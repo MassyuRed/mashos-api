@@ -13,7 +13,7 @@
 
 既存PR／branchと末尾の最新未完了checkpointから、承認済みの同じ作業を続ける。R4再実装、P0/metadata/executor検討、古いcandidateへの巻き戻しは行わない。変更後の同じ100件・華恋全文確認は継続作業に含む。MashのProduct Read PASSや採用を自動成立させない。
 
-2026-09-10最新（candidate89）：本人にとってのやりやすさの見込みを原文で証明し、欠落していた比較対象と見込みを元行動とともにfollowへ保持。1件の観測・followが変わり、他99件全record同一。華恋が全100件全文確認、direct100／73 GENERATED・27 UNAVAILABLE、旧140責務を保持して各層141。必須430は424 PASS／6既存FAIL、前回426全成否同一・追加4全PASS。長い復唱・定型締め・他の中心内容／関係の欠落は残りNOT_CLEAR。詳細と再開点は末尾candidate89。System Context未使用・原典直接確認、PR37不変更。
+2026-09-10最新（candidate91 source checkpoint・最終検証前）：継続する活動・現在状態・予定までの時間を、同じ原文材料のまま元行動とともに保持する修正。対象の外側の生成不可は未解消。必須全回帰と同じ100件の最終確認は未完で、前回candidate90の428 PASS／6 FAIL、73 GENERATED／27 UNAVAILABLEは前回値。商品NOT_CLEAR、disabled・Draft維持。詳細は末尾。System Context未使用・原典直接確認、PR37不変更。
 
 ## 1. GitHub anchors
 
@@ -7191,3 +7191,12 @@ Mash様の残件継続指示と既存20260905／20260908承認内で、final OP�
 商品判定はNOT_CLEAR。今回の欠落は改善したが、その分長い原文再掲が増え、定型の受取表現も残る。本人の自己評価、混合した現在状態／未確定な変化・可能性、複数主題／共有関係の欠落、抽象的な指示語と締めは未解消。次は保存済み本文とsource診断からこれらの中心内容が失われる境界を扱う。他者／伝聞や時点を本人の現在へ置換せず、自己評価を単なるuncertaintyへ変更せず、任意の行動や共有関係を追加選択する別仕様へ広げない。機械結果をMashのProduct PASSへ変換しない。
 
 最終検証sourceはlocal `d88cbe31a5402833360c347b74537617a5b9c20a`／remote `75b7c6adedb9c20fd6fe556f9feae00158841855`、whole tree `13fdb35c4b8ee6dd5bda2af8402c3e7abc8b4cb4` が同一。後続は結果資料のみ。既存20260905と20260908承認と今回の運用指示を継承し、現行PR heads、前提・作業規則、恒久incident全文、weekly20260905、全体設計／全file地図と影響sourceを確認。入力→国家保存／非同期／read-side、旧I5と三中核境界を維持し、STRUCTURE_MAP_DELTA_NONE。System Contextは現在指示に従い未使用で、PR37も変更しない。全PR Draft/open/unmerged、disabled、automatic_progression=false、ready／採用／merge／本番／human PASS未成立。privateの入力・本文・個別case・digest・locatorは既存の承認済み非公開記録へ保持し、公開GitHubへ置かない。途中保存は維持し、定例JSON／ZIP配布は行わない。9月12日の本文確認準備目標と品質リスクを継承する。
+
+
+### 2026-09-10 continuation — 継続状態と予定までの時間を元行動と保つ（candidate91 source checkpoint・最終検証前）
+
+既存final OPのfinite-background全field証明に、活動の継続＋現在状態＋予定まで時間／余裕があるという譲歩を一つの原文材料として確認する有限文法を追加した。活動・状態・資源の閉じた構文と原field全域を確認し、同じstate／fact／continuing等の核・主体・極性・根拠・関係を保持、source_bounded_expressionの証明だけを付す。疲れを新しい感情分類へ変えず、休息許可・安心・十分な余裕・回復・因果・実行を推定しない。既存の中心材料＋実行済み元行動の選択、唯一のHRとselected input再導出を使用し、selector／schema／owner／Surface／Gateを追加・緩和しない。STRUCTURE_MAP_DELTA_NONE。旧I5・国家／API／DB／RN／Piece／Analysis・Layer3は不変更。
+
+追加検査は公開合成3例で、元核を証明属性以外そのまま保つこと、NORMAL／LIMITED、全recovery、同一immutable selected input、背景・程度・時点・譲歩・予定の境界・資源・元行動の独立inverse／Gate、他者／報告／否定／推量／条件／別文、既存選択のoptional／第三主題／required関係／未実行行動境界を確認する。初回3 PASS／1 FAILで、raw spanのstripが二重終端を隠す漏れを確認した。finite-background証明へ原field全文から終端を1個だけ除いた文字列を渡すよう修正し、旧テスト・入力・期待値・閾値は不変更。初期結果は非creditで保存する。
+
+対象の直接診断本文へ状態と時間条件を回復する修正であり、外側の生成不可の解消ではない。別の混合推量／確定否定は節の仮投影だけでは選択へ届かず、未来行動の名詞化試作は未実行の見え方を保てず不採用とした。これらを修正済みへ数えない。修正後の追加4検査は全PASS。既存current13定数だけを再導出し、非current ASTと旧test全byteを保持した。この固定sourceの必須回帰・同じ100件生成と華恋の全件全文確認は次工程であり未完。商品NOT_CLEAR、disabled・Draft/open/unmerged・automatic_progression=false。System Context未使用・原典直接確認、PR37不変更、private本文は既存非公開記録へ保持する。

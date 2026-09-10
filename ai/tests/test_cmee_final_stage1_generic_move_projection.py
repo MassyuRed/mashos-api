@@ -10118,3 +10118,99 @@ class CMEEFinalDeliberativeOmissionSelectionTest(unittest.TestCase):
             old_public = build_grounded_observation_plan(frozen.normalized_current_input,
                                                          evidence_spans=frozen.evidence_spans)
         self.assertEqual(old_public, legacy)
+
+
+class CMEEFinalContinuingStateMaterialSelectionTest(unittest.TestCase):
+    """Receive a current state and remaining time with the original action."""
+
+    marker = "lexical:source_bounded_expression"
+    row = staticmethod(CMEEFinalFiniteBackgroundMaterialSelectionTest.row)
+    sources = (
+        "作業が続いて少し疲れているけれど、次の約束まで時間はある。",
+        "会議が続いてかなり疲れていますけど、予定まで余裕はあります。",
+        "用事が続いてちょっと困っているけれども、開始まで時間はある。",
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = tuple(_full_surface_artifacts(cls.row(s)) for s in cls.sources)
+
+    test_original_material_and_action_reach_both_modes_author_and_recovery = (
+        CMEEFinalFiniteBackgroundMaterialSelectionTest.
+        test_original_material_and_action_reach_both_modes_author_and_recovery
+    )
+    test_related_optional_third_theme_and_unperformed_action_keep_old_selection = (
+        CMEEFinalFiniteBackgroundMaterialSelectionTest.
+        test_related_optional_third_theme_and_unperformed_action_keep_old_selection
+    )
+
+    def test_state_concessive_limit_degree_and_action_loss_fail_inverse_and_gate(self):
+        a = self.artifacts[0]
+        material = next(n for n in a.plan.nuclei if n.source_fields == ("memo",))
+        self.assertEqual((material.kind, material.semantic_frame.predicate_kind,
+                          material.semantic_frame.time_scope, material.semantic_frame.modality),
+                         ("state", "state", "continuing", "fact"))
+        for old, new in (("作業が続いて", ""), ("少し", ""),
+                         ("疲れている", "疲れていた"), ("けれど", "ので"),
+                         ("次の約束まで", ""), ("時間はある", "時間はない"),
+                         ("時間はある", "安心して休める"),
+                         ("作業台を片づけた", "")):
+            with self.subTest(old=old, new=new):
+                body = _tamper_reception(a.surface.text, old, new)
+                self.assertNotEqual(body, a.surface.text)
+                self.assertFalse(evaluate_grounded_surface_body_inverse(
+                    body=body.encode(), plan=a.plan, sentence_plan=a.sentence_plan,
+                    resolver=a.resolver, selected_subjective_input=a.selected_subjective_input).passed)
+                self.assertFalse(evaluate_grounded_observation_gate(
+                    plan=a.plan, sentence_plan=a.sentence_plan, surface_result=replace(a.surface, text=body),
+                    resolver=a.resolver, require_body_inverse=True,
+                    selected_subjective_input=a.selected_subjective_input).passed)
+
+    def test_source_owner_time_modality_and_whole_field_boundaries_stay_closed(self):
+        base = self.sources[0]
+        sources = (
+            "友人は" + base, "友人の" + base, "昨日は" + base, "明日は" + base,
+            base.replace("疲れている", "妹は疲れている"),
+            base.replace("次の約束", "兄の約束"),
+            base.replace("疲れている", "疲れていた"),
+            base.replace("疲れている", "疲れていない"),
+            base.replace("疲れている", "疲れているらしい"),
+            base.replace("時間はある", "時間はない"),
+            base.replace("時間はある", "時間はあるかもしれない"),
+            base.replace("時間はある", "時間があれば休む"),
+            base.replace("時間はある", "時間はあると聞いた"),
+            base.replace("時間はある", "時間はあると思った"),
+            base.replace("時間はある", "時間はあった"),
+            base.replace("時間はある", "十分な時間はある"),
+            base.rstrip("。") + "？", base.rstrip("。") + "…", base.rstrip("。") + "．。",
+            "「" + base.rstrip("。") + "」", "別の記録。" + base, base + "別の記録。",
+        )
+        for source in sources:
+            with self.subTest(source=source):
+                frozen = freeze_text_source(_request_from_row(self.row(source)))
+                plan = build_final_stage1_grounded_observation_plan(
+                    frozen.normalized_current_input, evidence_spans=frozen.evidence_spans)
+                self.assertFalse(any(self.marker in n.semantic_frame.attribute_codes
+                                     for n in plan.nuclei if n.source_fields == ("memo",)))
+        frozen = freeze_text_source(_request_from_row(self.row(base)))
+        legacy = build_grounded_observation_plan(frozen.normalized_current_input,
+                                                 evidence_spans=frozen.evidence_spans)
+        material = next(n for n in legacy.nuclei if n.source_fields == ("memo",))
+        for frame in (replace(material.semantic_frame, actor="other"),
+                      replace(material.semantic_frame, time_scope="future"),
+                      replace(material.semantic_frame, modality="uncertain"),
+                      replace(material.semantic_frame, attribute_codes=(
+                          *material.semantic_frame.attribute_codes, "operator:negation"))):
+            altered = replace(legacy, nuclei=tuple(replace(n, semantic_frame=frame)
+                                                   if n == material else n for n in legacy.nuclei))
+            nuclei, _ = observation_plan_owner._final_stage1_typed_nuclei(
+                altered, frozen.evidence_spans, normalized_input=frozen.normalized_current_input)
+            self.assertFalse(any(self.marker in n.semantic_frame.attribute_codes for n in nuclei))
+        for source in ("別の記録。" + base, base + "別の記録。", base.replace("作業", "移動")):
+            nuclei, _ = observation_plan_owner._final_stage1_typed_nuclei(
+                legacy, frozen.evidence_spans,
+                normalized_input={**frozen.normalized_current_input, "memo": source})
+            self.assertFalse(any(self.marker in n.semantic_frame.attribute_codes for n in nuclei))
+        with patch.object(observation_plan_owner, "_source_finite_background_expression_is_bound", return_value=False):
+            self.assertEqual(build_grounded_observation_plan(frozen.normalized_current_input,
+                evidence_spans=frozen.evidence_spans), legacy)

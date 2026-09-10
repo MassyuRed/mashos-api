@@ -10105,6 +10105,19 @@ def _source_finite_background_expression_is_bound(fragment: str) -> bool:
     # Closed clause heads prevent a free suffix check from swallowing an
     # attribution, a changed subject, or an unfinished third clause.
     degree = r"(?:(?:もう|まだ|今も|ずっと))?(?:少し(?:だけ)?|ちょっと|とても|かなり)?"
+    # A continuing activity, current state and finite remaining-time clause
+    # form one complete source object. Keep the concessive and its limit;
+    # do not infer a feeling, causation, recovery or a completed action.
+    # Closed activity/state/resource slots cannot hide a reporting owner
+    # or turn the future schedule boundary into the time of the state.
+    if re.fullmatch(
+        r"(?:移動|作業|会議|用事|練習|運動|仕事|勉強|待機)が続いて"
+        + degree + r"(?:疲れ|困っ)て(?:いる|います)"
+        r"(?:けど|けれど|けれども)[、,]"
+        r"(?:次の)?(?:予定|約束|開始)まで(?:時間|余裕)は(?:ある|あります)",
+        fragment,
+    ):
+        return True
     coordinated = re.fullmatch(
         r"(?P<background>[^、,。．.!！?？\s]+[てで])[、,]"
         + degree + r"(?:疲れた|疲れて(?:いる|います)|困った|困って(?:いる|います))し"
@@ -10522,7 +10535,10 @@ def _final_stage1_typed_nuclei(
                                or _source_past_negative_feeling_is_bound(finite)))
                          or (scalar_expression := frame.time_scope != "continuing"
                              and _source_scalar_background_expression_is_bound(finite))
-                         or _source_finite_background_expression_is_bound(finite))
+                         # Prove the complete field, removing at most one
+                         # terminator; a trimmed span must not hide a second.
+                         or _source_finite_background_expression_is_bound(
+                             re.sub(r"[。．.]$", "", source.strip())))
                 ):
                     if past_feeling:
                         nucleus = replace(nucleus, kind="reaction", semantic_frame=replace(
