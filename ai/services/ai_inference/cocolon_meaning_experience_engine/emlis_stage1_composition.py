@@ -6255,7 +6255,7 @@ def _normal_reception_appraisal(
         and source_qualifiers[0].source_argument_role is None
         and source_qualifiers[0].polarity == "positive"
         and source_qualifiers[0].modality == "feeling"
-        and source_qualifiers[0].time_scope in {"present", "current_input"}
+        and source_qualifiers[0].time_scope in {"present", "current_input", "past"}
     )
     material = (
         proposition.reception_function in {

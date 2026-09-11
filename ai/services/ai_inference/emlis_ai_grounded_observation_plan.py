@@ -6101,6 +6101,8 @@ def _grounded_human_follow_role_for_nucleus(
         return "retained_intention"
     if _is_reception_performed_action_nucleus(nucleus, final_source_fidelity=final_source_fidelity):
         return "concrete_effort"
+    if final_source_fidelity and is_grounded_positive_feeling(nucleus):
+        return "valued_change"
     if (
         final_source_fidelity
         and nucleus.kind == nucleus.semantic_frame.predicate_kind == "change"

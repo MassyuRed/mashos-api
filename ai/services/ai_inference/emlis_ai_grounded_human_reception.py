@@ -2376,6 +2376,33 @@ def source_grounded_current_expression_nominal(
     a self-owned feeling over the whole field. That feeling's plain clause
     can adjoin こと unchanged. Preserve act, scope, axes and anaphoric policy.
     """
+    # A selected event/reaction contrast already owns two separate scalar
+    # fragments. Nominalize its finite event without labelling that event as
+    # "words placed here". Do not promote an unbounded span or quoted claim.
+    if (plan is not None and FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in plan.source_contracts
+        and move in plan.response_plan.human_reception_plan.moves
+        and move.reception_act == "stay_with_current_burden"
+        and len(move.target_nucleus_ids) == len(move.support_nucleus_ids) == 1):
+        event = nucleus_index.get(move.target_nucleus_ids[0])
+        support = nucleus_index.get(move.support_nucleus_ids[0])
+        if (event is not None and support is not None and event in plan.nuclei and support in plan.nuclei
+            and event.kind == "event" and support.kind == "reaction"
+            and len(event.source_span_ids) == 1
+            and event.semantic_frame.modality == "fact" and event.semantic_frame.time_scope == "past"
+            and event.source_fields in {("memo",), ("memo_action",)}
+            and any(r.type == "contrast" and r.relation_id in plan.coverage_requirements.required_relation_ids
+                    and (r.from_nucleus_id, r.to_nucleus_id) == (event.nucleus_id, support.nucleus_id)
+                    for r in plan.relations)):
+            fragment = _source_grounded_clause_candidate(event, resolver)
+            raw = resolver.resolve(event.source_span_ids[0]).raw_text
+            profile = _source_grounded_semantic_profile(event, fragment)
+            if (profile.actor_kind == "SELF" and profile.predicate_kind == "event"
+                and not (profile.quoted_boundary or profile.performed_action or profile.future_action)
+                and _typed_reception_source_fragment(event, raw) == fragment
+                and _SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(fragment)
+                and not re.search(r"[「」『』…‥?？!！]", raw)
+                and not _SOURCE_GROUNDED_TRAILING_CONNECTIVE_RE.search(fragment)):
+                return f"{fragment}こと"
     if (plan is None or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
         or move not in plan.response_plan.human_reception_plan.moves
         or move.reception_act != "stay_with_current_burden"
@@ -7602,6 +7629,9 @@ def _source_grounded_target_np(
                 or profile.nucleus_kind == "reaction"
                 and profile.predicate_kind in {"feeling", "reaction"}
                 and profile.modality == "feeling"
+                and referent_text == f"{meaning_fragment}こと"
+                or profile.nucleus_kind == profile.predicate_kind == "event"
+                and profile.modality == "fact" and realization.time_scope == "past"
                 and referent_text == f"{meaning_fragment}こと"
             )
         )

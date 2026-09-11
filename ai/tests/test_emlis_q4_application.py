@@ -95,3 +95,65 @@ def test_positive_answer_is_feeling_not_burden_or_completed_change():
     moves=plan.response_plan.human_reception_plan.moves
     answer_moves=[m for m in moves if any(n.startswith('answer:') for n in m.target_nucleus_ids)]
     assert answer_moves and all(m.reception_act=='recognize_lived_change' for m in answer_moves)
+
+def test_active_requires_separate_release_approval(monkeypatch):
+    from emlis_thread_config import application_mode,writes_enabled
+    monkeypatch.setenv('COCOLON_EMLIS_THREAD_MODE','active');monkeypatch.delenv('COCOLON_EMLIS_THREAD_RELEASE_APPROVED',raising=False)
+    assert application_mode()=='read_only' and not writes_enabled()
+
+
+def test_read_only_authenticated_api_exposes_saved_dto_and_rejects_all_writes(qcase,monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from api_emlis_thread import register_emlis_thread_routes
+    import api_account_visibility
+    user,parent,_=qcase;s=active(monkeypatch);before=run(s.start(user,parent))
+    async def resolve(token):return user
+    monkeypatch.setattr(api_account_visibility,'_resolve_user_id_from_token',resolve)
+    monkeypatch.setenv('COCOLON_EMLIS_THREAD_MODE','read_only')
+    app=FastAPI();register_emlis_thread_routes(app)
+    with TestClient(app) as client:
+        url=f'/emlis/threads/by-input/{parent}';headers={'Authorization':'Bearer synthetic-owner-token'}
+        assert client.get(url).status_code==401
+        got=client.get(url,headers=headers);assert got.status_code==200
+        assert got.json()['timeline']==before['timeline'] and not got.json()['can_write']
+        assert got.headers['cache-control']=='private, no-store'
+        base=dict(expected_revision=before['revision'],idempotency_key='blocked')
+        for suffix,payload in [('answers',dict(question_id=before['pending_question']['question_id'],answer_text='回答')),('actions',dict(action='skip')),('frames',dict(frame_ref='frame',status='REJECTED'))]:
+            denied=client.post(f"/emlis/threads/{before['thread_id']}/{suffix}",headers=headers,json={**base,**payload})
+            assert denied.status_code==503 and denied.json()['detail']=='application_paused'
+        assert client.get(url,headers=headers).json()['revision']==before['revision']
+
+
+def test_cancel_after_pause_closes_attempt_and_preserves_meaning(qcase,monkeypatch):
+    import asyncio
+    user,parent,_=qcase;s=active(monkeypatch);dto=run(s.start(user,parent))
+    original=s.engine.generate
+    def cancel(req):
+        monkeypatch.setenv('COCOLON_EMLIS_THREAD_MODE','read_only');raise asyncio.CancelledError()
+    monkeypatch.setattr(s.engine,'generate',cancel)
+    with pytest.raises(asyncio.CancelledError):run(answer(s,user,dto,'その時は重かった。'))
+    failed=run(s.get(user,parent));assert failed['meaning_updated'] and failed['failure_code']=='worker_interrupted'
+    assert failed['processing_deadline_at'] is None and not failed['can_retry']
+    monkeypatch.setattr(s.engine,'generate',original);monkeypatch.setenv('COCOLON_EMLIS_THREAD_MODE','active')
+    assert run(s.get(user,parent))['can_retry']
+
+@pytest.mark.parametrize('memo',['褒められたのに、嬉しくなかった。','誘われたのに、悲しかった。'])
+def test_initial_event_nominal_keeps_both_source_endpoints_and_inverse(memo):
+    from test_cmee_emlis_q1_thread import initial
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning,build_updated_grounded_plan
+    from cocolon_meaning_experience_engine.emlis_thread_surface import realize_emlis_thread_body
+    from cocolon_meaning_experience_engine.emlis_thread_projection import project_thread_meaning
+    import emlis_ai_grounded_sentence_surface as surface
+    from emlis_ai_grounded_observation_gate import evaluate_grounded_surface_body_inverse
+    prepared=prepare_emlis_meaning(initial(memo));checkpoint=prepared.checkpoint;plan=build_updated_grounded_plan(prepared)
+    result=realize_emlis_thread_body(prepared);assert prepared.checkpoint==checkpoint
+    event,reaction=memo.rstrip('。').split('のに、')
+    assert f'{event}ことと{reaction}こと' in result.artifact.reception
+    assert '今ここに置かれた言葉' not in result.artifact.reception
+    resolver=prepared.thread.resolver();projection=project_thread_meaning(prepared,plan)
+    sentence=surface.build_grounded_sentence_plan(plan,resolver,recovery_stage='full')
+    def inverse(text):return evaluate_grounded_surface_body_inverse(body=text.encode(),plan=plan,sentence_plan=sentence,resolver=resolver,selected_subjective_input=projection.selected_reception).passed
+    body=result.artifact.text;assert inverse(body)
+    for old,new in [(event+'こと',''),(reaction+'こと',''),('その違いも含めて',''),(event+'こと',f'「{event}」こと')]:
+        changed=body.replace(old,new);assert changed!=body and not inverse(changed)

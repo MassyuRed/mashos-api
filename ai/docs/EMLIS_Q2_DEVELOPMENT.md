@@ -8,7 +8,7 @@
 
 `emotion_submit_service.persist_emotion_submission`の元保存・既存fanout後、`emlis_ai_reply_service`の明示development分岐からthreadを開始する。開発分岐は保存済みthread DTOへ一本化し、旧I5本文との二重生成をしない。flag OFFでは従来I5がowner。旧`input_feedback.comment_text`／passed gateを質問statusで拡張しない。Piece publishのmodalには回答欄を追加せず、InputScreenの通常保存とAnalysisHistoryScreenの元入力IDから専用modalを開く。
 
-実行profileは外側の`DEVELOPMENT_APPLICATION` / `q2.free.one_round.v1`。その内部でQ1の純粋作者を`OFFLINE_CANDIDATE` requestのまま呼ぶ。Q1作者のmode・共有意味/本文契約・既存canonical100の資料を本番利用可能へ昇格しない。HTTP/DB/期限/認証はQ2 serviceが所有し、機械検証は商品判定を代筆しない。
+Q2当時の実行profileは外側の`DEVELOPMENT_APPLICATION` / `q2.free.one_round.v1`で、内部作者を`OFFLINE_CANDIDATE`として呼んでいた。現行Q4は保存profileを保ち、作者へ明示`EMLIS_APPLICATION`を渡す。Q1作者のmode・共有意味/本文契約・既存canonical100の資料を本番利用可能へ昇格しない。HTTP/DB/期限/認証はQ2 serviceが所有し、機械検証は商品判定を代筆しない。
 
 ## 保存・API
 
@@ -40,7 +40,7 @@ modalの「閉じる」は書き込みなし。「今回はスキップ」だけ
 
 ## 開発環境での有効化と検証
 
-適用先の開発DBを確認してmigrationを適用し、そのDBを使うAPIに`COCOLON_ENV=development`と`COCOLON_EMLIS_THREAD_DEVELOPMENT=true`を設定する。RNは`lib/api/emlisThreadApi.js`の`Q2_DEVELOPMENT_OPT_IN`を開発checkoutでtrueへ変更し、開発APIを向けたdebug buildを使用する。commitされた値はfalse、release buildは`__DEV__`でも閉じる。これらは本番公開の手順ではない。
+Q4現在の設定は下記追記と[適用・運用確認](EMLIS_DEPLOYMENT_AND_OPERATION_CHECKS.md)の§6/§9を使う。Q2当時のRN定数`Q2_DEVELOPMENT_OPT_IN`は廃止済み。APIの`/app/bootstrap`が返す`emlis_threads_enabled`でdebug/release共通のreaderを選び、既定値はfalse。開発書込みには引き続き`COCOLON_ENV=development`と`COCOLON_EMLIS_THREAD_DEVELOPMENT=true`が必要。
 
 Pythonは既存bootstrap lockのCPython3.12.13・pytest8.4.1・46依存。DB testは[公式PGlite](https://pglite.dev/docs/)0.5.8のPostgreSQL WASMに**実migrationとRPC**を適用し、`Q2_PGLITE_MODULE`をそのpackageの絶対pathに設定して実行する。
 
@@ -57,4 +57,15 @@ RN検査は`tests/emlis-q2-tools/package.json`の固定test依存を用い、そ
 
 公開合成5組（`ai/tests/fixtures/emlis_q2_synthetic_saved_rounds_20260911.json`）の元入力・初回本文・質問・回答後の保存本文を実DB RPCから読み、意味A/Bの違い、「今」の時点表示、訂正後の本文不存在、unknownの本文不変を確認した。再掲と定型的な受け取りは残っており商品NOT_CLEAR。本文全文を読んだことを広範な自由文対応やMashの商品合格へ換算しない。
 
-修正版v1.2によりQ2のコード実装は完了としてQ3へ進行した。現在は既存handoff末尾Q3節が実装・検証・次工程を所有する。開発DB適用、端末上の一往復・再開・復旧、実課金、商品判断と公開は[後日の適用・運用確認](EMLIS_DEPLOYMENT_AND_OPERATION_CHECKS.md)へ分離し、それらの未実施だけでQ3/Q4コード実装を止めない。稼働DBへの変更、merge、deployは行っていない。
+修正版v1.2によりQ2のコード実装は完了としてQ3へ進行した。現在は既存handoff末尾Q4節が実装・検証・次工程を所有する。開発DB適用、端末上の一往復・再開・復旧、実課金、商品判断と公開は[後日の適用・運用確認](EMLIS_DEPLOYMENT_AND_OPERATION_CHECKS.md)へ分離し、それらの未実施だけでQ3/Q4コード実装を止めない。稼働DBへの変更、merge、deployは行っていない。
+
+
+## 2026-09-11 Q4 — アプリ統合・互換と停止復旧
+
+現行入口は明示`EMLIS_APPLICATION`。純粋な旧`OFFLINE_CANDIDATE`呼出しは維持し、application modeはEmlis threadを持つrequestだけを受ける。serviceから認証・mode・revision・sourceを検証して同じ作者を呼び、EngineOutcomeのbody-free情報にも実modeを記録する。保存profileのQ2/Q3、元source/checkpointのidentityとwire versionは変えない。
+
+DTOへ`can_write`を追加。read_onlyは現在本文・履歴・pending questionを返し、can_retry/can_continueもfalseにする。GETは生成しない。HTTP・service受理・意味/本文commit前で書込み条件を検証し、確認済み停止だけ既存attemptの失敗終了を許す。旧clientはactive/read_onlyでcurrent_observationを旧comment_textへ読み出し、QUESTION_PENDINGや内部graphを旧public enumへ混ぜない。
+
+RNはbootstrapのemlis_threads_enabledでreaderを開く。最新本文を先頭、元記録と前のやり取りを展開欄に置く。未作成の場合だけ既存modal導線へ戻り、保存結果不明のGET失敗を旧本文で隠さない。409/422はGET後に新revisionで操作でき、不明ACKは元key/payloadを保つ。InputScreenは開始ownerと遅い応答を照合し、4つの入力/Piece書込みは認証取得時も同じuserを確認する。RootNavigatorはuserごとにprivate tab stateを再作成する。
+
+適用順、独立した公開承認値、全replicaの停止、旧版を残す回復は[運用資料§9](EMLIS_DEPLOYMENT_AND_OPERATION_CHECKS.md)を参照。コードとローカル実SQL/React検証、稼働環境への適用は区別する。全検証件数・本文確認・残件は既存handoff末尾Q4節がowner。

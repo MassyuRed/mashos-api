@@ -3,7 +3,7 @@
 作成日：2026-09-11 JST  
 担当：Ultra華恋  
 版：1.0  
-対応設計：Mashの添付「問いシステム技術設計 v1.2」。実装記録は[既存handoffの末尾Q3節](CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md)  
+対応設計：Mashの添付「問いシステム技術設計 v1.2」。実装記録は[既存handoffの末尾Q4節](CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md)
 位置づけ：Q2〜Q4のコード実装から分けた、実際の環境への適用・確認・商品判断・公開作業の一覧。
 
 ## 1. この資料の役割
@@ -29,9 +29,9 @@
 | Q2 | 実装完了。専用32件、RN新規9件＋既存36件成功。Q3へ進行可能。 |
 | Q2のDB検証 | 検証用PostgreSQL WASM（PGlite）に実migrationを適用し、実RPCを実行済み。稼働DBへは未適用。 |
 | Q2の画面検証 | 実hook／componentをReact rendererで検証済み。端末の視認・キーボード・OS動作は未確認。 |
-| Q3・Q4 | Q3コード実装済み、Q4コード実装が次。本書の実環境項目は未実施の確認予定です。 |
+| Q3・Q4 | Q3実装済み。Q4は公開mode・単一路・停止復旧・互換・RN統合を実装検証し、本文修正も実施。品質残件は既存handoffのQ4節で管理。本書の実環境項目は未実施。 |
 | 商品品質 | NOT_CLEARを継承。保存済み合成本文の再掲・定型的な受け取り等の課題を保持。 |
-| 今回の作業 | Q3コード・自動検証・合成実本文の確認と既存PR3/30資料の更新。稼働DB適用・端末・実課金・正式商品判断・merge・deployは未実施。詳細は既存handoff末尾Q3節。 |
+| 今回の作業 | Q4コード・自動検証・保存済み実本文の確認と既存PR3/30資料の更新。稼働DB適用・端末・実課金・正式商品判断・merge・deployは未実施。詳細は既存handoff末尾Q4節。 |
 
 検証の詳細は[Q2開発資料](EMLIS_Q2_DEVELOPMENT.md)を参照します。保存済みの件数を今回の新規実行へ数えません。
 
@@ -88,7 +88,7 @@ Q4には、現在の環境で確認できる実装統合・本文の確認と修
 5. 開発checkoutの`lib/api/emlisThreadApi.js`にある`Q2_DEVELOPMENT_OPT_IN`をtrueにし、開発APIを向けたdebug buildを使用します。保存されている既定値はfalseです。
 6. 本書§3の入力保存・回答・履歴・失敗／再開を順に確認し、結果と実際の差分を残します。必要に応じて§4のQ3項目を続けます。
 
-Q2のコードは`__DEV__`と開発設定で制限されているため、この設定だけでrelease build／本番利用可能にはなりません。公開用mode・経路の実装はQ4、実際の公開操作は§5です。
+Q4のreaderはdebug/release共通ですが、書込みはserverのmodeで制御します。公開用mode・経路はコードにあり、実際の有効化は§5です。開発設定を公開承認へ読み替えません。
 
 現在の実装値は、threadの各attemptが30秒、既存の元submit budgetが3秒、専用RN clientのtimeoutが35秒です。実環境での処理時間と制限を確認して必要な場合に見直します。機能確認のために期限を無制限にしたり、保存結果不明を無条件の再生成へ変えたりしません。
 
@@ -111,3 +111,27 @@ Q2の実装は完了しており、この資料を先に全件完了しないと
 - [Cocolon PR #30](https://github.com/MassyuRed/Cocolon/pull/30)：`f7b29302aaa18a59de1f42c12a5bad86349a6668`。
 - [Q2 migration](https://github.com/MassyuRed/mashos-api/blob/d67bb771c65564bb8341738366a8aea4e0f85887/supabase/migrations/20260911020509_emlis_input_threads_q2.sql)。
 - [Q2 service](https://github.com/MassyuRed/mashos-api/blob/d67bb771c65564bb8341738366a8aea4e0f85887/ai/services/ai_inference/emlis_thread_service.py)、[API設定](https://github.com/MassyuRed/mashos-api/blob/d67bb771c65564bb8341738366a8aea4e0f85887/ai/services/ai_inference/emlis_thread_config.py)、[RN client](https://github.com/MassyuRed/Cocolon/blob/f7b29302aaa18a59de1f42c12a5bad86349a6668/lib/api/emlisThreadApi.js)。
+
+
+## 9. Q4の設定・停止・保存版の回復手順
+
+設定のownerは`emlis_thread_config.py`。以下は適用準備であり、今回環境の値を有効化した記録ではない。
+
+| COCOLON_EMLIS_THREAD_MODE | 読取り | 新規・回答・続行・frame・retry | 旧submitへの本文 |
+|---|---|---|---|
+| 未設定 | 旧二重development gateが真ならdevelopment、それ以外legacy | 同左 | 同左 |
+| legacy | thread API無効 | 無効 | 従来I5。thread使用後の復旧先にはしない |
+| development | 有効 | COCOLON_ENV=development と COCOLON_EMLIS_THREAD_DEVELOPMENT=true の両方が必要 | Q2/Q3の開発互換どおり空。専用readerで閲覧 |
+| active | 有効 | COCOLON_EMLIS_THREAD_RELEASE_APPROVED=true が別途必要 | 保存済みcurrent_observationだけを従来comment_textへ投影 |
+| read_only | 有効 | 503 application_paused | 保存済みcurrent_observationだけ。再生成しない |
+| 不明な値、条件未成立のactive/development | 有効（read_onlyへ縮退） | 503 application_paused | 保存済みcurrent_observationだけ |
+
+1. 対象版を既存PR3/30の確認済みcommitとして指定する。Q2 migration `20260911020509_emlis_input_threads_q2.sql`、次にQ3追加 `20260911041749_emlis_q3_plan_rounds.sql`が必要。Q4の追加DDLはなく、旧migrationを再作成・改変しない。未適用の環境ではreaderも有効にしない。
+2. 初回配置では全API replicaをread_onlyとして起動し、本人認証・旧Q2/Q3保存版の取得、can_write=false、POST拒否、bootstrapのreader通知を確認する。新アプリはbootstrapを再取得する。旧アプリは既存passed＋comment_textの契約を使う。
+3. 公開承認・環境確認が整った場合だけactiveと独立承認値を対象版へ設定する。アプリのフラグを変えるだけでは書込みを許可しない。旧I5との二重生成を避け、thread側失敗でI5をfallback作者として呼ばない。
+4. 停止時は既存の配置手段で全writer replicaをread_onlyへ切り替え、旧active workerをdrain/停止する。modeはprocess環境値であり、全replicaへ即時伝播するDB共通kill switchではない。部分切替中を全停止とは記録しない。
+5. 確認できた処理中の停止では、回答・確定意味・質問枠を保持したまま既存attemptをworker_interruptedとして閉じる。停止下で許すcommitは既存attemptの失敗処理だけで、新しい意味・本文・質問は書かない。processの強制消失等で結果が不明なら既存deadline後にsave_result_unknownを表示し、自動retryしない。
+6. 回復は保存版互換のあるQ4 reader/writerで行う。GETで現在revisionと操作receiptを確認し、再開可能な確認済み一時障害だけ本人のretry_responseで同じ回答・operation・source/checkpointから新attemptを一つ作る。回答の再入力や質問枠追加は行わない。成功済み本文のACK消失ならGETで保存本文を戻す。
+7. threadを使い始めた後はlegacyへの単純切戻しを正常回復としない。旧I5は保存済みの本人回答・撤回・訂正を無視するため、互換版が準備できるまではread_onlyを維持する。table/eventを削除するdown migrationや古いcheckpointへのpointer巻戻しは行わない。
+
+current_observationがない場合、旧clientへ旧本文をpassedとして渡さない。新readerは履歴本文を別欄で表示する。処理中・結果不明・競合時のcacheは「前回確認した観測」と表示し、送信可否はserver側で再検証する。質問・回答・内部sourceを一般ログへ送らない。

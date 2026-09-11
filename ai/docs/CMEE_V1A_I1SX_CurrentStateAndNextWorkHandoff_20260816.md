@@ -7344,3 +7344,36 @@ python -m pytest -q tests/test_cmee_emlis_q3_thread.py tests/test_emlis_q3_appli
 ```
 
 canonical100は`test_cmee_nls_v3_batch001_unified_stage1_bridge`の既存`load_validated_batch`、`_unified_stage1_inputs`、`response.compile_stage1_response`と`MeaningExperienceEngine.generate`を使用。旧495件・旧194件全体の再実行をしたとは扱わない。RNは既存固定test依存をNODE_PATHで指定し`node --test tests/emlis-thread.test.js tests/rn-screen-contracts.test.js`。実環境の追加成功は0。
+
+
+## 2026-09-11 Q4 — 統合・実本文修正・互換・停止復旧
+
+Mashの添付修正版v1.2と「Q4から続けて」に従い、Q3保存版から既存Draft PR3/30を継続した。全体設計・国家システム・両repositoryの全tree/役割地図を先に確認し、変更ownerと共有基盤/旧経路/他機能の影響本文を読んだ。System Contextは使わず原典を直接確認。初期checkpointはAPI 23049fc00042b24682bb04d3f420d98ea16f77d5、App 71eef7f3792fe96382620c0d8f8a7ebd78f59e49。
+
+### 実装と境界
+
+- APIのmodeはlegacy/development/active/read_only。active単独では書込みを開かず、独立の公開承認値が必要。既定OFF。bootstrapでRN readerを選び、受理/意味/本文commit時にもserverがwrite条件を照合する。
+- 作者へ明示EMLIS_APPLICATIONを渡す。旧offline pure requestは維持し、applicationのsingle requestは拒否。旧clientには保存current本文だけをcomment_textへ返し、旧public enumへQUESTION_PENDINGを足さない。次問候補の失敗で成立した回答後本文を消さない。
+- read_onlyでも本人の保存済み本文・回答・履歴を取得できる。確認済みworker停止は保存回答/意味を保持して既存attemptを閉じる。再開時は同じoperation/回答/source/checkpointで明示retry。保存結果不明と確認済み停止を区別する。旧Q2/Q3保存profileと開始時枠を保ち、旧I5への単純切戻しは回復としない。
+- RNは最新本文を先頭、元入力/旧本文を展開欄へ。送信中・結果不明・競合のcacheを現在本文と呼ばない。409/422後はGETで照合して新revision、不明ACKでは元key/payloadを保つ。アカウント単位のtab再作成、callback/応答owner照合、認証取得時のowner/token照合で入力/Pieceの別人送信を防ぐ。
+- 元emotions保存・国家dispatch・件数/花/通知、Piece/Analysis/TodayQuestionへのsource許可は維持。Q4追加DDLなし、既存Q2→Q3 migrationを使用。設定・全replicaの停止・保存版回復の手順はEMLIS_DEPLOYMENT_AND_OPERATION_CHECKS.md §9。
+
+### 検証済みの結果
+
+Q3の既存146件にQ4の17件を加え、API/純粋処理/実SQL-RPC/保存版/共有作者/inverse/registryの163件がPASS。RN実hook/component/API client20件と既存screen36件、計56件がPASS。CPython3.12.13、pytest8.4.1、46依存と2268配布実fileを既存lockと照合。PGlite0.5.8と既存固定React/Babel依存を使用し、新provider/依存なし。実migration/RPCを使うローカルPGlite検証とReact rendererであり、稼働Postgresの複数接続負荷やnative端末の検証ではない。
+
+初回Q4専用は10 PASS/2 FAIL（fixture範囲と過大な本文assert）、修正後12 PASS。拡張158件で155 PASS/3 FAILを検出し、過去の肯定感情appraisalと主actの不整合を修正した。初回RN17件は15 PASS/2 FAILで履歴filterを修正。既存36screenのkey固定期待1件はuser境界追加に合わせて更新し、実remount検査を併設。初回失敗を消さず、最終163/56の結果と区別する。後続registry notesの同期後、その整合1件も再確認した（総数へ二重加算しない）。旧495/194全体は今回再実行していない。
+
+### 保存済み本文の確認と今回の修正
+
+公開合成22ケースを実SQL/RPCから保存し、Free/Plus/Premiumの初回・問い・回答後、Premium三roundの中間本文を華恋が全読。保存fixtureはai/tests/fixtures/emlis_q4_synthetic_saved_rounds_20260911.json。回答A/Bの対象対応、now/当時訂正、partial、不明、訂正後の故障時に旧本文が現在へ戻らないことを確認した。本文不存在3ケースは意図した故障注入で、提供成功へ数えない。
+
+実読から、肯定感情を負担型へ押し込む選択と当時の肯定感情を拒否するappraisalを修正。過去/回答時点はsource qualifierのまま保ち、completed changeやEmlisの喜びへ昇格しない。初回の出来事＋反応対比は原文に沿う名詞化へ修正し、対象/反応/関係の削除や引用化を独立inverseが拒否する。
+
+共有変更の区切りで、Q3 baseline 75151a538478dbb450c2fb94f1c56ff89538fd77と現在実装を別processから同じvalidated corpus/adapterで再生成した。固定100件のinput、direct観察/受取、実plan、outer本文/status/reasonsの全recordが一致。direct100、GENERATED73/UNAVAILABLE27。華恋が元入力全field、両層本文、可否/理由を全読し、独立readerも全件確認。private本文/個別case/digest/locatorは公開しない。この結果は質問機能のProduct PASS条件への回帰ではない。
+
+### 現在の品質と次の作業
+
+統合・mode・停止回復・互換・RNのコードと検証を完了した。一方、回答A/Bや負担句の長い再掲と共通の締めは今回本文でも残り、A/Bの自然な受容まで改善済みとは扱わない。既存100件には中心感情/複数主題/共有関係の不足と定型性が残る。商品NOT_CLEAR、P3/P8商品完成やMash正式PASSは未成立。
+
+次は今回の保存本文にある主観的な受け取りの名詞化・時点・長い復唱を、同じHuman Reception作者と独立inverseで修正する。入力別完成文、gateの後付け緩和、旧checkpointの意味変更は使わない。正式商品判断や実環境を待つために止める残件ではなく、本文sourceで確認できる品質残件として保持する。実DB適用、端末・実課金、Mash正式判断、merge/deploy/有効化は別作業として未実施。
