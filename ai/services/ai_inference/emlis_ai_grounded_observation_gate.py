@@ -1853,6 +1853,60 @@ def _body_inverse_thread_contrast_answers(body, witness, line, plan, resolver):
     return frozenset(matched), tuple(failures)
 
 
+def _body_inverse_received_contrast_group(body, witness, sentence, move, plan, resolver):
+    """Read each finite event/reaction pair and its actual source connector."""
+    count = len(move.target_nucleus_ids)
+    if (count not in {2, 3} or len(move.support_nucleus_ids) != count
+        or move.reception_act != "stay_with_current_burden" or sentence.section != "reception"):
+        return False
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    expected = []
+    for event_id, feeling_id in zip(move.target_nucleus_ids, move.support_nucleus_ids, strict=True):
+        event, feeling = index[event_id], index[feeling_id]
+        links = tuple(r for r in plan.relations if r.type == "contrast"
+            and (r.from_nucleus_id, r.to_nucleus_id) == (event_id, feeling_id)
+            and r.relation_id in plan.coverage_requirements.required_relation_ids)
+        if (len(links) != 1 or event.kind != "event" or feeling.kind != "reaction"
+            or event.semantic_frame.modality != "fact" or feeling.semantic_frame.modality != "feeling"
+            or event.semantic_frame.time_scope != feeling.semantic_frame.time_scope
+            or event.semantic_frame.time_scope != "past"
+            or event.source_span_ids != feeling.source_span_ids or len(event.source_span_ids) != 1
+            or event.source_fields != feeling.source_fields or event.source_fields not in {("memo",), ("memo_action",)}):
+            return False
+        left = final_reception_source_anchor_text(event_id, index, resolver)
+        right = final_reception_source_anchor_text(feeling_id, index, resolver)
+        raw = re.sub(r"\s+", " ", resolver.resolve(event.source_span_ids[0]).raw_text).strip(" 　、,。．.")
+        if not raw.startswith(left) or not raw.endswith(right):
+            return False
+        connector = raw[len(left):-len(right)].rstrip("、,")
+        if connector not in {"のに", "けど", "けれど", "けれども"}:
+            return False
+        expected.append((left, connector, right))
+    raw = body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8")
+    objects, separator, _predicate = raw.rpartition("を")
+    pieces = objects.split("と、")
+    if not separator or len(pieces) != count:
+        return False
+    offset = sentence.utf8_byte_start
+    for piece, expected_pair in zip(pieces, expected, strict=True):
+        if not piece.endswith("こと"):
+            return False
+        clause = piece[:-2]
+        candidates = {(clause[:m.start()], m.group(), clause[m.end():])
+                      for m in re.finditer(r"けれども|けれど|けど|のに", clause)}
+        if expected_pair not in candidates:
+            return False
+        end = offset + len(piece.encode("utf-8"))
+        if (any(q.utf8_byte_start < end and offset < q.utf8_byte_end for q in witness.quotes)
+            or any(m.marker_code == "secondary_quote_boundary" and m.utf8_byte_start < end
+                   and offset < m.utf8_byte_end for m in witness.markers)
+            or not any(m.section == "reception" and m.marker_code == "finite_clause_nominal"
+                       and offset <= m.utf8_byte_start and m.utf8_byte_end == end for m in witness.markers)):
+            return False
+        offset = end + len("と、".encode("utf-8"))
+    return True
+
+
 def _body_inverse_thread_answer_group(body, witness, sentence, move, plan, resolver):
     """Parse all event/answer/time pairs from one actual reception sentence.
 
@@ -2579,8 +2633,10 @@ def evaluate_grounded_surface_body_inverse(
                                         and restore_thread_answer_nominal(actual_nominal, grammar, when) == source
                                     )
                             if expression_nominal_required and len(move.target_nucleus_ids) > 1:
-                                nominal_target_visible = bool(_body_inverse_thread_answer_group(
-                                    body, witness, parsed_sentence, move, plan, resolver))
+                                nominal_target_visible = (
+                                    _body_inverse_received_contrast_group(body, witness, parsed_sentence, move, plan, resolver)
+                                    if move.support_nucleus_ids else bool(_body_inverse_thread_answer_group(
+                                        body, witness, parsed_sentence, move, plan, resolver)))
                         target_visible = (
                             nominal_target_visible if nominal_target_required
                             else bool(sentence_codes.intersection(target_markers))

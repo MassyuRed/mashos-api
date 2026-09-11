@@ -6794,6 +6794,50 @@ def _thread_mixed_answer_targets(nuclei, relations):
                         key=lambda group: min(order[subjects[nid]] for nid in group)))
 
 
+def _received_contrast_group_targets(nuclei, relations):
+    """Keep source-owned received events and their reactions as one duty."""
+    text = tuple(n for n in nuclei if any(f in _TEXT_SOURCE_FIELDS for f in n.source_fields))
+    if any(n.source_fields == ("answer_text_private",) for n in nuclei):
+        return ()
+    index = {n.nucleus_id: n for n in text}
+    pairs = []
+    for relation in relations:
+        if relation.retention != "required" or relation.type != "contrast":
+            continue
+        event, feeling = index.get(relation.from_nucleus_id), index.get(relation.to_nucleus_id)
+        if event is None or feeling is None:
+            continue
+        ef, ff = event.semantic_frame, feeling.semantic_frame
+        if (event.kind != "event" or ef.predicate_kind != "event"
+            or ef.modality != "fact" or ef.polarity != "neutral"
+            or feeling.kind != "reaction" or ff.predicate_kind != "feeling"
+            or ff.modality != "feeling" or ff.polarity != "negative"
+            or ef.actor != ff.actor or ef.actor != "current_user"
+            or ef.time_scope != ff.time_scope or ef.time_scope != "past"
+            or event.retention != feeling.retention or event.retention != "required"
+            or event.grounding_kind != feeling.grounding_kind or event.grounding_kind != "explicit"
+            or event.source_fields != feeling.source_fields or event.source_fields not in {("memo",), ("memo_action",)}
+            or event.source_span_ids != feeling.source_span_ids or len(event.source_span_ids) != 1
+            or "semantic_role:contrast_before" not in ef.attribute_codes
+            or "semantic_role:contrast_after" not in ff.attribute_codes
+            or (links := tuple(c for c in ef.attribute_codes if c.startswith("source_received_event_link:")))
+               != tuple(c for c in ff.attribute_codes if c.startswith("source_received_event_link:"))
+            or len(links) != 1 or links[0].split(":", 1)[1] not in {"noni", "kedo", "keredo", "keredomo"}
+            or any(not any(c.startswith("source_fragment_scalar_range:") for c in frame.attribute_codes)
+                   for frame in (ef, ff))):
+            continue
+        pairs.append((event, feeling))
+    if (not 2 <= len(pairs) <= 3
+        or len({n.nucleus_id for pair in pairs for n in pair}) != 2 * len(pairs)
+        or set(index) != {n.nucleus_id for pair in pairs for n in pair}
+        or len({pair[0].source_span_ids for pair in pairs}) != len(pairs)
+        or any(r.retention == "required" and r.type != "contrast" for r in relations)):
+        return ()
+    order = {n.nucleus_id: i for i, n in enumerate(nuclei)}
+    pairs.sort(key=lambda pair: order[pair[0].nucleus_id])
+    return (tuple(e.nucleus_id for e, _ in pairs), tuple(f.nucleus_id for _, f in pairs))
+
+
 def build_grounded_reception_opportunities(
     *,
     human_follow_target_ids: Sequence[str],
@@ -7077,6 +7121,20 @@ def build_grounded_reception_opportunities(
                 relation_connected_ids=relation_connected_ids, safety_required=False,
             ),
         ))
+
+    received_group = _received_contrast_group_targets(owned_nuclei, relations) if (
+        final_source_fidelity and include_relation_support
+        and safety_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality in {"grounded", "limited_grounding"}
+    ) else ()
+    if received_group:
+        burden = next(row for row in rows if row.family == "current_burden")
+        targets, supports = received_group
+        selected = tuple(nucleus_index[nid] for nid in (*targets, *supports))
+        return (replace(burden, opportunity_id="ro1", target_nucleus_ids=targets,
+                        support_nucleus_ids=supports, retention="required",
+                        source_evidence_span_ids=tuple(_ordered_span_ids(sid for n in selected for sid in n.source_span_ids)),
+                        source_field_count=len({f for n in selected for f in n.source_fields})),)
 
     if mixed_answer_targets:
         by_family = {row.family: row for row in rows}
@@ -10496,7 +10554,9 @@ def _received_event_reaction_projections(span, base_frame):
             ":" + name, kind, predicate, polarity, modality, "past", start, end,
             ("semantic_role:generic_relation_fragment", "semantic_role:final_stage1_compound_meaning",
              f"source_fragment_scalar_range:{start}:{end}", "source_fragment_scalar_source:normalized_raw_text",
-             *roles, "time_scope:past"), relation_kind="contrast"))
+             *roles, "time_scope:past",
+             *(("source_received_event_link:" + {"のに": "noni", "けど": "kedo", "けれど": "keredo", "けれども": "keredomo"}[match.group("link")],)
+               if reaction.endswith("かった") else ())), relation_kind="contrast"))
     return tuple(rows)
 
 

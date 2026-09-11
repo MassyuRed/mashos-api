@@ -278,3 +278,68 @@ def test_collective_follow_ir_checks_later_answer_slot_time_and_grammar(grammar)
     with pytest.raises(hr.GroundedHumanReceptionSurfaceError):
         hr.realize_source_grounded_human_reception(reception,(changed,),{n.nucleus_id:n for n in plan.nuclei},resolver,
             plan=plan,recovery_stage='full',clause_plans=clauses,selected_subjective_input=projection.selected_reception)
+
+
+@pytest.mark.parametrize('memo,expected',[
+    ('褒められたのに、嬉しくなかった。誘われたのに、悲しかった。',
+     ('褒められたのに嬉しくなかったこと','誘われたのに悲しかったこと')),
+    (MEMO,('褒められたのに嬉しくなかったこと','誘われたのに悲しかったこと','頼まれたのに寂しかったこと')),
+    ('褒められたのに、嬉しくなかった。褒められたけど、悲しかった。',
+     ('褒められたのに嬉しくなかったこと','褒められたけど悲しかったこと')),
+])
+def test_initial_follow_keeps_all_received_reactions_before_an_answer(memo,expected):
+    out=MeaningExperienceEngine().generate(begin(memo));assert out.artifact,out.reason_codes
+    follow=out.artifact.reception
+    assert all(part in follow for part in expected)
+    assert [follow.index(part) for part in expected]==sorted(follow.index(part) for part in expected)
+    assert follow.count('受け止めています')==1
+    assert out.question is not None
+
+
+@pytest.mark.parametrize('connector',['のに','けど','けれど','けれども'])
+def test_initial_group_preserves_the_source_connective_and_negative_feeling(connector):
+    memo=f'断られた{connector}、あまり悲しくなかった。誘われたのに、とても寂しかった。'
+    out=MeaningExperienceEngine().generate(begin(memo));assert out.artifact,out.reason_codes
+    follow=out.artifact.reception
+    assert f'断られた{connector}あまり悲しくなかったこと' in follow
+    assert '誘われたのにとても寂しかったこと' in follow
+    assert '安心' not in follow
+
+
+def test_initial_group_inverse_reads_every_pair_without_forward_replay():
+    r=begin('褒められたけど、嬉しくなかった。誘われたのに、悲しかった。')
+    prepared=prepare_emlis_meaning(r);plan=build_updated_grounded_plan(prepared);resolver=prepared.thread.resolver()
+    projection=project_thread_meaning(prepared,plan);out=realize_emlis_thread_body(prepared)
+    sentence=surface.build_grounded_sentence_plan(plan,resolver,recovery_stage='full')
+    from emlis_ai_grounded_observation_gate import _body_inverse_received_contrast_group
+    move=plan.response_plan.human_reception_plan.moves[0]
+    def check(follow):
+        body=out.artifact.text.replace(out.artifact.reception,follow).encode()
+        witness=surface.parse_grounded_surface_body_bytes(body)
+        actual=next(s for s in witness.sentences if s.section=='reception')
+        independent=_body_inverse_received_contrast_group(body,witness,actual,move,plan,resolver)
+        result=evaluate_grounded_surface_body_inverse(body=body,plan=plan,sentence_plan=sentence,
+            resolver=resolver,selected_subjective_input=projection.selected_reception)
+        return independent,result
+    original=out.artifact.reception
+    assert check(original)[0] and check(original)[1].passed
+    mutations=[original.replace('褒められたけど','褒められたのに'),
+        original.replace('嬉しくなかった','嬉しかった'),original.replace('悲しかった','悲しい'),
+        original.replace('褒められたけど嬉しくなかったことと、',''),
+        original.replace('嬉しくなかった','TMP').replace('悲しかった','嬉しくなかった').replace('TMP','悲しかった'),
+        original.replace('誘われたのに悲しかったこと','褒められたけど嬉しくなかったこと'),
+        original.replace('誘われたのに悲しかったこと','「誘われたのに悲しかったこと」')]
+    for changed in mutations:
+        independent,inverse=check(changed)
+        assert changed!=original and not independent and not inverse.passed
+
+
+def test_initial_group_allows_existing_answer_update_and_next_question():
+    # Current answer selection still owns the refined reception; retaining all
+    # unanswered original reactions after this point remains separate work.
+    request=begin();initial_out=MeaningExperienceEngine().generate(request)
+    request=advance(request,'その時は重かった。')
+    out=MeaningExperienceEngine().generate(request);assert out.artifact,out.reason_codes
+    assert 'その時の重さ' in out.artifact.reception
+    assert initial_out.artifact.observation!=out.artifact.observation
+    assert out.question is not None

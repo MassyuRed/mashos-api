@@ -2603,12 +2603,49 @@ def source_grounded_thread_answer_nominal(
     return nucleus.nucleus_id, fragment, row[0], when, _thread_answer_timed_nominal(row[1], row[0], when)
 
 
+_RECEIVED_EVENT_LINK_TEXT = {"noni": "のに", "kedo": "けど", "keredo": "けれど", "keredomo": "けれども"}
+
+
+def source_grounded_received_contrast_group(move, plan, nucleus_index, resolver):
+    """Prove grammatical views of the already-selected original reaction pairs."""
+    from emlis_ai_grounded_observation_plan import _received_contrast_group_targets
+    if (plan is None or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
+        or move not in plan.response_plan.human_reception_plan.moves
+        or move.reception_act != "stay_with_current_burden"
+        or _received_contrast_group_targets(plan.nuclei, plan.relations)
+           != (move.target_nucleus_ids, move.support_nucleus_ids)):
+        return ()
+    rows = []
+    for event_id, feeling_id in zip(move.target_nucleus_ids, move.support_nucleus_ids, strict=True):
+        event, feeling = nucleus_index[event_id], nucleus_index[feeling_id]
+        fragments = tuple(_source_grounded_clause_candidate(n, resolver) for n in (event, feeling))
+        for n, fragment in zip((event, feeling), fragments, strict=True):
+            raw = resolver.resolve(n.source_span_ids[0]).raw_text
+            profile = _source_grounded_semantic_profile(n, fragment)
+            if (profile.actor_kind != "SELF" or profile.quoted_boundary or profile.performed_action or profile.future_action
+                or _typed_reception_source_fragment(n, raw) != fragment
+                or not _SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(fragment)
+                or re.search(r"[「」『』…‥?？!！]", raw)):
+                return ()
+        link = next(c.split(":", 1)[1] for c in event.semantic_frame.attribute_codes
+                    if c.startswith("source_received_event_link:"))
+        # Check the source connector itself, beyond the semantic contrast kind.
+        raw = re.sub(r"\s+", " ", resolver.resolve(event.source_span_ids[0]).raw_text).strip(" 　、,。．.")
+        if raw not in {fragments[0] + _RECEIVED_EVENT_LINK_TEXT[link] + sep + fragments[1] for sep in ("", "、", ",")}:
+            return ()
+        rows.append((event_id, feeling_id, *fragments, link))
+    return tuple(rows)
+
+
 def source_grounded_current_expression_nominal(
     move: GroundedReceptionMovePlan,
     plan: GroundedObservationPlan | None,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
 ) -> str:
+    received = source_grounded_received_contrast_group(move, plan, nucleus_index, resolver)
+    if received:
+        return "と、".join(event + _RECEIVED_EVENT_LINK_TEXT[link] + feeling + "こと" for _, _, event, feeling, link in received)
     group = source_grounded_thread_answer_group(move, plan, nucleus_index, resolver)
     if group:
         return "と、".join(row.event_fragment + ("ことについて、" if row.grammar == "FINITE" else "ことへの")
@@ -5053,6 +5090,12 @@ def derive_source_grounded_nominalization_plan(
     )
     if reference_mode == "ANAPHORIC" or move is None or plan is None or resolver is None:
         return nominalization
+    received = source_grounded_received_contrast_group(move, plan, {n.nucleus_id: n for n in nuclei}, resolver)
+    if received:
+        ordered = tuple(n.nucleus_id for n in nuclei)
+        if ordered != (*move.target_nucleus_ids, *move.support_nucleus_ids):
+            raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+        return (*nominalization, f"received-contrast-group:{len(received)}:" + ":".join(row[4] for row in received))
     group = source_grounded_thread_answer_group(move, plan, {n.nucleus_id: n for n in nuclei}, resolver)
     if group:
         if tuple(n.nucleus_id for n in nuclei[:len(group)]) != tuple(r.nucleus_id for r in group):
@@ -5156,7 +5199,12 @@ def _source_grounded_nominalization_shape_valid(
         and 2 * (len(plan) - 1) == semantic_count):
         return True
     return bool(
-        plan == _SOURCE_GROUNDED_NOMINALIZATION_BASE
+        (semantic_count in {4, 6}
+         and len(plan) == 2 and plan[:1] == _SOURCE_GROUNDED_NOMINALIZATION_BASE
+         and plan[1].split(":")[:2] == ["received-contrast-group", str(semantic_count // 2)]
+         and len(plan[1].split(":")) == 2 + semantic_count // 2
+         and set(plan[1].split(":")[2:]) <= _RECEIVED_EVENT_LINK_TEXT.keys())
+        or plan == _SOURCE_GROUNDED_NOMINALIZATION_BASE
         or semantic_count == 1 and len(plan) == 2
         and plan[:1] == _SOURCE_GROUNDED_NOMINALIZATION_BASE
         and re.fullmatch(r"nominal-slot:0:NEGATIVE_FEELING_CARRIER:[0-3]:[0-2]", plan[1])
@@ -6691,6 +6739,11 @@ def _validate_source_grounded_move_ir(
     expected_nominalization = _source_grounded_nominalization_from_profiles(
         move.semantic_fragments, move.semantic_profiles, move.reference_mode,
     )
+    received_grammar = tuple(p for p in move.nominalization_plan if p.startswith("received-contrast-group:"))
+    if received_grammar:
+        if not _received_contrast_group_ir_text(move):
+            raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+        expected_nominalization = (*expected_nominalization, *received_grammar)
     answer_grammar = tuple(p for p in move.nominalization_plan if p.startswith("answer-slot:"))
     if answer_grammar:
         if (len(answer_grammar) != move.target_slot_count
@@ -7329,7 +7382,7 @@ def _source_grounded_target_owner_slot(
     referent_kind: str,
 ) -> int:
     """Bind a typed referent only to a semantically compatible slot."""
-    if referent_kind == "current_expression" and _thread_answer_group_ir_text(realization):
+    if referent_kind == "current_expression" and (_received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)):
         # Slot zero anchors the collective grammar, whose core must cover
         # every target and its subject. It is not the sole selected answer.
         return 0
@@ -7338,6 +7391,36 @@ def _source_grounded_target_owner_slot(
         realization.target_slot_count,
         referent_kind,
     )
+
+
+def _received_contrast_group_ir_text(realization):
+    codes = tuple(c for c in realization.nominalization_plan if c.startswith("received-contrast-group:"))
+    if not codes:
+        return ""
+    count = realization.target_slot_count
+    if (count not in {2, 3}
+        or len(codes) != 1
+        or not _source_grounded_nominalization_shape_valid(realization.nominalization_plan, 2 * count)
+        or realization.reference_mode == "ANAPHORIC"
+        or realization.context_slots != tuple(range(count, 2 * count)) or len(realization.semantic_fragments) != 2 * count
+        or len(realization.relations) != count or realization.time_scope != "past"
+        or realization.aspect not in {"unknown", "not_applicable"}
+        or realization.polarity != "neutral" or realization.modality != "fact"):
+        raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+    parts = []
+    for slot in range(count):
+        event, feeling = realization.semantic_fragments[slot], realization.semantic_fragments[count + slot]
+        ep, fp = realization.semantic_profiles[slot], realization.semantic_profiles[count + slot]
+        if (ep.nucleus_kind != "event" or ep.predicate_kind != "event" or ep.modality != "fact"
+            or fp.nucleus_kind != "reaction" or fp.predicate_kind != "feeling" or fp.modality != "feeling"
+            or any(p.actor_kind != "SELF" or p.quoted_boundary or p.performed_action or p.future_action for p in (ep, fp))
+            or any(not _SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(fragment) for fragment in (event, feeling))
+            or realization.relations[slot].relation_kind != "contrast"
+            or realization.relations[slot].endpoint_roles != ("LEFT", "RIGHT")
+            or realization.relations[slot].endpoint_slots != (slot, count + slot)):
+            raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP")
+        parts.append(event + _RECEIVED_EVENT_LINK_TEXT[codes[0].split(":")[2 + slot]] + feeling + "こと")
+    return "と、".join(parts)
 
 
 def _thread_answer_group_ir_text(realization):
@@ -7619,7 +7702,7 @@ def _source_grounded_temporal_aspect_realization(
     if realization.reference_mode == "ANAPHORIC":
         return "ANTECEDENT", "ANTECEDENT", "", ""
 
-    group_text = _thread_answer_group_ir_text(realization)
+    group_text = _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
     if group_text:
         if target_referent != group_text or realization.aspect not in {"unknown", "not_applicable"}:
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
@@ -7869,7 +7952,7 @@ def _source_grounded_target_np(
         realization.semantic_fragments[target_owner_slot],
         target_referent=referent_text,
     )
-    group_text = _thread_answer_group_ir_text(realization)
+    group_text = _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
     if group_text:
         if (referent_kind != "current_expression" or referent_text != group_text
             or move.reception_act != "stay_with_current_burden" or target_owner_slot != 0):

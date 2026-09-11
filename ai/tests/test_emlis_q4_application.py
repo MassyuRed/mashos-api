@@ -373,3 +373,17 @@ def test_mixed_answer_follow_is_saved_with_both_event_subjects(qcase,monkeypatch
     assert 'その時の重さ' in follow and '嬉しかったという気持ち' in follow
     assert follow.index('褒められたことについて')<follow.index('誘われたことについて')
     assert dto['issued_count']==2 and dto['question_limit']==3
+
+
+def test_initial_all_reactions_are_saved_before_optional_answer(qcase,monkeypatch):
+    user,parent,_=qcase;service=active(monkeypatch)
+    dto=run(service.start(user,parent));assert run(service.get(user,parent))==dto
+    initial_body=dto['current_observation']['text']
+    follow=initial_body.split('Emlisから：')[1]
+    for part in ('褒められたのに嬉しくなかったこと','誘われたのに悲しかったこと','頼まれたのに寂しかったこと'):
+        assert part in follow
+    assert follow.count('受け止めています')==1
+    dto=run(answer(service,user,dto,'その時は重かった。','initial-reactions-answer'))
+    assert run(service.get(user,parent))==dto
+    assert dto['body_state']=='REFINED' and 'その時の重さ' in dto['current_observation']['text']
+    assert dto['issued_count']==1 and dto['question_limit']==3
