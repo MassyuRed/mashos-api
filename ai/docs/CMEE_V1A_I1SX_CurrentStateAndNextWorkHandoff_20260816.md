@@ -7514,3 +7514,25 @@ LIMITEDの既存共有claimに二つの回答が含まれる場合、同じ封�
 次は統合フローの原入力で既に示された複数主題と中心感情を、既存の関係・選択・本文で保持する箇所を進める。追加質問で読み落としを埋めることや今回の限定条件の一律緩和はしない。原100件・既存22件・追加6件を比較元として保持する。
 
 既存Draft PR3/30へ継続し、実本文・途中判断・全実行結果・再現harnessは同じ非公開作業記録へ追記する。private本文/個別case/digest/locatorを公開GitHubへ含めない。System Context未使用、原典を直接確認。既定OFF・Draft/open/unmergedを維持し、DB適用・native実機/実課金・merge/deploy/ready/有効化は未実施。
+
+
+## 2026-09-11 Q4残件 — 初回の複数の出来事と気持ちを保持
+
+最終実装sourceはAPI `d35a6df45300051b661cb9a7058d86fa64e0c24d`、tree `117d8d5f2514446bdbb614341556f68f312f8d86`。local検証commit `804c6f30bff9ca89093a66afef0be6a634e8f6f8` と同tree・変更6fileの全bytes再取得一致を確認。再開元API `209c0d8c7e920092d817d9ca7fe4d80995d44f65` / App `d160cf7062710e8815877d764928d6d38bcbbcd3`。後続commitは結果資料の追記だけである。
+
+原入力で既に示された複数の気持ちが、初回のフォローでは最初の一組しか残らない欠陥を修正した。既存source projectionで証拠が揃う本人の過去の受動出来事と過去の否定的反応が正確に2〜3組あり、全text核と必要contrast関係がその組で尽くされる場合、既存の一つのcurrent_burden moveへ全event/feelingを保持する。各組の原source範囲・順序・主体・時点・極性と元接続詞を照合する。意味を採用した回答がある場合、この初回groupを適用しない。反応の現在形・丁寧形や任意の複数主題まで対応したものではない。
+
+共有LIMITED aggregateの既存MATERIAL_WEIGHT/RECEIVE_AS_MATERIALと全contributionをそのまま使い、元の各出来事と気持ちを一つの目的句にし、締めは一回だけにする。構造化名詞化IRは全semantic slot・contrast・support contextを検査する。独立inverseは生成側markerの再利用だけで合否を決めず、原spanから接続詞を取り出し、完成本文の各節・組の対応・引用外を再照合する。欠落、入れ替え、重複、否定・時点の改変、接続詞の強化、引用化を拒否する。異なるsource spanだけで出来事の発生回数や別々の出来事だとは断定しない。
+
+既存のobservation_plan / human_reception / observation_gate内部を変更し、Q3/Q4回帰10件と現行owner snapshotを追加・更新した。新owner・schema・migration・RN変更はなく、STRUCTURE_MAP_DELTA_NONE。歴史的fixture・runner・期待値・閾値は変更していない。三coreと共有CMEE、RN表示→API処理→DB保存、回答の親入力帰属、質問枠・明示続行を保持する。
+
+- Q1〜Q4・実SQL/RPC・共有作者・独立inverse・registryは **228 PASS、失敗/error/skip 0**。前回218件を維持し、今回10件追加。既存deprecation警告2件。
+- 必須回帰は **438件中429 PASS / 9 FAIL**。全438件のcase keyと成否を前回と照合して一致、新規失敗なし。9件は既存の歴史的hash/dated receipt、旧move数・旧follow期待、旧stub契約と肯定/時点期待に関する不一致。後続の全case/cohort/post-hash診断も前回と完全一致。失敗を修正済みや全PASSとは数えない。
+- 同じ保存原本100件を固定sourceで再生成。全100レコードとHR planは前回と全bytes一致。direct100、GENERATED73 / UNAVAILABLE27、moves/expressions/bound各143。華恋と独立readerが原入力全field・Observation・HR・可否理由を100件全文確認した。
+- 既存22ケース48状態・62保存GET、前回追加6ケース28状態・28保存GETを実SQL/RPCで再確認。現在本文の変化は複数反応の初回7状態のみ、他69状態は同一。全76状態の質問・回答・主要状態・framesは保持し、変更された初回本文は履歴にも保持する。既存の訂正後本文故障注入3件も維持した。
+- 元接続詞を保ったままのskipと同一出来事表現に対する不明回答を追加し、2ケース4状態・4保存GETを確認。前者はCOMPLETED/FINAL、後者はCOMPLETED/UNCHANGEDでmeaning_updated=false、いずれも初回本文を維持する。合計30ケース80状態の原入力・全current本文・質問・回答timeline・framesを華恋と独立readerが全文確認した。
+- 確認済みCPython3.12.13、pytest8.4.1、固定46依存、PGlite0.5.8を再利用。既存installer metadataの差と過去保存DTO identityの再現上の限定は保持する。RNの以前の検証は継承情報であり、今回の実機検証とは扱わない。
+
+今回の初回修正後も、意味を採用した回答の後は未回答の原反応がHRから落ちる。次の実装単位は、既存の回答と原入力の対応を保ったまま、この未回答の気持ちをcurrent本文のHRへ残すこと。任意の複数主題・中心感情、3件の異種回答、同familyの異時点、未認識語と訂正、長いObservation・反復表現も残る。商品NOT_CLEAR。全検証成功やMash正式商品PASSとは扱わない。
+
+既存Draft PR3/30へ継続し、途中判断・全実本文・再現harness・結果は同じ非公開作業記録へ追記する。System Context未使用。既定OFF・Draft/open/unmergedを維持し、DB適用・native実機/実課金・merge/deploy/ready/有効化は未実施。
