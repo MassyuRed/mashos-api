@@ -355,3 +355,21 @@ def test_answer_observation_keeps_original_event_order_through_three_rounds(qcas
             before = dto['current_observation']['text']
             dto = run(cont(service, user, dto, f'next-order-{round_index}'))
             assert dto['current_observation']['text'] == before
+
+
+@pytest.mark.parametrize('answers',[
+    ('その時は重かった。','その時は嬉しかった。'),
+    ('その時は嬉しかった。','その時は重かった。'),
+])
+def test_mixed_answer_follow_is_saved_with_both_event_subjects(qcase,monkeypatch,answers):
+    user,parent,_=qcase;service=active(monkeypatch)
+    dto=run(service.start(user,parent))
+    for i,text in enumerate(answers,1):
+        dto=run(answer(service,user,dto,text,f'mixed-{i}'))
+        assert run(service.get(user,parent))==dto
+        assert dto['body_state']=='REFINED' and dto['answer_saved']
+        if i==1:dto=run(cont(service,user,dto,'mixed-next'))
+    follow=dto['current_observation']['text'].split('Emlisから：')[1]
+    assert 'その時の重さ' in follow and '嬉しかったという気持ち' in follow
+    assert follow.index('褒められたことについて')<follow.index('誘われたことについて')
+    assert dto['issued_count']==2 and dto['question_limit']==3

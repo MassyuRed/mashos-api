@@ -6745,6 +6745,55 @@ def _thread_answer_family_targets(candidates, relations, nucleus_index):
     return tuple(n.nucleus_id for _, n in sorted(zip(subjects, answers), key=lambda pair: order[pair[0]]))
 
 
+def _thread_mixed_answer_targets(nuclei, relations):
+    """Retain an answered positive feeling alongside an answered burden.
+
+    Both answers keep their existing acts and original event order. Other
+    answer combinations stay on the existing route. No relation between
+    the two feelings is inferred.
+    """
+    answers = tuple(n for n in nuclei if n.source_fields == ("answer_text_private",)
+                    and n.allowed_claim_scope == "explicit_supplemental_answer")
+    if len(answers) != 2:
+        return ()
+    index = {n.nucleus_id: n for n in nuclei}
+    subjects = {}
+    for n in answers:
+        frame = n.semantic_frame
+        times = {c for c in frame.attribute_codes if c.startswith("thread_time:")}
+        about = tuple(r for r in relations if r.to_nucleus_id == n.nucleus_id
+                      and r.type == "evaluation_about_event" and r.retention == "required")
+        if (n.retention != "required" or n.grounding_kind != "explicit"
+            or n.kind != "reaction" or frame.actor != "current_user"
+            or frame.predicate_kind != "feeling" or frame.modality != "feeling"
+            or frame.polarity not in {"positive", "negative"}
+            or "thread_subject:unique_source_clause" not in frame.attribute_codes
+            or len(times) != 1 or not times <= {
+                "thread_time:original_occasion", "thread_time:answer_time", "thread_time:prior_answer_time"}
+            or len(about) != 1):
+            return ()
+        subject = index.get(about[0].from_nucleus_id)
+        if (subject is None or subject.kind != "event"
+            or subject.semantic_frame.modality != "fact" or subject.semantic_frame.time_scope != "past"
+            or subject.source_fields not in {("memo",), ("memo_action",)}):
+            return ()
+        subjects[n.nucleus_id] = subject.nucleus_id
+    if len(set(subjects.values())) != len(answers):
+        return ()
+    positive = tuple(n for n in answers if is_grounded_positive_feeling(n)
+                     and _reception_opportunity_families_for_nucleus(
+                         n, safety_kind=TRIAGE_SAFE_OBSERVATION, final_source_fidelity=True) == ("lived_change",))
+    burden = tuple(n for n in answers if n.semantic_frame.polarity == "negative"
+                   and _reception_opportunity_families_for_nucleus(
+                       n, safety_kind=TRIAGE_SAFE_OBSERVATION, final_source_fidelity=True) == ("current_burden",))
+    if len(positive) != 1 or len(positive) + len(burden) != len(answers):
+        return ()
+    burden_ids = (burden[0].nucleus_id,)
+    order = {n.nucleus_id: i for i, n in enumerate(nuclei)}
+    return tuple(sorted((burden_ids, (positive[0].nucleus_id,)),
+                        key=lambda group: min(order[subjects[nid]] for nid in group)))
+
+
 def build_grounded_reception_opportunities(
     *,
     human_follow_target_ids: Sequence[str],
@@ -6850,11 +6899,17 @@ def build_grounded_reception_opportunities(
     if concrete_families and compatibility_family != "words_placed":
         candidates_by_family.pop("words_placed", None)
     richer_families = concrete_families - {"current_burden"}
+    mixed_answer_targets = _thread_mixed_answer_targets(owned_nuclei, relations) if (
+        final_source_fidelity and include_relation_support
+        and safety_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality in {"grounded", "limited_grounding"}
+    ) else ()
     if (
         richer_families
         and safety_kind != TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER
         and material_quality != "short_state_sufficient"
         and compatibility_family != "current_burden"
+        and not mixed_answer_targets
     ):
         candidates_by_family.pop("current_burden", None)
 
@@ -7023,6 +7078,21 @@ def build_grounded_reception_opportunities(
             ),
         ))
 
+    if mixed_answer_targets:
+        by_family = {row.family: row for row in rows}
+        mixed_rows = []
+        for target_ids in mixed_answer_targets:
+            selected = tuple(nucleus_index[nid] for nid in target_ids)
+            family = "lived_change" if is_grounded_positive_feeling(selected[0]) else "current_burden"
+            mixed_rows.append(replace(
+                by_family[family], target_nucleus_ids=target_ids, support_nucleus_ids=(),
+                source_evidence_span_ids=tuple(_ordered_span_ids(
+                    sid for n in selected for sid in n.source_span_ids)),
+                retention="required", source_field_count=1,
+            ))
+        return tuple(replace(row, opportunity_id=f"ro{i}")
+                     for i, row in enumerate(mixed_rows, 1))
+
     rows.sort(
         key=lambda item: (
             -item.priority,
@@ -7058,10 +7128,18 @@ def _select_reception_opportunities(
     safety_kind: str,
     semantic_complexity: str,
     final_source_fidelity: bool = False,
+    mixed_answer_targets: tuple[tuple[str, ...], ...] = (),
 ) -> tuple[GroundedReceptionOpportunity, ...]:
     inventory = tuple(opportunities)
     if not inventory:
         raise GroundedObservationPlanError("human_reception_opportunity_missing")
+    if mixed_answer_targets:
+        if (not final_source_fidelity or safety_kind != TRIAGE_SAFE_OBSERVATION
+            or tuple(row.target_nucleus_ids for row in inventory) != mixed_answer_targets
+            or {row.family for row in inventory} != {"current_burden", "lived_change"}
+            or any(row.support_nucleus_ids or row.retention != "required" for row in inventory)):
+            raise GroundedObservationPlanError("human_reception_opportunity_missing")
+        return inventory
     primary = next(
         (
             item
@@ -7198,6 +7276,7 @@ def _build_reception_depth_policy_and_moves(
     safety_kind: str,
     semantic_complexity: str,
     final_source_fidelity: bool = False,
+    mixed_answer_targets: tuple[tuple[str, ...], ...] = (),
 ) -> tuple[GroundedReceptionDepthPolicy, tuple[GroundedReceptionMovePlan, ...]]:
     selected = _select_reception_opportunities(
         opportunities,
@@ -7205,6 +7284,7 @@ def _build_reception_depth_policy_and_moves(
         safety_kind=safety_kind,
         semantic_complexity=semantic_complexity,
         final_source_fidelity=final_source_fidelity,
+        mixed_answer_targets=mixed_answer_targets,
     )
     if safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER:
         safety_mode: GroundedReceptionSafetyMode = (
@@ -7277,7 +7357,7 @@ def _build_reception_depth_policy_and_moves(
                     "explicit_emlis_counterposition"
                     if explicit
                     else "short_anchor_if_ambiguous"
-                    if independent_burdens
+                    if independent_burdens or mixed_answer_targets
                     else legacy_reference_mode
                     if index == 1
                     else "anaphoric_first"
@@ -7436,6 +7516,11 @@ def build_grounded_human_reception_plan(
         safety_kind=safety_kind,
         semantic_complexity=semantic_complexity,
         final_source_fidelity=final_source_fidelity,
+        mixed_answer_targets=(_thread_mixed_answer_targets(available_nuclei, relations) if (
+            final_source_fidelity and include_relation_support
+            and safety_kind == TRIAGE_SAFE_OBSERVATION
+            and material_quality in {"grounded", "limited_grounding"}
+        ) else ()),
     )
     # A newly retained, independently proven burden is received before its
     # separate action. Both canonical act/role pairs already permit felt

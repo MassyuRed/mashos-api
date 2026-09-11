@@ -11957,8 +11957,19 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
     # Move targets; do not select a different meaning or rewrite the claim.
     # The sole author/replay still require the shared claim's complete content
     # across both Moves, including all primary and boundary response objects.
+    mixed_answers = bool(
+        len(rows) == 2
+        and {row.reception_act for row in rows} == {
+            "stay_with_current_burden", "recognize_lived_change"}
+        and all(len(row.target_nucleus_ids) == 1
+                and (nucleus := binding.node_meta[binding.nucleus_to_node[row.target_nucleus_ids[0]]])
+                .source_fields == ("answer_text_private",)
+                and nucleus.allowed_claim_scope == "explicit_supplemental_answer"
+                for row in rows)
+    )
     if (len(rows) == 2
-        and all(row.reception_act == "stay_with_current_burden" for row in rows)
+        and (all(row.reception_act == "stay_with_current_burden" for row in rows)
+             or mixed_answers)
         and rows[0].projected_claim_ref == rows[1].projected_claim_ref):
         first = rows[0]
         if (any(not move.required or len(move.target_nucleus_ids) != 1

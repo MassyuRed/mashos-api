@@ -15,6 +15,102 @@ def begin(memo=MEMO,memo_action=''):
     r=initial(memo,memo_action)
     return replace(r,emlis_thread=replace(r.emlis_thread,capability_snapshot='Q3_PREMIUM',question_control_context=EmlisQuestionControlV1(question_limit=3)))
 
+
+@pytest.mark.parametrize('positive,burden', [
+    ('その時は嬉しかった。','その時は重かった。'),
+    ('今は嬉しい。','その時は重かった。'),
+    ('その時は嬉しかった。','今は怖くない。'),
+])
+@pytest.mark.parametrize('positive_first',[False,True])
+def test_mixed_answer_follow_retains_each_event_and_existing_feeling(positive,burden,positive_first):
+    answers=(positive,burden) if positive_first else (burden,positive)
+    r=advance(advance(begin(),answers[0]),answers[1])
+    out=MeaningExperienceEngine().generate(r);assert out.artifact,out.reason_codes
+    follow=out.artifact.reception
+    first,second=follow.split('。')[:2]
+    assert '褒められたことについて' in first and '誘われたことについて' in second
+    joy=first if positive_first else second
+    weight=second if positive_first else first
+    assert ('嬉しかった' if '嬉しかった' in positive else '嬉しい') in joy
+    assert ('その時に' if 'その時' in positive else '回答した時点で') in joy
+    assert '気持ちを受け止めています' in joy and '小さくせず' not in joy
+    assert ('その時の重さ' if '重かった' in burden else '回答した時点で怖くないこと') in weight
+    assert '小さくせずに受け止めています' in weight
+    p=prepare_emlis_meaning(r);plan=build_updated_grounded_plan(p)
+    moves=plan.response_plan.human_reception_plan.moves
+    assert [m.target_nucleus_ids for m in moves]==[('answer:s7',),('answer:s8',)]
+    assert {m.reception_act for m in moves}=={'recognize_lived_change','stay_with_current_burden'}
+
+
+@pytest.mark.parametrize('third,old,new',[
+    ('「重かった」ではなく「苦しかった」です。','重さ','苦しさ'),
+    ('「重かった」は誤りです。','重さ',None),
+])
+def test_mixed_answer_correction_or_withdrawal_keeps_the_other_answer(third,old,new):
+    r=advance(advance(advance(begin(),'その時は重かった。'),'その時は嬉しかった。'),third)
+    out=MeaningExperienceEngine().generate(r);assert out.artifact,out.reason_codes
+    assert old not in out.artifact.text
+    assert '誘われたことについて、その時に嬉しかったという気持ち' in out.artifact.reception
+    if new is not None:assert '褒められたことについて、その時の'+new in out.artifact.reception
+
+
+def test_mixed_answer_body_inverse_rejects_missing_swapped_and_changed_answers():
+    p=prepare_emlis_meaning(advance(advance(begin(),'その時は重かった。'),'その時は嬉しかった。'))
+    plan=build_updated_grounded_plan(p);resolver=p.thread.resolver()
+    projection=project_thread_meaning(p,plan);out=realize_emlis_thread_body(p)
+    sentence=surface.build_grounded_sentence_plan(plan,resolver,recovery_stage='full')
+    def passes(body):
+        return evaluate_grounded_surface_body_inverse(body=body.encode(),plan=plan,
+            sentence_plan=sentence,resolver=resolver,selected_subjective_input=projection.selected_reception).passed
+    assert passes(out.artifact.text)
+    follow=out.artifact.reception
+    mutations=[follow.split('。',1)[1],follow.replace('その時の重さ','回答した時点の重さ'),
+        follow.replace('嬉しかった','嬉しくなかった'),
+        follow.replace('褒められた','TEMP').replace('誘われた','褒められた').replace('TEMP','誘われた')]
+    for changed in mutations:
+        assert changed!=follow and not passes(out.artifact.text.replace(follow,changed))
+
+
+@pytest.mark.parametrize('replacement',[
+    '回答した時点で嬉しかったという気持ち',
+    'その時に嬉しくなかったという気持ち',
+    '嬉しかったという気持ち',
+    '「その時に嬉しかったという気持ち」',
+])
+def test_positive_answer_time_and_source_are_checked_without_replay(replacement):
+    p=prepare_emlis_meaning(advance(advance(begin(),'その時は重かった。'),'その時は嬉しかった。'))
+    plan=build_updated_grounded_plan(p);resolver=p.thread.resolver();projection=project_thread_meaning(p,plan)
+    result=realize_emlis_thread_body(p)
+    sentence=surface.build_grounded_sentence_plan(plan,resolver,recovery_stage='full')
+    body=result.artifact.text.replace('その時に嬉しかったという気持ち',replacement)
+    inverse=evaluate_grounded_surface_body_inverse(body=body.encode(),plan=plan,sentence_plan=sentence,
+        resolver=resolver,selected_subjective_input=projection.selected_reception)
+    assert not inverse.passed
+    assert any('positive_answer_source_time_missing' in reason for reason in inverse.failure_codes)
+
+
+def test_mixed_shared_claim_partition_keeps_complete_disjoint_source_contributions():
+    import emlis_ai_grounded_human_reception as hr
+    p=prepare_emlis_meaning(advance(advance(begin(),'その時は重かった。'),'その時は嬉しかった。'))
+    plan=build_updated_grounded_plan(p);projection=project_thread_meaning(p,plan)
+    selected=projection.selected_reception;left,right=selected.decisions
+    assert left.projected_claim_ref==right.projected_claim_ref
+    assert left.subjective_proposition==right.subjective_proposition
+    assert set(left.selected_contribution_refs).isdisjoint(right.selected_contribution_refs)
+    all_refs={r.contribution_ref for r in left.basis_rows}
+    assert set(left.selected_contribution_refs)|set(right.selected_contribution_refs)==all_refs
+    wrong=hr.identify_selected_subjective_reception_decision(replace(left,decision_ref='',
+        selected_contribution_refs=right.selected_contribution_refs))
+    altered=hr.identify_selected_subjective_reception_input(replace(selected,input_ref='',decisions=(wrong,right)))
+    from cocolon_meaning_experience_engine.emlis_thread_surface import _bind_expression
+    reception=plan.response_plan.human_reception_plan
+    expressions=tuple(_bind_expression(plan,p.thread.resolver(),replace(projection,selected_reception=altered),m,'FINITE') for m in reception.moves)
+    sentence=surface.build_grounded_sentence_plan(plan,p.thread.resolver(),recovery_stage='full')
+    clauses=next(l.reception_clause_plans for l in sentence.lines if l.binding.line_role=='human_follow')
+    with pytest.raises(hr.GroundedHumanReceptionSurfaceError):
+        hr.realize_source_grounded_human_reception(reception,expressions,{n.nucleus_id:n for n in plan.nuclei},
+            p.thread.resolver(),plan=plan,recovery_stage='full',clause_plans=clauses,selected_subjective_input=altered)
+
 def advance(req,text):
     e=MeaningExperienceEngine();out=e.generate(req);assert out.artifact and out.question,out.reason_codes
     q,t=out.question,req.emlis_thread;control=t.question_control_context;n=len(t.answers)+1

@@ -2433,6 +2433,28 @@ def evaluate_grounded_surface_body_inverse(
                             # selection must be visible in the parsed body.
                             # Change/words markers cannot discharge this duty.
                             target_markers = frozenset({"target_feeling"})
+                            if (getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+                                and len(target_nuclei) == 1
+                                and target_nuclei[0].source_fields == ("answer_text_private",)):
+                                answer = target_nuclei[0]
+                                times = {code.split(":", 1)[1] for code in answer.semantic_frame.attribute_codes
+                                         if code.startswith("thread_time:")}
+                                prefixes = {"original_occasion": "その時に", "answer_time": "回答した時点で",
+                                            "prior_answer_time": "先の回答時点で"}
+                                source = final_reception_source_anchor_text(answer.nucleus_id,nucleus_index,resolver)
+                                phrase = (prefixes[next(iter(times))]+source+"という気持ち").encode() if (
+                                    len(times) == 1 and times <= prefixes.keys() and source
+                                    and answer.allowed_claim_scope == "explicit_supplemental_answer") else b""
+                                raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end]
+                                start = parsed_sentence.utf8_byte_start + raw.find(phrase)
+                                end = start + len(phrase)
+                                if (not phrase or raw.count(phrase) != 1
+                                    or any(q.section == "reception" and q.utf8_byte_start < end
+                                           and start < q.utf8_byte_end for q in witness.quotes)
+                                    or any(m.section == "reception" and m.marker_code == "secondary_quote_boundary"
+                                           and m.utf8_byte_start < end and start < m.utf8_byte_end
+                                           for m in witness.markers)):
+                                    failures.append(f"body_inverse_positive_answer_source_time_missing:{move_id}")
                         else:
                             target_markers = (
                                 _BODY_INVERSE_RECEPTION_ACT_TARGET_MARKERS.get(

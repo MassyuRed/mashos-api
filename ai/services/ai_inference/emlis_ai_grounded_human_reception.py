@@ -2443,9 +2443,11 @@ def _source_grounded_current_expression_nominal(
         or profile.modality not in {"fact", "feeling", "uncertain"}
         or len(fields) != 1 or (fields[0] not in {"memo", "memo_action"} and not answer_clause)
         or (raw != fragment and not answer_clause)
-        or any(re.search(r"[「」『』…‥?？!！]", span.raw_text)
-               for span in resolver.resolve_many(resolver.span_ids)
-               if (span.span_id in nucleus.source_span_ids if answer_clause else span.source_field in fields))
+        # A correction envelope quotes its old/replacement text. The admitted
+        # source range, already proved above, owns this answer's grammar.
+        or (bool(re.search(r"[「」『』…‥?？!！]", fragment)) if answer_clause else
+            any(re.search(r"[「」『』…‥?？!！]", span.raw_text)
+                for span in resolver.resolve_many(resolver.span_ids) if span.source_field in fields))
         or _SOURCE_GROUNDED_TRAILING_CONNECTIVE_RE.search(fragment)
         or not (_SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(fragment)
                 or _SOURCE_GROUNDED_NONPAST_MORPHOLOGY_RE.search(fragment)
@@ -8007,7 +8009,11 @@ def _source_grounded_target_np(
                 "future_action_intention", "positive_feeling",
             }
         ):
-            content_target = f"{meaning_fragment}という{quantity_modifier}{referent_text}"
+            answer_time_prefix = ({
+                "original_occasion": "その時に", "answer_time": "回答した時点で",
+                "prior_answer_time": "先の回答時点で",
+            }.get(thread_answer_about_time, "") if referent_kind == "positive_feeling" else "")
+            content_target = f"{answer_time_prefix}{meaning_fragment}という{quantity_modifier}{referent_text}"
         elif ((material_pair_object or material_change_object) and referent_kind == "lived_change"
               and _SOURCE_GROUNDED_FINITE_END_RE.search(meaning_fragment)):
             # The proven change clause directly modifies the same referent.
