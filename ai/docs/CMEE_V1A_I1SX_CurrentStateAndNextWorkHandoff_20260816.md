@@ -7478,3 +7478,39 @@ The broader unchanged 438-test suite reported 429 PASS/9 FAIL at the first sourc
 次は統合フローのまま、原入力ですでに見えている感情・複数主題と、異なる種類の回答が混在したときの選択を確認する。読み落としを追加質問へ転嫁せず、今回の限定条件を一律に緩めない。Q1や旧単独入力の修正ループへ戻る作業ではない。
 
 既存Draft PR3/30へ反映し、詳細な実本文・旧baseline・途中判断・全実行結果は既存非公開作業記録へ保持する。private本文/個別case/digest/locatorをGitHubへ含めない。System Contextは使わず原典を直接確認。既定OFF、Draft/open/unmergedを維持し、DB適用・native実機/実課金・merge/deploy/ready/有効化は別作業で未実施。
+
+
+## 2026-09-11 Q4残件 — 肯定と負担の2回答を両方の出来事・時点とともに保持
+
+再開元API `4b5905945ec3078eb0db0771a28b92a77c1f52cd` / App `8d63edbcd53b3fd3690431068d9d19aa6487ec2a`。最終実装sourceはAPI `3336e634527fbabcea353cb0e6044aa2266b6c47`、tree `2e8378b61a129f55b25273c531c222d1af69a97f`。local検証commit `d4a9f73e22d9e7ca87282d3aacda9676236365de` と同tree・変更7fileの再取得一致を確認した。以下はこの固定sourceの結果で、後続commitは結果資料の追記だけである。
+
+### 今回の修正と対応範囲
+
+統合フローの実本文から、負担と肯定の回答が混在すると片方がフォローから落ち、逆順では回答後本文が成立しない欠陥を修正した。共有Reception選択が扱うのは、有効な明示本人回答が正確に2件で、肯定の `lived_change` と負担の `current_burden` が一つずつ、各ABOUT_TARGETが原入力の別々の一意な出来事へ結び付く場合に限る。sourceが持つ当時・回答時点・前回答時点を保持し、元の出来事順で両方の既存actを返す。肯定感情を完了した変化やEmlis自身の喜びへ読み替えない。
+
+LIMITEDの既存共有claimに二つの回答が含まれる場合、同じ封印済みclaimのcontributionを各moveへ分配する。両targetとの完全対応、互いに重ならない分配と元の全contributionの保持を検査し、最終作者も全claimの内容を照合する。別claimの意味を削って成立させる処理ではない。肯定の本文にも回答sourceの時点を明示し、独立inverseは各moveの文で、原sourceに対応する有限節・時点表現の一回出現と引用外を照合する。極性・時点の改変と引用化を独立に拒否する。
+
+明示訂正の旧表現にある引用符が、採用された新しい負担句の名詞化まで止めていた箇所も修正した。句の適格性は既存の型と証拠範囲内で調べ、訂正対象以外の有効回答は保持する。確認した対応構文では、訂正が対象回答だけを更新し、撤回が対象回答だけを除き、もう一方の肯定回答を現在本文へ残す。認識できない肯定語や構文まで対応済みとはしない。
+
+実装ownerは共有 `emlis_ai_grounded_observation_plan.py`、`cocolon_meaning_experience_engine/emlis_stage1_response.py`、`emlis_ai_grounded_human_reception.py`、`emlis_ai_grounded_observation_gate.py`。Q3/Q4回帰を16件追加し、現行共有owner snapshotを更新した。新file・新owner・新意味分類器・schema・migration・RN実行コードはない。**STRUCTURE_MAP_DELTA_NONE**。三coreと共有CMEE、RN表示→API処理→DB保存の責務、質問枠と明示続行、回答を元記録へ帰属させる契約を保持する。歴史的fixture・runner・期待値・閾値は変更していない。
+
+### 最終検証と全文確認
+
+- Q1〜Q4・実SQL/RPC・保存版・共有作者・独立inverse・registryは **218 PASS、失敗/error/skip 0**。既存202件と追加16件。既存deprecation警告2件。RNの旧56 PASSは継承記録であり、今回再実行した結果ではない。
+- 広い必須回帰438件は **429 PASS / 9 FAIL、error/skip 0**。前回の全438 test keyと成否が一致し、新規失敗・欠落なし。未解消9件は歴史的観測hash2、dated source receipt1、旧Moves数1、旧フォロー句2、旧stubのnominalization_plan不足2、旧肯定感情の限定期待1。後段の全case・集合診断も前回と完全一致。失敗詳細はsource位置と現行source hashが変わるため全bytes不変とはしない。全回帰GREENや新しい受入基準へ換算せず、歴史的期待値を保持した。
+- 保存原本と同じvalidated canonical100を固定sourceで再生成した。全100レコードと全HR planが前回原本と完全一致。direct100、GENERATED73 / UNAVAILABLE27、Moves/expressions/bound各143。華恋と独立readerが元入力全field・Observation・HR・可否と全理由を100件全文確認した。未提供27件も保持し、読み落としを質問の成否へ転嫁しない。
+- 既存合成22ケースを実SQL/RPCで新規生成・保存し、48状態・履歴を含む62保存GET一致を確認。問い・回答・frame・Premium全6中間状態を華恋と独立readerが全読した。本文変更は肯定回答の当時/回答時点を明示する6状態、他42状態は同じ。問い・回答・主要状態と意味は保持。最終はREFINED13、PARTIALLY_REFINED3、UNCHANGED3、意図した訂正後本文故障3。旧22件fixtureは変更していない。
+- 追加した保存6ケースは肯定/負担の順序、当時/回答時点、訂正、撤回を扱い、全28状態の実SQL/RPC保存GETが一致した。華恋と独立readerが初回・必要な一問・本人回答・意味更新・current本文を全読。4ケースは2回答後のAWAITING_CONTINUEまで、訂正/撤回の2ケースは3回答後のCOMPLETEDまでであり、6件全部を3round完了とは数えない。
+- runtimeは確認済みCPython3.12.13、pytest8.4.1、46固定依存と2277のinstalled RECORD対象file実bytes、PGlite0.5.8を再利用した。既存installer metadataの差、新規DTO identity、旧fixtureにないPlus履歴UUID/秒時刻の再現上の限定は保持する。稼働DB・native端末・実課金の検証ではない。
+
+途中のselector単独修正では共有claimのcausal traceが不成立で、分配処理を修正した。初回targetedは70 PASS/3 FAILで、訂正句の実不具合と新規検査のstate参照を修正。次は73 PASS/4 FAILで、新規検査のfailure_codes属性名を修正した。独立の肯定極性/時点変異4件も成功し、最終218件へ含めた。既存期待値を下げて成功へ変えていない。
+
+長時間の3検証は初回実行で完了記録のないままprocessが失われたため、部分出力を保持し、同じ固定source・同じrunnerで未完了の必須回帰・関連・100件だけ再実行した。原因は未確定。完了済み22件と追加6件を再実行扱いにせず、最後の完了記録と区別する。
+
+### 残件と次の実装単位
+
+異なるfamilyの正確に2回答を保持する欠陥は上記範囲で修正した。3件の異種回答、同familyで時点の異なる回答、未認識の肯定語とその訂正、初回の複数主題/中心感情/共有関係の拾い方、長いObservationと共通の締めは残り、**商品NOT_CLEAR**。partialの未確定部分は回答履歴と意味の未確定理由に残るが、current本文に明示されるとは限らない。全文確認・回帰結果はMash正式商品PASSを意味しない。
+
+次は統合フローの原入力で既に示された複数主題と中心感情を、既存の関係・選択・本文で保持する箇所を進める。追加質問で読み落としを埋めることや今回の限定条件の一律緩和はしない。原100件・既存22件・追加6件を比較元として保持する。
+
+既存Draft PR3/30へ継続し、実本文・途中判断・全実行結果・再現harnessは同じ非公開作業記録へ追記する。private本文/個別case/digest/locatorを公開GitHubへ含めない。System Context未使用、原典を直接確認。既定OFF・Draft/open/unmergedを維持し、DB適用・native実機/実課金・merge/deploy/ready/有効化は未実施。
