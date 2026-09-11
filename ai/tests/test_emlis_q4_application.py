@@ -334,3 +334,18 @@ def test_answer_observation_does_not_group_ambiguous_or_hedged_event():
     altered = replace(binding,relation_ids=(*binding.relation_ids,other.relation_id))
     assert surface._thread_contrast_answer_groups(altered,index,{**relations,other.relation_id:other},resolver) == ((),frozenset())
     assert surface._thread_contrast_answer_groups(binding,index,{**relations,other.relation_id:other},resolver) == ((),frozenset())
+
+
+def test_answer_observation_keeps_original_event_order_through_three_rounds(qcase, monkeypatch):
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    dto = run(service.start(user, parent))
+    for round_index, text in enumerate(['その時は重かった。', 'その時は怖かった。', 'その時は苦しかった。'], 1):
+        dto = run(answer(service, user, dto, text, f'order-{round_index}'))
+        observation = dto['current_observation']['text'].split('Emlisから：')[0]
+        events = ['「褒められた」', '「誘われた」', '「頼まれた」']
+        assert all(observation.count(event) == 1 for event in events)
+        assert [observation.index(event) for event in events] == sorted(observation.index(event) for event in events)
+        assert run(service.get(user, parent)) == dto
+        if round_index < 3:
+            dto = run(cont(service, user, dto, f'next-order-{round_index}'))

@@ -2779,8 +2779,9 @@ def _thread_contrast_answer_groups(binding, nucleus_index, relation_index, resol
         if any(sum(anchor(part) in values for values in source_anchors.values()) != 1 for part in parts):
             continue
         left, right, received = parts
-        sentences.append(f"{left}という出来事の一方で{right}という反応があり、"
-                         f"その出来事に対する{when}の受け止めとして、{received}が見えます。")
+        sentences.append((contrast.relation_id,
+                          f"{left}という出来事の一方で{right}という反応があり、"
+                          f"その出来事に対する{when}の受け止めとして、{received}が見えます。"))
         consumed.update((contrast.relation_id, about[0].relation_id))
     return tuple(sentences), frozenset(consumed)
 
@@ -2802,10 +2803,14 @@ def _render_relation(
         )
     groups, consumed = _thread_contrast_answer_groups(
         binding, nucleus_index, relation_index, resolver)
-    sentences: list[str] = list(groups)
+    grouped_by_relation = dict(groups)
+    sentences: list[str] = []
     contrast_pairs = []
     evaluations = {}
     for relation_id in binding.relation_ids:
+        if relation_id in grouped_by_relation:
+            sentences.append(grouped_by_relation[relation_id])
+            continue
         if relation_id in consumed:
             continue
         if relation_id not in relation_index:
@@ -2877,7 +2882,12 @@ def _render_relation(
                 "捉え方や動きが移っています。"
             )
         elif role == "coexisting_contrast":
-            contrast_pairs.append((left, right))
+            if groups:
+                # Keep unanswered and answered events in the same original
+                # relation order across rounds, rather than moving them apart.
+                sentences.append(f"{left}と{right}が、異なる向きのまま同時にあります。")
+            else:
+                contrast_pairs.append((left, right))
         elif relation.type == "temporal_before_after":
             sentences.append(f"{left}のあとに、{right}へ動いています。")
         elif relation.type == "wish_and_constraint":
