@@ -101,7 +101,13 @@ def test_design_answers_reach_selected_meaning_and_shared_human_reception(text):
     assert isinstance(projection.structure.meaning_decision_outcome, c.SelectedEmlisProvisionalReading)
     result = render(text)
     assert text.rstrip('。') in result.artifact.observation
-    assert text.rstrip('。') in result.artifact.reception
+    # Q4 retains the full finite source in Observation and realizes a
+    # reversible, time-bound nominal in Reception. Its independent inverse
+    # and mutation checks live in test_emlis_q4_application.
+    expected = {A: '次も同じ成果を求められるようだという、その時の重さ',
+                B: '結果だけで、そこまでの苦労は見てもらえていないという、その時の思い',
+                C: C.rstrip('。')}[text]
+    assert expected in result.artifact.reception
     supplemental = tuple(d for d in result.meaning_graph.owner_dispositions if d.visible_authority is c.VisibleAuthority.SUPPLEMENTAL_USER)
     assert supplemental and all(d.source_owner_disposition is c.SourceOwnerDisposition.SUPPLEMENTAL_USER_VISIBLE for d in supplemental)
     assert result.question is None and result.question_decision.disposition == 'END'

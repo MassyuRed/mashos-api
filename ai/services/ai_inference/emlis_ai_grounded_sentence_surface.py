@@ -194,6 +194,9 @@ _BODY_RECEPTION_GRAMMAR_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] 
     )),
     # Structural only: this suffix does not prove feeling or burden.
     ("negative_carrier_nominal", re.compile(r"なさ")),
+    # No feeling semantics: inverse binds this suffix to a complete,
+    # source-proven supplemental-answer noun and reverses its grammar.
+    ("thread_answer_nominal", re.compile(r"という、(?:その時の|回答した時点の|先の回答時点の)思い|さ")),
     # A finite adnominal plus its object head; source identity is proved only
     # by the inverse matcher, never by the lexical content of this witness.
     ("adnominal_subject", re.compile(r"(?:ている|でいる|気になる)[^、,。\s]+?(?=を)")),

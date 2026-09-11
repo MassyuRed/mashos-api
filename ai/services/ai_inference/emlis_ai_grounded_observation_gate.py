@@ -32,6 +32,8 @@ from emlis_ai_grounded_human_reception import (
     source_grounded_feeling_target_nominal,
     source_grounded_unfinished_referent,
     source_grounded_current_expression_nominal,
+    source_grounded_thread_answer_nominal,
+    restore_thread_answer_nominal,
     source_grounded_negative_context_nominal,
     final_reception_source_anchor_text,
 )
@@ -339,6 +341,41 @@ def _semantic_subcheck_reasons(
         for item in plan.nuclei
         if any(code.startswith("lexical:") for code in item.semantic_frame.attribute_codes)
     )
+    # Compare sensation families in the original inflection of an exactly
+    # witnessed answer nominal. This local check view never changes body
+    # bytes, lexical coverage, or the independent inverse requirement.
+    # A second or unrelated sensation expression remains fully checked.
+    sensation_body = surface_result.text.encode("utf-8")
+    sensation_witness = None
+    replacements = set()
+    reception_plan = plan.response_plan.human_reception_plan
+    for move in reception_plan.moves if reception_plan is not None else ():
+        answer_nominal = source_grounded_thread_answer_nominal(move, plan, nucleus_index, resolver)
+        if answer_nominal is None:
+            continue
+        _, source, grammar, when, nominal = answer_nominal
+        nominal_bytes = nominal.encode("utf-8")
+        if sensation_body.count(nominal_bytes) != 1:
+            continue
+        start = sensation_body.index(nominal_bytes)
+        end = start + len(nominal_bytes)
+        if sensation_witness is None:
+            sensation_witness = parse_grounded_surface_body_bytes(sensation_body)
+        if (restore_thread_answer_nominal(nominal, grammar, when) == source
+            and any(m.section == "reception" and m.marker_code == "thread_answer_nominal"
+                    and start <= m.utf8_byte_start and m.utf8_byte_end == end for m in sensation_witness.markers)
+            and not any(q.utf8_byte_start < end and start < q.utf8_byte_end for q in sensation_witness.quotes)
+            and not any(m.marker_code == "secondary_quote_boundary" and m.utf8_byte_start < end
+                        and start < m.utf8_byte_end for m in sensation_witness.markers)):
+            replacements.add((start, end, source.encode("utf-8")))
+    # Each offset addresses the original body. Dedupe identical witnesses
+    # and keep overlapping, disagreeing ranges out of this local view.
+    disjoint = tuple(row for row in replacements if not any(
+        other != row and row[0] < other[1] and other[0] < row[1] for other in replacements
+    ))
+    for start, end, source in sorted(disjoint, reverse=True):
+        sensation_body = sensation_body[:start] + source + sensation_body[end:]
+    sensation_text = sensation_body.decode("utf-8")
     for nucleus in plan.nuclei:
         attributes = set(nucleus.semantic_frame.attribute_codes)
         if "lexical:preserve_source_predicate" in attributes:
@@ -347,7 +384,7 @@ def _semantic_subcheck_reasons(
                 semantic.append("lexical_anchor_missing")
         if "lexical:no_new_sensation_family" in attributes:
             for pattern in _SENSATION_FAMILIES.values():
-                if pattern.search(surface_result.text) and not pattern.search(source_text):
+                if pattern.search(sensation_text) and not pattern.search(source_text):
                     semantic.append("ungrounded_sensation_family_added")
                     break
 
@@ -2317,6 +2354,10 @@ def evaluate_grounded_surface_body_inverse(
                             expression_nominal_required
                             and expected_referent.text.endswith("という言葉")
                         )
+                        thread_answer_nominal = (
+                            source_grounded_thread_answer_nominal(move, plan, nucleus_index, resolver)
+                            if expression_nominal_required else None
+                        )
                         nominal_target_required = bool(
                             final_stage1_plan
                             and effective_reference_mode != "anaphoric_first"
@@ -2341,6 +2382,7 @@ def evaluate_grounded_surface_body_inverse(
                                     and marker.marker_kind == ("reception" if expression_words_nominal_required else "semantic")
                                     and marker.marker_code == (
                                         "target_words" if expression_words_nominal_required else
+                                        "thread_answer_nominal" if thread_answer_nominal is not None else
                                         ("negative_carrier_nominal"
                                          if expected_referent.text.endswith("なさ")
                                          else "adnominal_subject") if burden_nominal_required
@@ -2361,6 +2403,13 @@ def evaluate_grounded_surface_body_inverse(
                                            for m in witness.markers)
                                 ):
                                     nominal_target_visible = False
+                                if thread_answer_nominal is not None:
+                                    _, source, grammar, when, nominal = thread_answer_nominal
+                                    actual_nominal = body[start:end].decode("utf-8")
+                                    nominal_target_visible = bool(
+                                        nominal_target_visible and actual_nominal == nominal
+                                        and restore_thread_answer_nominal(actual_nominal, grammar, when) == source
+                                    )
                         target_visible = (
                             nominal_target_visible if nominal_target_required
                             else bool(sentence_codes.intersection(target_markers))

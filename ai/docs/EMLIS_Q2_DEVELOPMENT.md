@@ -69,3 +69,8 @@ DTOへ`can_write`を追加。read_onlyは現在本文・履歴・pending questio
 RNはbootstrapのemlis_threads_enabledでreaderを開く。最新本文を先頭、元記録と前のやり取りを展開欄に置く。未作成の場合だけ既存modal導線へ戻り、保存結果不明のGET失敗を旧本文で隠さない。409/422はGET後に新revisionで操作でき、不明ACKは元key/payloadを保つ。InputScreenは開始ownerと遅い応答を照合し、4つの入力/Piece書込みは認証取得時も同じuserを確認する。RootNavigatorはuserごとにprivate tab stateを再作成する。
 
 適用順、独立した公開承認値、全replicaの停止、旧版を残す回復は[運用資料§9](EMLIS_DEPLOYMENT_AND_OPERATION_CHECKS.md)を参照。コードとローカル実SQL/React検証、稼働環境への適用は区別する。全検証件数・本文確認・残件は既存handoff末尾Q4節がowner。
+
+
+### 2026-09-11 Q4回答名詞化の検証完了
+
+回答の命題・否定・限定・推量・語幹を保つ可逆な名詞化を同じHuman Reception作者へ追加した。時点は最終主観名詞へ掛け、元の意味/source/checkpointを変えない。形態・slot・時点を既存IRへ封じ、全plan再導出・Sentence Surface・独立inverseが一致するものだけを出す。今回のQ4コード作業は検証済みで、API179 PASS、保存22ケース全読、既存100件の全record不変。詳しい途中失敗・最終結果・品質残件は既存handoff末尾Q4 continuation節。商品NOT_CLEARと後日の適用・運用確認は保持する。

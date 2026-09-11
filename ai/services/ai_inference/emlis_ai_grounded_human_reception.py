@@ -2363,7 +2363,7 @@ def _source_grounded_burden_nominal_responsibility(
     ))
 
 
-def source_grounded_current_expression_nominal(
+def _source_grounded_current_expression_nominal(
     move: GroundedReceptionMovePlan,
     plan: GroundedObservationPlan | None,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
@@ -2484,6 +2484,131 @@ def source_grounded_current_expression_nominal(
         and not fragment.endswith(("ます", "です", "ました", "でした"))):
         return fragment + "こと"
     return fragment + "という言葉"
+
+
+_THREAD_ANSWER_TIME_NOMINAL_PREFIX: Final = {
+    "original_occasion": "その時の",
+    "answer_time": "回答した時点の",
+    "prior_answer_time": "先の回答時点の",
+}
+
+
+def _thread_answer_nominal_morphology(fragment: str) -> tuple[str, str] | None:
+    """Inflect a proven answer; keep its entire lexical proposition.
+
+    This is grammar, not answer interpretation. Bare adjective hosts must
+    belong to the existing feeling grammar. Topics, adverbs, negation and
+    polite forms remain in their existing finite-clause realization.
+    """
+    if re.search(r"[「」『』…‥?？!！。．.\r\n]", fragment):
+        return None
+    if fragment.endswith("と思った") and len(fragment) > len("と思った"):
+        return "BELIEF", fragment[:-4] + "という思い"
+
+    def adjective(text: str) -> str | None:
+        if not text.endswith("かった"):
+            return None
+        stem = text[:-3]
+        if (_FEELING_RE.fullmatch(stem) or _FEELING_RE.fullmatch(stem + "い")
+            or stem.endswith("し") and _FEELING_RE.fullmatch(stem[:-1])):
+            return stem + "さ"
+        return None
+
+    perceived = re.fullmatch(r"(.+)ようで([、,])([^、,]+)", fragment)
+    if perceived is not None:
+        nominal = adjective(perceived[3])
+        if nominal is not None:
+            return f"PERCEIVED_{('、', ',').index(perceived[2])}", perceived[1] + "ようだという" + nominal
+    nominal = adjective(fragment)
+    return ("PAST_FEELING", nominal) if nominal is not None else None
+
+
+def _thread_answer_timed_nominal(nominal: str, grammar: str, when: str) -> str:
+    prefix = _THREAD_ANSWER_TIME_NOMINAL_PREFIX[when]
+    if grammar == "PAST_FEELING":
+        return prefix + nominal
+    # Time modifies the final subjective noun, not a noun embedded in
+    # the proposition (e.g. the result which the answer mentions).
+    before, head = nominal.rsplit("という", 1)
+    return before + "という、" + prefix + head
+
+
+def restore_thread_answer_nominal(nominal: str, grammar: str, when: str | None = None) -> str | None:
+    """Invert only the emitted grammatical suffix, retaining every stem."""
+    timed_nominal = nominal
+    if when is not None:
+        prefix = _THREAD_ANSWER_TIME_NOMINAL_PREFIX.get(when)
+        if prefix is None:
+            return None
+        if grammar == "PAST_FEELING":
+            if not nominal.startswith(prefix):
+                return None
+            nominal = nominal[len(prefix):]
+        else:
+            parts = nominal.rsplit("という、" + prefix, 1)
+            if len(parts) != 2:
+                return None
+            nominal = "という".join(parts)
+    if grammar == "BELIEF" and nominal.endswith("という思い"):
+        source = nominal[:-5] + "と思った"
+    elif grammar == "PAST_FEELING" and nominal.endswith("さ"):
+        source = nominal[:-1] + "かった"
+    elif grammar in {"PERCEIVED_0", "PERCEIVED_1"} and nominal.endswith("さ"):
+        parts = nominal.rsplit("ようだという", 1)
+        if len(parts) != 2:
+            return None
+        source = parts[0] + "ようで" + ("、", ",")[int(grammar[-1])] + parts[1][:-1] + "かった"
+    else:
+        return None
+    return source if (
+        _thread_answer_nominal_morphology(source) == (grammar, nominal)
+        and (when is None or _thread_answer_timed_nominal(nominal, grammar, when) == timed_nominal)
+    ) else None
+
+
+def source_grounded_thread_answer_nominal(
+    move: GroundedReceptionMovePlan,
+    plan: GroundedObservationPlan | None,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    resolver: EvidenceSpanResolver,
+) -> tuple[str, str, str, str, str] | None:
+    """Bind reversible grammar to an already witnessed supplemental answer."""
+    if (plan is None or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids
+        or getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"):
+        return None
+    nucleus = nucleus_index.get(move.target_nucleus_ids[0])
+    if nucleus is None:
+        return None
+    codes = set(nucleus.semantic_frame.attribute_codes)
+    times = {c.split(":", 1)[1] for c in codes if c.startswith("thread_time:")}
+    if (nucleus.kind != "reaction" or nucleus.semantic_frame.predicate_kind != "feeling"
+        or nucleus.semantic_frame.modality != "feeling" or nucleus.semantic_frame.polarity != "negative"
+        or nucleus.allowed_claim_scope != "explicit_supplemental_answer"
+        or nucleus.source_fields != ("answer_text_private",)
+        or resolver.source_fields_for(nucleus.source_span_ids) != ("answer_text_private",)
+        or len(times) != 1 or not times <= _THREAD_ANSWER_TIME_NOMINAL_PREFIX.keys()
+        or any(c.startswith("aspect:") and c.split(":", 1)[1] not in {"unknown", "not_applicable"} for c in codes)):
+        return None
+    when = next(iter(times))
+    fragment = _source_grounded_clause_candidate(nucleus, resolver)
+    finite = _source_grounded_current_expression_nominal(move, plan, nucleus_index, resolver)
+    old_prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で", "prior_answer_time": "先の回答時点で"}[when]
+    if finite != old_prefix + fragment + "こと":
+        return None
+    row = _thread_answer_nominal_morphology(fragment)
+    if row is None or restore_thread_answer_nominal(row[1], row[0]) != fragment:
+        return None
+    return nucleus.nucleus_id, fragment, row[0], when, _thread_answer_timed_nominal(row[1], row[0], when)
+
+
+def source_grounded_current_expression_nominal(
+    move: GroundedReceptionMovePlan,
+    plan: GroundedObservationPlan | None,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    resolver: EvidenceSpanResolver,
+) -> str:
+    answer = source_grounded_thread_answer_nominal(move, plan, nucleus_index, resolver)
+    return answer[4] if answer else _source_grounded_current_expression_nominal(move, plan, nucleus_index, resolver)
 
 
 def resolve_grounded_reception_referent(
@@ -4853,6 +4978,13 @@ def derive_source_grounded_nominalization_plan(
     )
     if reference_mode == "ANAPHORIC" or move is None or plan is None or resolver is None:
         return nominalization
+    answer = source_grounded_thread_answer_nominal(move, plan, {n.nucleus_id: n for n in nuclei}, resolver)
+    if answer is not None:
+        nucleus_id, source, grammar, when, _nominal = answer
+        slots = tuple(i for i, n in enumerate(nuclei) if n.nucleus_id == nucleus_id)
+        if len(slots) != 1 or fragments[slots[0]] != source:
+            raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+        return (*nominalization, f"answer-slot:{slots[0]}:{grammar}:{when}")
     context = source_grounded_negative_context_nominal(
         move, plan, {n.nucleus_id: n for n in nuclei}, resolver,
     )
@@ -4943,6 +5075,11 @@ def _source_grounded_nominalization_shape_valid(
         or len(plan) == 2 and plan[:1] == _SOURCE_GROUNDED_NOMINALIZATION_BASE
         and plan[1] in {f"context-slot:{slot}:NEGATIVE_CONTINUATIVE"
                        for slot in range(semantic_count)}
+        or len(plan) == 2 and plan[:1] == _SOURCE_GROUNDED_NOMINALIZATION_BASE
+        and plan[1] in {f"answer-slot:{slot}:{grammar}:{when}"
+                       for slot in range(semantic_count)
+                       for grammar in ("BELIEF", "PAST_FEELING", "PERCEIVED_0", "PERCEIVED_1")
+                       for when in _THREAD_ANSWER_TIME_NOMINAL_PREFIX}
     )
 
 
@@ -6466,6 +6603,24 @@ def _validate_source_grounded_move_ir(
     expected_nominalization = _source_grounded_nominalization_from_profiles(
         move.semantic_fragments, move.semantic_profiles, move.reference_mode,
     )
+    answer_grammar = tuple(p for p in move.nominalization_plan if p.startswith("answer-slot:"))
+    if answer_grammar:
+        if (len(answer_grammar) != 1
+            or not _source_grounded_nominalization_shape_valid(move.nominalization_plan, semantic_count)):
+            raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+        _, slot_text, grammar, when = answer_grammar[0].split(":")
+        slot = int(slot_text)
+        profile = move.semantic_profiles[slot]
+        row = _thread_answer_nominal_morphology(move.semantic_fragments[slot])
+        if (move.reference_mode == "ANAPHORIC" or move.target_slot_count != 1 or slot != 0
+            or profile.nucleus_kind != "reaction" or profile.predicate_kind != "feeling"
+            or profile.actor_kind != "SELF" or profile.modality != "feeling"
+            or profile.quoted_boundary or profile.performed_action or profile.future_action
+            or move.polarity != "negative" or move.aspect not in {"unknown", "not_applicable"}
+            or row is None or row[0] != grammar
+            or move.time_scope != ("past" if when == "original_occasion" else "present")):
+            raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+        expected_nominalization = (*expected_nominalization, answer_grammar[0])
     context_grammar = tuple(p for p in move.nominalization_plan
                             if p.startswith("context-slot:"))
     if context_grammar:
@@ -7337,6 +7492,19 @@ def _source_grounded_temporal_aspect_realization(
     if realization.reference_mode == "ANAPHORIC":
         return "ANTECEDENT", "ANTECEDENT", "", ""
 
+    # Past inflection was replaced by a reversible noun. Its explicit
+    # answer-time prefix, not the un-emitted source clause, owns time.
+    for code in realization.nominalization_plan:
+        if code.startswith("answer-slot:"):
+            _, slot, grammar, when = code.split(":")
+            fragment = realization.semantic_fragments[int(slot)]
+            row = _thread_answer_nominal_morphology(fragment)
+            if (fragment == semantic_head and row is not None and row[0] == grammar
+                and target_referent == _thread_answer_timed_nominal(row[1], row[0], when)
+                and realization.aspect in {"unknown", "not_applicable"}):
+                return "TARGET_REFERENT", "SOURCE_CLAUSE", "", ""
+            raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+
     clean_head = _source_finite_without_postposed_focus(
         semantic_head.strip(" \u3000、,。．.")
     )
@@ -7624,6 +7792,13 @@ def _source_grounded_target_np(
             and realization.quantity in {"not_applicable", "source_bounded", "unknown"}
             and (
                 referent_text == f"{meaning_fragment}という言葉"
+                or thread_answer_about_time in _THREAD_ANSWER_TIME_NOMINAL_PREFIX
+                and any(
+                    code == f"answer-slot:0:{row[0]}:{thread_answer_about_time}"
+                    and referent_text == _thread_answer_timed_nominal(row[1], row[0], thread_answer_about_time)
+                    for row in (_thread_answer_nominal_morphology(meaning_fragment),) if row is not None
+                    for code in realization.nominalization_plan
+                )
                 or thread_answer_about_time in {"original_occasion", "answer_time", "prior_answer_time"}
                 and referent_text == f"{'その時に' if thread_answer_about_time == 'original_occasion' else '先の回答時点で' if thread_answer_about_time == 'prior_answer_time' else '回答した時点で'}{meaning_fragment}こと"
                 or profile.nucleus_kind == "reaction"

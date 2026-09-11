@@ -7377,3 +7377,30 @@ Q3の既存146件にQ4の17件を加え、API/純粋処理/実SQL-RPC/保存版/
 統合・mode・停止回復・互換・RNのコードと検証を完了した。一方、回答A/Bや負担句の長い再掲と共通の締めは今回本文でも残り、A/Bの自然な受容まで改善済みとは扱わない。既存100件には中心感情/複数主題/共有関係の不足と定型性が残る。商品NOT_CLEAR、P3/P8商品完成やMash正式PASSは未成立。
 
 次は今回の保存本文にある主観的な受け取りの名詞化・時点・長い復唱を、同じHuman Reception作者と独立inverseで修正する。入力別完成文、gateの後付け緩和、旧checkpointの意味変更は使わない。正式商品判断や実環境を待つために止める残件ではなく、本文sourceで確認できる品質残件として保持する。実DB適用、端末・実課金、Mash正式判断、merge/deploy/有効化は別作業として未実施。
+
+
+## 2026-09-11 Q4 continuation — 回答名詞化と実装検証の完了
+
+前節で残した回答本文の名詞化・時点を修正した。再開元はAPI `89ab8491da71786c2070389281ac051efa4501b1`、App `79a757e69099ad1aa59ee348cf837afff3d7a08a`。Q4のコード実装・統合・公開接続準備と今回の検証を完了した。下記の既存商品品質や後日の運用確認を、完了済みのQ4コードと混同しない。
+
+### 回答本文で直したこと
+
+既存Human Receptionの同じ作者で、source証明済みの本人回答だけを可逆な名詞句へ活用する。思考節の命題・否定・限定、知覚的な推量、感情の語幹を保持し、時点は最終の主観名詞に掛ける。裸の過去形容詞は既存の感情文法が受け入れる形に限定し、主題・程度副詞・否定・対応外述語は元の有限節経路を保つ。意味checkpoint、元source、入力件数、国家dispatch、他coreの許可範囲を変更しない。
+
+名詞化の種類・slot・回答時点を既存nominalization_planへ封じ、IR検査、全planからの再導出、時間所有、target NP、Sentence Surfaceの構造witness、独立inverseを接続した。逆検査は名詞句全文の一回出現・引用外・末端一致を要求し、実本文から元の回答を復元する。感覚family検査でも、この一つの証明済み名詞句だけ元の活用へ戻して照合する。実本文・lexical coverage・独立inverseは元bytesを使い、別の感覚表現追加は拒否する。Reception不在、同一byte範囲の二重置換、重なる範囲も検査した。
+
+変更ownerはAPIの `emlis_ai_grounded_human_reception.py`、`emlis_ai_grounded_sentence_surface.py`、`emlis_ai_grounded_observation_gate.py`。影響先のthread source/update/projection/surface、意味binding、元の語彙・時間/aspect・gate契約を本文で確認した。新しい作者・意味分類器・入力別完成文・API schema・migrationは追加していない。Q1の原文必須assertはObservation側に維持し、Reception側は今回の名詞句と独立変異検査へ対応させた。
+
+### 最終検証と実本文
+
+- APIはQ3相当146件＋Q4 33件、同一の最終sourceで **179 PASS、失敗/skip 0**。既存deprecation警告2件。実SQL/RPC、保存版互換、mode/停止、共有作者と独立inverseを含む。RNは保存済みApp headの **56 PASS**を継承し、今回App実行コードの変更・再実行はない。
+- 初回の追加Q4検査は27 PASS/1 FAILで、回答nucleusのsource_fields照合を補強した。続く177件は175 PASS/2 FAILで、Q1の旧Reception全文復唱assertを意図した新動作へ更新した。追加境界修正後のfocused36件と最終179件が成功。途中失敗を最終成功で上書きしない。
+- 再起動で失われた環境をCPython3.12.13へ復元。既存lock対象46wheelのSHA-256・版・wheel RECORDと、対応する2176配布fileの実bytesを照合し、pytest8.4.1を使用。PGlite0.5.8と固定React/Babel資材を復元し、製品依存の版・providerを変更していない。
+- 同じ公開合成22ケースを実SQL/RPCで保存・GET照合し、華恋と独立readerが初回・問い・回答後・frame・Premium全6中間状態を全文確認した。最終状態はREFINED13、PARTIALLY_REFINED3、UNCHANGED3、意図した訂正後本文故障3。新snapshotは `ai/tests/fixtures/emlis_q4_synthetic_saved_nominals_20260911.json`。前の22ケースsnapshotは残す。
+- 既存canonical100を同じvalidated corpus/adapterで再生成し、前節で全読済みの100件と全record・保存bytesが一致。input、direct両層、plan、outer本文/status/reasonsは不変。direct100、GENERATED73/UNAVAILABLE27。今回の再比較は既存本文を改善済みへ換算しない。
+
+### 残る品質と運用作業
+
+回答の不自然な名詞化と時点の係りは今回修正済み。長い内容の再掲、共通の締め、既存100件の中心感情・複数主題・共有関係の不足は引き続き商品品質の残件で、商品NOT_CLEAR、P3/P8商品完成・Mash正式PASSは未成立。Q4で現在確認できた機能境界と今回の名詞化欠陥を残したまま、実機確認へ送ったという意味ではない。
+
+開発DBへのQ2→Q3 migration適用、native端末・実課金、Mashの商品判断、全replicaの設定切替・停止復旧の実施、merge/deploy/有効化は `EMLIS_DEPLOYMENT_AND_OPERATION_CHECKS.md` §9と別添の適用・運用確認に残る。既定OFF、Draft/open/unmergedを維持。後日の環境確認でコード不具合が判明した場合は、その機能の修正として引き取る。
