@@ -1,4 +1,4 @@
-"""Authenticated, default-off Q2 development application API."""
+"""Authenticated, default-off application API with a persistent read-only mode."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -9,7 +9,7 @@ from fastapi import FastAPI, Header, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from api_account_visibility import _require_user_id
-from emlis_thread_config import MAX_ANSWER_CHARS, development_enabled
+from emlis_thread_config import MAX_ANSWER_CHARS, read_enabled, writes_enabled
 from emlis_thread_store import ThreadStoreError
 
 
@@ -118,6 +118,7 @@ class ThreadResponse(BaseModel):
     attempt_id: UUID | None = None
     requested_attempt_id: UUID | None = None
     can_retry: bool
+    can_write: bool = True
     can_continue: bool = False
     issued_count: int = 0
     question_limit: int = 1
@@ -132,13 +133,16 @@ def register_emlis_thread_routes(app: FastAPI, *, service=None):
         if service is not None:
             return service
         from emlis_thread_service import EmlisThreadService
-        return EmlisThreadService()
+        return EmlisThreadService(enforce_application_policy=True)
 
-    async def user(authorization, response):
+    async def user(authorization, response, *, write=False):
         response.headers["Cache-Control"] = "private, no-store"
-        if not development_enabled():
-            raise HTTPException(404, "emlis_thread_not_enabled")
-        return await _require_user_id(authorization)
+        if not read_enabled():
+            raise HTTPException(404, "emlis_thread_not_enabled", headers={"Cache-Control": "private, no-store"})
+        me = await _require_user_id(authorization)
+        if write and not writes_enabled():
+            raise HTTPException(503, "application_paused", headers={"Cache-Control": "private, no-store"})
+        return me
 
     async def call(awaitable):
         try:
@@ -153,19 +157,19 @@ def register_emlis_thread_routes(app: FastAPI, *, service=None):
 
     @app.post("/emlis/threads/{thread_id}/answers", response_model=ThreadResponse, response_model_exclude_unset=True)
     async def answer(thread_id: UUID, body: ThreadAnswerBody, response: Response, authorization: str | None = Header(default=None)):
-        me = await user(authorization, response)
+        me = await user(authorization, response, write=True)
         values = body.model_dump()
         values["authored_at"] = body.authored_at.isoformat() if body.authored_at else None
         return await call(owner().answer(me, str(thread_id), **values))
 
     @app.post("/emlis/threads/{thread_id}/actions", response_model=ThreadResponse, response_model_exclude_unset=True)
     async def action(thread_id: UUID, body: ThreadActionBody, response: Response, authorization: str | None = Header(default=None)):
-        me = await user(authorization, response)
+        me = await user(authorization, response, write=True)
         values = body.model_dump()
         values["operation_id"] = str(body.operation_id) if body.operation_id else None
         return await call(owner().action(me, str(thread_id), **values))
 
     @app.post("/emlis/threads/{thread_id}/frames",response_model=ThreadResponse,response_model_exclude_unset=True)
     async def frame_feedback(thread_id: UUID,body: ThreadFrameFeedbackBody,response: Response,authorization: str | None = Header(default=None)):
-        me = await user(authorization,response)
+        me = await user(authorization,response,write=True)
         return await call(owner().frame_feedback(me,str(thread_id),**body.model_dump()))

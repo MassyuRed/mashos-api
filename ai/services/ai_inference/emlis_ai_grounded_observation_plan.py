@@ -6538,7 +6538,10 @@ def _reception_opportunity_families_for_nucleus(
         & attributes
     ):
         return ("retained_intention",)
-    if _is_reception_lived_change_nucleus(nucleus):
+    # A positive feeling does not need a change/result operator to deserve
+    # recognition. HR preserves its feeling predicate; it never asserts a
+    # completed change. Supplemental answers deliberately strip change cues.
+    if (final_source_fidelity and is_grounded_positive_feeling(nucleus)) or _is_reception_lived_change_nucleus(nucleus):
         return ("lived_change",)
     if has_text_source and (
         nucleus.semantic_frame.polarity == "negative"

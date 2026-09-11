@@ -245,6 +245,7 @@ class ProductJob(str, Enum):
 
 class ExecutionMode(str, Enum):
     OFFLINE_CANDIDATE = "OFFLINE_CANDIDATE"
+    EMLIS_APPLICATION = "EMLIS_APPLICATION"
 
 
 class EngineStatus(str, Enum):
@@ -21408,6 +21409,7 @@ class EngineOutcome:
     automatic_progression: bool = False
     schema_version: str = CMEE_SCHEMA_VERSION
     source_owner_policy_version: str = CMEE_SOURCE_OWNER_POLICY_VERSION
+    execution_mode: str = ExecutionMode.OFFLINE_CANDIDATE.value
 
     def as_body_free(self) -> Mapping[str, Any]:
         graph = self.meaning_graph
@@ -21422,7 +21424,7 @@ class EngineOutcome:
             "source_owner_policy_version": self.source_owner_policy_version,
             "core_id": CoreId.EMLIS_AI.value,
             "product_job": ProductJob.OBSERVE_AND_CLARIFY.value,
-            "execution_mode": ExecutionMode.OFFLINE_CANDIDATE.value,
+            "execution_mode": self.execution_mode,
             "status": self.status.value,
             "reason_codes": list(self.reason_codes),
             "source_envelope_count": int(self.source_envelope is not None),

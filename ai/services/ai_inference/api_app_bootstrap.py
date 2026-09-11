@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
 from client_compat import extract_client_meta
+from emlis_thread_config import read_enabled
 
 logger = logging.getLogger("api_app_bootstrap")
 
@@ -30,6 +31,7 @@ class AppStartupResponse(AppBootstrapResponse):
 def _feature_flags() -> Dict[str, bool]:
     return {
         "account_delete_enabled": True,
+        "emlis_threads_enabled": read_enabled(),
         "myweb_mock_enabled": False,
         "today_question_enabled": True,
         "today_question_history_enabled": True,

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Public exact-one orchestration entry for the disabled CMEE candidate."""
+"""CMEE offline candidate and admitted Emlis application thread entry."""
 
 from .contracts import (
     CMEE_TERMINAL_GENERATED_DISABLED,
@@ -19,10 +19,9 @@ from .source_kernel import SourceAdmissionError, freeze_text_source
 class MeaningExperienceEngine:
     """Run the first source-to-experience CMEE vertical without fallback.
 
-    The callable is deliberately disconnected from API and production routing.
-    It accepts only the Emlis offline-candidate job. A narrowly supported input
-    can produce a private implementation-proof artifact, but this WIP is not
-    Product-Read-eligible or candidate-ready.
+    Public application execution requires an admitted Emlis thread. The
+    existing single-input candidate remains offline-only; route enablement
+    belongs to the application config, not this pure meaning engine.
     """
 
     def generate(self, request: GenerationRequest) -> EngineOutcome:
@@ -32,7 +31,7 @@ class MeaningExperienceEngine:
             return self._rejected("core_id_out_of_scope")
         if request.product_job != ProductJob.OBSERVE_AND_CLARIFY.value:
             return self._rejected("product_job_out_of_scope")
-        if request.execution_mode != ExecutionMode.OFFLINE_CANDIDATE.value:
+        if not self._mode_admitted(request):
             return self._rejected("execution_mode_out_of_scope")
         if not str(request.request_id or "").strip():
             return self._rejected("request_id_required")
@@ -41,10 +40,15 @@ class MeaningExperienceEngine:
             from .emlis_thread_engine import generate_emlis_thread
             return generate_emlis_thread(self, request)
 
+        return self._generate_original_body(request)
+
+    def _generate_original_body(self, request: GenerationRequest) -> EngineOutcome:
+        """Shared original-source body after public or thread admission."""
         try:
             source = freeze_text_source(request)
         except SourceAdmissionError as exc:
             return EngineOutcome(
+                execution_mode=request.execution_mode,
                 status=EngineStatus.REJECTED if exc.hard_invalid else EngineStatus.UNAVAILABLE,
                 reason_codes=(exc.reason_code,),
                 terminal_state=(
@@ -59,6 +63,7 @@ class MeaningExperienceEngine:
             # unexpected exception text, and never continue with a partial
             # envelope.
             return EngineOutcome(
+                execution_mode=request.execution_mode,
                 status=EngineStatus.REJECTED,
                 reason_codes=("source_admission_internal_failure",),
                 terminal_state="CMEE_V1A_I1SX_SOURCE_ADMISSION_REJECTED_STOP",
@@ -70,6 +75,7 @@ class MeaningExperienceEngine:
         except CMEEVerticalError as exc:
             separate_safety = exc.reason_code == "separate_safety_owner_required"
             return EngineOutcome(
+                execution_mode=request.execution_mode,
                 status=(
                     EngineStatus.SEPARATE_SAFETY
                     if separate_safety
@@ -89,6 +95,7 @@ class MeaningExperienceEngine:
             # Never expose an exception string: upstream exceptions can include
             # private source material. There is no fallback or retry.
             return EngineOutcome(
+                execution_mode=request.execution_mode,
                 status=EngineStatus.UNAVAILABLE,
                 reason_codes=("cmee_vertical_internal_failure",),
                 source_envelope=source.envelope,
@@ -109,7 +116,7 @@ class MeaningExperienceEngine:
             else "text_grounded_source_explicit_generated"
         )
         return EngineOutcome(
-            status=status,
+                execution_mode=request.execution_mode,            status=status,
             reason_codes=(reason_code,),
             source_envelope=source.envelope,
             meaning_graph=graph,
@@ -117,6 +124,12 @@ class MeaningExperienceEngine:
             terminal_state=CMEE_TERMINAL_GENERATED_DISABLED,
             automatic_progression=False,
         )
+
+    @staticmethod
+    def _mode_admitted(request):
+        return (request.execution_mode == ExecutionMode.OFFLINE_CANDIDATE.value
+                or request.execution_mode == ExecutionMode.EMLIS_APPLICATION.value
+                and request.emlis_thread is not None)
 
     @staticmethod
     def _rejected(reason_code: str) -> EngineOutcome:
@@ -132,7 +145,7 @@ class MeaningExperienceEngine:
         if (type(request) is not GenerationRequest
                 or request.core_id != CoreId.EMLIS_AI.value
                 or request.product_job != ProductJob.OBSERVE_AND_CLARIFY.value
-                or request.execution_mode != ExecutionMode.OFFLINE_CANDIDATE.value
+                or not self._mode_admitted(request)
                 or not str(request.request_id or "").strip()):
             raise ValueError("emlis_update_request_out_of_scope")
         from .emlis_answer_update import prepare_emlis_meaning

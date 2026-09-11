@@ -1,8 +1,8 @@
-"""Q2: authenticated application orchestration around the unchanged Q1 author.
+"""Persisted Emlis application: separate answer, meaning and body commits.
 
-Only persisted artifacts are returned. Answers, meaning and body are separate
-commits. GET never evaluates an answer or starts work. Q3 history/rounds are not
-admitted: all tiers currently use the same Free source scope and one question.
+Q2 and Q3 saved profiles retain their source and round contracts. GET never
+evaluates an answer or starts work. Application policy is checked at admission
+and before each write; pausing preserves the reader and saved corrections.
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from cocolon_meaning_experience_engine.emlis_thread_contracts import (
     EmlisQuestionDecisionV1, SupplementalAnswerSource, SEMANTIC_SCHEMA,
 )
 from emlis_thread_store import EmlisThreadStore, ThreadStoreError
-from emlis_thread_config import APPLICATION_EXECUTION_MODE, MAX_ANSWER_CHARS, development_enabled
+from emlis_thread_config import APPLICATION_EXECUTION_MODE, MAX_ANSWER_CHARS, writes_enabled
 
 ATTEMPT_SECONDS = 30
 DTO_SCHEMA = "cocolon.emlis_thread.application.v1"
@@ -69,7 +69,8 @@ def _find(snapshot, event_id):
 def _request(snapshot, *, checkpoint_ref=None, include_context=True):
     t, original = snapshot["thread"], dict(snapshot["original"])
     original["created_at"] = parse_iso_utc(original["created_at"]).isoformat()
-    req = GenerationRequest("emlis-" + t["id"], build_emlis_current_input_bundle(original), original["id"])
+    req = GenerationRequest("emlis-" + t["id"], build_emlis_current_input_bundle(original), original["id"],
+                            execution_mode=APPLICATION_EXECUTION_MODE)
     ref = freeze_text_source(req).envelope.envelope_id
     if t["data"].get("original_source_ref", ref) != ref:
         raise ValueError("original_source_changed")
@@ -167,12 +168,12 @@ def _public_frames(snapshot):
         "correction_text":feedback.get(row["frame_key"],{}).get("correction_text")} for row in rows]
 
 
-def thread_dto(snapshot, *, requested_attempt_id=None):
+def thread_dto(snapshot, *, requested_attempt_id=None, can_write=True):
     t = _check(snapshot)
     original = {k: snapshot["original"].get(k) for k in ("id", "created_at", "memo", "memo_action")}
     if not t:
         return {"schema_version": DTO_SCHEMA, "state": "NOT_CREATED", "original": original,
-                "thread_id": None, "timeline": [], "can_retry": False}
+                "thread_id": None, "timeline": [], "can_retry": False, "can_write": can_write}
     d = t["data"]
     expired = bool(t["active_attempt_id"] and parse_iso_utc(t["processing_deadline_at"]) <= _now(snapshot))
     state = "RESPONSE_FAILED" if expired else t["state"]
@@ -198,7 +199,7 @@ def thread_dto(snapshot, *, requested_attempt_id=None):
     q = next((e for e in reversed(timeline) if e["kind"] == "QUESTION"), None)
     failure = "save_result_unknown" if expired else d.get("failure_code")
     return {"schema_version": DTO_SCHEMA, "thread_id": t["id"], "revision": t["revision"],
-        "state": state, "original": original, "timeline": timeline,
+        "state": state, "original": original, "timeline": timeline, "can_write": can_write,
         "pending_question": q if state == "AWAITING_ANSWER" else None,
         "current_observation": {"event_id": current["id"], "text": _observation_text(snapshot,current["payload"])} if current else None,
         "body_state": body_state, "answer_saved": bool(t.get("latest_answer_event_id")),
@@ -208,8 +209,8 @@ def thread_dto(snapshot, *, requested_attempt_id=None):
         "operation_id": t.get("active_operation_id") or d.get("operation_id"),
         "attempt_id": t.get("active_attempt_id") or d.get("attempt_id"),
         "requested_attempt_id": requested_attempt_id,
-        "can_retry": bool(state == "RESPONSE_FAILED" and not expired and failure in RETRYABLE_FAILURES and _generation_current(snapshot)),
-        "can_continue": bool(state == "AWAITING_CONTINUE" and d.get("continuation_question")
+        "can_retry": bool(can_write and state == "RESPONSE_FAILED" and not expired and failure in RETRYABLE_FAILURES and _generation_current(snapshot)),
+        "can_continue": bool(can_write and state == "AWAITING_CONTINUE" and d.get("continuation_question")
             and t["issued_count"] < question_limit(t, snapshot["tier"]) and _generation_current(snapshot)),
         "issued_count": t["issued_count"], "question_limit": question_limit(t, snapshot["tier"]),
         "started_question_limit": t.get("started_question_limit", 1),
@@ -218,16 +219,27 @@ def thread_dto(snapshot, *, requested_attempt_id=None):
 
 
 class EmlisThreadService:
-    def __init__(self, store=None, engine=None, *, runtime_profile=RUNTIME_PROFILE):
+    def __init__(self, store=None, engine=None, *, runtime_profile=RUNTIME_PROFILE, enforce_application_policy=False):
         if runtime_profile not in {RUNTIME_PROFILE, Q3_PROFILE}:
             raise ValueError("unsupported_thread_profile")
+        self.enforce_application_policy = enforce_application_policy
         self.runtime_profile = runtime_profile
         self.store = store or EmlisThreadStore()
         self.engine = engine or MeaningExperienceEngine()
 
+    def _writable(self):
+        return not self.enforce_application_policy or writes_enabled()
+
+    def _require_write(self):
+        if not self._writable():
+            raise ThreadStoreError("application_paused", 503)
+
+    def _dto(self, snapshot, **kwargs):
+        return thread_dto(snapshot, can_write=self._writable(), **kwargs)
+
     async def get(self, user_id, input_id):
         snapshot = await self._hydrate(user_id, await self.store.read(user_id, input_id=input_id))
-        return thread_dto(snapshot)
+        return self._dto(snapshot)
 
     async def _hydrate(self, user_id, snapshot, *, fresh=False):
         snapshot = copy.deepcopy(snapshot)
@@ -242,14 +254,16 @@ class EmlisThreadService:
         return snapshot
 
     async def _commit(self, user_id, snapshot, next_state, events, **kwargs):
+        self._require_write()
         result = await self.store.commit(user_id, snapshot, next_state, events, **kwargs)
         return {**result, **({"context":snapshot["context"]} if "context" in snapshot else {})}
 
 
     async def start(self, user_id, input_id):
+        self._require_write()
         snapshot = await self._hydrate(user_id, await self.store.read(user_id, input_id=input_id))
         if _check(snapshot):
-            return thread_dto(snapshot)
+            return self._dto(snapshot)
         t = {"id": str(uuid4()), "state": "INITIALIZING", "issued_count": 0,
             "started_question_limit": 3 if self.runtime_profile == Q3_PROFILE and snapshot["tier"] == "premium" else 1,
             "data": {"runtime_profile": self.runtime_profile, "execution_mode": APPLICATION_EXECUTION_MODE,
@@ -270,7 +284,7 @@ class EmlisThreadService:
             if exc.status == 409:
                 fresh = await self._hydrate(user_id, await self.store.read(user_id, input_id=input_id))
                 if _check(fresh):
-                    return thread_dto(fresh)
+                    return self._dto(fresh)
             raise
         return await self._process(user_id, snapshot)
 
@@ -281,13 +295,12 @@ class EmlisThreadService:
         t["processing_deadline_at"] = (_now(snapshot) + timedelta(seconds=ATTEMPT_SECONDS)).isoformat()
         t["data"].update(failure_code=None, operation_id=t["active_operation_id"], attempt_id=t["active_attempt_id"])
 
-    @staticmethod
-    def _replay(snapshot, key, fingerprint):
+    def _replay(self, snapshot, key, fingerprint):
         found = next((e for e in snapshot["events"] if e.get("idempotency_key") == key), None)
         if found:
             if found["payload"].get("request_fingerprint") != fingerprint:
                 raise ThreadStoreError("idempotency_conflict", 409)
-            dto = thread_dto(snapshot, requested_attempt_id=found["attempt_id"])
+            dto = self._dto(snapshot, requested_attempt_id=found["attempt_id"])
             if snapshot["thread"]["data"]["runtime_profile"] == Q3_PROFILE:
                 terminal = next((e for e in reversed(snapshot["events"]) if found["attempt_id"] and
                     e["attempt_id"] == found["attempt_id"] and e["kind"] == "OPERATION"), found)
@@ -298,6 +311,7 @@ class EmlisThreadService:
 
     async def answer(self, user_id, thread_id, *, question_id, expected_revision, idempotency_key,
                      answer_text, authored_at=None):
+        self._require_write()
         if not isinstance(answer_text, str) or not answer_text.strip() or len(answer_text) > MAX_ANSWER_CHARS:
             raise ThreadStoreError("answer_invalid", 422)
         snapshot = await self._hydrate(user_id, await self.store.read(user_id, thread_id=thread_id))
@@ -337,6 +351,7 @@ class EmlisThreadService:
 
     async def frame_feedback(self,user_id,thread_id,*,frame_ref,status,correction_text,
                              expected_revision,idempotency_key):
+        self._require_write()
         if (status not in {"CONFIRMED","REJECTED","REVISED"} or (status == "REVISED") != bool(correction_text)
                 or correction_text is not None and (not isinstance(correction_text,str) or not correction_text.strip() or len(correction_text)>2000)):
             raise ThreadStoreError("frame_feedback_invalid",422)
@@ -360,10 +375,11 @@ class EmlisThreadService:
             "source_emotion_id":frame["input_id"],"status":status,"correction_text":correction_text}
         event = _event("OPERATION",{"status":"FRAME_"+status,"request_fingerprint":fingerprint},t,key=idempotency_key)
         saved = await self._commit(user_id,snapshot,t,[event])
-        return thread_dto(await self._hydrate(user_id,saved))
+        return self._dto(await self._hydrate(user_id,saved))
 
     async def action(self, user_id, thread_id, *, action, expected_revision, idempotency_key,
                      question_id=None, operation_id=None):
+        self._require_write()
         snapshot = await self._hydrate(user_id, await self.store.read(user_id, thread_id=thread_id))
         t = _check(snapshot)
         fingerprint = identity("action-request", action, question_id, operation_id)
@@ -383,7 +399,7 @@ class EmlisThreadService:
                 t["data"]["body_state"] = "FINAL"
             event = _event("TERMINAL", {"reason": action, "request_fingerprint": fingerprint}, t, key=idempotency_key)
             try:
-                return thread_dto(await self._commit(user_id, snapshot, t, [event]))
+                return self._dto(await self._commit(user_id, snapshot, t, [event]))
             except ThreadStoreError as exc:
                 if exc.status == 409:
                     replay = self._replay(await self._hydrate(user_id, await self.store.read(user_id, thread_id=thread_id)), idempotency_key, fingerprint)
@@ -391,7 +407,7 @@ class EmlisThreadService:
                         return replay
                 raise
         if action == "continue":
-            if not thread_dto(snapshot)["can_continue"] or t["data"]["runtime_profile"] != Q3_PROFILE:
+            if not self._dto(snapshot)["can_continue"] or t["data"]["runtime_profile"] != Q3_PROFILE:
                 raise ThreadStoreError("continue_not_available", 409)
             if not _generation_current(snapshot) or admit_emlis_thread(_request(snapshot)).source_prefix_ref != t["source_prefix_ref"]:
                 raise ThreadStoreError("continue_source_changed",409)
@@ -401,14 +417,14 @@ class EmlisThreadService:
             event = _event("OPERATION", {"status": "CONTINUED", "request_fingerprint": fingerprint}, t, key=idempotency_key)
             t["state"] = "AWAITING_ANSWER"
             try:
-                return thread_dto(await self._commit(user_id, snapshot, t, [question, event]))
+                return self._dto(await self._commit(user_id, snapshot, t, [question, event]))
             except ThreadStoreError as exc:
                 if exc.status == 409:
                     replay = self._replay(await self._hydrate(user_id, await self.store.read(user_id, thread_id=thread_id)), idempotency_key, fingerprint)
                     if replay:
                         return replay
                 raise
-        if action != "retry_response" or not thread_dto(snapshot)["can_retry"] or operation_id != t["data"].get("operation_id"):
+        if action != "retry_response" or not self._dto(snapshot)["can_retry"] or operation_id != t["data"].get("operation_id"):
             raise ThreadStoreError("retry_not_available", 409)
         if not _generation_current(snapshot) or admit_emlis_thread(_request(snapshot)).source_prefix_ref != t["source_prefix_ref"]:
             raise ThreadStoreError("retry_source_changed",409)
@@ -428,6 +444,7 @@ class EmlisThreadService:
     async def _process(self, user_id, snapshot):
         t, attempt = snapshot["thread"], snapshot["thread"]["active_attempt_id"]
         try:
+            self._require_write()
             checkpoint = _find(snapshot, t.get("current_meaning_event_id"))
             if t.get("evaluated_prefix_ref") != t["source_prefix_ref"]:
                 cp = await asyncio.to_thread(self.engine.prepare_emlis_update, _request(snapshot))
@@ -455,6 +472,7 @@ class EmlisThreadService:
                 return await self._finish(user_id, snapshot, body_state="UNCHANGED" if valid else "UNAVAILABLE", state="COMPLETED")
             if update and update["disposition"] == "UNRESOLVED":
                 return await self._finish(user_id, snapshot, body_state="ANSWER_UNREFLECTED", state="COMPLETED")
+            self._require_write()
             outcome = await asyncio.to_thread(self.engine.generate, _request(snapshot, checkpoint_ref=cp["checkpoint_id"]))
             if _json(outcome.meaning_checkpoint) != cp:
                 raise ValueError("checkpoint_body_mismatch")
@@ -483,11 +501,13 @@ class EmlisThreadService:
             # Cancellation confirms the worker stopped before a further commit.
             # Only the active, unexpired attempt may record this fact.
             try:
-                await asyncio.shield(self._record_failure(user_id, snapshot, attempt, "worker_interrupted"))
+                await asyncio.shield(self._record_failure(user_id, snapshot, attempt, "worker_interrupted", paused=not self._writable()))
             except Exception:
                 pass
             raise
         except ThreadStoreError as exc:
+            if exc.code == "application_paused":
+                return await self._record_failure(user_id, snapshot, attempt, "worker_interrupted", paused=True)
             if exc.transient:
                 return await self._record_failure(user_id, snapshot, attempt, exc.code)
             raise
@@ -499,18 +519,18 @@ class EmlisThreadService:
         except Exception:
             return await self._record_failure(user_id, snapshot, attempt, "meaning_or_body_unavailable")
 
-    async def _record_failure(self, user_id, snapshot, attempt, reason):
+    async def _record_failure(self, user_id, snapshot, attempt, reason, *, paused=False):
         fresh = await self.store.read(user_id, thread_id=snapshot["thread"]["id"])
         _check(fresh)
         if fresh["thread"]["active_attempt_id"] != attempt:
-            return thread_dto(await self._hydrate(user_id, fresh))
+            return self._dto(await self._hydrate(user_id, fresh))
         await self._finish(user_id, fresh, body_state=fresh["thread"]["data"]["body_state"],
-                                  state="RESPONSE_FAILED", failure=reason)
+                                  state="RESPONSE_FAILED", failure=reason, paused=paused or not self._writable())
         # Save failure before refreshing optional paid context, so context outages
         # cannot leave an otherwise finished attempt running.
         return await self.get(user_id, fresh["original"]["id"])
 
-    async def _finish(self, user_id, snapshot, *, body_state, state, failure=None, observation=None, question=None):
+    async def _finish(self, user_id, snapshot, *, body_state, state, failure=None, observation=None, question=None, paused=False):
         t = copy.deepcopy(snapshot["thread"])
         attempt = t["active_attempt_id"]
         events = [e for e in (observation, question) if e]
@@ -521,4 +541,12 @@ class EmlisThreadService:
         events.append(_event("OPERATION", {"status": state, "failure_code": failure}, t))
         t.update(state=state, active_operation_id=None, active_attempt_id=None, processing_deadline_at=None)
         t["data"].update(body_state=body_state, failure_code=failure)
-        return thread_dto(await self._commit(user_id, snapshot, t, events, finishing_attempt=attempt))
+        if paused:
+            # Sole policy exception: close the already admitted attempt. No new
+            # answer, meaning, body, question, context or frame write is allowed.
+            if (observation or question or failure not in {"worker_interrupted", "storage_temporarily_unavailable", "meaning_or_body_unavailable"}
+                    or state != "RESPONSE_FAILED" or body_state != snapshot["thread"]["data"]["body_state"]):
+                raise ValueError("invalid_pause_receipt")
+            saved = await self.store.commit(user_id, snapshot, t, events, finishing_attempt=attempt)
+            return self._dto(saved)
+        return self._dto(await self._commit(user_id, snapshot, t, events, finishing_attempt=attempt))

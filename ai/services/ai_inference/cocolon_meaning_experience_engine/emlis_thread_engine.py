@@ -38,7 +38,7 @@ def generate_emlis_thread(engine, request) -> EmlisThreadOutcomeV1:
                     EmlisQuestionDecisionV1("BLOCKED", decision_reason="prequestion_body_unavailable"),
                     meaning_checkpoint=checkpoint, reason_codes=("emlis_q3_initial_body_unavailable",))
         else:
-            body = engine.generate(replace(request, emlis_thread=None))
+            body = engine._generate_original_body(request)
         if body.artifact is None:
             return EmlisThreadOutcomeV1(body.status, None,
                 EmlisQuestionDecisionV1("BLOCKED", decision_reason="prequestion_body_unavailable"),
@@ -65,7 +65,7 @@ def generate_emlis_thread(engine, request) -> EmlisThreadOutcomeV1:
             return EmlisThreadOutcomeV1(EngineStatus.GENERATED, None, end,
                 meaning_checkpoint=checkpoint, body_state="UNCHANGED",
                 reason_codes=("reuse_saved_observation_required",))
-        body = engine.generate(replace(request, emlis_thread=None))
+        body = engine._generate_original_body(request)
         return EmlisThreadOutcomeV1(body.status, body if body.artifact else None, end,
             meaning_checkpoint=checkpoint,
             body_sufficiency="LIMITED" if body.status is EngineStatus.LIMITED else "SUFFICIENT" if body.artifact else None,
@@ -82,8 +82,11 @@ def generate_emlis_thread(engine, request) -> EmlisThreadOutcomeV1:
     question = None
     if (request.emlis_thread.capability_snapshot == "Q3_PREMIUM"
             and checkpoint.assessment_status == "RESOLVED"):
-        end, question = question_candidate(prepared.thread, build_updated_grounded_plan(prepared),
-                                           parent_request_id=request.request_id)
+        try:
+            end, question = question_candidate(prepared.thread, build_updated_grounded_plan(prepared),
+                                               parent_request_id=request.request_id)
+        except Exception:
+            end = EmlisQuestionDecisionV1("END", decision_reason="question_realization_unavailable")
     return EmlisThreadOutcomeV1(body.status, body, end, question=question, meaning_checkpoint=checkpoint,
         body_sufficiency="LIMITED" if body.status is EngineStatus.LIMITED else "SUFFICIENT",
         body_state="PARTIALLY_REFINED" if checkpoint.assessment_status == "PARTIAL" else "REFINED",

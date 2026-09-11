@@ -156,15 +156,19 @@ async def render_emlis_ai_reply(
     second substantive body path after cutover.
     """
 
-    # Q3 is a server-selected development application profile. Its persisted
-    # body has a separate DTO; legacy status enums and I5 display gates stay intact.
-    from emlis_thread_config import development_enabled
-    if development_enabled() and current_input.get("id"):
+    # Exactly one generation owner. Legacy clients receive only the validated,
+    # saved current body through their existing passed-only wire contract.
+    from emlis_thread_config import application_mode, writes_enabled
+    mode = application_mode()
+    if mode != "legacy" and current_input.get("id"):
         from emlis_thread_service import EmlisThreadService, Q3_PROFILE
-        await EmlisThreadService(runtime_profile=Q3_PROFILE).start(user_id, str(current_input["id"]))
-        return ReplyEnvelope(comment_text="", meta={
-            "observation_status": "unavailable", "used_sources": ["current_input"],
-            "rejection_reasons": ["development_thread_separate_delivery"],
+        owner = EmlisThreadService(runtime_profile=Q3_PROFILE, enforce_application_policy=True)
+        dto = await (owner.start(user_id, str(current_input["id"])) if writes_enabled()
+                     else owner.get(user_id, str(current_input["id"])))
+        text = str((dto.get("current_observation") or {}).get("text") or "").strip() if mode != "development" else ""
+        return ReplyEnvelope(comment_text=text, meta={
+            "observation_status": "passed" if text else "unavailable", "used_sources": ["current_input"],
+            "rejection_reasons": [] if text else ["thread_body_unavailable"],
         }, used_evidence=[], evidence_by_line={}, used_memory_layers=[], fallback_used=False)
 
     dormant_override = _step10_dormant_v3_public_hook(
