@@ -269,3 +269,68 @@ def test_sensation_check_handles_absent_reception_and_duplicate_nominal_ranges(d
         sentence_plan=surface.build_grounded_sentence_plan(plan,prepared.thread.resolver(),recovery_stage='full'),
         surface_result=SimpleNamespace(text=body,lines=()),resolver=prepared.thread.resolver())
     assert 'ungrounded_sensation_family_added' in reasons
+
+
+@pytest.mark.parametrize('answer_text,when', [
+    ('次も同じ成果を求められるようで、重かった。', 'その時'),
+    ('結果だけで、そこまでの苦労は見てもらえていないと思った。', 'その時'),
+    ('今は嬉しい。', '回答した時点'),
+])
+def test_answer_observation_binds_one_event_without_repetition(answer_text, when):
+    from test_cmee_emlis_q1_thread import answered
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    from cocolon_meaning_experience_engine.emlis_thread_surface import realize_emlis_thread_body
+    from cocolon_meaning_experience_engine.emlis_thread_projection import project_thread_meaning
+    import emlis_ai_grounded_sentence_surface as surface
+    from emlis_ai_grounded_observation_gate import evaluate_grounded_surface_body_inverse
+    prepared = prepare_emlis_meaning(answered(answer_text)); checkpoint = prepared.checkpoint
+    plan = build_updated_grounded_plan(prepared); resolver = prepared.thread.resolver()
+    result = realize_emlis_thread_body(prepared)
+    assert prepared.checkpoint == checkpoint
+    body = result.artifact.text
+    assert result.artifact.observation.count('「褒められた」') == 1
+    assert '「嬉しくなかった」という反応' in result.artifact.observation
+    assert f'その出来事に対する{when}の受け止め' in result.artifact.observation
+    projection = project_thread_meaning(prepared, plan)
+    sentence = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    def inverse(text):
+        return evaluate_grounded_surface_body_inverse(body=text.encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver, selected_subjective_input=projection.selected_reception).passed
+    assert inverse(body)
+    for before, after in [
+        ('その出来事に対する', 'その反応に対する'),
+        ('その出来事に対する', 'その出来事が原因の'),
+        ('という反応があり、', 'という反応はなく、'),
+        ('という反応があり、', 'という反応があり。'),
+        ('「褒められた」', '「誘われた」'),
+        ('「嬉しくなかった」', '「嬉しかった」'),
+        (f'に対する{when}', 'に対する先の回答時点'),
+    ]:
+        changed = body.replace(before, after)
+        assert changed != body and not inverse(changed)
+    crossed = body.replace('「褒められた」', '「TEMP」').replace('「嬉しくなかった」', '「褒められた」').replace('「TEMP」', '「嬉しくなかった」')
+    assert not inverse(crossed)
+
+
+def test_answer_observation_does_not_group_ambiguous_or_hedged_event():
+    from test_cmee_emlis_q1_thread import answered
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    import emlis_ai_grounded_sentence_surface as surface
+    prepared = prepare_emlis_meaning(answered('その時は重かった。'))
+    plan = build_updated_grounded_plan(prepared); resolver = prepared.thread.resolver()
+    index = {n.nucleus_id:n for n in plan.nuclei}; relations = {r.relation_id:r for r in plan.relations}
+    sentence = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    binding = next(l.binding for l in sentence.lines if l.binding.relation_ids)
+    groups, consumed = surface._thread_contrast_answer_groups(binding,index,relations,resolver)
+    assert len(groups) == 1 and len(consumed) == 2
+    hedged = replace(binding,functional_atom_ids=(*binding.functional_atom_ids,'scope_hedge'))
+    assert surface._thread_contrast_answer_groups(hedged,index,relations,resolver) == ((),frozenset())
+    duplicate = replace(index['nucleus:s1:event'],nucleus_id='duplicate-event')
+    assert surface._thread_contrast_answer_groups(binding,{**index,duplicate.nucleus_id:duplicate},relations,resolver) == ((),frozenset())
+    # Multiple ABOUT_TARGETs require explicit targets, even if one binding
+    # could otherwise make the event sound like a unique antecedent.
+    about = next(r for r in plan.relations if r.type=='evaluation_about_event')
+    other = replace(about,relation_id='duplicate-about')
+    altered = replace(binding,relation_ids=(*binding.relation_ids,other.relation_id))
+    assert surface._thread_contrast_answer_groups(altered,index,{**relations,other.relation_id:other},resolver) == ((),frozenset())
+    assert surface._thread_contrast_answer_groups(binding,index,{**relations,other.relation_id:other},resolver) == ((),frozenset())

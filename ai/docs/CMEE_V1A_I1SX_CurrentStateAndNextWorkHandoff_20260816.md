@@ -7404,3 +7404,13 @@ Q3の既存146件にQ4の17件を加え、API/純粋処理/実SQL-RPC/保存版/
 回答の不自然な名詞化と時点の係りは今回修正済み。長い内容の再掲、共通の締め、既存100件の中心感情・複数主題・共有関係の不足は引き続き商品品質の残件で、商品NOT_CLEAR、P3/P8商品完成・Mash正式PASSは未成立。Q4で現在確認できた機能境界と今回の名詞化欠陥を残したまま、実機確認へ送ったという意味ではない。
 
 開発DBへのQ2→Q3 migration適用、native端末・実課金、Mashの商品判断、全replicaの設定切替・停止復旧の実施、merge/deploy/有効化は `EMLIS_DEPLOYMENT_AND_OPERATION_CHECKS.md` §9と別添の適用・運用確認に残る。既定OFF、Draft/open/unmergedを維持。後日の環境確認でコード不具合が判明した場合は、その機能の修正として引き取る。
+
+## 2026-09-11 Q4 remaining quality — shared-event observation source checkpoint
+
+Continuation of API `e899c8ba5cca1b65db1a994cee622f192edec930` / App `aaf7e739fb494d8728c89dfd86167425446047f8`; existing Draft PR3 / PR30. The current user instruction keeps Q1–Q4 integrated and permits original-file reading without System Context. Product remains NOT_CLEAR.
+
+The shared sentence owner now composes one original event, its contrast reaction, and one explicitly attached personal answer into one sentence. Each quoted source occurs once in that group; the answer's original/answer/prior-answer time remains explicit. The independent inverse resolves the sentence's explicit event antecedent from body bytes before matching all three sources and both relations. It does not broadly relax directional adjacency. Ambiguous sources, multiple answers to one event, absent contrast after revision, and hedged bindings retain explicit existing forms. HR selection, question policy, checkpoints, persistence, feature mode, DB and RN are unchanged.
+
+Scope: shared sentence surface and observation inverse, focused Q4 mutation/fallback tests, current shared-owner identity snapshot, and this handoff. One existing Q1 mutation now replaces the same `に対する` relation connective and asserts that bytes actually changed; the removed duplicate event no longer contains its old `ことに対する` target. No historical corpus, receipt, runner expectation or acceptance threshold is changed. The initial relevant Q4/Q1 run was 90 PASS; final-source mandatory regressions and full saved-case evaluation are pending at this checkpoint. Do not reuse that initial run as final-source verification.
+
+Next: complete final-source shared/Q1–Q4 regressions, unchanged canonical100 with original saved baseline, all22 Q4 persisted cases including Premium intermediate states; root reads inputs/bodies/status/reasons, then saves actual results. Repetition is narrowed here, not claimed resolved across the product. Generic follow endings and loss of earlier same-family answers from follow remain separate confirmed quality work. No deploy/merge/ready/enable or automatic progression.

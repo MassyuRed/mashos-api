@@ -1787,6 +1787,63 @@ def _body_inverse_reception_context_ids(
     return (candidates[0][2],)
 
 
+def _body_inverse_thread_contrast_answers(body, witness, line, plan, resolver):
+    """Resolve the sentence's explicit event antecedent before source matching.
+
+    This grammar consumes visible bytes only; it does not replay the renderer.
+    An ambiguous source identity or a cross-sentence antecedent cannot bind.
+    """
+    matched, failures = set(), []
+    for sentence in witness.sentences:
+        if sentence.section != "observation" or sentence.section_line_ordinal != line.section_ordinal:
+            continue
+        text = _body_inverse_visible_text(body, sentence)
+        connective_text = re.sub(r"「[^「」]*」|『[^『』]*』", "", text)
+        if "その出来事に対する" not in connective_text:
+            continue
+        parsed = re.fullmatch(
+            r"「([^「」『』\n]+)」という出来事の一方で「([^「」『』\n]+)」という反応があり、"
+            r"その出来事に対する(その時|回答した時点|先の回答時点)の受け止めとして、"
+            r"「([^「」『』\n]+)」が見えます。", text)
+        if parsed is None:
+            failures.append("body_inverse_answer_antecedent_invalid")
+            continue
+        event_text, reaction_text, when, answer_text = parsed.groups()
+        ids = []
+        for value in (event_text, reaction_text, answer_text):
+            normalized = _body_inverse_normalized_anchor(value)
+            candidates = tuple(n.nucleus_id for n in plan.nuclei
+                               if normalized in _body_inverse_nucleus_source_values(n.nucleus_id, plan, resolver))
+            if len(candidates) != 1:
+                break
+            ids.append(candidates[0])
+        if len(ids) != 3 or len(set(ids)) != 3:
+            failures.append("body_inverse_answer_antecedent_ambiguous")
+            continue
+        index = {n.nucleus_id: n for n in plan.nuclei}
+        event, reaction, answer = (index[i] for i in ids)
+        contrasts = tuple(r for r in plan.relations if r.type == "contrast"
+                          and r.from_nucleus_id == event.nucleus_id)
+        about = tuple(r for r in plan.relations if r.type == "evaluation_about_event"
+                      and r.from_nucleus_id == event.nucleus_id)
+        expected_time = {"その時": "original_occasion", "回答した時点": "answer_time",
+                         "先の回答時点": "prior_answer_time"}[when]
+        times = {c.split(":", 1)[1] for c in answer.semantic_frame.attribute_codes
+                 if c.startswith("thread_time:")}
+        if (event.kind == "event" and reaction.kind == "reaction"
+                and event.source_fields in {("memo",), ("memo_action",)}
+                and reaction.source_fields in {("memo",), ("memo_action",)}
+                and answer.source_fields == ("answer_text_private",)
+                and times == {expected_time}
+                and len(contrasts) == len(about) == 1
+                and contrasts[0].to_nucleus_id == reaction.nucleus_id
+                and about[0].to_nucleus_id == answer.nucleus_id):
+            matched.add(about[0].relation_id)
+        else:
+            failures.append("body_inverse_answer_antecedent_source_mismatch")
+    return frozenset(matched), tuple(failures)
+
+
 def evaluate_grounded_surface_body_inverse(
     *,
     body: bytes,
@@ -1873,6 +1930,11 @@ def evaluate_grounded_surface_body_inverse(
         if planned_line.binding.relation_ids and not parsed_line.relation_marker_codes:
             failures.append(f"body_inverse_required_relation_marker_missing:{index}")
         relation_index = {item.relation_id: item for item in plan.relations}
+        grouped_answers = frozenset()
+        if getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1":
+            grouped_answers, group_failures = _body_inverse_thread_contrast_answers(
+                body, witness, parsed_line, plan, resolver)
+            failures.extend(group_failures)
         for relation_id in planned_line.binding.relation_ids:
             relation = relation_index.get(relation_id)
             if relation is None:
@@ -1922,6 +1984,7 @@ def evaluate_grounded_surface_body_inverse(
                 )
             if (
                 relation.type in DIRECTIONAL_GROUNDED_RELATION_TYPES
+                and relation_id not in grouped_answers
                 and from_positions
                 and to_positions
                 and not any(
@@ -1943,7 +2006,7 @@ def evaluate_grounded_surface_body_inverse(
                 right_sources = _body_inverse_nucleus_source_values(relation.to_nucleus_id, plan, resolver)
                 target_codes = set(nucleus_index[relation.to_nucleus_id].semantic_frame.attribute_codes)
                 when = "先の回答時点" if "thread_time:prior_answer_time" in target_codes else "回答した時点" if "thread_time:answer_time" in target_codes else "その時"
-                if not (any(b == a + 1 for a in from_positions for b in to_positions) and
+                if relation_id not in grouped_answers and not (any(b == a + 1 for a in from_positions for b in to_positions) and
                         any(re.search(re.escape(left) + r"[^。]*に対する" + when + r"の受け止めとして[^。]*" + re.escape(right), visible)
                             for left in left_sources for right in right_sources)):
                     failures.append(f"body_inverse_answer_target_relation_missing:{index}")

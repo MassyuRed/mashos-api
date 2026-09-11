@@ -2728,6 +2728,63 @@ def _render_observation_with_relations(
     return relation_text
 
 
+def _thread_contrast_answer_groups(binding, nucleus_index, relation_index, resolver):
+    """Compose only one unambiguous original event/reaction/answer per sentence."""
+    if (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+            or _hedge_prefix(binding)):
+        return (), frozenset()
+    relations = tuple(relation_index[r] for r in binding.relation_ids if r in relation_index)
+    endpoints = {key: _final_stage1_typed_relation_endpoint(key, nucleus_index, resolver)
+                 for key in nucleus_index}
+    # Check ambiguity before semantic-kind suffixes are attached as well.
+    # Punctuation and leading connectors cannot distinguish an antecedent.
+    def anchor(value):
+        value = re.sub(r"[\s\u3000、。,.!！?？「」『』（）()・:：;；'’\"]", "", value).lower()
+        while True:
+            stripped = re.sub(r"^(?:とそれから|そして|それでも|けれど|だけど|でも|で)", "", value)
+            if stripped == value:
+                return value
+            value = stripped
+    source_anchors = {key: tuple(anchor(q) for q in _quotes_for_nuclei((key,), nucleus_index, resolver))
+                      for key in nucleus_index}
+    sentences, consumed = [], set()
+    for contrast in relations:
+        if relation_surface_role(contrast, nucleus_index) != "coexisting_contrast":
+            continue
+        event = nucleus_index[contrast.from_nucleus_id]
+        reaction = nucleus_index[contrast.to_nucleus_id]
+        if (event.kind != "event" or reaction.kind != "reaction"
+                or event.source_fields not in {("memo",), ("memo_action",)}
+                or reaction.source_fields not in {("memo",), ("memo_action",)}):
+            continue
+        about = tuple(r for r in relation_index.values() if r.type == "evaluation_about_event"
+                      and r.from_nucleus_id == event.nucleus_id)
+        contrasts = tuple(r for r in relation_index.values() if r.type == "contrast"
+                          and r.from_nucleus_id == event.nucleus_id)
+        if (len(about) != 1 or len(contrasts) != 1
+                or about[0].relation_id not in binding.relation_ids):
+            continue
+        answer = nucleus_index[about[0].to_nucleus_id]
+        times = {c.split(":", 1)[1] for c in answer.semantic_frame.attribute_codes
+                 if c.startswith("thread_time:")}
+        when = {frozenset({"original_occasion"}): "その時",
+                frozenset({"answer_time"}): "回答した時点",
+                frozenset({"prior_answer_time"}): "先の回答時点"}.get(frozenset(times))
+        if when is None or answer.source_fields != ("answer_text_private",):
+            continue
+        parts = tuple(endpoints[n.nucleus_id] for n in (event, reaction, answer))
+        if any(not re.fullmatch(r"「[^「」『』\n]+」", part)
+               or tuple(endpoints.values()).count(part) != 1 for part in parts):
+            continue
+        if any(sum(anchor(part) in values for values in source_anchors.values()) != 1 for part in parts):
+            continue
+        left, right, received = parts
+        sentences.append(f"{left}という出来事の一方で{right}という反応があり、"
+                         f"その出来事に対する{when}の受け止めとして、{received}が見えます。")
+        consumed.update((contrast.relation_id, about[0].relation_id))
+    return tuple(sentences), frozenset(consumed)
+
+
 def _render_relation(
     binding: GroundedSentenceBinding,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
@@ -2743,10 +2800,14 @@ def _render_relation(
             resolver,
             typed_semantic_duties=typed_semantic_duties,
         )
-    sentences: list[str] = []
+    groups, consumed = _thread_contrast_answer_groups(
+        binding, nucleus_index, relation_index, resolver)
+    sentences: list[str] = list(groups)
     contrast_pairs = []
     evaluations = {}
     for relation_id in binding.relation_ids:
+        if relation_id in consumed:
+            continue
         if relation_id not in relation_index:
             continue
         relation = relation_index[relation_id]

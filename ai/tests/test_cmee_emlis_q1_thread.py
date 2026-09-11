@@ -235,7 +235,8 @@ def test_inverse_rejects_answer_time_and_content_tampering():
     assert inverse(body).passed
     assert not inverse(body.replace('回答した時点', 'その時')).passed
     assert not inverse(body.replace('「嬉しい」', '「悲しい」')).passed
-    assert not inverse(body.replace('ことに対する', 'ことから続く')).passed
+    changed = body.replace('に対する', 'から続く')
+    assert changed != body and not inverse(changed).passed
     assert not inverse(body.replace('褒められたことについて、', '')).passed
 
 def test_legacy_scope_vocabulary_and_matrix_remain_closed():
