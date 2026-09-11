@@ -7252,3 +7252,10 @@ Q1の意味・本文一往復は成立したが、自由文全体への対応や
 次の機能単位はQ2：checkpoint先行保存、回答／本文の別保存、認証・API・RN・履歴・削除・遅延回答・冪等性・明示再試行。Q1でDB／API／RNを接続したとは扱わない。国家の入力件数・課金event、TodayQuestion、Piece／Analysisの入力許可は変更していない。Q3の有料履歴・後続round、Q4のMash商品判断・公開接続も未実施。今回の終了を古いcandidate91単独修正ループやRound 0 PASS待ちへ戻さない。
 
 Draft/open/unmerged、disabled、candidate_ready=false、automatic_progression=false。Mash human PASS、商品採用、ready、merge、本番切替は成立していない。
+# 2026-09-11 Q2実装・途中保存（Q1確認済み）
+
+今回のownerはQ2 development application。Q1 dedicated53件は固定Python3.12.13・pytest8.4.1で再実行し53 passed。canonical100、旧combined495等は今回再実行したとは扱わない。
+
+Q2の保存RPC/migration、認証API、回答→意味checkpoint→本文の別commit、一問上限、明示retryと期限付きattemptを実装中。実migrationをPGlite0.5.8へ適用したsynthetic一往復で、本文更新・別service instanceからの再取得・同じkeyのreplayが成功（専用test 1 passed）。GETはauthorを呼ばない。RN入力/履歴接続もローカル実装中。
+
+未完了：障害注入・削除/権限/競合・RN動作検査、実際の保存本文の確認、全体地図と正本更新。現時点をQ2完了、商品合格、本番有効化と扱わない。実DBへのmigrationは未適用。既存Draft PR3/30で続け、Q3/Q4・旧candidate91探索には進まない。
