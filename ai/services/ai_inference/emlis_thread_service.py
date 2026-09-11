@@ -26,7 +26,7 @@ from cocolon_meaning_experience_engine.emlis_thread_contracts import (
     EmlisQuestionDecisionV1, SupplementalAnswerSource, SEMANTIC_SCHEMA,
 )
 from emlis_thread_store import EmlisThreadStore, ThreadStoreError
-from emlis_thread_config import MAX_ANSWER_CHARS, development_enabled
+from emlis_thread_config import APPLICATION_EXECUTION_MODE, MAX_ANSWER_CHARS, development_enabled
 
 ATTEMPT_SECONDS = 30
 DTO_SCHEMA = "cocolon.emlis_thread.application.v1"
@@ -149,7 +149,8 @@ class EmlisThreadService:
         if _check(snapshot):
             return thread_dto(snapshot)
         t = {"id": str(uuid4()), "state": "INITIALIZING", "issued_count": 0,
-            "data": {"runtime_profile": RUNTIME_PROFILE, "started_tier": snapshot["tier"],
+            "data": {"runtime_profile": RUNTIME_PROFILE, "execution_mode": APPLICATION_EXECUTION_MODE,
+                     "started_tier": snapshot["tier"],
                      "body_state": "UNAVAILABLE", "answer_assessment": "NOT_APPLICABLE"}}
         self._begin(t, snapshot)
         initial = {**snapshot, "thread": t}
@@ -157,7 +158,14 @@ class EmlisThreadService:
         t["data"]["original_source_ref"] = req.emlis_thread.original_source_ref
         t["source_prefix_ref"] = admit_emlis_thread(req).source_prefix_ref
         event = _event("OPERATION", {"status": "RUNNING", "stage": "INITIAL"}, t, key="initial")
-        snapshot = await self.store.commit(user_id, snapshot, t, [event])
+        try:
+            snapshot = await self.store.commit(user_id, snapshot, t, [event])
+        except ThreadStoreError as exc:
+            if exc.status == 409:
+                fresh = await self.store.read(user_id, input_id=input_id)
+                if _check(fresh):
+                    return thread_dto(fresh)
+            raise
         return await self._process(user_id, snapshot)
 
     @staticmethod
@@ -203,7 +211,14 @@ class EmlisThreadService:
         proposed = {**snapshot, "thread": t, "events": snapshot["events"] + [answer]}
         t["source_prefix_ref"] = admit_emlis_thread(_request(proposed)).source_prefix_ref
         operation = _event("OPERATION", {"status": "RUNNING", "stage": "ANSWER"}, t)
-        snapshot = await self.store.commit(user_id, snapshot, t, [answer, operation])
+        try:
+            snapshot = await self.store.commit(user_id, snapshot, t, [answer, operation])
+        except ThreadStoreError as exc:
+            if exc.status == 409:
+                replay = self._replay(await self.store.read(user_id, thread_id=thread_id), idempotency_key, fingerprint)
+                if replay:
+                    return replay
+            raise
         return await self._process(user_id, snapshot)
 
     async def action(self, user_id, thread_id, *, action, expected_revision, idempotency_key,
@@ -224,13 +239,27 @@ class EmlisThreadService:
             t["state"] = "COMPLETED"
             t["data"]["body_state"] = "FINAL"
             event = _event("TERMINAL", {"reason": action, "request_fingerprint": fingerprint}, t, key=idempotency_key)
-            return thread_dto(await self.store.commit(user_id, snapshot, t, [event]))
+            try:
+                return thread_dto(await self.store.commit(user_id, snapshot, t, [event]))
+            except ThreadStoreError as exc:
+                if exc.status == 409:
+                    replay = self._replay(await self.store.read(user_id, thread_id=thread_id), idempotency_key, fingerprint)
+                    if replay:
+                        return replay
+                raise
         if action != "retry_response" or not thread_dto(snapshot)["can_retry"] or operation_id != t["data"].get("operation_id"):
             raise ThreadStoreError("retry_not_available", 409)
         t["state"] = "REFINING" if t.get("latest_answer_event_id") else "INITIALIZING"
         self._begin(t, snapshot, operation_id)
         event = _event("OPERATION", {"status": "RUNNING", "request_fingerprint": fingerprint}, t, key=idempotency_key)
-        snapshot = await self.store.commit(user_id, snapshot, t, [event])
+        try:
+            snapshot = await self.store.commit(user_id, snapshot, t, [event])
+        except ThreadStoreError as exc:
+            if exc.status == 409:
+                replay = self._replay(await self.store.read(user_id, thread_id=thread_id), idempotency_key, fingerprint)
+                if replay:
+                    return replay
+            raise
         return await self._process(user_id, snapshot)
 
     async def _process(self, user_id, snapshot):

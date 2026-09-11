@@ -1,4 +1,4 @@
-> 2026-09-10 Q1最終更新：Q1のFree相当process-local一往復を実装・検証。初回本文→一問→独立回答source→意味checkpoint→回答後本文が共通作者を通る。追加53件PASS、主要既存442件は436 PASS／既存6 FAIL、旧契約194件は123 PASS／46 FAIL／23 ERROR／2 SKIPでcandidate91 baselineと全成否一致。単独100件は73 GENERATED／27 UNAVAILABLEで全record一致、華恋が全100件の入力・実本文・理由を読了。商品NOT_CLEAR、Q2以降未実施、未公開。 現在の再開先は本書末尾のQ1節。
+> 2026-09-11 Q2更新：Q1専用53件を再確認し、Q2保存/認証API/RN入力・履歴/明示再試行をdefault OFFで実装。Q2専用32件とRN45件は成功。既存registry2検査の同じ失敗をQ1 headでも再現。実保存の公開合成5組を全文確認、商品NOT_CLEAR。稼働DB適用・端末での開発アプリ確認は未実施。再開先は本書末尾Q2節と `EMLIS_Q2_DEVELOPMENT.md`。Q3/Q4へ自動進行しない。
 
 # CMEE V1-A I1-SX Current State and Next Work Handoff — 2026-08-16
 
@@ -7259,3 +7259,27 @@ Draft/open/unmerged、disabled、candidate_ready=false、automatic_progression=f
 Q2の保存RPC/migration、認証API、回答→意味checkpoint→本文の別commit、一問上限、明示retryと期限付きattemptを実装中。実migrationをPGlite0.5.8へ適用したsynthetic一往復で、本文更新・別service instanceからの再取得・同じkeyのreplayが成功（専用test 1 passed）。GETはauthorを呼ばない。RN入力/履歴接続もローカル実装中。
 
 未完了：障害注入・削除/権限/競合・RN動作検査、実際の保存本文の確認、全体地図と正本更新。現時点をQ2完了、商品合格、本番有効化と扱わない。実DBへのmigrationは未適用。既存Draft PR3/30で続け、Q3/Q4・旧candidate91探索には進まない。
+
+## 2026-09-11 Q2 — source実装・自動検証・実本文確認
+
+途中保存 `1d0e2df2dd6a4b22440fa96bc1f13195a8e5ed13` から、同一keyの同時受理の照合、public response model、入力/履歴UIと下書き消去、registry同期、障害/権限/削除/expired attempt/API/開発entryの検証を追加した。現在はfreshなDraft PR3/30 headを読む。最終sourceと本書・関連正本を反映し、変更fileのremote blob SHAを照合する。
+
+保存実装は `emlis_thread_config.py` / `api_emlis_thread.py` / `emlis_thread_service.py` / `emlis_thread_store.py` と `supabase/migrations/20260911020509_emlis_input_threads_q2.sql`。新routeはapp・公開registryへ登録。原入力保存後のEmlis分岐だけをdevelopment gateで接続し、旧I5のstatus enumと本文gateを保護した。RNは専用API・useEmlisThread・EmlisThreadModalをInputScreenとAnalysisHistoryScreenから使用する。Piece publish/tutorの回答欄は追加しない。回答は国家入力件数・通知・queue・他core sourceにしない。
+
+Q1 authorの意味/本文文法は変更しない。外側DEVELOPMENT_APPLICATIONで保存と権限を所有し、内側Q1 pure OFFLINE_CANDIDATEを継承。回答保存→意味checkpoint→本文を別transactionにし、現意味と旧観測を別参照で保持。明示retryは同じ回答/operation/意味、別attempt。一問枠・ANSWER・意味確定を二重に消費しない。不明ACKは先にGET照合し、期限切れだけをretry可にしない。親/accountの削除cascade、retention、source snapshot、現在revision/leaseをservice roleでも検査する。
+
+### 実行した検証
+
+- 固定CPython3.12.13・pytest8.4.1・既存46依存。Q1 dedicated53 passed。今回canonical100/旧495/旧194は再実行していない。
+- Q2実migrationをPGlite0.5.8へ適用し、実RPCとactual作者を使う専用32件が成功（最後のdevelopment entry1件は追加単独実行）。API認証resolverのverified-token境界、余分なuser/plan/ref拒否、原入力→一問→回答→保存本文、再取得、新service instance、訂正後の本文失敗、無変更の本文再利用、部分/未解決、時点、同時POST、ACK消失、明示retry、parent/account削除、retention、source/plan変更、失効attempt、separate safetyを検証。
+- RN新規9件＋既存36件＝45 passed。React18.3.1 rendererで実hook/panelを実行。close/reopen、二重tap、GET照合後の同じpayload再送、user切替と遅延応答、削除時消去、旧本文表示とretry出し分け、旧passed-only/Piece/tutorialを検査。native端末での視認・キーボード・foreground復帰を確認したとは扱わない。
+- 関連既存API/public-feedback/governance/diagnostic39件は、実行adapterをそろえた最終成否37 passed / 既存2 failed。`test_api_contract_registry`のpublic-profile route存在/response model検査2件は変更前Q1 head `b679a04b501ae7d4bb7a73bcdb8c449fdc7af2da` でも同じ失敗を再現。対象外routeを消したり検査を弱めたりしない。
+- 最初の関連123件は115 passed / 8 failed（registry資料漏れ1、既存2、async adapter未指定5）。registry資料は同期後成功、5 asyncは前回同様stdlib asyncio hookで実行し全成功。別途Q2途中でfixtureのnull JSON応答/verified resolver例外契約の不足を修正。途中失敗も残し、実行不能をproduct failureや全PASSへ読み替えない。
+
+公開合成5組は元入力を前日として実SQLから再取得した。`ai/tests/fixtures/emlis_q2_synthetic_saved_rounds_20260911.json` に元入力・初回本文・質問・回答後DTOを保存し、華恋が全文を確認した。A/Bの異なる意味は観測と受取へ別々に反映され、「今は嬉しい」は回答時点として表示される。withdraw後の本文失敗ではcurrent本文なし、unknownは同じartifactのまま。再掲・定型受取は残り、商品NOT_CLEAR。これを広範な自由文対応や正式商品PASSとしない。
+
+### 未完了と次の一手
+
+実装と自動検証は成立。稼働Supabaseはread-onlyでschema/constraints/migrationsを確認しただけで、このmigrationは未適用。次に適用先の開発DBを確認して適用し、debug appで一往復、日をまたぐ再開、意味確定後の本文失敗、回答再入力なしの回復を確認する。この開発アプリ確認が残るためQ2完了を宣言しない。Q3の有料履歴/後続round、Q4の商品/公開判断へ自動で進まない。merge/deploy/本番切替は今回0。
+
+再現手順とcode/SQL/API/RN境界は `ai/docs/EMLIS_Q2_DEVELOPMENT.md`。Cocolon側の全体/Home/国家/current_structure00/01/04、v1正本02/05/06、07 milestoneを同期する。System Context fresh実行やPR37修正は行っていない。定例ZIP・別Libraryへのrepoコピーは作らない。

@@ -2,6 +2,7 @@
 import os
 
 MAX_ANSWER_CHARS = 2000
+APPLICATION_EXECUTION_MODE = "DEVELOPMENT_APPLICATION"
 
 
 def development_enabled():
