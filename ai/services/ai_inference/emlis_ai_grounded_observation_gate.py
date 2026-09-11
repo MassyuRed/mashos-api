@@ -9,6 +9,7 @@ reconstruct meaning from the public body and it never serializes source text.
 """
 
 from dataclasses import dataclass
+from itertools import combinations
 import re
 from typing import Any, Final, Literal, Mapping
 
@@ -350,6 +351,14 @@ def _semantic_subcheck_reasons(
     replacements = set()
     reception_plan = plan.response_plan.human_reception_plan
     for move in reception_plan.moves if reception_plan is not None else ():
+        if len(move.target_nucleus_ids) > 1:
+            if sensation_witness is None:
+                sensation_witness = parse_grounded_surface_body_bytes(sensation_body)
+            for sentence in sensation_witness.sentences:
+                if sentence.section == "reception":
+                    replacements.update(_body_inverse_thread_answer_group(
+                        sensation_body, sensation_witness, sentence, move, plan, resolver))
+            continue
         answer_nominal = source_grounded_thread_answer_nominal(move, plan, nucleus_index, resolver)
         if answer_nominal is None:
             continue
@@ -1844,6 +1853,80 @@ def _body_inverse_thread_contrast_answers(body, witness, line, plan, resolver):
     return frozenset(matched), tuple(failures)
 
 
+def _body_inverse_thread_answer_group(body, witness, sentence, move, plan, resolver):
+    """Parse all event/answer/time pairs from one actual reception sentence.
+
+    No forward group or rendered reference is consulted. Every reconstructed
+    pair must resolve once to the selected source duties in their own order.
+    Returned byte ranges are also safe grammatical views for sensation checks.
+    """
+    if (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+        or not 2 <= len(move.target_nucleus_ids) <= 3 or move.support_nucleus_ids
+        or move.reception_act != "stay_with_current_burden" or sentence.section != "reception"):
+        return ()
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    expected = []
+    for nid in move.target_nucleus_ids:
+        n = index[nid]
+        times = {c.split(":", 1)[1] for c in n.semantic_frame.attribute_codes if c.startswith("thread_time:")}
+        about = tuple(r for r in plan.relations if r.type == "evaluation_about_event"
+            and r.relation_id in plan.coverage_requirements.required_relation_ids and r.to_nucleus_id == nid)
+        if (n.source_fields != ("answer_text_private",) or n.allowed_claim_scope != "explicit_supplemental_answer"
+            or n.kind != "reaction" or n.semantic_frame.modality != "feeling"
+            or n.semantic_frame.polarity != "negative" or len(times) != 1 or len(about) != 1):
+            return ()
+        event = index[about[0].from_nucleus_id]
+        if event.kind != "event" or event.source_fields not in {("memo",), ("memo_action",)}:
+            return ()
+        expected.append((final_reception_source_anchor_text(event.nucleus_id, index, resolver),
+                         final_reception_source_anchor_text(nid, index, resolver), next(iter(times))))
+    if len(set(expected)) != len(expected):
+        return ()
+    raw = body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8")
+    objects, separator, _predicate = raw.rpartition("を")
+    if not separator:
+        return ()
+    divisions = tuple(m.start() for m in re.finditer("と、", objects))
+    successes = []
+    for cuts in combinations(divisions, len(expected) - 1):
+        starts = (0, *(i + 2 for i in cuts))
+        ends = (*cuts, len(objects))
+        restored, spans = [], []
+        for start, end in zip(starts, ends, strict=True):
+            piece = objects[start:end]
+            boundaries = tuple((piece.index(s), s) for s in ("ことへの", "ことについて、") if s in piece)
+            if not boundaries:
+                break
+            boundary, sep = min(boundaries)
+            event, nominal = piece[:boundary], piece[boundary + len(sep):]
+            interpretations = set()
+            for when, prefix in (("original_occasion", "その時に"), ("answer_time", "回答した時点で"),
+                                 ("prior_answer_time", "先の回答時点で")):
+                for grammar in ("BELIEF", "PAST_FEELING", "PERCEIVED_0", "PERCEIVED_1"):
+                    source = restore_thread_answer_nominal(nominal, grammar, when)
+                    if source is not None and sep == "ことへの":
+                        interpretations.add((event, source, when))
+                if sep == "ことについて、" and nominal.startswith(prefix) and nominal.endswith("こと"):
+                    interpretations.add((event, nominal[len(prefix):-2], when))
+            matches = interpretations.intersection(expected)
+            if len(matches) != 1:
+                break
+            match = next(iter(matches))
+            restored.append(match)
+            offset = sentence.utf8_byte_start + len(objects[:start + len(event) + len(sep)].encode("utf-8"))
+            finish = offset + len(nominal.encode("utf-8"))
+            if (any(q.utf8_byte_start < finish and offset < q.utf8_byte_end for q in witness.quotes)
+                or any(m.marker_code == "secondary_quote_boundary" and m.utf8_byte_start < finish
+                       and offset < m.utf8_byte_end for m in witness.markers)
+                or not any(m.section == "reception" and m.marker_code in {"thread_answer_nominal", "finite_clause_nominal"}
+                           and offset <= m.utf8_byte_start and m.utf8_byte_end == finish for m in witness.markers)):
+                break
+            spans.append((offset, finish, match[1].encode("utf-8")))
+        if tuple(restored) == tuple(expected) and len(spans) == len(expected):
+            successes.append(tuple(spans))
+    return successes[0] if len(successes) == 1 else ()
+
+
 def evaluate_grounded_surface_body_inverse(
     *,
     body: bytes,
@@ -2473,6 +2556,9 @@ def evaluate_grounded_surface_body_inverse(
                                         nominal_target_visible and actual_nominal == nominal
                                         and restore_thread_answer_nominal(actual_nominal, grammar, when) == source
                                     )
+                            if expression_nominal_required and len(move.target_nucleus_ids) > 1:
+                                nominal_target_visible = bool(_body_inverse_thread_answer_group(
+                                    body, witness, parsed_sentence, move, plan, resolver))
                         target_visible = (
                             nominal_target_visible if nominal_target_required
                             else bool(sentence_codes.intersection(target_markers))

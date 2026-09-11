@@ -346,6 +346,12 @@ def test_answer_observation_keeps_original_event_order_through_three_rounds(qcas
         events = ['「褒められた」', '「誘われた」', '「頼まれた」']
         assert all(observation.count(event) == 1 for event in events)
         assert [observation.index(event) for event in events] == sorted(observation.index(event) for event in events)
+        follow = dto['current_observation']['text'].split('Emlisから：')[1]
+        for event, feeling in list(zip(('褒められた', '誘われた', '頼まれた'), ('重さ', '怖さ', '苦しさ')))[:round_index]:
+            assert event in follow and feeling in follow
+        assert follow.count('受け止めています') == 1
         assert run(service.get(user, parent)) == dto
         if round_index < 3:
+            before = dto['current_observation']['text']
             dto = run(cont(service, user, dto, f'next-order-{round_index}'))
+            assert dto['current_observation']['text'] == before

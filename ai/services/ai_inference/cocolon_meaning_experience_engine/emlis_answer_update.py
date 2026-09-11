@@ -133,12 +133,6 @@ def _active_plan(original, thread, added, inactive, updates):
                      for row in original.unknown_boundaries
                      if not row.affected_nucleus_ids or not set(row.affected_nucleus_ids).issubset(inactive))
     quality = original.input_profile.material_quality
-    response, coverage, surface, safety_policy = gp._build_response_and_policies(
-        nuclei=nuclei, relations=relations, safety_decision=safety, complexity=complexity,
-        material_quality=quality, include_reception_relation_support=True,
-        final_source_fidelity=True,
-        primary_focus_nucleus_ids=tuple(row.nucleus_id for row in added),
-    )
     resolver = thread.resolver()
     index = {row.nucleus_id: row for row in nuclei}
     # This subject relation is both a premeaning scope basis and a required
@@ -163,8 +157,41 @@ def _active_plan(original, thread, added, inactive, updates):
         for target in subject_targets(item) if target in index
         for changed in item.changed_claim_refs if changed in index)
     relations = (*relations, *about_relations)
-    coverage = replace(coverage, required_relation_ids=(*coverage.required_relation_ids,
-                                                       *(row.relation_id for row in about_relations)))
+    # Bind distinguishable original source clauses before body-free reception
+    # selection. Different evidence IDs alone cannot distinguish repeated text.
+    answer_subjects = {}
+    for n in nuclei:
+        if n.source_fields != (ANSWER_FIELD,):
+            continue
+        about = tuple(r for r in relations if r.type == "evaluation_about_event"
+                      and r.retention == "required" and r.to_nucleus_id == n.nucleus_id)
+        if len(about) == 1 and about[0].from_nucleus_id in index:
+            event = index[about[0].from_nucleus_id]
+            text = _text(event, index, resolver)
+            if (event.kind == "event" and event.source_fields in {("memo",), ("memo_action",)}
+                and event.semantic_frame.modality == "fact" and event.semantic_frame.time_scope == "past"
+                and len(event.source_span_ids) == 1 and text.endswith(("た", "だ"))
+                and not re.search(r"[「」『』…‥?？!！]", resolver.resolve(event.source_span_ids[0]).raw_text)):
+                answer_subjects[n.nucleus_id] = text
+    subject_texts = tuple(answer_subjects.values())
+    proof = "thread_subject:unique_source_clause"
+    nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame, attribute_codes=(
+        *(c for c in n.semantic_frame.attribute_codes if c != proof),
+        *((proof,) if n.nucleus_id in answer_subjects and subject_texts.count(answer_subjects[n.nucleus_id]) == 1 else ()),
+    ))) if n.source_fields == (ANSWER_FIELD,) else n for n in nuclei)
+    # A withdrawal supplies no replacement claim. Keep the latest remaining
+    # accepted answer in focus instead of reverting to the original memo.
+    focus_ids = tuple(row.nucleus_id for row in added) or tuple(
+        row.nucleus_id for row in nuclei
+        if row.source_fields == (ANSWER_FIELD,) and row.retention == "required"
+        and row.allowed_claim_scope == "explicit_supplemental_answer"
+    )[-1:]
+    response, coverage, surface, safety_policy = gp._build_response_and_policies(
+        nuclei=nuclei, relations=relations, safety_decision=safety, complexity=complexity,
+        material_quality=quality, include_reception_relation_support=True,
+        final_source_fidelity=True,
+        primary_focus_nucleus_ids=focus_ids,
+    )
     return replace(original, nuclei=nuclei, relations=relations, unknown_boundaries=unknowns,
         input_profile=replace(original.input_profile, nucleus_count=len(nuclei),
             relation_count=len(relations), semantic_complexity=complexity, material_quality=quality),

@@ -6704,6 +6704,47 @@ def _independent_nonaction_pair(
     return (*material, *nonaction) if len(material) == len(nonaction) == 1 else ()
 
 
+def _thread_answer_family_targets(candidates, relations, nucleus_index):
+    """Keep distinct, active answers in one already-selected feeling duty.
+
+    Their typed about-relations supply subjects, not an inferred relation
+    between the answers. Original inputs and other reception families retain
+    their existing selection. No body text or question wording is consulted.
+    """
+    answers = tuple(n for n in candidates
+        if n.source_fields == ("answer_text_private",)
+        and n.allowed_claim_scope == "explicit_supplemental_answer")
+    if not 2 <= len(answers) <= 3:
+        return ()
+    subjects = []
+    for n in answers:
+        frame = n.semantic_frame
+        times = {c for c in frame.attribute_codes if c.startswith("thread_time:")}
+        about = tuple(r for r in relations if r.to_nucleus_id == n.nucleus_id
+                      and r.type == "evaluation_about_event" and r.retention == "required")
+        if (n.retention != "required" or n.kind != "reaction"
+            or frame.actor != "current_user" or frame.predicate_kind != "feeling"
+            or frame.modality != "feeling" or frame.polarity != "negative"
+            or "thread_subject:unique_source_clause" not in frame.attribute_codes
+            or len(times) != 1 or not times <= {
+                "thread_time:original_occasion", "thread_time:answer_time", "thread_time:prior_answer_time"}
+            or len(about) != 1):
+            return ()
+        subject = nucleus_index.get(about[0].from_nucleus_id)
+        if (subject is None or subject.kind != "event"
+            or subject.semantic_frame.modality != "fact" or subject.semantic_frame.time_scope != "past"
+            or subject.source_fields not in {("memo",), ("memo_action",)}):
+            return ()
+        subjects.append(subject.nucleus_id)
+    if len(set(subjects)) != len(answers):
+        return ()
+    if len({(n.semantic_frame.time_scope, tuple(c for c in n.semantic_frame.attribute_codes
+                if c.startswith(("aspect:", "quantity:")))) for n in answers}) != 1:
+        return ()
+    order = {nid: i for i, nid in enumerate(nucleus_index)}
+    return tuple(n.nucleus_id for _, n in sorted(zip(subjects, answers), key=lambda pair: order[pair[0]]))
+
+
 def build_grounded_reception_opportunities(
     *,
     human_follow_target_ids: Sequence[str],
@@ -6850,6 +6891,13 @@ def build_grounded_reception_opportunities(
         )
         target_ids: tuple[str, ...] = (representative.nucleus_id,)
         support_ids: tuple[str, ...] = ()
+        answer_targets = _thread_answer_family_targets(family_candidates, relations, nucleus_index) if (
+            final_source_fidelity and include_relation_support and family == "current_burden"
+            and safety_kind == TRIAGE_SAFE_OBSERVATION
+            and representative.source_fields == ("answer_text_private",)
+        ) else ()
+        if answer_targets:
+            target_ids = answer_targets
         if family == "counterdirection" and fact_boundary_nucleus_ids:
             fact_id = next(
                 (
@@ -6878,6 +6926,11 @@ def build_grounded_reception_opportunities(
             ] = []
             for relation in relations:
                 if relation.retention not in {"required", "should"}:
+                    continue
+                # The answered-about event is independently realized as a
+                # context. It must not replace another feeling as support.
+                if (final_source_fidelity and relation.type == "evaluation_about_event"
+                    and representative.source_fields == ("answer_text_private",)):
                     continue
                 if relation.from_nucleus_id == representative.nucleus_id:
                     other_id = relation.to_nucleus_id
