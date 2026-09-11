@@ -7420,3 +7420,30 @@ Next: complete final-source shared/Q1–Q4 regressions, unchanged canonical100 w
 The first saved22 replay exposed a new reading-order issue: grouped answered events followed the remaining contrast block, so Premium's intermediate rounds reordered the original events. The renderer now inserts each group at its own original relation position and keeps the remaining original contrasts there too. The focused persisted three-round ordering and inverse checks pass (5 cases). This is a pre-final source correction; earlier 183-pass/100-case/22-case evidence belongs to the first source tree, and final-source reruns follow.
 
 The broader unchanged 438-test suite reported 429 PASS/9 FAIL at the first source. Six failures match saved candidate91; three additional failures require comparison against the actual Q4 resume source, not an assumption that they were introduced here. Historical expected hashes, phrase assertions, and denominator remain unchanged. Product remains NOT_CLEAR.
+
+## 2026-09-11 Q4残件 — 出来事・反応・本人回答の接続を検証して保存
+
+最終実装sourceは `72d6c047717c3b78ca591e88dcd4faef528028b3`、treeは `06d74365f672eafcb8e89bb5e1aafe3835ce1b23`。local検証commit `77d33521a676851c2e87e125af6016516b981929` と同tree・全変更file内容のGitHub再取得一致を確認した。最初のsource checkpoint `3f7e0d2aff10e8e420c464d1ac9acbce02f7c43c` で見つかったPremium中間の並び替わりは修正し、以下は修正後の新しい実行結果である。
+
+### 修正の範囲
+
+同じ出来事に結ばれた元の反応と本人回答を、共有Observation作者で一文へ接続した。対象の出来事の二重引用を除き、元入力の出来事順、当時・回答時点・前回答時点、本人の否定・限定を保持する。本文だけから文内の照応を解析し、その後に各sourceとcontrast/ABOUT_TARGETを独立照合する。隣接条件の一律緩和、意味checkpointの変更、入力別完成文の追加は行っていない。照応が曖昧、同じ出来事への回答が複数、元の対比が訂正で消えた場合は従来の明示形を使う。
+
+実装変更は `ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py` と `ai/services/ai_inference/emlis_ai_grounded_observation_gate.py`。回帰追加は `ai/tests/test_emlis_q4_application.py`、既存Q1の関係改竄テストは新旧共通の助詞を実際に変更する形へ対応。current共有owner snapshotを更新した。歴史的runner、保存済みfixture、期待hash、意味/語数の合格閾値は変更していない。
+
+### 最終検証
+
+- Q1〜Q4・保存版・実SQL/RPC・共有作者・独立inverse・registryは **184 PASS、失敗/skip 0**。旧RN 56 PASSは既存App sourceからの継承で、今回RNコード変更・再実行はない。
+- 広い既存必須回帰438件は **429 PASS / 9 FAIL**。candidate91からの6失敗（過去の観測hash2、dated receipt1、Moves期待数1、旧フォロー句2）を保持。追加で見えた3失敗は、今回再開元 `e899c8ba5cca1b65db1a994cee622f192edec930` の隔離checkoutでも同じ失敗を再現した。2件は旧stubのnominalization_plan欠落、1件は旧current-positive-only期待と既存Q4の過去感情対応の不一致。未解消のまま記録し、全回帰GREENとは扱わない。最初と最終sourceの438件の成否は同一。
+- canonical100は同じvalidated corpus・入力順・adapterで再生成し、取得した**保存済みcandidate91原本**と全100レコード、両層本文、HR plan、提供可否/理由が一致した。direct100、GENERATED73 / UNAVAILABLE27、Moves143。旧原本を再生成物へ置き換えていない。華恋が最終版の元入力全field・観測・フォロー・可否/理由を全件実読し、独立readerも照合した。
+- 既存Q4合成22ケースを実SQL/RPCで新規生成・保存・GET照合した。初回/問い/本人回答/回答後とPremium全6中間状態、計48DTOを華恋と独立readerが全文確認。最終はREFINED13、PARTIALLY_REFINED3、UNCHANGED3、意図した訂正後本文故障3。元入力・問い/回答・状態・フォローを保持し、Premiumの出来事順を全roundで保持。履歴を含む62回の保存GETが当該返却DTOと一致した。
+- これは旧DTOのidentity再現ではない。新規thread/event/operation等は新identity。旧DTOに存在しないPlus履歴のUUID/秒時刻は復元済みと主張せず、既存Q3履歴fixtureの内容・日付・tier条件を使用した。元の公開22ケースfixtureは変更していない。
+- 固定CPython3.12.13、pytest8.4.1、46依存wheelと2176配布file実bytesを照合して復元した環境、PGlite0.5.8を使用。uvのinstaller metadataと旧pip環境の同一性は主張しない。稼働DB・native端末・実課金の検証ではない。
+
+### 残る品質と次の作業
+
+今回の改善は、同一出来事と本人回答の接続・二重引用・読み順に限る。全体の短文化やフォロー改善の完了ではない。複数roundは同じ構文が重なり、フォローは同じ感情familyの代表1件へ絞る選択のため最新回答だけへ偏る。既存100件の中心感情、複数主題、共同/共有関係の不足と定型的な締めも残り、**商品NOT_CLEAR**。機械成功・全文確認をMashの正式商品PASSへ換算しない。
+
+次は、`emlis_answer_update._active_plan` がABOUT_TARGET追加前にReceptionを作り、`build_grounded_reception_opportunities` が同familyの回答を代表1件へ絞る箇所を、原入力から回答後までの既存意味・対象関係として修正検討する。すでに入力されている中心感情の読取り不足を追加質問へ転嫁しない。Q1や旧単独入力修正ループへ戻らない。
+
+公開する記録はこのhandoffとCocolon既存02/06の差分、Draft PR3/30。本文を含む実行結果・旧baseline・途中結果・再現harness・全文確認記録は既存非公開作業記録へ保持し、private本文/個別case/digest/locatorを公開しない。System Context未使用、原典を直接確認。DB適用、merge/deploy/ready/有効化は未実施、既定OFF・Draft/open/unmergedを維持する。
