@@ -1,6 +1,6 @@
 # Emlis Q2 — 保存を伴う一往復の開発実装
 
-2026-09-11。MashのQuestion System Technical Design v1.1と「Q1を確認してQ2へ」の指示を使用。Q1の53件を再確認して実装した。Q2のsource・SQL・API・RN実装は既存Draft PR3/30で管理する。稼働DB適用、端末上の開発アプリ確認、商品合格、本番切替は未成立。
+2026-09-11。MashのQuestion System Technical Design v1.1と「Q1を確認してQ2へ」の指示を使用。Q1の53件を再確認して実装した。Q2のsource・SQL・API・RN実装は既存Draft PR3/30で管理する。Q2のコード実装は完了。2026-09-11修正版v1.2に従いQ3へ進行し、Q3も実装済み。以下はQ2保存profileの記録であり、新規開発入口はQ3 profileを選ぶ。稼働DB適用、端末上の開発アプリ確認、商品合格、本番切替は別作業として未実施。
 
 ## 商品と国家システムの境界
 
@@ -22,7 +22,7 @@
 | `emlis_thread_commit` | 親・plan・threadをlockし、元source、現在revision、attemptと期限を再確認。events appendとpointer更新を短い一transactionでcommit |
 | `GET /emlis/threads/by-input/{emotion_id}` | 元入力と保存済みtimeline、現在本文、質問、処理状態を返す |
 | `POST /emlis/threads/{thread_id}/answers` | expected_revision / idempotency_key / question_id / answer_text / optional authored_at |
-| `POST /emlis/threads/{thread_id}/actions` | skip / stop / retry_response。continueはQ3まで拒否 |
+| `POST /emlis/threads/{thread_id}/actions` | skip / stop / retry_response。旧Q2 profileはcontinueなし、Q3 profileは明示continueに対応 |
 
 公開wireは`cocolon.emlis_thread.application.v1`。厳密な型とallowlistは`api_emlis_thread.ThreadResponse`。Bearerを既存verified resolverで検証し、clientのuser/plan/source refは受け付けない。200 responsesはprivate, no-store。保存済みQUESTIONだけ公開する。checkpoint、graph、raw bytes、内部source digestはDTOへ渡さない。専用RN clientはerror本文をmonitoringへ送らない。
 
@@ -57,4 +57,4 @@ RN検査は`tests/emlis-q2-tools/package.json`の固定test依存を用い、そ
 
 公開合成5組（`ai/tests/fixtures/emlis_q2_synthetic_saved_rounds_20260911.json`）の元入力・初回本文・質問・回答後の保存本文を実DB RPCから読み、意味A/Bの違い、「今」の時点表示、訂正後の本文不存在、unknownの本文不変を確認した。再掲と定型的な受け取りは残っており商品NOT_CLEAR。本文全文を読んだことを広範な自由文対応やMashの商品合格へ換算しない。
 
-次は開発DBの適用先・適用と、開発アプリでの一往復、日をまたぐ再開、訂正後の本文失敗と回答を入れ直さない回復の確認。Q2を開発アプリで完了確認する前にQ3へ自動で進まない。Q4の商品判断・実機正式確認・本番単一路切替は別途必要。稼働DBへの変更、merge、deployは今回行っていない。
+修正版v1.2によりQ2のコード実装は完了としてQ3へ進行した。現在は既存handoff末尾Q3節が実装・検証・次工程を所有する。開発DB適用、端末上の一往復・再開・復旧、実課金、商品判断と公開は[後日の適用・運用確認](EMLIS_DEPLOYMENT_AND_OPERATION_CHECKS.md)へ分離し、それらの未実施だけでQ3/Q4コード実装を止めない。稼働DBへの変更、merge、deployは行っていない。

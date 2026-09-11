@@ -107,7 +107,7 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
         return None
     if not bounded or kind in {"event", "other_explicit"} or _FOREIGN_HOST.search(bounded):
         return None
-    time_scope = "present" if about_time == "ANSWER_TIME" else "past"
+    time_scope = "present" if about_time in {"ANSWER_TIME","PRIOR_ANSWER_TIME"} else "past"
     codes = tuple(c for c in frame.attribute_codes if not c.startswith(("time_scope:", "operator:change", "operator:positive_change")))
     frame = replace(frame, time_scope=time_scope, attribute_codes=(
         *codes, f"time_scope:{time_scope}", f"thread_time:{about_time.lower()}",
@@ -127,7 +127,7 @@ def _active_plan(original, thread, added, inactive, updates):
     nuclei = tuple(row for row in original.nuclei if row.nucleus_id not in inactive) + tuple(added)
     relations = tuple(row for row in original.relations if row.relation_id not in inactive
                       and row.from_nucleus_id not in inactive and row.to_nucleus_id not in inactive)
-    safety = classify_emlis_safety_triage_text(thread.answers[0].source.answer_text_private)
+    safety = classify_emlis_safety_triage_text(thread.answers[-1].source.answer_text_private)
     complexity = gp._semantic_complexity(nuclei=nuclei, relations=relations, meaning_artifacts=gp._MeaningArtifacts())
     unknowns = tuple(replace(row, affected_nucleus_ids=tuple(n for n in row.affected_nucleus_ids if n not in inactive))
                      for row in original.unknown_boundaries
@@ -150,6 +150,10 @@ def _active_plan(original, thread, added, inactive, updates):
         if (item.operation == "REVISE" and set(item.target_meaning_refs).issubset(focus)
                 and focus and focus[0] in index):
             return (focus[0],)
+        if item.operation == "REVISE":
+            return tuple(dict.fromkeys(r.from_nucleus_id for r in original.relations
+                if r.type == "evaluation_about_event" and r.to_nucleus_id in item.target_meaning_refs
+                and r.from_nucleus_id in index))
         return ()
     about_relations = tuple(gp.GroundedSemanticRelation(
         identity("answer-target", item.update_ref, target, changed), "evaluation_about_event",
@@ -173,6 +177,50 @@ def _active_plan(original, thread, added, inactive, updates):
 def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
     thread = admit_emlis_thread(request)
     original = original_meaning_plan(thread)
+    if thread.control.capability_snapshot == "Q3_PREMIUM" and thread.control.admitted_history and not thread.answers:
+        from .emlis_thread_history import frame_supported_focus
+        focus = frame_supported_focus(thread, original)
+        if focus:
+            focus = tuple(dict.fromkeys((*focus, *(r.to_nucleus_id for r in original.relations if r.from_nucleus_id in focus))))
+            safety = classify_emlis_safety_triage_text(" ".join(str(thread.original.normalized_current_input.get(k, "")) for k in ("memo", "memo_action")))
+            response, coverage, surface, policy = gp._build_response_and_policies(
+                nuclei=original.nuclei, relations=original.relations, safety_decision=safety,
+                complexity=original.input_profile.semantic_complexity,
+                material_quality=original.input_profile.material_quality,
+                include_reception_relation_support=True, final_source_fidelity=True,
+                primary_focus_nucleus_ids=focus)
+            original = replace(original, response_plan=response, coverage_requirements=coverage,
+                               surface_policy=surface, safety_policy=policy)
+    if thread.control.capability_snapshot.startswith("Q3_") and thread.answers:
+        plan = original
+        accepted, inactive = (), ()
+        for count in range(1, len(thread.answers) + 1):
+            control = thread.control.question_control_context
+            questions = control.issued_questions[:count]
+            prefix_control = replace(control, pending_question=questions[-1],
+                issued_questions=questions, issued_count=count,
+                asked_target_refs=control.asked_target_refs[:count])
+            prefix_request = replace(request, emlis_thread=replace(thread.control,
+                answers=thread.control.answers[:count], current_round=count,
+                question_control_context=prefix_control, prepared_meaning_checkpoint_ref=None))
+            prefix = admit_emlis_thread(prefix_request)
+            prepared = _prepare_answer(prefix, plan)
+            cp = prepared.checkpoint
+            accepted = tuple(dict.fromkeys((*accepted, *cp.accepted_update_refs)))
+            inactive = tuple(dict.fromkeys((*inactive, *cp.inactive_claim_refs)))
+            cp = replace(cp, accepted_update_refs=accepted, inactive_claim_refs=inactive)
+            prepared = replace(prepared, checkpoint=cp)
+            if count < len(thread.answers):
+                if cp.answer_update.disposition != "MATERIAL_UPDATE" or cp.assessment_status != "RESOLVED":
+                    raise ValueError("emlis_q3_unresolved_predecessor")
+                plan = build_updated_grounded_plan(prepared)
+        if thread.control.prepared_meaning_checkpoint_ref not in {None, cp.checkpoint_id}:
+            raise ValueError("emlis_checkpoint_source_prefix_mismatch")
+        return prepared
+    return _prepare_answer(thread, original)
+
+
+def _prepare_answer(thread, original):
     base = _base_ref(thread, original)
     if not thread.answers:
         checkpoint = EmlisMeaningCheckpointV1(
@@ -183,7 +231,7 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
             raise ValueError("emlis_checkpoint_source_prefix_mismatch")
         return PreparedEmlisMeaning(thread, original, (), checkpoint)
     validate_question_binding(thread, original)
-    answer = thread.answers[0]
+    answer = thread.answers[-1]
     if classify_emlis_safety_triage_text(answer.source.answer_text_private).safety_triage_kind != TRIAGE_SAFE_OBSERVATION:
         raise ValueError("separate_safety_owner_required")
     resolver = thread.resolver()
@@ -208,18 +256,30 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         then, now = _THEN.match(text), _NOW.match(text)
         targets: tuple[str, ...] = ()
         operation, binding = "ADD", "QUESTION_FOCUS"
+        temporal_anchor = thread.original.envelope.envelope_id
+        prior_answer_time = False
         if withdrawal or replacement:
             correction = withdrawal or replacement
             quoted = correction.group("old").rstrip("。．.")
             targets = tuple(row.nucleus_id for row in original.nuclei
-                            if set(row.source_fields) & {"memo", "memo_action"}
+                            if set(row.source_fields) & {"memo", "memo_action", ANSWER_FIELD}
                             and _text(row, index, resolver).rstrip("。．.") == quoted)
             if len(targets) != 1:
                 unresolved.append(EmlisUnresolvedPartV1(ev, "correction_target_unresolved"))
                 continue
             operation, binding, about = "WITHDRAW" if withdrawal else "REVISE", "EXPLICIT_CORRECTION", "ORIGINAL_OCCASION"
+            target_nucleus = index[targets[0]]
+            target_times = set(target_nucleus.semantic_frame.attribute_codes)
+            if target_nucleus.source_fields == (ANSWER_FIELD,) and target_times & {"thread_time:answer_time","thread_time:prior_answer_time"}:
+                about = "ANSWER_TIME"
+                prior_answer_time = True
+                temporal_anchor = next((x.split(":",1)[1] for x in target_times if x.startswith("thread_time_anchor:")),
+                    resolver.qualified_ref(target_nucleus.source_span_ids[0]).source_envelope_id)
             nucleus = None if withdrawal else _answer_nucleus(span, raw=answer.source.answer_text_private,
-                about_time=about, source_start=replacement.start("new"), source_end=replacement.end("new"))
+                about_time="PRIOR_ANSWER_TIME" if prior_answer_time else about, source_start=replacement.start("new"), source_end=replacement.end("new"))
+            if nucleus and prior_answer_time:
+                nucleus = replace(nucleus,semantic_frame=replace(nucleus.semantic_frame,
+                    attribute_codes=(*nucleus.semantic_frame.attribute_codes,"thread_time_anchor:"+temporal_anchor)))
             if replacement and nucleus is None:
                 unresolved.append(EmlisUnresolvedPartV1(ev, "correction_replacement_unsupported"))
                 operation = "WITHDRAW"
@@ -243,7 +303,7 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
             elif then and correcting_then:
                 candidates = tuple(row.nucleus_id for row in original.nuclei
                     if row.nucleus_id in focus and row.kind in {"reaction", "state", "value"}
-                    and set(row.source_fields) & {"memo", "memo_action"})
+                    and set(row.source_fields) & {"memo", "memo_action", ANSWER_FIELD})
                 if len(candidates) != 1:
                     unresolved.append(EmlisUnresolvedPartV1(ev, "correction_target_unresolved"))
                     continue
@@ -259,8 +319,8 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
                             for row in original.nuclei if row.nucleus_id in focus)):
                 known_unchanged = True
                 continue
-        temporal = AnswerTemporalBindingV1(about, thread.original.envelope.envelope_id,
-            ev if then or now else (), "answer_deictic_now" if now else None)
+        temporal = AnswerTemporalBindingV1(about, temporal_anchor,
+            ev if then or now else (), "revision_of_answer_time" if prior_answer_time else "answer_deictic_now" if now else None)
         superseded = targets if operation in {"REVISE", "WITHDRAW"} else ()
         dependencies = _dependent_refs(original, superseded)
         changed = (nucleus.nucleus_id,) if nucleus else ()
@@ -292,6 +352,8 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
 
 def build_updated_grounded_plan(prepared: PreparedEmlisMeaning):
     """Post-checkpoint plan construction; failure cannot undo meaning."""
+    if not prepared.thread.answers or prepared.checkpoint.answer_update.disposition == "NO_MATERIAL_UPDATE":
+        return prepared.original_plan
     return _active_plan(prepared.original_plan, prepared.thread,
                         prepared.accepted_nuclei, set(prepared.checkpoint.inactive_claim_refs),
                         prepared.checkpoint.answer_update.updates if prepared.checkpoint.answer_update else ())

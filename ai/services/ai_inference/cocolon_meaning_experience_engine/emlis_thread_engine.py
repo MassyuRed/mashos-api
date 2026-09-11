@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from .contracts import EngineStatus
-from .emlis_answer_update import prepare_emlis_meaning
+from .emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
 from .emlis_question import question_candidate
 from .emlis_thread_contracts import EmlisThreadOutcomeV1, EmlisQuestionDecisionV1
 from .emlis_thread_surface import realize_emlis_thread_body
@@ -30,7 +30,15 @@ def generate_emlis_thread(engine, request) -> EmlisThreadOutcomeV1:
             reason_codes=("emlis_meaning_preparation_unavailable",))
     checkpoint = prepared.checkpoint
     if not prepared.thread.answers:
-        body = engine.generate(replace(request, emlis_thread=None))
+        if request.emlis_thread.capability_snapshot.startswith("Q3_"):
+            try:
+                body = realize_emlis_thread_body(prepared)
+            except Exception:
+                return EmlisThreadOutcomeV1(EngineStatus.UNAVAILABLE, None,
+                    EmlisQuestionDecisionV1("BLOCKED", decision_reason="prequestion_body_unavailable"),
+                    meaning_checkpoint=checkpoint, reason_codes=("emlis_q3_initial_body_unavailable",))
+        else:
+            body = engine.generate(replace(request, emlis_thread=None))
         if body.artifact is None:
             return EmlisThreadOutcomeV1(body.status, None,
                 EmlisQuestionDecisionV1("BLOCKED", decision_reason="prequestion_body_unavailable"),
@@ -53,6 +61,10 @@ def generate_emlis_thread(engine, request) -> EmlisThreadOutcomeV1:
             meaning_checkpoint=checkpoint, body_state="ANSWER_UNREFLECTED",
             reason_codes=tuple(dict.fromkeys(row.reason_code for row in checkpoint.unresolved_parts)))
     if update.disposition == "NO_MATERIAL_UPDATE":
+        if request.emlis_thread.capability_snapshot.startswith("Q3_"):
+            return EmlisThreadOutcomeV1(EngineStatus.GENERATED, None, end,
+                meaning_checkpoint=checkpoint, body_state="UNCHANGED",
+                reason_codes=("reuse_saved_observation_required",))
         body = engine.generate(replace(request, emlis_thread=None))
         return EmlisThreadOutcomeV1(body.status, body if body.artifact else None, end,
             meaning_checkpoint=checkpoint,
@@ -67,7 +79,12 @@ def generate_emlis_thread(engine, request) -> EmlisThreadOutcomeV1:
         return EmlisThreadOutcomeV1(EngineStatus.UNAVAILABLE, None, end,
             meaning_checkpoint=checkpoint, body_state="MEANING_UPDATED_BODY_UNAVAILABLE",
             reason_codes=("emlis_refined_body_unavailable",))
-    return EmlisThreadOutcomeV1(body.status, body, end, meaning_checkpoint=checkpoint,
+    question = None
+    if (request.emlis_thread.capability_snapshot == "Q3_PREMIUM"
+            and checkpoint.assessment_status == "RESOLVED"):
+        end, question = question_candidate(prepared.thread, build_updated_grounded_plan(prepared),
+                                           parent_request_id=request.request_id)
+    return EmlisThreadOutcomeV1(body.status, body, end, question=question, meaning_checkpoint=checkpoint,
         body_sufficiency="LIMITED" if body.status is EngineStatus.LIMITED else "SUFFICIENT",
         body_state="PARTIALLY_REFINED" if checkpoint.assessment_status == "PARTIAL" else "REFINED",
         reason_codes=body.reason_codes)

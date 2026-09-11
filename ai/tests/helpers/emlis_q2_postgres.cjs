@@ -20,9 +20,9 @@ const readline = require('node:readline');
     const q=JSON.parse(line);
     try {
       if (q.role) await db.exec(`set role ${['anon','authenticated','service_role'].includes(q.role)?q.role:'postgres'}`);
-      const result=await db.query(q.sql,q.params || []);
+      const result=q.script ? {rows:await db.exec(q.sql)} : await db.query(q.sql,q.params || []);
       process.stdout.write(JSON.stringify({rows:result.rows})+'\n');
-    } catch(e) { process.stdout.write(JSON.stringify({code:e.code || 'test_bridge_error'})+'\n'); }
+    } catch(e) { process.stdout.write(JSON.stringify({code:e.code || 'test_bridge_error', ...(q.script ? {message:e.message,position:e.position}: {})})+'\n'); }
     finally { await db.exec('reset role'); }
   }
   await db.close();

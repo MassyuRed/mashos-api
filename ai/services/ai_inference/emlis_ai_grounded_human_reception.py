@@ -2432,10 +2432,10 @@ def source_grounded_current_expression_nominal(
     codes = set(nucleus.semantic_frame.attribute_codes)
     if answer_clause:
         times = {code.split(":", 1)[1] for code in codes if code.startswith("thread_time:")}
-        when = "回答した時点" if times == {"answer_time"} else "その時" if times == {"original_occasion"} else None
+        when = "先の回答時点" if times == {"prior_answer_time"} else "回答した時点" if times == {"answer_time"} else "その時" if times == {"original_occasion"} else None
         if when is None:
             return ""
-        return f"{when}{'で' if times == {'answer_time'} else 'に'}{fragment}こと"
+        return f"{when}{'で' if times in ({'answer_time'},{'prior_answer_time'}) else 'に'}{fragment}こと"
     witnessed_feeling = bool(
         profile.nucleus_kind == "reaction" and profile.modality == "feeling"
         and nucleus.semantic_frame.polarity == "negative"
@@ -7597,8 +7597,8 @@ def _source_grounded_target_np(
             and realization.quantity in {"not_applicable", "source_bounded", "unknown"}
             and (
                 referent_text == f"{meaning_fragment}という言葉"
-                or thread_answer_about_time in {"original_occasion", "answer_time"}
-                and referent_text == f"{'その時に' if thread_answer_about_time == 'original_occasion' else '回答した時点で'}{meaning_fragment}こと"
+                or thread_answer_about_time in {"original_occasion", "answer_time", "prior_answer_time"}
+                and referent_text == f"{'その時に' if thread_answer_about_time == 'original_occasion' else '先の回答時点で' if thread_answer_about_time == 'prior_answer_time' else '回答した時点で'}{meaning_fragment}こと"
                 or profile.nucleus_kind == "reaction"
                 and profile.predicate_kind in {"feeling", "reaction"}
                 and profile.modality == "feeling"

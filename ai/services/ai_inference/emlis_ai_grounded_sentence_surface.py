@@ -1553,6 +1553,29 @@ def _relation_aware_groups(
     )
 
 
+def _merge_parallel_contrast_groups(groups, relation_ids, nucleus_index, relation_index):
+    """Coordinate explicit contrast pairs, preserving each source, pair and order.
+
+    Supplemental evaluations stay with their original component. They do not
+    create a causal or temporal edge between otherwise independent events.
+    """
+    def field(group):
+        relations = [relation_index[r] for r in _internal_relation_ids(group, relation_ids, relation_index)]
+        contrasts = [r for r in relations if relation_surface_role(r, nucleus_index) == "coexisting_contrast"]
+        if not contrasts or any(r not in contrasts and r.type != "evaluation_about_event" for r in relations):
+            return None
+        fields = {f for r in contrasts for n in (r.from_nucleus_id, r.to_nucleus_id)
+                  for f in nucleus_index[n].source_fields}
+        return frozenset(fields) if fields and fields <= {"memo", "memo_action"} else None
+    merged = []
+    for group in groups:
+        if merged and field(group) is not None and field(merged[-1]) is not None:
+            merged[-1] = (*merged[-1], *group)
+        else:
+            merged.append(tuple(group))
+    return tuple(merged)
+
+
 def _merge_homogeneous_state_groups(
     groups: Sequence[Sequence[str]],
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
@@ -2031,6 +2054,7 @@ def _build_regular_lines(
             relation_index,
             max_groups=max_observation_groups,
         )
+        groups = _merge_parallel_contrast_groups(groups, relation_candidates, nucleus_index, relation_index)
         groups = _merge_homogeneous_state_groups(groups, nucleus_index)
         groups = _merge_source_local_relation_free_event_groups(
             groups,
@@ -2717,6 +2741,8 @@ def _render_relation(
             typed_semantic_duties=typed_semantic_duties,
         )
     sentences: list[str] = []
+    contrast_pairs = []
+    evaluations = {}
     for relation_id in binding.relation_ids:
         if relation_id not in relation_index:
             continue
@@ -2787,7 +2813,7 @@ def _render_relation(
                 "捉え方や動きが移っています。"
             )
         elif role == "coexisting_contrast":
-            sentences.append(f"{left}と{right}が、異なる向きのまま同時にあります。")
+            contrast_pairs.append((left, right))
         elif relation.type == "temporal_before_after":
             sentences.append(f"{left}のあとに、{right}へ動いています。")
         elif relation.type == "wish_and_constraint":
@@ -2803,16 +2829,24 @@ def _render_relation(
             target = nucleus_index[relation.to_nucleus_id]
             times = {code.split(":", 1)[1] for code in target.semantic_frame.attribute_codes
                      if code.startswith("thread_time:")}
-            when = "回答した時点" if times == {"answer_time"} else "その時" if times == {"original_occasion"} else None
+            when = "先の回答時点" if times == {"prior_answer_time"} else "回答した時点" if times == {"answer_time"} else "その時" if times == {"original_occasion"} else None
             if when is None or target.source_fields != ("answer_text_private",):
                 raise GroundedSentenceSurfaceError("thread_answer_target_time_unbound")
-            sentences.append(f"{left}ことに対する{when}の受け止めとして、{right}が見えます。")
+            evaluations.setdefault(when, []).append(f"{left}ことに対する{when}の受け止めとして、{right}")
         elif relation.type == "uncertain_connection":
             sentences.append(f"{left}のあとに{right}が続いていますが、それ以上の因果は確定しません。")
         elif left_form == "nominal_anchor" and right_form == "nominal_anchor":
             sentences.append(f"{left}と{right}が、今の状態の中で並んでいます。")
         else:
             sentences.append(f"{left}と{right}が、この順でつながっています。")
+    if len(contrast_pairs) == 1:
+        left, right = contrast_pairs[0]
+        sentences.insert(0, f"{left}と{right}が、異なる向きのまま同時にあります。")
+    elif contrast_pairs:
+        pairs = "、また".join(f"{left}の一方で{right}" for left, right in contrast_pairs)
+        sentences.insert(0, f"{pairs}という、それぞれ異なる向きが並んでいます。")
+    for clauses in evaluations.values():
+        sentences.append("、また".join(clauses) + "が見えます。")
     joined = " ".join(item for item in sentences if item)
     if not joined:
         return _render_observation(binding, nucleus_index, resolver)
@@ -4322,3 +4356,18 @@ __all__ = [
     "validate_grounded_sentence_plan",
     "validate_grounded_surface_result",
 ]
+
+
+def realize_emlis_history_line(line_plan):
+    """Realize a typed, separately admitted connection after Layer 1 and 2."""
+    from cocolon_meaning_experience_engine.emlis_thread_history import HistoryLinePlanV1
+    from datetime import datetime
+    if type(line_plan) is not HistoryLinePlanV1 or line_plan.relation != 'REPEATED_EXPLICIT_WORDING':
+        raise GroundedSentenceSurfaceError('history_relation_not_admitted')
+    if not line_plan.current_evidence_refs or not line_plan.past_evidence_refs or line_plan.current_text != line_plan.past_text:
+        raise GroundedSentenceSurfaceError('history_evidence_not_bound')
+    if any(x in line_plan.current_text for x in ('「','」','\n')):
+        raise GroundedSentenceSurfaceError('history_anchor_quote_not_supported')
+    date = datetime.fromisoformat(line_plan.recorded_at.replace('Z','+00:00')).date().isoformat()
+    return (f'今回の「{line_plan.current_text}」という言葉は、{date}の記録の「{line_plan.past_text}」にも重なります。'
+            '同じ言葉でも、今回の受け止めまで同じとは決めずに見ています。')

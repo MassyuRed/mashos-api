@@ -45,6 +45,32 @@ class ThreadActionBody(ThreadOperationBody):
     operation_id: UUID | None = None
 
 
+class ThreadFrameFeedbackBody(ThreadOperationBody):
+    frame_ref: str = Field(min_length=1,max_length=128)
+    status: Literal["CONFIRMED","REJECTED","REVISED"]
+    correction_text: str | None = Field(default=None,min_length=1,max_length=2000)
+
+class ThreadFrame(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    frame_key: str
+    frame_ref: str
+    trigger: str
+    received_meaning: str
+    input_id: UUID
+    recorded_at: str
+    status: Literal["TENTATIVE","CONFIRMED","REJECTED","REVISED"]
+    correction_text: str | None
+
+class ThreadOperationReceipt(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    idempotency_key: str
+    event_id: UUID
+    question_id: str | None
+    operation_id: UUID | None
+    attempt_id: UUID | None
+    status: str
+
+
 class ThreadOriginal(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: UUID
@@ -56,6 +82,7 @@ class ThreadOriginal(BaseModel):
 class ThreadTimelineItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
     event_id: UUID
+    round_index: int = Field(default=0, ge=0, le=3)
     kind: Literal["OBSERVATION", "QUESTION", "ANSWER"]
     recorded_at: str | None = None
     text: str
@@ -77,7 +104,7 @@ class ThreadResponse(BaseModel):
     schema_version: Literal["cocolon.emlis_thread.application.v1"]
     thread_id: UUID | None
     revision: int | None = None
-    state: Literal["NOT_CREATED", "INITIALIZING", "AWAITING_ANSWER", "REFINING", "COMPLETED", "RESPONSE_FAILED"]
+    state: Literal["NOT_CREATED", "INITIALIZING", "AWAITING_ANSWER", "AWAITING_CONTINUE", "REFINING", "COMPLETED", "RESPONSE_FAILED"]
     original: ThreadOriginal
     timeline: list[ThreadTimelineItem]
     pending_question: ThreadTimelineItem | None = None
@@ -94,7 +121,10 @@ class ThreadResponse(BaseModel):
     can_continue: bool = False
     issued_count: int = 0
     question_limit: int = 1
+    started_question_limit: int = 1
     processing_deadline_at: str | None = None
+    interpretive_frames: list[ThreadFrame] = Field(default_factory=list)
+    requested_operation: ThreadOperationReceipt | None = None
 
 
 def register_emlis_thread_routes(app: FastAPI, *, service=None):
@@ -134,3 +164,8 @@ def register_emlis_thread_routes(app: FastAPI, *, service=None):
         values = body.model_dump()
         values["operation_id"] = str(body.operation_id) if body.operation_id else None
         return await call(owner().action(me, str(thread_id), **values))
+
+    @app.post("/emlis/threads/{thread_id}/frames",response_model=ThreadResponse,response_model_exclude_unset=True)
+    async def frame_feedback(thread_id: UUID,body: ThreadFrameFeedbackBody,response: Response,authorization: str | None = Header(default=None)):
+        me = await user(authorization,response)
+        return await call(owner().frame_feedback(me,str(thread_id),**body.model_dump()))

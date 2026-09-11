@@ -2779,10 +2779,10 @@ def _semantic_key(candidate: EmlisInterpretationCandidate) -> str:
 
 
 def _selected_contribution_candidates(
-    rows: Sequence[_CandidateRow],
+    rows: Sequence[_CandidateRow], *, contribution_cap=LAYER1_OBSERVATION_CONTRIBUTION_CAP,
 ) -> tuple[_CandidateRow, ...]:
     required = [row for row in rows if row.required]
-    if len(required) > LAYER1_OBSERVATION_CONTRIBUTION_CAP:
+    if len(required) > contribution_cap:
         raise CMEEStage1ContractError("stage1_required_observation_unrealizable")
     structured_context_kinds = {
         "EMOTION_CONTEXT",
@@ -2809,7 +2809,8 @@ def _plan_layer1_observation_from_rows(
     *,
     stage1_response_schema_version: str = CMEE_STAGE1_RESPONSE_SCHEMA_VERSION,
 ) -> tuple[PlannedObservationContribution, ...]:
-    selected = _selected_contribution_candidates(rows)
+    from .contracts import observation_contribution_cap
+    selected = _selected_contribution_candidates(rows, contribution_cap=observation_contribution_cap(parent_plan.source_version))
     contributions: list[PlannedObservationContribution] = []
     for row in selected:
         candidate = row.candidate
@@ -2882,7 +2883,7 @@ def plan_layer1_observation(
 
 
 def classify_observation_depth(
-    contributions: Sequence[PlannedObservationContribution],
+    contributions: Sequence[PlannedObservationContribution], *, contribution_cap=LAYER1_OBSERVATION_CONTRIBUTION_CAP,
 ) -> ObservationDepthClass:
     """Classify depth from selected distinct contribution count only."""
 
@@ -2897,7 +2898,7 @@ def classify_observation_depth(
         return ObservationDepthClass.FOCUSED
     if 2 <= count <= 3:
         return ObservationDepthClass.LAYERED
-    if 4 <= count <= LAYER1_OBSERVATION_CONTRIBUTION_CAP:
+    if 4 <= count <= contribution_cap:
         return ObservationDepthClass.DENSE
     raise CMEEStage1ContractError("stage1_observation_depth_unrealizable")
 

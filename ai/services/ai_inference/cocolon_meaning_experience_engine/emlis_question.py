@@ -38,7 +38,9 @@ def original_meaning_plan(thread: AdmittedEmlisThread):
 def question_candidate(thread: AdmittedEmlisThread, plan, *, parent_request_id: str,
                        respect_control: bool = True):
     control = thread.control.question_control_context
-    if respect_control and (control.stop or control.issued_count >= 1 or thread.answers):
+    q3 = thread.control.capability_snapshot.startswith("Q3_")
+    if respect_control and (control.stop or control.issued_count >= control.question_limit
+                            or (thread.answers and not q3)):
         return EmlisQuestionDecisionV1("END", decision_reason="free_round_complete"), None
     if plan.input_profile.safety_kind != TRIAGE_SAFE_OBSERVATION:
         return EmlisQuestionDecisionV1("BLOCKED", decision_reason="separate_safety_owner"), None
@@ -87,14 +89,14 @@ def question_candidate(thread: AdmittedEmlisThread, plan, *, parent_request_id: 
                 continue
         target = identity("emlis-target", original.envelope.envelope_id,
                           nucleus.nucleus_id, "personal_received_meaning")
-        if respect_control and target in control.asked_target_refs:
+        if (respect_control or q3) and target in control.asked_target_refs:
             continue
         evidence = tuple(resolver.qualified_ref(s).evidence.evidence_id for s in nucleus.source_span_ids)
         affected = tuple(dict.fromkeys((nucleus.nucleus_id, *(r.nucleus_id for r in bound_reactions))))
         decision = EmlisQuestionDecisionV1(
             "ASK", target, "PERSONAL_RECEIVED_MEANING", evidence,
             "personal_received_meaning", affected,
-            tuple(plan.response_plan.human_reception_plan.target_nucleus_ids)
+            affected if q3 else tuple(plan.response_plan.human_reception_plan.target_nucleus_ids)
             if plan.response_plan.human_reception_plan else (),
             control.asked_target_refs if respect_control else (),
             "source_bound_event_personal_meaning_missing",
@@ -112,6 +114,11 @@ def validate_question_binding(thread: AdmittedEmlisThread, plan) -> None:
     question = thread.control.question_control_context.pending_question
     if question is None:
         raise ValueError("emlis_question_required")
+    if thread.control.capability_snapshot.startswith("Q3_"):
+        control = thread.control.question_control_context
+        prior = replace(control, pending_question=None, issued_count=len(control.asked_target_refs) - 1,
+                        asked_target_refs=control.asked_target_refs[:-1], issued_questions=control.issued_questions[:-1])
+        thread = replace(thread, control=replace(thread.control, question_control_context=prior))
     _, canonical = question_candidate(thread, plan, parent_request_id=question.parent_request_id,
                                       respect_control=False)
     if canonical is None or question != replace(canonical, decision=replace(

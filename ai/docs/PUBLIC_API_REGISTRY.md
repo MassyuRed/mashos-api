@@ -7,9 +7,10 @@ Deprecated rows remain listed until their compatibility window is closed.
 
 | Method | Path | Contract ID | Deprecated | Replacement | Notes |
 |---|---|---|---|---|---|
-| GET | `/emlis/threads/by-input/{emotion_id}` | `emlis.thread.read.v1` | `false` |  | Q2 development only; authenticated owner, persisted snapshots, no generation |
-| POST | `/emlis/threads/{thread_id}/answers` | `emlis.thread.answer.v1` | `false` |  | Q2 development only; one answer per issued question, meaning before body |
-| POST | `/emlis/threads/{thread_id}/actions` | `emlis.thread.action.v1` | `false` |  | Q2 development only; skip/stop or confirmed transient failure retry; continue unavailable until Q3 |
+| GET | `/emlis/threads/by-input/{emotion_id}` | `emlis.thread.read.v1` | `false` |  | Q2/Q3 development only; authenticated owner, persisted snapshots, no generation |
+| POST | `/emlis/threads/{thread_id}/answers` | `emlis.thread.answer.v1` | `false` |  | Q2/Q3 development only; one answer per issued question, meaning before body |
+| POST | `/emlis/threads/{thread_id}/actions` | `emlis.thread.action.v1` | `false` |  | Q2/Q3 development only; skip/stop or confirmed transient failure retry; Q3 explicit continuation within server budget |
+| POST | `/emlis/threads/{thread_id}/frames` | `emlis.thread.frame_feedback.v1` | `false` |  | Q3 development only; owned tentative frame confirmation, rejection or correction; no question budget |
 | GET | `/app/bootstrap` | `app.bootstrap.v1` | `false` |  | Runtime guardrail / maintenance switch |
 | GET | `/app/startup` | `app.startup.v1` | `false` |  | Auth-required startup bundle for unread / popup / lightweight prefetch only; Home hydration moved to /home/state |
 | GET | `/home/state` | `home.state.v1` | `false` |  | Auth-required Home hydration bundle (input summary + global summary + notices + today question + reflection quota); app.startup intentionally excludes heavy Home counters |

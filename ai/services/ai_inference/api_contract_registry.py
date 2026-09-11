@@ -26,9 +26,10 @@ class ApiContractEntry:
 
 
 PUBLIC_API_CONTRACTS: Tuple[ApiContractEntry, ...] = (
-    ApiContractEntry('GET', '/emlis/threads/by-input/{emotion_id}', 'emlis.thread.read.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Q2 development only; authenticated owner, persisted snapshots, no generation'),
-    ApiContractEntry('POST', '/emlis/threads/{thread_id}/answers', 'emlis.thread.answer.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Q2 development only; one answer per issued question, meaning before body'),
-    ApiContractEntry('POST', '/emlis/threads/{thread_id}/actions', 'emlis.thread.action.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Q2 development only; skip/stop or confirmed transient failure retry; continue unavailable until Q3'),
+    ApiContractEntry('GET', '/emlis/threads/by-input/{emotion_id}', 'emlis.thread.read.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Q2/Q3 development only; authenticated owner, persisted snapshots, no generation'),
+    ApiContractEntry('POST', '/emlis/threads/{thread_id}/answers', 'emlis.thread.answer.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Q2/Q3 development only; one answer per issued question, meaning before body'),
+    ApiContractEntry('POST', '/emlis/threads/{thread_id}/actions', 'emlis.thread.action.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Q2/Q3 development only; skip/stop or confirmed transient failure retry; Q3 explicit continuation within server budget'),
+    ApiContractEntry('POST', '/emlis/threads/{thread_id}/frames', 'emlis.thread.frame_feedback.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Q3 development only; owned tentative frame confirmation, rejection or correction; no question budget'),
     ApiContractEntry('GET', '/app/bootstrap', 'app.bootstrap.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Runtime guardrail / maintenance switch'),
     ApiContractEntry('GET', '/app/startup', 'app.startup.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Auth-required startup bundle for unread / popup / lightweight prefetch only; Home hydration moved to /home/state'),
     ApiContractEntry('GET', '/home/state', 'home.state.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Auth-required Home hydration bundle (input summary + global summary + notices + today question + reflection quota); app.startup intentionally excludes heavy Home counters'),

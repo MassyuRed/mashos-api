@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Source/version adapter to the existing sole Human Reception author."""
 
+from dataclasses import replace
 import emlis_ai_grounded_human_reception as hr
 import emlis_ai_grounded_sentence_surface as surface_owner
 from emlis_ai_grounded_observation_gate import evaluate_grounded_surface_body_inverse, evaluate_grounded_observation_gate
@@ -115,4 +116,19 @@ def realize_emlis_thread_body(prepared) -> EmlisThreadBodyOutcomeV1:
         observation, reception_text, checkpoint.source_prefix_ref, checkpoint.checkpoint_id,
         resolver.qualified_refs, projection.meaning_plan.meaning_visible_causal_trace_rows,
         projection.meaning_plan.reception_visible_causal_trace_rows, status)
+    if prepared.thread.control.admitted_history:
+        from .emlis_thread_history import history_line_plan, derive_interpretive_frames
+        from emlis_ai_grounded_observation_gate import evaluate_emlis_history_line_inverse
+        try:
+            line_plan = history_line_plan(prepared, plan)
+            line = surface_owner.realize_emlis_history_line(line_plan) if line_plan else None
+            if line and not evaluate_emlis_history_line_inverse(line, line_plan, prepared=prepared):
+                raise ValueError("emlis_history_line_inverse_failed")
+            frames = tuple(frame for frame in derive_interpretive_frames(prepared.thread)
+                           if frame.frame_key not in prepared.thread.control.rejected_frame_keys)
+            artifact = replace(artifact, history_line=line, history_line_plan=line_plan, interpretive_frames=frames)
+        except ValueError:
+            # Optional context must not erase independently valid current
+            # Observation/Reception. No history line or frame is emitted.
+            pass
     return EmlisThreadBodyOutcomeV1(status, artifact, projection.graph, ("emlis_thread_body_generated",))

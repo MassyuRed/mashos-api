@@ -684,7 +684,7 @@ def derive_grounded_situation_view(
                 "grounded_situation_view_source_relation_invalid"
             )
         if (type(row.relation_kind) is EmlisThreadScopeRelationKind
-                and (graph.source_version != "cocolon.cmee.emlis_thread.v1"
+                and (graph.source_version not in {"cocolon.cmee.emlis_thread.v1", "cocolon.cmee.emlis_thread.q3.v1"}
                      or row.relation_ref not in edges_by_ref
                      or edges_by_ref[row.relation_ref].relation != "evaluation_about_event")):
             raise CMEEStage1ContractError("thread_answer_target_relation_source_invalid")
@@ -1067,7 +1067,7 @@ def validate_grounded_situation_view(
         edge = edges.get(row.relation_ref)
         if (edge is None or not admitted_scope_relation_kind(row.relation_kind)
                 or type(row.relation_kind) is EmlisThreadScopeRelationKind and (
-                    grounded_graph.source_version != "cocolon.cmee.emlis_thread.v1"
+                    grounded_graph.source_version not in {"cocolon.cmee.emlis_thread.v1", "cocolon.cmee.emlis_thread.q3.v1"}
                     or edge.relation != "evaluation_about_event")):
             raise CMEEStage1ContractError("grounded_situation_view_source_relation_mismatch")
         if not _relation_is_source_explicit(edge, grounded_graph):

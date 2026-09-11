@@ -342,6 +342,12 @@ def test_saved_input_development_entry_uses_thread_and_keeps_old_wire(case,monke
     monkeypatch.setenv('COCOLON_ENV','development')
     monkeypatch.setenv('COCOLON_EMLIS_THREAD_DEVELOPMENT','true')
     monkeypatch.setattr('emlis_ai_reply_service._step10_dormant_v3_public_hook',lambda **_: pytest.fail('second author'))
+    # Keep this Q2 wire-compatibility check on the old saved profile; Q3 has
+    # an actual migrated-entry test in test_emlis_q3_application.
+    def selected_owner(*,runtime_profile):
+        assert runtime_profile == 'q3.plan.sequential.v1'
+        return service
+    monkeypatch.setattr('emlis_thread_service.EmlisThreadService',selected_owner)
     normalized=normalize_emlis_current_input({'id':parent,'created_at':'2026-09-10T00:00:00Z','memo':ORIGINAL})
     reply=run(render_emlis_ai_reply(user_id=user,subscription_tier='free',current_input=normalized))
     assert reply.comment_text=='' and reply.meta['observation_status']=='unavailable'

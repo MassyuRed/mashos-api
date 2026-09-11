@@ -1,4 +1,4 @@
-> 2026-09-11 Q2更新：Q1専用53件を再確認し、Q2保存/認証API/RN入力・履歴/明示再試行をdefault OFFで実装。Q2専用32件とRN45件は成功。既存registry2検査の同じ失敗をQ1 headでも再現。実保存の公開合成5組を全文確認、商品NOT_CLEAR。稼働DB適用・端末での開発アプリ確認は未実施。再開先は本書末尾Q2節と `EMLIS_Q2_DEVELOPMENT.md`。Q3/Q4へ自動進行しない。
+> 2026-09-11 Q3現在地：添付修正版Technical Design v1.2に従い、Q2のコード実装完了からQ3へ進めた。Plusの適格本人履歴、Premiumの本人続行による最大3問と確認・修正・否定できる解釈フレーム、限定条件のLayer3を保存・API・RNまで実装した。Q3のコード実装は完了し、次の実装単位はQ4の統合・実本文確認・互換性・公開接続準備。実DB適用、端末・実課金確認、Mashの正式商品判断、公開操作は別作業として未実施。default OFF、商品NOT_CLEAR、Draft/open/unmergedを維持する。以下の旧Q1/Q2段落・Product Read待ちの順序は当時の履歴であり、Q3/Q4のコード進行を止める現行条件ではない。現在の進行ownerは本系列の`06_implementation_order_migration_and_verification.md`末尾Q3節とAPI既存handoff末尾Q3節。
 
 # CMEE V1-A I1-SX Current State and Next Work Handoff — 2026-08-16
 
@@ -7283,3 +7283,64 @@ Q1 authorの意味/本文文法は変更しない。外側DEVELOPMENT_APPLICATIO
 実装と自動検証は成立。稼働Supabaseはread-onlyでschema/constraints/migrationsを確認しただけで、このmigrationは未適用。次に適用先の開発DBを確認して適用し、debug appで一往復、日をまたぐ再開、意味確定後の本文失敗、回答再入力なしの回復を確認する。この開発アプリ確認が残るためQ2完了を宣言しない。Q3の有料履歴/後続round、Q4の商品/公開判断へ自動で進まない。merge/deploy/本番切替は今回0。
 
 再現手順とcode/SQL/API/RN境界は `ai/docs/EMLIS_Q2_DEVELOPMENT.md`。Cocolon側の全体/Home/国家/current_structure00/01/04、v1正本02/05/06、07 milestoneを同期する。System Context fresh実行やPR37修正は行っていない。定例ZIP・別Libraryへのrepoコピーは作らない。
+
+## 2026-09-11 Q3 — 有料履歴・逐次質問・解釈フレーム
+
+開始時のfresh headはAPI `d67bb771c65564bb8341738366a8aea4e0f85887`、App `f7b29302aaa18a59de1f42c12a5bad86349a6668`。既存Draft PR3/30とbranchを継続。再開時は、このQ3節を含む最新remote headを取得する。System Contextは使わず、前提原典・全体図・全ファイル地図・実sourceを直接確認した。
+
+Emlisは「今回の入力を読んだ観測→重要な一点の任意質問→本人回答で観測を深める」体験を担当する。回答・続行・フレーム操作は元入力に所属し、国家の入力件数・課金event・通知・Astor queueを増やさない。原入力の保存と既存fanoutは`emotion_submit_service`、履歴の閲覧期限は既存`publish_governance`が所有する。Piece／Analysisの入力許可、TodayQuestionの回答schema、旧I5 public wireを拡張しない。共有CMEE→既存Human Reception作者→Sentence Surface→独立逆検証の順を継承し、外部生成AIや別本文rendererは追加しない。
+
+| 対象 | 現行Q3の動作 |
+|---|---|
+| Free | 今回の原入力＋同thread回答のみ、最大1問。履歴とframeなし。 |
+| Plus | 最大1問、所有者・状態・365日の条件を満たす直近最大3記録から必要な履歴。 |
+| Premium | 最大3問、3650日の条件を満たす直近最大6記録と修正可能frame。元入力自体の閲覧は既存Premium無期限条件のまま。 |
+| 質問発行 | 回答後本文を先に保存し、次候補があればAWAITING_CONTINUE。本人のcontinueで初めて次問を保存・発行する。4問目なし。 |
+| プラン変更 | 開始時上限と現在上限の小さい方。upgradeで開始枠を増やさず、downgrade後も既発行問への回答を受けるが次問は現在枠に従う。 |
+| 履歴失効 | 編集・削除・回答更新・期限・権限・feedback versionの変化を保存時に照合。古い現在本文はCONTEXT_CHANGED、旧timelineでは自分のLayer1/2だけを履歴として扱う。 |
+| 意味変更なし | 同じ有効意味・同じ許可contextの保存済み本文だけを再使用。旧本文へ新prefixを付け替えず、最終commitでもguardを再照合。 |
+| 障害と再送 | ANSWER→意味→本文の独立commit、同じ回答で明示retry。旧操作receiptと現在stateを分ける。CAS後の再読取りと失敗返却も現在contextを照合。 |
+
+| 所在 / owner | Q3の責任と接続 |
+|---|---|
+| API `cocolon_meaning_experience_engine/emlis_thread_contracts.py` / `emlis_thread_source.py` | Q3 capability、逐次3回答、発行済み質問列、版付きprefix。本人履歴・回答・feedbackを異なるsourceとして扱う。 |
+| API `.../emlis_thread_history.py`（新規） | 所有者・保持期間で許可されたraw履歴から意味を再導出。暫定フレーム、独立feedback、Layer3適格性と根拠。古い生成本文・model cacheは意味根拠にしない。 |
+| API `.../emlis_question.py` / `emlis_answer_update.py` | 既質問焦点を除いた次候補、回答ごとの累積ADD/REVISE/WITHDRAW。前回答の訂正はその回答時点を保持。 |
+| API `.../emlis_thread_engine.py` / `emlis_thread_surface.py` / `emlis_thread_projection.py` | 各roundの意味checkpointと本文、保留候補と発行の分離、共有作者への投影、検証済み本文の後に任意Layer3。 |
+| API `.../contracts.py` / `emlis_stage1_response.py` / `emlis_input_specific_meaning.py` | Q3 logical graphだけ寄与上限8（原入力5＋回答3）。旧single/Q1の上限5と型検証を維持。 |
+| API `emlis_ai_grounded_sentence_surface.py` / `emlis_ai_grounded_human_reception.py` / `emlis_ai_grounded_observation_gate.py` | 独立した対比の組を保持した文、前回答時点、既存受け取り。組の取り違え・時点改変・Layer3根拠を独立照合。 |
+| API `emlis_thread_service.py` / `emlis_thread_store.py` | 本人続行、round別保存、現在権限、履歴revision/feedback version、CAS、再取得、失敗後の明示retry、操作receipt。 |
+| API `api_emlis_thread.py` / `api_contract_registry.py` / `ai/docs/PUBLIC_API_REGISTRY.md` | strict DTOとframes route。本人確認・訂正・否定は質問枠を消費しない。 |
+| API `emlis_ai_reply_service.py` | default OFFの開発入口でQ3 profileを選択。旧I5との二重実行をしない。 |
+| API `supabase/migrations/20260911041749_emlis_q3_plan_rounds.sql`（新規） | Q2後の追加migration、開始時上限、round、frame feedback、owned context RPCと保存時再照合。親/account削除cascade、RLS/service_role境界を保持。 |
+| App `lib/api/emlisThreadApi.js` / `screens/input/useEmlisThread.js` / `screens/input/EmlisThreadModal.js` | 本人続行・停止・round表示・フレーム編集。過去roundの回答receiptで新下書きを消さず、不明ACKは同じkey/payloadで照合する。 |
+| API `ai/tests/test_cmee_emlis_q3_thread.py` / `test_emlis_q3_application.py`（新規） | 実本文・時点訂正・旧Q2移行・実SQL/RPC・履歴/プラン/競合/失敗の検証。 |
+| API `ai/tests/test_emlis_q2_application.py` / `helpers/emlis_q2_postgres.cjs`; App `tests/emlis-thread.test.js` | Q2互換と実開発入口、追加DDLの実行、実hook/componentのQ3継続・編集検証。 |
+
+上表のAPI Python sourceは`ai/services/ai_inference/`以下。影響先として、直接修正しない`engine.py`、既存source/observation plan/reception plan、`app.py`、`emlis_thread_config.py`、Q2 migration、`emotion_submit_service`、`publish_governance`、認証・親入力削除・account削除、AppのInputScreen／AnalysisHistoryScreen／AuthContext／apiClient／draft cleanup／Piece返信導線の本文を確認した。全体図・国家図・両repositoryの全treeを照合し、関係の薄い既存familyは地図で役割を確認した。全repository全文監査を完了したという意味ではない。
+
+Layer3は既存P5の接続可能familyを参照し、今回は回答と出来事の関係が成立した`self_understanding_follow`に限定する。現在と適格な過去記録の明示句が一致し、主体・極性・modality・時点・述語型が整合するときだけ、過去の日付付きで言葉の重なりを0〜1行示す。一般的な意味類似、原因、人格、長期変化の推定やP5全体の移植が完成したとは扱わない。
+
+Premiumのフレームは、評価済み履歴の本人回答と対象の出来事から、原入力当時の受け取りを構築できる有限文法の範囲。現在の明示的な複数候補が同順位になる場合に焦点選定を補助し、現在回答を優先する。本人の修正は独立sourceとして保存し、否定した読みは再採用しない。feedback保存直後は自動再生成せず、古い本文の現在性を外し、次回生成へ反映する。
+
+検証結果：API/純粋処理/実SQL/RPC/旧Q1-Q2/共有作者・inverseの8 test filesとregistry文書整合1件で144 PASS、追加の有料障害・start競合2件で2 PASS（重複なし合計146）。RN専用12＋既存screen契約36で48 PASS。
+
+初回の拡張回帰は139 PASS/1 FAILで、Q3寄与上限helperが不正なNone参照を拒否する前に例外化していた。型guardを修正し、関連30件と最終144件で確認済み。初回失敗を成功へ書き換えず、この修正経緯を保持する。
+
+実migrationをPGliteへ適用してRPCを実行し、旧Q2保存行の移行・再読取り、三round、所有者境界、意味と本文の分離、履歴の削除/更新、プラン変更、UNCHANGED保存競合、feedbackの二度目取得競合、一時障害・再送を確認した。React rendererは実hook/componentを対象とし、native端末の確認ではない。PGlite上のinterleavingは稼働Postgres複数接続の負荷試験ではない。
+
+Q3の公開合成入力について、Free/Plus/Premiumの保存済み初回本文・質問・回答後本文、Premium三round、frame修正、前回答時点の訂正を本文として確認した。引用の長さ・定型的な受け取り・有限文法の範囲は残り、商品NOT_CLEAR。共有作者変更の区切りとしてcanonical100も今回再実行した。保存済み本文baselineを取得できなかったため、Q1保存版 `b679a04b501ae7d4bb7a73bcdb8c449fdc7af2da` と今回の固定sourceを別processで再生成した比較であり、過去成果物の取得と称しない。既存validated batch/manifest・request adapter・日時・入力順序を不変とし、原row、direct projectionと全units、outer artifact/plan/trace/status/reasonsの全100レコードが一致。direct100、outer73 GENERATED/27 UNAVAILABLE。華恋が全100件の元入力全field・direct本文・提供可否/理由を全文確認し、outer本文がdirectの対応本文と同じことも照合した。長い再掲、定型的な締め、中心感情・共有関係の不足は残りNOT_CLEAR。Q3の機能検証件数とは別分母で記録する。
+
+Q1・Q2・Q3のコード実装を完了として記録し、次はQ4の実装統合、対象集合の初回/質問/回答後本文の確認と修正、旧client/保存版互換、公開用mode・単一生成ownerの接続準備、保存済み訂正を消さない停止・復旧のコードと検証へ進む。古いcandidate91単独修正ループやProduct Read PASS待ちへ戻さない。
+
+実DB適用、端末・実課金の環境確認、Mashの正式商品判断、merge/deploy/公開切替は、API `ai/docs/EMLIS_DEPLOYMENT_AND_OPERATION_CHECKS.md`へ分離した未実施作業。これらが未実施という理由だけでQ3/Q4のコード作業を停止しない。機械成功・華恋の本文確認・Mashの商品合格・公開を相互に代用しない。
+
+### Q3検証の再実行入口
+
+固定runtimeは既存Q2のCPython3.12.13/pytest8.4.1、PGlite0.5.8。新しいproviderや依存は追加していない。既存async test adapterを用いた最終実行は、`ai`から次の集合。最後の追加2件は同じsourceで別実行し、重複なし146件として集計した。
+
+```sh
+python -m pytest -q tests/test_cmee_emlis_q3_thread.py tests/test_emlis_q3_application.py tests/test_cmee_emlis_q1_thread.py tests/test_emlis_q2_application.py tests/test_cmee_grounded_surface_owner_inheritance.py tests/test_cmee_limited_reception_aggregate.py tests/test_emlis_cmee_body_inverse_protected.py tests/test_cmee_source_kernel_variable_cardinality.py tests/contract/test_api_contract_registry.py::test_public_registry_doc_mentions_all_registered_routes -p no:cacheprovider -p async_test_support
+```
+
+canonical100は`test_cmee_nls_v3_batch001_unified_stage1_bridge`の既存`load_validated_batch`、`_unified_stage1_inputs`、`response.compile_stage1_response`と`MeaningExperienceEngine.generate`を使用。旧495件・旧194件全体の再実行をしたとは扱わない。RNは既存固定test依存をNODE_PATHで指定し`node --test tests/emlis-thread.test.js tests/rn-screen-contracts.test.js`。実環境の追加成功は0。

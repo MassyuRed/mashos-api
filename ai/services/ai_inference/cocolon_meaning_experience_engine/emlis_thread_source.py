@@ -57,7 +57,7 @@ def freeze_supplemental_answer(answer: SupplementalAnswerSource) -> FrozenSupple
                 answer.answer_id, answer.thread_id, answer.question_id,
                 answer.original_source_ref, answer.answer_text_private))):
         raise SourceAdmissionError("emlis_answer_identity_or_text_invalid")
-    if type(answer.round_index) is not int or answer.round_index != 1:
+    if type(answer.round_index) is not int or not 1 <= answer.round_index <= 3:
         raise SourceAdmissionError("emlis_q1_answer_round_out_of_scope")
     _timestamp(answer.recorded_at)
     _timestamp(answer.authored_at, optional=True)
@@ -144,19 +144,39 @@ def admit_emlis_thread(request: GenerationRequest) -> AdmittedEmlisThread:
     if (type(thread.thread_id) is not str or not thread.thread_id.strip()
             or thread.original_source_ref != original.envelope.envelope_id):
         raise SourceAdmissionError("emlis_thread_original_binding_invalid")
-    if thread.capability_snapshot != "FREE_Q1" or thread.admitted_history != ():
+    q3 = thread.capability_snapshot in {"Q3_FREE", "Q3_PLUS", "Q3_PREMIUM"}
+    if (not q3 and thread.capability_snapshot != "FREE_Q1") or (thread.capability_snapshot in {"FREE_Q1", "Q3_FREE"} and thread.admitted_history != ()):
         raise SourceAdmissionError("emlis_q1_capability_or_history_out_of_scope")
-    if (type(thread.answers) is not tuple or len(thread.answers) > 1
+    if (type(thread.answers) is not tuple or len(thread.answers) > (3 if q3 else 1)
             or type(thread.current_round) is not int or thread.current_round != len(thread.answers)):
         raise SourceAdmissionError("emlis_q1_round_invalid")
     control = thread.question_control_context
     if (type(control) is not EmlisQuestionControlV1 or type(control.issued_count) is not int
-            or control.issued_count not in (0, 1)
+            or control.issued_count not in range(4 if q3 else 2)
             or type(control.asked_target_refs) is not tuple
-            or len(control.asked_target_refs) != control.issued_count):
+            or len(control.asked_target_refs) != control.issued_count
+            or len(set(control.asked_target_refs)) != control.issued_count
+            or type(control.question_limit) is not int or control.question_limit not in (1, 3)):
         raise SourceAdmissionError("emlis_question_control_invalid")
     answers = tuple(freeze_supplemental_answer(answer) for answer in thread.answers)
-    if answers:
+    if q3:
+        questions = control.issued_questions
+        if (type(questions) is not tuple or len(questions) != control.issued_count
+                or tuple(q.decision.target_ref for q in questions) != control.asked_target_refs
+                or len({q.question_id for q in questions}) != len(questions)
+                or len({a.source.answer_id for a in answers}) != len(answers)):
+            raise SourceAdmissionError("emlis_q3_question_sequence_invalid")
+        for index, answer in enumerate(answers, 1):
+            if index > len(questions):
+                raise SourceAdmissionError("emlis_q3_answer_question_missing")
+            q, a = questions[index - 1], answer.source
+            if (a.round_index != index or a.thread_id != thread.thread_id
+                    or a.question_id != q.question_id or a.original_source_ref != thread.original_source_ref
+                    or q.thread_id != thread.thread_id or q.original_source_ref != thread.original_source_ref):
+                raise SourceAdmissionError("emlis_answer_parent_binding_invalid")
+        if questions and control.pending_question != questions[-1]:
+            raise SourceAdmissionError("emlis_q3_current_question_invalid")
+    elif answers:
         question = control.pending_question
         if (question is None or control.issued_count != 1 or control.stop
                 or question.thread_id != thread.thread_id
@@ -164,9 +184,30 @@ def admit_emlis_thread(request: GenerationRequest) -> AdmittedEmlisThread:
                 or question.decision.target_ref not in control.asked_target_refs):
             raise SourceAdmissionError("emlis_answer_question_control_invalid")
         answer = answers[0].source
-        if (answer.thread_id != thread.thread_id or answer.question_id != question.question_id
+        if (answer.round_index != 1 or answer.thread_id != thread.thread_id or answer.question_id != question.question_id
                 or answer.original_source_ref != thread.original_source_ref):
             raise SourceAdmissionError("emlis_answer_parent_binding_invalid")
+    if thread.frame_feedback_sources:
+        from .emlis_thread_history import FrameFeedbackSourceV1
+        if thread.capability_snapshot != "Q3_PREMIUM" or type(thread.frame_feedback_sources) is not tuple:
+            raise SourceAdmissionError("emlis_frame_capability_invalid")
+        if any(type(f) is not FrameFeedbackSourceV1 or f.version < 1 or f.status not in {"CONFIRMED","REJECTED","REVISED"}
+               or (f.status == "REVISED") != bool(f.correction_text) for f in thread.frame_feedback_sources):
+            raise SourceAdmissionError("emlis_frame_feedback_invalid")
+    history_guards = []
+    if thread.admitted_history:
+        from .emlis_thread_history import OwnedHistorySourceV1
+        limit = 6 if thread.capability_snapshot == "Q3_PREMIUM" else 3
+        if type(thread.admitted_history) is not tuple or len(thread.admitted_history) > limit:
+            raise SourceAdmissionError("emlis_history_limit_invalid")
+        for source in thread.admitted_history:
+            if type(source) is not OwnedHistorySourceV1:
+                raise SourceAdmissionError("emlis_history_source_invalid")
+            history_guards.append(source.source_guard)
+        if len(set(history_guards)) != len(history_guards):
+            raise SourceAdmissionError("emlis_history_duplicate")
     prefix = identity("emlis-source-prefix", thread.thread_id, original.envelope.envelope_id,
                       tuple(answer.envelope.envelope_id for answer in answers))
+    if q3:
+        prefix = identity("emlis-q3-source-prefix", prefix, thread.capability_snapshot, history_guards, thread.rejected_frame_keys, tuple(f.evidence_ref for f in thread.frame_feedback_sources))
     return AdmittedEmlisThread(original, thread, answers, prefix)

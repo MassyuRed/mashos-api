@@ -156,12 +156,12 @@ async def render_emlis_ai_reply(
     second substantive body path after cutover.
     """
 
-    # Q2 is a server-selected development application profile. Its persisted
+    # Q3 is a server-selected development application profile. Its persisted
     # body has a separate DTO; legacy status enums and I5 display gates stay intact.
     from emlis_thread_config import development_enabled
     if development_enabled() and current_input.get("id"):
-        from emlis_thread_service import EmlisThreadService
-        await EmlisThreadService().start(user_id, str(current_input["id"]))
+        from emlis_thread_service import EmlisThreadService, Q3_PROFILE
+        await EmlisThreadService(runtime_profile=Q3_PROFILE).start(user_id, str(current_input["id"]))
         return ReplyEnvelope(comment_text="", meta={
             "observation_status": "unavailable", "used_sources": ["current_input"],
             "rejection_reasons": ["development_thread_separate_delivery"],

@@ -5007,7 +5007,7 @@ def stage1_visible_user_source_owner(disposition: SourceOwnerResolution, source_
     """Admit supplemental authority only in the Emlis thread source version."""
     pair = (disposition.visible_authority, disposition.source_owner_disposition)
     return pair == (VisibleAuthority.SOURCE_EXPLICIT, SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE) or (
-        source_version == "cocolon.cmee.emlis_thread.v1"
+        source_version in {"cocolon.cmee.emlis_thread.v1", "cocolon.cmee.emlis_thread.q3.v1"}
         and pair == (VisibleAuthority.SUPPLEMENTAL_USER, SourceOwnerDisposition.SUPPLEMENTAL_USER_VISIBLE)
     )
 
@@ -7478,7 +7478,7 @@ def _foreground_expected_layer1(
         depth = ObservationDepthClass.FOCUSED
     elif 2 <= count <= 3:
         depth = ObservationDepthClass.LAYERED
-    elif 4 <= count <= _STAGE1_LAYER1_OBSERVATION_CAP:
+    elif 4 <= count <= observation_contribution_cap(grounded_graph.source_version):
         depth = ObservationDepthClass.DENSE
     else:
         raise CMEEStage1ContractError(
@@ -15564,6 +15564,13 @@ def _im04_limited_reception_mode_operator_pairs(
     return ()
 
 
+def contribution_rows_cap(rows):
+    if any(type(row) is not PlannedObservationContribution or type(row.evidence_refs) is not tuple for row in rows):
+        return _STAGE1_LAYER1_OBSERVATION_CAP
+    refs = tuple(ref for row in rows for ref in row.evidence_refs)
+    return EMLIS_Q3_LAYER1_CONTRIBUTION_CAP if refs and all(type(ref) is str and ref.endswith("@" + EMLIS_Q3_SOURCE_VERSION) for ref in refs) else _STAGE1_LAYER1_OBSERVATION_CAP
+
+
 def canonical_limited_retained_layer1_refs(
     retained_layer1_refs: Sequence[str],
     observation_contribution_rows: Sequence[PlannedObservationContribution],
@@ -15581,7 +15588,7 @@ def canonical_limited_retained_layer1_refs(
         type(retained_layer1_refs) is not tuple
         or type(observation_contribution_rows) is not tuple
         or not retained
-        or len(retained) > _STAGE1_LAYER1_OBSERVATION_CAP
+        or len(retained) > contribution_rows_cap(contributions)
         or len(retained) != len(set(retained))
         or any(not _stage1_identity_string(ref) for ref in retained)
         or len(contribution_ids) != len(contributions)
@@ -15658,7 +15665,7 @@ def resolve_limited_reception_aggregate(
         or tuple(row.act_ref for row in retained) != expected_acts
         or not retained_layer1
         or retained_layer1 != canonical_retained_layer1
-        or len(retained_layer1) > _STAGE1_LAYER1_OBSERVATION_CAP
+        or len(retained_layer1) > contribution_rows_cap(contributions)
         or len(retained_layer1) != len(set(retained_layer1))
         or any(not _stage1_identity_string(ref) for ref in retained_layer1)
         or len(contribution_by_id) != len(contributions)
@@ -17069,6 +17076,12 @@ def validate_whole_reading_consequence_row(
 _STAGE1_INTERPRETATION_CANDIDATE_POOL_CAP = 16
 _STAGE1_INTERPRETATION_CANDIDATE_KIND_CAP = 2
 _STAGE1_LAYER1_OBSERVATION_CAP = 5
+EMLIS_Q3_SOURCE_VERSION = "cocolon.cmee.emlis_thread.q3.v1"
+EMLIS_Q3_LAYER1_CONTRIBUTION_CAP = 8  # original five + three supplemental answers
+
+def observation_contribution_cap(source_version):
+    return EMLIS_Q3_LAYER1_CONTRIBUTION_CAP if source_version == EMLIS_Q3_SOURCE_VERSION else _STAGE1_LAYER1_OBSERVATION_CAP
+
 
 
 def stage1_candidate_selection_indices(
@@ -20143,7 +20156,7 @@ def validate_stage1_projection(
         len(required_candidate_set) != 1 and optional_contribution_count
     ):
         raise CMEEStage1ContractError("stage1_observation_optional_tail_invalid")
-    if len(required_candidate_set) > _STAGE1_LAYER1_OBSERVATION_CAP:
+    if len(required_candidate_set) > observation_contribution_cap(grounded_graph.source_version):
         raise CMEEStage1ContractError("stage1_required_observation_unrealizable")
     if len(semantic_keys) != len(set(semantic_keys)):
         raise CMEEStage1ContractError("stage1_duplicate_observation_contribution")
@@ -20315,7 +20328,7 @@ def validate_stage1_projection(
     observation_ranges = {
         ObservationDepthClass.FOCUSED: (1, 1),
         ObservationDepthClass.LAYERED: (2, 3),
-        ObservationDepthClass.DENSE: (4, 5),
+        ObservationDepthClass.DENSE: (4, observation_contribution_cap(grounded_graph.source_version)),
     }
     observation_floor, observation_ceiling = observation_ranges[
         projection.observation_depth_class
@@ -20633,7 +20646,7 @@ def _validate_stage1_trace_spine_v2(
     unknown_count = roles.count("UNKNOWN")
     reception_count = roles.count("RECEPTION")
     if (
-        not 1 <= observation_count <= 5
+        not 1 <= observation_count <= observation_contribution_cap(grounded_graph.source_version)
         or not 0 <= unknown_count <= 1
         or not 1 <= reception_count <= 4
         or roles
@@ -21032,7 +21045,7 @@ def validate_stage1_trace_spine(
     unknown_count = roles.count("UNKNOWN")
     reception_count = roles.count("RECEPTION")
     if (
-        not 1 <= observation_count <= 5
+        not 1 <= observation_count <= observation_contribution_cap(grounded_graph.source_version)
         or not 0 <= unknown_count <= 1
         or not 1 <= reception_count <= 4
         or observation_count != len(projection.ordered_observation_refs)

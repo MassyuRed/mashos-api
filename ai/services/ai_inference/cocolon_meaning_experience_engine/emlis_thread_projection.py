@@ -37,6 +37,7 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
     if plan != build_updated_grounded_plan(prepared):
         raise ValueError("emlis_thread_plan_checkpoint_mismatch")
     thread, checkpoint = prepared.thread, prepared.checkpoint
+    source_version = c.EMLIS_Q3_SOURCE_VERSION if thread.control.capability_snapshot.startswith("Q3_") else THREAD_SCHEMA
     resolver = thread.resolver()
     index = {n.nucleus_id: n for n in plan.nuclei}
     nodes, edges, dispositions = [], [], []
@@ -91,11 +92,11 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
     owner_digest = identity("owner-universe", owner_refs)
     graph = c.GroundedMeaningGraph(identity("graph", checkpoint.checkpoint_id),
         thread.source_prefix_ref, tuple(nodes), tuple(edges), tuple(dispositions),
-        owner_refs, optional_owners, THREAD_SCHEMA, "cocolon.cmee.emlis_thread_obligations.v1", owner_digest)
+        owner_refs, optional_owners, source_version, "cocolon.cmee.emlis_thread_obligations.v1", owner_digest)
     reception = plan.response_plan.human_reception_plan
     acts = tuple(dict.fromkeys(m.reception_act for m in reception.moves))
     parent = c.ExperiencePlan(identity("plan", checkpoint.checkpoint_id), thread.source_prefix_ref,
-        THREAD_SCHEMA, graph.obligation_version, owner_digest, THREAD_SCHEMA,
+        source_version, graph.obligation_version, owner_digest, THREAD_SCHEMA,
         identity("observation-duty", checkpoint.checkpoint_id), identity("unknown-duty", checkpoint.checkpoint_id),
         identity("reception-duty", checkpoint.checkpoint_id), identity("reception-plan", str(reception)),
         acts, tuple(o for o in owner_refs if o in visible_owners), visible_owners, visible_owners,
@@ -121,7 +122,7 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
         stage1_response_schema_version=c.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2)
     contributions = r._plan_layer1_observation_from_rows(parent, rows,
         stage1_response_schema_version=c.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2)
-    depth = r.classify_observation_depth(contributions)
+    depth = r.classify_observation_depth(contributions, contribution_cap=c.observation_contribution_cap(source_version))
     qualifiers = []
     shift_endpoints = c.project_stage1_source_explicit_shift_endpoint_node_ids(graph)
     for node in graph.nodes:

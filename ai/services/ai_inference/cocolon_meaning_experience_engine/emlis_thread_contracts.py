@@ -87,6 +87,8 @@ class EmlisQuestionControlV1:
     asked_target_refs: tuple[str, ...] = ()
     issued_count: int = 0
     stop: bool = False
+    issued_questions: tuple[EmlisClarificationV1, ...] = ()
+    question_limit: int = 1
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -100,6 +102,8 @@ class EmlisThreadInputV1:
     question_control_context: EmlisQuestionControlV1 = EmlisQuestionControlV1()
     prepared_meaning_checkpoint_ref: str | None = None
     schema_version: str = THREAD_SCHEMA
+    rejected_frame_keys: tuple[str, ...] = ()
+    frame_feedback_sources: tuple[Any, ...] = ()
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -179,10 +183,13 @@ class EmlisThreadBodyArtifactV1:
     reception_trace: tuple[Any, ...]
     body_status: EngineStatus
     schema_version: str = "cocolon.cmee.emlis_thread_artifact.v1"
+    history_line: str | None = None
+    history_line_plan: Any = None
+    interpretive_frames: tuple[Any, ...] = ()
 
     @property
     def text(self) -> str:
-        return f"見えたこと：\n{self.observation}\n\nEmlisから：\n{self.reception}"
+        return f"見えたこと：\n{self.observation}\n\nEmlisから：\n{self.reception}" + (f"\n\nこれまでの記録から：\n{self.history_line}" if self.history_line else "")
 
 
 @dataclass(frozen=True, slots=True, repr=False)

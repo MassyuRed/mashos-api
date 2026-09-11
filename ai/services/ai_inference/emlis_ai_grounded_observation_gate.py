@@ -1894,13 +1894,21 @@ def evaluate_grounded_surface_body_inverse(
                 )
             ):
                 failures.append(f"body_inverse_relation_direction_reversed:{index}")
+            if relation.type == "contrast" and len(planned_line.binding.relation_ids) > 1:
+                # Each visible pair must remain adjacent, even when several
+                # independent pairs share a single coordinated predicate.
+                if not any(b == a + 1 for a in from_positions for b in to_positions):
+                    failures.append(f"body_inverse_contrast_pair_crossed:{index}")
             if (relation.type == "evaluation_about_event"
                     and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"):
                 visible = _body_inverse_normalized_anchor(_body_inverse_visible_text(body, parsed_line))
                 left_sources = _body_inverse_nucleus_source_values(relation.from_nucleus_id, plan, resolver)
                 right_sources = _body_inverse_nucleus_source_values(relation.to_nucleus_id, plan, resolver)
-                if not any(re.search(re.escape(left) + r"[^。]*に対する[^。]*" + re.escape(right), visible)
-                           for left in left_sources for right in right_sources):
+                target_codes = set(nucleus_index[relation.to_nucleus_id].semantic_frame.attribute_codes)
+                when = "先の回答時点" if "thread_time:prior_answer_time" in target_codes else "回答した時点" if "thread_time:answer_time" in target_codes else "その時"
+                if not (any(b == a + 1 for a in from_positions for b in to_positions) and
+                        any(re.search(re.escape(left) + r"[^。]*に対する" + when + r"の受け止めとして[^。]*" + re.escape(right), visible)
+                            for left in left_sources for right in right_sources)):
                     failures.append(f"body_inverse_answer_target_relation_missing:{index}")
         if (
             planned_line.binding.line_role == "fact_boundary"
@@ -1972,7 +1980,7 @@ def evaluate_grounded_surface_body_inverse(
                     failures.append(f"body_inverse_answer_source_anchor_incomplete:{index}")
                 times = {code.split(":", 1)[1] for code in nucleus.semantic_frame.attribute_codes
                          if code.startswith("thread_time:")}
-                expected = "回答した時点" if times == {"answer_time"} else "その時" if times == {"original_occasion"} else None
+                expected = "先の回答時点" if times == {"prior_answer_time"} else "回答した時点" if times == {"answer_time"} else "その時" if times == {"original_occasion"} else None
                 if expected is None or expected not in visible_line:
                     failures.append(f"body_inverse_answer_target_time_missing:{index}")
         if "change" in required_kinds and "change" not in parsed_line.semantic_marker_codes:
@@ -3215,3 +3223,29 @@ __all__ = [
     "evaluate_grounded_surface_body_inverse",
     "evaluate_grounded_observation_gate",
 ]
+
+
+def evaluate_emlis_history_line_inverse(text, line_plan, *, prepared):
+    """Independent Layer-3 grammar/anchor check; never enter two-layer inverse."""
+    from datetime import datetime
+    from cocolon_meaning_experience_engine.emlis_thread_history import admitted_history_plans
+    from cocolon_meaning_experience_engine.emlis_answer_update import build_updated_grounded_plan
+    from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
+    current_plan = build_updated_grounded_plan(prepared)
+    past = next((row for row in admitted_history_plans(prepared.thread) if row[0].source_guard[0] == line_plan.input_id), None)
+    if past is None or past[0].recorded_at != line_plan.recorded_at:
+        return False
+    for plan, resolver, nid, expected, evidence in (
+        (current_plan, prepared.thread.resolver(), line_plan.current_nucleus_id, line_plan.current_text, line_plan.current_evidence_refs),
+        (past[2],past[1].thread.resolver(),line_plan.past_nucleus_id,line_plan.past_text,line_plan.past_evidence_refs)):
+        index = {n.nucleus_id:n for n in plan.nuclei}
+        if nid not in index or final_reception_source_anchor_text(nid,index,resolver) != expected:
+            return False
+        if tuple(resolver.qualified_ref(s).evidence.evidence_id for s in index[nid].source_span_ids) != evidence:
+            return False
+    match = re.fullmatch(r'今回の「([^「」\n]+)」という言葉は、(\d{4}-\d{2}-\d{2})の記録の「([^「」\n]+)」にも重なります。同じ言葉でも、今回の受け止めまで同じとは決めずに見ています。', text)
+    if not match or line_plan.relation != 'REPEATED_EXPLICIT_WORDING':
+        return False
+    return (match.group(1) == line_plan.current_text and match.group(3) == line_plan.past_text
+            and match.group(2) == datetime.fromisoformat(line_plan.recorded_at.replace('Z','+00:00')).date().isoformat()
+            and bool(line_plan.current_evidence_refs and line_plan.past_evidence_refs))
