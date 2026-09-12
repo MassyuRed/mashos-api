@@ -138,6 +138,32 @@ def test_phase20_2_support_required_is_separate_from_safe_state_answer_and_emerg
     assert support_contract["public_input_feedback_allowed"] is False
 
 
+def test_self_worth_additive_particle_cannot_override_stronger_safety_boundaries() -> None:
+    # Use a grammatical variant of the existing public self-worth input.
+    denial = "自分には価値がない。".replace("価値が", "価値も")
+    for stronger, expected in (
+        ("安全が保てない。助けが必要。", "safety_support_required"),
+        ("もう消えたい。今日で終わりにしたい。", "safety_blocked_emergency"),
+    ):
+        for combined in (denial + stronger, stronger + denial):
+            decision = build_emlis_safety_triage_decision(
+                current_input={"memo": combined},
+                evidence_spans=[_span(denial), _span(stronger, span_id="memo.2")],
+            )
+            assert decision.safety_triage_kind == expected
+            assert decision.requires_block is True
+            assert decision.public_emlis_observation_allowed is False
+            assert decision.must_not_accept_identity_claim_as_fact is True
+    graph_boundary = build_emlis_safety_triage_decision(
+        current_input={"memo": denial},
+        graph=_graph(["safety_boundary"]),
+        evidence_spans=[_span(denial)],
+    )
+    assert graph_boundary.safety_triage_kind == "safety_support_required"
+    assert graph_boundary.requires_block is True
+    assert graph_boundary.public_emlis_observation_allowed is False
+
+
 def test_phase20_2_safe_observation_maps_to_normal_observation_contract() -> None:
     decision = build_emlis_safety_triage_decision(
         current_input={"memo": "今日は少し落ち着いて、部屋を片付けた。", "emotions": ["平穏"]},
