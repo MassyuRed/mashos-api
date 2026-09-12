@@ -7638,3 +7638,28 @@ PARTIAL回答のうち解釈へ反映できなかった根拠範囲が、完成�
 商品は **NOT_CLEAR**。今回閉じたのは未反映箇所を黙って消す問題。次は、本人が明示した不明の対象・時点・sourceの採用境界を整理して意味/HRへ接続し、初回と回答後に共通する中心感情・複数主題・関係の選択を改善する。入力欄だけによる行動分類、長い原文列挙・名詞列・定型句反復、引用の二重括弧、対応外文法・複数肯定も残る。読み落としを追加質問で埋めず、機械成功や本文確認をMash正式商品PASSへ換算しない。
 
 最新weekly20260912の2027年1月目標、9/16共通修正・本文、9/18比較、9/19判断を維持。確認済みCPython3.12.13・pytest8.4.1・固定46依存・PGlite0.5.8を再利用し、歴史的installation identityと同一とは扱わない。新owner/file・公開wire・意味schema field・DDL・RN変更なし。内部境界の役割を正本05とcurrent_structureへ追記した。既定OFF・Draft/open/unmergedを維持。実DB適用・native実機/実課金・merge/deploy/ready/有効化は未実施。System Context未使用、原典を直接確認。実本文・途中失敗・再現harness・最終結果は同じ非公開作業記録へ保持し、個別case本文やprivate digest/locatorは公開しない。
+
+
+## 2026-09-12 Q4継続 — 現在の不明と元の気持ちを共有HRで保持
+
+最新weekly20260912のNB-F01/F02と、本人が明示した不明の受容を進めた。現在時点を明示する回答が採用済みでも、HRが感情型だけを対象にして未訂正の原反応を落としていた。本人の不明を感情へ変換せず、既存の原反応保持groupと有限節の名詞化で、元の出来事・気持ちと回答時点の不明を一緒に残す。
+
+本人の過去の受動出来事と有効な原陰性反応が一組あり、sourceで一意に対応する回答が一件、現在のstate/state/uncertain・negative・presentとして採用されている場合に限定する。private回答source、required/explicit、単一span、limit/negation/uncertaintyと原述語保持、回答時点/前回答時点を再確認する。未撤回の単一eventと一意ABOUTを要求し、状態の型・主体・時点・意味採用を変更しない。同じHR作者・IR・独立本文inverseで、元の気持ちと不明の欠落、断定化、過去化、他者化、引用化を拒否する。
+
+共有初回source文法にも、既存の認識上の不明に現在の時点修飾が付く範囲を追加した。主体・引用・文末・source offset等の既存条件を維持し、直接の共有stage1では結論を急がない受け止めへ接続できた。ただしQ3初回の実経路は現在もUNAVAILABLEであり、初回体験の修正済みには数えない。限定副詞を伴う一部の回答は意味採用がUNRESOLVEDのままで、今回のHR変更から採用へ昇格させない。
+
+実装は既存observation_planとHuman Receptionの二owner内。新production file・作者・route・公開wire・意味schema field・DDL・RN変更はない。current owner snapshotだけを更新し、歴史的fixture・runner・期待値・閾値を変更しない。構造の新設はなく、既存ownerの追加責務をcurrent_structureへ追記した。
+
+
+実装sourceはAPI `69b265a392dd2ce9cb0259b52e8fa9ed8528b4b5`、tree `9afca79a2115473a91a636cc8624919f787e21e7`。固定検証local source `0f6febb2fa8a4717ba0ed7dbe62d63344d89f206` と同treeで、実装・現行owner snapshot・追加検査の6fileをremoteから全内容再取得し一致を確認した。再開元API `b4708178db9db2b2476b52baf7daf8d7e8299997` / App `7a042c393859d837e3aede97c470a8206c2ef755`。後続の差分は既存資料への追記のみ。
+
+- Q1〜Q4・実SQL/RPC・共有作者・独立inverse・registryの最終一括316件は314 PASS / 2既存FAIL。前回307件の全key・成否を保持し、追加9件は全PASS。
+- 必須回帰は439件中430 PASS / 9既存FAIL。前回438件の全key・成否を保持し、追加1件はPASS。後続case/cohort/歴史的hash診断は除外なしで全bytes一致。失敗詳細は3件全文一致、5件は行番号移動のみ、1件は変更sourceのactual hashのみが異なる。全失敗の全文と差分は同じ非公開記録へ保持する。既存失敗を合格へ変更していない。
+- 同じvalidated100を固定sourceで再生成。全100レコードとHR planは前回と全bytes同一、direct100、GENERATED73 / UNAVAILABLE27、moves/expressions/bound各143。華恋が全入力field・両層全文・可否/全理由を読んだ原本との完全一致を確認し、独立readerも既読全件へ対応付けた。UNAVAILABLE診断本文を提供成功へ数えない。
+- 既存保存59ケース157状態と追加3ケース6状態、合計62ケース163状態・189保存GET一致。既存157状態はcurrent本文の変化0で、問い/回答/主要状態/frame内容も保持。華恋と独立readerが追加の全元入力・初回/回答後両層本文・全Q/A・timeline・frame・状態を読み、既読全59件の同一性も確認した。追加2件は原反応と回答時点の不明を保持して終了。追加故障注入1件は回答/意味保存、currentなし、旧本文非current、retry/continue不可。既存7件と合わせた8故障例は回復成功ではない。
+
+初回の対象15検査は13 PASS / 2 FAILで、新規の肯定期待2件が既存の未対応admissionに一致していなかった。意味採用を広げず、Q1/Q3で未採用を保持する境界検査へ直した。共有初回の診断scriptはcheckpoint属性名の誤りを修正した。追加保存例の初回runでは原入力日を既存answer helperの固定回答日より後へ設定していたため、合成原入力日だけを既存harnessと同日に直し、同じ3例を再実行した。初回run・修正差・最終runを全て保持し、production変更による成功化とは扱わない。
+
+商品はNOT_CLEAR。今回の改善は、採用済みの現在の不明と元反応を回答後HRへ保持する範囲。次は初回UNKNOWNのsourceとaffected nucleusが選択へ結び付かず、観察の根拠traceを持たないforegroundになる接続を、共通の意味投影・選択・独立契約で補修する。UNKNOWNを除外して通したり、必須trace検査を緩めたりしない。中心感情・複数主題・関係の選択、入力欄由来の行動分類、長い原文列挙・名詞列・定型句反復、二重引用、対応外文法・複数肯定も残る。読み落としを質問で埋めず、機械検証・華恋の本文確認をMashの正式商品PASSへ換算しない。
+
+2027年1月の全体目標、9/16共通修正・本文確認、9/18比較、9/19判断を維持。CPython3.12.13・pytest8.4.1・固定46依存・PGlite0.5.8を再構築し、interpreter実bytesとinstalled RECORD2277項目を照合した。歴史的installation identityとは扱わない。既定OFFと既存Draft PRを維持し、実DB適用・native実機/実課金・merge/deploy/ready/有効化は未実施。System Context未使用、原典を直接確認。実本文・途中失敗・再現harness・結果は同じ非公開作業記録へ保持する。
