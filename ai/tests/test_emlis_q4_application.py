@@ -210,10 +210,16 @@ def test_answer_nominal_does_not_strip_topic_degree_negation_or_other_predicate(
 def test_answer_nominal_requires_original_source_scope_owner_and_time():
     from test_cmee_emlis_q1_thread import answered
     from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning,build_updated_grounded_plan
-    from emlis_ai_grounded_human_reception import source_grounded_thread_answer_nominal
+    from emlis_ai_grounded_human_reception import source_grounded_thread_answer_nominal,source_grounded_thread_received_group
     prepared=prepare_emlis_meaning(answered('その時は重かった。'));plan=build_updated_grounded_plan(prepared)
-    move=plan.response_plan.human_reception_plan.moves[0];index={n.nucleus_id:n for n in plan.nuclei};n=index[move.target_nucleus_ids[0]]
-    assert source_grounded_thread_answer_nominal(move,plan,index,prepared.thread.resolver()) is not None
+    group_move=plan.response_plan.human_reception_plan.moves[0];index={n.nucleus_id:n for n in plan.nuclei};n=prepared.accepted_nuclei[0]
+    # Keep the answer-only grammar unit's guards and verify the actual selected
+    # original+answer group against the identical source corruptions.
+    move=replace(group_move,target_nucleus_ids=(n.nucleus_id,),support_nucleus_ids=())
+    assert source_grounded_thread_received_group(group_move,plan,index,prepared.thread.resolver())
+    answer_plan=replace(plan,response_plan=replace(plan.response_plan,
+        human_reception_plan=replace(plan.response_plan.human_reception_plan,moves=(move,))))
+    assert source_grounded_thread_answer_nominal(move,answer_plan,index,prepared.thread.resolver()) is not None
     changes=[replace(n,allowed_claim_scope='memo_only'),replace(n,source_fields=('memo',)),
              replace(n,semantic_frame=replace(n.semantic_frame,actor='other_person')),
              replace(n,semantic_frame=replace(n.semantic_frame,polarity='positive'))]
@@ -223,7 +229,9 @@ def test_answer_nominal_requires_original_source_scope_owner_and_time():
             attribute_codes=tuple(c for c in n.semantic_frame.attribute_codes if not c.startswith(prefix))+(code,))))
     for changed in changes:
         altered=replace(plan,nuclei=tuple(changed if x.nucleus_id==n.nucleus_id else x for x in plan.nuclei))
-        assert source_grounded_thread_answer_nominal(move,altered,{x.nucleus_id:x for x in altered.nuclei},prepared.thread.resolver()) is None
+        altered_answer=replace(answer_plan,nuclei=altered.nuclei)
+        assert source_grounded_thread_answer_nominal(move,altered_answer,{x.nucleus_id:x for x in altered.nuclei},prepared.thread.resolver()) is None
+        assert not source_grounded_thread_received_group(group_move,altered,{x.nucleus_id:x for x in altered.nuclei},prepared.thread.resolver())
 
 
 @pytest.mark.parametrize('grammar',['answer-slot:0:PAST_FEELING:answer_time',
