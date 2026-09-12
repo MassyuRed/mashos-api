@@ -7721,3 +7721,25 @@ STRUCTURE_MAP_DELTA_NONE：既存2owner内、新file/route/schema/DDL/RNなし�
 商品 **NOT_CLEAR**。次は、本人の中心感情・不明が原入力に存在するのに、補助行動だけがHR対象となる既存opportunity/選択の残差を扱う。同じOP ownerの主対象補正・current_burden候補除去・補助family選択を一体で確認する。固定回帰4件と原文保持要求の不一致も未解消として引き継ぐ。別主題を時間順とする関係、両側保持と称しながら片方を選べない問題、入力欄由来の行動分類、長い再掲・定型句・不自然な名詞化も残る。同じ週次Rev2の未完了であり、短い初回不明の改善を全面達成や別名の新規問題へ換算しない。
 
 STRUCTURE_MAP_DELTA_NONE：既存4owner内、新file/route/schema/DDL/RNなし。実bytes/依存RECORD確認済みruntimeを再利用し、weekly20260912の予定・既存Draft PR3/30・既定OFFを維持。実DB/native/実課金/merge/deploy/enable/readyなし。System Context未使用、原典とKaren-Diaryを参照。機械検証・華恋の読解・Mashの商品合格は区別する。
+
+
+## 2026-09-12 Q4残件 — 短い現在の不明と独立した行動を両方受け止める
+
+**DIRECT_PRODUCT_OR_ACCEPTANCE_WORK**。初回の短い本人の不明と、別欄の実行済み行動が一つずつある場合、行動だけをHRの対象にして不明を落とす共通選択を補修した。既存final OPでmemo全域・単一span・本人/現在/否定/不明を証明し、独立したmaterialを保持する既存選択へ接続する。明示されたfocusは優先し、任意の関係を独立扱いへ変えない。非requiredのuncertain_connectionを行動の確定背景に採用せず、元の関係自体はsource planに残す。
+
+共有HRは不明を原文どおりのこと名詞化で先に受け止め、別の行動を後続文で保持する。時点・継続・程度・表記を足さず、selected propositionがmaterial受容の場合に未選択の「結論を急がない」姿勢へ書き換えない。共有claimの根拠は命題のtarget_contribution_refsを正本として、対象ごとの非空・排他・全量を照合する。Q3の完全共有集合と、Q1で既に正しく分配された集合の両方を維持し、混在・欠落・交換・外部参照は拒否する。単独の不明に対する既存の核属性契約は保持した。
+
+既存OP・HR・Stage1 response・独立body inverseの4ownerと、現行identity snapshot・追加検査を変更。新規owner/file/route/schema/DDL/RN変更なし、**STRUCTURE_MAP_DELTA_NONE**。作者の期待文との一致だけでなく、独立inverseで原文の修飾・時点・主体・否定・引用・重複・片方の受容義務欠落を拒否する。固定入力・歴史的fixture・既存FAIL期待値は変更していない。
+
+実装sourceはAPI `90263ec5682d9f717ab358aea9213aa96435057b`、tree `5488cb1dc43c8ab64998973614b1a09026cc7756`。固定検証local `830f3de260d59e4b3cac276e0ca7b9c6cd1a970b`と同treeで、実装・snapshot・追加検査の6fileをGitHubから全内容再取得して一致確認。再開元API `900e2d16b98a25c28d19fa8dc7aa3c8f0249333d` / App `f6459ce20fc2709a3cd0fd8c26f2b8b5fb7e721a`。後続差分は既存資料への追記のみ。
+
+- 必須回帰439件は426 PASS / 13既存FAIL。前回全key・成否を保持し、削除0。既存9件と、原文保持と固定された未完了参照の不一致4件はFAILのまま。後続case/cohort診断JSONは除外なしで全bytes一致。13失敗の詳細は10件全文一致、2件は行番号のみ、1件はcurrent source hash差。後続診断は元の判定を置き換えない。
+- Q1〜Q4・SQL/RPC・共有作者・独立inverse・registry一括363件は361 PASS / 2既存FAIL。前回351件の成否を保持し、追加12件はPASS。実Q1/Q3 engineによる3種類の短い不明と別行動の生成、明示focus、全域証拠の境界、不正な根拠分配を含む。
+- 同じvalidated100を固定sourceで再生成し、全入力field・Observation/HR・状態・全理由が前回と一致。direct100、GENERATED73 / UNAVAILABLE27、moves/expressions/bound各143。華恋が全文読解した原本への完全一致を対応付け、独立readerも確認した。外側UNAVAILABLEの診断本文を提供成功へ数えない。
+- 既存保存69ケース170状態は、全元入力内容・現在/過去本文・Q/A・主要状態・frame内容を保持。新規6ケース6状態を加え、全75ケース176状態・202保存GET一致。追加6件は全プランで不明と行動の両方を保持し、質問0・FINAL/COMPLETEDとなる。華恋と独立readerが追加の全入力・両層本文・timeline・frame・状態を確認。既存故障注入は回復成功へ数えない。
+
+途中版では共有参照が未分配のQ3だけを確認し、実Q1では分配済み参照を拒否する回帰を見落とした。追加実経路probeで検出し、同じ共有処理を補修した。また、単核にもbounded markerを付けた途中版は必須回帰1件が追加FAILとなり、2 textの範囲へ限定した。最初の限定条件はtyped projection前に行動の判定済み証拠を要求したため正例が停止した。前段はmemoの全域証明、後段は行動の実行証明という既存責務へ戻して解消した。全途中ログ・停止した一括run・修正差・最終結果を同じ非公開記録に保持し、途中版を最終証拠へ流用しない。
+
+商品は **NOT_CLEAR**。今回の改善は、短い現在の認識上の不明と独立した実行済み行動の組合せに限る。複数節の中心感情・不明が補助行動に負ける問題、主題/関係の選択、入力欄由来の行動分類、長い原文列挙・名詞列・定型的な締め、対応外文法は未解消。次は複数節の中心感情・不明と補助行動のforeground/backgroundを共有選択で補修し、実本文の比較へ進む。原文の読み落としを追加質問で埋めず、華恋の読解と機械検証をMashの正式商品PASSに換算しない。
+
+2027年1月の全体目標と、9/16共通修正・本文確認、9/18比較、9/19判断を維持。CPython3.12.13・pytest8.4.1・固定46依存・PGlite0.5.8は既存環境を再利用し、interpreter実bytesとinstalled RECORD2277項目を再照合。再構築や歴史的installation identityの証明とは扱わない。System Context未使用、最新weekly・必要原典・Karen-Diaryを直接確認。既定OFF・既存Draft/open/unmerged、merge/deploy/enable/readyなし、実DB/native/実課金なし。個別原入力・応答・digest/locatorは非公開の同じ作業記録だけに保持する。
