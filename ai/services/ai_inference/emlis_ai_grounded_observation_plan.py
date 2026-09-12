@@ -6861,7 +6861,7 @@ def _thread_retained_reaction_groups(nuclei, relations):
     pairs = _received_contrast_group_targets(
         tuple(n for n in originals if n.nucleus_id in pair_ids), original_relations, minimum=1)
     answers = tuple(n for n in nuclei if n.source_fields == ("answer_text_private",))
-    if (not pairs or not 2 <= len(events) <= 3 or len(answers) > 3
+    if (not pairs or not 1 <= len(events) <= 3 or len(answers) > 3
         or not answers and len(pairs[0]) == len(events)
         or any(n.nucleus_id not in pair_ids and n.nucleus_id not in events for n in original_text)
         or not set(pairs[0]) <= set(events)):
@@ -6895,7 +6895,10 @@ def _thread_retained_reaction_groups(nuclei, relations):
         else:
             return ()
         by_event[about[0].from_nucleus_id] = n
-    if len(positive) > 1:
+    # A positive ADD does not supersede the original negative reaction,
+    # including when the original input contains only one received event.
+    # Other single-event selections retain their existing ownership policy.
+    if len(positive) > 1 or len(events) == 1 and (len(answers) != 1 or len(positive) != 1):
         return ()
     targets, supports = [], []
     for event in events:

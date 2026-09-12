@@ -477,3 +477,58 @@ def test_retained_group_expression_rechecks_later_slot_ownership_and_time(change
     with pytest.raises(hr.GroundedHumanReceptionSurfaceError):
         hr.realize_source_grounded_human_reception(reception, (changed,), {n.nucleus_id:n for n in plan.nuclei}, resolver,
             plan=plan, recovery_stage='full', clause_plans=clauses, selected_subjective_input=projection.selected_reception)
+
+
+@pytest.mark.parametrize('answer,answer_phrase', [
+    ('その時は嬉しかった。', 'その時に嬉しかったという気持ち'),
+    ('今は嬉しい。', '回答した時点で嬉しいという気持ち'),
+    ('その時は嬉しかった。どう表したらいいかはまだ分からない。',
+     'その時に嬉しかったという気持ち'),
+])
+@pytest.mark.parametrize('q3', [False, True])
+def test_single_event_positive_add_keeps_both_independent_meanings(answer, answer_phrase, q3):
+    from test_cmee_emlis_q1_thread import answered
+    req = begin('褒められたのに、嬉しくなかった。') if q3 else initial()
+    req = advance(req, answer) if q3 else answered(answer, req)
+    prepared = prepare_emlis_meaning(req)
+    assert not prepared.checkpoint.inactive_claim_refs
+    plan = build_updated_grounded_plan(prepared)
+    projection = project_thread_meaning(prepared, plan)
+    result = realize_emlis_thread_body(prepared)
+    follow = result.artifact.reception
+    assert '褒められたのに嬉しくなかったこと' in follow
+    assert '褒められたことについて、' + answer_phrase in follow
+    decisions = projection.selected_reception.decisions
+    assert len(decisions) == 2 and all(d.branch == 'NORMAL' for d in decisions)
+    assert len({d.projected_claim_ref for d in decisions}) == 2
+    assert not set(decisions[0].selected_contribution_refs) & set(decisions[1].selected_contribution_refs)
+    assert {d.reception_act for d in decisions} == {'stay_with_current_burden', 'recognize_lived_change'}
+    if '分からない' in answer:
+        assert prepared.checkpoint.assessment_status == 'PARTIAL'
+
+
+def test_single_event_positive_add_inverse_rejects_lost_or_retimed_original_and_answer():
+    from test_cmee_emlis_q1_thread import answered
+    prepared = prepare_emlis_meaning(answered('今は嬉しい。'))
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    projection = project_thread_meaning(prepared, plan)
+    result = realize_emlis_thread_body(prepared)
+    sentence = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    def valid(follow):
+        return evaluate_grounded_surface_body_inverse(
+            body=result.artifact.text.replace(result.artifact.reception, follow).encode(),
+            plan=plan, sentence_plan=sentence, resolver=resolver,
+            selected_subjective_input=projection.selected_reception).passed
+    follow = result.artifact.reception
+    assert valid(follow)
+    mutations = [
+        follow.split('。', 1)[1], follow.split('。', 1)[0] + '。',
+        follow.replace('嬉しくなかったこと', '嬉しかったこと'),
+        follow.replace('嬉しくなかったこと', '嬉しくないこと'),
+        follow.replace('回答した時点で', 'その時に'),
+        follow.replace('褒められたことについて', '誘われたことについて'),
+        follow.replace('褒められたのに嬉しくなかったこと', '「褒められたのに嬉しくなかったこと」'),
+    ]
+    for changed in mutations:
+        assert changed != follow and not valid(changed)

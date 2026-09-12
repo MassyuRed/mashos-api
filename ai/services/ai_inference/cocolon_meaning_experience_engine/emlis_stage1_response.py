@@ -11967,7 +11967,10 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
         and {row.reception_act for row in rows} == {"stay_with_current_burden", "recognize_lived_change"}
         and tuple(("current_burden" if m.reception_act == "stay_with_current_burden" else "lived_change",
                    m.target_nucleus_ids, m.support_nucleus_ids) for m in reception_plan.moves) == retained)
-    if grouped:
+    # A single original contrast and its positive ADD can already own
+    # distinct NORMAL claims. Only partition a genuinely shared claim;
+    # independent decisions keep their existing contribution bindings.
+    if grouped and rows[0].projected_claim_ref == rows[1].projected_claim_ref:
         first = rows[0]
         appraisal = first.subjective_proposition.appraisal_content
         if (first.branch != SubjectiveProjectionBranch.LIMITED

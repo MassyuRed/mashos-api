@@ -391,3 +391,24 @@ def test_initial_all_reactions_are_saved_before_optional_answer(qcase,monkeypatc
     assert run(service.get(user,parent))==dto
     assert dto['body_state']=='REFINED' and 'その時の重さ' in dto['current_observation']['text']
     assert dto['issued_count']==1 and dto['question_limit']==3
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+def test_single_event_positive_add_is_saved_with_original_feeling(qcase,qdb,monkeypatch,tier):
+    user,parent,_=qcase
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1',[user,tier])
+    qdb.query('update public.emotions set memo=$2 where id=$1',
+              [parent,'褒められたのに、嬉しくなかった。'])
+    service=active(monkeypatch)
+    initial=run(service.start(user,parent))
+    dto=run(answer(service,user,initial,'今は嬉しい。','single-positive'))
+    assert run(service.get(user,parent))==dto
+    assert dto['body_state']=='REFINED' and dto['meaning_updated']
+    follow=dto['current_observation']['text'].split('Emlisから：')[1]
+    assert '褒められたのに嬉しくなかったこと' in follow
+    assert '褒められたことについて、回答した時点で嬉しいという気持ち' in follow
+    assert dto['original']==initial['original'] and dto['issued_count']==1
+    assert dto['state']=='COMPLETED' and not dto['can_continue']
+    assert dto['question_limit']==(3 if tier=='premium' else 1)
+    previous=[e for e in dto['timeline'] if e['kind']=='OBSERVATION' and not e['is_current']]
+    assert previous[0]['text']==initial['current_observation']['text']
