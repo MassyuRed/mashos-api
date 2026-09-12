@@ -7663,3 +7663,23 @@ PARTIAL回答のうち解釈へ反映できなかった根拠範囲が、完成�
 商品はNOT_CLEAR。今回の改善は、採用済みの現在の不明と元反応を回答後HRへ保持する範囲。次は初回UNKNOWNのsourceとaffected nucleusが選択へ結び付かず、観察の根拠traceを持たないforegroundになる接続を、共通の意味投影・選択・独立契約で補修する。UNKNOWNを除外して通したり、必須trace検査を緩めたりしない。中心感情・複数主題・関係の選択、入力欄由来の行動分類、長い原文列挙・名詞列・定型句反復、二重引用、対応外文法・複数肯定も残る。読み落としを質問で埋めず、機械検証・華恋の本文確認をMashの正式商品PASSへ換算しない。
 
 2027年1月の全体目標、9/16共通修正・本文確認、9/18比較、9/19判断を維持。CPython3.12.13・pytest8.4.1・固定46依存・PGlite0.5.8を再構築し、interpreter実bytesとinstalled RECORD2277項目を照合した。歴史的installation identityとは扱わない。既定OFFと既存Draft PRを維持し、実DB適用・native実機/実課金・merge/deploy/ready/有効化は未実施。System Context未使用、原典を直接確認。実本文・途中失敗・再現harness・結果は同じ非公開作業記録へ保持する。
+
+
+## 2026-09-12 Q4残件 — 初回の現在の不明を原文に結び付け本文へ到達
+
+**DIRECT_PRODUCT_OR_ACCEPTANCE_WORK**。初回の現在の認識上の不明は、UNKNOWNを表す内部objectだけがforegroundに入り、原文のrequired Layer 1 contributionへ到達せず本文が停止していた。既存thread adapterで元boundaryのaffected nucleus・完全source span・hedge-onlyを照合し、共有contractの一意なsource-object導出へ接続した。UNKNOWN node / owner / material unknown refsは維持し、unknownを解決済みへ変更しない。実Q1/Q3のview検証でcoverage・basis・compatibilityを独立再導出し、対象差替え・根拠欠落・重複・矛盾するaxis・余分なduty混入を拒否する。単一required UNFINISHEDの限定appraisalは既存LEAVE_UNFINISHEDへ渡す。
+
+この対応は既存meaning→HR→Sentence Surface→独立inverseの中だけで行う。新規file/owner/route/schema/作者/質問は増やさず、旧generic source admission、historical grounding-kind、Layer 1 trace必須、user-fact-effect 0を維持する。現行owner identity snapshotだけを更新し、歴史的fixtureや既存FAIL期待値を変更しない。
+
+実装sourceはAPI `09ff659d0476d03b8c2292ab3ce86422791decc0`、tree `cafcfaa4d10d585f9741af4ab69064c670c8516f`。固定検証local `3f6cc786d48371cf7bfe83e428cbe2409cc622a1` と同tree、実装・現行snapshot・追加検査の5fileをremoteから全内容再取得して一致確認。再開元API `12cf8d359c307b569391d4a534b7d969f0fb9b59` / App `39af6fcab9dae20aa5d129a1bd919e7743751f1c`。後続の差分は既存資料への追記のみ。
+
+- 必須回帰439件は430 PASS / 9既存FAIL。前回全key・成否保持、削除0。後続case/cohort/歴史的hash診断も除外なしで全bytes一致。9件の失敗詳細も前回と全文一致。全失敗の全文・差分を同じ非公開記録に保持。
+- Q1〜Q4・実SQL/RPC・共有作者・独立inverse・registry一括327件は325 PASS / 2既存FAIL。前回316件の全key・成否保持、追加11件は全PASS。原文対応、実生成、未解決保持、本文改変拒否、unknown viewの欠落/差替え/混入拒否、未対応上流分類の境界を含む。
+- 同じvalidated100を固定sourceで再生成。全100レコード・HR planは前回と全bytes一致、direct100、GENERATED73 / UNAVAILABLE27、moves/expressions/bound各143。華恋と独立readerは既読の全入力field・Observation/HR全文・可否/全理由へ完全一致を対応付けた。診断本文を提供成功へ数えない。
+- 既存保存62ケース163状態はcurrent本文変化0、主要状態・元入力内容・質問/回答・frame内容も保持。追加4ケース4状態を含む全66ケース167状態・193保存GET一致。追加3件は初回両層本文を保存して質問0で完了。追加1件は既存のlow-information分類が残り、currentなしの停止を確認。全追加元入力・両層本文・Q/A・timeline・frame・状態を華恋と独立readerが読解。8件の既存故障注入は回復成功へ数えない。
+
+初回targeted9件は2 PASS / 7 FAILだった。4件はassert先をpropositionからclaimへ、1件は複数unknown境界から対象dimensionだけを選ぶよう検査の誤りを修正。裸の不明2件は上流分類が異なり未対応のため、成功期待を外し明示的停止検査として残した。既に認識される現在修飾3形のQ1/Q3成功検査を含む最終targeted11件は全PASS。初回ログと修正差を保持し、admissionの緩和による成功化は行わない。
+
+商品は **NOT_CLEAR**。初回Observationの汎用文型には認識上の未知を感覚として表す問題と時点表現の重複が残る。裸の不明はlow-information判定によりlimiting-unknown role / required UNFINISHEDが付かず、今回の対応から昇格させない。次はこの原入力認識とObservationのsource忠実性を既存ownerで確認する。長い再掲・名詞列・定型的な締め、複数主題/中心感情/共有関係、対応外文法も残件。質問追加で原文の読み落としを埋めない。
+
+既存Draft PR3/30と同じ非公開作業記録に継続。個別入力・全実本文・個別digest/locatorを公開資料へ移さない。merge/deploy/enable/readyなし、default-off、実DB/native/実課金なし。System Contextは未使用、同じ最新weeklyと原典を直接参照。
