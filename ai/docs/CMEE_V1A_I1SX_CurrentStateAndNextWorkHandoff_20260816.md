@@ -7618,3 +7618,23 @@ sourceで証明された本人の過去の受動出来事と有効な原陰性�
 商品は **NOT_CLEAR**。今回の適用範囲では単一陰性ADD後の原感情欠落を補修できた。次は、回答の未確定部分を確定扱いせず本文へ反映する処理と、初回/回答後に共通する中心感情・複数主題・関係の選択を改善する。読み落としを追加質問で埋めない。長い原文再掲・名詞列・定型句の反復、肯定回答と元反応の離れ、対応外文法・複数肯定の限定も残る。合成試験と全文確認をMash正式商品PASSへ換算しない。
 
 2027年1月の全体目標、9/16共通修正・本文確認、9/18比較、9/19判断は維持。新owner・schema・migration・RN変更はなくSTRUCTURE_MAP_DELTA_NONE。既定OFF・Draft/open/unmergedを保持し、実DB適用・native実機/実課金・merge/deploy/ready/有効化は未実施。System Context未使用、原典を直接確認。全実本文・途中失敗・再現harness・最終結果は同じ非公開作業記録に保持し、private本文/個別case/digest/locatorは公開しない。
+
+
+## 2026-09-12 Q4継続 — 回答の未反映範囲を共有本文へ保持
+
+PARTIAL回答のうち解釈へ反映できなかった根拠範囲が、完成したObservationから黙って消える問題を修正した。採用済みの意味とHRを保持し、未反映根拠の原文を示して「今回の観測に反映できていない部分」があることを伝える。本人の不明、過去や第三者の感情へ読み替えず、処理限界として扱う。これは本人が明示した不明を意味として受け止めるHRの完成ではない。
+
+実装sourceはAPI `f1a5880c801d47e259d18352b246c6dec4291cf2`、tree `4a4c9a6aa7328d6f7021886a8c096234655bc9d9`。固定検証local source `5bbf418b54a751ad3a7c064a66b66b904e9ce98c` と同treeで、実装・現行owner snapshot・検査の変更7fileはremote全内容再取得一致。後続差分は既存資料への追記のみ。
+
+未解釈の連続した回答spanだけを既存GroundedUnknownBoundaryの内部dimension `answer_interpretation_unresolved`へ束ねる。これは採用意味に関する未知を作らず、既存limited_scope句を必須出力にする境界である。source_explicit_epistemic_limit等の意味上の未知は従来の能力判定を維持する。元sourceの区切り文字と引用内文脈を保持し、間の解釈済みspan・裸unknownを飛び越えない。引用内で始まる断片は独立した本人回答にしない。部分撤回と未対応の置換が同じspanでも、成立した撤回を維持する。
+
+共有Sentence Surfaceの同じsentence plan内で出力し、後付けや別作者を使わない。独立body inverseは完成本文を再読し、plan上の必須境界・sourceと全件・順序・原文・処理限界の述語を照合する。欠落、重複、別根拠への付替え、否定・主語・時点変更、本人の不明や反映済みへの書換えを拒否する。入れ子引用は対応する括弧を検査し、source内の疑問符は検証済みの処理限界句だけに許可する。Emlisの追加発問の許可には転用しない。
+
+- 対象moduleは75件PASS。初期実装には投影先の混同、引用/疑問符処理、source offset参照誤りがあり、途中失敗を保持した上で実装を修正した。最終固定sourceのQ1〜Q4・実SQL/RPC・共有作者・独立inverse・registryは、一括307件中305 PASS / 2既存FAIL。前回全285 keyの成否を保持し、新22件全PASS。歴史的fixture・runner・閾値・期待本文は不変。
+- 必須回帰は438件中429 PASS / 9既存FAIL。前回の全438 key・成否と9失敗の全文を保持。後続case/cohort/post-hash診断も除外なしの全bytes一致。失敗を合格扱いせず、全文と差分は非公開記録へ保持した。
+- 同じvalidated100を新規再生成し、全100レコード・HR planは前回と全bytes一致。direct100、GENERATED73 / UNAVAILABLE27、可否変更0。華恋が今回全入力field・両層全文・可否/全理由を読んだ原本と最終集合を完全一致で照合し、独立readerも最終全100を確認した。UNAVAILABLEの診断本文は提供成功へ数えない。
+- 既存53保存ケース143状態と追加6ケース14状態、合計59ケース157状態・182保存GET一致。既存の問い・回答・主要状態・frame・HRを全件保持し、既存53ケースに対するObservationの変化は部分回答5状態への必須限界句追加のみ。全59件の初回/回答後両層本文、全質問/回答、timeline、frames、状態を華恋と独立readerが読了。本文作者故障7例は回答/意味保存・currentなし・過去本文非currentを確認したもので、回復成功ではない。
+
+商品は **NOT_CLEAR**。今回閉じたのは未反映箇所を黙って消す問題。次は、本人が明示した不明の対象・時点・sourceの採用境界を整理して意味/HRへ接続し、初回と回答後に共通する中心感情・複数主題・関係の選択を改善する。入力欄だけによる行動分類、長い原文列挙・名詞列・定型句反復、引用の二重括弧、対応外文法・複数肯定も残る。読み落としを追加質問で埋めず、機械成功や本文確認をMash正式商品PASSへ換算しない。
+
+最新weekly20260912の2027年1月目標、9/16共通修正・本文、9/18比較、9/19判断を維持。確認済みCPython3.12.13・pytest8.4.1・固定46依存・PGlite0.5.8を再利用し、歴史的installation identityと同一とは扱わない。新owner/file・公開wire・意味schema field・DDL・RN変更なし。内部境界の役割を正本05とcurrent_structureへ追記した。既定OFF・Draft/open/unmergedを維持。実DB適用・native実機/実課金・merge/deploy/ready/有効化は未実施。System Context未使用、原典を直接確認。実本文・途中失敗・再現harness・最終結果は同じ非公開作業記録へ保持し、個別case本文やprivate digest/locatorは公開しない。
