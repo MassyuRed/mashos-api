@@ -7701,3 +7701,23 @@ PARTIAL回答のうち解釈へ反映できなかった根拠範囲が、完成�
 商品 **NOT_CLEAR**。次は裸不明のlow-information分類によるlimiting_unknown/required UNFINISHED証明欠落と、短い不明がHRの全文replay防止で汎用参照へ戻る問題を整理する。原文にない「まだ」や程度を補わず、既存証明を弱めない。長い再掲・定型句、入力欄由来の行動分類、中心感情・複数主題・関係選択も残る。
 
 STRUCTURE_MAP_DELTA_NONE：既存2owner内、新file/route/schema/DDL/RNなし。既存runtimeの実bytesと依存RECORDを照合して再利用した。weekly20260912の予定、Draft PR3/30、default-offを維持。実DB/native/実課金/merge/deploy/enable/readyなし。System Context未使用、原典・Karen-Diaryを直接確認。機械検証と本文確認をMashの正式商品PASSへ換算しない。
+
+
+## 2026-09-12 Q4残件 — 短い初回不明を原文どおりに本文化
+
+**DIRECT_PRODUCT_OR_ACCEPTANCE_WORK**。短い本人の否定・不明の有限文を、初回Q1/Q3の既存意味経路から本文まで接続した。final OPで原memo全域・同核・required/explicit・current_input・単一spanを証明し、既存limiting_unknownと原述語保持属性を補う。唯一のtext核・safe・関係を持たない場合だけ、既存selected-label contextのretentionをsource ownerのACTIVE_OPTIONALへ整合させる。labelの値・ID・証拠を削除せず、旧I5の低情報分類・label保持・material quality、source admission、required unknown/UNFINISHEDを維持する。
+
+短い不明のObservationと単一felt_responseのHRは、時点・継続・程度・否定・表記を原文のまま保持する。HRの既存こと名詞化は、原文にない継続を補わない。独立body inverseは目的語全体の開始から格までを読み、ことを除いた原述語を完全照合する。名詞化外の再掲・引用・主体/時点/程度追加・否定反転・格改変を拒否し、作者replayだけを根拠にしない。複数Move/関係付きの一般的な不明表現まで改善済みとはしない。
+
+実装sourceはAPI `56ede254c6f850c3dc06551aee466b3ec8489d8c`、tree `769eb0e8fd0c5c26ac4d01a5a37a0bbdbd2d45ae`。固定検証local `971f284fa47f9cd8d2731d2dcb18a1cf700ed7d6` と同tree。既存owner4file・現行identity・既存Q3 testの全6fileをremote再取得して全文一致確認済み。再開元はAPI `8c819e83d19b03782d882c18ea10c7ab0e07235f` / App `b901c1df1b610b8cca51d43179b26f75881190ac`。後続は既存資料への追記のみ。
+
+- 必須回帰439件：426 PASS / 13 FAIL（既存9＋今回4）。追加4件はCMEEFinalUnfinishedStateReferentTestの固定された正規化参照・汎用参照と、今回の原文修飾・表記保持との不一致。固定入力・期待値・testは書き換えずFAILを保持した。原文、改変拒否、source証明、旧経路の後続義務を別途46項目で診断し全PASSしたが、元の4 FAILを成功へ換算しない。既存9件は同じ失敗で、行位置・現行source hash差分も含む失敗全文を保存。歴史的case/cohort/hashの後続診断は前回と全bytes一致。
+- Q1〜Q4・実SQL/RPC・共有作者・独立inverse・registry351件：349 PASS / 2既存FAIL。前回333件の成否と失敗全文を維持、追加18件全PASS。裸の旧拒否test2件は、実際にfinal証明を除いた負例として元のbinding保護目的を維持した。歴史的fixture・runner・期待件数・閾値は変更しない。
+- 同じvalidated100は99件の全recordと全100件のHR planが前回と一致。不明1件の両層のみ改善し、他の全fieldは不変。direct100、GENERATED73 / UNAVAILABLE27、moves/expressions/bound各143。全原入力field・両層全文・可否/理由を読解した。
+- 保存済み全69ケース170状態・196保存GET一致。旧167状態のうち163状態のcurrent/過去本文は不変。初回不明3件はHRの修飾保持、裸不明1件は停止からFINALへ改善。短い初回3ケースを追加し、初回7ケースすべて質問0で正常完了。旧Q/A・原入力内容・frame内容を保持し、8故障注入は回復成功と数えない。再生成されたframe識別子と内容一致は区別する。
+
+属性補正だけの途中実装では、Q1にlabel付随関係の未知がmaterial化して停止し、Q3にlabel列挙が残った。上記final context整合で両経路へ修正を届けた。開発中の拒否検査は、既存作者replayを残したまま新しい独立検査を確かめる方式へ修正した。途中失敗・最終比較・再現harness・実本文は同じ非公開作業記録へ保持する。
+
+商品 **NOT_CLEAR**。次は、本人の中心感情・不明が原入力に存在するのに、補助行動だけがHR対象となる既存opportunity/選択の残差を扱う。同じOP ownerの主対象補正・current_burden候補除去・補助family選択を一体で確認する。固定回帰4件と原文保持要求の不一致も未解消として引き継ぐ。別主題を時間順とする関係、両側保持と称しながら片方を選べない問題、入力欄由来の行動分類、長い再掲・定型句・不自然な名詞化も残る。同じ週次Rev2の未完了であり、短い初回不明の改善を全面達成や別名の新規問題へ換算しない。
+
+STRUCTURE_MAP_DELTA_NONE：既存4owner内、新file/route/schema/DDL/RNなし。実bytes/依存RECORD確認済みruntimeを再利用し、weekly20260912の予定・既存Draft PR3/30・既定OFFを維持。実DB/native/実課金/merge/deploy/enable/readyなし。System Context未使用、原典とKaren-Diaryを参照。機械検証・華恋の読解・Mashの商品合格は区別する。
