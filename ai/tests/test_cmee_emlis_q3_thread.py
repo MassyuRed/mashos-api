@@ -28,7 +28,8 @@ def test_mixed_answer_follow_retains_each_event_and_existing_feeling(positive,bu
     out=MeaningExperienceEngine().generate(r);assert out.artifact,out.reason_codes
     follow=out.artifact.reception
     first,second=follow.split('。')[:2]
-    assert '褒められたことについて' in first and '誘われたことについて' in second
+    assert '褒められた' in first and '誘われた' in second
+    assert '頼まれたのに寂しかったこと' in follow
     joy=first if positive_first else second
     weight=second if positive_first else first
     assert ('嬉しかった' if '嬉しかった' in positive else '嬉しい') in joy
@@ -38,7 +39,12 @@ def test_mixed_answer_follow_retains_each_event_and_existing_feeling(positive,bu
     assert '小さくせずに受け止めています' in weight
     p=prepare_emlis_meaning(r);plan=build_updated_grounded_plan(p)
     moves=plan.response_plan.human_reception_plan.moves
-    assert [m.target_nucleus_ids for m in moves]==[('answer:s7',),('answer:s8',)]
+    positive_id = 'answer:s7' if positive_first else 'answer:s8'
+    positive_move = next(m for m in moves if m.reception_act == 'recognize_lived_change')
+    burden_move = next(m for m in moves if m.reception_act == 'stay_with_current_burden')
+    assert positive_move.target_nucleus_ids == (positive_id,)
+    assert 'nucleus:s3:reaction' in burden_move.support_nucleus_ids
+    assert ('answer:s8' if positive_first else 'answer:s7') in burden_move.support_nucleus_ids
     assert {m.reception_act for m in moves}=={'recognize_lived_change','stay_with_current_burden'}
 
 
@@ -51,7 +57,7 @@ def test_mixed_answer_correction_or_withdrawal_keeps_the_other_answer(third,old,
     out=MeaningExperienceEngine().generate(r);assert out.artifact,out.reason_codes
     assert old not in out.artifact.text
     assert '誘われたことについて、その時に嬉しかったという気持ち' in out.artifact.reception
-    if new is not None:assert '褒められたことについて、その時の'+new in out.artifact.reception
+    if new is not None:assert '褒められたのに嬉しくなかったことと、その出来事へのその時の'+new in out.artifact.reception
 
 
 def test_mixed_answer_body_inverse_rejects_missing_swapped_and_changed_answers():
@@ -187,8 +193,9 @@ def test_follow_keeps_each_answer_subject_and_its_entire_expression(second,fragm
     r=advance(advance(begin(),'その時は重かった。'),second)
     out=MeaningExperienceEngine().generate(r);assert out.artifact,out.reason_codes
     follow=out.artifact.reception
-    assert '褒められたことへのその時の重さ' in follow
-    assert '誘われたこと' in follow and fragment in follow
+    assert '褒められたのに嬉しくなかったことと、その出来事へのその時の重さ' in follow
+    assert '誘われたのに悲しかったことと、その出来事' in follow and fragment in follow
+    assert '頼まれたのに寂しかったこと' in follow
     assert 'ことへのその時に' not in follow
     assert follow.count('受け止めています')==1
 
@@ -230,9 +237,10 @@ def test_repeated_event_wording_keeps_single_answer_selection_available(second):
 
 
 def test_collective_follow_inverse_requires_every_correct_subject_answer_time_pair():
+    # The current original reaction retains the existing answer-only route.
     from emlis_ai_grounded_observation_gate import _body_inverse_thread_answer_group
     from unittest.mock import patch
-    r=advance(advance(begin(),'その時は重かった。'),'その時は怖かった。')
+    r=advance(advance(begin(MEMO.replace('寂しかった', '今は寂しい')),'その時は重かった。'),'その時は怖かった。')
     p=prepare_emlis_meaning(r);plan=build_updated_grounded_plan(p);resolver=p.thread.resolver()
     out=realize_emlis_thread_body(p);projection=project_thread_meaning(p,plan)
     sp=surface.build_grounded_sentence_plan(plan,resolver,recovery_stage='full')
@@ -266,7 +274,7 @@ def test_collective_follow_inverse_requires_every_correct_subject_answer_time_pa
 def test_collective_follow_ir_checks_later_answer_slot_time_and_grammar(grammar):
     from cocolon_meaning_experience_engine.emlis_thread_surface import _bind_expression
     import emlis_ai_grounded_human_reception as hr
-    r=advance(advance(begin(),'その時は重かった。'),'その時は怖かった。')
+    r=advance(advance(begin(MEMO.replace('寂しかった', '今は寂しい')),'その時は重かった。'),'その時は怖かった。')
     p=prepare_emlis_meaning(r);plan=build_updated_grounded_plan(p);resolver=p.thread.resolver()
     projection=project_thread_meaning(p,plan);reception=plan.response_plan.human_reception_plan
     expression=_bind_expression(plan,resolver,projection,reception.moves[0],'FINITE')
@@ -343,3 +351,123 @@ def test_initial_group_allows_existing_answer_update_and_next_question():
     assert 'その時の重さ' in out.artifact.reception
     assert initial_out.artifact.observation!=out.artifact.observation
     assert out.question is not None
+
+
+@pytest.mark.parametrize('answer', ['その時は重かった。', '今は重い。', 'その時は嬉しかった。',
+                                  'その時は重かった。どう表したらいいかはまだ分からない。'])
+def test_answer_follow_retains_unanswered_original_reactions(answer):
+    request = advance(begin(), answer)
+    out = MeaningExperienceEngine().generate(request)
+    assert out.artifact, out.reason_codes
+    assert '誘われたのに悲しかったこと' in out.artifact.reception
+    assert '頼まれたのに寂しかったこと' in out.artifact.reception
+    assert out.artifact.reception.count('小さくせずに受け止めています') == 1
+    prepared = prepare_emlis_meaning(request)
+    assert not prepared.checkpoint.inactive_claim_refs
+    if prepared.checkpoint.assessment_status == 'PARTIAL':
+        assert out.body_state == 'PARTIALLY_REFINED' and out.question is None
+    else:
+        assert out.question and '誘われた' in out.question.prompt_private
+
+
+@pytest.mark.parametrize('answer,removed,replacement', [
+    ('「嬉しくなかった」ではなく「寂しかった」です。', '嬉しくなかった', 'その時の寂しさ'),
+    ('「嬉しくなかった」は誤りです。', '嬉しくなかった', None),
+    ('あの時も本当は嬉しかった。書き方を間違えた。', '嬉しくなかった', 'その時に嬉しかった'),
+])
+def test_original_correction_keeps_unaffected_reactions_without_reviving_old_meaning(answer, removed, replacement):
+    request = advance(begin(), answer)
+    prepared = prepare_emlis_meaning(request)
+    assert 'nucleus:s1:reaction' in prepared.checkpoint.inactive_claim_refs
+    out = realize_emlis_thread_body(prepared)
+    assert removed not in out.artifact.text
+    assert '誘われたのに悲しかったこと' in out.artifact.reception
+    assert '頼まれたのに寂しかったこと' in out.artifact.reception
+    if replacement:
+        assert replacement in out.artifact.reception
+
+
+def test_retained_original_and_each_answer_keep_their_own_time_through_three_rounds():
+    request = begin()
+    for answer in ('その時は重かった。', '今は怖い。', 'その時は苦しかった。'):
+        request = advance(request, answer)
+    out = MeaningExperienceEngine().generate(request)
+    assert out.artifact and not out.question
+    follow = out.artifact.reception
+    assert '褒められたのに嬉しくなかったことと、その出来事へのその時の重さ' in follow
+    assert '誘われたのに悲しかったことと、その出来事について、回答した時点で怖いこと' in follow
+    assert '頼まれたのに寂しかったことと、その出来事へのその時の苦しさ' in follow
+    assert follow.count('受け止めています') == 1
+
+
+def test_three_mixed_answers_keep_original_burdens_and_the_positive_answer():
+    request = begin()
+    for answer in ('その時は重かった。', '今は嬉しい。', 'その時は怖かった。'):
+        request = advance(request, answer)
+    out = MeaningExperienceEngine().generate(request)
+    assert out.artifact and not out.question
+    follow = out.artifact.reception
+    assert '褒められたのに嬉しくなかったことと、その出来事へのその時の重さ' in follow
+    assert '頼まれたのに寂しかったことと、その出来事へのその時の怖さ' in follow
+    assert '誘われたことについて、回答した時点で嬉しいという気持ちを受け止めています' in follow
+
+
+def test_retained_group_inverse_rejects_missing_crossed_quoted_and_retimed_source_without_replay():
+    from emlis_ai_grounded_observation_gate import _body_inverse_thread_received_group
+    from unittest.mock import patch
+    request = advance(advance(begin(), 'その時は重かった。'), '今は怖い。')
+    prepared = prepare_emlis_meaning(request)
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    out = realize_emlis_thread_body(prepared)
+    move = plan.response_plan.human_reception_plan.moves[0]
+    follow = out.artifact.reception
+    def parsed(text):
+        raw = text.encode()
+        witness = surface.parse_grounded_surface_body_bytes(raw)
+        return tuple(_body_inverse_thread_received_group(raw, witness, sentence, move, plan, resolver)
+                     for sentence in witness.sentences if sentence.section == 'reception')
+    assert any(result is not None for result in parsed(out.artifact.text))
+    mutations = [
+        follow.replace('と、頼まれたのに寂しかったこと', ''),
+        follow.replace('悲しかった', '寂しかった'),
+        follow.replace('嬉しくなかった', '嬉しかった'),
+        follow.replace('のに', 'から', 1),
+        follow.replace('と、その出来事へのその時の重さ', ''),
+        follow.replace('その出来事へのその時の重さ', 'その出来事への回答した時点の重さ'),
+        follow.replace('回答した時点で怖いこと', 'その時に怖いこと'),
+        follow.replace('その出来事', '別の出来事', 1),
+        follow.replace('頼まれたのに寂しかったこと', '「頼まれたのに寂しかったこと」'),
+        follow.replace('褒められた', 'TEMP').replace('誘われた', '褒められた').replace('TEMP', '誘われた'),
+    ]
+    for mutation in mutations:
+        assert mutation != follow
+        with patch('emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no replay')):
+            assert all(result is None for result in parsed(out.artifact.text.replace(follow, mutation)))
+
+
+@pytest.mark.parametrize('change', ['time', 'grammar', 'reaction_slot', 'answer_slot'])
+def test_retained_group_expression_rechecks_later_slot_ownership_and_time(change):
+    from cocolon_meaning_experience_engine.emlis_thread_surface import _bind_expression
+    import emlis_ai_grounded_human_reception as hr
+    prepared = prepare_emlis_meaning(advance(advance(begin(), 'その時は重かった。'), '今は怖い。'))
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    projection = project_thread_meaning(prepared, plan)
+    reception = plan.response_plan.human_reception_plan
+    expression = _bind_expression(plan, resolver, projection, reception.moves[0], 'FINITE')
+    codes = list(expression.nominalization_plan)
+    original = codes[2]
+    pieces = original.split(':')
+    if change == 'time': pieces[-1] = 'original_occasion'
+    elif change == 'grammar': pieces[-2] = 'PAST_FEELING'
+    elif change == 'reaction_slot': pieces[2] = codes[1].split(':')[2]
+    else: pieces[-3] = codes[1].split(':')[-3]
+    codes[2] = ':'.join(pieces)
+    assert codes[2] != original
+    changed = hr.identify_source_grounded_reception_expression(replace(expression, expression_ref='', nominalization_plan=tuple(codes)))
+    sentence = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    clauses = next(line.reception_clause_plans for line in sentence.lines if line.binding.line_role == 'human_follow')
+    with pytest.raises(hr.GroundedHumanReceptionSurfaceError):
+        hr.realize_source_grounded_human_reception(reception, (changed,), {n.nucleus_id:n for n in plan.nuclei}, resolver,
+            plan=plan, recovery_stage='full', clause_plans=clauses, selected_subjective_input=projection.selected_reception)

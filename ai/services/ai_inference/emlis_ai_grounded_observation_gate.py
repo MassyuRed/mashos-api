@@ -351,13 +351,15 @@ def _semantic_subcheck_reasons(
     replacements = set()
     reception_plan = plan.response_plan.human_reception_plan
     for move in reception_plan.moves if reception_plan is not None else ():
-        if len(move.target_nucleus_ids) > 1:
+        if len(move.target_nucleus_ids) > 1 or move.support_nucleus_ids:
             if sensation_witness is None:
                 sensation_witness = parse_grounded_surface_body_bytes(sensation_body)
             for sentence in sensation_witness.sentences:
                 if sentence.section == "reception":
                     replacements.update(_body_inverse_thread_answer_group(
                         sensation_body, sensation_witness, sentence, move, plan, resolver))
+                    replacements.update(_body_inverse_thread_received_group(
+                        sensation_body, sensation_witness, sentence, move, plan, resolver) or ())
             continue
         answer_nominal = source_grounded_thread_answer_nominal(move, plan, nucleus_index, resolver)
         if answer_nominal is None:
@@ -1853,6 +1855,125 @@ def _body_inverse_thread_contrast_answers(body, witness, line, plan, resolver):
     return frozenset(matched), tuple(failures)
 
 
+
+def _body_inverse_thread_received_group(body, witness, sentence, move, plan, resolver):
+    """Read original clauses and immediately bound answer anaphora from bytes.
+
+    Source contrasts and ABOUT edges are checked separately; no forward group
+    nominal, expression, or grammatical marker payload is the answer oracle.
+    """
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+    if (sentence.section != "reception"
+        or ("current_burden", move.target_nucleus_ids, move.support_nucleus_ids)
+           not in _thread_retained_reaction_groups(plan.nuclei, plan.relations)):
+        return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    expected = []
+    for event_id in move.target_nucleus_ids:
+        event = index[event_id]
+        contrast = tuple(r for r in plan.relations if r.type == "contrast"
+            and r.from_nucleus_id == event_id and r.to_nucleus_id in move.support_nucleus_ids
+            and r.relation_id in plan.coverage_requirements.required_relation_ids)
+        about = tuple(r for r in plan.relations if r.type == "evaluation_about_event"
+            and r.from_nucleus_id == event_id and r.to_nucleus_id in move.support_nucleus_ids
+            and r.relation_id in plan.coverage_requirements.required_relation_ids)
+        if len(contrast) > 1 or len(about) > 1 or not (contrast or about):
+            return None
+        if contrast:
+            feeling = index[contrast[0].to_nucleus_id]
+            left, right = (final_reception_source_anchor_text(n.nucleus_id, index, resolver) for n in (event, feeling))
+            if (event.source_span_ids != feeling.source_span_ids or len(event.source_span_ids) != 1
+                or event.source_fields != feeling.source_fields or event.source_fields not in {("memo",), ("memo_action",)}
+                or event.semantic_frame.time_scope != feeling.semantic_frame.time_scope
+                or event.semantic_frame.time_scope != "past"):
+                return None
+            source = re.sub(r"\s+", " ", resolver.resolve(event.source_span_ids[0]).raw_text).strip(" 　、,。．.")
+            if not source.startswith(left) or not source.endswith(right):
+                return None
+            connector = source[len(left):-len(right)].rstrip("、,")
+            if connector not in {"のに", "けど", "けれど", "けれども"}:
+                return None
+            expected.append(("original", event_id, left, connector, right))
+        if about:
+            answer = index[about[0].to_nucleus_id]
+            times = {c.split(":", 1)[1] for c in answer.semantic_frame.attribute_codes if c.startswith("thread_time:")}
+            if (len(times) != 1 or answer.source_fields != ("answer_text_private",)
+                or answer.allowed_claim_scope != "explicit_supplemental_answer"
+                or answer.semantic_frame.polarity != "negative"):
+                return None
+            expected.append(("answer" if contrast else "direct", event_id,
+                final_reception_source_anchor_text(answer.nucleus_id, index, resolver), next(iter(times))))
+    raw = body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8")
+    objects, separator, _predicate = raw.rpartition("を")
+    if not separator:
+        return None
+    divisions = tuple(m.start() for m in re.finditer("と、", objects))
+    def read_piece(start, end, wanted):
+        piece = objects[start:end]
+        if wanted[0] == "original":
+            if not piece.endswith("こと"):
+                return None
+            clause = piece[:-2]
+            parses = {(clause[:m.start()], m.group(), clause[m.end():])
+                      for m in re.finditer(r"けれども|けれど|けど|のに", clause)}
+            if wanted[2:] not in parses:
+                return None
+            nominal_start = start
+            markers = {"finite_clause_nominal"}
+        else:
+            interpretations = set()
+            nominal = ""
+            event_anchor = "その出来事" if wanted[0] == "answer" else final_reception_source_anchor_text(wanted[1], index, resolver) + "こと"
+            for prefix in (event_anchor + "への", event_anchor + "について、"):
+                if not piece.startswith(prefix):
+                    continue
+                nominal = piece[len(prefix):]
+                nominal_start = start + len(prefix)
+                for when, temporal in (("original_occasion", "その時に"), ("answer_time", "回答した時点で"),
+                                       ("prior_answer_time", "先の回答時点で")):
+                    if prefix.endswith("への"):
+                        for grammar in ("BELIEF", "PAST_FEELING", "PERCEIVED_0", "PERCEIVED_1"):
+                            value = restore_thread_answer_nominal(nominal, grammar, when)
+                            if value is not None:
+                                interpretations.add((value, when))
+                    elif nominal.startswith(temporal) and nominal.endswith("こと"):
+                        interpretations.add((nominal[len(temporal):-2], when))
+            if wanted[2:] not in interpretations:
+                return None
+            markers = {"thread_answer_nominal", "finite_clause_nominal"}
+        offset = sentence.utf8_byte_start + len(objects[:nominal_start].encode("utf-8"))
+        finish = sentence.utf8_byte_start + len(objects[:end].encode("utf-8"))
+        if (any(q.utf8_byte_start < finish and offset < q.utf8_byte_end for q in witness.quotes)
+            or any(m.marker_code == "secondary_quote_boundary" and m.utf8_byte_start < finish
+                   and offset < m.utf8_byte_end for m in witness.markers)
+            or not any(m.section == "reception" and m.marker_code in markers
+                       and offset <= m.utf8_byte_start and m.utf8_byte_end == finish for m in witness.markers)):
+            return None
+        return ((offset, finish, wanted[2].encode("utf-8")),) if wanted[0] != "original" else ()
+
+    # Parse successive duties rather than enumerating combinations of every
+    # conjunction in a potentially long answer. Cache ambiguous suffixes and
+    # retain at most two parses: exactly one complete reading is required.
+    from functools import lru_cache
+    @lru_cache(None)
+    def read_suffix(item, start):
+        final = item == len(expected) - 1
+        ends = (len(objects),) if final else tuple(end for end in divisions if end >= start)
+        successes = []
+        for end in ends:
+            spans = read_piece(start, end, expected[item])
+            if spans is None:
+                continue
+            tails = ((),) if final else read_suffix(item + 1, end + 2)
+            for tail in tails:
+                successes.append((*spans, *tail))
+                if len(successes) == 2:
+                    return tuple(successes)
+        return tuple(successes)
+    successes = read_suffix(0, 0)
+    return successes[0] if len(successes) == 1 else None
+
+
 def _body_inverse_received_contrast_group(body, witness, sentence, move, plan, resolver):
     """Read each finite event/reaction pair and its actual source connector."""
     count = len(move.target_nucleus_ids)
@@ -2632,7 +2753,13 @@ def evaluate_grounded_surface_body_inverse(
                                         nominal_target_visible and actual_nominal == nominal
                                         and restore_thread_answer_nominal(actual_nominal, grammar, when) == source
                                     )
-                            if expression_nominal_required and len(move.target_nucleus_ids) > 1:
+                            from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+                            retained_group = ("current_burden", move.target_nucleus_ids, move.support_nucleus_ids) in (
+                                _thread_retained_reaction_groups(plan.nuclei, plan.relations))
+                            if expression_nominal_required and retained_group:
+                                nominal_target_visible = _body_inverse_thread_received_group(
+                                    body, witness, parsed_sentence, move, plan, resolver) is not None
+                            elif expression_nominal_required and len(move.target_nucleus_ids) > 1:
                                 nominal_target_visible = (
                                     _body_inverse_received_contrast_group(body, witness, parsed_sentence, move, plan, resolver)
                                     if move.support_nucleus_ids else bool(_body_inverse_thread_answer_group(

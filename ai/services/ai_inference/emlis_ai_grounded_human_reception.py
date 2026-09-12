@@ -2615,8 +2615,13 @@ def source_grounded_received_contrast_group(move, plan, nucleus_index, resolver)
         or _received_contrast_group_targets(plan.nuclei, plan.relations)
            != (move.target_nucleus_ids, move.support_nucleus_ids)):
         return ()
+    return _source_grounded_received_contrast_rows(
+        move.target_nucleus_ids, move.support_nucleus_ids, nucleus_index, resolver)
+
+
+def _source_grounded_received_contrast_rows(targets, supports, nucleus_index, resolver):
     rows = []
-    for event_id, feeling_id in zip(move.target_nucleus_ids, move.support_nucleus_ids, strict=True):
+    for event_id, feeling_id in zip(targets, supports, strict=True):
         event, feeling = nucleus_index[event_id], nucleus_index[feeling_id]
         fragments = tuple(_source_grounded_clause_candidate(n, resolver) for n in (event, feeling))
         for n, fragment in zip((event, feeling), fragments, strict=True):
@@ -2643,6 +2648,9 @@ def source_grounded_current_expression_nominal(
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
 ) -> str:
+    retained = source_grounded_thread_received_group(move, plan, nucleus_index, resolver)
+    if retained:
+        return _thread_received_group_nominal(retained)
     received = source_grounded_received_contrast_group(move, plan, nucleus_index, resolver)
     if received:
         return "と、".join(event + _RECEIVED_EVENT_LINK_TEXT[link] + feeling + "こと" for _, _, event, feeling, link in received)
@@ -2676,8 +2684,12 @@ def source_grounded_thread_answer_group(move, plan, nucleus_index, resolver):
         or move.reception_act != "stay_with_current_burden" or move.support_nucleus_ids
         or not 2 <= len(move.target_nucleus_ids) <= 3):
         return ()
+    return _source_grounded_thread_answer_rows(move.target_nucleus_ids, plan, nucleus_index, resolver)
+
+
+def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver):
     rows = []
-    for nid in move.target_nucleus_ids:
+    for nid in targets:
         n = nucleus_index[nid]
         times = {c.split(":", 1)[1] for c in n.semantic_frame.attribute_codes if c.startswith("thread_time:")}
         about = tuple(r for r in plan.relations if r.to_nucleus_id == nid
@@ -2710,6 +2722,49 @@ def source_grounded_thread_answer_group(move, plan, nucleus_index, resolver):
             value = _thread_answer_timed_nominal(value, grammar, when)
         rows.append(_ThreadAnswerGroupItem(nid, event.nucleus_id, source, grammar, when, value, event_fragment))
     return tuple(rows) if len({r.event_id for r in rows}) == len(rows) else ()
+
+
+
+def source_grounded_thread_received_group(move, plan, nucleus_index, resolver):
+    """Prove each original pair and its optional active answer in one duty."""
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+    if (plan is None or getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+        or move not in plan.response_plan.human_reception_plan.moves
+        or ("current_burden", move.target_nucleus_ids, move.support_nucleus_ids)
+           not in _thread_retained_reaction_groups(plan.nuclei, plan.relations)):
+        return ()
+    rows = []
+    for event_id in move.target_nucleus_ids:
+        contrasts = tuple(r for r in plan.relations if r.type == "contrast"
+            and r.from_nucleus_id == event_id and r.to_nucleus_id in move.support_nucleus_ids
+            and r.relation_id in plan.coverage_requirements.required_relation_ids)
+        about = tuple(r for r in plan.relations if r.type == "evaluation_about_event"
+            and r.from_nucleus_id == event_id and r.to_nucleus_id in move.support_nucleus_ids
+            and r.relation_id in plan.coverage_requirements.required_relation_ids)
+        if len(contrasts) > 1 or len(about) > 1 or not (contrasts or about):
+            return ()
+        original = _source_grounded_received_contrast_rows(
+            (event_id,), (contrasts[0].to_nucleus_id,), nucleus_index, resolver) if contrasts else ()
+        answers = _source_grounded_thread_answer_rows(
+            tuple(r.to_nucleus_id for r in about), plan, nucleus_index, resolver)
+        if len(original) != len(contrasts) or len(answers) != len(about):
+            return ()
+        rows.append((original[0] if original else None, answers[0] if answers else None))
+    return tuple(rows)
+
+
+def _thread_received_group_nominal(rows):
+    parts = []
+    for original, answer in rows:
+        if original is None:
+            part = answer.event_fragment + ("ことについて、" if answer.grammar == "FINITE" else "ことへの") + answer.nominal
+        else:
+            _, _, event, feeling, link = original
+            part = event + _RECEIVED_EVENT_LINK_TEXT[link] + feeling + "こと"
+            if answer is not None:
+                part += "と、その出来事" + ("について、" if answer.grammar == "FINITE" else "への") + answer.nominal
+        parts.append(part)
+    return "と、".join(parts)
 
 
 def resolve_grounded_reception_referent(
@@ -5090,6 +5145,18 @@ def derive_source_grounded_nominalization_plan(
     )
     if reference_mode == "ANAPHORIC" or move is None or plan is None or resolver is None:
         return nominalization
+    retained = source_grounded_thread_received_group(move, plan, {n.nucleus_id: n for n in nuclei}, resolver)
+    if retained:
+        positions = {n.nucleus_id: slot for slot, n in enumerate(nuclei)}
+        codes = []
+        for slot, (original, answer) in enumerate(retained):
+            event = original[0] if original else answer.event_id
+            if positions[event] != slot:
+                raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+            suffix = f":{positions[answer.nucleus_id]}:{answer.grammar}:{answer.when}" if answer else ":none"
+            original_code = f"{positions[original[1]]}:{original[4]}" if original else "none:none"
+            codes.append(f"thread-received-slot:{slot}:" + original_code + suffix)
+        return (*nominalization, *codes)
     received = source_grounded_received_contrast_group(move, plan, {n.nucleus_id: n for n in nuclei}, resolver)
     if received:
         ordered = tuple(n.nucleus_id for n in nuclei)
@@ -5190,6 +5257,12 @@ def source_grounded_negative_context_nominal(
 def _source_grounded_nominalization_shape_valid(
     plan: tuple[str, ...], semantic_count: int,
 ) -> bool:
+    if (2 <= len(plan) <= 4 and plan[:1] == _SOURCE_GROUNDED_NOMINALIZATION_BASE
+        and all(re.fullmatch(
+            rf"thread-received-slot:{slot}:(?:[0-8]:(?:noni|kedo|keredo|keredomo)|none:none):(?:none|[0-8]:(?:BELIEF|PAST_FEELING|PERCEIVED_0|PERCEIVED_1|FINITE):(?:original_occasion|answer_time|prior_answer_time))", code)
+            for slot, code in enumerate(plan[1:]))
+        and semantic_count == len(plan) - 1 + sum(c.split(":")[2] != "none" for c in plan[1:]) + sum(not c.endswith(":none") for c in plan[1:])):
+        return True
     if (3 <= len(plan) <= 4 and plan[:1] == _SOURCE_GROUNDED_NOMINALIZATION_BASE
         and len(set(plan)) == len(plan)
         and all(code in {f"answer-slot:{slot}:{grammar}:{when}"
@@ -6739,6 +6812,11 @@ def _validate_source_grounded_move_ir(
     expected_nominalization = _source_grounded_nominalization_from_profiles(
         move.semantic_fragments, move.semantic_profiles, move.reference_mode,
     )
+    retained_grammar = tuple(p for p in move.nominalization_plan if p.startswith("thread-received-slot:"))
+    if retained_grammar:
+        if not _thread_received_group_ir_text(move):
+            raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+        expected_nominalization = (*expected_nominalization, *retained_grammar)
     received_grammar = tuple(p for p in move.nominalization_plan if p.startswith("received-contrast-group:"))
     if received_grammar:
         if not _received_contrast_group_ir_text(move):
@@ -7382,7 +7460,7 @@ def _source_grounded_target_owner_slot(
     referent_kind: str,
 ) -> int:
     """Bind a typed referent only to a semantically compatible slot."""
-    if referent_kind == "current_expression" and (_received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)):
+    if referent_kind == "current_expression" and (_thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)):
         # Slot zero anchors the collective grammar, whose core must cover
         # every target and its subject. It is not the sole selected answer.
         return 0
@@ -7391,6 +7469,73 @@ def _source_grounded_target_owner_slot(
         realization.target_slot_count,
         referent_kind,
     )
+
+
+
+def _thread_received_group_ir_text(realization):
+    codes = tuple(c for c in realization.nominalization_plan if c.startswith("thread-received-slot:"))
+    if not codes:
+        return ""
+    count = realization.target_slot_count
+    fragments, profiles = realization.semantic_fragments, realization.semantic_profiles
+    if (len(codes) != count or not 1 <= count <= 3
+        or not _source_grounded_nominalization_shape_valid(realization.nominalization_plan, len(fragments))
+        or realization.reference_mode == "ANAPHORIC"
+        or realization.context_slots != tuple(range(count, len(fragments)))
+        or realization.time_scope != "past" or realization.polarity != "neutral"
+        or realization.modality != "fact" or realization.aspect not in {"unknown", "not_applicable"}):
+        raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+    consumed, expected_relations, parts = set(range(count)), set(), []
+    for slot, code in enumerate(codes):
+        _, actual, feeling_text, link, *answer_code = code.split(":")
+        ep = profiles[slot]
+        if (int(actual) != slot or ep.nucleus_kind != "event" or ep.predicate_kind != "event" or ep.modality != "fact"
+            or ep.actor_kind != "SELF" or ep.quoted_boundary or ep.performed_action or ep.future_action
+            or not _SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(fragments[slot])):
+            raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+        part = ""
+        if feeling_text != "none":
+            feeling_slot = int(feeling_text)
+            if feeling_slot not in realization.context_slots or feeling_slot in consumed:
+                raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP")
+            consumed.add(feeling_slot)
+            fp = profiles[feeling_slot]
+            if (fp.nucleus_kind != "reaction" or fp.predicate_kind != "feeling" or fp.modality != "feeling"
+                or fp.actor_kind != "SELF" or fp.quoted_boundary or fp.performed_action or fp.future_action
+                or not _SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(fragments[feeling_slot])):
+                raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+            expected_relations.add(("contrast", (slot, feeling_slot)))
+            part = fragments[slot] + _RECEIVED_EVENT_LINK_TEXT[link] + fragments[feeling_slot] + "こと"
+        elif answer_code == ["none"]:
+            raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP")
+        if answer_code != ["none"]:
+            answer_slot, grammar, when = int(answer_code[0]), *answer_code[1:]
+            if answer_slot not in realization.context_slots or answer_slot in consumed:
+                raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP")
+            consumed.add(answer_slot)
+            ap = profiles[answer_slot]
+            source = fragments[answer_slot]
+            row = _thread_answer_nominal_morphology(source)
+            if (ap.nucleus_kind != "reaction" or ap.predicate_kind != "feeling" or ap.modality != "feeling"
+                or ap.actor_kind != "SELF" or ap.quoted_boundary or ap.performed_action or ap.future_action):
+                raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+            if grammar == "FINITE" and row is None and _SOURCE_GROUNDED_FINITE_END_RE.search(source):
+                prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で", "prior_answer_time": "先の回答時点で"}[when]
+                nominal = prefix + source + "こと"
+            elif row is not None and row[0] == grammar:
+                nominal = _thread_answer_timed_nominal(row[1], grammar, when)
+            else:
+                raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+            expected_relations.add(("evaluation_about_event", (slot, answer_slot)))
+            subject = "と、その出来事" if part else fragments[slot] + "こと"
+            part += subject + ("について、" if grammar == "FINITE" else "への") + nominal
+        parts.append(part)
+    actual_relations = {(r.relation_kind, r.endpoint_slots) for r in realization.relations
+                        if r.endpoint_roles == ("LEFT", "RIGHT")}
+    if (consumed != set(range(len(fragments))) or actual_relations != expected_relations
+        or len(realization.relations) != len(expected_relations)):
+        raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP")
+    return "と、".join(parts)
 
 
 def _received_contrast_group_ir_text(realization):
@@ -7702,7 +7847,7 @@ def _source_grounded_temporal_aspect_realization(
     if realization.reference_mode == "ANAPHORIC":
         return "ANTECEDENT", "ANTECEDENT", "", ""
 
-    group_text = _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
+    group_text = _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
     if group_text:
         if target_referent != group_text or realization.aspect not in {"unknown", "not_applicable"}:
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
@@ -7952,7 +8097,7 @@ def _source_grounded_target_np(
         realization.semantic_fragments[target_owner_slot],
         target_referent=referent_text,
     )
-    group_text = _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
+    group_text = _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
     if group_text:
         if (referent_kind != "current_expression" or referent_text != group_text
             or move.reception_act != "stay_with_current_burden" or target_owner_slot != 0):

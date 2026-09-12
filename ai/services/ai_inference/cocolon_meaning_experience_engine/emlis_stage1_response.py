@@ -11957,6 +11957,42 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
     # Move targets; do not select a different meaning or rewrite the claim.
     # The sole author/replay still require the shared claim's complete content
     # across both Moves, including all primary and boundary response objects.
+    # A retained original/answer burden group and one positive answer still
+    # share the same aggregate claim. Assign whole contributions, including
+    # both endpoints of every original contrast, to the consuming Move.
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+    retained = _thread_retained_reaction_groups(tuple(binding.node_meta.values()),
+        tuple(binding.edge_meta.values()))
+    grouped = bool(len(rows) == 2 and any(move.support_nucleus_ids for move in reception_plan.moves)
+        and {row.reception_act for row in rows} == {"stay_with_current_burden", "recognize_lived_change"}
+        and tuple(("current_burden" if m.reception_act == "stay_with_current_burden" else "lived_change",
+                   m.target_nucleus_ids, m.support_nucleus_ids) for m in reception_plan.moves) == retained)
+    if grouped:
+        first = rows[0]
+        appraisal = first.subjective_proposition.appraisal_content
+        if (first.branch != SubjectiveProjectionBranch.LIMITED
+            or appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
+            or appraisal.operation != "RECEIVE_AS_MATERIAL"
+            or any(not m.required for m in reception_plan.moves)
+            or any((r.branch, r.projected_claim_ref, r.meaning_outcome_ref, r.reception_binding_ref,
+                    r.subjective_proposition, r.selected_contribution_refs)
+                   != (first.branch, first.projected_claim_ref, first.meaning_outcome_ref, first.reception_binding_ref,
+                       first.subjective_proposition, first.selected_contribution_refs) for r in rows)
+            or first.subjective_proposition.focal_relation_ref is not None):
+            raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+        duties = tuple({_node_ref(binding.nucleus_to_node[nid])
+                        for nid in (*m.target_nucleus_ids, *m.support_nucleus_ids)}
+                       for m in reception_plan.moves)
+        partition = tuple(tuple(ref for ref in first.selected_contribution_refs
+            if (basis := {b.semantic_ref for b in first.basis_rows if b.contribution_ref == ref})
+            and basis <= duty) for duty in duties)
+        if (any(not refs for refs in partition) or set(partition[0]) & set(partition[1])
+            or set().union(*map(set, partition)) != set(first.selected_contribution_refs)
+            or set().union(*duties) != set(first.subjective_proposition.response_object_refs)):
+            raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+        return [identify_selected_subjective_reception_decision(replace(
+            row, decision_ref="", selected_contribution_refs=refs))
+            for row, refs in zip(rows, partition, strict=True)]
     mixed_answers = bool(
         len(rows) == 2
         and {row.reception_act for row in rows} == {

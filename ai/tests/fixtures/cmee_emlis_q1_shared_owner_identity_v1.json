@@ -1,7 +1,7 @@
 {
   "scope": "Q1 shared language owners only; test snapshot, not product acceptance or full thread identity",
-  "language_identity": "9262f2f8352af46648a2a3a632d8a0b9e85222679d3f4a9a5dd4eabafa821e30",
-  "runtime_identity": "a6470e1e2d8bb914fa1b04bd9e581cec5ff586b9591aaf05a0059676d86847b1",
+  "language_identity": "7fa6fd70680df5addba486d98a8d5b4800c31085709ed74fcb9eabde5bfc5110",
+  "runtime_identity": "859130b36738400293a81d81a5525f1096da8c7935c6696513ec446b3abfd63c",
   "language_payloads": [
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
@@ -15,8 +15,8 @@
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py",
-      "1405d85bce94c8a4d47adf62dbdf55dc7b4d10fb318051704d6c3258daaf5d93",
-      903118
+      "8de3baeb251a702bd14dc5c88b1443d1c044efb7daa4df306b49f7409c6fb12e",
+      913016
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py",
@@ -25,8 +25,8 @@
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
-      "c60d59fc026c210a6a9742d02b9252b78ae8e58730dc2a1d098994343e04e0f2",
-      1354066
+      "3443a53791b9c9f8e3f91a69837964de54724af5c5ae9d691dc6b9d6d843179d",
+      1378874
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
@@ -35,13 +35,13 @@
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
-      "4bb5f7f04d2203f2f1d820fe9ad59283fc8d18db7f7322a6ad402195d7515e16",
-      1132069
+      "e0f59237102104a70833f60219dbe5c3f186874bbc3360024105bdf5974655d2",
+      1167663
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
-      "8592ee38b69c681d5a11d1529f5bb66edcb61676804206a9272ba8ce329c0aa6",
-      414926
+      "34b7cebc3b712d11bb103c1f629205853521d263013368660986ec5511d938d6",
+      443289
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",
@@ -107,8 +107,8 @@
     ],
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py",
-      "f8d9987014b08354fd6051b8e864aa09ebf3c1aeedffd6f87caa0afe2cd5f858",
-      529466
+      "77c5e1cb18ec7e81e6f47279d6b5727f314c051f5bd50376a5411abc6e91e78d",
+      532244
     ],
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py",
@@ -117,8 +117,8 @@
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
-      "24e740c8d9d17d3f6163077b56207e35a2fc8710fe458446685878e1e9534840",
-      537495
+      "4766da2ec4378fb004d50c78fe9ae435756ec61199e162c0af801d4741689088",
+      543837
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
@@ -127,13 +127,13 @@
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
-      "c7a848a4a98f55595c3505a2673136aa1d07e35a21a4f0184bd59c662bc03238",
-      420525
+      "c5fde6f342579291482c7c16649f939abceb3ebf016c2e10afd151bf073c79dc",
+      430077
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
-      "b4a9a8f62a76c9d0f806a5efca8d2eb02587030b9b796646c2b22f9604f63794",
-      158252
+      "35681018bb9414d6f8ca8b086a6c26b6ae79b97dd7e99ade03db0c95baf98969",
+      166033
     ],
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",
@@ -192,10 +192,10 @@
       478,
       117,
       194,
-      294,
+      295,
       123,
-      231,
-      59,
+      236,
+      60,
       90
     ],
     [
@@ -209,6 +209,6 @@
       45,
       101
     ],
-    "8b160e8c2efe6af02392e30671b06f9be8b6d8848337187abdf3353afe2b2ca3"
+    "ae7630e989d4b88ab97ada82c36c89d767988b79fee59d65bbb85cd07092f418"
   ]
 }
