@@ -12789,6 +12789,12 @@ def _final_source_feeling_reason_nuclei(nuclei, evidence_spans, normalized_input
         or not re.fullmatch(r"\s*[。．.]?\s*", source[right.end_index:])):
         return nuclei
     first, second = (str(s.raw_text).strip(" 　。．.") for s in (left, right))
+    first_person = tuple(re.finditer(r"(?:わたし|ぼく|おれ|私|僕|俺)", first))
+    if first_person and (len(first_person) != 1
+        or not re.fullmatch(r"(?:わたし|ぼく|おれ|私|僕|俺)は[^、,]+", first)):
+        # A simple SELF topic has a reversible recipient-owned nominal.
+        # Other focus/case/reporting forms need their own grammatical proof.
+        return nuclei
     host_parts = re.split(r"[、,]", first)
     host = host_parts[-1]
     self_perception = re.fullmatch(
@@ -12800,12 +12806,15 @@ def _final_source_feeling_reason_nuclei(nuclei, evidence_spans, normalized_input
     perception_owner_bound = bool(self_perception
         and re.fullmatch(r"(?:[^はがも]|が(?=[らりるれろっ]))+(?:ている|でいる|ていない|でいない|ない)", self_perception['content'])
         and not re.search(r"(?:のに|けど|けれど|だが|ですが)", self_perception['content']))
+    bare_feeling_host = re.compile(r"(?:(?:今|現在)(?:は|も))?(?:(?:何となく|なんとなく|少し|とても|すごく))*"
+                                   r"(?:悲し|寂し|苦し|怖|つら|重|しんど|だる)い")
+    self_topic = re.fullmatch(r"(?:わたし|ぼく|おれ|私|僕|俺)は(?P<predicate>.+)", host)
     owner_bound = bool(
         (len(host_parts) == 1 or len(host_parts) == 2 and re.search(r"(?:ても|でも)$", host_parts[0]))
         and (_source_operator_owner_scope_is_bound(host)
              or perception_owner_bound
-             or re.fullmatch(r"(?:(?:今|現在)(?:は|も))?(?:(?:何となく|なんとなく|少し|とても|すごく))*"
-                             r"(?:悲し|寂し|苦し|怖|つら|重|しんど|だる)い", host))
+             or bare_feeling_host.fullmatch(host)
+             or self_topic and bare_feeling_host.fullmatch(self_topic['predicate']))
     )
     if (len(tuple(_FEELING_RE.finditer(first))) != 1
         or not owner_bound

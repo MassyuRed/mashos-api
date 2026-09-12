@@ -1113,13 +1113,14 @@ def test_event_withdrawal_inverse_rejects_lost_retimed_or_rebound_independent_me
         assert not parsed(result.artifact.text.replace('と、頼まれたのに寂しかったこと', ''))
 
 
-@pytest.mark.parametrize('memo', [
-    '何となく寂しい。なぜそう感じるのかは分からない。',
-    '私は少し怖い。その理由はまだよく分からない。',
-    '人が近くにいても、自分だけ離れている感じがする。どうしてそう感じるのかがわからない。',
+@pytest.mark.parametrize('memo,first_nominal', [
+    ('何となく寂しい。なぜそう感じるのかは分からない。', '何となく寂しいこと'),
+    ('私は少し怖い。その理由はまだよく分からない。', '少し怖いというあなたの気持ち'),
+    ('僕はとても寂しい。その理由は分からない。', 'とても寂しいというあなたの気持ち'),
+    ('人が近くにいても、自分だけ離れている感じがする。どうしてそう感じるのかがわからない。', '人が近くにいても、自分だけ離れている感じがすること'),
 ])
 @pytest.mark.parametrize('q3', [False, True])
-def test_current_feeling_and_its_reason_unknown_remain_one_reception_duty(memo, q3):
+def test_current_feeling_and_its_reason_unknown_remain_one_reception_duty(memo, first_nominal, q3):
     req = (begin if q3 else initial)(memo, 'お茶を飲んだ。')
     prepared = prepare_emlis_meaning(req)
     plan = build_updated_grounded_plan(prepared)
@@ -1127,7 +1128,7 @@ def test_current_feeling_and_its_reason_unknown_remain_one_reception_duty(memo, 
     result = realize_emlis_thread_body(prepared)
     assert result.artifact, result.reason_codes
     feeling, unknown = memo.rstrip('。').split('。')
-    expected = feeling + 'ことと、' + unknown + 'ことを小さくせずに受け止めています。お茶を飲んだことを大切に思っています。'
+    expected = first_nominal + 'と、' + unknown + 'ことを小さくせずに受け止めています。お茶を飲んだことを大切に思っています。'
     assert result.artifact.reception == expected
     assert unknown + 'のですね。' in result.artifact.observation
     engine = MeaningExperienceEngine()
@@ -1161,6 +1162,8 @@ def test_current_feeling_and_its_reason_unknown_remain_one_reception_duty(memo, 
 
 @pytest.mark.parametrize('memo', [
     '友達がつらい。その理由は分からない。',
+    '私も少し怖い。その理由は分からない。',
+    '私だけ少し怖い。その理由は分からない。',
     '私が一緒にいる友達は寂しい。その理由は分からない。',
     '私は仕事中だが彼女は寂しい。その理由は分からない。',
     '彼女は悲しい。なぜそう感じるのかは分からない。',
@@ -1197,10 +1200,11 @@ def test_feeling_reason_body_inverse_rejects_loss_rebinding_or_closed_reason_wit
                 plan=plan, sentence_plan=sentence_plan, resolver=resolver, selected_subjective_input=selected).passed
     assert independent(follow)
     for changed in (
-        follow.replace('私は少し怖いことと、', ''), follow.replace('と、その理由はまだよく分からないこと', ''),
-        follow.replace('私は', '彼は'), follow.replace('まだよく', ''), follow.replace('分からない', '分かった'),
+        follow.replace('少し怖いというあなたの気持ちと、', ''), follow.replace('と、その理由はまだよく分からないこと', ''),
+        follow.replace('あなたの気持ち', '私の気持ち'), follow.replace('まだよく', ''), follow.replace('分からない', '分かった'),
         follow.replace('分からない', '分からなかった'), follow.replace('その理由', '行動の理由'),
-        follow.replace('ことと、', 'ことが原因で、'), follow.replace('私は少し怖いこと', '「私は少し怖いこと」'),
+        follow.replace('気持ちと、', '気持ちが原因で、'), follow.replace('少し怖いというあなたの気持ち', '私は少し怖いこと'),
+        follow.replace('あなたの気持ち', '彼女の気持ち'), follow.replace('少し怖いというあなたの気持ち', '「少し怖いというあなたの気持ち」'),
         follow.replace('お茶を飲んだこと', 'お茶を飲まなかったこと'),
     ):
         assert changed != follow and not independent(changed), changed

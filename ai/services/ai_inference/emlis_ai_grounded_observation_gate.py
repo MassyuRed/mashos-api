@@ -1993,19 +1993,24 @@ def _body_inverse_feeling_reason_group(body, witness, sentence, move, plan, reso
         and proposition.relational_position.stance_operator == "HOLD_UNFINISHED_OPEN")
     raw = body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8")
     prefix = "結論を急がずに、" if openness else ""
-    parsed = re.fullmatch(re.escape(prefix) + r"(?P<left>[^。！？!?]+)ことと、(?P<right>[^。！？!?]+)こと"
+    expected = tuple(str(resolver.resolve(n.source_span_ids[0]).raw_text).strip(" 　。．.") for n in group[:2])
+    self_topic = re.fullmatch(r"(?P<owner>私|わたし|僕|ぼく|俺|おれ)は(?P<feeling>[^、,]+)", expected[0])
+    left_suffix = "というあなたの気持ち" if self_topic else "こと"
+    parsed = re.fullmatch(re.escape(prefix) + r"(?P<left>[^。！？!?]+)" + re.escape(left_suffix) + r"と、(?P<right>[^。！？!?]+)こと"
         r"を小さくせずに(?:(?:受け止めて|気にかけて)(?:います|いて)|(?:受け止め|気にかけ)たいです)。", raw)
     if parsed is None:
         return False
-    expected = tuple(str(resolver.resolve(n.source_span_ids[0]).raw_text).strip(" 　。．.") for n in group[:2])
-    if (parsed.group("left"), parsed.group("right")) != expected:
+    restored_left = (self_topic['owner'] + "は" if self_topic else "") + parsed.group("left")
+    if (restored_left, parsed.group("right")) != expected:
         return False
     for name in ("left", "right"):
         start = sentence.utf8_byte_start + len(raw[:parsed.start(name)].encode())
-        end = sentence.utf8_byte_start + len(raw[:parsed.end(name)].encode()) + len("こと".encode())
+        suffix = left_suffix if name == "left" else "こと"
+        marker_code = "target_feeling" if name == "left" and self_topic else "finite_clause_nominal"
+        end = sentence.utf8_byte_start + len(raw[:parsed.end(name)].encode()) + len(suffix.encode())
         if (any(q.utf8_byte_start < end and start < q.utf8_byte_end for q in witness.quotes)
             or any(m.marker_code == "secondary_quote_boundary" and m.utf8_byte_start < end and start < m.utf8_byte_end for m in witness.markers)
-            or not any(m.section == "reception" and m.marker_code == "finite_clause_nominal"
+            or not any(m.section == "reception" and m.marker_code == marker_code
                        and start <= m.utf8_byte_start and m.utf8_byte_end == end for m in witness.markers)):
             return False
     return True

@@ -2679,6 +2679,15 @@ def source_grounded_feeling_reason_group(move, plan, nucleus_index, resolver):
     return clauses
 
 
+def _source_feeling_reason_nominal(clauses):
+    first, unknown = clauses
+    self_topic = re.fullmatch(r"(?:わたし|ぼく|おれ|私|僕|俺)は(?P<feeling>[^、,]+)", first)
+    # The source's first person is the recipient, never Emlis. Keep its
+    # complete finite feeling and make the already-proven SELF owner explicit.
+    nominal = (self_topic['feeling'] + "というあなたの気持ち" if self_topic else first + "こと")
+    return nominal + "と、" + unknown + "こと"
+
+
 def source_grounded_current_expression_nominal(
     move: GroundedReceptionMovePlan,
     plan: GroundedObservationPlan | None,
@@ -2687,7 +2696,7 @@ def source_grounded_current_expression_nominal(
 ) -> str:
     reason = source_grounded_feeling_reason_group(move, plan, nucleus_index, resolver)
     if reason:
-        return "ことと、".join(reason) + "こと"
+        return _source_feeling_reason_nominal(reason)
     retained = source_grounded_thread_received_group(move, plan, nucleus_index, resolver)
     if retained:
         return _thread_received_group_nominal(retained)
@@ -7606,7 +7615,7 @@ def _source_feeling_reason_group_ir_text(realization):
         or not re.fullmatch(r"(?:(?:なぜ|どうして|何故)そう感じるのか|その理由)(?:は|が)?"
                             r"(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", realization.semantic_fragments[1])):
         raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
-    return "ことと、".join(realization.semantic_fragments) + "こと"
+    return _source_feeling_reason_nominal(realization.semantic_fragments)
 
 
 def _thread_received_group_ir_text(realization):
