@@ -7578,3 +7578,22 @@ sourceで証明された本人の過去の受動出来事と未訂正の原陰�
 商品は **NOT_CLEAR**。単一の陰性ADDでは原感情がHRから落ちる場合が残る。原イベント自体の撤回では、独立した原反応や過去回答が関係を失い、他の有効な組までgroup選択から外れる原因を静的に確認したが、本turnの保存40ケースはその修正を証明しない。次は撤回対象に意味を再結合せず、残る組と孤立した意味を保持する既存ownerの処理を進める。本文の未確定部分、複数主題/中心感情/共有関係、対応外文法、複数肯定、長い再掲・名詞列・定型的な締めも残件。単純な適用条件緩和や質問追加で原入力の読み落としを埋めない。
 
 2027年1月の全体目標、9/16共通修正・本文確認、9/18比較、9/19判断を維持。既存確認済みCPython3.12.13・pytest8.4.1・固定46依存・PGlite0.5.8を再利用し、installed RECORD2277fileとinterpreter実bytesを照合した。既存installer metadata/過去DTO identityの限定を保持する。Draft/open/unmerged・既定OFFを維持し、DB適用・native実機/実課金・merge/deploy/ready/有効化は未実施。正式商品PASSへ換算しない。System Context未使用、原典を直接確認。全実本文・途中失敗・再現harness・結果は同じ非公開作業記録へ追記し、private本文/個別case/digest/locatorは公開しない。
+
+## 2026-09-12 Q4残件 — 出来事の撤回後も独立した気持ちと他の出来事を保持
+
+最新weekly20260912に沿って、原イベントの明示撤回で、未撤回の原反応や既回答がHRから落ち、他の有効な出来事の組まで失う欠陥を修正した。API実装sourceは `35dcd0580cde228e6fe6bd05b5195d54ad6384c8`、tree `a000ce562de0214fd727476224494e185350c08a`。local固定検証source `9b18657df325c1cd06266e85b7dfc2449d2cc33e` と同treeで、実装・追加検査・現行owner snapshotの8fileをremoteから再取得し全内容一致を確認した。再開元API `2db60c4a533da825edc7659aaca1ea47be2e4b96` / App `ca73913df58c93816c5ffddbb9682ec46e931c4c`。後続commitは引継ぎ資料のみ。
+
+実際に非活性化された出来事の必要関係から、残る反応に撤回由来の証拠を渡す。sourceで証明された原反応と回答を、それぞれの過去・回答時点の独立した意味として保持する。撤回していない出来事と原反応・回答の対応も維持し、旧eventへの関係や改善の因果を作り直さない。独立した反応への明示REVISEは証拠のある対象だけを継承し、訂正後の語法・時点を採用する。
+
+既存の意味更新・選択・stage1・作者・surface・独立inverseを通して修正した。共有projected claimの分配は、本当に同一claimを共有する必要moveに限定し、全contributionの非空・排他・全量coverageを維持する。別々のNORMAL claimは各帰属を維持する。元の反応は原文法・全属性・主体・過去時点を独立に再確認し、本文からの欠落、反転、時点や所有者の入れ替え、引用化、旧eventの復活を拒否する。必要moveが三つを超える場合や対応外の撤回形は、代表一部だけの本文へ縮退せず生成不可とし、採用済み意味を保持する。新owner・schema・migration・RN変更はなく、STRUCTURE_MAP_DELTA_NONE。歴史的fixture・runner・期待値・閾値は変更していない。
+
+- Q1〜Q4・実SQL/RPC・共有作者・独立inverse・registryの全275件は **273 PASS / 2既存FAIL**、error/skip 0。前回261件の全key・成否を保持し、追加14件は全PASS。registry2失敗のmessageと詳細全文も前回と一致した。
+- 必須回帰は **438件中429 PASS / 9既存FAIL**。全438 key・成否は前回と一致。後段の全case/cohort/歴史的hashを含む診断JSONは除外なしで全内容・全bytes一致した。既存の歴史的hash/dated receipt、旧move数・follow期待、旧stub/時点期待の失敗を合格に変更していない。失敗詳細6件は全文一致、2件は作者の行番号移動のみ、1件は実source変更に伴うactual hashだけが異なり、その差を別記録に保持する。
+- 同じvalidated100を固定sourceで再生成。全100レコードとHR planは前回と全bytes一致。direct100、GENERATED73 / UNAVAILABLE27、moves/expressions/bound各143。華恋と独立readerが全入力field、両層全文、可否と全理由を読んだ。外側UNAVAILABLEの診断本文を提供成功へ加算していない。
+- 既存保存40ケース108状態・123保存GET一致を再確認し、出来事撤回と既回答・他出来事・三往復・故障注入の7ケース23状態・31保存GET一致を追加した。合計 **47ケース131状態・154保存GET一致**。華恋と独立readerが全原入力、問い、回答、current本文、timeline、frameと状態を確認した。既存108状態は本文・状態・可否・frame内容を維持し、生成identity/記録時刻とそれに由来する参照の差だけを明記して比較した。内部retry snapshotのtrace順序はrun間で異なるため完全同一とは扱わず、各run内の拒否操作前後の保存内容一致を確認した。
+
+追加7ケースはhistoryなしの合成入力で、別記録をまたぐ将来のframe修復までは証明しない。本文故障注入は計5状態あり、回答保存と意味更新を保持しcurrentなし、旧観測は非current、retry/continue不可となる。復旧成功として数えない。初回2ケースの補助harnessは旧HEAD定数の開始前assertで一度停止した。元失敗を保持し、scratchのHEAD/TREE定数だけ今回固定版へ合わせ、同じ2ケースを再実行して4状態・4保存GETを完了した。実装や期待値の変更による成功化ではない。
+
+商品は **NOT_CLEAR**。今回の対応範囲では、撤回した出来事を復活させず、原反応・既回答・残る出来事をHRへ保持できた。単一の陰性ADD後の原反応不足、未確定部分の本文反映、中心感情より行動へ寄る選択、対応外文法・複数肯定、長い名詞列・原文再掲・定型句の反復は残る。次は単一の陰性ADDでも元反応を保持する共有処理を進め、未確定部分と中心感情・関係、読みやすさの改善へ続ける。読み落としを追加質問で埋めない。全文確認・合成試験をMash正式商品PASSへ換算しない。
+
+2027年1月の全体目標、9/16共通修正・本文確認、9/18比較、9/19判断を維持。確認済みCPython3.12.13・pytest8.4.1・固定46依存・PGlite0.5.8を再利用し、既存runtime/履歴identityの限定も継承した。既定OFF・Draft/open/unmergedを保持。DB適用・native実機/実課金・merge/deploy/ready/有効化は未実施。System Context未使用、原典を直接確認。全実本文・途中失敗・再現harness・最終結果は同じ非公開作業記録に保持し、private本文/個別case/digest/locatorは公開しない。
