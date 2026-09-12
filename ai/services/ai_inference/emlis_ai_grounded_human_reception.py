@@ -3270,10 +3270,27 @@ def source_grounded_unfinished_referent(
         or nucleus.semantic_frame.polarity not in {"neutral", "negative"}
         or not {"lexical:preserve_source_predicate", "lexical:no_new_sensation_family"} <= attributes
         or {"operator:positive_change", "operator:change", "operator:result"} & attributes
-        # Keep the established anaphoric no-full-source-replay boundary.
-        or _source_grounded_clause_candidate(nucleus, resolver)
-        in _SOURCE_GROUNDED_UNFINISHED_REFERENT
     ):
+        return ""
+    clause = _source_grounded_clause_candidate(nucleus, resolver)
+    # A selected finite cognition can be the existing grammatical こと object.
+    # Preserve every source qualifier; the generic unknown referent must not
+    # add まだ or discard the user's degree/time. This is not a quote replay.
+    if (
+        nucleus.grounding_kind == "explicit" and nucleus.retention == "required"
+        and len(plan.response_plan.human_reception_plan.moves) == 1
+        and move.move_role == "felt_response"
+        and nucleus.semantic_frame.actor == "current_user"
+        and nucleus.semantic_frame.polarity == "negative"
+        and {"semantic_role:limiting_unknown", "operator:negation"} <= attributes
+        and not any(code.startswith(("source_fragment_", "surface_scalar_", "thread_time:"))
+                    or code == "semantic_role:embedded_turn" for code in attributes)
+        and re.fullmatch(r"(?:(?:今|現在)(?:は|も))?(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", clause)
+    ):
+        return clause + "こと"
+    # Keep the established anaphoric no-full-source-replay boundary for all
+    # other source forms, including unresolved questions and fragments.
+    if clause in _SOURCE_GROUNDED_UNFINISHED_REFERENT:
         return ""
     return _SOURCE_GROUNDED_UNFINISHED_REFERENT
 

@@ -2245,7 +2245,7 @@ def evaluate_grounded_surface_body_inverse(
                 codes = set(cf.attribute_codes)
                 if (cognition.kind == cf.predicate_kind == "uncertainty"
                     and cf.actor == "current_user" and cf.modality == "uncertain"
-                    and cf.polarity == "negative" and cf.time_scope == "present"
+                    and cf.polarity == "negative" and cf.time_scope in {"present", "current_input"}
                     and cognition.grounding_kind == "explicit" and cognition.retention == "required"
                     and cognition.source_fields in {("memo",), ("memo_action",)}
                     and len(cognition.source_span_ids) == 1
@@ -2258,7 +2258,7 @@ def evaluate_grounded_surface_body_inverse(
                     source_clause = str(source_span.raw_text).strip(" \u3000。．.")
                     if (source_span.source_field == cognition.source_fields[0]
                         and 0 <= source_span.start_index < source_span.end_index
-                        and re.fullmatch(r"(?:現在|今)(?:も|は)(?:まだ)?(?:はっきり|よく)?(?:わからない|分からない)", source_clause)):
+                        and re.fullmatch(r"(?:(?:現在|今)(?:も|は))?(?:まだ)?(?:はっきり|よく)?(?:わからない|分からない)", source_clause)):
                         direct_cognition = True
                         visible = _body_inverse_visible_text(body, parsed_line)
                         if "scope_hedge" in binding.functional_atom_ids:
@@ -2759,6 +2759,7 @@ def evaluate_grounded_surface_body_inverse(
                             else ""
                         )
                         nominal_target_visible = False
+                        cognition_nominal_range: tuple[int, int] | None = None
                         future_nominal_required = bool(
                             final_stage1_plan
                             and effective_reference_mode != "anaphoric_first"
@@ -2857,6 +2858,47 @@ def evaluate_grounded_surface_body_inverse(
                                         nominal_target_visible and actual_nominal == nominal
                                         and restore_thread_answer_nominal(actual_nominal, grammar, when) == source
                                     )
+                                # Independently restore a finite cognition from
+                                # its body-only こと object. A generic referent,
+                                # a quotation, or a source replay elsewhere in
+                                # this sentence cannot satisfy this obligation.
+                                if (burden_nominal_required and nominal_target_visible
+                                    and len(reception_plan.moves) == 1 and move.move_role == "felt_response"
+                                    and len(move.target_nucleus_ids) == 1 and not move.support_nucleus_ids):
+                                    cognition = nucleus_index[move.target_nucleus_ids[0]]
+                                    cf = cognition.semantic_frame
+                                    codes = set(cf.attribute_codes)
+                                    if (cognition.kind == cf.predicate_kind == "uncertainty"
+                                        and cf.actor == "current_user" and cf.modality == "uncertain"
+                                        and cf.polarity == "negative" and cf.time_scope in {"present", "current_input"}
+                                        and cognition.grounding_kind == "explicit" and cognition.retention == "required"
+                                        and cognition.source_fields in {("memo",), ("memo_action",)}
+                                        and len(cognition.source_span_ids) == 1
+                                        and {"operator:uncertainty", "operator:negation", "semantic_role:limiting_unknown",
+                                             "lexical:preserve_source_predicate", "lexical:no_new_sensation_family"} <= codes
+                                        and not any(code.startswith(("source_fragment_", "surface_scalar_", "thread_time:"))
+                                                    or code == "semantic_role:embedded_turn" for code in codes)):
+                                        source_span = resolver.resolve(cognition.source_span_ids[0])
+                                        source_clause = str(source_span.raw_text).strip(" \u3000。．.")
+                                        if (source_span.source_field == cognition.source_fields[0]
+                                            and 0 <= source_span.start_index < source_span.end_index
+                                            and re.fullmatch(r"(?:(?:現在|今)(?:も|は))?(?:まだ)?(?:はっきり|よく)?(?:わからない|分からない)", source_clause)):
+                                            actual_nominal = body[start:end].decode("utf-8")
+                                            # Read the whole object slot, not
+                                            # an expected substring inside an
+                                            # added まだ/subject/time modifier.
+                                            received = re.fullmatch(
+                                                r"結論を急がずに、(?P<source>[^。！？!?]+)こと"
+                                                r"を小さくせずに(?:"
+                                                r"(?:受け止めて|気にかけて)(?:います|いて)|"
+                                                r"(?:受け止め|気にかけ)たいです)。",
+                                                raw_sentence.decode("utf-8"),
+                                            )
+                                            if (received is not None and received.group("source") == source_clause
+                                                and actual_nominal.endswith("こと") and actual_nominal[:-2] == source_clause):
+                                                cognition_nominal_range = (start, end)
+                                            else:
+                                                nominal_target_visible = False
                             from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
                             retained_group = bool(move.support_nucleus_ids) and (
                                 "current_burden", move.target_nucleus_ids, move.support_nucleus_ids) in (
@@ -2900,10 +2942,13 @@ def evaluate_grounded_surface_body_inverse(
                         )
                         if (
                             effective_reference_mode == "anaphoric_first"
-                            and any(
-                                source_value in parsed_sentence_text
-                                for source_value in target_values
-                            )
+                            and any(source_value in (
+                                _body_inverse_normalized_anchor((
+                                    body[parsed_sentence.utf8_byte_start:cognition_nominal_range[0]]
+                                    + body[cognition_nominal_range[1]:parsed_sentence.utf8_byte_end]
+                                ).decode("utf-8"))
+                                if cognition_nominal_range is not None else parsed_sentence_text
+                            ) for source_value in target_values)
                         ):
                             failures.append(
                                 "body_inverse_reception_anaphoric_target_replayed:"

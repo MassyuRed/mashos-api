@@ -2608,7 +2608,7 @@ def _source_bound_current_cognition(
         nucleus.kind == frame.predicate_kind == "uncertainty"
         and frame.actor == "current_user"
         and frame.modality == "uncertain" and frame.polarity == "negative"
-        and frame.time_scope == "present"
+        and frame.time_scope in {"present", "current_input"}
         and nucleus.grounding_kind == "explicit" and nucleus.retention == "required"
         and nucleus.source_fields in {("memo",), ("memo_action",)}
         and len(nucleus.source_span_ids) == 1
@@ -2622,7 +2622,7 @@ def _source_bound_current_cognition(
         clause = str(span.raw_text).strip(" \u3000。．.")
         if (span.source_field == nucleus.source_fields[0]
             and 0 <= span.start_index < span.end_index
-            and re.fullmatch(r"(?:今|現在)(?:は|も)(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", clause)):
+            and re.fullmatch(r"(?:(?:今|現在)(?:は|も))?(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", clause)):
             return clause
     return ""
 

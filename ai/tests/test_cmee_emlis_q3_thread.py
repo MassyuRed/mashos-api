@@ -646,7 +646,10 @@ def test_unsupported_qualified_current_unknown_is_not_promoted_by_reception(q3):
     assert not prepared.accepted_nuclei
 
 
-@pytest.mark.parametrize('memo', ['今はまだよく分からない。', '現在は分からない。', '現在もまだはっきりわからない。'])
+@pytest.mark.parametrize('memo', [
+    '今はまだよく分からない。', '現在は分からない。', '現在もまだはっきりわからない。',
+    '分からない。', 'わからない。', 'まだ分からない。', 'まだよくわからない。',
+])
 @pytest.mark.parametrize('q3', [False, True])
 def test_initial_epistemic_unknown_reaches_actual_body_without_becoming_resolved(memo, q3):
     from cocolon_meaning_experience_engine import contracts as c
@@ -667,7 +670,11 @@ def test_initial_epistemic_unknown_reaches_actual_body_without_becoming_resolved
     result = engine.generate(req)
     assert result.body_state == 'FINAL' and result.artifact and result.question is None
     assert memo.rstrip('。') in result.artifact.observation
-    assert '結論を急がずに、まだ分からないことを小さくせずに受け止めています。' == result.artifact.reception
+    assert '結論を急がずに、' + memo.rstrip('。') + 'ことを小さくせずに受け止めています。' == result.artifact.reception
+    source, = (n for n in plan.nuclei if n.source_fields == ('memo',))
+    assert source.semantic_frame.time_scope == ('present' if memo.startswith(('今', '現在')) else 'current_input')
+    assert source.kind == source.semantic_frame.predicate_kind == 'uncertainty'
+    assert source.grounding_kind == 'explicit' and source.retention == 'required'
     resolver = prepared.thread.resolver()
     sentence = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
     def valid(body):
@@ -677,6 +684,36 @@ def test_initial_epistemic_unknown_reaches_actual_body_without_becoming_resolved
     for changed in ('もう分かったことを受け止めています。', 'まだ分からなかったことを受け止めています。',
                     'まだ分からないことを小さくせずに受け止めています。'):
         assert not valid(result.artifact.text.replace(result.artifact.reception, changed))
+    # The whole grammatical object must match. Matching its source as a
+    # substring would incorrectly admit an added subject, time, or degree.
+    from unittest.mock import patch
+    nominal = memo.rstrip('。') + 'こと'
+    mutations = [
+        'まだ' + nominal, 'よく' + nominal, '今は' + nominal, '彼は' + nominal,
+        nominal.replace('分からない', '分からなかった').replace('わからない', 'わからなかった'),
+        nominal.replace('分からない', '分かった').replace('わからない', 'わかった'),
+        '「' + nominal + '」', '『' + nominal + '』', nominal + 'と、' + nominal,
+        '今ここに置かれた言葉',
+        nominal.replace('現在も', '現在は').replace('まだ', '').replace('よく', '').replace('はっきり', ''),
+    ]
+    from types import SimpleNamespace
+    def independent(follow):
+        # Bypass only the existing writer replay equality. The body parser,
+        # source/meaning checks and new whole-object matcher must still reject
+        # each mutation independently of the writer's expected text.
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan',
+                   return_value=SimpleNamespace(text=follow)), patch(
+                   'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses',
+                   side_effect=AssertionError('no author replay')):
+            return valid(result.artifact.text.replace(result.artifact.reception, follow))
+    assert independent(result.artifact.reception)
+    for changed in mutations:
+        if changed != nominal:
+            follow = result.artifact.reception.replace(nominal, changed)
+            assert not valid(result.artifact.text.replace(result.artifact.reception, follow)), changed
+            assert not independent(follow), changed
+    assert not independent(result.artifact.reception + memo)
+    assert not independent(result.artifact.reception.replace('ことを', 'ことに'))
 
 
 def test_initial_epistemic_unknown_requires_affected_source_and_complete_evidence():
@@ -694,6 +731,7 @@ def test_initial_epistemic_unknown_requires_affected_source_and_complete_evidenc
 
 @pytest.mark.parametrize('memo', [
     '今はまだよく分からない。', '現在は分からない。', '現在もまだはっきりわからない。',
+    '分からない。', 'わからない。', 'まだ分からない。', 'まだよくわからない。',
 ])
 @pytest.mark.parametrize('q3', [False, True])
 def test_current_cognition_observation_preserves_source_without_added_feeling_or_time(memo, q3):
@@ -731,8 +769,76 @@ def test_current_cognition_observation_preserves_source_without_added_feeling_or
 @pytest.mark.parametrize('q3', [False, True])
 def test_bare_unknown_without_unfinished_source_proof_is_not_promoted_by_binding(q3):
     prepared = prepare_emlis_meaning(begin('分からない。') if q3 else initial('分からない。'))
+    # The real bare source now has a final-OP proof. Remove that proof to keep
+    # this negative test's original purpose: binding must not invent it.
+    added = {'semantic_role:limiting_unknown', 'lexical:preserve_source_predicate',
+             'lexical:no_new_sensation_family'}
+    plan = prepared.original_plan
+    prepared = replace(prepared, original_plan=replace(plan, nuclei=tuple(
+        replace(n, kind='state', semantic_frame=replace(n.semantic_frame, predicate_kind='state',
+            attribute_codes=tuple(code for code in n.semantic_frame.attribute_codes if code not in added)))
+        if n.source_fields == ('memo',) else n for n in plan.nuclei)))
     with pytest.raises(ValueError, match='LIMITED_RECEPTION_CAPABILITY_GAP_STOP'):
         project_thread_meaning(prepared, build_updated_grounded_plan(prepared))
+
+
+@pytest.mark.parametrize('clause', ['分からない', 'わからない'])
+def test_bare_cognition_proof_requires_whole_source_and_keeps_legacy_low_information(clause):
+    import emlis_ai_grounded_observation_plan as gp
+    prepared = prepare_emlis_meaning(begin(clause + '。'))
+    original = prepared.original_plan
+    nucleus, = (n for n in original.nuclei if n.source_fields == ('memo',))
+    raw = dict(memo=clause + '。', memo_action='', category=['仕事'], emotions=['不安'],
+               emotion_details=[dict(type='不安', strength='medium')])
+    legacy = gp.build_grounded_observation_plan(raw)
+    labels = tuple(n for n in original.nuclei if n.allowed_claim_scope == 'selected_label_only')
+    legacy_labels = tuple(n for n in legacy.nuclei if n.allowed_claim_scope == 'selected_label_only')
+    assert labels and all(n.retention == 'required' for n in legacy_labels)
+    assert labels == tuple(replace(n, retention='optional') for n in legacy_labels)
+    assert original.input_profile.material_quality == legacy.input_profile.material_quality
+    assert original.coverage_requirements.required_nucleus_ids == (nucleus.nucleus_id,)
+    span = prepared.thread.resolver().resolve(nucleus.source_span_ids[0])
+    # I5 still treats these short texts as limited; only final OP may prove
+    # their complete source-owned finite predicate before meaning selection.
+    assert not gp._is_substantive_text_span(span)
+    added = {'semantic_role:limiting_unknown', 'lexical:preserve_source_predicate',
+             'lexical:no_new_sensation_family'}
+    before = replace(nucleus, kind='state', semantic_frame=replace(nucleus.semantic_frame,
+        predicate_kind='state', attribute_codes=tuple(c for c in nucleus.semantic_frame.attribute_codes if c not in added)))
+    def projected(source, evidence=span, owner=before):
+        plan = replace(original, nuclei=(owner,))
+        nuclei, _ = gp._final_stage1_typed_nuclei(plan, (evidence,), normalized_input={'memo': source})
+        result, = nuclei
+        return result
+    proven = projected(clause + '。')
+    assert proven == replace(before, kind='uncertainty', semantic_frame=replace(before.semantic_frame,
+        predicate_kind='uncertainty', attribute_codes=before.semantic_frame.attribute_codes + (
+            'semantic_role:limiting_unknown', 'lexical:preserve_source_predicate', 'lexical:no_new_sensation_family')))
+    for source in (clause + '？', clause + 'なら待つ。', clause + '。続きがある。',
+                   clause + '。。', '彼は' + clause + '。', '「' + clause + '。」'):
+        start = source.index(clause)
+        changed = replace(span, start_index=start, end_index=start + len(clause))
+        assert projected(source, changed).kind == 'state', source
+    for changed in (replace(span, start_index=1), replace(span, end_index=len(clause) - 1),
+                    replace(span, raw_text=clause + '。'), replace(span, source_field='answer_text_private')):
+        assert projected(clause + '。', changed).kind == 'state'
+    for changed in (replace(before, retention='optional'), replace(before, grounding_kind='inferred'),
+                    replace(before, allowed_claim_scope='selected_label_only'),
+                    replace(before, semantic_frame=replace(before.semantic_frame, actor='other')),
+                    replace(before, semantic_frame=replace(before.semantic_frame, time_scope='past'))):
+        assert projected(clause + '。', owner=changed).kind == 'state'
+    # The original low-information label obligations stay required when the
+    # whole-field proof is absent or another text owner is present.
+    legacy_text, = (n for n in legacy.nuclei if n.source_fields == ('memo',))
+    for source in (clause + '？', '「' + clause + '。」'):
+        start = source.index(clause)
+        evidence = replace(span, start_index=start, end_index=start + len(clause))
+        result, _ = gp._final_stage1_typed_nuclei(legacy, (evidence,), normalized_input={'memo': source})
+        assert tuple(n for n in result if n.allowed_claim_scope == 'selected_label_only') == legacy_labels
+    additional = replace(legacy_text, nucleus_id='other:text', source_span_ids=('other:span',), source_fields=('memo_action',))
+    result, _ = gp._final_stage1_typed_nuclei(replace(legacy, nuclei=legacy.nuclei + (additional,)),
+        (span,), normalized_input={'memo': clause + '。', 'memo_action': '待つ。'})
+    assert tuple(n for n in result if n.allowed_claim_scope == 'selected_label_only') == legacy_labels
 
 
 def test_initial_epistemic_unknown_view_independently_rejects_lost_or_rebound_unknown():

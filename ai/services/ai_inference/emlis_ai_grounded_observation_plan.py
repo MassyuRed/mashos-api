@@ -10767,6 +10767,7 @@ def _final_stage1_typed_nuclei(
     }
     result: list[GroundedSemanticNucleus] = []
     compound_dependencies: list[tuple[str, str, str]] = []
+    proved_bare_cognition_ids: set[str] = set()
     for nucleus in plan.nuclei:
         span = (
             span_index.get(nucleus.source_span_ids[0])
@@ -11099,6 +11100,43 @@ def _final_stage1_typed_nuclei(
                             "operator:positive_change", "semantic_role:positive_evaluation",
                         ))),
                     ))
+            # The old low-information classifier intentionally keeps bare labels
+            # unexpanded. At this final boundary a complete negative cognition
+            # is instead a finite statement of not knowing. Prove the original
+            # field, then restore its existing role on the same required owner.
+            # Do not change I5 admission or infer a time, object, or feeling.
+            frame = nucleus.semantic_frame
+            attributes = set(frame.attribute_codes)
+            if (
+                span is not None and normalized_input is not None
+                and nucleus.kind == frame.predicate_kind == "state"
+                and nucleus.source_fields == ("memo",) and span.source_field == "memo"
+                and len(nucleus.source_span_ids) == 1
+                and nucleus.grounding_kind == "explicit" and nucleus.retention == "required"
+                and nucleus.allowed_claim_scope == "explicit_current_input"
+                and frame.actor == "current_user" and frame.time_scope == "current_input"
+                and frame.modality == "uncertain" and frame.polarity == "negative"
+                and {"operator:uncertainty", "operator:negation"} <= attributes
+                and not any(code.startswith(("source_fragment_", "surface_scalar_", "thread_time:"))
+                            or code == "semantic_role:embedded_turn" for code in attributes)
+            ):
+                source = str(normalized_input.get("memo") or "")
+                start, end = span.start_index, span.end_index
+                raw = str(span.raw_text)
+                if (
+                    0 <= start < end <= len(source) and source[start:end] == raw
+                    and not source[:start].strip()
+                    and re.fullmatch(r"\s*[。．.]?\s*", source[end:])
+                    and _top_level_text(source) == source
+                    and re.fullmatch(r"(?:分からない|わからない)", raw.strip(" \u3000。．."))
+                ):
+                    nucleus = replace(nucleus, semantic_frame=replace(
+                        frame, attribute_codes=tuple(_dedupe((
+                            *frame.attribute_codes, "semantic_role:limiting_unknown",
+                            "lexical:preserve_source_predicate", "lexical:no_new_sensation_family",
+                        ))),
+                    ))
+                    proved_bare_cognition_ids.add(nucleus.nucleus_id)
             # An embedded action/change does not make an unresolved why-question
             # an assertion. A finite, already-uncertain state must likewise
             # retain its openness before meaning selection. Correct the kind before
@@ -11324,6 +11362,22 @@ def _final_stage1_typed_nuclei(
             raise GroundedObservationPlanError(
                 "typed_projection_cardinality_invalid"
             )
+    # The source kernel owns structured labels as ACTIVE_OPTIONAL context.
+    # I5 made them required while the bare text had no substantive predicate.
+    # Once this whole-field proof supplies the sole required text owner, align
+    # that inherited context before the existing final coverage is rebuilt.
+    # Preserve every label/evidence/value and the old material-quality limit.
+    text_ids = {n.nucleus_id for n in result if set(n.source_fields) & _TEXT_SOURCE_FIELDS}
+    if (len(proved_bare_cognition_ids) == 1 and text_ids == proved_bare_cognition_ids
+        and plan.safety_policy.safety_kind == TRIAGE_SAFE_OBSERVATION
+        and not plan.relations and not compound_dependencies
+        and all(n.kind == n.semantic_frame.predicate_kind == "uncertainty"
+                and n.retention == "required" and n.grounding_kind == "explicit"
+                for n in result if n.nucleus_id in proved_bare_cognition_ids)):
+        result = [replace(n, retention="optional")
+                  if n.source_fields and set(n.source_fields) <= _LABEL_SOURCE_FIELDS
+                  and n.allowed_claim_scope == "selected_label_only" and n.grounding_kind == "explicit"
+                  else n for n in result]
     return tuple(result), tuple(compound_dependencies)
 
 
