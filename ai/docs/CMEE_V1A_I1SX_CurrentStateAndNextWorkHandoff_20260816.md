@@ -7558,3 +7558,23 @@ LIMITEDの既存共有claimに二つの回答が含まれる場合、同じ封�
 商品は **NOT_CLEAR**。原反応群の後に肯定回答を受け止めるため、その出来事の原反応と回答が隣接しないこと、長い名詞列と定型の締めは残る。原イベント自体の撤回で原反応が孤立する場合は今回の保存35ケースに含まれず、他の有効な組の保持を含めて次に確認・修正する。原反応の撤回結果から一般化しない。任意の複数主題・中心感情・共有関係、現在形/未対応文法、複数の肯定回答、未確定部分の本文反映も未完了。単一eventでの肯定ADD後の両義性は本修正の範囲外で、原陰性がObservationのみに残る場合がある。次は既存の意味・関係・本文ownerでこの保持範囲と読みやすさを進め、読み落としを質問追加で埋めない。全文確認と機械結果をMashの正式商品PASSへ換算しない。
 
 既存Draft PR3/30と既存02/06・API handoffへ継続。原本、全実本文、途中失敗、再現harness、最終結果、全文確認と残件は同じ非公開作業記録に保持する。private本文/個別case/digest/locatorは公開しない。System Context未使用、原典を直接確認。
+
+
+## 2026-09-12 Q4残件 — 単一出来事への肯定ADDでも元の感情を保持
+
+最新weekly20260912に沿って、前節の単一eventの肯定ADD後の両義性を修正した。API実装sourceは `4af65007d3b425d0331810251de01a28835f0993`、tree `a5b024da27beb81f9ddf859808d77ecc6a7101af`。local検証source `42918a97301510b79cd50e32bd2af20fe25d3433` と同treeで、変更5fileの全内容をremoteから再取得して一致を確認。再開元API `3c34b110d55a6d50e74f02899ae2b6be4ed208f8` / App `db4c6e5e973dfae11985dc49cd712915892beb71`。後続commitは引継ぎ資料のみ。
+
+sourceで証明された本人の過去の受動出来事と未訂正の原陰性反応が一組あり、一意な肯定回答を一件ADDした場合、既存の原反応保持経路を適用する。元の感情は原接続詞とともに保持し、肯定回答は出来事と当時/回答時点を明示して受け止める。改善したという関係は補わない。別々のNORMAL claimはそれぞれのcontribution帰属を保ち、分配は本当に同一projected claimを共有する場合だけに適用する。従来のLIMITED分配検証、全contribution・IR・独立inverseを維持する。明示REVISEは旧反応を復活させず、他の単一回答の適用条件を一律に広げない。
+
+共有observation_planとstage1_responseを修正し、現行Q3/Q4回帰10件とowner snapshotを更新した。新owner・schema・migration・RN変更はなく、STRUCTURE_MAP_DELTA_NONE。歴史的fixture・runner・期待値・閾値、質問枠と本人による明示続行は保持する。
+
+- 関連回帰は **252 PASS**。追加registry9件は7 PASS / 2既存FAIL、実行全261件は259 PASS / 2 FAIL。前回251全keyの成否を維持し、追加10件は全PASS。既存2失敗はprofile/by-share-codeの登録/response_modelに関するもので、失敗messageと詳細全文も前回と一致。
+- 必須回帰は **438件中429 PASS / 9既存FAIL**。前回の全438 key・成否と一致し、後続の全case/cohort/歴史的hashを含む診断JSONは除外なしで完全一致。失敗説明一件のactual source hashだけは変更した実fileに従って変わり、旧期待値とFAILを保持する。
+- 保存原本と同じvalidated100を固定sourceで再生成。全100レコードとHR planは前回と全bytes一致。direct100、GENERATED73 / UNAVAILABLE27、moves/expressions/bound各143。華恋と独立readerが原入力全field・Observation・HR・可否と全理由を全文確認した。
+- 保存既存35ケース98状態・112保存GET一致に、単一肯定の時点・部分回答・接続詞/程度・本文生成失敗の5ケース10状態・11保存GET一致を追加。合計 **40ケース108状態・123保存GET一致**を実SQL/RPCで確認。既存98状態のうち肯定回答後のHR3状態が変わり、他95状態は同一。Observationと主要状態は全98状態同一。 華恋と独立readerが原入力・問い・回答・current本文・timeline・frameを全文確認した。部分回答の未確定状態は保持するが、未確定部分が本文へ明示されるとは限らない。
+
+追加の本文生成失敗ケースは、回答/意味更新を保持しcurrent本文なし・can_retry=falseとなる既存挙動を確認した。再生成できると誤想定した初回harnessと、読取時刻nowを保存内容と一緒に比較した次のharnessを修正し、対象一ケースだけ再実行した。拒否操作の前後で全保存fieldが不変、読取envelopeの差はnowのみ。既存3件と合わせた故障注入4件を復旧成功とは数えない。途中結果は非公開記録へ残した。
+
+商品は **NOT_CLEAR**。単一の陰性ADDでは原感情がHRから落ちる場合が残る。原イベント自体の撤回では、独立した原反応や過去回答が関係を失い、他の有効な組までgroup選択から外れる原因を静的に確認したが、本turnの保存40ケースはその修正を証明しない。次は撤回対象に意味を再結合せず、残る組と孤立した意味を保持する既存ownerの処理を進める。本文の未確定部分、複数主題/中心感情/共有関係、対応外文法、複数肯定、長い再掲・名詞列・定型的な締めも残件。単純な適用条件緩和や質問追加で原入力の読み落としを埋めない。
+
+2027年1月の全体目標、9/16共通修正・本文確認、9/18比較、9/19判断を維持。既存確認済みCPython3.12.13・pytest8.4.1・固定46依存・PGlite0.5.8を再利用し、installed RECORD2277fileとinterpreter実bytesを照合した。既存installer metadata/過去DTO identityの限定を保持する。Draft/open/unmerged・既定OFFを維持し、DB適用・native実機/実課金・merge/deploy/ready/有効化は未実施。正式商品PASSへ換算しない。System Context未使用、原典を直接確認。全実本文・途中失敗・再現harness・結果は同じ非公開作業記録へ追記し、private本文/個別case/digest/locatorは公開しない。
