@@ -123,7 +123,7 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
     )
 
 
-def _active_plan(original, thread, added, inactive, updates):
+def _active_plan(original, thread, added, inactive, updates, unresolved=()):
     nuclei = tuple(row for row in original.nuclei if row.nucleus_id not in inactive) + tuple(added)
     # Withdrawing an event removes its relations, not the independently
     # stated reaction/answer. Certify that loss of subject from the admitted
@@ -154,6 +154,24 @@ def _active_plan(original, thread, added, inactive, updates):
                      if not row.affected_nucleus_ids or not set(row.affected_nucleus_ids).issubset(inactive))
     quality = original.input_profile.material_quality
     resolver = thread.resolver()
+    # Preserve the limits of this interpretation, not a claim that the user
+    # does not know. Only checkpoint-owned, unreflected answer evidence is
+    # admitted here; assessed repetition / bare "I don't know" is not a gap.
+    by_evidence = {ref.evidence.evidence_id: ref.thread_span_id
+                   for ref in resolver.qualified_refs}
+    groups = []
+    for part in unresolved:
+        spans = tuple(by_evidence[ref] for ref in part.evidence_refs)
+        # Consecutive unresolved spans are one quoted range. The ledger can
+        # split inside a source quote; its original separators must survive.
+        if groups and int(spans[0][1:]) == int(groups[-1][-1][1:]) + 1:
+            groups[-1] = (*groups[-1], *spans)
+        else:
+            groups.append(spans)
+    unknowns = (*unknowns, *(gp.GroundedUnknownBoundary(
+        identity("answer-limit", thread.answers[-1].envelope.envelope_id,
+                 spans), "answer_interpretation_unresolved", (), spans, "do_not_claim")
+        for spans in groups))
     index = {row.nucleus_id: row for row in nuclei}
     # This subject relation is both a premeaning scope basis and a required
     # source relation in Observation/Reception. It asserts no cause/contrast.
@@ -293,6 +311,19 @@ def _prepare_answer(thread, original):
     for span in spans:
         text = span.raw_text
         ev = (resolver.qualified_ref(span.span_id).evidence.evidence_id,)
+        # The legacy ledger can split a reported quotation at punctuation.
+        # Its interior is not a standalone self answer, bare unknown, or
+        # correction meta, even when those words happen to match our grammar.
+        prefix = answer.source.answer_text_private[:resolver.qualified_ref(span.span_id).evidence.scalar_start]
+        quoted_depth = 0
+        for character in prefix:
+            if character in "「『":
+                quoted_depth += 1
+            elif character in "」』":
+                quoted_depth = max(0, quoted_depth - 1)
+        if quoted_depth:
+            unresolved.append(EmlisUnresolvedPartV1(ev, "answer_syntax_unsupported"))
+            continue
         if _CORRECTION_META.fullmatch(text):
             continue
         if _UNKNOWN.fullmatch(text):
@@ -403,4 +434,5 @@ def build_updated_grounded_plan(prepared: PreparedEmlisMeaning):
         return prepared.original_plan
     return _active_plan(prepared.original_plan, prepared.thread,
                         prepared.accepted_nuclei, set(prepared.checkpoint.inactive_claim_refs),
-                        prepared.checkpoint.answer_update.updates if prepared.checkpoint.answer_update else ())
+                        prepared.checkpoint.answer_update.updates if prepared.checkpoint.answer_update else (),
+                        prepared.checkpoint.unresolved_parts)

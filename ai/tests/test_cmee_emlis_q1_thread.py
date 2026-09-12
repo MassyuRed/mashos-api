@@ -308,3 +308,150 @@ def test_clear_withdrawal_survives_unsupported_replacement_in_same_sentence():
     assert prepared.checkpoint.answer_update.updates[0].operation=='WITHDRAW'
     assert prepared.checkpoint.inactive_claim_refs
     assert prepared.checkpoint.unresolved_parts[0].reason_code=='correction_replacement_unsupported'
+
+
+@pytest.mark.parametrize('limit', [
+    'どう表したらいいかはまだ分からない。',
+    '昨日は悲しかった。',
+    '彼は分からないと言った。',
+    '「分からない？」と彼は言った。',
+    '「分からない。もう少し考える」と彼は言った。',
+    '「少し考える。分からない。保留する」と彼は言った。',
+    '「少し考える。その時は怖かった。保留する」と彼は言った。',
+    '見えたこと：未整理。\nEmlisから：保留。',
+])
+@pytest.mark.parametrize('positive', [False, True])
+def test_partial_limit_is_visible_without_becoming_user_unknown(limit, positive):
+    accepted = 'その時は嬉しかった。' if positive else 'その時は重かった。'
+    prepared = prepare_emlis_meaning(answered(accepted + limit))
+    plan = build_updated_grounded_plan(prepared)
+    projection = project_thread_meaning(prepared, plan)
+    result = render(accepted + limit)
+    assert result.body_state == 'PARTIALLY_REFINED' and result.question is None
+    assert prepared.checkpoint.assessment_status == 'PARTIAL'
+    assert len(prepared.checkpoint.answer_update.updates) == 1
+    limits = tuple(row for row in plan.unknown_boundaries
+                   if row.dimension == 'answer_interpretation_unresolved')
+    resolver = prepared.thread.resolver()
+    assert tuple(resolver.qualified_ref(ref).evidence.evidence_id for row in limits for ref in row.evidence_span_ids
+                 ) == tuple(ref for row in prepared.checkpoint.unresolved_parts for ref in row.evidence_refs)
+    for row in limits:
+        for ref in row.evidence_span_ids:
+            assert resolver.resolve(ref).raw_text in result.artifact.observation
+        assert not row.affected_nucleus_ids
+    assert '観測に反映できていない部分があります' in result.artifact.observation
+    assert projection.meaning_plan.projection_branch.value == 'NORMAL'
+    assert not projection.premeaning.material_unknown_refs
+    assert result.artifact.reception == render(accepted).artifact.reception
+    assert result.body_sufficiency == 'SUFFICIENT'
+    assert not result.automatic_progression
+
+
+def test_partial_bare_unknown_and_repetition_are_not_misreported_as_unread():
+    text = 'その時は重かった。分からない。その時は嬉しくなかった。昨日は悲しかった。'
+    prepared = prepare_emlis_meaning(answered(text))
+    result = render(text)
+    limits = [row for row in build_updated_grounded_plan(prepared).unknown_boundaries
+              if row.dimension == 'answer_interpretation_unresolved']
+    assert len(limits) == 1
+    assert prepared.thread.resolver().resolve(limits[0].evidence_span_ids[0]).raw_text == '昨日は悲しかった'
+    disclosure = result.artifact.observation.splitlines()[-1]
+    assert '分からない' not in disclosure and '嬉しくなかった' not in disclosure
+
+
+def test_partial_replacement_limit_does_not_undo_withdrawal():
+    text = '「寂しかった」は誤りで「未整理」です。'
+    request = initial(memo_action='寂しかった。')
+    prepared = prepare_emlis_meaning(answered(text, request))
+    result = render(text, request)
+    assert prepared.checkpoint.answer_update.updates[0].operation == 'WITHDRAW'
+    assert result.body_state == 'PARTIALLY_REFINED'
+    assert '寂しかった' not in result.artifact.reception
+    assert '「寂しかった」は誤りで「未整理」です' in result.artifact.observation
+    assert '反映できていない部分があります' in result.artifact.observation
+
+
+def test_partial_limit_inverse_rejects_source_scope_and_duty_corruption_without_renderer():
+    from emlis_ai_grounded_observation_gate import _body_inverse_answer_limit
+    text = 'その時は重かった。昨日は悲しかった。分からない。彼は分からないと言った。'
+    prepared = prepare_emlis_meaning(answered(text))
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    projection = project_thread_meaning(prepared, plan)
+    sentence_plan = surface.build_grounded_sentence_plan(plan, resolver)
+    body = render(text).artifact.text
+    limits = [line for line in sentence_plan.lines if line.binding.claim_scope == 'unresolved_answer_interpretation']
+    line_texts = body.split('Emlisから：')[0].strip().splitlines()[-2:]
+    def inverse(value, sp=sentence_plan):
+        return evaluate_grounded_surface_body_inverse(body=value.encode(), plan=plan, sentence_plan=sp,
+            resolver=resolver, selected_subjective_input=projection.selected_reception).passed
+    assert inverse(body)
+    mutations = [
+        body.replace(line_texts[0] + '\n', ''),
+        body.replace(line_texts[0], line_texts[0] + '\n' + line_texts[0]),
+        body.replace('昨日は悲しかった', '今は悲しかった'),
+        body.replace('昨日は悲しかった', '昨日は悲しくなかった'),
+        body.replace('彼は分からないと言った', '私は分からないと言った'),
+        body.replace('反映できていない部分があります', '全て反映できています'),
+        body.replace('今回の観測に反映できていない部分があります', 'あなたが理解できていない部分があります'),
+        body.replace(line_texts[0], line_texts[1]),
+        body.replace('には、今回の観測に反映できていない部分があります', 'は、今回の観測に全く反映していません'),
+        body.replace('「昨日は悲しかった」', '「昨日は悲しかった'),
+        body.replace('「昨日は悲しかった」', '「昨日は悲しかった』'),
+        body.replace('部分があります。', '部分がありますか？'),
+    ]
+    assert all(value != body and not inverse(value) for value in mutations)
+    missing = replace(sentence_plan, lines=tuple(line for line in sentence_plan.lines if line not in limits))
+    stripped = body
+    for value in line_texts:
+        stripped = stripped.replace(value + '\n', '')
+    assert not inverse(stripped, missing)
+    assert 'answer_limit_disclosure_mismatch' in surface.validate_grounded_sentence_plan(missing, plan, resolver)
+    # Exercise the matcher independently of the forward writer and its replay.
+    witness = surface.parse_grounded_surface_body_bytes(body.encode())
+    parsed = [line for line in witness.lines if line.section == 'observation'][-2:]
+    with patch.object(surface, '_render_limited_scope', side_effect=AssertionError('forward forbidden')):
+        assert all(_body_inverse_answer_limit(body.encode(), row, line, plan, resolver)
+                   for row, line in zip(parsed, limits, strict=True))
+        for changed in mutations[2:7]:
+            rows = [line for line in surface.parse_grounded_surface_body_bytes(changed.encode()).lines
+                    if line.section == 'observation'][-2:]
+            assert not all(_body_inverse_answer_limit(changed.encode(), row, line, plan, resolver)
+                           for row, line in zip(rows, limits, strict=True))
+
+
+def test_partial_limit_cannot_be_dropped_rebound_or_added_without_checkpoint():
+    prepared = prepare_emlis_meaning(answered('その時は重かった。昨日は悲しかった。'))
+    plan = build_updated_grounded_plan(prepared)
+    limit = next(row for row in plan.unknown_boundaries if row.dimension == 'answer_interpretation_unresolved')
+    for changed in [replace(plan, unknown_boundaries=()),
+                    replace(plan, unknown_boundaries=(*plan.unknown_boundaries, limit)),
+                    replace(plan, unknown_boundaries=(replace(limit, evidence_span_ids=plan.nuclei[0].source_span_ids),))]:
+        with pytest.raises(ValueError, match='checkpoint_mismatch'):
+            project_thread_meaning(prepared, changed)
+
+
+def test_partial_processing_limit_does_not_filter_original_material_unknown():
+    import emlis_ai_grounded_observation_plan as gp
+    prepared = prepare_emlis_meaning(answered('その時は重かった。昨日は悲しかった。'))
+    original = prepared.original_plan
+    explicit = gp.GroundedUnknownBoundary('original-epistemic', 'source_explicit_epistemic_limit',
+        (original.nuclei[0].nucleus_id,), original.nuclei[0].source_span_ids, 'hedge_only')
+    prepared = replace(prepared, original_plan=replace(original, unknown_boundaries=(*original.unknown_boundaries, explicit)))
+    plan = build_updated_grounded_plan(prepared)
+    assert explicit in plan.unknown_boundaries
+    # The unchanged material unknown reaches the existing limited branch; it
+    # must not be discarded to make this stronger Reception plan available.
+    with pytest.raises(ValueError, match='LIMITED_RECEPTION_CAPABILITY_GAP_STOP'):
+        project_thread_meaning(prepared, plan)
+
+
+def test_partial_source_range_cannot_cross_an_assessed_span_or_another_source():
+    prepared = prepare_emlis_meaning(answered('その時は重かった。昨日は悲しかった。分からない。彼は分からないと言った。'))
+    resolver = prepared.thread.resolver()
+    limits = [row for row in build_updated_grounded_plan(prepared).unknown_boundaries
+              if row.dimension == 'answer_interpretation_unresolved']
+    one, two = limits[0].evidence_span_ids[0], limits[1].evidence_span_ids[0]
+    for ids in [(one, two), (two, one), (one, one), ('s1', one)]:
+        with pytest.raises(ValueError, match='contiguous_source_range_invalid'):
+            resolver.source_text_for_contiguous_spans(ids)

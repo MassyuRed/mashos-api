@@ -75,6 +75,11 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
     visible_owners = tuple(x.meaning_owner_id for x in dispositions)
     unknown_owners = []
     for unknown in plan.unknown_boundaries:
+        # An unreflected answer span constrains what the body may claim to
+        # have understood. It is not an unknown inside the accepted reading.
+        # Its source-bound disclosure remains a mandatory Sentence/Gate duty.
+        if unknown.dimension == "answer_interpretation_unresolved":
+            continue
         ev = tuple(resolver.qualified_ref(s).evidence.evidence_id for s in unknown.evidence_span_ids)
         if not ev:
             continue

@@ -2102,6 +2102,57 @@ def _body_inverse_thread_answer_group(body, witness, sentence, move, plan, resol
     return successes[0] if len(successes) == 1 else ()
 
 
+def _body_inverse_answer_limit(body, parsed_line, planned_line, plan, resolver):
+    """Read the completed limit sentence without replaying the renderer.
+
+    Nested source quotes remain source text. Only the outside predicate says
+    that part of this answer is unreflected; it makes no claim about the user.
+    """
+    binding = planned_line.binding
+    ids = tuple(atom[len("unknown_boundary:"):] for atom in binding.functional_atom_ids
+                if atom.startswith("unknown_boundary:"))
+    boundaries = tuple(row for row in plan.unknown_boundaries
+        if row.dimension == "answer_interpretation_unresolved" and row.unknown_id in ids)
+    if (len(ids) != 1 or len(boundaries) != 1
+        or binding.nucleus_ids or binding.relation_ids or not binding.required
+        or binding.line_role != "limited_scope" or planned_line.surface_function != "render_limited_scope"
+        or boundaries[0].affected_nucleus_ids or boundaries[0].surface_policy != "do_not_claim"
+        or binding.evidence_span_ids != boundaries[0].evidence_span_ids
+        or not binding.evidence_span_ids
+        or getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+        or resolver.source_fields_for(binding.evidence_span_ids) != ("answer_text_private",)):
+        return False
+    text = body[parsed_line.utf8_byte_start:parsed_line.utf8_byte_end].decode("utf-8")
+    prefix, suffix = "回答の", "には、今回の観測に反映できていない部分があります。"
+    if not text.startswith(prefix) or not text.endswith(suffix):
+        return False
+    quoted = text[len(prefix):-len(suffix)]
+    values, start = [], 0
+    while start < len(quoted):
+        if quoted[start] != "「":
+            return False
+        stack, end = ["「"], start + 1
+        while end < len(quoted) and stack:
+            if quoted[end] in "「『":
+                stack.append(quoted[end])
+            elif quoted[end] in "」』":
+                if stack[-1] != {"」": "「", "』": "『"}[quoted[end]]:
+                    return False
+                stack.pop()
+            end += 1
+        if stack or quoted[end-1] != "」":
+            return False
+        values.append(quoted[start+1:end-1])
+        if end == len(quoted):
+            break
+        if quoted[end:end+2] != "と「":
+            return False
+        start = end + 1
+    # Resolve the source independently of its forward surface. Separators
+    # inside a contiguous range are evidence too, not invented conjunctions.
+    return tuple(values) == (resolver.source_text_for_contiguous_spans(boundaries[0].evidence_span_ids),)
+
+
 def evaluate_grounded_surface_body_inverse(
     *,
     body: bytes,
@@ -2144,6 +2195,14 @@ def evaluate_grounded_surface_body_inverse(
         failures.append("body_inverse_observation_line_count_mismatch")
     if len(reception_lines) != len(planned_reception_lines):
         failures.append("body_inverse_reception_line_count_mismatch")
+    expected_limit_ids = tuple(row.unknown_id for row in plan.unknown_boundaries
+                              if row.dimension == "answer_interpretation_unresolved")
+    actual_limit_ids = tuple(atom[len("unknown_boundary:"):]
+        for line in planned_observation_lines
+        if line.binding.claim_scope == "unresolved_answer_interpretation"
+        for atom in line.binding.functional_atom_ids if atom.startswith("unknown_boundary:"))
+    if actual_limit_ids != expected_limit_ids:
+        failures.append("body_inverse_answer_limit_duty_missing")
 
     sentence_line_index = {
         (row.section, row.section_ordinal): row.section_line_ordinal
@@ -2163,6 +2222,10 @@ def evaluate_grounded_surface_body_inverse(
         zip(observation_lines, planned_observation_lines),
         start=1,
     ):
+        if planned_line.binding.claim_scope == "unresolved_answer_interpretation":
+            if not _body_inverse_answer_limit(body, parsed_line, planned_line, plan, resolver):
+                failures.append(f"body_inverse_answer_limit_mismatch:{index}")
+            continue
         quote_rows = quotes_for_line("observation", parsed_line.section_ordinal)
         expected_sources = _body_inverse_source_values(planned_line, plan, resolver)
         if expected_sources and not quote_rows:
@@ -3378,11 +3441,19 @@ def evaluate_grounded_observation_gate(
         )
     else:
         mechanical_restatement_gate = "not_evaluated"
+    question_text = surface_result.text
+    if require_body_inverse and not body_inverse_reasons:
+        for line in surface_result.lines:
+            if line.binding.claim_scope == "unresolved_answer_interpretation":
+                # Only an independently matched source-limit sentence may
+                # contain quoted questions. Its outside predicate is fixed;
+                # no source quotation can authorize an Emlis question.
+                question_text = question_text.replace(line.text, "", 1)
     question_free = bool(
         not plan.response_plan.question_policy.allowed
         and all(not line.binding.contains_question for line in sentence_plan.lines)
-        and "?" not in surface_result.text
-        and "？" not in surface_result.text
+        and "?" not in question_text
+        and "？" not in question_text
     )
     depth_adequate = bool(
         required_coverage

@@ -573,6 +573,24 @@ def _body_sentence_spans(line_text: str) -> tuple[tuple[int, int], ...]:
     return tuple(spans)
 
 
+def _body_primary_quote_spans(text):
+    """Return primary quote ranges with strict nested delimiter matching."""
+    stack, ranges = [], []
+    pairs = {"」": "「", "』": "『"}
+    for i, character in enumerate(text):
+        if character in "「『":
+            stack.append((character, i))
+        elif character in pairs:
+            if not stack or stack[-1][0] != pairs[character]:
+                return (), False
+            opener, start = stack.pop()
+            if opener == "「":
+                ranges.append((start + 1, i))
+    # Keep the historical witness order for nonnested quotes. Nested ranges
+    # are source quotations, not additional authored sentences or claims.
+    return tuple(sorted(ranges)), not stack
+
+
 def _body_marker_rows(
     *,
     section: BodyWitnessSection,
@@ -725,12 +743,13 @@ def parse_grounded_surface_body_bytes(body: bytes) -> GroundedBodyOnlyWitness:
                     section_sentence_ordinal += 1
                     visible_ordinal += 1
                     sentence_quotes: list[GroundedBodyQuoteWitness] = []
-                    for quote_ordinal, quote_match in enumerate(
-                        _BODY_QUOTE_RE.finditer(sentence_text),
+                    quote_ranges, quotes_balanced = _body_primary_quote_spans(sentence_text)
+                    for quote_ordinal, (quote_local_start, quote_local_end) in enumerate(
+                        quote_ranges,
                         start=1,
                     ):
-                        quote_start = sentence_start + quote_match.start(1)
-                        quote_end = sentence_start + quote_match.end(1)
+                        quote_start = sentence_start + quote_local_start
+                        quote_end = sentence_start + quote_local_end
                         quote_bytes = text[quote_start:quote_end].encode("utf-8")
                         sentence_quotes.append(
                             GroundedBodyQuoteWitness(
@@ -742,10 +761,7 @@ def parse_grounded_surface_body_bytes(body: bytes) -> GroundedBodyOnlyWitness:
                                 text_sha256=hashlib.sha256(quote_bytes).hexdigest(),
                             )
                         )
-                    if (
-                        sentence_text.count("「") != len(sentence_quotes)
-                        or sentence_text.count("」") != len(sentence_quotes)
-                    ):
+                    if not quotes_balanced:
                         issues.append("body_quote_balance_invalid")
                     sentence_markers = _body_marker_rows(
                         section=section,
@@ -2186,6 +2202,31 @@ def _coverage_from_lines(
     )
 
 
+def _answer_limit_lines(plan, resolver, recovery_stage):
+    """Bind processing limits without inventing user meaning or a new author."""
+    boundaries = tuple(row for row in plan.unknown_boundaries
+                       if row.dimension == "answer_interpretation_unresolved")
+    if not boundaries:
+        return ()
+    if getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1":
+        raise GroundedSentenceSurfaceError("answer_limit_source_contract_invalid")
+    lines = []
+    for boundary in boundaries:
+        if (boundary.affected_nucleus_ids or boundary.surface_policy != "do_not_claim"
+            or not boundary.evidence_span_ids
+            or len(set(boundary.evidence_span_ids)) != len(boundary.evidence_span_ids)
+            or resolver.source_fields_for(boundary.evidence_span_ids) != ("answer_text_private",)):
+            raise GroundedSentenceSurfaceError("answer_limit_evidence_invalid")
+        lines.append(GroundedSentencePlanLine(GroundedSentenceBinding(
+            "", "limited_scope", (), (), boundary.evidence_span_ids,
+            "unresolved_answer_interpretation",
+            ("source_anchor_quote", "surface_function:render_limited_scope",
+             "line_role:limited_scope", f"recovery:{recovery_stage}",
+             f"unknown_boundary:{boundary.unknown_id}"), False, True),
+            "render_limited_scope"))
+    return tuple(lines)
+
+
 def build_grounded_sentence_plan(
     plan: GroundedObservationPlan,
     resolver: EvidenceSpanResolver,
@@ -2256,6 +2297,14 @@ def build_grounded_sentence_plan(
                 relation_index=relation_index,
             )
         )
+        limit_lines = _answer_limit_lines(plan, resolver, recovery_stage)
+        if limit_lines:
+            # Observation discloses only what was not admitted. Reception
+            # continues to receive the unchanged, accepted meaning duties.
+            lines = tuple(line for line in lines if line.binding.line_role != "human_follow") + limit_lines + tuple(
+                line for line in lines if line.binding.line_role == "human_follow")
+            lines = tuple(replace(line, binding=replace(line.binding,
+                sentence_id=f"sentence:{i}")) for i, line in enumerate(lines, 1))
         covered_nuclei, covered_relations, unresolved = _coverage_from_lines(
             lines,
             required_nucleus_ids,
@@ -3244,6 +3293,10 @@ def _render_limited_scope(
     relation_index: Mapping[str, GroundedSemanticRelation],
     resolver: EvidenceSpanResolver,
 ) -> str:
+    if binding.claim_scope == "unresolved_answer_interpretation":
+        quote = _quote(resolver.source_text_for_contiguous_spans(binding.evidence_span_ids),
+                       preserve_source_punctuation=True)
+        return f"回答の{quote}には、今回の観測に反映できていない部分があります。"
     if _is_final_stage1_grounded_projection(plan):
         return _render_final_stage1_limited_scope(
             binding,
@@ -3409,6 +3462,24 @@ def _apply_integrated_human_follow(
     # layer to an observation sentence; validation and Gate logic reject them.
     _ = binding
     return text
+
+
+def _line_has_authored_question(text, binding):
+    if binding.claim_scope != "unresolved_answer_interpretation":
+        return bool(_QUESTION_RE.search(text))
+    # Source quotations may contain a question. This exception is limited to
+    # the independently checked disclosure grammar, never a new Emlis ask.
+    depth = 0
+    for character in text:
+        if character in "「『":
+            depth += 1
+        elif character in "」』":
+            if not depth:
+                return True
+            depth -= 1
+        elif character in "?？" and not depth:
+            return True
+    return bool(depth)
 
 
 def _realize_line(
@@ -3579,7 +3650,7 @@ def _realize_grounded_sentence_plan(
                 evidence_span_ids=line.binding.evidence_span_ids,
                 claim_scope=line.binding.claim_scope,
                 functional_atom_ids=line.binding.functional_atom_ids,
-                contains_question=bool(_QUESTION_RE.search(text)),
+                contains_question=_line_has_authored_question(text, line.binding),
                 required=line.binding.required,
             )
             surface_lines.append(
@@ -3946,6 +4017,11 @@ def validate_grounded_sentence_plan(
     nucleus_ids = set(nucleus_index)
     relation_ids = set(relation_index)
     seen_sentence_ids: set[str] = set()
+    expected_limits = _answer_limit_lines(plan, resolver, sentence_plan.recovery_stage)
+    actual_limits = tuple(line for line in sentence_plan.lines
+                          if line.binding.claim_scope == "unresolved_answer_interpretation")
+    if tuple(replace(line, binding=replace(line.binding, sentence_id="")) for line in actual_limits) != expected_limits:
+        issues.append("answer_limit_disclosure_mismatch")
     for line in sentence_plan.lines:
         binding = line.binding
         if (
@@ -4285,7 +4361,12 @@ def validate_grounded_surface_result(
         issues.extend(two_stage_issues)
         if not result.required_coverage_preserved:
             issues.append("required_coverage_not_preserved")
-        if _QUESTION_RE.search(result.text):
+        question_scan = result.text
+        for line in result.lines:
+            if (line.binding.claim_scope == "unresolved_answer_interpretation"
+                    and not _line_has_authored_question(line.text, line.binding)):
+                question_scan = question_scan.replace(line.text, "", 1)
+        if _QUESTION_RE.search(question_scan):
             issues.append("surface_question_forbidden")
         for line in result.lines:
             if line.binding.contains_question:

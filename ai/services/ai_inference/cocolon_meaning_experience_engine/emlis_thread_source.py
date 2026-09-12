@@ -118,11 +118,36 @@ class ThreadEvidenceSpanResolver(EvidenceSpanResolver):
         self._index = {span.span_id: span for span in spans}
         self.qualified_refs = tuple(qualified)
         self._qualified = {row.thread_span_id: row for row in qualified}
+        self._source_envelopes = {row.envelope_id: row
+                                 for row in (original.envelope, *(a.envelope for a in answers))}
         self.source_contract = THREAD_SCHEMA
 
     def qualified_ref(self, span_id: str) -> QualifiedEvidenceRef:
         self.resolve(span_id)
         return self._qualified[span_id]
+
+    def source_text_for_contiguous_spans(self, span_ids: tuple[str, ...]) -> str:
+        """Read an exact source range, including separators between its spans.
+
+        No evidence identity or segmentation changes. A missing intervening
+        span cannot be quoted as if it belonged to the requested range.
+        """
+        import re
+        if not span_ids or len(set(span_ids)) != len(span_ids):
+            raise ValueError("emlis_contiguous_source_range_invalid")
+        refs = tuple(self.qualified_ref(s).evidence for s in span_ids)
+        first, last = refs[0], refs[-1]
+        if (any(r.source_envelope_id != first.source_envelope_id or r.field_path != first.field_path
+                for r in refs) or first.utf8_start > last.utf8_start):
+            raise ValueError("emlis_contiguous_source_range_invalid")
+        actual = tuple(q.thread_span_id for q in self.qualified_refs
+                       if q.source_envelope_id == first.source_envelope_id
+                       and q.evidence.field_path == first.field_path
+                       and first.utf8_start <= q.evidence.utf8_start <= last.utf8_start)
+        if actual != span_ids:
+            raise ValueError("emlis_contiguous_source_range_invalid")
+        raw = self._source_envelopes[first.source_envelope_id].raw_utf8[first.utf8_start:last.utf8_end].decode('utf-8')
+        return re.sub(r"\s+", " ", raw).strip()
 
 
 @dataclass(frozen=True, slots=True, repr=False)
