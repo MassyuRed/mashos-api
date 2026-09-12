@@ -2586,11 +2586,16 @@ def _render_observation(
             return f"{prefix}{joined}が、同じ入力に置かれた出来事として並んでいます。"
         return f"{prefix}{joined}が、同じ入力の中で一つの流れになっています。"
     nucleus = nucleus_index[binding.nucleus_ids[0]]
+    if ("thread_subject:withdrawn_source_event" in nucleus.semantic_frame.attribute_codes
+        and nucleus.source_fields in {("memo",), ("memo_action",)}
+        and nucleus.kind == "reaction" and nucleus.semantic_frame.time_scope == "past"):
+        return f"{prefix}その時の気持ちとして、{joined}が見えます。"
     thread_times = {code for code in nucleus.semantic_frame.attribute_codes if code.startswith("thread_time:")}
     if thread_times:
         if len(thread_times) != 1:
             raise GroundedSentenceSurfaceError("thread_temporal_binding_ambiguous")
-        when = "回答した時点" if "thread_time:answer_time" in thread_times else "その時"
+        when = ("回答した時点" if "thread_time:answer_time" in thread_times else
+                "先の回答時点" if "thread_time:prior_answer_time" in thread_times else "その時")
         noun = "気持ち" if nucleus.semantic_frame.modality == "feeling" else "こと"
         return f"{prefix}{when}の{noun}として、{joined}が見えます。"
     if typed_semantic_duties:
@@ -2659,6 +2664,28 @@ def _render_extra_context(
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
 ) -> str:
+    detached = tuple(nid for nid in extra_ids if nid in nucleus_index
+        and "thread_subject:withdrawn_source_event" in nucleus_index[nid].semantic_frame.attribute_codes
+        and nucleus_index[nid].source_fields in {("memo",), ("memo_action",), ("answer_text_private",)}
+        and nucleus_index[nid].kind == "reaction"
+        and (nucleus_index[nid].semantic_frame.time_scope == "past"
+             or nucleus_index[nid].source_fields == ("answer_text_private",)))
+    if detached:
+        # An independent reaction does not become background for another
+        # event when the user has withdrawn its former subject relation.
+        parts = []
+        for nid in detached:
+            nucleus = nucleus_index[nid]
+            times = {c for c in nucleus.semantic_frame.attribute_codes if c.startswith("thread_time:")}
+            when = ("回答した時点" if times == {"thread_time:answer_time"} else
+                    "先の回答時点" if times == {"thread_time:prior_answer_time"} else "その時")
+            if nucleus.source_fields == ("answer_text_private",) and times not in (
+                {"thread_time:original_occasion"}, {"thread_time:answer_time"}, {"thread_time:prior_answer_time"}):
+                raise GroundedSentenceSurfaceError("thread_temporal_binding_ambiguous")
+            quoted = _join_quotes(_quotes_for_nuclei((nid,), nucleus_index, resolver))
+            parts.append(f"また、{when}の気持ちとして、{quoted}が見えます。")
+        remaining = tuple(nid for nid in extra_ids if nid not in detached)
+        return "".join(parts) + _render_extra_context(remaining, nucleus_index, resolver)
     extras = _join_quotes(_quotes_for_nuclei(extra_ids, nucleus_index, resolver))
     if not extras:
         return ""

@@ -2438,11 +2438,24 @@ def _source_grounded_current_expression_nominal(
         and nucleus.allowed_claim_scope == "explicit_supplemental_answer"
         and _typed_reception_source_fragment(nucleus, raw) == fragment
     )
+    from emlis_ai_grounded_observation_plan import (
+        _received_event_reaction_projections, _thread_withdrawn_original_reaction,
+    )
+    detached_reaction = bool(
+        getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+        and _thread_withdrawn_original_reaction(nucleus, plan.relations)
+        and fields == nucleus.source_fields
+        and _typed_reception_source_fragment(nucleus, raw) == fragment
+        and any(row.kind == "reaction" and row.polarity == "negative"
+                and set(row.attribute_codes) <= set(nucleus.semantic_frame.attribute_codes)
+                for row in _received_event_reaction_projections(
+                    resolver.resolve(nucleus.source_span_ids[0]), nucleus.semantic_frame))
+    )
     if (profile.actor_kind != "SELF" or profile.quoted_boundary
         or profile.performed_action or profile.future_action
         or profile.modality not in {"fact", "feeling", "uncertain"}
         or len(fields) != 1 or (fields[0] not in {"memo", "memo_action"} and not answer_clause)
-        or (raw != fragment and not answer_clause)
+        or (raw != fragment and not (answer_clause or detached_reaction))
         # A correction envelope quotes its old/replacement text. The admitted
         # source range, already proved above, owns this answer's grammar.
         or (bool(re.search(r"[「」『』…‥?？!！]", fragment)) if answer_clause else
@@ -2473,7 +2486,7 @@ def _source_grounded_current_expression_nominal(
             or
             profile.predicate_kind == "feeling"
             and nucleus.semantic_frame.time_scope == "past"
-            and "lexical:source_past_negative_feeling" in codes
+            and ("lexical:source_past_negative_feeling" in codes or detached_reaction)
             or profile.predicate_kind in {"feeling", "reaction"}
             and nucleus.semantic_frame.time_scope in {"present", "current_input", "continuing"}
             and bool(codes.intersection({

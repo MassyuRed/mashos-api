@@ -2754,8 +2754,9 @@ def evaluate_grounded_surface_body_inverse(
                                         and restore_thread_answer_nominal(actual_nominal, grammar, when) == source
                                     )
                             from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
-                            retained_group = ("current_burden", move.target_nucleus_ids, move.support_nucleus_ids) in (
-                                _thread_retained_reaction_groups(plan.nuclei, plan.relations))
+                            retained_group = bool(move.support_nucleus_ids) and (
+                                "current_burden", move.target_nucleus_ids, move.support_nucleus_ids) in (
+                                    _thread_retained_reaction_groups(plan.nuclei, plan.relations))
                             if expression_nominal_required and retained_group:
                                 nominal_target_visible = _body_inverse_thread_received_group(
                                     body, witness, parsed_sentence, move, plan, resolver) is not None

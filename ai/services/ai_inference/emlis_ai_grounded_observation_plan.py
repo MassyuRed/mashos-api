@@ -6839,6 +6839,24 @@ def _received_contrast_group_targets(nuclei, relations, *, minimum=2):
 
 
 
+def _thread_withdrawn_original_reaction(nucleus, relations):
+    frame = nucleus.semantic_frame
+    codes = frame.attribute_codes
+    return bool(
+        "thread_subject:withdrawn_source_event" in codes
+        and nucleus.source_fields in {("memo",), ("memo_action",)}
+        and nucleus.kind == "reaction" and frame.predicate_kind == "feeling"
+        and frame.actor == "current_user" and frame.modality == "feeling"
+        and frame.polarity == "negative" and frame.time_scope == "past"
+        and nucleus.retention == "required" and nucleus.grounding_kind == "explicit"
+        and "semantic_role:contrast_after" in codes
+        and len(nucleus.source_span_ids) == 1
+        and len([c for c in codes if c.startswith("source_fragment_scalar_range:")]) == 1
+        and len([c for c in codes if c.startswith("source_received_event_link:")]) == 1
+        and not any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations)
+    )
+
+
 def _thread_retained_reaction_groups(nuclei, relations):
     """Keep unanswered original reactions alongside the accepted answer duties.
 
@@ -6847,6 +6865,12 @@ def _thread_retained_reaction_groups(nuclei, relations):
     between them. Corrections and withdrawals have already removed inactive
     nuclei before this selector. No question wording or body is consulted.
     """
+    withdrawal = any("thread_subject:withdrawn_source_event" in n.semantic_frame.attribute_codes
+                     for n in nuclei)
+    def unsupported():
+        if withdrawal:
+            raise GroundedObservationPlanError("human_reception_withdrawal_capability_gap")
+        return ()
     originals = tuple(n for n in nuclei if n.source_fields != ("answer_text_private",))
     original_relations = tuple(r for r in relations if r.type != "evaluation_about_event")
     original_text = tuple(n for n in originals if any(f in _TEXT_SOURCE_FIELDS for f in n.source_fields))
@@ -6861,31 +6885,39 @@ def _thread_retained_reaction_groups(nuclei, relations):
     pairs = _received_contrast_group_targets(
         tuple(n for n in originals if n.nucleus_id in pair_ids), original_relations, minimum=1)
     answers = tuple(n for n in nuclei if n.source_fields == ("answer_text_private",))
-    if (not pairs or not 1 <= len(events) <= 3 or len(answers) > 3
-        or not answers and len(pairs[0]) == len(events)
-        or any(n.nucleus_id not in pair_ids and n.nucleus_id not in events for n in original_text)
+    detached_originals = tuple(n for n in original_text if _thread_withdrawn_original_reaction(n, relations))
+    detached_ids = {n.nucleus_id for n in detached_originals}
+    if withdrawal and not pairs and not pair_ids:
+        pairs = ((), ())
+    if (not pairs or not (0 if withdrawal else 1) <= len(events) <= 3 or len(answers) > 3
+        or not withdrawal and not answers and len(pairs[0]) == len(events)
+        or any(n.nucleus_id not in pair_ids and n.nucleus_id not in events
+               and n.nucleus_id not in detached_ids for n in original_text)
         or not set(pairs[0]) <= set(events)):
-        return ()
+        return unsupported()
     index = {n.nucleus_id: n for n in nuclei}
     feelings = dict(zip(*pairs, strict=True))
     by_event = {}
     positive = []
     negative = []
+    detached_answers = []
     for n in answers:
         frame = n.semantic_frame
         about = tuple(r for r in relations if r.type == "evaluation_about_event"
                       and r.to_nucleus_id == n.nucleus_id and r.retention == "required")
         times = {c for c in frame.attribute_codes if c.startswith("thread_time:")}
+        detached = bool("thread_subject:withdrawn_source_event" in frame.attribute_codes
+                        and not any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations))
         if (n.allowed_claim_scope != "explicit_supplemental_answer"
             or n.retention != "required" or n.grounding_kind != "explicit"
             or n.kind != "reaction" or frame.actor != "current_user"
             or frame.predicate_kind != "feeling" or frame.modality != "feeling"
-            or "thread_subject:unique_source_clause" not in frame.attribute_codes
+            or not detached and "thread_subject:unique_source_clause" not in frame.attribute_codes
             or len(times) != 1 or not times <= {"thread_time:original_occasion",
                 "thread_time:answer_time", "thread_time:prior_answer_time"}
-            or len(about) != 1 or about[0].from_nucleus_id not in events
-            or about[0].from_nucleus_id in by_event):
-            return ()
+            or not detached and (len(about) != 1 or about[0].from_nucleus_id not in events
+                                 or about[0].from_nucleus_id in by_event)):
+            return unsupported()
         families = _reception_opportunity_families_for_nucleus(
             n, safety_kind=TRIAGE_SAFE_OBSERVATION, final_source_fidelity=True)
         if is_grounded_positive_feeling(n) and families == ("lived_change",):
@@ -6893,13 +6925,16 @@ def _thread_retained_reaction_groups(nuclei, relations):
         elif frame.polarity == "negative" and families == ("current_burden",):
             negative.append(n)
         else:
-            return ()
-        by_event[about[0].from_nucleus_id] = n
+            return unsupported()
+        if detached:
+            detached_answers.append(n)
+        else:
+            by_event[about[0].from_nucleus_id] = n
     # A positive ADD does not supersede the original negative reaction,
     # including when the original input contains only one received event.
     # Other single-event selections retain their existing ownership policy.
-    if len(positive) > 1 or len(events) == 1 and (len(answers) != 1 or len(positive) != 1):
-        return ()
+    if not withdrawal and (len(positive) > 1 or len(events) == 1 and (len(answers) != 1 or len(positive) != 1)):
+        return unsupported()
     targets, supports = [], []
     for event in events:
         feeling = feelings.get(event)
@@ -6911,12 +6946,18 @@ def _thread_retained_reaction_groups(nuclei, relations):
             supports.append(feeling)
         if answer in negative:
             supports.append(answer.nucleus_id)
-    if not targets:
-        return ()
-    groups = [("current_burden", tuple(targets), tuple(supports))]
-    if positive:
-        groups.append(("lived_change", (positive[0].nucleus_id,), ()))
-    subject_order = {nid: i for i, nid in enumerate(events)}
+    if not targets and not withdrawal:
+        return unsupported()
+    groups = [("current_burden", tuple(targets), tuple(supports))] if targets else []
+    groups.extend(("current_burden", (n.nucleus_id,), ()) for n in detached_originals)
+    groups.extend(("current_burden", (n.nucleus_id,), ()) for n in detached_answers if n in negative)
+    groups.extend(("lived_change", (n.nucleus_id,), ()) for n in positive)
+    if withdrawal and len(groups) > 3:
+        # Keep the accepted checkpoint; no representative may silently
+        # discard an independent duty to fit the existing three-Move budget.
+        raise GroundedObservationPlanError("human_reception_withdrawal_capacity_gap")
+    subject_order = ({n.nucleus_id: _span_number(n.source_span_ids[0]) for n in nuclei}
+                     if withdrawal else {nid: i for i, nid in enumerate(events)})
     target_events = {n.nucleus_id: e for e, n in by_event.items()}
     return tuple(sorted(groups, key=lambda row: min(
         subject_order[target_events.get(nid, nid)] for nid in row[1])))
@@ -7491,6 +7532,17 @@ def _build_reception_depth_policy_and_moves(
         # Existing attention and felt-response acts distinguish the two
         # source duties without repeating the same predicate responsibility.
         roles[selected[0].opportunity_id] = "attention"
+    if retained_reaction_groups:
+        burdens = tuple(item for item in selected if item.family == "current_burden")
+        if len(burdens) >= 2:
+            # The collective grammar keeps its existing felt-response act;
+            # attention belongs to an independently stated detached duty.
+            for item in burdens:
+                roles[item.opportunity_id] = "felt_response"
+            standalone = tuple(item for item in burdens if not item.support_nucleus_ids)
+            roles[standalone[0].opportunity_id] = "attention"
+        if len(burdens) == 3:
+            roles[standalone[-1].opportunity_id] = "significance"
     moves: list[GroundedReceptionMovePlan] = []
     for index, opportunity in enumerate(selected, start=1):
         role = roles[opportunity.opportunity_id]

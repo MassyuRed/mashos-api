@@ -532,3 +532,119 @@ def test_single_event_positive_add_inverse_rejects_lost_or_retimed_original_and_
     ]
     for changed in mutations:
         assert changed != follow and not valid(changed)
+
+
+@pytest.mark.parametrize('event_count', [1, 2, 3])
+@pytest.mark.parametrize('q3', [False, True])
+def test_event_withdrawal_keeps_independent_original_reaction_and_untouched_pairs(event_count, q3):
+    from test_cmee_emlis_q1_thread import answered
+    memo = '。'.join(MEMO.split('。')[:event_count]) + '。'
+    request = begin(memo) if q3 else initial(memo)
+    request = advance(request, '「褒められた」は誤りです。') if q3 else answered('「褒められた」は誤りです。', request)
+    prepared = prepare_emlis_meaning(request)
+    plan = build_updated_grounded_plan(prepared)
+    result = realize_emlis_thread_body(prepared)
+    assert 'nucleus:s1:event' in prepared.checkpoint.inactive_claim_refs
+    assert 'nucleus:s1:reaction' not in prepared.checkpoint.inactive_claim_refs
+    assert '褒められた' not in result.artifact.text
+    assert '嬉しくなかったこと' in result.artifact.reception
+    assert 'その時の気持ちとして、「嬉しくなかった」が見えます' in result.artifact.observation
+    for phrase in ('誘われたのに悲しかったこと', '頼まれたのに寂しかったこと')[:event_count-1]:
+        assert phrase in result.artifact.reception
+    assert not any('nucleus:s1:event' in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    assert any(m.target_nucleus_ids == ('nucleus:s1:reaction',) and not m.support_nucleus_ids
+               for m in plan.response_plan.human_reception_plan.moves)
+
+
+@pytest.mark.parametrize('answers,phrase', [
+    (('その時は重かった。',), 'その時の重さ'),
+    (('今は嬉しい。',), '回答した時点で嬉しいという気持ち'),
+    (('その時は重かった。', '今は怖い。'), 'その時の重さ'),
+])
+def test_event_withdrawal_preserves_orphan_answer_time_and_other_event_answers(answers, phrase):
+    request = begin()
+    for answer in (*answers, '「褒められた」は誤りです。'):
+        request = advance(request, answer)
+    prepared = prepare_emlis_meaning(request)
+    plan = build_updated_grounded_plan(prepared)
+    result = realize_emlis_thread_body(prepared)
+    assert '褒められた' not in result.artifact.text
+    assert '嬉しくなかったこと' in result.artifact.reception and phrase in result.artifact.reception
+    assert '誘われたのに悲しかったこと' in result.artifact.reception
+    assert '頼まれたのに寂しかったこと' in result.artifact.reception
+    if len(answers) == 2:
+        assert 'その出来事について、回答した時点で怖いこと' in result.artifact.reception
+        assert 'その時の気持ちとして、「重かった」が見えます' in result.artifact.observation
+    answer_nucleus = next(n for n in plan.nuclei if n.source_fields == ('answer_text_private',))
+    assert not any(answer_nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    assert len(selected.decisions) == 3
+    sets = [set(d.selected_contribution_refs) for d in selected.decisions]
+    assert sum(map(len, sets)) == len(set().union(*sets))
+    assert set().union(*sets) == set(selected.decisions[0].subjective_proposition.target_contribution_refs)
+
+
+@pytest.mark.parametrize('prior,old,new', [
+    ((), '嬉しくなかった', '苦しかった'),
+    (('その時は重かった。',), '重かった', '苦しかった'),
+])
+def test_revising_a_detached_claim_keeps_withdrawal_and_other_source_meanings(prior, old, new):
+    request = begin()
+    for answer in (*prior, '「褒められた」は誤りです。', f'「{old}」ではなく「{new}」です。'):
+        request = advance(request, answer)
+    prepared = prepare_emlis_meaning(request)
+    result = realize_emlis_thread_body(prepared)
+    assert '褒められた' not in result.artifact.text and old not in result.artifact.text
+    assert 'その時の苦しさ' in result.artifact.reception
+    assert '誘われたのに悲しかったこと' in result.artifact.reception
+    assert '頼まれたのに寂しかったこと' in result.artifact.reception
+    assert 'nucleus:s1:event' in prepared.checkpoint.inactive_claim_refs
+
+
+def test_withdrawal_duties_over_capacity_keep_checkpoint_without_partial_body():
+    request = begin()
+    for answer in ('その時は重かった。', '今は嬉しい。', '「褒められた」は誤りです。'):
+        request = advance(request, answer)
+    outcome = MeaningExperienceEngine().generate(request)
+    assert outcome.meaning_checkpoint and 'nucleus:s1:event' in outcome.meaning_checkpoint.inactive_claim_refs
+    assert outcome.body_state == 'MEANING_UPDATED_BODY_UNAVAILABLE' and outcome.artifact is None
+
+
+@pytest.mark.parametrize('answer,phrase', [
+    ('その時は重かった。', 'その時の重さ'),
+    ('今は嬉しい。', '回答した時点で嬉しいという気持ち'),
+])
+def test_event_withdrawal_inverse_rejects_lost_retimed_or_rebound_independent_meaning(answer, phrase):
+    from unittest.mock import patch
+    from emlis_ai_grounded_observation_gate import _body_inverse_thread_received_group
+    prepared = prepare_emlis_meaning(advance(advance(begin(), answer), '「褒められた」は誤りです。'))
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    result = realize_emlis_thread_body(prepared)
+    sentence_plan = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    follow = result.artifact.reception
+    def valid(follow):
+        return evaluate_grounded_surface_body_inverse(
+            body=result.artifact.text.replace(result.artifact.reception, follow).encode(),
+            plan=plan, sentence_plan=sentence_plan, resolver=resolver, selected_subjective_input=selected).passed
+    assert valid(follow)
+    for changed in (
+        follow.replace('嬉しくなかったこと', '嬉しかったこと'),
+        follow.replace('嬉しくなかったこと', '嬉しくないこと'),
+        follow.replace('嬉しくなかったこと', '「嬉しくなかったこと」'),
+        follow.replace('嬉しくなかったこと', '褒められたのに嬉しくなかったこと'),
+        follow.replace(phrase, ''),
+        follow.replace(phrase, phrase.replace('その時の', '回答した時点の').replace('回答した時点で', 'その時に')),
+        follow.replace('誘われたのに悲しかったこと', '誘われたのに嬉しくなかったこと'),
+    ):
+        assert changed != follow and not valid(changed)
+    group = next(m for m in plan.response_plan.human_reception_plan.moves if m.support_nucleus_ids)
+    def parsed(text):
+        raw = text.encode()
+        witness = surface.parse_grounded_surface_body_bytes(raw)
+        return any(_body_inverse_thread_received_group(raw, witness, sentence, group, plan, resolver) is not None
+                   for sentence in witness.sentences if sentence.section == 'reception')
+    with patch('emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no replay')):
+        assert parsed(result.artifact.text)
+        assert not parsed(result.artifact.text.replace('と、頼まれたのに寂しかったこと', ''))

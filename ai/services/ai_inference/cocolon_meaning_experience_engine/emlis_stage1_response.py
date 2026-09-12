@@ -11963,39 +11963,28 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
     from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
     retained = _thread_retained_reaction_groups(tuple(binding.node_meta.values()),
         tuple(binding.edge_meta.values()))
-    grouped = bool(len(rows) == 2 and any(move.support_nucleus_ids for move in reception_plan.moves)
-        and {row.reception_act for row in rows} == {"stay_with_current_burden", "recognize_lived_change"}
+    withdrawal = any("thread_subject:withdrawn_source_event" in n.semantic_frame.attribute_codes
+                     for n in binding.node_meta.values())
+    grouped = bool(2 <= len(rows) <= 3
+        and (withdrawal or any(move.support_nucleus_ids for move in reception_plan.moves)
+             and {row.reception_act for row in rows} == {"stay_with_current_burden", "recognize_lived_change"})
         and tuple(("current_burden" if m.reception_act == "stay_with_current_burden" else "lived_change",
                    m.target_nucleus_ids, m.support_nucleus_ids) for m in reception_plan.moves) == retained)
     # A single original contrast and its positive ADD can already own
     # distinct NORMAL claims. Only partition a genuinely shared claim;
     # independent decisions keep their existing contribution bindings.
-    if grouped and rows[0].projected_claim_ref == rows[1].projected_claim_ref:
-        first = rows[0]
-        appraisal = first.subjective_proposition.appraisal_content
-        if (first.branch != SubjectiveProjectionBranch.LIMITED
-            or appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
-            or appraisal.operation != "RECEIVE_AS_MATERIAL"
-            or any(not m.required for m in reception_plan.moves)
-            or any((r.branch, r.projected_claim_ref, r.meaning_outcome_ref, r.reception_binding_ref,
-                    r.subjective_proposition, r.selected_contribution_refs)
-                   != (first.branch, first.projected_claim_ref, first.meaning_outcome_ref, first.reception_binding_ref,
-                       first.subjective_proposition, first.selected_contribution_refs) for r in rows)
-            or first.subjective_proposition.focal_relation_ref is not None):
-            raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
-        duties = tuple({_node_ref(binding.nucleus_to_node[nid])
-                        for nid in (*m.target_nucleus_ids, *m.support_nucleus_ids)}
-                       for m in reception_plan.moves)
-        partition = tuple(tuple(ref for ref in first.selected_contribution_refs
-            if (basis := {b.semantic_ref for b in first.basis_rows if b.contribution_ref == ref})
-            and basis <= duty) for duty in duties)
-        if (any(not refs for refs in partition) or set(partition[0]) & set(partition[1])
-            or set().union(*map(set, partition)) != set(first.selected_contribution_refs)
-            or set().union(*duties) != set(first.subjective_proposition.response_object_refs)):
-            raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
-        return [identify_selected_subjective_reception_decision(replace(
-            row, decision_ref="", selected_contribution_refs=refs))
-            for row, refs in zip(rows, partition, strict=True)]
+    if grouped:
+        result = list(rows)
+        for claim_ref in dict.fromkeys(r.projected_claim_ref for r in rows):
+            positions = tuple(i for i, row in enumerate(rows) if row.projected_claim_ref == claim_ref)
+            if len(positions) == 1:
+                continue
+            shared = tuple(rows[i] for i in positions)
+            shared_moves = tuple(reception_plan.moves[i] for i in positions)
+            partitioned = _partition_retained_claim_contributions(shared, shared_moves, binding)
+            for i, row in zip(positions, partitioned, strict=True):
+                result[i] = row
+        return result
     mixed_answers = bool(
         len(rows) == 2
         and {row.reception_act for row in rows} == {
@@ -12036,6 +12025,37 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
             row, decision_ref="", selected_contribution_refs=refs,
         )) for row, refs in zip(rows, partition, strict=True)]
     return rows
+
+
+def _partition_retained_claim_contributions(rows, moves, binding):
+    # Partition a genuinely shared sealed claim, including three distinct
+    # withdrawal duties. Every whole contribution has exactly one owner.
+    first = rows[0]
+    appraisal = first.subjective_proposition.appraisal_content
+    if (first.branch != SubjectiveProjectionBranch.LIMITED
+        or appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
+        or appraisal.operation != "RECEIVE_AS_MATERIAL"
+        or any(not m.required for m in moves)
+        or any((r.branch, r.projected_claim_ref, r.meaning_outcome_ref, r.reception_binding_ref,
+                r.subjective_proposition, r.selected_contribution_refs)
+               != (first.branch, first.projected_claim_ref, first.meaning_outcome_ref, first.reception_binding_ref,
+                   first.subjective_proposition, first.selected_contribution_refs) for r in rows)
+        or first.subjective_proposition.focal_relation_ref is not None):
+        raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+    duties = tuple({_node_ref(binding.nucleus_to_node[nid])
+                    for nid in (*m.target_nucleus_ids, *m.support_nucleus_ids)}
+                   for m in moves)
+    partition = tuple(tuple(ref for ref in first.selected_contribution_refs
+        if (basis := {b.semantic_ref for b in first.basis_rows if b.contribution_ref == ref})
+        and basis <= duty) for duty in duties)
+    if (any(not refs for refs in partition)
+        or sum(len(refs) for refs in partition) != len(set().union(*map(set, partition)))
+        or set().union(*map(set, partition)) != set(first.selected_contribution_refs)
+        or set().union(*duties) != set(first.subjective_proposition.response_object_refs)):
+        raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+    return [identify_selected_subjective_reception_decision(replace(
+        row, decision_ref="", selected_contribution_refs=refs))
+        for row, refs in zip(rows, partition, strict=True)]
 
 
 def _build_selected_subjective_reception_input(

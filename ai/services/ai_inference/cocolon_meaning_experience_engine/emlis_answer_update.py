@@ -125,6 +125,26 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
 
 def _active_plan(original, thread, added, inactive, updates):
     nuclei = tuple(row for row in original.nuclei if row.nucleus_id not in inactive) + tuple(added)
+    # Withdrawing an event removes its relations, not the independently
+    # stated reaction/answer. Certify that loss of subject from the admitted
+    # prior relation; a missing edge alone is not a withdrawal witness.
+    withdrawn_events = {n.nucleus_id for n in original.nuclei
+                        if n.kind == "event" and n.nucleus_id in inactive}
+    detached = {r.to_nucleus_id for r in original.relations
+                if r.type in {"contrast", "evaluation_about_event"}
+                and r.retention == "required" and r.from_nucleus_id in withdrawn_events}
+    prior_detached = {n.nucleus_id for n in original.nuclei
+                      if "thread_subject:withdrawn_source_event" in n.semantic_frame.attribute_codes
+                      and not any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
+                                  for r in original.relations)}
+    detached.update(changed for item in updates
+                    if item.operation == "REVISE" and item.target_meaning_refs
+                    and set(item.target_meaning_refs) <= prior_detached
+                    for changed in item.changed_claim_refs)
+    nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+        attribute_codes=tuple(dict.fromkeys((*n.semantic_frame.attribute_codes,
+            "thread_subject:withdrawn_source_event"))))) if n.nucleus_id in detached else n
+        for n in nuclei)
     relations = tuple(row for row in original.relations if row.relation_id not in inactive
                       and row.from_nucleus_id not in inactive and row.to_nucleus_id not in inactive)
     safety = classify_emlis_safety_triage_text(thread.answers[-1].source.answer_text_private)
