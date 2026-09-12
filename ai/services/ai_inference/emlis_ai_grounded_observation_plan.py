@@ -11250,10 +11250,10 @@ def _final_stage1_typed_nuclei(
             if (
                 span is not None and normalized_input is not None
                 and sum(bool(set(n.source_fields) & _TEXT_SOURCE_FIELDS) for n in plan.nuclei) == 2
-                and any(n.source_fields == ("memo_action",)
-                        and n.grounding_kind == "explicit" and n.retention == "required"
-                        and n.semantic_frame.actor == "current_user"
-                        and source_proven_performed_action_status(n) for n in plan.nuclei)
+                # This pass proves only the memo expression. The final
+                # response planner proves the other nucleus's action status
+                # after both nuclei have completed their typed projection.
+                and any(n.source_fields == ("memo_action",) for n in plan.nuclei)
                 and nucleus.kind == frame.predicate_kind == "uncertainty"
                 and nucleus.source_fields == ("memo",) and span.source_field == "memo"
                 and len(nucleus.source_span_ids) == 1
