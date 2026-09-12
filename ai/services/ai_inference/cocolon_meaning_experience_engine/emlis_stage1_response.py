@@ -12019,23 +12019,37 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
         if (any(not move.required or len(move.target_nucleus_ids) != 1
                 or move.support_nucleus_ids for move in reception_plan.moves)
             or any((row.branch, row.meaning_outcome_ref, row.reception_binding_ref,
-                    row.subjective_proposition, row.selected_contribution_refs)
+                    row.subjective_proposition, row.basis_rows, row.qualifier_rows)
                    != (first.branch, first.meaning_outcome_ref, first.reception_binding_ref,
-                       first.subjective_proposition, first.selected_contribution_refs)
+                       first.subjective_proposition, first.basis_rows, first.qualifier_rows)
                    for row in rows)
             or first.subjective_proposition.focal_relation_ref is not None):
+            raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+        complete = first.subjective_proposition.target_contribution_refs
+        if (not complete or len(set(complete)) != len(complete)
+            or tuple(b.binding_ref for b in first.basis_rows)
+                != first.subjective_proposition.basis_binding_refs
+            or {b.contribution_ref for b in first.basis_rows} != set(complete)):
             raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
         targets = tuple(_node_ref(binding.nucleus_to_node[row.target_nucleus_ids[0]]) for row in rows)
         if (len(set(targets)) != 2
             or set(targets) != set(first.subjective_proposition.response_object_refs)):
             raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
-        partition = tuple(tuple(ref for ref in first.selected_contribution_refs
+        partition = tuple(tuple(ref for ref in complete
                                 if {entry.semantic_ref for entry in first.basis_rows
                                     if entry.contribution_ref == ref} == {target})
                           for target in targets)
         if (any(not refs for refs in partition)
             or set(partition[0]) & set(partition[1])
-            or set().union(*map(set, partition)) != set(first.selected_contribution_refs)):
+            or set().union(*map(set, partition)) != set(complete)):
+            raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+        # Q1 retained acts can already carry the exact per-target partition;
+        # Q3 starts with the complete shared claim. Accept only those two
+        # proven shapes, never repair arbitrary incomplete or mixed subsets.
+        if all(row.selected_contribution_refs == refs
+               for row, refs in zip(rows, partition, strict=True)):
+            return rows
+        if any(row.selected_contribution_refs != complete for row in rows):
             raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
         rows = [identify_selected_subjective_reception_decision(replace(
             row, decision_ref="", selected_contribution_refs=refs,

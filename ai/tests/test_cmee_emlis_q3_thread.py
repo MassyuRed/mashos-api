@@ -731,6 +731,17 @@ def test_current_unknown_and_separate_action_keep_both_objects(memo, q3):
     nominal = memo.rstrip('。') + 'こと'
     assert follow == (nominal + 'を小さくせずに受け止めています。'
                       'メモを書いたことを大切に思っています。')
+    # Exercise the actual Q1 engine as well as the modern thread projector.
+    # Their initial contribution shapes differ before the shared partition.
+    engine = MeaningExperienceEngine()
+    checkpoint = engine.prepare_emlis_update(req)
+    current = replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id))
+    actual = engine.generate(current)
+    assert actual.artifact, actual.reason_codes
+    assert actual.body_state == 'FINAL' and actual.question is None
+    assert actual.artifact.reception == follow
+    assert memo.rstrip('。') in actual.artifact.observation
     moves = plan.response_plan.human_reception_plan.moves
     assert [m.reception_act for m in moves] == ['stay_with_current_burden', 'honor_concrete_effort']
     assert all(m.required and not m.support_nucleus_ids for m in moves)
@@ -741,6 +752,27 @@ def test_current_unknown_and_separate_action_keep_both_objects(memo, q3):
         assert not set(left.selected_contribution_refs) & set(right.selected_contribution_refs)
         assert set(left.selected_contribution_refs + right.selected_contribution_refs) == set(
             left.subjective_proposition.target_contribution_refs)
+        from cocolon_meaning_experience_engine.emlis_stage1_response import (
+            _partition_shared_reception_move_contributions, CMEEStage1ContractError)
+        def partition(rows):
+            return _partition_shared_reception_move_contributions(
+                rows, plan.response_plan.human_reception_plan, projection.binding)
+        assigned = [left, right]
+        assert partition(assigned) is assigned
+        complete = left.subjective_proposition.target_contribution_refs
+        full = [replace(row, selected_contribution_refs=complete) for row in assigned]
+        assert [r.selected_contribution_refs for r in partition(full)] == [
+            r.selected_contribution_refs for r in assigned]
+        for invalid in [
+            [full[0], right],
+            [replace(left, selected_contribution_refs=()), right],
+            [replace(left, selected_contribution_refs=right.selected_contribution_refs),
+             replace(right, selected_contribution_refs=left.selected_contribution_refs)],
+            [replace(left, selected_contribution_refs=(*left.selected_contribution_refs, 'foreign')), right],
+            [replace(left, basis_rows=left.basis_rows[:-1]), right],
+        ]:
+            with pytest.raises(CMEEStage1ContractError, match='CAUSAL_TRACE_GAP'):
+                partition(invalid)
     resolver = prepared.thread.resolver()
     sentence = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
     def independent(changed):
