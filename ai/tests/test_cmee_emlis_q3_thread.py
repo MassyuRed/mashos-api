@@ -534,6 +534,78 @@ def test_single_event_positive_add_inverse_rejects_lost_or_retimed_original_and_
         assert changed != follow and not valid(changed)
 
 
+@pytest.mark.parametrize('answer,phrase', [
+    ('その時は重かった。', 'その出来事へのその時の重さ'),
+    ('今は怖い。', 'その出来事について、回答した時点で怖いこと'),
+    ('今は怖くない。', 'その出来事について、回答した時点で怖くないこと'),
+    ('その時は重かった。どう表したらいいかはまだ分からない。', 'その出来事へのその時の重さ'),
+])
+@pytest.mark.parametrize('q3', [False, True])
+def test_single_event_negative_add_preserves_original_and_answer_in_body_and_selection(answer, phrase, q3):
+    from test_cmee_emlis_q1_thread import answered
+    req = advance(begin('褒められたのに、嬉しくなかった。'), answer) if q3 else answered(answer)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    projection = project_thread_meaning(prepared, plan)
+    result = realize_emlis_thread_body(prepared)
+    assert not prepared.checkpoint.inactive_claim_refs
+    assert '嬉しくなかった' in result.artifact.observation
+    assert '褒められたのに嬉しくなかったこと' in result.artifact.reception
+    assert phrase in result.artifact.reception
+    move, = plan.response_plan.human_reception_plan.moves
+    assert move.target_nucleus_ids == ('nucleus:s1:event',)
+    assert move.support_nucleus_ids == ('nucleus:s1:reaction', prepared.accepted_nuclei[0].nucleus_id)
+    decision, = projection.selected_reception.decisions
+    assert decision.branch == 'NORMAL'
+    assert len(decision.selected_contribution_refs) == 2
+    assert set(decision.selected_contribution_refs) == set(decision.subjective_proposition.target_contribution_refs)
+    if '分からない' in answer:
+        assert prepared.checkpoint.assessment_status == 'PARTIAL'
+
+
+@pytest.mark.parametrize('answer,phrase,retimed', [
+    ('その時は重かった。', 'その出来事へのその時の重さ', 'その出来事への回答した時点の重さ'),
+    ('今は怖い。', 'その出来事について、回答した時点で怖いこと', 'その出来事について、その時に怖いこと'),
+])
+def test_single_negative_add_inverse_rejects_lost_swapped_or_retimed_meanings(answer, phrase, retimed):
+    from test_cmee_emlis_q1_thread import answered
+    from emlis_ai_grounded_observation_gate import _body_inverse_thread_received_group
+    from unittest.mock import patch
+    prepared = prepare_emlis_meaning(answered(answer))
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    projection = project_thread_meaning(prepared, plan)
+    result = realize_emlis_thread_body(prepared)
+    sentence = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    follow = result.artifact.reception
+    def valid(changed):
+        return evaluate_grounded_surface_body_inverse(
+            body=result.artifact.text.replace(follow, changed).encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver,
+            selected_subjective_input=projection.selected_reception).passed
+    assert valid(follow)
+    move, = plan.response_plan.human_reception_plan.moves
+    def parsed(changed):
+        raw = result.artifact.text.replace(follow, changed).encode()
+        witness = surface.parse_grounded_surface_body_bytes(raw)
+        return tuple(_body_inverse_thread_received_group(raw, witness, row, move, plan, resolver)
+                     for row in witness.sentences if row.section == 'reception')
+    with patch('emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no replay')):
+        assert any(row is not None for row in parsed(follow))
+    original = '褒められたのに嬉しくなかったこと'
+    mutations = [
+        follow.replace(original + 'と、', ''), follow.replace('と、' + phrase, ''),
+        follow.replace(original, '褒められたのに嬉しかったこと'),
+        follow.replace(original, '褒められたのに嬉しくないこと'),
+        follow.replace(phrase, retimed), follow.replace('褒められた', '誘われた'),
+        follow.replace(original, '「' + original + '」'),
+    ]
+    for changed in mutations:
+        assert changed != follow and not valid(changed)
+        with patch('emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no replay')):
+            assert all(row is None for row in parsed(changed))
+
+
 @pytest.mark.parametrize('event_count', [1, 2, 3])
 @pytest.mark.parametrize('q3', [False, True])
 def test_event_withdrawal_keeps_independent_original_reaction_and_untouched_pairs(event_count, q3):

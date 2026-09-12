@@ -6930,10 +6930,10 @@ def _thread_retained_reaction_groups(nuclei, relations):
             detached_answers.append(n)
         else:
             by_event[about[0].from_nucleus_id] = n
-    # A positive ADD does not supersede the original negative reaction,
-    # including when the original input contains only one received event.
-    # Other single-event selections retain their existing ownership policy.
-    if not withdrawal and (len(positive) > 1 or len(events) == 1 and (len(answers) != 1 or len(positive) != 1)):
+    # An ADD does not supersede the original reaction, regardless of the
+    # answer's polarity or whether the input contains one received event.
+    # Single-event grouping still requires exactly one source-proven answer.
+    if not withdrawal and (len(positive) > 1 or len(events) == 1 and len(answers) != 1):
         return unsupported()
     targets, supports = [], []
     for event in events:
