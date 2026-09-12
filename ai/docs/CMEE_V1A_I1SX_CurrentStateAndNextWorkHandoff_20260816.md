@@ -7683,3 +7683,21 @@ PARTIAL回答のうち解釈へ反映できなかった根拠範囲が、完成�
 商品は **NOT_CLEAR**。初回Observationの汎用文型には認識上の未知を感覚として表す問題と時点表現の重複が残る。裸の不明はlow-information判定によりlimiting-unknown role / required UNFINISHEDが付かず、今回の対応から昇格させない。次はこの原入力認識とObservationのsource忠実性を既存ownerで確認する。長い再掲・名詞列・定型的な締め、複数主題/中心感情/共有関係、対応外文法も残件。質問追加で原文の読み落としを埋めない。
 
 既存Draft PR3/30と同じ非公開作業記録に継続。個別入力・全実本文・個別digest/locatorを公開資料へ移さない。merge/deploy/enable/readyなし、default-off、実DB/native/実課金なし。System Contextは未使用、同じ最新weeklyと原典を直接参照。
+
+
+## 2026-09-12 Q4残件 — 初回の不明の感覚化・時点重複を修正
+
+**DIRECT_PRODUCT_OR_ACCEPTANCE_WORK**。採用済みの本人・現在・否定・不明を示す単一の有限節は、感覚と呼び替えず、原文の時点・継続・程度・否定を一度で返す。既存Sentence Surface内でQ1のlimited句とQ3の観察句を共通化し、独立body inverseは作者helperを使わず原文全句と外側述語を照合する。単核・無関係・required/explicit・単一spanに限定し、Q1のLIMITED、出来事/理由の補完禁止、unknown保持、既存admissionは維持する。
+
+実装sourceはAPI `8295c01ae47335f73c6088c2b7d51b51a8d5d78b`、tree `c55889be686df83ae8cb1ddb2486bee2513693cb`。固定検証local `c209fb51954ade22a9b3c697e083b9e6bf902122` と同treeで、作者2file・現行identity・追加検査の全4fileをremote再取得して一致確認。再開元はAPI `52bd8de5f74843147fd4b1449a089934bebe7dfc` / App `3c8dd63e2e5ea3ce890a9265cebb5193f79fa27b`。後続差分は既存資料への追記のみ。
+
+- 必須回帰439件：430 PASS / 9既存FAIL。全key・成否を保持、削除0。後続case/cohort/hash診断は除外なしで全bytes一致。
+- Q1〜Q4・実SQL/RPC・共有作者・独立inverse・registry333件：331 PASS / 2既存FAIL。前回327件の成否を保持、追加6件全PASS。歴史的fixture・runner・期待本文・閾値は不変。
+- 同じvalidated100の全record・HR planは前回と全bytes一致。direct100、GENERATED73 / UNAVAILABLE27、moves/expressions/bound各143。全入力field・両層全文・可否/理由を読解し、最終原物へ完全一致を対応付けた。
+- 保存済み全66ケース167状態・193保存GET一致。初回不明3件のObservationだけが変わり、残る164状態のcurrent/過去本文は不変。全Q/A・状態・元入力内容・HR・frame内容を保持し、各roundを含め全文確認。再生成frame_refと内容一致は区別する。8故障注入と裸不明の停止は回復成功に数えない。
+
+初期検査はQ3にだけ修正が届き、Q1の旧limited本文をfull観察planで照合した3件が失敗した。Q1の実生成停止とは区別し、既存limited作者へ同じ節を接続して改善を届けた。途中ログ・失敗全文差分・再現harness・実出力は同じ非公開作業記録へ保持する。
+
+商品 **NOT_CLEAR**。次は裸不明のlow-information分類によるlimiting_unknown/required UNFINISHED証明欠落と、短い不明がHRの全文replay防止で汎用参照へ戻る問題を整理する。原文にない「まだ」や程度を補わず、既存証明を弱めない。長い再掲・定型句、入力欄由来の行動分類、中心感情・複数主題・関係選択も残る。
+
+STRUCTURE_MAP_DELTA_NONE：既存2owner内、新file/route/schema/DDL/RNなし。既存runtimeの実bytesと依存RECORDを照合して再利用した。weekly20260912の予定、Draft PR3/30、default-offを維持。実DB/native/実課金/merge/deploy/enable/readyなし。System Context未使用、原典・Karen-Diaryを直接確認。機械検証と本文確認をMashの正式商品PASSへ換算しない。
