@@ -716,6 +716,79 @@ def test_initial_epistemic_unknown_reaches_actual_body_without_becoming_resolved
     assert not independent(result.artifact.reception.replace('ことを', 'ことに'))
 
 
+@pytest.mark.parametrize('memo', ['分からない。', '今はまだよく分からない。', '現在もまだはっきりわからない。'])
+@pytest.mark.parametrize('q3', [False, True])
+def test_current_unknown_and_separate_action_keep_both_objects(memo, q3):
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    req = (begin if q3 else initial)(memo, 'メモを書いた。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    projection = project_thread_meaning(prepared, plan)
+    result = realize_emlis_thread_body(prepared)
+    assert result.artifact, result.reason_codes
+    follow = result.artifact.reception
+    nominal = memo.rstrip('。') + 'こと'
+    assert follow == (nominal + 'を小さくせずに受け止めています。'
+                      'メモを書いたことを大切に思っています。')
+    moves = plan.response_plan.human_reception_plan.moves
+    assert [m.reception_act for m in moves] == ['stay_with_current_burden', 'honor_concrete_effort']
+    assert all(m.required and not m.support_nucleus_ids for m in moves)
+    assert not set(moves[0].source_evidence_span_ids) & set(moves[1].source_evidence_span_ids)
+    left, right = projection.selected_reception.decisions
+    if left.projected_claim_ref == right.projected_claim_ref:
+        assert left.subjective_proposition == right.subjective_proposition
+        assert not set(left.selected_contribution_refs) & set(right.selected_contribution_refs)
+        assert set(left.selected_contribution_refs + right.selected_contribution_refs) == set(
+            left.subjective_proposition.target_contribution_refs)
+    resolver = prepared.thread.resolver()
+    sentence = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    def independent(changed):
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan',
+                   return_value=SimpleNamespace(text=changed)), patch(
+                   'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses',
+                   side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(
+                body=result.artifact.text.replace(follow, changed).encode(), plan=plan,
+                sentence_plan=sentence, resolver=resolver,
+                selected_subjective_input=projection.selected_reception).passed
+    assert independent(follow)
+    for altered in ['まだ' + nominal, '今は' + nominal, '彼は' + nominal,
+                    nominal.replace('ない', 'なかった'), '「' + nominal + '」',
+                    nominal + 'と、' + nominal]:
+        assert not independent(follow.replace(nominal, altered)), altered
+    assert not independent(follow.split('。', 1)[1])
+    assert not independent(follow.split('。', 1)[0] + '。')
+    assert not independent(follow.replace('メモを書いた', 'メモを書かなかった'))
+
+
+def test_independent_material_does_not_override_explicit_action_focus():
+    import emlis_ai_grounded_observation_plan as gp
+    from emlis_ai_safety_triage import classify_emlis_safety_triage_text
+    prepared = prepare_emlis_meaning(begin('分からない。', 'メモを書いた。'))
+    original = prepared.original_plan
+    action, = (n for n in original.nuclei if n.source_fields == ('memo_action',))
+    response, *_ = gp._build_response_and_policies(
+        nuclei=original.nuclei, relations=original.relations,
+        safety_decision=classify_emlis_safety_triage_text('分からない。 メモを書いた。'),
+        complexity=original.input_profile.semantic_complexity,
+        material_quality=original.input_profile.material_quality,
+        include_reception_relation_support=True, final_source_fidelity=True,
+        primary_focus_nucleus_ids=(action.nucleus_id,))
+    assert response.human_follow_target_ids == (action.nucleus_id,)
+
+
+@pytest.mark.parametrize('memo', [
+    '彼は分からない。', '「分からない」と言われた。', '分からないと思った。',
+    '分からない。寂しかった。', 'まだ分からない？',
+])
+def test_current_cognition_whole_field_witness_does_not_cover_other_source_forms(memo):
+    plan = prepare_emlis_meaning(begin(memo, 'メモを書いた。')).original_plan
+    for nucleus in plan.nuclei:
+        if nucleus.kind == 'uncertainty':
+            assert 'lexical:source_bounded_expression' not in nucleus.semantic_frame.attribute_codes
+
+
 def test_initial_epistemic_unknown_requires_affected_source_and_complete_evidence():
     prepared = prepare_emlis_meaning(begin('今はまだよく分からない。'))
     boundary, = (b for b in prepared.original_plan.unknown_boundaries if b.dimension == 'source_explicit_epistemic_limit')

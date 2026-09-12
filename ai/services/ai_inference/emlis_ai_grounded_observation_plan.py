@@ -7202,6 +7202,29 @@ def build_grounded_reception_opportunities(
                     or other.kind == "other_explicit"
                 ):
                     continue
+                # An uncertain connection is not an asserted background.
+                # For a whole-field current cognition and a separate action,
+                # preserve both duties without presenting either as context
+                # for the other. The relation itself remains in the source plan.
+                if (final_source_fidelity and relation.type == "uncertain_connection"
+                    and relation.retention != "required"
+                    and safety_kind == TRIAGE_SAFE_OBSERVATION
+                    and material_quality in {"grounded", "limited_grounding"}
+                    and len(tuple(n for n in nuclei if set(n.source_fields) & _TEXT_SOURCE_FIELDS)) == 2
+                    and any(
+                        cognition.source_fields == ("memo",)
+                        and _is_independent_source_material(cognition, safety_kind=safety_kind)
+                        and cognition.kind == cognition.semantic_frame.predicate_kind == "uncertainty"
+                        and cognition.semantic_frame.time_scope in {"present", "current_input"}
+                        and {"lexical:source_bounded_expression", "lexical:preserve_source_predicate",
+                             "lexical:no_new_sensation_family", "semantic_role:limiting_unknown"}
+                            <= set(cognition.semantic_frame.attribute_codes)
+                        and action.source_fields == ("memo_action",)
+                        and action.retention == "required" and action.semantic_frame.actor == "current_user"
+                        and source_proven_performed_action_status(action)
+                        for cognition, action in ((representative, other), (other, representative))
+                    )):
+                    continue
                 relation_support_candidates.append(
                     (
                         relation_priority.get(relation.type, 99),
@@ -8513,6 +8536,7 @@ def _build_response_and_policies(
         and material_quality in {"grounded", "limited_grounding"}
         and len(text_candidates) == 2
         and len(independent_materials) == 1
+        and not primary_focus_nucleus_ids
         and selected_follow is not None
         and selected_follow.source_fields == ("memo_action",)
         and selected_follow.retention == "required"
@@ -11219,6 +11243,41 @@ def _final_stage1_typed_nuclei(
                             ))),
                         ),
                     )
+            # The same finite cognition may coexist with a separate action.
+            # Prove the whole memo field before granting the existing bounded
+            # source witness; lexical policy alone is not evidence of scope.
+            frame = nucleus.semantic_frame
+            if (
+                span is not None and normalized_input is not None
+                and nucleus.kind == frame.predicate_kind == "uncertainty"
+                and nucleus.source_fields == ("memo",) and span.source_field == "memo"
+                and len(nucleus.source_span_ids) == 1
+                and nucleus.grounding_kind == "explicit" and nucleus.retention == "required"
+                and nucleus.allowed_claim_scope == "explicit_current_input"
+                and frame.actor == "current_user" and frame.modality == "uncertain"
+                and frame.polarity == "negative" and frame.time_scope in {"present", "current_input"}
+                and {"operator:uncertainty", "operator:negation", "semantic_role:limiting_unknown"}
+                    <= set(frame.attribute_codes)
+                and not any(code.startswith(("source_fragment_", "surface_scalar_", "thread_time:"))
+                            or code == "semantic_role:embedded_turn" for code in frame.attribute_codes)
+            ):
+                source = str(normalized_input.get("memo") or "")
+                start, end = span.start_index, span.end_index
+                raw = str(span.raw_text)
+                if (
+                    0 <= start < end <= len(source) and source[start:end] == raw
+                    and not source[:start].strip()
+                    and re.fullmatch(r"\s*[。．.]?\s*", source[end:])
+                    and _top_level_text(source) == source
+                    and re.fullmatch(r"(?:(?:今|現在)(?:は|も))?(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)",
+                                     raw.strip(" \u3000。．."))
+                ):
+                    nucleus = replace(nucleus, semantic_frame=replace(
+                        frame, attribute_codes=tuple(_dedupe((
+                            *frame.attribute_codes, "lexical:source_bounded_expression",
+                            "lexical:preserve_source_predicate", "lexical:no_new_sensation_family",
+                        ))),
+                    ))
             result.append(nucleus)
             continue
         projected_ids: list[str] = []

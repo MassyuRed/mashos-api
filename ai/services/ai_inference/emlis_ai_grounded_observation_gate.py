@@ -2862,13 +2862,38 @@ def evaluate_grounded_surface_body_inverse(
                                 # its body-only こと object. A generic referent,
                                 # a quotation, or a source replay elsewhere in
                                 # this sentence cannot satisfy this obligation.
-                                if (burden_nominal_required and nominal_target_visible
-                                    and len(reception_plan.moves) == 1 and move.move_role == "felt_response"
+                                if ((burden_nominal_required or expression_nominal_required) and nominal_target_visible
+                                    and move.move_role == "felt_response"
                                     and len(move.target_nucleus_ids) == 1 and not move.support_nucleus_ids):
                                     cognition = nucleus_index[move.target_nucleus_ids[0]]
                                     cf = cognition.semantic_frame
                                     codes = set(cf.attribute_codes)
+                                    independent_cognition = len(reception_plan.moves) == 1 or (
+                                        len(reception_plan.moves) == 2
+                                        and "lexical:source_bounded_expression" in codes
+                                        and cognition.source_fields == ("memo",)
+                                        and all(
+                                            other.required and other.reception_act == "honor_concrete_effort"
+                                            and len(other.target_nucleus_ids) == 1 and not other.support_nucleus_ids
+                                            and (action := nucleus_index.get(other.target_nucleus_ids[0])) is not None
+                                            and action.nucleus_id != cognition.nucleus_id
+                                            and action.source_fields == ("memo_action",) and action.retention == "required"
+                                            and not set(action.source_span_ids).intersection(cognition.source_span_ids)
+                                            and action.semantic_frame.actor == "current_user"
+                                            and action.kind == "action"
+                                            and action.semantic_frame.modality == "fact"
+                                            and action.semantic_frame.time_scope in {"past", "continuing", "present", "completed"}
+                                            and "operator:performed_action" in action.semantic_frame.attribute_codes
+                                            for other in reception_plan.moves if other != move
+                                        )
+                                        and not any(
+                                            (r.retention == "required" or r.type != "uncertain_connection")
+                                            and cognition.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
+                                            for r in plan.relations
+                                        )
+                                    )
                                     if (cognition.kind == cf.predicate_kind == "uncertainty"
+                                        and independent_cognition
                                         and cf.actor == "current_user" and cf.modality == "uncertain"
                                         and cf.polarity == "negative" and cf.time_scope in {"present", "current_input"}
                                         and cognition.grounding_kind == "explicit" and cognition.retention == "required"
@@ -2887,8 +2912,21 @@ def evaluate_grounded_surface_body_inverse(
                                             # Read the whole object slot, not
                                             # an expected substring inside an
                                             # added まだ/subject/time modifier.
+                                            decision = next((d for d in selected_subjective_input.decisions
+                                                if d.move_id == move.move_id), None) if selected_subjective_input else None
+                                            proposition = decision.subjective_proposition if decision else None
+                                            open_required = bool(
+                                                proposition is None and len(reception_plan.moves) == 1
+                                                or proposition is not None and (
+                                                    proposition.appraisal_content is not None
+                                                    and proposition.appraisal_content.operation == "LEAVE_UNFINISHED"
+                                                    or proposition.relational_position is not None
+                                                    and proposition.relational_position.stance_operator == "HOLD_UNFINISHED_OPEN"
+                                                )
+                                            )
                                             received = re.fullmatch(
-                                                r"結論を急がずに、(?P<source>[^。！？!?]+)こと"
+                                                (r"結論を急がずに、" if open_required else "")
+                                                + r"(?P<source>[^。！？!?]+)こと"
                                                 r"を小さくせずに(?:"
                                                 r"(?:受け止めて|気にかけて)(?:います|いて)|"
                                                 r"(?:受け止め|気にかけ)たいです)。",

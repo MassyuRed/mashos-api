@@ -2473,6 +2473,9 @@ def _source_grounded_current_expression_nominal(
     # Keep every source character and the original tense; polite terminal
     # forms and unproved expressions retain the existing quotative referent.
     codes = set(nucleus.semantic_frame.attribute_codes)
+    if (witnessed_uncertainty
+        and source_grounded_unfinished_referent(move, plan, nucleus_index, resolver) == fragment + "こと"):
+        return fragment + "こと"
     if answer_clause:
         times = {code.split(":", 1)[1] for code in codes if code.startswith("thread_time:")}
         when = "先の回答時点" if times == {"prior_answer_time"} else "回答した時点" if times == {"answer_time"} else "その時" if times == {"original_occasion"} else None
@@ -3224,8 +3227,8 @@ def source_grounded_unfinished_referent(
     """Retain the selected unknown scope, including its change when present.
 
     This grammatical view does not reclassify polarity, act, or status. Only
-    the existing final anaphoric caller may use it; selected openness is
-    consumed separately by the sole author and full-body replay.
+    final anaphoric and independently bounded explicit callers may use it;
+    selected openness is consumed separately by the sole author and replay.
     """
     if (plan is None or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
         or move not in plan.response_plan.human_reception_plan.moves
@@ -3278,7 +3281,30 @@ def source_grounded_unfinished_referent(
     # add まだ or discard the user's degree/time. This is not a quote replay.
     if (
         nucleus.grounding_kind == "explicit" and nucleus.retention == "required"
-        and len(plan.response_plan.human_reception_plan.moves) == 1
+        and (
+            len(plan.response_plan.human_reception_plan.moves) == 1
+            or (
+                len(plan.response_plan.human_reception_plan.moves) == 2
+                and "lexical:source_bounded_expression" in attributes
+                and nucleus.source_fields == ("memo",)
+                and all(
+                    other.required and other.reception_act == "honor_concrete_effort"
+                    and not other.support_nucleus_ids and len(other.target_nucleus_ids) == 1
+                    and (action := nucleus_index.get(other.target_nucleus_ids[0])) is not None
+                    and action.nucleus_id != nucleus.nucleus_id
+                    and action.source_fields == ("memo_action",) and action.retention == "required"
+                    and action.semantic_frame.actor == "current_user"
+                    and not set(action.source_span_ids).intersection(nucleus.source_span_ids)
+                    and source_proven_performed_action_status(action)
+                    for other in plan.response_plan.human_reception_plan.moves if other != move
+                )
+                and not any(
+                    (r.retention == "required" or r.type != "uncertain_connection")
+                    and nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
+                    for r in plan.relations
+                )
+            )
+        )
         and move.move_role == "felt_response"
         and nucleus.semantic_frame.actor == "current_user"
         and nucleus.semantic_frame.polarity == "negative"
@@ -8239,6 +8265,11 @@ def _source_grounded_target_np(
                 and referent_text == f"{meaning_fragment}こと"
                 or profile.nucleus_kind == profile.predicate_kind == "event"
                 and profile.modality == "fact" and realization.time_scope == "past"
+                and referent_text == f"{meaning_fragment}こと"
+                or profile.nucleus_kind == profile.predicate_kind == "uncertainty"
+                and profile.modality == "uncertain"
+                and realization.time_scope in {"present", "current_input"}
+                and re.fullmatch(r"(?:(?:今|現在)(?:は|も))?(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", meaning_fragment)
                 and referent_text == f"{meaning_fragment}こと"
             )
         )

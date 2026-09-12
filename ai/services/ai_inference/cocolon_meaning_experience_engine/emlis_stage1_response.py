@@ -11995,9 +11995,25 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
                 and nucleus.allowed_claim_scope == "explicit_supplemental_answer"
                 for row in rows)
     )
+    independent_cognition_action = bool(
+        len(rows) == 2
+        and {row.reception_act for row in rows} == {"stay_with_current_burden", "honor_concrete_effort"}
+        and all(len(row.target_nucleus_ids) == 1 for row in rows)
+        and any(
+            (nucleus := binding.node_meta[binding.nucleus_to_node[row.target_nucleus_ids[0]]])
+                .source_fields == ("memo",)
+            and nucleus.kind == nucleus.semantic_frame.predicate_kind == "uncertainty"
+            and nucleus.semantic_frame.modality == "uncertain"
+            and nucleus.semantic_frame.time_scope in {"present", "current_input"}
+            and {"lexical:source_bounded_expression", "semantic_role:limiting_unknown",
+                 "lexical:preserve_source_predicate", "lexical:no_new_sensation_family"}
+                <= set(nucleus.semantic_frame.attribute_codes)
+            for row in rows if row.reception_act == "stay_with_current_burden"
+        )
+    )
     if (len(rows) == 2
         and (all(row.reception_act == "stay_with_current_burden" for row in rows)
-             or mixed_answers)
+             or mixed_answers or independent_cognition_action)
         and rows[0].projected_claim_ref == rows[1].projected_claim_ref):
         first = rows[0]
         if (any(not move.required or len(move.target_nucleus_ids) != 1
