@@ -692,6 +692,42 @@ def test_initial_epistemic_unknown_requires_affected_source_and_complete_evidenc
             project_thread_meaning(modified, build_updated_grounded_plan(modified))
 
 
+@pytest.mark.parametrize('memo', [
+    '今はまだよく分からない。', '現在は分からない。', '現在もまだはっきりわからない。',
+])
+@pytest.mark.parametrize('q3', [False, True])
+def test_current_cognition_observation_preserves_source_without_added_feeling_or_time(memo, q3):
+    prepared = prepare_emlis_meaning(begin(memo) if q3 else initial(memo))
+    plan = build_updated_grounded_plan(prepared)
+    projection = project_thread_meaning(prepared, plan)
+    result = realize_emlis_thread_body(prepared)
+    observation = result.artifact.observation
+    clause = memo.rstrip('。')
+    assert observation == clause + 'のですね。'
+    assert '感覚' not in observation and '気持ち' not in observation
+    sentence = surface.build_grounded_sentence_plan(plan, prepared.thread.resolver(), recovery_stage='full')
+    def valid(text):
+        return evaluate_grounded_surface_body_inverse(body=text.encode(), plan=plan,
+            sentence_plan=sentence, resolver=prepared.thread.resolver(),
+            selected_subjective_input=projection.selected_reception).passed
+    assert valid(result.artifact.text)
+    mutations = [
+        '今は、' + observation,
+        '彼は' + observation,
+        observation.replace('分からない', '分かった').replace('わからない', 'わかった'),
+        observation.replace('分からない', '分からなかった').replace('わからない', 'わからなかった'),
+        clause + 'という感覚が前に出ています。',
+        clause + 'のですか？',
+        '「' + clause + '」という感覚が前に出ています。',
+        '「' + clause + '」のですね。',
+        observation + observation,
+        observation.replace('現在も', '現在は').replace('まだ', '').replace('はっきり', '').replace('よく', ''),
+    ]
+    for changed in mutations:
+        if changed != observation:
+            assert not valid(result.artifact.text.replace(observation, changed)), changed
+
+
 @pytest.mark.parametrize('q3', [False, True])
 def test_bare_unknown_without_unfinished_source_proof_is_not_promoted_by_binding(q3):
     prepared = prepare_emlis_meaning(begin('分からない。') if q3 else initial('分からない。'))

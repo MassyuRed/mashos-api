@@ -2228,7 +2228,48 @@ def evaluate_grounded_surface_body_inverse(
             continue
         quote_rows = quotes_for_line("observation", parsed_line.section_ordinal)
         expected_sources = _body_inverse_source_values(planned_line, plan, resolver)
-        if expected_sources and not quote_rows:
+        # Independently read a complete, source-bound finite cognition clause.
+        # This is an exact source obligation, not a quote-free fallback. The
+        # writer and this matcher do not share a renderer or its witness.
+        direct_cognition = False
+        binding = planned_line.binding
+        if (final_stage1_plan
+            and (planned_line.surface_function, binding.claim_scope) in {
+                ("observe_nuclei", "single_input_bounded_observation"),
+                ("render_limited_scope", "limited_grounding_no_event_completion"),
+            }
+            and len(binding.nucleus_ids) == 1 and not binding.relation_ids):
+            cognition = nucleus_index.get(binding.nucleus_ids[0])
+            if cognition is not None:
+                cf = cognition.semantic_frame
+                codes = set(cf.attribute_codes)
+                if (cognition.kind == cf.predicate_kind == "uncertainty"
+                    and cf.actor == "current_user" and cf.modality == "uncertain"
+                    and cf.polarity == "negative" and cf.time_scope == "present"
+                    and cognition.grounding_kind == "explicit" and cognition.retention == "required"
+                    and cognition.source_fields in {("memo",), ("memo_action",)}
+                    and len(cognition.source_span_ids) == 1
+                    and binding.evidence_span_ids == cognition.source_span_ids
+                    and {"operator:negation", "operator:uncertainty", "semantic_role:limiting_unknown",
+                         "lexical:preserve_source_predicate"} <= codes
+                    and not any(code.startswith(("thread_time:", "source_fragment_", "surface_scalar_"))
+                                or code == "semantic_role:embedded_turn" for code in codes)):
+                    source_span = resolver.resolve(cognition.source_span_ids[0])
+                    source_clause = str(source_span.raw_text).strip(" \u3000。．.")
+                    if (source_span.source_field == cognition.source_fields[0]
+                        and 0 <= source_span.start_index < source_span.end_index
+                        and re.fullmatch(r"(?:現在|今)(?:も|は)(?:まだ)?(?:はっきり|よく)?(?:わからない|分からない)", source_clause)):
+                        direct_cognition = True
+                        visible = _body_inverse_visible_text(body, parsed_line)
+                        if "scope_hedge" in binding.functional_atom_ids:
+                            if not visible.startswith("今の入力だけを見ると、"):
+                                failures.append(f"body_inverse_cognition_scope_missing:{index}")
+                            else:
+                                visible = visible[len("今の入力だけを見ると、"):]
+                        matched = re.fullmatch(r"(?P<source>.+)のですね。", visible)
+                        if (quote_rows or not matched or matched.group("source") != source_clause):
+                            failures.append(f"body_inverse_cognition_source_or_predicate_mismatch:{index}")
+        if expected_sources and not quote_rows and not direct_cognition:
             failures.append(f"body_inverse_observation_source_anchor_missing:{index}")
         normalized_quote_texts: list[str] = []
         for quote_row in quote_rows:

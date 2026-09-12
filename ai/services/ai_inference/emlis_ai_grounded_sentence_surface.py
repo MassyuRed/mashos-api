@@ -2592,6 +2592,41 @@ def _hedge_prefix(binding: GroundedSentenceBinding) -> str:
     return "今の入力だけを見ると、" if "scope_hedge" in binding.functional_atom_ids else ""
 
 
+def _source_bound_current_cognition(
+    binding: GroundedSentenceBinding,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    resolver: EvidenceSpanResolver,
+) -> str:
+    """Read the admitted single finite clause without adding a feeling or time."""
+
+    if len(binding.nucleus_ids) != 1 or binding.relation_ids:
+        return ""
+    nucleus = nucleus_index[binding.nucleus_ids[0]]
+    frame = nucleus.semantic_frame
+    attributes = set(frame.attribute_codes)
+    if (
+        nucleus.kind == frame.predicate_kind == "uncertainty"
+        and frame.actor == "current_user"
+        and frame.modality == "uncertain" and frame.polarity == "negative"
+        and frame.time_scope == "present"
+        and nucleus.grounding_kind == "explicit" and nucleus.retention == "required"
+        and nucleus.source_fields in {("memo",), ("memo_action",)}
+        and len(nucleus.source_span_ids) == 1
+        and binding.evidence_span_ids == nucleus.source_span_ids
+        and {"lexical:preserve_source_predicate", "semantic_role:limiting_unknown",
+             "operator:uncertainty", "operator:negation"} <= attributes
+        and not any(code.startswith(("source_fragment_", "surface_scalar_", "thread_time:"))
+                    or code == "semantic_role:embedded_turn" for code in attributes)
+    ):
+        span = resolver.resolve(nucleus.source_span_ids[0])
+        clause = str(span.raw_text).strip(" \u3000。．.")
+        if (span.source_field == nucleus.source_fields[0]
+            and 0 <= span.start_index < span.end_index
+            and re.fullmatch(r"(?:今|現在)(?:は|も)(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", clause)):
+            return clause
+    return ""
+
+
 def _render_observation(
     binding: GroundedSentenceBinding,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
@@ -2648,6 +2683,9 @@ def _render_observation(
         noun = "気持ち" if nucleus.semantic_frame.modality == "feeling" else "こと"
         return f"{prefix}{when}の{noun}として、{joined}が見えます。"
     if typed_semantic_duties:
+        cognition = _source_bound_current_cognition(binding, nucleus_index, resolver)
+        if cognition:
+            return f"{prefix}{cognition}のですね。"
         typed_endpoint = _final_stage1_typed_relation_endpoint(
             binding.nucleus_ids[0],
             nucleus_index,
@@ -3222,6 +3260,11 @@ def _render_final_stage1_limited_scope(
     resolver: EvidenceSpanResolver,
 ) -> str:
     """Keep typed final meaning visible without replaying the whole memo."""
+
+    if binding.claim_scope == "limited_grounding_no_event_completion":
+        cognition = _source_bound_current_cognition(binding, nucleus_index, resolver)
+        if cognition:
+            return f"{_hedge_prefix(binding)}{cognition}のですね。"
 
     relation_rows = tuple(
         relation_index[relation_id]
