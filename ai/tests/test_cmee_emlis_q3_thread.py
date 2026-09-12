@@ -646,6 +646,110 @@ def test_unsupported_qualified_current_unknown_is_not_promoted_by_reception(q3):
     assert not prepared.accepted_nuclei
 
 
+@pytest.mark.parametrize('memo', ['今はまだよく分からない。', '現在は分からない。', '現在もまだはっきりわからない。'])
+@pytest.mark.parametrize('q3', [False, True])
+def test_initial_epistemic_unknown_reaches_actual_body_without_becoming_resolved(memo, q3):
+    from cocolon_meaning_experience_engine import contracts as c
+    req = begin(memo) if q3 else initial(memo)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    projection = project_thread_meaning(prepared, plan)
+    unknown, = (d for d in projection.graph.owner_dispositions if d.target_unknown_ref)
+    carrier = c.source_explicit_epistemic_unknown_object_ref(projection.premeaning, unknown)
+    assert carrier and projection.premeaning.material_unknown_refs
+    assert unknown.source_owner_disposition is c.SourceOwnerDisposition.UNKNOWN_PRESERVED_LIMITED
+    assert unknown.visible_authority is c.VisibleAuthority.NONE
+    assert projection.meaning_plan.subjective_claim_rows
+    assert all(d.user_fact_effect == 0 for d in projection.meaning_plan.subjective_claim_rows)
+    engine = MeaningExperienceEngine()
+    checkpoint = engine.prepare_emlis_update(req)
+    req = replace(req, emlis_thread=replace(req.emlis_thread, prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id))
+    result = engine.generate(req)
+    assert result.body_state == 'FINAL' and result.artifact and result.question is None
+    assert memo.rstrip('。') in result.artifact.observation
+    assert '結論を急がずに、まだ分からないことを小さくせずに受け止めています。' == result.artifact.reception
+    resolver = prepared.thread.resolver()
+    sentence = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    def valid(body):
+        return evaluate_grounded_surface_body_inverse(body=body.encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver, selected_subjective_input=projection.selected_reception).passed
+    assert valid(result.artifact.text)
+    for changed in ('もう分かったことを受け止めています。', 'まだ分からなかったことを受け止めています。',
+                    'まだ分からないことを小さくせずに受け止めています。'):
+        assert not valid(result.artifact.text.replace(result.artifact.reception, changed))
+
+
+def test_initial_epistemic_unknown_requires_affected_source_and_complete_evidence():
+    prepared = prepare_emlis_meaning(begin('今はまだよく分からない。'))
+    boundary, = (b for b in prepared.original_plan.unknown_boundaries if b.dimension == 'source_explicit_epistemic_limit')
+    for changed in (replace(boundary, evidence_span_ids=()),
+                    replace(boundary, affected_nucleus_ids=()),
+                    replace(boundary, affected_nucleus_ids=('nucleus:foreign',)),
+                    replace(boundary, surface_policy='do_not_claim')):
+        modified = replace(prepared, original_plan=replace(prepared.original_plan, unknown_boundaries=tuple(
+            changed if b == boundary else b for b in prepared.original_plan.unknown_boundaries)))
+        with pytest.raises(ValueError, match='emlis_thread_epistemic_unknown_source_unbound'):
+            project_thread_meaning(modified, build_updated_grounded_plan(modified))
+
+
+@pytest.mark.parametrize('q3', [False, True])
+def test_bare_unknown_without_unfinished_source_proof_is_not_promoted_by_binding(q3):
+    prepared = prepare_emlis_meaning(begin('分からない。') if q3 else initial('分からない。'))
+    with pytest.raises(ValueError, match='LIMITED_RECEPTION_CAPABILITY_GAP_STOP'):
+        project_thread_meaning(prepared, build_updated_grounded_plan(prepared))
+
+
+def test_initial_epistemic_unknown_view_independently_rejects_lost_or_rebound_unknown():
+    from cocolon_meaning_experience_engine import contracts as c
+    from cocolon_meaning_experience_engine.emlis_input_specific_meaning import (
+        derive_grounded_situation_view, validate_grounded_situation_view)
+    prepared = prepare_emlis_meaning(begin('今はまだよく分からない。'))
+    projection = project_thread_meaning(prepared, build_updated_grounded_plan(prepared))
+    pre, graph = projection.premeaning, projection.graph
+    view = derive_grounded_situation_view(pre)
+    validate_grounded_situation_view(view, pre, graph)
+    basis, = (r for r in view.basis_rows if r.material_unknown_refs)
+    compatibility, = (r for r in view.compatibility_rows if r.material_unknown_refs)
+    unknown, = (d for d in graph.owner_dispositions if d.target_unknown_ref)
+    bookkeeping = f'node:{unknown.target_unknown_ref}@{c.CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}'
+    assert basis.scope_object_refs == basis.source_object_refs == (compatibility.scope_object_ref,)
+    assert bookkeeping not in basis.scope_object_refs
+    mutations = [replace(view, basis_rows=tuple(r for r in view.basis_rows if r != basis))]
+    for altered in (replace(basis, scope_object_refs=(bookkeeping,)),
+                    replace(basis, source_object_refs=(bookkeeping,)),
+                    replace(basis, layer1_required_object_refs=(bookkeeping,)),
+                    replace(basis, required_retention_duty_refs=('foreign:duty',)),
+                    replace(basis, source_connected_relation_refs=('foreign:relation',)),
+                    replace(basis, required_qualifier_refs=('actor:other',)),
+                    replace(basis, source_evidence_refs=()), replace(basis, material_unknown_refs=())):
+        mutations.append(replace(view, basis_rows=tuple(altered if r == basis else r for r in view.basis_rows)))
+    mutations.append(replace(view, compatibility_rows=tuple(
+        replace(r, material_unknown_refs=()) if r == compatibility else r for r in view.compatibility_rows)))
+    for changed in mutations:
+        with pytest.raises(c.CMEEStage1ContractError, match='unknown_'):
+            validate_grounded_situation_view(changed, pre, graph)
+    with pytest.raises(c.CMEEStage1ContractError):
+        validate_grounded_situation_view(view, replace(pre, material_unknown_refs=()), graph)
+
+
+def test_initial_epistemic_unknown_binding_does_not_accept_conflicting_or_missing_source_proof():
+    from cocolon_meaning_experience_engine import contracts as c
+    prepared = prepare_emlis_meaning(begin('今はまだよく分からない。'))
+    projection = project_thread_meaning(prepared, build_updated_grounded_plan(prepared))
+    pre = projection.premeaning
+    unknown, = (d for d in pre.grounded_graph.owner_dispositions if d.target_unknown_ref)
+    ref = c.source_explicit_epistemic_unknown_object_ref(pre, unknown)
+    qualifier, = (q for q in pre.source_qualifier_rows if q.node_ref == ref)
+    mutations = [replace(pre, material_unknown_refs=()),
+                 replace(pre, grounded_graph=replace(pre.grounded_graph, required_owner_refs=()))]
+    for extra in ('actor:other', 'time_scope:past', 'modality:asserted', 'polarity:positive', 'actor:current_user'):
+        changed = replace(qualifier, qualifier_refs=qualifier.qualifier_refs + (extra,))
+        mutations.append(replace(pre, source_qualifier_rows=tuple(
+            changed if q == qualifier else q for q in pre.source_qualifier_rows)))
+    for changed in mutations:
+        assert c.source_explicit_epistemic_unknown_object_ref(changed, unknown) is None
+
+
 @pytest.mark.parametrize('event_count', [1, 2, 3])
 @pytest.mark.parametrize('q3', [False, True])
 def test_event_withdrawal_keeps_independent_original_reaction_and_untouched_pairs(event_count, q3):

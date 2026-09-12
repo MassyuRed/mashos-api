@@ -74,6 +74,7 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
             (edge_id,), ev, None, ("versioned_source_bound",)))
     visible_owners = tuple(x.meaning_owner_id for x in dispositions)
     unknown_owners = []
+    epistemic_boundaries = {}
     for unknown in plan.unknown_boundaries:
         # An unreflected answer span constrains what the body may claim to
         # have understood. It is not an unknown inside the accepted reading.
@@ -82,10 +83,14 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
             continue
         ev = tuple(resolver.qualified_ref(s).evidence.evidence_id for s in unknown.evidence_span_ids)
         if not ev:
+            if unknown.dimension == "source_explicit_epistemic_limit":
+                raise ValueError("emlis_thread_epistemic_unknown_source_unbound")
             continue
         node_id = identity("unknown", checkpoint.checkpoint_id, unknown.unknown_id)
         owner = identity("owner", node_id)
         unknown_owners.append(owner)
+        if unknown.dimension == "source_explicit_epistemic_limit":
+            epistemic_boundaries[node_id] = unknown
         nodes.append(c.MeaningNode(node_id, owner, "unknown", "unknown", unknown.dimension,
                                    c.EpistemicState.UNKNOWN, ev))
         dispositions.append(c.OwnerDisposition(owner, c.OwnerClass.REQUIRED,
@@ -151,6 +156,19 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
         graph, r._graph_ref(graph), parent.observation_duty_id, candidates, field, contributions,
         tuple(x.contribution_id for x in contributions), field.material_unknown_refs, depth,
         tuple(sorted(qualifiers, key=lambda x: x.node_ref)), relation_rows)
+    for disposition in dispositions:
+        carrier = c.source_explicit_epistemic_unknown_object_ref(pre, disposition)
+        if carrier is None:
+            continue
+        unknown = epistemic_boundaries[disposition.target_unknown_ref]
+        affected = tuple(index[nid] for nid in unknown.affected_nucleus_ids if nid in index)
+        if (len(unknown.affected_nucleus_ids) != 1 or len(affected) != 1
+            or unknown.evidence_span_ids != affected[0].source_span_ids
+            or unknown.surface_policy != "hedge_only"
+            or carrier != r._node_ref(node_ids[affected[0].nucleus_id])
+            or affected[0].source_fields not in {("memo",), ("memo_action",)}
+            or "semantic_role:limiting_unknown" not in affected[0].semantic_frame.attribute_codes):
+            raise ValueError("emlis_thread_epistemic_unknown_source_unbound")
     view = derive_grounded_situation_view(pre)
     validate_grounded_situation_view(view, pre, graph)
     scope = derive_foreground_scope_closed(view)

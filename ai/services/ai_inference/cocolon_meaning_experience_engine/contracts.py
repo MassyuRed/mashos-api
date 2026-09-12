@@ -7842,6 +7842,76 @@ def foreground_scope_basis_row_ref(row: ForegroundScopeBasisRow) -> str:
     )
 
 
+def source_explicit_epistemic_unknown_object_ref(premeaning_inputs, disposition):
+    """Bind a preserved thread unknown to its unique witnessed source state.
+
+    This derives an object, never an interpretation of the unknown. The source
+    adapter separately checks the original boundary's affected nucleus/span.
+    A dimension label or overlapping evidence alone grants no binding.
+    """
+    graph = premeaning_inputs.grounded_graph
+    if graph.source_version not in {EMLIS_Q3_SOURCE_VERSION, "cocolon.cmee.emlis_thread.v1"}:
+        return None
+    unknowns = tuple(n for n in graph.nodes if n.node_id == disposition.target_unknown_ref)
+    if len(unknowns) != 1:
+        return None
+    unknown = unknowns[0]
+    if (unknown.node_kind != "unknown" or unknown.grounding_kind != "unknown"
+        or unknown.value != "source_explicit_epistemic_limit"
+        or unknown.epistemic_state is not EpistemicState.UNKNOWN
+        or unknown.owner_id != disposition.meaning_owner_id
+        or unknown.owner_id not in graph.required_owner_refs
+        or tuple(d for d in graph.owner_dispositions if d.meaning_owner_id == unknown.owner_id) != (disposition,)
+        or f"unknown:{unknown.node_id}@{graph.obligation_version}" not in premeaning_inputs.material_unknown_refs
+        or disposition.owner_class is not OwnerClass.REQUIRED
+        or disposition.resolver_resolution is not ResolverResolution.UNRESOLVED
+        or disposition.attachment_admission is not AttachmentAdmission.UNRESOLVED
+        or disposition.visible_authority is not VisibleAuthority.NONE
+        or disposition.source_owner_disposition is not SourceOwnerDisposition.UNKNOWN_PRESERVED_LIMITED
+        or disposition.visible_claim_refs != (unknown.node_id,)
+        or not unknown.evidence_ids or len(set(unknown.evidence_ids)) != len(unknown.evidence_ids)
+        or disposition.evidence_refs != unknown.evidence_ids):
+        return None
+    candidates = []
+    for node in graph.nodes:
+        if (node.node_kind != "uncertainty" or node.grounding_kind != "explicit"
+            or node.epistemic_state is not EpistemicState.SOURCE_EXPLICIT
+            or node.evidence_ids != unknown.evidence_ids):
+            continue
+        owners = tuple(d for d in graph.owner_dispositions if d.meaning_owner_id == node.owner_id)
+        if (len(owners) != 1 or owners[0].owner_class is not OwnerClass.REQUIRED
+            or node.owner_id not in graph.required_owner_refs
+            or owners[0].attachment_admission is not AttachmentAdmission.PROVISIONAL_ONLY
+            or owners[0].source_owner_disposition is not SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE
+            or owners[0].visible_authority is not VisibleAuthority.SOURCE_EXPLICIT
+            or owners[0].resolver_resolution is not ResolverResolution.UNIQUE
+            or owners[0].visible_claim_refs != (node.node_id,)
+            or owners[0].evidence_refs != node.evidence_ids):
+            continue
+        ref = _graph_object_ref(node)
+        qualifiers = tuple(q for q in premeaning_inputs.source_qualifier_rows if q.node_ref == ref)
+        if len(qualifiers) != 1:
+            continue
+        codes = set(qualifiers[0].qualifier_refs)
+        if (len(codes) != len(qualifiers[0].qualifier_refs)
+            or any({v for v in codes if v.startswith(axis + ":")} != {expected}
+                   for axis, expected in (("actor", "actor:current_user"),
+                                          ("modality", "modality:uncertain"),
+                                          ("polarity", "polarity:negative")))
+            or {v for v in codes if v.startswith("time_scope:")} not in
+                ({"time_scope:present"}, {"time_scope:current_input"})):
+            continue
+        cs = tuple(c for c in premeaning_inputs.interpretation_candidate_rows if c.semantic_refs == (ref,))
+        rows = tuple(c for c in premeaning_inputs.observation_contribution_rows if c.semantic_refs == (ref,))
+        expected_evidence = tuple(f"evidence:{e}@{graph.source_version}" for e in node.evidence_ids)
+        if (len(cs) == len(rows) == 1 and _stage1_direct_unfinished_contribution(cs[0], rows[0], ref)
+            and cs[0].evidence_refs == expected_evidence
+            and len(cs[0].required_qualifiers) == len(set(cs[0].required_qualifiers))
+            and set(cs[0].required_qualifiers) == codes - {"world:unknown"}):
+            candidates.append(ref)
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def validate_foreground_scope_basis_row(
     row: ForegroundScopeBasisRow,
     *,
@@ -8129,8 +8199,8 @@ def validate_foreground_scope_basis_row(
                 )
             unknown_source_objects = {
                 (
-                    f"node:{disposition.target_unknown_ref}"
-                    f"@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+                    source_explicit_epistemic_unknown_object_ref(premeaning_inputs, disposition)
+                    or f"node:{disposition.target_unknown_ref}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
                 )
                 for disposition in grounded_graph.owner_dispositions
                 if (
@@ -15937,6 +16007,33 @@ def _im04_limited_exact2_relation_ref(
     return row.relation_basis_refs[0]
 
 
+def _stage1_direct_unfinished_contribution(candidate, row, ref):
+    try:
+        validate_stage1_interpretation_matrix(candidate)
+    except CMEEStage1ContractError:
+        return False
+    roles = tuple(a.role for a in candidate.argument_bindings)
+    return bool(
+        candidate.candidate_kind is InterpretationKind.UNFINISHED
+        and candidate.semantic_operator is SemanticOperator.PRESENT_UNFINISHED
+        and candidate.relation_operator is RelationOperator.NO_RELATION_CLAIM
+        and not candidate.relation_basis_refs and candidate.semantic_refs == (ref,)
+        and roles.count(ArgumentRole.PRIMARY) == 1
+        and set(roles) <= {ArgumentRole.PRIMARY, ArgumentRole.EXPERIENCER}
+        and len(roles) == len(set(roles))
+        and all(a.semantic_ref == ref for a in candidate.argument_bindings)
+        and row.retention == "REQUIRED"
+        and row.contribution_kind is ObservationContributionKind.PRESERVE_UNFINISHED
+        and row.interpretation_candidate_refs == (candidate.candidate_id,)
+        and row.semantic_refs == candidate.semantic_refs
+        and row.semantic_operator is candidate.semantic_operator
+        and row.relation_operator is candidate.relation_operator
+        and row.relation_basis_refs == candidate.relation_basis_refs
+        and row.argument_bindings == candidate.argument_bindings
+        and bool(row.evidence_refs) and row.evidence_refs == candidate.evidence_refs
+    )
+
+
 def _im04_limited_bounded_source_order_unfinished(
     *,
     basis_binding_refs: tuple[str, ...],
@@ -16019,6 +16116,15 @@ def _im04_limited_appraisal_content(
     """Derive the only lossless LIMITED appraisal for one or two targets."""
 
     if len(semantic_refs) == 1:
+        rows = tuple(r for r in contribution_rows if r.contribution_id in contribution_refs)
+        mapped = tuple(c for r, c in contribution_candidate_map if r in contribution_refs)
+        candidates = tuple(c for c in candidate_rows if c.candidate_id in mapped)
+        if (len(basis_binding_refs) == len(contribution_refs) == len(rows) == len(mapped) == len(candidates) == 1
+            and _stage1_direct_unfinished_contribution(candidates[0], rows[0], semantic_refs[0])):
+            return EmlisAppraisalContent(
+                AppraisalDimension.UNFINISHED_OPENNESS,
+                AppraisalOperation.LEAVE_UNFINISHED, basis_binding_refs, None, (), contribution_refs,
+            )
         return EmlisAppraisalContent(
             AppraisalDimension.MATERIAL_WEIGHT,
             AppraisalOperation.RECEIVE_AS_MATERIAL,

@@ -22,6 +22,7 @@ from itertools import combinations, product
 from typing import Iterable, Mapping, Sequence, Tuple
 
 from .contracts import (
+    source_explicit_epistemic_unknown_object_ref,
     stage1_visible_user_source_owner,
     BasisEpistemicTier,
     BasisProvenanceKind,
@@ -308,9 +309,8 @@ def _unknowns_by_node_ref(
             f"unknown:{disposition.target_unknown_ref}"
             f"@{graph.obligation_version}"
         )
-        object_ref = (
-            f"node:{disposition.target_unknown_ref}"
-            f"@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
+        object_ref = source_explicit_epistemic_unknown_object_ref(premeaning_inputs, disposition) or (
+            f"node:{disposition.target_unknown_ref}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
         )
         if object_ref in nodes_by_ref:
             unknown_to_nodes.setdefault(unknown_ref, set()).add(object_ref)
@@ -1061,6 +1061,40 @@ def validate_grounded_situation_view(
         raise CMEEStage1ContractError(
             "grounded_situation_view_source_projection_mismatch"
         )
+    if grounded_graph.source_version in {"cocolon.cmee.emlis_thread.v1", "cocolon.cmee.emlis_thread.q3.v1"}:
+        # Q1/Q3 use their own source admission. Re-derive unknown coverage here,
+        # where the actual carried view is validated, without legacy admission.
+        required_unknowns = tuple(
+            f"unknown:{d.target_unknown_ref}@{grounded_graph.obligation_version}"
+            for d in grounded_graph.owner_dispositions
+            if d.owner_class is OwnerClass.REQUIRED
+            and d.source_owner_disposition is SourceOwnerDisposition.UNKNOWN_PRESERVED_LIMITED
+            and d.target_unknown_ref is not None
+        )
+        if (len(required_unknowns) != len(set(required_unknowns))
+                or _canonical(required_unknowns) != _canonical(premeaning_inputs.material_unknown_refs)
+                or len(premeaning_inputs.material_unknown_refs) != len(required_unknowns)
+                or _missing):
+            raise CMEEStage1ContractError("grounded_situation_view_unknown_coverage_mismatch")
+        for unknown_ref in required_unknowns:
+            objects = _canonical(ref for ref, refs in unknowns_by_node.items() if unknown_ref in refs)
+            rows = tuple(row for row in view.basis_rows if unknown_ref in row.material_unknown_refs)
+            evidence = _evidence_refs((nodes_by_ref[ref] for ref in objects),
+                                      source_version=grounded_graph.source_version)
+            if (len(rows) != 1 or not evidence
+                    or rows[0].basis_kind is not ForegroundScopeBasisKind.MATERIAL_UNKNOWN_OR_REQUIRED_QUALIFIER
+                    or rows[0].scope_object_refs != objects or rows[0].source_object_refs != objects
+                    or rows[0].source_evidence_refs != evidence
+                    or rows[0].layer1_required_object_refs or rows[0].required_retention_duty_refs
+                    or rows[0].source_connected_relation_refs or rows[0].required_qualifier_refs
+                    or rows[0].material_unknown_refs != (unknown_ref,)):
+                raise CMEEStage1ContractError("grounded_situation_view_unknown_basis_mismatch")
+        if any(ref not in required_unknowns for row in view.basis_rows for ref in row.material_unknown_refs):
+            raise CMEEStage1ContractError("grounded_situation_view_unknown_basis_mismatch")
+        for object_ref in set(unknowns_by_node) | {row.scope_object_ref for row in view.compatibility_rows}:
+            rows = tuple(row for row in view.compatibility_rows if row.scope_object_ref == object_ref)
+            if len(rows) != 1 or rows[0].material_unknown_refs != unknowns_by_node.get(object_ref, ()):
+                raise CMEEStage1ContractError("grounded_situation_view_unknown_compatibility_mismatch")
     edges = {_edge_ref(edge): edge for edge in grounded_graph.edges}
     expected_relations = []
     for row in premeaning_inputs.source_relation_rows:

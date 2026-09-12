@@ -1,7 +1,7 @@
 {
   "scope": "Q1 shared language owners only; test snapshot, not product acceptance or full thread identity",
-  "language_identity": "81ec4b05c2e7bb96b859a59b0ebb204f0027642bfd5b1ce32ac63559102edec8",
-  "runtime_identity": "44e00ed572ef5cfb38c15009071e0263321cfff8f313f69564e4cb0771ff7f84",
+  "language_identity": "da27268036f21ec256f977ebd98e2512fa247818a0019731c836bd9ec488acdc",
+  "runtime_identity": "204779dba7b8d739c13e3f5deff74bb19f587f1dda3644cff4d5f516633183e6",
   "language_payloads": [
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
@@ -10,8 +10,8 @@
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py",
-      "409c6c8f12a04dc7d15c28632c8d0f17784d3eaf2f1927f5e8fd56e5d77a9ceb",
-      2026891
+      "60bbfb557b0c2319d08d69383f31e10281f68cd932a656616ed7a907ce2ec0b3",
+      2051934
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py",
@@ -45,8 +45,8 @@
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",
-      "6833a320ceda8849e7636a70423f1bd36ece63cef8d186a566b6ec6643b57782",
-      503108
+      "30895dfdbc3bf6f604af337ae20ff9a4379ea3564af395911f34236822415074",
+      511903
     ],
     [
       "language_core_contract_manifest",
@@ -102,8 +102,8 @@
     ],
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py",
-      "04bbe01e2bc3423d942f5264d4b1e0d51c7a5cd672719e7ed0e6dc7c5b1a375c",
-      826232
+      "95a57556f8c1038403d3d9fb00c1b881deabb15fcc0cbabfe7d5caff18601d87",
+      832895
     ],
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py",
@@ -137,8 +137,8 @@
     ],
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",
-      "1a2939ad165a004e5f2c1cfdfb1f54fb4f9dae991cf53caa84896c6e338277f0",
-      207876
+      "c68ef7801851644bd532bb19331076ddfcc5eeed085492b915f80a16fc5cf5cb",
+      210747
     ],
     [
       "language_core_contract_manifest",
@@ -189,7 +189,7 @@
   "source_owner_symbols": [
     [
       84,
-      478,
+      480,
       118,
       194,
       297,
@@ -207,8 +207,8 @@
       42,
       35,
       45,
-      101
+      103
     ],
-    "56cc96fd6dde20e8ac722108b457a3c9b1a9d619779dbf863a76e1bf7c6e2caa"
+    "76d578e246103e8e57a47b084d2d1d85e87061b877e92ae16053364af4f3e1d5"
   ]
 }
