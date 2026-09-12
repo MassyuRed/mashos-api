@@ -1006,7 +1006,9 @@ class CMEEUnresolvedQuestionSourceTest(unittest.TestCase):
         return source, plan
 
     def test_finite_cognitive_unknown_preserves_same_nucleus_and_source(self):
-        for text in ("まだよく分からない。", "今もはっきりわからない。"):
+        for text in ("まだよく分からない。", "今もはっきりわからない。",
+                     "今はまだよく分からない。", "現在は分からない。",
+                     "現在もまだはっきりわからない。"):
             with self.subTest(text=text):
                 source, before = self._source_plan(text)
                 target = next(n for n in before.nuclei if "memo" in n.source_fields)
@@ -1047,7 +1049,10 @@ class CMEEUnresolvedQuestionSourceTest(unittest.TestCase):
                 self.assertEqual(untouched, before.nuclei)
         for text in ("まだ弟は分からない。", "まだ体が動かない。",
                      "まだ分からなかった。", "まだ分からないとは言えない。",
-                     "まだよく分からない？"):
+                     "まだよく分からない？", "今は弟も分からない。",
+                     "現在は分からなかった。", "明日はまだ分からない。",
+                     "今はまだ分からないと思った。", "今はまだ分からないなら待つ。",
+                     "今はまだよく分からない？"):
             with self.subTest(text=text):
                 candidate_source, plan = self._source_plan(text)
                 nuclei, _ = observation_plan_owner._final_stage1_typed_nuclei(
@@ -1057,9 +1062,25 @@ class CMEEUnresolvedQuestionSourceTest(unittest.TestCase):
                 self.assertFalse(any(n.kind == "uncertainty" for n in nuclei))
 
     def test_cognitive_unknown_selected_openness_reaches_body_and_inverse(self):
+        self._assert_cognitive_unknown_surface("まだよく分からない。")
+
+    def test_present_cognitive_unknown_retains_time_and_selected_openness(self):
+        for text in ("今はまだよく分からない。", "現在は分からない。",
+                     "現在もまだはっきりわからない。"):
+            with self.subTest(text=text):
+                source, before = self._source_plan(text)
+                nuclei, _ = observation_plan_owner._final_stage1_typed_nuclei(
+                    before, source.evidence_spans,
+                    normalized_input=source.normalized_current_input,
+                )
+                unknown = next(n for n in nuclei if "memo" in n.source_fields)
+                self.assertEqual(unknown.semantic_frame.time_scope, "present")
+                self._assert_cognitive_unknown_surface(text)
+
+    def _assert_cognitive_unknown_surface(self, text):
         artifacts = _full_surface_artifacts({
             "case_id": "finite-cognitive-unknown-expression-unit",
-            "input": {"thought_text": "まだよく分からない。", "action_text": "",
+            "input": {"thought_text": text, "action_text": "",
                       "categories": ["生活"],
                       "emotions": [{"type": "不安", "strength": "weak"}]},
         })

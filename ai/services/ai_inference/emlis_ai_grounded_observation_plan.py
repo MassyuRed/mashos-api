@@ -6857,6 +6857,30 @@ def _thread_withdrawn_original_reaction(nucleus, relations):
     )
 
 
+def is_grounded_current_answer_uncertainty(nucleus):
+    """Keep an admitted current epistemic answer as a state, not a feeling.
+
+    The source owner has already accepted this exact supplemental claim.
+    The Reception author must still prove its source fragment and grammar.
+    This predicate grants no answer admission or missing-object inference.
+    """
+    frame = nucleus.semantic_frame
+    codes = set(frame.attribute_codes)
+    return bool(
+        nucleus.kind == frame.predicate_kind == "state"
+        and frame.actor == "current_user" and frame.modality == "uncertain"
+        and frame.polarity == "negative" and frame.time_scope == "present"
+        and nucleus.source_fields == ("answer_text_private",)
+        and nucleus.allowed_claim_scope == "explicit_supplemental_answer"
+        and nucleus.retention == "required" and nucleus.grounding_kind == "explicit"
+        and len(nucleus.source_span_ids) == 1
+        and {"detected_type:limit_signal", "operator:negation", "operator:uncertainty",
+             "lexical:preserve_source_predicate", "lexical:no_new_sensation_family"} <= codes
+        and {c for c in codes if c.startswith("thread_time:")}
+            in ({"thread_time:answer_time"}, {"thread_time:prior_answer_time"})
+    )
+
+
 def _thread_retained_reaction_groups(nuclei, relations):
     """Keep unanswered original reactions alongside the accepted answer duties.
 
@@ -6903,6 +6927,8 @@ def _thread_retained_reaction_groups(nuclei, relations):
     detached_answers = []
     for n in answers:
         frame = n.semantic_frame
+        current_unknown = (not withdrawal and len(events) == len(answers) == 1
+                           and is_grounded_current_answer_uncertainty(n))
         about = tuple(r for r in relations if r.type == "evaluation_about_event"
                       and r.to_nucleus_id == n.nucleus_id and r.retention == "required")
         times = {c for c in frame.attribute_codes if c.startswith("thread_time:")}
@@ -6910,8 +6936,9 @@ def _thread_retained_reaction_groups(nuclei, relations):
                         and not any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations))
         if (n.allowed_claim_scope != "explicit_supplemental_answer"
             or n.retention != "required" or n.grounding_kind != "explicit"
-            or n.kind != "reaction" or frame.actor != "current_user"
-            or frame.predicate_kind != "feeling" or frame.modality != "feeling"
+            or frame.actor != "current_user"
+            or not current_unknown and (n.kind != "reaction"
+                or frame.predicate_kind != "feeling" or frame.modality != "feeling")
             or not detached and "thread_subject:unique_source_clause" not in frame.attribute_codes
             or len(times) != 1 or not times <= {"thread_time:original_occasion",
                 "thread_time:answer_time", "thread_time:prior_answer_time"}
@@ -11125,11 +11152,13 @@ def _final_stage1_typed_nuclei(
                             and nucleus.semantic_frame.modality == "uncertain"
                             and {"operator:uncertainty", "semantic_role:limiting_unknown"}
                             <= set(nucleus.semantic_frame.attribute_codes)
-                            # Only adverb attachment to the registered finite
-                            # cognition predicate: no inferred object, actor,
-                            # embedded assertion or reporting host.
+                            # Present-time qualifiers and degree adverbs attach
+                            # to the same registered finite cognition predicate.
+                            # Keep the proven time_scope; do not infer an object,
+                            # actor, embedded assertion or reporting host.
                             and re.fullmatch(
-                                r"(?:まだ|今も)?(?:よく|はっきり)?"
+                                r"(?:(?:今|現在)(?:は|も))?(?:まだ)?"
+                                r"(?:よく|はっきり)?"
                                 r"(?:分からない|わからない)", finite,
                             )
                             and _UNCERTAIN_RE.search(finite)

@@ -11,6 +11,24 @@ def active(monkeypatch):
     monkeypatch.setenv('COCOLON_EMLIS_THREAD_RELEASE_APPROVED','true')
     return EmlisThreadService(runtime_profile=Q3_PROFILE,enforce_application_policy=True)
 
+@pytest.mark.parametrize('text', ['今はまだよく分からない。', '現在は分からない。'])
+def test_current_unknown_answer_persists_original_feeling_and_current_uncertainty(qcase,qdb,monkeypatch,text):
+    user,parent,_=qcase
+    qdb.query('update public.emotions set memo=$1 where id=$2', ['褒められたのに、嬉しくなかった。',parent])
+    service=active(monkeypatch)
+    initial=run(service.start(user,parent))
+    assert initial['state']=='AWAITING_ANSWER'
+    result=run(answer(service,user,initial,text,'current-unknown'))
+    assert result['state']=='COMPLETED' and result['body_state']=='REFINED'
+    assert result['answer_assessment']=='RESOLVED' and result['answer_saved'] and result['meaning_updated']
+    assert result['original']==initial['original']
+    assert result['issued_count']==1 and result['pending_question'] is None
+    assert not result['can_continue']
+    follow=result['current_observation']['text'].split('Emlisから：',1)[1]
+    assert '褒められたのに嬉しくなかったこと' in follow
+    assert 'その出来事について、回答した時点で' in follow and '分からないこと' in follow
+    assert run(service.get(user,parent))==result
+
 @pytest.mark.parametrize('mode,read,write',[('legacy',False,False),('active',True,True),('read_only',True,False),('invalid',True,False)])
 def test_policy_bootstrap(monkeypatch,mode,read,write):
     from emlis_thread_config import read_enabled,writes_enabled

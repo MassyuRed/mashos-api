@@ -30,6 +30,7 @@ from emlis_ai_grounded_observation_plan import (
     source_proven_performed_action_status,
     source_proven_future_action_status,
     is_grounded_positive_feeling,
+    is_grounded_current_answer_uncertainty,
     past_reported_wish_finite,
     _FEELING_RE,
     _direct_finite_carrier_shape,
@@ -2704,12 +2705,14 @@ def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver):
     rows = []
     for nid in targets:
         n = nucleus_index[nid]
+        current_unknown = len(targets) == 1 and is_grounded_current_answer_uncertainty(n)
         times = {c.split(":", 1)[1] for c in n.semantic_frame.attribute_codes if c.startswith("thread_time:")}
         about = tuple(r for r in plan.relations if r.to_nucleus_id == nid
             and r.type == "evaluation_about_event" and r.relation_id in plan.coverage_requirements.required_relation_ids)
         if (n.source_fields != ("answer_text_private",) or n.allowed_claim_scope != "explicit_supplemental_answer"
-            or n.kind != "reaction" or n.semantic_frame.predicate_kind != "feeling"
-            or n.semantic_frame.modality != "feeling" or n.semantic_frame.polarity != "negative"
+            or not current_unknown and (n.kind != "reaction" or n.semantic_frame.predicate_kind != "feeling"
+                or n.semantic_frame.modality != "feeling")
+            or n.semantic_frame.polarity != "negative"
             or len(n.source_span_ids) != 1 or len(times) != 1
             or not times <= _THREAD_ANSWER_TIME_NOMINAL_PREFIX.keys() or len(about) != 1):
             return ()
@@ -7551,7 +7554,9 @@ def _thread_received_group_ir_text(realization):
             ap = profiles[answer_slot]
             source = fragments[answer_slot]
             row = _thread_answer_nominal_morphology(source)
-            if (ap.nucleus_kind != "reaction" or ap.predicate_kind != "feeling" or ap.modality != "feeling"
+            current_unknown = (count == 1 and grammar == "FINITE" and when in {"answer_time", "prior_answer_time"}
+                and ap.nucleus_kind == ap.predicate_kind == "state" and ap.modality == "uncertain")
+            if (not current_unknown and (ap.nucleus_kind != "reaction" or ap.predicate_kind != "feeling" or ap.modality != "feeling")
                 or ap.actor_kind != "SELF" or ap.quoted_boundary or ap.performed_action or ap.future_action):
                 raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
             if grammar == "FINITE" and row is None and _SOURCE_GROUNDED_FINITE_END_RE.search(source):

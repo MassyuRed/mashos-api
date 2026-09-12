@@ -566,6 +566,7 @@ def test_single_event_negative_add_preserves_original_and_answer_in_body_and_sel
 @pytest.mark.parametrize('answer,phrase,retimed', [
     ('その時は重かった。', 'その出来事へのその時の重さ', 'その出来事への回答した時点の重さ'),
     ('今は怖い。', 'その出来事について、回答した時点で怖いこと', 'その出来事について、その時に怖いこと'),
+    ('今はまだよく分からない。', 'その出来事について、回答した時点でまだよく分からないこと', 'その出来事について、その時にまだよく分からないこと'),
 ])
 def test_single_negative_add_inverse_rejects_lost_swapped_or_retimed_meanings(answer, phrase, retimed):
     from test_cmee_emlis_q1_thread import answered
@@ -600,10 +601,49 @@ def test_single_negative_add_inverse_rejects_lost_swapped_or_retimed_meanings(an
         follow.replace(phrase, retimed), follow.replace('褒められた', '誘われた'),
         follow.replace(original, '「' + original + '」'),
     ]
+    if 'まだよく分からない' in follow:
+        mutations.extend(follow.replace('まだよく分からない', changed)
+                         for changed in ('もう分かった', 'まだよく分からなかった', '彼はまだよく分からない'))
     for changed in mutations:
         assert changed != follow and not valid(changed)
         with patch('emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no replay')):
             assert all(row is None for row in parsed(changed))
+
+
+@pytest.mark.parametrize('answer,fragment', [
+    ('今はまだよく分からない。', 'まだよく分からない'),
+    ('現在は分からない。', '分からない'),
+])
+@pytest.mark.parametrize('q3', [False, True])
+def test_current_unknown_answer_keeps_original_reaction_without_becoming_a_feeling(answer, fragment, q3):
+    from test_cmee_emlis_q1_thread import answered
+    req = advance(begin('褒められたのに、嬉しくなかった。'), answer) if q3 else answered(answer)
+    prepared = prepare_emlis_meaning(req)
+    assert prepared.checkpoint.assessment_status == 'RESOLVED'
+    assert not prepared.checkpoint.inactive_claim_refs
+    n, = prepared.accepted_nuclei
+    assert (n.kind, n.semantic_frame.predicate_kind, n.semantic_frame.modality) == ('state', 'state', 'uncertain')
+    assert n.semantic_frame.time_scope == 'present'
+    plan = build_updated_grounded_plan(prepared)
+    move, = plan.response_plan.human_reception_plan.moves
+    assert move.target_nucleus_ids == ('nucleus:s1:event',)
+    assert move.support_nucleus_ids == ('nucleus:s1:reaction', n.nucleus_id)
+    result = realize_emlis_thread_body(prepared)
+    assert '嬉しくなかった' in result.artifact.observation
+    assert '褒められたのに嬉しくなかったこと' in result.artifact.reception
+    assert 'その出来事について、回答した時点で' + fragment + 'こと' in result.artifact.reception
+    assert '反映できていない' not in result.artifact.text
+
+
+@pytest.mark.parametrize('q3', [False, True])
+def test_unsupported_qualified_current_unknown_is_not_promoted_by_reception(q3):
+    from test_cmee_emlis_q1_thread import answered
+    answer = '今ははっきりわからない。'
+    req = advance(begin('褒められたのに、嬉しくなかった。'), answer) if q3 else answered(answer)
+    prepared = prepare_emlis_meaning(req)
+    assert prepared.checkpoint.assessment_status == 'UNRESOLVED'
+    assert not prepared.checkpoint.inactive_claim_refs
+    assert not prepared.accepted_nuclei
 
 
 @pytest.mark.parametrize('event_count', [1, 2, 3])
