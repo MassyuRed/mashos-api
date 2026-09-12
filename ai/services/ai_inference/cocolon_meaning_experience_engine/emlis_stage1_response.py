@@ -12011,13 +12011,19 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
             for row in rows if row.reception_act == "stay_with_current_burden"
         )
     )
+    from emlis_ai_grounded_observation_plan import _source_feeling_reason_group
+    reason_group = _source_feeling_reason_group(tuple(binding.node_meta.values()), tuple(binding.edge_meta.values()))
+    feeling_reason_action = bool(len(reason_group) == 3 and len(rows) == 2
+        and tuple((m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in reception_plan.moves)
+            == (("stay_with_current_burden", (reason_group[0].nucleus_id,), (reason_group[1].nucleus_id,)),
+                ("honor_concrete_effort", (reason_group[2].nucleus_id,), ())))
     if (len(rows) == 2
         and (all(row.reception_act == "stay_with_current_burden" for row in rows)
-             or mixed_answers or independent_cognition_action)
+             or mixed_answers or independent_cognition_action or feeling_reason_action)
         and rows[0].projected_claim_ref == rows[1].projected_claim_ref):
         first = rows[0]
         if (any(not move.required or len(move.target_nucleus_ids) != 1
-                or move.support_nucleus_ids for move in reception_plan.moves)
+                or move.support_nucleus_ids and not feeling_reason_action for move in reception_plan.moves)
             or any((row.branch, row.meaning_outcome_ref, row.reception_binding_ref,
                     row.subjective_proposition, row.basis_rows, row.qualifier_rows)
                    != (first.branch, first.meaning_outcome_ref, first.reception_binding_ref,
@@ -12031,14 +12037,15 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
                 != first.subjective_proposition.basis_binding_refs
             or {b.contribution_ref for b in first.basis_rows} != set(complete)):
             raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
-        targets = tuple(_node_ref(binding.nucleus_to_node[row.target_nucleus_ids[0]]) for row in rows)
-        if (len(set(targets)) != 2
-            or set(targets) != set(first.subjective_proposition.response_object_refs)):
+        duties = tuple({_node_ref(binding.nucleus_to_node[nid])
+                        for nid in (*row.target_nucleus_ids, *row.support_nucleus_ids)} for row in rows)
+        if (duties[0] & duties[1]
+            or set().union(*duties) != set(first.subjective_proposition.response_object_refs)):
             raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
         partition = tuple(tuple(ref for ref in complete
-                                if {entry.semantic_ref for entry in first.basis_rows
-                                    if entry.contribution_ref == ref} == {target})
-                          for target in targets)
+                                if (basis := {entry.semantic_ref for entry in first.basis_rows
+                                             if entry.contribution_ref == ref}) and basis <= duty)
+                          for duty in duties)
         if (any(not refs for refs in partition)
             or set(partition[0]) & set(partition[1])
             or set().union(*map(set, partition)) != set(complete)):

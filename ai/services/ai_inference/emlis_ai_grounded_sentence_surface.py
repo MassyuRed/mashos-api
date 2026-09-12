@@ -2622,7 +2622,10 @@ def _source_bound_current_cognition(
         clause = str(span.raw_text).strip(" \u3000。．.")
         if (span.source_field == nucleus.source_fields[0]
             and 0 <= span.start_index < span.end_index
-            and re.fullmatch(r"(?:(?:今|現在)(?:は|も))?(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", clause)):
+            and (re.fullmatch(r"(?:(?:今|現在)(?:は|も))?(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", clause)
+                 or "lexical:source_feeling_reason_unknown" in attributes
+                 and re.fullmatch(r"(?:(?:なぜ|どうして|何故)そう感じるのか|その理由)(?:は|が)?"
+                                  r"(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", clause))):
             return clause
     return ""
 

@@ -6670,6 +6670,39 @@ def _is_independent_source_material(
     )
 
 
+def _source_feeling_reason_group(nuclei, relations):
+    """One source-proven feeling and its explicitly unresolved reason.
+
+    Source order alone never supplies this ownership. The final source pass
+    must have proved both complete adjacent clauses and the unique anaphor.
+    Optional uncertain-connection edges remain evidence, not asserted causes.
+    """
+    text = tuple(n for n in nuclei if set(n.source_fields) & _TEXT_SOURCE_FIELDS)
+    feelings = tuple(n for n in text if "lexical:source_feeling_reason_subject" in n.semantic_frame.attribute_codes)
+    unknowns = tuple(n for n in text if "lexical:source_feeling_reason_unknown" in n.semantic_frame.attribute_codes)
+    if len(feelings) != 1 or len(unknowns) != 1 or len(text) not in {2, 3}:
+        return ()
+    feeling, unknown = feelings[0], unknowns[0]
+    if (feeling.kind != "reaction" or feeling.semantic_frame.predicate_kind != "feeling"
+        or feeling.semantic_frame.modality != "feeling"
+        or unknown.kind != unknown.semantic_frame.predicate_kind or unknown.kind != "uncertainty"
+        or unknown.semantic_frame.modality != "uncertain"
+        or any(n.source_fields != ("memo",) or n.retention != "required"
+               or n.grounding_kind != "explicit" or n.allowed_claim_scope != "explicit_current_input"
+               or n.semantic_frame.actor != "current_user" or n.semantic_frame.polarity != "negative"
+               or n.semantic_frame.time_scope not in {"present", "current_input"}
+               for n in (feeling, unknown))
+        or any(r.retention == "required" or r.type != "uncertain_connection" for r in relations
+               if {r.from_nucleus_id, r.to_nucleus_id} & {n.nucleus_id for n in text})):
+        return ()
+    actions = tuple(n for n in text if n not in (feeling, unknown))
+    if any(n.source_fields != ("memo_action",) or n.retention != "required"
+           or n.semantic_frame.actor != "current_user" or not source_proven_performed_action_status(n)
+           for n in actions):
+        return ()
+    return (feeling, unknown, *actions)
+
+
 def _source_proven_past_nonaction(nucleus: GroundedSemanticNucleus) -> bool:
     frame = nucleus.semantic_frame
     return bool(
@@ -7290,6 +7323,25 @@ def build_grounded_reception_opportunities(
             )
         )
 
+    reason_group = _source_feeling_reason_group(nuclei, relations) if (
+        final_source_fidelity
+        and safety_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality in {"grounded", "limited_grounding"}
+    ) else ()
+    if reason_group and follow_ids == {reason_group[0].nucleus_id}:
+        by_family = {row.family: row for row in rows}
+        duties = (("current_burden", reason_group[:1], reason_group[1:2]),) + (
+            (("concrete_effort", reason_group[2:], ()),) if len(reason_group) == 3 else ())
+        grouped = []
+        for family, targets, supports in duties:
+            selected = (*targets, *supports)
+            grouped.append(replace(by_family[family],
+                target_nucleus_ids=tuple(n.nucleus_id for n in targets),
+                support_nucleus_ids=tuple(n.nucleus_id for n in supports),
+                source_evidence_span_ids=tuple(_ordered_span_ids(s for n in selected for s in n.source_span_ids)),
+                source_field_count=1, retention="required"))
+        return tuple(replace(row, opportunity_id=f"ro{i}") for i, row in enumerate(grouped, 1))
+
     if nonaction_pair:
         burden = next(item for item in rows if item.family == "current_burden")
         other = next(n for n in nonaction_pair if (n.nucleus_id,) != burden.target_nucleus_ids)
@@ -7797,6 +7849,20 @@ def build_grounded_human_reception_plan(
             and material_quality in {"grounded", "limited_grounding"}
         ) else ()),
     )
+    reason_group = _source_feeling_reason_group(nuclei, relations) if final_source_fidelity else ()
+    if (len(reason_group) == 2 and len(moves) == 1
+        and moves[0].target_nucleus_ids == (reason_group[0].nucleus_id,)
+        and moves[0].support_nucleus_ids == (reason_group[1].nucleus_id,)):
+        reference_mode = "short_anchor_if_ambiguous"
+        moves = (replace(moves[0], reference_mode=reference_mode),)
+    if (len(reason_group) == 3 and len(moves) == 2
+        and moves[0].target_nucleus_ids == (reason_group[0].nucleus_id,)
+        and moves[0].support_nucleus_ids == (reason_group[1].nucleus_id,)
+        and moves[1].target_nucleus_ids == (reason_group[2].nucleus_id,)
+        and not moves[1].support_nucleus_ids):
+        reference_mode = "short_anchor_if_ambiguous"
+        moves = (replace(moves[0], reference_mode=reference_mode), replace(moves[1],
+            move_role="felt_response", surface_strategy="felt_response_first", reference_mode=reference_mode))
     # A newly retained, independently proven burden is received before its
     # separate action. Both canonical act/role pairs already permit felt
     # response; no Reception role participates in the meaning decision.
@@ -8554,6 +8620,12 @@ def _build_response_and_policies(
         )
     ):
         selected_follow = independent_materials[0]
+    reason_group = _source_feeling_reason_group(nuclei, relations) if (
+        final_source_fidelity and safety_decision.safety_triage_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality in {"grounded", "limited_grounding"} and not primary_focus_nucleus_ids
+    ) else ()
+    if reason_group:
+        selected_follow = reason_group[0]
     follow_ids = (selected_follow.nucleus_id,) if selected_follow is not None else primary_ids[:1]
 
     observable_nucleus_present = bool(nuclei)
@@ -12611,7 +12683,7 @@ def project_final_stage1_grounded_observation_plan(
     )
     relations, nuclei = _final_stage1_typed_relations(
         plan,
-        projected_nuclei,
+        _final_source_feeling_reason_nuclei(projected_nuclei, evidence_spans, normalized_input),
         compound_dependencies,
         evidence_spans,
     )
@@ -12678,6 +12750,81 @@ def project_final_stage1_grounded_observation_plan(
             "invalid_final_stage1_grounded_projection:" + ",".join(issues)
         )
     return projected
+
+
+def _final_source_feeling_reason_nuclei(nuclei, evidence_spans, normalized_input):
+    """Bind a finite reason-unknown host to one adjacent current feeling.
+
+    This source projection precedes meaning selection. It changes neither
+    evidence nor relations and cannot use a rendered reception as evidence.
+    """
+    if normalized_input is None:
+        return nuclei
+    memo = tuple(n for n in nuclei if n.source_fields == ("memo",))
+    if len(memo) != 2:
+        return nuclei
+    spans = {s.span_id: s for s in evidence_spans}
+    if any(len(n.source_span_ids) != 1 or n.source_span_ids[0] not in spans for n in memo):
+        return nuclei
+    feeling, unknown = sorted(memo, key=lambda n: spans[n.source_span_ids[0]].start_index)
+    left, right = (spans[n.source_span_ids[0]] for n in (feeling, unknown))
+    source = str(normalized_input.get("memo") or "")
+    if (any(n.retention != "required" or n.grounding_kind != "explicit"
+            or n.allowed_claim_scope != "explicit_current_input"
+            or n.semantic_frame.actor != "current_user" or n.semantic_frame.polarity != "negative"
+            or n.semantic_frame.time_scope not in {"present", "current_input"}
+            or any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:"))
+                   or c == "semantic_role:embedded_turn" for c in n.semantic_frame.attribute_codes)
+            for n in (feeling, unknown))
+        or feeling.kind != "reaction" or feeling.semantic_frame.predicate_kind != "feeling"
+        or feeling.semantic_frame.modality != "feeling"
+        or unknown.kind not in {"reaction", "state", "uncertainty"}
+        or unknown.semantic_frame.modality != "uncertain"
+        or not {"operator:uncertainty", "semantic_role:limiting_unknown"} <= set(unknown.semantic_frame.attribute_codes)
+        or _top_level_text(source) != source or re.search(r"[?？!！…‥\r\n]", source)
+        or any(s.source_field != "memo" or not 0 <= s.start_index < s.end_index <= len(source)
+               or source[s.start_index:s.end_index] != s.raw_text for s in (left, right))
+        or source[:left.start_index].strip()
+        or not re.fullmatch(r"\s*[。．.]\s*", source[left.end_index:right.start_index])
+        or not re.fullmatch(r"\s*[。．.]?\s*", source[right.end_index:])):
+        return nuclei
+    first, second = (str(s.raw_text).strip(" 　。．.") for s in (left, right))
+    host_parts = re.split(r"[、,]", first)
+    host = host_parts[-1]
+    self_perception = re.fullmatch(
+        r"(?:自分|私|わたし|僕|ぼく|俺|おれ)(?:だけ|は|が|には|も)"
+        r"(?P<content>.+)感じ(?:がする|る)", host)
+    # A SELF prefix inside a relative clause is not its final experiencer.
+    # The narrow perception fallback admits no competing subject/topic or
+    # second concessive host. Voiced -garu verb inflections are not が cases.
+    perception_owner_bound = bool(self_perception
+        and re.fullmatch(r"(?:[^はがも]|が(?=[らりるれろっ]))+(?:ている|でいる|ていない|でいない|ない)", self_perception['content'])
+        and not re.search(r"(?:のに|けど|けれど|だが|ですが)", self_perception['content']))
+    owner_bound = bool(
+        (len(host_parts) == 1 or len(host_parts) == 2 and re.search(r"(?:ても|でも)$", host_parts[0]))
+        and (_source_operator_owner_scope_is_bound(host)
+             or perception_owner_bound
+             or re.fullmatch(r"(?:(?:今|現在)(?:は|も))?(?:(?:何となく|なんとなく|少し|とても|すごく))*"
+                             r"(?:悲し|寂し|苦し|怖|つら|重|しんど|だる)い", host))
+    )
+    if (len(tuple(_FEELING_RE.finditer(first))) != 1
+        or not owner_bound
+        or re.search(r"(?:と言|と思|という|らしい|そうだ|ようだ)", first)
+        or not re.search(r"(?:感じ(?:がする|る)|(?:悲し|寂し|苦し|怖|つら|重|しんど|だる)い)$", first)
+        or not re.fullmatch(r"(?:(?:なぜ|どうして|何故)そう感じるのか|その理由)(?:は|が)?"
+                            r"(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", second)):
+        return nuclei
+    replacements = {}
+    for n, marker in ((feeling, "subject"), (unknown, "unknown")):
+        frame = n.semantic_frame
+        replacements[n.nucleus_id] = replace(n,
+            kind="uncertainty" if n == unknown else n.kind,
+            semantic_frame=replace(frame,
+                predicate_kind="uncertainty" if n == unknown else frame.predicate_kind,
+                attribute_codes=tuple(_dedupe((*frame.attribute_codes,
+                    "lexical:source_feeling_reason_" + marker,
+                    "lexical:preserve_source_predicate", "lexical:no_new_sensation_family")))))
+    return tuple(replacements.get(n.nucleus_id, n) for n in nuclei)
 
 
 def build_final_stage1_grounded_observation_plan(

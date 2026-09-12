@@ -1974,6 +1974,43 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
     return successes[0] if len(successes) == 1 else None
 
 
+def _body_inverse_feeling_reason_group(body, witness, sentence, move, plan, resolver, selected_subjective_input):
+    """Restore both finite source objects from bytes, without forward replay."""
+    from emlis_ai_grounded_observation_plan import _source_feeling_reason_group
+    group = _source_feeling_reason_group(plan.nuclei, plan.relations)
+    if (not group or sentence.section != "reception" or move.move_role != "felt_response"
+        or move.reception_act != "stay_with_current_burden" or not move.required
+        or move.target_nucleus_ids != (group[0].nucleus_id,)
+        or move.support_nucleus_ids != (group[1].nucleus_id,)):
+        return False
+    decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None) if selected_subjective_input else None
+    proposition = decision.subjective_proposition if decision else None
+    if proposition is None:
+        return False
+    appraisal = proposition.appraisal_content
+    openness = bool(appraisal is not None and appraisal.operation == "LEAVE_UNFINISHED"
+        or proposition.relational_position is not None
+        and proposition.relational_position.stance_operator == "HOLD_UNFINISHED_OPEN")
+    raw = body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8")
+    prefix = "結論を急がずに、" if openness else ""
+    parsed = re.fullmatch(re.escape(prefix) + r"(?P<left>[^。！？!?]+)ことと、(?P<right>[^。！？!?]+)こと"
+        r"を小さくせずに(?:(?:受け止めて|気にかけて)(?:います|いて)|(?:受け止め|気にかけ)たいです)。", raw)
+    if parsed is None:
+        return False
+    expected = tuple(str(resolver.resolve(n.source_span_ids[0]).raw_text).strip(" 　。．.") for n in group[:2])
+    if (parsed.group("left"), parsed.group("right")) != expected:
+        return False
+    for name in ("left", "right"):
+        start = sentence.utf8_byte_start + len(raw[:parsed.start(name)].encode())
+        end = sentence.utf8_byte_start + len(raw[:parsed.end(name)].encode()) + len("こと".encode())
+        if (any(q.utf8_byte_start < end and start < q.utf8_byte_end for q in witness.quotes)
+            or any(m.marker_code == "secondary_quote_boundary" and m.utf8_byte_start < end and start < m.utf8_byte_end for m in witness.markers)
+            or not any(m.section == "reception" and m.marker_code == "finite_clause_nominal"
+                       and start <= m.utf8_byte_start and m.utf8_byte_end == end for m in witness.markers)):
+            return False
+    return True
+
+
 def _body_inverse_received_contrast_group(body, witness, sentence, move, plan, resolver):
     """Read each finite event/reaction pair and its actual source connector."""
     count = len(move.target_nucleus_ids)
@@ -2258,7 +2295,10 @@ def evaluate_grounded_surface_body_inverse(
                     source_clause = str(source_span.raw_text).strip(" \u3000。．.")
                     if (source_span.source_field == cognition.source_fields[0]
                         and 0 <= source_span.start_index < source_span.end_index
-                        and re.fullmatch(r"(?:(?:現在|今)(?:も|は))?(?:まだ)?(?:はっきり|よく)?(?:わからない|分からない)", source_clause)):
+                        and (re.fullmatch(r"(?:(?:現在|今)(?:も|は))?(?:まだ)?(?:はっきり|よく)?(?:わからない|分からない)", source_clause)
+                             or "lexical:source_feeling_reason_unknown" in codes
+                             and re.fullmatch(r"(?:(?:何故|どうして|なぜ)そう感じるのか|その理由)(?:が|は)?"
+                                              r"(?:まだ)?(?:はっきり|よく)?(?:わからない|分からない)", source_clause))):
                         direct_cognition = True
                         visible = _body_inverse_visible_text(body, parsed_line)
                         if "scope_hedge" in binding.functional_atom_ids:
@@ -2944,6 +2984,11 @@ def evaluate_grounded_surface_body_inverse(
                             if expression_nominal_required and retained_group:
                                 nominal_target_visible = _body_inverse_thread_received_group(
                                     body, witness, parsed_sentence, move, plan, resolver) is not None
+                            elif expression_nominal_required and any(
+                                "lexical:source_feeling_reason_subject" in nucleus_index[nid].semantic_frame.attribute_codes
+                                for nid in move.target_nucleus_ids):
+                                nominal_target_visible = nominal_target_visible and _body_inverse_feeling_reason_group(
+                                    body, witness, parsed_sentence, move, plan, resolver, selected_subjective_input)
                             elif expression_nominal_required and len(move.target_nucleus_ids) > 1:
                                 nominal_target_visible = (
                                     _body_inverse_received_contrast_group(body, witness, parsed_sentence, move, plan, resolver)

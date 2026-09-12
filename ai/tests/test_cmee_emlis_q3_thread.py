@@ -1111,3 +1111,109 @@ def test_event_withdrawal_inverse_rejects_lost_retimed_or_rebound_independent_me
     with patch('emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no replay')):
         assert parsed(result.artifact.text)
         assert not parsed(result.artifact.text.replace('と、頼まれたのに寂しかったこと', ''))
+
+
+@pytest.mark.parametrize('memo', [
+    '何となく寂しい。なぜそう感じるのかは分からない。',
+    '私は少し怖い。その理由はまだよく分からない。',
+    '人が近くにいても、自分だけ離れている感じがする。どうしてそう感じるのかがわからない。',
+])
+@pytest.mark.parametrize('q3', [False, True])
+def test_current_feeling_and_its_reason_unknown_remain_one_reception_duty(memo, q3):
+    req = (begin if q3 else initial)(memo, 'お茶を飲んだ。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    projection = project_thread_meaning(prepared, plan)
+    result = realize_emlis_thread_body(prepared)
+    assert result.artifact, result.reason_codes
+    feeling, unknown = memo.rstrip('。').split('。')
+    expected = feeling + 'ことと、' + unknown + 'ことを小さくせずに受け止めています。お茶を飲んだことを大切に思っています。'
+    assert result.artifact.reception == expected
+    assert unknown + 'のですね。' in result.artifact.observation
+    engine = MeaningExperienceEngine()
+    checkpoint = engine.prepare_emlis_update(req)
+    current = replace(req, emlis_thread=replace(req.emlis_thread, prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id))
+    actual = engine.generate(current)
+    assert actual.artifact and actual.body_state == 'FINAL' and actual.question is None
+    assert actual.artifact.reception == expected
+    moves = plan.response_plan.human_reception_plan.moves
+    assert [(m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in moves] == [
+        ('stay_with_current_burden', ('nucleus:s1',), ('nucleus:s2',)),
+        ('honor_concrete_effort', ('nucleus:s3',), ())]
+    assert all(r.retention != 'required' and r.type == 'uncertain_connection' for r in plan.relations)
+    left, right = projection.selected_reception.decisions
+    if left.projected_claim_ref == right.projected_claim_ref:
+        from cocolon_meaning_experience_engine.emlis_stage1_response import _partition_shared_reception_move_contributions, CMEEStage1ContractError
+        assigned = [left, right]
+        def partition(rows):
+            return _partition_shared_reception_move_contributions(rows, plan.response_plan.human_reception_plan, projection.binding)
+        assert partition(assigned) is assigned
+        complete = left.subjective_proposition.target_contribution_refs
+        assert not set(left.selected_contribution_refs) & set(right.selected_contribution_refs)
+        assert set(left.selected_contribution_refs + right.selected_contribution_refs) == set(complete)
+        full = [replace(r, selected_contribution_refs=complete) for r in assigned]
+        assert [r.selected_contribution_refs for r in partition(full)] == [r.selected_contribution_refs for r in assigned]
+        for bad in ([full[0], right], [replace(left, selected_contribution_refs=()), right],
+                    [replace(left, selected_contribution_refs=right.selected_contribution_refs), replace(right, selected_contribution_refs=left.selected_contribution_refs)]):
+            with pytest.raises(CMEEStage1ContractError, match='CAUSAL_TRACE_GAP'):
+                partition(bad)
+
+
+@pytest.mark.parametrize('memo', [
+    '友達がつらい。その理由は分からない。',
+    '私が一緒にいる友達は寂しい。その理由は分からない。',
+    '私は仕事中だが彼女は寂しい。その理由は分からない。',
+    '彼女は悲しい。なぜそう感じるのかは分からない。',
+    '私は不安だ。その理由は分からない。',
+    '「私は寂しい」と言われた。その理由は分からない。',
+    '何となく寂しい？なぜそう感じるのかは分からない。',
+    '何となく寂しかった。なぜそう感じるのかは分からない。',
+    '何となく寂しい。その理由は分からなかった。',
+    '何となく寂しい。彼がなぜそう感じるのかは分からない。',
+    '何となく寂しい。少し怖い。その理由は分からない。',
+])
+def test_feeling_reason_group_requires_unique_current_self_owned_finite_host(memo):
+    import emlis_ai_grounded_observation_plan as gp
+    plan = prepare_emlis_meaning(begin(memo, 'お茶を飲んだ。')).original_plan
+    assert not gp._source_feeling_reason_group(plan.nuclei, plan.relations)
+
+
+def test_feeling_reason_body_inverse_rejects_loss_rebinding_or_closed_reason_without_author_replay():
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    memo = '私は少し怖い。その理由はまだよく分からない。'
+    prepared = prepare_emlis_meaning(begin(memo, 'お茶を飲んだ。'))
+    plan = build_updated_grounded_plan(prepared)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    result = realize_emlis_thread_body(prepared)
+    assert result.artifact
+    resolver = prepared.thread.resolver()
+    sentence_plan = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    follow = result.artifact.reception
+    def independent(changed):
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan', return_value=SimpleNamespace(text=changed)), patch(
+            'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(body=result.artifact.text.replace(follow, changed).encode(),
+                plan=plan, sentence_plan=sentence_plan, resolver=resolver, selected_subjective_input=selected).passed
+    assert independent(follow)
+    for changed in (
+        follow.replace('私は少し怖いことと、', ''), follow.replace('と、その理由はまだよく分からないこと', ''),
+        follow.replace('私は', '彼は'), follow.replace('まだよく', ''), follow.replace('分からない', '分かった'),
+        follow.replace('分からない', '分からなかった'), follow.replace('その理由', '行動の理由'),
+        follow.replace('ことと、', 'ことが原因で、'), follow.replace('私は少し怖いこと', '「私は少し怖いこと」'),
+        follow.replace('お茶を飲んだこと', 'お茶を飲まなかったこと'),
+    ):
+        assert changed != follow and not independent(changed), changed
+
+
+@pytest.mark.parametrize('q3', [False, True])
+def test_feeling_reason_group_keeps_explicit_objects_without_a_supplementary_action(q3):
+    req = (begin if q3 else initial)('何となく寂しい。なぜそう感じるのかは分からない。')
+    prepared = prepare_emlis_meaning(req)
+    result = realize_emlis_thread_body(prepared)
+    engine = MeaningExperienceEngine()
+    checkpoint = engine.prepare_emlis_update(req)
+    actual = engine.generate(replace(req, emlis_thread=replace(req.emlis_thread, prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id)))
+    assert result.artifact and actual.artifact
+    expected = '何となく寂しいことと、なぜそう感じるのかは分からないことを小さくせずに受け止めています。'
+    assert result.artifact.reception == actual.artifact.reception == expected
