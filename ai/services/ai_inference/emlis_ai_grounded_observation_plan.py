@@ -6901,12 +6901,12 @@ def _thread_retained_reaction_groups(nuclei, relations):
     for event in events:
         feeling = feelings.get(event)
         answer = by_event.get(event)
-        if answer in positive or feeling is None and answer is None:
+        if feeling is None and answer not in negative:
             continue
         targets.append(event)
         if feeling is not None:
             supports.append(feeling)
-        if answer is not None:
+        if answer in negative:
             supports.append(answer.nucleus_id)
     if not targets:
         return ()

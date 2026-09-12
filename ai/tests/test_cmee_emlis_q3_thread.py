@@ -28,10 +28,13 @@ def test_mixed_answer_follow_retains_each_event_and_existing_feeling(positive,bu
     out=MeaningExperienceEngine().generate(r);assert out.artifact,out.reason_codes
     follow=out.artifact.reception
     first,second=follow.split('。')[:2]
-    assert '褒められた' in first and '誘われた' in second
+    assert follow.index('褒められた') < follow.index('誘われた') < follow.index('頼まれた')
+    assert '褒められたのに嬉しくなかったこと' in first
+    assert '誘われたのに悲しかったこと' in first
     assert '頼まれたのに寂しかったこと' in follow
-    joy=first if positive_first else second
-    weight=second if positive_first else first
+    joy=second
+    weight=first
+    assert ('褒められた' if positive_first else '誘われた') + 'ことについて' in joy
     assert ('嬉しかった' if '嬉しかった' in positive else '嬉しい') in joy
     assert ('その時に' if 'その時' in positive else '回答した時点で') in joy
     assert '気持ちを受け止めています' in joy and '小さくせず' not in joy
@@ -70,7 +73,10 @@ def test_mixed_answer_body_inverse_rejects_missing_swapped_and_changed_answers()
             sentence_plan=sentence,resolver=resolver,selected_subjective_input=projection.selected_reception).passed
     assert passes(out.artifact.text)
     follow=out.artifact.reception
-    mutations=[follow.split('。',1)[1],follow.replace('その時の重さ','回答した時点の重さ'),
+    mutations=[follow.split('。',1)[1],
+        follow.replace('誘われたのに悲しかったことと、', ''),
+        follow.replace('誘われたのに悲しかったこと', '誘われたのに悲しいこと'),
+        follow.replace('その時の重さ','回答した時点の重さ'),
         follow.replace('嬉しかった','嬉しくなかった'),
         follow.replace('褒められた','TEMP').replace('誘われた','褒められた').replace('TEMP','誘われた')]
     for changed in mutations:

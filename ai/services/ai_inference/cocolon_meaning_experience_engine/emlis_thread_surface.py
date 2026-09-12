@@ -25,9 +25,7 @@ def _bind_expression(plan, resolver, projection, move, clause_form):
     decision = decisions[move.move_id]
     index = {n.nucleus_id: n for n in plan.nuclei}
     targets = set(move.target_nucleus_ids)
-    relations = tuple(row for row in plan.relations
-        if row.relation_id in plan.coverage_requirements.required_relation_ids
-        and targets.intersection((row.from_nucleus_id, row.to_nucleus_id)))
+    relations = hr.source_grounded_reception_move_relations(move, plan)
     context = _unique(n for row in relations for n in (row.from_nucleus_id, row.to_nucleus_id)
                       if n not in targets and n not in move.support_nucleus_ids)
     nucleus_ids = (*move.target_nucleus_ids, *move.support_nucleus_ids, *context)

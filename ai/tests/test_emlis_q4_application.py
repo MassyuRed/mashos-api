@@ -371,7 +371,11 @@ def test_mixed_answer_follow_is_saved_with_both_event_subjects(qcase,monkeypatch
         if i==1:dto=run(cont(service,user,dto,'mixed-next'))
     follow=dto['current_observation']['text'].split('Emlisから：')[1]
     assert 'その時の重さ' in follow and '嬉しかったという気持ち' in follow
-    assert follow.index('褒められたことについて')<follow.index('誘われたことについて')
+    assert follow.index('褒められた') < follow.index('誘われた') < follow.index('頼まれた')
+    for original in ('褒められたのに嬉しくなかったこと', '誘われたのに悲しかったこと', '頼まれたのに寂しかったこと'):
+        assert original in follow
+    positive_event = '褒められた' if '嬉しかった' in answers[0] else '誘われた'
+    assert positive_event + 'ことについて、その時に嬉しかったという気持ち' in follow
     assert dto['issued_count']==2 and dto['question_limit']==3
 
 

@@ -2725,6 +2725,35 @@ def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver):
 
 
 
+def source_grounded_reception_move_relations(move, plan):
+    """Required source relations owned by this already-selected Move.
+
+    An active original contrast and a positive ADD remain separate duties.
+    The positive Move owns its ABOUT edge; it is not a hidden burden context.
+    No edge is dropped from the plan or from the complete set of duties.
+    """
+    targets = set(move.target_nucleus_ids)
+    relations = tuple(r for r in plan.relations
+        if r.relation_id in plan.coverage_requirements.required_relation_ids
+        and targets.intersection((r.from_nucleus_id, r.to_nucleus_id)))
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+    groups = _thread_retained_reaction_groups(plan.nuclei, plan.relations)
+    if (move not in plan.response_plan.human_reception_plan.moves or not move.required
+        or move.reception_act != "stay_with_current_burden"
+        or ("current_burden", move.target_nucleus_ids, move.support_nucleus_ids) not in groups):
+        return relations
+    positive_ids = tuple(row[1][0] for row in groups if row[0] == "lived_change" and len(row[1]) == 1)
+    owners = tuple(m for m in plan.response_plan.human_reception_plan.moves
+        if m.required and m.reception_act == "recognize_lived_change"
+        and len(m.target_nucleus_ids) == 1 and m.target_nucleus_ids == positive_ids
+        and not m.support_nucleus_ids)
+    if len(positive_ids) != 1 or len(owners) != 1:
+        return relations
+    delegated = tuple(r for r in relations if r.type == "evaluation_about_event"
+        and r.from_nucleus_id in targets and r.to_nucleus_id == positive_ids[0])
+    return tuple(r for r in relations if r not in delegated) if len(delegated) == 1 else relations
+
+
 def source_grounded_thread_received_group(move, plan, nucleus_index, resolver):
     """Prove each original pair and its optional active answer in one duty."""
     from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
@@ -5583,14 +5612,7 @@ def _project_source_grounded_reception_move_realization(
     required_relation_ids = set(
         plan.coverage_requirements.required_relation_ids
     )
-    applicable_relations = tuple(
-        relation
-        for relation in plan.relations
-        if relation.relation_id in required_relation_ids
-        and target_id_set.intersection(
-            (relation.from_nucleus_id, relation.to_nucleus_id)
-        )
-    )
+    applicable_relations = source_grounded_reception_move_relations(move, plan)
     relation_context_ids = _dedupe(
         nucleus_id
         for relation in applicable_relations
@@ -9054,12 +9076,7 @@ def _author_source_grounded_reception_clauses(
             )
             selected_decision = selected_decisions[move_id]
             selected_proposition = selected_decision.subjective_proposition
-            applicable_relations = tuple(
-                relation for relation in plan.relations
-                if relation.relation_id in plan.coverage_requirements.required_relation_ids
-                and set(move.target_nucleus_ids).intersection(
-                    (relation.from_nucleus_id, relation.to_nucleus_id))
-            )
+            applicable_relations = source_grounded_reception_move_relations(move, plan)
             # Resolve only the already selected focal relation. Directional
             # and uncertain relations keep their own predicates; contrast
             # needs the additional object-and-predicate proof below.

@@ -12566,17 +12566,8 @@ def _derive_source_grounded_reception_expression_authority(
             selected_grounded_plan.coverage_requirements.required_relation_ids
         )
         candidate_relation_ref_set = set(candidate_relation_refs)
-        applicable_relation_rows = tuple(
-            relation
-            for relation in selected_grounded_plan.relations
-            if relation.relation_id in required_relation_ids
-            and target_nucleus_id_set.intersection(
-                (
-                    relation.from_nucleus_id,
-                    relation.to_nucleus_id,
-                )
-            )
-        )
+        from emlis_ai_grounded_human_reception import source_grounded_reception_move_relations
+        applicable_relation_rows = source_grounded_reception_move_relations(move, selected_grounded_plan)
         try:
             plan_applicable_relation_refs = tuple(
                 _edge_ref(plan_binding.relation_to_edge[relation.relation_id])
