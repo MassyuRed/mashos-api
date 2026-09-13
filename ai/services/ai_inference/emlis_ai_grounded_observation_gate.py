@@ -2009,7 +2009,7 @@ def _body_inverse_nominal_constraint_clause(body, sentence, move, plan, resolver
 
 def _body_inverse_current_material_group(body, witness, sentence, move, plan, resolver, selected_subjective_input):
     """Restore both finite source objects from bytes, without forward replay."""
-    from emlis_ai_grounded_observation_plan import _source_current_material_group
+    from emlis_ai_grounded_observation_plan import _source_current_material_group, _source_material_allows_reverse
     group = _source_current_material_group(plan.nuclei, plan.relations)
     if (not group or sentence.section != "reception" or move.move_role != "felt_response"
         or move.reception_act != "stay_with_current_burden" or not move.required):
@@ -2017,8 +2017,7 @@ def _body_inverse_current_material_group(body, witness, sentence, move, plan, re
     selected = (move.target_nucleus_ids, move.support_nucleus_ids)
     forward = ((group[0].nucleus_id,), (group[1].nucleus_id,))
     reverse = ((group[1].nucleus_id,), (group[0].nucleus_id,))
-    reversed_focus = (selected == reverse and
-        "lexical:source_current_material_qualification" in group[1].semantic_frame.attribute_codes)
+    reversed_focus = selected == reverse and _source_material_allows_reverse(group)
     if selected != forward and not reversed_focus:
         return False
     if reversed_focus:
@@ -2343,6 +2342,9 @@ def evaluate_grounded_surface_body_inverse(
                         and (re.fullmatch(r"(?:(?:現在|今)(?:も|は))?(?:まだ)?(?:はっきり|よく)?(?:わからない|分からない)", source_clause)
                              or "lexical:source_feeling_reason_unknown" in codes
                              and re.fullmatch(r"(?:(?:何故|どうして|なぜ)そう感じるのか|その理由)(?:が|は)?"
+                                              r"(?:まだ)?(?:はっきり|よく)?(?:わからない|分からない)", source_clause)
+                             or "lexical:source_temporal_causal_unknown" in codes
+                             and re.fullmatch(r".*(?:現在|今|今日)の(?:きっかけ|原因|理由)が同じか(?:も|は)?"
                                               r"(?:まだ)?(?:はっきり|よく)?(?:わからない|分からない)", source_clause))):
                         direct_cognition = True
                         visible = _body_inverse_visible_text(body, parsed_line)
@@ -3036,7 +3038,8 @@ def evaluate_grounded_surface_body_inverse(
                                 nominal_target_visible = nominal_target_visible and _body_inverse_nominal_constraint_clause(
                                     body, parsed_sentence, move, plan, resolver, selected_subjective_input)
                             elif expression_nominal_required and any(
-                                {"lexical:source_feeling_reason_subject", "lexical:source_current_material_primary", "lexical:source_current_material_qualification"}
+                                {"lexical:source_feeling_reason_subject", "lexical:source_current_material_primary", "lexical:source_current_material_qualification",
+                                 "lexical:source_temporal_relief_residue", "lexical:source_temporal_causal_unknown"}
                                 & set(nucleus_index[nid].semantic_frame.attribute_codes)
                                 for nid in move.target_nucleus_ids):
                                 nominal_target_visible = nominal_target_visible and _body_inverse_current_material_group(

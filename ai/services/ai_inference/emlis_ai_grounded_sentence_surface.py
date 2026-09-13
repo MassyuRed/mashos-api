@@ -2669,6 +2669,9 @@ def _source_bound_current_cognition(
             and (re.fullmatch(r"(?:(?:今|現在)(?:は|も))?(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", clause)
                  or "lexical:source_feeling_reason_unknown" in attributes
                  and re.fullmatch(r"(?:(?:なぜ|どうして|何故)そう感じるのか|その理由)(?:は|が)?"
+                                  r"(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", clause)
+                 or "lexical:source_temporal_causal_unknown" in attributes
+                 and re.fullmatch(r".*(?:今日|今|現在)の(?:理由|原因|きっかけ)が同じか(?:は|も)?"
                                   r"(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", clause))):
             return clause
     return ""

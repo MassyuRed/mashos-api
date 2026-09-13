@@ -1683,3 +1683,125 @@ def test_nominal_constraint_actual_body_keeps_complete_clause_and_unfinished_tai
     actual = engine.generate(replace(req, emlis_thread=replace(req.emlis_thread,
         prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id)))
     _assert_nominal_constraint_actual_contract(first, with_tail, action, q3, plan, direct, actual)
+
+
+# Public compositional grammar examples, independent of private product cases.
+TEMPORAL_MEMOS = (
+    '今の原因が同じかはわからない。現在は横になると軽くなり、なお疲れも残っている。',
+    '現在は少し楽になり、今も緊張が残っています。今日のきっかけが同じかもまだ分からない。',
+    '以前に疲れがあった時を思い出したけど、今の原因が同じかはわからない。現在は横になると軽くなり、なお疲れも残っている。',
+)
+
+
+@pytest.mark.parametrize('memo', TEMPORAL_MEMOS)
+@pytest.mark.parametrize('q3', [False, True])
+@pytest.mark.parametrize('action', ['', 'お茶を飲んだ。'])
+def test_temporal_material_keeps_current_unknown_and_relief_residue(memo, q3, action):
+    import emlis_ai_grounded_observation_plan as gp
+    req = (begin if q3 else initial)(memo, action)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    group = gp._source_current_material_group(plan.nuclei, plan.relations)
+    assert len(group) == 2 + bool(action)
+    current, unknown = group[:2]
+    assert (current.kind, current.semantic_frame.modality, current.semantic_frame.polarity) == ('change', 'fact', 'mixed')
+    assert (unknown.kind, unknown.semantic_frame.modality, unknown.semantic_frame.polarity) == ('uncertainty', 'uncertain', 'negative')
+    assert not any(u.dimension == 'source_explicit_epistemic_limit'
+                   and current.nucleus_id in u.affected_nucleus_ids for u in plan.unknown_boundaries)
+    assert all(r.type == 'uncertain_connection' and r.retention != 'required' for r in plan.relations)
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact, out.reason_codes
+    resolver = prepared.thread.resolver()
+    current_text, unknown_text = [resolver.resolve(n.source_span_ids[0]).raw_text for n in group[:2]]
+    assert any(first + 'ことと、' + second + 'こと' in out.artifact.reception
+               for first, second in ((current_text, unknown_text), (unknown_text, current_text)))
+    assert unknown_text + 'のですね。' in out.artifact.observation
+    assert 'という感覚' not in out.artifact.observation
+    assert bool('お茶を飲んだこと' in out.artifact.reception) == bool(action)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    assigned = [set(d.selected_contribution_refs) for d in selected.decisions]
+    assert len(assigned) == 1 + bool(action) and all(assigned)
+    if action:
+        assert not assigned[0] & assigned[1]
+    engine = MeaningExperienceEngine()
+    checkpoint = engine.prepare_emlis_update(req)
+    actual = engine.generate(replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id)))
+    if not q3 and memo != TEMPORAL_MEMOS[1]:
+        # Preserve the existing first-person admission boundary. The common
+        # body and Q3 capability do not bypass legacy Q1 source admission.
+        assert actual.artifact is None and actual.body_state == 'UNAVAILABLE'
+        assert actual.reason_codes == ('current_experiencer_or_time_scope_unsupported',)
+    else:
+        assert actual.artifact and actual.artifact.reception == out.artifact.reception
+        assert actual.question is None and actual.body_state == 'FINAL'
+
+
+@pytest.mark.parametrize('memo', [
+    '友達は今の原因が同じかはわからない。現在は横になると軽くなり、なお疲れも残っている。',
+    '今の原因が同じかはわからない。彼女は現在は横になると軽くなり、なお疲れも残っている。',
+    '「今の原因が同じかはわからない」と言われた。現在は横になると軽くなり、なお疲れも残っている。',
+    '今の原因が同じかはわかる。現在は横になると軽くなり、なお疲れも残っている。',
+    '昨日の原因が同じかはわからなかった。現在は横になると軽くなり、なお疲れも残っている。',
+    '今の原因が同じかはわからない。昨日は横になると軽くなり、なお疲れも残っていた。',
+    '今の原因が同じかはわからない。現在は横になると軽くなり、なお疲れも残っていない。',
+    '今の原因が同じかはわからない。現在は横になると軽くなり、なお疲れも残っているか分からない。',
+    '今の原因が同じかはわからない。現在は横になると軽くなり、なお疲れも残っている。まだ続きがある。',
+    '今の原因が同じかはわからない。現在は横になると軽くなり、なお疲れも残っているが…',
+    '今の原因が同じかはわからない。',
+    '現在は横になると軽くなり、なお疲れも残っている。',
+])
+def test_temporal_material_requires_complete_pair_and_explicit_scope(memo):
+    import emlis_ai_grounded_observation_plan as gp
+    plan = prepare_emlis_meaning(begin(memo, 'お茶を飲んだ。')).original_plan
+    assert not gp._source_temporal_material_group(plan.nuclei, plan.relations)
+    assert not any(c.startswith('lexical:source_temporal_') for n in plan.nuclei
+                   for c in n.semantic_frame.attribute_codes)
+
+
+@pytest.mark.parametrize('slot', [1, 2])
+def test_temporal_material_respects_existing_requested_focus(monkeypatch, slot):
+    req = _current_material_with_requested_focus(monkeypatch, TEMPORAL_MEMOS[0], 'お茶を飲んだ。', True, slot)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    first = plan.response_plan.human_reception_plan.moves[0]
+    assert first.target_nucleus_ids == (('nucleus:s1',) if slot == 1 else ('nucleus:s3',))
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact, out.reason_codes
+    if slot == 1:
+        assert out.artifact.reception.startswith('今の原因が同じかはわからないことと、現在は横になると軽くなり、なお疲れも残っていること')
+    else:
+        assert out.artifact.reception.startswith('お茶を飲んだこと')
+
+
+@pytest.mark.parametrize('unknown_focus', [False, True])
+def test_temporal_material_inverse_rejects_scope_changes_without_author_replay(monkeypatch, unknown_focus):
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    memo = TEMPORAL_MEMOS[2]
+    req = (_current_material_with_requested_focus(monkeypatch, memo, 'お茶を飲んだ。', True, 1)
+           if unknown_focus else begin(memo, 'お茶を飲んだ。'))
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact, out.reason_codes
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    resolver = prepared.thread.resolver()
+    sentence = surface.build_grounded_sentence_plan(plan, resolver)
+    def independent(body):
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan',
+                   return_value=SimpleNamespace(text=out.artifact.reception)), patch(
+                   'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses',
+                   side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(body=body.encode(), plan=plan,
+                sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert independent(out.artifact.text)
+    for old, new in (
+        ('以前に疲れがあった時', '現在も疲れている時'),
+        ('思い出した', '想像した'), ('今の原因が同じかはわからない', '今の原因は分からない'),
+        ('わからない', 'わかる'), ('横になると', '横になったから'),
+        ('軽くなり', '軽くならず'), ('なお疲れも残っている', '疲れはもうない'),
+        ('ことと、', 'ことが原因で、'), ('お茶を飲んだ', 'お茶を飲まなかった'),
+    ):
+        changed = out.artifact.text.replace(old, new)
+        assert changed != out.artifact.text and not independent(changed), (old, new)

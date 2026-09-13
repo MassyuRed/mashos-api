@@ -2718,7 +2718,7 @@ def _source_grounded_received_contrast_rows(targets, supports, nucleus_index, re
 
 def _source_grounded_current_material_clauses(move, plan, nucleus_index, resolver):
     """Two selected current source objects, without asserting a new relation."""
-    from emlis_ai_grounded_observation_plan import _source_current_material_group, _source_coexisting_feelings_and_tentative_target
+    from emlis_ai_grounded_observation_plan import _source_current_material_group, _source_coexisting_feelings_and_tentative_target, _source_material_allows_reverse, _source_temporal_clause_parts
     if (plan is None or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
         or move not in plan.response_plan.human_reception_plan.moves
         or move.reception_act != "stay_with_current_burden" or not move.required):
@@ -2729,8 +2729,7 @@ def _source_grounded_current_material_clauses(move, plan, nucleus_index, resolve
     forward = ((group[0].nucleus_id,), (group[1].nucleus_id,))
     reverse = ((group[1].nucleus_id,), (group[0].nucleus_id,))
     selected = (move.target_nucleus_ids, move.support_nucleus_ids)
-    reversed_focus = (selected == reverse and
-        "lexical:source_current_material_qualification" in group[1].semantic_frame.attribute_codes)
+    reversed_focus = selected == reverse and _source_material_allows_reverse(group)
     if selected != forward and not reversed_focus:
         return ()
     clauses = tuple(_source_grounded_clause_candidate(n, resolver) for n in group[:2])
@@ -2739,7 +2738,10 @@ def _source_grounded_current_material_clauses(move, plan, nucleus_index, resolve
         or not (re.fullmatch(r"(?:(?:なぜ|どうして|何故)そう感じるのか|その理由)(?:は|が)?"
                             r"(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", clauses[1])
                 if "lexical:source_feeling_reason_subject" in group[0].semantic_frame.attribute_codes
-                else _source_coexisting_feelings_and_tentative_target(*clauses))):
+                else (tuple((_source_temporal_clause_parts(c) or (None,))[0] for c in clauses)
+                      == ("relief_residue", "causal_unknown")
+                      if "lexical:source_temporal_relief_residue" in group[0].semantic_frame.attribute_codes
+                      else _source_coexisting_feelings_and_tentative_target(*clauses)))):
         return ()
     return tuple(reversed(clauses)) if reversed_focus else clauses
 
@@ -5334,7 +5336,11 @@ def derive_source_grounded_nominalization_plan(
     if reason:
         if fragments != reason or tuple(n.nucleus_id for n in nuclei) != (*move.target_nucleus_ids, *move.support_nucleus_ids):
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
-        marker = ("source-feeling-reason-boundary:0:1"
+        marker = ("source-temporal-material:0:1"
+                  if "lexical:source_temporal_relief_residue" in nuclei[0].semantic_frame.attribute_codes
+                  else "source-temporal-material:1:0"
+                  if "lexical:source_temporal_causal_unknown" in nuclei[0].semantic_frame.attribute_codes
+                  else "source-feeling-reason-boundary:0:1"
                   if "lexical:source_feeling_reason_subject" in nuclei[0].semantic_frame.attribute_codes
                   else ("source-current-material:0:1"
                         if "lexical:source_current_material_primary" in nuclei[0].semantic_frame.attribute_codes
@@ -5456,6 +5462,8 @@ def _source_grounded_nominalization_shape_valid(
         (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, "source-feeling-reason-boundary:0:1"),
         (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, "source-current-material:0:1"),
         (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, "source-current-material:1:0"),
+        (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, "source-temporal-material:0:1"),
+        (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, "source-temporal-material:1:0"),
     }:
         return True
     if (2 <= len(plan) <= 4 and plan[:1] == _SOURCE_GROUNDED_NOMINALIZATION_BASE
@@ -7007,7 +7015,8 @@ def _validate_source_grounded_move_ir(
         move.semantic_fragments, move.semantic_profiles, move.reference_mode,
     )
     material_markers = tuple(c for c in move.nominalization_plan
-        if c in {"source-feeling-reason-boundary:0:1", "source-current-material:0:1", "source-current-material:1:0"})
+        if c in {"source-feeling-reason-boundary:0:1", "source-current-material:0:1", "source-current-material:1:0",
+                 "source-temporal-material:0:1", "source-temporal-material:1:0"})
     if material_markers:
         if len(material_markers) != 1 or not _source_current_material_group_ir_text(move):
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
@@ -7674,16 +7683,18 @@ def _source_grounded_target_owner_slot(
 
 def _source_current_material_group_ir_text(realization):
     markers = tuple(c for c in realization.nominalization_plan
-        if c in {"source-feeling-reason-boundary:0:1", "source-current-material:0:1", "source-current-material:1:0"})
+        if c in {"source-feeling-reason-boundary:0:1", "source-current-material:0:1", "source-current-material:1:0",
+                 "source-temporal-material:0:1", "source-temporal-material:1:0"})
     if not markers:
         return ""
     is_reason = markers == ("source-feeling-reason-boundary:0:1",)
-    reversed_focus = markers == ("source-current-material:1:0",)
+    temporal = any(m.startswith("source-temporal-material:") for m in markers)
+    reversed_focus = markers in {("source-current-material:1:0",), ("source-temporal-material:1:0",)}
     if (len(markers) != 1 or realization.nominalization_plan != (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, *markers)
         or realization.target_slot_count != 1 or realization.context_slots != (1,)
         or len(realization.semantic_fragments) != 2 or len(realization.semantic_profiles) != 2
         or realization.relations or realization.reference_mode != "COMPOSITE"
-        or realization.modality != ("uncertain" if reversed_focus else "feeling")
+        or realization.modality != ("uncertain" if reversed_focus else "fact" if temporal else "feeling")
         or realization.polarity != ("negative" if is_reason or reversed_focus else "mixed")
         or realization.time_scope not in {"present", "current_input"}
         or realization.aspect not in {"unknown", "not_applicable"}):
@@ -7693,16 +7704,19 @@ def _source_current_material_group_ir_text(realization):
     if reversed_focus:
         profiles, fragments = tuple(reversed(profiles)), tuple(reversed(fragments))
     feeling, unknown = profiles
-    from emlis_ai_grounded_observation_plan import _source_coexisting_feelings_and_tentative_target
-    if (feeling.nucleus_kind != "reaction" or feeling.predicate_kind != "feeling" or feeling.modality != "feeling"
+    from emlis_ai_grounded_observation_plan import _source_coexisting_feelings_and_tentative_target, _source_temporal_clause_parts
+    if ((feeling.nucleus_kind, feeling.predicate_kind, feeling.modality) !=
+        (("change", "change", "fact") if temporal else ("reaction", "feeling", "feeling"))
         or unknown.nucleus_kind != unknown.predicate_kind
-        or unknown.nucleus_kind not in ({"uncertainty"} if is_reason else {"event", "state"})
+        or unknown.nucleus_kind not in ({"uncertainty"} if is_reason or temporal else {"event", "state"})
         or unknown.modality != "uncertain"
         or any(p.actor_kind != "SELF" or p.quoted_boundary or p.performed_action or p.future_action for p in (feeling, unknown))
         or any(re.search(r"[「」『』…‥?？!！。．.\r\n]", part) for part in realization.semantic_fragments)
         or not (re.fullmatch(r"(?:(?:なぜ|どうして|何故)そう感じるのか|その理由)(?:は|が)?"
                             r"(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", realization.semantic_fragments[1])
-                if is_reason else _source_coexisting_feelings_and_tentative_target(*fragments))):
+                if is_reason else (tuple((_source_temporal_clause_parts(c) or (None,))[0] for c in fragments)
+                    == ("relief_residue", "causal_unknown") if temporal else
+                    _source_coexisting_feelings_and_tentative_target(*fragments)))):
         raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
     return _source_feeling_reason_nominal(realization.semantic_fragments)
 

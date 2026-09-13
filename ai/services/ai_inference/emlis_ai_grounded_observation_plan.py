@@ -6724,6 +6724,9 @@ def _source_current_material_group(nuclei, relations):
     cause or an answer to the uncertainty. Selection consumes body-free
     witnesses established before the graph and meanings are sealed.
     """
+    temporal = _source_temporal_material_group(nuclei, relations)
+    if temporal:
+        return temporal
     reason = _source_feeling_reason_group(nuclei, relations)
     if reason:
         return reason
@@ -7390,7 +7393,7 @@ def build_grounded_reception_opportunities(
         and material_quality in {"grounded", "limited_grounding"}
     ) else ()
     if reason_group and (follow_ids in ({reason_group[0].nucleus_id}, {n.nucleus_id for n in reason_group[2:]})
-        or ("lexical:source_current_material_qualification" in reason_group[1].semantic_frame.attribute_codes
+        or (_source_material_allows_reverse(reason_group)
             and follow_ids == {reason_group[1].nucleus_id})):
         by_family = {row.family: row for row in rows}
         # Focus changes discourse order, never the source roles or status.
@@ -7929,7 +7932,7 @@ def build_grounded_human_reception_plan(
     )
     reason_group = _source_current_material_group(nuclei, relations) if final_source_fidelity else ()
     if (reason_group and tuple(human_follow_target_ids) == (reason_group[1].nucleus_id,)
-        and "lexical:source_current_material_qualification" in reason_group[1].semantic_frame.attribute_codes):
+        and _source_material_allows_reverse(reason_group)):
         reason_group = (reason_group[1], reason_group[0], *reason_group[2:])
     if reason_group:
         # A supplemental group still owns both explicit source clauses.
@@ -11850,6 +11853,19 @@ def _final_stage1_normalize_relation_authority(
         )
         relation_type = relation.type
         if (
+            left_fields == right_fields == {"memo"}
+            and relation.type == "shift_from_to" and retention != "required"
+            and relation.grounding_kind == "bounded_structural_inference"
+            and relation.source_relation_ids == ("whole_input_source_order",)
+            and relation.source_meaning_arc_keys == ("whole_input:source_order",)
+            and set(relation.source_span_ids) == set((*left.source_span_ids, *right.source_span_ids))
+            and "lexical:source_temporal_causal_unknown" in left.semantic_frame.attribute_codes
+            and "lexical:source_temporal_relief_residue" in right.semantic_frame.attribute_codes
+        ):
+            # A recollection inside today's unknown is not a before/after
+            # relation to a separately stated current conditional change.
+            relation_type = "uncertain_connection"
+        elif (
             cross_field and left_fields == {"memo"} and right_fields == {"memo_action"}
             and relation.type == "action_supports_change" and retention != "required"
             and relation.grounding_kind == "bounded_structural_inference"
@@ -11860,7 +11876,8 @@ def _final_stage1_normalize_relation_authority(
             and set(relation.source_span_ids) == set((*left.source_span_ids, *right.source_span_ids))
             and left.retention == right.retention == "required"
             and left.semantic_frame.actor == right.semantic_frame.actor == "current_user"
-            and "lexical:source_current_material_primary" in left.semantic_frame.attribute_codes
+            and set(left.semantic_frame.attribute_codes) & {
+                "lexical:source_current_material_primary", "lexical:source_temporal_relief_residue"}
             and source_proven_performed_action_status(right)
         ):
             # The coexisting feelings belong to the memo's current host.
@@ -12820,6 +12837,9 @@ def project_final_stage1_grounded_observation_plan(
     projected_nuclei = _final_source_nominal_constraint_nuclei(
         projected_nuclei, evidence_spans, normalized_input,
     )
+    projected_nuclei = _final_source_temporal_material_nuclei(
+        projected_nuclei, evidence_spans, normalized_input,
+    )
     relations, nuclei = _final_stage1_typed_relations(
         plan,
         _final_source_current_material_nuclei(
@@ -12976,6 +12996,133 @@ def _final_source_feeling_reason_nuclei(nuclei, evidence_spans, normalized_input
                     "lexical:preserve_source_predicate", "lexical:no_new_sensation_family")))))
     return tuple(replacements.get(n.nucleus_id, n) for n in nuclei)
 
+
+
+def _source_temporal_clause_parts(fragment: str):
+    """Parse finite hosts and their local time scopes before selecting a reply.
+
+    Recollection is a past object of a completed cognitive act; the final
+    unknown concerns present causal equivalence only. In the second form,
+    the conditional antecedent is not a performed action. Positive change
+    and a continuing residue share a current host without resolving either
+    cause. Every returned part is a range in the unchanged source clause.
+    These independent productions also recognize standalone clauses.
+    """
+    burden = r"(?:だるさ|重さ|疲れ|疲労|痛み|不安|緊張|苦しさ)"
+    recall = (
+        r"(?P<recalled>(?:前|以前|前回|昔)に(?:同じような|似た)?"
+        + burden + r"があった(?:日|時))を"
+        r"(?P<recall_host>思い出した)(?:けれども?|けど)[、,]?"
+    )
+    unknown = re.fullmatch(
+        r"(?:" + recall + r")?"
+        r"(?P<unknown_object>(?:今日|今|現在)の(?:理由|原因|きっかけ)が同じか)"
+        r"(?:は|も)?(?P<unknown_host>(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない))",
+        fragment,
+    )
+    if unknown:
+        return ("causal_unknown", tuple(
+            (role, *unknown.span(role), time)
+            for role, time in (("recalled", "past"), ("recall_host", "past"),
+                               ("unknown_object", "present"), ("unknown_host", "present"))
+            if unknown.groupdict().get(role) is not None
+        ))
+    current = re.fullmatch(
+        r"(?P<current_time>(?:今|現在)(?:は|も))[、,]?"
+        r"(?:(?P<condition>(?:少し|しばらく)?(?:休む|横になる|座る|眠る))と)?"
+        r"(?P<change>(?:少し|ちょっと)?(?:楽に|軽く)なり)[、,]"
+        r"(?P<residue>(?:まだ|なお|今も)" + burden + r"(?:も|が)(?:少し)?残って(?:いる|います))",
+        fragment,
+    )
+    if current:
+        return ("relief_residue", tuple(
+            (role, *current.span(role), time)
+            for role, time in (("current_time", "present"), ("condition", "conditional"),
+                               ("change", "present"), ("residue", "continuing"))
+            if current.groupdict().get(role) is not None
+        ))
+    return None
+
+
+def _final_source_temporal_material_nuclei(nuclei, evidence_spans, normalized_input):
+    """Bind the complete field, then align each host independently of order."""
+    if normalized_input is None:
+        return nuclei
+    spans = {s.span_id: s for s in evidence_spans}
+    memo = tuple(n for n in nuclei if n.source_fields == ("memo",))
+    source = str(normalized_input.get("memo") or "")
+    if (len(memo) != 2 or _top_level_text(source) != source
+        or re.search(r"[?？!！…‥\r\n]", source)
+        or any(n.retention != "required" or n.grounding_kind != "explicit"
+               or n.allowed_claim_scope != "explicit_current_input"
+               or n.semantic_frame.actor != "current_user"
+               or len(n.source_span_ids) != 1 or n.source_span_ids[0] not in spans
+               or any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:",
+                                     "semantic_dependency:")) for c in n.semantic_frame.attribute_codes)
+               for n in memo)):
+        return nuclei
+    ordered = sorted(memo, key=lambda n: spans[n.source_span_ids[0]].start_index)
+    parsed, previous = [], None
+    for n in ordered:
+        span = spans[n.source_span_ids[0]]
+        proof = _source_temporal_clause_parts(span.raw_text)
+        if (span.source_field != "memo" or not 0 <= span.start_index < span.end_index <= len(source)
+            or source[span.start_index:span.end_index] != span.raw_text or proof is None
+            or (source[:span.start_index].strip() if previous is None else
+                not re.fullmatch(r"\s*[。．.]\s*", source[previous:span.start_index]))):
+            return nuclei
+        parsed.append((n, proof))
+        previous = span.end_index
+    if (not re.fullmatch(r"\s*[。．.]?\s*", source[previous:])
+        or len({proof[0] for _, proof in parsed}) != len(parsed)):
+        return nuclei
+    replacements = {}
+    for n, (role, parts) in parsed:
+        unknown = role == "causal_unknown"
+        frame = n.semantic_frame
+        provenance = tuple(c for c in frame.attribute_codes
+            if c.startswith(("semantic_analyzer:", "detected_type:", "source_claim:")))
+        replacements[n.nucleus_id] = replace(n, kind="uncertainty" if unknown else "change",
+            semantic_frame=replace(frame, predicate_kind="uncertainty" if unknown else "change",
+                modality="uncertain" if unknown else "fact", polarity="negative" if unknown else "mixed",
+                time_scope="present", attribute_codes=tuple(_dedupe((
+                    *provenance, "time_scope:present", "lexical:source_temporal_" + role,
+                    "lexical:source_bounded_expression", "lexical:preserve_source_predicate",
+                    "lexical:no_new_sensation_family",
+                    *(("operator:uncertainty", "operator:negation", "semantic_role:limiting_unknown") if unknown else
+                      ("operator:change", "operator:coexistence")),
+                    *(f"source_clause_scope:{name}:{start}:{end}:{time}" for name, start, end, time in parts),
+                )))))
+    return tuple(replacements.get(n.nucleus_id, n) for n in nuclei)
+
+
+def _source_temporal_material_group(nuclei, relations):
+    """Keep current mixed material and an independently scoped unknown."""
+    text = tuple(n for n in nuclei if set(n.source_fields) & _TEXT_SOURCE_FIELDS)
+    current = tuple(n for n in text if "lexical:source_temporal_relief_residue" in n.semantic_frame.attribute_codes)
+    unknown = tuple(n for n in text if "lexical:source_temporal_causal_unknown" in n.semantic_frame.attribute_codes)
+    if len(current) != 1 or len(unknown) != 1 or len(text) not in {2, 3}:
+        return ()
+    if (any(n.source_fields != ("memo",) or n.retention != "required" or n.grounding_kind != "explicit"
+            or n.allowed_claim_scope != "explicit_current_input" or n.semantic_frame.actor != "current_user"
+            or n.semantic_frame.time_scope != "present" for n in (*current, *unknown))
+        or (current[0].kind, current[0].semantic_frame.predicate_kind,
+            current[0].semantic_frame.modality, current[0].semantic_frame.polarity) != ("change", "change", "fact", "mixed")
+        or (unknown[0].kind, unknown[0].semantic_frame.predicate_kind,
+            unknown[0].semantic_frame.modality, unknown[0].semantic_frame.polarity) != ("uncertainty", "uncertainty", "uncertain", "negative")
+        or any(r.retention == "required" or r.type != "uncertain_connection" for r in relations
+               if {r.from_nucleus_id, r.to_nucleus_id} & {n.nucleus_id for n in text})):
+        return ()
+    actions = tuple(n for n in text if n not in (*current, *unknown))
+    if any(n.source_fields != ("memo_action",) or n.retention != "required"
+           or n.semantic_frame.actor != "current_user" or not source_proven_performed_action_status(n) for n in actions):
+        return ()
+    return (*current, *unknown, *actions)
+
+
+def _source_material_allows_reverse(group):
+    return bool(group and set(group[1].semantic_frame.attribute_codes) & {
+        "lexical:source_current_material_qualification", "lexical:source_temporal_causal_unknown"})
 
 
 def _source_coexisting_feelings_and_tentative_target(first: str, second: str) -> bool:
