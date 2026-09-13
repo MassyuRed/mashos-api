@@ -12011,6 +12011,26 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
             for row in rows if row.reception_act == "stay_with_current_burden"
         )
     )
+    from emlis_ai_grounded_observation_plan import is_grounded_positive_feeling, source_proven_performed_action_status
+    nominal_cognition_action = bool(
+        len(rows) == 2
+        and {row.reception_act for row in rows} == {"recognize_lived_change", "honor_concrete_effort"}
+        and all(len(row.target_nucleus_ids) == 1 and not row.support_nucleus_ids for row in rows)
+        and all(
+            (nucleus.source_fields == ("memo",) and is_grounded_positive_feeling(nucleus)
+             and "lexical:source_nominal_cognition_feeling" in nucleus.semantic_frame.attribute_codes)
+            if row.reception_act == "recognize_lived_change" else
+            (nucleus.source_fields == ("memo_action",) and source_proven_performed_action_status(nucleus))
+            for row in rows
+            for nucleus in (binding.node_meta[binding.nucleus_to_node[row.target_nucleus_ids[0]]],)
+        )
+        and not any(
+            {relation.from_nucleus_id, relation.to_nucleus_id}
+                <= {row.target_nucleus_ids[0] for row in rows}
+            and (relation.retention == "required" or relation.type != "uncertain_connection")
+            for relation in binding.edge_meta.values()
+        )
+    )
     from emlis_ai_grounded_observation_plan import _source_current_material_group, _source_nominal_constraint_group, _source_material_allows_reverse
     material_group = _source_current_material_group(tuple(binding.node_meta.values()), tuple(binding.edge_meta.values()))
     if (material_group and any(m.target_nucleus_ids == (material_group[1].nucleus_id,)
@@ -12055,7 +12075,8 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
         return result
     if (len(rows) == 2
         and (all(row.reception_act == "stay_with_current_burden" for row in rows)
-             or mixed_answers or independent_cognition_action or current_material_action or nominal_constraint_action)
+             or mixed_answers or independent_cognition_action or current_material_action or nominal_constraint_action
+             or nominal_cognition_action)
         and rows[0].projected_claim_ref == rows[1].projected_claim_ref):
         return _partition_shared_source_duty_contributions(rows, reception_plan.moves, binding,
             allow_support=current_material_action)

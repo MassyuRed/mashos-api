@@ -7382,6 +7382,14 @@ def build_grounded_reception_opportunities(
                     # An unfinished utterance and a separate action do not
                     # assert a background/cause for the complete predicate.
                     continue
+                if (final_source_fidelity and relation.type == "uncertain_connection"
+                    and relation.retention != "required"
+                    and any("lexical:source_nominal_cognition_feeling" in n.semantic_frame.attribute_codes
+                            for n in (nucleus_index.get(relation.from_nucleus_id),
+                                      nucleus_index.get(relation.to_nucleus_id)) if n is not None)):
+                    # Source order around a whole cognitive feeling cannot
+                    # make the adjacent material its asserted background.
+                    continue
                 if relation.from_nucleus_id == representative.nucleus_id:
                     other_id = relation.to_nucleus_id
                 elif relation.to_nucleus_id == representative.nucleus_id:
@@ -8212,6 +8220,18 @@ def build_grounded_human_reception_plan(
                     surface_strategy="emlis_attention_first",
                 ),
             )
+    # An outer cognitive feeling owns its entire negative/potential content.
+    # A preceding action cannot act as that content's antecedent. Use the
+    # existing complete explicit reference for this independently held duty.
+    if (final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality in {"grounded", "limited_grounding"}):
+        moves = tuple(replace(move, reference_mode="short_anchor_if_ambiguous")
+            if (move.required and move.reception_act == "recognize_lived_change"
+                and len(move.target_nucleus_ids) == 1 and not move.support_nucleus_ids
+                and (target := nucleus_index.get(move.target_nucleus_ids[0])) is not None
+                and is_grounded_positive_feeling(target)
+                and "lexical:source_nominal_cognition_feeling" in target.semantic_frame.attribute_codes)
+            else move for move in moves)
     # A single selected performance or current positive feeling still has
     # concrete content. Keep it explicit without changing its meaning or duty.
     # Use the existing concrete-reference/quote policy together; the final
@@ -11124,6 +11144,29 @@ def _received_event_reaction_projections(span, base_frame):
     return tuple(rows)
 
 
+def _source_nominal_cognition_feeling_is_bound(fragment: str) -> bool:
+    """Prove a positive feeling about a whole, explicitly nominal cognition.
+
+    The concessive negation and the potential remain inside that cognition;
+    neither supplies the polarity of the outer feeling nor proves an act.
+    Closed predicate slots and a nominal goal object exclude a reporting
+    owner, a different experiencer and an unfinished or negated feeling.
+    """
+    noun = r"[一-鿿々ァ-ヶー]+"
+    goal_object = (r"(?:(?:この|その|あの)|[一-鿿々]+[ぁ-ん]{0,4}た)?"
+                   + noun + r"(?:の" + noun + r"){0,2}")
+    return re.fullmatch(
+        r"(?:(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が)[、,]?)?"
+        r"(?:" + goal_object + r"を"
+        r"(?:埋める|補う|取り戻す|整える|終える|済ませる)ように)?"
+        r"(?:頑張ら|急が|焦ら|無理をし|背伸びをし)なくても[、,]"
+        r"(?:また|もう一度|少しずつ)?"
+        r"(?:関われる|参加できる|話せる|続けられる|取り組める|やり直せる|休める)"
+        r"と思えたことが(?:少し|とても|本当に)?(?:うれしい|嬉しい)(?:です)?",
+        fragment,
+    ) is not None
+
+
 def _final_stage1_typed_nuclei(
     plan: GroundedObservationPlan,
     evidence_spans: Sequence[EvidenceSpan],
@@ -11169,6 +11212,55 @@ def _final_stage1_typed_nuclei(
             else ()
         )
         if not projections:
+            # Correct only the polarity of a proven outer feeling. The
+            # complete original sentence, including its negative background
+            # and cognitive possibility, remains one required source object.
+            # This can occur after another sentence, but never inside a
+            # quote, report, longer clause or scalar subprojection.
+            frame = nucleus.semantic_frame
+            if (
+                span is not None and normalized_input is not None
+                and nucleus.kind == "reaction" and frame.predicate_kind == "feeling"
+                and frame.modality == "feeling" and frame.polarity == "negative"
+                and nucleus.source_fields == ("memo",) and span.source_field == "memo"
+                and nucleus.grounding_kind == "explicit" and nucleus.retention == "required"
+                and frame.actor == "current_user" and frame.time_scope in {"present", "current_input"}
+                and {"operator:negation", "operator:feeling"} <= set(frame.attribute_codes)
+                and not any(code.startswith(("source_fragment_scalar_", "surface_scalar_",
+                                             "semantic_dependency:"))
+                            for code in frame.attribute_codes)
+                and not set(frame.attribute_codes).intersection({
+                    "operator:performed_action", "operator:change", "operator:result",
+                    "operator:wish", "operator:refusal", "operator:uncertainty",
+                    "semantic_role:explicit_result",
+                })
+            ):
+                source = str(normalized_input.get("memo") or "")
+                start, end = span.start_index, span.end_index
+                raw = str(span.raw_text)
+                if (
+                    0 <= start < end <= len(source) and source[start:end] == raw
+                    and (not source[:start].strip() or source[:start].rstrip().endswith(("。", "．", ".")))
+                    and not re.search(
+                        r"によると|いわく|曰く|"
+                        r"(?:^|[。．.])[^。．.]*の[^。．.]+(?:だ|です|だった|でした)\s*[。．.]|"
+                        r"(?:言った|言いました|話した|話しました|語った|語りました|述べた|述べました|"
+                        r"書いた|書きました|伝えた|伝えました|答えた|答えました|説明した|説明しました)\s*[。．.]",
+                        source[:start],
+                    )
+                    and (not source[end:].strip() or source[end:].lstrip().startswith(("。", "．", ".")))
+                    and _top_level_text(source) == source
+                    and _source_nominal_cognition_feeling_is_bound(raw)
+                ):
+                    nucleus = replace(nucleus, semantic_frame=replace(
+                        frame, polarity="positive", attribute_codes=tuple(_dedupe((
+                            *(code for code in frame.attribute_codes
+                              if code != "semantic_role:current_change"),
+                            "lexical:source_bounded_expression", "lexical:preserve_source_predicate",
+                            "lexical:no_new_sensation_family",
+                            "lexical:source_nominal_cognition_feeling",
+                        ))),
+                    ))
             # Prove the entire current expression before a selected target
             # can use an adnominal reference. Keep event/fact/neutral and all
             # source ownership; kininaru is not promoted to worry or feeling.
@@ -12011,6 +12103,30 @@ def _final_stage1_normalize_relation_authority(
         relation_type = relation.type
         if (
             left_fields == right_fields == {"memo"}
+            and any("lexical:source_nominal_cognition_feeling" in n.semantic_frame.attribute_codes
+                    for n in (left, right))
+            and set(left.source_span_ids).isdisjoint(right.source_span_ids)
+            and set(relation.source_span_ids) == set((*left.source_span_ids, *right.source_span_ids))
+            and (
+                relation.type == "uncertain_connection"
+                and relation.source_relation_ids == ("whole_input_source_order",)
+                and relation.source_meaning_arc_keys == ("whole_input:source_order",)
+                or relation.type == "wish_and_constraint"
+                and len(relation.source_relation_ids) == 1
+                and re.fullmatch(r"conflict\.e[1-9][0-9]*", relation.source_relation_ids[0])
+                and not relation.source_meaning_arc_keys
+                and not any(n.kind == "wish" or n.semantic_frame.modality == "wish" for n in (left, right))
+            )
+        ):
+            # The negation and potential are inside a nominal cognition,
+            # not a wish opposed to the preceding sentence's constraint.
+            # Keep both endpoints and observer provenance as uncertain
+            # source-order context, without asserting an intersentence link.
+            relation_type = "uncertain_connection"
+            grounding_kind = "bounded_structural_inference"
+            retention = "should" if retention == "required" else retention
+        elif (
+            left_fields == right_fields == {"memo"}
             and relation.type == "uncertain_connection"
             and relation.source_relation_ids == ("whole_input_source_order",)
             and relation.source_meaning_arc_keys == ("whole_input:source_order",)
@@ -12064,7 +12180,8 @@ def _final_stage1_normalize_relation_authority(
             and left.retention == right.retention == "required"
             and left.semantic_frame.actor == right.semantic_frame.actor == "current_user"
             and set(left.semantic_frame.attribute_codes) & {
-                "lexical:source_current_material_primary", "lexical:source_temporal_relief_residue"}
+                "lexical:source_current_material_primary", "lexical:source_temporal_relief_residue",
+                "lexical:source_nominal_cognition_feeling"}
             and source_proven_performed_action_status(right)
         ):
             # The coexisting feelings belong to the memo's current host.

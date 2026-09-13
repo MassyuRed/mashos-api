@@ -2640,3 +2640,95 @@ def test_finite_contrast_inverse_binds_complete_ordered_objects_and_left_edge(q3
         left + '一方で、' + right + 'との違い' + tail,
     ):
         assert changed != clauses[1] and not passes(changed), changed
+
+
+NOMINAL_COGNITION_FEELING = '課題を終えるように急がなくても、もう一度話せると思えたことがうれしい'
+
+
+@pytest.mark.parametrize('q3', [False, True])
+@pytest.mark.parametrize('memo', [NOMINAL_COGNITION_FEELING,
+    '片付けが終わった。背伸びをしなくても、少しずつ取り組めると思えたことが嬉しい'])
+def test_nominal_cognition_feeling_keeps_background_and_potential_as_one_response_object(q3, memo):
+    from emlis_ai_grounded_observation_plan import is_grounded_positive_feeling
+    prepared = prepare_emlis_meaning((begin if q3 else initial)(memo + '。', '机を拭いた。'))
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    positives = [n for n in plan.nuclei if is_grounded_positive_feeling(n)]
+    assert len(positives) == 1
+    feeling = positives[0]
+    host = memo.split('。')[-1]
+    assert resolver.resolve(feeling.source_span_ids[0]).raw_text == host
+    assert feeling.source_fields == ('memo',) and feeling.retention == 'required'
+    assert 'operator:negation' in feeling.semantic_frame.attribute_codes
+    assert 'operator:performed_action' not in feeling.semantic_frame.attribute_codes
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    duties = plan.response_plan.human_reception_plan.moves
+    assert {m.reception_act for m in duties} == {'honor_concrete_effort', 'recognize_lived_change'}
+    assert all(not m.support_nucleus_ids for m in duties)
+    assert all(r.type == 'uncertain_connection' and r.retention != 'required'
+               for r in plan.relations if feeling.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id))
+    consumed = [ref for d in selected.decisions for ref in d.selected_contribution_refs]
+    assert len(consumed) == len(set(consumed))
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact, out.reason_codes
+    assert host + 'という気持ちを受け止めています。' in out.artifact.reception
+    assert '机を拭いたことを見過ごさず、大切に受け止めています。' in out.artifact.reception
+    assert 'を背景に' not in out.artifact.reception and 'を支えている' not in out.artifact.reception
+
+
+@pytest.mark.parametrize('memo', [
+    '弟は' + NOMINAL_COGNITION_FEELING,
+    '友人によると、' + NOMINAL_COGNITION_FEELING,
+    '友人の感想です。' + NOMINAL_COGNITION_FEELING,
+    '友人はこう言った。' + NOMINAL_COGNITION_FEELING,
+    '同僚の記録です。' + NOMINAL_COGNITION_FEELING,
+    '友人の気持ちです。' + NOMINAL_COGNITION_FEELING,
+    '「' + NOMINAL_COGNITION_FEELING + '」',
+    '「' + NOMINAL_COGNITION_FEELING,
+    NOMINAL_COGNITION_FEELING + 'と友人は言った',
+    NOMINAL_COGNITION_FEELING + 'とは限らない',
+    NOMINAL_COGNITION_FEELING + 'わけではない',
+    NOMINAL_COGNITION_FEELING.replace('うれしい', 'うれしくない'),
+    NOMINAL_COGNITION_FEELING.replace('うれしい', 'うれしいかもしれない'),
+    NOMINAL_COGNITION_FEELING.replace('うれしい', 'うれしかったら'),
+    NOMINAL_COGNITION_FEELING + '？',
+    '明日は' + NOMINAL_COGNITION_FEELING,
+    NOMINAL_COGNITION_FEELING.replace('もう一度話せる', '弟がもう一度話せる'),
+])
+def test_nominal_cognition_scope_does_not_promote_foreign_report_or_nonaffirmative_host(memo):
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(initial(memo + '。')))
+    assert not any('lexical:source_nominal_cognition_feeling' in n.semantic_frame.attribute_codes
+                   for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('q3', [False, True])
+def test_nominal_cognition_inverse_requires_whole_feeling_object_without_author_replay(q3):
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    prepared = prepare_emlis_meaning((begin if q3 else initial)(NOMINAL_COGNITION_FEELING + '。', '机を拭いた。'))
+    plan = build_updated_grounded_plan(prepared)
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact, out.reason_codes
+    resolver = prepared.thread.resolver()
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    sentence = surface.build_grounded_sentence_plan(plan, resolver)
+    follow = out.artifact.reception
+    def passes(changed):
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan', return_value=SimpleNamespace(text=changed)), patch(
+            'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(body=out.artifact.text.replace(follow, changed).encode(),
+                plan=plan, sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert passes(follow)
+    for old, new in [
+        ('課題を終えるように急がなくても、', ''),
+        ('もう一度話せると思えたことが', ''),
+        ('話せると思えた', '話した'),
+        ('うれしい', 'うれしくない'),
+        ('という気持ち', 'という変化'),
+        ('という気持ち', 'という弟の気持ち'),
+        ('課題を終える', '弟が課題を終える'),
+        ('受け止めています', '受け止めていません'),
+        (NOMINAL_COGNITION_FEELING + 'という気持ち', 'その気持ち'),
+    ]:
+        changed = follow.replace(old, new)
+        assert changed != follow and not passes(changed), (old, new)

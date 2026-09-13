@@ -3235,6 +3235,24 @@ def evaluate_grounded_surface_body_inverse(
                                 )
                             )
                         )
+                        if (final_stage1_plan and sentence_plan.recovery_stage == "full"
+                            and len(clause.move_ids) == 1 and len(target_nuclei) == 1
+                            and move.reception_act == "recognize_lived_change"
+                            and is_grounded_positive_feeling(target_nuclei[0])
+                            and "lexical:source_nominal_cognition_feeling"
+                                in target_nuclei[0].semantic_frame.attribute_codes):
+                            # The positive main feeling governs this whole
+                            # nominal cognition. Its negative background and
+                            # potential content cannot be left only in Layer 1
+                            # or reassigned to a foreign owner or a change.
+                            source = final_reception_source_anchor_text(
+                                target_nuclei[0].nucleus_id, nucleus_index, resolver)
+                            raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
+                            role = {"attention": "を見過ごさず、", "felt_response": "を"}.get(move.move_role)
+                            if (not source or role is None or move.support_nucleus_ids
+                                or effective_reference_mode == "anaphoric_first"
+                                or raw != source + "という気持ち" + role + "受け止めています。"):
+                                failures.append(f"body_inverse_nominal_cognition_feeling_object_missing:{move_id}")
                         if (
                             effective_reference_mode == "anaphoric_first"
                             and any(source_value in (
