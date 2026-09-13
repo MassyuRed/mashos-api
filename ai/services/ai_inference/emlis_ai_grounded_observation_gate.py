@@ -3212,9 +3212,42 @@ def evaluate_grounded_surface_body_inverse(
                                 "body_inverse_reception_anaphoric_target_replayed:"
                                 f"{move.move_id}"
                             )
+                        relation_attention_valid = True
+                        if (final_stage1_plan and sentence_plan.recovery_stage == "full"
+                            and len(clause.move_ids) == 1 and move.move_role == "attention"
+                            and effective_reference_mode != "anaphoric_first"
+                            and selected_subjective_input is not None):
+                            decision = next((d for d in selected_subjective_input.decisions
+                                             if d.move_id == move.move_id), None)
+                            appraisal = decision.subjective_proposition.appraisal_content if decision else None
+                            object_ids = set(move.target_nucleus_ids) | set(
+                                _body_inverse_reception_context_ids(move, plan))
+                            object_relations = [r for r in plan.relations
+                                if {r.from_nucleus_id, r.to_nucleus_id} == object_ids]
+                            if (appraisal is not None and appraisal.dimension == "MATERIAL_WEIGHT"
+                                and appraisal.operation == "RECEIVE_AS_MATERIAL"
+                                and len(object_ids) == 2 and len(object_relations) == 1):
+                                relation_kind = object_relations[0].type
+                                boundary = {
+                                    ("action_supports_change", "honor_concrete_effort"):
+                                        ("支えていること", "大切に思っています"),
+                                    ("contrast", "stay_with_current_burden"):
+                                        ("との違い", "小さくせずに受け止めています"),
+                                }.get((relation_kind, move.reception_act))
+                                if boundary is not None:
+                                    # Parse the completed object's case and
+                                    # affirmative attention/act independently
+                                    # of author replay. A source-internal word
+                                    # such as 見過ごして cannot stand for this duty.
+                                    nominal_end, act = boundary
+                                    raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
+                                    relation_attention_valid = re.fullmatch(
+                                        r"[^。！？!?]+" + re.escape(nominal_end)
+                                        + r"(?:を見過ごさず、|に目が留まり、それを)"
+                                        + re.escape(act) + "。", raw) is not None
                         if (
                             move.move_role == "attention"
-                            and "attention" not in sentence_codes
+                            and ("attention" not in sentence_codes or not relation_attention_valid)
                         ):
                             failures.append(
                                 "body_inverse_reception_attention_duty_missing:"

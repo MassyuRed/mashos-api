@@ -8734,6 +8734,7 @@ def _source_grounded_response_predicate(
     selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
     distributive_object: bool = False,
     single_target_object: bool = False,
+    completed_relation_kind: str | None = None,
     integrate_attention_pair: bool = False,
     unfinished_change: bool = False,
     unfinished_pair: bool = False,
@@ -8867,6 +8868,35 @@ def _source_grounded_response_predicate(
         # material reception, just as for a performed action above. Keep
         # that object under one case without restarting it as a pronoun.
         object_particle, role_operator = "を", "見過ごさず、"
+    material_relation_attention = bool(
+        move_role == "attention"
+        and not distributive_object and not pending_relation_slots
+        and not unfinished_change and not unfinished_pair
+        and semantic_profile.actor_kind == "SELF"
+        and not semantic_profile.future_action and not semantic_profile.quoted_boundary
+        and _selected_material_appraisal(selected_subjective_decision)
+        and (
+            completed_relation_kind == "action_supports_change"
+            and reception_act == "honor_concrete_effort"
+            and referent_kind == "self_started_effort"
+            and target_predicate_kind == "present_actual_output"
+            and semantic_profile.nucleus_kind == "action"
+            and semantic_profile.modality == "fact"
+            and semantic_profile.performed_action and voice == "SELF_PERFORMED"
+            or completed_relation_kind == "contrast"
+            and reception_act == "stay_with_current_burden"
+            and referent_kind == "current_expression"
+            and semantic_profile.nucleus_kind == "reaction"
+            and semantic_profile.predicate_kind == "feeling"
+            and semantic_profile.modality == "feeling"
+            and not semantic_profile.performed_action and voice == "STATE"
+        )
+    )
+    if material_relation_attention:
+        # The completed relation is one governed object. Integrate its
+        # attention case without reintroducing it through a pronoun; retain
+        # the selected act predicate and both complete source endpoints.
+        object_particle, role_operator = "を", "見過ごさず、"
     if unfinished_change:
         if (reception_act != "recognize_lived_change" or referent_kind != "lived_change"
             or semantic_profile.nucleus_kind != "uncertainty"
@@ -8961,7 +8991,7 @@ def _source_grounded_response_predicate(
     valency_complement = (
         "それを" if move_role == "attention"
         and not (material_action_attention or material_intention_attention
-                 or material_state_attention) else ""
+                 or material_state_attention or material_relation_attention) else ""
     )
     completed_relation_slots = ()
     if type(pending_relation_slots) is not tuple or any(type(slot) is not int for slot in pending_relation_slots):
@@ -9093,6 +9123,7 @@ def _source_grounded_response_predicate_surface(
     selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
     distributive_object: bool = False,
     single_target_object: bool = False,
+    completed_relation_kind: str | None = None,
     unfinished_change: bool = False,
     unfinished_pair: bool = False,
     pending_relation_slots: tuple[int, ...] = (),
@@ -9111,6 +9142,7 @@ def _source_grounded_response_predicate_surface(
         selected_subjective_decision=selected_subjective_decision,
         distributive_object=distributive_object,
         single_target_object=single_target_object,
+        completed_relation_kind=completed_relation_kind,
         integrate_attention_pair=recovery_stage == "full",
         unfinished_change=unfinished_change,
         unfinished_pair=unfinished_pair,
@@ -9248,6 +9280,24 @@ def _source_grounded_reception_fragment(
             and len(realization.semantic_fragments) == 1
             and not realization.relations and not realization.context_slots
             and target_core.semantic_slots == (target_owner_slot,)
+        ),
+        completed_relation_kind=(
+            realization.relations[0].relation_kind
+            if recovery_stage == "full" and realization.reference_mode != "ANAPHORIC"
+            and not context_prefix and not target_core.pending_relation_slots
+            and len(realization.semantic_fragments) == 2
+            and target_core.semantic_slots == (0, 1)
+            and target_core.relation_count == len(realization.relations) == 1
+            and set(realization.relations[0].endpoint_slots) == {0, 1}
+            and all(p.actor_kind == "SELF" and not p.quoted_boundary
+                    and not p.future_action and p.modality in {"fact", "feeling"}
+                    for p in realization.semantic_profiles)
+            and (realization.relations[0].relation_kind,
+                 realization.relations[0].endpoint_roles) in {
+                     ("action_supports_change", ("ACTION", "CHANGE")),
+                     ("contrast", ("LEFT", "RIGHT")),
+                 }
+            else None
         ),
         unfinished_pair=unfinished_pair,
         pending_relation_slots=target_core.pending_relation_slots,

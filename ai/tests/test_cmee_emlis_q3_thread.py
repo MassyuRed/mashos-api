@@ -2536,3 +2536,68 @@ def test_mixed_unfinished_observation_does_not_name_the_fact_as_a_future_action(
     fact_sentence, = (part for part in text.split('。') if 'まだ配置は見つかっていない' in part)
     assert '明日、棚を動かす' not in fact_sentence and 'これからの行動' not in fact_sentence
     assert '明日、棚を動かす' in text and 'これからの行動' in text
+
+
+@pytest.mark.parametrize('q3', [False, True])
+@pytest.mark.parametrize('unfinished', ['', 'まだ配置は見つかっていない。', 'まだ配置は見つかっていません。'])
+def test_completed_relation_attention_governs_one_object_in_actual_reception(q3, unfinished):
+    request = (begin if q3 else initial)(ACTION_CHANGE_CONTRAST_MEMO + unfinished)
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(request))
+    output = MeaningExperienceEngine().generate(request)
+    assert output.artifact, output.reason_codes
+    follow = output.artifact.reception
+    clauses = follow.rstrip('。').split('。')
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(clauses) == len(moves) == (3 if unfinished else 2)
+    assert '窓辺の鉢を棚へ移したことが机の上が広くなってうれしかったことを支えていること' in clauses[0]
+    assert '机の上が広くなってうれしかったことといつも見ていた葉が遠くなり、手元に緑がない寂しさも残っていること' in clauses[1]
+    assert '違い' in clauses[1]
+    assert clauses[0].endswith('を見過ごさず、大切に思っています')
+    assert '目が留まり、それを' not in follow
+    for move, clause in zip(moves, clauses):
+        if move.move_role == 'attention':
+            assert clause.count('を見過ごさず、') == 1 and 'それを' not in clause
+        else:
+            assert '見過ごさず' not in clause
+    if unfinished:
+        nominal = unfinished[:-1] + ('という言葉' if unfinished.endswith('ません。') else 'こと')
+        assert clauses[-1] == nominal + 'を小さくせずに受け止めています'
+
+
+@pytest.mark.parametrize('q3', [False, True])
+@pytest.mark.parametrize('source_attention_word', [False, True])
+def test_completed_relation_attention_inverse_rejects_changed_grammar_without_author_replay(q3, source_attention_word):
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    memo = ACTION_CHANGE_CONTRAST_MEMO
+    if source_attention_word:
+        memo = memo.replace('窓辺の鉢', '見過ごしていた窓辺の鉢')
+    prepared = prepare_emlis_meaning((begin if q3 else initial)(memo + 'まだ配置は見つかっていない。'))
+    plan = build_updated_grounded_plan(prepared)
+    output = realize_emlis_thread_body(prepared)
+    assert output.artifact, output.reason_codes
+    resolver = prepared.thread.resolver()
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    sentence = surface.build_grounded_sentence_plan(plan, resolver)
+    follow = output.artifact.reception
+    def passes(changed):
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan', return_value=SimpleNamespace(text=changed)), patch(
+            'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(body=output.artifact.text.replace(follow, changed).encode(),
+                plan=plan, sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert passes(follow)
+    clauses = follow.rstrip('。').split('。')
+    for index in (0, 1):
+        for old, new in [('を見過ごさず、', 'を'), ('を見過ごさず、', 'を見過ごして、'),
+                         ('を見過ごさず、', 'に見過ごさず、'), ('を見過ごさず、', 'を見過ごさず、それを'),
+                         ('ています', 'ていません')]:
+            changed = list(clauses)
+            changed[index] = changed[index].replace(old, new)
+            assert changed[index] != clauses[index]
+            assert not passes('。'.join(changed) + '。'), (index, old, new)
+    for old, new in [('を支えていること', 'を支えていないこと'), ('との違い', 'との共通点'),
+                     ('寂しさも残っている', '寂しさも残っていた'), ('うれしかった', 'うれしくなかった'),
+                     ('大切に思っています', '小さくせずに受け止めています'),
+                     ('小さくせずに受け止めています', '大切に思っています'),
+                     ('窓辺の鉢を棚へ移した', '弟が窓辺の鉢を棚へ移した')]:
+        assert not passes(follow.replace(old, new)), (old, new)
