@@ -1,7 +1,7 @@
 {
   "scope": "Q1 shared language owners only; test snapshot, not product acceptance or full thread identity",
-  "language_identity": "ba9aef91cdbb121bbe932d5e0c5c433adaf2ef236f74cff8869b6171c474ab2f",
-  "runtime_identity": "5ec61e6f025b74a12884180dbfca7da141503d939bf73a3e4789af667ae45a97",
+  "language_identity": "ccfff967c42b9db1c0d2fda8b3824ebb26f8ec0c41af8cab7f7af0b022390d69",
+  "runtime_identity": "c84a69e497020c74b598acfa087501495b521e6ac1f5bc672b569673b73a0622",
   "language_payloads": [
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
@@ -30,8 +30,8 @@
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
-      "09f035f6118d6335c2ae908b36c261fe2cd0037cf29b8db09600d24fc145d17f",
-      548345
+      "68eb16b0e1f6513ac93e60ac8425a9de13ace96acb1c655845bfce5f6c212764",
+      552026
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
@@ -122,8 +122,8 @@
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
-      "9f5ae680a90e768ff759254b8307e22d74d7b101ae1b5f6d0c8b7fd6eeff5bbe",
-      191540
+      "03bf04e7d0bc0df66dfcaeb2b1776cacf685704c87e64860fe1fe0f129c1052f",
+      193259
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",

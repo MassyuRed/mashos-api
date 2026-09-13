@@ -1221,3 +1221,79 @@ def test_feeling_reason_group_keeps_explicit_objects_without_a_supplementary_act
     assert result.artifact and actual.artifact
     expected = '何となく寂しいことと、なぜそう感じるのかは分からないことを小さくせずに受け止めています。'
     assert result.artifact.reception == actual.artifact.reception == expected
+
+
+@pytest.mark.parametrize('memo', [
+    '何となく寂しい。なぜそう感じるのかは分からない。',
+    '私は少し怖い。その理由はまだよく分からない。',
+    '僕はとても寂しい。その理由は分からない。',
+])
+@pytest.mark.parametrize('recovery_stage', surface.GROUND_RECOVERY_STAGES)
+def test_limited_observation_keeps_finite_unknown_separate_from_neighboring_content(memo, recovery_stage):
+    # The same admitted meaning can be rendered under limited observation.
+    # Exercise every recovery stage; the existing minimal-stage rejection
+    # must not collapse these three source duties into one.
+    prepared = prepare_emlis_meaning(begin(memo, 'お茶を飲んだ。'))
+    original = build_updated_grounded_plan(prepared)
+    plan = replace(original, input_profile=replace(original.input_profile, material_quality='limited_grounding'))
+    resolver = prepared.thread.resolver()
+    if recovery_stage == 'minimal_grounded':
+        from emlis_ai_grounded_human_reception import GroundedHumanReceptionSurfaceError
+        with pytest.raises(GroundedHumanReceptionSurfaceError, match='human_reception_minimal_grounded_not_allowed'):
+            surface.build_grounded_sentence_plan(plan, resolver, recovery_stage=recovery_stage)
+        return
+    sentence = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage=recovery_stage)
+    observation_lines = [line for line in sentence.lines if line.binding.line_role != 'human_follow']
+    assert [line.binding.nucleus_ids for line in observation_lines] == [
+        ('nucleus:s1',), ('nucleus:s2',), ('nucleus:s3',)]
+    assert sentence.covered_required_nucleus_ids == original.coverage_requirements.required_nucleus_ids
+    assert sentence.covered_required_relation_ids == original.coverage_requirements.required_relation_ids
+    assert [line.binding.sentence_id for line in sentence.lines] == [
+        f'sentence:{i}' for i in range(1, len(sentence.lines) + 1)]
+    ni = {n.nucleus_id: n for n in plan.nuclei}
+    ri = {r.relation_id: r for r in plan.relations}
+    texts = [surface._render_final_stage1_limited_scope(line.binding, ni, ri, resolver) for line in observation_lines]
+    unknown = memo.rstrip('。').split('。')[1]
+    assert texts[1] == unknown + 'のですね。'
+    assert all(unknown not in text for text in (texts[0], texts[2]))
+    assert 'お茶を飲んだ' not in texts[0] and 'お茶を飲んだ' in texts[2]
+    # Existing Q3 body uses the same independent source duty for this nucleus.
+    actual = realize_emlis_thread_body(prepared)
+    assert actual.artifact and unknown + 'のですね。' in actual.artifact.observation
+    if recovery_stage == 'full':
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        selected = project_thread_meaning(prepared, original).selected_reception
+        body = actual.artifact.text.replace(actual.artifact.observation, '\n'.join(texts))
+        def valid(changed):
+            # Keep the already-tested reception while isolating this changed
+            # observation profile. Its selected meaning was not recomputed.
+            with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan',
+                       return_value=SimpleNamespace(text=actual.artifact.reception)), patch(
+                    'emlis_ai_grounded_sentence_surface._source_bound_current_cognition', side_effect=AssertionError('no author replay')):
+                return evaluate_grounded_surface_body_inverse(body=changed.encode(), plan=plan,
+                    sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+        assert valid(body)
+        for changed in (
+            body.replace(texts[1], ''),
+            body.replace(texts[1], texts[1] + texts[1]),
+            body.replace(texts[1], texts[1].replace('分からない', '分かった')),
+            body.replace(texts[1], texts[1].replace('分からない', '分からなかった')),
+            body.replace(texts[1], '「' + unknown + '」という、まだ分からない範囲があります。'),
+            body.replace('\n'.join(texts), '\n'.join((texts[1], texts[0], texts[2]))),
+        ):
+            assert changed != body and not valid(changed)
+
+
+def test_limited_observation_retains_unsplit_group_without_finite_unknown_proof():
+    prepared = prepare_emlis_meaning(begin('何となく寂しい。なぜそう感じるのかは分からない。', 'お茶を飲んだ。'))
+    original = build_updated_grounded_plan(prepared)
+    plan = replace(original, input_profile=replace(original.input_profile, material_quality='limited_grounding'),
+        nuclei=tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+            attribute_codes=tuple(code for code in n.semantic_frame.attribute_codes
+                if code != 'lexical:preserve_source_predicate'))) if n.nucleus_id == 'nucleus:s2' else n
+            for n in original.nuclei))
+    sentence = surface.build_grounded_sentence_plan(plan, prepared.thread.resolver())
+    observations = [line for line in sentence.lines if line.binding.line_role != 'human_follow']
+    assert len(observations) == 1
+    assert observations[0].binding.nucleus_ids == ('nucleus:s1', 'nucleus:s2', 'nucleus:s3')

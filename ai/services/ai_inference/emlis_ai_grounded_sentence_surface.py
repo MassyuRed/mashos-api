@@ -1942,6 +1942,7 @@ def _build_self_denial_lines(
 def _build_regular_lines(
     *,
     plan: GroundedObservationPlan,
+    resolver: EvidenceSpanResolver,
     recovery_stage: RecoveryStage,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     relation_index: Mapping[str, GroundedSemanticRelation],
@@ -2045,12 +2046,47 @@ def _build_regular_lines(
                 nucleus_index,
                 relation_index,
             )
-        lines.append(
-            _make_line(
+        limited_groups = (selected_ids,)
+        if (
+            material_quality == "limited_grounding"
+            and _is_final_stage1_grounded_projection(plan)
+            and not required_relation_ids
+            and len(selected_ids) > 1
+        ):
+            # A finite unknown owns its own sentence boundary. Leaving it in
+            # the noun list makes its uncertainty appear to qualify adjacent
+            # feelings or actions. Reuse the admitted single-clause surface
+            # and its independent inverse, keeping all other source groups.
+            groups: list[tuple[str, ...]] = []
+            pending: list[str] = []
+            for nucleus_id in selected_ids:
+                single = _make_line(
+                    sentence_number=sentence_number,
+                    line_role="limited_scope",
+                    surface_function="render_limited_scope",
+                    nucleus_ids=(nucleus_id,),
+                    relation_ids=(),
+                    nucleus_index=nucleus_index,
+                    relation_index=relation_index,
+                    claim_scope=claim_scope,
+                    recovery_stage=recovery_stage,
+                )
+                if _source_bound_current_cognition(single.binding, nucleus_index, resolver):
+                    if pending:
+                        groups.append(tuple(pending))
+                        pending = []
+                    groups.append((nucleus_id,))
+                else:
+                    pending.append(nucleus_id)
+            if pending:
+                groups.append(tuple(pending))
+            limited_groups = tuple(groups)
+        for group in limited_groups:
+            lines.append(_make_line(
                 sentence_number=sentence_number,
                 line_role="limited_scope",
                 surface_function="render_limited_scope",
-                nucleus_ids=selected_ids,
+                nucleus_ids=group,
                 relation_ids=required_relation_ids,
                 nucleus_index=nucleus_index,
                 relation_index=relation_index,
@@ -2061,10 +2097,9 @@ def _build_regular_lines(
                     "no_reason_completion",
                     "single_input_scope",
                 ),
-            )
-        )
+            ))
+            sentence_number += 1
         covered_relations.update(required_relation_ids)
-        sentence_number += 1
     else:
         groups = _relation_aware_groups(
             selected_ids,
@@ -2292,6 +2327,7 @@ def build_grounded_sentence_plan(
             if safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER
             else _build_regular_lines(
                 plan=plan,
+                resolver=resolver,
                 recovery_stage=recovery_stage,
                 nucleus_index=nucleus_index,
                 relation_index=relation_index,
