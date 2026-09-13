@@ -12013,6 +12013,10 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
     )
     from emlis_ai_grounded_observation_plan import _source_current_material_group
     material_group = _source_current_material_group(tuple(binding.node_meta.values()), tuple(binding.edge_meta.values()))
+    if (material_group and any(m.target_nucleus_ids == (material_group[1].nucleus_id,)
+        and m.support_nucleus_ids == (material_group[0].nucleus_id,) for m in reception_plan.moves)
+        and "lexical:source_current_material_qualification" in material_group[1].semantic_frame.attribute_codes):
+        material_group = (material_group[1], material_group[0], *material_group[2:])
     current_material_action = bool(len(material_group) == 3 and len(rows) == 2
         and {(m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in reception_plan.moves}
             == {("stay_with_current_burden", (material_group[0].nucleus_id,), (material_group[1].nucleus_id,)),

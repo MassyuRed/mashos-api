@@ -1444,3 +1444,104 @@ def test_current_material_without_action_keeps_both_explicit_objects(q3):
     actual = engine.generate(replace(req, emlis_thread=replace(req.emlis_thread,
         prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id)))
     assert actual.artifact and actual.artifact.reception == expected and actual.question is None
+
+
+def _current_material_with_requested_focus(monkeypatch, memo, action, q3, slot):
+    """Exercise the existing internal focus contract before checkpoint sealing.
+
+    There is no new public focus control. Only the selected focus is supplied;
+    source recognition, meaning, sole body author, inverse and engine run live.
+    """
+    import emlis_ai_grounded_observation_plan as gp
+    original = gp._build_response_and_policies
+    def requested(**kwargs):
+        group = gp._source_current_material_group(kwargs['nuclei'], kwargs['relations'])
+        if group:
+            kwargs['primary_focus_nucleus_ids'] = (group[slot].nucleus_id,)
+        return original(**kwargs)
+    monkeypatch.setattr(gp, '_build_response_and_policies', requested)
+    return (begin if q3 else initial)(memo, action)
+
+
+@pytest.mark.parametrize('q3', [False, True])
+@pytest.mark.parametrize('action', ['', 'お茶を飲んだ。'])
+@pytest.mark.parametrize('memo', [
+    '嬉しい感じと怖い感じが同時にある。対象は一つではない気がする。',
+    '理由はうまく説明できないけれど、嬉しい感じと緊張する感じが同時にある。対象も一つではない気がする。',
+])
+def test_current_material_qualification_focus_reaches_both_layers(monkeypatch, q3, action, memo):
+    req = _current_material_with_requested_focus(monkeypatch, memo, action, q3, 1)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    move = plan.response_plan.human_reception_plan.moves[0]
+    index = {n.nucleus_id:n for n in plan.nuclei}
+    assert plan.response_plan.human_follow_target_ids == move.target_nucleus_ids == ('nucleus:s2',)
+    assert move.support_nucleus_ids == ('nucleus:s1',)
+    target, support = index['nucleus:s2'], index['nucleus:s1']
+    assert (target.semantic_frame.modality,target.semantic_frame.polarity) == ('uncertain','negative')
+    assert (support.semantic_frame.modality,support.semantic_frame.polarity) == ('feeling','mixed')
+    out = realize_emlis_thread_body(prepared)
+    first, second = memo.rstrip('。').split('。')
+    expected = second+'ことと、'+first+'ことを小さくせずに受け止めています。'
+    assert out.artifact and out.artifact.reception.startswith(expected)
+    assert first in out.artifact.observation and second in out.artifact.observation
+    assert bool('お茶を飲んだこと' in out.artifact.reception) == bool(action)
+    engine=MeaningExperienceEngine()
+    checkpoint=engine.prepare_emlis_update(req)
+    actual=engine.generate(replace(req,emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id)))
+    assert actual.artifact and actual.artifact.reception == out.artifact.reception
+    assert actual.question is None
+
+
+def test_current_material_qualification_inverse_rejects_changes_without_author_replay(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    memo='嬉しい感じと怖い感じが同時にある。対象は一つではない気がする。'
+    req=_current_material_with_requested_focus(monkeypatch,memo,'お茶を飲んだ。',True,1)
+    prepared=prepare_emlis_meaning(req);plan=build_updated_grounded_plan(prepared)
+    out=realize_emlis_thread_body(prepared);follow=out.artifact.reception
+    selected=project_thread_meaning(prepared,plan).selected_reception
+    resolver=prepared.thread.resolver();sentence=surface.build_grounded_sentence_plan(plan,resolver)
+    def independent(changed):
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan',
+                   return_value=SimpleNamespace(text=changed)),patch(
+                   'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses',
+                   side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(body=out.artifact.text.replace(follow,changed).encode(),
+                plan=plan,sentence_plan=sentence,resolver=resolver,selected_subjective_input=selected).passed
+    assert independent(follow)
+    for changed in (
+        follow.replace('一つではない気がする','一つではない'),
+        follow.replace('気がする','気がした'),
+        follow.replace('対象は','理由は'),
+        follow.replace('嬉しい感じと',''),
+        follow.replace('怖い感じ','寂しい感じ'),
+        follow.replace('同時にある','同時にあった'),
+        follow.replace('と、嬉しい感じと怖い感じが同時にあること',''),
+        follow.replace('対象は一つではない気がすることと、',''),
+        follow.replace('ことと、嬉しい','ことが原因で、嬉しい'),
+        follow.replace('お茶を飲んだこと','お茶を飲まなかったこと'),
+    ):
+        assert changed != follow and not independent(changed)
+
+
+def test_current_material_focus_ir_cannot_swap_roles_or_status(monkeypatch):
+    import emlis_ai_grounded_human_reception as hr
+    memo='嬉しい感じと怖い感じが同時にある。対象は一つではない気がする。'
+    req=_current_material_with_requested_focus(monkeypatch,memo,'お茶を飲んだ。',True,1)
+    prepared=prepare_emlis_meaning(req);plan=build_updated_grounded_plan(prepared)
+    reception=plan.response_plan.human_reception_plan;move=reception.moves[0]
+    ir=hr._project_source_grounded_reception_move_realization(reception,move,
+        {n.nucleus_id:n for n in plan.nuclei},prepared.thread.resolver(),
+        plan=plan,recovery_stage='full',clause_form='FINITE')
+    assert hr._source_current_material_group_ir_text(ir)
+    for bad in (
+        replace(ir,modality='feeling',polarity='mixed'),
+        replace(ir,nominalization_plan=(*ir.nominalization_plan[:-1],'source-current-material:0:1')),
+        replace(ir,semantic_profiles=tuple(reversed(ir.semantic_profiles))),
+        replace(ir,semantic_fragments=tuple(reversed(ir.semantic_fragments))),
+        replace(ir,context_slots=()),
+    ):
+        with pytest.raises(hr.GroundedHumanReceptionSurfaceError):
+            hr._source_current_material_group_ir_text(bad)

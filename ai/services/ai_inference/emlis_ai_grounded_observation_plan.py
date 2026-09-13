@@ -7371,9 +7371,15 @@ def build_grounded_reception_opportunities(
         and safety_kind == TRIAGE_SAFE_OBSERVATION
         and material_quality in {"grounded", "limited_grounding"}
     ) else ()
-    if reason_group and follow_ids in ({reason_group[0].nucleus_id}, {n.nucleus_id for n in reason_group[2:]}):
+    if reason_group and (follow_ids in ({reason_group[0].nucleus_id}, {n.nucleus_id for n in reason_group[2:]})
+        or ("lexical:source_current_material_qualification" in reason_group[1].semantic_frame.attribute_codes
+            and follow_ids == {reason_group[1].nucleus_id})):
         by_family = {row.family: row for row in rows}
-        duties = (("current_burden", reason_group[:1], reason_group[1:2]),) + (
+        # Focus changes discourse order, never the source roles or status.
+        materials = reason_group[:2]
+        if follow_ids == {materials[1].nucleus_id}:
+            materials = tuple(reversed(materials))
+        duties = (("current_burden", materials[:1], materials[1:2]),) + (
             (("concrete_effort", reason_group[2:], ()),) if len(reason_group) == 3 else ())
         grouped = []
         for family, targets, supports in duties:
@@ -7904,6 +7910,9 @@ def build_grounded_human_reception_plan(
         ) else ()),
     )
     reason_group = _source_current_material_group(nuclei, relations) if final_source_fidelity else ()
+    if (reason_group and tuple(human_follow_target_ids) == (reason_group[1].nucleus_id,)
+        and "lexical:source_current_material_qualification" in reason_group[1].semantic_frame.attribute_codes):
+        reason_group = (reason_group[1], reason_group[0], *reason_group[2:])
     if reason_group:
         # A supplemental group still owns both explicit source clauses.
         # Moving attention to the action cannot turn that pair into an anaphor.

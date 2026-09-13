@@ -1979,10 +1979,17 @@ def _body_inverse_current_material_group(body, witness, sentence, move, plan, re
     from emlis_ai_grounded_observation_plan import _source_current_material_group
     group = _source_current_material_group(plan.nuclei, plan.relations)
     if (not group or sentence.section != "reception" or move.move_role != "felt_response"
-        or move.reception_act != "stay_with_current_burden" or not move.required
-        or move.target_nucleus_ids != (group[0].nucleus_id,)
-        or move.support_nucleus_ids != (group[1].nucleus_id,)):
+        or move.reception_act != "stay_with_current_burden" or not move.required):
         return False
+    selected = (move.target_nucleus_ids, move.support_nucleus_ids)
+    forward = ((group[0].nucleus_id,), (group[1].nucleus_id,))
+    reverse = ((group[1].nucleus_id,), (group[0].nucleus_id,))
+    reversed_focus = (selected == reverse and
+        "lexical:source_current_material_qualification" in group[1].semantic_frame.attribute_codes)
+    if selected != forward and not reversed_focus:
+        return False
+    if reversed_focus:
+        group = (group[1], group[0], *group[2:])
     decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None) if selected_subjective_input else None
     proposition = decision.subjective_proposition if decision else None
     if proposition is None:
@@ -2990,7 +2997,7 @@ def evaluate_grounded_surface_body_inverse(
                                 nominal_target_visible = _body_inverse_thread_received_group(
                                     body, witness, parsed_sentence, move, plan, resolver) is not None
                             elif expression_nominal_required and any(
-                                {"lexical:source_feeling_reason_subject", "lexical:source_current_material_primary"}
+                                {"lexical:source_feeling_reason_subject", "lexical:source_current_material_primary", "lexical:source_current_material_qualification"}
                                 & set(nucleus_index[nid].semantic_frame.attribute_codes)
                                 for nid in move.target_nucleus_ids):
                                 nominal_target_visible = nominal_target_visible and _body_inverse_current_material_group(
