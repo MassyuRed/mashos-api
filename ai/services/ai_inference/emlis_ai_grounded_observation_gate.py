@@ -2033,6 +2033,9 @@ def _body_inverse_current_material_group(body, witness, sentence, move, plan, re
     raw = body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8")
     prefix = "結論を急がずに、" if openness else ""
     expected = tuple(str(resolver.resolve(n.source_span_ids[0]).raw_text).strip(" 　。．.") for n in group[:2])
+    expected = tuple(c[:-3] + "いる" if c.endswith("残っています")
+                     and "lexical:source_temporal_relief_residue" in n.semantic_frame.attribute_codes
+                     else c for n, c in zip(group[:2], expected))
     self_topic = re.fullmatch(r"(?P<owner>私|わたし|僕|ぼく|俺|おれ)は(?P<feeling>[^、,]+)", expected[0])
     left_suffix = "というあなたの気持ち" if self_topic else "こと"
     parsed = re.fullmatch(re.escape(prefix) + r"(?P<left>[^。！？!?]+)" + re.escape(left_suffix) + r"と、(?P<right>[^。！？!?]+)こと"

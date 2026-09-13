@@ -2747,6 +2747,12 @@ def _source_grounded_current_material_clauses(move, plan, nucleus_index, resolve
 
 
 def _source_feeling_reason_nominal(clauses):
+    from emlis_ai_grounded_observation_plan import _source_temporal_clause_parts
+    # A finite polite ending becomes attributive before koto; the proven
+    # present progressive and every preceding source constituent stay intact.
+    clauses = tuple(c[:-3] + "いる" if c.endswith("います")
+                    and (_source_temporal_clause_parts(c) or (None,))[0] == "relief_residue"
+                    else c for c in clauses)
     first, unknown = clauses
     self_topic = re.fullmatch(r"(?:わたし|ぼく|おれ|私|僕|俺)は(?P<feeling>[^、,]+)", first)
     # The source's first person is the recipient, never Emlis. Keep its

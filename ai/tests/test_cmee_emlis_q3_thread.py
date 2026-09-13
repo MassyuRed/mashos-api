@@ -1713,8 +1713,10 @@ def test_temporal_material_keeps_current_unknown_and_relief_residue(memo, q3, ac
     assert out.artifact, out.reason_codes
     resolver = prepared.thread.resolver()
     current_text, unknown_text = [resolver.resolve(n.source_span_ids[0]).raw_text for n in group[:2]]
+    current_nominal = current_text.replace('残っています', '残っている')
     assert any(first + 'ことと、' + second + 'こと' in out.artifact.reception
-               for first, second in ((current_text, unknown_text), (unknown_text, current_text)))
+               for first, second in ((current_nominal, unknown_text), (unknown_text, current_nominal)))
+    assert 'いますこと' not in out.artifact.reception
     assert unknown_text + 'のですね。' in out.artifact.observation
     assert 'という感覚' not in out.artifact.observation
     assert bool('お茶を飲んだこと' in out.artifact.reception) == bool(action)
@@ -1805,3 +1807,26 @@ def test_temporal_material_inverse_rejects_scope_changes_without_author_replay(m
     ):
         changed = out.artifact.text.replace(old, new)
         assert changed != out.artifact.text and not independent(changed), (old, new)
+
+
+def test_temporal_material_polite_attributive_is_checked_without_author_replay():
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    prepared = prepare_emlis_meaning(begin(TEMPORAL_MEMOS[1]))
+    plan = build_updated_grounded_plan(prepared)
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact and '今も緊張が残っていること' in out.artifact.reception
+    resolver = prepared.thread.resolver()
+    sentence = surface.build_grounded_sentence_plan(plan, resolver)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    def independent(follow):
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan',
+                   return_value=SimpleNamespace(text=follow)), patch(
+                   'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses',
+                   side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(
+                body=out.artifact.text.replace(out.artifact.reception, follow).encode(),
+                plan=plan, sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert independent(out.artifact.reception)
+    for ending in ('残っていますこと', '残っていたこと', '残っていないこと'):
+        assert not independent(out.artifact.reception.replace('残っていること', ending))
