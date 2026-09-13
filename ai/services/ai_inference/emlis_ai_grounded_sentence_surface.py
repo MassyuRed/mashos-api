@@ -2047,6 +2047,7 @@ def _build_regular_lines(
                 relation_index,
             )
         limited_groups = (selected_ids,)
+        finite_cognition_ids: set[str] = set()
         if (
             material_quality == "limited_grounding"
             and _is_final_stage1_grounded_projection(plan)
@@ -2072,6 +2073,7 @@ def _build_regular_lines(
                     recovery_stage=recovery_stage,
                 )
                 if _source_bound_current_cognition(single.binding, nucleus_index, resolver):
+                    finite_cognition_ids.add(nucleus_id)
                     if pending:
                         groups.append(tuple(pending))
                         pending = []
@@ -2081,7 +2083,10 @@ def _build_regular_lines(
             if pending:
                 groups.append(tuple(pending))
             limited_groups = tuple(groups)
+        material_scope_introduced = False
         for group in limited_groups:
+            is_cognition = len(group) == 1 and group[0] in finite_cognition_ids
+            additional_material = material_scope_introduced and not is_cognition
             lines.append(_make_line(
                 sentence_number=sentence_number,
                 line_role="limited_scope",
@@ -2096,8 +2101,11 @@ def _build_regular_lines(
                     "no_event_completion",
                     "no_reason_completion",
                     "single_input_scope",
+                    *(("limited_scope:additional_material",) if additional_material else ()),
                 ),
             ))
+            if not is_cognition:
+                material_scope_introduced = True
             sentence_number += 1
         covered_relations.update(required_relation_ids)
     else:
@@ -3355,6 +3363,11 @@ def _render_final_stage1_limited_scope(
                 f"{_JA_SENTENCE_END}"
             )
     if not relation_fragments and extras:
+        if "limited_scope:additional_material" in binding.functional_atom_ids:
+            # The earlier material sentence already introduced the input
+            # boundary. Keep this later source group inside that boundary
+            # without repeating the same introductory sentence structure.
+            return f"{extras}も見えます{_JA_SENTENCE_END}"
         clauses.append(
             f"今の入力では、{extras}までが確かに見えます"
             f"{_JA_SENTENCE_END}"

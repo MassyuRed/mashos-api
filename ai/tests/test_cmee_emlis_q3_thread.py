@@ -1257,12 +1257,24 @@ def test_limited_observation_keeps_finite_unknown_separate_from_neighboring_cont
     assert texts[1] == unknown + 'のですね。'
     assert all(unknown not in text for text in (texts[0], texts[2]))
     assert 'お茶を飲んだ' not in texts[0] and 'お茶を飲んだ' in texts[2]
+    assert sum(text.count('今の入力では、') for text in texts) == 1
+    assert texts[2] == '「お茶を飲んだ」という行動も見えます。'
     # Existing Q3 body uses the same independent source duty for this nucleus.
     actual = realize_emlis_thread_body(prepared)
     assert actual.artifact and unknown + 'のですね。' in actual.artifact.observation
     if recovery_stage == 'full':
         from types import SimpleNamespace
         from unittest.mock import patch
+        # Exercise the actual initial path, including its outer core guard.
+        # This does not replace that guard or reception with a test double.
+        req = initial(memo, 'お茶を飲んだ。')
+        engine = MeaningExperienceEngine()
+        checkpoint = engine.prepare_emlis_update(req)
+        outcome = engine.generate(replace(req, emlis_thread=replace(req.emlis_thread,
+            prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id)))
+        assert outcome.artifact and outcome.body_state == 'FINAL' and outcome.question is None
+        assert unknown + 'のですね。' in outcome.artifact.observation
+        assert 'お茶を飲んだ' in outcome.artifact.observation
         selected = project_thread_meaning(prepared, original).selected_reception
         body = actual.artifact.text.replace(actual.artifact.observation, '\n'.join(texts))
         def valid(changed):
