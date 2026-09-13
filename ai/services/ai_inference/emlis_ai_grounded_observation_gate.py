@@ -1974,10 +1974,10 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
     return successes[0] if len(successes) == 1 else None
 
 
-def _body_inverse_feeling_reason_group(body, witness, sentence, move, plan, resolver, selected_subjective_input):
+def _body_inverse_current_material_group(body, witness, sentence, move, plan, resolver, selected_subjective_input):
     """Restore both finite source objects from bytes, without forward replay."""
-    from emlis_ai_grounded_observation_plan import _source_feeling_reason_group
-    group = _source_feeling_reason_group(plan.nuclei, plan.relations)
+    from emlis_ai_grounded_observation_plan import _source_current_material_group
+    group = _source_current_material_group(plan.nuclei, plan.relations)
     if (not group or sentence.section != "reception" or move.move_role != "felt_response"
         or move.reception_act != "stay_with_current_burden" or not move.required
         or move.target_nucleus_ids != (group[0].nucleus_id,)
@@ -2990,9 +2990,10 @@ def evaluate_grounded_surface_body_inverse(
                                 nominal_target_visible = _body_inverse_thread_received_group(
                                     body, witness, parsed_sentence, move, plan, resolver) is not None
                             elif expression_nominal_required and any(
-                                "lexical:source_feeling_reason_subject" in nucleus_index[nid].semantic_frame.attribute_codes
+                                {"lexical:source_feeling_reason_subject", "lexical:source_current_material_primary"}
+                                & set(nucleus_index[nid].semantic_frame.attribute_codes)
                                 for nid in move.target_nucleus_ids):
-                                nominal_target_visible = nominal_target_visible and _body_inverse_feeling_reason_group(
+                                nominal_target_visible = nominal_target_visible and _body_inverse_current_material_group(
                                     body, witness, parsed_sentence, move, plan, resolver, selected_subjective_input)
                             elif expression_nominal_required and len(move.target_nucleus_ids) > 1:
                                 nominal_target_visible = (

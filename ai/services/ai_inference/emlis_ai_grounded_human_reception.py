@@ -2659,22 +2659,24 @@ def _source_grounded_received_contrast_rows(targets, supports, nucleus_index, re
     return tuple(rows)
 
 
-def source_grounded_feeling_reason_group(move, plan, nucleus_index, resolver):
-    """The selected feeling and its reason boundary, without a new relation."""
-    from emlis_ai_grounded_observation_plan import _source_feeling_reason_group
+def _source_grounded_current_material_clauses(move, plan, nucleus_index, resolver):
+    """Two selected current source objects, without asserting a new relation."""
+    from emlis_ai_grounded_observation_plan import _source_current_material_group, _source_coexisting_feelings_and_tentative_target
     if (plan is None or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
         or move not in plan.response_plan.human_reception_plan.moves
         or move.reception_act != "stay_with_current_burden" or not move.required):
         return ()
-    group = _source_feeling_reason_group(plan.nuclei, plan.relations)
+    group = _source_current_material_group(plan.nuclei, plan.relations)
     if (not group or move.target_nucleus_ids != (group[0].nucleus_id,)
         or move.support_nucleus_ids != (group[1].nucleus_id,)):
         return ()
     clauses = tuple(_source_grounded_clause_candidate(n, resolver) for n in group[:2])
     if (any(len(n.source_span_ids) != 1 or n != nucleus_index.get(n.nucleus_id) for n in group[:2])
         or any(re.search(r"[「」『』…‥?？!！。．.\r\n]", part) for part in clauses)
-        or not re.fullmatch(r"(?:(?:なぜ|どうして|何故)そう感じるのか|その理由)(?:は|が)?"
-                            r"(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", clauses[1])):
+        or not (re.fullmatch(r"(?:(?:なぜ|どうして|何故)そう感じるのか|その理由)(?:は|が)?"
+                            r"(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", clauses[1])
+                if "lexical:source_feeling_reason_subject" in group[0].semantic_frame.attribute_codes
+                else _source_coexisting_feelings_and_tentative_target(*clauses))):
         return ()
     return clauses
 
@@ -2694,7 +2696,7 @@ def source_grounded_current_expression_nominal(
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
 ) -> str:
-    reason = source_grounded_feeling_reason_group(move, plan, nucleus_index, resolver)
+    reason = _source_grounded_current_material_clauses(move, plan, nucleus_index, resolver)
     if reason:
         return _source_feeling_reason_nominal(reason)
     retained = source_grounded_thread_received_group(move, plan, nucleus_index, resolver)
@@ -5265,11 +5267,14 @@ def derive_source_grounded_nominalization_plan(
     )
     if reference_mode == "ANAPHORIC" or move is None or plan is None or resolver is None:
         return nominalization
-    reason = source_grounded_feeling_reason_group(move, plan, {n.nucleus_id: n for n in nuclei}, resolver)
+    reason = _source_grounded_current_material_clauses(move, plan, {n.nucleus_id: n for n in nuclei}, resolver)
     if reason:
         if fragments != reason or tuple(n.nucleus_id for n in nuclei) != (*move.target_nucleus_ids, *move.support_nucleus_ids):
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
-        return (*nominalization, "source-feeling-reason-boundary:0:1")
+        marker = ("source-feeling-reason-boundary:0:1"
+                  if "lexical:source_feeling_reason_subject" in nuclei[0].semantic_frame.attribute_codes
+                  else "source-current-material:0:1")
+        return (*nominalization, marker)
     retained = source_grounded_thread_received_group(move, plan, {n.nucleus_id: n for n in nuclei}, resolver)
     if retained:
         positions = {n.nucleus_id: slot for slot, n in enumerate(nuclei)}
@@ -5382,7 +5387,10 @@ def source_grounded_negative_context_nominal(
 def _source_grounded_nominalization_shape_valid(
     plan: tuple[str, ...], semantic_count: int,
 ) -> bool:
-    if semantic_count == 2 and plan == (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, "source-feeling-reason-boundary:0:1"):
+    if semantic_count == 2 and plan in {
+        (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, "source-feeling-reason-boundary:0:1"),
+        (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, "source-current-material:0:1"),
+    }:
         return True
     if (2 <= len(plan) <= 4 and plan[:1] == _SOURCE_GROUNDED_NOMINALIZATION_BASE
         and all(re.fullmatch(
@@ -6932,10 +6940,12 @@ def _validate_source_grounded_move_ir(
     expected_nominalization = _source_grounded_nominalization_from_profiles(
         move.semantic_fragments, move.semantic_profiles, move.reference_mode,
     )
-    if "source-feeling-reason-boundary:0:1" in move.nominalization_plan:
-        if not _source_feeling_reason_group_ir_text(move):
+    material_markers = tuple(c for c in move.nominalization_plan
+        if c in {"source-feeling-reason-boundary:0:1", "source-current-material:0:1"})
+    if material_markers:
+        if len(material_markers) != 1 or not _source_current_material_group_ir_text(move):
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
-        expected_nominalization = (*expected_nominalization, "source-feeling-reason-boundary:0:1")
+        expected_nominalization = (*expected_nominalization, *material_markers)
     retained_grammar = tuple(p for p in move.nominalization_plan if p.startswith("thread-received-slot:"))
     if retained_grammar:
         if not _thread_received_group_ir_text(move):
@@ -7584,7 +7594,7 @@ def _source_grounded_target_owner_slot(
     referent_kind: str,
 ) -> int:
     """Bind a typed referent only to a semantically compatible slot."""
-    if referent_kind == "current_expression" and (_source_feeling_reason_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)):
+    if referent_kind == "current_expression" and (_source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)):
         # Slot zero anchors the collective grammar, whose core must cover
         # every target and its subject. It is not the sole selected answer.
         return 0
@@ -7596,24 +7606,31 @@ def _source_grounded_target_owner_slot(
 
 
 
-def _source_feeling_reason_group_ir_text(realization):
-    if "source-feeling-reason-boundary:0:1" not in realization.nominalization_plan:
+def _source_current_material_group_ir_text(realization):
+    markers = tuple(c for c in realization.nominalization_plan
+        if c in {"source-feeling-reason-boundary:0:1", "source-current-material:0:1"})
+    if not markers:
         return ""
-    if (realization.nominalization_plan != (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, "source-feeling-reason-boundary:0:1")
+    is_reason = markers == ("source-feeling-reason-boundary:0:1",)
+    if (len(markers) != 1 or realization.nominalization_plan != (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, *markers)
         or realization.target_slot_count != 1 or realization.context_slots != (1,)
         or len(realization.semantic_fragments) != 2 or len(realization.semantic_profiles) != 2
         or realization.relations or realization.reference_mode != "COMPOSITE"
-        or realization.modality != "feeling" or realization.polarity != "negative"
+        or realization.modality != "feeling" or realization.polarity != ("negative" if is_reason else "mixed")
         or realization.time_scope not in {"present", "current_input"}
         or realization.aspect not in {"unknown", "not_applicable"}):
         raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
     feeling, unknown = realization.semantic_profiles
+    from emlis_ai_grounded_observation_plan import _source_coexisting_feelings_and_tentative_target
     if (feeling.nucleus_kind != "reaction" or feeling.predicate_kind != "feeling" or feeling.modality != "feeling"
-        or unknown.nucleus_kind != "uncertainty" or unknown.predicate_kind != "uncertainty" or unknown.modality != "uncertain"
+        or unknown.nucleus_kind != unknown.predicate_kind
+        or unknown.nucleus_kind not in ({"uncertainty"} if is_reason else {"event", "state"})
+        or unknown.modality != "uncertain"
         or any(p.actor_kind != "SELF" or p.quoted_boundary or p.performed_action or p.future_action for p in (feeling, unknown))
         or any(re.search(r"[「」『』…‥?？!！。．.\r\n]", part) for part in realization.semantic_fragments)
-        or not re.fullmatch(r"(?:(?:なぜ|どうして|何故)そう感じるのか|その理由)(?:は|が)?"
-                            r"(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", realization.semantic_fragments[1])):
+        or not (re.fullmatch(r"(?:(?:なぜ|どうして|何故)そう感じるのか|その理由)(?:は|が)?"
+                            r"(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", realization.semantic_fragments[1])
+                if is_reason else _source_coexisting_feelings_and_tentative_target(*realization.semantic_fragments))):
         raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
     return _source_feeling_reason_nominal(realization.semantic_fragments)
 
@@ -7995,7 +8012,7 @@ def _source_grounded_temporal_aspect_realization(
     if realization.reference_mode == "ANAPHORIC":
         return "ANTECEDENT", "ANTECEDENT", "", ""
 
-    group_text = _source_feeling_reason_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
+    group_text = _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
     if group_text:
         if target_referent != group_text or realization.aspect not in {"unknown", "not_applicable"}:
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
@@ -8245,7 +8262,7 @@ def _source_grounded_target_np(
         realization.semantic_fragments[target_owner_slot],
         target_referent=referent_text,
     )
-    group_text = _source_feeling_reason_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
+    group_text = _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
     if group_text:
         if (referent_kind != "current_expression" or referent_text != group_text
             or move.reception_act != "stay_with_current_burden" or target_owner_slot != 0):

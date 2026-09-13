@@ -1309,3 +1309,138 @@ def test_limited_observation_retains_unsplit_group_without_finite_unknown_proof(
     observations = [line for line in sentence.lines if line.binding.line_role != 'human_follow']
     assert len(observations) == 1
     assert observations[0].binding.nucleus_ids == ('nucleus:s1', 'nucleus:s2', 'nucleus:s3')
+
+
+@pytest.mark.parametrize('memo', [
+    '嬉しい感じと怖い感じが同時にある。対象は一つではない気がする。',
+    '理由はうまく説明できないけれど、嬉しい感じと緊張する感じが同時にある。対象も一つではない気がする。',
+    'わけをはっきり説明できないけど、怖い感じと安心した感じがどちらもある。対象は一つではない気がする。',
+])
+@pytest.mark.parametrize('q3', [False, True])
+def test_coexisting_current_material_keeps_both_feelings_and_tentative_target(memo, q3):
+    import emlis_ai_grounded_observation_plan as gp
+    request = (begin if q3 else initial)(memo, 'お茶を飲んだ。')
+    prepared = prepare_emlis_meaning(request)
+    plan = build_updated_grounded_plan(prepared)
+    group = gp._source_current_material_group(plan.nuclei, plan.relations)
+    assert len(group) == 3
+    assert group[0].kind == 'reaction' and group[0].semantic_frame.polarity == 'mixed'
+    assert group[1].semantic_frame.modality == 'uncertain'
+    assert group[1].kind != 'uncertainty'  # An impression is not inability to know.
+    assert not any(u.dimension == 'source_explicit_epistemic_limit'
+                   and group[1].nucleus_id in u.affected_nucleus_ids for u in plan.unknown_boundaries)
+    assert not any(r.retention == 'required' for r in plan.relations)
+    result = realize_emlis_thread_body(prepared)
+    assert result.artifact, result.reason_codes
+    first, second = memo.rstrip('。').split('。')
+    assert first + 'ことと、' + second + 'ことを小さくせずに受け止めています。' in result.artifact.reception
+    assert result.artifact.reception.index(first) < result.artifact.reception.index('お茶を飲んだ')
+    assert 'お茶を飲んだことを大切に思っています。' in result.artifact.reception
+    assert 'という制約' not in result.artifact.observation
+    assert '対象は一つです' not in result.artifact.text
+    engine = MeaningExperienceEngine()
+    checkpoint = engine.prepare_emlis_update(request)
+    actual = engine.generate(replace(request, emlis_thread=replace(request.emlis_thread,
+        prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id)))
+    if not q3 and memo.startswith('わけを'):
+        # The unchanged legacy first-person admission rejects this carrier.
+        # Q3 and the common body above are independent of that older gate;
+        # do not widen admission to make this capability test generate.
+        assert actual.artifact is None and actual.body_state == 'UNAVAILABLE'
+        assert actual.reason_codes == ('current_experiencer_or_time_scope_unsupported',)
+    else:
+        assert actual.artifact and actual.body_state == 'FINAL' and actual.question is None
+        assert actual.artifact.reception == result.artifact.reception
+    projection = project_thread_meaning(prepared, plan)
+    decisions = projection.selected_reception.decisions
+    assert len(decisions) == 2
+    assigned = [set(d.selected_contribution_refs) for d in decisions]
+    assert assigned[0] and assigned[1] and not assigned[0] & assigned[1]
+
+
+@pytest.mark.parametrize('memo', [
+    '友達が嬉しい感じと怖い感じが同時にある。対象は一つではない気がする。',
+    '彼には嬉しい感じと怖い感じが同時にある。対象は一つではない気がする。',
+    '昨日は嬉しい感じと怖い感じが同時にあった。対象は一つではない気がする。',
+    '嬉しい感じと怖い感じが同時にある。対象は一つではない気がした。',
+    '「嬉しい感じと怖い感じが同時にある」と言われた。対象は一つではない気がする。',
+    '嬉しい感じと怖い感じが同時にあるか分からない。対象は一つではない気がする。',
+    '嬉しい感じと怖い感じが同時にない。対象は一つではない気がする。',
+    '嬉しい感じと怖い感じが同時にある。対象は一つではない。',
+    '嬉しい感じと怖い感じが同時にある。対象は一つではない気がするが…',
+    '嬉しい感じと怖い感じが同時にある。対象は一つではない気がする。まだ何かある。',
+    '嬉しい感じと怖い感じと寂しい感じが同時にある。対象は一つではない気がする。',
+    '嬉しい感じと怖い感じが同時にある。その理由も一つではない気がする。',
+])
+def test_current_material_does_not_borrow_unproved_owner_time_or_target(memo):
+    import emlis_ai_grounded_observation_plan as gp
+    plan = prepare_emlis_meaning(begin(memo, 'お茶を飲んだ。')).original_plan
+    assert not gp._source_current_material_group(plan.nuclei, plan.relations)
+
+
+def test_current_material_inverse_reads_both_objects_without_author_replay():
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    memo = '理由はうまく説明できないけれど、嬉しい感じと緊張する感じが同時にある。対象も一つではない気がする。'
+    prepared = prepare_emlis_meaning(begin(memo, 'お茶を飲んだ。'))
+    plan = build_updated_grounded_plan(prepared)
+    result = realize_emlis_thread_body(prepared)
+    assert result.artifact, result.reason_codes
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    resolver = prepared.thread.resolver()
+    sentence = surface.build_grounded_sentence_plan(plan, resolver)
+    follow = result.artifact.reception
+    def independent(changed):
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan',
+                   return_value=SimpleNamespace(text=changed)), patch(
+                   'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses',
+                   side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(body=result.artifact.text.replace(follow, changed).encode(),
+                plan=plan, sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert independent(follow)
+    for changed in (
+        follow.replace('嬉しい感じと', ''), follow.replace('緊張する感じ', '寂しい感じ'),
+        follow.replace('嬉しい感じと緊張する感じ', '緊張する感じと嬉しい感じ'),
+        follow.replace('説明できない', '説明できる'), follow.replace('同時にある', '同時にあった'),
+        follow.replace('一つではない気がする', '一つではない'),
+        follow.replace('対象も', '理由も'), follow.replace('気がする', '気がした'),
+        follow.replace('ことと、対象', 'ことが原因で、対象'),
+        follow.replace('と、対象も一つではない気がすること', ''),
+        follow.replace('お茶を飲んだこと', 'お茶を飲まなかったこと'),
+    ):
+        assert changed != follow and not independent(changed), changed
+
+
+@pytest.mark.parametrize('focus_slot', [0, 1, 2])
+def test_current_material_preserves_explicit_focus(focus_slot):
+    import emlis_ai_grounded_observation_plan as gp
+    from emlis_ai_safety_triage import classify_emlis_safety_triage_text
+    memo = '理由はうまく説明できないけれど、嬉しい感じと緊張する感じが同時にある。対象も一つではない気がする。'
+    original = prepare_emlis_meaning(begin(memo, 'お茶を飲んだ。')).original_plan
+    group = gp._source_current_material_group(original.nuclei, original.relations)
+    assert len(group) == 3
+    focused = group[focus_slot]
+    response, *_ = gp._build_response_and_policies(
+        nuclei=original.nuclei, relations=original.relations,
+        safety_decision=classify_emlis_safety_triage_text(memo + 'お茶を飲んだ。'),
+        complexity=original.input_profile.semantic_complexity,
+        material_quality=original.input_profile.material_quality,
+        include_reception_relation_support=True, final_source_fidelity=True,
+        primary_focus_nucleus_ids=(focused.nucleus_id,))
+    assert response.human_follow_target_ids == (focused.nucleus_id,)
+    assert focused.nucleus_id in response.human_reception_plan.moves[0].target_nucleus_ids
+
+
+@pytest.mark.parametrize('q3', [False, True])
+def test_current_material_without_action_keeps_both_explicit_objects(q3):
+    memo = '嬉しい感じと怖い感じが同時にある。対象は一つではない気がする。'
+    req = (begin if q3 else initial)(memo)
+    prepared = prepare_emlis_meaning(req)
+    out = realize_emlis_thread_body(prepared)
+    expected = '嬉しい感じと怖い感じが同時にあることと、対象は一つではない気がすることを小さくせずに受け止めています。'
+    assert out.artifact and out.artifact.reception == expected
+    engine = MeaningExperienceEngine()
+    checkpoint = engine.prepare_emlis_update(req)
+    actual = engine.generate(replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id)))
+    assert actual.artifact and actual.artifact.reception == expected and actual.question is None
