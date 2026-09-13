@@ -2532,7 +2532,8 @@ def _source_grounded_current_expression_nominal(
         or profile.performed_action or profile.future_action
         or profile.modality not in {"fact", "feeling", "uncertain"}
         or len(fields) != 1 or (fields[0] not in {"memo", "memo_action"} and not answer_clause)
-        or (raw != fragment and not (answer_clause or detached_reaction))
+        or (raw != fragment and not (answer_clause or detached_reaction
+            or _source_grounded_split_contrast_fragment(nucleus, resolver) == fragment))
         # A correction envelope quotes its old/replacement text. The admitted
         # source range, already proved above, owns this answer's grammar.
         or (bool(re.search(r"[「」『』…‥?？!！]", fragment)) if answer_clause else
@@ -2558,11 +2559,15 @@ def _source_grounded_current_expression_nominal(
         if when is None:
             return ""
         return f"{when}{'で' if times in ({'answer_time'},{'prior_answer_time'}) else 'に'}{fragment}こと"
+    from emlis_ai_grounded_observation_plan import _source_action_change_contrast
+    action_contrast = _source_action_change_contrast(plan.nuclei, plan.relations)
     witnessed_feeling = bool(
         profile.nucleus_kind == "reaction" and profile.modality == "feeling"
         and nucleus.semantic_frame.polarity == "negative"
         and (
-            answer_clause and profile.predicate_kind == "feeling"
+            action_contrast and nucleus.nucleus_id == action_contrast[2]
+            and profile.predicate_kind == "feeling"
+            or answer_clause and profile.predicate_kind == "feeling"
             or
             profile.predicate_kind == "feeling"
             and nucleus.semantic_frame.time_scope == "past"
@@ -4939,6 +4944,27 @@ def _source_grounded_axis(values: Sequence[str], *, default: str) -> str:
     return rows[0]
 
 
+def _source_grounded_split_contrast_fragment(nucleus, resolver):
+    """Recover the clause after a connector split by the existing ledger.
+
+    The adjacent original spans must themselves spell the connector. This
+    grammatical view changes neither source spans nor the remaining clause.
+    """
+    if (len(nucleus.source_span_ids) != 1
+        or "semantic_role:contrast_after" not in nucleus.semantic_frame.attribute_codes
+        or resolver.unresolved_ids(nucleus.source_span_ids)):
+        return None
+    span = resolver.resolve(nucleus.source_span_ids[0])
+    if not span.raw_text.startswith(("で、", "で,")):
+        return None
+    preceding = tuple(row for row in resolver.resolve_many(resolver.span_ids)
+        if row.source_field == span.source_field and row.end_index == span.start_index
+        and row.raw_text == "一方")
+    if len(preceding) != 1:
+        return None
+    return re.sub(r"\s+", " ", span.raw_text[2:]).strip(" 　、,。．.") or None
+
+
 def _source_grounded_clause_candidate(
     nucleus: GroundedSemanticNucleus,
     resolver: EvidenceSpanResolver,
@@ -4964,7 +4990,9 @@ def _source_grounded_clause_candidate(
                 "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
             )
         precise = _typed_reception_source_fragment(nucleus, raw)
-        bounded_source = precise if precise is not None else raw
+        bounded_source = precise if precise is not None else (
+            _source_grounded_split_contrast_fragment(nucleus, resolver) or raw
+        )
         for row in re.split(r"[。．.!！?？]+", bounded_source):
             value = re.sub(r"\s+", " ", row).strip(
                 " \u3000、,。．.!！?？「」『』"

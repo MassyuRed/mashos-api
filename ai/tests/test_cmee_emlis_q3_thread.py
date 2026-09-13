@@ -2255,3 +2255,148 @@ def test_independent_decision_ir_cannot_swap_roles_or_promote_proposed_actions(m
     for bad in mutations:
         with pytest.raises(hr.GroundedHumanReceptionSurfaceError):
             hr._source_current_material_group_ir_text(bad)
+
+
+ACTION_CHANGE_CONTRAST_MEMO = (
+    '窓辺の鉢を棚へ移したら、机の上が広くなってうれしかった。'
+    '一方で、いつも見ていた葉が遠くなり、手元に緑がない寂しさも残っている。'
+)
+
+
+@pytest.mark.parametrize('q3', [False, True])
+@pytest.mark.parametrize('action', ['', 'お茶を飲んだ。'])
+@pytest.mark.parametrize('unfinished', ['', 'まだ配置は見つかっていない。'])
+def test_action_change_contrast_receives_both_duties_in_actual_body(q3, action, unfinished):
+    import emlis_ai_grounded_observation_plan as gp
+    req = (begin if q3 else initial)(ACTION_CHANGE_CONTRAST_MEMO + unfinished, action)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    group = gp._source_action_change_contrast(plan.nuclei, plan.relations)
+    assert len(group) == 3
+    moves = plan.response_plan.human_reception_plan.moves
+    assert [(m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in moves] == [
+        ('honor_concrete_effort', (group[0],), (group[1],)),
+        ('stay_with_current_burden', (group[2],), ()),
+    ]
+    output = MeaningExperienceEngine().generate(req)
+    assert output.artifact, output.reason_codes
+    assert '窓辺の鉢を棚へ移したこと' in output.artifact.reception
+    assert '机の上が広くなってうれしかったこと' in output.artifact.reception
+    assert 'いつも見ていた葉が遠くなり、手元に緑がない寂しさも残っていること' in output.artifact.reception
+    assert 'とで、' not in output.artifact.reception
+    if unfinished:
+        assert unfinished[:-1] in output.artifact.observation
+        remaining = next(n for n in plan.nuclei if 'semantic_role:present_unfinished' in n.semantic_frame.attribute_codes)
+        assert (remaining.kind, remaining.semantic_frame.modality, remaining.semantic_frame.polarity) == ('event', 'fact', 'negative')
+        assert remaining.nucleus_id in plan.coverage_requirements.required_nucleus_ids
+        assert all(remaining.nucleus_id not in u.affected_nucleus_ids for u in plan.unknown_boundaries
+                   if u.dimension == 'source_explicit_epistemic_limit')
+
+
+@pytest.mark.parametrize('q3', [False, True])
+def test_action_change_contrast_whole_contribution_partition_cannot_be_swapped(q3):
+    import emlis_ai_grounded_human_reception as hr
+    from cocolon_meaning_experience_engine.emlis_thread_surface import _bind_expression
+    prepared = prepare_emlis_meaning((begin if q3 else initial)(ACTION_CHANGE_CONTRAST_MEMO))
+    plan = build_updated_grounded_plan(prepared)
+    projection = project_thread_meaning(prepared, plan)
+    selected = projection.selected_reception
+    left, right = selected.decisions
+    assert left.projected_claim_ref == right.projected_claim_ref
+    assert set(left.selected_contribution_refs).isdisjoint(right.selected_contribution_refs)
+    assert set(left.selected_contribution_refs) | set(right.selected_contribution_refs) == set(left.subjective_proposition.target_contribution_refs)
+    wrong = hr.identify_selected_subjective_reception_decision(replace(left, decision_ref='',
+        selected_contribution_refs=right.selected_contribution_refs))
+    altered = hr.identify_selected_subjective_reception_input(replace(selected, input_ref='', decisions=(wrong, right)))
+    resolver = prepared.thread.resolver()
+    reception = plan.response_plan.human_reception_plan
+    expressions = tuple(_bind_expression(plan, resolver, replace(projection, selected_reception=altered), m, 'FINITE') for m in reception.moves)
+    sentence = surface.build_grounded_sentence_plan(plan, resolver)
+    clauses = next(l.reception_clause_plans for l in sentence.lines if l.binding.line_role == 'human_follow')
+    with pytest.raises(hr.GroundedHumanReceptionSurfaceError):
+        hr.realize_source_grounded_human_reception(reception, expressions, {n.nucleus_id: n for n in plan.nuclei},
+            resolver, plan=plan, recovery_stage='full', clause_plans=clauses, selected_subjective_input=altered)
+
+
+@pytest.mark.parametrize('change', ['actor', 'polarity', 'modality', 'retention', 'relation_grounding', 'relation_retention'])
+def test_action_change_contrast_requires_the_complete_explicit_source_graph(change):
+    import emlis_ai_grounded_observation_plan as gp
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(ACTION_CHANGE_CONTRAST_MEMO)))
+    group = gp._source_action_change_contrast(plan.nuclei, plan.relations)
+    assert group
+    nuclei, relations = plan.nuclei, plan.relations
+    burden = next(n for n in nuclei if n.nucleus_id == group[2])
+    if change in {'actor', 'polarity', 'modality', 'retention'}:
+        if change == 'retention':
+            changed = replace(burden, retention='should')
+        else:
+            changed = replace(burden, semantic_frame=replace(burden.semantic_frame,
+                **{change: {'actor': 'other_person', 'polarity': 'positive', 'modality': 'possibility'}[change]}))
+        nuclei = tuple(changed if n == burden else n for n in nuclei)
+    else:
+        relations = tuple(replace(r, **({'grounding_kind': 'bounded_structural_inference'}
+            if change == 'relation_grounding' else {'retention': 'should'}))
+            if r.type == 'contrast' else r for r in relations)
+    assert not gp._source_action_change_contrast(nuclei, relations)
+
+
+@pytest.mark.parametrize('suffix', [
+    '友人の話では、まだ配置は見つかっていない。',
+    '伝聞では、まだ方法は決まっていない。',
+    'まだ配置は見つかっていないと言われた。',
+    'まだ配置は見つかっていないかもしれない。',
+    'もしまだ配置は見つかっていないなら。',
+    'まだ配置は見つかっていないわけではない。',
+    '「まだ配置は見つかっていない」。',
+    'まだ配置は見つかっていなかった。',
+])
+def test_unfinished_result_duty_does_not_promote_other_finite_hosts(suffix):
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(ACTION_CHANGE_CONTRAST_MEMO + suffix)))
+    assert not any('semantic_role:present_unfinished' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
+def test_action_change_contrast_inverse_rejects_missing_or_changed_source_without_author_replay():
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    prepared = prepare_emlis_meaning(begin(ACTION_CHANGE_CONTRAST_MEMO))
+    plan = build_updated_grounded_plan(prepared)
+    output = realize_emlis_thread_body(prepared)
+    assert output.artifact, output.reason_codes
+    resolver = prepared.thread.resolver()
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    sentence = surface.build_grounded_sentence_plan(plan, resolver)
+    follow = output.artifact.reception
+    def passes(changed):
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan',
+                   return_value=SimpleNamespace(text=changed)), patch(
+                   'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses',
+                   side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(body=output.artifact.text.replace(follow, changed).encode(),
+                plan=plan, sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert passes(follow)
+    for changed in (follow.split('。')[0] + '。', follow.split('。', 1)[1],
+                    follow.replace('いつも見ていた葉が遠くなり、', ''),
+                    follow.replace('寂しさも残っている', '寂しさも残っていた'),
+                    follow.replace('寂しさも残っている', '寂しさは残っていない'),
+                    follow.replace('うれしかった', 'うれしくなかった'),
+                    follow.replace('窓辺の鉢を棚へ移した', '弟が窓辺の鉢を棚へ移した')):
+        assert changed != follow and not passes(changed)
+
+
+@pytest.mark.parametrize('change', ['field', 'offset', 'prefix'])
+def test_split_contrast_clause_requires_adjacent_original_connector(monkeypatch, change):
+    import emlis_ai_grounded_human_reception as hr
+    import emlis_ai_grounded_observation_plan as gp
+    prepared = prepare_emlis_meaning(begin(ACTION_CHANGE_CONTRAST_MEMO))
+    plan = build_updated_grounded_plan(prepared)
+    group = gp._source_action_change_contrast(plan.nuclei, plan.relations)
+    burden = next(n for n in plan.nuclei if n.nucleus_id == group[2])
+    resolver = prepared.thread.resolver()
+    assert hr._source_grounded_split_contrast_fragment(burden, resolver).startswith('いつも見ていた葉')
+    original = resolver.resolve_many
+    def changed(ids):
+        return tuple(replace(s, **({'source_field': 'memo_action'} if change == 'field' else
+                                  {'end_index': s.end_index - 1} if change == 'offset' else {'raw_text': '一緒'}))
+                     if s.raw_text == '一方' else s for s in original(ids))
+    monkeypatch.setattr(resolver, 'resolve_many', changed)
+    assert hr._source_grounded_split_contrast_fragment(burden, resolver) is None

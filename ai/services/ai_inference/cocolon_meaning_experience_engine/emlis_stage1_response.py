@@ -12027,13 +12027,19 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
         and {(m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in reception_plan.moves}
             == {("stay_with_current_burden", (nominal_group[0].nucleus_id,), ()),
                 ("honor_concrete_effort", (nominal_action[0].nucleus_id,), ())})
+    from emlis_ai_grounded_observation_plan import _source_action_change_contrast
+    action_contrast = _source_action_change_contrast(tuple(binding.node_meta.values()), tuple(binding.edge_meta.values()))
+    action_contrast = action_contrast if (action_contrast and len(rows) == 2
+        and {(m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in reception_plan.moves}
+            == {("honor_concrete_effort", (action_contrast[0],), (action_contrast[1],)),
+                ("stay_with_current_burden", (action_contrast[2],), ())}) else ()
     if (len(rows) == 2
         and (all(row.reception_act == "stay_with_current_burden" for row in rows)
-             or mixed_answers or independent_cognition_action or current_material_action or nominal_constraint_action)
+             or mixed_answers or independent_cognition_action or current_material_action or nominal_constraint_action or action_contrast)
         and rows[0].projected_claim_ref == rows[1].projected_claim_ref):
         first = rows[0]
         if (any(not move.required or len(move.target_nucleus_ids) != 1
-                or move.support_nucleus_ids and not current_material_action for move in reception_plan.moves)
+                or move.support_nucleus_ids and not (current_material_action or action_contrast) for move in reception_plan.moves)
             or any((row.branch, row.meaning_outcome_ref, row.reception_binding_ref,
                     row.subjective_proposition, row.basis_rows, row.qualifier_rows)
                    != (first.branch, first.meaning_outcome_ref, first.reception_binding_ref,
@@ -12049,7 +12055,14 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
             raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
         duties = tuple({_node_ref(binding.nucleus_to_node[nid])
                         for nid in (*row.target_nucleus_ids, *row.support_nucleus_ids)} for row in rows)
-        if (duties[0] & duties[1]
+        if action_contrast:
+            # The second duty realizes its required contrast in full. The
+            # positive change is shared context; each whole contribution
+            # still belongs to exactly one Move below.
+            duties = tuple(duty | {_node_ref(binding.nucleus_to_node[action_contrast[1]])}
+                if row.reception_act == "stay_with_current_burden" else duty
+                for row, duty in zip(rows, duties, strict=True))
+        if ((duties[0] & duties[1] and not action_contrast)
             or set().union(*duties) != set(first.subjective_proposition.response_object_refs)):
             raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
         partition = tuple(tuple(ref for ref in complete

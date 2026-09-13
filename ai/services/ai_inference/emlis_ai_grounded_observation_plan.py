@@ -7083,6 +7083,46 @@ def _thread_retained_reaction_groups(nuclei, relations):
         subject_order[target_events.get(nid, nid)] for nid in row[1])))
 
 
+def _source_action_change_contrast(nuclei, relations):
+    """Return an explicit contrast left outside an action/change duty.
+
+    The performed action already coowns its positive change. That ownership
+    cannot erase the independently stated feeling on the other contrast end.
+    This uses the existing source graph, never lexical examples or body text.
+    """
+    index = {n.nucleus_id: n for n in nuclei}
+    groups = []
+    for link in relations:
+        if (link.type != "action_supports_change" or link.retention != "required"
+            or link.grounding_kind != "user_stated_relation"):
+            continue
+        action, change = index.get(link.from_nucleus_id), index.get(link.to_nucleus_id)
+        if (action is None or change is None or not source_proven_performed_action_status(action)
+            or change.kind != "change" or change.semantic_frame.predicate_kind != "change"
+            or change.semantic_frame.polarity != "positive"
+            or "semantic_role:compound_reception_coowned_nonprimary" not in change.semantic_frame.attribute_codes):
+            continue
+        for contrast in relations:
+            ends = {contrast.from_nucleus_id, contrast.to_nucleus_id}
+            if (contrast.type != "contrast" or contrast.retention != "required"
+                or contrast.grounding_kind != "user_stated_relation"
+                or change.nucleus_id not in ends or len(ends) != 2):
+                continue
+            burden = index.get(next(iter(ends - {change.nucleus_id})))
+            if (burden is None or burden.kind != "reaction"
+                or burden.semantic_frame.predicate_kind != "feeling"
+                or burden.semantic_frame.polarity != "negative"
+                or burden.semantic_frame.modality != "feeling"
+                or any(n.source_fields != ("memo",) or n.retention != "required"
+                       or n.grounding_kind != "explicit"
+                       or n.allowed_claim_scope != "explicit_current_input"
+                       or n.semantic_frame.actor != "current_user"
+                       for n in (action, change, burden))):
+                continue
+            groups.append((action.nucleus_id, change.nucleus_id, burden.nucleus_id))
+    return groups[0] if len(groups) == 1 else ()
+
+
 def build_grounded_reception_opportunities(
     *,
     human_follow_target_ids: Sequence[str],
@@ -7205,6 +7245,13 @@ def build_grounded_reception_opportunities(
         and safety_kind == TRIAGE_SAFE_OBSERVATION
         and material_quality in {"grounded", "limited_grounding"}
     ) else ()
+    action_change_contrast = _source_action_change_contrast(owned_nuclei, relations) if (
+        final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality in {"grounded", "limited_grounding"}
+        and compatibility_family == "concrete_effort"
+    ) else ()
+    if action_change_contrast and follow_ids != {action_change_contrast[0]}:
+        action_change_contrast = ()
     if (
         richer_families
         and safety_kind != TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER
@@ -7213,6 +7260,7 @@ def build_grounded_reception_opportunities(
         and not mixed_answer_targets
         and not retained_reaction_groups
         and not current_material_group
+        and not action_change_contrast
     ):
         candidates_by_family.pop("current_burden", None)
 
@@ -7231,6 +7279,8 @@ def build_grounded_reception_opportunities(
         representative = min(
             family_candidates,
             key=lambda item: (
+                0 if action_change_contrast and family == "current_burden"
+                and item.nucleus_id == action_change_contrast[2] else 1,
                 0
                 if family == "lived_change"
                 and {
@@ -7268,7 +7318,9 @@ def build_grounded_reception_opportunities(
             if fact_id is not None and fact_id != representative.nucleus_id:
                 target_ids = (fact_id,)
                 support_ids = (representative.nucleus_id,)
-        elif include_relation_support and not (nonaction_pair and family == "current_burden"):
+        elif include_relation_support and not (
+            (nonaction_pair or action_change_contrast) and family == "current_burden"
+        ):
             relation_priority = {
                 "action_supports_change": 0,
                 "preserves_despite": 1,
@@ -7513,6 +7565,7 @@ def _select_reception_opportunities(
     mixed_answer_targets: tuple[tuple[str, ...], ...] = (),
     retained_reaction_groups: tuple = (),
     current_material_group: tuple = (),
+    action_change_contrast: tuple = (),
 ) -> tuple[GroundedReceptionOpportunity, ...]:
     inventory = tuple(opportunities)
     if not inventory:
@@ -7576,7 +7629,7 @@ def _select_reception_opportunities(
             "words_placed": (),
         }
         support_order = support_order_by_primary[primary.family]
-        if (current_material_group and final_source_fidelity
+        if ((current_material_group or action_change_contrast) and final_source_fidelity
             and primary.family == "concrete_effort"):
             support_order = ("current_burden", *support_order)
 
@@ -7672,6 +7725,7 @@ def _build_reception_depth_policy_and_moves(
     mixed_answer_targets: tuple[tuple[str, ...], ...] = (),
     retained_reaction_groups: tuple = (),
     current_material_group: tuple = (),
+    action_change_contrast: tuple = (),
 ) -> tuple[GroundedReceptionDepthPolicy, tuple[GroundedReceptionMovePlan, ...]]:
     selected = _select_reception_opportunities(
         opportunities,
@@ -7682,6 +7736,7 @@ def _build_reception_depth_policy_and_moves(
         mixed_answer_targets=mixed_answer_targets,
         retained_reaction_groups=retained_reaction_groups,
         current_material_group=current_material_group,
+        action_change_contrast=action_change_contrast,
     )
     if safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER:
         safety_mode: GroundedReceptionSafetyMode = (
@@ -7765,7 +7820,7 @@ def _build_reception_depth_policy_and_moves(
                     "explicit_emlis_counterposition"
                     if explicit
                     else "short_anchor_if_ambiguous"
-                    if independent_burdens or mixed_answer_targets or retained_reaction_groups
+                    if independent_burdens or mixed_answer_targets or retained_reaction_groups or action_change_contrast
                     else legacy_reference_mode
                     if index == 1
                     else "anaphoric_first"
@@ -7917,10 +7972,18 @@ def build_grounded_human_reception_plan(
         include_relation_support=include_relation_support,
         final_source_fidelity=final_source_fidelity,
     )
+    action_change_contrast = _source_action_change_contrast(available_nuclei, relations) if (
+        final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality in {"grounded", "limited_grounding"}
+        and primary_act == "honor_concrete_effort"
+    ) else ()
+    if action_change_contrast and set(target_ids) != {action_change_contrast[0]}:
+        action_change_contrast = ()
     depth_policy, moves = _build_reception_depth_policy_and_moves(
         opportunities,
         legacy_primary_act=primary_act,
         legacy_reference_mode=reference_mode,
+        action_change_contrast=action_change_contrast,
         current_material_group=(_source_current_material_group(available_nuclei, relations) if (
             final_source_fidelity
             and safety_kind == TRIAGE_SAFE_OBSERVATION
@@ -12850,6 +12913,43 @@ def _final_stage1_align_action_status(
     return tuple(aligned)
 
 
+def _final_source_unfinished_result_nuclei(nuclei, evidence_spans, normalized_input):
+    """Keep an explicit still-unachieved result as an observation duty.
+
+    A negative result is a fact, not an epistemic unknown or a positive
+    change. Recognize its finite host without changing that source frame.
+    """
+    if normalized_input is None:
+        return nuclei
+    source = str(normalized_input.get("memo") or "")
+    if _top_level_text(source) != source:
+        return nuclei
+    spans = {s.span_id: s for s in evidence_spans}
+    result = []
+    for nucleus in nuclei:
+        frame = nucleus.semantic_frame
+        span = spans.get(nucleus.source_span_ids[0]) if len(nucleus.source_span_ids) == 1 else None
+        if (span is not None and nucleus.source_fields == ("memo",) and span.source_field == "memo"
+            and nucleus.grounding_kind == "explicit" and nucleus.allowed_claim_scope == "explicit_current_input"
+            and frame.actor == "current_user" and frame.modality == "fact" and frame.polarity == "negative"
+            and nucleus.kind == frame.predicate_kind == "event"
+            and frame.time_scope in {"present", "current_input", "continuing"}
+            and not any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:", "semantic_dependency:"))
+                        for c in frame.attribute_codes)
+            and 0 <= span.start_index < span.end_index <= len(source)
+            and source[span.start_index:span.end_index] == span.raw_text
+            and (span.start_index == 0 or source[span.start_index - 1] in "。．.\n")
+            and (span.end_index == len(source) or source[span.end_index] in "。．.")
+            and not re.search(r"[?？!！…‥\r\n]|もし|たら|なら|れば", span.raw_text)
+            and re.fullmatch(r"(?:(?:どちら|どっち|両方|双方)(?:も|とも)(?:本当|事実)で[、,])?"
+                             r"まだ[一-鿿々ぁ-ゖァ-ヶー]+(?:は|が|も)"
+                             r"(?:見つか|決ま|定ま)って(?:いない|いません)", span.raw_text)):
+            nucleus = replace(nucleus, retention="required", semantic_frame=replace(frame,
+                attribute_codes=tuple(_dedupe((*frame.attribute_codes, "semantic_role:present_unfinished")))))
+        result.append(nucleus)
+    return tuple(result)
+
+
 def project_final_stage1_grounded_observation_plan(
     plan: GroundedObservationPlan,
     *,
@@ -12888,6 +12988,9 @@ def project_final_stage1_grounded_observation_plan(
         projected_nuclei, evidence_spans, normalized_input,
     )
     projected_nuclei = _final_source_independent_decision_nuclei(
+        projected_nuclei, evidence_spans, normalized_input,
+    )
+    projected_nuclei = _final_source_unfinished_result_nuclei(
         projected_nuclei, evidence_spans, normalized_input,
     )
     relations, nuclei = _final_stage1_typed_relations(

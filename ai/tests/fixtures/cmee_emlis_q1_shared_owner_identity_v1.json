@@ -1,7 +1,7 @@
 {
   "scope": "Q1 shared language owners only; test snapshot, not product acceptance or full thread identity",
-  "language_identity": "d111d60e02a6dc728d76dfc9f9d91777184e84bab8e7db548c9276683d368e36",
-  "runtime_identity": "e5bc6541812622921d5594009033f9694cf9d3491ad103dc7d965e69bae39d63",
+  "language_identity": "6232603571add002cfd7744b26c35bb1b74e0d8709f105c35a2d98a5a1e315a1",
+  "runtime_identity": "0a7314d7362248dec9787675d10f2a3989846ed243862c7c4b028ffdad0329ac",
   "language_payloads": [
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
@@ -15,8 +15,8 @@
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py",
-      "ea6f292361ebecba434839544ed2d6b2c4a32276b68f09063780b1bdb74a3c33",
-      929765
+      "053eeb6942e2d4e5b285f451bc4e0364fda898254937ecf36e8c3d5d00abf085",
+      933150
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py",
@@ -25,8 +25,8 @@
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
-      "6cc089b03726b02310c4de55693f9d8adb99c2f13ee440cb425f913a3ee365e8",
-      1617547
+      "d43e4cb7712cee6924645418dfdefbf991fab4ad6f28744da9e8adfebc5b559d",
+      1636806
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
@@ -35,13 +35,13 @@
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
-      "a09035fe180ae705d55f14844e723178573d6265c73e8de82f29c7eadee1783e",
-      1231835
+      "5ebe789557a085cceb5fc6f0701d9f41ec59294d37bec75b889586156b2b500e",
+      1236710
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
-      "3b394617c2010f082bea64ff537c1e3610e834410ea0b5a66406d65d916b9af3",
-      525742
+      "7e7c5904d5de22760fe4e0d471cf8c6d8996adf25f47391309cc7a9464aa8a0f",
+      527475
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",
@@ -107,8 +107,8 @@
     ],
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py",
-      "dd722b6e1b2d8bd4aab9476c75c8acca3440f172a6ab9c5a8f731093af8e9668",
-      536879
+      "85161a6475ebc6f3eeef40bfe97b77b6f4ca628cda24c834d8a2679597595aa8",
+      537968
     ],
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py",
@@ -117,8 +117,8 @@
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
-      "8781627c43ef9a280813aea02ccca4c7c6a01e049cd9efceb832d655a3995149",
-      615133
+      "a15953dc46b9dd7296b2baabc52ead126ea04c890b9bb7a2ad1b67e00d0f92ad",
+      621181
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
@@ -127,13 +127,13 @@
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
-      "659201dae6567ad0b6691feac445316febff6fe4a1afc2a13d9d0319ff99f657",
-      451520
+      "4a5e3744d90b8b03599204449d868106dba3aadac447bec8b921eedecf391dc9",
+      452965
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
-      "4f91b1ef8f15f33cd7dc9c4cf1877bb37a6c3daad508be87615a7b6e1064f203",
-      195872
+      "5b7b18a2d868372e69fe28f8e094b7694d1e6b628fc6cd4c9c1b37b8a8e0383b",
+      196899
     ],
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",
@@ -192,9 +192,9 @@
       480,
       118,
       194,
-      318,
+      320,
       126,
-      240,
+      241,
       63,
       90
     ],
@@ -209,6 +209,6 @@
       45,
       103
     ],
-    "6ae6adfcc7e854ff5724988ffa27beb2b47b35bfb2f072127613cfe9d9626081"
+    "3ca1ac89e97dff670178a9bd25005351c337f5bd5f21048d94238dbbf672afca"
   ]
 }

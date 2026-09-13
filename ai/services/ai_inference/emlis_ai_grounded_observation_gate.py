@@ -3023,6 +3023,17 @@ def evaluate_grounded_surface_body_inverse(
                                            for m in witness.markers)
                                 ):
                                     nominal_target_visible = False
+                                # A performed action with its coowned change
+                                # starts this source-bound relational object.
+                                # A matching substring inside a newly prefixed
+                                # actor or time does not prove the same object.
+                                from emlis_ai_grounded_observation_plan import _source_action_change_contrast
+                                action_contrast = _source_action_change_contrast(plan.nuclei, plan.relations)
+                                if (action_contrast and move.reception_act == "honor_concrete_effort"
+                                    and move.target_nucleus_ids == (action_contrast[0],)
+                                    and move.support_nucleus_ids == (action_contrast[1],)
+                                    and nucleus_index[action_contrast[0]].semantic_frame.time_scope == "past"):
+                                    nominal_target_visible = nominal_target_visible and offset == 0
                                 if thread_answer_nominal is not None:
                                     _, source, grammar, when, nominal = thread_answer_nominal
                                     actual_nominal = body[start:end].decode("utf-8")
