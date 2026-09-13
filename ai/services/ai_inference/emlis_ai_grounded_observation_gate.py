@@ -390,8 +390,19 @@ def _semantic_subcheck_reasons(
     for nucleus in plan.nuclei:
         attributes = set(nucleus.semantic_frame.attribute_codes)
         if "lexical:preserve_source_predicate" in attributes:
-            anchor = _normalized(_nucleus_source_text(nucleus, resolver))
-            if anchor and anchor not in surface_normalized:
+            source_anchor = _nucleus_source_text(nucleus, resolver)
+            anchors = {_normalized(source_anchor)}
+            decision_roles = tuple(role for role in ("choice", "timing")
+                if "lexical:source_independent_decision_" + role in attributes)
+            if len(decision_roles) == 1:
+                from emlis_ai_grounded_observation_plan import _source_independent_decision_clause_parts
+                clause = source_anchor.strip(" 　。．.")
+                if (_source_independent_decision_clause_parts(clause) or (None,))[0] == decision_roles[0]:
+                    # Only these complete, source-proven hosts have a plain
+                    # attributive form here; no shortened source stem counts.
+                    anchors.add(_normalized(re.sub(r"決められません$", "決められない",
+                        re.sub(r"迷っています$", "迷っている", clause))))
+            if any(anchors) and not any(anchor and anchor in surface_normalized for anchor in anchors):
                 semantic.append("lexical_anchor_missing")
         if "lexical:no_new_sensation_family" in attributes:
             for pattern in _SENSATION_FAMILIES.values():
@@ -2061,6 +2072,13 @@ def _body_inverse_current_material_group(body, witness, sentence, move, plan, re
     expected = tuple(c[:-3] + "いる" if c.endswith("残っています")
                      and "lexical:source_temporal_relief_residue" in n.semantic_frame.attribute_codes
                      else c for n, c in zip(group[:2], expected))
+    decision_roles = tuple(next((role for role in ("choice", "timing")
+        if "lexical:source_independent_decision_" + role in n.semantic_frame.attribute_codes), None) for n in group[:2])
+    if decision_roles in {("choice", "timing"), ("timing", "choice")}:
+        expected = tuple(re.sub(r"決められません$", "決められない",
+                                re.sub(r"迷っています$", "迷っている", c)) for c in expected)
+        if decision_roles == ("timing", "choice"):
+            expected = (re.sub(r"^それとは別に[、,]?", "", expected[0]), "それとは別に、" + expected[1])
     self_topic = re.fullmatch(r"(?P<owner>私|わたし|僕|ぼく|俺|おれ)は(?P<feeling>[^、,]+)", expected[0])
     left_suffix = "というあなたの気持ち" if self_topic else "こと"
     parsed = re.fullmatch(re.escape(prefix) + r"(?P<left>[^。！？!?]+)" + re.escape(left_suffix) + r"と、(?P<right>[^。！？!?]+)こと"
@@ -2342,6 +2360,7 @@ def evaluate_grounded_surface_body_inverse(
         # writer and this matcher do not share a renderer or its witness.
         direct_cognition = False
         direct_provisional = False
+        direct_decision = False
         binding = planned_line.binding
         if (final_stage1_plan
             and (planned_line.surface_function, binding.claim_scope) in {
@@ -2357,7 +2376,13 @@ def evaluate_grounded_surface_body_inverse(
                     and (cf.actor, cf.modality, cf.polarity, cf.time_scope)
                         == ("current_user", "fact", "mixed", "current_input")
                     and {"lexical:source_provisional_degree", "lexical:preserve_source_predicate"} <= codes)
-                if ((provisional or (cognition.kind == cf.predicate_kind == "uncertainty"
+                decision_roles = tuple(role for role in ("choice", "timing")
+                    if "lexical:source_independent_decision_" + role in codes)
+                decision = bool(len(decision_roles) == 1 and cognition.kind == cf.predicate_kind == "uncertainty"
+                    and cf.actor == "current_user" and cf.modality == "uncertain" and cf.time_scope == "present"
+                    and cf.polarity == ("neutral" if decision_roles[0] == "choice" else "negative")
+                    and {"operator:uncertainty", "semantic_role:limiting_unknown", "lexical:preserve_source_predicate"} <= codes)
+                if ((provisional or decision or (cognition.kind == cf.predicate_kind == "uncertainty"
                     and cf.actor == "current_user" and cf.modality == "uncertain"
                     and cf.polarity == "negative" and cf.time_scope in {"present", "current_input"}
                     and {"operator:negation", "operator:uncertainty", "semantic_role:limiting_unknown",
@@ -2370,10 +2395,11 @@ def evaluate_grounded_surface_body_inverse(
                                 or code == "semantic_role:embedded_turn" for code in codes)):
                     source_span = resolver.resolve(cognition.source_span_ids[0])
                     source_clause = str(source_span.raw_text).strip(" \u3000。．.")
-                    from emlis_ai_grounded_observation_plan import _source_provisional_degree_parts
+                    from emlis_ai_grounded_observation_plan import _source_provisional_degree_parts, _source_independent_decision_clause_parts
                     if (source_span.source_field == cognition.source_fields[0]
                         and 0 <= source_span.start_index < source_span.end_index
                         and (provisional and _source_provisional_degree_parts(source_clause) is not None
+                             or decision and (_source_independent_decision_clause_parts(source_clause) or (None,))[0] == decision_roles[0]
                              or re.fullmatch(r"(?:(?:現在|今)(?:も|は))?(?:まだ)?(?:はっきり|よく)?(?:わからない|分からない)", source_clause)
                              or "lexical:source_feeling_reason_unknown" in codes
                              and re.fullmatch(r"(?:(?:何故|どうして|なぜ)そう感じるのか|その理由)(?:が|は)?"
@@ -2385,6 +2411,9 @@ def evaluate_grounded_surface_body_inverse(
                         if provisional:
                             source_clause = re.sub(r"(気[がはも])します(?=けれど|けど)", r"\1する", source_clause)
                             source_clause = re.sub(r"ないです$|ありません$", "ない", source_clause)
+                        if decision:
+                            source_clause = re.sub(r"迷っています$", "迷っている", source_clause)
+                            source_clause = re.sub(r"決められません$", "決められない", source_clause)
                         visible = _body_inverse_visible_text(body, parsed_line)
                         if "scope_hedge" in binding.functional_atom_ids:
                             if not visible.startswith("今の入力だけを見ると、"):
@@ -2396,6 +2425,8 @@ def evaluate_grounded_surface_body_inverse(
                             failures.append(f"body_inverse_cognition_source_or_predicate_mismatch:{index}")
                         elif provisional:
                             direct_provisional = True
+                        elif decision:
+                            direct_decision = True
         if expected_sources and not quote_rows and not direct_cognition:
             failures.append(f"body_inverse_observation_source_anchor_missing:{index}")
         normalized_quote_texts: list[str] = []
@@ -2601,6 +2632,9 @@ def evaluate_grounded_surface_body_inverse(
             )
             and "unknown" not in parsed_line.semantic_marker_codes
             and not parsed_line.uncertainty_marker_codes
+            # This exact finite host already states the unresolved object.
+            # A changed/deleted host fails the complete source match above.
+            and not direct_decision
         ):
             failures.append(f"body_inverse_required_unknown_missing:{index}")
         required_future_intention = any(
@@ -3090,7 +3124,8 @@ def evaluate_grounded_surface_body_inverse(
                                     body, parsed_sentence, move, plan, resolver, selected_subjective_input)
                             elif expression_nominal_required and any(
                                 {"lexical:source_feeling_reason_subject", "lexical:source_current_material_primary", "lexical:source_current_material_qualification",
-                                 "lexical:source_temporal_relief_residue", "lexical:source_temporal_causal_unknown"}
+                                 "lexical:source_temporal_relief_residue", "lexical:source_temporal_causal_unknown",
+                                 "lexical:source_independent_decision_choice", "lexical:source_independent_decision_timing"}
                                 & set(nucleus_index[nid].semantic_frame.attribute_codes)
                                 for nid in move.target_nucleus_ids):
                                 nominal_target_visible = nominal_target_visible and _body_inverse_current_material_group(
@@ -3211,6 +3246,16 @@ def evaluate_grounded_surface_body_inverse(
                         )
                         context_match_text = parsed_sentence_text
                         context_morphology_missing = False
+                        decision_context_matched = bool(
+                            final_stage1_plan and not anaphoric_context
+                            and len(context_ids) == 1
+                            and any({"lexical:source_independent_decision_choice",
+                                     "lexical:source_independent_decision_timing"}
+                                    & set(nucleus_index[nid].semantic_frame.attribute_codes)
+                                    for nid in move.target_nucleus_ids)
+                            and _body_inverse_current_material_group(
+                                body, witness, parsed_sentence, move, plan, resolver, selected_subjective_input)
+                        )
                         context_nominal = None
                         if final_stage1_plan and not anaphoric_context:
                             try:
@@ -3265,6 +3310,7 @@ def evaluate_grounded_surface_body_inverse(
                                 )
                                 or (
                                     not anaphoric_context
+                                    and not decision_context_matched
                                     and not any(
                                         source_value in context_match_text
                                         for source_value in context_values

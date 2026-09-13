@@ -2648,6 +2648,21 @@ def _source_bound_current_cognition(
     nucleus = nucleus_index[binding.nucleus_ids[0]]
     frame = nucleus.semantic_frame
     attributes = set(frame.attribute_codes)
+    if (nucleus.kind == frame.predicate_kind == "uncertainty"
+        and frame.actor == "current_user" and frame.modality == "uncertain"
+        and frame.time_scope == "present" and nucleus.source_fields == ("memo",)
+        and nucleus.grounding_kind == "explicit" and nucleus.retention == "required"
+        and len(nucleus.source_span_ids) == 1 and binding.evidence_span_ids == nucleus.source_span_ids
+        and {"lexical:preserve_source_predicate", "semantic_role:limiting_unknown"} <= attributes):
+        from emlis_ai_grounded_observation_plan import _source_independent_decision_clause_parts
+        span = resolver.resolve(nucleus.source_span_ids[0])
+        clause = str(span.raw_text)
+        proof = _source_independent_decision_clause_parts(clause)
+        if (span.source_field == "memo" and proof is not None
+            and "lexical:source_independent_decision_" + proof[0] in attributes
+            and frame.polarity == ("neutral" if proof[0] == "choice" else "negative")):
+            clause = re.sub(r"迷っています$", "迷っている", clause)
+            return re.sub(r"決められません$", "決められない", clause)
     if (nucleus.kind == frame.predicate_kind == "change"
         and (frame.actor, frame.modality, frame.polarity, frame.time_scope)
             == ("current_user", "fact", "mixed", "current_input")

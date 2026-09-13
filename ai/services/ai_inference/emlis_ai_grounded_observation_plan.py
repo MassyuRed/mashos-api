@@ -6726,6 +6726,9 @@ def _source_current_material_group(nuclei, relations):
     An appraisal pair keeps its required source contrast; it does not use
     the independent pairs' relation-free nominalization contract.
     """
+    decisions = _source_independent_decision_group(nuclei, relations)
+    if decisions:
+        return decisions
     appraisal = _source_appraisal_contrast_group(nuclei, relations)
     if appraisal:
         return appraisal
@@ -11860,6 +11863,20 @@ def _final_stage1_normalize_relation_authority(
         )
         relation_type = relation.type
         if (
+            left_fields == right_fields == {"memo"}
+            and relation.type == "uncertain_connection"
+            and relation.source_relation_ids == ("whole_input_source_order",)
+            and relation.source_meaning_arc_keys == ("whole_input:source_order",)
+            and set(relation.source_span_ids) == set((*left.source_span_ids, *right.source_span_ids))
+            and "lexical:source_independent_decision_choice" in left.semantic_frame.attribute_codes
+            and "lexical:source_independent_decision_timing" in right.semantic_frame.attribute_codes
+        ):
+            # A continuation verb under a choice host cannot promote source
+            # order into an asserted relation to an explicitly separate item.
+            # Keep the edge as context and both source duties as required.
+            grounding_kind = "bounded_structural_inference"
+            retention = "should" if retention == "required" else retention
+        elif (
             cross_field and left_fields == {"memo"} and right_fields == {"memo_action"}
             and relation.type in {"contrast", "shift_from_to", "action_supports_change"}
             and relation.grounding_kind == "bounded_structural_inference" and retention != "required"
@@ -12870,6 +12887,9 @@ def project_final_stage1_grounded_observation_plan(
     projected_nuclei = _final_source_appraisal_contrast_nuclei(
         projected_nuclei, evidence_spans, normalized_input,
     )
+    projected_nuclei = _final_source_independent_decision_nuclei(
+        projected_nuclei, evidence_spans, normalized_input,
+    )
     relations, nuclei = _final_stage1_typed_relations(
         plan,
         _final_source_current_material_nuclei(
@@ -13229,6 +13249,99 @@ def _source_temporal_material_group(nuclei, relations):
     return (*current, *unknown, *actions)
 
 
+def _source_independent_decision_clause_parts(fragment: str):
+    """Keep the choice and the start-of-consideration time under their hosts.
+
+    Closed noun and finite-verb slots cannot swallow another subject,
+    reporting predicate or conditional. The proposed act is not performed;
+    inability to choose a time does not establish a decision to change.
+    """
+    stem = r"[一-鿿々]+"
+    continuative = r"[いきぎしちにびみりえけげせてねべめれ]"
+    finite = stem + r"(?:う|く|ぐ|す|つ|ぬ|ぶ|む|[いきぎしちにびみりえけげせてねべめれあかがさたなばまらおこごそとのぼもろ]?る)"
+    verb = r"(?:" + stem + continuative + r")?" + finite
+    noun = r"[一-鿿々ァ-ヶー]+"
+    nominal = (r"(?:今の|現在の|この|その|あの|新しい|別の)?(?:" + verb + r")?"
+               + noun + r"(?:の" + noun + r"){0,2}")
+    proposal = r"(?:" + nominal + r"を)?" + verb
+    if _top_level_text(fragment) != fragment:
+        return None
+    choice = re.fullmatch(r"(?P<object>" + proposal + r")か(?P<host>迷って(?:いる|います))", fragment)
+    timing = re.fullmatch(r"それとは別に[、,]?(?P<object>(?P<proposal>" + proposal
+        + r")ことを(?P<consideration>考え始める)(?P<time>時期))(?:も|は|が)"
+          r"(?P<host>決められない|決められません)", fragment)
+    match = choice or timing
+    if match is None:
+        return None
+    role = "choice" if choice else "timing"
+    return role, tuple((name, *match.span(name)) for name in match.groupdict())
+
+
+def _final_source_independent_decision_nuclei(nuclei, evidence_spans, normalized_input):
+    """Recognize two explicitly separate unresolved objects before sealing."""
+    if normalized_input is None:
+        return nuclei
+    spans = {s.span_id: s for s in evidence_spans}
+    memo = tuple(n for n in nuclei if n.source_fields == ("memo",))
+    if len(memo) != 2 or any(len(n.source_span_ids) != 1 or n.source_span_ids[0] not in spans for n in memo):
+        return nuclei
+    ordered = sorted(memo, key=lambda n: spans[n.source_span_ids[0]].start_index)
+    a, b = (spans[n.source_span_ids[0]] for n in ordered)
+    source = str(normalized_input.get("memo") or "")
+    proofs = tuple(_source_independent_decision_clause_parts(s.raw_text) for s in (a, b))
+    if (tuple(p[0] if p else None for p in proofs) != ("choice", "timing")
+        or any(n.retention != "required" or n.grounding_kind != "explicit"
+               or n.allowed_claim_scope != "explicit_current_input" or n.semantic_frame.actor != "current_user"
+               or n.kind not in {"event", "state", "action", "uncertainty"}
+               or n.semantic_frame.modality not in {"fact", "uncertain"}
+               or n.semantic_frame.time_scope not in {"present", "current_input", "continuing"}
+               or any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:", "semantic_dependency:"))
+                      for c in n.semantic_frame.attribute_codes) for n in ordered)
+        or _top_level_text(source) != source or re.search(r"[?？!！…‥\r\n]", source)
+        or any(s.source_field != "memo" or not 0 <= s.start_index < s.end_index <= len(source)
+               or source[s.start_index:s.end_index] != s.raw_text for s in (a, b))
+        or source[:a.start_index].strip()
+        or not re.fullmatch(r"\s*[。．.]\s*", source[a.end_index:b.start_index])
+        or not re.fullmatch(r"\s*[。．.]?\s*", source[b.end_index:])):
+        return nuclei
+    replacements = {}
+    for n, (role, parts) in zip(ordered, proofs):
+        provenance = tuple(c for c in n.semantic_frame.attribute_codes
+                           if c.startswith(("semantic_analyzer:", "detected_type:", "source_claim:")))
+        replacements[n.nucleus_id] = replace(n, kind="uncertainty", semantic_frame=replace(
+            n.semantic_frame, predicate_kind="uncertainty", modality="uncertain",
+            polarity="neutral" if role == "choice" else "negative", time_scope="present",
+            attribute_codes=tuple(_dedupe((*provenance, "operator:uncertainty",
+                "semantic_role:limiting_unknown", "time_scope:present",
+                *(("operator:negation",) if role == "timing" else ()),
+                "lexical:source_independent_decision_" + role,
+                "lexical:preserve_source_predicate", "lexical:no_new_sensation_family",
+                *(f"source_decision_scope:{name}:{start}:{end}" for name, start, end in parts))))))
+    return tuple(replacements.get(n.nucleus_id, n) for n in nuclei)
+
+
+def _source_independent_decision_group(nuclei, relations):
+    text = tuple(n for n in nuclei if set(n.source_fields) & _TEXT_SOURCE_FIELDS)
+    choice = tuple(n for n in text if "lexical:source_independent_decision_choice" in n.semantic_frame.attribute_codes)
+    timing = tuple(n for n in text if "lexical:source_independent_decision_timing" in n.semantic_frame.attribute_codes)
+    if len(choice) != 1 or len(timing) != 1 or len(text) not in {2, 3}:
+        return ()
+    if (any(n.source_fields != ("memo",) or n.retention != "required" or n.grounding_kind != "explicit"
+            or n.allowed_claim_scope != "explicit_current_input" or n.semantic_frame.actor != "current_user"
+            or n.kind != n.semantic_frame.predicate_kind or n.kind != "uncertainty"
+            or n.semantic_frame.modality != "uncertain" or n.semantic_frame.time_scope != "present"
+            for n in (*choice, *timing))
+        or (choice[0].semantic_frame.polarity, timing[0].semantic_frame.polarity) != ("neutral", "negative")
+        or any(r.retention == "required" or r.type != "uncertain_connection" for r in relations
+               if {r.from_nucleus_id, r.to_nucleus_id} & {n.nucleus_id for n in text})):
+        return ()
+    actions = tuple(n for n in text if n not in (*choice, *timing))
+    if any(n.source_fields != ("memo_action",) or n.retention != "required"
+           or n.semantic_frame.actor != "current_user" or not source_proven_performed_action_status(n) for n in actions):
+        return ()
+    return (*choice, *timing, *actions)
+
+
 def _source_appraisal_contrast_parts(first: str, second: str) -> bool:
     """Two finite appraisal hosts; neither establishes an action or owner.
 
@@ -13330,7 +13443,7 @@ def _source_appraisal_contrast_group(nuclei, relations):
 def _source_material_allows_reverse(group):
     return bool(group and set(group[1].semantic_frame.attribute_codes) & {
         "lexical:source_current_material_qualification", "lexical:source_temporal_causal_unknown",
-        "lexical:source_appraisal_alternative"})
+        "lexical:source_appraisal_alternative", "lexical:source_independent_decision_timing"})
 
 
 def _source_coexisting_feelings_and_tentative_target(first: str, second: str) -> bool:

@@ -7893,11 +7893,20 @@ def source_explicit_epistemic_unknown_object_ref(premeaning_inputs, disposition)
         if len(qualifiers) != 1:
             continue
         codes = set(qualifiers[0].qualifier_refs)
+        # The source's unresolved choice is affirmative progressive, not a
+        # negation. Keep that polarity while binding its separate UNKNOWN to
+        # the same complete finite source object. A neutral label alone is
+        # insufficient; the thread adapter also checks the original span.
+        from emlis_ai_grounded_observation_plan import _source_independent_decision_clause_parts
+        decision = _source_independent_decision_clause_parts(node.value)
+        expected_polarity = ("polarity:neutral" if decision is not None
+                             and decision[0] == "choice" and "polarity:neutral" in codes
+                             else "polarity:negative")
         if (len(codes) != len(qualifiers[0].qualifier_refs)
             or any({v for v in codes if v.startswith(axis + ":")} != {expected}
                    for axis, expected in (("actor", "actor:current_user"),
                                           ("modality", "modality:uncertain"),
-                                          ("polarity", "polarity:negative")))
+                                          ("polarity", expected_polarity)))
             or {v for v in codes if v.startswith("time_scope:")} not in
                 ({"time_scope:present"}, {"time_scope:current_input"})):
             continue

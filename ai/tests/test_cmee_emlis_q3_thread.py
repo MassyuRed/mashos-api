@@ -2077,3 +2077,181 @@ def test_appraisal_contrast_inverse_rejects_changed_evaluation_relation_and_acti
                 assert not independent(out.artifact.text.replace(original, original.replace(old, new))), (section, old)
         second = memo.rstrip('。').split('。でも')[1]
         assert not independent(out.artifact.text.replace(original, original.replace(second, '')))
+
+
+# An unresolved choice and an independently unresolved time for starting
+# consideration keep their nested objects. Neither proposal is performed.
+INDEPENDENT_DECISION_MEMOS = (
+    '今の教材を使うか迷っている。それとは別に、通う時間を変えることを考え始める時期も決められない。',
+    '今の講座を続けるか迷っています。それとは別に、読む資料を替えることを考え始める時期は決められません。',
+)
+
+
+@pytest.mark.parametrize('memo', INDEPENDENT_DECISION_MEMOS)
+@pytest.mark.parametrize('action', ['', 'お茶を飲んだ。'])
+@pytest.mark.parametrize('q3', [False, True])
+def test_independent_decision_preserves_two_unknown_objects_and_separate_action(memo, action, q3):
+    import emlis_ai_grounded_observation_plan as gp
+    req = (begin if q3 else initial)(memo, action)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    group = gp._source_independent_decision_group(plan.nuclei, plan.relations)
+    assert len(group) == 2 + bool(action)
+    assert [n.kind for n in group[:2]] == ['uncertainty', 'uncertainty']
+    assert [n.semantic_frame.modality for n in group[:2]] == ['uncertain', 'uncertain']
+    assert [n.semantic_frame.polarity for n in group[:2]] == ['neutral', 'negative']
+    limits = [u for u in plan.unknown_boundaries if u.dimension == 'source_explicit_epistemic_limit']
+    assert len(limits) == 2
+    assert {(u.affected_nucleus_ids, u.evidence_span_ids, u.surface_policy) for u in limits} == {
+        ((n.nucleus_id,), n.source_span_ids, 'hedge_only') for n in group[:2]}
+    assert not plan.coverage_requirements.required_relation_ids
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == 1 + bool(action)
+    assert (moves[0].target_nucleus_ids, moves[0].support_nucleus_ids) == (
+        (group[0].nucleus_id,), (group[1].nucleus_id,))
+    if action:
+        assert moves[1].target_nucleus_ids == (group[2].nucleus_id,)
+        assert not moves[1].support_nucleus_ids
+    direct = realize_emlis_thread_body(prepared)
+    engine = MeaningExperienceEngine()
+    checkpoint = engine.prepare_emlis_update(req)
+    actual = engine.generate(replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id)))
+    assert direct.artifact and actual.artifact, (direct.reason_codes, actual.reason_codes)
+    assert actual.question is None
+    hosts = memo.rstrip('。').replace('迷っています', '迷っている').replace('決められません', '決められない').split('。')
+    for artifact in (direct.artifact, actual.artifact):
+        for section in (artifact.observation, artifact.reception):
+            assert all(host in section for host in hosts)
+            assert section.index(hosts[0]) < section.index(hosts[1])
+        assert bool('お茶を飲んだ' in artifact.reception) == bool(action)
+        if action:
+            assert '。' in artifact.reception[artifact.reception.index(hosts[1]) + len(hosts[1]):artifact.reception.index('お茶を飲んだ')]
+        assert not any(x in artifact.text for x in ('迷っていますこと', '決められませんこと', '使いました', '続けました', '変える時期', '替える時期'))
+
+
+@pytest.mark.parametrize('q3', [False, True])
+@pytest.mark.parametrize('focus', [0, 1, 2])
+def test_independent_decision_keeps_explicit_focus_and_independence(monkeypatch, q3, focus):
+    import emlis_ai_grounded_observation_plan as gp
+    req = _current_material_with_requested_focus(monkeypatch, INDEPENDENT_DECISION_MEMOS[1], 'お茶を飲んだ。', q3, focus)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    group = gp._source_independent_decision_group(plan.nuclei, plan.relations)
+    expected = group[focus].nucleus_id
+    assert plan.response_plan.human_follow_target_ids == (expected,)
+    assert plan.response_plan.human_reception_plan.moves[0].target_nucleus_ids == (expected,)
+    direct = realize_emlis_thread_body(prepared)
+    engine = MeaningExperienceEngine()
+    checkpoint = engine.prepare_emlis_update(req)
+    actual = engine.generate(replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id)))
+    assert direct.artifact and actual.artifact, (direct.reason_codes, actual.reason_codes)
+    for artifact in (direct.artifact, actual.artifact):
+        follow = artifact.reception
+        first = '今の講座を続けるか迷っている'
+        second = '読む資料を替えることを考え始める時期は決められない'
+        assert all(part in follow for part in (first, second, 'お茶を飲んだ'))
+        if focus == 1:
+            assert second + 'ことと、それとは別に、' + first in follow
+        else:
+            assert first + 'ことと、それとは別に、' + second in follow
+
+
+@pytest.mark.parametrize('memo', [
+    '弟が教材を使うか迷っている。それとは別に、通う時間を変えることを考え始める時期も決められない。',
+    '弟の教材を使うか迷っている。それとは別に、弟が通う時間を変えることを考え始める時期も決められない。',
+    '「今の教材を使うか迷っている。それとは別に、通う時間を変えることを考え始める時期も決められない」と聞いた。',
+    '今の教材を使うか迷っていると思った。それとは別に、通う時間を変えることを考え始める時期も決められない。',
+    '今の教材を使うか迷っていた。それとは別に、通う時間を変えることを考え始める時期も決められない。',
+    '今の教材を使うことにした。それとは別に、通う時間を変えることを考え始める時期も決められない。',
+    '今の教材を使うか迷っている。それとは別に、通う時間を変える時期も決められない。',
+    '今の教材を使うか迷っている。それとは別に、通う時間を変えることを考え始めた時期も決められない。',
+    '今の教材を使うか迷っている。それとは別に、通う時間を変えることを考え始める時期も決められなかった。',
+    '今の教材を使うか迷っている。それとは別に、通う時間を変えることを考え始める時期も決められないと弟は言った。',
+    '今の教材を使うか迷っている。それとは別に、聞かれたら帰ることを考え始める時期も決められない。',
+    '今の教材を使うか迷っている。それとは別に、通う時間を変えることを考え始める時期も…',
+    '今の教材を使うか迷っている。それとは別に、通う時間を変えることを考え始める時期も決められない。昼寝した。',
+    '今の教材を使うか迷っている。だから通う時間を変えることを考え始める時期も決められない。',
+])
+def test_independent_decision_does_not_promote_other_owners_hosts_or_timing(memo):
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(memo, 'お茶を飲んだ。')))
+    assert not any('lexical:source_independent_decision_choice' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('memo', INDEPENDENT_DECISION_MEMOS)
+def test_independent_decision_inverse_rejects_changed_host_nested_scope_and_action(memo):
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    prepared = prepare_emlis_meaning(begin(memo, 'お茶を飲んだ。'))
+    plan = build_updated_grounded_plan(prepared)
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact, out.reason_codes
+    resolver = prepared.thread.resolver()
+    sentence = surface.build_grounded_sentence_plan(plan, resolver)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    def independent(body):
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan',
+                   return_value=SimpleNamespace(text=out.artifact.reception)), patch(
+                   'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses',
+                   side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(body=body.encode(), plan=plan,
+                sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert independent(out.artifact.text)
+    for section in ('observation', 'reception'):
+        original = getattr(out.artifact, section)
+        for old, new in (('か迷っている', 'ことに決めた'), ('迷っている', '迷っていた'),
+                         ('決められない', '決められる'), ('決められない', '決められなかった'),
+                         ('ことを考え始める時期', '時期'), ('考え始める', '考え始めた'),
+                         ('それとは別に、', 'そのため、'), ('それとは別に、', ''),
+                         ('お茶を飲んだ', 'お茶を飲まなかった')):
+            assert old in original
+            assert not independent(out.artifact.text.replace(original, original.replace(old, new))), (section, old)
+
+
+@pytest.mark.parametrize('memo', INDEPENDENT_DECISION_MEMOS)
+def test_independent_decision_neutral_unknown_carrier_requires_complete_host_and_owner(memo):
+    from cocolon_meaning_experience_engine import contracts as c
+    prepared = prepare_emlis_meaning(begin(memo))
+    pre = project_thread_meaning(prepared, build_updated_grounded_plan(prepared)).premeaning
+    unknowns = [d for d in pre.grounded_graph.owner_dispositions if d.target_unknown_ref]
+    assert len(unknowns) == 2
+    for unknown in unknowns:
+        ref = c.source_explicit_epistemic_unknown_object_ref(pre, unknown)
+        assert ref is not None
+        qualifier, = (q for q in pre.source_qualifier_rows if q.node_ref == ref)
+        for extra in ('actor:other', 'time_scope:past', 'modality:asserted', 'polarity:positive'):
+            changed = replace(qualifier, qualifier_refs=qualifier.qualifier_refs + (extra,))
+            assert c.source_explicit_epistemic_unknown_object_ref(replace(pre, source_qualifier_rows=tuple(
+                changed if q == qualifier else q for q in pre.source_qualifier_rows)), unknown) is None
+        if 'polarity:neutral' in qualifier.qualifier_refs:
+            node, = (n for n in pre.grounded_graph.nodes if c._graph_object_ref(n) == ref)
+            for value in ('迷っている', node.value.replace('迷っている', '決めた').replace('迷っています', '決めました'),
+                          '弟が' + node.value):
+                graph = replace(pre.grounded_graph, nodes=tuple(
+                    replace(n, value=value) if n == node else n for n in pre.grounded_graph.nodes))
+                assert c.source_explicit_epistemic_unknown_object_ref(replace(pre, grounded_graph=graph), unknown) is None
+
+
+@pytest.mark.parametrize('focus', [0, 1])
+def test_independent_decision_ir_cannot_swap_roles_or_promote_proposed_actions(monkeypatch, focus):
+    import emlis_ai_grounded_human_reception as hr
+    req = _current_material_with_requested_focus(monkeypatch, INDEPENDENT_DECISION_MEMOS[1], '', True, focus)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    reception = plan.response_plan.human_reception_plan
+    ir = hr._project_source_grounded_reception_move_realization(reception, reception.moves[0],
+        {n.nucleus_id: n for n in plan.nuclei}, prepared.thread.resolver(),
+        plan=plan, recovery_stage='full', clause_form='FINITE')
+    assert hr._source_current_material_group_ir_text(ir)
+    mutations = [replace(ir, modality='fact'), replace(ir, polarity='mixed'),
+        replace(ir, context_slots=()), replace(ir, semantic_fragments=tuple(reversed(ir.semantic_fragments))),
+        replace(ir, nominalization_plan=(*ir.nominalization_plan[:-1], 'source-independent-decision:' + ('1:0' if focus == 0 else '0:1')))]
+    for slot, profile in enumerate(ir.semantic_profiles):
+        for changes in ({'actor_kind': 'OTHER'}, {'performed_action': True}, {'future_action': True},
+                        {'quoted_boundary': True}, {'modality': 'fact'}):
+            mutations.append(replace(ir, semantic_profiles=tuple(
+                replace(p, **changes) if i == slot else p for i, p in enumerate(ir.semantic_profiles))))
+    for bad in mutations:
+        with pytest.raises(hr.GroundedHumanReceptionSurfaceError):
+            hr._source_current_material_group_ir_text(bad)
