@@ -1963,3 +1963,117 @@ def test_provisional_degree_does_not_exempt_assurances_outside_negative_source(m
         result = gate.evaluate_grounded_observation_gate(**{**captured, 'surface_result': changed})
         assert result.public_observation_status == 'rejected'
         assert 'reception_safety_or_resolution_guarantee_added' in result.rejection_reasons
+
+
+# A tentative target appraisal and an explicit evaluation of an alternative
+# retain their contrast. Neither is a new unknown or a performed action.
+APPRAISAL_CONTRAST_MEMOS = (
+    '説明が長かったかもしれない。でも省くのも違う。',
+    '判断が厳しかったかも知れない。でも引き下がるのは違う。',
+)
+
+
+@pytest.mark.parametrize('memo', APPRAISAL_CONTRAST_MEMOS)
+@pytest.mark.parametrize('action', ['', 'お茶を飲んだ。'])
+@pytest.mark.parametrize('q3', [False, True])
+def test_appraisal_contrast_preserves_two_evaluations_and_independent_action(memo, action, q3):
+    import emlis_ai_grounded_observation_plan as gp
+    req = (begin if q3 else initial)(memo, action)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    group = gp._source_appraisal_contrast_group(plan.nuclei, plan.relations)
+    assert len(group) == 2 + bool(action)
+    assert (group[0].semantic_frame.modality, group[1].semantic_frame.modality) == ('uncertain', 'fact')
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == 1 + bool(action)
+    assert (moves[0].target_nucleus_ids, moves[0].support_nucleus_ids) == (
+        (group[0].nucleus_id,), (group[1].nucleus_id,))
+    contrast = next(r for r in plan.relations if r.type == 'contrast')
+    assert contrast.retention == 'required' and contrast.grounding_kind == 'user_stated_relation'
+    assert contrast.relation_id in plan.coverage_requirements.required_relation_ids
+    if action:
+        assert moves[1].target_nucleus_ids == (group[2].nucleus_id,)
+        assert not moves[1].support_nucleus_ids
+    direct = realize_emlis_thread_body(prepared)
+    engine = MeaningExperienceEngine()
+    checkpoint = engine.prepare_emlis_update(req)
+    actual = engine.generate(replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id)))
+    assert direct.artifact and actual.artifact, (direct.reason_codes, actual.reason_codes)
+    assert actual.question is None
+    first, second = memo.rstrip('。').split('。でも')
+    for artifact in (direct.artifact, actual.artifact):
+        assert all(part in section for part in (first, second)
+                   for section in (artifact.observation, artifact.reception))
+        assert bool('お茶を飲んだ' in artifact.reception) == bool(action)
+        assert not any(x in artifact.reception for x in ('結論を急がず', '分からない', 'あなたの説明', 'あなたの判断'))
+
+
+@pytest.mark.parametrize('q3', [False, True])
+@pytest.mark.parametrize('focus', [0, 1, 2])
+def test_appraisal_contrast_respects_existing_explicit_focus(monkeypatch, q3, focus):
+    req = _current_material_with_requested_focus(monkeypatch, APPRAISAL_CONTRAST_MEMOS[0], 'お茶を飲んだ。', q3, focus)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    expected = ('nucleus:s1', 'nucleus:s3', 'nucleus:s4')[focus]
+    assert plan.response_plan.human_follow_target_ids == (expected,)
+    assert plan.response_plan.human_reception_plan.moves[0].target_nucleus_ids == (expected,)
+    direct = realize_emlis_thread_body(prepared)
+    engine = MeaningExperienceEngine()
+    checkpoint = engine.prepare_emlis_update(req)
+    actual = engine.generate(replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id)))
+    assert direct.artifact and actual.artifact, (direct.reason_codes, actual.reason_codes)
+    for part in ('説明が長かったかもしれない', '省くのも違う', 'お茶を飲んだ'):
+        assert part in direct.artifact.reception and part in actual.artifact.reception
+
+
+@pytest.mark.parametrize('memo', [
+    '弟の説明が長かったかもしれない。でも省くのも違う。',
+    '「説明が長かったかもしれない。でも省くのも違う」と聞いた。',
+    '説明が長かったかもしれないと思った。でも省くのも違う。',
+    '説明が長かった。でも省くのも違う。',
+    '説明が長かったかもしれない。でも省くのも違うかもしれない。',
+    '説明が長かったかもしれない。でも省くのも違った。',
+    '説明が長かったかもしれない。でも省くのも…',
+    '説明が長かったかもしれない。でも省くのも違う。転居の時期も迷う。',
+    '説明が長かったかもしれない。でも省くのも違うと弟は言った。',
+    '説明が長かったかもしれない。でも弟は省くのも違うと思う。',
+    '声が高かったかもしれない。でも友人が断るのも違う。',
+    '声が高かったかもしれない。でも彼が受け入れるのも違う。',
+    '声が高かったかもしれない。でも聞かれたら帰るのも違う。',
+    '彼の声が高かったかもしれない。でも黙って受け入れるのも違う。',
+])
+def test_appraisal_contrast_does_not_promote_other_hosts_or_incomplete_material(memo):
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(memo, 'お茶を飲んだ。')))
+    assert not any('lexical:source_appraisal_tentative' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('memo', APPRAISAL_CONTRAST_MEMOS)
+def test_appraisal_contrast_inverse_rejects_changed_evaluation_relation_and_action(memo):
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    prepared = prepare_emlis_meaning(begin(memo, 'お茶を飲んだ。'))
+    plan = build_updated_grounded_plan(prepared)
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact, out.reason_codes
+    resolver = prepared.thread.resolver()
+    sentence = surface.build_grounded_sentence_plan(plan, resolver)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    def independent(body):
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan',
+                   return_value=SimpleNamespace(text=out.artifact.reception)), patch(
+                   'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses',
+                   side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(body=body.encode(), plan=plan,
+                sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert independent(out.artifact.text)
+    for section in ('observation', 'reception'):
+        original = getattr(out.artifact, section)
+        for old, new in (('かもしれない', ''), ('かも知れない', ''), ('違う', '同じだ'),
+                         ('違う', '違った'), ('違う', '違わない'), ('との違い', 'が原因'),
+                         ('お茶を飲んだ', 'お茶を飲まなかった')):
+            if old in original:
+                assert not independent(out.artifact.text.replace(original, original.replace(old, new))), (section, old)
+        second = memo.rstrip('。').split('。でも')[1]
+        assert not independent(out.artifact.text.replace(original, original.replace(second, '')))

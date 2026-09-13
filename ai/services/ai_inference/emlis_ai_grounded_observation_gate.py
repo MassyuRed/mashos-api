@@ -2558,6 +2558,16 @@ def evaluate_grounded_surface_body_inverse(
                 ):
                     failures.append(f"body_inverse_observation_source_anchor_incomplete:{index}")
         required_kinds = {item.kind for item in required_nuclei}
+        # Each finite appraisal retains its complete host independently of
+        # the other layer. A surviving adjective must not stand in for a
+        # deleted tentative host, nor a verb for its nominalized evaluation.
+        for nucleus in required_nuclei:
+            if final_stage1_plan and {"lexical:source_appraisal_tentative",
+                    "lexical:source_appraisal_alternative"} & set(nucleus.semantic_frame.attribute_codes):
+                source_values = _body_inverse_nucleus_source_values(nucleus.nucleus_id, plan, resolver)
+                if not source_values or any(not any(value in quote for quote in normalized_quote_texts)
+                                            for value in source_values):
+                    failures.append(f"body_inverse_appraisal_host_incomplete:{index}")
         if getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1":
             visible_line = _body_inverse_visible_text(body, parsed_line)
             for nucleus in required_nuclei:

@@ -6723,7 +6723,12 @@ def _source_current_material_group(nuclei, relations):
     and a tentative target judgment are separate objects, not an inferred
     cause or an answer to the uncertainty. Selection consumes body-free
     witnesses established before the graph and meanings are sealed.
+    An appraisal pair keeps its required source contrast; it does not use
+    the independent pairs' relation-free nominalization contract.
     """
+    appraisal = _source_appraisal_contrast_group(nuclei, relations)
+    if appraisal:
+        return appraisal
     temporal = _source_temporal_material_group(nuclei, relations)
     if temporal:
         return temporal
@@ -7190,8 +7195,10 @@ def build_grounded_reception_opportunities(
         and safety_kind == TRIAGE_SAFE_OBSERVATION
         and material_quality in {"grounded", "limited_grounding"}
     ) else ()
+    # Whole-source group duties are already fixed. The compatibility flag
+    # controls inferred relation support, not retention of these duties.
     current_material_group = _source_current_material_group(owned_nuclei, relations) if (
-        final_source_fidelity and include_relation_support
+        final_source_fidelity
         and safety_kind == TRIAGE_SAFE_OBSERVATION
         and material_quality in {"grounded", "limited_grounding"}
     ) else ()
@@ -7912,7 +7919,7 @@ def build_grounded_human_reception_plan(
         legacy_primary_act=primary_act,
         legacy_reference_mode=reference_mode,
         current_material_group=(_source_current_material_group(available_nuclei, relations) if (
-            final_source_fidelity and include_relation_support
+            final_source_fidelity
             and safety_kind == TRIAGE_SAFE_OBSERVATION
             and material_quality in {"grounded", "limited_grounding"}
         ) else ()),
@@ -12064,8 +12071,9 @@ def _final_stage1_unknown_boundaries(
         # A source-proven tentative judgment keeps its uncertain modality
         # and literal hedge. It does not assert an extra unknowable object.
         # Existing boundaries above and genuine cognitive limits stay intact.
-        and "lexical:source_current_material_qualification"
-        not in row.semantic_frame.attribute_codes
+        and not {"lexical:source_current_material_qualification",
+                 "lexical:source_appraisal_tentative"}
+        & set(row.semantic_frame.attribute_codes)
     )
     next_index = len(expanded) + 1
     for nucleus in explicitly_unknown:
@@ -12859,6 +12867,9 @@ def project_final_stage1_grounded_observation_plan(
     projected_nuclei = _final_source_temporal_material_nuclei(
         projected_nuclei, evidence_spans, normalized_input,
     )
+    projected_nuclei = _final_source_appraisal_contrast_nuclei(
+        projected_nuclei, evidence_spans, normalized_input,
+    )
     relations, nuclei = _final_stage1_typed_relations(
         plan,
         _final_source_current_material_nuclei(
@@ -13218,9 +13229,108 @@ def _source_temporal_material_group(nuclei, relations):
     return (*current, *unknown, *actions)
 
 
+def _source_appraisal_contrast_parts(first: str, second: str) -> bool:
+    """Two finite appraisal hosts; neither establishes an action or owner.
+
+    A noun target and an inflected adjective stay under the tentative host.
+    A finite verb clause stays under the second, nominalized evaluation.
+    These closed slots cannot consume reports, extra subjects or clauses.
+    """
+    stem = r"[一-鿿々]+"
+    continuative = r"(?:い|き|ぎ|し|ち|に|び|み|り|え|け|げ|せ|て|ね|べ|め|れ)"
+    noun = stem + r"(?:" + continuative + r"方)?"
+    adjective = r"[一-鿿々]+し?(?:い|かった|くなかった)"
+    te_form = stem + r"(?:って|いて|いで|して|んで|えて|けて|げて|せて|てて|ねて|べて|めて|れて)"
+    finite = stem + r"(?:う|く|ぐ|す|つ|ぬ|ぶ|む|[いきぎしちにびみりえけげせてねべめれあかがさたなばまらおこごそとのぼもろ]?る)"
+    verb = r"(?:" + te_form + r")?(?:" + stem + continuative + r")?" + finite
+    return bool(
+        _top_level_text(first) == first and _top_level_text(second) == second
+        and re.fullmatch(noun + r"(?:が|は)" + adjective + r"かも(?:しれ|知れ)ない", first)
+        and re.fullmatch(verb + r"の(?:も|は)違う", second)
+        and not re.search(r"(?:と言|と思|という|らしい|そうだ|ようだ)", second)
+    )
+
+
+def _final_source_appraisal_contrast_nuclei(nuclei, evidence_spans, normalized_input):
+    """Prove the complete adjacent source hosts before meanings are sealed.
+
+    The optional connector remains relation evidence. No personal ownership,
+    feeling, intent, performed action, or extra unknown object is inferred.
+    """
+    if normalized_input is None:
+        return nuclei
+    memo = tuple(n for n in nuclei if n.source_fields == ("memo",))
+    spans = {s.span_id: s for s in evidence_spans}
+    if len(memo) != 3 or any(len(n.source_span_ids) != 1 or n.source_span_ids[0] not in spans for n in memo):
+        return nuclei
+    left, connector, right = sorted(memo, key=lambda n: spans[n.source_span_ids[0]].start_index)
+    a, c, b = (spans[n.source_span_ids[0]] for n in (left, connector, right))
+    source = str(normalized_input.get("memo") or "")
+    if (any(n.retention != "required" or n.grounding_kind != "explicit"
+            or n.allowed_claim_scope != "explicit_current_input" or n.semantic_frame.actor != "current_user"
+            or n.kind != n.semantic_frame.predicate_kind or n.kind not in {"event", "state"}
+            or n.semantic_frame.time_scope not in {"present", "current_input"}
+            or n.semantic_frame.polarity != "neutral"
+            or any(code.startswith(("source_fragment_", "surface_scalar_", "thread_time:"))
+                   for code in n.semantic_frame.attribute_codes) for n in (left, right))
+        or left.semantic_frame.modality not in {"uncertain", "fact"}
+        or right.semantic_frame.modality != "fact"
+        or connector.retention != "optional" or connector.kind != "other_explicit"
+        or connector.grounding_kind != "user_stated_relation"
+        or connector.allowed_claim_scope != "source_bounded_relation"
+        or c.raw_text not in {"でも", "しかし"}
+        or _top_level_text(source) != source or re.search(r"[?？!！…‥\r\n]", source)
+        or any(s.source_field != "memo" or not 0 <= s.start_index < s.end_index <= len(source)
+               or source[s.start_index:s.end_index] != s.raw_text for s in (a, c, b))
+        or source[:a.start_index].strip()
+        or not re.fullmatch(r"\s*[。．.]\s*", source[a.end_index:c.start_index])
+        or not re.fullmatch(r"\s*[、,]?\s*", source[c.end_index:b.start_index])
+        or not re.fullmatch(r"\s*[。．.]?\s*", source[b.end_index:])
+        or not _source_appraisal_contrast_parts(a.raw_text, b.raw_text)):
+        return nuclei
+    markers = {left.nucleus_id: "tentative", right.nucleus_id: "alternative"}
+    return tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+        modality="uncertain" if n == left else n.semantic_frame.modality,
+        attribute_codes=tuple(_dedupe((*n.semantic_frame.attribute_codes,
+            *(("operator:uncertainty",) if n == left else ()),
+            "lexical:source_appraisal_" + markers[n.nucleus_id],
+            "lexical:preserve_source_predicate", "lexical:no_new_sensation_family")))))
+        if n.nucleus_id in markers else n for n in nuclei)
+
+
+def _source_appraisal_contrast_group(nuclei, relations):
+    text = tuple(n for n in nuclei if set(n.source_fields) & _TEXT_SOURCE_FIELDS)
+    left = tuple(n for n in text if "lexical:source_appraisal_tentative" in n.semantic_frame.attribute_codes)
+    right = tuple(n for n in text if "lexical:source_appraisal_alternative" in n.semantic_frame.attribute_codes)
+    if len(left) != 1 or len(right) != 1:
+        return ()
+    first, second = left[0], right[0]
+    memo = tuple(n for n in text if n.source_fields == ("memo",))
+    connectors = tuple(n for n in memo if n not in (first, second))
+    actions = tuple(n for n in text if n.source_fields == ("memo_action",))
+    contrast = tuple(r for r in relations if r.type == "contrast"
+        and (r.from_nucleus_id, r.to_nucleus_id) == (first.nucleus_id, second.nucleus_id)
+        and r.retention == "required" and r.grounding_kind == "user_stated_relation")
+    if (len(connectors) > 1 or len(actions) > 1 or len(text) != 2 + len(connectors) + len(actions)
+        or len(contrast) != 1 or any(n.retention != "optional" for n in connectors)
+        or any(n.retention != "required" or n.source_fields != ("memo",)
+               or n.grounding_kind != "explicit" or n.allowed_claim_scope != "explicit_current_input"
+               or n.kind != n.semantic_frame.predicate_kind or n.kind not in {"event", "state"}
+               or n.semantic_frame.actor != "current_user" or n.semantic_frame.polarity != "neutral"
+               or n.semantic_frame.time_scope not in {"present", "current_input"} for n in (first, second))
+        or (first.semantic_frame.modality, second.semantic_frame.modality) != ("uncertain", "fact")
+        or any(r != contrast[0] and (r.retention == "required" or r.type != "uncertain_connection")
+               for r in relations if {r.from_nucleus_id, r.to_nucleus_id} & {n.nucleus_id for n in text})
+        or any(n.retention != "required" or n.semantic_frame.actor != "current_user"
+               or not source_proven_performed_action_status(n) for n in actions)):
+        return ()
+    return (first, second, *actions)
+
+
 def _source_material_allows_reverse(group):
     return bool(group and set(group[1].semantic_frame.attribute_codes) & {
-        "lexical:source_current_material_qualification", "lexical:source_temporal_causal_unknown"})
+        "lexical:source_current_material_qualification", "lexical:source_temporal_causal_unknown",
+        "lexical:source_appraisal_alternative"})
 
 
 def _source_coexisting_feelings_and_tentative_target(first: str, second: str) -> bool:
