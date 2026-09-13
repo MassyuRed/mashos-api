@@ -1805,7 +1805,7 @@ def _body_inverse_finite_contrast_attention(raw, relation, move, plan, resolver,
             and re.search(r"(?:ない|ある|いる|なる|する|[うくぐすつぬぶむるい])$", final))
         if "今" not in target and not ongoing and not sustained:
             prefix = "今も、"
-    expected = prefix + source + "一方で、" + referent + "を見過ごさず、小さくせずに受け止めています。"
+    expected = source + "一方で、" + prefix + referent + "を見過ごさず、小さくせずに受け止めています。"
     return raw == expected
 
 

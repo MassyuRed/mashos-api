@@ -7429,6 +7429,7 @@ def _source_grounded_argument_surface(
     anaphoric_context_object: tuple[int, str] | None = None,
     material_pair_object: bool = False,
     material_contrast_object: bool = False,
+    target_adjunct: str = "",
 ) -> tuple[str, tuple[int, ...], tuple[int, ...]]:
     """Realize bounded heads in one relation clause per endpoint pair."""
 
@@ -7509,6 +7510,7 @@ def _source_grounded_argument_surface(
             )
 
     target_inserted = False
+    target_adjunct_bound = False
 
     def relation_nominal_for_slot(
         semantic_slot: int,
@@ -7685,8 +7687,9 @@ def _source_grounded_argument_surface(
             # Its left finite clause needs no nominal case; the right object
             # remains the full target of attention and burden reception.
             relation_phrases.append(
-                f"{move.semantic_fragments[first.semantic_slot]}一方で、{second_nominal}"
+                f"{move.semantic_fragments[first.semantic_slot]}一方で、{target_adjunct}{second_nominal}"
             )
+            target_adjunct_bound = True
         else:
             relation_phrases.append(
                 f"{first_nominal}{first.case_marker}"
@@ -7714,7 +7717,7 @@ def _source_grounded_argument_surface(
             "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
         )
     return (
-        "、また、".join(phrases),
+        ("" if target_adjunct_bound else target_adjunct) + "、また、".join(phrases),
         tuple(sorted(appended_semantic_slots)),
         tuple(appended_relation_slots),
     )
@@ -8631,6 +8634,9 @@ def _source_grounded_target_np(
             )
     # Record slots only when their direct phrase or relation is appended.
     # The same path also realizes non-relational secondary arguments.
+    adjuncts = _dedupe(
+        adjunct for adjunct in (temporal_adjunct, aspect_adjunct) if adjunct
+    )
     target, semantic_slots, relation_slots = _source_grounded_argument_surface(
         realization,
         target_nominal=content_target,
@@ -8639,13 +8645,8 @@ def _source_grounded_target_np(
         anaphoric_context_object=anaphoric_context_object,
         material_pair_object=material_pair_object,
         material_contrast_object=material_contrast_object,
+        target_adjunct="".join(adjuncts),
     )
-    adjuncts = _dedupe(
-        adjunct
-        for adjunct in (temporal_adjunct, aspect_adjunct)
-        if adjunct
-    )
-    target = f"{''.join(adjuncts)}{target}"
     core = _SourceGroundedClauseCoreV1(
         text=target,
         target_referent=referent_text,
