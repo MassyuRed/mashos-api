@@ -2430,6 +2430,25 @@ def _source_grounded_current_expression_nominal(
     # selected grammar and every participating span here, without relaxing
     # the whole-field punctuation guard for other source expressions.
     codes = set(nucleus.semantic_frame.attribute_codes)
+    if "lexical:source_provisional_degree" in codes:
+        from emlis_ai_grounded_observation_plan import _source_provisional_degree_parts
+        frame = nucleus.semantic_frame
+        if (nucleus.kind == frame.predicate_kind == "change"
+            and (frame.actor, frame.modality, frame.polarity, frame.time_scope)
+                == ("current_user", "fact", "mixed", "current_input")
+            and nucleus.retention == "required" and nucleus.grounding_kind == "explicit"
+            and nucleus.allowed_claim_scope == "explicit_current_input"
+            and nucleus.source_fields == fields == ("memo",)
+            and {"lexical:source_bounded_expression", "lexical:preserve_source_predicate",
+                 "lexical:no_new_sensation_family"} <= codes
+            and not any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:")) for c in codes)
+            and raw == fragment and _source_provisional_degree_parts(fragment) is not None
+            and not any(r.retention == "required" or r.type != "uncertain_connection" for r in plan.relations
+                        if nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id))):
+            # Receive the complete statement, including the present tentative
+            # host and degree negation. Its inner assertion is not a feeling,
+            # performed act, unknown question, or established recovery.
+            return fragment + "という言葉"
     if "lexical:source_nominal_constraint_clause" in codes:
         from emlis_ai_grounded_observation_plan import (
             _source_nominal_constraint_clause_is_bound,

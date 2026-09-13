@@ -1462,7 +1462,31 @@ def _evaluate_reception_gates(
         reasons_by_gate["reception_safety_boundary_gate"].append(
             "reception_identity_claim_accepted"
         )
-    if _RECEPTION_RESOLUTION_GUARANTEE_RE.search(reception_text):
+    # A source-proven negative degree is not a resolution guarantee. Exempt
+    # only the embedded assertion's exact range inside a complete, unchanged
+    # nominal object; added assurances elsewhere are still checked normally.
+    denied_assertion_ranges = []
+    from emlis_ai_grounded_observation_plan import _source_provisional_degree_parts
+    for move in active_moves:
+        if len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids:
+            continue
+        n = nucleus_index.get(move.target_nucleus_ids[0])
+        if (n is None or "lexical:source_provisional_degree" not in n.semantic_frame.attribute_codes
+            or n.source_fields != ("memo",) or len(n.source_span_ids) != 1
+            or move.reception_act != "stay_with_current_burden"):
+            continue
+        source = str(resolver.resolve(n.source_span_ids[0]).raw_text)
+        parts = _source_provisional_degree_parts(source)
+        if parts is None:
+            continue
+        for sentence in re.finditer(r"[^。！？!?]+。", reception_text):
+            match = re.fullmatch(re.escape(source) + r"という言葉を小さくせずに(?:"
+                r"(?:受け止めて|気にかけて)(?:います|いて)|(?:受け止め|気にかけ)たいです)。", sentence.group())
+            if match:
+                denied_assertion_ranges.extend((sentence.start() + start, sentence.start() + end)
+                    for role, start, end, _ in parts if role == "assertion")
+    if any(not any(start <= m.start() and m.end() <= end for start, end in denied_assertion_ranges)
+           for m in _RECEPTION_RESOLUTION_GUARANTEE_RE.finditer(reception_text)):
         reasons_by_gate["reception_safety_boundary_gate"].append(
             "reception_safety_or_resolution_guarantee_added"
         )
@@ -1987,7 +2011,8 @@ def _body_inverse_nominal_constraint_clause(body, sentence, move, plan, resolver
         return False
     nucleus = next((n for n in plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0]), None)
     if (nucleus is None or len(nucleus.source_span_ids) != 1
-        or "lexical:source_nominal_constraint_clause" not in nucleus.semantic_frame.attribute_codes):
+        or not {"lexical:source_nominal_constraint_clause", "lexical:source_provisional_degree"}
+            & set(nucleus.semantic_frame.attribute_codes)):
         return False
     decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None) if selected_subjective_input else None
     proposition = decision.subjective_proposition if decision else None
@@ -2316,6 +2341,7 @@ def evaluate_grounded_surface_body_inverse(
         # This is an exact source obligation, not a quote-free fallback. The
         # writer and this matcher do not share a renderer or its witness.
         direct_cognition = False
+        direct_provisional = False
         binding = planned_line.binding
         if (final_stage1_plan
             and (planned_line.surface_function, binding.claim_scope) in {
@@ -2327,22 +2353,28 @@ def evaluate_grounded_surface_body_inverse(
             if cognition is not None:
                 cf = cognition.semantic_frame
                 codes = set(cf.attribute_codes)
-                if (cognition.kind == cf.predicate_kind == "uncertainty"
+                provisional = bool(cognition.kind == cf.predicate_kind == "change"
+                    and (cf.actor, cf.modality, cf.polarity, cf.time_scope)
+                        == ("current_user", "fact", "mixed", "current_input")
+                    and {"lexical:source_provisional_degree", "lexical:preserve_source_predicate"} <= codes)
+                if ((provisional or (cognition.kind == cf.predicate_kind == "uncertainty"
                     and cf.actor == "current_user" and cf.modality == "uncertain"
                     and cf.polarity == "negative" and cf.time_scope in {"present", "current_input"}
+                    and {"operator:negation", "operator:uncertainty", "semantic_role:limiting_unknown",
+                         "lexical:preserve_source_predicate"} <= codes))
                     and cognition.grounding_kind == "explicit" and cognition.retention == "required"
                     and cognition.source_fields in {("memo",), ("memo_action",)}
                     and len(cognition.source_span_ids) == 1
                     and binding.evidence_span_ids == cognition.source_span_ids
-                    and {"operator:negation", "operator:uncertainty", "semantic_role:limiting_unknown",
-                         "lexical:preserve_source_predicate"} <= codes
                     and not any(code.startswith(("thread_time:", "source_fragment_", "surface_scalar_"))
                                 or code == "semantic_role:embedded_turn" for code in codes)):
                     source_span = resolver.resolve(cognition.source_span_ids[0])
                     source_clause = str(source_span.raw_text).strip(" \u3000。．.")
+                    from emlis_ai_grounded_observation_plan import _source_provisional_degree_parts
                     if (source_span.source_field == cognition.source_fields[0]
                         and 0 <= source_span.start_index < source_span.end_index
-                        and (re.fullmatch(r"(?:(?:現在|今)(?:も|は))?(?:まだ)?(?:はっきり|よく)?(?:わからない|分からない)", source_clause)
+                        and (provisional and _source_provisional_degree_parts(source_clause) is not None
+                             or re.fullmatch(r"(?:(?:現在|今)(?:も|は))?(?:まだ)?(?:はっきり|よく)?(?:わからない|分からない)", source_clause)
                              or "lexical:source_feeling_reason_unknown" in codes
                              and re.fullmatch(r"(?:(?:何故|どうして|なぜ)そう感じるのか|その理由)(?:が|は)?"
                                               r"(?:まだ)?(?:はっきり|よく)?(?:わからない|分からない)", source_clause)
@@ -2350,6 +2382,9 @@ def evaluate_grounded_surface_body_inverse(
                              and re.fullmatch(r".*(?:現在|今|今日)の(?:きっかけ|原因|理由)が同じか(?:も|は)?"
                                               r"(?:まだ)?(?:はっきり|よく)?(?:わからない|分からない)", source_clause))):
                         direct_cognition = True
+                        if provisional:
+                            source_clause = re.sub(r"(気[がはも])します(?=けれど|けど)", r"\1する", source_clause)
+                            source_clause = re.sub(r"ないです$|ありません$", "ない", source_clause)
                         visible = _body_inverse_visible_text(body, parsed_line)
                         if "scope_hedge" in binding.functional_atom_ids:
                             if not visible.startswith("今の入力だけを見ると、"):
@@ -2359,6 +2394,8 @@ def evaluate_grounded_surface_body_inverse(
                         matched = re.fullmatch(r"(?P<source>.+)のですね。", visible)
                         if (quote_rows or not matched or matched.group("source") != source_clause):
                             failures.append(f"body_inverse_cognition_source_or_predicate_mismatch:{index}")
+                        elif provisional:
+                            direct_provisional = True
         if expected_sources and not quote_rows and not direct_cognition:
             failures.append(f"body_inverse_observation_source_anchor_missing:{index}")
         normalized_quote_texts: list[str] = []
@@ -2535,7 +2572,8 @@ def evaluate_grounded_surface_body_inverse(
                 expected = "先の回答時点" if times == {"prior_answer_time"} else "回答した時点" if times == {"answer_time"} else "その時" if times == {"original_occasion"} else None
                 if expected is None or expected not in visible_line:
                     failures.append(f"body_inverse_answer_target_time_missing:{index}")
-        if "change" in required_kinds and "change" not in parsed_line.semantic_marker_codes:
+        if ("change" in required_kinds and "change" not in parsed_line.semantic_marker_codes
+            and not direct_provisional):
             failures.append(f"body_inverse_required_change_missing:{index}")
         if (
             "constraint" in required_kinds
@@ -3035,8 +3073,8 @@ def evaluate_grounded_surface_body_inverse(
                                 nominal_target_visible = _body_inverse_thread_received_group(
                                     body, witness, parsed_sentence, move, plan, resolver) is not None
                             elif expression_nominal_required and any(
-                                "lexical:source_nominal_constraint_clause"
-                                in nucleus_index[nid].semantic_frame.attribute_codes
+                                {"lexical:source_nominal_constraint_clause", "lexical:source_provisional_degree"}
+                                & set(nucleus_index[nid].semantic_frame.attribute_codes)
                                 for nid in move.target_nucleus_ids):
                                 nominal_target_visible = nominal_target_visible and _body_inverse_nominal_constraint_clause(
                                     body, parsed_sentence, move, plan, resolver, selected_subjective_input)

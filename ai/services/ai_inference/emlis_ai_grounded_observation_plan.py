@@ -11853,6 +11853,22 @@ def _final_stage1_normalize_relation_authority(
         )
         relation_type = relation.type
         if (
+            cross_field and left_fields == {"memo"} and right_fields == {"memo_action"}
+            and relation.type in {"contrast", "shift_from_to", "action_supports_change"}
+            and relation.grounding_kind == "bounded_structural_inference" and retention != "required"
+            and relation.source_relation_ids and set(relation.source_relation_ids) <= {
+                "whole_input_source_order", "source_field_transition:memo_to_memo_action"}
+            and relation.source_meaning_arc_keys == ("whole_input:source_order",)
+            and set(relation.source_span_ids) == set((*left.source_span_ids, *right.source_span_ids))
+            and "lexical:source_provisional_degree" in left.semantic_frame.attribute_codes
+            and left.retention == right.retention == "required"
+            and left.semantic_frame.actor == right.semantic_frame.actor == "current_user"
+            and source_proven_performed_action_status(right)
+        ):
+            # The concession belongs to the complete memo, not the following
+            # action field. Preserve both independent duties and provenance.
+            relation_type = "uncertain_connection"
+        elif (
             left_fields == right_fields == {"memo"}
             and relation.type == "shift_from_to" and retention != "required"
             and relation.grounding_kind == "bounded_structural_inference"
@@ -12834,6 +12850,9 @@ def project_final_stage1_grounded_observation_plan(
         evidence_spans,
         normalized_input=normalized_input,
     )
+    projected_nuclei = _final_source_provisional_degree_nuclei(
+        projected_nuclei, evidence_spans, normalized_input,
+    )
     projected_nuclei = _final_source_nominal_constraint_nuclei(
         projected_nuclei, evidence_spans, normalized_input,
     )
@@ -12996,6 +13015,85 @@ def _final_source_feeling_reason_nuclei(nuclei, evidence_spans, normalized_input
                     "lexical:preserve_source_predicate", "lexical:no_new_sensation_family")))))
     return tuple(replacements.get(n.nucleus_id, n) for n in nuclei)
 
+
+
+def _source_provisional_degree_parts(fragment: str):
+    """Bind a tentative comparison and a denied degree of assertion.
+
+    The present ``ki ga/wa/mo suru`` host owns the comparison, while the
+    negative degree host owns ``to ieru``. Neither the compared change nor
+    the embedded assertion is established independently. Closed inflection
+    slots cannot absorb another experiencer, report or unfinished clause.
+    """
+    nominal = r"[一-鿿々]+(?:やか|らか|か)?"
+    change = (r"(?:" + nominal + r"に|[一-鿿々]+し?く)なった"
+              r"|落ち着(?:いた|いてきた)")
+    match = re.fullmatch(
+        r"(?P<tentative>(?P<comparison>(?:前|以前|さっき|昨日|今朝|これまで)より)"
+        r"(?:少し(?:だけ)?|ちょっと|やや|かなり)?"
+        r"(?P<change>" + change + r")気(?:が|は|も)(?:する|します))"
+        r"(?:けど|けれど|けれども)[、,]?"
+        r"(?P<degree>(?P<assertion>(?:もう|まだ|すっかり|完全に)?"
+        + nominal + r"(?:した|だ|である)?)"
+        r"と(?:は)?言(?:える|い切れる)ほど(?:では|じゃ)(?:ない(?:です)?|ありません))",
+        fragment,
+    )
+    if match is None or _top_level_text(fragment) != fragment:
+        return None
+    return tuple((role, *match.span(role), scope) for role, scope in (
+        ("comparison", "past_comparison"), ("change", "under_tentative_host"),
+        ("tentative", "present_tentative"), ("assertion", "under_negative_degree"),
+        ("degree", "present_negative_degree"),
+    ))
+
+
+def _final_source_provisional_degree_nuclei(nuclei, evidence_spans, normalized_input):
+    """Receive one complete mixed expression through the existing owner.
+
+    Lexical relation/uncertainty flags cannot flatten two nested hosts.
+    ``fact`` describes the whole stated expression, including its tentative
+    comparison and degree negation; it does not assert recovery or a cause.
+    """
+    if normalized_input is None:
+        return nuclei
+    memo = tuple(n for n in nuclei if n.source_fields == ("memo",))
+    if len(memo) != 1 or len(memo[0].source_span_ids) != 1:
+        return nuclei
+    nucleus = memo[0]
+    frame = nucleus.semantic_frame
+    span = next((s for s in evidence_spans if s.span_id == nucleus.source_span_ids[0]), None)
+    if (span is None or span.source_field != "memo"
+        or nucleus.kind not in {"other_explicit", "change"}
+        or frame.predicate_kind != "change" or frame.actor != "current_user"
+        or frame.modality not in {"fact", "uncertain"} or frame.polarity != "mixed"
+        or frame.time_scope not in {"past", "present", "current_input"}
+        or nucleus.retention != "required"
+        or (nucleus.grounding_kind, nucleus.allowed_claim_scope) not in {
+            ("explicit", "explicit_current_input"), ("user_stated_relation", "source_bounded_relation")}
+        or any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:", "semantic_dependency:"))
+               for c in frame.attribute_codes)):
+        return nuclei
+    source = str(normalized_input.get("memo") or "")
+    raw = str(span.raw_text)
+    parts = _source_provisional_degree_parts(raw)
+    if (parts is None or _top_level_text(source) != source
+        or not 0 <= span.start_index < span.end_index <= len(source)
+        or source[span.start_index:span.end_index] != raw
+        or source[:span.start_index].strip()
+        or not re.fullmatch(r"\s*[。．.]?\s*", source[span.end_index:])):
+        return nuclei
+    provenance = tuple(c for c in frame.attribute_codes
+        if not c.startswith(("operator:", "semantic_role:", "time_scope:", "aspect:", "lexical:")))
+    corrected = replace(nucleus, kind="change", grounding_kind="explicit",
+        allowed_claim_scope="explicit_current_input", semantic_frame=replace(frame,
+            modality="fact", time_scope="current_input", attribute_codes=tuple(_dedupe((
+                *provenance, "time_scope:current_input", "operator:change", "operator:contrast",
+                "operator:negation", "lexical:source_provisional_degree",
+                "lexical:source_bounded_expression", "lexical:preserve_source_predicate",
+                "lexical:no_new_sensation_family",
+                *(f"source_clause_scope:{role}:{start}:{end}:{scope}" for role, start, end, scope in parts),
+            )))))
+    return tuple(corrected if n == nucleus else n for n in nuclei)
 
 
 def _source_temporal_clause_parts(fragment: str):
@@ -13175,12 +13273,16 @@ def _source_unfinished_utterance_clause_is_bound(fragment: str) -> bool:
 def _source_nominal_constraint_group(nuclei, relations):
     """Keep a proven complete burden independent of a suspended utterance."""
     text = tuple(n for n in nuclei if set(n.source_fields) & _TEXT_SOURCE_FIELDS)
-    first = tuple(n for n in text if "lexical:source_nominal_constraint_clause" in n.semantic_frame.attribute_codes)
+    first = tuple(n for n in text if {
+        "lexical:source_nominal_constraint_clause", "lexical:source_provisional_degree",
+    } & set(n.semantic_frame.attribute_codes))
     if len(first) != 1 or not _is_independent_source_material(first[0], safety_kind=TRIAGE_SAFE_OBSERVATION):
         return ()
     tail = tuple(n for n in text if "lexical:source_unfinished_utterance_clause" in n.semantic_frame.attribute_codes)
     actions = tuple(n for n in text if n.source_fields == ("memo_action",))
-    if (len(tail) > 1 or len(actions) > 1 or set(n.nucleus_id for n in text)
+    if (len(tail) > 1 or len(actions) > 1
+        or (tail and "lexical:source_provisional_degree" in first[0].semantic_frame.attribute_codes)
+        or set(n.nucleus_id for n in text)
         != set(n.nucleus_id for n in (*first, *tail, *actions))
         or any(n.source_fields != ("memo",) or n.semantic_frame.actor != "current_user"
                or n.retention != "required" or n.grounding_kind != "explicit" for n in tail)

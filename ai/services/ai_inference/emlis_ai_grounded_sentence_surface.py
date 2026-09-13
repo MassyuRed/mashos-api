@@ -2648,6 +2648,20 @@ def _source_bound_current_cognition(
     nucleus = nucleus_index[binding.nucleus_ids[0]]
     frame = nucleus.semantic_frame
     attributes = set(frame.attribute_codes)
+    if (nucleus.kind == frame.predicate_kind == "change"
+        and (frame.actor, frame.modality, frame.polarity, frame.time_scope)
+            == ("current_user", "fact", "mixed", "current_input")
+        and {"lexical:source_provisional_degree", "lexical:preserve_source_predicate"} <= attributes
+        and nucleus.source_fields == ("memo",) and nucleus.grounding_kind == "explicit"
+        and nucleus.retention == "required" and len(nucleus.source_span_ids) == 1
+        and binding.evidence_span_ids == nucleus.source_span_ids):
+        from emlis_ai_grounded_observation_plan import _source_provisional_degree_parts
+        span = resolver.resolve(nucleus.source_span_ids[0])
+        clause = str(span.raw_text)
+        if span.source_field == "memo" and _source_provisional_degree_parts(clause) is not None:
+            # Plain connective/attributive inflection keeps both present hosts.
+            clause = re.sub(r"(気[がはも])します(?=けど|けれど)", r"\1する", clause)
+            return re.sub(r"ありません$|ないです$", "ない", clause)
     if (
         nucleus.kind == frame.predicate_kind == "uncertainty"
         and frame.actor == "current_user"

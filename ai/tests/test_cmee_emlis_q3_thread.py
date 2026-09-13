@@ -1830,3 +1830,136 @@ def test_temporal_material_polite_attributive_is_checked_without_author_replay()
     assert independent(out.artifact.reception)
     for ending in ('残っていますこと', '残っていたこと', '残っていないこと'):
         assert not independent(out.artifact.reception.replace('残っていること', ending))
+
+
+# A tentative comparison and the negative degree of asserting a conclusion
+# have different hosts. Neither permits recovery certainty or a new unknown.
+PROVISIONAL_DEGREE_MEMOS = (
+    '以前より軽くなった気がするけれど、まだ平気と言えるほどではない。',
+    'さっきより楽になった気もするけど、すっかり回復したと言えるほどではない。',
+    '昨日より楽になった気はしますけれど、もう元気と言えるほどではありません。',
+    'さっきより軽くなった気がするけど、もう大丈夫と言い切れるほどではない。',
+)
+
+
+@pytest.mark.parametrize('memo', PROVISIONAL_DEGREE_MEMOS)
+@pytest.mark.parametrize('action', ['', 'お茶を飲んだ。'])
+@pytest.mark.parametrize('q3', [False, True])
+def test_provisional_degree_actual_body_keeps_both_hosts_before_separate_action(memo, action, q3):
+    import re
+    req = (begin if q3 else initial)(memo, action)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    direct = realize_emlis_thread_body(prepared)
+    engine = MeaningExperienceEngine()
+    checkpoint = engine.prepare_emlis_update(req)
+    actual = engine.generate(replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id)))
+    assert direct.artifact and actual.artifact, (direct.reason_codes, actual.reason_codes)
+    assert actual.question is None and actual.body_state == 'FINAL'
+    raw = memo.rstrip('。')
+    finite = re.sub(r'(気[がはも])します', r'\1する', raw)
+    finite = re.sub(r'ありません$', 'ない', finite)
+    expected = raw + 'という言葉を小さくせずに受け止めています。'
+    if action:
+        expected += 'お茶を飲んだことを大切に思っています。'
+    for artifact in (direct.artifact, actual.artifact):
+        assert artifact.reception == expected
+        assert finite + 'のですね。' in artifact.observation
+        assert bool('お茶を飲んだ' in artifact.observation) == bool(action)
+        assert all(value not in artifact.text for value in (
+            'という感覚', 'という変化', '理由が分からない', 'もう大丈夫です', '回復しました'))
+    target = next(n for n in plan.nuclei if 'memo' in n.source_fields)
+    frame = target.semantic_frame
+    assert (target.kind, target.grounding_kind, target.retention) == ('change', 'explicit', 'required')
+    assert (frame.actor, frame.modality, frame.polarity, frame.time_scope) == (
+        'current_user', 'fact', 'mixed', 'current_input')
+    assert not any(n.kind == 'uncertainty' and 'memo' in n.source_fields for n in plan.nuclei)
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == 1 + bool(action)
+    assert moves[0].target_nucleus_ids == (target.nucleus_id,)
+    assert moves[0].reception_act == 'stay_with_current_burden'
+    assert not any(move.support_nucleus_ids for move in moves)
+    if action:
+        action_target = next(n for n in plan.nuclei if 'memo_action' in n.source_fields)
+        assert moves[1].target_nucleus_ids == (action_target.nucleus_id,)
+        assert not any(r.retention == 'required' and r.type != 'uncertain_connection'
+                       and {r.from_nucleus_id, r.to_nucleus_id} == {target.nucleus_id, action_target.nucleus_id}
+                       for r in plan.relations)
+
+
+@pytest.mark.parametrize('memo', [
+    '私は以前より静かになった気がするけれど、もう安心だと言えるほどではない。',
+    '弟は以前より軽くなった気がするけど、もう平気と言えるほどではない。',
+    '「以前より軽くなった気がするけど、もう平気と言えるほどではない」と言われた。',
+    '以前より軽くなった気がしたけど、もう平気と言えるほどではない。',
+    '以前より軽くなったけど、もう平気と言えるほどではない。',
+    '以前より軽くなった気がするけど、もう平気と言える。',
+    '以前より軽くなった気がするけど、もう平気と言えるほどではなかった。',
+    '以前より軽くなった気がするけど、もう平気と言えるほどではないかもしれない。',
+    '以前より軽くなった気がするけど、もう平気と言えるほどではない？',
+    '以前より軽くなった気がするけど、もう平気と言えるほどではない…',
+    '以前より軽くなった気がするけど、もう平気と言えるほどではない。と弟が言った。',
+    '以前より軽くなった気がするけど、もう平気と言えるほどではない。どこからかはまだ…',
+    '前より楽な気はするけど、まだ重さが残っている。',
+    '明日は以前より軽くなった気がするけど、もう平気と言えるほどではない。',
+])
+def test_provisional_degree_requires_complete_current_user_and_host_scopes(memo):
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(memo, 'お茶を飲んだ。')))
+    assert not any('lexical:source_provisional_degree' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('memo', [PROVISIONAL_DEGREE_MEMOS[2], PROVISIONAL_DEGREE_MEMOS[3]])
+def test_provisional_degree_inverse_rejects_host_changes_without_author_replay(memo):
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    prepared = prepare_emlis_meaning(begin(memo, 'お茶を飲んだ。'))
+    plan = build_updated_grounded_plan(prepared)
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact, out.reason_codes
+    resolver = prepared.thread.resolver()
+    sentence = surface.build_grounded_sentence_plan(plan, resolver)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    def independent(body):
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan',
+                   return_value=SimpleNamespace(text=out.artifact.reception)), patch(
+                   'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses',
+                   side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(body=body.encode(), plan=plan,
+                sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert independent(out.artifact.text)
+    # Mutate either observation or reception independently; the other layer
+    # cannot compensate for a missing hedge, negation, owner or comparison.
+    for section in ('observation', 'reception'):
+        original = getattr(out.artifact, section)
+        for old, new in (
+            ('より', 'と同じくらい'), ('気がする', ''), ('気はする', ''), ('気はします', ''),
+            ('ではない', 'です'), ('ではありません', 'です'),
+            ('気がする', '気がした'), ('気はする', '気はした'),
+            ('気はします', '気はしました'), ('という言葉', 'という確かな事実'),
+            ('お茶を飲んだ', 'お茶を飲まなかった'),
+        ):
+            if old in original:
+                changed = out.artifact.text.replace(original, original.replace(old, new))
+                assert not independent(changed), (section, old, new)
+        changed = out.artifact.text.replace(original, '弟は' + original)
+        assert not independent(changed), section
+
+
+def test_provisional_degree_does_not_exempt_assurances_outside_negative_source(monkeypatch):
+    import cocolon_meaning_experience_engine.emlis_thread_surface as thread_surface
+    import emlis_ai_grounded_observation_gate as gate
+    captured = {}
+    original_gate = thread_surface.evaluate_grounded_observation_gate
+    def capture(**kwargs):
+        captured.update(kwargs)
+        return original_gate(**kwargs)
+    monkeypatch.setattr(thread_surface, 'evaluate_grounded_observation_gate', capture)
+    out = realize_emlis_thread_body(prepare_emlis_meaning(begin(PROVISIONAL_DEGREE_MEMOS[3])))
+    assert out.artifact and original_gate(**captured).public_observation_status == 'passed'
+    for assurance in ('もう大丈夫です。', '安全です。'):
+        raw = captured['surface_result']
+        changed = replace(raw, text=raw.text + assurance)
+        result = gate.evaluate_grounded_observation_gate(**{**captured, 'surface_result': changed})
+        assert result.public_observation_status == 'rejected'
+        assert 'reception_safety_or_resolution_guarantee_added' in result.rejection_reasons
