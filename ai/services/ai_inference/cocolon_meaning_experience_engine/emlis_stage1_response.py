@@ -12027,64 +12027,103 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
         and {(m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in reception_plan.moves}
             == {("stay_with_current_burden", (nominal_group[0].nucleus_id,), ()),
                 ("honor_concrete_effort", (nominal_action[0].nucleus_id,), ())})
-    from emlis_ai_grounded_observation_plan import _source_action_change_contrast
-    action_contrast = _source_action_change_contrast(tuple(binding.node_meta.values()), tuple(binding.edge_meta.values()))
-    action_contrast = action_contrast if (action_contrast and len(rows) == 2
-        and {(m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in reception_plan.moves}
-            == {("honor_concrete_effort", (action_contrast[0],), (action_contrast[1],)),
-                ("stay_with_current_burden", (action_contrast[2],), ())}) else ()
+    from emlis_ai_grounded_observation_plan import (
+        _source_action_change_contrast, _source_action_change_contrast_unfinished,
+    )
+    nuclei, relations = tuple(binding.node_meta.values()), tuple(binding.edge_meta.values())
+    action_contrast = _source_action_change_contrast(nuclei, relations)
+    unfinished = _source_action_change_contrast_unfinished(nuclei, relations)
+    duties = {(m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in reception_plan.moves}
+    expected = {("honor_concrete_effort", (action_contrast[0],), (action_contrast[1],)),
+                ("stay_with_current_burden", (action_contrast[2],), ())} if action_contrast else set()
+    if unfinished and len(rows) == 3:
+        expected.add(("stay_with_current_burden", unfinished, ()))
+    if action_contrast and len(rows) in {2, 3} and len(duties) == len(rows) and duties == expected:
+        # A third duty may have its own sealed claim. Partition only the
+        # claims actually shared, preserving complete, unique contributions.
+        result = list(rows)
+        for claim_ref in dict.fromkeys(row.projected_claim_ref for row in rows):
+            positions = tuple(i for i, row in enumerate(rows) if row.projected_claim_ref == claim_ref)
+            if len(positions) < 2:
+                continue
+            shared = tuple(rows[i] for i in positions)
+            moves = tuple(reception_plan.moves[i] for i in positions)
+            partitioned = _partition_shared_source_duty_contributions(
+                shared, moves, binding, allow_support=True, action_contrast=action_contrast)
+            for i, row in zip(positions, partitioned, strict=True):
+                result[i] = row
+        return result
     if (len(rows) == 2
         and (all(row.reception_act == "stay_with_current_burden" for row in rows)
-             or mixed_answers or independent_cognition_action or current_material_action or nominal_constraint_action or action_contrast)
+             or mixed_answers or independent_cognition_action or current_material_action or nominal_constraint_action)
         and rows[0].projected_claim_ref == rows[1].projected_claim_ref):
-        first = rows[0]
-        if (any(not move.required or len(move.target_nucleus_ids) != 1
-                or move.support_nucleus_ids and not (current_material_action or action_contrast) for move in reception_plan.moves)
-            or any((row.branch, row.meaning_outcome_ref, row.reception_binding_ref,
-                    row.subjective_proposition, row.basis_rows, row.qualifier_rows)
-                   != (first.branch, first.meaning_outcome_ref, first.reception_binding_ref,
-                       first.subjective_proposition, first.basis_rows, first.qualifier_rows)
-                   for row in rows)
-            or first.subjective_proposition.focal_relation_ref is not None):
-            raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
-        complete = first.subjective_proposition.target_contribution_refs
-        if (not complete or len(set(complete)) != len(complete)
-            or tuple(b.binding_ref for b in first.basis_rows)
-                != first.subjective_proposition.basis_binding_refs
-            or {b.contribution_ref for b in first.basis_rows} != set(complete)):
-            raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
-        duties = tuple({_node_ref(binding.nucleus_to_node[nid])
-                        for nid in (*row.target_nucleus_ids, *row.support_nucleus_ids)} for row in rows)
-        if action_contrast:
-            # The second duty realizes its required contrast in full. The
-            # positive change is shared context; each whole contribution
-            # still belongs to exactly one Move below.
-            duties = tuple(duty | {_node_ref(binding.nucleus_to_node[action_contrast[1]])}
-                if row.reception_act == "stay_with_current_burden" else duty
-                for row, duty in zip(rows, duties, strict=True))
-        if ((duties[0] & duties[1] and not action_contrast)
-            or set().union(*duties) != set(first.subjective_proposition.response_object_refs)):
-            raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
-        partition = tuple(tuple(ref for ref in complete
-                                if (basis := {entry.semantic_ref for entry in first.basis_rows
-                                             if entry.contribution_ref == ref}) and basis <= duty)
-                          for duty in duties)
-        if (any(not refs for refs in partition)
-            or set(partition[0]) & set(partition[1])
-            or set().union(*map(set, partition)) != set(complete)):
-            raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
-        # Q1 retained acts can already carry the exact per-target partition;
-        # Q3 starts with the complete shared claim. Accept only those two
-        # proven shapes, never repair arbitrary incomplete or mixed subsets.
-        if all(row.selected_contribution_refs == refs
-               for row, refs in zip(rows, partition, strict=True)):
-            return rows
-        if any(row.selected_contribution_refs != complete for row in rows):
-            raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
-        rows = [identify_selected_subjective_reception_decision(replace(
-            row, decision_ref="", selected_contribution_refs=refs,
-        )) for row, refs in zip(rows, partition, strict=True)]
+        return _partition_shared_source_duty_contributions(rows, reception_plan.moves, binding,
+            allow_support=current_material_action)
     return rows
+
+
+def _partition_shared_source_duty_contributions(rows, moves, binding, *, allow_support=False, action_contrast=()):
+    first = rows[0]
+    if (any(not move.required or len(move.target_nucleus_ids) != 1
+            or move.support_nucleus_ids and not allow_support for move in moves)
+        or any((row.branch, row.meaning_outcome_ref, row.reception_binding_ref,
+                row.subjective_proposition, row.basis_rows, row.qualifier_rows)
+               != (first.branch, first.meaning_outcome_ref, first.reception_binding_ref,
+                   first.subjective_proposition, first.basis_rows, first.qualifier_rows)
+               for row in rows)
+        or first.subjective_proposition.focal_relation_ref is not None):
+        raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+    complete = first.subjective_proposition.target_contribution_refs
+    if (not complete or len(set(complete)) != len(complete)
+        or tuple(b.binding_ref for b in first.basis_rows)
+            != first.subjective_proposition.basis_binding_refs
+        or {b.contribution_ref for b in first.basis_rows} != set(complete)):
+        raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+    duties = tuple({_node_ref(binding.nucleus_to_node[nid])
+                    for nid in (*row.target_nucleus_ids, *row.support_nucleus_ids)} for row in rows)
+    source_duties = duties
+    if action_contrast:
+        # The second duty realizes its required contrast in full. The
+        # positive change is shared context; each whole contribution
+        # still belongs to exactly one Move below.
+        duties = tuple(duty | {_node_ref(binding.nucleus_to_node[action_contrast[1]])}
+            if row.target_nucleus_ids == (action_contrast[2],) else duty
+            for row, duty in zip(rows, duties, strict=True))
+    if ((any(left & right for i, left in enumerate(duties) for right in duties[i + 1:]) and not action_contrast)
+        or set().union(*duties) != set(first.subjective_proposition.response_object_refs)):
+        raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+    partition = tuple(tuple(ref for ref in complete
+                            if (basis := {entry.semantic_ref for entry in first.basis_rows
+                                         if entry.contribution_ref == ref}) and basis <= duty)
+                      for duty in duties)
+    if (any(not refs for refs in partition)
+        or sum(map(len, partition)) != len(set().union(*map(set, partition)))
+        or set().union(*map(set, partition)) != set(complete)):
+        raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+    # Q1 retained acts can already carry the exact per-target partition;
+    # Q3 starts with the complete shared claim. Accept only those two
+    # proven shapes, never repair arbitrary incomplete or mixed subsets.
+    if all(row.selected_contribution_refs == refs
+           for row, refs in zip(rows, partition, strict=True)):
+        return rows
+
+    # A direct LIMITED projection retains contributions per act, using
+    # _bind_reception_moves' intersection with original target/support refs.
+    # The coowned change therefore also brings the complete contrast into
+    # the action's basis, while the burden act owns both burden duties.
+    # Reconstruct that exact whole-input shape before unique consumption;
+    # no mixed complete/partial/per-Move subsets may be repaired here.
+    retained_act_partition = bool(action_contrast and len(rows) == 3
+        and all(row.branch == SubjectiveProjectionBranch.LIMITED.value for row in rows)
+        and all(row.selected_contribution_refs == tuple(ref for ref in complete
+            if any({b.semantic_ref for b in first.basis_rows if b.contribution_ref == ref} & duty
+                   for other, duty in zip(rows, source_duties, strict=True)
+                   if other.reception_act == row.reception_act)) for row in rows))
+    if not retained_act_partition and any(row.selected_contribution_refs != complete for row in rows):
+        raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+    return [identify_selected_subjective_reception_decision(replace(
+        row, decision_ref="", selected_contribution_refs=refs,
+    )) for row, refs in zip(rows, partition, strict=True)]
 
 
 def _partition_retained_claim_contributions(rows, moves, binding):

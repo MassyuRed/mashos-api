@@ -1,7 +1,7 @@
 {
   "scope": "Q1 shared language owners only; test snapshot, not product acceptance or full thread identity",
-  "language_identity": "6232603571add002cfd7744b26c35bb1b74e0d8709f105c35a2d98a5a1e315a1",
-  "runtime_identity": "0a7314d7362248dec9787675d10f2a3989846ed243862c7c4b028ffdad0329ac",
+  "language_identity": "ef604d62b1221d3ff09afc7a33d08faa3e97c71d2a0e7081a1bf25b4ccc743e8",
+  "runtime_identity": "0be49dcda7b833c0333f1fab4b76a18587c3ea96ab27ce6f9772e90a0095e324",
   "language_payloads": [
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
@@ -15,8 +15,8 @@
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py",
-      "053eeb6942e2d4e5b285f451bc4e0364fda898254937ecf36e8c3d5d00abf085",
-      933150
+      "5bece6d228711969900c0ae6de4c0ee7d172a345b28f1f38061c5b1d622f8f17",
+      941371
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py",
@@ -25,23 +25,23 @@
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
-      "d43e4cb7712cee6924645418dfdefbf991fab4ad6f28744da9e8adfebc5b559d",
-      1636806
+      "ebeb26d620b8f9e848e994c9c32bba66fbfdfbc1a31fb49dfbf35ad285c5c91b",
+      1652661
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
-      "6bd50996bcc24d0a6ab7094ba34ea26212b3f08fbdecf7d3897555c80c330281",
-      561766
+      "0144dd8b54b145792e8f86adc0fe60877e4100d258f32a0f8e57c149515b0f66",
+      565040
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
-      "5ebe789557a085cceb5fc6f0701d9f41ec59294d37bec75b889586156b2b500e",
-      1236710
+      "15fa624d00b7f5f589b398481b672a27bc616e2da925795c523e5a48c0968999",
+      1239419
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
-      "7e7c5904d5de22760fe4e0d471cf8c6d8996adf25f47391309cc7a9464aa8a0f",
-      527475
+      "64931679e29a7f744017f358a33bf3b572eecec3c2a2254a645b3c376af6c138",
+      532889
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",
@@ -107,8 +107,8 @@
     ],
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py",
-      "85161a6475ebc6f3eeef40bfe97b77b6f4ca628cda24c834d8a2679597595aa8",
-      537968
+      "8c5b1345768030c8c30f8969ec3b1dcd2e10021bc67be1408327627aef909bd7",
+      540220
     ],
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py",
@@ -117,23 +117,23 @@
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
-      "a15953dc46b9dd7296b2baabc52ead126ea04c890b9bb7a2ad1b67e00d0f92ad",
-      621181
+      "50572bfb002cdbc43ee7d8d8d3ae3c1e35d7380b3dbe84dc748c71c23a62ea7e",
+      626543
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
-      "406937c567a41c8b326156db49228d4c080839851ee5075e8f459423a575d688",
-      196650
+      "b161efb9df817e1f32360ec9987e5f5d7e4aa0cb3bb3896d4dd0897be6e4c124",
+      197673
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
-      "4a5e3744d90b8b03599204449d868106dba3aadac447bec8b921eedecf391dc9",
-      452965
+      "52df9eaa30a497fbd375eb1f08cfac564ffdabf12e80d77df37e1b80748c2dd4",
+      454022
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
-      "5b7b18a2d868372e69fe28f8e094b7694d1e6b628fc6cd4c9c1b37b8a8e0383b",
-      196899
+      "fcc80393386f76ddcfccfebb878126b64d5fbe0984ea8915630b50994949a504",
+      198650
     ],
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",
@@ -190,12 +190,12 @@
     [
       84,
       480,
-      118,
+      119,
       194,
-      320,
+      322,
       126,
       241,
-      63,
+      64,
       90
     ],
     [
@@ -209,6 +209,6 @@
       45,
       103
     ],
-    "3ca1ac89e97dff670178a9bd25005351c337f5bd5f21048d94238dbbf672afca"
+    "6c312d88acbeceeca647a9fe0365d1440c9d2f590b43cde030514a1e47d07bca"
   ]
 }

@@ -2502,6 +2502,12 @@ def _source_grounded_current_expression_nominal(
     # A source-owned tentative clause is complete even when its terminal
     # hedge is not a plain verb ending. Keep that whole clause as words;
     # do not turn possibility into a fact or infer a new feeling here.
+    from emlis_ai_grounded_observation_plan import (
+        _source_action_change_contrast_unfinished, _source_unfinished_result_clause_is_bound,
+    )
+    unfinished = _source_action_change_contrast_unfinished(plan.nuclei, plan.relations)
+    witnessed_unfinished = bool(unfinished == (nucleus.nucleus_id,) and raw == fragment
+        and _source_unfinished_result_clause_is_bound(fragment))
     witnessed_uncertainty = bool(
         fields == ("memo",)
         and nucleus.kind == profile.nucleus_kind == profile.predicate_kind == "uncertainty"
@@ -2542,7 +2548,7 @@ def _source_grounded_current_expression_nominal(
         or _SOURCE_GROUNDED_TRAILING_CONNECTIVE_RE.search(fragment)
         or not (_SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(fragment)
                 or _SOURCE_GROUNDED_NONPAST_MORPHOLOGY_RE.search(fragment)
-                or witnessed_uncertainty)):
+                or witnessed_uncertainty or witnessed_unfinished)):
         return ""
     # A final source witness has already bound the whole declarative field
     # and its experiential owner. Its plain finite clause can govern こと
@@ -2561,6 +2567,10 @@ def _source_grounded_current_expression_nominal(
         return f"{when}{'で' if times in ({'answer_time'},{'prior_answer_time'}) else 'に'}{fragment}こと"
     from emlis_ai_grounded_observation_plan import _source_action_change_contrast
     action_contrast = _source_action_change_contrast(plan.nuclei, plan.relations)
+    if (witnessed_unfinished
+        and profile.nucleus_kind == profile.predicate_kind == "event"
+        and profile.modality == "fact" and re.search(r"っていない$", fragment)):
+        return fragment + "こと"
     witnessed_feeling = bool(
         profile.nucleus_kind == "reaction" and profile.modality == "feeling"
         and nucleus.semantic_frame.polarity == "negative"
@@ -8413,6 +8423,8 @@ def _source_grounded_target_np(
 ) -> _SourceGroundedClauseCoreV1:
     """Build one grammatical content core with one inverse referent."""
 
+    from emlis_ai_grounded_observation_plan import _source_unfinished_result_clause_is_bound
+
     (
         temporal_realization,
         aspect_realization,
@@ -8507,7 +8519,12 @@ def _source_grounded_target_np(
                 and profile.modality == "feeling"
                 and referent_text == f"{meaning_fragment}こと"
                 or profile.nucleus_kind == profile.predicate_kind == "event"
-                and profile.modality == "fact" and realization.time_scope == "past"
+                and profile.modality == "fact"
+                and (realization.time_scope == "past" or (
+                    realization.time_scope in {"present", "current_input", "continuing"}
+                    and realization.polarity == "negative"
+                    and _source_unfinished_result_clause_is_bound(meaning_fragment)
+                    and meaning_fragment.endswith("っていない")))
                 and referent_text == f"{meaning_fragment}こと"
                 or profile.nucleus_kind == profile.predicate_kind == "uncertainty"
                 and profile.modality == "uncertain"

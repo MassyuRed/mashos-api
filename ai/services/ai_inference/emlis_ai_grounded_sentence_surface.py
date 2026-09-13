@@ -3375,11 +3375,20 @@ def _render_final_stage1_limited_scope(
         for nucleus_id in binding.nucleus_ids
         if nucleus_id not in endpoint_ids
     )
-    extras = _final_stage1_nucleus_summary(
-        extra_ids,
-        nucleus_index,
-        resolver,
-    )
+    from emlis_ai_grounded_observation_plan import _source_action_change_contrast_unfinished
+    unfinished = _source_action_change_contrast_unfinished(
+        tuple(nucleus_index.values()), tuple(relation_index.values()))
+    extra_groups = (extra_ids,)
+    if unfinished and unfinished[0] in extra_ids and len(extra_ids) > 1:
+        # Keep an independently stated unfinished fact outside the noun
+        # coordination of a separate future action. This is the existing
+        # limited-scope author, retaining every source item and its order.
+        position = extra_ids.index(unfinished[0])
+        extra_groups = tuple(group for group in (
+            extra_ids[:position], unfinished, extra_ids[position + 1:]) if group)
+    extra_summaries = tuple(_final_stage1_nucleus_summary(group, nucleus_index, resolver)
+                            for group in extra_groups)
+    extras = extra_summaries[0] if extra_summaries else ""
     clauses: list[str] = []
     for relation_index_value, relation_fragment in enumerate(
         relation_fragments
@@ -3399,17 +3408,20 @@ def _render_final_stage1_limited_scope(
             # The earlier material sentence already introduced the input
             # boundary. Keep this later source group inside that boundary
             # without repeating the same introductory sentence structure.
-            return f"{extras}も見えます{_JA_SENTENCE_END}"
-        clauses.append(
-            f"今の入力では、{extras}までが確かに見えます"
-            f"{_JA_SENTENCE_END}"
-        )
+            clauses.append(f"{extras}も見えます{_JA_SENTENCE_END}")
+        else:
+            clauses.append(
+                f"今の入力では、{extras}までが確かに見えます"
+                f"{_JA_SENTENCE_END}"
+            )
         extras = ""
-    if extras:
-        clauses.append(
-            f"あわせて、{extras}も今の状態として見えます"
-            f"{_JA_SENTENCE_END}"
-        )
+    for index, summary in enumerate((extras, *extra_summaries[1:])):
+        if summary:
+            connective = "あわせて" if index == 0 else "また"
+            clauses.append(
+                f"{connective}、{summary}も今の状態として見えます"
+                f"{_JA_SENTENCE_END}"
+            )
     return " ".join(clauses)
 
 

@@ -7123,6 +7123,40 @@ def _source_action_change_contrast(nuclei, relations):
     return groups[0] if len(groups) == 1 else ()
 
 
+
+def _source_action_change_contrast_unfinished(nuclei, relations):
+    """Keep one separately witnessed unfinished fact outside the contrast.
+
+    An unfinished result is neither a second feeling nor an unknown cause.
+    Its original finite-host witness owns that distinction before selection.
+    """
+    group = _source_action_change_contrast(nuclei, relations)
+    if not group:
+        return ()
+    candidates = tuple(n for n in nuclei if n.nucleus_id not in group
+        and n.kind == n.semantic_frame.predicate_kind == "event"
+        and n.source_fields == ("memo",) and len(n.source_span_ids) == 1
+        and n.retention == "required" and n.grounding_kind == "explicit"
+        and n.allowed_claim_scope == "explicit_current_input"
+        and (n.semantic_frame.actor, n.semantic_frame.modality, n.semantic_frame.polarity)
+            == ("current_user", "fact", "negative")
+        and n.semantic_frame.time_scope in {"present", "current_input", "continuing"}
+        and "semantic_role:present_unfinished" in n.semantic_frame.attribute_codes
+        and not any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:",
+                                  "semantic_dependency:", "semantic_role:compound_"))
+                    for c in n.semantic_frame.attribute_codes))
+    if len(candidates) != 1:
+        return ()
+    unfinished = candidates[0]
+    if any(r.retention == "required"
+           and unfinished.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations):
+        return ()
+    if any(set(unfinished.source_span_ids) & set(n.source_span_ids)
+           for n in nuclei if n.nucleus_id in group):
+        return ()
+    return (unfinished.nucleus_id,)
+
+
 def build_grounded_reception_opportunities(
     *,
     human_follow_target_ids: Sequence[str],
@@ -7402,6 +7436,13 @@ def build_grounded_reception_opportunities(
                 support_ids = (
                     relation_support_candidates[0][2].nucleus_id,
                 )
+        if (action_change_contrast and family == "concrete_effort"
+            and target_ids == (action_change_contrast[0],)
+            and _source_action_change_contrast_unfinished(owned_nuclei, relations)):
+            # This is the performed action's already coowned change, not
+            # inferred optional relation support. Both direct and thread
+            # selectors must see the same complete three-duty inventory.
+            support_ids = (action_change_contrast[1],)
         selected_nuclei = tuple(
             nucleus_index[nucleus_id]
             for nucleus_id in (*target_ids, *support_ids)
@@ -7527,6 +7568,17 @@ def build_grounded_reception_opportunities(
         return tuple(replace(row, opportunity_id=f"ro{i}")
                      for i, row in enumerate(mixed_rows, 1))
 
+    unfinished = _source_action_change_contrast_unfinished(owned_nuclei, relations) if action_change_contrast else ()
+    if unfinished:
+        burden = next(row for row in rows if row.family == "current_burden")
+        nucleus = nucleus_index[unfinished[0]]
+        rows.append(replace(burden, target_nucleus_ids=unfinished, support_nucleus_ids=(),
+            source_evidence_span_ids=tuple(_ordered_span_ids(nucleus.source_span_ids)),
+            source_field_count=1, retention="required",
+            priority=_opportunity_priority(nucleus, family="current_burden",
+                human_follow_target_ids=follow_ids, relation_connected_ids=relation_connected_ids,
+                safety_required=False)))
+
     rows.sort(
         key=lambda item: (
             -item.priority,
@@ -7566,6 +7618,7 @@ def _select_reception_opportunities(
     retained_reaction_groups: tuple = (),
     current_material_group: tuple = (),
     action_change_contrast: tuple = (),
+    action_contrast_unfinished: tuple = (),
 ) -> tuple[GroundedReceptionOpportunity, ...]:
     inventory = tuple(opportunities)
     if not inventory:
@@ -7583,6 +7636,18 @@ def _select_reception_opportunities(
             or any(row.support_nucleus_ids or row.retention != "required" for row in inventory)):
             raise GroundedObservationPlanError("human_reception_opportunity_missing")
         return inventory
+    if action_contrast_unfinished:
+        if (not final_source_fidelity or safety_kind != TRIAGE_SAFE_OBSERVATION
+            or len(action_change_contrast) != 3 or len(action_contrast_unfinished) != 1):
+            raise GroundedObservationPlanError("human_reception_opportunity_missing")
+        duties = (("concrete_effort", (action_change_contrast[0],), (action_change_contrast[1],)),
+                  ("current_burden", (action_change_contrast[2],), ()),
+                  ("current_burden", action_contrast_unfinished, ()))
+        selected = tuple(tuple(row for row in inventory
+            if (row.family, row.target_nucleus_ids, row.support_nucleus_ids) == duty) for duty in duties)
+        if any(len(rows) != 1 or rows[0].retention != "required" for rows in selected):
+            raise GroundedObservationPlanError("human_reception_opportunity_missing")
+        return tuple(rows[0] for rows in selected)
     primary = next(
         (
             item
@@ -7726,6 +7791,7 @@ def _build_reception_depth_policy_and_moves(
     retained_reaction_groups: tuple = (),
     current_material_group: tuple = (),
     action_change_contrast: tuple = (),
+    action_contrast_unfinished: tuple = (),
 ) -> tuple[GroundedReceptionDepthPolicy, tuple[GroundedReceptionMovePlan, ...]]:
     selected = _select_reception_opportunities(
         opportunities,
@@ -7737,6 +7803,7 @@ def _build_reception_depth_policy_and_moves(
         retained_reaction_groups=retained_reaction_groups,
         current_material_group=current_material_group,
         action_change_contrast=action_change_contrast,
+        action_contrast_unfinished=action_contrast_unfinished,
     )
     if safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER:
         safety_mode: GroundedReceptionSafetyMode = (
@@ -7775,6 +7842,12 @@ def _build_reception_depth_policy_and_moves(
         # Existing attention and felt-response acts distinguish the two
         # source duties without repeating the same predicate responsibility.
         roles[selected[0].opportunity_id] = "attention"
+    if action_contrast_unfinished:
+        # Preserve the stated contrast, then receive the independent
+        # unfinished fact. Distinct act/role pairs preserve all three duties
+        # in source order without repeating one predicate responsibility.
+        contrast = next(item for item in selected if item.target_nucleus_ids == (action_change_contrast[2],))
+        roles[contrast.opportunity_id] = "attention"
     if retained_reaction_groups:
         burdens = tuple(item for item in selected if item.family == "current_burden")
         if len(burdens) >= 2:
@@ -7914,6 +7987,15 @@ def build_grounded_human_reception_plan(
         available_nuclei=available_nuclei,
         final_source_fidelity=final_source_fidelity,
     )
+    if (final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality in {"grounded", "limited_grounding"}
+        and human_follow_role == "concrete_effort"
+        and (source_group := _source_action_change_contrast(available_nuclei, relations))
+        and target_ids == (source_group[0],)
+        and _source_action_change_contrast_unfinished(available_nuclei, relations)):
+        # A long-arc heuristic must not promote this action's coowned change
+        # into another primary act and thereby discard the two other duties.
+        primary_act = "honor_concrete_effort"
     support_ids = _select_reception_support_nucleus_ids(
         primary_act=primary_act,
         human_follow_role=human_follow_role,
@@ -7979,11 +8061,13 @@ def build_grounded_human_reception_plan(
     ) else ()
     if action_change_contrast and set(target_ids) != {action_change_contrast[0]}:
         action_change_contrast = ()
+    action_contrast_unfinished = _source_action_change_contrast_unfinished(available_nuclei, relations) if action_change_contrast else ()
     depth_policy, moves = _build_reception_depth_policy_and_moves(
         opportunities,
         legacy_primary_act=primary_act,
         legacy_reference_mode=reference_mode,
         action_change_contrast=action_change_contrast,
+        action_contrast_unfinished=action_contrast_unfinished,
         current_material_group=(_source_current_material_group(available_nuclei, relations) if (
             final_source_fidelity
             and safety_kind == TRIAGE_SAFE_OBSERVATION
@@ -12913,6 +12997,14 @@ def _final_stage1_align_action_status(
     return tuple(aligned)
 
 
+def _source_unfinished_result_clause_is_bound(text):
+    """Recognize only the same complete still-unachieved finite host."""
+    return bool(re.fullmatch(
+        r"(?:(?:どちら|どっち|両方|双方)(?:も|とも)(?:本当|事実)で[、,])?"
+        r"まだ[一-鿿々ぁ-ゖァ-ヶー]+(?:は|が|も)"
+        r"(?:見つか|決ま|定ま)って(?:いない|いません)", text))
+
+
 def _final_source_unfinished_result_nuclei(nuclei, evidence_spans, normalized_input):
     """Keep an explicit still-unachieved result as an observation duty.
 
@@ -12941,9 +13033,7 @@ def _final_source_unfinished_result_nuclei(nuclei, evidence_spans, normalized_in
             and (span.start_index == 0 or source[span.start_index - 1] in "。．.\n")
             and (span.end_index == len(source) or source[span.end_index] in "。．.")
             and not re.search(r"[?？!！…‥\r\n]|もし|たら|なら|れば", span.raw_text)
-            and re.fullmatch(r"(?:(?:どちら|どっち|両方|双方)(?:も|とも)(?:本当|事実)で[、,])?"
-                             r"まだ[一-鿿々ぁ-ゖァ-ヶー]+(?:は|が|も)"
-                             r"(?:見つか|決ま|定ま)って(?:いない|いません)", span.raw_text)):
+            and _source_unfinished_result_clause_is_bound(span.raw_text)):
             nucleus = replace(nucleus, retention="required", semantic_frame=replace(frame,
                 attribute_codes=tuple(_dedupe((*frame.attribute_codes, "semantic_role:present_unfinished")))))
         result.append(nucleus)

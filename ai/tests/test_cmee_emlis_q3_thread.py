@@ -2400,3 +2400,139 @@ def test_split_contrast_clause_requires_adjacent_original_connector(monkeypatch,
                      if s.raw_text == '一方' else s for s in original(ids))
     monkeypatch.setattr(resolver, 'resolve_many', changed)
     assert hr._source_grounded_split_contrast_fragment(burden, resolver) is None
+
+
+@pytest.mark.parametrize('q3', [False, True])
+@pytest.mark.parametrize('ending', ['まだ配置は見つかっていない。', 'まだ配置は見つかっていません。'])
+def test_mixed_unfinished_fact_survives_actual_reception_as_a_separate_duty(q3, ending):
+    import emlis_ai_grounded_observation_plan as gp
+    req = (begin if q3 else initial)(ACTION_CHANGE_CONTRAST_MEMO + ending)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    unfinished = gp._source_action_change_contrast_unfinished(plan.nuclei, plan.relations)
+    assert len(unfinished) == 1
+    group = gp._source_action_change_contrast(plan.nuclei, plan.relations)
+    moves = plan.response_plan.human_reception_plan.moves
+    assert [(m.move_role, m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in moves] == [
+        ('attention', 'honor_concrete_effort', (group[0],), (group[1],)),
+        ('attention', 'stay_with_current_burden', (group[2],), ()),
+        ('felt_response', 'stay_with_current_burden', unfinished, ()),
+    ]
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact, result.reason_codes
+    assert ending[:-1] in result.artifact.observation
+    nominal = ending[:-1] + ('という言葉' if ending.endswith('ません。') else 'こと')
+    assert nominal + 'を小さくせずに受け止めています。' in result.artifact.reception
+    assert result.artifact.reception.count(ending[:-1]) == 1
+    assert '手元に緑がない寂しさも残っている' in result.artifact.reception
+    assert '机の上が広くなってうれしかった' in result.artifact.reception
+    assert result.artifact.reception.endswith(nominal + 'を小さくせずに受け止めています。')
+
+
+@pytest.mark.parametrize('support', [False, True])
+@pytest.mark.parametrize('complexity', ['multi', 'long_arc'])
+def test_mixed_unfinished_selection_keeps_all_source_duties_across_existing_adapters(support, complexity):
+    import emlis_ai_grounded_observation_plan as gp
+    prepared = prepare_emlis_meaning(begin(ACTION_CHANGE_CONTRAST_MEMO + 'まだ配置は見つかっていない。', 'お茶を飲んだ。'))
+    plan = build_updated_grounded_plan(prepared)
+    rp = plan.response_plan
+    reception = gp.build_grounded_human_reception_plan(required=True,
+        human_follow_target_ids=rp.human_follow_target_ids, primary_nucleus_ids=rp.primary_nucleus_ids,
+        supporting_nucleus_ids=rp.supporting_nucleus_ids, required_nucleus_ids=rp.required_nucleus_ids,
+        fact_boundary_nucleus_ids=rp.fact_boundary_nucleus_ids, nuclei=plan.nuclei, relations=plan.relations,
+        safety_kind=plan.safety_policy.safety_kind, material_quality='grounded', semantic_complexity=complexity,
+        include_relation_support=support, final_source_fidelity=True)
+    assert reception.moves == rp.human_reception_plan.moves
+    assert reception.depth_policy.selected_move_count == reception.depth_policy.min_realized_moves == 3
+
+
+@pytest.mark.parametrize('mutation', ['actor', 'time', 'polarity', 'modality', 'retention', 'scope', 'fragment', 'required_relation', 'duplicate'])
+def test_mixed_unfinished_fact_requires_one_independent_current_source_witness(mutation):
+    import emlis_ai_grounded_observation_plan as gp
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(ACTION_CHANGE_CONTRAST_MEMO + 'まだ配置は見つかっていない。')))
+    unfinished, = gp._source_action_change_contrast_unfinished(plan.nuclei, plan.relations)
+    nucleus = next(n for n in plan.nuclei if n.nucleus_id == unfinished)
+    nuclei, relations = plan.nuclei, plan.relations
+    if mutation in {'actor', 'time', 'polarity', 'modality'}:
+        change = {'actor': {'actor': 'other_person'}, 'time': {'time_scope': 'past'},
+                  'polarity': {'polarity': 'positive'}, 'modality': {'modality': 'uncertain'}}[mutation]
+        altered = replace(nucleus, semantic_frame=replace(nucleus.semantic_frame, **change))
+    elif mutation == 'retention':
+        altered = replace(nucleus, retention='should')
+    elif mutation == 'scope':
+        altered = replace(nucleus, allowed_claim_scope='explicit_supplemental_answer')
+    elif mutation == 'fragment':
+        altered = replace(nucleus, semantic_frame=replace(nucleus.semantic_frame,
+            attribute_codes=(*nucleus.semantic_frame.attribute_codes, 'source_fragment_start:1')))
+    elif mutation == 'duplicate':
+        nuclei = (*nuclei, replace(nucleus, nucleus_id='duplicate_unfinished'))
+        altered = nucleus
+    else:
+        relations = (*relations, replace(relations[0], relation_id='unfinished_required',
+            type='uncertain_connection', retention='required', from_nucleus_id=unfinished))
+        altered = nucleus
+    nuclei = tuple(altered if n == nucleus else n for n in nuclei)
+    assert not gp._source_action_change_contrast_unfinished(nuclei, relations)
+
+
+@pytest.mark.parametrize('q3', [False, True])
+def test_mixed_unfinished_whole_claim_partition_rejects_partial_or_cross_duty_consumption(q3):
+    import emlis_ai_grounded_human_reception as hr
+    from cocolon_meaning_experience_engine import emlis_stage1_response as owner
+    prepared = prepare_emlis_meaning((begin if q3 else initial)(ACTION_CHANGE_CONTRAST_MEMO + 'まだ配置は見つかっていない。'))
+    plan = build_updated_grounded_plan(prepared)
+    projection = project_thread_meaning(prepared, plan)
+    rows = projection.selected_reception.decisions
+    assert len(rows) == 3 and len({r.projected_claim_ref for r in rows}) == 1
+    complete = rows[0].subjective_proposition.target_contribution_refs
+    assert sum(len(r.selected_contribution_refs) for r in rows) == len(complete)
+    assert {c for r in rows for c in r.selected_contribution_refs} == set(complete)
+    assert owner._partition_shared_reception_move_contributions(rows, plan.response_plan.human_reception_plan, projection.binding) == list(rows)
+    for index, selected in ((0, complete), (1, rows[2].selected_contribution_refs), (2, ())):
+        altered = hr.identify_selected_subjective_reception_decision(replace(rows[index], decision_ref='', selected_contribution_refs=selected))
+        changed = tuple(altered if i == index else row for i, row in enumerate(rows))
+        with pytest.raises(owner.CMEEStage1ContractError):
+            owner._partition_shared_reception_move_contributions(changed, plan.response_plan.human_reception_plan, projection.binding)
+
+
+@pytest.mark.parametrize('ending', ['まだ配置は見つかっていない。', 'まだ配置は見つかっていません。'])
+def test_mixed_unfinished_inverse_reads_complete_fact_without_author_replay(ending):
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    prepared = prepare_emlis_meaning(begin(ACTION_CHANGE_CONTRAST_MEMO + ending))
+    plan = build_updated_grounded_plan(prepared)
+    output = realize_emlis_thread_body(prepared)
+    resolver = prepared.thread.resolver()
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    sentence = surface.build_grounded_sentence_plan(plan, resolver)
+    follow = output.artifact.reception
+    def passes(changed):
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan', return_value=SimpleNamespace(text=changed)), patch(
+            'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(body=output.artifact.text.replace(follow, changed).encode(),
+                plan=plan, sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert passes(follow)
+    source = ending[:-1]
+    for changed in ('弟が' + source, '以前は' + source, 'そのため、' + source,
+                    'まだ配置は見つかっていなかった', '配置は見つかった', '配置を探している',
+                    '「' + source + '」', ''):
+        assert not passes(follow.replace(source, changed)), changed
+
+
+@pytest.mark.parametrize('recovery_stage', ['full', 'integrated', 'hedged'])
+@pytest.mark.parametrize('separate_material', [False, True])
+def test_mixed_unfinished_observation_does_not_name_the_fact_as_a_future_action(recovery_stage, separate_material):
+    prepared = prepare_emlis_meaning(begin(ACTION_CHANGE_CONTRAST_MEMO + 'まだ配置は見つかっていない。', '明日、棚を動かす。'))
+    original = build_updated_grounded_plan(prepared)
+    plan = replace(original, input_profile=replace(original.input_profile, material_quality='limited_grounding'))
+    resolver = prepared.thread.resolver()
+    sentence = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage=recovery_stage)
+    ni, ri = {n.nucleus_id: n for n in plan.nuclei}, {r.relation_id: r for r in plan.relations}
+    bindings = [line.binding for line in sentence.lines if line.binding.line_role == 'limited_scope']
+    if separate_material:
+        bindings = [replace(binding, relation_ids=(), functional_atom_ids=(*binding.functional_atom_ids, 'limited_scope:additional_material')) for binding in bindings]
+    texts = [surface._render_final_stage1_limited_scope(binding, ni, ri, resolver) for binding in bindings]
+    text = ' '.join(texts)
+    fact_sentence, = (part for part in text.split('。') if 'まだ配置は見つかっていない' in part)
+    assert '明日、棚を動かす' not in fact_sentence and 'これからの行動' not in fact_sentence
+    assert '明日、棚を動かす' in text and 'これからの行動' in text

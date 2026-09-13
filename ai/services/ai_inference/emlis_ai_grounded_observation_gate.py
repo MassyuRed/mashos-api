@@ -2043,6 +2043,24 @@ def _body_inverse_nominal_constraint_clause(body, sentence, move, plan, resolver
     return parsed is not None and parsed.group("source") == source
 
 
+
+def _body_inverse_unfinished_result_clause(body, sentence, move, plan, resolver):
+    """Read the complete independent event object from body bytes only."""
+    from emlis_ai_grounded_observation_plan import _source_action_change_contrast_unfinished
+    unfinished = _source_action_change_contrast_unfinished(plan.nuclei, plan.relations)
+    if (not unfinished or move.target_nucleus_ids != unfinished or move.support_nucleus_ids
+        or move.move_role != "felt_response" or move.reception_act != "stay_with_current_burden"
+        or not move.required or sentence.section != "reception"):
+        return False
+    nucleus = next(n for n in plan.nuclei if n.nucleus_id == unfinished[0])
+    source = str(resolver.resolve(nucleus.source_span_ids[0]).raw_text).strip(" 　、,。．.")
+    nominal = "こと" if source.endswith("っていない") else "という言葉"
+    raw = body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8")
+    parsed = re.fullmatch(r"(?P<source>[^。！？!?]+)" + nominal
+        + r"を小さくせずに(?:(?:受け止めて|気にかけて)(?:います|いて)|(?:受け止め|気にかけ)たいです)。", raw)
+    return parsed is not None and parsed.group("source") == source
+
+
 def _body_inverse_current_material_group(body, witness, sentence, move, plan, resolver, selected_subjective_input):
     """Restore both finite source objects from bytes, without forward replay."""
     from emlis_ai_grounded_observation_plan import _source_current_material_group, _source_material_allows_reverse
@@ -3124,6 +3142,11 @@ def evaluate_grounded_surface_body_inverse(
                             retained_group = bool(move.support_nucleus_ids) and (
                                 "current_burden", move.target_nucleus_ids, move.support_nucleus_ids) in (
                                     _thread_retained_reaction_groups(plan.nuclei, plan.relations))
+                            from emlis_ai_grounded_observation_plan import _source_action_change_contrast_unfinished
+                            if (expression_nominal_required and move.target_nucleus_ids
+                                == _source_action_change_contrast_unfinished(plan.nuclei, plan.relations)):
+                                nominal_target_visible = nominal_target_visible and _body_inverse_unfinished_result_clause(
+                                    body, parsed_sentence, move, plan, resolver)
                             if expression_nominal_required and retained_group:
                                 nominal_target_visible = _body_inverse_thread_received_group(
                                     body, witness, parsed_sentence, move, plan, resolver) is not None
