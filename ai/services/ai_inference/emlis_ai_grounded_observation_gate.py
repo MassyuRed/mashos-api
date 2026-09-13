@@ -1772,6 +1772,43 @@ def _body_inverse_nucleus_source_values(
     return tuple(values)
 
 
+def _body_inverse_finite_contrast_attention(raw, relation, move, plan, resolver, referent):
+    """Read the full ordered contrast and its reception without author replay."""
+    if move.target_nucleus_ids != (relation.to_nucleus_id,):
+        return False
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    left, right = index[relation.from_nucleus_id], index[relation.to_nucleus_id]
+    if len(left.source_span_ids) != 1 or right.semantic_frame.time_scope not in {"current_input", "continuing"}:
+        return False
+    aspect = tuple(c.split(":", 1)[1] for c in right.semantic_frame.attribute_codes if c.startswith("aspect:"))
+    if any(a not in {"unknown", "not_applicable"} for a in aspect):
+        return False
+    source = str(resolver.resolve(left.source_span_ids[0]).raw_text or "")
+    typed = _body_inverse_typed_source_fragment(left, source)
+    if typed == "":
+        return False
+    source = (typed if typed is not None else source).strip(" \u3000、,。．.")
+    if (not source or not referent or not referent.endswith("こと")
+        or not re.search(r"(?:かった|[てで]いる|[てで]いた|た|ある|ない)$", source)
+        or re.search(r"[「」『』“”‘’\"?？!！。;；…‥]", source)):
+        return False
+    target = referent[:-2]
+    prefix = ""
+    if right.semantic_frame.time_scope == "continuing":
+        final = re.split(r"[、,]", target)[-1]
+        ongoing = bool(re.search(r"(?:て|で)(?:い|お)(?:る|ます|た|ました)$", target))
+        sustained = bool(final.startswith("ずっと")
+            and not re.search(r"[「」『』“”‘’\"()（）\[\]【】?？!！。．.;；…‥]", target)
+            and not re.search(r"(?:より|比べ|比較)", target)
+            and not re.match(r"ずっと(?:前|後|先|昔|未来|以前|以後|遠|近|多|少|高|低)", final)
+            and not re.search(r"(?:と|って)[^、,]*(?:聞|聴|言|話|語|述べ|書|記録|思|考|感じ|判断|伝|教)", final)
+            and re.search(r"(?:ない|ある|いる|なる|する|[うくぐすつぬぶむるい])$", final))
+        if "今" not in target and not ongoing and not sustained:
+            prefix = "今も、"
+    expected = prefix + source + "一方で、" + referent + "を見過ごさず、小さくせずに受け止めています。"
+    return raw == expected
+
+
 def _body_inverse_anchor_matches(left: str, right: str) -> bool:
     if not left or not right:
         return False
@@ -3245,6 +3282,10 @@ def evaluate_grounded_surface_body_inverse(
                                         r"[^。！？!?]+" + re.escape(nominal_end)
                                         + r"(?:を見過ごさず、|に目が留まり、それを)"
                                         + re.escape(act) + "。", raw) is not None
+                                    if relation_kind == "contrast" and "一方で、" in raw:
+                                        relation_attention_valid = _body_inverse_finite_contrast_attention(
+                                            raw, object_relations[0], move, plan, resolver,
+                                            expected_referent.text if expected_referent is not None else "")
                         if (
                             move.move_role == "attention"
                             and ("attention" not in sentence_codes or not relation_attention_valid)

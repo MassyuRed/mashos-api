@@ -7428,6 +7428,7 @@ def _source_grounded_argument_surface(
     distributive_relation_slot: int | None = None,
     anaphoric_context_object: tuple[int, str] | None = None,
     material_pair_object: bool = False,
+    material_contrast_object: bool = False,
 ) -> tuple[str, tuple[int, ...], tuple[int, ...]]:
     """Realize bounded heads in one relation clause per endpoint pair."""
 
@@ -7658,6 +7659,34 @@ def _source_grounded_argument_surface(
             relation_phrases.append(f"{first_nominal}と{second_nominal}の両方")
         elif relation.relation_kind == "evaluation_about_event":
             relation_phrases.append(f"{first_nominal}について、{second_nominal}")
+        elif (material_contrast_object
+              and len(move.relations) == 1 and len(move.semantic_fragments) == 2
+              and relation.relation_kind == "contrast"
+              and relation.endpoint_roles == ("LEFT", "RIGHT")
+              and (first.case_marker, second.case_marker) == ("と", "との")
+              and second.semantic_slot == target_owner_slot
+              and move.context_slots == (first.semantic_slot,)
+              and move.reference_mode != "ANAPHORIC"
+              and move.time_scope in {"current_input", "continuing"}
+              and move.aspect in {"unknown", "not_applicable"}
+              and not direct_phrases
+              and all(p.actor_kind == "SELF" and not p.quoted_boundary
+                      and not p.performed_action and not p.future_action
+                      and p.modality in {"fact", "feeling"}
+                      for p in move.semantic_profiles)
+              and first_nominal == move.semantic_fragments[first.semantic_slot] + "こと"
+              and second_nominal == target_nominal
+              and target_nominal.endswith("こと")
+              and re.search(r"(?:かった|[てで]いる|[てで]いた|た|ある|ない)$",
+                            move.semantic_fragments[first.semantic_slot])
+              and not re.search(r"[「」『』“”‘’\"?？!！。;；…‥]",
+                                move.semantic_fragments[first.semantic_slot])):
+            # The same ordered contrast owns both complete source objects.
+            # Its left finite clause needs no nominal case; the right object
+            # remains the full target of attention and burden reception.
+            relation_phrases.append(
+                f"{move.semantic_fragments[first.semantic_slot]}一方で、{second_nominal}"
+            )
         else:
             relation_phrases.append(
                 f"{first_nominal}{first.case_marker}"
@@ -8418,6 +8447,7 @@ def _source_grounded_target_np(
     distributive_relation_slot: int | None = None,
     anaphoric_context_object: tuple[int, str] | None = None,
     material_pair_object: bool = False,
+    material_contrast_object: bool = False,
     material_change_object: bool = False,
     thread_answer_about_time: str | None = None,
 ) -> _SourceGroundedClauseCoreV1:
@@ -8608,6 +8638,7 @@ def _source_grounded_target_np(
         distributive_relation_slot=distributive_relation_slot,
         anaphoric_context_object=anaphoric_context_object,
         material_pair_object=material_pair_object,
+        material_contrast_object=material_contrast_object,
     )
     adjuncts = _dedupe(
         adjunct
@@ -9593,6 +9624,12 @@ def _author_source_grounded_reception_clauses(
                 distributive_relation_slot=distributive_relation_slot,
                 anaphoric_context_object=anaphoric_context_object,
                 material_pair_object=material_pair_object,
+                material_contrast_object=bool(
+                    move.move_role == "attention"
+                    and move.reception_act == "stay_with_current_burden"
+                    and referent.kind == "current_expression"
+                    and _selected_material_appraisal(selected_decision)
+                ),
                 material_change_object=material_change_object,
                 thread_answer_about_time=next((code.split(":", 1)[1]
                     for nid in move.target_nucleus_ids

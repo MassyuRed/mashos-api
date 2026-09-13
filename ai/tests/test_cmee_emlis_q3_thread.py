@@ -2550,8 +2550,11 @@ def test_completed_relation_attention_governs_one_object_in_actual_reception(q3,
     moves = plan.response_plan.human_reception_plan.moves
     assert len(clauses) == len(moves) == (3 if unfinished else 2)
     assert '窓辺の鉢を棚へ移したことが机の上が広くなってうれしかったことを支えていること' in clauses[0]
-    assert '机の上が広くなってうれしかったことといつも見ていた葉が遠くなり、手元に緑がない寂しさも残っていること' in clauses[1]
-    assert '違い' in clauses[1]
+    if unfinished:
+        assert clauses[1] == '机の上が広くなってうれしかった一方で、いつも見ていた葉が遠くなり、手元に緑がない寂しさも残っていることを見過ごさず、小さくせずに受け止めています'
+    else:
+        assert '机の上が広くなってうれしかったことといつも見ていた葉が遠くなり、手元に緑がない寂しさも残っていること' in clauses[1]
+        assert '違い' in clauses[1]
     assert clauses[0].endswith('を見過ごさず、大切に思っています')
     assert '目が留まり、それを' not in follow
     for move, clause in zip(moves, clauses):
@@ -2595,9 +2598,45 @@ def test_completed_relation_attention_inverse_rejects_changed_grammar_without_au
             changed[index] = changed[index].replace(old, new)
             assert changed[index] != clauses[index]
             assert not passes('。'.join(changed) + '。'), (index, old, new)
-    for old, new in [('を支えていること', 'を支えていないこと'), ('との違い', 'との共通点'),
+    for old, new in [('を支えていること', 'を支えていないこと'), ('一方で、', 'ので、'),
                      ('寂しさも残っている', '寂しさも残っていた'), ('うれしかった', 'うれしくなかった'),
                      ('大切に思っています', '小さくせずに受け止めています'),
                      ('小さくせずに受け止めています', '大切に思っています'),
                      ('窓辺の鉢を棚へ移した', '弟が窓辺の鉢を棚へ移した')]:
         assert not passes(follow.replace(old, new)), (old, new)
+
+
+@pytest.mark.parametrize('q3', [False, True])
+def test_finite_contrast_inverse_binds_complete_ordered_objects_and_left_edge(q3):
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    prepared = prepare_emlis_meaning((begin if q3 else initial)(ACTION_CHANGE_CONTRAST_MEMO + 'まだ配置は見つかっていない。'))
+    plan = build_updated_grounded_plan(prepared)
+    output = realize_emlis_thread_body(prepared)
+    resolver = prepared.thread.resolver()
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    sentence = surface.build_grounded_sentence_plan(plan, resolver)
+    clauses = output.artifact.reception.rstrip('。').split('。')
+    left = '机の上が広くなってうれしかった'
+    right = 'いつも見ていた葉が遠くなり、手元に緑がない寂しさも残っていること'
+    tail = 'を見過ごさず、小さくせずに受け止めています'
+    assert clauses[1] == left + '一方で、' + right + tail
+    def passes(middle):
+        changed = '。'.join((clauses[0], middle, clauses[2])) + '。'
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan', return_value=SimpleNamespace(text=changed)), patch(
+            'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(body=output.artifact.text.replace(output.artifact.reception, changed).encode(),
+                plan=plan, sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert passes(clauses[1])
+    for changed in (
+        *(prefix + clauses[1] for prefix in ('弟が', '以前は', '今も、', 'そのため、')),
+        *(left + link + right + tail for link in ('ので、', 'そして、', 'ことと', '一方で、さらに、')),
+        right[:-2] + '一方で、' + left + 'こと' + tail,
+        right + tail, left + '一方で、' + tail,
+        left + 'こと一方で、' + right + tail,
+        left + '一方で、' + right + right + tail,
+        left + '一方で、それ' + tail,
+        left + '一方で、' + right.replace('、', '') + tail,
+        left + '一方で、' + right + 'との違い' + tail,
+    ):
+        assert changed != clauses[1] and not passes(changed), changed
