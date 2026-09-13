@@ -1974,6 +1974,39 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
     return successes[0] if len(successes) == 1 else None
 
 
+def _body_inverse_nominal_constraint_clause(body, sentence, move, plan, resolver, selected_subjective_input):
+    """Restore the entire selected nominal object, including its left edge.
+
+    A matching source substring cannot license an added experiencer, cause,
+    or completed thought around it. Parse the body-owned object slot and
+    compare its complete contents with the selected source, without replay.
+    """
+    if (sentence.section != "reception" or move.move_role != "felt_response"
+        or move.reception_act != "stay_with_current_burden" or not move.required
+        or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids):
+        return False
+    nucleus = next((n for n in plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0]), None)
+    if (nucleus is None or len(nucleus.source_span_ids) != 1
+        or "lexical:source_nominal_constraint_clause" not in nucleus.semantic_frame.attribute_codes):
+        return False
+    decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None) if selected_subjective_input else None
+    proposition = decision.subjective_proposition if decision else None
+    if proposition is None:
+        return False
+    appraisal = proposition.appraisal_content
+    openness = bool(appraisal is not None and appraisal.operation == "LEAVE_UNFINISHED"
+        or proposition.relational_position is not None
+        and proposition.relational_position.stance_operator == "HOLD_UNFINISHED_OPEN")
+    raw = body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8")
+    parsed = re.fullmatch(
+        (r"結論を急がずに、" if openness else "")
+        + r"(?P<source>[^。！？!?]+)という言葉を小さくせずに(?:"
+        r"(?:受け止めて|気にかけて)(?:います|いて)|"
+        r"(?:受け止め|気にかけ)たいです)。", raw)
+    source = str(resolver.resolve(nucleus.source_span_ids[0]).raw_text).strip(" \u3000、,。．.")
+    return parsed is not None and parsed.group("source") == source
+
+
 def _body_inverse_current_material_group(body, witness, sentence, move, plan, resolver, selected_subjective_input):
     """Restore both finite source objects from bytes, without forward replay."""
     from emlis_ai_grounded_observation_plan import _source_current_material_group
@@ -2996,6 +3029,12 @@ def evaluate_grounded_surface_body_inverse(
                             if expression_nominal_required and retained_group:
                                 nominal_target_visible = _body_inverse_thread_received_group(
                                     body, witness, parsed_sentence, move, plan, resolver) is not None
+                            elif expression_nominal_required and any(
+                                "lexical:source_nominal_constraint_clause"
+                                in nucleus_index[nid].semantic_frame.attribute_codes
+                                for nid in move.target_nucleus_ids):
+                                nominal_target_visible = nominal_target_visible and _body_inverse_nominal_constraint_clause(
+                                    body, parsed_sentence, move, plan, resolver, selected_subjective_input)
                             elif expression_nominal_required and any(
                                 {"lexical:source_feeling_reason_subject", "lexical:source_current_material_primary", "lexical:source_current_material_qualification"}
                                 & set(nucleus_index[nid].semantic_frame.attribute_codes)

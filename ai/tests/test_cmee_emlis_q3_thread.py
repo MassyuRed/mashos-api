@@ -1545,3 +1545,141 @@ def test_current_material_focus_ir_cannot_swap_roles_or_status(monkeypatch):
     ):
         with pytest.raises(hr.GroundedHumanReceptionSurfaceError):
             hr._source_current_material_group_ir_text(bad)
+
+
+def test_nominal_constraint_inverse_preserves_source_and_unfinished_tail_without_author_replay():
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    memo = '全部、ちょっと無理。どこからかというとまだ…'
+    prepared = prepare_emlis_meaning(begin(memo, 'お茶を飲んだ。'))
+    plan = build_updated_grounded_plan(prepared)
+    result = realize_emlis_thread_body(prepared)
+    assert result.artifact, result.reason_codes
+    follow = result.artifact.reception
+    assert '全部、ちょっと無理という言葉を小さくせずに受け止めています。' in follow
+    assert 'どこからかというとまだ…' in result.artifact.observation
+    assert 'どこから' not in follow
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    resolver = prepared.thread.resolver()
+    sentence = surface.build_grounded_sentence_plan(plan, resolver)
+
+    def independent(changed_follow, changed_observation=None):
+        body = result.artifact.text.replace(follow, changed_follow)
+        if changed_observation is not None:
+            body = body.replace(result.artifact.observation, changed_observation)
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan',
+                   return_value=SimpleNamespace(text=changed_follow)), patch(
+                   'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses',
+                   side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(body=body.encode(), plan=plan,
+                sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+
+    assert independent(follow)
+    mutations = {
+        'degree': follow.replace('ちょっと', 'とても'),
+        'constraint_cancellation': follow.replace('無理という', '無理ではないという'),
+        'foreign_owner': follow.replace('全部、ちょっと無理', '弟には全部、ちょっと無理'),
+        'source_omission': follow.replace('全部、', ''),
+        'unfinished_completion': follow.replace('という言葉を', 'という言葉と、どこからかはまだ分からないことを'),
+        'new_cause': follow.replace('全部、ちょっと無理', 'お茶を飲んだことが原因で、全部、ちょっと無理'),
+        'action_negation': follow.replace('お茶を飲んだこと', 'お茶を飲まなかったこと'),
+    }
+    for name, changed in mutations.items():
+        assert changed != follow and not independent(changed), name
+    completed = result.artifact.observation.replace('どこからかというとまだ…', 'どこからかはまだ分からない')
+    assert completed != result.artifact.observation and not independent(follow, completed)
+
+
+@pytest.mark.parametrize('memo', [
+    '弟には全部、ちょっと無理。',
+    '弟が全部、ちょっと無理と言った。',
+    '「全部、ちょっと無理」と言われた。',
+    '全部、ちょっと無理だった。',
+    '全部、ちょっと無理ではない。',
+    '全部、ちょっと無理かもしれない。',
+    '無理の予定を見た。',
+    '全部、ちょっと無理？',
+    '全部、ちょっと無理…',
+    '全部、ちょっと無理。と弟が言ったけど…',
+    '全部、ちょっと無理。それは嘘だけど…',
+    '全部、ちょっと無理。というのはまだ…',
+    '全部、ちょっと無理。昨日はまだ…',
+    '全部、ちょっと無理。彼には…',
+    '全部、ちょっと無理。どこがつらいかはまだ…',
+    '全部、ちょっと無理。どこからかというとまだ分からない。',
+    '全部、ちょっと無理。どこからかというとまだ…？',
+])
+def test_nominal_constraint_source_proof_rejects_changed_scope_or_completion(memo):
+    prepared = prepare_emlis_meaning(begin(memo, 'お茶を飲んだ。'))
+    plan = build_updated_grounded_plan(prepared)
+    assert not any('lexical:source_nominal_constraint_clause' in n.semantic_frame.attribute_codes
+                   or 'lexical:source_unfinished_utterance_clause' in n.semantic_frame.attribute_codes
+                   for n in plan.nuclei)
+
+
+def _assert_nominal_constraint_actual_contract(first, with_tail, action, q3, plan, direct, actual):
+    tail_text = 'どこからかというとまだ…'
+    assert direct.artifact is not None, direct.reason_codes
+    expected = first + 'という言葉を小さくせずに受け止めています。'
+    if action:
+        expected += 'お茶を飲んだことを大切に思っています。'
+    assert direct.artifact.reception == expected
+    assert actual.question is None
+    if not q3 and first == 'どれも、もう限界':
+        # The unchanged legacy Q1 first-person admission rejects this carrier.
+        # Common body and Q3 coverage do not mean Q1 admission was widened.
+        assert actual.artifact is None and actual.body_state == 'UNAVAILABLE'
+        assert actual.reason_codes == ('current_experiencer_or_time_scope_unsupported',)
+    else:
+        assert actual.artifact is not None, actual.reason_codes
+        assert actual.body_state == 'FINAL'
+        assert actual.artifact.reception == direct.artifact.reception
+
+    # Q1 may use its existing limited observation. Check both observations for
+    # the complete source parts; do not require identical recovery-stage prose.
+    artifacts = (direct.artifact,) + ((actual.artifact,) if actual.artifact else ())
+    for artifact in artifacts:
+        assert first in artifact.observation
+        assert bool('お茶を飲んだ' in artifact.observation) == bool(action)
+        assert bool('お茶を飲んだ' in artifact.reception) == bool(action)
+        assert bool(tail_text in artifact.observation) == with_tail
+        assert tail_text not in artifact.reception
+        assert all(x not in artifact.text for x in (
+            'どこからか分からない', '理由が分からない', 'まだ説明できない'))
+
+    first_move = plan.response_plan.human_reception_plan.moves[0]
+    first_nucleus = next(n for n in plan.nuclei
+        if 'lexical:source_nominal_constraint_clause' in n.semantic_frame.attribute_codes)
+    assert plan.response_plan.human_follow_target_ids == first_move.target_nucleus_ids == (first_nucleus.nucleus_id,)
+    assert first_move.reception_act == 'stay_with_current_burden'
+    assert not first_move.support_nucleus_ids
+    assert len(plan.response_plan.human_reception_plan.moves) == 1 + bool(action)
+    assert first_nucleus.kind == first_nucleus.semantic_frame.predicate_kind == 'constraint'
+    assert (first_nucleus.semantic_frame.actor, first_nucleus.semantic_frame.modality,
+            first_nucleus.semantic_frame.polarity, first_nucleus.semantic_frame.time_scope) == (
+                'current_user', 'possibility', 'negative', 'current_input')
+    tails = [n for n in plan.nuclei
+        if 'lexical:source_unfinished_utterance_clause' in n.semantic_frame.attribute_codes]
+    assert len(tails) == int(with_tail)
+    if tails:
+        tail = tails[0]
+        assert tail.nucleus_id not in first_move.target_nucleus_ids + first_move.support_nucleus_ids
+        assert tail.retention == 'required' and tail.grounding_kind == 'explicit'
+        assert tail.kind != 'uncertainty'
+
+
+@pytest.mark.parametrize('q3', [False, True])
+@pytest.mark.parametrize('action', ['', 'お茶を飲んだ。'])
+@pytest.mark.parametrize('with_tail', [False, True])
+@pytest.mark.parametrize('first', ['全部、ちょっと無理', 'どれも、もう限界'])
+def test_nominal_constraint_actual_body_keeps_complete_clause_and_unfinished_tail(first, with_tail, action, q3):
+    memo = first + '。' + ('どこからかというとまだ…' if with_tail else '')
+    req = (begin if q3 else initial)(memo, action)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    direct = realize_emlis_thread_body(prepared)
+    engine = MeaningExperienceEngine()
+    checkpoint = engine.prepare_emlis_update(req)
+    actual = engine.generate(replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id)))
+    _assert_nominal_constraint_actual_contract(first, with_tail, action, q3, plan, direct, actual)

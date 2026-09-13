@@ -6607,7 +6607,19 @@ def _opportunity_priority(
 def _is_independent_source_material(
     item: GroundedSemanticNucleus, *, safety_kind: str,
 ) -> bool:
-    """One whole-field material duty, without inferring a new feeling."""
+    """A source-proven material duty, without inferring a new feeling."""
+
+    if "lexical:source_nominal_constraint_clause" in item.semantic_frame.attribute_codes:
+        return bool(
+            item.source_fields == ("memo",) and item.retention == "required"
+            and item.grounding_kind == "explicit"
+            and item.allowed_claim_scope == "explicit_current_input"
+            and item.kind == item.semantic_frame.predicate_kind == "constraint"
+            and item.semantic_frame.actor == "current_user"
+            and item.semantic_frame.polarity == "negative"
+            and item.semantic_frame.modality == "possibility"
+            and item.semantic_frame.time_scope == "current_input"
+        )
 
     return bool(
         item.source_fields == ("memo",)
@@ -7264,6 +7276,12 @@ def build_grounded_reception_opportunities(
                 # context. It must not replace another feeling as support.
                 if (final_source_fidelity and relation.type == "evaluation_about_event"
                     and representative.source_fields == ("answer_text_private",)):
+                    continue
+                if (final_source_fidelity and relation.type == "uncertain_connection"
+                    and relation.retention != "required"
+                    and _source_nominal_constraint_group(nuclei, relations)):
+                    # An unfinished utterance and a separate action do not
+                    # assert a background/cause for the complete predicate.
                     continue
                 if relation.from_nucleus_id == representative.nucleus_id:
                     other_id = relation.to_nucleus_id
@@ -7933,6 +7951,19 @@ def build_grounded_human_reception_plan(
         reference_mode = "short_anchor_if_ambiguous"
         moves = (replace(moves[0], reference_mode=reference_mode), replace(moves[1],
             move_role="felt_response", surface_strategy="felt_response_first", reference_mode=reference_mode))
+    nominal_group = _source_nominal_constraint_group(nuclei, relations) if (
+        final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality in {"short_state_sufficient", "grounded", "limited_grounding"}
+    ) else ()
+    if nominal_group and any(
+        m.reception_act == "stay_with_current_burden"
+        and m.target_nucleus_ids == (nominal_group[0].nucleus_id,)
+        and not m.support_nucleus_ids for m in moves
+    ):
+        reference_mode = "short_anchor_if_ambiguous"
+        moves = tuple(replace(m, reference_mode=reference_mode,
+            **({"move_role": "felt_response", "surface_strategy": "felt_response_first"}
+               if m.reception_act == "honor_concrete_effort" else {})) for m in moves)
     # A newly retained, independently proven burden is received before its
     # separate action. Both canonical act/role pairs already permit felt
     # response; no Reception role participates in the meaning decision.
@@ -8702,6 +8733,13 @@ def _build_response_and_policies(
     ) else ()
     if reason_group:
         selected_follow = reason_group[0]
+    nominal_group = _source_nominal_constraint_group(nuclei, relations) if (
+        final_source_fidelity and safety_decision.safety_triage_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality in {"short_state_sufficient", "grounded", "limited_grounding"}
+        and not primary_focus_nucleus_ids
+    ) else ()
+    if nominal_group:
+        selected_follow = nominal_group[0]
     follow_ids = (selected_follow.nucleus_id,) if selected_follow is not None else primary_ids[:1]
 
     observable_nucleus_present = bool(nuclei)
@@ -12779,6 +12817,9 @@ def project_final_stage1_grounded_observation_plan(
         evidence_spans,
         normalized_input=normalized_input,
     )
+    projected_nuclei = _final_source_nominal_constraint_nuclei(
+        projected_nuclei, evidence_spans, normalized_input,
+    )
     relations, nuclei = _final_stage1_typed_relations(
         plan,
         _final_source_current_material_nuclei(
@@ -12952,6 +12993,103 @@ def _source_coexisting_feelings_and_tentative_target(first: str, second: str) ->
         + r")が(?:同時に|どちらも)ある")
     target = r"(?:(?:今|現在)(?:は|も)[、,]?)?対象(?:も|は)一つではない気がする"
     return bool(re.fullmatch(coexistence, first) and re.fullmatch(target, second))
+
+
+def _source_nominal_constraint_clause_is_bound(fragment: str) -> bool:
+    """Recognize a complete nominal predicate, without supplying a copula.
+
+    Distributive demonstratives denote the source's unspecified objects,
+    never a new actor. Degree and indeterminacy modifiers remain verbatim.
+    Reports, foreign owners, negation, past and embedded predicates do not
+    belong to this present, self-owned grammatical production.
+    """
+    return bool(re.fullmatch(
+        r"(?:(?:私|わたし|僕|ぼく|俺|おれ|自分)(?:には|にとっては?|は|も)[、,]?)?"
+        r"(?:(?:(?:これ|それ|あれ)も){1,3}|(?:何もかも|どれも|全部|全て|すべて)(?:は|が|も)?)?"
+        r"[、,]?(?:(?:今は|今も|まだ|もう|少し|ちょっと|かなり|とても|本当に|なんか|なんだか|どうも)[、,]?){0,2}"
+        r"(?:無理|限界)(?:だ|です)?", fragment,
+    ))
+
+
+def _source_unfinished_utterance_clause_is_bound(fragment: str) -> bool:
+    """An interrogative lead-in suspended before its main predicate.
+
+    Bind the entire utterance, not just its final particle. A later report
+    or correction cannot turn the preceding nominal clause into self-owned
+    material. This witness supplies no missing answer, owner, time or cause.
+    """
+    return bool(re.fullmatch(
+        r"(?:何|なに|どこ|どれ|どちら|いつ|誰|だれ|どう)"
+        r"(?:が|は|を|に|で|から|まで)?か?"
+        r"(?:(?:って|と)聞かれると|というと)[、,]?まだ[…‥]+", fragment,
+    ))
+
+
+def _source_nominal_constraint_group(nuclei, relations):
+    """Keep a proven complete burden independent of a suspended utterance."""
+    text = tuple(n for n in nuclei if set(n.source_fields) & _TEXT_SOURCE_FIELDS)
+    first = tuple(n for n in text if "lexical:source_nominal_constraint_clause" in n.semantic_frame.attribute_codes)
+    if len(first) != 1 or not _is_independent_source_material(first[0], safety_kind=TRIAGE_SAFE_OBSERVATION):
+        return ()
+    tail = tuple(n for n in text if "lexical:source_unfinished_utterance_clause" in n.semantic_frame.attribute_codes)
+    actions = tuple(n for n in text if n.source_fields == ("memo_action",))
+    if (len(tail) > 1 or len(actions) > 1 or set(n.nucleus_id for n in text)
+        != set(n.nucleus_id for n in (*first, *tail, *actions))
+        or any(n.source_fields != ("memo",) or n.semantic_frame.actor != "current_user"
+               or n.retention != "required" or n.grounding_kind != "explicit" for n in tail)
+        or any(n.retention != "required" or n.semantic_frame.actor != "current_user"
+               or not source_proven_performed_action_status(n) for n in actions)
+        or any(r.retention == "required" or r.type != "uncertain_connection" for r in relations
+               if {r.from_nucleus_id, r.to_nucleus_id} & {n.nucleus_id for n in text})):
+        return ()
+    return (*first, *tail, *actions)
+
+
+def _final_source_nominal_constraint_nuclei(nuclei, evidence_spans, normalized_input):
+    if normalized_input is None:
+        return nuclei
+    spans = {s.span_id: s for s in evidence_spans}
+    memo = tuple(n for n in nuclei if n.source_fields == ("memo",))
+    if len(memo) not in {1, 2} or any(len(n.source_span_ids) != 1 for n in memo):
+        return nuclei
+    ordered = sorted(memo, key=lambda n: spans[n.source_span_ids[0]].start_index)
+    first = ordered[0]
+    frame = first.semantic_frame
+    source = str(normalized_input.get("memo") or "")
+    if (first.kind != frame.predicate_kind or first.kind != "constraint"
+        or frame.actor != "current_user" or frame.modality != "possibility"
+        or frame.polarity != "negative" or frame.time_scope != "current_input"
+        or first.retention != "required" or first.grounding_kind != "explicit"
+        or first.allowed_claim_scope != "explicit_current_input"
+        or _top_level_text(source) != source
+        or any(code.startswith(("source_fragment_", "surface_scalar_", "thread_time:", "semantic_dependency:"))
+               for n in ordered for code in n.semantic_frame.attribute_codes)):
+        return nuclei
+    source_spans = tuple(spans[n.source_span_ids[0]] for n in ordered)
+    if (any(s.source_field != "memo" or not 0 <= s.start_index < s.end_index <= len(source)
+            or source[s.start_index:s.end_index].strip() != s.raw_text.strip() for s in source_spans)
+        or source[:source_spans[0].start_index].strip()
+        or not _source_nominal_constraint_clause_is_bound(source_spans[0].raw_text.strip())):
+        return nuclei
+    if len(ordered) == 1:
+        if not re.fullmatch(r"\s*[。．.]?\s*", source[source_spans[0].end_index:]):
+            return nuclei
+    else:
+        left, right = source_spans
+        if (not re.fullmatch(r"\s*[。．.]\s*", source[left.end_index:right.start_index])
+            or source[right.end_index:].strip()
+            or not _source_unfinished_utterance_clause_is_bound(right.raw_text.strip())
+            or ordered[1].semantic_frame.actor != "current_user"
+            or ordered[1].retention != "required" or ordered[1].grounding_kind != "explicit"):
+            return nuclei
+    markers = {first.nucleus_id: "lexical:source_nominal_constraint_clause"}
+    if len(ordered) == 2:
+        markers[ordered[1].nucleus_id] = "lexical:source_unfinished_utterance_clause"
+    return tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+        attribute_codes=tuple(_dedupe((*n.semantic_frame.attribute_codes, markers[n.nucleus_id],
+            *(("lexical:preserve_source_predicate", "lexical:no_new_sensation_family")
+              if n == first else ()))))))
+        if n.nucleus_id in markers else n for n in nuclei)
 
 
 def _final_source_current_material_nuclei(nuclei, evidence_spans, normalized_input):

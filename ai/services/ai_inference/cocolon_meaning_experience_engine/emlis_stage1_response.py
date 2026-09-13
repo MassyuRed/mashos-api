@@ -12011,7 +12011,7 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
             for row in rows if row.reception_act == "stay_with_current_burden"
         )
     )
-    from emlis_ai_grounded_observation_plan import _source_current_material_group
+    from emlis_ai_grounded_observation_plan import _source_current_material_group, _source_nominal_constraint_group
     material_group = _source_current_material_group(tuple(binding.node_meta.values()), tuple(binding.edge_meta.values()))
     if (material_group and any(m.target_nucleus_ids == (material_group[1].nucleus_id,)
         and m.support_nucleus_ids == (material_group[0].nucleus_id,) for m in reception_plan.moves)
@@ -12021,9 +12021,15 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
         and {(m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in reception_plan.moves}
             == {("stay_with_current_burden", (material_group[0].nucleus_id,), (material_group[1].nucleus_id,)),
                 ("honor_concrete_effort", (material_group[2].nucleus_id,), ())})
+    nominal_group = _source_nominal_constraint_group(tuple(binding.node_meta.values()), tuple(binding.edge_meta.values()))
+    nominal_action = tuple(n for n in nominal_group if n.source_fields == ("memo_action",))
+    nominal_constraint_action = bool(nominal_group and len(nominal_action) == 1 and len(rows) == 2
+        and {(m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in reception_plan.moves}
+            == {("stay_with_current_burden", (nominal_group[0].nucleus_id,), ()),
+                ("honor_concrete_effort", (nominal_action[0].nucleus_id,), ())})
     if (len(rows) == 2
         and (all(row.reception_act == "stay_with_current_burden" for row in rows)
-             or mixed_answers or independent_cognition_action or current_material_action)
+             or mixed_answers or independent_cognition_action or current_material_action or nominal_constraint_action)
         and rows[0].projected_claim_ref == rows[1].projected_claim_ref):
         first = rows[0]
         if (any(not move.required or len(move.target_nucleus_ids) != 1

@@ -2423,6 +2423,63 @@ def _source_grounded_current_expression_nominal(
     raw = re.sub(r"\s+", " ", resolver.resolve(nucleus.source_span_ids[0]).raw_text).strip(
         " \u3000、,。．.",
     )
+    # A source-proven nominal predicate may close before an independent
+    # unfinished utterance. Receive this complete clause as the same words;
+    # the later ellipsis neither invalidates it nor supplies a missing thought.
+    # The upstream witness owns the original sentence separator. Recheck the
+    # selected grammar and every participating span here, without relaxing
+    # the whole-field punctuation guard for other source expressions.
+    codes = set(nucleus.semantic_frame.attribute_codes)
+    if "lexical:source_nominal_constraint_clause" in codes:
+        from emlis_ai_grounded_observation_plan import (
+            _source_nominal_constraint_clause_is_bound,
+            _source_unfinished_utterance_clause_is_bound,
+        )
+        memo_nuclei = tuple(n for n in plan.nuclei if n.source_fields == ("memo",))
+        later = tuple(n for n in memo_nuclei if n != nucleus)
+        first_span = resolver.resolve(nucleus.source_span_ids[0])
+        permitted_codes = {
+            "lexical:source_nominal_constraint_clause",
+            "lexical:preserve_source_predicate",
+            "lexical:no_new_sensation_family",
+        }
+        nominal_clause = bool(
+            nucleus.kind == nucleus.semantic_frame.predicate_kind == "constraint"
+            and nucleus.semantic_frame.modality == "possibility"
+            and nucleus.semantic_frame.polarity == "negative"
+            and nucleus.semantic_frame.time_scope == "current_input"
+            and nucleus.semantic_frame.actor == "current_user"
+            and nucleus.retention == "required" and nucleus.grounding_kind == "explicit"
+            and nucleus.allowed_claim_scope == "explicit_current_input"
+            and nucleus.source_fields == fields == ("memo",)
+            and permitted_codes <= codes
+            and not any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:"))
+                        for c in codes)
+            and profile.actor_kind == "SELF" and not profile.quoted_boundary
+            and not profile.performed_action and not profile.future_action
+            and raw == fragment and _source_nominal_constraint_clause_is_bound(fragment)
+            and 0 <= first_span.start_index < first_span.end_index
+            and len(memo_nuclei) in {1, 2} and nucleus in memo_nuclei
+            and len({n.source_span_ids for n in memo_nuclei}) == len(memo_nuclei)
+            and not any(r.retention == "required" or r.type != "uncertain_connection"
+                        for r in plan.relations
+                        if nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id))
+        )
+        if nominal_clause and all(
+            len(tail.source_span_ids) == 1
+            and "lexical:source_unfinished_utterance_clause" in tail.semantic_frame.attribute_codes
+            and not any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:"))
+                        for c in tail.semantic_frame.attribute_codes)
+            and tail.retention == "required" and tail.grounding_kind == "explicit"
+            and tail.allowed_claim_scope == "explicit_current_input"
+            and resolver.source_fields_for(tail.source_span_ids) == ("memo",)
+            and (tail_span := resolver.resolve(tail.source_span_ids[0])).start_index
+                > first_span.end_index
+            and _source_grounded_clause_candidate(tail, resolver) == tail_span.raw_text.strip(" \u3000、,。．.")
+            and _source_unfinished_utterance_clause_is_bound(tail_span.raw_text)
+            for tail in later
+        ):
+            return fragment + "という言葉"
     # A source-owned tentative clause is complete even when its terminal
     # hedge is not a plain verb ending. Keep that whole clause as words;
     # do not turn possibility into a fact or infer a new feeling here.
