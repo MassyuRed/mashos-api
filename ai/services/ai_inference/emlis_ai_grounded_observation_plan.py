@@ -6682,6 +6682,102 @@ def _is_independent_source_material(
     )
 
 
+def _source_explicit_original_feeling(nucleus):
+    """A complete original feeling retains a duty beside a separate action.
+
+    Kind may describe a constraint; the owned predicate still describes a
+    feeling. Labels, fragments, another actor and unasserted hosts do not
+    provide this proof. This consumes sealed source semantics, not a score,
+    rendered body, or the wording of a question.
+    """
+    frame = nucleus.semantic_frame
+    return bool(
+        nucleus.source_fields == ("memo",) and nucleus.retention == "required"
+        and nucleus.grounding_kind == "explicit"
+        and nucleus.allowed_claim_scope == "explicit_current_input"
+        and len(nucleus.source_span_ids) == 1
+        and nucleus.surface_anchor_ids == nucleus.source_span_ids
+        and frame.actor == "current_user" and frame.predicate_kind == "feeling"
+        and frame.modality == "feeling" and frame.polarity == "negative"
+        and frame.time_scope in {"present", "current_input", "continuing"}
+        and {"operator:feeling", "lexical:source_explicit_original_feeling"} <= set(frame.attribute_codes)
+        and not any(code.startswith(("source_fragment_", "surface_scalar_", "thread_time:",
+                                    "semantic_dependency:", "semantic_role:compound_"))
+                    for code in frame.attribute_codes)
+    )
+
+
+def _source_explicit_original_feeling_is_bound(fragment):
+    """Prove the affirmative current feeling host, keeping its whole object.
+
+    A cognitive antecedent and an explicitly unresolved prediction stay
+    inside the same source clause. They do not become performed events or
+    resolved facts. The prediction's negation never negates the feeling.
+    """
+    if _top_level_text(fragment) != fragment or re.search(r"[「」『』!?！？…‥]", fragment):
+        return False
+    prefix = (r"(?:(?:それでも|でも|けれど|けれども)[、,]?)?"
+              r"(?:(?:(?:今|現在|今日|今朝)(?:は|も)?|"
+              r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が|も))[、,]?){0,2}")
+    # These are non-person occasions, not experiencer names. A nominative
+    # person cannot borrow the diary writer's ownership from a feeling word.
+    occasion = r"(?:発表|試験|面接|会議|会話|説明|予定|準備|結果|返事|連絡|次|今後)"
+    context = r"(?:(?:" + occasion + r"(?:は|が|も))|(?:" + occasion + r"を(?:考える|思い出す)と[、,]?))?"
+    host = (r"(?:少し(?:だけ)?|ちょっと|とても|まだ|ずっと)?"
+            r"(?:怖い|こわい|悲しい|寂しい|さみしい|苦しい|つらい|辛い|息苦しい|"
+            r"落ち着かない|せわしない|不安(?:だ|です))")
+    prediction = (r"(?:し[、,]?[ぁ-んァ-ヶ一-鿿々ー]+(?:なる|する|れる|る)"
+                  r"可能性(?:は|も)否定できない)?")
+    return re.fullmatch(prefix + context + host + prediction, fragment) is not None
+
+
+def _final_source_explicit_original_feeling_nuclei(nuclei, evidence_spans, normalized_input):
+    if normalized_input is None:
+        return nuclei
+    source = str(normalized_input.get("memo") or "")
+    if _top_level_text(source) != source:
+        return nuclei
+    spans = {span.span_id: span for span in evidence_spans}
+    result = []
+    for nucleus in nuclei:
+        frame = nucleus.semantic_frame
+        codes = tuple(c for c in frame.attribute_codes if c != "lexical:source_explicit_original_feeling")
+        nucleus = replace(nucleus, semantic_frame=replace(frame, attribute_codes=codes))
+        if (nucleus.source_fields != ("memo",) or nucleus.retention not in {"required", "should"}
+            or nucleus.grounding_kind != "explicit" or nucleus.allowed_claim_scope != "explicit_current_input"
+            or frame.actor != "current_user" or frame.predicate_kind != "feeling"
+            or frame.modality != "feeling" or frame.polarity != "negative"
+            or frame.time_scope not in {"present", "current_input", "continuing"}
+            or len(nucleus.source_span_ids) != 1
+            or nucleus.surface_anchor_ids != nucleus.source_span_ids
+            or any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:",
+                                 "semantic_dependency:", "semantic_role:compound_")) for c in codes)):
+            result.append(nucleus)
+            continue
+        span = spans.get(nucleus.source_span_ids[0])
+        if span is None or span.source_field != "memo":
+            result.append(nucleus)
+            continue
+        start, end, raw = span.start_index, span.end_index, str(span.raw_text)
+        preceding = re.split(r"[。．.]", source[:start].rstrip(" 。．."))[-1].strip()
+        preceding = _LEADING_CONTRAST_RE.sub("", preceding, count=1).lstrip("、, ")
+        preceding = re.sub(r"^(?:今日|昨日|一昨日|先日|先週|先月|去年|以前|今|現在|朝|昼|夜)(?:は|も|に)?[、,\s]*", "", preceding)
+        topic = re.match(r"(?P<owner>[一-鿿々ァ-ヶー]+|わたし|ぼく|おれ|あなた|あの人|その人)"
+                         r"(?:は|が|も|" + _OWNER_FOCUS_PARTICLE_SOURCE + "|" + _OWNER_TOPIC_PARTICLE_SOURCE + ")", preceding)
+        self_reset = re.match(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が|も)",
+                              _LEADING_CONTRAST_RE.sub("", raw, count=1).lstrip("、, "))
+        if (0 <= start < end <= len(source) and source[start:end] == raw
+            and (not source[:start].strip() or source[:start].rstrip().endswith(("。", "．", ".")))
+            and (not source[end:].strip() or source[end:].lstrip().startswith(("。", "．", ".")))
+            and not _source_prefix_opens_report(source[:start])
+            and (not topic or topic['owner'] in {"私", "わたし", "自分", "僕", "ぼく", "俺", "おれ"} or self_reset)
+            and _source_explicit_original_feeling_is_bound(raw)):
+            nucleus = replace(nucleus, semantic_frame=replace(nucleus.semantic_frame,
+                attribute_codes=tuple(_dedupe((*codes, "lexical:source_explicit_original_feeling")))))
+        result.append(nucleus)
+    return tuple(result)
+
+
 def _source_feeling_reason_group(nuclei, relations):
     """One source-proven feeling and its explicitly unresolved reason.
 
@@ -7037,8 +7133,9 @@ def _thread_retained_reaction_groups(nuclei, relations):
     independent = tuple(n for n in original_text if n.nucleus_id not in pair_ids
         and n.source_fields == ("memo",) and n.retention == "required"
         and n.grounding_kind == "explicit" and n.allowed_claim_scope == "explicit_current_input"
-        and is_grounded_positive_feeling(n) and n.semantic_frame.time_scope == "past"
-        and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes
+        and (_source_explicit_original_feeling(n) or (
+            is_grounded_positive_feeling(n) and n.semantic_frame.time_scope == "past"
+            and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes))
         and not any(r.retention == "required" and n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
                     for r in relations))
     actions = tuple(n for n in original_text if independent
@@ -7124,7 +7221,8 @@ def _thread_retained_reaction_groups(nuclei, relations):
     groups.extend(("lived_change", (n.nucleus_id,), ()) for n in positive)
     # An answer changes its own occasion. Separately stated original
     # feelings and actions remain independent duties in the same plan.
-    groups.extend(("lived_change", (n.nucleus_id,), ()) for n in independent)
+    groups.extend(("lived_change" if is_grounded_positive_feeling(n) else "current_burden",
+                   (n.nucleus_id,), ()) for n in independent)
     groups.extend(("concrete_effort", (n.nucleus_id,), ()) for n in actions)
     if independent and len(groups) > 3:
         raise GroundedObservationPlanError("human_reception_opportunity_missing")
@@ -7325,8 +7423,8 @@ def build_grounded_reception_opportunities(
     ) else ()
     retained_reaction_groups = _thread_retained_reaction_groups(owned_nuclei, relations) if (
         final_source_fidelity and (include_relation_support or any(
-                is_grounded_positive_feeling(n)
-                and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes
+                _source_explicit_original_feeling(n) or (is_grounded_positive_feeling(n)
+                and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes)
                 for n in owned_nuclei))
         and safety_kind == TRIAGE_SAFE_OBSERVATION
         and material_quality in {"grounded", "limited_grounding"}
@@ -7485,6 +7583,20 @@ def build_grounded_reception_opportunities(
                         and source_proven_performed_action_status(action)
                         for cognition, action in ((representative, other), (other, representative))
                     )):
+                    continue
+                if (final_source_fidelity and relation.type == "uncertain_connection"
+                    and relation.retention != "required"
+                    and any(_source_explicit_original_feeling(feeling)
+                        and action.source_fields == ("memo_action",)
+                        and action.retention == "required"
+                        and action.grounding_kind == "explicit"
+                        and action.semantic_frame.actor == "current_user"
+                        and (source_proven_performed_action_status(action)
+                             or source_proven_future_action_status(action))
+                        and set(feeling.source_span_ids).isdisjoint(action.source_span_ids)
+                        for feeling, action in ((representative, other), (other, representative)))):
+                    # Source order does not make either independent field
+                    # the other's background. Each keeps its own Move.
                     continue
                 relation_support_candidates.append(
                     (
@@ -8182,8 +8294,8 @@ def build_grounded_human_reception_plan(
         final_source_fidelity=final_source_fidelity,
         retained_reaction_groups=(_thread_retained_reaction_groups(available_nuclei, relations) if (
             final_source_fidelity and (include_relation_support or any(
-                is_grounded_positive_feeling(n)
-                and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes
+                _source_explicit_original_feeling(n) or (is_grounded_positive_feeling(n)
+                and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes)
                 for n in available_nuclei))
             and safety_kind == TRIAGE_SAFE_OBSERVATION
             and material_quality in {"grounded", "limited_grounding"}
@@ -9007,6 +9119,28 @@ def _build_response_and_policies(
         )
     ):
         selected_follow = independent_materials[0]
+    explicit_feelings = tuple(item for item in follow_candidates
+                              if _source_explicit_original_feeling(item))
+    if (final_source_fidelity
+        and safety_decision.safety_triage_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality in {"grounded", "limited_grounding"}
+        and not primary_focus_nucleus_ids and len(explicit_feelings) == 1
+        and selected_follow is not None
+        and selected_follow.source_fields == ("memo_action",)
+        and selected_follow.retention == "required"
+        and selected_follow.grounding_kind == "explicit"
+        and selected_follow.semantic_frame.actor == "current_user"
+        and (source_proven_performed_action_status(selected_follow)
+             or source_proven_future_action_status(selected_follow))
+        and set(selected_follow.source_span_ids).isdisjoint(explicit_feelings[0].source_span_ids)
+        and not any(n.source_fields == ("answer_text_private",) for n in nuclei)
+        and not any(r.retention == "required"
+                    and selected_follow.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
+                    for r in relations)):
+        # The memo's asserted feeling survives its context and contrast.
+        # The separate action is still selected by the existing burden
+        # support policy; it cannot erase the feeling by family preference.
+        selected_follow = explicit_feelings[0]
     reason_group = _source_current_material_group(nuclei, relations) if (
         final_source_fidelity and safety_decision.safety_triage_kind == TRIAGE_SAFE_OBSERVATION
         and material_quality in {"grounded", "limited_grounding"} and not primary_focus_nucleus_ids
@@ -13513,6 +13647,9 @@ def project_final_stage1_grounded_observation_plan(
     projected_nuclei = _final_source_unfinished_result_nuclei(
         projected_nuclei, evidence_spans, normalized_input,
     )
+    projected_nuclei = _final_source_explicit_original_feeling_nuclei(
+        projected_nuclei, evidence_spans, normalized_input,
+    )
     relations, nuclei = _final_stage1_typed_relations(
         plan,
         _final_source_current_material_nuclei(
@@ -13525,20 +13662,24 @@ def project_final_stage1_grounded_observation_plan(
         relations,
         nuclei,
     )
-    if any(is_grounded_positive_feeling(n) and n.retention == "required"
-           and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes for n in nuclei):
+    promotable_feelings = {n.nucleus_id for n in nuclei if n.retention == "should"
+        and _source_explicit_original_feeling(replace(n, retention="required"))}
+    if promotable_feelings or any(_source_explicit_original_feeling(n) or (
+           is_grounded_positive_feeling(n) and n.retention == "required"
+           and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes) for n in nuclei):
         # The legacy span-count rank cannot discard an explicit received
         # reaction merely because an independent feeling/action is present.
         # Admit only the complete source-proven group, with the same budget.
         candidate_ids = {n.nucleus_id for n in nuclei if n.retention == "should"
             and n.grounding_kind == "explicit" and n.allowed_claim_scope == "explicit_current_input"
             and any(c.startswith("source_received_event_link:") for c in n.semantic_frame.attribute_codes)}
-        candidate_nuclei = tuple(replace(n, retention="required") if n.nucleus_id in candidate_ids else n for n in nuclei)
+        candidate_nuclei = tuple(replace(n, retention="required")
+            if n.nucleus_id in candidate_ids | promotable_feelings else n for n in nuclei)
         candidate_relations = tuple(replace(r, retention="required")
             if r.retention == "should" and r.type == "contrast" and r.grounding_kind == "user_stated_relation"
             and r.source_relation_ids == ("typed_projection:top_level_connective",)
             and {r.from_nucleus_id, r.to_nucleus_id} <= candidate_ids else r for r in relations)
-        if candidate_ids and _thread_retained_reaction_groups(candidate_nuclei, candidate_relations):
+        if (candidate_ids or promotable_feelings) and _thread_retained_reaction_groups(candidate_nuclei, candidate_relations):
             nuclei, relations = candidate_nuclei, candidate_relations
     complexity = _semantic_complexity(
         nuclei=nuclei,

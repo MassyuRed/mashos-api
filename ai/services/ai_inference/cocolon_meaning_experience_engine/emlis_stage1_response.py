@@ -11960,7 +11960,7 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
     # A retained original/answer burden group and one positive answer still
     # share the same aggregate claim. Assign whole contributions, including
     # both endpoints of every original contrast, to the consuming Move.
-    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups, _source_independent_positive_feelings
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups, _source_independent_positive_feelings, _source_explicit_original_feeling
     positive_duties = _source_independent_positive_feelings(tuple(binding.node_meta.values()),
         tuple(binding.edge_meta.values()))
     if (positive_duties and tuple(("lived_change" if m.reception_act == "recognize_lived_change"
@@ -11983,7 +11983,8 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
                      for n in binding.node_meta.values())
     grouped = bool(2 <= len(rows) <= 3
         and (withdrawal or any(move.support_nucleus_ids for move in reception_plan.moves)
-             and {"stay_with_current_burden", "recognize_lived_change"} <= {row.reception_act for row in rows}
+             and ({"stay_with_current_burden", "recognize_lived_change"} <= {row.reception_act for row in rows}
+                  or any(_source_explicit_original_feeling(n) for n in binding.node_meta.values()))
              and {row.reception_act for row in rows} <= {"stay_with_current_burden", "recognize_lived_change", "honor_concrete_effort"})
         and tuple(({"stay_with_current_burden": "current_burden", "recognize_lived_change": "lived_change",
                     "honor_concrete_effort": "concrete_effort"}.get(m.reception_act),
@@ -12012,6 +12013,13 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
                 .source_fields == ("answer_text_private",)
                 and nucleus.allowed_claim_scope == "explicit_supplemental_answer"
                 for row in rows)
+    )
+    explicit_original_feeling_action = bool(
+        len(rows) == 2
+        and {row.reception_act for row in rows} == {"stay_with_current_burden", "honor_concrete_effort"}
+        and all(len(row.target_nucleus_ids) == 1 and not row.support_nucleus_ids for row in rows)
+        and any(_source_explicit_original_feeling(binding.node_meta[binding.nucleus_to_node[row.target_nucleus_ids[0]]])
+                for row in rows if row.reception_act == "stay_with_current_burden")
     )
     independent_cognition_action = bool(
         len(rows) == 2
@@ -12095,7 +12103,7 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
     if (len(rows) == 2
         and (all(row.reception_act == "stay_with_current_burden" for row in rows)
              or mixed_answers or independent_cognition_action or current_material_action or nominal_constraint_action
-             or nominal_cognition_action)
+             or nominal_cognition_action or explicit_original_feeling_action)
         and rows[0].projected_claim_ref == rows[1].projected_claim_ref):
         nominal_contrast = ()
         if nominal_cognition_action:
@@ -12217,7 +12225,15 @@ def _partition_retained_claim_contributions(rows, moves, binding):
         raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
     if all(row.selected_contribution_refs == refs for row, refs in zip(rows, partition, strict=True)):
         return rows
-    if any(row.selected_contribution_refs != complete for row in rows):
+    # The direct projection can already partition the same sealed claim
+    # by act. Two original burden duties then share exactly that act's
+    # contributions, while Q3 carries the complete claim on each Move.
+    # Accept only these proven preimages before unique whole consumption.
+    per_act = all(row.selected_contribution_refs == tuple(ref for ref in complete
+        if any({b.semantic_ref for b in first.basis_rows if b.contribution_ref == ref} & duty
+               for other, duty in zip(rows, duties, strict=True)
+               if other.reception_act == row.reception_act)) for row in rows)
+    if not per_act and any(row.selected_contribution_refs != complete for row in rows):
         raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
     return [identify_selected_subjective_reception_decision(replace(
         row, decision_ref="", selected_contribution_refs=refs))
@@ -13659,12 +13675,12 @@ def compile_stage1_response(
             str,
         ]
     ] = []
-    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups, _source_explicit_original_feeling
     retained_groups = _thread_retained_reaction_groups(selected_grounded_plan.nuclei, selected_grounded_plan.relations)
     original_collective = bool(any(family == "current_burden" and len(targets) > 1
         for family, targets, supports in retained_groups)
-        and any(n.source_fields == ("memo",)
-            and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes
+        and any(_source_explicit_original_feeling(n) or (n.source_fields == ("memo",)
+            and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes)
             for n in selected_grounded_plan.nuclei))
     for recovery_stage in GROUND_RECOVERY_STAGES:
         if original_collective and recovery_stage not in {"full", "optional_removed"}:

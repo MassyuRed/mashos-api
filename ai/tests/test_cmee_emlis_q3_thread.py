@@ -3394,3 +3394,156 @@ def test_nominal_background_outer_scope_requires_source_bound_feeling_ranges(inv
     with pytest.raises(Exception, match='current_experiencer_or_time_scope_unsupported'):
         _cmee_assert_current_first_person_scope_supported(memo, plan,
             stage1_response_schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2, resolver=resolver)
+
+
+# A separate action cannot displace a complete, explicit original feeling.
+# The same source duty remains distinct from a received event and its answer.
+@pytest.mark.parametrize('q3', [False, True])
+@pytest.mark.parametrize('action', ['机を拭いた。', '今夜は机を拭くことにした。'])
+def test_original_burden_survives_separate_action_without_inferred_background(q3, action):
+    memo = '発表が怖い。'
+    req = (begin if q3 else initial)(memo, action)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact, out.reason_codes
+    follow = out.artifact.reception
+    assert '発表が怖い' in follow
+    assert '背景に' not in follow
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == 2 and all(not m.support_nucleus_ids for m in moves)
+    assert {m.reception_act for m in moves} == {'stay_with_current_burden', 'honor_concrete_effort'}
+    engine = MeaningExperienceEngine()
+    cp = engine.prepare_emlis_update(req)
+    actual = engine.generate(replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=cp.checkpoint_id)))
+    assert actual.artifact and actual.question is None, actual.reason_codes
+    assert '発表が怖い' in actual.artifact.reception and '背景に' not in actual.artifact.reception
+
+
+@pytest.mark.parametrize('q3', [False, True])
+@pytest.mark.parametrize('action', ['', '机を拭いた。'])
+@pytest.mark.parametrize('two_events', [False, True])
+def test_original_burden_is_retained_beside_received_events_and_answer(q3, action, two_events):
+    memo = '誘われたのに、悲しかった。' + ('頼まれたのに、寂しかった。' if two_events else '') + '今は怖い。'
+    req = (begin if q3 else initial)(memo, action)
+    for current in (req, advance(req, 'その時は重かった。')):
+        prepared = prepare_emlis_meaning(current)
+        out = realize_emlis_thread_body(prepared)
+        assert out.artifact, out.reason_codes
+        follow = out.artifact.reception
+        assert '今は怖い' in follow and '誘われたのに悲しかったこと' in follow
+        assert ('頼まれたのに寂しかったこと' in follow) == two_events
+        assert ('机を拭いたこと' in follow) == bool(action)
+        assert '背景に' not in follow
+        plan = build_updated_grounded_plan(prepared)
+        assert len(plan.response_plan.human_reception_plan.moves) == 2 + bool(action)
+        if current is not req:
+            assert 'その出来事へのその時の重さ' in follow
+
+
+@pytest.mark.parametrize('replacement', [
+    '「重かった」ではなく「苦しかった」です。', '「重かった」は誤りです。',
+])
+@pytest.mark.parametrize('action', ['', '机を拭いた。'])
+def test_original_burden_survives_answer_correction_and_withdrawal(replacement, action):
+    memo = '誘われたのに、悲しかった。頼まれたのに、寂しかった。今は怖い。'
+    req = advance(advance(begin(memo, action), 'その時は重かった。'), replacement)
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact, out.reason_codes
+    follow = out.artifact.reception
+    assert all(t in follow for t in ('今は怖い', '誘われたのに悲しかったこと', '頼まれたのに寂しかったこと'))
+    assert ('机を拭いたこと' in follow) == bool(action)
+    assert 'その時の重さ' not in follow
+    assert ('その時の苦しさ' in follow) == ('ではなく' in replacement)
+
+
+@pytest.mark.parametrize('memo', [
+    '友人は怖いと言った。', '「怖い」と友人から聞いた。',
+    'もし怖いなら休む。', '発表は怖くない。',
+])
+def test_original_burden_does_not_promote_foreign_reported_conditional_or_denied_feeling(memo):
+    import emlis_ai_grounded_observation_plan as gp
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(initial(memo, '机を拭いた。')))
+    assert not any(gp._source_explicit_original_feeling(n) for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('q3', [False, True])
+def test_original_burden_inverse_keeps_each_source_duty_without_author_replay(q3):
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    req = advance((begin if q3 else initial)('誘われたのに、悲しかった。今は怖い。', '机を拭いた。'), 'その時は重かった。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    sentence = surface.build_grounded_sentence_plan(plan, prepared.thread.resolver())
+    follow = out.artifact.reception
+    def passes(changed):
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan', return_value=SimpleNamespace(text=changed)), patch(
+            'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(body=out.artifact.text.replace(follow, changed).encode(),
+                plan=plan, sentence_plan=sentence, resolver=prepared.thread.resolver(), selected_subjective_input=selected).passed
+    assert passes(follow)
+    for old, new in [('今は怖い', '今は怖くない'), ('今は怖い', '以前は怖かった'),
+                     ('今は怖い', '友人は怖い'), ('その時の重さ', '今の重さ'),
+                     ('悲しかったこと', '悲しいこと'), ('机を拭いたこと', '机を拭く予定')]:
+        changed = follow.replace(old, new)
+        assert changed != follow and not passes(changed), (old, new)
+
+
+@pytest.mark.parametrize('q3', [False, True])
+@pytest.mark.parametrize('action', ['机を拭いた。', '今夜は机を拭くことにした。'])
+@pytest.mark.parametrize('memo', [
+    '次を考えると怖い。',
+    'それでも次を考えると怖いし、また失敗する可能性も否定できない。',
+])
+def test_original_burden_preserves_cognitive_context_and_unresolved_prediction(q3, action, memo):
+    req = (begin if q3 else initial)(memo, action)
+    engine = MeaningExperienceEngine()
+    cp = engine.prepare_emlis_update(req)
+    actual = engine.generate(replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=cp.checkpoint_id)))
+    assert actual.artifact and actual.question is None, actual.reason_codes
+    assert memo.rstrip('。') in actual.artifact.reception
+    assert '背景に' not in actual.artifact.reception
+    assert 'これからの行動' in actual.artifact.reception if '今夜' in action else '実際の行動' in actual.artifact.reception
+
+
+@pytest.mark.parametrize('q3', [False, True])
+def test_original_burden_positive_answer_keeps_current_and_original_past_feelings(q3):
+    req = advance((begin if q3 else initial)('誘われたのに、悲しかった。今は怖い。'), 'その時は嬉しかった。')
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact, out.reason_codes
+    follow = out.artifact.reception
+    assert all(t in follow for t in ('誘われたのに悲しかったこと', '今は怖い', 'その時に嬉しかったという気持ち'))
+    assert len(build_updated_grounded_plan(prepare_emlis_meaning(req)).response_plan.human_reception_plan.moves) == 3
+
+
+@pytest.mark.parametrize('memo', ['明日は怖い。', '友人は不安だ。それでも怖い。',
+    '友人だけ不安だ。それでも怖い。', '先週、友人は不安だった。それでも怖い。'])
+def test_original_burden_rejects_future_host_and_unreset_foreign_topic(memo):
+    import emlis_ai_grounded_observation_plan as gp
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(initial(memo, '机を拭いた。')))
+    assert not any(gp._source_explicit_original_feeling(n) for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('invalid', ['no_resolver', 'different_source', 'no_source_witness'])
+def test_original_burden_nonperson_scope_requires_exact_source_proof(invalid):
+    from types import SimpleNamespace
+    from cocolon_meaning_experience_engine.emlis_v1a import _cmee_assert_current_first_person_scope_supported, CMEEVerticalError
+    from cocolon_meaning_experience_engine.contracts import CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+    prepared = prepare_emlis_meaning(initial('発表が怖い。', '机を拭いた。'))
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    if invalid == 'no_resolver':
+        resolver = None
+    elif invalid == 'different_source':
+        resolver = SimpleNamespace(resolve=lambda sid: SimpleNamespace(source_field='memo', raw_text='面接が怖い'))
+    else:
+        plan = replace(plan, nuclei=tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+            attribute_codes=tuple(c for c in n.semantic_frame.attribute_codes if c != 'lexical:source_explicit_original_feeling'))) for n in plan.nuclei))
+    with pytest.raises(CMEEVerticalError, match='current_experiencer_or_time_scope_unsupported'):
+        _cmee_assert_current_first_person_scope_supported('発表が怖い。', plan,
+            stage1_response_schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2, resolver=resolver)

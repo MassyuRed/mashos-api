@@ -3537,6 +3537,7 @@ def _cmee_assert_current_first_person_scope_supported(
     value = re.sub(r"\s+", "", str(text or ""))
     nominal_feeling_ranges = []
     received_feeling_ranges = []
+    explicit_feeling_ranges = []
     if (resolver is not None and stage1_response_schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
         and FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in grounded_plan.source_contracts):
         from emlis_ai_grounded_observation_plan import is_grounded_positive_feeling, _source_nominal_past_feeling_is_bound
@@ -3558,6 +3559,20 @@ def _cmee_assert_current_first_person_scope_supported(
                 and (occurrences[0].start() == 0 or value[occurrences[0].start() - 1] in "。．.")
                 and (occurrences[0].end() == len(value) or value[occurrences[0].end()] in "。．.")):
                 nominal_feeling_ranges.append(occurrences[0].span())
+        from emlis_ai_grounded_observation_plan import (
+            _source_explicit_original_feeling, _source_explicit_original_feeling_is_bound,
+        )
+        for n in grounded_plan.nuclei:
+            if not _source_explicit_original_feeling(n):
+                continue
+            span = resolver.resolve(n.source_span_ids[0])
+            raw = str(span.raw_text)
+            occurrences = tuple(re.finditer(re.escape(raw), value))
+            if (span.source_field == "memo" and _source_explicit_original_feeling_is_bound(raw)
+                and len(occurrences) == 1
+                and (occurrences[0].start() == 0 or value[occurrences[0].start() - 1] in "。．.")
+                and (occurrences[0].end() == len(value) or value[occurrences[0].end()] in "。．.")):
+                explicit_feeling_ranges.append(occurrences[0].span())
         from emlis_ai_grounded_observation_plan import _received_contrast_group_targets
         from emlis_ai_grounded_human_reception import _typed_reception_source_fragment
         pair_ids = {nid for r in grounded_plan.relations if r.type == "contrast" and r.retention == "required"
@@ -3662,6 +3677,12 @@ def _cmee_assert_current_first_person_scope_supported(
             if any(start <= match.start() and match.end() <= end for start, end in nominal_feeling_ranges):
                 # The final source owner has proved the completed experience,
                 # its subordinate subjects and its past self feeling together.
+                continue
+            if (pattern is GENERIC_EXPERIENCER_STATE_OR_DESIRE_RE
+                and any(start <= match.start() and match.end() <= end for start, end in explicit_feeling_ranges)):
+                # The complete source proof fixes a non-person occasion as
+                # the feeling's object, not a different experiencer. Other
+                # owner, tense and scope checks still apply to their ranges.
                 continue
             subject = str(match.group("subject") or "")
             if any(
