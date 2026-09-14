@@ -7034,6 +7034,20 @@ def _thread_retained_reaction_groups(nuclei, relations):
         and "semantic_role:contrast_before" in n.semantic_frame.attribute_codes)
     pair_ids = {nid for r in original_relations if r.type == "contrast" and r.retention == "required"
                 for nid in (r.from_nucleus_id, r.to_nucleus_id)}
+    independent = tuple(n for n in original_text if n.nucleus_id not in pair_ids
+        and n.source_fields == ("memo",) and n.retention == "required"
+        and n.grounding_kind == "explicit" and n.allowed_claim_scope == "explicit_current_input"
+        and is_grounded_positive_feeling(n) and n.semantic_frame.time_scope == "past"
+        and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes
+        and not any(r.retention == "required" and n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
+                    for r in relations))
+    actions = tuple(n for n in original_text if independent
+        and n.source_fields == ("memo_action",) and n.retention == "required"
+        and n.grounding_kind == "explicit" and n.semantic_frame.actor == "current_user"
+        and source_proven_performed_action_status(n)
+        and not any(r.retention == "required" and n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
+                    for r in relations))
+    independent_ids = {n.nucleus_id for n in (*independent, *actions)}
     pairs = _received_contrast_group_targets(
         tuple(n for n in originals if n.nucleus_id in pair_ids), original_relations, minimum=1)
     answers = tuple(n for n in nuclei if n.source_fields == ("answer_text_private",))
@@ -7042,9 +7056,9 @@ def _thread_retained_reaction_groups(nuclei, relations):
     if withdrawal and not pairs and not pair_ids:
         pairs = ((), ())
     if (not pairs or not (0 if withdrawal else 1) <= len(events) <= 3 or len(answers) > 3
-        or not withdrawal and not answers and len(pairs[0]) == len(events)
+        or not withdrawal and not answers and not independent and len(pairs[0]) == len(events)
         or any(n.nucleus_id not in pair_ids and n.nucleus_id not in events
-               and n.nucleus_id not in detached_ids for n in original_text)
+               and n.nucleus_id not in detached_ids and n.nucleus_id not in independent_ids for n in original_text)
         or not set(pairs[0]) <= set(events)):
         return unsupported()
     index = {n.nucleus_id: n for n in nuclei}
@@ -7088,7 +7102,8 @@ def _thread_retained_reaction_groups(nuclei, relations):
     # An ADD does not supersede the original reaction, regardless of the
     # answer's polarity or whether the input contains one received event.
     # Single-event grouping still requires exactly one source-proven answer.
-    if not withdrawal and (len(positive) > 1 or len(events) == 1 and len(answers) != 1):
+    if not withdrawal and (len(positive) > 1 or len(events) == 1 and len(answers) != 1
+                           and not (independent and not answers)):
         return unsupported()
     targets, supports = [], []
     for event in events:
@@ -7107,12 +7122,18 @@ def _thread_retained_reaction_groups(nuclei, relations):
     groups.extend(("current_burden", (n.nucleus_id,), ()) for n in detached_originals)
     groups.extend(("current_burden", (n.nucleus_id,), ()) for n in detached_answers if n in negative)
     groups.extend(("lived_change", (n.nucleus_id,), ()) for n in positive)
+    # An answer changes its own occasion. Separately stated original
+    # feelings and actions remain independent duties in the same plan.
+    groups.extend(("lived_change", (n.nucleus_id,), ()) for n in independent)
+    groups.extend(("concrete_effort", (n.nucleus_id,), ()) for n in actions)
+    if independent and len(groups) > 3:
+        raise GroundedObservationPlanError("human_reception_opportunity_missing")
     if withdrawal and len(groups) > 3:
         # Keep the accepted checkpoint; no representative may silently
         # discard an independent duty to fit the existing three-Move budget.
         raise GroundedObservationPlanError("human_reception_withdrawal_capacity_gap")
     subject_order = ({n.nucleus_id: _span_number(n.source_span_ids[0]) for n in nuclei}
-                     if withdrawal else {nid: i for i, nid in enumerate(events)})
+                     if withdrawal or independent else {nid: i for i, nid in enumerate(events)})
     target_events = {n.nucleus_id: e for e, n in by_event.items()}
     return tuple(sorted(groups, key=lambda row: min(
         subject_order[target_events.get(nid, nid)] for nid in row[1])))
@@ -11246,7 +11267,8 @@ def _source_nominal_past_feeling_is_bound(fragment: str) -> bool:
         r"(?:安心した|ほっとした|落ち着いた|うれしかった|嬉しかった)", fragment)
     if match is None:
         return False
-    experience = re.sub(r"^(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が)[、,]?", "", match['experience'])
+    experience = _LEADING_CONTRAST_RE.sub("", match['experience'], count=1).lstrip("、, ")
+    experience = re.sub(r"^(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が)[、,]?", "", experience)
     if re.search(r"[。．.!！?？:：;；]|こと|によると|いわく|曰く|"
                  r"明日|来週|来月|来年|今後|もし|なら|たら|としたら|"
                  r"と言|という|って言|らしい|そうだ|ようだ", experience):
@@ -11256,10 +11278,19 @@ def _source_nominal_past_feeling_is_bound(fragment: str) -> bool:
         if re.search(r"は|が|も", concession['claim']):
             return False
         experience = experience[concession.end():]
-    temporal = re.match(r"(?:すれ違った|話した|話し合った|相談した|議論した|伝えた|集まった|参加した)"
+    temporal = re.match(r"(?:すれ違った|話した|話し合った|相談した|議論した|伝えた|集まった|参加した|"
+                        r"(?:話|会話|相談|議論|会議|打ち合わせ|打合せ)が(?:終わった|済んだ))"
                         r"(?:後|あと|時|とき)(?:も|に)?[、,]", experience)
     if temporal:
         experience = experience[temporal.end():]
+    # This finite state is a subordinate background, not the experiencer
+    # of the outer feeling. Its concessive 'も' cannot license other topics.
+    background = re.match(
+        r"(?:(?:意見|考え|見方|答え|結論)が)?"
+        r"(?:違う|異なる|合わない|揃わない|一致しない|まとまらない|決まらない)"
+        r"まま(?:でも|で)[、,]?", experience)
+    if background:
+        experience = experience[background.end():]
     event = re.fullmatch(
         r"(?P<object>[一-鿿々ぁ-んァ-ヶー、,]*?)(?:[てで]くれた|[てで]もらえた|"
         r"話せた|話し合えた|伝えられた|続けられた|取り組めた|参加できた|相談できた)",
@@ -11368,8 +11399,11 @@ def _final_stage1_typed_nuclei(
             frame = nucleus.semantic_frame
             if (span is not None and normalized_input is not None
                 and nucleus.source_fields == ("memo",) and span.source_field == "memo"
-                and nucleus.grounding_kind == "explicit" and nucleus.retention == "required"
-                and nucleus.allowed_claim_scope == "explicit_current_input"
+                and (nucleus.grounding_kind, nucleus.allowed_claim_scope) in {
+                    ("explicit", "explicit_current_input"),
+                    ("user_stated_relation", "source_bounded_relation"),
+                }
+                and nucleus.retention == "required"
                 and frame.actor == "current_user"
                 and not any(code.startswith(("source_fragment_scalar_", "surface_scalar_",
                                              "semantic_dependency:", "thread_time:"))
@@ -11377,14 +11411,27 @@ def _final_stage1_typed_nuclei(
                 source = str(normalized_input.get("memo") or "")
                 start, end = span.start_index, span.end_index
                 raw = str(span.raw_text)
+                preceding = re.split(r"[。．.]", source[:start].rstrip(" 。．."))[-1].strip()
+                preceding = re.sub(r"^(?:今日|昨日|一昨日|先週|今|現在|朝|昼|夜)(?:は|も|に)?[、,\s]*", "", preceding)
+                prior_topic = re.match(r"(?P<owner>[一-鿿々ァ-ヶー]+|わたし|ぼく|おれ|あなた|あの人|その人)"
+                                       r"(?:は|が|も|" + _OWNER_FOCUS_PARTICLE_SOURCE + "|"
+                                       + _OWNER_TOPIC_PARTICLE_SOURCE + ")", preceding)
+                self_owners = {"私", "わたし", "自分", "僕", "ぼく", "俺", "おれ"}
+                explicit_self = re.match(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が)",
+                                         _LEADING_CONTRAST_RE.sub("", raw, count=1).lstrip("、, "))
                 if (0 <= start < end <= len(source) and source[start:end] == raw
                     and (not source[:start].strip() or source[:start].rstrip().endswith(("。", "．", ".")))
                     and not _source_prefix_opens_report(source[:start])
                     and not re.search(r"によると|いわく|曰く|の(?:感想|気持ち|説明|報告|発言)[。．.]", source[:start])
                     and (not source[end:].strip() or source[end:].lstrip().startswith(("。", "．", ".")))
                     and _top_level_text(source) == source
+                    # A contrast does not reset an unresolved preceding
+                    # subject to the diary writer. An explicit self does.
+                    and (not _LEADING_CONTRAST_RE.match(raw)
+                         or not prior_topic or prior_topic['owner'] in self_owners or explicit_self)
                     and _source_nominal_past_feeling_is_bound(raw)):
-                    nucleus = replace(nucleus, kind="reaction", semantic_frame=replace(
+                    nucleus = replace(nucleus, kind="reaction", grounding_kind="explicit",
+                        allowed_claim_scope="explicit_current_input", semantic_frame=replace(
                         frame, predicate_kind="feeling", polarity="positive", modality="feeling",
                         time_scope="past", attribute_codes=tuple(_dedupe((
                             *(code for code in frame.attribute_codes if code.startswith(
@@ -12524,7 +12571,13 @@ def _final_stage1_material_quality(
         & set(nucleus.semantic_frame.attribute_codes)
         for nucleus in nuclei
     )
-    return "grounded" if final_compound or direction_under_burden else original
+    nominal_experience = any(is_grounded_positive_feeling(n)
+        and n.source_fields == ("memo",) and n.retention == "required"
+        and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes
+        for n in nuclei)
+    # A proven completed experience and its outer feeling are sufficient
+    # material, even when represented by one indivisible source object.
+    return "grounded" if final_compound or direction_under_burden or nominal_experience else original
 
 
 def _final_stage1_unknown_boundaries(

@@ -3238,3 +3238,107 @@ def test_nominal_past_communicated_object_requires_complete_action_proof(invalid
         plan = replace(plan, nuclei=tuple(changed if n == target else n for n in plan.nuclei))
     with pytest.raises(v.CMEEVerticalError, match='current_experiencer_or_time_scope_unsupported'):
         v._cmee_assert_current_first_person_scope_supported(memo + action, plan, **kwargs)
+
+
+NOMINAL_BACKGROUND_JOY = '会議が済んだ後、考えが合わないままでも相談できたことが嬉しかった'
+
+
+@pytest.mark.parametrize('q3', [False, True])
+@pytest.mark.parametrize('action', ['', '机を拭いた。'])
+@pytest.mark.parametrize('feeling', [
+    NOMINAL_BACKGROUND_JOY,
+    'それでも' + NOMINAL_BACKGROUND_JOY,
+    'でも、私が議論が終わった時、結論が決まらないままで話せたことに安心した',
+])
+def test_nominal_background_initial_keeps_time_state_and_outer_feeling(q3, action, feeling):
+    import emlis_ai_grounded_observation_plan as gp
+    prepared = prepare_emlis_meaning((begin if q3 else initial)(feeling + '。', action))
+    plan = build_updated_grounded_plan(prepared)
+    feelings = [n for n in plan.nuclei if 'lexical:source_nominal_past_feeling' in n.semantic_frame.attribute_codes]
+    assert len(feelings) == 1 and gp.is_grounded_positive_feeling(feelings[0])
+    assert feelings[0].semantic_frame.time_scope == 'past'
+    assert feelings[0].grounding_kind == 'explicit'
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact, out.reason_codes
+    assert feeling + 'という気持ち' in out.artifact.reception
+    assert '今は' not in out.artifact.observation
+    if action:
+        assert '机を拭いたこと' in out.artifact.reception
+
+
+@pytest.mark.parametrize('memo', [
+    '弟は落ち込んだ。それでも' + NOMINAL_BACKGROUND_JOY,
+    '妹が悩んでいた。でも、' + NOMINAL_BACKGROUND_JOY,
+    'それでも弟が' + NOMINAL_BACKGROUND_JOY,
+    'それでも友人によると、' + NOMINAL_BACKGROUND_JOY,
+    'それでも会議が済んだ後、弟が違うままでも相談できたことで安心した',
+    'それでも会議が済んだ後、妹だけ相談できたことで安心した',
+    'それでも会議が済んだら、相談できたことで安心した',
+    '明日、それでも' + NOMINAL_BACKGROUND_JOY,
+    '「それでも' + NOMINAL_BACKGROUND_JOY + '」',
+    'それでも' + NOMINAL_BACKGROUND_JOY + 'と弟は言った',
+    'それでも' + NOMINAL_BACKGROUND_JOY + 'わけではない',
+    'それでも' + NOMINAL_BACKGROUND_JOY.replace('嬉しかった', '嬉しくなかった'),
+])
+def test_nominal_background_rejects_foreign_hypothetical_reported_and_denied_hosts(memo):
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(initial(memo + '。')))
+    assert not any('lexical:source_nominal_past_feeling' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
+def test_nominal_background_explicit_self_resets_preceding_foreign_topic():
+    memo = '弟は落ち込んだ。それでも私は' + NOMINAL_BACKGROUND_JOY + '。'
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(initial(memo)))
+    feelings = [n for n in plan.nuclei if 'lexical:source_nominal_past_feeling' in n.semantic_frame.attribute_codes]
+    assert len(feelings) == 1 and feelings[0].semantic_frame.actor == 'current_user'
+
+
+def test_nominal_background_inverse_checks_complete_source_without_author_replay():
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    feeling = 'それでも' + NOMINAL_BACKGROUND_JOY
+    prepared = prepare_emlis_meaning(begin(feeling + '。', '机を拭いた。'))
+    plan = build_updated_grounded_plan(prepared)
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    sentence = surface.build_grounded_sentence_plan(plan, prepared.thread.resolver())
+    follow = out.artifact.reception
+    def passes(changed):
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan', return_value=SimpleNamespace(text=changed)), patch(
+            'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(body=out.artifact.text.replace(follow, changed).encode(),
+                plan=plan, sentence_plan=sentence, resolver=prepared.thread.resolver(), selected_subjective_input=selected).passed
+    assert passes(follow)
+    for old, new in [('それでも', ''), ('会議が済んだ後、', ''), ('考えが合わないままでも', ''),
+                     ('相談できた', '相談した'), ('嬉しかった', '嬉しい'), ('嬉しかった', '嬉しくなかった'),
+                     ('という気持ち', 'という変化'), ('受け止めています', '受け止めていません')]:
+        changed = follow.replace(old, new)
+        assert changed != follow and not passes(changed), (old, new)
+
+
+@pytest.mark.parametrize('q3', [False, True])
+@pytest.mark.parametrize('action', ['', '机を拭いた。'])
+def test_nominal_background_answer_keeps_original_feelings_and_action(q3, action):
+    memo = '誘われたのに、悲しかった。' + NOMINAL_BACKGROUND_JOY + '。'
+    request = (begin if q3 else initial)(memo, action)
+    before = MeaningExperienceEngine().generate(request)
+    assert before.artifact and before.question, before.reason_codes
+    assert '誘われたのに悲しかったこと' in before.artifact.reception
+    assert NOMINAL_BACKGROUND_JOY + 'という気持ち' in before.artifact.reception
+    request = advance(request, 'その時は重かった。')
+    after = MeaningExperienceEngine().generate(request)
+    assert after.artifact, after.reason_codes
+    assert '誘われたのに悲しかったこと' in after.artifact.reception
+    assert 'その出来事へのその時の重さ' in after.artifact.reception
+    assert NOMINAL_BACKGROUND_JOY + 'という気持ち' in after.artifact.reception
+    if action:
+        assert '机を拭いたこと' in before.artifact.reception and '机を拭いたこと' in after.artifact.reception
+
+
+@pytest.mark.parametrize('memo', [
+    '弟だけ落ち込んだ。それでも' + NOMINAL_BACKGROUND_JOY,
+    '昨日、弟は落ち込んだ。それでも' + NOMINAL_BACKGROUND_JOY,
+])
+def test_nominal_background_prior_focus_and_temporal_topic_stays_unresolved(memo):
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(initial(memo + '。')))
+    assert not any('lexical:source_nominal_past_feeling' in n.semantic_frame.attribute_codes for n in plan.nuclei)

@@ -8125,3 +8125,9 @@ Remaining work is shared recognition/selection of other independent feelings and
 - withdrawal / epistemic / cognition_action / independent_decisionの4群で先行exportが不完全だったため、不採用原本を残し、同じsource・入力・assertionで該当群のみ再実行した。実際に返った全rowsとcountersを完全保存した版を採用manifestに明記。低層原因は未特定。先行exportやexit0だけを完成証拠にしない。
 - **次の残件:** 複合節の安堵・独立感情の取り落とし、行動への優先偏り、長い復唱と「こと」の連鎖。改善した一例を全体品質の合格にしない。共有認識/選択と既存authorで各意味を一度ずつ自然な文へ実現し、回答更新も同じownerで進める。固定2Move不一致と既存失敗を引き続き明示する。
 - STRUCTURE_MAP_DELTA_NONE。実DB・実機・実課金、merge/deploy/enable、外部AI生成は未実施。完全な私的入力・出力・比較・不採用試行は既存の非公開作業記録へ保存する。
+
+## 2026-09-14 continuation — nominal experience background (in progress)
+
+Product state remains **NOT_CLEAR**. The current work recognizes an outer past feeling while retaining a completed time clause and a continuing-state background. It also keeps independently stated original feelings beside the occasion being answered. The existing meaning/projection/Reception owners are used; question limits and source boundaries are unchanged. `STRUCTURE_MAP_DELTA_NONE`.
+
+This is an intermediate checkpoint, not final acceptance. Targeted inherited nominal/received-past checks remained passing in the latest completed run; new synthetic coverage still exposed seven failures (a separately tokenized leading connector, the original-response scope gate, and an action-bearing retained group). Further fixes are in progress. The derived current owner snapshot was refreshed; historical identity receipts and fixed regression expectations remain unchanged. Final required regressions, the same 100 inputs, every inherited saved conversation, root body reading and private writeback/readback are pending for this source. Preserve the previous accepted private record as the comparison baseline. Resume from these current sources and the pending failures, not an older candidate.

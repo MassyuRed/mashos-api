@@ -3535,6 +3535,28 @@ def _cmee_assert_current_first_person_scope_supported(
 
     _stage1_runtime_contract(stage1_response_schema_version)
     value = re.sub(r"\s+", "", str(text or ""))
+    nominal_feeling_ranges = []
+    if (resolver is not None and stage1_response_schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+        and FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in grounded_plan.source_contracts):
+        from emlis_ai_grounded_observation_plan import is_grounded_positive_feeling, _source_nominal_past_feeling_is_bound
+        for n in grounded_plan.nuclei:
+            f = n.semantic_frame
+            if (n.source_fields != ("memo",) or len(n.source_span_ids) != 1
+                or n.retention != "required" or n.grounding_kind != "explicit"
+                or n.allowed_claim_scope != "explicit_current_input"
+                or not is_grounded_positive_feeling(n) or f.time_scope != "past"
+                or "lexical:source_nominal_past_feeling" not in f.attribute_codes
+                or any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:", "semantic_dependency:"))
+                       for c in f.attribute_codes)):
+                continue
+            span = resolver.resolve(n.source_span_ids[0])
+            raw = str(span.raw_text)
+            occurrences = tuple(re.finditer(re.escape(raw), value))
+            if (span.source_field == "memo" and _source_nominal_past_feeling_is_bound(raw)
+                and len(occurrences) == 1
+                and (occurrences[0].start() == 0 or value[occurrences[0].start() - 1] in "。．.")
+                and (occurrences[0].end() == len(value) or value[occurrences[0].end()] in "。．.")):
+                nominal_feeling_ranges.append(occurrences[0].span())
     typed_v2_unfinished_scope = (
         stage1_response_schema_version
         == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
@@ -3615,6 +3637,10 @@ def _cmee_assert_current_first_person_scope_supported(
         RELATIVE_CLAUSE_OTHER_EXPERIENCER_RE,
     ):
         for match in pattern.finditer(value):
+            if any(start <= match.start() and match.end() <= end for start, end in nominal_feeling_ranges):
+                # The final source owner has proved the completed experience,
+                # its subordinate subjects and its past self feeling together.
+                continue
             subject = str(match.group("subject") or "")
             if any(
                 subject.endswith(first_person)
@@ -3719,6 +3745,7 @@ def _cmee_assert_current_first_person_scope_supported(
         pattern for pattern in scope_forbidden_patterns
         if any(not any(pattern is owner and start <= match.start() and match.end() <= end
                        for owner, start, end in denied_resolution_ranges)
+               and not any(start <= match.start() and match.end() <= end for start, end in nominal_feeling_ranges)
                for match in pattern.finditer(value))
     )
     typed_v2_unfinished = (
@@ -3782,6 +3809,7 @@ def _cmee_assert_current_first_person_scope_supported(
                 nominal_desire_ranges.append((offset, offset + nominal.start() + len("たかった")))
     unbound_past_morphology = any(
         not any(start <= match.start() and match.end() == end for start, end in nominal_desire_ranges)
+        and not any(start <= match.start() and match.end() <= end for start, end in nominal_feeling_ranges)
         for match in PAST_STATE_OR_DESIRE_MORPHOLOGY_RE.finditer(value)
     )
     if (

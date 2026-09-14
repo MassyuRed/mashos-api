@@ -4678,6 +4678,13 @@ def final_reception_source_anchor_text(
             getattr(resolver.resolve(span_id), "raw_text", "")
         )
         typed_fragment = _typed_reception_source_fragment(nucleus, raw_text)
+        if "lexical:source_nominal_past_feeling" in nucleus.semantic_frame.attribute_codes:
+            from emlis_ai_grounded_observation_plan import _source_nominal_past_feeling_is_bound
+            if typed_fragment in {None, raw_text} and _source_nominal_past_feeling_is_bound(raw_text):
+                # The complete feeling owns its connector and background.
+                # Inverse and answer locators must see the same source object
+                # as realization, rather than a connector-stripped fragment.
+                return raw_text
         target = _final_clean_fragment(
             typed_fragment if typed_fragment is not None else raw_text
         )

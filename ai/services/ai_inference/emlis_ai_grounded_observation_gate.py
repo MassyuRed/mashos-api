@@ -3252,9 +3252,23 @@ def evaluate_grounded_surface_body_inverse(
                                 target_nuclei[0].nucleus_id, nucleus_index, resolver)
                             raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
                             role = {"attention": "を見過ごさず、", "felt_response": "を"}.get(move.move_role)
-                            if (not source or role is None or move.support_nucleus_ids
-                                or effective_reference_mode == "anaphoric_first"
-                                or raw != source + "という気持ち" + role + "受け止めています。"):
+                            expected = source + "という気持ち" + (role or "") + "受け止めています。"
+                            contexts = _body_inverse_reception_context_ids(move, plan)
+                            contrast = tuple(r for r in plan.relations
+                                if r.type == "contrast" and r.retention == "required"
+                                and r.to_nucleus_id == target_nuclei[0].nucleus_id
+                                and contexts == (r.from_nucleus_id,))
+                            context_valid = not contexts and not move.support_nucleus_ids
+                            if (len(contrast) == 1 and len(contexts) == 1
+                                and nucleus_index[contexts[0]].kind == "event"
+                                and "lexical:source_nominal_past_feeling"
+                                    in target_nuclei[0].semantic_frame.attribute_codes):
+                                before = final_reception_source_anchor_text(contexts[0], nucleus_index, resolver)
+                                context_valid = bool(before and (not move.support_nucleus_ids
+                                    or move.support_nucleus_ids == contexts))
+                                expected = before + "ことと" + source + "という気持ちとの違い" + (role or "") + "受け止めています。"
+                            if (not source or role is None or not context_valid
+                                or effective_reference_mode == "anaphoric_first" or raw != expected):
                                 failures.append(f"body_inverse_nominal_cognition_feeling_object_missing:{move_id}")
                         if (
                             effective_reference_mode == "anaphoric_first"
