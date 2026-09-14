@@ -3547,3 +3547,17 @@ def test_original_burden_nonperson_scope_requires_exact_source_proof(invalid):
     with pytest.raises(CMEEVerticalError, match='current_experiencer_or_time_scope_unsupported'):
         _cmee_assert_current_first_person_scope_supported('発表が怖い。', plan,
             stage1_response_schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2, resolver=resolver)
+
+
+@pytest.mark.parametrize('action', ['机を拭いた。', '今夜は机を拭くことにした。'])
+def test_original_burden_with_contrast_keeps_complete_claim_context(action):
+    from test_cmee_final_stage1_generic_move_projection import _full_surface_artifacts
+    row = {'case_id': 'synthetic-original-burden-contrast', 'input': {
+        'thought_text': '資料をまとめた。それでも発表が怖い。', 'action_text': action,
+        'categories': ['仕事'], 'emotions': [{'type': '不安', 'strength': 'medium'}]}}
+    out = _full_surface_artifacts(row)
+    assert out.inverse.passed and out.gate.passed
+    follow = out.surface.text.split('Emlisから：\n')[1]
+    assert '資料をまとめたこととそれでも発表が怖い' in follow
+    assert '違い' in follow and '背景に' not in follow
+    assert 'これからの行動' in follow if '今夜' in action else '実際の行動' in follow

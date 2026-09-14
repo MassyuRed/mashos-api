@@ -12020,6 +12020,12 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
         and all(len(row.target_nucleus_ids) == 1 and not row.support_nucleus_ids for row in rows)
         and any(_source_explicit_original_feeling(binding.node_meta[binding.nucleus_to_node[row.target_nucleus_ids[0]]])
                 for row in rows if row.reception_act == "stay_with_current_burden")
+        # Only the complete two-object claim can use this partition. A
+        # feeling with additional contrast context keeps the existing
+        # aggregate realization and its complete source bindings.
+        and {_node_ref(binding.nucleus_to_node[nid])
+             for row in rows for nid in row.target_nucleus_ids}
+            == set(rows[0].subjective_proposition.response_object_refs)
     )
     independent_cognition_action = bool(
         len(rows) == 2
