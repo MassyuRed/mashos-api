@@ -3067,3 +3067,174 @@ def test_denied_resolution_keeps_independent_finite_line_beside_required_relatio
     assert '昨日は会議だった' in out.artifact.observation and '午後は休憩だった' in out.artifact.observation
     assert DENIED_RESOLUTION_COGNITION + 'のですね。' in out.artifact.observation
     assert 'という変化' not in out.artifact.observation
+
+
+NOMINAL_PAST_JOY = '話した後も、説明を聞いてもらえたことが嬉しかった'
+NOMINAL_PAST_RELIEF = '十分伝わったとは思わないけど、相談できたことで安心した'
+
+
+@pytest.mark.parametrize('q3', [False, True])
+@pytest.mark.parametrize('action', ['', '机を拭いた。'])
+@pytest.mark.parametrize('joy', [NOMINAL_PAST_JOY, '相談を聞いてくれたことがうれしかった'])
+def test_nominal_past_pair_keeps_both_feelings_with_their_whole_objects(q3, action, joy):
+    from emlis_ai_grounded_observation_plan import is_grounded_positive_feeling
+    prepared = prepare_emlis_meaning((begin if q3 else initial)(
+        joy + '。' + NOMINAL_PAST_RELIEF + '。', action))
+    plan = build_updated_grounded_plan(prepared)
+    feelings = [n for n in plan.nuclei if is_grounded_positive_feeling(n)]
+    assert len(feelings) == 2
+    assert all(n.semantic_frame.time_scope == 'past' for n in feelings)
+    assert all('lexical:source_nominal_past_feeling' in n.semantic_frame.attribute_codes for n in feelings)
+    assert not any(r.retention == 'required' or r.type != 'uncertain_connection' for r in plan.relations)
+    moves = plan.response_plan.human_reception_plan.moves
+    assert [m.reception_act for m in moves] == ['recognize_lived_change'] * 2 + (['honor_concrete_effort'] if action else [])
+    assert all(not m.support_nucleus_ids for m in moves)
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact, out.reason_codes
+    follow = out.artifact.reception
+    assert joy + 'という気持ちを見過ごさず、受け止めています。' in follow
+    assert NOMINAL_PAST_RELIEF + 'という気持ちを受け止めています。' in follow
+    assert follow.index(joy) < follow.index(NOMINAL_PAST_RELIEF)
+    assert '今は' not in out.artifact.observation and '一つの状態' not in out.artifact.observation
+    assert 'を背景に' not in follow and 'を支えている' not in follow
+    if action:
+        assert follow.index(NOMINAL_PAST_RELIEF) < follow.index('机を拭いた')
+
+
+@pytest.mark.parametrize('memo', [
+    '弟は' + NOMINAL_PAST_RELIEF,
+    '弟だけ、相談できたことで安心した',
+    '弟のみ、相談できたことで安心した',
+    '弟って、相談できたことで安心した',
+    '弟自身、相談できたことで安心した',
+    '弟が話した後、相談できたことで安心した',
+    '友人によると、' + NOMINAL_PAST_RELIEF,
+    '友人の感想。' + NOMINAL_PAST_RELIEF,
+    '友人の感想です。' + NOMINAL_PAST_RELIEF,
+    '友人は話した。' + NOMINAL_PAST_RELIEF,
+    '「' + NOMINAL_PAST_RELIEF + '」',
+    '「' + NOMINAL_PAST_RELIEF,
+    NOMINAL_PAST_RELIEF + 'と友人は言った',
+    NOMINAL_PAST_RELIEF + 'とは限らない',
+    NOMINAL_PAST_RELIEF + 'わけではない',
+    NOMINAL_PAST_RELIEF.replace('安心した', '安心しなかった'),
+    NOMINAL_PAST_RELIEF.replace('安心した', '安心したかもしれない'),
+    NOMINAL_PAST_RELIEF.replace('安心した', '安心したら'),
+    NOMINAL_PAST_RELIEF.replace('安心した', '安心している'),
+    NOMINAL_PAST_RELIEF + '？',
+    '明日は' + NOMINAL_PAST_RELIEF,
+])
+def test_nominal_past_feeling_requires_affirmative_current_user_host(memo):
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(initial(memo + '。')))
+    assert not any('lexical:source_nominal_past_feeling' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('q3', [False, True])
+def test_nominal_past_pair_inverse_preserves_each_object_without_author_replay(q3):
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    prepared = prepare_emlis_meaning((begin if q3 else initial)(
+        NOMINAL_PAST_JOY + '。' + NOMINAL_PAST_RELIEF + '。', '机を拭いた。'))
+    plan = build_updated_grounded_plan(prepared)
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact, out.reason_codes
+    resolver = prepared.thread.resolver()
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    sentence = surface.build_grounded_sentence_plan(plan, resolver)
+    follow = out.artifact.reception
+    def passes(changed):
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan', return_value=SimpleNamespace(text=changed)), patch(
+            'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(body=out.artifact.text.replace(follow, changed).encode(),
+                plan=plan, sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert passes(follow)
+    for old, new in [
+        ('話した後も、', ''), ('十分伝わったとは思わないけど、', ''),
+        ('相談できた', '相談した'), ('安心した', '安心している'),
+        ('嬉しかった', '嬉しくなかった'),
+        (NOMINAL_PAST_RELIEF, '弟が' + NOMINAL_PAST_RELIEF),
+        ('という気持ち', 'という変化'), ('受け止めています', '受け止めていません'),
+        (NOMINAL_PAST_JOY + 'という気持ちを見過ごさず、受け止めています。', ''),
+        (NOMINAL_PAST_RELIEF + 'という気持ちを受け止めています。', ''),
+        ('机を拭いたことを大切に思っています。', ''),
+    ]:
+        changed = follow.replace(old, new)
+        assert changed != follow and not passes(changed), (old, new)
+
+
+@pytest.mark.parametrize('action', ['', '机を拭いた。'])
+def test_nominal_past_pair_direct_compile_consumes_each_feeling_once(action):
+    from test_cmee_final_stage1_generic_move_projection import _full_surface_artifacts
+    result = _full_surface_artifacts({'case_id': 'synthetic-nominal-past-pair', 'input': {
+        'thought_text': NOMINAL_PAST_JOY + '。' + NOMINAL_PAST_RELIEF + '。',
+        'action_text': action, 'categories': ['仕事'], 'emotions': [{'type': '不安', 'strength': 'medium'}]}})
+    assert result.inverse.passed and result.gate.passed
+    decisions = result.selected_subjective_input.decisions
+    assert len(decisions) == (3 if action else 2)
+    refs = [ref for d in decisions for ref in d.selected_contribution_refs]
+    assert len(refs) == len(set(refs)) and all(d.selected_contribution_refs for d in decisions)
+    assert NOMINAL_PAST_JOY + 'という気持ち' in result.surface.text
+    assert NOMINAL_PAST_RELIEF + 'という気持ち' in result.surface.text
+
+
+@pytest.mark.parametrize('action', ['', '机を拭いた。'])
+def test_nominal_past_single_keeps_finite_past_in_observation(action):
+    out = realize_emlis_thread_body(prepare_emlis_meaning(initial(NOMINAL_PAST_RELIEF + '。', action)))
+    assert out.artifact, out.reason_codes
+    assert NOMINAL_PAST_RELIEF in out.artifact.observation
+    assert '今は' not in out.artifact.observation
+    assert NOMINAL_PAST_RELIEF + 'という気持ち' in out.artifact.reception
+
+
+@pytest.mark.parametrize('action', ['話したかった内容を伝えた。', '書きたかった気持ちを書いた。'])
+def test_nominal_past_pair_outer_scope_keeps_desire_inside_communicated_object(action):
+    import test_cmee_nls_v3_batch001_unified_stage1_bridge as bridge
+    row = {'case_id': 'synthetic-nominal-past-outer', 'input': {
+        'thought_text': NOMINAL_PAST_JOY + '。' + NOMINAL_PAST_RELIEF + '。',
+        'action_text': action, 'categories': ['仕事'], 'emotions': [{'type': '平穏', 'strength': 'medium'}]}}
+    out = MeaningExperienceEngine().generate(bridge._request_from_canonical_row(row))
+    assert out.artifact, out.reason_codes
+    assert NOMINAL_PAST_JOY in out.artifact.reception and NOMINAL_PAST_RELIEF in out.artifact.reception
+    assert action.rstrip('。') in out.artifact.reception
+
+
+@pytest.mark.parametrize('unbound', ['話したかった。', '話したかった内容を伝えたい。',
+    '話したかった内容を伝えたかもしれない。', '話したかった内容を伝えなかった。'])
+def test_nominal_past_scope_exemption_requires_matching_completed_source(unbound):
+    from cocolon_meaning_experience_engine import emlis_v1a as v
+    memo = NOMINAL_PAST_JOY + '。' + NOMINAL_PAST_RELIEF + '。'
+    action = '話したかった内容を伝えた。'
+    prepared = prepare_emlis_meaning(initial(memo, action))
+    plan = build_updated_grounded_plan(prepared)
+    kwargs = dict(stage1_response_schema_version=v.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
+                  resolver=prepared.thread.resolver())
+    v._cmee_assert_current_first_person_scope_supported(memo + action, plan, **kwargs)
+    with pytest.raises(v.CMEEVerticalError, match='current_experiencer_or_time_scope_unsupported'):
+        v._cmee_assert_current_first_person_scope_supported(memo + unbound, plan, **kwargs)
+
+
+@pytest.mark.parametrize('invalid', ['no_resolver', 'not_performed', 'different_field', 'two_desires', 'prior_cognition'])
+def test_nominal_past_communicated_object_requires_complete_action_proof(invalid):
+    from cocolon_meaning_experience_engine import emlis_v1a as v
+    memo = NOMINAL_PAST_JOY + '。' + NOMINAL_PAST_RELIEF + '。'
+    action = ('帰りたかったが、質問したかった内容を伝えた。' if invalid == 'two_desires'
+              else '帰りたいと思ったが、質問したかった内容を伝えた。' if invalid == 'prior_cognition'
+              else '質問したかった内容を伝えた。')
+    prepared = prepare_emlis_meaning(initial(memo, action))
+    # Isolate the object proof from the pre-existing directional-relation
+    # allowance; no relation is offered as alternative time-scope evidence.
+    plan = replace(build_updated_grounded_plan(prepared), relations=())
+    kwargs = dict(stage1_response_schema_version=v.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
+                  resolver=prepared.thread.resolver())
+    if invalid not in {'two_desires', 'prior_cognition'}:
+        v._cmee_assert_current_first_person_scope_supported(memo + action, plan, **kwargs)
+    if invalid == 'no_resolver':
+        kwargs['resolver'] = None
+    elif invalid in {'not_performed', 'different_field'}:
+        target = next(n for n in plan.nuclei if n.source_fields == ('memo_action',))
+        changed = (replace(target, semantic_frame=replace(target.semantic_frame,
+            attribute_codes=tuple(c for c in target.semantic_frame.attribute_codes if c != 'operator:performed_action')))
+            if invalid == 'not_performed' else replace(target, source_fields=('memo',)))
+        plan = replace(plan, nuclei=tuple(changed if n == target else n for n in plan.nuclei))
+    with pytest.raises(v.CMEEVerticalError, match='current_experiencer_or_time_scope_unsupported'):
+        v._cmee_assert_current_first_person_scope_supported(memo + action, plan, **kwargs)

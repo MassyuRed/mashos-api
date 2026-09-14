@@ -3752,10 +3752,42 @@ def _cmee_assert_current_first_person_scope_supported(
         completed_factual_change
         and has_source_bound_positive_change
     )
+    nominal_desire_ranges = []
+    if (resolver is not None and stage1_response_schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+        and FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in grounded_plan.source_contracts):
+        from emlis_ai_grounded_observation_plan import source_proven_performed_action_status
+        for n in grounded_plan.nuclei:
+            f = n.semantic_frame
+            if (n.source_fields != ("memo_action",) or len(n.source_span_ids) != 1
+                or n.retention != "required" or n.grounding_kind != "explicit"
+                or n.allowed_claim_scope != "explicit_current_input"
+                or (f.actor, f.modality, f.time_scope) != ("current_user", "fact", "past")
+                or not source_proven_performed_action_status(n)
+                or any(c.startswith(("source_fragment_", "surface_scalar_", "semantic_dependency:"))
+                       for c in f.attribute_codes)):
+                continue
+            span = resolver.resolve(n.source_span_ids[0])
+            raw = str(span.raw_text)
+            # A past desire modifies the explicitly communicated object.
+            # It is neither a separate current desire nor a change caused
+            # by an adjacent feeling. Exempt only that morphology match.
+            nominal = re.search(r"たかった(?:内容|こと|話|要点|気持ち)を"
+                                r"(?:伝えた|説明した|書いた|話した)$", raw)
+            occurrences = tuple(re.finditer(re.escape(raw), value))
+            if (span.source_field == "memo_action" and nominal and len(occurrences) == 1
+                and not PAST_STATE_OR_DESIRE_MORPHOLOGY_RE.search(raw[:nominal.start()])
+                and (occurrences[0].start() == 0 or value[occurrences[0].start() - 1] in "。．.")
+                and (occurrences[0].end() == len(value) or value[occurrences[0].end()] in "。．.")):
+                offset = occurrences[0].start()
+                nominal_desire_ranges.append((offset, offset + nominal.start() + len("たかった")))
+    unbound_past_morphology = any(
+        not any(start <= match.start() and match.end() == end for start, end in nominal_desire_ranges)
+        for match in PAST_STATE_OR_DESIRE_MORPHOLOGY_RE.finditer(value)
+    )
     if (
         PAST_BURDEN_OR_DESIRE_RE.search(value)
         or PAST_TO_CURRENT_SCOPE_RE.search(value)
-        or PAST_STATE_OR_DESIRE_MORPHOLOGY_RE.search(value)
+        or unbound_past_morphology
     ) and not any(
         str(relation.type) in DIRECTIONAL_GROUNDED_RELATION_TYPES
         for relation in grounded_plan.relations

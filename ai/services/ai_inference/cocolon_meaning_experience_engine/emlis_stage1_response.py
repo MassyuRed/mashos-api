@@ -12034,7 +12034,7 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
         and all(len(row.target_nucleus_ids) == 1 and not row.support_nucleus_ids for row in rows)
         and all(
             (nucleus.source_fields == ("memo",) and is_grounded_positive_feeling(nucleus)
-             and {"lexical:source_nominal_cognition_feeling", "lexical:source_received_past_feeling"}
+             and {"lexical:source_nominal_cognition_feeling", "lexical:source_received_past_feeling", "lexical:source_nominal_past_feeling"}
                  & set(nucleus.semantic_frame.attribute_codes))
             if row.reception_act == "recognize_lived_change" else
             (nucleus.source_fields == ("memo_action",) and source_proven_performed_action_status(nucleus))

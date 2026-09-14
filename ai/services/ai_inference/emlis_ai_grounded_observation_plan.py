@@ -6804,7 +6804,8 @@ def _source_independent_positive_feelings(nuclei, relations):
     replace either required meaning, and source order proves no causal link.
     This is bounded by the existing three-Move maximum, not a new budget.
     """
-    text = tuple(n for n in nuclei if any(f in _TEXT_SOURCE_FIELDS for f in n.source_fields))
+    text = tuple(sorted((n for n in nuclei if any(f in _TEXT_SOURCE_FIELDS for f in n.source_fields)),
+                        key=lambda n: _span_number(n.source_span_ids[0]) if n.source_span_ids else 0))
     feelings = tuple(n for n in text if n.source_fields == ("memo",) and is_grounded_positive_feeling(n))
     actions = tuple(n for n in text if n.source_fields == ("memo_action",)
                     and source_proven_performed_action_status(n))
@@ -7418,7 +7419,7 @@ def build_grounded_reception_opportunities(
                     continue
                 if (final_source_fidelity and relation.type == "uncertain_connection"
                     and relation.retention != "required"
-                    and any({"lexical:source_nominal_cognition_feeling", "lexical:source_received_past_feeling"}
+                    and any({"lexical:source_nominal_cognition_feeling", "lexical:source_received_past_feeling", "lexical:source_nominal_past_feeling"}
                             & set(n.semantic_frame.attribute_codes)
                             for n in (nucleus_index.get(relation.from_nucleus_id),
                                       nucleus_index.get(relation.to_nucleus_id)) if n is not None)):
@@ -8301,7 +8302,7 @@ def build_grounded_human_reception_plan(
                 and len(move.target_nucleus_ids) == 1 and not move.support_nucleus_ids
                 and (target := nucleus_index.get(move.target_nucleus_ids[0])) is not None
                 and is_grounded_positive_feeling(target)
-                and {"lexical:source_nominal_cognition_feeling", "lexical:source_received_past_feeling"}
+                and {"lexical:source_nominal_cognition_feeling", "lexical:source_received_past_feeling", "lexical:source_nominal_past_feeling"}
                     & set(target.semantic_frame.attribute_codes))
             else move for move in moves)
     # A single selected performance or current positive feeling still has
@@ -11229,6 +11230,50 @@ def _received_event_reaction_projections(span, base_frame):
     return tuple(rows)
 
 
+def _source_nominal_past_feeling_is_bound(fragment: str) -> bool:
+    """Bind a completed experience to its outer finite past feeling.
+
+    Negation in an earlier cognitive concession belongs to that clause.
+    A benefactive or possible completed experience is the feeling's object,
+    not a separate performed-action claim. Competing topics and reporting
+    hosts are outside this bounded grammar.
+    """
+    if _top_level_text(fragment) != fragment:
+        return False
+    match = re.fullmatch(
+        r"(?P<experience>.+)こと(?:に|で|が)"
+        r"(?:少し(?:だけ)?|ちょっと|とても|本当に)?"
+        r"(?:安心した|ほっとした|落ち着いた|うれしかった|嬉しかった)", fragment)
+    if match is None:
+        return False
+    experience = re.sub(r"^(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が)[、,]?", "", match['experience'])
+    if re.search(r"[。．.!！?？:：;；]|こと|によると|いわく|曰く|"
+                 r"明日|来週|来月|来年|今後|もし|なら|たら|としたら|"
+                 r"と言|という|って言|らしい|そうだ|ようだ", experience):
+        return False
+    concession = re.match(r"(?P<claim>[^、,]+)とは思わない(?:けれども|けれど|けど|が)[、,]", experience)
+    if concession:
+        if re.search(r"は|が|も", concession['claim']):
+            return False
+        experience = experience[concession.end():]
+    temporal = re.match(r"(?:すれ違った|話した|話し合った|相談した|議論した|伝えた|集まった|参加した)"
+                        r"(?:後|あと|時|とき)(?:も|に)?[、,]", experience)
+    if temporal:
+        experience = experience[temporal.end():]
+    event = re.fullmatch(
+        r"(?P<object>[一-鿿々ぁ-んァ-ヶー、,]*?)(?:[てで]くれた|[てで]もらえた|"
+        r"話せた|話し合えた|伝えられた|続けられた|取り組めた|参加できた|相談できた)",
+        experience)
+    if event is None:
+        return False
+    # Inspect the host separately from the finite benefactive: the 'も'
+    # inside 'もらえた' is not a competing topic particle.
+    return re.search(r"は|が|も|にとって|について|に関して|こそ|さえ|まで|だって|自身|"
+                     r"気持ちとして|感想として|聞いた|言った|述べた|語った|説明した|答えた|"
+                     + _OWNER_FOCUS_PARTICLE_SOURCE + "|" + _OWNER_TOPIC_PARTICLE_SOURCE,
+                     event['object']) is None
+
+
 def _source_received_past_feeling_is_bound(fragment: str) -> bool:
     """Bind a complete received experience to its finite past feeling.
 
@@ -11320,6 +11365,35 @@ def _final_stage1_typed_nuclei(
             else ()
         )
         if not projections:
+            frame = nucleus.semantic_frame
+            if (span is not None and normalized_input is not None
+                and nucleus.source_fields == ("memo",) and span.source_field == "memo"
+                and nucleus.grounding_kind == "explicit" and nucleus.retention == "required"
+                and nucleus.allowed_claim_scope == "explicit_current_input"
+                and frame.actor == "current_user"
+                and not any(code.startswith(("source_fragment_scalar_", "surface_scalar_",
+                                             "semantic_dependency:", "thread_time:"))
+                            for code in frame.attribute_codes)):
+                source = str(normalized_input.get("memo") or "")
+                start, end = span.start_index, span.end_index
+                raw = str(span.raw_text)
+                if (0 <= start < end <= len(source) and source[start:end] == raw
+                    and (not source[:start].strip() or source[:start].rstrip().endswith(("。", "．", ".")))
+                    and not _source_prefix_opens_report(source[:start])
+                    and not re.search(r"によると|いわく|曰く|の(?:感想|気持ち|説明|報告|発言)[。．.]", source[:start])
+                    and (not source[end:].strip() or source[end:].lstrip().startswith(("。", "．", ".")))
+                    and _top_level_text(source) == source
+                    and _source_nominal_past_feeling_is_bound(raw)):
+                    nucleus = replace(nucleus, kind="reaction", semantic_frame=replace(
+                        frame, predicate_kind="feeling", polarity="positive", modality="feeling",
+                        time_scope="past", attribute_codes=tuple(_dedupe((
+                            *(code for code in frame.attribute_codes if code.startswith(
+                                ("semantic_analyzer:", "detected_type:", "source_claim:"))),
+                            "operator:feeling", "operator:positive_change", "time_scope:past",
+                            "lexical:source_bounded_expression", "lexical:preserve_source_predicate",
+                            "lexical:no_new_sensation_family", "lexical:source_nominal_past_feeling",
+                        ))),
+                    ))
             # Correct the lexical background reading only after proving the
             # complete sentence and source owner. Background operators remain
             # in the source bytes; they must not label the outer past feeling.
@@ -12334,7 +12408,7 @@ def _final_stage1_normalize_relation_authority(
             and left.semantic_frame.actor == right.semantic_frame.actor == "current_user"
             and set(left.semantic_frame.attribute_codes) & {
                 "lexical:source_current_material_primary", "lexical:source_temporal_relief_residue",
-                "lexical:source_nominal_cognition_feeling", "lexical:source_received_past_feeling"}
+                "lexical:source_nominal_cognition_feeling", "lexical:source_received_past_feeling", "lexical:source_nominal_past_feeling"}
             and source_proven_performed_action_status(right)
         ):
             # The coexisting feelings belong to the memo's current host.
@@ -12921,6 +12995,10 @@ def _final_stage1_align_action_status(
         # it in source and surface; isolate only the finite part for proof.
         finite = _source_finite_without_postposed_focus(finite)
         if is_grounded_positive_feeling(nucleus):
+            if ("lexical:source_nominal_past_feeling" in codes
+                and _source_nominal_past_feeling_is_bound(text)):
+                aligned.append(nucleus)
+                continue
             if ("lexical:source_received_past_feeling" in codes
                 and _source_received_past_feeling_is_bound(text)):
                 # The complete received experience proves a past feeling;

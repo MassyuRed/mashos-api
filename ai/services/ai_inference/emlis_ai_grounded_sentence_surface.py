@@ -2760,7 +2760,7 @@ def _render_observation(
                 and all(is_grounded_positive_feeling(n)
                         and {"lexical:source_bounded_expression", "lexical:preserve_source_predicate"}
                             <= set(n.semantic_frame.attribute_codes) for n in feelings)
-                and any("lexical:source_received_past_feeling" in n.semantic_frame.attribute_codes
+                and any({"lexical:source_received_past_feeling", "lexical:source_nominal_past_feeling"} & set(n.semantic_frame.attribute_codes)
                         for n in feelings)):
                 # Their complete sources carry their own times. Co-presence
                 # in one input cannot make a past feeling a single current state.
@@ -2818,7 +2818,7 @@ def _render_observation(
         if typed_endpoint and typed_endpoint != joined:
             return f"{prefix}今の入力には、{typed_endpoint}があります。"
     if (typed_semantic_duties
-        and "lexical:source_received_past_feeling" in nucleus.semantic_frame.attribute_codes):
+        and {"lexical:source_received_past_feeling", "lexical:source_nominal_past_feeling"} & set(nucleus.semantic_frame.attribute_codes)):
         return f"{prefix}{joined}という気持ちが書かれています。"
     if "lexical:preserve_source_predicate" in nucleus.semantic_frame.attribute_codes:
         return f"{prefix}今は、{joined}という感覚が前に出ています。"
