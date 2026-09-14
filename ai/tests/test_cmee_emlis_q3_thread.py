@@ -2739,7 +2739,7 @@ RECEIVED_PAST_FEELING = '連絡できなかったけれど、訪ねたときに�
 
 @pytest.mark.parametrize('q3', [False, True])
 @pytest.mark.parametrize('past', [RECEIVED_PAST_FEELING,
-    '戻った時に責めず迎えてくれてほっとした',
+    '話したときに否定せず受け入れてくれて嬉しかった',
     '私は話を聞いてもらえて少し落ち着いた'])
 def test_received_past_feeling_and_current_cognition_keep_independent_duties(q3, past):
     from emlis_ai_grounded_observation_plan import is_grounded_positive_feeling
