@@ -2051,7 +2051,6 @@ def _build_regular_lines(
         if (
             material_quality == "limited_grounding"
             and _is_final_stage1_grounded_projection(plan)
-            and not required_relation_ids
             and len(selected_ids) > 1
         ):
             # A finite unknown owns its own sentence boundary. Leaving it in
@@ -2072,7 +2071,12 @@ def _build_regular_lines(
                     claim_scope=claim_scope,
                     recovery_stage=recovery_stage,
                 )
-                if _source_bound_current_cognition(single.binding, nucleus_index, resolver):
+                independent_denial = (
+                    "lexical:source_denied_resolution" in nucleus_index[nucleus_id].semantic_frame.attribute_codes
+                    and not any(nucleus_id in (relation_index[rid].from_nucleus_id, relation_index[rid].to_nucleus_id)
+                                for rid in required_relation_ids))
+                if ((not required_relation_ids or independent_denial)
+                    and _source_bound_current_cognition(single.binding, nucleus_index, resolver)):
                     finite_cognition_ids.add(nucleus_id)
                     if pending:
                         groups.append(tuple(pending))
@@ -2082,7 +2086,13 @@ def _build_regular_lines(
                     pending.append(nucleus_id)
             if pending:
                 groups.append(tuple(pending))
-            limited_groups = tuple(groups)
+            # Keep an existing relation in one group. A split may isolate
+            # only the independent finite clause, never its neighbours' link.
+            if all(any({relation_index[rid].from_nucleus_id, relation_index[rid].to_nucleus_id} <= set(group)
+                       for group in groups) for rid in required_relation_ids):
+                limited_groups = tuple(groups)
+            else:
+                finite_cognition_ids.clear()
         material_scope_introduced = False
         for group in limited_groups:
             is_cognition = len(group) == 1 and group[0] in finite_cognition_ids
@@ -2092,7 +2102,7 @@ def _build_regular_lines(
                 line_role="limited_scope",
                 surface_function="render_limited_scope",
                 nucleus_ids=group,
-                relation_ids=required_relation_ids,
+                relation_ids=_internal_relation_ids(group, required_relation_ids, relation_index),
                 nucleus_index=nucleus_index,
                 relation_index=relation_index,
                 claim_scope=claim_scope,
@@ -2124,6 +2134,26 @@ def _build_regular_lines(
             nucleus_index,
             relation_index,
         )
+        # A proven nested denial must keep its own finite sentence. A noun
+        # list would present the denied resolution as an ordinary change.
+        # Split only that relation-free owner; retain every adjacent group
+        # and all required relations under their existing observation lines.
+        scoped_groups = []
+        for group in groups:
+            pending = []
+            for nid in group:
+                if ("lexical:source_denied_resolution" in nucleus_index[nid].semantic_frame.attribute_codes
+                    and not any(nid in (r.from_nucleus_id, r.to_nucleus_id)
+                                for rid, r in relation_index.items() if rid in required_relation_ids)):
+                    if pending:
+                        scoped_groups.append(tuple(pending))
+                        pending = []
+                    scoped_groups.append((nid,))
+                else:
+                    pending.append(nid)
+            if pending:
+                scoped_groups.append(tuple(pending))
+        groups = tuple(scoped_groups)
         for group_index, group in enumerate(groups):
             internal_relations = _internal_relation_ids(group, relation_candidates, relation_index)
             covered_relations.update(internal_relations)
@@ -2676,6 +2706,9 @@ def _source_bound_current_cognition(
         if span.source_field == "memo" and _source_provisional_degree_parts(clause) is not None:
             # Plain connective/attributive inflection keeps both present hosts.
             clause = re.sub(r"(気[がはも])します(?=けど|けれど)", r"\1する", clause)
+            if "lexical:source_denied_resolution" in attributes:
+                clause = re.sub(r"思えました$", "思えた", clause)
+                clause = re.sub(r"思いました$", "思った", clause)
             return re.sub(r"ありません$|ないです$", "ない", clause)
     if (
         nucleus.kind == frame.predicate_kind == "uncertainty"

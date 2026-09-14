@@ -3529,6 +3529,7 @@ def _cmee_assert_current_first_person_scope_supported(
     grounded_plan: Any,
     *,
     stage1_response_schema_version: str = CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V1,
+    resolver: Any | None = None,
 ) -> None:
     """Fail closed when Stage 1 cannot safely bind experiencer or time scope."""
 
@@ -3682,8 +3683,43 @@ def _cmee_assert_current_first_person_scope_supported(
         FUTURE_HYPOTHETICAL_DESIRE_RE,
         PAST_DESIRE_WITH_CURRENT_SCOPE_RE,
     )
+    denied_resolution_ranges = []
+    if (resolver is not None and stage1_response_schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+        and FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in grounded_plan.source_contracts):
+        from emlis_ai_grounded_observation_plan import _source_denied_resolution_parts
+        for n in grounded_plan.nuclei:
+            f = n.semantic_frame
+            if (n.source_fields != ("memo",) or len(n.source_span_ids) != 1
+                or n.retention != "required" or n.grounding_kind != "explicit"
+                or n.allowed_claim_scope != "explicit_current_input"
+                or n.kind != f.predicate_kind or n.kind != "change"
+                or (f.actor, f.modality, f.polarity, f.time_scope) != ("current_user", "fact", "mixed", "current_input")
+                or "lexical:source_denied_resolution" not in f.attribute_codes):
+                continue
+            span = resolver.resolve(n.source_span_ids[0])
+            raw = str(span.raw_text)
+            parts = _source_denied_resolution_parts(raw)
+            if span.source_field != "memo" or parts is None:
+                continue
+            if not all(f"source_clause_scope:{role}:{start}:{end}:{scope}" in f.attribute_codes
+                       for role, start, end, scope in parts):
+                continue
+            occurrences = tuple(re.finditer(re.escape(raw), value))
+            if len(occurrences) != 1:
+                continue
+            offset = occurrences[0].start()
+            denied_resolution_ranges.extend((NEGATED_OR_RESOLVED_BURDEN_WINDOW_RE, offset + start, offset + end)
+                for role, start, end, _ in parts if role == "assertion")
+            # The possibility belongs to the completed cognitive host;
+            # a broad burden-to-epistemic window cannot detach that host.
+            positions = {role: (start, end) for role, start, end, _ in parts}
+            denied_resolution_ranges.append((UNBOUND_EPISTEMIC_STATE_OR_DESIRE_RE,
+                offset + positions["degree"][0], offset + positions["possibility"][1]))
     matched_scope_patterns = tuple(
-        pattern for pattern in scope_forbidden_patterns if pattern.search(value)
+        pattern for pattern in scope_forbidden_patterns
+        if any(not any(pattern is owner and start <= match.start() and match.end() <= end
+                       for owner, start, end in denied_resolution_ranges)
+               for match in pattern.finditer(value))
     )
     typed_v2_unfinished = (
         typed_v2_unfinished_scope
@@ -6362,10 +6398,19 @@ def _validate_reception_semantic_compatibility(
         for span in source.evidence_spans
         if str(getattr(span, "span_id", "") or "") in observation_span_ids
     )
-    if any(NEGATIVE_RECEPTION_RE.search(line.text) for line in reception) and not (
-        _cmee_has_current_burden(source_text)
-    ):
-        raise CMEEVerticalError("reception_negative_meaning_promotion")
+    if not _cmee_has_current_burden(source_text):
+        from emlis_ai_grounded_observation_plan import _source_denied_resolution_parts
+        for line in reception:
+            owned = []
+            if schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2:
+                for span in source.evidence_spans:
+                    if (span.span_id in line.binding.evidence_span_ids
+                        and span.span_id in observation_span_ids and span.source_field == "memo"
+                        and _source_denied_resolution_parts(str(span.raw_text)) is not None):
+                        owned.extend(m.span() for m in re.finditer(re.escape(str(span.raw_text)), line.text))
+            if any(not any(start <= m.start() and m.end() <= end for start, end in owned)
+                   for m in NEGATIVE_RECEPTION_RE.finditer(line.text)):
+                raise CMEEVerticalError("reception_negative_meaning_promotion")
 
 
 def _bind_plan_to_visible_lines(
@@ -7602,6 +7647,7 @@ def _build_text_grounded_limited_artifact_for_schema(
         ),
         grounded_plan,
         stage1_response_schema_version=stage1_response_schema_version,
+        resolver=resolver,
     )
 
     required_nucleus_ids, required_relation_ids, reception_target_ids = (

@@ -2844,3 +2844,226 @@ def test_received_past_pair_direct_projection_consumes_each_duty_once(action):
     assert len(refs) == len(set(refs))
     assert RECEIVED_PAST_FEELING + 'という気持ち' in result.surface.text
     assert NOMINAL_COGNITION_FEELING + 'という気持ち' in result.surface.text
+
+
+DENIED_RESOLUTION_COGNITION = '不安が消えたわけではないけれど、別の方法もありそうだと思えた'
+
+
+@pytest.mark.parametrize('q3', [False, True])
+@pytest.mark.parametrize('clause', [DENIED_RESOLUTION_COGNITION,
+    '緊張がなくなったわけではありませんが、他の手順もありそうだと思いました',
+    '痛みが取れたわけじゃないけど、休む以外の過ごし方もありそうだと思えました'])
+def test_denied_resolution_keeps_each_host_and_prior_context(q3, clause):
+    import re
+    request = (begin if q3 else initial)(
+        '昨日は会議だった。' + clause + '。', '机を拭いた。')
+    prepared = prepare_emlis_meaning(request)
+    plan = build_updated_grounded_plan(prepared)
+    target = next(n for n in plan.nuclei if 'lexical:source_denied_resolution' in n.semantic_frame.attribute_codes)
+    frame = target.semantic_frame
+    assert (frame.predicate_kind, frame.modality, frame.polarity, frame.time_scope) == ('change', 'fact', 'mixed', 'current_input')
+    codes = frame.attribute_codes
+    assert 'operator:positive_change' not in codes and 'operator:performed_action' not in codes
+    assert any(c.endswith(':under_present_denial') for c in codes)
+    assert any(c.endswith(':under_past_cognition') for c in codes)
+    assert prepared.thread.resolver().resolve(target.source_span_ids[0]).raw_text == clause
+    moves = plan.response_plan.human_reception_plan.moves
+    assert moves[0].target_nucleus_ids == (target.nucleus_id,)
+    assert all(not m.support_nucleus_ids for m in moves)
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact, out.reason_codes
+    engine = MeaningExperienceEngine()
+    checkpoint = engine.prepare_emlis_update(request)
+    actual = engine.generate(replace(request, emlis_thread=replace(
+        request.emlis_thread, prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id)))
+    assert actual.artifact, actual.reason_codes
+    assert actual.question is None and actual.body_state == 'FINAL'
+    finite = re.sub(r'思いました$', '思った', clause)
+    finite = re.sub(r'思えました$', '思えた', finite)
+    for artifact in (out.artifact, actual.artifact):
+        assert finite + 'のですね。' in artifact.observation
+        assert '昨日は会議だった' in artifact.observation
+        assert clause + 'という言葉' in artifact.reception
+        assert artifact.reception.index(clause) < artifact.reception.index('机を拭いた')
+        assert '実際の行動' not in artifact.reception and 'という変化' not in artifact.observation
+        assert '思いましたのですね' not in artifact.observation
+        assert '思えましたのですね' not in artifact.observation
+
+
+@pytest.mark.parametrize('memo', [
+    '弟は' + DENIED_RESOLUTION_COGNITION,
+    '友人によると、' + DENIED_RESOLUTION_COGNITION,
+    '友人の感想です。' + DENIED_RESOLUTION_COGNITION,
+    '友人の説明です。' + DENIED_RESOLUTION_COGNITION,
+    '弟が説明した。' + DENIED_RESOLUTION_COGNITION,
+    '昨日の自分の気持ちです。' + DENIED_RESOLUTION_COGNITION,
+    '同僚が答えました。' + DENIED_RESOLUTION_COGNITION,
+    '以前の自分の感想でした。' + DENIED_RESOLUTION_COGNITION,
+    '父が自分の意見を述べた。' + DENIED_RESOLUTION_COGNITION,
+    '父の要望を伝えた。' + DENIED_RESOLUTION_COGNITION,
+    '私は次のように話した。' + DENIED_RESOLUTION_COGNITION,
+    '自分の意見をこう伝えた。' + DENIED_RESOLUTION_COGNITION,
+    '兄こそ自分の意見を述べた。' + DENIED_RESOLUTION_COGNITION,
+    '兄自身、自分の意見を述べた。' + DENIED_RESOLUTION_COGNITION,
+    '兄本人、自分の意見を述べた。' + DENIED_RESOLUTION_COGNITION,
+    '兄まで自分の意見を述べた。' + DENIED_RESOLUTION_COGNITION,
+    '兄だって自分の意見を述べた。' + DENIED_RESOLUTION_COGNITION,
+    '「' + DENIED_RESOLUTION_COGNITION + '」',
+    '「' + DENIED_RESOLUTION_COGNITION,
+    DENIED_RESOLUTION_COGNITION + 'と弟が言った',
+    DENIED_RESOLUTION_COGNITION.replace('わけではない', 'わけではなかった'),
+    DENIED_RESOLUTION_COGNITION.replace('消えた', '消えない'),
+    DENIED_RESOLUTION_COGNITION.replace('わけではない', 'わけではないかもしれない'),
+    DENIED_RESOLUTION_COGNITION.replace('思えた', '思えなかった'),
+    DENIED_RESOLUTION_COGNITION.replace('思えた', '思えれば'),
+    DENIED_RESOLUTION_COGNITION.replace('ありそうだと思えた', 'あった'),
+    DENIED_RESOLUTION_COGNITION + '？',
+    '明日は' + DENIED_RESOLUTION_COGNITION,
+])
+def test_denied_resolution_does_not_borrow_foreign_or_nonfinite_hosts(memo):
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(initial(memo + '。')))
+    assert not any('lexical:source_denied_resolution' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('q3', [False, True])
+def test_denied_resolution_inverse_retains_both_scopes_without_author_replay(q3):
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    prepared = prepare_emlis_meaning((begin if q3 else initial)(
+        '昨日は会議だった。' + DENIED_RESOLUTION_COGNITION + '。', '机を拭いた。'))
+    plan = build_updated_grounded_plan(prepared)
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact, out.reason_codes
+    resolver = prepared.thread.resolver()
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    sentence = surface.build_grounded_sentence_plan(plan, resolver)
+    def passes(observation, reception):
+        body = out.artifact.text.replace(out.artifact.observation, observation).replace(out.artifact.reception, reception)
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan', return_value=SimpleNamespace(text=reception)), patch(
+            'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(body=body.encode(), plan=plan,
+                sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert passes(out.artifact.observation, out.artifact.reception)
+    for old, new in [
+        ('わけではない', ''), ('わけではない', 'わけではなかった'),
+        ('消えた', '消えない'), ('ありそうだと思えた', 'あった'),
+        ('思えた', '思えなかった'), ('不安が', '弟の不安が'),
+        ('不安が消えたわけではないけれど、', ''),
+        ('別の方法もありそうだと思えた', ''),
+    ]:
+        observation = out.artifact.observation.replace(old, new)
+        reception = out.artifact.reception.replace(old, new)
+        assert observation != out.artifact.observation and reception != out.artifact.reception
+        assert not passes(observation, out.artifact.reception), (old, new, 'observation')
+        assert not passes(out.artifact.observation, reception), (old, new, 'reception')
+    assert not passes(out.artifact.observation, out.artifact.reception + 'もう大丈夫です。')
+
+
+@pytest.mark.parametrize('action', ['', '机を拭いた。'])
+def test_denied_resolution_direct_projection_preserves_context_and_unique_duties(action):
+    from test_cmee_final_stage1_generic_move_projection import _full_surface_artifacts
+    result = _full_surface_artifacts({'case_id': 'synthetic-scoped-denial', 'input': {
+        'thought_text': '昨日は会議だった。' + DENIED_RESOLUTION_COGNITION + '。',
+        'action_text': action, 'categories': ['仕事'], 'emotions': [{'type': '不安', 'strength': 'medium'}]}})
+    assert result.inverse.passed and result.gate.passed
+    assert DENIED_RESOLUTION_COGNITION + 'という言葉' in result.surface.text
+    refs = [ref for d in result.selected_subjective_input.decisions for ref in d.selected_contribution_refs]
+    assert len(refs) == len(set(refs))
+
+
+@pytest.mark.parametrize('scope_case', ['no_resolver', 'missing_scope', 'forged_scope', 'unbound_source'])
+def test_denied_resolution_outer_requires_complete_source_scope_proof(scope_case):
+    from cocolon_meaning_experience_engine import emlis_v1a
+    prepared = prepare_emlis_meaning(initial(DENIED_RESOLUTION_COGNITION + '。'))
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    target = next(n for n in plan.nuclei if 'lexical:source_denied_resolution' in n.semantic_frame.attribute_codes)
+    kwargs = {'stage1_response_schema_version': emlis_v1a.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
+              'resolver': resolver}
+    check = emlis_v1a._cmee_assert_current_first_person_scope_supported
+    check(DENIED_RESOLUTION_COGNITION + '。', plan, **kwargs)
+    value = DENIED_RESOLUTION_COGNITION + '。'
+    if scope_case == 'no_resolver':
+        kwargs['resolver'] = None
+    elif scope_case in {'missing_scope', 'forged_scope'}:
+        codes = tuple(c for c in target.semantic_frame.attribute_codes
+                      if not c.startswith('source_clause_scope:assertion:'))
+        if scope_case == 'forged_scope':
+            codes += ('source_clause_scope:assertion:999:1000:under_present_denial',)
+        changed = replace(target, semantic_frame=replace(target.semantic_frame, attribute_codes=codes))
+        plan = replace(plan, nuclei=tuple(changed if n.nucleus_id == target.nucleus_id else n for n in plan.nuclei))
+    else:
+        value = '不安が消えた。'
+    with pytest.raises(emlis_v1a.CMEEVerticalError, match='current_experiencer_or_time_scope_unsupported'):
+        check(value, plan, **kwargs)
+
+
+@pytest.mark.parametrize('other_sentence', [
+    '不安が消えた。',
+    '弟は不安を感じている。',
+    '昨日は不安だった。',
+])
+@pytest.mark.parametrize('before', [False, True])
+def test_denied_resolution_outer_exemption_does_not_cover_other_sentences(other_sentence, before):
+    from cocolon_meaning_experience_engine import emlis_v1a
+    prepared = prepare_emlis_meaning(initial(DENIED_RESOLUTION_COGNITION + '。'))
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    kwargs = {'stage1_response_schema_version': emlis_v1a.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
+              'resolver': resolver}
+    check = emlis_v1a._cmee_assert_current_first_person_scope_supported
+    original = DENIED_RESOLUTION_COGNITION + '。'
+    check(original, plan, **kwargs)
+    value = other_sentence + original if before else original + other_sentence
+    with pytest.raises(emlis_v1a.CMEEVerticalError, match='current_experiencer_or_time_scope_unsupported'):
+        check(value, plan, **kwargs)
+
+
+@pytest.mark.parametrize('prefix', [
+    '私の要望を伝えた。', '面談では、自分の意見を述べた。', '父には自分の意見を伝えた。',
+])
+def test_denied_resolution_does_not_treat_completed_self_expression_as_report(prefix):
+    prepared = prepare_emlis_meaning(initial(prefix + DENIED_RESOLUTION_COGNITION + '。', '机を拭いた。'))
+    plan = build_updated_grounded_plan(prepared)
+    assert any('lexical:source_denied_resolution' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact, out.reason_codes
+    assert prefix.rstrip('。') in out.artifact.observation
+    assert DENIED_RESOLUTION_COGNITION + 'という言葉' in out.artifact.reception
+
+
+@pytest.mark.parametrize('action', ['', '机を拭いた。'])
+def test_denied_resolution_outer_negative_reception_requires_owned_whole_source(action):
+    from unittest.mock import patch
+    from cocolon_meaning_experience_engine import emlis_v1a
+    source_clause = '痛みが取れたわけじゃないけど、休む以外の過ごし方もありそうだと思えました'
+    request = initial(source_clause + '。', action)
+    engine = MeaningExperienceEngine()
+    checkpoint = engine.prepare_emlis_update(request)
+    check = emlis_v1a._validate_reception_semantic_compatibility
+    captured = []
+    def capture(source, lines, projection):
+        captured.append((source, lines, projection))
+        return check(source, lines, projection)
+    with patch.object(emlis_v1a, '_validate_reception_semantic_compatibility', side_effect=capture):
+        actual = engine.generate(replace(request, emlis_thread=replace(
+            request.emlis_thread, prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id)))
+    assert actual.artifact and captured, actual.reason_codes
+    source, lines, projection = captured[-1]
+    target = next(line for line in lines if line.binding.line_role == 'human_follow')
+    for extra in ('そのつらさも受け止めています。', 'ほかの痛みも受け止めています。'):
+        changed = replace(target, text=target.text + extra)
+        with pytest.raises(emlis_v1a.CMEEVerticalError, match='reception_negative_meaning_promotion'):
+            check(source, tuple(changed if line is target else line for line in lines), projection)
+
+
+def test_denied_resolution_keeps_independent_finite_line_beside_required_relation():
+    prepared = prepare_emlis_meaning(initial(
+        '昨日は会議だった。でも午後は休憩だった。' + DENIED_RESOLUTION_COGNITION + '。', '机を拭いた。'))
+    plan = build_updated_grounded_plan(prepared)
+    assert plan.coverage_requirements.required_relation_ids
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact, out.reason_codes
+    assert '昨日は会議だった' in out.artifact.observation and '午後は休憩だった' in out.artifact.observation
+    assert DENIED_RESOLUTION_COGNITION + 'のですね。' in out.artifact.observation
+    assert 'という変化' not in out.artifact.observation

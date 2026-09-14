@@ -2466,6 +2466,9 @@ def evaluate_grounded_surface_body_inverse(
                         if provisional:
                             source_clause = re.sub(r"(気[がはも])します(?=けれど|けど)", r"\1する", source_clause)
                             source_clause = re.sub(r"ないです$|ありません$", "ない", source_clause)
+                            if "lexical:source_denied_resolution" in codes:
+                                source_clause = re.sub(r"思いました$", "思った", source_clause)
+                                source_clause = re.sub(r"思えました$", "思えた", source_clause)
                         if decision:
                             source_clause = re.sub(r"迷っています$", "迷っている", source_clause)
                             source_clause = re.sub(r"決められません$", "決められない", source_clause)

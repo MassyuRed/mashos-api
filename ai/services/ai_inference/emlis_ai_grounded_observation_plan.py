@@ -8992,6 +8992,19 @@ def _build_response_and_policies(
     ) else ()
     if nominal_group:
         selected_follow = nominal_group[0]
+    scoped_denials = tuple(n for n in independent_materials
+        if "lexical:source_denied_resolution" in n.semantic_frame.attribute_codes)
+    if (final_source_fidelity and len(scoped_denials) == 1
+        and safety_decision.safety_triage_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality in {"grounded", "limited_grounding"}
+        and not primary_focus_nucleus_ids and selected_follow is not None
+        and selected_follow.source_fields == ("memo_action",)
+        and source_proven_performed_action_status(selected_follow)
+        and not any(r.retention == "required" or r.type != "uncertain_connection" for r in relations
+                    if scoped_denials[0].nucleus_id in (r.from_nucleus_id, r.to_nucleus_id))):
+        # A complete scoped expression does not disappear behind an action
+        # when independent context sentences precede it. Their duties stay.
+        selected_follow = scoped_denials[0]
     follow_ids = (selected_follow.nucleus_id,) if selected_follow is not None else primary_ids[:1]
 
     observable_nucleus_present = bool(nuclei)
@@ -12227,6 +12240,21 @@ def _final_stage1_normalize_relation_authority(
         )
         relation_type = relation.type
         if (
+            any("lexical:source_denied_resolution" in n.semantic_frame.attribute_codes for n in (left, right))
+            and relation.source_relation_ids == ("whole_input_source_order",)
+            and relation.source_meaning_arc_keys == ("whole_input:source_order",)
+            and set(relation.source_span_ids) == set((*left.source_span_ids, *right.source_span_ids))
+            and set(left.source_span_ids).isdisjoint(right.source_span_ids)
+            and relation.type in {"uncertain_connection", "continuation_or_refusal", "shift_from_to",
+                                  "contrast", "action_supports_change"}
+        ):
+            # The connective and possibility belong to the proven sentence.
+            # Mere order cannot attach either host to a different sentence
+            # or to the separately recorded action. Keep both endpoints.
+            relation_type = "uncertain_connection"
+            grounding_kind = "bounded_structural_inference"
+            retention = "should" if retention == "required" else retention
+        elif (
             left_fields == right_fields == {"memo"}
             and any("lexical:source_nominal_cognition_feeling" in n.semantic_frame.attribute_codes
                     for n in (left, right))
@@ -13510,13 +13538,63 @@ def _source_provisional_degree_parts(fragment: str):
         r"と(?:は)?言(?:える|い切れる)ほど(?:では|じゃ)(?:ない(?:です)?|ありません))",
         fragment,
     )
-    if match is None or _top_level_text(fragment) != fragment:
+    if match is None:
+        return _source_denied_resolution_parts(fragment)
+    if _top_level_text(fragment) != fragment:
         return None
     return tuple((role, *match.span(role), scope) for role, scope in (
         ("comparison", "past_comparison"), ("change", "under_tentative_host"),
         ("tentative", "present_tentative"), ("assertion", "under_negative_degree"),
         ("degree", "present_negative_degree"),
     ))
+
+
+def _source_denied_resolution_parts(fragment: str):
+    """Keep a resolution under denial and a possibility under cognition.
+
+    The present denial does not deny the feeling itself. The completed
+    cognitive host does not establish its proposed alternative as an act.
+    Closed slots bind each complete host before any reception is selected.
+    """
+    noun = r"[一-鿿々]+(?:[ぁ-ん]{1,3}方)?"
+    verb = r"[一-鿿々]+(?:わせ|い|き|ぎ|し|ち|び|み|り|え|け|げ|せ|て|ね|べ|め|れ)?(?:る|う|く|ぐ|す|つ|ぬ|ぶ|む)"
+    alternative = r"(?:(?:別|他)の|" + verb + r"以外の)" + noun
+    match = re.fullmatch(
+        r"(?:(?:私|わたし|僕|ぼく|自分)(?:は|が)[、,]?)?"
+        r"(?P<degree>(?P<assertion>(?:不安|心配|緊張|怖さ|疲れ|痛み|悲しさ|苦しさ)"
+        r"(?:が|は)(?:完全に|すっかり)?(?:消えた|なくなった|解消した|取れた|収まった))"
+        r"わけ(?:では|じゃ)(?:ない|ありません))"
+        r"(?:けれども?|けど|が)[、,]?"
+        r"(?P<cognition>(?P<possibility>" + alternative + r"(?:も|は)ありそうだ)"
+        r"と(?:思えた|思えました|思った|思いました))", fragment)
+    if match is None or _top_level_text(fragment) != fragment:
+        return None
+    return tuple((role, *match.span(role), scope) for role, scope in (
+        ("assertion", "under_present_denial"), ("degree", "present_denial"),
+        ("possibility", "under_past_cognition"), ("cognition", "past_cognition"),
+    ))
+
+
+def _source_prefix_opens_report(prefix: str) -> bool:
+    """A completed self-owned statement is not a report of the next sentence."""
+    speech = (r"(?:言った|言いました|話した|話しました|語った|語りました|述べた|述べました|"
+              r"書いた|書きました|伝えた|伝えました|答えた|答えました|説明した|説明しました)")
+    for clause in re.split(r"[。．.]", prefix):
+        clause = clause.strip()
+        if re.search(r"の[^。．.]+(?:だ|です|だった|でした)$", clause):
+            return True
+        if not re.search(speech + r"$", clause):
+            continue
+        completed = re.fullmatch(r"(?P<before>.*?)(?:私|わたし|僕|ぼく|自分)の[一-鿿々]+を" + speech, clause)
+        if completed is None:
+            return True
+        before = re.sub(r"^(?:私|わたし|僕|ぼく|自分)(?:は|が|も)[、,]?", "", completed.group("before"))
+        focus_source = re.sub(r"だけれど(?:も)?|だけど", "", before)
+        if (re.search(_OWNER_FOCUS_PARTICLE_SOURCE + "|" + _OWNER_TOPIC_PARTICLE_SOURCE, focus_source)
+            or re.search(r"(?<!で)(?<!に)(?:は|が|も)|によると|から|こう|そう|次の|以下|ように|"
+                         r"明日|来週|来月|来年|今後|もし|なら|としたら", before)):
+            return True
+    return False
 
 
 def _final_source_provisional_degree_nuclei(nuclei, evidence_spans, normalized_input):
@@ -13528,6 +13606,46 @@ def _final_source_provisional_degree_nuclei(nuclei, evidence_spans, normalized_i
     """
     if normalized_input is None:
         return nuclei
+    # The same scoped-expression family may occur as one complete sentence
+    # in a longer memo. Correct only that source owner, retaining every other
+    # sentence and its existing observation obligations.
+    source = str(normalized_input.get("memo") or "")
+    spans = {s.span_id: s for s in evidence_spans}
+    replacements = {}
+    if (_top_level_text(source) == source
+        and not re.search(r"によると|いわく|曰く|の(?:話|感想|発言)(?:です|だ)|と言|と話|と語", source)):
+        for n in nuclei:
+            f = n.semantic_frame
+            span = spans.get(n.source_span_ids[0]) if len(n.source_span_ids) == 1 else None
+            parts = _source_denied_resolution_parts(str(span.raw_text)) if span is not None else None
+            if (parts is None or n.source_fields != ("memo",) or span.source_field != "memo"
+                or n.retention != "required"
+                or (n.grounding_kind, n.allowed_claim_scope) not in {
+                    ("explicit", "explicit_current_input"), ("user_stated_relation", "source_bounded_relation")}
+                or f.actor != "current_user"
+                or f.modality not in {"fact", "feeling", "uncertain"}
+                or f.time_scope not in {"present", "past", "current_input", "continuing"}
+                or any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:", "semantic_dependency:"))
+                       for c in f.attribute_codes)
+                or not 0 <= span.start_index < span.end_index <= len(source)
+                or source[span.start_index:span.end_index] != span.raw_text
+                or _source_prefix_opens_report(source[:span.start_index])
+                or (span.start_index and source[span.start_index - 1] not in "。．.")
+                or (span.end_index < len(source) and source[span.end_index] not in "。．.")):
+                continue
+            provenance = tuple(c for c in f.attribute_codes
+                if c.startswith(("semantic_analyzer:", "detected_type:", "source_claim:")))
+            replacements[n.nucleus_id] = replace(n, kind="change", grounding_kind="explicit",
+                allowed_claim_scope="explicit_current_input", semantic_frame=replace(
+                f, predicate_kind="change", modality="fact", polarity="mixed", time_scope="current_input",
+                attribute_codes=tuple(_dedupe((*provenance, "time_scope:current_input",
+                    "operator:change", "operator:contrast", "operator:negation",
+                    "lexical:source_provisional_degree", "lexical:source_denied_resolution",
+                    "lexical:source_bounded_expression", "lexical:preserve_source_predicate",
+                    "lexical:no_new_sensation_family",
+                    *(f"source_clause_scope:{role}:{start}:{end}:{scope}" for role, start, end, scope in parts))))))
+    if replacements:
+        return tuple(replacements.get(n.nucleus_id, n) for n in nuclei)
     memo = tuple(n for n in nuclei if n.source_fields == ("memo",))
     if len(memo) != 1 or len(memo[0].source_span_ids) != 1:
         return nuclei
@@ -13944,16 +14062,38 @@ def _source_nominal_constraint_group(nuclei, relations):
         return ()
     tail = tuple(n for n in text if "lexical:source_unfinished_utterance_clause" in n.semantic_frame.attribute_codes)
     actions = tuple(n for n in text if n.source_fields == ("memo_action",))
+    scoped_denial = "lexical:source_denied_resolution" in first[0].semantic_frame.attribute_codes
+    context = tuple(n for n in text if n not in (*first, *tail, *actions))
+    context_ids = {n.nucleus_id for n in context}
+    if context and (not scoped_denial or any(
+        n.source_fields != ("memo",)
+        or (n.retention != "required" and not (
+            n.retention == "optional" and n.kind == "other_explicit"
+            and "detected_type:relation_marker" in n.semantic_frame.attribute_codes
+            and len(n.source_span_ids) == 1
+            and any(r.retention == "required"
+                    and {r.from_nucleus_id, r.to_nucleus_id} <= context_ids
+                    and n.source_span_ids[0] in r.source_span_ids
+                    and "evidence_relation_marker:" + n.source_span_ids[0] in r.source_relation_ids
+                    for r in relations)))
+        or n.grounding_kind not in {"explicit", "user_stated_relation"}
+        or n.kind not in {"event", "other_explicit"}
+        or (n.semantic_frame.actor, n.semantic_frame.modality, n.semantic_frame.polarity)
+            != ("current_user", "fact", "neutral")
+        or set(n.source_span_ids) & set(first[0].source_span_ids)
+        for n in context)):
+        return ()
+    received_ids = {n.nucleus_id for n in (*first, *tail, *actions)}
     if (len(tail) > 1 or len(actions) > 1
         or (tail and "lexical:source_provisional_degree" in first[0].semantic_frame.attribute_codes)
         or set(n.nucleus_id for n in text)
-        != set(n.nucleus_id for n in (*first, *tail, *actions))
+        != set(n.nucleus_id for n in (*first, *tail, *actions, *context))
         or any(n.source_fields != ("memo",) or n.semantic_frame.actor != "current_user"
                or n.retention != "required" or n.grounding_kind != "explicit" for n in tail)
         or any(n.retention != "required" or n.semantic_frame.actor != "current_user"
                or not source_proven_performed_action_status(n) for n in actions)
         or any(r.retention == "required" or r.type != "uncertain_connection" for r in relations
-               if {r.from_nucleus_id, r.to_nucleus_id} & {n.nucleus_id for n in text})):
+               if {r.from_nucleus_id, r.to_nucleus_id} & received_ids)):
         return ()
     return (*first, *tail, *actions)
 
