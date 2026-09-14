@@ -3239,8 +3239,8 @@ def evaluate_grounded_surface_body_inverse(
                             and len(clause.move_ids) == 1 and len(target_nuclei) == 1
                             and move.reception_act == "recognize_lived_change"
                             and is_grounded_positive_feeling(target_nuclei[0])
-                            and "lexical:source_nominal_cognition_feeling"
-                                in target_nuclei[0].semantic_frame.attribute_codes):
+                            and {"lexical:source_nominal_cognition_feeling", "lexical:source_received_past_feeling"}
+                                & set(target_nuclei[0].semantic_frame.attribute_codes)):
                             # The positive main feeling governs this whole
                             # nominal cognition. Its negative background and
                             # potential content cannot be left only in Layer 1

@@ -11960,7 +11960,23 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
     # A retained original/answer burden group and one positive answer still
     # share the same aggregate claim. Assign whole contributions, including
     # both endpoints of every original contrast, to the consuming Move.
-    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups, _source_independent_positive_feelings
+    positive_duties = _source_independent_positive_feelings(tuple(binding.node_meta.values()),
+        tuple(binding.edge_meta.values()))
+    if (positive_duties and tuple(("lived_change" if m.reception_act == "recognize_lived_change"
+        else "concrete_effort", m.target_nucleus_ids, m.support_nucleus_ids)
+        for m in reception_plan.moves) == positive_duties):
+        result = list(rows)
+        for claim_ref in dict.fromkeys(r.projected_claim_ref for r in rows):
+            positions = tuple(i for i, row in enumerate(rows) if row.projected_claim_ref == claim_ref)
+            if len(positions) < 2:
+                continue
+            partitioned = _partition_shared_source_duty_contributions(
+                tuple(rows[i] for i in positions), tuple(reception_plan.moves[i] for i in positions), binding,
+                independent_positive=True)
+            for i, row in zip(positions, partitioned, strict=True):
+                result[i] = row
+        return result
     retained = _thread_retained_reaction_groups(tuple(binding.node_meta.values()),
         tuple(binding.edge_meta.values()))
     withdrawal = any("thread_subject:withdrawn_source_event" in n.semantic_frame.attribute_codes
@@ -12018,7 +12034,8 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
         and all(len(row.target_nucleus_ids) == 1 and not row.support_nucleus_ids for row in rows)
         and all(
             (nucleus.source_fields == ("memo",) and is_grounded_positive_feeling(nucleus)
-             and "lexical:source_nominal_cognition_feeling" in nucleus.semantic_frame.attribute_codes)
+             and {"lexical:source_nominal_cognition_feeling", "lexical:source_received_past_feeling"}
+                 & set(nucleus.semantic_frame.attribute_codes))
             if row.reception_act == "recognize_lived_change" else
             (nucleus.source_fields == ("memo_action",) and source_proven_performed_action_status(nucleus))
             for row in rows
@@ -12083,7 +12100,7 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
     return rows
 
 
-def _partition_shared_source_duty_contributions(rows, moves, binding, *, allow_support=False, action_contrast=()):
+def _partition_shared_source_duty_contributions(rows, moves, binding, *, allow_support=False, action_contrast=(), independent_positive=False):
     first = rows[0]
     if (any(not move.required or len(move.target_nucleus_ids) != 1
             or move.support_nucleus_ids and not allow_support for move in moves)
@@ -12134,7 +12151,7 @@ def _partition_shared_source_duty_contributions(rows, moves, binding, *, allow_s
     # the action's basis, while the burden act owns both burden duties.
     # Reconstruct that exact whole-input shape before unique consumption;
     # no mixed complete/partial/per-Move subsets may be repaired here.
-    retained_act_partition = bool(action_contrast and len(rows) == 3
+    retained_act_partition = bool((action_contrast and len(rows) == 3 or independent_positive)
         and all(row.branch == SubjectiveProjectionBranch.LIMITED.value for row in rows)
         and all(row.selected_contribution_refs == tuple(ref for ref in complete
             if any({b.semantic_ref for b in first.basis_rows if b.contribution_ref == ref} & duty

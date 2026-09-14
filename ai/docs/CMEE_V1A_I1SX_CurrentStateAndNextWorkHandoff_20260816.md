@@ -8075,3 +8075,9 @@ weekly20260912 Rev2の9/16共通修正・9/18比較・9/19判断、2027年1月�
 - 残件：迎えられた安堵そのものの認識、解消を否定した怖さのscope、受け止めの優先順、文をまたぐ同内容の復唱と名詞化の長さ。今回も行動は先に出ており、優先順全体の解消は主張しない。次は共有認識からこれらの気持ち・時点・関係の保持を修正する。
 - `STRUCTURE_MAP_DELTA_NONE`：既存の共有owner内の修正。新しいcore／schema／storage／並行rendererは追加していない。Cocolon PR #30は不変更。最新weekly_reviewsの計画に沿う。
 - default OFF、Draft/open/unmerged、商品NOT_CLEARを維持。実DB、端末、実課金、外部AI呼出し、deploy／enable、Mashの正式商品判断は未実施。System Context未使用、原典を直接確認。
+
+### 2026-09-14 continuation checkpoint — independent past and current positive feelings
+
+The shared source-bound plan now distinguishes a complete received experience's past feeling from negated/continuing background material. Two independently stated, fully grounded positive feelings and an optional performed action remain separate required duties within the existing three-Move budget. Source-claim contributions stay complete and are consumed once in thread and direct LIMITED projections. Observation preserves each source tense; the existing full-stage inverse requires the entire explicit feeling object in Reception.
+
+This checkpoint has 26 new public synthetic tests passing, including whole-object deletion and owner/tense/polarity mutations without author replay, Q1/Q3 generation, direct generation, and standalone past observations. Final existing-regression, canonical-body and saved-conversation verification is pending at this checkpoint. Existing expectations and historical receipts are unchanged; only the current derived owner snapshot was refreshed. STRUCTURE_MAP_DELTA_NONE: existing shared owners only, no schema/wire/question-policy/storage/activation change. Product NOT_CLEAR; long repetition, unsupported constructions and existing failures remain. Draft/open/unmerged and default OFF continue.
