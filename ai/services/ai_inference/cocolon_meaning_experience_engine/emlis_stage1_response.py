@@ -11983,8 +11983,10 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
                      for n in binding.node_meta.values())
     grouped = bool(2 <= len(rows) <= 3
         and (withdrawal or any(move.support_nucleus_ids for move in reception_plan.moves)
-             and {row.reception_act for row in rows} == {"stay_with_current_burden", "recognize_lived_change"})
-        and tuple(("current_burden" if m.reception_act == "stay_with_current_burden" else "lived_change",
+             and {"stay_with_current_burden", "recognize_lived_change"} <= {row.reception_act for row in rows}
+             and {row.reception_act for row in rows} <= {"stay_with_current_burden", "recognize_lived_change", "honor_concrete_effort"})
+        and tuple(({"stay_with_current_burden": "current_burden", "recognize_lived_change": "lived_change",
+                    "honor_concrete_effort": "concrete_effort"}.get(m.reception_act),
                    m.target_nucleus_ids, m.support_nucleus_ids) for m in reception_plan.moves) == retained)
     # A single original contrast and its positive ADD can already own
     # distinct NORMAL claims. Only partition a genuinely shared claim;
@@ -12095,12 +12097,28 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
              or mixed_answers or independent_cognition_action or current_material_action or nominal_constraint_action
              or nominal_cognition_action)
         and rows[0].projected_claim_ref == rows[1].projected_claim_ref):
+        nominal_contrast = ()
+        if nominal_cognition_action:
+            feeling_id = next(r.target_nucleus_ids[0] for r in rows
+                              if r.reception_act == "recognize_lived_change")
+            feeling = binding.node_meta[binding.nucleus_to_node[feeling_id]]
+            links = tuple(r for r in binding.edge_meta.values()
+                          if r.retention == "required" and feeling_id in (r.from_nucleus_id, r.to_nucleus_id))
+            if ("lexical:source_nominal_past_feeling" in feeling.semantic_frame.attribute_codes
+                and len(links) == 1 and links[0].type == "contrast"
+                and links[0].to_nucleus_id == feeling_id
+                and links[0].grounding_kind == "user_stated_relation"):
+                event = binding.node_meta[binding.nucleus_to_node[links[0].from_nucleus_id]]
+                if (event.kind == "event" and event.semantic_frame.modality == "fact"
+                    and event.source_fields == feeling.source_fields == ("memo",)
+                    and event.retention == "required"):
+                    nominal_contrast = (event.nucleus_id, feeling_id)
         return _partition_shared_source_duty_contributions(rows, reception_plan.moves, binding,
-            allow_support=current_material_action)
+            allow_support=current_material_action, nominal_contrast=nominal_contrast)
     return rows
 
 
-def _partition_shared_source_duty_contributions(rows, moves, binding, *, allow_support=False, action_contrast=(), independent_positive=False):
+def _partition_shared_source_duty_contributions(rows, moves, binding, *, allow_support=False, action_contrast=(), independent_positive=False, nominal_contrast=()):
     first = rows[0]
     if (any(not move.required or len(move.target_nucleus_ids) != 1
             or move.support_nucleus_ids and not allow_support for move in moves)
@@ -12120,6 +12138,12 @@ def _partition_shared_source_duty_contributions(rows, moves, binding, *, allow_s
     duties = tuple({_node_ref(binding.nucleus_to_node[nid])
                     for nid in (*row.target_nucleus_ids, *row.support_nucleus_ids)} for row in rows)
     source_duties = duties
+    if nominal_contrast:
+        # This one explicit contrast is source context of the nominal
+        # feeling. Its whole contribution remains owned by that Move.
+        duties = tuple(duty | {_node_ref(binding.nucleus_to_node[nominal_contrast[0]])}
+            if row.target_nucleus_ids == (nominal_contrast[1],) else duty
+            for row, duty in zip(rows, duties, strict=True))
     if action_contrast:
         # The second duty realizes its required contrast in full. The
         # positive change is shared context; each whole contribution
@@ -12174,21 +12198,26 @@ def _partition_retained_claim_contributions(rows, moves, binding):
         or appraisal.operation != "RECEIVE_AS_MATERIAL"
         or any(not m.required for m in moves)
         or any((r.branch, r.projected_claim_ref, r.meaning_outcome_ref, r.reception_binding_ref,
-                r.subjective_proposition, r.selected_contribution_refs)
+                r.subjective_proposition, r.basis_rows, r.qualifier_rows)
                != (first.branch, first.projected_claim_ref, first.meaning_outcome_ref, first.reception_binding_ref,
-                   first.subjective_proposition, first.selected_contribution_refs) for r in rows)
+                   first.subjective_proposition, first.basis_rows, first.qualifier_rows) for r in rows)
         or first.subjective_proposition.focal_relation_ref is not None):
         raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
     duties = tuple({_node_ref(binding.nucleus_to_node[nid])
                     for nid in (*m.target_nucleus_ids, *m.support_nucleus_ids)}
                    for m in moves)
-    partition = tuple(tuple(ref for ref in first.selected_contribution_refs
+    complete = first.subjective_proposition.target_contribution_refs
+    partition = tuple(tuple(ref for ref in complete
         if (basis := {b.semantic_ref for b in first.basis_rows if b.contribution_ref == ref})
         and basis <= duty) for duty in duties)
     if (any(not refs for refs in partition)
         or sum(len(refs) for refs in partition) != len(set().union(*map(set, partition)))
-        or set().union(*map(set, partition)) != set(first.selected_contribution_refs)
+        or set().union(*map(set, partition)) != set(complete)
         or set().union(*duties) != set(first.subjective_proposition.response_object_refs)):
+        raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+    if all(row.selected_contribution_refs == refs for row, refs in zip(rows, partition, strict=True)):
+        return rows
+    if any(row.selected_contribution_refs != complete for row in rows):
         raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
     return [identify_selected_subjective_reception_decision(replace(
         row, decision_ref="", selected_contribution_refs=refs))
@@ -13630,7 +13659,18 @@ def compile_stage1_response(
             str,
         ]
     ] = []
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+    retained_groups = _thread_retained_reaction_groups(selected_grounded_plan.nuclei, selected_grounded_plan.relations)
+    original_collective = bool(any(family == "current_burden" and len(targets) > 1
+        for family, targets, supports in retained_groups)
+        and any(n.source_fields == ("memo",)
+            and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes
+            for n in selected_grounded_plan.nuclei))
     for recovery_stage in GROUND_RECOVERY_STAGES:
+        if original_collective and recovery_stage not in {"full", "optional_removed"}:
+            # Current collective grammar has exact source anchors only.
+            # Do not request an ambiguous single-owner pronoun candidate.
+            continue
         try:
             sentence_plan = (
                 base_sentence_plan

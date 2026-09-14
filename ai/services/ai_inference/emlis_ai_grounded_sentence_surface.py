@@ -2127,6 +2127,20 @@ def _build_regular_lines(
             max_groups=max_observation_groups,
         )
         groups = _merge_parallel_contrast_groups(groups, relation_candidates, nucleus_index, relation_index)
+        from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+        if (FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in plan.source_contracts
+            and any("lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes
+                    for n in plan.nuclei)
+            and _thread_retained_reaction_groups(plan.nuclei, plan.relations)):
+            # Merge the already-proven parallel original contrasts before
+            # applying the line budget, so an unrelated feeling and action
+            # are not compressed into an invented common flow.
+            source_groups = _relation_aware_groups(selected_ids, relation_candidates,
+                nucleus_index, relation_index, max_groups=len(selected_ids))
+            source_groups = _merge_parallel_contrast_groups(source_groups, relation_candidates,
+                nucleus_index, relation_index)
+            if len(source_groups) <= max_observation_groups:
+                groups = source_groups
         groups = _merge_homogeneous_state_groups(groups, nucleus_index)
         groups = _merge_source_local_relation_free_event_groups(
             groups,

@@ -3253,6 +3253,7 @@ def evaluate_grounded_surface_body_inverse(
                             raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
                             role = {"attention": "を見過ごさず、", "felt_response": "を"}.get(move.move_role)
                             expected = source + "という気持ち" + (role or "") + "受け止めています。"
+                            complete_forms = (expected,)
                             contexts = _body_inverse_reception_context_ids(move, plan)
                             contrast = tuple(r for r in plan.relations
                                 if r.type == "contrast" and r.retention == "required"
@@ -3266,9 +3267,11 @@ def evaluate_grounded_surface_body_inverse(
                                 before = final_reception_source_anchor_text(contexts[0], nucleus_index, resolver)
                                 context_valid = bool(before and (not move.support_nucleus_ids
                                     or move.support_nucleus_ids == contexts))
-                                expected = before + "ことと" + source + "という気持ちとの違い" + (role or "") + "受け止めています。"
+                                expected = before + "ことと" + source + "という気持ち" + (role or "") + "その違いも含めて受け止めています。"
+                                complete_forms = (expected, before + "ことと" + source
+                                    + "という気持ちとの違い" + (role or "") + "受け止めています。")
                             if (not source or role is None or not context_valid
-                                or effective_reference_mode == "anaphoric_first" or raw != expected):
+                                or effective_reference_mode == "anaphoric_first" or raw not in complete_forms):
                                 failures.append(f"body_inverse_nominal_cognition_feeling_object_missing:{move_id}")
                         if (
                             effective_reference_mode == "anaphoric_first"

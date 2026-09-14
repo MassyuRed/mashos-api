@@ -3318,8 +3318,9 @@ def test_nominal_background_inverse_checks_complete_source_without_author_replay
 
 @pytest.mark.parametrize('q3', [False, True])
 @pytest.mark.parametrize('action', ['', '机を拭いた。'])
-def test_nominal_background_answer_keeps_original_feelings_and_action(q3, action):
-    memo = '誘われたのに、悲しかった。' + NOMINAL_BACKGROUND_JOY + '。'
+@pytest.mark.parametrize('two_events', [False, True])
+def test_nominal_background_answer_keeps_original_feelings_and_action(q3, action, two_events):
+    memo = '誘われたのに、悲しかった。' + ('頼まれたのに、寂しかった。' if two_events else '') + NOMINAL_BACKGROUND_JOY + '。'
     request = (begin if q3 else initial)(memo, action)
     before = MeaningExperienceEngine().generate(request)
     assert before.artifact and before.question, before.reason_codes
@@ -3333,6 +3334,8 @@ def test_nominal_background_answer_keeps_original_feelings_and_action(q3, action
     assert NOMINAL_BACKGROUND_JOY + 'という気持ち' in after.artifact.reception
     if action:
         assert '机を拭いたこと' in before.artifact.reception and '机を拭いたこと' in after.artifact.reception
+    if two_events:
+        assert '頼まれたのに寂しかったこと' in before.artifact.reception and '頼まれたのに寂しかったこと' in after.artifact.reception
 
 
 @pytest.mark.parametrize('memo', [
@@ -3342,3 +3345,52 @@ def test_nominal_background_answer_keeps_original_feelings_and_action(q3, action
 def test_nominal_background_prior_focus_and_temporal_topic_stays_unresolved(memo):
     plan = build_updated_grounded_plan(prepare_emlis_meaning(initial(memo + '。')))
     assert not any('lexical:source_nominal_past_feeling' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
+def test_nominal_background_contrast_inverse_keeps_event_and_feeling_without_replay():
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    from test_cmee_final_stage1_generic_move_projection import _full_surface_artifacts
+    event = 'すぐに話はまとまらず、少し待った'
+    feeling = 'それでも' + NOMINAL_BACKGROUND_JOY
+    row = {'case_id': 'synthetic-nominal-background-contrast', 'input': {
+        'thought_text': event + '。' + feeling + '。', 'action_text': '机を拭いた。',
+        'categories': ['仕事'], 'emotions': [{'type': '不安', 'strength': 'medium'}]}}
+    result = _full_surface_artifacts(row)
+    assert result.sentence_plan.recovery_stage == 'full'
+    assert result.inverse.passed
+    assert any(r.type == 'contrast' and r.retention == 'required' for r in result.plan.relations)
+    follow = result.surface.text.split('Emlisから：\n')[1]
+    assert event + 'ことと' + feeling + 'という気持ち' in follow
+    assert 'その違いも含めて受け止めています。' in follow
+    def passes(changed):
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan', return_value=SimpleNamespace(text=changed)), patch(
+            'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(body=result.surface.text.replace(follow, changed).encode(),
+                plan=result.plan, sentence_plan=result.sentence_plan, resolver=result.resolver,
+                selected_subjective_input=result.selected_subjective_input).passed
+    assert passes(follow)
+    for old, new in [(event + 'ことと', ''), ('それでも', ''), ('考えが合わないままでも', ''),
+                     ('嬉しかった', '嬉しくなかった'), ('その違いも含めて', 'その結果として'),
+                     (event, '弟が' + event), (feeling, '弟が' + feeling)]:
+        changed = follow.replace(old, new)
+        assert changed != follow and not passes(changed), (old, new)
+
+
+@pytest.mark.parametrize('invalid', ['no_resolver', 'different_source'])
+def test_nominal_background_outer_scope_requires_source_bound_feeling_ranges(invalid):
+    from cocolon_meaning_experience_engine.emlis_v1a import _cmee_assert_current_first_person_scope_supported
+    from cocolon_meaning_experience_engine.contracts import CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+    memo = '誘われたのに、悲しかった。' + NOMINAL_BACKGROUND_JOY + '。'
+    prepared = prepare_emlis_meaning(initial(memo))
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    _cmee_assert_current_first_person_scope_supported(memo, plan,
+        stage1_response_schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2, resolver=resolver)
+    if invalid == 'no_resolver':
+        resolver = None
+    else:
+        memo = memo.replace('誘われた', '弟は誘われた')
+    with pytest.raises(Exception, match='current_experiencer_or_time_scope_unsupported'):
+        _cmee_assert_current_first_person_scope_supported(memo, plan,
+            stage1_response_schema_version=CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2, resolver=resolver)

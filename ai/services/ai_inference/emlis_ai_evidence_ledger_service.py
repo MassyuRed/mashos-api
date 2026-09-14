@@ -194,6 +194,11 @@ def _split_relation_prefix(span: _RawSpan, source: str) -> List[_RawSpan]:
     match = _RELATION_PREFIX_RE.match(span.text)
     if not match or len(span.text) <= len(match.group(1)):
         return [span]
+    if re.search(r"こと(?:に|で|が)[^、,「」『』。.!！?？]+(?:た|です|ます)$", span.text):
+        # Keep a finite nominal clause whole, including its leading marker.
+        # Later source owners still decide experiencer, polarity and scope;
+        # segmentation alone makes no claim about the stated experience.
+        return [span]
     marker_text = match.group(1)
     marker = _RawSpan(text=marker_text, start=span.start, end=span.start + len(marker_text))
     rest = _trim_with_offsets(source, marker.end, span.end)

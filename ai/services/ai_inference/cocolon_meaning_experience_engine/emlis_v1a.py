@@ -3536,6 +3536,7 @@ def _cmee_assert_current_first_person_scope_supported(
     _stage1_runtime_contract(stage1_response_schema_version)
     value = re.sub(r"\s+", "", str(text or ""))
     nominal_feeling_ranges = []
+    received_feeling_ranges = []
     if (resolver is not None and stage1_response_schema_version == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
         and FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in grounded_plan.source_contracts):
         from emlis_ai_grounded_observation_plan import is_grounded_positive_feeling, _source_nominal_past_feeling_is_bound
@@ -3557,6 +3558,27 @@ def _cmee_assert_current_first_person_scope_supported(
                 and (occurrences[0].start() == 0 or value[occurrences[0].start() - 1] in "。．.")
                 and (occurrences[0].end() == len(value) or value[occurrences[0].end()] in "。．.")):
                 nominal_feeling_ranges.append(occurrences[0].span())
+        from emlis_ai_grounded_observation_plan import _received_contrast_group_targets
+        from emlis_ai_grounded_human_reception import _typed_reception_source_fragment
+        pair_ids = {nid for r in grounded_plan.relations if r.type == "contrast" and r.retention == "required"
+                    for nid in (r.from_nucleus_id, r.to_nucleus_id)}
+        pairs = _received_contrast_group_targets(
+            tuple(n for n in grounded_plan.nuclei if n.nucleus_id in pair_ids), grounded_plan.relations, minimum=1)
+        index = {n.nucleus_id: n for n in grounded_plan.nuclei}
+        for nid in pairs[1] if pairs else ():
+            n = index[nid]
+            span = resolver.resolve(n.source_span_ids[0])
+            raw = str(span.raw_text)
+            fragment = _typed_reception_source_fragment(n, raw)
+            scalar = tuple(c.split(":") for c in n.semantic_frame.attribute_codes
+                           if c.startswith("source_fragment_scalar_range:"))
+            occurrences = tuple(re.finditer(re.escape(raw), value))
+            if (span.source_field == "memo" and fragment and len(scalar) == len(occurrences) == 1
+                and (occurrences[0].start() == 0 or value[occurrences[0].start() - 1] in "。．.")
+                and (occurrences[0].end() == len(value) or value[occurrences[0].end()] in "。．.")):
+                start, end = map(int, scalar[0][1:])
+                if raw[start:end] == fragment:
+                    received_feeling_ranges.append((occurrences[0].start() + start, occurrences[0].start() + end))
     typed_v2_unfinished_scope = (
         stage1_response_schema_version
         == CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
@@ -3810,6 +3832,7 @@ def _cmee_assert_current_first_person_scope_supported(
     unbound_past_morphology = any(
         not any(start <= match.start() and match.end() == end for start, end in nominal_desire_ranges)
         and not any(start <= match.start() and match.end() <= end for start, end in nominal_feeling_ranges)
+        and not any(start <= match.start() and match.end() <= end for start, end in received_feeling_ranges)
         for match in PAST_STATE_OR_DESIRE_MORPHOLOGY_RE.finditer(value)
     )
     if (

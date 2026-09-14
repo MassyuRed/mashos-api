@@ -7324,7 +7324,10 @@ def build_grounded_reception_opportunities(
         and material_quality in {"grounded", "limited_grounding"}
     ) else ()
     retained_reaction_groups = _thread_retained_reaction_groups(owned_nuclei, relations) if (
-        final_source_fidelity and include_relation_support
+        final_source_fidelity and (include_relation_support or any(
+                is_grounded_positive_feeling(n)
+                and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes
+                for n in owned_nuclei))
         and safety_kind == TRIAGE_SAFE_OBSERVATION
         and material_quality in {"grounded", "limited_grounding"}
     ) else ()
@@ -8178,7 +8181,10 @@ def build_grounded_human_reception_plan(
         semantic_complexity=semantic_complexity,
         final_source_fidelity=final_source_fidelity,
         retained_reaction_groups=(_thread_retained_reaction_groups(available_nuclei, relations) if (
-            final_source_fidelity and include_relation_support
+            final_source_fidelity and (include_relation_support or any(
+                is_grounded_positive_feeling(n)
+                and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes
+                for n in available_nuclei))
             and safety_kind == TRIAGE_SAFE_OBSERVATION
             and material_quality in {"grounded", "limited_grounding"}
         ) else ()),
@@ -11439,6 +11445,8 @@ def _final_stage1_typed_nuclei(
                             "operator:feeling", "operator:positive_change", "time_scope:past",
                             "lexical:source_bounded_expression", "lexical:preserve_source_predicate",
                             "lexical:no_new_sensation_family", "lexical:source_nominal_past_feeling",
+                            *(("operator:contrast", "semantic_role:contrast_after")
+                              if _LEADING_CONTRAST_RE.match(raw) and not raw.startswith("ただ") else ()),
                         ))),
                     ))
             # Correct the lexical background reading only after proving the
@@ -12361,6 +12369,21 @@ def _final_stage1_normalize_relation_authority(
         )
         relation_type = relation.type
         if (
+            left_fields == right_fields == {"memo"}
+            and relation.type == "user_stated_result"
+            and relation.source_relation_ids == ("whole_input_source_order",)
+            and relation.source_meaning_arc_keys == ("whole_input:source_order",)
+            and set(relation.source_span_ids) == set((*left.source_span_ids, *right.source_span_ids))
+            and set(left.source_span_ids).isdisjoint(right.source_span_ids)
+            and {"lexical:source_nominal_past_feeling", "semantic_role:contrast_after"}
+                <= set(right.semantic_frame.attribute_codes)
+        ):
+            # The proven leading contrast is not a result merely because
+            # its outer feeling is positive. Preserve both source endpoints.
+            relation_type = "contrast"
+            grounding_kind = "user_stated_relation"
+            retention = "required"
+        elif (
             any("lexical:source_denied_resolution" in n.semantic_frame.attribute_codes for n in (left, right))
             and relation.source_relation_ids == ("whole_input_source_order",)
             and relation.source_meaning_arc_keys == ("whole_input:source_order",)
@@ -13502,6 +13525,21 @@ def project_final_stage1_grounded_observation_plan(
         relations,
         nuclei,
     )
+    if any(is_grounded_positive_feeling(n) and n.retention == "required"
+           and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes for n in nuclei):
+        # The legacy span-count rank cannot discard an explicit received
+        # reaction merely because an independent feeling/action is present.
+        # Admit only the complete source-proven group, with the same budget.
+        candidate_ids = {n.nucleus_id for n in nuclei if n.retention == "should"
+            and n.grounding_kind == "explicit" and n.allowed_claim_scope == "explicit_current_input"
+            and any(c.startswith("source_received_event_link:") for c in n.semantic_frame.attribute_codes)}
+        candidate_nuclei = tuple(replace(n, retention="required") if n.nucleus_id in candidate_ids else n for n in nuclei)
+        candidate_relations = tuple(replace(r, retention="required")
+            if r.retention == "should" and r.type == "contrast" and r.grounding_kind == "user_stated_relation"
+            and r.source_relation_ids == ("typed_projection:top_level_connective",)
+            and {r.from_nucleus_id, r.to_nucleus_id} <= candidate_ids else r for r in relations)
+        if candidate_ids and _thread_retained_reaction_groups(candidate_nuclei, candidate_relations):
+            nuclei, relations = candidate_nuclei, candidate_relations
     complexity = _semantic_complexity(
         nuclei=nuclei,
         relations=relations,

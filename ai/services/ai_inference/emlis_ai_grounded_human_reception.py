@@ -2927,7 +2927,10 @@ def source_grounded_reception_move_relations(move, plan):
 def source_grounded_thread_received_group(move, plan, nucleus_index, resolver):
     """Prove each original pair and its optional active answer in one duty."""
     from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
-    if (plan is None or getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+    if (plan is None
+        or (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+            and any(n.source_fields == ("answer_text_private",) for n in plan.nuclei))
+        or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
         or move not in plan.response_plan.human_reception_plan.moves
         or ("current_burden", move.target_nucleus_ids, move.support_nucleus_ids)
            not in _thread_retained_reaction_groups(plan.nuclei, plan.relations)):
