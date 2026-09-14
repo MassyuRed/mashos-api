@@ -1,4 +1,4 @@
-> 2026-09-14 最新現在地：解消を否定の内側に、可能性を認知の内側に保持する共有経路の修正を検証。追加54検査PASS、従来1152検査の合否変更0。同じ100入力と保存126ケース・227状態を全文確認。既存19失敗、感情の取り落としと長い復唱による提供停止は残り、商品NOT_CLEAR。現在の採用結果と次の作業は末尾「nested denial and cognitive possibility」節。
+> 2026-09-14 最新現在地：名詞句を伴う過去感情を共有経路で保持し、二つの感情と別行動を独立に受け止める修正を検証。追加46検査PASS。既存19失敗に加え、固定2Move期待との不一致1件が発生し、期待値は維持。同じ100入力と保存126ケース・227状態を全文確認。感情の取り落としと長い復唱は残り、商品NOT_CLEAR。現在の採用結果と次の作業は末尾「independent nominal past feelings」節。
 
 > 2026-09-13 現在地：共通authorで対比の名詞化を一段減らし、継続語を右の対象へ限定。追加2検査PASS、従来1101検査の合否変更0。同じ100入力と保存110ケース・211状態を全文確認。既存19失敗・文をまたぐ復唱・意味選択の残件があり、商品NOT_CLEAR。詳細は末尾の同見出し。
 
@@ -8111,3 +8111,17 @@ The shared recognition path previously treated a resolution embedded under denia
 Remaining work is shared recognition/selection of other independent feelings and time scopes, including answer updates, followed by concise shared prose that expresses each meaning once. Complex feelings are still omitted, actions can dominate, and long nominalized repetition remains. Scope support is a closed grammatical case, not a claim of general Japanese scope coverage. Existing 19 test failures and broader admission limitations remain; assertions after a known early failure are not counted as passing.
 
 `STRUCTURE_MAP_DELTA_NONE`: existing owner internals, no new core, schema, wire API, storage, question policy or activation path. Continue the latest weekly milestones of 9/16 shared fixes, 9/18 comparison/naturalness and 9/19 full product review; the January 2027 release target and overall progress percentage are unchanged. The verified Python 3.12.13 / pytest 8.4.1 / PGlite 0.5.8 environment was reused without restoration. System Context remains unused; current originals were read directly. Existing PR #3 and PR #30 remain Draft/open/unmerged, default OFF. No formal product PASS, real DB/device/billing work, external AI generation, merge, deploy or enable was performed.
+
+
+## 2026-09-14 continuation — independent nominal past feelings
+
+- **商品NOT_CLEAR、default OFF、Draft/open/unmergedを維持。** 最新weeklyの9/16共有修正、9/18比較・自然さ、9/19全件商品判断の順序を継続する。正式商品PASSや全体進捗の引上げは行っていない。
+- 完了した経験を名詞句として伴う過去感情を、元の本人記述・完全な範囲・明示された過去時制に結び付ける。背景の認知否定を外側の感情否定へ広げず、複数の独立感情は元の順序で保持する。別行動があっても感情を落とさず、行動の因果関係は加えない。
+- 伝達済み行動の目的語内部にある過去願望を、外側の未実行行動と誤認する範囲を修正。完全な本人memo_actionと文境界に限定し、前の独立願望、引用・報告・他者・未来への拡張は拒否する。共有認識・gate・既存author・scope guardの5ファイルに修正を置き、独立inverseも元記述との一致を検査する。
+- 凍結した全検証source: `b34bcb3084745576004c2a6f986a4b7159988def`、tree: `e308d3154c7a1a7ea2a6d15597e293ede3aa9f5f`。この最終公開は既存handoffだけを更新し、検証後の製品コード・テスト本文は変更しない。現行の派生identityのみ更新し、旧入力・期待値・閾値・過去receiptは保存する。
+- 必須回帰: **425 PASS / 14 FAIL（439）**。Q1–Q4: **807 PASS / 6 FAIL（813）**、追加synthetic46件は全PASS。従来1206検査のうち1205件の合否が同じで、`test_multi_move_surfaces_retain_each_rr4_duty` が新たにFAIL。対象は旧「感情一つ＋行動」の固定2Move期待と、新「感情二つ＋行動」の3Moveとの差。期待値を変更して緑化していない。総失敗20件＝既存19＋新規1。早期失敗後のassertは成功と主張しない。
+- 同じcanonical100件を入力・観測・Reception・可用性まで全読。99 recordsが同じ、1件で二つの過去感情と独立行動を保持。outerは全件で前回と同じ **73 GENERATED / 27 UNAVAILABLE**。required moves / expressions / bindingsは各156。aggregate旧期待133との失敗とhistorical source receiptの不一致も残る。
+- 保存21群 **126ケース / 227状態 / 298 GET**を全読。すべて前回から継承し、227状態の本文と操作フィールドは許容された実行ID/時刻正規化後に同じ。新規savedケース・質問回答状態の網羅は0。Free/Plus上限1、Premium明示continue最大3、訂正・撤回・unknown・partial・8失敗状態の表示と保存関係を確認した。
+- withdrawal / epistemic / cognition_action / independent_decisionの4群で先行exportが不完全だったため、不採用原本を残し、同じsource・入力・assertionで該当群のみ再実行した。実際に返った全rowsとcountersを完全保存した版を採用manifestに明記。低層原因は未特定。先行exportやexit0だけを完成証拠にしない。
+- **次の残件:** 複合節の安堵・独立感情の取り落とし、行動への優先偏り、長い復唱と「こと」の連鎖。改善した一例を全体品質の合格にしない。共有認識/選択と既存authorで各意味を一度ずつ自然な文へ実現し、回答更新も同じownerで進める。固定2Move不一致と既存失敗を引き続き明示する。
+- STRUCTURE_MAP_DELTA_NONE。実DB・実機・実課金、merge/deploy/enable、外部AI生成は未実施。完全な私的入力・出力・比較・不採用試行は既存の非公開作業記録へ保存する。
