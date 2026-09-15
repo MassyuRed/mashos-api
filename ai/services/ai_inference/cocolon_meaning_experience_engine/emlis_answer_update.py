@@ -305,15 +305,11 @@ def _prepare_answer(thread, original):
     focus = question.decision.affected_meaning_refs
     spans = tuple(resolver.resolve(sid) for sid in resolver.span_ids
                   if resolver.qualified_ref(sid).source_envelope_id == answer.envelope.envelope_id)
-    correcting_then = any(_CORRECTION_META.fullmatch(span.raw_text) for span in spans)
-    updates, unresolved, added, inactive = [], [], [], []
-    known_unchanged = False
+    # Resolve quote ownership before either clause interpretation or the
+    # answer-wide correction flag. A quoted report cannot authorize revision
+    # of the user's original reaction, even when a later self answer is valid.
+    quoted_span_ids = set()
     for span in spans:
-        text = span.raw_text
-        ev = (resolver.qualified_ref(span.span_id).evidence.evidence_id,)
-        # The legacy ledger can split a reported quotation at punctuation.
-        # Its interior is not a standalone self answer, bare unknown, or
-        # correction meta, even when those words happen to match our grammar.
         prefix = answer.source.answer_text_private[:resolver.qualified_ref(span.span_id).evidence.scalar_start]
         quoted_depth = 0
         for character in prefix:
@@ -322,6 +318,17 @@ def _prepare_answer(thread, original):
             elif character in "」』":
                 quoted_depth = max(0, quoted_depth - 1)
         if quoted_depth:
+            quoted_span_ids.add(span.span_id)
+    correcting_then = any(span.span_id not in quoted_span_ids
+                          and _CORRECTION_META.fullmatch(span.raw_text) for span in spans)
+    updates, unresolved, added, inactive = [], [], [], []
+    known_unchanged = False
+    for span in spans:
+        text = span.raw_text
+        ev = (resolver.qualified_ref(span.span_id).evidence.evidence_id,)
+        # The legacy ledger can split a reported quotation at punctuation.
+        # Its interior remains unresolved, not a self answer or correction.
+        if span.span_id in quoted_span_ids:
             unresolved.append(EmlisUnresolvedPartV1(ev, "answer_syntax_unsupported"))
             continue
         if _CORRECTION_META.fullmatch(text):
