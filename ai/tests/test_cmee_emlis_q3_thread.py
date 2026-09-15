@@ -1,5 +1,6 @@
 """Actual Q3 bodies: cumulative meaning, source time, pair composition and inverse."""
 from dataclasses import replace
+from functools import lru_cache
 import pytest
 from test_cmee_emlis_q1_thread import initial
 from cocolon_meaning_experience_engine import MeaningExperienceEngine
@@ -3561,3 +3562,85 @@ def test_original_burden_with_contrast_keeps_complete_claim_context(action):
     assert '資料をまとめたこととそれでも発表が怖い' in follow
     assert '違い' in follow and '背景に' not in follow
     assert 'これからの行動' in follow if '今夜' in action else '実際の行動' in follow
+
+
+# Component checks use an independently public synthetic source. They exercise
+# the selected felt-response grammar, not a claim that every outer route has
+# already selected that act. Outer admission is checked separately.
+@lru_cache(maxsize=1)
+def _finite_past_context_component():
+    from unittest.mock import patch
+    import emlis_ai_grounded_human_reception as hr
+    from test_cmee_final_stage1_generic_move_projection import _full_surface_artifacts
+    captured = []
+    original = hr._source_grounded_argument_surface
+    def observe(move, **kwargs):
+        if move.relations and move.reference_mode != 'ANAPHORIC':
+            captured.append((move, dict(kwargs)))
+        return original(move, **kwargs)
+    with patch.object(hr, '_source_grounded_argument_surface', side_effect=observe):
+        result = _full_surface_artifacts({'case_id': 'public-finite-past-context-component', 'input': {
+            'thought_text': '予定は一度では決まらなかった。それでも私は相談できたことがうれしかった。',
+            'action_text': '机を拭いた。', 'categories': ['仕事'],
+            'emotions': [{'type': '不安', 'strength': 'medium'}]}})
+    assert result.inverse.passed and result.gate.passed
+    move, kwargs = next((m, k) for m, k in captured if m.time_scope == 'past'
+        and len(m.context_slots) == 1 and k['target_nominal'].endswith('という気持ち'))
+    # This is the existing single material-appraisal grammar component. The
+    # attention form with two primary objects is deliberately not replaced.
+    kwargs.update(material_pair_object=False, material_contrast_object=True)
+    return hr, move, kwargs
+
+
+def test_finite_past_context_component_retains_both_complete_sources_and_relation():
+    hr, move, kwargs = _finite_past_context_component()
+    text, slots, relations = hr._source_grounded_argument_surface(move, **kwargs)
+    left, right = move.relations[0].endpoint_slots
+    assert text == move.semantic_fragments[left] + 'けれど、' + move.semantic_fragments[right] + 'という気持ち'
+    assert all(text.count(fragment) == 1 for fragment in move.semantic_fragments)
+    assert slots == (0, 1) and relations == (0,)
+    assert 'との違い' not in text and 'ことと' not in text
+
+
+@pytest.mark.parametrize('boundary', [
+    'unselected_material', 'two_primary_objects', 'anaphoric', 'current_time',
+    'negative_target', 'ongoing_aspect', 'foreign_actor', 'quoted_boundary',
+    'performed_context', 'future_context', 'not_event_context', 'uncertain_context',
+    'not_feeling_target', 'no_context', 'source_question', 'source_quote',
+    'source_without_finite_end', 'partial_target',
+])
+def test_finite_past_context_component_does_not_extend_unsupported_boundaries(boundary):
+    hr, move, kwargs = _finite_past_context_component()
+    kwargs = dict(kwargs)
+    left, right = move.relations[0].endpoint_slots
+    original = move.semantic_fragments
+    expected = original[left] + 'けれど、' + original[right] + 'という気持ち'
+    if boundary == 'unselected_material': kwargs['material_contrast_object'] = False
+    elif boundary == 'two_primary_objects': kwargs['material_pair_object'] = True
+    elif boundary == 'anaphoric': move = replace(move, reference_mode='ANAPHORIC')
+    elif boundary == 'current_time': move = replace(move, time_scope='current_input')
+    elif boundary == 'negative_target': move = replace(move, polarity='negative')
+    elif boundary == 'ongoing_aspect': move = replace(move, aspect='continuing')
+    elif boundary == 'no_context': move = replace(move, context_slots=())
+    elif boundary == 'partial_target': kwargs['target_nominal'] = 'うれしかったという気持ち'
+    elif boundary.startswith('source_'):
+        fragments = list(original)
+        fragments[left] = (original[left] + '？' if boundary == 'source_question' else
+            '「' + original[left] + '」' if boundary == 'source_quote' else '予定について')
+        move = replace(move, semantic_fragments=tuple(fragments))
+    else:
+        profiles = list(move.semantic_profiles)
+        slot = right if boundary == 'not_feeling_target' else left
+        changes = {
+            'foreign_actor': {'actor_kind': 'OTHER'}, 'quoted_boundary': {'quoted_boundary': True},
+            'performed_context': {'performed_action': True}, 'future_context': {'future_action': True},
+            'not_event_context': {'nucleus_kind': 'change'}, 'uncertain_context': {'modality': 'uncertain'},
+            'not_feeling_target': {'predicate_kind': 'reaction'},
+        }[boundary]
+        profiles[slot] = replace(profiles[slot], **changes)
+        move = replace(move, semantic_profiles=tuple(profiles))
+    try:
+        text, _, _ = hr._source_grounded_argument_surface(move, **kwargs)
+    except hr.GroundedHumanReceptionSurfaceError:
+        return
+    assert text != expected and not text.startswith(move.semantic_fragments[left] + 'けれど、')

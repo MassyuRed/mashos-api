@@ -3270,6 +3270,26 @@ def evaluate_grounded_surface_body_inverse(
                                 expected = before + "ことと" + source + "という気持ち" + (role or "") + "その違いも含めて受け止めています。"
                                 complete_forms = (expected, before + "ことと" + source
                                     + "という気持ちとの違い" + (role or "") + "受け止めています。")
+                                # Independently check the finite background,
+                                # its contrast connector, the complete past
+                                # feeling and the selected reception role.
+                                # Do not ask the author to certify its prose.
+                                left = nucleus_index[contexts[0]]
+                                right = target_nuclei[0]
+                                if (right.semantic_frame.time_scope == "past"
+                                    and right.semantic_frame.polarity == "positive"
+                                    and all(str(n.semantic_frame.actor).lower() in {"current_user", "user", "self"}
+                                            and not _body_inverse_action_is_performed(n)
+                                            and not _body_inverse_action_is_future_intention(n)
+                                            for n in (left, right))
+                                    and left.semantic_frame.modality == "fact"
+                                    and not any(code.startswith("aspect:") and code.split(":", 1)[1]
+                                                not in {"unknown", "not_applicable"}
+                                                for code in right.semantic_frame.attribute_codes)
+                                    and re.search(r"(?:かった|[てで]いた|た|だ)$", before)
+                                    and not re.search(r"[「」『』“”‘’\"?？!！。;；…‥]", before + source)):
+                                    complete_forms += (before + "けれど、" + source
+                                        + "という気持ち" + (role or "") + "受け止めています。",)
                             if (not source or role is None or not context_valid
                                 or effective_reference_mode == "anaphoric_first" or raw not in complete_forms):
                                 failures.append(f"body_inverse_nominal_cognition_feeling_object_missing:{move_id}")

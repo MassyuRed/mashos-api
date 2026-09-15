@@ -7679,6 +7679,39 @@ def _source_grounded_argument_surface(
               and second.semantic_slot == target_owner_slot
               and move.context_slots == (first.semantic_slot,)
               and move.reference_mode != "ANAPHORIC"
+              and move.time_scope == "past" and move.polarity == "positive"
+              and move.aspect in {"unknown", "not_applicable"}
+              and not direct_phrases and not target_adjunct
+              and all(p.actor_kind == "SELF" and not p.quoted_boundary
+                      and not p.performed_action and not p.future_action
+                      for p in move.semantic_profiles)
+              and move.semantic_profiles[first.semantic_slot].nucleus_kind == "event"
+              and move.semantic_profiles[first.semantic_slot].modality == "fact"
+              and move.semantic_profiles[second.semantic_slot].nucleus_kind == "reaction"
+              and move.semantic_profiles[second.semantic_slot].predicate_kind == "feeling"
+              and move.semantic_profiles[second.semantic_slot].modality == "feeling"
+              and first_nominal == move.semantic_fragments[first.semantic_slot] + "こと"
+              and second_nominal == target_nominal
+              and target_nominal == move.semantic_fragments[second.semantic_slot] + "という気持ち"
+              and re.search(r"(?:かった|[てで]いた|た|だ)$",
+                            move.semantic_fragments[first.semantic_slot])
+              and not re.search(r"[「」『』“”‘’\"?？!！。;；…‥]",
+                                move.semantic_fragments[first.semantic_slot])):
+            # The plan already binds this event as the contrast context of
+            # the past feeling. Keep both whole source clauses, but attach
+            # the finite background directly instead of nominalizing the
+            # event, then the feeling, and then their difference again.
+            relation_phrases.append(
+                f"{move.semantic_fragments[first.semantic_slot]}けれど、{second_nominal}"
+            )
+        elif (material_contrast_object
+              and len(move.relations) == 1 and len(move.semantic_fragments) == 2
+              and relation.relation_kind == "contrast"
+              and relation.endpoint_roles == ("LEFT", "RIGHT")
+              and (first.case_marker, second.case_marker) == ("と", "との")
+              and second.semantic_slot == target_owner_slot
+              and move.context_slots == (first.semantic_slot,)
+              and move.reference_mode != "ANAPHORIC"
               and move.time_scope in {"current_input", "continuing"}
               and move.aspect in {"unknown", "not_applicable"}
               and not direct_phrases
@@ -9636,9 +9669,12 @@ def _author_source_grounded_reception_clauses(
                 anaphoric_context_object=anaphoric_context_object,
                 material_pair_object=material_pair_object,
                 material_contrast_object=bool(
-                    move.move_role == "attention"
-                    and move.reception_act == "stay_with_current_burden"
-                    and referent.kind == "current_expression"
+                    (move.move_role == "attention"
+                     and move.reception_act == "stay_with_current_burden"
+                     and referent.kind == "current_expression"
+                     or move.move_role in {"attention", "felt_response"}
+                     and move.reception_act == "recognize_lived_change"
+                     and referent.kind == "positive_feeling")
                     and _selected_material_appraisal(selected_decision)
                 ),
                 material_change_object=material_change_object,
