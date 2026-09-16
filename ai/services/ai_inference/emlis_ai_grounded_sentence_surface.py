@@ -2833,7 +2833,8 @@ def _render_observation(
         if typed_endpoint and typed_endpoint != joined:
             return f"{prefix}今の入力には、{typed_endpoint}があります。"
     if (typed_semantic_duties
-        and {"lexical:source_received_past_feeling", "lexical:source_nominal_past_feeling"} & set(nucleus.semantic_frame.attribute_codes)):
+        and {"lexical:source_received_past_feeling", "lexical:source_nominal_past_feeling",
+             "lexical:source_finite_feeling"} & set(nucleus.semantic_frame.attribute_codes)):
         return f"{prefix}{joined}という気持ちが書かれています。"
     if "lexical:preserve_source_predicate" in nucleus.semantic_frame.attribute_codes:
         return f"{prefix}今は、{joined}という感覚が前に出ています。"
@@ -2915,6 +2916,17 @@ def _render_extra_context(
             parts.append(f"また、{when}の気持ちとして、{quoted}が見えます。")
         remaining = tuple(nid for nid in extra_ids if nid not in detached)
         return "".join(parts) + _render_extra_context(remaining, nucleus_index, resolver)
+    # Field-independent feelings are separate source duties, not an
+    # inferred background or an action supporting the adjacent event.
+    from emlis_ai_grounded_observation_plan import _source_finite_original_feeling
+    finite_feelings = tuple(nid for nid in extra_ids if nid in nucleus_index
+                            and _source_finite_original_feeling(nucleus_index[nid]))
+    if finite_feelings:
+        quoted = _join_quotes(_quotes_for_nuclei(finite_feelings, nucleus_index, resolver))
+        remaining = tuple(nid for nid in extra_ids if nid not in finite_feelings)
+        return f"また、{quoted}という気持ちも書かれています。" + _render_extra_context(
+            remaining, nucleus_index, resolver,
+        )
     extras = _join_quotes(_quotes_for_nuclei(extra_ids, nucleus_index, resolver))
     if not extras:
         return ""

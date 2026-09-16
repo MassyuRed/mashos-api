@@ -4040,3 +4040,84 @@ def test_independent_material_past_quotative_prefix_keeps_complete_object(action
                          (expected, "これまで、" + memo.rstrip("。") + "こと")):
             changed = helpers._tamper_reception(body, old, new)
             assert not passes(changed), (recovery, old, new)
+
+
+@pytest.mark.parametrize('feeling,when',[
+    ('つらかった。','past'), ('不安だった。','past'),
+    ('怖かったです。','past'), ('嬉しくなかった。','past'),
+    ('悲しい。','current_input'), ('私は怖くない。','current_input'),
+    ('今は不安です。','present'), ('落ち着いていた。','past'),
+    ('嬉しかった。','past'),
+])
+def test_field_finite_feeling_owns_meaning_not_action_label(feeling,when):
+    req=begin('頼まれたのに、寂しかった。',feeling)
+    prepared=prepare_emlis_meaning(req);plan=build_updated_grounded_plan(prepared)
+    owned=[n for n in plan.nuclei if n.source_fields==('memo_action',)]
+    assert len(owned)==1
+    nucleus=owned[0];frame=nucleus.semantic_frame
+    assert (nucleus.kind,frame.predicate_kind,frame.modality,frame.time_scope)==('reaction','feeling','feeling',when)
+    assert 'operator:action' not in frame.attribute_codes and 'operator:performed_action' not in frame.attribute_codes
+    assert prepared.thread.resolver().resolve(nucleus.source_span_ids[0]).source_field=='memo_action'
+    out=MeaningExperienceEngine().generate(req);assert out.artifact,out.reason_codes
+    assert feeling.rstrip('。') in out.artifact.observation and feeling.rstrip('。') in out.artifact.reception
+    assert '頼まれた' in out.artifact.reception and '寂しかった' in out.artifact.reception
+    assert '行動に移しています' not in out.artifact.observation
+    assert all(m.reception_act!='honor_concrete_effort' for m in plan.response_plan.human_reception_plan.moves)
+    assert not any(nucleus.nucleus_id in (r.from_nucleus_id,r.to_nucleus_id)
+                   and r.retention=='required' for r in plan.relations)
+
+
+@pytest.mark.parametrize('text',[
+    '友人は怖かった。','妹が悲しかった。','「不安だった」と言われた。',
+    '不安だったかもしれない。','不安だった？','不安だったのなら。',
+    '悲しみ。','重い荷物を運んだ。','不安な友人を訪ねた。',
+    '明日は怖い。','怖いと言う予定だ。',
+])
+def test_field_finite_feeling_does_not_promote_unproved_owner_or_host(text):
+    prepared=prepare_emlis_meaning(begin('頼まれたのに、寂しかった。',text))
+    plan=build_updated_grounded_plan(prepared)
+    assert not any('lexical:source_finite_feeling' in n.semantic_frame.attribute_codes
+                   for n in plan.nuclei if n.source_fields==('memo_action',))
+
+
+@pytest.mark.parametrize('feeling',['つらかった。','不安だった。','嬉しくなかった。','私は怖くない。'])
+def test_field_finite_feeling_survives_other_answer_correction_withdrawal(feeling):
+    req=begin(memo_action=feeling)
+    for answer,removed in [(None,()),('その時は重かった。',()),
+                           ('「重かった」ではなく「苦しかった」です。',('重かった','重さ')),
+                           ('「苦しかった」は誤りです。',('重かった','重さ','苦しかった','苦しさ'))]:
+        if answer is not None:req=advance(req,answer)
+        out=MeaningExperienceEngine().generate(req);assert out.artifact,out.reason_codes
+        assert feeling.rstrip('。') in out.artifact.reception
+        assert all(t in out.artifact.reception for t in ['褒められた','嬉しくなかった','誘われた','悲しかった','頼まれた','寂しかった'])
+        assert not any(t in out.artifact.text for t in removed)
+        assert '支える動きとして' not in out.artifact.observation
+        assert 'その背景には' not in out.artifact.observation
+
+
+@pytest.mark.parametrize('mutation',['omit_feeling','change_time','reverse_negation','invent_action','invent_relation','omit_other'])
+def test_field_finite_feeling_inverse_keeps_both_source_duties(mutation,monkeypatch):
+    import emlis_ai_grounded_human_reception as hr
+    req=begin('頼まれたのに、寂しかった。','私は怖くなかった。')
+    prepared=prepare_emlis_meaning(req);plan=build_updated_grounded_plan(prepared)
+    resolver=prepared.thread.resolver();projection=project_thread_meaning(prepared,plan)
+    result=realize_emlis_thread_body(prepared);assert result.artifact
+    sp=surface.build_grounded_sentence_plan(plan,resolver,recovery_stage='full')
+    body=result.artifact.text;follow=result.artifact.reception
+    def passes(text):
+        return evaluate_grounded_surface_body_inverse(body=text.encode(),plan=plan,sentence_plan=sp,
+            resolver=resolver,selected_subjective_input=projection.selected_reception).passed
+    assert passes(body)
+    sentences=tuple(s+'。' for s in follow.split('。') if s)
+    changed={
+        'omit_feeling':''.join(s for s in sentences if '怖くなかった' not in s),
+        'change_time':follow.replace('怖くなかった','怖くない'),
+        'reverse_negation':follow.replace('怖くなかった','怖かった'),
+        'invent_action':follow.replace('怖くなかったという言葉','怖くなかったという行動'),
+        'invent_relation':follow.replace('私は怖くなかった','頼まれたから私は怖くなかった'),
+        'omit_other':''.join(s for s in sentences if '頼まれた' not in s),
+    }[mutation]
+    assert changed!=follow
+    def no_author(*args,**kwargs):raise AssertionError('inverse must not ask the author to judge its own text')
+    monkeypatch.setattr(hr,'realize_source_grounded_human_reception',no_author)
+    assert not passes(body.replace(follow,changed))

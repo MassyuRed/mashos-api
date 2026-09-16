@@ -7221,6 +7221,25 @@ def is_grounded_current_answer_uncertainty(nucleus):
     )
 
 
+def _source_finite_original_feeling(nucleus):
+    """A field-independent finite feeling proved before meaning selection."""
+    frame = nucleus.semantic_frame
+    return bool(
+        nucleus.kind == "reaction" and frame.predicate_kind == "feeling"
+        and frame.actor == "current_user" and frame.modality == "feeling"
+        and frame.time_scope in {"current_input", "present", "continuing", "past"}
+        and nucleus.source_fields == ("memo_action",)
+        and nucleus.grounding_kind == "explicit" and nucleus.retention == "required"
+        and nucleus.allowed_claim_scope == "explicit_current_input"
+        and len(nucleus.source_span_ids) == 1
+        and nucleus.surface_anchor_ids == nucleus.source_span_ids
+        and {"operator:feeling", "lexical:source_finite_feeling"} <= set(frame.attribute_codes)
+        and not any(code.startswith(("source_fragment_", "surface_scalar_", "thread_time:",
+                                     "semantic_dependency:")) for code in frame.attribute_codes)
+        and not {"operator:action", "operator:performed_action"} & set(frame.attribute_codes)
+    )
+
+
 def _thread_retained_reaction_groups(nuclei, relations):
     """Keep unanswered original reactions alongside the accepted answer duties.
 
@@ -7247,9 +7266,9 @@ def _thread_retained_reaction_groups(nuclei, relations):
     pair_ids = {nid for r in original_relations if r.type == "contrast" and r.retention == "required"
                 for nid in (r.from_nucleus_id, r.to_nucleus_id)}
     independent = tuple(n for n in original_text if n.nucleus_id not in pair_ids
-        and n.source_fields == ("memo",) and n.retention == "required"
+        and n.source_fields in {("memo",), ("memo_action",)} and n.retention == "required"
         and n.grounding_kind == "explicit" and n.allowed_claim_scope == "explicit_current_input"
-        and (_source_explicit_original_feeling(n) or _source_current_cognition(n) or (
+        and (_source_finite_original_feeling(n) or _source_explicit_original_feeling(n) or _source_current_cognition(n) or (
             is_grounded_positive_feeling(n) and n.semantic_frame.time_scope == "past"
             and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes))
         and not any(r.retention == "required" and n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
@@ -7539,7 +7558,7 @@ def build_grounded_reception_opportunities(
     ) else ()
     retained_reaction_groups = _thread_retained_reaction_groups(owned_nuclei, relations) if (
         final_source_fidelity and (include_relation_support or any(
-                _source_explicit_original_feeling(n) or _source_current_cognition(n) or (is_grounded_positive_feeling(n)
+                _source_finite_original_feeling(n) or _source_explicit_original_feeling(n) or _source_current_cognition(n) or (is_grounded_positive_feeling(n)
                 and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes)
                 for n in owned_nuclei))
         and safety_kind == TRIAGE_SAFE_OBSERVATION
@@ -8429,7 +8448,7 @@ def build_grounded_human_reception_plan(
         final_source_fidelity=final_source_fidelity,
         retained_reaction_groups=(_thread_retained_reaction_groups(available_nuclei, relations) if (
             final_source_fidelity and (include_relation_support or any(
-                _source_explicit_original_feeling(n) or _source_current_cognition(n) or (is_grounded_positive_feeling(n)
+                _source_finite_original_feeling(n) or _source_explicit_original_feeling(n) or _source_current_cognition(n) or (is_grounded_positive_feeling(n)
                 and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes)
                 for n in available_nuclei))
             and safety_kind == TRIAGE_SAFE_OBSERVATION
@@ -13139,6 +13158,50 @@ def _final_stage1_align_action_status(
     for nucleus in nuclei:
         frame = nucleus.semantic_frame
         codes = tuple(frame.attribute_codes)
+        # The action input field is provenance, not proof of performance.
+        # A complete self-owned finite feeling uses the same registered
+        # grammatical proof as a memo feeling. Keep the original field,
+        # source object and polarity; only remove the field-default action
+        # interpretation before graph, selection and surface composition.
+        if (nucleus.kind == "action" and frame.predicate_kind == "feeling"
+            and frame.actor == "current_user" and frame.modality == "feeling"
+            and frame.time_scope in {"current_input", "present", "continuing", "past"}
+            and nucleus.source_fields == ("memo_action",)
+            and nucleus.grounding_kind == "explicit"
+            and nucleus.allowed_claim_scope == "explicit_current_input"
+            and len(nucleus.source_span_ids) == 1
+            and not any(code.startswith(("source_fragment_scalar_", "surface_scalar_",
+                                         "semantic_dependency:", "thread_time:")) for code in codes)):
+            feeling_span = spans.get(nucleus.source_span_ids[0])
+            source = str((normalized_input or {}).get("memo_action") or "")
+            raw = str(feeling_span.raw_text) if feeling_span else ""
+            if (feeling_span is not None and feeling_span.source_field == "memo_action"
+                and 0 <= feeling_span.start_index < feeling_span.end_index <= len(source)
+                and source[feeling_span.start_index:feeling_span.end_index] == raw
+                and not source[:feeling_span.start_index].strip()
+                and re.fullmatch(r"\s*[。．.]?\s*", source[feeling_span.end_index:])
+                and _top_level_text(source) == source
+                and not re.search(r"[「」『』…‥!?！？]", source)
+                and not _FUTURE_RE.search(raw)
+                and not re.search(r"(?:明日|明後日|来週|来月|来年|次回|今度)", raw)
+                and _source_operator_owner_scope_is_bound(raw)
+                and _semantic_content_is_bounded(raw, require_finite=True)
+                and _last_finite_operator_match(raw, _FEELING_RE) is not None):
+                # Finite grammar has already proved the carrier. A polite
+                # adjective's desu does not move its past tense to now.
+                finite = re.sub(r"(?<=かった)です$", "", raw)
+                feeling_time = "past" if _EXPLICIT_PERFECTIVE_END_RE.search(finite) else frame.time_scope
+                attributes = tuple(c for c in codes if not c.startswith("time_scope:")
+                    and c not in {"operator:action", "operator:performed_action",
+                                  "semantic_role:concrete_action_evidence", "semantic_role:concrete_action",
+                                  "semantic_role:next_intention"})
+                aligned.append(replace(nucleus, kind="reaction", semantic_frame=replace(
+                    frame, time_scope=feeling_time, attribute_codes=tuple(_dedupe((
+                        *attributes, "time_scope:" + feeling_time,
+                        "lexical:source_finite_feeling",
+                    ))),
+                )))
+                continue
         if (
             nucleus.kind in {"wish", "action"}
             and frame.predicate_kind == "wish"
@@ -13810,7 +13873,7 @@ def project_final_stage1_grounded_observation_plan(
     promotable_feelings = {n.nucleus_id for n in nuclei if n.retention == "should"
         and (_source_explicit_original_feeling(replace(n, retention="required"))
              or _source_current_cognition(replace(n, retention="required")))}
-    if promotable_feelings or any(_source_explicit_original_feeling(n) or _source_current_cognition(n) or (
+    if promotable_feelings or any(_source_finite_original_feeling(n) or _source_explicit_original_feeling(n) or _source_current_cognition(n) or (
            is_grounded_positive_feeling(n) and n.retention == "required"
            and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes) for n in nuclei):
         # The legacy span-count rank cannot discard an explicit received
