@@ -3644,3 +3644,104 @@ def test_finite_past_context_component_does_not_extend_unsupported_boundaries(bo
     except hr.GroundedHumanReceptionSurfaceError:
         return
     assert text != expected and not text.startswith(move.semantic_fragments[left] + 'けれど、')
+
+
+# Discourse priority follows the selected meaning without rewriting action roles.
+@pytest.mark.parametrize('q3', [False, True])
+@pytest.mark.parametrize('action', ['資料を並べた。', '今夜は資料を並べることにした。'])
+def test_selected_burden_priority_actual_body_keeps_primary_before_action(q3, action):
+    import emlis_ai_grounded_human_reception as hr
+    memo = '次を考えると怖いし、また失敗する可能性も否定できない。'
+    prepared = prepare_emlis_meaning((begin if q3 else initial)(memo, action))
+    plan = build_updated_grounded_plan(prepared)
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact, out.reason_codes
+    rp = plan.response_plan.human_reception_plan
+    assert rp.primary_reception_act == 'stay_with_current_burden'
+    assert len(rp.moves) == 2 and all(m.required for m in rp.moves)
+    assert [m.reception_act for m in rp.moves] == ['stay_with_current_burden', 'honor_concrete_effort']
+    assert [m.move_role for m in rp.moves] == ['felt_response', 'attention']
+    assert 'selection:primary_burden_first' in rp.depth_policy.selection_reason_codes
+    follow = out.artifact.reception
+    assert follow.startswith(memo.rstrip('。'))
+    label = 'これからの行動' if '今夜' in action else '実際の行動'
+    assert follow.index(memo.rstrip('。')) < follow.index(label)
+    assert action.rstrip('。') in out.artifact.observation
+    for recovery in ('full', 'optional_removed', 'integrated', 'hedged'):
+        active = hr.reception_active_moves(rp, recovery)
+        assert active[0] == rp.moves[0]
+        assert {m.move_id for m in active} == {m.move_id for m in rp.moves}
+    # Without this final-plan ordering choice, the inherited role sort remains.
+    legacy = replace(rp, depth_policy=replace(rp.depth_policy,
+        selection_reason_codes=tuple(c for c in rp.depth_policy.selection_reason_codes
+                                     if c != 'selection:primary_burden_first')))
+    assert hr.reception_active_moves(legacy, 'full')[0] == rp.moves[1]
+    assert legacy.moves == rp.moves
+
+
+@pytest.mark.parametrize('response', [None, 'その時は重かった。'])
+@pytest.mark.parametrize('q3', [False, True])
+def test_selected_burden_priority_keeps_original_and_answer_duties(response, q3):
+    req = (begin if q3 else initial)('誘われたのに、悲しかった。今は怖い。', '机を拭いた。')
+    if response is not None:
+        req = advance(req, response)
+    prepared = prepare_emlis_meaning(req)
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact, out.reason_codes
+    follow = out.artifact.reception
+    assert '今は怖い' in follow and '誘われたのに悲しかったこと' in follow
+    assert '机を拭いたこと' in follow
+    assert follow.index('今は怖い') < follow.index('机を拭いたこと')
+    if response is not None:
+        assert 'その時の重さ' in follow
+    assert '背景に' not in follow
+
+
+@pytest.mark.parametrize('replacement', ['「重かった」ではなく「苦しかった」です。', '「重かった」は誤りです。'])
+def test_selected_burden_priority_correction_and_withdrawal_preserve_other_meanings(replacement):
+    req = begin('誘われたのに、悲しかった。頼まれたのに、寂しかった。今は怖い。', '机を拭いた。')
+    req = advance(advance(req, 'その時は重かった。'), replacement)
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact, out.reason_codes
+    follow = out.artifact.reception
+    assert all(s in follow for s in ('今は怖い', '誘われたのに悲しかったこと', '頼まれたのに寂しかったこと', '机を拭いたこと'))
+    assert follow.index('今は怖い') < follow.index('机を拭いたこと')
+    assert 'その時の重さ' not in follow
+    assert ('その時の苦しさ' in follow) == ('ではなく' in replacement)
+
+
+@pytest.mark.parametrize('q3', [False, True])
+def test_selected_burden_priority_does_not_expand_four_duty_capacity(q3):
+    from emlis_ai_grounded_observation_plan import GroundedObservationPlanError
+    req = advance((begin if q3 else initial)('誘われたのに、悲しかった。今は怖い。', '机を拭いた。'), 'その時は嬉しかった。')
+    # Original occasion, current feeling, positive answer and action remain
+    # four independent duties. This ordering repair does not raise the limit.
+    with pytest.raises(GroundedObservationPlanError, match='human_reception_opportunity_missing'):
+        build_updated_grounded_plan(prepare_emlis_meaning(req))
+
+
+def test_selected_burden_priority_inverse_rejects_object_mutations_without_author_replay():
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    memo = '次を考えると怖いし、また失敗する可能性も否定できない。'
+    prepared = prepare_emlis_meaning(initial(memo, '資料を並べた。'))
+    plan = build_updated_grounded_plan(prepared)
+    out = realize_emlis_thread_body(prepared)
+    assert out.artifact
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    sentence = surface.build_grounded_sentence_plan(plan, prepared.thread.resolver())
+    follow = out.artifact.reception
+    def passes(text):
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan', return_value=SimpleNamespace(text=text)), patch(
+            'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(body=out.artifact.text.replace(follow, text).encode(),
+                plan=plan, sentence_plan=sentence, resolver=prepared.thread.resolver(), selected_subjective_input=selected).passed
+    assert passes(follow)
+    for old, new in [(memo.rstrip('。'), '怖い'), ('怖い', '怖くない'),
+                     ('否定できない', '否定できる'), ('実際の行動', 'これからの行動'),
+                     ('次を考えると', '友人が次を考えると')]:
+        changed = follow.replace(old, new)
+        assert changed != follow and not passes(changed), (old, new)
+    first, second, trailing = follow.split('。')
+    assert first and second and not trailing
+    assert not passes(second + '。' + first + '。')

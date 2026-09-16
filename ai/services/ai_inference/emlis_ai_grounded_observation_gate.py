@@ -2058,9 +2058,7 @@ def _body_inverse_nominal_constraint_clause(body, sentence, move, plan, resolver
         or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids):
         return False
     nucleus = next((n for n in plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0]), None)
-    if (nucleus is None or len(nucleus.source_span_ids) != 1
-        or not {"lexical:source_nominal_constraint_clause", "lexical:source_provisional_degree"}
-            & set(nucleus.semantic_frame.attribute_codes)):
+    if nucleus is None or len(nucleus.source_span_ids) != 1:
         return False
     decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None) if selected_subjective_input else None
     proposition = decision.subjective_proposition if decision else None
@@ -3231,6 +3229,21 @@ def evaluate_grounded_surface_body_inverse(
                             if expression_nominal_required and retained_group:
                                 nominal_target_visible = _body_inverse_thread_received_group(
                                     body, witness, parsed_sentence, move, plan, resolver) is not None
+                            elif (expression_words_nominal_required and len(clause.move_ids) == 1
+                                and move.move_role == "felt_response"
+                                and move.reception_act == "stay_with_current_burden"
+                                and len(move.target_nucleus_ids) == 1 and not move.support_nucleus_ids
+                                and nucleus_index[move.target_nucleus_ids[0]].semantic_frame.time_scope
+                                    in {"present", "current_input"}
+                                and not _body_inverse_reception_context_ids(move, plan)
+                                and len(nucleus_index[move.target_nucleus_ids[0]].source_span_ids) == 1
+                                and expected_referent.text == str(resolver.resolve(
+                                    nucleus_index[move.target_nucleus_ids[0]].source_span_ids[0]).raw_text)
+                                    .strip(" \u3000、,。．.") + "という言葉"):
+                                # Read the entire selected object, not a source
+                                # substring inside an added actor, time or cause.
+                                nominal_target_visible = nominal_target_visible and _body_inverse_nominal_constraint_clause(
+                                    body, parsed_sentence, move, plan, resolver, selected_subjective_input)
                             elif expression_nominal_required and any(
                                 {"lexical:source_nominal_constraint_clause", "lexical:source_provisional_degree"}
                                 & set(nucleus_index[nid].semantic_frame.attribute_codes)

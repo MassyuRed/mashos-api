@@ -1457,11 +1457,18 @@ def reception_active_moves(
     for move in moves:
         reception_move_predicate_family(move)
     original_order = {move.move_id: index for index, move in enumerate(moves)}
+    # Preserve the final plan's selected primary before a supporting action.
+    # Ordering is not a reason to change either Move's act, role or reference.
+    primary_first = (
+        "selection:primary_burden_first" in reception_plan.depth_policy.selection_reason_codes
+        and reception_plan.depth_policy.safety_mode == "standard"
+        and moves[0].required and moves[0].reception_act == "stay_with_current_burden"
+    )
     ordered = tuple(
         sorted(
             moves,
             key=lambda move: (
-                _MOVE_ROLE_ORDER[move.move_role],
+                -1 if primary_first and move.move_id == moves[0].move_id else _MOVE_ROLE_ORDER[move.move_role],
                 original_order[move.move_id],
             ),
         )

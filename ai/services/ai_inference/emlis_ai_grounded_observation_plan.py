@@ -8129,6 +8129,15 @@ def _build_reception_depth_policy_and_moves(
             "selection:semantic_opportunity_inventory",
             "selection:distinct_human_contributions",
             "selection:raw_character_count_unused",
+            *(("selection:primary_burden_first",) if (
+                final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION
+                and selected[0].family == "current_burden"
+                and roles[selected[0].opportunity_id] == "felt_response"
+                and any(item.family == "concrete_effort" and roles[item.opportunity_id] == "attention"
+                        for item in selected)
+                and all(roles[item.opportunity_id] not in {"attention", "significance"}
+                        for item in selected if item.family != "concrete_effort")
+            ) else ()),
             f"depth:{level}",
             f"safety:{safety_mode}",
         ),
