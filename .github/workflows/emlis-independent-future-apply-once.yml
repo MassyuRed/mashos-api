@@ -1,0 +1,113 @@
+name: Apply corrected independent-burden source once
+on:
+  push:
+    branches:
+      - agent/emlis-independent-future-apply-once-20260916
+    paths:
+      - .github/workflows/emlis-independent-future-apply-once.yml
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.repository == 'MassyuRed/mashos-api' && github.ref == 'refs/heads/agent/emlis-independent-future-apply-once-20260916'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Apply final public five-file source; private validation stays local
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRANSFER_HEAD: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          """One-time public source transport, reusing the existing PR apply route.
+          No private input, answer, output or evaluation is read or executed here.
+          """
+          import base64, hashlib, json, os, pathlib, subprocess, tempfile, urllib.request
+          API = 'https://api.github.com/repos/MassyuRed/mashos-api'
+          TARGET = 'agent/cmee-v1a-i1sx-source-explicit-20260815'
+          TRANSFER = 'agent/emlis-independent-future-apply-once-20260916'
+          BASE = '10bedadcb567577ed17b6fbfa7da9a754df799f3'
+          PATCHES = [('64f0012bd4469340dcec46413a98454ccad4434b', '78a904ff8a8156765a86d6eb77fdc691d048c4487ea2db2d39dbe3b7319270a5'), ('9f9939607051743a060130b383ca01afe048090e', '4bc2315dcdc07e246b03b3ca2505174fb3ae761e8b72bdc9198325a2f557a8e4')]
+          FINAL_PATCH_SHA256 = '8f704100369631f098976adae7680e2d2c044ff18c578230754a283343bb2fa8'
+          FILES = {'ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py': ('71ac57c06f79a5da817ecde4bfcd8dcb7e6a6f33', '080064697ff54fc8492d60374e7bdeb50b5b984f'), 'ai/services/ai_inference/emlis_ai_grounded_observation_gate.py': ('80660f80643b8b26233e06a1bac3964259c50c7f', '6d06a7fbe710d6b27c531ff4f7d3b607a9955c07'), 'ai/services/ai_inference/emlis_ai_grounded_observation_plan.py': ('4659b7d7a2697fec0680eeb8fbdf079e24fa51a5', '0b4fcfee7ec40a0648375637c0e8b01f24993458'), 'ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json': ('2a461d0c7031ae4512c36e5617b53ca266b93c9f', 'ab8e0b47673ab031bdf4fecb121e32b51a856291'), 'ai/tests/test_cmee_emlis_q3_thread.py': ('35e89ce238862b25d063d77d2d2be96f14d3beb8', 'be5fe84fe523368eb68ffa2cce8fad91d10a0be3')}
+
+          def call(path, method='GET', value=None):
+           data=None if value is None else json.dumps(value).encode()
+           req=urllib.request.Request(API+path,data=data,method=method,headers={
+            'Authorization':'Bearer '+os.environ['GH_TOKEN'], 'Accept':'application/vnd.github+json',
+            'Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28','Cache-Control':'no-cache'})
+           with urllib.request.urlopen(req,timeout=60) as response:
+            raw=response.read()
+           return json.loads(raw) if raw else None
+          def blob(data):
+           return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+          def bytes_for(sha):
+           obj=call('/git/blobs/'+sha); data=base64.b64decode(obj['content'])
+           assert obj['sha']==sha and blob(data)==sha
+           return data
+          pr=call('/pulls/3')
+          assert pr['state']=='open' and pr['draft'] and not pr['merged']
+          assert pr['head']['ref']==TARGET and pr['head']['repo']['full_name']=='MassyuRed/mashos-api'
+          assert pr['head']['sha']==BASE and call('/git/ref/heads/'+TARGET)['object']['sha']==BASE
+          base_tree=call('/git/commits/'+BASE)['tree']['sha']
+          tree=call('/git/trees/'+base_tree+'?recursive=1');assert not tree['truncated']
+          entries={entry['path']:entry for entry in tree['tree']}
+          patches=[]
+          for patch_blob,patch_sha in PATCHES:
+           patch=bytes_for(patch_blob);assert hashlib.sha256(patch).hexdigest()==patch_sha
+           patches.append(patch)
+          postimages={}
+          with tempfile.TemporaryDirectory() as directory:
+           root=pathlib.Path(directory)
+           for path,(before,after) in FILES.items():
+            assert entries[path]['sha']==before and entries[path]['mode']=='100644'
+            out=root/path;out.parent.mkdir(parents=True,exist_ok=True);out.write_bytes(bytes_for(before))
+           # Apply both transparent pieces only in the temporary tree.
+           # Publish only the corrected final postimages, never the rejected intermediate.
+           for patch in patches:
+            patch_path=root/'public.patch';patch_path.write_bytes(patch)
+            subprocess.run(['git','apply','--check',str(patch_path)],cwd=root,check=True)
+            subprocess.run(['git','apply',str(patch_path)],cwd=root,check=True)
+           patch_path.unlink()
+           for path,(before,after) in FILES.items():
+            data=(root/path).read_bytes();assert blob(data)==after
+            postimages[path]=data
+           assert {p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file()}==set(FILES)
+          new_entries=[]
+          for path,data in postimages.items():
+           result=call('/git/blobs','POST',{'content':data.decode('utf-8'),'encoding':'utf-8'})
+           assert result['sha']==FILES[path][1]
+           new_entries.append({'path':path,'mode':'100644','type':'blob','sha':result['sha']})
+          new_tree=call('/git/trees','POST',{'base_tree':base_tree,'tree':new_entries})['sha']
+          new_rows=call('/git/trees/'+new_tree+'?recursive=1');assert not new_rows['truncated']
+          new_index={e['path']:e for e in new_rows['tree']}
+          assert set(entries)==set(new_index)
+          changed={p for p in entries if entries[p]['type']=='blob' and entries[p]['sha']!=new_index[p]['sha']}
+          assert changed==set(FILES)
+          assert call('/git/ref/heads/'+TARGET)['object']['sha']==BASE
+          message=('fix(emlis): retain independent burden with concrete intended action\n\n'
+           'Preserve both source-owned duties without an invented background relation.\n'
+           'Use the corrected complete-object inverse with bound time and recovery references.\n'
+           'Apply exactly five source/test/derived-identity files.\n'
+           'Full changed-source validation is pending and recorded separately in PR #3.\n'
+           'No private evaluation runs in this source-transfer job.\n'
+           'STRUCTURE_MAP_DELTA_NONE; NOT_CLEAR; Draft; no merge/deploy/enable.')
+          commit=call('/git/commits','POST',{'message':message,'tree':new_tree,'parents':[BASE]})['sha']
+          call('/git/refs/heads/'+TARGET,'PATCH',{'sha':commit,'force':False})
+          # Only reread after the one non-force write; never repeat the source update.
+          import time
+          for attempt in range(5):
+           if call('/git/ref/heads/'+TARGET)['object']['sha']==commit:break
+           time.sleep(1)
+          else:raise AssertionError('Published commit needs independent ref readback: '+commit)
+          for path,data in postimages.items():
+           assert new_index[path]['sha']==FILES[path][1] and bytes_for(FILES[path][1])==data
+          print(json.dumps({'state':'SOURCE_APPLIED_AND_READ_BACK','commit':commit,'parent':BASE,
+           'final_patch_sha256':FINAL_PATCH_SHA256,'paths':{p:FILES[p][1] for p in FILES},
+           'product_tests_executed_here':False,'private_data_transferred':False}),flush=True)
+          assert call('/git/ref/heads/'+TRANSFER)['object']['sha']==os.environ['TRANSFER_HEAD']
+          call('/git/refs/heads/'+TRANSFER,'DELETE')
+          print('Temporary transfer branch deleted; no helper in product branch or main.',flush=True)
+          PY
