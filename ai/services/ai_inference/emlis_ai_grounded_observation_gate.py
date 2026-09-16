@@ -2577,6 +2577,47 @@ def evaluate_grounded_surface_body_inverse(
                 # independent pairs share a single coordinated predicate.
                 if not any(b == a + 1 for a in from_positions for b in to_positions):
                     failures.append(f"body_inverse_contrast_pair_crossed:{index}")
+            # The typed event/past-feeling sentence owes both complete clauses,
+            # their ordered contrast, and a past (not current or causal) reading.
+            # Recover these duties from source and body bytes, never author replay.
+            if (final_stage1_plan and relation.type == "contrast"
+                and len(planned_line.binding.relation_ids) == 1):
+                event = nucleus_index[relation.from_nucleus_id]
+                feeling = nucleus_index[relation.to_nucleus_id]
+                sentence_rows = tuple(row for row in witness.sentences
+                    if row.section == "observation"
+                    and row.section_line_ordinal == parsed_line.section_ordinal)
+                if sentence_rows:
+                    first_sentence = _body_inverse_visible_text(body, sentence_rows[0])
+                    exterior = re.sub(r"「[^「」]*」|『[^『』]*』", "", first_sentence)
+                    if "という経緯" in exterior or "という気持ちも" in exterior:
+                        supported = (
+                            event.kind == "event" and event.semantic_frame.modality == "fact"
+                            and feeling.kind == "reaction"
+                            and feeling.semantic_frame.predicate_kind == "feeling"
+                            and feeling.semantic_frame.modality == "feeling"
+                            and feeling.semantic_frame.polarity == "positive"
+                            and feeling.semantic_frame.time_scope == "past"
+                            and "lexical:source_nominal_past_feeling" in feeling.semantic_frame.attribute_codes
+                            and all(n.semantic_frame.actor == "current_user"
+                                and n.grounding_kind == "explicit" and n.source_fields == ("memo",)
+                                and len(n.source_span_ids) == 1
+                                and not _body_inverse_action_is_performed(n)
+                                and not _body_inverse_action_is_future_intention(n)
+                                and not any(c.startswith(("source_fragment_scalar_", "surface_scalar_", "thread_time:"))
+                                    or c == "semantic_role:generic_relation_fragment"
+                                    for c in n.semantic_frame.attribute_codes)
+                                for n in (event, feeling)))
+                        originals = tuple(str(resolver.resolve(n.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
+                                          for n in (event, feeling)) if supported else ()
+                        matched = re.fullmatch(r"「([^「」]+)」という経緯があった一方で、"
+                            r"「([^「」]+)」という気持ちもあったのですね。", first_sentence)
+                        if (not supported or not matched
+                            or not re.search(r"(?:かった|[てで]いた|た|だ)$", originals[0])
+                            or any(re.search(r"[「」『』“”‘’\"?？!！。;；…‥\n]", text) for text in originals)
+                            or tuple(map(_body_inverse_normalized_anchor, matched.groups()))
+                               != tuple(map(_body_inverse_normalized_anchor, originals))):
+                            failures.append(f"body_inverse_past_feeling_contrast_scope_mismatch:{index}")
             if (relation.type == "evaluation_about_event"
                     and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"):
                 visible = _body_inverse_normalized_anchor(_body_inverse_visible_text(body, parsed_line))

@@ -3395,6 +3395,50 @@ def _final_stage1_nucleus_summary(
     return _join_relation_fragments(tuple(units))
 
 
+def _final_stage1_past_feeling_contrast_sentence(
+    relation: GroundedSemanticRelation,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    resolver: EvidenceSpanResolver,
+) -> str | None:
+    """Distinguish a factual background from its contrasting past feeling.
+
+    Both complete source clauses stay visible. This realizes their already
+    selected roles, rather than labelling two unlike things "different directions".
+    """
+    left = nucleus_index.get(relation.from_nucleus_id)
+    right = nucleus_index.get(relation.to_nucleus_id)
+    if (relation.type != "contrast" or left is None or right is None
+        or left.kind != "event" or left.semantic_frame.modality != "fact"
+        or right.kind != "reaction" or right.semantic_frame.predicate_kind != "feeling"
+        or right.semantic_frame.modality != "feeling"
+        or right.semantic_frame.polarity != "positive"
+        or right.semantic_frame.time_scope != "past"
+        or "lexical:source_nominal_past_feeling" not in right.semantic_frame.attribute_codes):
+        return None
+    raw = []
+    for nucleus in (left, right):
+        if (nucleus.semantic_frame.actor != "current_user"
+            or nucleus.grounding_kind != "explicit"
+            or nucleus.source_fields != ("memo",) or len(nucleus.source_span_ids) != 1
+            or _final_action_is_performed(nucleus) or _final_action_is_future_intention(nucleus)
+            or any(code.startswith(("source_fragment_scalar_", "surface_scalar_", "thread_time:"))
+                   or code == "semantic_role:generic_relation_fragment"
+                   for code in nucleus.semantic_frame.attribute_codes)):
+            return None
+        text = str(resolver.resolve(nucleus.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
+        if not text or re.search(r"[「」『』“”‘’\"?？!！。;；…‥\n]", text):
+            return None
+        raw.append(text)
+    if not re.search(r"(?:かった|[てで]いた|た|だ)$", raw[0]):
+        return None
+    # Do not let a shortened surface anchor stand in for the complete background.
+    quotes = tuple(_join_quotes(_quotes_for_nuclei((n.nucleus_id,), nucleus_index, resolver))
+                   for n in (left, right))
+    if quotes != tuple(_quote(text) for text in raw):
+        return None
+    return f"{quotes[0]}という経緯があった一方で、{quotes[1]}という気持ちもあったのですね。"
+
+
 def _render_final_stage1_limited_scope(
     binding: GroundedSentenceBinding,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
@@ -3456,7 +3500,13 @@ def _render_final_stage1_limited_scope(
     for relation_index_value, relation_fragment in enumerate(
         relation_fragments
     ):
-        if relation_index_value == 0:
+        past_feeling = (
+            _final_stage1_past_feeling_contrast_sentence(relation_rows[0], nucleus_index, resolver)
+            if len(relation_rows) == 1 and len(relation_fragments) == 1 else None
+        )
+        if past_feeling:
+            clauses.append(past_feeling)
+        elif relation_index_value == 0:
             clauses.append(
                 f"今の入力では、{relation_fragment}が確認できます"
                 f"{_JA_SENTENCE_END}"

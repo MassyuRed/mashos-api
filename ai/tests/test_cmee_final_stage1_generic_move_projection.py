@@ -10235,3 +10235,99 @@ class CMEEFinalContinuingStateMaterialSelectionTest(unittest.TestCase):
         with patch.object(observation_plan_owner, "_source_finite_background_expression_is_bound", return_value=False):
             self.assertEqual(build_grounded_observation_plan(frozen.normalized_current_input,
                 evidence_spans=frozen.evidence_spans), legacy)
+
+
+class PastFeelingContrastObservationTests(unittest.TestCase):
+    """Public synthetic source; private evaluation examples are not fixtures."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.row = {"case_id": "public-planning-past-feeling-contrast", "input": {
+            "thought_text": "予定は一度では決まらなかった。それでも私は相談できたことがうれしかった。",
+            "action_text": "机を拭いた。", "categories": ["仕事"],
+            "emotions": [{"type": "不安", "strength": "medium"}]}}
+        cls.artifacts = _full_surface_artifacts(cls.row)
+        cls.relation = next(r for r in cls.artifacts.plan.relations
+                           if r.type == "contrast")
+        cls.nuclei = {n.nucleus_id: n for n in cls.artifacts.plan.nuclei}
+        cls.expected = ("「予定は一度では決まらなかった」という経緯があった一方で、"
+                        "「私は相談できたことがうれしかった」という気持ちもあったのですね。")
+
+    def test_actual_surface_distinguishes_background_and_past_feeling(self):
+        a = self.artifacts
+        self.assertTrue(a.inverse.passed, a.inverse.failure_codes)
+        self.assertTrue(a.gate.passed)
+        self.assertIn(self.expected, a.surface.text)
+        self.assertEqual(a.surface.text.count(self.expected), 1)
+        self.assertIn("机を拭いた", a.surface.text)
+
+    def test_actual_outer_response_is_deliverable_without_guard_changes(self):
+        from cocolon_meaning_experience_engine import MeaningExperienceEngine
+        result = MeaningExperienceEngine().generate(_request_from_row(self.row))
+        self.assertEqual(result.status.value, "GENERATED", result.reason_codes)
+        self.assertIsNotNone(result.artifact)
+        self.assertIn(self.expected, result.artifact.observation)
+
+    def test_body_inverse_rejects_role_time_source_and_relation_mutations(self):
+        a = self.artifacts
+        mutations = (
+            ("予定は一度では決まらなかった", "予定は一度で決まった"),
+            ("予定は一度では決まらなかった", "予定は一度では決まらない"),
+            ("私は相談できたことがうれしかった", "うれしかった"),
+            ("私は相談できたことがうれしかった", "友人は相談できたことがうれしかった"),
+            ("うれしかった", "うれしい"), ("うれしかった", "うれしくなかった"),
+            ("相談できた", "相談した"),
+            ("という経緯があった一方で、", "という経緯があったから、"),
+            ("という経緯があった一方で、", "という経緯がある一方で、"),
+            ("という経緯があった一方で、", "という気持ちがあった一方で、"),
+            ("という気持ちもあったのですね。", "という気持ちもあるのですね。"),
+            ("という気持ちもあったのですね。", "という事実もあったのですね。"),
+            ("という気持ちもあったのですね。", "という気持ちはなかったのですね。"),
+        )
+        # Neither author may act as this inverse's oracle. The pre-existing
+        # Reception replay is bypassed only for unchanged Reception bytes.
+        follow = a.surface.text.split("Emlisから：\n", 1)[1]
+        with patch.object(gate_owner, "replay_source_grounded_human_reception_from_plan",
+                          return_value=SimpleNamespace(text=follow)), \
+             patch.object(surface_owner, "_render_final_stage1_limited_scope",
+                          side_effect=AssertionError("inverse must not replay observation author")), \
+             patch.object(reception_owner, "_author_source_grounded_reception_clauses",
+                          side_effect=AssertionError("inverse must not replay reception author")):
+            valid = evaluate_grounded_surface_body_inverse(body=a.surface.text.encode(),
+                plan=a.plan, sentence_plan=a.sentence_plan, resolver=a.resolver,
+                selected_subjective_input=a.selected_subjective_input)
+            self.assertTrue(valid.passed, valid.failure_codes)
+            for old, new in mutations:
+                with self.subTest(old=old, new=new):
+                    candidate = a.surface.text.replace(self.expected, self.expected.replace(old, new), 1)
+                    self.assertNotEqual(candidate, a.surface.text)
+                    result = evaluate_grounded_surface_body_inverse(body=candidate.encode(),
+                        plan=a.plan, sentence_plan=a.sentence_plan, resolver=a.resolver,
+                        selected_subjective_input=a.selected_subjective_input)
+                    self.assertFalse(result.passed)
+
+    def test_component_does_not_promote_unsupported_source_frames(self):
+        a = self.artifacts
+        left = self.nuclei[self.relation.from_nucleus_id]
+        right = self.nuclei[self.relation.to_nucleus_id]
+        variants = (
+            replace(left, semantic_frame=replace(left.semantic_frame, actor="other")),
+            replace(left, semantic_frame=replace(left.semantic_frame, modality="uncertain")),
+            replace(left, source_fields=("answer_text_private",)),
+            replace(left, grounding_kind="inferred"),
+            replace(left, semantic_frame=replace(left.semantic_frame, attribute_codes=(
+                *left.semantic_frame.attribute_codes, "source_fragment_scalar_range:0:3"))),
+            replace(right, semantic_frame=replace(right.semantic_frame, time_scope="current_input")),
+            replace(right, semantic_frame=replace(right.semantic_frame, polarity="negative")),
+            replace(right, semantic_frame=replace(right.semantic_frame, modality="uncertain")),
+            replace(right, semantic_frame=replace(right.semantic_frame, predicate_kind="event")),
+            replace(right, semantic_frame=replace(right.semantic_frame, attribute_codes=tuple(
+                c for c in right.semantic_frame.attribute_codes if c != "lexical:source_nominal_past_feeling"))),
+        )
+        for changed in variants:
+            with self.subTest(nucleus=changed):
+                index = {**self.nuclei, changed.nucleus_id: changed}
+                self.assertIsNone(surface_owner._final_stage1_past_feeling_contrast_sentence(
+                    self.relation, index, a.resolver))
+        self.assertIsNone(surface_owner._final_stage1_past_feeling_contrast_sentence(
+            replace(self.relation, type="coexistence"), self.nuclei, a.resolver))
