@@ -4121,3 +4121,153 @@ def test_field_finite_feeling_inverse_keeps_both_source_duties(mutation,monkeypa
     def no_author(*args,**kwargs):raise AssertionError('inverse must not ask the author to judge its own text')
     monkeypatch.setattr(hr,'realize_source_grounded_human_reception',no_author)
     assert not passes(body.replace(follow,changed))
+
+
+# Complete self-appraisals are subjective source material, not proved facts
+# about the person or a reason to erase their separately recorded action.
+@pytest.mark.parametrize('memo,time_scope', [
+    ('準備を忘れた自分が情けない。', 'current_input'),
+    ('予定を守れない自分がふがいない。', 'current_input'),
+    ('私が頼りない。', 'current_input'),
+    ('返事をしなかった自分が恥ずかしいです。', 'current_input'),
+    ('昨日は準備を忘れた自分が情けなかった。', 'past'),
+    ('自分が不甲斐なかったです。', 'past'),
+])
+def test_source_self_appraisal_is_received_before_independent_action(memo, time_scope):
+    from emlis_ai_grounded_observation_plan import _source_self_appraisal
+    request = begin(memo, '机を拭いた。')
+    prepared = prepare_emlis_meaning(request)
+    plan = build_updated_grounded_plan(prepared)
+    appraisals = tuple(n for n in plan.nuclei if _source_self_appraisal(n))
+    assert len(appraisals) == 1
+    appraisal = appraisals[0]
+    assert appraisal.semantic_frame.time_scope == time_scope
+    assert appraisal.semantic_frame.modality == 'feeling'
+    assert not {'operator:action', 'operator:performed_action'} & set(appraisal.semantic_frame.attribute_codes)
+    result = MeaningExperienceEngine().generate(request)
+    assert result.artifact, result.reason_codes
+    follow = result.artifact.reception
+    assert memo.rstrip('。') in follow and '机を拭いた' in follow
+    assert follow.index(memo.rstrip('。')) < follow.index('机を拭いた')
+    received = {s for m in plan.response_plan.human_reception_plan.moves if m.required
+                for s in m.source_evidence_span_ids}
+    assert set(appraisal.source_span_ids) <= received
+    assert request.emlis_thread.current_round == 0
+
+
+@pytest.mark.parametrize('memo', [
+    '友人が情けない。',
+    '準備を忘れた友人が情けない。',
+    '友人は準備を忘れた自分が情けない。',
+    '友人によると、準備を忘れた自分が情けない。',
+    '友人の感想です。準備を忘れた自分が情けない。',
+    '友人は困った。準備を忘れた自分が情けない。',
+    '「準備を忘れた自分が情けない」と友人が言った。',
+    '準備を忘れた自分が情けないと言われた。',
+    '準備を忘れた自分が情けない？',
+    '準備を忘れた自分が情けなくない。',
+    '準備を忘れた自分が情けないとは思わない。',
+    '準備を忘れた自分が情けないかもしれない。',
+    'もし自分が情けないなら、休む。',
+    '明日は自分が情けない。',
+    '自分が情けなくなる予定です。',
+    '準備を忘れた自分が情けないのが怖い。',
+])
+def test_source_self_appraisal_cannot_borrow_denied_or_foreign_host(memo):
+    from emlis_ai_grounded_observation_plan import _source_self_appraisal
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(memo, '机を拭いた。')))
+    assert not any(_source_self_appraisal(n) for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('operation,new', [
+    ('「重かった」ではなく「苦しかった」です。', 'その時の苦しさ'),
+    ('「重かった」は誤りです。', None),
+])
+def test_source_self_appraisal_survives_other_answer_correction(operation, new):
+    memo = '誘われたのに、悲しかった。頼まれたのに、寂しかった。準備を忘れた自分が情けない。'
+    request = begin(memo, '机を拭いた。')
+    original = request.current_input_bundle
+    request = advance(advance(request, 'その時は重かった。'), operation)
+    result = MeaningExperienceEngine().generate(request)
+    assert result.artifact, result.reason_codes
+    follow = result.artifact.reception
+    assert '準備を忘れた自分が情けない' in follow
+    assert '机を拭いた' in follow and '頼まれたのに寂しかった' in follow
+    assert 'その時の重さ' not in follow
+    if new is not None:
+        assert new in follow
+    assert request.current_input_bundle == original
+
+
+@pytest.mark.parametrize('answered', [False, True])
+def test_source_self_appraisal_independent_inverse_rejects_deleted_or_changed_meaning(monkeypatch, answered):
+    from types import SimpleNamespace
+    import emlis_ai_grounded_human_reception as reception
+    import emlis_ai_grounded_observation_gate as gate
+    memo = '準備を忘れた自分が情けない。'
+    request = begin(('誘われたのに、悲しかった。' if answered else '') + memo, '机を拭いた。')
+    if answered:
+        request = advance(request, 'その時は重かった。')
+    prepared = prepare_emlis_meaning(request)
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    projection = project_thread_meaning(prepared, plan)
+    result = realize_emlis_thread_body(prepared)
+    assert result.artifact, result.reason_codes
+    sentence = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Independent inverse must not call the author')
+    monkeypatch.setattr(reception, '_author_source_grounded_reception_clauses', forbidden)
+    def passed(follow):
+        monkeypatch.setattr(gate, 'replay_source_grounded_human_reception_from_plan',
+                            lambda *a, **kw: SimpleNamespace(text=follow))
+        return gate.evaluate_grounded_surface_body_inverse(
+            body=result.artifact.text.replace(result.artifact.reception, follow).encode(),
+            plan=plan, sentence_plan=sentence, resolver=resolver,
+            selected_subjective_input=projection.selected_reception).passed
+    follow = result.artifact.reception
+    assert passed(follow)
+    for changed in [follow.replace(memo.rstrip('。'), ''),
+                    follow.replace('自分が情けない', '友人が情けない'),
+                    follow.replace('情けない', '情けなかった'),
+                    follow.replace('情けない', '情けなくない'),
+                    follow.replace('準備を忘れた', '準備を忘れていない')]:
+        assert changed != follow
+        assert not passed(changed)
+
+@pytest.mark.parametrize('action', [
+    'それでも今日は十分だけ作業した。',
+    '今日は少しだけ模写した。',
+    'それでも午後は音読した。',
+    'まだ仕上げていない。',
+])
+@pytest.mark.parametrize('memo', ['約束を忘れた自分が情けない。', '自分が不甲斐なかった。'])
+def test_source_self_appraisal_keeps_separate_word_reception_without_action_promotion(memo, action, monkeypatch):
+    import emlis_ai_grounded_human_reception as hr
+    from emlis_ai_grounded_observation_plan import _source_self_appraisal, source_proven_performed_action_status
+    request = begin(memo, action)
+    prepared = prepare_emlis_meaning(request)
+    plan = build_updated_grounded_plan(prepared)
+    appraisal = next(n for n in plan.nuclei if _source_self_appraisal(n))
+    other = next(n for n in plan.nuclei if n.source_fields == ('memo_action',))
+    assert not source_proven_performed_action_status(other)
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == 2 and all(m.reception_act == 'stay_with_current_burden' for m in moves)
+    assert all(not m.support_nucleus_ids for m in moves)
+    assert {m.target_nucleus_ids for m in moves} == {(appraisal.nucleus_id,), (other.nucleus_id,)}
+    result = realize_emlis_thread_body(prepared)
+    follow = result.artifact.reception
+    assert memo.rstrip('。') in follow and action.rstrip('。') in follow
+    assert follow.index(memo.rstrip('。')) < follow.index(action.rstrip('。'))
+    assert '背景に' not in follow and '支えて' not in follow and '努力' not in follow
+    resolver = prepared.thread.resolver()
+    sentence = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    projection = project_thread_meaning(prepared, plan)
+    def no_author(*args, **kwargs):
+        raise AssertionError('body inverse must not use the author')
+    monkeypatch.setattr(hr, 'realize_source_grounded_human_reception', no_author)
+    for source in (memo.rstrip('。'), action.rstrip('。')):
+        changed = result.artifact.text.replace(follow, follow.replace(source, ''))
+        assert not evaluate_grounded_surface_body_inverse(body=changed.encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver,
+            selected_subjective_input=projection.selected_reception).passed

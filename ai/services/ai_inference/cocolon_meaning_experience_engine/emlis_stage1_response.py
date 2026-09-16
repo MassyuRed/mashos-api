@@ -11960,7 +11960,7 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
     # A retained original/answer burden group and one positive answer still
     # share the same aggregate claim. Assign whole contributions, including
     # both endpoints of every original contrast, to the consuming Move.
-    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups, _source_independent_positive_feelings, _source_explicit_original_feeling, _source_current_cognition, _source_finite_original_feeling
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups, _source_independent_positive_feelings, _source_explicit_original_feeling, _source_current_cognition, _source_finite_original_feeling, _source_self_appraisal
     positive_duties = _source_independent_positive_feelings(tuple(binding.node_meta.values()),
         tuple(binding.edge_meta.values()))
     if (positive_duties and tuple(("lived_change" if m.reception_act == "recognize_lived_change"
@@ -11984,7 +11984,7 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
     grouped = bool(2 <= len(rows) <= 3
         and (withdrawal or any(move.support_nucleus_ids for move in reception_plan.moves)
              and ({"stay_with_current_burden", "recognize_lived_change"} <= {row.reception_act for row in rows}
-                  or any(_source_finite_original_feeling(n) or _source_explicit_original_feeling(n) or _source_current_cognition(n) for n in binding.node_meta.values()))
+                  or any(_source_finite_original_feeling(n) or _source_explicit_original_feeling(n) or _source_current_cognition(n) or _source_self_appraisal(n) for n in binding.node_meta.values()))
              and {row.reception_act for row in rows} <= {"stay_with_current_burden", "recognize_lived_change", "honor_concrete_effort"})
         and tuple(({"stay_with_current_burden": "current_burden", "recognize_lived_change": "lived_change",
                     "honor_concrete_effort": "concrete_effort"}.get(m.reception_act),
@@ -12022,7 +12022,7 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
         len(rows) == 2
         and {row.reception_act for row in rows} == {"stay_with_current_burden", "honor_concrete_effort"}
         and all(len(row.target_nucleus_ids) == 1 and not row.support_nucleus_ids for row in rows)
-        and any((_source_explicit_original_feeling(nucleus) or _source_current_cognition(nucleus) or (
+        and any((_source_explicit_original_feeling(nucleus) or _source_current_cognition(nucleus) or _source_self_appraisal(nucleus) or (
                     _is_independent_source_material(nucleus, safety_kind=TRIAGE_SAFE_OBSERVATION)
                     and len(tuple(n for n in binding.node_meta.values()
                                   if set(n.source_fields) & {"memo", "memo_action", "answer_text_private"})) == 2

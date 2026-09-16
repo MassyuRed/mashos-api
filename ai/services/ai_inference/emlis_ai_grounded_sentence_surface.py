@@ -2127,9 +2127,9 @@ def _build_regular_lines(
             max_groups=max_observation_groups,
         )
         groups = _merge_parallel_contrast_groups(groups, relation_candidates, nucleus_index, relation_index)
-        from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups, _source_explicit_original_feeling, _source_current_cognition
+        from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups, _source_explicit_original_feeling, _source_current_cognition, _source_self_appraisal
         if (FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in plan.source_contracts
-            and any(_source_explicit_original_feeling(n) or _source_current_cognition(n)
+            and any(_source_explicit_original_feeling(n) or _source_current_cognition(n) or _source_self_appraisal(n)
                     or "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes
                     for n in plan.nuclei)
             and _thread_retained_reaction_groups(plan.nuclei, plan.relations)):
@@ -2836,6 +2836,9 @@ def _render_observation(
         and {"lexical:source_received_past_feeling", "lexical:source_nominal_past_feeling",
              "lexical:source_finite_feeling"} & set(nucleus.semantic_frame.attribute_codes)):
         return f"{prefix}{joined}という気持ちが書かれています。"
+    if (typed_semantic_duties
+        and "lexical:source_self_appraisal" in nucleus.semantic_frame.attribute_codes):
+        return f"{prefix}{joined}という自分への見方が書かれています。"
     if "lexical:preserve_source_predicate" in nucleus.semantic_frame.attribute_codes:
         return f"{prefix}今は、{joined}という感覚が前に出ています。"
     if all(field in {"emotion_details", "emotions", "category"} for field in nucleus.source_fields):
