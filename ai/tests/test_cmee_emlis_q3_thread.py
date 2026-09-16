@@ -3745,3 +3745,132 @@ def test_selected_burden_priority_inverse_rejects_object_mutations_without_autho
     first, second, trailing = follow.split('。')
     assert first and second and not trailing
     assert not passes(second + '。' + first + '。')
+
+
+# Public synthetic regression: keep the complete conditional feeling as one
+# original duty, without asserting the antecedent or changing its experiencer.
+@pytest.mark.parametrize("memo", [
+    "会議の予定を何度も聞かれると、少しつらい。",
+    "名前を突然呼ばれると、少し怖い。",
+    "返事を求められると、とても苦しい。",
+])
+@pytest.mark.parametrize("action", ["机を拭いた。", "今夜は机を拭くことにした。"])
+@pytest.mark.parametrize("q3", [False, True])
+def test_received_condition_original_feeling_retained_with_action(memo, action, q3):
+    request = (begin if q3 else initial)(memo, action)
+    prepared = prepare_emlis_meaning(request)
+    plan = build_updated_grounded_plan(prepared)
+    result = MeaningExperienceEngine().generate(request)
+    assert result.artifact, result.reason_codes
+    reception = result.artifact.reception
+    assert memo.rstrip("。") + "という言葉" in reception
+    assert memo.rstrip("。") in result.artifact.observation
+    assert action.rstrip("。") in result.artifact.observation
+    rp = plan.response_plan.human_reception_plan
+    assert any(m.reception_act == "stay_with_current_burden" for m in rp.moves)
+    assert any(m.reception_act == "honor_concrete_effort" for m in rp.moves)
+    assert len(rp.moves) == 2 and all(m.required for m in rp.moves)
+    assert reception.index(memo.rstrip("。")) < reception.index("行動")
+    assert ("これからの行動" in reception) == ("今夜" in action)
+    assert result.question is None
+
+
+@pytest.mark.parametrize("text", [
+    "友人は名前を呼ばれると、怖い", "彼が名前を呼ばれると、怖い",
+    "名前を呼ばれると、友人は怖い", "友人によると名前を呼ばれると、怖い",
+    "名前を呼ばれると、怖いと友人は言う", "「名前を呼ばれると、怖い」",
+    "もし名前を呼ばれると、怖い", "仮に名前を呼ばれると、怖い",
+    "明日名前を呼ばれると、怖い", "昔名前を呼ばれると、怖い",
+    "名前を呼ばれると、怖くない", "名前を呼ばれると、怖いかもしれない",
+    "名前を呼ばれないと、怖い", "名前を呼ばれたら、怖い",
+    "名前を呼ばれると、怖かった", "名前を呼ばれるから、怖い",
+    "名前を呼ばれると、怖い？", "名前を呼ばれると、怖いという話",
+])
+def test_received_condition_recognition_does_not_extend_scope(text):
+    import emlis_ai_grounded_observation_plan as owner
+    assert not owner._source_explicit_original_feeling_is_bound(text)
+
+
+@pytest.mark.parametrize("memo", [
+    "友人は名前を突然呼ばれると、少し怖い。",
+    "友人は話した。名前を突然呼ばれると、少し怖い。",
+    "友人は「名前を突然呼ばれると、少し怖い」と話した。",
+    "名前を突然呼ばれると、少し怖いかもしれない。",
+])
+def test_received_condition_final_source_cannot_borrow_ownership(memo):
+    import emlis_ai_grounded_observation_plan as owner
+    from unittest.mock import patch
+    req = initial(memo, "机を拭いた。")
+    old = owner._source_explicit_original_feeling_is_bound
+    def previous(fragment):
+        # Only remove this new received-conditional syntax, not old coverage.
+        return False if "れると、" in fragment else old(fragment)
+    with patch.object(owner, "_source_explicit_original_feeling_is_bound", side_effect=previous):
+        before = prepare_emlis_meaning(req).original_plan
+    after = prepare_emlis_meaning(req).original_plan
+    assert after == before
+    assert not any("lexical:source_explicit_original_feeling" in n.semantic_frame.attribute_codes
+                   for n in after.nuclei)
+
+
+@pytest.mark.parametrize("q3", [False, True])
+def test_received_condition_survives_answer_as_unrelated_original_duty(q3):
+    memo = "誘われたのに、悲しかった。名前を突然呼ばれると、少し怖い。"
+    req = (begin if q3 else initial)(memo, "机を拭いた。")
+    first = MeaningExperienceEngine().generate(req)
+    assert first.artifact and first.question
+    req = advance(req, "その時は重かった。")
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact, result.reason_codes
+    for part in ("名前を突然呼ばれると、少し怖いという言葉", "誘われたのに悲しかったこと", "机を拭いたこと", "その時の重さ"):
+        assert part in result.artifact.reception
+    assert req.emlis_thread.current_round == 1
+    assert req.emlis_thread.question_control_context.question_limit == (3 if q3 else 1)
+
+
+@pytest.mark.parametrize("replacement", ["「重かった」ではなく「苦しかった」です。", "「重かった」は誤りです。"])
+def test_received_condition_survives_correction_and_withdrawal(replacement):
+    req = begin("誘われたのに、悲しかった。頼まれたのに、寂しかった。名前を突然呼ばれると、少し怖い。", "机を拭いた。")
+    req = advance(advance(req, "その時は重かった。"), replacement)
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact, result.reason_codes
+    follow = result.artifact.reception
+    for part in ("名前を突然呼ばれると、少し怖いという言葉", "誘われたのに悲しかったこと", "頼まれたのに寂しかったこと", "机を拭いたこと"):
+        assert part in follow
+    assert "その時の重さ" not in follow
+    assert ("その時の苦しさ" in follow) == ("ではなく" in replacement)
+    assert req.emlis_thread.question_control_context.question_limit == 3
+    assert req.emlis_thread.current_round == 2
+
+
+def test_received_condition_inverse_rejects_missing_or_reinterpreted_condition():
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    memo = "会議の予定を何度も聞かれると、少しつらい。"
+    prepared = prepare_emlis_meaning(initial(memo, "机を拭いた。"))
+    plan = build_updated_grounded_plan(prepared)
+    result = realize_emlis_thread_body(prepared)
+    assert result.artifact
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    sentence = surface.build_grounded_sentence_plan(plan, prepared.thread.resolver())
+    follow = result.artifact.reception
+    def passes(text):
+        # Neutralize the inherited replay-equality precheck so only the actual
+        # body/source inverse can reject these mutations; the author is disabled.
+        with patch("emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan", return_value=SimpleNamespace(text=text)), patch(
+            "emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses", side_effect=AssertionError("no author replay")):
+            return evaluate_grounded_surface_body_inverse(
+                body=result.artifact.text.replace(follow, text).encode(), plan=plan,
+                sentence_plan=sentence, resolver=prepared.thread.resolver(),
+                selected_subjective_input=selected).passed
+    assert passes(follow)
+    mutations = [
+        (memo.rstrip("。"), "少しつらい"), ("と、", "ので、"),
+        ("聞かれると、", "聞かれたので、"), ("少しつらい", "とてもつらい"),
+        ("少しつらい", "少しつらかった"), ("少しつらい", "つらくない"),
+        ("会議の予定", "友人が会議の予定"), ("会議の予定", "明日の会議の予定"),
+        ("何度も", "一度だけ"), ("実際の行動", "これからの行動"),
+    ]
+    for old, new in mutations:
+        changed = follow.replace(old, new)
+        assert changed != follow and not passes(changed), (old, new)

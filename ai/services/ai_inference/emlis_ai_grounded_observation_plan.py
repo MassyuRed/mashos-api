@@ -6728,7 +6728,23 @@ def _source_explicit_original_feeling_is_bound(fragment):
             r"落ち着かない|せわしない|不安(?:だ|です))")
     prediction = (r"(?:し[、,]?[ぁ-んァ-ヶ一-鿿々ー]+(?:なる|する|れる|る)"
                   r"可能性(?:は|も)否定できない)?")
-    return re.fullmatch(prefix + context + host + prediction, fragment) is not None
+    if re.fullmatch(prefix + context + host + prediction, fragment) is not None:
+        return True
+    # A received-event conditional is also a complete original feeling object.
+    # Keep its antecedent, conditional connector and degree together: this does
+    # not assert that the event happened or that the feeling is unconditional.
+    # The object slot cannot absorb a topic/subject, reporting attribution or
+    # another case frame. A separate owner still needs the existing source pass.
+    received_condition = (
+        r"[^はがもをにと、,。．.!！?？\s]+を"
+        r"(?:何度も|何回も|繰り返し|急に|突然)?"
+        r"(?:聞かれる|尋ねられる|求められる|確認される|呼ばれる)"
+        r"と[、,]"
+    )
+    return bool(
+        not re.search(r"もし|仮に|たとえ|明日|あした|将来|昔|以前|去年|先週|先月", fragment)
+        and re.fullmatch(prefix + received_condition + host, fragment)
+    )
 
 
 def _final_source_explicit_original_feeling_nuclei(nuclei, evidence_spans, normalized_input):
