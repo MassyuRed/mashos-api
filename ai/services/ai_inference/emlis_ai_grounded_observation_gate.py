@@ -2046,7 +2046,7 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
     return successes[0] if len(successes) == 1 else None
 
 
-def _body_inverse_nominal_constraint_clause(body, sentence, move, plan, resolver, selected_subjective_input):
+def _body_inverse_nominal_constraint_clause(body, sentence, move, plan, resolver, selected_subjective_input, *, nominal="という言葉", temporal_prefix=""):
     """Restore the entire selected nominal object, including its left edge.
 
     A matching source substring cannot license an added experiencer, cause,
@@ -2071,7 +2071,7 @@ def _body_inverse_nominal_constraint_clause(body, sentence, move, plan, resolver
     raw = body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8")
     parsed = re.fullmatch(
         (r"結論を急がずに、" if openness else "")
-        + r"(?P<source>[^。！？!?]+)という言葉を小さくせずに(?:"
+        + re.escape(temporal_prefix) + r"(?P<source>[^。！？!?]+)" + re.escape(nominal) + r"を小さくせずに(?:"
         r"(?:受け止めて|気にかけて)(?:います|いて)|"
         r"(?:受け止め|気にかけ)たいです)。", raw)
     source = str(resolver.resolve(nucleus.source_span_ids[0]).raw_text).strip(" \u3000、,。．.")
@@ -3263,6 +3263,52 @@ def evaluate_grounded_surface_body_inverse(
                                     _body_inverse_received_contrast_group(body, witness, parsed_sentence, move, plan, resolver)
                                     if move.support_nucleus_ids else bool(_body_inverse_thread_answer_group(
                                         body, witness, parsed_sentence, move, plan, resolver)))
+                        # The selected independent two-object path owes the
+                        # complete material and action clauses. A familiar
+                        # suffix alone cannot authorize another actor or time.
+                        from emlis_ai_grounded_observation_plan import _is_independent_source_material
+                        independent_pair = bool(
+                            final_stage1_plan and len(reception_plan.moves) == 2
+                            and effective_reference_mode != "anaphoric_first"
+                            and len(clause.move_ids) == 1
+                            and {m.reception_act for m in reception_plan.moves}
+                                == {"stay_with_current_burden", "honor_concrete_effort"}
+                            and all(m.required and m.move_role == "felt_response"
+                                    and len(m.target_nucleus_ids) == 1 and not m.support_nucleus_ids
+                                    and not _body_inverse_reception_context_ids(m, plan)
+                                    for m in reception_plan.moves)
+                            and any(_is_independent_source_material(nucleus_index[m.target_nucleus_ids[0]],
+                                        safety_kind=plan.input_profile.safety_kind)
+                                    for m in reception_plan.moves if m.reception_act == "stay_with_current_burden")
+                        )
+                        if independent_pair:
+                            owner = nucleus_index[move.target_nucleus_ids[0]]
+                            source = (str(resolver.resolve(owner.source_span_ids[0]).raw_text)
+                                      .strip(" \u3000、,。．.")) if len(owner.source_span_ids) == 1 else ""
+                            raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
+                            complete_object = False
+                            if move.reception_act == "stay_with_current_burden":
+                                for nominal in ("こと", "という言葉"):
+                                    if expected_referent is not None and expected_referent.text == source + nominal:
+                                        # A source-owned time adjunct may be outside
+                                        # the complete quoted/nominal object. Preserve
+                                        # the existing present/continuing/past forms;
+                                        # another actor, time or cause is not licensed.
+                                        prefix = {"present": "今、", "continuing": "今も、",
+                                                  "past": "これまで、"}.get(owner.semantic_frame.time_scope, "")
+                                        prefixes = ("", prefix) if prefix else ("",)
+                                        complete_object = any(_body_inverse_nominal_constraint_clause(
+                                            body, parsed_sentence, move, plan, resolver, selected_subjective_input,
+                                            nominal=nominal, temporal_prefix=prefix) for prefix in prefixes)
+                            elif owner.source_fields == ("memo_action",) and owner.semantic_frame.actor == "current_user":
+                                nominal = ("というこれからの行動" if _body_inverse_action_is_future_intention(owner)
+                                           else "こと" if _body_inverse_action_is_performed(owner) else None)
+                                if source and nominal:
+                                    parsed = re.fullmatch(r"(?P<source>[^。！？!?]+)" + re.escape(nominal)
+                                        + r"を(?:大切に思って(?:います|いて)|大切に思いたいです)。", raw)
+                                    complete_object = parsed is not None and parsed.group("source") == source
+                            if not complete_object:
+                                failures.append(f"body_inverse_independent_material_action_object_missing:{move_id}")
                         target_visible = (
                             nominal_target_visible if nominal_target_required
                             else bool(sentence_codes.intersection(target_markers))

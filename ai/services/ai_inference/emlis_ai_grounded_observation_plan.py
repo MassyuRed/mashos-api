@@ -7702,7 +7702,17 @@ def build_grounded_reception_opportunities(
                     continue
                 if (final_source_fidelity and relation.type == "uncertain_connection"
                     and relation.retention != "required"
-                    and any((_source_explicit_original_feeling(feeling) or _source_current_cognition(feeling))
+                    and any((_source_explicit_original_feeling(feeling) or _source_current_cognition(feeling) or (
+                            safety_kind == TRIAGE_SAFE_OBSERVATION
+                            and material_quality in {"grounded", "limited_grounding"}
+                            and len(tuple(n for n in nuclei if set(n.source_fields) & _TEXT_SOURCE_FIELDS)) == 2
+                            and _is_independent_source_material(feeling, safety_kind=safety_kind)
+                            and _reception_opportunity_families_for_nucleus(
+                                action, safety_kind=safety_kind, final_source_fidelity=True) == ("concrete_effort",)
+                            and not any(r.retention == "required" or r.type != "uncertain_connection"
+                                for r in relations if {r.from_nucleus_id, r.to_nucleus_id}
+                                & {feeling.nucleus_id, action.nucleus_id})
+                        ))
                         and action.source_fields == ("memo_action",)
                         and action.retention == "required"
                         and action.grounding_kind == "explicit"
@@ -8469,8 +8479,10 @@ def build_grounded_human_reception_plan(
             **({"move_role": "felt_response", "surface_strategy": "felt_response_first"}
                if m.reception_act == "honor_concrete_effort" else {})) for m in moves)
     # A newly retained, independently proven burden is received before its
-    # separate action. Both canonical act/role pairs already permit felt
-    # response; no Reception role participates in the meaning decision.
+    # separate performed action or source-proven future intention. Both
+    # canonical act/role pairs already permit felt response; the action's
+    # source-owned time/modality is retained, not promoted to a completed act.
+    # No Reception role participates in the meaning decision.
     if (
         final_source_fidelity
         and safety_kind == TRIAGE_SAFE_OBSERVATION
@@ -8491,7 +8503,8 @@ def build_grounded_human_reception_plan(
         and feeling.source_fields == ("memo",)
         and action.source_fields == ("memo_action",)
         and feeling.semantic_frame.actor == action.semantic_frame.actor == "current_user"
-        and source_proven_performed_action_status(action)
+        and (source_proven_performed_action_status(action)
+             or source_proven_future_action_status(action))
         and set(feeling.semantic_frame.attribute_codes).intersection({
             "lexical:source_declarative_feeling_subject",
             "lexical:source_current_feeling_with_cognitive_background",
@@ -9232,6 +9245,10 @@ def _build_response_and_policies(
         and selected_follow.retention == "required"
         and selected_follow.semantic_frame.actor == "current_user"
         and (source_proven_performed_action_status(selected_follow)
+             or (source_proven_future_action_status(selected_follow)
+                 and _reception_opportunity_families_for_nucleus(
+                     selected_follow, safety_kind=safety_decision.safety_triage_kind,
+                     final_source_fidelity=True) == ("concrete_effort",))
              or bool(_independent_nonaction_pair(
                  nuclei, relations, safety_kind=safety_decision.safety_triage_kind,
                  material_quality=material_quality,

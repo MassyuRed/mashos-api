@@ -3874,3 +3874,169 @@ def test_received_condition_inverse_rejects_missing_or_reinterpreted_condition()
     for old, new in mutations:
         changed = follow.replace(old, new)
         assert changed != follow and not passes(changed), (old, new)
+
+
+@pytest.mark.parametrize('q3', [False, True])
+@pytest.mark.parametrize('memo', ['話を遮られて、不安がまだ残っている。', '今も不安が残っている。'])
+@pytest.mark.parametrize('action', ['資料を並べた。', '今夜は資料を並べることにした。'])
+def test_independent_material_future_action_keeps_both_complete_objects(q3, memo, action):
+    import emlis_ai_grounded_observation_plan as gp
+    req = (begin if q3 else initial)(memo, action)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact is not None, out.reason_codes
+    assert out.question is None
+    follow = out.artifact.reception
+    assert memo.rstrip('。') in follow and action.rstrip('。') in follow
+    assert follow.index(memo.rstrip('。')) < follow.index(action.rstrip('。'))
+    assert '背景に' not in follow and '重なる中で' not in follow
+    assert ('これからの行動' in follow) == ('今夜' in action)
+    rp = plan.response_plan.human_reception_plan
+    assert [m.reception_act for m in rp.moves] == ['stay_with_current_burden', 'honor_concrete_effort']
+    assert all(m.required and len(m.target_nucleus_ids) == 1 and not m.support_nucleus_ids for m in rp.moves)
+    action_nucleus = next(n for n in plan.nuclei if n.source_fields == ('memo_action',))
+    assert gp.source_proven_future_action_status(action_nucleus) == ('今夜' in action)
+    assert gp.source_proven_performed_action_status(action_nucleus) == ('今夜' not in action)
+    # Relation evidence remains in the plan; it is not promoted into a context.
+    assert any(r.type == 'uncertain_connection' for r in plan.relations)
+    projected = project_thread_meaning(prepared, plan)
+    decisions = projected.selected_reception.decisions
+    first, second = (set(d.selected_contribution_refs) for d in decisions)
+    assert first and second and not first & second
+    assert first | second == set(decisions[0].subjective_proposition.target_contribution_refs)
+
+
+@pytest.mark.parametrize('memo', ['話を遮られて、不安がまだ残っている。', '今も不安が残っている。'])
+def test_independent_material_future_action_inverse_reads_whole_source_without_author(memo):
+    from unittest.mock import patch
+    from types import SimpleNamespace
+    action = '今夜は資料を並べることにした。'
+    prepared = prepare_emlis_meaning(begin(memo, action))
+    plan = build_updated_grounded_plan(prepared)
+    out = realize_emlis_thread_body(prepared)
+    resolver = prepared.thread.resolver()
+    projected = project_thread_meaning(prepared, plan)
+    sentence = surface.build_grounded_sentence_plan(plan, resolver)
+    follow = out.artifact.reception
+    def passes(text):
+        # A replay echo cannot certify mutations. The source/body inverse must.
+        with patch('emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan', return_value=SimpleNamespace(text=text)), patch(
+            'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no author replay')):
+            return evaluate_grounded_surface_body_inverse(body=out.artifact.text.replace(follow, text).encode(),
+                plan=plan, sentence_plan=sentence, resolver=resolver,
+                selected_subjective_input=projected.selected_reception).passed
+    assert passes(follow)
+    mutations = [follow.replace(memo.rstrip('。'), '不安'),
+        follow.replace('不安', '安心'), follow.replace('残っている', '残っていない'),
+        follow.replace(memo.rstrip('。'), '友人は' + memo.rstrip('。')),
+        follow.replace(memo.rstrip('。'), '昨日は' + memo.rstrip('。')),
+        follow.replace('これからの行動', '実際の行動'),
+        follow.replace(action.rstrip('。'), '資料を並べた'),
+        follow.replace(action.rstrip('。'), '友人は' + action.rstrip('。')),
+        follow.replace('。', '。そのため、', 1),
+        follow.split('。', 1)[1], follow.split('。', 1)[0] + '。']
+    for text in mutations:
+        assert text != follow and not passes(text), text
+
+
+@pytest.mark.parametrize('memo', ['友人は不安が残っていると言った。', '私は「不安が残っている」と聞いた。'])
+def test_independent_material_future_action_does_not_promote_reported_feeling(memo):
+    import emlis_ai_grounded_observation_plan as gp
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(memo, '今夜は資料を並べることにした。')))
+    assert not any(gp._is_independent_source_material(n, safety_kind=gp.TRIAGE_SAFE_OBSERVATION) for n in plan.nuclei)
+    assert not any(m.reception_act == 'stay_with_current_burden' and m.target_nucleus_ids == ('nucleus:s1',)
+                   and not m.support_nucleus_ids for m in plan.response_plan.human_reception_plan.moves)
+
+
+@pytest.mark.parametrize('action', ['今夜は資料を並べたい。', '資料を並べるつもりはない。', '資料を並べるかもしれない。'])
+def test_independent_material_future_action_keeps_other_action_families_outside_repair(action):
+    import emlis_ai_grounded_observation_plan as gp
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin('今も不安が残っている。', action)))
+    act = next(n for n in plan.nuclei if n.source_fields == ('memo_action',))
+    families = gp._reception_opportunity_families_for_nucleus(act, safety_kind=gp.TRIAGE_SAFE_OBSERVATION,
+                                                           final_source_fidelity=True)
+    assert not (gp.source_proven_future_action_status(act) and families == ('concrete_effort',))
+    if families != ('concrete_effort',):
+        assert not any(m.reception_act == 'honor_concrete_effort' for m in plan.response_plan.human_reception_plan.moves)
+
+
+def test_independent_material_future_action_requires_existing_source_proof():
+    from unittest.mock import patch
+    import emlis_ai_grounded_observation_plan as gp
+    req = begin('今も不安が残っている。', '今夜は資料を並べることにした。')
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(req))
+    assert len(plan.response_plan.human_reception_plan.moves) == 2
+    with patch.object(gp, 'source_proven_future_action_status', return_value=False):
+        unproven = build_updated_grounded_plan(prepare_emlis_meaning(req))
+    assert unproven.response_plan.human_reception_plan != plan.response_plan.human_reception_plan
+    assert unproven.nuclei == plan.nuclei and unproven.relations == plan.relations
+
+
+@pytest.mark.parametrize('action', ['作業台を片づけた。', '今夜は作業台を片づけることにした。'])
+def test_independent_material_future_action_keeps_bound_time_and_recovery_references(action):
+    from unittest.mock import patch
+    import test_cmee_final_stage1_generic_move_projection as helpers
+    import emlis_ai_grounded_human_reception as author
+    memo = '作業が続いて少し疲れているけれど、次の約束まで時間はある。'
+    row = {'case_id': 'public-independent-material-recovery-time', 'input': {
+        'thought_text': memo, 'action_text': action, 'categories': ['仕事'],
+        'emotions': [{'type': '不安', 'strength': 'medium'}]}}
+    a = helpers._full_surface_artifacts(row)
+    assert a.gate.passed and a.inverse.passed
+    assert '今も、' + memo.rstrip('。') + 'という言葉' in a.surface.text
+    assert '背景に' not in a.surface.text
+    for recovery in ('full', 'optional_removed', 'integrated', 'hedged'):
+        sp = a.sentence_plan if recovery == 'full' else surface.build_reception_recovery_sentence_plan(
+            a.sentence_plan, a.plan, a.resolver, recovery_stage=recovery)
+        body = helpers._recovery_surface(a, sp).text
+        # Existing bound anaphoric reference is not an omitted source object.
+        # The raw-source object check must not demand an explicit noun there.
+        with patch.object(author, 'realize_source_grounded_human_reception',
+                          side_effect=AssertionError('author replay is not independent evidence')):
+            inverse = evaluate_grounded_surface_body_inverse(body=body.encode(), plan=a.plan,
+                sentence_plan=sp, resolver=a.resolver, selected_subjective_input=a.selected_subjective_input)
+        assert inverse.passed, (recovery, inverse.failure_codes)
+        if recovery in ('full', 'optional_removed'):
+            for prefix in ('昨日は、', '友人は、', 'そのため、'):
+                changed = body.replace('今も、' + memo.rstrip('。'), prefix + memo.rstrip('。'))
+                assert changed != body
+                inverse = evaluate_grounded_surface_body_inverse(body=changed.encode(), plan=a.plan,
+                    sentence_plan=sp, resolver=a.resolver, selected_subjective_input=a.selected_subjective_input)
+                assert not inverse.passed
+
+
+@pytest.mark.parametrize("action", ["作業台を片づけた。", "今夜は作業台を片づけることにした。"])
+def test_independent_material_past_quotative_prefix_keeps_complete_object(action):
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    import test_cmee_final_stage1_generic_move_projection as helpers
+    memo = "昨日は悔しかったです。"
+    row = helpers.CMEEFinalIndependentFeelingSelectionTest.row(memo)
+    row["input"]["action_text"] = action
+    a = helpers._full_surface_artifacts(row)
+    assert a.gate.passed and a.inverse.passed
+    assert a.sentence_plan.recovery_stage == "full"
+    for recovery in ("full", "optional_removed"):
+        sp = a.sentence_plan if recovery == "full" else surface.build_reception_recovery_sentence_plan(
+            a.sentence_plan, a.plan, a.resolver, recovery_stage=recovery)
+        body = helpers._recovery_surface(a, sp).text
+        follow = helpers._reception_text(body)
+        expected = "これまで、" + memo.rstrip("。") + "という言葉"
+        assert expected in follow and action.rstrip("。") in follow
+        def passes(text):
+            with patch("emlis_ai_grounded_observation_gate.replay_source_grounded_human_reception_from_plan",
+                       return_value=SimpleNamespace(text=helpers._reception_text(text).strip())), patch(
+                "emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses",
+                side_effect=AssertionError("no author replay")):
+                return evaluate_grounded_surface_body_inverse(body=text.encode(), plan=a.plan,
+                    sentence_plan=sp, resolver=a.resolver,
+                    selected_subjective_input=a.selected_subjective_input).passed
+        assert passes(body)
+        for old, new in ((expected, "今も、" + memo.rstrip("。") + "という言葉"),
+                         (expected, "これから、" + memo.rstrip("。") + "という言葉"),
+                         (expected, "これまで、友人は" + memo.rstrip("。") + "という言葉"),
+                         (expected, "これまで、悔しかったという言葉"),
+                         (expected, "これまで、" + memo.rstrip("。") + "こと")):
+            changed = helpers._tamper_reception(body, old, new)
+            assert not passes(changed), (recovery, old, new)

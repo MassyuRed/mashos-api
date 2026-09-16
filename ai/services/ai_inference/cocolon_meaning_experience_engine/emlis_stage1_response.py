@@ -12014,13 +12014,31 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
                 and nucleus.allowed_claim_scope == "explicit_supplemental_answer"
                 for row in rows)
     )
+    from emlis_ai_grounded_observation_plan import (
+        _is_independent_source_material, source_proven_future_action_status,
+        source_proven_performed_action_status,
+    )
     explicit_original_feeling_action = bool(
         len(rows) == 2
         and {row.reception_act for row in rows} == {"stay_with_current_burden", "honor_concrete_effort"}
         and all(len(row.target_nucleus_ids) == 1 and not row.support_nucleus_ids for row in rows)
-        and any((_source_explicit_original_feeling(binding.node_meta[binding.nucleus_to_node[row.target_nucleus_ids[0]]])
-                 or _source_current_cognition(binding.node_meta[binding.nucleus_to_node[row.target_nucleus_ids[0]]]))
-                for row in rows if row.reception_act == "stay_with_current_burden")
+        and any((_source_explicit_original_feeling(nucleus) or _source_current_cognition(nucleus) or (
+                    _is_independent_source_material(nucleus, safety_kind=TRIAGE_SAFE_OBSERVATION)
+                    and len(tuple(n for n in binding.node_meta.values()
+                                  if set(n.source_fields) & {"memo", "memo_action", "answer_text_private"})) == 2
+                    and not any(r.retention == "required" or r.type != "uncertain_connection"
+                                for r in binding.edge_meta.values()
+                                if {r.from_nucleus_id, r.to_nucleus_id}
+                                   & {row.target_nucleus_ids[0] for row in rows})
+                    and any(action.source_fields == ("memo_action",)
+                            and action.retention == "required" and action.grounding_kind == "explicit"
+                            and action.semantic_frame.actor == "current_user"
+                            and (source_proven_performed_action_status(action)
+                                 or source_proven_future_action_status(action))
+                            for action in binding.node_meta.values())
+                ))
+                for row in rows if row.reception_act == "stay_with_current_burden"
+                for nucleus in (binding.node_meta[binding.nucleus_to_node[row.target_nucleus_ids[0]]],))
         # Only the complete two-object claim can use this partition. A
         # feeling with additional contrast context keeps the existing
         # aggregate realization and its complete source bindings.
