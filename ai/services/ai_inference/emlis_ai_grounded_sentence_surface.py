@@ -2127,9 +2127,9 @@ def _build_regular_lines(
             max_groups=max_observation_groups,
         )
         groups = _merge_parallel_contrast_groups(groups, relation_candidates, nucleus_index, relation_index)
-        from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups, _source_explicit_original_feeling
+        from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups, _source_explicit_original_feeling, _source_current_cognition
         if (FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in plan.source_contracts
-            and any(_source_explicit_original_feeling(n)
+            and any(_source_explicit_original_feeling(n) or _source_current_cognition(n)
                     or "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes
                     for n in plan.nuclei)
             and _thread_retained_reaction_groups(plan.nuclei, plan.relations)):
