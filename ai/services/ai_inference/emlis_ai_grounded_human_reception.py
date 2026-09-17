@@ -10677,13 +10677,13 @@ def bind_and_validate_grounded_human_reception_surface(
         if clause_plans is not None
         else build_grounded_reception_clause_plans(
             reception_plan,
-            recovery_stage, plan=plan,
+            recovery_stage,
         )
     )
     _validate_clause_plan_binding(
         reception_plan,
         resolved_clause_plans,
-        recovery_stage, plan=plan,
+        recovery_stage,
     )
     move_index = {move.move_id: move for move in active_moves}
     referents: list[GroundedReceptionReferent] = []
@@ -10902,13 +10902,13 @@ def realize_grounded_human_reception(
         if clause_plans is not None
         else build_grounded_reception_clause_plans(
             reception_plan,
-            recovery_stage, plan=plan,
+            recovery_stage,
         )
     )
     _validate_clause_plan_binding(
         reception_plan,
         resolved_clause_plans,
-        recovery_stage, plan=plan,
+        recovery_stage,
     )
     move_index = {move.move_id: move for move in active_moves}
 

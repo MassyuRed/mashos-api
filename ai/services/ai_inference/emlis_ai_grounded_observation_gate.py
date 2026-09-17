@@ -3442,6 +3442,23 @@ def evaluate_grounded_surface_body_inverse(
                             nominal_target_visible if nominal_target_required
                             else bool(sentence_codes.intersection(target_markers))
                         )
+                        if (final_stage1_plan and sentence_plan.recovery_stage == "full"
+                            and len(clause.move_ids) == 2
+                            and move.reception_act == "recognize_lived_change"
+                            and target_markers == frozenset({"target_feeling"})):
+                            # A shared sentence's other feeling marker cannot
+                            # discharge this move's own complete feeling object.
+                            # Keep the existing per-duty diagnostic as well as
+                            # the independent whole shared-clause proof.
+                            owned_source = (final_reception_source_anchor_text(
+                                move.target_nucleus_ids[0], nucleus_index, resolver,
+                            ) if len(move.target_nucleus_ids) == 1 else "")
+                            owned_object = _body_inverse_normalized_anchor(
+                                owned_source + "という気持ち"
+                            ) if owned_source else ""
+                            target_visible = target_visible and bool(
+                                owned_object and owned_object in parsed_sentence_text
+                            )
                         if target_markers and not target_visible:
                             failures.append(
                                 "body_inverse_reception_target_duty_missing:"

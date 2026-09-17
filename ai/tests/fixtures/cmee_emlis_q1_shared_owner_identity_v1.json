@@ -1,7 +1,7 @@
 {
   "scope": "Q1 shared language owners only; test snapshot, not product acceptance or full thread identity",
-  "language_identity": "bf336035213808a9bbdafdb3d2ccc311ab434fd052fde76889968e05073f1eec",
-  "runtime_identity": "7e8101fa3a27cb7b146e4ea8ec92518701551265d7f3e49beccdcab82122d40d",
+  "language_identity": "6f5ae10b039dc3d12f483abc687d7f33626dc59c98db261a7567870253cab6ce",
+  "runtime_identity": "900124376c44c80092aa51699f1cc2844a988446e353f4afb936b73ba3df68a5",
   "language_payloads": [
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
@@ -35,13 +35,13 @@
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
-      "75c444597eba348abc10c6f8b4c6a95817bb239afb7980ba3f0785c32862caff",
-      1308496
+      "953c082e817c8d017362937983134dce065076b081fec6e9e528f635ae076222",
+      1308388
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
-      "64ec8359b75dd13094f6258afad2190a65042506876b5a93bf8d737542835ba5",
-      610608
+      "97111fd264ab283ce5452d8bb63bcf528d9684c4ca970951d98a4ea21d887362",
+      612723
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",
@@ -127,13 +127,13 @@
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
-      "c4a4355a4e75617d570fd4cb77ab5cf24d91f389fe2e82e66140e5a387e71bb0",
-      478652
+      "e938f4d22d846ff85051f4d9c9cc81d8e8e348517cb5209bb9f35fde5318d64f",
+      478608
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
-      "19add4b20fef6485d54a271721bf3a9341bc2527bb56eb23bc4c6965c2f62b2e",
-      227175
+      "7f742fa14ad71e0421e510e9885949b5713bb5c35420620277f84ce9c5a39b0b",
+      228419
     ],
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",

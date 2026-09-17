@@ -170,3 +170,38 @@ def test_shared_sentence_admission_requires_the_same_source_scope_and_depth(cont
         plan = replace(plan, nuclei=tuple(replacement if n.nucleus_id == target else n for n in plan.nuclei))
     plan = replace(plan, response_plan=replace(plan.response_plan, human_reception_plan=rp))
     assert not _independent_recognition_pair(rp, stage, plan=plan)
+
+
+@pytest.mark.parametrize('target_index', [0, 1])
+def test_one_shared_feeling_cannot_borrow_the_other_targets_diagnostic(context, target_index):
+    pair, (result, plan, sentence, resolver, selected) = context
+    follow = result.artifact.reception
+    changed = follow.replace(pair[target_index] + 'という気持ち',
+                             pair[target_index] + 'という変化')
+    assert changed != follow
+    inverse = evaluate_grounded_surface_body_inverse(
+        body=result.artifact.text.replace(follow, changed).encode(), plan=plan,
+        sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected)
+    assert not inverse.passed
+    move = plan.response_plan.human_reception_plan.moves[target_index]
+    assert 'body_inverse_reception_target_duty_missing:' + move.move_id in inverse.failure_codes
+
+
+@pytest.mark.parametrize('case_id', ['A', 'D'])
+def test_legacy_author_needs_no_final_source_plan(case_id):
+    from test_emlis_ai_grounded_human_reception_rr5_multi_move_surface import _case
+    plan, rp, _sentence, _line, _result, direct, _observation, reception, _resolver = _case(case_id)
+    from emlis_ai_grounded_human_reception import reception_active_moves
+    assert direct.text == reception
+    assert direct.realized_move_ids == tuple(m.move_id for m in reception_active_moves(rp, 'full'))
+
+
+def test_legacy_binder_needs_no_final_source_plan():
+    from test_emlis_ai_grounded_human_reception_rr5_multi_move_surface import _case
+    from emlis_ai_grounded_human_reception import bind_and_validate_grounded_human_reception_surface
+    plan, rp, _sentence, line, _result, direct, _observation, _reception, resolver = _case('A')
+    bound = bind_and_validate_grounded_human_reception_surface(
+        rp, {n.nucleus_id: n for n in plan.nuclei}, resolver,
+        actual_text=direct.text, clause_plans=line.reception_clause_plans)
+    assert bound.text == direct.text
+    assert bound.realized_move_ids == direct.realized_move_ids
