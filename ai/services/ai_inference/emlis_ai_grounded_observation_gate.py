@@ -3568,6 +3568,23 @@ def evaluate_grounded_surface_body_inverse(
                                 if {r.from_nucleus_id, r.to_nucleus_id} == object_ids]
                             if (appraisal is not None and appraisal.dimension == "MATERIAL_WEIGHT"
                                 and appraisal.operation == "RECEIVE_AS_MATERIAL"
+                                and move.reception_act == "stay_with_current_burden"
+                                and len(move.target_nucleus_ids) == 1 and not move.support_nucleus_ids
+                                and len(object_ids) == 1
+                                and expected_referent is not None
+                                and expected_referent.kind == "current_expression"
+                                and nucleus_index[move.target_nucleus_ids[0]].semantic_frame.actor == "current_user"):
+                                # Read the whole independently resolved source
+                                # object and the affirmative attention/reception
+                                # clause. Source-internal markers, an inserted
+                                # actor/time, or a negated act cannot discharge it.
+                                raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
+                                relation_attention_valid = re.fullmatch(
+                                    re.escape(expected_referent.text)
+                                    + r"(?:を見過ごさず、|に目が留まり、それを)"
+                                    + r"小さくせずに受け止めています。", raw) is not None
+                            if (appraisal is not None and appraisal.dimension == "MATERIAL_WEIGHT"
+                                and appraisal.operation == "RECEIVE_AS_MATERIAL"
                                 and len(object_ids) == 2 and len(object_relations) == 1):
                                 relation_kind = object_relations[0].type
                                 boundary = {

@@ -9028,6 +9028,23 @@ def _source_grounded_response_predicate(
         # honor. Keep its future source and the selected honor predicate;
         # a second accusative pronoun does not introduce another object.
         object_particle, role_operator = "を", "見過ごさず、"
+    material_expression_attention = bool(
+        single_target_object and move_role == "attention"
+        and reception_act == "stay_with_current_burden"
+        and referent_kind == "current_expression"
+        and target_predicate_kind == "source_bounded"
+        and semantic_profile.actor_kind == "SELF" and voice == "STATE"
+        and not semantic_profile.performed_action and not semantic_profile.future_action
+        and not semantic_profile.quoted_boundary
+        and not distributive_object and not pending_relation_slots
+        and not unfinished_change and not unfinished_pair
+        and _selected_material_appraisal(selected_subjective_decision)
+    )
+    if material_expression_attention:
+        # The complete source-bounded expression is already one object.
+        # Attention and reception can govern it under the same case without
+        # restarting it as a pronoun. Keep the selected burden act and guard.
+        object_particle, role_operator = "を", "見過ごさず、"
     material_change = bool(
         reception_act == "recognize_lived_change" and referent_kind == "lived_change"
         and target_predicate_kind == "present_change"
@@ -9191,6 +9208,7 @@ def _source_grounded_response_predicate(
     valency_complement = (
         "それを" if move_role == "attention"
         and not (material_action_attention or material_intention_attention
+                 or material_expression_attention
                  or material_state_attention or material_relation_attention) else ""
     )
     completed_relation_slots = ()
