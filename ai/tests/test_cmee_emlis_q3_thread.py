@@ -3509,7 +3509,8 @@ def test_original_burden_preserves_cognitive_context_and_unresolved_prediction(q
     assert actual.artifact and actual.question is None, actual.reason_codes
     assert memo.rstrip('。') in actual.artifact.reception
     assert '背景に' not in actual.artifact.reception
-    assert 'これからの行動' in actual.artifact.reception if '今夜' in action else '実際の行動' in actual.artifact.reception
+    assert action.rstrip('。') in actual.artifact.reception
+    assert ('これからの行動' in actual.artifact.reception) == ('今夜' in action)
 
 
 @pytest.mark.parametrize('q3', [False, True])
@@ -3561,7 +3562,8 @@ def test_original_burden_with_contrast_keeps_complete_claim_context(action):
     follow = out.surface.text.split('Emlisから：\n')[1]
     assert '資料をまとめたこととそれでも発表が怖い' in follow
     assert '違い' in follow and '背景に' not in follow
-    assert 'これからの行動' in follow if '今夜' in action else '実際の行動' in follow
+    assert action.rstrip('。') in follow
+    assert ('これからの行動' in follow) == ('今夜' in action)
 
 
 # Component checks use an independently public synthetic source. They exercise
@@ -3664,8 +3666,8 @@ def test_selected_burden_priority_actual_body_keeps_primary_before_action(q3, ac
     assert 'selection:primary_burden_first' in rp.depth_policy.selection_reason_codes
     follow = out.artifact.reception
     assert follow.startswith(memo.rstrip('。'))
-    label = 'これからの行動' if '今夜' in action else '実際の行動'
-    assert follow.index(memo.rstrip('。')) < follow.index(label)
+    assert follow.index(memo.rstrip('。')) < follow.index(action.rstrip('。'))
+    assert ('これからの行動' in follow) == ('今夜' in action)
     assert action.rstrip('。') in out.artifact.observation
     for recovery in ('full', 'optional_removed', 'integrated', 'hedged'):
         active = hr.reception_active_moves(rp, recovery)
@@ -3738,7 +3740,7 @@ def test_selected_burden_priority_inverse_rejects_object_mutations_without_autho
                 plan=plan, sentence_plan=sentence, resolver=prepared.thread.resolver(), selected_subjective_input=selected).passed
     assert passes(follow)
     for old, new in [(memo.rstrip('。'), '怖い'), ('怖い', '怖くない'),
-                     ('否定できない', '否定できる'), ('実際の行動', 'これからの行動'),
+                     ('否定できない', '否定できる'), ('資料を並べたこと', '資料を並べる予定'),
                      ('次を考えると', '友人が次を考えると')]:
         changed = follow.replace(old, new)
         assert changed != follow and not passes(changed), (old, new)
@@ -3770,7 +3772,7 @@ def test_received_condition_original_feeling_retained_with_action(memo, action, 
     assert any(m.reception_act == "stay_with_current_burden" for m in rp.moves)
     assert any(m.reception_act == "honor_concrete_effort" for m in rp.moves)
     assert len(rp.moves) == 2 and all(m.required for m in rp.moves)
-    assert reception.index(memo.rstrip("。")) < reception.index("行動")
+    assert reception.index(memo.rstrip("。")) < reception.index(action.rstrip("。"))
     assert ("これからの行動" in reception) == ("今夜" in action)
     assert result.question is None
 
@@ -3869,7 +3871,7 @@ def test_received_condition_inverse_rejects_missing_or_reinterpreted_condition()
         ("聞かれると、", "聞かれたので、"), ("少しつらい", "とてもつらい"),
         ("少しつらい", "少しつらかった"), ("少しつらい", "つらくない"),
         ("会議の予定", "友人が会議の予定"), ("会議の予定", "明日の会議の予定"),
-        ("何度も", "一度だけ"), ("実際の行動", "これからの行動"),
+        ("何度も", "一度だけ"), ("机を拭いたこと", "机を拭く予定"),
     ]
     for old, new in mutations:
         changed = follow.replace(old, new)

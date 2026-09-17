@@ -3139,6 +3139,16 @@ def evaluate_grounded_surface_body_inverse(
                                     and move.support_nucleus_ids == (action_contrast[1],)
                                     and nucleus_index[action_contrast[0]].semantic_frame.time_scope == "past"):
                                     nominal_target_visible = nominal_target_visible and offset == 0
+                                # A separately selected performed-action attention
+                                # Move owns the whole object, not a substring under
+                                # a newly inserted actor/time prefix. Its existing
+                                # sole-clause author starts with this exact nominal.
+                                if (len(clause.move_ids) == 1 and move.move_role == "attention"
+                                    and move.reception_act == "honor_concrete_effort"
+                                    and len(move.target_nucleus_ids) == 1 and not move.support_nucleus_ids
+                                    and expected_referent.kind == "self_started_effort"
+                                    and not _body_inverse_reception_context_ids(move, plan)):
+                                    nominal_target_visible = nominal_target_visible and offset == 0
                                 if thread_answer_nominal is not None:
                                     _, source, grammar, when, nominal = thread_answer_nominal
                                     actual_nominal = body[start:end].decode("utf-8")

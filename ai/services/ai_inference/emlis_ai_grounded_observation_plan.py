@@ -8918,8 +8918,9 @@ def build_grounded_human_reception_plan(
                 and move.reception_act == "honor_concrete_effort"
                 and (move.move_role == "felt_response"
                      or move.move_role == "attention" and target is not None
-                     and source_proven_future_action_status(target)
-                     and target.semantic_frame.modality == "intention")
+                     and (source_proven_performed_action_status(target)
+                          or source_proven_future_action_status(target)
+                          and target.semantic_frame.modality == "intention"))
                 and not move.support_nucleus_ids
                 and target is not None
                 and target.retention == "required"
