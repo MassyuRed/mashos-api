@@ -7488,6 +7488,7 @@ def _source_grounded_argument_surface(
     material_pair_object: bool = False,
     material_contrast_object: bool = False,
     target_adjunct: str = "",
+    preceding_change_context_slot: int | None = None,
 ) -> tuple[str, tuple[int, ...], tuple[int, ...]]:
     """Realize bounded heads in one relation clause per endpoint pair."""
 
@@ -7569,6 +7570,7 @@ def _source_grounded_argument_surface(
 
     target_inserted = False
     target_adjunct_bound = False
+    preceding_context_bound = preceding_change_context_slot is None
 
     def relation_nominal_for_slot(
         semantic_slot: int,
@@ -7777,9 +7779,20 @@ def _source_grounded_argument_surface(
             # The same ordered contrast owns both complete source objects.
             # Its left finite clause needs no nominal case; the right object
             # remains the full target of attention and burden reception.
-            relation_phrases.append(
-                f"{move.semantic_fragments[first.semantic_slot]}一方で、{target_adjunct}{second_nominal}"
-            )
+            if preceding_change_context_slot is not None:
+                if (preceding_change_context_slot != first.semantic_slot
+                    or move.time_scope != "continuing"
+                    or move.semantic_profiles[first.semantic_slot].nucleus_kind != "change"):
+                    raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP")
+                # The immediately preceding, complete action/change clause
+                # owns this same endpoint. The contrast points back to it;
+                # the continuing target and its temporal adjunct stay full.
+                relation_phrases.append(f"その一方で、{target_adjunct}{second_nominal}")
+                preceding_context_bound = True
+            else:
+                relation_phrases.append(
+                    f"{move.semantic_fragments[first.semantic_slot]}一方で、{target_adjunct}{second_nominal}"
+                )
             target_adjunct_bound = True
         else:
             relation_phrases.append(
@@ -7803,7 +7816,7 @@ def _source_grounded_argument_surface(
             "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
         )
     expected_completed_slots = () if material_pair_object or distributive_contrast else tuple(range(len(move.relations)))
-    if tuple(appended_relation_slots) != expected_completed_slots:
+    if not preceding_context_bound or tuple(appended_relation_slots) != expected_completed_slots:
         raise GroundedHumanReceptionSurfaceError(
             "REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP"
         )
@@ -8545,6 +8558,7 @@ def _source_grounded_target_np(
     material_contrast_object: bool = False,
     material_change_object: bool = False,
     thread_answer_about_time: str | None = None,
+    preceding_change_context_slot: int | None = None,
 ) -> _SourceGroundedClauseCoreV1:
     """Build one grammatical content core with one inverse referent."""
 
@@ -8749,6 +8763,7 @@ def _source_grounded_target_np(
         material_pair_object=material_pair_object,
         material_contrast_object=material_contrast_object,
         target_adjunct="".join(adjuncts),
+        preceding_change_context_slot=preceding_change_context_slot,
     )
     core = _SourceGroundedClauseCoreV1(
         text=target,
@@ -9492,6 +9507,7 @@ def _author_source_grounded_reception_clauses(
     referent_kinds: list[str] = []
     anchor_used = False
     cursor = 0
+    preceding_change_context: tuple[str, str] | None = None
     # Per-Move selected contribution cover stays exact. Complete proposition
     # cover is aggregated across active Moves sharing that selected claim;
     # each Move need not repeat the other Moves' source objects.
@@ -9717,6 +9733,20 @@ def _author_source_grounded_reception_clauses(
                     and basis.binding_ref in appraisal.appraised_bindings
                     and basis.semantic_ref in selected_proposition.primary_target_refs}
             )
+            shared_context_slot = None
+            if (preceding_change_context is not None and len(realization.moves) == 1
+                and move.move_role == "attention" and move.reception_act == "stay_with_current_burden"
+                and meaning_realization.time_scope == "continuing"
+                and meaning_realization.reference_mode != "ANAPHORIC"
+                and _selected_material_appraisal(selected_decision)
+                and len(context_ids) == len(meaning_realization.context_slots) == 1
+                and len(meaning_realization.relations) == len(applicable_relations) == 1
+                and applicable_relations[0].type == "contrast"
+                and applicable_relations[0].from_nucleus_id == context_ids[0]
+                and move.target_nucleus_ids == (applicable_relations[0].to_nucleus_id,)
+                and preceding_change_context == (context_ids[0],
+                    meaning_realization.semantic_fragments[meaning_realization.context_slots[0]])):
+                shared_context_slot = meaning_realization.context_slots[0]
             target_core = _source_grounded_target_np(
                 move,
                 meaning_realization,
@@ -9728,6 +9758,7 @@ def _author_source_grounded_reception_clauses(
                 distributive_relation_slot=distributive_relation_slot,
                 anaphoric_context_object=anaphoric_context_object,
                 material_pair_object=material_pair_object,
+                preceding_change_context_slot=shared_context_slot,
                 material_contrast_object=bool(
                     (move.move_role == "attention"
                      and move.reception_act == "stay_with_current_burden"
@@ -9899,6 +9930,36 @@ def _author_source_grounded_reception_clauses(
                 raise GroundedHumanReceptionSurfaceError(
                     "REALIZABLE_RECEPTION_EXPRESSION_VISIBLE_BINDING_GAP"
                 )
+            # Only one immediately preceding full, past action/change
+            # sentence can supply a continuing contrast's shared endpoint.
+            # Never carry this proof over another Move, a recovery form,
+            # an answer source, a quote or an incompletely realized object.
+            preceding_change_context = None
+            if (recovery_stage == "full" and len(realization.moves) == 1
+                and move.move_role == "attention" and move.reception_act == "honor_concrete_effort"
+                and _selected_material_appraisal(selected_decision)
+                and meaning_realization.clause_form == "FINITE"
+                and meaning_realization.reference_mode != "ANAPHORIC"
+                and meaning_realization.time_scope == "past"
+                and len(move.target_nucleus_ids) == len(move.support_nucleus_ids) == 1
+                and len(meaning_realization.semantic_fragments) == 2
+                and len(applicable_relations) == len(meaning_realization.relations) == 1
+                and applicable_relations[0].type == "action_supports_change"
+                and applicable_relations[0].from_nucleus_id == move.target_nucleus_ids[0]
+                and applicable_relations[0].to_nucleus_id == move.support_nucleus_ids[0]
+                and target_core.semantic_slots == (0, 1) and target_core.relation_count == 1
+                and not target_core.pending_relation_slots
+                and all(nucleus_index[nid].source_fields in {("memo",), ("memo_action",)}
+                        for nid in (*move.target_nucleus_ids, *move.support_nucleus_ids))
+                and nucleus_index[move.target_nucleus_ids[0]].source_span_ids
+                    == nucleus_index[move.support_nucleus_ids[0]].source_span_ids
+                and all(p.actor_kind == "SELF" and not p.quoted_boundary and not p.future_action
+                        for p in meaning_realization.semantic_profiles)
+                and move_sentence == (meaning_realization.semantic_fragments[0] + "ことが"
+                    + meaning_realization.semantic_fragments[1]
+                    + "ことを支えていることを見過ごさず、大切に思っています")):
+                preceding_change_context = (move.support_nucleus_ids[0],
+                                            meaning_realization.semantic_fragments[1])
             move_sentences.append(move_sentence)
         segment = (
             move_sentences[0]

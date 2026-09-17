@@ -1772,7 +1772,65 @@ def _body_inverse_nucleus_source_values(
     return tuple(values)
 
 
-def _body_inverse_finite_contrast_attention(raw, relation, move, plan, resolver, referent):
+def _body_inverse_preceding_change_context(
+    body, previous_sentence, previous_clause, current_sentence,
+    move, reception_plan, plan, resolver,
+):
+    """Prove a discourse antecedent from the preceding actual sentence.
+
+    This parser does not call the author or accept an anchor elsewhere in
+    the body. Both complete source objects, their direction and reception
+    must occupy the adjacent, single-Move past action/change clause.
+    """
+    if (previous_sentence is None or previous_clause is None
+        or len(previous_clause.move_ids) != 1
+        or previous_sentence.utf8_byte_end != current_sentence.utf8_byte_start
+        or move.move_role != "attention" or move.reception_act != "stay_with_current_burden"
+        or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids):
+        return False
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    target = index[move.target_nucleus_ids[0]]
+    contexts = _body_inverse_reception_context_ids(move, plan)
+    prior = next((m for m in reception_plan.moves if m.move_id == previous_clause.move_ids[0]), None)
+    if (target.semantic_frame.time_scope != "continuing" or len(contexts) != 1
+        or prior is None or prior.move_role != "attention"
+        or prior.reception_act != "honor_concrete_effort" or not prior.required
+        or len(prior.target_nucleus_ids) != 1 or prior.support_nucleus_ids != contexts):
+        return False
+    action, change = index[prior.target_nucleus_ids[0]], index[contexts[0]]
+    if (action.kind != "action" or change.kind != "change"
+        or action.semantic_frame.time_scope != "past"
+        or not _body_inverse_action_is_performed(action)
+        or len(action.source_span_ids) != 1 or action.source_span_ids != change.source_span_ids
+        or any(n.semantic_frame.actor != "current_user" or n.grounding_kind != "explicit"
+               or n.source_fields not in {("memo",), ("memo_action",)}
+               for n in (action, change, target))):
+        return False
+    supports = [r for r in plan.relations if r.type == "action_supports_change"
+        and (r.from_nucleus_id, r.to_nucleus_id) == (action.nucleus_id, change.nucleus_id)]
+    contrasts = [r for r in plan.relations if r.type == "contrast"
+        and (r.from_nucleus_id, r.to_nucleus_id) == (change.nucleus_id, target.nucleus_id)]
+    if len(supports) != 1 or len(contrasts) != 1:
+        return False
+    fragments = []
+    for nucleus in (action, change):
+        source = str(resolver.resolve(nucleus.source_span_ids[0]).raw_text or "")
+        typed = _body_inverse_typed_source_fragment(nucleus, source)
+        if typed == "":
+            return False
+        fragment = (typed if typed is not None else source).strip(" \u3000、,。．.")
+        if not fragment or re.search(r'[「」『』“”‘’"?？!！。;；…‥]', fragment):
+            return False
+        fragments.append(fragment)
+    expected = (fragments[0] + "ことが" + fragments[1]
+        + "ことを支えていることを見過ごさず、大切に思っています。")
+    actual = body[previous_sentence.utf8_byte_start:previous_sentence.utf8_byte_end].decode("utf-8")
+    return actual == expected
+
+
+def _body_inverse_finite_contrast_attention(
+    raw, relation, move, plan, resolver, referent, *, preceding_change_proven=False,
+):
     """Read the full ordered contrast and its reception without author replay."""
     if move.target_nucleus_ids != (relation.to_nucleus_id,):
         return False
@@ -1805,7 +1863,9 @@ def _body_inverse_finite_contrast_attention(raw, relation, move, plan, resolver,
             and re.search(r"(?:ない|ある|いる|なる|する|[うくぐすつぬぶむるい])$", final))
         if "今" not in target and not ongoing and not sustained:
             prefix = "今も、"
-    expected = source + "一方で、" + prefix + referent + "を見過ごさず、小さくせずに受け止めています。"
+    connector = ("その一方で、" if preceding_change_proven
+                 and right.semantic_frame.time_scope == "continuing" else source + "一方で、")
+    expected = connector + prefix + referent + "を見過ごさず、小さくせずに受け止めています。"
     return raw == expected
 
 
@@ -2934,10 +2994,10 @@ def evaluate_grounded_surface_body_inverse(
                             continue
                         anchor_used = anchor_used or referent.source_anchor_used
                         expected_referent_by_move[move_id] = referent
-                for clause, parsed_sentence in zip(
+                for clause_index, (clause, parsed_sentence) in enumerate(zip(
                     clause_plans,
                     parsed_sentences,
-                ):
+                )):
                     try:
                         parsed_sentence_text = (
                             _body_inverse_normalized_anchor(
@@ -3426,6 +3486,7 @@ def evaluate_grounded_surface_body_inverse(
                                 f"{move.move_id}"
                             )
                         relation_attention_valid = True
+                        shared_change_context_matched = False
                         if (final_stage1_plan and sentence_plan.recovery_stage == "full"
                             and len(clause.move_ids) == 1 and move.move_role == "attention"
                             and effective_reference_mode != "anaphoric_first"
@@ -3459,9 +3520,15 @@ def evaluate_grounded_surface_body_inverse(
                                         + r"(?:を見過ごさず、|に目が留まり、それを)"
                                         + re.escape(act) + "。", raw) is not None
                                     if relation_kind == "contrast" and "一方で、" in raw:
+                                        prior_proven = bool(raw.startswith("その一方で、") and clause_index > 0
+                                            and _body_inverse_preceding_change_context(
+                                                body, parsed_sentences[clause_index - 1], clause_plans[clause_index - 1],
+                                                parsed_sentence, move, reception_plan, plan, resolver))
                                         relation_attention_valid = _body_inverse_finite_contrast_attention(
                                             raw, object_relations[0], move, plan, resolver,
-                                            expected_referent.text if expected_referent is not None else "")
+                                            expected_referent.text if expected_referent is not None else "",
+                                            preceding_change_proven=prior_proven)
+                                        shared_change_context_matched = prior_proven and relation_attention_valid
                         if (
                             move.move_role == "attention"
                             and ("attention" not in sentence_codes or not relation_attention_valid)
@@ -3595,6 +3662,7 @@ def evaluate_grounded_surface_body_inverse(
                                 or (
                                     not anaphoric_context
                                     and not decision_context_matched
+                                    and not shared_change_context_matched
                                     and not any(
                                         source_value in context_match_text
                                         for source_value in context_values
