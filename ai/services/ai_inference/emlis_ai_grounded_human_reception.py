@@ -1550,9 +1550,54 @@ def reception_active_moves(
     return retained
 
 
+def _independent_recognition_pair(
+    reception_plan: GroundedHumanReceptionPlan,
+    recovery_stage: ReceptionRecoveryStage,
+    *, plan: GroundedObservationPlan | None = None,
+) -> bool:
+    """Coordinate two independent duties inside the existing sentence budget.
+
+    Only source-proven independent nominal feelings enter this full-form
+    topology. Legacy plans, other sources, contexts, recovery forms and depth
+    budgets retain their existing clauses. Selected material reception is
+    proved separately by the sole author and the independent body reader.
+    """
+    if (plan is None or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
+        or plan.response_plan.human_reception_plan != reception_plan):
+        return False
+    nucleus_index = {n.nucleus_id: n for n in plan.nuclei}
+    moves = reception_active_moves(reception_plan, recovery_stage)
+    return bool(
+        recovery_stage == "full"
+        and reception_plan.depth_policy.safety_mode == "standard"
+        and len(moves) == 3
+        and reception_plan.depth_policy.min_sentences <= 2
+        and reception_plan.depth_policy.max_moves_per_sentence >= 2
+        and tuple(m.move_role for m in moves[:2]) == ("attention", "felt_response")
+        and all(m.reception_act == "recognize_lived_change" and m.required
+                and len(m.target_nucleus_ids) == 1 and not m.support_nucleus_ids
+                for m in moves[:2])
+        and moves[2].reception_act == "honor_concrete_effort"
+        and moves[2].move_role == "felt_response"
+        and all((n := nucleus_index.get(m.target_nucleus_ids[0])) is not None
+                and is_grounded_positive_feeling(n)
+                and n.source_fields == ("memo",) and len(n.source_span_ids) == 1
+                and n.semantic_frame.actor == "current_user"
+                and {"lexical:source_nominal_cognition_feeling",
+                     "lexical:source_received_past_feeling", "lexical:source_nominal_past_feeling"}
+                    & set(n.semantic_frame.attribute_codes)
+                and not final_reception_context_nucleus_ids(move=m, plan=plan)
+                for m in moves[:2])
+        and not (set(moves[0].target_nucleus_ids) & set(moves[1].target_nucleus_ids))
+        and not (set(moves[0].source_evidence_span_ids)
+                 & set(moves[1].source_evidence_span_ids))
+    )
+
+
 def build_grounded_reception_clause_plans(
     reception_plan: GroundedHumanReceptionPlan,
     recovery_stage: ReceptionRecoveryStage,
+    *, plan: GroundedObservationPlan | None = None,
 ) -> tuple[GroundedReceptionClausePlan, ...]:
     """Bind active Moves to deterministic one- or two-Move sentence slots."""
 
@@ -1564,7 +1609,9 @@ def build_grounded_reception_clause_plans(
     move_groups: tuple[tuple[GroundedReceptionMovePlan, ...], ...] = tuple(
         (move,) for move in moves
     )
-    if (
+    if _independent_recognition_pair(reception_plan, recovery_stage, plan=plan,):
+        move_groups = (moves[:2], moves[2:])
+    elif (
         recovery_stage == "integrated"
         and len(moves) == 3
         and reception_plan.depth_policy.max_moves_per_sentence >= 2
@@ -4047,12 +4094,13 @@ def _validate_clause_plan_binding(
     reception_plan: GroundedHumanReceptionPlan,
     clauses: Sequence[GroundedReceptionClausePlan],
     recovery_stage: ReceptionRecoveryStage,
+    *, plan: GroundedObservationPlan | None = None,
 ) -> tuple[GroundedReceptionMovePlan, ...]:
     active_moves = reception_active_moves(reception_plan, recovery_stage)
     move_index = {move.move_id: move for move in active_moves}
     canonical_clauses = build_grounded_reception_clause_plans(
         reception_plan,
-        recovery_stage,
+        recovery_stage, plan=plan,
     )
     if len(clauses) != len(canonical_clauses):
         raise GroundedHumanReceptionSurfaceError(
@@ -4097,7 +4145,9 @@ def _validate_clause_plan_binding(
             raise GroundedHumanReceptionSurfaceError(
                 "human_reception_counterposition_clause_not_independent"
             )
-        if len(moves) == 2 and recovery_stage != "integrated":
+        if (len(moves) == 2 and recovery_stage != "integrated"
+            and not (_independent_recognition_pair(reception_plan, recovery_stage, plan=plan,)
+                     and clause.move_ids == canonical_clause.move_ids)):
             raise GroundedHumanReceptionSurfaceError(
                 "human_reception_multi_move_clause_wrong_stage"
             )
@@ -9461,6 +9511,60 @@ def _source_grounded_reception_fragment(
     return predicate_surface
 
 
+def _source_grounded_shared_material_feelings(
+    terms: tuple[tuple[_ReceptionMoveRealizationV1, _SourceGroundedClauseCoreV1,
+                       SelectedSubjectiveReceptionDecisionV1, str], ...],
+) -> str | None:
+    """Govern two complete independent objects with one selected predicate.
+
+    The coordinated objects are authored from their semantic cores, never
+    cut out of finished prose. Both Moves and their forward bindings remain.
+    No shared guard is inferred from an act, feeling word, or another Move.
+    """
+    if len(terms) != 2 or tuple(t[3] for t in terms) != ("attention", "felt_response"):
+        return None
+    predicates = []
+    for realization, core, decision, role in terms:
+        if (len(realization.semantic_fragments) != 1
+            or len(realization.semantic_profiles) != 1
+            or realization.target_slot_count != 1
+            or realization.context_slots or realization.relations
+            or realization.reference_mode == "ANAPHORIC"
+            or core.semantic_slots != (0,) or core.target_owner_slot != 0
+            or core.relation_count or core.pending_relation_slots
+            or not core.text.endswith("という気持ち")
+            or not _selected_material_appraisal(decision)):
+            return None
+        profile = realization.semantic_profiles[0]
+        if (profile.nucleus_kind != "reaction" or profile.predicate_kind != "feeling"
+            or profile.modality != "feeling" or profile.actor_kind != "SELF"
+            or profile.quoted_boundary or profile.future_action or profile.performed_action):
+            return None
+        predicate = _source_grounded_response_predicate(
+            reception_act="recognize_lived_change", move_role=role,
+            future_action=False, target_predicate_kind=realization.predicate_kind,
+            semantic_profile=profile, referent_kind="positive_feeling", voice="STATE",
+            selected_subjective_decision=decision, single_target_object=True,
+        )
+        if (predicate.object_particle != "を"
+            or predicate.role_operator != ("見過ごさず、" if role == "attention" else "")
+            or predicate.act_guard or predicate.reception_operator
+            or predicate.voice_complement or predicate.valency_complement
+            or predicate.completed_relation_slots
+            or predicate.predicate_lemma != "受け止める"
+            or predicate.conjugation_class != "ICHIDAN"):
+            return None
+        predicates.append(predicate)
+    if terms[0][1].text == terms[1][1].text:
+        return None
+    # Mo ... mo distributes the one reception over both intact source
+    # objects. It does not assert a relation between the user's feelings.
+    return (terms[0][1].text + "も、" + terms[1][1].text + "も、"
+            + predicates[0].role_operator
+            + _source_grounded_inflect_response_predicate(
+                predicates[1], clause_form="FINITE", hedged=False))
+
+
 def _author_source_grounded_reception_clauses(
     reception_plan: GroundedHumanReceptionPlan,
     clause_plans: tuple[GroundedReceptionClausePlan, ...],
@@ -9534,6 +9638,7 @@ def _author_source_grounded_reception_clauses(
                 "REALIZABLE_RECEPTION_EXPRESSION_VISIBLE_BINDING_GAP"
             )
         move_sentences: list[str] = []
+        coordination_terms = []
         for move_id, meaning_realization in zip(
             clause_plan.move_ids,
             realization.moves,
@@ -9960,8 +10065,20 @@ def _author_source_grounded_reception_clauses(
                     + "ことを支えていることを見過ごさず、大切に思っています")):
                 preceding_change_context = (move.support_nucleus_ids[0],
                                             meaning_realization.semantic_fragments[1])
+            if (recovery_stage == "full" and len(realization.moves) == 2
+                and referent.kind == "positive_feeling"
+                and not context_ids and not context_prefix
+                and len(move.target_nucleus_ids) == 1
+                and nucleus_index[move.target_nucleus_ids[0]].source_fields == ("memo",)
+                and not unfinished_pair and distributive_relation_slot is None):
+                coordination_terms.append((meaning_realization, target_core,
+                                           selected_decision, move.move_role))
             move_sentences.append(move_sentence)
+        shared_feelings = _source_grounded_shared_material_feelings(tuple(coordination_terms))
+        if recovery_stage == "full" and len(realization.moves) == 2 and shared_feelings is None:
+            raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAPABILITY_GAP")
         segment = (
+            shared_feelings if shared_feelings is not None else
             move_sentences[0]
             if len(move_sentences) == 1
             else "、".join(
@@ -10088,7 +10205,7 @@ def _replay_source_grounded_human_reception_from_plan(
     _validate_clause_plan_binding(
         reception_plan,
         resolved_clause_plans,
-        recovery_stage,
+        recovery_stage, plan=plan,
     )
     realizations = _source_grounded_plan_clause_realizations(
         reception_plan,
@@ -10373,7 +10490,7 @@ def _realize_source_grounded_human_reception(
     _validate_clause_plan_binding(
         reception_plan,
         resolved_clause_plans,
-        recovery_stage=recovery_stage,
+        recovery_stage=recovery_stage, plan=plan,
     )
     plan_realizations = _source_grounded_plan_clause_realizations(
         reception_plan,
@@ -10560,13 +10677,13 @@ def bind_and_validate_grounded_human_reception_surface(
         if clause_plans is not None
         else build_grounded_reception_clause_plans(
             reception_plan,
-            recovery_stage,
+            recovery_stage, plan=plan,
         )
     )
     _validate_clause_plan_binding(
         reception_plan,
         resolved_clause_plans,
-        recovery_stage,
+        recovery_stage, plan=plan,
     )
     move_index = {move.move_id: move for move in active_moves}
     referents: list[GroundedReceptionReferent] = []
@@ -10785,13 +10902,13 @@ def realize_grounded_human_reception(
         if clause_plans is not None
         else build_grounded_reception_clause_plans(
             reception_plan,
-            recovery_stage,
+            recovery_stage, plan=plan,
         )
     )
     _validate_clause_plan_binding(
         reception_plan,
         resolved_clause_plans,
-        recovery_stage,
+        recovery_stage, plan=plan,
     )
     move_index = {move.move_id: move for move in active_moves}
 

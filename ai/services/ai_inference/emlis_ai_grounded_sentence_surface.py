@@ -1173,12 +1173,13 @@ def _observation_surface_atoms(
 def _reception_contract_atoms(
     reception_plan: GroundedHumanReceptionPlan,
     recovery_stage: RecoveryStage,
+    *, plan: GroundedObservationPlan | None = None,
 ) -> tuple[str, ...]:
     moves = reception_active_moves(reception_plan, recovery_stage)
     acts = tuple(move.reception_act for move in moves)
     clauses = build_grounded_reception_clause_plans(
         reception_plan,
-        recovery_stage,
+        recovery_stage, plan=plan,
     )
     clause_by_move_id = {
         move_id: clause
@@ -1309,6 +1310,7 @@ def _human_follow_atoms(
     recovery_stage: RecoveryStage,
     *,
     target_already_delivered: bool = False,
+    plan: GroundedObservationPlan | None = None,
 ) -> tuple[str, ...]:
     modality = {
         "retained_intention": "intention",
@@ -1328,7 +1330,7 @@ def _human_follow_atoms(
             "closure_role:human_follow",
             f"closure_modality:{modality}",
             "closure_scope:selected_target",
-            *_reception_contract_atoms(reception_plan, recovery_stage),
+            *_reception_contract_atoms(reception_plan, recovery_stage, plan=plan,),
             *(
                 ("human_follow_target_already_delivered",)
                 if target_already_delivered
@@ -1896,7 +1898,7 @@ def _build_self_denial_lines(
         reception_plan = _required_reception_plan(plan, follow_ids)
         reception_clause_plans = build_grounded_reception_clause_plans(
             reception_plan,
-            recovery_stage,
+            recovery_stage, plan=plan,
         )
         reception_nucleus_ids = _dedupe(
             (
@@ -1929,7 +1931,7 @@ def _build_self_denial_lines(
                         follow_role,
                         reception_plan,
                         recovery_stage,
-                        target_already_delivered=target_already_delivered,
+                        target_already_delivered=target_already_delivered, plan=plan,
                     ),
                     "no_personality_guarantee",
                     "no_action_instruction",
@@ -2228,7 +2230,7 @@ def _build_regular_lines(
         reception_plan = _required_reception_plan(plan, follow_ids)
         reception_clause_plans = build_grounded_reception_clause_plans(
             reception_plan,
-            recovery_stage,
+            recovery_stage, plan=plan,
         )
         reception_nucleus_ids = _dedupe(
             (
@@ -2257,7 +2259,7 @@ def _build_regular_lines(
                         follow_role,
                         reception_plan,
                         recovery_stage,
-                        target_already_delivered=target_already_delivered,
+                        target_already_delivered=target_already_delivered, plan=plan,
                     ),
                     "no_personality_guarantee",
                     "no_action_instruction",
@@ -4169,11 +4171,11 @@ def build_reception_recovery_sentence_plan(
         try:
             contract_atoms = _reception_contract_atoms(
                 reception_plan,
-                recovery_stage,
+                recovery_stage, plan=plan,
             )
             recovery_clause_plans = build_grounded_reception_clause_plans(
                 reception_plan,
-                recovery_stage,
+                recovery_stage, plan=plan,
             )
         except GroundedHumanReceptionSurfaceError as exc:
             raise GroundedSentenceSurfaceError(str(exc)) from exc
@@ -4407,7 +4409,7 @@ def validate_grounded_sentence_plan(
             expected_clause_plans = (
                 build_grounded_reception_clause_plans(
                     reception_plan,
-                    sentence_plan.recovery_stage,
+                    sentence_plan.recovery_stage, plan=plan,
                 )
                 if reception_plan is not None
                 else ()
@@ -4476,7 +4478,7 @@ def validate_grounded_sentence_plan(
 
                 expected_contract_atoms = _reception_contract_atoms(
                     reception_plan,
-                    sentence_plan.recovery_stage,
+                    sentence_plan.recovery_stage, plan=plan,
                 )
                 # Contract atoms list act kinds once; per-Move atoms below
                 # independently preserve every target and repeated act duty.

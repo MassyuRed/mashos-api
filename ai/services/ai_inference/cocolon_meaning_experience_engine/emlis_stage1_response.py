@@ -12294,7 +12294,7 @@ def _derive_source_grounded_reception_expression_authority(
         active_moves = reception_active_moves(reception_plan, recovery_stage)
         clause_plans = build_grounded_reception_clause_plans(
             reception_plan,
-            recovery_stage,
+            recovery_stage, plan=selected_grounded_plan,
         )
     except GroundedHumanReceptionSurfaceError as exc:
         _raise_realizable_reception_failure(exc)

@@ -2106,6 +2106,50 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
     return successes[0] if len(successes) == 1 else None
 
 
+def _body_inverse_shared_material_feeling_objects(
+    body, sentence, clause, plan, resolver, selected_subjective_input,
+) -> bool | None:
+    """Read both source-owned objects and their one shared governed predicate.
+
+    This is independent of the author, its replay, and its surface bindings.
+    Eligibility comes from the selected duties, never from matching a suffix
+    in the supplied body. A changed connective cannot evade the whole proof.
+    """
+    if len(clause.move_ids) != 2 or selected_subjective_input is None:
+        return None
+    moves_by_id = {m.move_id: m for m in plan.response_plan.human_reception_plan.moves}
+    moves = tuple(moves_by_id[mid] for mid in clause.move_ids if mid in moves_by_id)
+    if (len(moves) != 2 or tuple(m.move_role for m in moves) != ("attention", "felt_response")
+        or any(m.reception_act != "recognize_lived_change" or not m.required
+               or len(m.target_nucleus_ids) != 1 or m.support_nucleus_ids for m in moves)):
+        return None
+    nuclei = {n.nucleus_id: n for n in plan.nuclei}
+    objects = []
+    for move in moves:
+        nucleus = nuclei.get(move.target_nucleus_ids[0])
+        decision = next((d for d in selected_subjective_input.decisions
+                         if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if (nucleus is None or not is_grounded_positive_feeling(nucleus)
+            or nucleus.source_fields != ("memo",)
+            or nucleus.semantic_frame.actor != "current_user"
+            or _body_inverse_reception_context_ids(move, plan)
+            or appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
+            or appraisal.operation != "RECEIVE_AS_MATERIAL"):
+            return None
+        source = final_reception_source_anchor_text(nucleus.nucleus_id, nuclei, resolver)
+        if not source:
+            return False
+        objects.append(source + "という気持ち")
+    if (len(set(m.target_nucleus_ids[0] for m in moves)) != 2
+        or len(set(objects)) != 2
+        or set(moves[0].source_evidence_span_ids) & set(moves[1].source_evidence_span_ids)):
+        return False
+    raw = body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8")
+    expected = objects[0] + "も、" + objects[1] + "も、見過ごさず、受け止めています。"
+    return raw == expected
+
+
 def _body_inverse_nominal_constraint_clause(body, sentence, move, plan, resolver, selected_subjective_input, *, nominal="という言葉", temporal_prefix=""):
     """Restore the entire selected nominal object, including its left edge.
 
@@ -3015,6 +3059,13 @@ def evaluate_grounded_surface_body_inverse(
                     sentence_codes = set(
                         parsed_sentence.reception_marker_codes
                     )
+                    if final_stage1_plan and sentence_plan.recovery_stage == "full":
+                        shared_objects = _body_inverse_shared_material_feeling_objects(
+                            body, parsed_sentence, clause, plan, resolver, selected_subjective_input,
+                        )
+                        if len(clause.move_ids) == 2 and shared_objects is not True:
+                            failures.append("body_inverse_shared_feeling_objects_invalid:"
+                                            + str(clause.sentence_slot))
                     for move_id in clause.move_ids:
                         move = move_index.get(move_id)
                         if move is None or not move.required:
