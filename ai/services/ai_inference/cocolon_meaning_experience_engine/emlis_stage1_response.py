@@ -11984,6 +11984,7 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
     grouped = bool(2 <= len(rows) <= 3
         and (withdrawal or any(move.support_nucleus_ids for move in reception_plan.moves)
              and ({"stay_with_current_burden", "recognize_lived_change"} <= {row.reception_act for row in rows}
+                  or {"stay_with_current_burden", "honor_concrete_effort"} <= {row.reception_act for row in rows}
                   or any(_source_finite_original_feeling(n) or _source_explicit_original_feeling(n) or _source_current_cognition(n) or _source_self_appraisal(n) for n in binding.node_meta.values()))
              and {row.reception_act for row in rows} <= {"stay_with_current_burden", "recognize_lived_change", "honor_concrete_effort"})
         and tuple(({"stay_with_current_burden": "current_burden", "recognize_lived_change": "lived_change",

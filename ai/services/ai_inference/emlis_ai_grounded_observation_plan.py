@@ -7405,8 +7405,10 @@ def _thread_retained_reaction_groups(nuclei, relations):
             and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes))
         and not any(r.retention == "required" and n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
                     for r in relations))
-    actions = tuple(n for n in original_text if independent
-        and n.source_fields == ("memo_action",) and n.retention == "required"
+    # An independent action is its own source duty. Withdrawing another
+    # independent statement cannot make the surviving contrasts disappear.
+    actions = tuple(n for n in original_text
+        if n.source_fields == ("memo_action",) and n.retention == "required"
         and n.grounding_kind == "explicit" and n.semantic_frame.actor == "current_user"
         and source_proven_performed_action_status(n)
         and not any(r.retention == "required" and n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
@@ -7420,7 +7422,7 @@ def _thread_retained_reaction_groups(nuclei, relations):
     if withdrawal and not pairs and not pair_ids:
         pairs = ((), ())
     if (not pairs or not (0 if withdrawal else 1) <= len(events) <= 3 or len(answers) > 3
-        or not withdrawal and not answers and not independent and len(pairs[0]) == len(events)
+        or not withdrawal and not answers and not independent and not actions and len(pairs[0]) == len(events)
         or any(n.nucleus_id not in pair_ids and n.nucleus_id not in events
                and n.nucleus_id not in detached_ids and n.nucleus_id not in independent_ids for n in original_text)
         or not set(pairs[0]) <= set(events)):
@@ -7467,7 +7469,7 @@ def _thread_retained_reaction_groups(nuclei, relations):
     # answer's polarity or whether the input contains one received event.
     # Single-event grouping still requires exactly one source-proven answer.
     if not withdrawal and (len(positive) > 1 or len(events) == 1 and len(answers) != 1
-                           and not (independent and not answers)):
+                           and not ((independent or actions) and not answers)):
         return unsupported()
     targets, supports = [], []
     for event in events:
@@ -7491,14 +7493,14 @@ def _thread_retained_reaction_groups(nuclei, relations):
     groups.extend(("lived_change" if is_grounded_positive_feeling(n) else "current_burden",
                    (n.nucleus_id,), ()) for n in independent)
     groups.extend(("concrete_effort", (n.nucleus_id,), ()) for n in actions)
-    if independent and len(groups) > 3:
+    if (independent or actions) and len(groups) > 3:
         raise GroundedObservationPlanError("human_reception_opportunity_missing")
     if withdrawal and len(groups) > 3:
         # Keep the accepted checkpoint; no representative may silently
         # discard an independent duty to fit the existing three-Move budget.
         raise GroundedObservationPlanError("human_reception_withdrawal_capacity_gap")
     subject_order = ({n.nucleus_id: _span_number(n.source_span_ids[0]) for n in nuclei}
-                     if withdrawal or independent else {nid: i for i, nid in enumerate(events)})
+                     if withdrawal or independent or actions else {nid: i for i, nid in enumerate(events)})
     target_events = {n.nucleus_id: e for e, n in by_event.items()}
     return tuple(sorted(groups, key=lambda row: min(
         subject_order[target_events.get(nid, nid)] for nid in row[1])))

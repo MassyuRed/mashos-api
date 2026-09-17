@@ -4271,3 +4271,101 @@ def test_source_self_appraisal_keeps_separate_word_reception_without_action_prom
         assert not evaluate_grounded_surface_body_inverse(body=changed.encode(), plan=plan,
             sentence_plan=sentence, resolver=resolver,
             selected_subjective_input=projection.selected_reception).passed
+
+
+# Removing an independent source duty must not remove the still-active
+# event/reaction pairs or the separately proved performed action.
+@pytest.mark.parametrize('appraisal', [
+    '準備を忘れた自分が情けない。',
+    '自分が不甲斐なかった。',
+])
+@pytest.mark.parametrize('pairs', [
+    '誘われたのに、悲しかった。',
+    '誘われたのに、悲しかった。頼まれたのに、寂しかった。',
+])
+@pytest.mark.parametrize('appraisal_first', [False, True])
+def test_withdraw_independent_appraisal_keeps_active_contrasts_and_action(appraisal, pairs, appraisal_first):
+    memo = appraisal + pairs if appraisal_first else pairs + appraisal
+    request = begin(memo, '机を拭いた。')
+    original = request.current_input_bundle
+    request = advance(request, '「' + appraisal.rstrip('。') + '」は誤りです。')
+    prepared = prepare_emlis_meaning(request)
+    plan = build_updated_grounded_plan(prepared)
+    result = realize_emlis_thread_body(prepared)
+    assert result.artifact, result.reason_codes
+    follow = result.artifact.reception
+    assert appraisal.rstrip('。') not in result.artifact.text
+    assert '誘われたのに悲しかった' in follow
+    if '頼まれた' in pairs:
+        assert '頼まれたのに寂しかった' in follow
+    assert '机を拭いた' in follow
+    assert request.current_input_bundle == original
+    assert prepared.checkpoint.answer_update.updates[0].operation == 'WITHDRAW'
+    moves = plan.response_plan.human_reception_plan.moves
+    assert {m.reception_act for m in moves} == {'stay_with_current_burden', 'honor_concrete_effort'}
+    assert len(moves) == 2
+    active_required = {n.nucleus_id for n in plan.nuclei
+                      if n.retention == 'required' and n.source_fields in {('memo',), ('memo_action',)}}
+    received = {nid for m in moves for nid in (*m.target_nucleus_ids, *m.support_nucleus_ids)}
+    assert active_required <= received
+    # Withdrawal is not an answer assigning a new feeling to either event.
+    assert not any(r.type == 'evaluation_about_event' for r in plan.relations)
+    assert not any('thread_subject:withdrawn_source_event' in n.semantic_frame.attribute_codes
+                   for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('answer,required', [
+    ('その時は重かった。', 'その時の重さ'),
+])
+def test_withdraw_independent_appraisal_after_answer_keeps_answer_and_original_duties(answer, required):
+    appraisal = '準備を忘れた自分が情けない。'
+    request = begin('誘われたのに、悲しかった。頼まれたのに、寂しかった。' + appraisal, '机を拭いた。')
+    original = request.current_input_bundle
+    request = advance(request, answer)
+    request = advance(request, '「' + appraisal.rstrip('。') + '」は誤りです。')
+    result = MeaningExperienceEngine().generate(request)
+    assert result.artifact, result.reason_codes
+    follow = result.artifact.reception
+    assert all(text in follow for text in ('誘われたのに悲しかった', '頼まれたのに寂しかった', '机を拭いた', required))
+    assert appraisal.rstrip('。') not in result.artifact.text
+    assert request.current_input_bundle == original
+
+
+@pytest.mark.parametrize('mutation', ['first_feeling', 'second_feeling', 'action', 'owner', 'time', 'revive'])
+def test_withdraw_independent_appraisal_inverse_keeps_each_surviving_duty(monkeypatch, mutation):
+    from types import SimpleNamespace
+    import emlis_ai_grounded_human_reception as reception
+    import emlis_ai_grounded_observation_gate as gate
+    appraisal = '準備を忘れた自分が情けない。'
+    request = advance(begin('誘われたのに、悲しかった。頼まれたのに、寂しかった。' + appraisal,
+                            '机を拭いた。'), '「' + appraisal.rstrip('。') + '」は誤りです。')
+    prepared = prepare_emlis_meaning(request)
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    projection = project_thread_meaning(prepared, plan)
+    result = realize_emlis_thread_body(prepared)
+    assert result.artifact, result.reason_codes
+    sentence = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    follow = result.artifact.reception
+    changes = {
+        'first_feeling': follow.replace('誘われたのに悲しかったことと、', ''),
+        'second_feeling': follow.replace('頼まれたのに寂しかったこと', ''),
+        'action': follow.replace('机を拭いたこと', ''),
+        'owner': follow.replace('誘われたのに悲しかった', '友人が誘われたのに悲しかった'),
+        'time': follow.replace('悲しかった', '今は悲しい'),
+        'revive': appraisal + follow,
+    }
+    changed = changes[mutation]
+    assert changed != follow
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Independent inverse must not call the author')
+    monkeypatch.setattr(reception, '_author_source_grounded_reception_clauses', forbidden)
+    def passed(text):
+        monkeypatch.setattr(gate, 'replay_source_grounded_human_reception_from_plan',
+                            lambda *a, **kw: SimpleNamespace(text=text))
+        return gate.evaluate_grounded_surface_body_inverse(
+            body=result.artifact.text.replace(follow, text).encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver,
+            selected_subjective_input=projection.selected_reception).passed
+    assert passed(follow)
+    assert not passed(changed)

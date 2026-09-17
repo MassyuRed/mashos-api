@@ -1,7 +1,7 @@
 {
   "scope": "Q1 shared language owners only; test snapshot, not product acceptance or full thread identity",
-  "language_identity": "e6bde8efd59187bbba71a6cbe45296341660e885124adb6c768aa7cbf193afc7",
-  "runtime_identity": "3e15cec13b47258081ed7bb119e40883cd6f367340787cc8c7ca9874eb1df6e5",
+  "language_identity": "e06f3049b242c2698e0776f784b468a06bd2ba5b50e2c86c254f4b277be63ea3",
+  "runtime_identity": "9a88bad6c11cd48befc2824f46b87468c01f5bb0da77f0d0c5e3ed682d23c817",
   "language_payloads": [
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
@@ -15,8 +15,8 @@
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py",
-      "ffd509e7d788aa69b35806e50a8989aad32c2b0ecc8a083ea70b838ef34576a3",
-      969728
+      "44fa48382c13184552d1556090fef5e909fbd1846d657af0fa88f408d948559c",
+      970076
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py",
@@ -25,8 +25,8 @@
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
-      "877438c439a71d0de5c35ef06bbcbfb3842dfdf2424672a5da6bf32b83e41ae8",
-      1848156
+      "c8edf1ee4d1b0f87f77f1d3cf8cffe63992f27b0160fd8174e8d759c33102357",
+      1848327
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
@@ -107,8 +107,8 @@
     ],
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py",
-      "ef82d8456048ffe5f9497a4f8747fd67b7746cfdcca95980fce61086209ca6e5",
-      548893
+      "fa8102dd7eba8b5f3d517143cd8b0e4ae8750f2034cb75ad0589af5d1b3c6007",
+      549007
     ],
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_v1a.py",
@@ -117,8 +117,8 @@
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
-      "0cca22e750854ceee6b41a64b3cc7cc887660e9762db50066a5da378b45e1e8a",
-      696701
+      "d914cbe6b9fa0e0f7efb2e7aa91b37307b6e0d42ad7c168eac9c5238386bb1c9",
+      696885
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
