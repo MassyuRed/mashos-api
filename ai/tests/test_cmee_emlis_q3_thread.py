@@ -4369,3 +4369,216 @@ def test_withdraw_independent_appraisal_inverse_keeps_each_surviving_duty(monkey
             selected_subjective_input=projection.selected_reception).passed
     assert passed(follow)
     assert not passed(changed)
+
+
+# Updating an independently recorded self-appraisal cannot erase the other
+# received events/reactions, or attach the replacement to a question event.
+@pytest.mark.parametrize("replacement,visible", [
+    ("不安です", "その時の不安"),
+    ("不安でした", "その時の不安"),
+    ("苦しかった", "その時の苦しさ"),
+    ("嬉しかった", "その時に嬉しかった"),
+])
+@pytest.mark.parametrize("pairs", [1, 2])
+def test_independent_source_replacement_keeps_untouched_pairs(replacement, visible, pairs):
+    clauses = ("誘われたのに、悲しかった。", "頼まれたのに、寂しかった。")[:pairs]
+    appraisal = "準備を忘れた自分が情けない"
+    request = begin("".join(clauses) + appraisal + "。", "机を拭いた。")
+    original = request.current_input_bundle
+    request = advance(request, f'「{appraisal}」ではなく「{replacement}」。')
+    prepared = prepare_emlis_meaning(request)
+    plan = build_updated_grounded_plan(prepared)
+    answer = next(n for n in plan.nuclei if n.source_fields == ("answer_text_private",))
+    assert "thread_subject:independent_source_replacement" in answer.semantic_frame.attribute_codes
+    assert not any(answer.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    result = MeaningExperienceEngine().generate(request)
+    assert result.artifact, result.reason_codes
+    follow = result.artifact.reception
+    assert appraisal not in follow and visible in follow and "机を拭いた" in follow
+    for clause in clauses:
+        assert clause.replace("、", "").rstrip("。") in follow
+    assert "ですこと" not in follow and "でしたこと" not in follow and "これまで、" not in follow
+    assert request.current_input_bundle == original
+    assert len(plan.response_plan.human_reception_plan.moves) == 3
+
+
+@pytest.mark.parametrize("appraisal", ["準備を忘れた自分が情けない", "自分が不甲斐なかった"])
+@pytest.mark.parametrize("pairs", [1, 2, 3])
+def test_independent_source_withdrawal_preserves_other_reactions_and_action(appraisal, pairs):
+    clauses = ("誘われたのに、悲しかった。", "頼まれたのに、寂しかった。",
+               "褒められたのに、嬉しくなかった。")[:pairs]
+    request = begin("".join(clauses) + appraisal + "。", "机を拭いた。")
+    original = request.current_input_bundle
+    request = advance(request, f'「{appraisal}」は誤りです。')
+    result = MeaningExperienceEngine().generate(request)
+    assert result.artifact, result.reason_codes
+    follow = result.artifact.reception
+    assert appraisal not in follow and "机を拭いた" in follow
+    for clause in clauses:
+        assert clause.replace("、", "").rstrip("。") in follow
+    assert request.current_input_bundle == original
+    assert not any("independent_source_replacement" in c for n in
+        build_updated_grounded_plan(prepare_emlis_meaning(request)).nuclei
+        for c in n.semantic_frame.attribute_codes)
+
+
+@pytest.mark.parametrize("second,visible", [
+    ('「不安です」ではなく「苦しかった」です。', "その時の苦しさ"),
+    ('「不安です」は誤りです。', None),
+])
+def test_revising_or_withdrawing_replacement_never_revives_superseded_appraisal(second, visible):
+    appraisal = "準備を忘れた自分が情けない"
+    request = begin("誘われたのに、悲しかった。頼まれたのに、寂しかった。" + appraisal + "。", "机を拭いた。")
+    original = request.current_input_bundle
+    request = advance(advance(request, f'「{appraisal}」ではなく「不安です」。'), second)
+    result = MeaningExperienceEngine().generate(request)
+    assert result.artifact, result.reason_codes
+    follow = result.artifact.reception
+    assert all(t in follow for t in ("誘われたのに悲しかった", "頼まれたのに寂しかった", "机を拭いた"))
+    assert appraisal not in follow and "不安" not in follow
+    assert visible is None or visible in follow
+    assert request.current_input_bundle == original
+
+
+@pytest.mark.parametrize("with_action", [False, True])
+def test_retained_original_pairs_do_not_depend_on_a_third_feeling(with_action):
+    request = begin("誘われたのに、悲しかった。頼まれたのに、寂しかった。", "机を拭いた。" if with_action else "")
+    result = MeaningExperienceEngine().generate(request)
+    assert result.artifact, result.reason_codes
+    assert "誘われたのに悲しかった" in result.artifact.reception
+    assert "頼まれたのに寂しかった" in result.artifact.reception
+    assert not with_action or "机を拭いた" in result.artifact.reception
+
+
+@pytest.mark.parametrize("replacement", ["不安です", "不安でした"])
+def test_independent_replacement_inverse_rejects_lost_meaning_without_author(monkeypatch, replacement):
+    from types import SimpleNamespace
+    import emlis_ai_grounded_human_reception as hr
+    import emlis_ai_grounded_observation_gate as gate
+    request = begin("誘われたのに、悲しかった。頼まれたのに、寂しかった。準備を忘れた自分が情けない。", "机を拭いた。")
+    request = advance(request, f'「準備を忘れた自分が情けない」ではなく「{replacement}」。')
+    prepared = prepare_emlis_meaning(request)
+    plan = build_updated_grounded_plan(prepared)
+    projection = project_thread_meaning(prepared, plan)
+    resolver = prepared.thread.resolver()
+    result = realize_emlis_thread_body(prepared)
+    sentence = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage="full")
+    def forbidden(*a, **k):
+        raise AssertionError("Independent body inverse cannot ask the author")
+    monkeypatch.setattr(hr, "_author_source_grounded_reception_clauses", forbidden)
+    def passes(follow):
+        monkeypatch.setattr(gate, "replay_source_grounded_human_reception_from_plan", lambda *a, **k: SimpleNamespace(text=follow))
+        return gate.evaluate_grounded_surface_body_inverse(
+            body=result.artifact.text.replace(result.artifact.reception, follow).encode(),
+            plan=plan, sentence_plan=sentence, resolver=resolver,
+            selected_subjective_input=projection.selected_reception).passed
+    follow = result.artifact.reception
+    assert passes(follow)
+    for old, new in [("その時の不安", ""), ("その時の不安", "回答した時点の不安"),
+                     ("その時の不安", "その時の安心"), ("その時の不安", "友人の不安"),
+                     ("悲しかった", "悲しくなかった"), ("頼まれたのに寂しかったことと、", ""),
+                     ("机を拭いた", "机を拭く")]:
+        changed = follow.replace(old, new)
+        # Deleting the final pair uses its suffix-free position in this order.
+        if changed == follow and old.startswith("頼まれた"):
+            changed = follow.replace("と、頼まれたのに寂しかったこと", "")
+        assert changed != follow
+        assert not passes(changed), (old, new)
+
+
+@pytest.mark.parametrize("fragment", ["友人は不安です", "不安ではないです", "不安かもしれません", "不安だそうです", "不安ですか", "少し不安です"])
+def test_polite_answer_nominal_does_not_remove_owner_negation_or_degree(fragment):
+    from emlis_ai_grounded_human_reception import _thread_answer_nominal_morphology
+    assert _thread_answer_nominal_morphology(fragment) is None
+
+
+@pytest.mark.parametrize("when", ["original_occasion", "answer_time", "prior_answer_time"])
+@pytest.mark.parametrize("fragment", ["不安です", "不安でした"])
+def test_polite_feeling_nominal_independently_restores_full_source_and_time(fragment, when):
+    from emlis_ai_grounded_human_reception import _thread_answer_nominal_morphology, _thread_answer_timed_nominal, restore_thread_answer_nominal
+    grammar, nominal = _thread_answer_nominal_morphology(fragment)
+    rendered = _thread_answer_timed_nominal(nominal, grammar, when)
+    assert restore_thread_answer_nominal(rendered, grammar, when) == fragment
+    assert restore_thread_answer_nominal(rendered.replace("不安", "友人の不安"), grammar, when) is None
+
+
+@pytest.mark.parametrize("memo", ["今は自分がもどかしい。", "自分が少しだけ情けないです。"])
+@pytest.mark.parametrize("answered", [False, True])
+def test_integrated_predecessor_appraisal_variants_keep_complete_original_duty(memo, answered):
+    from emlis_ai_grounded_observation_plan import _source_self_appraisal
+    request = begin(("誘われたのに、悲しかった。" if answered else "") + memo, "机を拭いた。")
+    if answered:
+        request = advance(request, "その時は重かった。")
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(request))
+    assert len([n for n in plan.nuclei if _source_self_appraisal(n)]) == 1
+    result = MeaningExperienceEngine().generate(request)
+    assert result.artifact, result.reason_codes
+    follow = result.artifact.reception
+    assert memo.rstrip("。") in follow and "机を拭いた" in follow
+    assert follow.index(memo.rstrip("。")) < follow.index("机を拭いた")
+
+
+@pytest.mark.parametrize("memo", [
+    "友人は自分がもどかしい。", "自分がもどかしくない。", "もし自分がもどかしいなら、休む。",
+    "自分が少しだけ情けないとは思わない。", "自分が少しだけ情けないかもしれない。",
+])
+def test_integrated_predecessor_variants_keep_foreign_negation_hypothesis_boundary(memo):
+    from emlis_ai_grounded_observation_plan import _source_self_appraisal
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(memo, "机を拭いた。")))
+    assert not any(_source_self_appraisal(n) for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('replacement,nominal', [('嬉しいです', '嬉しさ'), ('うれしいです', 'うれしさ')])
+@pytest.mark.parametrize('repeated', [False, True])
+def test_independent_positive_polite_replacement_has_one_original_time_owner(replacement, nominal, repeated):
+    request = begin('誘われたのに、悲しかった。頼まれたのに、寂しかった。準備を忘れた自分が情けない。', '机を拭いた。')
+    original = request.current_input_bundle
+    target = '準備を忘れた自分が情けない'
+    if repeated:
+        request = advance(request, f'「{target}」ではなく「不安です」。')
+        target = '不安です'
+    request = advance(request, f'「{target}」ではなく「{replacement}」。')
+    result = MeaningExperienceEngine().generate(request)
+    assert result.artifact, result.reason_codes
+    follow = result.artifact.reception
+    assert f'その時の{nominal}という気持ち' in follow
+    assert all(x in follow for x in ('誘われたのに悲しかった', '頼まれたのに寂しかった', '机を拭いた'))
+    assert 'これまで' not in follow and '今は' not in follow and '不安' not in follow and '情けない' not in follow
+    assert request.current_input_bundle == original
+
+
+@pytest.mark.parametrize('mutation', ['time', 'foreign_owner', 'valence', 'revive', 'drop_feeling', 'drop_action'])
+def test_independent_positive_polite_nominal_inverse_rejects_source_drift(monkeypatch, mutation):
+    from types import SimpleNamespace
+    import emlis_ai_grounded_human_reception as reception
+    import emlis_ai_grounded_observation_gate as gate
+    request = advance(begin('誘われたのに、悲しかった。頼まれたのに、寂しかった。準備を忘れた自分が情けない。', '机を拭いた。'),
+                      '「準備を忘れた自分が情けない」ではなく「嬉しいです」。')
+    prepared = prepare_emlis_meaning(request)
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    projection = project_thread_meaning(prepared, plan)
+    result = realize_emlis_thread_body(prepared)
+    assert result.artifact, result.reason_codes
+    sentence = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    follow = result.artifact.reception
+    altered = {
+        'time': follow.replace('その時の嬉しさ', '今の嬉しさ'),
+        'foreign_owner': follow.replace('その時の嬉しさ', '友人のその時の嬉しさ'),
+        'valence': follow.replace('嬉しさ', '悲しさ'),
+        'revive': '自分が情けない。' + follow,
+        'drop_feeling': follow.replace('その時の嬉しさという気持ち', ''),
+        'drop_action': follow.replace('机を拭いたこと', ''),
+    }[mutation]
+    assert altered != follow
+    def forbidden(*a, **kw):
+        raise AssertionError('The inverse cannot invoke the author')
+    monkeypatch.setattr(reception, '_author_source_grounded_reception_clauses', forbidden)
+    def passes(text):
+        monkeypatch.setattr(gate, 'replay_source_grounded_human_reception_from_plan', lambda *a, **kw: SimpleNamespace(text=text))
+        return gate.evaluate_grounded_surface_body_inverse(
+            body=result.artifact.text.replace(follow, text).encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver,
+            selected_subjective_input=projection.selected_reception).passed
+    assert passes(follow)
+    assert not passes(altered)

@@ -2614,13 +2614,29 @@ def _thread_answer_nominal_morphology(fragment: str) -> tuple[str, str] | None:
     """Inflect a proven answer; keep its entire lexical proposition.
 
     This is grammar, not answer interpretation. Bare adjective hosts must
-    belong to the existing feeling grammar. Topics, adverbs, negation and
-    polite forms remain in their existing finite-clause realization.
+    belong to the existing feeling grammar. Topics, adverbs and negation
+    remain in their existing finite-clause realization; only the explicitly
+    reversible bare polite copula and adjective forms below are inflected.
     """
     if re.search(r"[「」『』…‥?？!！。．.\r\n]", fragment):
         return None
     if fragment.endswith("と思った") and len(fragment) > len("と思った"):
         return "BELIEF", fragment[:-4] + "という思い"
+
+    # A bare feeling noun with a polite copula uses the same reversible
+    # answer nominal as adjective feelings. The answer's admitted time owns
+    # the prefix; a present copula must not add an invented duration.
+    for ending, grammar in (("でした", "COPULAR_PAST_POLITE"),
+                            ("です", "COPULAR_PRESENT_POLITE")):
+        if fragment.endswith(ending):
+            stem = fragment[:-len(ending)]
+            if _FEELING_RE.fullmatch(stem) and not stem.endswith("い"):
+                return grammar, stem
+            if ending == "です" and stem.endswith("い"):
+                adjective_stem = stem[:-1]
+                if (_FEELING_RE.fullmatch(adjective_stem) or _FEELING_RE.fullmatch(stem)
+                    or adjective_stem.endswith("し") and _FEELING_RE.fullmatch(adjective_stem[:-1])):
+                    return "ADJECTIVE_PRESENT_POLITE", adjective_stem + "さ"
 
     def adjective(text: str) -> str | None:
         if not text.endswith("かった"):
@@ -2642,7 +2658,7 @@ def _thread_answer_nominal_morphology(fragment: str) -> tuple[str, str] | None:
 
 def _thread_answer_timed_nominal(nominal: str, grammar: str, when: str) -> str:
     prefix = _THREAD_ANSWER_TIME_NOMINAL_PREFIX[when]
-    if grammar == "PAST_FEELING":
+    if grammar in {"PAST_FEELING", "COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE", "ADJECTIVE_PRESENT_POLITE"}:
         return prefix + nominal
     # Time modifies the final subjective noun, not a noun embedded in
     # the proposition (e.g. the result which the answer mentions).
@@ -2657,7 +2673,7 @@ def restore_thread_answer_nominal(nominal: str, grammar: str, when: str | None =
         prefix = _THREAD_ANSWER_TIME_NOMINAL_PREFIX.get(when)
         if prefix is None:
             return None
-        if grammar == "PAST_FEELING":
+        if grammar in {"PAST_FEELING", "COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE", "ADJECTIVE_PRESENT_POLITE"}:
             if not nominal.startswith(prefix):
                 return None
             nominal = nominal[len(prefix):]
@@ -2668,6 +2684,10 @@ def restore_thread_answer_nominal(nominal: str, grammar: str, when: str | None =
             nominal = "という".join(parts)
     if grammar == "BELIEF" and nominal.endswith("という思い"):
         source = nominal[:-5] + "と思った"
+    elif grammar in {"COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE"}:
+        source = nominal + ("です" if grammar == "COPULAR_PRESENT_POLITE" else "でした")
+    elif grammar == "ADJECTIVE_PRESENT_POLITE" and nominal.endswith("さ"):
+        source = nominal[:-1] + "いです"
     elif grammar == "PAST_FEELING" and nominal.endswith("さ"):
         source = nominal[:-1] + "かった"
     elif grammar in {"PERCEIVED_0", "PERCEIVED_1"} and nominal.endswith("さ"):
@@ -2699,7 +2719,7 @@ def source_grounded_thread_answer_nominal(
     codes = set(nucleus.semantic_frame.attribute_codes)
     times = {c.split(":", 1)[1] for c in codes if c.startswith("thread_time:")}
     if (nucleus.kind != "reaction" or nucleus.semantic_frame.predicate_kind != "feeling"
-        or nucleus.semantic_frame.modality != "feeling" or nucleus.semantic_frame.polarity != "negative"
+        or nucleus.semantic_frame.modality != "feeling" or nucleus.semantic_frame.polarity not in {"negative", "positive"}
         or nucleus.allowed_claim_scope != "explicit_supplemental_answer"
         or nucleus.source_fields != ("answer_text_private",)
         or resolver.source_fields_for(nucleus.source_span_ids) != ("answer_text_private",)
@@ -2708,11 +2728,24 @@ def source_grounded_thread_answer_nominal(
         return None
     when = next(iter(times))
     fragment = _source_grounded_clause_candidate(nucleus, resolver)
-    finite = _source_grounded_current_expression_nominal(move, plan, nucleus_index, resolver)
-    old_prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で", "prior_answer_time": "先の回答時点で"}[when]
-    if finite != old_prefix + fragment + "こと":
-        return None
     row = _thread_answer_nominal_morphology(fragment)
+    if nucleus.semantic_frame.polarity == "positive":
+        # A separately corrected positive feeling owns its own time. Bind the
+        # same reversible polite grammar, never the current question's event.
+        if (move.reception_act != "recognize_lived_change" or row is None
+            or row[0] not in {"ADJECTIVE_PRESENT_POLITE", "COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE"}
+            or "thread_subject:independent_source_replacement" not in codes
+            or nucleus.semantic_frame.actor != "current_user"
+            or nucleus.retention != "required" or nucleus.grounding_kind != "explicit"
+            or len(nucleus.source_span_ids) != 1
+            or any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+            or _typed_reception_source_fragment(nucleus, resolver.resolve(nucleus.source_span_ids[0]).raw_text) != fragment):
+            return None
+    else:
+        finite = _source_grounded_current_expression_nominal(move, plan, nucleus_index, resolver)
+        old_prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で", "prior_answer_time": "先の回答時点で"}[when]
+        if finite != old_prefix + fragment + "こと":
+            return None
     if row is None or restore_thread_answer_nominal(row[1], row[0]) != fragment:
         return None
     return nucleus.nucleus_id, fragment, row[0], when, _thread_answer_timed_nominal(row[1], row[0], when)
@@ -3541,6 +3574,10 @@ def resolve_grounded_reception_move_referent(
             final_source_fidelity=final_source_fidelity,
         )
     if final_source_fidelity and effective_reference != "anaphoric_first":
+        if referent.kind == "positive_feeling":
+            answer = source_grounded_thread_answer_nominal(move, plan, nucleus_index, resolver)
+            if answer is not None:
+                return replace(referent, text=answer[-1] + "という気持ち")
         if referent.kind == "current_expression":
             nominal = source_grounded_current_expression_nominal(move, plan, nucleus_index, resolver)
             if nominal:
@@ -5566,14 +5603,14 @@ def _source_grounded_nominalization_shape_valid(
         return True
     if (2 <= len(plan) <= 4 and plan[:1] == _SOURCE_GROUNDED_NOMINALIZATION_BASE
         and all(re.fullmatch(
-            rf"thread-received-slot:{slot}:(?:[0-8]:(?:noni|kedo|keredo|keredomo)|none:none):(?:none|[0-8]:(?:BELIEF|PAST_FEELING|PERCEIVED_0|PERCEIVED_1|FINITE):(?:original_occasion|answer_time|prior_answer_time))", code)
+            rf"thread-received-slot:{slot}:(?:[0-8]:(?:noni|kedo|keredo|keredomo)|none:none):(?:none|[0-8]:(?:BELIEF|PAST_FEELING|PERCEIVED_0|PERCEIVED_1|COPULAR_PRESENT_POLITE|COPULAR_PAST_POLITE|ADJECTIVE_PRESENT_POLITE|FINITE):(?:original_occasion|answer_time|prior_answer_time))", code)
             for slot, code in enumerate(plan[1:]))
         and semantic_count == len(plan) - 1 + sum(c.split(":")[2] != "none" for c in plan[1:]) + sum(not c.endswith(":none") for c in plan[1:])):
         return True
     if (3 <= len(plan) <= 4 and plan[:1] == _SOURCE_GROUNDED_NOMINALIZATION_BASE
         and len(set(plan)) == len(plan)
         and all(code in {f"answer-slot:{slot}:{grammar}:{when}"
-                         for grammar in ("BELIEF", "PAST_FEELING", "PERCEIVED_0", "PERCEIVED_1", "FINITE")
+                         for grammar in ("BELIEF", "PAST_FEELING", "PERCEIVED_0", "PERCEIVED_1", "COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE", "ADJECTIVE_PRESENT_POLITE", "FINITE")
                          for when in _THREAD_ANSWER_TIME_NOMINAL_PREFIX}
                 for slot, code in enumerate(plan[1:]))
         and 2 * (len(plan) - 1) == semantic_count):
@@ -5594,7 +5631,7 @@ def _source_grounded_nominalization_shape_valid(
         or len(plan) == 2 and plan[:1] == _SOURCE_GROUNDED_NOMINALIZATION_BASE
         and plan[1] in {f"answer-slot:{slot}:{grammar}:{when}"
                        for slot in range(semantic_count)
-                       for grammar in ("BELIEF", "PAST_FEELING", "PERCEIVED_0", "PERCEIVED_1")
+                       for grammar in ("BELIEF", "PAST_FEELING", "PERCEIVED_0", "PERCEIVED_1", "COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE", "ADJECTIVE_PRESENT_POLITE")
                        for when in _THREAD_ANSWER_TIME_NOMINAL_PREFIX}
     )
 
@@ -7145,7 +7182,11 @@ def _validate_source_grounded_move_ir(
                 or profile.nucleus_kind != "reaction" or profile.predicate_kind != "feeling"
                 or profile.actor_kind != "SELF" or profile.modality != "feeling"
                 or profile.quoted_boundary or profile.performed_action or profile.future_action
-                or move.polarity != "negative" or move.aspect not in {"unknown", "not_applicable"}
+                or (move.polarity != "negative" and not (move.polarity == "positive"
+                    and len(answer_grammar) == move.target_slot_count == 1
+                    and grammar in {"ADJECTIVE_PRESENT_POLITE", "COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE"}
+                    and not move.relations))
+                or move.aspect not in {"unknown", "not_applicable"}
                 or not finite and (row is None or row[0] != grammar)
                 or finite and (row is not None or not _SOURCE_GROUNDED_FINITE_END_RE.search(move.semantic_fragments[slot]))
                 or move.time_scope != ("past" if when == "original_occasion" else "present")):
@@ -8280,6 +8321,7 @@ def _source_grounded_temporal_aspect_realization(
             row = _thread_answer_nominal_morphology(fragment)
             if (fragment == semantic_head and row is not None and row[0] == grammar
                 and target_referent == _thread_answer_timed_nominal(row[1], row[0], when)
+                    + ("という気持ち" if realization.polarity == "positive" else "")
                 and realization.aspect in {"unknown", "not_applicable"}):
                 return "TARGET_REFERENT", "SOURCE_CLAUSE", "", ""
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
@@ -8616,7 +8658,18 @@ def _source_grounded_target_np(
                 and referent_text == f"{meaning_fragment}こと"
             )
         )
-        if not (action_nominal or wish_nominal or expression_nominal) and referent_text.startswith(("その", "それらの")):
+        positive_answer_nominal = bool(
+            referent_kind == "positive_feeling" and move.reception_act == "recognize_lived_change"
+            and realization.polarity == "positive" and profile.actor_kind == "SELF"
+            and profile.nucleus_kind == "reaction" and profile.predicate_kind == "feeling"
+            and profile.modality == "feeling" and not profile.quoted_boundary
+            and not profile.performed_action and not profile.future_action
+            and thread_answer_about_time in _THREAD_ANSWER_TIME_NOMINAL_PREFIX
+            and any(code == f"answer-slot:0:{row[0]}:{thread_answer_about_time}"
+                    and referent_text == _thread_answer_timed_nominal(row[1], row[0], thread_answer_about_time) + "という気持ち"
+                    for row in (_thread_answer_nominal_morphology(meaning_fragment),) if row is not None
+                    for code in realization.nominalization_plan))
+        if not (action_nominal or wish_nominal or expression_nominal or positive_answer_nominal) and referent_text.startswith(("その", "それらの")):
             raise GroundedHumanReceptionSurfaceError(
                 "REALIZABLE_RECEPTION_EXPRESSION_REFERENCE_GAP"
             )
@@ -8635,7 +8688,7 @@ def _source_grounded_target_np(
                 predicate_kind=realization.predicate_kind,
             )
         )
-        if action_nominal or wish_nominal or expression_nominal:
+        if action_nominal or wish_nominal or expression_nominal or positive_answer_nominal:
             content_target = referent_text
         elif referent_kind in {"current_expression", "grounded_effort"}:
             content_target = f"{meaning_fragment}という{quantity_modifier}{referent_text}"

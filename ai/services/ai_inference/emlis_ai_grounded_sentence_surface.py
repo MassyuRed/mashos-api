@@ -196,7 +196,7 @@ _BODY_RECEPTION_GRAMMAR_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] 
     ("negative_carrier_nominal", re.compile(r"なさ")),
     # No feeling semantics: inverse binds this suffix to a complete,
     # source-proven supplemental-answer noun and reverses its grammar.
-    ("thread_answer_nominal", re.compile(r"という、(?:その時の|回答した時点の|先の回答時点の)思い|さ")),
+    ("thread_answer_nominal", re.compile(r"という、(?:その時の|回答した時点の|先の回答時点の)思い|さ|(?:その時の|回答した時点の|先の回答時点の)[^。．.!！?？、,「」『』\r\n]+?(?=を|に)")),
     # A finite adnominal plus its object head; source identity is proved only
     # by the inverse matcher, never by the lexical content of this witness.
     ("adnominal_subject", re.compile(r"(?:ている|でいる|気になる)[^、,。\s]+?(?=を)")),
@@ -2127,10 +2127,11 @@ def _build_regular_lines(
             max_groups=max_observation_groups,
         )
         groups = _merge_parallel_contrast_groups(groups, relation_candidates, nucleus_index, relation_index)
-        from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups, _source_explicit_original_feeling, _source_current_cognition, _source_self_appraisal
+        from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups, _source_explicit_original_feeling, _source_current_cognition, _source_self_appraisal, source_proven_performed_action_status
         if (FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in plan.source_contracts
             and any(_source_explicit_original_feeling(n) or _source_current_cognition(n) or _source_self_appraisal(n)
                     or "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes
+                    or (n.source_fields == ("memo_action",) and source_proven_performed_action_status(n))
                     for n in plan.nuclei)
             and _thread_retained_reaction_groups(plan.nuclei, plan.relations)):
             # Merge the already-proven parallel original contrasts before

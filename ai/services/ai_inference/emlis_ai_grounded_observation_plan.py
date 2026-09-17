@@ -6701,10 +6701,10 @@ def _source_self_appraisal_parts(fragment: str):
     # hide in the relative description. A degree modifier and object are
     # retained verbatim, never projected as a separate performed action.
     relative = r"(?P<description>[^はが、,。．.!！?？\s]*?(?:ない|なかった|る|た))?"
-    judgment = r"(?P<appraisal>情けな|ふがいな|不甲斐な|頼りな|恥ずかし)"
+    judgment = r"(?P<appraisal>情けな|ふがいな|不甲斐な|頼りな|恥ずかし|もどかし)"
     ending = r"(?P<ending>い|かった)(?:です)?"
     match = re.fullmatch(prefix + relative + r"(?P<self>" + self_noun + r")(?:が|は|も)"
-                         + r"(?:少し|ちょっと|とても|すごく|本当に|ほんとうに)?"
+                         + r"(?:少し(?:だけ)?|ちょっと|とても|すごく|本当に|ほんとうに)?"
                          + judgment + ending, fragment)
     if match is None:
         return None
@@ -7405,10 +7405,11 @@ def _thread_retained_reaction_groups(nuclei, relations):
             and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes))
         and not any(r.retention == "required" and n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
                     for r in relations))
-    # An independent action is its own source duty. Withdrawing another
-    # independent statement cannot make the surviving contrasts disappear.
-    actions = tuple(n for n in original_text
-        if n.source_fields == ("memo_action",) and n.retention == "required"
+    # A separately proved action is not conditional on another independent
+    # feeling still being active. Correcting that feeling must not suppress
+    # either this action or the untouched event/reaction pairs.
+    actions = tuple(n for n in original_text if n.nucleus_id not in pair_ids
+        and n.source_fields == ("memo_action",) and n.retention == "required"
         and n.grounding_kind == "explicit" and n.semantic_frame.actor == "current_user"
         and source_proven_performed_action_status(n)
         and not any(r.retention == "required" and n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
@@ -7433,6 +7434,7 @@ def _thread_retained_reaction_groups(nuclei, relations):
     positive = []
     negative = []
     detached_answers = []
+    independent_answers = []
     for n in answers:
         frame = n.semantic_frame
         current_unknown = (not withdrawal and len(events) == len(answers) == 1
@@ -7442,15 +7444,17 @@ def _thread_retained_reaction_groups(nuclei, relations):
         times = {c for c in frame.attribute_codes if c.startswith("thread_time:")}
         detached = bool("thread_subject:withdrawn_source_event" in frame.attribute_codes
                         and not any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations))
+        independent_answer = bool("thread_subject:independent_source_replacement" in frame.attribute_codes
+            and not any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations))
         if (n.allowed_claim_scope != "explicit_supplemental_answer"
             or n.retention != "required" or n.grounding_kind != "explicit"
             or frame.actor != "current_user"
             or not current_unknown and (n.kind != "reaction"
                 or frame.predicate_kind != "feeling" or frame.modality != "feeling")
-            or not detached and "thread_subject:unique_source_clause" not in frame.attribute_codes
+            or not (detached or independent_answer) and "thread_subject:unique_source_clause" not in frame.attribute_codes
             or len(times) != 1 or not times <= {"thread_time:original_occasion",
                 "thread_time:answer_time", "thread_time:prior_answer_time"}
-            or not detached and (len(about) != 1 or about[0].from_nucleus_id not in events
+            or not (detached or independent_answer) and (len(about) != 1 or about[0].from_nucleus_id not in events
                                  or about[0].from_nucleus_id in by_event)):
             return unsupported()
         families = _reception_opportunity_families_for_nucleus(
@@ -7463,6 +7467,8 @@ def _thread_retained_reaction_groups(nuclei, relations):
             return unsupported()
         if detached:
             detached_answers.append(n)
+        elif independent_answer:
+            independent_answers.append(n)
         else:
             by_event[about[0].from_nucleus_id] = n
     # An ADD does not supersede the original reaction, regardless of the
@@ -7487,20 +7493,21 @@ def _thread_retained_reaction_groups(nuclei, relations):
     groups = [("current_burden", tuple(targets), tuple(supports))] if targets else []
     groups.extend(("current_burden", (n.nucleus_id,), ()) for n in detached_originals)
     groups.extend(("current_burden", (n.nucleus_id,), ()) for n in detached_answers if n in negative)
+    groups.extend(("current_burden", (n.nucleus_id,), ()) for n in independent_answers if n in negative)
     groups.extend(("lived_change", (n.nucleus_id,), ()) for n in positive)
     # An answer changes its own occasion. Separately stated original
     # feelings and actions remain independent duties in the same plan.
     groups.extend(("lived_change" if is_grounded_positive_feeling(n) else "current_burden",
                    (n.nucleus_id,), ()) for n in independent)
     groups.extend(("concrete_effort", (n.nucleus_id,), ()) for n in actions)
-    if (independent or actions) and len(groups) > 3:
+    if (independent or actions or independent_answers) and len(groups) > 3:
         raise GroundedObservationPlanError("human_reception_opportunity_missing")
     if withdrawal and len(groups) > 3:
         # Keep the accepted checkpoint; no representative may silently
         # discard an independent duty to fit the existing three-Move budget.
         raise GroundedObservationPlanError("human_reception_withdrawal_capacity_gap")
     subject_order = ({n.nucleus_id: _span_number(n.source_span_ids[0]) for n in nuclei}
-                     if withdrawal or independent or actions else {nid: i for i, nid in enumerate(events)})
+                     if withdrawal or independent or actions or independent_answers else {nid: i for i, nid in enumerate(events)})
     target_events = {n.nucleus_id: e for e, n in by_event.items()}
     return tuple(sorted(groups, key=lambda row: min(
         subject_order[target_events.get(nid, nid)] for nid in row[1])))
@@ -7691,10 +7698,7 @@ def build_grounded_reception_opportunities(
         and material_quality in {"grounded", "limited_grounding"}
     ) else ()
     retained_reaction_groups = _thread_retained_reaction_groups(owned_nuclei, relations) if (
-        final_source_fidelity and (include_relation_support or any(
-                _source_finite_original_feeling(n) or _source_explicit_original_feeling(n) or _source_current_cognition(n) or _source_self_appraisal(n) or (is_grounded_positive_feeling(n)
-                and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes)
-                for n in owned_nuclei))
+        final_source_fidelity
         and safety_kind == TRIAGE_SAFE_OBSERVATION
         and material_quality in {"grounded", "limited_grounding"}
     ) else ()
@@ -8581,10 +8585,7 @@ def build_grounded_human_reception_plan(
         semantic_complexity=semantic_complexity,
         final_source_fidelity=final_source_fidelity,
         retained_reaction_groups=(_thread_retained_reaction_groups(available_nuclei, relations) if (
-            final_source_fidelity and (include_relation_support or any(
-                _source_finite_original_feeling(n) or _source_explicit_original_feeling(n) or _source_current_cognition(n) or _source_self_appraisal(n) or (is_grounded_positive_feeling(n)
-                and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes)
-                for n in available_nuclei))
+            final_source_fidelity
             and safety_kind == TRIAGE_SAFE_OBSERVATION
             and material_quality in {"grounded", "limited_grounding"}
         ) else ()),

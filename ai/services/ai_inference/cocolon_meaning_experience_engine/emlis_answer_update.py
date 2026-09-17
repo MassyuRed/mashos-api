@@ -195,6 +195,35 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
         for target in subject_targets(item) if target in index
         for changed in item.changed_claim_refs if changed in index)
     relations = (*relations, *about_relations)
+    # An explicit correction of independent source material supplies its
+    # own replacement duty. It does not borrow the pending question's event.
+    # Certify the admitted revision before selection, and preserve that
+    # provenance when the replacement itself is revised in a later round.
+    replacement_proof = "thread_subject:independent_source_replacement"
+    independent_targets = {n.nucleus_id for n in original.nuclei
+        if n.retention == "required" and n.grounding_kind == "explicit"
+        and n.semantic_frame.actor == "current_user"
+        and ((n.source_fields in {("memo",), ("memo_action",)}
+              and n.allowed_claim_scope == "explicit_current_input"
+              and gp._is_independent_source_material(n, safety_kind=TRIAGE_SAFE_OBSERVATION))
+             or (n.source_fields == (ANSWER_FIELD,)
+                 and n.allowed_claim_scope == "explicit_supplemental_answer"
+                 and replacement_proof in n.semantic_frame.attribute_codes))
+        and not any(r.retention == "required"
+                    and n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
+                    for r in original.relations)}
+    independent_replacements = {changed for item in updates
+        if item.operation == "REVISE" and item.binding_kind == "EXPLICIT_CORRECTION"
+        and len(item.target_meaning_refs) == 1
+        and set(item.target_meaning_refs) <= independent_targets
+        and set(item.target_meaning_refs) <= set(item.superseded_claim_refs)
+        for changed in item.changed_claim_refs
+        if changed in index and not any(changed in (r.from_nucleus_id, r.to_nucleus_id)
+                                       for r in relations)}
+    nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+        attribute_codes=tuple(dict.fromkeys((*n.semantic_frame.attribute_codes,
+            replacement_proof))))) if n.nucleus_id in independent_replacements else n
+        for n in nuclei)
     # Bind distinguishable original source clauses before body-free reception
     # selection. Different evidence IDs alone cannot distinguish repeated text.
     answer_subjects = {}

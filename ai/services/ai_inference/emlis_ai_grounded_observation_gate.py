@@ -2004,7 +2004,7 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
                 for when, temporal in (("original_occasion", "その時に"), ("answer_time", "回答した時点で"),
                                        ("prior_answer_time", "先の回答時点で")):
                     if prefix.endswith("への"):
-                        for grammar in ("BELIEF", "PAST_FEELING", "PERCEIVED_0", "PERCEIVED_1"):
+                        for grammar in ("BELIEF", "PAST_FEELING", "PERCEIVED_0", "PERCEIVED_1", "COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE", "ADJECTIVE_PRESENT_POLITE"):
                             value = restore_thread_answer_nominal(nominal, grammar, when)
                             if value is not None:
                                 interpretations.add((value, when))
@@ -2257,7 +2257,7 @@ def _body_inverse_thread_answer_group(body, witness, sentence, move, plan, resol
             interpretations = set()
             for when, prefix in (("original_occasion", "その時に"), ("answer_time", "回答した時点で"),
                                  ("prior_answer_time", "先の回答時点で")):
-                for grammar in ("BELIEF", "PAST_FEELING", "PERCEIVED_0", "PERCEIVED_1"):
+                for grammar in ("BELIEF", "PAST_FEELING", "PERCEIVED_0", "PERCEIVED_1", "COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE", "ADJECTIVE_PRESENT_POLITE"):
                     source = restore_thread_answer_nominal(nominal, grammar, when)
                     if source is not None and sep == "ことへの":
                         interpretations.add((event, source, when))
@@ -2993,10 +2993,18 @@ def evaluate_grounded_surface_body_inverse(
                                 phrase = (prefixes[next(iter(times))]+source+"という気持ち").encode() if (
                                     len(times) == 1 and times <= prefixes.keys() and source
                                     and answer.allowed_claim_scope == "explicit_supplemental_answer") else b""
+                                nominal_answer = source_grounded_thread_answer_nominal(move, plan, nucleus_index, resolver)
+                                if nominal_answer is not None:
+                                    _, original, grammar, when, nominal = nominal_answer
+                                    if original != source or restore_thread_answer_nominal(nominal, grammar, when) != source:
+                                        phrase = b""
+                                    else:
+                                        phrase = (nominal + "という気持ち").encode()
                                 raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end]
                                 start = parsed_sentence.utf8_byte_start + raw.find(phrase)
                                 end = start + len(phrase)
                                 if (not phrase or raw.count(phrase) != 1
+                                    or nominal_answer is not None and not raw.startswith(phrase)
                                     or any(q.section == "reception" and q.utf8_byte_start < end
                                            and start < q.utf8_byte_end for q in witness.quotes)
                                     or any(m.section == "reception" and m.marker_code == "secondary_quote_boundary"
