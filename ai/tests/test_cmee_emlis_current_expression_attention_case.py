@@ -90,11 +90,27 @@ def test_independent_inverse_requires_whole_object_and_affirmative_duties(monkey
 
 @pytest.mark.parametrize('premium', [False, True])
 @pytest.mark.parametrize('memo', SOURCES)
-def test_initial_thread_preserves_input_limits_and_same_full_body(premium, memo):
+def test_initial_thread_keeps_existing_availability_and_input_limits(premium, memo):
     request = (begin if premium else initial)(memo, ACTION)
     original = request.current_input_bundle
     result = MeaningExperienceEngine().generate(request)
-    assert result.artifact, result.reason_codes
     assert request.current_input_bundle == original
     assert request.emlis_thread.question_control_context.question_limit == (3 if premium else 1)
-    assert result.artifact.reception == artifacts(memo)[2].text.split('Emlisから：', 1)[1].strip()
+    if premium and memo == 'たぶん疲れている。':
+        # This public fixture is already unsupported by the unchanged Q3
+        # limited-composition route. Do not turn a direct diagnostic body
+        # into a claim that it was or is deliverable by Premium.
+        assert result.artifact is None
+        assert result.reason_codes == ('emlis_q3_initial_body_unavailable',)
+    else:
+        assert result.artifact, result.reason_codes
+        assert result.artifact.reception == artifacts(memo)[2].text.split('Emlisから：', 1)[1].strip()
+
+
+def test_polite_past_feeling_preserves_existing_typed_time_outside_whole_object():
+    request = begin('頼まれたのに、寂しかった。', '怖かったです。')
+    result = MeaningExperienceEngine().generate(request)
+    assert result.artifact, result.reason_codes
+    assert ('これまで、怖かったですという言葉を見過ごさず、小さくせずに受け止めています。'
+            in result.artifact.reception)
+    assert '頼まれたのに寂しかったこと' in result.artifact.reception

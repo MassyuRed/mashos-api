@@ -3573,14 +3573,25 @@ def evaluate_grounded_surface_body_inverse(
                                 and len(object_ids) == 1
                                 and expected_referent is not None
                                 and expected_referent.kind == "current_expression"
+                                and expected_referent.text.endswith("という言葉")
                                 and nucleus_index[move.target_nucleus_ids[0]].semantic_frame.actor == "current_user"):
                                 # Read the whole independently resolved source
                                 # object and the affirmative attention/reception
                                 # clause. Source-internal markers, an inserted
                                 # actor/time, or a negated act cannot discharge it.
                                 raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
+                                # Preserve the existing typed polite-past
+                                # adjunct outside the complete source object.
+                                # This correction does not change temporal
+                                # realization or permit arbitrary added time.
+                                frame = nucleus_index[move.target_nucleus_ids[0]].semantic_frame
+                                source_text = expected_referent.text[:-len("という言葉")]
+                                time_marker = {"past": "これまで", "completed": "すでに"}.get(frame.time_scope)
+                                prefix = (time_marker + "、" if time_marker
+                                    and source_text.endswith("かったです")
+                                    and time_marker not in source_text else "")
                                 relation_attention_valid = re.fullmatch(
-                                    re.escape(expected_referent.text)
+                                    re.escape(prefix + expected_referent.text)
                                     + r"(?:を見過ごさず、|に目が留まり、それを)"
                                     + r"小さくせずに受け止めています。", raw) is not None
                             if (appraisal is not None and appraisal.dimension == "MATERIAL_WEIGHT"

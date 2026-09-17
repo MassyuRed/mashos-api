@@ -9359,7 +9359,9 @@ def _source_grounded_response_predicate_surface(
         voice=voice,
         selected_subjective_decision=selected_subjective_decision,
         distributive_object=distributive_object,
-        single_target_object=single_target_object,
+        single_target_object=(single_target_object and (
+            referent_kind != "current_expression" or object_core.endswith("という言葉")
+        )),
         completed_relation_kind=completed_relation_kind,
         integrate_attention_pair=recovery_stage == "full",
         unfinished_change=unfinished_change,
