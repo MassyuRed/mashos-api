@@ -3060,6 +3060,59 @@ def _thread_contrast_answer_groups(binding, nucleus_index, relation_index, resol
     return tuple(sentences), frozenset(consumed)
 
 
+def _shared_observation_change_relation(
+    binding: GroundedSentenceBinding,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    relation_index: Mapping[str, GroundedSemanticRelation],
+    resolver: EvidenceSpanResolver,
+) -> str | None:
+    """Reuse one explicitly named change, not its whole source clause.
+
+    The selected contrast first names the change and the remaining feeling.
+    Its immediately following action -> change relation can then refer to that
+    same change. This does not drop either endpoint, change the relation order,
+    or borrow an antecedent from another line, answer, or possible change.
+    """
+    if _hedge_prefix(binding) or len(binding.relation_ids) != 2:
+        return None
+    rows = tuple(relation_index.get(rid) for rid in binding.relation_ids)
+    contrast, support = rows
+    if (contrast is None or support is None
+        or (contrast.type, support.type) != ("contrast", "action_supports_change")
+        or contrast.from_nucleus_id != support.to_nucleus_id
+        or len({support.from_nucleus_id, support.to_nucleus_id, contrast.to_nucleus_id}) != 3
+        or any(r.grounding_kind != "user_stated_relation" for r in rows)):
+        return None
+    nuclei = tuple(nucleus_index.get(nid) for nid in
+        (support.from_nucleus_id, support.to_nucleus_id, contrast.to_nucleus_id))
+    if any(n is None for n in nuclei):
+        return None
+    action, change, feeling = nuclei
+    if (not _final_action_is_performed(action)
+        or action.semantic_frame.time_scope != "past"
+        or change.kind != "change" or change.semantic_frame.time_scope != "past"
+        or change.semantic_frame.modality not in {"fact", "feeling"}
+        or feeling.kind not in {"reaction", "state"}
+        or _final_action_is_performed(feeling) or _final_action_is_future_intention(feeling)
+        or action.source_span_ids != change.source_span_ids
+        or any(n.grounding_kind != "explicit" or n.source_fields != ("memo",)
+            or len(n.source_span_ids) != 1 or n.semantic_frame.actor != "current_user"
+            or any(c.startswith("thread_time:") for c in n.semantic_frame.attribute_codes)
+            for n in nuclei)):
+        return None
+    quotes = tuple(_join_quotes(_quotes_for_nuclei((n.nucleus_id,), nucleus_index, resolver))
+                   for n in nuclei)
+    if (tuple(_final_stage1_typed_relation_endpoint(n.nucleus_id, nucleus_index, resolver)
+              for n in nuclei) != (quotes[0] + "という行動", quotes[1] + "という変化", quotes[2])
+        or any(not re.fullmatch(r"「[^「」]+」", value) for value in quotes)
+        or any(re.search(r"[「」『』“”‘’\"?？!！;；…‥\n]",
+                         str(resolver.resolve(n.source_span_ids[0]).raw_text or "")) for n in nuclei)
+        or any(a[1:-1] in b[1:-1] for i, a in enumerate(quotes)
+               for j, b in enumerate(quotes) if i != j)):
+        return None
+    return support.relation_id
+
+
 def _render_relation(
     binding: GroundedSentenceBinding,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
@@ -3078,6 +3131,10 @@ def _render_relation(
     groups, consumed = _thread_contrast_answer_groups(
         binding, nucleus_index, relation_index, resolver)
     grouped_by_relation = dict(groups)
+    shared_change_relation = (
+        _shared_observation_change_relation(binding, nucleus_index, relation_index, resolver)
+        if typed_semantic_duties and not groups and not consumed else None
+    )
     sentences: list[str] = []
     contrast_pairs = []
     evaluations = {}
@@ -3123,8 +3180,10 @@ def _render_relation(
             and nucleus_index[relation.from_nucleus_id].kind == "action"
             and nucleus_index[relation.to_nucleus_id].kind == "change"
         ):
-            # Final projection owns action -> change. Typed endpoints already
-            # carry each kind; preserve that direction without re-labelling.
+            # The immediately preceding contrast already named this exact
+            # change. Keep the action -> change direction without replaying it.
+            if relation_id == shared_change_relation:
+                right = "その変化"
             sentences.append(f"{left}から{right}へつながっています。")
         elif role == "provisional_evaluation_to_counterevidence":
             sentences.append(
@@ -3273,6 +3332,7 @@ def _final_stage1_relation_fragment(
     relation: GroundedSemanticRelation,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
+    *, shared_change_reference: bool = False,
 ) -> str:
     """Render typed relation endpoints once, in their owned direction."""
 
@@ -3305,6 +3365,8 @@ def _final_stage1_relation_fragment(
         )
         if not action or not change:
             return ""
+        if shared_change_reference:
+            return f"{action}という行動からその変化へのつながり"
         return f"{action}という行動から{change}という変化へのつながり"
     if relation.type == "preserves_despite":
         return f"{left}が{right}の中にも残る向き"
@@ -3475,6 +3537,9 @@ def _render_final_stage1_limited_scope(
         for relation_id in binding.relation_ids
         if relation_id in relation_index
     )
+    shared_change_relation = _shared_observation_change_relation(
+        binding, nucleus_index, relation_index, resolver,
+    )
     relation_fragments = tuple(
         fragment
         for fragment in (
@@ -3482,6 +3547,7 @@ def _render_final_stage1_limited_scope(
                 relation,
                 nucleus_index,
                 resolver,
+                shared_change_reference=relation.relation_id == shared_change_relation,
             )
             for relation in relation_rows
         )

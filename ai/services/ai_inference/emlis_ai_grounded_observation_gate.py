@@ -1772,6 +1772,78 @@ def _body_inverse_nucleus_source_values(
     return tuple(values)
 
 
+def _body_inverse_observation_change_reference(
+    body, witness, line, planned_line, plan, resolver,
+):
+    """Resolve an anaphoric change from adjacent observation bytes alone.
+
+    Neither the author, its eligibility helper, nor forward surface bindings
+    are consulted. A named, complete change and feeling must form the first
+    contrast; the next sentence owes the original action and that same change.
+    """
+    visible = _body_inverse_visible_text(body, line)
+    exterior = re.sub(r"「[^「」]*」|『[^『』]*』", "", visible)
+    if "その変化" not in exterior:
+        return frozenset(), ()
+    failure = ("body_inverse_observation_change_reference_unbound",)
+    binding = planned_line.binding
+    relations = {r.relation_id: r for r in plan.relations}
+    if len(binding.relation_ids) != 2 or "scope_hedge" in binding.functional_atom_ids:
+        return frozenset(), failure
+    contrast, support = (relations.get(rid) for rid in binding.relation_ids)
+    if (contrast is None or support is None
+        or contrast.type != "contrast" or support.type != "action_supports_change"
+        or contrast.from_nucleus_id != support.to_nucleus_id
+        or len({support.from_nucleus_id, support.to_nucleus_id, contrast.to_nucleus_id}) != 3
+        or any(r.grounding_kind != "user_stated_relation" for r in (contrast, support))):
+        return frozenset(), failure
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    nuclei = tuple(index.get(nid) for nid in
+        (support.from_nucleus_id, support.to_nucleus_id, contrast.to_nucleus_id))
+    if any(n is None for n in nuclei):
+        return frozenset(), failure
+    action, change, feeling = nuclei
+    if (not _body_inverse_action_is_performed(action)
+        or action.semantic_frame.time_scope != "past"
+        or change.kind != "change" or change.semantic_frame.time_scope != "past"
+        or change.semantic_frame.modality not in {"fact", "feeling"}
+        or feeling.kind not in {"reaction", "state"}
+        or _body_inverse_action_is_performed(feeling) or _body_inverse_action_is_future_intention(feeling)
+        or action.source_span_ids != change.source_span_ids
+        or any(n.grounding_kind != "explicit" or n.source_fields != ("memo",)
+            or len(n.source_span_ids) != 1 or n.semantic_frame.actor != "current_user"
+            or any(c.startswith("thread_time:") for c in n.semantic_frame.attribute_codes)
+            for n in nuclei)):
+        return frozenset(), failure
+    sources = tuple(_body_inverse_nucleus_source_values(n.nucleus_id, plan, resolver) for n in nuclei)
+    if (any(len(values) != 1 for values in sources)
+        or any(re.search(r"[「」『』“”‘’\"?？!！;；…‥\n]",
+                         str(resolver.resolve(n.source_span_ids[0]).raw_text or "")) for n in nuclei)):
+        return frozenset(), failure
+    action_source, change_source, feeling_source = (values[0] for values in sources)
+    if any(a in b for i, (a,) in enumerate(sources) for j, (b,) in enumerate(sources) if i != j):
+        return frozenset(), failure
+    sentences = tuple(row for row in witness.sentences if row.section == "observation"
+        and row.section_line_ordinal == line.section_ordinal)
+    if len(sentences) < 2:
+        return frozenset(), failure
+    first, second = (_body_inverse_visible_text(body, row) for row in sentences[:2])
+    if planned_line.surface_function == "render_limited_scope":
+        before = re.fullmatch(r"今の入力では、「([^「」]+)」という変化と「([^「」]+)」"
+                              r"の異なる向きが確認できます。", first)
+        after = re.fullmatch(r"また、「([^「」]+)」という行動からその変化へのつながりも確認できます。", second)
+    else:
+        before = re.fullmatch(r"「([^「」]+)」という変化と「([^「」]+)」"
+                              r"が、異なる向きのまま同時にあります。", first)
+        after = re.fullmatch(r"「([^「」]+)」という行動からその変化へつながっています。", second)
+    if (not before or not after
+        or tuple(map(_body_inverse_normalized_anchor, before.groups())) != (change_source, feeling_source)
+        or _body_inverse_normalized_anchor(after.group(1)) != action_source
+        or exterior.count("その変化") != 1):
+        return frozenset(), failure
+    return frozenset((support.relation_id,)), ()
+
+
 def _body_inverse_preceding_change_context(
     body, previous_sentence, previous_clause, current_sentence,
     move, reception_plan, plan, resolver,
@@ -2610,6 +2682,12 @@ def evaluate_grounded_surface_body_inverse(
         if planned_line.binding.relation_ids and not parsed_line.relation_marker_codes:
             failures.append(f"body_inverse_required_relation_marker_missing:{index}")
         relation_index = {item.relation_id: item for item in plan.relations}
+        shared_change_relations = frozenset()
+        if final_stage1_plan:
+            shared_change_relations, reference_failures = _body_inverse_observation_change_reference(
+                body, witness, parsed_line, planned_line, plan, resolver,
+            )
+            failures.extend(reference_failures)
         grouped_answers = frozenset()
         if getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1":
             grouped_answers, group_failures = _body_inverse_thread_contrast_answers(
@@ -2665,6 +2743,7 @@ def evaluate_grounded_surface_body_inverse(
             if (
                 relation.type in DIRECTIONAL_GROUNDED_RELATION_TYPES
                 and relation_id not in grouped_answers
+                and relation_id not in shared_change_relations
                 and from_positions
                 and to_positions
                 and not any(
