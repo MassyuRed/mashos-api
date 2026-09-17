@@ -7401,6 +7401,24 @@ def _source_finite_original_feeling(nucleus):
     )
 
 
+
+def _source_independent_performed_action(nucleus, relations):
+    """An optional source-order link does not make the whole act implicit."""
+    return bool(
+        nucleus.source_fields == ("memo_action",) and nucleus.retention == "required"
+        and nucleus.semantic_frame.actor == "current_user"
+        and source_proven_performed_action_status(nucleus)
+        and len(nucleus.source_span_ids) == 1
+        and not any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:",
+                                  "semantic_dependency:")) for c in nucleus.semantic_frame.attribute_codes)
+        and ((nucleus.grounding_kind, nucleus.allowed_claim_scope) in {
+            ("explicit", "explicit_current_input"), ("user_stated_relation", "source_bounded_relation")})
+        and not any((r.retention == "required" or
+            (r.type != "uncertain_connection" and r.grounding_kind != "bounded_structural_inference"))
+            and nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations)
+    )
+
+
 def _thread_retained_reaction_groups(nuclei, relations):
     """Keep unanswered original reactions alongside the accepted answer duties.
 
@@ -7438,11 +7456,7 @@ def _thread_retained_reaction_groups(nuclei, relations):
     # feeling still being active. Correcting that feeling must not suppress
     # either this action or the untouched event/reaction pairs.
     actions = tuple(n for n in original_text if n.nucleus_id not in pair_ids
-        and n.source_fields == ("memo_action",) and n.retention == "required"
-        and n.grounding_kind == "explicit" and n.semantic_frame.actor == "current_user"
-        and source_proven_performed_action_status(n)
-        and not any(r.retention == "required" and n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
-                    for r in relations))
+        and _source_independent_performed_action(n, relations))
     independent_ids = {n.nucleus_id for n in (*independent, *actions)}
     pairs = _received_contrast_group_targets(
         tuple(n for n in originals if n.nucleus_id in pair_ids), original_relations, minimum=1)
@@ -9457,7 +9471,9 @@ def _build_response_and_policies(
         and selected_follow is not None
         and selected_follow.source_fields == ("memo_action",)
         and selected_follow.retention == "required"
-        and selected_follow.grounding_kind == "explicit"
+        and (selected_follow.grounding_kind == "explicit"
+             or (_source_self_appraisal(explicit_feelings[0])
+                 and _source_independent_performed_action(selected_follow, relations)))
         and selected_follow.semantic_frame.actor == "current_user"
         and (source_proven_performed_action_status(selected_follow)
              or source_proven_future_action_status(selected_follow))
@@ -13312,6 +13328,24 @@ def _bounded_past_nonaction_finite(text: str) -> bool:
     return False
 
 
+
+def _bounded_past_activity_finite(text: str) -> bool:
+    """Prove an unquoted, whole finite activity with its optional duration.
+
+    These activity nouns may omit an object. Do not treat arbitrary suru
+    nouns (a feeling, illness or result, for example) as self-performance.
+    Concessive/time prefixes are grammar only, never a causal relation.
+    """
+    value = re.sub(r"^(?:それでも|けれども?|でも|だけど)[、,\s]*", "", text)
+    value = re.sub(r"^(?:私|わたし|僕|ぼく|俺|おれ|自分)(?:は|が|も)[、,\s]*", "", value)
+    value = re.sub(r"^(?:今日|昨日|今朝|昨夜)(?:は|も)?[、,\s]*", "", value)
+    return bool(re.fullmatch(
+        r"(?:(?:[0-9０-９一二三四五六七八九十百]+(?:分|時間|秒))(?:間)?(?:だけ|ほど)?)?"
+        r"(?:練習|音読|読書|復習|予習|勉強|運動|体操|散歩|掃除)(?:した|しました)",
+        value,
+    ))
+
+
 def _final_stage1_align_action_status(
     nuclei: Sequence[GroundedSemanticNucleus],
     evidence_spans: Sequence[EvidenceSpan],
@@ -13770,6 +13804,25 @@ def _final_stage1_align_action_status(
             or re.search(r"(?:ない|なかった|ません|ませんでした|ずに|ぬ)$", text)
         ):
             aligned.append(nucleus)
+            continue
+        # The activity's own finite host, not an argument particle inside
+        # a connective or a time topic, proves this existing owner's act.
+        # Keep duration, concessive wording, evidence and ordinary past;
+        # past occurrence does not assert completion or improvement.
+        if (nucleus.source_fields == ("memo_action",) and span.source_field == "memo_action"
+            and frame.predicate_kind == "action" and frame.polarity == "neutral"
+            and not (markers or ranges or sources or legacy)
+            and not set(codes).intersection({"operator:negation", "operator:wish", "operator:uncertainty"})
+            and 0 <= span.start_index < span.end_index <= len(source)
+            and source[span.start_index:span.end_index] == span.raw_text
+            and not source[:span.start_index].strip()
+            and re.fullmatch(r"\s*[。．.]?\s*", source[span.end_index:])
+            and _bounded_past_activity_finite(text)):
+            attributes = tuple(c for c in codes if not c.startswith(("time_scope:", "modality:")))
+            aligned.append(replace(nucleus, semantic_frame=replace(
+                frame, modality="fact", time_scope="past",
+                attribute_codes=tuple(_dedupe((*attributes, "time_scope:past", "operator:performed_action"))),
+            )))
             continue
         # A past decision establishes the decision, not performance of its
         # embedded action. Keep this owner's existing intention; do not split

@@ -191,6 +191,7 @@ _BODY_RECEPTION_GRAMMAR_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] 
     ("finite_clause_nominal", re.compile(
         r"(?:ている|でいる|ない|た|だ|[いくぐすつぬぶむる])こと"
         r"|(?:たい|ほしい|欲しい)(?:気持ち|願い)(?:は|が)あるということ"
+        r"|しましたという実際の行動"
     )),
     # Structural only: this suffix does not prove feeling or burden.
     ("negative_carrier_nominal", re.compile(r"なさ")),

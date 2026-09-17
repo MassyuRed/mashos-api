@@ -40,6 +40,7 @@ from emlis_ai_grounded_observation_plan import (
     source_grounded_feeling_subject_parts,
     source_grounded_attention_subject_parts,
     _source_finite_without_postposed_focus,
+    _bounded_past_activity_finite,
 )
 
 
@@ -2269,6 +2270,11 @@ def source_grounded_performed_action_nominal(
     ):
         return ""
     clause = _source_grounded_clause_candidate(nucleus, resolver)
+    # Keep the polite finite source unchanged. The existing nominal form
+    # is now a whole source-bound object, not a generic action label whose
+    # internal time, duration or actor can escape independent inverse proof.
+    if clause.endswith("しました") and _bounded_past_activity_finite(clause):
+        return f"{clause}という実際の行動"
     if (
         not re.search(r"(?:た|だ|ている|でいる)$", clause)
         or re.search(r"(?:ました|でした)$", clause)
@@ -8673,7 +8679,14 @@ def _source_grounded_target_np(
             )
             and realization.target_slot_count == 1
             and realization.quantity in {"not_applicable", "source_bounded", "unknown"}
-            and referent_text == f"{meaning_fragment}こと"
+            and (
+                referent_text == f"{meaning_fragment}こと"
+                or referent_kind == "self_started_effort"
+                and profile.performed_action and not profile.future_action
+                and meaning_fragment.endswith("しました")
+                and _bounded_past_activity_finite(meaning_fragment)
+                and referent_text == f"{meaning_fragment}という実際の行動"
+            )
         )
         wish_nominal = bool(
             profile.actor_kind == "SELF" and not profile.quoted_boundary
