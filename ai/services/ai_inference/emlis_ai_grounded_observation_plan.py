@@ -6808,7 +6808,36 @@ def _source_current_cognition_parts(fragment):
     host = r"(?P<cognition>考えちゃう|考えてしまう|思ってしまう|考えている|思っている|考える|思う)"
     match = re.fullmatch(self_subject + now + background + possible + r"(?:と|って)" + host, fragment)
     if match is None:
-        return None
+        # A finite "ki ga suru" host reports the writer's present impression,
+        # not the truth, completion, or tense of its embedded proposition.
+        # Keep a separately bounded past concessive background inside that
+        # same source clause. These are grammatical slots, not input cases.
+        impression_background = (
+            r"(?P<background>(?:前|以前)(?:は|も)"
+            r"[^はが、,。．.!！?？\s]+?(?:けれど|けど)[、,])?"
+        )
+        impression_now = r"(?:(?:今|現在|今日)(?:は|も|なら)?[、,]?)?"
+        impression = r"(?P<possibility>[^はが、,。．.!！?？\s]+?(?:る|ない|た|い|だ|そうな|ような))"
+        impression_host = r"(?P<cognition>気がする|気がしている|気がします|気がしています)"
+        match = re.fullmatch(self_subject + impression_background + impression_now
+                             + impression + impression_host, fragment)
+        if match is None:
+            return None
+        # A topic/focus particle after another named participant cannot be
+        # borrowed as the writer's cognitive owner (including additive mo).
+        # Ambiguous bare nominal topics remain outside this bounded witness.
+        embedded_topic = re.match(
+            r"(?P<owner>[一-鿿々ァ-ヶーA-Za-z0-9]+|わたし|ぼく|おれ|あなた|あの人|その人)"
+            r"(?:は|が|も|" + _OWNER_FOCUS_PARTICLE_SOURCE + "|" + _OWNER_TOPIC_PARTICLE_SOURCE + ")",
+            match['possibility'],
+        )
+        if embedded_topic and embedded_topic['owner'] not in {'私', 'わたし', '自分', '僕', 'ぼく', '俺', 'おれ'}:
+            return None
+        if match['background'] and re.search(
+            r"によると|いわく|曰く|と言|と話|と語|って言|って話|って語|と思|って思|と考|って考|もし|仮に|なら",
+            match['background'],
+        ):
+            return None
     # The complement must be a possible proposition, not an attribution or
     # nested cognitive/reporting host whose subject could escape its scope.
     inner = match['possibility']
