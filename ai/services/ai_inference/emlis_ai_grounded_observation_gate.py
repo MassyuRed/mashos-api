@@ -1901,6 +1901,44 @@ def _body_inverse_adjacent_action_context(
         and current == "また、その行動を大切に思っています。")
 
 
+def _body_inverse_attributive_support_attention(raw, relation, move, plan, resolver):
+    """Read the actual support clause, not the author's candidate or replay.
+
+    Both ordered endpoints are resolved from their own source evidence. The
+    support remains progressive, while each source keeps its own time and
+    subjectivity. A causal, reversed, quoted or truncated substitute is not
+    this object's affirmative attention/reception.
+    """
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    if (relation.type != "action_supports_change"
+        or move.reception_act != "honor_concrete_effort"
+        or move.target_nucleus_ids != (relation.from_nucleus_id,)
+        or move.support_nucleus_ids != (relation.to_nucleus_id,)
+        or move.reference_mode == "anaphoric_first"):
+        return False
+    action, change = index[relation.from_nucleus_id], index[relation.to_nucleus_id]
+    if (action.kind != "action" or change.kind != "change"
+        or not _body_inverse_action_is_performed(action)
+        or action.semantic_frame.modality != "fact"
+        or change.semantic_frame.modality not in {"fact", "feeling"}
+        or any(n.semantic_frame.actor != "current_user" or n.grounding_kind != "explicit"
+               or len(n.source_span_ids) != 1 for n in (action, change))):
+        return False
+    fragments = []
+    for nucleus in (action, change):
+        source = str(resolver.resolve(nucleus.source_span_ids[0]).raw_text or "")
+        typed = _body_inverse_typed_source_fragment(nucleus, source)
+        if typed == "":
+            return False
+        fragment = (typed if typed is not None else source).strip(" \u3000、,。．.")
+        if not fragment or re.search(r'[「」『』“”‘’"?？!！。;；…‥]', fragment):
+            return False
+        fragments.append(fragment)
+    return re.fullmatch(
+        re.escape(fragments[0] + "ことが支えている、" + fragments[1] + "という変化")
+        + r"(?:を見過ごさず、|に目が留まり、それを)大切に思っています。", raw) is not None
+
+
 def _body_inverse_preceding_change_context(
     body, previous_sentence, previous_clause, current_sentence,
     move, reception_plan, plan, resolver,
@@ -1951,8 +1989,8 @@ def _body_inverse_preceding_change_context(
         if not fragment or re.search(r'[「」『』“”‘’"?？!！。;；…‥]', fragment):
             return False
         fragments.append(fragment)
-    expected = (fragments[0] + "ことが" + fragments[1]
-        + "ことを支えていることを見過ごさず、大切に思っています。")
+    expected = (fragments[0] + "ことが支えている、" + fragments[1]
+        + "という変化を見過ごさず、大切に思っています。")
     actual = body[previous_sentence.utf8_byte_start:previous_sentence.utf8_byte_end].decode("utf-8")
     return actual == expected
 
@@ -3807,6 +3845,9 @@ def evaluate_grounded_surface_body_inverse(
                                         r"[^。！？!?]+" + re.escape(nominal_end)
                                         + r"(?:を見過ごさず、|に目が留まり、それを)"
                                         + re.escape(act) + "。", raw) is not None
+                                    if relation_kind == "action_supports_change":
+                                        relation_attention_valid = relation_attention_valid or _body_inverse_attributive_support_attention(
+                                            raw, object_relations[0], move, plan, resolver)
                                     if relation_kind == "contrast" and "一方で、" in raw:
                                         prior_proven = bool(raw.startswith("その一方で、") and clause_index > 0
                                             and _body_inverse_preceding_change_context(

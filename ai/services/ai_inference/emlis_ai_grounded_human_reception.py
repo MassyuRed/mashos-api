@@ -7831,6 +7831,29 @@ def _source_grounded_argument_surface(
                     "REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP"
                 )
             relation_phrases.append(f"{first_nominal}と{second_nominal}の両方")
+        elif (relation.relation_kind == "action_supports_change"
+              and relation.endpoint_roles == ("ACTION", "CHANGE")
+              and (first.case_marker, second.case_marker) == ("が", "を")
+              and len(move.relations) == 1 and len(move.semantic_fragments) == 2
+              and first.semantic_slot == target_owner_slot
+              and move.reference_mode != "ANAPHORIC" and not direct_phrases
+              and first_nominal == move.semantic_fragments[first.semantic_slot] + "こと"
+              and second_nominal == move.semantic_fragments[second.semantic_slot] + "こと"
+              and move.semantic_profiles[first.semantic_slot].performed_action
+              and move.semantic_profiles[first.semantic_slot].modality == "fact"
+              and move.semantic_profiles[second.semantic_slot].nucleus_kind == "change"
+              and move.semantic_profiles[second.semantic_slot].modality in {"fact", "feeling"}
+              and all(p.actor_kind == "SELF" and not p.quoted_boundary and not p.future_action
+                      for p in move.semantic_profiles)):
+            # Keep ACTION -> CHANGE and the same progressive support predicate,
+            # but let it modify the complete change directly. Nominalizing each
+            # endpoint and then the entire relation produces a three-level
+            # chain. The finite CHANGE clause retains its own tense, polarity
+            # and any personally-felt qualification; none is reconstructed.
+            relation_phrases.append(
+                f"{first_nominal}が{finite}、"
+                f"{move.semantic_fragments[second.semantic_slot]}という変化"
+            )
         elif relation.relation_kind == "evaluation_about_event":
             relation_phrases.append(f"{first_nominal}について、{second_nominal}")
         elif (material_contrast_object
@@ -10229,9 +10252,9 @@ def _author_source_grounded_reception_clauses(
                     == nucleus_index[move.support_nucleus_ids[0]].source_span_ids
                 and all(p.actor_kind == "SELF" and not p.quoted_boundary and not p.future_action
                         for p in meaning_realization.semantic_profiles)
-                and move_sentence == (meaning_realization.semantic_fragments[0] + "ことが"
-                    + meaning_realization.semantic_fragments[1]
-                    + "ことを支えていることを見過ごさず、大切に思っています")):
+                and move_sentence == (meaning_realization.semantic_fragments[0]
+                    + "ことが支えている、" + meaning_realization.semantic_fragments[1]
+                    + "という変化を見過ごさず、大切に思っています")):
                 preceding_change_context = (move.support_nucleus_ids[0],
                                             meaning_realization.semantic_fragments[1])
             if (recovery_stage == "full" and len(realization.moves) == 2
