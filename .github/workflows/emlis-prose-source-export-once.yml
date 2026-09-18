@@ -1,0 +1,30 @@
+name: Export fixed Emlis source once
+on:
+  push:
+    branches: [agent/emlis-hypothesis-work-20260918]
+    paths: [.github/workflows/emlis-prose-source-export-once.yml]
+permissions:
+  contents: read
+jobs:
+  export:
+    if: github.repository == 'MassyuRed/mashos-api' && github.ref == 'refs/heads/agent/emlis-hypothesis-work-20260918'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 745873107166dd9ccb15e2e6f6fb82934b16ea01
+          persist-credentials: false
+      - name: Export public source and complete tracked path map only
+        run: |
+          mkdir -p /tmp/emlis-source
+          git rev-parse HEAD > /tmp/emlis-source/commit.txt
+          git ls-tree -r --full-tree HEAD > /tmp/emlis-source/tracked-files.txt
+          git archive --format=tar.gz HEAD ai scripts supabase ARCHITECTURE.md requirements.txt > /tmp/emlis-source/source.tar.gz
+          cd /tmp/emlis-source
+          sha256sum source.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emlis-public-source-7458731
+          path: /tmp/emlis-source/
+          retention-days: 3
