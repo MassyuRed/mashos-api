@@ -6,7 +6,10 @@ from dataclasses import replace
 import re
 
 from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
-from emlis_ai_grounded_observation_plan import build_final_stage1_grounded_observation_plan
+from emlis_ai_grounded_observation_plan import (
+    build_final_stage1_grounded_observation_plan,
+    _source_self_appraisal, _source_self_appraisal_parts,
+)
 from emlis_ai_safety_triage import TRIAGE_SAFE_OBSERVATION
 
 from .emlis_thread_contracts import EmlisClarificationV1, EmlisQuestionDecisionV1
@@ -33,6 +36,87 @@ def original_meaning_plan(thread: AdmittedEmlisThread):
     return build_final_stage1_grounded_observation_plan(
         source.normalized_current_input, evidence_spans=source.evidence_spans,
     )
+
+
+
+# The proposal lives in question control, never in an original/answer claim.
+# Its two premises are independently sourced; neither implies a hidden goal.
+_APPRAISAL_STANDARD = "PERSONAL_OUTCOME_STANDARD"
+_ZERO_OUTCOME = re.compile(r"(?:何も|何一つ|何ひとつ|一つも|ひとつも)(?:でき|出来)(?:なかった|ていない)")
+_MATERIAL_PREFIX = re.compile(
+    r"^(?:(?:今日|今|現在)(?:は|も)?[、,]?)?"
+    r"(?:(?:私|わたし|僕|ぼく|俺|おれ|自分)(?:は|も)[、,]?)?")
+
+
+def _appraisal_standard_candidate(thread, plan, *, parent_request_id, respect_control):
+    """Ask whether an outcome appraisal uses a personally intended standard.
+
+    A completed record beside a whole zero-outcome
+    appraisal supplies a possible distinction between doing and satisfaction.
+    No specific activity, motive, failure cause, or personality is inferred.
+    Other sources/extra claims and already supplied standards are not ignored.
+    """
+    text = tuple(n for n in plan.nuclei if set(n.source_fields) & {"memo", "memo_action"})
+    appraisals = tuple(n for n in text if _source_self_appraisal(n))
+    material_rows = tuple(n for n in text if n not in appraisals)
+    if len(appraisals) != 1 or len(material_rows) != 1:
+        return None
+    material_row = material_rows[0]
+    if (material_row.source_fields not in {("memo",), ("memo_action",)}
+        or material_row.retention != "required" or len(material_row.source_span_ids) != 1
+        or material_row.grounding_kind not in {"explicit", "user_stated_relation"}
+        or material_row.allowed_claim_scope not in {"explicit_current_input", "source_bounded_relation"}
+        or material_row.semantic_frame.actor != "current_user"
+        or set(material_row.source_span_ids) & set(appraisals[0].source_span_ids)
+        or any(r.retention == "required" for r in plan.relations
+               if {r.from_nucleus_id, r.to_nucleus_id} & {n.nucleus_id for n in text})):
+        return None
+    pair = (*appraisals, material_row)
+    resolver = thread.resolver()
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    appraisal, material = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
+                           for n in pair)
+    proof = _source_self_appraisal_parts(appraisal)
+    if (proof is None or len(proof[1]) != 1 or proof[1][0][0] != "appraisal"
+        or not _ZERO_OUTCOME.fullmatch(appraisal[slice(*proof[1][0][1:])])):
+        return None
+    finite = _MATERIAL_PREFIX.sub("", material, count=1)
+    # A retained word alone cannot prove a completed record. Check its
+    # whole finite form, rather than inferring an action from a field label.
+    # Copular/adjectival pasts are records of a state, not completed activity;
+    # an ambiguous bare -katta form stays outside this bounded candidate.
+    if (not re.fullmatch(r"[^はがも、,。．.!！?？\s「」『』]+(?:た|ました)(?:だけ(?:です)?)?", finite)
+        or re.search(r"ない|なかった|ません|たかった|たくな|かもしれ|らしい|なら|たら|もし|という|と言|と思|そうだ|予定|つもり", finite)
+        or re.search(r"(?:かった|だった|でした)(?:だけ(?:です)?)?$", finite)
+        or pair[1].semantic_frame.modality != "fact"
+        or re.search(r"昨日|以前|先週|去年|昨年|明日", appraisal + material)):
+        return None
+    # Require complete coverage of the original free-text fields, not just
+    # whichever claims an upstream finite grammar happened to retain.
+    selected_spans = {s for n in pair for s in n.source_span_ids}
+    text_spans = {s.span_id for s in thread.original.evidence_spans
+                  if s.source_field in {"memo", "memo_action"}}
+    if selected_spans != text_spans:
+        return None
+    control = thread.control.question_control_context
+    target = identity("emlis-target", thread.original.envelope.envelope_id,
+                      pair[0].nucleus_id, "personal_outcome_standard")
+    if ((respect_control or thread.control.capability_snapshot.startswith("Q3_"))
+        and target in control.asked_target_refs):
+        return None
+    evidence = tuple(resolver.qualified_ref(s).evidence.evidence_id
+                     for n in pair for s in n.source_span_ids)
+    affected = tuple(n.nucleus_id for n in pair)
+    decision = EmlisQuestionDecisionV1("ASK", target, _APPRAISAL_STANDARD, evidence,
+        "personal_outcome_standard", affected, affected,
+        control.asked_target_refs if respect_control else (),
+        "performed_material_and_zero_outcome_standard_unconfirmed")
+    question = EmlisClarificationV1(
+        identity("emlis-question", thread.control.thread_id, target), parent_request_id,
+        thread.control.thread_id, thread.original.envelope.envelope_id, decision,
+        f"「{appraisal}」は、やりたかったことには手が届かなかった、ということでしょうか。"
+        "違っていたら、その意味を教えてください。")
+    return decision, question
 
 
 def question_candidate(thread: AdmittedEmlisThread, plan, *, parent_request_id: str,
@@ -107,6 +191,10 @@ def question_candidate(thread: AdmittedEmlisThread, plan, *, parent_request_id: 
             f"「{event}」は、あなたにはどんな意味として届きましたか。",
         )
         return decision, question
+    appraisal = _appraisal_standard_candidate(thread, plan, parent_request_id=parent_request_id,
+                                              respect_control=respect_control)
+    if appraisal is not None:
+        return appraisal
     return EmlisQuestionDecisionV1("END", decision_reason="no_bound_personal_meaning_target"), None
 
 

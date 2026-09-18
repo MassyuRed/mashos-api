@@ -17,7 +17,7 @@ from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
 from emlis_ai_safety_triage import classify_emlis_safety_triage_text, TRIAGE_SAFE_OBSERVATION
 
 from .contracts import GenerationRequest
-from .emlis_question import original_meaning_plan, validate_question_binding
+from .emlis_question import original_meaning_plan, validate_question_binding, _APPRAISAL_STANDARD
 from .emlis_thread_contracts import (
     ANSWER_FIELD, SEMANTIC_SCHEMA, THREAD_SCHEMA, AnswerMeaningUpdateV1,
     AnswerTemporalBindingV1, EmlisAnswerUpdateItemV1, EmlisMeaningCheckpointV1,
@@ -38,6 +38,31 @@ _FOREIGN_HOST = re.compile(r"(?:と|って).{1,16}(?:は|が|も)(?:思|感じ|�
 _PERCEIVED_REACTION = re.compile(r"^.+(?:ようで|ように感じて|気がして|と思って)[、,](?:少し|とても|まだ)?(?:重|苦し|つら|辛|怖|悲し|寂し|嬉し|うれし|軽)(?:かった|くなかった)(?:です)?$")
 _SELF_CORRECTIVE_STATE = re.compile(r"^.+(?:のではなく|ではなく)[、,]?(?:私|自分)(?:では|は|も).+(?:していた|していなかった|できなかった)(?:です)?$")
 _OTHER_TIME = re.compile(r"^(?:昨日|一昨日|先週|去年|昨年|別の日|翌日|今日)(?:は|も|の)?")
+
+
+# A yes/no answer assesses the proposal; it does not create evidence for the
+# unspecified activity. Complete personal content is still separately parsed.
+_PROPOSAL_FEEDBACK = re.compile(r"^(?:はい|そうです|そうでした|その通りです|いいえ|違います|違いました|そうではありません|そういう意味ではありません)$")
+_PAST_DESIRE = re.compile(
+    r"(?:(?:私|わたし|僕|ぼく|俺|おれ|自分)(?:は|も))?"
+    r"(?P<content>[^はがも、,。．.!！?？\s「」『』]+?)たかった(?:です)?$")
+
+
+def _past_desire_source(text):
+    """Finite past desiderative, without assigning its complement as fact.
+
+    The kanji-plus-continuative inflection proof excludes bare -tai
+    adjectives (cold/heavy/sleepy), quotes, foreign subjects and conditions.
+    Kana-only ambiguous predicates remain unresolved rather than guessed.
+    """
+    match = _PAST_DESIRE.fullmatch(text)
+    if match is None:
+        return False
+    head = match["content"]
+    return bool((head in {"し", "やり", "なり"}
+                 or (re.search(r"[一-鿿々〆〇]", head)
+                     and re.search(r"[いきぎしじちぢにびぴみりえけげせぜてでねへべぺめれ]$", head)))
+                and not re.search(r"と(?:思|言|聞|感じ)|って|なら|たら|もし|かもしれ|らしい|そう", head))
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -73,7 +98,7 @@ def _dependent_refs(plan, targets: tuple[str, ...]) -> tuple[str, ...]:
                  if row.from_nucleus_id in targets or row.to_nucleus_id in targets)
 
 
-def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, source_end: int | None = None):
+def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, source_end: int | None = None, outcome_standard: bool = False):
     """Use the shared source grammar with a real answer field and no labels."""
     text = span.raw_text
     offset = source_start
@@ -90,7 +115,10 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
                                         normalized_input=local)
     # A finite self belief is retained as a belief, not its complement's
     # truth. The question only supplies the omitted response target.
-    if (any(pattern.fullmatch(bounded) for pattern in (_BELIEF, _PERCEIVED_REACTION, _SELF_CORRECTIVE_STATE))
+    if outcome_standard and _past_desire_source(bounded):
+        kind = "wish"
+        frame = replace(frame, predicate_kind="wish", modality="wish", polarity="positive")
+    elif (any(pattern.fullmatch(bounded) for pattern in (_BELIEF, _PERCEIVED_REACTION, _SELF_CORRECTIVE_STATE))
             and not _FOREIGN_HOST.search(bounded)):
         if (not _SELF_CORRECTIVE_STATE.fullmatch(bounded)
                 and re.match(r"^(?!(?:私は|私が|私も|自分は|自分が|自分も|次も))[^、,「」]{1,28}?(?:は|が|も)", bounded)):
@@ -332,6 +360,7 @@ def _prepare_answer(thread, original):
     index = {row.nucleus_id: row for row in original.nuclei}
     question = thread.control.question_control_context.pending_question
     focus = question.decision.affected_meaning_refs
+    outcome_standard = question.decision.target_kind == _APPRAISAL_STANDARD
     spans = tuple(resolver.resolve(sid) for sid in resolver.span_ids
                   if resolver.qualified_ref(sid).source_envelope_id == answer.envelope.envelope_id)
     # Resolve quote ownership before either clause interpretation or the
@@ -362,6 +391,11 @@ def _prepare_answer(thread, original):
             continue
         if _CORRECTION_META.fullmatch(text):
             continue
+        if outcome_standard and _PROPOSAL_FEEDBACK.fullmatch(text):
+            # The proposal never entered the claim graph, so rejection cannot
+            # withdraw an original source and assent cannot invent its object.
+            known_unchanged = True
+            continue
         if _UNKNOWN.fullmatch(text):
             known_unchanged = True
             continue
@@ -390,7 +424,7 @@ def _prepare_answer(thread, original):
                 temporal_anchor = next((x.split(":",1)[1] for x in target_times if x.startswith("thread_time_anchor:")),
                     resolver.qualified_ref(target_nucleus.source_span_ids[0]).source_envelope_id)
             nucleus = None if withdrawal else _answer_nucleus(span, raw=answer.source.answer_text_private,
-                about_time="PRIOR_ANSWER_TIME" if prior_answer_time else about, source_start=replacement.start("new"), source_end=replacement.end("new"))
+                about_time="PRIOR_ANSWER_TIME" if prior_answer_time else about, source_start=replacement.start("new"), source_end=replacement.end("new"), outcome_standard=outcome_standard)
             if nucleus and prior_answer_time:
                 nucleus = replace(nucleus,semantic_frame=replace(nucleus.semantic_frame,
                     attribute_codes=(*nucleus.semantic_frame.attribute_codes,"thread_time_anchor:"+temporal_anchor)))
@@ -407,7 +441,7 @@ def _prepare_answer(thread, original):
                 continue
             offset = (then.end() if then else now.end() if now else 0)
             nucleus = _answer_nucleus(span, raw=answer.source.answer_text_private,
-                                      about_time=about, source_start=offset)
+                                      about_time=about, source_start=offset, outcome_standard=outcome_standard)
             if nucleus is None:
                 unresolved.append(EmlisUnresolvedPartV1(ev, "answer_syntax_unsupported"))
                 continue
