@@ -1,0 +1,45 @@
+name: Repair initial prose transfer once
+on:
+  push:
+    branches: [agent/emlis-hypothesis-work-20260918]
+    paths: [.github/workflows/emlis-initial-prose-repair-once.yml]
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    if: github.repository == 'MassyuRed/mashos-api' && github.ref == 'refs/heads/agent/emlis-hypothesis-work-20260918'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: abc9bbc84c8639457ee5dc34ebb4e373f8e08e17
+      - name: Restore the exact validated public patch before applying it
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import pathlib,re,gzip,base64,hashlib,textwrap,subprocess
+          text=pathlib.Path('.github/workflows/emlis-initial-prose-apply-once.yml').read_text()
+          pathlib.Path('/tmp/public-transfer').mkdir(exist_ok=True)
+          pathlib.Path('/tmp/public-transfer/original-workflow.yml').write_text(text)
+          original=re.search(r"encoded='([^']+)'",text)[1]
+          corrected=original
+          for old,new in [('ITRonm6a6Zg2','ITRonm6Zg2'),('GvDoW3b2FS4','GvDoWb2FS4'),('VQgsI6A6bfSK','VQgsI6bfSK'),('K2cBPb90evxD0','K2cBPb90evzD0'),('qNsZmv/L1','qNsZsv/L1'),('t3976P2m/vf','t397/2m/vf')]:
+              assert corrected.count(old)==1,old
+              corrected=corrected.replace(old,new)
+          pathlib.Path('/tmp/public-transfer/corrected.b64').write_text(corrected)
+          patch=gzip.decompress(base64.b64decode(corrected))
+          assert hashlib.sha256(patch).hexdigest()=='561d5f698e338970754b6429e6d67586cf78689422e792b3028b67a5781931b1'
+          script=text.split("          python3 - <<'PY'\n",1)[1].rsplit('\n          PY',1)[0]
+          script=textwrap.dedent(script).replace(original,corrected)
+          pathlib.Path('/tmp/verified-public-transfer.py').write_text(script)
+          subprocess.run(['git','fetch','--depth=1','origin','745873107166dd9ccb15e2e6f6fb82934b16ea01'],check=True)
+          subprocess.run(['git','checkout','--detach','745873107166dd9ccb15e2e6f6fb82934b16ea01'],check=True)
+          subprocess.run(['python3','/tmp/verified-public-transfer.py'],check=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: emlis-public-transfer-diagnostic
+          path: /tmp/public-transfer/
+          retention-days: 3
