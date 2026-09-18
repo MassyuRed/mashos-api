@@ -8929,6 +8929,36 @@ def _validate_source_grounded_predicate_voice(
         )
 
 
+def _source_grounded_contextual_subjective_change(
+    realization: _ReceptionMoveRealizationV1,
+    target_owner_slot: int,
+) -> bool:
+    """One subjective change stays the object; a performed act stays context.
+
+    COMPOSITE describes source coverage, not a second reception object.
+    This bounded case has no relation to realize or infer between the two.
+    Existing clause/context validation still requires both complete sources.
+    """
+    if (realization.reference_mode != "COMPOSITE"
+        or realization.target_slot_count != 1 or target_owner_slot != 0
+        or realization.context_slots != (1,) or realization.relations
+        or len(realization.semantic_fragments) != 2
+        or len(realization.semantic_profiles) != 2):
+        return False
+    target, background = realization.semantic_profiles
+    return bool(
+        (target.nucleus_kind, target.predicate_kind, target.modality)
+        == ("reaction", "feeling", "feeling")
+        and target.actor_kind == "SELF" and not target.quoted_boundary
+        and not target.performed_action and not target.future_action
+        and (background.nucleus_kind, background.predicate_kind, background.modality)
+        == ("action", "action", "fact")
+        and background.actor_kind == "SELF" and not background.quoted_boundary
+        and background.performed_action and not background.future_action
+        and realization.semantic_fragments[1].endswith("た")
+    )
+
+
 def _source_grounded_response_predicate(
     reception_act: GroundedReceptionAct,
     move_role: str,
@@ -8947,6 +8977,7 @@ def _source_grounded_response_predicate(
     selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
     distributive_object: bool = False,
     single_target_object: bool = False,
+    contextual_change_object: bool = False,
     completed_relation_kind: str | None = None,
     integrate_attention_pair: bool = False,
     unfinished_change: bool = False,
@@ -9064,7 +9095,7 @@ def _source_grounded_response_predicate(
         and ((semantic_profile.nucleus_kind == "change"
               and (semantic_profile.predicate_kind, semantic_profile.modality)
                   in {("change", "fact"), ("feeling", "feeling")})
-             or (single_target_object
+             or ((single_target_object or contextual_change_object)
                  and (semantic_profile.nucleus_kind, semantic_profile.predicate_kind,
                       semantic_profile.modality) == ("reaction", "feeling", "feeling")))
         and semantic_profile.actor_kind == "SELF" and voice == "STATE"
@@ -9091,7 +9122,8 @@ def _source_grounded_response_predicate(
         # does not claim that Emlis experiences that feeling or a new change.
         predicate_lemma, conjugation_class = "受け止める", "ICHIDAN"
     material_state_attention = bool(
-        single_target_object and move_role == "attention"
+        (single_target_object or contextual_change_object and material_change)
+        and move_role == "attention"
         and (material_change or material_feeling)
         and not distributive_object and not pending_relation_slots
         and not unfinished_change and not unfinished_pair
@@ -9357,6 +9389,7 @@ def _source_grounded_response_predicate_surface(
     selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
     distributive_object: bool = False,
     single_target_object: bool = False,
+    contextual_change_object: bool = False,
     completed_relation_kind: str | None = None,
     unfinished_change: bool = False,
     unfinished_pair: bool = False,
@@ -9378,6 +9411,7 @@ def _source_grounded_response_predicate_surface(
         single_target_object=(single_target_object and (
             referent_kind != "current_expression" or object_core.endswith("という言葉")
         )),
+        contextual_change_object=contextual_change_object,
         completed_relation_kind=completed_relation_kind,
         integrate_attention_pair=recovery_stage == "full",
         unfinished_change=unfinished_change,
@@ -9516,6 +9550,13 @@ def _source_grounded_reception_fragment(
             and len(realization.semantic_fragments) == 1
             and not realization.relations and not realization.context_slots
             and target_core.semantic_slots == (target_owner_slot,)
+        ),
+        contextual_change_object=bool(
+            recovery_stage == "full" and context_prefix
+            and referent_kind == "lived_change"
+            and target_core.semantic_slots == (target_owner_slot,)
+            and not target_core.pending_relation_slots
+            and _source_grounded_contextual_subjective_change(realization, target_owner_slot)
         ),
         completed_relation_kind=(
             realization.relations[0].relation_kind
@@ -9832,7 +9873,10 @@ def _author_source_grounded_reception_clauses(
                 and _selected_material_appraisal(selected_decision)
                 and meaning_realization.reference_mode != "ANAPHORIC"
                 and not meaning_realization.relations
-                and len(meaning_realization.semantic_fragments) == 1
+                and (len(meaning_realization.semantic_fragments) == 1
+                     or recovery_stage == "full"
+                     and _source_grounded_contextual_subjective_change(
+                         meaning_realization, target_owner_slot))
             )
             material_pair_object = bool(
                 (move.move_role == "attention" or move.move_role == "felt_response"

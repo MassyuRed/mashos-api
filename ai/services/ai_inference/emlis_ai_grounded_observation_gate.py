@@ -3673,11 +3673,32 @@ def evaluate_grounded_surface_body_inverse(
                                     re.escape(prefix + expected_referent.text)
                                     + r"(?:を見過ごさず、|に目が留まり、それを)"
                                     + r"小さくせずに受け止めています。", raw) is not None
+                            change_context_ids = _body_inverse_reception_context_ids(move, plan)
+                            change_context_prefix = None
+                            # Only required/selected relations belong to this Move.
+                            # A retained SHOULD source-order relation is not an
+                            # authored causal relation or a second target object.
+                            required_object_relations = [r for r in object_relations
+                                if r.relation_id in plan.coverage_requirements.required_relation_ids]
+                            if (len(change_context_ids) == 1 and len(object_ids) == 2
+                                and not required_object_relations):
+                                context_nucleus = nucleus_index[change_context_ids[0]]
+                                context_frame = context_nucleus.semantic_frame
+                                context_source = final_reception_source_anchor_text(
+                                    context_nucleus.nucleus_id, nucleus_index, resolver)
+                                if (context_nucleus.kind == "action"
+                                    and context_frame.actor == "current_user"
+                                    and context_frame.predicate_kind == "action"
+                                    and context_frame.modality == "fact"
+                                    and "operator:performed_action" in context_frame.attribute_codes
+                                    and context_source and context_source.endswith("た")):
+                                    change_context_prefix = context_source + "ことを背景に、"
                             if (appraisal is not None and appraisal.dimension == "MATERIAL_WEIGHT"
                                 and appraisal.operation == "RECEIVE_AS_MATERIAL"
                                 and move.reception_act == "recognize_lived_change"
-                                and len(move.target_nucleus_ids) == 1 and not move.support_nucleus_ids
-                                and len(object_ids) == 1
+                                and len(move.target_nucleus_ids) == 1
+                                and (len(object_ids) == 1 and not move.support_nucleus_ids
+                                     or change_context_prefix is not None)
                                 and expected_referent is not None and expected_referent.kind == "lived_change"
                                 and target_nuclei[0].kind == "reaction"
                                 and target_nuclei[0].semantic_frame.actor == "current_user"
@@ -3692,7 +3713,7 @@ def evaluate_grounded_surface_body_inverse(
                                     target_nuclei[0].nucleus_id, nucleus_index, resolver)
                                 raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
                                 relation_attention_valid = bool(source and raw == (
-                                    source + "という" + expected_referent.text
+                                    (change_context_prefix or "") + source + "という" + expected_referent.text
                                     + "を見過ごさず、受け止めています。"))
                             if (appraisal is not None and appraisal.dimension == "MATERIAL_WEIGHT"
                                 and appraisal.operation == "RECEIVE_AS_MATERIAL"
