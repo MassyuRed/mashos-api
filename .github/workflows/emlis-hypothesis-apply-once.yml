@@ -1,0 +1,76 @@
+name: Apply grounded outcome question once
+on:
+  push:
+    branches: [agent/emlis-hypothesis-work-20260918]
+    paths: [.github/workflows/emlis-hypothesis-apply-once.yml]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.repository == 'MassyuRed/mashos-api' && github.ref == 'refs/heads/agent/emlis-hypothesis-work-20260918'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 1e1623f222b0bc98a75bfae2b5ed21bd99200797
+      - name: Apply only public source and tests; no private evaluation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64, gzip, hashlib, json, os, pathlib, subprocess, urllib.request
+          BASE='1e1623f222b0bc98a75bfae2b5ed21bd99200797'
+          TARGET='agent/cmee-v1a-i1sx-source-explicit-20260815'
+          API='https://api.github.com/repos/MassyuRed/mashos-api'
+          FILES={
+            'ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_question.py': ('a4ae84ea07804117c82542b49b8ce035ec05ea38','89221a044e52f28014aea95f1a40c01d53464bf6'),
+            'ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_answer_update.py': ('f06f0c48a1a0b9d57b8300774210839b1e3eec3f','1248a37580ea9a5b8a945d520645685ad8f8a377'),
+            'ai/tests/test_cmee_emlis_outcome_standard_question.py': (None,'0a8478d0bae0c2a0c7c298ce8188c1e8b0140bc0'),
+          }
+          def git(*args): return subprocess.check_output(['git',*args]).decode().strip()
+          def call(path):
+            req=urllib.request.Request(API+path,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+            with urllib.request.urlopen(req,timeout=60) as response: return json.load(response)
+          def blob(data): return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+          def data_for(sha):
+            result=call('/git/blobs/'+sha); data=base64.b64decode(result['content'])
+            assert result['encoding']=='base64' and blob(data)==sha
+            return data
+          assert git('rev-parse','HEAD')==BASE and not git('status','--porcelain')
+          pr=call('/pulls/3')
+          assert pr['state']=='open' and pr['draft'] and not pr['merged'] and pr['head']['sha']==BASE and pr['head']['ref']==TARGET
+          assert call('/git/ref/heads/'+TARGET)['object']['sha']==BASE
+          for path,(before,after) in FILES.items():
+            if before is None: assert not pathlib.Path(path).exists()
+            else: assert blob(pathlib.Path(path).read_bytes())==before
+          wire=data_for('5faffd453ebf6c53eb7804ed170695df24bc7c40')
+          # Restore an observed transport-only substitution; then require the
+          # exact original wire and complete tested source-patch identities.
+          assert wire.count(b'QDETa8P+m8T703fuf/t980')==1
+          wire=wire.replace(b'QDETa8P+m8T703fuf/t980',b'QDETa8P+m8Q/7076P980',1)
+          assert blob(wire)=='d5b687456ef9b95c676255b4c90cc0f9e8366821'
+          patch=gzip.decompress(base64.b64decode(wire,validate=True))
+          assert hashlib.sha256(patch).hexdigest()=='5b48f5aece7f5d82e570c8fda4d3c71d568faf0e62354b75aea1d33b11f8d3f3'
+          correction=data_for('04dbbbab50e8a57c3728a8e649fc06f162124239')
+          assert correction.count(b'\n diff --git ')==1
+          correction=correction.replace(b'\n diff --git ',b'\ndiff --git ',1)
+          assert blob(correction)=='654648217bfc7222ef1d0121ede24090ce7003e0'
+          for number,value in enumerate((patch,correction)):
+            path=pathlib.Path('/tmp/emlis-source-'+str(number)+'.patch');path.write_bytes(value)
+            subprocess.run(['git','apply','--check','--index',str(path)],check=True)
+            subprocess.run(['git','apply','--index',str(path)],check=True)
+          assert set(git('diff','--cached','--name-only').splitlines())==set(FILES)
+          assert not git('diff','--name-only')
+          for path,(_,after) in FILES.items(): assert blob(pathlib.Path(path).read_bytes())==after
+          subprocess.run(['git','diff','--cached','--check'],check=True)
+          message='fix(emlis): ask a grounded outcome hypothesis and retain the person\'s answer\n\nSelect a tentative personal-outcome-standard question from complete original source evidence, without storing the hypothesis as a claim. Preserve bounded past desires as wishes rather than performed changes. Explicit assent or rejection alone cannot invent a goal or withdraw original evidence. Copular/adjectival state records remain outside the candidate. Existing question limits, answer correction, saved service route, schemas and default-OFF controls are unchanged. Product NOT_CLEAR; no release, merge, deployment or external AI. Validation scope is recorded separately; this job only transfers public source and tests.'
+          subprocess.run(['git','-c','user.name=github-actions[bot]','-c','user.email=41898282+github-actions[bot]@users.noreply.github.com','commit','-m',message],check=True)
+          head=git('rev-parse','HEAD')
+          assert call('/git/ref/heads/'+TARGET)['object']['sha']==BASE
+          subprocess.run(['git','push','origin','HEAD:refs/heads/'+TARGET],check=True)
+          assert call('/git/ref/heads/'+TARGET)['object']['sha']==head
+          for path,(_,after) in FILES.items(): assert data_for(after)==pathlib.Path(path).read_bytes()
+          print(json.dumps({'state':'SOURCE_APPLIED_AND_READ_BACK','head':head,'parent':BASE,'tree':git('rev-parse','HEAD^{tree}'),'files':{p:s[1] for p,s in FILES.items()},'private_data_transferred':False,'product_evaluation_executed_here':False}))
+          PY
