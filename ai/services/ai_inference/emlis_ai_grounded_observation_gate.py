@@ -835,7 +835,9 @@ def _evaluate_reception_gates(
                         clause_plans=human_line.reception_clause_plans,
                         selected_subjective_input=selected_subjective_input,
                     )
-                    if realized_reception.text != reception_text:
+                    if not _received_discourse_equivalent(reception_text, realized_reception.text,
+                        reception_plan, human_line.reception_clause_plans, plan, resolver,
+                        selected_subjective_input):
                         raise GroundedHumanReceptionSurfaceError(
                             "human_reception_surface_replay_mismatch"
                         )
@@ -1146,14 +1148,16 @@ def _evaluate_reception_gates(
             expected_reception_text = (
                 canonical_reception_text or realized_reception.text
             )
-            if expected_reception_text.strip() != reception_text.strip():
+            if not _received_discourse_equivalent(reception_text.strip(), expected_reception_text.strip(),
+                reception_plan, human_line.reception_clause_plans, plan, resolver,
+                selected_subjective_input):
                 reasons_by_gate["reception_move_realization_gate"].append(
                     "reception_canonical_surface_mismatch"
                 )
             if (
                 human_surface_line is None
                 or human_surface_line.text.strip()
-                != expected_reception_text.strip()
+                != reception_text.strip()
             ):
                 reasons_by_gate["reception_move_realization_gate"].append(
                     "reception_surface_line_mismatch"
@@ -2155,12 +2159,225 @@ def _body_inverse_thread_contrast_answers(body, witness, line, plan, resolver):
 
 
 
+def read_received_discourse(raw, move, plan, resolver, selected_subjective_input=None):
+    """Parse either finite or coordinated clauses with a shared past scope.
+
+    Source-owned event boundaries must be unique. Only the actual connective
+    inflection is normalized for the independent role reader; the source,
+    body, witness and response bindings are never rewritten.
+    """
+    if len(move.target_nucleus_ids) <= 1 or "、また、" in raw:
+        return _read_received_discourse_parts(raw, move, plan, resolver, selected_subjective_input)
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    cuts = [0]
+    for nid in move.target_nucleus_ids[1:]:
+        event = final_reception_source_anchor_text(nid, index, resolver)
+        starts = [m.start() for m in re.finditer(re.escape("、" + event), raw)] if event else []
+        if len(starts) != 1 or starts[0] <= cuts[-1]:
+            return None
+        cuts.append(starts[0] + 1)
+    actual_parts = [raw[start:end - 1] for start, end in zip(cuts, cuts[1:])]
+    actual_parts.append(raw[cuts[-1]:])
+    normalized_parts = []
+    for part in actual_parts[:-1]:
+        if part.endswith("届き"):
+            finite = part[:-2] + "届いた"
+        elif part.endswith("と思い"):
+            finite = part[:-1] + "った"
+        elif part.endswith("く"):
+            finite = part[:-1] + "かった"
+        else:
+            return None
+        normalized_parts.append(finite + "のですね")
+    normalized_parts.append(actual_parts[-1])
+    normalized = "、また、".join(normalized_parts)
+    proof = _read_received_discourse_parts(normalized, move, plan, resolver, selected_subjective_input)
+    if proof is None:
+        return None
+    intervals, base = [], 0
+    for original, adapted, start in zip(actual_parts, normalized_parts, cuts):
+        intervals.append((base, base + len(adapted.encode()), len(raw[:start].encode()), len(original.encode())))
+        base += len(adapted.encode()) + len("、また、".encode())
+    restored = []
+    for start, end, source in proof:
+        containing = [r for r in intervals if r[0] <= start < end <= r[1]]
+        if len(containing) != 1:
+            return None
+        lo, hi, actual_start, actual_size = containing[0]
+        restored.append((actual_start + start - lo,
+                         actual_start + min(end - lo, actual_size), source))
+    return tuple(restored)
+
+
+def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjective_input=None):
+    """Read finite event/feeling/answer roles from actual text, without replay.
+
+    The response grammar may vary its acknowledgement; acceptance depends on
+    the reconstructed propositions, relation ownership, polarity and time.
+    No source clause may disappear merely because it is present in Layer 1.
+    Returned ranges restore grammatical feeling nouns for sensation checks;
+    they are not a replacement body or evidence supplied by the author.
+    """
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+    if (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+        or not move.required or move.move_role != "felt_response"
+        or move.reception_act != "stay_with_current_burden"
+        or ("current_burden", move.target_nucleus_ids, move.support_nucleus_ids)
+           not in _thread_retained_reaction_groups(plan.nuclei, plan.relations)
+        or not raw.endswith("。") or raw.count("。") != 1
+        or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions
+                         if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if appraisal is None or appraisal.operation not in {"RECEIVE_AS_MATERIAL", "PRESERVE_BOTH_ENDPOINTS"}:
+            return None
+    parts = raw[:-1].split("、また、")
+    if len(parts) != len(move.target_nucleus_ids):
+        return None
+    nuclei = {n.nucleus_id: n for n in plan.nuclei}
+    required = set(plan.coverage_requirements.required_relation_ids)
+    consumed, consumed_relations, replacements = set(), set(), []
+    offset, saw_answer = 0, False
+    for event_id, part in zip(move.target_nucleus_ids, parts):
+        event = nuclei[event_id]
+        contrasts = tuple(r for r in plan.relations if r.relation_id in required
+            and r.type == "contrast" and r.from_nucleus_id == event_id
+            and r.to_nucleus_id in move.support_nucleus_ids)
+        about = tuple(r for r in plan.relations if r.relation_id in required
+            and r.type == "evaluation_about_event" and r.from_nucleus_id == event_id
+            and r.to_nucleus_id in move.support_nucleus_ids)
+        if (len(contrasts) > 1 or len(about) > 1 or not (contrasts or about)
+            or event.semantic_frame.actor != "current_user"
+            or event.semantic_frame.time_scope != "past"
+            or event.source_fields not in {("memo",), ("memo_action",)}):
+            return None
+        event_source = final_reception_source_anchor_text(event_id, nuclei, resolver)
+        feeling_source = link = None
+        if contrasts:
+            relation = contrasts[0]
+            feeling = nuclei[relation.to_nucleus_id]
+            feeling_source = final_reception_source_anchor_text(feeling.nucleus_id, nuclei, resolver)
+            if (feeling.source_span_ids != event.source_span_ids or len(event.source_span_ids) != 1
+                or feeling.source_fields != event.source_fields
+                or feeling.semantic_frame.time_scope != "past"
+                or feeling.semantic_frame.actor != "current_user"):
+                return None
+            source = re.sub(r"\s+", " ", resolver.resolve(event.source_span_ids[0]).raw_text).strip(" 　、,。．.")
+            if not (source.startswith(event_source) and source.endswith(feeling_source)):
+                return None
+            link = source[len(event_source):-len(feeling_source)].rstrip("、,")
+            if link not in {"のに", "けど", "けれど", "けれども"}:
+                return None
+            consumed.add(feeling.nucleus_id)
+            consumed_relations.add(relation.relation_id)
+        ending = re.search(r"(?:のですね|のです|のだと受け取りました)$", part)
+        if ending is None:
+            return None
+        clause = part[:ending.start()]
+        consumed.add(event_id)
+        if not about:
+            # An unasked original stays an independent complete contrast.
+            candidates = {(clause[:m.start()], m.group(), clause[m.end():])
+                          for m in re.finditer(r"けれども|けれど|けど|のに", clause)}
+            if (event_source, link, feeling_source) not in candidates:
+                return None
+        else:
+            saw_answer = True
+            relation = about[0]
+            answer = nuclei[relation.to_nucleus_id]
+            times = {c.split(":", 1)[1] for c in answer.semantic_frame.attribute_codes
+                     if c.startswith("thread_time:")}
+            if (times != {"original_occasion"} or answer.source_fields != ("answer_text_private",)
+                or answer.allowed_claim_scope != "explicit_supplemental_answer"
+                or answer.semantic_frame.actor != "current_user"
+                or answer.semantic_frame.polarity != "negative"):
+                return None
+            answer_source = final_reception_source_anchor_text(answer.nucleus_id, nuclei, resolver)
+            # The body, not an author-produced nominal, owns these spans.
+            perceived = re.fullmatch(
+                r"(?P<event>.+?)ことは(?:(?P<feeling>[^、,]+)さにはつながらず、|、(?P<positive>[^、,]+)さを伴い、|、)"
+                r"(?P<perception>.+)ような(?P<burden>[^、,]+)さとして届いた", clause)
+            finite = re.fullmatch(
+                r"(?P<event>.+?)時は(?:(?P<feeling>[^、,]+)くなく、|(?P<positive>[^、,]+)く、|、)(?P<answer>.+)", clause)
+            if perceived is not None:
+                actual_event = perceived["event"]
+                actual_feeling = (perceived["feeling"] + "くなかった"
+                                  if perceived["feeling"] is not None else
+                                  perceived["positive"] + "かった" if perceived["positive"] is not None else None)
+                restored = {perceived["perception"] + "ようで" + comma
+                            + perceived["burden"] + "かった" for comma in ("、", ",")}
+                if answer_source not in restored:
+                    return None
+                begin = len((raw[:offset] + clause[:perceived.start("perception")]).encode("utf-8"))
+                finish = len((raw[:offset] + clause[:perceived.end()]).encode("utf-8"))
+                replacements.append((begin, finish, answer_source.encode("utf-8")))
+            elif finite is not None:
+                actual_event = finite["event"]
+                actual_feeling = (finite["feeling"] + "くなかった"
+                                  if finite["feeling"] is not None else
+                                  finite["positive"] + "かった" if finite["positive"] is not None else None)
+                if finite["answer"] != answer_source:
+                    return None
+            else:
+                return None
+            if (actual_event, actual_feeling) != (event_source, feeling_source):
+                return None
+            consumed.add(answer.nucleus_id)
+            consumed_relations.add(relation.relation_id)
+        offset += len(part) + len("、また、")
+    expected_relations = {r.relation_id for r in plan.relations if r.relation_id in required
+        and r.from_nucleus_id in move.target_nucleus_ids
+        and r.to_nucleus_id in move.support_nucleus_ids}
+    if (not saw_answer or consumed != set((*move.target_nucleus_ids, *move.support_nucleus_ids))
+        or consumed_relations != expected_relations):
+        return None
+    return tuple(replacements)
+
+
+def _received_discourse_equivalent(actual, canonical, reception_plan, clauses, plan,
+                                   resolver, selected_subjective_input):
+    """Do not make a grammatical acknowledgement spelling a semantic oracle.
+
+    Unchanged clauses retain the existing contract. A changed finite reading
+    must independently express the complete same source-owned duties on both
+    sides, so this does not authorize arbitrary rewrites, omissions or labels.
+    """
+    if actual == canonical:
+        return True
+    actual_parts = actual.split("。")
+    canonical_parts = canonical.split("。")
+    if (actual_parts[-1] or canonical_parts[-1]
+        or len(actual_parts) != len(canonical_parts)
+        or len(actual_parts) != len(clauses) + 1):
+        return False
+    moves = {m.move_id: m for m in reception_plan.moves}
+    for left, right, clause in zip(actual_parts[:-1], canonical_parts[:-1], clauses):
+        if left == right:
+            continue
+        if len(clause.move_ids) != 1:
+            return False
+        move = moves.get(clause.move_ids[0])
+        if move is None or any(read_received_discourse(text + "。", move, plan, resolver,
+            selected_subjective_input) is None for text in (left, right)):
+            return False
+    return True
+
+
 def _body_inverse_thread_received_group(body, witness, sentence, move, plan, resolver):
     """Read original clauses and immediately bound answer anaphora from bytes.
 
     Source contrasts and ABOUT edges are checked separately; no forward group
     nominal, expression, or grammatical marker payload is the answer oracle.
     """
+    finite = read_received_discourse(
+        body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8"),
+        move, plan, resolver,
+    ) if sentence.section == "reception" else None
+    if finite is not None:
+        return tuple((start + sentence.utf8_byte_start, end + sentence.utf8_byte_start, source)
+                     for start, end, source in finite)
     from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
     if (sentence.section != "reception"
         or ("current_burden", move.target_nucleus_ids, move.support_nucleus_ids)
@@ -3102,7 +3319,10 @@ def evaluate_grounded_surface_body_inverse(
                         clause_plans=planned_line.reception_clause_plans,
                         selected_subjective_input=selected_subjective_input,
                     )
-                    if _body_inverse_visible_text(body, parsed_line) != replay.text:
+                    if not _received_discourse_equivalent(
+                        _body_inverse_visible_text(body, parsed_line), replay.text,
+                        reception_plan, planned_line.reception_clause_plans, plan, resolver,
+                        selected_subjective_input):
                         failures.append(f"body_inverse_reception_replay_mismatch:{index}")
                 except (GroundedHumanReceptionSurfaceError, AttributeError, KeyError, TypeError, ValueError):
                     failures.append(f"body_inverse_reception_replay_unavailable:{index}")
@@ -3243,6 +3463,16 @@ def evaluate_grounded_surface_body_inverse(
                     for move_id in clause.move_ids:
                         move = move_index.get(move_id)
                         if move is None or not move.required:
+                            continue
+                        finite_proof = read_received_discourse(
+                            body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8"),
+                            move, plan, resolver, selected_subjective_input,
+                        ) if (final_stage1_plan and len(clause.move_ids) == 1
+                              and sentence_plan.recovery_stage == "full") else None
+                        if finite_proof is not None:
+                            # Complete body-owned proposition/edge verification
+                            # replaces nominal/closing-token requirements only.
+                            # Source, plan, clause, trace and safety gates remain.
                             continue
                         target_nuclei = tuple(
                             nucleus_index[nucleus_id]

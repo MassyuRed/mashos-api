@@ -4564,6 +4564,12 @@ def validate_grounded_human_reception_surface(
             or any(_source_grounded_burden_nominal_responsibility(surface.text, nominal, allow_relation_object=True)
                    for nominal in expression_nominals)
         )
+        if not visible and plan is not None and surface.recovery_stage == "full":
+            from emlis_ai_grounded_observation_gate import read_received_discourse
+            sentences = tuple(part + "。" for part in surface.text.split("。") if part)
+            visible = all(any(read_received_discourse(text, move, plan, resolver,
+                selected_subjective_input) is not None for text in sentences)
+                for move in active_moves if move.reception_act == act)
         visible_responsibilities.append(visible)
         if not visible:
             issues.append(f"human_reception_act_responsibility_missing:{act}")
@@ -9540,6 +9546,108 @@ def _source_grounded_response_predicate_surface(
     )
 
 
+def _received_discourse_negative_feeling(fragment: str) -> tuple[str, str] | None:
+    """Inflect a bare, source-proven adjective, not an arbitrary source clause.
+
+    The original negative reaction becomes a finite qualification of its
+    event. It is not an additional object of Emlis's generic approval.
+    Compound/quoted/actor-bearing clauses keep the existing source grammar.
+    """
+    match = re.fullmatch(r"([^、,。\s]+?)(くなかった|かった)", fragment)
+    if match is None:
+        return None
+    stem = match[1]
+    if _thread_answer_nominal_morphology(stem + "かった") is None:
+        return None
+    return stem + "さ", stem + ("くなく" if match[2] == "くなかった" else "く")
+
+
+def _source_grounded_received_discourse(realization) -> str | None:
+    """Realize selected event/reaction/answer relations as finite discourse.
+
+    Existing source IR proves every endpoint, actor, time and ABOUT edge.
+    This changes neither selection nor source provenance. The selected
+    response is the reading of that relationship, not a nominal recital
+    followed by a statement about Emlis's own feelings. No case IDs, example
+    text, synonym lookup or output post-processing participate.
+    """
+    codes = tuple(c for c in realization.nominalization_plan
+                  if c.startswith("thread-received-slot:"))
+    if (not codes or realization.clause_form != "FINITE"
+        or realization.recovery_form != "full"
+        or realization.reference_mode == "ANAPHORIC"):
+        return None
+    # The inherited IR validator owns eligibility and complete relation cover.
+    _thread_received_group_ir_text(realization)
+    fragments = realization.semantic_fragments
+    parts = []
+    has_answer = False
+    for code in codes:
+        _, slot_text, feeling_text, link, *answer_code = code.split(":")
+        event = fragments[int(slot_text)]
+        feeling = fragments[int(feeling_text)] if feeling_text != "none" else None
+        negative = _received_discourse_negative_feeling(feeling) if feeling else None
+        if feeling is not None and negative is None:
+            return None
+        if answer_code == ["none"]:
+            parts.append(event + _RECEIVED_EVENT_LINK_TEXT[link] + feeling)
+            continue
+        has_answer = True
+        answer_slot, grammar, when = int(answer_code[0]), *answer_code[1:]
+        source = fragments[answer_slot]
+        # A later answer is a different time, not a revised past emotion.
+        # Preserve it explicitly rather than inferring a causal past reading.
+        if when != "original_occasion":
+            return None
+        if grammar.startswith("PERCEIVED_"):
+            parsed = re.fullmatch(r"(.+)ようで[、,]([^、,]+)かった", source)
+            if parsed is None or _thread_answer_nominal_morphology(parsed[2] + "かった") is None:
+                return None
+            reception = parsed[1] + "ような" + parsed[2] + "さとして届いた"
+            topic = event + "ことは"
+            if negative is not None:
+                topic += (negative[0] + "にはつながらず、" if feeling.endswith("くなかった")
+                          else "、" + negative[0] + "を伴い、")
+            else:
+                topic += "、"
+            parts.append(topic + reception)
+        else:
+            # A belief remains a belief; a denial/qualification stays inside
+            # its complete finite source clause. Conjoining it to the same
+            # event does not invent a reason or another person's intention.
+            if grammar not in {"BELIEF", "FINITE", "PAST_FEELING"}:
+                return None
+            if not _SOURCE_GROUNDED_FINITE_END_RE.search(source):
+                return None
+            prefix = event + "時は"
+            if negative is not None:
+                prefix += negative[1] + "、"
+            else:
+                prefix += "、"
+            parts.append(prefix + source)
+    if not has_answer:
+        return None
+    # Independent events remain distinct. Each scope is closed before the
+    # next begins; no cause, ranking or shared experiencer is manufactured.
+    coordinated = []
+    for part in parts[:-1]:
+        if part.endswith("届いた"):
+            coordinated.append(part[:-3] + "届き")
+        elif part.endswith("と思った"):
+            coordinated.append(part[:-2] + "い")
+        elif part.endswith("かった"):
+            coordinated.append(part[:-3] + "く")
+        else:
+            return None
+    text = "、".join((*coordinated, parts[-1] + "のですね"))
+    # Avoid ambiguous event attachment, including an event repeated inside
+    # another event's answer. The original grammar remains available there.
+    if any(text.count("、" + fragments[int(code.split(":")[1])]) != 1
+           for code in codes[1:]):
+        return None
+    return text
+
+
 def _source_grounded_reception_fragment(
     move: GroundedReceptionMovePlan,
     realization: _ReceptionMoveRealizationV1,
@@ -9567,6 +9675,14 @@ def _source_grounded_reception_fragment(
             "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
         )
     core = f"{context_prefix}{target_core.text}"
+    if (move.reception_act == "stay_with_current_burden"
+        and move.move_role == "felt_response" and not context_prefix
+        and selected_subjective_decision.subjective_proposition.appraisal_content is not None
+        and selected_subjective_decision.subjective_proposition.appraisal_content.operation
+            in {"RECEIVE_AS_MATERIAL", "PRESERVE_BOTH_ENDPOINTS"}):
+        discourse = _source_grounded_received_discourse(realization)
+        if discourse is not None:
+            return discourse
     if move.move_role == "bounded_counterposition":
         proposition = selected_subjective_decision.subjective_proposition
         position = proposition.relational_position
@@ -10169,7 +10285,14 @@ def _author_source_grounded_reception_clauses(
                 distributive_object=distributive_relation_slot is not None,
                 unfinished_pair=unfinished_pair,
             )
-            if (
+            # A finite relation reading is checked against its source roles,
+            # not against the old nominalized referent or a fixed closing.
+            from emlis_ai_grounded_observation_gate import read_received_discourse
+            discourse_proof = read_received_discourse(
+                move_sentence + "。", move, plan, resolver,
+                selected_subjective_input,
+            )
+            if discourse_proof is None and (
                 _visible_fragment_occurrence_count(
                     move_sentence,
                     (referent_text,),

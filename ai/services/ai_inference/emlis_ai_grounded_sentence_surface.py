@@ -165,7 +165,7 @@ _BODY_UNCERTAINTY_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
 )
 _BODY_RECEPTION_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     ("emlis_voice", re.compile(r"Emlis")),
-    ("receive", re.compile(r"受け止め|大切に思|大切にした|大切にしたい|尊重")),
+    ("receive", re.compile(r"受け止め|大切に思|大切にした|大切にしたい|尊重|のですね|のです|のだと受け取りました")),
     ("felt_response", re.compile(r"感じます|感じて|思います|見過ごしたく|流したく")),
     ("protect", re.compile(r"見失わ|終わらない|決まるとは思え|消さず|残しておきたい|残したい|なかったことにしたくない")),
     ("attention", re.compile(r"特に印象|印象に残|見過ご|目(?:が|に)留ま")),
