@@ -32,7 +32,7 @@ jobs:
           extensions={'.py','.json','.md','.txt','.sh','.js','.ts','.tsx','.yml','.yaml','.lock','.toml','.ini','.cfg','.sql','.csv'}
           for name in ('api','app'):
               root=pathlib.Path(name)
-              git=lambda *a: subprocess.check_output(['git','-C',name,*a]).decode().strip()
+              git=lambda *a: subprocess.check_output(['git','-c','core.quotepath=false','-C',name,*a]).decode().strip()
               (out/(name+'.commit')).write_text(git('rev-parse','HEAD'))
               (out/(name+'.tree')).write_text(git('rev-parse','HEAD^{tree}'))
               rows=[]
