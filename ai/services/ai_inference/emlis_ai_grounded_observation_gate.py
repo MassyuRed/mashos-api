@@ -3675,6 +3675,27 @@ def evaluate_grounded_surface_body_inverse(
                                     + r"小さくせずに受け止めています。", raw) is not None
                             if (appraisal is not None and appraisal.dimension == "MATERIAL_WEIGHT"
                                 and appraisal.operation == "RECEIVE_AS_MATERIAL"
+                                and move.reception_act == "recognize_lived_change"
+                                and len(move.target_nucleus_ids) == 1 and not move.support_nucleus_ids
+                                and len(object_ids) == 1
+                                and expected_referent is not None and expected_referent.kind == "lived_change"
+                                and target_nuclei[0].kind == "reaction"
+                                and target_nuclei[0].semantic_frame.actor == "current_user"
+                                and target_nuclei[0].semantic_frame.predicate_kind == "feeling"
+                                and target_nuclei[0].semantic_frame.modality == "feeling"):
+                                # A personally felt change remains subjective.
+                                # Resolve the whole original object independently:
+                                # mere source words elsewhere, a changed speaker,
+                                # time/cause insertion, or negated reception cannot
+                                # stand for this affirmative attention clause.
+                                source = final_reception_source_anchor_text(
+                                    target_nuclei[0].nucleus_id, nucleus_index, resolver)
+                                raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
+                                relation_attention_valid = bool(source and raw == (
+                                    source + "という" + expected_referent.text
+                                    + "を見過ごさず、受け止めています。"))
+                            if (appraisal is not None and appraisal.dimension == "MATERIAL_WEIGHT"
+                                and appraisal.operation == "RECEIVE_AS_MATERIAL"
                                 and len(object_ids) == 2 and len(object_relations) == 1):
                                 relation_kind = object_relations[0].type
                                 boundary = {

@@ -9061,9 +9061,12 @@ def _source_grounded_response_predicate(
     material_change = bool(
         reception_act == "recognize_lived_change" and referent_kind == "lived_change"
         and target_predicate_kind == "present_change"
-        and semantic_profile.nucleus_kind == "change"
-        and (semantic_profile.predicate_kind, semantic_profile.modality)
-        in {("change", "fact"), ("feeling", "feeling")}
+        and ((semantic_profile.nucleus_kind == "change"
+              and (semantic_profile.predicate_kind, semantic_profile.modality)
+                  in {("change", "fact"), ("feeling", "feeling")})
+             or (single_target_object
+                 and (semantic_profile.nucleus_kind, semantic_profile.predicate_kind,
+                      semantic_profile.modality) == ("reaction", "feeling", "feeling")))
         and semantic_profile.actor_kind == "SELF" and voice == "STATE"
         and not semantic_profile.performed_action and not semantic_profile.future_action
         and not semantic_profile.quoted_boundary and not distributive_object
@@ -9813,10 +9816,15 @@ def _author_source_grounded_reception_clauses(
                 distributive_relation_slot = 0
             material_change_object = bool(
                 move.reception_act == "recognize_lived_change" and referent.kind == "lived_change"
-                and meaning_realization.semantic_profiles[target_owner_slot].nucleus_kind == "change"
-                and (meaning_realization.semantic_profiles[target_owner_slot].predicate_kind,
-                     meaning_realization.semantic_profiles[target_owner_slot].modality)
-                in {("change", "fact"), ("feeling", "feeling")}
+                and ((meaning_realization.semantic_profiles[target_owner_slot].nucleus_kind == "change"
+                      and (meaning_realization.semantic_profiles[target_owner_slot].predicate_kind,
+                           meaning_realization.semantic_profiles[target_owner_slot].modality)
+                          in {("change", "fact"), ("feeling", "feeling")})
+                     or (recovery_stage == "full"
+                         and (meaning_realization.semantic_profiles[target_owner_slot].nucleus_kind,
+                              meaning_realization.semantic_profiles[target_owner_slot].predicate_kind,
+                              meaning_realization.semantic_profiles[target_owner_slot].modality)
+                             == ("reaction", "feeling", "feeling")))
                 and meaning_realization.semantic_profiles[target_owner_slot].actor_kind == "SELF"
                 and not meaning_realization.semantic_profiles[target_owner_slot].performed_action
                 and not meaning_realization.semantic_profiles[target_owner_slot].future_action
