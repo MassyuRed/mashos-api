@@ -5734,7 +5734,7 @@ def _source_grounded_nominalization_shape_valid(
         and 2 * (len(plan) - 1) == semantic_count):
         return True
     return bool(
-        (semantic_count in {4, 6}
+        (semantic_count in {2, 4, 6}
          and len(plan) == 2 and plan[:1] == _SOURCE_GROUNDED_NOMINALIZATION_BASE
          and plan[1].split(":")[:2] == ["received-contrast-group", str(semantic_count // 2)]
          and len(plan[1].split(":")) == 2 + semantic_count // 2
@@ -8156,7 +8156,7 @@ def _received_contrast_group_ir_text(realization):
     if not codes:
         return ""
     count = realization.target_slot_count
-    if (count not in {2, 3}
+    if (count not in {1, 2, 3}
         or len(codes) != 1
         or not _source_grounded_nominalization_shape_valid(realization.nominalization_plan, 2 * count)
         or realization.reference_mode == "ANAPHORIC"
@@ -9573,15 +9573,25 @@ def _source_grounded_received_discourse(realization) -> str | None:
     """
     codes = tuple(c for c in realization.nominalization_plan
                   if c.startswith("thread-received-slot:"))
-    if (not codes or realization.clause_form != "FINITE"
+    original_codes = tuple(c for c in realization.nominalization_plan
+                           if c.startswith("received-contrast-group:"))
+    if (not (codes or original_codes) or realization.clause_form != "FINITE"
         or realization.recovery_form != "full"
         or realization.reference_mode == "ANAPHORIC"):
         return None
-    # The inherited IR validator owns eligibility and complete relation cover.
-    _thread_received_group_ir_text(realization)
+    # Original input and accepted answers use the same source-owned discourse.
+    # Do not wait for an answer before the event/reaction relation can speak.
+    # The existing IR validators retain exact endpoint and relation coverage.
+    if codes:
+        _thread_received_group_ir_text(realization)
+    else:
+        _received_contrast_group_ir_text(realization)
+        count = realization.target_slot_count
+        links = original_codes[0].split(":")[2:]
+        codes = tuple(f"thread-received-slot:{slot}:{count + slot}:{link}:none"
+                      for slot, link in enumerate(links))
     fragments = realization.semantic_fragments
     parts = []
-    has_answer = False
     for code in codes:
         _, slot_text, feeling_text, link, *answer_code = code.split(":")
         event = fragments[int(slot_text)]
@@ -9590,9 +9600,12 @@ def _source_grounded_received_discourse(realization) -> str | None:
         if feeling is not None and negative is None:
             return None
         if answer_code == ["none"]:
-            parts.append(event + _RECEIVED_EVENT_LINK_TEXT[link] + feeling)
+            if feeling.endswith("くなかった"):
+                parts.append(event + "ことは、" + negative[0] + "にはつながらなかった")
+            else:
+                parts.append(event + _RECEIVED_EVENT_LINK_TEXT[link]
+                             + "、" + negative[0] + "を感じた")
             continue
-        has_answer = True
         answer_slot, grammar, when = int(answer_code[0]), *answer_code[1:]
         source = fragments[answer_slot]
         # A later answer is a different time, not a revised past emotion.
@@ -9625,13 +9638,15 @@ def _source_grounded_received_discourse(realization) -> str | None:
             else:
                 prefix += "、"
             parts.append(prefix + source)
-    if not has_answer:
-        return None
     # Independent events remain distinct. Each scope is closed before the
     # next begins; no cause, ranking or shared experiencer is manufactured.
     coordinated = []
     for part in parts[:-1]:
-        if part.endswith("届いた"):
+        if part.endswith("つながらなかった"):
+            coordinated.append(part[:-8] + "つながらず")
+        elif part.endswith("感じた"):
+            coordinated.append(part[:-3] + "感じ")
+        elif part.endswith("届いた"):
             coordinated.append(part[:-3] + "届き")
         elif part.endswith("と思った"):
             coordinated.append(part[:-2] + "い")

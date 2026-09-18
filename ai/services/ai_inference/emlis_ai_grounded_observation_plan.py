@@ -7317,7 +7317,7 @@ def _thread_mixed_answer_targets(nuclei, relations):
                         key=lambda group: min(order[subjects[nid]] for nid in group)))
 
 
-def _received_contrast_group_targets(nuclei, relations, *, minimum=2):
+def _received_contrast_group_targets(nuclei, relations, *, minimum=1):
     """Keep source-owned received events and their reactions as one duty."""
     text = tuple(n for n in nuclei if any(f in _TEXT_SOURCE_FIELDS for f in n.source_fields))
     if any(n.source_fields == ("answer_text_private",) for n in nuclei):

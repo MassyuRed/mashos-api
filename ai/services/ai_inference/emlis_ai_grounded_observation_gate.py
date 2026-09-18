@@ -2230,7 +2230,11 @@ def read_received_discourse(raw, move, plan, resolver, selected_subjective_input
     actual_parts.append(raw[cuts[-1]:])
     normalized_parts = []
     for part in actual_parts[:-1]:
-        if part.endswith("届き"):
+        if part.endswith("つながらず"):
+            finite = part[:-5] + "つながらなかった"
+        elif part.endswith("感じ"):
+            finite = part + "た"
+        elif part.endswith("届き"):
             finite = part[:-2] + "届いた"
         elif part.endswith("と思い"):
             finite = part[:-1] + "った"
@@ -2268,12 +2272,19 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
     Returned ranges restore grammatical feeling nouns for sensation checks;
     they are not a replacement body or evidence supplied by the author.
     """
-    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
-    if (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+    from emlis_ai_grounded_observation_plan import (
+        _thread_retained_reaction_groups, _received_contrast_group_targets,
+    )
+    original_group = _received_contrast_group_targets(plan.nuclei, plan.relations)
+    original = bool(original_group and original_group ==
+                    (move.target_nucleus_ids, move.support_nucleus_ids))
+    thread_group = (("current_burden", move.target_nucleus_ids, move.support_nucleus_ids)
+                    in _thread_retained_reaction_groups(plan.nuclei, plan.relations))
+    has_answers = any(n.source_fields == ("answer_text_private",) for n in plan.nuclei)
+    if (has_answers and getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
         or not move.required or move.move_role != "felt_response"
         or move.reception_act != "stay_with_current_burden"
-        or ("current_burden", move.target_nucleus_ids, move.support_nucleus_ids)
-           not in _thread_retained_reaction_groups(plan.nuclei, plan.relations)
+        or not (original or thread_group)
         or not raw.endswith("。") or raw.count("。") != 1
         or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
         return None
@@ -2328,13 +2339,27 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
         clause = part[:ending.start()]
         consumed.add(event_id)
         if not about:
-            # An unasked original stays an independent complete contrast.
-            candidates = {(clause[:m.start()], m.group(), clause[m.end():])
-                          for m in re.finditer(r"けれども|けれど|けど|のに", clause)}
-            if (event_source, link, feeling_source) not in candidates:
-                return None
+            # Reconstruct the complete source feeling from the actual finite
+            # reading. Absence is not inability, continuing pain or a cause.
+            absent = re.fullmatch(r"(?P<event>.+?)ことは、(?P<feeling>[^、,]+)さにはつながらなかった", clause)
+            present = re.fullmatch(r"(?P<event>.+?)(?P<link>けれども|けれど|けど|のに)、(?P<feeling>[^、,]+)さを感じた", clause)
+            parsed = absent or present
+            if parsed is not None:
+                restored = parsed["feeling"] + ("くなかった" if absent else "かった")
+                if (parsed["event"] != event_source or restored != feeling_source
+                    or present is not None and present["link"] != link):
+                    return None
+                start = len((raw[:offset] + clause[:parsed.start("feeling")]).encode("utf-8"))
+                end = len((raw[:offset] + clause[:parsed.end("feeling")] + "さ").encode("utf-8"))
+                replacements.append((start, end, feeling_source.encode("utf-8")))
+            else:
+                # The earlier grammatical reading remains independently
+                # interpretable, but not a reason to require it verbatim.
+                candidates = {(clause[:m.start()], m.group(), clause[m.end():])
+                              for m in re.finditer(r"けれども|けれど|けど|のに", clause)}
+                if (event_source, link, feeling_source) not in candidates:
+                    return None
         else:
-            saw_answer = True
             relation = about[0]
             answer = nuclei[relation.to_nucleus_id]
             times = {c.split(":", 1)[1] for c in answer.semantic_frame.attribute_codes
@@ -2380,7 +2405,7 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
     expected_relations = {r.relation_id for r in plan.relations if r.relation_id in required
         and r.from_nucleus_id in move.target_nucleus_ids
         and r.to_nucleus_id in move.support_nucleus_ids}
-    if (not saw_answer or consumed != set((*move.target_nucleus_ids, *move.support_nucleus_ids))
+    if (consumed != set((*move.target_nucleus_ids, *move.support_nucleus_ids))
         or consumed_relations != expected_relations):
         return None
     return tuple(replacements)

@@ -2959,6 +2959,8 @@ def _cmee_semantic_reception_plan(
 
     response_plan = grounded_plan.response_plan
     nucleus_index = {row.nucleus_id: row for row in grounded_plan.nuclei}
+    from emlis_ai_grounded_observation_plan import _received_contrast_group_targets
+    received_group = _received_contrast_group_targets(grounded_plan.nuclei, grounded_plan.relations)
     reception_plan = build_grounded_human_reception_plan(
         required=grounded_plan.coverage_requirements.human_follow_required,
         human_follow_target_ids=response_plan.human_follow_target_ids,
@@ -2971,6 +2973,9 @@ def _cmee_semantic_reception_plan(
         safety_kind=grounded_plan.safety_policy.safety_kind,
         material_quality=material_quality,
         semantic_complexity=grounded_plan.input_profile.semantic_complexity,
+        # The original-source adapter has a single projected Reception claim.
+        # Keep its existing multi-pair contract; Q3 owns grouped thread claims.
+        include_relation_support=bool(received_group and len(received_group[0]) == 1),
         final_source_fidelity=FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in grounded_plan.source_contracts,
     )
     if reception_plan is None or not reception_plan.required:
