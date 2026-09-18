@@ -1,0 +1,44 @@
+name: Export exact Emlis source once
+on:
+  push:
+    branches: [agent/emlis-hypothesis-work-20260918]
+    paths: [.github/workflows/emlis-hypothesis-source-once.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 1e1623f222b0bc98a75bfae2b5ed21bd99200797
+          path: api
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: MassyuRed/Cocolon
+          ref: refs/pull/30/head
+          path: app
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: MassyuRed/Karen-Diary
+          path: diary
+          persist-credentials: false
+      - name: Archive public source only; execute no product or private evaluation
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir out
+          for repo in api app diary; do
+            git -C "$repo" rev-parse HEAD > "out/$repo.commit"
+            git -C "$repo" rev-parse HEAD^{tree} > "out/$repo.tree"
+            git -C "$repo" archive --format=tar.gz HEAD > "out/$repo.tar.gz"
+          done
+          sha256sum out/*.tar.gz > out/source.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emlis-hypothesis-public-source
+          path: out/
+          retention-days: 3
