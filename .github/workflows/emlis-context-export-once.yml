@@ -1,0 +1,40 @@
+name: Export fixed app context once
+on:
+  push:
+    branches: [agent/emlis-hypothesis-work-20260918]
+    paths: [.github/workflows/emlis-context-export-once.yml]
+permissions:
+  contents: read
+jobs:
+  export:
+    if: github.repository == 'MassyuRed/mashos-api' && github.ref == 'refs/heads/agent/emlis-hypothesis-work-20260918'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: MassyuRed/Cocolon
+          ref: 6a073151facb674efa412e80451403dd50f8bfa6
+          persist-credentials: false
+      - name: Archive tracked public documentation and application source
+        run: |
+          mkdir -p /tmp/emlis-context
+          git rev-parse HEAD > /tmp/emlis-context/commit.txt
+          git -c core.quotepath=false ls-tree -r --full-tree HEAD > /tmp/emlis-context/tracked-files.txt
+          python3 - <<'PY'
+          import subprocess, pathlib, tarfile
+          paths=subprocess.check_output(['git','ls-files','-z']).decode().split('\0')
+          suffixes={'.md','.txt','.json','.js','.jsx','.ts','.tsx','.yaml','.yml','.csv','.sql'}
+          with tarfile.open('/tmp/emlis-context/context.tar.gz','w:gz') as archive:
+              for p in paths:
+                  f=pathlib.Path(p)
+                  if p and f.is_file() and f.suffix.lower() in suffixes:
+                      archive.add(f,arcname=p,recursive=False)
+          PY
+          cd /tmp/emlis-context
+          sha256sum context.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emlis-app-context-6a07315
+          path: /tmp/emlis-context/
+          retention-days: 3
