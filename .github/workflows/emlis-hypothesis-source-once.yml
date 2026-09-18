@@ -21,16 +21,31 @@ jobs:
           ref: refs/pull/30/head
           path: app
           persist-credentials: false
-      - name: Archive public source only; execute no product or private evaluation
+      - name: Export code and text; execute no product or private evaluation
         shell: bash
         run: |
           set -euo pipefail
           mkdir out
-          for repo in api app; do
-            git -C "$repo" rev-parse HEAD > "out/$repo.commit"
-            git -C "$repo" rev-parse HEAD^{tree} > "out/$repo.tree"
-            git -C "$repo" archive --format=tar.gz HEAD > "out/$repo.tar.gz"
-          done
+          python3 - <<'PY'
+          import subprocess,pathlib,tarfile,json
+          out=pathlib.Path('out')
+          extensions={'.py','.json','.md','.txt','.sh','.js','.ts','.tsx','.yml','.yaml','.lock','.toml','.ini','.cfg','.sql','.csv'}
+          for name in ('api','app'):
+              root=pathlib.Path(name)
+              git=lambda *a: subprocess.check_output(['git','-C',name,*a]).decode().strip()
+              (out/(name+'.commit')).write_text(git('rev-parse','HEAD'))
+              (out/(name+'.tree')).write_text(git('rev-parse','HEAD^{tree}'))
+              rows=[]
+              with tarfile.open(out/(name+'.tar.gz'),'w:gz') as archive:
+                  for entry in git('ls-tree','-r','HEAD').splitlines():
+                      meta,path=entry.split('\t',1);mode,kind,sha=meta.split()
+                      if kind!='blob':continue
+                      p=root/path
+                      if name=='api' or p.suffix in extensions:
+                          archive.add(p,arcname=path,recursive=False)
+                          rows.append({'path':path,'sha':sha,'mode':mode})
+              (out/(name+'.manifest.json')).write_text(json.dumps(rows,ensure_ascii=False))
+          PY
           sha256sum out/*.tar.gz > out/source.sha256
       - uses: actions/upload-artifact@v4
         with:
