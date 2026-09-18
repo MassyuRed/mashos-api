@@ -3568,6 +3568,56 @@ def source_grounded_unfinished_referent(
     return _SOURCE_GROUNDED_UNFINISHED_REFERENT
 
 
+def _source_grounded_adjacent_action_context(
+    reception_plan: GroundedHumanReceptionPlan,
+    move: GroundedReceptionMovePlan,
+    plan: GroundedObservationPlan | None,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    resolver: EvidenceSpanResolver,
+    recovery_stage: ReceptionRecoveryStage,
+) -> GroundedReceptionMovePlan | None:
+    """Resolve an adjacent, reciprocal support pair, not a causal relation.
+
+    The earlier explicit Move names the action as background and the other
+    source as its own target. The later anaphoric Move receives that action.
+    This is a discourse reference choice, never removal of either duty.
+    Actual antecedent visibility is checked separately by author and inverse.
+    """
+    if (plan is None or recovery_stage != "full"
+        or plan.response_plan.human_reception_plan != reception_plan
+        or move.reference_mode != "anaphoric_first"
+        or move.move_role != "felt_response" or move.reception_act != "honor_concrete_effort"
+        or move not in reception_plan.moves):
+        return None
+    index = reception_plan.moves.index(move)
+    if index == 0:
+        return None
+    previous = reception_plan.moves[index - 1]
+    if (not move.required or not previous.required
+        or previous.reference_mode != "short_anchor_if_ambiguous"
+        or len(move.target_nucleus_ids) != 1 or len(move.support_nucleus_ids) != 1
+        or previous.target_nucleus_ids != move.support_nucleus_ids
+        or previous.support_nucleus_ids != move.target_nucleus_ids
+        or set(move.target_nucleus_ids) & set(move.support_nucleus_ids)
+        or source_grounded_reception_move_relations(move, plan)
+        or source_grounded_reception_move_relations(previous, plan)):
+        return None
+    target = nucleus_index.get(move.target_nucleus_ids[0])
+    context = nucleus_index.get(move.support_nucleus_ids[0])
+    if (target is None or context is None
+        or target.kind != "action" or not source_proven_performed_action_status(target)
+        or target.semantic_frame.modality != "fact"
+        or any(n.semantic_frame.actor != "current_user"
+               or n.source_fields not in {("memo",), ("memo_action",)}
+               or n.retention != "required" for n in (target, context))
+        or set(target.source_span_ids) & set(context.source_span_ids)
+        or any(re.search(r"[「」『』]", span.raw_text)
+               for span in resolver.resolve_many(resolver.span_ids)
+               if span.source_field in {*target.source_fields, *context.source_fields})):
+        return None
+    return previous
+
+
 def resolve_grounded_reception_move_referent(
     reception_plan: GroundedHumanReceptionPlan,
     move: GroundedReceptionMovePlan,
@@ -3604,6 +3654,12 @@ def resolve_grounded_reception_move_referent(
         effective_reference_mode=effective_reference,
         final_source_fidelity=final_source_fidelity,
     )
+    if (final_source_fidelity and referent.kind == "self_started_effort"
+        and _source_grounded_adjacent_action_context(
+            reception_plan, move, plan, nucleus_index, resolver, recovery_stage,
+        ) is not None):
+        # The source-bound antecedent is the action, not its generic category.
+        return replace(referent, text="その行動")
     if (final_source_fidelity and effective_reference == "anaphoric_first"
         and referent.kind in {"lived_change", "current_expression"}):
         unfinished = source_grounded_unfinished_referent(
@@ -10001,6 +10057,34 @@ def _author_source_grounded_reception_clauses(
                     meaning_realization,
                     core_semantic_slots=target_core.semantic_slots,
                 )
+            adjacent = _source_grounded_adjacent_action_context(
+                reception_plan, move, plan, nucleus_index, resolver, recovery_stage,
+            )
+            if (adjacent is not None and clause_index > 0
+                and clause_plans[clause_index - 1].move_ids == (adjacent.move_id,)
+                and clause_plan.move_ids == (move.move_id,)
+                and meaning_realization.reference_mode == "ANAPHORIC"
+                and meaning_realization.context_slots == (1,)
+                and not meaning_realization.relations
+                and len(meaning_realization.semantic_fragments) == 2):
+                previous_realization = clause_realizations[clause_index - 1].moves[0]
+                previous_text = parts[-1]
+                action, context = meaning_realization.semantic_fragments
+                if (previous_realization.reference_mode == "COMPOSITE"
+                    and previous_realization.context_slots == (1,)
+                    and not previous_realization.relations
+                    and previous_realization.semantic_fragments == (context, action)
+                    and previous_realization.semantic_profiles
+                        == tuple(reversed(meaning_realization.semantic_profiles))
+                    and action.endswith("た") and action != context
+                    and previous_text.startswith(action + "ことを背景に、")
+                    and previous_text.count(action) == previous_text.count(context) == 1
+                    and not any(p.quoted_boundary or p.future_action
+                                for p in previous_realization.semantic_profiles)):
+                    # また links this still-separate response to the complete
+                    # immediately preceding context. Its exact support slot
+                    # remains consumed and bound; only its second recital goes.
+                    context_prefix = "また、"
             _validate_source_grounded_clause_core(
                 target_core,
                 realization=meaning_realization,

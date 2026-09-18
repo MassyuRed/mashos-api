@@ -1844,6 +1844,63 @@ def _body_inverse_observation_change_reference(
     return frozenset((support.relation_id,)), ()
 
 
+def _body_inverse_adjacent_action_context(
+    body, parsed_sentence, previous_sentence, clause, previous_clause,
+    move, reception_plan, plan, resolver,
+) -> bool:
+    """Read the two actual sentences without invoking the author/reuse rule.
+
+    A coordination marker cannot replace arbitrary missing context. Its
+    immediately preceding sentence must visibly contain the same complete
+    action/background and primary source, assigned to the reciprocal Moves.
+    """
+    if (clause.move_ids != (move.move_id,)
+        or move.reference_mode != "anaphoric_first" or not move.required
+        or move.move_role != "felt_response" or move.reception_act != "honor_concrete_effort"
+        or len(move.target_nucleus_ids) != 1 or len(move.support_nucleus_ids) != 1):
+        return False
+    index = reception_plan.moves.index(move)
+    if index == 0:
+        return False
+    previous = reception_plan.moves[index - 1]
+    if (previous_clause.move_ids != (previous.move_id,) or not previous.required
+        or previous.reference_mode != "short_anchor_if_ambiguous"
+        or previous.target_nucleus_ids != move.support_nucleus_ids
+        or previous.support_nucleus_ids != move.target_nucleus_ids
+        or set(move.target_nucleus_ids) & set(move.support_nucleus_ids)):
+        return False
+    nuclei = {n.nucleus_id: n for n in plan.nuclei}
+    action = nuclei[move.target_nucleus_ids[0]]
+    context = nuclei[move.support_nucleus_ids[0]]
+    pair_ids = {action.nucleus_id, context.nucleus_id}
+    if (action.kind != "action" or action.semantic_frame.modality != "fact"
+        or not _body_inverse_action_is_performed(action)
+        or any(n.semantic_frame.actor != "current_user" or n.retention != "required"
+               or n.source_fields not in {("memo",), ("memo_action",)}
+               for n in (action, context))
+        or set(action.source_span_ids) & set(context.source_span_ids)
+        or any(r.relation_id in plan.coverage_requirements.required_relation_ids
+               and pair_ids.intersection((r.from_nucleus_id, r.to_nucleus_id))
+               for r in plan.relations)
+        or any(re.search(r"[「」『』]", span.raw_text)
+               for span in resolver.resolve_many(resolver.span_ids)
+               if span.source_field in {*action.source_fields, *context.source_fields})):
+        return False
+    action_text = final_reception_source_anchor_text(action.nucleus_id, nuclei, resolver)
+    context_text = final_reception_source_anchor_text(context.nucleus_id, nuclei, resolver)
+    if (not action_text or not context_text or not action_text.endswith("た")
+        or action_text == context_text):
+        return False
+    before = body[previous_sentence.utf8_byte_start:previous_sentence.utf8_byte_end].decode("utf-8")
+    current = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
+    # Bound the affirmative present reception as well as the deictic object.
+    # The original action's actor/time/negation are in the exact preceding
+    # prefix; dropping or altering either source cannot discharge this duty.
+    return bool(before.startswith(action_text + "ことを背景に、")
+        and before.count(action_text) == before.count(context_text) == 1
+        and current == "また、その行動を大切に思っています。")
+
+
 def _body_inverse_preceding_change_context(
     body, previous_sentence, previous_clause, current_sentence,
     move, reception_plan, plan, resolver,
@@ -3517,10 +3574,24 @@ def evaluate_grounded_surface_body_inverse(
                                     complete_object = parsed is not None and parsed.group("source") == source
                             if not complete_object:
                                 failures.append(f"body_inverse_independent_material_action_object_missing:{move_id}")
+                        adjacent_context_matched = bool(
+                            final_stage1_plan and sentence_plan.recovery_stage == "full"
+                            and effective_reference_mode == "anaphoric_first" and clause_index > 0
+                            and _body_inverse_adjacent_action_context(
+                                body, parsed_sentence, parsed_sentences[clause_index - 1],
+                                clause, clause_plans[clause_index - 1], move,
+                                reception_plan, plan, resolver,
+                            )
+                        )
                         target_visible = (
                             nominal_target_visible if nominal_target_required
                             else bool(sentence_codes.intersection(target_markers))
                         )
+                        if expected_referent_text == "その行動":
+                            # This reference is admitted only with its actual
+                            # antecedent, never by a generic action marker.
+                            target_visible = adjacent_context_matched
+
                         if (final_stage1_plan and sentence_plan.recovery_stage == "full"
                             and len(clause.move_ids) == 2
                             and move.reception_act == "recognize_lived_change"
@@ -3871,6 +3942,7 @@ def evaluate_grounded_surface_body_inverse(
                             and (
                                 (
                                     anaphoric_context
+                                    and not adjacent_context_matched
                                     and not any(
                                         marker in parsed_sentence_text
                                         for marker in ("中で", "中にも", "背景")

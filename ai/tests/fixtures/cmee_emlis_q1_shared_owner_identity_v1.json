@@ -1,7 +1,7 @@
 {
   "scope": "Q1 shared language owners only; test snapshot, not product acceptance or full thread identity",
-  "language_identity": "80ee5be26dc9baf2451e6e48b51e0ba98f076b5039ca96a2311fbe8f4cbc3fb3",
-  "runtime_identity": "21f9a80192779de6722dcb2bdc78f708085b86fc4fab5f9b23f52ca4ef237962",
+  "language_identity": "b688403145e767e2ed9847ada0336beff7b59b18ca71bf82f8598e1a0432989f",
+  "runtime_identity": "5d9283d18965cb0d8b6646ce66f24163eb6627a4d6a4fb17657f573292b40f6e",
   "language_payloads": [
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
@@ -35,13 +35,13 @@
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
-      "1613c1e012abb73862fe40d43c61631d641c565df7d1e3a6b912f4f5727d4948",
-      1319909
+      "6b0e0e4584eb8fc6bee41e2bb7199b26005ca630bf50f58225c297cb16066d93",
+      1334474
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
-      "d42f9d985d4a54b3b684289124f56059bf4fda9206a18dc6de0e8e665ca6135e",
-      642398
+      "70a1953dcc7458a5791fa7544424a8b149e4beae307847a7b2176175952db5f7",
+      655423
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",
@@ -127,13 +127,13 @@
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
-      "c74e1ea91b868ecc4992addb02c4e3930071a7f0a0ec154de4b52d65d52c29da",
-      483455
+      "8b110b3c56cba7a30e069b56af3c2a2ec56b7e328feb8371aefd32efc7f138a9",
+      488336
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
-      "17db2131c33cabde5a432adc74749279f93013658d24df7a37547a0367b946e4",
-      239289
+      "f89b1f57e8c2a41c057a75d6e5d7e534fb6d09829ca2ede4d228346a6a4865f0",
+      243581
     ],
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",
@@ -194,8 +194,8 @@
       194,
       340,
       128,
-      244,
-      68,
+      245,
+      69,
       90
     ],
     [
@@ -209,6 +209,6 @@
       45,
       103
     ],
-    "53cf46f2612b8a80ffebecc2947b56b3cf9db255b943824b98951f88eebf41da"
+    "c171a25b33f2efd41920e6f7839cb38250b0317403af55a48ecedefcaa888d80"
   ]
 }
