@@ -12212,7 +12212,25 @@ def _partition_shared_source_duty_contributions(rows, moves, binding, *, allow_s
             if any({b.semantic_ref for b in first.basis_rows if b.contribution_ref == ref} & duty
                    for other, duty in zip(rows, source_duties, strict=True)
                    if other.reception_act == row.reception_act)) for row in rows))
-    if not retained_act_partition and any(row.selected_contribution_refs != complete for row in rows):
+    # The direct LIMITED selector orders one same-act inventory by its
+    # selected (appraisal-first) duties, while the sealed claim keeps source
+    # order. Accept that exact, complete permutation, not arbitrary subsets.
+    from emlis_ai_grounded_observation_plan import _independent_nonaction_pair
+    independent_pair = _independent_nonaction_pair(
+        tuple(binding.node_meta.values()), tuple(binding.edge_meta.values()),
+        safety_kind="safe_observation", material_quality="grounded",
+    )
+    prioritized_pair = bool(
+        len(rows) == len(independent_pair) == 2
+        and tuple(m.target_nucleus_ids for m in moves)
+            == tuple((n.nucleus_id,) for n in independent_pair)
+        and all(row.branch == SubjectiveProjectionBranch.LIMITED.value
+                and row.reception_act == "stay_with_current_burden"
+                and row.selected_contribution_refs == tuple(ref for refs in partition for ref in refs)
+                for row in rows)
+    )
+    if not (retained_act_partition or prioritized_pair) and any(
+            row.selected_contribution_refs != complete for row in rows):
         raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
     return [identify_selected_subjective_reception_decision(replace(
         row, decision_ref="", selected_contribution_refs=refs,

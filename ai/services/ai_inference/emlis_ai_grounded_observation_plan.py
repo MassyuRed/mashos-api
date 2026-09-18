@@ -6697,6 +6697,18 @@ def _source_self_appraisal_parts(fragment: str):
         return None
     prefix = r"(?:(?:今|現在|今日|昨日|以前)(?:は|も)?[、,]?)?"
     self_noun = r"(?:自分|私|わたし|僕|ぼく|俺|おれ)(?:自身)?"
+    # A zero-quantity accomplishment judgment is about the reported outcome,
+    # not a denial of the writer's identity. Retain it as a whole appraisal;
+    # do not infer what the writer wanted to do or refute it with another act.
+    scalar = re.fullmatch(
+        prefix + r"(?:(?:私|わたし|僕|ぼく|俺|おれ)(?:は|も)[、,]?)?"
+        + r"(?P<appraisal>(?:何も|何一つ|何ひとつ|一つも|ひとつも)"
+        + r"(?:でき|出来)(?:なかった|ていない))(?:です)?", fragment)
+    if scalar is not None:
+        scope = "past" if scalar["appraisal"].endswith("なかった") else "current_input"
+        if re.match(r"(?:昨日|以前)", fragment) and scope != "past":
+            return None
+        return scope, (("appraisal", *scalar.span("appraisal")),)
     # No subject, attribution, conditional, or cognitive/reporting host can
     # hide in the relative description. A degree modifier and object are
     # retained verbatim, never projected as a separate performed action.
@@ -6735,7 +6747,7 @@ def _source_self_appraisal(nucleus):
                     for c in frame.attribute_codes))
 
 
-def _final_source_self_appraisal_nuclei(nuclei, evidence_spans, normalized_input):
+def _final_source_self_appraisal_nuclei(nuclei, evidence_spans, normalized_input, source_relations=()):
     if normalized_input is None:
         return nuclei
     source = str(normalized_input.get('memo') or '')
@@ -6747,7 +6759,17 @@ def _final_source_self_appraisal_nuclei(nuclei, evidence_spans, normalized_input
         frame = nucleus.semantic_frame
         span = spans.get(nucleus.source_span_ids[0]) if len(nucleus.source_span_ids) == 1 else None
         proof = _source_self_appraisal_parts(str(span.raw_text)) if span is not None else None
-        if (proof is None or nucleus.source_fields != ('memo',) or span.source_field != 'memo'
+        # A newly recognized zero-quantity outcome cannot replace an endpoint
+        # already owned by a required temporal/causal source relation. Keep
+        # that existing interpretation until its relation can be re-proved;
+        # do not create an invalid graph by relabeling only the endpoint.
+        scalar_relation_owned = bool(proof is not None
+            and len(proof[1]) == 1 and proof[1][0][0] == 'appraisal'
+            and any(r.retention == 'required'
+                    and nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
+                    for r in source_relations))
+        if (proof is None or scalar_relation_owned
+            or nucleus.source_fields != ('memo',) or span.source_field != 'memo'
             or nucleus.retention not in {'required', 'should'}
             or (nucleus.grounding_kind, nucleus.allowed_claim_scope) not in {
                 ('explicit', 'explicit_current_input'), ('user_stated_relation', 'source_bounded_relation')}
@@ -7139,7 +7161,7 @@ def _independent_nonaction_pair(
     if (safety_kind == TRIAGE_SAFE_OBSERVATION
         and material_quality in {"grounded", "limited_grounding"}
         and len(appraisals) == len(others) == 1
-        and others[0].source_fields == ("memo_action",)
+        and others[0].source_fields in {("memo",), ("memo_action",)}
         and others[0].retention == "required"
         and others[0].grounding_kind in {"explicit", "user_stated_relation"}
         and others[0].allowed_claim_scope in {"explicit_current_input", "source_bounded_relation"}
@@ -14081,7 +14103,7 @@ def project_final_stage1_grounded_observation_plan(
         projected_nuclei, evidence_spans, normalized_input,
     )
     projected_nuclei = _final_source_self_appraisal_nuclei(
-        projected_nuclei, evidence_spans, normalized_input,
+        projected_nuclei, evidence_spans, normalized_input, plan.relations,
     )
     projected_nuclei = _final_source_current_cognition_nuclei(
         projected_nuclei, evidence_spans, normalized_input,

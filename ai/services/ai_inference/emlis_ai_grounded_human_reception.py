@@ -4565,9 +4565,9 @@ def validate_grounded_human_reception_surface(
                    for nominal in expression_nominals)
         )
         if not visible and plan is not None and surface.recovery_stage == "full":
-            from emlis_ai_grounded_observation_gate import read_received_discourse
+            from emlis_ai_grounded_observation_gate import read_source_owned_discourse
             sentences = tuple(part + "。" for part in surface.text.split("。") if part)
-            visible = all(any(read_received_discourse(text, move, plan, resolver,
+            visible = all(any(read_source_owned_discourse(text, move, plan, resolver,
                 selected_subjective_input) is not None for text in sentences)
                 for move in active_moves if move.reception_act == act)
         visible_responsibilities.append(visible)
@@ -9837,6 +9837,42 @@ def _source_grounded_shared_material_feelings(
                 predicates[1], clause_form="FINITE", hedged=False))
 
 
+def _source_owned_appraisal_material_sentence(move, realization, plan, resolver,
+                                              selected_decision, recovery_stage):
+    """Receive a whole self-appraisal without using independent material against it.
+
+    The source-proven pair already owns the two separate duties. This is a
+    realization of that distinction, not an inferred goal, cause, diagnosis,
+    performed action or extra question. Each duty keeps its full source text.
+    """
+    from emlis_ai_grounded_observation_plan import _independent_nonaction_pair, _source_self_appraisal
+    pair = _independent_nonaction_pair(plan.nuclei, plan.relations,
+        safety_kind="safe_observation", material_quality="grounded")
+    if (len(pair) != 2 or not _source_self_appraisal(pair[0])
+        or recovery_stage != "full" or realization.reference_mode == "ANAPHORIC"
+        or realization.clause_form != "FINITE" or realization.context_slots
+        or realization.relations or len(realization.semantic_fragments) != 1
+        or not _selected_material_appraisal(selected_decision)
+        or move.reception_act != "stay_with_current_burden"
+        or move.support_nucleus_ids or not move.required):
+        return None
+    active = tuple(m for m in plan.response_plan.human_reception_plan.moves if m.required)
+    if (len(active) != 2
+        or tuple(m.target_nucleus_ids for m in active) != tuple((n.nucleus_id,) for n in pair)
+        or tuple(m.move_role for m in active) != ("attention", "felt_response")):
+        return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    source = final_reception_source_anchor_text(move.target_nucleus_ids[0], index, resolver)
+    if (not source or source != realization.semantic_fragments[0]
+        or re.search(r'[「」『』“”‘’"?？!！\r\n。]', source)):
+        return None
+    if move.target_nucleus_ids == (pair[0].nucleus_id,) and move.move_role == "attention":
+        return source + "、という言葉が気になりました"
+    if move.target_nucleus_ids == (pair[1].nucleus_id,) and move.move_role == "felt_response":
+        return source + "、という記録を理由に、先ほどの言葉を打ち消すことはしません"
+    return None
+
+
 def _author_source_grounded_reception_clauses(
     reception_plan: GroundedHumanReceptionPlan,
     clause_plans: tuple[GroundedReceptionClausePlan, ...],
@@ -10285,10 +10321,15 @@ def _author_source_grounded_reception_clauses(
                 distributive_object=distributive_relation_slot is not None,
                 unfinished_pair=unfinished_pair,
             )
-            # A finite relation reading is checked against its source roles,
+            appraisal_sentence = _source_owned_appraisal_material_sentence(
+                move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
+            )
+            if appraisal_sentence is not None:
+                move_sentence = appraisal_sentence
+            # A source-owned reading is checked against its actual source roles,
             # not against the old nominalized referent or a fixed closing.
-            from emlis_ai_grounded_observation_gate import read_received_discourse
-            discourse_proof = read_received_discourse(
+            from emlis_ai_grounded_observation_gate import read_source_owned_discourse
+            discourse_proof = read_source_owned_discourse(
                 move_sentence + "。", move, plan, resolver,
                 selected_subjective_input,
             )

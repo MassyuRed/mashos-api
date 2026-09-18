@@ -2159,6 +2159,56 @@ def _body_inverse_thread_contrast_answers(body, witness, line, plan, resolver):
 
 
 
+def _read_appraisal_material_discourse(raw, move, plan, resolver, selected_subjective_input=None):
+    """Independently read two complete, ordered, non-cancelling source duties.
+
+    No author replay or expected prose is used. A unique original source is
+    reconstructed from the actual clause and checked against the source-owned
+    appraisal/material inventory. In particular a factual correction, an
+    invented goal or an affirmative cancellation cannot discharge either duty.
+    """
+    from emlis_ai_grounded_observation_plan import _independent_nonaction_pair, _source_self_appraisal
+    pair = _independent_nonaction_pair(plan.nuclei, plan.relations,
+        safety_kind="safe_observation", material_quality="grounded")
+    if (len(pair) != 2 or not _source_self_appraisal(pair[0])
+        or move.reception_act != "stay_with_current_burden" or not move.required
+        or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids
+        or not raw.endswith("。") or raw.count("。") != 1
+        or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
+        return None
+    active = tuple(m for m in plan.response_plan.human_reception_plan.moves if m.required)
+    if (len(active) != 2
+        or tuple(m.target_nucleus_ids for m in active) != tuple((n.nucleus_id,) for n in pair)
+        or tuple(m.move_role for m in active) != ("attention", "felt_response")):
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if appraisal is None or appraisal.operation != "RECEIVE_AS_MATERIAL":
+            return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    expected = final_reception_source_anchor_text(move.target_nucleus_ids[0], index, resolver)
+    if move.target_nucleus_ids == (pair[0].nucleus_id,) and move.move_role == "attention":
+        parsed = re.fullmatch(r"(?P<source>.+)、という言葉(?:が気になりました|に目が留まりました)。", raw)
+    elif move.target_nucleus_ids == (pair[1].nucleus_id,) and move.move_role == "felt_response":
+        parsed = re.fullmatch(r"(?P<source>.+)、という記録を理由に、先ほどの言葉を"
+                              r"(?:打ち消す|否定する)ことはしません。", raw)
+    else:
+        return None
+    if parsed is None or not expected or parsed["source"] != expected:
+        return None
+    # Preserve source bytes for the existing sensation/qualifier inverse.
+    end = len(parsed["source"].encode("utf-8"))
+    return ((0, end, expected.encode("utf-8")),)
+
+
+def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None):
+    """Read supported finite source duties without a literal-author oracle."""
+    appraisal = _read_appraisal_material_discourse(raw, move, plan, resolver, selected_subjective_input)
+    return appraisal if appraisal is not None else read_received_discourse(
+        raw, move, plan, resolver, selected_subjective_input)
+
+
 def read_received_discourse(raw, move, plan, resolver, selected_subjective_input=None):
     """Parse either finite or coordinated clauses with a shared past scope.
 
@@ -2359,7 +2409,7 @@ def _received_discourse_equivalent(actual, canonical, reception_plan, clauses, p
         if len(clause.move_ids) != 1:
             return False
         move = moves.get(clause.move_ids[0])
-        if move is None or any(read_received_discourse(text + "。", move, plan, resolver,
+        if move is None or any(read_source_owned_discourse(text + "。", move, plan, resolver,
             selected_subjective_input) is None for text in (left, right)):
             return False
     return True
@@ -2371,7 +2421,7 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
     Source contrasts and ABOUT edges are checked separately; no forward group
     nominal, expression, or grammatical marker payload is the answer oracle.
     """
-    finite = read_received_discourse(
+    finite = read_source_owned_discourse(
         body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8"),
         move, plan, resolver,
     ) if sentence.section == "reception" else None
@@ -3464,7 +3514,7 @@ def evaluate_grounded_surface_body_inverse(
                         move = move_index.get(move_id)
                         if move is None or not move.required:
                             continue
-                        finite_proof = read_received_discourse(
+                        finite_proof = read_source_owned_discourse(
                             body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8"),
                             move, plan, resolver, selected_subjective_input,
                         ) if (final_stage1_plan and len(clause.move_ids) == 1
