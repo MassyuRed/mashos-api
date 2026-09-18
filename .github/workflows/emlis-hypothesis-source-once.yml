@@ -21,17 +21,12 @@ jobs:
           ref: refs/pull/30/head
           path: app
           persist-credentials: false
-      - uses: actions/checkout@v4
-        with:
-          repository: MassyuRed/Karen-Diary
-          path: diary
-          persist-credentials: false
       - name: Archive public source only; execute no product or private evaluation
         shell: bash
         run: |
           set -euo pipefail
           mkdir out
-          for repo in api app diary; do
+          for repo in api app; do
             git -C "$repo" rev-parse HEAD > "out/$repo.commit"
             git -C "$repo" rev-parse HEAD^{tree} > "out/$repo.tree"
             git -C "$repo" archive --format=tar.gz HEAD > "out/$repo.tar.gz"
