@@ -8762,6 +8762,57 @@ def _build_reception_depth_policy_and_moves(
     return policy, tuple(moves)
 
 
+def _source_owned_memo_duties_before_action(moves, nuclei, relations):
+    """Keep two already selected memo duties together before a separate act.
+
+    This is a discourse order, not new meaning or a new selection. The
+    primary burden, whole-source feeling and independent action retain
+    their actors, times, roles and all required relation endpoints.
+    """
+    if (len(moves) != 3 or moves[0].reception_act != "stay_with_current_burden"
+        or {m.reception_act for m in moves} != {
+            "stay_with_current_burden", "recognize_lived_change", "honor_concrete_effort"}
+        or any(not m.required or len(m.target_nucleus_ids) != 1
+            or m.move_role != ("attention" if m.reception_act == "honor_concrete_effort"
+                               else "felt_response") for m in moves)):
+        return False
+    index = {n.nucleus_id: n for n in nuclei}
+    if any(nid not in index for m in moves for nid in (*m.target_nucleus_ids, *m.support_nucleus_ids)):
+        return False
+    feeling_move = next(m for m in moves if m.reception_act == "recognize_lived_change")
+    action_move = next(m for m in moves if m.reception_act == "honor_concrete_effort")
+    memo_moves = (moves[0], feeling_move)
+    targets = tuple(index[m.target_nucleus_ids[0]] for m in memo_moves)
+    feeling = index[feeling_move.target_nucleus_ids[0]]
+    action = index[action_move.target_nucleus_ids[0]]
+    if (not is_grounded_positive_feeling(feeling)
+        or any(n.source_fields != ("memo",) or n.retention != "required"
+            or n.grounding_kind != "explicit" or n.allowed_claim_scope != "explicit_current_input"
+            or n.semantic_frame.actor != "current_user" or len(n.source_span_ids) != 1
+            or not {"lexical:source_bounded_expression", "lexical:preserve_source_predicate"}
+                <= set(n.semantic_frame.attribute_codes) for n in targets)
+        or action_move.support_nucleus_ids or action.source_fields != ("memo_action",)
+        or not source_proven_performed_action_status(action)):
+        return False
+    for move in memo_moves:
+        ids = set((*move.target_nucleus_ids, *move.support_nucleus_ids))
+        links = tuple(r for r in relations if r.retention == "required"
+            and ids & {r.from_nucleus_id, r.to_nucleus_id})
+        if (any(index[nid].source_fields != ("memo",)
+                or index[nid].semantic_frame.actor != "current_user"
+                or index[nid].retention != "required" for nid in ids)
+            or any(r.grounding_kind != "user_stated_relation"
+                or not {r.from_nucleus_id, r.to_nucleus_id} <= ids for r in links)
+            or set(move.support_nucleus_ids) - {
+                nid for r in links for nid in (r.from_nucleus_id, r.to_nucleus_id)}):
+            return False
+    # An explicit link can require a different action/change order. A field
+    # boundary or source proximity alone cannot establish such a link.
+    return not any(action.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
+        and (r.retention == "required" or r.type != "uncertain_connection"
+             or r.grounding_kind != "bounded_structural_inference") for r in relations)
+
+
 def build_grounded_human_reception_plan(
     *,
     required: bool,
@@ -9275,6 +9326,14 @@ def build_grounded_human_reception_plan(
         moves = tuple(replace(move, reference_mode="short_anchor_if_ambiguous")
             if source_owned_relational_focus(move, nuclei=nuclei, relations=relations)
             is not None else move for move in moves)
+        if ("selection:primary_burden_first" in depth_policy.selection_reason_codes
+            and _source_owned_memo_duties_before_action(moves, nuclei, relations)):
+            depth_policy = replace(depth_policy, selection_reason_codes=(
+                *depth_policy.selection_reason_codes, "selection:source_owned_memo_duties_first"))
+            # The feeling remains a distinct object after the primary burden;
+            # an anaphor must not silently refer back to that different duty.
+            moves = tuple(replace(move, reference_mode="short_anchor_if_ambiguous")
+                if move.reception_act == "recognize_lived_change" else move for move in moves)
     # RR4 keeps the public follow target stable while expanding the aggregate
     # compatibility grounding to every selected Move.  ClausePlan remains the
     # owner of each individual Move binding; the aggregate fields keep the

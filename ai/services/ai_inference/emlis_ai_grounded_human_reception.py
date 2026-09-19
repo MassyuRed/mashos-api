@@ -1465,10 +1465,21 @@ def reception_active_moves(
         and reception_plan.depth_policy.safety_mode == "standard"
         and moves[0].required and moves[0].reception_act == "stay_with_current_burden"
     )
+    memo_duties_first = (
+        "selection:source_owned_memo_duties_first" in reception_plan.depth_policy.selection_reason_codes
+        and primary_first
+        and len(moves) == 3 and all(move.required
+            and move.move_role == ("attention" if move.reception_act == "honor_concrete_effort"
+                                   else "felt_response") for move in moves)
+        and moves[0].reception_act == "stay_with_current_burden"
+        and {move.reception_act for move in moves} == {
+            "stay_with_current_burden", "recognize_lived_change", "honor_concrete_effort"}
+    )
     ordered = tuple(
         sorted(
             moves,
             key=lambda move: (
+                (move.reception_act == "honor_concrete_effort") if memo_duties_first else False,
                 -1 if primary_first and move.move_id == moves[0].move_id else _MOVE_ROLE_ORDER[move.move_role],
                 original_order[move.move_id],
             ),

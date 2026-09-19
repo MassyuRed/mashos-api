@@ -2959,8 +2959,15 @@ def _cmee_semantic_reception_plan(
 
     response_plan = grounded_plan.response_plan
     nucleus_index = {row.nucleus_id: row for row in grounded_plan.nuclei}
-    from emlis_ai_grounded_observation_plan import _received_contrast_group_targets
+    from emlis_ai_grounded_observation_plan import (
+        _received_contrast_group_targets, _source_owned_memo_duties_before_action,
+    )
     received_group = _received_contrast_group_targets(grounded_plan.nuclei, grounded_plan.relations)
+    original_reception = response_plan.human_reception_plan
+    memo_duties = bool(original_reception
+        and "selection:source_owned_memo_duties_first" in original_reception.depth_policy.selection_reason_codes
+        and _source_owned_memo_duties_before_action(
+            original_reception.moves, grounded_plan.nuclei, grounded_plan.relations))
     reception_plan = build_grounded_human_reception_plan(
         required=grounded_plan.coverage_requirements.human_follow_required,
         human_follow_target_ids=response_plan.human_follow_target_ids,
@@ -2975,7 +2982,9 @@ def _cmee_semantic_reception_plan(
         semantic_complexity=grounded_plan.input_profile.semantic_complexity,
         # The original-source adapter has a single projected Reception claim.
         # Keep its existing multi-pair contract; Q3 owns grouped thread claims.
-        include_relation_support=bool(received_group and len(received_group[0]) == 1),
+        # The proven memo duties use distinct acts. Keep their original
+        # relation endpoints so the shared builder can derive their order.
+        include_relation_support=bool(memo_duties or received_group and len(received_group[0]) == 1),
         final_source_fidelity=FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in grounded_plan.source_contracts,
     )
     if reception_plan is None or not reception_plan.required:
