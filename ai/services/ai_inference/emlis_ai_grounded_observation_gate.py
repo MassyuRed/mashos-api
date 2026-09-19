@@ -1996,7 +1996,8 @@ def _body_inverse_preceding_change_context(
     expected = (fragments[0] + "ことが支えている、" + fragments[1]
         + "という変化を見過ごさず、大切に思っています。")
     actual = body[previous_sentence.utf8_byte_start:previous_sentence.utf8_byte_end].decode("utf-8")
-    return actual == expected
+    return (actual == expected
+            or _read_action_change_discourse(actual, prior, plan, resolver, None) is not None)
 
 
 def _body_inverse_finite_contrast_attention(
@@ -2294,8 +2295,33 @@ def _read_action_purpose_discourse(raw, move, plan, resolver, selected_subjectiv
              (purpose + connector + action).encode()),)
 
 
+def _read_action_change_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Verify the past episode from body bytes without rerunning its author."""
+    from emlis_ai_grounded_observation_plan import source_owned_action_change
+    parts = source_owned_action_change(move, plan, resolver)
+    if parts is None:
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
+        proposition = decision.subjective_proposition if decision else None
+        appraisal = proposition.appraisal_content if proposition else None
+        if (appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
+            or appraisal.operation != "RECEIVE_AS_MATERIAL"):
+            return None
+    left, connector, right = parts
+    parsed = re.fullmatch(r"(?P<episode>.+)(?:のですね|のです|のだと受け取りました)。", raw)
+    if parsed is None or parsed['episode'] != left + connector + right:
+        return None
+    start = len((left + connector).encode())
+    return ((0, len(left.encode()), left.encode()),
+            (start, start + len(right.encode()), right.encode()))
+
+
 def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None):
     """Read supported finite source duties without a literal-author oracle."""
+    action_change = _read_action_change_discourse(raw, move, plan, resolver, selected_subjective_input)
+    if action_change is not None:
+        return action_change
     purpose = _read_action_purpose_discourse(raw, move, plan, resolver, selected_subjective_input)
     if purpose is not None:
         return purpose

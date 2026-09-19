@@ -9879,6 +9879,21 @@ def _source_owned_action_purpose_sentence(move, realization, plan, resolver,
     return f"{action}のは、{aim}ためなのですね"
 
 
+def _source_owned_action_change_sentence(move, realization, plan, resolver,
+                                        selected_decision, recovery_stage):
+    from emlis_ai_grounded_observation_plan import source_owned_action_change
+    if (recovery_stage != "full" or realization.reference_mode == "ANAPHORIC"
+        or realization.clause_form != "FINITE" or realization.context_slots != (1,)
+        or len(realization.semantic_fragments) != 2 or len(realization.relations) != 1
+        or any(p.actor_kind != "SELF" or p.quoted_boundary for p in realization.semantic_profiles)
+        or not _selected_material_appraisal(selected_decision)):
+        return None
+    parts = source_owned_action_change(move, plan, resolver)
+    if parts is None or tuple(realization.semantic_fragments) != (parts[0], parts[2]):
+        return None
+    return "".join(parts) + "のですね"
+
+
 def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
                                            selected_decision, recovery_stage):
     """Realize the scope of uncertainty or a person's supplied evaluation basis.
@@ -10427,6 +10442,11 @@ def _author_source_grounded_reception_clauses(
             )
             if purpose_sentence is not None:
                 move_sentence = purpose_sentence
+            action_change_sentence = _source_owned_action_change_sentence(
+                move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
+            )
+            if action_change_sentence is not None:
+                move_sentence = action_change_sentence
             # A source-owned reading is checked against its actual source roles,
             # not against the old nominalized referent or a fixed closing.
             from emlis_ai_grounded_observation_gate import read_source_owned_discourse
@@ -10517,9 +10537,11 @@ def _author_source_grounded_reception_clauses(
                     == nucleus_index[move.support_nucleus_ids[0]].source_span_ids
                 and all(p.actor_kind == "SELF" and not p.quoted_boundary and not p.future_action
                         for p in meaning_realization.semantic_profiles)
-                and move_sentence == (meaning_realization.semantic_fragments[0]
-                    + "ことが支えている、" + meaning_realization.semantic_fragments[1]
-                    + "という変化を見過ごさず、大切に思っています")):
+                and (action_change_sentence is not None
+                     and move_sentence == action_change_sentence
+                     or move_sentence == (meaning_realization.semantic_fragments[0]
+                         + "ことが支えている、" + meaning_realization.semantic_fragments[1]
+                         + "という変化を見過ごさず、大切に思っています"))):
                 preceding_change_context = (move.support_nucleus_ids[0],
                                             meaning_realization.semantic_fragments[1])
             if (recovery_stage == "full" and len(realization.moves) == 2

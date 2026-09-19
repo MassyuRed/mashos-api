@@ -7181,6 +7181,55 @@ def source_owned_action_purpose(nucleus, resolver) -> tuple[str, str, str] | Non
     return purpose, connector, action
 
 
+def source_owned_action_change(move, plan, resolver):
+    """Keep a completed action/result relation in its original conditional form.
+
+    A past ``tara`` episode is not evidence of continuing causal support.
+    Read the two already selected, coowned clauses and their actual connector;
+    do not derive another event, feeling, cause or present-tense claim.
+    """
+    from emlis_ai_grounded_human_reception import (
+        final_reception_source_anchor_text, source_grounded_reception_move_relations,
+    )
+    if (not move.required or move.reception_act != "honor_concrete_effort"
+        or len(move.target_nucleus_ids) != 1 or len(move.support_nucleus_ids) != 1):
+        return None
+    links = source_grounded_reception_move_relations(move, plan)
+    if (len(links) != 1 or links[0].type != "action_supports_change"
+        or links[0].grounding_kind != "user_stated_relation"
+        or links[0].retention != "required"
+        or links[0].relation_id not in plan.coverage_requirements.required_relation_ids
+        or (links[0].from_nucleus_id, links[0].to_nucleus_id)
+            != (move.target_nucleus_ids[0], move.support_nucleus_ids[0])):
+        return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    action, change = (index[nid] for nid in
+                      (move.target_nucleus_ids[0], move.support_nucleus_ids[0]))
+    if (not source_proven_performed_action_status(action)
+        or change.kind != "change" or change.semantic_frame.predicate_kind != "change"
+        or change.semantic_frame.modality not in {"fact", "feeling"}
+        or action.source_span_ids != change.source_span_ids
+        or any(n.source_fields != ("memo",) or len(n.source_span_ids) != 1
+               or n.retention != "required" or n.grounding_kind != "explicit"
+               or n.allowed_claim_scope != "explicit_current_input"
+               or n.semantic_frame.actor != "current_user"
+               or n.semantic_frame.time_scope != "past"
+               or any(c.startswith("thread_time:") for c in n.semantic_frame.attribute_codes)
+               for n in (action, change))):
+        return None
+    left, right = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
+                   for n in (action, change))
+    raw = str(resolver.resolve(action.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
+    if (not left or not right or left == right or not left.endswith(("た", "だ"))
+        or not raw.startswith(left) or not raw.endswith(right)
+        or _top_level_text(raw) != raw or re.search(r'[「」『』“”‘’"?？!！;；…‥\r\n]', raw)):
+        return None
+    connector = raw[len(left):-len(right)]
+    if re.fullmatch(r"ら[、,]?", connector) is None:
+        return None
+    return left, connector, right
+
+
 def source_owned_relational_focus(move, plan=None, *, nuclei=None, relations=None):
     """Select an existing, complete relation for a finite reading, not a new claim.
 
