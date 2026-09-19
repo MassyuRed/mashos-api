@@ -1,0 +1,99 @@
+name: Apply validated Emlis source focus once
+on:
+  push:
+    branches: [agent/emlis-hypothesis-work-20260918]
+    paths: [.github/workflows/emlis-source-focus-apply-once.yml]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.repository == 'MassyuRed/mashos-api' && github.ref == 'refs/heads/agent/emlis-hypothesis-work-20260918'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 283249cefd8502d1fa9d1031322d5fd9c890bbe6
+      - name: Apply exact public source and existing handoff
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64, gzip, hashlib, json, os, pathlib, subprocess, urllib.request
+          repo = 'MassyuRed/mashos-api'
+          base = '283249cefd8502d1fa9d1031322d5fd9c890bbe6'
+          target = 'refs/heads/agent/cmee-v1a-i1sx-source-explicit-20260815'
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True).strip()
+          def blob(data):
+              return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+          def fetch_blob(sha):
+              req = urllib.request.Request('https://api.github.com/repos/'+repo+'/git/blobs/'+sha,
+                  headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'], 'Accept':'application/vnd.github+json', 'X-GitHub-Api-Version':'2022-11-28'})
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  result = json.load(response)
+              assert result['encoding'] == 'base64'
+              data = base64.b64decode(result['content'])
+              assert blob(data) == sha, 'transfer blob mismatch'
+              return data
+          assert git('rev-parse', 'HEAD') == base
+          assert git('ls-remote', 'origin', target).split()[0] == base, 'target changed; no overwrite'
+          chunks = [
+              '97ab5299cfd7b82a236f7ab17dfdaa1e61612256',
+              '4b0a07ef2d3f161ce6676b9114aa0e4e2cc2fd1a',
+              '81902170a245880008855222b32a7537767dfc07',
+              'a65bb4c405a4032b975f79e54b46a689e2f5eea3',
+              '1ddcc1c90f265eaf357ff2ab5f96d34414842470',
+              '5aaff8be128c6777f7a0459b1ee95d511cb3a93f',
+              '2ceb212f2999febce497b50c89c915ac0aa541c9',
+              '96bb34704b1ffd52a102ed7ea9878ea49feab9e7',
+              'c8e239ce9add480e89403bd60e48ab6ef56dd0f4',
+              'bc41e9b13a2bf0f611e14ecb9b9e327ad9e39d15',
+              '984b5601ced8c2d50a611626be5fe6b0f1eadb26',
+          ]
+          compressed = b''.join(fetch_blob(sha) for sha in chunks)
+          assert len(compressed) == 10632 and blob(compressed) == '291e0fb00cf8414f152b1d845077489bdbc3ba5a'
+          patch = gzip.decompress(compressed)
+          assert hashlib.sha256(patch).hexdigest() == '62e4a621c9c18b49770fe62fa0499a87b48e8f3f00414d00dd193294a2b8c29a'
+          expected = {
+              'ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py': ('58b05b428510d0e868bdc12dc1ab955532275ad2','2cc51c970b613b589a139987e7f25cf9316a9bdb'),
+              'ai/services/ai_inference/emlis_ai_grounded_human_reception.py': ('b905e9b65976739c3ce376d0ce851b3b3b94e4bf','f2abaa6094c6164c13ce3833728cc7f55e9d63f6'),
+              'ai/services/ai_inference/emlis_ai_grounded_observation_gate.py': ('1f98a0a6b572c31c97d34849f9910addf7f111ea','164fa1f7001aef3dd3af13e8b180d6fe329869bf'),
+              'ai/services/ai_inference/emlis_ai_grounded_observation_plan.py': ('03dddaa7595b1e78b679825d68c465c7cc76ae5f','bbae789ad4c853da4af83e27027a8613157be412'),
+              'ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py': ('61b820f4860ede1bc951d7f7ec754a8ccba5025c','a9cfa391093fc727769bb11fbfc0ade13a720b31'),
+              'ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json': ('07f2949ae5477894a5e3e890e58077b5d7e85c3f','540d26affc60bd066ab2922490829b7b3396d686'),
+              'ai/tests/test_cmee_emlis_source_owned_focus.py': (None,'d43f7126a6f5fcf5509e9639bb40986c32d94899'),
+          }
+          for name, (before, after) in expected.items():
+              path = pathlib.Path(name)
+              assert (blob(path.read_bytes()) == before) if before else not path.exists(), name
+          patch_path = pathlib.Path('/tmp/emlis-public-source-focus.patch')
+          patch_path.write_bytes(patch)
+          subprocess.run(['git','apply','--check',str(patch_path)], check=True)
+          subprocess.run(['git','apply',str(patch_path)], check=True)
+          for name, (before, after) in expected.items():
+              assert blob(pathlib.Path(name).read_bytes()) == after, name
+          handoff = 'ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md'
+          previous = pathlib.Path(handoff).read_bytes()
+          assert blob(previous) == '0db4581da2406c471e5bc9b7a0805297350025ad'
+          updated = previous + fetch_blob('ae4715cc7d255c879fef6f28b282a0aa44274c83')
+          assert blob(updated) == '2b528445f8c160414d5de726c91bac11f760b5ec'
+          pathlib.Path(handoff).write_bytes(updated)
+          expected[handoff] = ('0db4581da2406c471e5bc9b7a0805297350025ad','2b528445f8c160414d5de726c91bac11f760b5ec')
+          subprocess.run(['git','add','--',*expected], check=True)
+          assert set(git('diff','--cached','--name-only').splitlines()) == set(expected)
+          subprocess.run(['git','diff','--cached','--check'], check=True)
+          git('config','user.name','github-actions[bot]')
+          git('config','user.email','41898282+github-actions[bot]@users.noreply.github.com')
+          subprocess.run(['git','commit','-m','fix(emlis): partition complete source duties and realize input-owned focus',
+              '-m','Preserve whole meaning contributions across required response parts, make explicit uncertainty focus readable, and connect actual answer-owned wishes to self-appraisal in the existing sole author and independent inverse. Fixed offline validation: same 1969 existing outcomes remain 1714 pass / 255 fail; new 44 checks pass (baseline 37 fail / 7 pass). Same100: two follow-ups changed, observations unchanged, 74/26 availability unchanged. Targeted saved 9 cases / 15 states, 24 GET and 9 restart equalities. Full inherited 231/461 saved replay not completed. NOT_CLEAR; no API/schema/RN/deploy/liveDB/externalAI change.'], check=True)
+          assert git('rev-parse','HEAD^') == base
+          for name, (_, after) in expected.items():
+              assert git('rev-parse','HEAD:'+name) == after
+          assert git('ls-remote','origin',target).split()[0] == base, 'target advanced; keep candidate only'
+          subprocess.run(['git','push','origin','HEAD:'+target], check=True)
+          result = {'commit':git('rev-parse','HEAD'),'parent':base,'files':{name:after for name,(_,after) in expected.items()}}
+          assert git('ls-remote','origin',target).split()[0] == result['commit']
+          print(json.dumps(result, indent=2))
+          PY
