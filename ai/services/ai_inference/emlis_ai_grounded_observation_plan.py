@@ -7131,6 +7131,64 @@ def _source_current_material_group(nuclei, relations):
     return (left, right, *actions)
 
 
+def source_owned_relational_focus(move, plan=None, *, nuclei=None, relations=None):
+    """Select an existing, complete relation for a finite reading, not a new claim.
+
+    This only names the two source roles already required by the plan. The
+    author and the body reader separately realize/read their actual words.
+    No field label, hypothetical question text or previous output is evidence.
+    """
+    if (not move.required or len(move.target_nucleus_ids) != 1
+        or len(move.support_nucleus_ids) > 1):
+        return None
+    nuclei = plan.nuclei if plan is not None else nuclei
+    relations = plan.relations if plan is not None else relations
+    if nuclei is None or relations is None:
+        return None
+    required_ids = (set(plan.coverage_requirements.required_relation_ids)
+                    if plan is not None else {r.relation_id for r in relations if r.retention == "required"})
+    index = {n.nucleus_id: n for n in nuclei}
+    relations = tuple(r for r in relations
+        if r.relation_id in required_ids and r.retention == "required"
+        and move.target_nucleus_ids[0] in (r.from_nucleus_id, r.to_nucleus_id))
+    if len(relations) != 1:
+        return None
+    relation = relations[0]
+    left, right = index.get(relation.from_nucleus_id), index.get(relation.to_nucleus_id)
+    if (left is None or right is None or left == right
+        or not set((*move.target_nucleus_ids, *move.support_nucleus_ids))
+            <= {left.nucleus_id, right.nucleus_id}
+        or any(n.semantic_frame.actor != "current_user"
+               or n.grounding_kind not in {"explicit", "user_stated_relation"}
+               or n.retention != "required" for n in (left, right))):
+        return None
+    if (relation.type == "evaluation_about_event"
+        and relation.grounding_kind == "user_stated_relation"
+        and _source_self_appraisal(left)
+        and right.kind == right.semantic_frame.predicate_kind == "wish"
+        and right.semantic_frame.modality == "wish"
+        and right.semantic_frame.polarity == "positive"
+        and right.semantic_frame.time_scope == "past"
+        and right.source_fields == ("answer_text_private",)
+        and right.allowed_claim_scope == "explicit_supplemental_answer"
+        and "thread_time:original_occasion" in right.semantic_frame.attribute_codes
+        and move.target_nucleus_ids == (right.nucleus_id,)
+        and move.reception_act == "protect_retained_intention"):
+        return "answer_owned_standard", left, right
+    if (relation.type == "contrast"
+        and relation.grounding_kind == "user_stated_relation"
+        and move.target_nucleus_ids == (left.nucleus_id,)
+        and all(n.source_fields == ("memo",)
+                and n.allowed_claim_scope in {"explicit_current_input", "source_bounded_relation"}
+                for n in (left, right))
+        and (left.kind == "wish" and left.semantic_frame.modality == "wish"
+             and left.semantic_frame.polarity == "positive"
+             or is_grounded_positive_feeling(left))
+        and move.reception_act in {"protect_retained_intention", "recognize_lived_change"}):
+        return "affirmed_with_unknown", left, right
+    return None
+
+
 def _source_proven_past_nonaction(nucleus: GroundedSemanticNucleus) -> bool:
     frame = nucleus.semantic_frame
     return bool(
@@ -9002,6 +9060,14 @@ def build_grounded_human_reception_plan(
                 move = replace(move, reference_mode=reference_mode)
             concrete_moves.append(move)
         moves = tuple(concrete_moves)
+    # A clarified relation needs the two actual scopes, not an ambiguous
+    # "that wish/change" that hides which part remains unsettled. This chooses
+    # an existing reference mode before expression/trace creation; the author
+    # never rewrites an ANAPHORIC expression into an unbound explicit one.
+    if final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION:
+        moves = tuple(replace(move, reference_mode="short_anchor_if_ambiguous")
+            if source_owned_relational_focus(move, nuclei=nuclei, relations=relations)
+            is not None else move for move in moves)
     # RR4 keeps the public follow target stable while expanding the aggregate
     # compatibility grounding to every selected Move.  ClausePlan remains the
     # owner of each individual Move binding; the aggregate fields keep the

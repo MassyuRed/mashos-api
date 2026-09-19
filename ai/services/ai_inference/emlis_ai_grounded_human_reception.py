@@ -9852,6 +9852,55 @@ def _source_grounded_shared_material_feelings(
                 predicates[1], clause_form="FINITE", hedged=False))
 
 
+def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
+                                           selected_decision, recovery_stage):
+    """Realize the scope of uncertainty or a person's supplied evaluation basis.
+
+    A relation is not an instruction to list two nominalized source strings.
+    Keep its source roles while making the live question/basis the predicate.
+    The response is a corrigible reading, never an invented cause or goal.
+    """
+    from emlis_ai_grounded_observation_plan import source_owned_relational_focus
+    focus = source_owned_relational_focus(move, plan)
+    if (focus is None or recovery_stage != "full"
+        or realization.reference_mode == "ANAPHORIC"
+        or realization.clause_form != "FINITE"
+        or len(realization.semantic_fragments) != 2
+        or len(realization.relations) != 1
+        or any(p.actor_kind != "SELF" or p.quoted_boundary
+               for p in realization.semantic_profiles)
+        or not (_selected_material_appraisal(selected_decision)
+                or _selected_noncollapse_appraisal(selected_decision)
+                or (selected_decision.subjective_proposition.relational_position is not None
+                    and selected_decision.subjective_proposition.relational_position.stance_operator
+                        == "STAY_WITH_SPECIFIC_OBJECT"))):
+        return None
+    kind, left, right = focus
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    first, second = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
+                     for n in (left, right))
+    if (not first or not second or first == second
+        or set(realization.semantic_fragments) != {first, second}
+        or any(mark in first + second for mark in ("。", "？", "?", "「", "」", "\n"))):
+        return None
+    if kind == "answer_owned_standard":
+        # The answer's positive past wish is evidence. The question's tentative
+        # goal, whether affirmed or rejected, is deliberately not consulted.
+        if selected_decision.subjective_proposition.relational_position is not None:
+            return (f"{first}という振り返りを、{second}という望みを起点に、一緒に見ていきたいです")
+        return (f"{first}という振り返りは、{second}という望みに照らしたものとして読めます")
+    parsed = re.fullmatch(
+        r"(?P<matter>.+(?:か|のか))(?P<topic>は|が)?"
+        r"(?P<state>(?:まだ|今は|もう)?(?:分からない|わからない|分からなくなった|"
+        r"わからなくなった|決められない|迷っている))", second)
+    if parsed is None:
+        return None
+    # The epistemic predicate remains verbatim, including its change/time.
+    # In particular, 'no longer know' must not become simply 'do not know'.
+    return (f"{first}一方で、{parsed['state']}のは、"
+            f"{parsed['matter']}という点なのですね")
+
+
 def _source_owned_appraisal_material_sentence(move, realization, plan, resolver,
                                               selected_decision, recovery_stage):
     """Receive a whole self-appraisal without using independent material against it.
@@ -10336,6 +10385,11 @@ def _author_source_grounded_reception_clauses(
                 distributive_object=distributive_relation_slot is not None,
                 unfinished_pair=unfinished_pair,
             )
+            focus_sentence = _source_owned_relational_focus_sentence(
+                move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
+            )
+            if focus_sentence is not None:
+                move_sentence = focus_sentence
             appraisal_sentence = _source_owned_appraisal_material_sentence(
                 move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
             )

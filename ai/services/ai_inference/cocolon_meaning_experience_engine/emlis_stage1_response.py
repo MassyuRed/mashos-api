@@ -12146,7 +12146,85 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
                     nominal_contrast = (event.nucleus_id, feeling_id)
         return _partition_shared_source_duty_contributions(rows, reception_plan.moves, binding,
             allow_support=current_material_action, nominal_contrast=nominal_contrast)
-    return rows
+    return _partition_complete_shared_relation_duties(rows, reception_plan, binding)
+
+
+def _partition_complete_shared_relation_duties(rows, reception_plan, binding):
+    """Consume a shared selected claim once per whole source contribution.
+
+    A relation may supply context to another Move without making that Move
+    responsible for the relation's other endpoint. Requiring every Move to
+    realize the entire aggregate made a valid thought/constraint plus action
+    fail before prose generation. Partition by closed source duties rather
+    than by a catalogue of feeling words or incidental input layouts.
+    """
+    if not 2 <= len(rows) <= 3:
+        return rows
+    result = list(rows)
+    moves = {m.move_id: m for m in reception_plan.moves}
+    for claim in dict.fromkeys(row.projected_claim_ref for row in rows):
+        positions = tuple(i for i, row in enumerate(rows) if row.projected_claim_ref == claim)
+        if len(positions) < 2:
+            continue
+        shared = tuple(rows[i] for i in positions)
+        first = shared[0]
+        proposition = first.subjective_proposition
+        appraisal = proposition.appraisal_content
+        if (first.branch != SubjectiveProjectionBranch.LIMITED.value
+            or appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
+            or appraisal.operation != "RECEIVE_AS_MATERIAL"
+            or proposition.focal_relation_ref is not None):
+            continue
+        if (any((row.branch, row.meaning_outcome_ref, row.reception_binding_ref,
+                 row.subjective_proposition, row.basis_rows, row.qualifier_rows)
+                != (first.branch, first.meaning_outcome_ref, first.reception_binding_ref,
+                    proposition, first.basis_rows, first.qualifier_rows) for row in shared)
+            or any(row.move_id not in moves or not moves[row.move_id].required
+                   or moves[row.move_id].target_nucleus_ids != row.target_nucleus_ids
+                   or moves[row.move_id].support_nucleus_ids != row.support_nucleus_ids
+                   for row in shared)):
+            raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+        complete = proposition.target_contribution_refs
+        if (not complete or len(set(complete)) != len(complete)
+            or tuple(b.binding_ref for b in first.basis_rows) != proposition.basis_binding_refs
+            or {b.contribution_ref for b in first.basis_rows} != set(complete)):
+            raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+        duties = []
+        for row in shared:
+            ids = set((*row.target_nucleus_ids, *row.support_nucleus_ids))
+            for relation in binding.edge_meta.values():
+                if relation.retention == "required" and set(row.target_nucleus_ids) & {
+                        relation.from_nucleus_id, relation.to_nucleus_id}:
+                    ids.update((relation.from_nucleus_id, relation.to_nucleus_id))
+            if any(nid not in binding.nucleus_to_node for nid in ids):
+                raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+            duties.append({_node_ref(binding.nucleus_to_node[nid]) for nid in ids})
+        if set().union(*duties) != set(proposition.response_object_refs):
+            continue
+        by_contribution = {ref: {b.semantic_ref for b in first.basis_rows if b.contribution_ref == ref}
+                           for ref in complete}
+        owners = {ref: tuple(i for i, duty in enumerate(duties) if basis and basis <= duty)
+                  for ref, basis in by_contribution.items()}
+        # Shared context is permitted; duplicated, split or missing meaning
+        # contributions are not. Ambiguity remains a failure, not a new pick.
+        if any(len(owner) != 1 for owner in owners.values()):
+            continue
+        partition = tuple(tuple(ref for ref in complete if owners[ref] == (i,))
+                          for i in range(len(shared)))
+        if any(not part for part in partition):
+            continue
+        if all(row.selected_contribution_refs == part
+               for row, part in zip(shared, partition, strict=True)):
+            continue
+        per_act = all(row.selected_contribution_refs == tuple(ref for ref in complete
+            if any(by_contribution[ref] & duty for other, duty in zip(shared, duties, strict=True)
+                   if other.reception_act == row.reception_act)) for row in shared)
+        if not per_act and not all(row.selected_contribution_refs == complete for row in shared):
+            raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+        for position, row, refs in zip(positions, shared, partition, strict=True):
+            result[position] = identify_selected_subjective_reception_decision(replace(
+                row, decision_ref="", selected_contribution_refs=refs))
+    return result
 
 
 def _partition_shared_source_duty_contributions(rows, moves, binding, *, allow_support=False, action_contrast=(), independent_positive=False, nominal_contrast=()):

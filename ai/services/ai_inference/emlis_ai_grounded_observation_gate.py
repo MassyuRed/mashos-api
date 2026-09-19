@@ -2202,8 +2202,70 @@ def _read_appraisal_material_discourse(raw, move, plan, resolver, selected_subje
     return ((0, end, expected.encode("utf-8")),)
 
 
+def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Independently read the asserted focus, then restore only its source spans.
+
+    The plan proves which two source roles may be related; full body parsing
+    proves their words, direction, epistemic scope and non-certain stance. No
+    author call, author output, fixture text or body binding grants admission.
+    """
+    from emlis_ai_grounded_observation_plan import source_owned_relational_focus
+    focus = source_owned_relational_focus(move, plan)
+    if focus is None:
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions
+                         if d.move_id == move.move_id), None)
+        proposition = decision.subjective_proposition if decision else None
+        appraisal = proposition.appraisal_content if proposition else None
+        position = proposition.relational_position if proposition else None
+        if not (appraisal is not None and appraisal.operation in {
+                    "RECEIVE_AS_MATERIAL", "PRESERVE_BOTH_ENDPOINTS"}
+                or position is not None and position.stance_operator == "STAY_WITH_SPECIFIC_OBJECT"):
+            return None
+    kind, left, right = focus
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    first, second = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
+                     for n in (left, right))
+    if (not first or not second or first == second
+        or any(mark in first + second for mark in ("。", "？", "?", "「", "」", "\n"))):
+        return None
+    if kind == "answer_owned_standard":
+        stance_reading = re.fullmatch(
+            r"(?P<appraisal>.+)という振り返りを、(?P<wish>.+)という望みを起点に、"
+            r"一緒に見ていきたいです。", raw)
+        material_reading = re.fullmatch(
+            r"(?P<appraisal>.+)という振り返りは、(?P<wish>.+)という望みに"
+            r"照らしたものとして(?:読めます|受け取れます)。", raw)
+        if selected_subjective_input is not None:
+            parsed = stance_reading if position is not None else material_reading
+        else:
+            parsed = stance_reading or material_reading
+        if (parsed is None or parsed["appraisal"] != first or parsed["wish"] != second):
+            return None
+        spans = (('appraisal', first), ('wish', second))
+        return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()),
+                      value.encode()) for key, value in spans)
+    source = re.fullmatch(r"(?P<matter>.+(?:か|のか))(?P<topic>は|が)?"
+                          r"(?P<state>(?:まだ|今は|もう)?(?:分からない|わからない|分からなくなった|"
+                          r"わからなくなった|決められない|迷っている))", second)
+    parsed = re.fullmatch(r"(?P<affirmed>.+)一方で、(?P<unknown>.+)のは、"
+                          r"(?P<matter>.+)という点(?:なのですね|なのだと読めます)。", raw)
+    if (source is None or parsed is None or parsed['affirmed'] != first
+        or parsed['unknown'] != source['state'] or parsed['matter'] != source['matter']):
+        return None
+    # The topicalization is one contiguous source-owned span. Restoring it for
+    # the existing inverse does not change the emitted body or original data.
+    return ((0, len(first.encode()), first.encode()),
+            (len(raw[:parsed.start('unknown')].encode()),
+             len(raw[:parsed.end('matter')].encode()), second.encode()))
+
+
 def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None):
     """Read supported finite source duties without a literal-author oracle."""
+    focus = _read_relational_focus_discourse(raw, move, plan, resolver, selected_subjective_input)
+    if focus is not None:
+        return focus
     appraisal = _read_appraisal_material_discourse(raw, move, plan, resolver, selected_subjective_input)
     return appraisal if appraisal is not None else read_received_discourse(
         raw, move, plan, resolver, selected_subjective_input)
