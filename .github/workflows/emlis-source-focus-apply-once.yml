@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 879f292053c4b6eb531433b54b8504d2228ec38c
+          ref: bd517b9d38cc3afae01a1849da375bc177d9abaf
       - name: Apply exact public source and existing handoff
         env:
           GH_TOKEN: ${{ github.token }}
@@ -22,7 +22,7 @@ jobs:
           python3 - <<'PY'
           import base64, gzip, hashlib, json, os, pathlib, subprocess, urllib.request
           repo = 'MassyuRed/mashos-api'
-          base = '879f292053c4b6eb531433b54b8504d2228ec38c'
+          base = 'bd517b9d38cc3afae01a1849da375bc177d9abaf'
           target = 'refs/heads/agent/cmee-v1a-i1sx-source-explicit-20260815'
           def git(*args):
               return subprocess.check_output(['git', *args], text=True).strip()
@@ -40,28 +40,28 @@ jobs:
           assert git('rev-parse', 'HEAD') == base
           assert git('ls-remote', 'origin', target).split()[0] == base, 'target changed; no overwrite'
           chunks = [
-              '690a43cb877e13b58bf36cfb654287543a5d526b',
-              'c4ff9d95c4dfc262db2a00f5ebf40e9b90f6584a',
-              '96d21bb2d8083a6c5d2c6b16a8494ac48dc3468c',
-              '86a09ffdd18c1134e0c7c45d4e0ea0195708a3c2',
-              '564d5bd66ce7d55c2c8c341748e72a4157ca9bec',
-              'b59497fbdd86922aff1759c94f44c5d7fbefbdc1',
-              '28c79550a8908788ee13d324e1c377c4acf65f08',
+              '9df6962b06287176653c9dd7f0a94ab4c85a5e46',
+              'fe33ea89149699c0113799a360532af5d545bcfd',
+              '2bc8eab38c1bb23a9e941068b9df0bd36903b043',
+              '5ceb48935d85ac8a124e1e57c8c11f116018e0cb',
+              '4c9a89d66bec0315966174a97cac8c0d8158ac15',
+              'd5b5b2c2684c3b11112032dc90822346fe07ac07',
+              '7f9139465ed67c8120ce5f23826b0592e5260fe2',
           ]
           compressed = b''.join(fetch_blob(sha) for sha in chunks)
-          assert len(compressed) == 8312 and blob(compressed) == '96bec892560dec6c228e24677e4c708df2930614'
+          assert len(compressed) == 6451 and blob(compressed) == 'a5912af811a16e161e9ecdde14685f2d1c585676'
           patch = gzip.decompress(compressed)
-          assert hashlib.sha256(patch).hexdigest() == '7841912836840b53298d79fbf4f412dd4c9d081504aba0ed57c4a42df10a2006'
+          assert hashlib.sha256(patch).hexdigest() == '0ff06d03333c0121d7676cdbaef61b16de01239121a53a3bc971bed6063ed035'
           expected = {
-              'ai/services/ai_inference/emlis_ai_grounded_observation_gate.py': ('164fa1f7001aef3dd3af13e8b180d6fe329869bf','949f752cc1e47e993e4fb7057f1e07ebb95275b4'),
-              'ai/services/ai_inference/emlis_ai_grounded_observation_plan.py': ('bbae789ad4c853da4af83e27027a8613157be412','9c407b7c025453eb9c2ebef8257cd82a0f450258'),
-              'ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json': ('540d26affc60bd066ab2922490829b7b3396d686','7106cc0d6a19ba53d80837c076903bc6a48a2575'),
-              'ai/tests/test_cmee_emlis_source_owned_focus.py': ('d43f7126a6f5fcf5509e9639bb40986c32d94899','34f866d00c0d0b35d9e0247d31d1e5e2192fe1cb'),
-              'ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md': ('2b528445f8c160414d5de726c91bac11f760b5ec','85371f4be45e9599819504d9802f2adb5563c96a'),
+              'ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py': ('2cc51c970b613b589a139987e7f25cf9316a9bdb','ae752357385447b7606a2898392aa630b2a5f07e'),
+              'ai/services/ai_inference/emlis_ai_grounded_observation_gate.py': ('949f752cc1e47e993e4fb7057f1e07ebb95275b4','cfc6108e08996e2a78e95bbda0c89e2cdaf72a06'),
+              'ai/tests/test_cmee_emlis_source_owned_focus.py': ('34f866d00c0d0b35d9e0247d31d1e5e2192fe1cb','582100bc9cf5a1f9da04714efe0fabec1111faae'),
+              'ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json': ('7106cc0d6a19ba53d80837c076903bc6a48a2575','33d3cd2fec5e472b1aaa354ce0a7050054180128'),
+              'ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md': ('85371f4be45e9599819504d9802f2adb5563c96a','fecd9f03d244a3b236e5c846d9bb977bbe077f44'),
           }
           for name, (before, after) in expected.items():
               assert blob(pathlib.Path(name).read_bytes()) == before, name
-          patch_path = pathlib.Path('/tmp/emlis-public-independent-context.patch')
+          patch_path = pathlib.Path('/tmp/emlis-public-qualified-revision.patch')
           patch_path.write_bytes(patch)
           subprocess.run(['git','apply','--check',str(patch_path)], check=True)
           subprocess.run(['git','apply',str(patch_path)], check=True)
@@ -72,8 +72,8 @@ jobs:
           subprocess.run(['git','diff','--cached','--check'], check=True)
           git('config','user.name','github-actions[bot]')
           git('config','user.email','41898282+github-actions[bot]@users.noreply.github.com')
-          subprocess.run(['git','commit','-m','fix(emlis): keep independent original fields out of asserted background',
-              '-m','Publish the five unchanged files validated in the preceding private work session. Preserve explicit same-field and required relations, independent reception and inverse affirmative-act checks. Inherited selected validation: 1782 passed / 299 failed of 2081, new 68 passed; same100 unchanged at 74 generated / 26 unavailable; saved33 cases / 45 states with 21 changed, 24 unchanged, 78 GET and 33 restart equalities. This transfer does not rerun or upgrade those results. Repetition and three corrected states without current prose remain NOT_CLEAR; full inherited 231/461 replay incomplete. No API, DB, RN, deployment, external AI or fixed-expectation change.'], check=True)
+          subprocess.run(['git','commit','-m','fix(emlis): realize qualified revisions through disjoint source duties',
+              '-m','Keep required original-event context without duplicating corrected-feeling and independent-action contributions. Bind the full qualified event/time/feeling object in the existing independent inverse. Selected final validation: 1826 passed / 299 failed of 2125; all 2081 inherited outcomes unchanged, 44 new regressions fail before and pass after. Same100 full outcomes unchanged at 74 generated / 26 unavailable. Existing saved33 cases /45 states: three revised states gain current prose, 42 states unchanged, 78 GET and 33 no-author restart equalities. No full inherited 231/461 replay or whole-suite GREEN claimed. Repetitive observation and stock follow-up remain NOT_CLEAR. No API, DB, RN, deployment, external AI, threshold or fixed-expectation change.'], check=True)
           assert git('rev-parse','HEAD^') == base
           for name, (_, after) in expected.items():
               assert git('rev-parse','HEAD:'+name) == after, name
