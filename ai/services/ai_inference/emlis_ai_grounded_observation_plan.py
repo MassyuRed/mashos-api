@@ -7131,6 +7131,56 @@ def _source_current_material_group(nuclei, relations):
     return (left, right, *actions)
 
 
+def source_owned_action_purpose(nucleus, resolver) -> tuple[str, str, str] | None:
+    """Read one explicit purpose inside an already proven self-performed act.
+
+    This is a grammatical view of the same whole source owner, not another
+    relation or an inference about why an independent feeling led to an act.
+    The purpose is not an achieved result. A past cause, reported purpose,
+    conditional purpose or another person's purpose cannot use this form.
+    """
+    frame = nucleus.semantic_frame
+    if (not source_proven_performed_action_status(nucleus)
+        or frame.actor != "current_user" or frame.predicate_kind != "action"
+        or nucleus.grounding_kind != "explicit" or nucleus.retention != "required"
+        or nucleus.source_fields not in {("memo",), ("memo_action",)}
+        or nucleus.allowed_claim_scope != "explicit_current_input"
+        or len(nucleus.source_span_ids) != 1
+        or any(code.startswith(("source_fragment_", "surface_scalar_", "thread_time:"))
+               or code == "semantic_role:generic_relation_fragment"
+               for code in frame.attribute_codes)):
+        return None
+    span = resolver.resolve(nucleus.source_span_ids[0])
+    raw = str(span.raw_text or "").strip(" \u3000、,。．.")
+    if (span.source_field != nucleus.source_fields[0]
+        or any(re.search(r'[「」『』“”‘’"?？!！…‥\r\n]', str(row.raw_text))
+               for row in resolver.resolve_many(resolver.span_ids)
+               if row.source_field == span.source_field)
+        or re.search(r"[。．.;；\s]", raw)
+        or raw.count("ため") != 1
+        or re.search(r"(?:によると|(?:と|って)(?:言|話|思|考|聞|聴|教|伝|述|語|書|記|読)|"
+                     r"かもしれ|らしい|なら|たら|れば|場合|もし)", raw)):
+        return None
+    parsed = re.fullmatch(r"(?P<purpose>[^、,]+)(?P<connector>ために?、)(?P<action>.+)", raw)
+    if parsed is None:
+        return None
+    purpose, connector, action = (parsed.group(key) for key in ("purpose", "connector", "action"))
+    # These are intentional predicate classes, never replacement prose.
+    # The dictionary form distinguishes a supplied aim from a past cause.
+    # An explicit object and no separate topic/subject keep the aim owned by
+    # the same actor. More complex temporal/topic purposes retain old prose.
+    aim = re.search(r"(?:確認する|記録する|整理する|比較する|保存する|連絡する|"
+                    r"相談する|準備する|提出する|予約する|調べる|確かめる|"
+                    r"伝える|書く|読む|作る|試す|残す|見る)$", purpose)
+    if (aim is None or "を" not in purpose[:aim.start()]
+        or re.search(r"[はがも]", purpose)
+        or re.search(r"(?:してもらう|してくれる|させる|ため|ように)", purpose)
+        or not re.search(r"(?:た|だ|ている|でいる)$", action)
+        or re.search(r"(?:ました|でした|ことにした|ようにした)$", action)):
+        return None
+    return purpose, connector, action
+
+
 def source_owned_relational_focus(move, plan=None, *, nuclei=None, relations=None):
     """Select an existing, complete relation for a finite reading, not a new claim.
 

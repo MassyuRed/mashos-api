@@ -9852,6 +9852,33 @@ def _source_grounded_shared_material_feelings(
                 predicates[1], clause_form="FINITE", hedged=False))
 
 
+def _source_owned_action_purpose_sentence(move, realization, plan, resolver,
+                                         selected_decision, recovery_stage):
+    """Put a source-owned aim in focus without promoting it to achievement."""
+    from emlis_ai_grounded_observation_plan import source_owned_action_purpose
+    if (not move.required or move.reception_act != "honor_concrete_effort"
+        or move.move_role not in {"attention", "felt_response"}
+        or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids
+        or recovery_stage != "full" or realization.reference_mode == "ANAPHORIC"
+        or realization.clause_form != "FINITE" or realization.context_slots
+        or realization.relations or len(realization.semantic_fragments) != 1
+        or len(realization.semantic_profiles) != 1
+        or not _selected_material_appraisal(selected_decision)):
+        return None
+    profile = realization.semantic_profiles[0]
+    if (profile.actor_kind != "SELF" or profile.quoted_boundary
+        or profile.future_action or not profile.performed_action
+        or (profile.nucleus_kind, profile.predicate_kind, profile.modality)
+            != ("action", "action", "fact")):
+        return None
+    nucleus = next(n for n in plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0])
+    purpose = source_owned_action_purpose(nucleus, resolver)
+    if purpose is None or realization.semantic_fragments[0] != "".join(purpose):
+        return None
+    aim, connector, action = purpose
+    return f"{action}のは、{aim}ためなのですね"
+
+
 def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
                                            selected_decision, recovery_stage):
     """Realize the scope of uncertainty or a person's supplied evaluation basis.
@@ -10395,6 +10422,11 @@ def _author_source_grounded_reception_clauses(
             )
             if appraisal_sentence is not None:
                 move_sentence = appraisal_sentence
+            purpose_sentence = _source_owned_action_purpose_sentence(
+                move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
+            )
+            if purpose_sentence is not None:
+                move_sentence = purpose_sentence
             # A source-owned reading is checked against its actual source roles,
             # not against the old nominalized referent or a fixed closing.
             from emlis_ai_grounded_observation_gate import read_source_owned_discourse

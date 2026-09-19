@@ -2261,8 +2261,44 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
              len(raw[:parsed.end('matter')].encode()), second.encode()))
 
 
+def _read_action_purpose_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Read the purpose and performed action independently from actual prose.
+
+    Source grammar supplies the two permitted roles, never the answer text.
+    Restoring that one source span serves the existing evidence inverse only;
+    it cannot promote the purpose to an achieved result or a cause.
+    """
+    from emlis_ai_grounded_observation_plan import source_owned_action_purpose
+    from emlis_ai_grounded_human_reception import source_grounded_reception_move_relations
+    if (move.reception_act != "honor_concrete_effort" or not move.required
+        or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids
+        or source_grounded_reception_move_relations(move, plan)):
+        return None
+    nucleus = next((n for n in plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0]), None)
+    parts = source_owned_action_purpose(nucleus, resolver) if nucleus is not None else None
+    if parts is None:
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
+        proposition = decision.subjective_proposition if decision else None
+        appraisal = proposition.appraisal_content if proposition else None
+        if appraisal is None or appraisal.operation != "RECEIVE_AS_MATERIAL":
+            return None
+    purpose, connector, action = parts
+    parsed = re.fullmatch(r"(?P<action>.+)のは、(?P<purpose>.+)ため(?:なのですね|なのです|なのだと受け取りました)。", raw)
+    if parsed is None or parsed['action'] != action or parsed['purpose'] != purpose:
+        return None
+    # The inversion occupies one contiguous body range. Reconstruct the
+    # exact source order, including its connective, for downstream scope checks.
+    return ((0, len(raw[:parsed.end('purpose')].encode()),
+             (purpose + connector + action).encode()),)
+
+
 def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None):
     """Read supported finite source duties without a literal-author oracle."""
+    purpose = _read_action_purpose_discourse(raw, move, plan, resolver, selected_subjective_input)
+    if purpose is not None:
+        return purpose
     focus = _read_relational_focus_discourse(raw, move, plan, resolver, selected_subjective_input)
     if focus is not None:
         return focus
