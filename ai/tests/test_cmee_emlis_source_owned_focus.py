@@ -302,3 +302,80 @@ def test_saved_answer_and_withdrawal_keep_separate_action_and_source_time(qcase,
     monkeypatch.setattr(service.engine,'generate',lambda *_:pytest.fail('saved update was regenerated'))
     assert run(service.start(user,parent))==after
     assert run(service.get(user,parent))==after
+
+
+CORRECTED_RECEPTIONS = (
+    'あの時も本当は嬉しかった。書き方を間違えた。',
+    '当時は嬉しかった。書き方を間違えた。',
+    '「嬉しくなかった」は誤りです。本当は嬉しかった。',
+)
+
+
+def corrected_reception_request(reply=CORRECTED_RECEPTIONS[0], action=ACTION+'。', tier='free'):
+    from test_cmee_emlis_q3_thread import advance
+    return prepared_request(advance(application('褒められたのに、嬉しくなかった。', action, tier), reply))
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('action', [ACTION+'。', '机を片づけた。', '本を読んだ。'])
+@pytest.mark.parametrize('reply', CORRECTED_RECEPTIONS)
+def test_corrected_reception_and_unrelated_action_own_distinct_complete_contributions(tier, action, reply):
+    request, checkpoint = corrected_reception_request(reply, action, tier)
+    before = request
+    out = MeaningExperienceEngine().generate(request)
+    assert out.artifact is not None, out.reason_codes
+    assert out.body_state == 'REFINED' and checkpoint.assessment_status == 'RESOLVED'
+    assert request == before and not out.automatic_progression
+    text = out.artifact.text
+    assert '褒められた' in text and '嬉しかった' in text and action.rstrip('。') in text
+    assert '嬉しくなかった' not in text
+    assert 'その時' in out.artifact.reception and 'ことを背景に、' not in out.artifact.reception
+    prepared = prepare_emlis_meaning(request)
+    plan = build_updated_grounded_plan(prepared)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    consumed = [ref for row in selected.decisions for ref in row.selected_contribution_refs]
+    complete = {ref for row in selected.decisions for ref in row.subjective_proposition.target_contribution_refs}
+    assert set(consumed) == complete and all(count == 1 for count in Counter(consumed).values())
+    assert inverse(actual(request=request), out.artifact.reception, without_author=True).passed
+
+
+@pytest.mark.parametrize('old,new', [
+    ('褒められた', '叱られた'),
+    ('嬉しかった', '嬉しくなかった'),
+    ('その時に', '回答した時点では'),
+    ('その時に', '友人がその時に'),
+    ('絵筆を洗った', '絵筆を洗わなかった'),
+    ('絵筆を洗った', '友人が絵筆を洗った'),
+    ('絵筆を洗った', '来月は絵筆を洗った'),
+    ('大切に思っています', '大切に思っていません'),
+])
+def test_corrected_reception_rejects_changed_event_feeling_time_and_unrelated_action(old, new):
+    request, _ = corrected_reception_request()
+    context = actual(request=request)
+    assert context[0].artifact is not None
+    follow = context[0].artifact.reception
+    changed = follow.replace(old, new)
+    assert changed != follow
+    assert inverse(context, follow, without_author=True).passed
+    assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('reply', CORRECTED_RECEPTIONS)
+def test_saved_corrected_reception_is_current_without_rewriting_original_or_rerender(qcase, qdb, monkeypatch, tier, reply):
+    user, parent, service = qcase
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
+    qdb.query('update public.emotions set memo=$1,memo_action=$2 where id=$3',
+              ['褒められたのに、嬉しくなかった。', ACTION+'。', parent])
+    first = run(service.start(user, parent))
+    assert first['current_observation'] is not None and first['pending_question'] is not None
+    updated = run(answer(service, user, first, reply))
+    assert updated['current_observation'] is not None, updated
+    text = updated['current_observation']['text']
+    assert '嬉しかった' in text and '嬉しくなかった' not in text
+    assert '褒められた' in text and ACTION in text and 'その時' in text
+    assert updated['original'] == first['original']
+    assert run(service.get(user, parent)) == updated
+    monkeypatch.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved correction was regenerated'))
+    assert run(service.start(user, parent)) == updated
+    assert run(service.get(user, parent)) == updated

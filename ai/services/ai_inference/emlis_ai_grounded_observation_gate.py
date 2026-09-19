@@ -3652,11 +3652,26 @@ def evaluate_grounded_surface_body_inverse(
                                         phrase = b""
                                     else:
                                         phrase = (nominal + "という気持ち").encode()
+                                # Restore the whole event/time/feeling object from
+                                # its required source relation, not an inner phrase
+                                # that could sit under a newly inserted experiencer.
+                                about = tuple(r for r in plan.relations
+                                    if r.type == "evaluation_about_event"
+                                    and r.to_nucleus_id == answer.nucleus_id
+                                    and r.relation_id in plan.coverage_requirements.required_relation_ids)
+                                qualified_object = None
+                                if nominal_answer is None and len(clause.move_ids) == 1 and len(about) == 1:
+                                    event_source = final_reception_source_anchor_text(
+                                        about[0].from_nucleus_id, nucleus_index, resolver)
+                                    qualified_object = ((event_source + "ことについて、").encode() + phrase
+                                                        if event_source and phrase else b"")
                                 raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end]
                                 start = parsed_sentence.utf8_byte_start + raw.find(phrase)
                                 end = start + len(phrase)
                                 if (not phrase or raw.count(phrase) != 1
                                     or nominal_answer is not None and not raw.startswith(phrase)
+                                    or qualified_object is not None and (not qualified_object
+                                        or not raw.startswith(qualified_object))
                                     or any(q.section == "reception" and q.utf8_byte_start < end
                                            and start < q.utf8_byte_end for q in witness.quotes)
                                     or any(m.section == "reception" and m.marker_code == "secondary_quote_boundary"

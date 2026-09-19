@@ -12199,7 +12199,11 @@ def _partition_complete_shared_relation_duties(rows, reception_plan, binding):
             if any(nid not in binding.nucleus_to_node for nid in ids):
                 raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
             duties.append({_node_ref(binding.nucleus_to_node[nid]) for nid in ids})
-        if set().union(*duties) != set(proposition.response_object_refs):
+        # A required qualified relation can add a source context endpoint
+        # without turning that endpoint into an appraisal response object.
+        # All response objects must still be realized; the complete basis
+        # below must still have exactly one owner per whole contribution.
+        if not set(proposition.response_object_refs) <= set().union(*duties):
             continue
         by_contribution = {ref: {b.semantic_ref for b in first.basis_rows if b.contribution_ref == ref}
                            for ref in complete}
