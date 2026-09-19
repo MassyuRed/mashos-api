@@ -21,6 +21,7 @@ from emlis_ai_grounded_human_reception import (
     realize_grounded_human_reception,
     reception_active_moves,
     reception_move_predicate_family,
+    resolve_grounded_reception_move_referent,
     validate_grounded_human_reception_surface,
 )
 from emlis_ai_grounded_observation_plan import build_grounded_observation_plan
@@ -485,3 +486,55 @@ def test_rr5_realizer_and_surface_validator_reject_move_corruption() -> None:
             resolver,
         )
     )
+
+
+@pytest.mark.parametrize("source", ("今日はずっと重い", "今日は胸が苦しい"))
+def test_rr5_burden_reference_preserves_the_selected_complete_source(source) -> None:
+    artifacts = _artifacts({
+        "memo": source + "。何をしても重く感じる。今も同じ重さが続いている。",
+        "memo_action": "", "emotions": ["悲しみ"], "category": ["生活"],
+    })
+    plan, reception_plan, _, _, _, direct, _, _, resolver = artifacts
+    move, = reception_plan.moves
+    assert move.reception_act == "stay_with_current_burden"
+    assert move.reference_mode == "short_anchor_if_ambiguous"
+    assert move.support_nucleus_ids == ()
+    target = next(n for n in plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0])
+    assert tuple(resolver.resolve(s).raw_text for s in target.source_span_ids) == (source,)
+    assert _QUOTE_RE.findall(direct.text) == [source]
+    assert direct.source_anchor_count == 1
+    assert direct.realized_move_ids == (move.move_id,)
+    assert direct.move_predicate_families == (reception_move_predicate_family(move),)
+    assert validate_grounded_human_reception_surface(direct, reception_plan, resolver) == ()
+
+
+@pytest.mark.parametrize("boundary", (
+    "no_clause_budget", "no_quote_budget", "too_long", "anaphoric", "integrated", "final",
+))
+def test_rr5_burden_anchor_respects_existing_reference_boundaries(boundary) -> None:
+    artifacts = _artifacts({
+        "memo": "今日はずっと重い。何をしても重く感じる。今も同じ重さが続いている。",
+        "memo_action": "", "emotions": ["悲しみ"], "category": ["生活"],
+    })
+    plan, reception_plan, _, _, _, _, _, _, resolver = artifacts
+    move, = reception_plan.moves
+    if boundary == "no_quote_budget":
+        reception_plan = replace(reception_plan, quote_policy=replace(
+            reception_plan.quote_policy, max_anchor_count=0,
+        ))
+    elif boundary == "too_long":
+        reception_plan = replace(reception_plan, quote_policy=replace(
+            reception_plan.quote_policy, max_anchor_visible_chars=4,
+        ))
+    elif boundary == "anaphoric":
+        move = replace(move, reference_mode="anaphoric_first")
+    referent = resolve_grounded_reception_move_referent(
+        reception_plan, move, {n.nucleus_id: n for n in plan.nuclei}, resolver,
+        allow_short_anchor=boundary != "no_clause_budget",
+        recovery_stage="integrated" if boundary == "integrated" else "full",
+        final_source_fidelity=boundary == "final",
+    )
+    assert referent.source_anchor_used is False
+    assert referent.nucleus_ids == move.target_nucleus_ids
+    assert referent.evidence_span_ids == move.source_evidence_span_ids
+    assert referent.text == ("今ここに置かれた言葉" if boundary == "final" else "今のしんどさ")

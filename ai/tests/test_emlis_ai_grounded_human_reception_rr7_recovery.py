@@ -207,11 +207,10 @@ def test_rr7_optional_removed_drops_only_a_synthetic_optional_third_move() -> No
         moves=(*reception_plan.moves[:-1], optional_third),
     )
 
-    assert len(reception_active_moves(synthetic, "full")) == 3
-    assert tuple(
-        move.move_id
-        for move in reception_active_moves(synthetic, "optional_removed")
-    ) == tuple(move.move_id for move in synthetic.moves[:2])
+    full_moves = reception_active_moves(synthetic, "full")
+    assert len(full_moves) == 3
+    expected = tuple(move for move in full_moves if move.move_id != optional_third.move_id)
+    assert reception_active_moves(synthetic, "optional_removed") == expected
     assert len(reception_active_moves(synthetic, "integrated")) == 3
     assert len(reception_active_moves(synthetic, "hedged")) == 3
     with pytest.raises(
