@@ -262,3 +262,110 @@ def test_action_postposition_requires_existing_independent_source_proof(mutation
         nuclei = tuple(replace(n, **kwargs) if n.nucleus_id == target_id else n for n in plan.nuclei)
         relations = plan.relations
     assert not owner._thread_retained_reaction_groups(nuclei, relations)
+
+
+# A separate received contrast is not required to receive an explicit feeling
+# before an unrelated performed act. Existing source witnesses own both duties.
+from test_cmee_emlis_q3_thread import NOMINAL_COGNITION_FEELING
+
+SINGLE_FEELING_MEMOS = (
+    NOMINAL_COGNITION_FEELING,
+    '片付けが終わった。背伸びをしなくても、少しずつ取り組めると思えたことが嬉しい',
+)
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('source', SINGLE_FEELING_MEMOS)
+def test_single_source_feeling_precedes_action_without_changing_selected_meaning(tier, source):
+    req = application(source + '。', ACTION + '。', tier=tier)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    hr = plan.response_plan.human_reception_plan
+    with patch.object(owner, '_source_owned_memo_duties_before_action', return_value=False):
+        before = build_updated_grounded_plan(prepared)
+    assert plan.nuclei == before.nuclei and plan.relations == before.relations
+    assert plan.coverage_requirements == before.coverage_requirements
+    assert hr.moves == before.response_plan.human_reception_plan.moves
+    assert tuple(m.reception_act for m in reception_active_moves(hr, 'full')) == (
+        'recognize_lived_change', 'honor_concrete_effort')
+    for current in (req, replace(req, emlis_thread=None)):
+        out = MeaningExperienceEngine().generate(current)
+        assert out.artifact is not None, out.reason_codes
+        assert out.artifact.reception.index(source.split('。')[-1]) < out.artifact.reception.index(ACTION)
+        if current.emlis_thread is not None:
+            assert out.question is None and not out.automatic_progression
+
+
+@pytest.mark.parametrize('mutation', ['feeling_actor', 'field', 'witness', 'action_actor',
+    'action_retention', 'action_span', 'action_grounding', 'action_time', 'action_relation',
+    'optional', 'role', 'unsupported_support'])
+def test_single_feeling_order_requires_complete_source_ownership(mutation):
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(
+        NOMINAL_COGNITION_FEELING + '。', ACTION + '。')))
+    moves, nuclei, relations = plan.response_plan.human_reception_plan.moves, plan.nuclei, plan.relations
+    assert owner._source_owned_memo_duties_before_action(moves, nuclei, relations)
+    feeling = next(m for m in moves if m.reception_act == 'recognize_lived_change')
+    action = next(m for m in moves if m.reception_act == 'honor_concrete_effort')
+    if mutation == 'action_relation':
+        relations = tuple(replace(r, retention='required', grounding_kind='user_stated_relation')
+                          for r in relations)
+    elif mutation in {'optional', 'role', 'unsupported_support'}:
+        changes = {'required': False} if mutation == 'optional' else {'move_role': 'significance'} if mutation == 'role' else {
+            'support_nucleus_ids': action.target_nucleus_ids}
+        moves = tuple(replace(m, **changes) if m == feeling else m for m in moves)
+    else:
+        target_id = (action if mutation.startswith('action_') else feeling).target_nucleus_ids[0]
+        def changed(n):
+            if n.nucleus_id != target_id: return n
+            if mutation == 'field': return replace(n, source_fields=('answer_text_private',))
+            if mutation == 'action_retention': return replace(n, retention='optional')
+            if mutation == 'action_span': return replace(n, source_span_ids=())
+            if mutation == 'action_grounding': return replace(n, grounding_kind='bounded_structural_inference')
+            frame = replace(n.semantic_frame, attribute_codes=tuple(c for c in n.semantic_frame.attribute_codes
+                if c != 'lexical:source_bounded_expression')) if mutation == 'witness' else replace(
+                    n.semantic_frame, **({'time_scope': 'future'} if mutation == 'action_time' else {'actor': 'other'}))
+            return replace(n, semantic_frame=frame)
+        nuclei = tuple(changed(n) for n in nuclei)
+    assert not owner._source_owned_memo_duties_before_action(moves, nuclei, relations)
+
+
+@lru_cache(maxsize=1)
+def single_feeling_context():
+    return actual(request=begin(NOMINAL_COGNITION_FEELING + '。', ACTION + '。'))
+
+
+@pytest.mark.parametrize('mutation', ['action_first', 'omit_feeling', 'omit_action',
+    'actor', 'time', 'negation', 'cause'])
+def test_single_feeling_inverse_preserves_order_and_complete_meaning_without_author(mutation):
+    ctx = single_feeling_context()
+    text = ctx[0].artifact.reception
+    assert inverse(ctx, text, without_author=True).passed
+    parts = [x + '。' for x in text.split('。') if x]
+    assert len(parts) == 2 and NOMINAL_COGNITION_FEELING in parts[0]
+    if mutation == 'action_first': changed = parts[1] + parts[0]
+    elif mutation == 'omit_feeling': changed = parts[1]
+    elif mutation == 'omit_action': changed = parts[0]
+    else:
+        old, new = {'actor': (NOMINAL_COGNITION_FEELING, '友人は' + NOMINAL_COGNITION_FEELING),
+                    'time': ('うれしい', 'うれしかった'),
+                    'negation': ('急がなくても', '急いだから'),
+                    'cause': ('という気持ちを', 'ので、机を拭いたという気持ちを')}[mutation]
+        changed = text.replace(old, new)
+    assert changed != text and not inverse(ctx, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+def test_saved_single_feeling_order_survives_get_and_no_author_restart(qdb, qcase, monkeypatch, tier):
+    user, parent, service = qcase
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
+    qdb.query('update public.emotions set memo=$1,memo_action=$2 where id=$3',
+              [NOMINAL_COGNITION_FEELING + '。', ACTION + '。', parent])
+    dto = run(service.start(user, parent))
+    assert dto['current_observation'] is not None
+    text = dto['current_observation']['text'].split('Emlisから：', 1)[1]
+    assert text.index(NOMINAL_COGNITION_FEELING) < text.index(ACTION)
+    assert dto['pending_question'] is None and dto['body_state'] == 'FINAL'
+    assert run(service.get(user, parent)) == dto
+    monkeypatch.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved content rerendered'))
+    assert run(service.start(user, parent)) == dto
+    assert run(service.get(user, parent)) == dto
