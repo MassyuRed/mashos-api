@@ -290,3 +290,84 @@ def test_received_past_feeling_after_sentence_keeps_ownership(prefix, owned):
         assert received[0].semantic_frame.time_scope == 'past'
         assert received[0].semantic_frame.actor == 'current_user'
         assert 'operator:help_seeking' not in received[0].semantic_frame.attribute_codes
+
+
+@pytest.mark.parametrize('first,second', SOURCES)
+@pytest.mark.parametrize('action', ['', '机を拭いた。'])
+def test_initial_mixed_contrasts_retain_each_original_relation(first, second, action):
+    received = '褒められたのに、嬉しくなかった。'
+    req = application(received+first+'。ただ、'+second+'。', action)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact is not None, out.reason_codes
+    body = out.artifact.reception
+    assert body.startswith(first)
+    for source in ['褒められた', '嬉しさにはつながらなかった', second.replace('は分からない', '')]:
+        assert source in body
+    assert body.count('机を拭いた') == bool(action)
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == 2 + bool(action)
+    covered = {nid for move in moves for nid in (*move.target_nucleus_ids, *move.support_nucleus_ids)}
+    assert all({r.from_nucleus_id, r.to_nucleus_id} <= covered
+               for r in plan.relations if r.retention == 'required' and r.type == 'contrast')
+
+
+@pytest.mark.parametrize('change', ['feeling', 'time', 'owner', 'relation', 'drop_received'])
+def test_mixed_contrast_inverse_rejects_changed_original_reaction_without_author(change):
+    first, second = SOURCES[0]
+    ctx = actual(request=application('褒められたのに、嬉しくなかった。'+first+'。ただ、'+second+'。', '机を拭いた。'))
+    body = ctx[0].artifact.reception
+    original_sentence = next(s+'。' for s in body.split('。') if '褒められた' in s)
+    old, new = {
+        'feeling': ('嬉しさにはつながらなかった', '嬉しさにつながった'),
+        'time': ('褒められた', '褒められる'),
+        'owner': ('褒められた', '友人が褒められた'),
+        'relation': ('褒められたことは、', '褒められたことが原因で、'),
+        'drop_received': (original_sentence, ''),
+    }[change]
+    assert old in body
+    assert inverse(ctx, body, without_author=True).passed
+    assert not inverse(ctx, body.replace(old, new), without_author=True).passed
+
+
+@pytest.mark.parametrize('change', ['actor', 'time', 'polarity', 'connector', 'missing_endpoint', 'cross_relation', 'extra_material',
+    'marker_required', 'marker_source', 'marker_type', 'unpromoted_reaction'])
+def test_mixed_contrast_group_requires_complete_source_owned_duties(change):
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+    first, second = SOURCES[0]
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(application(
+        '褒められたのに、嬉しくなかった。'+first+'。ただ、'+second+'。', '机を拭いた。')))
+    nuclei, relations = plan.nuclei, plan.relations
+    event = next(n for n in nuclei if n.kind == 'event')
+    relation = next(r for r in relations if r.type == 'contrast' and r.from_nucleus_id == event.nucleus_id)
+    reaction = next(n for n in nuclei if n.nucleus_id == relation.to_nucleus_id)
+    assert len(_thread_retained_reaction_groups(nuclei, relations)) == 3
+    if change in {'actor', 'time', 'polarity'}:
+        key, value = {'actor': ('actor', 'other_person'), 'time': ('time_scope', 'present'),
+                      'polarity': ('polarity', 'positive')}[change]
+        nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame, **{key: value}))
+                       if n == reaction else n for n in nuclei)
+    elif change == 'connector':
+        nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+            attribute_codes=tuple(c for c in n.semantic_frame.attribute_codes
+                                  if not c.startswith('source_received_event_link:'))))
+                       if n == event else n for n in nuclei)
+    elif change == 'missing_endpoint':
+        nuclei = tuple(n for n in nuclei if n != reaction)
+    elif change == 'cross_relation':
+        positive = next(n for n in nuclei if n.kind == 'reaction' and n != reaction)
+        relations += (replace(relation, relation_id='synthetic-cross', to_nucleus_id=positive.nucleus_id),)
+    elif change.startswith('marker_'):
+        marker = next(n for n in nuclei if 'detected_type:relation_marker' in n.semantic_frame.attribute_codes)
+        replacement = (replace(marker, retention='required') if change == 'marker_required'
+            else replace(marker, source_span_ids=('unrelated-marker-source',)) if change == 'marker_source'
+            else replace(marker, semantic_frame=replace(marker.semantic_frame,
+                attribute_codes=tuple(c for c in marker.semantic_frame.attribute_codes if c != 'detected_type:relation_marker'))))
+        nuclei = tuple(replacement if n == marker else n for n in nuclei)
+    elif change == 'unpromoted_reaction':
+        nuclei = tuple(replace(n, retention='should') if n in (event, reaction) else n for n in nuclei)
+        relations = tuple(replace(r, retention='should') if r == relation else r for r in relations)
+    else:
+        nuclei += (replace(event, nucleus_id='synthetic-unassigned', source_span_ids=('extra-source',)),)
+    assert not _thread_retained_reaction_groups(nuclei, relations)

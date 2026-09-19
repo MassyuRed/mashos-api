@@ -7615,6 +7615,46 @@ def _thread_retained_reaction_groups(nuclei, relations):
     originals = tuple(n for n in nuclei if n.source_fields != ("answer_text_private",))
     original_relations = tuple(r for r in relations if r.type != "evaluation_about_event")
     original_text = tuple(n for n in originals if any(f in _TEXT_SOURCE_FIELDS for f in n.source_fields))
+    # An initial input can own both a received-event reaction and a separate
+    # positive feeling whose meaning remains uncertain. Prove each complete
+    # contribution before family ranking, so neither contrast becomes the
+    # other's representative. Answered/withdrawn sources keep their existing
+    # update path below; proximity never creates a relation between groups.
+    if not withdrawal and len(originals) == len(nuclei):
+        contrasts = _source_explicit_contrast_reception_duties(originals, relations)
+        if contrasts:
+            contrast_ids = {nid for _, targets, supports in contrasts for nid in (*targets, *supports)}
+            # Full plans retain the optional connector nucleus; owned
+            # projections omit it. Its source is already owned by this
+            # required contrast, so it is syntax, not another lived event.
+            connector_ids = {n.nucleus_id for n in original_text
+                if n.retention == "optional" and n.kind == n.semantic_frame.predicate_kind == "other_explicit"
+                and "detected_type:relation_marker" in n.semantic_frame.attribute_codes
+                and n.source_span_ids and any(r.type == "contrast" and r.retention == "required"
+                    and r.grounding_kind == "user_stated_relation"
+                    and {r.from_nucleus_id, r.to_nucleus_id} <= contrast_ids
+                    and set(n.source_span_ids) <= set(r.source_span_ids)
+                    and all(other.source_fields == n.source_fields for other in originals
+                            if other.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id))
+                    for r in relations)
+                and not any(r.retention == "required"
+                    and n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations)}
+            actions = tuple(n for n in original_text if n.nucleus_id not in contrast_ids
+                and _source_independent_performed_action(n, relations))
+            remaining = tuple(n for n in original_text
+                if n.nucleus_id not in contrast_ids | connector_ids and n not in actions)
+            remaining_ids = {n.nucleus_id for n in remaining}
+            closed = not any(r.retention == "required"
+                and remaining_ids & {r.from_nucleus_id, r.to_nucleus_id}
+                and not {r.from_nucleus_id, r.to_nucleus_id} <= remaining_ids for r in relations)
+            received = _received_contrast_group_targets(remaining, tuple(r for r in relations
+                if {r.from_nucleus_id, r.to_nucleus_id} <= remaining_ids)) if closed else ()
+            if received and len(actions) <= 1:
+                # Keep the existing positive/unknown focus; retain the
+                # separate received contrast before any ancillary action.
+                groups = [*contrasts, ("current_burden", *received)]
+                groups.extend(("concrete_effort", (n.nucleus_id,), ()) for n in actions)
+                return tuple(groups)
     events = tuple(n.nucleus_id for n in original_text if n.kind == "event"
         and n.semantic_frame.actor == "current_user" and n.semantic_frame.modality == "fact"
         and n.semantic_frame.time_scope == "past" and n.semantic_frame.polarity == "neutral"
