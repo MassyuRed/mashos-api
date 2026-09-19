@@ -193,3 +193,100 @@ def test_saved_updated_reception_retains_original_relation(qdb, qcase, monkeypat
     assert run(service.get(user, parent)) == after
     monkeypatch.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved restart rerendered'))
     assert run(service.start(user, parent)) == after
+
+
+@pytest.mark.parametrize('first,second', SOURCES)
+@pytest.mark.parametrize('action', ['机を拭いた。', '手順を確かめるために、資料を読み直した。'])
+def test_independent_memo_relation_keeps_focus_before_supplemental_action(first, second, action):
+    from collections import Counter
+    from cocolon_meaning_experience_engine.emlis_thread_projection import project_thread_meaning
+    req = application('褒められたのに、嬉しくなかった。'+first+'。ただ、'+second+'。', action)
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact is not None, out.reason_codes
+    reception = out.artifact.reception
+    assert reception.startswith(first+'一方で、')
+    assert second.replace('は分からない', '') in reception
+    assert reception.count(action.rstrip('。').split('、')[-1]) == 1
+    assert '褒められた' in out.artifact.observation and '嬉しくなかった' in out.artifact.observation
+    assert out.question is not None
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    refs = [ref for d in selected.decisions for ref in d.selected_contribution_refs]
+    assert refs and max(Counter(refs).values()) == 1
+    assert set(refs) == {ref for d in selected.decisions
+                        for ref in d.subjective_proposition.target_contribution_refs}
+
+
+@pytest.mark.parametrize('first,second', SOURCES)
+@pytest.mark.parametrize('reply', ['その時は重かった。', '今は嬉しい。',
+    'あの時も本当は嬉しかった。書き方を間違えた。', '「嬉しくなかった」は誤りです。'])
+def test_answer_focus_and_withdrawal_keep_complete_original_relation(first, second, reply):
+    from test_cmee_emlis_q3_thread import advance
+    req = application('褒められたのに、嬉しくなかった。'+first+'。ただ、'+second+'。', '机を拭いた。')
+    updated = advance(req, reply)
+    out = MeaningExperienceEngine().generate(updated)
+    assert out.artifact is not None, out.reason_codes
+    body = out.artifact.reception
+    assert first+'一方で、' in body and second.replace('は分からない', '') in body
+    assert body.index(first) < body.index('机を拭いた')
+    if reply.startswith('「'):
+        assert body.startswith(first) and '嬉しくなかった' not in out.artifact.text
+    else:
+        assert body.index('褒められたことについて') < body.index(first)
+        assert ('回答した時点' if reply.startswith('今は') else 'その時') in body
+    assert updated.emlis_thread.original_source_ref == req.emlis_thread.original_source_ref
+
+
+@pytest.mark.parametrize('first,second', SOURCES)
+@pytest.mark.parametrize('change', ['feeling', 'unknown', 'cause', 'action'])
+def test_relation_focus_inverse_keeps_both_endpoints_and_independent_action(first, second, change):
+    req = application('褒められたのに、嬉しくなかった。'+first+'。ただ、'+second+'。', '机を拭いた。')
+    ctx = actual(request=req)
+    body = ctx[0].artifact.reception
+    assert body.startswith(first)
+    old, new = {'feeling': ('うれしかった', 'うれしくなかった'),
+                'unknown': ('分からないのは', '分かっているのは'),
+                'cause': ('一方で、', 'そのため、'),
+                'action': ('机を拭いた', '机を拭かなかった')}[change]
+    changed = body.replace(old, new)
+    assert changed != body
+    assert inverse(ctx, body, without_author=True).passed
+    assert not inverse(ctx, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('first,second', SOURCES)
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+def test_saved_initial_relation_focus_keeps_question_and_no_author_restart(qdb, qcase, monkeypatch, first, second, tier):
+    user, parent, service = qcase
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
+    memo = '褒められたのに、嬉しくなかった。'+first+'。ただ、'+second+'。'
+    qdb.query('update public.emotions set memo=$1,memo_action=$2 where id=$3', [memo, '机を拭いた。', parent])
+    dto = run(service.start(user, parent))
+    assert dto['current_observation'] is not None and dto['pending_question'] is not None
+    assert dto['current_observation']['text'].split('Emlisから：', 1)[1].strip().startswith(first)
+    assert dto['original']['memo'] == memo
+    assert run(service.get(user, parent)) == dto
+    monkeypatch.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved restart rerendered'))
+    assert run(service.start(user, parent)) == dto
+
+
+@pytest.mark.parametrize('prefix,owned', [
+    ('褒められたのに、嬉しくなかった。', True),
+    ('机を拭いた。', True),
+    ('友人はこう話した。', False),
+    ('これは友人の感想です。', False),
+    ('友人によると。', False),
+    ('友人いわく。', False),
+    ('友人曰く。', False),
+])
+def test_received_past_feeling_after_sentence_keeps_ownership(prefix, owned):
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(application(
+        prefix+'話を聞いてもらえてうれしかった。ただ、どの部分が伝わったのかは分からない。', '机を拭いた。')))
+    received = [n for n in plan.nuclei if 'lexical:source_received_past_feeling' in n.semantic_frame.attribute_codes]
+    assert bool(received) == owned
+    if owned:
+        assert len(received) == 1
+        assert received[0].semantic_frame.time_scope == 'past'
+        assert received[0].semantic_frame.actor == 'current_user'
+        assert 'operator:help_seeking' not in received[0].semantic_frame.attribute_codes

@@ -9593,6 +9593,26 @@ def _build_response_and_policies(
         ))
     ):
         scored_lived_change_primary = None
+    # A source-owned relation is one reception focus even when the response
+    # has other independent primaries. Rank its complete contribution, not
+    # an isolated endpoint (which may itself be an uncertainty). The existing
+    # duty proof requires one closed, explicit self-owned relation; it does
+    # not infer a new relation or absorb another primary's source.
+    scored_focus_ids = ()
+    if (final_source_fidelity
+        and safety_decision.safety_triage_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality == "grounded"):
+        for _, targets, supports in _source_explicit_contrast_reception_duties(nuclei, relations):
+            group = (*targets, *supports)
+            if (set(group) & primary_set
+                and candidate_index[targets[0]].source_fields == ("memo",)
+                and max(primary_score(candidate_index[nid]) for nid in group) > 0):
+                scored_lived_change_primary = candidate_index[targets[0]]
+                scored_focus_ids = group
+    scored_focus_weight = max(
+        (primary_score(candidate_index[nid]) for nid in scored_focus_ids),
+        default=primary_score(scored_lived_change_primary) if scored_lived_change_primary else 0,
+    )
     supplemental_action_ids = {
         item.nucleus_id
         for item in follow_candidates
@@ -9602,7 +9622,7 @@ def _build_response_and_policies(
         and item.source_fields == ("memo_action",)
         and "semantic_role:concrete_action_evidence"
         in item.semantic_frame.attribute_codes
-        and primary_score(item) < primary_score(scored_lived_change_primary)
+        and primary_score(item) < scored_focus_weight
     }
 
     current_material_group = _source_current_material_group(nuclei, relations) if (
@@ -12197,7 +12217,10 @@ def _final_stage1_typed_nuclei(
                 start, end = span.start_index, span.end_index
                 raw = str(span.raw_text)
                 if (0 <= start < end <= len(source) and source[start:end] == raw
-                    and not source[:start].strip()
+                    and (not source[:start].strip()
+                         or source[:start].rstrip().endswith(("。", "．", ".")))
+                    and not _source_prefix_opens_report(source[:start])
+                    and not re.search(r"によると|いわく|曰く|の(?:感想|気持ち|説明|報告|発言)[。．.]", source[:start])
                     and (not source[end:].strip() or source[end:].lstrip().startswith(("。", "．", ".")))
                     and _top_level_text(source) == source
                     and _source_received_past_feeling_is_bound(raw)):
