@@ -8277,3 +8277,26 @@ Final selected validation on the same frozen product/test bytes, using the inher
 Remaining common defects include long quotation replay, generic/repeated reception acts, action-first focus, unsupported relation combinations and unavailable legacy paths. In the new mixed answer/correction/current-time examples, the independent contrast remains in the observation but is not also received in the Reception paragraph; that is a residual, not complete meaning reception. Reverse-order proximity without a proven adjacent marker remains outside this correction. Continue the existing shared observation/reception composition work with the same original inputs and full saved obligations; do not extend a synonym catalogue or treat availability/counts as acceptance.
 
 September 23 interim judgment, September 26 focus end, September 27 Piece main allocation and October 10 Emlis content deadline remain unchanged. No merge, enablement, deployment, live-DB/device/payment action, external AI or formal human Product PASS was performed. Private source/output/state evidence, individual failure IDs and diagnostic originals remain outside this public handoff.
+
+
+## 2026-09-19 continuation — 回答後にも、元の明示対比をフォローへ残す
+
+9月19日週次議事録 §§6.8–6.11 の継続。基準は API `f281b0d0ea089b3a7b021d327938c00d14f4893b`、Cocolon `a847f6ff93b42f70c5b7f395a66a94b8d22b6168`。添付作業指示・前回記録、全体設計、両repoの全ファイル地図、現行三大中核設計、作業ルール、最新議事録とKaren-Diaryを確認した。前回完了した実行環境・GitHub反映・元の明示対比認識を再構築せず、前回の未解消本文原因を一つ修正した。商品状態は **NOT_CLEAR**、既存PRはDraft/open/unmerged、default OFF、`STRUCTURE_MAP_DELTA_NONE` を維持する。
+
+原因は、回答・訂正後に回答側が同じ種類の代表対象となり、元の独立した対比がフォローの候補から押し出されることだった。既存の共通選択処理で、元の肯定的感情とその内容を制限する不明を結ぶ、本人が明示した一つの閉じた対比を独立の受け取り対象として保持する。語句やケース番号で分岐せず、型付け済みの根拠・所有範囲・必須関係を読む。外部の必須関係につながる対象、複数の独立対比、根拠のない近接関係は自動的に含めない。
+
+回答された出来事→元の独立対比→独立行動を既存の最大3 Move内で返し、回答の意味・時点、対比と因果の違いを保つ。既存の単一作者・独立逆解析・strict gate・保存経路を維持する。製品差分は既存の意味計画／選択ファイル1つ、現行の派生identity、既存対比テストへの追加、この既存引継ぎへの追記だけ。API・DBスキーマ・RN・問いの回数・固定期待値・過去の検証receiptは変更していない。
+
+同じ製品・テスト版の検証結果：
+
+- 選択済み回帰2,241件は1,942 PASS / 299 FAIL。前回の2,211 case IDは全て成否一致、新規失敗0・既存失敗解消0・削除0。追加30件は全件PASS。内訳は三種類の原対比×否定的回答・現在の回答・訂正の9件、作者を停止した独立逆解析による改変拒否12件、Free/Plus/Premiumの保存・GET・再開9件。旧299失敗は未解消であり、成功・無害・商品合格へ読み替えない。
+- 同じ100初回入力を全再生成し、原入力・状態・理由・観測・フォロー・診断unitsは100件一致。74 GENERATED / 26 UNAVAILABLEを維持。1件のartifact内部identity・digest・参照だけが変化したため、全record完全一致とはしない。root本人が100件の原入力と本文、本文なしの場合の診断出力を全文読取済み。初回100件に新しい提供可能化・本文改善を加算しない。
+- 継承35集合は231ケース・461状態、GET一致532回。元実行18集合PASS、17集合は元本文assertionのFAILを保持し、診断経路で全操作・保存出力を完了。診断本文検査647件中293 FAILは前回と同じ。コピー済み出力先による起動停止は、旧ログ・結果を保存して出力先だけを分離し復旧した。起動停止と本文FAILを混同しない。
+- 別途継承した焦点集合は33ケース・45状態・GET一致78回、目的集合は21ケース・33状態・54回、明示対比集合は21ケース・33状態・54回。計75ケースは作者を停止した再開も全件一致。合計306ケース・572状態を比較し、本文変化は明示対比集合の回答後9状態だけ。Free/Plus/Premiumそれぞれの否定的回答・過去訂正・現在回答で、元の対比がフォローへ戻った。観測、pending question、body_stateは全状態で不変。対比集合の初回と撤回後は本文不変。
+- root本人が同じ実行の完全な本文245種、原入力98組、および306ケース・572状態への全対応を読取済み。重複だけを完全一致参照で共有し、代表例や要約へ置き換えていない。変更した9状態の前後本文も全件読んだ。本文なし11状態は継承（作者失敗注入8、保存再試行の中間1、引用だけの未反映回答2）。診断出力を提供済み本文として数えない。
+
+この修正で、回答後に押し出されていた元の対比をフォローでも読めるようになった。ただし長い引用再掲・定型的な行動への返答・初回や混合入力で行動が先に出る問題・複数対比の構成・未提供経路・既存検査の失敗は残る。自然な非定型応答全体、構造気づき、商品合格は未達。次は残る共通の意味選択／フォロー本文原因へ進み、語句別の条件追加や完了済み環境の再構築へ戻らない。
+
+実生成原物、前後全比較、試行失敗、root読取判定、GitHub反映receipt、非公開保存と再取得照合の結果は、同日の `contrast reception retention` 継続記録で保持する。非公開本文・個別識別子・入力digest・locatorは公開引継ぎへ載せない。
+
+9/23中間判断、9/26 Emlis集中終了、9/27からPiece主枠、以後Emlis最大30%、10/10内容期限・10/24運用期限を維持する。全体進捗45%・三大中核商品合格0/3も変更しない。merge・有効化・deploy・実DB・実機・実課金・外部AI・正式な人手商品PASSは今回に含めない。

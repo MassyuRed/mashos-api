@@ -7760,6 +7760,49 @@ def _source_action_change_contrast_unfinished(nuclei, relations):
     return (unfinished.nucleus_id,)
 
 
+def _source_explicit_contrast_reception_duties(nuclei, relations):
+    """Keep a complete original contrast separate from a same-family answer.
+
+    A family representative is a ranking choice, not authority to replace an
+    independent, source-stated relation. Only already typed original objects
+    and required relations participate; no question or generated text does.
+    """
+    index = {n.nucleus_id: n for n in nuclei}
+    duties = []
+    for relation in relations:
+        if (relation.type != "contrast" or relation.retention != "required"
+            or relation.grounding_kind != "user_stated_relation"):
+            continue
+        left, right = (index.get(nid) for nid in (
+            relation.from_nucleus_id, relation.to_nucleus_id))
+        if (left is None or right is None or left.nucleus_id == right.nucleus_id
+            or left.source_fields != right.source_fields
+            or left.source_fields not in {("memo",), ("memo_action",)}
+            or any(n.retention != "required" or n.grounding_kind != "explicit"
+                   or n.allowed_claim_scope != "explicit_current_input"
+                   or n.semantic_frame.actor != "current_user" for n in (left, right))
+            or not is_grounded_positive_feeling(left)
+            or right.kind != right.semantic_frame.predicate_kind
+            or right.kind != "uncertainty"
+            or right.semantic_frame.modality != "uncertain"
+            or "semantic_role:limiting_unknown" not in right.semantic_frame.attribute_codes
+            or not left.source_span_ids or not right.source_span_ids
+            or not set((*left.source_span_ids, *right.source_span_ids)) <= set(relation.source_span_ids)):
+            continue
+        endpoints = {left.nucleus_id, right.nucleus_id}
+        if any(r.retention == "required"
+               and endpoints & {r.from_nucleus_id, r.to_nucleus_id}
+               and not {r.from_nucleus_id, r.to_nucleus_id} <= endpoints for r in relations):
+            # A qualified answer/event or another required relation is part
+            # of that duty's scope; it cannot be called an independent pair.
+            continue
+        duties.append(("lived_change", (left.nucleus_id,), (right.nucleus_id,)))
+    unique = tuple(dict.fromkeys(duties))
+    # Several independent contrasts need a separate composition decision;
+    # do not choose one arbitrarily or duplicate an existing response role.
+    return unique if len(unique) == 1 else ()
+
+
 def build_grounded_reception_opportunities(
     *,
     human_follow_target_ids: Sequence[str],
@@ -8242,6 +8285,28 @@ def build_grounded_reception_opportunities(
                 human_follow_target_ids=follow_ids, relation_connected_ids=relation_connected_ids,
                 safety_required=False)))
 
+    if (final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality in {"grounded", "limited_grounding"}):
+        for family, targets, supports in _source_explicit_contrast_reception_duties(
+            owned_nuclei, relations
+        ):
+            if any(row.family == family and row.target_nucleus_ids == targets and row.support_nucleus_ids == supports
+                   for row in rows):
+                continue
+            selected = tuple(nucleus_index[nid] for nid in (*targets, *supports))
+            representative = selected[0]
+            rows.append(GroundedReceptionOpportunity(
+                opportunity_id="", family=family,
+                reception_act=_RECEPTION_ACT_BY_OPPORTUNITY_FAMILY[family],
+                target_nucleus_ids=targets, support_nucleus_ids=supports,
+                source_evidence_span_ids=tuple(_ordered_span_ids(
+                    sid for n in selected for sid in n.source_span_ids)),
+                retention="required", priority=_opportunity_priority(
+                    representative, family=family, human_follow_target_ids=follow_ids,
+                    relation_connected_ids=relation_connected_ids, safety_required=False),
+                source_field_count=len({f for n in selected for f in n.source_fields}),
+                safety_required=False))
+
     rows.sort(
         key=lambda item: (
             -item.priority,
@@ -8283,6 +8348,7 @@ def _select_reception_opportunities(
     action_change_contrast: tuple = (),
     action_contrast_unfinished: tuple = (),
     independent_positive_duties: tuple = (),
+    explicit_contrast_duties: tuple = (),
 ) -> tuple[GroundedReceptionOpportunity, ...]:
     inventory = tuple(opportunities)
     if not inventory:
@@ -8337,7 +8403,9 @@ def _select_reception_opportunities(
         and _opportunities_are_distinct(*inventory)):
         return (primary, next(item for item in inventory if item != primary))
     selected: list[GroundedReceptionOpportunity] = [primary]
-    by_family = {item.family: item for item in inventory}
+    by_family = {}
+    for item in inventory:
+        by_family.setdefault(item.family, item)
 
     if safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER:
         if primary.family == "help_seeking":
@@ -8380,6 +8448,18 @@ def _select_reception_opportunities(
             selected_support_count += 1
             if selected_support_count >= support_limit:
                 break
+
+    if explicit_contrast_duties and final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION:
+        remaining = tuple(item for item in inventory
+            if (item.family, item.target_nucleus_ids, item.support_nucleus_ids)
+               in explicit_contrast_duties and item not in selected
+            and all(_opportunities_are_distinct(item, other) for other in selected))
+        if (len(selected) + len(remaining) <= 3
+            and all(_opportunities_are_distinct(left, right)
+                    for i, left in enumerate(remaining) for right in remaining[i+1:])):
+            insert_at = next((i for i, item in enumerate(selected)
+                              if i and item.family == "concrete_effort"), len(selected))
+            selected[insert_at:insert_at] = remaining
 
     required_safety = tuple(
         item
@@ -8464,6 +8544,7 @@ def _build_reception_depth_policy_and_moves(
     action_change_contrast: tuple = (),
     action_contrast_unfinished: tuple = (),
     independent_positive_duties: tuple = (),
+    explicit_contrast_duties: tuple = (),
 ) -> tuple[GroundedReceptionDepthPolicy, tuple[GroundedReceptionMovePlan, ...]]:
     selected = _select_reception_opportunities(
         opportunities,
@@ -8477,6 +8558,7 @@ def _build_reception_depth_policy_and_moves(
         action_change_contrast=action_change_contrast,
         action_contrast_unfinished=action_contrast_unfinished,
         independent_positive_duties=independent_positive_duties,
+        explicit_contrast_duties=explicit_contrast_duties,
     )
     if safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER:
         safety_mode: GroundedReceptionSafetyMode = (
@@ -8507,6 +8589,16 @@ def _build_reception_depth_policy_and_moves(
             and safety_kind == TRIAGE_SAFE_OBSERVATION
         ),
     )
+    contrast_selected = tuple(item for item in selected
+        if (item.family, item.target_nucleus_ids, item.support_nucleus_ids) in explicit_contrast_duties)
+    if contrast_selected and len(selected) == 3:
+        # The original relation gets its own response. A same-family answer
+        # retains attention, while the action remains a separate response.
+        for item in selected:
+            if item.family == "concrete_effort":
+                roles[item.opportunity_id] = "felt_response"
+            elif item.family == "lived_change":
+                roles[item.opportunity_id] = "felt_response" if item in contrast_selected else "attention"
     if independent_positive_duties:
         feelings = tuple(item for item in selected if item.family == "lived_change")
         roles[feelings[0].opportunity_id] = "attention"
@@ -8573,7 +8665,7 @@ def _build_reception_depth_policy_and_moves(
                     "explicit_emlis_counterposition"
                     if explicit
                     else "short_anchor_if_ambiguous"
-                    if independent_burdens or mixed_answer_targets or retained_reaction_groups or action_change_contrast or independent_positive_duties
+                    if independent_burdens or mixed_answer_targets or retained_reaction_groups or action_change_contrast or independent_positive_duties or contrast_selected
                     else legacy_reference_mode
                     if index == 1
                     else "anaphoric_first"
@@ -8777,6 +8869,10 @@ def build_grounded_human_reception_plan(
         mixed_answer_targets=(_thread_mixed_answer_targets(available_nuclei, relations) if (
             final_source_fidelity and include_relation_support
             and safety_kind == TRIAGE_SAFE_OBSERVATION
+            and material_quality in {"grounded", "limited_grounding"}
+        ) else ()),
+        explicit_contrast_duties=(_source_explicit_contrast_reception_duties(available_nuclei, relations) if (
+            final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION
             and material_quality in {"grounded", "limited_grounding"}
         ) else ()),
     )
