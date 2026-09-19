@@ -114,6 +114,18 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
     covered = {n for edge in plan.relations if edge.relation_id in plan.coverage_requirements.required_relation_ids
                and edge.type != "evaluation_about_event"
                for n in (edge.from_nucleus_id, edge.to_nucleus_id)}
+    # Both initial and updated thread projection keep the direct unfinished
+    # witness required by the existing strict unknown-source binding. A
+    # relational contribution cannot discharge this separate epistemic duty.
+    covered.difference_update(nid for boundary in plan.unknown_boundaries
+        if boundary.dimension == "source_explicit_epistemic_limit"
+        and boundary.surface_policy == "hedge_only" and len(boundary.affected_nucleus_ids) == 1
+        for nid in boundary.affected_nucleus_ids
+        if nid in index and index[nid].kind == index[nid].semantic_frame.predicate_kind == "uncertainty"
+        and index[nid].grounding_kind == "explicit"
+        and "semantic_role:limiting_unknown" in index[nid].semantic_frame.attribute_codes
+        and boundary.evidence_span_ids == index[nid].source_span_ids
+        and nid in plan.coverage_requirements.required_nucleus_ids)
     binding = r._PlanBinding(
         node_meta={node_ids[n.nucleus_id]: n for n in plan.nuclei},
         edge_meta={edge_ids[e.relation_id]: e for e in plan.relations},

@@ -12584,6 +12584,40 @@ def _final_stage1_typed_nuclei(
                             ))),
                         ),
                     )
+            # An indirect question is the object of this finite cognition,
+            # not an asserted embedded act. Preserve its already established
+            # actor/modality/polarity and whole source owner. A preceding pure
+            # connective can belong to the same top-level sentence.
+            frame = nucleus.semantic_frame
+            if (span is not None and normalized_input is not None
+                and nucleus.kind in {"state", "action", "change"}
+                and nucleus.source_fields in {("memo",), ("memo_action",)}
+                and len(nucleus.source_span_ids) == 1
+                and nucleus.grounding_kind == "explicit" and nucleus.retention == "required"
+                and nucleus.allowed_claim_scope == "explicit_current_input"
+                and frame.actor == "current_user" and frame.modality == "uncertain"
+                and frame.polarity == "negative" and frame.time_scope in {"current_input", "present"}
+                and {"operator:uncertainty", "semantic_role:limiting_unknown"} <= set(frame.attribute_codes)
+                and not any(code.startswith(("source_fragment_", "surface_scalar_", "thread_time:"))
+                            for code in frame.attribute_codes)):
+                source = str(normalized_input.get(span.source_field) or "")
+                start, end = span.start_index, span.end_index
+                boundary = max(source.rfind(mark, 0, start) for mark in "。．.")
+                prefix = source[boundary + 1:start]
+                markers = tuple(s for s in evidence_spans
+                                if s.source_field == span.source_field
+                                and boundary < s.start_index < s.end_index <= start
+                                and _is_pure_relation_marker(s))
+                marker_prefix = len(markers) == 1 and source[markers[0].start_index:markers[0].end_index] == markers[0].raw_text and not (
+                    source[boundary + 1:markers[0].start_index].strip()
+                    or source[markers[0].end_index:start].strip(" 、,\u3000"))
+                if (0 <= start < end <= len(source) and source[start:end] == span.raw_text
+                    and _top_level_text(source) == source
+                    and (not prefix.strip() or marker_prefix)
+                    and re.fullmatch(r"[^、,。．.?!？！\r\n]+(?:か|のか)(?:は|が)?(?:まだ|今は)?(?:分からない|わからない)", span.raw_text)
+                    and re.match(r"^(?:\s*[。．.]|\s*$)", source[end:])):
+                    nucleus = replace(nucleus, kind="uncertainty", semantic_frame=replace(
+                        frame, predicate_kind="uncertainty"))
             # The same finite cognition may coexist with a separate action.
             # Prove the whole memo field before granting the existing bounded
             # source witness; lexical policy alone is not evidence of scope.
@@ -12967,6 +13001,7 @@ def _final_stage1_typed_relations(
 def _final_stage1_normalize_relation_authority(
     relations: Sequence[GroundedSemanticRelation],
     nuclei: Sequence[GroundedSemanticNucleus],
+    evidence_spans: Sequence[EvidenceSpan] = (),
 ) -> tuple[GroundedSemanticRelation, ...]:
     """Keep structural co-presence distinct from source relation evidence.
 
@@ -12978,6 +13013,7 @@ def _final_stage1_normalize_relation_authority(
     """
 
     nucleus_index = {row.nucleus_id: row for row in nuclei}
+    span_index = {span.span_id: span for span in evidence_spans}
     normalized: list[GroundedSemanticRelation] = []
     for relation in relations:
         left = nucleus_index.get(relation.from_nucleus_id)
@@ -13004,6 +13040,42 @@ def _final_stage1_normalize_relation_authority(
             else relation.retention
         )
         relation_type = relation.type
+        # The conflict observer only pairs nearby wish/value and limit spans.
+        # That proximity does not prove an attempted action was blocked. At
+        # the final seam, an actual adjacent contrast marker owns the relation
+        # ahead of that detector label. Keep the endpoints and all lineage.
+        if (relation_type == "attempt_and_block" and not cross_field
+            and len(left_fields) == len(right_fields) == 1
+            and left_fields == right_fields and left_fields <= _TEXT_SOURCE_FIELDS
+            and any(ref.startswith("conflict.") for ref in relation.source_relation_ids)
+            and all(ref.startswith(("conflict.", "evidence_relation_marker:"))
+                    or ref == "whole_input_source_order" for ref in relation.source_relation_ids)):
+            left_spans = [span_index[sid] for sid in left.source_span_ids if sid in span_index]
+            right_spans = [span_index[sid] for sid in right.source_span_ids if sid in span_index]
+            for ref in relation.source_relation_ids:
+                if not ref.startswith("evidence_relation_marker:"):
+                    continue
+                marker = span_index.get(ref.split(":", 1)[1])
+                if (marker is None or len(left_spans) != len(left.source_span_ids)
+                    or len(right_spans) != len(right.source_span_ids)
+                    or not left_spans or not right_spans
+                    or marker.source_field not in left_fields
+                    or not _is_pure_relation_marker(marker)
+                    or not _LEADING_CONTRAST_RE.search(_clean(marker.raw_text))):
+                    continue
+                left_end = max(span.end_index for span in left_spans)
+                right_start = min(span.start_index for span in right_spans)
+                if (left_end <= marker.start_index < marker.end_index <= right_start
+                    and not any(span.source_field == marker.source_field
+                                and span.span_id != marker.span_id
+                                and span.start_index >= left_end and span.end_index <= right_start
+                                and not _is_pure_relation_marker(span) for span in evidence_spans)):
+                    relation = replace(relation, source_span_ids=tuple(
+                        _ordered_span_ids((*relation.source_span_ids, marker.span_id))))
+                    relation_type = "contrast"
+                    grounding_kind = "user_stated_relation"
+                    break
+
         if (
             left_fields == right_fields == {"memo"}
             and relation.type == "user_stated_result"
@@ -14250,6 +14322,7 @@ def project_final_stage1_grounded_observation_plan(
     relations = _final_stage1_normalize_relation_authority(
         relations,
         nuclei,
+        evidence_spans,
     )
     promotable_feelings = {n.nucleus_id for n in nuclei if n.retention == "should"
         and (_source_explicit_original_feeling(replace(n, retention="required"))
