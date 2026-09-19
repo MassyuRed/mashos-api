@@ -177,3 +177,128 @@ def test_shared_relation_partition_cannot_borrow_or_drop_another_duty(mutation):
         clauses=next(l.reception_clause_plans for l in sentence.lines if l.binding.line_role=='human_follow')
         hr.realize_source_grounded_human_reception(reception,expressions,{n.nucleus_id:n for n in plan.nuclei},
             resolver,plan=plan,recovery_stage='full',clause_plans=clauses,selected_subjective_input=altered)
+
+
+# Optional source-order hypotheses must not be promoted into an asserted
+# background. These public scenarios exercise the existing application path;
+# the relation graph, original source and mandatory duties remain available.
+INDEPENDENT_SOURCES = (
+    (INPUT, ACTION+'。', (WISH, UNKNOWN, ACTION)),
+    ('作品を見てもらえてうれしかった。でもこの色でよいのか迷っている。',
+     ACTION+'。', ('作品を見てもらえてうれしかった', 'この色でよいのか迷っている', ACTION)),
+    ('話してみたら前より楽になった気がした。', '机を片づけた。',
+     ('話してみたら前より楽になった気がした', '机を片づけた')),
+    ('窓を開けたら気分が軽くなった。', '本を閉じた。',
+     ('窓を開けたら気分が軽くなった', '本を閉じた')),
+    ('予定が変わったので困った。でも待ち時間は嬉しかった。', ACTION+'。',
+     ('予定が変わったので困った', '待ち時間は嬉しかった', ACTION)),
+    ('泳ぎたい。', ACTION+'。', ('泳ぎたい', ACTION)),
+    ('前より少し楽になった。', ACTION+'。', ('前より少し楽になった', ACTION)),
+)
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('memo,action,parts', INDEPENDENT_SOURCES)
+def test_optional_adjacency_does_not_assert_background_or_displace_source(tier, memo, action, parts):
+    req=application(memo, action, tier)
+    original=req
+    out=MeaningExperienceEngine().generate(req)
+    assert out.artifact is not None, out.reason_codes
+    assert all(part in out.artifact.text for part in parts)
+    assert 'ことを背景に、' not in out.artifact.reception
+    assert '気持ちを背景に、' not in out.artifact.reception
+    assert req == original and not out.automatic_progression
+    p=prepare_emlis_meaning(req); plan=build_updated_grounded_plan(p)
+    hypotheses=tuple(r for r in plan.relations if r.grounding_kind=='bounded_structural_inference'
+                     and r.retention=='should')
+    assert hypotheses  # Retained as hypotheses, not deleted from meaning.
+    moves=plan.response_plan.human_reception_plan.moves
+    for move in moves:
+        for target in move.target_nucleus_ids:
+            for support in move.support_nucleus_ids:
+                matching=[r for r in plan.relations
+                          if {r.from_nucleus_id,r.to_nucleus_id}=={target,support}]
+                assert not matching or any(r.retention=='required'
+                    or r.grounding_kind!='bounded_structural_inference' for r in matching)
+    selected=project_thread_meaning(p,plan).selected_reception
+    refs=[r for d in selected.decisions for r in d.selected_contribution_refs]
+    assert refs and max(Counter(refs).values())==1
+
+
+@pytest.mark.parametrize('index', [0, 2, 3])
+@pytest.mark.parametrize('change', ['invent_background','drop_action','change_actor','change_time','negate_reception'])
+def test_independent_source_body_is_checked_without_rerender(index,change):
+    memo, action, _=INDEPENDENT_SOURCES[index]
+    context=actual(request=application(memo, action));follow=context[0].artifact.reception
+    anchor=action.rstrip('。')
+    assert anchor in follow and inverse(context,follow,without_author=True).passed
+    if change=='invent_background':
+        edited=anchor+'ことを背景に、'+follow
+    elif change=='drop_action':
+        edited='。'.join(s for s in follow.split('。') if anchor not in s)
+    elif change=='change_actor':
+        edited=follow.replace(anchor,'友人が'+anchor)
+    elif change=='change_time':
+        edited=follow.replace(anchor,'来月は'+anchor)
+    else:
+        edited=follow.replace('大切に思っています','大切に思っていません')
+    assert edited!=follow
+    assert not inverse(context,edited,without_author=True).passed
+
+
+@pytest.mark.parametrize('premium', [False, True])
+def test_required_source_relation_remains_in_the_existing_relation_author(premium):
+    from test_cmee_emlis_shared_change_context import _actual, _independent_passes
+    context=_actual(premium=premium)
+    out,plan,*_=context
+    source_relations=[r for r in plan.relations if r.retention=='required'
+                      and r.type=='action_supports_change']
+    assert source_relations
+    follow=out.artifact.reception
+    assert 'ことが支えている、' in follow
+    assert '手元に緑がない寂しさも残っている' in follow
+    assert 'まだ配置は見つかっていない' in follow
+    assert _independent_passes(context, follow)
+
+
+@pytest.mark.parametrize('tier', ['free','plus','premium'])
+@pytest.mark.parametrize('memo,action,parts', INDEPENDENT_SOURCES)
+def test_saved_independent_sources_keep_meaning_without_inferred_background(qcase,qdb,monkeypatch,tier,memo,action,parts):
+    user,parent,service=qcase
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1',[user,tier])
+    qdb.query('update public.emotions set memo=$1,memo_action=$2 where id=$3',[memo,action,parent])
+    dto=run(service.start(user,parent))
+    assert dto['current_observation'] is not None, dto
+    text=dto['current_observation']['text']
+    assert all(part in text for part in parts)
+    follow=text.split('Emlisから：',1)[1]
+    assert 'ことを背景に、' not in follow and '気持ちを背景に、' not in follow
+    assert run(service.get(user,parent))==dto
+    monkeypatch.setattr(service.engine,'generate',lambda *_:pytest.fail('saved sources were regenerated'))
+    assert run(service.start(user,parent))==dto
+    assert run(service.get(user,parent))==dto
+
+
+@pytest.mark.parametrize('tier', ['free','plus','premium'])
+@pytest.mark.parametrize('reply,required,absent', [
+    ('次も同じ成果を求められるようで、重かった。','次も同じ成果',''),
+    ('「嬉しくなかった」は誤りです。','褒められた','嬉しくなかった'),
+    ('今は嬉しい。','回答した時点',''),
+])
+def test_saved_answer_and_withdrawal_keep_separate_action_and_source_time(qcase,qdb,monkeypatch,tier,reply,required,absent):
+    user,parent,service=qcase
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1',[user,tier])
+    qdb.query('update public.emotions set memo=$1,memo_action=$2 where id=$3',
+              ['褒められたのに、嬉しくなかった。',ACTION+'。',parent])
+    first=run(service.start(user,parent))
+    assert first['current_observation'] is not None and first['pending_question'] is not None
+    after=run(answer(service,user,first,reply))
+    assert after['current_observation'] is not None, after
+    text=after['current_observation']['text']
+    assert ACTION in text and required in text
+    assert not absent or absent not in text
+    assert after['original']==first['original']
+    assert run(service.get(user,parent))==after
+    monkeypatch.setattr(service.engine,'generate',lambda *_:pytest.fail('saved update was regenerated'))
+    assert run(service.start(user,parent))==after
+    assert run(service.get(user,parent))==after

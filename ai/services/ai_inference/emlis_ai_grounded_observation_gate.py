@@ -3791,16 +3791,24 @@ def evaluate_grounded_surface_body_inverse(
                                     and move.support_nucleus_ids == (action_contrast[1],)
                                     and nucleus_index[action_contrast[0]].semantic_frame.time_scope == "past"):
                                     nominal_target_visible = nominal_target_visible and offset == 0
-                                # A separately selected performed-action attention
-                                # Move owns the whole object, not a substring under
-                                # a newly inserted actor/time prefix. Its existing
-                                # sole-clause author starts with this exact nominal.
-                                if (len(clause.move_ids) == 1 and move.move_role == "attention"
+                                # A separately selected performed action owns the
+                                # whole object in attention and felt-response
+                                # clauses alike. A new actor/time prefix cannot
+                                # borrow the original action as a substring.
+                                if (len(clause.move_ids) == 1
                                     and move.reception_act == "honor_concrete_effort"
                                     and len(move.target_nucleus_ids) == 1 and not move.support_nucleus_ids
                                     and expected_referent.kind == "self_started_effort"
                                     and not _body_inverse_reception_context_ids(move, plan)):
-                                    nominal_target_visible = nominal_target_visible and offset == 0
+                                    # The response act must itself be affirmative.
+                                    # A source-internal or earlier positive marker
+                                    # cannot discharge a negated final predicate.
+                                    response_tail = raw_sentence[len(nominal_bytes):].decode("utf-8")
+                                    affirmative_act = re.search(
+                                        r"大切に(?:(?:思って|気にかけて|受け止めて)(?:います|いて)|"
+                                        r"(?:思い|気にかけ|受け止め)たいです)。\Z", response_tail)
+                                    nominal_target_visible = bool(
+                                        nominal_target_visible and offset == 0 and affirmative_act)
                                 if thread_answer_nominal is not None:
                                     _, source, grammar, when, nominal = thread_answer_nominal
                                     actual_nominal = body[start:end].decode("utf-8")
@@ -4191,6 +4199,29 @@ def evaluate_grounded_surface_body_inverse(
                                 relation_attention_valid = bool(source and raw == (
                                     (change_context_prefix or "") + source + "という" + expected_referent.text
                                     + "を見過ごさず、受け止めています。"))
+                            if (appraisal is not None and appraisal.dimension == "MATERIAL_WEIGHT"
+                                and appraisal.operation == "RECEIVE_AS_MATERIAL"
+                                and move.reception_act == "recognize_lived_change"
+                                and len(move.target_nucleus_ids) == len(object_ids) == 1
+                                and not move.support_nucleus_ids and not change_context_ids
+                                and not required_object_relations
+                                and effective_reference_mode != "anaphoric_first"
+                                and expected_referent is not None and expected_referent.kind == "lived_change"
+                                and target_nuclei[0].kind == "change"
+                                and target_nuclei[0].semantic_frame.actor == "current_user"
+                                and (target_nuclei[0].semantic_frame.predicate_kind,
+                                     target_nuclei[0].semantic_frame.modality) in {
+                                         ("change", "fact"), ("feeling", "feeling")}):
+                                # The sole change object has no admitted background.
+                                # Read its complete source and grammatical boundary;
+                                # source containment under an invented prefix is not
+                                # evidence that this is the same received meaning.
+                                source = final_reception_source_anchor_text(
+                                    target_nuclei[0].nucleus_id, nucleus_index, resolver)
+                                raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
+                                relation_attention_valid = bool(source and re.fullmatch(
+                                    re.escape(source + "という" + expected_referent.text)
+                                    + r"(?:を見過ごさず、|に目が留まり、それを)受け止めています。", raw))
                             if (appraisal is not None and appraisal.dimension == "MATERIAL_WEIGHT"
                                 and appraisal.operation == "RECEIVE_AS_MATERIAL"
                                 and len(object_ids) == 2 and len(object_relations) == 1):

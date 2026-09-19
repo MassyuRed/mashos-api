@@ -7924,6 +7924,18 @@ def build_grounded_reception_opportunities(
             for relation in relations:
                 if relation.retention not in {"required", "should"}:
                     continue
+                if (final_source_fidelity
+                    and relation.grounding_kind == "bounded_structural_inference"
+                    and relation.retention != "required"
+                    and {nucleus_index[nid].source_fields for nid in (
+                        relation.from_nucleus_id, relation.to_nucleus_id)
+                        if nid in nucleus_index} == {("memo",), ("memo_action",)}):
+                    # Crossing the two original input fields is not evidence
+                    # that one explains the other. Keep the hypothesis in the
+                    # graph, but do not author it as an asserted background.
+                    # Same-field meaning groups, qualified answers and required
+                    # relations keep their existing coverage responsibilities.
+                    continue
                 # The answered-about event is independently realized as a
                 # context. It must not replace another feeling as support.
                 if (final_source_fidelity and relation.type == "evaluation_about_event"
