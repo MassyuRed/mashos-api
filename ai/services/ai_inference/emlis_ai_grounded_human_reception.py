@@ -1458,6 +1458,22 @@ def reception_active_moves(
     for move in moves:
         reception_move_predicate_family(move)
     original_order = {move.move_id: index for index, move in enumerate(moves)}
+    # The source owner has already proved the retained reactions and the
+    # independent performed action as complete, separate duties. Keep the
+    # reactions together in their selected order, including corrected answers;
+    # an attention role on the action must not split that response.
+    retained_reactions_first = (
+        "selection:retained_reactions_before_independent_action"
+            in reception_plan.depth_policy.selection_reason_codes
+        and reception_plan.depth_policy.safety_mode == "standard"
+        and 2 <= len(moves) <= 3
+        and sum(move.reception_act == "honor_concrete_effort" for move in moves) == 1
+        and all(move.required
+            and move.reception_act in {"stay_with_current_burden", "recognize_lived_change", "honor_concrete_effort"}
+            and (move.reception_act != "honor_concrete_effort" or (
+                len(move.target_nucleus_ids) == 1 and not move.support_nucleus_ids))
+            for move in moves)
+    )
     # Preserve the final plan's selected primary before a supporting action.
     # Ordering is not a reason to change either Move's act, role or reference.
     primary_first = (
@@ -1479,8 +1495,9 @@ def reception_active_moves(
         sorted(
             moves,
             key=lambda move: (
-                (move.reception_act == "honor_concrete_effort") if memo_duties_first else False,
-                -1 if primary_first and move.move_id == moves[0].move_id else _MOVE_ROLE_ORDER[move.move_role],
+                (move.reception_act == "honor_concrete_effort") if (memo_duties_first or retained_reactions_first) else False,
+                0 if retained_reactions_first else
+                    -1 if primary_first and move.move_id == moves[0].move_id else _MOVE_ROLE_ORDER[move.move_role],
                 original_order[move.move_id],
             ),
         )

@@ -8738,6 +8738,16 @@ def _build_reception_depth_policy_and_moves(
             "selection:semantic_opportunity_inventory",
             "selection:distinct_human_contributions",
             "selection:raw_character_count_unused",
+            *(("selection:retained_reactions_before_independent_action",) if (
+                final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION
+                and retained_reaction_groups and 2 <= len(selected) <= 3
+                and sum(item.family == "concrete_effort" for item in selected) == 1
+                and all(item.retention == "required"
+                    and item.family in {"current_burden", "lived_change", "concrete_effort"}
+                    and (item.family != "concrete_effort" or (
+                        len(item.target_nucleus_ids) == 1 and not item.support_nucleus_ids))
+                    for item in selected)
+            ) else ()),
             *(("selection:primary_burden_first",) if (
                 final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION
                 and selected[0].family == "current_burden"
