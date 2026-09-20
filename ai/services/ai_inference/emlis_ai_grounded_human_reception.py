@@ -10083,7 +10083,12 @@ def _source_owned_detached_feeling_parts(move, realization, plan, resolver,
         # Identical source and time would erase the visible distinction
         # between these independent duties. Keep their existing realizations.
         return None
-    return parts if parts is not None and realization.semantic_fragments == (parts[1],) else None
+    # Politeness belongs to the response ending; the full source still owns
+    # the feeling. Removing only adjective + desu is reversible, including
+    # past and negative inflections. No tense or person is supplied here.
+    fragments = tuple(re.sub(r"(?<=[い])です$|(?<=かった)です$", "", fragment)
+                      for fragment in realization.semantic_fragments)
+    return parts if parts is not None and fragments == (parts[1],) else None
 
 
 def _detached_feeling_source_parts(move, plan, resolver):
@@ -10109,8 +10114,9 @@ def _detached_feeling_source_parts(move, plan, resolver):
         return None
     index = {n.nucleus_id: n for n in plan.nuclei}
     source = final_reception_source_anchor_text(nucleus.nucleus_id, index, resolver)
-    if (not source or not _SOURCE_GROUNDED_FINITE_END_RE.search(source)
-        or re.search(r"(?:です|ます|でした|ました|だ)$", source)
+    finite = re.sub(r"(?<=[い])です$|(?<=かった)です$", "", source)
+    if (not source or not _SOURCE_GROUNDED_FINITE_END_RE.search(finite)
+        or re.search(r"(?:です|ます|でした|ました|だ)$", finite)
         or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", source)
         or re.search(r'[「」『』“”‘’"?？!！\r\n。]', source)):
         return None
@@ -10129,7 +10135,7 @@ def _detached_feeling_source_parts(move, plan, resolver):
                 "prior_answer_time": "先の回答時点では"}[times[0]]
     else:
         return None
-    return time, source
+    return time, finite
 
 
 def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,

@@ -2531,8 +2531,15 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
     if resolver.source_fields_for(nucleus.source_span_ids) != nucleus.source_fields:
         return None
     source = _body_inverse_typed_source_fragment(nucleus, span.raw_text)
-    if (not source or not _SOURCE_GROUNDED_FINITE_END_RE.search(source)
-        or re.search(r"(?:です|ます|でした|ました|だ)$", source)
+    # Read the complete source separately from its finite surface inflection.
+    # Only adjective/past-adjective + desu can lend politeness to the final
+    # acknowledgement. The returned proof restores those original bytes.
+    if not source:
+        return None
+    polite_adjective = re.fullmatch(r"(?P<predicate>.+(?:い|かった))です", source)
+    predicate = polite_adjective['predicate'] if polite_adjective else source
+    if (not source or not _SOURCE_GROUNDED_FINITE_END_RE.search(predicate)
+        or re.search(r"(?:です|ます|でした|ました|だ)$", predicate)
         or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", source)
         or re.search(r'[「」『』“”‘’"?？!！\r\n。]', source)):
         return None
@@ -2558,7 +2565,7 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
         return None
     parsed = re.fullmatch(r"(?P<time>その時は|回答した時点では|先の回答時点では)"
                           r"(?P<feeling>.+)(?:のですね|のです|のだと受け取りました)。", raw)
-    if parsed is None or parsed['time'] != expected_time or parsed['feeling'] != source:
+    if parsed is None or parsed['time'] != expected_time or parsed['feeling'] != predicate:
         return None
     return ((len(raw[:parsed.start('feeling')].encode()),
              len(raw[:parsed.end('feeling')].encode()), source.encode()),)
@@ -2584,6 +2591,11 @@ def read_detached_feeling_pair(raw, moves, plan, resolver, selected_subjective_i
         second = _read_detached_feeling_discourse(
             right, moves[1], plan, resolver, selected_subjective_input)
         if first is None or second is None or first[0][2] == second[0][2]:
+            continue
+        if (left.encode()[first[0][0]:first[0][1]]
+            == right.encode()[second[0][0]:second[0][1]]):
+            # Different politeness cannot make two equal visible duties
+            # distinct. Such Moves retain their separate existing topology.
             continue
         offset = len(raw[:boundary.end()].encode())
         matches.append((first, tuple((a + offset, b + offset, source) for a, b, source in second)))
