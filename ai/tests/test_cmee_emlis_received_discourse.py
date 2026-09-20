@@ -224,3 +224,111 @@ def test_temporal_finite_body_survives_save_and_no_author_restart(qcase, qdb, te
     monkeypatch.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved body must not rerender'))
     assert run(service.get(user, parent)) == current
     assert run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('memo', [
+    '褒められたのに、嬉しくなかった。',
+    '誘われたのに、悲しかった。',
+    '頼まれたのに、寂しかった。',
+])
+@pytest.mark.parametrize('text,time,source', [
+    ('今は嬉しい。', '回答した時点では', '嬉しい'),
+    ('今は少し嬉しい。', '回答した時点では', '少し嬉しい'),
+    ('その時は嬉しかった。', 'その時は', '嬉しかった'),
+])
+def test_positive_answer_is_a_time_bound_finite_feeling(memo, text, time, source):
+    context = actual(request=answered(text, initial(memo)))
+    result, plan, _, resolver, selected = context
+    follow = result.artifact.reception
+    event = memo.split('のに')[0]
+    assert event + 'ことについて、' + time + source in follow
+    assert 'という気持ち' not in follow and '受け止めています' not in follow
+    assert len(plan.response_plan.human_reception_plan.moves) == 2
+    assert inverse(context, follow, without_author=True).passed
+    # The original reaction is an independent duty, including when the
+    # added answer names a different feeling about the original occasion.
+    original = actual(request=initial(memo))[0].artifact.reception
+    assert original in follow
+    assert not inverse(context, follow.replace(original, ''), without_author=True).passed
+
+
+@pytest.mark.parametrize('old,new', [
+    ('回答した時点では', 'その時は'), ('回答した時点では', '先の回答時点では'),
+    ('回答した時点では', ''), ('回答した時点では', 'そのため回答した時点では'),
+    ('回答した時点では', '回答した時点では友人は'),
+    ('ことについて、', 'ことのおかげで、'),
+    ('少し嬉しい', '嬉しい'), ('少し嬉しい', '少し嬉しかった'),
+    ('少し嬉しい', '少し嬉しくない'), ('少し嬉しい', '「少し嬉しい」'),
+    ('褒められたことについて', '誘われたことについて'),
+])
+def test_positive_finite_answer_mutations_are_rejected_without_author(old, new):
+    context = actual(request=answered('今は少し嬉しい。', initial()))
+    follow = context[0].artifact.reception
+    changed = follow.replace(old, new)
+    assert changed != follow
+    assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('ending', ['のです。', 'のだと受け取りました。'])
+def test_positive_answer_acknowledgement_does_not_require_author_spelling(ending):
+    context = actual(request=answered('今は嬉しい。', initial()))
+    follow = context[0].artifact.reception
+    before, last = follow.rsplit('。', 2)[:2]
+    changed = before + '。' + last.removesuffix('のですね') + ending
+    assert changed != follow
+    assert inverse(context, changed).passed
+
+
+def test_positive_answer_correction_replaces_only_the_original_reaction():
+    context = actual(request=answered('あの時も本当は嬉しかった。書き方を間違えた。', initial()))
+    follow = context[0].artifact.reception
+    assert 'その時は嬉しかった' in follow
+    assert '嬉しくなかった' not in follow and 'つながらなかった' not in follow
+    assert len(context[1].response_plan.human_reception_plan.moves) == 1
+    assert inverse(context, follow, without_author=True).passed
+
+
+def test_prior_positive_answer_has_its_own_time_after_correction():
+    request = advance(begin('褒められたのに、嬉しくなかった。誘われたのに、悲しかった。'), '今は嬉しい。')
+    request = advance(request, '「嬉しい」ではなく「少し嬉しい」です。')
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    assert '先の回答時点では少し嬉しい' in follow
+    assert '誘われた' in follow and '悲しさ' in follow
+    assert inverse(context, follow, without_author=True).passed
+    assert not inverse(context, follow.replace('先の回答時点では', '回答した時点では'), without_author=True).passed
+
+
+def test_unsupported_positive_replacement_and_event_withdrawal_stays_unavailable():
+    from emlis_ai_grounded_observation_plan import GroundedObservationPlanError
+    request = advance(begin('褒められたのに、嬉しくなかった。誘われたのに、悲しかった。'), '今は嬉しい。')
+    request = advance(request, '「嬉しい」ではなく「楽しい」です。「誘われた」は誤りです。')
+    with pytest.raises(GroundedObservationPlanError, match='human_reception_withdrawal_capability_gap'):
+        build_updated_grounded_plan(prepare_emlis_meaning(request))
+
+
+@pytest.mark.parametrize('text', ['今は嬉しいです。', '今は私は嬉しい。', '今は僕は嬉しい。'])
+def test_positive_finite_answer_keeps_unproven_clause_grammar_on_old_path(text):
+    context = actual(request=answered(text, initial()))
+    follow = context[0].artifact.reception
+    assert '回答した時点では' not in follow
+    assert 'ですのですね' not in follow
+    assert inverse(context, follow, without_author=True).passed
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('text', ['今は嬉しい。', 'あの時も本当は嬉しかった。書き方を間違えた。'])
+def test_positive_finite_answer_survives_saved_reads(qcase, qdb, tier, text, monkeypatch):
+    user, parent, service = qcase
+    assert 'code' not in qdb.query('update public.profiles set subscription_tier=$1 where id=$2', [tier, user])
+    qdb.query('update public.emotions set memo=$1 where id=$2', ['褒められたのに、嬉しくなかった。', parent])
+    first = run(service.start(user, parent))
+    current = run(answer(service, user, first, text))
+    body = current['current_observation']['text']
+    assert 'という気持ちを受け止めています' not in body
+    assert ('回答した時点では嬉しい' if text.startswith('今') else 'その時は嬉しかった') in body
+    assert current['original'] == first['original']
+    assert current['question_limit'] == (3 if tier == 'premium' else 1)
+    monkeypatch.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not rerender'))
+    assert run(service.get(user, parent)) == current
+    assert run(service.start(user, parent)) == current

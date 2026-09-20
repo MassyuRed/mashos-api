@@ -9940,6 +9940,37 @@ def _source_owned_action_change_sentence(move, realization, plan, resolver,
     return "".join(parts) + "のですね"
 
 
+def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
+                                          selected_decision, recovery_stage):
+    """Give the person's answer its own finite predicate and explicit time."""
+    from emlis_ai_grounded_observation_plan import source_owned_answer_feeling
+    roles = source_owned_answer_feeling(move, plan)
+    if getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1":
+        return None
+    if (roles is None or recovery_stage != "full"
+        or realization.reference_mode == "ANAPHORIC"
+        or realization.clause_form != "FINITE" or realization.context_slots != (1,)
+        or len(realization.semantic_fragments) != 2 or len(realization.relations) != 1
+        or realization.relations[0].relation_kind != "evaluation_about_event"
+        or any(p.actor_kind != "SELF" or p.quoted_boundary or p.future_action
+               or p.performed_action for p in realization.semantic_profiles)
+        or not _selected_material_appraisal(selected_decision)):
+        return None
+    event, answer, when = roles
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    event_text, source = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
+                          for n in (event, answer))
+    if (not event_text or not source or tuple(realization.semantic_fragments) != (source, event_text)
+        or not _SOURCE_GROUNDED_FINITE_END_RE.search(source)
+        or re.search(r"(?:です|ます|でした|ました|だ)$", source)
+        or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", event_text + source)
+        or re.search(r'[「」『』“”‘’"?？!！\r\n。]', event_text + source)):
+        return None
+    time = {"original_occasion": "その時は", "answer_time": "回答した時点では",
+            "prior_answer_time": "先の回答時点では"}[when]
+    return event_text + "ことについて、" + time + source + "のですね"
+
+
 def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
                                            selected_decision, recovery_stage):
     """Realize the scope of uncertainty or a person's supplied evaluation basis.
@@ -10497,6 +10528,11 @@ def _author_source_grounded_reception_clauses(
                 distributive_object=distributive_relation_slot is not None,
                 unfinished_pair=unfinished_pair,
             )
+            answer_sentence = _source_owned_answer_feeling_sentence(
+                move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
+            )
+            if answer_sentence is not None:
+                move_sentence = answer_sentence
             focus_sentence = _source_owned_relational_focus_sentence(
                 move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
             )

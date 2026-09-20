@@ -7230,6 +7230,49 @@ def source_owned_action_change(move, plan, resolver):
     return left, connector, right
 
 
+def source_owned_answer_feeling(move, plan):
+    """Identify the existing answer's feeling, event and time without prose.
+
+    The ABOUT edge belongs to the positive Move. Original reactions remain
+    separate duties; an added feeling is not a correction or proof of change.
+    """
+    if (not move.required or move.reception_act != "recognize_lived_change"
+        or move.move_role != "felt_response" or len(move.target_nucleus_ids) != 1
+        or move.support_nucleus_ids
+        or move not in plan.response_plan.human_reception_plan.moves):
+        return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    answer = index.get(move.target_nucleus_ids[0])
+    if (answer is None or not is_grounded_positive_feeling(answer)
+        or answer.source_fields != ("answer_text_private",)
+        or answer.allowed_claim_scope != "explicit_supplemental_answer"
+        or answer.grounding_kind != "explicit" or answer.retention != "required"
+        or answer.semantic_frame.actor != "current_user"
+        or len(answer.source_span_ids) != 1):
+        return None
+    times = {c.split(":", 1)[1] for c in answer.semantic_frame.attribute_codes
+             if c.startswith("thread_time:")}
+    edges = tuple(r for r in plan.relations
+        if r.relation_id in plan.coverage_requirements.required_relation_ids
+        and answer.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id))
+    if (len(times) != 1 or not times <= {"original_occasion", "answer_time", "prior_answer_time"}
+        or len(edges) != 1 or edges[0].type != "evaluation_about_event"
+        or edges[0].to_nucleus_id != answer.nucleus_id
+        or edges[0].grounding_kind != "user_stated_relation"
+        or edges[0].retention != "required"):
+        return None
+    event = index.get(edges[0].from_nucleus_id)
+    if (event is None or event.kind != event.semantic_frame.predicate_kind
+        or event.kind != "event" or event.semantic_frame.modality != "fact"
+        or event.semantic_frame.time_scope != "past"
+        or event.semantic_frame.actor != "current_user"
+        or event.source_fields not in {("memo",), ("memo_action",)}
+        or event.allowed_claim_scope != "explicit_current_input"
+        or event.grounding_kind != "explicit" or event.retention != "required"):
+        return None
+    return event, answer, next(iter(times))
+
+
 def source_owned_relational_focus(move, plan=None, *, nuclei=None, relations=None):
     """Select an existing, complete relation for a finite reading, not a new claim.
 

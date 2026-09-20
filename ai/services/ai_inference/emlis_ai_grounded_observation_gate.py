@@ -15,6 +15,7 @@ from typing import Any, Final, Literal, Mapping
 
 from emlis_ai_evidence_ledger_service import EvidenceSpanResolver
 from emlis_ai_grounded_human_reception import (
+    _SOURCE_GROUNDED_FINITE_END_RE,
     SelectedSubjectiveReceptionInputV1,
     GroundedHumanReceptionSurfaceError,
     replay_source_grounded_human_reception_from_plan,
@@ -2361,8 +2362,51 @@ def _read_action_change_discourse(raw, move, plan, resolver, selected_subjective
             (start, start + len(right.encode()), right.encode()))
 
 
+def _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Read event ownership, source time and the full answer from body bytes.
+
+    No author replay or expected sentence grants admission. The feeling is
+    still the person's explicit answer, not Emlis's state or an inferred change.
+    """
+    from emlis_ai_grounded_observation_plan import source_owned_answer_feeling
+    roles = source_owned_answer_feeling(move, plan)
+    if getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1":
+        return None
+    if roles is None:
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if (appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
+            or appraisal.operation != "RECEIVE_AS_MATERIAL"):
+            return None
+    event, answer, when = roles
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    event_text, source = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
+                          for n in (event, answer))
+    if (not event_text or not source
+        or not _SOURCE_GROUNDED_FINITE_END_RE.search(source)
+        or re.search(r"(?:です|ます|でした|ました|だ)$", source)
+        or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", event_text + source)
+        or re.search(r'[「」『』“”‘’"?？!！\r\n。]', event_text + source)):
+        return None
+    parsed = re.fullmatch(r"(?P<event>.+)ことについて、"
+        r"(?P<time>その時は|回答した時点では|先の回答時点では)"
+        r"(?P<feeling>.+)(?:のですね|のです|のだと受け取りました)。", raw)
+    expected_time = {"original_occasion": "その時は", "answer_time": "回答した時点では",
+                     "prior_answer_time": "先の回答時点では"}[when]
+    if (parsed is None or parsed['event'] != event_text or parsed['time'] != expected_time
+        or parsed['feeling'] != source):
+        return None
+    return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
+                 for key, value in (("event", event_text), ("feeling", source)))
+
+
 def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None):
     """Read supported finite source duties without a literal-author oracle."""
+    answer = _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjective_input)
+    if answer is not None:
+        return answer
     action_change = _read_action_change_discourse(raw, move, plan, resolver, selected_subjective_input)
     if action_change is not None:
         return action_change
