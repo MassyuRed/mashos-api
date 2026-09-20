@@ -2538,9 +2538,14 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
         return None
     polite_adjective = re.fullmatch(r"(?P<predicate>.+(?:い|かった))です", source)
     predicate = polite_adjective['predicate'] if polite_adjective else source
+    # Restore the source speaker from actual recipient-facing prose below.
+    # This is independent of the author's surface transformation.
+    owner = re.match(r"(?P<self>わたし|ぼく|おれ|私|僕|俺|自分)"
+                     r"(?P<particle>には|にも|は|も)", predicate)
+    remainder = predicate[owner.end():] if owner else predicate
     if (not source or not _SOURCE_GROUNDED_FINITE_END_RE.search(predicate)
         or re.search(r"(?:です|ます|でした|ました|だ)$", predicate)
-        or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", source)
+        or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", remainder)
         or re.search(r'[「」『』“”‘’"?？!！\r\n。]', source)):
         return None
     if nucleus.source_fields in {("memo",), ("memo_action",)}:
@@ -2563,9 +2568,21 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
         expected_time = prefixes[times[0]]
     else:
         return None
-    parsed = re.fullmatch(r"(?P<time>その時は|回答した時点では|先の回答時点では)"
+    if owner:
+        expected_time = {"その時は": "その時、", "回答した時点では": "回答した時点で、",
+                         "先の回答時点では": "先の回答時点で、"}[expected_time]
+    parsed = re.fullmatch(r"(?P<time>その時は|回答した時点では|先の回答時点では|"
+                          r"その時、|回答した時点で、|先の回答時点で、)"
                           r"(?P<feeling>.+)(?:のですね|のです|のだと受け取りました)。", raw)
-    if parsed is None or parsed['time'] != expected_time or parsed['feeling'] != predicate:
+    if parsed is None or parsed['time'] != expected_time:
+        return None
+    restored = parsed['feeling']
+    if owner:
+        recipient = "あなた" + owner['particle']
+        if not restored.startswith(recipient):
+            return None
+        restored = owner.group() + restored[len(recipient):]
+    if restored != predicate:
         return None
     return ((len(raw[:parsed.start('feeling')].encode()),
              len(raw[:parsed.end('feeling')].encode()), source.encode()),)

@@ -10086,9 +10086,21 @@ def _source_owned_detached_feeling_parts(move, realization, plan, resolver,
     # Politeness belongs to the response ending; the full source still owns
     # the feeling. Removing only adjective + desu is reversible, including
     # past and negative inflections. No tense or person is supplied here.
-    fragments = tuple(re.sub(r"(?<=[い])です$|(?<=かった)です$", "", fragment)
+    fragments = tuple(_detached_feeling_finite_surface(fragment)
                       for fragment in realization.semantic_fragments)
     return parts if parts is not None and fragments == (parts[1],) else None
+
+
+def _detached_feeling_finite_surface(source):
+    """Address an explicitly SELF-owned feeling to its original speaker.
+
+    Only the leading pronoun changes perspective; its particle, predicate,
+    polarity and tense remain intact. Callers prove the complete source and
+    current-user ownership before using this surface.
+    """
+    finite = re.sub(r"(?<=[い])です$|(?<=かった)です$", "", source)
+    return re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?=には|にも|は|も)",
+                  "あなた", finite, count=1)
 
 
 def _detached_feeling_source_parts(move, plan, resolver):
@@ -10114,10 +10126,10 @@ def _detached_feeling_source_parts(move, plan, resolver):
         return None
     index = {n.nucleus_id: n for n in plan.nuclei}
     source = final_reception_source_anchor_text(nucleus.nucleus_id, index, resolver)
-    finite = re.sub(r"(?<=[い])です$|(?<=かった)です$", "", source)
+    finite = _detached_feeling_finite_surface(source)
     if (not source or not _SOURCE_GROUNDED_FINITE_END_RE.search(finite)
         or re.search(r"(?:です|ます|でした|ました|だ)$", finite)
-        or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", source)
+        or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)
         or re.search(r'[「」『』“”‘’"?？!！\r\n。]', source)):
         return None
     if nucleus.source_fields in {("memo",), ("memo_action",)}:
@@ -10135,6 +10147,9 @@ def _detached_feeling_source_parts(move, plan, resolver):
                 "prior_answer_time": "先の回答時点では"}[times[0]]
     else:
         return None
+    if re.match(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)", source):
+        time = {"その時は": "その時、", "回答した時点では": "回答した時点で、",
+                "先の回答時点では": "先の回答時点で、"}[time]
     return time, finite
 
 
