@@ -7261,6 +7261,20 @@ def source_owned_relational_focus(move, plan=None, *, nuclei=None, relations=Non
                or n.grounding_kind not in {"explicit", "user_stated_relation"}
                or n.retention != "required" for n in (left, right))):
         return None
+    if (relation.type == "contrast"
+        and relation.grounding_kind == "user_stated_relation"
+        and left.kind == left.semantic_frame.predicate_kind == "event"
+        and left.semantic_frame.modality == "fact"
+        and is_grounded_positive_feeling(right)
+        and right.semantic_frame.time_scope == "past"
+        and "lexical:source_nominal_past_feeling" in right.semantic_frame.attribute_codes
+        and all(n.source_fields == ("memo",)
+                and n.allowed_claim_scope == "explicit_current_input"
+                for n in (left, right))
+        and move.target_nucleus_ids == (right.nucleus_id,)
+        and move.support_nucleus_ids == (left.nucleus_id,)
+        and move.reception_act == "recognize_lived_change"):
+        return "received_experience_focus", left, right
     if (relation.type == "evaluation_about_event"
         and relation.grounding_kind == "user_stated_relation"
         and _source_self_appraisal(left)
@@ -9377,8 +9391,8 @@ def build_grounded_human_reception_plan(
     # never rewrites an ANAPHORIC expression into an unbound explicit one.
     if final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION:
         moves = tuple(replace(move, reference_mode="short_anchor_if_ambiguous")
-            if source_owned_relational_focus(move, nuclei=nuclei, relations=relations)
-            is not None else move for move in moves)
+            if (focus := source_owned_relational_focus(move, nuclei=nuclei, relations=relations))
+            is not None and focus[0] != "received_experience_focus" else move for move in moves)
         if ((len(moves) == 2 or "selection:primary_burden_first" in depth_policy.selection_reason_codes)
             and _source_owned_memo_duties_before_action(moves, nuclei, relations)):
             depth_policy = replace(depth_policy, selection_reason_codes=(
@@ -12170,7 +12184,7 @@ def _received_event_reaction_projections(span, base_frame):
     return tuple(rows)
 
 
-def _source_nominal_past_feeling_is_bound(fragment: str) -> bool:
+def _source_nominal_past_feeling_parts(fragment: str) -> tuple[str, str, str, str] | None:
     """Bind a completed experience to its outer finite past feeling.
 
     Negation in an earlier cognitive concession belongs to that clause.
@@ -12179,23 +12193,23 @@ def _source_nominal_past_feeling_is_bound(fragment: str) -> bool:
     hosts are outside this bounded grammar.
     """
     if _top_level_text(fragment) != fragment:
-        return False
+        return None
     match = re.fullmatch(
-        r"(?P<experience>.+)こと(?:に|で|が)"
-        r"(?:少し(?:だけ)?|ちょっと|とても|本当に)?"
-        r"(?:安心した|ほっとした|落ち着いた|うれしかった|嬉しかった)", fragment)
+        r"(?P<experience>.+)こと(?P<particle>に|で|が)"
+        r"(?P<degree>少し(?:だけ)?|ちょっと|とても|本当に)?"
+        r"(?P<feeling>安心した|ほっとした|落ち着いた|うれしかった|嬉しかった)", fragment)
     if match is None:
-        return False
+        return None
     experience = _LEADING_CONTRAST_RE.sub("", match['experience'], count=1).lstrip("、, ")
     experience = re.sub(r"^(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が)[、,]?", "", experience)
     if re.search(r"[。．.!！?？:：;；]|こと|によると|いわく|曰く|"
                  r"明日|来週|来月|来年|今後|もし|なら|たら|としたら|"
                  r"と言|という|って言|らしい|そうだ|ようだ", experience):
-        return False
+        return None
     concession = re.match(r"(?P<claim>[^、,]+)とは思わない(?:けれども|けれど|けど|が)[、,]", experience)
     if concession:
         if re.search(r"は|が|も", concession['claim']):
-            return False
+            return None
         experience = experience[concession.end():]
     temporal = re.match(r"(?:すれ違った|話した|話し合った|相談した|議論した|伝えた|集まった|参加した|"
                         r"(?:話|会話|相談|議論|会議|打ち合わせ|打合せ)が(?:終わった|済んだ))"
@@ -12215,13 +12229,19 @@ def _source_nominal_past_feeling_is_bound(fragment: str) -> bool:
         r"話せた|話し合えた|伝えられた|続けられた|取り組めた|参加できた|相談できた)",
         experience)
     if event is None:
-        return False
+        return None
     # Inspect the host separately from the finite benefactive: the 'も'
     # inside 'もらえた' is not a competing topic particle.
-    return re.search(r"は|が|も|にとって|について|に関して|こそ|さえ|まで|だって|自身|"
+    if re.search(r"は|が|も|にとって|について|に関して|こそ|さえ|まで|だって|自身|"
                      r"気持ちとして|感想として|聞いた|言った|述べた|語った|説明した|答えた|"
                      + _OWNER_FOCUS_PARTICLE_SOURCE + "|" + _OWNER_TOPIC_PARTICLE_SOURCE,
-                     event['object']) is None
+                     event['object']) is not None:
+        return None
+    return match['experience'], match['particle'], match['degree'] or '', match['feeling']
+
+
+def _source_nominal_past_feeling_is_bound(fragment: str) -> bool:
+    return _source_nominal_past_feeling_parts(fragment) is not None
 
 
 def _source_received_past_feeling_is_bound(fragment: str) -> bool:

@@ -9971,6 +9971,30 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
         or set(realization.semantic_fragments) != {first, second}
         or any(mark in first + second for mark in ("。", "？", "?", "「", "」", "\n"))):
         return None
+    if kind == "received_experience_focus":
+        from emlis_ai_grounded_observation_plan import (
+            _source_nominal_past_feeling_parts, _LEADING_CONTRAST_RE,
+        )
+        parts = _source_nominal_past_feeling_parts(second)
+        if parts is None or parts[1] not in {"に", "が"}:
+            return None
+        experience, particle, degree, feeling = parts
+        lead = _LEADING_CONTRAST_RE.match(experience)
+        prefix = lead.group() if lead else ""
+        # Keep a source comma/space with its leading connective. Moving
+        # only the word would create a second comma after the focus marker.
+        if prefix:
+            end = len(prefix)
+            while end < len(experience) and experience[end] in "、, ":
+                end += 1
+            prefix, experience = experience[:end], experience[end:]
+        # Preserve the person's explicit perspective in the old grammar;
+        # this finite reading must not turn their first person into Emlis's.
+        if (re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が)", first + second)
+            or "とは思わない" in experience):
+            return None
+        return (f"{first}けれど、{prefix}{degree}{feeling}のは、"
+                f"{experience}ことなのですね")
     if kind == "answer_owned_standard":
         # The answer's positive past wish is evidence. The question's tentative
         # goal, whether affirmed or rejected, is deliberately not consulted.

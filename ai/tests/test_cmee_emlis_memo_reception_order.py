@@ -369,3 +369,91 @@ def test_saved_single_feeling_order_survives_get_and_no_author_restart(qdb, qcas
     monkeypatch.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved content rerendered'))
     assert run(service.start(user, parent)) == dto
     assert run(service.get(user, parent)) == dto
+
+
+# The existing source relation names the experience behind a feeling.
+# Keep its duties while making that experience the focus of the response.
+@pytest.mark.parametrize('feeling', FEELINGS)
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+def test_experience_focus_preserves_background_feeling_and_independent_action(feeling, tier):
+    req = request(feeling, tier)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    current_focus = owner.source_owned_relational_focus
+    def old_focus(*args, **kwargs):
+        value = current_focus(*args, **kwargs)
+        return None if value is not None and value[0] == 'received_experience_focus' else value
+    with patch.object(owner, 'source_owned_relational_focus', side_effect=old_focus):
+        before = build_updated_grounded_plan(prepared)
+    assert plan == before  # No semantic selection, Move or reference-mode drift.
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact is not None, out.reason_codes
+    follow = out.artifact.reception
+    experience = feeling.removeprefix('それでも').removesuffix('ことにほっとした')
+    assert BACKGROUND + 'けれど、それでもほっとしたのは、' + experience + 'ことなのですね。' in follow
+    assert follow.index(BURDEN) < follow.index(BACKGROUND) < follow.index(ACTION)
+    assert 'ほっとしたという気持ちを受け止めています' not in follow
+    assert req.emlis_thread.question_control_context.question_limit == (3 if tier == 'premium' else 1)
+    assert out.question is None
+
+
+@pytest.mark.parametrize('old,new', [
+    (BACKGROUND, ''), ('けれど、それでも', 'ので、そのため'),
+    ('説明を聞いてもらえた', '提案を聞いてもらえた'),
+    ('聞いてもらえた', '聞いてもらえる'), ('聞いてもらえた', '聞いてもらえなかった'),
+    ('話が終わった後', '話が終わる前'), ('ほっとしたのは', 'ほっとしているのは'),
+    ('ほっとしたのは', '安心したのは'), ('それでもほっとした', '友人がほっとした'),
+])
+def test_experience_focus_inverse_rejects_changed_source_roles_without_author(old, new):
+    ctx = context(); follow = ctx[0].artifact.reception
+    assert inverse(ctx, follow, without_author=True).passed
+    changed = follow.replace(old, new)
+    assert changed != follow
+    assert not inverse(ctx, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('ending', ['なのです。', 'なのだと受け取りました。'])
+def test_experience_focus_acknowledgement_is_not_bound_to_author_spelling(ending):
+    ctx = context(); follow = ctx[0].artifact.reception
+    changed = follow.replace('ことなのですね。', 'こと' + ending)
+    assert changed != follow and inverse(ctx, changed).passed
+
+
+def test_experience_focus_keeps_degree_and_connective_punctuation():
+    feeling = 'それでも、話が終わった後、説明を聞いてもらえたことに少しほっとした'
+    ctx = actual(request=request(feeling)); follow = ctx[0].artifact.reception
+    assert 'それでも、少しほっとしたのは、話が終わった後、説明を聞いてもらえたことなのですね。' in follow
+    assert '、、' not in follow and inverse(ctx, follow, without_author=True).passed
+    assert not inverse(ctx, follow.replace('少しほっとした', 'ほっとした'), without_author=True).passed
+
+
+@pytest.mark.parametrize('source', [
+    'それでも説明を聞いてもらえたことでほっとした',
+    'それでも私は説明を聞いてもらえたことにほっとした',
+    'それでも安心だとは思わないけれど、説明を聞いてもらえたことにほっとした',
+])
+def test_experience_focus_boundary_does_not_change_source_grammar(source):
+    parts = owner._source_nominal_past_feeling_parts(source)
+    assert parts is not None and owner._source_nominal_past_feeling_is_bound(source)
+    experience, particle, degree, feeling = parts
+    assert experience + 'こと' + particle + degree + feeling == source
+    # Synthetic raw body cannot gain the new discourse authority at a
+    # source/plan boundary; the existing grammar remains independently used.
+    ctx = context(); move = next(m for m in ctx[1].response_plan.human_reception_plan.moves
+                                if m.reception_act == 'recognize_lived_change')
+    import emlis_ai_grounded_observation_gate as inverse_owner
+    fabricated = BACKGROUND + 'けれど、ほっとしたのは、' + experience + 'ことなのですね。'
+    assert inverse_owner.read_source_owned_discourse(fabricated, move, ctx[1], ctx[3], ctx[4]) is None
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+def test_experience_focus_saved_body_and_restart_are_identical(qcase, qdb, tier, monkeypatch):
+    user, parent, service = qcase
+    qdb.query('update public.profiles set subscription_tier=$1 where id=$2', [tier, user])
+    qdb.query('update public.emotions set memo=$1, memo_action=$2 where id=$3', [memo(), ACTION+'。', parent])
+    dto = run(service.start(user, parent))
+    assert dto['current_observation'] is not None, dto['failure_code']
+    assert 'ほっとしたのは、話が終わった後、説明を聞いてもらえたことなのですね。' in dto['current_observation']['text']
+    monkeypatch.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read rerendered'))
+    assert run(service.get(user, parent)) == dto
+    assert run(service.start(user, parent)) == dto

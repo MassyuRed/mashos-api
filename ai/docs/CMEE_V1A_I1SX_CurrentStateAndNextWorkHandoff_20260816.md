@@ -8424,3 +8424,12 @@ Draft/default OFF and NOT_CLEAR remain. No public API, schema, live DB, RN, othe
 - 初回環境パス誤り、出力先の事前配置衝突、診断の出力先置換誤りと修正前実行を保全。最終の衝突2件は出力先だけを分離し、同じ実装・入力・期待・collectorで元手順を再実行して成功。引用訂正集合も実データ18ケース/41状態と後続読取が一致した。
 
 商品判定は **NOT_CLEAR**。今回の単一出来事の構成改善を全体解決にはしない。複数の意味を自然なフォローへまとめる品質、長い復唱・定型終止、行動偏重や曖昧な変化指示、未提供経路が残る。次も共通の意味から文章を構成する原因を扱い、語句集追加・別作者・環境再構築へ戻らない。9/23中間確認、9/26集中期間終了、9/27以降の配分、全体45%/商品合格0/3は据え置き。Draft/default OFF維持、merge/Ready/enable/deploy・稼働DB/実機/実課金/外部AI・正式人手商品PASSは未実施。System Contextは使わず現行原典を直接確認した。
+
+
+## 2026-09-20 continuation — focus the experience behind a source-owned feeling (validation pending)
+
+The current weekly agreement and latest verified checkpoint remain in force. The shared Reception author now gives a selected positive past feeling and its nominal experience a finite focus, retaining the required contrasting background and separate memo/action duties. It uses the existing complete-source grammar without adding accepted vocabulary or changing meaning/Move selection. The independent body reader checks the actual background, connective, degree, past feeling and complete experience; lexical coverage recognizes that exact independently read transposition. Explicit first-person subjects, causal-particle objects and preceding cognitive concessions retain the old path. No parallel author or renderer is added. STRUCTURE_MAP_DELTA_NONE.
+
+The added 24 targeted checks pass, including all three plans, source/actor/time/degree/contrast mutations without author replay, equivalent acknowledgements, unchanged plan selection, and saved GET/start without regeneration. The full inherited regression, same100 and all saved cohorts are pending on these source bytes. Earlier source-path and exploratory failures are retained privately. Historical inputs, expectations, quality thresholds and prior failures are unchanged.
+
+Product remains NOT_CLEAR, Draft/default OFF. API/DB/RN contracts, question limits, other cores, external AI and release operations are unchanged. Root owns implementation and publication; read-only review found and corrected connective punctuation, first-person and reference-mode boundaries. Continue final validation and full body review, preserving private texts outside public GitHub.

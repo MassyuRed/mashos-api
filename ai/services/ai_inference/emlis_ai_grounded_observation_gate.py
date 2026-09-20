@@ -349,6 +349,7 @@ def _semantic_subcheck_reasons(
     sensation_body = surface_result.text.encode("utf-8")
     sensation_witness = None
     replacements = set()
+    focused_source_nuclei = set()
     reception_plan = plan.response_plan.human_reception_plan
     for move in reception_plan.moves if reception_plan is not None else ():
         if len(move.target_nucleus_ids) > 1 or move.support_nucleus_ids:
@@ -360,6 +361,15 @@ def _semantic_subcheck_reasons(
                         sensation_body, sensation_witness, sentence, move, plan, resolver))
                     replacements.update(_body_inverse_thread_received_group(
                         sensation_body, sensation_witness, sentence, move, plan, resolver) or ())
+                    from emlis_ai_grounded_observation_plan import source_owned_relational_focus
+                    focus = source_owned_relational_focus(move, plan)
+                    if (focus is not None and focus[0] == "received_experience_focus"
+                        and _read_relational_focus_discourse(
+                            sensation_body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode(),
+                            move, plan, resolver, None) is not None):
+                        # Exact source roles survive the focus transposition;
+                        # a source-string substring is no longer its proof.
+                        focused_source_nuclei.add(focus[2].nucleus_id)
             continue
         answer_nominal = source_grounded_thread_answer_nominal(move, plan, nucleus_index, resolver)
         if answer_nominal is None:
@@ -402,7 +412,8 @@ def _semantic_subcheck_reasons(
                     # attributive form here; no shortened source stem counts.
                     anchors.add(_normalized(re.sub(r"決められません$", "決められない",
                         re.sub(r"迷っています$", "迷っている", clause))))
-            if any(anchors) and not any(anchor and anchor in surface_normalized for anchor in anchors):
+            if (any(anchors) and not any(anchor and anchor in surface_normalized for anchor in anchors)
+                and nucleus.nucleus_id not in focused_source_nuclei):
                 semantic.append("lexical_anchor_missing")
         if "lexical:no_new_sensation_family" in attributes:
             for pattern in _SENSATION_FAMILIES.values():
@@ -2231,6 +2242,39 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
     if (not first or not second or first == second
         or any(mark in first + second for mark in ("。", "？", "?", "「", "」", "\n"))):
         return None
+    if kind == "received_experience_focus":
+        from emlis_ai_grounded_observation_plan import (
+            _source_nominal_past_feeling_parts, _LEADING_CONTRAST_RE,
+        )
+        source = _source_nominal_past_feeling_parts(second)
+        if source is None or source[1] not in {"に", "が"}:
+            return None
+        experience, particle, degree, feeling = source
+        lead = _LEADING_CONTRAST_RE.match(experience)
+        prefix = lead.group() if lead else ""
+        # Keep a source comma/space with its leading connective. Moving
+        # only the word would create a second comma after the focus marker.
+        if prefix:
+            end = len(prefix)
+            while end < len(experience) and experience[end] in "、, ":
+                end += 1
+            prefix, experience = experience[:end], experience[end:]
+        if (re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が)", first + second)
+            or "とは思わない" in experience):
+            return None
+        parsed = re.fullmatch(
+            r"(?P<background>.+)けれど、(?P<response>.+)のは、"
+            r"(?P<experience>.+)こと(?:なのですね|なのです|なのだと受け取りました)。", raw)
+        if (parsed is None or parsed['background'] != first
+            or parsed['response'] != prefix + degree + feeling
+            or parsed['experience'] != experience
+            or prefix + parsed['experience'] + 'こと' + particle + degree + feeling != second):
+            return None
+        # Restore the complete transposed source only after reading all its
+        # roles. These spans serve the existing inverse, never the author.
+        return ((0, len(first.encode()), first.encode()),
+                (len(raw[:parsed.start('response')].encode()),
+                 len(raw[:parsed.end('experience')].encode()), second.encode()))
     if kind == "answer_owned_standard":
         stance_reading = re.fullmatch(
             r"(?P<appraisal>.+)という振り返りを、(?P<wish>.+)という望みを起点に、"
