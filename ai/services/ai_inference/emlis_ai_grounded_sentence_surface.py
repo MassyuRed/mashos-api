@@ -1599,6 +1599,44 @@ def _merge_parallel_contrast_groups(groups, relation_ids, nucleus_index, relatio
     return tuple(merged)
 
 
+def _detached_observation_time(nucleus):
+    """Keep each admitted independent feeling's own observation time."""
+    frame = nucleus.semantic_frame
+    codes = set(frame.attribute_codes)
+    if ("thread_subject:withdrawn_source_event" not in codes
+        or nucleus.kind != "reaction" or frame.predicate_kind != "feeling"
+        or frame.actor != "current_user" or frame.modality != "feeling"
+        or nucleus.retention != "required" or nucleus.grounding_kind != "explicit"
+        or len(nucleus.source_span_ids) != 1):
+        return None
+    times = {c for c in codes if c.startswith("thread_time:")}
+    if nucleus.source_fields in {("memo",), ("memo_action",)}:
+        return "その時" if frame.time_scope == "past" and not times else None
+    if (nucleus.source_fields == ("answer_text_private",)
+        and nucleus.allowed_claim_scope == "explicit_supplemental_answer"
+        and len(times) == 1):
+        return {"thread_time:original_occasion": "その時", "thread_time:answer_time": "回答した時点",
+                "thread_time:prior_answer_time": "先の回答時点"}.get(next(iter(times)))
+    return None
+
+
+def _merge_detached_feeling_groups(groups, nucleus_index, relation_index):
+    """Coordinate independent feelings without attaching them to another event.
+
+    Keep their source order and all other relation components intact. Each
+    operand will carry its own time, including across input/answer fields.
+    """
+    linked = {nid for r in relation_index.values() for nid in (r.from_nucleus_id, r.to_nucleus_id)}
+    positions = [i for i, group in enumerate(groups) if group
+                 and all(nid not in linked and _detached_observation_time(nucleus_index[nid])
+                         for nid in group)]
+    if len(positions) < 2:
+        return groups
+    combined = tuple(nid for i in positions for nid in groups[i])
+    return tuple(combined if i == positions[0] else tuple(group)
+                 for i, group in enumerate(groups) if i == positions[0] or i not in positions)
+
+
 def _merge_homogeneous_state_groups(
     groups: Sequence[Sequence[str]],
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
@@ -2148,6 +2186,16 @@ def _build_regular_lines(
                 nucleus_index, relation_index)
             if len(source_groups) <= max_observation_groups:
                 groups = source_groups
+        if getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1":
+            # Compose source components before the line budget can absorb an
+            # independent feeling into an unrelated surviving event.
+            source_groups = _relation_aware_groups(selected_ids, relation_candidates,
+                nucleus_index, relation_index, max_groups=len(selected_ids))
+            source_groups = _merge_parallel_contrast_groups(source_groups, relation_candidates,
+                nucleus_index, relation_index)
+            detached_groups = _merge_detached_feeling_groups(source_groups, nucleus_index, relation_index)
+            if detached_groups != source_groups and len(detached_groups) <= max_observation_groups:
+                groups = detached_groups
         groups = _merge_homogeneous_state_groups(groups, nucleus_index)
         groups = _merge_source_local_relation_free_event_groups(
             groups,
@@ -2774,6 +2822,18 @@ def _render_observation(
         return ""
     prefix = _hedge_prefix(binding)
     if len(binding.nucleus_ids) > 1:
+        detached_times = tuple(_detached_observation_time(nucleus_index[nid]) for nid in binding.nucleus_ids)
+        if (getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+            and not binding.relation_ids and all(detached_times)):
+            # Resolve separately: a quote list may reorder fields or dedupe
+            # equal words, which must not exchange these feelings' times.
+            operands = []
+            for nid, when in zip(binding.nucleus_ids, detached_times, strict=True):
+                source = _quotes_for_nuclei((nid,), nucleus_index, resolver)
+                if len(source) != 1:
+                    raise GroundedSentenceSurfaceError("detached_feeling_source_ambiguous")
+                operands.append(f"{when}の{source[0]}")
+            return f"{prefix}{'と、'.join(operands)}という気持ちが書かれています。"
         atoms = set(binding.functional_atom_ids)
         if typed_semantic_duties and "observation_surface_role:state_arc" in atoms:
             from emlis_ai_grounded_observation_plan import is_grounded_positive_feeling

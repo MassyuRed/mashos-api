@@ -2271,6 +2271,59 @@ def _body_inverse_thread_contrast_answers(body, witness, line, plan, resolver):
 
 
 
+def _body_inverse_detached_observation(raw, nuclei, plan, resolver):
+    """Read each quoted feeling with its own time, without author replay.
+
+    Whole-line parsing excludes a revived event or a newly causal link. A
+    time token elsewhere in the line cannot discharge this operand's duty.
+    """
+    from emlis_ai_grounded_observation_plan import (
+        _thread_withdrawn_original_reaction, _received_event_reaction_projections,
+    )
+    operand = r"(?:その時|回答した時点|先の回答時点)の「[^「」『』\n]+」"
+    parsed = re.fullmatch(r"(?:今の入力だけを見ると、)?(" + operand
+                         + r"(?:と、" + operand + r")+)という気持ちが(?:書かれています|記されています)。", raw)
+    if parsed is None:
+        return False
+    pieces = re.findall(r"(その時|回答した時点|先の回答時点)の「([^「」『』\n]+)」", parsed[1])
+    if len(pieces) != len(nuclei):
+        return False
+    for nucleus, (when, quoted) in zip(nuclei, pieces, strict=True):
+        frame = nucleus.semantic_frame
+        codes = set(frame.attribute_codes)
+        if ("thread_subject:withdrawn_source_event" not in codes
+            or nucleus.kind != "reaction" or frame.predicate_kind != "feeling"
+            or frame.modality != "feeling" or frame.actor != "current_user"
+            or nucleus.retention != "required" or nucleus.grounding_kind != "explicit"
+            or len(nucleus.source_span_ids) != 1
+            or resolver.source_fields_for(nucleus.source_span_ids) != nucleus.source_fields
+            or any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)):
+            return False
+        span = resolver.resolve(nucleus.source_span_ids[0])
+        source = _body_inverse_typed_source_fragment(nucleus, span.raw_text)
+        if source is None:
+            source = str(span.raw_text).strip(" \u3000、,。．.")
+        if not source or quoted != source:
+            return False
+        times = {c.split(":", 1)[1] for c in codes if c.startswith("thread_time:")}
+        if nucleus.source_fields in {("memo",), ("memo_action",)}:
+            if (when != "その時" or times
+                or not _thread_withdrawn_original_reaction(nucleus, plan.relations)
+                or not any(row.kind == "reaction" and row.polarity == frame.polarity
+                           and set(row.attribute_codes) <= codes
+                           for row in _received_event_reaction_projections(span, frame))):
+                return False
+        elif (nucleus.source_fields == ("answer_text_private",)
+              and nucleus.allowed_claim_scope == "explicit_supplemental_answer"):
+            expected = {"その時": "original_occasion", "回答した時点": "answer_time",
+                        "先の回答時点": "prior_answer_time"}[when]
+            if times != {expected}:
+                return False
+        else:
+            return False
+    return True
+
+
 def _read_appraisal_material_discourse(raw, move, plan, resolver, selected_subjective_input=None):
     """Independently read two complete, ordered, non-cancelling source duties.
 
@@ -4028,6 +4081,12 @@ def evaluate_grounded_surface_body_inverse(
                     failures.append(f"body_inverse_appraisal_host_incomplete:{index}")
         if getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1":
             visible_line = _body_inverse_visible_text(body, parsed_line)
+            detached_nuclei = tuple(nucleus_index[nid] for nid in planned_line.binding.nucleus_ids)
+            if (len(detached_nuclei) > 1 and not planned_line.binding.relation_ids
+                and all("thread_subject:withdrawn_source_event" in n.semantic_frame.attribute_codes
+                        for n in detached_nuclei)
+                and not _body_inverse_detached_observation(visible_line, detached_nuclei, plan, resolver)):
+                failures.append(f"body_inverse_detached_feeling_scope_mismatch:{index}")
             for nucleus in required_nuclei:
                 if nucleus.source_fields != ("answer_text_private",):
                     continue
