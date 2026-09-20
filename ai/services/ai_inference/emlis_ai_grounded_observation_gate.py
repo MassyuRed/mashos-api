@@ -2362,7 +2362,42 @@ def _read_action_change_discourse(raw, move, plan, resolver, selected_subjective
             (start, start + len(right.encode()), right.encode()))
 
 
-def _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjective_input):
+def _answer_feeling_preceding_event(move, plan, resolver, selected_subjective_input,
+                                    preceding_context):
+    """Resolve a shared event only from its immediately preceding full reading.
+
+    Both selected duties and their order stay intact. An omitted event cannot
+    bind through another Move, another event, a partial body or an old answer.
+    """
+    from emlis_ai_grounded_observation_plan import source_owned_answer_feeling
+    roles = source_owned_answer_feeling(move, plan)
+    if roles is None or preceding_context is None:
+        return False
+    previous_move, previous_text = preceding_context
+    moves = plan.response_plan.human_reception_plan.moves
+    position = next((i for i, candidate in enumerate(moves) if candidate == move), -1)
+    event, answer, when = roles
+    if (when not in {"answer_time", "prior_answer_time"}
+        or position <= 0 or moves[position - 1] != previous_move
+        or previous_move.target_nucleus_ids != (event.nucleus_id,)
+        or len(previous_move.support_nucleus_ids) != 1
+        or not previous_move.required or previous_move.move_role != "felt_response"
+        or previous_move.reception_act != "stay_with_current_burden"):
+        return False
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    original = index.get(previous_move.support_nucleus_ids[0])
+    if (original is None or original.source_fields != event.source_fields
+        or original.source_span_ids != event.source_span_ids
+        or original.allowed_claim_scope != "explicit_current_input"
+        or original.semantic_frame.actor != "current_user"
+        or original.semantic_frame.time_scope != "past"):
+        return False
+    return read_received_discourse(previous_text, previous_move, plan, resolver,
+                                   selected_subjective_input) is not None
+
+
+def _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjective_input,
+                                   preceding_context=None):
     """Read event ownership, source time and the full answer from body bytes.
 
     No author replay or expected sentence grants admission. The feeling is
@@ -2390,21 +2425,27 @@ def _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjectiv
         or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", event_text + source)
         or re.search(r'[「」『』“”‘’"?？!！\r\n。]', event_text + source)):
         return None
-    parsed = re.fullmatch(r"(?P<event>.+)ことについて、"
+    shared_event = _answer_feeling_preceding_event(
+        move, plan, resolver, selected_subjective_input, preceding_context)
+    parsed = re.fullmatch(r"(?:(?P<event>.+)ことについて、)?"
         r"(?P<time>その時は|回答した時点では|先の回答時点では)"
         r"(?P<feeling>.+)(?:のですね|のです|のだと受け取りました)。", raw)
     expected_time = {"original_occasion": "その時は", "answer_time": "回答した時点では",
                      "prior_answer_time": "先の回答時点では"}[when]
-    if (parsed is None or parsed['event'] != event_text or parsed['time'] != expected_time
+    if (parsed is None or (parsed['event'] != event_text
+            and not (parsed['event'] is None and shared_event)) or parsed['time'] != expected_time
         or parsed['feeling'] != source):
         return None
     return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
-                 for key, value in (("event", event_text), ("feeling", source)))
+                 for key, value in (("event", event_text), ("feeling", source))
+                 if parsed[key] is not None)
 
 
-def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None):
+def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None,
+                                *, preceding_context=None):
     """Read supported finite source duties without a literal-author oracle."""
-    answer = _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjective_input)
+    answer = _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjective_input,
+                                           preceding_context)
     if answer is not None:
         return answer
     action_change = _read_action_change_discourse(raw, move, plan, resolver, selected_subjective_input)
@@ -2662,14 +2703,18 @@ def _received_discourse_equivalent(actual, canonical, reception_plan, clauses, p
         or len(actual_parts) != len(clauses) + 1):
         return False
     moves = {m.move_id: m for m in reception_plan.moves}
-    for left, right, clause in zip(actual_parts[:-1], canonical_parts[:-1], clauses):
+    for number, (left, right, clause) in enumerate(zip(actual_parts[:-1], canonical_parts[:-1], clauses)):
         if left == right:
             continue
         if len(clause.move_ids) != 1:
             return False
         move = moves.get(clause.move_ids[0])
+        previous = (moves.get(clauses[number - 1].move_ids[0])
+                    if number and len(clauses[number - 1].move_ids) == 1 else None)
         if move is None or any(read_source_owned_discourse(text + "。", move, plan, resolver,
-            selected_subjective_input) is None for text in (left, right)):
+            selected_subjective_input, preceding_context=(previous, parts[number - 1] + "。")
+            if previous is not None else None) is None
+            for text, parts in ((left, actual_parts), (right, canonical_parts))):
             return False
     return True
 
@@ -3776,6 +3821,11 @@ def evaluate_grounded_surface_body_inverse(
                         finite_proof = read_source_owned_discourse(
                             body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8"),
                             move, plan, resolver, selected_subjective_input,
+                            preceding_context=(
+                                move_index[clause_plans[clause_index - 1].move_ids[0]],
+                                body[parsed_sentences[clause_index - 1].utf8_byte_start:
+                                     parsed_sentences[clause_index - 1].utf8_byte_end].decode("utf-8"),
+                            ) if clause_index and len(clause_plans[clause_index - 1].move_ids) == 1 else None,
                         ) if (final_stage1_plan and len(clause.move_ids) == 1
                               and sentence_plan.recovery_stage == "full") else None
                         if finite_proof is not None:

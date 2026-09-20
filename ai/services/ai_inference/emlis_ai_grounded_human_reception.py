@@ -4597,8 +4597,15 @@ def validate_grounded_human_reception_surface(
         if not visible and plan is not None and surface.recovery_stage == "full":
             from emlis_ai_grounded_observation_gate import read_source_owned_discourse
             sentences = tuple(part + "。" for part in surface.text.split("。") if part)
-            visible = all(any(read_source_owned_discourse(text, move, plan, resolver,
-                selected_subjective_input) is not None for text in sentences)
+            clauses = build_grounded_reception_clause_plans(reception_plan, surface.recovery_stage, plan=plan)
+            by_id = {move.move_id: move for move in active_moves}
+            visible = all(any(
+                number < len(clauses) and clauses[number].move_ids == (move.move_id,)
+                and read_source_owned_discourse(text, move, plan, resolver,
+                    selected_subjective_input, preceding_context=(
+                        by_id[clauses[number - 1].move_ids[0]], sentences[number - 1])
+                    if number and len(clauses[number - 1].move_ids) == 1 else None) is not None
+                for number, text in enumerate(sentences))
                 for move in active_moves if move.reception_act == act)
         visible_responsibilities.append(visible)
         if not visible:
@@ -9941,8 +9948,9 @@ def _source_owned_action_change_sentence(move, realization, plan, resolver,
 
 
 def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
-                                          selected_decision, recovery_stage):
-    """Give the person's answer its own finite predicate and explicit time."""
+                                          selected_decision, recovery_stage,
+                                          preceding_context=None, selected_subjective_input=None):
+    """Give the answer its finite predicate, time and unambiguous event topic."""
     from emlis_ai_grounded_observation_plan import source_owned_answer_feeling
     roles = source_owned_answer_feeling(move, plan)
     if getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1":
@@ -9968,7 +9976,11 @@ def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
         return None
     time = {"original_occasion": "その時は", "answer_time": "回答した時点では",
             "prior_answer_time": "先の回答時点では"}[when]
-    return event_text + "ことについて、" + time + source + "のですね"
+    from emlis_ai_grounded_observation_gate import _answer_feeling_preceding_event
+    shared_event = _answer_feeling_preceding_event(
+        move, plan, resolver, selected_subjective_input, preceding_context)
+    topic = "" if shared_event else event_text + "ことについて、"
+    return topic + time + source + "のですね"
 
 
 def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
@@ -10152,6 +10164,11 @@ def _author_source_grounded_reception_clauses(
             raise GroundedHumanReceptionSurfaceError(
                 "REALIZABLE_RECEPTION_EXPRESSION_VISIBLE_BINDING_GAP"
             )
+        preceding_context = (
+            (move_index[clause_plans[clause_index - 1].move_ids[0]], parts[-1])
+            if recovery_stage == "full" and clause_index
+            and len(clause_plans[clause_index - 1].move_ids) == 1 else None
+        )
         move_sentences: list[str] = []
         coordination_terms = []
         for move_id, meaning_realization in zip(
@@ -10530,6 +10547,7 @@ def _author_source_grounded_reception_clauses(
             )
             answer_sentence = _source_owned_answer_feeling_sentence(
                 move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
+                preceding_context, selected_subjective_input,
             )
             if answer_sentence is not None:
                 move_sentence = answer_sentence
@@ -10558,7 +10576,7 @@ def _author_source_grounded_reception_clauses(
             from emlis_ai_grounded_observation_gate import read_source_owned_discourse
             discourse_proof = read_source_owned_discourse(
                 move_sentence + "。", move, plan, resolver,
-                selected_subjective_input,
+                selected_subjective_input, preceding_context=preceding_context,
             )
             if discourse_proof is None and (
                 _visible_fragment_occurrence_count(

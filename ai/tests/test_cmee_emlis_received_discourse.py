@@ -332,3 +332,93 @@ def test_positive_finite_answer_survives_saved_reads(qcase, qdb, tier, text, mon
     monkeypatch.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not rerender'))
     assert run(service.get(user, parent)) == current
     assert run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('memo', [
+    '褒められたのに、嬉しくなかった。',
+    '誘われたのに、悲しかった。',
+    '頼まれたのに、寂しかった。',
+])
+@pytest.mark.parametrize('text,feeling', [('今は嬉しい。', '嬉しい'),
+                                         ('今は少し嬉しい。', '少し嬉しい')])
+def test_answer_continues_the_unique_preceding_event_without_repeating_it(memo, text, feeling):
+    context = actual(request=answered(text, initial(memo)))
+    result, plan, _, resolver, selected = context
+    follow = result.artifact.reception
+    original = actual(request=initial(memo))[0].artifact.reception
+    assert follow == original + '回答した時点では' + feeling + 'のですね。'
+    assert follow.count(memo.split('のに')[0]) == 1
+    reception_plan = plan.response_plan.human_reception_plan
+    assert len(reception_plan.moves) == 2
+    assert reception_plan.depth_policy.min_sentences == 2
+    assert len(reception.build_grounded_reception_clause_plans(reception_plan, 'full', plan=plan)) == 2
+    assert inverse(context, follow, without_author=True).passed
+    # The feeling alone is not an independent reading of an unspecified event.
+    second = follow[len(original):]
+    assert gate.read_source_owned_discourse(second, reception_plan.moves[1], plan, resolver, selected) is None
+
+
+@pytest.mark.parametrize('old,new', [
+    ('褒められた', '誘われた'), ('褒められた', '友人が褒められた'),
+    ('嬉しさにはつながらなかった', '嬉しさにつながった'),
+    ('嬉しさにはつながらなかった', '嬉しさにはつながらない'),
+    ('回答した時点では', 'その時は'), ('回答した時点では', '先の回答時点では'),
+    ('回答した時点では', ''), ('回答した時点では', 'そのため回答した時点では'),
+    ('回答した時点では', '回答した時点では友人は'),
+    ('少し嬉しい', '嬉しい'), ('少し嬉しい', '少し嬉しかった'),
+    ('少し嬉しい', '少し嬉しくない'), ('少し嬉しい', '「少し嬉しい」'),
+])
+def test_shared_event_actual_context_mutations_fail_without_author(old, new):
+    context = actual(request=answered('今は少し嬉しい。', initial()))
+    follow = context[0].artifact.reception
+    changed = follow.replace(old, new)
+    assert changed != follow
+    assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('mutation', ['delete', 'swap', 'insert', 'quote'])
+def test_shared_event_requires_the_immediately_preceding_complete_sentence(mutation):
+    context = actual(request=answered('今は嬉しい。', initial()))
+    follow = context[0].artifact.reception
+    first, second, end = follow.split('。')
+    assert end == ''
+    changed = {'delete': second + '。', 'swap': second + '。' + first + '。',
+               'insert': first + '。別の出来事がありました。' + second + '。',
+               'quote': '「' + first + '」。' + second + '。'}[mutation]
+    assert not inverse(context, changed, without_author=True).passed
+
+
+def test_answer_does_not_share_an_ambiguous_multiple_event_context():
+    request = advance(begin('褒められたのに、嬉しくなかった。誘われたのに、悲しかった。'), '今は嬉しい。')
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    explicit = '褒められたことについて、回答した時点では嬉しい'
+    assert explicit in follow
+    assert not inverse(context, follow.replace('褒められたことについて、', ''), without_author=True).passed
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('memo', ['誘われたのに、悲しかった。', '頼まれたのに、寂しかった。'])
+def test_shared_event_survives_saved_retrieval_without_generation(qcase, qdb, tier, memo, monkeypatch):
+    user, parent, service = qcase
+    assert 'code' not in qdb.query('update public.profiles set subscription_tier=$1 where id=$2', [tier, user])
+    qdb.query('update public.emotions set memo=$1 where id=$2', [memo, parent])
+    first = run(service.start(user, parent))
+    current = run(answer(service, user, first, '今は少し嬉しい。'))
+    follow = current['current_observation']['text'].split('Emlisから：', 1)[1].strip()
+    assert follow.count(memo.split('のに')[0]) == 1
+    assert '回答した時点では少し嬉しい' in follow
+    assert current['original'] == first['original']
+    assert current['question_limit'] == (3 if tier == 'premium' else 1)
+    monkeypatch.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read must not rerender'))
+    assert run(service.get(user, parent)) == current
+    assert run(service.start(user, parent)) == current
+
+
+def test_shared_event_accepts_explicit_reference_and_equivalent_acknowledgements():
+    context = actual(request=answered('今は嬉しい。', initial()))
+    follow = context[0].artifact.reception
+    expanded = follow.replace('回答した時点では', '褒められたことについて、回答した時点では')
+    assert expanded != follow and inverse(context, expanded).passed
+    changed = follow.replace('のですね。', 'のです。')
+    assert changed != follow and inverse(context, changed).passed
