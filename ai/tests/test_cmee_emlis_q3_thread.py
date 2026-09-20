@@ -1183,6 +1183,72 @@ def test_feeling_reason_group_requires_unique_current_self_owned_finite_host(mem
     assert not gp._source_feeling_reason_group(plan.nuclei, plan.relations)
 
 
+@pytest.mark.parametrize('memo,experience', [
+    ('何となく寂しい。なぜそう感じるのかは分からない。', '何となく寂しくて'),
+    ('私は少し怖い。その理由はまだよく分からない。', 'あなたは少し怖くて'),
+    ('僕はとても寂しい。その理由は分からない。', 'あなたはとても寂しくて'),
+    ('人が近くにいても、自分だけ離れている感じがする。どうしてそう感じるのかがわからない。',
+     '人が近くにいても、自分だけ離れている感じがして'),
+])
+@pytest.mark.parametrize('q3', [False, True])
+def test_feeling_reason_discourse_keeps_present_experience_and_open_reason(memo, experience, q3):
+    from test_cmee_emlis_received_discourse import actual, inverse
+    ctx = actual(request=(begin if q3 else initial)(memo, 'お茶を飲んだ。'))
+    result, plan, _, _, _ = ctx
+    follow = result.artifact.reception
+    unknown = memo.rstrip('。').split('。')[1]
+    assert experience + '、' + unknown + 'のですね。' in follow
+    assert 'ことと、' not in follow and '小さくせずに' not in follow
+    assert 'お茶を飲んだことを大切に思っています。' in follow
+    moves = plan.response_plan.human_reception_plan.moves
+    assert [(m.target_nucleus_ids, m.support_nucleus_ids) for m in moves] == [
+        (('nucleus:s1',), ('nucleus:s2',)), (('nucleus:s3',), ())]
+    assert inverse(ctx, follow, without_author=True).passed
+
+
+@pytest.mark.parametrize('old,new', [
+    ('あなたは', '私は'), ('あなたは', '彼女は'), ('あなたは', ''),
+    ('少し怖くて', 'とても怖くて'), ('少し怖くて', '少し寂しくて'),
+    ('少し怖くて', '少し怖かったため'), ('少し怖くて', '少し怖くなくて'),
+    ('怖くて、', '怖いから、'), ('怖くて、', '怖いのに、'),
+    ('その理由', '行動の理由'), ('まだよく', ''),
+    ('分からない', '分かった'), ('分からない', '分からなかった'),
+    ('あなたは少し怖くて、', ''), ('その理由はまだよく分からない', ''),
+    ('お茶を飲んだ', 'お茶を飲まなかった'),
+])
+def test_feeling_reason_discourse_rejects_actual_semantic_mutations(old, new):
+    from test_cmee_emlis_received_discourse import actual, inverse
+    ctx = actual(request=begin('私は少し怖い。その理由はまだよく分からない。', 'お茶を飲んだ。'))
+    follow = ctx[0].artifact.reception
+    changed = follow.replace(old, new)
+    assert changed != follow
+    assert not inverse(ctx, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('ending', ['のです。', 'のだと受け取りました。'])
+def test_feeling_reason_discourse_accepts_equivalent_acknowledgement(ending):
+    from test_cmee_emlis_received_discourse import actual, inverse
+    ctx = actual(request=begin('何となく寂しい。なぜそう感じるのかは分からない。'))
+    follow = ctx[0].artifact.reception.replace('のですね。', ending)
+    assert inverse(ctx, follow, without_author=True).passed
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+def test_feeling_reason_discourse_saved_body_survives_author_free_restart(qdb, qcase, monkeypatch, tier):
+    from test_emlis_q2_application import run
+    user, parent, service = qcase
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
+    qdb.query('update public.emotions set memo=$1,memo_action=$2 where id=$3',
+              ['私は少し怖い。その理由はまだよく分からない。', 'お茶を飲んだ。', parent])
+    dto = run(service.start(user, parent))
+    assert dto['current_observation'] is not None
+    assert 'あなたは少し怖くて、その理由はまだよく分からないのですね。' in dto['current_observation']['text']
+    assert dto['pending_question'] is None and dto['body_state'] == 'FINAL'
+    assert run(service.get(user, parent)) == dto
+    monkeypatch.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved text regenerated'))
+    assert run(service.start(user, parent)) == dto
+
+
 def test_feeling_reason_body_inverse_rejects_loss_rebinding_or_closed_reason_without_author_replay():
     from types import SimpleNamespace
     from unittest.mock import patch

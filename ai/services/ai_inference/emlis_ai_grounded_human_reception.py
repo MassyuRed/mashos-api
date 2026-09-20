@@ -9747,6 +9747,26 @@ def _source_grounded_reception_fragment(
         and move.move_role == "felt_response" and not context_prefix
         and recovery_stage == "full" and realization.clause_form == "FINITE"
         and _selected_material_appraisal(selected_subjective_decision)
+        and "source-feeling-reason-boundary:0:1" in realization.nominalization_plan):
+        # These are already one selected experience and its unresolved reason,
+        # not two objects to place under a generic acknowledgement. Coordinate
+        # the complete present predicate without making the reason a cause.
+        _source_current_material_group_ir_text(realization)
+        feeling, unknown = realization.semantic_fragments
+        feeling = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺)は", "あなたは", feeling)
+        if feeling.endswith("感じがする"):
+            connected = feeling[:-2] + "して"
+        elif feeling.endswith("感じる"):
+            connected = feeling[:-1] + "て"
+        elif feeling.endswith("い"):
+            connected = feeling[:-1] + "くて"
+        else:
+            raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+        return connected + "、" + unknown + "のですね"
+    if (move.required and move.reception_act == "stay_with_current_burden"
+        and move.move_role == "felt_response" and not context_prefix
+        and recovery_stage == "full" and realization.clause_form == "FINITE"
+        and _selected_material_appraisal(selected_subjective_decision)
         and any(code in {"source-independent-decision:0:1", "source-independent-decision:1:0"}
                 for code in realization.nominalization_plan)):
         # The two unresolved hosts already belong to one selected Move.

@@ -2493,9 +2493,65 @@ def _read_independent_decision_discourse(raw, move, plan, resolver, selected_sub
                   source.encode()) for key, source in zip(('left', 'right'), sources))
 
 
+def _read_feeling_reason_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Restore a present experience and its open reason from actual prose.
+
+    The source projection owns their association. The inverse independently
+    restores the finite predicate and its SELF topic, never replaying author
+    output or accepting a feeling substring inside a different proposition.
+    """
+    from emlis_ai_grounded_observation_plan import _source_feeling_reason_group
+    group = _source_feeling_reason_group(plan.nuclei, plan.relations)
+    if (not group or not move.required or move.move_role != "felt_response"
+        or move.reception_act != "stay_with_current_burden"
+        or (move.target_nucleus_ids, move.support_nucleus_ids)
+            != ((group[0].nucleus_id,), (group[1].nucleus_id,))
+        or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions
+                         if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if (appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
+            or appraisal.operation != "RECEIVE_AS_MATERIAL"):
+            return None
+    sources = tuple(str(resolver.resolve(n.source_span_ids[0]).raw_text).strip(" 　。．.")
+                    for n in group[:2] if len(n.source_span_ids) == 1)
+    if len(sources) != 2:
+        return None
+    parsed = re.fullmatch(r"(?P<experience>[^。！？!?]+)、(?P<unknown>"
+        r"(?:(?:なぜ|どうして|何故)そう感じるのか|その理由)(?:は|が)?"
+        r"(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない))"
+        r"(?:のですね|のです|のだと受け取りました)。", raw)
+    if parsed is None or parsed['unknown'] != sources[1]:
+        return None
+    visible = parsed['experience']
+    if visible.endswith("感じがして"):
+        restored = visible[:-2] + "する"
+    elif visible.endswith("感じて"):
+        restored = visible[:-1] + "る"
+    elif visible.endswith("くて") and sources[0].endswith("い"):
+        restored = visible[:-2] + "い"
+    else:
+        return None
+    topic = re.match(r"(?P<owner>わたし|ぼく|おれ|私|僕|俺)は", sources[0])
+    if topic:
+        if not restored.startswith("あなたは"):
+            return None
+        restored = topic['owner'] + "は" + restored[len("あなたは"):]
+    if restored != sources[0]:
+        return None
+    return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()),
+                  source.encode()) for key, source in zip(('experience', 'unknown'), sources))
+
+
 def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None,
                                 *, preceding_context=None):
     """Read supported finite source duties without a literal-author oracle."""
+    feeling_reason = _read_feeling_reason_discourse(
+        raw, move, plan, resolver, selected_subjective_input)
+    if feeling_reason is not None:
+        return feeling_reason
     independent_decision = _read_independent_decision_discourse(
         raw, move, plan, resolver, selected_subjective_input)
     if independent_decision is not None:
