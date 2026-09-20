@@ -8473,3 +8473,17 @@ Continues the current weekly agreement and verified positive-answer checkpoint. 
 Thirty-one added checks passed for three existing source grammars, different current feelings, actual-context deletion/actor/event/polarity/time/quote/insertion mutations with the author unavailable, ambiguous multi-event context and all three plans' saved reads. Equivalent endings and an explicit restored event reference also pass. Full required regression, same100 and all inherited saved cases are still pending. Old inputs/expectations are unchanged. This is an implementation checkpoint, not final validation or product acceptance.
 
 NOT_CLEAR and Draft/default OFF remain. The repeated event is reduced in the eligible two-sentence discourse; observation/follow overlap, repeated acknowledgements, broader meaning selection and unsupported scopes remain. No merge, Ready, deployment, activation, live DB/device/billing work or external AI. Current weekly deadlines and allocation remain unchanged. Continue final validation on these product bytes, retaining failures and private actual bodies outside public GitHub.
+
+## 2026-09-20 継続完了 — 直前の出来事を保った回答文の反復削減
+
+上の途中保存について、必須検証と全本文確認を完了した。共通HumanReceptionと独立inverseが、直前の完全な実文にある単一出来事・原反応を照合し、後続の肯定的回答で同じ出来事を再掲しない構成を扱う。現在回答・先の回答の時点、感情と程度、2つのMoveと文数責務は保持。複数出来事や不完全な直前文、当時の追加感情は明示参照を維持する。
+
+固定実装はremote `fc06e40c7998c1cb2edb310e06073046dc322925`、local `e6f2e039326e7ab98ba6fdf9fa5acb08daaa4912`、同一tree `a9ac7fb4ce86af9155ed2b9a4dc0902b3d8afee3`。変更5ファイルの全文をGitHubから読み戻し一致。この最終追記は既存引継ぎ文書だけで、検証後の実装変更はない。
+
+- 必須47テストファイル：**2,548件、2,161 PASS / 387 FAIL**。追加31件は全PASS。既存378 FAILは維持、9 PASS→FAIL、削除0。増分6件は旧出来事接頭句の固定期待、3件はなくなった旧接頭句を置換しても実本文が変わらない検査。旧入力・期待値・閾値は不変更で、失敗後の未実行assertを成功にしない。追加検査は実本文の対象・主体・時点・因果・否定・程度・引用、直前文の削除/並替/挿入を作者停止状態で確認。先の回答の適格な省略と時点改変拒否も私的実出力で確認した。
+- same100をrootが全件通読。全recordが前回と完全一致し、**74 GENERATED / 26 UNAVAILABLE**。初回100への改善加算はない。
+- 継承保存は**329ケース/616状態、GET785一致**。主保存312ケース/578状態の全247種の完全本文、原入力100組、全ケース/状態対応、frame/入力/操作制御をrootが通読。時点10ケース/22状態と肯定7ケース/16状態も全本文・操作・時点を通読した。代表例やhashだけで全文確認を代替しない。
+- 現在本文の変更は主保存10状態と肯定3状態、計13状態。元の反応と回答の感情/時点を残し、出来事の再掲を減らした。質問、質問枠、操作状態、意味、frame内容と本文なし11状態は不変。保存snapshot25ケースの意味内容も不変。実行時のID/時計差分は私的比較に保持した。
+- 元36保存系列は18 PASS / 18 FAIL。診断18系列は全操作完走、651原検査中323 FAIL（評価例外2を含む）で前回と同じ。肯定系列の旧接頭句検査3 FAILもそのまま保持する。診断収集を元テストPASSにしない。複製された出力ディレクトリとの起動衝突は初回試行を保全し、該当分だけ同じスクリプトで再実行。完了済原実行を優先して集計し、全実データ件数との一致を確認した。
+
+**商品判定はNOT_CLEAR。** 今回は隣接する単一出来事の復唱削減であり、初回/複数意味の長い列挙、固定終止、意味選択の偏り、未提供範囲は残る。次も現行の共通意味選択と本文構成を扱い、原反応と後続回答の時点・責務を失わないこと。別作者・語句条件集・環境再構築へ戻らない。STRUCTURE_MAP_DELTA_NONE。API/RPC/DB/RN、質問枠、他中核、Draft/default OFFは維持。現行weeklyの締切・配分、全体45%/商品合格0/3は据え置き。merge/Ready/deploy/enable、稼働DB/実機/実課金/外部AI、正式人手商品PASSは未実施。私的本文・個別対応・失敗原物は非公開継続記録へ保持する。
