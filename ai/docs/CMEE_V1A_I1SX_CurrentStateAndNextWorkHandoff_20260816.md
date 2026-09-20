@@ -1,3 +1,5 @@
+> 2026-09-20 最新現在地：独立した未決対象を共通フォローの一文へ構成。必須2,573件＝2,170 PASS／403 FAIL。same100・保存329ケース616状態をroot確認。本文変更は初手1件・保存4状態。商品NOT_CLEAR、Draft／既定OFF。詳細は末尾「独立した未決対象を共通フォローの一文へ構成」を参照。以前の集計は履歴。
+
 > 2026-09-20 最新現在地：背景を保持し、安堵した経験を共通フォローの焦点へ構成。追加24検査PASS、全体2119 PASS / 364 FAIL（従来350＋旧原文全文一致との新規不一致14）。same100と継承保存322ケース600状態をrootが全文確認。商品NOT_CLEAR。最終結果と次の残件は末尾「focus the experience behind a source-owned feeling」。以下の現在地は過去時点の履歴。
 
 > 2026-09-20 最新現在地：単一受領出来事の元反応と回答時点を有限節で区別。追加38検査PASS、全体2109 PASS / 350 FAIL。same100・保存312ケース578状態と追加10ケース22状態を全文確認。商品NOT_CLEAR。詳細と次の作業は末尾「元反応と回答時点の有限節を分ける」。
@@ -8495,3 +8497,25 @@ Continues the latest weekly agreement and verified shared-event checkpoint. The 
 Added25 tests PASS: both source forms and three focus choices, actual semantic mutations, equivalent acknowledgement endings, and all three plans' saved GET/author-disabled restart. Initial new-test fixture and result-object mistakes were corrected; failed attempts remain private. Sixteen old checks now fail at fixed nominal/source-prefix expectations or old mutation preconditions; old inputs/expectations are unchanged. Final required regression, same100 and all329 inherited saved cases remain pending. This is an implementation checkpoint, not final validation or product acceptance.
 
 The changed saved independent-decision inputs end without a question; this revision is not evidence of improved answer interpretation. Answer/correction/withdrawal regression remains part of the full inherited review. NOT_CLEAR and Draft/default OFF remain. No merge, Ready, deployment, activation, live DB/device/payment work or external AI. Current weekly deadlines and allocation remain; private bodies and locators stay outside public GitHub.
+
+### 2026-09-20 継続完了 — 独立した未決対象を共通フォローの一文へ構成
+
+既存の本人・完全二節・独立した判断対象と検討開始時期を扱う範囲で、選択済みの一つの必須Moveを、名詞句二項と一律の受容末尾から、独立性を述べる有限文へ変えた。内側の行動候補・検討開始時期・未決・助詞・明示focusと別Moveの実行済み行動を保つ。既存Human Reception authorと、実本文を原文の二hostへ独立照合するinverseだけを変更し、語彙表・別renderer・新source grammarは追加していない。意味選択・質問対象・回答理解の許可範囲は広げていない。
+
+固定実装は公開 `c9817655a84413d3b3bc8dc0047551c2655b363d`、local `16af09b40fba71ee7c6e239c67954676f589c809`、完全一致tree `266651d31ab3b4fab03e05fcb36b2c4fb9c81c12`。変更5blobは公開から全文取得して照合済み。この後のAPI差分は本引継ぎのみ。現在のshared-owner派生identityだけを更新し、歴史的入力・期待値・receiptを変更していない。
+
+| 最終確認 | 結果 |
+|---|---|
+| 必須47ファイル | 2,573件：2,170 PASS／403 FAIL。旧2,548件を維持、追加25件全PASS。従来387失敗に、旧固定文面14件・旧置換substring前提2件の16失敗が加わった。後段未実行assertを成功へ数えない。 |
+| 同じ初手100件 | 原入力・提供可否・理由は不変。74 GENERATED／26 UNAVAILABLE。対象1件の本文を変更し、他99件は全record同一。 |
+| 保存全量 | 329ケース／616状態／785 GET一致。主312ケース／578状態の現在本文4状態だけが変化。時点追加10ケース22状態、肯定追加7ケース16状態を含め、問い・回答・制御・意味・frame内容は維持。本文なし11状態は成功に数えない。 |
+| 本文一読 | root華恋が本セッションでsame100と保存全329ケースの原文・実本文・問い・回答・状態／操作を確認。主247全文中243は本セッションで読んだ全文との完全一致、変更4全文を再読し全ケース対応を照合。 |
+| 元保存検査と診断 | 元36系列は17 PASS／19 FAIL。新規失敗1系列は旧独立性の字句期待。診断19系列691検査中339 FAIL（評価例外10を含む）。従来651検査の合否・例外は同じ。診断完走は元検査PASSではない。 |
+
+追加25件は完全なhost/focus、意味改変の拒否、等価な文末、3プランの保存・作者停止再表示を確認する。今回変わった保存4件は初回COMPLETED／FINALで問いがなく、回答後理解の改善を示さない。既存テスト189定義はAST同一で、旧検査を通すための期待値変更はしていない。
+
+検証時の未完了記録も保持した。独立対象の最初の診断停止は、元の本文assertを失敗として記録する対象へ5式追加し、原期待のまま続きを取得した。別1系列は終了記録欠落を検出して同一診断を再実行し、最終record/dataを確認した。regression_0 stdoutは途中保存のため完全ログとは扱わず、全921件のJUnitと取得したexit1を採用。別肯定collectorの旧assert3失敗とexit3も保持する。
+
+商品 **NOT_CLEAR**。二つの独立した迷いの表現は改善したが、観測とフォローの復唱、固定末尾、独立行動への一般的な受容、意味選択と未対応範囲が残る。次の限定単位は、既存source-feeling-reasonが持つ「現在の経験」と「理由は不明」の役割を、理由を推定せず共通文章へ構成すること。実本文の名詞列挙を起点にし、temporal-materialへ自動拡張しない。全体の意味認識・選択・文章化を一緒に点検し、単語別の受け皿追加を反復しない。
+
+最新09/19 weekly §6.8–6.10の09/23中間実文判断、09/26 Emlis集中配分終了、09/27 Piece主配分、10/10内容・10/24運用を継承。全体45%・商品合格0/3、既存Draft PR3／30・既定OFFを維持。STRUCTURE_MAP_DELTA_NONE（owner/file graph・公開契約は同じ。既存current_structure01へ文章化責務の差分を追記）。ready／merge／deploy／enable・実DB・実機・実課金・外部AI・Mash正式商品PASSは未実施。非公開原文・全出力・失敗・本文確認対応は継続証跡へ保持する。
