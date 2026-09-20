@@ -2488,12 +2488,34 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
             answer = nuclei[relation.to_nucleus_id]
             times = {c.split(":", 1)[1] for c in answer.semantic_frame.attribute_codes
                      if c.startswith("thread_time:")}
-            if (times != {"original_occasion"} or answer.source_fields != ("answer_text_private",)
+            if (len(times) != 1 or not times <= {"original_occasion", "answer_time", "prior_answer_time"}
+                or answer.source_fields != ("answer_text_private",)
                 or answer.allowed_claim_scope != "explicit_supplemental_answer"
                 or answer.semantic_frame.actor != "current_user"
                 or answer.semantic_frame.polarity != "negative"):
                 return None
             answer_source = final_reception_source_anchor_text(answer.nucleus_id, nuclei, resolver)
+            if times != {"original_occasion"}:
+                # Read source/time roles from the delivered clause, without
+                # asking the author for its expected surface. An answer-time
+                # statement cannot replace the original past reaction.
+                temporal = re.fullmatch(
+                    r"(?P<event>.+?)(?:時は(?:(?P<absent>[^、,]+)くなく、|(?P<felt>[^、,]+)く、)|ことについて、)"
+                    r"(?P<time>回答した時点では|先の回答時点では)(?P<answer>.+)", clause)
+                if temporal is None or len(move.target_nucleus_ids) != 1:
+                    return None
+                actual_feeling = (temporal["absent"] + "くなかった" if temporal["absent"] is not None
+                                  else temporal["felt"] + "かった" if temporal["felt"] is not None else None)
+                actual_time = {"回答した時点では": "answer_time",
+                               "先の回答時点では": "prior_answer_time"}[temporal["time"]]
+                if ((temporal["event"], actual_feeling, temporal["answer"])
+                    != (event_source, feeling_source, answer_source)
+                    or times != {actual_time}):
+                    return None
+                consumed.add(answer.nucleus_id)
+                consumed_relations.add(relation.relation_id)
+                offset += len(part) + len("、また、")
+                continue
             # The body, not an author-produced nominal, owns these spans.
             perceived = re.fullmatch(
                 r"(?P<event>.+?)ことは(?:(?P<feeling>[^、,]+)さにはつながらず、|、(?P<positive>[^、,]+)さを伴い、|、)"

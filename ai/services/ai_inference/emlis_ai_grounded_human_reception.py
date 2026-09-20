@@ -9641,7 +9641,20 @@ def _source_grounded_received_discourse(realization) -> str | None:
         # A later answer is a different time, not a revised past emotion.
         # Preserve it explicitly rather than inferring a causal past reading.
         if when != "original_occasion":
-            return None
+            # One event can have a past reaction and a separately reported
+            # current (or earlier-answer) state. Give the two times their own
+            # predicates instead of joining nominal objects under approval.
+            # Do not coordinate present clauses through a later past ending.
+            if (len(codes) != 1 or when not in {"answer_time", "prior_answer_time"}
+                or not _SOURCE_GROUNDED_FINITE_END_RE.search(source)
+                or re.search(r"(?:です|ます|でした|ました)$", source)
+                or re.search(r'[「」『』“”‘’"?？!！\r\n。]', source)):
+                return None
+            time = {"answer_time": "回答した時点では",
+                    "prior_answer_time": "先の回答時点では"}[when]
+            original = (event + "時は" + negative[1] + "、"
+                        if negative is not None else event + "ことについて、")
+            return original + time + source + "のですね"
         if grammar.startswith("PERCEIVED_"):
             parsed = re.fullmatch(r"(.+)ようで[、,]([^、,]+)かった", source)
             if parsed is None or _thread_answer_nominal_morphology(parsed[2] + "かった") is None:

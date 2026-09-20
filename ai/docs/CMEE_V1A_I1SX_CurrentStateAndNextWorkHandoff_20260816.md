@@ -8398,3 +8398,12 @@ Product status remains NOT_CLEAR. Long source repetition, generic reception endi
 - 1集合で完了metadataと実保存件数が不一致だった試行は保全し、同じ実装・入力・検査条件で当該集合だけ再実行。最終18ケース/41状態の実データと後続読取は一致した。書戻し不一致の原因は未確定。初回の追加検査15失敗も原物を保持する。
 
 商品判定は **NOT_CLEAR**。意味の欠落は補正したが、長い復唱、定型的な締め、行動偏重や曖昧な変化指示、未提供経路は残る。次は保持できた複数の意味を自然なフォローへ構成する既存共通ownerの原因から進む。語句集追加・別作者・環境再構築へ戻らない。STRUCTURE_MAP_DELTA_NONE、日程・配分・全体45%/商品合格0/3、Draft/default OFFを維持。非公開原物・失敗試行・保存取得確認は既存非公開checkpointへ引き継ぐ。System Contextは未使用、最新原典を直接確認した。
+
+
+## 2026-09-20 continuation — separate the original reaction from the later answer state (validation pending)
+
+Continues the current weekly agreement and prior mixed-contrast checkpoint. The existing shared Human Reception author now gives a source-owned single-event past reaction and a later negative feeling or uncertainty separate finite time scopes, instead of nominalizing both beneath generic approval. The independent reader reconstructs both source clauses and checks the answer-time binding. Current and prior-answer times remain distinct; no change, cause or recovery is inferred. Positive-answer Moves, multiple-event coordination, polite unsupported forms, meaning selection, question budgets and persistence contracts keep their existing paths. STRUCTURE_MAP_DELTA_NONE.
+
+The existing received-discourse test file now has 76 passing checks, including 34 added cases covering three original received-event forms, negative/negated/unknown later states, source/time/actor mutations with the author unavailable, prior-answer correction with event withdrawal, and saved retrieval/restart. Initial direct probes confirm the intended temporal composition. A copied test-support path was initially absent; its startup failure is retained and the inherited support file was restored unchanged. Full required regression, same100 and the complete inherited saved-state review are still pending; this is a checkpoint, not final verification or product PASS.
+
+Draft/default OFF and NOT_CLEAR remain. No public API, schema, live DB, RN, other core, external AI, deployment or release change. Root owns implementation/publication; independent read-only review checked the source-time and scope boundaries. Continue final validation on these product bytes, retaining all old expectations and failures and all private body evidence outside public GitHub.

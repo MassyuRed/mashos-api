@@ -139,3 +139,86 @@ def test_finite_response_is_saved_and_retrieved_without_rerendering(qcase,qdb,te
     monkeypatch.setattr(service.engine,'generate',lambda *_:pytest.fail('GET must not regenerate'))
     assert run(service.get(user,parent))==current
     assert run(service.start(user,parent))==current
+
+
+@pytest.mark.parametrize('memo', [
+    '褒められたのに、嬉しくなかった。',
+    '誘われたのに、悲しかった。',
+    '頼まれたのに、寂しかった。',
+])
+@pytest.mark.parametrize('text,source', [
+    ('今は怖い。', '怖い'), ('今は怖くない。', '怖くない'),
+    ('今は重い。', '重い'),
+    ('今はまだよく分からない。', 'まだよく分からない'),
+    ('今はどう受け止めているのか分からない。', 'どう受け止めているのか分からない'),
+])
+def test_later_state_has_its_own_finite_time_without_generic_approval(memo, text, source):
+    context = actual(request=answered(text, initial(memo)))
+    result, plan, _, resolver, selected = context
+    follow = result.artifact.reception
+    event = memo.split('のに')[0]
+    assert follow.count(event) == 1
+    assert event + '時は' in follow
+    assert '回答した時点では' + source in follow
+    assert not any(s in follow for s in ('ことと、その出来事', '受け止めています', '大切に思っています'))
+    assert gate.read_received_discourse(follow, plan.response_plan.human_reception_plan.moves[0],
+        plan, resolver, selected) is not None
+    assert inverse(context, follow, without_author=True).passed
+
+
+@pytest.mark.parametrize('old,new', [
+    ('回答した時点では', ''), ('回答した時点では', 'その時には'),
+    ('回答した時点では', '先の回答時点では'),
+    ('褒められた時は', '誘われた時は'), ('褒められた時は', '彼が褒められた時は'),
+    ('嬉しくなく、', ''), ('嬉しくなく、', '嬉しく、'),
+    ('怖くない', '怖い'), ('怖くない', '怖くなかった'),
+    ('回答した時点では', 'そのため回答した時点では'),
+])
+def test_temporal_discourse_mutations_fail_without_author(old, new):
+    context = actual(request=answered('今は怖くない。', initial()))
+    follow = context[0].artifact.reception
+    changed = follow.replace(old, new)
+    assert changed != follow
+    assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('old,new', [('まだ', ''), ('よく', ''), ('分からない', '分かる')])
+def test_current_unknown_scope_is_not_lost_in_finite_response(old, new):
+    context = actual(request=answered('今はまだよく分からない。', initial()))
+    follow = context[0].artifact.reception
+    changed = follow.replace(old, new)
+    assert changed != follow and not inverse(context, changed, without_author=True).passed
+
+
+def test_prior_answer_revision_keeps_its_time_and_withdrawn_event_stays_absent():
+    request = advance(begin('褒められたのに、嬉しくなかった。誘われたのに、悲しかった。'), '今は重い。')
+    request = advance(request, '「重い」ではなく「苦しい」です。「誘われた」は誤りです。')
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    assert '先の回答時点では苦しい' in follow
+    assert '誘われた' not in follow and '重い' not in follow and '悲しかった' in follow
+    assert inverse(context, follow, without_author=True).passed
+    assert not inverse(context, follow.replace('先の回答時点では', '回答した時点では'), without_author=True).passed
+
+
+@pytest.mark.parametrize('text', ['今は不安です。', '今は怖いです。'])
+def test_polite_answers_keep_the_existing_grammatical_path(text):
+    context = actual(request=answered(text, initial()))
+    follow = context[0].artifact.reception
+    assert 'ですのですね' not in follow
+    assert '回答した時点' in follow
+    assert inverse(context, follow, without_author=True).passed
+
+
+@pytest.mark.parametrize('text', ['今は怖い。', '今は怖くない。', '今はまだよく分からない。'])
+def test_temporal_finite_body_survives_save_and_no_author_restart(qcase, qdb, text, monkeypatch):
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$1 where id=$2', ['褒められたのに、嬉しくなかった。', parent])
+    first = run(service.start(user, parent))
+    current = run(answer(service, user, first, text))
+    follow = current['current_observation']['text'].split('Emlisから：', 1)[1]
+    assert '回答した時点では' in follow and '受け止めています' not in follow
+    assert current['original'] == first['original']
+    monkeypatch.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved body must not rerender'))
+    assert run(service.get(user, parent)) == current
+    assert run(service.start(user, parent)) == current
