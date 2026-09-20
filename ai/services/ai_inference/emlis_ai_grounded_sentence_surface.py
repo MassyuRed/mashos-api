@@ -3520,6 +3520,74 @@ def _final_stage1_past_feeling_contrast_sentence(
     return f"{quotes[0]}という経緯があった一方で、{quotes[1]}という気持ちもあったのですね。"
 
 
+def _limited_action_change_feeling_sentences(binding, nucleus_index, relation_index, resolver):
+    """Focus the feeling in one already selected past action/change episode.
+
+    The original tara relation stays past and conditional. Only the reversible
+    ``...なって<feeling>かった`` seam is reorganized; no lexical paraphrase,
+    inferred cause or new source interpretation is introduced here.
+    """
+    if binding.line_role != "limited_scope":
+        return ()
+    shared = _shared_observation_change_relation(binding, nucleus_index, relation_index, resolver)
+    if shared is None:
+        return ()
+    contrast, support = (relation_index[rid] for rid in binding.relation_ids)
+    action, change, burden = (nucleus_index[nid] for nid in
+        (support.from_nucleus_id, support.to_nucleus_id, contrast.to_nucleus_id))
+    if any(n.retention != "required" or n.allowed_claim_scope != "explicit_current_input"
+           for n in (action, change, burden)) or change.semantic_frame.polarity != "positive":
+        return ()
+    extras = tuple(nid for nid in binding.nucleus_ids
+                   if nid not in {action.nucleus_id, change.nucleus_id, burden.nucleus_id})
+    from emlis_ai_grounded_observation_plan import _source_action_change_contrast_unfinished
+    unfinished = _source_action_change_contrast_unfinished(tuple(nucleus_index.values()), tuple(relation_index.values()))
+    if len(extras) > 2 or len(extras) == 2 and (not unfinished or unfinished[0] not in extras):
+        return ()
+    if any(not (_final_action_is_performed(nucleus_index[nid])
+                or _final_action_is_future_intention(nucleus_index[nid])
+                or (nucleus_index[nid].kind == "event"
+                    and "semantic_role:present_unfinished" in nucleus_index[nid].semantic_frame.attribute_codes))
+           for nid in extras):
+        return ()
+    action_text, change_text, burden_text = (
+        _join_quotes(_quotes_for_nuclei((n.nucleus_id,), nucleus_index, resolver))[1:-1]
+        for n in (action, change, burden))
+    raw = str(resolver.resolve(action.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
+    if not raw.startswith(action_text) or not raw.endswith(change_text):
+        return ()
+    connector = raw[len(action_text):-len(change_text)]
+    if re.fullmatch(r"ら[、,]?", connector) is None:
+        return ()
+    from emlis_ai_grounded_observation_plan import (
+        _CHANGE_RE, _FEELING_RE, _POSITIVE_CHANGE_RE, _direct_finite_carrier_shape,
+    )
+    parts = re.fullmatch(r"(?P<experience>[^、,。]+(?:く|に)なっ)て"
+                        r"(?P<degree>少し(?:だけ)?|とても|本当に)?(?P<feeling>[^、,。]+かった)", change_text)
+    if parts is None:
+        return ()
+    experience, degree, feeling = parts['experience'], parts['degree'] or '', parts['feeling']
+    operator = _FEELING_RE.match(feeling)
+    if (operator is None or _POSITIVE_CHANGE_RE.match(feeling) is None
+        or not _direct_finite_carrier_shape(feeling[operator.end():],
+            operator_surface=operator.group(), operator_pattern=_FEELING_RE)
+        or _CHANGE_RE.search(experience + "た") is None
+        or re.search(r"[「」『』“”‘’\"?？!！;；…‥\s]|(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が)",
+                     action_text + change_text + burden_text)
+        or not burden_text.endswith(("る", "た", "だ", "ない"))):
+        return ()
+    residue = re.fullmatch(r"(?P<event>[^、,。]+)なり、(?P<absence>[^、,。]+ない)"
+                          r"(?P<feeling>[^、,。]+さ)も残っている", burden_text)
+    if residue is None or _FEELING_RE.match(residue['feeling']) is None:
+        return ()
+    # Preserve the conjunctive event and the complete negative modifier of
+    # the feeling noun. Neither seam becomes a causal or quoted-speech link.
+    burden_sentence = (f"{residue['event']}なって、{residue['absence']}という"
+                       f"{residue['feeling']}も残っている")
+    return (f"{action_text}{connector}{degree}{feeling}のは、{experience}たことなのですね。",
+            f"一方で、{burden_sentence}のですね。")
+
+
 def _render_final_stage1_limited_scope(
     binding: GroundedSentenceBinding,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
@@ -3581,9 +3649,11 @@ def _render_final_stage1_limited_scope(
     extra_summaries = tuple(_final_stage1_nucleus_summary(group, nucleus_index, resolver)
                             for group in extra_groups)
     extras = extra_summaries[0] if extra_summaries else ""
-    clauses: list[str] = []
+    focused = _limited_action_change_feeling_sentences(
+        binding, nucleus_index, relation_index, resolver)
+    clauses: list[str] = list(focused)
     for relation_index_value, relation_fragment in enumerate(
-        relation_fragments
+        () if focused else relation_fragments
     ):
         past_feeling = (
             _final_stage1_past_feeling_contrast_sentence(relation_rows[0], nucleus_index, resolver)

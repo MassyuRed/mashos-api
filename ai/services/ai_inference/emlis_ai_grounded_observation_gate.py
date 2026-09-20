@@ -1788,6 +1788,105 @@ def _body_inverse_nucleus_source_values(
     return tuple(values)
 
 
+def _body_inverse_limited_change_feeling(body, witness, line, planned_line, plan, resolver):
+    """Recover a past episode from finite clauses, independently of its author.
+
+    Only the three completely restored nuclei receive quote-free credit. The
+    remaining source duties still need their own visible, typed anchors.
+    """
+    binding = planned_line.binding
+    if (binding.line_role != "limited_scope"
+        or planned_line.surface_function != "render_limited_scope"
+        or len(binding.relation_ids) != 2 or "scope_hedge" in binding.functional_atom_ids):
+        return (), frozenset(), frozenset()
+    relations = {r.relation_id: r for r in plan.relations}
+    contrast, support = (relations.get(rid) for rid in binding.relation_ids)
+    if (contrast is None or support is None
+        or (contrast.type, support.type) != ("contrast", "action_supports_change")
+        or contrast.from_nucleus_id != support.to_nucleus_id
+        or len({support.from_nucleus_id, support.to_nucleus_id, contrast.to_nucleus_id}) != 3
+        or any(r.grounding_kind != "user_stated_relation" for r in (contrast, support))):
+        return (), frozenset(), frozenset()
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    nuclei = tuple(index.get(nid) for nid in
+        (support.from_nucleus_id, support.to_nucleus_id, contrast.to_nucleus_id))
+    if any(n is None for n in nuclei):
+        return (), frozenset(), frozenset()
+    action, change, burden = nuclei
+    if (not _body_inverse_action_is_performed(action)
+        or action.semantic_frame.time_scope != "past"
+        or change.kind != "change" or change.semantic_frame.time_scope != "past"
+        or change.semantic_frame.polarity != "positive"
+        or change.semantic_frame.modality not in {"fact", "feeling"}
+        or burden.kind not in {"reaction", "state"}
+        or _body_inverse_action_is_performed(burden) or _body_inverse_action_is_future_intention(burden)
+        or action.source_span_ids != change.source_span_ids
+        or any(n.grounding_kind != "explicit" or n.retention != "required"
+            or n.allowed_claim_scope != "explicit_current_input"
+            or n.source_fields != ("memo",) or len(n.source_span_ids) != 1
+            or n.semantic_frame.actor != "current_user"
+            or any(c.startswith("thread_time:") for c in n.semantic_frame.attribute_codes)
+            for n in nuclei)):
+        return (), frozenset(), frozenset()
+    rows = tuple(row for row in witness.sentences if row.section == "observation"
+                 and row.section_line_ordinal == line.section_ordinal)
+    if len(rows) < 2:
+        return (), frozenset(), frozenset()
+    first, second = (_body_inverse_visible_text(body, row) for row in rows[:2])
+    parsed = re.fullmatch(r"(?P<action>[^。]+[ただ])(?P<link>ら[、,]?)"
+        r"(?P<feeling>[^、,。]+かった)のは、(?P<experience>[^、,。]+(?:く|に)なった)ことなのですね。", first)
+    remaining = re.fullmatch(r"一方で、(?P<event>[^、,。]+)なって、"
+        r"(?P<absence>[^、,。]+ない)という(?P<feeling>[^、,。]+さ)も残っているのですね。", second)
+    if parsed is None or remaining is None:
+        return (), frozenset(), frozenset()
+    visible_sources = (parsed['action'], parsed['experience'][:-1] + "て" + parsed['feeling'],
+                       remaining['event'] + "なり、" + remaining['absence'] + remaining['feeling'] + "も残っている")
+    sources = tuple(_body_inverse_nucleus_source_values(n.nucleus_id, plan, resolver) for n in nuclei)
+    if (any(len(values) != 1 for values in sources)
+        or tuple(_body_inverse_normalized_anchor(value) for value in visible_sources)
+            != tuple(values[0] for values in sources)
+        or any(a in b for i, (a,) in enumerate(sources) for j, (b,) in enumerate(sources) if i != j)
+        or any(re.search(r'[「」『』“”‘’"?？!！;；…‥\s]', value) for value in visible_sources)):
+        return (), frozenset(), frozenset()
+    original = str(resolver.resolve(action.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
+    if parsed['action'] + parsed['link'] + visible_sources[1] != original:
+        return (), frozenset(), frozenset()
+    from emlis_ai_grounded_observation_plan import _FEELING_RE, _POSITIVE_CHANGE_RE, _direct_finite_carrier_shape
+    feeling = re.sub(r"^(?:少し(?:だけ)?|とても|本当に)", "", parsed['feeling'])
+    operator = _FEELING_RE.match(feeling)
+    if (operator is None or _POSITIVE_CHANGE_RE.match(feeling) is None
+        or _FEELING_RE.match(remaining['feeling']) is None
+        or not _direct_finite_carrier_shape(feeling[operator.end():],
+            operator_surface=operator.group(), operator_pattern=_FEELING_RE)):
+        return (), frozenset(), frozenset()
+    # The first two sentences are the whole relation realization. No unknown
+    # prose can be smuggled into the remaining independent material sentences.
+    extras = tuple(nid for nid in binding.nucleus_ids if nid not in {n.nucleus_id for n in nuclei})
+    if len(rows) - 2 != len(extras):
+        return (), frozenset(), frozenset()
+    tail_quotes = []
+    for row, nid in zip(rows[2:], extras):
+        tail = _body_inverse_visible_text(body, row)
+        matched = re.fullmatch(r'(?:あわせて|また)、「([^「」]+)」(.*?)も今の状態として見えます。', tail)
+        nucleus = index[nid]
+        if _body_inverse_action_is_future_intention(nucleus):
+            qualifier = ("という、まだ定めていないこれからの行動"
+                         if nucleus.semantic_frame.modality == "uncertain" else "という、これからの行動")
+        elif _body_inverse_action_is_performed(nucleus):
+            qualifier = "という行動"
+        elif nucleus.kind == "event" and "semantic_role:present_unfinished" in nucleus.semantic_frame.attribute_codes:
+            qualifier = ""
+        else:
+            return (), frozenset(), frozenset()
+        if matched is None or matched[2] != qualifier:
+            return (), frozenset(), frozenset()
+        tail_quotes.append(_body_inverse_normalized_anchor(matched[1]))
+    expected_extras = tuple(value for nid in extras for value in _body_inverse_nucleus_source_values(nid, plan, resolver))
+    if tuple(tail_quotes) != expected_extras:
+        return (), frozenset(), frozenset()
+    return tuple(values[0] for values in sources), frozenset(binding.relation_ids), frozenset(n.nucleus_id for n in nuclei)
+
+
 def _body_inverse_observation_change_reference(
     body, witness, line, planned_line, plan, resolver,
 ):
@@ -3368,6 +3467,9 @@ def evaluate_grounded_surface_body_inverse(
         direct_cognition = False
         direct_provisional = False
         direct_decision = False
+        direct_sources, direct_relations, direct_nuclei = (
+            _body_inverse_limited_change_feeling(body, witness, parsed_line, planned_line, plan, resolver)
+            if final_stage1_plan else ((), frozenset(), frozenset()))
         binding = planned_line.binding
         if (final_stage1_plan
             and (planned_line.surface_function, binding.claim_scope) in {
@@ -3437,9 +3539,9 @@ def evaluate_grounded_surface_body_inverse(
                             direct_provisional = True
                         elif decision:
                             direct_decision = True
-        if expected_sources and not quote_rows and not direct_cognition:
+        if expected_sources and not quote_rows and not direct_cognition and not direct_sources:
             failures.append(f"body_inverse_observation_source_anchor_missing:{index}")
-        normalized_quote_texts: list[str] = []
+        normalized_quote_texts: list[str] = list(direct_sources)
         for quote_row in quote_rows:
             try:
                 quote_text = _body_inverse_normalized_anchor(
@@ -3480,7 +3582,7 @@ def evaluate_grounded_surface_body_inverse(
                 relation.type,
                 frozenset(),
             )
-            if allowed_markers and not (
+            if relation_id not in direct_relations and allowed_markers and not (
                 set(parsed_line.relation_marker_codes) & allowed_markers
             ):
                 failures.append(
@@ -3671,7 +3773,8 @@ def evaluate_grounded_surface_body_inverse(
                 expected = "先の回答時点" if times == {"prior_answer_time"} else "回答した時点" if times == {"answer_time"} else "その時" if times == {"original_occasion"} else None
                 if expected is None or expected not in visible_line:
                     failures.append(f"body_inverse_answer_target_time_missing:{index}")
-        if ("change" in required_kinds and "change" not in parsed_line.semantic_marker_codes
+        if (any(n.kind == "change" and n.nucleus_id not in direct_nuclei for n in required_nuclei)
+            and "change" not in parsed_line.semantic_marker_codes
             and not direct_provisional):
             failures.append(f"body_inverse_required_change_missing:{index}")
         if (
@@ -3713,7 +3816,7 @@ def evaluate_grounded_surface_body_inverse(
             failures.append(f"body_inverse_required_intention_missing:{index}")
         required_effort = (
             any(
-                _body_inverse_action_is_performed(item)
+                _body_inverse_action_is_performed(item) and item.nucleus_id not in direct_nuclei
                 for item in required_nuclei
             )
             if final_stage1_plan
