@@ -3038,7 +3038,7 @@ def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver):
         grammar, value = nominal if nominal else ("FINITE", source)
         if grammar == "FINITE":
             prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で", "prior_answer_time": "先の回答時点で"}[when]
-            value = prefix + source + "こと"
+            value = prefix + _detached_feeling_finite_surface(source) + "こと"
         else:
             value = _thread_answer_timed_nominal(value, grammar, when)
         rows.append(_ThreadAnswerGroupItem(nid, event.nucleus_id, source, grammar, when, value, event_fragment))
@@ -8205,7 +8205,7 @@ def _thread_received_group_ir_text(realization):
                 raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
             if grammar == "FINITE" and row is None and _SOURCE_GROUNDED_FINITE_END_RE.search(source):
                 prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で", "prior_answer_time": "先の回答時点で"}[when]
-                nominal = prefix + source + "こと"
+                nominal = prefix + _detached_feeling_finite_surface(source) + "こと"
             elif row is not None and row[0] == grammar:
                 nominal = _thread_answer_timed_nominal(row[1], grammar, when)
             else:
@@ -8273,7 +8273,7 @@ def _thread_answer_group_ir_text(realization):
         nominal = _thread_answer_nominal_morphology(source)
         if grammar == "FINITE" and nominal is None:
             prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で", "prior_answer_time": "先の回答時点で"}[when]
-            value = prefix + source + "こと"
+            value = prefix + _detached_feeling_finite_surface(source) + "こと"
         elif nominal is not None and nominal[0] == grammar:
             value = _thread_answer_timed_nominal(nominal[1], grammar, when)
         else:

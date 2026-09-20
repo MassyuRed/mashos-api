@@ -3250,6 +3250,28 @@ def _received_discourse_equivalent(actual, canonical, reception_plan, clauses, p
     return True
 
 
+def _restore_thread_finite_answer(actual, source):
+    """Restore an admitted answer from its complete attributive clause.
+
+    Parse the actual recipient subject and terminal inflection independently
+    of the author. The source owns every other character, including degree,
+    particles, negation and tense; no substring can discharge that duty.
+    """
+    polite = re.fullmatch(r"(?P<predicate>.+(?:い|かった))です", source)
+    predicate = polite['predicate'] if polite else source
+    owner = re.match(r"(?P<self>わたし|ぼく|おれ|私|僕|俺|自分)"
+                     r"(?P<particle>には|にも|は|も)", predicate)
+    restored = actual
+    if owner:
+        recipient = "あなた" + owner['particle']
+        if not restored.startswith(recipient):
+            return None
+        restored = owner.group() + restored[len(recipient):]
+    if polite:
+        restored += "です"
+    return source if restored == source else None
+
+
 def _body_inverse_thread_received_group(body, witness, sentence, move, plan, resolver):
     """Read original clauses and immediately bound answer anaphora from bytes.
 
@@ -3338,7 +3360,9 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
                             if value is not None:
                                 interpretations.add((value, when))
                     elif nominal.startswith(temporal) and nominal.endswith("こと"):
-                        interpretations.add((nominal[len(temporal):-2], when))
+                        value = _restore_thread_finite_answer(nominal[len(temporal):-2], wanted[2])
+                        if value is not None:
+                            interpretations.add((value, when))
             if wanted[2:] not in interpretations:
                 return None
             markers = {"thread_answer_nominal", "finite_clause_nominal"}
@@ -3635,7 +3659,11 @@ def _body_inverse_thread_answer_group(body, witness, sentence, move, plan, resol
                     if source is not None and sep == "ことへの":
                         interpretations.add((event, source, when))
                 if sep == "ことについて、" and nominal.startswith(prefix) and nominal.endswith("こと"):
-                    interpretations.add((event, nominal[len(prefix):-2], when))
+                    for expected_event, expected_source, _ in expected:
+                        if event == expected_event:
+                            source = _restore_thread_finite_answer(nominal[len(prefix):-2], expected_source)
+                            if source is not None:
+                                interpretations.add((event, source, when))
             matches = interpretations.intersection(expected)
             if len(matches) != 1:
                 break
