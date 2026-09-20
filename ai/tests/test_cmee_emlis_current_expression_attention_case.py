@@ -3,6 +3,8 @@
 Only synthetic sources already represented by public regression fixtures are
 used here. Selection, time, uncertainty and the separate action duty are kept.
 """
+
+from helpers.retained_assertions import continue_assertions, retained_assertion
 from functools import lru_cache
 from types import SimpleNamespace
 
@@ -28,23 +30,24 @@ def artifacts(memo):
 
 
 @pytest.mark.parametrize('memo', SOURCES)
+@continue_assertions
 def test_complete_expression_has_one_case_and_keeps_both_reception_duties(memo):
     plan, sentence, surface, resolver, selected = artifacts(memo)
     follow = surface.text.split('Emlisから：', 1)[1].strip()
     moves = plan.response_plan.human_reception_plan.moves
-    assert surface.recovery_stage == 'full'
-    assert len(moves) == 2 and all(m.required for m in moves)
-    assert [(m.move_role, m.reception_act) for m in moves] == [
+    retained_assertion(lambda: (surface.recovery_stage == 'full'), "surface.recovery_stage == 'full'")
+    retained_assertion(lambda: (len(moves) == 2 and all(m.required for m in moves)), 'len(moves) == 2 and all((m.required for m in moves))')
+    retained_assertion(lambda: ([(m.move_role, m.reception_act) for m in moves] == [
         ('attention', 'stay_with_current_burden'),
         ('felt_response', 'stay_with_current_burden'),
-    ]
-    assert follow == (memo.rstrip('。') + 'という言葉を見過ごさず、小さくせずに受け止めています。'
-                      + ACTION.rstrip('。') + 'という言葉を小さくせずに受け止めています。')
+    ]), "[(m.move_role, m.reception_act) for m in moves] == [('attention', 'stay_with_current_burden'), ('felt_response', 'stay_with_current_burden')]")
+    retained_assertion(lambda: (follow == (memo.rstrip('。') + 'という言葉を見過ごさず、小さくせずに受け止めています。'
+                      + ACTION.rstrip('。') + 'という言葉を小さくせずに受け止めています。')), "follow == memo.rstrip('。') + 'という言葉を見過ごさず、小さくせずに受け止めています。' + ACTION.rstrip('。') + 'という言葉を小さくせずに受け止めています。'")
     inverse = gate.evaluate_grounded_surface_body_inverse(
         body=surface.text.encode(), plan=plan, sentence_plan=sentence,
         resolver=resolver, selected_subjective_input=selected,
     )
-    assert inverse.passed, inverse.failure_codes
+    retained_assertion(lambda: (inverse.passed), 'inverse.passed', lambda: (inverse.failure_codes))
 
 
 @pytest.mark.parametrize('memo', SOURCES)
@@ -52,6 +55,7 @@ def test_complete_expression_has_one_case_and_keeps_both_reception_duties(memo):
     'drop_source', 'insert_actor', 'insert_time', 'drop_attention',
     'negate_attention', 'drop_burden_guard', 'negate_reception', 'replace_case',
 ])
+@continue_assertions
 def test_independent_inverse_requires_whole_object_and_affirmative_duties(monkeypatch, memo, mutation):
     plan, sentence, surface, resolver, selected = artifacts(memo)
     follow = surface.text.split('Emlisから：', 1)[1].strip()
@@ -71,7 +75,7 @@ def test_independent_inverse_requires_whole_object_and_affirmative_duties(monkey
             selected_subjective_input=selected,
         ).passed
 
-    assert passes(follow)
+    retained_assertion(lambda: (passes(follow)), 'passes(follow)')
     source = memo.rstrip('。')
     before, after = {
         'drop_source': (source + 'という言葉', '今回の気持ち'),
@@ -84,8 +88,8 @@ def test_independent_inverse_requires_whole_object_and_affirmative_duties(monkey
         'replace_case': ('という言葉を見過ごさず、', 'という言葉に見過ごさず、'),
     }[mutation]
     changed = follow.replace(before, after, 1)
-    assert changed != follow
-    assert not passes(changed)
+    retained_assertion(lambda: (changed != follow), 'changed != follow')
+    retained_assertion(lambda: (not passes(changed)), 'not passes(changed)')
 
 
 @pytest.mark.parametrize('premium', [False, True])
@@ -107,10 +111,11 @@ def test_initial_thread_keeps_existing_availability_and_input_limits(premium, me
         assert result.artifact.reception == artifacts(memo)[2].text.split('Emlisから：', 1)[1].strip()
 
 
+@continue_assertions
 def test_polite_past_feeling_preserves_existing_typed_time_outside_whole_object():
     request = begin('頼まれたのに、寂しかった。', '怖かったです。')
     result = MeaningExperienceEngine().generate(request)
-    assert result.artifact, result.reason_codes
-    assert ('これまで、怖かったですという言葉を見過ごさず、小さくせずに受け止めています。'
-            in result.artifact.reception)
-    assert '頼まれたのに寂しかったこと' in result.artifact.reception
+    retained_assertion(lambda: (result.artifact), 'result.artifact', lambda: (result.reason_codes))
+    retained_assertion(lambda: ('これまで、怖かったですという言葉を見過ごさず、小さくせずに受け止めています。'
+            in result.artifact.reception), "'これまで、怖かったですという言葉を見過ごさず、小さくせずに受け止めています。' in result.artifact.reception")
+    retained_assertion(lambda: ('頼まれたのに寂しかったこと' in result.artifact.reception), "'頼まれたのに寂しかったこと' in result.artifact.reception")

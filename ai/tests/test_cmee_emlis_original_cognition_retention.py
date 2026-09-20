@@ -4,6 +4,8 @@ These cases exercise the real initial/answer path. They do not exempt the
 existing inverse, introduce a renderer, or make an inner possibility a fact.
 The defect is already present at the product source bound to 7c3dff8.
 """
+
+from helpers.retained_assertions import continue_assertions, retained_assertion
 import pytest
 
 from test_cmee_emlis_q3_thread import (
@@ -61,19 +63,20 @@ def test_original_uncertain_thought_is_not_replaced_by_separate_action(thought, 
 
 @pytest.mark.parametrize("thought", THOUGHTS)
 @pytest.mark.parametrize("premium", [False, True])
+@continue_assertions
 def test_unrelated_answer_does_not_drop_original_uncertain_thought(thought, premium):
     request = (begin if premium else initial)("誘われたのに、悲しかった。" + thought, ACTION)
     old_source = request.current_input_bundle
     request = advance(request, "その時は重かった。")
     prepared = prepare_emlis_meaning(request)
     result = MeaningExperienceEngine().generate(request)
-    assert request.current_input_bundle == old_source
-    assert request.emlis_thread.current_round == 1
-    assert request.emlis_thread.question_control_context.question_limit == (3 if premium else 1)
-    assert result.artifact, result.reason_codes
+    retained_assertion(lambda: (request.current_input_bundle == old_source), 'request.current_input_bundle == old_source')
+    retained_assertion(lambda: (request.emlis_thread.current_round == 1), 'request.emlis_thread.current_round == 1')
+    retained_assertion(lambda: (request.emlis_thread.question_control_context.question_limit == (3 if premium else 1)), 'request.emlis_thread.question_control_context.question_limit == (3 if premium else 1)')
+    retained_assertion(lambda: (result.artifact), 'result.artifact', lambda: (result.reason_codes))
     _assert_original_thought_has_required_reception_evidence(prepared, thought)
-    assert any(word in result.artifact.reception for word in ("かも", "可能性"))
-    assert "その時の重さ" in result.artifact.reception
+    retained_assertion(lambda: (any(word in result.artifact.reception for word in ("かも", "可能性"))), "any((word in result.artifact.reception for word in ('かも', '可能性')))")
+    retained_assertion(lambda: ("その時の重さ" in result.artifact.reception), "'その時の重さ' in result.artifact.reception")
 
 
 @pytest.mark.parametrize('thought', [
@@ -124,18 +127,19 @@ def test_unasserted_or_other_owned_host_cannot_borrow_present_self_witness(text)
     ('「重かった」ではなく「苦しかった」です。', 'その時の重さ', '苦しさ'),
     ('「重かった」は誤りです。', 'その時の重さ', None),
 ])
+@continue_assertions
 def test_correcting_or_withdrawing_an_unrelated_answer_retains_the_original_cognition(operation, removed, new):
     thought = THOUGHTS[0]
     request = advance(advance(begin('誘われたのに、悲しかった。頼まれたのに、寂しかった。' + thought, ACTION),
                               'その時は重かった。'), operation)
     prepared = prepare_emlis_meaning(request)
     result = MeaningExperienceEngine().generate(request)
-    assert result.artifact, result.reason_codes
-    assert removed not in result.artifact.reception
+    retained_assertion(lambda: (result.artifact), 'result.artifact', lambda: (result.reason_codes))
+    retained_assertion(lambda: (removed not in result.artifact.reception), 'removed not in result.artifact.reception')
     if new is not None:
-        assert new in result.artifact.reception
-    assert thought.rstrip('。') in result.artifact.reception
-    assert '机を拭いた' in result.artifact.reception
+        retained_assertion(lambda: (new in result.artifact.reception), 'new in result.artifact.reception')
+    retained_assertion(lambda: (thought.rstrip('。') in result.artifact.reception), "thought.rstrip('。') in result.artifact.reception")
+    retained_assertion(lambda: ('机を拭いた' in result.artifact.reception), "'机を拭いた' in result.artifact.reception")
     _assert_original_thought_has_required_reception_evidence(prepared, thought)
 
 

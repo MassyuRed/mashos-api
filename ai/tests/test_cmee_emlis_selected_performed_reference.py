@@ -3,6 +3,8 @@
 Reference policy may not erase an independent performed action merely because
 another required Move is first. No new meaning, source, status or author.
 """
+
+from helpers.retained_assertions import continue_assertions, retained_assertion
 from dataclasses import replace
 from types import SimpleNamespace
 import pytest
@@ -81,36 +83,38 @@ def test_existing_performed_nominal_does_not_borrow_changed_owner_or_unproved_st
 
 @pytest.mark.parametrize('premium', [False, True])
 @pytest.mark.parametrize('action', ACTIONS[:2])
+@continue_assertions
 def test_unrelated_answer_retains_original_condition_and_concrete_action(premium, action):
     memo = '誘われたのに、悲しかった。' + MEMOS[0]
     req = (begin if premium else initial)(memo, action)
     original = req.current_input_bundle
     first = MeaningExperienceEngine().generate(req)
-    assert first.artifact and first.question
-    assert MEMOS[0].rstrip('。') in first.artifact.reception
-    assert action.rstrip('。') in first.artifact.reception
+    retained_assertion(lambda: (first.artifact and first.question), 'first.artifact and first.question')
+    retained_assertion(lambda: (MEMOS[0].rstrip('。') in first.artifact.reception), "MEMOS[0].rstrip('。') in first.artifact.reception")
+    retained_assertion(lambda: (action.rstrip('。') in first.artifact.reception), "action.rstrip('。') in first.artifact.reception")
     req = advance(req, 'その時は重かった。')
     out = MeaningExperienceEngine().generate(req)
-    assert out.artifact, out.reason_codes
-    assert req.current_input_bundle == original
-    assert MEMOS[0].rstrip('。') in out.artifact.reception
-    assert action.rstrip('。') in out.artifact.reception
-    assert 'その時の重さ' in out.artifact.reception
-    assert req.emlis_thread.question_control_context.question_limit == (3 if premium else 1)
+    retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
+    retained_assertion(lambda: (req.current_input_bundle == original), 'req.current_input_bundle == original')
+    retained_assertion(lambda: (MEMOS[0].rstrip('。') in out.artifact.reception), "MEMOS[0].rstrip('。') in out.artifact.reception")
+    retained_assertion(lambda: (action.rstrip('。') in out.artifact.reception), "action.rstrip('。') in out.artifact.reception")
+    retained_assertion(lambda: ('その時の重さ' in out.artifact.reception), "'その時の重さ' in out.artifact.reception")
+    retained_assertion(lambda: (req.emlis_thread.question_control_context.question_limit == (3 if premium else 1)), 'req.emlis_thread.question_control_context.question_limit == (3 if premium else 1)')
 
 @pytest.mark.parametrize('operation,removed,new', [
     ('「重かった」ではなく「苦しかった」です。', 'その時の重さ', '苦しさ'),
     ('「重かった」は誤りです。', 'その時の重さ', None),
 ])
+@continue_assertions
 def test_unrelated_correction_and_withdrawal_keep_performed_action_and_condition(operation, removed, new):
     memo = '誘われたのに、悲しかった。頼まれたのに、寂しかった。' + MEMOS[0]
     req = begin(memo, ACTIONS[0])
     req = advance(advance(req, 'その時は重かった。'), operation)
     out = MeaningExperienceEngine().generate(req)
-    assert out.artifact, out.reason_codes
-    assert MEMOS[0].rstrip('。') in out.artifact.reception
-    assert ACTIONS[0].rstrip('。') in out.artifact.reception
-    assert '頼まれたのに寂しかったこと' in out.artifact.reception
-    assert removed not in out.artifact.reception
+    retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
+    retained_assertion(lambda: (MEMOS[0].rstrip('。') in out.artifact.reception), "MEMOS[0].rstrip('。') in out.artifact.reception")
+    retained_assertion(lambda: (ACTIONS[0].rstrip('。') in out.artifact.reception), "ACTIONS[0].rstrip('。') in out.artifact.reception")
+    retained_assertion(lambda: ('頼まれたのに寂しかったこと' in out.artifact.reception), "'頼まれたのに寂しかったこと' in out.artifact.reception")
+    retained_assertion(lambda: (removed not in out.artifact.reception), 'removed not in out.artifact.reception')
     if new:
-        assert new in out.artifact.reception
+        retained_assertion(lambda: (new in out.artifact.reception), 'new in out.artifact.reception')

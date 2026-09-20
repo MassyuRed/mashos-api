@@ -2,6 +2,8 @@
 
 Public synthetic examples only. Historical inputs and expectations are unchanged.
 """
+
+from helpers.retained_assertions import continue_assertions, retained_assertion
 from dataclasses import replace
 from functools import lru_cache
 from collections import Counter
@@ -247,18 +249,19 @@ def test_independent_source_body_is_checked_without_rerender(index,change):
 
 
 @pytest.mark.parametrize('premium', [False, True])
+@continue_assertions
 def test_required_source_relation_remains_in_the_existing_relation_author(premium):
     from test_cmee_emlis_shared_change_context import _actual, _independent_passes
     context=_actual(premium=premium)
     out,plan,*_=context
     source_relations=[r for r in plan.relations if r.retention=='required'
                       and r.type=='action_supports_change']
-    assert source_relations
+    retained_assertion(lambda: (source_relations), 'source_relations')
     follow=out.artifact.reception
-    assert 'ことが支えている、' in follow
-    assert '手元に緑がない寂しさも残っている' in follow
-    assert 'まだ配置は見つかっていない' in follow
-    assert _independent_passes(context, follow)
+    retained_assertion(lambda: ('ことが支えている、' in follow), "'ことが支えている、' in follow")
+    retained_assertion(lambda: ('手元に緑がない寂しさも残っている' in follow), "'手元に緑がない寂しさも残っている' in follow")
+    retained_assertion(lambda: ('まだ配置は見つかっていない' in follow), "'まだ配置は見つかっていない' in follow")
+    retained_assertion(lambda: (_independent_passes(context, follow)), '_independent_passes(context, follow)')
 
 
 @pytest.mark.parametrize('tier', ['free','plus','premium'])

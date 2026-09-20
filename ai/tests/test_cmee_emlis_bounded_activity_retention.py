@@ -3,6 +3,8 @@
 An omitted object is not a missing action; a source-order connection cannot
 make an independent self-appraisal disappear. No evaluation input is copied.
 """
+
+from helpers.retained_assertions import continue_assertions, retained_assertion
 from types import SimpleNamespace
 import pytest
 import emlis_ai_grounded_human_reception as reception
@@ -83,34 +85,36 @@ def test_independent_inverse_rejects_losing_or_changing_source_meaning(monkeypat
 
 @pytest.mark.parametrize('premium', [False, True])
 @pytest.mark.parametrize('action', ACTIONS[:2])
+@continue_assertions
 def test_answer_updates_keep_independent_appraisal_and_activity(premium, action):
     req = (begin if premium else initial)('誘われたのに、悲しかった。' + MEMO, action)
     original = req.current_input_bundle
     first = MeaningExperienceEngine().generate(req)
-    assert first.artifact and first.question, first.reason_codes
-    assert MEMO.rstrip('。') in first.artifact.reception
-    assert action.rstrip('。') in first.artifact.reception
+    retained_assertion(lambda: (first.artifact and first.question), 'first.artifact and first.question', lambda: (first.reason_codes))
+    retained_assertion(lambda: (MEMO.rstrip('。') in first.artifact.reception), "MEMO.rstrip('。') in first.artifact.reception")
+    retained_assertion(lambda: (action.rstrip('。') in first.artifact.reception), "action.rstrip('。') in first.artifact.reception")
     req = advance(req, 'その時は重かった。')
     out = MeaningExperienceEngine().generate(req)
-    assert out.artifact, out.reason_codes
-    assert req.current_input_bundle == original
-    assert MEMO.rstrip('。') in out.artifact.reception
-    assert action.rstrip('。') in out.artifact.reception
-    assert 'その時の重さ' in out.artifact.reception
+    retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
+    retained_assertion(lambda: (req.current_input_bundle == original), 'req.current_input_bundle == original')
+    retained_assertion(lambda: (MEMO.rstrip('。') in out.artifact.reception), "MEMO.rstrip('。') in out.artifact.reception")
+    retained_assertion(lambda: (action.rstrip('。') in out.artifact.reception), "action.rstrip('。') in out.artifact.reception")
+    retained_assertion(lambda: ('その時の重さ' in out.artifact.reception), "'その時の重さ' in out.artifact.reception")
 
 @pytest.mark.parametrize('operation,removed,new', [
     ('「重かった」ではなく「苦しかった」です。', 'その時の重さ', '苦しさ'),
     ('「重かった」は誤りです。', 'その時の重さ', None),
 ])
+@continue_assertions
 def test_correction_and_withdrawal_do_not_erase_untouched_activity(operation, removed, new):
     action = ACTIONS[0]
     req = begin('誘われたのに、悲しかった。頼まれたのに、寂しかった。' + MEMO, action)
     req = advance(advance(req, 'その時は重かった。'), operation)
     out = MeaningExperienceEngine().generate(req)
-    assert out.artifact, out.reason_codes
-    assert MEMO.rstrip('。') in out.artifact.reception
-    assert action.rstrip('。') in out.artifact.reception
-    assert '頼まれたのに寂しかったこと' in out.artifact.reception
-    assert removed not in out.artifact.reception
+    retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
+    retained_assertion(lambda: (MEMO.rstrip('。') in out.artifact.reception), "MEMO.rstrip('。') in out.artifact.reception")
+    retained_assertion(lambda: (action.rstrip('。') in out.artifact.reception), "action.rstrip('。') in out.artifact.reception")
+    retained_assertion(lambda: ('頼まれたのに寂しかったこと' in out.artifact.reception), "'頼まれたのに寂しかったこと' in out.artifact.reception")
+    retained_assertion(lambda: (removed not in out.artifact.reception), 'removed not in out.artifact.reception')
     if new:
-        assert new in out.artifact.reception
+        retained_assertion(lambda: (new in out.artifact.reception), 'new in out.artifact.reception')

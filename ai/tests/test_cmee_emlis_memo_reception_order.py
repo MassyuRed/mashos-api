@@ -2,6 +2,8 @@
 
 Public synthetic sources; existing corpus inputs and expectations are unchanged.
 """
+
+from helpers.retained_assertions import continue_assertions, retained_assertion
 from dataclasses import replace
 from functools import lru_cache
 from unittest.mock import patch
@@ -36,34 +38,36 @@ def context(feeling=FEELINGS[0]):
 
 
 @pytest.mark.parametrize('feeling', FEELINGS)
+@continue_assertions
 def test_original_source_projection_preserves_the_same_complete_memo_order(feeling):
     req = replace(request(feeling), emlis_thread=None)
     out = MeaningExperienceEngine().generate(req)
-    assert out.artifact is not None, out.reason_codes
+    retained_assertion(lambda: (out.artifact is not None), 'out.artifact is not None', lambda: (out.reason_codes))
     text = out.artifact.reception
-    assert text.index(BURDEN) < text.index(BACKGROUND) < text.index(feeling) < text.index(ACTION)
+    retained_assertion(lambda: (text.index(BURDEN) < text.index(BACKGROUND) < text.index(feeling) < text.index(ACTION)), 'text.index(BURDEN) < text.index(BACKGROUND) < text.index(feeling) < text.index(ACTION)', evaluation_errors=(ValueError,))
 
 
 @pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
 @pytest.mark.parametrize('feeling', FEELINGS)
+@continue_assertions
 def test_primary_memo_and_its_feeling_relation_precede_independent_action(tier, feeling):
     req = request(feeling, tier)
     prepared = prepare_emlis_meaning(req)
     plan = build_updated_grounded_plan(prepared)
     hr = plan.response_plan.human_reception_plan
-    assert tuple(m.move_id for m in hr.moves) == ('rm1', 'rm2', 'rm3')
-    assert tuple(m.move_id for m in reception_active_moves(hr, 'full')) == ('rm1', 'rm3', 'rm2')
+    retained_assertion(lambda: (tuple(m.move_id for m in hr.moves) == ('rm1', 'rm2', 'rm3')), "tuple((m.move_id for m in hr.moves)) == ('rm1', 'rm2', 'rm3')")
+    retained_assertion(lambda: (tuple(m.move_id for m in reception_active_moves(hr, 'full')) == ('rm1', 'rm3', 'rm2')), "tuple((m.move_id for m in reception_active_moves(hr, 'full'))) == ('rm1', 'rm3', 'rm2')")
     with patch.object(owner, '_source_owned_memo_duties_before_action', return_value=False):
         before = build_updated_grounded_plan(prepared)
-    assert plan.nuclei == before.nuclei and plan.relations == before.relations
-    assert plan.coverage_requirements == before.coverage_requirements
-    assert hr.target_nucleus_ids == before.response_plan.human_reception_plan.target_nucleus_ids
-    assert hr.moves == before.response_plan.human_reception_plan.moves
+    retained_assertion(lambda: (plan.nuclei == before.nuclei and plan.relations == before.relations), 'plan.nuclei == before.nuclei and plan.relations == before.relations')
+    retained_assertion(lambda: (plan.coverage_requirements == before.coverage_requirements), 'plan.coverage_requirements == before.coverage_requirements')
+    retained_assertion(lambda: (hr.target_nucleus_ids == before.response_plan.human_reception_plan.target_nucleus_ids), 'hr.target_nucleus_ids == before.response_plan.human_reception_plan.target_nucleus_ids')
+    retained_assertion(lambda: (hr.moves == before.response_plan.human_reception_plan.moves), 'hr.moves == before.response_plan.human_reception_plan.moves')
     out = MeaningExperienceEngine().generate(req)
-    assert out.artifact is not None, out.reason_codes
+    retained_assertion(lambda: (out.artifact is not None), 'out.artifact is not None', lambda: (out.reason_codes))
     text = out.artifact.reception
-    assert text.index(BURDEN) < text.index(BACKGROUND) < text.index(feeling) < text.index(ACTION)
-    assert out.question is None and not out.automatic_progression
+    retained_assertion(lambda: (text.index(BURDEN) < text.index(BACKGROUND) < text.index(feeling) < text.index(ACTION)), 'text.index(BURDEN) < text.index(BACKGROUND) < text.index(feeling) < text.index(ACTION)', evaluation_errors=(ValueError,))
+    retained_assertion(lambda: (out.question is None and not out.automatic_progression), 'out.question is None and (not out.automatic_progression)')
 
 
 @pytest.mark.parametrize('mutation', ['old_order', 'omit_feeling', 'omit_background', 'actor', 'time', 'negation', 'cause'])
@@ -114,19 +118,20 @@ def test_schedule_requires_existing_ownership_and_complete_independent_duties(mu
 
 @pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
 @pytest.mark.parametrize('feeling', FEELINGS)
+@continue_assertions
 def test_saved_body_and_question_decision_survive_get_and_no_author_restart(qdb, qcase, monkeypatch, tier, feeling):
     user, parent, service = qcase
     qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
     qdb.query('update public.emotions set memo=$1,memo_action=$2 where id=$3', [memo(feeling), ACTION + '。', parent])
     dto = run(service.start(user, parent))
-    assert dto['current_observation'] is not None
+    retained_assertion(lambda: (dto['current_observation'] is not None), "dto['current_observation'] is not None")
     text = dto['current_observation']['text'].split('Emlisから：', 1)[1]
-    assert text.index(BURDEN) < text.index(BACKGROUND) < text.index(feeling) < text.index(ACTION)
-    assert dto['pending_question'] is None and dto['body_state'] == 'FINAL'
-    assert run(service.get(user, parent)) == dto
+    retained_assertion(lambda: (text.index(BURDEN) < text.index(BACKGROUND) < text.index(feeling) < text.index(ACTION)), 'text.index(BURDEN) < text.index(BACKGROUND) < text.index(feeling) < text.index(ACTION)', evaluation_errors=(ValueError,))
+    retained_assertion(lambda: (dto['pending_question'] is None and dto['body_state'] == 'FINAL'), "dto['pending_question'] is None and dto['body_state'] == 'FINAL'")
+    retained_assertion(lambda: (run(service.get(user, parent)) == dto), 'run(service.get(user, parent)) == dto')
     monkeypatch.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved content rerendered'))
-    assert run(service.start(user, parent)) == dto
-    assert run(service.get(user, parent)) == dto
+    retained_assertion(lambda: (run(service.start(user, parent)) == dto), 'run(service.start(user, parent)) == dto')
+    retained_assertion(lambda: (run(service.get(user, parent)) == dto), 'run(service.get(user, parent)) == dto')
 
 # A received contrast, a separate feeling and its later correction use the
 # same source-owned selection; the action's rhetorical role must not split it.

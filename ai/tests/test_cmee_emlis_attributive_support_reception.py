@@ -3,6 +3,8 @@
 The scenarios extend the existing public synthetic plant fixture. No private
 case or expectation is used. Historical full-text assertions remain intact.
 """
+
+from helpers.retained_assertions import continue_assertions, retained_assertion
 from dataclasses import replace
 from unittest.mock import patch
 
@@ -28,23 +30,24 @@ SCENARIOS = (
 @pytest.mark.parametrize('memo', SCENARIOS)
 @pytest.mark.parametrize('premium', [False, True])
 @pytest.mark.parametrize('ending', ['まだ配置は見つかっていない。', 'まだ配置は見つかっていません。'])
+@continue_assertions
 def test_support_is_attributed_without_three_nominal_layers(memo, premium, ending):
     context = _actual(memo, premium=premium, ending=ending)
     result, plan, *_ = context
     first, second, last, empty = result.artifact.reception.split('。')
     action, following = memo.split('ら、', 1)
     change = following.split('。', 1)[0]
-    assert not empty
-    assert first == (action + 'ことが支えている、' + change
-        + 'という変化を見過ごさず、大切に思っています')
-    assert 'ことを支えていること' not in first
-    assert first.count('こと') == 1
-    assert second.startswith('その一方で、')
-    assert second.count(memo.split('一方で、', 1)[1].rstrip('。')) == 1
-    assert last.startswith(ending.rstrip('。'))
-    assert result.artifact.reception.count(change) == 1
-    assert len(plan.response_plan.human_reception_plan.moves) == 3
-    assert _independent_passes(context, result.artifact.reception)
+    retained_assertion(lambda: (not empty), 'not empty')
+    retained_assertion(lambda: (first == (action + 'ことが支えている、' + change
+        + 'という変化を見過ごさず、大切に思っています')), "first == action + 'ことが支えている、' + change + 'という変化を見過ごさず、大切に思っています'")
+    retained_assertion(lambda: ('ことを支えていること' not in first), "'ことを支えていること' not in first")
+    retained_assertion(lambda: (first.count('こと') == 1), "first.count('こと') == 1")
+    retained_assertion(lambda: (second.startswith('その一方で、')), "second.startswith('その一方で、')")
+    retained_assertion(lambda: (second.count(memo.split('一方で、', 1)[1].rstrip('。')) == 1), "second.count(memo.split('一方で、', 1)[1].rstrip('。')) == 1")
+    retained_assertion(lambda: (last.startswith(ending.rstrip('。'))), "last.startswith(ending.rstrip('。'))")
+    retained_assertion(lambda: (result.artifact.reception.count(change) == 1), 'result.artifact.reception.count(change) == 1')
+    retained_assertion(lambda: (len(plan.response_plan.human_reception_plan.moves) == 3), 'len(plan.response_plan.human_reception_plan.moves) == 3')
+    retained_assertion(lambda: (_independent_passes(context, result.artifact.reception)), '_independent_passes(context, result.artifact.reception)')
 
 
 @pytest.fixture
@@ -71,11 +74,12 @@ def subjective_support():
     ('手元に緑がない寂しさも残っている', '手元に緑がない寂しさはなくなった'),
     ('まだ配置は見つかっていない', '配置は見つかった'),
 ])
+@continue_assertions
 def test_independent_inverse_rejects_actual_changed_relation_or_source(subjective_support, old, new):
     original = subjective_support[0].artifact.reception
     changed = original.replace(old, new, 1)
-    assert changed != original
-    assert not _independent_passes(subjective_support, changed)
+    retained_assertion(lambda: (changed != original), 'changed != original')
+    retained_assertion(lambda: (not _independent_passes(subjective_support, changed)), 'not _independent_passes(subjective_support, changed)')
 
 
 @pytest.mark.parametrize('axis,value', [
@@ -107,13 +111,14 @@ def test_attribution_is_not_extended_to_unproven_action_profiles(axis, value):
     assert 'ことが支えている、' not in text
 
 
+@continue_assertions
 def test_existing_alternative_attention_case_remains_independently_readable():
     context = _actual(SCENARIOS[3].replace('ずっと見ていた', 'いつも見ていた'))
     follow = context[0].artifact.reception
-    assert 'その一方で、' not in follow
+    retained_assertion(lambda: ('その一方で、' not in follow), "'その一方で、' not in follow")
     # Same object, source and act, using the already supported second attention
     # construction. This does not license arbitrary attention-word insertion.
     changed = follow.replace('という変化を見過ごさず、', 'という変化に目が留まり、それを', 1)
-    assert changed != follow
-    assert _independent_passes(context, changed)
-    assert not _independent_passes(context, changed.replace('に目が留まり、それを', 'に目が留まり、', 1))
+    retained_assertion(lambda: (changed != follow), 'changed != follow')
+    retained_assertion(lambda: (_independent_passes(context, changed)), '_independent_passes(context, changed)')
+    retained_assertion(lambda: (not _independent_passes(context, changed.replace('に目が留まり、それを', 'に目が留まり、', 1))), "not _independent_passes(context, changed.replace('に目が留まり、それを', 'に目が留まり、', 1))")

@@ -3,6 +3,8 @@
 All examples are extensions of the existing public synthetic plant scenario.
 They are not private evaluation inputs. Existing frozen expectations stay intact.
 """
+
+from helpers.retained_assertions import continue_assertions, retained_assertion
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -39,21 +41,22 @@ def _actual(memo=CONTINUATIONS[0], *, premium=True, ending='まだ配置は見�
 @pytest.mark.parametrize('premium', [False, True])
 @pytest.mark.parametrize('memo', CONTINUATIONS)
 @pytest.mark.parametrize('ending', ['まだ配置は見つかっていない。', 'まだ配置は見つかっていません。'])
+@continue_assertions
 def test_continuing_contrast_refers_to_one_complete_preceding_change(premium, memo, ending):
     result, plan, sentence, resolver, selected = _actual(memo, premium=premium, ending=ending)
     follow = result.artifact.reception
     first, second, last, empty = follow.split('。')
-    assert not empty
-    assert first == '窓辺の鉢を棚へ移したことが' + CHANGE + 'ことを支えていることを見過ごさず、大切に思っています'
-    assert second.startswith('その一方で、')
-    assert follow.count(CHANGE) == 1
-    assert memo.split('一方で、')[1].rstrip('。') in second
-    assert second.endswith('ことを見過ごさず、小さくせずに受け止めています')
-    assert ending[:-1] in last
-    assert len(plan.response_plan.human_reception_plan.moves) == 3
+    retained_assertion(lambda: (not empty), 'not empty')
+    retained_assertion(lambda: (first == '窓辺の鉢を棚へ移したことが' + CHANGE + 'ことを支えていることを見過ごさず、大切に思っています'), "first == '窓辺の鉢を棚へ移したことが' + CHANGE + 'ことを支えていることを見過ごさず、大切に思っています'")
+    retained_assertion(lambda: (second.startswith('その一方で、')), "second.startswith('その一方で、')")
+    retained_assertion(lambda: (follow.count(CHANGE) == 1), 'follow.count(CHANGE) == 1')
+    retained_assertion(lambda: (memo.split('一方で、')[1].rstrip('。') in second), "memo.split('一方で、')[1].rstrip('。') in second")
+    retained_assertion(lambda: (second.endswith('ことを見過ごさず、小さくせずに受け止めています')), "second.endswith('ことを見過ごさず、小さくせずに受け止めています')")
+    retained_assertion(lambda: (ending[:-1] in last), 'ending[:-1] in last')
+    retained_assertion(lambda: (len(plan.response_plan.human_reception_plan.moves) == 3), 'len(plan.response_plan.human_reception_plan.moves) == 3')
     inverse = evaluate_grounded_surface_body_inverse(body=result.artifact.text.encode(), plan=plan,
         sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected)
-    assert inverse.passed, inverse.failure_codes
+    retained_assertion(lambda: (inverse.passed), 'inverse.passed', lambda: (inverse.failure_codes))
 
 
 @pytest.mark.parametrize('premium', [False, True])
@@ -93,6 +96,7 @@ def test_independent_body_read_accepts_the_complete_actual_antecedent(actual_con
     'wrong_connector', 'negate_burden', 'past_burden', 'remove_burden_context',
     'quoted_antecedent', 'remove_attention', 'insert_unrelated_sentence',
 ])
+@continue_assertions
 def test_independent_body_read_rejects_missing_or_changed_adjacent_meaning(actual_context, mutation):
     follow = actual_context[0].artifact.reception
     first, second, last, _ = follow.split('。')
@@ -113,5 +117,5 @@ def test_independent_body_read_rejects_missing_or_changed_adjacent_meaning(actua
     elif mutation == 'remove_attention': first = first.replace('を見過ごさず、', 'を')
     elif mutation == 'insert_unrelated_sentence': first += '。お茶を飲みました'
     changed = '。'.join(x for x in (first, second, last) if x) + '。'
-    assert changed != follow
-    assert not _independent_passes(actual_context, changed)
+    retained_assertion(lambda: (changed != follow), 'changed != follow')
+    retained_assertion(lambda: (not _independent_passes(actual_context, changed)), 'not _independent_passes(actual_context, changed)')

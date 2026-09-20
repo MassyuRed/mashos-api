@@ -3,6 +3,8 @@
 A finite cognitive host does not assert its embedded proposition as fact.
 These tests use the existing sole body path and independent inverse.
 """
+
+from helpers.retained_assertions import continue_assertions, retained_assertion
 from dataclasses import replace
 from types import SimpleNamespace
 import pytest
@@ -44,18 +46,19 @@ def test_present_impression_remains_tentative_and_has_its_own_reception_duty(tho
 
 @pytest.mark.parametrize('thought', IMPRESSIONS[:3])
 @pytest.mark.parametrize('premium', [False, True])
+@continue_assertions
 def test_unrelated_answer_does_not_replace_the_original_impression(thought, premium):
     req = (begin if premium else initial)('誘われたのに、悲しかった。' + thought, ACTION)
     old_source = req.current_input_bundle
     req = advance(req, 'その時は重かった。')
     out = MeaningExperienceEngine().generate(req)
-    assert out.artifact, out.reason_codes
-    assert req.current_input_bundle == old_source
-    assert req.emlis_thread.current_round == 1
-    assert req.emlis_thread.question_control_context.question_limit == (3 if premium else 1)
-    assert thought.rstrip('。') in out.artifact.reception
-    assert 'その時の重さ' in out.artifact.reception
-    assert '机を拭いた' in out.artifact.reception
+    retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
+    retained_assertion(lambda: (req.current_input_bundle == old_source), 'req.current_input_bundle == old_source')
+    retained_assertion(lambda: (req.emlis_thread.current_round == 1), 'req.emlis_thread.current_round == 1')
+    retained_assertion(lambda: (req.emlis_thread.question_control_context.question_limit == (3 if premium else 1)), 'req.emlis_thread.question_control_context.question_limit == (3 if premium else 1)')
+    retained_assertion(lambda: (thought.rstrip('。') in out.artifact.reception), "thought.rstrip('。') in out.artifact.reception")
+    retained_assertion(lambda: ('その時の重さ' in out.artifact.reception), "'その時の重さ' in out.artifact.reception")
+    retained_assertion(lambda: ('机を拭いた' in out.artifact.reception), "'机を拭いた' in out.artifact.reception")
     _assert_original_thought_has_required_reception_evidence(prepare_emlis_meaning(req), thought)
 
 @pytest.mark.parametrize('text', [
@@ -88,17 +91,18 @@ def test_unasserted_or_other_owned_impression_cannot_borrow_a_present_self_witne
     ('「重かった」ではなく「苦しかった」です。', 'その時の重さ', '苦しさ'),
     ('「重かった」は誤りです。', 'その時の重さ', None),
 ])
+@continue_assertions
 def test_unrelated_correction_and_withdrawal_keep_impression_and_action(operation, removed, new):
     thought = IMPRESSIONS[2]
     req = begin('誘われたのに、悲しかった。頼まれたのに、寂しかった。' + thought, ACTION)
     req = advance(advance(req, 'その時は重かった。'), operation)
     out = MeaningExperienceEngine().generate(req)
-    assert out.artifact, out.reason_codes
-    assert removed not in out.artifact.reception
+    retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
+    retained_assertion(lambda: (removed not in out.artifact.reception), 'removed not in out.artifact.reception')
     if new is not None:
-        assert new in out.artifact.reception
-    assert thought.rstrip('。') in out.artifact.reception
-    assert '机を拭いた' in out.artifact.reception
+        retained_assertion(lambda: (new in out.artifact.reception), 'new in out.artifact.reception')
+    retained_assertion(lambda: (thought.rstrip('。') in out.artifact.reception), "thought.rstrip('。') in out.artifact.reception")
+    retained_assertion(lambda: ('机を拭いた' in out.artifact.reception), "'机を拭いた' in out.artifact.reception")
     _assert_original_thought_has_required_reception_evidence(prepare_emlis_meaning(req), thought)
 
 @pytest.mark.parametrize('answered', [False, True])

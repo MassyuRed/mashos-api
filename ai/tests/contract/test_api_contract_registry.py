@@ -138,16 +138,17 @@ def _clean_subprocess_route_map():
     service_root = root / "services" / "ai_inference"
     script = """
 import json
-from fastapi.routing import APIRoute
+from fastapi.routing import APIRoute, iter_route_contexts
 import app as app_module
 
 routes = {}
-for route in app_module.app.router.routes:
+for context in iter_route_contexts(app_module.app.router.routes):
+    route = context.original_route
     if not isinstance(route, APIRoute):
         continue
     for method in route.methods or set():
         if method in {"GET", "POST", "PATCH", "DELETE"}:
-            routes[f"{method} {route.path}"] = route.response_model is not None
+            routes[f"{method} {context.path}"] = route.response_model is not None
 print(json.dumps(routes, sort_keys=True))
 """
     env = os.environ.copy()

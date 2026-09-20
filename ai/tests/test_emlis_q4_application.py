@@ -1,4 +1,6 @@
 """Q4: actual persisted application mode, pause and legacy delivery."""
+
+from helpers.retained_assertions import continue_assertions, retained_assertion
 from dataclasses import replace
 import pytest
 from test_emlis_q3_application import qdb, qcase, cont
@@ -12,22 +14,23 @@ def active(monkeypatch):
     return EmlisThreadService(runtime_profile=Q3_PROFILE,enforce_application_policy=True)
 
 @pytest.mark.parametrize('text', ['今はまだよく分からない。', '現在は分からない。'])
+@continue_assertions
 def test_current_unknown_answer_persists_original_feeling_and_current_uncertainty(qcase,qdb,monkeypatch,text):
     user,parent,_=qcase
     qdb.query('update public.emotions set memo=$1 where id=$2', ['褒められたのに、嬉しくなかった。',parent])
     service=active(monkeypatch)
     initial=run(service.start(user,parent))
-    assert initial['state']=='AWAITING_ANSWER'
+    retained_assertion(lambda: (initial['state']=='AWAITING_ANSWER'), "initial['state'] == 'AWAITING_ANSWER'")
     result=run(answer(service,user,initial,text,'current-unknown'))
-    assert result['state']=='COMPLETED' and result['body_state']=='REFINED'
-    assert result['answer_assessment']=='RESOLVED' and result['answer_saved'] and result['meaning_updated']
-    assert result['original']==initial['original']
-    assert result['issued_count']==1 and result['pending_question'] is None
-    assert not result['can_continue']
+    retained_assertion(lambda: (result['state']=='COMPLETED' and result['body_state']=='REFINED'), "result['state'] == 'COMPLETED' and result['body_state'] == 'REFINED'")
+    retained_assertion(lambda: (result['answer_assessment']=='RESOLVED' and result['answer_saved'] and result['meaning_updated']), "result['answer_assessment'] == 'RESOLVED' and result['answer_saved'] and result['meaning_updated']")
+    retained_assertion(lambda: (result['original']==initial['original']), "result['original'] == initial['original']")
+    retained_assertion(lambda: (result['issued_count']==1 and result['pending_question'] is None), "result['issued_count'] == 1 and result['pending_question'] is None")
+    retained_assertion(lambda: (not result['can_continue']), "not result['can_continue']")
     follow=result['current_observation']['text'].split('Emlisから：',1)[1]
-    assert '褒められたのに嬉しくなかったこと' in follow
-    assert 'その出来事について、回答した時点で' in follow and '分からないこと' in follow
-    assert run(service.get(user,parent))==result
+    retained_assertion(lambda: ('褒められたのに嬉しくなかったこと' in follow), "'褒められたのに嬉しくなかったこと' in follow")
+    retained_assertion(lambda: ('その出来事について、回答した時点で' in follow and '分からないこと' in follow), "'その出来事について、回答した時点で' in follow and '分からないこと' in follow")
+    retained_assertion(lambda: (run(service.get(user,parent))==result), 'run(service.get(user, parent)) == result')
 
 @pytest.mark.parametrize('mode,read,write',[('legacy',False,False),('active',True,True),('read_only',True,False),('invalid',True,False)])
 def test_policy_bootstrap(monkeypatch,mode,read,write):
@@ -157,6 +160,7 @@ def test_cancel_after_pause_closes_attempt_and_preserves_meaning(qcase,monkeypat
     assert run(s.get(user,parent))['can_retry']
 
 @pytest.mark.parametrize('memo',['褒められたのに、嬉しくなかった。','誘われたのに、悲しかった。'])
+@continue_assertions
 def test_initial_event_nominal_keeps_both_source_endpoints_and_inverse(memo):
     from test_cmee_emlis_q1_thread import initial
     from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning,build_updated_grounded_plan
@@ -165,16 +169,16 @@ def test_initial_event_nominal_keeps_both_source_endpoints_and_inverse(memo):
     import emlis_ai_grounded_sentence_surface as surface
     from emlis_ai_grounded_observation_gate import evaluate_grounded_surface_body_inverse
     prepared=prepare_emlis_meaning(initial(memo));checkpoint=prepared.checkpoint;plan=build_updated_grounded_plan(prepared)
-    result=realize_emlis_thread_body(prepared);assert prepared.checkpoint==checkpoint
+    result=realize_emlis_thread_body(prepared);retained_assertion(lambda: (prepared.checkpoint==checkpoint), 'prepared.checkpoint == checkpoint')
     event,reaction=memo.rstrip('。').split('のに、')
-    assert f'{event}ことと{reaction}こと' in result.artifact.reception
-    assert '今ここに置かれた言葉' not in result.artifact.reception
+    retained_assertion(lambda: (f'{event}ことと{reaction}こと' in result.artifact.reception), "f'{event}ことと{reaction}こと' in result.artifact.reception")
+    retained_assertion(lambda: ('今ここに置かれた言葉' not in result.artifact.reception), "'今ここに置かれた言葉' not in result.artifact.reception")
     resolver=prepared.thread.resolver();projection=project_thread_meaning(prepared,plan)
     sentence=surface.build_grounded_sentence_plan(plan,resolver,recovery_stage='full')
     def inverse(text):return evaluate_grounded_surface_body_inverse(body=text.encode(),plan=plan,sentence_plan=sentence,resolver=resolver,selected_subjective_input=projection.selected_reception).passed
-    body=result.artifact.text;assert inverse(body)
+    body=result.artifact.text;retained_assertion(lambda: (inverse(body)), 'inverse(body)')
     for old,new in [(event+'こと',''),(reaction+'こと',''),('その違いも含めて',''),(event+'こと',f'「{event}」こと')]:
-        changed=body.replace(old,new);assert changed!=body and not inverse(changed)
+        changed=body.replace(old,new);retained_assertion(lambda: (changed!=body and not inverse(changed)), 'changed != body and (not inverse(changed))')
 
 
 @pytest.mark.parametrize('answer_text,nominal,mutations',[
@@ -185,6 +189,7 @@ def test_initial_event_nominal_keeps_both_source_endpoints_and_inverse(memo):
     ('その時は重かった。','その時の重さ',[('重さ','軽さ')]),
     ('その時は寂しかった。','その時の寂しさ',[('寂しさ','嬉しさ')]),
 ])
+@continue_assertions
 def test_answer_nominal_preserves_source_and_rejects_semantic_mutations(answer_text,nominal,mutations):
     from test_cmee_emlis_q1_thread import answered
     from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning,build_updated_grounded_plan
@@ -194,24 +199,24 @@ def test_answer_nominal_preserves_source_and_rejects_semantic_mutations(answer_t
     from emlis_ai_grounded_observation_gate import evaluate_grounded_surface_body_inverse, _semantic_subcheck_reasons
     prepared=prepare_emlis_meaning(answered(answer_text));checkpoint=prepared.checkpoint
     plan=build_updated_grounded_plan(prepared);resolver=prepared.thread.resolver()
-    result=realize_emlis_thread_body(prepared);assert prepared.checkpoint==checkpoint
-    assert nominal in result.artifact.reception
+    result=realize_emlis_thread_body(prepared);retained_assertion(lambda: (prepared.checkpoint==checkpoint), 'prepared.checkpoint == checkpoint')
+    retained_assertion(lambda: (nominal in result.artifact.reception), 'nominal in result.artifact.reception')
     projection=project_thread_meaning(prepared,plan)
     sentence=surface.build_grounded_sentence_plan(plan,resolver,recovery_stage='full')
     def inverse(text):return evaluate_grounded_surface_body_inverse(body=text.encode(),plan=plan,sentence_plan=sentence,resolver=resolver,selected_subjective_input=projection.selected_reception).passed
-    body=result.artifact.text;assert inverse(body)
+    body=result.artifact.text;retained_assertion(lambda: (inverse(body)), 'inverse(body)')
     variants=[nominal.replace(a,b) for a,b in mutations]
     variants += [nominal.replace('その時の',''),nominal.replace('その時の','今の'),nominal*2,
                  '「'+nominal+'」','『'+nominal+'』']
     for changed in variants:
-        assert changed!=nominal and not inverse(body.replace(nominal,changed))
+        retained_assertion(lambda: (changed!=nominal and not inverse(body.replace(nominal,changed))), 'changed != nominal and (not inverse(body.replace(nominal, changed)))')
     # Only the one exact source-owned nominal may be re-inflected for
     # sensation checking; an unrelated extra burden remains ungrounded.
     from types import SimpleNamespace
     extra=body+'\n重さもあります。'
     semantic,_,_=_semantic_subcheck_reasons(plan=plan,sentence_plan=sentence,
         surface_result=SimpleNamespace(text=extra,lines=()),resolver=resolver)
-    assert 'ungrounded_sensation_family_added' in semantic
+    retained_assertion(lambda: ('ungrounded_sensation_family_added' in semantic), "'ungrounded_sensation_family_added' in semantic")
 
 
 @pytest.mark.parametrize('text',['私は重かった','少し重かった','まだ重かった','重くなかった','行きたかった','悪かった'])
@@ -276,6 +281,7 @@ def test_answer_nominal_ir_cannot_change_answer_time_or_predicate(grammar):
 
 
 @pytest.mark.parametrize('duplicate',[False,True])
+@continue_assertions
 def test_sensation_check_handles_absent_reception_and_duplicate_nominal_ranges(duplicate):
     from types import SimpleNamespace
     from test_cmee_emlis_q1_thread import answered
@@ -294,7 +300,7 @@ def test_sensation_check_handles_absent_reception_and_duplicate_nominal_ranges(d
     reasons,_,_=_semantic_subcheck_reasons(plan=altered,
         sentence_plan=surface.build_grounded_sentence_plan(plan,prepared.thread.resolver(),recovery_stage='full'),
         surface_result=SimpleNamespace(text=body,lines=()),resolver=prepared.thread.resolver())
-    assert 'ungrounded_sensation_family_added' in reasons
+    retained_assertion(lambda: ('ungrounded_sensation_family_added' in reasons), "'ungrounded_sensation_family_added' in reasons")
 
 
 @pytest.mark.parametrize('answer_text,when', [
@@ -362,6 +368,7 @@ def test_answer_observation_does_not_group_ambiguous_or_hedged_event():
     assert surface._thread_contrast_answer_groups(binding,index,{**relations,other.relation_id:other},resolver) == ((),frozenset())
 
 
+@continue_assertions
 def test_answer_observation_keeps_original_event_order_through_three_rounds(qcase, monkeypatch):
     user, parent, _ = qcase
     service = active(monkeypatch)
@@ -370,56 +377,59 @@ def test_answer_observation_keeps_original_event_order_through_three_rounds(qcas
         dto = run(answer(service, user, dto, text, f'order-{round_index}'))
         observation = dto['current_observation']['text'].split('Emlisから：')[0]
         events = ['「褒められた」', '「誘われた」', '「頼まれた」']
-        assert all(observation.count(event) == 1 for event in events)
-        assert [observation.index(event) for event in events] == sorted(observation.index(event) for event in events)
+        retained_assertion(lambda: (all(observation.count(event) == 1 for event in events)), 'all((observation.count(event) == 1 for event in events))')
+        retained_assertion(lambda: ([observation.index(event) for event in events] == sorted(observation.index(event) for event in events)), '[observation.index(event) for event in events] == sorted((observation.index(event) for event in events))')
         follow = dto['current_observation']['text'].split('Emlisから：')[1]
         for event, feeling in list(zip(('褒められた', '誘われた', '頼まれた'), ('重さ', '怖さ', '苦しさ')))[:round_index]:
-            assert event in follow and feeling in follow
-        assert follow.count('受け止めています') == 1
-        assert run(service.get(user, parent)) == dto
+            retained_assertion(lambda: (event in follow and feeling in follow), 'event in follow and feeling in follow')
+        retained_assertion(lambda: (follow.count('受け止めています') == 1), "follow.count('受け止めています') == 1")
+        retained_assertion(lambda: (run(service.get(user, parent)) == dto), 'run(service.get(user, parent)) == dto')
         if round_index < 3:
             before = dto['current_observation']['text']
             dto = run(cont(service, user, dto, f'next-order-{round_index}'))
-            assert dto['current_observation']['text'] == before
+            retained_assertion(lambda: (dto['current_observation']['text'] == before), "dto['current_observation']['text'] == before")
 
 
 @pytest.mark.parametrize('answers',[
     ('その時は重かった。','その時は嬉しかった。'),
     ('その時は嬉しかった。','その時は重かった。'),
 ])
+@continue_assertions
 def test_mixed_answer_follow_is_saved_with_both_event_subjects(qcase,monkeypatch,answers):
     user,parent,_=qcase;service=active(monkeypatch)
     dto=run(service.start(user,parent))
     for i,text in enumerate(answers,1):
         dto=run(answer(service,user,dto,text,f'mixed-{i}'))
-        assert run(service.get(user,parent))==dto
-        assert dto['body_state']=='REFINED' and dto['answer_saved']
+        retained_assertion(lambda: (run(service.get(user,parent))==dto), 'run(service.get(user, parent)) == dto')
+        retained_assertion(lambda: (dto['body_state']=='REFINED' and dto['answer_saved']), "dto['body_state'] == 'REFINED' and dto['answer_saved']")
         if i==1:dto=run(cont(service,user,dto,'mixed-next'))
     follow=dto['current_observation']['text'].split('Emlisから：')[1]
-    assert 'その時の重さ' in follow and '嬉しかったという気持ち' in follow
-    assert follow.index('褒められた') < follow.index('誘われた') < follow.index('頼まれた')
+    retained_assertion(lambda: ('その時の重さ' in follow and '嬉しかったという気持ち' in follow), "'その時の重さ' in follow and '嬉しかったという気持ち' in follow")
+    retained_assertion(lambda: (follow.index('褒められた') < follow.index('誘われた') < follow.index('頼まれた')), "follow.index('褒められた') < follow.index('誘われた') < follow.index('頼まれた')")
     for original in ('褒められたのに嬉しくなかったこと', '誘われたのに悲しかったこと', '頼まれたのに寂しかったこと'):
-        assert original in follow
+        retained_assertion(lambda: (original in follow), 'original in follow')
     positive_event = '褒められた' if '嬉しかった' in answers[0] else '誘われた'
-    assert positive_event + 'ことについて、その時に嬉しかったという気持ち' in follow
-    assert dto['issued_count']==2 and dto['question_limit']==3
+    retained_assertion(lambda: (positive_event + 'ことについて、その時に嬉しかったという気持ち' in follow), "positive_event + 'ことについて、その時に嬉しかったという気持ち' in follow")
+    retained_assertion(lambda: (dto['issued_count']==2 and dto['question_limit']==3), "dto['issued_count'] == 2 and dto['question_limit'] == 3")
 
 
+@continue_assertions
 def test_initial_all_reactions_are_saved_before_optional_answer(qcase,monkeypatch):
     user,parent,_=qcase;service=active(monkeypatch)
-    dto=run(service.start(user,parent));assert run(service.get(user,parent))==dto
+    dto=run(service.start(user,parent));retained_assertion(lambda: (run(service.get(user,parent))==dto), 'run(service.get(user, parent)) == dto')
     initial_body=dto['current_observation']['text']
     follow=initial_body.split('Emlisから：')[1]
     for part in ('褒められたのに嬉しくなかったこと','誘われたのに悲しかったこと','頼まれたのに寂しかったこと'):
-        assert part in follow
-    assert follow.count('受け止めています')==1
+        retained_assertion(lambda: (part in follow), 'part in follow')
+    retained_assertion(lambda: (follow.count('受け止めています')==1), "follow.count('受け止めています') == 1")
     dto=run(answer(service,user,dto,'その時は重かった。','initial-reactions-answer'))
-    assert run(service.get(user,parent))==dto
-    assert dto['body_state']=='REFINED' and 'その時の重さ' in dto['current_observation']['text']
-    assert dto['issued_count']==1 and dto['question_limit']==3
+    retained_assertion(lambda: (run(service.get(user,parent))==dto), 'run(service.get(user, parent)) == dto')
+    retained_assertion(lambda: (dto['body_state']=='REFINED' and 'その時の重さ' in dto['current_observation']['text']), "dto['body_state'] == 'REFINED' and 'その時の重さ' in dto['current_observation']['text']")
+    retained_assertion(lambda: (dto['issued_count']==1 and dto['question_limit']==3), "dto['issued_count'] == 1 and dto['question_limit'] == 3")
 
 
 @pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@continue_assertions
 def test_single_event_positive_add_is_saved_with_original_feeling(qcase,qdb,monkeypatch,tier):
     user,parent,_=qcase
     qdb.query('update public.profiles set subscription_tier=$2 where id=$1',[user,tier])
@@ -428,13 +438,13 @@ def test_single_event_positive_add_is_saved_with_original_feeling(qcase,qdb,monk
     service=active(monkeypatch)
     initial=run(service.start(user,parent))
     dto=run(answer(service,user,initial,'今は嬉しい。','single-positive'))
-    assert run(service.get(user,parent))==dto
-    assert dto['body_state']=='REFINED' and dto['meaning_updated']
+    retained_assertion(lambda: (run(service.get(user,parent))==dto), 'run(service.get(user, parent)) == dto')
+    retained_assertion(lambda: (dto['body_state']=='REFINED' and dto['meaning_updated']), "dto['body_state'] == 'REFINED' and dto['meaning_updated']")
     follow=dto['current_observation']['text'].split('Emlisから：')[1]
-    assert '褒められたのに嬉しくなかったこと' in follow
-    assert '褒められたことについて、回答した時点で嬉しいという気持ち' in follow
-    assert dto['original']==initial['original'] and dto['issued_count']==1
-    assert dto['state']=='COMPLETED' and not dto['can_continue']
-    assert dto['question_limit']==(3 if tier=='premium' else 1)
+    retained_assertion(lambda: ('褒められたのに嬉しくなかったこと' in follow), "'褒められたのに嬉しくなかったこと' in follow")
+    retained_assertion(lambda: ('褒められたことについて、回答した時点で嬉しいという気持ち' in follow), "'褒められたことについて、回答した時点で嬉しいという気持ち' in follow")
+    retained_assertion(lambda: (dto['original']==initial['original'] and dto['issued_count']==1), "dto['original'] == initial['original'] and dto['issued_count'] == 1")
+    retained_assertion(lambda: (dto['state']=='COMPLETED' and not dto['can_continue']), "dto['state'] == 'COMPLETED' and (not dto['can_continue'])")
+    retained_assertion(lambda: (dto['question_limit']==(3 if tier=='premium' else 1)), "dto['question_limit'] == (3 if tier == 'premium' else 1)")
     previous=[e for e in dto['timeline'] if e['kind']=='OBSERVATION' and not e['is_current']]
-    assert previous[0]['text']==initial['current_observation']['text']
+    retained_assertion(lambda: (previous[0]['text']==initial['current_observation']['text']), "previous[0]['text'] == initial['current_observation']['text']")

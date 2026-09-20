@@ -2,6 +2,8 @@
 
 Only public Q1/Q3 grammar inputs are used. Old snapshots stay unchanged.
 """
+
+from helpers.retained_assertions import continue_assertions, retained_assertion
 from types import SimpleNamespace
 from unittest.mock import patch
 import pytest
@@ -236,20 +238,21 @@ def test_temporal_finite_body_survives_save_and_no_author_restart(qcase, qdb, te
     ('今は少し嬉しい。', '回答した時点では', '少し嬉しい'),
     ('その時は嬉しかった。', 'その時は', '嬉しかった'),
 ])
+@continue_assertions
 def test_positive_answer_is_a_time_bound_finite_feeling(memo, text, time, source):
     context = actual(request=answered(text, initial(memo)))
     result, plan, _, resolver, selected = context
     follow = result.artifact.reception
     event = memo.split('のに')[0]
-    assert event + 'ことについて、' + time + source in follow
-    assert 'という気持ち' not in follow and '受け止めています' not in follow
-    assert len(plan.response_plan.human_reception_plan.moves) == 2
-    assert inverse(context, follow, without_author=True).passed
+    retained_assertion(lambda: (event + 'ことについて、' + time + source in follow), "event + 'ことについて、' + time + source in follow")
+    retained_assertion(lambda: ('という気持ち' not in follow and '受け止めています' not in follow), "'という気持ち' not in follow and '受け止めています' not in follow")
+    retained_assertion(lambda: (len(plan.response_plan.human_reception_plan.moves) == 2), 'len(plan.response_plan.human_reception_plan.moves) == 2')
+    retained_assertion(lambda: (inverse(context, follow, without_author=True).passed), 'inverse(context, follow, without_author=True).passed')
     # The original reaction is an independent duty, including when the
     # added answer names a different feeling about the original occasion.
     original = actual(request=initial(memo))[0].artifact.reception
-    assert original in follow
-    assert not inverse(context, follow.replace(original, ''), without_author=True).passed
+    retained_assertion(lambda: (original in follow), 'original in follow')
+    retained_assertion(lambda: (not inverse(context, follow.replace(original, ''), without_author=True).passed), "not inverse(context, follow.replace(original, ''), without_author=True).passed")
 
 
 @pytest.mark.parametrize('old,new', [
@@ -261,12 +264,13 @@ def test_positive_answer_is_a_time_bound_finite_feeling(memo, text, time, source
     ('少し嬉しい', '少し嬉しくない'), ('少し嬉しい', '「少し嬉しい」'),
     ('褒められたことについて', '誘われたことについて'),
 ])
+@continue_assertions
 def test_positive_finite_answer_mutations_are_rejected_without_author(old, new):
     context = actual(request=answered('今は少し嬉しい。', initial()))
     follow = context[0].artifact.reception
     changed = follow.replace(old, new)
-    assert changed != follow
-    assert not inverse(context, changed, without_author=True).passed
+    retained_assertion(lambda: (changed != follow), 'changed != follow')
+    retained_assertion(lambda: (not inverse(context, changed, without_author=True).passed), 'not inverse(context, changed, without_author=True).passed')
 
 
 @pytest.mark.parametrize('ending', ['のです。', 'のだと受け取りました。'])

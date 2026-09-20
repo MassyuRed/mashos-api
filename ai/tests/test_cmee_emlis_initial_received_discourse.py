@@ -2,6 +2,8 @@
 
 Public synthetic cases only. Existing literal expectations remain unchanged.
 """
+
+from helpers.retained_assertions import continue_assertions, retained_assertion
 from dataclasses import replace
 import pytest
 from cocolon_meaning_experience_engine import MeaningExperienceEngine
@@ -152,12 +154,13 @@ def test_initial_group_inverse_keeps_all_pairs_without_an_author_oracle(old,new)
     ('「嬉しくなかった」は誤りです。',True,None),
     ('あの時も本当は嬉しかった。書き方を間違えた。',True,'その時に嬉しかった'),
 ])
+@continue_assertions
 def test_answer_time_and_original_correction_preserve_other_events(reply,withdraws,time):
     request=advance(begin(MULTI),reply)
     context=actual(request=request);follow=context[0].artifact.reception
-    assert '誘われたのに、悲しさを感じ' in follow
-    assert '頼まれたのに、寂しさを感じた' in follow
-    assert ('嬉しさにはつながらず' in follow)==(not withdraws)
-    if time is not None:assert time in follow
-    assert inverse(context,follow,without_author=True).passed
-    assert not inverse(context,follow.replace('悲しさ','楽しさ'),without_author=True).passed
+    retained_assertion(lambda: ('誘われたのに、悲しさを感じ' in follow), "'誘われたのに、悲しさを感じ' in follow")
+    retained_assertion(lambda: ('頼まれたのに、寂しさを感じた' in follow), "'頼まれたのに、寂しさを感じた' in follow")
+    retained_assertion(lambda: (('嬉しさにはつながらず' in follow)==(not withdraws)), "('嬉しさにはつながらず' in follow) == (not withdraws)")
+    if time is not None:retained_assertion(lambda: (time in follow), 'time in follow')
+    retained_assertion(lambda: (inverse(context,follow,without_author=True).passed), 'inverse(context, follow, without_author=True).passed')
+    retained_assertion(lambda: (not inverse(context,follow.replace('悲しさ','楽しさ'),without_author=True).passed), "not inverse(context, follow.replace('悲しさ', '楽しさ'), without_author=True).passed")

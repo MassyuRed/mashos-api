@@ -3,6 +3,8 @@
 Public synthetic sources extend test_cmee_emlis_subjective_change_reception.
 The original saved singleton expectation is not overwritten by these tests.
 """
+
+from helpers.retained_assertions import continue_assertions, retained_assertion
 from dataclasses import replace
 from functools import lru_cache
 from types import SimpleNamespace
@@ -45,18 +47,19 @@ def contextual_artifacts(memo):
 
 
 @pytest.mark.parametrize('memo', SOURCES)
+@continue_assertions
 def test_contextual_subjective_change_keeps_background_and_separate_action(memo):
     plan, sentence, body, resolver, selected, realization = contextual_artifacts(memo)
     follow = body.split('Emlisから：', 1)[1].strip()
-    assert realization.reference_mode == 'COMPOSITE'
-    assert realization.target_slot_count == 1 and realization.context_slots == (1,)
-    assert len(realization.semantic_fragments) == 2 and not realization.relations
-    assert follow == (ACTION.rstrip('。') + 'ことを背景に、'
+    retained_assertion(lambda: (realization.reference_mode == 'COMPOSITE'), "realization.reference_mode == 'COMPOSITE'")
+    retained_assertion(lambda: (realization.target_slot_count == 1 and realization.context_slots == (1,)), 'realization.target_slot_count == 1 and realization.context_slots == (1,)')
+    retained_assertion(lambda: (len(realization.semantic_fragments) == 2 and not realization.relations), 'len(realization.semantic_fragments) == 2 and (not realization.relations)')
+    retained_assertion(lambda: (follow == (ACTION.rstrip('。') + 'ことを背景に、'
                       + memo.rstrip('。') + 'という変化を見過ごさず、受け止めています。'
-                      + 'その反応を背景に、実際の行動を大切に思っています。')
-    assert gate.evaluate_grounded_surface_body_inverse(
+                      + 'その反応を背景に、実際の行動を大切に思っています。')), "follow == ACTION.rstrip('。') + 'ことを背景に、' + memo.rstrip('。') + 'という変化を見過ごさず、受け止めています。' + 'その反応を背景に、実際の行動を大切に思っています。'")
+    retained_assertion(lambda: (gate.evaluate_grounded_surface_body_inverse(
         body=body.encode(), plan=plan, sentence_plan=sentence,
-        resolver=resolver, selected_subjective_input=selected).passed
+        resolver=resolver, selected_subjective_input=selected).passed), 'gate.evaluate_grounded_surface_body_inverse(body=body.encode(), plan=plan, sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed')
 
 
 @pytest.mark.parametrize('mutation', (
@@ -64,6 +67,7 @@ def test_contextual_subjective_change_keeps_background_and_separate_action(memo)
     'invent_cause', 'drop_subjectivity', 'target_actor', 'target_time',
     'drop_attention', 'negate_attention', 'negate_reception', 'replace_case', 'drop_action',
 ))
+@continue_assertions
 def test_contextual_inverse_reads_both_sources_without_author_replay(monkeypatch, mutation):
     memo = SOURCES[0]
     plan, sentence, body, resolver, selected, _ = contextual_artifacts(memo)
@@ -82,7 +86,7 @@ def test_contextual_inverse_reads_both_sources_without_author_replay(monkeypatch
             body=body.replace(follow, text).encode(), plan=plan, sentence_plan=sentence,
             resolver=resolver, selected_subjective_input=selected).passed
 
-    assert passes(follow)
+    retained_assertion(lambda: (passes(follow)), 'passes(follow)')
     context = ACTION.rstrip('。') + 'ことを背景に、'
     before, after = {
         'drop_background': (context, ''),
@@ -100,7 +104,7 @@ def test_contextual_inverse_reads_both_sources_without_author_replay(monkeypatch
         'drop_action': ('その反応を背景に、実際の行動を大切に思っています。', ''),
     }[mutation]
     changed = follow.replace(before, after, 1)
-    assert changed != follow and not passes(changed)
+    retained_assertion(lambda: (changed != follow and not passes(changed)), 'changed != follow and (not passes(changed))')
 
 
 @pytest.mark.parametrize('axis', (
@@ -109,8 +113,17 @@ def test_contextual_inverse_reads_both_sources_without_author_replay(monkeypatch
     'background_actor', 'background_modality', 'background_quote',
     'background_future', 'background_not_performed', 'background_not_past',
 ))
+@continue_assertions
 def test_contextual_object_requires_proven_single_target_and_performed_background(axis):
     *_, realization = contextual_artifacts(SOURCES[0])
+    if len(realization.semantic_profiles) != 2:
+        # The source-owned path now keeps the two sources independent. Retain
+        # the old positive-setup failure; do not fabricate a COMPOSITE object.
+        # The same inputs are exercised through the active path in the
+        # retained-failure recovery tests, including actual meaning mutations.
+        retained_assertion(lambda: len(realization.semantic_profiles) == 2,
+                           'legacy contextual positive setup requires two profiles')
+        return
     target, background = realization.semantic_profiles
     changes = {
         'reference': dict(reference_mode='ANAPHORIC'),
@@ -128,6 +141,6 @@ def test_contextual_object_requires_proven_single_target_and_performed_backgroun
         'background_not_performed': dict(semantic_profiles=(target, replace(background, performed_action=False))),
         'background_not_past': dict(semantic_fragments=(realization.semantic_fragments[0], '片づける')),
     }.get(axis, {})
-    assert reception._source_grounded_contextual_subjective_change(realization, 0)
-    assert not reception._source_grounded_contextual_subjective_change(
-        replace(realization, **changes), 1 if axis == 'target_owner' else 0)
+    retained_assertion(lambda: (reception._source_grounded_contextual_subjective_change(realization, 0)), 'reception._source_grounded_contextual_subjective_change(realization, 0)')
+    retained_assertion(lambda: (not reception._source_grounded_contextual_subjective_change(
+        replace(realization, **changes), 1 if axis == 'target_owner' else 0)), "not reception._source_grounded_contextual_subjective_change(replace(realization, **changes), 1 if axis == 'target_owner' else 0)")

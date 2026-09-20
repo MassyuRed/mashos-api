@@ -4,6 +4,8 @@ The initial engine must not drop an outcome appraisal merely because another
 sentence has the same reception family. A non-cancelling stance preserves both
 sources without inventing a personal goal, diagnosis, cause or extra question.
 """
+
+from helpers.retained_assertions import continue_assertions, retained_assertion
 from dataclasses import replace
 from functools import lru_cache
 from types import SimpleNamespace
@@ -75,19 +77,20 @@ def test_another_speaker_negation_condition_and_qualifier_are_not_silent_apprais
     ('何もできなかった。今日は出かけただけ。', '何もできなかった', '今日は出かけただけ'),
     ('用事を済ませただけ。私も何もできなかった。', '私も何もできなかった', '用事を済ませただけ'),
 ])
+@continue_assertions
 def test_initial_engine_keeps_both_sources_and_does_not_use_material_to_deny_appraisal(memo, appraisal, material):
     request = initial(memo)
     before = request
     result = MeaningExperienceEngine().generate(request)
-    assert result.artifact is not None, result.reason_codes
+    retained_assertion(lambda: (result.artifact is not None), 'result.artifact is not None', lambda: (result.reason_codes))
     follow = result.artifact.reception
-    assert follow.count(appraisal) == follow.count(material) == 1
-    assert follow.index(appraisal) < follow.index(material)
-    assert '打ち消すことはしません' in follow
-    assert '小さくせずに受け止めています' not in follow
-    assert result.question is None and not result.automatic_progression
-    assert request == before
-    assert not any(word in follow for word in ('本当は', '進めたかった', '価値がない', 'うつ病'))
+    retained_assertion(lambda: (follow.count(appraisal) == follow.count(material) == 1), 'follow.count(appraisal) == follow.count(material) == 1')
+    retained_assertion(lambda: (follow.index(appraisal) < follow.index(material)), 'follow.index(appraisal) < follow.index(material)')
+    retained_assertion(lambda: ('打ち消すことはしません' in follow), "'打ち消すことはしません' in follow")
+    retained_assertion(lambda: ('小さくせずに受け止めています' not in follow), "'小さくせずに受け止めています' not in follow")
+    retained_assertion(lambda: (result.question is None and not result.automatic_progression), 'result.question is None and (not result.automatic_progression)')
+    retained_assertion(lambda: (request == before), 'request == before')
+    retained_assertion(lambda: (not any(word in follow for word in ('本当は', '進めたかった', '価値がない', 'うつ病'))), "not any((word in follow for word in ('本当は', '進めたかった', '価値がない', 'うつ病')))")
 
 
 def test_initial_engine_is_deterministic_and_legacy_temporal_path_is_not_retyped_halfway():

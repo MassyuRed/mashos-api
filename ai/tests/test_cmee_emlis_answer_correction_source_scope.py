@@ -1,4 +1,6 @@
 """Public synthetic regression: quoted correction metadata is not self authority."""
+
+from helpers.retained_assertions import continue_assertions, retained_assertion
 from dataclasses import replace
 from itertools import product
 
@@ -36,6 +38,7 @@ def _assert_original_reaction_retained(prepared):
 
 
 @pytest.mark.parametrize("marker,quotes,report_first", product(_MARKERS, _QUOTES, (False, True)))
+@continue_assertions
 def test_quoted_meta_cannot_revise_original_or_remove_its_follow(marker, quotes, report_first):
     report = _reported(marker, quotes)
     self_answer = "その時は嬉しかった。"
@@ -43,35 +46,36 @@ def test_quoted_meta_cannot_revise_original_or_remove_its_follow(marker, quotes,
     request = answered(text)
     prepared = prepare_emlis_meaning(request)
     _assert_original_reaction_retained(prepared)
-    assert prepared.checkpoint.assessment_status == "PARTIAL"
+    retained_assertion(lambda: (prepared.checkpoint.assessment_status == "PARTIAL"), "prepared.checkpoint.assessment_status == 'PARTIAL'")
     request, checkpoint = prepared_request(request)
     result = MeaningExperienceEngine().generate(request)
-    assert result.artifact is not None, result.reason_codes
-    assert result.meaning_checkpoint == checkpoint
-    assert result.body_state == "PARTIALLY_REFINED" and result.question is None
-    assert "嬉しくなかった" in result.artifact.observation
-    assert "褒められたのに嬉しくなかったこと" in result.artifact.reception
-    assert "その時に嬉しかったという気持ち" in result.artifact.reception
-    assert report.rstrip("。") in result.artifact.observation
-    assert "今回の観測に反映できていない部分があります" in result.artifact.observation
-    assert marker not in result.artifact.reception
+    retained_assertion(lambda: (result.artifact is not None), 'result.artifact is not None', lambda: (result.reason_codes))
+    retained_assertion(lambda: (result.meaning_checkpoint == checkpoint), 'result.meaning_checkpoint == checkpoint')
+    retained_assertion(lambda: (result.body_state == "PARTIALLY_REFINED" and result.question is None), "result.body_state == 'PARTIALLY_REFINED' and result.question is None")
+    retained_assertion(lambda: ("嬉しくなかった" in result.artifact.observation), "'嬉しくなかった' in result.artifact.observation")
+    retained_assertion(lambda: ("褒められたのに嬉しくなかったこと" in result.artifact.reception), "'褒められたのに嬉しくなかったこと' in result.artifact.reception")
+    retained_assertion(lambda: ("その時に嬉しかったという気持ち" in result.artifact.reception), "'その時に嬉しかったという気持ち' in result.artifact.reception")
+    retained_assertion(lambda: (report.rstrip("。") in result.artifact.observation), "report.rstrip('。') in result.artifact.observation")
+    retained_assertion(lambda: ("今回の観測に反映できていない部分があります" in result.artifact.observation), "'今回の観測に反映できていない部分があります' in result.artifact.observation")
+    retained_assertion(lambda: (marker not in result.artifact.reception), 'marker not in result.artifact.reception')
 
 
 @pytest.mark.parametrize("marker,marker_first", product(_MARKERS, (False, True)))
+@continue_assertions
 def test_self_owned_meta_still_revises_regardless_of_sentence_order(marker, marker_first):
     claim = "その時は嬉しかった。"
     text = marker + "。" + claim if marker_first else claim + marker + "。"
     request = answered(text)
     prepared = prepare_emlis_meaning(request)
     update, = prepared.checkpoint.answer_update.updates
-    assert update.operation == "REVISE"
-    assert update.superseded_claim_refs == ("nucleus:s1:reaction",)
-    assert prepared.checkpoint.assessment_status == "RESOLVED"
+    retained_assertion(lambda: (update.operation == "REVISE"), "update.operation == 'REVISE'")
+    retained_assertion(lambda: (update.superseded_claim_refs == ("nucleus:s1:reaction",)), "update.superseded_claim_refs == ('nucleus:s1:reaction',)")
+    retained_assertion(lambda: (prepared.checkpoint.assessment_status == "RESOLVED"), "prepared.checkpoint.assessment_status == 'RESOLVED'")
     request, _ = prepared_request(request)
     result = MeaningExperienceEngine().generate(request)
-    assert result.artifact is not None, result.reason_codes
-    assert "嬉しくなかった" not in result.artifact.text
-    assert "その時に嬉しかった" in result.artifact.reception
+    retained_assertion(lambda: (result.artifact is not None), 'result.artifact is not None', lambda: (result.reason_codes))
+    retained_assertion(lambda: ("嬉しくなかった" not in result.artifact.text), "'嬉しくなかった' not in result.artifact.text")
+    retained_assertion(lambda: ("その時に嬉しかった" in result.artifact.reception), "'その時に嬉しかった' in result.artifact.reception")
 
 
 @pytest.mark.parametrize("quotes", _QUOTES)
@@ -90,31 +94,33 @@ def test_nested_quote_meta_is_unresolved_and_not_correction_authority():
 
 
 @pytest.mark.parametrize("round_index", (1, 2))
+@continue_assertions
 def test_premium_cumulative_answer_does_not_acquire_quoted_revision_authority(round_index):
     request = begin()
     if round_index == 2:
         request = advance(request, "その時は重かった。")
     request = advance(request, _reported(_MARKERS[0]) + "その時は嬉しかった。")
     prepared = prepare_emlis_meaning(request)
-    assert not prepared.checkpoint.inactive_claim_refs
-    assert all(u.operation == "ADD" for u in prepared.checkpoint.answer_update.updates)
+    retained_assertion(lambda: (not prepared.checkpoint.inactive_claim_refs), 'not prepared.checkpoint.inactive_claim_refs')
+    retained_assertion(lambda: (all(u.operation == "ADD" for u in prepared.checkpoint.answer_update.updates)), "all((u.operation == 'ADD' for u in prepared.checkpoint.answer_update.updates))")
     result = MeaningExperienceEngine().generate(request)
-    assert result.artifact is not None, result.reason_codes
-    assert result.body_state == "PARTIALLY_REFINED" and result.question is None
+    retained_assertion(lambda: (result.artifact is not None), 'result.artifact is not None', lambda: (result.reason_codes))
+    retained_assertion(lambda: (result.body_state == "PARTIALLY_REFINED" and result.question is None), "result.body_state == 'PARTIALLY_REFINED' and result.question is None")
     for original in ("褒められたのに嬉しくなかったこと", "誘われたのに悲しかったこと", "頼まれたのに寂しかったこと"):
-        assert original in result.artifact.reception
+        retained_assertion(lambda: (original in result.artifact.reception), 'original in result.artifact.reception')
     if round_index == 2:
-        assert "その時の重さ" in result.artifact.reception
-    assert request.emlis_thread.current_round == round_index
-    assert request.emlis_thread.question_control_context.question_limit == 3
+        retained_assertion(lambda: ("その時の重さ" in result.artifact.reception), "'その時の重さ' in result.artifact.reception")
+    retained_assertion(lambda: (request.emlis_thread.current_round == round_index), 'request.emlis_thread.current_round == round_index')
+    retained_assertion(lambda: (request.emlis_thread.question_control_context.question_limit == 3), 'request.emlis_thread.question_control_context.question_limit == 3')
 
 
+@continue_assertions
 def test_body_inverse_rejects_loss_of_original_after_reported_meta():
     prepared = prepare_emlis_meaning(answered(_reported(_MARKERS[0]) + "その時は嬉しかった。"))
     _assert_original_reaction_retained(prepared)
     request, _ = prepared_request(answered(_reported(_MARKERS[0]) + "その時は嬉しかった。"))
     result = MeaningExperienceEngine().generate(request)
-    assert result.artifact is not None, result.reason_codes
+    retained_assertion(lambda: (result.artifact is not None), 'result.artifact is not None', lambda: (result.reason_codes))
     plan = build_updated_grounded_plan(prepared)
     resolver = prepared.thread.resolver()
     projection = project_thread_meaning(prepared, plan)
@@ -122,8 +128,8 @@ def test_body_inverse_rejects_loss_of_original_after_reported_meta():
     def inverse(text):
         return evaluate_grounded_surface_body_inverse(body=text.encode(), plan=plan,
             sentence_plan=sentence, resolver=resolver, selected_subjective_input=projection.selected_reception)
-    assert inverse(result.artifact.text).passed
+    retained_assertion(lambda: (inverse(result.artifact.text).passed), 'inverse(result.artifact.text).passed')
     original_follow = "褒められたのに嬉しくなかったことを小さくせずに受け止めています。"
-    assert original_follow in result.artifact.text
+    retained_assertion(lambda: (original_follow in result.artifact.text), 'original_follow in result.artifact.text')
     corrupted = result.artifact.text.replace(original_follow, "")
-    assert not inverse(corrupted).passed
+    retained_assertion(lambda: (not inverse(corrupted).passed), 'not inverse(corrupted).passed')

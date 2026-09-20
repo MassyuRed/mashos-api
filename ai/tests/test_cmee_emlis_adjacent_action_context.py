@@ -2,6 +2,8 @@
 
 Public synthetic strings only. Existing literal expectations remain intact.
 """
+
+from helpers.retained_assertions import continue_assertions, retained_assertion
 from dataclasses import replace
 from functools import lru_cache
 from types import SimpleNamespace
@@ -39,19 +41,20 @@ def artifacts(memo=SOURCES[0], action=ACTIONS[0]):
 
 @pytest.mark.parametrize('memo', SOURCES)
 @pytest.mark.parametrize('action', ACTIONS)
+@continue_assertions
 def test_complete_background_is_not_recited_as_reciprocal_context(memo, action):
     plan, sentence, body, resolver, selected = artifacts(memo, action)
     follow = body.split('Emlisから：', 1)[1].strip()
-    assert follow == (action.rstrip('。') + 'ことを背景に、'
+    retained_assertion(lambda: (follow == (action.rstrip('。') + 'ことを背景に、'
                       + memo.rstrip('。') + 'という変化を見過ごさず、受け止めています。'
-                      + 'また、その行動を大切に思っています。')
-    assert follow.count('背景') == 1 and follow.count(action.rstrip('。')) == 1
-    assert follow.count(memo.rstrip('。')) == 1
-    assert len(plan.response_plan.human_reception_plan.moves) == 2
-    assert all(m.required for m in plan.response_plan.human_reception_plan.moves)
-    assert gate.evaluate_grounded_surface_body_inverse(
+                      + 'また、その行動を大切に思っています。')), "follow == action.rstrip('。') + 'ことを背景に、' + memo.rstrip('。') + 'という変化を見過ごさず、受け止めています。' + 'また、その行動を大切に思っています。'")
+    retained_assertion(lambda: (follow.count('背景') == 1 and follow.count(action.rstrip('。')) == 1), "follow.count('背景') == 1 and follow.count(action.rstrip('。')) == 1")
+    retained_assertion(lambda: (follow.count(memo.rstrip('。')) == 1), "follow.count(memo.rstrip('。')) == 1")
+    retained_assertion(lambda: (len(plan.response_plan.human_reception_plan.moves) == 2), 'len(plan.response_plan.human_reception_plan.moves) == 2')
+    retained_assertion(lambda: (all(m.required for m in plan.response_plan.human_reception_plan.moves)), 'all((m.required for m in plan.response_plan.human_reception_plan.moves))')
+    retained_assertion(lambda: (gate.evaluate_grounded_surface_body_inverse(
         body=body.encode(), plan=plan, sentence_plan=sentence,
-        resolver=resolver, selected_subjective_input=selected).passed
+        resolver=resolver, selected_subjective_input=selected).passed), 'gate.evaluate_grounded_surface_body_inverse(body=body.encode(), plan=plan, sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed')
 
 
 @pytest.mark.parametrize('mutation', (
@@ -61,6 +64,7 @@ def test_complete_background_is_not_recited_as_reciprocal_context(memo, action):
     'invent_cause', 'drop_coordination', 'negate_reception', 'new_actor',
     'new_time', 'wrong_case', 'add_background_marker', 'drop_action_reception',
 ))
+@continue_assertions
 def test_inverse_requires_actual_adjacent_sources_not_author_replay(monkeypatch, mutation):
     plan, sentence, body, resolver, selected = artifacts()
     follow = body.split('Emlisから：', 1)[1].strip()
@@ -85,7 +89,7 @@ def test_inverse_requires_actual_adjacent_sources_not_author_replay(monkeypatch,
         return gate.evaluate_grounded_surface_body_inverse(
             body=body.replace(follow, text).encode(), plan=plan, sentence_plan=sentence,
             resolver=resolver, selected_subjective_input=selected).passed
-    assert passes(follow)
+    retained_assertion(lambda: (passes(follow)), 'passes(follow)')
     first, second = follow.split('。')[:2]
     old, new = {
         'drop_action_source': (ACTIONS[0].rstrip('。') + 'ことを背景に、', ''),
@@ -110,20 +114,21 @@ def test_inverse_requires_actual_adjacent_sources_not_author_replay(monkeypatch,
         'drop_action_reception': (second + '。', ''),
     }[mutation]
     changed = follow.replace(old, new, 1)
-    assert changed != follow and not passes(changed)
+    retained_assertion(lambda: (changed != follow and not passes(changed)), 'changed != follow and (not passes(changed))')
 
 
 @pytest.mark.parametrize('axis', (
     'first_move', 'not_required', 'not_adjacent_reference', 'missing_context',
     'same_target', 'recovery', 'other_actor', 'future', 'not_retained', 'quoted',
 ))
+@continue_assertions
 def test_reference_choice_does_not_cross_source_or_recovery_boundary(axis):
     plan, _, _, resolver, _ = artifacts()
     reception_plan = plan.response_plan.human_reception_plan
     move = reception_plan.moves[1]
     indices = {n.nucleus_id: n for n in plan.nuclei}
     resolve = reception._source_grounded_adjacent_action_context
-    assert resolve(reception_plan, move, plan, indices, resolver, 'full') is not None
+    retained_assertion(lambda: (resolve(reception_plan, move, plan, indices, resolver, 'full') is not None), "resolve(reception_plan, move, plan, indices, resolver, 'full') is not None")
     stage = 'full'
     if axis == 'first_move':
         move = reception_plan.moves[0]
@@ -153,4 +158,4 @@ def test_reference_choice_does_not_cross_source_or_recovery_boundary(axis):
         move = replace(move, **changes)
         reception_plan = replace(reception_plan, moves=(reception_plan.moves[0], move))
         plan = replace(plan, response_plan=replace(plan.response_plan, human_reception_plan=reception_plan))
-    assert resolve(reception_plan, move, plan, indices, resolver, stage) is None
+    retained_assertion(lambda: (resolve(reception_plan, move, plan, indices, resolver, stage) is None), 'resolve(reception_plan, move, plan, indices, resolver, stage) is None')

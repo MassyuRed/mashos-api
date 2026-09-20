@@ -1,4 +1,6 @@
 """Actual Q3 bodies: cumulative meaning, source time, pair composition and inverse."""
+
+from helpers.retained_assertions import continue_assertions, retained_assertion
 from dataclasses import replace
 from functools import lru_cache
 import pytest
@@ -24,47 +26,50 @@ def begin(memo=MEMO,memo_action=''):
     ('その時は嬉しかった。','今は怖くない。'),
 ])
 @pytest.mark.parametrize('positive_first',[False,True])
+@continue_assertions
 def test_mixed_answer_follow_retains_each_event_and_existing_feeling(positive,burden,positive_first):
     answers=(positive,burden) if positive_first else (burden,positive)
     r=advance(advance(begin(),answers[0]),answers[1])
-    out=MeaningExperienceEngine().generate(r);assert out.artifact,out.reason_codes
+    out=MeaningExperienceEngine().generate(r);retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
     follow=out.artifact.reception
     first,second=follow.split('。')[:2]
-    assert follow.index('褒められた') < follow.index('誘われた') < follow.index('頼まれた')
-    assert '褒められたのに嬉しくなかったこと' in first
-    assert '誘われたのに悲しかったこと' in first
-    assert '頼まれたのに寂しかったこと' in follow
+    retained_assertion(lambda: (follow.index('褒められた') < follow.index('誘われた') < follow.index('頼まれた')), "follow.index('褒められた') < follow.index('誘われた') < follow.index('頼まれた')")
+    retained_assertion(lambda: ('褒められたのに嬉しくなかったこと' in first), "'褒められたのに嬉しくなかったこと' in first")
+    retained_assertion(lambda: ('誘われたのに悲しかったこと' in first), "'誘われたのに悲しかったこと' in first")
+    retained_assertion(lambda: ('頼まれたのに寂しかったこと' in follow), "'頼まれたのに寂しかったこと' in follow")
     joy=second
     weight=first
-    assert ('褒められた' if positive_first else '誘われた') + 'ことについて' in joy
-    assert ('嬉しかった' if '嬉しかった' in positive else '嬉しい') in joy
-    assert ('その時に' if 'その時' in positive else '回答した時点で') in joy
-    assert '気持ちを受け止めています' in joy and '小さくせず' not in joy
-    assert ('その時の重さ' if '重かった' in burden else '回答した時点で怖くないこと') in weight
-    assert '小さくせずに受け止めています' in weight
+    retained_assertion(lambda: (('褒められた' if positive_first else '誘われた') + 'ことについて' in joy), "('褒められた' if positive_first else '誘われた') + 'ことについて' in joy")
+    retained_assertion(lambda: (('嬉しかった' if '嬉しかった' in positive else '嬉しい') in joy), "('嬉しかった' if '嬉しかった' in positive else '嬉しい') in joy")
+    retained_assertion(lambda: (('その時に' if 'その時' in positive else '回答した時点で') in joy), "('その時に' if 'その時' in positive else '回答した時点で') in joy")
+    retained_assertion(lambda: ('気持ちを受け止めています' in joy and '小さくせず' not in joy), "'気持ちを受け止めています' in joy and '小さくせず' not in joy")
+    retained_assertion(lambda: (('その時の重さ' if '重かった' in burden else '回答した時点で怖くないこと') in weight), "('その時の重さ' if '重かった' in burden else '回答した時点で怖くないこと') in weight")
+    retained_assertion(lambda: ('小さくせずに受け止めています' in weight), "'小さくせずに受け止めています' in weight")
     p=prepare_emlis_meaning(r);plan=build_updated_grounded_plan(p)
     moves=plan.response_plan.human_reception_plan.moves
     positive_id = 'answer:s7' if positive_first else 'answer:s8'
     positive_move = next(m for m in moves if m.reception_act == 'recognize_lived_change')
     burden_move = next(m for m in moves if m.reception_act == 'stay_with_current_burden')
-    assert positive_move.target_nucleus_ids == (positive_id,)
-    assert 'nucleus:s3:reaction' in burden_move.support_nucleus_ids
-    assert ('answer:s8' if positive_first else 'answer:s7') in burden_move.support_nucleus_ids
-    assert {m.reception_act for m in moves}=={'recognize_lived_change','stay_with_current_burden'}
+    retained_assertion(lambda: (positive_move.target_nucleus_ids == (positive_id,)), 'positive_move.target_nucleus_ids == (positive_id,)')
+    retained_assertion(lambda: ('nucleus:s3:reaction' in burden_move.support_nucleus_ids), "'nucleus:s3:reaction' in burden_move.support_nucleus_ids")
+    retained_assertion(lambda: (('answer:s8' if positive_first else 'answer:s7') in burden_move.support_nucleus_ids), "('answer:s8' if positive_first else 'answer:s7') in burden_move.support_nucleus_ids")
+    retained_assertion(lambda: ({m.reception_act for m in moves}=={'recognize_lived_change','stay_with_current_burden'}), "{m.reception_act for m in moves} == {'recognize_lived_change', 'stay_with_current_burden'}")
 
 
 @pytest.mark.parametrize('third,old,new',[
     ('「重かった」ではなく「苦しかった」です。','重さ','苦しさ'),
     ('「重かった」は誤りです。','重さ',None),
 ])
+@continue_assertions
 def test_mixed_answer_correction_or_withdrawal_keeps_the_other_answer(third,old,new):
     r=advance(advance(advance(begin(),'その時は重かった。'),'その時は嬉しかった。'),third)
-    out=MeaningExperienceEngine().generate(r);assert out.artifact,out.reason_codes
-    assert old not in out.artifact.text
-    assert '誘われたことについて、その時に嬉しかったという気持ち' in out.artifact.reception
-    if new is not None:assert '褒められたのに嬉しくなかったことと、その出来事へのその時の'+new in out.artifact.reception
+    out=MeaningExperienceEngine().generate(r);retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
+    retained_assertion(lambda: (old not in out.artifact.text), 'old not in out.artifact.text')
+    retained_assertion(lambda: ('誘われたことについて、その時に嬉しかったという気持ち' in out.artifact.reception), "'誘われたことについて、その時に嬉しかったという気持ち' in out.artifact.reception")
+    if new is not None:retained_assertion(lambda: ('褒められたのに嬉しくなかったことと、その出来事へのその時の'+new in out.artifact.reception), "'褒められたのに嬉しくなかったことと、その出来事へのその時の' + new in out.artifact.reception")
 
 
+@continue_assertions
 def test_mixed_answer_body_inverse_rejects_missing_swapped_and_changed_answers():
     p=prepare_emlis_meaning(advance(advance(begin(),'その時は重かった。'),'その時は嬉しかった。'))
     plan=build_updated_grounded_plan(p);resolver=p.thread.resolver()
@@ -73,7 +78,7 @@ def test_mixed_answer_body_inverse_rejects_missing_swapped_and_changed_answers()
     def passes(body):
         return evaluate_grounded_surface_body_inverse(body=body.encode(),plan=plan,
             sentence_plan=sentence,resolver=resolver,selected_subjective_input=projection.selected_reception).passed
-    assert passes(out.artifact.text)
+    retained_assertion(lambda: (passes(out.artifact.text)), 'passes(out.artifact.text)')
     follow=out.artifact.reception
     mutations=[follow.split('。',1)[1],
         follow.replace('誘われたのに悲しかったことと、', ''),
@@ -82,7 +87,7 @@ def test_mixed_answer_body_inverse_rejects_missing_swapped_and_changed_answers()
         follow.replace('嬉しかった','嬉しくなかった'),
         follow.replace('褒められた','TEMP').replace('誘われた','褒められた').replace('TEMP','誘われた')]
     for changed in mutations:
-        assert changed!=follow and not passes(out.artifact.text.replace(follow,changed))
+        retained_assertion(lambda: (changed!=follow and not passes(out.artifact.text.replace(follow,changed))), 'changed != follow and (not passes(out.artifact.text.replace(follow, changed)))')
 
 
 @pytest.mark.parametrize('replacement',[
@@ -91,6 +96,7 @@ def test_mixed_answer_body_inverse_rejects_missing_swapped_and_changed_answers()
     '嬉しかったという気持ち',
     '「その時に嬉しかったという気持ち」',
 ])
+@continue_assertions
 def test_positive_answer_time_and_source_are_checked_without_replay(replacement):
     p=prepare_emlis_meaning(advance(advance(begin(),'その時は重かった。'),'その時は嬉しかった。'))
     plan=build_updated_grounded_plan(p);resolver=p.thread.resolver();projection=project_thread_meaning(p,plan)
@@ -99,8 +105,8 @@ def test_positive_answer_time_and_source_are_checked_without_replay(replacement)
     body=result.artifact.text.replace('その時に嬉しかったという気持ち',replacement)
     inverse=evaluate_grounded_surface_body_inverse(body=body.encode(),plan=plan,sentence_plan=sentence,
         resolver=resolver,selected_subjective_input=projection.selected_reception)
-    assert not inverse.passed
-    assert any('positive_answer_source_time_missing' in reason for reason in inverse.failure_codes)
+    retained_assertion(lambda: (not inverse.passed), 'not inverse.passed')
+    retained_assertion(lambda: (any('positive_answer_source_time_missing' in reason for reason in inverse.failure_codes)), "any(('positive_answer_source_time_missing' in reason for reason in inverse.failure_codes))")
 
 
 def test_mixed_shared_claim_partition_keeps_complete_disjoint_source_contributions():
@@ -135,19 +141,20 @@ def advance(req,text):
     return replace(r,emlis_thread=replace(t,prepared_meaning_checkpoint_ref=cp.checkpoint_id))
 
 
+@continue_assertions
 def test_three_distinct_answers_preserve_every_pair_and_end():
     r=begin()
     for count,text in enumerate(['その時は重かった。','その時は怖かった。','その時は苦しかった。'],1):
         r=advance(r,text)
-        current=MeaningExperienceEngine().generate(r);assert current.artifact,current.reason_codes
+        current=MeaningExperienceEngine().generate(r);retained_assertion(lambda: (current.artifact), 'current.artifact', lambda: (current.reason_codes))
         follow=current.artifact.reception
         for event,feeling in list(zip(('褒められた','誘われた','頼まれた'),('重さ','怖さ','苦しさ')))[:count]:
-            assert event in follow and feeling in follow
-        assert follow.count('受け止めています')==1
-    out=MeaningExperienceEngine().generate(r);assert out.artifact,out.reason_codes
-    assert all(x in out.artifact.observation for x in ['褒められた','誘われた','頼まれた','重かった','怖かった','苦しかった'])
-    assert out.question is None
-    p=prepare_emlis_meaning(r);assert len(p.checkpoint.accepted_update_refs)==3
+            retained_assertion(lambda: (event in follow and feeling in follow), 'event in follow and feeling in follow')
+        retained_assertion(lambda: (follow.count('受け止めています')==1), "follow.count('受け止めています') == 1")
+    out=MeaningExperienceEngine().generate(r);retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
+    retained_assertion(lambda: (all(x in out.artifact.observation for x in ['褒められた','誘われた','頼まれた','重かった','怖かった','苦しかった'])), "all((x in out.artifact.observation for x in ['褒められた', '誘われた', '頼まれた', '重かった', '怖かった', '苦しかった']))")
+    retained_assertion(lambda: (out.question is None), 'out.question is None')
+    p=prepare_emlis_meaning(r);retained_assertion(lambda: (len(p.checkpoint.accepted_update_refs)==3), 'len(p.checkpoint.accepted_update_refs) == 3')
 
 
 def test_later_correction_preserves_previous_answer_time_and_subject():
@@ -197,15 +204,16 @@ def test_separate_source_fields_keep_pair_identity_in_coordinated_body():
     ('結果だけで、そこまでの苦労は見てもらえていないと思った。','苦労は見てもらえていないという、その時の思い'),
     ('次も同じ成果を求められるようで、重かった。','求められるようだという、その時の重さ'),
 ])
+@continue_assertions
 def test_follow_keeps_each_answer_subject_and_its_entire_expression(second,fragment):
     r=advance(advance(begin(),'その時は重かった。'),second)
-    out=MeaningExperienceEngine().generate(r);assert out.artifact,out.reason_codes
+    out=MeaningExperienceEngine().generate(r);retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
     follow=out.artifact.reception
-    assert '褒められたのに嬉しくなかったことと、その出来事へのその時の重さ' in follow
-    assert '誘われたのに悲しかったことと、その出来事' in follow and fragment in follow
-    assert '頼まれたのに寂しかったこと' in follow
-    assert 'ことへのその時に' not in follow
-    assert follow.count('受け止めています')==1
+    retained_assertion(lambda: ('褒められたのに嬉しくなかったことと、その出来事へのその時の重さ' in follow), "'褒められたのに嬉しくなかったことと、その出来事へのその時の重さ' in follow")
+    retained_assertion(lambda: ('誘われたのに悲しかったことと、その出来事' in follow and fragment in follow), "'誘われたのに悲しかったことと、その出来事' in follow and fragment in follow")
+    retained_assertion(lambda: ('頼まれたのに寂しかったこと' in follow), "'頼まれたのに寂しかったこと' in follow")
+    retained_assertion(lambda: ('ことへのその時に' not in follow), "'ことへのその時に' not in follow")
+    retained_assertion(lambda: (follow.count('受け止めています')==1), "follow.count('受け止めています') == 1")
 
 
 @pytest.mark.parametrize('second',['今は怖い。','その時は嬉しかった。','分からない。','その時は怖かった。別のことです。'])
@@ -227,12 +235,13 @@ def test_follow_mixed_axes_and_unresolved_parts_keep_existing_availability(secon
     ('「重かった」ではなく「苦しかった」です。','重さ','苦しさ'),
     ('「重かった」は誤りです。','重さ',None),
 ])
+@continue_assertions
 def test_later_correction_or_withdrawal_preserves_other_answer_follow(third,old,new):
     r=advance(advance(advance(begin(),'その時は重かった。'),'その時は怖かった。'),third)
-    out=MeaningExperienceEngine().generate(r);assert out.artifact,out.reason_codes
-    assert old not in out.artifact.reception and '重かった' not in out.artifact.observation
-    assert '誘われた' in out.artifact.reception and '怖さ' in out.artifact.reception
-    if new is not None:assert '褒められた' in out.artifact.reception and new in out.artifact.reception
+    out=MeaningExperienceEngine().generate(r);retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
+    retained_assertion(lambda: (old not in out.artifact.reception and '重かった' not in out.artifact.observation), "old not in out.artifact.reception and '重かった' not in out.artifact.observation")
+    retained_assertion(lambda: ('誘われた' in out.artifact.reception and '怖さ' in out.artifact.reception), "'誘われた' in out.artifact.reception and '怖さ' in out.artifact.reception")
+    if new is not None:retained_assertion(lambda: ('褒められた' in out.artifact.reception and new in out.artifact.reception), "'褒められた' in out.artifact.reception and new in out.artifact.reception")
 
 
 @pytest.mark.parametrize('second',['その時は重かった。','その時は怖かった。'])
@@ -303,13 +312,14 @@ def test_collective_follow_ir_checks_later_answer_slot_time_and_grammar(grammar)
     ('褒められたのに、嬉しくなかった。褒められたけど、悲しかった。',
      ('褒められたのに嬉しくなかったこと','褒められたけど悲しかったこと')),
 ])
+@continue_assertions
 def test_initial_follow_keeps_all_received_reactions_before_an_answer(memo,expected):
-    out=MeaningExperienceEngine().generate(begin(memo));assert out.artifact,out.reason_codes
+    out=MeaningExperienceEngine().generate(begin(memo));retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
     follow=out.artifact.reception
-    assert all(part in follow for part in expected)
-    assert [follow.index(part) for part in expected]==sorted(follow.index(part) for part in expected)
-    assert follow.count('受け止めています')==1
-    assert out.question is not None
+    retained_assertion(lambda: (all(part in follow for part in expected)), 'all((part in follow for part in expected))')
+    retained_assertion(lambda: ([follow.index(part) for part in expected]==sorted(follow.index(part) for part in expected)), '[follow.index(part) for part in expected] == sorted((follow.index(part) for part in expected))', evaluation_errors=(ValueError,))
+    retained_assertion(lambda: (follow.count('受け止めています')==1), "follow.count('受け止めています') == 1")
+    retained_assertion(lambda: (out.question is not None), 'out.question is not None')
 
 
 @pytest.mark.parametrize('connector',['のに','けど','けれど','けれども'])
@@ -322,6 +332,7 @@ def test_initial_group_preserves_the_source_connective_and_negative_feeling(conn
     assert '安心' not in follow
 
 
+@continue_assertions
 def test_initial_group_inverse_reads_every_pair_without_forward_replay():
     r=begin('褒められたけど、嬉しくなかった。誘われたのに、悲しかった。')
     prepared=prepare_emlis_meaning(r);plan=build_updated_grounded_plan(prepared);resolver=prepared.thread.resolver()
@@ -338,7 +349,7 @@ def test_initial_group_inverse_reads_every_pair_without_forward_replay():
             resolver=resolver,selected_subjective_input=projection.selected_reception)
         return independent,result
     original=out.artifact.reception
-    assert check(original)[0] and check(original)[1].passed
+    retained_assertion(lambda: (check(original)[0] and check(original)[1].passed), 'check(original)[0] and check(original)[1].passed')
     mutations=[original.replace('褒められたけど','褒められたのに'),
         original.replace('嬉しくなかった','嬉しかった'),original.replace('悲しかった','悲しい'),
         original.replace('褒められたけど嬉しくなかったことと、',''),
@@ -347,35 +358,37 @@ def test_initial_group_inverse_reads_every_pair_without_forward_replay():
         original.replace('誘われたのに悲しかったこと','「誘われたのに悲しかったこと」')]
     for changed in mutations:
         independent,inverse=check(changed)
-        assert changed!=original and not independent and not inverse.passed
+        retained_assertion(lambda: (changed!=original and not independent and not inverse.passed), 'changed != original and (not independent) and (not inverse.passed)')
 
 
+@continue_assertions
 def test_initial_group_allows_existing_answer_update_and_next_question():
     # Current answer selection still owns the refined reception; retaining all
     # unanswered original reactions after this point remains separate work.
     request=begin();initial_out=MeaningExperienceEngine().generate(request)
     request=advance(request,'その時は重かった。')
-    out=MeaningExperienceEngine().generate(request);assert out.artifact,out.reason_codes
-    assert 'その時の重さ' in out.artifact.reception
-    assert initial_out.artifact.observation!=out.artifact.observation
-    assert out.question is not None
+    out=MeaningExperienceEngine().generate(request);retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
+    retained_assertion(lambda: ('その時の重さ' in out.artifact.reception), "'その時の重さ' in out.artifact.reception")
+    retained_assertion(lambda: (initial_out.artifact.observation!=out.artifact.observation), 'initial_out.artifact.observation != out.artifact.observation')
+    retained_assertion(lambda: (out.question is not None), 'out.question is not None')
 
 
 @pytest.mark.parametrize('answer', ['その時は重かった。', '今は重い。', 'その時は嬉しかった。',
                                   'その時は重かった。どう表したらいいかはまだ分からない。'])
+@continue_assertions
 def test_answer_follow_retains_unanswered_original_reactions(answer):
     request = advance(begin(), answer)
     out = MeaningExperienceEngine().generate(request)
-    assert out.artifact, out.reason_codes
-    assert '誘われたのに悲しかったこと' in out.artifact.reception
-    assert '頼まれたのに寂しかったこと' in out.artifact.reception
-    assert out.artifact.reception.count('小さくせずに受け止めています') == 1
+    retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
+    retained_assertion(lambda: ('誘われたのに悲しかったこと' in out.artifact.reception), "'誘われたのに悲しかったこと' in out.artifact.reception")
+    retained_assertion(lambda: ('頼まれたのに寂しかったこと' in out.artifact.reception), "'頼まれたのに寂しかったこと' in out.artifact.reception")
+    retained_assertion(lambda: (out.artifact.reception.count('小さくせずに受け止めています') == 1), "out.artifact.reception.count('小さくせずに受け止めています') == 1")
     prepared = prepare_emlis_meaning(request)
-    assert not prepared.checkpoint.inactive_claim_refs
+    retained_assertion(lambda: (not prepared.checkpoint.inactive_claim_refs), 'not prepared.checkpoint.inactive_claim_refs')
     if prepared.checkpoint.assessment_status == 'PARTIAL':
-        assert out.body_state == 'PARTIALLY_REFINED' and out.question is None
+        retained_assertion(lambda: (out.body_state == 'PARTIALLY_REFINED' and out.question is None), "out.body_state == 'PARTIALLY_REFINED' and out.question is None")
     else:
-        assert out.question and '誘われた' in out.question.prompt_private
+        retained_assertion(lambda: (out.question and '誘われた' in out.question.prompt_private), "out.question and '誘われた' in out.question.prompt_private")
 
 
 @pytest.mark.parametrize('answer,removed,replacement', [
@@ -383,16 +396,17 @@ def test_answer_follow_retains_unanswered_original_reactions(answer):
     ('「嬉しくなかった」は誤りです。', '嬉しくなかった', None),
     ('あの時も本当は嬉しかった。書き方を間違えた。', '嬉しくなかった', 'その時に嬉しかった'),
 ])
+@continue_assertions
 def test_original_correction_keeps_unaffected_reactions_without_reviving_old_meaning(answer, removed, replacement):
     request = advance(begin(), answer)
     prepared = prepare_emlis_meaning(request)
-    assert 'nucleus:s1:reaction' in prepared.checkpoint.inactive_claim_refs
+    retained_assertion(lambda: ('nucleus:s1:reaction' in prepared.checkpoint.inactive_claim_refs), "'nucleus:s1:reaction' in prepared.checkpoint.inactive_claim_refs")
     out = realize_emlis_thread_body(prepared)
-    assert removed not in out.artifact.text
-    assert '誘われたのに悲しかったこと' in out.artifact.reception
-    assert '頼まれたのに寂しかったこと' in out.artifact.reception
+    retained_assertion(lambda: (removed not in out.artifact.text), 'removed not in out.artifact.text')
+    retained_assertion(lambda: ('誘われたのに悲しかったこと' in out.artifact.reception), "'誘われたのに悲しかったこと' in out.artifact.reception")
+    retained_assertion(lambda: ('頼まれたのに寂しかったこと' in out.artifact.reception), "'頼まれたのに寂しかったこと' in out.artifact.reception")
     if replacement:
-        assert replacement in out.artifact.reception
+        retained_assertion(lambda: (replacement in out.artifact.reception), 'replacement in out.artifact.reception')
 
 
 def test_retained_original_and_each_answer_keep_their_own_time_through_three_rounds():
@@ -408,16 +422,17 @@ def test_retained_original_and_each_answer_keep_their_own_time_through_three_rou
     assert follow.count('受け止めています') == 1
 
 
+@continue_assertions
 def test_three_mixed_answers_keep_original_burdens_and_the_positive_answer():
     request = begin()
     for answer in ('その時は重かった。', '今は嬉しい。', 'その時は怖かった。'):
         request = advance(request, answer)
     out = MeaningExperienceEngine().generate(request)
-    assert out.artifact and not out.question
+    retained_assertion(lambda: (out.artifact and not out.question), 'out.artifact and (not out.question)')
     follow = out.artifact.reception
-    assert '褒められたのに嬉しくなかったことと、その出来事へのその時の重さ' in follow
-    assert '頼まれたのに寂しかったことと、その出来事へのその時の怖さ' in follow
-    assert '誘われたことについて、回答した時点で嬉しいという気持ちを受け止めています' in follow
+    retained_assertion(lambda: ('褒められたのに嬉しくなかったことと、その出来事へのその時の重さ' in follow), "'褒められたのに嬉しくなかったことと、その出来事へのその時の重さ' in follow")
+    retained_assertion(lambda: ('頼まれたのに寂しかったことと、その出来事へのその時の怖さ' in follow), "'頼まれたのに寂しかったことと、その出来事へのその時の怖さ' in follow")
+    retained_assertion(lambda: ('誘われたことについて、回答した時点で嬉しいという気持ちを受け止めています' in follow), "'誘われたことについて、回答した時点で嬉しいという気持ちを受け止めています' in follow")
 
 
 def test_retained_group_inverse_rejects_missing_crossed_quoted_and_retimed_source_without_replay():
@@ -488,27 +503,29 @@ def test_retained_group_expression_rechecks_later_slot_ownership_and_time(change
      'その時に嬉しかったという気持ち'),
 ])
 @pytest.mark.parametrize('q3', [False, True])
+@continue_assertions
 def test_single_event_positive_add_keeps_both_independent_meanings(answer, answer_phrase, q3):
     from test_cmee_emlis_q1_thread import answered
     req = begin('褒められたのに、嬉しくなかった。') if q3 else initial()
     req = advance(req, answer) if q3 else answered(answer, req)
     prepared = prepare_emlis_meaning(req)
-    assert not prepared.checkpoint.inactive_claim_refs
+    retained_assertion(lambda: (not prepared.checkpoint.inactive_claim_refs), 'not prepared.checkpoint.inactive_claim_refs')
     plan = build_updated_grounded_plan(prepared)
     projection = project_thread_meaning(prepared, plan)
     result = realize_emlis_thread_body(prepared)
     follow = result.artifact.reception
-    assert '褒められたのに嬉しくなかったこと' in follow
-    assert '褒められたことについて、' + answer_phrase in follow
+    retained_assertion(lambda: ('褒められたのに嬉しくなかったこと' in follow), "'褒められたのに嬉しくなかったこと' in follow")
+    retained_assertion(lambda: ('褒められたことについて、' + answer_phrase in follow), "'褒められたことについて、' + answer_phrase in follow")
     decisions = projection.selected_reception.decisions
-    assert len(decisions) == 2 and all(d.branch == 'NORMAL' for d in decisions)
-    assert len({d.projected_claim_ref for d in decisions}) == 2
-    assert not set(decisions[0].selected_contribution_refs) & set(decisions[1].selected_contribution_refs)
-    assert {d.reception_act for d in decisions} == {'stay_with_current_burden', 'recognize_lived_change'}
+    retained_assertion(lambda: (len(decisions) == 2 and all(d.branch == 'NORMAL' for d in decisions)), "len(decisions) == 2 and all((d.branch == 'NORMAL' for d in decisions))")
+    retained_assertion(lambda: (len({d.projected_claim_ref for d in decisions}) == 2), 'len({d.projected_claim_ref for d in decisions}) == 2')
+    retained_assertion(lambda: (not set(decisions[0].selected_contribution_refs) & set(decisions[1].selected_contribution_refs)), 'not set(decisions[0].selected_contribution_refs) & set(decisions[1].selected_contribution_refs)')
+    retained_assertion(lambda: ({d.reception_act for d in decisions} == {'stay_with_current_burden', 'recognize_lived_change'}), "{d.reception_act for d in decisions} == {'stay_with_current_burden', 'recognize_lived_change'}")
     if '分からない' in answer:
-        assert prepared.checkpoint.assessment_status == 'PARTIAL'
+        retained_assertion(lambda: (prepared.checkpoint.assessment_status == 'PARTIAL'), "prepared.checkpoint.assessment_status == 'PARTIAL'")
 
 
+@continue_assertions
 def test_single_event_positive_add_inverse_rejects_lost_or_retimed_original_and_answer():
     from test_cmee_emlis_q1_thread import answered
     prepared = prepare_emlis_meaning(answered('今は嬉しい。'))
@@ -523,7 +540,7 @@ def test_single_event_positive_add_inverse_rejects_lost_or_retimed_original_and_
             plan=plan, sentence_plan=sentence, resolver=resolver,
             selected_subjective_input=projection.selected_reception).passed
     follow = result.artifact.reception
-    assert valid(follow)
+    retained_assertion(lambda: (valid(follow)), 'valid(follow)')
     mutations = [
         follow.split('。', 1)[1], follow.split('。', 1)[0] + '。',
         follow.replace('嬉しくなかったこと', '嬉しかったこと'),
@@ -533,7 +550,7 @@ def test_single_event_positive_add_inverse_rejects_lost_or_retimed_original_and_
         follow.replace('褒められたのに嬉しくなかったこと', '「褒められたのに嬉しくなかったこと」'),
     ]
     for changed in mutations:
-        assert changed != follow and not valid(changed)
+        retained_assertion(lambda: (changed != follow and not valid(changed)), 'changed != follow and (not valid(changed))')
 
 
 @pytest.mark.parametrize('answer,phrase', [
@@ -543,6 +560,7 @@ def test_single_event_positive_add_inverse_rejects_lost_or_retimed_original_and_
     ('その時は重かった。どう表したらいいかはまだ分からない。', 'その出来事へのその時の重さ'),
 ])
 @pytest.mark.parametrize('q3', [False, True])
+@continue_assertions
 def test_single_event_negative_add_preserves_original_and_answer_in_body_and_selection(answer, phrase, q3):
     from test_cmee_emlis_q1_thread import answered
     req = advance(begin('褒められたのに、嬉しくなかった。'), answer) if q3 else answered(answer)
@@ -550,19 +568,19 @@ def test_single_event_negative_add_preserves_original_and_answer_in_body_and_sel
     plan = build_updated_grounded_plan(prepared)
     projection = project_thread_meaning(prepared, plan)
     result = realize_emlis_thread_body(prepared)
-    assert not prepared.checkpoint.inactive_claim_refs
-    assert '嬉しくなかった' in result.artifact.observation
-    assert '褒められたのに嬉しくなかったこと' in result.artifact.reception
-    assert phrase in result.artifact.reception
+    retained_assertion(lambda: (not prepared.checkpoint.inactive_claim_refs), 'not prepared.checkpoint.inactive_claim_refs')
+    retained_assertion(lambda: ('嬉しくなかった' in result.artifact.observation), "'嬉しくなかった' in result.artifact.observation")
+    retained_assertion(lambda: ('褒められたのに嬉しくなかったこと' in result.artifact.reception), "'褒められたのに嬉しくなかったこと' in result.artifact.reception")
+    retained_assertion(lambda: (phrase in result.artifact.reception), 'phrase in result.artifact.reception')
     move, = plan.response_plan.human_reception_plan.moves
-    assert move.target_nucleus_ids == ('nucleus:s1:event',)
-    assert move.support_nucleus_ids == ('nucleus:s1:reaction', prepared.accepted_nuclei[0].nucleus_id)
+    retained_assertion(lambda: (move.target_nucleus_ids == ('nucleus:s1:event',)), "move.target_nucleus_ids == ('nucleus:s1:event',)")
+    retained_assertion(lambda: (move.support_nucleus_ids == ('nucleus:s1:reaction', prepared.accepted_nuclei[0].nucleus_id)), "move.support_nucleus_ids == ('nucleus:s1:reaction', prepared.accepted_nuclei[0].nucleus_id)")
     decision, = projection.selected_reception.decisions
-    assert decision.branch == 'NORMAL'
-    assert len(decision.selected_contribution_refs) == 2
-    assert set(decision.selected_contribution_refs) == set(decision.subjective_proposition.target_contribution_refs)
+    retained_assertion(lambda: (decision.branch == 'NORMAL'), "decision.branch == 'NORMAL'")
+    retained_assertion(lambda: (len(decision.selected_contribution_refs) == 2), 'len(decision.selected_contribution_refs) == 2')
+    retained_assertion(lambda: (set(decision.selected_contribution_refs) == set(decision.subjective_proposition.target_contribution_refs)), 'set(decision.selected_contribution_refs) == set(decision.subjective_proposition.target_contribution_refs)')
     if '分からない' in answer:
-        assert prepared.checkpoint.assessment_status == 'PARTIAL'
+        retained_assertion(lambda: (prepared.checkpoint.assessment_status == 'PARTIAL'), "prepared.checkpoint.assessment_status == 'PARTIAL'")
 
 
 @pytest.mark.parametrize('answer,phrase,retimed', [
@@ -570,6 +588,7 @@ def test_single_event_negative_add_preserves_original_and_answer_in_body_and_sel
     ('今は怖い。', 'その出来事について、回答した時点で怖いこと', 'その出来事について、その時に怖いこと'),
     ('今はまだよく分からない。', 'その出来事について、回答した時点でまだよく分からないこと', 'その出来事について、その時にまだよく分からないこと'),
 ])
+@continue_assertions
 def test_single_negative_add_inverse_rejects_lost_swapped_or_retimed_meanings(answer, phrase, retimed):
     from test_cmee_emlis_q1_thread import answered
     from emlis_ai_grounded_observation_gate import _body_inverse_thread_received_group
@@ -586,7 +605,7 @@ def test_single_negative_add_inverse_rejects_lost_swapped_or_retimed_meanings(an
             body=result.artifact.text.replace(follow, changed).encode(), plan=plan,
             sentence_plan=sentence, resolver=resolver,
             selected_subjective_input=projection.selected_reception).passed
-    assert valid(follow)
+    retained_assertion(lambda: (valid(follow)), 'valid(follow)')
     move, = plan.response_plan.human_reception_plan.moves
     def parsed(changed):
         raw = result.artifact.text.replace(follow, changed).encode()
@@ -594,7 +613,7 @@ def test_single_negative_add_inverse_rejects_lost_swapped_or_retimed_meanings(an
         return tuple(_body_inverse_thread_received_group(raw, witness, row, move, plan, resolver)
                      for row in witness.sentences if row.section == 'reception')
     with patch('emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no replay')):
-        assert any(row is not None for row in parsed(follow))
+        retained_assertion(lambda: (any(row is not None for row in parsed(follow))), 'any((row is not None for row in parsed(follow)))')
     original = '褒められたのに嬉しくなかったこと'
     mutations = [
         follow.replace(original + 'と、', ''), follow.replace('と、' + phrase, ''),
@@ -607,9 +626,9 @@ def test_single_negative_add_inverse_rejects_lost_swapped_or_retimed_meanings(an
         mutations.extend(follow.replace('まだよく分からない', changed)
                          for changed in ('もう分かった', 'まだよく分からなかった', '彼はまだよく分からない'))
     for changed in mutations:
-        assert changed != follow and not valid(changed)
+        retained_assertion(lambda: (changed != follow and not valid(changed)), 'changed != follow and (not valid(changed))')
         with patch('emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no replay')):
-            assert all(row is None for row in parsed(changed))
+            retained_assertion(lambda: (all(row is None for row in parsed(changed))), 'all((row is None for row in parsed(changed)))')
 
 
 @pytest.mark.parametrize('answer,fragment', [
@@ -617,24 +636,25 @@ def test_single_negative_add_inverse_rejects_lost_swapped_or_retimed_meanings(an
     ('現在は分からない。', '分からない'),
 ])
 @pytest.mark.parametrize('q3', [False, True])
+@continue_assertions
 def test_current_unknown_answer_keeps_original_reaction_without_becoming_a_feeling(answer, fragment, q3):
     from test_cmee_emlis_q1_thread import answered
     req = advance(begin('褒められたのに、嬉しくなかった。'), answer) if q3 else answered(answer)
     prepared = prepare_emlis_meaning(req)
-    assert prepared.checkpoint.assessment_status == 'RESOLVED'
-    assert not prepared.checkpoint.inactive_claim_refs
+    retained_assertion(lambda: (prepared.checkpoint.assessment_status == 'RESOLVED'), "prepared.checkpoint.assessment_status == 'RESOLVED'")
+    retained_assertion(lambda: (not prepared.checkpoint.inactive_claim_refs), 'not prepared.checkpoint.inactive_claim_refs')
     n, = prepared.accepted_nuclei
-    assert (n.kind, n.semantic_frame.predicate_kind, n.semantic_frame.modality) == ('state', 'state', 'uncertain')
-    assert n.semantic_frame.time_scope == 'present'
+    retained_assertion(lambda: ((n.kind, n.semantic_frame.predicate_kind, n.semantic_frame.modality) == ('state', 'state', 'uncertain')), "(n.kind, n.semantic_frame.predicate_kind, n.semantic_frame.modality) == ('state', 'state', 'uncertain')")
+    retained_assertion(lambda: (n.semantic_frame.time_scope == 'present'), "n.semantic_frame.time_scope == 'present'")
     plan = build_updated_grounded_plan(prepared)
     move, = plan.response_plan.human_reception_plan.moves
-    assert move.target_nucleus_ids == ('nucleus:s1:event',)
-    assert move.support_nucleus_ids == ('nucleus:s1:reaction', n.nucleus_id)
+    retained_assertion(lambda: (move.target_nucleus_ids == ('nucleus:s1:event',)), "move.target_nucleus_ids == ('nucleus:s1:event',)")
+    retained_assertion(lambda: (move.support_nucleus_ids == ('nucleus:s1:reaction', n.nucleus_id)), "move.support_nucleus_ids == ('nucleus:s1:reaction', n.nucleus_id)")
     result = realize_emlis_thread_body(prepared)
-    assert '嬉しくなかった' in result.artifact.observation
-    assert '褒められたのに嬉しくなかったこと' in result.artifact.reception
-    assert 'その出来事について、回答した時点で' + fragment + 'こと' in result.artifact.reception
-    assert '反映できていない' not in result.artifact.text
+    retained_assertion(lambda: ('嬉しくなかった' in result.artifact.observation), "'嬉しくなかった' in result.artifact.observation")
+    retained_assertion(lambda: ('褒められたのに嬉しくなかったこと' in result.artifact.reception), "'褒められたのに嬉しくなかったこと' in result.artifact.reception")
+    retained_assertion(lambda: ('その出来事について、回答した時点で' + fragment + 'こと' in result.artifact.reception), "'その出来事について、回答した時点で' + fragment + 'こと' in result.artifact.reception")
+    retained_assertion(lambda: ('反映できていない' not in result.artifact.text), "'反映できていない' not in result.artifact.text")
 
 
 @pytest.mark.parametrize('q3', [False, True])
@@ -1001,6 +1021,7 @@ def test_initial_epistemic_unknown_binding_does_not_accept_conflicting_or_missin
 
 @pytest.mark.parametrize('event_count', [1, 2, 3])
 @pytest.mark.parametrize('q3', [False, True])
+@continue_assertions
 def test_event_withdrawal_keeps_independent_original_reaction_and_untouched_pairs(event_count, q3):
     from test_cmee_emlis_q1_thread import answered
     memo = '。'.join(MEMO.split('。')[:event_count]) + '。'
@@ -1009,16 +1030,16 @@ def test_event_withdrawal_keeps_independent_original_reaction_and_untouched_pair
     prepared = prepare_emlis_meaning(request)
     plan = build_updated_grounded_plan(prepared)
     result = realize_emlis_thread_body(prepared)
-    assert 'nucleus:s1:event' in prepared.checkpoint.inactive_claim_refs
-    assert 'nucleus:s1:reaction' not in prepared.checkpoint.inactive_claim_refs
-    assert '褒められた' not in result.artifact.text
-    assert '嬉しくなかったこと' in result.artifact.reception
-    assert 'その時の気持ちとして、「嬉しくなかった」が見えます' in result.artifact.observation
+    retained_assertion(lambda: ('nucleus:s1:event' in prepared.checkpoint.inactive_claim_refs), "'nucleus:s1:event' in prepared.checkpoint.inactive_claim_refs")
+    retained_assertion(lambda: ('nucleus:s1:reaction' not in prepared.checkpoint.inactive_claim_refs), "'nucleus:s1:reaction' not in prepared.checkpoint.inactive_claim_refs")
+    retained_assertion(lambda: ('褒められた' not in result.artifact.text), "'褒められた' not in result.artifact.text")
+    retained_assertion(lambda: ('嬉しくなかったこと' in result.artifact.reception), "'嬉しくなかったこと' in result.artifact.reception")
+    retained_assertion(lambda: ('その時の気持ちとして、「嬉しくなかった」が見えます' in result.artifact.observation), "'その時の気持ちとして、「嬉しくなかった」が見えます' in result.artifact.observation")
     for phrase in ('誘われたのに悲しかったこと', '頼まれたのに寂しかったこと')[:event_count-1]:
-        assert phrase in result.artifact.reception
-    assert not any('nucleus:s1:event' in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
-    assert any(m.target_nucleus_ids == ('nucleus:s1:reaction',) and not m.support_nucleus_ids
-               for m in plan.response_plan.human_reception_plan.moves)
+        retained_assertion(lambda: (phrase in result.artifact.reception), 'phrase in result.artifact.reception')
+    retained_assertion(lambda: (not any('nucleus:s1:event' in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)), "not any(('nucleus:s1:event' in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations))")
+    retained_assertion(lambda: (any(m.target_nucleus_ids == ('nucleus:s1:reaction',) and not m.support_nucleus_ids
+               for m in plan.response_plan.human_reception_plan.moves)), "any((m.target_nucleus_ids == ('nucleus:s1:reaction',) and (not m.support_nucleus_ids) for m in plan.response_plan.human_reception_plan.moves))")
 
 
 @pytest.mark.parametrize('answers,phrase', [
@@ -1026,6 +1047,7 @@ def test_event_withdrawal_keeps_independent_original_reaction_and_untouched_pair
     (('今は嬉しい。',), '回答した時点で嬉しいという気持ち'),
     (('その時は重かった。', '今は怖い。'), 'その時の重さ'),
 ])
+@continue_assertions
 def test_event_withdrawal_preserves_orphan_answer_time_and_other_event_answers(answers, phrase):
     request = begin()
     for answer in (*answers, '「褒められた」は誤りです。'):
@@ -1033,37 +1055,38 @@ def test_event_withdrawal_preserves_orphan_answer_time_and_other_event_answers(a
     prepared = prepare_emlis_meaning(request)
     plan = build_updated_grounded_plan(prepared)
     result = realize_emlis_thread_body(prepared)
-    assert '褒められた' not in result.artifact.text
-    assert '嬉しくなかったこと' in result.artifact.reception and phrase in result.artifact.reception
-    assert '誘われたのに悲しかったこと' in result.artifact.reception
-    assert '頼まれたのに寂しかったこと' in result.artifact.reception
+    retained_assertion(lambda: ('褒められた' not in result.artifact.text), "'褒められた' not in result.artifact.text")
+    retained_assertion(lambda: ('嬉しくなかったこと' in result.artifact.reception and phrase in result.artifact.reception), "'嬉しくなかったこと' in result.artifact.reception and phrase in result.artifact.reception")
+    retained_assertion(lambda: ('誘われたのに悲しかったこと' in result.artifact.reception), "'誘われたのに悲しかったこと' in result.artifact.reception")
+    retained_assertion(lambda: ('頼まれたのに寂しかったこと' in result.artifact.reception), "'頼まれたのに寂しかったこと' in result.artifact.reception")
     if len(answers) == 2:
-        assert 'その出来事について、回答した時点で怖いこと' in result.artifact.reception
-        assert 'その時の気持ちとして、「重かった」が見えます' in result.artifact.observation
+        retained_assertion(lambda: ('その出来事について、回答した時点で怖いこと' in result.artifact.reception), "'その出来事について、回答した時点で怖いこと' in result.artifact.reception")
+        retained_assertion(lambda: ('その時の気持ちとして、「重かった」が見えます' in result.artifact.observation), "'その時の気持ちとして、「重かった」が見えます' in result.artifact.observation")
     answer_nucleus = next(n for n in plan.nuclei if n.source_fields == ('answer_text_private',))
-    assert not any(answer_nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    retained_assertion(lambda: (not any(answer_nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)), 'not any((answer_nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations))')
     selected = project_thread_meaning(prepared, plan).selected_reception
-    assert len(selected.decisions) == 3
+    retained_assertion(lambda: (len(selected.decisions) == 3), 'len(selected.decisions) == 3')
     sets = [set(d.selected_contribution_refs) for d in selected.decisions]
-    assert sum(map(len, sets)) == len(set().union(*sets))
-    assert set().union(*sets) == set(selected.decisions[0].subjective_proposition.target_contribution_refs)
+    retained_assertion(lambda: (sum(map(len, sets)) == len(set().union(*sets))), 'sum(map(len, sets)) == len(set().union(*sets))')
+    retained_assertion(lambda: (set().union(*sets) == set(selected.decisions[0].subjective_proposition.target_contribution_refs)), 'set().union(*sets) == set(selected.decisions[0].subjective_proposition.target_contribution_refs)')
 
 
 @pytest.mark.parametrize('prior,old,new', [
     ((), '嬉しくなかった', '苦しかった'),
     (('その時は重かった。',), '重かった', '苦しかった'),
 ])
+@continue_assertions
 def test_revising_a_detached_claim_keeps_withdrawal_and_other_source_meanings(prior, old, new):
     request = begin()
     for answer in (*prior, '「褒められた」は誤りです。', f'「{old}」ではなく「{new}」です。'):
         request = advance(request, answer)
     prepared = prepare_emlis_meaning(request)
     result = realize_emlis_thread_body(prepared)
-    assert '褒められた' not in result.artifact.text and old not in result.artifact.text
-    assert 'その時の苦しさ' in result.artifact.reception
-    assert '誘われたのに悲しかったこと' in result.artifact.reception
-    assert '頼まれたのに寂しかったこと' in result.artifact.reception
-    assert 'nucleus:s1:event' in prepared.checkpoint.inactive_claim_refs
+    retained_assertion(lambda: ('褒められた' not in result.artifact.text and old not in result.artifact.text), "'褒められた' not in result.artifact.text and old not in result.artifact.text")
+    retained_assertion(lambda: ('その時の苦しさ' in result.artifact.reception), "'その時の苦しさ' in result.artifact.reception")
+    retained_assertion(lambda: ('誘われたのに悲しかったこと' in result.artifact.reception), "'誘われたのに悲しかったこと' in result.artifact.reception")
+    retained_assertion(lambda: ('頼まれたのに寂しかったこと' in result.artifact.reception), "'頼まれたのに寂しかったこと' in result.artifact.reception")
+    retained_assertion(lambda: ('nucleus:s1:event' in prepared.checkpoint.inactive_claim_refs), "'nucleus:s1:event' in prepared.checkpoint.inactive_claim_refs")
 
 
 def test_withdrawal_duties_over_capacity_keep_checkpoint_without_partial_body():
@@ -1079,6 +1102,7 @@ def test_withdrawal_duties_over_capacity_keep_checkpoint_without_partial_body():
     ('その時は重かった。', 'その時の重さ'),
     ('今は嬉しい。', '回答した時点で嬉しいという気持ち'),
 ])
+@continue_assertions
 def test_event_withdrawal_inverse_rejects_lost_retimed_or_rebound_independent_meaning(answer, phrase):
     from unittest.mock import patch
     from emlis_ai_grounded_observation_gate import _body_inverse_thread_received_group
@@ -1093,7 +1117,7 @@ def test_event_withdrawal_inverse_rejects_lost_retimed_or_rebound_independent_me
         return evaluate_grounded_surface_body_inverse(
             body=result.artifact.text.replace(result.artifact.reception, follow).encode(),
             plan=plan, sentence_plan=sentence_plan, resolver=resolver, selected_subjective_input=selected).passed
-    assert valid(follow)
+    retained_assertion(lambda: (valid(follow)), 'valid(follow)')
     for changed in (
         follow.replace('嬉しくなかったこと', '嬉しかったこと'),
         follow.replace('嬉しくなかったこと', '嬉しくないこと'),
@@ -1103,7 +1127,7 @@ def test_event_withdrawal_inverse_rejects_lost_retimed_or_rebound_independent_me
         follow.replace(phrase, phrase.replace('その時の', '回答した時点の').replace('回答した時点で', 'その時に')),
         follow.replace('誘われたのに悲しかったこと', '誘われたのに嬉しくなかったこと'),
     ):
-        assert changed != follow and not valid(changed)
+        retained_assertion(lambda: (changed != follow and not valid(changed)), 'changed != follow and (not valid(changed))')
     group = next(m for m in plan.response_plan.human_reception_plan.moves if m.support_nucleus_ids)
     def parsed(text):
         raw = text.encode()
@@ -1111,8 +1135,8 @@ def test_event_withdrawal_inverse_rejects_lost_retimed_or_rebound_independent_me
         return any(_body_inverse_thread_received_group(raw, witness, sentence, group, plan, resolver) is not None
                    for sentence in witness.sentences if sentence.section == 'reception')
     with patch('emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no replay')):
-        assert parsed(result.artifact.text)
-        assert not parsed(result.artifact.text.replace('と、頼まれたのに寂しかったこと', ''))
+        retained_assertion(lambda: (parsed(result.artifact.text)), 'parsed(result.artifact.text)')
+        retained_assertion(lambda: (not parsed(result.artifact.text.replace('と、頼まれたのに寂しかったこと', ''))), "not parsed(result.artifact.text.replace('と、頼まれたのに寂しかったこと', ''))")
 
 
 @pytest.mark.parametrize('memo,first_nominal', [
@@ -1122,40 +1146,41 @@ def test_event_withdrawal_inverse_rejects_lost_retimed_or_rebound_independent_me
     ('人が近くにいても、自分だけ離れている感じがする。どうしてそう感じるのかがわからない。', '人が近くにいても、自分だけ離れている感じがすること'),
 ])
 @pytest.mark.parametrize('q3', [False, True])
+@continue_assertions
 def test_current_feeling_and_its_reason_unknown_remain_one_reception_duty(memo, first_nominal, q3):
     req = (begin if q3 else initial)(memo, 'お茶を飲んだ。')
     prepared = prepare_emlis_meaning(req)
     plan = build_updated_grounded_plan(prepared)
     projection = project_thread_meaning(prepared, plan)
     result = realize_emlis_thread_body(prepared)
-    assert result.artifact, result.reason_codes
+    retained_assertion(lambda: (result.artifact), 'result.artifact', lambda: (result.reason_codes))
     feeling, unknown = memo.rstrip('。').split('。')
     expected = first_nominal + 'と、' + unknown + 'ことを小さくせずに受け止めています。お茶を飲んだことを大切に思っています。'
-    assert result.artifact.reception == expected
-    assert unknown + 'のですね。' in result.artifact.observation
+    retained_assertion(lambda: (result.artifact.reception == expected), 'result.artifact.reception == expected')
+    retained_assertion(lambda: (unknown + 'のですね。' in result.artifact.observation), "unknown + 'のですね。' in result.artifact.observation")
     engine = MeaningExperienceEngine()
     checkpoint = engine.prepare_emlis_update(req)
     current = replace(req, emlis_thread=replace(req.emlis_thread, prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id))
     actual = engine.generate(current)
-    assert actual.artifact and actual.body_state == 'FINAL' and actual.question is None
-    assert actual.artifact.reception == expected
+    retained_assertion(lambda: (actual.artifact and actual.body_state == 'FINAL' and actual.question is None), "actual.artifact and actual.body_state == 'FINAL' and (actual.question is None)")
+    retained_assertion(lambda: (actual.artifact.reception == expected), 'actual.artifact.reception == expected')
     moves = plan.response_plan.human_reception_plan.moves
-    assert [(m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in moves] == [
+    retained_assertion(lambda: ([(m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in moves] == [
         ('stay_with_current_burden', ('nucleus:s1',), ('nucleus:s2',)),
-        ('honor_concrete_effort', ('nucleus:s3',), ())]
-    assert all(r.retention != 'required' and r.type == 'uncertain_connection' for r in plan.relations)
+        ('honor_concrete_effort', ('nucleus:s3',), ())]), "[(m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in moves] == [('stay_with_current_burden', ('nucleus:s1',), ('nucleus:s2',)), ('honor_concrete_effort', ('nucleus:s3',), ())]")
+    retained_assertion(lambda: (all(r.retention != 'required' and r.type == 'uncertain_connection' for r in plan.relations)), "all((r.retention != 'required' and r.type == 'uncertain_connection' for r in plan.relations))")
     left, right = projection.selected_reception.decisions
     if left.projected_claim_ref == right.projected_claim_ref:
         from cocolon_meaning_experience_engine.emlis_stage1_response import _partition_shared_reception_move_contributions, CMEEStage1ContractError
         assigned = [left, right]
         def partition(rows):
             return _partition_shared_reception_move_contributions(rows, plan.response_plan.human_reception_plan, projection.binding)
-        assert partition(assigned) is assigned
+        retained_assertion(lambda: (partition(assigned) is assigned), 'partition(assigned) is assigned')
         complete = left.subjective_proposition.target_contribution_refs
-        assert not set(left.selected_contribution_refs) & set(right.selected_contribution_refs)
-        assert set(left.selected_contribution_refs + right.selected_contribution_refs) == set(complete)
+        retained_assertion(lambda: (not set(left.selected_contribution_refs) & set(right.selected_contribution_refs)), 'not set(left.selected_contribution_refs) & set(right.selected_contribution_refs)')
+        retained_assertion(lambda: (set(left.selected_contribution_refs + right.selected_contribution_refs) == set(complete)), 'set(left.selected_contribution_refs + right.selected_contribution_refs) == set(complete)')
         full = [replace(r, selected_contribution_refs=complete) for r in assigned]
-        assert [r.selected_contribution_refs for r in partition(full)] == [r.selected_contribution_refs for r in assigned]
+        retained_assertion(lambda: ([r.selected_contribution_refs for r in partition(full)] == [r.selected_contribution_refs for r in assigned]), '[r.selected_contribution_refs for r in partition(full)] == [r.selected_contribution_refs for r in assigned]')
         for bad in ([full[0], right], [replace(left, selected_contribution_refs=()), right],
                     [replace(left, selected_contribution_refs=right.selected_contribution_refs), replace(right, selected_contribution_refs=left.selected_contribution_refs)]):
             with pytest.raises(CMEEStage1ContractError, match='CAUSAL_TRACE_GAP'):
@@ -1249,6 +1274,7 @@ def test_feeling_reason_discourse_saved_body_survives_author_free_restart(qdb, q
     assert run(service.start(user, parent)) == dto
 
 
+@continue_assertions
 def test_feeling_reason_body_inverse_rejects_loss_rebinding_or_closed_reason_without_author_replay():
     from types import SimpleNamespace
     from unittest.mock import patch
@@ -1257,7 +1283,7 @@ def test_feeling_reason_body_inverse_rejects_loss_rebinding_or_closed_reason_wit
     plan = build_updated_grounded_plan(prepared)
     selected = project_thread_meaning(prepared, plan).selected_reception
     result = realize_emlis_thread_body(prepared)
-    assert result.artifact
+    retained_assertion(lambda: (result.artifact), 'result.artifact')
     resolver = prepared.thread.resolver()
     sentence_plan = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
     follow = result.artifact.reception
@@ -1266,7 +1292,7 @@ def test_feeling_reason_body_inverse_rejects_loss_rebinding_or_closed_reason_wit
             'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no author replay')):
             return evaluate_grounded_surface_body_inverse(body=result.artifact.text.replace(follow, changed).encode(),
                 plan=plan, sentence_plan=sentence_plan, resolver=resolver, selected_subjective_input=selected).passed
-    assert independent(follow)
+    retained_assertion(lambda: (independent(follow)), 'independent(follow)')
     for changed in (
         follow.replace('少し怖いというあなたの気持ちと、', ''), follow.replace('と、その理由はまだよく分からないこと', ''),
         follow.replace('あなたの気持ち', '私の気持ち'), follow.replace('まだよく', ''), follow.replace('分からない', '分かった'),
@@ -1275,10 +1301,11 @@ def test_feeling_reason_body_inverse_rejects_loss_rebinding_or_closed_reason_wit
         follow.replace('あなたの気持ち', '彼女の気持ち'), follow.replace('少し怖いというあなたの気持ち', '「少し怖いというあなたの気持ち」'),
         follow.replace('お茶を飲んだこと', 'お茶を飲まなかったこと'),
     ):
-        assert changed != follow and not independent(changed), changed
+        retained_assertion(lambda: (changed != follow and not independent(changed)), 'changed != follow and (not independent(changed))', lambda: (changed))
 
 
 @pytest.mark.parametrize('q3', [False, True])
+@continue_assertions
 def test_feeling_reason_group_keeps_explicit_objects_without_a_supplementary_action(q3):
     req = (begin if q3 else initial)('何となく寂しい。なぜそう感じるのかは分からない。')
     prepared = prepare_emlis_meaning(req)
@@ -1286,9 +1313,9 @@ def test_feeling_reason_group_keeps_explicit_objects_without_a_supplementary_act
     engine = MeaningExperienceEngine()
     checkpoint = engine.prepare_emlis_update(req)
     actual = engine.generate(replace(req, emlis_thread=replace(req.emlis_thread, prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id)))
-    assert result.artifact and actual.artifact
+    retained_assertion(lambda: (result.artifact and actual.artifact), 'result.artifact and actual.artifact')
     expected = '何となく寂しいことと、なぜそう感じるのかは分からないことを小さくせずに受け止めています。'
-    assert result.artifact.reception == actual.artifact.reception == expected
+    retained_assertion(lambda: (result.artifact.reception == actual.artifact.reception == expected), 'result.artifact.reception == actual.artifact.reception == expected')
 
 
 @pytest.mark.parametrize('memo', [
@@ -2223,48 +2250,50 @@ def test_independent_decision_discourse_saved_body_survives_author_free_restart(
 @pytest.mark.parametrize('memo', INDEPENDENT_DECISION_MEMOS)
 @pytest.mark.parametrize('action', ['', 'お茶を飲んだ。'])
 @pytest.mark.parametrize('q3', [False, True])
+@continue_assertions
 def test_independent_decision_preserves_two_unknown_objects_and_separate_action(memo, action, q3):
     import emlis_ai_grounded_observation_plan as gp
     req = (begin if q3 else initial)(memo, action)
     prepared = prepare_emlis_meaning(req)
     plan = build_updated_grounded_plan(prepared)
     group = gp._source_independent_decision_group(plan.nuclei, plan.relations)
-    assert len(group) == 2 + bool(action)
-    assert [n.kind for n in group[:2]] == ['uncertainty', 'uncertainty']
-    assert [n.semantic_frame.modality for n in group[:2]] == ['uncertain', 'uncertain']
-    assert [n.semantic_frame.polarity for n in group[:2]] == ['neutral', 'negative']
+    retained_assertion(lambda: (len(group) == 2 + bool(action)), 'len(group) == 2 + bool(action)')
+    retained_assertion(lambda: ([n.kind for n in group[:2]] == ['uncertainty', 'uncertainty']), "[n.kind for n in group[:2]] == ['uncertainty', 'uncertainty']")
+    retained_assertion(lambda: ([n.semantic_frame.modality for n in group[:2]] == ['uncertain', 'uncertain']), "[n.semantic_frame.modality for n in group[:2]] == ['uncertain', 'uncertain']")
+    retained_assertion(lambda: ([n.semantic_frame.polarity for n in group[:2]] == ['neutral', 'negative']), "[n.semantic_frame.polarity for n in group[:2]] == ['neutral', 'negative']")
     limits = [u for u in plan.unknown_boundaries if u.dimension == 'source_explicit_epistemic_limit']
-    assert len(limits) == 2
-    assert {(u.affected_nucleus_ids, u.evidence_span_ids, u.surface_policy) for u in limits} == {
-        ((n.nucleus_id,), n.source_span_ids, 'hedge_only') for n in group[:2]}
-    assert not plan.coverage_requirements.required_relation_ids
+    retained_assertion(lambda: (len(limits) == 2), 'len(limits) == 2')
+    retained_assertion(lambda: ({(u.affected_nucleus_ids, u.evidence_span_ids, u.surface_policy) for u in limits} == {
+        ((n.nucleus_id,), n.source_span_ids, 'hedge_only') for n in group[:2]}), "{(u.affected_nucleus_ids, u.evidence_span_ids, u.surface_policy) for u in limits} == {((n.nucleus_id,), n.source_span_ids, 'hedge_only') for n in group[:2]}")
+    retained_assertion(lambda: (not plan.coverage_requirements.required_relation_ids), 'not plan.coverage_requirements.required_relation_ids')
     moves = plan.response_plan.human_reception_plan.moves
-    assert len(moves) == 1 + bool(action)
-    assert (moves[0].target_nucleus_ids, moves[0].support_nucleus_ids) == (
-        (group[0].nucleus_id,), (group[1].nucleus_id,))
+    retained_assertion(lambda: (len(moves) == 1 + bool(action)), 'len(moves) == 1 + bool(action)')
+    retained_assertion(lambda: ((moves[0].target_nucleus_ids, moves[0].support_nucleus_ids) == (
+        (group[0].nucleus_id,), (group[1].nucleus_id,))), '(moves[0].target_nucleus_ids, moves[0].support_nucleus_ids) == ((group[0].nucleus_id,), (group[1].nucleus_id,))')
     if action:
-        assert moves[1].target_nucleus_ids == (group[2].nucleus_id,)
-        assert not moves[1].support_nucleus_ids
+        retained_assertion(lambda: (moves[1].target_nucleus_ids == (group[2].nucleus_id,)), 'moves[1].target_nucleus_ids == (group[2].nucleus_id,)')
+        retained_assertion(lambda: (not moves[1].support_nucleus_ids), 'not moves[1].support_nucleus_ids')
     direct = realize_emlis_thread_body(prepared)
     engine = MeaningExperienceEngine()
     checkpoint = engine.prepare_emlis_update(req)
     actual = engine.generate(replace(req, emlis_thread=replace(req.emlis_thread,
         prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id)))
-    assert direct.artifact and actual.artifact, (direct.reason_codes, actual.reason_codes)
-    assert actual.question is None
+    retained_assertion(lambda: (direct.artifact and actual.artifact), 'direct.artifact and actual.artifact', lambda: ((direct.reason_codes, actual.reason_codes)))
+    retained_assertion(lambda: (actual.question is None), 'actual.question is None')
     hosts = memo.rstrip('。').replace('迷っています', '迷っている').replace('決められません', '決められない').split('。')
     for artifact in (direct.artifact, actual.artifact):
         for section in (artifact.observation, artifact.reception):
-            assert all(host in section for host in hosts)
-            assert section.index(hosts[0]) < section.index(hosts[1])
-        assert bool('お茶を飲んだ' in artifact.reception) == bool(action)
+            retained_assertion(lambda: (all(host in section for host in hosts)), 'all((host in section for host in hosts))')
+            retained_assertion(lambda: (section.index(hosts[0]) < section.index(hosts[1])), 'section.index(hosts[0]) < section.index(hosts[1])', evaluation_errors=(ValueError,))
+        retained_assertion(lambda: (bool('お茶を飲んだ' in artifact.reception) == bool(action)), "bool('お茶を飲んだ' in artifact.reception) == bool(action)")
         if action:
-            assert '。' in artifact.reception[artifact.reception.index(hosts[1]) + len(hosts[1]):artifact.reception.index('お茶を飲んだ')]
-        assert not any(x in artifact.text for x in ('迷っていますこと', '決められませんこと', '使いました', '続けました', '変える時期', '替える時期'))
+            retained_assertion(lambda: ('。' in artifact.reception[artifact.reception.index(hosts[1]) + len(hosts[1]):artifact.reception.index('お茶を飲んだ')]), "'。' in artifact.reception[artifact.reception.index(hosts[1]) + len(hosts[1]):artifact.reception.index('お茶を飲んだ')]", evaluation_errors=(ValueError,))
+        retained_assertion(lambda: (not any(x in artifact.text for x in ('迷っていますこと', '決められませんこと', '使いました', '続けました', '変える時期', '替える時期'))), "not any((x in artifact.text for x in ('迷っていますこと', '決められませんこと', '使いました', '続けました', '変える時期', '替える時期')))")
 
 
 @pytest.mark.parametrize('q3', [False, True])
 @pytest.mark.parametrize('focus', [0, 1, 2])
+@continue_assertions
 def test_independent_decision_keeps_explicit_focus_and_independence(monkeypatch, q3, focus):
     import emlis_ai_grounded_observation_plan as gp
     req = _current_material_with_requested_focus(monkeypatch, INDEPENDENT_DECISION_MEMOS[1], 'お茶を飲んだ。', q3, focus)
@@ -2272,23 +2301,23 @@ def test_independent_decision_keeps_explicit_focus_and_independence(monkeypatch,
     plan = build_updated_grounded_plan(prepared)
     group = gp._source_independent_decision_group(plan.nuclei, plan.relations)
     expected = group[focus].nucleus_id
-    assert plan.response_plan.human_follow_target_ids == (expected,)
-    assert plan.response_plan.human_reception_plan.moves[0].target_nucleus_ids == (expected,)
+    retained_assertion(lambda: (plan.response_plan.human_follow_target_ids == (expected,)), 'plan.response_plan.human_follow_target_ids == (expected,)')
+    retained_assertion(lambda: (plan.response_plan.human_reception_plan.moves[0].target_nucleus_ids == (expected,)), 'plan.response_plan.human_reception_plan.moves[0].target_nucleus_ids == (expected,)')
     direct = realize_emlis_thread_body(prepared)
     engine = MeaningExperienceEngine()
     checkpoint = engine.prepare_emlis_update(req)
     actual = engine.generate(replace(req, emlis_thread=replace(req.emlis_thread,
         prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id)))
-    assert direct.artifact and actual.artifact, (direct.reason_codes, actual.reason_codes)
+    retained_assertion(lambda: (direct.artifact and actual.artifact), 'direct.artifact and actual.artifact', lambda: ((direct.reason_codes, actual.reason_codes)))
     for artifact in (direct.artifact, actual.artifact):
         follow = artifact.reception
         first = '今の講座を続けるか迷っている'
         second = '読む資料を替えることを考え始める時期は決められない'
-        assert all(part in follow for part in (first, second, 'お茶を飲んだ'))
+        retained_assertion(lambda: (all(part in follow for part in (first, second, 'お茶を飲んだ'))), "all((part in follow for part in (first, second, 'お茶を飲んだ')))")
         if focus == 1:
-            assert second + 'ことと、それとは別に、' + first in follow
+            retained_assertion(lambda: (second + 'ことと、それとは別に、' + first in follow), "second + 'ことと、それとは別に、' + first in follow")
         else:
-            assert first + 'ことと、それとは別に、' + second in follow
+            retained_assertion(lambda: (first + 'ことと、それとは別に、' + second in follow), "first + 'ことと、それとは別に、' + second in follow")
 
 
 @pytest.mark.parametrize('memo', [
@@ -2313,13 +2342,14 @@ def test_independent_decision_does_not_promote_other_owners_hosts_or_timing(memo
 
 
 @pytest.mark.parametrize('memo', INDEPENDENT_DECISION_MEMOS)
+@continue_assertions
 def test_independent_decision_inverse_rejects_changed_host_nested_scope_and_action(memo):
     from types import SimpleNamespace
     from unittest.mock import patch
     prepared = prepare_emlis_meaning(begin(memo, 'お茶を飲んだ。'))
     plan = build_updated_grounded_plan(prepared)
     out = realize_emlis_thread_body(prepared)
-    assert out.artifact, out.reason_codes
+    retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
     resolver = prepared.thread.resolver()
     sentence = surface.build_grounded_sentence_plan(plan, resolver)
     selected = project_thread_meaning(prepared, plan).selected_reception
@@ -2330,7 +2360,7 @@ def test_independent_decision_inverse_rejects_changed_host_nested_scope_and_acti
                    side_effect=AssertionError('no author replay')):
             return evaluate_grounded_surface_body_inverse(body=body.encode(), plan=plan,
                 sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
-    assert independent(out.artifact.text)
+    retained_assertion(lambda: (independent(out.artifact.text)), 'independent(out.artifact.text)')
     for section in ('observation', 'reception'):
         original = getattr(out.artifact, section)
         for old, new in (('か迷っている', 'ことに決めた'), ('迷っている', '迷っていた'),
@@ -2338,8 +2368,8 @@ def test_independent_decision_inverse_rejects_changed_host_nested_scope_and_acti
                          ('ことを考え始める時期', '時期'), ('考え始める', '考え始めた'),
                          ('それとは別に、', 'そのため、'), ('それとは別に、', ''),
                          ('お茶を飲んだ', 'お茶を飲まなかった')):
-            assert old in original
-            assert not independent(out.artifact.text.replace(original, original.replace(old, new))), (section, old)
+            retained_assertion(lambda: (old in original), 'old in original')
+            retained_assertion(lambda: (not independent(out.artifact.text.replace(original, original.replace(old, new)))), 'not independent(out.artifact.text.replace(original, original.replace(old, new)))', lambda: ((section, old)))
 
 
 @pytest.mark.parametrize('memo', INDEPENDENT_DECISION_MEMOS)
@@ -2399,31 +2429,34 @@ ACTION_CHANGE_CONTRAST_MEMO = (
 @pytest.mark.parametrize('q3', [False, True])
 @pytest.mark.parametrize('action', ['', 'お茶を飲んだ。'])
 @pytest.mark.parametrize('unfinished', ['', 'まだ配置は見つかっていない。'])
+@continue_assertions
 def test_action_change_contrast_receives_both_duties_in_actual_body(q3, action, unfinished):
     import emlis_ai_grounded_observation_plan as gp
     req = (begin if q3 else initial)(ACTION_CHANGE_CONTRAST_MEMO + unfinished, action)
     prepared = prepare_emlis_meaning(req)
     plan = build_updated_grounded_plan(prepared)
     group = gp._source_action_change_contrast(plan.nuclei, plan.relations)
-    assert len(group) == 3
+    retained_assertion(lambda: (len(group) == 3), 'len(group) == 3')
     moves = plan.response_plan.human_reception_plan.moves
-    assert [(m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in moves] == [
+    retained_assertion(lambda: ([(m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in moves] == [
         ('honor_concrete_effort', (group[0],), (group[1],)),
         ('stay_with_current_burden', (group[2],), ()),
-    ]
+    ]), "[(m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in moves] == [('honor_concrete_effort', (group[0],), (group[1],)), ('stay_with_current_burden', (group[2],), ())]")
     output = MeaningExperienceEngine().generate(req)
-    assert output.artifact, output.reason_codes
-    assert '窓辺の鉢を棚へ移したこと' in output.artifact.reception
-    assert '机の上が広くなってうれしかったこと' in output.artifact.reception
-    assert 'いつも見ていた葉が遠くなり、手元に緑がない寂しさも残っていること' in output.artifact.reception
-    assert 'とで、' not in output.artifact.reception
+    retained_assertion(lambda: (output.artifact), 'output.artifact', lambda: (output.reason_codes))
+    if output.artifact is not None:
+        retained_assertion(lambda: ('窓辺の鉢を棚へ移したこと' in output.artifact.reception), "'窓辺の鉢を棚へ移したこと' in output.artifact.reception")
+        retained_assertion(lambda: ('机の上が広くなってうれしかったこと' in output.artifact.reception), "'机の上が広くなってうれしかったこと' in output.artifact.reception")
+        retained_assertion(lambda: ('いつも見ていた葉が遠くなり、手元に緑がない寂しさも残っていること' in output.artifact.reception), "'いつも見ていた葉が遠くなり、手元に緑がない寂しさも残っていること' in output.artifact.reception")
+        retained_assertion(lambda: ('とで、' not in output.artifact.reception), "'とで、' not in output.artifact.reception")
     if unfinished:
-        assert unfinished[:-1] in output.artifact.observation
+        if output.artifact is not None:
+            retained_assertion(lambda: (unfinished[:-1] in output.artifact.observation), 'unfinished[:-1] in output.artifact.observation')
         remaining = next(n for n in plan.nuclei if 'semantic_role:present_unfinished' in n.semantic_frame.attribute_codes)
-        assert (remaining.kind, remaining.semantic_frame.modality, remaining.semantic_frame.polarity) == ('event', 'fact', 'negative')
-        assert remaining.nucleus_id in plan.coverage_requirements.required_nucleus_ids
-        assert all(remaining.nucleus_id not in u.affected_nucleus_ids for u in plan.unknown_boundaries
-                   if u.dimension == 'source_explicit_epistemic_limit')
+        retained_assertion(lambda: ((remaining.kind, remaining.semantic_frame.modality, remaining.semantic_frame.polarity) == ('event', 'fact', 'negative')), "(remaining.kind, remaining.semantic_frame.modality, remaining.semantic_frame.polarity) == ('event', 'fact', 'negative')")
+        retained_assertion(lambda: (remaining.nucleus_id in plan.coverage_requirements.required_nucleus_ids), 'remaining.nucleus_id in plan.coverage_requirements.required_nucleus_ids')
+        retained_assertion(lambda: (all(remaining.nucleus_id not in u.affected_nucleus_ids for u in plan.unknown_boundaries
+                   if u.dimension == 'source_explicit_epistemic_limit')), "all((remaining.nucleus_id not in u.affected_nucleus_ids for u in plan.unknown_boundaries if u.dimension == 'source_explicit_epistemic_limit'))")
 
 
 @pytest.mark.parametrize('q3', [False, True])
@@ -2673,35 +2706,37 @@ def test_mixed_unfinished_observation_does_not_name_the_fact_as_a_future_action(
 
 @pytest.mark.parametrize('q3', [False, True])
 @pytest.mark.parametrize('unfinished', ['', 'まだ配置は見つかっていない。', 'まだ配置は見つかっていません。'])
+@continue_assertions
 def test_completed_relation_attention_governs_one_object_in_actual_reception(q3, unfinished):
     request = (begin if q3 else initial)(ACTION_CHANGE_CONTRAST_MEMO + unfinished)
     plan = build_updated_grounded_plan(prepare_emlis_meaning(request))
     output = MeaningExperienceEngine().generate(request)
-    assert output.artifact, output.reason_codes
+    retained_assertion(lambda: (output.artifact), 'output.artifact', lambda: (output.reason_codes))
     follow = output.artifact.reception
     clauses = follow.rstrip('。').split('。')
     moves = plan.response_plan.human_reception_plan.moves
-    assert len(clauses) == len(moves) == (3 if unfinished else 2)
-    assert '窓辺の鉢を棚へ移したことが机の上が広くなってうれしかったことを支えていること' in clauses[0]
+    retained_assertion(lambda: (len(clauses) == len(moves) == (3 if unfinished else 2)), 'len(clauses) == len(moves) == (3 if unfinished else 2)')
+    retained_assertion(lambda: ('窓辺の鉢を棚へ移したことが机の上が広くなってうれしかったことを支えていること' in clauses[0]), "'窓辺の鉢を棚へ移したことが机の上が広くなってうれしかったことを支えていること' in clauses[0]")
     if unfinished:
-        assert clauses[1] == '机の上が広くなってうれしかった一方で、いつも見ていた葉が遠くなり、手元に緑がない寂しさも残っていることを見過ごさず、小さくせずに受け止めています'
+        retained_assertion(lambda: (clauses[1] == '机の上が広くなってうれしかった一方で、いつも見ていた葉が遠くなり、手元に緑がない寂しさも残っていることを見過ごさず、小さくせずに受け止めています'), "clauses[1] == '机の上が広くなってうれしかった一方で、いつも見ていた葉が遠くなり、手元に緑がない寂しさも残っていることを見過ごさず、小さくせずに受け止めています'")
     else:
-        assert '机の上が広くなってうれしかったことといつも見ていた葉が遠くなり、手元に緑がない寂しさも残っていること' in clauses[1]
-        assert '違い' in clauses[1]
-    assert clauses[0].endswith('を見過ごさず、大切に思っています')
-    assert '目が留まり、それを' not in follow
+        retained_assertion(lambda: ('机の上が広くなってうれしかったことといつも見ていた葉が遠くなり、手元に緑がない寂しさも残っていること' in clauses[1]), "'机の上が広くなってうれしかったことといつも見ていた葉が遠くなり、手元に緑がない寂しさも残っていること' in clauses[1]")
+        retained_assertion(lambda: ('違い' in clauses[1]), "'違い' in clauses[1]")
+    retained_assertion(lambda: (clauses[0].endswith('を見過ごさず、大切に思っています')), "clauses[0].endswith('を見過ごさず、大切に思っています')")
+    retained_assertion(lambda: ('目が留まり、それを' not in follow), "'目が留まり、それを' not in follow")
     for move, clause in zip(moves, clauses):
         if move.move_role == 'attention':
-            assert clause.count('を見過ごさず、') == 1 and 'それを' not in clause
+            retained_assertion(lambda: (clause.count('を見過ごさず、') == 1 and 'それを' not in clause), "clause.count('を見過ごさず、') == 1 and 'それを' not in clause")
         else:
-            assert '見過ごさず' not in clause
+            retained_assertion(lambda: ('見過ごさず' not in clause), "'見過ごさず' not in clause")
     if unfinished:
         nominal = unfinished[:-1] + ('という言葉' if unfinished.endswith('ません。') else 'こと')
-        assert clauses[-1] == nominal + 'を小さくせずに受け止めています'
+        retained_assertion(lambda: (clauses[-1] == nominal + 'を小さくせずに受け止めています'), "clauses[-1] == nominal + 'を小さくせずに受け止めています'")
 
 
 @pytest.mark.parametrize('q3', [False, True])
 @pytest.mark.parametrize('source_attention_word', [False, True])
+@continue_assertions
 def test_completed_relation_attention_inverse_rejects_changed_grammar_without_author_replay(q3, source_attention_word):
     from types import SimpleNamespace
     from unittest.mock import patch
@@ -2711,7 +2746,7 @@ def test_completed_relation_attention_inverse_rejects_changed_grammar_without_au
     prepared = prepare_emlis_meaning((begin if q3 else initial)(memo + 'まだ配置は見つかっていない。'))
     plan = build_updated_grounded_plan(prepared)
     output = realize_emlis_thread_body(prepared)
-    assert output.artifact, output.reason_codes
+    retained_assertion(lambda: (output.artifact), 'output.artifact', lambda: (output.reason_codes))
     resolver = prepared.thread.resolver()
     selected = project_thread_meaning(prepared, plan).selected_reception
     sentence = surface.build_grounded_sentence_plan(plan, resolver)
@@ -2721,7 +2756,7 @@ def test_completed_relation_attention_inverse_rejects_changed_grammar_without_au
             'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no author replay')):
             return evaluate_grounded_surface_body_inverse(body=output.artifact.text.replace(follow, changed).encode(),
                 plan=plan, sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
-    assert passes(follow)
+    retained_assertion(lambda: (passes(follow)), 'passes(follow)')
     clauses = follow.rstrip('。').split('。')
     for index in (0, 1):
         for old, new in [('を見過ごさず、', 'を'), ('を見過ごさず、', 'を見過ごして、'),
@@ -2729,14 +2764,14 @@ def test_completed_relation_attention_inverse_rejects_changed_grammar_without_au
                          ('ています', 'ていません')]:
             changed = list(clauses)
             changed[index] = changed[index].replace(old, new)
-            assert changed[index] != clauses[index]
-            assert not passes('。'.join(changed) + '。'), (index, old, new)
+            retained_assertion(lambda: (changed[index] != clauses[index]), 'changed[index] != clauses[index]')
+            retained_assertion(lambda: (not passes('。'.join(changed) + '。')), "not passes('。'.join(changed) + '。')", lambda: ((index, old, new)))
     for old, new in [('を支えていること', 'を支えていないこと'), ('一方で、', 'ので、'),
                      ('寂しさも残っている', '寂しさも残っていた'), ('うれしかった', 'うれしくなかった'),
                      ('大切に思っています', '小さくせずに受け止めています'),
                      ('小さくせずに受け止めています', '大切に思っています'),
                      ('窓辺の鉢を棚へ移した', '弟が窓辺の鉢を棚へ移した')]:
-        assert not passes(follow.replace(old, new)), (old, new)
+        retained_assertion(lambda: (not passes(follow.replace(old, new))), 'not passes(follow.replace(old, new))', lambda: ((old, new)))
 
 
 @pytest.mark.parametrize('q3', [False, True])
@@ -2874,6 +2909,7 @@ RECEIVED_PAST_FEELING = '連絡できなかったけれど、訪ねたときに�
 @pytest.mark.parametrize('past', [RECEIVED_PAST_FEELING,
     '話したときに否定せず受け入れてくれて嬉しかった',
     '私は話を聞いてもらえて少し落ち着いた'])
+@continue_assertions
 def test_received_past_feeling_and_current_cognition_keep_independent_duties(q3, past):
     from emlis_ai_grounded_observation_plan import is_grounded_positive_feeling
     prepared = prepare_emlis_meaning((begin if q3 else initial)(
@@ -2881,24 +2917,24 @@ def test_received_past_feeling_and_current_cognition_keep_independent_duties(q3,
     plan = build_updated_grounded_plan(prepared)
     resolver = prepared.thread.resolver()
     feelings = [n for n in plan.nuclei if is_grounded_positive_feeling(n)]
-    assert len(feelings) == 2
-    assert [resolver.resolve(n.source_span_ids[0]).raw_text for n in feelings] == [past, NOMINAL_COGNITION_FEELING]
-    assert [n.semantic_frame.time_scope for n in feelings] == ['past', 'current_input']
+    retained_assertion(lambda: (len(feelings) == 2), 'len(feelings) == 2')
+    retained_assertion(lambda: ([resolver.resolve(n.source_span_ids[0]).raw_text for n in feelings] == [past, NOMINAL_COGNITION_FEELING]), '[resolver.resolve(n.source_span_ids[0]).raw_text for n in feelings] == [past, NOMINAL_COGNITION_FEELING]')
+    retained_assertion(lambda: ([n.semantic_frame.time_scope for n in feelings] == ['past', 'current_input']), "[n.semantic_frame.time_scope for n in feelings] == ['past', 'current_input']")
     moves = plan.response_plan.human_reception_plan.moves
-    assert [m.reception_act for m in moves] == ['recognize_lived_change', 'recognize_lived_change', 'honor_concrete_effort']
-    assert all(not m.support_nucleus_ids for m in moves)
-    assert [m.target_nucleus_ids for m in moves[:2]] == [(n.nucleus_id,) for n in feelings]
+    retained_assertion(lambda: ([m.reception_act for m in moves] == ['recognize_lived_change', 'recognize_lived_change', 'honor_concrete_effort']), "[m.reception_act for m in moves] == ['recognize_lived_change', 'recognize_lived_change', 'honor_concrete_effort']")
+    retained_assertion(lambda: (all(not m.support_nucleus_ids for m in moves)), 'all((not m.support_nucleus_ids for m in moves))')
+    retained_assertion(lambda: ([m.target_nucleus_ids for m in moves[:2]] == [(n.nucleus_id,) for n in feelings]), '[m.target_nucleus_ids for m in moves[:2]] == [(n.nucleus_id,) for n in feelings]')
     selected = project_thread_meaning(prepared, plan).selected_reception
     consumed = [ref for d in selected.decisions for ref in d.selected_contribution_refs]
-    assert len(consumed) == len(set(consumed)) and all(d.selected_contribution_refs for d in selected.decisions)
+    retained_assertion(lambda: (len(consumed) == len(set(consumed)) and all(d.selected_contribution_refs for d in selected.decisions)), 'len(consumed) == len(set(consumed)) and all((d.selected_contribution_refs for d in selected.decisions))')
     out = realize_emlis_thread_body(prepared)
-    assert out.artifact, out.reason_codes
-    assert past + 'という気持ちを見過ごさず、受け止めています。' in out.artifact.reception
-    assert NOMINAL_COGNITION_FEELING + 'という気持ちを受け止めています。' in out.artifact.reception
-    assert '机を拭いたことを大切に思っています。' in out.artifact.reception
-    assert out.artifact.reception.index(past) < out.artifact.reception.index(NOMINAL_COGNITION_FEELING) < out.artifact.reception.index('机を拭いた')
-    assert '一つの状態' not in out.artifact.observation
-    assert 'を背景に' not in out.artifact.reception and 'を支えている' not in out.artifact.reception
+    retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
+    retained_assertion(lambda: (past + 'という気持ちを見過ごさず、受け止めています。' in out.artifact.reception), "past + 'という気持ちを見過ごさず、受け止めています。' in out.artifact.reception")
+    retained_assertion(lambda: (NOMINAL_COGNITION_FEELING + 'という気持ちを受け止めています。' in out.artifact.reception), "NOMINAL_COGNITION_FEELING + 'という気持ちを受け止めています。' in out.artifact.reception")
+    retained_assertion(lambda: ('机を拭いたことを大切に思っています。' in out.artifact.reception), "'机を拭いたことを大切に思っています。' in out.artifact.reception")
+    retained_assertion(lambda: (out.artifact.reception.index(past) < out.artifact.reception.index(NOMINAL_COGNITION_FEELING) < out.artifact.reception.index('机を拭いた')), "out.artifact.reception.index(past) < out.artifact.reception.index(NOMINAL_COGNITION_FEELING) < out.artifact.reception.index('机を拭いた')")
+    retained_assertion(lambda: ('一つの状態' not in out.artifact.observation), "'一つの状態' not in out.artifact.observation")
+    retained_assertion(lambda: ('を背景に' not in out.artifact.reception and 'を支えている' not in out.artifact.reception), "'を背景に' not in out.artifact.reception and 'を支えている' not in out.artifact.reception")
 
 
 @pytest.mark.parametrize('memo', [
@@ -2923,6 +2959,7 @@ def test_received_past_feeling_does_not_promote_foreign_report_or_nonaffirmative
 
 
 @pytest.mark.parametrize('q3', [False, True])
+@continue_assertions
 def test_received_past_pair_inverse_requires_each_complete_object_without_author_replay(q3):
     from types import SimpleNamespace
     from unittest.mock import patch
@@ -2930,7 +2967,7 @@ def test_received_past_pair_inverse_requires_each_complete_object_without_author
         RECEIVED_PAST_FEELING + '。' + NOMINAL_COGNITION_FEELING + '。', '机を拭いた。'))
     plan = build_updated_grounded_plan(prepared)
     out = realize_emlis_thread_body(prepared)
-    assert out.artifact, out.reason_codes
+    retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
     resolver = prepared.thread.resolver()
     selected = project_thread_meaning(prepared, plan).selected_reception
     sentence = surface.build_grounded_sentence_plan(plan, resolver)
@@ -2940,7 +2977,7 @@ def test_received_past_pair_inverse_requires_each_complete_object_without_author
             'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no author replay')):
             return evaluate_grounded_surface_body_inverse(body=out.artifact.text.replace(follow, changed).encode(),
                 plan=plan, sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
-    assert passes(follow)
+    retained_assertion(lambda: (passes(follow)), 'passes(follow)')
     for old, new in [
         ('連絡できなかったけれど、', ''),
         ('急かさず', '急かして'),
@@ -2954,7 +2991,7 @@ def test_received_past_pair_inverse_requires_each_complete_object_without_author
         ('机を拭いたことを大切に思っています。', ''),
     ]:
         changed = follow.replace(old, new)
-        assert changed != follow and not passes(changed), (old, new)
+        retained_assertion(lambda: (changed != follow and not passes(changed)), 'changed != follow and (not passes(changed))', lambda: ((old, new)))
 
 
 @pytest.mark.parametrize('action', ['', '机を拭いた。'])
@@ -3209,29 +3246,30 @@ NOMINAL_PAST_RELIEF = '十分伝わったとは思わないけど、相談でき
 @pytest.mark.parametrize('q3', [False, True])
 @pytest.mark.parametrize('action', ['', '机を拭いた。'])
 @pytest.mark.parametrize('joy', [NOMINAL_PAST_JOY, '相談を聞いてくれたことがうれしかった'])
+@continue_assertions
 def test_nominal_past_pair_keeps_both_feelings_with_their_whole_objects(q3, action, joy):
     from emlis_ai_grounded_observation_plan import is_grounded_positive_feeling
     prepared = prepare_emlis_meaning((begin if q3 else initial)(
         joy + '。' + NOMINAL_PAST_RELIEF + '。', action))
     plan = build_updated_grounded_plan(prepared)
     feelings = [n for n in plan.nuclei if is_grounded_positive_feeling(n)]
-    assert len(feelings) == 2
-    assert all(n.semantic_frame.time_scope == 'past' for n in feelings)
-    assert all('lexical:source_nominal_past_feeling' in n.semantic_frame.attribute_codes for n in feelings)
-    assert not any(r.retention == 'required' or r.type != 'uncertain_connection' for r in plan.relations)
+    retained_assertion(lambda: (len(feelings) == 2), 'len(feelings) == 2')
+    retained_assertion(lambda: (all(n.semantic_frame.time_scope == 'past' for n in feelings)), "all((n.semantic_frame.time_scope == 'past' for n in feelings))")
+    retained_assertion(lambda: (all('lexical:source_nominal_past_feeling' in n.semantic_frame.attribute_codes for n in feelings)), "all(('lexical:source_nominal_past_feeling' in n.semantic_frame.attribute_codes for n in feelings))")
+    retained_assertion(lambda: (not any(r.retention == 'required' or r.type != 'uncertain_connection' for r in plan.relations)), "not any((r.retention == 'required' or r.type != 'uncertain_connection' for r in plan.relations))")
     moves = plan.response_plan.human_reception_plan.moves
-    assert [m.reception_act for m in moves] == ['recognize_lived_change'] * 2 + (['honor_concrete_effort'] if action else [])
-    assert all(not m.support_nucleus_ids for m in moves)
+    retained_assertion(lambda: ([m.reception_act for m in moves] == ['recognize_lived_change'] * 2 + (['honor_concrete_effort'] if action else [])), "[m.reception_act for m in moves] == ['recognize_lived_change'] * 2 + (['honor_concrete_effort'] if action else [])")
+    retained_assertion(lambda: (all(not m.support_nucleus_ids for m in moves)), 'all((not m.support_nucleus_ids for m in moves))')
     out = realize_emlis_thread_body(prepared)
-    assert out.artifact, out.reason_codes
+    retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
     follow = out.artifact.reception
-    assert joy + 'という気持ちを見過ごさず、受け止めています。' in follow
-    assert NOMINAL_PAST_RELIEF + 'という気持ちを受け止めています。' in follow
-    assert follow.index(joy) < follow.index(NOMINAL_PAST_RELIEF)
-    assert '今は' not in out.artifact.observation and '一つの状態' not in out.artifact.observation
-    assert 'を背景に' not in follow and 'を支えている' not in follow
+    retained_assertion(lambda: (joy + 'という気持ちを見過ごさず、受け止めています。' in follow), "joy + 'という気持ちを見過ごさず、受け止めています。' in follow")
+    retained_assertion(lambda: (NOMINAL_PAST_RELIEF + 'という気持ちを受け止めています。' in follow), "NOMINAL_PAST_RELIEF + 'という気持ちを受け止めています。' in follow")
+    retained_assertion(lambda: (follow.index(joy) < follow.index(NOMINAL_PAST_RELIEF)), 'follow.index(joy) < follow.index(NOMINAL_PAST_RELIEF)')
+    retained_assertion(lambda: ('今は' not in out.artifact.observation and '一つの状態' not in out.artifact.observation), "'今は' not in out.artifact.observation and '一つの状態' not in out.artifact.observation")
+    retained_assertion(lambda: ('を背景に' not in follow and 'を支えている' not in follow), "'を背景に' not in follow and 'を支えている' not in follow")
     if action:
-        assert follow.index(NOMINAL_PAST_RELIEF) < follow.index('机を拭いた')
+        retained_assertion(lambda: (follow.index(NOMINAL_PAST_RELIEF) < follow.index('机を拭いた')), "follow.index(NOMINAL_PAST_RELIEF) < follow.index('机を拭いた')")
 
 
 @pytest.mark.parametrize('memo', [
@@ -3263,6 +3301,7 @@ def test_nominal_past_feeling_requires_affirmative_current_user_host(memo):
 
 
 @pytest.mark.parametrize('q3', [False, True])
+@continue_assertions
 def test_nominal_past_pair_inverse_preserves_each_object_without_author_replay(q3):
     from types import SimpleNamespace
     from unittest.mock import patch
@@ -3270,7 +3309,7 @@ def test_nominal_past_pair_inverse_preserves_each_object_without_author_replay(q
         NOMINAL_PAST_JOY + '。' + NOMINAL_PAST_RELIEF + '。', '机を拭いた。'))
     plan = build_updated_grounded_plan(prepared)
     out = realize_emlis_thread_body(prepared)
-    assert out.artifact, out.reason_codes
+    retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
     resolver = prepared.thread.resolver()
     selected = project_thread_meaning(prepared, plan).selected_reception
     sentence = surface.build_grounded_sentence_plan(plan, resolver)
@@ -3280,7 +3319,7 @@ def test_nominal_past_pair_inverse_preserves_each_object_without_author_replay(q
             'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no author replay')):
             return evaluate_grounded_surface_body_inverse(body=out.artifact.text.replace(follow, changed).encode(),
                 plan=plan, sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
-    assert passes(follow)
+    retained_assertion(lambda: (passes(follow)), 'passes(follow)')
     for old, new in [
         ('話した後も、', ''), ('十分伝わったとは思わないけど、', ''),
         ('相談できた', '相談した'), ('安心した', '安心している'),
@@ -3292,7 +3331,7 @@ def test_nominal_past_pair_inverse_preserves_each_object_without_author_replay(q
         ('机を拭いたことを大切に思っています。', ''),
     ]:
         changed = follow.replace(old, new)
-        assert changed != follow and not passes(changed), (old, new)
+        retained_assertion(lambda: (changed != follow and not passes(changed)), 'changed != follow and (not passes(changed))', lambda: ((old, new)))
 
 
 @pytest.mark.parametrize('action', ['', '机を拭いた。'])
@@ -3452,23 +3491,24 @@ def test_nominal_background_inverse_checks_complete_source_without_author_replay
 @pytest.mark.parametrize('q3', [False, True])
 @pytest.mark.parametrize('action', ['', '机を拭いた。'])
 @pytest.mark.parametrize('two_events', [False, True])
+@continue_assertions
 def test_nominal_background_answer_keeps_original_feelings_and_action(q3, action, two_events):
     memo = '誘われたのに、悲しかった。' + ('頼まれたのに、寂しかった。' if two_events else '') + NOMINAL_BACKGROUND_JOY + '。'
     request = (begin if q3 else initial)(memo, action)
     before = MeaningExperienceEngine().generate(request)
-    assert before.artifact and before.question, before.reason_codes
-    assert '誘われたのに悲しかったこと' in before.artifact.reception
-    assert NOMINAL_BACKGROUND_JOY + 'という気持ち' in before.artifact.reception
+    retained_assertion(lambda: (before.artifact and before.question), 'before.artifact and before.question', lambda: (before.reason_codes))
+    retained_assertion(lambda: ('誘われたのに悲しかったこと' in before.artifact.reception), "'誘われたのに悲しかったこと' in before.artifact.reception")
+    retained_assertion(lambda: (NOMINAL_BACKGROUND_JOY + 'という気持ち' in before.artifact.reception), "NOMINAL_BACKGROUND_JOY + 'という気持ち' in before.artifact.reception")
     request = advance(request, 'その時は重かった。')
     after = MeaningExperienceEngine().generate(request)
-    assert after.artifact, after.reason_codes
-    assert '誘われたのに悲しかったこと' in after.artifact.reception
-    assert 'その出来事へのその時の重さ' in after.artifact.reception
-    assert NOMINAL_BACKGROUND_JOY + 'という気持ち' in after.artifact.reception
+    retained_assertion(lambda: (after.artifact), 'after.artifact', lambda: (after.reason_codes))
+    retained_assertion(lambda: ('誘われたのに悲しかったこと' in after.artifact.reception), "'誘われたのに悲しかったこと' in after.artifact.reception")
+    retained_assertion(lambda: ('その出来事へのその時の重さ' in after.artifact.reception), "'その出来事へのその時の重さ' in after.artifact.reception")
+    retained_assertion(lambda: (NOMINAL_BACKGROUND_JOY + 'という気持ち' in after.artifact.reception), "NOMINAL_BACKGROUND_JOY + 'という気持ち' in after.artifact.reception")
     if action:
-        assert '机を拭いたこと' in before.artifact.reception and '机を拭いたこと' in after.artifact.reception
+        retained_assertion(lambda: ('机を拭いたこと' in before.artifact.reception and '机を拭いたこと' in after.artifact.reception), "'机を拭いたこと' in before.artifact.reception and '机を拭いたこと' in after.artifact.reception")
     if two_events:
-        assert '頼まれたのに寂しかったこと' in before.artifact.reception and '頼まれたのに寂しかったこと' in after.artifact.reception
+        retained_assertion(lambda: ('頼まれたのに寂しかったこと' in before.artifact.reception and '頼まれたのに寂しかったこと' in after.artifact.reception), "'頼まれたのに寂しかったこと' in before.artifact.reception and '頼まれたのに寂しかったこと' in after.artifact.reception")
 
 
 @pytest.mark.parametrize('memo', [
@@ -3557,38 +3597,40 @@ def test_original_burden_survives_separate_action_without_inferred_background(q3
 @pytest.mark.parametrize('q3', [False, True])
 @pytest.mark.parametrize('action', ['', '机を拭いた。'])
 @pytest.mark.parametrize('two_events', [False, True])
+@continue_assertions
 def test_original_burden_is_retained_beside_received_events_and_answer(q3, action, two_events):
     memo = '誘われたのに、悲しかった。' + ('頼まれたのに、寂しかった。' if two_events else '') + '今は怖い。'
     req = (begin if q3 else initial)(memo, action)
     for current in (req, advance(req, 'その時は重かった。')):
         prepared = prepare_emlis_meaning(current)
         out = realize_emlis_thread_body(prepared)
-        assert out.artifact, out.reason_codes
+        retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
         follow = out.artifact.reception
-        assert '今は怖い' in follow and '誘われたのに悲しかったこと' in follow
-        assert ('頼まれたのに寂しかったこと' in follow) == two_events
-        assert ('机を拭いたこと' in follow) == bool(action)
-        assert '背景に' not in follow
+        retained_assertion(lambda: ('今は怖い' in follow and '誘われたのに悲しかったこと' in follow), "'今は怖い' in follow and '誘われたのに悲しかったこと' in follow")
+        retained_assertion(lambda: (('頼まれたのに寂しかったこと' in follow) == two_events), "('頼まれたのに寂しかったこと' in follow) == two_events")
+        retained_assertion(lambda: (('机を拭いたこと' in follow) == bool(action)), "('机を拭いたこと' in follow) == bool(action)")
+        retained_assertion(lambda: ('背景に' not in follow), "'背景に' not in follow")
         plan = build_updated_grounded_plan(prepared)
-        assert len(plan.response_plan.human_reception_plan.moves) == 2 + bool(action)
+        retained_assertion(lambda: (len(plan.response_plan.human_reception_plan.moves) == 2 + bool(action)), 'len(plan.response_plan.human_reception_plan.moves) == 2 + bool(action)')
         if current is not req:
-            assert 'その出来事へのその時の重さ' in follow
+            retained_assertion(lambda: ('その出来事へのその時の重さ' in follow), "'その出来事へのその時の重さ' in follow")
 
 
 @pytest.mark.parametrize('replacement', [
     '「重かった」ではなく「苦しかった」です。', '「重かった」は誤りです。',
 ])
 @pytest.mark.parametrize('action', ['', '机を拭いた。'])
+@continue_assertions
 def test_original_burden_survives_answer_correction_and_withdrawal(replacement, action):
     memo = '誘われたのに、悲しかった。頼まれたのに、寂しかった。今は怖い。'
     req = advance(advance(begin(memo, action), 'その時は重かった。'), replacement)
     out = MeaningExperienceEngine().generate(req)
-    assert out.artifact, out.reason_codes
+    retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
     follow = out.artifact.reception
-    assert all(t in follow for t in ('今は怖い', '誘われたのに悲しかったこと', '頼まれたのに寂しかったこと'))
-    assert ('机を拭いたこと' in follow) == bool(action)
-    assert 'その時の重さ' not in follow
-    assert ('その時の苦しさ' in follow) == ('ではなく' in replacement)
+    retained_assertion(lambda: (all(t in follow for t in ('今は怖い', '誘われたのに悲しかったこと', '頼まれたのに寂しかったこと'))), "all((t in follow for t in ('今は怖い', '誘われたのに悲しかったこと', '頼まれたのに寂しかったこと')))")
+    retained_assertion(lambda: (('机を拭いたこと' in follow) == bool(action)), "('机を拭いたこと' in follow) == bool(action)")
+    retained_assertion(lambda: ('その時の重さ' not in follow), "'その時の重さ' not in follow")
+    retained_assertion(lambda: (('その時の苦しさ' in follow) == ('ではなく' in replacement)), "('その時の苦しさ' in follow) == ('ではなく' in replacement)")
 
 
 @pytest.mark.parametrize('memo', [
@@ -3602,6 +3644,7 @@ def test_original_burden_does_not_promote_foreign_reported_conditional_or_denied
 
 
 @pytest.mark.parametrize('q3', [False, True])
+@continue_assertions
 def test_original_burden_inverse_keeps_each_source_duty_without_author_replay(q3):
     from types import SimpleNamespace
     from unittest.mock import patch
@@ -3609,7 +3652,7 @@ def test_original_burden_inverse_keeps_each_source_duty_without_author_replay(q3
     prepared = prepare_emlis_meaning(req)
     plan = build_updated_grounded_plan(prepared)
     out = realize_emlis_thread_body(prepared)
-    assert out.artifact
+    retained_assertion(lambda: (out.artifact), 'out.artifact')
     selected = project_thread_meaning(prepared, plan).selected_reception
     sentence = surface.build_grounded_sentence_plan(plan, prepared.thread.resolver())
     follow = out.artifact.reception
@@ -3618,12 +3661,12 @@ def test_original_burden_inverse_keeps_each_source_duty_without_author_replay(q3
             'emlis_ai_grounded_human_reception._author_source_grounded_reception_clauses', side_effect=AssertionError('no author replay')):
             return evaluate_grounded_surface_body_inverse(body=out.artifact.text.replace(follow, changed).encode(),
                 plan=plan, sentence_plan=sentence, resolver=prepared.thread.resolver(), selected_subjective_input=selected).passed
-    assert passes(follow)
+    retained_assertion(lambda: (passes(follow)), 'passes(follow)')
     for old, new in [('今は怖い', '今は怖くない'), ('今は怖い', '以前は怖かった'),
                      ('今は怖い', '友人は怖い'), ('その時の重さ', '今の重さ'),
                      ('悲しかったこと', '悲しいこと'), ('机を拭いたこと', '机を拭く予定')]:
         changed = follow.replace(old, new)
-        assert changed != follow and not passes(changed), (old, new)
+        retained_assertion(lambda: (changed != follow and not passes(changed)), 'changed != follow and (not passes(changed))', lambda: ((old, new)))
 
 
 @pytest.mark.parametrize('q3', [False, True])
@@ -3646,13 +3689,14 @@ def test_original_burden_preserves_cognitive_context_and_unresolved_prediction(q
 
 
 @pytest.mark.parametrize('q3', [False, True])
+@continue_assertions
 def test_original_burden_positive_answer_keeps_current_and_original_past_feelings(q3):
     req = advance((begin if q3 else initial)('誘われたのに、悲しかった。今は怖い。'), 'その時は嬉しかった。')
     out = MeaningExperienceEngine().generate(req)
-    assert out.artifact, out.reason_codes
+    retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
     follow = out.artifact.reception
-    assert all(t in follow for t in ('誘われたのに悲しかったこと', '今は怖い', 'その時に嬉しかったという気持ち'))
-    assert len(build_updated_grounded_plan(prepare_emlis_meaning(req)).response_plan.human_reception_plan.moves) == 3
+    retained_assertion(lambda: (all(t in follow for t in ('誘われたのに悲しかったこと', '今は怖い', 'その時に嬉しかったという気持ち'))), "all((t in follow for t in ('誘われたのに悲しかったこと', '今は怖い', 'その時に嬉しかったという気持ち')))")
+    retained_assertion(lambda: (len(build_updated_grounded_plan(prepare_emlis_meaning(req)).response_plan.human_reception_plan.moves) == 3), 'len(build_updated_grounded_plan(prepare_emlis_meaning(req)).response_plan.human_reception_plan.moves) == 3')
 
 
 @pytest.mark.parametrize('memo', ['明日は怖い。', '友人は不安だ。それでも怖い。',
@@ -3815,33 +3859,35 @@ def test_selected_burden_priority_actual_body_keeps_primary_before_action(q3, ac
 
 @pytest.mark.parametrize('response', [None, 'その時は重かった。'])
 @pytest.mark.parametrize('q3', [False, True])
+@continue_assertions
 def test_selected_burden_priority_keeps_original_and_answer_duties(response, q3):
     req = (begin if q3 else initial)('誘われたのに、悲しかった。今は怖い。', '机を拭いた。')
     if response is not None:
         req = advance(req, response)
     prepared = prepare_emlis_meaning(req)
     out = realize_emlis_thread_body(prepared)
-    assert out.artifact, out.reason_codes
+    retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
     follow = out.artifact.reception
-    assert '今は怖い' in follow and '誘われたのに悲しかったこと' in follow
-    assert '机を拭いたこと' in follow
-    assert follow.index('今は怖い') < follow.index('机を拭いたこと')
+    retained_assertion(lambda: ('今は怖い' in follow and '誘われたのに悲しかったこと' in follow), "'今は怖い' in follow and '誘われたのに悲しかったこと' in follow")
+    retained_assertion(lambda: ('机を拭いたこと' in follow), "'机を拭いたこと' in follow")
+    retained_assertion(lambda: (follow.index('今は怖い') < follow.index('机を拭いたこと')), "follow.index('今は怖い') < follow.index('机を拭いたこと')")
     if response is not None:
-        assert 'その時の重さ' in follow
-    assert '背景に' not in follow
+        retained_assertion(lambda: ('その時の重さ' in follow), "'その時の重さ' in follow")
+    retained_assertion(lambda: ('背景に' not in follow), "'背景に' not in follow")
 
 
 @pytest.mark.parametrize('replacement', ['「重かった」ではなく「苦しかった」です。', '「重かった」は誤りです。'])
+@continue_assertions
 def test_selected_burden_priority_correction_and_withdrawal_preserve_other_meanings(replacement):
     req = begin('誘われたのに、悲しかった。頼まれたのに、寂しかった。今は怖い。', '机を拭いた。')
     req = advance(advance(req, 'その時は重かった。'), replacement)
     out = MeaningExperienceEngine().generate(req)
-    assert out.artifact, out.reason_codes
+    retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
     follow = out.artifact.reception
-    assert all(s in follow for s in ('今は怖い', '誘われたのに悲しかったこと', '頼まれたのに寂しかったこと', '机を拭いたこと'))
-    assert follow.index('今は怖い') < follow.index('机を拭いたこと')
-    assert 'その時の重さ' not in follow
-    assert ('その時の苦しさ' in follow) == ('ではなく' in replacement)
+    retained_assertion(lambda: (all(s in follow for s in ('今は怖い', '誘われたのに悲しかったこと', '頼まれたのに寂しかったこと', '机を拭いたこと'))), "all((s in follow for s in ('今は怖い', '誘われたのに悲しかったこと', '頼まれたのに寂しかったこと', '机を拭いたこと')))")
+    retained_assertion(lambda: (follow.index('今は怖い') < follow.index('机を拭いたこと')), "follow.index('今は怖い') < follow.index('机を拭いたこと')")
+    retained_assertion(lambda: ('その時の重さ' not in follow), "'その時の重さ' not in follow")
+    retained_assertion(lambda: (('その時の苦しさ' in follow) == ('ではなく' in replacement)), "('その時の苦しさ' in follow) == ('ではなく' in replacement)")
 
 
 @pytest.mark.parametrize('q3', [False, True])
@@ -3948,33 +3994,35 @@ def test_received_condition_final_source_cannot_borrow_ownership(memo):
 
 
 @pytest.mark.parametrize("q3", [False, True])
+@continue_assertions
 def test_received_condition_survives_answer_as_unrelated_original_duty(q3):
     memo = "誘われたのに、悲しかった。名前を突然呼ばれると、少し怖い。"
     req = (begin if q3 else initial)(memo, "机を拭いた。")
     first = MeaningExperienceEngine().generate(req)
-    assert first.artifact and first.question
+    retained_assertion(lambda: (first.artifact and first.question), 'first.artifact and first.question')
     req = advance(req, "その時は重かった。")
     result = MeaningExperienceEngine().generate(req)
-    assert result.artifact, result.reason_codes
+    retained_assertion(lambda: (result.artifact), 'result.artifact', lambda: (result.reason_codes))
     for part in ("名前を突然呼ばれると、少し怖いという言葉", "誘われたのに悲しかったこと", "机を拭いたこと", "その時の重さ"):
-        assert part in result.artifact.reception
-    assert req.emlis_thread.current_round == 1
-    assert req.emlis_thread.question_control_context.question_limit == (3 if q3 else 1)
+        retained_assertion(lambda: (part in result.artifact.reception), 'part in result.artifact.reception')
+    retained_assertion(lambda: (req.emlis_thread.current_round == 1), 'req.emlis_thread.current_round == 1')
+    retained_assertion(lambda: (req.emlis_thread.question_control_context.question_limit == (3 if q3 else 1)), 'req.emlis_thread.question_control_context.question_limit == (3 if q3 else 1)')
 
 
 @pytest.mark.parametrize("replacement", ["「重かった」ではなく「苦しかった」です。", "「重かった」は誤りです。"])
+@continue_assertions
 def test_received_condition_survives_correction_and_withdrawal(replacement):
     req = begin("誘われたのに、悲しかった。頼まれたのに、寂しかった。名前を突然呼ばれると、少し怖い。", "机を拭いた。")
     req = advance(advance(req, "その時は重かった。"), replacement)
     result = MeaningExperienceEngine().generate(req)
-    assert result.artifact, result.reason_codes
+    retained_assertion(lambda: (result.artifact), 'result.artifact', lambda: (result.reason_codes))
     follow = result.artifact.reception
     for part in ("名前を突然呼ばれると、少し怖いという言葉", "誘われたのに悲しかったこと", "頼まれたのに寂しかったこと", "机を拭いたこと"):
-        assert part in follow
-    assert "その時の重さ" not in follow
-    assert ("その時の苦しさ" in follow) == ("ではなく" in replacement)
-    assert req.emlis_thread.question_control_context.question_limit == 3
-    assert req.emlis_thread.current_round == 2
+        retained_assertion(lambda: (part in follow), 'part in follow')
+    retained_assertion(lambda: ("その時の重さ" not in follow), "'その時の重さ' not in follow")
+    retained_assertion(lambda: (("その時の苦しさ" in follow) == ("ではなく" in replacement)), "('その時の苦しさ' in follow) == ('ではなく' in replacement)")
+    retained_assertion(lambda: (req.emlis_thread.question_control_context.question_limit == 3), 'req.emlis_thread.question_control_context.question_limit == 3')
+    retained_assertion(lambda: (req.emlis_thread.current_round == 2), 'req.emlis_thread.current_round == 2')
 
 
 def test_received_condition_inverse_rejects_missing_or_reinterpreted_condition():
@@ -4183,22 +4231,23 @@ def test_independent_material_past_quotative_prefix_keeps_complete_object(action
     ('今は不安です。','present'), ('落ち着いていた。','past'),
     ('嬉しかった。','past'),
 ])
+@continue_assertions
 def test_field_finite_feeling_owns_meaning_not_action_label(feeling,when):
     req=begin('頼まれたのに、寂しかった。',feeling)
     prepared=prepare_emlis_meaning(req);plan=build_updated_grounded_plan(prepared)
     owned=[n for n in plan.nuclei if n.source_fields==('memo_action',)]
-    assert len(owned)==1
+    retained_assertion(lambda: (len(owned)==1), 'len(owned) == 1')
     nucleus=owned[0];frame=nucleus.semantic_frame
-    assert (nucleus.kind,frame.predicate_kind,frame.modality,frame.time_scope)==('reaction','feeling','feeling',when)
-    assert 'operator:action' not in frame.attribute_codes and 'operator:performed_action' not in frame.attribute_codes
-    assert prepared.thread.resolver().resolve(nucleus.source_span_ids[0]).source_field=='memo_action'
-    out=MeaningExperienceEngine().generate(req);assert out.artifact,out.reason_codes
-    assert feeling.rstrip('。') in out.artifact.observation and feeling.rstrip('。') in out.artifact.reception
-    assert '頼まれた' in out.artifact.reception and '寂しかった' in out.artifact.reception
-    assert '行動に移しています' not in out.artifact.observation
-    assert all(m.reception_act!='honor_concrete_effort' for m in plan.response_plan.human_reception_plan.moves)
-    assert not any(nucleus.nucleus_id in (r.from_nucleus_id,r.to_nucleus_id)
-                   and r.retention=='required' for r in plan.relations)
+    retained_assertion(lambda: ((nucleus.kind,frame.predicate_kind,frame.modality,frame.time_scope)==('reaction','feeling','feeling',when)), "(nucleus.kind, frame.predicate_kind, frame.modality, frame.time_scope) == ('reaction', 'feeling', 'feeling', when)")
+    retained_assertion(lambda: ('operator:action' not in frame.attribute_codes and 'operator:performed_action' not in frame.attribute_codes), "'operator:action' not in frame.attribute_codes and 'operator:performed_action' not in frame.attribute_codes")
+    retained_assertion(lambda: (prepared.thread.resolver().resolve(nucleus.source_span_ids[0]).source_field=='memo_action'), "prepared.thread.resolver().resolve(nucleus.source_span_ids[0]).source_field == 'memo_action'")
+    out=MeaningExperienceEngine().generate(req);retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
+    retained_assertion(lambda: (feeling.rstrip('。') in out.artifact.observation and feeling.rstrip('。') in out.artifact.reception), "feeling.rstrip('。') in out.artifact.observation and feeling.rstrip('。') in out.artifact.reception")
+    retained_assertion(lambda: ('頼まれた' in out.artifact.reception and '寂しかった' in out.artifact.reception), "'頼まれた' in out.artifact.reception and '寂しかった' in out.artifact.reception")
+    retained_assertion(lambda: ('行動に移しています' not in out.artifact.observation), "'行動に移しています' not in out.artifact.observation")
+    retained_assertion(lambda: (all(m.reception_act!='honor_concrete_effort' for m in plan.response_plan.human_reception_plan.moves)), "all((m.reception_act != 'honor_concrete_effort' for m in plan.response_plan.human_reception_plan.moves))")
+    retained_assertion(lambda: (not any(nucleus.nucleus_id in (r.from_nucleus_id,r.to_nucleus_id)
+                   and r.retention=='required' for r in plan.relations)), "not any((nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) and r.retention == 'required' for r in plan.relations))")
 
 
 @pytest.mark.parametrize('text',[
@@ -4215,18 +4264,19 @@ def test_field_finite_feeling_does_not_promote_unproved_owner_or_host(text):
 
 
 @pytest.mark.parametrize('feeling',['つらかった。','不安だった。','嬉しくなかった。','私は怖くない。'])
+@continue_assertions
 def test_field_finite_feeling_survives_other_answer_correction_withdrawal(feeling):
     req=begin(memo_action=feeling)
     for answer,removed in [(None,()),('その時は重かった。',()),
                            ('「重かった」ではなく「苦しかった」です。',('重かった','重さ')),
                            ('「苦しかった」は誤りです。',('重かった','重さ','苦しかった','苦しさ'))]:
         if answer is not None:req=advance(req,answer)
-        out=MeaningExperienceEngine().generate(req);assert out.artifact,out.reason_codes
-        assert feeling.rstrip('。') in out.artifact.reception
-        assert all(t in out.artifact.reception for t in ['褒められた','嬉しくなかった','誘われた','悲しかった','頼まれた','寂しかった'])
-        assert not any(t in out.artifact.text for t in removed)
-        assert '支える動きとして' not in out.artifact.observation
-        assert 'その背景には' not in out.artifact.observation
+        out=MeaningExperienceEngine().generate(req);retained_assertion(lambda: (out.artifact), 'out.artifact', lambda: (out.reason_codes))
+        retained_assertion(lambda: (feeling.rstrip('。') in out.artifact.reception), "feeling.rstrip('。') in out.artifact.reception")
+        retained_assertion(lambda: (all(t in out.artifact.reception for t in ['褒められた','嬉しくなかった','誘われた','悲しかった','頼まれた','寂しかった'])), "all((t in out.artifact.reception for t in ['褒められた', '嬉しくなかった', '誘われた', '悲しかった', '頼まれた', '寂しかった']))")
+        retained_assertion(lambda: (not any(t in out.artifact.text for t in removed)), 'not any((t in out.artifact.text for t in removed))')
+        retained_assertion(lambda: ('支える動きとして' not in out.artifact.observation), "'支える動きとして' not in out.artifact.observation")
+        retained_assertion(lambda: ('その背景には' not in out.artifact.observation), "'その背景には' not in out.artifact.observation")
 
 
 @pytest.mark.parametrize('mutation',['omit_feeling','change_time','reverse_negation','invent_action','invent_relation','omit_other'])
@@ -4317,20 +4367,21 @@ def test_source_self_appraisal_cannot_borrow_denied_or_foreign_host(memo):
     ('「重かった」ではなく「苦しかった」です。', 'その時の苦しさ'),
     ('「重かった」は誤りです。', None),
 ])
+@continue_assertions
 def test_source_self_appraisal_survives_other_answer_correction(operation, new):
     memo = '誘われたのに、悲しかった。頼まれたのに、寂しかった。準備を忘れた自分が情けない。'
     request = begin(memo, '机を拭いた。')
     original = request.current_input_bundle
     request = advance(advance(request, 'その時は重かった。'), operation)
     result = MeaningExperienceEngine().generate(request)
-    assert result.artifact, result.reason_codes
+    retained_assertion(lambda: (result.artifact), 'result.artifact', lambda: (result.reason_codes))
     follow = result.artifact.reception
-    assert '準備を忘れた自分が情けない' in follow
-    assert '机を拭いた' in follow and '頼まれたのに寂しかった' in follow
-    assert 'その時の重さ' not in follow
+    retained_assertion(lambda: ('準備を忘れた自分が情けない' in follow), "'準備を忘れた自分が情けない' in follow")
+    retained_assertion(lambda: ('机を拭いた' in follow and '頼まれたのに寂しかった' in follow), "'机を拭いた' in follow and '頼まれたのに寂しかった' in follow")
+    retained_assertion(lambda: ('その時の重さ' not in follow), "'その時の重さ' not in follow")
     if new is not None:
-        assert new in follow
-    assert request.current_input_bundle == original
+        retained_assertion(lambda: (new in follow), 'new in follow')
+    retained_assertion(lambda: (request.current_input_bundle == original), 'request.current_input_bundle == original')
 
 
 @pytest.mark.parametrize('answered', [False, True])
@@ -4418,6 +4469,7 @@ def test_source_self_appraisal_keeps_separate_word_reception_without_action_prom
     '誘われたのに、悲しかった。頼まれたのに、寂しかった。',
 ])
 @pytest.mark.parametrize('appraisal_first', [False, True])
+@continue_assertions
 def test_withdraw_independent_appraisal_keeps_active_contrasts_and_action(appraisal, pairs, appraisal_first):
     memo = appraisal + pairs if appraisal_first else pairs + appraisal
     request = begin(memo, '机を拭いた。')
@@ -4426,31 +4478,32 @@ def test_withdraw_independent_appraisal_keeps_active_contrasts_and_action(apprai
     prepared = prepare_emlis_meaning(request)
     plan = build_updated_grounded_plan(prepared)
     result = realize_emlis_thread_body(prepared)
-    assert result.artifact, result.reason_codes
+    retained_assertion(lambda: (result.artifact), 'result.artifact', lambda: (result.reason_codes))
     follow = result.artifact.reception
-    assert appraisal.rstrip('。') not in result.artifact.text
-    assert '誘われたのに悲しかった' in follow
+    retained_assertion(lambda: (appraisal.rstrip('。') not in result.artifact.text), "appraisal.rstrip('。') not in result.artifact.text")
+    retained_assertion(lambda: ('誘われたのに悲しかった' in follow), "'誘われたのに悲しかった' in follow")
     if '頼まれた' in pairs:
-        assert '頼まれたのに寂しかった' in follow
-    assert '机を拭いた' in follow
-    assert request.current_input_bundle == original
-    assert prepared.checkpoint.answer_update.updates[0].operation == 'WITHDRAW'
+        retained_assertion(lambda: ('頼まれたのに寂しかった' in follow), "'頼まれたのに寂しかった' in follow")
+    retained_assertion(lambda: ('机を拭いた' in follow), "'机を拭いた' in follow")
+    retained_assertion(lambda: (request.current_input_bundle == original), 'request.current_input_bundle == original')
+    retained_assertion(lambda: (prepared.checkpoint.answer_update.updates[0].operation == 'WITHDRAW'), "prepared.checkpoint.answer_update.updates[0].operation == 'WITHDRAW'")
     moves = plan.response_plan.human_reception_plan.moves
-    assert {m.reception_act for m in moves} == {'stay_with_current_burden', 'honor_concrete_effort'}
-    assert len(moves) == 2
+    retained_assertion(lambda: ({m.reception_act for m in moves} == {'stay_with_current_burden', 'honor_concrete_effort'}), "{m.reception_act for m in moves} == {'stay_with_current_burden', 'honor_concrete_effort'}")
+    retained_assertion(lambda: (len(moves) == 2), 'len(moves) == 2')
     active_required = {n.nucleus_id for n in plan.nuclei
                       if n.retention == 'required' and n.source_fields in {('memo',), ('memo_action',)}}
     received = {nid for m in moves for nid in (*m.target_nucleus_ids, *m.support_nucleus_ids)}
-    assert active_required <= received
+    retained_assertion(lambda: (active_required <= received), 'active_required <= received')
     # Withdrawal is not an answer assigning a new feeling to either event.
-    assert not any(r.type == 'evaluation_about_event' for r in plan.relations)
-    assert not any('thread_subject:withdrawn_source_event' in n.semantic_frame.attribute_codes
-                   for n in plan.nuclei)
+    retained_assertion(lambda: (not any(r.type == 'evaluation_about_event' for r in plan.relations)), "not any((r.type == 'evaluation_about_event' for r in plan.relations))")
+    retained_assertion(lambda: (not any('thread_subject:withdrawn_source_event' in n.semantic_frame.attribute_codes
+                   for n in plan.nuclei)), "not any(('thread_subject:withdrawn_source_event' in n.semantic_frame.attribute_codes for n in plan.nuclei))")
 
 
 @pytest.mark.parametrize('answer,required', [
     ('その時は重かった。', 'その時の重さ'),
 ])
+@continue_assertions
 def test_withdraw_independent_appraisal_after_answer_keeps_answer_and_original_duties(answer, required):
     appraisal = '準備を忘れた自分が情けない。'
     request = begin('誘われたのに、悲しかった。頼まれたのに、寂しかった。' + appraisal, '机を拭いた。')
@@ -4458,14 +4511,15 @@ def test_withdraw_independent_appraisal_after_answer_keeps_answer_and_original_d
     request = advance(request, answer)
     request = advance(request, '「' + appraisal.rstrip('。') + '」は誤りです。')
     result = MeaningExperienceEngine().generate(request)
-    assert result.artifact, result.reason_codes
+    retained_assertion(lambda: (result.artifact), 'result.artifact', lambda: (result.reason_codes))
     follow = result.artifact.reception
-    assert all(text in follow for text in ('誘われたのに悲しかった', '頼まれたのに寂しかった', '机を拭いた', required))
-    assert appraisal.rstrip('。') not in result.artifact.text
-    assert request.current_input_bundle == original
+    retained_assertion(lambda: (all(text in follow for text in ('誘われたのに悲しかった', '頼まれたのに寂しかった', '机を拭いた', required))), "all((text in follow for text in ('誘われたのに悲しかった', '頼まれたのに寂しかった', '机を拭いた', required)))")
+    retained_assertion(lambda: (appraisal.rstrip('。') not in result.artifact.text), "appraisal.rstrip('。') not in result.artifact.text")
+    retained_assertion(lambda: (request.current_input_bundle == original), 'request.current_input_bundle == original')
 
 
 @pytest.mark.parametrize('mutation', ['first_feeling', 'second_feeling', 'action', 'owner', 'time', 'revive'])
+@continue_assertions
 def test_withdraw_independent_appraisal_inverse_keeps_each_surviving_duty(monkeypatch, mutation):
     from types import SimpleNamespace
     import emlis_ai_grounded_human_reception as reception
@@ -4478,7 +4532,7 @@ def test_withdraw_independent_appraisal_inverse_keeps_each_surviving_duty(monkey
     resolver = prepared.thread.resolver()
     projection = project_thread_meaning(prepared, plan)
     result = realize_emlis_thread_body(prepared)
-    assert result.artifact, result.reason_codes
+    retained_assertion(lambda: (result.artifact), 'result.artifact', lambda: (result.reason_codes))
     sentence = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
     follow = result.artifact.reception
     changes = {
@@ -4490,7 +4544,7 @@ def test_withdraw_independent_appraisal_inverse_keeps_each_surviving_duty(monkey
         'revive': appraisal + follow,
     }
     changed = changes[mutation]
-    assert changed != follow
+    retained_assertion(lambda: (changed != follow), 'changed != follow')
     def forbidden(*args, **kwargs):
         raise AssertionError('Independent inverse must not call the author')
     monkeypatch.setattr(reception, '_author_source_grounded_reception_clauses', forbidden)
@@ -4501,8 +4555,8 @@ def test_withdraw_independent_appraisal_inverse_keeps_each_surviving_duty(monkey
             body=result.artifact.text.replace(follow, text).encode(), plan=plan,
             sentence_plan=sentence, resolver=resolver,
             selected_subjective_input=projection.selected_reception).passed
-    assert passed(follow)
-    assert not passed(changed)
+    retained_assertion(lambda: (passed(follow)), 'passed(follow)')
+    retained_assertion(lambda: (not passed(changed)), 'not passed(changed)')
 
 
 # Updating an independently recorded self-appraisal cannot erase the other
@@ -4514,6 +4568,7 @@ def test_withdraw_independent_appraisal_inverse_keeps_each_surviving_duty(monkey
     ("嬉しかった", "その時に嬉しかった"),
 ])
 @pytest.mark.parametrize("pairs", [1, 2])
+@continue_assertions
 def test_independent_source_replacement_keeps_untouched_pairs(replacement, visible, pairs):
     clauses = ("誘われたのに、悲しかった。", "頼まれたのに、寂しかった。")[:pairs]
     appraisal = "準備を忘れた自分が情けない"
@@ -4523,21 +4578,22 @@ def test_independent_source_replacement_keeps_untouched_pairs(replacement, visib
     prepared = prepare_emlis_meaning(request)
     plan = build_updated_grounded_plan(prepared)
     answer = next(n for n in plan.nuclei if n.source_fields == ("answer_text_private",))
-    assert "thread_subject:independent_source_replacement" in answer.semantic_frame.attribute_codes
-    assert not any(answer.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    retained_assertion(lambda: ("thread_subject:independent_source_replacement" in answer.semantic_frame.attribute_codes), "'thread_subject:independent_source_replacement' in answer.semantic_frame.attribute_codes")
+    retained_assertion(lambda: (not any(answer.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)), 'not any((answer.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations))')
     result = MeaningExperienceEngine().generate(request)
-    assert result.artifact, result.reason_codes
+    retained_assertion(lambda: (result.artifact), 'result.artifact', lambda: (result.reason_codes))
     follow = result.artifact.reception
-    assert appraisal not in follow and visible in follow and "机を拭いた" in follow
+    retained_assertion(lambda: (appraisal not in follow and visible in follow and "机を拭いた" in follow), "appraisal not in follow and visible in follow and ('机を拭いた' in follow)")
     for clause in clauses:
-        assert clause.replace("、", "").rstrip("。") in follow
-    assert "ですこと" not in follow and "でしたこと" not in follow and "これまで、" not in follow
-    assert request.current_input_bundle == original
-    assert len(plan.response_plan.human_reception_plan.moves) == 3
+        retained_assertion(lambda: (clause.replace("、", "").rstrip("。") in follow), "clause.replace('、', '').rstrip('。') in follow")
+    retained_assertion(lambda: ("ですこと" not in follow and "でしたこと" not in follow and "これまで、" not in follow), "'ですこと' not in follow and 'でしたこと' not in follow and ('これまで、' not in follow)")
+    retained_assertion(lambda: (request.current_input_bundle == original), 'request.current_input_bundle == original')
+    retained_assertion(lambda: (len(plan.response_plan.human_reception_plan.moves) == 3), 'len(plan.response_plan.human_reception_plan.moves) == 3')
 
 
 @pytest.mark.parametrize("appraisal", ["準備を忘れた自分が情けない", "自分が不甲斐なかった"])
 @pytest.mark.parametrize("pairs", [1, 2, 3])
+@continue_assertions
 def test_independent_source_withdrawal_preserves_other_reactions_and_action(appraisal, pairs):
     clauses = ("誘われたのに、悲しかった。", "頼まれたのに、寂しかった。",
                "褒められたのに、嬉しくなかった。")[:pairs]
@@ -4545,46 +4601,49 @@ def test_independent_source_withdrawal_preserves_other_reactions_and_action(appr
     original = request.current_input_bundle
     request = advance(request, f'「{appraisal}」は誤りです。')
     result = MeaningExperienceEngine().generate(request)
-    assert result.artifact, result.reason_codes
+    retained_assertion(lambda: (result.artifact), 'result.artifact', lambda: (result.reason_codes))
     follow = result.artifact.reception
-    assert appraisal not in follow and "机を拭いた" in follow
+    retained_assertion(lambda: (appraisal not in follow and "机を拭いた" in follow), "appraisal not in follow and '机を拭いた' in follow")
     for clause in clauses:
-        assert clause.replace("、", "").rstrip("。") in follow
-    assert request.current_input_bundle == original
-    assert not any("independent_source_replacement" in c for n in
+        retained_assertion(lambda: (clause.replace("、", "").rstrip("。") in follow), "clause.replace('、', '').rstrip('。') in follow")
+    retained_assertion(lambda: (request.current_input_bundle == original), 'request.current_input_bundle == original')
+    retained_assertion(lambda: (not any("independent_source_replacement" in c for n in
         build_updated_grounded_plan(prepare_emlis_meaning(request)).nuclei
-        for c in n.semantic_frame.attribute_codes)
+        for c in n.semantic_frame.attribute_codes)), "not any(('independent_source_replacement' in c for n in build_updated_grounded_plan(prepare_emlis_meaning(request)).nuclei for c in n.semantic_frame.attribute_codes))")
 
 
 @pytest.mark.parametrize("second,visible", [
     ('「不安です」ではなく「苦しかった」です。', "その時の苦しさ"),
     ('「不安です」は誤りです。', None),
 ])
+@continue_assertions
 def test_revising_or_withdrawing_replacement_never_revives_superseded_appraisal(second, visible):
     appraisal = "準備を忘れた自分が情けない"
     request = begin("誘われたのに、悲しかった。頼まれたのに、寂しかった。" + appraisal + "。", "机を拭いた。")
     original = request.current_input_bundle
     request = advance(advance(request, f'「{appraisal}」ではなく「不安です」。'), second)
     result = MeaningExperienceEngine().generate(request)
-    assert result.artifact, result.reason_codes
+    retained_assertion(lambda: (result.artifact), 'result.artifact', lambda: (result.reason_codes))
     follow = result.artifact.reception
-    assert all(t in follow for t in ("誘われたのに悲しかった", "頼まれたのに寂しかった", "机を拭いた"))
-    assert appraisal not in follow and "不安" not in follow
-    assert visible is None or visible in follow
-    assert request.current_input_bundle == original
+    retained_assertion(lambda: (all(t in follow for t in ("誘われたのに悲しかった", "頼まれたのに寂しかった", "机を拭いた"))), "all((t in follow for t in ('誘われたのに悲しかった', '頼まれたのに寂しかった', '机を拭いた')))")
+    retained_assertion(lambda: (appraisal not in follow and "不安" not in follow), "appraisal not in follow and '不安' not in follow")
+    retained_assertion(lambda: (visible is None or visible in follow), 'visible is None or visible in follow')
+    retained_assertion(lambda: (request.current_input_bundle == original), 'request.current_input_bundle == original')
 
 
 @pytest.mark.parametrize("with_action", [False, True])
+@continue_assertions
 def test_retained_original_pairs_do_not_depend_on_a_third_feeling(with_action):
     request = begin("誘われたのに、悲しかった。頼まれたのに、寂しかった。", "机を拭いた。" if with_action else "")
     result = MeaningExperienceEngine().generate(request)
-    assert result.artifact, result.reason_codes
-    assert "誘われたのに悲しかった" in result.artifact.reception
-    assert "頼まれたのに寂しかった" in result.artifact.reception
-    assert not with_action or "机を拭いた" in result.artifact.reception
+    retained_assertion(lambda: (result.artifact), 'result.artifact', lambda: (result.reason_codes))
+    retained_assertion(lambda: ("誘われたのに悲しかった" in result.artifact.reception), "'誘われたのに悲しかった' in result.artifact.reception")
+    retained_assertion(lambda: ("頼まれたのに寂しかった" in result.artifact.reception), "'頼まれたのに寂しかった' in result.artifact.reception")
+    retained_assertion(lambda: (not with_action or "机を拭いた" in result.artifact.reception), "not with_action or '机を拭いた' in result.artifact.reception")
 
 
 @pytest.mark.parametrize("replacement", ["不安です", "不安でした"])
+@continue_assertions
 def test_independent_replacement_inverse_rejects_lost_meaning_without_author(monkeypatch, replacement):
     from types import SimpleNamespace
     import emlis_ai_grounded_human_reception as hr
@@ -4607,7 +4666,7 @@ def test_independent_replacement_inverse_rejects_lost_meaning_without_author(mon
             plan=plan, sentence_plan=sentence, resolver=resolver,
             selected_subjective_input=projection.selected_reception).passed
     follow = result.artifact.reception
-    assert passes(follow)
+    retained_assertion(lambda: (passes(follow)), 'passes(follow)')
     for old, new in [("その時の不安", ""), ("その時の不安", "回答した時点の不安"),
                      ("その時の不安", "その時の安心"), ("その時の不安", "友人の不安"),
                      ("悲しかった", "悲しくなかった"), ("頼まれたのに寂しかったことと、", ""),
@@ -4616,8 +4675,8 @@ def test_independent_replacement_inverse_rejects_lost_meaning_without_author(mon
         # Deleting the final pair uses its suffix-free position in this order.
         if changed == follow and old.startswith("頼まれた"):
             changed = follow.replace("と、頼まれたのに寂しかったこと", "")
-        assert changed != follow
-        assert not passes(changed), (old, new)
+        retained_assertion(lambda: (changed != follow), 'changed != follow')
+        retained_assertion(lambda: (not passes(changed)), 'not passes(changed)', lambda: ((old, new)))
 
 
 @pytest.mark.parametrize("fragment", ["友人は不安です", "不安ではないです", "不安かもしれません", "不安だそうです", "不安ですか", "少し不安です"])
@@ -4664,6 +4723,7 @@ def test_integrated_predecessor_variants_keep_foreign_negation_hypothesis_bounda
 
 @pytest.mark.parametrize('replacement,nominal', [('嬉しいです', '嬉しさ'), ('うれしいです', 'うれしさ')])
 @pytest.mark.parametrize('repeated', [False, True])
+@continue_assertions
 def test_independent_positive_polite_replacement_has_one_original_time_owner(replacement, nominal, repeated):
     request = begin('誘われたのに、悲しかった。頼まれたのに、寂しかった。準備を忘れた自分が情けない。', '机を拭いた。')
     original = request.current_input_bundle
@@ -4673,12 +4733,12 @@ def test_independent_positive_polite_replacement_has_one_original_time_owner(rep
         target = '不安です'
     request = advance(request, f'「{target}」ではなく「{replacement}」。')
     result = MeaningExperienceEngine().generate(request)
-    assert result.artifact, result.reason_codes
+    retained_assertion(lambda: (result.artifact), 'result.artifact', lambda: (result.reason_codes))
     follow = result.artifact.reception
-    assert f'その時の{nominal}という気持ち' in follow
-    assert all(x in follow for x in ('誘われたのに悲しかった', '頼まれたのに寂しかった', '机を拭いた'))
-    assert 'これまで' not in follow and '今は' not in follow and '不安' not in follow and '情けない' not in follow
-    assert request.current_input_bundle == original
+    retained_assertion(lambda: (f'その時の{nominal}という気持ち' in follow), "f'その時の{nominal}という気持ち' in follow")
+    retained_assertion(lambda: (all(x in follow for x in ('誘われたのに悲しかった', '頼まれたのに寂しかった', '机を拭いた'))), "all((x in follow for x in ('誘われたのに悲しかった', '頼まれたのに寂しかった', '机を拭いた')))")
+    retained_assertion(lambda: ('これまで' not in follow and '今は' not in follow and '不安' not in follow and '情けない' not in follow), "'これまで' not in follow and '今は' not in follow and ('不安' not in follow) and ('情けない' not in follow)")
+    retained_assertion(lambda: (request.current_input_bundle == original), 'request.current_input_bundle == original')
 
 
 @pytest.mark.parametrize('mutation', ['time', 'foreign_owner', 'valence', 'revive', 'drop_feeling', 'drop_action'])

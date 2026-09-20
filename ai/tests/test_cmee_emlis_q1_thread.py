@@ -1,3 +1,5 @@
+
+from helpers.retained_assertions import continue_assertions, retained_assertion
 from dataclasses import replace
 from unittest.mock import patch
 import pytest
@@ -94,23 +96,24 @@ def test_free_scope_rejects_history_or_invalid_round(change):
         prepare_emlis_meaning(replace(req, emlis_thread=replace(req.emlis_thread, **change)))
 
 @pytest.mark.parametrize('text', [A, B, C])
+@continue_assertions
 def test_design_answers_reach_selected_meaning_and_shared_human_reception(text):
     prepared = prepare_emlis_meaning(answered(text))
     projection = project_thread_meaning(prepared, build_updated_grounded_plan(prepared))
-    assert any(r.relation_kind is c.EmlisThreadScopeRelationKind.ABOUT_TARGET for r in projection.premeaning.source_relation_rows)
-    assert isinstance(projection.structure.meaning_decision_outcome, c.SelectedEmlisProvisionalReading)
+    retained_assertion(lambda: (any(r.relation_kind is c.EmlisThreadScopeRelationKind.ABOUT_TARGET for r in projection.premeaning.source_relation_rows)), 'any((r.relation_kind is c.EmlisThreadScopeRelationKind.ABOUT_TARGET for r in projection.premeaning.source_relation_rows))')
+    retained_assertion(lambda: (isinstance(projection.structure.meaning_decision_outcome, c.SelectedEmlisProvisionalReading)), 'isinstance(projection.structure.meaning_decision_outcome, c.SelectedEmlisProvisionalReading)')
     result = render(text)
-    assert text.rstrip('。') in result.artifact.observation
+    retained_assertion(lambda: (text.rstrip('。') in result.artifact.observation), "text.rstrip('。') in result.artifact.observation")
     # Q4 retains the full finite source in Observation and realizes a
     # reversible, time-bound nominal in Reception. Its independent inverse
     # and mutation checks live in test_emlis_q4_application.
     expected = {A: '次も同じ成果を求められるようだという、その時の重さ',
                 B: '結果だけで、そこまでの苦労は見てもらえていないという、その時の思い',
                 C: C.rstrip('。')}[text]
-    assert expected in result.artifact.reception
+    retained_assertion(lambda: (expected in result.artifact.reception), 'expected in result.artifact.reception')
     supplemental = tuple(d for d in result.meaning_graph.owner_dispositions if d.visible_authority is c.VisibleAuthority.SUPPLEMENTAL_USER)
-    assert supplemental and all(d.source_owner_disposition is c.SourceOwnerDisposition.SUPPLEMENTAL_USER_VISIBLE for d in supplemental)
-    assert result.question is None and result.question_decision.disposition == 'END'
+    retained_assertion(lambda: (supplemental and all(d.source_owner_disposition is c.SourceOwnerDisposition.SUPPLEMENTAL_USER_VISIBLE for d in supplemental)), 'supplemental and all((d.source_owner_disposition is c.SourceOwnerDisposition.SUPPLEMENTAL_USER_VISIBLE for d in supplemental))')
+    retained_assertion(lambda: (result.question is None and result.question_decision.disposition == 'END'), "result.question is None and result.question_decision.disposition == 'END'")
 
 def test_distinct_received_meanings_change_actual_follow():
     a, b = render(A), render(B)
@@ -222,6 +225,7 @@ def test_question_target_excludes_unrelated_reaction_and_meaning():
     assert question is not None
     assert all('memo_action' not in n.source_fields for n in plan.nuclei if n.nucleus_id in decision.affected_meaning_refs)
 
+@continue_assertions
 def test_inverse_rejects_answer_time_and_content_tampering():
     prepared = prepare_emlis_meaning(answered('今は嬉しい。'))
     plan = build_updated_grounded_plan(prepared)
@@ -232,12 +236,12 @@ def test_inverse_rejects_answer_time_and_content_tampering():
     def inverse(text):
         return evaluate_grounded_surface_body_inverse(body=text.encode(), plan=plan, sentence_plan=sentence_plan,
             resolver=resolver, selected_subjective_input=projection.selected_reception)
-    assert inverse(body).passed
-    assert not inverse(body.replace('回答した時点', 'その時')).passed
-    assert not inverse(body.replace('「嬉しい」', '「悲しい」')).passed
+    retained_assertion(lambda: (inverse(body).passed), 'inverse(body).passed')
+    retained_assertion(lambda: (not inverse(body.replace('回答した時点', 'その時')).passed), "not inverse(body.replace('回答した時点', 'その時')).passed")
+    retained_assertion(lambda: (not inverse(body.replace('「嬉しい」', '「悲しい」')).passed), "not inverse(body.replace('「嬉しい」', '「悲しい」')).passed")
     changed = body.replace('に対する', 'から続く')
-    assert changed != body and not inverse(changed).passed
-    assert not inverse(body.replace('褒められたことについて、', '')).passed
+    retained_assertion(lambda: (changed != body and not inverse(changed).passed), 'changed != body and (not inverse(changed).passed)')
+    retained_assertion(lambda: (not inverse(body.replace('褒められたことについて、', '')).passed), "not inverse(body.replace('褒められたことについて、', '')).passed")
 
 def test_legacy_scope_vocabulary_and_matrix_remain_closed():
     assert tuple(x.value for x in c.ForegroundScopeRelationKind) == ('contrast', 'coexistence', 'continuation', 'correction')
