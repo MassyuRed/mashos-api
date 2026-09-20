@@ -2495,6 +2495,101 @@ def _answer_feeling_preceding_event(move, plan, resolver, selected_subjective_in
                                    selected_subjective_input) is not None
 
 
+def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Read the still-active source feeling and its time from complete bytes.
+
+    A removed ABOUT edge cannot be reconstructed from proximity or the old
+    event's source span. Only the independently bounded reaction is readable.
+    No author call or old nominal surface supplies this proof.
+    """
+    if (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+        or not move.required or move not in plan.response_plan.human_reception_plan.moves
+        or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids
+        or move.reference_mode == "anaphoric_first"):
+        return None
+    nucleus = next((n for n in plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0]), None)
+    if nucleus is None:
+        return None
+    frame = nucleus.semantic_frame
+    codes = set(frame.attribute_codes)
+    if ("thread_subject:withdrawn_source_event" not in codes
+        or nucleus.kind != "reaction" or frame.predicate_kind != "feeling"
+        or frame.modality != "feeling" or frame.actor != "current_user"
+        or nucleus.retention != "required" or nucleus.grounding_kind != "explicit"
+        or len(nucleus.source_span_ids) != 1
+        or any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+        or (frame.polarity, move.reception_act) not in {
+            ("negative", "stay_with_current_burden"), ("positive", "recognize_lived_change")}):
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if (appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
+            or appraisal.operation != "RECEIVE_AS_MATERIAL"):
+            return None
+    span = resolver.resolve(nucleus.source_span_ids[0])
+    if resolver.source_fields_for(nucleus.source_span_ids) != nucleus.source_fields:
+        return None
+    source = _body_inverse_typed_source_fragment(nucleus, span.raw_text)
+    if (not source or not _SOURCE_GROUNDED_FINITE_END_RE.search(source)
+        or re.search(r"(?:です|ます|でした|ました|だ)$", source)
+        or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", source)
+        or re.search(r'[「」『』“”‘’"?？!！\r\n。]', source)):
+        return None
+    if nucleus.source_fields in {("memo",), ("memo_action",)}:
+        from emlis_ai_grounded_observation_plan import (
+            _thread_withdrawn_original_reaction, _received_event_reaction_projections,
+        )
+        if (not _thread_withdrawn_original_reaction(nucleus, plan.relations)
+            or not any(row.kind == "reaction" and row.polarity == "negative"
+                       and set(row.attribute_codes) <= codes
+                       for row in _received_event_reaction_projections(span, frame))):
+            return None
+        expected_time = "その時は"
+    elif (nucleus.source_fields == ("answer_text_private",)
+          and nucleus.allowed_claim_scope == "explicit_supplemental_answer"):
+        times = [c.split(":", 1)[1] for c in frame.attribute_codes if c.startswith("thread_time:")]
+        prefixes = {"original_occasion": "その時は", "answer_time": "回答した時点では",
+                    "prior_answer_time": "先の回答時点では"}
+        if len(times) != 1 or times[0] not in prefixes:
+            return None
+        expected_time = prefixes[times[0]]
+    else:
+        return None
+    parsed = re.fullmatch(r"(?P<time>その時は|回答した時点では|先の回答時点では)"
+                          r"(?P<feeling>.+)(?:のですね|のです|のだと受け取りました)。", raw)
+    if parsed is None or parsed['time'] != expected_time or parsed['feeling'] != source:
+        return None
+    return ((len(raw[:parsed.start('feeling')].encode()),
+             len(raw[:parsed.end('feeling')].encode()), source.encode()),)
+
+
+def read_detached_feeling_pair(raw, moves, plan, resolver, selected_subjective_input):
+    """Read both full finite operands and their separate source times.
+
+    Try every additive boundary; only one complete source-owned partition
+    may succeed. A connective inside a source cannot shorten either operand.
+    Return actual body byte intervals, with no author or replay dependency.
+    """
+    if (len(moves) != 2 or selected_subjective_input is None
+        or moves[0].target_nucleus_ids == moves[1].target_nucleus_ids
+        or set(moves[0].source_evidence_span_ids) & set(moves[1].source_evidence_span_ids)):
+        return None
+    matches = []
+    for boundary in re.finditer("し、", raw):
+        left = raw[:boundary.start()]
+        right = raw[boundary.end():]
+        first = _read_detached_feeling_discourse(
+            left + "のですね。", moves[0], plan, resolver, selected_subjective_input)
+        second = _read_detached_feeling_discourse(
+            right, moves[1], plan, resolver, selected_subjective_input)
+        if first is None or second is None or first[0][2] == second[0][2]:
+            continue
+        offset = len(raw[:boundary.end()].encode())
+        matches.append((first, tuple((a + offset, b + offset, source) for a, b, source in second)))
+    return matches[0] if len(matches) == 1 else None
+
+
 def _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjective_input,
                                    preceding_context=None):
     """Read event ownership, source time and the full answer from body bytes.
@@ -2767,6 +2862,9 @@ def _read_temporal_material_discourse(raw, move, plan, resolver, selected_subjec
 def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None,
                                 *, preceding_context=None):
     """Read supported finite source duties without a literal-author oracle."""
+    detached = _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subjective_input)
+    if detached is not None:
+        return detached
     temporal = _read_temporal_material_discourse(
         raw, move, plan, resolver, selected_subjective_input)
     if temporal is not None:
@@ -3050,6 +3148,13 @@ def _received_discourse_equivalent(actual, canonical, reception_plan, clauses, p
     for number, (left, right, clause) in enumerate(zip(actual_parts[:-1], canonical_parts[:-1], clauses)):
         if left == right:
             continue
+        if len(clause.move_ids) == 2:
+            pair = tuple(moves[mid] for mid in clause.move_ids if mid in moves)
+            if all(read_detached_feeling_pair(text + "。", pair, plan, resolver,
+                                              selected_subjective_input) is not None
+                   for text in (left, right)):
+                continue
+            return False
         if len(clause.move_ids) != 1:
             return False
         move = moves.get(clause.move_ids[0])
@@ -4155,11 +4260,19 @@ def evaluate_grounded_surface_body_inverse(
                     sentence_codes = set(
                         parsed_sentence.reception_marker_codes
                     )
+                    detached_pair_proof = None
                     if final_stage1_plan and sentence_plan.recovery_stage == "full":
                         shared_objects = _body_inverse_shared_material_feeling_objects(
                             body, parsed_sentence, clause, plan, resolver, selected_subjective_input,
                         )
-                        if len(clause.move_ids) == 2 and shared_objects is not True:
+                        if len(clause.move_ids) == 2:
+                            detached_pair_proof = read_detached_feeling_pair(
+                                body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8"),
+                                tuple(move_index[mid] for mid in clause.move_ids if mid in move_index),
+                                plan, resolver, selected_subjective_input,
+                            )
+                        if (len(clause.move_ids) == 2 and shared_objects is not True
+                            and detached_pair_proof is None):
                             failures.append("body_inverse_shared_feeling_objects_invalid:"
                                             + str(clause.sentence_slot))
                     for move_id in clause.move_ids:
@@ -4176,7 +4289,7 @@ def evaluate_grounded_surface_body_inverse(
                             ) if clause_index and len(clause_plans[clause_index - 1].move_ids) == 1 else None,
                         ) if (final_stage1_plan and len(clause.move_ids) == 1
                               and sentence_plan.recovery_stage == "full") else None
-                        if finite_proof is not None:
+                        if finite_proof is not None or detached_pair_proof is not None:
                             # Complete body-owned proposition/edge verification
                             # replaces nominal/closing-token requirements only.
                             # Source, plan, clause, trace and safety gates remain.

@@ -1625,10 +1625,34 @@ def _independent_recognition_pair(
     )
 
 
+def _detached_feeling_pair(reception_plan, recovery_stage, *, plan=None, resolver=None):
+    """Coordinate only adjacent, completely source-proven withdrawal duties."""
+    if (plan is None or resolver is None
+        or plan.response_plan.human_reception_plan != reception_plan
+        or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
+        or recovery_stage != "full" or reception_plan.depth_policy.safety_mode != "standard"
+        or reception_plan.depth_policy.min_sentences > 2
+        or reception_plan.depth_policy.max_moves_per_sentence < 2):
+        return None
+    moves = reception_active_moves(reception_plan, recovery_stage)
+    if len(moves) != 3:
+        return None
+    operands = tuple(_detached_feeling_source_parts(move, plan, resolver) for move in moves)
+    for start in (0, 1):
+        left, right = moves[start:start + 2]
+        first, second = operands[start:start + 2]
+        if (first is not None and second is not None and first[1] != second[1]
+            and operands.count(first) == operands.count(second) == 1
+            and left.target_nucleus_ids != right.target_nucleus_ids
+            and not set(left.source_evidence_span_ids) & set(right.source_evidence_span_ids)):
+            return start
+    return None
+
+
 def build_grounded_reception_clause_plans(
     reception_plan: GroundedHumanReceptionPlan,
     recovery_stage: ReceptionRecoveryStage,
-    *, plan: GroundedObservationPlan | None = None,
+    *, plan: GroundedObservationPlan | None = None, resolver: EvidenceSpanResolver | None = None,
 ) -> tuple[GroundedReceptionClausePlan, ...]:
     """Bind active Moves to deterministic one- or two-Move sentence slots."""
 
@@ -1640,7 +1664,11 @@ def build_grounded_reception_clause_plans(
     move_groups: tuple[tuple[GroundedReceptionMovePlan, ...], ...] = tuple(
         (move,) for move in moves
     )
-    if _independent_recognition_pair(reception_plan, recovery_stage, plan=plan,):
+    detached_pair = _detached_feeling_pair(reception_plan, recovery_stage, plan=plan, resolver=resolver)
+    if detached_pair is not None:
+        move_groups = ((moves[:2], moves[2:]) if detached_pair == 0
+                       else (moves[:1], moves[1:]))
+    elif _independent_recognition_pair(reception_plan, recovery_stage, plan=plan,):
         move_groups = (moves[:2], moves[2:])
     elif (
         recovery_stage == "integrated"
@@ -4186,13 +4214,13 @@ def _validate_clause_plan_binding(
     reception_plan: GroundedHumanReceptionPlan,
     clauses: Sequence[GroundedReceptionClausePlan],
     recovery_stage: ReceptionRecoveryStage,
-    *, plan: GroundedObservationPlan | None = None,
+    *, plan: GroundedObservationPlan | None = None, resolver: EvidenceSpanResolver | None = None,
 ) -> tuple[GroundedReceptionMovePlan, ...]:
     active_moves = reception_active_moves(reception_plan, recovery_stage)
     move_index = {move.move_id: move for move in active_moves}
     canonical_clauses = build_grounded_reception_clause_plans(
         reception_plan,
-        recovery_stage, plan=plan,
+        recovery_stage, plan=plan, resolver=resolver,
     )
     if len(clauses) != len(canonical_clauses):
         raise GroundedHumanReceptionSurfaceError(
@@ -4238,7 +4266,8 @@ def _validate_clause_plan_binding(
                 "human_reception_counterposition_clause_not_independent"
             )
         if (len(moves) == 2 and recovery_stage != "integrated"
-            and not (_independent_recognition_pair(reception_plan, recovery_stage, plan=plan,)
+            and not ((_independent_recognition_pair(reception_plan, recovery_stage, plan=plan,)
+                      or _detached_feeling_pair(reception_plan, recovery_stage, plan=plan, resolver=resolver) is not None)
                      and clause.move_ids == canonical_clause.move_ids)):
             raise GroundedHumanReceptionSurfaceError(
                 "human_reception_multi_move_clause_wrong_stage"
@@ -4595,16 +4624,21 @@ def validate_grounded_human_reception_surface(
                    for nominal in expression_nominals)
         )
         if not visible and plan is not None and surface.recovery_stage == "full":
-            from emlis_ai_grounded_observation_gate import read_source_owned_discourse
+            from emlis_ai_grounded_observation_gate import read_source_owned_discourse, read_detached_feeling_pair
             sentences = tuple(part + "。" for part in surface.text.split("。") if part)
-            clauses = build_grounded_reception_clause_plans(reception_plan, surface.recovery_stage, plan=plan)
+            clauses = build_grounded_reception_clause_plans(reception_plan, surface.recovery_stage, plan=plan, resolver=resolver)
             by_id = {move.move_id: move for move in active_moves}
             visible = all(any(
-                number < len(clauses) and clauses[number].move_ids == (move.move_id,)
-                and read_source_owned_discourse(text, move, plan, resolver,
-                    selected_subjective_input, preceding_context=(
-                        by_id[clauses[number - 1].move_ids[0]], sentences[number - 1])
-                    if number and len(clauses[number - 1].move_ids) == 1 else None) is not None
+                number < len(clauses) and move.move_id in clauses[number].move_ids
+                and ((clauses[number].move_ids == (move.move_id,)
+                    and read_source_owned_discourse(text, move, plan, resolver,
+                        selected_subjective_input, preceding_context=(
+                            by_id[clauses[number - 1].move_ids[0]], sentences[number - 1])
+                        if number and len(clauses[number - 1].move_ids) == 1 else None) is not None)
+                    or (len(clauses[number].move_ids) == 2
+                        and read_detached_feeling_pair(text,
+                            tuple(by_id[mid] for mid in clauses[number].move_ids),
+                            plan, resolver, selected_subjective_input) is not None))
                 for number, text in enumerate(sentences))
                 for move in active_moves if move.reception_act == act)
         visible_responsibilities.append(visible)
@@ -10027,6 +10061,77 @@ def _source_owned_action_change_sentence(move, realization, plan, resolver,
     return "".join(parts) + "のですね"
 
 
+def _source_owned_detached_feeling_parts(move, realization, plan, resolver,
+                                           selected_decision, recovery_stage):
+    """Keep the surviving feeling finite without reviving its withdrawn event.
+
+    Withdrawal has already removed the relation, not the independent feeling.
+    Its existing Move retains its complete source and own time;
+    nominalization followed by generic approval adds no reception here.
+    """
+    if (recovery_stage != "full" or realization.reference_mode == "ANAPHORIC"
+        or realization.clause_form not in {"FINITE", "CONTINUATIVE"}
+        or realization.context_slots or realization.relations
+        or not _selected_material_appraisal(selected_decision)):
+        return None
+    parts = _detached_feeling_source_parts(move, plan, resolver)
+    if parts is not None and any(
+        other.move_id != move.move_id
+        and _detached_feeling_source_parts(other, plan, resolver) == parts
+        for other in reception_active_moves(plan.response_plan.human_reception_plan, recovery_stage)
+    ):
+        # Identical source and time would erase the visible distinction
+        # between these independent duties. Keep their existing realizations.
+        return None
+    return parts if parts is not None and realization.semantic_fragments == (parts[1],) else None
+
+
+def _detached_feeling_source_parts(move, plan, resolver):
+    """Prove complete finite source operands before choosing clause topology."""
+    if (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+        or not move.required or move not in plan.response_plan.human_reception_plan.moves
+        or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids
+        or move.reference_mode == "anaphoric_first"
+        or move.move_role == "bounded_counterposition"
+        or final_reception_context_nucleus_ids(move=move, plan=plan)):
+        return None
+    nucleus = next(n for n in plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0])
+    frame = nucleus.semantic_frame
+    codes = set(frame.attribute_codes)
+    if ("thread_subject:withdrawn_source_event" not in codes
+        or nucleus.kind != "reaction" or frame.predicate_kind != "feeling"
+        or frame.modality != "feeling" or frame.actor != "current_user"
+        or nucleus.retention != "required" or nucleus.grounding_kind != "explicit"
+        or len(nucleus.source_span_ids) != 1
+        or any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+        or (frame.polarity, move.reception_act) not in {
+            ("negative", "stay_with_current_burden"), ("positive", "recognize_lived_change")}):
+        return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    source = final_reception_source_anchor_text(nucleus.nucleus_id, index, resolver)
+    if (not source or not _SOURCE_GROUNDED_FINITE_END_RE.search(source)
+        or re.search(r"(?:です|ます|でした|ました|だ)$", source)
+        or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", source)
+        or re.search(r'[「」『』“”‘’"?？!！\r\n。]', source)):
+        return None
+    if nucleus.source_fields in {("memo",), ("memo_action",)}:
+        from emlis_ai_grounded_observation_plan import _thread_withdrawn_original_reaction
+        if (not _thread_withdrawn_original_reaction(nucleus, plan.relations)
+            or _source_grounded_current_expression_nominal(move, plan, index, resolver) != source + "こと"):
+            return None
+        time = "その時は"
+    elif (nucleus.source_fields == ("answer_text_private",)
+          and nucleus.allowed_claim_scope == "explicit_supplemental_answer"):
+        times = [c.split(":", 1)[1] for c in frame.attribute_codes if c.startswith("thread_time:")]
+        if len(times) != 1 or times[0] not in _THREAD_ANSWER_TIME_NOMINAL_PREFIX:
+            return None
+        time = {"original_occasion": "その時は", "answer_time": "回答した時点では",
+                "prior_answer_time": "先の回答時点では"}[times[0]]
+    else:
+        return None
+    return time, source
+
+
 def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
                                           selected_decision, recovery_stage,
                                           preceding_context=None, selected_subjective_input=None):
@@ -10251,6 +10356,7 @@ def _author_source_grounded_reception_clauses(
         )
         move_sentences: list[str] = []
         coordination_terms = []
+        detached_terms = []
         for move_id, meaning_realization in zip(
             clause_plan.move_ids,
             realization.moves,
@@ -10625,6 +10731,12 @@ def _author_source_grounded_reception_clauses(
                 distributive_object=distributive_relation_slot is not None,
                 unfinished_pair=unfinished_pair,
             )
+            detached_parts = _source_owned_detached_feeling_parts(
+                move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
+            )
+            if detached_parts is not None:
+                detached_terms.append(detached_parts)
+                move_sentence = "".join(detached_parts) + "のですね"
             answer_sentence = _source_owned_answer_feeling_sentence(
                 move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
                 preceding_context, selected_subjective_input,
@@ -10758,6 +10870,16 @@ def _author_source_grounded_reception_clauses(
                                            selected_decision, move.move_role))
             move_sentences.append(move_sentence)
         shared_feelings = _source_grounded_shared_material_feelings(tuple(coordination_terms))
+        if (recovery_stage == "full" and len(realization.moves) == len(detached_terms) == 2
+            and detached_terms[0][1] != detached_terms[1][1]):
+            shared_feelings = ("".join(detached_terms[0]) + "し、"
+                               + "".join(detached_terms[1]) + "のですね")
+            from emlis_ai_grounded_observation_gate import read_detached_feeling_pair
+            if read_detached_feeling_pair(
+                shared_feelings + "。", tuple(move_index[mid] for mid in clause_plan.move_ids),
+                plan, resolver, selected_subjective_input,
+            ) is None:
+                raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAPABILITY_GAP")
         if recovery_stage == "full" and len(realization.moves) == 2 and shared_feelings is None:
             raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAPABILITY_GAP")
         segment = (
@@ -10888,7 +11010,7 @@ def _replay_source_grounded_human_reception_from_plan(
     _validate_clause_plan_binding(
         reception_plan,
         resolved_clause_plans,
-        recovery_stage, plan=plan,
+        recovery_stage, plan=plan, resolver=resolver,
     )
     realizations = _source_grounded_plan_clause_realizations(
         reception_plan,
@@ -11173,7 +11295,7 @@ def _realize_source_grounded_human_reception(
     _validate_clause_plan_binding(
         reception_plan,
         resolved_clause_plans,
-        recovery_stage=recovery_stage, plan=plan,
+        recovery_stage=recovery_stage, plan=plan, resolver=resolver,
     )
     plan_realizations = _source_grounded_plan_clause_realizations(
         reception_plan,
