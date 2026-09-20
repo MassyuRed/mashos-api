@@ -2706,9 +2706,71 @@ def _read_coexisting_material_discourse(raw, move, plan, resolver, selected_subj
     return matches[0] if len(matches) == 1 else None
 
 
+def _read_temporal_material_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Restore each complete temporal host without replaying its author.
+
+    The unknown is causal equivalence in the present, not the past memory
+    or the conditional change. Read the visible coordination boundary and
+    reverse only the inflection; all inner scopes must match their source.
+    """
+    from emlis_ai_grounded_observation_plan import (
+        _source_temporal_material_group, _source_temporal_clause_parts,
+        _source_material_allows_reverse,
+    )
+    group = _source_temporal_material_group(plan.nuclei, plan.relations)
+    if (not group or not move.required or move.move_role != "felt_response"
+        or move.reception_act != "stay_with_current_burden"
+        or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
+        return None
+    selected = (move.target_nucleus_ids, move.support_nucleus_ids)
+    forward = ((group[0].nucleus_id,), (group[1].nucleus_id,))
+    reverse = ((group[1].nucleus_id,), (group[0].nucleus_id,))
+    reversed_focus = selected == reverse and _source_material_allows_reverse(group)
+    if selected != forward and not reversed_focus:
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions
+                         if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if (appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
+            or appraisal.operation != "RECEIVE_AS_MATERIAL"):
+            return None
+    sources = tuple(str(resolver.resolve(n.source_span_ids[0]).raw_text).strip(" 　。．.")
+                    for n in group[:2] if len(n.source_span_ids) == 1)
+    if (len(sources) != 2 or tuple((_source_temporal_clause_parts(s) or (None,))[0]
+            for s in sources) != ("relief_residue", "causal_unknown")):
+        return None
+    current = sources[0][:-3] + "いる" if sources[0].endswith("残っています") else sources[0]
+    expected = (sources[1], current) if reversed_focus else (current, sources[1])
+    ordered_sources = tuple(reversed(sources)) if reversed_focus else sources
+    ending = re.search(r"(?:のですね|のです|のだと受け取りました)。$", raw)
+    if ending is None:
+        return None
+    clause = raw[:ending.start()]
+    matches = []
+    for split in re.finditer("、", clause):
+        left, right = clause[:split.start()], clause[split.end():]
+        if reversed_focus:
+            if not left.endswith(("分からず", "わからず")):
+                continue
+            restored = left[:-1] + "ない"
+        else:
+            if not left.endswith("残っていて"):
+                continue
+            restored = left[:-1] + "る"
+        if (restored, right) == expected:
+            matches.append(((0, len(left.encode()), ordered_sources[0].encode()),
+                            (len(clause[:split.end()].encode()), len(clause.encode()), ordered_sources[1].encode())))
+    return matches[0] if len(matches) == 1 else None
+
+
 def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None,
                                 *, preceding_context=None):
     """Read supported finite source duties without a literal-author oracle."""
+    temporal = _read_temporal_material_discourse(
+        raw, move, plan, resolver, selected_subjective_input)
+    if temporal is not None:
+        return temporal
     coexisting = _read_coexisting_material_discourse(
         raw, move, plan, resolver, selected_subjective_input)
     if coexisting is not None:

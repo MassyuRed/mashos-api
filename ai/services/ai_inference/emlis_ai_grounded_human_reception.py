@@ -9747,6 +9747,24 @@ def _source_grounded_reception_fragment(
         and move.move_role == "felt_response" and not context_prefix
         and recovery_stage == "full" and realization.clause_form == "FINITE"
         and _selected_material_appraisal(selected_subjective_decision)
+        and any(code in {"source-temporal-material:0:1", "source-temporal-material:1:0"}
+                for code in realization.nominalization_plan)):
+        # Keep the remembered past inside its cognitive host and the current
+        # change/residue inside its own conditional host. Only coordinate the
+        # outer predicates: neither an action nor a cause is inferred here.
+        _source_current_material_group_ir_text(realization)
+        clauses = tuple(c[:-3] + "いる" if c.endswith("残っています") else c
+                        for c in realization.semantic_fragments)
+        first, second = clauses
+        if "source-temporal-material:1:0" in realization.nominalization_plan:
+            connected = first[:-2] + "ず"  # source-proven 分からない / わからない
+        else:
+            connected = first[:-1] + "て"  # source-proven 残っている
+        return connected + "、" + second + "のですね"
+    if (move.required and move.reception_act == "stay_with_current_burden"
+        and move.move_role == "felt_response" and not context_prefix
+        and recovery_stage == "full" and realization.clause_form == "FINITE"
+        and _selected_material_appraisal(selected_subjective_decision)
         and any(code in {"source-current-material:0:1", "source-current-material:1:0"}
                 for code in realization.nominalization_plan)):
         # Coexisting feelings and a tentative view of their targets are
