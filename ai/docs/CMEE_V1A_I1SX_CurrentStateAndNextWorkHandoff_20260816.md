@@ -8451,3 +8451,17 @@ Continues the latest weekly agreement after reviewing the attached instructions,
 The 34 added checks pass: original/current/prior answer time, actor/event/degree/polarity mutations, equivalent endings, unsupported grammar boundaries and all three plans' saved retrieval and author-disabled restart. Initial added-test errors were retained; only the new tests were corrected. A combined positive correction and other-event withdrawal remains an inherited planner capability gap and is explicitly covered as unavailable, not claimed fixed. Existing inputs and expectations remain unchanged; only the current derived owner identity is refreshed.
 
 Full required regression, same100 and all inherited saved text review are pending. This checkpoint is not final verification or product PASS. STRUCTURE_MAP_DELTA_NONE: changes stay within the three existing shared owners, the derived identity, the existing received-discourse test and this handoff. API/RPC/DB/RN contracts, other cores, question budgets, Draft/default OFF and NOT_CLEAR remain. Repeated event mentions and fixed acknowledgement endings still require product work. No merge, Ready, deployment, enablement, live DB, device, billing or external AI work. Private evaluation inputs, actual bodies, identifiers, digests and locators stay outside GitHub.
+
+## 2026-09-20 継続完了 — 肯定的な回答を、出来事と時点のある述語で返す
+
+上の途中保存の全検証と全文確認を完了した。追加回答の肯定的な感情を名詞化して汎用的な受け止めへ足す箇所を、既存の共通HumanReceptionで、元の出来事と当時・回答時点・先の回答時点を明示した有限述語へ構成した。既存ObservationPlanが本人の明示的回答と出来事の関係を証明し、独立inverseが実本文から全対象・時点・感情を読む。本人の明示的な訂正がない限り元の否定的反応は保持する。意味/Move選択、別Moveの統合、語彙の追加受理、作者数は変更していない。
+
+固定実装はremote `3f5d7d37630afe3444cf3d421b19851681bf6d8d`、local `3c67e569152226bcd57f755d469dbca077b40b92`、同一tree `d5aba30796f0b2101804d04d16b889da9caee71b`。変更6ファイルをGitHubから全文読み戻し、固定sourceと一致。この最終追記は引継ぎ文書のみ。
+
+- 必須47テストファイルは **2,517件、2,139 PASS / 378 FAIL**。追加34件は全PASS。旧2,483件は削除0、364 FAIL維持、14 PASS→FAIL、0 FAIL→PASS。増分10件は旧時点・名詞化表現の固定期待、4件は旧置換文字列がなく本文を変造できない検査。旧入力・期待値・閾値は不変更。失敗後の未実行assertへ成功を加算しない。追加の実変造11件で対象・時点・主体・因果・程度・否定等の拒否を別途確認。
+- same100は全入力・本文・状態・理由・診断の全recordとファイルが直前から完全一致。**74 GENERATED / 26 UNAVAILABLE**。rootが本セッションで全100件を読了し、現在全byte/record一致を照合した。初回100への改善加算はない。
+- 継承保存322ケース/600状態と追加7ケース/16状態、計 **329ケース/616状態、GET785一致**。直近の保存系列で作者停止再開98一致。主保存312ケース/578状態では現在本文56状態と履歴だけ1状態が変わり、問い・操作制御・元入力・意味更新・frame内容は不変。本文なし11状態も維持。時点追加10ケース/22状態は内容不変。今回の追加7ケースは3プランの現在肯定・当時訂正と先の回答訂正を保存/再表示で確認した。
+- rootは主保存の全247種の完全本文、100組の原入力、全312ケース/578状態への対応、context/frame/制御を通読。今回29種の本文差分を全件読み、残る218種は本セッションで全文読了した原文と完全一致を照合。全対応表も一致し、frameの不透明参照7行だけは変更行を再読した。追加・時点の全17ケース/38状態も全本文・操作・時点を読了。代表例やhashだけで全文確認を代替しない。
+- 元36保存系列は前回と同じ18 PASS / 18 FAIL。診断18系列は全操作完走、651原検査中323 FAIL（評価例外2を含む）。前回301から増えた22失敗も旧本文期待のまま保存する。診断収集を元テストPASSにしない。中断原物、欠けた参照メタ、完了印と実データ件数が不一致だった試行は保全し、参照だけ復旧して未完分を同条件で再実行した。完了済は再実行していない。
+
+**商品判定はNOT_CLEAR。** 出来事の復唱と固定終止、複数の意味を自然にまとめる品質、意味選択の偏りと未提供範囲は残る。肯定的な回答訂正と別出来事撤回の組合せには既存のplanner能力不足があり、今回の成功には含めない。次は共通の意味から文を構成する原因を扱い、原反応・後続回答の時点と責務を保持する。STRUCTURE_MAP_DELTA_NONE。API/RPC/DB/RN、質問枠、他中核、Draft/default OFFを維持。9/23中間確認、9/26集中期間終了、9/27配分変更、10/10内容・10/24運用、全体45%/商品合格0/3は不変更。merge/Ready/deploy/enable・稼働DB/実機/実課金/外部AI・正式人手商品PASSは未実施。System Contextは使わず、現行原典を直接確認。非公開の本文・個別対応・失敗原物は継続記録へ保持する。
