@@ -10,6 +10,7 @@ from cocolon_meaning_experience_engine.emlis_thread_surface import realize_emlis
 from cocolon_meaning_experience_engine.emlis_thread_projection import project_thread_meaning
 from emlis_ai_grounded_observation_gate import evaluate_grounded_surface_body_inverse
 import emlis_ai_grounded_sentence_surface as surface
+from test_emlis_q3_application import qdb, qcase
 
 MEMO='褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。'
 def begin(memo=MEMO,memo_action=''):
@@ -2086,6 +2087,71 @@ INDEPENDENT_DECISION_MEMOS = (
     '今の教材を使うか迷っている。それとは別に、通う時間を変えることを考え始める時期も決められない。',
     '今の講座を続けるか迷っています。それとは別に、読む資料を替えることを考え始める時期は決められません。',
 )
+
+
+@pytest.mark.parametrize('memo', INDEPENDENT_DECISION_MEMOS)
+@pytest.mark.parametrize('focus', [0, 1, 2])
+def test_independent_decision_discourse_keeps_complete_hosts_and_focus(monkeypatch, memo, focus):
+    from test_cmee_emlis_received_discourse import actual, inverse
+    req = _current_material_with_requested_focus(monkeypatch, memo, 'お茶を飲んだ。', True, focus)
+    ctx = actual(request=req)
+    out, plan, _, resolver, selected = ctx
+    follow = out.artifact.reception
+    first, second = memo.rstrip('。').replace('迷っています', '迷っている').replace(
+        '決められません', '決められない').split('。')
+    second = second.removeprefix('それとは別に、')
+    left, right = (second, first) if focus == 1 else (first, second)
+    assert left + 'こととは別に、' + right + 'のですね。' in follow
+    assert follow.count(first) == follow.count(second) == 1
+    assert 'ことと、' not in follow and '小さくせずに' not in follow
+    assert 'お茶を飲んだ' in follow and len(plan.response_plan.human_reception_plan.moves) == 2
+    assert plan.response_plan.human_follow_target_ids == (
+        plan.response_plan.human_reception_plan.moves[0].target_nucleus_ids[0],)
+    assert MeaningExperienceEngine().generate(req).question is None
+    assert inverse(ctx, follow, without_author=True).passed
+
+
+@pytest.mark.parametrize('old,new', [
+    ('こととは別に、', 'ことが原因で、'), ('こととは別に、', 'ことと、'),
+    ('こととは別に、', ''), ('か迷っている', 'ことに決めた'),
+    ('迷っている', '迷っていた'), ('今の教材', '弟が今の教材'),
+    ('今の教材', '昨日、今の教材'), ('決められない', '決められる'),
+    ('決められない', '決められなかった'), ('通う時間', '読む資料'),
+    ('考え始める時期', '変える時期'), ('考え始める', '考え始めた'),
+    ('時期も', '時期は'), ('お茶を飲んだ', 'お茶を飲まなかった'),
+])
+def test_independent_decision_discourse_rejects_actual_semantic_mutation(old, new):
+    from test_cmee_emlis_received_discourse import actual, inverse
+    ctx = actual(request=begin(INDEPENDENT_DECISION_MEMOS[0], 'お茶を飲んだ。'))
+    follow = ctx[0].artifact.reception
+    changed = follow.replace(old, new)
+    assert changed != follow
+    assert inverse(ctx, follow, without_author=True).passed
+    assert not inverse(ctx, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('ending', ['のです。', 'のだと受け取りました。'])
+def test_independent_decision_discourse_accepts_equivalent_reading(ending):
+    from test_cmee_emlis_received_discourse import actual, inverse
+    ctx = actual(request=begin(INDEPENDENT_DECISION_MEMOS[0]))
+    changed = ctx[0].artifact.reception.replace('のですね。', ending)
+    assert inverse(ctx, changed).passed
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+def test_independent_decision_discourse_saved_body_survives_author_free_restart(qdb, qcase, monkeypatch, tier):
+    from test_emlis_q2_application import run
+    user, parent, service = qcase
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
+    qdb.query('update public.emotions set memo=$1,memo_action=$2 where id=$3',
+              [INDEPENDENT_DECISION_MEMOS[0], 'お茶を飲んだ。', parent])
+    dto = run(service.start(user, parent))
+    assert dto['current_observation'] is not None
+    assert 'こととは別に、通う時間を変えることを考え始める時期も決められないのですね。' in dto['current_observation']['text']
+    assert dto['pending_question'] is None
+    assert run(service.get(user, parent)) == dto
+    monkeypatch.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved text regenerated'))
+    assert run(service.start(user, parent)) == dto
 
 
 @pytest.mark.parametrize('memo', INDEPENDENT_DECISION_MEMOS)

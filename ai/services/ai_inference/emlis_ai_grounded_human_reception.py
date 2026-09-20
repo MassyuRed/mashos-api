@@ -9743,6 +9743,22 @@ def _source_grounded_reception_fragment(
             "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
         )
     core = f"{context_prefix}{target_core.text}"
+    if (move.required and move.reception_act == "stay_with_current_burden"
+        and move.move_role == "felt_response" and not context_prefix
+        and recovery_stage == "full" and realization.clause_form == "FINITE"
+        and _selected_material_appraisal(selected_subjective_decision)
+        and any(code in {"source-independent-decision:0:1", "source-independent-decision:1:0"}
+                for code in realization.nominalization_plan)):
+        # The two unresolved hosts already belong to one selected Move.
+        # Express their explicit independence instead of placing two koto
+        # objects under a generic acknowledgement. No proposal becomes an act.
+        _source_current_material_group_ir_text(realization)
+        clauses = tuple(re.sub(r"決められません$", "決められない",
+                               re.sub(r"迷っています$", "迷っている", value))
+                        for value in realization.semantic_fragments)
+        first, second = (re.sub(r"^それとは別に[、,]?", "", value)
+                         for value in clauses)
+        return first + "こととは別に、" + second + "のですね"
     if (move.reception_act == "stay_with_current_burden"
         and move.move_role == "felt_response" and not context_prefix
         and selected_subjective_decision.subjective_proposition.appraisal_content is not None

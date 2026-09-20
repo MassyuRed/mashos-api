@@ -2441,9 +2441,65 @@ def _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjectiv
                  if parsed[key] is not None)
 
 
+def _read_independent_decision_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Read both unresolved hosts and their explicit separation from prose.
+
+    Source grammar proves roles; this reader checks actual bytes rather than
+    asking the author for its output. Selection and focus remain unchanged.
+    """
+    from emlis_ai_grounded_observation_plan import (
+        _source_independent_decision_group, _source_independent_decision_clause_parts,
+        _source_material_allows_reverse,
+    )
+    group = _source_independent_decision_group(plan.nuclei, plan.relations)
+    if (not group or not move.required or move.move_role != "felt_response"
+        or move.reception_act != "stay_with_current_burden"
+        or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
+        return None
+    selected = (move.target_nucleus_ids, move.support_nucleus_ids)
+    forward = ((group[0].nucleus_id,), (group[1].nucleus_id,))
+    reverse = ((group[1].nucleus_id,), (group[0].nucleus_id,))
+    if selected == reverse and _source_material_allows_reverse(group):
+        group = (group[1], group[0], *group[2:])
+    elif selected != forward:
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions
+                         if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if (appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
+            or appraisal.operation != "RECEIVE_AS_MATERIAL"):
+            return None
+    sources = tuple(str(resolver.resolve(n.source_span_ids[0]).raw_text).strip(" 　。．.")
+                    for n in group[:2] if len(n.source_span_ids) == 1)
+    if len(sources) != 2:
+        return None
+    for nucleus, source in zip(group, sources):
+        proof = _source_independent_decision_clause_parts(source)
+        if (proof is None or "lexical:source_independent_decision_" + proof[0]
+            not in nucleus.semantic_frame.attribute_codes):
+            return None
+    parsed = re.fullmatch(r"(?P<left>[^。！？!?]+)こととは別に、(?P<right>[^。！？!?]+)"
+                          r"(?:のですね|のです|のだと受け取りました)。", raw)
+    if parsed is None:
+        return None
+    expected = tuple(re.sub(r"^それとは別に[、,]?", "",
+                            re.sub(r"決められません$", "決められない",
+                                   re.sub(r"迷っています$", "迷っている", source)))
+                     for source in sources)
+    if (parsed['left'], parsed['right']) != expected:
+        return None
+    return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()),
+                  source.encode()) for key, source in zip(('left', 'right'), sources))
+
+
 def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None,
                                 *, preceding_context=None):
     """Read supported finite source duties without a literal-author oracle."""
+    independent_decision = _read_independent_decision_discourse(
+        raw, move, plan, resolver, selected_subjective_input)
+    if independent_decision is not None:
+        return independent_decision
     answer = _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjective_input,
                                            preceding_context)
     if answer is not None:
