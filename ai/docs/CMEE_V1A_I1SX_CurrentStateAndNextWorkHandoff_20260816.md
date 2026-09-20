@@ -1,3 +1,5 @@
+> 2026-09-20 最新現在地：単一受領出来事の元反応と回答時点を有限節で区別。追加38検査PASS、全体2109 PASS / 350 FAIL。same100・保存312ケース578状態と追加10ケース22状態を全文確認。商品NOT_CLEAR。詳細と次の作業は末尾「元反応と回答時点の有限節を分ける」。
+
 > 2026-09-14 最新現在地：名詞句を伴う過去感情を共有経路で保持し、二つの感情と別行動を独立に受け止める修正を検証。追加46検査PASS。既存19失敗に加え、固定2Move期待との不一致1件が発生し、期待値は維持。同じ100入力と保存126ケース・227状態を全文確認。感情の取り落としと長い復唱は残り、商品NOT_CLEAR。現在の採用結果と次の作業は末尾「independent nominal past feelings」節。
 
 > 2026-09-13 現在地：共通authorで対比の名詞化を一段減らし、継続語を右の対象へ限定。追加2検査PASS、従来1101検査の合否変更0。同じ100入力と保存110ケース・211状態を全文確認。既存19失敗・文をまたぐ復唱・意味選択の残件があり、商品NOT_CLEAR。詳細は末尾の同見出し。
@@ -8407,3 +8409,18 @@ Continues the current weekly agreement and prior mixed-contrast checkpoint. The 
 The existing received-discourse test file now has 76 passing checks, including 34 added cases covering three original received-event forms, negative/negated/unknown later states, source/time/actor mutations with the author unavailable, prior-answer correction with event withdrawal, and saved retrieval/restart. Initial direct probes confirm the intended temporal composition. A copied test-support path was initially absent; its startup failure is retained and the inherited support file was restored unchanged. Full required regression, same100 and the complete inherited saved-state review are still pending; this is a checkpoint, not final verification or product PASS.
 
 Draft/default OFF and NOT_CLEAR remain. No public API, schema, live DB, RN, other core, external AI, deployment or release change. Root owns implementation/publication; independent read-only review checked the source-time and scope boundaries. Continue final validation on these product bytes, retaining all old expectations and failures and all private body evidence outside public GitHub.
+
+## 2026-09-20 継続完了 — 元反応と回答時点の有限節を分ける
+
+上の途中保存に、独立監査で見つけた終止の連結と明示一人称の境界修正を加えて最終確認した。単一の受領出来事について、元の否定的反応と回答した時点・先の回答時点の否定的感情や不明を、共通HumanReceptionで別の時点の有限述語として述べる。独立inverseは作者停止下で対象・元反応・回答全文と時点を再構成する。丁寧形、終止のコピュラ、明示一人称など未証明の文法は既存経路へ残す。肯定Move、複数対象の連結、意味選択、保存契約の変更はない。STRUCTURE_MAP_DELTA_NONE。
+
+固定検証版はlocal `5edc023f711318a3f379760ad63c071a972516bb`、tree `5b4f01568f3d667b01dd9ff4392f88efb662228e`。remote `8742010241e82a1b195645a69bb3295f5e2761c3` は同一tree。この最終追記は引継ぎ文書のみで、検証した製品コードは変更していない。
+
+- 必須13実行・47テストファイルは2,459件、2,109 PASS / 350 FAIL。新規38件は全PASS、対象ファイル全80件PASS。旧2,421件は削除0、338 FAIL維持、12 PASS→FAIL、0 FAIL→PASS。増分12件は旧名詞化本文の固定期待10件と旧置換文字列の不一致2件。旧入力・期待値・閾値を変えず、失敗のまま保全した。
+- same100は74 GENERATED / 26 UNAVAILABLE、入力・本文・状態・理由・診断の全recordとファイルが前回から完全一致。rootが全100件を通読。初回100への改善加算はない。
+- 既存保存39集合312ケース/578状態、GET730一致、別途作者停止再開81一致。元36系列は出力先準備2件の同条件再試行を含め18 PASS / 18 FAIL。診断18集合は651検査中301 FAIL・評価例外2を保持し全操作完了。前回17からの増分は現在の不明を扱う保存集合で、旧本文期待の不一致。診断収集を元検査PASSとはしない。
+- rootは247種の完全本文、100原入力組、全312ケース/578状態の対応とcontext/frame/操作を通読した。現在の怖さ・否定形・不明を述べる4状態のみ、元反応と回答時点を有限述語へ構成。観測、問い・枠・操作状態・frameは不変、本文なし11状態も維持。他の差は実行日時・識別子で、完全な比較と変更前後は非公開記録に保全。
+- 追加保存10ケース/22状態を、3プランの現在否定・否定形・不明、および先の回答訂正と別出来事撤回で確認。GET32・作者停止再開10一致、全本文と操作列をrootが通読した。
+- 初回環境パス誤り、出力先の事前配置衝突、診断の出力先置換誤りと修正前実行を保全。最終の衝突2件は出力先だけを分離し、同じ実装・入力・期待・collectorで元手順を再実行して成功。引用訂正集合も実データ18ケース/41状態と後続読取が一致した。
+
+商品判定は **NOT_CLEAR**。今回の単一出来事の構成改善を全体解決にはしない。複数の意味を自然なフォローへまとめる品質、長い復唱・定型終止、行動偏重や曖昧な変化指示、未提供経路が残る。次も共通の意味から文章を構成する原因を扱い、語句集追加・別作者・環境再構築へ戻らない。9/23中間確認、9/26集中期間終了、9/27以降の配分、全体45%/商品合格0/3は据え置き。Draft/default OFF維持、merge/Ready/enable/deploy・稼働DB/実機/実課金/外部AI・正式人手商品PASSは未実施。System Contextは使わず現行原典を直接確認した。
