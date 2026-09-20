@@ -201,11 +201,13 @@ def test_prior_answer_revision_keeps_its_time_and_withdrawn_event_stays_absent()
     assert not inverse(context, follow.replace('先の回答時点では', '回答した時点では'), without_author=True).passed
 
 
-@pytest.mark.parametrize('text', ['今は不安です。', '今は怖いです。'])
-def test_polite_answers_keep_the_existing_grammatical_path(text):
+@pytest.mark.parametrize('text', ['今は不安です。', '今は怖いです。', '今は不安だ。',
+                                  '今は私は少し怖くない。', '今は私も怖い。', '今は自分は怖い。'])
+def test_incomplete_temporal_clause_grammar_keeps_the_existing_path(text):
     context = actual(request=answered(text, initial()))
     follow = context[0].artifact.reception
-    assert 'ですのですね' not in follow
+    assert 'ですのですね' not in follow and 'だのですね' not in follow
+    assert '回答した時点では' not in follow
     assert '回答した時点' in follow
     assert inverse(context, follow, without_author=True).passed
 

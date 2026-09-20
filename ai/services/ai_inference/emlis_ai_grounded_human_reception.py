@@ -9645,9 +9645,12 @@ def _source_grounded_received_discourse(realization) -> str | None:
             # current (or earlier-answer) state. Give the two times their own
             # predicates instead of joining nominal objects under approval.
             # Do not coordinate present clauses through a later past ending.
+            # Copulas need attributive inflection; explicit first-person
+            # subjects need ownership wording. Keep their existing path.
             if (len(codes) != 1 or when not in {"answer_time", "prior_answer_time"}
                 or not _SOURCE_GROUNDED_FINITE_END_RE.search(source)
-                or re.search(r"(?:です|ます|でした|ました)$", source)
+                or re.search(r"(?:です|ます|でした|ました|だ)$", source)
+                or re.search(r"(?:私|自分)(?:は|も|が)", source)
                 or re.search(r'[「」『』“”‘’"?？!！\r\n。]', source)):
                 return None
             time = {"answer_time": "回答した時点では",
