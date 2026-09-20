@@ -9747,6 +9747,24 @@ def _source_grounded_reception_fragment(
         and move.move_role == "felt_response" and not context_prefix
         and recovery_stage == "full" and realization.clause_form == "FINITE"
         and _selected_material_appraisal(selected_subjective_decision)
+        and any(code in {"source-current-material:0:1", "source-current-material:1:0"}
+                for code in realization.nominalization_plan)):
+        # Coexisting feelings and a tentative view of their targets are
+        # already selected together. Give them their own finite predicates,
+        # without assigning each feeling a target or inventing a cause.
+        # The complete explanation difficulty, present scope and impression
+        # remain inside their source clauses, in the selected focus order.
+        _source_current_material_group_ir_text(realization)
+        first, second = realization.semantic_fragments
+        if "source-current-material:1:0" in realization.nominalization_plan:
+            connected = first[:-2] + "して"  # source-proven 気がする
+        else:
+            connected = first[:-1] + "り"  # source-proven 同時に/どちらもある
+        return connected + "、" + second + "のですね"
+    if (move.required and move.reception_act == "stay_with_current_burden"
+        and move.move_role == "felt_response" and not context_prefix
+        and recovery_stage == "full" and realization.clause_form == "FINITE"
+        and _selected_material_appraisal(selected_subjective_decision)
         and "source-feeling-reason-boundary:0:1" in realization.nominalization_plan):
         # These are already one selected experience and its unresolved reason,
         # not two objects to place under a generic acknowledgement. Coordinate

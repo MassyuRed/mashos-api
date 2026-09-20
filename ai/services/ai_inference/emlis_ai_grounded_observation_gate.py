@@ -2644,9 +2644,75 @@ def _read_feeling_reason_discourse(raw, move, plan, resolver, selected_subjectiv
                   source.encode()) for key, source in zip(('experience', 'unknown'), sources))
 
 
+def _read_coexisting_material_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Restore the two complete source clauses from finite reception prose.
+
+    The tentative target view is not an unresolved reason. Parse only the
+    additive inflection of the first predicate, retaining the source's own
+    explanation difficulty and every constituent of both selected hosts.
+    No author, nominalizer, rendered expectation or vocabulary list is used.
+    """
+    from emlis_ai_grounded_observation_plan import (
+        _source_current_material_group, _source_coexisting_feelings_and_tentative_target,
+    )
+    group = _source_current_material_group(plan.nuclei, plan.relations)
+    if (not group or "lexical:source_current_material_primary"
+            not in group[0].semantic_frame.attribute_codes
+        or "lexical:source_current_material_qualification"
+            not in group[1].semantic_frame.attribute_codes
+        or not move.required or move.move_role != "felt_response"
+        or move.reception_act != "stay_with_current_burden"
+        or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
+        return None
+    selected = (move.target_nucleus_ids, move.support_nucleus_ids)
+    forward = ((group[0].nucleus_id,), (group[1].nucleus_id,))
+    reverse = ((group[1].nucleus_id,), (group[0].nucleus_id,))
+    if selected not in (forward, reverse):
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions
+                         if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if (appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
+            or appraisal.operation != "RECEIVE_AS_MATERIAL"):
+            return None
+    sources = tuple(str(resolver.resolve(n.source_span_ids[0]).raw_text).strip(" 　。．.")
+                    for n in group[:2] if len(n.source_span_ids) == 1)
+    if len(sources) != 2 or not _source_coexisting_feelings_and_tentative_target(*sources):
+        return None
+    reversed_focus = selected == reverse
+    if reversed_focus:
+        sources = tuple(reversed(sources))
+    # The complete second clause may itself contain a comma. Enumerate the
+    # body-owned boundary and require one unique restoration in focus order.
+    ending = re.search(r"(?:のですね|のです|のだと受け取りました)。$", raw)
+    if ending is None:
+        return None
+    clause = raw[:ending.start()]
+    matches = []
+    for split in re.finditer("、", clause):
+        left, right = clause[:split.start()], clause[split.end():]
+        if reversed_focus:
+            if not left.endswith("気がして"):
+                continue
+            restored = left[:-2] + "する"
+        else:
+            if not left.endswith("あり"):
+                continue
+            restored = left[:-1] + "る"
+        if (restored, right) == sources:
+            matches.append(((0, len(left.encode()), sources[0].encode()),
+                            (len(clause[:split.end()].encode()), len(clause.encode()), sources[1].encode())))
+    return matches[0] if len(matches) == 1 else None
+
+
 def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None,
                                 *, preceding_context=None):
     """Read supported finite source duties without a literal-author oracle."""
+    coexisting = _read_coexisting_material_discourse(
+        raw, move, plan, resolver, selected_subjective_input)
+    if coexisting is not None:
+        return coexisting
     feeling_reason = _read_feeling_reason_discourse(
         raw, move, plan, resolver, selected_subjective_input)
     if feeling_reason is not None:
