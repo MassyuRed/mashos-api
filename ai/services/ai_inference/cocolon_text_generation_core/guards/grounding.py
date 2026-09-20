@@ -382,6 +382,36 @@ def guard_grounding(
         phrase_matches = [span_id for span_id, phrase_text in phrase_supports if _span_matches_sentence(sentence, phrase_text)]
         sentence_matches = list(dict.fromkeys(sentence_matches + phrase_matches))
         if binding_support["binding_used"]:
+            bound_ids = set(binding_support["used_evidence_span_ids"])
+            # Whole source text identifies its owner more strongly than a
+            # coincidental overlap with another source's grammatical wording.
+            # Keep every declared binding and every other whole source actually
+            # present. Only ambiguous, unbound lexical alternatives are removed
+            # from attribution; support/coverage and rejection rules are unchanged.
+            exact_ids = {
+                _span_id(span) for span in scoped
+                if len(normalize_text(_span_raw(span))) >= 3
+                and normalize_text(_span_raw(span)) in normalize_text(sentence)
+            }
+            if (bound_ids & exact_ids
+                and not missing_declared
+                and not binding_support["missing_evidence_span_ids"]
+                and not binding_support["missing_phrase_unit_ids"]):
+                # A second source may appear only in part. Test the text
+                # outside the complete bound sources before removing any
+                # alternative: a partial source/phrase there is real support,
+                # not merely shared grammar inside the bound quotation.
+                residual = normalize_text(sentence)
+                whole_bound = sorted((normalize_text(_span_raw(evidence_by_id[span_id]))
+                                      for span_id in bound_ids & exact_ids), key=len, reverse=True)
+                for raw in whole_bound:
+                    residual = residual.replace(raw, "")
+                sentence_matches = [span_id for span_id in sentence_matches
+                    if span_id in bound_ids or span_id in exact_ids
+                    or (residual and (
+                        _span_matches_sentence(residual, _span_raw(evidence_by_id[span_id]))
+                        or any(owner == span_id and _span_matches_sentence(residual, phrase)
+                               for owner, phrase in phrase_supports)))]
             sentence_matches = list(dict.fromkeys([*sentence_matches, *binding_support["used_evidence_span_ids"]]))
 
         sentence_claims.append({
