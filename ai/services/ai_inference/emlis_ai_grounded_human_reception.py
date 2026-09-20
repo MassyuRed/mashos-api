@@ -9629,6 +9629,7 @@ def _source_grounded_received_discourse(realization) -> str | None:
                       for slot, link in enumerate(links))
     fragments = realization.semantic_fragments
     parts = []
+    separate_time_scopes = False
     for code in codes:
         _, slot_text, feeling_text, link, *answer_code = code.split(":")
         event = fragments[int(slot_text)]
@@ -9654,7 +9655,7 @@ def _source_grounded_received_discourse(realization) -> str | None:
             # Do not coordinate present clauses through a later past ending.
             # Copulas need attributive inflection; explicit first-person
             # subjects need ownership wording. Keep their existing path.
-            if (len(codes) != 1 or when not in {"answer_time", "prior_answer_time"}
+            if (when not in {"answer_time", "prior_answer_time"}
                 or not _SOURCE_GROUNDED_FINITE_END_RE.search(source)
                 or re.search(r"(?:です|ます|でした|ました|だ)$", source)
                 or re.search(r"(?:私|自分)(?:は|も|が)", source)
@@ -9664,7 +9665,9 @@ def _source_grounded_received_discourse(realization) -> str | None:
                     "prior_answer_time": "先の回答時点では"}[when]
             original = (event + "時は" + negative[1] + "、"
                         if negative is not None else event + "ことについて、")
-            return original + time + source + "のですね"
+            parts.append(original + time + source)
+            separate_time_scopes = True
+            continue
         if grammar.startswith("PERCEIVED_"):
             parsed = re.fullmatch(r"(.+)ようで[、,]([^、,]+)かった", source)
             if parsed is None or _thread_answer_nominal_morphology(parsed[2] + "かった") is None:
@@ -9695,7 +9698,12 @@ def _source_grounded_received_discourse(realization) -> str | None:
     # next begins; no cause, ranking or shared experiencer is manufactured.
     coordinated = []
     for part in parts[:-1]:
-        if part.endswith("つながらなかった"):
+        if separate_time_scopes:
+            # Each independent event keeps its own finite tense. An answer
+            # made now must not take the past tense of a later event, and a
+            # past reaction must not acquire an answer's current tense.
+            coordinated.append(part + "し")
+        elif part.endswith("つながらなかった"):
             coordinated.append(part[:-8] + "つながらず")
         elif part.endswith("感じた"):
             coordinated.append(part[:-3] + "感じ")

@@ -2822,7 +2822,12 @@ def read_received_discourse(raw, move, plan, resolver, selected_subjective_input
     actual_parts.append(raw[cuts[-1]:])
     normalized_parts = []
     for part in actual_parts[:-1]:
-        if part.endswith("つながらず"):
+        if part.endswith("し"):
+            # Additive coordination preserves each complete finite clause.
+            # Cut only at the unique next source-owned event above; an
+            # identical connective inside an answer remains part of it.
+            finite = part[:-1]
+        elif part.endswith("つながらず"):
             finite = part[:-5] + "つながらなかった"
         elif part.endswith("感じ"):
             finite = part + "た"
@@ -2970,7 +2975,7 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                 temporal = re.fullmatch(
                     r"(?P<event>.+?)(?:時は(?:(?P<absent>[^、,]+)くなく、|(?P<felt>[^、,]+)く、)|ことについて、)"
                     r"(?P<time>回答した時点では|先の回答時点では)(?P<answer>.+)", clause)
-                if temporal is None or len(move.target_nucleus_ids) != 1:
+                if temporal is None:
                     return None
                 actual_feeling = (temporal["absent"] + "くなかった" if temporal["absent"] is not None
                                   else temporal["felt"] + "かった" if temporal["felt"] is not None else None)
