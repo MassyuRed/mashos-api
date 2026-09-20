@@ -1771,6 +1771,7 @@ def _self_denial_opposition_relation(
 def _build_self_denial_lines(
     *,
     plan: GroundedObservationPlan,
+    resolver: EvidenceSpanResolver,
     recovery_stage: RecoveryStage,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     relation_index: Mapping[str, GroundedSemanticRelation],
@@ -2378,6 +2379,7 @@ def build_grounded_sentence_plan(
         lines = (
             _build_self_denial_lines(
                 plan=plan,
+                resolver=resolver,
                 recovery_stage=recovery_stage,
                 nucleus_index=nucleus_index,
                 relation_index=relation_index,
