@@ -14,6 +14,7 @@ from .contracts import (
 )
 from .emlis_v1a import CMEEVerticalError, build_text_grounded_limited_artifact
 from .source_kernel import SourceAdmissionError, freeze_text_source
+from .piece_v1c import PieceEngineOutcome, PieceGenerationRequest, generate_piece_artifact
 
 
 class MeaningExperienceEngine:
@@ -24,7 +25,9 @@ class MeaningExperienceEngine:
     belongs to the application config, not this pure meaning engine.
     """
 
-    def generate(self, request: GenerationRequest) -> EngineOutcome:
+    def generate(self, request: GenerationRequest | PieceGenerationRequest) -> EngineOutcome | PieceEngineOutcome:
+        if isinstance(request, PieceGenerationRequest):
+            return generate_piece_artifact(request)
         if not isinstance(request, GenerationRequest):
             return self._rejected("generation_request_type_mismatch")
         if request.core_id != CoreId.EMLIS_AI.value:

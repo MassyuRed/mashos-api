@@ -61,6 +61,12 @@ def main() -> int:
         ('self_paced_choice', 'すぐに決めると、気持ちが追いつかないことがある。迷う時間も私には必要だ。私は速さだけで答えを決めず、自分で納得できる選び方を続けたい。'),
         ('walking', '長く歩くと、疲れてしまうこともある。新しい景色を見る楽しさも残っている。私は体調に余裕があるときに、知らない道も歩いてみたい。'),
         ('uncertainty', '今はまだ、考えが変わるかもしれない。人の意見を聞かないわけではない。私は迷いを隠して、決まった答えのようには話したくない。'),
+        ('single_intent', '私は自分で納得できるまで、焦らずに自分の答えを考えたい。'),
+        ('initial_intent', '私は自分で納得してから答えを決めたい。昨日は時間が足りなかった。まだ迷っている。'),
+        ('middle_intent', '昨日は時間が足りなかった。私は自分で納得してから答えを決めたい。まだ迷っている。'),
+        ('role_abstraction', '友人の佐藤さんと話した。私は自分で納得してから答えを決めたい。'),
+        ('role_qualification', '昨日は上司の田中さんに相談しなかった。私は気持ちが整理できたら、自分の考えを伝えたい。まだ、いつ話すかは決めていない。'),
+        ('role_reference', '同僚の山田さんと話した。山田さんには、まだ結論を伝えていない。私は答えを急がず、自分の考えを整理したい。'),
     ]
     records = []
     # Dynamic ICC creation embeds a wall-clock timestamp. A fixed PNG sRGB
@@ -109,7 +115,8 @@ def main() -> int:
             raise AssertionError('negative example unexpectedly generated')
     report = {'scope': 'DEVELOPMENT_PROBE_NOT_NATIVE_ACCEPTANCE', 'renderer_profile': metrics.profile_id,
         'application_dependency_changes': 0, 'native_device_verified': False,
-        'public_safety_complete': False, 'cmee_piece_consumer_connected': False,
+        'public_safety_complete': False, 'cmee_piece_consumer_connected': True,
+        'meaning_scope': 'source_propositions_and_explicit_role_bindings_not_general_relation_inference',
         'source_retrieval_connected': False, 'records': records, 'negative': negative}
     (output / 'probe_results.private.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     for item in records[::2]:

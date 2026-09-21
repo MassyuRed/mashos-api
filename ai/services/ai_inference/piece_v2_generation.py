@@ -1,22 +1,17 @@
-"""B8 bounded first-person editorial compiler; disabled candidate entry only.
+"""Disabled B8 entry and original-snapshot grammar admission.
 
-This is NOT the CMEE Piece consumer or an authenticated preview API. It accepts
-an internal saved-source snapshot supplied by a trusted caller. It currently
-handles explicit first-person focal constructions and a shared meaning-block
-paragraph intent, plus their complete adjacent sentences. Unsupported discourse is unavailable, never raw-source fallback.
+CMEE owns Piece source meaning, intent, ArtifactPlan and canonical text.
+This module retains the existing caller shape; it does not retrieve saved inputs,
+authenticate callers, create records, consume quota or enable a public route.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
 import re
-from emlis_ai_types import EvidenceRef
-from piece_v2_expression import compile_piece_expression_plan
-from piece_v2_content_policy import (check_existing_detectors, choose_format,
-                                     unavailable, validate_candidate_text)
+from piece_v2_content_policy import unavailable
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class PieceSourceSnapshot:
     owner_id: str
     saved_input_id: str
@@ -55,85 +50,26 @@ def _sentences(text: str) -> list[str]:
 
 def generate_piece_candidate(source: PieceSourceSnapshot, *, authenticated_owner_id: str,
                              tier: str = 'free', requested_format: str | None = None) -> dict:
-    """Return actual candidate text with no writes, quota or runtime activation.
+    """Existing disabled B8 entry, now consuming CMEE's Piece artifact directly.
 
-    Equality of owner IDs is a binding check, NOT authentication. The caller is
-    responsible for authentication and immutable saved-source retrieval (B5).
+    Owner equality is a binding check, NOT authentication. B5 must still obtain
+    the immutable saved source; no API, DB, quota or native route is enabled.
     """
+    from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.piece_v1c import PieceGenerationRequest, PieceEngineOutcome
+    from cocolon_meaning_experience_engine.contracts import EngineStatus
     if type(source) is not PieceSourceSnapshot:
         raise unavailable('source_type')
-    if not all(isinstance(x, str) and x for x in
-               (source.owner_id, source.saved_input_id, source.source_version,
-                source.original_text, authenticated_owner_id)):
-        raise unavailable('source_identity')
-    if source.owner_id != authenticated_owner_id:
-        raise unavailable('source_owner_mismatch')
-    if source.source_role != 'original' or source.source_stage not in (
-            'normal_observation', 'pre_question_observation'):
-        raise unavailable('source_role_or_stage_not_yet_supported')
-    check_existing_detectors(source.original_text)
-    sentences = _sentences(source.original_text)
-    edited: list[str] = []
-    focal_count = 0
-    for sentence in sentences:
-        m = _FOCUS.fullmatch(sentence)
-        if m:
-            obj = m['object'].lstrip('、，,')
-            if (not obj or not obj.endswith(('こと', 'もの', '時間'))
-                    or _NESTED.search(obj) or _DEICTIC.search(obj)):
-                raise unavailable('focal_object_not_self_contained')
-            # All object text, including internal contrast, negation and time,
-            # remains verbatim. The existing predicate is moved, not inferred.
-            edited.append('私は、' + obj + 'を' + m['predicate'] + '。')
-            focal_count += 1
-        else:
-            edited.append(sentence)
-    expression_plan = None
-    if not focal_count:
-        expression_plan = compile_piece_expression_plan(
-            sentences=sentences,
-            evidence=EvidenceRef(kind='saved_input', ref_id=source.saved_input_id),
-        )
-        edited = list(expression_plan.sentences)
-    if any(_DEICTIC.search(s) for s in sentences):
-        raise unavailable('unresolved_reference')
-    # The legacy focal path preserves source order. The expression plan owns
-    # an explicitly bounded reordering. Neither path drops repeated emphasis,
-    # invents a connection, merges past/current claims, or adds a hidden title.
-    # At most three meaning blocks; adjacent complete clauses stay in order.
-    if expression_plan is not None:
-        blocks = list(expression_plan.body_blocks)
-    elif len(edited) <= 3:
-        blocks = edited
-    else:
-        blocks = [edited[0], ''.join(edited[1:-1]), edited[-1]]
-    eligible: list[str] = []
-    payloads: dict[str, dict] = {}
-    for fmt in ('short_essay', 'quote', 'declaration'):
-        if fmt == 'quote' and len(edited) != 1:
-            continue
-        # Intent must be explicit in the transformed source, with no uncertain
-        # adjacent discourse. Multiple stances are not collapsed to a promise.
-        if fmt == 'declaration' and (len(edited) != 1 or _UNCERTAIN.search(edited[0])):
-            continue
-        payload = {'schema_version': 'piece.content_payload.v1', 'format_type': fmt,
-                   'body_blocks': blocks[:], 'title': None, 'language': 'ja',
-                   'meaning_contract_version': 'piece.content_meaning.v1',
-                   'safety_contract_version': 'piece.public_safety_transformation.v1'}
-        try:
-            validate_candidate_text(payload)
-        except ValueError:
-            continue
-        eligible.append(fmt)
-        payloads[fmt] = payload
-    preferred = 'declaration' if 'declaration' in eligible else (
-        'quote' if 'quote' in eligible else 'short_essay')
-    selected = choose_format(tier=tier, requested=requested_format,
-                             eligible=tuple(eligible), recommended=preferred)
-    payload = payloads[selected]
-    text = validate_candidate_text(payload)
-    check_existing_detectors(text)
-    return {'candidate_state': 'OFFLINE_NOT_ACCEPTED', 'content_payload': payload,
-            'piece_text': text, 'piece_text_hash': hashlib.sha256(text.encode('utf-8')).hexdigest(),
-            'eligible_formats': eligible, 'format_type': selected,
-            'production_enabled': False, 'record_effect': 0, 'quota_effect': 0}
+    request = PieceGenerationRequest(
+        request_id='piece-offline-candidate', source=source,
+        expected_owner_id=authenticated_owner_id,
+        expected_saved_input_id=source.saved_input_id,
+        expected_source_version=source.source_version,
+        tier=tier, requested_format=requested_format)
+    outcome = MeaningExperienceEngine().generate(request)
+    if not isinstance(outcome, PieceEngineOutcome):
+        raise unavailable('piece_engine_outcome_type')
+    if (outcome.status != EngineStatus.GENERATED or outcome.artifact is None
+            or outcome.artifact_plan is None or outcome.source_meaning is None):
+        raise unavailable(outcome.reason_codes[0] if outcome.reason_codes else 'piece_content_unavailable')
+    return outcome.artifact.as_candidate()
