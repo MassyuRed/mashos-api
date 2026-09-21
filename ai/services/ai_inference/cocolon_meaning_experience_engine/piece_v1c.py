@@ -233,6 +233,49 @@ def _evaluation_sentence(meaning: PieceSourceMeaning, frame: PiecePersonalEvalua
     return perspective + '、' + target + 'が' + finite + '。'
 
 
+def _linked_self_continuations(meaning: PieceSourceMeaning,
+                               plan: PieceArtifactPlan) -> frozenset[str]:
+    """Reduce an adjacent, source-proven author repetition, not subject meaning.
+
+    The same-block antecedent must itself state the same literal first person.
+    A validated nominal reference must open the following written scope. Only
+    its explicit wish may omit the redundant topic; an evaluation viewpoint,
+    comparison, intervening context or different speaker is never elided.
+    Source/graph/plan validators run before this editorial choice is consumed.
+    """
+    original = meaning.envelope.raw_utf8.decode('utf-8')
+    nodes = {node.node_id: node for node in meaning.graph.nodes}
+    evaluations = {frame.node_id: frame for frame in meaning.personal_evaluations}
+    scopes = {scope.node_id: scope for scope in meaning.expression_scopes}
+    references = {ref.reference_node_id: ref for ref in meaning.nominal_references}
+    continuations = set()
+    for group in plan.block_node_ids:
+        for previous, current in zip(group, group[1:]):
+            ref, scope = references.get(current), scopes.get(current)
+            if (ref is None or scope is None or ref.antecedent_node_id != previous
+                    or previous in scopes or current in evaluations
+                    or ref.reference_scalar_span[0] != scope.scope_scalar_span[0]):
+                continue
+            # A linked referent does not establish the subject of its whole
+            # condition. A later は/が can introduce another participant or a
+            # contrast, so do not elide the author's explicit topic across it.
+            # The referent's own initial は/が is not a competing subject.
+            # This conservative surface check only declines an optional edit;
+            # it never rejects input or claims general subject resolution.
+            tail = original[ref.reference_scalar_span[1]:scope.scope_scalar_span[1]]
+            if re.search(r'[はが]', tail[1:] if tail.startswith(('は', 'が')) else tail):
+                continue
+            topic = _SELF_TOPIC.fullmatch(original[slice(*scope.expression_scalar_span)])
+            if topic is None or not _WISH_END.search(topic['body']):
+                continue
+            frame = evaluations.get(previous)
+            speaker = (original[slice(*frame.scalar_parts[0])] if frame is not None
+                       else '私' if _focal_parts(nodes[previous].value) is not None else None)
+            if speaker == topic['speaker']:
+                continuations.add(current)
+    return frozenset(continuations)
+
+
 def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
                            *, tier: str, requested_format: str | None) -> PieceArtifact:
     """Realize plan-owned duties from the source graph; never call B8's old author."""
@@ -249,6 +292,7 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
         raise unavailable('piece_intent_mismatch')
     if plan != compile_piece_artifact_plan(meaning):
         raise unavailable('piece_plan_semantic_binding')
+    continuations = _linked_self_continuations(meaning, plan)
     sentences: dict[str, str] = {}
     for node, duty, evidence in zip(graph.nodes, plan.duties, meaning.evidence, strict=True):
         raw = meaning.envelope.raw_utf8
@@ -277,8 +321,12 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
                 # its exact connective, and all intention arguments stay intact.
                 # In particular なら never becomes ので, and neither clause is
                 # changed into a new causal explanation or an unconditional vow.
+                # An adjacent source-bound continuation already establishes
+                # this author. Keep its full scope and predicate; omit only
+                # the repeated self-topic, never the first visible viewpoint.
+                prefix = '' if node.node_id in continuations else topic['speaker'] + 'は、'
                 text = _publicize_source_sentence(
-                    topic['speaker'] + 'は、' + premise + '、' + topic['body'] + '。', meaning)
+                    prefix + premise + '、' + topic['body'] + '。', meaning)
         elif duty.operation == 'SOURCE_FOCAL_TO_FIRST_PERSON':
             parts = _focal_parts(text)
             if parts is None:

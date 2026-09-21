@@ -72,11 +72,16 @@ def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics) -> list
         if i and (unicodedata.combining(c[0]) or c[0] == '\u200d'
                   or 0xFE00 <= ord(c[0]) <= 0xFE0F or clusters[i - 1].endswith('\u200d')):
             raise _fail('split_grapheme')
-    # Minimize line count first, then balance raggedness over ALL lines.
-    # Counting the final line avoids the long-line + one-character-orphan
-    # result of greedy wrapping without altering content or font scale.
+    # Minimize line count first, then avoid splitting ASCII letter/digit runs,
+    # avoid one-character sentence heads stranded by that mixed-text edit,
+    # then balance raggedness over ALL lines. This is a preference between
+    # equally compact layouts, not a new token-admission or segmentation rule.
+    # Long tokens still have grapheme-safe break candidates; no hyphen, space
+    # or replacement text is inserted to make a line fit.
     n = len(clusters)
-    costs = {n: (0, 0.0)}
+    word_clusters = [c[0].isascii() and c[0].isalnum() for c in clusters]
+    mixed_word_run = any(a and b for a, b in zip(word_clusters, word_clusters[1:]))
+    costs = {n: (0, 0, 0, 0.0)}
     choices = {}
     for start in range(n - 1, -1, -1):
         best = None
@@ -90,8 +95,14 @@ def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics) -> list
             measured_width = _width(measured)
             if measured_width > width:
                 continue
-            count, penalty = costs[end]
-            score = (count + 1, penalty + (width - measured_width) ** 2)
+            count, word_splits, head_orphans, penalty = costs[end]
+            split = int(end < n and word_clusters[end - 1] and word_clusters[end])
+            # This follows an explicit sentence mark, not a guessed Japanese
+            # word boundary. Pure Japanese keeps the previous balanced choice.
+            head_orphan = int(mixed_word_run and end < n and end >= 2
+                              and clusters[end - 2][-1] in '。！？!?')
+            score = (count + 1, word_splits + split, head_orphans + head_orphan,
+                     penalty + (width - measured_width) ** 2)
             if best is None or score < best[0]:
                 best = (score, end, part, measured)
         if best is not None:
