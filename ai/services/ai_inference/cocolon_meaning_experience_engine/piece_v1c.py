@@ -20,7 +20,8 @@ from piece_v2_expression import (
 )
 from .contracts import EngineStatus, ExecutionMode
 from .piece_source import (
-    PieceSourceMeaning, build_piece_source_meaning, validate_piece_nominal_references, validate_piece_personal_evaluations,
+    PieceSourceMeaning, build_piece_source_meaning, validate_piece_nominal_references,
+    validate_piece_personal_evaluations, validate_piece_expression_scopes,
 )
 
 
@@ -127,6 +128,8 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
     validate_piece_nominal_references(meaning)
     validate_piece_personal_evaluations(meaning)
     evaluations = {frame.node_id: frame for frame in meaning.personal_evaluations}
+    validate_piece_expression_scopes(meaning)
+    scopes = {scope.node_id: scope for scope in meaning.expression_scopes}
     duties: list[PieceTextDuty] = []
     intents: list[int] = []
     focal = False
@@ -139,6 +142,10 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
                         and semantic.source_start + m.end() <= b for a, b in admitted)
                 for m in _REFERENCE.finditer(sentence)):
             raise unavailable('unresolved_reference')
+        if node.node_id in scopes:
+            duties.append(PieceTextDuty(node.node_id, 'SOURCE_SCOPED_EXPRESSION_TO_FIRST_PERSON'))
+            intents.append(index)
+            continue
         if _focal_parts(sentence) is not None:
             duties.append(PieceTextDuty(node.node_id, 'SOURCE_FOCAL_TO_FIRST_PERSON'))
             intents.append(index)
@@ -167,9 +174,9 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
         # or last-wish-first move can detach what the reference refers to.
         first = min(ids.index(r.antecedent_node_id) for r in meaning.nominal_references)
         blocks = (ids[:first], ids[first:]) if first else (ids,)
-    elif evaluations:
-        # Keep the personal viewpoint and every surrounding qualification in
-        # source order. A final evaluation is not a wish to move before context.
+    elif evaluations or meaning.expression_scopes:
+        # Keep each value, preference and source-marked reason/condition with
+        # every qualification in source order; never excerpt a pledge.
         blocks = (ids,)
     elif focal:
         # Keep the existing admitted focal path's canonical block identity.
@@ -184,7 +191,8 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
         # to the end, turn it into a standalone declaration, or drop its tail.
         pivot = intents[0]
         blocks = (ids[:pivot], ids[pivot:]) if pivot else (ids,)
-    declaration = (len(ids) == 1 and not _UNCERTAIN.search(graph.nodes[0].value))
+    declaration = (len(ids) == 1 and not meaning.expression_scopes
+                   and not _UNCERTAIN.search(graph.nodes[0].value))
     if evaluations:
         # A past preference, negation or tentative assessment is not a promise.
         # Only an explicit present value can additionally offer declaration.
@@ -236,7 +244,22 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
                 or raw[evidence.utf8_start:evidence.utf8_end].decode('utf-8') != node.value):
             raise unavailable('piece_graph_source_binding')
         text = _publicize_source_sentence(node.value, meaning)
-        if duty.operation == 'SOURCE_FOCAL_TO_FIRST_PERSON':
+        if duty.operation == 'SOURCE_SCOPED_EXPRESSION_TO_FIRST_PERSON':
+            scope = next((s for s in meaning.expression_scopes if s.node_id == node.node_id), None)
+            if scope is None:
+                raise unavailable('piece_plan_operation_binding')
+            original = raw.decode('utf-8')
+            premise = original[slice(*scope.scope_scalar_span)]
+            topic = _SELF_TOPIC.fullmatch(original[slice(*scope.expression_scalar_span)])
+            if topic is None:
+                raise unavailable('piece_plan_operation_binding')
+            # Move only the written first-person topic. The complete premise,
+            # its exact connective, and all intention arguments stay intact.
+            # In particular なら never becomes ので, and neither clause is
+            # changed into a new causal explanation or an unconditional vow.
+            text = _publicize_source_sentence(
+                topic['speaker'] + 'は、' + premise + '、' + topic['body'] + '。', meaning)
+        elif duty.operation == 'SOURCE_FOCAL_TO_FIRST_PERSON':
             parts = _focal_parts(text)
             if parts is None:
                 raise unavailable('piece_plan_operation_binding')
@@ -265,7 +288,7 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
                    for group in plan.block_node_ids)
     payloads = {}
     for fmt in ('short_essay', 'quote', 'declaration'):
-        if fmt == 'quote' and len(ids) != 1:
+        if fmt == 'quote' and (len(ids) != 1 or meaning.expression_scopes):
             continue
         if fmt == 'declaration' and not plan.declaration_eligible:
             continue

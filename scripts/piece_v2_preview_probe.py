@@ -82,6 +82,22 @@ def main() -> int:
         ('context_preference', '昨日は答えを急いでしまった。私が苦手なのは、考える間もなく結論を伝えることです。まだ、話す順番は決めていない。'),
         ('tentative_value', '私にとって必要かもしれないのは、一人でゆっくり考える時間だ。まだ、自分でもよく分からない。'),
         ('value_noun', '私にとって大切なのは、対話です。対話が続けば、考えを確かめ直せる。'),
+        ('scope_reason', '集中できる時間が少ないので、私は朝の予定を少し減らしたい。'),
+        ('scope_past_reason', '友人の佐藤さんと昨日は話せなかったので、私は次に会うときは落ち着いて話したい。まだ、会う日は決めていない。'),
+        ('scope_conditional_role', '友人の佐藤さんが時間を取れるなら、私は無理のない日にゆっくり話したい。まだ、返事はもらっていない。'),
+        ('scope_negative', 'まだ気持ちが落ち着かないなら、私は無理に話を続けたくない。'),
+        ('scope_uncertain_reason', '明日は疲れているかもしれないので、私は予定を詰め込みたくない。'),
+        ('scope_reading', '明日の朝に時間が取れるならば、私は静かな場所で少し本を読みたい。'),
+        ('scope_context', '昨日は上司の田中さんと話した。気持ちが整理できるなら、私は田中さんに自分の考えを伝えたい。ただし、まだ何を伝えるかは決めていない。'),
+        ('scope_comparison', '少し身軽になれたので、私は旅に出る前の鳥みたい。'),
+        ('linked_value_condition', '私にとって大切なのは、友人の佐藤さんと落ち着いて話す時間です。その時間が取れるなら、私は急がずに気持ちを伝えたい。まだ、会う日は決めていない。'),
+        ('linked_preference_condition', '僕が好きなのは、小さく試して確かめることです。そのことを続けられるなら、僕は焦らずに学びたい。すぐに答えが出るとは限らない。'),
+        ('linked_negative_value', '私にとって必要ではないのは、すぐに結論を出すことだ。そのことを相手にも求めたいわけではない。'),
+        ('linked_past_value', '私にとって大切だったのは、家族と毎日話す時間だ。この時間は昨日だけで、毎日あるわけではない。'),
+        ('linked_tentative_reason', '私にとって必要かもしれないのは、一人で考えを整理する時間だ。その時間がまだ足りないので、私は答えを急ぎたくない。まだ、自分でもよく分からない。'),
+        ('linked_context_preference', '今週は予定が重なっていた。私が好きなのは、家で静かに過ごす時間です。この時間を確保できるかは、まだ分からない。'),
+        ('linked_distinct_targets', '私にとって大切なのは、家で静かに過ごす時間です。私が大切にしたいのは、自分で納得して選ぶことです。その時間が取れるなら、私は焦らずに考えたい。'),
+        ('linked_object_reservation', '私が好きなのは、自分の手で長く使ってきたものです。このものには、使いながら直した跡が残っている。誰にでも勧めたいわけではない。'),
     ]
     records = []
     # Dynamic ICC creation embeds a wall-clock timestamp. A fixed PNG sRGB
@@ -131,7 +147,7 @@ def main() -> int:
     report = {'scope': 'DEVELOPMENT_PROBE_NOT_NATIVE_ACCEPTANCE', 'renderer_profile': metrics.profile_id,
         'application_dependency_changes': 0, 'native_device_verified': False,
         'public_safety_complete': False, 'cmee_piece_consumer_connected': True,
-        'meaning_scope': 'source_propositions_explicit_personal_evaluation_roles_and_nominal_reference_not_general_relation_inference',
+        'meaning_scope': 'source_bound_personal_evaluation_nominal_reference_and_marked_clause_scope_not_general_inference',
         'source_retrieval_connected': False, 'records': records, 'negative': negative}
     (output / 'probe_results.private.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     for item in records[::2]:

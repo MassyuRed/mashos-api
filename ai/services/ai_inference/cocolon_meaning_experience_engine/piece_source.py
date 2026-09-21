@@ -7,7 +7,7 @@ all visible propositions. Authenticated saved-record retrieval remains B5.
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
 import re
@@ -72,6 +72,23 @@ class PiecePersonalEvaluation:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
+class PieceExpressionScope:
+    """A source-marked reason/condition attached to an explicit first-person expression.
+
+    Both clauses remain private exact ranges of the same original sentence.
+    The relation describes the written connective, not an inferred cause or
+    an assertion that a hypothetical condition has happened or a comparison is a wish.
+    """
+    node_id: str
+    relation: str
+    marker: str
+    scope_scalar_span: tuple[int, int]
+    scope_utf8_span: tuple[int, int]
+    expression_scalar_span: tuple[int, int]
+    expression_utf8_span: tuple[int, int]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
 class PieceSourceMeaning:
     envelope: SourceEnvelope
     graph: GroundedMeaningGraph
@@ -80,6 +97,70 @@ class PieceSourceMeaning:
     role_bindings: tuple[PieceRoleBinding, ...]
     nominal_references: tuple[PieceNominalReference, ...] = ()
     personal_evaluations: tuple[PiecePersonalEvaluation, ...] = ()
+    expression_scopes: tuple[PieceExpressionScope, ...] = ()
+
+
+# These are clause operators, not a list of causes, topics or output phrases.
+# Ambiguous origin/causal "から", concessives, reported wishes and unmarked
+# links are not promoted to a reason. Already-admitted self-topic sentences
+# keep their previous canonical identity.
+_SCOPED_EXPRESSION = re.compile(
+    r'^(?P<scope>(?P<premise>.+?)(?P<marker>ので|なら(?:ば)?))[、，,][ \t]*'
+    r'(?P<intention>(?:私|わたし|僕|ぼく|俺|おれ)は[、，,]?.+。)$')
+# Preserve the complete self expression, not an inferred desire lemma.
+# 読みたい / 休みたい and a source-written comparison ending みたい retain
+# their exact surface. Neither is promoted to a declaration by this operator.
+_SCOPED_SELF_END = re.compile(r'(?:たい|たくない)(?:です)?$')
+_SELF_TOPIC_MENTION = re.compile(r'(?:私|わたし|僕|ぼく|俺|おれ)は')
+_SCOPE_KINDS = {
+    'SOURCE_EXPLICIT_REASON': 'PIECE_SOURCE_REASON_SCOPED_EXPRESSION',
+    'SOURCE_EXPLICIT_CONDITION': 'PIECE_SOURCE_CONDITION_SCOPED_EXPRESSION',
+}
+
+
+def _expression_scopes(text: str, nodes: tuple[MeaningNode, ...],
+                   sentences: tuple[PieceSentenceMeaning, ...]
+                   ) -> tuple[PieceExpressionScope, ...]:
+    from piece_v2_expression import (_SELF_TOPIC, _DEPENDENT_START, _EMBEDDED_REPORT)
+    scopes = []
+    for node, sentence in zip(nodes, sentences, strict=True):
+        start, end = sentence.source_start, sentence.source_end
+        if (sentence.node_id != node.node_id or start < 0 or end > len(text)
+                or text[start:end] != node.value):
+            raise unavailable('piece_intent_scope_source_binding')
+        if _SELF_TOPIC.fullmatch(node.value):
+            continue
+        match = _SCOPED_EXPRESSION.fullmatch(node.value)
+        if match is None or _SELF_TOPIC_MENTION.search(match['premise']):
+            continue
+        topic = _SELF_TOPIC.fullmatch(match['intention'])
+        if (topic is None or not _SCOPED_SELF_END.search(topic['body'])
+                or _DEPENDENT_START.search(topic['body'])
+                or _EMBEDDED_REPORT.search(topic['body'])):
+            continue
+        relation = ('SOURCE_EXPLICIT_REASON' if match['marker'] == 'ので'
+                    else 'SOURCE_EXPLICIT_CONDITION')
+        a, b = start + match.start('scope'), start + match.end('scope')
+        c, d = start + match.start('intention'), start + match.end('intention')
+        scopes.append(PieceExpressionScope(
+            node.node_id, relation, match['marker'], (a, b),
+            (len(text[:a].encode('utf-8')), len(text[:b].encode('utf-8'))),
+            (c, d), (len(text[:c].encode('utf-8')), len(text[:d].encode('utf-8')))))
+    return tuple(scopes)
+
+
+def validate_piece_expression_scopes(meaning: PieceSourceMeaning) -> None:
+    """Keep the writer's scope interpretation tied to its actual source."""
+    expected = _expression_scopes(meaning.envelope.raw_utf8.decode('utf-8'),
+                              meaning.graph.nodes, meaning.sentences)
+    if meaning.expression_scopes != expected:
+        raise unavailable('piece_intent_scope_source_binding')
+    by_node = {scope.node_id: scope for scope in expected}
+    for node in meaning.graph.nodes:
+        expected_kind = (_SCOPE_KINDS[by_node[node.node_id].relation]
+                         if node.node_id in by_node else 'PIECE_SOURCE_PROPOSITION')
+        if node.node_kind != expected_kind:
+            raise unavailable('piece_intent_scope_kind_binding')
 
 
 # Relationship terms, not topic/final-sentence dispatch vocabulary. We only
@@ -132,8 +213,9 @@ def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
                         ) -> tuple[PieceNominalReference, ...]:
     """Attach an explicit nominal reference to one prior focal object.
 
-    Only existing, complete focal objects can introduce an antecedent. Every
-    earlier occurrence of its nominal head must belong to that object or an
+    Only complete focal objects or source-bound personal-evaluation arguments
+    can introduce an antecedent. Every earlier occurrence of its nominal head
+    must belong to that object or an
     already bound mention. A second candidate, an unmodelled mention or an
     internal contrast remains unresolved; nearest-word guessing is not used.
     The writer keeps the entire antecedent and following qualification in one
@@ -142,6 +224,11 @@ def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
     """
     from piece_v2_generation import _FOCUS
     from piece_v2_expression import _REFERENCE
+    # Derive from actual source again, not caller-supplied frame metadata.
+    # Evaluation polarity/time describes the evaluation, not the referent's
+    # existence: a tentative or past value does not become a present promise.
+    evaluations = {frame.node_id: frame for frame in
+                   _personal_evaluations(text, nodes, sentences)}
     candidates: dict[str, list[tuple[str, int, int]]] = {}
     bound: list[PieceNominalReference] = []
     for node, sentence in zip(nodes, sentences, strict=True):
@@ -168,14 +255,18 @@ def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
                 (r_start, r_end),
                 (len(text[:r_start].encode('utf-8')), len(text[:r_end].encode('utf-8')))))
         focal = _FOCUS.fullmatch(node.value)
-        if focal is None:
+        if focal is not None:
+            obj = focal['object'].lstrip('、，,')
+            a_end = start + focal.end('object')
+        elif node.node_id in evaluations:
+            a_start, a_end = evaluations[node.node_id].scalar_parts[2]
+            obj = text[a_start:a_end]
+        else:
             continue
-        obj = focal['object'].lstrip('、，,')
         head = next((h for h in ('こと', 'もの', '時間') if obj.endswith(h)), None)
         if (head is None or obj.count(head) != 1 or _REFERENCE.search(obj)
                 or _COMPOSITE_OBJECT.search(obj)):
             continue
-        a_end = start + focal.end('object')
         candidates.setdefault(head, []).append((node.node_id, a_end - len(obj), a_end))
     return tuple(bound)
 
@@ -358,6 +449,10 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
                 epistemic_state=EpistemicState.SOURCE_EXPLICIT,
                 evidence_ids=(evidence[index-1].evidence_id, evidence_id)))
     evaluations = _personal_evaluations(text, tuple(nodes), tuple(meanings))
+    scopes = _expression_scopes(text, tuple(nodes), tuple(meanings))
+    scope_by_node = {scope.node_id: scope for scope in scopes}
+    nodes = [replace(node, node_kind=_SCOPE_KINDS[scope_by_node[node.node_id].relation])
+             if node.node_id in scope_by_node else node for node in nodes]
     references = _nominal_references(text, tuple(nodes), tuple(meanings))
     edges.extend(_reference_edges(references, tuple(nodes)))
     # Preserve predecessor identities when the graph has no new attachment.
@@ -369,6 +464,13 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
         graph_seed = json.dumps([graph_seed, 'piece.personal_evaluation.v1',
                                  [asdict(frame) for frame in evaluations]], ensure_ascii=False)
     owners = tuple(node.owner_id for node in nodes)
+    if scopes:
+        graph_seed = json.dumps([
+            graph_seed, 'piece.intent_scope.v1',
+            [(scope.node_id, scope.relation, scope.marker,
+              scope.scope_scalar_span, scope.scope_utf8_span,
+              scope.expression_scalar_span, scope.expression_utf8_span)
+             for scope in scopes]], ensure_ascii=False, separators=(',', ':'))
     graph = GroundedMeaningGraph(
         graph_id='piece-graph:' + _digest(graph_seed), source_envelope_id=envelope_id,
         nodes=tuple(nodes), edges=tuple(edges), owner_dispositions=tuple(resolutions),
@@ -376,4 +478,4 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
         source_version=source.source_version, obligation_version='piece.content_meaning.v1',
         owner_universe_digest=_digest(json.dumps(owners)))
     return PieceSourceMeaning(envelope, graph, tuple(evidence), tuple(meanings), aliases,
-                              references, evaluations)
+                              references, evaluations, scopes)
