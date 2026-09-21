@@ -106,7 +106,7 @@ class PieceSourceMeaning:
 # keep their previous canonical identity.
 _SCOPED_EXPRESSION = re.compile(
     r'^(?P<scope>(?P<premise>.+?)(?P<marker>ので|なら(?:ば)?))[、，,][ \t]*'
-    r'(?P<intention>(?:私|わたし|僕|ぼく|俺|おれ)は[、，,]?.+。)$')
+    r'(?P<intention>(?:私|わたし|僕|ぼく|俺|おれ)(?:は|にとって|が)[、，,]?.+。)$')
 # Preserve the complete self expression, not an inferred desire lemma.
 # 読みたい / 休みたい and a source-written comparison ending みたい retain
 # their exact surface. Neither is promoted to a declaration by this operator.
@@ -122,6 +122,11 @@ def _expression_scopes(text: str, nodes: tuple[MeaningNode, ...],
                    sentences: tuple[PieceSentenceMeaning, ...]
                    ) -> tuple[PieceExpressionScope, ...]:
     from piece_v2_expression import (_SELF_TOPIC, _DEPENDENT_START, _EMBEDDED_REPORT)
+    # A scope can qualify an existing value/preference, not only a wish.
+    # The evaluation parser proves its speaker, predicate and whole argument;
+    # a clause ending alone cannot grant authorship or invent an intention.
+    evaluations = {frame.node_id: frame for frame in
+                   _personal_evaluations(text, nodes, sentences)}
     scopes = []
     for node, sentence in zip(nodes, sentences, strict=True):
         start, end = sentence.source_start, sentence.source_end
@@ -134,10 +139,11 @@ def _expression_scopes(text: str, nodes: tuple[MeaningNode, ...],
         if match is None or _SELF_TOPIC_MENTION.search(match['premise']):
             continue
         topic = _SELF_TOPIC.fullmatch(match['intention'])
-        if (topic is None or not _SCOPED_SELF_END.search(topic['body'])
-                or _DEPENDENT_START.search(topic['body'])
-                or _EMBEDDED_REPORT.search(topic['body'])):
-            continue
+        if node.node_id not in evaluations:
+            if (topic is None or not _SCOPED_SELF_END.search(topic['body'])
+                    or _DEPENDENT_START.search(topic['body'])
+                    or _EMBEDDED_REPORT.search(topic['body'])):
+                continue
         relation = ('SOURCE_EXPLICIT_REASON' if match['marker'] == 'ので'
                     else 'SOURCE_EXPLICIT_CONDITION')
         a, b = start + match.start('scope'), start + match.end('scope')
@@ -326,8 +332,17 @@ def _personal_evaluations(text: str, nodes: tuple[MeaningNode, ...],
                 or text[start:end] != node.value):
             raise unavailable('piece_evaluation_source_binding')
         match = _EVALUATIVE_FOCUS.fullmatch(node.value)
+        expression_start = start
         if match is None:
-            continue
+            scoped = _SCOPED_EXPRESSION.fullmatch(node.value)
+            if scoped is None or _SELF_TOPIC_MENTION.search(scoped['premise']):
+                continue
+            # Interpret the already-modelled evaluation inside its written
+            # scope. Do not reinterpret the premise as the evaluation target.
+            match = _EVALUATIVE_FOCUS.fullmatch(scoped['intention'])
+            if match is None:
+                continue
+            expression_start += scoped.start('intention')
         kind = 'PERSONAL_VALUE' if match['base'] in _VALUE_BASES else 'PERSONAL_PREFERENCE'
         # が marks the experiencer of 好き/苦手. It is not freely substituted
         # for にとって in evaluative predicates with a different argument role.
@@ -340,7 +355,7 @@ def _personal_evaluations(text: str, nodes: tuple[MeaningNode, ...],
                 or _REFERENCE.search(target) or _NESTED.search(target)
                 or 'のは' in target or target.startswith(('、', '，', ','))):
             raise unavailable('evaluation_target_not_self_contained')
-        spans = tuple((start + match.start(key), start + match.end(key))
+        spans = tuple((expression_start + match.start(key), expression_start + match.end(key))
                       for key in ('speaker', 'predicate', 'target'))
         utf8 = tuple((len(text[:a].encode('utf-8')), len(text[:b].encode('utf-8')))
                      for a, b in spans)
