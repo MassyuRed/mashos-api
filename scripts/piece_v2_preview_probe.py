@@ -20,7 +20,7 @@ def main() -> int:
     parser.add_argument('--font-file', type=Path, required=True)
     args = parser.parse_args()
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'ai/services/ai_inference'))
-    from PIL import Image, ImageDraw, ImageFont, ImageCms
+    from PIL import Image, ImageDraw, ImageFont, PngImagePlugin
     import PIL
     import regex
     from fontTools.ttLib import TTFont
@@ -49,6 +49,8 @@ def main() -> int:
             return TextMeasurement(float(font.getlength(text)), *map(float, bbox), not missing)
     metrics = FontMetrics()
     output = args.output_dir.resolve()
+    if output.exists() and any(output.iterdir()):
+        parser.error('output directory must be empty; preserve earlier evidence separately')
     output.mkdir(parents=True, exist_ok=True)
     cases = [
         ('choice', '私が大切にしたいのは、早く決めることより、自分で納得して選ぶことです。まだ迷っているので、今は答えを急がない。'),
@@ -57,7 +59,10 @@ def main() -> int:
         ('learning', '私が選びたいのは、間違えない方法だけを探すことより、小さく試して確かめることです。分からないところは、分からないままにせずに聞きたい。'),
     ]
     records = []
-    icc = ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()
+    # Dynamic ICC creation embeds a wall-clock timestamp. A fixed PNG sRGB
+    # intent chunk declares the same color space without changing repeat bytes.
+    png_info = PngImagePlugin.PngInfo()
+    png_info.add(b'sRGB', b'\x00')
     for name, text in cases:
         c = generate_piece_candidate(PieceSourceSnapshot('synthetic-owner', name, '1', text),
                                      authenticated_owner_id='synthetic-owner')
@@ -85,7 +90,7 @@ def main() -> int:
                 draw.text((m, h - m), 'Cocolon', font=metrics.font(28),
                           fill=layout['colors']['branding'], anchor='ls')
             filename = f'{name}_{ratio.replace(":", "x")}.png'
-            image.save(output / filename, format='PNG', icc_profile=icc)
+            image.save(output / filename, format='PNG', pnginfo=png_info)
             records.append({'case': name, 'source': text, 'candidate': c,
                 'visual_recipe': r, 'layout': layout, 'fit': fit_summary(layout),
                 'actual_ink_box': list(box), 'file': filename,

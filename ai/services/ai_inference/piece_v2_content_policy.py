@@ -43,7 +43,10 @@ def check_existing_detectors(text: str) -> None:
                      0x200B, 0xFEFF} for c in text):
         raise unavailable('hidden_control')
     result = format_reflection_text(text)
-    if result.flags or result.display_text is None:
+    # ASCII mail addresses can touch Japanese words on both sides; Unicode
+    # word-boundary checks in the legacy detector do not cover that form.
+    adjacent_mail = re.search(r'(?i)[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}', text)
+    if result.flags or result.display_text is None or adjacent_mail:
         raise unavailable('existing_safety_detector')
     if re.search(r'(?i)(?:bearer\s+|(?:api[_ -]?key|password|token)\s*[:=]|postgres(?:ql)?://)', text):
         raise unavailable('credential_like_material')
