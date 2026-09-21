@@ -74,6 +74,14 @@ def main() -> int:
         ('reference_role', '私が大切にしたいのは、友人の佐藤さんと落ち着いて話す時間です。その時間が持てなかった昨日は、少し寂しかった。まだ、いつ会うかは決めていない。'),
         ('reference_chain', '私が大切にしたいのは、一人で考えを整理する時間です。その時間は、昨日は取れなかった。私はその時間を毎日少しでも持ちたい。'),
         ('reference_context', '今週は予定が重なっていた。私が大切にしたいのは、家で静かに過ごす時間です。この時間を確保できるかは、まだ分からない。'),
+        ('value_comparison', '私にとって大切なのは、早く答えることより、自分で納得して選ぶことです。まだ、答えは決めていない。'),
+        ('preference_contrast', '私が好きなのは、にぎやかな場所で話すことではなく、一人ずつゆっくり話すことだ。人と会いたくないわけではない。'),
+        ('negative_value', '私にとって必要ではないのは、すぐに結論を出すことだ。今は考えを整理する時間を残している。'),
+        ('past_role', '私にとって大切だったのは、友人の佐藤さんと毎日話す時間だ。今も同じ頻度で会いたいとは限らない。'),
+        ('conditional_value', '私にとって重要なのは、気持ちに余裕があるときに、家族の話を聞くことだ。余裕がない日は無理をしない。'),
+        ('context_preference', '昨日は答えを急いでしまった。私が苦手なのは、考える間もなく結論を伝えることです。まだ、話す順番は決めていない。'),
+        ('tentative_value', '私にとって必要かもしれないのは、一人でゆっくり考える時間だ。まだ、自分でもよく分からない。'),
+        ('value_noun', '私にとって大切なのは、対話です。対話が続けば、考えを確かめ直せる。'),
     ]
     records = []
     # Dynamic ICC creation embeds a wall-clock timestamp. A fixed PNG sRGB
@@ -123,7 +131,7 @@ def main() -> int:
     report = {'scope': 'DEVELOPMENT_PROBE_NOT_NATIVE_ACCEPTANCE', 'renderer_profile': metrics.profile_id,
         'application_dependency_changes': 0, 'native_device_verified': False,
         'public_safety_complete': False, 'cmee_piece_consumer_connected': True,
-        'meaning_scope': 'source_propositions_explicit_roles_and_nominal_reference_not_general_relation_inference',
+        'meaning_scope': 'source_propositions_explicit_personal_evaluation_roles_and_nominal_reference_not_general_relation_inference',
         'source_retrieval_connected': False, 'records': records, 'negative': negative}
     (output / 'probe_results.private.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     for item in records[::2]:

@@ -20,7 +20,7 @@ from piece_v2_expression import (
 )
 from .contracts import EngineStatus, ExecutionMode
 from .piece_source import (
-    PieceSourceMeaning, build_piece_source_meaning, validate_piece_nominal_references,
+    PieceSourceMeaning, build_piece_source_meaning, validate_piece_nominal_references, validate_piece_personal_evaluations,
 )
 
 
@@ -125,6 +125,8 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
     from piece_v2_generation import _UNCERTAIN, _DEICTIC
     graph = meaning.graph
     validate_piece_nominal_references(meaning)
+    validate_piece_personal_evaluations(meaning)
+    evaluations = {frame.node_id: frame for frame in meaning.personal_evaluations}
     duties: list[PieceTextDuty] = []
     intents: list[int] = []
     focal = False
@@ -141,6 +143,10 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
             duties.append(PieceTextDuty(node.node_id, 'SOURCE_FOCAL_TO_FIRST_PERSON'))
             intents.append(index)
             focal = True
+            continue
+        if node.node_id in evaluations:
+            duties.append(PieceTextDuty(node.node_id, 'SOURCE_PERSONAL_EVALUATION'))
+            intents.append(index)
             continue
         topic = _SELF_TOPIC.fullmatch(sentence)
         if (topic is not None and _WISH_END.search(topic['body'])
@@ -161,6 +167,10 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
         # or last-wish-first move can detach what the reference refers to.
         first = min(ids.index(r.antecedent_node_id) for r in meaning.nominal_references)
         blocks = (ids[:first], ids[first:]) if first else (ids,)
+    elif evaluations:
+        # Keep the personal viewpoint and every surrounding qualification in
+        # source order. A final evaluation is not a wish to move before context.
+        blocks = (ids,)
     elif focal:
         # Keep the existing admitted focal path's canonical block identity.
         blocks = tuple((node_id,) for node_id in ids) if len(ids) <= 3 else (
@@ -175,6 +185,16 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
         pivot = intents[0]
         blocks = (ids[:pivot], ids[pivot:]) if pivot else (ids,)
     declaration = (len(ids) == 1 and not _UNCERTAIN.search(graph.nodes[0].value))
+    if evaluations:
+        # A past preference, negation or tentative assessment is not a promise.
+        # Only an explicit present value can additionally offer declaration.
+        frame = evaluations.get(ids[0])
+        declaration = bool(declaration and frame is not None
+                           and frame.kind == 'PERSONAL_VALUE'
+                           and frame.temporal_scope == 'NONPAST'
+                           and frame.polarity == 'AFFIRMATIVE'
+                           and frame.commitment == 'ASSERTED'
+                           and not re.search(r'もし|なら|たら|とき|場合', graph.nodes[0].value))
     return PieceArtifactPlan(graph.graph_id, graph.source_version, PieceArtifactIntent(),
                              tuple(duties), blocks, declaration)
 
@@ -227,6 +247,17 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
             if topic is None or not _WISH_END.search(topic['body']):
                 raise unavailable('piece_plan_operation_binding')
             text = topic['speaker'] + 'は、' + topic['body'] + '。'
+        elif duty.operation == 'SOURCE_PERSONAL_EVALUATION':
+            frame = next((f for f in meaning.personal_evaluations if f.node_id == node.node_id), None)
+            if frame is None:
+                raise unavailable('piece_plan_operation_binding')
+            original = raw.decode('utf-8')
+            speaker, predicate, target = (original[a:b] for a, b in frame.scalar_parts)
+            perspective = speaker + ('にとって' if frame.construction == 'にとって' else 'は')
+            # Only the relative nominal copula な becomes its source register's
+            # finite copula. Negative/past/modal predicates stay byte-exact.
+            finite = predicate[:-1] + frame.copula if predicate.endswith('な') else predicate
+            text = _publicize_source_sentence(perspective + '、' + target + 'が' + finite + '。', meaning)
         elif duty.operation != 'KEEP_COMPLETE_SOURCE_CONTEXT':
             raise unavailable('piece_plan_operation_unknown')
         sentences[node.node_id] = text

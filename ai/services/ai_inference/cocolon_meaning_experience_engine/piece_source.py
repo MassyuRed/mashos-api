@@ -7,7 +7,7 @@ all visible propositions. Authenticated saved-record retrieval remains B5.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import hashlib
 import json
 import re
@@ -53,6 +53,25 @@ class PieceNominalReference:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
+class PiecePersonalEvaluation:
+    """Source-bound experiencer, evaluation predicate and nominal argument.
+
+    These are provisional Piece semantics, not a shared classifier's label or
+    a new source. Parts are ordered speaker / predicate / target, in the exact
+    original scalar and UTF-8 coordinate systems, before role publicization.
+    """
+    node_id: str
+    construction: str
+    kind: str
+    scalar_parts: tuple[tuple[int, int], ...]
+    utf8_parts: tuple[tuple[int, int], ...]
+    copula: str
+    polarity: str
+    temporal_scope: str
+    commitment: str
+
+
+@dataclass(frozen=True, slots=True, repr=False)
 class PieceSourceMeaning:
     envelope: SourceEnvelope
     graph: GroundedMeaningGraph
@@ -60,6 +79,7 @@ class PieceSourceMeaning:
     sentences: tuple[PieceSentenceMeaning, ...]
     role_bindings: tuple[PieceRoleBinding, ...]
     nominal_references: tuple[PieceNominalReference, ...] = ()
+    personal_evaluations: tuple[PiecePersonalEvaluation, ...] = ()
 
 
 # Relationship terms, not topic/final-sentence dispatch vocabulary. We only
@@ -183,6 +203,74 @@ def validate_piece_nominal_references(meaning: PieceSourceMeaning) -> None:
         raise unavailable('piece_reference_source_binding')
 
 
+# Typed evaluative predicates, not topic keywords or canned output sentences.
+# A wish is not inferred from liking, importance, need or a negative evaluation.
+_VALUE_BASES = frozenset({'大切', '大事', '重要', '必要'})
+_EVALUATIVE_FOCUS = re.compile(
+    r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)'
+    r'(?P<construction>にとって|が)[、，,]?'
+    r'(?P<predicate>(?P<base>大切|大事|重要|必要|好き|苦手)'
+    r'(?P<inflection>ではなかった|ではない|じゃなかった|じゃない|'
+    r'だった|かもしれない|とは限らない|な))のは[、，,]?'
+    r'(?P<target>.+?)(?P<copula>です|だ)。$')
+_SIMPLE_NOUN = re.compile(r'[一-龥々ァ-ヴー]+')
+
+
+def _personal_evaluations(text: str, nodes: tuple[MeaningNode, ...],
+                          sentences: tuple[PieceSentenceMeaning, ...]
+                          ) -> tuple[PiecePersonalEvaluation, ...]:
+    """Recover an explicit personal evaluation, never an omitted viewpoint.
+
+    A complete nominal target is kept as one argument: internal comparison,
+    negation and conditions are not shortened into a winning keyword. Outer
+    denial, reported speech, nested focus and unresolved deixis are not this
+    construction. They are not turned into the author's current conviction.
+    """
+    from piece_v2_expression import _REFERENCE
+    from piece_v2_generation import _NESTED
+    frames = []
+    for node, sentence in zip(nodes, sentences, strict=True):
+        start, end = sentence.source_start, sentence.source_end
+        if (sentence.node_id != node.node_id or start < 0 or end > len(text)
+                or text[start:end] != node.value):
+            raise unavailable('piece_evaluation_source_binding')
+        match = _EVALUATIVE_FOCUS.fullmatch(node.value)
+        if match is None:
+            continue
+        kind = 'PERSONAL_VALUE' if match['base'] in _VALUE_BASES else 'PERSONAL_PREFERENCE'
+        # が marks the experiencer of 好き/苦手. It is not freely substituted
+        # for にとって in evaluative predicates with a different argument role.
+        if match['construction'] == 'が' and kind != 'PERSONAL_PREFERENCE':
+            continue
+        target = match['target']
+        nominal = target.endswith(('こと', 'もの', '時間'))
+        bare = match['construction'] == 'にとって' and _SIMPLE_NOUN.fullmatch(target)
+        if (not (nominal or bare)
+                or _REFERENCE.search(target) or _NESTED.search(target)
+                or 'のは' in target or target.startswith(('、', '，', ','))):
+            raise unavailable('evaluation_target_not_self_contained')
+        spans = tuple((start + match.start(key), start + match.end(key))
+                      for key in ('speaker', 'predicate', 'target'))
+        utf8 = tuple((len(text[:a].encode('utf-8')), len(text[:b].encode('utf-8')))
+                     for a, b in spans)
+        inflection = match['inflection']
+        polarity = 'NEGATIVE' if inflection.startswith(('では', 'じゃ')) else 'AFFIRMATIVE'
+        temporal = 'PAST' if inflection.endswith(('だった', 'なかった')) else 'NONPAST'
+        commitment = ('POSSIBLE' if inflection == 'かもしれない' else
+                      'NON_UNIVERSAL' if inflection == 'とは限らない' else 'ASSERTED')
+        frames.append(PiecePersonalEvaluation(
+            node.node_id, match['construction'], kind, spans, utf8,
+            match['copula'], polarity, temporal, commitment))
+    return tuple(frames)
+
+
+def validate_piece_personal_evaluations(meaning: PieceSourceMeaning) -> None:
+    expected = _personal_evaluations(meaning.envelope.raw_utf8.decode('utf-8'),
+                                     meaning.graph.nodes, meaning.sentences)
+    if meaning.personal_evaluations != expected:
+        raise unavailable('piece_evaluation_source_binding')
+
+
 def build_piece_source_meaning(source: object, *, expected_owner_id: str,
                                expected_saved_input_id: str,
                                expected_source_version: str) -> PieceSourceMeaning:
@@ -269,6 +357,7 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
                 target_node_id=node_id, grounding_kind='explicit',
                 epistemic_state=EpistemicState.SOURCE_EXPLICIT,
                 evidence_ids=(evidence[index-1].evidence_id, evidence_id)))
+    evaluations = _personal_evaluations(text, tuple(nodes), tuple(meanings))
     references = _nominal_references(text, tuple(nodes), tuple(meanings))
     edges.extend(_reference_edges(references, tuple(nodes)))
     # Preserve predecessor identities when the graph has no new attachment.
@@ -276,6 +365,9 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
         [envelope_id, 'piece.nominal_reference.v1',
          [(r.antecedent_node_id, r.reference_node_id, r.nominal_head,
            r.antecedent_scalar_span, r.reference_scalar_span) for r in references]])
+    if evaluations:
+        graph_seed = json.dumps([graph_seed, 'piece.personal_evaluation.v1',
+                                 [asdict(frame) for frame in evaluations]], ensure_ascii=False)
     owners = tuple(node.owner_id for node in nodes)
     graph = GroundedMeaningGraph(
         graph_id='piece-graph:' + _digest(graph_seed), source_envelope_id=envelope_id,
@@ -283,4 +375,5 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
         required_owner_refs=owners, active_optional_owner_refs=(),
         source_version=source.source_version, obligation_version='piece.content_meaning.v1',
         owner_universe_digest=_digest(json.dumps(owners)))
-    return PieceSourceMeaning(envelope, graph, tuple(evidence), tuple(meanings), aliases, references)
+    return PieceSourceMeaning(envelope, graph, tuple(evidence), tuple(meanings), aliases,
+                              references, evaluations)
