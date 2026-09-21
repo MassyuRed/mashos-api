@@ -16,6 +16,9 @@ from cocolon_meaning_experience_engine.piece_v1c import (
 from piece_v2_generation import PieceSourceSnapshot, generate_piece_candidate
 
 
+# All reference-bound premises keep the written topic position. Concessions
+# and optional omission are unchanged; reasons/conditions retain the same author.
+
 CASES = (
     ('uncertain_wish',
      'まだ自信はないけれど、私は小さく試して確かめたい。すぐに結果が出るとは限らない。',
@@ -191,7 +194,7 @@ def test_additive_participant_does_not_inherit_the_authors_wish(marker):
     text = prefix + premise + '、私は近況を伝える方法を考えたい。まだ、方法は決めていない。'
     out = generated(text)
     stance = '近況を伝える方法を考えたい。まだ、方法は決めていない。'
-    joined = (premise + '、私は、' if marker.startswith('けれど') else '私は、' + premise + '、')
+    joined = premise + '、私は、'
     expected = '私にとって、家族と落ち着いて話す時間が大切です。' + joined + stance
     assert out.artifact.piece_text == expected
     assert out.artifact.body_blocks == (expected,)

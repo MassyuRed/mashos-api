@@ -319,7 +319,7 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
                 topic = _SELF_TOPIC.fullmatch(original[slice(*scope.expression_scalar_span)])
                 if topic is None:
                     raise unavailable('piece_plan_operation_binding')
-                # Move only the written first-person topic. The complete premise,
+                # Realize the written first-person topic. The complete premise,
                 # its exact connective, and all intention arguments stay intact.
                 # In particular なら never becomes ので, and neither clause is
                 # changed into a new causal explanation or an unconditional vow.
@@ -327,11 +327,17 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
                 # this author. Keep its full scope and predicate; omit only
                 # the repeated self-topic, never the first visible viewpoint.
                 prefix = '' if node.node_id in continuations else topic['speaker'] + 'は、'
-                if scope.relation == 'SOURCE_EXPLICIT_CONCESSION':
-                    # Keep the contrasted premise before this author's stance.
-                    # Fronting the topic across another person's premise can
-                    # blur who owns each side. A proven adjacent continuation
-                    # still uses the same existing optional repetition edit.
+                referenced_premise = any(
+                    ref.reference_node_id == node.node_id
+                    and scope.scope_scalar_span[0] <= ref.reference_scalar_span[0]
+                    and ref.reference_scalar_span[1] <= scope.scope_scalar_span[1]
+                    for ref in meaning.nominal_references)
+                if (scope.relation == 'SOURCE_EXPLICIT_CONCESSION'
+                        or referenced_premise):
+                    # Keep the source-bound premise before the written topic.
+                    # A nominal link does not make its participant the author;
+                    # fronting a retained topic can blur that clause boundary.
+                    # The existing continuation check alone owns omission.
                     text = premise + '、' + prefix + topic['body'] + '。'
                 else:
                     text = prefix + premise + '、' + topic['body'] + '。'

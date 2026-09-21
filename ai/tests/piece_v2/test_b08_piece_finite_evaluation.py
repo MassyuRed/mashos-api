@@ -13,6 +13,9 @@ from cocolon_meaning_experience_engine.piece_v1c import PieceGenerationRequest, 
 from piece_v2_generation import PieceSourceSnapshot, generate_piece_candidate
 
 
+# Reconcile the previously introduced source-proven adjacent topic omission.
+# This changes an old expected body, not the input, source semantics or assertions.
+
 CASES = (
     ('preference',
      '私は一人でゆっくり本を読むことが好きです。まだ、毎日読むとは決めていない。',
@@ -31,7 +34,7 @@ CASES = (
      '私にとって、家で静かに過ごす時間が必要だったかもしれない。その時間を確保できていたかは、まだ分からない。'),
     ('reference_into_condition',
      '私にとって家族と落ち着いて話す時間が大切です。その時間が取れるなら、私は急がずに近況を伝えたい。まだ、会う日は決めていない。',
-     '私にとって、家族と落ち着いて話す時間が大切です。私は、その時間が取れるなら、急がずに近況を伝えたい。まだ、会う日は決めていない。'),
+     '私にとって、家族と落ち着いて話す時間が大切です。その時間が取れるなら、急がずに近況を伝えたい。まだ、会う日は決めていない。'),
     ('polite_past',
      '昨日の過ごし方を振り返っている。僕は家で静かに音楽を聴くことが好きでした。今も同じ過ごし方が好きとは限らない。',
      '昨日の過ごし方を振り返っている。僕は、家で静かに音楽を聴くことが好きでした。今も同じ過ごし方が好きとは限らない。'),

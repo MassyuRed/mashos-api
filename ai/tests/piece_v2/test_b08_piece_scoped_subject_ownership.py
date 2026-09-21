@@ -16,19 +16,22 @@ from piece_v2_visual import build_visual_recipe
 from piece_v2_layout import TextMeasurement, build_measured_layout
 
 
+# Retain the explicit author in its source-written clause, after the other
+# participant. No subject is elided and the connective is not reinterpreted.
+
 CASES = (
     ('mother_subject',
      '私にとって家族と話す時間が大切です。その時間を母が取れるなら、私は近況を伝えたい。まだ、会う日は決めていない。',
-     '私にとって、家族と話す時間が大切です。私は、その時間を母が取れるなら、近況を伝えたい。まだ、会う日は決めていない。'),
+     '私にとって、家族と話す時間が大切です。その時間を母が取れるなら、私は、近況を伝えたい。まだ、会う日は決めていない。'),
     ('mother_topic',
      '私にとって家族と話す時間が大切です。その時間を母は取れないので、私は別の日に近況を伝えたい。まだ、会う日は決めていない。',
-     '私にとって、家族と話す時間が大切です。私は、その時間を母は取れないので、別の日に近況を伝えたい。まだ、会う日は決めていない。'),
+     '私にとって、家族と話す時間が大切です。その時間を母は取れないので、私は、別の日に近況を伝えたい。まだ、会う日は決めていない。'),
     ('friend_role',
      '私にとって落ち着いて話す時間が大切です。その時間を友人の佐藤さんが取れるなら、私はゆっくり近況を伝えたい。まだ、会う日は決めていない。',
-     '私にとって、落ち着いて話す時間が大切です。私は、その時間を友人が取れるなら、ゆっくり近況を伝えたい。まだ、会う日は決めていない。'),
+     '私にとって、落ち着いて話す時間が大切です。その時間を友人が取れるなら、私は、ゆっくり近況を伝えたい。まだ、会う日は決めていない。'),
     ('different_viewpoint',
      '僕が好きなのは、小さく試して確かめることです。そのことを友人が続けられるなら、僕はそばで学びたい。すぐに答えが出るとは限らない。',
-     '僕は、小さく試して確かめることが好きです。僕は、そのことを友人が続けられるなら、そばで学びたい。すぐに答えが出るとは限らない。'),
+     '僕は、小さく試して確かめることが好きです。そのことを友人が続けられるなら、僕は、そばで学びたい。すぐに答えが出るとは限らない。'),
 )
 
 
@@ -76,8 +79,8 @@ def test_literal_author_and_connective_survive_competing_subject(speaker, marker
             + 'は答えを急がずに考えたい。まだ、決めていない。')
     out = generated(text)
     expected = (speaker + 'にとって、落ち着いて話す時間が必要かもしれない。'
-                + speaker + 'は、その時間を友人が取れる' + marker
-                + '、答えを急がずに考えたい。まだ、決めていない。')
+                + 'その時間を友人が取れる' + marker + '、' + speaker
+                + 'は、答えを急がずに考えたい。まだ、決めていない。')
     assert out.artifact.piece_text == expected
     assert out.source_meaning.expression_scopes[0].marker == marker
 

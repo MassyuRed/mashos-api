@@ -13,13 +13,17 @@ from piece_v2_visual import build_visual_recipe
 from piece_v2_layout import TextMeasurement, build_measured_layout
 
 
+# Adjacent source-proven author omission already belongs to the current writer.
+# Reconcile its old repetitions; distinct targets retain the topic in source order.
+# Inputs, source bindings, complete body/hash assertions and B9 checks stay intact.
+
 CASES = (
     ('linked_value_condition',
      '私にとって大切なのは、友人の佐藤さんと落ち着いて話す時間です。その時間が取れるなら、私は急がずに気持ちを伝えたい。まだ、会う日は決めていない。',
-     '私にとって、友人と落ち着いて話す時間が大切です。私は、その時間が取れるなら、急がずに気持ちを伝えたい。まだ、会う日は決めていない。'),
+     '私にとって、友人と落ち着いて話す時間が大切です。その時間が取れるなら、急がずに気持ちを伝えたい。まだ、会う日は決めていない。'),
     ('linked_preference_condition',
      '僕が好きなのは、小さく試して確かめることです。そのことを続けられるなら、僕は焦らずに学びたい。すぐに答えが出るとは限らない。',
-     '僕は、小さく試して確かめることが好きです。僕は、そのことを続けられるなら、焦らずに学びたい。すぐに答えが出るとは限らない。'),
+     '僕は、小さく試して確かめることが好きです。そのことを続けられるなら、焦らずに学びたい。すぐに答えが出るとは限らない。'),
     ('linked_negative_value',
      '私にとって必要ではないのは、すぐに結論を出すことだ。そのことを相手にも求めたいわけではない。',
      '私にとって、すぐに結論を出すことが必要ではない。そのことを相手にも求めたいわけではない。'),
@@ -28,13 +32,13 @@ CASES = (
      '私にとって、家族と毎日話す時間が大切だった。この時間は昨日だけで、毎日あるわけではない。'),
     ('linked_tentative_reason',
      '私にとって必要かもしれないのは、一人で考えを整理する時間だ。その時間がまだ足りないので、私は答えを急ぎたくない。まだ、自分でもよく分からない。',
-     '私にとって、一人で考えを整理する時間が必要かもしれない。私は、その時間がまだ足りないので、答えを急ぎたくない。まだ、自分でもよく分からない。'),
+     '私にとって、一人で考えを整理する時間が必要かもしれない。その時間がまだ足りないので、答えを急ぎたくない。まだ、自分でもよく分からない。'),
     ('linked_context_preference',
      '今週は予定が重なっていた。私が好きなのは、家で静かに過ごす時間です。この時間を確保できるかは、まだ分からない。',
      '今週は予定が重なっていた。\n\n私は、家で静かに過ごす時間が好きです。この時間を確保できるかは、まだ分からない。'),
     ('linked_distinct_targets',
      '私にとって大切なのは、家で静かに過ごす時間です。私が大切にしたいのは、自分で納得して選ぶことです。その時間が取れるなら、私は焦らずに考えたい。',
-     '私にとって、家で静かに過ごす時間が大切です。私は、自分で納得して選ぶことを大切にしたい。私は、その時間が取れるなら、焦らずに考えたい。'),
+     '私にとって、家で静かに過ごす時間が大切です。私は、自分で納得して選ぶことを大切にしたい。その時間が取れるなら、私は、焦らずに考えたい。'),
     ('linked_object_reservation',
      '私が好きなのは、自分の手で長く使ってきたものです。このものには、使いながら直した跡が残っている。誰にでも勧めたいわけではない。',
      '私は、自分の手で長く使ってきたものが好きです。このものには、使いながら直した跡が残っている。誰にでも勧めたいわけではない。'),
@@ -103,7 +107,7 @@ def test_actual_evaluative_argument_ranges_bind_before_name_publicization():
                          (scope.scope_scalar_span, scope.scope_utf8_span)]:
         assert text[slice(*scalar)] == meaning.envelope.raw_utf8[slice(*utf8)].decode()
     assert text[slice(*ref.antecedent_scalar_span)] == '🌱を眺めて静かに過ごす時間'
-    assert out.artifact.piece_text == '私にとって、🌱を眺めて静かに過ごす時間が大切です。私は、その時間が取れるなら、慌てずに一日を始めたい。'
+    assert out.artifact.piece_text == '私にとって、🌱を眺めて静かに過ごす時間が大切です。その時間が取れるなら、慌てずに一日を始めたい。'
 
 
 @pytest.mark.parametrize('mutation', ['evaluation', 'reference', 'scope', 'edge', 'split', 'reverse'])
