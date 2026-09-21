@@ -21,7 +21,7 @@ from piece_v2_expression import (
 from .contracts import EngineStatus, ExecutionMode
 from .piece_source import (
     PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
-    validate_piece_nominal_references,
+    piece_public_role_aliases, validate_piece_nominal_references,
     validate_piece_personal_evaluations, validate_piece_expression_scopes,
 )
 
@@ -215,11 +215,18 @@ def _publicize_source_sentence(sentence: str, meaning: PieceSourceMeaning) -> st
     for binding in meaning.role_bindings:
         if source_text[binding.source_start:binding.source_end] != binding.role + 'の' + binding.name:
             raise unavailable('public_role_source_binding')
-    bindings = {b.name: b.role for b in meaning.role_bindings}
-    for name, role in bindings.items():
-        sentence = sentence.replace(role + 'の' + name, role)
-        sentence = re.sub(r'(?<![一-龥々])' + re.escape(name), lambda _: role, sentence)
-    return sentence
+    aliases = piece_public_role_aliases(meaning.role_bindings)
+    if not aliases:
+        return sentence
+    phrases = {b.role + 'の' + b.name: aliases[b.name] for b in meaning.role_bindings}
+    # Consume the whole written phrase before a bare name. A single pass
+    # prevents an inserted qualification from being replaced again, and
+    # preserves a shorter explicit binding without duplicating its prefix.
+    full = '|'.join(re.escape(p) for p in sorted(phrases, key=len, reverse=True))
+    names = '|'.join(re.escape(n) for n in sorted(aliases, key=len, reverse=True))
+    replacements = {**phrases, **aliases}
+    return re.sub(full + r'|(?<![一-龥々])(?:' + names + ')',
+                  lambda match: replacements[match.group()], sentence)
 
 
 def _evaluation_sentence(meaning: PieceSourceMeaning, frame: PiecePersonalEvaluation) -> str:

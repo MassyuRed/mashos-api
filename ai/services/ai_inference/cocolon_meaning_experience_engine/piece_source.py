@@ -181,7 +181,11 @@ def validate_piece_expression_scopes(meaning: PieceSourceMeaning) -> None:
 
 # Relationship terms, not topic/final-sentence dispatch vocabulary. We only
 # abstract an identity when the author supplies the replacement role verbatim.
-_ROLE_NAME = re.compile(r'(?P<role>友人|同僚|上司|部下|先輩|後輩|先生)の'
+_ROLE = r'(?:友人|同僚|上司|部下|先輩|後輩|先生)'
+# A written relational chain is one role, not just its terminal noun.
+# Keep every link (including repeated roles); the existing vocabulary is
+# unchanged and no omitted possessor or unknown modifier is inferred.
+_ROLE_NAME = re.compile(r'(?P<role>' + _ROLE + r'(?:の' + _ROLE + r')*)の'
                         r'(?P<name>[一-龥々]{1,6}さん)')
 _HONORIFIC_NAME = re.compile(r'[一-龥々]{1,6}さん')
 
@@ -190,19 +194,31 @@ def _digest(text: str) -> str:
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
 
+def piece_public_role_aliases(bindings: tuple[PieceRoleBinding, ...]) -> dict[str, str]:
+    """Use the most qualified compatible role explicitly bound to each name.
+
+    A shorter written suffix must not erase an existing qualification. Two
+    incompatible chains remain ambiguous; this is not general coreference.
+    Every selected alias is a whole source-written role, never a merged one.
+    """
+    by_name: dict[str, str] = {}
+    for binding in bindings:
+        previous = by_name.get(binding.name)
+        if previous is None or binding.role.endswith('の' + previous):
+            by_name[binding.name] = binding.role
+        elif previous != binding.role and not previous.endswith('の' + binding.role):
+            raise unavailable('public_role_binding_ambiguous')
+    if len(set(by_name.values())) != len(by_name):
+        # Complete qualifications can distinguish people with the same final
+        # role, but two identical full aliases cannot distinguish two names.
+        raise unavailable('public_role_binding_ambiguous')
+    return by_name
+
+
 def _role_bindings(text: str) -> tuple[PieceRoleBinding, ...]:
     bindings = tuple(PieceRoleBinding(m['name'], m['role'], m.start(), m.end())
                      for m in _ROLE_NAME.finditer(text))
-    by_name: dict[str, str] = {}
-    by_role: dict[str, str] = {}
-    for binding in bindings:
-        if (binding.name in by_name and by_name[binding.name] != binding.role
-                or binding.role in by_role and by_role[binding.role] != binding.name):
-            # Do not collapse two different people into one indistinguishable
-            # role, or resolve an ambiguous identity by picking the last one.
-            raise unavailable('public_role_binding_ambiguous')
-        by_name[binding.name] = binding.role
-        by_role[binding.role] = binding.name
+    by_name = piece_public_role_aliases(bindings)
     for match in _HONORIFIC_NAME.finditer(text):
         if match.group() not in by_name:
             raise unavailable('public_role_binding_missing')
