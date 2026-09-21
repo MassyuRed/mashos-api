@@ -303,17 +303,24 @@ def validate_piece_nominal_references(meaning: PieceSourceMeaning) -> None:
 # Typed evaluative predicates, not topic keywords or canned output sentences.
 # A wish is not inferred from liking, importance, need or a negative evaluation.
 _VALUE_BASES = frozenset({'大切', '大事', '重要', '必要'})
+# Both word orders share the same state/modal composition. The only
+# construction-specific inflection is the relative or finite copula.
+_EVALUATIVE_PREDICATE = (
+    r'(?P<predicate>(?P<base>大切|大事|重要|必要|好き|苦手)'
+    r'(?P<inflection>(?:(?P<state>(?:では|じゃ)(?:なかった|ない)|だった)'
+    r'(?P<state_modal>かもしれない|とは限らない)?|'
+    r'(?P<bare_modal>かもしれない|とは限らない)|{copula})))')
 _EVALUATIVE_FOCUS = re.compile(
     r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)'
     r'(?P<construction>にとって|が)[、，,]?'
-    r'(?P<predicate>(?P<base>大切|大事|重要|必要|好き|苦手)'
-    # The modal scopes over the complete written copular state. Treating
-    # polarity/time and modality as exclusive alternatives loses combinations
-    # such as negative-past possibility; do not simplify them into certainty.
-    r'(?P<inflection>(?:(?P<state>(?:では|じゃ)(?:なかった|ない)|だった)'
-    r'(?P<state_modal>かもしれない|とは限らない)?|'
-    r'(?P<bare_modal>かもしれない|とは限らない)|な)))のは[、，,]?'
-    r'(?P<target>.+?)(?P<copula>です|だ)。$')
+    + _EVALUATIVE_PREDICATE.format(copula='な')
+    + r'のは[、，,]?(?P<target>.+?)(?P<copula>です|だ)。$')
+_EVALUATIVE_FINITE = re.compile(
+    r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)'
+    r'(?P<construction>にとって|は)[、，,]?'
+    r'(?P<target>.+?)が'
+    + _EVALUATIVE_PREDICATE.format(copula=r'(?P<copula>でした|です|だ)')
+    + r'。$')
 _SIMPLE_NOUN = re.compile(r'[一-龥々ァ-ヴー]+')
 
 
@@ -335,7 +342,8 @@ def _personal_evaluations(text: str, nodes: tuple[MeaningNode, ...],
         if (sentence.node_id != node.node_id or start < 0 or end > len(text)
                 or text[start:end] != node.value):
             raise unavailable('piece_evaluation_source_binding')
-        match = _EVALUATIVE_FOCUS.fullmatch(node.value)
+        match = (_EVALUATIVE_FOCUS.fullmatch(node.value)
+                 or _EVALUATIVE_FINITE.fullmatch(node.value))
         expression_start = start
         if match is None:
             scoped = _SCOPED_EXPRESSION.fullmatch(node.value)
@@ -343,14 +351,16 @@ def _personal_evaluations(text: str, nodes: tuple[MeaningNode, ...],
                 continue
             # Interpret the already-modelled evaluation inside its written
             # scope. Do not reinterpret the premise as the evaluation target.
-            match = _EVALUATIVE_FOCUS.fullmatch(scoped['intention'])
+            match = (_EVALUATIVE_FOCUS.fullmatch(scoped['intention'])
+                     or _EVALUATIVE_FINITE.fullmatch(scoped['intention']))
             if match is None:
                 continue
             expression_start += scoped.start('intention')
         kind = 'PERSONAL_VALUE' if match['base'] in _VALUE_BASES else 'PERSONAL_PREFERENCE'
-        # が marks the experiencer of 好き/苦手. It is not freely substituted
-        # for にとって in evaluative predicates with a different argument role.
-        if match['construction'] == 'が' and kind != 'PERSONAL_PREFERENCE':
+        # A self topic and a が experiencer bind liking/difficulty; neither
+        # is freely substituted for the explicit value viewpoint にとって.
+        # The target's が is preserved. A contrastive は/も is not rewritten.
+        if match['construction'] in ('が', 'は') and kind != 'PERSONAL_PREFERENCE':
             continue
         target = match['target']
         nominal = target.endswith(('こと', 'もの', '時間'))
@@ -369,12 +379,13 @@ def _personal_evaluations(text: str, nodes: tuple[MeaningNode, ...],
         # NON_UNIVERSAL over NEGATIVE is not an affirmative evaluation, and
         # a present modal must not reset the evaluation's original past time.
         polarity = 'NEGATIVE' if state.startswith(('では', 'じゃ')) else 'AFFIRMATIVE'
-        temporal = 'PAST' if state.endswith(('だった', 'なかった')) else 'NONPAST'
+        temporal = ('PAST' if state.endswith(('だった', 'なかった'))
+                    or match['copula'] == 'でした' else 'NONPAST')
         commitment = ('POSSIBLE' if modal == 'かもしれない' else
                       'NON_UNIVERSAL' if modal == 'とは限らない' else 'ASSERTED')
         frames.append(PiecePersonalEvaluation(
             node.node_id, match['construction'], kind, spans, utf8,
-            match['copula'], polarity, temporal, commitment))
+            match['copula'] or '', polarity, temporal, commitment))
     return tuple(frames)
 
 
