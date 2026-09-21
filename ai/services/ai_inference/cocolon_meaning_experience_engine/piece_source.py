@@ -364,7 +364,11 @@ def _personal_evaluations(text: str, nodes: tuple[MeaningNode, ...],
             continue
         target = match['target']
         nominal = target.endswith(('こと', 'もの', '時間'))
-        bare = match['construction'] == 'にとって' and _SIMPLE_NOUN.fullmatch(target)
+        # A finite self-topic already owns the experiencer: 私はXが好き.
+        # Reuse the existing bounded noun shape without guessing a missing
+        # nominalizer or changing the target. Do not extend the が-focus:
+        # 私が好きなのはX can instead make a person-like X the experiencer.
+        bare = match['construction'] in ('にとって', 'は') and _SIMPLE_NOUN.fullmatch(target)
         if (not (nominal or bare)
                 or _REFERENCE.search(target) or _NESTED.search(target)
                 or 'のは' in target or target.startswith(('、', '，', ','))):
