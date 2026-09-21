@@ -257,13 +257,15 @@ def _linked_self_continuations(meaning: PieceSourceMeaning,
                     or ref.reference_scalar_span[0] != scope.scope_scalar_span[0]):
                 continue
             # A linked referent does not establish the subject of its whole
-            # condition. A later は/が can introduce another participant or a
+            # scope. A later は/が/も can introduce another participant or a
             # contrast, so do not elide the author's explicit topic across it.
-            # The referent's own initial は/が is not a competing subject.
+            # The referent's own initial は/が/も is not a competing subject.
+            # Exclude the validated connective (including けれども) itself.
             # This conservative surface check only declines an optional edit;
             # it never rejects input or claims general subject resolution.
-            tail = original[ref.reference_scalar_span[1]:scope.scope_scalar_span[1]]
-            if re.search(r'[はが]', tail[1:] if tail.startswith(('は', 'が')) else tail):
+            tail = original[ref.reference_scalar_span[1]:
+                            scope.scope_scalar_span[1] - len(scope.marker)]
+            if re.search(r'[はがも]', tail[1:] if tail.startswith(('は', 'が', 'も')) else tail):
                 continue
             topic = _SELF_TOPIC.fullmatch(original[slice(*scope.expression_scalar_span)])
             if topic is None or not _WISH_END.search(topic['body']):
@@ -325,8 +327,15 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
                 # this author. Keep its full scope and predicate; omit only
                 # the repeated self-topic, never the first visible viewpoint.
                 prefix = '' if node.node_id in continuations else topic['speaker'] + 'は、'
-                text = _publicize_source_sentence(
-                    prefix + premise + '、' + topic['body'] + '。', meaning)
+                if scope.relation == 'SOURCE_EXPLICIT_CONCESSION':
+                    # Keep the contrasted premise before this author's stance.
+                    # Fronting the topic across another person's premise can
+                    # blur who owns each side. A proven adjacent continuation
+                    # still uses the same existing optional repetition edit.
+                    text = premise + '、' + prefix + topic['body'] + '。'
+                else:
+                    text = prefix + premise + '、' + topic['body'] + '。'
+                text = _publicize_source_sentence(text, meaning)
         elif duty.operation == 'SOURCE_FOCAL_TO_FIRST_PERSON':
             parts = _focal_parts(text)
             if parts is None:

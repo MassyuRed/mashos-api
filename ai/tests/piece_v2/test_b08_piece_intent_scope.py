@@ -98,7 +98,6 @@ def test_no_invented_causal_link_or_change_to_existing_self_topic(text):
 
 @pytest.mark.parametrize('text', [
     '駅から、私は静かな道を通ってゆっくり家まで歩いて帰りたい。',
-    '時間が少ないけれど、私は急がずに自分の答えを考えたい。',
     '友人が来るので、友人は一人でゆっくり話したい。',
     '雨が降るなら、私は出かけたいとは思っていない。',
     '時間が取れるなら、私は会いたいと言ってもらいたい。',

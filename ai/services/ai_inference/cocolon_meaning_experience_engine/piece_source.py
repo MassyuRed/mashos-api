@@ -73,11 +73,13 @@ class PiecePersonalEvaluation:
 
 @dataclass(frozen=True, slots=True, repr=False)
 class PieceExpressionScope:
-    """A source-marked reason/condition attached to an explicit first-person expression.
+    """A source-marked relation attached to an explicit first-person expression.
 
     Both clauses remain private exact ranges of the same original sentence.
     The relation describes the written connective, not an inferred cause or
     an assertion that a hypothetical condition has happened or a comparison is a wish.
+    A written concession keeps its two sides; it does not supply an inferred
+    expectation, a causal explanation or a resolution of their tension.
     """
     node_id: str
     relation: str
@@ -101,11 +103,19 @@ class PieceSourceMeaning:
 
 
 # These are clause operators, not a list of causes, topics or output phrases.
-# Ambiguous origin/causal "から", concessives, reported wishes and unmarked
-# links are not promoted to a reason. Already-admitted self-topic sentences
-# keep their previous canonical identity.
+# Ambiguous origin/causal "から", purpose/concessive "のに", reported wishes
+# and unmarked links are not promoted to a relation. Already-admitted
+# self-topic sentences keep their previous canonical identity.
+_SCOPE_RELATIONS = {
+    'ので': 'SOURCE_EXPLICIT_REASON',
+    'ならば': 'SOURCE_EXPLICIT_CONDITION',
+    'なら': 'SOURCE_EXPLICIT_CONDITION',
+    'けれども': 'SOURCE_EXPLICIT_CONCESSION',
+    'けれど': 'SOURCE_EXPLICIT_CONCESSION',
+}
 _SCOPED_EXPRESSION = re.compile(
-    r'^(?P<scope>(?P<premise>.+?)(?P<marker>ので|なら(?:ば)?))[、，,][ \t]*'
+    r'^(?P<scope>(?P<premise>.+?)(?P<marker>'
+    + '|'.join(map(re.escape, _SCOPE_RELATIONS)) + r'))[、，,][ \t]*'
     r'(?P<intention>(?:私|わたし|僕|ぼく|俺|おれ)(?:は|にとって|が)[、，,]?.+。)$')
 # Preserve the complete self expression, not an inferred desire lemma.
 # 読みたい / 休みたい and a source-written comparison ending みたい retain
@@ -115,6 +125,7 @@ _SELF_TOPIC_MENTION = re.compile(r'(?:私|わたし|僕|ぼく|俺|おれ)は')
 _SCOPE_KINDS = {
     'SOURCE_EXPLICIT_REASON': 'PIECE_SOURCE_REASON_SCOPED_EXPRESSION',
     'SOURCE_EXPLICIT_CONDITION': 'PIECE_SOURCE_CONDITION_SCOPED_EXPRESSION',
+    'SOURCE_EXPLICIT_CONCESSION': 'PIECE_SOURCE_CONCESSION_SCOPED_EXPRESSION',
 }
 
 
@@ -144,8 +155,7 @@ def _expression_scopes(text: str, nodes: tuple[MeaningNode, ...],
                     or _DEPENDENT_START.search(topic['body'])
                     or _EMBEDDED_REPORT.search(topic['body'])):
                 continue
-        relation = ('SOURCE_EXPLICIT_REASON' if match['marker'] == 'ので'
-                    else 'SOURCE_EXPLICIT_CONDITION')
+        relation = _SCOPE_RELATIONS[match['marker']]
         a, b = start + match.start('scope'), start + match.end('scope')
         c, d = start + match.start('intention'), start + match.end('intention')
         scopes.append(PieceExpressionScope(
