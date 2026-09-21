@@ -41,12 +41,25 @@ class PieceRoleBinding:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
+class PieceNominalReference:
+    """Private source spans for a bounded, provisional discourse attachment."""
+    antecedent_node_id: str
+    reference_node_id: str
+    nominal_head: str
+    antecedent_scalar_span: tuple[int, int]
+    antecedent_utf8_span: tuple[int, int]
+    reference_scalar_span: tuple[int, int]
+    reference_utf8_span: tuple[int, int]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
 class PieceSourceMeaning:
     envelope: SourceEnvelope
     graph: GroundedMeaningGraph
     evidence: tuple[EvidenceRef, ...]
     sentences: tuple[PieceSentenceMeaning, ...]
     role_bindings: tuple[PieceRoleBinding, ...]
+    nominal_references: tuple[PieceNominalReference, ...] = ()
 
 
 # Relationship terms, not topic/final-sentence dispatch vocabulary. We only
@@ -82,6 +95,92 @@ def _role_bindings(text: str) -> tuple[PieceRoleBinding, ...]:
             # Replacing it by a relationship would change the proposition.
             raise unavailable('public_identity_is_material')
     return bindings
+
+
+# Reuse the nominal heads admitted by the existing focal grammar. This does
+# not infer an omitted event, person, cause or a bare pronoun's referent.
+_NOMINAL_REFERENCE = re.compile(
+    r'^(?:(?:私|わたし|僕|ぼく|俺|おれ)は[、，,]?)?'
+    r'(?P<reference>(?:その|この)(?P<head>時間|こと|もの))'
+    r'(?=[はがをにでとのも]|から|だけ|さえ|まで|より)')
+_COMPOSITE_OBJECT = re.compile(r'より|ではなく|だけでなく|または|あるいは')
+_REFERENCE_RELATION = 'SOURCE_BOUND_NOMINAL_REFERENCE'
+
+
+def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
+                        sentences: tuple[PieceSentenceMeaning, ...]
+                        ) -> tuple[PieceNominalReference, ...]:
+    """Attach an explicit nominal reference to one prior focal object.
+
+    Only existing, complete focal objects can introduce an antecedent. Every
+    earlier occurrence of its nominal head must belong to that object or an
+    already bound mention. A second candidate, an unmodelled mention or an
+    internal contrast remains unresolved; nearest-word guessing is not used.
+    The writer keeps the entire antecedent and following qualification in one
+    source-ordered reading group, rather than expanding a vague pronoun into
+    an invented visible proposition.
+    """
+    from piece_v2_generation import _FOCUS
+    from piece_v2_expression import _REFERENCE
+    candidates: dict[str, list[tuple[str, int, int]]] = {}
+    bound: list[PieceNominalReference] = []
+    for node, sentence in zip(nodes, sentences, strict=True):
+        start, end = sentence.source_start, sentence.source_end
+        if (sentence.node_id != node.node_id or start < 0 or end > len(text)
+                or text[start:end] != node.value):
+            raise unavailable('piece_reference_source_binding')
+        mention = _NOMINAL_REFERENCE.match(node.value)
+        if mention is not None:
+            head = mention['head']
+            prior = candidates.get(head, [])
+            if len(prior) != 1:
+                raise unavailable('unresolved_reference')
+            antecedent_id, a_start, a_end = prior[0]
+            r_start, r_end = start + mention.start('reference'), start + mention.end('reference')
+            known = {(a_end - len(head), a_end)}
+            known.update((r.reference_scalar_span[1] - len(head), r.reference_scalar_span[1])
+                         for r in bound if r.nominal_head == head)
+            if any(m.span() not in known for m in re.finditer(re.escape(head), text[:r_start])):
+                raise unavailable('unresolved_reference')
+            bound.append(PieceNominalReference(
+                antecedent_id, node.node_id, head, (a_start, a_end),
+                (len(text[:a_start].encode('utf-8')), len(text[:a_end].encode('utf-8'))),
+                (r_start, r_end),
+                (len(text[:r_start].encode('utf-8')), len(text[:r_end].encode('utf-8')))))
+        focal = _FOCUS.fullmatch(node.value)
+        if focal is None:
+            continue
+        obj = focal['object'].lstrip('、，,')
+        head = next((h for h in ('こと', 'もの', '時間') if obj.endswith(h)), None)
+        if (head is None or obj.count(head) != 1 or _REFERENCE.search(obj)
+                or _COMPOSITE_OBJECT.search(obj)):
+            continue
+        a_end = start + focal.end('object')
+        candidates.setdefault(head, []).append((node.node_id, a_end - len(obj), a_end))
+    return tuple(bound)
+
+
+def _reference_edges(references: tuple[PieceNominalReference, ...],
+                      nodes: tuple[MeaningNode, ...]) -> tuple[MeaningEdge, ...]:
+    by_id = {node.node_id: node for node in nodes}
+    return tuple(MeaningEdge(
+        edge_id=f'piece:reference{index+1}', owner_id=by_id[ref.reference_node_id].owner_id,
+        relation=_REFERENCE_RELATION, source_node_id=ref.reference_node_id,
+        target_node_id=ref.antecedent_node_id, grounding_kind='source_bound_nominal_reference',
+        epistemic_state=EpistemicState.SOURCE_EXPLICIT,
+        evidence_ids=(by_id[ref.antecedent_node_id].evidence_ids[0],
+                      by_id[ref.reference_node_id].evidence_ids[0]))
+        for index, ref in enumerate(references))
+
+
+def validate_piece_nominal_references(meaning: PieceSourceMeaning) -> None:
+    """The artifact planner consumes the source attachments, not a free allowlist."""
+    expected = _nominal_references(meaning.envelope.raw_utf8.decode('utf-8'),
+                                   meaning.graph.nodes, meaning.sentences)
+    edges = tuple(e for e in meaning.graph.edges if e.relation == _REFERENCE_RELATION)
+    if (meaning.nominal_references != expected
+            or edges != _reference_edges(expected, meaning.graph.nodes)):
+        raise unavailable('piece_reference_source_binding')
 
 
 def build_piece_source_meaning(source: object, *, expected_owner_id: str,
@@ -170,11 +269,18 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
                 target_node_id=node_id, grounding_kind='explicit',
                 epistemic_state=EpistemicState.SOURCE_EXPLICIT,
                 evidence_ids=(evidence[index-1].evidence_id, evidence_id)))
+    references = _nominal_references(text, tuple(nodes), tuple(meanings))
+    edges.extend(_reference_edges(references, tuple(nodes)))
+    # Preserve predecessor identities when the graph has no new attachment.
+    graph_seed = envelope_id if not references else json.dumps(
+        [envelope_id, 'piece.nominal_reference.v1',
+         [(r.antecedent_node_id, r.reference_node_id, r.nominal_head,
+           r.antecedent_scalar_span, r.reference_scalar_span) for r in references]])
     owners = tuple(node.owner_id for node in nodes)
     graph = GroundedMeaningGraph(
-        graph_id='piece-graph:' + _digest(envelope_id), source_envelope_id=envelope_id,
+        graph_id='piece-graph:' + _digest(graph_seed), source_envelope_id=envelope_id,
         nodes=tuple(nodes), edges=tuple(edges), owner_dispositions=tuple(resolutions),
         required_owner_refs=owners, active_optional_owner_refs=(),
         source_version=source.source_version, obligation_version='piece.content_meaning.v1',
         owner_universe_digest=_digest(json.dumps(owners)))
-    return PieceSourceMeaning(envelope, graph, tuple(evidence), tuple(meanings), aliases)
+    return PieceSourceMeaning(envelope, graph, tuple(evidence), tuple(meanings), aliases, references)

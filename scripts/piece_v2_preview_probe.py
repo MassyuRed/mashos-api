@@ -67,6 +67,13 @@ def main() -> int:
         ('role_abstraction', '友人の佐藤さんと話した。私は自分で納得してから答えを決めたい。'),
         ('role_qualification', '昨日は上司の田中さんに相談しなかった。私は気持ちが整理できたら、自分の考えを伝えたい。まだ、いつ話すかは決めていない。'),
         ('role_reference', '同僚の山田さんと話した。山田さんには、まだ結論を伝えていない。私は答えを急がず、自分の考えを整理したい。'),
+        ('reference_time', '私が大切にしたいのは、ひとりで静かに過ごす時間です。その時間を持てた日は、気持ちに余裕があった。'),
+        ('reference_action', '私が大切にしたいのは、自分で納得して選ぶことです。そのことを人に押しつけたいわけではない。'),
+        ('reference_object', '私が大切にしているのは、自分の手で長く使ってきたものです。このものには、使いながら直した跡が残っている。'),
+        ('reference_condition', '私が望んでいるのは、家族と落ち着いて話す時間です。その時間が取れたら、私は近況を伝えたい。まだ、日程は決めていない。'),
+        ('reference_role', '私が大切にしたいのは、友人の佐藤さんと落ち着いて話す時間です。その時間が持てなかった昨日は、少し寂しかった。まだ、いつ会うかは決めていない。'),
+        ('reference_chain', '私が大切にしたいのは、一人で考えを整理する時間です。その時間は、昨日は取れなかった。私はその時間を毎日少しでも持ちたい。'),
+        ('reference_context', '今週は予定が重なっていた。私が大切にしたいのは、家で静かに過ごす時間です。この時間を確保できるかは、まだ分からない。'),
     ]
     records = []
     # Dynamic ICC creation embeds a wall-clock timestamp. A fixed PNG sRGB
@@ -116,7 +123,7 @@ def main() -> int:
     report = {'scope': 'DEVELOPMENT_PROBE_NOT_NATIVE_ACCEPTANCE', 'renderer_profile': metrics.profile_id,
         'application_dependency_changes': 0, 'native_device_verified': False,
         'public_safety_complete': False, 'cmee_piece_consumer_connected': True,
-        'meaning_scope': 'source_propositions_and_explicit_role_bindings_not_general_relation_inference',
+        'meaning_scope': 'source_propositions_explicit_roles_and_nominal_reference_not_general_relation_inference',
         'source_retrieval_connected': False, 'records': records, 'negative': negative}
     (output / 'probe_results.private.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     for item in records[::2]:

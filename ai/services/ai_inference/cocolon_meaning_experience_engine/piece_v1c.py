@@ -19,7 +19,9 @@ from piece_v2_expression import (
     _SELF_TOPIC, _WISH_END,
 )
 from .contracts import EngineStatus, ExecutionMode
-from .piece_source import PieceSourceMeaning, build_piece_source_meaning
+from .piece_source import (
+    PieceSourceMeaning, build_piece_source_meaning, validate_piece_nominal_references,
+)
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -122,12 +124,18 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
     """
     from piece_v2_generation import _UNCERTAIN, _DEICTIC
     graph = meaning.graph
+    validate_piece_nominal_references(meaning)
     duties: list[PieceTextDuty] = []
     intents: list[int] = []
     focal = False
     for index, (node, semantic) in enumerate(zip(graph.nodes, meaning.sentences, strict=True)):
         sentence = node.value
-        if _DEICTIC.search(sentence) or _REFERENCE.search(sentence):
+        admitted = [r.reference_scalar_span for r in meaning.nominal_references
+                    if r.reference_node_id == node.node_id]
+        if _DEICTIC.search(sentence) or any(
+                not any(a <= semantic.source_start + m.start()
+                        and semantic.source_start + m.end() <= b for a, b in admitted)
+                for m in _REFERENCE.finditer(sentence)):
             raise unavailable('unresolved_reference')
         if _focal_parts(sentence) is not None:
             duties.append(PieceTextDuty(node.node_id, 'SOURCE_FOCAL_TO_FIRST_PERSON'))
@@ -147,7 +155,13 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
         raise unavailable('expression_meaning_not_admitted')
     ids = tuple(node.node_id for node in graph.nodes)
     dependent = any(_DEPENDENT_START.search(node.value) for node in graph.nodes)
-    if focal:
+    if meaning.nominal_references:
+        # Antecedents, mentions and subsequent reservations remain a single
+        # source-ordered reading group. No isolated quote, inferred expansion
+        # or last-wish-first move can detach what the reference refers to.
+        first = min(ids.index(r.antecedent_node_id) for r in meaning.nominal_references)
+        blocks = (ids[:first], ids[first:]) if first else (ids,)
+    elif focal:
         # Keep the existing admitted focal path's canonical block identity.
         blocks = tuple((node_id,) for node_id in ids) if len(ids) <= 3 else (
             (ids[0],), ids[1:-1], (ids[-1],))
