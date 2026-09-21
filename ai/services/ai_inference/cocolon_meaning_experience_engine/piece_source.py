@@ -184,8 +184,11 @@ def validate_piece_expression_scopes(meaning: PieceSourceMeaning) -> None:
 _ROLE = r'(?:友人|同僚|上司|部下|先輩|後輩|先生)'
 # A written relational chain is one role, not just its terminal noun.
 # Keep every link (including repeated roles); the existing vocabulary is
-# unchanged and no omitted possessor or unknown modifier is inferred.
-_ROLE_NAME = re.compile(r'(?P<role>' + _ROLE + r'(?:の' + _ROLE + r')*)の'
+# unchanged. Reuse the existing speaker vocabulary only when its possessive
+# is written; an omitted possessor or unknown modifier is not inferred.
+_ROLE_OWNER = r'(?:(?:私|わたし|僕|ぼく|俺|おれ)の)?'
+_ROLE_NAME = re.compile(r'(?<![一-龥々])(?P<role>' + _ROLE_OWNER + _ROLE
+                        + r'(?:の' + _ROLE + r')*)の'
                         r'(?P<name>[一-龥々]{1,6}さん)')
 _HONORIFIC_NAME = re.compile(r'[一-龥々]{1,6}さん')
 
@@ -218,8 +221,19 @@ def piece_public_role_aliases(bindings: tuple[PieceRoleBinding, ...]) -> dict[st
 def _role_bindings(text: str) -> tuple[PieceRoleBinding, ...]:
     bindings = tuple(PieceRoleBinding(m['name'], m['role'], m.start(), m.end())
                      for m in _ROLE_NAME.finditer(text))
+    for binding in bindings:
+        if text[:binding.source_start].rstrip().endswith('の'):
+            # A suffix match inside an unresolved genitive would silently
+            # discard its owner in subsequent name mentions. Do not infer it.
+            raise unavailable('public_role_owner_not_bound')
     by_name = piece_public_role_aliases(bindings)
+    bound_ends = {binding.source_end for binding in bindings}
     for match in _HONORIFIC_NAME.finditer(text):
+        if (text[:match.start()].rstrip().endswith('の')
+                and match.end() not in bound_ends):
+            # An earlier alias cannot license a later, unsupported role phrase
+            # or a role-looking suffix inside another noun for that same name.
+            raise unavailable('public_role_binding_missing')
         if match.group() not in by_name:
             raise unavailable('public_role_binding_missing')
         if (re.match(r'(?:という|と言う|っていう|と呼|と書|と読)', text[match.end():])
