@@ -307,8 +307,12 @@ _EVALUATIVE_FOCUS = re.compile(
     r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)'
     r'(?P<construction>にとって|が)[、，,]?'
     r'(?P<predicate>(?P<base>大切|大事|重要|必要|好き|苦手)'
-    r'(?P<inflection>ではなかった|ではない|じゃなかった|じゃない|'
-    r'だった|かもしれない|とは限らない|な))のは[、，,]?'
+    # The modal scopes over the complete written copular state. Treating
+    # polarity/time and modality as exclusive alternatives loses combinations
+    # such as negative-past possibility; do not simplify them into certainty.
+    r'(?P<inflection>(?:(?P<state>(?:では|じゃ)(?:なかった|ない)|だった)'
+    r'(?P<state_modal>かもしれない|とは限らない)?|'
+    r'(?P<bare_modal>かもしれない|とは限らない)|な)))のは[、，,]?'
     r'(?P<target>.+?)(?P<copula>です|だ)。$')
 _SIMPLE_NOUN = re.compile(r'[一-龥々ァ-ヴー]+')
 
@@ -359,11 +363,15 @@ def _personal_evaluations(text: str, nodes: tuple[MeaningNode, ...],
                       for key in ('speaker', 'predicate', 'target'))
         utf8 = tuple((len(text[:a].encode('utf-8')), len(text[:b].encode('utf-8')))
                      for a, b in spans)
-        inflection = match['inflection']
-        polarity = 'NEGATIVE' if inflection.startswith(('では', 'じゃ')) else 'AFFIRMATIVE'
-        temporal = 'PAST' if inflection.endswith(('だった', 'なかった')) else 'NONPAST'
-        commitment = ('POSSIBLE' if inflection == 'かもしれない' else
-                      'NON_UNIVERSAL' if inflection == 'とは限らない' else 'ASSERTED')
+        state = match['state'] or ''
+        modal = match['state_modal'] or match['bare_modal'] or ''
+        # These describe the inner evaluation under the outer commitment.
+        # NON_UNIVERSAL over NEGATIVE is not an affirmative evaluation, and
+        # a present modal must not reset the evaluation's original past time.
+        polarity = 'NEGATIVE' if state.startswith(('では', 'じゃ')) else 'AFFIRMATIVE'
+        temporal = 'PAST' if state.endswith(('だった', 'なかった')) else 'NONPAST'
+        commitment = ('POSSIBLE' if modal == 'かもしれない' else
+                      'NON_UNIVERSAL' if modal == 'とは限らない' else 'ASSERTED')
         frames.append(PiecePersonalEvaluation(
             node.node_id, match['construction'], kind, spans, utf8,
             match['copula'], polarity, temporal, commitment))
