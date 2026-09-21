@@ -20,7 +20,8 @@ from piece_v2_expression import (
 )
 from .contracts import EngineStatus, ExecutionMode
 from .piece_source import (
-    PieceSourceMeaning, build_piece_source_meaning, validate_piece_nominal_references,
+    PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
+    validate_piece_nominal_references,
     validate_piece_personal_evaluations, validate_piece_expression_scopes,
 )
 
@@ -221,6 +222,17 @@ def _publicize_source_sentence(sentence: str, meaning: PieceSourceMeaning) -> st
     return sentence
 
 
+def _evaluation_sentence(meaning: PieceSourceMeaning, frame: PiecePersonalEvaluation) -> str:
+    """One writer realization shared by free and explicitly scoped evaluations."""
+    original = meaning.envelope.raw_utf8.decode('utf-8')
+    speaker, predicate, target = (original[a:b] for a, b in frame.scalar_parts)
+    perspective = speaker + ('にとって' if frame.construction == 'にとって' else 'は')
+    # Only the relative nominal copula な becomes its source register's
+    # finite copula. Negative/past/modal predicates stay byte-exact.
+    finite = predicate[:-1] + frame.copula if predicate.endswith('な') else predicate
+    return perspective + '、' + target + 'が' + finite + '。'
+
+
 def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
                            *, tier: str, requested_format: str | None) -> PieceArtifact:
     """Realize plan-owned duties from the source graph; never call B8's old author."""
@@ -250,15 +262,23 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
                 raise unavailable('piece_plan_operation_binding')
             original = raw.decode('utf-8')
             premise = original[slice(*scope.scope_scalar_span)]
-            topic = _SELF_TOPIC.fullmatch(original[slice(*scope.expression_scalar_span)])
-            if topic is None:
-                raise unavailable('piece_plan_operation_binding')
-            # Move only the written first-person topic. The complete premise,
-            # its exact connective, and all intention arguments stay intact.
-            # In particular なら never becomes ので, and neither clause is
-            # changed into a new causal explanation or an unconditional vow.
-            text = _publicize_source_sentence(
-                topic['speaker'] + 'は、' + premise + '、' + topic['body'] + '。', meaning)
+            frame = next((f for f in meaning.personal_evaluations if f.node_id == node.node_id), None)
+            if frame is not None:
+                # The condition/reason governs this evaluation. Keep it before
+                # the complete first-person evaluation, rather than outputting
+                # a free-standing value or manufacturing a wish from liking.
+                text = _publicize_source_sentence(
+                    premise + '、' + _evaluation_sentence(meaning, frame), meaning)
+            else:
+                topic = _SELF_TOPIC.fullmatch(original[slice(*scope.expression_scalar_span)])
+                if topic is None:
+                    raise unavailable('piece_plan_operation_binding')
+                # Move only the written first-person topic. The complete premise,
+                # its exact connective, and all intention arguments stay intact.
+                # In particular なら never becomes ので, and neither clause is
+                # changed into a new causal explanation or an unconditional vow.
+                text = _publicize_source_sentence(
+                    topic['speaker'] + 'は、' + premise + '、' + topic['body'] + '。', meaning)
         elif duty.operation == 'SOURCE_FOCAL_TO_FIRST_PERSON':
             parts = _focal_parts(text)
             if parts is None:
@@ -274,13 +294,7 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
             frame = next((f for f in meaning.personal_evaluations if f.node_id == node.node_id), None)
             if frame is None:
                 raise unavailable('piece_plan_operation_binding')
-            original = raw.decode('utf-8')
-            speaker, predicate, target = (original[a:b] for a, b in frame.scalar_parts)
-            perspective = speaker + ('にとって' if frame.construction == 'にとって' else 'は')
-            # Only the relative nominal copula な becomes its source register's
-            # finite copula. Negative/past/modal predicates stay byte-exact.
-            finite = predicate[:-1] + frame.copula if predicate.endswith('な') else predicate
-            text = _publicize_source_sentence(perspective + '、' + target + 'が' + finite + '。', meaning)
+            text = _publicize_source_sentence(_evaluation_sentence(meaning, frame), meaning)
         elif duty.operation != 'KEEP_COMPLETE_SOURCE_CONTEXT':
             raise unavailable('piece_plan_operation_unknown')
         sentences[node.node_id] = text
