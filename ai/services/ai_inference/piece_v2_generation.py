@@ -2,14 +2,16 @@
 
 This is NOT the CMEE Piece consumer or an authenticated preview API. It accepts
 an internal saved-source snapshot supplied by a trusted caller. It currently
-handles explicit first-person focal constructions, plus their complete adjacent
-sentences. Unsupported discourse is unavailable, never raw-source fallback.
+handles explicit first-person focal constructions and a shared meaning-block
+paragraph intent, plus their complete adjacent sentences. Unsupported discourse is unavailable, never raw-source fallback.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
 import re
+from emlis_ai_types import EvidenceRef
+from piece_v2_expression import compile_piece_expression_plan
 from piece_v2_content_policy import (check_existing_detectors, choose_format,
                                      unavailable, validate_candidate_text)
 
@@ -86,14 +88,22 @@ def generate_piece_candidate(source: PieceSourceSnapshot, *, authenticated_owner
             focal_count += 1
         else:
             edited.append(sentence)
+    expression_plan = None
     if not focal_count:
-        raise unavailable('expression_not_yet_supported')
+        expression_plan = compile_piece_expression_plan(
+            sentences=sentences,
+            evidence=EvidenceRef(kind='saved_input', ref_id=source.saved_input_id),
+        )
+        edited = list(expression_plan.sentences)
     if any(_DEICTIC.search(s) for s in sentences):
         raise unavailable('unresolved_reference')
-    # Preserve source order. No deduplication (which could erase emphasis),
-    # invented connection, past/current merge, or hidden title is allowed.
+    # The legacy focal path preserves source order. The expression plan owns
+    # an explicitly bounded reordering. Neither path drops repeated emphasis,
+    # invents a connection, merges past/current claims, or adds a hidden title.
     # At most three meaning blocks; adjacent complete clauses stay in order.
-    if len(edited) <= 3:
+    if expression_plan is not None:
+        blocks = list(expression_plan.body_blocks)
+    elif len(edited) <= 3:
         blocks = edited
     else:
         blocks = [edited[0], ''.join(edited[1:-1]), edited[-1]]
