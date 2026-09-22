@@ -48,6 +48,14 @@ def _sentences(text: str) -> list[str]:
     pieces = re.findall(r'[^。！？!?]+[。！？!?]', joined)
     if not pieces or ''.join(pieces) != joined or len(pieces) > 6:
         raise unavailable('complete_sentence_required')
+    # Horizontal separators belong to the gap between sentences, not to the
+    # next sentence's speaker or reference. Keep sentence-internal whitespace
+    # and punctuation verbatim; never normalize the original source. CMEE
+    # locates these exact substrings in the raw text, preserving scalar/UTF-8
+    # evidence coordinates and the original newline barriers for the writer.
+    pieces = [piece.lstrip(' \t\u3000') for piece in pieces]
+    if any(len(piece) == 1 for piece in pieces):
+        raise unavailable('complete_sentence_required')
     return pieces
 
 
