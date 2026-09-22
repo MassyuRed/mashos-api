@@ -490,6 +490,63 @@ def validate_piece_personal_evaluations(meaning: PieceSourceMeaning) -> None:
         raise unavailable('piece_evaluation_source_binding')
 
 
+def _piece_editorial_roles(sentences: tuple[str, ...],
+                           evidence: InputEvidenceRef) -> dict[int, str]:
+    """Project register only for provisional role classification.
+
+    The existing Piece grammar already admits an optional polite auxiliary,
+    while the shared compatibility classifier can miss the same predicate in
+    that register. Keep its original admitted roles. For an otherwise missing
+    intent role, classify a register-neutral view of the SAME ordered source
+    sentences, using only the already-admitted self-topic/wish grammar.
+
+    This view is not an envelope, graph, evidence span or visible wording. No
+    speaker, predicate, negation, scope, or sentence is removed. A projected
+    slot still needs the shared classifier's admitted intent role; matching
+    the terminal grammar alone never supplies that role. The shared owner,
+    duplicate handling, and author/format admission are not relaxed.
+    """
+    from piece_v2_expression import (
+        _DEPENDENT_START, _EMBEDDED_REPORT, _INTENT_ROLES, _SELF_TOPIC, _WISH_END,
+    )
+
+    def classify(values: tuple[str, ...]) -> dict[int, str]:
+        blocks = build_input_meaning_blocks(
+            current_input={'memo': ''.join(values)}, shaped_user_phrases=(),
+            evidence=evidence)
+        result: dict[int, str] = {}
+        for block in blocks:
+            match = re.fullmatch(r'meaning:(\d+):[^:]+', block.block_key)
+            if match and block.include_in_piece_core:
+                result[int(match[1])] = block.role
+        return result
+
+    roles = classify(sentences)
+    projected = list(sentences)
+    changed: list[int] = []
+    for index, sentence in enumerate(sentences):
+        if roles.get(index) in _INTENT_ROLES:
+            continue
+        topic = _SELF_TOPIC.fullmatch(sentence)
+        if (topic is None or not _WISH_END.search(topic['body'])
+                or not topic['body'].endswith('です')
+                or _DEPENDENT_START.search(topic['body'])
+                or _EMBEDDED_REPORT.search(topic['body'])):
+            continue
+        # Only the grammar's optional register auxiliary is projected away.
+        # Original punctuation and the rest of the complete source stay put.
+        end = topic.end('body')
+        projected[index] = sentence[:end - len('です')] + sentence[end:]
+        changed.append(index)
+    if changed:
+        projected_roles = classify(tuple(projected))
+        for index in changed:
+            role = projected_roles.get(index)
+            if role in _INTENT_ROLES:
+                roles[index] = role
+    return roles
+
+
 def build_piece_source_meaning(source: object, *, expected_owner_id: str,
                                expected_saved_input_id: str,
                                expected_source_version: str) -> PieceSourceMeaning:
@@ -516,16 +573,10 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
     check_existing_detectors(text)
     sentences = _sentences(text)
     aliases = _role_bindings(text)
-    roles = build_input_meaning_blocks(
-        current_input={'memo': ''.join(sentences)}, shaped_user_phrases=(),
-        evidence=InputEvidenceRef(kind='saved_input', ref_id=source.saved_input_id))
-    role_by_position: dict[int, str] = {}
-    for block in roles:
-        # The shared compatibility classifier may omit duplicate summaries.
-        # It is NEVER allowed to omit an original sentence in the Piece graph.
-        match = re.fullmatch(r'meaning:(\d+):[^:]+', block.block_key)
-        if match and block.include_in_piece_core:
-            role_by_position[int(match[1])] = block.role
+    role_by_position = _piece_editorial_roles(
+        sentences, InputEvidenceRef(kind='saved_input', ref_id=source.saved_input_id))
+    # Provisional role classification may omit duplicate summaries. It is
+    # NEVER allowed to omit an original sentence in the Piece graph below.
     raw = text.encode('utf-8')
     identity = json.dumps([source.owner_id, source.saved_input_id,
                            source.source_version, source.source_role,
