@@ -306,6 +306,43 @@ _COMPOSITE_OBJECT = re.compile(r'より|ではなく|だけでなく|または|�
 _REFERENCE_RELATION = 'SOURCE_BOUND_NOMINAL_REFERENCE'
 
 
+def _evaluation_target_references(target: str) -> tuple[tuple[int, int, str], ...]:
+    """Locate whole reference operands without replacing the evaluation target.
+
+    A source-written ``Aより、B`` can contain one already-bound nominal
+    reference and one complete, non-referential nominal operand. The comma
+    supplies the operand boundary; temporal/modifier uses of より, nested
+    comparisons and two deictic operands are not interpreted by this rule.
+    Both sides and the exact marker remain in the original target. Neither
+    operand becomes a new antecedent, an inferred winner, or a user's wish.
+    These are relative source ranges, not authority to resolve a referent.
+    """
+    from piece_v2_expression import _REFERENCE
+    from piece_v2_generation import _NESTED
+    direct = _NOMINAL_REFERENCE_TARGET.fullmatch(target)
+    if direct is not None:
+        return ((0, len(target), direct['head']),)
+    if not _REFERENCE.search(target):
+        return ()
+    comparison = re.fullmatch(r'(?P<left>.+?)より[、，,][ \t\u3000]*(?P<right>.+)', target)
+    if comparison is None:
+        raise unavailable('evaluation_target_not_self_contained')
+    references = []
+    for part in ('left', 'right'):
+        operand = comparison[part]
+        reference = _NOMINAL_REFERENCE_TARGET.fullmatch(operand)
+        if reference is not None:
+            references.append((comparison.start(part), comparison.end(part), reference['head']))
+        elif (not operand.endswith(('こと', 'もの', '時間'))
+                or _REFERENCE.search(operand) or _COMPOSITE_OBJECT.search(operand)
+                or _NESTED.search(operand) or 'のは' in operand
+                or operand.startswith(('、', '，', ',', ' ', '\t', '\u3000'))):
+            raise unavailable('evaluation_target_not_self_contained')
+    if len(references) != 1:
+        raise unavailable('evaluation_target_not_self_contained')
+    return tuple(references)
+
+
 def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
                         sentences: tuple[PieceSentenceMeaning, ...]
                         ) -> tuple[PieceNominalReference, ...]:
@@ -338,23 +375,27 @@ def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
                 or text[start:end] != node.value):
             raise unavailable('piece_reference_source_binding')
         # Preserve the old sentence-initial reference grammar. A parsed
-        # personal evaluation can additionally bind its entire nominal target
-        # at the target's original range, irrespective of its word order. The
+        # personal evaluation can additionally bind a whole nominal target or
+        # an explicit comparison operand at its original range. The
         # two views of a finite self-topic can describe the SAME mention; it
         # must receive exactly one edge. A scope and a target can instead own
         # two different mentions, both checked in original source order.
-        mentions: dict[tuple[int, int], tuple[str, str]] = {}
+        mentions: dict[tuple[int, int], tuple[str, str, int]] = {}
         mention = _NOMINAL_REFERENCE.match(node.value)
         if mention is not None:
             span = (start + mention.start('reference'), start + mention.end('reference'))
-            mentions[span] = (mention['head'], 'unresolved_reference')
+            mentions[span] = (mention['head'], 'unresolved_reference', span[0])
         frame = evaluations.get(node.node_id)
         if frame is not None:
             a, b = frame.scalar_parts[2]
-            target_reference = _NOMINAL_REFERENCE_TARGET.fullmatch(text[a:b])
-            if target_reference is not None:
-                mentions[(a, b)] = (target_reference['head'], 'evaluation_target_not_self_contained')
-        for (r_start, r_end), (head, failure) in sorted(mentions.items()):
+            for left, right, head in _evaluation_target_references(text[a:b]):
+                # In Aより、B, the other operand is part of this comparison,
+                # not a new discourse antecedent for its sibling. Resolve
+                # against the context preceding the complete target; do not
+                # select an object from inside the comparison by proximity.
+                mentions[(a + left, a + right)] = (
+                    head, 'evaluation_target_not_self_contained', a)
+        for (r_start, r_end), (head, failure, context_end) in sorted(mentions.items()):
             prior = candidates.get(head, [])
             if len(prior) != 1:
                 raise unavailable(failure)
@@ -362,7 +403,7 @@ def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
             known = {(a_end - len(head), a_end)}
             known.update((r.reference_scalar_span[1] - len(head), r.reference_scalar_span[1])
                          for r in bound if r.nominal_head == head)
-            if any(m.span() not in known for m in re.finditer(re.escape(head), text[:r_start])):
+            if any(m.span() not in known for m in re.finditer(re.escape(head), text[:context_end])):
                 raise unavailable(failure)
             bound.append(PieceNominalReference(
                 antecedent_id, node.node_id, head, (a_start, a_end),
@@ -442,8 +483,8 @@ def _personal_evaluation_shapes(text: str, nodes: tuple[MeaningNode, ...],
     negation and conditions are not shortened into a winning keyword. Outer
     denial, reported speech, nested focus and unresolved deixis are not this
     construction. They are not turned into the author's current conviction.
-    An exact nominal-reference target is only a candidate argument here; the
-    source resolver must bind it before _personal_evaluations can admit it.
+    A nominal-reference target or comparison operand is only a candidate
+    here; the source resolver must bind it before evaluation admission.
     """
     from piece_v2_expression import _REFERENCE
     from piece_v2_generation import _NESTED
@@ -480,7 +521,7 @@ def _personal_evaluation_shapes(text: str, nodes: tuple[MeaningNode, ...],
         # nominalizer or changing the target. Do not extend the が-focus:
         # 私が好きなのはX can instead make a person-like X the experiencer.
         bare = match['construction'] in ('にとって', 'は') and _SIMPLE_NOUN.fullmatch(target)
-        referential = _NOMINAL_REFERENCE_TARGET.fullmatch(target) is not None
+        referential = bool(_evaluation_target_references(target))
         if (not (nominal or bare)
                 or (_REFERENCE.search(target) and not referential) or _NESTED.search(target)
                 or 'のは' in target or target.startswith(('、', '，', ','))):
@@ -516,17 +557,21 @@ def _personal_evaluations(text: str, nodes: tuple[MeaningNode, ...],
     propositions and validates the exact reference edges independently.
     """
     frames = _personal_evaluation_shapes(text, nodes, sentences)
-    referential = tuple(frame for frame in frames if _NOMINAL_REFERENCE_TARGET.fullmatch(
-        text[slice(*frame.scalar_parts[2])]))
-    if referential:
+    referential = [(frame, _evaluation_target_references(text[slice(*frame.scalar_parts[2])]))
+                   for frame in frames]
+    if any(parts for _, parts in referential):
         references = _nominal_references(text, nodes, sentences)
-        for frame in referential:
-            matching = tuple(ref for ref in references
-                             if ref.reference_node_id == frame.node_id
-                             and ref.reference_scalar_span == frame.scalar_parts[2]
-                             and ref.reference_utf8_span == frame.utf8_parts[2])
-            if len(matching) != 1:
-                raise unavailable('evaluation_target_not_self_contained')
+        for frame, parts in referential:
+            for left, right, head in parts:
+                a, b = frame.scalar_parts[2][0] + left, frame.scalar_parts[2][0] + right
+                utf8 = (len(text[:a].encode('utf-8')), len(text[:b].encode('utf-8')))
+                matching = tuple(ref for ref in references
+                                 if ref.reference_node_id == frame.node_id
+                                 and ref.nominal_head == head
+                                 and ref.reference_scalar_span == (a, b)
+                                 and ref.reference_utf8_span == utf8)
+                if len(matching) != 1:
+                    raise unavailable('evaluation_target_not_self_contained')
     return frames
 
 
