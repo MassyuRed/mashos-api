@@ -107,9 +107,13 @@ def _kana_bridge_breaks(clusters: list[str], script_runs: list[str]) -> list[boo
     """
     boundaries = [False] * (len(clusters) + 1)
     for index in range(2, len(clusters)):
+        # Compare the complete renderer grapheme canonically: decomposed
+        # voiced/semi-voiced kana must use the same existing bridge hint.
+        # Keep the original clusters for measurement, layout and text hashes.
+        bridge = unicodedata.normalize('NFC', clusters[index - 1])[0]
         boundaries[index] = (script_runs[index] == 'han'
                              and script_runs[index - 2] in ('han', 'katakana')
-                             and clusters[index - 1][0] in _SHORT_KANA_BRIDGES)
+                             and bridge in _SHORT_KANA_BRIDGES)
     return boundaries
 
 
