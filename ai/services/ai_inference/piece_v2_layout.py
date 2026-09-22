@@ -150,6 +150,45 @@ def _fitting_bridge_run_breaks(clusters: list[str], script_runs: list[str],
     return boundaries
 
 
+def _fitting_determiner_run_breaks(clusters: list[str], script_runs: list[str],
+                                  *, size: int, width: int,
+                                  metrics: RendererMetrics) -> list[bool]:
+    """Soft cohesion for a delimited determiner and its following written run.
+
+    Only この/その/あの/どの at a paragraph start or after an explicit
+    punctuation/space boundary qualify. Never match inside another word or
+    infer a referent. The following contiguous Han or Katakana run, with any
+    required kinsoku marks, must actually fit the renderer's measured width.
+    General hiragana words and mixed-script noun boundaries are not inferred.
+    This changes only wrap costs: vertical capacity can still require a cut.
+    """
+    boundaries = [False] * (len(clusters) + 1)
+    delimiters = _NO_END | frozenset('、。，．？！!?：；:;')
+    for start in range(len(clusters) - 2):
+        if start and not (clusters[start - 1][-1].isspace()
+                          or clusters[start - 1][-1] in delimiters):
+            continue
+        # Normalize only the comparison view; render the untouched graphemes.
+        prefix = unicodedata.normalize('NFC', ''.join(clusters[start:start + 2]))
+        if prefix not in ('この', 'その', 'あの', 'どの'):
+            continue
+        kind = script_runs[start + 2]
+        if kind not in ('han', 'katakana'):
+            continue
+        end = start + 3
+        while end < len(clusters) and script_runs[end] == kind:
+            end += 1
+        left, right = start, end
+        while left and clusters[left - 1][-1] in _NO_END:
+            left -= 1
+        while right < len(clusters) and clusters[right][0] in _NO_START:
+            right += 1
+        if _width(_measure(metrics, ''.join(clusters[left:right]), size)) <= width:
+            for boundary in range(start + 1, end):
+                boundaries[boundary] = True
+    return boundaries
+
+
 _WrapScore = tuple[int, int, int, int, int, int, int, float]
 _MeasuredRows = list[tuple[str, TextMeasurement]]
 _WrapSolutions = dict[int, tuple[_WrapScore, _MeasuredRows]]
@@ -178,7 +217,8 @@ def _wrap_solutions(text: str, *, size: int, width: int, metrics: RendererMetric
         if i and (unicodedata.combining(c[0]) or c[0] == '\u200d'
                   or 0xFE00 <= ord(c[0]) <= 0xFE0F or clusters[i - 1].endswith('\u200d')):
             raise _fail('split_grapheme')
-    # First keep short-bridge runs intact when their complete measured form
+    # First keep short-bridge and delimited determiner runs intact when their
+    # complete measured form
     # (including required punctuation) fits. A readable extra line is better
     # than cutting such a run merely to achieve the minimum line count.
     # Otherwise prefer the minimum line count, then preserve ASCII runs, then visible
@@ -196,7 +236,11 @@ def _wrap_solutions(text: str, *, size: int, width: int, metrics: RendererMetric
     fitting_bridges = (_fitting_bridge_run_breaks(
         clusters, script_runs, kana_attachments, kana_bridges,
         size=size, width=width, metrics=metrics) if prefer_fitting_bridges else [False] * (n + 1))
-    has_fitting_bridge = any(fitting_bridges)
+    fitting_determiners = _fitting_determiner_run_breaks(
+        clusters, script_runs, size=size, width=width, metrics=metrics)
+    fitting_runs = [bridge or determiner for bridge, determiner in
+                    zip(fitting_bridges, fitting_determiners, strict=True)]
+    has_fitting_run = any(fitting_runs)
     costs = {n: {0: (0, 0, 0, 0, 0, 0, 0, 0.0)}}
     choices = {}
     for start in range(n - 1, -1, -1):
@@ -222,16 +266,16 @@ def _wrap_solutions(text: str, *, size: int, width: int, metrics: RendererMetric
             head_orphan = int(end < n and end >= 2
                               and clusters[end - 2][-1] in '。！？!?')
             # Do not buy cohesion by stranding a single grapheme on its own.
-            # With no fitting bridge this new tier stays zero, preserving the
+            # With no fitting run this tier stays zero, preserving the
             # previous ordered preferences exactly.
-            singleton = int(has_fitting_bridge and end - start == 1)
+            singleton = int(has_fitting_run and end - start == 1)
             for tail_count, tail_cost in costs[end].items():
                 count = tail_count + 1
                 if max_lines is not None and count > max_lines:
                     continue
                 (cohesion_cost, _, word_splits, script_splits, head_orphans,
                  kana_splits, bridge_splits, penalty) = tail_cost
-                score = (cohesion_cost + int(fitting_bridges[end]) + singleton,
+                score = (cohesion_cost + int(fitting_runs[end]) + singleton,
                          count, word_splits + split, script_splits + script_split,
                          head_orphans + head_orphan, kana_splits + int(kana_attachments[end]),
                          bridge_splits + int(kana_bridges[end]),
