@@ -132,7 +132,7 @@ def test_names_are_removed_only_after_original_focal_target_and_reference_bindin
     target = '友人の林さんの同僚の井上さんと落ち着いて話す時間'
     text = focal('ぼく', target=target) + 'ぼくはその時間が好きです。' + TAIL
     out = generated(text)
-    assert out.artifact.piece_text == 'ぼくは、友人の同僚と落ち着いて話す時間を大切にしたい。ぼくは、その時間が好きです。' + TAIL
+    assert out.artifact.piece_text == 'ぼくは、友人の同僚と落ち着いて話す時間を大切にしたい。その時間が好きです。' + TAIL
     ref, = out.source_meaning.nominal_references
     assert text[slice(*ref.antecedent_scalar_span)] == target
     assert out.source_meaning.envelope.raw_utf8 == text.encode()

@@ -288,27 +288,52 @@ def _linked_self_continuations(meaning: PieceSourceMeaning,
 
 def _adjacent_self_continuations(meaning: PieceSourceMeaning,
                                  plan: PieceArtifactPlan) -> frozenset[str]:
-    """Find optional self-topic omissions from two explicit, adjacent duties.
+    """Find optional self-topic omissions from explicit, adjacent duties.
 
-    The plan and every original proposition remain intact. Same spelling of
-    the author is necessary but not sufficient: another subject/contrast, a
-    source line break, a different duty or a paragraph boundary keeps the topic.
-    This conservative edit is not general subject or discourse resolution.
+    Two wishes, or a focal author followed by a bound plain-topic preference,
+    can share a written author. Another subject/contrast, source line break,
+    viewpoint-qualified evaluation or paragraph boundary keeps the topic.
+    The plan and every proposition remain intact; this is not general subject
+    or discourse resolution. Validated reference spans alone do not prove an
+    author: the focal source and preference must state the same first person.
     """
     original = meaning.envelope.raw_utf8.decode('utf-8')
     nodes = {node.node_id: node for node in meaning.graph.nodes}
     positions = {node.node_id: i for i, node in enumerate(meaning.graph.nodes)}
     spans = {sentence.node_id: sentence for sentence in meaning.sentences}
     duties = {duty.node_id: duty.operation for duty in plan.duties}
+    evaluations = {frame.node_id: frame for frame in meaning.personal_evaluations}
     continuations = set()
     for group in plan.block_node_ids:
         for previous, current in zip(group, group[1:]):
-            if (duties[previous] != 'SOURCE_FIRST_PERSON_TOPIC'
-                    or duties[current] != 'SOURCE_FIRST_PERSON_TOPIC'
-                    or positions[current] != positions[previous] + 1):
+            if positions[current] != positions[previous] + 1:
                 continue
             gap = original[spans[previous].source_end:spans[current].source_start]
             if '\n' in gap or '\r' in gap:
+                continue
+            if (duties[previous] == 'SOURCE_FOCAL_TO_FIRST_PERSON'
+                    and duties[current] == 'SOURCE_PERSONAL_EVALUATION'):
+                focal = _focal_parts(nodes[previous].value)
+                frame = evaluations.get(current)
+                # A plain は preference may continue this author. Neither an
+                # explicit にとって viewpoint nor が focus grants this edit.
+                if (focal is None or frame is None or frame.construction != 'は'
+                        or frame.kind != 'PERSONAL_PREFERENCE'
+                        or original[slice(*frame.scalar_parts[0])] != focal[2]):
+                    continue
+                links = [ref for ref in meaning.nominal_references
+                         if ref.reference_node_id == current
+                         and ref.reference_scalar_span == frame.scalar_parts[2]
+                         and ref.reference_utf8_span == frame.utf8_parts[2]]
+                if (len(links) != 1 or links[0].antecedent_node_id != previous
+                        or original[slice(*links[0].antecedent_scalar_span)] != focal[0]
+                        # The bound head もの contains も, not a contrast particle.
+                        or re.search(r'[はがも]', focal[0][:-len(links[0].nominal_head)])):
+                    continue
+                continuations.add(current)
+                continue
+            if (duties[previous] != 'SOURCE_FIRST_PERSON_TOPIC'
+                    or duties[current] != 'SOURCE_FIRST_PERSON_TOPIC'):
                 continue
             before = _SELF_TOPIC.fullmatch(nodes[previous].value)
             after = _SELF_TOPIC.fullmatch(nodes[current].value)
@@ -419,7 +444,7 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
             if topic is None:
                 raise unavailable('piece_plan_operation_binding')
             edited[node_id] = topic['body'] + '。'
-        # Multisentence wishes are short essays. An optional edit must not turn
+        # These multisentence bodies are short essays. An optional edit must not turn
         # an admitted short essay into a below-minimum refusal. Decline the edit
         # rather than changing the existing envelope or padding the user's text.
         length = len(re.sub(r'\s', '', ''.join(edited.values())))
