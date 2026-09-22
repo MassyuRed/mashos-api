@@ -105,7 +105,7 @@ class PieceEngineOutcome:
                 'record_effect': 0, 'quota_effect': 0}
 
 
-def _focal_parts(sentence: str):
+def _focal_parts(sentence: str) -> tuple[str, str, str] | None:
     from piece_v2_generation import _FOCUS, _DEICTIC, _NESTED
     match = _FOCUS.fullmatch(sentence)
     if match is None:
@@ -114,7 +114,7 @@ def _focal_parts(sentence: str):
     if (not obj.endswith(('こと', 'もの', '時間'))
             or _NESTED.search(obj) or _DEICTIC.search(obj)):
         raise unavailable('focal_object_not_self_contained')
-    return obj, match['predicate']
+    return obj, match['predicate'], match['speaker']
 
 
 def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPlan:
@@ -278,8 +278,9 @@ def _linked_self_continuations(meaning: PieceSourceMeaning,
             if topic is None or not _WISH_END.search(topic['body']):
                 continue
             frame = evaluations.get(previous)
+            focal = _focal_parts(nodes[previous].value) if frame is None else None
             speaker = (original[slice(*frame.scalar_parts[0])] if frame is not None
-                       else '私' if _focal_parts(nodes[previous].value) is not None else None)
+                       else focal[2] if focal is not None else None)
             if speaker == topic['speaker']:
                 continuations.add(current)
     return frozenset(continuations)
@@ -392,8 +393,8 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
             parts = _focal_parts(text)
             if parts is None:
                 raise unavailable('piece_plan_operation_binding')
-            obj, predicate = parts
-            text = '私は、' + obj + 'を' + predicate + '。'
+            obj, predicate, speaker = parts
+            text = speaker + 'は、' + obj + 'を' + predicate + '。'
         elif duty.operation == 'SOURCE_FIRST_PERSON_TOPIC':
             topic = _SELF_TOPIC.fullmatch(text)
             if topic is None or not _WISH_END.search(topic['body']):

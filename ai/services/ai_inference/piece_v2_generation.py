@@ -26,7 +26,10 @@ class PieceSourceSnapshot:
 # Past copulas and quoted/nested focal clauses are deliberately not admitted.
 _PREDICATES = ('大切にしたい', '大切にしている', '大切にしたくない',
                '望んでいる', '望んでいない', '選びたい', '選びたくない')
-_FOCUS = re.compile(r'^私が(?P<predicate>' + '|'.join(_PREDICATES) +
+# Bind the already-supported first-person spellings as source material. The
+# writer and reference-linked continuity must use this same captured author.
+_FOCUS = re.compile(r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)が(?P<predicate>'
+                    + '|'.join(_PREDICATES) +
                     r')のは[、，,]?(?P<object>.+?)(?:です|だ)[。]$')
 _UNCERTAIN = re.compile(r'かもしれ|分から|わから|迷って|迷い|まだ決め|とは限ら|たぶん|おそらく')
 _DEICTIC = re.compile(r'^(?:これ|それ|あれ|ここ|そこ|あそこ)(?:は|が|を|に|で|も)')
