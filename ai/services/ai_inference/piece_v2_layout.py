@@ -235,6 +235,50 @@ def _fitting_determiner_run_breaks(clusters: list[str], script_runs: list[str],
     return boundaries
 
 
+def _fitting_long_kana_run_breaks(clusters: list[str], script_runs: list[str],
+                                 existing_fitting_runs: list[bool], *, size: int, width: int,
+                                 metrics: RendererMetrics) -> list[bool]:
+    """Soft cohesion for a complete written run with a longer kana tail.
+
+    A maximal Han/Katakana run followed by at least three hiragana graphemes
+    is measured as a whole, with required kinsoku punctuation. Keep that
+    whole run together when it fits instead of cutting a longer written
+    ending merely to reduce line count. This is not lexical analysis: the
+    tail can include particles, inflection, degree or modality, and none of
+    those meanings is inferred. Never protect only a prefix of an overwide
+    tail. Short tails retain their existing determiner/bridge preferences.
+    Existing bridge/determiner scopes take precedence: do not extend or
+    overlap one with this additional hint. All hints remain soft under the
+    shared vertical-capacity allocator.
+    """
+    boundaries = [False] * (len(clusters) + 1)
+    start = 0
+    while start < len(clusters):
+        kind = script_runs[start]
+        if kind not in ('han', 'katakana'):
+            start += 1
+            continue
+        end = start + 1
+        while end < len(clusters) and script_runs[end] == kind:
+            end += 1
+        tail_end = end
+        while (tail_end < len(clusters) and unicodedata.name(
+                clusters[tail_end][0], '').startswith('HIRAGANA LETTER ')):
+            tail_end += 1
+        if (tail_end - end >= 3
+                and not any(existing_fitting_runs[start:tail_end])):
+            left, right = start, tail_end
+            while left and clusters[left - 1][-1] in _NO_END:
+                left -= 1
+            while right < len(clusters) and clusters[right][0] in _NO_START:
+                right += 1
+            if _width(_measure(metrics, ''.join(clusters[left:right]), size)) <= width:
+                for boundary in range(start + 1, tail_end):
+                    boundaries[boundary] = True
+        start = tail_end
+    return boundaries
+
+
 _WrapScore = tuple[int, int, int, int, int, int, int, float]
 _MeasuredRows = list[tuple[str, TextMeasurement]]
 _WrapSolutions = dict[int, tuple[_WrapScore, _MeasuredRows]]
@@ -263,7 +307,7 @@ def _wrap_solutions(text: str, *, size: int, width: int, metrics: RendererMetric
         if i and (unicodedata.combining(c[0]) or c[0] == '\u200d'
                   or 0xFE00 <= ord(c[0]) <= 0xFE0F or clusters[i - 1].endswith('\u200d')):
             raise _fail('split_grapheme')
-    # First keep short-bridge and delimited determiner runs intact when their
+    # First keep short-bridge, determiner and long-kana runs intact when their
     # complete measured form
     # (including required punctuation) fits. A readable extra line is better
     # than cutting such a run merely to achieve the minimum line count.
@@ -286,7 +330,12 @@ def _wrap_solutions(text: str, *, size: int, width: int, metrics: RendererMetric
         clusters, script_runs, size=size, width=width, metrics=metrics)
     fitting_runs = [bridge or determiner for bridge, determiner in
                     zip(fitting_bridges, fitting_determiners, strict=True)]
+    fitting_long_kana = _fitting_long_kana_run_breaks(
+        clusters, script_runs, fitting_runs, size=size, width=width, metrics=metrics)
+    fitting_runs = [prior or long_kana for prior, long_kana in
+                    zip(fitting_runs, fitting_long_kana, strict=True)]
     has_fitting_run = any(fitting_runs)
+    has_long_kana_run = any(fitting_long_kana)
     costs = {n: {0: (0, 0, 0, 0, 0, 0, 0, 0.0)}}
     choices = {}
     for start in range(n - 1, -1, -1):
@@ -315,13 +364,17 @@ def _wrap_solutions(text: str, *, size: int, width: int, metrics: RendererMetric
             # With no fitting run this tier stays zero, preserving the
             # previous ordered preferences exactly.
             singleton = int(has_fitting_run and end - start == 1)
+            # A longer protected ending must not merely move the defect into
+            # the first grapheme of the next sentence. Reuse the existing
+            # written sentence-head signal; infer no words or new meaning.
+            long_kana_orphan = int(has_long_kana_run and head_orphan)
             for tail_count, tail_cost in costs[end].items():
                 count = tail_count + 1
                 if max_lines is not None and count > max_lines:
                     continue
                 (cohesion_cost, _, word_splits, script_splits, head_orphans,
                  kana_splits, bridge_splits, penalty) = tail_cost
-                score = (cohesion_cost + int(fitting_runs[end]) + singleton,
+                score = (cohesion_cost + int(fitting_runs[end]) + singleton + long_kana_orphan,
                          count, word_splits + split, script_splits + script_split,
                          head_orphans + head_orphan, kana_splits + int(kana_attachments[end]),
                          bridge_splits + int(kana_bridges[end]),
