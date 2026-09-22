@@ -150,8 +150,20 @@ def _fitting_bridge_run_breaks(clusters: list[str], script_runs: list[str],
     return boundaries
 
 
-def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics,
-          prefer_fitting_bridges: bool = True) -> list[tuple[str, TextMeasurement]]:
+_WrapScore = tuple[int, int, int, int, int, int, int, float]
+_MeasuredRows = list[tuple[str, TextMeasurement]]
+_WrapSolutions = dict[int, tuple[_WrapScore, _MeasuredRows]]
+
+
+def _wrap_solutions(text: str, *, size: int, width: int, metrics: RendererMetrics,
+                    prefer_fitting_bridges: bool = True, max_lines: int | None = None,
+                    line_height: int | None = None) -> _WrapSolutions:
+    """Keep the old optimum, or the best measured path for each line count.
+
+    A constrained suffix needs its line count as well as its position: keeping
+    only its unconstrained optimum can discard a readable path that fits the
+    remaining vertical space. Measurements and costs are shared by both modes.
+    """
     try:
         clusters = metrics.graphemes(text)
     except Exception as exc:
@@ -185,10 +197,10 @@ def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics,
         clusters, script_runs, kana_attachments, kana_bridges,
         size=size, width=width, metrics=metrics) if prefer_fitting_bridges else [False] * (n + 1))
     has_fitting_bridge = any(fitting_bridges)
-    costs = {n: (0, 0, 0, 0, 0, 0, 0, 0.0)}
+    costs = {n: {0: (0, 0, 0, 0, 0, 0, 0, 0.0)}}
     choices = {}
     for start in range(n - 1, -1, -1):
-        best = None
+        best = {}
         for end in range(start + 1, n + 1):
             if end not in costs:
                 continue
@@ -197,10 +209,9 @@ def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics,
             part = ''.join(clusters[start:end])
             measured = _measure(metrics, part, size)
             measured_width = _width(measured)
-            if measured_width > width:
+            if (measured_width > width or line_height is not None
+                    and measured.bottom - measured.top > line_height):
                 continue
-            (cohesion_cost, count, word_splits, script_splits, head_orphans,
-             kana_splits, bridge_splits, penalty) = costs[end]
             split = int(end < n and word_clusters[end - 1] and word_clusters[end])
             script_split = int(end < n and (
                 bool(script_runs[end - 1]) and script_runs[end - 1] == script_runs[end]
@@ -214,24 +225,90 @@ def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics,
             # With no fitting bridge this new tier stays zero, preserving the
             # previous ordered preferences exactly.
             singleton = int(has_fitting_bridge and end - start == 1)
-            score = (cohesion_cost + int(fitting_bridges[end]) + singleton,
-                     count + 1, word_splits + split, script_splits + script_split,
-                     head_orphans + head_orphan, kana_splits + int(kana_attachments[end]),
-                     bridge_splits + int(kana_bridges[end]),
-                     penalty + (width - measured_width) ** 2)
-            if best is None or score < best[0]:
-                best = (score, end, part, measured)
-        if best is not None:
-            costs[start] = best[0]
-            choices[start] = best[1:]
-    if 0 not in choices:
+            for tail_count, tail_cost in costs[end].items():
+                count = tail_count + 1
+                if max_lines is not None and count > max_lines:
+                    continue
+                (cohesion_cost, _, word_splits, script_splits, head_orphans,
+                 kana_splits, bridge_splits, penalty) = tail_cost
+                score = (cohesion_cost + int(fitting_bridges[end]) + singleton,
+                         count, word_splits + split, script_splits + script_split,
+                         head_orphans + head_orphan, kana_splits + int(kana_attachments[end]),
+                         bridge_splits + int(kana_bridges[end]),
+                         penalty + (width - measured_width) ** 2)
+                if count not in best or score < best[count]:
+                    best[count] = score
+                    choices[start, count] = (end, tail_count, part, measured)
+        if best:
+            if max_lines is None:
+                count = min(best, key=best.get)
+                best = {count: best[count]}
+            costs[start] = best
+    if 0 not in costs:
         raise _fail('unbreakable_line')
-    out, start = [], 0
-    while start < n:
-        end, part, measured = choices[start]
-        out.append((part, measured))
-        start = end
-    return out
+    solutions = {}
+    for count, score in costs[0].items():
+        out, start, remaining = [], 0, count
+        while start < n:
+            end, remaining, part, measured = choices[start, remaining]
+            out.append((part, measured))
+            start = end
+        solutions[count] = (score, out)
+    return solutions
+
+
+def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics,
+          prefer_fitting_bridges: bool = True) -> list[tuple[str, TextMeasurement]]:
+    solutions = _wrap_solutions(text, size=size, width=width, metrics=metrics,
+                               prefer_fitting_bridges=prefer_fitting_bridges)
+    return min(solutions.values(), key=lambda item: item[0])[1]
+
+
+def _fit_measured_groups(blocks: list[str], *, size: int, width: int,
+                         line_height: int, gap: float, available_height: float,
+                         metrics: RendererMetrics) -> list[_MeasuredRows] | None:
+    """Allocate the actual line budget across intact source-order paragraphs.
+
+    Only used when the existing unconstrained layout does not fit. Minimize
+    the SAME ordered costs, summed across paragraphs, within the shared line
+    budget. Do not disable every paragraph's cohesion, shrink first, remove
+    text, guess words, or change recipe/paragraph spacing to obtain a fit.
+    """
+    paragraph_height = (len(blocks) - 1) * gap
+    max_lines = math.floor((available_height - paragraph_height) / line_height)
+    # Subtraction/division can round an exact fit just below an integer.
+    # Check with the same forward height expression used by the compositor;
+    # do not add an epsilon that could admit genuinely overflowing content.
+    if (max_lines + 1) * line_height + paragraph_height <= available_height:
+        max_lines += 1
+    if max_lines * line_height + paragraph_height > available_height:
+        max_lines -= 1
+    if max_lines < len(blocks):
+        return None
+    choices = {0: ((0, 0, 0, 0, 0, 0, 0, 0.0), [])}
+    for index, block in enumerate(blocks):
+        remaining_blocks = len(blocks) - index - 1
+        block_limit = max_lines - min(choices) - remaining_blocks
+        try:
+            solutions = _wrap_solutions(block, size=size, width=width, metrics=metrics,
+                                       max_lines=block_limit, line_height=line_height)
+        except PieceContractError as exc:
+            if exc.detail == 'unbreakable_line':
+                return None
+            raise
+        next_choices = {}
+        for used, (score, groups) in sorted(choices.items()):
+            for count, (cost, rows) in sorted(solutions.items()):
+                total = used + count
+                if total + remaining_blocks > max_lines:
+                    continue
+                combined = tuple(a + b for a, b in zip(score, cost, strict=True))
+                if total not in next_choices or combined < next_choices[total][0]:
+                    next_choices[total] = (combined, groups + [rows])
+        if not next_choices:
+            return None
+        choices = next_choices
+    return min(choices.values(), key=lambda item: item[0])[1]
 
 
 def build_measured_layout(candidate: dict, recipe: dict, recipe_hash: str,
@@ -249,26 +326,22 @@ def build_measured_layout(candidate: dict, recipe: dict, recipe_hash: str,
     for size in v['font_sizes']:
         line_height = math.ceil(size * v['line_height_ratio'])
         gap = line_height * v['paragraph_spacing_ratio']
-        fits = False
-        for prefer_fitting_bridges in (True, False):
-            try:
-                groups = [_wrap(b, size=size, width=width, metrics=metrics,
-                                prefer_fitting_bridges=prefer_fitting_bridges)
-                          for b in payload['body_blocks']]
-            except PieceContractError as exc:
-                if exc.detail == 'unbreakable_line':
-                    break  # Soft costs cannot change whether a legal path exists.
-                raise
-            line_count = sum(len(group) for group in groups)
-            height = line_count * line_height + (len(groups) - 1) * gap
-            fits = height <= available_height and all(
-                m.bottom - m.top <= line_height for g in groups for _, m in g)
-            if fits:
-                break
-            # If extra readable lines exceed the content zone, retain the old
-            # wrapping at THIS size before shrinking or refusing the artifact.
-        if not fits:
-            continue
+        try:
+            groups = [_wrap(b, size=size, width=width, metrics=metrics)
+                      for b in payload['body_blocks']]
+        except PieceContractError as exc:
+            if exc.detail == 'unbreakable_line':
+                continue
+            raise
+        height = sum(map(len, groups)) * line_height + (len(groups) - 1) * gap
+        if height > available_height or any(
+                m.bottom - m.top > line_height for g in groups for _, m in g):
+            groups = _fit_measured_groups(
+                payload['body_blocks'], size=size, width=width, metrics=metrics,
+                line_height=line_height, gap=gap, available_height=available_height)
+            if groups is None:
+                continue
+            height = sum(map(len, groups)) * line_height + (len(groups) - 1) * gap
         # Center the complete composition in the reserved content zone. Every
         # line retains its exact substring; layout does not rewrite text.
         top = v['margin'] + (available_height - height) / 2
