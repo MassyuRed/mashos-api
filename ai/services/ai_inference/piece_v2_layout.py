@@ -74,6 +74,25 @@ def _script_run_kind(cluster: str) -> str:
     return ''
 
 
+def _kana_attachment_breaks(clusters: list[str], script_runs: list[str]) -> list[bool]:
+    """Soft attachment of a written Han/Katakana run to following hiragana.
+
+    Keep okurigana and following kana together when the existing line-count,
+    script-run and sentence-head preferences permit it. This is not lexical
+    segmentation: a hiragana-to-Han transition may still be inside a compound.
+    Punctuation, spaces, Latin text and other scripts reset the attachment.
+    No grapheme is split, joined, normalized or declared unbreakable here.
+    """
+    attached = False
+    boundaries = [False] * (len(clusters) + 1)
+    for index, (cluster, kind) in enumerate(zip(clusters, script_runs, strict=True)):
+        if unicodedata.name(cluster[0], '').startswith('HIRAGANA LETTER '):
+            boundaries[index] = attached
+        else:
+            attached = kind in ('han', 'katakana')
+    return boundaries
+
+
 def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics) -> list[tuple[str, TextMeasurement]]:
     try:
         clusters = metrics.graphemes(text)
@@ -91,14 +110,16 @@ def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics) -> list
             raise _fail('split_grapheme')
     # Prefer the minimum line count, then preserve ASCII runs, then visible
     # Han/Katakana runs and the letter after a sokuon, then avoid a lone
-    # character after a sentence mark. This does not infer word boundaries.
+    # character after a sentence mark, then avoid splitting attached hiragana.
+    # These are visual hints, not a Japanese word parser.
     # Balance every line only after these readability preferences. No break
     # is prohibited by a run hint: overwide runs still split at a renderer's
     # grapheme boundary instead of shrinking, padding or refusing the body.
     n = len(clusters)
     word_clusters = [c[0].isascii() and c[0].isalnum() for c in clusters]
     script_runs = [_script_run_kind(c) for c in clusters]
-    costs = {n: (0, 0, 0, 0, 0.0)}
+    kana_attachments = _kana_attachment_breaks(clusters, script_runs)
+    costs = {n: (0, 0, 0, 0, 0, 0.0)}
     choices = {}
     for start in range(n - 1, -1, -1):
         best = None
@@ -112,7 +133,7 @@ def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics) -> list
             measured_width = _width(measured)
             if measured_width > width:
                 continue
-            count, word_splits, script_splits, head_orphans, penalty = costs[end]
+            count, word_splits, script_splits, head_orphans, kana_splits, penalty = costs[end]
             split = int(end < n and word_clusters[end - 1] and word_clusters[end])
             script_split = int(end < n and (
                 bool(script_runs[end - 1]) and script_runs[end - 1] == script_runs[end]
@@ -123,7 +144,8 @@ def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics) -> list
             head_orphan = int(end < n and end >= 2
                               and clusters[end - 2][-1] in '。！？!?')
             score = (count + 1, word_splits + split, script_splits + script_split,
-                     head_orphans + head_orphan, penalty + (width - measured_width) ** 2)
+                     head_orphans + head_orphan, kana_splits + int(kana_attachments[end]),
+                     penalty + (width - measured_width) ** 2)
             if best is None or score < best[0]:
                 best = (score, end, part, measured)
         if best is not None:
