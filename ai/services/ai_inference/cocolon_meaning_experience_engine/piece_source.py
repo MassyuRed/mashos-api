@@ -469,7 +469,11 @@ _EVALUATIVE_FINITE = re.compile(
     r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)'
     r'(?P<construction>にとって|は)[、，,]?'
     r'(?P<target>.+?)が'
-    + _EVALUATIVE_PREDICATE.format(copula=r'(?P<copula>でした|です|だ)')
+    # A complete finite evaluation may leave its nonpast affirmative copula
+    # unwritten. The explicit speaker, target particle and predicate still
+    # bind here; an absent copula is not inserted into the source or author.
+    # Keep the focal construction's required relative/final copulas separate.
+    + _EVALUATIVE_PREDICATE.format(copula=r'(?P<copula>でした|です|だ)?')
     + r'。$')
 _SIMPLE_NOUN = re.compile(r'[一-龥々ァ-ヴー]+')
 
