@@ -180,7 +180,7 @@ def validate_piece_expression_scopes(meaning: PieceSourceMeaning) -> None:
 
 
 # Relationship terms, not topic/final-sentence dispatch vocabulary. We only
-# abstract an identity when the author supplies the replacement role verbatim.
+# abstract an identity using the roles and owner links the author writes.
 _ROLE = r'(?:友人|同僚|上司|部下|先輩|後輩|先生)'
 # A written relational chain is one role, not just its terminal noun.
 # Keep every link (including repeated roles); the existing vocabulary is
@@ -198,37 +198,87 @@ def _digest(text: str) -> str:
 
 
 def piece_public_role_aliases(bindings: tuple[PieceRoleBinding, ...]) -> dict[str, str]:
-    """Use the most qualified compatible role explicitly bound to each name.
+    """Resolve written name/role links without dropping an intermediate owner.
 
-    A shorter written suffix must not erase an existing qualification. Two
-    incompatible chains remain ambiguous; this is not general coreference.
-    Every selected alias is a whole source-written role, never a merged one.
+    Raw bindings retain their original spans. A named possessor contributes
+    only its own explicit, uniquely resolved role; it is never guessed from
+    proximity. Resolve dependencies before suffix compatibility so a later
+    written qualification also reaches the person's dependent relationships.
     """
-    by_name: dict[str, str] = {}
+    relations: dict[str, list[tuple[str | None, str]]] = {}
     for binding in bindings:
-        previous = by_name.get(binding.name)
-        if previous is None or binding.role.endswith('の' + previous):
-            by_name[binding.name] = binding.role
-        elif previous != binding.role and not previous.endswith('の' + binding.role):
+        owners = tuple(_HONORIFIC_NAME.finditer(binding.role))
+        if owners:
+            owner = owners[-1]
+            # The nearest named owner includes the earlier links through its
+            # own binding. Reusing the whole prefix would duplicate them.
+            suffix = binding.role[owner.end():]
+            if not re.fullmatch(r'の' + _ROLE + r'(?:の' + _ROLE + r')*', suffix):
+                raise unavailable('public_role_binding_missing')
+            relation = (owner.group(), suffix[1:])
+        else:
+            relation = (None, binding.role)
+        relations.setdefault(binding.name, []).append(relation)
+    for choices in relations.values():
+        owners = {owner for owner, _ in choices if owner is not None}
+        if len(owners) > 1:
+            # Different explicitly named people are not the same owner merely
+            # because one public role happens to be a suffix of the other.
             raise unavailable('public_role_binding_ambiguous')
+        if any(owner not in relations for owner in owners):
+            raise unavailable('public_role_owner_not_bound')
+    by_name: dict[str, str] = {}
+    pending = dict(relations)
+    while pending:
+        resolved = []
+        for name, choices in pending.items():
+            if any(owner is not None and owner not in by_name for owner, _ in choices):
+                continue
+            selected = None
+            for owner, role in choices:
+                role = by_name[owner] + 'の' + role if owner is not None else role
+                if selected is None or role.endswith('の' + selected):
+                    selected = role
+                elif selected != role and not selected.endswith('の' + role):
+                    raise unavailable('public_role_binding_ambiguous')
+            by_name[name] = selected
+            resolved.append(name)
+        if not resolved:
+            # A cycle, including a self-reference, has no source-proven root.
+            # Even an additional short role cannot license guessing the edge.
+            raise unavailable('public_role_binding_ambiguous')
+        for name in resolved:
+            del pending[name]
     if len(set(by_name.values())) != len(by_name):
-        # Complete qualifications can distinguish people with the same final
-        # role, but two identical full aliases cannot distinguish two names.
         raise unavailable('public_role_binding_ambiguous')
     return by_name
 
 
 def _role_bindings(text: str) -> tuple[PieceRoleBinding, ...]:
-    bindings = tuple(PieceRoleBinding(m['name'], m['role'], m.start(), m.end())
-                     for m in _ROLE_NAME.finditer(text))
-    for binding in bindings:
-        if text[:binding.source_start].rstrip().endswith('の'):
-            # A suffix match inside an unresolved genitive would silently
-            # discard its owner in subsequent name mentions. Do not infer it.
-            raise unavailable('public_role_owner_not_bound')
+    names = tuple(_HONORIFIC_NAME.finditer(text))
+    names_by_end = {match.end(): match for match in names}
+    by_end: dict[int, PieceRoleBinding] = {}
+    collected = []
+    for match in _ROLE_NAME.finditer(text):
+        start = match.start()
+        if text[:start].rstrip().endswith('の'):
+            owner = names_by_end.get(start - 1)
+            if owner is None:
+                raise unavailable('public_role_owner_not_bound')
+            # Inline owners extend the exact source range, including their
+            # names. A bare named owner can be bound elsewhere in this input.
+            enclosing = by_end.get(owner.end())
+            start = enclosing.source_start if enclosing is not None else owner.start()
+            if text[:start].rstrip().endswith('の'):
+                raise unavailable('public_role_owner_not_bound')
+        binding = PieceRoleBinding(match['name'], text[start:match.start('name') - 1],
+                                   start, match.end())
+        collected.append(binding)
+        by_end[binding.source_end] = binding
+    bindings = tuple(collected)
     by_name = piece_public_role_aliases(bindings)
     bound_ends = {binding.source_end for binding in bindings}
-    for match in _HONORIFIC_NAME.finditer(text):
+    for match in names:
         if (text[:match.start()].rstrip().endswith('の')
                 and match.end() not in bound_ends):
             # An earlier alias cannot license a later, unsupported role phrase

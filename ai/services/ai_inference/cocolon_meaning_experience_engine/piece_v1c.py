@@ -209,8 +209,8 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
 
 
 def _publicize_source_sentence(sentence: str, meaning: PieceSourceMeaning) -> str:
-    # The replacement is itself an exact source phrase. No generic mask, new
-    # social role, changed relationship or inferred person is introduced.
+    # Replacements use source-written roles and explicitly bound named owners.
+    # No generic mask, new social role or inferred person is introduced.
     source_text = meaning.envelope.raw_utf8.decode('utf-8')
     for binding in meaning.role_bindings:
         if source_text[binding.source_start:binding.source_end] != binding.role + 'の' + binding.name:
