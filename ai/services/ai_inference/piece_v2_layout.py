@@ -113,7 +113,45 @@ def _kana_bridge_breaks(clusters: list[str], script_runs: list[str]) -> list[boo
     return boundaries
 
 
-def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics) -> list[tuple[str, TextMeasurement]]:
+def _fitting_bridge_run_breaks(clusters: list[str], script_runs: list[str],
+                               kana_attachments: list[bool], kana_bridges: list[bool],
+                               *, size: int, width: int, metrics: RendererMetrics) -> list[bool]:
+    """Prefer intact, measured-to-fit mixed-script runs over fewer lines.
+
+    Use only the existing short-kana bridge and attachment hints, not a word
+    dictionary or a source/fixture selector. A maximal connected run must
+    contain a bridge; ordinary particles and long kana-to-Han links do not
+    join runs. Overwide runs keep the existing freely breakable preferences.
+    Include adjacent kinsoku punctuation in the fit measurement: a run that
+    fits alone may not fit together with its required opening/closing marks.
+    These remain soft costs, never new line prohibitions or text mutations.
+    """
+    n = len(clusters)
+    boundaries = [False] * (n + 1)
+    start = 0
+    has_bridge = False
+    for end in range(1, n + 1):
+        connected = end < n and (kana_attachments[end] or kana_bridges[end]
+            or bool(script_runs[end - 1]) and script_runs[end - 1] == script_runs[end])
+        if connected:
+            has_bridge = has_bridge or kana_bridges[end]
+            continue
+        if has_bridge:
+            left, right = start, end
+            while left and clusters[left - 1][-1] in _NO_END:
+                left -= 1
+            while right < n and clusters[right][0] in _NO_START:
+                right += 1
+            measured = _measure(metrics, ''.join(clusters[left:right]), size)
+            if _width(measured) <= width:
+                for boundary in range(start + 1, end):
+                    boundaries[boundary] = True
+        start, has_bridge = end, False
+    return boundaries
+
+
+def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics,
+          prefer_fitting_bridges: bool = True) -> list[tuple[str, TextMeasurement]]:
     try:
         clusters = metrics.graphemes(text)
     except Exception as exc:
@@ -128,7 +166,10 @@ def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics) -> list
         if i and (unicodedata.combining(c[0]) or c[0] == '\u200d'
                   or 0xFE00 <= ord(c[0]) <= 0xFE0F or clusters[i - 1].endswith('\u200d')):
             raise _fail('split_grapheme')
-    # Prefer the minimum line count, then preserve ASCII runs, then visible
+    # First keep short-bridge runs intact when their complete measured form
+    # (including required punctuation) fits. A readable extra line is better
+    # than cutting such a run merely to achieve the minimum line count.
+    # Otherwise prefer the minimum line count, then preserve ASCII runs, then visible
     # Han/Katakana runs and the letter after a sokuon, then avoid a lone
     # character after a sentence mark, then avoid splitting attached hiragana.
     # Short kana bridges are preferred next, without parsing Japanese words.
@@ -140,7 +181,11 @@ def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics) -> list
     script_runs = [_script_run_kind(c) for c in clusters]
     kana_attachments = _kana_attachment_breaks(clusters, script_runs)
     kana_bridges = _kana_bridge_breaks(clusters, script_runs)
-    costs = {n: (0, 0, 0, 0, 0, 0, 0.0)}
+    fitting_bridges = (_fitting_bridge_run_breaks(
+        clusters, script_runs, kana_attachments, kana_bridges,
+        size=size, width=width, metrics=metrics) if prefer_fitting_bridges else [False] * (n + 1))
+    has_fitting_bridge = any(fitting_bridges)
+    costs = {n: (0, 0, 0, 0, 0, 0, 0, 0.0)}
     choices = {}
     for start in range(n - 1, -1, -1):
         best = None
@@ -154,7 +199,8 @@ def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics) -> list
             measured_width = _width(measured)
             if measured_width > width:
                 continue
-            count, word_splits, script_splits, head_orphans, kana_splits, bridge_splits, penalty = costs[end]
+            (cohesion_cost, count, word_splits, script_splits, head_orphans,
+             kana_splits, bridge_splits, penalty) = costs[end]
             split = int(end < n and word_clusters[end - 1] and word_clusters[end])
             script_split = int(end < n and (
                 bool(script_runs[end - 1]) and script_runs[end - 1] == script_runs[end]
@@ -164,7 +210,12 @@ def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics) -> list
             # Japanese-only text need not contain an ASCII word to benefit.
             head_orphan = int(end < n and end >= 2
                               and clusters[end - 2][-1] in '。！？!?')
-            score = (count + 1, word_splits + split, script_splits + script_split,
+            # Do not buy cohesion by stranding a single grapheme on its own.
+            # With no fitting bridge this new tier stays zero, preserving the
+            # previous ordered preferences exactly.
+            singleton = int(has_fitting_bridge and end - start == 1)
+            score = (cohesion_cost + int(fitting_bridges[end]) + singleton,
+                     count + 1, word_splits + split, script_splits + script_split,
                      head_orphans + head_orphan, kana_splits + int(kana_attachments[end]),
                      bridge_splits + int(kana_bridges[end]),
                      penalty + (width - measured_width) ** 2)
@@ -198,15 +249,25 @@ def build_measured_layout(candidate: dict, recipe: dict, recipe_hash: str,
     for size in v['font_sizes']:
         line_height = math.ceil(size * v['line_height_ratio'])
         gap = line_height * v['paragraph_spacing_ratio']
-        try:
-            groups = [_wrap(b, size=size, width=width, metrics=metrics) for b in payload['body_blocks']]
-        except PieceContractError as exc:
-            if exc.detail == 'unbreakable_line':
-                continue
-            raise
-        line_count = sum(len(group) for group in groups)
-        height = line_count * line_height + (len(groups) - 1) * gap
-        if height > available_height or any(m.bottom - m.top > line_height for g in groups for _, m in g):
+        fits = False
+        for prefer_fitting_bridges in (True, False):
+            try:
+                groups = [_wrap(b, size=size, width=width, metrics=metrics,
+                                prefer_fitting_bridges=prefer_fitting_bridges)
+                          for b in payload['body_blocks']]
+            except PieceContractError as exc:
+                if exc.detail == 'unbreakable_line':
+                    break  # Soft costs cannot change whether a legal path exists.
+                raise
+            line_count = sum(len(group) for group in groups)
+            height = line_count * line_height + (len(groups) - 1) * gap
+            fits = height <= available_height and all(
+                m.bottom - m.top <= line_height for g in groups for _, m in g)
+            if fits:
+                break
+            # If extra readable lines exceed the content zone, retain the old
+            # wrapping at THIS size before shrinking or refusing the artifact.
+        if not fits:
             continue
         # Center the complete composition in the reserved content zone. Every
         # line retains its exact substring; layout does not rewrite text.
