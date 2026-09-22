@@ -455,8 +455,14 @@ def validate_piece_nominal_references(meaning: PieceSourceMeaning) -> None:
 _VALUE_BASES = frozenset({'大切', '大事', '重要', '必要'})
 # Both word orders share the same state/modal composition. The only
 # construction-specific inflection is the relative or finite copula.
+# A single source-written degree modifier belongs to the WHOLE predicate.
+# Keep it inside its scalar/UTF-8 span in both word orders, including negative,
+# past and modal forms. Do not turn degree into certainty or a numeric score,
+# infer an omitted modifier, or move a modifier out of the nominal argument.
+# Unmodelled adverbs and stacked modifiers do not acquire scope here.
 _EVALUATIVE_PREDICATE = (
-    r'(?P<predicate>(?P<base>大切|大事|重要|必要|好き|苦手)'
+    r'(?P<predicate>(?:とても|かなり|少し|あまり)?'
+    r'(?P<base>大切|大事|重要|必要|好き|苦手)'
     r'(?P<inflection>(?:(?P<state>(?:では|じゃ)(?:なかった|ない)|だった)'
     r'(?P<state_modal>かもしれない|とは限らない)?|'
     r'(?P<bare_modal>かもしれない|とは限らない)|{copula})))')
