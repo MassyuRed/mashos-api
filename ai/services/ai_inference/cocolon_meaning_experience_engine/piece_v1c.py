@@ -12,7 +12,7 @@ import re
 
 from piece_v2_contract import PieceContractError
 from piece_v2_content_policy import (
-    check_existing_detectors, choose_format, unavailable, validate_candidate_text,
+    ENVELOPES, check_existing_detectors, choose_format, unavailable, validate_candidate_text,
 )
 from piece_v2_expression import (
     _DEPENDENT_START, _EMBEDDED_REPORT, _INTENT_ROLES, _REFERENCE,
@@ -285,6 +285,45 @@ def _linked_self_continuations(meaning: PieceSourceMeaning,
     return frozenset(continuations)
 
 
+def _adjacent_self_continuations(meaning: PieceSourceMeaning,
+                                 plan: PieceArtifactPlan) -> frozenset[str]:
+    """Find optional self-topic omissions from two explicit, adjacent duties.
+
+    The plan and every original proposition remain intact. Same spelling of
+    the author is necessary but not sufficient: another subject/contrast, a
+    source line break, a different duty or a paragraph boundary keeps the topic.
+    This conservative edit is not general subject or discourse resolution.
+    """
+    original = meaning.envelope.raw_utf8.decode('utf-8')
+    nodes = {node.node_id: node for node in meaning.graph.nodes}
+    positions = {node.node_id: i for i, node in enumerate(meaning.graph.nodes)}
+    spans = {sentence.node_id: sentence for sentence in meaning.sentences}
+    duties = {duty.node_id: duty.operation for duty in plan.duties}
+    continuations = set()
+    for group in plan.block_node_ids:
+        for previous, current in zip(group, group[1:]):
+            if (duties[previous] != 'SOURCE_FIRST_PERSON_TOPIC'
+                    or duties[current] != 'SOURCE_FIRST_PERSON_TOPIC'
+                    or positions[current] != positions[previous] + 1):
+                continue
+            gap = original[spans[previous].source_end:spans[current].source_start]
+            if '\n' in gap or '\r' in gap:
+                continue
+            before = _SELF_TOPIC.fullmatch(nodes[previous].value)
+            after = _SELF_TOPIC.fullmatch(nodes[current].value)
+            if (before is None or after is None
+                    or before['speaker'] != after['speaker']
+                    or before['body'] == after['body']):
+                continue
+            # Do not move an implicit subject across another participant or
+            # contrast. Even lexical false positives only decline this optional
+            # edit; they do not make an otherwise admitted input unavailable.
+            if any(re.search(r'[はがも]', topic['body']) for topic in (before, after)):
+                continue
+            continuations.add(current)
+    return frozenset(continuations)
+
+
 def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
                            *, tier: str, requested_format: str | None) -> PieceArtifact:
     """Realize plan-owned duties from the source graph; never call B8's old author."""
@@ -368,6 +407,23 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
         elif duty.operation != 'KEEP_COMPLETE_SOURCE_CONTEXT':
             raise unavailable('piece_plan_operation_unknown')
         sentences[node.node_id] = text
+    # Apply the optional continuity edit only after source/plan validation and
+    # complete realization. Remove just the redundant topic, not a proposition,
+    # public relationship, predicate, negation, reservation or the first author.
+    adjacent = _adjacent_self_continuations(meaning, plan)
+    if adjacent:
+        edited = dict(sentences)
+        for node_id in adjacent:
+            topic = _SELF_TOPIC.fullmatch(edited[node_id])
+            if topic is None:
+                raise unavailable('piece_plan_operation_binding')
+            edited[node_id] = topic['body'] + '。'
+        # Multisentence wishes are short essays. An optional edit must not turn
+        # an admitted short essay into a below-minimum refusal. Decline the edit
+        # rather than changing the existing envelope or padding the user's text.
+        length = len(re.sub(r'\s', '', ''.join(edited.values())))
+        if length >= ENVELOPES['short_essay'][0]:
+            sentences = edited
     blocks = tuple(''.join(sentences[node_id] for node_id in group)
                    for group in plan.block_node_ids)
     payloads = {}
