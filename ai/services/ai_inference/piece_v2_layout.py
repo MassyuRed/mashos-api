@@ -157,12 +157,18 @@ def _fitting_determiner_run_breaks(clusters: list[str], script_runs: list[str],
 
     Only この/その/あの/どの at a paragraph start or after an explicit
     punctuation/space boundary qualify. Never match inside another word or
-    infer a referent. The following contiguous Han or Katakana run, with any
-    required kinsoku marks, must actually fit the renderer's measured width.
-    General hiragana words and mixed-script noun boundaries are not inferred.
-    This changes only wrap costs: vertical capacity can still require a cut.
+    infer a referent. Prefer including a complete following hiragana run
+    of one or two renderer graphemes, so a short tail is not stranded on the
+    next line. This is a written-run hint, not a particle/word parser: never
+    take just the beginning of a longer kana run. Measure the expanded form
+    with required kinsoku marks; if it is overwide, retain the original
+    determiner-plus-Han/Katakana preference when that smaller form fits.
+    When expanded tails are used, give other fitting short kana endings in
+    this paragraph the same preference, rather than moving the cut into a
+    different short ending. Vertical capacity can still require a cut.
     """
     boundaries = [False] * (len(clusters) + 1)
+    expanded_tail = False
     delimiters = _NO_END | frozenset('、。，．？！!?：；:;')
     for start in range(len(clusters) - 2):
         if start and not (clusters[start - 1][-1].isspace()
@@ -178,14 +184,50 @@ def _fitting_determiner_run_breaks(clusters: list[str], script_runs: list[str],
         end = start + 3
         while end < len(clusters) and script_runs[end] == kind:
             end += 1
-        left, right = start, end
-        while left and clusters[left - 1][-1] in _NO_END:
-            left -= 1
-        while right < len(clusters) and clusters[right][0] in _NO_START:
-            right += 1
-        if _width(_measure(metrics, ''.join(clusters[left:right]), size)) <= width:
-            for boundary in range(start + 1, end):
-                boundaries[boundary] = True
+        tail_end = end
+        while (tail_end < len(clusters) and unicodedata.name(
+                clusters[tail_end][0], '').startswith('HIRAGANA LETTER ')):
+            tail_end += 1
+        ends = [end]
+        if 1 <= tail_end - end <= 2:
+            ends.insert(0, tail_end)
+        for candidate_end in ends:
+            left, right = start, candidate_end
+            while left and clusters[left - 1][-1] in _NO_END:
+                left -= 1
+            while right < len(clusters) and clusters[right][0] in _NO_START:
+                right += 1
+            if _width(_measure(metrics, ''.join(clusters[left:right]), size)) <= width:
+                for boundary in range(start + 1, candidate_end):
+                    boundaries[boundary] = True
+                expanded_tail = expanded_tail or candidate_end > end
+                break
+    if expanded_tail:
+        # Protect equivalent short written endings in the same composition.
+        # No source labels, word dictionary, or hard line prohibition is used.
+        start = 0
+        while start < len(clusters):
+            kind = script_runs[start]
+            if kind not in ('han', 'katakana'):
+                start += 1
+                continue
+            end = start + 1
+            while end < len(clusters) and script_runs[end] == kind:
+                end += 1
+            tail_end = end
+            while (tail_end < len(clusters) and unicodedata.name(
+                    clusters[tail_end][0], '').startswith('HIRAGANA LETTER ')):
+                tail_end += 1
+            if 1 <= tail_end - end <= 2:
+                left, right = start, tail_end
+                while left and clusters[left - 1][-1] in _NO_END:
+                    left -= 1
+                while right < len(clusters) and clusters[right][0] in _NO_START:
+                    right += 1
+                if _width(_measure(metrics, ''.join(clusters[left:right]), size)) <= width:
+                    for boundary in range(start + 1, tail_end):
+                        boundaries[boundary] = True
+            start = tail_end
     return boundaries
 
 
