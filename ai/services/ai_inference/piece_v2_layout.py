@@ -93,6 +93,26 @@ def _kana_attachment_breaks(clusters: list[str], script_runs: list[str]) -> list
     return boundaries
 
 
+_SHORT_KANA_BRIDGES = frozenset('いきぎしじちぢびぴみりえけげせぜねべぺめれ')
+
+
+def _kana_bridge_breaks(clusters: list[str], script_runs: list[str]) -> list[bool]:
+    """Soft visual hint for one short kana between a written run and Han.
+
+    This joins neither text nor words. The selected kana cover short written
+    stem bridges, while common case/topic particles and te/de links are not
+    admitted. Longer hiragana sequences and general compound boundaries are
+    not inferred. Existing line-count, run, orphan and kana-attachment costs
+    all take precedence; overwide sequences remain freely breakable.
+    """
+    boundaries = [False] * (len(clusters) + 1)
+    for index in range(2, len(clusters)):
+        boundaries[index] = (script_runs[index] == 'han'
+                             and script_runs[index - 2] in ('han', 'katakana')
+                             and clusters[index - 1][0] in _SHORT_KANA_BRIDGES)
+    return boundaries
+
+
 def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics) -> list[tuple[str, TextMeasurement]]:
     try:
         clusters = metrics.graphemes(text)
@@ -111,7 +131,7 @@ def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics) -> list
     # Prefer the minimum line count, then preserve ASCII runs, then visible
     # Han/Katakana runs and the letter after a sokuon, then avoid a lone
     # character after a sentence mark, then avoid splitting attached hiragana.
-    # These are visual hints, not a Japanese word parser.
+    # Short kana bridges are preferred next, without parsing Japanese words.
     # Balance every line only after these readability preferences. No break
     # is prohibited by a run hint: overwide runs still split at a renderer's
     # grapheme boundary instead of shrinking, padding or refusing the body.
@@ -119,7 +139,8 @@ def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics) -> list
     word_clusters = [c[0].isascii() and c[0].isalnum() for c in clusters]
     script_runs = [_script_run_kind(c) for c in clusters]
     kana_attachments = _kana_attachment_breaks(clusters, script_runs)
-    costs = {n: (0, 0, 0, 0, 0, 0.0)}
+    kana_bridges = _kana_bridge_breaks(clusters, script_runs)
+    costs = {n: (0, 0, 0, 0, 0, 0, 0.0)}
     choices = {}
     for start in range(n - 1, -1, -1):
         best = None
@@ -133,7 +154,7 @@ def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics) -> list
             measured_width = _width(measured)
             if measured_width > width:
                 continue
-            count, word_splits, script_splits, head_orphans, kana_splits, penalty = costs[end]
+            count, word_splits, script_splits, head_orphans, kana_splits, bridge_splits, penalty = costs[end]
             split = int(end < n and word_clusters[end - 1] and word_clusters[end])
             script_split = int(end < n and (
                 bool(script_runs[end - 1]) and script_runs[end - 1] == script_runs[end]
@@ -145,6 +166,7 @@ def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics) -> list
                               and clusters[end - 2][-1] in '。！？!?')
             score = (count + 1, word_splits + split, script_splits + script_split,
                      head_orphans + head_orphan, kana_splits + int(kana_attachments[end]),
+                     bridge_splits + int(kana_bridges[end]),
                      penalty + (width - measured_width) ** 2)
             if best is None or score < best[0]:
                 best = (score, end, part, measured)
