@@ -296,10 +296,12 @@ def _role_bindings(text: str) -> tuple[PieceRoleBinding, ...]:
 
 # Reuse the nominal heads admitted by the existing focal grammar. This does
 # not infer an omitted event, person, cause or a bare pronoun's referent.
+_NOMINAL_REFERENCE_BODY = r'(?P<reference>(?:その|この)(?P<head>時間|こと|もの))'
+_NOMINAL_REFERENCE_TARGET = re.compile(_NOMINAL_REFERENCE_BODY)
 _NOMINAL_REFERENCE = re.compile(
     r'^(?:(?:私|わたし|僕|ぼく|俺|おれ)は[、，,]?)?'
-    r'(?P<reference>(?:その|この)(?P<head>時間|こと|もの))'
-    r'(?=[はがをにでとのも]|から|だけ|さえ|まで|より)')
+    + _NOMINAL_REFERENCE_BODY
+    + r'(?=[はがをにでとのも]|から|だけ|さえ|まで|より)')
 _COMPOSITE_OBJECT = re.compile(r'より|ではなく|だけでなく|または|あるいは')
 _REFERENCE_RELATION = 'SOURCE_BOUND_NOMINAL_REFERENCE'
 
@@ -323,8 +325,11 @@ def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
     # Derive from actual source again, not caller-supplied frame metadata.
     # Evaluation polarity/time describes the evaluation, not the referent's
     # existence: a tentative or past value does not become a present promise.
+    # Parse evaluation arguments without granting their reference authority.
+    # This resolver is the sole source of that authority, avoiding a cycle in
+    # which a candidate evaluation would certify its own antecedent.
     evaluations = {frame.node_id: frame for frame in
-                   _personal_evaluations(text, nodes, sentences)}
+                   _personal_evaluation_shapes(text, nodes, sentences)}
     candidates: dict[str, list[tuple[str, int, int]]] = {}
     bound: list[PieceNominalReference] = []
     for node, sentence in zip(nodes, sentences, strict=True):
@@ -332,19 +337,33 @@ def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
         if (sentence.node_id != node.node_id or start < 0 or end > len(text)
                 or text[start:end] != node.value):
             raise unavailable('piece_reference_source_binding')
+        # Preserve the old sentence-initial reference grammar. A parsed
+        # personal evaluation can additionally bind its entire nominal target
+        # at the target's original range, irrespective of its word order. The
+        # two views of a finite self-topic can describe the SAME mention; it
+        # must receive exactly one edge. A scope and a target can instead own
+        # two different mentions, both checked in original source order.
+        mentions: dict[tuple[int, int], tuple[str, str]] = {}
         mention = _NOMINAL_REFERENCE.match(node.value)
         if mention is not None:
-            head = mention['head']
+            span = (start + mention.start('reference'), start + mention.end('reference'))
+            mentions[span] = (mention['head'], 'unresolved_reference')
+        frame = evaluations.get(node.node_id)
+        if frame is not None:
+            a, b = frame.scalar_parts[2]
+            target_reference = _NOMINAL_REFERENCE_TARGET.fullmatch(text[a:b])
+            if target_reference is not None:
+                mentions[(a, b)] = (target_reference['head'], 'evaluation_target_not_self_contained')
+        for (r_start, r_end), (head, failure) in sorted(mentions.items()):
             prior = candidates.get(head, [])
             if len(prior) != 1:
-                raise unavailable('unresolved_reference')
+                raise unavailable(failure)
             antecedent_id, a_start, a_end = prior[0]
-            r_start, r_end = start + mention.start('reference'), start + mention.end('reference')
             known = {(a_end - len(head), a_end)}
             known.update((r.reference_scalar_span[1] - len(head), r.reference_scalar_span[1])
                          for r in bound if r.nominal_head == head)
             if any(m.span() not in known for m in re.finditer(re.escape(head), text[:r_start])):
-                raise unavailable('unresolved_reference')
+                raise unavailable(failure)
             bound.append(PieceNominalReference(
                 antecedent_id, node.node_id, head, (a_start, a_end),
                 (len(text[:a_start].encode('utf-8')), len(text[:a_end].encode('utf-8'))),
@@ -414,7 +433,7 @@ _EVALUATIVE_FINITE = re.compile(
 _SIMPLE_NOUN = re.compile(r'[一-龥々ァ-ヴー]+')
 
 
-def _personal_evaluations(text: str, nodes: tuple[MeaningNode, ...],
+def _personal_evaluation_shapes(text: str, nodes: tuple[MeaningNode, ...],
                           sentences: tuple[PieceSentenceMeaning, ...]
                           ) -> tuple[PiecePersonalEvaluation, ...]:
     """Recover an explicit personal evaluation, never an omitted viewpoint.
@@ -423,6 +442,8 @@ def _personal_evaluations(text: str, nodes: tuple[MeaningNode, ...],
     negation and conditions are not shortened into a winning keyword. Outer
     denial, reported speech, nested focus and unresolved deixis are not this
     construction. They are not turned into the author's current conviction.
+    An exact nominal-reference target is only a candidate argument here; the
+    source resolver must bind it before _personal_evaluations can admit it.
     """
     from piece_v2_expression import _REFERENCE
     from piece_v2_generation import _NESTED
@@ -459,8 +480,9 @@ def _personal_evaluations(text: str, nodes: tuple[MeaningNode, ...],
         # nominalizer or changing the target. Do not extend the が-focus:
         # 私が好きなのはX can instead make a person-like X the experiencer.
         bare = match['construction'] in ('にとって', 'は') and _SIMPLE_NOUN.fullmatch(target)
+        referential = _NOMINAL_REFERENCE_TARGET.fullmatch(target) is not None
         if (not (nominal or bare)
-                or _REFERENCE.search(target) or _NESTED.search(target)
+                or (_REFERENCE.search(target) and not referential) or _NESTED.search(target)
                 or 'のは' in target or target.startswith(('、', '，', ','))):
             raise unavailable('evaluation_target_not_self_contained')
         spans = tuple((expression_start + match.start(key), expression_start + match.end(key))
@@ -481,6 +503,31 @@ def _personal_evaluations(text: str, nodes: tuple[MeaningNode, ...],
             node.node_id, match['construction'], kind, spans, utf8,
             match['copula'] or '', polarity, temporal, commitment))
     return tuple(frames)
+
+
+def _personal_evaluations(text: str, nodes: tuple[MeaningNode, ...],
+                          sentences: tuple[PieceSentenceMeaning, ...]
+                          ) -> tuple[PiecePersonalEvaluation, ...]:
+    """Admit evaluative arguments only after their actual source binding.
+
+    A reference keeps its own speaker, polarity, time and commitment. It does
+    not inherit the antecedent's evaluation, become a new antecedent, or gain
+    a guessed expanded surface. The existing plan/author retains both full
+    propositions and validates the exact reference edges independently.
+    """
+    frames = _personal_evaluation_shapes(text, nodes, sentences)
+    referential = tuple(frame for frame in frames if _NOMINAL_REFERENCE_TARGET.fullmatch(
+        text[slice(*frame.scalar_parts[2])]))
+    if referential:
+        references = _nominal_references(text, nodes, sentences)
+        for frame in referential:
+            matching = tuple(ref for ref in references
+                             if ref.reference_node_id == frame.node_id
+                             and ref.reference_scalar_span == frame.scalar_parts[2]
+                             and ref.reference_utf8_span == frame.utf8_parts[2])
+            if len(matching) != 1:
+                raise unavailable('evaluation_target_not_self_contained')
+    return frames
 
 
 def validate_piece_personal_evaluations(meaning: PieceSourceMeaning) -> None:
