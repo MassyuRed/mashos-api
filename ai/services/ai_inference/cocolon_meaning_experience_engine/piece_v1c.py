@@ -295,7 +295,9 @@ def _adjacent_self_continuations(meaning: PieceSourceMeaning,
     line break, scoped duty or paragraph boundary keeps the topic. A preceding
     evaluation's viewpoint is retained; the following explicit viewpoint or
     focus is never elided. Both propositions must state the same first person.
-    The plan remains intact; this is not general subject/discourse resolution.
+    A continued preference may extend that same source-bound referent chain,
+    but cannot start a new chain after an unlicensed link. The plan remains
+    intact; this is not general subject/discourse resolution.
     """
     original = meaning.envelope.raw_utf8.decode('utf-8')
     nodes = {node.node_id: node for node in meaning.graph.nodes}
@@ -304,6 +306,7 @@ def _adjacent_self_continuations(meaning: PieceSourceMeaning,
     duties = {duty.node_id: duty.operation for duty in plan.duties}
     evaluations = {frame.node_id: frame for frame in meaning.personal_evaluations}
     continuations = set()
+    continuation_referents = {}
     for group in plan.block_node_ids:
         for previous, current in zip(group, group[1:]):
             if positions[current] != positions[previous] + 1:
@@ -339,7 +342,27 @@ def _adjacent_self_continuations(meaning: PieceSourceMeaning,
                          if ref.reference_node_id == current
                          and ref.reference_scalar_span == frame.scalar_parts[2]
                          and ref.reference_utf8_span == frame.utf8_parts[2]]
-                if (len(links) != 1 or links[0].antecedent_node_id != previous
+                if len(links) != 1:
+                    continue
+                ref = links[0]
+                referent = (ref.antecedent_node_id, ref.nominal_head,
+                            ref.antecedent_scalar_span, ref.antecedent_utf8_span)
+                # The resolver keeps later mentions bound to the original
+                # object, not the preceding pronoun. Extend only a previously
+                # licensed adjacent continuation of that exact source object.
+                # Matching visible words, proximity, or an earlier standalone
+                # mention cannot restart a chain across a declined boundary.
+                if continuation_referents.get(previous) == referent:
+                    # Do not manufacture identical adjacent sentences. Keep
+                    # the source's repeated proposition and its explicit topic,
+                    # just as the existing two-wish edit declines duplicates.
+                    if (prior is None or _evaluation_sentence(meaning, prior)
+                            == _evaluation_sentence(meaning, frame)):
+                        continue
+                    continuations.add(current)
+                    continuation_referents[current] = referent
+                    continue
+                if (ref.antecedent_node_id != previous
                         or original[slice(*links[0].antecedent_scalar_span)] != target
                         or (prior is not None and (
                             links[0].antecedent_scalar_span != prior.scalar_parts[2]
@@ -348,6 +371,7 @@ def _adjacent_self_continuations(meaning: PieceSourceMeaning,
                         or re.search(r'[はがも]', target[:-len(links[0].nominal_head)])):
                     continue
                 continuations.add(current)
+                continuation_referents[current] = referent
                 continue
             if (duties[previous] != 'SOURCE_FIRST_PERSON_TOPIC'
                     or duties[current] != 'SOURCE_FIRST_PERSON_TOPIC'):
