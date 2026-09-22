@@ -57,6 +57,23 @@ def _width(m: TextMeasurement) -> float:
     return max(m.advance, m.right) - min(0.0, m.left)
 
 
+def _script_run_kind(cluster: str) -> str:
+    """A soft visual run hint, not Japanese word/meaning segmentation.
+
+    Inspect only the first scalar of a renderer-owned grapheme. Variation
+    selectors, combining marks and halfwidth voicing stay in that grapheme.
+    Hiragana and mixed-script word boundaries are deliberately not inferred.
+    """
+    char = cluster[0]
+    name = unicodedata.name(char, '')
+    if name.startswith(('CJK UNIFIED IDEOGRAPH-', 'CJK COMPATIBILITY IDEOGRAPH-')):
+        return 'han'
+    if (name.startswith(('KATAKANA LETTER ', 'HALFWIDTH KATAKANA LETTER '))
+            or char in 'ーｰヽヾ'):
+        return 'katakana'
+    return ''
+
+
 def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics) -> list[tuple[str, TextMeasurement]]:
     try:
         clusters = metrics.graphemes(text)
@@ -72,16 +89,16 @@ def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics) -> list
         if i and (unicodedata.combining(c[0]) or c[0] == '\u200d'
                   or 0xFE00 <= ord(c[0]) <= 0xFE0F or clusters[i - 1].endswith('\u200d')):
             raise _fail('split_grapheme')
-    # Minimize line count first, then avoid splitting ASCII letter/digit runs,
-    # avoid one-character sentence heads stranded by that mixed-text edit,
-    # then balance raggedness over ALL lines. This is a preference between
-    # equally compact layouts, not a new token-admission or segmentation rule.
-    # Long tokens still have grapheme-safe break candidates; no hyphen, space
-    # or replacement text is inserted to make a line fit.
+    # Prefer the minimum line count, then preserve ASCII runs, then visible
+    # Han/Katakana runs and the letter after a sokuon, then avoid a lone
+    # character after a sentence mark. This does not infer word boundaries.
+    # Balance every line only after these readability preferences. No break
+    # is prohibited by a run hint: overwide runs still split at a renderer's
+    # grapheme boundary instead of shrinking, padding or refusing the body.
     n = len(clusters)
     word_clusters = [c[0].isascii() and c[0].isalnum() for c in clusters]
-    mixed_word_run = any(a and b for a, b in zip(word_clusters, word_clusters[1:]))
-    costs = {n: (0, 0, 0, 0.0)}
+    script_runs = [_script_run_kind(c) for c in clusters]
+    costs = {n: (0, 0, 0, 0, 0.0)}
     choices = {}
     for start in range(n - 1, -1, -1):
         best = None
@@ -95,14 +112,18 @@ def _wrap(text: str, *, size: int, width: int, metrics: RendererMetrics) -> list
             measured_width = _width(measured)
             if measured_width > width:
                 continue
-            count, word_splits, head_orphans, penalty = costs[end]
+            count, word_splits, script_splits, head_orphans, penalty = costs[end]
             split = int(end < n and word_clusters[end - 1] and word_clusters[end])
-            # This follows an explicit sentence mark, not a guessed Japanese
-            # word boundary. Pure Japanese keeps the previous balanced choice.
-            head_orphan = int(mixed_word_run and end < n and end >= 2
+            script_split = int(end < n and (
+                bool(script_runs[end - 1]) and script_runs[end - 1] == script_runs[end]
+                or clusters[end - 1][-1] in 'っッ'
+                and unicodedata.category(clusters[end][0]).startswith('L')))
+            # The source's sentence mark is enough to detect this orphan;
+            # Japanese-only text need not contain an ASCII word to benefit.
+            head_orphan = int(end < n and end >= 2
                               and clusters[end - 2][-1] in '。！？!?')
-            score = (count + 1, word_splits + split, head_orphans + head_orphan,
-                     penalty + (width - measured_width) ** 2)
+            score = (count + 1, word_splits + split, script_splits + script_split,
+                     head_orphans + head_orphan, penalty + (width - measured_width) ** 2)
             if best is None or score < best[0]:
                 best = (score, end, part, measured)
         if best is not None:
