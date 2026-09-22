@@ -290,12 +290,12 @@ def _adjacent_self_continuations(meaning: PieceSourceMeaning,
                                  plan: PieceArtifactPlan) -> frozenset[str]:
     """Find optional self-topic omissions from explicit, adjacent duties.
 
-    Two wishes, or a focal author followed by a bound plain-topic preference,
-    can share a written author. Another subject/contrast, source line break,
-    viewpoint-qualified evaluation or paragraph boundary keeps the topic.
-    The plan and every proposition remain intact; this is not general subject
-    or discourse resolution. Validated reference spans alone do not prove an
-    author: the focal source and preference must state the same first person.
+    Two wishes, or a focal/evaluative author followed by a bound plain-topic
+    preference, can share a written author. Another subject/contrast, source
+    line break, scoped duty or paragraph boundary keeps the topic. A preceding
+    evaluation's viewpoint is retained; the following explicit viewpoint or
+    focus is never elided. Both propositions must state the same first person.
+    The plan remains intact; this is not general subject/discourse resolution.
     """
     original = meaning.envelope.raw_utf8.decode('utf-8')
     nodes = {node.node_id: node for node in meaning.graph.nodes}
@@ -311,24 +311,41 @@ def _adjacent_self_continuations(meaning: PieceSourceMeaning,
             gap = original[spans[previous].source_end:spans[current].source_start]
             if '\n' in gap or '\r' in gap:
                 continue
-            if (duties[previous] == 'SOURCE_FOCAL_TO_FIRST_PERSON'
+            if (duties[previous] in {'SOURCE_FOCAL_TO_FIRST_PERSON',
+                                     'SOURCE_PERSONAL_EVALUATION'}
                     and duties[current] == 'SOURCE_PERSONAL_EVALUATION'):
-                focal = _focal_parts(nodes[previous].value)
+                prior = evaluations.get(previous)
+                if duties[previous] == 'SOURCE_PERSONAL_EVALUATION':
+                    # An existing source-bound evaluation can establish this
+                    # author and referent. Keep its full viewpoint/predicate;
+                    # no new source admission or evaluation inference occurs.
+                    if prior is None or prior.construction not in {'は', 'にとって'}:
+                        continue
+                    speaker = original[slice(*prior.scalar_parts[0])]
+                    target = original[slice(*prior.scalar_parts[2])]
+                else:
+                    focal = _focal_parts(nodes[previous].value)
+                    if focal is None:
+                        continue
+                    target, _, speaker = focal
                 frame = evaluations.get(current)
-                # A plain は preference may continue this author. Neither an
-                # explicit にとって viewpoint nor が focus grants this edit.
-                if (focal is None or frame is None or frame.construction != 'は'
+                # Only the next plain は preference can omit its self-topic.
+                # Its explicit にとって viewpoint, が focus or comparison stays.
+                if (frame is None or frame.construction != 'は'
                         or frame.kind != 'PERSONAL_PREFERENCE'
-                        or original[slice(*frame.scalar_parts[0])] != focal[2]):
+                        or original[slice(*frame.scalar_parts[0])] != speaker):
                     continue
                 links = [ref for ref in meaning.nominal_references
                          if ref.reference_node_id == current
                          and ref.reference_scalar_span == frame.scalar_parts[2]
                          and ref.reference_utf8_span == frame.utf8_parts[2]]
                 if (len(links) != 1 or links[0].antecedent_node_id != previous
-                        or original[slice(*links[0].antecedent_scalar_span)] != focal[0]
+                        or original[slice(*links[0].antecedent_scalar_span)] != target
+                        or (prior is not None and (
+                            links[0].antecedent_scalar_span != prior.scalar_parts[2]
+                            or links[0].antecedent_utf8_span != prior.utf8_parts[2]))
                         # The bound head もの contains も, not a contrast particle.
-                        or re.search(r'[はがも]', focal[0][:-len(links[0].nominal_head)])):
+                        or re.search(r'[はがも]', target[:-len(links[0].nominal_head)])):
                     continue
                 continuations.add(current)
                 continue
