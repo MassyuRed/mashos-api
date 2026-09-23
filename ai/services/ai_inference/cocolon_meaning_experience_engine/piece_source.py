@@ -348,7 +348,9 @@ def _evaluation_target_references(target: str) -> tuple[tuple[int, int, str], ..
     operand rule. It can also contain two references with distinct nominal
     heads, as can ``Aと、B``. Each must independently bind to one prior
     source object in the resolver below; neither operand certifies the other.
-    Same-head pairs, implicit separators and nested operands stay unresolved.
+    Two whole reference operands can also use their explicit と/より operator
+    without a comma. This compact form does not admit a literal operand or
+    infer a missing operator. Same-head and nested pairs stay unresolved.
     Both sides and the exact marker remain ONE evaluation target, not two
     separately evaluated objects, an inferred winner, or a user's wish.
     These relative source ranges do not themselves resolve any referent.
@@ -363,7 +365,14 @@ def _evaluation_target_references(target: str) -> tuple[tuple[int, int, str], ..
     comparison = re.fullmatch(r'(?P<left>.+?)より[、，,][ \t\u3000]*(?P<right>.+)', target)
     # Keep comparison precedence: a と inside its complete literal operand
     # must not steal the outer より boundary from the existing grammar.
-    compound = comparison or re.fullmatch(
+    # Only two complete reference tokens can omit punctuation. Matching the
+    # entire target prevents a nested comparison or a suffix inside an operand
+    # from being treated as the outer operator. The existing resolver below
+    # must still bind BOTH references to distinct, unique source objects.
+    compact_pair = re.fullmatch(
+        r'(?P<left>(?:その|この)(?:時間|こと|もの))(?:より|と)[ \t\u3000]*'
+        r'(?P<right>(?:その|この)(?:時間|こと|もの))', target)
+    compound = comparison or compact_pair or re.fullmatch(
         r'(?P<left>.+?)と[、，,][ \t\u3000]*(?P<right>.+)', target)
     if compound is None:
         raise unavailable('evaluation_target_not_self_contained')
