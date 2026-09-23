@@ -20,7 +20,7 @@ from piece_v2_expression import (
 )
 from .contracts import EngineStatus, ExecutionMode
 from .piece_source import (
-    PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
+    _PERSON_NAME_CHARS, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
     piece_public_role_aliases, validate_piece_nominal_references,
     validate_piece_personal_evaluations, validate_piece_expression_scopes,
 )
@@ -225,7 +225,7 @@ def _publicize_source_sentence(sentence: str, meaning: PieceSourceMeaning) -> st
     full = '|'.join(re.escape(p) for p in sorted(phrases, key=len, reverse=True))
     names = '|'.join(re.escape(n) for n in sorted(aliases, key=len, reverse=True))
     replacements = {**phrases, **aliases}
-    return re.sub(full + r'|(?<![一-龥々])(?:' + names + ')',
+    return re.sub(full + r'|(?<![' + _PERSON_NAME_CHARS + r'])(?:' + names + ')',
                   lambda match: replacements[match.group()], sentence)
 
 

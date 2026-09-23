@@ -187,10 +187,18 @@ _ROLE = r'(?:友人|同僚|上司|部下|先輩|後輩|先生)'
 # unchanged. Reuse the existing speaker vocabulary only when its possessive
 # is written; an omitted possessor or unknown modifier is not inferred.
 _ROLE_OWNER = r'(?:(?:私|わたし|僕|ぼく|俺|おれ)の)?'
-_ROLE_NAME = re.compile(r'(?<![一-龥々])(?P<role>' + _ROLE_OWNER + _ROLE
+# Name recognition and replacement share one complete written token boundary.
+# Script is not evidence of a relationship: kana and mixed-script identities
+# still need the same explicit role/owner proof as kanji identities. Do not
+# truncate a longer name to a known suffix or normalize its original spelling.
+# Hiragana is deliberately excluded (ordinary words such as たくさん are not
+# people); this is not a general personal-information recognizer.
+_PERSON_NAME_CHARS = '一-龥々ァ-ヺー'
+_PERSON_NAME = r'[' + _PERSON_NAME_CHARS + r']+さん'
+_ROLE_NAME = re.compile(r'(?<![' + _PERSON_NAME_CHARS + r'])(?P<role>' + _ROLE_OWNER + _ROLE
                         + r'(?:の' + _ROLE + r')*)の'
-                        r'(?P<name>[一-龥々]{1,6}さん)')
-_HONORIFIC_NAME = re.compile(r'[一-龥々]{1,6}さん')
+                        r'(?P<name>' + _PERSON_NAME + r')')
+_HONORIFIC_NAME = re.compile(_PERSON_NAME)
 
 
 def _digest(text: str) -> str:
