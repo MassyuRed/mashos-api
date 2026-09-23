@@ -474,23 +474,32 @@ def validate_piece_nominal_references(meaning: PieceSourceMeaning) -> None:
 # Typed evaluative predicates, not topic keywords or canned output sentences.
 # A wish is not inferred from liking, importance, need or a negative evaluation.
 _VALUE_BASES = frozenset({'大切', '大事', '重要', '必要'})
-# Both word orders share the same state/modal composition. The only
-# construction-specific inflection is the relative or finite copula.
+# Both word orders share state/modal composition. Finite polite auxiliaries
+# are separate from the relative focus grammar: a complete polite denial is
+# not a relative predicate and cannot be followed by another modal here.
 # A single source-written degree modifier belongs to the WHOLE predicate.
 # Keep it inside its scalar/UTF-8 span in both word orders, including negative,
 # past and modal forms. Do not turn degree into certainty or a numeric score,
 # infer an omitted modifier, or move a modifier out of the nominal argument.
 # Unmodelled adverbs and stacked modifiers do not acquire scope here.
+# Register is source text, not a normalization instruction. Plain state may
+# take a polite outer modal; a polite negative is already finite. Keep the
+# whole predicate in its original span so the existing writer preserves it.
+_PLAIN_EVALUATION_MODAL = r'かもしれない|とは限らない'
+_FINITE_EVALUATION_MODAL = _PLAIN_EVALUATION_MODAL + r'|かもしれません|とは限りません'
+_FINITE_NEGATIVE = (r'(?P<finite_negative>(?:では|じゃ)'
+                    r'(?:ありませんでした|ありません|なかったです|ないです))|')
 _EVALUATIVE_PREDICATE = (
     r'(?P<predicate>(?:とても|かなり|少し|あまり)?'
     r'(?P<base>大切|大事|重要|必要|好き|苦手)'
     r'(?P<inflection>(?:(?P<state>(?:では|じゃ)(?:なかった|ない)|だった)'
-    r'(?P<state_modal>かもしれない|とは限らない)?|'
-    r'(?P<bare_modal>かもしれない|とは限らない)|{copula})))')
+    r'(?P<state_modal>{modal})?|'
+    r'(?P<bare_modal>{modal})|{finite_negative}{copula})))')
 _EVALUATIVE_FOCUS = re.compile(
     r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)'
     r'(?P<construction>にとって|が)[、，,]?'
-    + _EVALUATIVE_PREDICATE.format(copula='な')
+    + _EVALUATIVE_PREDICATE.format(
+        copula='な', modal=_PLAIN_EVALUATION_MODAL, finite_negative='')
     + r'のは[、，,]?(?P<target>.+?)(?P<copula>です|だ)。$')
 _EVALUATIVE_FINITE = re.compile(
     r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)'
@@ -500,7 +509,9 @@ _EVALUATIVE_FINITE = re.compile(
     # unwritten. The explicit speaker, target particle and predicate still
     # bind here; an absent copula is not inserted into the source or author.
     # Keep the focal construction's required relative/final copulas separate.
-    + _EVALUATIVE_PREDICATE.format(copula=r'(?P<copula>でした|です|だ)?')
+    + _EVALUATIVE_PREDICATE.format(
+        copula=r'(?P<copula>でした|です|だ)?', modal=_FINITE_EVALUATION_MODAL,
+        finite_negative=_FINITE_NEGATIVE)
     + r'。$')
 _SIMPLE_NOUN = re.compile(r'[一-龥々ァ-ヴー]+')
 
@@ -561,16 +572,17 @@ def _personal_evaluation_shapes(text: str, nodes: tuple[MeaningNode, ...],
                       for key in ('speaker', 'predicate', 'target'))
         utf8 = tuple((len(text[:a].encode('utf-8')), len(text[:b].encode('utf-8')))
                      for a, b in spans)
-        state = match['state'] or ''
+        state = match['state'] or match.groupdict().get('finite_negative') or ''
         modal = match['state_modal'] or match['bare_modal'] or ''
         # These describe the inner evaluation under the outer commitment.
         # NON_UNIVERSAL over NEGATIVE is not an affirmative evaluation, and
         # a present modal must not reset the evaluation's original past time.
         polarity = 'NEGATIVE' if state.startswith(('では', 'じゃ')) else 'AFFIRMATIVE'
-        temporal = ('PAST' if state.endswith(('だった', 'なかった'))
+        temporal = ('PAST' if state.endswith(('だった', 'なかった', 'なかったです',
+                                             'ありませんでした'))
                     or match['copula'] == 'でした' else 'NONPAST')
-        commitment = ('POSSIBLE' if modal == 'かもしれない' else
-                      'NON_UNIVERSAL' if modal == 'とは限らない' else 'ASSERTED')
+        commitment = ('POSSIBLE' if modal in ('かもしれない', 'かもしれません') else
+                      'NON_UNIVERSAL' if modal in ('とは限らない', 'とは限りません') else 'ASSERTED')
         frames.append(PiecePersonalEvaluation(
             node.node_id, match['construction'], kind, spans, utf8,
             match['copula'] or '', polarity, temporal, commitment))
