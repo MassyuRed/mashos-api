@@ -10,8 +10,80 @@ import argparse
 from functools import lru_cache
 import hashlib
 import json
+import math
+import unicodedata
 from pathlib import Path
 import sys
+
+
+class TabAwareMetrics:
+    """Development-only tab4-v1 policy shared by measurement and drawing.
+
+    A tab advances to the next stop spaced by the renderer's measured four
+    spaces, relative to the current line origin. It is not a missing glyph
+    or a replacement string. Raw line text, graphemes and canonical hashes
+    are unchanged. Other C0/C1 controls are unsupported, not silently hidden.
+    This policy is not an iOS/Android renderer or a product export contract.
+    """
+
+    def __init__(self, base):
+        self.base = base
+        self.profile_id = base.profile_id + '-tab4-v1'
+
+    def graphemes(self, text):
+        return self.base.graphemes(text)
+
+    def font(self, size):
+        return self.base.font(size)
+
+    @lru_cache(maxsize=8192)
+    def _plan(self, text, font_px):
+        from piece_v2_layout import TextMeasurement, _fail, _measure
+
+        def fail(reason):
+            raise _fail(reason)
+
+        if any(unicodedata.category(c) == 'Cc' and c != '\t' for c in text):
+            fail('unsupported_control_character')
+        if '\t' not in text:
+            return ((text, 0.0),), _measure(self.base, text, font_px)
+        interval = _measure(self.base, '    ', font_px).advance
+        if interval <= 0:
+            fail('invalid_tab_interval')
+        runs, boxes = [], []
+        x = 0.0
+        parts = text.split('\t')
+        for index, part in enumerate(parts):
+            if part:
+                m = _measure(self.base, part, font_px)
+                runs.append((part, x))
+                if m.right > m.left and m.bottom > m.top:
+                    boxes.append((x + m.left, m.top, x + m.right, m.bottom))
+                x += m.advance
+                if not math.isfinite(x):
+                    fail('invalid_metrics')
+            if index < len(parts) - 1:
+                runs.append(('\t', x))
+                stop = (math.floor(x / interval) + 1) * interval
+                if not math.isfinite(stop) or stop <= x:
+                    fail('invalid_tab_interval')
+                x = stop
+        bounds = (min(b[0] for b in boxes), min(b[1] for b in boxes),
+                  max(b[2] for b in boxes), max(b[3] for b in boxes)) if boxes else (0, 0, 0, 0)
+        return tuple(runs), TextMeasurement(x, *bounds)
+
+    def measure(self, text, font_px):
+        return self._plan(text, font_px)[1]
+
+    def draw_text(self, draw, position, text, *, font_px, fill):
+        # Resolve the entire plan before drawing: a missing later glyph must
+        # not leave a partially rendered line that could be mistaken for fit.
+        runs, _ = self._plan(text, font_px)
+        font = self.font(font_px)
+        for run, offset in runs:
+            if run != '\t':
+                draw.text((position[0] + offset, position[1]), run,
+                          font=font, fill=fill, anchor='ls')
 
 
 def main() -> int:
@@ -47,7 +119,7 @@ def main() -> int:
             # glyphs. Missing visible glyphs never become a success placeholder.
             missing = any(ord(c) not in glyphs and not (c == '\u200d' or 0xFE00 <= ord(c) <= 0xFE0F) for c in text)
             return TextMeasurement(float(font.getlength(text)), *map(float, bbox), not missing)
-    metrics = FontMetrics()
+    metrics = TabAwareMetrics(FontMetrics())
     output = args.output_dir.resolve()
     if output.exists() and any(output.iterdir()):
         parser.error('output directory must be empty; preserve earlier evidence separately')
@@ -120,9 +192,9 @@ def main() -> int:
             ink = ImageDraw.Draw(mask)
             for line in layout['lines']:
                 at = (line['x'], line['baseline'])
-                font = metrics.font(layout['font_px'])
-                draw.text(at, line['text'], font=font, fill=layout['colors']['text'], anchor='ls')
-                ink.text(at, line['text'], font=font, fill=255, anchor='ls')
+                metrics.draw_text(draw, at, line['text'], font_px=layout['font_px'],
+                                  fill=layout['colors']['text'])
+                metrics.draw_text(ink, at, line['text'], font_px=layout['font_px'], fill=255)
             box = mask.getbbox()
             m = layout['margin']
             assert box and box[0] >= m and box[1] >= m
