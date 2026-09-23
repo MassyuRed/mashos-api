@@ -191,14 +191,27 @@ _ROLE_OWNER = r'(?:(?:私|わたし|僕|ぼく|俺|おれ)の)?'
 # Script is not evidence of a relationship: kana and mixed-script identities
 # still need the same explicit role/owner proof as kanji identities. Do not
 # truncate a longer name to a known suffix or normalize its original spelling.
-# Hiragana is deliberately excluded (ordinary words such as たくさん are not
-# people); this is not a general personal-information recognizer.
-_PERSON_NAME_CHARS = '一-龥々ァ-ヺー'
-_PERSON_NAME = r'[' + _PERSON_NAME_CHARS + r']+さん'
-_ROLE_NAME = re.compile(r'(?<![' + _PERSON_NAME_CHARS + r'])(?P<role>' + _ROLE_OWNER + _ROLE
+# Halfwidth voiced marks remain separate source scalars. Width and the two
+# middle-dot spellings are NOT aliases; each exact name needs its own proof.
+# Hiragana/Latin are still outside this grammar. In particular ordinary words
+# such as たくさん are not people. This is not general PII recognition.
+_PERSON_NAME_CHARS = '一-龥々ァ-ヺーｦ-ﾟ'
+_PERSON_NAME_TOKEN_CHARS = _PERSON_NAME_CHARS + '・･'
+_PERSON_NAME = (r'[' + _PERSON_NAME_CHARS + r']+'
+                r'(?:[・･][' + _PERSON_NAME_CHARS + r']+)*さん')
+# A dot inside a name is not the same boundary as a dot AFTER a completed
+# さん. The latter can separate two named people or two role phrases.
+_PERSON_NAME_LEFT_BOUNDARY = (r'(?:(?<![' + _PERSON_NAME_TOKEN_CHARS
+                              + r'])|(?<=さん・)|(?<=さん･))')
+_ROLE_NAME = re.compile(_PERSON_NAME_LEFT_BOUNDARY + r'(?P<role>' + _ROLE_OWNER + _ROLE
                         + r'(?:の' + _ROLE + r')*)の'
                         r'(?P<name>' + _PERSON_NAME + r')')
-_HONORIFIC_NAME = re.compile(_PERSON_NAME)
+# Scan a whole potential token, including malformed joins, before checking its
+# binding. A leading/trailing/doubled dot must not expose a shorter known
+# suffix to the writer or silently escape the existing unbound-name check.
+_HONORIFIC_NAME = re.compile(
+    r'(?:[' + _PERSON_NAME_CHARS + r']|(?<!さん)[・･])'
+    r'[' + _PERSON_NAME_TOKEN_CHARS + r']*さん')
 
 
 def _digest(text: str) -> str:
