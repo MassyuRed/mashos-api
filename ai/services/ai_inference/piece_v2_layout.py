@@ -279,6 +279,75 @@ def _fitting_long_kana_run_breaks(clusters: list[str], script_runs: list[str],
     return boundaries
 
 
+def _fitting_competing_kana_breaks(clusters: list[str], script_runs: list[str],
+                                   existing_fitting_runs: list[bool], *, size: int,
+                                   width: int, metrics: RendererMetrics) -> list[bool]:
+    """Do not move a protected long-tail cut into another complete kana run.
+
+    Used only when long-kana cohesion is active in this paragraph. Give short
+    written endings and unattached hiragana runs the same measured-fit hint.
+    A one-grapheme tail has no internal cut to protect; keep its old costs.
+    This is script cohesion, not a word dictionary: take the entire kana run,
+    include its preceding maximal Han/Katakana run when present, and never
+    take a prefix of an overwide run. Existing bridge/determiner scopes are
+    not extended: an unjoined kana suffix after a protected head receives
+    its own internal cohesion, never a new head-to-suffix link. Required
+    kinsoku marks participate in the measurement;
+    vertical capacity can still choose a cut without rewriting the source.
+    """
+    boundaries = [False] * (len(clusters) + 1)
+    # Preserve the competing written head itself without attaching a lone
+    # kana to it. Otherwise keeping a short ending can move the same cut
+    # into a fitting Han/Katakana core solely to save a line.
+    start = 0
+    while start < len(clusters):
+        kind = script_runs[start]
+        end = start + 1
+        if kind:
+            while end < len(clusters) and script_runs[end] == kind:
+                end += 1
+            if end - start > 1 and not any(existing_fitting_runs[start:end]):
+                left, right = start, end
+                while left and clusters[left - 1][-1] in _NO_END:
+                    left -= 1
+                while right < len(clusters) and clusters[right][0] in _NO_START:
+                    right += 1
+                if _width(_measure(metrics, ''.join(clusters[left:right]), size)) <= width:
+                    for boundary in range(start + 1, end):
+                        boundaries[boundary] = True
+        start = end
+    start = 0
+    while start < len(clusters):
+        if not unicodedata.name(clusters[start][0], '').startswith('HIRAGANA LETTER '):
+            start += 1
+            continue
+        end = start + 1
+        while (end < len(clusters) and unicodedata.name(
+                clusters[end][0], '').startswith('HIRAGANA LETTER ')):
+            end += 1
+        run_start = start
+        if start and script_runs[start - 1]:
+            kind = script_runs[start - 1]
+            while run_start and script_runs[run_start - 1] == kind:
+                run_start -= 1
+        if any(existing_fitting_runs[run_start:end]):
+            # A determiner/bridge may protect the preceding written head.
+            # Do not extend that scope, but do not leave the *internal* kana
+            # suffix available as a cheaper replacement cut either.
+            run_start = start
+        if end - start >= 2 and not any(existing_fitting_runs[run_start:end]):
+            left, right = run_start, end
+            while left and clusters[left - 1][-1] in _NO_END:
+                left -= 1
+            while right < len(clusters) and clusters[right][0] in _NO_START:
+                right += 1
+            if _width(_measure(metrics, ''.join(clusters[left:right]), size)) <= width:
+                for boundary in range(run_start + 1, end):
+                    boundaries[boundary] = True
+        start = end
+    return boundaries
+
+
 _WrapScore = tuple[int, int, int, int, int, int, int, float]
 _MeasuredRows = list[tuple[str, TextMeasurement]]
 _WrapSolutions = dict[int, tuple[_WrapScore, _MeasuredRows]]
@@ -334,8 +403,13 @@ def _wrap_solutions(text: str, *, size: int, width: int, metrics: RendererMetric
         clusters, script_runs, fitting_runs, size=size, width=width, metrics=metrics)
     fitting_runs = [prior or long_kana for prior, long_kana in
                     zip(fitting_runs, fitting_long_kana, strict=True)]
-    has_fitting_run = any(fitting_runs)
     has_long_kana_run = any(fitting_long_kana)
+    if has_long_kana_run:
+        competing_kana = _fitting_competing_kana_breaks(
+            clusters, script_runs, fitting_runs, size=size, width=width, metrics=metrics)
+        fitting_runs = [prior or competing for prior, competing in
+                        zip(fitting_runs, competing_kana, strict=True)]
+    has_fitting_run = any(fitting_runs)
     costs = {n: {0: (0, 0, 0, 0, 0, 0, 0, 0.0)}}
     choices = {}
     for start in range(n - 1, -1, -1):
