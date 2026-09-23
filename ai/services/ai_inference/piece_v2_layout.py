@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+import re
 import unicodedata
 from typing import Protocol
 from piece_v2_contract import PieceContractError, validate_piece_text_binding
@@ -173,7 +174,10 @@ def _fitting_determiner_run_breaks(clusters: list[str], script_runs: list[str],
     determiner-plus-Han/Katakana preference when that smaller form fits.
     When expanded tails are used, give other fitting short kana endings in
     this paragraph the same preference, rather than moving the cut into a
-    different short ending. Vertical capacity can still require a cut.
+    different short ending. A compact pair of complete written reference
+    forms can receive the same measured-fit hint, including its explicit
+    connector and following particle. It does not resolve either referent.
+    Vertical capacity can still require a cut.
     """
     boundaries = [False] * (len(clusters) + 1)
     expanded_tail = False
@@ -196,9 +200,39 @@ def _fitting_determiner_run_breaks(clusters: list[str], script_runs: list[str],
             if ''.join(clusters[start:end]) == viewpoint:
                 determiner_starts.add(end)
                 viewpoint_starts[end] = start
+    # One comparison scalar per renderer grapheme; original clusters remain
+    # the sole measurement/output source, including marks and selectors.
+    written = ''.join(unicodedata.normalize('NFC', c)[0] for c in clusters)
+    compact_pair = re.compile(
+        r'(?:その|この)(?:時間|こと|もの)(?:と|より)'
+        r'(?:その|この)(?:時間|こと|もの)[はがをにでのも]')
     for start in range(len(clusters) - 2):
         if start not in determiner_starts:
             continue
+        pair = compact_pair.match(written, start)
+        # A following kana could continue the same word (e.g. ことがら).
+        # Do not protect only that word's apparent reference-shaped prefix.
+        if pair is not None and (pair.end() == len(clusters)
+                or script_runs[pair.end()] in ('han', 'katakana')
+                or clusters[pair.end()][0].isspace()
+                or clusters[pair.end()][0] in _NO_START):
+            left, right = start, pair.end()
+            while left and clusters[left - 1][-1] in _NO_END:
+                left -= 1
+            while right < len(clusters) and clusters[right][0] in _NO_START:
+                right += 1
+            if _width(_measure(metrics, ''.join(clusters[left:right]), size)) <= width:
+                for boundary in range(start + 1, pair.end()):
+                    boundaries[boundary] = True
+                expanded_tail = True
+                if start in viewpoint_starts:
+                    viewpoint_start = viewpoint_starts[start]
+                    left = viewpoint_start
+                    while left and clusters[left - 1][-1] in _NO_END:
+                        left -= 1
+                    if _width(_measure(metrics, ''.join(clusters[left:start]), size)) <= width:
+                        for boundary in range(viewpoint_start + 1, start):
+                            boundaries[boundary] = True
         # Normalize only the comparison view; render the untouched graphemes.
         prefix = unicodedata.normalize('NFC', ''.join(clusters[start:start + 2]))
         if prefix not in ('この', 'その', 'あの', 'どの'):
