@@ -159,9 +159,13 @@ def _fitting_determiner_run_breaks(clusters: list[str], script_runs: list[str],
                                   metrics: RendererMetrics) -> list[bool]:
     """Soft cohesion for a delimited determiner and its following written run.
 
-    Only この/その/あの/どの at a paragraph start or after an explicit
-    punctuation/space boundary qualify. Never match inside another word or
-    infer a referent. Prefer including a complete following hiragana run
+    この/その/あの/どの can start at a paragraph/punctuation/space boundary,
+    or immediately after a complete self-viewpoint at such a boundary. These
+    are the existing author's explicit は/にとって spellings, not arbitrary
+    topic-particle suffixes or inferred speakers. Keep the viewpoint separate
+    from the determiner run; never insert punctuation into canonical text.
+    Never match inside another word or infer a referent. Prefer including a
+    complete following hiragana run
     of one or two renderer graphemes, so a short tail is not stranded on the
     next line. This is a written-run hint, not a particle/word parser: never
     take just the beginning of a longer kana run. Measure the expanded form
@@ -174,9 +178,26 @@ def _fitting_determiner_run_breaks(clusters: list[str], script_runs: list[str],
     boundaries = [False] * (len(clusters) + 1)
     expanded_tail = False
     delimiters = _NO_END | frozenset('、。，．？！!?：；:;')
+    delimited_starts = {0} | {
+        i for i in range(1, len(clusters))
+        if clusters[i - 1][-1].isspace() or clusters[i - 1][-1] in delimiters}
+    determiner_starts = set(delimited_starts)
+    viewpoint_starts = {}
+    # A temporal evaluation can contain 私はその時間 without the ordinary
+    # author's viewpoint comma. Recognize the complete written viewpoint,
+    # not the は inside another word. Do not recursively chain viewpoints.
+    # Matching only whole renderer graphemes keeps scalar/ink boundaries intact.
+    viewpoints = tuple(speaker + marker
+                       for speaker in ('私', 'わたし', '僕', 'ぼく', '俺', 'おれ')
+                       for marker in ('は', 'にとって'))
+    for start in delimited_starts:
+        for viewpoint in viewpoints:
+            end = start + len(viewpoint)
+            if ''.join(clusters[start:end]) == viewpoint:
+                determiner_starts.add(end)
+                viewpoint_starts[end] = start
     for start in range(len(clusters) - 2):
-        if start and not (clusters[start - 1][-1].isspace()
-                          or clusters[start - 1][-1] in delimiters):
+        if start not in determiner_starts:
             continue
         # Normalize only the comparison view; render the untouched graphemes.
         prefix = unicodedata.normalize('NFC', ''.join(clusters[start:start + 2]))
@@ -205,6 +226,17 @@ def _fitting_determiner_run_breaks(clusters: list[str], script_runs: list[str],
                 for boundary in range(start + 1, candidate_end):
                     boundaries[boundary] = True
                 expanded_tail = expanded_tail or candidate_end > end
+                if start in viewpoint_starts:
+                    # Do not relocate a determiner cut into the viewpoint that
+                    # licensed it (にとっ / て). They are TWO measured runs:
+                    # their shared boundary remains free, not one long unit.
+                    viewpoint_start = viewpoint_starts[start]
+                    left = viewpoint_start
+                    while left and clusters[left - 1][-1] in _NO_END:
+                        left -= 1
+                    if _width(_measure(metrics, ''.join(clusters[left:start]), size)) <= width:
+                        for boundary in range(viewpoint_start + 1, start):
+                            boundaries[boundary] = True
                 break
     if expanded_tail:
         # Protect equivalent short written endings in the same composition.
