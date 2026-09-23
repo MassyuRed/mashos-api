@@ -31,7 +31,7 @@ class RendererMetrics(Protocol):
     def measure(self, text: str, font_px: int) -> TextMeasurement: ...
 
 
-_NO_START = frozenset('、。，．？！!?：；:;)]）］｝】〉》」』〕〗〙〛ー々ぁぃぅぇぉっゃゅょァィゥェォッャュョ')
+_NO_START = frozenset('、。，．,？！!?：；:;)]）］｝】〉》」』〕〗〙〛ー々ぁぃぅぇぉっゃゅょァィゥェォッャュョ')
 _NO_END = frozenset('([（［｛【〈《「『〔〖〘〚')
 
 
@@ -389,6 +389,7 @@ def _wrap_solutions(text: str, *, size: int, width: int, metrics: RendererMetric
     # grapheme boundary instead of shrinking, padding or refusing the body.
     n = len(clusters)
     word_clusters = [c[0].isascii() and c[0].isalnum() for c in clusters]
+    space_clusters = [c.isspace() for c in clusters]
     script_runs = [_script_run_kind(c) for c in clusters]
     kana_attachments = _kana_attachment_breaks(clusters, script_runs)
     kana_bridges = _kana_bridge_breaks(clusters, script_runs)
@@ -425,7 +426,16 @@ def _wrap_solutions(text: str, *, size: int, width: int, metrics: RendererMetric
             if (measured_width > width or line_height is not None
                     and measured.bottom - measured.top > line_height):
                 continue
-            split = int(end < n and word_clusters[end - 1] and word_clusters[end])
+            # A retained whitespace sequence is one visual gap. Prefer a
+            # break after it, rather than distributing it over two rows or
+            # turning it into a new line indent. Original leading gaps stay.
+            # Share the existing soft ASCII-run tier: line count and measured
+            # kana cohesion still take precedence, and an overwide sequence
+            # remains breakable. Never trim, collapse or replace source bytes.
+            split = int(end < n and (
+                word_clusters[end - 1] and word_clusters[end]
+                or space_clusters[end] and (space_clusters[end - 1]
+                    or end + 1 < n and space_clusters[end + 1])))
             script_split = int(end < n and (
                 bool(script_runs[end - 1]) and script_runs[end - 1] == script_runs[end]
                 or clusters[end - 1][-1] in 'っッ'
