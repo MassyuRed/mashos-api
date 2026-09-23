@@ -117,6 +117,14 @@ _SCOPED_EXPRESSION = re.compile(
     r'^(?P<scope>(?P<premise>.+?)(?P<marker>'
     + '|'.join(map(re.escape, _SCOPE_RELATIONS)) + r'))[、，,][ \t]*'
     r'(?P<intention>(?:私|わたし|僕|ぼく|俺|おれ)(?:は|にとって|が)[、，,]?.+。)$')
+# A sentence-initial time topic qualifies an explicit evaluation. The comma
+# fixes its boundary; time words inside the nominal target are not extracted.
+# Preserve the written relative time and contrast/additive particle without
+# resolving a date, inferring a previous evaluation, or changing predicate tense.
+# This is not a general temporal parser or permission to admit scoped wishes.
+_TEMPORAL_EVALUATION = re.compile(
+    r'^(?P<scope>(?P<premise>以前|当時|今|現在)(?P<marker>は|も))[、，,][ \t\u3000]*'
+    r'(?P<intention>(?:私|わたし|僕|ぼく|俺|おれ)(?:は|にとって|が)[、，,]?.+。)$')
 # Preserve the complete self expression, not an inferred desire lemma.
 # 読みたい / 休みたい and a source-written comparison ending みたい retain
 # their exact surface. Neither is promoted to a declaration by this operator.
@@ -126,6 +134,7 @@ _SCOPE_KINDS = {
     'SOURCE_EXPLICIT_REASON': 'PIECE_SOURCE_REASON_SCOPED_EXPRESSION',
     'SOURCE_EXPLICIT_CONDITION': 'PIECE_SOURCE_CONDITION_SCOPED_EXPRESSION',
     'SOURCE_EXPLICIT_CONCESSION': 'PIECE_SOURCE_CONCESSION_SCOPED_EXPRESSION',
+    'SOURCE_EXPLICIT_TIME_CONTEXT': 'PIECE_SOURCE_TIME_SCOPED_EXPRESSION',
 }
 
 
@@ -146,8 +155,12 @@ def _expression_scopes(text: str, nodes: tuple[MeaningNode, ...],
             raise unavailable('piece_intent_scope_source_binding')
         if _SELF_TOPIC.fullmatch(node.value):
             continue
-        match = _SCOPED_EXPRESSION.fullmatch(node.value)
+        match = (_SCOPED_EXPRESSION.fullmatch(node.value)
+                 or _TEMPORAL_EVALUATION.fullmatch(node.value))
         if match is None or _SELF_TOPIC_MENTION.search(match['premise']):
+            continue
+        temporal = match.re is _TEMPORAL_EVALUATION
+        if temporal and node.node_id not in evaluations:
             continue
         topic = _SELF_TOPIC.fullmatch(match['intention'])
         if node.node_id not in evaluations:
@@ -155,7 +168,8 @@ def _expression_scopes(text: str, nodes: tuple[MeaningNode, ...],
                     or _DEPENDENT_START.search(topic['body'])
                     or _EMBEDDED_REPORT.search(topic['body'])):
                 continue
-        relation = _SCOPE_RELATIONS[match['marker']]
+        relation = ('SOURCE_EXPLICIT_TIME_CONTEXT' if temporal
+                    else _SCOPE_RELATIONS[match['marker']])
         a, b = start + match.start('scope'), start + match.end('scope')
         c, d = start + match.start('intention'), start + match.end('intention')
         scopes.append(PieceExpressionScope(
@@ -540,7 +554,8 @@ def _personal_evaluation_shapes(text: str, nodes: tuple[MeaningNode, ...],
                  or _EVALUATIVE_FINITE.fullmatch(node.value))
         expression_start = start
         if match is None:
-            scoped = _SCOPED_EXPRESSION.fullmatch(node.value)
+            scoped = (_SCOPED_EXPRESSION.fullmatch(node.value)
+                      or _TEMPORAL_EVALUATION.fullmatch(node.value))
             if scoped is None or _SELF_TOPIC_MENTION.search(scoped['premise']):
                 continue
             # Interpret the already-modelled evaluation inside its written

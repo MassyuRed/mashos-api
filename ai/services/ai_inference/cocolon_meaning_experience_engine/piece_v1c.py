@@ -229,7 +229,8 @@ def _publicize_source_sentence(sentence: str, meaning: PieceSourceMeaning) -> st
                   lambda match: replacements[match.group()], sentence)
 
 
-def _evaluation_sentence(meaning: PieceSourceMeaning, frame: PiecePersonalEvaluation) -> str:
+def _evaluation_sentence(meaning: PieceSourceMeaning, frame: PiecePersonalEvaluation,
+                         *, separate_viewpoint: bool = True) -> str:
     """One writer realization shared by free and explicitly scoped evaluations."""
     original = meaning.envelope.raw_utf8.decode('utf-8')
     speaker, predicate, target = (original[a:b] for a, b in frame.scalar_parts)
@@ -237,7 +238,7 @@ def _evaluation_sentence(meaning: PieceSourceMeaning, frame: PiecePersonalEvalua
     # Only the relative nominal copula な becomes its source register's
     # finite copula. Negative/past/modal predicates stay byte-exact.
     finite = predicate[:-1] + frame.copula if predicate.endswith('な') else predicate
-    return perspective + '、' + target + 'が' + finite + '。'
+    return perspective + ('、' if separate_viewpoint else '') + target + 'が' + finite + '。'
 
 
 def _linked_self_continuations(meaning: PieceSourceMeaning,
@@ -423,11 +424,15 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
             premise = original[slice(*scope.scope_scalar_span)]
             frame = next((f for f in meaning.personal_evaluations if f.node_id == node.node_id), None)
             if frame is not None:
-                # The condition/reason governs this evaluation. Keep it before
-                # the complete first-person evaluation, rather than outputting
-                # a free-standing value or manufacturing a wish from liking.
+                # Keep the written scope before the complete evaluation. A
+                # time topic is not its nominal argument or an inferred cause.
+                # Its existing comma separates the short time topic from the
+                # explicit viewpoint; avoid another inserted pause immediately
+                # after that viewpoint. Other scopes retain their prior surface.
+                temporal = scope.relation == 'SOURCE_EXPLICIT_TIME_CONTEXT'
                 text = _publicize_source_sentence(
-                    premise + '、' + _evaluation_sentence(meaning, frame), meaning)
+                    premise + '、' + _evaluation_sentence(
+                        meaning, frame, separate_viewpoint=not temporal), meaning)
             else:
                 topic = _SELF_TOPIC.fullmatch(original[slice(*scope.expression_scalar_span)])
                 if topic is None:
