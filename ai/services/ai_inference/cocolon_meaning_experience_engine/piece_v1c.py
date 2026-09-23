@@ -505,31 +505,41 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
                     premise + '、' + _evaluation_sentence(
                         meaning, frame, separate_viewpoint=not temporal), meaning)
             else:
-                topic = _SELF_TOPIC.fullmatch(original[slice(*scope.expression_scalar_span)])
-                if topic is None:
-                    raise unavailable('piece_plan_operation_binding')
-                # Realize the written first-person topic. The complete premise,
-                # its exact connective, and all intention arguments stay intact.
-                # In particular なら never becomes ので, and neither clause is
-                # changed into a new causal explanation or an unconditional vow.
-                # An adjacent source-bound continuation already establishes
-                # this author. Keep its full scope and predicate; omit only
-                # the repeated self-topic, never the first visible viewpoint.
-                prefix = '' if node.node_id in continuations else topic['speaker'] + 'は、'
-                referenced_premise = any(
-                    ref.reference_node_id == node.node_id
-                    and scope.scope_scalar_span[0] <= ref.reference_scalar_span[0]
-                    and ref.reference_scalar_span[1] <= scope.scope_scalar_span[1]
-                    for ref in meaning.nominal_references)
-                if (scope.relation == 'SOURCE_EXPLICIT_CONCESSION'
-                        or referenced_premise):
-                    # Keep the source-bound premise before the written topic.
-                    # A nominal link does not make its participant the author;
-                    # fronting a retained topic can blur that clause boundary.
-                    # The existing continuation check alone owns omission.
-                    text = premise + '、' + prefix + topic['body'] + '。'
+                expression = original[slice(*scope.expression_scalar_span)]
+                focal = _focal_parts(expression)
+                if focal is not None:
+                    obj, predicate, speaker = focal
+                    # Keep the original clause order and full scoped object.
+                    # This author stays explicit across the scope boundary;
+                    # no continuity heuristic may erase it or turn a written
+                    # condition/concession into an unconditional declaration.
+                    text = premise + '、' + speaker + 'は' + obj + 'を' + predicate + '。'
                 else:
-                    text = prefix + premise + '、' + topic['body'] + '。'
+                    topic = _SELF_TOPIC.fullmatch(original[slice(*scope.expression_scalar_span)])
+                    if topic is None:
+                        raise unavailable('piece_plan_operation_binding')
+                    # Realize the written first-person topic. The complete premise,
+                    # its exact connective, and all intention arguments stay intact.
+                    # In particular なら never becomes ので, and neither clause is
+                    # changed into a new causal explanation or an unconditional vow.
+                    # An adjacent source-bound continuation already establishes
+                    # this author. Keep its full scope and predicate; omit only
+                    # the repeated self-topic, never the first visible viewpoint.
+                    prefix = '' if node.node_id in continuations else topic['speaker'] + 'は、'
+                    referenced_premise = any(
+                        ref.reference_node_id == node.node_id
+                        and scope.scope_scalar_span[0] <= ref.reference_scalar_span[0]
+                        and ref.reference_scalar_span[1] <= scope.scope_scalar_span[1]
+                        for ref in meaning.nominal_references)
+                    if (scope.relation == 'SOURCE_EXPLICIT_CONCESSION'
+                            or referenced_premise):
+                        # Keep the source-bound premise before the written topic.
+                        # A nominal link does not make its participant the author;
+                        # fronting a retained topic can blur that clause boundary.
+                        # The existing continuation check alone owns omission.
+                        text = premise + '、' + prefix + topic['body'] + '。'
+                    else:
+                        text = prefix + premise + '、' + topic['body'] + '。'
                 text = _publicize_source_sentence(text, meaning)
         elif duty.operation == 'SOURCE_FOCAL_TO_FIRST_PERSON':
             parts = _focal_parts(text)

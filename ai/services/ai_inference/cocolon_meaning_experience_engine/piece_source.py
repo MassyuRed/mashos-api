@@ -138,6 +138,29 @@ _SCOPE_KINDS = {
 }
 
 
+
+def _scoped_focal_expression(sentence: str) -> tuple[re.Match[str], re.Match[str]] | None:
+    """Bind an existing focal expression inside its written clause scope.
+
+    Reuse the same focal predicate/author grammar; a condition, reason or
+    concession does not establish a missing author or fulfill a wish. The
+    returned offsets are relative to the original sentence and expression,
+    so nominal references can retain their exact original evidence ranges.
+    Temporal contexts remain evaluation-only, as before.
+    """
+    from piece_v2_generation import _FOCUS, _DEICTIC, _NESTED
+    scoped = _SCOPED_EXPRESSION.fullmatch(sentence)
+    if scoped is None or _SELF_TOPIC_MENTION.search(scoped['premise']):
+        return None
+    focal = _FOCUS.fullmatch(scoped['intention'])
+    if focal is None:
+        return None
+    obj = focal['object'].lstrip('、，,')
+    if (not obj.endswith(('こと', 'もの', '時間')) or 'のは' in obj
+            or _NESTED.search(obj) or _DEICTIC.search(obj)):
+        raise unavailable('focal_object_not_self_contained')
+    return scoped, focal
+
 def _expression_scopes(text: str, nodes: tuple[MeaningNode, ...],
                    sentences: tuple[PieceSentenceMeaning, ...]
                    ) -> tuple[PieceExpressionScope, ...]:
@@ -164,7 +187,9 @@ def _expression_scopes(text: str, nodes: tuple[MeaningNode, ...],
             continue
         topic = _SELF_TOPIC.fullmatch(match['intention'])
         if node.node_id not in evaluations:
-            if (topic is None or not _SCOPED_SELF_END.search(topic['body'])
+            focal = _scoped_focal_expression(node.value)
+            if focal is None and (
+                    topic is None or not _SCOPED_SELF_END.search(topic['body'])
                     or _DEPENDENT_START.search(topic['body'])
                     or _EMBEDDED_REPORT.search(topic['body'])):
                 continue
@@ -462,9 +487,18 @@ def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
                 (r_start, r_end),
                 (len(text[:r_start].encode('utf-8')), len(text[:r_end].encode('utf-8')))))
         focal = _FOCUS.fullmatch(node.value)
+        expression_start = start
+        if focal is None:
+            scoped_focal = _scoped_focal_expression(node.value)
+            if scoped_focal is not None:
+                scoped, focal = scoped_focal
+                expression_start += scoped.start('intention')
         if focal is not None:
+            # Bind the complete object, not its preceding scope or speaker.
+            # Its existence as a referent never asserts that a condition was
+            # met or changes the focal predicate's negation/commitment.
             obj = focal['object'].lstrip('、，,')
-            a_end = start + focal.end('object')
+            a_end = expression_start + focal.end('object')
         elif node.node_id in evaluations:
             a_start, a_end = evaluations[node.node_id].scalar_parts[2]
             obj = text[a_start:a_end]
