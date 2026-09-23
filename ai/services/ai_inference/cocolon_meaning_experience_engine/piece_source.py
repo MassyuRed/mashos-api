@@ -344,13 +344,14 @@ _REFERENCE_RELATION = 'SOURCE_BOUND_NOMINAL_REFERENCE'
 def _evaluation_target_references(target: str) -> tuple[tuple[int, int, str], ...]:
     """Locate whole reference operands without replacing the evaluation target.
 
-    A source-written ``Aより、B`` can contain one already-bound nominal
-    reference and one complete, non-referential nominal operand. The comma
-    supplies the operand boundary; temporal/modifier uses of より, nested
-    comparisons and two deictic operands are not interpreted by this rule.
-    Both sides and the exact marker remain in the original target. Neither
-    operand becomes a new antecedent, an inferred winner, or a user's wish.
-    These are relative source ranges, not authority to resolve a referent.
+    A source-written ``Aより、B`` retains the existing single-reference
+    operand rule. It can also contain two references with distinct nominal
+    heads, as can ``Aと、B``. Each must independently bind to one prior
+    source object in the resolver below; neither operand certifies the other.
+    Same-head pairs, implicit separators and nested operands stay unresolved.
+    Both sides and the exact marker remain ONE evaluation target, not two
+    separately evaluated objects, an inferred winner, or a user's wish.
+    These relative source ranges do not themselves resolve any referent.
     """
     from piece_v2_expression import _REFERENCE
     from piece_v2_generation import _NESTED
@@ -360,20 +361,26 @@ def _evaluation_target_references(target: str) -> tuple[tuple[int, int, str], ..
     if not _REFERENCE.search(target):
         return ()
     comparison = re.fullmatch(r'(?P<left>.+?)より[、，,][ \t\u3000]*(?P<right>.+)', target)
-    if comparison is None:
+    # Keep comparison precedence: a と inside its complete literal operand
+    # must not steal the outer より boundary from the existing grammar.
+    compound = comparison or re.fullmatch(
+        r'(?P<left>.+?)と[、，,][ \t\u3000]*(?P<right>.+)', target)
+    if compound is None:
         raise unavailable('evaluation_target_not_self_contained')
     references = []
     for part in ('left', 'right'):
-        operand = comparison[part]
+        operand = compound[part]
         reference = _NOMINAL_REFERENCE_TARGET.fullmatch(operand)
         if reference is not None:
-            references.append((comparison.start(part), comparison.end(part), reference['head']))
+            references.append((compound.start(part), compound.end(part), reference['head']))
         elif (not operand.endswith(('こと', 'もの', '時間'))
                 or _REFERENCE.search(operand) or _COMPOSITE_OBJECT.search(operand)
                 or _NESTED.search(operand) or 'のは' in operand
                 or operand.startswith(('、', '，', ',', ' ', '\t', '\u3000'))):
             raise unavailable('evaluation_target_not_self_contained')
-    if len(references) != 1:
+    single_comparison = comparison is not None and len(references) == 1
+    distinct_pair = len(references) == 2 and references[0][2] != references[1][2]
+    if not (single_comparison or distinct_pair):
         raise unavailable('evaluation_target_not_self_contained')
     return tuple(references)
 
@@ -424,10 +431,10 @@ def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
         if frame is not None:
             a, b = frame.scalar_parts[2]
             for left, right, head in _evaluation_target_references(text[a:b]):
-                # In Aより、B, the other operand is part of this comparison,
-                # not a new discourse antecedent for its sibling. Resolve
-                # against the context preceding the complete target; do not
-                # select an object from inside the comparison by proximity.
+                # A sibling operand is part of the complete evaluation
+                # target, not a new discourse antecedent. Resolve both
+                # against the context preceding that whole target; never
+                # select an object from inside the pair by proximity.
                 mentions[(a + left, a + right)] = (
                     head, 'evaluation_target_not_self_contained', a)
         for (r_start, r_end), (head, failure, context_end) in sorted(mentions.items()):
