@@ -509,11 +509,13 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
                 focal = _focal_parts(expression)
                 if focal is not None:
                     obj, predicate, speaker = focal
-                    # Keep the original clause order and full scoped object.
-                    # This author stays explicit across the scope boundary;
-                    # no continuity heuristic may erase it or turn a written
-                    # condition/concession into an unconditional declaration.
-                    text = premise + '、' + speaker + 'は' + obj + 'を' + predicate + '。'
+                    # Scope validation proves a sentence-initial self topic,
+                    # when present, is this exact same author without another
+                    # participant/report boundary. Keep that visible topic and
+                    # omit only its repetition; do not infer speaker aliases.
+                    # The full premise, connective, object and predicate stay.
+                    prefix = '' if premise.startswith(speaker + 'は') else speaker + 'は'
+                    text = premise + '、' + prefix + obj + 'を' + predicate + '。'
                 else:
                     topic = _SELF_TOPIC.fullmatch(original[slice(*scope.expression_scalar_span)])
                     if topic is None:

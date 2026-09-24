@@ -150,14 +150,29 @@ def _scoped_focal_expression(sentence: str) -> tuple[re.Match[str], re.Match[str
     """
     from piece_v2_generation import _FOCUS, _DEICTIC, _NESTED
     scoped = _SCOPED_EXPRESSION.fullmatch(sentence)
-    if scoped is None or _SELF_TOPIC_MENTION.search(scoped['premise']):
+    if scoped is None:
         return None
     focal = _FOCUS.fullmatch(scoped['intention'])
     if focal is None:
         return None
+    self_premise = _SELF_TOPIC_MENTION.search(scoped['premise']) is not None
+    if self_premise:
+        from piece_v2_expression import _SELF_TOPIC, _DEPENDENT_START, _EMBEDDED_REPORT
+        topic = _SELF_TOPIC.fullmatch(scoped['premise'] + '。')
+        # Only one sentence-initial, literally identical author may be shared.
+        # Another topic/participant, aside or reported wish does not establish
+        # this continuity. Decline this edit, not an otherwise valid context.
+        # The particle check is conservative; it is not a general parser.
+        if (topic is None or topic['speaker'] != focal['speaker']
+                or re.search(r'[はがも、，,]', topic['body'])
+                or _DEPENDENT_START.search(topic['body'])
+                or _EMBEDDED_REPORT.search(topic['body'])):
+            return None
     obj = focal['object'].lstrip('、，,')
     if (not obj.endswith(('こと', 'もの', '時間')) or 'のは' in obj
             or _NESTED.search(obj) or _DEICTIC.search(obj)):
+        if self_premise:
+            return None
         raise unavailable('focal_object_not_self_contained')
     return scoped, focal
 
@@ -176,18 +191,19 @@ def _expression_scopes(text: str, nodes: tuple[MeaningNode, ...],
         if (sentence.node_id != node.node_id or start < 0 or end > len(text)
                 or text[start:end] != node.value):
             raise unavailable('piece_intent_scope_source_binding')
-        if _SELF_TOPIC.fullmatch(node.value):
+        focal = _scoped_focal_expression(node.value)
+        if _SELF_TOPIC.fullmatch(node.value) and focal is None:
             continue
         match = (_SCOPED_EXPRESSION.fullmatch(node.value)
                  or _TEMPORAL_EVALUATION.fullmatch(node.value))
-        if match is None or _SELF_TOPIC_MENTION.search(match['premise']):
+        if match is None or (_SELF_TOPIC_MENTION.search(match['premise'])
+                             and focal is None):
             continue
         temporal = match.re is _TEMPORAL_EVALUATION
         if temporal and node.node_id not in evaluations:
             continue
         topic = _SELF_TOPIC.fullmatch(match['intention'])
         if node.node_id not in evaluations:
-            focal = _scoped_focal_expression(node.value)
             if focal is None and (
                     topic is None or not _SCOPED_SELF_END.search(topic['body'])
                     or _DEPENDENT_START.search(topic['body'])
