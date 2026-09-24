@@ -496,6 +496,26 @@ def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
                 # select an object from inside the pair by proximity.
                 mentions[(a + left, a + right)] = (
                     head, 'evaluation_target_not_self_contained', a)
+        focal = _FOCUS.fullmatch(node.value)
+        expression_start = start
+        if focal is None:
+            scoped_focal = _scoped_focal_expression(node.value)
+            if scoped_focal is not None:
+                scoped, focal = scoped_focal
+                expression_start += scoped.start('intention')
+        if focal is not None:
+            # The already-admitted focal grammar owns this whole object and
+            # its explicit speaker/predicate, including a written outer scope.
+            # A complete nominal reference uses the SAME unique-prior-object
+            # resolver as an evaluation; matching a pronoun alone is not proof.
+            # Do not extend this to embedded or comparative focal operands.
+            obj = focal['object'].lstrip('、，,')
+            reference = _NOMINAL_REFERENCE_TARGET.fullmatch(obj)
+            if reference is not None:
+                r_end = expression_start + focal.end('object')
+                r_start = r_end - len(obj)
+                mentions[(r_start, r_end)] = (
+                    reference['head'], 'unresolved_reference', r_start)
         for (r_start, r_end), (head, failure, context_end) in sorted(mentions.items()):
             prior = candidates.get(head, [])
             if len(prior) != 1:
@@ -511,13 +531,6 @@ def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
                 (len(text[:a_start].encode('utf-8')), len(text[:a_end].encode('utf-8'))),
                 (r_start, r_end),
                 (len(text[:r_start].encode('utf-8')), len(text[:r_end].encode('utf-8')))))
-        focal = _FOCUS.fullmatch(node.value)
-        expression_start = start
-        if focal is None:
-            scoped_focal = _scoped_focal_expression(node.value)
-            if scoped_focal is not None:
-                scoped, focal = scoped_focal
-                expression_start += scoped.start('intention')
         if focal is not None:
             # Bind the complete object, not its preceding scope or speaker.
             # Its existence as a referent never asserts that a condition was
