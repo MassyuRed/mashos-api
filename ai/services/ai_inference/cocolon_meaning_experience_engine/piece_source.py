@@ -572,6 +572,22 @@ def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
         if mention is not None:
             span = (start + mention.start('reference'), start + mention.end('reference'))
             mentions[span] = (mention['head'], 'unresolved_reference', span[0])
+        # A coordinated conditional premise retains BOTH complete source
+        # referents. Reuse the existing two-operand parser and unique-prior
+        # resolver; the first case-marked mention is the same span, not a
+        # second edge. No predicate, comparison, third operand or suffix is
+        # admitted by this bounded nominal conjunction.
+        if _NOMINAL_REFERENCE_TARGET.match(node.value):
+            conditional = _SCOPED_EXPRESSION.fullmatch(node.value)
+            token = r'(?:その|この)(?:時間|こと|もの)'
+            if (conditional is not None
+                    and _SCOPE_RELATIONS[conditional['marker']] == 'SOURCE_EXPLICIT_CONDITION'
+                    and re.fullmatch(token + r'と[、，,]?[ \t\u3000]*' + token,
+                                     conditional['premise'])):
+                for left, right, head in _evaluation_target_references(conditional['premise']):
+                    # Both operands resolve against preceding discourse, not
+                    # each other. Same-head pairs remain outside the parser.
+                    mentions[(start + left, start + right)] = (head, 'unresolved_reference', start)
         frame = evaluations.get(node.node_id)
         if frame is not None:
             a, b = frame.scalar_parts[2]

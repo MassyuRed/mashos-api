@@ -483,7 +483,8 @@ def _paired_self_continuations(meaning: PieceSourceMeaning,
     The following plain-topic preference must refer to exactly those objects.
     Keep the ordered joint/comparative target intact. This does not equate an
     explicit value viewpoint with a self-topic or infer an omitted author.
-    A scope, newline, competing subject or different speaker declines only
+    A complete two-reference conditional wish can share the same proved author.
+    Other scopes, newlines, competing subjects or different speakers decline only
     this optional edit. Source admission, meaning and plan stay unchanged.
     """
     original = meaning.envelope.raw_utf8.decode('utf-8')
@@ -492,27 +493,56 @@ def _paired_self_continuations(meaning: PieceSourceMeaning,
     spans = {sentence.node_id: sentence for sentence in meaning.sentences}
     duties = {duty.node_id: duty.operation for duty in plan.duties}
     evaluations = {frame.node_id: frame for frame in meaning.personal_evaluations}
+    scopes = {scope.node_id: scope for scope in meaning.expression_scopes}
     continuations = set()
     for group in plan.block_node_ids:
         for first, previous, current in zip(group, group[1:], group[2:]):
-            frame = evaluations.get(current)
-            if (duties[current] != 'SOURCE_PERSONAL_EVALUATION' or frame is None
-                    or frame.construction != 'は' or frame.kind != 'PERSONAL_PREFERENCE'
-                    or positions[previous] != positions[first] + 1
+            frame, scope = evaluations.get(current), scopes.get(current)
+            if (positions[previous] != positions[first] + 1
                     or positions[current] != positions[previous] + 1):
                 continue
+            if scope is not None:
+                # Only a written two-object condition with an explicit simple
+                # wish may share its author. Keep evaluative viewpoints and
+                # direct transitive clauses with their existing writers.
+                expression = original[slice(*scope.expression_scalar_span)]
+                topic = _SELF_TOPIC.fullmatch(expression)
+                if (duties[current] != 'SOURCE_SCOPED_EXPRESSION_TO_FIRST_PERSON'
+                        or scope.relation != 'SOURCE_EXPLICIT_CONDITION'
+                        or frame is not None or topic is None
+                        or not _WISH_END.search(topic['body'])
+                        or _direct_transitive_expression(expression) is not None
+                        or _REFERENCE.search(topic['body'])
+                        or re.search(r'[はがも]', topic['body'])):
+                    continue
+                target_span = (scope.scope_scalar_span[0],
+                               scope.scope_scalar_span[1] - len(scope.marker))
+                speaker = topic['speaker']
+            else:
+                if (duties[current] != 'SOURCE_PERSONAL_EVALUATION' or frame is None
+                        or frame.construction != 'は' or frame.kind != 'PERSONAL_PREFERENCE'):
+                    continue
+                target_span = frame.scalar_parts[2]
+                speaker = original[slice(*frame.scalar_parts[0])]
             if any('\n' in gap or '\r' in gap for gap in (
                     original[spans[first].source_end:spans[previous].source_start],
                     original[spans[previous].source_end:spans[current].source_start])):
                 continue
             links = [ref for ref in meaning.nominal_references
                      if ref.reference_node_id == current
-                     and frame.scalar_parts[2][0] <= ref.reference_scalar_span[0]
-                     and ref.reference_scalar_span[1] <= frame.scalar_parts[2][1]]
+                     and target_span[0] <= ref.reference_scalar_span[0]
+                     and ref.reference_scalar_span[1] <= target_span[1]]
             if (len(links) != 2 or len({ref.nominal_head for ref in links}) != 2
                     or {ref.antecedent_node_id for ref in links} != {first, previous}):
                 continue
-            speaker = original[slice(*frame.scalar_parts[0])]
+            if scope is not None:
+                ordered_links = sorted(links, key=lambda ref: ref.reference_scalar_span)
+                left, right = ordered_links
+                joiner = original[left.reference_scalar_span[1]:right.reference_scalar_span[0]]
+                if (left.reference_scalar_span[0] != target_span[0]
+                        or right.reference_scalar_span[1] != target_span[1]
+                        or re.fullmatch(r'と[、，,]?[ \t\u3000]*', joiner) is None):
+                    continue
             for ref in links:
                 antecedent = ref.antecedent_node_id
                 prior = evaluations.get(antecedent)
@@ -683,8 +713,12 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
     # Apply the optional continuity edit only after source/plan validation and
     # complete realization. Remove just the redundant topic, not a proposition,
     # public relationship, predicate, negation, reservation or the first author.
-    adjacent = (_adjacent_self_continuations(meaning, plan)
-                  | _paired_self_continuations(meaning, plan))
+    paired = _paired_self_continuations(meaning, plan)
+    # A paired condition keeps its premise first. Its topic edit uses the
+    # existing scoped post-realization path, never the sentence-initial edit.
+    paired_scopes = paired & {scope.node_id for scope in meaning.expression_scopes}
+    direct_continuations = direct_continuations | paired_scopes
+    adjacent = _adjacent_self_continuations(meaning, plan) | (paired - paired_scopes)
     if adjacent:
         edited = dict(sentences)
         for node_id in adjacent:
