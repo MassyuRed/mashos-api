@@ -160,10 +160,23 @@ def _direct_transitive_expression(sentence: str) -> re.Match[str] | None:
     """
     from piece_v2_generation import _PREDICATES, _NESTED, _DEICTIC
     from piece_v2_expression import _REFERENCE
+    # Derive only the nonpast polite register of the already-admitted
+    # predicates. These inflections do not license another lexical predicate,
+    # tense or modal. Keep the matched surface in the original source span;
+    # neither the graph nor the writer replaces it with the plain form.
+    # This finite grammar is separate from the relative focal construction.
+    predicates = list(_PREDICATES)
+    for predicate in _PREDICATES:
+        if predicate.endswith(('たい', 'たくない')):
+            predicates.append(predicate + 'です')
+        elif predicate.endswith('いない'):
+            predicates.append(predicate[:-len('いない')] + 'いません')
+        elif predicate.endswith('いる'):
+            predicates.append(predicate[:-len('いる')] + 'います')
     match = re.fullmatch(
         r'(?P<speaker>私|わたし|僕|ぼく|俺|おれ)は[、，,]?'
         r'(?P<object>.+?)を(?P<predicate>'
-        + '|'.join(map(re.escape, _PREDICATES)) + r')。', sentence)
+        + '|'.join(map(re.escape, predicates)) + r')。', sentence)
     if match is None:
         return None
     obj = match['object']
