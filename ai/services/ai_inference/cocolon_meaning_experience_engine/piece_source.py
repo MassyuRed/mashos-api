@@ -557,6 +557,18 @@ def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
         # two different mentions, both checked in original source order.
         mentions: dict[tuple[int, int], tuple[str, str, int]] = {}
         mention = _NOMINAL_REFERENCE.match(node.value)
+        if mention is None and _NOMINAL_REFERENCE_TARGET.match(node.value):
+            # A whole nominal premise can meet the existing conditional
+            # connective directly, without a case/topic particle in between.
+            # Bind only that complete written premise at the sentence start;
+            # a suffix inside a larger premise or a partial connective is not
+            # licensed. The same unique-prior-object resolver below owns its
+            # authority. Referring to an earlier wish/value does not assert
+            # its existence, fulfill this condition, or transfer its stance.
+            conditional = _SCOPED_EXPRESSION.fullmatch(node.value)
+            if (conditional is not None and _SCOPE_RELATIONS[conditional['marker']]
+                    == 'SOURCE_EXPLICIT_CONDITION'):
+                mention = _NOMINAL_REFERENCE_TARGET.fullmatch(conditional['premise'])
         if mention is not None:
             span = (start + mention.start('reference'), start + mention.end('reference'))
             mentions[span] = (mention['head'], 'unresolved_reference', span[0])
