@@ -270,7 +270,8 @@ def _evaluation_sentence(meaning: PieceSourceMeaning, frame: PiecePersonalEvalua
 
 
 def _linked_self_continuations(meaning: PieceSourceMeaning,
-                               plan: PieceArtifactPlan) -> frozenset[str]:
+                               plan: PieceArtifactPlan
+                               ) -> tuple[frozenset[str], frozenset[str]]:
     """Reduce an adjacent, source-proven author repetition, not subject meaning.
 
     The same-block antecedent must itself state the same literal first person.
@@ -278,13 +279,18 @@ def _linked_self_continuations(meaning: PieceSourceMeaning,
     its explicit wish may omit the redundant topic; an evaluation viewpoint,
     comparison, intervening context or different speaker is never elided.
     Source/graph/plan validators run before this editorial choice is consumed.
+    Direct antecedents reuse their complete author/object proof. Their optional
+    edits are returned separately and applied only after full realization, so
+    shortening cannot remove an already-admitted short essay from its envelope.
     """
     original = meaning.envelope.raw_utf8.decode('utf-8')
     nodes = {node.node_id: node for node in meaning.graph.nodes}
     evaluations = {frame.node_id: frame for frame in meaning.personal_evaluations}
     scopes = {scope.node_id: scope for scope in meaning.expression_scopes}
     references = {ref.reference_node_id: ref for ref in meaning.nominal_references}
-    continuations = set()
+    positions = {node.node_id: i for i, node in enumerate(meaning.graph.nodes)}
+    spans = {sentence.node_id: sentence for sentence in meaning.sentences}
+    continuations, direct_continuations = set(), set()
     for group in plan.block_node_ids:
         for previous, current in zip(group, group[1:]):
             ref, scope = references.get(current), scopes.get(current)
@@ -312,7 +318,31 @@ def _linked_self_continuations(meaning: PieceSourceMeaning,
                        else focal[2] if focal is not None else None)
             if speaker == topic['speaker']:
                 continuations.add(current)
-    return frozenset(continuations)
+            elif speaker is None:
+                direct = _direct_transitive_expression(nodes[previous].value)
+                # Only the existing simple scoped-wish realization can lose
+                # this topic. A scoped transitive expression has its own writer.
+                if (direct is None or direct['speaker'] != topic['speaker']
+                        or _direct_transitive_expression(
+                            original[slice(*scope.expression_scalar_span)]) is not None
+                        or positions[current] != positions[previous] + 1):
+                    continue
+                gap = original[spans[previous].source_end:spans[current].source_start]
+                start = spans[previous].source_start
+                target_span = (start + direct.start('object'), start + direct.end('object'))
+                # Preserve source line breaks and competing subjects/contrasts.
+                # A false positive merely declines an optional edit. Match the
+                # complete original object in both coordinate systems; a wish
+                # label, nearby word or speaker alias never supplies authority.
+                if ('\n' in gap or '\r' in gap
+                        or re.search(r'[はがも]', direct['object'][:-len(ref.nominal_head)])
+                        or re.search(r'[はがも]', topic['body'])
+                        or ref.antecedent_scalar_span != target_span
+                        or ref.antecedent_utf8_span != tuple(
+                            len(original[:offset].encode('utf-8')) for offset in target_span)):
+                    continue
+                direct_continuations.add(current)
+    return frozenset(continuations), frozenset(direct_continuations)
 
 
 def _adjacent_self_continuations(meaning: PieceSourceMeaning,
@@ -550,7 +580,7 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
         raise unavailable('piece_intent_mismatch')
     if plan != compile_piece_artifact_plan(meaning):
         raise unavailable('piece_plan_semantic_binding')
-    continuations = _linked_self_continuations(meaning, plan)
+    continuations, direct_continuations = _linked_self_continuations(meaning, plan)
     sentences: dict[str, str] = {}
     for node, duty, evidence in zip(graph.nodes, plan.duties, meaning.evidence, strict=True):
         raw = meaning.envelope.raw_utf8
@@ -667,6 +697,26 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
         # rather than changing the existing envelope or padding the user's text.
         length = len(re.sub(r'\s', '', ''.join(edited.values())))
         if length >= ENVELOPES['short_essay'][0]:
+            sentences = edited
+    if direct_continuations:
+        edited = dict(sentences)
+        original = meaning.envelope.raw_utf8.decode('utf-8')
+        for scope in meaning.expression_scopes:
+            if scope.node_id not in direct_continuations:
+                continue
+            topic = _SELF_TOPIC.fullmatch(original[slice(*scope.expression_scalar_span)])
+            if topic is None:
+                raise unavailable('piece_plan_operation_binding')
+            premise = original[slice(*scope.scope_scalar_span)] + '、'
+            # Work from the actual complete realized sentence, not a new body
+            # or a guessed subject. Keep the referential premise and all of
+            # its connective; delete only this proven repeated self-topic.
+            prefix = _publicize_source_sentence(premise + topic['speaker'] + 'は、', meaning)
+            if not edited[scope.node_id].startswith(prefix):
+                raise unavailable('piece_plan_operation_binding')
+            edited[scope.node_id] = (_publicize_source_sentence(premise, meaning)
+                                     + edited[scope.node_id][len(prefix):])
+        if len(re.sub(r'\s', '', ''.join(edited.values()))) >= ENVELOPES['short_essay'][0]:
             sentences = edited
     blocks = tuple(''.join(sentences[node_id] for node_id in group)
                    for group in plan.block_node_ids)
