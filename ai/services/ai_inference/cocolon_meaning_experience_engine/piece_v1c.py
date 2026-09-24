@@ -431,6 +431,8 @@ def _paired_self_continuations(meaning: PieceSourceMeaning,
 
     Both objects must be the immediately preceding, same-block propositions,
     each with the same written author and its own complete source argument.
+    A focal or direct expression uses its already-admitted source grammar;
+    a generic wish label alone cannot establish either author or argument.
     The following plain-topic preference must refer to exactly those objects.
     Keep the ordered joint/comparative target intact. This does not equate an
     explicit value viewpoint with a self-topic or infer an omitted author.
@@ -479,6 +481,24 @@ def _paired_self_continuations(meaning: PieceSourceMeaning,
                     if focal is None:
                         break
                     target, _, author = focal
+                elif duties[antecedent] in {'SOURCE_TRANSITIVE_SELF_TOPIC',
+                                           'SOURCE_FIRST_PERSON_TOPIC'}:
+                    # Reuse the admitted direct grammar, including its exact
+                    # predicate/register. Bind the complete argument at BOTH
+                    # coordinate types; matching a word or wish role is not
+                    # authority to share an author across these propositions.
+                    direct = _direct_transitive_expression(nodes[antecedent].value)
+                    if direct is None:
+                        break
+                    start = spans[antecedent].source_start
+                    target_span = (start + direct.start('object'),
+                                   start + direct.end('object'))
+                    if (ref.antecedent_scalar_span != target_span
+                            or ref.antecedent_utf8_span != tuple(
+                                len(original[:offset].encode('utf-8'))
+                                for offset in target_span)):
+                        break
+                    target, author = direct['object'], direct['speaker']
                 else:
                     break
                 if (author != speaker
@@ -487,10 +507,12 @@ def _paired_self_continuations(meaning: PieceSourceMeaning,
                     break
             else:
                 continuations.add(current)
-                # A focal wish has already been realized as this author's は
-                # sentence. It can share the same author, but an explicit
-                # にとって evaluation keeps its distinct written viewpoint.
-                if duties[previous] == 'SOURCE_FOCAL_TO_FIRST_PERSON':
+                # The validated focal/direct expression is this author's は
+                # sentence. Share only its topic, not its state, rejection or
+                # intention. An explicit にとって keeps its written viewpoint.
+                if duties[previous] in {'SOURCE_FOCAL_TO_FIRST_PERSON',
+                                        'SOURCE_TRANSITIVE_SELF_TOPIC',
+                                        'SOURCE_FIRST_PERSON_TOPIC'}:
                     continuations.add(previous)
     return frozenset(continuations)
 
