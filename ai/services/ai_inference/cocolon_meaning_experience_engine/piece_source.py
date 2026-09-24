@@ -160,23 +160,31 @@ def _direct_transitive_expression(sentence: str) -> re.Match[str] | None:
     """
     from piece_v2_generation import _PREDICATES, _NESTED, _DEICTIC
     from piece_v2_expression import _REFERENCE
-    # Derive only the nonpast polite register of the already-admitted
-    # predicates. These inflections do not license another lexical predicate,
-    # tense or modal. Keep the matched surface in the original source span;
-    # neither the graph nor the writer replaces it with the plain form.
-    # This finite grammar is separate from the relative focal construction.
+    # Derive finite register/time forms of the existing transitive predicates,
+    # not another lexical predicate or a guessed current intention. The past
+    # branch is explicitly bound for format planning; every matched surface
+    # stays in the original scalar/UTF-8 span and is written without tense or
+    # polarity conversion. Relative focus and outer modals remain separate.
     predicates = list(_PREDICATES)
+    past_predicates = []
     for predicate in _PREDICATES:
         if predicate.endswith(('たい', 'たくない')):
             predicates.append(predicate + 'です')
+            past = predicate[:-1] + 'かった'
+            past_predicates.extend((past, past + 'です'))
         elif predicate.endswith('いない'):
-            predicates.append(predicate[:-len('いない')] + 'いません')
+            stem = predicate[:-len('いない')]
+            predicates.append(stem + 'いません')
+            past_predicates.extend((stem + 'いなかった', stem + 'いませんでした'))
         elif predicate.endswith('いる'):
-            predicates.append(predicate[:-len('いる')] + 'います')
+            stem = predicate[:-len('いる')]
+            predicates.append(stem + 'います')
+            past_predicates.extend((stem + 'いた', stem + 'いました'))
     match = re.fullmatch(
         r'(?P<speaker>私|わたし|僕|ぼく|俺|おれ)は[、，,]?'
-        r'(?P<object>.+?)を(?P<predicate>'
-        + '|'.join(map(re.escape, predicates)) + r')。', sentence)
+        r'(?P<object>.+?)を(?P<predicate>(?:'
+        + '|'.join(map(re.escape, predicates)) + r')|(?P<past_predicate>'
+        + '|'.join(map(re.escape, past_predicates)) + r'))。', sentence)
     if match is None:
         return None
     obj = match['object']
