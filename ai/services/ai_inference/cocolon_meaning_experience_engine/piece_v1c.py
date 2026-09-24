@@ -302,8 +302,8 @@ def _adjacent_self_continuations(meaning: PieceSourceMeaning,
                                  plan: PieceArtifactPlan) -> frozenset[str]:
     """Find optional self-topic omissions from explicit, adjacent duties.
 
-    Two wishes, or a focal/evaluative author followed by a bound plain-topic
-    preference, can share a written author. Another subject/contrast, source
+    Two wishes, or a focal/evaluative/direct author followed by a bound
+    plain-topic preference, can share a written author. Another subject/contrast, source
     line break, scoped duty or paragraph boundary keeps the topic. A preceding
     evaluation's viewpoint is retained; the following explicit viewpoint or
     focus is never elided. Both propositions must state the same first person.
@@ -327,9 +327,12 @@ def _adjacent_self_continuations(meaning: PieceSourceMeaning,
             if '\n' in gap or '\r' in gap:
                 continue
             if (duties[previous] in {'SOURCE_FOCAL_TO_FIRST_PERSON',
-                                     'SOURCE_PERSONAL_EVALUATION'}
+                                     'SOURCE_PERSONAL_EVALUATION',
+                                     'SOURCE_TRANSITIVE_SELF_TOPIC',
+                                     'SOURCE_FIRST_PERSON_TOPIC'}
                     and duties[current] == 'SOURCE_PERSONAL_EVALUATION'):
                 prior = evaluations.get(previous)
+                direct_span = None
                 if duties[previous] == 'SOURCE_PERSONAL_EVALUATION':
                     # An existing source-bound evaluation can establish this
                     # author and referent. Keep its full viewpoint/predicate;
@@ -338,11 +341,24 @@ def _adjacent_self_continuations(meaning: PieceSourceMeaning,
                         continue
                     speaker = original[slice(*prior.scalar_parts[0])]
                     target = original[slice(*prior.scalar_parts[2])]
-                else:
+                elif duties[previous] == 'SOURCE_FOCAL_TO_FIRST_PERSON':
                     focal = _focal_parts(nodes[previous].value)
                     if focal is None:
                         continue
                     target, _, speaker = focal
+                else:
+                    # An admitted direct expression states the same author
+                    # and full argument as a focal one. A generic wish role
+                    # alone cannot supply either: re-read the existing direct
+                    # grammar and bind its exact object span below. Keep its
+                    # predicate/register, even when it is a state or refusal.
+                    direct = _direct_transitive_expression(nodes[previous].value)
+                    if direct is None:
+                        continue
+                    target, speaker = direct['object'], direct['speaker']
+                    start = spans[previous].source_start
+                    direct_span = (start + direct.start('object'),
+                                   start + direct.end('object'))
                 frame = evaluations.get(current)
                 # Only the next plain は preference can omit its self-topic.
                 # Its explicit にとって viewpoint, が focus or comparison stays.
@@ -357,6 +373,11 @@ def _adjacent_self_continuations(meaning: PieceSourceMeaning,
                 if len(links) != 1:
                     continue
                 ref = links[0]
+                if direct_span is not None and (
+                        ref.antecedent_scalar_span != direct_span
+                        or ref.antecedent_utf8_span != tuple(
+                            len(original[:offset].encode('utf-8')) for offset in direct_span)):
+                    continue
                 referent = (ref.antecedent_node_id, ref.nominal_head,
                             ref.antecedent_scalar_span, ref.antecedent_utf8_span)
                 # The resolver keeps later mentions bound to the original
