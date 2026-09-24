@@ -230,7 +230,8 @@ def _publicize_source_sentence(sentence: str, meaning: PieceSourceMeaning) -> st
 
 
 def _evaluation_sentence(meaning: PieceSourceMeaning, frame: PiecePersonalEvaluation,
-                         *, separate_viewpoint: bool = True) -> str:
+                         *, separate_viewpoint: bool = True,
+                         omit_self_topic: bool = False) -> str:
     """One writer realization shared by free and explicitly scoped evaluations."""
     original = meaning.envelope.raw_utf8.decode('utf-8')
     speaker, predicate, target = (original[a:b] for a, b in frame.scalar_parts)
@@ -238,7 +239,11 @@ def _evaluation_sentence(meaning: PieceSourceMeaning, frame: PiecePersonalEvalua
     # Only the relative nominal copula な becomes its source register's
     # finite copula. Negative/past/modal predicates stay byte-exact.
     finite = predicate[:-1] + frame.copula if predicate.endswith('な') else predicate
-    return perspective + ('、' if separate_viewpoint else '') + target + 'が' + finite + '。'
+    # Only the caller's source-proven same-author scope may omit a repeated
+    # self topic. An explicit value viewpoint remains a distinct expression.
+    prefix = ('' if omit_self_topic and frame.construction in ('は', 'が')
+              else perspective + ('、' if separate_viewpoint else ''))
+    return prefix + target + 'が' + finite + '。'
 
 
 def _linked_self_continuations(meaning: PieceSourceMeaning,
@@ -501,9 +506,16 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
                 # explicit viewpoint; avoid another inserted pause immediately
                 # after that viewpoint. Other scopes retain their prior surface.
                 temporal = scope.relation == 'SOURCE_EXPLICIT_TIME_CONTEXT'
+                speaker = original[slice(*frame.scalar_parts[0])]
+                # Recomputed scope/frame validation already established this
+                # exact author within one sentence, without a new participant
+                # or report boundary. Keep its first topic and every premise
+                # word; にとって still states the explicit evaluation viewpoint.
+                same_author = premise.startswith(speaker + 'は')
                 text = _publicize_source_sentence(
                     premise + '、' + _evaluation_sentence(
-                        meaning, frame, separate_viewpoint=not temporal), meaning)
+                        meaning, frame, separate_viewpoint=not (temporal or same_author),
+                        omit_self_topic=same_author), meaning)
             else:
                 expression = original[slice(*scope.expression_scalar_span)]
                 focal = _focal_parts(expression)

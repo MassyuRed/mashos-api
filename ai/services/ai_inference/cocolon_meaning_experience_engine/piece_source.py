@@ -139,6 +139,16 @@ _SCOPE_KINDS = {
 
 
 
+def _same_self_scope_author(premise: str, speaker: str) -> bool:
+    """Reuse the existing conservative, literally identical scope author."""
+    from piece_v2_expression import _SELF_TOPIC, _DEPENDENT_START, _EMBEDDED_REPORT
+    topic = _SELF_TOPIC.fullmatch(premise + '。')
+    return (topic is not None and topic['speaker'] == speaker
+            and not re.search(r'[はがも、，,]', topic['body'])
+            and not _DEPENDENT_START.search(topic['body'])
+            and not _EMBEDDED_REPORT.search(topic['body']))
+
+
 def _scoped_focal_expression(sentence: str) -> tuple[re.Match[str], re.Match[str]] | None:
     """Bind an existing focal expression inside its written clause scope.
 
@@ -157,16 +167,9 @@ def _scoped_focal_expression(sentence: str) -> tuple[re.Match[str], re.Match[str
         return None
     self_premise = _SELF_TOPIC_MENTION.search(scoped['premise']) is not None
     if self_premise:
-        from piece_v2_expression import _SELF_TOPIC, _DEPENDENT_START, _EMBEDDED_REPORT
-        topic = _SELF_TOPIC.fullmatch(scoped['premise'] + '。')
-        # Only one sentence-initial, literally identical author may be shared.
-        # Another topic/participant, aside or reported wish does not establish
-        # this continuity. Decline this edit, not an otherwise valid context.
-        # The particle check is conservative; it is not a general parser.
-        if (topic is None or topic['speaker'] != focal['speaker']
-                or re.search(r'[はがも、，,]', topic['body'])
-                or _DEPENDENT_START.search(topic['body'])
-                or _EMBEDDED_REPORT.search(topic['body'])):
+        # Share only the already-admitted sentence-initial author. This is
+        # not general participant inference or a speaker-alias equivalence.
+        if not _same_self_scope_author(scoped['premise'], focal['speaker']):
             return None
     obj = focal['object'].lstrip('、，,')
     if (not obj.endswith(('こと', 'もの', '時間')) or 'のは' in obj
@@ -192,12 +195,18 @@ def _expression_scopes(text: str, nodes: tuple[MeaningNode, ...],
                 or text[start:end] != node.value):
             raise unavailable('piece_intent_scope_source_binding')
         focal = _scoped_focal_expression(node.value)
-        if _SELF_TOPIC.fullmatch(node.value) and focal is None:
-            continue
         match = (_SCOPED_EXPRESSION.fullmatch(node.value)
                  or _TEMPORAL_EVALUATION.fullmatch(node.value))
+        frame = evaluations.get(node.node_id)
+        # A whole-sentence finite match is not evidence of an inner scope.
+        # The evaluation parser must have bound its speaker after the actual
+        # connective, leaving the premise outside the evaluated argument.
+        inner_evaluation = (match is not None and frame is not None
+                            and frame.scalar_parts[0][0] == start + match.start('intention'))
+        if _SELF_TOPIC.fullmatch(node.value) and focal is None and not inner_evaluation:
+            continue
         if match is None or (_SELF_TOPIC_MENTION.search(match['premise'])
-                             and focal is None):
+                             and focal is None and not inner_evaluation):
             continue
         temporal = match.re is _TEMPORAL_EVALUATION
         if temporal and node.node_id not in evaluations:
@@ -619,18 +628,22 @@ def _personal_evaluation_shapes(text: str, nodes: tuple[MeaningNode, ...],
         match = (_EVALUATIVE_FOCUS.fullmatch(node.value)
                  or _EVALUATIVE_FINITE.fullmatch(node.value))
         expression_start = start
-        if match is None:
-            scoped = (_SCOPED_EXPRESSION.fullmatch(node.value)
-                      or _TEMPORAL_EVALUATION.fullmatch(node.value))
-            if scoped is None or _SELF_TOPIC_MENTION.search(scoped['premise']):
-                continue
-            # Interpret the already-modelled evaluation inside its written
-            # scope. Do not reinterpret the premise as the evaluation target.
-            match = (_EVALUATIVE_FOCUS.fullmatch(scoped['intention'])
+        scoped = (_SCOPED_EXPRESSION.fullmatch(node.value)
+                  or _TEMPORAL_EVALUATION.fullmatch(node.value))
+        if scoped is not None:
+            inner = (_EVALUATIVE_FOCUS.fullmatch(scoped['intention'])
                      or _EVALUATIVE_FINITE.fullmatch(scoped['intention']))
-            if match is None:
-                continue
-            expression_start += scoped.start('intention')
+            if inner is not None and (
+                    not _SELF_TOPIC_MENTION.search(scoped['premise'])
+                    or _same_self_scope_author(scoped['premise'], inner['speaker'])):
+                # Prefer the proven inner evaluation even when the outer
+                # finite grammar could swallow its premise and second author
+                # into the target. Both word orders keep the same argument;
+                # the scope does not become an evaluated object or a wish.
+                match = inner
+                expression_start += scoped.start('intention')
+        if match is None:
+            continue
         kind = 'PERSONAL_VALUE' if match['base'] in _VALUE_BASES else 'PERSONAL_PREFERENCE'
         # A self topic and a が experiencer bind liking/difficulty; neither
         # is freely substituted for the explicit value viewpoint にとって.
