@@ -149,10 +149,38 @@ def _same_self_scope_author(premise: str, speaker: str) -> bool:
             and not _EMBEDDED_REPORT.search(topic['body']))
 
 
-def _scoped_focal_expression(sentence: str) -> tuple[re.Match[str], re.Match[str]] | None:
-    """Bind an existing focal expression inside its written clause scope.
+def _direct_transitive_expression(sentence: str) -> re.Match[str] | None:
+    """Read an explicit self topic, nominal object and existing transitive verb.
 
-    Reuse the same focal predicate/author grammar; a condition, reason or
+    Reuse the focal grammar's predicates, not a second intention dictionary.
+    The written を and complete object own the argument; a state or rejection
+    is not rewritten as a wish. Comma-delimited or marked outer clauses are
+    not swallowed into an antecedent. Existing scope parsing owns those.
+    This is bounded surface interpretation, not general Japanese parsing.
+    """
+    from piece_v2_generation import _PREDICATES, _NESTED, _DEICTIC
+    from piece_v2_expression import _REFERENCE
+    match = re.fullmatch(
+        r'(?P<speaker>私|わたし|僕|ぼく|俺|おれ)は[、，,]?'
+        r'(?P<object>.+?)を(?P<predicate>'
+        + '|'.join(map(re.escape, _PREDICATES)) + r')。', sentence)
+    if match is None:
+        return None
+    obj = match['object']
+    if (not obj.endswith(('こと', 'もの', '時間'))
+            or re.search(r'[、，,]', obj) or 'のは' in obj
+            or any(marker in obj for marker in _SCOPE_RELATIONS)
+            or _NESTED.search(obj) or _DEICTIC.search(obj)
+            or _SELF_TOPIC_MENTION.search(obj)
+            or (_REFERENCE.search(obj) and not _NOMINAL_REFERENCE_TARGET.fullmatch(obj))):
+        return None
+    return match
+
+
+def _scoped_focal_expression(sentence: str) -> tuple[re.Match[str], re.Match[str]] | None:
+    """Bind a focal or direct transitive expression inside its written scope.
+
+    Reuse the same transitive predicate/author grammar; a condition, reason or
     concession does not establish a missing author or fulfill a wish. The
     returned offsets are relative to the original sentence and expression,
     so nominal references can retain their exact original evidence ranges.
@@ -162,7 +190,8 @@ def _scoped_focal_expression(sentence: str) -> tuple[re.Match[str], re.Match[str
     scoped = _SCOPED_EXPRESSION.fullmatch(sentence)
     if scoped is None:
         return None
-    focal = _FOCUS.fullmatch(scoped['intention'])
+    focal = (_FOCUS.fullmatch(scoped['intention'])
+             or _direct_transitive_expression(scoped['intention']))
     if focal is None:
         return None
     self_premise = _SELF_TOPIC_MENTION.search(scoped['premise']) is not None
@@ -496,7 +525,8 @@ def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
                 # select an object from inside the pair by proximity.
                 mentions[(a + left, a + right)] = (
                     head, 'evaluation_target_not_self_contained', a)
-        focal = _FOCUS.fullmatch(node.value)
+        focal = (_FOCUS.fullmatch(node.value)
+                 or _direct_transitive_expression(node.value))
         expression_start = start
         if focal is None:
             scoped_focal = _scoped_focal_expression(node.value)

@@ -20,7 +20,7 @@ from piece_v2_expression import (
 )
 from .contracts import EngineStatus, ExecutionMode
 from .piece_source import (
-    _PERSON_NAME_LEFT_BOUNDARY, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
+    _direct_transitive_expression, _PERSON_NAME_LEFT_BOUNDARY, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
     piece_public_role_aliases, validate_piece_nominal_references,
     validate_piece_personal_evaluations, validate_piece_expression_scopes,
 )
@@ -162,6 +162,12 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
                 and not _DEPENDENT_START.search(topic['body'])
                 and not _EMBEDDED_REPORT.search(topic['body'])):
             duties.append(PieceTextDuty(node.node_id, 'SOURCE_FIRST_PERSON_TOPIC'))
+            intents.append(index)
+        elif _direct_transitive_expression(sentence) is not None:
+            # Preserve the established wish path above. A complete explicit
+            # transitive state/rejection also owns an expression, without
+            # depending on a shared wish label or inventing an intention.
+            duties.append(PieceTextDuty(node.node_id, 'SOURCE_TRANSITIVE_SELF_TOPIC'))
             intents.append(index)
         else:
             duties.append(PieceTextDuty(node.node_id, 'KEEP_COMPLETE_SOURCE_CONTEXT'))
@@ -519,6 +525,9 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
             else:
                 expression = original[slice(*scope.expression_scalar_span)]
                 focal = _focal_parts(expression)
+                direct = _direct_transitive_expression(expression) if focal is None else None
+                if direct is not None:
+                    focal = (direct['object'], direct['predicate'], direct['speaker'])
                 if focal is not None:
                     obj, predicate, speaker = focal
                     # Scope validation proves a sentence-initial self topic,
@@ -566,6 +575,13 @@ def realize_piece_artifact(meaning: PieceSourceMeaning, plan: PieceArtifactPlan,
             if topic is None or not _WISH_END.search(topic['body']):
                 raise unavailable('piece_plan_operation_binding')
             text = topic['speaker'] + 'は、' + topic['body'] + '。'
+        elif duty.operation == 'SOURCE_TRANSITIVE_SELF_TOPIC':
+            direct = _direct_transitive_expression(node.value)
+            if direct is None:
+                raise unavailable('piece_plan_operation_binding')
+            text = _publicize_source_sentence(
+                direct['speaker'] + 'は、' + direct['object']
+                + 'を' + direct['predicate'] + '。', meaning)
         elif duty.operation == 'SOURCE_PERSONAL_EVALUATION':
             frame = next((f for f in meaning.personal_evaluations if f.node_id == node.node_id), None)
             if frame is None:
