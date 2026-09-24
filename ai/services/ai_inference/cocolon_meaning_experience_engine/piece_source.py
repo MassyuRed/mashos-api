@@ -121,7 +121,8 @@ _SCOPED_EXPRESSION = re.compile(
 # fixes its boundary; time words inside the nominal target are not extracted.
 # Preserve the written relative time and contrast/additive particle without
 # resolving a date, inferring a previous evaluation, or changing predicate tense.
-# This is not a general temporal parser or permission to admit scoped wishes.
+# The same operator also qualifies a proved direct transitive expression.
+# It is not a general temporal parser or authority for other scoped wishes.
 _TEMPORAL_EVALUATION = re.compile(
     r'^(?P<scope>(?P<premise>以前|当時|今|現在)(?P<marker>は|も))[、，,][ \t\u3000]*'
     r'(?P<intention>(?:私|わたし|僕|ぼく|俺|おれ)(?:は|にとって|が)[、，,]?.+。)$')
@@ -205,14 +206,23 @@ def _scoped_focal_expression(sentence: str) -> tuple[re.Match[str], re.Match[str
     concession does not establish a missing author or fulfill a wish. The
     returned offsets are relative to the original sentence and expression,
     so nominal references can retain their exact original evidence ranges.
-    Temporal contexts remain evaluation-only, as before.
+    A time topic may qualify the same complete direct transitive expression,
+    but does not extend the focal construction or infer an omitted author.
     """
     from piece_v2_generation import _FOCUS, _DEICTIC, _NESTED
-    scoped = _SCOPED_EXPRESSION.fullmatch(sentence)
+    scoped = (_SCOPED_EXPRESSION.fullmatch(sentence)
+              or _TEMPORAL_EVALUATION.fullmatch(sentence))
     if scoped is None:
         return None
-    focal = (_FOCUS.fullmatch(scoped['intention'])
-             or _direct_transitive_expression(scoped['intention']))
+    # Time qualifies the whole written direct expression, not its object or
+    # predicate tense. Reuse the finite author/object/polarity/register proof;
+    # neither a time word nor a wish suffix licenses a different construction.
+    # In particular the existing relative focal grammar stays outside this
+    # temporal extension. Evaluation frames retain their separate owner.
+    focal = (_direct_transitive_expression(scoped['intention'])
+             if scoped.re is _TEMPORAL_EVALUATION else
+             (_FOCUS.fullmatch(scoped['intention'])
+              or _direct_transitive_expression(scoped['intention'])))
     if focal is None:
         return None
     self_premise = _SELF_TOPIC_MENTION.search(scoped['premise']) is not None
@@ -259,7 +269,7 @@ def _expression_scopes(text: str, nodes: tuple[MeaningNode, ...],
                              and focal is None and not inner_evaluation):
             continue
         temporal = match.re is _TEMPORAL_EVALUATION
-        if temporal and node.node_id not in evaluations:
+        if temporal and node.node_id not in evaluations and focal is None:
             continue
         topic = _SELF_TOPIC.fullmatch(match['intention'])
         if node.node_id not in evaluations:
