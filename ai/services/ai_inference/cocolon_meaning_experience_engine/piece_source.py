@@ -165,28 +165,42 @@ def _direct_transitive_expression(sentence: str) -> re.Match[str] | None:
     # not another lexical predicate or a guessed current intention. The past
     # branch is explicitly bound for format planning; every matched surface
     # stays in the original scalar/UTF-8 span and is written without tense or
-    # polarity conversion. Relative focus and outer modals remain separate.
+    # polarity conversion. A single existing finite modal may qualify a plain
+    # predicate; its complete written surface remains the predicate span.
+    # Relative focus, reported speech and stacked modals remain separate.
     predicates = list(_PREDICATES)
     past_predicates = []
+    modal_predicates = set(_PREDICATES)
     for predicate in _PREDICATES:
         if predicate.endswith(('たい', 'たくない')):
             predicates.append(predicate + 'です')
             past = predicate[:-1] + 'かった'
             past_predicates.extend((past, past + 'です'))
+            modal_predicates.add(past)
         elif predicate.endswith('いない'):
             stem = predicate[:-len('いない')]
             predicates.append(stem + 'いません')
             past_predicates.extend((stem + 'いなかった', stem + 'いませんでした'))
+            modal_predicates.add(stem + 'いなかった')
         elif predicate.endswith('いる'):
             stem = predicate[:-len('いる')]
             predicates.append(stem + 'います')
             past_predicates.extend((stem + 'いた', stem + 'いました'))
+            modal_predicates.add(stem + 'いた')
     match = re.fullmatch(
         r'(?P<speaker>私|わたし|僕|ぼく|俺|おれ)は[、，,]?'
-        r'(?P<object>.+?)を(?P<predicate>(?:'
+        r'(?P<object>.+?)を(?P<predicate>(?:(?:'
         + '|'.join(map(re.escape, predicates)) + r')|(?P<past_predicate>'
-        + '|'.join(map(re.escape, past_predicates)) + r'))。', sentence)
+        + '|'.join(map(re.escape, past_predicates)) + r'))(?P<modal>'
+        + _FINITE_EVALUATION_MODAL + r')?)。', sentence)
     if match is None:
+        return None
+    # The modal's own polite register is allowed, not a polite finite base
+    # followed by another auxiliary. Reuse the evaluation owner's closed
+    # possibility/non-universality operators; never remove them to authorize
+    # a current intention, affirmative refusal, or another predicate.
+    modal = match['modal']
+    if modal and match['predicate'][:-len(modal)] not in modal_predicates:
         return None
     obj = match['object']
     if (not obj.endswith(('こと', 'もの', '時間'))

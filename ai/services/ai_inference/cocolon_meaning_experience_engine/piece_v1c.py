@@ -191,11 +191,12 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
             (ids[0],), ids[1:-1], (ids[-1],))
     elif len(intents) == 1 and intents[0] == len(ids)-1 and len(ids) > 1 and not dependent:
         direct = _direct_transitive_expression(graph.nodes[-1].value)
-        # A retrospective expression must not inherit the old terminal-wish
-        # fronting. Keep its prior context before it, without guessing a new
-        # time or causal relation, and retain the complete reading group.
-        blocks = ((ids,) if direct is not None and direct['past_predicate'] is not None
-                  else ((ids[-1],), ids[:-1]))
+        # A retrospective or tentative expression must not inherit the old
+        # terminal-wish fronting. Keep prior context before it without adding
+        # a time, cause or commitment, and retain the complete reading group.
+        qualified = direct is not None and (
+            direct['past_predicate'] is not None or direct['modal'] is not None)
+        blocks = (ids,) if qualified else ((ids[-1],), ids[:-1])
     elif len(ids) == 1:
         blocks = (ids,)
     else:
@@ -210,7 +211,11 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
     # direct grammar that admitted the source; a suffix elsewhere in the
     # argument cannot supply its tense. Existing nonpast eligibility stays.
     direct = _direct_transitive_expression(graph.nodes[0].value) if declaration else None
-    if direct is not None and direct['past_predicate'] is not None:
+    # Bind outer commitment to the parsed predicate, not just an uncertainty
+    # keyword elsewhere in the sentence. In particular polite non-universality
+    # is still not a pledge, even when the older keyword scan misses it.
+    if direct is not None and (
+            direct['past_predicate'] is not None or direct['modal'] is not None):
         declaration = False
     if evaluations:
         # A past preference, negation or tentative assessment is not a promise.
