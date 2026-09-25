@@ -150,6 +150,16 @@ _CALENDAR_TIME_ADVERB = re.compile(
     r'(?P<adverb>これから)[、，,]?[ \t\u3000]*'
     r'毎(?:日|週|月|年|朝|晩)(?![はがをのとにで])')
 
+# A written numeric interval followed by a comma also has an explicit
+# adverb boundary. Do not search inside nominal arguments or treat a bare
+# number, an interval's nominal suffix, or an unpunctuated continuation as
+# proof. Digits and units remain source text: no duration/date calculation,
+# numeral normalization, inferred author, or nominal referent is introduced.
+_DURATION_TIME_ADVERB = re.compile(
+    r'(?P<adverb>これから)[、，,]?[ \t\u3000]*'
+    r'[0-9０-９]+(?:秒|分|時|日|週|[かヶ箇]月|年)間'
+    r'[ \t\u3000]*[、，,][ \t\u3000]*(?=[^、，,。！？!? \t\u3000])')
+
 
 def _calendar_time_adverb_span(sentence: str) -> tuple[int, int] | None:
     """Return only the written temporal token, never an inferred referent.
@@ -169,7 +179,8 @@ def _calendar_time_adverb_span(sentence: str) -> tuple[int, int] | None:
     topic = _SELF_TOPIC.fullmatch(sentence[offset:])
     if topic is not None:
         offset += topic.start('body')
-    match = _CALENDAR_TIME_ADVERB.match(sentence, offset)
+    match = (_CALENDAR_TIME_ADVERB.match(sentence, offset)
+             or _DURATION_TIME_ADVERB.match(sentence, offset))
     return match.span('adverb') if match is not None else None
 
 
