@@ -26,11 +26,46 @@ class PieceSourceSnapshot:
 # Past copulas and quoted/nested focal clauses are deliberately not admitted.
 _PREDICATES = ('大切にしたい', '大切にしている', '大切にしたくない',
                '望んでいる', '望んでいない', '選びたい', '選びたくない')
+
+
+def _transitive_predicate_forms() -> tuple[tuple[str, ...], tuple[str, ...], frozenset[str]]:
+    """Share finite forms of the existing predicates, not a new lexicon.
+
+    The third set contains only plain bases licensed before a finite
+    modal. A past member of that set can also modify the focal nominal;
+    polite finite predicates cannot. All writers retain source wording.
+    """
+    predicates = list(_PREDICATES)
+    past_predicates = []
+    modal_predicates = set(_PREDICATES)
+    for predicate in _PREDICATES:
+        if predicate.endswith(('たい', 'たくない')):
+            predicates.append(predicate + 'です')
+            past = predicate[:-1] + 'かった'
+            past_predicates.extend((past, past + 'です'))
+            modal_predicates.add(past)
+        elif predicate.endswith('いない'):
+            stem = predicate[:-len('いない')]
+            predicates.append(stem + 'いません')
+            past_predicates.extend((stem + 'いなかった', stem + 'いませんでした'))
+            modal_predicates.add(stem + 'いなかった')
+        elif predicate.endswith('いる'):
+            stem = predicate[:-len('いる')]
+            predicates.append(stem + 'います')
+            past_predicates.extend((stem + 'いた', stem + 'いました'))
+            modal_predicates.add(stem + 'いた')
+    return tuple(predicates), tuple(past_predicates), frozenset(modal_predicates)
+
 # Bind the already-supported first-person spellings as source material. The
 # writer and reference-linked continuity must use this same captured author.
-_FOCUS = re.compile(r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)が(?P<predicate>'
-                    + '|'.join(_PREDICATES) +
-                    r')のは[、，,]?(?P<object>.+?)(?:です|だ)[。]$')
+# Past belongs to the embedded predicate, not the final copula or a word
+# inside its object. Reuse the direct construction's plain past forms; neither
+# polite relative predicates nor focal modals gain admission here.
+_FINITE_PREDICATES, _PAST_PREDICATES, _PLAIN_PREDICATES = _transitive_predicate_forms()
+_FOCUS = re.compile(r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)が(?P<predicate>(?:'
+                    + '|'.join(map(re.escape, _PREDICATES)) + r')|(?P<past_predicate>'
+                    + '|'.join(re.escape(p) for p in _PAST_PREDICATES if p in _PLAIN_PREDICATES)
+                    + r'))のは[、，,]?(?P<object>.+?)(?:です|だ)[。]$')
 _UNCERTAIN = re.compile(r'かもしれ|分から|わから|迷って|迷い|まだ決め|とは限ら|たぶん|おそらく')
 _DEICTIC = re.compile(r'^(?:これ|それ|あれ|ここ|そこ|あそこ)(?:は|が|を|に|で|も)')
 _NESTED = re.compile(r'[「」『』"“”]|(?:[がは]私)|(?:と(?:彼|彼女|上司|友人))')

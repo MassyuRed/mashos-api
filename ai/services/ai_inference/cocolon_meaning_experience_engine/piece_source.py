@@ -159,7 +159,7 @@ def _direct_transitive_expression(sentence: str) -> re.Match[str] | None:
     not swallowed into an antecedent. Existing scope parsing owns those.
     This is bounded surface interpretation, not general Japanese parsing.
     """
-    from piece_v2_generation import _PREDICATES, _NESTED, _DEICTIC
+    from piece_v2_generation import _transitive_predicate_forms, _NESTED, _DEICTIC
     from piece_v2_expression import _REFERENCE
     # Derive finite register/time forms of the existing transitive predicates,
     # not another lexical predicate or a guessed current intention. The past
@@ -168,25 +168,7 @@ def _direct_transitive_expression(sentence: str) -> re.Match[str] | None:
     # polarity conversion. A single existing finite modal may qualify a plain
     # predicate; its complete written surface remains the predicate span.
     # Relative focus, reported speech and stacked modals remain separate.
-    predicates = list(_PREDICATES)
-    past_predicates = []
-    modal_predicates = set(_PREDICATES)
-    for predicate in _PREDICATES:
-        if predicate.endswith(('たい', 'たくない')):
-            predicates.append(predicate + 'です')
-            past = predicate[:-1] + 'かった'
-            past_predicates.extend((past, past + 'です'))
-            modal_predicates.add(past)
-        elif predicate.endswith('いない'):
-            stem = predicate[:-len('いない')]
-            predicates.append(stem + 'いません')
-            past_predicates.extend((stem + 'いなかった', stem + 'いませんでした'))
-            modal_predicates.add(stem + 'いなかった')
-        elif predicate.endswith('いる'):
-            stem = predicate[:-len('いる')]
-            predicates.append(stem + 'います')
-            past_predicates.extend((stem + 'いた', stem + 'いました'))
-            modal_predicates.add(stem + 'いた')
+    predicates, past_predicates, modal_predicates = _transitive_predicate_forms()
     match = re.fullmatch(
         r'(?P<speaker>私|わたし|僕|ぼく|俺|おれ)は[、，,]?'
         r'(?P<object>.+?)を(?P<predicate>(?:(?:'

@@ -211,6 +211,14 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
     # direct grammar that admitted the source; a suffix elsewhere in the
     # argument cannot supply its tense. Existing nonpast eligibility stays.
     direct = _direct_transitive_expression(graph.nodes[0].value) if declaration else None
+    if declaration:
+        # The focal and direct word orders share the same source-bound past
+        # predicate. Reordering it does not establish a present commitment.
+        # Object-internal past words and the final copula do not supply tense.
+        from piece_v2_generation import _FOCUS
+        focused = _FOCUS.fullmatch(graph.nodes[0].value)
+        if focused is not None and focused['past_predicate'] is not None:
+            declaration = False
     # Bind outer commitment to the parsed predicate, not just an uncertainty
     # keyword elsewhere in the sentence. In particular polite non-universality
     # is still not a pledge, even when the older keyword scan misses it.
