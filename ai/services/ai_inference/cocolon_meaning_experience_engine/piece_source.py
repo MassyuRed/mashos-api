@@ -140,6 +140,37 @@ _SCOPE_KINDS = {
 
 
 
+# A prospective time adverb at a clause opening, followed by an explicitly
+# written calendar recurrence, is not a nominal source argument. Requiring
+# the recurrence keeps bare/ablative uses and nominal "...の" unadmitted.
+# This is a bounded temporal surface, not a general deictic resolver.
+_CALENDAR_TIME_ADVERB = re.compile(
+    r'(?P<adverb>これから)[、，,]?[ \t\u3000]*'
+    r'毎(?:日|週|月|年|朝|晩)(?![はがをのとにで])')
+
+
+def _calendar_time_adverb_span(sentence: str) -> tuple[int, int] | None:
+    """Return only the written temporal token, never an inferred referent.
+
+    Use the existing discourse/self-topic grammar to find the clause opening.
+    Do not search inside arbitrary objects, quotations or later clauses. The
+    caller must still validate every OTHER nominal reference and retain all
+    source words; this token alone supplies no author, intent or date.
+    """
+    from piece_v2_expression import _DEPENDENT_START, _SELF_TOPIC
+    offset = 0
+    dependent = _DEPENDENT_START.match(sentence)
+    if dependent is not None:
+        offset = dependent.end()
+        while offset < len(sentence) and sentence[offset] in '、，, \t\u3000':
+            offset += 1
+    topic = _SELF_TOPIC.fullmatch(sentence[offset:])
+    if topic is not None:
+        offset += topic.start('body')
+    match = _CALENDAR_TIME_ADVERB.match(sentence, offset)
+    return match.span('adverb') if match is not None else None
+
+
 def _same_self_scope_author(premise: str, speaker: str) -> bool:
     """Reuse the existing conservative, literally identical scope author."""
     from piece_v2_expression import _SELF_TOPIC, _DEPENDENT_START, _EMBEDDED_REPORT

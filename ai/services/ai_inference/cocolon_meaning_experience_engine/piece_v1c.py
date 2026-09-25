@@ -20,7 +20,7 @@ from piece_v2_expression import (
 )
 from .contracts import EngineStatus, ExecutionMode
 from .piece_source import (
-    _direct_transitive_expression, _PERSON_NAME_LEFT_BOUNDARY, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
+    _calendar_time_adverb_span, _direct_transitive_expression, _PERSON_NAME_LEFT_BOUNDARY, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
     piece_public_role_aliases, validate_piece_nominal_references,
     validate_piece_personal_evaluations, validate_piece_expression_scopes,
 )
@@ -134,13 +134,17 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
     duties: list[PieceTextDuty] = []
     intents: list[int] = []
     focal = False
+    has_calendar_time_context = False
     for index, (node, semantic) in enumerate(zip(graph.nodes, meaning.sentences, strict=True)):
         sentence = node.value
         admitted = [r.reference_scalar_span for r in meaning.nominal_references
                     if r.reference_node_id == node.node_id]
+        temporal = _calendar_time_adverb_span(sentence)
+        has_calendar_time_context = has_calendar_time_context or temporal is not None
         if _DEICTIC.search(sentence) or any(
-                not any(a <= semantic.source_start + m.start()
-                        and semantic.source_start + m.end() <= b for a, b in admitted)
+                m.span() != temporal and not any(
+                    a <= semantic.source_start + m.start()
+                    and semantic.source_start + m.end() <= b for a, b in admitted)
                 for m in _REFERENCE.finditer(sentence)):
             raise unavailable('unresolved_reference')
         if node.node_id in scopes:
@@ -174,7 +178,10 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
     if not intents:
         raise unavailable('expression_meaning_not_admitted')
     ids = tuple(node.node_id for node in graph.nodes)
-    dependent = any(_DEPENDENT_START.search(node.value) for node in graph.nodes)
+    # A newly admitted temporal context must not be moved behind a later wish.
+    # Keep the original sequence without adding an inferred time/scope edge.
+    dependent = has_calendar_time_context or any(
+        _DEPENDENT_START.search(node.value) for node in graph.nodes)
     if meaning.nominal_references:
         # Antecedents, mentions and subsequent reservations remain a single
         # source-ordered reading group. No isolated quote, inferred expansion
