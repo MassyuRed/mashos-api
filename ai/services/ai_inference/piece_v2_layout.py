@@ -414,6 +414,54 @@ def _fitting_competing_kana_breaks(clusters: list[str], script_runs: list[str],
     return boundaries
 
 
+_NUMERIC_DURATION_RUN = re.compile(r'[0-9０-９]+(?:秒|分|時|日|週|[かヶ箇]月|年)間')
+
+
+def _fitting_numeric_duration_breaks(clusters: list[str], *, size: int,
+                                      width: int, metrics: RendererMetrics) -> list[bool]:
+    """Soft cohesion for a complete written numeric duration that fits.
+
+    Recognize only contiguous digits and an explicit interval unit, not a
+    number/date value or a linguistic referent. Do not take a suffix of an
+    identifier/decimal or a prefix of a longer written unit. Matches must
+    begin and end at the renderer's existing grapheme boundaries. Required
+    kinsoku marks participate in the actual width measurement. Overwide
+    intervals get no hint; the existing vertical allocator may still split
+    fitting ones. No new prohibition, text normalization or font change.
+    """
+    boundaries = [False] * (len(clusters) + 1)
+    offsets = {0: 0}
+    position = 0
+    for index, cluster in enumerate(clusters):
+        position += len(cluster)
+        offsets[position] = index + 1
+
+    def identifier_char(char: str) -> bool:
+        return (char.isascii() and (char.isalnum() or char == '_')
+                or char in '０１２３４５６７８９'
+                or unicodedata.name(char, '').startswith('FULLWIDTH LATIN '))
+
+    for match in _NUMERIC_DURATION_RUN.finditer(''.join(clusters)):
+        start, end = offsets.get(match.start()), offsets.get(match.end())
+        if start is None or end is None:
+            continue
+        if start and (identifier_char(clusters[start - 1][-1])
+                      or clusters[start - 1][-1] in '.,．，/／+＋-－−'):
+            continue
+        if end < len(clusters) and (identifier_char(clusters[end][0])
+                                   or _script_run_kind(clusters[end])):
+            continue
+        left, right = start, end
+        while left and clusters[left - 1][-1] in _NO_END:
+            left -= 1
+        while right < len(clusters) and clusters[right][0] in _NO_START:
+            right += 1
+        if _width(_measure(metrics, ''.join(clusters[left:right]), size)) <= width:
+            for boundary in range(start + 1, end):
+                boundaries[boundary] = True
+    return boundaries
+
+
 _WrapScore = tuple[int, int, int, int, int, int, int, float]
 _MeasuredRows = list[tuple[str, TextMeasurement]]
 _WrapSolutions = dict[int, tuple[_WrapScore, _MeasuredRows]]
@@ -476,6 +524,10 @@ def _wrap_solutions(text: str, *, size: int, width: int, metrics: RendererMetric
             clusters, script_runs, fitting_runs, size=size, width=width, metrics=metrics)
         fitting_runs = [prior or competing for prior, competing in
                         zip(fitting_runs, competing_kana, strict=True)]
+    fitting_durations = _fitting_numeric_duration_breaks(
+        clusters, size=size, width=width, metrics=metrics)
+    fitting_runs = [prior or duration for prior, duration in
+                    zip(fitting_runs, fitting_durations, strict=True)]
     has_fitting_run = any(fitting_runs)
     costs = {n: {0: (0, 0, 0, 0, 0, 0, 0, 0.0)}}
     choices = {}
