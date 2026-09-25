@@ -212,23 +212,21 @@ def _scoped_focal_expression(sentence: str) -> tuple[re.Match[str], re.Match[str
     concession does not establish a missing author or fulfill a wish. The
     returned offsets are relative to the original sentence and expression,
     so nominal references can retain their exact original evidence ranges.
-    A time topic may qualify the same complete direct transitive expression,
-    but does not extend the focal construction or infer an omitted author.
+    A time topic qualifies the same complete focal or direct expression;
+    it neither changes its written predicate tense nor supplies an author.
     """
     from piece_v2_generation import _FOCUS, _DEICTIC, _NESTED
     scoped = (_SCOPED_EXPRESSION.fullmatch(sentence)
               or _TEMPORAL_EVALUATION.fullmatch(sentence))
     if scoped is None:
         return None
-    # Time qualifies the whole written direct expression, not its object or
-    # predicate tense. Reuse the finite author/object/polarity/register proof;
-    # neither a time word nor a wish suffix licenses a different construction.
-    # In particular the existing relative focal grammar stays outside this
-    # temporal extension. Evaluation frames retain their separate owner.
-    focal = (_direct_transitive_expression(scoped['intention'])
-             if scoped.re is _TEMPORAL_EVALUATION else
-             (_FOCUS.fullmatch(scoped['intention'])
-              or _direct_transitive_expression(scoped['intention'])))
+    # The written time topic scopes the complete expression in either
+    # already-admitted word order. Parse its own author, argument and
+    # predicate, including a plain past focal predicate, without converting
+    # its tense from the time word. Nominal links still require the same
+    # source resolver; evaluation frames retain their separate owner.
+    focal = (_FOCUS.fullmatch(scoped['intention'])
+             or _direct_transitive_expression(scoped['intention']))
     if focal is None:
         return None
     self_premise = _SELF_TOPIC_MENTION.search(scoped['premise']) is not None
