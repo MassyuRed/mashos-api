@@ -632,11 +632,10 @@ def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
                 r_start = r_end - len(obj)
                 mentions[(r_start, r_end)] = (
                     reference['head'], 'unresolved_reference', r_start)
-            elif ('past_predicate' in focal.groupdict()
-                  and _NOMINAL_REFERENCE_CONJUNCTION.fullmatch(obj)):
-                # Only the complete direct transitive grammar admits this
-                # coordinated object, not the relative focal construction.
-                # Reuse the operand parser and exact unique-prior resolver.
+            elif _NOMINAL_REFERENCE_CONJUNCTION.fullmatch(obj):
+                # The existing focal and direct word orders own the same
+                # complete transitive argument. Neither supplies a referent;
+                # reuse the operand parser and exact unique-prior resolver.
                 # Both mentions see the context BEFORE the whole argument;
                 # the first operand cannot supply the second's antecedent.
                 r_start = expression_start + focal.end('object') - len(obj)

@@ -480,7 +480,7 @@ def _paired_self_continuations(meaning: PieceSourceMeaning,
     each with the same written author and its own complete source argument.
     A focal or direct expression uses its already-admitted source grammar;
     a generic wish label alone cannot establish either author or argument.
-    The following plain-topic preference or direct transitive expression
+    The following plain-topic preference, direct or focal transitive expression
     must refer to exactly those objects. Keep its entire ordered argument and
     predicate intact, including past time, negation or modality. This does not equate an
     explicit value viewpoint with a self-topic or infer an omitted author.
@@ -532,6 +532,18 @@ def _paired_self_continuations(meaning: PieceSourceMeaning,
                 target_span = (start + direct.start('object'),
                                start + direct.end('object'))
                 speaker = direct['speaker']
+            elif duties[current] == 'SOURCE_FOCAL_TO_FIRST_PERSON':
+                # The focal writer already realizes this explicit speaker as
+                # a self-topic. Share only that repeated topic after both
+                # source-bound operands pass the same adjacency proof below.
+                # Its complete predicate and object are not shortened.
+                from piece_v2_generation import _FOCUS
+                focal = _FOCUS.fullmatch(nodes[current].value)
+                if focal is None:
+                    continue
+                end = spans[current].source_start + focal.end('object')
+                target_span = (end - len(focal['object'].lstrip('、，,')), end)
+                speaker = focal['speaker']
             else:
                 if (duties[current] != 'SOURCE_PERSONAL_EVALUATION' or frame is None
                         or frame.construction != 'は' or frame.kind != 'PERSONAL_PREFERENCE'):
