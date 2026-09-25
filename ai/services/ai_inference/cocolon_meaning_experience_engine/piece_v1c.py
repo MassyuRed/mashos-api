@@ -140,6 +140,13 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
         admitted = [r.reference_scalar_span for r in meaning.nominal_references
                     if r.reference_node_id == node.node_id]
         temporal = _calendar_time_adverb_span(sentence)
+        time_scope = scopes.get(node.node_id)
+        if time_scope is not None and time_scope.relation == 'SOURCE_EXPLICIT_TIME_CONTEXT':
+            # The source scope was recomputed above, including its complete
+            # self expression and comma boundary. Admit only the exact time
+            # lexeme before its topic particle, never another nominal token.
+            temporal = (time_scope.scope_scalar_span[0] - semantic.source_start,
+                        time_scope.scope_scalar_span[1] - len(time_scope.marker) - semantic.source_start)
         has_calendar_time_context = has_calendar_time_context or temporal is not None
         if _DEICTIC.search(sentence) or any(
                 m.span() != temporal and not any(

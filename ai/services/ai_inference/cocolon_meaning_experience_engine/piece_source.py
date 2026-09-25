@@ -123,8 +123,10 @@ _SCOPED_EXPRESSION = re.compile(
 # resolving a date, inferring a previous evaluation, or changing predicate tense.
 # The same operator also qualifies a proved direct transitive expression.
 # It is not a general temporal parser or authority for other scoped wishes.
+# A prospective topic needs the same complete expression and comma boundary;
+# its exact source span, not the spelling alone, can authorize a temporal token.
 _TEMPORAL_EVALUATION = re.compile(
-    r'^(?P<scope>(?P<premise>以前|当時|今|現在)(?P<marker>は|も))[、，,][ \t\u3000]*'
+    r'^(?P<scope>(?P<premise>以前|当時|今|現在|これから)(?P<marker>は|も))[、，,][ \t\u3000]*'
     r'(?P<intention>(?:私|わたし|僕|ぼく|俺|おれ)(?:は|にとって|が)[、，,]?.+。)$')
 # Preserve the complete self expression, not an inferred desire lemma.
 # 読みたい / 休みたい and a source-written comparison ending みたい retain
