@@ -480,8 +480,9 @@ def _paired_self_continuations(meaning: PieceSourceMeaning,
     each with the same written author and its own complete source argument.
     A focal or direct expression uses its already-admitted source grammar;
     a generic wish label alone cannot establish either author or argument.
-    The following plain-topic preference must refer to exactly those objects.
-    Keep the ordered joint/comparative target intact. This does not equate an
+    The following plain-topic preference or direct transitive expression
+    must refer to exactly those objects. Keep its entire ordered argument and
+    predicate intact, including past time, negation or modality. This does not equate an
     explicit value viewpoint with a self-topic or infer an omitted author.
     A complete two-reference conditional wish can share the same proved author.
     Other scopes, newlines, competing subjects or different speakers decline only
@@ -518,6 +519,19 @@ def _paired_self_continuations(meaning: PieceSourceMeaning,
                 target_span = (scope.scope_scalar_span[0],
                                scope.scope_scalar_span[1] - len(scope.marker))
                 speaker = topic['speaker']
+            elif duties[current] in {'SOURCE_TRANSITIVE_SELF_TOPIC',
+                                     'SOURCE_FIRST_PERSON_TOPIC'}:
+                # The same source-bound two-object author proof applies to
+                # an existing direct predicate, not just a liking expression.
+                # A wish role alone supplies neither an object nor a speaker.
+                # Scoped transitive expressions retain their own full writer.
+                direct = _direct_transitive_expression(nodes[current].value)
+                if direct is None:
+                    continue
+                start = spans[current].source_start
+                target_span = (start + direct.start('object'),
+                               start + direct.end('object'))
+                speaker = direct['speaker']
             else:
                 if (duties[current] != 'SOURCE_PERSONAL_EVALUATION' or frame is None
                         or frame.construction != 'は' or frame.kind != 'PERSONAL_PREFERENCE'):

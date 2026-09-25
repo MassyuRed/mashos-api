@@ -203,12 +203,22 @@ def _direct_transitive_expression(sentence: str) -> re.Match[str] | None:
     if modal and match['predicate'][:-len(modal)] not in modal_predicates:
         return None
     obj = match['object']
+    # Two complete references joined by the written と form ONE object of
+    # this existing transitive predicate. The source resolver must still bind
+    # both independently. No literal/comparative/nested operand or same-head
+    # ambiguity is admitted here; punctuation inside this exact pair is not
+    # an outer clause boundary. Preserve its order and predicate verbatim.
+    pair = _NOMINAL_REFERENCE_CONJUNCTION.fullmatch(obj)
+    paired = (pair is not None
+              and _NOMINAL_REFERENCE_TARGET.fullmatch(pair['left'])['head']
+              != _NOMINAL_REFERENCE_TARGET.fullmatch(pair['right'])['head'])
     if (not obj.endswith(('こと', 'もの', '時間'))
-            or re.search(r'[、，,]', obj) or 'のは' in obj
+            or (re.search(r'[、，,]', obj) and not paired) or 'のは' in obj
             or any(marker in obj for marker in _SCOPE_RELATIONS)
             or _NESTED.search(obj) or _DEICTIC.search(obj)
             or _SELF_TOPIC_MENTION.search(obj)
-            or (_REFERENCE.search(obj) and not _NOMINAL_REFERENCE_TARGET.fullmatch(obj))):
+            or (_REFERENCE.search(obj)
+                and not (_NOMINAL_REFERENCE_TARGET.fullmatch(obj) or paired))):
         return None
     return match
 
@@ -457,6 +467,11 @@ def _role_bindings(text: str) -> tuple[PieceRoleBinding, ...]:
 # not infer an omitted event, person, cause or a bare pronoun's referent.
 _NOMINAL_REFERENCE_BODY = r'(?P<reference>(?:その|この)(?P<head>時間|こと|もの))'
 _NOMINAL_REFERENCE_TARGET = re.compile(_NOMINAL_REFERENCE_BODY)
+# A whole conjunction, shared by the conditional and transitive boundaries.
+# Matching this surface supplies no antecedent or author authority.
+_NOMINAL_REFERENCE_CONJUNCTION = re.compile(
+    r'(?P<left>(?:その|この)(?:時間|こと|もの))と[、，,]?[ \t\u3000]*'
+    r'(?P<right>(?:その|この)(?:時間|こと|もの))')
 _NOMINAL_REFERENCE = re.compile(
     r'^(?:(?:私|わたし|僕|ぼく|俺|おれ)は[、，,]?)?'
     + _NOMINAL_REFERENCE_BODY
@@ -579,11 +594,9 @@ def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
         # admitted by this bounded nominal conjunction.
         if _NOMINAL_REFERENCE_TARGET.match(node.value):
             conditional = _SCOPED_EXPRESSION.fullmatch(node.value)
-            token = r'(?:その|この)(?:時間|こと|もの)'
             if (conditional is not None
                     and _SCOPE_RELATIONS[conditional['marker']] == 'SOURCE_EXPLICIT_CONDITION'
-                    and re.fullmatch(token + r'と[、，,]?[ \t\u3000]*' + token,
-                                     conditional['premise'])):
+                    and _NOMINAL_REFERENCE_CONJUNCTION.fullmatch(conditional['premise'])):
                 for left, right, head in _evaluation_target_references(conditional['premise']):
                     # Both operands resolve against preceding discourse, not
                     # each other. Same-head pairs remain outside the parser.
@@ -619,6 +632,17 @@ def _nominal_references(text: str, nodes: tuple[MeaningNode, ...],
                 r_start = r_end - len(obj)
                 mentions[(r_start, r_end)] = (
                     reference['head'], 'unresolved_reference', r_start)
+            elif ('past_predicate' in focal.groupdict()
+                  and _NOMINAL_REFERENCE_CONJUNCTION.fullmatch(obj)):
+                # Only the complete direct transitive grammar admits this
+                # coordinated object, not the relative focal construction.
+                # Reuse the operand parser and exact unique-prior resolver.
+                # Both mentions see the context BEFORE the whole argument;
+                # the first operand cannot supply the second's antecedent.
+                r_start = expression_start + focal.end('object') - len(obj)
+                for left, right, head in _evaluation_target_references(obj):
+                    mentions[(r_start + left, r_start + right)] = (
+                        head, 'unresolved_reference', r_start)
         for (r_start, r_end), (head, failure, context_end) in sorted(mentions.items()):
             prior = candidates.get(head, [])
             if len(prior) != 1:
