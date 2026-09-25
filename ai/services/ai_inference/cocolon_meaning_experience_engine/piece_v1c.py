@@ -372,11 +372,11 @@ def _adjacent_self_continuations(meaning: PieceSourceMeaning,
     """Find optional self-topic omissions from explicit, adjacent duties.
 
     Two wishes, or a focal/evaluative/direct author followed by a bound
-    plain-topic preference, can share a written author. Another subject/contrast, source
+    plain-topic preference or direct expression, can share a written author. Another subject/contrast, source
     line break, scoped duty or paragraph boundary keeps the topic. A preceding
     evaluation's viewpoint is retained; the following explicit viewpoint or
     focus is never elided. Both propositions must state the same first person.
-    A continued preference may extend that same source-bound referent chain,
+    A continued expression may extend that same source-bound referent chain,
     but cannot start a new chain after an unlicensed link. The plan remains
     intact; this is not general subject/discourse resolution.
     """
@@ -395,13 +395,37 @@ def _adjacent_self_continuations(meaning: PieceSourceMeaning,
             gap = original[spans[previous].source_end:spans[current].source_start]
             if '\n' in gap or '\r' in gap:
                 continue
+            # A direct continuation must have ONE already-bound reference as
+            # its complete object, in both original coordinate systems. A
+            # source predicate match, matching words, or one operand of a pair
+            # alone cannot grant subject continuity. Leave the old two-wish
+            # path below untouched when this bounded reference is absent.
+            bound_direct = None
+            direct_links = []
+            if duties[current] in {'SOURCE_TRANSITIVE_SELF_TOPIC',
+                                   'SOURCE_FIRST_PERSON_TOPIC'}:
+                candidate = _direct_transitive_expression(nodes[current].value)
+                if candidate is not None:
+                    start = spans[current].source_start
+                    target_span = (start + candidate.start('object'),
+                                   start + candidate.end('object'))
+                    target_utf8 = tuple(len(original[:offset].encode('utf-8'))
+                                        for offset in target_span)
+                    direct_links = [ref for ref in meaning.nominal_references
+                                    if ref.reference_node_id == current
+                                    and ref.reference_scalar_span == target_span
+                                    and ref.reference_utf8_span == target_utf8]
+                    if len(direct_links) == 1:
+                        bound_direct = candidate
             if (duties[previous] in {'SOURCE_FOCAL_TO_FIRST_PERSON',
                                      'SOURCE_PERSONAL_EVALUATION',
                                      'SOURCE_TRANSITIVE_SELF_TOPIC',
                                      'SOURCE_FIRST_PERSON_TOPIC'}
-                    and duties[current] == 'SOURCE_PERSONAL_EVALUATION'):
+                    and (duties[current] == 'SOURCE_PERSONAL_EVALUATION'
+                         or bound_direct is not None)):
                 prior = evaluations.get(previous)
                 direct_span = None
+                direct = None
                 if duties[previous] == 'SOURCE_PERSONAL_EVALUATION':
                     # An existing source-bound evaluation can establish this
                     # author and referent. Keep its full viewpoint/predicate;
@@ -429,24 +453,25 @@ def _adjacent_self_continuations(meaning: PieceSourceMeaning,
                     direct_span = (start + direct.start('object'),
                                    start + direct.end('object'))
                 frame = evaluations.get(current)
-                # Only the next plain は preference can omit its self-topic.
-                # Its explicit にとって viewpoint, が focus or comparison stays.
-                if (frame is None or frame.construction != 'は'
-                        or frame.kind != 'PERSONAL_PREFERENCE'
-                        or original[slice(*frame.scalar_parts[0])] != speaker):
-                    continue
-                links = [ref for ref in meaning.nominal_references
-                         if ref.reference_node_id == current
-                         and ref.reference_scalar_span == frame.scalar_parts[2]
-                         and ref.reference_utf8_span == frame.utf8_parts[2]]
+                # Only the next plain は preference or proved direct object
+                # may omit its topic. Explicit viewpoints, focus, comparisons
+                # and outer scopes retain their existing complete writer.
+                if bound_direct is not None:
+                    if bound_direct['speaker'] != speaker:
+                        continue
+                    links = direct_links
+                else:
+                    if (frame is None or frame.construction != 'は'
+                            or frame.kind != 'PERSONAL_PREFERENCE'
+                            or original[slice(*frame.scalar_parts[0])] != speaker):
+                        continue
+                    links = [ref for ref in meaning.nominal_references
+                             if ref.reference_node_id == current
+                             and ref.reference_scalar_span == frame.scalar_parts[2]
+                             and ref.reference_utf8_span == frame.utf8_parts[2]]
                 if len(links) != 1:
                     continue
                 ref = links[0]
-                if direct_span is not None and (
-                        ref.antecedent_scalar_span != direct_span
-                        or ref.antecedent_utf8_span != tuple(
-                            len(original[:offset].encode('utf-8')) for offset in direct_span)):
-                    continue
                 referent = (ref.antecedent_node_id, ref.nominal_head,
                             ref.antecedent_scalar_span, ref.antecedent_utf8_span)
                 # The resolver keeps later mentions bound to the original
@@ -458,11 +483,25 @@ def _adjacent_self_continuations(meaning: PieceSourceMeaning,
                     # Do not manufacture identical adjacent sentences. Keep
                     # the source's repeated proposition and its explicit topic,
                     # just as the existing two-wish edit declines duplicates.
-                    if (prior is None or _evaluation_sentence(meaning, prior)
-                            == _evaluation_sentence(meaning, frame)):
+                    same_evaluation = (prior is not None and frame is not None
+                                       and _evaluation_sentence(meaning, prior)
+                                       == _evaluation_sentence(meaning, frame))
+                    same_direct = (direct is not None and bound_direct is not None
+                                   and (direct['object'], direct['predicate'])
+                                   == (bound_direct['object'], bound_direct['predicate']))
+                    if ((prior is None and direct is None)
+                            or same_evaluation or same_direct):
                         continue
                     continuations.add(current)
                     continuation_referents[current] = referent
+                    continue
+                # Starting a chain binds the actual preceding full object.
+                # Extending one above instead binds the original antecedent;
+                # the preceding pronoun must never become a new object owner.
+                if direct_span is not None and (
+                        ref.antecedent_scalar_span != direct_span
+                        or ref.antecedent_utf8_span != tuple(
+                            len(original[:offset].encode('utf-8')) for offset in direct_span)):
                     continue
                 if (ref.antecedent_node_id != previous
                         or original[slice(*links[0].antecedent_scalar_span)] != target
