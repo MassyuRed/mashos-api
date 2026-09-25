@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 from piece_v2_content_policy import unavailable
+from cocolon_meaning_experience_engine.piece_source import _PLAIN_EVALUATION_MODAL
 
 
 @dataclass(frozen=True, repr=False)
@@ -60,12 +61,16 @@ def _transitive_predicate_forms() -> tuple[tuple[str, ...], tuple[str, ...], fro
 # writer and reference-linked continuity must use this same captured author.
 # Past belongs to the embedded predicate, not the final copula or a word
 # inside its object. Reuse the direct construction's plain past forms; neither
-# polite relative predicates nor focal modals gain admission here.
+# polite relative predicates nor stacked modals gain admission here.
+# The existing plain modal owner qualifies the WHOLE predicate, just as in
+# the direct word order. Keep its literal wording inside the predicate span
+# for the unchanged author and uncertainty/format checks; never infer a vow.
 _FINITE_PREDICATES, _PAST_PREDICATES, _PLAIN_PREDICATES = _transitive_predicate_forms()
-_FOCUS = re.compile(r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)が(?P<predicate>(?:'
+_FOCUS = re.compile(r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)が(?P<predicate>(?:(?:'
                     + '|'.join(map(re.escape, _PREDICATES)) + r')|(?P<past_predicate>'
                     + '|'.join(re.escape(p) for p in _PAST_PREDICATES if p in _PLAIN_PREDICATES)
-                    + r'))のは[、，,]?(?P<object>.+?)(?:です|だ)[。]$')
+                    + r'))(?P<modal>' + _PLAIN_EVALUATION_MODAL
+                    + r')?)のは[、，,]?(?P<object>.+?)(?:です|だ)[。]$')
 _UNCERTAIN = re.compile(r'かもしれ|分から|わから|迷って|迷い|まだ決め|とは限ら|たぶん|おそらく')
 _DEICTIC = re.compile(r'^(?:これ|それ|あれ|ここ|そこ|あそこ)(?:は|が|を|に|で|も)')
 _NESTED = re.compile(r'[「」『』"“”]|(?:[がは]私)|(?:と(?:彼|彼女|上司|友人))')
