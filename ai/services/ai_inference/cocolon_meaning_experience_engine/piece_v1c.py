@@ -20,7 +20,7 @@ from piece_v2_expression import (
 )
 from .contracts import EngineStatus, ExecutionMode
 from .piece_source import (
-    _calendar_time_adverb_span, _direct_transitive_expression, _PERSON_NAME_LEFT_BOUNDARY, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
+    _SIMPLE_NOUN, _calendar_time_adverb_span, _direct_transitive_expression, _PERSON_NAME_LEFT_BOUNDARY, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
     piece_public_role_aliases, validate_piece_nominal_references,
     validate_piece_personal_evaluations, validate_piece_expression_scopes,
 )
@@ -111,7 +111,10 @@ def _focal_parts(sentence: str) -> tuple[str, str, str] | None:
     if match is None:
         return None
     obj = match['object'].lstrip('、，,')
-    if (not obj.endswith(('こと', 'もの', '時間'))
+    # Use the same complete nominal shape as the Piece source parser.
+    # The written focal transitive predicate already establishes its object;
+    # do not fabricate a nominalizer or change the user's chosen noun.
+    if (not (obj.endswith(('こと', 'もの', '時間')) or _SIMPLE_NOUN.fullmatch(obj))
             or _NESTED.search(obj) or _DEICTIC.search(obj)):
         raise unavailable('focal_object_not_self_contained')
     return obj, match['predicate'], match['speaker']

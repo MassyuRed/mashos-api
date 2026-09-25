@@ -238,7 +238,11 @@ def _direct_transitive_expression(sentence: str) -> re.Match[str] | None:
     paired = (pair is not None
               and _NOMINAL_REFERENCE_TARGET.fullmatch(pair['left'])['head']
               != _NOMINAL_REFERENCE_TARGET.fullmatch(pair['right'])['head'])
-    if (not obj.endswith(('こと', 'もの', '時間'))
+    # The evaluation parser already admits this complete simple nominal
+    # shape. The transitive construction explicitly owns it as an object;
+    # a nominalizing suffix is not required. This supplies neither a new
+    # predicate/author nor an antecedent for an unsupported reference.
+    if (not (obj.endswith(('こと', 'もの', '時間')) or _SIMPLE_NOUN.fullmatch(obj))
             or (re.search(r'[、，,]', obj) and not paired) or 'のは' in obj
             or any(marker in obj for marker in _SCOPE_RELATIONS)
             or _NESTED.search(obj) or _DEICTIC.search(obj)
@@ -280,7 +284,11 @@ def _scoped_focal_expression(sentence: str) -> tuple[re.Match[str], re.Match[str
         if not _same_self_scope_author(scoped['premise'], focal['speaker']):
             return None
     obj = focal['object'].lstrip('、，,')
-    if (not obj.endswith(('こと', 'もの', '時間')) or 'のは' in obj
+    # The evaluation parser already admits this complete simple nominal
+    # shape. The transitive construction explicitly owns it as an object;
+    # a nominalizing suffix is not required. This supplies neither a new
+    # predicate/author nor an antecedent for an unsupported reference.
+    if (not (obj.endswith(('こと', 'もの', '時間')) or _SIMPLE_NOUN.fullmatch(obj)) or 'のは' in obj
             or _NESTED.search(obj) or _DEICTIC.search(obj)):
         if self_premise:
             return None
