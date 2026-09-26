@@ -21,7 +21,7 @@ from piece_v2_generation import generate_piece_candidate
 from piece_v2_source_adapter import (
     PieceSavedHandoff, PieceSavedSourceAdapter, project_saved_original_source,
 )
-from piece_v2_visual import build_visual_recipe
+from piece_v2_visual import build_visual_recipe, validate_visual_recipe
 
 _SOURCE_FIELDS = frozenset({
     'source_input_id', 'source_input_version', 'source_input_bundle_commitment',
@@ -169,4 +169,70 @@ class PiecePreviewService:
         except Exception:
             # No internal detector code, input, token or RPC body crosses this
             # service boundary. Cancellation (BaseException) still propagates.
+            raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None
+
+
+    async def prepare_visual_change(
+        self, authorization: str | None, previous: PreparedPiecePreview,
+        visual_selection: dict,
+    ) -> PreparedPiecePreview:
+        """Replace only B9 settings on a server-held, pre-issuance assembly.
+
+        This is not PATCH or persistence: the caller must hold the immutable
+        result of prepare_original, never deserialize a client-supplied body.
+        All three selectors are required; None uses B9's existing tier default.
+        No author, format change, preview ID, expiry or save effect is involved.
+        """
+        if type(previous) is not PreparedPiecePreview or type(previous.handoff) is not PieceSavedHandoff:
+            raise _error('PIECE_REQUEST_INVALID')
+        try:
+            # Own the choice before either authenticated read can yield.
+            if type(visual_selection) is not dict or set(visual_selection) != _VISUAL_FIELDS:
+                raise _error('PIECE_REQUEST_INVALID')
+            selection = json.loads(canonical_json_bytes(visual_selection))
+            if any(v is not None and (type(v) is not str or not v) for v in selection.values()):
+                raise _error('PIECE_VISUAL_SELECTION_NOT_ALLOWED')
+        except PieceContractError as exc:
+            raise _error(exc.code if exc.code in _SERVICE_ERRORS else 'PIECE_REQUEST_INVALID') from None
+        except (ValueError, TypeError, UnicodeError, RecursionError):
+            raise _error('PIECE_REQUEST_INVALID') from None
+        try:
+            handoff = previous.handoff
+            current = await self._source_adapter.revalidate_original_handoff(authorization, handoff)
+            if current != handoff:
+                raise _error('PIECE_CONFLICT')
+            # Reuse the established text/recipe contracts. This checks internal
+            # corruption, not authorship of arbitrary client replacement prose.
+            artifact = previous.artifact_payload()
+            try:
+                payload = artifact['content_payload']
+                validate_piece_text_binding(payload, artifact['piece_text'], artifact['piece_text_hash'])
+                if (artifact['content_payload_hash'] != canonical_sha256_hex(payload)
+                        or artifact['format_type'] != payload['format_type']
+                        or artifact['api_contract_version'] != PIECE_V2_CONTRACT_VERSIONS['api_contract_version']
+                        or artifact['piece_contract_version'] != PIECE_V2_CONTRACT_VERSIONS['piece_contract_version']
+                        or artifact['visibility_scope'] != 'private'):
+                    raise _error('PIECE_HASH_MISMATCH')
+                validate_visual_recipe(artifact['visual_recipe'],
+                    format_type=artifact['format_type'], language=payload['language'],
+                    expected_hash=artifact['visual_recipe_hash'])
+            except (PieceContractError, KeyError, TypeError):
+                raise _error('PIECE_HASH_MISMATCH') from None
+            try:
+                recipe = build_visual_recipe(artifact['format_type'],
+                    tier=current.original.subscription_tier, language=payload['language'],
+                    theme=selection['theme_id'], aspect_ratio=selection['aspect_ratio'],
+                    branding=selection['branding_mode'])
+            except PieceContractError:
+                raise _error('PIECE_VISUAL_SELECTION_NOT_ALLOWED') from None
+            artifact['visual_recipe'] = recipe
+            artifact['visual_recipe_hash'] = canonical_sha256_hex(recipe)
+            artifact_bytes = canonical_json_bytes(artifact)
+            current = await self._source_adapter.revalidate_original_handoff(authorization, handoff)
+            if current != handoff:
+                raise _error('PIECE_CONFLICT')
+            return PreparedPiecePreview(handoff, artifact_bytes)
+        except PieceContractError as exc:
+            raise _error(exc.code if exc.code in _SERVICE_ERRORS else 'PIECE_TEMPORARILY_UNAVAILABLE') from None
+        except Exception:
             raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None
