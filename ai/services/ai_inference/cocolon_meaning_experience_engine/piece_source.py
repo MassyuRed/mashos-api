@@ -91,6 +91,23 @@ class PieceExpressionScope:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
+class PieceSelectedFeeling:
+    """A saved selection covered by one retained, explicit self proposition.
+
+    selection_field/index address the immutable saved JSON, not text offsets.
+    node/evidence address the independently retained written proposition. This
+    is equivalence coverage, never a cause, an inferred intensity or new prose.
+    The full saved snapshot still owns the exact raw label/strength spelling.
+    """
+    selection_field: str
+    selection_index: int
+    label: str
+    strength: str
+    node_id: str
+    evidence_id: str
+
+
+@dataclass(frozen=True, slots=True, repr=False)
 class PieceSourceMeaning:
     envelope: SourceEnvelope
     graph: GroundedMeaningGraph
@@ -101,6 +118,7 @@ class PieceSourceMeaning:
     personal_evaluations: tuple[PiecePersonalEvaluation, ...] = ()
     expression_scopes: tuple[PieceExpressionScope, ...] = ()
     saved_snapshot: object | None = None
+    selected_feelings: tuple[PieceSelectedFeeling, ...] = ()
 
 
 # These are clause operators, not a list of causes, topics or output phrases.
@@ -131,7 +149,7 @@ _TEMPORAL_EVALUATION = re.compile(
     r'(?P<intention>(?:私|わたし|僕|ぼく|俺|おれ)(?:は|にとって|が)[、，,]?.+。)$')
 # Preserve the complete self expression, not an inferred desire lemma.
 # 読みたい / 休みたい and a source-written comparison ending みたい retain
-# their exact surface. Neither is promoted to a declaration by this operator.
+# their exact surface. Neither is promoted to declaration by this operator.
 _SCOPED_SELF_END = re.compile(r'(?:たい|たくない)(?:です)?$')
 _SELF_TOPIC_MENTION = re.compile(r'(?:私|わたし|僕|ぼく|俺|おれ)は')
 _SCOPE_KINDS = {
@@ -979,11 +997,9 @@ def _saved_field_projection(source) -> tuple[tuple[str, int, int], ...]:
             raise ValueError()
     except (ValueError, TypeError, UnicodeError):
         raise unavailable('saved_original_projection_invalid') from None
-    # The present author interprets written propositions, not selected-feeling
-    # labels/intensities. Preserve this gap explicitly instead of declaring a
-    # text-only subset to be the complete original or inventing feeling prose.
-    if record['emotions'] or record['emotion_details']:
-        raise unavailable('saved_emotion_meaning_not_yet_supported')
+    # Selected-feeling coverage is resolved against the completed graph below.
+    # The complete raw record remains sealed; do not delete the selected fields
+    # or turn them into synthetic sentences to make this text view eligible.
     parts, spans, cursor = [], [], 0
     for key in ('memo', 'memo_action'):
         text = record[key]
@@ -1000,6 +1016,74 @@ def _saved_field_projection(source) -> tuple[tuple[str, int, int], ...]:
     return tuple(spans)
 
 
+def _selected_feeling_bindings(source, nodes: tuple[MeaningNode, ...],
+                               evidence: tuple[EvidenceRef, ...]) -> tuple[PieceSelectedFeeling, ...]:
+    """Cover every selected feeling with one explicit, still-visible sentence.
+
+    This bounded route admits only present affirmative first-person feeling
+    propositions whose whole written meaning already carries the selection.
+    Negated, past, modal, conditional, reported or ambiguous matches do not
+    provide that cover. Unrepresented feelings remain unavailable; the author
+    is not permitted to invent an explanation, will, cause or degree for them.
+    """
+    if source.saved_original_json is None:
+        return ()
+    from emlis_ai_current_input_bundle import _normalize_strength
+    from .source_kernel import CANONICAL_EMOTIONS, CANONICAL_STRENGTHS
+    record = json.loads(source.saved_original_json)
+    tags, details = record['emotions'] or [], record['emotion_details'] or []
+    if not tags and not details:
+        return ()
+
+    def require(condition):
+        if not condition:
+            raise unavailable('saved_emotion_meaning_not_yet_supported')
+
+    # 自己理解 is an input mode, not a feeling from which to infer a state.
+    labels = tuple(label for label in CANONICAL_EMOTIONS if label != '自己理解')
+    require(all(type(label) is str and label in labels for label in tags))
+    require(len(tags) == len(set(tags)))
+    rows = [('emotions', i, label, '') for i, label in enumerate(tags)]
+    detail_labels = []
+    for i, detail in enumerate(details):
+        require(type(detail) is dict and not set(detail) - {'type', 'strength'})
+        label, raw_strength = detail.get('type'), detail.get('strength', '')
+        require(type(label) is str and label in labels and type(raw_strength) is str)
+        strength = _normalize_strength(raw_strength)
+        require(strength == '' or strength in CANONICAL_STRENGTHS)
+        detail_labels.append(label)
+        rows.append(('emotion_details', i, label, strength))
+    require(len(detail_labels) == len(set(detail_labels)))
+    # These fields are aliases for the same ordered selections, not two sets
+    # from which to choose whichever agrees with a sentence. Never silently
+    # replace a mismatching tag, detail or its explicitly selected strength.
+    require(not tags or not details or tags == detail_labels)
+    degree = {'': '', '弱い': 'weak', '中程度の': 'medium', '強い': 'strong'}
+    feeling = re.compile(
+        r'^(?:私|わたし|僕|ぼく|俺|おれ)は[、，,]?[ \t\u3000]*'
+        r'(?P<degree>弱い|中程度の|強い)?(?P<label>'
+        + '|'.join(map(re.escape, labels)) + r')を感じています。$')
+    matches = {}
+    for node in nodes:
+        match = feeling.fullmatch(node.value)
+        if match:
+            matches.setdefault(match['label'], []).append((node, degree[match['degree'] or '']))
+    evidence_by_id = {item.evidence_id: item for item in evidence}
+    bound = []
+    for field, index, label, strength in rows:
+        candidates = matches.get(label, [])
+        require(len(candidates) == 1)
+        node, written_strength = candidates[0]
+        require(not strength or strength == written_strength)
+        require(len(node.evidence_ids) == 1 and node.evidence_ids[0] in evidence_by_id)
+        ev = evidence_by_id[node.evidence_ids[0]]
+        require(ev.field_path in {'memo', 'memo_action'})
+        require(record[ev.field_path][ev.scalar_start:ev.scalar_end] == node.value)
+        bound.append(PieceSelectedFeeling(field, index, label, strength,
+                                          node.node_id, ev.evidence_id))
+    return tuple(bound)
+
+
 def validate_piece_saved_fields(meaning: PieceSourceMeaning) -> None:
     """Keep field/record provenance bound through plan and final realization.
 
@@ -1009,6 +1093,8 @@ def validate_piece_saved_fields(meaning: PieceSourceMeaning) -> None:
     """
     is_saved = meaning.envelope.source_schema_version == 'piece.saved_source.original_fields.v1'
     if not is_saved and meaning.saved_snapshot is None:
+        if meaning.selected_feelings:
+            raise unavailable('piece_saved_field_binding')
         return
     from piece_v2_generation import PieceSourceSnapshot
     source = meaning.saved_snapshot
@@ -1147,4 +1233,5 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
         owner_universe_digest=_digest(json.dumps(owners)))
     return PieceSourceMeaning(envelope, graph, tuple(evidence), tuple(meanings), aliases,
                               references, evaluations, scopes,
-                              source if source.saved_original_json is not None else None)
+                              source if source.saved_original_json is not None else None,
+                              _selected_feeling_bindings(source, tuple(nodes), tuple(evidence)))
