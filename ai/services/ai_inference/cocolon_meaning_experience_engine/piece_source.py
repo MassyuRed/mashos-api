@@ -1039,6 +1039,23 @@ def _selected_feeling_bindings(source, nodes: tuple[MeaningNode, ...],
         if not condition:
             raise unavailable('saved_emotion_meaning_not_yet_supported')
 
+    # The current input UI selects 自己理解 alone and sends a hidden medium
+    # placeholder, not an authored feeling intensity. Keep the exact selection
+    # in saved_snapshot/envelope identity; it contributes no feeling proposition.
+    # Missing/empty optional strength is also non-semantic. Reject mixed modes,
+    # duplicate selections, extra keys and every other strength spelling rather
+    # than normalizing them into a claim of self-understanding or ignoring them.
+    if ('自己理解' in tags or any(type(detail) is dict and
+            detail.get('type') == '自己理解' for detail in details)):
+        require(not tags or tags == ['自己理解'])
+        require(len(details) <= 1)
+        for detail in details:
+            require(type(detail) is dict and not set(detail) - {'type', 'strength'})
+            require(detail.get('type') == '自己理解')
+            raw_strength = detail.get('strength', '')
+            require(type(raw_strength) is str and raw_strength in ('', 'medium'))
+        return ()
+
     # 自己理解 is an input mode, not a feeling from which to infer a state.
     labels = tuple(label for label in CANONICAL_EMOTIONS if label != '自己理解')
     require(all(type(label) is str and label in labels for label in tags))
