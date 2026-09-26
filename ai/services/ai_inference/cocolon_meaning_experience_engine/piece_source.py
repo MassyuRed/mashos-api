@@ -100,6 +100,7 @@ class PieceSourceMeaning:
     nominal_references: tuple[PieceNominalReference, ...] = ()
     personal_evaluations: tuple[PiecePersonalEvaluation, ...] = ()
     expression_scopes: tuple[PieceExpressionScope, ...] = ()
+    saved_snapshot: object | None = None
 
 
 # These are clause operators, not a list of causes, topics or output phrases.
@@ -947,6 +948,81 @@ def _piece_editorial_roles(sentences: tuple[str, ...],
     return roles
 
 
+def _saved_field_projection(source) -> tuple[tuple[str, int, int], ...]:
+    """Map exact stored field strings into a non-narrative text working view.
+
+    Offsets in PieceSentenceMeaning are view-relative. EvidenceRef scalar
+    offsets are relative to memo/memo_action; UTF-8 offsets address that field
+    inside the view envelope. The complete JSON record is retained privately
+    and committed in the envelope identity, including nulls and metadata.
+    """
+    from piece_v2_contract import canonical_json_bytes
+    from piece_v2_generation import _sentences
+    try:
+        payload = source.saved_original_json
+        if type(payload) is not bytes:
+            raise ValueError()
+        record = json.loads(payload)
+        if (type(record) is not dict or
+                set(record) != {'id', 'created_at', 'memo', 'memo_action',
+                                'category', 'emotions', 'emotion_details'} or
+                canonical_json_bytes(record) != payload or
+                record['id'] != source.saved_input_id or
+                source.source_version != 'emlis.current_input_bundle.v1' or
+                type(record['created_at']) is not str or not record['created_at'] or
+                any(record[key] is not None and type(record[key]) is not str
+                    for key in ('memo', 'memo_action')) or
+                any(record[key] is not None and type(record[key]) is not list
+                    for key in ('category', 'emotions', 'emotion_details')) or
+                any(type(v) is not str for key in ('category', 'emotions')
+                    for v in (record[key] or []))):
+            raise ValueError()
+    except (ValueError, TypeError, UnicodeError):
+        raise unavailable('saved_original_projection_invalid') from None
+    # The present author interprets written propositions, not selected-feeling
+    # labels/intensities. Preserve this gap explicitly instead of declaring a
+    # text-only subset to be the complete original or inventing feeling prose.
+    if record['emotions'] or record['emotion_details']:
+        raise unavailable('saved_emotion_meaning_not_yet_supported')
+    parts, spans, cursor = [], [], 0
+    for key in ('memo', 'memo_action'):
+        text = record[key]
+        if text is None or not text.strip():
+            continue
+        _sentences(text)  # An unfinished field cannot borrow the next field.
+        if parts:
+            cursor += 2
+        spans.append((key, cursor, cursor + len(text)))
+        parts.append(text)
+        cursor += len(text)
+    if not parts or source.original_text != '\n\n'.join(parts):
+        raise unavailable('saved_original_projection_mismatch')
+    return tuple(spans)
+
+
+def validate_piece_saved_fields(meaning: PieceSourceMeaning) -> None:
+    """Keep field/record provenance bound through plan and final realization.
+
+    The existing single-text path is unchanged. For the field-aware path the
+    same saved snapshot rederives the graph, field evidence and editorial
+    bindings; no caller-supplied field map can weaken source coverage.
+    """
+    is_saved = meaning.envelope.source_schema_version == 'piece.saved_source.original_fields.v1'
+    if not is_saved and meaning.saved_snapshot is None:
+        return
+    from piece_v2_generation import PieceSourceSnapshot
+    source = meaning.saved_snapshot
+    if (not is_saved or type(source) is not PieceSourceSnapshot or
+            source.saved_original_json is None):
+        raise unavailable('piece_saved_field_binding')
+    expected = build_piece_source_meaning(
+        source, expected_owner_id=source.owner_id,
+        expected_saved_input_id=source.saved_input_id,
+        expected_source_version=source.source_version)
+    if expected != meaning:
+        raise unavailable('piece_saved_field_binding')
+
+
 def build_piece_source_meaning(source: object, *, expected_owner_id: str,
                                expected_saved_input_id: str,
                                expected_source_version: str) -> PieceSourceMeaning:
@@ -969,6 +1045,8 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
     if source.source_role != 'original' or source.source_stage not in (
             'normal_observation', 'pre_question_observation'):
         raise unavailable('source_role_or_stage_not_yet_supported')
+    fields = (_saved_field_projection(source) if source.saved_original_json is not None
+              else (('original_text', 0, len(source.original_text)),))
     text = source.original_text
     check_existing_detectors(text)
     sentences = _sentences(text)
@@ -981,11 +1059,16 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
     identity = json.dumps([source.owner_id, source.saved_input_id,
                            source.source_version, source.source_role,
                            source.source_stage, _digest(text)], ensure_ascii=False)
+    if source.saved_original_json is not None:
+        identity = json.dumps([identity, 'piece.saved_source.original_fields.v1',
+                               hashlib.sha256(source.saved_original_json).hexdigest()])
     envelope_id = 'piece-source:' + _digest(identity)
     envelope = SourceEnvelope(
         envelope_id=envelope_id, source_record_id=source.saved_input_id,
         source_role='ORIGINAL_USER_INPUT',
-        source_schema_version='piece.saved_source.original.v1',
+        source_schema_version=('piece.saved_source.original_fields.v1'
+                               if source.saved_original_json is not None
+                               else 'piece.saved_source.original.v1'),
         source_contract_version='piece.source_lineage.v1', source_encoding='UTF-8',
         label_contract_id='NOT_APPLICABLE', label_contract_digest='',
         raw_utf8=raw, raw_sha256=_digest(text))
@@ -1000,12 +1083,18 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
         node_id, owner_id, evidence_id = f'piece:s{index+1}', f'piece:o{index+1}', f'piece:e{index+1}'
         utf8_start = len(text[:start].encode('utf-8'))
         utf8_end = len(text[:end].encode('utf-8'))
+        matching = [(key, a, b) for key, a, b in fields if a <= start < end <= b]
+        if len(matching) != 1:
+            raise unavailable('saved_original_field_range_mismatch')
+        key, field_start, field_end = matching[0]
         evidence.append(EvidenceRef(
             evidence_id=evidence_id, source_span_id=node_id,
-            source_envelope_id=envelope_id, field_path='original_text', element_index=0,
-            field_utf8_start=0, field_utf8_end=len(raw), scalar_start=start,
-            scalar_end=end, utf8_start=utf8_start, utf8_end=utf8_end,
-            field_sha256=_digest(text), literal_sha256=_digest(sentence)))
+            source_envelope_id=envelope_id, field_path=key, element_index=0,
+            field_utf8_start=len(text[:field_start].encode('utf-8')),
+            field_utf8_end=len(text[:field_end].encode('utf-8')),
+            scalar_start=start - field_start, scalar_end=end - field_start,
+            utf8_start=utf8_start, utf8_end=utf8_end,
+            field_sha256=_digest(text[field_start:field_end]), literal_sha256=_digest(sentence)))
         nodes.append(MeaningNode(
             node_id=node_id, owner_id=owner_id, node_kind='PIECE_SOURCE_PROPOSITION',
             grounding_kind='explicit', value=sentence,
@@ -1057,4 +1146,5 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
         source_version=source.source_version, obligation_version='piece.content_meaning.v1',
         owner_universe_digest=_digest(json.dumps(owners)))
     return PieceSourceMeaning(envelope, graph, tuple(evidence), tuple(meanings), aliases,
-                              references, evaluations, scopes)
+                              references, evaluations, scopes,
+                              source if source.saved_original_json is not None else None)

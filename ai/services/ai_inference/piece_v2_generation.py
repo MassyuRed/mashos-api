@@ -20,6 +20,10 @@ class PieceSourceSnapshot:
     original_text: str
     source_role: str = 'original'
     source_stage: str = 'normal_observation'
+    # Optional complete saved-record projection, never a public payload. The
+    # source builder verifies original_text against both written fields and
+    # binds all metadata to the same immutable record before generation.
+    saved_original_json: bytes | None = None
 
 
 # This is a grammar operation, not a table of input sentences or generated

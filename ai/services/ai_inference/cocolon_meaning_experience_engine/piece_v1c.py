@@ -21,7 +21,7 @@ from piece_v2_expression import (
 from .contracts import EngineStatus, ExecutionMode
 from .piece_source import (
     _SIMPLE_NOUN, _calendar_time_adverb_span, _direct_transitive_expression, _PERSON_NAME_LEFT_BOUNDARY, PiecePersonalEvaluation, PieceSourceMeaning, build_piece_source_meaning,
-    piece_public_role_aliases, validate_piece_nominal_references,
+    piece_public_role_aliases, validate_piece_nominal_references, validate_piece_saved_fields,
     validate_piece_personal_evaluations, validate_piece_expression_scopes,
 )
 
@@ -129,6 +129,7 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
     """
     from piece_v2_generation import _UNCERTAIN, _DEICTIC
     graph = meaning.graph
+    validate_piece_saved_fields(meaning)
     validate_piece_nominal_references(meaning)
     validate_piece_personal_evaluations(meaning)
     evaluations = {frame.node_id: frame for frame in meaning.personal_evaluations}
@@ -221,6 +222,13 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
         # to the end, turn it into a standalone declaration, or drop its tail.
         pivot = intents[0]
         blocks = (ids[:pivot], ids[pivot:]) if pivot else (ids,)
+    if meaning.saved_snapshot is not None:
+        # UI field order is not a temporal/causal relation. Keep each written
+        # field intact as one paragraph; do not front an action-field intention
+        # across thought context or elide an author across the field boundary.
+        field_order = tuple(dict.fromkeys(ev.field_path for ev in meaning.evidence))
+        blocks = tuple(tuple(node.node_id for node, ev in zip(graph.nodes, meaning.evidence)
+                             if ev.field_path == key) for key in field_order)
     declaration = (len(ids) == 1 and not meaning.expression_scopes
                    and not _UNCERTAIN.search(graph.nodes[0].value))
     # A source-written past wish/value/state is an account of that time,
