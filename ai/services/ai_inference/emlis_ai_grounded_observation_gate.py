@@ -2550,7 +2550,7 @@ def _answer_feeling_preceding_event(move, plan, resolver, selected_subjective_in
 
 
 def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subjective_input,
-                                    *, shared_explanatory_ending=True):
+                                    *, sentence_ending=True):
     """Read the still-active source feeling and its time from complete bytes.
 
     A removed ABOUT edge cannot be reconstructed from proximity or the old
@@ -2610,13 +2610,24 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
         if not explanation_proven:
             return None
         predicate = explanatory['predicate']
+    copular = re.fullmatch(r"(?P<host>.+?)(?P<ending>でした|だった|です|だ)", source)
+    copular_proven = False
+    if copular is not None:
+        noun = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)",
+                      "", copular['host'], count=1)
+        noun = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", noun, count=1)
+        copular_proven = bool(_FEELING_RE.fullmatch(noun) and not noun.endswith("い"))
+        if copular_proven:
+            predicate = copular['host'] + (
+                "だった" if copular['ending'] in {"でした", "だった"} else "だ")
     # Restore the source speaker from actual recipient-facing prose below.
     # This is independent of the author's surface transformation.
     owner = re.match(r"(?P<self>わたし|ぼく|おれ|私|僕|俺|自分)"
                      r"(?P<particle>には|にも|は|も)", predicate)
     remainder = predicate[owner.end():] if owner else predicate
-    if (not source or not (nominal_explanation or _SOURCE_GROUNDED_FINITE_END_RE.search(predicate))
-        or re.search(r"(?:です|ます|でした|ました|だ)$", predicate)
+    if (not source or not (nominal_explanation or copular_proven
+                          or _SOURCE_GROUNDED_FINITE_END_RE.search(predicate))
+        or re.search(r"(?:です|ます|でした|ました|だ)$", predicate) and not copular_proven
         or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", remainder)
         or re.search(r'[「」『』“”‘’"?？!！\r\n。]', source)):
         return None
@@ -2656,7 +2667,9 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
         restored = owner.group() + restored[len(recipient):]
     # A synthetic ending used to parse the left operand of a pair is not
     # the response's real acknowledgement. Its explanation must remain のだ.
-    expected = predicate + ("のだ" if explanation_proven and not shared_explanatory_ending else "")
+    expected = predicate + ("のだ" if explanation_proven and not sentence_ending else "")
+    if copular_proven and predicate.endswith("だ") and sentence_ending:
+        expected = predicate[:-1] + "な"
     if restored != expected:
         return None
     return ((len(raw[:parsed.start('feeling')].encode()),
@@ -2680,7 +2693,7 @@ def read_detached_feeling_pair(raw, moves, plan, resolver, selected_subjective_i
         right = raw[boundary.end():]
         first = _read_detached_feeling_discourse(
             left + "のですね。", moves[0], plan, resolver, selected_subjective_input,
-            shared_explanatory_ending=False)
+            sentence_ending=False)
         second = _read_detached_feeling_discourse(
             right, moves[1], plan, resolver, selected_subjective_input)
         if first is None or second is None or first[0][2] == second[0][2]:

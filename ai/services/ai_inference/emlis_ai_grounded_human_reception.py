@@ -10146,12 +10146,26 @@ def _source_owned_detached_feeling_parts(move, realization, plan, resolver,
     # The full source owns the feeling, including tense and negation.
     # Adjective politeness can use the response ending; a proven explanation
     # stays explicit until its position at that ending is known.
-    fragments = tuple(_detached_feeling_finite_surface(fragment, allow_explanatory=True)
+    fragments = tuple(_detached_feeling_finite_surface(fragment, allow_explanatory=True,
+                                                     allow_copular=True)
                       for fragment in realization.semantic_fragments)
     return parts if parts is not None and fragments == (parts[1],) else None
 
 
-def _detached_feeling_finite_surface(source, *, allow_explanatory=False):
+def _detached_feeling_copula_parts(source):
+    """Prove a complete ordinary feeling-noun copula before inflecting it."""
+    copular = re.fullmatch(r"(?P<host>.+?)(?P<ending>でした|だった|です|だ)", source)
+    if copular is None:
+        return None
+    noun = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)",
+                  "", copular['host'], count=1)
+    noun = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", noun, count=1)
+    if _FEELING_RE.fullmatch(noun) and not noun.endswith("い"):
+        return copular['host'], copular['ending']
+    return None
+
+
+def _detached_feeling_finite_surface(source, *, allow_explanatory=False, allow_copular=False):
     """Address an explicitly SELF-owned feeling to its original speaker.
 
     Only the leading pronoun changes perspective; its particle, predicate,
@@ -10161,6 +10175,11 @@ def _detached_feeling_finite_surface(source, *, allow_explanatory=False):
     finite = re.sub(r"(?<=[い])です$|(?<=かった)です$", "", source)
     finite = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?=には|にも|は|も)",
                     "あなた", finite, count=1)
+    if allow_copular:
+        copular = _detached_feeling_copula_parts(source)
+        if copular is not None:
+            finite = finite[:-len(copular[1])] + (
+                "だった" if copular[1] in {"でした", "だった"} else "だ")
     if allow_explanatory:
         explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", finite)
         if explanatory is not None:
@@ -10204,13 +10223,15 @@ def _detached_feeling_source_parts(move, plan, resolver):
         return None
     index = {n.nucleus_id: n for n in plan.nuclei}
     source = final_reception_source_anchor_text(nucleus.nucleus_id, index, resolver)
-    finite = _detached_feeling_finite_surface(source, allow_explanatory=True)
+    finite = _detached_feeling_finite_surface(source, allow_explanatory=True, allow_copular=True)
+    copular = _detached_feeling_copula_parts(source)
     predicate = finite.removesuffix("のだ") if finite is not None else ""
     # The helper has proved this nominal explanation's attributive な.
     # It is local to this source; do not widen the shared finite-ending grammar.
     nominal_explanation = finite is not None and finite.endswith("なのだ")
-    if (not source or not (nominal_explanation or _SOURCE_GROUNDED_FINITE_END_RE.search(predicate))
-        or re.search(r"(?:です|ます|でした|ました|だ)$", predicate)
+    if (not source or not (nominal_explanation or copular
+                          or _SOURCE_GROUNDED_FINITE_END_RE.search(predicate))
+        or re.search(r"(?:です|ます|でした|ました|だ)$", predicate) and copular is None
         or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)
         or re.search(r'[「」『』“”‘’"?？!！\r\n。]', source)):
         return None
@@ -10853,7 +10874,10 @@ def _author_source_grounded_reception_clauses(
             )
             if detached_parts is not None:
                 detached_terms.append(detached_parts)
-                move_sentence = "".join(detached_parts).removesuffix("のだ") + "のですね"
+                terminal = "".join(detached_parts)
+                terminal = (terminal[:-2] if terminal.endswith("のだ") else
+                            terminal[:-1] + "な" if terminal.endswith("だ") else terminal)
+                move_sentence = terminal + "のですね"
             answer_sentence = _source_owned_answer_feeling_sentence(
                 move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
                 preceding_context, selected_subjective_input,
@@ -10989,8 +11013,10 @@ def _author_source_grounded_reception_clauses(
         shared_feelings = _source_grounded_shared_material_feelings(tuple(coordination_terms))
         if (recovery_stage == "full" and len(realization.moves) == len(detached_terms) == 2
             and detached_terms[0][1] != detached_terms[1][1]):
-            shared_feelings = ("".join(detached_terms[0]) + "し、"
-                               + "".join(detached_terms[1]).removesuffix("のだ") + "のですね")
+            terminal = "".join(detached_terms[1])
+            terminal = (terminal[:-2] if terminal.endswith("のだ") else
+                        terminal[:-1] + "な" if terminal.endswith("だ") else terminal)
+            shared_feelings = "".join(detached_terms[0]) + "し、" + terminal + "のですね"
             from emlis_ai_grounded_observation_gate import read_detached_feeling_pair
             if read_detached_feeling_pair(
                 shared_feelings + "。", tuple(move_index[mid] for mid in clause_plan.move_ids),
