@@ -1,5 +1,5 @@
 {
-  "language_identity": "33a5fba94bdd519dcf3fac2a78961ef3cc7363e76d5518b99a4d1c3acd62af8a",
+  "language_identity": "064a0f0ade705e00b2e63e39fff65951768e58698758ed36f9a367904ea10916",
   "language_payloads": [
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
@@ -23,8 +23,8 @@
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
-      "36688e00fbde162f41181a7496050f52a3323b70c332735a3b09135e6005eb00",
-      1946745
+      "04145f7d6fe524dbfd759567e326d5a8705aa3a0386a03c6630a824169ac3fd6",
+      1946649
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
@@ -33,8 +33,8 @@
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
-      "612488b00966e1878b5835b2575a069150b2d7543d7bfd9b8d7921fe62bd674c",
-      1485265
+      "28b5405937b5ac74b59cd2bb203aecee6c87f1c0f9fd4a203c47f239dc89f2eb",
+      1485176
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
@@ -92,7 +92,7 @@
       8985
     ]
   ],
-  "runtime_identity": "700fed3db01f084ad19f8b393a9b9b0e0f56a9e626f215db500dfbe80aaa7012",
+  "runtime_identity": "27d884633cfcf531aba3eb60d38ce57fc53338e21435e2eb2ce812ce4a8d2bed",
   "runtime_payloads": [
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
@@ -116,8 +116,8 @@
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
-      "fc804db81aa0f16ed9926aaf1733687cacb872b91f2c643b603cd3eb12d127e4",
-      738055
+      "29f54c6c340a6cf2f69e2e9b4f1ff4d43648759ae05c845140fd4cf36874e9be",
+      738129
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
@@ -126,8 +126,8 @@
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
-      "1a5b76aad6ed08e735bd79061b57cec3d6c113ac259ad56bd8e5ed71aef10a9a",
-      540213
+      "9396a1dec4671b056b70baf8ff12c223bc497dfda68331f020f7b4bed9a190a4",
+      540198
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",

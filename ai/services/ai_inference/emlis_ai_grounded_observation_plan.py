@@ -7761,10 +7761,11 @@ def _thread_retained_reaction_groups(nuclei, relations):
         times = {c for c in frame.attribute_codes if c.startswith("thread_time:")}
         detached = bool("thread_subject:withdrawn_source_event" in frame.attribute_codes
                         and not any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations))
-        # Withdrawal removes the event link, not the separately admitted
-        # answer's uncertain state or its own answer time.
+        # One admitted unknown answers its own event without replacing the
+        # original reactions to any event. Withdrawal removes that event
+        # link, not the answer's uncertain state or its own answer time.
         current_unknown = (is_grounded_current_answer_uncertainty(n)
-                           and (detached or not withdrawal and len(events) == len(answers) == 1))
+                           and (detached or not withdrawal and len(answers) == 1))
         independent_answer = bool("thread_subject:independent_source_replacement" in frame.attribute_codes
             and not any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations))
         if (n.allowed_claim_scope != "explicit_supplemental_answer"

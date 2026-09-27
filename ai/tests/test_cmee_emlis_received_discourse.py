@@ -443,3 +443,119 @@ def test_shared_event_accepts_explicit_reference_and_equivalent_acknowledgements
     assert expanded != follow and inverse(context, expanded).passed
     changed = follow.replace('のですね。', 'のです。')
     assert changed != follow and inverse(context, changed).passed
+
+
+# An epistemic ADD owns one event; it cannot replace the other lived reactions.
+ATTACHED_UNKNOWN_ANSWERS = (
+    ('今はまだよく分からない。', 'まだよく分からない'),
+    ('現在は分からない。', '分からない'),
+)
+
+
+@pytest.mark.parametrize('text,source', ATTACHED_UNKNOWN_ANSWERS)
+@pytest.mark.parametrize('count', [2, 3])
+@pytest.mark.parametrize('reversed_events', [False, True])
+def test_attached_unknown_preserves_every_event_and_original_reaction(text, source, count, reversed_events):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    clauses = ['褒められたのに、嬉しくなかった', '誘われたのに、悲しかった', '頼まれたのに、寂しかった'][:count]
+    if reversed_events:
+        clauses.reverse()
+    request = advance(begin('。'.join(clauses) + '。'), text)
+    public = MeaningExperienceEngine().generate(request)
+    assert public.artifact is not None, public.reason_codes
+    context = actual(request=request)
+    result, plan, _, resolver, selected = context
+    assert result.artifact.text == public.artifact.text
+    follow = result.artifact.reception
+    assert f'回答した時点では{source}' in follow
+    assert '受け止めています' not in follow
+    for clause in clauses:
+        event, feeling = clause.split('のに、')
+        assert follow.count(event) == 1
+        if clause == clauses[0]:
+            assert event + '時は' + feeling.removesuffix('かった') + 'く、' in follow
+        elif feeling == '嬉しくなかった':
+            assert event + 'ことは、嬉しさにはつながらなかった' in follow
+        else:
+            assert event + 'のに、' + feeling.removesuffix('かった') + 'さを感じた' in follow
+    move, = plan.response_plan.human_reception_plan.moves
+    assert set((*move.target_nucleus_ids, *move.support_nucleus_ids)) == {
+        n.nucleus_id for n in plan.nuclei if n.retention == 'required'
+        and n.source_fields in {('memo',), ('answer_text_private',)}}
+    state, = (n for n in plan.nuclei if n.source_fields == ('answer_text_private',))
+    assert (state.kind, state.semantic_frame.predicate_kind, state.semantic_frame.modality) == ('state', 'state', 'uncertain')
+    about, = (r for r in plan.relations if r.type == 'evaluation_about_event')
+    assert about.to_nucleus_id == state.nucleus_id and about.from_nucleus_id == move.target_nucleus_ids[0]
+    assert gate.read_received_discourse(follow, move, plan, resolver, selected) is not None
+    assert inverse(context, follow, without_author=True).passed
+
+
+@pytest.fixture(scope='module')
+def attached_unknown_context():
+    return actual(request=advance(begin(), ATTACHED_UNKNOWN_ANSWERS[0][0]))
+
+
+@pytest.mark.parametrize('old,new', [
+    ('まだよく分からない', 'よく分からない'),
+    ('まだよく分からない', 'まだ分からない'),
+    ('まだよく分からない', 'まだよく分かった'),
+    ('まだよく分からない', 'まだよく分からなかった'),
+    ('まだよく分からない', 'まだよく分からない気持ちだ'),
+    ('回答した時点では', 'その時は'),
+    ('回答した時点では', '先の回答時点では'),
+    ('回答した時点では', ''),
+    ('嬉しくなく、', ''), ('嬉しくなく、', '嬉しく、'),
+    ('褒められた時は', '誘われた時は'),
+    ('褒められた時は', '友人が褒められた時は'),
+    ('誘われたのに、悲しさを感じたし、', ''),
+    ('悲しさを感じた', '悲しさを感じなかった'),
+    ('頼まれたのに、寂しさを感じた', '頼まれたのに、嬉しさを感じた'),
+    ('誘われたのに、', '誘われたので、'),
+    ('分からないし、誘われた', '分からないから、誘われた'),
+    ('頼まれたのに、', '今、頼まれたのに、'),
+])
+def test_attached_unknown_rejects_lost_or_reassigned_meaning_without_author(attached_unknown_context, old, new):
+    follow = attached_unknown_context[0].artifact.reception
+    assert old in follow
+    changed = follow.replace(old, new, 1)
+    assert not inverse(attached_unknown_context, changed, without_author=True).passed
+
+
+def test_attached_unknown_accepts_equivalent_acknowledgement(attached_unknown_context):
+    follow = attached_unknown_context[0].artifact.reception.replace('のですね。', 'のです。')
+    assert inverse(attached_unknown_context, follow).passed
+
+
+@pytest.mark.parametrize('text,source', ATTACHED_UNKNOWN_ANSWERS)
+@pytest.mark.parametrize('operation', ['correct', 'withdraw'])
+def test_attached_unknown_saved_updates_keep_original_reactions_and_replay(qcase, qdb, monkeypatch, text, source, operation):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    replacement = '分からない' if source == 'まだよく分からない' else 'まだよく分からない'
+    change = (f'「{source}」ではなく「{replacement}」です。' if operation == 'correct'
+              else f'「{source}」は誤りです。')
+    first = current = run(service.start(user, parent))
+    for index, value in enumerate((text, change, '「褒められた」は誤りです。')):
+        if index:
+            current = run(cont(service, user, current, f'attached-continue-{index}'))
+        current = run(answer(service, user, current, value, f'attached-answer-{index}'))
+        assert current['body_state'] == 'REFINED', current
+        assert current['original'] == first['original']
+        follow = current['current_observation']['text'].split('Emlisから：', 1)[1].strip()
+        for event, feeling in [('誘われた', '悲し'), ('頼まれた', '寂し')]:
+            assert event in follow and feeling in follow
+        if index == 0:
+            assert f'褒められた時は嬉しくなく、回答した時点では{source}' in follow
+        elif index == 1:
+            if operation == 'correct':
+                assert f'褒められた時は嬉しくなく、先の回答時点では{replacement}' in follow
+            else:
+                assert '褒められたことは、嬉しさにはつながらず' in follow
+                assert '分からない' not in follow
+        else:
+            assert '褒められた' not in follow and 'その時は嬉しくなかった' in follow
+            assert ('分からない' in follow) == (operation == 'correct')
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not generate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current

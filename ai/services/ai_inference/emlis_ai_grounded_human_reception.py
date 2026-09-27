@@ -8200,7 +8200,7 @@ def _thread_received_group_ir_text(realization):
             ap = profiles[answer_slot]
             source = fragments[answer_slot]
             row = _thread_answer_nominal_morphology(source)
-            current_unknown = (count == 1 and grammar == "FINITE" and when in {"answer_time", "prior_answer_time"}
+            current_unknown = (grammar == "FINITE" and when in {"answer_time", "prior_answer_time"}
                 and ap.nucleus_kind == ap.predicate_kind == "state" and ap.modality == "uncertain")
             if (not current_unknown and (ap.nucleus_kind != "reaction" or ap.predicate_kind != "feeling" or ap.modality != "feeling")
                 or ap.actor_kind != "SELF" or ap.quoted_boundary or ap.performed_action or ap.future_action):

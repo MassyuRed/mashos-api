@@ -9491,3 +9491,28 @@ Python3.12.14／pytest9.1.1／pydantic2.13.5／FastAPI0.141.1／httpx0.28.1と�
 次は**撤回前の複数出来事で、不明回答への受け取りだけが残り、元反応と他の出来事・反応がReceptionから落ちる既存経路**を確認する。今回の変更前後とも、保存の回答直後は `褒められたことについて、回答した時点でまだよく分からないことを小さくせずに受け止めています。` に縮み、元反応と別の対比はObservation側にだけ残る。別の意味を補わず、既存選択と作者／readerからこの共通原因を扱う。非隣接同感情反復・三重一致・重複本人主語・原文再掲・長文の意味選択も未解決。今回の29 PASSをunknown全般やEmlis全体の完了へ拡大しない。
 
 **STRUCTURE_MAP_DELTA_NONE／全体48%・商品合格0/3／NOT_CLEAR／default OFF／Draft・open・unmerged。** 既存owner内部の限定補正で、file graph・route・source型・語彙/回答認定・質問枠・保存schema・公開API/DB/RN・他中核は不変。今回は既存受け取り義務の選択不成立を修正したため、従来存在しなかった撤回後planまで「前後全文不変」とは主張しない。旧必須59file・Q3全950件・初回100件・継承保存337ケース全量、正式Product Read、実DB・実機・実課金・Ready・merge・deploy・enable・外部生成AIは未実施。
+
+
+## 2026-09-27 継続 — 複数出来事への不明回答で元反応を受け取りから落とさない
+
+**開始点・範囲。** API `7c5a76b564f7423cb338edaf7cc17dbe7aac26a4`、Cocolon `b07a7db14dc9c02d450903685625ffb369698fa0` をfresh PRで確認。両repoの非省略tree（2300／1645 blobs）と検証用copyを照合し、前回からpath追加・削除なし。前提・作業rule・恒久incident全文・全体図／全file map・current structure・最新weekly 20260926 §5.3／採用済み§5.9を継承・照合した。DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、既存承認内LEVEL_2、root華恋が唯一の編集・実行・GitHub反映担当。独立担当は商品整合と技術差分／実本文をread-only reviewした。初回の認定済み不明回答1件と2〜3出来事におけるReception欠落を、必要な訂正・撤回・保存再読まで扱う限定単位。新しい受付、renderer、品質条件、依存、外部service、Mash操作、費用は追加しない。
+
+**原因と変更。** `_thread_retained_reaction_groups` は、出来事1件・回答1件の場合だけattached unknownを残す条件だった。2〜3出来事ではgroupが空になり、一般のfamily代表選択へ戻って、不明回答だけをReceptionに残していた。既に出来事1〜3件を証明する同じ関数内で、初回1回答の出来事数制限を外した。`emlis_ai_grounded_human_reception.py` の既存thread-received IRも、unknownのslotを扱う際の全出来事件数1限定だけを外した。各出来事の既存作者と独立readerをそのまま使用する。
+
+既存helperのstate／state／uncertain・本人・否定・現在・explicit supplemental source・完全source範囲・回答時点、unique_source_clause・一意ABOUT・元反応と他出来事の全義務を保持する。不明を気持ちへ変換せず、他出来事へ不明の対象を広げない。回答認定、質問、保存schema、Move予算、品質閾値、独立readerは変更しない。変更prodは既存2owner、既存received-discourse testへの追加、現在source由来identity fixture、既存引継ぎ／正本06の同期だけ。
+
+**実本文。** 元入力「褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。」へ「今はまだよく分からない。」と回答した後、旧Receptionは「褒められたことについて、回答した時点でまだよく分からないことを小さくせずに受け止めています。」だった。変更後は「褒められた時は嬉しくなく、回答した時点ではまだよく分からないし、誘われたのに、悲しさを感じたし、頼まれたのに、寂しさを感じたのですね。」となる。出来事順を逆にした場合も、その回答対象にだけ不明を結び、他の反応を保持する。
+
+**検証。** 最終横断 **1107件＝1079 PASS／既存28 FAIL、ERROR／SKIP 0、193 deselected**。旧1076件のtest identity・成否、および実行時memory addressだけ正規化した28失敗のmessage／tracebackは前節最終結果と全一致。旧1076 baseline全体は同じ開始production・同じruntimeの前節log/XMLを継承し、今回再実行していない。
+
+- 追加31件：出来事2／3×回答2表現×出来事順2の8件、作者を止めた独立readerで欠落・否定・程度・時点・主体・出来事入替・因果化を拒否する18件、同義語尾1件、保存更新4系列。最終追加31件は全PASS。同一31件を開始productionで実行すると6 PASS／25 FAIL、ERROR／SKIP 0。旧testの全文をprefixとして保持し、旧assertを変更していない。
+- 隣接Q3 unknown 41件は変更前後とも25 PASS／16既存FAIL。成否と実行時addressだけ正規化した失敗内容が一致。上の横断分母とは別で、成功へ合算しない。beforeは今回開始productionと同一の前節実行結果を継承した。
+- 直接8条件は全8 Receptionが変化し、checkpoint・accepted nuclei・Observationは全文同一。前節の46状態probeも再実行し、answeredの4本文だけ変更、他42状態は不変、全checkpoint／acceptedは不変。未提供や未認定を成功へ数えない。
+- 保存は2回答×訂正／回答撤回の4系列で、回答→操作→元出来事撤回の12状態を同じ入力でbefore／after実行。6本文変更・6全文不変、Observationは全12不変。全状態でoriginal DTO不変、生成停止下GET／再startが保存DTOと完全一致。一時PGliteであり実DB・端末の証拠ではない。
+- rootが直接8本文＋保存12本文を全文確認（重複あり）。独立reviewでも重大な意味誤りや修正必須指摘はない。単一出来事と前回の撤回後改善も既存検査／probeで保持した。
+
+Python3.12.14／pytest9.1.1／pydantic2.13.5／FastAPI0.141.1／httpx0.28.1と既存PGliteを再使用し、依存installなし。再実行は前節の同じ横断path／selectorへ追加31件を含める。追加だけは `ai/tests/test_cmee_emlis_received_discourse.py -k attached_unknown`。System Context prepareは `PUBLICATION_RECOVERY_AMBIGUOUS: residual without marker` で停止し、規定の原典直接参照を使用。生成Contextの最新化を主張せず、その補助経路の修復へ逸れていない。
+
+**残件・再開先。** 不明回答の後に別回答「その時は怖かった。」「今はまだよく分からない。」「今は嬉しい。」を追加すると、新しい回答だけのReceptionへ戻る既存欠落を実測した。今回の初回1回答条件には含めていない。次はこの複数回答での既存group選択・作者／独立readerを確認し、原反応と各回答の出来事／時点を保持する。先に別出来事「誘われた」を撤回した場合の本文未提供、前節の2回目出来事撤回時の容量不足も未解決。長い「し」の列挙、回答対象の逆接が既存文法の「時は」へ弱まる点、原文再掲、重複主語、非隣接反復・三重一致・長文の意味選択も残す。今回をunknown群全体の解決や正式Product Read PASSへ拡張しない。
+
+**TECHNICAL_CREDIT／STRUCTURE_MAP_DELTA_NONE／全体48%・商品合格0/3／NOT_CLEAR／default OFF。** owner/file graph・公開API／DB／RN・保存契約・他中核の境界は同一。旧必須59file・Q3全950・初回100・継承保存337ケースは今回全量未再実行。Draft・open・unmergedを維持し、Ready・merge・deploy・enableは行わない。
