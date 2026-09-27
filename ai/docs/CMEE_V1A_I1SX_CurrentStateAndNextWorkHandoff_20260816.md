@@ -9516,3 +9516,36 @@ Python3.12.14／pytest9.1.1／pydantic2.13.5／FastAPI0.141.1／httpx0.28.1と�
 **残件・再開先。** 不明回答の後に別回答「その時は怖かった。」「今はまだよく分からない。」「今は嬉しい。」を追加すると、新しい回答だけのReceptionへ戻る既存欠落を実測した。今回の初回1回答条件には含めていない。次はこの複数回答での既存group選択・作者／独立readerを確認し、原反応と各回答の出来事／時点を保持する。先に別出来事「誘われた」を撤回した場合の本文未提供、前節の2回目出来事撤回時の容量不足も未解決。長い「し」の列挙、回答対象の逆接が既存文法の「時は」へ弱まる点、原文再掲、重複主語、非隣接反復・三重一致・長文の意味選択も残す。今回をunknown群全体の解決や正式Product Read PASSへ拡張しない。
 
 **TECHNICAL_CREDIT／STRUCTURE_MAP_DELTA_NONE／全体48%・商品合格0/3／NOT_CLEAR／default OFF。** owner/file graph・公開API／DB／RN・保存契約・他中核の境界は同一。旧必須59file・Q3全950・初回100・継承保存337ケースは今回全量未再実行。Draft・open・unmergedを維持し、Ready・merge・deploy・enableは行わない。
+
+
+## 2026-09-27 継続 — 複数回答でも不明回答・元反応をReceptionへ保持
+
+**開始点・必要性。** API `e56c25cf29d8cde04d4916b761b015f58a3f990c`、Cocolon `6f46a49a1c6f90d4186d0d67fbd38ee62274eced` のfresh PR状態と、非省略tree（API2300／Cocolon1645 blobs）を照合。全tracked bytesを確認し、前回からpath追加・削除なし。現行rule・恒久incident全文・全体設計図・全file map・current_structure・最新weekly 20260926 §5.3／採用済み§5.9・前回記録を確認した。System Context prepareは `PUBLICATION_RECOVERY_AMBIGUOUS: residual without marker` で停止したため、規定の原典直接参照を使用し、生成Contextの最新化は主張しない。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、既存承認内LEVEL_2。未完了条件は、認定済み不明回答の後に別回答を加えると、元反応と先の不明回答がReceptionから落ちること。root華恋のみ編集・検査・GitHub反映を担当し、2担当は原因／差分と商品本文をread-only reviewした。既存owner内部の一条件を直し、受付・質問・保存・品質境界の変更を必要とする拡張は扱わない。
+
+**原因と修正。** `_thread_retained_reaction_groups` はattached unknownを `not withdrawal and len(answers) == 1` に限定していた。回答追加や別出来事の撤回だけでgroupが成立しなくなり、代表回答へのfallbackまたは本文未提供へ戻っていた。各回答自身が既存 `is_grounded_current_answer_uncertainty` の証明を満たし、`detached or len(about) == 1` である条件へ変更した。attachedでは後続の既存検査がunique_source_clause・active event・一意ABOUT・同じ出来事への重複禁止を検査し、detachedでは撤回markerと全relationからの独立を要求する。独立source置換でリンクのないunknownは追加対象にしない。
+
+state／state／uncertain、本人、否定・現在、explicit supplemental source、required・完全単一source、認定済み回答時点の条件は維持する。不明を感情へ変換せず、元反応・他出来事・各回答時点を保持する。作者・独立reader・admission・最大3Move・既存の肯定数上限・公開／保存契約は変更しない。本体変更は `emlis_ai_grounded_observation_plan.py` のみ。既存testへの追加、現行source由来identity fixture、既存handoff／正本06を同期する。
+
+**実本文。** 三つの出来事への「今はまだよく分からない。」の後、「その時は怖かった。」を加えると、旧Receptionは後者の誘いへの怖さだけだった。変更後は「褒められた時は嬉しくなく、回答した時点ではまだよく分からないし、誘われた時は悲しく、怖かったし、頼まれたのに、寂しさを感じたのですね。」となる。不明2件はそれぞれの出来事に結び、肯定1件は既存の別Moveに保持する。
+
+直接27条件は、2／3出来事の二回答12、三回答7、訂正／撤回6、既存未対応2条件。既提供21本文が変化し、別出来事撤回後の未提供2本文が提供され、4状態は不変。比較可能26条件のcheckpoint／accepted nucleiはすべて一致し、前後とも提供された23本文のObservationは全文一致。未認定の「今ははっきりわからない。」は前後同じ未認定で、payload比較や本文成功に数えない。
+
+保存は4系列×3段階＝12状態。不明→別回答→先の不明訂正、不明→別不明→先の不明撤回、不明→怖さ→怖さの訂正、不明→怖さ→別出来事撤回を、一時PGliteの既存SQL/RPC・service経由でbefore／after比較した。6既提供本文が変化、未提供1本文が提供、5本文は全文不変。比較可能11本文のObservationは一致。全12状態でoriginal DTO不変、生成停止下GET／再startと保存DTOの完全一致を確認した。実DB・端末での検証ではない。
+
+rootと独立担当が直接25本文＋保存12本文を全文読了した。重大な意味誤り・修正必須指摘はないが、長い「し」の列挙、逆接が「時は」へ弱まる読後差、原文再掲、汎用的な受け取りは残る。正式Product Read PASSではない。
+
+**検証。** 最終横断 **1150件＝1122 PASS／既存28 FAIL、ERROR／SKIP 0、193 deselected**。旧1107件のtest identity・成否は全保持し、実行時memory addressだけを正規化した28失敗のmessage／tracebackも前節最終XMLと全一致。新たな失敗0。旧1107全体のbeforeは同じ開始production・同じruntimeの前節log/XMLを継承し、今回全量再実行していない。
+
+- 新43件は全PASS。同じ最終43件を今回開始productionで実行すると4 PASS／39 FAIL、ERROR／SKIP 0。二回答12、三回答7、作者を止めた独立逆読改変14、source入替と等価語尾1、ABOUT所有破損拒否4、保存4、未回答の別出来事撤回1。既存testの全bytesをprefixとして保持し、旧assertを変更していない。
+- 初回追加43件は42 PASS／1 FAIL。新しい保存assertが「嬉しさにはつながらなかったし」という正当な否定活用を許していなかったため、新assertだけに完全な否定形を追加した。production変更は追加していない。上記before／afterは同じ修正後43件で比較した。
+- 現行shared-owner identity fixtureのみ既存導出関数で再生成し、plan hashと集約identityを更新した。歴史的凍結証跡は変更しない。隣接unknown41件の別分母は今回は再実行しておらず、前節結果を今回のPASSへ加算しない。
+
+Python3.12.14／pytest9.1.1／pydantic2.13.5／FastAPI0.141.1／httpx0.28.1と既存Node/PGliteを再使用し、依存installはない。横断の再実行path／selectorは上記1047件節と同じで、そこへ蓄積された追加testを含む。今回43件のみは `ai/tests/test_cmee_emlis_received_discourse.py -k multi_unknown`。`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<既存PGlite path> <Python3.12> -m pytest -q` を使用。旧必須59file・Q3全950件・初回100件・継承保存337ケース全量は今回未再実行。
+
+**残件と次の一群。** 不明＋怖さの二回答後に、不明の元出来事「褒められた」を撤回する条件は前後とも本文未提供。最終sourceで一度原因を追跡し、3Move・required nuclei 7/7・relations 3/3を保持し表層検証も通る一方、独立逆読の `body_inverse_answer_target_time_missing:2` で止まることを確認した。外側の `grounded_depth_adequacy_failed` はその結果で、anti-templateは通過している。この条件を容量不足と断定しない。次はこの既存の観測source／時点の読み取りと作者の整合を、義務や品質を減らさず確認する。
+
+不明＋肯定2回答は本文自体は出るが、最新肯定だけのReceptionへ縮む既存欠落が前後不変。今回の成功へ含めない。別に既知の3Move容量不足、非隣接反復・三重一致・重複本人主語・長文の意味選択も残る。複数回答・撤回全般の完了ではない。
+
+**TECHNICAL_CREDIT／STRUCTURE_MAP_DELTA_NONE／全体48%・商品合格0/3／NOT_CLEAR／default OFF／Draft・open・unmerged。** API既存production1・test1・派生fixture1・handoff1、Cocolon既存06追記1。file graph・route・source型・語彙／回答認定・質問枠・保存schema・公開API/DB/RN・他中核・品質閾値は不変。Ready・merge・deploy・enable・実DB・実機・実課金・外部生成AIは未実施。

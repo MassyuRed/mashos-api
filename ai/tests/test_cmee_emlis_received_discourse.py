@@ -559,3 +559,179 @@ def test_attached_unknown_saved_updates_keep_original_reactions_and_replay(qcase
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not generate'))
             assert run(service.get(user, parent)) == current
             assert run(service.start(user, parent)) == current
+
+
+MULTI_UNKNOWN = '今はまだよく分からない。'
+MULTI_OTHER_UNKNOWN = '現在は分からない。'
+MULTI_NEGATIVE = 'その時は怖かった。'
+MULTI_POSITIVE = '今は嬉しい。'
+MULTI_THIRD = 'その時は苦しかった。'
+MULTI_UNKNOWN_PAIRS = (
+    (MULTI_UNKNOWN, MULTI_NEGATIVE), (MULTI_NEGATIVE, MULTI_UNKNOWN),
+    (MULTI_UNKNOWN, MULTI_OTHER_UNKNOWN), (MULTI_OTHER_UNKNOWN, MULTI_UNKNOWN),
+    (MULTI_UNKNOWN, MULTI_POSITIVE), (MULTI_POSITIVE, MULTI_UNKNOWN),
+)
+MULTI_UNKNOWN_TRIPLES = (
+    (MULTI_UNKNOWN, MULTI_NEGATIVE, MULTI_THIRD),
+    (MULTI_NEGATIVE, MULTI_UNKNOWN, MULTI_THIRD),
+    (MULTI_NEGATIVE, MULTI_THIRD, MULTI_UNKNOWN),
+    (MULTI_UNKNOWN, MULTI_OTHER_UNKNOWN, MULTI_UNKNOWN),
+    (MULTI_UNKNOWN, MULTI_NEGATIVE, MULTI_POSITIVE),
+    (MULTI_POSITIVE, MULTI_UNKNOWN, MULTI_NEGATIVE),
+    (MULTI_UNKNOWN, MULTI_OTHER_UNKNOWN, MULTI_POSITIVE),
+)
+
+
+def multi_unknown_request(sequence, count=3):
+    from test_cmee_emlis_q3_thread import MEMO
+    request = begin('。'.join(MEMO.split('。')[:count]) + '。')
+    for text in sequence:
+        request = advance(request, text)
+    return request
+
+
+def assert_multi_unknown_duties(context, sequence, count):
+    result, plan, _, _, _ = context
+    follow = result.artifact.reception
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == (2 if MULTI_POSITIVE in sequence else 1)
+    assert set(nid for move in moves for nid in (*move.target_nucleus_ids, *move.support_nucleus_ids)) == {
+        n.nucleus_id for n in plan.nuclei if n.retention == 'required'
+        and n.source_fields in {('memo',), ('answer_text_private',)}}
+    for event in ('褒められた', '誘われた', '頼まれた')[:count]:
+        assert event in follow
+    for feeling in ('嬉し', '悲し', '寂し')[:count]:
+        assert feeling in follow
+    for index, text in enumerate(sequence):
+        event = ('褒められた', '誘われた', '頼まれた')[index]
+        if text in (MULTI_UNKNOWN, MULTI_OTHER_UNKNOWN):
+            source = 'まだよく分からない' if text == MULTI_UNKNOWN else '分からない'
+            assert event + '時は' in follow and '回答した時点では' + source in follow
+        elif text == MULTI_POSITIVE:
+            assert event + 'ことについて、回答した時点では嬉しい' in follow
+        else:
+            assert text.removeprefix('その時は').removesuffix('。') in follow
+    for n in plan.nuclei:
+        if n.source_fields == ('answer_text_private',) and n.semantic_frame.modality == 'uncertain':
+            assert (n.kind, n.semantic_frame.predicate_kind, n.semantic_frame.time_scope) == ('state', 'state', 'present')
+    assert inverse(context, follow, without_author=True).passed
+
+
+@pytest.mark.parametrize('sequence', MULTI_UNKNOWN_PAIRS)
+@pytest.mark.parametrize('count', [2, 3])
+def test_multi_unknown_two_answers_keep_each_source_and_original(sequence, count):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    request = multi_unknown_request(sequence, count)
+    public = MeaningExperienceEngine().generate(request)
+    assert public.artifact is not None, public.reason_codes
+    context = actual(request=request)
+    assert public.artifact.text == context[0].artifact.text
+    assert_multi_unknown_duties(context, sequence, count)
+
+
+@pytest.mark.parametrize('sequence', MULTI_UNKNOWN_TRIPLES)
+def test_multi_unknown_three_answers_keep_all_sources(sequence):
+    assert_multi_unknown_duties(actual(request=multi_unknown_request(sequence)), sequence, 3)
+
+
+@pytest.fixture(scope='module')
+def multi_unknown_context():
+    return actual(request=multi_unknown_request((MULTI_UNKNOWN, MULTI_OTHER_UNKNOWN, MULTI_NEGATIVE)))
+
+
+@pytest.mark.parametrize('old,new', [
+    ('まだよく分からない', '分からない'), ('まだよく分からない', 'まだ分からない'),
+    ('まだよく分からない', 'まだよく分かった'),
+    ('まだよく分からない', 'まだよく分からなかった'),
+    ('まだよく分からない', 'まだよく分からない気持ちだ'),
+    ('回答した時点では', 'その時は'), ('回答した時点では', '先の回答時点では'),
+    ('褒められた時は', '友人が褒められた時は'),
+    ('嬉しくなく、', ''), ('悲しく、', ''), ('怖かった', '怖くなかった'),
+    ('褒められた時は嬉しくなく、回答した時点ではまだよく分からないし、', ''),
+    ('誘われた時は悲しく、回答した時点では分からないし、', ''),
+    ('分からないし、誘われた', '分からないので、誘われた'),
+])
+def test_multi_unknown_meaning_changes_fail_without_author(multi_unknown_context, old, new):
+    follow = multi_unknown_context[0].artifact.reception
+    assert old in follow
+    assert not inverse(multi_unknown_context, follow.replace(old, new, 1), without_author=True).passed
+
+
+def test_multi_unknown_swapped_sources_fail_and_equivalent_ending_passes(multi_unknown_context):
+    follow = multi_unknown_context[0].artifact.reception
+    changed = follow.replace('まだよく分からない', '<first>', 1).replace('では分からない', 'ではまだよく分からない', 1).replace('<first>', '分からない')
+    assert changed != follow and not inverse(multi_unknown_context, changed, without_author=True).passed
+    assert inverse(multi_unknown_context, follow.replace('のですね。', 'のです。')).passed
+
+
+@pytest.mark.parametrize('mutation', ['missing', 'duplicate', 'same_event', 'independent'])
+def test_multi_unknown_requires_unique_active_event_ownership(multi_unknown_context, mutation):
+    from dataclasses import replace
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+    plan = multi_unknown_context[1]
+    about = [r for r in plan.relations if r.type == 'evaluation_about_event']
+    first, second = about[:2]
+    nuclei = plan.nuclei
+    relations = list(plan.relations)
+    if mutation in ('missing', 'independent'):
+        relations.remove(first)
+    elif mutation == 'duplicate':
+        relations.append(replace(first, relation_id=first.relation_id + '-duplicate'))
+    else:
+        relations[relations.index(second)] = replace(second, from_nucleus_id=first.from_nucleus_id)
+    if mutation == 'independent':
+        nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+            attribute_codes=tuple(c for c in n.semantic_frame.attribute_codes if c != 'thread_subject:unique_source_clause')
+                + ('thread_subject:independent_source_replacement',))) if n.nucleus_id == first.to_nucleus_id else n for n in nuclei)
+    assert _thread_retained_reaction_groups(nuclei, tuple(relations)) == ()
+
+
+MULTI_UNKNOWN_UPDATES = (
+    ('correct_first', MULTI_NEGATIVE, '「まだよく分からない」ではなく「分からない」です。'),
+    ('withdraw_first', MULTI_OTHER_UNKNOWN, '「まだよく分からない」は誤りです。'),
+    ('correct_second', MULTI_NEGATIVE, '「怖かった」ではなく「苦しかった」です。'),
+    ('withdraw_other_event', MULTI_NEGATIVE, '「誘われた」は誤りです。'),
+)
+
+
+@pytest.mark.parametrize('operation,second,change', MULTI_UNKNOWN_UPDATES)
+def test_multi_unknown_saved_update_retains_other_sources_and_replays(qcase, qdb, monkeypatch, operation, second, change):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    for index, text in enumerate((MULTI_UNKNOWN, second, change)):
+        if index:
+            current = run(cont(service, user, current, f'multi-continue-{index}'))
+        current = run(answer(service, user, current, text, f'multi-answer-{index}'))
+        assert current['body_state'] == 'REFINED', current
+        assert current['original'] == first['original']
+        follow = current['current_observation']['text'].split('Emlisから：', 1)[1].strip()
+        assert '褒められた' in follow and '頼まれた' in follow
+        assert any(text in follow for text in ('嬉しくなく', '嬉しさにはつながらず', '嬉しさにはつながらなかった'))
+        assert '悲し' in follow and '寂し' in follow
+        if index < 2:
+            assert '回答した時点ではまだよく分からない' in follow
+            assert '誘われた' in follow
+            if index == 1:
+                assert ('怖かった' if second == MULTI_NEGATIVE else '回答した時点では分からない') in follow
+        elif operation == 'correct_first':
+            assert '先の回答時点では分からない' in follow and 'まだよく' not in follow and '怖かった' in follow
+        elif operation == 'withdraw_first':
+            assert 'まだよく' not in follow and '誘われた時は悲しく、回答した時点では分からない' in follow
+        elif operation == 'correct_second':
+            assert '怖かった' not in follow and '苦しかった' in follow and 'まだよく分からない' in follow
+        else:
+            assert '誘われた' not in follow and 'その時は怖かった' in follow and 'まだよく分からない' in follow
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not generate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+
+
+def test_multi_unknown_other_event_withdrawal_keeps_attached_unknown():
+    context = actual(request=multi_unknown_request((MULTI_UNKNOWN, '「誘われた」は誤りです。')))
+    follow = context[0].artifact.reception
+    assert '誘われた' not in follow and 'その時は悲しかった' in follow
+    assert '褒められた時は嬉しくなく、回答した時点ではまだよく分からない' in follow
+    assert '頼まれたのに、寂しさを感じた' in follow
+    assert inverse(context, follow, without_author=True).passed
