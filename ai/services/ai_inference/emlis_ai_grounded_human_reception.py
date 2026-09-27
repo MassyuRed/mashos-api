@@ -10166,11 +10166,14 @@ def _detached_feeling_finite_surface(source, *, allow_explanatory=False):
         if explanatory is not None:
             host = re.sub(r"^あなた(?:には|にも|は|も)", "", explanatory['predicate'], count=1)
             host = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", host, count=1)
+            noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)", host)
             adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
-            if adjective is None or not (
+            noun_proven = (noun is not None and _FEELING_RE.fullmatch(noun[1])
+                           and not noun[1].endswith("い"))
+            adjective_proven = (adjective is not None and (
                 _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
-                or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])
-            ):
+                or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])))
+            if not (noun_proven or adjective_proven):
                 return None
             # Keep explanation explicit in a continuing clause (のだし).
             # Only a real sentence ending may share its の with のですね.
@@ -10203,7 +10206,10 @@ def _detached_feeling_source_parts(move, plan, resolver):
     source = final_reception_source_anchor_text(nucleus.nucleus_id, index, resolver)
     finite = _detached_feeling_finite_surface(source, allow_explanatory=True)
     predicate = finite.removesuffix("のだ") if finite is not None else ""
-    if (not source or not _SOURCE_GROUNDED_FINITE_END_RE.search(predicate)
+    # The helper has proved this nominal explanation's attributive な.
+    # It is local to this source; do not widen the shared finite-ending grammar.
+    nominal_explanation = finite is not None and finite.endswith("なのだ")
+    if (not source or not (nominal_explanation or _SOURCE_GROUNDED_FINITE_END_RE.search(predicate))
         or re.search(r"(?:です|ます|でした|ました|だ)$", predicate)
         or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)
         or re.search(r'[「」『』“”‘’"?？!！\r\n。]', source)):

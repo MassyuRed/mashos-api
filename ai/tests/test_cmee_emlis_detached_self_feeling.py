@@ -240,3 +240,136 @@ def test_detached_explanation_saved_updates_and_authorless_reopen(qcase, qdb, mo
             m.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read must not generate'))
             assert run(service.get(user, parent)) == current
             assert run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('occasion,prefix', [('今は', '回答した時点で、'), ('その時は', 'その時、')])
+@pytest.mark.parametrize('source,visible,altered', [
+    ('私は不安なのです', 'あなたは不安な', 'あなたは不安だった'),
+    ('私も少し不安だったのだ', 'あなたも少し不安だった', 'あなたも少し不安な'),
+    ('私には不安ではなかったのです', 'あなたには不安ではなかった', 'あなたには不安だった'),
+    ('自分は不安ではないのです', 'あなたは不安ではない', 'あなたは不安な'),
+])
+def test_detached_nominal_explanation_preserves_complete_meaning(occasion, prefix, source, visible, altered):
+    context = actual(request=advance(advance(begin(), occasion + source + '。'), WITHDRAW))
+    follow = context[0].artifact.reception
+    assert prefix + visible + 'のですね。' in follow
+    assert '受け止めています' not in follow and 'ですこと' not in follow
+    assert '褒められた' not in context[0].artifact.text
+    assert 'その時は嬉しくなかった' in follow
+    assert '悲しさを感じ' in follow and '寂しさを感じた' in follow
+    assert inverse(context, follow, without_author=True).passed
+    plain = visible[:-1] if visible.endswith('な') else visible
+    mutations = [(visible + 'のですね', plain + 'ですね'),
+                 (visible + 'のですね', visible + 'ののですね'),
+                 (visible, altered), (visible, visible + 'らしい'),
+                 ('あなた', '私'), ('あなた', '友人'), (prefix, '先の回答時点で、'),
+                 (prefix, '褒められたことについて、' + prefix),
+                 ('その時は嬉しくなかった', 'その時は嬉しかった'),
+                 ('悲しさを感じ', '嬉しさを感じ')]
+    if '少し' in visible:
+        mutations.append(('少し', ''))
+    if 'あなたも' in visible:
+        mutations.append(('あなたも', 'あなたは'))
+    if 'あなたには' in visible:
+        mutations.append(('あなたには', 'あなたにも'))
+    for old, new in mutations:
+        changed = follow.replace(old, new, 1)
+        assert changed != follow
+        assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('occasion,prefix', [('今は', '回答した時点では'), ('その時は', 'その時は')])
+def test_detached_nominal_explanation_without_subject(occasion, prefix):
+    context = actual(request=advance(advance(begin(), occasion + '不安なのです。'), WITHDRAW))
+    assert prefix + '不安なのですね。' in context[0].artifact.reception
+    assert inverse(context, context[0].artifact.reception, without_author=True).passed
+
+
+@pytest.mark.parametrize('occasion', ['今は', 'その時は'])
+def test_detached_nominal_explanation_does_not_expand_answer_admission(occasion):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    result = MeaningExperienceEngine().generate(advance(begin(), occasion + '僕はもやもやなのだ。'))
+    assert result.artifact is None
+    assert 'answer_syntax_unsupported' in result.reason_codes
+
+
+@pytest.mark.parametrize('source,visible,plain', [
+    ('私は不安なのです', 'あなたは不安なのだ', 'あなたは不安だ'),
+    ('私も少し不安だったのだ', 'あなたも少し不安だったのだ', 'あなたも少し不安だった'),
+])
+def test_detached_nominal_explanation_intermediate_source_proof(source, visible, plain):
+    context = actual(request=advance(advance(begin(), '今は' + source + '。'), WITHDRAW))
+    result, plan, _, resolver, selected = context
+    moves = reception.reception_active_moves(plan.response_plan.human_reception_plan, 'full')[:2]
+    clause = result.artifact.reception.split('。')[0] + '。'
+    proof = gate.read_detached_feeling_pair(clause, moves, plan, resolver, selected)
+    assert proof is not None
+    start, end, original = proof[1][0]
+    assert clause.encode()[start:end].decode() == visible.removesuffix('のだ')
+    assert original.decode() == source
+    # Reverse only the independent reader's operands to exercise a nominal
+    # explanation in the left clause. Product Move order stays unchanged.
+    left = '回答した時点で、' + visible + 'し、その時は嬉しくなかったのですね。'
+    assert gate.read_detached_feeling_pair(left, moves[::-1], plan, resolver, selected) is not None
+    for old, new in [(visible, plain), (visible, visible + 'のだ'), ('し、', 'ので、')]:
+        assert gate.read_detached_feeling_pair(left.replace(old, new, 1), moves[::-1],
+                                              plan, resolver, selected) is None
+
+
+@pytest.mark.parametrize('source,invalid', [
+    ('私は私には不安なのです', 'あなたは不安なのですね。'),
+    ('少し私は不安なのです', 'あなたは少し不安なのですね。'),
+    ('私は不安なのだった', 'あなたは不安だったのですね。'),
+])
+def test_detached_nominal_explanation_does_not_erase_unproven_parts(source, invalid):
+    context = actual(request=advance(advance(begin(), '今は' + source + '。'), WITHDRAW))
+    assert inverse(context, context[0].artifact.reception, without_author=True).passed
+    _, plan, _, resolver, selected = context
+    move = next(m for m in plan.response_plan.human_reception_plan.moves
+                if any(n.nucleus_id in m.target_nucleus_ids and n.source_fields == ('answer_text_private',)
+                       for n in plan.nuclei))
+    assert gate._read_detached_feeling_discourse('回答した時点で、' + invalid,
+                                               move, plan, resolver, selected) is None
+
+
+@pytest.mark.parametrize('occasion,prefix', [('今は', '先の回答時点で、'), ('その時は', 'その時、')])
+def test_detached_nominal_explanation_revision_keeps_inner_tense_and_time(occasion, prefix):
+    request = advance(advance(begin(), occasion + '私は不安なのです。'), WITHDRAW)
+    context = actual(request=advance(request, '「私は不安なのです」ではなく「私も少し不安ではなかったのだ」です。'))
+    follow = context[0].artifact.reception
+    assert prefix + 'あなたも少し不安ではなかったのですね。' in follow
+    assert 'あなたは不安な' not in follow and '褒められた' not in context[0].artifact.text
+    assert inverse(context, follow, without_author=True).passed
+
+
+@pytest.mark.parametrize('occasion', ['今は', 'その時は'])
+@pytest.mark.parametrize('last', ['correction', 'withdrawal'])
+def test_detached_nominal_explanation_saved_updates_and_reopen(qcase, qdb, monkeypatch, occasion, last):
+    user, parent, service = qcase
+    first = run(service.start(user, parent))
+    current = run(answer(service, user, first, occasion + '私は不安なのです。'))
+    for stage in ('answer', 'event_withdrawal', last):
+        if stage == 'event_withdrawal':
+            current = run(cont(service, user, current, 'continue-nominal-event'))
+            current = run(answer(service, user, current, WITHDRAW, 'withdraw-nominal-event'))
+        elif stage in ('correction', 'withdrawal'):
+            current = run(cont(service, user, current, 'continue-nominal-final'))
+            text = ('「私は不安なのです」ではなく「私も少し不安ではなかったのだ」です。'
+                    if stage == 'correction' else '「私は不安なのです」は誤りです。')
+            current = run(answer(service, user, current, text, 'update-nominal-final'))
+        body = current['current_observation']['text']
+        assert current['original'] == first['original']
+        assert '悲しさを感じ' in body and '寂しさを感じた' in body
+        if stage != 'answer':
+            assert '褒められた' not in body and 'その時は嬉しくなかった' in body
+        if stage == 'event_withdrawal':
+            assert 'あなたは不安なのですね' in body
+        elif stage == 'correction':
+            prefix = '先の回答時点で、' if occasion == '今は' else 'その時、'
+            assert prefix + 'あなたも少し不安ではなかったのですね' in body
+        elif stage == 'withdrawal':
+            assert '不安' not in body
+        with monkeypatch.context() as m:
+            m.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read must not generate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current

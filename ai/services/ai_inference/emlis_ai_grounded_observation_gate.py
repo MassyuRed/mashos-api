@@ -2595,12 +2595,16 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
     predicate = polite_adjective['predicate'] if polite_adjective else source
     explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", source)
     explanation_proven = False
+    nominal_explanation = False
     if explanatory is not None:
         host = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)",
                       "", explanatory['predicate'], count=1)
         host = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", host, count=1)
+        noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)", host)
+        nominal_explanation = bool(noun is not None and _FEELING_RE.fullmatch(noun[1])
+                                   and not noun[1].endswith("い"))
         adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
-        explanation_proven = bool(adjective is not None and (
+        explanation_proven = nominal_explanation or bool(adjective is not None and (
             _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
             or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])))
         if not explanation_proven:
@@ -2611,7 +2615,7 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
     owner = re.match(r"(?P<self>わたし|ぼく|おれ|私|僕|俺|自分)"
                      r"(?P<particle>には|にも|は|も)", predicate)
     remainder = predicate[owner.end():] if owner else predicate
-    if (not source or not _SOURCE_GROUNDED_FINITE_END_RE.search(predicate)
+    if (not source or not (nominal_explanation or _SOURCE_GROUNDED_FINITE_END_RE.search(predicate))
         or re.search(r"(?:です|ます|でした|ました|だ)$", predicate)
         or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", remainder)
         or re.search(r'[「」『』“”‘’"?？!！\r\n。]', source)):
