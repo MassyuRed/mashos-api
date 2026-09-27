@@ -2281,12 +2281,17 @@ def _body_inverse_detached_observation(raw, nuclei, plan, resolver):
     from emlis_ai_grounded_observation_plan import (
         _thread_withdrawn_original_reaction, _received_event_reaction_projections,
     )
-    operand = r"(?:その時|回答した時点|先の回答時点)の「[^「」『』\n]+」"
-    parsed = re.fullmatch(r"(?:今の入力だけを見ると、)?(" + operand
-                         + r"(?:と、" + operand + r")+)という気持ちが(?:書かれています|記されています)。", raw)
-    if parsed is None:
+    if not nuclei:
         return False
-    pieces = re.findall(r"(その時|回答した時点|先の回答時点)の「([^「」『』\n]+)」", parsed[1])
+    operand = r"(?:その時|回答した時点|先の回答時点)の「[^「」『』\n]+」"
+    if len(nuclei) == 1:
+        parsed = re.fullmatch(r"(?:今の入力だけを見ると、)?(その時|回答した時点|先の回答時点)"
+                             r"の気持ちとして、「([^「」『』\n]+)」が(?:見えます|読み取れます)。", raw)
+        pieces = [parsed.groups()] if parsed else []
+    else:
+        parsed = re.fullmatch(r"(?:今の入力だけを見ると、)?(" + operand
+                             + r"(?:と、" + operand + r")+)という気持ちが(?:書かれています|記されています)。", raw)
+        pieces = re.findall(r"(その時|回答した時点|先の回答時点)の「([^「」『』\n]+)」", parsed[1]) if parsed else []
     if len(pieces) != len(nuclei):
         return False
     for nucleus, (when, quoted) in zip(nuclei, pieces, strict=True):
@@ -4140,11 +4145,22 @@ def evaluate_grounded_surface_body_inverse(
                 plan,
                 resolver,
             )
+            # A thread's explicit contrast owes each complete source operand.
+            # A shorter adjective cannot stand in for its degree or negation,
+            # including when the complete words occur in another source group.
+            exact_contrast = (relation.type == "contrast"
+                and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+                and nucleus_index[relation.from_nucleus_id].kind == "event"
+                and nucleus_index[relation.to_nucleus_id].kind == "reaction"
+                and nucleus_index[relation.to_nucleus_id].semantic_frame.predicate_kind == "feeling"
+                and all(nucleus_index[nid].source_fields in {("memo",), ("memo_action",)}
+                        and nucleus_index[nid].grounding_kind == "explicit"
+                        for nid in (relation.from_nucleus_id, relation.to_nucleus_id)))
             from_positions = tuple(
                 quote_index
                 for quote_index, quote_text in enumerate(normalized_quote_texts)
                 if any(
-                    _body_inverse_anchor_matches(quote_text, source_text)
+                    quote_text == source_text if exact_contrast else _body_inverse_anchor_matches(quote_text, source_text)
                     for source_text in from_values
                 )
             )
@@ -4152,7 +4168,7 @@ def evaluate_grounded_surface_body_inverse(
                 quote_index
                 for quote_index, quote_text in enumerate(normalized_quote_texts)
                 if any(
-                    _body_inverse_anchor_matches(quote_text, source_text)
+                    quote_text == source_text if exact_contrast else _body_inverse_anchor_matches(quote_text, source_text)
                     for source_text in to_values
                 )
             )
@@ -4302,9 +4318,16 @@ def evaluate_grounded_surface_body_inverse(
                                             for value in source_values):
                     failures.append(f"body_inverse_appraisal_host_incomplete:{index}")
         if getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1":
+            from emlis_ai_grounded_observation_plan import _thread_withdrawn_original_reaction
             visible_line = _body_inverse_visible_text(body, parsed_line)
             detached_nuclei = tuple(nucleus_index[nid] for nid in planned_line.binding.nucleus_ids)
-            if (len(detached_nuclei) > 1 and not planned_line.binding.relation_ids
+            if (detached_nuclei and not planned_line.binding.relation_ids
+                and (len(detached_nuclei) > 1 or all(
+                    (n.kind, n.semantic_frame.predicate_kind, n.semantic_frame.modality)
+                        == ("reaction", "feeling", "feeling")
+                    and (n.source_fields == ("answer_text_private",)
+                         or _thread_withdrawn_original_reaction(n, plan.relations))
+                    for n in detached_nuclei))
                 and all("thread_subject:withdrawn_source_event" in n.semantic_frame.attribute_codes
                         for n in detached_nuclei)
                 and not _body_inverse_detached_observation(visible_line, detached_nuclei, plan, resolver)):

@@ -9394,3 +9394,67 @@ runtimeは既存Python3.12.14／pytest9.1.1／pydantic2.13.5／FastAPI0.141.1／
 **残件と次の一群。** 今回閉じたのは、既存active順で隣接する独立2sourceが同じ時点表現・完全述語を持つ場合の受け取り反復だけ。原入力中途の出来事を先に撤回した直後の本文未提供、全3出来事撤回後の非隣接反復、三重一致、同じ感情で異なる時点表現、重複本人主語、観測部の原文再掲・逆向き反応・長文の意味選択は未解決。次は、今回before/afterとも7件で再現した**中途出来事撤回直後の本文未提供**を、既存意味plan・active Move・作者／readerの実経路から確認する。反復群全体を完了とせず、存在すべき本文が届かない共通原因を先に扱う。新engineや安全補助systemへ逸れない。
 
 **STRUCTURE_MAP_DELTA_NONE／全体48%・商品合格0/3／NOT_CLEAR／default OFF／Draft・open・unmerged。** production3・既存test1・派生fixture1・本handoff1、Cocolon既存06追記1。既存owner内部の文法修正で、file graph・route・語彙/回答認定・意味選択・active Move順・質問・保存schema・公開API/DB/RN・他中核・品質閾値は不変。Ready・merge・deploy・enable・実DB・実機・実課金・外部生成AIは実施していない。
+
+## 2026-09-27 JST — 中央出来事撤回直後の本文未提供（作業開始・検証中）
+
+継続指示に基づき、直前handoffの次群を開始。開始headはAPI `f83c30617552f5738d691bb62d4dd9c5b65466f5`、Cocolon `e7ef35019def1c65cac7c6ffc34007647d0074e3`。双方既存Draft/open/unmergedを確認。全体設計／file map／current_structureはこの継続セッションの既読原典を保持し、入口・必読ProductNeglect監査全文・最新weekly 20260926 §5.3／§5.9・handoff末尾を再確認した。System Context prepareはGit metadata不足のrepository unavailableで停止。原典直接参照のfallbackを使用し、生成context更新とは扱わない。
+
+原因の実測：中央撤回後の意味planとHuman Receptionは生成でき、surface validationと独立inverseは通るが、観測が「残存対比・独立感情・残存対比」の3行になり、外側Gateの `relation_surface_stem_repetition_without_new_role` と `required_arc_fragmented_without_reason` で未提供になる。fullの3行予算超過ではない。既存Sentence Surface内で、撤回由来・source証明済み・全relationから独立した感情だけを越えて並列対比をまとめる限定修正を検証中。感情groupは独立保持し、Gate・行数予算・意味選択・Move・回答認定を変えない。代表本文は両Gateを通ったが、完了件数は後続の最終検証記録で確定する。
+
+## 2026-09-27 JST — 中央出来事撤回の本文提供とsource時点・程度の独立検査（最終追記）
+
+**対象。** 前節の7表現で再現した「中央の出来事を最初に撤回すると本文が出ない」を修正した。操作順を末尾→中央へ変えて回避せず、中央撤回直後から二段本文を返す。既存の単一Human Reception作者とSentence Surface経路を使用した。
+
+**原因と変更。** 意味plan・更新checkpoint・Human Receptionは作れていたが、観測の隣接群だけをまとめる処理により、中央撤回後は残存対比・独立感情・残存対比に分かれた。同じ対比語尾が2行に出るため、外側Gateの `relation_surface_stem_repetition_without_new_role`／`required_arc_fragmented_without_reason` が拒否した。独立inverseそのものは当初通っていた。fullの3行予算超過ではない。
+
+既存 `_merge_parallel_contrast_groups` に既定OFFの限定optionを追加し、thread source componentsの再構成時だけ有効にする。全relationから独立し、既存の撤回後感情・時点証明が成立した群だけを越えて、両側の明示対比を同じ観測行へまとめる。独立感情のnucleusはその群に残し、どちらの出来事にも帰属させない。対比のsource順・各endpoint・必要relation・line budgetを維持する。一般の行動や不確実な状態を跨ぐ統合ではない。
+
+追加の意味改変検査で、従来のsubstring照合は「少し」の欠落を見逃し、単独detached観測は時点付替えを検出していなかった。既存独立readerを補修し、threadの原event→reaction/feeling対比の各operandを正規化済みtyped source全文と一致させる。引用以外に同じ語があるだけではそのrelationを満たさない。単独の撤回後感情もwhole-lineから時点・完全source・独立性を復元する。作者を停止しても意味改変を拒否し、同じ意味の「読み取れます」終端は許容する。閾値緩和・新Gate・新語彙認定は行っていない。独立reviewの指摘により新singleton検査は、既存証明を満たす原reaction、または明示answer feelingに限定し、state/wishを新たに感情扱いしない。従来multiの対象は維持した。
+
+代表合成入力は `褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、悲しかった。`、回答は `「誘われた」は誤りです。`。修正前は `emlis_refined_body_unavailable`、修正後の実本文：
+
+```text
+見えたこと：
+「褒められた」の一方で「嬉しくなかった」、また「頼まれた」の一方で「悲しかった」という、それぞれ異なる向きが並んでいます。
+その時の気持ちとして、「悲しかった」が見えます。
+
+Emlisから：
+その時は悲しかったのですね。褒められたことは、嬉しさにはつながらず、頼まれたのに、悲しさを感じたのですね。
+```
+
+**本文・意味の前後比較。** 7表現（悲しかった／嬉しくなかった／寂しかった／怖かった／少し悲しかった／悲しくなかった／とても寂しかった）×先頭・中央・末尾の単独撤回21条件と、既回答 `今は重い。` が先頭出来事に属する状態で中央を撤回する1条件の計22条件。同じ開始productionとの比較で、本文未提供8→0。既に提供できた先頭/末尾の14本文はbyte相当の全文一致。全22の完全plan payload・selected reception payload・更新checkpointは前後同一。7表現の中央→末尾撤回も実engine経由で通り、原source二本を保った前回の共有受け取りへ到達する。
+
+保存は一時PGliteで3系列×2状態＝6状態を確認した。中央→末尾出来事撤回、中央出来事撤回→中央reaction訂正、中央出来事撤回→中央reaction撤回。original DTOは不変で、各current本文は当該意味更新へ進む。生成停止下GET／再startは各保存DTOと完全一致。開始productionでは3系列とも中央撤回直後に `RESPONSE_FAILED / MEANING_UPDATED_BODY_UNAVAILABLE` となり次段へ到達できなかった。訂正後は既存質問仕様でCOMPLETEDとなるため第三回答を無理に発行せず、reaction撤回を別系列で確認した。質問仕様は変更していない。
+
+rootは上記22＋保存6の最終28本文状態を全文読了（重複あり）。程度付き感情の受け取りには既存の名詞化した受け止め表現が残り、観測の引用再掲や形式的な響きも残る。正式Product Read PASSではない。
+
+**最終検証。** 固定した最終sourceで **1047件＝1019 PASS／既存28 FAIL、ERROR／SKIP 0、193 deselected**。継承977件のtest identity・成否を全て保持し、残る28失敗のmessage／tracebackはruntime memory addressを正規化後に全件一致。新たな失敗0。今回影響範囲に加えた既存独立観測26件は、開始production・最終とも全PASS。新規44件は全PASS（位置21、中央→末尾7、異なる感情1、既回答保持1、意味改変拒否10、保存3、等価終端1）。同じ最終44件のbeforeは14 PASS／30 FAIL。旧977全体のbaselineは同一開始productionで前回得た949 PASS／28 FAILのlog/XMLを継承し、今回before全量は再実行していない。途中横断1046件＝1018 PASS／28 FAILは適用範囲review反映と並行した探索実行であり、最終source固定の証拠には再利用せず、上記1047件を再実行した。件数を合算しない。
+
+**初期検査と境界。** 初期追加42件は37 PASS／5 FAIL。1件は旧表現を想定した新assertの誤りで、実本文の出来事・回答時点・所有関係を検査する内容へ訂正した。3件は上記degree/時点reader欠落でproductionを補修。1件は訂正後COMPLETEDから第三回答を続けようとした新testの操作誤りで、撤回を別系列へ分けた。その後追加43件全PASS。さらに等価終端1件を加え、最終追加は44件。同じ最終44件の開始productionは14 PASS／30 FAIL、ERROR／SKIP 0であり、比較時にassertを変えていない。既存testの操作・assertは変更せず、前回helperの説明commentだけ最新状態に合わせた。
+
+別の境界として、`今はまだよく分からない。`／`現在は分からない。` の回答後に先頭出来事を撤回する2例は、開始production・修正後とも本文未提供。今回の中央撤回による分断とは別の既存残件であり、stateをfeelingと認定して閉じていない。`その時は嬉しかった。` の回答後に同じ出来事を撤回する1例は前後全文一致で提供。これらは補助確認3例で、44件や全体test件数へ加算しない。
+
+**再実行。** 既存Python3.12.14／pytest9.1.1／pydantic2.13.5／FastAPI0.141.1／httpx0.28.1とNode/PGliteを再使用。新規install・production依存変更なし。repo rootで `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<既存 @electric-sql/pglite path> <Python3.12> -m pytest -q` に、下記pathsとselectorを渡す。
+
+```text
+ai/tests/test_cmee_emlis_answer_recipient_perspective.py
+ai/tests/test_cmee_emlis_answer_attributive.py
+ai/tests/test_cmee_emlis_q1_thread.py
+ai/tests/test_cmee_emlis_answer_correction_source_scope.py
+ai/tests/test_cmee_emlis_received_discourse.py
+ai/tests/test_cmee_v1a_i1sx_contracts.py
+ai/tests/test_cmee_emlis_detached_feeling_discourse.py
+ai/tests/test_cmee_emlis_detached_polite_feeling.py
+ai/tests/test_cmee_emlis_detached_self_feeling.py
+ai/tests/test_cmee_emlis_detached_observation.py
+ai/tests/test_cmee_emlis_q3_thread.py::test_polite_answer_nominal_does_not_remove_owner_negation_or_degree
+ai/tests/test_cmee_emlis_q3_thread.py::test_polite_feeling_nominal_independently_restores_full_source_and_time
+ai/tests/test_cmee_emlis_retained_failure_recovery.py::test_surviving_pairs_are_checked_after_withdrawal_or_replacement
+-k 'not test_cmee_v1a_i1sx_contracts or active_final_language_owner_chain_has_zero_legacy_compose_calls'
+```
+
+追加44件だけは `test_cmee_emlis_detached_feeling_discourse.py -k 'withdrawal_at_each_position or middle_'`。現行source由来のshared-owner identity fixtureのみ既存手順で再算出した。旧必須59file・Q3全950件・初回100件・継承保存337ケース全量は未再実行。正式Product Readや実DB・実機の証拠とはしない。
+
+**残件と次の一群。** 中央出来事撤回の有限群は、意味を減らさず即時本文が届くところまで閉じた。観測の原文再掲、受け取りの程度付き反応の名詞化、全3出来事撤回後の非隣接同感情反復、三重一致、異なる時点表現、重複本人主語、長文の意味選択は残る。新たに補助確認したunknown回答後の出来事撤回も未提供のまま。次はこの**認定済みunknown回答を残した出来事撤回後の本文未提供**について、状態を感情へ変換せず、残存意味plan・既存作者／readerのどこで止まるかを確認する。今回の有限群を反復・撤回全体の完了とはしない。
+
+**STRUCTURE_MAP_DELTA_NONE／全体48%・商品合格0/3／NOT_CLEAR／default OFF／Draft・open・unmerged。** API production2・既存test1・現行派生fixture1・既存handoff1、Cocolon既存06追記1。file graph・route・意味/回答認定・語彙・Move順・質問・保存schema・公開API/DB/RN・他中核・品質閾値は不変。Ready・merge・deploy・enable・実DB・実機・実課金・外部生成AIは未実施。

@@ -1576,7 +1576,8 @@ def _relation_aware_groups(
     )
 
 
-def _merge_parallel_contrast_groups(groups, relation_ids, nucleus_index, relation_index):
+def _merge_parallel_contrast_groups(groups, relation_ids, nucleus_index, relation_index,
+                                    *, bridge_detached_feelings=False):
     """Coordinate explicit contrast pairs, preserving each source, pair and order.
 
     Supplemental evaluations stay with their original component. They do not
@@ -1590,12 +1591,26 @@ def _merge_parallel_contrast_groups(groups, relation_ids, nucleus_index, relatio
         fields = {f for r in contrasts for n in (r.from_nucleus_id, r.to_nucleus_id)
                   for f in nucleus_index[n].source_fields}
         return frozenset(fields) if fields and fields <= {"memo", "memo_action"} else None
+    linked = {nid for r in relation_index.values()
+              for nid in (r.from_nucleus_id, r.to_nucleus_id)}
     merged = []
+    contrast_at = None
     for group in groups:
-        if merged and field(group) is not None and field(merged[-1]) is not None:
-            merged[-1] = (*merged[-1], *group)
+        if field(group) is not None:
+            if contrast_at is None:
+                contrast_at = len(merged)
+                merged.append(tuple(group))
+            else:
+                merged[contrast_at] = (*merged[contrast_at], *group)
         else:
             merged.append(tuple(group))
+            # Only a source-proven, relation-free feeling after withdrawal
+            # may separate parallel pairs. Keep that feeling in its own
+            # group; it must never become part of either surviving event.
+            if not (bridge_detached_feelings and group
+                    and all(nid not in linked and _detached_observation_time(nucleus_index[nid])
+                            for nid in group)):
+                contrast_at = None
     return tuple(merged)
 
 
@@ -2193,7 +2208,9 @@ def _build_regular_lines(
                 nucleus_index, relation_index, max_groups=len(selected_ids))
             source_groups = _merge_parallel_contrast_groups(source_groups, relation_candidates,
                 nucleus_index, relation_index)
-            detached_groups = _merge_detached_feeling_groups(source_groups, nucleus_index, relation_index)
+            parallel_groups = _merge_parallel_contrast_groups(source_groups, relation_candidates,
+                nucleus_index, relation_index, bridge_detached_feelings=True)
+            detached_groups = _merge_detached_feeling_groups(parallel_groups, nucleus_index, relation_index)
             if detached_groups != source_groups and len(detached_groups) <= max_observation_groups:
                 groups = detached_groups
         groups = _merge_homogeneous_state_groups(groups, nucleus_index)

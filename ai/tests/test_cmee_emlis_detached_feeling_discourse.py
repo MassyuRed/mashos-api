@@ -160,8 +160,8 @@ def repeated_mentions_context(source='悲しかった', start=0):
     request = begin('。'.join(event + 'のに、' + feeling
                              for event, feeling in zip(events, feelings)) + '。')
     withdrawn = events[start:start + 2]
-    # Removing the middle event first has an existing unavailable intermediate
-    # body. Use the available public sequence to reach this final pair.
+    # Preserve this historical sequence. Middle-first delivery has its own
+    # immediate and subsequent-state checks below.
     for event in reversed(withdrawn) if start else withdrawn:
         request = advance(request, '「' + event + '」は誤りです。')
     return actual(request=request)
@@ -322,3 +322,152 @@ def test_repeated_mentions_saved_operations_and_authorless_reopen(qcase, qdb, ro
             stopped.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read generated'))
             assert run(service.get(user, parent)) == current
             assert run(service.start(user, parent)) == current
+
+
+MIDDLE_FEELINGS = ('悲しかった', '嬉しくなかった', '寂しかった', '怖かった',
+                   '少し悲しかった', '悲しくなかった', 'とても寂しかった')
+EVENTS = ('褒められた', '誘われた', '頼まれた')
+
+
+def middle_request(source='少し悲しかった', position=1):
+    memo = f'褒められたのに、嬉しくなかった。誘われたのに、{source}。頼まれたのに、{source}。'
+    return advance(begin(memo), f'「{EVENTS[position]}」は誤りです。')
+
+
+@pytest.mark.parametrize('source', MIDDLE_FEELINGS)
+@pytest.mark.parametrize('position', [0, 1, 2])
+def test_withdrawal_at_each_position_delivers_all_surviving_pairs(source, position):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    from test_cmee_emlis_detached_observation import read_body
+    request = middle_request(source, position)
+    public = MeaningExperienceEngine().generate(request)
+    assert public.artifact is not None, public.reason_codes
+    context = actual(request=request)
+    result, plan, sentence, _, selected = context
+    assert result.artifact.text == public.artifact.text
+    assert EVENTS[position] not in result.artifact.text
+    ids = set(plan.coverage_requirements.required_nucleus_ids)
+    withdrawn = f'nucleus:s{position + 1}:event'
+    assert withdrawn not in ids
+    assert f'nucleus:s{position + 1}:reaction' in ids
+    assert withdrawn in prepare_emlis_meaning(request).checkpoint.inactive_claim_refs
+    observation = [line for line in sentence.lines if line.binding.line_role != 'human_follow']
+    detached = next(line for line in observation if not line.binding.relation_ids)
+    assert detached.binding.nucleus_ids == (f'nucleus:s{position + 1}:reaction',)
+    pairs = next(line for line in observation if line.binding.relation_ids)
+    remaining = [i for i in range(3) if i != position]
+    assert len(observation) == 2 and len(pairs.binding.relation_ids) == 2
+    assert pairs.binding.nucleus_ids == tuple(
+        f'nucleus:s{i + 1}:{kind}' for i in remaining for kind in ('event', 'reaction'))
+    for i in remaining:
+        assert EVENTS[i] in result.artifact.observation and EVENTS[i] in result.artifact.reception
+    moves = reception.reception_active_moves(plan.response_plan.human_reception_plan, 'full')
+    assert len(moves) == 2
+    refs = [set(d.selected_contribution_refs) for d in selected.decisions]
+    assert all(refs) and sum(map(len, refs)) == len(set().union(*refs))
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.mark.parametrize('source', MIDDLE_FEELINGS)
+def test_middle_first_then_last_keeps_both_detached_mentions(source):
+    from test_cmee_emlis_detached_observation import read_body
+    request = middle_request(source)
+    first = actual(request=request)
+    assert f'その時は{source}のですね。' in first[0].artifact.reception
+    context = actual(request=advance(request, '「頼まれた」は誤りです。'))
+    body = context[0].artifact.text
+    assert '誘われた' not in body and '頼まれた' not in body
+    assert f'その時は{source}という気持ちを、どちらの言葉からも受け取りました。' in body
+    assert '褒められた' in context[0].artifact.observation
+    assert '褒められた' in context[0].artifact.reception
+    assert read_body(context, body).passed
+
+
+def test_middle_withdrawal_with_distinct_feelings_retains_their_owners():
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=advance(begin(), '「誘われた」は誤りです。'))
+    body = context[0].artifact.text
+    assert '「褒められた」の一方で「嬉しくなかった」' in body
+    assert '「頼まれた」の一方で「寂しかった」' in body
+    assert 'その時の気持ちとして、「悲しかった」' in body
+    assert read_body(context, body).passed
+
+
+def test_middle_withdrawal_keeps_an_answer_owned_by_the_first_event():
+    from test_cmee_emlis_detached_observation import read_body
+    request = advance(advance(begin(), '今は重い。'), '「誘われた」は誤りです。')
+    context = actual(request=request)
+    body = context[0].artifact.text
+    assert '「褒められた」という出来事' in body
+    assert 'その出来事に対する回答した時点の受け止めとして、「重い」' in body
+    assert '褒められた時は嬉しくなく、回答した時点では重い' in context[0].artifact.reception
+    assert 'その時は悲しかった' in body and '誘われた' not in body
+    assert read_body(context, body).passed
+
+
+@pytest.mark.parametrize('old,new', [
+    ('「嬉しくなかった」', '「嬉しかった」'),
+    ('「少し悲しかった」', '「悲しかった」'),
+    ('「少し悲しかった」', '「少し悲しい」'),
+    ('「頼まれた」', '「誘われた」'),
+    ('その時の気持ちとして、', '回答した時点の気持ちとして、'),
+    ('その時の気持ちとして、', '頼まれた時の気持ちとして、'),
+    ('その時の気持ちとして、「少し悲しかった」が見えます。', ''),
+    ('「褒められた」の一方で「嬉しくなかった」、また「頼まれた」の一方で「少し悲しかった」',
+     '「褒められた」の一方で「少し悲しかった」、また「頼まれた」の一方で「嬉しくなかった」'),
+    ('その時は少し悲しかったのですね。', ''),
+    ('その時は少し悲しかった', '頼まれた時は少し悲しかった'),
+])
+def test_middle_withdrawal_rejects_changed_meaning_without_either_author(old, new):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=middle_request())
+    body = context[0].artifact.text
+    changed = body.replace(old, new, 1)
+    assert changed != body
+    assert not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('route', ['middle_then_last', 'correct_reaction', 'withdraw_reaction'])
+def test_middle_first_saved_series_never_replaces_original_or_renders_on_read(qcase, qdb, monkeypatch, route):
+    user, parent, service = qcase
+    if route == 'middle_then_last':
+        qdb.query('update public.emotions set memo=$1 where id=$2',
+                 ['褒められたのに、嬉しくなかった。誘われたのに、少し悲しかった。頼まれたのに、少し悲しかった。', parent])
+        answers = ('「誘われた」は誤りです。', '「頼まれた」は誤りです。')
+    else:
+        answers = ('「誘われた」は誤りです。', '「悲しかった」ではなく「怖かった」です。'
+                   if route == 'correct_reaction' else '「悲しかった」は誤りです。')
+    first = current = run(service.start(user, parent))
+    bodies = []
+    for index, text in enumerate(answers):
+        if index:
+            current = run(cont(service, user, current, f'middle-continue-{index}'))
+        current = run(answer(service, user, current, text, f'middle-answer-{index}'))
+        assert current['body_state'] == 'REFINED', current
+        assert current['current_observation'] is not None
+        body = current['current_observation']['text']
+        assert '誘われた' not in body and '褒められた' in body
+        assert current['original'] == first['original']
+        assert body not in bodies
+        bodies.append(body)
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read must not render'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+    if route == 'middle_then_last':
+        assert '頼まれた' not in bodies[-1] and 'どちらの言葉からも' in bodies[-1]
+    elif route == 'correct_reaction':
+        assert 'その時は悲しかった' in bodies[0]
+        assert '怖かった' in bodies[1] and '悲しかった' not in bodies[1]
+        assert current['state'] == 'COMPLETED' and not current['can_continue']
+    else:
+        assert 'その時は悲しかった' in bodies[0] and '悲しかった' not in bodies[1]
+
+
+def test_middle_observation_accepts_an_equivalent_ending_without_either_author():
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=middle_request())
+    body = context[0].artifact.text.replace('が見えます。', 'が読み取れます。')
+    assert body != context[0].artifact.text
+    assert read_body(context, body).passed
