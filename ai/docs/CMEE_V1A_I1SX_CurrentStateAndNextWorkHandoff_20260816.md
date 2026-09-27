@@ -9549,3 +9549,29 @@ Python3.12.14／pytest9.1.1／pydantic2.13.5／FastAPI0.141.1／httpx0.28.1と�
 不明＋肯定2回答は本文自体は出るが、最新肯定だけのReceptionへ縮む既存欠落が前後不変。今回の成功へ含めない。別に既知の3Move容量不足、非隣接反復・三重一致・重複本人主語・長文の意味選択も残る。複数回答・撤回全般の完了ではない。
 
 **TECHNICAL_CREDIT／STRUCTURE_MAP_DELTA_NONE／全体48%・商品合格0/3／NOT_CLEAR／default OFF／Draft・open・unmerged。** API既存production1・test1・派生fixture1・handoff1、Cocolon既存06追記1。file graph・route・source型・語彙／回答認定・質問枠・保存schema・公開API/DB/RN・他中核・品質閾値は不変。Ready・merge・deploy・enable・実DB・実機・実課金・外部生成AIは未実施。
+
+## 2026-09-27 継続 — 複数回答後の出来事撤回でも不明回答の時点と独立性を保持
+
+**開始点・範囲。** fresh GitHubでAPI `2cd13f7ce1fd83f013a2eddb523c0f067323aa63`、Cocolon `5b720c4b056e68e2075cd3304ba262b92076b691`を確認した。非省略treeはAPI2300／Cocolon1645 blobsで、全tracked materialized bytesが一致。前回txt、前提資料と作業rule、恒久incident全文、全体構造・全file map・Emlis/CMEE current_structure、最新weekly 20260926 §5.3／採用済み§5.9を照合した。System Context prepareは `repository unavailable: Cocolon`（materialized copyのGit metadataなし）で停止し、正本が許す原典直接参照を使用した。生成Contextの最新化を主張しない。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、既存承認内LEVEL_2。本文未提供と回答時点の欠落を同じ限定単位で直す。root華恋だけが編集・検査・GitHub反映を担当し、独立担当は商品経路と技術差分／実本文をread-only reviewした。新しい作者、外部AI、回答認定、意味選択、質問枠、Move上限、品質閾値、保存／公開契約は変更しない。追加依存・課金・Mash操作は0。
+
+**原因と修正。** 不明回答→別の怖さ回答→不明の元出来事撤回で、既存Sentence Surfaceの `_render_extra_context` が独立した不明状態を「その背景には…という状態も重なっています」へ落とし、回答時点を省いていた。元の反応・不明・別の反応を含む7 required nucleiと3 relation、3Moveは残っており、この経路は容量不足ではない。後続回答が当時の怖さなら独立逆読が時点欠落を拒否して本文未提供になり、後続回答が現在の怖さや別の不明なら同じ行の時点語が代用され、欠落した本文を通すこともあった。
+
+既存の `is_grounded_current_answer_uncertainty` とwithdrawn marker、thread契約を満たすextraだけ、他の文の後へ完全sourceと各回答時点を持つ独立文として残す。例は「また、回答した時点では、「まだよく分からない」と書かれています。」。元出来事を戻さず、別出来事の背景／原因／気持ちへ変換しない。singleton作者は不変。独立Gateは実際のobservation sentence bytesから、末尾の文数・順序・完全source・各回答時点・全relationからの独立を照合する。同じ行の別回答の時点語や、同じ一文の重複使用では義務を満たさない。作者replayを正解判定へ使わない。
+
+**実本文と保存。** 直接probeの比較可能40状態はcheckpoint・accepted nuclei・全planが前後同一。未提供2状態を提供へ戻し、既提供4状態の不明を背景扱いから独立した回答時点の状態へ修正した。他34状態は同一（既提供32、既存未提供2）。比較可能な既提供36本文のReceptionは全不変。不明が第2回答の場合の逆順6本文もrootが全文確認し、既存単独stateの経路を保持した。2出来事の8系列は二回答後に次質問がなく、撤回用helperが進めないため、未到達撤回を成功／未提供へ算入していない。
+
+一時PGliteの既存SQL/RPC/serviceで、不明2表現×後続怖さ2時点の4系列、回答→別回答→元出来事撤回の12状態をbefore/after比較した。未提供2を提供、既提供2を修正、8本文は全文不変。全12状態でoriginal DTO不変、生成停止下GET／再startが保存DTOと一致。rootは変更6本文、逆順6本文、保存12本文を全文読了（重複あり）。独立静的reviewにも修正必須指摘なし。長い列挙・汎用的な受け取り・原文再掲は残り、実DB・端末・正式Product Read PASSではない。
+
+**検証。** 最終横断 **1182件＝1154 PASS／既存28 FAIL、ERROR／SKIP 0、193 deselected**。旧1150件のtest identity・成否と、workspace prefix／実行時memory addressだけ正規化した28失敗のmessage／tracebackが前節最終XMLと全一致。新たな失敗0。
+
+- 追加32件：順逆12、別回答に同じ時点語がある状態でsource／否定／程度／時点／主体／因果／背景／重複／欠落を拒否する15、同義終端1、保存4。全PASS。同じ最終32件を今回開始productionで実行すると7 PASS／25 FAIL、ERROR／SKIP 0。旧test全文をprefixとして保持し、旧assertは変更しない。
+- 初期32件は31 PASS／1 FAIL。不明文を重複した改変をreaderが通したため、実sentenceの個数照合を追加して修正した。検査期待を緩めていない。cwd指定誤りによるpytest実行0件の起動が2回あり、成功へ合算しない。
+- 旧1150全体のbeforeは同じ開始production・同じruntimeの前節最終log/XMLを継承し、今回は全体を再実行していない。新32件、直接40状態、保存12状態のbeforeは今回実行した。current shared-owner identity fixtureだけ既存導出関数で更新し、歴史的凍結証跡は不変。
+
+runtimeは既存Python3.12.14／pytest9.1.1／pydantic2.13.5／FastAPI0.141.1／httpx0.28.1と既存Node/PGlite。新規installなし。横断再実行path／selectorは前の1047件節と同じ。今回追加のみは `ai/tests/test_cmee_emlis_detached_observation.py -k compound_unknown`。`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<既存PGlite path> <Python3.12> -m pytest -q` を使う。旧必須59file・Q3全950・初回100・継承保存337ケース全量は今回未再実行。
+
+**残件・次作業。** 今回閉じたのは、不明＋当時／現在の怖さ・別不明の二回答後に不明の元出来事を撤回する経路であり、複数回答／撤回全体の完了ではない。不明＋肯定回答の元出来事撤回は `human_reception_withdrawal_capacity_gap` で未提供のまま。さらに前節の不明＋肯定2回答では最新肯定だけのReceptionへ縮む既存欠落も残る。次はこの肯定を含む複数回答群の既存選択／Move配分を、元反応・不明・各回答の義務を削らず確認する。新しいMove枠や品質条件の変更は扱わない。非隣接反復・三重一致・重複主語・長文の意味選択も未解決。
+
+**TECHNICAL_CREDIT／STRUCTURE_MAP_DELTA_NONE／全体48%・商品合格0/3／NOT_CLEAR／default OFF／Draft・open・unmerged。** API既存production2・test1・派生fixture1・handoff1、Cocolon既存06追記1。file graph・route・認定source型・語彙・質問・保存schema・公開API/DB/RN・他中核は不変。Ready・merge・deploy・enableは行わない。

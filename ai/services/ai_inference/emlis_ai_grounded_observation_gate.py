@@ -4344,18 +4344,34 @@ def evaluate_grounded_surface_body_inverse(
                 expected = "先の回答時点" if times == {"prior_answer_time"} else "回答した時点" if times == {"answer_time"} else "その時" if times == {"original_occasion"} else None
                 if expected is None or expected not in visible_line:
                     failures.append(f"body_inverse_answer_target_time_missing:{index}")
-                from emlis_ai_grounded_observation_plan import is_grounded_current_answer_uncertainty
-                if (len(detached_nuclei) == 1 and not planned_line.binding.relation_ids
-                    and "thread_subject:withdrawn_source_event" in nucleus.semantic_frame.attribute_codes
-                    and is_grounded_current_answer_uncertainty(nucleus)):
-                    # Read the complete independent state from the body, not
-                    # from an author replay or a source substring elsewhere.
-                    state = re.fullmatch(
-                        r"(?:今の入力だけを見ると、)?(回答した時点|先の回答時点)では、"
-                        r"「([^「」]+)」と(?:書かれています|記されています)。", visible_line)
-                    if (state is None or state.group(1) != expected or len(source_values) != 1
-                        or _normalized(state.group(2)) != source_values[0]):
-                        failures.append(f"body_inverse_detached_answer_state_scope_mismatch:{index}")
+            from emlis_ai_grounded_observation_plan import is_grounded_current_answer_uncertainty
+            detached_states = tuple(n for n in required_nuclei
+                if "thread_subject:withdrawn_source_event" in n.semantic_frame.attribute_codes
+                and is_grounded_current_answer_uncertainty(n))
+            if detached_states:
+                # Read one complete final sentence per independent state. A
+                # time token or matching quote elsewhere in this line cannot
+                # discharge that answer's own source/time obligation.
+                line_rows = tuple(row for row in witness.sentences
+                    if row.section == "observation"
+                    and row.section_line_ordinal == parsed_line.section_ordinal)
+                state_pattern = (r"(?:今の入力だけを見ると、|また、)?(回答した時点|先の回答時点)では、"
+                                 r"「([^「」]+)」と(?:書かれています|記されています)。")
+                state_rows = line_rows[-len(detached_states):]
+                state_count = sum(re.fullmatch(state_pattern, _body_inverse_visible_text(body, row)) is not None
+                                  for row in line_rows)
+                if len(state_rows) != len(detached_states) or state_count != len(detached_states):
+                    failures.append(f"body_inverse_detached_answer_state_scope_mismatch:{index}")
+                else:
+                    for nucleus, row in zip(detached_states, state_rows, strict=True):
+                        source_values = _body_inverse_nucleus_source_values(nucleus.nucleus_id, plan, resolver)
+                        expected = ("先の回答時点" if "thread_time:prior_answer_time" in nucleus.semantic_frame.attribute_codes
+                                    else "回答した時点")
+                        state = re.fullmatch(state_pattern, _body_inverse_visible_text(body, row))
+                        if (state is None or state.group(1) != expected or len(source_values) != 1
+                            or _normalized(state.group(2)) != source_values[0]
+                            or any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)):
+                            failures.append(f"body_inverse_detached_answer_state_scope_mismatch:{index}")
         if (any(n.kind == "change" and n.nucleus_id not in direct_nuclei for n in required_nuclei)
             and "change" not in parsed_line.semantic_marker_codes
             and not direct_provisional):

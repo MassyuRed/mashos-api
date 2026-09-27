@@ -2989,6 +2989,25 @@ def _render_extra_context(
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
 ) -> str:
+    from emlis_ai_grounded_observation_plan import is_grounded_current_answer_uncertainty
+    states = tuple(nid for nid in extra_ids if nid in nucleus_index
+        and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+        and "thread_subject:withdrawn_source_event" in nucleus_index[nid].semantic_frame.attribute_codes
+        and is_grounded_current_answer_uncertainty(nucleus_index[nid]))
+    if states:
+        # These answers no longer belong to an event. Keep each full state
+        # and its own answer time, without making it another event's background.
+        remaining = tuple(nid for nid in extra_ids if nid not in states)
+        parts = [_render_extra_context(remaining, nucleus_index, resolver)]
+        for nid in states:
+            nucleus = nucleus_index[nid]
+            when = ("先の回答時点" if "thread_time:prior_answer_time" in nucleus.semantic_frame.attribute_codes
+                    else "回答した時点")
+            quotes = _quotes_for_nuclei((nid,), nucleus_index, resolver)
+            if len(quotes) != 1:
+                raise GroundedSentenceSurfaceError("detached_answer_state_source_ambiguous")
+            parts.append(f"また、{when}では、{quotes[0]}と書かれています。")
+        return "".join(parts)
     detached = tuple(nid for nid in extra_ids if nid in nucleus_index
         and "thread_subject:withdrawn_source_event" in nucleus_index[nid].semantic_frame.attribute_codes
         and nucleus_index[nid].source_fields in {("memo",), ("memo_action",), ("answer_text_private",)}

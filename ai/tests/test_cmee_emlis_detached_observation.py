@@ -255,3 +255,112 @@ def test_detached_unknown_saved_correction_or_withdrawal_keeps_original_and_read
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not regenerate'))
             assert run(service.get(user, parent)) == current
             assert run(service.start(user, parent)) == current
+
+
+# A detached epistemic answer remains independent even when its sentence
+# shares an observation line with other events and supplemental answers.
+COMPOUND_UNKNOWN = '今はまだよく分からない。'
+COMPOUND_STATE = 'また、回答した時点では、「まだよく分からない」と書かれています。'
+
+
+def compound_unknown_request(unknown=COMPOUND_UNKNOWN, second='今は怖い。', reverse=False):
+    request = begin()
+    answers = (second, unknown) if reverse else (unknown, second)
+    for text in (*answers, '「誘われた」は誤りです。' if reverse else '「褒められた」は誤りです。'):
+        request = advance(request, text)
+    return request
+
+
+@pytest.mark.parametrize('unknown,source', UNKNOWN_ANSWERS)
+@pytest.mark.parametrize('second', ['その時は怖かった。', '今は怖い。', '現在は分からない。'])
+@pytest.mark.parametrize('reverse', [False, True])
+def test_compound_unknown_withdrawal_delivers_each_retained_source(unknown, source, second, reverse):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    request = compound_unknown_request(unknown, second, reverse)
+    output = MeaningExperienceEngine().generate(request)
+    assert output.artifact is not None, output.reason_codes
+    context = actual(request=request)
+    result, plan, sentence, resolver, selected = context
+    assert result.artifact.text == output.artifact.text
+    states = [n for n in plan.nuclei if n.source_fields == ('answer_text_private',)
+              and 'thread_subject:withdrawn_source_event' in n.semantic_frame.attribute_codes]
+    state, = states
+    assert (state.kind, state.semantic_frame.predicate_kind, state.semantic_frame.modality) == ('state', 'state', 'uncertain')
+    assert not any(state.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    assert f'回答した時点では、「{source}」と書かれています。' in result.artifact.observation
+    withdrawn, retained = ('誘われた', '褒められた') if reverse else ('褒められた', '誘われた')
+    assert withdrawn not in result.artifact.text
+    assert retained in result.artifact.observation and retained in result.artifact.reception
+    assert '頼まれた' in result.artifact.text and '寂し' in result.artifact.reception
+    assert ('その時は悲しかった' if reverse else 'その時は嬉しくなかった') in result.artifact.reception
+    assert '分からない' in result.artifact.reception
+    assert ('怖' if '怖' in second else '分からない') in result.artifact.reception
+    assert len(plan.response_plan.human_reception_plan.moves) <= 3
+    required = set(plan.coverage_requirements.required_nucleus_ids)
+    covered = {nid for line in sentence.lines if line.binding.line_role != 'human_follow' for nid in line.binding.nucleus_ids}
+    assert required <= covered
+    assert state.nucleus_id not in prepare_emlis_meaning(request).checkpoint.inactive_claim_refs
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.fixture(scope='module')
+def compound_unknown_context():
+    return actual(request=compound_unknown_request())
+
+
+@pytest.mark.parametrize('changed', [
+    'また、先の回答時点では、「まだよく分からない」と書かれています。',
+    'また、その時では、「まだよく分からない」と書かれています。',
+    'また、「まだよく分からない」と書かれています。',
+    'また、回答した時点では、「分からない」と書かれています。',
+    'また、回答した時点では、「まだ分からない」と書かれています。',
+    'また、回答した時点では、「まだよく分かった」と書かれています。',
+    'また、回答した時点では、「まだよく分からなかった」と書かれています。',
+    'また、回答した時点では、「友人はまだよく分からない」と書かれています。',
+    'また、回答した時点では、「まだよく分からない」という気持ちが書かれています。',
+    'その背景には、「まだよく分からない」という状態も重なっています。',
+    'また、回答した時点では、「まだよく分からない」と誘われたことについて書かれています。',
+    '褒められた回答した時点では、「まだよく分からない」と書かれています。',
+    COMPOUND_STATE + 'そのため悲しかったのです。',
+    COMPOUND_STATE + COMPOUND_STATE,
+    '',
+])
+def test_compound_unknown_scope_changes_fail_without_authors(compound_unknown_context, changed):
+    context = compound_unknown_context
+    body = context[0].artifact.text
+    assert COMPOUND_STATE in context[0].artifact.observation
+    # A different answer retains the correct token on the same line, so a
+    # line-wide presence check alone would wrongly accept missing attribution.
+    assert body.replace(COMPOUND_STATE, '').split('Emlisから：')[0].count('回答した時点') >= 1
+    assert not read_body(context, body.replace(COMPOUND_STATE, changed, 1)).passed
+
+
+def test_compound_unknown_equivalent_ending_passes_without_authors(compound_unknown_context):
+    body = compound_unknown_context[0].artifact.text
+    assert read_body(compound_unknown_context, body.replace(COMPOUND_STATE,
+        COMPOUND_STATE.replace('書かれています', '記されています'))).passed
+
+
+@pytest.mark.parametrize('unknown,source', UNKNOWN_ANSWERS)
+@pytest.mark.parametrize('second', ['その時は怖かった。', '今は怖い。'])
+def test_compound_unknown_saved_withdrawal_preserves_original_and_reads(qcase, qdb, monkeypatch, unknown, source, second):
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    for index, text in enumerate((unknown, second, '「褒められた」は誤りです。')):
+        if index:
+            current = run(cont(service, user, current, f'compound-continue-{index}'))
+        current = run(answer(service, user, current, text, f'compound-answer-{index}'))
+        assert current['body_state'] == 'REFINED', current
+        assert current['original'] == first['original']
+        body = current['current_observation']['text']
+        assert '誘われた' in body and '頼まれた' in body
+        if index == 2:
+            assert '褒められた' not in body
+            assert f'回答した時点では、「{source}」と書かれています。' in body
+            assert 'その時は嬉しくなかった' in body
+            assert ('その時の受け止め' if second.startswith('その時') else '回答した時点の受け止め') in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not regenerate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
