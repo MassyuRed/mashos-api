@@ -1593,15 +1593,37 @@ def _merge_parallel_contrast_groups(groups, relation_ids, nucleus_index, relatio
         return frozenset(fields) if fields and fields <= {"memo", "memo_action"} else None
     linked = {nid for r in relation_index.values()
               for nid in (r.from_nucleus_id, r.to_nucleus_id)}
+    from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
+    revised_original = bridge_detached_feelings and any(
+        _thread_revised_original_reaction(nucleus_index[nid], tuple(relation_index.values()))
+        for group in groups for nid in group)
+
+    def evaluation_component(group):
+        relations = [relation_index[r] for r in _internal_relation_ids(group, relation_ids, relation_index)]
+        return bool(relations and set(group) == {
+            nid for r in relations for nid in (r.from_nucleus_id, r.to_nucleus_id)}
+            and all(r.type == "evaluation_about_event" and r.retention == "required"
+                    and nucleus_index[r.from_nucleus_id].kind == "event"
+                    and nucleus_index[r.from_nucleus_id].source_fields in {("memo",), ("memo_action",)}
+                    and nucleus_index[r.to_nucleus_id].source_fields == ("answer_text_private",)
+                    for r in relations))
+
     merged = []
     contrast_at = None
-    for group in groups:
+    for index, group in enumerate(groups):
         if field(group) is not None:
             if contrast_at is None:
                 contrast_at = len(merged)
                 merged.append(tuple(group))
             else:
                 merged[contrast_at] = (*merged[contrast_at], *group)
+        elif (revised_original and contrast_at is not None and evaluation_component(group)
+              and index > 0 and field(groups[index - 1]) is not None
+              and index + 1 < len(groups) and field(groups[index + 1]) is not None):
+            # A correction can remove only the middle event's old contrast.
+            # Its complete ABOUT component still belongs between the surviving
+            # pairs in the same observation, without creating a new relation.
+            merged[contrast_at] = (*merged[contrast_at], *group)
         else:
             merged.append(tuple(group))
             # Only a source-proven, relation-free feeling after withdrawal
@@ -3248,7 +3270,26 @@ def _render_relation(
     sentences: list[str] = []
     contrast_pairs = []
     evaluations = {}
-    for relation_id in binding.relation_ids:
+    relation_ids = tuple(r for r in binding.relation_ids if r in relation_index)
+    from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
+    contrast_order = [_nucleus_source_order(nucleus_index[relation_index[r].from_nucleus_id])
+                      for r in relation_ids
+                      if relation_surface_role(relation_index[r], nucleus_index) == "coexisting_contrast"]
+    intervening_evaluations = {
+        r for r in relation_ids if r not in consumed
+        and relation_index[r].type == "evaluation_about_event"
+        and len(contrast_order) > 1
+        and min(contrast_order) < _nucleus_source_order(nucleus_index[relation_index[r].from_nucleus_id]) < max(contrast_order)
+    } if (groups and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+          and all(relation_index[r].type in {"contrast", "evaluation_about_event"} for r in relation_ids)
+          and any(_thread_revised_original_reaction(n, tuple(relation_index.values()))
+                  for n in nucleus_index.values())) else set()
+    if intervening_evaluations:
+        # The corrected event's surviving ABOUT stays at its source position
+        # between the two intact contrasts, rather than moving to the tail.
+        relation_ids = sorted(relation_ids, key=lambda r:
+            _nucleus_source_order(nucleus_index[relation_index[r].from_nucleus_id]))
+    for relation_id in relation_ids:
         if relation_id in grouped_by_relation:
             sentences.append(grouped_by_relation[relation_id])
             continue
@@ -3349,7 +3390,11 @@ def _render_relation(
             when = "先の回答時点" if times == {"prior_answer_time"} else "回答した時点" if times == {"answer_time"} else "その時" if times == {"original_occasion"} else None
             if when is None or target.source_fields != ("answer_text_private",):
                 raise GroundedSentenceSurfaceError("thread_answer_target_time_unbound")
-            evaluations.setdefault(when, []).append(f"{left}ことに対する{when}の受け止めとして、{right}")
+            clause = f"{left}ことに対する{when}の受け止めとして、{right}"
+            if relation_id in intervening_evaluations:
+                sentences.append(clause + "が見えます。")
+            else:
+                evaluations.setdefault(when, []).append(clause)
         elif relation.type == "uncertain_connection":
             sentences.append(f"{left}のあとに{right}が続いていますが、それ以上の因果は確定しません。")
         elif left_form == "nominal_anchor" and right_form == "nominal_anchor":

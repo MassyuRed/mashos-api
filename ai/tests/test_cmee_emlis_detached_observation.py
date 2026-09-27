@@ -795,3 +795,98 @@ def test_revised_original_can_be_corrected_again_without_reviving_old_relations(
     replacement, = [n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes]
     assert not any(replacement.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
     assert read_body(context, result.artifact.text).passed
+
+
+@pytest.mark.parametrize('answers', TWO_POSITIVE_PAIRS)
+@pytest.mark.parametrize('source', ['苦しかった', '少し苦しかった', '私は苦しかったです', '怖くなかった'])
+def test_middle_revision_delivers_complete_contrasts_and_ordered_answer(answers, source):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    request = revised_original_request(source, answers, old='悲しかった')
+    public = MeaningExperienceEngine().generate(request)
+    assert public.artifact is not None, public.reason_codes
+    context = actual(request=request)
+    result, plan, sentence, _, _ = context
+    assert result.artifact.text == public.artifact.text
+    observation = result.artifact.observation
+    assert observation.index('褒められた') < observation.index('誘われた') < observation.index('頼まれた')
+    assert f'その時の気持ちとして、「{source}」が見えます。' in observation
+    assert '悲しかった' not in result.artifact.text
+    assert len([n for n in plan.nuclei if n.retention == 'required']) == 8
+    assert len(plan.relations) == 4 and all(r.retention == 'required' for r in plan.relations)
+    assert {(r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations if r.type == 'contrast'} == {
+        ('nucleus:s1:event', 'nucleus:s1:reaction'), ('nucleus:s3:event', 'nucleus:s3:reaction')}
+    assert {(r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations if r.type == 'evaluation_about_event'} == {
+        ('nucleus:s1:event', 'answer:s7'), ('nucleus:s2:event', 'answer:s8')}
+    relation_lines = [line for line in sentence.lines if line.binding.relation_ids]
+    assert len(relation_lines) == 1
+    assert set(relation_lines[0].binding.relation_ids) == {r.relation_id for r in plan.relations}
+    assert 'answer:s9' not in relation_lines[0].binding.nucleus_ids
+    assert not any('semantic_arc_fragment:justified' in line.binding.functional_atom_ids for line in sentence.lines)
+    assert len(plan.response_plan.human_reception_plan.moves) == 3
+    checkpoint = prepare_emlis_meaning(request).checkpoint
+    assert len(checkpoint.accepted_update_refs) == 3
+    assert {'nucleus:s2:reaction', 'relation:r2'} <= set(checkpoint.inactive_claim_refs)
+    assert not {'answer:s7', 'answer:s8', 'answer:s9', 'nucleus:s2:event'} & set(checkpoint.inactive_claim_refs)
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.fixture(scope='module')
+def middle_revision_context():
+    return actual(request=revised_original_request(answers=TWO_POSITIVE_PAIRS[1], old='悲しかった'))
+
+
+@pytest.mark.parametrize('old,new', [
+    ('「嬉しくなかった」', '「嬉しかった」'),
+    ('「少し嬉しかった」', '「嬉しかった」'),
+    ('「少し嬉しかった」', '「少し嬉しい」'),
+    ('「楽しい」', '「友人は楽しい」'),
+    ('「楽しい」', '「楽しくない」'),
+    ('「寂しかった」', '「寂しくなかった」'),
+    ('その出来事に対するその時の', 'その出来事に対する回答した時点の'),
+    ('「誘われた」ことに対する回答した時点の', '「誘われた」ことに対するその時の'),
+    ('「誘われた」ことに対する', '「頼まれた」ことに対する'),
+    ('「誘われた」ことに対する', '「誘われた」ことのおかげで'),
+    ('その時の気持ちとして、「苦しかった」', '回答した時点の気持ちとして、「苦しかった」'),
+    ('その時の気持ちとして、「苦しかった」', '気持ちとして、「苦しかった」'),
+    ('その時の気持ちとして、「苦しかった」', 'その時の気持ちとして、「悲しかった」'),
+    ('その時の気持ちとして、「苦しかった」', '誘われたので、その時の気持ちとして、「苦しかった」'),
+    ('その時の気持ちとして、「苦しかった」が見えます。', ''),
+    ('「誘われた」ことに対する回答した時点の受け止めとして、「楽しい」が見えます。', ''),
+    ('「頼まれた」と「寂しかった」が、異なる向きのまま同時にあります。', ''),
+    ('その時の気持ちとして、「苦しかった」が見えます。',
+     'その時の気持ちとして、「苦しかった」が見えます。苦しさは誘われたことによるものです。'),
+])
+def test_middle_revision_rejects_observation_meaning_changes_without_authors(middle_revision_context, old, new):
+    result = middle_revision_context[0]
+    changed = result.artifact.observation.replace(old, new, 1)
+    assert changed != result.artifact.observation
+    body = result.artifact.text.replace(result.artifact.observation, changed, 1)
+    assert not read_body(middle_revision_context, body).passed
+
+
+def test_middle_revision_accepts_equivalent_reception_ending(middle_revision_context):
+    body = middle_revision_context[0].artifact.text
+    changed = body.replace('のですね、また、', 'のです、また、')
+    assert changed != body and read_body(middle_revision_context, changed).passed
+
+
+@pytest.mark.parametrize('answers', TWO_POSITIVE_PAIRS)
+def test_middle_revision_saved_reads_preserve_initial_and_all_answers(qcase, qdb, monkeypatch, answers):
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    for index, text in enumerate((None, *answers, '「悲しかった」ではなく「少し苦しかった」です。')):
+        if text is not None:
+            if index > 1:
+                current = run(cont(service, user, current, f'middle-revision-continue-{index}'))
+            current = run(answer(service, user, current, text, f'middle-revision-answer-{index}'))
+            assert current['body_state'] == 'REFINED'
+        assert current['original'] == first['original']
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not regenerate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+    body = current['current_observation']['text']
+    assert '悲しかった' not in body
+    assert 'その時の気持ちとして、「少し苦しかった」' in body
+    assert all(s in body for s in ('褒められた', '誘われた', '頼まれた', '嬉し', '寂し', '楽し'))
