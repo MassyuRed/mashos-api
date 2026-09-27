@@ -234,6 +234,20 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
     # Certify the admitted revision before selection, and preserve that
     # provenance when the replacement itself is revised in a later round.
     replacement_proof = "thread_subject:independent_source_replacement"
+    reaction_replacement_proof = "thread_subject:revised_original_reaction"
+    original_index = {n.nucleus_id: n for n in original.nuclei}
+    # A replaced reaction loses its old contrast. Prove that exact prior
+    # pair without inheriting its edge or borrowing the current question.
+    revised_reaction_targets = {r.to_nucleus_id for r in original.relations
+        if r.type == "contrast" and r.retention == "required" and r.relation_id in inactive
+        and r.to_nucleus_id in inactive and r.from_nucleus_id in index
+        and r.from_nucleus_id in original_index and r.to_nucleus_id in original_index
+        and gp._received_contrast_group_targets(
+            (original_index[r.from_nucleus_id], original_index[r.to_nucleus_id]), (r,), minimum=1)}
+    revised_reaction_targets.update(n.nucleus_id for n in original.nuclei
+        if reaction_replacement_proof in n.semantic_frame.attribute_codes
+        and replacement_proof in n.semantic_frame.attribute_codes
+        and not any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in original.relations))
     independent_targets = {n.nucleus_id for n in original.nuclei
         if n.retention == "required" and n.grounding_kind == "explicit"
         and n.semantic_frame.actor == "current_user"
@@ -249,14 +263,32 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
     independent_replacements = {changed for item in updates
         if item.operation == "REVISE" and item.binding_kind == "EXPLICIT_CORRECTION"
         and len(item.target_meaning_refs) == 1
-        and set(item.target_meaning_refs) <= independent_targets
+        and set(item.target_meaning_refs) <= independent_targets | revised_reaction_targets
         and set(item.target_meaning_refs) <= set(item.superseded_claim_refs)
         for changed in item.changed_claim_refs
-        if changed in index and not any(changed in (r.from_nucleus_id, r.to_nucleus_id)
+        if changed in index
+        and (set(item.target_meaning_refs) <= independent_targets or (
+            (index[changed].kind, index[changed].semantic_frame.predicate_kind,
+             index[changed].semantic_frame.modality, index[changed].semantic_frame.polarity,
+             index[changed].semantic_frame.actor, index[changed].semantic_frame.time_scope)
+            == ("reaction", "feeling", "feeling", "negative", "current_user", "past")
+            and item.temporal_binding.about_time == "ORIGINAL_OCCASION"))
+        and not any(changed in (r.from_nucleus_id, r.to_nucleus_id)
                                        for r in relations)}
+    revised_reactions = {changed for item in updates
+        if item.operation == "REVISE" and item.binding_kind == "EXPLICIT_CORRECTION"
+        and len(item.target_meaning_refs) == 1
+        and set(item.target_meaning_refs) <= revised_reaction_targets
+        and item.temporal_binding.about_time == "ORIGINAL_OCCASION"
+        for changed in item.changed_claim_refs if changed in independent_replacements
+        and (index[changed].kind, index[changed].semantic_frame.predicate_kind,
+             index[changed].semantic_frame.modality, index[changed].semantic_frame.polarity,
+             index[changed].semantic_frame.actor, index[changed].semantic_frame.time_scope)
+            == ("reaction", "feeling", "feeling", "negative", "current_user", "past")}
     nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
         attribute_codes=tuple(dict.fromkeys((*n.semantic_frame.attribute_codes,
-            replacement_proof))))) if n.nucleus_id in independent_replacements else n
+            replacement_proof, *((reaction_replacement_proof,) if n.nucleus_id in revised_reactions else ()))))))
+        if n.nucleus_id in independent_replacements else n
         for n in nuclei)
     # Bind distinguishable original source clauses before body-free reception
     # selection. Different evidence IDs alone cannot distinguish repeated text.

@@ -620,3 +620,178 @@ def test_two_positive_withdrawal_saved_reads_keep_all_three_states(qcase, qdb, m
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not generate'))
             assert run(service.get(user, parent)) == current
             assert run(service.start(user, parent)) == current
+
+
+# Explicit correction invalidates the old contrast; the admitted replacement
+# keeps its own original occasion without inheriting a new event relation.
+def revised_original_request(source='苦しかった', answers=TWO_POSITIVE_PAIRS[0], old='嬉しくなかった'):
+    request = begin()
+    for text in (*answers, f'「{old}」ではなく「{source}」です。'):
+        request = advance(request, text)
+    return request
+
+
+@pytest.mark.parametrize('answers', TWO_POSITIVE_PAIRS)
+@pytest.mark.parametrize('source,finite', [
+    ('苦しかった', '苦しかった'), ('少し苦しかった', '少し苦しかった'),
+    ('私は苦しかったです', 'あなたは苦しかった'), ('怖くなかった', '怖くなかった'),
+])
+def test_revised_original_retains_both_positives_and_remaining_reactions(answers, source, finite):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    request = revised_original_request(source, answers)
+    context = actual(request=request)
+    result, plan, _, _, _ = context
+    assert f'その時の気持ちとして、「{source}」が見えます。' in result.artifact.observation
+    assert f'その時は{finite}のですね。' in result.artifact.reception
+    assert '嬉しくなかった' not in result.artifact.text
+    assert all(s in result.artifact.reception for s in ('褒められた', '誘われた', '頼まれた', '悲し', '寂し'))
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == 3
+    assert {m.target_nucleus_ids for m in moves if m.reception_act == 'recognize_lived_change'} == {('answer:s7',), ('answer:s8',)}
+    for event, aid in (('nucleus:s1:event', 'answer:s7'), ('nucleus:s2:event', 'answer:s8')):
+        assert any(r.type == 'evaluation_about_event' and (r.from_nucleus_id, r.to_nucleus_id) == (event, aid)
+                   for r in plan.relations)
+    replacement, = [n for n in plan.nuclei if n.nucleus_id == 'answer:s9']
+    assert 'thread_subject:revised_original_reaction' in replacement.semantic_frame.attribute_codes
+    assert 'thread_subject:withdrawn_source_event' not in replacement.semantic_frame.attribute_codes
+    assert not any(replacement.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    checkpoint = prepare_emlis_meaning(request).checkpoint
+    assert len(checkpoint.accepted_update_refs) == 3
+    assert {'nucleus:s1:reaction', 'relation:r1'} <= set(checkpoint.inactive_claim_refs)
+    assert not {'answer:s7', 'answer:s8', 'answer:s9', 'nucleus:s1:event'} & set(checkpoint.inactive_claim_refs)
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.fixture(scope='module')
+def revised_original_context():
+    return actual(request=revised_original_request())
+
+
+@pytest.mark.parametrize('replacement', [
+    'また、回答した時点の気持ちとして、「苦しかった」が見えます。',
+    'また、先の回答時点の気持ちとして、「苦しかった」が見えます。',
+    'また、気持ちとして、「苦しかった」が見えます。',
+    'また、その時の気持ちとして、「苦しい」が見えます。',
+    'また、その時の気持ちとして、「苦しくなかった」が見えます。',
+    'また、その時の気持ちとして、「友人が苦しかった」が見えます。',
+    'また、その時の気持ちとして、「嬉しくなかった」が見えます。',
+    'その背景には、「苦しかった」という状態も重なっています。',
+    '褒められたので、その時の気持ちとして、「苦しかった」が見えます。',
+    'また、その時の気持ちとして、「苦しかった」が見えます。苦しさは誘われたことによるものです。',
+    '苦しさは誘われたことによるものです。また、その時の気持ちとして、「苦しかった」が見えます。',
+    '「誘われた」から「苦しかった」へつながっています。また、その時の気持ちとして、「苦しかった」が見えます。',
+    'また、その時の気持ちとして、「苦しかった」が見えます。また、その時の気持ちとして、「苦しかった」が見えます。',
+    '',
+])
+def test_revised_original_observation_owns_its_time_even_with_other_time_tokens(revised_original_context, replacement):
+    body = revised_original_context[0].artifact.text
+    original = 'また、その時の気持ちとして、「苦しかった」が見えます。'
+    assert original in body
+    assert not read_body(revised_original_context, body.replace(original, replacement, 1)).passed
+
+
+@pytest.mark.parametrize('old,new', [
+    ('その時は苦しかったのですね。', ''),
+    ('その時は苦しかった', '回答した時点では苦しかった'),
+    ('その時は苦しかった', '苦しかった'),
+    ('その時は苦しかった', 'その時は苦しくなかった'),
+    ('その時は苦しかった', 'その時は苦しい'),
+    ('その時は苦しかった', 'その時は嬉しくなかった'),
+    ('その時は苦しかった', 'その時は友人が苦しかった'),
+    ('その時は苦しかった', '褒められたことについて、その時は苦しかった'),
+    ('、また、', 'ので、'),
+    ('誘われたのに、悲しさを感じたのですね、また、', ''),
+    ('頼まれたのに、寂しさを感じたのですね、また、', ''),
+    ('誘われたことについて、その時は楽しかったのですね。', ''),
+    ('褒められたことについて、回答した時点では嬉しいのですね。', ''),
+])
+def test_revised_original_reception_rejects_missing_or_reassigned_duties(revised_original_context, old, new):
+    result = revised_original_context[0]
+    changed = result.artifact.reception.replace(old, new, 1)
+    assert changed != result.artifact.reception
+    assert not read_body(revised_original_context, result.artifact.text.replace(result.artifact.reception, changed)).passed
+
+
+def test_revised_original_equivalent_endings_are_read_without_authors(revised_original_context):
+    body = revised_original_context[0].artifact.text
+    changed = body.replace('「苦しかった」が見えます。', '「苦しかった」が読み取れます。').replace('のですね、また、', 'のです、また、')
+    assert read_body(revised_original_context, changed).passed
+
+
+@pytest.mark.parametrize('mutation', ['time', 'polarity', 'actor', 'quote', 'relation', 'governing', 'answer_slot'])
+def test_revised_original_composite_ir_keeps_replacement_independent(revised_original_context, mutation):
+    _, plan, _, resolver, _ = revised_original_context
+    rp = plan.response_plan.human_reception_plan
+    move, = [m for m in rp.moves if m.reception_act == 'stay_with_current_burden']
+    ir = reception._project_source_grounded_reception_move_realization(rp, move,
+        {n.nucleus_id: n for n in plan.nuclei}, resolver,
+        plan=plan, recovery_stage='full', clause_form='FINITE')
+    reception._validate_source_grounded_move_ir(ir)
+    marker, = [c for c in ir.nominalization_plan if ':none:replacement:none' in c]
+    slot = int(marker.split(':')[1])
+    if mutation == 'time': changed = replace(ir, time_scope='past')
+    elif mutation == 'polarity': changed = replace(ir, polarity='neutral')
+    elif mutation == 'relation': changed = replace(ir, relations=(replace(ir.relations[0], endpoint_slots=(0, slot)), *ir.relations[1:]))
+    elif mutation == 'governing': changed = replace(ir, governing_relation_slots=())
+    elif mutation == 'answer_slot': changed = replace(ir, nominalization_plan=tuple(
+        c.replace(':none:replacement:none', ':none:replacement:0:FINITE:answer_time') for c in ir.nominalization_plan))
+    else:
+        profiles = tuple(replace(p, **({'actor_kind': 'OTHER'} if mutation == 'actor' else {'quoted_boundary': True}))
+                         if i == slot else p for i, p in enumerate(ir.semantic_profiles))
+        changed = replace(ir, semantic_profiles=profiles)
+    assert changed != ir
+    with pytest.raises(reception.GroundedHumanReceptionSurfaceError):
+        reception._validate_source_grounded_move_ir(changed)
+
+
+@pytest.mark.parametrize('answers', TWO_POSITIVE_PAIRS)
+def test_revised_original_current_question_target_keeps_existing_about(answers):
+    context = actual(request=revised_original_request(answers=answers, old='寂しかった'))
+    result, plan, _, _, _ = context
+    assert all(s in result.artifact.reception for s in ('褒められた', '誘われた', '頼まれた', '嬉し', '悲し', '苦し'))
+    assert any(r.type == 'evaluation_about_event' and (r.from_nucleus_id, r.to_nucleus_id)
+               == ('nucleus:s3:event', 'answer:s9') for r in plan.relations)
+    assert not any('thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.mark.parametrize('answers', TWO_POSITIVE_PAIRS)
+def test_revised_original_second_position_keeps_existing_fragmentation_gap_visible(answers):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    result = MeaningExperienceEngine().generate(revised_original_request(answers=answers, old='悲しかった'))
+    assert result.artifact is None and result.reason_codes == ('emlis_refined_body_unavailable',)
+
+
+@pytest.mark.parametrize('answers', TWO_POSITIVE_PAIRS)
+def test_revised_original_saved_reads_preserve_initial_and_all_answers(qcase, qdb, monkeypatch, answers):
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved initial reads must not regenerate'))
+        assert run(service.get(user, parent)) == current
+        assert run(service.start(user, parent)) == current
+    for index, text in enumerate((*answers, '「嬉しくなかった」ではなく「少し苦しかった」です。')):
+        if index:
+            current = run(cont(service, user, current, f'revised-original-continue-{index}'))
+        current = run(answer(service, user, current, text, f'revised-original-answer-{index}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not regenerate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+    body = current['current_observation']['text']
+    assert 'その時の気持ちとして、「少し苦しかった」' in body and 'その時は少し苦しかった' in body
+    assert all(s in body for s in ('褒められた', '誘われた', '頼まれた', '悲し', '寂し', '楽し'))
+    assert '嬉しくなかった' not in body
+
+
+def test_revised_original_can_be_corrected_again_without_reviving_old_relations():
+    context = actual(request=advance(revised_original_request(answers=('今は嬉しい。',)),
+        '「苦しかった」ではなく「少し怖かった」です。'))
+    result, plan, _, _, _ = context
+    assert '苦しかった' not in result.artifact.text and '嬉しくなかった' not in result.artifact.text
+    assert 'その時の気持ちとして、「少し怖かった」' in result.artifact.observation
+    assert '少し怖かった' in result.artifact.reception
+    replacement, = [n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes]
+    assert not any(replacement.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    assert read_body(context, result.artifact.text).passed

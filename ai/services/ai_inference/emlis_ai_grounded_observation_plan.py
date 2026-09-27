@@ -7603,6 +7603,23 @@ def _thread_withdrawn_original_reaction(nucleus, relations):
     )
 
 
+def _thread_revised_original_reaction(nucleus, relations):
+    """An admitted original-reaction replacement, without an inherited edge."""
+    frame = nucleus.semantic_frame
+    return bool(
+        nucleus.source_fields == ("answer_text_private",)
+        and nucleus.allowed_claim_scope == "explicit_supplemental_answer"
+        and nucleus.retention == "required" and nucleus.grounding_kind == "explicit"
+        and (nucleus.kind, frame.predicate_kind, frame.modality) == ("reaction", "feeling", "feeling")
+        and frame.actor == "current_user" and frame.polarity == "negative"
+        and frame.time_scope == "past" and len(nucleus.source_span_ids) == 1
+        and {"thread_subject:independent_source_replacement", "thread_subject:revised_original_reaction",
+             "lexical:preserve_source_predicate", "lexical:no_new_sensation_family"} <= set(frame.attribute_codes)
+        and {c for c in frame.attribute_codes if c.startswith("thread_time:")} == {"thread_time:original_occasion"}
+        and not any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations)
+    )
+
+
 def is_grounded_current_answer_uncertainty(nucleus):
     """Keep an admitted current epistemic answer as a state, not a feeling.
 
@@ -7805,8 +7822,12 @@ def _thread_retained_reaction_groups(nuclei, relations):
     # An ADD does not supersede the original reaction, regardless of the
     # answer's polarity or whether the input contains one received event.
     # Single-event grouping still requires exactly one source-proven answer.
+    revised_originals = tuple(n for n in independent_answers if _thread_revised_original_reaction(n, relations))
+    mixed_revision = bool(len(positive) == 2 and len(answers) == 3
+        and len(revised_originals) == len(independent_answers) == 1
+        and not (withdrawal or independent or actions or detached_answers))
     if not withdrawal and (len(positive) > 2
-                           or len(positive) == 2 and (independent or actions or independent_answers)
+                           or len(positive) == 2 and (independent or actions or independent_answers) and not mixed_revision
                            or len(events) == 1 and len(answers) != 1
                            and not ((independent or actions) and not answers)):
         return unsupported()
@@ -7833,6 +7854,9 @@ def _thread_retained_reaction_groups(nuclei, relations):
     groups.extend(("lived_change" if is_grounded_positive_feeling(n) else "current_burden",
                    (n.nucleus_id,), ()) for n in independent)
     groups.extend(("concrete_effort", (n.nucleus_id,), ()) for n in actions)
+    if mixed_revision and targets and len(groups) == 4:
+        groups = [row for row in groups if row[0] != "current_burden"]
+        groups.append(("current_burden", (*targets, revised_originals[0].nucleus_id), tuple(supports)))
     if withdrawal and len(groups) > 3 and not (independent or actions or independent_answers):
         # A withdrawn event does not retract its independently stated
         # reaction or answer. Coordinate only those detached burdens, with

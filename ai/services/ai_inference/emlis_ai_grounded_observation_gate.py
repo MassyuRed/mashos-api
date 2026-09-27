@@ -2280,6 +2280,7 @@ def _body_inverse_detached_observation(raw, nuclei, plan, resolver):
     """
     from emlis_ai_grounded_observation_plan import (
         _thread_withdrawn_original_reaction, _received_event_reaction_projections,
+        _thread_revised_original_reaction,
     )
     if not nuclei:
         return False
@@ -2297,7 +2298,8 @@ def _body_inverse_detached_observation(raw, nuclei, plan, resolver):
     for nucleus, (when, quoted) in zip(nuclei, pieces, strict=True):
         frame = nucleus.semantic_frame
         codes = set(frame.attribute_codes)
-        if ("thread_subject:withdrawn_source_event" not in codes
+        if (("thread_subject:withdrawn_source_event" not in codes
+             and not _thread_revised_original_reaction(nucleus, plan.relations))
             or nucleus.kind != "reaction" or frame.predicate_kind != "feeling"
             or frame.modality != "feeling" or frame.actor != "current_user"
             or nucleus.retention != "required" or nucleus.grounding_kind != "explicit"
@@ -3282,6 +3284,7 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
     from emlis_ai_grounded_observation_plan import (
         _thread_retained_reaction_groups, _received_contrast_group_targets,
         _thread_withdrawn_original_reaction, _received_event_reaction_projections,
+        _thread_revised_original_reaction,
     )
     original_group = _received_contrast_group_targets(plan.nuclei, plan.relations)
     original = bool(original_group and original_group ==
@@ -3312,6 +3315,20 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
     offset, saw_answer = 0, False
     for part_index, (event_id, part) in enumerate(zip(move.target_nucleus_ids, parts)):
         event = nuclei[event_id]
+        if _thread_revised_original_reaction(event, plan.relations):
+            span = resolver.resolve(event.source_span_ids[0])
+            source = _body_inverse_typed_source_fragment(event, span.raw_text)
+            ending = re.search(r"(?:のですね|のです|のだと受け取りました)$", part)
+            if (not thread_group or resolver.source_fields_for(event.source_span_ids) != event.source_fields
+                or not source or ending is None or not part.startswith("その時は")
+                or _restore_thread_finite_answer(part[len("その時は"):ending.start()], source) != source):
+                return None
+            start = len((raw[:offset] + "その時は").encode())
+            end = len((raw[:offset] + part[:ending.start()]).encode())
+            replacements.append((start, end, source.encode()))
+            consumed.add(event_id)
+            offset += len(part) + len("、また、")
+            continue
         if _thread_withdrawn_original_reaction(event, plan.relations):
             span = resolver.resolve(event.source_span_ids[0])
             source = _body_inverse_typed_source_fragment(event, span.raw_text)
@@ -4420,7 +4437,9 @@ def evaluate_grounded_surface_body_inverse(
                                             for value in source_values):
                     failures.append(f"body_inverse_appraisal_host_incomplete:{index}")
         if getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1":
-            from emlis_ai_grounded_observation_plan import _thread_withdrawn_original_reaction
+            from emlis_ai_grounded_observation_plan import (
+                _thread_withdrawn_original_reaction, _thread_revised_original_reaction,
+            )
             visible_line = _body_inverse_visible_text(body, parsed_line)
             detached_nuclei = tuple(nucleus_index[nid] for nid in planned_line.binding.nucleus_ids)
             if (detached_nuclei and not planned_line.binding.relation_ids
@@ -4431,6 +4450,7 @@ def evaluate_grounded_surface_body_inverse(
                          or _thread_withdrawn_original_reaction(n, plan.relations))
                     for n in detached_nuclei))
                 and all("thread_subject:withdrawn_source_event" in n.semantic_frame.attribute_codes
+                        or _thread_revised_original_reaction(n, plan.relations)
                         for n in detached_nuclei)
                 and not _body_inverse_detached_observation(visible_line, detached_nuclei, plan, resolver)):
                 failures.append(f"body_inverse_detached_feeling_scope_mismatch:{index}")
@@ -4447,9 +4467,52 @@ def evaluate_grounded_surface_body_inverse(
                 if expected is None or expected not in visible_line:
                     failures.append(f"body_inverse_answer_target_time_missing:{index}")
             from emlis_ai_grounded_observation_plan import is_grounded_current_answer_uncertainty
+            revised_reactions = tuple(n for n in required_nuclei
+                if _thread_revised_original_reaction(n, plan.relations))
             detached_states = tuple(n for n in required_nuclei
                 if "thread_subject:withdrawn_source_event" in n.semantic_frame.attribute_codes
                 and is_grounded_current_answer_uncertainty(n))
+            line_rows = tuple(row for row in witness.sentences
+                if row.section == "observation"
+                and row.section_line_ordinal == parsed_line.section_ordinal)
+            independent_tail = line_rows[-len(revised_reactions) - len(detached_states):]
+            if revised_reactions:
+                # In this bounded contrast/answer graph, every sentence
+                # belongs to an event duty or to an independent tail duty.
+                # Extra prose before the tail cannot invent another relation.
+                relations = tuple(r for r in plan.relations
+                    if r.relation_id in planned_line.binding.relation_ids)
+                endpoints = {nid for r in relations for nid in (r.from_nucleus_id, r.to_nucleus_id)}
+                independent_ids = {n.nucleus_id for n in (*revised_reactions, *detached_states)}
+                if (relations and {r.type for r in relations} <= {"contrast", "evaluation_about_event"}
+                    and set(planned_line.binding.nucleus_ids) - endpoints == independent_ids):
+                    contrasts = tuple(r for r in relations if r.type == "contrast")
+                    answers = tuple(r for r in relations if r.type == "evaluation_about_event")
+                    shared_events = {r.from_nucleus_id for r in contrasts} & {r.from_nucleus_id for r in answers}
+                    remaining_contrasts = sum(r.from_nucleus_id not in shared_events for r in contrasts)
+                    separate_answer_times = {tuple(c for c in nucleus_index[r.to_nucleus_id].semantic_frame.attribute_codes
+                        if c.startswith("thread_time:")) for r in answers if r.from_nucleus_id not in shared_events}
+                    event_sentences = (len(shared_events)
+                        + (remaining_contrasts if shared_events else int(bool(remaining_contrasts)))
+                        + len(separate_answer_times))
+                    if len(line_rows) != event_sentences + len(independent_ids):
+                        failures.append(f"body_inverse_revised_reaction_scope_mismatch:{index}")
+            for nucleus in revised_reactions:
+                if (not planned_line.binding.relation_ids
+                    and _body_inverse_detached_observation(visible_line, detached_nuclei, plan, resolver)):
+                    continue
+                # Bind this replacement to its own complete independent
+                # sentence. Another answer's time token is not its proof.
+                rows = tuple(row for row in witness.sentences
+                    if row.section == "observation"
+                    and row.section_line_ordinal == parsed_line.section_ordinal
+                    and _body_inverse_detached_observation(
+                        _body_inverse_visible_text(body, row).removeprefix("また、"),
+                        (nucleus,), plan, resolver))
+                if (len(independent_tail) != len(revised_reactions) + len(detached_states)
+                    or len(rows) != 1
+                    or rows[0] != independent_tail[revised_reactions.index(nucleus)]):
+                    failures.append(f"body_inverse_revised_reaction_scope_mismatch:{index}")
             if detached_states:
                 # Read one complete final sentence per independent state. A
                 # time token or matching quote elsewhere in this line cannot

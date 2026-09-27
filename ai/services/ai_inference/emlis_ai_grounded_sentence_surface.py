@@ -1616,9 +1616,11 @@ def _merge_parallel_contrast_groups(groups, relation_ids, nucleus_index, relatio
 
 def _detached_observation_time(nucleus):
     """Keep each admitted independent feeling's own observation time."""
+    from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
     frame = nucleus.semantic_frame
     codes = set(frame.attribute_codes)
-    if ("thread_subject:withdrawn_source_event" not in codes
+    if (("thread_subject:withdrawn_source_event" not in codes
+         and not _thread_revised_original_reaction(nucleus, ()))
         or nucleus.kind != "reaction" or frame.predicate_kind != "feeling"
         or frame.actor != "current_user" or frame.modality != "feeling"
         or nucleus.retention != "required" or nucleus.grounding_kind != "explicit"
@@ -3009,7 +3011,7 @@ def _render_extra_context(
             parts.append(f"また、{when}では、{quotes[0]}と書かれています。")
         return "".join(parts)
     detached = tuple(nid for nid in extra_ids if nid in nucleus_index
-        and "thread_subject:withdrawn_source_event" in nucleus_index[nid].semantic_frame.attribute_codes
+        and _detached_observation_time(nucleus_index[nid]) is not None
         and nucleus_index[nid].source_fields in {("memo",), ("memo_action",), ("answer_text_private",)}
         and nucleus_index[nid].kind == "reaction"
         and (nucleus_index[nid].semantic_frame.time_scope == "past"
