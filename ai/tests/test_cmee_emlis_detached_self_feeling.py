@@ -646,3 +646,119 @@ def test_medial_owner_saved_correction_withdrawal_and_authorless_reopen(qcase, q
             m.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read must not generate'))
             assert run(service.get(user, parent)) == current
             assert run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('occasion', ['今は', 'その時は'])
+@pytest.mark.parametrize('route', ['single', 'multiple', 'detached'])
+@pytest.mark.parametrize('source,inner,wrong_inner', [
+    ('私は不安なのだった', 'あなたは不安な', 'あなたは不安だった'),
+    ('私は不安だったのだった', 'あなたは不安だった', 'あなたは不安な'),
+    ('私も少し不安ではなかったのだった', 'あなたも少し不安ではなかった', 'あなたも少し不安だった'),
+    ('私は嬉しいのだった', 'あなたは嬉しい', 'あなたは嬉しかった'),
+    ('私には怖くないのだった', 'あなたには怖くない', 'あなたには怖い'),
+    ('私は嬉しかったのだった', 'あなたは嬉しかった', 'あなたは嬉しい'),
+])
+def test_outer_past_keeps_inner_feeling_and_all_live_source_scopes(occasion, route, source, inner, wrong_inner):
+    request = begin('褒められたのに、嬉しくなかった。') if route == 'single' else begin()
+    request = advance(request, occasion + source + '。')
+    context = actual(request=advance(request, WITHDRAW) if route == 'detached' else request)
+    follow = context[0].artifact.reception
+    terminal = route != 'multiple' or '嬉し' in source
+    suffix = 'のでしたね' if terminal else 'のだったし'
+    target = inner + suffix
+    assert target in follow
+    assert 'のだったのですね' not in follow and '受け止めています' not in follow
+    assert any(s in follow for s in ('嬉しくなかった', '嬉しくなく', '嬉しさにはつながらず', '嬉しさにはつながらなかった'))
+    assert ('褒められた' not in context[0].artifact.text) if route == 'detached' else ('褒められた' in follow)
+    if route != 'single':
+        assert '悲しさを感じ' in follow and '寂しさを感じた' in follow
+    assert inverse(context, follow, without_author=True).passed
+    mutations = [
+        (target, inner + ('のですね' if terminal else 'のだし')),
+        (target, wrong_inner + suffix),
+        (target, target.replace('あなた', '私', 1)),
+        (target, target.replace('あなた', '友人', 1)),
+        (target, target.replace('あなたも', 'あなたは', 1) if 'あなたも' in target
+         else target.replace('あなたには', 'あなたにも', 1) if 'あなたには' in target
+         else target.replace('あなたは', 'あなたも', 1)),
+    ]
+    if '少し' in target:
+        mutations.append((target, target.replace('少し', '', 1)))
+    if occasion == '今は':
+        mutations.append(('回答した時点で', '先の回答時点で'))
+    if route == 'detached':
+        prefix = '回答した時点で、' if occasion == '今は' else 'その時、'
+        mutations.extend([(prefix, ''), (prefix, '褒められたことについて、' + prefix)])
+    if route != 'single':
+        mutations.append(('悲しさを感じ', '嬉しさを感じ'))
+    for old, new in mutations:
+        changed = follow.replace(old, new, 1)
+        assert changed != follow
+        assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('source,inner', [
+    ('私は不安なのだった', 'あなたは不安な'),
+    ('私は不安だったのだった', 'あなたは不安だった'),
+    ('私には怖くないのだった', 'あなたには怖くない'),
+])
+def test_outer_past_independent_reader_restores_full_source_and_continuing_clause(source, inner):
+    context = actual(request=advance(advance(begin(), '今は' + source + '。'), WITHDRAW))
+    result, plan, _, resolver, selected = context
+    moves = reception.reception_active_moves(plan.response_plan.human_reception_plan, 'full')[:2]
+    clause = result.artifact.reception.split('。')[0] + '。'
+    proof = gate.read_detached_feeling_pair(clause, moves, plan, resolver, selected)
+    assert proof is not None
+    start, end, restored = proof[1][0]
+    assert clause.encode()[start:end].decode() == inner
+    assert restored.decode() == source
+    left = '回答した時点で、' + inner + 'のだったし、その時は嬉しくなかったのですね。'
+    assert gate.read_detached_feeling_pair(left, moves[::-1], plan, resolver, selected) is not None
+    for wrong in ('のだし', 'のでしたねし', 'ので'):
+        assert gate.read_detached_feeling_pair(left.replace('のだったし', wrong),
+                                              moves[::-1], plan, resolver, selected) is None
+
+
+@pytest.mark.parametrize('source', ['私は不安なのです', '私は不安でした'])
+@pytest.mark.parametrize('detached', [False, True])
+def test_outer_past_cannot_be_added_to_an_ordinary_or_present_explanation(source, detached):
+    request = advance(begin() if detached else begin('褒められたのに、嬉しくなかった。'), '今は' + source + '。')
+    context = actual(request=advance(request, WITHDRAW) if detached else request)
+    follow = context[0].artifact.reception
+    changed = follow.replace('のですね', 'のでしたね')
+    assert changed != follow
+    assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('occasion', ['今は', 'その時は'])
+@pytest.mark.parametrize('last', ['correction', 'withdrawal'])
+def test_outer_past_saved_revision_and_authorless_reopen(qcase, qdb, monkeypatch, occasion, last):
+    user, parent, service = qcase
+    first = run(service.start(user, parent))
+    current = run(answer(service, user, first, occasion + '私は不安なのだった。'))
+    for stage in ('answer', 'event_withdrawal', last):
+        if stage == 'event_withdrawal':
+            current = run(cont(service, user, current, 'continue-outer-event'))
+            current = run(answer(service, user, current, WITHDRAW, 'withdraw-outer-event'))
+        elif stage in ('correction', 'withdrawal'):
+            current = run(cont(service, user, current, 'continue-outer-final'))
+            text = ('「私は不安なのだった」ではなく「私も少し不安ではなかったのだった」です。'
+                    if stage == 'correction' else '「私は不安なのだった」は誤りです。')
+            current = run(answer(service, user, current, text, 'update-outer-final'))
+        body = current['current_observation']['text']
+        assert current['original'] == first['original']
+        assert '悲しさを感じ' in body and '寂しさを感じた' in body
+        if stage != 'answer':
+            assert '褒められた' not in body and 'その時は嬉しくなかった' in body
+        if stage == 'event_withdrawal':
+            assert 'あなたは不安なのでしたね' in body
+        elif stage == 'correction':
+            prefix = '先の回答時点で、' if occasion == '今は' else 'その時、'
+            assert prefix + 'あなたも少し不安ではなかったのでしたね' in body
+            assert 'あなたは不安な' not in body
+        elif stage == 'withdrawal':
+            assert '不安' not in body
+        with monkeypatch.context() as m:
+            m.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read must not generate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current

@@ -2580,6 +2580,24 @@ def _thread_feeling_lexical_host(source, owner):
     return re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", host, count=1)
 
 
+def _thread_past_explanation_predicate(source):
+    """Read outer past separately from the source feeling's own tense."""
+    parsed = re.fullmatch(r"(?P<predicate>.+)のだった", source)
+    if parsed is None:
+        return None
+    predicate = parsed['predicate']
+    host = _thread_feeling_lexical_host(predicate, _thread_feeling_owner(source))
+    noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)", host)
+    if noun is not None and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い"):
+        return predicate
+    adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
+    if adjective is not None and (
+        _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+        or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])):
+        return predicate
+    return None
+
+
 def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subjective_input,
                                     *, sentence_ending=True):
     """Read the still-active source feeling and its time from complete bytes.
@@ -2682,7 +2700,7 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
                          "先の回答時点では": "先の回答時点で、"}[expected_time]
     parsed = re.fullmatch(r"(?P<time>その時は|回答した時点では|先の回答時点では|"
                           r"その時、|回答した時点で、|先の回答時点で、)"
-                          r"(?P<feeling>.+)(?:のですね|のです|のだと受け取りました)。", raw)
+                          r"(?P<feeling>.+)(?P<ending>のでしたね|のですね|のです|のだと受け取りました)。", raw)
     if parsed is None or parsed['time'] != expected_time:
         return None
     restored = parsed['feeling']
@@ -2696,6 +2714,8 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
     expected = predicate + ("のだ" if explanation_proven and not sentence_ending else "")
     if copular_proven and predicate.endswith("だ") and sentence_ending:
         expected = predicate[:-1] + "な"
+    if parsed['ending'] == "のでしたね":
+        expected = _thread_past_explanation_predicate(source) if sentence_ending else None
     if restored != expected:
         return None
     return ((len(raw[:parsed.start('feeling')].encode()),
@@ -2784,12 +2804,15 @@ def _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjectiv
         move, plan, resolver, selected_subjective_input, preceding_context)
     parsed = re.fullmatch(r"(?:(?P<event>.+)ことについて、)?"
         r"(?P<time>その時は|回答した時点では|先の回答時点では)"
-        r"(?P<feeling>.+)(?:のですね|のです|のだと受け取りました)。", raw)
+        r"(?P<feeling>.+)(?P<ending>のでしたね|のですね|のです|のだと受け取りました)。", raw)
     expected_time = {"original_occasion": "その時は", "answer_time": "回答した時点では",
                      "prior_answer_time": "先の回答時点では"}[when]
+    past_explanation = parsed is not None and parsed['ending'] == "のでしたね"
+    if past_explanation and _thread_past_explanation_predicate(source) is None:
+        return None
     if (parsed is None or (parsed['event'] != event_text
             and not (parsed['event'] is None and shared_event)) or parsed['time'] != expected_time
-        or _restore_thread_finite_answer(parsed['feeling'], source,
+        or _restore_thread_finite_answer(parsed['feeling'] + ("のだった" if past_explanation else ""), source,
             copular_clause=explanation_proven,
             shared_explanatory_ending=explanation_proven) != source):
         return None
@@ -3200,10 +3223,13 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                 return None
             consumed.add(feeling.nucleus_id)
             consumed_relations.add(relation.relation_id)
-        ending = re.search(r"(?:のですね|のです|のだと受け取りました)$", part)
+        ending = re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました)$", part)
         if ending is None:
             return None
         clause = part[:ending.start()]
+        past_explanation = ending.group() == "のでしたね"
+        if past_explanation and (not about or part_index < coordinated_prefix_count):
+            return None
         consumed.add(event_id)
         if not about:
             # Reconstruct the complete source feeling from the actual finite
@@ -3238,6 +3264,10 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                 or answer.semantic_frame.polarity != "negative"):
                 return None
             answer_source = final_reception_source_anchor_text(answer.nucleus_id, nuclei, resolver)
+            if past_explanation:
+                if _thread_past_explanation_predicate(answer_source) is None:
+                    return None
+                clause += "のだった"
             polite = re.fullmatch(r"(?P<predicate>.+(?:い|かった))です", answer_source)
             predicate = polite['predicate'] if polite else answer_source
             owner = _thread_feeling_owner(answer_source)

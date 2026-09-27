@@ -9779,7 +9779,7 @@ def _source_grounded_received_discourse(realization) -> str | None:
             parts.append(prefix + finite)
             # A present adjective must keep its own tense when followed by
             # a different past event; additive coordination is reversible.
-            if finite.endswith("い"):
+            if finite.endswith("い") or _feeling_past_explanation_predicate(source) is not None:
                 separate_time_scopes = True
     # Independent events remain distinct. Each scope is closed before the
     # next begins; no cause, ranking or shared experiencer is manufactured.
@@ -9807,7 +9807,11 @@ def _source_grounded_received_discourse(realization) -> str | None:
     # Ordinary present nouns instead take な before the final の.
     terminal = (parts[-1][:-2] if parts[-1].endswith("のだ") else
                 parts[-1][:-1] + "な" if parts[-1].endswith("だ") else parts[-1])
-    text = "、".join((*coordinated, terminal + "のですね"))
+    acknowledgement = terminal + "のですね"
+    if (answer_code != ["none"] and _feeling_past_explanation_predicate(source) is not None
+        and parts[-1].endswith(finite)):
+        acknowledgement = parts[-1][:-len(finite)] + _feeling_acknowledgement(finite)
+    text = "、".join((*coordinated, acknowledgement))
     # Avoid ambiguous event attachment, including an event repeated inside
     # another event's answer. The original grammar remains available there.
     if any(text.count("、" + fragments[int(code.split(":")[1])]) != 1
@@ -10193,6 +10197,33 @@ def _detached_feeling_copula_parts(source):
     return None
 
 
+def _feeling_past_explanation_predicate(source):
+    """Prove the inner feeling without moving the explanation's past inward."""
+    if not source.endswith("のだった"):
+        return None
+    predicate = source[:-4]
+    host = re.sub(r"^(?:あなた|わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)",
+                  "", predicate, count=1)
+    host = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", host, count=1)
+    noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)", host)
+    adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
+    if (noun is not None and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い")
+        or adjective is not None and (
+            _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+            or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1]))):
+        return predicate
+    return None
+
+
+def _feeling_acknowledgement(finite):
+    past_explanation = _feeling_past_explanation_predicate(finite)
+    if past_explanation is not None:
+        return past_explanation + "のでしたね"
+    terminal = (finite[:-2] if finite.endswith("のだ") else
+                finite[:-1] + "な" if finite.endswith("だ") else finite)
+    return terminal + "のですね"
+
+
 def _detached_feeling_finite_surface(source, *, allow_explanatory=False, allow_copular=False,
                                      allow_medial=False):
     """Address an explicitly SELF-owned feeling to its original speaker.
@@ -10334,7 +10365,7 @@ def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
     shared_event = _answer_feeling_preceding_event(
         move, plan, resolver, selected_subjective_input, preceding_context)
     topic = "" if shared_event else event_text + "ことについて、"
-    return topic + time + finite + "のですね"
+    return topic + time + _feeling_acknowledgement(finite)
 
 
 def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
@@ -10905,10 +10936,7 @@ def _author_source_grounded_reception_clauses(
             )
             if detached_parts is not None:
                 detached_terms.append(detached_parts)
-                terminal = "".join(detached_parts)
-                terminal = (terminal[:-2] if terminal.endswith("のだ") else
-                            terminal[:-1] + "な" if terminal.endswith("だ") else terminal)
-                move_sentence = terminal + "のですね"
+                move_sentence = detached_parts[0] + _feeling_acknowledgement(detached_parts[1])
             answer_sentence = _source_owned_answer_feeling_sentence(
                 move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
                 preceding_context, selected_subjective_input,
@@ -11044,10 +11072,8 @@ def _author_source_grounded_reception_clauses(
         shared_feelings = _source_grounded_shared_material_feelings(tuple(coordination_terms))
         if (recovery_stage == "full" and len(realization.moves) == len(detached_terms) == 2
             and detached_terms[0][1] != detached_terms[1][1]):
-            terminal = "".join(detached_terms[1])
-            terminal = (terminal[:-2] if terminal.endswith("のだ") else
-                        terminal[:-1] + "な" if terminal.endswith("だ") else terminal)
-            shared_feelings = "".join(detached_terms[0]) + "し、" + terminal + "のですね"
+            terminal = detached_terms[1][0] + _feeling_acknowledgement(detached_terms[1][1])
+            shared_feelings = "".join(detached_terms[0]) + "し、" + terminal
             from emlis_ai_grounded_observation_gate import read_detached_feeling_pair
             if read_detached_feeling_pair(
                 shared_feelings + "。", tuple(move_index[mid] for mid in clause_plan.move_ids),
