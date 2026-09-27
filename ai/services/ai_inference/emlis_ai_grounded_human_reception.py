@@ -2966,6 +2966,9 @@ def source_grounded_current_expression_nominal(
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
 ) -> str:
+    detached = source_grounded_detached_burden_group(move, plan, nucleus_index, resolver)
+    if detached:
+        return "と、".join(_detached_burden_nominal(source, when) for _, source, when in detached)
     reason = _source_grounded_current_material_clauses(move, plan, nucleus_index, resolver)
     if reason:
         return _source_feeling_reason_nominal(reason)
@@ -2992,6 +2995,72 @@ class _ThreadAnswerGroupItem:
     when: str
     nominal: str
     event_fragment: str
+
+
+def source_grounded_detached_burden_group(move, plan, nucleus_index, resolver):
+    """Prove each independent withdrawn-source duty in a selected group.
+
+    An unknown stays an epistemic state. Each operand keeps its own source
+    and time; the collective reception creates neither ABOUT nor causality.
+    """
+    from emlis_ai_grounded_observation_plan import (
+        _thread_retained_reaction_groups, _thread_withdrawn_original_reaction,
+        _received_event_reaction_projections,
+    )
+    if (plan is None or getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+        or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
+        or move not in plan.response_plan.human_reception_plan.moves or not move.required
+        or move.reception_act != "stay_with_current_burden" or move.support_nucleus_ids
+        or not 2 <= len(move.target_nucleus_ids) <= 3
+        or ("current_burden", move.target_nucleus_ids, ())
+            not in _thread_retained_reaction_groups(plan.nuclei, plan.relations)):
+        return ()
+    rows = []
+    for nid in move.target_nucleus_ids:
+        n = nucleus_index.get(nid)
+        if n is None or n not in plan.nuclei:
+            return ()
+        frame, codes = n.semantic_frame, set(n.semantic_frame.attribute_codes)
+        unknown = is_grounded_current_answer_uncertainty(n)
+        if ("thread_subject:withdrawn_source_event" not in codes
+            or n.retention != "required" or n.grounding_kind != "explicit"
+            or frame.actor != "current_user" or frame.polarity != "negative"
+            or len(n.source_span_ids) != 1
+            or not unknown and (n.kind, frame.predicate_kind, frame.modality) != ("reaction", "feeling", "feeling")
+            or any(nid in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+            or resolver.source_fields_for(n.source_span_ids) != n.source_fields):
+            return ()
+        span = resolver.resolve(n.source_span_ids[0])
+        source = _source_grounded_clause_candidate(n, resolver)
+        profile = _source_grounded_semantic_profile(n, source)
+        if (not source or _typed_reception_source_fragment(n, span.raw_text) != source
+            or profile.actor_kind != "SELF" or profile.quoted_boundary
+            or profile.performed_action or profile.future_action
+            or not _SOURCE_GROUNDED_FINITE_END_RE.search(source)
+            or re.search(r'[「」『』“”‘’"?？!！\r\n。]', source)):
+            return ()
+        times = {c.split(":", 1)[1] for c in codes if c.startswith("thread_time:")}
+        if n.source_fields in {("memo",), ("memo_action",)}:
+            if (times or not _thread_withdrawn_original_reaction(n, plan.relations)
+                or not any(row.kind == "reaction" and row.polarity == "negative"
+                    and set(row.attribute_codes) <= codes
+                    for row in _received_event_reaction_projections(span, frame))):
+                return ()
+            when = "original_occasion"
+        elif n.source_fields == ("answer_text_private",) and n.allowed_claim_scope == "explicit_supplemental_answer":
+            if len(times) != 1 or not times <= _THREAD_ANSWER_TIME_NOMINAL_PREFIX.keys():
+                return ()
+            when = next(iter(times))
+        else:
+            return ()
+        rows.append((nid, source, when))
+    return tuple(rows)
+
+
+def _detached_burden_nominal(source, when):
+    prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で",
+              "prior_answer_time": "先の回答時点で"}[when]
+    return prefix + _detached_feeling_finite_surface(source, allow_medial=True) + "こと"
 
 
 def source_grounded_thread_answer_group(move, plan, nucleus_index, resolver):
@@ -5654,6 +5723,11 @@ def derive_source_grounded_nominalization_plan(
     )
     if reference_mode == "ANAPHORIC" or move is None or plan is None or resolver is None:
         return nominalization
+    detached = source_grounded_detached_burden_group(move, plan, {n.nucleus_id: n for n in nuclei}, resolver)
+    if detached:
+        if tuple(n.nucleus_id for n in nuclei) != move.target_nucleus_ids or fragments != tuple(r[1] for r in detached):
+            raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+        return (*nominalization, *(f"detached-burden-slot:{slot}:{row[2]}" for slot, row in enumerate(detached)))
     reason = _source_grounded_current_material_clauses(move, plan, {n.nucleus_id: n for n in nuclei}, resolver)
     if reason:
         if fragments != reason or tuple(n.nucleus_id for n in nuclei) != (*move.target_nucleus_ids, *move.support_nucleus_ids):
@@ -5784,6 +5858,11 @@ def source_grounded_negative_context_nominal(
 def _source_grounded_nominalization_shape_valid(
     plan: tuple[str, ...], semantic_count: int,
 ) -> bool:
+    if (2 <= semantic_count <= 3 and len(plan) == semantic_count + 1
+        and plan[:1] == _SOURCE_GROUNDED_NOMINALIZATION_BASE
+        and all(re.fullmatch(rf"detached-burden-slot:{slot}:(?:original_occasion|answer_time|prior_answer_time)", code)
+                for slot, code in enumerate(plan[1:]))):
+        return True
     if semantic_count == 2 and plan in {
         (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, "source-feeling-reason-boundary:0:1"),
         (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, "source-current-material:0:1"),
@@ -6389,6 +6468,11 @@ def _project_source_grounded_reception_move_realization(
             for nucleus in typed_targets
         )
     )
+    detached_burdens = source_grounded_detached_burden_group(move, plan, nucleus_index, resolver)
+    if detached_burdens:
+        # The aggregate has no shared event or predicate. Each unchanged
+        # profile and timed source clause owns its own assertion.
+        predicate_values = ("source_bounded",)
     if len(predicate_values) != 1:
         raise GroundedHumanReceptionSurfaceError(
             "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
@@ -6440,11 +6524,11 @@ def _project_source_grounded_reception_move_realization(
             tuple(frame.polarity for frame in frames),
             default="source_bounded",
         ),
-        modality=_source_grounded_axis(
+        modality="source_bounded" if detached_burdens else _source_grounded_axis(
             tuple(frame.modality for frame in frames),
             default="source_bounded",
         ),
-        time_scope=_source_grounded_axis(
+        time_scope="source_bounded" if detached_burdens else _source_grounded_axis(
             tuple(frame.time_scope for frame in frames),
             default="current_input",
         ),
@@ -7342,6 +7426,11 @@ def _validate_source_grounded_move_ir(
     expected_nominalization = _source_grounded_nominalization_from_profiles(
         move.semantic_fragments, move.semantic_profiles, move.reference_mode,
     )
+    detached_grammar = tuple(p for p in move.nominalization_plan if p.startswith("detached-burden-slot:"))
+    if detached_grammar:
+        if not _detached_burden_group_ir_text(move):
+            raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+        expected_nominalization = (*expected_nominalization, *detached_grammar)
     material_markers = tuple(c for c in move.nominalization_plan
         if c in {"source-feeling-reason-boundary:0:1", "source-current-material:0:1", "source-current-material:1:0",
                  "source-temporal-material:0:1", "source-temporal-material:1:0",
@@ -8103,7 +8192,7 @@ def _source_grounded_target_owner_slot(
     referent_kind: str,
 ) -> int:
     """Bind a typed referent only to a semantically compatible slot."""
-    if referent_kind == "current_expression" and (_source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)):
+    if referent_kind == "current_expression" and (_detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)):
         # Slot zero anchors the collective grammar, whose core must cover
         # every target and its subject. It is not the sole selected answer.
         return 0
@@ -8113,6 +8202,28 @@ def _source_grounded_target_owner_slot(
         referent_kind,
     )
 
+
+
+def _detached_burden_group_ir_text(realization):
+    codes = tuple(c for c in realization.nominalization_plan if c.startswith("detached-burden-slot:"))
+    if not codes:
+        return ""
+    fragments, profiles = realization.semantic_fragments, realization.semantic_profiles
+    if (len(codes) != len(fragments) or realization.target_slot_count != len(fragments)
+        or realization.context_slots or realization.relations
+        or realization.predicate_kind != "source_bounded"
+        or realization.modality != "source_bounded" or realization.time_scope != "source_bounded"
+        or realization.reference_mode != "COMPOSITE"
+        or realization.polarity != "negative" or realization.aspect not in {"unknown", "not_applicable"}
+        or not _source_grounded_nominalization_shape_valid(realization.nominalization_plan, len(fragments))
+        or any(p.actor_kind != "SELF" or p.quoted_boundary or p.performed_action or p.future_action
+               or (p.nucleus_kind, p.predicate_kind, p.modality)
+                   not in {("reaction", "feeling", "feeling"), ("state", "state", "uncertain")}
+               for p in profiles)
+        or any(not _SOURCE_GROUNDED_FINITE_END_RE.search(f) for f in fragments)):
+        raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+    return "と、".join(_detached_burden_nominal(source, code.split(":")[2])
+                     for source, code in zip(fragments, codes, strict=True))
 
 
 def _source_current_material_group_ir_text(realization):
@@ -8535,7 +8646,7 @@ def _source_grounded_temporal_aspect_realization(
     if realization.reference_mode == "ANAPHORIC":
         return "ANTECEDENT", "ANTECEDENT", "", ""
 
-    group_text = _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
+    group_text = _detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
     if group_text:
         if target_referent != group_text or realization.aspect not in {"unknown", "not_applicable"}:
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
@@ -8790,7 +8901,7 @@ def _source_grounded_target_np(
         realization.semantic_fragments[target_owner_slot],
         target_referent=referent_text,
     )
-    group_text = _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
+    group_text = _detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
     if group_text:
         if (referent_kind != "current_expression" or referent_text != group_text
             or move.reception_act != "stay_with_current_burden" or target_owner_slot != 0):
@@ -10127,6 +10238,28 @@ def _source_owned_action_change_sentence(move, realization, plan, resolver,
     return "".join(parts) + "のですね"
 
 
+def _source_owned_detached_burden_sentence(move, realization, plan, resolver,
+                                          selected_decision, recovery_stage):
+    if (recovery_stage != "full" or realization.clause_form != "FINITE"
+        or not _selected_material_appraisal(selected_decision)
+        or not _detached_burden_group_ir_text(realization)):
+        return None
+    rows = source_grounded_detached_burden_group(
+        move, plan, {n.nucleus_id: n for n in plan.nuclei}, resolver)
+    if not rows or tuple(realization.semantic_fragments) != tuple(row[1] for row in rows):
+        return None
+    parts = []
+    for _, source, when in rows:
+        prefix = {"original_occasion": "その時は", "answer_time": "回答した時点では",
+                  "prior_answer_time": "先の回答時点では"}[when]
+        if (re.match(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)", source)
+            or _medial_feeling_owner(source) is not None):
+            prefix = {"その時は": "その時、", "回答した時点では": "回答した時点で、",
+                      "先の回答時点では": "先の回答時点で、"}[prefix]
+        parts.append(prefix + _detached_feeling_finite_surface(source, allow_medial=True))
+    return "し、".join(parts[:-1]) + "し、" + _feeling_acknowledgement(parts[-1])
+
+
 def _source_owned_detached_feeling_parts(move, realization, plan, resolver,
                                            selected_decision, recovery_stage):
     """Keep the surviving feeling finite without reviving its withdrawn event.
@@ -10949,6 +11082,11 @@ def _author_source_grounded_reception_clauses(
             if detached_parts is not None:
                 detached_terms.append(detached_parts)
                 move_sentence = detached_parts[0] + _feeling_acknowledgement(detached_parts[1])
+            detached_group = _source_owned_detached_burden_sentence(
+                move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
+            )
+            if detached_group is not None:
+                move_sentence = detached_group
             answer_sentence = _source_owned_answer_feeling_sentence(
                 move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
                 preceding_context, selected_subjective_input,

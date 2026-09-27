@@ -364,3 +364,116 @@ def test_compound_unknown_saved_withdrawal_preserves_original_and_reads(qcase, q
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not regenerate'))
             assert run(service.get(user, parent)) == current
             assert run(service.start(user, parent)) == current
+# A negative original reaction and a detached answer may share a reception
+# sentence only when each keeps its source and explicit occasion.
+@pytest.mark.parametrize('unknown,source', (*UNKNOWN_ANSWERS,
+    ('今は私にはまだよく分からない。', '私にはまだよく分からない')))
+@pytest.mark.parametrize('positive', ['今は嬉しい。', 'その時は嬉しかった。'])
+@pytest.mark.parametrize('reverse', [False, True])
+def test_detached_burden_group_with_positive_retains_each_source(unknown, source, positive, reverse):
+    context = actual(request=compound_unknown_request(unknown, positive, reverse))
+    result, plan, _, resolver, selected = context
+    body, follow = result.artifact.text, result.artifact.reception
+    withdrawn = '誘われた' if reverse else '褒められた'
+    assert withdrawn not in body
+    assert ('その時は悲しかったし、' if reverse else 'その時は嬉しくなかったし、') in follow
+    visible_source = source.replace('私には', 'あなたには')
+    assert ('回答した時点で、' if source.startswith('私には') else '回答した時点では') + visible_source in follow
+    assert ('その時は嬉しかった' if positive.startswith('その時') else '回答した時点では嬉しい') in follow
+    assert '頼まれた' in follow and '寂し' in follow
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == 3
+    group, = [m for m in moves if len(m.target_nucleus_ids) == 2 and not m.support_nucleus_ids]
+    assert gate.read_source_owned_discourse(follow.split('。')[0] + '。', group, plan, resolver, selected)
+    state, = [n for n in plan.nuclei if n.nucleus_id in group.target_nucleus_ids and n.kind == 'state']
+    assert state.semantic_frame.modality == 'uncertain'
+    assert not any(state.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    assert read_body(context, body).passed
+
+
+@pytest.fixture(scope='module')
+def detached_burden_context():
+    return actual(request=compound_unknown_request(second='今は嬉しい。'))
+
+
+@pytest.mark.parametrize('old,new', [
+    ('その時は嬉しくなかったし、', ''), ('回答した時点ではまだよく分からない', ''),
+    ('嬉しくなかった', '嬉しかった'), ('嬉しくなかった', '嬉しくない'),
+    ('まだよく分からない', 'よく分からない'), ('まだよく分からない', 'まだ分からない'),
+    ('まだよく分からない', 'まだよく分かる'), ('まだよく分からない', '友人はまだよく分からない'),
+    ('その時は', '今も'), ('回答した時点では', 'その時は'),
+    ('回答した時点では', '先の回答時点では'), ('回答した時点では', ''),
+    ('し、', 'から、'), ('し、', 'ので、'), ('し、', 'のに、'),
+    ('し、', 'し、そのため'), ('し、', 'し、同じ出来事について'),
+    ('その時は', '褒められたその時は'),
+])
+def test_detached_burden_mutations_fail_without_authors(detached_burden_context, old, new):
+    context = detached_burden_context
+    result = context[0]
+    first, rest = result.artifact.reception.split('。', 1)
+    changed = first.replace(old, new) + '。' + rest
+    assert changed != result.artifact.reception
+    assert not read_body(context, result.artifact.text.replace(result.artifact.reception, changed)).passed
+
+
+@pytest.mark.parametrize('ending', ['のです。', 'のだと受け取りました。'])
+def test_detached_burden_accepts_same_meaning_without_author_spelling(detached_burden_context, ending):
+    body = detached_burden_context[0].artifact.text
+    follow = detached_burden_context[0].artifact.reception.replace('のですね。', ending, 1)
+    assert read_body(detached_burden_context, body.replace(detached_burden_context[0].artifact.reception, follow)).passed
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+def test_detached_burden_saved_reads_preserve_body_and_original(qcase, qdb, monkeypatch, reverse):
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    answers = ('今は嬉しい。', COMPOUND_UNKNOWN) if reverse else (COMPOUND_UNKNOWN, '今は嬉しい。')
+    for index, text in enumerate((*answers, '「誘われた」は誤りです。' if reverse else '「褒められた」は誤りです。')):
+        if index:
+            current = run(cont(service, user, current, f'detached-continue-{index}'))
+        current = run(answer(service, user, current, text, f'detached-answer-{index}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        if index == 2:
+            body = current['current_observation']['text']
+            assert ('誘われた' if reverse else '褒められた') not in body
+            assert '回答した時点ではまだよく分からない' in body
+            assert ('その時は悲しかったし、' if reverse else 'その時は嬉しくなかったし、') in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not generate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('negative,clause', [
+    ('その時は怖かった。', 'その時は怖かった'),
+    ('今は少し怖い。', '回答した時点では少し怖い'),
+])
+def test_detached_burden_negative_answer_retains_degree_and_occasion(negative, clause):
+    context = actual(request=compound_unknown_request(negative, '今は嬉しい。'))
+    body = context[0].artifact.text
+    assert f'その時は嬉しくなかったし、{clause}のですね。' in body
+    assert read_body(context, body).passed
+    assert not read_body(context, body.replace(clause, '回答した時点では怖い')).passed
+
+
+@pytest.mark.parametrize('event', ['褒められた', '頼まれた'])
+def test_detached_burden_does_not_drop_two_positive_duties_to_fit(event):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    from emlis_ai_grounded_observation_plan import GroundedObservationPlanError
+    request = advance(advance(advance(begin(), '今は嬉しい。'), 'その時は嬉しかった。'), f'「{event}」は誤りです。')
+    prepared = prepare_emlis_meaning(request)
+    assert len(prepared.checkpoint.accepted_update_refs) == 3
+    assert not {'answer:s7', 'answer:s8'} & set(prepared.checkpoint.inactive_claim_refs)
+    with pytest.raises(GroundedObservationPlanError, match='human_reception_withdrawal_capacity_gap'):
+        build_updated_grounded_plan(prepared)
+    result = MeaningExperienceEngine().generate(request)
+    assert result.artifact is None and result.reason_codes == ('emlis_refined_body_unavailable',)
+
+
+@pytest.mark.parametrize('replacement', ['あなたは', '友人には', ''])
+def test_detached_burden_self_case_cannot_be_changed_or_lost(replacement):
+    context = actual(request=compound_unknown_request('今は私にはまだよく分からない。', '今は嬉しい。'))
+    body = context[0].artifact.text
+    assert 'あなたには' in body
+    assert not read_body(context, body.replace('あなたには', replacement)).passed

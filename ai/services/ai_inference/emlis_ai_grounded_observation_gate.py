@@ -3080,9 +3080,92 @@ def _read_temporal_material_discourse(raw, move, plan, resolver, selected_subjec
     return matches[0] if len(matches) == 1 else None
 
 
+def _read_detached_burden_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Read every independent withdrawn-source clause and its own time.
+
+    This proof uses actual text and source fragments, never the group author,
+    its nominalization markers, or the first operand as a representative.
+    """
+    from emlis_ai_grounded_observation_plan import (
+        _thread_retained_reaction_groups, _thread_withdrawn_original_reaction,
+        _received_event_reaction_projections, is_grounded_current_answer_uncertainty,
+    )
+    if (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+        or move not in plan.response_plan.human_reception_plan.moves or not move.required
+        or move.reception_act != "stay_with_current_burden" or move.support_nucleus_ids
+        or not 2 <= len(move.target_nucleus_ids) <= 3
+        or ("current_burden", move.target_nucleus_ids, ())
+            not in _thread_retained_reaction_groups(plan.nuclei, plan.relations)
+        or move.reference_mode == "anaphoric_first"
+        or raw.count("。") != 1 or not raw.endswith("。")
+        or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if appraisal is None or (appraisal.dimension, appraisal.operation) != ("MATERIAL_WEIGHT", "RECEIVE_AS_MATERIAL"):
+            return None
+    ending = re.search(r"(?:のですね|のです|のだと受け取りました)。$", raw)
+    if ending is None:
+        return None
+    clauses = raw[:ending.start()].split("し、")
+    if len(clauses) != len(move.target_nucleus_ids):
+        return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    offset, replacements = 0, []
+    for nid, clause in zip(move.target_nucleus_ids, clauses, strict=True):
+        n = index[nid]
+        frame, codes = n.semantic_frame, set(n.semantic_frame.attribute_codes)
+        unknown = is_grounded_current_answer_uncertainty(n)
+        if ("thread_subject:withdrawn_source_event" not in codes
+            or n.retention != "required" or n.grounding_kind != "explicit"
+            or frame.actor != "current_user" or frame.polarity != "negative"
+            or len(n.source_span_ids) != 1
+            or not unknown and (n.kind, frame.predicate_kind, frame.modality) != ("reaction", "feeling", "feeling")
+            or any(nid in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+            or resolver.source_fields_for(n.source_span_ids) != n.source_fields):
+            return None
+        span = resolver.resolve(n.source_span_ids[0])
+        source = _body_inverse_typed_source_fragment(n, span.raw_text)
+        if not source or not _SOURCE_GROUNDED_FINITE_END_RE.search(source):
+            return None
+        times = {c.split(":", 1)[1] for c in codes if c.startswith("thread_time:")}
+        if n.source_fields in {("memo",), ("memo_action",)}:
+            if (times or not _thread_withdrawn_original_reaction(n, plan.relations)
+                or not any(row.kind == "reaction" and row.polarity == "negative"
+                    and set(row.attribute_codes) <= codes
+                    for row in _received_event_reaction_projections(span, frame))):
+                return None
+            expected_time = "その時は"
+        elif n.source_fields == ("answer_text_private",) and n.allowed_claim_scope == "explicit_supplemental_answer":
+            prefixes = {"original_occasion": "その時は", "answer_time": "回答した時点では",
+                        "prior_answer_time": "先の回答時点では"}
+            if len(times) != 1 or not times <= prefixes.keys():
+                return None
+            expected_time = prefixes[next(iter(times))]
+        else:
+            return None
+        if _thread_feeling_owner(source):
+            expected_time = {"その時は": "その時、", "回答した時点では": "回答した時点で、",
+                             "先の回答時点では": "先の回答時点で、"}[expected_time]
+        if not clause.startswith(expected_time):
+            return None
+        finite = clause[len(expected_time):]
+        if _restore_thread_finite_answer(finite, source) != source:
+            return None
+        start = len(raw[:offset + len(expected_time)].encode())
+        end = len(raw[:offset + len(clause)].encode())
+        replacements.append((start, end, source.encode()))
+        offset += len(clause) + len("し、")
+    return tuple(replacements)
+
+
 def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None,
                                 *, preceding_context=None):
     """Read supported finite source duties without a literal-author oracle."""
+    detached_group = _read_detached_burden_discourse(raw, move, plan, resolver, selected_subjective_input)
+    if detached_group is not None:
+        return detached_group
     detached = _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subjective_input)
     if detached is not None:
         return detached

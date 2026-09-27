@@ -7833,6 +7833,18 @@ def _thread_retained_reaction_groups(nuclei, relations):
     groups.extend(("lived_change" if is_grounded_positive_feeling(n) else "current_burden",
                    (n.nucleus_id,), ()) for n in independent)
     groups.extend(("concrete_effort", (n.nucleus_id,), ()) for n in actions)
+    if withdrawal and len(groups) > 3 and not (independent or actions or independent_answers):
+        # A withdrawn event does not retract its independently stated
+        # reaction or answer. Coordinate only those detached burdens, with
+        # each source and time retained; no relation is manufactured between
+        # them and no duty is dropped to fit the existing Move budget.
+        detached_burdens = tuple(n.nucleus_id for n in (
+            *detached_originals, *(n for n in detached_answers if n in negative)))
+        if 2 <= len(detached_burdens) <= 3 and len(groups) - len(detached_burdens) + 1 <= 3:
+            groups = [row for row in groups if not (
+                row[0] == "current_burden" and not row[2]
+                and len(row[1]) == 1 and row[1][0] in detached_burdens)]
+            groups.append(("current_burden", detached_burdens, ()))
     if (independent or actions or independent_answers) and len(groups) > 3:
         raise GroundedObservationPlanError("human_reception_opportunity_missing")
     if withdrawal and len(groups) > 3:

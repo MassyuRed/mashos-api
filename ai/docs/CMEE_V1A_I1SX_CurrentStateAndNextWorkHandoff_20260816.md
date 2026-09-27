@@ -9610,3 +9610,67 @@ runtimeは既存Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.2
 
 **TECHNICAL_CREDIT/STRUCTURE_MAP_DELTA_NONE/全体48%・商品合格0/3/NOT_CLEAR/default OFF/Draft・open・unmerged。** API既存production2・test1・派生fixture1・handoff1、Cocolon既存06追記1。file graph・route・認定source型・保存schema・公開API/DB/RN・他中核は不変。Ready・merge・deploy・enableは行わない。
 
+
+## 2026-09-28 継続 — 元出来事撤回後も当時の反応・不明回答・別の肯定を保持
+
+**開始点・対象。** fresh GitHubのAPI `89b11a0a4ec8d949e0601852232fad4179342017`（tree `6f732ed9330de06953ba990f75f72fdafa76be02`）、Cocolon `87f06c1ec2231c43ea02a182b0316da8c2ebf381`（tree `314453853b061040481eca690dc3043268c1ce3a`）から継続。両PRはDraft/open/unmerged。非省略treeのAPI2300/Cocolon1645 blobsと全tracked materialized bytesを照合した。前回txt、直前のhandoff/06、前提資料・作業rule・恒久incident全文・全体設計図・全file map・current_structure・最新weekly 20260926 §3.8/§5.3/採用済み§5.9を確認した。txtはさらに前の1150件時点のため、GitHubの直前1231件記録を現在地にした。全file地図確認を全source本文監査とは呼ばない。
+
+System Context prepareは `PUBLICATION_RECOVERY_AMBIGUOUS: residual without marker`、exit2で停止した。正本で許された原典直接参照を用い、生成Contextの最新化・復旧を主張しない。これを直す別のhelper作業は増やしていない。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、既存承認内LEVEL_2。root華恋が編集・検査・GitHub反映を担当し、2担当は商品経路と技術差分/実本文をread-only reviewした。対象exact pathsはAPIの既存 `ai/services/ai_inference/emlis_ai_grounded_observation_plan.py`、`emlis_ai_grounded_human_reception.py`、`emlis_ai_grounded_observation_gate.py`（後二つも同directory）、`ai/tests/test_cmee_emlis_detached_observation.py`、`ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json`、既存 `ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md`、Cocolon既存 `Cocolon_前提資料/designs/cmee/v1/06_implementation_order_migration_and_verification.md`。新file/engine/owner、回答認定・語彙・質問枠・Move上限・品質閾値、保存schema・公開API/DB/RN、他中核、実データには変更しない。
+
+**原因と修正。** 認定済み不明回答→別出来事への肯定回答→不明の元出来事撤回では、残存event/reaction群・撤回後の元反応・独立不明回答・別肯定の4Moveが必要になり、`human_reception_withdrawal_capacity_gap`で本文未提供だった。既存3Moveを超えるwithdrawalだけ、他の独立感情/行動/置換回答がない条件で、2〜3の独立した負の反応/不明の受取義務を一つの既存COMPOSITEへ列挙する。統合後も3以下の場合だけ適用し、各target/sourceを保持する。未知stateをfeelingへ変えず、肯定と負を一つの感情へ融合しない。
+
+Human Receptionの既存source証明と集約IRに、各slotの完全原文と `original_occasion` / `answer_time` / `prior_answer_time`を持たせる。集約のpredicate/modality/timeだけ既存 `source_bounded`へ限定正規化し、各semantic profile・全target・全sourceを維持する。一般predicate/axisの混在拒否は緩めない。全slotの消費、COMPOSITE、support/context/relationなしを確認してから、各節の時点を明示した有限文を作る。出来事やABOUT、原因、継続、同一時点を新設しない。独立readerは実本文と原source・元反応projection・各時点を照合し、作者replayや第一sourceだけを正解判定に使わない。
+
+共通の原入力は「褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。」。回答 `今はまだよく分からない。` → `今は嬉しい。` → `「褒められた」は誤りです。`の修正後全文は次のとおり（合成検証入力）。
+
+```text
+見えたこと：
+その時の気持ちとして、「嬉しくなかった」が見えます。
+「誘われた」という出来事の一方で「悲しかった」という反応があり、その出来事に対する回答した時点の受け止めとして、「嬉しい」が見えます。 「頼まれた」と「寂しかった」が、異なる向きのまま同時にあります。また、回答した時点では、「まだよく分からない」と書かれています。
+
+Emlisから：
+その時は嬉しくなかったし、回答した時点ではまだよく分からないのですね。誘われたのに、悲しさを感じ、頼まれたのに、寂しさを感じたのですね。誘われたことについて、回答した時点では嬉しいのですね。
+```
+
+**直接本文・保存・review。** 18系列54状態を同一runtimeの開始版/最終版で比較。38既提供本文は全文byte不変、14状態は未提供→提供、2状態は未提供のまま。全54状態でcheckpointとそのturnのaccepted nucleiは一致。比較可能な既存38planは全文一致（nuclei/relations/coverageを含む）で保持し、今回の変更はwithdrawal時の受取groupとその実現に限定する。
+
+18系列は、不明3表現（「今はまだよく分からない」「現在は分からない」「今は私にはまだよく分からない」）×肯定2時点（「今は嬉しい」「その時は嬉しかった」）×回答順2通りで不明の元出来事を撤回する12系列、unknown/positiveの後に別2出来事を撤回する2系列、怖さ2時点/程度（「その時は怖かった」「今は少し怖い」）→肯定→元出来事撤回の2系列、肯定2回答→最初/末尾出来事撤回の2系列。各3回答段階を比較した。最後の肯定2回答後の撤回2状態は依然容量不足であり成功へ数えない。
+
+一時PGliteの既存SQL/RPC/serviceで、不明→現在肯定、逆順、本人明示不明→当時肯定、少し怖い→現在肯定の4系列を、各元出来事撤回まで12状態比較した。未提供4状態を提供し、他8本文は全文不変。開始版/最終版とも全12状態でoriginal DTO保持、engine.generateを停止したGET/再startと保存DTOの完全一致。最終12状態は全REFINED。実DB/端末の証拠ではない。
+
+rootと独立2担当は変更14本文、商品担当とrootは保存12本文も全文読了（重複あり）。修正必須指摘なし。列挙の長さ、原文再掲、「のですね」の反復、同じ当時の相反する記述を読む難しさは残り、自然さの完成・正式Product Read PASS/creditへ換算しない。
+
+**検証。** 最終横断 **1272件＝1244 PASS/既存28 FAIL、ERROR/SKIP0、193 deselected**。同じruntimeで今回fresh実行した開始版1231件のtest identity・成否を全保持。workspace prefixと実行時memory addressだけ正規化した28失敗のmessage/tracebackも全一致し、新たな失敗0。追加41件は全PASS。before全量354.43秒、最終全量362.07秒。
+
+- 新41件は、unknown/positive順逆12、作者/観測作者を停止した意味改変拒否18、同義終端2、保存2、負の回答の時点/程度2、二肯定容量境界2、SELFの助詞/主体欠落拒否3。同じ最終41件の開始productionは2 PASS/19 FAIL/20 ERROR、SKIP0（87 deselected）。20 ERRORは共通fixtureの既存本文未提供で止まったもので、変異assert到達へ算入しない。
+- 最初の34件は30 PASS/4 FAIL。既存SELF視点変換「私には」→「あなたには」を新assertで考慮していなかったため、元sourceは維持したまま表示の期待を修正した。次の41件は39 PASS/2 FAILで、新assertがwithdrawal turnのaccepted_nucleiに過去回答も入ると誤認していた。累積checkpointの受理update3件と過去回答がinactiveでないことへ新assertだけを修正。旧test全文をprefixとして保持し、旧assertは変更していない。
+- 初期実装は混在predicate、次にmodality/time集約で既存IR制約へ止まり、全source証明済みgroupだけ上記既存source_bounded集約へ修正した。一般制約は不変。current shared-owner identity fixtureのみ既存導出関数で再生成し、歴史的凍結証跡は不変。
+
+前回scratchのPython/PGliteが消失していたため、旧pathのversion照会はexit127、pytest未実行。scratchのtest環境だけを復元した。Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1、Node24.19.0、PGlite0.5.8。repo依存manifest・製品runtimeは変更せず、実DB接続・有料操作・Mash操作なし。環境再構成後は前回結果をbaselineとして継承せず、開始版の横断1231件も今回fresh再実行し1203 PASS/28 FAIL/ERROR・SKIP0/193 deselectedを確認した。今回の全体実行が以前の全量検査を代用したとはしない。
+
+横断再実行は `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<PGlite0.5.8 module path> <Python3.12> -m pytest -q` に、次のpath/selectorを渡す。追加41件だけなら `ai/tests/test_cmee_emlis_detached_observation.py -k detached_burden`。直接/保存probeは検証用scratchであり継続必須ownerにしない。上記入力系列とcommitted test/helperから再生成する。
+
+```text
+ai/tests/test_cmee_emlis_answer_recipient_perspective.py
+ai/tests/test_cmee_emlis_answer_attributive.py
+ai/tests/test_cmee_emlis_q1_thread.py
+ai/tests/test_cmee_emlis_answer_correction_source_scope.py
+ai/tests/test_cmee_emlis_received_discourse.py
+ai/tests/test_cmee_v1a_i1sx_contracts.py
+ai/tests/test_cmee_emlis_detached_feeling_discourse.py
+ai/tests/test_cmee_emlis_detached_polite_feeling.py
+ai/tests/test_cmee_emlis_detached_self_feeling.py
+ai/tests/test_cmee_emlis_detached_observation.py
+ai/tests/test_cmee_emlis_q3_thread.py::test_polite_answer_nominal_does_not_remove_owner_negation_or_degree
+ai/tests/test_cmee_emlis_q3_thread.py::test_polite_feeling_nominal_independently_restores_full_source_and_time
+ai/tests/test_cmee_emlis_retained_failure_recovery.py::test_surviving_pairs_are_checked_after_withdrawal_or_replacement
+-k 'not test_cmee_v1a_i1sx_contracts or active_final_language_owner_chain_has_zero_legacy_compose_calls'
+```
+
+旧必須59file・Q3全950・初回100・継承保存337全量は今回未再実行。
+
+**残件・次作業。** 肯定2回答後の元出来事撤回では、独立した負の原反応が1つしかなく今回の負の群にまとめられず、4Moveの容量不足が残る。次はその全source・肯定2件・負の原反応・各時点を保つ既存group/作者/独立readerの構成を確認する。肯定と負の意味融合、義務削除、Move上限拡大で閉じない。肯定3回答、別の独立行動/感情を含む二肯定、value/fact扱い、未認定説明形、非隣接反復・三重一致・長文の意味選択も未解決。複数回答/撤回全般の完了を主張しない。
+
+**TECHNICAL_CREDIT/STRUCTURE_MAP_DELTA_NONE/全体48%・商品合格0/3/NOT_CLEAR/default OFF/Draft・open・unmerged。** 既存owner内部の実装・test・派生fixture・記録だけで、新規file/route/schemaは0。Ready・merge・deploy・enable・実DB・実機・外部生成AIは未実施。公開後のcommit・変更path・remote全文一致・最終head確認は両Draft PRの当節続報で記録する。
