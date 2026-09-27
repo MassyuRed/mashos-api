@@ -10179,11 +10179,21 @@ def _medial_feeling_owner(source):
 
 
 def _feeling_predicate_host(source):
-    """Remove a single owner only for lexical proof; keep its modifier order."""
+    """Prove the lexical host without changing any source modifier's order.
+
+    The already-bound owner keeps its existing position. A complete chain
+    of known prefixes belongs to this same predicate; it is removed only
+    from this lexical check, never from the delivered feeling.
+    """
     owner = re.match(r"(?P<degree>少し|とても|本当は|まだ|全然|あまり)?"
                      r"(?:あなた|わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)", source)
+    if owner is not None and owner['degree']:
+        # Preserve the existing single-prefix medial-owner proof. Consuming
+        # prefixes on both sides here could inflect a copula before that
+        # owner's full source has been proved by the independent reader.
+        return source[owner.end():]
     host = (owner['degree'] or "") + source[owner.end():] if owner else source
-    return re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", host, count=1)
+    return re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)+", "", host, count=1)
 
 
 def _detached_feeling_copula_parts(source):
@@ -10204,7 +10214,7 @@ def _feeling_past_explanation_predicate(source):
     predicate = source[:-4]
     host = re.sub(r"^(?:あなた|わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)",
                   "", predicate, count=1)
-    host = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", host, count=1)
+    host = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)+", "", host, count=1)
     noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)", host)
     adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
     if (noun is not None and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い")

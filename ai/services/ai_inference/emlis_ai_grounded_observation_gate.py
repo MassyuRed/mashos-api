@@ -2577,7 +2577,9 @@ def _thread_feeling_owner(source):
 
 def _thread_feeling_lexical_host(source, owner):
     host = source[:owner.start('self')] + source[owner.end():] if owner else source
-    return re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", host, count=1)
+    # Only the lexical proof ignores these known prefixes. The reader below
+    # still matches every modifier, in source order, against the full body.
+    return re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)+", "", host, count=1)
 
 
 def _thread_past_explanation_predicate(source):
