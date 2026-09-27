@@ -2555,13 +2555,14 @@ def _thread_feeling_owner(source):
                        r"(?P<particle>には|にも|は|も)", source)
     if leading is not None:
         return leading
-    medial = re.match(r"(?P<degree>少し|とても|本当は|まだ|全然|あまり)"
+    medial = re.match(r"(?P<degree>(?:少し|とても|本当は|まだ|全然|あまり)+)"
                       r"(?P<self>わたし|ぼく|おれ|私|僕|俺|自分)"
                       r"(?P<particle>には|にも|は|も)", source)
     if medial is None:
         return None
-    tail = source[medial.end():]
-    explanation = re.fullmatch(r"(.+)の(?:です|だ)", tail)
+    tail = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)+", "",
+                  source[medial.end():], count=1)
+    explanation = re.fullmatch(r"(.+)の(?:です|だった|だ)", tail)
     host = explanation[1] if explanation else tail
     noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)" if explanation
                         else r"(.+?)(?:でした|だった|です|だ)", host)

@@ -10155,18 +10155,19 @@ def _source_owned_detached_feeling_parts(move, realization, plan, resolver,
 
 
 def _medial_feeling_owner(source):
-    """Locate one SELF owner after one existing modifier in a whole feeling.
+    """Locate one SELF owner among known modifiers in a whole feeling.
 
-    This is a surface proof, not answer admission. A second owner, modifier,
+    This is a surface proof, not answer admission. A second owner,
     quotation or arbitrary embedded clause cannot fit the remaining predicate.
     """
-    owner = re.match(r"(?P<degree>少し|とても|本当は|まだ|全然|あまり)"
+    owner = re.match(r"(?P<degree>(?:少し|とても|本当は|まだ|全然|あまり)+)"
                      r"(?P<self>わたし|ぼく|おれ|私|僕|俺|自分)"
                      r"(?P<particle>には|にも|は|も)", source)
     if owner is None:
         return None
-    predicate = source[owner.end():]
-    explanation = re.fullmatch(r"(.+)の(?:です|だ)", predicate)
+    predicate = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)+", "",
+                       source[owner.end():], count=1)
+    explanation = re.fullmatch(r"(.+)の(?:です|だった|だ)", predicate)
     host = explanation[1] if explanation else predicate
     noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)" if explanation
                         else r"(.+?)(?:でした|だった|です|だ)", host)
@@ -10185,13 +10186,8 @@ def _feeling_predicate_host(source):
     of known prefixes belongs to this same predicate; it is removed only
     from this lexical check, never from the delivered feeling.
     """
-    owner = re.match(r"(?P<degree>少し|とても|本当は|まだ|全然|あまり)?"
+    owner = re.match(r"(?P<degree>(?:少し|とても|本当は|まだ|全然|あまり)*)"
                      r"(?:あなた|わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)", source)
-    if owner is not None and owner['degree']:
-        # Preserve the existing single-prefix medial-owner proof. Consuming
-        # prefixes on both sides here could inflect a copula before that
-        # owner's full source has been proved by the independent reader.
-        return source[owner.end():]
     host = (owner['degree'] or "") + source[owner.end():] if owner else source
     return re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)+", "", host, count=1)
 
@@ -10212,9 +10208,7 @@ def _feeling_past_explanation_predicate(source):
     if not source.endswith("のだった"):
         return None
     predicate = source[:-4]
-    host = re.sub(r"^(?:あなた|わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)",
-                  "", predicate, count=1)
-    host = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)+", "", host, count=1)
+    host = _feeling_predicate_host(predicate)
     noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)", host)
     adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
     if (noun is not None and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い")
