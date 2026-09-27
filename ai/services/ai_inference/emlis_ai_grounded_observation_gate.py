@@ -2549,7 +2549,8 @@ def _answer_feeling_preceding_event(move, plan, resolver, selected_subjective_in
                                    selected_subjective_input) is not None
 
 
-def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subjective_input):
+def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subjective_input,
+                                    *, shared_explanatory_ending=True):
     """Read the still-active source feeling and its time from complete bytes.
 
     A removed ABOUT edge cannot be reconstructed from proximity or the old
@@ -2586,12 +2587,25 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
         return None
     source = _body_inverse_typed_source_fragment(nucleus, span.raw_text)
     # Read the complete source separately from its finite surface inflection.
-    # Only adjective/past-adjective + desu can lend politeness to the final
-    # acknowledgement. The returned proof restores those original bytes.
+    # Adjective politeness and a proven explanation can share the final
+    # acknowledgement. The returned proof restores the original source bytes.
     if not source:
         return None
     polite_adjective = re.fullmatch(r"(?P<predicate>.+(?:い|かった))です", source)
     predicate = polite_adjective['predicate'] if polite_adjective else source
+    explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", source)
+    explanation_proven = False
+    if explanatory is not None:
+        host = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)",
+                      "", explanatory['predicate'], count=1)
+        host = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", host, count=1)
+        adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
+        explanation_proven = bool(adjective is not None and (
+            _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+            or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])))
+        if not explanation_proven:
+            return None
+        predicate = explanatory['predicate']
     # Restore the source speaker from actual recipient-facing prose below.
     # This is independent of the author's surface transformation.
     owner = re.match(r"(?P<self>わたし|ぼく|おれ|私|僕|俺|自分)"
@@ -2636,7 +2650,10 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
         if not restored.startswith(recipient):
             return None
         restored = owner.group() + restored[len(recipient):]
-    if restored != predicate:
+    # A synthetic ending used to parse the left operand of a pair is not
+    # the response's real acknowledgement. Its explanation must remain のだ.
+    expected = predicate + ("のだ" if explanation_proven and not shared_explanatory_ending else "")
+    if restored != expected:
         return None
     return ((len(raw[:parsed.start('feeling')].encode()),
              len(raw[:parsed.end('feeling')].encode()), source.encode()),)
@@ -2658,7 +2675,8 @@ def read_detached_feeling_pair(raw, moves, plan, resolver, selected_subjective_i
         left = raw[:boundary.start()]
         right = raw[boundary.end():]
         first = _read_detached_feeling_discourse(
-            left + "のですね。", moves[0], plan, resolver, selected_subjective_input)
+            left + "のですね。", moves[0], plan, resolver, selected_subjective_input,
+            shared_explanatory_ending=False)
         second = _read_detached_feeling_discourse(
             right, moves[1], plan, resolver, selected_subjective_input)
         if first is None or second is None or first[0][2] == second[0][2]:

@@ -9029,3 +9029,63 @@ source実装の初期対象60件はPASS。最終の説明欠落testを不自然�
 **残件と次作業。** 元出来事「褒められた」そのものを撤回した後は別のdetached経路に入り、実本文2例では「回答した時点で私は嬉しいのですという気持ちを受け止めています。」「これまで、その時に私も嬉しかったのだという気持ちを受け止めています。」が残る。これは原反応だけの撤回成功とは別で、肯定説明形全経路の修正完了ではない。次はこの原出来事撤回後の回答を、残る原反応・本人・時点・説明の意味を保持して返す既存作者/逆読の因果箇所を扱う。反復する「のですね」、原文の再掲、矛盾する原反応と回答の読み心地、認定されない表現、重複本人主語、長文の意味選択も未解消。週報の共通原因群全体・初回を含む全Emlisの商品合格には換算しない。
 
 **STRUCTURE_MAP_DELTA_NONE**：既存Human Reception・独立Gate内の変更でowner・route・質問・保存schema・公開API・DB・RN・他中核・回答認定・意味選択・品質閾値・全体構造は不変。API変更はproduction2・test1・派生fixture1・本引継ぎ1。**全体48%・商品合格0/3／NOT_CLEAR／default OFF／Draft・open・unmerged**を維持する。Ready・merge・deploy・enable・実DB・実機・実課金・外部生成AI・正式商品合格は実施していない。
+
+---
+
+### 2026-09-27 継続 — 元出来事の撤回後も、説明形の回答を本人・時点付きで返す
+
+**主分類：TECHNICAL_CREDIT。** Mashの継続指示を受け、前回txtの与格訂正が適用済みであることと、最新PR3 `2c75feb52529d0a4541ea8d2a22f0aa6f8ab669d`／PR30 `8a24a85162ddfc14472870c4b90165cb7c336cf6`を照合した。必須前提・現行ルール・恒久incident全文、アプリ全体設計・両repoの全tracked path（Cocolon1645／API2300）とファイル地図、current_structure、最新9/26 weekly §3.3・3.8・5.3・5.7・5.9を確認し、Work使用可能時はEmlisの共通原因修正を進める現行方針で作業した。System Context prepareはCocolonの祖先関係検査で停止したため、read-firstで認められた原資料直接参照を使用。生成contextの最新化は主張しない。
+
+前節に残った元出来事そのものの撤回後の経路を対象にした。説明形の形容詞回答がdetached sourceの有限文証明へ入れず、本人の「私」と「ですこと／という気持ちを受け止めています」のfallbackへ戻っていた。既存Human Receptionのdetached専用呼出しだけで「…のです／…のだ」を認識する。共有helperの他用途には適用せず、文頭本人・助詞・既存程度・内側時制/否定を既存の感情形容詞で証明する。名詞説明形、伝聞、中途/重複本人主語をこの証明に混ぜない。
+
+途中節では説明を「のだし」として残し、実際の応答末尾だけ「のですね」と「の」を共有する。独立Gateは作者を呼ばず、実本文の人称・助詞・程度・時点・述語と説明の有無を元source全体へ戻して照合する。2節の左側を仮の終端で読む場合は、実際の末尾と区別して「のだ」を要求する。説明を抜いた「苦しいし」を「苦しいのだし」と同一視しない。回答認定・語彙・意味選択・Move選択/順序・品質閾値は変更していない。
+
+原fixtureは「褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。」。回答後に `「褒められた」は誤りです。` を入力した。rootは直接18例の変更前後を照合し、実本文15例のうち8改善・7全文不変、残る3例は既存のエラー内容不変を確認した。3例は伝聞の未認定2と原時点の重複本人主語による本文未提供1であり、存在しない本文を読了件数に含めない。
+
+| 回答（その後、元出来事を撤回） | 変更前のEmlis本文 | 変更後のEmlis本文 |
+|---|---|---|
+| 今は私は嬉しいのです。 | その時は嬉しくなかったのですね。誘われたのに、悲しさを感じ、頼まれたのに、寂しさを感じたのですね。回答した時点で私は嬉しいのですという気持ちを受け止めています。 | その時は嬉しくなかったのですね。誘われたのに、悲しさを感じ、頼まれたのに、寂しさを感じたのですね。回答した時点で、あなたは嬉しいのですね。 |
+| その時は私も嬉しかったのだ。 | その時は嬉しくなかったのですね。誘われたのに、悲しさを感じ、頼まれたのに、寂しさを感じたのですね。これまで、その時に私も嬉しかったのだという気持ちを受け止めています。 | その時は嬉しくなかったのですね。誘われたのに、悲しさを感じ、頼まれたのに、寂しさを感じたのですね。その時、あなたも嬉しかったのですね。 |
+| 今は私には少し怖くなかったのです。 | その時は嬉しくなかったのですね。回答した時点で私には少し怖くなかったのですことを見失わず、小さくせずに受け止めています。誘われたのに、悲しさを感じ、頼まれたのに、寂しさを感じたのですね。 | その時は嬉しくなかったし、回答した時点で、あなたには少し怖くなかったのですね。誘われたのに、悲しさを感じ、頼まれたのに、寂しさを感じたのですね。 |
+
+保存4系列は原時点/回答時点×最終訂正/最終回答撤回で、回答→継続→元出来事撤回→継続→訂正または回答撤回を実行した。各系列の回答後・出来事撤回後・最終更新後の計12状態をrootが原回答とともに全文読了した。直接15本文と合わせて27状態の確認であり、重複状態を含む系列数である。保存12状態の変更前全文までは取得していない。
+
+訂正「私は嬉しいのです」→「私も少し嬉しかったのだ」では、回答時点のものは「先の回答時点で、あなたも少し嬉しかったのですね。」、原時点のものは「その時、あなたも少し嬉しかったのですね。」と返す。回答撤回では回答だけが消え、元の「その時は嬉しくなかった」と他の2反応は残る。撤回済みの出来事を復活させない。各更新後のGET/再startは生成を停止した状態で保存DTOと完全一致し、original DTOも不変だった。実DB・端末ではなく、既存migrationを用いた一時PGliteの検証である。
+
+| 検証 | 結果と範囲 |
+|---|---|
+| 今回取り直したbaseline | 開始HEADで638件＝609 PASS／29 FAIL。前回555件（529 PASS／26 FAIL）と、detached関連3ファイル83件（80 PASS／3 FAIL）を今回の同じ環境で実行した。555件は主要6ファイル528件と既存3nodeidの27件に分けて実行。 |
+| 最終 | **661件＝632 PASS／29既存FAIL、ERROR／SKIP 0**、contracts他193件は選択外。旧638件の成否と、29失敗のworkspace path・行番号・実行時addressだけを正規化した内容は全て一致。新23件は全PASSで内数。 |
+| 新23件の内訳 | 本人/助詞/程度/内側時制・否定×原時点/回答時点10、明示本人なし2、独立readerの途中説明節1、未証明sourceの削除拒否4、出来事撤回後の回答訂正2、保存訂正/回答撤回4。途中節検査は証明済み2Moveを入れ替えてreaderの左側を調べるもので、製品のMove順序は変更しない。 |
+| 変更前との検査差 | 新23件をproduction修正前に実行すると19 FAIL／4 PASS、修正後は23 PASS。旧テストの期待・入力・assertは変更せず、既存self-feeling testの末尾だけへ追加した。 |
+| 独立逆読 | 作者停止下で、説明の欠落/重複・伝聞追加・人称/助詞/程度/時点/内側時制/否定・元反応/他反応・撤回済み出来事の追加を拒否。途中節の説明削除、偽因果も拒否した。 |
+
+旧26失敗はQ1 thread3、correction source scope15、received discourse8。今回直接範囲へ加えた既存3失敗は全て `test_cmee_emlis_detached_feeling_discourse.py` である。`test_uncomposable_source_keeps_singleton_topology` の「その時は重かったです。」「その時は私は重かった。」2件は、各節を単独Moveとする期待に対し複数Moveの節があり失敗した。その後のinverse assertには到達していない。`test_same_source_on_different_events_is_not_coordinated` は単独Move条件を通るが、「その時は悲しかった」2回の期待に対し名詞fallbackが2文残る。これらを解消済み、または全て単なる旧期待と断定しない。
+
+read-onlyレビューで具体的な誤受理・scope拡大・修正必須の実装問題は見つからなかった。古いコメント2箇所は説明形対応に合わせて更新した。現行source由来のshared-owner identity fixtureだけを既存手順で再算出し、専用検査も最終661件に含む。歴史的な凍結証跡・採点基準は不変。27件の補助検査を最初にcandidate側で実行したものはbaselineへ流用せず、別途開始HEADのworktreeで取り直して照合した。
+
+実行環境はPython3.12.14／pytest9.1.1／pydantic2.13.5／FastAPI0.141.1／httpx0.28.1／Node24.19.0／PGlite0.5.8。production依存は不変。API rootで `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<installed-pglite-module>` を指定し、次を実行する。
+
+```sh
+python -m pytest -q \
+  ai/tests/test_cmee_emlis_answer_recipient_perspective.py \
+  ai/tests/test_cmee_emlis_answer_attributive.py \
+  ai/tests/test_cmee_emlis_q1_thread.py \
+  ai/tests/test_cmee_emlis_answer_correction_source_scope.py \
+  ai/tests/test_cmee_emlis_received_discourse.py \
+  ai/tests/test_cmee_v1a_i1sx_contracts.py \
+  ai/tests/test_cmee_emlis_detached_feeling_discourse.py \
+  ai/tests/test_cmee_emlis_detached_polite_feeling.py \
+  ai/tests/test_cmee_emlis_detached_self_feeling.py \
+  ai/tests/test_cmee_emlis_q3_thread.py::test_polite_answer_nominal_does_not_remove_owner_negation_or_degree \
+  ai/tests/test_cmee_emlis_q3_thread.py::test_polite_feeling_nominal_independently_restores_full_source_and_time \
+  ai/tests/test_cmee_emlis_retained_failure_recovery.py::test_surviving_pairs_are_checked_after_withdrawal_or_replacement \
+  -k 'not test_cmee_v1a_i1sx_contracts or active_final_language_owner_chain_has_zero_legacy_compose_calls' \
+  --tb=short
+```
+
+旧必須59ファイル・Q3全950件・初回100件・継承保存337ケースの全量再実行はしていない。全Emlisの商品合格や正式Product Read PASSへ換算しない。
+
+**次の残件。** 元出来事撤回後の名詞説明形「今は私は不安なのです」は、実本文に「回答した時点で私は不安なのですことを見失わず、小さくせずに受け止めています。」が残った。次はこの名詞hostを、内側のコピュラ・説明・本人・時点を落とさず既存のdetached作者/独立Gateで扱える範囲を確認する。形容詞対応を名詞まで修正済みとしない。外側過去「嬉しいのだったのですね」の読み心地、中途/重複本人主語のfallback/本文未提供、反復・原文再掲・矛盾する反応の読み心地、未認定表現、長文の意味選択も残る。
+
+**STRUCTURE_MAP_DELTA_NONE**：既存Human Reception・独立Gate内部の修正で、owner・route・質問・保存schema・公開API・DB・RN・他中核・回答認定・意味選択・品質閾値・全体構造は不変。API変更はproduction2・test1・派生fixture1・本引継ぎ1、Cocolonは既存正本06の追記だけ。**全体48%・商品合格0/3／NOT_CLEAR／default OFF／Draft・open・unmerged**を維持する。Ready・merge・deploy・enable・実DB・実機・実課金・外部生成AI・正式商品合格は実施していない。
