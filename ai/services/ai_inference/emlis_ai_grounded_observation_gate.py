@@ -2700,6 +2700,18 @@ def _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjectiv
     # may change perspective. Embedded subjects and event subjects still fail.
     polite = re.fullmatch(r"(?P<predicate>.+(?:い|かった))です", source)
     predicate = polite['predicate'] if polite else source
+    explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", source)
+    explanation_proven = False
+    if explanatory is not None:
+        host = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)",
+                      "", explanatory['predicate'], count=1)
+        host = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", host, count=1)
+        adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
+        explanation_proven = bool(adjective is not None and (
+            _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+            or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])))
+        if explanation_proven:
+            predicate = explanatory['predicate']
     source_predicate = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)",
                               "", predicate, count=1)
     if (not event_text or not source
@@ -2718,7 +2730,9 @@ def _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjectiv
                      "prior_answer_time": "先の回答時点では"}[when]
     if (parsed is None or (parsed['event'] != event_text
             and not (parsed['event'] is None and shared_event)) or parsed['time'] != expected_time
-        or _restore_thread_finite_answer(parsed['feeling'], source) != source):
+        or _restore_thread_finite_answer(parsed['feeling'], source,
+            copular_clause=explanation_proven,
+            shared_explanatory_ending=explanation_proven) != source):
         return None
     return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
                  for key, value in (("event", event_text), ("feeling", source))

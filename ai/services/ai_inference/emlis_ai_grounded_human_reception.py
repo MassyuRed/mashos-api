@@ -10235,6 +10235,18 @@ def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
     event_text, source = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
                           for n in (event, answer))
     finite = _detached_feeling_finite_surface(source)
+    explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", finite)
+    if explanatory is not None:
+        host = re.sub(r"^あなた(?:には|にも|は|も)", "", explanatory['predicate'], count=1)
+        host = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", host, count=1)
+        adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
+        if adjective is not None and (
+            _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+            or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])
+        ):
+            # The actual sentence ending shares the source explanation's の.
+            # Keep inner tense, degree and recipient scope in the predicate.
+            finite = explanatory['predicate']
     if (not event_text or not source or tuple(realization.semantic_fragments) != (source, event_text)
         or not _SOURCE_GROUNDED_FINITE_END_RE.search(finite)
         or re.search(r"(?:です|ます|でした|ました|だ)$", finite)
