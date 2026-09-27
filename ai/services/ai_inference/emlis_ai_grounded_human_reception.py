@@ -9727,7 +9727,9 @@ def _source_grounded_received_discourse(realization) -> str | None:
                 prefix += negative[1] + "、"
             else:
                 prefix += "、"
-            parts.append(prefix + source)
+            # Polite answers retain the established attributive path.
+            parts.append(prefix + (source if source.endswith("です")
+                                   else _detached_feeling_finite_surface(source)))
     # Independent events remain distinct. Each scope is closed before the
     # next begins; no cause, ranking or shared experiencer is manufactured.
     coordinated = []
@@ -10186,7 +10188,7 @@ def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
     shared_event = _answer_feeling_preceding_event(
         move, plan, resolver, selected_subjective_input, preceding_context)
     topic = "" if shared_event else event_text + "ことについて、"
-    return topic + time + source + "のですね"
+    return topic + time + _detached_feeling_finite_surface(source) + "のですね"
 
 
 def _source_owned_relational_focus_sentence(move, realization, plan, resolver,

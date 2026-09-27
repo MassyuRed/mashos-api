@@ -2710,7 +2710,7 @@ def _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjectiv
                      "prior_answer_time": "先の回答時点では"}[when]
     if (parsed is None or (parsed['event'] != event_text
             and not (parsed['event'] is None and shared_event)) or parsed['time'] != expected_time
-        or parsed['feeling'] != source):
+        or _restore_thread_finite_answer(parsed['feeling'], source) != source):
         return None
     return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
                  for key, value in (("event", event_text), ("feeling", source))
@@ -3193,7 +3193,10 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                 actual_feeling = (finite["feeling"] + "くなかった"
                                   if finite["feeling"] is not None else
                                   finite["positive"] + "かった" if finite["positive"] is not None else None)
-                if finite["answer"] != answer_source:
+                # Mirror the source class, not the author's surface rule.
+                actual_answer = (finite["answer"] if answer_source.endswith("です")
+                                 else _restore_thread_finite_answer(finite["answer"], answer_source))
+                if actual_answer != answer_source:
                     return None
             else:
                 return None

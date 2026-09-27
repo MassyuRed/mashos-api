@@ -88,3 +88,76 @@ def test_saved_answer_and_correction_are_read_without_regeneration(qcase, qdb):
     with patch.object(service.engine, "generate", side_effect=AssertionError("saved GET rendered")):
         assert run(service.get(user, parent)) == current
         assert run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize("memo", [
+    "褒められたのに、嬉しくなかった。",
+    "褒められたのに、嬉しくなかった。誘われたのに、悲しかった。",
+])
+@pytest.mark.parametrize("reply,recipient", [
+    ("その時は私には怖くなかった。", "あなたには怖くな"),
+    ("その時は僕には怖くなかった。", "あなたには怖くな"),
+    ("その時は私は怖くなかった。", "あなたは怖くな"),
+    ("その時は私には嬉しかった。", "その時はあなたには嬉しかった"),
+    ("今は私には嬉しい。", "回答した時点ではあなたには嬉しい"),
+])
+def test_original_time_and_positive_answer_address_the_source_speaker(memo, reply, recipient):
+    context = actual(request=advance(begin(memo), reply))
+    follow = context[0].artifact.reception
+    assert recipient in follow and "褒められた" in follow
+    assert "私には" not in follow and "僕には" not in follow and "私は" not in follow
+    assert inverse(context, follow, without_author=True).passed
+
+
+@pytest.mark.parametrize("reply,old,new", [
+    ("その時は私には怖くなかった。", "あなたには", "私には"),
+    ("その時は私は怖くなかった。", "あなたは", "友人は"),
+    ("その時は私には怖くなかった。", "怖くなく", "怖く"),
+    ("その時は私には嬉しかった。", "その時はあなたには", "回答した時点ではあなたには"),
+    ("今は私には嬉しい。", "あなたには", "友人には"),
+    ("今は私には嬉しい。", "嬉しい", "悲しい"),
+])
+def test_original_time_and_positive_inverse_rejects_owner_time_polarity_meaning(reply, old, new):
+    context = actual(request=advance(begin(), reply))
+    follow = context[0].artifact.reception
+    changed = follow.replace(old, new, 1)
+    assert changed != follow
+    assert not inverse(context, changed, without_author=True).passed
+
+
+def test_saved_original_time_answer_correction_withdrawal_and_reopen(qcase, qdb):
+    user, parent, service = qcase
+    first = run(service.start(user, parent))
+    current = run(answer(service, user, first, "その時は私には怖くなかった。"))
+    assert "あなたには怖くな" in current["current_observation"]["text"]
+    with patch.object(service.engine, "generate", side_effect=AssertionError("saved GET rendered")):
+        assert run(service.get(user, parent)) == current
+
+    current = run(cont(service, user, current, "continue-original-recipient"))
+    current = run(answer(service, user, current,
+                         "「私には怖くなかった」ではなく「私には寂しくなかった」です。",
+                         "correct-original-recipient"))
+    assert "あなたには寂しくな" in current["current_observation"]["text"]
+    assert "あなたには怖くな" not in current["current_observation"]["text"]
+    assert current["original"] == first["original"]
+    with patch.object(service.engine, "generate", side_effect=AssertionError("saved GET rendered")):
+        assert run(service.get(user, parent)) == current
+
+    current = run(cont(service, user, current, "continue-withdraw-original-recipient"))
+    current = run(answer(service, user, current,
+                         "「私には寂しくなかった」は誤りです。", "withdraw-original-recipient"))
+    assert "あなたには寂しくな" not in current["current_observation"]["text"]
+    assert "褒められた" in current["current_observation"]["text"]
+    with patch.object(service.engine, "generate", side_effect=AssertionError("saved GET rendered")):
+        assert run(service.get(user, parent)) == current
+        assert run(service.start(user, parent)) == current
+
+
+def test_saved_positive_answer_reopens_with_recipient_perspective(qcase, qdb):
+    user, parent, service = qcase
+    first = run(service.start(user, parent))
+    current = run(answer(service, user, first, "今は私には嬉しい。"))
+    assert "回答した時点ではあなたには嬉しい" in current["current_observation"]["text"]
+    with patch.object(service.engine, "generate", side_effect=AssertionError("saved GET rendered")):
+        assert run(service.get(user, parent)) == current
+        assert run(service.start(user, parent)) == current

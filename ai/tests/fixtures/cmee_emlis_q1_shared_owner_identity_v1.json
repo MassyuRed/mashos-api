@@ -1,5 +1,5 @@
 {
-  "language_identity": "f2e38f5ad9a595cbc08ef566a16a191b14b79059c5c5893f709967fc2fc01a3a",
+  "language_identity": "cdfcb3f190c0ac82e766a97409aa4c9ac0b5ee09cd087981640c984864e1b054",
   "language_payloads": [
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
@@ -33,13 +33,13 @@
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
-      "ffc1999427580759811d9d0193776accd80c769257e63379f6721371d5c445bd",
-      1448834
+      "346bc8029409d3e321d53e5b0822d3971e792644c0df954a083babd96951cf4d",
+      1449199
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
-      "ed9cffd80183d43acc043f0da47816dd861b3ca1380fc9d9e2042993fa69582b",
-      900564
+      "b18c1b769b338f55b791675d7ee7c29a1bb0548f58ec0fb1544c281dc06c3309",
+      901161
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",
@@ -92,7 +92,7 @@
       8985
     ]
   ],
-  "runtime_identity": "85a1ebd9499134e98a625786dcc9cc0517b044e0188c4f0196f38e3eb126e173",
+  "runtime_identity": "40a25ef243e37eb45c466f9ae0077abc21364a84ef8af021cd49f0f13da1fddc",
   "runtime_payloads": [
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
@@ -126,13 +126,13 @@
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
-      "53d5714211a19f28bbf333b071da64d9eb93a8d3e04823a11672abfd0dd99ab6",
-      528123
+      "d7c47e157b44afbaac38503abf827ce1b106d617e0a369130ce54297d7297531",
+      528339
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
-      "6e07a0c450ea206cbba21f7edd6ac6f53ea916bffc3771cf4ca690da04271659",
-      318462
+      "87d3e652c4ce6c1a0efcc4133c19d60648e7526f6170d7bd1268d1e64ce86979",
+      318760
     ],
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",
