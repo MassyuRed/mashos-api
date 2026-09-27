@@ -2549,6 +2549,37 @@ def _answer_feeling_preceding_event(move, plan, resolver, selected_subjective_in
                                    selected_subjective_input) is not None
 
 
+def _thread_feeling_owner(source):
+    """Read the source owner independently, including a bounded medial one."""
+    leading = re.match(r"(?P<self>わたし|ぼく|おれ|私|僕|俺|自分)"
+                       r"(?P<particle>には|にも|は|も)", source)
+    if leading is not None:
+        return leading
+    medial = re.match(r"(?P<degree>少し|とても|本当は|まだ|全然|あまり)"
+                      r"(?P<self>わたし|ぼく|おれ|私|僕|俺|自分)"
+                      r"(?P<particle>には|にも|は|も)", source)
+    if medial is None:
+        return None
+    tail = source[medial.end():]
+    explanation = re.fullmatch(r"(.+)の(?:です|だ)", tail)
+    host = explanation[1] if explanation else tail
+    noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)" if explanation
+                        else r"(.+?)(?:でした|だった|です|だ)", host)
+    if noun is not None and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い"):
+        return medial
+    adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)(?:です)?", host)
+    if adjective is not None and (
+        _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+        or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])):
+        return medial
+    return None
+
+
+def _thread_feeling_lexical_host(source, owner):
+    host = source[:owner.start('self')] + source[owner.end():] if owner else source
+    return re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", host, count=1)
+
+
 def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subjective_input,
                                     *, sentence_ending=True):
     """Read the still-active source feeling and its time from complete bytes.
@@ -2591,15 +2622,14 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
     # acknowledgement. The returned proof restores the original source bytes.
     if not source:
         return None
+    owner = _thread_feeling_owner(source)
     polite_adjective = re.fullmatch(r"(?P<predicate>.+(?:い|かった))です", source)
     predicate = polite_adjective['predicate'] if polite_adjective else source
     explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", source)
     explanation_proven = False
     nominal_explanation = False
     if explanatory is not None:
-        host = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)",
-                      "", explanatory['predicate'], count=1)
-        host = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", host, count=1)
+        host = _thread_feeling_lexical_host(explanatory['predicate'], owner)
         noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)", host)
         nominal_explanation = bool(noun is not None and _FEELING_RE.fullmatch(noun[1])
                                    and not noun[1].endswith("い"))
@@ -2613,17 +2643,13 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
     copular = re.fullmatch(r"(?P<host>.+?)(?P<ending>でした|だった|です|だ)", source)
     copular_proven = False
     if copular is not None:
-        noun = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)",
-                      "", copular['host'], count=1)
-        noun = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", noun, count=1)
+        noun = _thread_feeling_lexical_host(copular['host'], owner)
         copular_proven = bool(_FEELING_RE.fullmatch(noun) and not noun.endswith("い"))
         if copular_proven:
             predicate = copular['host'] + (
                 "だった" if copular['ending'] in {"でした", "だった"} else "だ")
     # Restore the source speaker from actual recipient-facing prose below.
     # This is independent of the author's surface transformation.
-    owner = re.match(r"(?P<self>わたし|ぼく|おれ|私|僕|俺|自分)"
-                     r"(?P<particle>には|にも|は|も)", predicate)
     remainder = predicate[owner.end():] if owner else predicate
     if (not source or not (nominal_explanation or copular_proven
                           or _SOURCE_GROUNDED_FINITE_END_RE.search(predicate))
@@ -2661,7 +2687,7 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
         return None
     restored = parsed['feeling']
     if owner:
-        recipient = "あなた" + owner['particle']
+        recipient = source[:owner.start('self')] + "あなた" + owner['particle']
         if not restored.startswith(recipient):
             return None
         restored = owner.group() + restored[len(recipient):]
@@ -2731,24 +2757,22 @@ def _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjectiv
     index = {n.nucleus_id: n for n in plan.nuclei}
     event_text, source = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
                           for n in (event, answer))
-    # Only a leading self owner with an independently restorable particle
-    # may change perspective. Embedded subjects and event subjects still fail.
+    # A source-proven owner changes perspective at the same position.
+    # Unproven embedded subjects and event subjects still fail.
+    owner = _thread_feeling_owner(source)
     polite = re.fullmatch(r"(?P<predicate>.+(?:い|かった))です", source)
     predicate = polite['predicate'] if polite else source
     explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", source)
     explanation_proven = False
     if explanatory is not None:
-        host = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)",
-                      "", explanatory['predicate'], count=1)
-        host = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", host, count=1)
+        host = _thread_feeling_lexical_host(explanatory['predicate'], owner)
         adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
         explanation_proven = bool(adjective is not None and (
             _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
             or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])))
         if explanation_proven:
             predicate = explanatory['predicate']
-    source_predicate = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)",
-                              "", predicate, count=1)
+    source_predicate = predicate[owner.end():] if owner else predicate
     if (not event_text or not source
         or not _SOURCE_GROUNDED_FINITE_END_RE.search(predicate)
         or re.search(r"(?:です|ます|でした|ました|だ)$", predicate)
@@ -3216,7 +3240,7 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
             answer_source = final_reception_source_anchor_text(answer.nucleus_id, nuclei, resolver)
             polite = re.fullmatch(r"(?P<predicate>.+(?:い|かった))です", answer_source)
             predicate = polite['predicate'] if polite else answer_source
-            owner = re.match(r"(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)", predicate)
+            owner = _thread_feeling_owner(answer_source)
             remainder = predicate[owner.end():] if owner else predicate
             if (polite is not None or owner is not None) and re.search(
                     r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", remainder):
@@ -3342,19 +3366,17 @@ def _restore_thread_finite_answer(actual, source, *, copular_clause=False,
             return source
     polite = re.fullmatch(r"(?P<predicate>.+(?:い|かった))です", source)
     predicate = polite['predicate'] if polite else source
-    owner = re.match(r"(?P<self>わたし|ぼく|おれ|私|僕|俺|自分)"
-                     r"(?P<particle>には|にも|は|も)", predicate)
+    owner = _thread_feeling_owner(source)
     restored = actual
     if owner:
-        recipient = "あなた" + owner['particle']
+        recipient = source[:owner.start('self')] + "あなた" + owner['particle']
         if not restored.startswith(recipient):
             return None
         restored = owner.group() + restored[len(recipient):]
     if copular_clause and polite is None:
         explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", source)
         if explanatory is not None:
-            host = explanatory['predicate'][owner.end():] if owner else explanatory['predicate']
-            host = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", host, count=1)
+            host = _thread_feeling_lexical_host(explanatory['predicate'], owner)
             noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)", host)
             adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
             noun_proven = (noun is not None and _FEELING_RE.fullmatch(noun[1])
@@ -3370,8 +3392,7 @@ def _restore_thread_finite_answer(actual, source, *, copular_clause=False,
                 return source if restored == explanatory['predicate'] + suffix else None
         copular = re.fullmatch(r"(?P<host>.+?)(?P<ending>でした|だった|です|だ)", source)
         if copular is not None:
-            noun = copular['host'][owner.end():] if owner else copular['host']
-            noun = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", noun, count=1)
+            noun = _thread_feeling_lexical_host(copular['host'], owner)
             # Only proven noun copulas acquire a new inflection. Other
             # admitted finite clauses retain their complete source match;
             # embedded SELF and explanatory endings cannot be rewritten.

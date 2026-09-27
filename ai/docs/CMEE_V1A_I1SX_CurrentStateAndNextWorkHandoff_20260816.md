@@ -9167,3 +9167,61 @@ read-only差分レビューで修正必須の問題はなかった。現行sourc
 **次の残件。** 今回の実本文にも「少し私は不安でした」「私は私には不安です」がそのまま「ことを…受け止めています」へ残った。次は中途/重複本人主語について、source全体を削らず扱う既存作者・独立逆読の共通原因を確認する。両者の原因が同じとは未確定であり、本人主語の機械的削除や認定拡張を解決としない。外側過去の読み心地、反復・原文再掲・矛盾する反応、未認定表現、長文の意味選択も未解消。
 
 **STRUCTURE_MAP_DELTA_NONE／全体48%・商品合格0/3／NOT_CLEAR／default OFF／Draft・open・unmerged**を維持。既存作者・独立Gate内部の修正で、owner・route・質問・保存schema・公開API・DB・RN・他中核・全体構造は不変。APIはproduction2・既存test1への追加・派生fixture1・既存handoff1、Cocolonは既存正本06の追記のみ。Ready・merge・deploy・enable・実DB・実機・実課金・外部生成AI・正式Product Read PASSは実施していない。
+
+
+---
+
+### 2026-09-27 継続 — 程度語の後の本人主語を、source内の位置と意味を保って返す
+
+**主分類：TECHNICAL_CREDIT。** MashのEmlisAI残件継続指示と添付txtを受け、API PR3 `a748143ad76f45c4d0bb8893dc8d3f88e1075f13`／Cocolon PR30 `2033d9d387466198854cd08157f89bc091942a93`をfresh確認して開始した。前提資料・CURRENT_RULES・恒久incident全文・全体設計・current_structure・既存ファイル地図・両repoの全tracked pathを確認し、最新9/26 weeklyの§3.8と採用済み§5.9に従った。System Contextの新規生成・最新化を主張せず、read-firstに基づく原資料直接参照を使用した。前節が残した中途/重複本人主語のうち、程度語の直後に本人が一つある共通原因を修正した。
+
+既存作者と独立Gateは文頭本人だけを想定していたため、「少し私は不安でした」を「私は…ですこと」のまま返し、「少し私は嬉しかったのだ」では本文を生成できない経路があった。既存の程度語一つ＋SELF本人一つ＋既存助詞＋既存感情述語の**source全体**が証明できる場合に限り、元の位置で本人を「あなた」へ転換する。程度・助詞・否定・時制・説明・回答所属時点を保持する。共有helperは既定OFFの引数を設け、既存の出来事に結び付いた負担/肯定的回答とdetachedの経路だけがこの処理を使う。回答認定・語彙・意味選択・Move選択/順序・品質閾値は変更していない。
+
+独立Gateは作者の変換関数を呼ばず、実本文の同じ位置から元本人を復元し、元source全文との一致を検証する。程度語や本人を削って通すこと、重複主語を一人へ畳むことはしない。「私は私には不安です」「少し私は私には怖いです」は今回も既存fallbackのままであり、解決済みではない。
+
+公開fixture「褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。」への回答後、`「褒められた」は誤りです。` と撤回した実本文は以下のとおり。引用はEmlis本文の全体で、観測部では元sourceを保つ。
+
+| 回答 | 変更前 | 変更後 |
+|---|---|---|
+| 今は少し私は不安でした。 | その時は嬉しくなかったのですね。今、回答した時点で少し私は不安でしたことを見失わず、小さくせずに受け止めています。誘われたのに、悲しさを感じ、頼まれたのに、寂しさを感じたのですね。 | その時は嬉しくなかったし、回答した時点で、少しあなたは不安だったのですね。誘われたのに、悲しさを感じ、頼まれたのに、寂しさを感じたのですね。 |
+| 今は少し私は嬉しかったのだ。 | `emlis_refined_body_unavailable`（本文なし） | その時は嬉しくなかったのですね。誘われたのに、悲しさを感じ、頼まれたのに、寂しさを感じたのですね。回答した時点で、少しあなたは嬉しかったのですね。 |
+
+rootが直接48条件（12source×2時点×出来事維持/撤回）の前後を照合した。12本文改善・4本文生成復旧・21全文不変・11既存エラー不変で、変更後に本文のある37状態を読了した。エラー11件は本文読了数に含めない。一出来事の直接8条件でも6本文改善・2本文生成復旧を確認し、全文読了と作者停止下の独立逆読・第三者への置換拒否を確認した。この8条件は元反応まで撤回した単独回答ではない。保存12状態を加え、変更後の読了は57本文状態（重複あり）。直接56条件は前後比較、保存12状態は変更後だけの確認である。
+
+保存4系列（原時点/回答時点×最終訂正/回答撤回）は、回答→継続→元出来事撤回→継続→訂正または回答撤回。回答「少し私は不安でした」を「少し私は怖くないのです」へ訂正すると、「先の回答時点で、少しあなたは怖くないのですね。」または「その時、少しあなたは怖くないのですね。」を返す。回答撤回はその回答だけを消す。各系列の回答後・出来事撤回後・最終更新後の計12状態で、他の反応保持・original DTO不変・生成停止下GET/再startと保存DTOの完全一致を確認した。既存migrationを使う一時PGliteの検証である。
+
+| 検証 | 結果と範囲 |
+|---|---|
+| baseline再実行 | 開始headの未変更worktreeで**715件＝686 PASS／29 FAIL、ERROR／SKIP 0**。今回同じinstalled runtimeで取り直した。 |
+| 最終再実行 | **759件＝730 PASS／29既存FAIL、ERROR／SKIP 0**。contracts他193件は選択外。旧715件の成否は全一致し、旧29失敗内容もworkspace path・実行時addressだけの正規化で一致した。 |
+| 新44件 | 全PASS。主要24（本人・助詞・程度・過去・説明・否定×2時点×出来事維持/撤回）、source全文/途中と終端3、未証明の重複/埋込み主語等7、既存未認定維持6、保存訂正/撤回4。 |
+| 独立逆読 | 作者停止下で本人/第三者・助詞・程度削除/移動・時制/否定・時点・他反応の変更、撤回済み出来事の再追加を拒否。元source bytesを復元し、通常名詞と説明名詞の途中節も区別する。 |
+
+旧29失敗はQ1 thread3・correction source scope15・received discourse8・detached feeling3。今回解消したとは扱わず、全て旧期待だけとも断定しない。最初の新38件は23 PASS／15 FAILで、既認定と仮定した入力に未認定表現が含まれる等、新テスト側の前提誤りを確認した。認定を広げず、既認定入力での改善と未認定維持を分けて最終44件にした。この初期38件を最終44件の同一before値として使用しない。
+
+最初の759件は729 PASS／30 FAILで、新44件は全PASS、増えた1失敗は既存attributive testが「少し私は不安です」にもfallbackを要求していたためだった。この1ケースのみ、今回の意図した二人称有限文の**全文一致＋作者停止下逆読PASS**を追加した。一人称の不正本文を拒否するassert、重複主語・伝聞・説明形の既存検査は維持した。旧29失敗のテストは変更していない。対象4ケースを再検査して4 PASS、その後759件全体を再実行した。read-only差分レビューに修正必須の問題はなかった。
+
+現行source由来のshared-owner identity fixtureだけを既存手順で再算出し、専用検査も759件に含めた。歴史的凍結証跡は不変。実行環境はPython3.12.14／pytest9.1.1／pydantic2.13.5／FastAPI0.141.1／httpx0.28.1／Node24.19.0／PGlite0.5.8。production依存は変更していない。再実行コマンドは次のとおり（`Q2_PGLITE_MODULE`は実行環境のPGlite配置を指定）。
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=/path/to/node_modules/@electric-sql/pglite python -m pytest -q \
+  ai/tests/test_cmee_emlis_answer_recipient_perspective.py \
+  ai/tests/test_cmee_emlis_answer_attributive.py \
+  ai/tests/test_cmee_emlis_q1_thread.py \
+  ai/tests/test_cmee_emlis_answer_correction_source_scope.py \
+  ai/tests/test_cmee_emlis_received_discourse.py \
+  ai/tests/test_cmee_v1a_i1sx_contracts.py \
+  ai/tests/test_cmee_emlis_detached_feeling_discourse.py \
+  ai/tests/test_cmee_emlis_detached_polite_feeling.py \
+  ai/tests/test_cmee_emlis_detached_self_feeling.py \
+  ai/tests/test_cmee_emlis_q3_thread.py::test_polite_answer_nominal_does_not_remove_owner_negation_or_degree \
+  ai/tests/test_cmee_emlis_q3_thread.py::test_polite_feeling_nominal_independently_restores_full_source_and_time \
+  ai/tests/test_cmee_emlis_retained_failure_recovery.py::test_surviving_pairs_are_checked_after_withdrawal_or_replacement \
+  -k 'not test_cmee_v1a_i1sx_contracts or active_final_language_owner_chain_has_zero_legacy_compose_calls'
+```
+
+旧必須59ファイル・Q3全950件・初回100件・継承保存337ケースの全量再実行は行っていない。正式Product Read PASSを自己付与しない。
+
+**次の残件。** 重複本人主語の「私は私には不安ですこと」「少し私は私には怖いですこと」が本文に残る。次は本人/助詞が複数あるsourceの所属と述語範囲を原文全体から扱う共通原因を確認し、機械的削除・単純な一人化・認定拡張を解決にしない。中途本人でも二つの程度語、未証明の主語、未認定表現まで解消したとはしない。外側過去の読み心地、反復・原文再掲・矛盾する反応の並べ方、長文の意味選択も未解消。
+
+**STRUCTURE_MAP_DELTA_NONE／全体48%・商品合格0/3／NOT_CLEAR／default OFF／Draft・open・unmerged**を維持。API変更はproduction2・既存test2（末尾追加1／上記の限定した期待更新1）・派生fixture1・本引継ぎ1の計6ファイル。Cocolonは既存正本06の追記のみ。owner・route・質問・保存schema・公開API・DB・RN・他中核・全体構造は不変。Ready・merge・deploy・enable・実DB・実機・実課金・外部生成AIは実施していない。

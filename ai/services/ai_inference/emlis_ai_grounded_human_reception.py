@@ -9680,7 +9680,7 @@ def _source_grounded_received_discourse(realization) -> str | None:
             continue
         answer_slot, grammar, when = int(answer_code[0]), *answer_code[1:]
         source = fragments[answer_slot]
-        finite = _detached_feeling_finite_surface(source)
+        finite = _detached_feeling_finite_surface(source, allow_medial=True)
         copular_predicate = None
         if grammar in {"COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE"}:
             nominal = _thread_answer_nominal_morphology(source)
@@ -9691,8 +9691,7 @@ def _source_grounded_received_discourse(realization) -> str | None:
         elif grammar == "FINITE":
             explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", finite)
             if explanatory is not None:
-                host = re.sub(r"^あなた(?:には|にも|は|も)", "", explanatory["predicate"], count=1)
-                host = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", host, count=1)
+                host = _feeling_predicate_host(explanatory["predicate"])
                 noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)", host)
                 adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
                 noun_proven = (noun is not None and _FEELING_RE.fullmatch(noun[1])
@@ -9709,8 +9708,7 @@ def _source_grounded_received_discourse(realization) -> str | None:
             # hearsay そうです, or an arbitrary verb ending in だ.
             copular = re.fullmatch(r"(?P<host>.+?)(?P<ending>でした|だった|です|だ)", finite)
             if copular is not None:
-                noun = re.sub(r"^あなた(?:には|にも|は|も)", "", copular["host"], count=1)
-                noun = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", noun, count=1)
+                noun = _feeling_predicate_host(copular["host"])
                 if _FEELING_RE.fullmatch(noun) and not noun.endswith("い"):
                     copular_predicate = copular["host"] + (
                         "だった" if copular["ending"] in {"でした", "だった"} else "だ")
@@ -10147,9 +10145,41 @@ def _source_owned_detached_feeling_parts(move, realization, plan, resolver,
     # Adjective politeness can use the response ending; a proven explanation
     # stays explicit until its position at that ending is known.
     fragments = tuple(_detached_feeling_finite_surface(fragment, allow_explanatory=True,
-                                                     allow_copular=True)
+                                                     allow_copular=True, allow_medial=True)
                       for fragment in realization.semantic_fragments)
     return parts if parts is not None and fragments == (parts[1],) else None
+
+
+def _medial_feeling_owner(source):
+    """Locate one SELF owner after one existing modifier in a whole feeling.
+
+    This is a surface proof, not answer admission. A second owner, modifier,
+    quotation or arbitrary embedded clause cannot fit the remaining predicate.
+    """
+    owner = re.match(r"(?P<degree>少し|とても|本当は|まだ|全然|あまり)"
+                     r"(?P<self>わたし|ぼく|おれ|私|僕|俺|自分)"
+                     r"(?P<particle>には|にも|は|も)", source)
+    if owner is None:
+        return None
+    predicate = source[owner.end():]
+    explanation = re.fullmatch(r"(.+)の(?:です|だ)", predicate)
+    host = explanation[1] if explanation else predicate
+    noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)" if explanation
+                        else r"(.+?)(?:でした|だった|です|だ)", host)
+    adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)(?:です)?", host)
+    noun_proven = noun is not None and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い")
+    adjective_proven = adjective is not None and (
+        _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+        or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1]))
+    return owner if noun_proven or adjective_proven else None
+
+
+def _feeling_predicate_host(source):
+    """Remove a single owner only for lexical proof; keep its modifier order."""
+    owner = re.match(r"(?P<degree>少し|とても|本当は|まだ|全然|あまり)?"
+                     r"(?:あなた|わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)", source)
+    host = (owner['degree'] or "") + source[owner.end():] if owner else source
+    return re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", host, count=1)
 
 
 def _detached_feeling_copula_parts(source):
@@ -10157,24 +10187,26 @@ def _detached_feeling_copula_parts(source):
     copular = re.fullmatch(r"(?P<host>.+?)(?P<ending>でした|だった|です|だ)", source)
     if copular is None:
         return None
-    noun = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)",
-                  "", copular['host'], count=1)
-    noun = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", noun, count=1)
+    noun = _feeling_predicate_host(copular['host'])
     if _FEELING_RE.fullmatch(noun) and not noun.endswith("い"):
         return copular['host'], copular['ending']
     return None
 
 
-def _detached_feeling_finite_surface(source, *, allow_explanatory=False, allow_copular=False):
+def _detached_feeling_finite_surface(source, *, allow_explanatory=False, allow_copular=False,
+                                     allow_medial=False):
     """Address an explicitly SELF-owned feeling to its original speaker.
 
-    Only the leading pronoun changes perspective; its particle, predicate,
-    polarity and tense remain intact. Callers prove the complete source and
-    current-user ownership before using this surface.
+    A leading pronoun, or the single bounded medial owner when enabled,
+    changes perspective at its original position. Its particle, predicate,
+    polarity and tense remain intact; callers prove current-user ownership.
     """
     finite = re.sub(r"(?<=[い])です$|(?<=かった)です$", "", source)
     finite = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?=には|にも|は|も)",
                     "あなた", finite, count=1)
+    medial = _medial_feeling_owner(source) if allow_medial else None
+    if medial is not None:
+        finite = finite[:medial.start('self')] + "あなた" + finite[medial.end('self'):]
     if allow_copular:
         copular = _detached_feeling_copula_parts(source)
         if copular is not None:
@@ -10183,8 +10215,7 @@ def _detached_feeling_finite_surface(source, *, allow_explanatory=False, allow_c
     if allow_explanatory:
         explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", finite)
         if explanatory is not None:
-            host = re.sub(r"^あなた(?:には|にも|は|も)", "", explanatory['predicate'], count=1)
-            host = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", host, count=1)
+            host = _feeling_predicate_host(explanatory['predicate'])
             noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)", host)
             adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
             noun_proven = (noun is not None and _FEELING_RE.fullmatch(noun[1])
@@ -10223,7 +10254,7 @@ def _detached_feeling_source_parts(move, plan, resolver):
         return None
     index = {n.nucleus_id: n for n in plan.nuclei}
     source = final_reception_source_anchor_text(nucleus.nucleus_id, index, resolver)
-    finite = _detached_feeling_finite_surface(source, allow_explanatory=True, allow_copular=True)
+    finite = _detached_feeling_finite_surface(source, allow_explanatory=True, allow_copular=True, allow_medial=True)
     copular = _detached_feeling_copula_parts(source)
     predicate = finite.removesuffix("のだ") if finite is not None else ""
     # The helper has proved this nominal explanation's attributive な.
@@ -10250,7 +10281,8 @@ def _detached_feeling_source_parts(move, plan, resolver):
                 "prior_answer_time": "先の回答時点では"}[times[0]]
     else:
         return None
-    if re.match(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)", source):
+    if (re.match(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)", source)
+        or _medial_feeling_owner(source) is not None):
         time = {"その時は": "その時、", "回答した時点では": "回答した時点で、",
                 "先の回答時点では": "先の回答時点で、"}[time]
     return time, finite
@@ -10277,11 +10309,10 @@ def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
     index = {n.nucleus_id: n for n in plan.nuclei}
     event_text, source = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
                           for n in (event, answer))
-    finite = _detached_feeling_finite_surface(source)
+    finite = _detached_feeling_finite_surface(source, allow_medial=True)
     explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", finite)
     if explanatory is not None:
-        host = re.sub(r"^あなた(?:には|にも|は|も)", "", explanatory['predicate'], count=1)
-        host = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", host, count=1)
+        host = _feeling_predicate_host(explanatory['predicate'])
         adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
         if adjective is not None and (
             _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
