@@ -3014,6 +3014,12 @@ def read_received_discourse(raw, move, plan, resolver, selected_subjective_input
             # Cut only at the unique next source-owned event above; an
             # identical connective inside an answer remains part of it.
             finite = part[:-1]
+            # A noun before additive し needs its finite copula だ. Treating
+            # な as equivalent here would misread 不安なし as 不安です.
+            if finite.endswith("な"):
+                return None
+            if finite.endswith("だ"):
+                finite = finite[:-1] + "な"
         elif part.endswith("つながらず"):
             finite = part[:-5] + "つながらなかった"
         elif part.endswith("感じ"):
@@ -3273,6 +3279,11 @@ def _restore_thread_finite_answer(actual, source):
     of the author. The source owns every other character, including degree,
     particles, negation and tense; no substring can discharge that duty.
     """
+    for ending, grammar in (("な", "COPULAR_PRESENT_POLITE"),
+                            ("だった", "COPULAR_PAST_POLITE")):
+        if actual.endswith(ending) and restore_thread_answer_nominal(
+                actual[:-len(ending)], grammar) == source:
+            return source
     polite = re.fullmatch(r"(?P<predicate>.+(?:い|かった))です", source)
     predicate = polite['predicate'] if polite else source
     owner = re.match(r"(?P<self>わたし|ぼく|おれ|私|僕|俺|自分)"

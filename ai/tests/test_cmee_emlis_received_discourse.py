@@ -205,11 +205,11 @@ def test_prior_answer_revision_keeps_its_time_and_withdrawn_event_stays_absent()
 
 @pytest.mark.parametrize('text', ['今は不安です。', '今は怖いです。', '今は不安だ。',
                                   '今は私は少し怖くない。', '今は私も怖い。', '今は自分は怖い。'])
-def test_temporal_adjective_uses_finite_clause_and_noun_keeps_existing_path(text):
+def test_temporal_adjective_and_polite_noun_use_finite_clause(text):
     context = actual(request=answered(text, initial()))
     follow = context[0].artifact.reception
     assert 'ですのですね' not in follow and 'だのですね' not in follow
-    if text in {'今は不安です。', '今は不安だ。'}:
+    if text == '今は不安だ。':
         assert '回答した時点では' not in follow
     else:
         assert '褒められた時は嬉しくなく、回答した時点では' in follow

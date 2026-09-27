@@ -9680,6 +9680,23 @@ def _source_grounded_received_discourse(realization) -> str | None:
             continue
         answer_slot, grammar, when = int(answer_code[0]), *answer_code[1:]
         source = fragments[answer_slot]
+        if grammar in {"COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE"}:
+            nominal = _thread_answer_nominal_morphology(source)
+            if nominal is None or nominal[0] != grammar:
+                return None
+            # The admitted bare noun has its own copula tense, independent
+            # of whether this is an original-occasion or later answer.
+            time = {"original_occasion": "", "answer_time": "回答した時点では",
+                    "prior_answer_time": "先の回答時点では"}.get(when)
+            if time is None:
+                return None
+            original = (event + "時は" + negative[1] + "、"
+                        if negative is not None else event + (
+                            "時は、" if when == "original_occasion" else "ことについて、"))
+            copula = "だ" if grammar == "COPULAR_PRESENT_POLITE" else "だった"
+            parts.append(original + time + nominal[1] + copula)
+            separate_time_scopes = True
+            continue
         finite = _detached_feeling_finite_surface(source)
         # A later answer is a different time, not a revised past emotion.
         # Preserve it explicitly rather than inferring a causal past reading.
@@ -9758,7 +9775,9 @@ def _source_grounded_received_discourse(realization) -> str | None:
             coordinated.append(part[:-3] + "く")
         else:
             return None
-    text = "、".join((*coordinated, parts[-1] + "のですね"))
+    # A present noun takes だ before additive し, but な before explanatory の.
+    terminal = parts[-1][:-1] + "な" if parts[-1].endswith("だ") else parts[-1]
+    text = "、".join((*coordinated, terminal + "のですね"))
     # Avoid ambiguous event attachment, including an event repeated inside
     # another event's answer. The original grammar remains available there.
     if any(text.count("、" + fragments[int(code.split(":")[1])]) != 1

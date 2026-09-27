@@ -172,18 +172,23 @@ def test_saved_finite_answer_revision_withdrawal_and_reopen(qcase, qdb, monkeypa
 
 
 @pytest.mark.parametrize('reply,reason', [
-    ('今は不安です。', 'emlis_refined_body_unavailable'),
+    ('今は不安です。', 'emlis_thread_body_generated'),
     ('今は私にも嬉しいです。', 'answer_syntax_unsupported'),
     ('今は友人には嬉しいです。', 'answer_syntax_unsupported'),
     ('今は私が嬉しいです。', 'emlis_thread_body_generated'),
     ('今は私は僕には嬉しいです。', 'emlis_thread_body_generated'),
     ('その時は私は私には怖かったです。', 'emlis_thread_body_generated'),
 ])
-def test_finite_answer_keeps_unproven_source_on_existing_path(reply, reason):
+def test_finite_answer_accepts_proven_noun_and_keeps_unproven_boundaries(reply, reason):
     from cocolon_meaning_experience_engine import MeaningExperienceEngine
     outcome = MeaningExperienceEngine().generate(advance(begin(), reply))
     assert outcome.reason_codes == (reason,)
-    if outcome.artifact is not None:
+    if reply == '今は不安です。':
+        context = actual(request=advance(begin(), reply))
+        follow = outcome.artifact.reception
+        assert '回答した時点では不安だし' in follow
+        assert inverse(context, follow, without_author=True).passed
+    elif outcome.artifact is not None:
         # These remain on the previous nominal path, including its known
         # surface limitations; they do not acquire a new finite reading.
         assert '受け止めています' in outcome.artifact.reception
@@ -200,3 +205,116 @@ def test_partial_self_conversion_cannot_become_a_new_finite_reading(occasion):
               '褒められた時は嬉しくなく、回答した時点ではあなたは私には怖かったし、'
               '誘われたのに、悲しさを感じたし、頼まれたのに、寂しさを感じたのですね。')
     assert not inverse(context, follow, without_author=True).passed
+
+
+@pytest.mark.parametrize('occasion', ['今は', 'その時は'])
+@pytest.mark.parametrize('copula', ['です', 'でした'])
+@pytest.mark.parametrize('preceding', [None, 0, 1, 2])
+def test_copular_answer_retains_tense_event_and_reactions(occasion, copula, preceding):
+    single = preceding is None
+    initial = begin('褒められたのに、嬉しくなかった。' if single else MEMO)
+    request = initial
+    for reply in ('その時は怖かった。', '今は重い。')[:preceding or 0]:
+        request = advance(request, reply)
+    request = advance(request, occasion + '不安' + copula + '。')
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    target = ('褒められた', '誘われた', '頼まれた')[preceding or 0]
+    final = single or preceding == 2
+    predicate = '不安だった' if copula == 'でした' else '不安な' if final else '不安だ'
+    assert predicate + ('のですね' if final else 'し') in follow
+    assert target + '時は' in follow and '嬉しくなく' in follow
+    if not single:
+        assert '悲し' in follow and '寂し' in follow
+        assert all(follow.count(event) == 1 for event in ('褒められた', '誘われた', '頼まれた'))
+    if occasion == '今は':
+        assert '回答した時点では' + predicate in follow
+    assert request.current_input_bundle == initial.current_input_bundle
+    assert '受け止めています' not in follow and 'だのですね' not in follow
+    assert inverse(context, follow, without_author=True).passed
+    changed_tense = '不安な' if final else '不安だ'
+    if copula == 'です':
+        changed_tense = '不安だった'
+    corruptions = [
+        follow.replace(predicate, changed_tense, 1),
+        follow.replace('不安', '安心', 1),
+        follow.replace('不安', '友人は不安', 1),
+        follow.replace('不安', '少し不安', 1),
+        follow.replace('嬉しくなく', '嬉しく', 1),
+        follow.replace(target, target + 'おかげで', 1),
+    ]
+    if occasion == '今は':
+        corruptions.append(follow.replace('回答した時点では' + predicate, 'その時は' + predicate, 1))
+    else:
+        corruptions.append(follow.replace(predicate, '回答した時点では' + predicate, 1))
+    if not single:
+        corruptions.append(follow.replace(target, '別の出来事', 1))
+    if copula == 'です':
+        # な is attributive only: 不安なし must not mean 不安だし.
+        corruptions.append(follow.replace(predicate, '不安だ' if final else '不安な', 1))
+    for changed in corruptions:
+        assert changed != follow
+        assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('occasion', ['今は', 'その時は'])
+@pytest.mark.parametrize('copula', ['です', 'でした'])
+def test_copular_answer_keeps_event_after_original_reaction_withdrawal(occasion, copula):
+    request = advance(advance(begin(), occasion + '不安' + copula + '。'),
+                      '「嬉しくなかった」は誤りです。')
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    assert '褒められた' in follow and '嬉し' not in follow
+    assert '不安' in follow and '悲しさ' in follow and '寂しさ' in follow
+    assert inverse(context, follow, without_author=True).passed
+    changed = follow.replace('褒められた', '誘われた', 1)
+    assert changed != follow and not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('occasion', ['今は', 'その時は'])
+def test_copular_grammar_preserves_another_admitted_noun(occasion):
+    context = actual(request=advance(begin(), occasion + 'もやもやでした。'))
+    follow = context[0].artifact.reception
+    assert 'もやもやだったし' in follow and '嬉しくなく' in follow
+    assert '悲しさ' in follow and '寂しさ' in follow
+    assert inverse(context, follow, without_author=True).passed
+    changed = follow.replace('もやもやだったし', 'もやもやだし')
+    assert changed != follow and not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('occasion', ['今は', 'その時は'])
+@pytest.mark.parametrize('old,new', [('不安です', '不安でした'), ('不安でした', '不安です')])
+def test_saved_copular_answer_correction_withdrawal_and_authorless_reopen(
+        qcase, qdb, monkeypatch, occasion, old, new):
+    user, parent, service = qcase
+    first = run(service.start(user, parent))
+    current = run(answer(service, user, first, occasion + old + '。'))
+    assert current['current_observation'] is not None
+    with monkeypatch.context() as read:
+        read.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read rendered'))
+        assert run(service.get(user, parent)) == current
+        assert run(service.start(user, parent)) == current
+    current = run(cont(service, user, current, 'continue-copula-correction'))
+    current = run(answer(service, user, current,
+        f'「{old}」ではなく「{new}」です。', 'correct-copula'))
+    body = current['current_observation']['text']
+    predicate = '不安だった' if new.endswith('でした') else '不安だ'
+    assert predicate + 'し' in body and old not in body
+    assert '嬉しくなく' in body and '悲しさ' in body and '寂しさ' in body
+    if occasion == '今は':
+        assert '先の回答時点では' + predicate in body
+    else:
+        assert '褒められた時は嬉しくなく、' + predicate in body
+    assert current['original'] == first['original']
+    with monkeypatch.context() as read:
+        read.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read rendered'))
+        assert run(service.get(user, parent)) == current
+        assert run(service.start(user, parent)) == current
+    current = run(cont(service, user, current, 'continue-copula-withdrawal'))
+    current = run(answer(service, user, current, f'「{new}」は誤りです。', 'withdraw-copula'))
+    assert current['current_observation']['text'] == first['current_observation']['text']
+    assert current['original'] == first['original']
+    with monkeypatch.context() as read:
+        read.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read rendered'))
+        assert run(service.get(user, parent)) == current
+        assert run(service.start(user, parent)) == current
