@@ -3161,7 +3161,8 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                                   else temporal["felt"] + "かった" if temporal["felt"] is not None else None)
                 actual_time = {"回答した時点では": "answer_time",
                                "先の回答時点では": "prior_answer_time"}[temporal["time"]]
-                if ((temporal["event"], actual_feeling, temporal["answer"])
+                actual_answer = _restore_thread_finite_answer(temporal["answer"], answer_source)
+                if ((temporal["event"], actual_feeling, actual_answer)
                     != (event_source, feeling_source, answer_source)
                     or times != {actual_time}):
                     return None

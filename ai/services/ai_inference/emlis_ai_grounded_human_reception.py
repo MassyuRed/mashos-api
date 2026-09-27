@@ -9699,7 +9699,7 @@ def _source_grounded_received_discourse(realization) -> str | None:
                     "prior_answer_time": "先の回答時点では"}[when]
             original = (event + "時は" + negative[1] + "、"
                         if negative is not None else event + "ことについて、")
-            parts.append(original + time + source)
+            parts.append(original + time + _detached_feeling_finite_surface(source))
             separate_time_scopes = True
             continue
         if grammar.startswith("PERCEIVED_"):
