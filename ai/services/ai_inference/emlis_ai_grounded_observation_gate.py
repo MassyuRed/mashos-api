@@ -3036,7 +3036,8 @@ def read_received_discourse(raw, move, plan, resolver, selected_subjective_input
         normalized_parts.append(finite + "のですね")
     normalized_parts.append(actual_parts[-1])
     normalized = "、また、".join(normalized_parts)
-    proof = _read_received_discourse_parts(normalized, move, plan, resolver, selected_subjective_input)
+    proof = _read_received_discourse_parts(normalized, move, plan, resolver, selected_subjective_input,
+                                           coordinated_prefix_count=len(actual_parts) - 1)
     if proof is None:
         return None
     intervals, base = [], 0
@@ -3054,7 +3055,8 @@ def read_received_discourse(raw, move, plan, resolver, selected_subjective_input
     return tuple(restored)
 
 
-def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjective_input=None):
+def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjective_input=None,
+                                  *, coordinated_prefix_count=0):
     """Read finite event/feeling/answer roles from actual text, without replay.
 
     The response grammar may vary its acknowledgement; acceptance depends on
@@ -3086,13 +3088,14 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
         if appraisal is None or appraisal.operation not in {"RECEIVE_AS_MATERIAL", "PRESERVE_BOTH_ENDPOINTS"}:
             return None
     parts = raw[:-1].split("、また、")
-    if len(parts) != len(move.target_nucleus_ids):
+    if (len(parts) != len(move.target_nucleus_ids)
+        or not 0 <= coordinated_prefix_count < len(parts)):
         return None
     nuclei = {n.nucleus_id: n for n in plan.nuclei}
     required = set(plan.coverage_requirements.required_relation_ids)
     consumed, consumed_relations, replacements = set(), set(), []
     offset, saw_answer = 0, False
-    for event_id, part in zip(move.target_nucleus_ids, parts):
+    for part_index, (event_id, part) in enumerate(zip(move.target_nucleus_ids, parts)):
         event = nuclei[event_id]
         contrasts = tuple(r for r in plan.relations if r.relation_id in required
             and r.type == "contrast" and r.from_nucleus_id == event_id
@@ -3183,7 +3186,7 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                 actual_time = {"回答した時点では": "answer_time",
                                "先の回答時点では": "prior_answer_time"}[temporal["time"]]
                 actual_answer = _restore_thread_finite_answer(temporal["answer"], answer_source,
-                                                              copular_clause=True)
+                    copular_clause=True, shared_explanatory_ending=part_index >= coordinated_prefix_count)
                 if ((temporal["event"], actual_feeling, actual_answer)
                     != (event_source, feeling_source, answer_source)
                     or times != {actual_time}):
@@ -3216,7 +3219,7 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                                   if finite["feeling"] is not None else
                                   finite["positive"] + "かった" if finite["positive"] is not None else None)
                 actual_answer = _restore_thread_finite_answer(finite["answer"], answer_source,
-                                                              copular_clause=True)
+                    copular_clause=True, shared_explanatory_ending=part_index >= coordinated_prefix_count)
                 if actual_answer != answer_source:
                     return None
             else:
@@ -3275,7 +3278,8 @@ def _received_discourse_equivalent(actual, canonical, reception_plan, clauses, p
     return True
 
 
-def _restore_thread_finite_answer(actual, source, *, copular_clause=False):
+def _restore_thread_finite_answer(actual, source, *, copular_clause=False,
+                                   shared_explanatory_ending=False):
     """Restore an admitted answer from its complete attributive clause.
 
     Parse the actual recipient subject and terminal inflection independently
@@ -3298,6 +3302,23 @@ def _restore_thread_finite_answer(actual, source, *, copular_clause=False):
             return None
         restored = owner.group() + restored[len(recipient):]
     if copular_clause and polite is None:
+        explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", source)
+        if explanatory is not None:
+            host = explanatory['predicate'][owner.end():] if owner else explanatory['predicate']
+            host = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", host, count=1)
+            noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)", host)
+            adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
+            noun_proven = (noun is not None and _FEELING_RE.fullmatch(noun[1])
+                           and not noun[1].endswith("い"))
+            adjective_proven = (adjective is not None and (
+                _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+                or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])))
+            if noun_proven or adjective_proven:
+                # Only a real acknowledged ending can share its の. A
+                # normalized intermediate clause must still contain the
+                # source explanation (のだし -> のな + のですね).
+                suffix = "" if shared_explanatory_ending else "のな"
+                return source if restored == explanatory['predicate'] + suffix else None
         copular = re.fullmatch(r"(?P<host>.+?)(?P<ending>でした|だった|です|だ)", source)
         if copular is not None:
             noun = copular['host'][owner.end():] if owner else copular['host']

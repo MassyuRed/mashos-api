@@ -422,6 +422,14 @@ def test_unproven_copula_host_does_not_gain_a_new_finite_reading(source, invalid
     context = actual(request=advance(begin(), '今は' + source + '。'))
     follow = ('褒められた時は嬉しくなく、回答した時点では' + invalid + 'だし、'
               '誘われたのに、悲しさを感じたし、頼まれたのに、寂しさを感じたのですね。')
+    if source == '私は不安なのです':
+        # This explicit explanation now has its own proven finite reading.
+        # Its の must remain visible in an intermediate clause.
+        assert context[0].artifact.reception == follow
+        assert inverse(context, follow, without_author=True).passed
+        assert not inverse(context, follow.replace('不安なのだし', '不安だし'),
+                           without_author=True).passed
+        return
     assert not inverse(context, follow, without_author=True).passed
     if source != '私は不安だそうです':
         # Existing nominal fallbacks remain available, with their known
@@ -479,3 +487,164 @@ def test_saved_scoped_copular_revision_withdrawal_and_authorless_reopen(
         read.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read rendered'))
         assert run(service.get(user, parent)) == current
         assert run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('memo', ['褒められたのに、嬉しくなかった。', MEMO])
+@pytest.mark.parametrize('occasion', ['今は', 'その時は'])
+@pytest.mark.parametrize('source,visible,other_tense', [
+    ('私は不安なのです', 'あなたは不安な', 'あなたは不安だった'),
+    ('私も少し不安なのです', 'あなたも少し不安な', 'あなたも少し不安だった'),
+    ('私には不安だったのです', 'あなたには不安だった', 'あなたには不安な'),
+    ('怖いのです', '怖い', '怖かった'),
+    ('私は怖かったのです', 'あなたは怖かった', 'あなたは怖い'),
+    ('私は怖くないのです', 'あなたは怖くない', 'あなたは怖くなかった'),
+    ('私は怖くなかったのです', 'あなたは怖くなかった', 'あなたは怖くない'),
+    ('私は不安なのだ', 'あなたは不安な', 'あなたは不安だった'),
+    ('私は不安ではないのです', 'あなたは不安ではない', 'あなたは不安ではなかった'),
+    ('私は不安ではなかったのです', 'あなたは不安ではなかった', 'あなたは不安ではない'),
+])
+def test_explanatory_answer_preserves_complete_source_in_finite_prose(
+        memo, occasion, source, visible, other_tense):
+    initial = begin(memo)
+    request = advance(initial, occasion + source + '。')
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    final = memo != MEMO
+    ending = 'のですね' if final else 'のだし'
+    assert visible + ending in follow
+    assert '褒められた時は嬉しくなく、' in follow
+    assert 'ですこと' not in follow and '受け止めています' not in follow
+    assert 'なのなのですね' not in follow
+    assert request.current_input_bundle == initial.current_input_bundle
+    if occasion == '今は':
+        assert '回答した時点では' + visible + ending in follow
+    else:
+        assert '褒められた時は嬉しくなく、' + visible + ending in follow
+    if not final:
+        assert all(follow.count(event) == 1 for event in ('褒められた', '誘われた', '頼まれた'))
+        assert '悲しさ' in follow and '寂しさ' in follow
+    assert inverse(context, follow, without_author=True).passed
+    plain = visible[:-1] + ('' if final else 'だ') if visible.endswith('な') else visible
+    corruptions = [
+        follow.replace(visible + ending, other_tense + ending, 1),
+        follow.replace(visible + ending, plain + ('ですね' if final else 'し'), 1),
+        follow.replace(visible + ending, visible + 'のな' + ending, 1),
+        follow.replace('嬉しくなく', '嬉しく', 1),
+        follow.replace('褒められた', '誘われた', 1),
+        follow.replace('褒められた', '褒められたおかげで', 1),
+        follow.replace('あなた', '友人', 1) if 'あなた' in follow else follow.replace(visible, '友人は' + visible, 1),
+        follow.replace('少し', '', 1) if '少し' in follow else follow.replace(visible, '少し' + visible, 1),
+        follow.replace('回答した時点では', '先の回答時点では', 1)
+        if occasion == '今は' else follow.replace(visible, '回答した時点では' + visible, 1),
+    ]
+    if 'くない' in visible:
+        corruptions.append(follow.replace('くない', 'い', 1))
+    elif 'くなかった' in visible:
+        corruptions.append(follow.replace('くなかった', 'かった', 1))
+    elif 'ではなかった' in visible:
+        corruptions.append(follow.replace('ではなかった', 'だった', 1))
+    elif 'ではない' in visible:
+        corruptions.append(follow.replace('ではない', 'な', 1))
+    if 'あなたは' in follow:
+        corruptions.append(follow.replace('あなたは', 'あなたも', 1))
+    if 'あなたも' in follow:
+        corruptions.append(follow.replace('あなたも', 'あなたは', 1))
+    if 'あなたには' in follow:
+        corruptions.append(follow.replace('あなたには', 'あなたにも', 1))
+    for changed in corruptions:
+        assert changed != follow
+        assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('preceding', [1, 2])
+@pytest.mark.parametrize('source,visible', [
+    ('私は不安なのです', 'あなたは不安な'),
+    ('私には怖くなかったのです', 'あなたには怖くなかった'),
+])
+def test_explanatory_answer_keeps_intermediate_and_final_attachment(preceding, source, visible):
+    request = begin()
+    for reply in ('その時は怖かった。', '今は重い。')[:preceding]:
+        request = advance(request, reply)
+    context = actual(request=advance(request, '今は' + source + '。'))
+    follow = context[0].artifact.reception
+    ending = 'のですね' if preceding == 2 else 'のだし'
+    assert '回答した時点では' + visible + ending in follow
+    assert all(follow.count(event) == 1 for event in ('褒められた', '誘われた', '頼まれた'))
+    assert inverse(context, follow, without_author=True).passed
+    target = ('誘われた', '頼まれた')[preceding - 1]
+    assert not inverse(context, follow.replace(target, '別の出来事', 1),
+                       without_author=True).passed
+    changed = follow.replace(visible + ending, visible + 'のな' + ending, 1)
+    assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('source,original,changed', [
+    ('私は不安です', 'あなたは不安だし', 'あなたは不安なのだし'),
+    ('私は怖かったです', 'あなたは怖かったし', 'あなたは怖かったのだし'),
+    ('私は不安なのだった', 'あなたは不安なのだったし', 'あなたは不安だったのだし'),
+])
+def test_explanation_cannot_be_added_or_move_the_outer_past(source, original, changed):
+    context = actual(request=advance(begin(), '今は' + source + '。'))
+    follow = context[0].artifact.reception
+    assert original in follow
+    assert inverse(context, follow, without_author=True).passed
+    assert not inverse(context, follow.replace(original, changed, 1),
+                       without_author=True).passed
+
+
+@pytest.mark.parametrize('source,invalid', [
+    ('私は私には不安なのです', 'あなたは私には不安なのだし'),
+    ('少し私は不安なのです', '少し私は不安なのだし'),
+    ('私は不安なのだそうです', 'あなたは不安なのだし'),
+])
+def test_unproven_explanation_cannot_erase_subject_or_hearsay(source, invalid):
+    context = actual(request=advance(begin(), '今は' + source + '。'))
+    follow = ('褒められた時は嬉しくなく、回答した時点では' + invalid + '、'
+              '誘われたのに、悲しさを感じたし、頼まれたのに、寂しさを感じたのですね。')
+    assert not inverse(context, follow, without_author=True).passed
+
+
+@pytest.mark.parametrize('occasion', ['今は', 'その時は'])
+def test_explanatory_answer_keeps_event_after_original_reaction_withdrawal(occasion):
+    request = advance(advance(begin(), occasion + '私は少し不安なのです。'),
+                      '「嬉しくなかった」は誤りです。')
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    assert '褒められた' in follow and '嬉し' not in follow
+    assert 'あなたは少し不安なのだし' in follow
+    assert '悲しさ' in follow and '寂しさ' in follow
+    assert inverse(context, follow, without_author=True).passed
+    assert not inverse(context, follow.replace('不安なのだし', '不安だし', 1),
+                       without_author=True).passed
+
+
+@pytest.mark.parametrize('occasion', ['今は', 'その時は'])
+@pytest.mark.parametrize('old,new,visible', [
+    ('私は不安なのです', '私も少し不安だったのです', 'あなたも少し不安だったのだ'),
+    ('私には怖いのです', '私は怖くなかったのです', 'あなたは怖くなかったのだ'),
+])
+def test_saved_explanatory_revision_withdrawal_and_authorless_reopen(
+        qcase, qdb, monkeypatch, occasion, old, new, visible):
+    user, parent, service = qcase
+    first = run(service.start(user, parent))
+    current = run(answer(service, user, first, occasion + old + '。'))
+    assert current['current_observation'] is not None
+    for stage in ('answer', 'correction', 'withdrawal'):
+        if stage == 'correction':
+            current = run(cont(service, user, current, 'continue-explanatory-correction'))
+            current = run(answer(service, user, current,
+                f'「{old}」ではなく「{new}」です。', 'correct-explanatory'))
+            body = current['current_observation']['text']
+            assert visible + 'し' in body and old not in body
+            assert '嬉しくなく' in body and '悲しさ' in body and '寂しさ' in body
+            assert ('先の回答時点では' + visible if occasion == '今は'
+                    else '褒められた時は嬉しくなく、' + visible) in body
+        elif stage == 'withdrawal':
+            current = run(cont(service, user, current, 'continue-explanatory-withdrawal'))
+            current = run(answer(service, user, current, f'「{new}」は誤りです。', 'withdraw-explanatory'))
+            assert current['current_observation']['text'] == first['current_observation']['text']
+        assert current['original'] == first['original']
+        with monkeypatch.context() as read:
+            read.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read rendered'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current

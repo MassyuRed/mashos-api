@@ -9689,6 +9689,21 @@ def _source_grounded_received_discourse(realization) -> str | None:
             copular_predicate = nominal[1] + (
                 "だ" if grammar == "COPULAR_PRESENT_POLITE" else "だった")
         elif grammar == "FINITE":
+            explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", finite)
+            if explanatory is not None:
+                host = re.sub(r"^あなた(?:には|にも|は|も)", "", explanatory["predicate"], count=1)
+                host = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", host, count=1)
+                noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)", host)
+                adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
+                noun_proven = (noun is not None and _FEELING_RE.fullmatch(noun[1])
+                               and not noun[1].endswith("い"))
+                adjective_proven = (adjective is not None and (
+                    _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+                    or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])))
+                if noun_proven or adjective_proven:
+                    # Keep the explanatory の and every inner tense/polarity
+                    # marker. Only its outer polite copula becomes finite.
+                    copular_predicate = explanatory["predicate"] + "のだ"
             # Person/degree-bearing nouns keep their existing FINITE source
             # proof. Inflect only its noun copula, not explanatory のです,
             # hearsay そうです, or an arbitrary verb ending in だ.
@@ -9789,8 +9804,11 @@ def _source_grounded_received_discourse(realization) -> str | None:
             coordinated.append(part[:-3] + "く")
         else:
             return None
-    # A present noun takes だ before additive し, but な before explanatory の.
-    terminal = parts[-1][:-1] + "な" if parts[-1].endswith("だ") else parts[-1]
+    # A source explanation shares its の with the final acknowledgement;
+    # it remains explicit as のだ before an intermediate additive し.
+    # Ordinary present nouns instead take な before the final の.
+    terminal = (parts[-1][:-2] if parts[-1].endswith("のだ") else
+                parts[-1][:-1] + "な" if parts[-1].endswith("だ") else parts[-1])
     text = "、".join((*coordinated, terminal + "のですね"))
     # Avoid ambiguous event attachment, including an event repeated inside
     # another event's answer. The original grammar remains available there.
