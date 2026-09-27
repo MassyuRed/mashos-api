@@ -40,6 +40,7 @@ from emlis_ai_grounded_human_reception import (
     final_reception_source_anchor_text,
 )
 from emlis_ai_grounded_observation_plan import (
+    _FEELING_RE,
     FINAL_STAGE1_GROUNDED_PROJECTION_VERSION,
     GroundedObservationPlan,
     is_grounded_positive_feeling,
@@ -3181,7 +3182,8 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                                   else temporal["felt"] + "かった" if temporal["felt"] is not None else None)
                 actual_time = {"回答した時点では": "answer_time",
                                "先の回答時点では": "prior_answer_time"}[temporal["time"]]
-                actual_answer = _restore_thread_finite_answer(temporal["answer"], answer_source)
+                actual_answer = _restore_thread_finite_answer(temporal["answer"], answer_source,
+                                                              copular_clause=True)
                 if ((temporal["event"], actual_feeling, actual_answer)
                     != (event_source, feeling_source, answer_source)
                     or times != {actual_time}):
@@ -3213,7 +3215,8 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                 actual_feeling = (finite["feeling"] + "くなかった"
                                   if finite["feeling"] is not None else
                                   finite["positive"] + "かった" if finite["positive"] is not None else None)
-                actual_answer = _restore_thread_finite_answer(finite["answer"], answer_source)
+                actual_answer = _restore_thread_finite_answer(finite["answer"], answer_source,
+                                                              copular_clause=True)
                 if actual_answer != answer_source:
                     return None
             else:
@@ -3272,7 +3275,7 @@ def _received_discourse_equivalent(actual, canonical, reception_plan, clauses, p
     return True
 
 
-def _restore_thread_finite_answer(actual, source):
+def _restore_thread_finite_answer(actual, source, *, copular_clause=False):
     """Restore an admitted answer from its complete attributive clause.
 
     Parse the actual recipient subject and terminal inflection independently
@@ -3294,6 +3297,19 @@ def _restore_thread_finite_answer(actual, source):
         if not restored.startswith(recipient):
             return None
         restored = owner.group() + restored[len(recipient):]
+    if copular_clause and polite is None:
+        copular = re.fullmatch(r"(?P<host>.+?)(?P<ending>でした|だった|です|だ)", source)
+        if copular is not None:
+            noun = copular['host'][owner.end():] if owner else copular['host']
+            noun = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", noun, count=1)
+            # Only proven noun copulas acquire a new inflection. Other
+            # admitted finite clauses retain their complete source match;
+            # embedded SELF and explanatory endings cannot be rewritten.
+            if _FEELING_RE.fullmatch(noun) and not noun.endswith("い"):
+                ending = "だった" if copular['ending'] in {"でした", "だった"} else "な"
+                if not restored.endswith(ending):
+                    return None
+                restored = restored[:-len(ending)] + copular['ending']
     if polite:
         restored += "です"
     return source if restored == source else None

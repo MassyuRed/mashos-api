@@ -8899,3 +8899,57 @@ rootは原入力・回答列と最終の合成本文30状態を全文確認し�
 再利用する検査は既存`ai/tests/test_cmee_emlis_answer_attributive.py`と`test_cmee_emlis_received_discourse.py`へ保存した。主要再実行は前節の6ファイル/identity選択に加え、`test_cmee_emlis_q3_thread.py::test_polite_answer_nominal_does_not_remove_owner_negation_or_degree`、`::test_polite_feeling_nominal_independently_restores_full_source_and_time`、`test_cmee_emlis_retained_failure_recovery.py::test_surviving_pairs_are_checked_after_withdrawal_or_replacement`を対象にする。環境指定は前節と同じ`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<@electric-sql/pgliteのpath>`。今回もPython3.12.14／pytest9.1.1／pydantic2.13.5／FastAPI0.141.1／Node24.19.0／PGlite0.5.8であり、過去の固定環境と同一とは扱わない。旧必須59ファイル、Q3全950件、同じ初回100件、継承保存337ケースの全量は今回再実行していない。
 
 既認定の裸の名詞コピュラ経路の未提供は対象範囲で解消した。一方、「私は不安です」「不安だ」等が別の有限source経路から「ですこと／だこと」を含むfallbackへ戻る文章不成立、未認定の「私にも」、複数出来事の反復、矛盾する回答の読み心地、長文の意味選択不足は残る。次の一作業は、既認定の本人主語・修飾を含む名詞回答がこの別経路で崩れる共通原因を確認すること。新しい名詞語彙の網羅を次作業へすり替えない。**STRUCTURE_MAP_DELTA_NONE**：既存Human Reception・独立Gate内のみの補正で、owner・route・質問・保存schema・公開API・DB・RN・他中核・品質閾値・全体構造は不変。**全体48%・商品合格0/3／NOT_CLEAR／default OFF／Draft・open・unmerged**。Ready・merge・deploy・enable・実DB・実機・実課金・外部生成AI・正式商品合格は行っていない。
+
+---
+
+### 2026-09-27 継続 — 本人主語・程度を含む名詞回答の不自然な名詞化を直す
+
+**主分類：TECHNICAL_CREDIT。** 開始時のAPI PR3 `3fc8253f2dd27f69a584134a5b42c51897cfc369`、Cocolon PR30 `9f3669fc8b777b2ded1d627c236a742ccf38acba`を再取得した。前回txtの与格訂正は既に反映済みであり、現行引継ぎ末尾に残る本人主語・修飾付き名詞の経路を今回の対象とした。必須前提・恒久incident、アプリ全体図・国家システム図、両repoの全ファイル一覧と既存地図、current_structure、9/26 weekly §5.1–5.9を確認した。現行配分はWork使用可能時Emlis／回復待ちProでPieceで、過去の30%上限を再適用しない。System Contextの標準prepareは浅いcheckoutの祖先関係の検査で停止したため、read-firstが認める原資料直接参照で進めた。生成済みcontextを最新化したとは扱わない。
+
+裸の「不安です／不安でした」は前節で対応済みだが、「私は不安です」「少し不安です」「不安だ」等は既認定のFINITE sourceとして別分岐に入り、「ですこと／だこと」を含む名詞列へ戻っていた。既存Human Reception内で、証明済みの名詞コピュラだけを同じ出来事別の有限文へ接続した。文頭本人の助詞と程度を保持し、「です／だ」は途中の「だし」・末尾の「なのですね」へ、「でした／だった」は「だったし／だったのですね」へ対応させる。回答の原時点・回答時点・訂正後の先の回答時点は、述語の現在／過去と分けて保持する。
+
+独立Observation Gateは作者を呼ばず、実本文の人称・助詞・程度・時制を戻してsource全体と比較する。新しいコピュラ復元はreceived-discourseの2呼出しだけに適用し、既存名詞fallbackの復元は変更しない。今回の名詞証明に合わない既存有限節は従来の完全一致復元を維持する。辞書・回答認定・意味選択・Move/role/order・外側品質Gateの閾値は変更していない。
+
+以下は既存公開fixture由来の合成入力「褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。」への実出力である。
+
+| 回答 | 修正前の該当部分 | 修正後のEmlis本文 |
+|---|---|---|
+| 今は私は不安です。 | 回答した時点であなたは不安ですことと… | 褒められた時は嬉しくなく、回答した時点ではあなたは不安だし、誘われたのに、悲しさを感じたし、頼まれたのに、寂しさを感じたのですね。 |
+| その時は私は不安でした。 | その時にあなたは不安でしたことと… | 褒められた時は嬉しくなく、あなたは不安だったし、誘われたのに、悲しさを感じたし、頼まれたのに、寂しさを感じたのですね。 |
+| 今は少し不安です。 | 回答した時点で少し不安ですことと… | 褒められた時は嬉しくなく、回答した時点では少し不安だし、誘われたのに、悲しさを感じたし、頼まれたのに、寂しさを感じたのですね。 |
+
+「今は私は不安です」の後に「『私は不安です』ではなく『私も少し不安でした』です」と訂正すると、実本文は「褒められた時は嬉しくなく、先の回答時点ではあなたも少し不安だったし、誘われたのに、悲しさを感じたし、頼まれたのに、寂しさを感じたのですね。」となる。その回答を撤回すると初回本文へ一致し、原反応を消さない。逆に原反応だけを撤回した場合は「褒められたことについて、回答した時点ではあなたは少し不安だし、…」となり、出来事と回答が残る。
+
+| 最終検証 | 結果と範囲 |
+|---|---|
+| 変更前の同一HEAD | 今回の環境で420件を実行し、394 PASS／26 FAIL、ERROR／SKIP 0。 |
+| 最終コード | **460件＝434 PASS／26 FAIL、ERROR／SKIP 0**。contractsの他193件は選択対象外。旧420件の成否は全件同じ。旧26失敗の内容は絶対path・行番号・実行時addressだけを除いて一致した。 |
+| 新40件 | 全PASS、460件の内数。人称/程度/時制×時点×単一/複数24、中間/末尾と「には」4、既存対象外程度語の過去2、未証明hostの新活用拒否4、原反応撤回2、保存訂正/撤回4。 |
+| 独立逆読 | 作者停止下で、時制・時点・名詞・本人/第三者・助詞・程度・否定・原反応・対象出来事・偽因果・接続/連体位置の改変を拒否した。説明・伝聞・中途/重複本人主語を新しい名詞活用として認めない。 |
+| Q3保存4件 | ローカルPGliteで回答→継続→訂正→継続→回答撤回。各更新後のGET／再startは生成停止下で保存DTOと完全一致。original DTO不変、回答撤回後本文と初回本文も一致した。実DBではない。 |
+| 本文読了 | rootは原回答・最終合成本文16状態（直接8、原反応撤回2、保存2系列×回答/訂正/撤回6）を全文確認。直接8の前後全文比較は5変更・3不変。意味認定されない否定名詞・一部与格名詞と、重複本人主語の不自然なfallbackは従来どおり残る。 |
+
+既存received-discourseの同一入力「今は不安だ」1実行ケースだけ、旧名詞fallback期待から元反応・回答時点・本人視点・独立逆読を守る有限文期待へ更新した。旧26失敗の入力・assertは不変。現行source由来のowner identity fixtureのみ再算出し、その専用検査も460件に含めた。歴史的な凍結証跡・採点基準は変更していない。
+
+途中候補では、新しい復元を既存名詞fallbackにも適用して重複主語の従来本文が失われたため、適用呼出しを限定した。さらにread-onlyレビューの指摘を受け、「今は私は少しだけ不安だった」「今はやや不安だった」が旧HEADでは提供されるのに途中候補では逆読エラーとなることを実測した。今回の名詞証明外は従来の完全一致復元へ戻し、2件の回帰検査で保護した。追加test挿入時に既存保存testの後半が移動し3件がNameErrorとなった編集ミスも、元testをHEADから戻して追加分を末尾へ置き直した。最終117件の連体化検査と最終460件で再確認済みであり、途中の失敗を成功へ換算していない。再レビューで残る具体的な修正必須事項はなかった。
+
+実行環境はPython3.12.14／pytest9.1.1／pydantic2.13.5／FastAPI0.141.1／httpx0.28.1／Node24.19.0／PGlite0.5.8。production依存ファイルは変更していない。再実行はAPI rootで `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<installed-pglite-module>` を指定し、以下を実行する。
+
+```sh
+python -m pytest -q \
+  ai/tests/test_cmee_emlis_answer_recipient_perspective.py \
+  ai/tests/test_cmee_emlis_answer_attributive.py \
+  ai/tests/test_cmee_emlis_q1_thread.py \
+  ai/tests/test_cmee_emlis_answer_correction_source_scope.py \
+  ai/tests/test_cmee_emlis_received_discourse.py \
+  ai/tests/test_cmee_v1a_i1sx_contracts.py \
+  ai/tests/test_cmee_emlis_q3_thread.py::test_polite_answer_nominal_does_not_remove_owner_negation_or_degree \
+  ai/tests/test_cmee_emlis_q3_thread.py::test_polite_feeling_nominal_independently_restores_full_source_and_time \
+  ai/tests/test_cmee_emlis_retained_failure_recovery.py::test_surviving_pairs_are_checked_after_withdrawal_or_replacement \
+  -k 'not test_cmee_v1a_i1sx_contracts or active_final_language_owner_chain_has_zero_legacy_compose_calls' \
+  --tb=short
+```
+
+旧必須59ファイル、Q3全950件、同じ初回100件、継承保存337ケースは今回全量再実行していない。本文が読めることと商品合格は分ける。「し」の反復、矛盾する原反応と回答の読み心地、長文の意味選択、重複本人主語・説明形のfallback、認定されない名詞否定や一部本人形は残件。次は、確認済みの説明形「私は不安なのです」が「不安なのですこと」へ戻る原因と、説明の意味を落とさず既存sourceへ逆復元できる範囲を、最新weeklyと実本文から一群として調べる。単純に「のです」を削らない。
+
+**STRUCTURE_MAP_DELTA_NONE**：既存Human Reception・独立Gate内の修正で、owner・route・質問・保存schema・公開API・DB・RN・他中核・品質閾値・全体構造は不変。変更はproduction2・test2・派生fixture1・本引継ぎ1。**全体48%・商品合格0/3／NOT_CLEAR／default OFF／Draft・open・unmerged**を維持する。Ready・merge・deploy・enable・実DB・実機・実課金・外部生成AI・正式商品合格は行っていない。

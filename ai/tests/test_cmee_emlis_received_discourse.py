@@ -209,12 +209,9 @@ def test_temporal_adjective_and_polite_noun_use_finite_clause(text):
     context = actual(request=answered(text, initial()))
     follow = context[0].artifact.reception
     assert 'ですのですね' not in follow and 'だのですね' not in follow
-    if text == '今は不安だ。':
-        assert '回答した時点では' not in follow
-    else:
-        assert '褒められた時は嬉しくなく、回答した時点では' in follow
-        assert '受け止めています' not in follow
-        assert '私は' not in follow and '私も' not in follow and '自分は' not in follow
+    assert '褒められた時は嬉しくなく、回答した時点では' in follow
+    assert '受け止めています' not in follow
+    assert '私は' not in follow and '私も' not in follow and '自分は' not in follow
     assert '回答した時点' in follow
     assert inverse(context, follow, without_author=True).passed
 

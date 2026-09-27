@@ -318,3 +318,164 @@ def test_saved_copular_answer_correction_withdrawal_and_authorless_reopen(
         read.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read rendered'))
         assert run(service.get(user, parent)) == current
         assert run(service.start(user, parent)) == current
+
+@pytest.mark.parametrize('memo', ['褒められたのに、嬉しくなかった。', MEMO])
+@pytest.mark.parametrize('occasion', ['今は', 'その時は'])
+@pytest.mark.parametrize('source,visible,past', [
+    ('私は不安です', 'あなたは不安', False),
+    ('私も少し不安です', 'あなたも少し不安', False),
+    ('自分は不安でした', 'あなたは不安', True),
+    ('少し不安だ', '少し不安', False),
+    ('私は不安だった', 'あなたは不安', True),
+    ('不安だ', '不安', False),
+])
+def test_scoped_copular_answer_is_finite_with_complete_meaning(memo, occasion, source, visible, past):
+    initial = begin(memo)
+    request = advance(initial, occasion + source + '。')
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    final = memo != MEMO
+    predicate = visible + ('だった' if past else 'な' if final else 'だ')
+    assert predicate + ('のですね' if final else 'し') in follow
+    assert '褒められた時は嬉しくなく、' in follow
+    assert '受け止めています' not in follow and 'ですこと' not in follow
+    assert 'だのですね' not in follow
+    if occasion == '今は':
+        assert '回答した時点では' + predicate in follow
+    else:
+        assert '褒められた時は嬉しくなく、' + predicate in follow
+    assert request.current_input_bundle == initial.current_input_bundle
+    assert inverse(context, follow, without_author=True).passed
+    if not final:
+        assert all(follow.count(event) == 1 for event in ('褒められた', '誘われた', '頼まれた'))
+        assert '悲しさ' in follow and '寂しさ' in follow
+    opposite = visible + ('な' if final else 'だ') if past else visible + 'だった'
+    corruptions = [
+        follow.replace(predicate, opposite, 1),
+        follow.replace('不安', '安心', 1),
+        follow.replace('不安', '不安ではない', 1),
+        follow.replace('嬉しくなく', '嬉しく', 1),
+        follow.replace('褒められた', '別の出来事', 1),
+        follow.replace('褒められた', '褒められたおかげで', 1),
+        follow.replace('あなた', '友人', 1) if 'あなた' in follow else follow.replace(visible, '友人は' + visible, 1),
+        follow.replace('少し', '', 1) if '少し' in follow else follow.replace('不安', '少し不安', 1),
+        follow.replace('回答した時点では', '先の回答時点では', 1)
+        if occasion == '今は' else follow.replace(predicate, '回答した時点では' + predicate, 1),
+    ]
+    if not past:
+        corruptions.append(follow.replace(predicate, visible + ('だ' if final else 'な'), 1))
+    if 'あなたは' in follow:
+        corruptions.append(follow.replace('あなたは', 'あなたも', 1))
+    elif 'あなたも' in follow:
+        corruptions.append(follow.replace('あなたも', 'あなたは', 1))
+    for changed in corruptions:
+        assert changed != follow
+        assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('preceding', [1, 2])
+@pytest.mark.parametrize('source,predicate', [
+    ('私には不安でした', 'あなたには不安だった'),
+    ('私は少し不安です', 'あなたは少し不安'),
+])
+def test_scoped_copular_answer_keeps_middle_and_last_event(preceding, source, predicate):
+    request = begin()
+    for reply in ('その時は怖かった。', '今は重い。')[:preceding]:
+        request = advance(request, reply)
+    context = actual(request=advance(request, '今は' + source + '。'))
+    follow = context[0].artifact.reception
+    final = preceding == 2
+    if source.endswith('です'):
+        predicate += 'な' if final else 'だ'
+    assert '回答した時点では' + predicate + ('のですね' if final else 'し') in follow
+    assert all(follow.count(event) == 1 for event in ('褒められた', '誘われた', '頼まれた'))
+    assert '嬉しくなく' in follow and '悲し' in follow and '寂し' in follow
+    assert inverse(context, follow, without_author=True).passed
+    target = ('誘われた', '頼まれた')[preceding - 1]
+    changed = follow.replace(target, '別の出来事', 1)
+    assert not inverse(context, changed, without_author=True).passed
+    particle = 'には' if 'あなたには' in follow else 'は'
+    changed = follow.replace('あなた' + particle, 'あなたも', 1)
+    assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('source,visible', [
+    ('私は少しだけ不安だった', 'あなたは少しだけ不安だった'),
+    ('やや不安だった', 'やや不安だった'),
+])
+def test_existing_finite_past_outside_noun_inflection_remains_readable(source, visible):
+    context = actual(request=advance(begin(), '今は' + source + '。'))
+    follow = context[0].artifact.reception
+    assert '回答した時点では' + visible + 'し' in follow
+    assert inverse(context, follow, without_author=True).passed
+    assert not inverse(context, follow.replace(visible, '不安だった', 1),
+                       without_author=True).passed
+
+
+@pytest.mark.parametrize('source,invalid', [
+    ('私は私には不安です', 'あなたは私には不安'),
+    ('少し私は不安です', '少し私は不安'),
+    ('私は不安なのです', 'あなたは不安なの'),
+    ('私は不安だそうです', 'あなたは不安だそう'),
+])
+def test_unproven_copula_host_does_not_gain_a_new_finite_reading(source, invalid):
+    context = actual(request=advance(begin(), '今は' + source + '。'))
+    follow = ('褒められた時は嬉しくなく、回答した時点では' + invalid + 'だし、'
+              '誘われたのに、悲しさを感じたし、頼まれたのに、寂しさを感じたのですね。')
+    assert not inverse(context, follow, without_author=True).passed
+    if source != '私は不安だそうです':
+        # Existing nominal fallbacks remain available, with their known
+        # surface defects; this change does not expand source admission.
+        assert '受け止めています' in context[0].artifact.reception
+
+
+@pytest.mark.parametrize('occasion', ['今は', 'その時は'])
+def test_scoped_copular_answer_keeps_event_after_original_reaction_withdrawal(occasion):
+    request = advance(advance(begin(), occasion + '私は少し不安です。'),
+                      '「嬉しくなかった」は誤りです。')
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    assert '褒められた' in follow and '嬉し' not in follow
+    assert 'あなたは少し不安だし' in follow
+    assert '悲しさ' in follow and '寂しさ' in follow
+    assert inverse(context, follow, without_author=True).passed
+    assert not inverse(context, follow.replace('褒められた', '誘われた', 1),
+                       without_author=True).passed
+
+
+@pytest.mark.parametrize('occasion', ['今は', 'その時は'])
+@pytest.mark.parametrize('old,new,visible', [
+    ('私は不安です', '私も少し不安でした', 'あなたも少し不安だった'),
+    ('私には不安でした', '私は少し不安です', 'あなたは少し不安だ'),
+])
+def test_saved_scoped_copular_revision_withdrawal_and_authorless_reopen(
+        qcase, qdb, monkeypatch, occasion, old, new, visible):
+    user, parent, service = qcase
+    first = run(service.start(user, parent))
+    current = run(answer(service, user, first, occasion + old + '。'))
+    assert current['current_observation'] is not None
+    with monkeypatch.context() as read:
+        read.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read rendered'))
+        assert run(service.get(user, parent)) == current
+        assert run(service.start(user, parent)) == current
+    current = run(cont(service, user, current, 'continue-scoped-copula-correction'))
+    current = run(answer(service, user, current,
+        f'「{old}」ではなく「{new}」です。', 'correct-scoped-copula'))
+    body = current['current_observation']['text']
+    assert visible + 'し' in body and old not in body
+    assert '嬉しくなく' in body and '悲しさ' in body and '寂しさ' in body
+    assert ('先の回答時点では' + visible if occasion == '今は'
+            else '褒められた時は嬉しくなく、' + visible) in body
+    assert current['original'] == first['original']
+    with monkeypatch.context() as read:
+        read.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read rendered'))
+        assert run(service.get(user, parent)) == current
+        assert run(service.start(user, parent)) == current
+    current = run(cont(service, user, current, 'continue-scoped-copula-withdrawal'))
+    current = run(answer(service, user, current, f'「{new}」は誤りです。', 'withdraw-scoped-copula'))
+    assert current['current_observation']['text'] == first['current_observation']['text']
+    assert current['original'] == first['original']
+    with monkeypatch.context() as read:
+        read.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read rendered'))
+        assert run(service.get(user, parent)) == current
+        assert run(service.start(user, parent)) == current

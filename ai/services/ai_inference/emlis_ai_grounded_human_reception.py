@@ -9680,11 +9680,27 @@ def _source_grounded_received_discourse(realization) -> str | None:
             continue
         answer_slot, grammar, when = int(answer_code[0]), *answer_code[1:]
         source = fragments[answer_slot]
+        finite = _detached_feeling_finite_surface(source)
+        copular_predicate = None
         if grammar in {"COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE"}:
             nominal = _thread_answer_nominal_morphology(source)
             if nominal is None or nominal[0] != grammar:
                 return None
-            # The admitted bare noun has its own copula tense, independent
+            copular_predicate = nominal[1] + (
+                "だ" if grammar == "COPULAR_PRESENT_POLITE" else "だった")
+        elif grammar == "FINITE":
+            # Person/degree-bearing nouns keep their existing FINITE source
+            # proof. Inflect only its noun copula, not explanatory のです,
+            # hearsay そうです, or an arbitrary verb ending in だ.
+            copular = re.fullmatch(r"(?P<host>.+?)(?P<ending>でした|だった|です|だ)", finite)
+            if copular is not None:
+                noun = re.sub(r"^あなた(?:には|にも|は|も)", "", copular["host"], count=1)
+                noun = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)", "", noun, count=1)
+                if _FEELING_RE.fullmatch(noun) and not noun.endswith("い"):
+                    copular_predicate = copular["host"] + (
+                        "だった" if copular["ending"] in {"でした", "だった"} else "だ")
+        if copular_predicate is not None:
+            # The admitted noun has its own copula tense, independent
             # of whether this is an original-occasion or later answer.
             time = {"original_occasion": "", "answer_time": "回答した時点では",
                     "prior_answer_time": "先の回答時点では"}.get(when)
@@ -9693,11 +9709,9 @@ def _source_grounded_received_discourse(realization) -> str | None:
             original = (event + "時は" + negative[1] + "、"
                         if negative is not None else event + (
                             "時は、" if when == "original_occasion" else "ことについて、"))
-            copula = "だ" if grammar == "COPULAR_PRESENT_POLITE" else "だった"
-            parts.append(original + time + nominal[1] + copula)
+            parts.append(original + time + copular_predicate)
             separate_time_scopes = True
             continue
-        finite = _detached_feeling_finite_surface(source)
         # A later answer is a different time, not a revised past emotion.
         # Preserve it explicitly rather than inferring a causal past reading.
         if when != "original_occasion":
