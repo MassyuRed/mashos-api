@@ -9458,3 +9458,36 @@ ai/tests/test_cmee_emlis_retained_failure_recovery.py::test_surviving_pairs_are_
 **残件と次の一群。** 中央出来事撤回の有限群は、意味を減らさず即時本文が届くところまで閉じた。観測の原文再掲、受け取りの程度付き反応の名詞化、全3出来事撤回後の非隣接同感情反復、三重一致、異なる時点表現、重複本人主語、長文の意味選択は残る。新たに補助確認したunknown回答後の出来事撤回も未提供のまま。次はこの**認定済みunknown回答を残した出来事撤回後の本文未提供**について、状態を感情へ変換せず、残存意味plan・既存作者／readerのどこで止まるかを確認する。今回の有限群を反復・撤回全体の完了とはしない。
 
 **STRUCTURE_MAP_DELTA_NONE／全体48%・商品合格0/3／NOT_CLEAR／default OFF／Draft・open・unmerged。** API production2・既存test1・現行派生fixture1・既存handoff1、Cocolon既存06追記1。file graph・route・意味/回答認定・語彙・Move順・質問・保存schema・公開API/DB/RN・他中核・品質閾値は不変。Ready・merge・deploy・enable・実DB・実機・実課金・外部生成AIは未実施。
+
+
+## 2026-09-27 JST — 認定済み不明回答を残した出来事撤回後の本文提供
+
+**TECHNICAL_CREDIT。** 前回txtとGitHubを照合し、API `46115237b8dd49bd58d7c8c41be5b79490a8874d`／Cocolon `f9c5936b3622faa3ffd8106eb2f9dd357e6da69a` から、直前の次群を実施した。前提・現行作業ルール・恒久ProductNeglect記録・全体設計・全path地図・current_structure01/04・最新weekly20260926 §5.3／採用済み§5.9を確認。省略なしremote treeはAPI2300／Cocolon1645 blobsで、全materialized fileをremote blobと照合した。System Context prepareはGit metadata不足のrepository unavailableとなり、規定の原典直接参照を使用。生成Context最新化は主張しない。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK／既存承認内LEVEL_2。今回の未完了条件は、認定済みの不明回答が残っているのに、元出来事撤回後の本文が届かないこと。Workのroot華恋を編集・実行・GitHub反映の唯一の担当とし、独立2担当が商品経路と原因／最終差分をread-only確認した。既存3owner内部、既存testへの追加、現在source由来identity fixtureと既存記録の同期に限定。新service・依存・費用・Mash操作は0。品質・質問・保存・公開境界を変更する必要があれば拡張しない。
+
+**原因と修正。** `emlis_ai_grounded_observation_plan.py::_thread_retained_reaction_groups` が不明回答を未撤回かつ単一出来事に限定し、撤回後は認定済みstate/state/uncertainを感情条件で拒否して `human_reception_withdrawal_capability_gap` となっていた。既存 `is_grounded_current_answer_uncertainty` の全証明を満たし、撤回由来markerがあり、どのrelationにも属さない回答に限り、既存の独立Moveへ渡す。撤回前の条件・回答認定・原文fragment・checkpointは変えない。
+
+二つの出来事では、その先で元の独立感情と不明状態に同じ「が見えます」が繰り返され、外側Gateの `relation_surface_stem_repetition_without_new_role` に止められた。同じSentence Surfaceの単一thread状態分岐で「回答した時点では、『まだよく分からない』と書かれています」に相当する引用文へ返す。実本文は既存の鉤括弧を使う。不明を気持ち・未処理・解決済みへ変えず、旧出来事や他の出来事に結び直さない。独立Gateは全文・完全source・回答時点を一文単位で読み、等価な「記されています」も許す。作者呼出し・閾値緩和・新しいGateは追加していない。
+
+**実本文と前後。** 既存合成入力の2／3出来事×回答2表現（`今はまだよく分からない。`／`現在は分からない。`）で、最初の出来事 `褒められた` の撤回直後に未提供だった4条件がすべて提供へ変わった。3出来事例の観測末尾は `回答した時点では、「まだよく分からない」と書かれています。`。受け取りは元の `その時は嬉しくなかったのですね。`、回答時点の不明、残る誘い／依頼と各反応を保持する。訂正2例では `先の回答時点` と訂正後の全sourceを保持し、回答撤回2例では不明回答だけが消える。この後続4状態も到達可能になった。
+
+同じprobeで、従来提供されていた23本文は全文不変。比較可能30状態の意味checkpointとaccepted nucleiは前後一致。probeの初回／回答／撤回は重複を含み、件数を商品合格数へ換算しない。単一出来事は回答後の次質問がないため、撤回用helperが停止した3条件を本文未提供とも成功とも数えない。未認定の `今ははっきりわからない。` は前後とも未認定で、回答や訂正対象の受付条件は拡張していない。
+
+保存は回答2表現×訂正／撤回の4系列、各3状態の計12状態。一時PGliteで既存SQL/RPC・serviceを通し、original DTO不変、対象外出来事保持、生成停止下GET／再startの保存DTO一致を確認した。開始productionは各系列の出来事撤回直後に本文なしとなり、後続へ到達できない。変更前にも成立していた回答直後4本文は全文不変。rootと独立担当は直接の新規到達8本文と保存12状態を全文読了した。引用の再掲・汎用的な受け取りは残り、正式Product Read PASSではない。
+
+| 検証 | 結果と限界 |
+|---|---|
+| 最終横断 | **1076件＝1048 PASS／既存28 FAIL、ERROR／SKIP 0、193 deselected**。旧1047件のtest identity・成否は全保持。旧28失敗のmessage／tracebackはworkspace prefixとruntime memory addressだけを正規化後に一致。新たな失敗0。 |
+| 追加29件 | 即時本文4、観測の意味改変拒否14、等価終端1、受け取りの意味改変拒否6、保存4。全PASS。既存test本文はbyte prefixとして保持し、末尾に追加した。 |
+| 同じ最終29件のbefore | 開始productionで8 FAIL／21 setup ERROR。21件は共通context fixtureが既知の本文生成例外で止まり、意味改変assertには到達しなかった。環境・importエラーではなく、成功に換算しない。初期23件もafter全PASS／before8 FAIL・15同setup ERRORで、最終と合算しない。 |
+| 隣接unknown検査 | Q3ファイルの `-k 'current_unknown or initial_epistemic_unknown'` は41件＝25 PASS／16既存FAIL、ERROR／SKIP 0。今回before/afterを実行し、全成否と正規化した失敗内容が一致。上記横断とは別分母。 |
+| baseline継承 | 旧1047全体のbeforeは同じ開始production・同じruntimeの前節最終log/XMLを使用し、今回全量再実行していない。追加29／隣接41／本文probe／保存は今回beforeを実行した。 |
+
+Python3.12.14／pytest9.1.1／pydantic2.13.5／FastAPI0.141.1／httpx0.28.1と既存Node/PGliteを使用。最初のruntime確認でprimary Pythonにpytestがないと分かり、既存検証環境の実体・versionを確認してから検査を実行した。依存installなし。再実行は前節1047件の同じpath・selectorに本test追加を含める。追加29件は `ai/tests/test_cmee_emlis_detached_observation.py -k detached_unknown`。現行shared-owner identity fixtureだけ既存の導出関数で更新し、歴史的凍結証跡・既存assert・品質条件は不変。
+
+**次の一群と残件。** 今回閉じたのは、2／3出来事の認定済み不明回答後、最初の元出来事撤回と、そこからの不明回答訂正／回答撤回である。さらに二つ目の出来事を撤回する2例は本文未提供が残る。独立義務の数を削って既存3Move予算へ押し込んでいない。
+
+次は**撤回前の複数出来事で、不明回答への受け取りだけが残り、元反応と他の出来事・反応がReceptionから落ちる既存経路**を確認する。今回の変更前後とも、保存の回答直後は `褒められたことについて、回答した時点でまだよく分からないことを小さくせずに受け止めています。` に縮み、元反応と別の対比はObservation側にだけ残る。別の意味を補わず、既存選択と作者／readerからこの共通原因を扱う。非隣接同感情反復・三重一致・重複本人主語・原文再掲・長文の意味選択も未解決。今回の29 PASSをunknown全般やEmlis全体の完了へ拡大しない。
+
+**STRUCTURE_MAP_DELTA_NONE／全体48%・商品合格0/3／NOT_CLEAR／default OFF／Draft・open・unmerged。** 既存owner内部の限定補正で、file graph・route・source型・語彙/回答認定・質問枠・保存schema・公開API/DB/RN・他中核は不変。今回は既存受け取り義務の選択不成立を修正したため、従来存在しなかった撤回後planまで「前後全文不変」とは主張しない。旧必須59file・Q3全950件・初回100件・継承保存337ケース全量、正式Product Read、実DB・実機・実課金・Ready・merge・deploy・enable・外部生成AIは未実施。

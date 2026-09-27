@@ -2903,6 +2903,14 @@ def _render_observation(
             raise GroundedSentenceSurfaceError("thread_temporal_binding_ambiguous")
         when = ("回答した時点" if "thread_time:answer_time" in thread_times else
                 "先の回答時点" if "thread_time:prior_answer_time" in thread_times else "その時")
+        from emlis_ai_grounded_observation_plan import is_grounded_current_answer_uncertainty
+        if (getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+            and not binding.relation_ids and len(quotes) == 1
+            and "thread_subject:withdrawn_source_event" in nucleus.semantic_frame.attribute_codes
+            and is_grounded_current_answer_uncertainty(nucleus)):
+            # This is the retained answer's epistemic state, independent of
+            # the remaining feelings. Do not give both the same state close.
+            return f"{prefix}{when}では、{joined}と書かれています。"
         noun = "気持ち" if nucleus.semantic_frame.modality == "feeling" else "こと"
         return f"{prefix}{when}の{noun}として、{joined}が見えます。"
     if typed_semantic_duties:

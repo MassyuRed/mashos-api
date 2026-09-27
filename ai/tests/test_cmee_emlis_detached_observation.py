@@ -128,3 +128,130 @@ def test_partial_withdrawal_and_prior_correction_survive_saved_reads(qcase, qdb,
     monkeypatch.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not regenerate'))
     assert run(service.get(user, parent)) == current
     assert run(service.start(user, parent)) == current
+
+
+# An admitted unknown answer remains an epistemic state after its event is
+# withdrawn; it must never be folded into the detached-feeling grammar.
+UNKNOWN_ANSWERS = (
+    ('今はまだよく分からない。', 'まだよく分からない'),
+    ('現在は分からない。', '分からない'),
+)
+
+
+def detached_unknown_request(prior, count=3):
+    from test_cmee_emlis_q3_thread import MEMO as three_events
+    memo = '。'.join(three_events.split('。')[:count]) + '。'
+    return advance(advance(begin(memo), prior), '「褒められた」は誤りです。')
+
+
+@pytest.mark.parametrize('prior,source', UNKNOWN_ANSWERS)
+@pytest.mark.parametrize('count', [2, 3])
+def test_detached_unknown_delivers_state_and_every_remaining_feeling(prior, source, count):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    request = detached_unknown_request(prior, count)
+    public = MeaningExperienceEngine().generate(request)
+    assert public.artifact is not None, public.reason_codes
+    context = actual(request=request)
+    result, plan, sentence, _, selected = context
+    assert result.artifact.text == public.artifact.text
+    state, = (n for n in plan.nuclei if n.source_fields == ('answer_text_private',))
+    assert (state.kind, state.semantic_frame.predicate_kind, state.semantic_frame.modality,
+            state.semantic_frame.time_scope) == ('state', 'state', 'uncertain', 'present')
+    assert not any(state.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    state_line, = (line for line in sentence.lines if line.binding.line_role != 'human_follow'
+                   and state.nucleus_id in line.binding.nucleus_ids)
+    assert state_line.binding.nucleus_ids == (state.nucleus_id,)
+    assert not state_line.binding.relation_ids
+    assert f'回答した時点では、「{source}」と書かれています。' in result.artifact.observation
+    assert 'その時は嬉しくなかった' in result.artifact.reception
+    assert '褒められた' not in result.artifact.text
+    for event, feeling in [('誘われた', '悲し'), ('頼まれた', '寂し')][:count-1]:
+        assert event in result.artifact.observation and event in result.artifact.reception
+        assert feeling in result.artifact.reception
+    checkpoint = prepare_emlis_meaning(request).checkpoint
+    assert 'nucleus:s1:event' in checkpoint.inactive_claim_refs
+    assert state.nucleus_id not in checkpoint.inactive_claim_refs
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.fixture(scope='module')
+def detached_unknown_context():
+    return actual(request=detached_unknown_request(UNKNOWN_ANSWERS[0][0]))
+
+
+@pytest.mark.parametrize('changed', [
+    '回答した時点では、「分からない」と書かれています。',
+    '回答した時点では、「まだ分からない」と書かれています。',
+    '回答した時点では、「まだよく分かった」と書かれています。',
+    '回答した時点では、「まだよく分からなかった」と書かれています。',
+    '先の回答時点では、「まだよく分からない」と書かれています。',
+    'その時では、「まだよく分からない」と書かれています。',
+    '「まだよく分からない」と書かれています。',
+    '回答した時点の気持ちとして、「まだよく分からない」が見えます。',
+    '回答した時点では、友人が「まだよく分からない」と書かれています。',
+    '回答した時点では、「友人はまだよく分からない」と書かれています。',
+    '回答した時点では、「まだよく分からない」と誘われたことについて書かれています。',
+    '褒められた回答した時点では、「まだよく分からない」と書かれています。',
+    '回答した時点では、「まだよく分からない」と書かれています。そのため悲しかったのです。',
+    '',
+])
+def test_detached_unknown_observation_rejects_changed_scope_without_authors(detached_unknown_context, changed):
+    context = detached_unknown_context
+    body = context[0].artifact.text
+    original = '回答した時点では、「まだよく分からない」と書かれています。'
+    assert original in body
+    assert not read_body(context, body.replace(original, changed, 1)).passed
+
+
+def test_detached_unknown_observation_accepts_equivalent_ending_without_authors(detached_unknown_context):
+    body = detached_unknown_context[0].artifact.text
+    assert read_body(detached_unknown_context, body.replace('と書かれています。', 'と記されています。')).passed
+
+
+@pytest.mark.parametrize('old,new', [
+    ('回答した時点でまだよく分からないこと', '回答した時点で分からないこと'),
+    ('回答した時点でまだよく分からないこと', '回答した時点でまだ分からないこと'),
+    ('回答した時点でまだよく分からないこと', 'その時にまだよく分からないこと'),
+    ('回答した時点でまだよく分からないこと', '回答した時点でまだよく分からない気持ち'),
+    ('回答した時点でまだよく分からないこと', '誘われたことについて、回答した時点でまだよく分からないこと'),
+    ('回答した時点でまだよく分からないこと', '回答した時点でよく分かったこと'),
+])
+def test_detached_unknown_reception_rejects_changed_meaning_without_authors(detached_unknown_context, old, new):
+    context = detached_unknown_context
+    body = context[0].artifact.text
+    assert old in context[0].artifact.reception
+    assert not read_body(context, body.replace(old, new, 1)).passed
+
+
+@pytest.mark.parametrize('prior,source', UNKNOWN_ANSWERS)
+@pytest.mark.parametrize('operation', ['correct', 'withdraw'])
+def test_detached_unknown_saved_correction_or_withdrawal_keeps_original_and_reads(qcase, qdb, monkeypatch, prior, source, operation):
+    from test_emlis_q2_application import run, answer
+    user, parent, service = qcase
+    replacement = '分からない' if source == 'まだよく分からない' else 'まだよく分からない'
+    final_answer = (f'「{source}」ではなく「{replacement}」です。' if operation == 'correct'
+                    else f'「{source}」は誤りです。')
+    first = current = run(service.start(user, parent))
+    for index, text in enumerate((prior, '「褒められた」は誤りです。', final_answer)):
+        if index:
+            current = run(cont(service, user, current, f'unknown-continue-{index}'))
+        current = run(answer(service, user, current, text, f'unknown-answer-{index}'))
+        assert current['body_state'] == 'REFINED', current
+        assert current['original'] == first['original']
+        body = current['current_observation']['text']
+        if index:
+            assert '褒められた' not in body and 'その時は嬉しくなかった' in body
+        if index == 1:
+            assert f'回答した時点では、「{source}」と書かれています。' in body
+        if index == 2:
+            if operation == 'correct':
+                assert f'先の回答時点では、「{replacement}」と書かれています。' in body
+            else:
+                assert '分からない' not in body
+        for event in ('誘われた', '頼まれた'):
+            assert event in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not regenerate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current

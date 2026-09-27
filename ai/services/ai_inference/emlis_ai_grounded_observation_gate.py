@@ -4344,6 +4344,18 @@ def evaluate_grounded_surface_body_inverse(
                 expected = "先の回答時点" if times == {"prior_answer_time"} else "回答した時点" if times == {"answer_time"} else "その時" if times == {"original_occasion"} else None
                 if expected is None or expected not in visible_line:
                     failures.append(f"body_inverse_answer_target_time_missing:{index}")
+                from emlis_ai_grounded_observation_plan import is_grounded_current_answer_uncertainty
+                if (len(detached_nuclei) == 1 and not planned_line.binding.relation_ids
+                    and "thread_subject:withdrawn_source_event" in nucleus.semantic_frame.attribute_codes
+                    and is_grounded_current_answer_uncertainty(nucleus)):
+                    # Read the complete independent state from the body, not
+                    # from an author replay or a source substring elsewhere.
+                    state = re.fullmatch(
+                        r"(?:今の入力だけを見ると、)?(回答した時点|先の回答時点)では、"
+                        r"「([^「」]+)」と(?:書かれています|記されています)。", visible_line)
+                    if (state is None or state.group(1) != expected or len(source_values) != 1
+                        or _normalized(state.group(2)) != source_values[0]):
+                        failures.append(f"body_inverse_detached_answer_state_scope_mismatch:{index}")
         if (any(n.kind == "change" and n.nucleus_id not in direct_nuclei for n in required_nuclei)
             and "change" not in parsed_line.semantic_marker_codes
             and not direct_provisional):
