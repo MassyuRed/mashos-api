@@ -7237,10 +7237,19 @@ def source_owned_answer_feeling(move, plan):
     separate duties; an added feeling is not a correction or proof of change.
     """
     if (not move.required or move.reception_act != "recognize_lived_change"
-        or move.move_role != "felt_response" or len(move.target_nucleus_ids) != 1
+        or move.move_role not in {"attention", "felt_response"} or len(move.target_nucleus_ids) != 1
         or move.support_nucleus_ids
         or move not in plan.response_plan.human_reception_plan.moves):
         return None
+    if move.move_role == "attention":
+        moves = plan.response_plan.human_reception_plan.moves
+        positives = tuple(m for m in moves if m.required
+            and m.reception_act == "recognize_lived_change"
+            and len(m.target_nucleus_ids) == 1 and not m.support_nucleus_ids)
+        if (len(moves) != 3 or len(positives) != 2 or positives[0] != move
+            or positives[1].move_role != "felt_response"
+            or positives[0].target_nucleus_ids == positives[1].target_nucleus_ids):
+            return None
     index = {n.nucleus_id: n for n in plan.nuclei}
     answer = index.get(move.target_nucleus_ids[0])
     if (answer is None or not is_grounded_positive_feeling(answer)
@@ -7796,7 +7805,9 @@ def _thread_retained_reaction_groups(nuclei, relations):
     # An ADD does not supersede the original reaction, regardless of the
     # answer's polarity or whether the input contains one received event.
     # Single-event grouping still requires exactly one source-proven answer.
-    if not withdrawal and (len(positive) > 1 or len(events) == 1 and len(answers) != 1
+    if not withdrawal and (len(positive) > 2
+                           or len(positive) == 2 and (independent or actions or independent_answers)
+                           or len(events) == 1 and len(answers) != 1
                            and not ((independent or actions) and not answers)):
         return unsupported()
     targets, supports = [], []
@@ -8770,6 +8781,12 @@ def _build_reception_depth_policy_and_moves(
         contrast = next(item for item in selected if item.target_nucleus_ids == (action_change_contrast[2],))
         roles[contrast.opportunity_id] = "attention"
     if retained_reaction_groups:
+        positives = tuple(item for item in selected if item.family == "lived_change")
+        if len(positives) == 2:
+            # Two separately sourced positive answers retain distinct acts;
+            # neither may replace the original reactions or the other answer.
+            roles[positives[0].opportunity_id] = "attention"
+            roles[positives[1].opportunity_id] = "felt_response"
         burdens = tuple(item for item in selected if item.family == "current_burden")
         if len(burdens) >= 2:
             # The collective grammar keeps its existing felt-response act;
@@ -8852,10 +8869,12 @@ def _build_reception_depth_policy_and_moves(
                 final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION
                 and selected[0].family == "current_burden"
                 and roles[selected[0].opportunity_id] == "felt_response"
-                and any(item.family == "concrete_effort" and roles[item.opportunity_id] == "attention"
-                        for item in selected)
-                and all(roles[item.opportunity_id] not in {"attention", "significance"}
-                        for item in selected if item.family != "concrete_effort")
+                and ((any(item.family == "concrete_effort" and roles[item.opportunity_id] == "attention"
+                          for item in selected)
+                      and all(roles[item.opportunity_id] not in {"attention", "significance"}
+                              for item in selected if item.family != "concrete_effort"))
+                     or (retained_reaction_groups and len(selected) == 3
+                         and sum(item.family == "lived_change" for item in selected) == 2))
             ) else ()),
             f"depth:{level}",
             f"safety:{safety_mode}",

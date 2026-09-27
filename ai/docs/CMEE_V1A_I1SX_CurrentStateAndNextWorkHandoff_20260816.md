@@ -9575,3 +9575,38 @@ runtimeは既存Python3.12.14／pytest9.1.1／pydantic2.13.5／FastAPI0.141.1／
 **残件・次作業。** 今回閉じたのは、不明＋当時／現在の怖さ・別不明の二回答後に不明の元出来事を撤回する経路であり、複数回答／撤回全体の完了ではない。不明＋肯定回答の元出来事撤回は `human_reception_withdrawal_capacity_gap` で未提供のまま。さらに前節の不明＋肯定2回答では最新肯定だけのReceptionへ縮む既存欠落も残る。次はこの肯定を含む複数回答群の既存選択／Move配分を、元反応・不明・各回答の義務を削らず確認する。新しいMove枠や品質条件の変更は扱わない。非隣接反復・三重一致・重複主語・長文の意味選択も未解決。
 
 **TECHNICAL_CREDIT／STRUCTURE_MAP_DELTA_NONE／全体48%・商品合格0/3／NOT_CLEAR／default OFF／Draft・open・unmerged。** API既存production2・test1・派生fixture1・handoff1、Cocolon既存06追記1。file graph・route・認定source型・語彙・質問・保存schema・公開API/DB/RN・他中核は不変。Ready・merge・deploy・enableは行わない。
+
+
+## 2026-09-27 継続 — 二つの肯定感情の回答でも原反応・不明・各回答を保持
+
+**開始点・範囲。** fresh GitHubのAPI `ba4465d9f60a208b956c3870f785f1f7e1896b03`、Cocolon `b040000f77081a41646876579dceadad0c1221fa`から継続した。両PRはDraft/open/unmerged、非省略treeのAPI2300/Cocolon1645 blobsが全て手元の実ファイルと一致。前回txtと直前の反映記録、前提資料・作業rule・全体設計図・全file map・current_structure・最新weekly 20260926 §3.8/§5.3/採用済み§5.9を照合し、恒久incidentを全文再読した。同一sessionで確認済みの原典・環境を継承し、System Contextの再生成・最新化は主張しない。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、既存承認内LEVEL_2。対象は、原反応群と認定済みの肯定感情回答2件が既存3Moveに収まるのに、Receptionが一つの肯定等へ縮む欠落。root華恋だけが編集・検査・GitHub反映を行い、技術と商品経路の2担当はread-only reviewした。新しい作者・外部AI・回答認定・語彙・質問・API/DB/RN・品質閾値・Move上限は追加/変更しない。追加依存・費用・Mash操作は0。
+
+**原因と修正。** `_thread_retained_reaction_groups`の肯定回答1件限定により、2件になると原反応・他回答を保持する選択から一般の代表選択へ戻っていた。原反応群＋肯定2Moveの範囲を既存選択に保持する。否定/不明回答は従来どおり各出来事の群に残す。別の独立感情・行動・独立置換回答がある場合や肯定3件は今回の適用外とし、既存経路を保持した。
+
+肯定2件は既存attention/felt_responseに分担し、既存`primary_burden_first`で原反応群→各肯定回答の順を維持する。`source_owned_answer_feeling`のattention適用は、実在する3Move中で異なるtargetを持つ肯定2Moveの先頭、相手がfelt_responseの場合だけに限定。各sourceのSELF、完全原文、単一required ABOUT、回答時点/当時/先の回答時点、既存の本文独立読取りを保持する。`source_grounded_reception_move_relations`は各肯定Moveの一意所有を確認してから各ABOUTを委譲する。owner欠落・重複・不正なact/targetでは義務を消さない。
+
+**実本文・意味情報。** 不明→現在の嬉しさ→当時の楽しさでは、旧Receptionは最後の楽しさだけだった。変更後は元の3反応と不明を先に受け取り、その後に「誘われたことについて、回答した時点では嬉しいのですね。頼まれたことについて、その時は楽しかったのですね。」が続く。意味を一つの感情や一時点へ統合しない。
+
+38系列の比較可能106状態ではcheckpoint・accepted nuclei・全planのnuclei/relations/coverage_requirementsが前後一致。既提供45本文のReceptionの欠落を補い、他61状態は全文不変（うち既存未提供3状態）。既提供103本文のObservationは全て不変。肯定2件の現在/過去4組合せ、出来事2/3件、不明/怖さの位置3通り、同一肯定2件、回答訂正/撤回、容量不足境界を含む。別の独立行動/感情がある境界4系列は6状態へ到達し、最終版と開始版のcheckpoint・本文・理由が全一致。3出来事＋行動の1系列は初回本文未提供のため回答へ未到達で、回答後の成功へ数えない。
+
+一時PGliteの既存SQL/RPC/serviceで、不明→肯定2件、肯定2件→先の回答を「少し」へ訂正、肯定2件→一方の回答撤回、肯定2件→怖さ回答の4系列12状態を比較。6本文が変化、6本文は全文不変、全12状態がREFINED。全12状態でoriginal DTO保持、生成を停止したGET/再startと保存DTOの一致をbefore/afterで確認した。最終attention限定後も直接106状態と保存12状態がレビュー済み本文と一致した。
+
+rootと独立担当が変更45本文・保存12本文を全文確認し、追加の修正必須指摘はない。原文再掲、原反応の長い列挙、語尾「のですね」の反復は残る。意味欠落の限定修正であり、自然さの合格・正式Product Read PASS・実DB/端末確認へ換算しない。
+
+**検証。** 最終横断 **1231件＝1203 PASS/既存28 FAIL、ERROR/SKIP 0、193 deselected**。旧1182件のtest identity・成否と、workspace prefix/実行時memory addressだけ正規化した28失敗のmessage/tracebackが前節最終XMLと全一致。新たな失敗0。
+
+- 追加49件は全PASS。同じ最終49件の開始productionは8 PASS/41 FAIL、ERROR/SKIP 0。二肯定の直接8、未知/負の回答位置9、本人/程度/丁寧/説明形4、作者を止めた意味改変拒否15、同義終端1、ABOUTの実owner破損4、source関係破損3、保存4、未認定説明形1。既存test全文をprefixとして保持し、旧assertを変更していない。
+- 初期追加48件は42 PASS/6 FAIL。4件は追記位置を誤って既存test末尾の2assertが新保存testへ移動した作業ミスで、元位置へ完全復元した。1件は新assertがsourceの「は」を「が」と期待した誤りで、本人と助詞を保つ期待へ訂正。1件は未認定の「その時は楽しかったのです」を二つ目の認定済み肯定と仮定した誤りで、認定済み説明形へ修正し、元の未認定例も別testで保持した。未認定部分の明示を消さず、認定範囲を拡大しない。
+- 初期probeの「安心している/安心した」は既存value/fact扱いで、今回の肯定feeling群へ混ぜない。境界確認でattention拡張が既存の肯定＋行動2Moveにも届くことを見つけ、上記3Move/肯定2件へ限定して既存6状態の不変を確認した。途中候補の横断検査は最終値へ合算せず、source確定後に再実行した。
+- current shared-owner identity fixtureのみ既存導出関数で更新し、歴史的凍結証跡は不変。旧1182全体のbeforeは同じ開始production・runtimeの前節最終log/XMLを継承し、今回は全体を再実行していない。追加49、直接106、保存12、境界6のbeforeは今回実行した。
+
+runtimeは既存Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1とNode/PGlite。新規installなし。横断path/selectorは前の1047件節と同じで、今回追加のみは `ai/tests/test_cmee_emlis_received_discourse.py -k two_positive`。`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<既存PGlite path> <Python3.12> -m pytest -q`。旧必須59file・Q3全950・初回100・継承保存337全量は今回未再実行。
+
+**残件・次作業。** 不明＋肯定回答の元出来事撤回では、active原反応群・撤回後の元反応・独立不明・肯定回答の4群が残り、`human_reception_withdrawal_capacity_gap`で未提供のまま。肯定2回答後の出来事撤回も未提供が残る。既存received-group文法は過去eventとcontrast/ABOUTを要求し、relationなしの独立state/reactionはそのまま併合できない。次は、この独立性・各時点・全sourceを保持する既存owner内の群構成/文章/独立読取りを確認する。Move上限を増やしたり義務を捨てたりして閉じない。
+
+肯定3回答、別の独立行動/感情を含む二肯定、value/fact扱いの回答、未認定説明形は今回の解決範囲外。非隣接反復・三重一致・重複主語・長文の意味選択も残る。二肯定一般・複数回答全般・撤回全般の完了を主張しない。
+
+**TECHNICAL_CREDIT/STRUCTURE_MAP_DELTA_NONE/全体48%・商品合格0/3/NOT_CLEAR/default OFF/Draft・open・unmerged。** API既存production2・test1・派生fixture1・handoff1、Cocolon既存06追記1。file graph・route・認定source型・保存schema・公開API/DB/RN・他中核は不変。Ready・merge・deploy・enableは行わない。
+

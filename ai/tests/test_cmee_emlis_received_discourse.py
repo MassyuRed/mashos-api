@@ -735,3 +735,196 @@ def test_multi_unknown_other_event_withdrawal_keeps_attached_unknown():
     assert '褒められた時は嬉しくなく、回答した時点ではまだよく分からない' in follow
     assert '頼まれたのに、寂しさを感じた' in follow
     assert inverse(context, follow, without_author=True).passed
+
+
+TWO_POSITIVE_PAIRS = (
+    ('今は嬉しい。', '今は楽しい。'),
+    ('今は嬉しい。', 'その時は楽しかった。'),
+    ('その時は嬉しかった。', '今は楽しい。'),
+    ('その時は嬉しかった。', 'その時は楽しかった。'),
+)
+
+
+def assert_two_positive_duties(context, count):
+    result, plan, _, _, _ = context
+    follow = result.artifact.reception
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == 3 and all(m.required for m in moves)
+    assert set(nid for m in moves for nid in (*m.target_nucleus_ids, *m.support_nucleus_ids)) == {
+        n.nucleus_id for n in plan.nuclei if n.retention == 'required'
+        and n.source_fields in {('memo',), ('answer_text_private',)}}
+    positives = [m for m in moves if m.reception_act == 'recognize_lived_change']
+    assert [m.move_role for m in positives] == ['attention', 'felt_response']
+    assert len({m.target_nucleus_ids for m in positives}) == 2
+    for event, feeling in list(zip(('褒められた', '誘われた', '頼まれた'), ('嬉し', '悲し', '寂し')))[:count]:
+        assert event in follow and feeling in follow
+    assert follow.count('。') == 3
+    # Original reactions precede the two supplemental readings; attention
+    # is an act responsibility, not a reason to split the source account.
+    assert '嬉し' in follow.split('。')[0] and '悲し' in follow.split('。')[0]
+    assert inverse(context, follow, without_author=True).passed
+
+
+@pytest.mark.parametrize('sequence', TWO_POSITIVE_PAIRS)
+@pytest.mark.parametrize('count', [2, 3])
+def test_two_positive_answers_keep_originals_and_each_event_time(sequence, count):
+    context = actual(request=multi_unknown_request(sequence, count))
+    assert_two_positive_duties(context, count)
+    follow = context[0].artifact.reception
+    for event, text in zip(('褒められた', '誘われた'), sequence):
+        when = '回答した時点では' if text.startswith('今は') else 'その時は'
+        source = text.removeprefix('今は').removeprefix('その時は').removesuffix('。')
+        assert event + 'ことについて、' + when + source in follow
+
+
+@pytest.mark.parametrize('other', [MULTI_UNKNOWN, MULTI_OTHER_UNKNOWN, MULTI_NEGATIVE])
+@pytest.mark.parametrize('position', [0, 1, 2])
+def test_two_positive_answers_keep_unknown_or_burden_in_every_position(other, position):
+    sequence = ['今は嬉しい。', 'その時は楽しかった。']
+    sequence.insert(position, other)
+    context = actual(request=multi_unknown_request(sequence))
+    assert_two_positive_duties(context, 3)
+    follow = context[0].artifact.reception
+    event = ('褒められた', '誘われた', '頼まれた')[position]
+    assert event + '時は' in follow
+    expected = ('怖' if other == MULTI_NEGATIVE else
+                '回答した時点では' + ('まだよく分からない' if other == MULTI_UNKNOWN else '分からない'))
+    assert expected in follow.split('。')[0]
+
+
+@pytest.mark.parametrize('sequence,first,second', [
+    (('今は私には嬉しい。', 'その時は少し楽しかった。'), '回答した時点ではあなたには嬉しい', 'その時は少し楽しかった'),
+    (('その時は嬉しかったです。', '今は楽しいです。'), 'その時は嬉しかった', '回答した時点では楽しい'),
+    (('今は少し嬉しい。', 'その時は私は楽しかった。'), '回答した時点では少し嬉しい', 'その時はあなたは楽しかった'),
+    (('今は嬉しいのです。', 'その時は嬉しかったのです。'), '回答した時点では嬉しい', 'その時は嬉しかった'),
+])
+def test_two_positive_answers_preserve_self_degree_politeness_and_explanation(sequence, first, second):
+    context = actual(request=multi_unknown_request(sequence))
+    assert_two_positive_duties(context, 3)
+    follow = context[0].artifact.reception
+    assert first in follow and second in follow
+
+
+@pytest.fixture(scope='module')
+def two_positive_context():
+    return actual(request=multi_unknown_request((MULTI_UNKNOWN, '今は私には嬉しい。', 'その時は少し楽しかった。')))
+
+
+@pytest.mark.parametrize('old,new', [
+    ('まだよく分からない', '分からない'), ('まだよく分からない', 'まだよく分かった'),
+    ('嬉しくなく', '嬉しく'), ('悲しさ', '嬉しさ'), ('寂しさ', '悲しさ'),
+    ('回答した時点ではあなたには', 'その時はあなたには'), ('あなたには', '友人には'),
+    ('嬉しいのですね', '嬉しくないのですね'),
+    ('その時は少し楽しかった', '回答した時点では少し楽しかった'),
+    ('少し楽しかった', '楽しかった'), ('少し楽しかった', '少し楽しい'),
+    ('誘われたことについて', '頼まれたことについて'),
+    ('。頼まれたことについて', 'ので、頼まれたことについて'),
+    ('誘われたことについて、回答した時点ではあなたには嬉しいのですね。', ''),
+    ('頼まれたことについて、その時は少し楽しかったのですね。',
+     '頼まれたことについて、その時は少し楽しかったのですね。頼まれたことについて、その時は少し楽しかったのですね。'),
+])
+def test_two_positive_semantic_mutations_fail_without_author(two_positive_context, old, new):
+    follow = two_positive_context[0].artifact.reception
+    assert old in follow
+    changed = follow.replace(old, new, 1)
+    assert changed != follow and not inverse(two_positive_context, changed, without_author=True).passed
+
+
+def test_two_positive_equivalent_ending_is_independently_accepted(two_positive_context):
+    follow = two_positive_context[0].artifact.reception
+    assert_two_positive_duties(two_positive_context, 3)
+    changed = follow.replace('嬉しいのですね。', '嬉しいのだと受け取りました。')
+    assert changed != follow and inverse(two_positive_context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('mutation', ['missing', 'duplicate', 'act', 'target'])
+def test_two_positive_about_requires_one_real_owner_per_answer(two_positive_context, mutation):
+    from dataclasses import replace
+    plan = two_positive_context[1]
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == 3
+    burden = next(m for m in moves if m.reception_act == 'stay_with_current_burden')
+    positives = [m for m in moves if m.reception_act == 'recognize_lived_change']
+    edges = {r.relation_id for r in plan.relations if r.type == 'evaluation_about_event'
+             and r.to_nucleus_id in {m.target_nucleus_ids[0] for m in positives}}
+    assert len(edges) == 2
+    owned = {r.relation_id for m in positives for r in reception.source_grounded_reception_move_relations(m, plan)}
+    assert edges <= owned
+    assert not edges & {r.relation_id for r in reception.source_grounded_reception_move_relations(burden, plan)}
+    changed = [m for m in moves if m != positives[0]]
+    if mutation == 'duplicate':
+        changed = [*moves, replace(positives[0], move_id='duplicate-positive')]
+    elif mutation == 'act':
+        changed.append(replace(positives[0], reception_act='stay_with_current_burden'))
+    elif mutation == 'target':
+        changed.append(replace(positives[0], target_nucleus_ids=positives[1].target_nucleus_ids))
+    altered = replace(plan, response_plan=replace(plan.response_plan, human_reception_plan=replace(
+        plan.response_plan.human_reception_plan, moves=tuple(changed))))
+    assert edges <= {r.relation_id for r in reception.source_grounded_reception_move_relations(burden, altered)}
+
+
+@pytest.mark.parametrize('mutation', ['missing', 'duplicate', 'same_event'])
+def test_two_positive_selection_requires_unique_about_sources(two_positive_context, mutation):
+    from dataclasses import replace
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+    plan = two_positive_context[1]
+    positive_ids = {n.nucleus_id for n in plan.nuclei if n.source_fields == ('answer_text_private',)
+                    and n.semantic_frame.polarity == 'positive'}
+    links = [r for r in plan.relations if r.type == 'evaluation_about_event' and r.to_nucleus_id in positive_ids]
+    assert len(links) == 2
+    relations = list(plan.relations)
+    if mutation == 'missing':
+        relations.remove(links[0])
+    elif mutation == 'duplicate':
+        relations.append(replace(links[0], relation_id='duplicate-about'))
+    else:
+        relations[relations.index(links[1])] = replace(links[1], from_nucleus_id=links[0].from_nucleus_id)
+    assert _thread_retained_reaction_groups(plan.nuclei, relations) == ()
+
+
+TWO_POSITIVE_SAVED = (
+    (MULTI_UNKNOWN, '今は嬉しい。', 'その時は楽しかった。'),
+    ('今は嬉しい。', 'その時は楽しかった。', '「嬉しい」ではなく「少し嬉しい」です。'),
+    ('今は嬉しい。', 'その時は楽しかった。', '「楽しかった」は誤りです。'),
+    ('今は嬉しい。', 'その時は楽しかった。', 'その時は怖かった。'),
+)
+
+
+@pytest.mark.parametrize('sequence', TWO_POSITIVE_SAVED)
+def test_two_positive_saved_answer_correction_withdrawal_and_replay(qcase, qdb, monkeypatch, sequence):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    for index, text in enumerate(sequence):
+        if index:
+            current = run(cont(service, user, current, f'positive-continue-{index}'))
+        current = run(answer(service, user, current, text, f'positive-answer-{index}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        follow = current['current_observation']['text'].split('Emlisから：', 1)[1].strip()
+        for event, feeling in zip(('褒められた', '誘われた', '頼まれた'), ('嬉し', '悲し', '寂し')):
+            assert event in follow and feeling in follow
+        if sequence[0] == MULTI_UNKNOWN:
+            assert '回答した時点ではまだよく分からない' in follow
+        if index == 2:
+            if 'ではなく' in text:
+                assert '先の回答時点では少し嬉しい' in follow and 'その時は楽しかった' in follow
+            elif '誤り' in text:
+                assert '楽しかった' not in follow and '回答した時点では嬉しい' in follow
+            else:
+                assert '回答した時点では嬉しい' in follow and 'その時は楽しかった' in follow
+                if text == 'その時は怖かった。':
+                    assert '怖かった' in follow
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not generate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+
+
+def test_two_positive_unadmitted_explanation_is_not_silently_retyped():
+    context = actual(request=multi_unknown_request(('今は嬉しいのです。', 'その時は楽しかったのです。')))
+    result, plan, _, _, _ = context
+    answers = [n for n in plan.nuclei if n.source_fields == ('answer_text_private',)]
+    assert len(answers) == 1
+    assert '回答の「その時は楽しかったのです」には、今回の観測に反映できていない部分があります。' in result.artifact.text
+    assert '楽しかった' not in result.artifact.reception
+    assert inverse(context, result.artifact.reception, without_author=True).passed

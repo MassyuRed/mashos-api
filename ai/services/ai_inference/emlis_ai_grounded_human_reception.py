@@ -3066,15 +3066,17 @@ def source_grounded_reception_move_relations(move, plan):
         or ("current_burden", move.target_nucleus_ids, move.support_nucleus_ids) not in groups):
         return relations
     positive_ids = tuple(row[1][0] for row in groups if row[0] == "lived_change" and len(row[1]) == 1)
-    owners = tuple(m for m in plan.response_plan.human_reception_plan.moves
+    owners = tuple(tuple(m for m in plan.response_plan.human_reception_plan.moves
         if m.required and m.reception_act == "recognize_lived_change"
-        and len(m.target_nucleus_ids) == 1 and m.target_nucleus_ids == positive_ids
-        and not m.support_nucleus_ids)
-    if len(positive_ids) != 1 or len(owners) != 1:
+        and m.target_nucleus_ids == (nid,) and not m.support_nucleus_ids)
+        for nid in positive_ids)
+    if not positive_ids or any(len(matches) != 1 for matches in owners):
         return relations
     delegated = tuple(r for r in relations if r.type == "evaluation_about_event"
-        and r.from_nucleus_id in targets and r.to_nucleus_id == positive_ids[0])
-    return tuple(r for r in relations if r not in delegated) if len(delegated) == 1 else relations
+        and r.from_nucleus_id in targets and r.to_nucleus_id in positive_ids)
+    if any(sum(r.to_nucleus_id == nid for r in delegated) > 1 for nid in positive_ids):
+        return relations
+    return tuple(r for r in relations if r not in delegated)
 
 
 def source_grounded_thread_received_group(move, plan, nucleus_index, resolver):
