@@ -8,6 +8,7 @@ from test_cmee_emlis_received_discourse import actual, inverse
 from test_cmee_emlis_q3_thread import begin, advance
 from test_emlis_q2_application import answer, run
 from test_emlis_q3_application import cont, qcase, qdb
+from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
 
 
 @pytest.mark.parametrize("memo", [
@@ -158,6 +159,84 @@ def test_saved_positive_answer_reopens_with_recipient_perspective(qcase, qdb):
     first = run(service.start(user, parent))
     current = run(answer(service, user, first, "今は私には嬉しい。"))
     assert "回答した時点ではあなたには嬉しい" in current["current_observation"]["text"]
+    with patch.object(service.engine, "generate", side_effect=AssertionError("saved GET rendered")):
+        assert run(service.get(user, parent)) == current
+        assert run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize("memo", [
+    "褒められたのに、嬉しくなかった。誘われたのに、悲しかった。",
+    "褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。",
+])
+@pytest.mark.parametrize("old,new,time,feeling", [
+    ("今は私には嬉しい。", "「私には嬉しい」ではなく「私には楽しい」です。",
+     "先の回答時点では", "楽しい"),
+    ("今は僕には嬉しい。", "「僕には嬉しい」ではなく「僕には楽しい」です。",
+     "先の回答時点では", "楽しい"),
+    ("その時は私には嬉しかった。", "「私には嬉しかった」ではなく「私には楽しかった」です。",
+     "その時は", "楽しかった"),
+])
+def test_positive_dative_correction_keeps_original_reactions_and_answer(memo, old, new, time, feeling):
+    request = advance(advance(begin(memo), old), new)
+    prepared = prepare_emlis_meaning(request)
+    assert prepared.checkpoint.assessment_status == "RESOLVED"
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    assert {m.reception_act for m in context[1].response_plan.human_reception_plan.moves} == {
+        "stay_with_current_burden", "recognize_lived_change"}
+    assert "嬉しさにはつながらず" in follow and "悲しさを感じ" in follow
+    if "頼まれた" in memo:
+        assert "頼まれたのに、寂しさを感じた" in follow
+    assert time + "あなたには" + feeling in follow
+    assert "私には" not in follow and "僕には" not in follow
+    assert inverse(context, follow, without_author=True).passed
+
+
+def test_positive_dative_correction_inverse_rejects_lost_source_and_changed_owner_time():
+    request = advance(advance(begin(), "今は私には嬉しい。"),
+                      "「私には嬉しい」ではなく「私には楽しい」です。")
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    for old, new in (("あなたには楽しい", "私には楽しい"),
+                     ("あなたには楽しい", "友人には楽しい"),
+                     ("先の回答時点では", "回答した時点では"),
+                     ("あなたには楽しい", "あなたには嬉しい"),
+                     ("悲しさを感じ", "嬉しさを感じ")):
+        changed = follow.replace(old, new, 1)
+        assert changed != follow
+        assert not inverse(context, changed, without_author=True).passed
+
+
+def test_unsupported_positive_dative_correction_does_not_admit_foreign_replacement():
+    request = advance(advance(begin(), "今は私には嬉しい。"),
+                      "「私には嬉しい」ではなく「友人には楽しい」です。")
+    prepared = prepare_emlis_meaning(request)
+    assert prepared.checkpoint.assessment_status == "PARTIAL"
+    follow = actual(request=request)[0].artifact.reception
+    assert "友人には楽しい" not in follow and "あなたには嬉しい" not in follow
+    assert "褒められた" in follow and "悲しさを感じ" in follow
+
+
+def test_saved_positive_dative_correction_withdrawal_and_reopen(qcase, qdb):
+    user, parent, service = qcase
+    first = run(service.start(user, parent))
+    current = run(answer(service, user, first, "今は私には嬉しい。"))
+    assert "回答した時点ではあなたには嬉しい" in current["current_observation"]["text"]
+    current = run(cont(service, user, current, "continue-positive-correction"))
+    current = run(answer(service, user, current,
+                         "「私には嬉しい」ではなく「私には楽しい」です。", "correct-positive-dative"))
+    assert "先の回答時点ではあなたには楽しい" in current["current_observation"]["text"]
+    assert "悲しさを感じ" in current["current_observation"]["text"]
+    assert current["original"] == first["original"]
+    with patch.object(service.engine, "generate", side_effect=AssertionError("saved GET rendered")):
+        assert run(service.get(user, parent)) == current
+        assert run(service.start(user, parent)) == current
+
+    current = run(cont(service, user, current, "continue-positive-withdrawal"))
+    current = run(answer(service, user, current,
+                         "「私には楽しい」は誤りです。", "withdraw-positive-dative"))
+    assert "あなたには楽しい" not in current["current_observation"]["text"]
+    assert "褒められた" in current["current_observation"]["text"]
     with patch.object(service.engine, "generate", side_effect=AssertionError("saved GET rendered")):
         assert run(service.get(user, parent)) == current
         assert run(service.start(user, parent)) == current

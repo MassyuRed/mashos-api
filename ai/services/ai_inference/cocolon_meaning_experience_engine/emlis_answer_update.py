@@ -31,7 +31,7 @@ _WITHDRAWAL = re.compile(r"^「(?P<old>[^「」]+)」(?:という(?:記録|読�
 _REPLACEMENT = re.compile(r"^「(?P<old>[^「」]+)」(?:ではなく|は誤りで)[、,]?「(?P<new>[^「」]+)」(?:です|でした)?$")
 _THEN = re.compile(r"^(?:あの時|その時|当時)(?:は|も)?(?:本当は|実際は)?[、,\s]*")
 _NOW = re.compile(r"^(?:今|現在)(?:は|も)[、,\s]*")
-_FEELING = re.compile(r"^(?:私は|私も|自分は)?(?:少し|とても|本当は|まだ|全然|あまり)?(?:嬉し|うれし|寂し|さびし|悲し|苦し|つら|辛|怖|こわ|重|楽し|軽)(?:い|かった|くない|くなかった)(?:です)?$")
+_FEELING = re.compile(r"^(?:私は|私も|自分は|私には|僕には)?(?:少し|とても|本当は|まだ|全然|あまり)?(?:嬉し|うれし|寂し|さびし|悲し|苦し|つら|辛|怖|こわ|重|楽し|軽)(?:い|かった|くない|くなかった)(?:です)?$")
 _PAST = re.compile(r"(?:た|だった|でした|ました)(?:んです|のです|です)?$")
 _BELIEF = re.compile(r"^.+(?:と思った|と感じた|と思いました|と感じました)$")
 _FOREIGN_HOST = re.compile(r"(?:と|って).{1,16}(?:は|が|も)(?:思|感じ|言)|^(?:彼|彼女|母|父|妹|弟|兄|姉|友人|上司)(?:は|が|も)")
@@ -130,7 +130,13 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
         kind = "reaction"
         negative = bool(re.search(r"くない|くなかった|寂|さび|悲|苦|つら|辛|怖|こわ|重", bounded))
         frame = replace(frame, predicate_kind="feeling", modality="feeling",
-                        polarity="negative" if negative else "positive")
+                        polarity="negative" if negative else "positive",
+                        # Only admitted self-dative answers gain the missing
+                        # feeling witness. Bare replacements retain their
+                        # existing mixed-withdrawal capability boundary.
+                        attribute_codes=(frame.attribute_codes if negative or not
+                            bounded.startswith(("私には", "僕には")) else
+                            tuple(dict.fromkeys((*frame.attribute_codes, "operator:feeling")))))
     elif not gp._source_operator_owner_scope_is_bound(bounded):
         return None
     if not bounded or kind in {"event", "other_explicit"} or _FOREIGN_HOST.search(bounded):
