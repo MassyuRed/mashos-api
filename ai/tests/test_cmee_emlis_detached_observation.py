@@ -477,3 +477,146 @@ def test_detached_burden_self_case_cannot_be_changed_or_lost(replacement):
     body = context[0].artifact.text
     assert 'あなたには' in body
     assert not read_body(context, body.replace('あなたには', replacement)).passed
+
+
+TWO_POSITIVE_PAIRS = (
+    ('今は嬉しい。', 'その時は楽しかった。'),
+    ('その時は少し嬉しかった。', '今は楽しい。'),
+)
+ORIGINAL_EVENTS = ('褒められた', '誘われた', '頼まれた')
+
+
+def two_positive_request(event='褒められた', answers=TWO_POSITIVE_PAIRS[0]):
+    request = begin()
+    for text in (*answers, f'「{event}」は誤りです。'):
+        request = advance(request, text)
+    return request
+
+
+@pytest.mark.parametrize('event', ORIGINAL_EVENTS)
+@pytest.mark.parametrize('answers', TWO_POSITIVE_PAIRS)
+def test_two_positive_withdrawal_keeps_all_originals_and_answer_owners(event, answers):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    request = two_positive_request(event, answers)
+    context = actual(request=request)
+    result, plan, _, _, _ = context
+    body = result.artifact.text
+    assert event not in body
+    for surviving in set(ORIGINAL_EVENTS) - {event}:
+        assert surviving in result.artifact.observation and surviving in result.artifact.reception
+    for feeling in ('嬉しくなかった' if event == '褒められた' else '嬉しさにはつながらなかった', '悲し', '寂し'):
+        assert feeling in result.artifact.reception
+    for text in answers:
+        when = 'その時は' if text.startswith('その時') else '回答した時点では'
+        assert when + text.split('は', 1)[1][:-1] in result.artifact.reception
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == 3
+    positive = [m for m in moves if m.reception_act == 'recognize_lived_change']
+    assert {m.target_nucleus_ids for m in positive} == {('answer:s7',), ('answer:s8',)}
+    detached_id = f'nucleus:s{ORIGINAL_EVENTS.index(event) + 1}:reaction'
+    burden, = [m for m in moves if m.reception_act == 'stay_with_current_burden']
+    assert detached_id in burden.target_nucleus_ids
+    assert not any(detached_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    for source_event, answer_id in zip(ORIGINAL_EVENTS[:2], ('answer:s7', 'answer:s8')):
+        links = [r for r in plan.relations if r.type == 'evaluation_about_event' and r.to_nucleus_id == answer_id]
+        assert len(links) == (0 if source_event == event else 1)
+        if links:
+            assert links[0].from_nucleus_id == f'nucleus:s{ORIGINAL_EVENTS.index(source_event) + 1}:event'
+    checkpoint = prepare_emlis_meaning(request).checkpoint
+    assert len(checkpoint.accepted_update_refs) == 3
+    assert not {'answer:s7', 'answer:s8', detached_id} & set(checkpoint.inactive_claim_refs)
+    assert read_body(context, body).passed
+
+
+@pytest.fixture(scope='module')
+def two_positive_context():
+    return actual(request=two_positive_request())
+
+
+@pytest.mark.parametrize('old,new', [
+    ('その時は嬉しくなかったのですね、また、', ''),
+    ('その時は嬉しくなかった', 'その時は嬉しかった'),
+    ('その時は嬉しくなかった', 'その時は嬉しくない'),
+    ('その時は嬉しくなかった', '今は嬉しくなかった'),
+    ('その時は嬉しくなかった', '回答した時点では嬉しくなかった'),
+    ('その時は嬉しくなかった', '嬉しくなかった'),
+    ('その時は嬉しくなかった', '友人はその時は嬉しくなかった'),
+    ('その時は嬉しくなかった', '褒められたその時は嬉しくなかった'),
+    ('、また、', 'ので、'), ('、また、', 'のに、'),
+    ('、また、', '、また、そのため'),
+    ('誘われたのに、悲しさを感じたのですね、また、', ''),
+    ('誘われたことについて、その時は楽しかった', '頼まれたことについて、その時は楽しかった'),
+    ('誘われたことについて、その時は楽しかった', '誘われたことのおかげで、その時は楽しかった'),
+    ('その時は楽しかった', '回答した時点では楽しかった'),
+    ('回答した時点では嬉しいのですね。', ''),
+    ('回答した時点では嬉しい', 'その時は嬉しい'),
+    ('回答した時点では嬉しい', '褒められたことについて、回答した時点では嬉しい'),
+])
+def test_two_positive_withdrawal_rejects_lost_or_reassigned_meaning_without_authors(two_positive_context, old, new):
+    result = two_positive_context[0]
+    follow = result.artifact.reception.replace(old, new, 1)
+    assert follow != result.artifact.reception
+    assert not read_body(two_positive_context, result.artifact.text.replace(result.artifact.reception, follow)).passed
+
+
+def test_two_positive_withdrawal_accepts_equivalent_acknowledgement(two_positive_context):
+    result = two_positive_context[0]
+    follow = result.artifact.reception.replace('のですね、また、', 'のです、また、')
+    assert follow != result.artifact.reception
+    assert read_body(two_positive_context, result.artifact.text.replace(result.artifact.reception, follow)).passed
+
+
+def test_two_positive_withdrawal_retains_answer_degree_without_authors():
+    context = actual(request=two_positive_request(answers=TWO_POSITIVE_PAIRS[1]))
+    result = context[0]
+    follow = result.artifact.reception.replace('少し嬉しかった', '嬉しかった')
+    assert follow != result.artifact.reception
+    assert not read_body(context, result.artifact.text.replace(result.artifact.reception, follow)).passed
+
+
+@pytest.mark.parametrize('mutation', ['time', 'polarity', 'modality', 'predicate', 'relation', 'governing', 'actor', 'quote', 'answer_slot'])
+def test_two_positive_composite_ir_consumes_every_independent_slot(two_positive_context, mutation):
+    _, plan, _, resolver, _ = two_positive_context
+    rp = plan.response_plan.human_reception_plan
+    group, = [m for m in rp.moves if m.reception_act == 'stay_with_current_burden']
+    ir = reception._project_source_grounded_reception_move_realization(rp, group,
+        {n.nucleus_id: n for n in plan.nuclei}, resolver,
+        plan=plan, recovery_stage='full', clause_form='FINITE')
+    reception._validate_source_grounded_move_ir(ir)
+    if mutation == 'time': changed = replace(ir, time_scope='past')
+    elif mutation == 'polarity': changed = replace(ir, polarity='neutral')
+    elif mutation == 'modality': changed = replace(ir, modality='fact')
+    elif mutation == 'predicate': changed = replace(ir, predicate_kind='event')
+    elif mutation == 'relation': changed = replace(ir, relations=(replace(ir.relations[0], endpoint_slots=(0, 3)), *ir.relations[1:]))
+    elif mutation == 'governing': changed = replace(ir, governing_relation_slots=(0,))
+    elif mutation == 'answer_slot': changed = replace(ir, nominalization_plan=tuple(
+        c.replace(':none:detached:none', ':none:detached:3:FINITE:answer_time') for c in ir.nominalization_plan))
+    else:
+        profile = replace(ir.semantic_profiles[0], **({'actor_kind': 'OTHER'} if mutation == 'actor' else {'quoted_boundary': True}))
+        changed = replace(ir, semantic_profiles=(profile, *ir.semantic_profiles[1:]))
+    with pytest.raises(reception.GroundedHumanReceptionSurfaceError):
+        reception._validate_source_grounded_move_ir(changed)
+
+
+@pytest.mark.parametrize('event', ORIGINAL_EVENTS)
+def test_two_positive_withdrawal_saved_reads_keep_all_three_states(qcase, qdb, monkeypatch, event):
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved initial reads must not generate'))
+        assert run(service.get(user, parent)) == current
+        assert run(service.start(user, parent)) == current
+    for index, text in enumerate((*TWO_POSITIVE_PAIRS[0], f'「{event}」は誤りです。')):
+        if index:
+            current = run(cont(service, user, current, f'two-positive-continue-{index}'))
+        current = run(answer(service, user, current, text, f'two-positive-answer-{index}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        if index == 2:
+            body = current['current_observation']['text']
+            assert event not in body
+            assert '回答した時点では嬉しい' in body and 'その時は楽しかった' in body
+            assert all(feeling in body for feeling in ('嬉しくなかった', '悲し', '寂し'))
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not generate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current

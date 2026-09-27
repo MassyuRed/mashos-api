@@ -9674,3 +9674,49 @@ ai/tests/test_cmee_emlis_retained_failure_recovery.py::test_surviving_pairs_are_
 **残件・次作業。** 肯定2回答後の元出来事撤回では、独立した負の原反応が1つしかなく今回の負の群にまとめられず、4Moveの容量不足が残る。次はその全source・肯定2件・負の原反応・各時点を保つ既存group/作者/独立readerの構成を確認する。肯定と負の意味融合、義務削除、Move上限拡大で閉じない。肯定3回答、別の独立行動/感情を含む二肯定、value/fact扱い、未認定説明形、非隣接反復・三重一致・長文の意味選択も未解決。複数回答/撤回全般の完了を主張しない。
 
 **TECHNICAL_CREDIT/STRUCTURE_MAP_DELTA_NONE/全体48%・商品合格0/3/NOT_CLEAR/default OFF/Draft・open・unmerged。** 既存owner内部の実装・test・派生fixture・記録だけで、新規file/route/schemaは0。Ready・merge・deploy・enable・実DB・実機・外部生成AIは未実施。公開後のcommit・変更path・remote全文一致・最終head確認は両Draft PRの当節続報で記録する。
+
+
+## 2026-09-28 継続 — 二つの肯定回答後の出来事撤回でも全反応・各回答を保持
+
+**開始点・範囲。** API `87ab91d595a2ee21f2cb4716f68aea8c1479f28d`、Cocolon `9200086e8024c2d50a6bc49fb325bf7d93853f98`の既存Draft PRから継続した。前回txtは1150件時点であり、GitHubの直前1272件記録を現在地にした。前提資料・作業rule、恒久incident全文、全体設計図・全file map（API2300/Cocolon1645 tracked blobs）、current_structure、最新weekly 20260926 §3.8/§5.3/採用済み§5.9、両handoffの末尾を照合した。全file地図確認を全source本文監査とは呼ばない。
+
+System Context prepareは、shallow checkoutのmaterial commitが指定祖先のdescendantとして確認できずexit2となった。正本で許された原典直接参照へ切り替え、生成Contextの最新化・復旧は主張しない。root華恋が編集・実行・GitHub反映を担当し、技術/商品担当はread-only reviewを行った。DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、既存承認内LEVEL_2。
+
+変更は既存APIの `ai/services/ai_inference/emlis_ai_grounded_observation_plan.py`、`emlis_ai_grounded_human_reception.py`、`emlis_ai_grounded_observation_gate.py`（後二つも同directory）、`ai/tests/test_cmee_emlis_detached_observation.py`、`ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json`、このhandoff、Cocolon既存06の計7path。新しいengine/owner/file/route、回答認定・語彙・質問枠・Move上限・品質閾値、公開API/保存schema/DB/RN、他中核は変更していない。
+
+**原因と修正。** 肯定回答2件の後に元出来事を撤回すると、残存event/reaction群・元出来事から独立した負の原反応・肯定回答2件の4Moveになり、本文未提供だった。既存withdrawal分岐に、肯定回答がちょうど2件、独立した元反応が1件、他の独立感情/行動/置換回答なし、旧構成4Moveという限定条件を追加した。元反応は、残存event/reaction群と同じ既存COMPOSITE内の独立targetとして保持する。別出来事のsupportへ付け替えず、関係を作らず、肯定2件はそれぞれの独立MoveとABOUT所有を維持する。
+
+既存source証明・名詞化IR・作者・本文独立readerに、関係を持たない元反応のslotを追加した。集約のpredicate/polarity/modality/timeだけ既存source_boundedを使い、各slotの完全原文、SELF、元の過去反応、残存関係・全slot消費を検査する。先頭が独立反応の場合にも、先頭の関係を無理に作らない。一般の関係predicate整合検査は維持し、この混在groupだけ完全なslot検査を通した上で扱う。独立readerは原sourceとreaction projection、明示された「その時は」を照合し、作者replayを正解判定に使わない。独立反応slotへanswerを付ける不正な名詞化shapeも拒否する。
+
+合成検証入力は「褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。」、回答は `今は嬉しい。` → `その時は楽しかった。` → `「褒められた」は誤りです。`。変更後全文は次のとおり。
+
+```text
+見えたこと：
+その時の「嬉しくなかった」と、回答した時点の「嬉しい」という気持ちが書かれています。
+「誘われた」という出来事の一方で「悲しかった」という反応があり、その出来事に対するその時の受け止めとして、「楽しかった」が見えます。 「頼まれた」と「寂しかった」が、異なる向きのまま同時にあります。
+
+Emlisから：
+その時は嬉しくなかったのですね、また、誘われたのに、悲しさを感じたのですね、また、頼まれたのに、寂しさを感じたのですね。誘われたことについて、その時は楽しかったのですね。回答した時点では嬉しいのですね。
+```
+
+**実本文と保存。** 同一runtimeで開始版/最終版の10系列40状態（初回＋各回答3段階）を比較した。肯定の現在/過去2組合せ×撤回位置3通りの6状態を未提供から提供へ復元し、他34本文は全文byte不変。全40checkpointは一致、比較可能な開始版34planも全文一致した。二つの訂正（肯定「嬉しい」→「少し嬉しい」、元反応「嬉しくなかった」→「苦しかった」）、不明＋肯定後の撤回、程度付き負感情＋肯定後の撤回を含む。元反応訂正の既存欠落は下記に残す。
+
+一時PGliteの既存SQL/RPC/serviceで、二肯定後に各3出来事を撤回する3系列を検査した。初回＋回答3段階の全12状態で、生成を止めたGET/再startが保存DTOと完全一致。各回答後は全REFINED、original DTOを保持した。最終3状態には両肯定と元反応が残り、撤回出来事を復活させていない。実DB・実機の確認ではない。
+
+rootと商品担当が復元6本文・訂正2本文・不明/負感情の既存撤回2本文を全文確認し、技術担当がsource/時点/関係所有と差分を独立reviewした。今回復元した6本文の意味保持に修正必須指摘はなかった。長い列挙、原文再掲、「のですね、また、…」の反復は残り、自然さの完成・正式Product Read PASS/creditへ換算しない。
+
+**検証。** 最終横断 **1310件＝1280 PASS/30 FAIL、ERROR・SKIP0、193 deselected**。開始版1272件は1244 PASS/既存28 FAIL（367.40秒）、最終版は378.95秒。旧1272件中1270件の成否が一致し、残る2件は下記の旧未提供期待との衝突。既存28失敗はworkspace prefixと実行時memory addressだけ正規化したmessage/tracebackまで全一致し、追加38件は全PASS。旧未提供期待2件以外の新規失敗はない。
+
+- 新規38件は全PASS。本文/source所有6、作者と観測作者を停止した意味改変拒否18、同義終端1、程度保持1、IR境界9、保存3。時点消失/入替え、否定/程度の欠落、主体変更、原因の追加、撤回出来事の復活、肯定回答の欠落/別出来事への付替え、独立反応への関係追加等を検査した。
+- 既存test全文をprefixとして保持し、旧assertは一切変更していない。今回復元した本文を未提供と期待する既存 `test_detached_burden_does_not_drop_two_positive_duties_to_fit` の2件は、例外が出なくなったためFAILになる。これは旧期待との衝突として明示し、既存28失敗とも商品退行とも分ける。期待値変更で緑化していない。
+- 追加testの最初の37件は31 PASS/6 FAIL。元のsource spanが各文1slotであるのに、新assertがevent/reactionで2slotずつ進むと誤認したため、新assertのID計算だけを訂正した。程度保持1件と初回保存read検査を加えた最終38件は全PASS。初期実装では混在groupの関係predicate整合とreaderの未定義定数に止まり、完全slot検査とreader内の既存過去形文法で修正した。最終値へ途中結果を合算していない。
+- current shared-owner identity fixtureのみ既存導出関数で更新し、歴史的凍結証跡は不変。`git diff --check`成功。検証path/selectorは直前1272件節と同じ。追加だけなら `ai/tests/test_cmee_emlis_detached_observation.py -k 'two_positive and not does_not_drop'`。旧必須59file・Q3全950・初回100・継承保存337全量は今回未再実行。
+- 最初の横断候補は856 PASS/330 FAIL/124 ERRORとなり、単独detached原反応まで新しい集合作者が受理し、2slot以上を求めるIRに入れてしまう退行を検出した。残存event targetとsupportを持つ2target以上の場合だけに入口を限定し、単独/独立反応だけの群は既存作者を維持するよう修正した。修正後にcurrent identity fixtureを再導出した。関連287件は283 PASS/既存2 FAIL/旧未提供期待2 FAIL/ERROR・SKIP0。レビュー済み40状態の本文・checkpoint・planが限定前と完全一致することを確認し、同じ横断を最初から再実行した。中間失敗を最終結果へ合算せず、未確認のまま反映していない。
+
+scratchの実行環境をPython3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1/python-dotenv1.2.3、Node24.19.0/PGlite0.5.8で復元した。repoの依存manifest・製品runtimeは変更せず、実DB接続・有料操作・Mash操作なし。前回結果をbaselineとして代用せず、開始版1272件をfresh再実行した。
+
+**残件・次作業。** 今回の比較で、肯定2回答後に元反応を訂正するとReceptionの内容が減る既存問題を具体化した。上記原入力に `今は嬉しい。` → `その時は楽しかった。` → `「嬉しくなかった」ではなく「苦しかった」です。` と答えると、Observationには他の反応と二つ目の肯定が残るが、Receptionは「その時の苦しさを小さくせずに受け止めています。褒められたことについて、回答した時点では嬉しいのですね。」だけになる。開始版と最終版で全文一致する既存問題。planにはanswer:s8が残る一方、Receptionのopportunities/movesはanswer:s7とanswer:s9のみで、2Moveなので単純な上限不足ではない。次は既存ObservationPlanの元反応訂正時のgroup/候補選択を確認し、訂正された原反応・残存event/reaction・肯定2件をそれぞれのsource/時点ごとに受け取れるよう進める。
+
+肯定3回答、別の独立行動/感情を含む二肯定、value/fact扱い、未認定説明形、非隣接反復・三重一致・長文の意味選択も未解決。複数回答/撤回/訂正全般の完了を主張しない。
+
+**TECHNICAL_CREDIT/STRUCTURE_MAP_DELTA_NONE/全体48%・商品合格0/3/NOT_CLEAR/default OFF/Draft・open・unmerged。** Ready・merge・deploy・enable・実DB・実機・外部生成AIは未実施。反映後のcommit・変更path・remote本文一致・最終headは両Draft PRの続報に記録する。

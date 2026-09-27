@@ -7845,6 +7845,15 @@ def _thread_retained_reaction_groups(nuclei, relations):
                 row[0] == "current_burden" and not row[2]
                 and len(row[1]) == 1 and row[1][0] in detached_burdens)]
             groups.append(("current_burden", detached_burdens, ()))
+        elif (len(positive) == len(answers) == 2 and len(detached_originals) == 1
+              and targets and len(groups) == 4):
+            # The withdrawn original reaction remains an independent target,
+            # alongside (never as a support of) the surviving event pairs.
+            # Positive answers keep their separate owners and ABOUT edges.
+            original_targets = tuple(sorted((*targets, detached_originals[0].nucleus_id),
+                key=lambda nid: _span_number(index[nid].source_span_ids[0])))
+            groups = [row for row in groups if row[0] != "current_burden"]
+            groups.append(("current_burden", original_targets, tuple(supports)))
     if (independent or actions or independent_answers) and len(groups) > 3:
         raise GroundedObservationPlanError("human_reception_opportunity_missing")
     if withdrawal and len(groups) > 3:

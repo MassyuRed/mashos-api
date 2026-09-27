@@ -3281,6 +3281,7 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
     """
     from emlis_ai_grounded_observation_plan import (
         _thread_retained_reaction_groups, _received_contrast_group_targets,
+        _thread_withdrawn_original_reaction, _received_event_reaction_projections,
     )
     original_group = _received_contrast_group_targets(plan.nuclei, plan.relations)
     original = bool(original_group and original_group ==
@@ -3311,6 +3312,24 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
     offset, saw_answer = 0, False
     for part_index, (event_id, part) in enumerate(zip(move.target_nucleus_ids, parts)):
         event = nuclei[event_id]
+        if _thread_withdrawn_original_reaction(event, plan.relations):
+            span = resolver.resolve(event.source_span_ids[0])
+            source = _body_inverse_typed_source_fragment(event, span.raw_text)
+            ending = re.search(r"(?:のですね|のです|のだと受け取りました)$", part)
+            if (not thread_group or resolver.source_fields_for(event.source_span_ids) != event.source_fields
+                or not source or not re.search(r"(?:かった|[てで]いた|た|だ)$", source)
+                or ending is None or not part.startswith("その時は")
+                or _restore_thread_finite_answer(part[len("その時は"):ending.start()], source) != source
+                or not any(row.kind == "reaction" and row.polarity == "negative"
+                    and set(row.attribute_codes) <= set(event.semantic_frame.attribute_codes)
+                    for row in _received_event_reaction_projections(span, event.semantic_frame))):
+                return None
+            start = len((raw[:offset] + "その時は").encode())
+            end = len((raw[:offset] + part[:ending.start()]).encode())
+            replacements.append((start, end, source.encode()))
+            consumed.add(event_id)
+            offset += len(part) + len("、また、")
+            continue
         contrasts = tuple(r for r in plan.relations if r.relation_id in required
             and r.type == "contrast" and r.from_nucleus_id == event_id
             and r.to_nucleus_id in move.support_nucleus_ids)
