@@ -205,11 +205,16 @@ def test_prior_answer_revision_keeps_its_time_and_withdrawn_event_stays_absent()
 
 @pytest.mark.parametrize('text', ['今は不安です。', '今は怖いです。', '今は不安だ。',
                                   '今は私は少し怖くない。', '今は私も怖い。', '今は自分は怖い。'])
-def test_incomplete_temporal_clause_grammar_keeps_the_existing_path(text):
+def test_temporal_adjective_uses_finite_clause_and_noun_keeps_existing_path(text):
     context = actual(request=answered(text, initial()))
     follow = context[0].artifact.reception
     assert 'ですのですね' not in follow and 'だのですね' not in follow
-    assert '回答した時点では' not in follow
+    if text in {'今は不安です。', '今は不安だ。'}:
+        assert '回答した時点では' not in follow
+    else:
+        assert '褒められた時は嬉しくなく、回答した時点では' in follow
+        assert '受け止めています' not in follow
+        assert '私は' not in follow and '私も' not in follow and '自分は' not in follow
     assert '回答した時点' in follow
     assert inverse(context, follow, without_author=True).passed
 
@@ -322,15 +327,15 @@ def test_positive_replacement_and_event_withdrawal_preserve_each_surviving_feeli
 
 
 @pytest.mark.parametrize('text', ['今は嬉しいです。', '今は私は嬉しい。', '今は僕は嬉しい。'])
-def test_positive_finite_answer_uses_proven_self_perspective_and_keeps_polite_boundary(text):
+def test_positive_answer_uses_proven_recipient_finite_clause(text):
     context = actual(request=answered(text, initial()))
     follow = context[0].artifact.reception
     if text.endswith('です。'):
-        assert '回答した時点では' not in follow
+        assert '回答した時点では嬉しい' in follow
     else:
         assert '回答した時点ではあなたは嬉しい' in follow
         assert '私は' not in follow and '僕は' not in follow
-        assert follow.count('褒められた') == 1
+    assert follow.count('褒められた') == 1
     assert 'ですのですね' not in follow
     assert inverse(context, follow, without_author=True).passed
 

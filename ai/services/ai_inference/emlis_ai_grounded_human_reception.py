@@ -9680,6 +9680,7 @@ def _source_grounded_received_discourse(realization) -> str | None:
             continue
         answer_slot, grammar, when = int(answer_code[0]), *answer_code[1:]
         source = fragments[answer_slot]
+        finite = _detached_feeling_finite_surface(source)
         # A later answer is a different time, not a revised past emotion.
         # Preserve it explicitly rather than inferring a causal past reading.
         if when != "original_occasion":
@@ -9687,19 +9688,20 @@ def _source_grounded_received_discourse(realization) -> str | None:
             # current (or earlier-answer) state. Give the two times their own
             # predicates instead of joining nominal objects under approval.
             # Do not coordinate present clauses through a later past ending.
-            # Copulas need attributive inflection; explicit first-person
-            # subjects need ownership wording. Keep their existing path.
+            # Reversible adjective politeness and a leading SELF subject
+            # belong to the delivered clause. Copular nouns and embedded
+            # subjects still require their existing realization.
             if (when not in {"answer_time", "prior_answer_time"}
-                or not _SOURCE_GROUNDED_FINITE_END_RE.search(source)
-                or re.search(r"(?:です|ます|でした|ました|だ)$", source)
-                or re.search(r"(?:私|自分)(?:は|も|が)", source)
+                or not _SOURCE_GROUNDED_FINITE_END_RE.search(finite)
+                or re.search(r"(?:です|ます|でした|ました|だ)$", finite)
+                or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)
                 or re.search(r'[「」『』“”‘’"?？!！\r\n。]', source)):
                 return None
             time = {"answer_time": "回答した時点では",
                     "prior_answer_time": "先の回答時点では"}[when]
             original = (event + "時は" + negative[1] + "、"
                         if negative is not None else event + "ことについて、")
-            parts.append(original + time + _detached_feeling_finite_surface(source))
+            parts.append(original + time + finite)
             separate_time_scopes = True
             continue
         if grammar.startswith("PERCEIVED_"):
@@ -9718,18 +9720,23 @@ def _source_grounded_received_discourse(realization) -> str | None:
             # A belief remains a belief; a denial/qualification stays inside
             # its complete finite source clause. Conjoining it to the same
             # event does not invent a reason or another person's intention.
-            if grammar not in {"BELIEF", "FINITE", "PAST_FEELING"}:
+            if grammar not in {"BELIEF", "FINITE", "PAST_FEELING", "ADJECTIVE_PRESENT_POLITE"}:
                 return None
-            if not _SOURCE_GROUNDED_FINITE_END_RE.search(source):
+            if (not _SOURCE_GROUNDED_FINITE_END_RE.search(finite)
+                or re.search(r"(?:です|ます|でした|ました|だ)$", finite)
+                or finite != source and re.search(
+                    r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)):
                 return None
             prefix = event + "時は"
             if negative is not None:
                 prefix += negative[1] + "、"
             else:
                 prefix += "、"
-            # Polite answers retain the established attributive path.
-            parts.append(prefix + (source if source.endswith("です")
-                                   else _detached_feeling_finite_surface(source)))
+            parts.append(prefix + finite)
+            # A present adjective must keep its own tense when followed by
+            # a different past event; additive coordination is reversible.
+            if finite.endswith("い"):
+                separate_time_scopes = True
     # Independent events remain distinct. Each scope is closed before the
     # next begins; no cause, ranking or shared experiencer is manufactured.
     coordinated = []
@@ -10178,8 +10185,8 @@ def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
                           for n in (event, answer))
     finite = _detached_feeling_finite_surface(source)
     if (not event_text or not source or tuple(realization.semantic_fragments) != (source, event_text)
-        or not _SOURCE_GROUNDED_FINITE_END_RE.search(source)
-        or re.search(r"(?:です|ます|でした|ました|だ)$", source)
+        or not _SOURCE_GROUNDED_FINITE_END_RE.search(finite)
+        or re.search(r"(?:です|ます|でした|ました|だ)$", finite)
         or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", event_text)
         or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)
         or re.search(r'[「」『』“”‘’"?？!！\r\n。]', event_text + source)):

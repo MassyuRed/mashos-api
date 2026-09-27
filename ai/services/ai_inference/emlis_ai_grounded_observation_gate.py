@@ -2697,11 +2697,13 @@ def _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjectiv
                           for n in (event, answer))
     # Only a leading self owner with an independently restorable particle
     # may change perspective. Embedded subjects and event subjects still fail.
+    polite = re.fullmatch(r"(?P<predicate>.+(?:い|かった))です", source)
+    predicate = polite['predicate'] if polite else source
     source_predicate = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)",
-                              "", source, count=1)
+                              "", predicate, count=1)
     if (not event_text or not source
-        or not _SOURCE_GROUNDED_FINITE_END_RE.search(source)
-        or re.search(r"(?:です|ます|でした|ました|だ)$", source)
+        or not _SOURCE_GROUNDED_FINITE_END_RE.search(predicate)
+        or re.search(r"(?:です|ます|でした|ました|だ)$", predicate)
         or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", event_text)
         or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", source_predicate)
         or re.search(r'[「」『』“”‘’"?？!！\r\n。]', event_text + source)):
@@ -3153,6 +3155,13 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                 or answer.semantic_frame.polarity != "negative"):
                 return None
             answer_source = final_reception_source_anchor_text(answer.nucleus_id, nuclei, resolver)
+            polite = re.fullmatch(r"(?P<predicate>.+(?:い|かった))です", answer_source)
+            predicate = polite['predicate'] if polite else answer_source
+            owner = re.match(r"(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)", predicate)
+            remainder = predicate[owner.end():] if owner else predicate
+            if (polite is not None or owner is not None) and re.search(
+                    r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", remainder):
+                return None
             if times != {"original_occasion"}:
                 # Read source/time roles from the delivered clause, without
                 # asking the author for its expected surface. An answer-time
@@ -3198,9 +3207,7 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                 actual_feeling = (finite["feeling"] + "くなかった"
                                   if finite["feeling"] is not None else
                                   finite["positive"] + "かった" if finite["positive"] is not None else None)
-                # Mirror the source class, not the author's surface rule.
-                actual_answer = (finite["answer"] if answer_source.endswith("です")
-                                 else _restore_thread_finite_answer(finite["answer"], answer_source))
+                actual_answer = _restore_thread_finite_answer(finite["answer"], answer_source)
                 if actual_answer != answer_source:
                     return None
             else:
