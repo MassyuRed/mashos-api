@@ -2733,9 +2733,36 @@ def read_detached_feeling_pair(raw, moves, plan, resolver, selected_subjective_i
     Return actual body byte intervals, with no author or replay dependency.
     """
     if (len(moves) != 2 or selected_subjective_input is None
+        or any(len(move.target_nucleus_ids) != 1 for move in moves)
         or moves[0].target_nucleus_ids == moves[1].target_nucleus_ids
         or set(moves[0].source_evidence_span_ids) & set(moves[1].source_evidence_span_ids)):
         return None
+    shared = re.fullmatch(r"(?P<feeling>.+)という気持ちを、どちらの言葉からも受け取りました。", raw)
+    if shared is not None:
+        # Both refers to two independent input mentions, not two events or
+        # two moments. Restore each complete source from the shared predicate.
+        # The temporary ending is outside the returned actual byte intervals.
+        finite = shared['feeling'] + "のですね。"
+        active = reception_active_moves(plan.response_plan.human_reception_plan, "full")
+        if len(active) != 3:
+            return None
+        nuclei = tuple(next((n for n in plan.nuclei
+                             if n.nucleus_id == move.target_nucleus_ids[0]), None)
+                       for move in moves)
+        if (any(n is None or len(n.source_span_ids) != 1 for n in nuclei)
+            or set(nuclei[0].source_span_ids) & set(nuclei[1].source_span_ids)):
+            return None
+        proofs = tuple(_read_detached_feeling_discourse(
+            finite, move, plan, resolver, selected_subjective_input, sentence_ending=False)
+            for move in active)
+        if sum(proof is not None for proof in proofs) != 2 or any(move not in active for move in moves):
+            return None
+        pair = tuple(proofs[active.index(move)] for move in moves)
+        if (any(proof is None for proof in pair)
+            or any(not 0 <= start < end <= len(shared['feeling'].encode())
+                   for proof in pair for start, end, _ in proof)):
+            return None
+        return pair
     matches = []
     for boundary in re.finditer("し、", raw):
         left = raw[:boundary.start()]

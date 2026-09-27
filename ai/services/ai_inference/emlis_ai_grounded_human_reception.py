@@ -1641,8 +1641,10 @@ def _detached_feeling_pair(reception_plan, recovery_stage, *, plan=None, resolve
     for start in (0, 1):
         left, right = moves[start:start + 2]
         first, second = operands[start:start + 2]
-        if (first is not None and second is not None and first[1] != second[1]
-            and operands.count(first) == operands.count(second) == 1
+        if (first is not None and second is not None
+            and (first[1] != second[1]
+                 and operands.count(first) == operands.count(second) == 1
+                 or first == second and operands.count(first) == 2)
             and left.target_nucleus_ids != right.target_nucleus_ids
             and not set(left.source_evidence_span_ids) & set(right.source_evidence_span_ids)):
             return start
@@ -10142,9 +10144,13 @@ def _source_owned_detached_feeling_parts(move, realization, plan, resolver,
         and _detached_feeling_source_parts(other, plan, resolver) == parts
         for other in reception_active_moves(plan.response_plan.human_reception_plan, recovery_stage)
     ):
-        # Identical source and time would erase the visible distinction
-        # between these independent duties. Keep their existing realizations.
-        return None
+        # Equal feelings stay separate source duties. Only the existing pair
+        # can acknowledge both input mentions with one complete predicate.
+        moves = reception_active_moves(plan.response_plan.human_reception_plan, recovery_stage)
+        start = _detached_feeling_pair(plan.response_plan.human_reception_plan,
+                                      recovery_stage, plan=plan, resolver=resolver)
+        if start is None or move not in moves[start:start + 2]:
+            return None
     # The full source owns the feeling, including tense and negation.
     # Adjective politeness can use the response ending; a proven explanation
     # stays explicit until its position at that ending is known.
@@ -11075,9 +11081,14 @@ def _author_source_grounded_reception_clauses(
             move_sentences.append(move_sentence)
         shared_feelings = _source_grounded_shared_material_feelings(tuple(coordination_terms))
         if (recovery_stage == "full" and len(realization.moves) == len(detached_terms) == 2
-            and detached_terms[0][1] != detached_terms[1][1]):
-            terminal = detached_terms[1][0] + _feeling_acknowledgement(detached_terms[1][1])
-            shared_feelings = "".join(detached_terms[0]) + "し、" + terminal
+            and (detached_terms[0] == detached_terms[1]
+                 or detached_terms[0][1] != detached_terms[1][1])):
+            if detached_terms[0] == detached_terms[1]:
+                shared_feelings = ("".join(detached_terms[0])
+                    + "という気持ちを、どちらの言葉からも受け取りました")
+            else:
+                terminal = detached_terms[1][0] + _feeling_acknowledgement(detached_terms[1][1])
+                shared_feelings = "".join(detached_terms[0]) + "し、" + terminal
             from emlis_ai_grounded_observation_gate import read_detached_feeling_pair
             if read_detached_feeling_pair(
                 shared_feelings + "。", tuple(move_index[mid] for mid in clause_plan.move_ids),
