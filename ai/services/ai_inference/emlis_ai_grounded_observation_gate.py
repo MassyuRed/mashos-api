@@ -2695,10 +2695,15 @@ def _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjectiv
     index = {n.nucleus_id: n for n in plan.nuclei}
     event_text, source = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
                           for n in (event, answer))
+    # Only a leading self owner with an independently restorable particle
+    # may change perspective. Embedded subjects and event subjects still fail.
+    source_predicate = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)",
+                              "", source, count=1)
     if (not event_text or not source
         or not _SOURCE_GROUNDED_FINITE_END_RE.search(source)
         or re.search(r"(?:です|ます|でした|ました|だ)$", source)
-        or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", event_text + source)
+        or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", event_text)
+        or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", source_predicate)
         or re.search(r'[「」『』“”‘’"?？!！\r\n。]', event_text + source)):
         return None
     shared_event = _answer_feeling_preceding_event(

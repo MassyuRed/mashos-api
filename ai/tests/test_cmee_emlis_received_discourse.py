@@ -303,19 +303,34 @@ def test_prior_positive_answer_has_its_own_time_after_correction():
     assert not inverse(context, follow.replace('先の回答時点では', '回答した時点では'), without_author=True).passed
 
 
-def test_unsupported_positive_replacement_and_event_withdrawal_stays_unavailable():
-    from emlis_ai_grounded_observation_plan import GroundedObservationPlanError
+def test_positive_replacement_and_event_withdrawal_preserve_each_surviving_feeling():
     request = advance(begin('褒められたのに、嬉しくなかった。誘われたのに、悲しかった。'), '今は嬉しい。')
     request = advance(request, '「嬉しい」ではなく「楽しい」です。「誘われた」は誤りです。')
-    with pytest.raises(GroundedObservationPlanError, match='human_reception_withdrawal_capability_gap'):
-        build_updated_grounded_plan(prepare_emlis_meaning(request))
+    # The already-admitted feeling must keep its operator after replacement.
+    # Withdraw only the event; neither the detached sadness nor the other
+    # event's original reaction is removed by that operation.
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    assert '誘われた' not in follow and 'その時は悲しかった' in follow
+    assert '褒められたことは、嬉しさにはつながらなかった' in follow
+    assert '先の回答時点では楽しい' in follow
+    assert inverse(context, follow, without_author=True).passed
+    for old, new in (('悲しかった', '悲しくなかった'),
+                     ('先の回答時点では', '回答した時点では'),
+                     ('楽しい', '嬉しい')):
+        assert not inverse(context, follow.replace(old, new), without_author=True).passed
 
 
 @pytest.mark.parametrize('text', ['今は嬉しいです。', '今は私は嬉しい。', '今は僕は嬉しい。'])
-def test_positive_finite_answer_keeps_unproven_clause_grammar_on_old_path(text):
+def test_positive_finite_answer_uses_proven_self_perspective_and_keeps_polite_boundary(text):
     context = actual(request=answered(text, initial()))
     follow = context[0].artifact.reception
-    assert '回答した時点では' not in follow
+    if text.endswith('です。'):
+        assert '回答した時点では' not in follow
+    else:
+        assert '回答した時点ではあなたは嬉しい' in follow
+        assert '私は' not in follow and '僕は' not in follow
+        assert follow.count('褒められた') == 1
     assert 'ですのですね' not in follow
     assert inverse(context, follow, without_author=True).passed
 

@@ -240,3 +240,103 @@ def test_saved_positive_dative_correction_withdrawal_and_reopen(qcase, qdb):
     with patch.object(service.engine, "generate", side_effect=AssertionError("saved GET rendered")):
         assert run(service.get(user, parent)) == current
         assert run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize("self_text,recipient", [
+    ("", ""), ("私は", "あなたは"), ("私も", "あなたも"),
+    ("自分は", "あなたは"), ("私には", "あなたには"), ("僕には", "あなたには"),
+])
+@pytest.mark.parametrize("occasion,old,new,time", [
+    ("今は", "嬉しい", "楽しい", "先の回答時点では"),
+    ("その時は", "嬉しかった", "楽しかった", "その時は"),
+])
+@pytest.mark.parametrize("memo", [
+    "褒められたのに、嬉しくなかった。誘われたのに、悲しかった。",
+    "褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。",
+])
+def test_admitted_positive_correction_preserves_source_reactions_across_self_forms(
+        self_text, recipient, occasion, old, new, time, memo):
+    initial_request = begin(memo)
+    first = actual(request=initial_request)
+    request = advance(initial_request, occasion + self_text + old + "。")
+    before = actual(request=request)
+    assert recipient + old in before[0].artifact.reception
+    request = advance(request, f"「{self_text}{old}」ではなく「{self_text}{new}」です。")
+    prepared = prepare_emlis_meaning(request)
+    update, = prepared.checkpoint.answer_update.updates
+    assert update.operation == "REVISE" and prepared.checkpoint.assessment_status == "RESOLVED"
+    corrected = actual(request=request)
+    follow = corrected[0].artifact.reception
+    assert time + recipient + new in follow
+    assert "褒められたことは、嬉しさにはつながら" in follow
+    assert "誘われたのに、悲しさを感じ" in follow
+    if "頼まれた" in memo:
+        assert "頼まれたのに、寂しさを感じた" in follow
+    # Multiple events still require the answer's event to be explicit.
+    assert "褒められたことについて、" + time in follow
+    assert "小さくせずに受け止めています" not in follow
+    assert inverse(corrected, follow, without_author=True).passed
+    # The two-event thread ends after correction. Only the three-event
+    # fixture has the third question needed to submit a later withdrawal.
+    if "頼まれた" in memo:
+        withdrawn = actual(request=advance(request, f"「{self_text}{new}」は誤りです。"))
+        assert withdrawn[0].artifact.reception == first[0].artifact.reception
+        assert inverse(withdrawn, withdrawn[0].artifact.reception, without_author=True).passed
+
+
+@pytest.mark.parametrize("old,new", [
+    ("あなたも", "私も"), ("あなたも", "友人も"), ("あなたも", "あなたは"),
+    ("先の回答時点では", "回答した時点では"), ("楽しい", "楽しくない"),
+    ("楽しい", "嬉しい"), ("悲しさを感じ", "嬉しさを感じ"),
+    ("褒められたことについて、", "誘われたことについて、"),
+])
+def test_positive_self_correction_rejects_changed_source_without_author(old, new):
+    request = advance(advance(begin(), "今は私も嬉しい。"),
+                      "「私も嬉しい」ではなく「私も楽しい」です。")
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    changed = follow.replace(old, new, 1)
+    assert changed != follow
+    assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize("text", ["今は私は私には嬉しい。", "今は私は僕には嬉しい。"])
+def test_positive_answer_does_not_partially_rewrite_chained_self_subjects(text):
+    context = actual(request=advance(begin("褒められたのに、嬉しくなかった。"), text))
+    follow = context[0].artifact.reception
+    assert "あなたは私には" not in follow and "あなたは僕には" not in follow
+    assert inverse(context, follow, without_author=True).passed
+    # A partial person shift must not become an independently accepted reading.
+    corrupted = follow.replace("私は", "あなたは", 1)
+    assert corrupted != follow
+    assert not inverse(context, corrupted, without_author=True).passed
+
+
+@pytest.mark.parametrize("self_text,recipient", [
+    ("", ""), ("私は", "あなたは"), ("私も", "あなたも"), ("自分は", "あなたは"),
+])
+def test_saved_positive_correction_preserves_all_reactions_and_withdrawal(qcase, qdb, self_text, recipient):
+    user, parent, service = qcase
+    first = run(service.start(user, parent))
+    current = run(answer(service, user, first, f"今は{self_text}嬉しい。"))
+    assert "回答した時点では" + recipient + "嬉しい" in current["current_observation"]["text"]
+    with patch.object(service.engine, "generate", side_effect=AssertionError("saved GET rendered")):
+        assert run(service.get(user, parent)) == current
+        assert run(service.start(user, parent)) == current
+    current = run(cont(service, user, current, "continue-self-positive"))
+    current = run(answer(service, user, current,
+        f"「{self_text}嬉しい」ではなく「{self_text}楽しい」です。", "correct-self-positive"))
+    text = current["current_observation"]["text"]
+    assert "先の回答時点では" + recipient + "楽しい" in text
+    assert "嬉しさにはつながらず" in text and "悲しさを感じ" in text and "寂しさを感じた" in text
+    assert current["original"] == first["original"]
+    with patch.object(service.engine, "generate", side_effect=AssertionError("saved GET rendered")):
+        assert run(service.get(user, parent)) == current
+        assert run(service.start(user, parent)) == current
+    current = run(cont(service, user, current, "continue-withdraw-self-positive"))
+    current = run(answer(service, user, current,
+        f"「{self_text}楽しい」は誤りです。", "withdraw-self-positive"))
+    assert current["current_observation"]["text"] == first["current_observation"]["text"]
+    with patch.object(service.engine, "generate", side_effect=AssertionError("saved GET rendered")):
+        assert run(service.get(user, parent)) == current
+        assert run(service.start(user, parent)) == current

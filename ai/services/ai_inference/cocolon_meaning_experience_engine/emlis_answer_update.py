@@ -131,11 +131,11 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
         negative = bool(re.search(r"くない|くなかった|寂|さび|悲|苦|つら|辛|怖|こわ|重", bounded))
         frame = replace(frame, predicate_kind="feeling", modality="feeling",
                         polarity="negative" if negative else "positive",
-                        # Only admitted self-dative answers gain the missing
-                        # feeling witness. Bare replacements retain their
-                        # existing mixed-withdrawal capability boundary.
-                        attribute_codes=(frame.attribute_codes if negative or not
-                            bounded.startswith(("私には", "僕には")) else
+                        # The complete answer grammar is the feeling witness,
+                        # including replacements whose source has no shared
+                        # lexical operator. Preserve it for every admitted
+                        # positive form, independently of the self pronoun.
+                        attribute_codes=(frame.attribute_codes if negative else
                             tuple(dict.fromkeys((*frame.attribute_codes, "operator:feeling")))))
     elif not gp._source_operator_owner_scope_is_bound(bounded):
         return None

@@ -10176,10 +10176,12 @@ def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
     index = {n.nucleus_id: n for n in plan.nuclei}
     event_text, source = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
                           for n in (event, answer))
+    finite = _detached_feeling_finite_surface(source)
     if (not event_text or not source or tuple(realization.semantic_fragments) != (source, event_text)
         or not _SOURCE_GROUNDED_FINITE_END_RE.search(source)
         or re.search(r"(?:です|ます|でした|ました|だ)$", source)
-        or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", event_text + source)
+        or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", event_text)
+        or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)
         or re.search(r'[「」『』“”‘’"?？!！\r\n。]', event_text + source)):
         return None
     time = {"original_occasion": "その時は", "answer_time": "回答した時点では",
@@ -10188,7 +10190,7 @@ def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
     shared_event = _answer_feeling_preceding_event(
         move, plan, resolver, selected_subjective_input, preceding_context)
     topic = "" if shared_event else event_text + "ことについて、"
-    return topic + time + _detached_feeling_finite_surface(source) + "のですね"
+    return topic + time + finite + "のですね"
 
 
 def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
