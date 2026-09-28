@@ -2900,15 +2900,23 @@ def _render_observation(
             revised = tuple(_thread_revised_original_reaction(
                 nucleus_index[nid], (), polarity=nucleus_index[nid].semantic_frame.polarity)
                 for nid in binding.nucleus_ids)
-            operands, clauses = [], []
+            operands, clauses, quoted_sources = [], [], []
             for nid, when, revision in zip(binding.nucleus_ids, detached_times, revised, strict=True):
                 source = _quotes_for_nuclei((nid,), nucleus_index, resolver)
                 if len(source) != 1:
                     raise GroundedSentenceSurfaceError("detached_feeling_source_ambiguous")
+                quoted_sources.append(source[0])
                 operands.append(f"{when}の{source[0]}")
                 separation = "それとは別に" if revision and clauses else ""
                 clauses.append(f"{separation}{source[0]}と、当時の気持ちを言い直されています" if revision
                                else f"{when}の{source[0]}という気持ちが書かれています")
+            if len(revised) == 2 and all(revised) and detached_times == ("その時", "その時"):
+                # Share the correction frame, never the two source duties or
+                # their distinct original occasions. Only exact equal quotes
+                # can share one visible source, with explicit multiplicity.
+                quoted = ("二つとも" + quoted_sources[0] if quoted_sources[0] == quoted_sources[1]
+                          else "それぞれ" + "、".join(quoted_sources))
+                return f"{prefix}当時の気持ちを、{quoted}と言い直されています。"
             if any(revised):
                 return prefix + "、".join(clause.removesuffix("います") + "おり"
                     for clause in clauses[:-1]) + "、" + clauses[-1] + "。"

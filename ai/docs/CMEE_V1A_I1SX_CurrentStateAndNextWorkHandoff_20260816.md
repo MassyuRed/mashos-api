@@ -10408,3 +10408,43 @@ DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / LEVEL_2 standing delegation。first effect�
 **残件。** 異なるMove間の長い訂正導入、Observationの原文再掲、撤回後の「その時」の参照の弱さ、全体の定型的な語り口、横断の既知20失敗は残る。今回の限定familyでは反復を軽減できたが、自然な受け取り文全体を完成扱いにしない。次はこれらの実本文から次の限定familyを定め、weeklyの9/30中間確認・10/3 family整理・10/10 Emlis判定へつなぐ。
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** Ready/merge/deploy/enable、実DB/実機/実課金、外部生成AIは未実施。反映commit・remote全文一致・最終headは両Draft PR本文へ記録する。
+
+## 2026-09-28 追加継続 — Observationの二つの訂正説明を一度にまとめる
+
+**開始点・対象。** MashのEmlisAI残件継続指示により、API `59ef68b580cd8abb988a942be15f2f83731bfc20`、Cocolon `8d48ec1c3b6c63a4dff029b4659f0f80701e007b`、既存Draft #3/#30から開始。前回のReception反復軽減を継承し、今回はObservation側に残る同じ訂正説明の繰り返しを扱った。01全体設計・02全file地図の関連分割、tracked inventory API2300/Cocolon1645、current_structure 00/01/04、rule入口/CURRENT_RULES/Rule18、恒久incident全文、最新weekly `Cocolon_Weekly_Review_20260926.md` §5と前回handoffを確認した。WorkではEmlisの共通原因一群を実本文・保存まで確認する採用方針に沿う。
+
+一時環境の消失後、GitHub最新版を取得し、APIの作業treeをremote `5914909a38786cf7803bae4ba93d8347cfadec1d` と完全一致させて復元した。APIローカルのsnapshot commitはremote headの代替identityではなく、公開時の親は上記remote headである。Cocolonは上記remote commitへ復元した。System Context prepareはmaterial commit祖先照合でexit2となり、原典を直接読んだ。Context freshness成功とは呼ばない。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / LEVEL_2 standing delegation。既存Sentence Surface・Observation Gate・detached observation test・current派生identity fixture・API handoff・Cocolon06の6pathをfirst effect前に固定。Codex Workでroot華恋が編集・実行・公開、独立担当はread-onlyの商品/技術reviewを行った。意味選択・Plan・Reception・Move数・語彙認定・品質閾値・schema/API/DB/RN・保存方式・dependency manifest・凍結検査は変更しない。
+
+**原因と修正。** 独立した当時の訂正が二つ同じ観測行に入ると、従来は各原文ごとに「当時の気持ちを言い直されており」「当時の気持ちを言い直されています」を繰り返した。既存のrelationなし・本人・明示source・当時訂正の条件を満たす2核だけ、説明を共有する。異なる原文は「それぞれ」で二引用を順番どおり残し、完全に同じ原文だけ「二つとも」で訂正数を示して一度引用する。語順が違う原文を意味が近いという理由で一つへ正規化しない。
+
+Gateは全文から新しい表現を独立に読み、二つの核をそれぞれのqualified source・原文・時点・独立性へ照合する。共有表現にしてもsource義務は二つのまま。同じ「当時」はそれぞれのoriginal_occasionを指し、同じ瞬間に起きたとは表明しない。片方のsource置換、交換、複製による片方の欠落、異なる原文の一引用化、数/時点の欠落、因果・同時性・別eventへの帰属を拒否する。旧明示2節と「言い換えられています」も読める。撤回混合、単一核、3核以上、relation付き行は従来経路を保持する。
+
+**実本文と前後比較。** 原入力は「褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。」。先行回答「今は嬉しい。」後、最初の二反応を訂正したObservationの対象行は次のようになる。
+
+```text
+当時の気持ちを、それぞれ「私も少し怖くなかったです」、「少し私には苦しかったです」と言い直されています。
+```
+
+両方が完全に「私は少し不安でした」の場合は次のとおり。
+
+```text
+当時の気持ちを、二つとも「私は少し不安でした」と言い直されています。
+```
+
+開始版と最終production版の同runtime・fresh importの30系列（先行現在回答の有無×訂正位置3組×原文5組）で、checkpoint・Plan・Receptionは全30一致、本文成立30→30、Observation変更は対象5系列だけ。残る25本文は完全一致した。本人・助詞・程度・否定・時点と二訂正を保持し、rootと商品担当が変更5の前後全文を両層で確認した。この行の重複は減ったが、全体の自然さや商品合格を保証するものではない。
+
+**検証。** 最終productionで6target（detached observation、received discourse、answer attributive、initial received discourse、Q1 thread、contractsのactive final language owner chain）を実行し、1669件中1649 PASS / 既知20 FAIL、193 deselected、1 warning、ERROR/SKIP 0（387.88秒）。前回公表の1587件（1567 PASS / 20 FAIL）へ新82件を追加した件数と整合し、既知20の関数・条件を現行失敗へ照合した。今回開始版focusedの163件は最終横断でも同じID・成功状態で、新規82件もすべて成功した。前回全量XMLは一時環境消失により再取得できず、前回全量tracebackのbyte一致や開始版6target全量の再実行を主張しない。
+
+今回の開始版focusedは163 PASS/856 deselected（33.55秒）。最終productionのfocusedは245 PASS/856 deselected（42.25秒）で、既存163と新規82が成功した。新82は数/時点/因果/帰属/重複の改変拒否45、各sourceの独立した原時点10、各引用の置換拒否10、旧明示表現と同義終止5、異なる原文の交換・複製・統合拒否12。既存2関数の本文anchor/引用数を更新し、個々の時点改変は受入れ可能な旧明示形へ展開して片方ずつ検証する。入力系列、二source義務、意味改変拒否は削っていない。
+
+保存系列の既存5条件（計30状態）はfocused・最終横断とも成功。元入力DTOを保持し、REFINEDからCOMPLETED/can_continue=falseまで進めた保存済DTOを、生成を禁止したGET/service.startから同一本文のまま再表示できた。これは試験用保存系での確認であり、process再起動・実DB・実機の検証とは呼ばない。
+
+既知失敗のうち、単一eventの現在回答で旧接頭句を要求する6条件と、存在しない旧接頭句を置換する2条件は、過去の反復軽減と旧文言期待の衝突として原典・現行検査を照合した。今回はその保護された元期待を編集せず、本文の反復も戻さない。この静的な分類を実欠陥の解消やFAIL件数の削減へ換算しない。
+
+最終current identityはlanguage=`41c75113cc861752895cd2662cb9801ea6b213be8930be8fa19ba1b9498e0f5a`、runtime=`69eeb21844fd64fc313c5a6a9aab4ab77b54822e8be779ad645f4fe69507f162`。既存導出を使い、各18payload/source owner9、fixtureのscope説明、歴史的凍結証跡を保持した。独立技術reviewでscope説明の初稿欠落を指摘され、復元後に最終横断を開始した。利用可能な既存runtimeを再発見してversion/importを確認（Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1）。本unitでinstallは行わず、前回の消失したruntimeとの物理的同一性は主張しない。旧13target全量・59file・Q3全量を再実行したとは呼ばない。
+
+**残件と次の対象。** Observation先頭の長い説明、ObservationとReceptionにまたがる再掲、別Move間の訂正導入、撤回後「その時」の参照、定型的な語り口、既知20失敗を継続対象にする。今回の限定familyの読みやすさ改善を、Emlis全体の商品完成へ昇格しない。weeklyの9/30中間確認、10/3対象群整理、10/10内容判定を維持する。
+
+**TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 新ownerや責任境界の変更なし。実DB・実機・実課金、外部生成AI、Ready/merge/deploy/enableは未実施。変更6path・反映commit・remote全文一致は両Draft PRの今回記録へ結合する。

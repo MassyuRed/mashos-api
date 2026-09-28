@@ -2404,7 +2404,21 @@ def _body_inverse_detached_observation(raw, nuclei, plan, resolver):
     operand = r"(?:その時|回答した時点|先の回答時点)の「[^「」『』\n]+」"
     revised = tuple(_thread_revised_original_reaction(n, plan.relations, polarity=n.semantic_frame.polarity)
                     for n in nuclei)
-    if any(revised):
+    shared_revision = None
+    if len(nuclei) == 2 and all(revised):
+        text = raw.removeprefix("今の入力だけを見ると、")
+        paired = re.fullmatch(r'当時の気持ちを、それぞれ「([^「」『』\n]+)」、「([^「」『』\n]+)」'
+                              r'と(?:言い直され|言い換えられ)ています。', text)
+        equal = re.fullmatch(r'当時の気持ちを、二つとも「([^「」『』\n]+)」'
+                             r'と(?:言い直され|言い換えられ)ています。', text)
+        if paired or equal:
+            # Each nucleus is still checked below against its own exact
+            # source and time. Equal visible text cannot erase a source duty.
+            values = paired.groups() if paired else (equal[1], equal[1])
+            shared_revision = [("当時", value, True) for value in values]
+    if shared_revision is not None:
+        pieces = shared_revision
+    elif any(revised):
         # The revision is an explicit discourse operation. Keep it separate
         # from the feeling's original time and from nearby event clauses.
         text = raw.removeprefix("今の入力だけを見ると、")

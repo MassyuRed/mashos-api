@@ -2202,14 +2202,16 @@ def test_two_independent_revisions_keep_every_duty_and_fact(two_independent_revi
     assert '嬉しくなかった' not in result.artifact.text and '悲しかった' not in result.artifact.text
     assert '褒められたことについて、回答した時点では嬉しいのですね。' in follow
     assert '「頼まれた」と「寂しかった」' in observation and '頼まれたのに、寂しさを感じた' in follow
-    assert observation.count('当時の気持ちを言い直') == 2
+    assert observation.count('当時の気持ちを、') == 1
+    assert ('二つとも' in observation) == (sources[0] == sources[1])
+    assert ('それぞれ' in observation) == (sources[0] != sources[1])
     shared = follow.startswith('二つの言い直しでは、どちらも')
     assert follow.count(REVISION_INTRO) == (2 if sources[0] == '楽しかった' else 0)
     assert shared == (INDEPENDENT_REVISION_FINITE[sources[0]] == INDEPENDENT_REVISION_FINITE[sources[1]])
     if not shared and sources[0] != '楽しかった':
         assert follow.startswith('言い直してくださった気持ちは、') and 'し、それとは別に当時' in follow
     for source, count in Counter(sources).items():
-        assert observation.count(f'「{source}」') == count
+        assert observation.count(f'「{source}」') == (1 if sources[0] == sources[1] else count)
     for finite, count in Counter(INDEPENDENT_REVISION_FINITE[s] for s in sources).items():
         assert follow.count(finite) == (1 if shared else count)
     assert 'でしたの' not in follow and 'でしたこと' not in follow
@@ -2254,15 +2256,21 @@ def test_two_independent_revisions_reject_changed_compressed_fact(two_independen
 @pytest.mark.parametrize('mutation', ['current_missing', 'current_time', 'pair_missing', 'pair_target',
     'first_revision_time', 'second_revision_time', 'second_revision_missing', 'revision_cause'])
 def test_two_independent_revisions_reject_lost_or_reassigned_duties(two_independent_revisions_context, mutation):
-    _, context = two_independent_revisions_context
+    sources, context = two_independent_revisions_context
     body = context[0].artifact.text
     if mutation in {'first_revision_time', 'second_revision_time', 'second_revision_missing'}:
         original = context[0].artifact.observation
-        before, second = original.split('それとは別に', 1)
+        # Expand the accepted shared frame for a change to only one source's
+        # time. Both distinct time duties remain protected independently.
+        before = f'「{sources[0]}」と、当時の気持ちを言い直されており、'
+        second = f'「{sources[1]}」と、当時の気持ちを言い直されています。'
+        line = original.splitlines()[-1]
+        expanded = before + 'それとは別に' + second
+        assert read_body(context, body.replace(line, expanded, 1)).passed
         if mutation == 'first_revision_time': before = before.replace('当時', '回答した時点', 1)
         elif mutation == 'second_revision_time': second = second.replace('当時', '回答した時点', 1)
         else: second = ''
-        changed = before + ('それとは別に' + second if second else '')
+        changed = original.replace(line, before + ('それとは別に' + second if second else ''), 1)
     else:
         original = context[0].artifact.reception
         old, new = {
@@ -2403,3 +2411,80 @@ def test_shared_revision_reader_keeps_previous_explicit_wording(sources):
     changed = old + original.split('。', 1)[1]
     assert changed != original
     assert read_body(context, context[0].artifact.text.replace(original, changed, 1)).passed
+
+
+@pytest.mark.parametrize('mutation', ['time_missing', 'answer_time', 'prior_time', 'simultaneous',
+    'count_missing', 'one_only', 'cause', 'wrong_event', 'duplicate'])
+def test_shared_observation_revision_rejects_frame_changes(two_independent_revisions_context, mutation):
+    _, context = two_independent_revisions_context
+    original = context[0].artifact.observation.splitlines()[-1]
+    assert original.startswith('当時の気持ちを、')
+    marker = '二つとも' if '二つとも' in original else 'それぞれ'
+    old, new = {
+        'time_missing': ('当時の', ''), 'answer_time': ('当時の', '回答した時点の'),
+        'prior_time': ('当時の', '先の回答時点の'), 'simultaneous': ('当時の', '同時の'),
+        'count_missing': (marker, ''), 'one_only': (marker, '一つだけ'),
+        'cause': ('当時の気持ちを、', '誘われたことが原因で、当時の気持ちを、'),
+        'wrong_event': ('当時の気持ちを、', '頼まれたことへの当時の気持ちを、'),
+        'duplicate': (original, original + original),
+    }[mutation]
+    changed = original.replace(old, new, 1)
+    assert changed != original
+    assert not read_body(context, context[0].artifact.text.replace(original, changed, 1)).passed
+
+
+@pytest.mark.parametrize('slot', [0, 1])
+def test_shared_observation_revision_requires_each_sources_own_time(two_independent_revisions_context, slot):
+    sources, context = two_independent_revisions_context
+    result, plan, sentence, resolver, _ = context
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    line, = [line for line in sentence.lines if len(line.binding.nucleus_ids) == 2
+        and all('thread_subject:revised_original_reaction' in index[nid].semantic_frame.attribute_codes
+                for nid in line.binding.nucleus_ids)]
+    nuclei = tuple(index[nid] for nid in line.binding.nucleus_ids)
+    assert len({n.nucleus_id for n in nuclei}) == len({n.source_span_ids for n in nuclei}) == 2
+    raw = result.artifact.observation.splitlines()[-1]
+    with patch.object(surface, '_render_observation', side_effect=AssertionError('no author oracle')):
+        assert gate._body_inverse_detached_observation(raw, nuclei, plan, resolver)
+        target = nuclei[slot]
+        changed = replace(target, semantic_frame=replace(target.semantic_frame,
+            attribute_codes=tuple('thread_time:answer_time' if c == 'thread_time:original_occasion' else c
+                                  for c in target.semantic_frame.attribute_codes)))
+        altered = tuple(changed if i == slot else n for i, n in enumerate(nuclei))
+        assert not gate._body_inverse_detached_observation(raw, altered, plan, resolver)
+
+
+@pytest.mark.parametrize('slot', [0, 1])
+def test_shared_observation_revision_keeps_each_exact_quote(two_independent_revisions_context, slot):
+    sources, context = two_independent_revisions_context
+    original = context[0].artifact.observation.splitlines()[-1]
+    quoted = f'「{sources[slot]}」'
+    changed = original.replace(quoted, '「友人は嬉しかった」', 1)
+    assert changed != original
+    assert not read_body(context, context[0].artifact.text.replace(original, changed, 1)).passed
+
+
+def test_shared_observation_revision_keeps_explicit_pair_and_equivalent_ending(two_independent_revisions_context):
+    sources, context = two_independent_revisions_context
+    original = context[0].artifact.observation.splitlines()[-1]
+    expanded = (f'「{sources[0]}」と、当時の気持ちを言い直されており、それとは別に'
+                f'「{sources[1]}」と、当時の気持ちを言い直されています。')
+    for changed in (expanded, original.replace('言い直され', '言い換えられ')):
+        assert changed != original
+        assert read_body(context, context[0].artifact.text.replace(original, changed, 1)).passed
+
+
+@pytest.mark.parametrize('sources', [s for s in NONADJACENT_CORRECTION_SOURCES if s[0] != s[1]])
+@pytest.mark.parametrize('mutation', ['swap', 'duplicate_first', 'share_first'])
+def test_shared_observation_revision_cannot_exchange_or_merge_distinct_sources(sources, mutation):
+    req = begin()
+    for text in two_independent_revision_answers(sources):
+        req = advance(req, text)
+    context = actual(request=req)
+    original = context[0].artifact.observation.splitlines()[-1]
+    quoted = ('二つとも' + f'「{sources[0]}」' if mutation == 'share_first'
+              else 'それぞれ' + (f'「{sources[1]}」、「{sources[0]}」' if mutation == 'swap'
+                                  else f'「{sources[0]}」、「{sources[0]}」'))
+    changed = f'当時の気持ちを、{quoted}と言い直されています。'
+    assert changed != original
+    assert not read_body(context, context[0].artifact.text.replace(original, changed, 1)).passed
