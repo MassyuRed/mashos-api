@@ -2226,12 +2226,17 @@ def _body_inverse_thread_contrast_answers(body, witness, line, plan, resolver):
             continue
         text = _body_inverse_visible_text(body, sentence)
         connective_text = re.sub(r"「[^「」]*」|『[^『』]*』", "", text)
-        if "その出来事に対する" not in connective_text:
+        if not any(marker in connective_text for marker in ("その出来事に対する", "その出来事について、")):
             continue
         parsed = re.fullmatch(
-            r"「([^「」『』\n]+)」という出来事の一方で「([^「」『』\n]+)」という反応があり、"
-            r"その出来事に対する(その時|回答した時点|先の回答時点)の受け止めとして、"
-            r"「([^「」『』\n]+)」が見えます。", text)
+            r"「([^「」『』\n]+)」一方で「([^「」『』\n]+)」とあり、"
+            r"その出来事について、(その時|回答した時点|先の回答時点)の受け止めは"
+            r"「([^「」『』\n]+)」と書かれています。", text)
+        if parsed is None:
+            parsed = re.fullmatch(
+                r"「([^「」『』\n]+)」という出来事の一方で「([^「」『』\n]+)」という反応があり、"
+                r"その出来事に対する(その時|回答した時点|先の回答時点)の受け止めとして、"
+                r"「([^「」『』\n]+)」が見えます。", text)
         if parsed is None:
             failures.append("body_inverse_answer_antecedent_invalid")
             continue

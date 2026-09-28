@@ -153,7 +153,7 @@ _RECEPTION_QUOTE_RE: Final = re.compile(r"「([^」]*)」")
 _BODY_RELATION_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     ("from_to", re.compile(r"から.{0,160}(?:へ|に)")),
     ("coexistence", re.compile(r"一方で|同時に|重なり|異なる向き|並んで|両方|ともに|中にも|中でも")),
-    ("link", re.compile(r"つなが|表れ|生まれ|結びつ|に対する")),
+    ("link", re.compile(r"つなが|表れ|生まれ|結びつ|に対する|その出来事について、")),
     ("counterdirection", re.compile(r"同意していない|終わらない|それでも|けれど")),
     ("change", re.compile(r"変化|動いて|進み|向き")),
 )
@@ -3282,8 +3282,8 @@ def _thread_contrast_answer_groups(binding, nucleus_index, relation_index, resol
             continue
         left, right, received = parts
         sentences.append((contrast.relation_id,
-                          f"{left}という出来事の一方で{right}という反応があり、"
-                          f"その出来事に対する{when}の受け止めとして、{received}が見えます。"))
+                          f"{left}一方で{right}とあり、"
+                          f"その出来事について、{when}の受け止めは{received}と書かれています。"))
         consumed.update((contrast.relation_id, about[0].relation_id))
     return tuple(sentences), frozenset(consumed)
 

@@ -843,7 +843,7 @@ def middle_revision_context():
     ('「楽しい」', '「友人は楽しい」'),
     ('「楽しい」', '「楽しくない」'),
     ('「寂しかった」', '「寂しくなかった」'),
-    ('その出来事に対するその時の', 'その出来事に対する回答した時点の'),
+    ('その出来事について、その時の', 'その出来事について、回答した時点の'),
     ('「誘われた」ことに対する回答した時点の', '「誘われた」ことに対するその時の'),
     ('「誘われた」ことに対する', '「頼まれた」ことに対する'),
     ('「誘われた」ことに対する', '「誘われた」ことのおかげで'),
@@ -1036,8 +1036,8 @@ def test_withdrawn_current_focus_keeps_independent_event_in_source_order(positiv
     assert f'「{order[1][0]}」という出来事がありました。' in observation
     assert order[1][1] not in body and '苦しかった' not in body
     assert all(value in observation for value in (*order[0], *order[2]))
-    assert ('その時の受け止めとして、「少し嬉しかった」' if '少し' in positive
-            else '回答した時点の受け止めとして、「嬉しい」') in observation
+    assert ('その時の受け止めは「少し嬉しかった」' if '少し' in positive
+            else '回答した時点の受け止めは「嬉しい」') in observation
     assert len(plan.coverage_requirements.required_nucleus_ids) == 6
     assert len(plan.relations) == 3
     assert not any('nucleus:s2:event' in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
@@ -1173,8 +1173,8 @@ def test_third_original_revision_preserves_separate_event_and_past_feeling(answe
     assert {'nucleus:s3:reaction', 'relation:r3'} <= set(checkpoint.inactive_claim_refs)
     assert 'nucleus:s3:event' not in checkpoint.inactive_claim_refs
     if answers:
-        assert ('その時の受け止めとして、「少し嬉しかった」' if '少し' in answers[0]
-                else '回答した時点の受け止めとして、「嬉しい」') in lines[0]
+        assert ('その時の受け止めは「少し嬉しかった」' if '少し' in answers[0]
+                else '回答した時点の受け止めは「嬉しい」') in lines[0]
     assert read_body(context, body).passed
 
 
@@ -1201,7 +1201,7 @@ def third_original_revision_context():
     ('「少し怖くなかった」と、当時の気持ちを言い直されています', '頼まれたので、「少し怖くなかった」と、当時の気持ちを言い直されています'),
     ('「嬉しくなかった」', '「嬉しかった」'),
     ('「悲しかった」', '「悲しくなかった」'),
-    ('その出来事に対する回答した時点の', 'その出来事に対するその時の'),
+    ('その出来事について、回答した時点の', 'その出来事について、その時の'),
 ])
 def test_third_original_revision_rejects_body_corruption_without_authors(third_original_revision_context, old, new):
     context = third_original_revision_context
@@ -1248,8 +1248,8 @@ def test_third_original_revision_saves_body_and_unchanged_original(qcase, qdb, m
     assert '「苦しかった」と、当時の気持ちを言い直されています' in body
     assert '寂しかった' not in body
     assert all(s in body for s in ('褒められた', '嬉しくなかった', '誘われた', '悲しかった'))
-    assert ('その時の受け止めとして、「少し嬉しかった」' if '少し' in positive
-            else '回答した時点の受け止めとして、「嬉しい」') in body
+    assert ('その時の受け止めは「少し嬉しかった」' if '少し' in positive
+            else '回答した時点の受け止めは「嬉しい」') in body
     assert not current['can_continue']
 
 

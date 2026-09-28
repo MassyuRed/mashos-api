@@ -321,8 +321,8 @@ def test_answer_observation_binds_one_event_without_repetition(answer_text, when
     assert prepared.checkpoint == checkpoint
     body = result.artifact.text
     assert result.artifact.observation.count('「褒められた」') == 1
-    assert '「嬉しくなかった」という反応' in result.artifact.observation
-    assert f'その出来事に対する{when}の受け止め' in result.artifact.observation
+    assert '「褒められた」一方で「嬉しくなかった」とあり、' in result.artifact.observation
+    assert f'その出来事について、{when}の受け止めは' in result.artifact.observation
     projection = project_thread_meaning(prepared, plan)
     sentence = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
     def inverse(text):
@@ -330,13 +330,13 @@ def test_answer_observation_binds_one_event_without_repetition(answer_text, when
             sentence_plan=sentence, resolver=resolver, selected_subjective_input=projection.selected_reception).passed
     assert inverse(body)
     for before, after in [
-        ('その出来事に対する', 'その反応に対する'),
-        ('その出来事に対する', 'その出来事が原因の'),
-        ('という反応があり、', 'という反応はなく、'),
-        ('という反応があり、', 'という反応があり。'),
+        ('その出来事について、', 'その反応について、'),
+        ('その出来事について、', 'その出来事が原因で、'),
+        ('とあり、', 'とはなく、'),
+        ('とあり、', 'とあり。'),
         ('「褒められた」', '「誘われた」'),
         ('「嬉しくなかった」', '「嬉しかった」'),
-        (f'に対する{when}', 'に対する先の回答時点'),
+        (f'について、{when}', 'について、先の回答時点'),
     ]:
         changed = body.replace(before, after)
         assert changed != body and not inverse(changed)
@@ -448,3 +448,70 @@ def test_single_event_positive_add_is_saved_with_original_feeling(qcase,qdb,monk
     retained_assertion(lambda: (dto['question_limit']==(3 if tier=='premium' else 1)), "dto['question_limit'] == (3 if tier == 'premium' else 1)")
     previous=[e for e in dto['timeline'] if e['kind']=='OBSERVATION' and not e['is_current']]
     retained_assertion(lambda: (previous[0]['text']==initial['current_observation']['text']), "previous[0]['text'] == initial['current_observation']['text']")
+
+
+@pytest.fixture(scope='module', params=[
+    ('今は嬉しい。', '回答した時点', '嬉しい'),
+    ('その時は重かった。', 'その時', '重かった'),
+    ('今は少し不安です。', '回答した時点', '少し不安です'),
+    ('今は私も怖くないです。', '回答した時点', '私も怖くないです'),
+    ('今はわからない。', '回答した時点', 'わからない'),
+])
+def compact_answer_observation(request):
+    from test_cmee_emlis_q3_thread import begin, advance
+    from test_cmee_emlis_received_discourse import actual
+    text, when, source = request.param
+    context = actual(request=advance(begin('褒められたのに、嬉しくなかった。'), text))
+    return context, when, source
+
+
+def test_compact_answer_observation_keeps_full_sources(compact_answer_observation):
+    from test_cmee_emlis_detached_observation import read_body
+    context, when, source = compact_answer_observation
+    result = context[0]
+    assert result.artifact.observation == (
+        '「褒められた」一方で「嬉しくなかった」とあり、'
+        f'その出来事について、{when}の受け止めは「{source}」と書かれています。')
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.mark.parametrize('mutation', [
+    'cause', 'unrelated', 'reaction_target', 'other_event_target', 'causal_target',
+    'denied_reaction', 'sentence_split', 'extra_current', 'wrong_event',
+    'wrong_reaction', 'missing_time', 'wrong_time', 'missing_answer', 'wrong_answer',
+])
+def test_compact_answer_observation_rejects_changed_duties(compact_answer_observation, mutation):
+    from test_cmee_emlis_detached_observation import read_body
+    context, when, source = compact_answer_observation
+    result = context[0]
+    observation = result.artifact.observation
+    old, new = {
+        'cause': ('一方で', 'ので'),
+        'unrelated': ('一方で', 'そして'),
+        'reaction_target': ('その出来事について、', 'その反応について、'),
+        'other_event_target': ('その出来事について、', '頼まれたことについて、'),
+        'causal_target': ('その出来事について、', 'その出来事が原因で、'),
+        'denied_reaction': ('とあり、', 'とは書かれておらず、'),
+        'sentence_split': ('とあり、', 'とあり。'),
+        'extra_current': ('その出来事について、', 'その出来事について、今は'),
+        'wrong_event': ('「褒められた」', '「誘われた」'),
+        'wrong_reaction': ('「嬉しくなかった」', '「嬉しかった」'),
+        'missing_time': (when + 'の受け止めは', '受け止めは'),
+        'wrong_time': (when + 'の受け止めは', ('回答した時点' if when == 'その時' else 'その時') + 'の受け止めは'),
+        'missing_answer': (f'「{source}」', ''),
+        'wrong_answer': (f'「{source}」', '「友人が悲しい」'),
+    }[mutation]
+    changed = observation.replace(old, new, 1)
+    assert changed != observation
+    body = result.artifact.text.replace(observation, changed, 1)
+    assert not read_body(context, body).passed
+
+
+def test_compact_answer_observation_still_reads_legacy_sentence(compact_answer_observation):
+    from test_cmee_emlis_detached_observation import read_body
+    context, when, source = compact_answer_observation
+    result = context[0]
+    legacy = ('「褒められた」という出来事の一方で「嬉しくなかった」という反応があり、'
+        f'その出来事に対する{when}の受け止めとして、「{source}」が見えます。')
+    body = result.artifact.text.replace(result.artifact.observation, legacy, 1)
+    assert read_body(context, body).passed

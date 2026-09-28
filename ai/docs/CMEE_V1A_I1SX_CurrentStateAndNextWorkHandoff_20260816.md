@@ -10448,3 +10448,41 @@ Gateは全文から新しい表現を独立に読み、二つの核をそれぞ�
 **残件と次の対象。** Observation先頭の長い説明、ObservationとReceptionにまたがる再掲、別Move間の訂正導入、撤回後「その時」の参照、定型的な語り口、既知20失敗を継続対象にする。今回の限定familyの読みやすさ改善を、Emlis全体の商品完成へ昇格しない。weeklyの9/30中間確認、10/3対象群整理、10/10内容判定を維持する。
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 新ownerや責任境界の変更なし。実DB・実機・実課金、外部生成AI、Ready/merge/deploy/enableは未実施。変更6path・反映commit・remote全文一致は両Draft PRの今回記録へ結合する。
+
+## 2026-09-29 継続 — 出来事・原反応・回答を結ぶObservationの説明句を整理
+
+**開始点と範囲。** MashのEmlisAI残件継続指示で、API `f906c7713c1710f535e71e59d404d436eedf40ac`、Cocolon `d11e00cc8b4b995423d84d504036c7239acab1c9`、Draft #3/#30をfresh確認して開始した。両repositoryの作業treeはremoteと一致。ローカルsnapshot commitは作業用aliasであり、公開commitの親には上記remote headを使う。前回の二訂正Observation修正を継承し、今回は一意な出来事・原反応・回答を一文にする既存groupの長い説明を対象にした。
+
+work-attitude入口/CURRENT_RULES/Rule18、全体設計01・全file地図02の関連分割、current_structure00/01/04、恒久incident全文、前回handoff、最新weekly `Cocolon_Weekly_Review_20260926.md` §5を確認。構造資料に前unitからの差分はなく、tracked inventory API2300/Cocolon1645を継承した。System Context prepareはmaterial commit祖先照合でexit2、原典直接読みに切り替えた。Context freshness成功とは呼ばない。Karen-Diaryの入口・行動原理・関係性資料も参照した。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / LEVEL_2。root華恋が現在のCodex Workで技術判断・編集・検査・GitHub反映を担当し、独立担当はread-onlyの商品・技術reviewを行った。Pro/Ultraの未確認model identityは名乗らない。first effect前にAPIのSurface、Gate、detached observation test、detached feeling discourse test、Q4 application test、current派生identity fixture、既存handoffとCocolon06の計8pathを固定した。新機構・別作者・別engineは作らず、意味選択・Plan・Reception・Move数・API/DB/RN・保存方式・語彙認定・品質条件・依存・既定OFFを変更しない。
+
+**原因と最終本文。** 既存三者groupは同じ一文で出来事と反応を保持できていたが、「という出来事」「という反応があり」「受け止めとして〜が見えます」が重なっていた。作者の一意性・hedge除外・relation条件を変えず、同じ三引用と対比、同じ出来事への参照、時点を残して説明句を整理した。
+
+```text
+修正前：
+「褒められた」という出来事の一方で「嬉しくなかった」という反応があり、その出来事に対する回答した時点の受け止めとして、「嬉しい」が見えます。
+
+最終版：
+「褒められた」一方で「嬉しくなかった」とあり、その出来事について、回答した時点の受け止めは「嬉しい」と書かれています。
+```
+
+原反応との対比は前半で閉じ、現在回答をその対比の相手へ移さない。「わからない」も気持ちへ断定変換せず原文のまま扱う。初稿の「受け止めは『X』です」は、本文実読で「少し不安です」です、のように6系列で丁寧語が重なるとroot・商品担当が確認したため不採用にし、原文を削らず一律「と書かれています」へ補正した。二文へ分割する案も、断片化と参照の曖昧さを避けるため採用しなかった。
+
+Gateは新しい全文grammarから三sourceと時点を独立に復元し、元event→reactionと同じevent→answerの関係を従来どおり照合する。新link markerは「その出来事について、」だけで、一般的な「について」全体へ広げない。markerがあるだけでは照合成功しない。旧全文grammarは保持した。複数ABOUT、曖昧source、hedge付き行の除外条件と、非共有ABOUT文の作者は変更していない。
+
+**実本文比較。** 同じruntime・fresh importで48系列を前後比較した。前unitの30系列に、出来事3種×現在肯定・当時負荷・程度付き不安・本人否定・不明・当時訂正の6回答を追加した。全48でcheckpoint・Plan・Receptionが完全一致し、本文成立48→48、独立inverseも全件成功。Observationの変更は対象20、残り28の全文は一致した。変更20の両層全文をrootと商品担当が読み、原時点3／回答時点17、本人・助詞・程度・否定・不明と同event参照の保持を確認した。長い修飾を減らした局所candidateであり、正式Product Read PASSや全体の商品完成を自己認定しない。
+
+**検証。** 開始版の比較母集団は、同じproduction treeで保存済みの前unit6target 1669件（1649 PASS / 20 FAIL）と、今回修正前に追加実行したQ4 application・detached feeling discourseの167件（148 PASS / 19 FAIL、49.99秒）の計1836件（1797 PASS / 39 FAIL）。最終productionで8targetを横断した結果は1916件中1876 PASS / 40 FAIL、193 deselected、2 warning（432.12秒）。このうち新たな1 FAILはmiddle revisionの旧時点改変anchorが新本文を置換できないもので、同じ時点保護を新anchorへ更新した後、該当18条件を再検証して18 PASS / 1083 deselected / 1 warning（9.09秒）。最後の修正は検査anchorのみでproduction sourceとfixtureは不変。横断結果へこの原因箇所の最終再検証を結合した結果は1916件＝1877 PASS / 既存39 FAIL、新規80は全PASS。1916件全量をanchor補正後に再実行したとは呼ばない。
+
+本文変更に合わせた二つのparameter IDは同じ改変目的の対応を明記して照合し、脱落case・成功/失敗の状態変化は0。39失敗は前回20＋今回追加範囲の開始版19であり、20→39を新規製品欠陥19件と数えない。ただし既知Q1失敗1件では、保護された旧「に対する→から続く」置換が対象不在となり、retained assertion失敗が1つ増えた。既存の旧Reception接頭句に対する失敗も残る。元の保護検査は変更せず、この意図した文面差を記録し、新しい可視文への因果/帰属改変拒否を新規70条件および既存Q4検査で確認した。全traceや全assertionが前回一致したとは主張しない。
+
+最終本文でのfocusedは156 PASS / 1192 deselected / 1 warning（33.42秒）。新規80条件は、三引用と時点の完全な本文5、因果・関係・帰属・反応・文境界・時点・回答の改変拒否70、旧全文grammarの独立受入れ5。既存7関数の文面anchorだけを更新し、意味・時点・保存条件・改変拒否の目的を保持した。最初のfocusedで旧anchorにより12条件が失敗した点は、原時点11条件と時点改変anchor1条件を更新し、最終focusedで解消した。既存保護検査の期待・継続assertionは変更していない。
+
+保存・再表示は横断内の第三反応訂正2系列と二訂正5系列の計7系列・36状態で成功。元入力DTOを保持し、本文更新とCOMPLETED/can_continue=falseの既存条件を満たし、生成を禁止したGET/service.startから保存済みDTOを同一内容で返した。試験用保存系・PGliteでの結果であり、process再起動・実DB・実機の証拠とは呼ばない。
+
+最終identityはlanguage=`fc83ee457b58960670078854e9616b316407dda77378efa4e79656f16b21ea07`、runtime=`19ee08c642fef3c95645a682d5a209a6dd7447cee621abcfd6c6cc332c9c24c9`。既存導出の各18payload・source owner9を使い、fixture key集合とscope説明、歴史的凍結証跡を保持した。同じ利用可能runtimeのversion/importを確認（Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1）、installは0。独立技術reviewで新grammar・旧互換・source/時点条件・保護検査不変を確認した。
+
+**残件と次の一作業。** 非共有ABOUT文の入れ子になった説明、ObservationとReceptionにまたがる再掲、別Move訂正導入、撤回後の参照、引用中心の説明調、既存検査失敗を保持する。次の本文対象は非共有ABOUT文の共通した説明句であり、意味・時点を保つ局所文として整理する。weeklyの9/30中間確認・10/3対象群確認・10/10内容判断を変更しない。実機一往復や共通機能の別枠を本文検査で完了扱いしない。
+
+**TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** owner、責務、API/DB/RN、保存境界に構造差分なし。実DB・実機・実課金・外部生成AI・Ready/merge/deploy/enableは未実施。反映commitと8path全文一致は両Draft PRの今回記録へ結合する。API PR本文は文字数上限のため先頭の直近要約を今回へ更新し、前unitの事実はこの既存handoff／06の2026-09-28追記に保持する。
