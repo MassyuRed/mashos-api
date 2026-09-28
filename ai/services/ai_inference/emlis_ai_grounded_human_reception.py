@@ -10008,6 +10008,29 @@ def _source_grounded_received_discourse(realization) -> str | None:
             # a different past event; additive coordination is reversible.
             if finite.endswith("い") or _feeling_past_explanation_predicate(source) is not None:
                 separate_time_scopes = True
+    # Equal complete feelings can govern adjacent, separately named
+    # occasions. Only ABOUT-only original-time rows share a predicate;
+    # an original contrast or independent revision remains its own scope.
+    event_names = [fragments[int(code.split(":")[1])] for code in codes]
+    if (len(set(event_names)) == len(event_names)
+        and not any(code.endswith((":none:detached:none", ":none:replacement:none")) for code in codes)):
+        combined, run_events, run_finite = [], [], None
+        for code, event, part in zip(codes, event_names, parts, strict=True):
+            fields = code.split(":")
+            prefix = event + "時は、"
+            eligible = (len(fields) == 7 and fields[2:4] == ["none", "none"]
+                and fields[6] == "original_occasion"
+                and fields[5] in {"FINITE", "PAST_FEELING", "ADJECTIVE_PRESENT_POLITE",
+                                  "COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE"}
+                and part.startswith(prefix) and not part.endswith(("のだ", "のだった")))
+            complete_feeling = part[len(prefix):] if eligible else None
+            if eligible and run_events and complete_feeling == run_finite:
+                run_events.append(event)
+                combined[-1] = "、".join(item + "時も" for item in run_events) + "、" + run_finite
+            else:
+                combined.append(part)
+                run_events, run_finite = ([event], complete_feeling) if eligible else ([], None)
+        parts = combined
     # Independent events remain distinct. Each scope is closed before the
     # next begins; no cause, ranking or shared experiencer is manufactured.
     if any(code.endswith(":none:detached:none") for code in codes):

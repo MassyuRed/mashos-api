@@ -3510,9 +3510,31 @@ def read_received_discourse(raw, move, plan, resolver, selected_subjective_input
         cuts.append(starts[0] + 1)
     actual_parts = [raw[start:end - 1] for start, end in zip(cuts, cuts[1:])]
     actual_parts.append(raw[cuts[-1]:])
-    normalized_parts = []
-    for part in actual_parts[:-1]:
-        if part.endswith("し"):
+    normalized_parts, shared_slots = [], []
+    for part_index, part in enumerate(actual_parts):
+        event_id = move.target_nucleus_ids[part_index]
+        event = final_reception_source_anchor_text(event_id, index, resolver)
+        shared_prefix = event + "時も、" if event else ""
+        shared = bool(event and (part == event + "時も" or part.startswith(shared_prefix)))
+        if shared:
+            required = set(plan.coverage_requirements.required_relation_ids)
+            relations = tuple(r for r in plan.relations if r.relation_id in required
+                and r.from_nucleus_id == event_id and r.to_nucleus_id in move.support_nucleus_ids)
+            if (len(relations) != 1 or relations[0].type != "evaluation_about_event"
+                or {c for c in index[relations[0].to_nucleus_id].semantic_frame.attribute_codes
+                    if c.startswith("thread_time:")} != {"thread_time:original_occasion"}):
+                return None
+            if part == event + "時も":
+                shared_slots.append(part_index)
+                normalized_parts.append(None)
+                continue
+            if not shared_slots:
+                return None
+        elif shared_slots:
+            return None
+        if part_index == len(actual_parts) - 1:
+            normalized = part
+        elif part.endswith("し"):
             # Additive coordination preserves each complete finite clause.
             # Cut only at the unique next source-owned event above; an
             # identical connective inside an answer remains part of it.
@@ -3535,8 +3557,20 @@ def read_received_discourse(raw, move, plan, resolver, selected_subjective_input
             finite = part[:-1] + "かった"
         else:
             return None
-        normalized_parts.append(finite + "のですね")
-    normalized_parts.append(actual_parts[-1])
+        if part_index < len(actual_parts) - 1:
+            normalized = finite + "のですね"
+        if shared:
+            suffix = normalized[len(shared_prefix):]
+            # Each original event/answer pair is independently read below,
+            # including exact source recovery and complete relation cover.
+            for slot in shared_slots:
+                source_event = final_reception_source_anchor_text(move.target_nucleus_ids[slot], index, resolver)
+                normalized_parts[slot] = source_event + "時は、" + suffix.removesuffix("。")
+            normalized = event + "時は、" + suffix
+            shared_slots = []
+        normalized_parts.append(normalized)
+    if shared_slots:
+        return None
     normalized = "、また、".join(normalized_parts)
     proof = _read_received_discourse_parts(normalized, move, plan, resolver, selected_subjective_input,
                                            coordinated_prefix_count=len(actual_parts) - 1)

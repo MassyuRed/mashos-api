@@ -10546,3 +10546,36 @@ Gateは新しい完成文の各組を、同bindingの固有ABOUT relation・完�
 **残件と次の一作業。** 今回のcommon explanationは局所改善として保持する。次はObservationとReceptionにまたがる同じ出来事・回答の再掲を、出来事ごとの帰属と時点を落とさず一つの欠陥群として扱う。Receptionの列挙調、別Move訂正導入、撤回後の参照、既存39失敗も未完了。本文を単に短縮したり既存の意味を削って件数を減らしたりしない。weeklyの9/30中間判断・10/3対象群整理・10/10内容判断と別枠の実機一往復10/2を維持する。
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 新owner・helper・engine、責務境界、API/DB/RN/schema、品質基準への変更なし。実DB・実機・実課金・外部生成AI・Ready/merge/deploy/enableは未実施。反映commitとexact6pathのremote全文再取得一致は両Draft PRの今回記録へ結合する。PR本文上限に合わせて先頭の直近要約を更新し、前unitの事実は両継続記録の前節へ保持する。
+
+## 2026-09-29 継続 — 二つの出来事に共通する気持ちの再掲を減らす
+
+MashのEmlisAI残件継続指示により、API `9c50191644b2ca470d7f65d1d507f1ab336d036b`／Cocolon `185401bae7ce26cadbc2b6b7debc10b6c6027441`、Draft #3/#30から開始。入口・CURRENT_RULES・Rule18、全体設計01/02と全ファイル地図、current_structure00/01/04、恒久incident全文、最新weekly9/26 §3.8〜5.9、前回TXTと直前handoffを参照した。前unitで照合済みのAPI2300/Cocolon1645 inventoryをsame-headのfresh確認により継承し、前回6変更fileもremote照合済み内容とローカルが一致した。Karen-Diary入口と行動原理も参照。Context prepareは`PUBLICATION_RECOVERY_AMBIGUOUS: residual without marker`でexit2、原典直接読みに戻り、freshness成功とはしない。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / LEVEL_2。現在のCodex Workのroot華恋が唯一の編集・実行・反映owner、独立商品・技術担当はread-only。未確認のPro/Ultra model名は名乗らない。first effect前にHR、Gate、detached observation test、current identity fixture、API handoffとCocolon06のexact6pathを固定した。意味・Plan・Move・Observation・保存責務・API/DB/RN/schemaを変えず、既存Reception作者内の共通原因を修正した。
+
+**対象と本文。** 同じMove内の隣接したABOUT-onlyの原時点節でも、従来は出来事ごとに同じ気持ちを有限節へ展開し、繰り返していた。既存の有限化で本人・助詞・程度・否定・時制を含む述語全体が完全一致した場合だけ、個々の出来事とその時点を明示したまま、共通述語を一度にする。
+
+```text
+修正前：誘われた時は、あなたは少し不安だったし、頼まれた時は、あなたは少し不安だったのですね。
+最終版：誘われた時も、頼まれた時も、あなたは少し不安だったのですね。
+```
+
+「時も」は各出来事の別々の時点を指し、同時性や新しい因果・変化を加えない。異なる述語・時点、原反応付き節、訂正/撤回の独立節、同文event、説明の「のだ／のだった」は共通化しない。原文が異なっても既存の人称/丁寧形処理で同じ有限節になる場合だけ扱い、新しい意味同一性認定は作らない。各引用はObservationにそのまま残る。2eventだけの既存answer-groupは別経路として保持した。
+
+同じ出来事の当時の反応と現在の肯定回答が別Moveへ分断される案も商品担当から挙がったが、多eventを含む既存Move・bindingの再配置に広がるため、このunitへ混ぜなかった。今回の共通述語化は局所改善candidateであり、二層の再掲全体が解消したとはしない。
+
+Gateの既存readerは、可視の「event時も」ごとにrequired ABOUTが一つで原時点であることを確認し、共通述語を各eventの独立節として読み戻す。既存のsource復元、本人/極性/時点、核・relation完全消費を保ち、片方のsourceだけで共有句全体を通さない。未完の列、間の非共有節、出来事の脱落・交換・複製、因果・同時性・余分なeventを拒否する。新しいhelper、作者、engine、source admissionは追加していない。
+
+**実本文。** 同runtime・fresh importの継承59行を前後比較。checkpoint・Plan・Observationは全59一致、提供・独立inverseも全59成功。Reception変更9行（異なる本文6種類）、残50行は全文一致。rootと商品担当が変更6種類の前後両層を全文確認し、追加3行は同じ本文だった。別に新検査の否定＋「私も」、原時点に属する現在形copulaを先行現在回答の有無で生成した4本文も確認した。正式human Product Read PASSや商品合格は自己認定しない。
+
+**検証。** 最終productionで8target全2100件を実行し、2061PASS/39FAIL/2warnings（434.17秒）。前unit確定2047条件（2008PASS/39FAIL）との照合で既存条件の欠落0、状態変化0、残存39失敗のassertion変化0、新規53条件は全PASS。既存39失敗を解消済みとも、全体greenとも扱わない。
+
+新規53条件は、二出来事と完全述語の保持8、可視の意味/順序/時点/帰属改変拒否30、片方のsource frameの時点/本人/極性変更拒否6、異なる完全述語の非共有4、非隣接/同文eventの非共有2、旧明示形と同義終止2、保存/撤回1。最初のfocusedは96PASS/2FAIL。新testが対象外の2event-only answer-groupまで共通化すると期待した設定誤りで、対象received groupの入力へ訂正した。production sourceは変更せず、最終focused100PASS/1185deselected/1warning（28.37秒）。既存検査本文・parameter ID・保護された検査・歴史的凍結証跡は変更0。
+
+保存は既存19系列＋新1系列の20系列。新系列では原反応二つを同じ気持ちへ訂正し、共有文が保存された後に一つの出来事を撤回する3回答状態を確認。元入力DTOを保持し、撤回した出来事を再掲せず、生成を禁止したGET/service.startで保存済みDTOが一致、最終COMPLETED/can_continue=falseを維持した。試験用保存系/PGliteの結果であり、process再起動・実DB・実機ではない。
+
+最終identityはlanguage=`d95959c9a791ffcc71fbe71451986a538a721affcc9264c00cd176d4e89e5d7b`、runtime=`ee2ff04b838fd5cf66ecccb8a5126a00e348b92a98c053c0f307efef93d6809c`。既存導出の各18payload・9owner、fixture keyとscopeを保持。既存Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1とPGliteを継承し、install0。独立技術reviewは元の完全source/関係消費へ戻ることと対象外の境界を確認した。
+
+**残件・再開先。** 二層間の再掲全体、同じ出来事の当時と現在の肯定回答が別Moveへ分断される場合、Receptionの列挙調、別Move訂正導入、撤回後の参照、既存39失敗は未完了。次は同event二時点の再導入が生じる実Move・bindingの因果箇所を、必須意味を落とさない範囲で扱う。新しい汎用文章engineや周辺証明へ逃げず、9/30中間判断・10/3対象群整理・10/10内容判断と別枠の実機一往復10/2を維持する。
+
+**TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 同じ作者・reader責務の内側の変更。実DB・実機・実課金・外部生成AI・Ready/merge/deploy/enableは未実施。反映commit・exact6path・remote全文一致は両Draft PRの今回記録へ結合する。

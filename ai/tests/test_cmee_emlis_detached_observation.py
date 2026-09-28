@@ -2731,3 +2731,150 @@ def test_adjacent_about_cannot_repeat_a_complete_group(adjacent_about_time_conte
     body = context[0].artifact.text
     group = re.search(r'それぞれの出来事について、その時の受け止めとして、[^。]+。', body)[0]
     assert not read_body(context, body.replace(group, group + ' ' + group, 1)).passed
+
+
+@pytest.mark.parametrize('prior', [False, True])
+@pytest.mark.parametrize('sources,finite', [
+    (('少し私は苦しかったです', '私は少し苦しかったです'), 'あなたは少し苦し'),
+    (('少し私は不安でした', '私は少し不安でした'), 'あなたは少し不安だった'),
+    (('私も少し怖くなかったです', '私も少し怖くなかったです'), 'あなたも少し怖くな'),
+    (('私は少し不安です', '私は少し不安です'), 'あなたは少し不安'),
+])
+def test_shared_event_feeling_retains_each_occasion_and_one_complete_predicate(prior, sources, finite):
+    req = advance(begin(), '今は嬉しい。') if prior else begin()
+    old = ('悲しかった', '寂しかった') if prior else ('嬉しくなかった', '悲しかった')
+    events = ('誘われた', '頼まれた') if prior else ('褒められた', '誘われた')
+    for previous, source in zip(old, sources):
+        req = advance(req, f'「{previous}」ではなく「{source}」です。')
+    context = actual(request=req)
+    follow = context[0].artifact.reception
+    assert f'{events[0]}時も、{events[1]}時も、{finite}' in follow
+    assert follow.count(finite) == 1
+    for source in sources:
+        assert f'「{source}」' in context[0].artifact.observation
+    if prior:
+        assert '回答した時点では嬉しい' in follow
+    with patch.object(reception, '_source_grounded_received_discourse', side_effect=AssertionError('no author oracle')):
+        assert read_body(context, context[0].artifact.text).passed
+
+
+@pytest.fixture(scope='module', params=[False, True])
+def shared_event_feeling_context(request):
+    req = advance(begin(), '今は嬉しい。') if request.param else begin()
+    old = ('悲しかった', '寂しかった') if request.param else ('嬉しくなかった', '悲しかった')
+    events = ('誘われた', '頼まれた') if request.param else ('褒められた', '誘われた')
+    for previous in old:
+        req = advance(req, f'「{previous}」ではなく「私も少し怖くなかったです」です。')
+    return actual(request=req), events
+
+
+@pytest.mark.parametrize('mutation', ['drop_first', 'drop_second', 'swap', 'duplicate',
+    'time_first', 'time_second', 'simultaneous', 'cause', 'actor', 'particle',
+    'degree', 'negation', 'tense', 'extra_event', 'contrast_event'])
+def test_shared_event_feeling_rejects_lost_or_changed_meaning(shared_event_feeling_context, mutation):
+    context, (first, second) = shared_event_feeling_context
+    follow = context[0].artifact.reception
+    pair = first + '時も、' + second + '時も、'
+    old, new = {
+        'drop_first': (first + '時も、', ''), 'drop_second': (second + '時も、', ''),
+        'swap': (pair, second + '時も、' + first + '時も、'),
+        'duplicate': (pair, first + '時も、' + first + '時も、'),
+        'time_first': (first + '時も', first + 'ことへの回答した時点も'),
+        'time_second': (second + '時も', second + 'ことへの先の回答時点も'),
+        'simultaneous': (pair, '同時に' + pair), 'cause': (pair, pair + 'そのため'),
+        'actor': ('あなたも', '友人も'), 'particle': ('あなたも', 'あなたは'),
+        'degree': ('少し', ''), 'negation': ('怖くな', '怖'),
+        'tense': ('怖くなく' if first == '褒められた' else '怖くなかった', '怖くない'),
+        'extra_event': (pair, pair + '断られた時も、'),
+        'contrast_event': (pair, pair + ('褒められた' if first == '誘われた' else '頼まれた') + '時も、'),
+    }[mutation]
+    changed = follow.replace(old, new, 1)
+    assert changed != follow
+    with patch.object(reception, '_source_grounded_received_discourse', side_effect=AssertionError('no author oracle')):
+        assert not read_body(context, context[0].artifact.text.replace(follow, changed, 1)).passed
+
+
+@pytest.mark.parametrize('slot', [0, 1])
+@pytest.mark.parametrize('field,value', [('time', 'answer_time'), ('actor', 'other_person'), ('polarity', 'positive')])
+def test_shared_event_feeling_requires_each_sources_own_frame(slot, field, value):
+    req = begin()
+    for old in ('嬉しくなかった', '悲しかった'):
+        req = advance(req, f'「{old}」ではなく「私は少し不安でした」です。')
+    result, plan, _, resolver, selected = actual(request=req)
+    move, = plan.response_plan.human_reception_plan.moves
+    answers = [n for n in plan.nuclei if n.source_fields == ('answer_text_private',)]
+    target = answers[slot]
+    if field == 'time':
+        frame = replace(target.semantic_frame, attribute_codes=tuple(
+            'thread_time:' + value if c.startswith('thread_time:') else c for c in target.semantic_frame.attribute_codes))
+    else:
+        frame = replace(target.semantic_frame, **{field:value})
+    altered = replace(plan, nuclei=tuple(replace(n, semantic_frame=frame) if n == target else n for n in plan.nuclei))
+    with patch.object(reception, '_source_grounded_received_discourse', side_effect=AssertionError('no author oracle')):
+        assert gate.read_received_discourse(result.artifact.reception, move, plan, resolver, selected) is not None
+        assert gate.read_received_discourse(result.artifact.reception, move, altered, resolver, selected) is None
+
+
+@pytest.mark.parametrize('sources', [
+    ('私は少し不安でした', '私も少し不安でした'),
+    ('私は不安でした', '私は少し不安でした'),
+    ('私は少し不安でした', '私は少し不安です'),
+    ('私も少し怖くなかったです', '私は少し怖くなかったです'),
+])
+def test_shared_event_feeling_does_not_merge_different_complete_predicates(sources):
+    req = begin()
+    for old, source in zip(('嬉しくなかった', '悲しかった'), sources):
+        req = advance(req, f'「{old}」ではなく「{source}」です。')
+    context = actual(request=req)
+    assert '時も、' not in context[0].artifact.reception
+    assert read_body(context, context[0].artifact.text).passed
+
+
+@pytest.mark.parametrize('repeated', [False, True])
+def test_shared_event_feeling_keeps_nonadjacent_or_repeated_events_separate(repeated):
+    memo = ('褒められたのに、嬉しくなかった。褒められたのに、悲しかった。頼まれたのに、寂しかった。'
+            if repeated else '褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。')
+    req = begin(memo)
+    for old in ('嬉しくなかった', '悲しかった' if repeated else '寂しかった'):
+        req = advance(req, f'「{old}」ではなく「私は少し不安でした」です。')
+    context = actual(request=req)
+    assert '時も、' not in context[0].artifact.reception
+    assert read_body(context, context[0].artifact.text).passed
+
+
+@pytest.mark.parametrize('ending', ['のです。', 'のだと受け取りました。'])
+def test_shared_event_feeling_keeps_complete_legacy_form_and_equivalent_ending(ending):
+    req = advance(begin(), '今は嬉しい。')
+    for old in ('悲しかった', '寂しかった'):
+        req = advance(req, f'「{old}」ではなく「私は少し不安でした」です。')
+    context = actual(request=req)
+    follow = context[0].artifact.reception
+    shared = '誘われた時も、頼まれた時も、あなたは少し不安だったのですね。'
+    assert shared in follow
+    expanded = ('誘われた時は、あなたは少し不安だったし、頼まれた時は、あなたは少し不安だった' + ending)
+    for replacement in (shared.removesuffix('のですね。') + ending, expanded):
+        changed = follow.replace(shared, replacement, 1)
+        assert read_body(context, context[0].artifact.text.replace(follow, changed, 1)).passed
+
+
+def test_shared_event_feeling_saved_corrections_and_withdrawal_reuse_exact_dto(qcase, qdb, monkeypatch):
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    first = current = run(service.start(user, parent))
+    answers = ('「嬉しくなかった」ではなく「私は少し不安でした」です。',
+               '「悲しかった」ではなく「私は少し不安でした」です。', '「褒められた」は誤りです。')
+    for index, text in enumerate(answers):
+        if index:
+            current = run(cont(service, user, current, f'shared-event-continue-{index}'))
+        current = run(answer(service, user, current, text, f'shared-event-answer-{index}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        if index == 1:
+            assert '褒められた時も、誘われた時も、あなたは少し不安だった' in body
+        if index == 2:
+            assert '褒められた' not in body and '時も、' not in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not regenerate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+    assert current['state'] == 'COMPLETED' and not current['can_continue']
