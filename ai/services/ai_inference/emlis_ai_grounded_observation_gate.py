@@ -2273,13 +2273,29 @@ def _body_inverse_thread_contrast_answers(body, witness, line, plan, resolver):
 
 
 def _body_inverse_intervening_events(body, witness, line, planned_line, plan, resolver):
-    """Read a surviving original fact between event pairs, without author replay."""
+    """Read retained original facts, separately or between pairs, without author replay."""
     index = {n.nucleus_id: n for n in plan.nuclei}
     relations = tuple(r for r in plan.relations if r.relation_id in planned_line.binding.relation_ids)
+    linked = {nid for r in plan.relations for nid in (r.from_nucleus_id, r.to_nucleus_id)}
+    if len(planned_line.binding.nucleus_ids) == 1 and not planned_line.binding.relation_ids:
+        nucleus = index[planned_line.binding.nucleus_ids[0]]
+        frame = nucleus.semantic_frame
+        if (nucleus.nucleus_id not in linked and nucleus.kind == "event"
+            and "semantic_role:contrast_before" in frame.attribute_codes
+            and nucleus.source_fields in {("memo",), ("memo_action",)}):
+            # A separately retained original event is a complete past fact,
+            # never the replacement feeling's cause, focus or shared flow.
+            sources = _body_inverse_nucleus_source_values(nucleus.nucleus_id, plan, resolver)
+            parsed = re.fullmatch(r"「([^「」『』\n]+)」という出来事がありました。",
+                                 _body_inverse_visible_text(body, line))
+            return bool(frame.predicate_kind == "event" and frame.actor == "current_user"
+                and frame.modality == "fact" and frame.time_scope == "past"
+                and nucleus.grounding_kind == "explicit" and nucleus.retention == "required"
+                and len(nucleus.source_span_ids) == 1 and len(sources) == 1
+                and parsed and _body_inverse_normalized_anchor(parsed.group(1)) == sources[0])
     contrasts = tuple(r for r in relations if r.type == "contrast")
     if len(contrasts) < 2:
         return True
-    linked = {nid for r in plan.relations for nid in (r.from_nucleus_id, r.to_nucleus_id)}
     span_order = {sid: i for i, sid in enumerate(resolver.span_ids)}
     def position(n):
         return min((span_order[sid] for sid in n.source_span_ids), default=-1)

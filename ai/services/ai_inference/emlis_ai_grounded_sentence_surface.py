@@ -2247,7 +2247,16 @@ def _build_regular_lines(
             parallel_groups = _merge_parallel_contrast_groups(source_groups, relation_candidates,
                 nucleus_index, relation_index, bridge_detached_feelings=True)
             detached_groups = _merge_detached_feeling_groups(parallel_groups, nucleus_index, relation_index)
-            if detached_groups != source_groups and len(detached_groups) <= max_observation_groups:
+            separate_event_and_feeling = (
+                any(len(group) == 1 and _independent_original_event(nucleus_index[group[0]], relation_index)
+                    for group in detached_groups)
+                and any(group and all(_detached_observation_time(nucleus_index[nid]) for nid in group)
+                        for group in detached_groups))
+            # The initial budget may have joined a bare event to an unrelated
+            # replacement. Prefer the uncompressed source components when
+            # contrast composition already makes them fit the same budget.
+            if ((detached_groups != source_groups or separate_event_and_feeling)
+                and len(detached_groups) <= max_observation_groups):
                 groups = detached_groups
         groups = _merge_homogeneous_state_groups(groups, nucleus_index)
         groups = _merge_source_local_relation_free_event_groups(
@@ -2929,6 +2938,10 @@ def _render_observation(
             return f"{prefix}{joined}が、同じ入力に置かれた出来事として並んでいます。"
         return f"{prefix}{joined}が、同じ入力の中で一つの流れになっています。"
     nucleus = nucleus_index[binding.nucleus_ids[0]]
+    if (getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+        and not binding.relation_ids and _independent_original_event(nucleus, {})
+        and "semantic_role:contrast_before" in nucleus.semantic_frame.attribute_codes):
+        return f"{prefix}{joined}という出来事がありました。"
     if ("thread_subject:withdrawn_source_event" in nucleus.semantic_frame.attribute_codes
         and nucleus.source_fields in {("memo",), ("memo_action",)}
         and nucleus.kind == "reaction" and nucleus.semantic_frame.time_scope == "past"):

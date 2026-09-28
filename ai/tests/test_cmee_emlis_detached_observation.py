@@ -1137,3 +1137,117 @@ def test_withdrawn_current_focus_saves_restored_body_and_unchanged_original(qcas
     assert '「誘われた」という出来事がありました。' in body
     assert '悲しかった' not in body and '苦しかった' not in body
     assert all(s in body for s in ('褒められた', '嬉しくなかった', '頼まれた', '寂しかった'))
+
+
+@pytest.mark.parametrize('answers', [(), ('今は嬉しい。',), ('その時は少し嬉しかった。',)])
+@pytest.mark.parametrize('source', ['苦しかった', '少し苦しかった', '私は苦しかったです', '怖くなかった'])
+def test_third_original_revision_preserves_separate_event_and_past_feeling(answers, source):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    request = revised_original_request(source, answers, old='寂しかった')
+    public = MeaningExperienceEngine().generate(request)
+    assert public.artifact is not None, public.reason_codes
+    context = actual(request=request)
+    result, plan, sentence, _, _ = context
+    assert result.artifact.text == public.artifact.text
+    body = result.artifact.text
+    lines = result.artifact.observation.splitlines()
+    assert len(lines) == 3
+    assert lines[1] == '「頼まれた」という出来事がありました。'
+    assert lines[2] == f'その時の気持ちとして、「{source}」が見えます。'
+    assert all(value in lines[0] for value in ('褒められた', '嬉しくなかった', '誘われた', '悲しかった'))
+    assert '寂しかった' not in body and '一つの流れ' not in body
+    assert '出発点' not in body and '今回の中心' not in body
+    assert len(plan.coverage_requirements.required_nucleus_ids) == 6 + len(answers)
+    assert len(plan.relations) == 2 + len(answers)
+    replacement, = [n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes]
+    assert not any({r.from_nucleus_id, r.to_nucleus_id} & {'nucleus:s3:event', replacement.nucleus_id}
+                   for r in plan.relations)
+    assert len(plan.response_plan.human_reception_plan.moves) == 2 + len(answers)
+    observation_lines = [row for row in sentence.lines if row.binding.line_role != 'human_follow']
+    assert len(observation_lines) == 3
+    assert observation_lines[1].binding.nucleus_ids == ('nucleus:s3:event',)
+    assert observation_lines[2].binding.nucleus_ids == (replacement.nucleus_id,)
+    assert not any('semantic_arc_fragment:justified' in row.binding.functional_atom_ids for row in sentence.lines)
+    checkpoint = prepare_emlis_meaning(request).checkpoint
+    assert {'nucleus:s3:reaction', 'relation:r3'} <= set(checkpoint.inactive_claim_refs)
+    assert 'nucleus:s3:event' not in checkpoint.inactive_claim_refs
+    if answers:
+        assert ('その時の受け止めとして、「少し嬉しかった」' if '少し' in answers[0]
+                else '回答した時点の受け止めとして、「嬉しい」') in lines[0]
+    assert read_body(context, body).passed
+
+
+@pytest.fixture(scope='module')
+def third_original_revision_context():
+    return actual(request=revised_original_request('少し怖くなかった', ('今は嬉しい。',), old='寂しかった'))
+
+
+@pytest.mark.parametrize('old,new', [
+    ('「頼まれた」という出来事がありました。', ''),
+    ('「頼まれた」という出来事がありました。', '「誘われた」という出来事がありました。'),
+    ('「頼まれた」という出来事がありました。', '「友人が頼まれた」という出来事がありました。'),
+    ('「頼まれた」という出来事がありました。', '「頼まれなかった」という出来事がありました。'),
+    ('「頼まれた」という出来事がありました。', '「頼まれる」という出来事がありました。'),
+    ('という出来事がありました。', 'という出来事があります。'),
+    ('「頼まれた」という出来事がありました。', '今回の中心には、「頼まれた」があります。'),
+    ('「頼まれた」という出来事がありました。', 'その出発点には、「頼まれた」という出来事がありました。'),
+    ('「頼まれた」という出来事がありました。', '「頼まれた」という出来事がありました。寂しかったのですね。'),
+    ('「頼まれた」という出来事がありました。', '「頼まれた」という出来事がありましたが、それが苦しさの原因です。'),
+    ('その時の気持ちとして、「少し怖くなかった」', '回答した時点の気持ちとして、「少し怖くなかった」'),
+    ('その時の気持ちとして、「少し怖くなかった」', 'その時の気持ちとして、「怖くなかった」'),
+    ('その時の気持ちとして、「少し怖くなかった」', 'その時の気持ちとして、「少し怖かった」'),
+    ('その時の気持ちとして、「少し怖くなかった」', 'その時の気持ちとして、「寂しかった」'),
+    ('その時の気持ちとして、「少し怖くなかった」', '頼まれたので、その時の気持ちとして、「少し怖くなかった」'),
+    ('「嬉しくなかった」', '「嬉しかった」'),
+    ('「悲しかった」', '「悲しくなかった」'),
+    ('その出来事に対する回答した時点の', 'その出来事に対するその時の'),
+])
+def test_third_original_revision_rejects_body_corruption_without_authors(third_original_revision_context, old, new):
+    context = third_original_revision_context
+    body = context[0].artifact.text
+    changed = body.replace(old, new, 1)
+    assert changed != body
+    with patch.object(surface, '_render_relation', side_effect=AssertionError('no relation oracle')):
+        assert not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('field,value', [('actor', 'other_person'), ('time_scope', 'present'), ('modality', 'uncertain')])
+def test_third_original_revision_requires_original_event_fact(third_original_revision_context, field, value):
+    result, plan, sentence, resolver, selected = third_original_revision_context
+    nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame, **{field: value}))
+                   if n.nucleus_id == 'nucleus:s3:event' else n for n in plan.nuclei)
+    context = result, replace(plan, nuclei=nuclei), sentence, resolver, selected
+    assert not read_body(context, result.artifact.text).passed
+
+
+def test_third_original_revision_accepts_equivalent_feeling_ending(third_original_revision_context):
+    context = third_original_revision_context
+    body = context[0].artifact.text
+    changed = body.replace('気持ちとして、「少し怖くなかった」が見えます。', '気持ちとして、「少し怖くなかった」が読み取れます。')
+    assert changed != body and read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('positive', ['今は嬉しい。', 'その時は少し嬉しかった。'])
+def test_third_original_revision_saves_body_and_unchanged_original(qcase, qdb, monkeypatch, positive):
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    for i, text in enumerate((None, positive, '「寂しかった」ではなく「苦しかった」です。')):
+        if text is not None:
+            if i > 1:
+                current = run(cont(service, user, current, f'third-revision-continue-{i}'))
+            current = run(answer(service, user, current, text, f'third-revision-answer-{i}'))
+            assert current['body_state'] == 'REFINED', current
+        assert current['original'] == first['original']
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read must not regenerate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+    body = current['current_observation']['text']
+    assert '「頼まれた」という出来事がありました。' in body
+    assert 'その時の気持ちとして、「苦しかった」' in body
+    assert '寂しかった' not in body
+    assert all(s in body for s in ('褒められた', '嬉しくなかった', '誘われた', '悲しかった'))
+    assert ('その時の受け止めとして、「少し嬉しかった」' if '少し' in positive
+            else '回答した時点の受け止めとして、「嬉しい」') in body
+    assert not current['can_continue']
