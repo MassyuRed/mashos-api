@@ -10683,3 +10683,35 @@ DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / LEVEL_2。root華恋が唯一の編集・実
 **残件・再開先。** 今回閉じたのは一意contrast＋ABOUT groupにある報告枠の重複である。二層全体の内容再掲、対象外の長い説明と「とあります」の反復、単一出来事の二文、中間event・訂正/撤回後の参照、受け取り自体の深さ、既存39失敗は未解決。当時の相反する回答が同じ時点に並ぶ既存例も、今回の語調短縮で解決したとはしない。次は残余の独立contrast群を含む本文全体で、sourceごとの対比・時点・主体を保った報告の反復を確認し、未解決群を実本文と保存までつなげる。9/30中間確認、10/3対象群、10/10内容判断、別枠の10/2開発実機一往復を維持する。
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 構造地図のowner/route/lifecycle変更なし。実DB・実機・実課金・Ready/merge/deploy/enableは未実施。反映commit・exact9path・remote全文一致は両Draft PRの今回記録へ結合する。
+
+
+## 2026-09-29 継続 — 独立した複数の対比で、報告の反復を減らす
+
+Mashの継続指示により、API `05c29a91505e3977213ff4ff278a425f5d7e6771`／Cocolon `27d3b3c4f033488adf6186da426efe16451bd53a`、Draft #3/#30から開始。fresh head・recursive tree（API2300/Cocolon1645 blob）を前unitの反映済み状態と照合。入口・CURRENT_RULES・最新weekly9/26 §3.8/5.3/5.9・直前handoffを再確認し、恒久incidentは本unitでも全文読んだ。全体設計01/02・全ファイル地図・current_structure00/01/04・Rule18の読了は同じ未変更blobから継承し、関連設計02 §35/36/38とmapを再確認した。System Context freshnessの新規成功は主張せず、原典を直接確認した。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / LEVEL_2。root華恋が唯一の編集・実行・反映owner、商品・技術担当はread-only。確認できないPro/Ultra名は用いない。A-Fでは、独立対比の抽象説明反復を対象とし、意味Plan・checkpoint・Reception・source所有・保存の不変を受入条件にした。first source effect前の許容9pathはSurface、Gate、detached observation/feeling/received discourse/Q4の4test、current identity fixture、API handoff、Cocolon06。最終差分はSurface・Gate・received discourse test・fixture・handoff・06の6pathだけ。既存test本文は全て開始時のまま、新testを末尾へ追加した。
+
+**変更と限定。** 既存Surfaceのcoexisting_contrastが返す、隣接した複数の一意な原入力event→feeling対比について、全引用と順序を保ち報告の末尾を共有する。ABOUT回答・独立事実・切り離された感情・訂正文の境界は越えない。
+
+```text
+修正前：「誘われた」と「悲しかった」が、異なる向きのまま同時にあります。 「頼まれた」と「寂しかった」が、異なる向きのまま同時にあります。
+今回版：「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」とあります。
+```
+
+初回に既に一文だった対比群も、末尾の「という、それぞれ異なる向きが並んでいます」を短くした。単独pairの短縮案は既存depth gateの`observation_surface_only_echo`に達したため対象を複数pairへ狭め、単独は従来表現を維持。閾値変更や合格のための文言水増しは行わない。商品全文レビューでは原文「けど／けれど／けれども」の3例を「のに」へ変えると期待違反の響きを強める懸念が指摘された。途中の全体実行は中断（exit130、成功件数に含めない）し、新pure報告には既存の中立的な「の一方で」を用いた。原connectorの完全再現を新規達成したとはしない。前unitのcontrast＋ABOUT三引用文は変更0。
+
+既存Gateは作者を再実行せず可視本文の全文grammarから、各pairの完全source・field・一意性・関係方向・隣接順序を確認する。複数報告をまたぐevent順序、重複・未消費文・因果化も検出する。文数は証明済みgroupの分だけ数え直し、旧完全grammarも保持。意味認定、Reception、depth容量、品質閾値、API/DB/RN/schema、新helper/owner/engine、商品dependencyは変更0。
+
+**実本文と検証。** 前unitと同じ開始source/runtimeの既存73条件のbeforeを継承し、初回・接続詞・訂正系列15条件は開始snapshotの別worktreeでfresh生成した。最終sourceでは全88条件をfresh生成。20変更・67全文一致・前後同じ未提供1（`emlis_q3_initial_body_unavailable`）。提供87条件のcheckpoint・意味Plan・Receptionは前後完全一致、前後とも独立inverse成功。rootと商品担当が変更20行の前後両層を全文確認した。20行には系列の重複があり、20種類の固有本文とは数えない。最終の接続詞3例は中立表現へ補正され、Receptionの原接続も保持。訂正・回答時点・撤回した出来事の非復活を確認し、技術担当も最終sourceに具体的blockerを認めなかった。正式Product Read合格の自己認定はしない。
+
+最終8対象の全量再実行は **2286条件＝2247PASS／39FAIL／2warnings（459.50秒）**。前回統合2226条件とcase IDで照合し、既存条件の脱落0・合否変化0・parameter ID変更0、既存39FAILのassertion式も一致。追加60は全PASS。今回は最終source・fixture・testを固定した全量実行の結果であり、部分再実行を合算した値ではない。ERROR/SKIP0。
+
+追加60は初回/現在回答/原反応訂正/出来事撤回の4文脈でpair保持4・改変拒否40・旧grammar4、初回接続詞3、source程度/主体/否定/時制の改変4、回答を越す順序変更1、単独/曖昧sourceの旧経路2、保存2。最終focused60PASS/314deselected/1warning（12.91秒）。最初のfocusedでは47PASS/10FAILとなり、6件はGateが部分cause/unrelatedを見逃す実装欠陥、4件は選んだowner-degree原文が既存認識上contrastでない試験前提の誤りだった。前者を両surface_functionで全文検証し、後者は認識済みの原文を用いてsource程度を削除する改変検査へ修正。未認識原文を成功扱いせず残件へ記録した。別枠の既存q3「独立pair交換拒否／別source fieldのpair保持」2件も最終sourceで2PASS（8対象集計へ加算しない）。既存39FAIL、protected/frozen test、凍結証跡、品質基準は変更0。
+
+保存確認は既存23＋新2＝25系列、全PASS。新2は現在回答→回答訂正→元の焦点または別出来事の撤回の各段階で、元入力DTO不変・保存本文・生成禁止GET/service.start完全一致、最終COMPLETED/can_continue=falseを確認。試験用保存系/PGliteの証拠で、実DB・実機・process再起動の証拠ではない。
+
+最終identityはlanguage=`c77998f6965165616e528ef06e53344334917cf246d9616d59fc7db37971903b`、runtime=`173c9f4fbd0ff3c5f1c985e2e294b9f6a8967bd8128fa71365018311e2ddf388`。既存導出の各18payload・9owner・source-owner symbolsを保持。既存task runtime Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1/PGlite0.5.8を確認し、install0・商品lock変更0・追加費用/Mash作業0。初回edge probeのimport/引数不足は呼出しを直して再実行し、失敗実行を成功へ数えない。
+
+**残件と次の判断。** 閉じたのは一意な複数対比における報告枠の反復だけである。二層の内容再掲、Receptionの深さと定型締め、単独pairの抽象説明、長いABOUT/訂正説明、同時点で相反する回答、既存39FAIL、未提供1は未解決。今回の初回probeでは「誘われたのに、私も少し不安だった。頼まれたのに、少し私は怖くなかった。」などの主体・程度付き原文が対比として分かれず、旧来の一節全体を扱う本文に残った。これと、反応側にも逆接を含む原文の例は前後全文一致で、改善実績に含めない。次はこの初回意味認識の不足を元のsourceと実本文から確認し、weeklyの意味品質優先に沿って必要な共通原因を特定する。追加の語調短縮だけを進捗にしない。9/30中間確認・10/3対象群・10/10内容判断、別枠10/2開発実機一往復を維持する。
+
+**TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 構造地図のowner/route/lifecycle変更なし。実DB・実機・実課金・Ready/merge/deploy/enableは未実施。反映commit・実差分6path・remote全文一致は両Draft PRの今回記録へ結合する。

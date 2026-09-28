@@ -2215,16 +2215,54 @@ def _body_inverse_reception_context_ids(
 
 
 def _body_inverse_thread_contrast_answers(body, witness, line, plan, resolver):
-    """Resolve the sentence's explicit event antecedent before source matching.
+    """Read complete contrast reports and their optional explicit answer.
 
     This grammar consumes visible bytes only; it does not replay the renderer.
+    Return proven relation IDs and pure contrast runs for sentence accounting.
     An ambiguous source identity or a cross-sentence antecedent cannot bind.
     """
-    matched, failures = set(), []
+    matched, failures, contrast_groups = set(), [], []
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    span_order = {sid: pos for pos, sid in enumerate(resolver.span_ids)}
+    event_positions = sorted({min((span_order[sid] for sid in n.source_span_ids), default=-1)
+                              for n in plan.nuclei if n.kind == "event"})
+    pair_grammar = r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」"
     for sentence in witness.sentences:
         if sentence.section != "observation" or sentence.section_line_ordinal != line.section_ordinal:
             continue
         text = _body_inverse_visible_text(body, sentence)
+        if re.fullmatch(rf"(?:{pair_grammar}、また)+{pair_grammar}とあります。", text):
+            pairs = re.findall(pair_grammar, text)
+            relations = []
+            for event_text, reaction_text in pairs:
+                candidates = tuple(r for r in plan.relations
+                    if r.type == "contrast"
+                    and index[r.from_nucleus_id].kind == "event"
+                    and index[r.to_nucleus_id].kind == "reaction"
+                    and index[r.to_nucleus_id].semantic_frame.predicate_kind == "feeling"
+                    and all(index[nid].grounding_kind == "explicit"
+                            and index[nid].source_fields in {("memo",), ("memo_action",)}
+                            for nid in (r.from_nucleus_id, r.to_nucleus_id))
+                    and not any(a.type == "evaluation_about_event" and a.from_nucleus_id == r.from_nucleus_id
+                                for a in plan.relations)
+                    and _body_inverse_nucleus_source_values(r.from_nucleus_id, plan, resolver)
+                        == (_body_inverse_normalized_anchor(event_text),)
+                    and _body_inverse_nucleus_source_values(r.to_nucleus_id, plan, resolver)
+                        == (_body_inverse_normalized_anchor(reaction_text),))
+                if len(candidates) != 1:
+                    break
+                relations.append(candidates[0])
+            ids = tuple(r.relation_id for r in relations)
+            positions = [min((span_order[sid] for sid in index[r.from_nucleus_id].source_span_ids), default=-1)
+                         for r in relations]
+            slots = [event_positions.index(pos) for pos in positions]
+            if (len(ids) != len(pairs) or len(set(ids)) != len(ids) or matched.intersection(ids)
+                or not slots or slots != list(range(slots[0], slots[0] + len(slots)))):
+                failures.append("body_inverse_contrast_report_source_mismatch")
+            else:
+                matched.update(ids)
+                contrast_groups.append(ids)
+            continue
         connective_text = re.sub(r"「[^「」]*」|『[^『』]*』", "", text)
         if not any(marker in connective_text for marker in ("その出来事に対する", "その出来事について、", "のに、")):
             continue
@@ -2276,10 +2314,10 @@ def _body_inverse_thread_contrast_answers(body, witness, line, plan, resolver):
                 and len(contrasts) == len(about) == 1
                 and contrasts[0].to_nucleus_id == reaction.nucleus_id
                 and about[0].to_nucleus_id == answer.nucleus_id):
-            matched.add(about[0].relation_id)
+            matched.update((contrasts[0].relation_id, about[0].relation_id))
         else:
             failures.append("body_inverse_answer_antecedent_source_mismatch")
-    return frozenset(matched), tuple(failures)
+    return frozenset(matched), tuple(failures), tuple(contrast_groups)
 
 
 
@@ -2326,7 +2364,7 @@ def _body_inverse_intervening_events(body, witness, line, planned_line, plan, re
         return True
     rows = tuple(row for row in witness.sentences if row.section == "observation"
                  and row.section_line_ordinal == line.section_ordinal)
-    shared_answers, shared_failures = _body_inverse_thread_contrast_answers(body, witness, line, plan, resolver)
+    shared_relations, shared_failures, contrast_groups = _body_inverse_thread_contrast_answers(body, witness, line, plan, resolver)
     if shared_failures:
         return False
     fact_rows = []
@@ -2358,7 +2396,7 @@ def _body_inverse_intervening_events(body, witness, line, planned_line, plan, re
                 for value in event_sources)]
             if (len(event_rows) != 1 or (event_rows[0] < matches[0]) != (position(event) < position(nucleus))):
                 return False
-            shared = any(r.relation_id in shared_answers and r.from_nucleus_id == event.nucleus_id
+            shared = any(r.relation_id in shared_relations and r.from_nucleus_id == event.nucleus_id
                          for r in relations)
             if not shared and relation.type == "evaluation_about_event":
                 visible = _body_inverse_visible_text(body, rows[event_rows[0]])
@@ -2399,7 +2437,7 @@ def _body_inverse_intervening_events(body, witness, line, planned_line, plan, re
         and set(planned_line.binding.nucleus_ids) - endpoints == {n.nucleus_id for n in independent}
         and all(r.type == "contrast" or r.from_nucleus_id in {c.from_nucleus_id for c in contrasts}
                 for r in relations)
-        and len(rows) != len(contrasts) + len(independent)):
+        and len(rows) != len(contrasts) - sum(len(group) - 1 for group in contrast_groups) + len(independent)):
         return False
     return True
 
@@ -4628,11 +4666,59 @@ def evaluate_grounded_surface_body_inverse(
                 body, witness, parsed_line, planned_line, plan, resolver,
             )
             failures.extend(reference_failures)
-        grouped_answers = frozenset()
+        grouped_relations, contrast_groups = frozenset(), ()
         if getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1":
-            grouped_answers, group_failures = _body_inverse_thread_contrast_answers(
+            grouped_relations, group_failures, contrast_groups = _body_inverse_thread_contrast_answers(
                 body, witness, parsed_line, plan, resolver)
             failures.extend(group_failures)
+        if contrast_groups:
+            # Compare the actual event quotes across reports, not only the
+            # pairs within one report. ABOUT and retained legacy reports
+            # cannot be moved past a compact run.
+            span_order = {sid: pos for pos, sid in enumerate(resolver.span_ids)}
+            event_order = []
+            event_mentions = {}
+            events = tuple(n for n in plan.nuclei if n.kind == "event"
+                           and n.nucleus_id in planned_line.binding.nucleus_ids)
+            for quote_row in quote_rows:
+                value = _body_inverse_normalized_anchor(_body_inverse_quote_text(body, quote_row))
+                candidates = tuple(n for n in events
+                    if _body_inverse_nucleus_source_values(n.nucleus_id, plan, resolver) == (value,))
+                if len(candidates) > 1:
+                    failures.append(f"body_inverse_contrast_report_source_ambiguous:{index}")
+                elif candidates:
+                    nid = candidates[0].nucleus_id
+                    event_mentions[nid] = event_mentions.get(nid, 0) + 1
+                    event_order.append(min((span_order[sid] for sid in candidates[0].source_span_ids), default=-1))
+            if event_order != sorted(event_order):
+                failures.append(f"body_inverse_contrast_report_order_mismatch:{index}")
+            # When these reports consume the whole relation-only line, every
+            # visible sentence must be one of those proven reports.
+            relations = tuple(relation_index[rid] for rid in planned_line.binding.relation_ids)
+            endpoints = {nid for r in relations for nid in (r.from_nucleus_id, r.to_nucleus_id)}
+            if (set(planned_line.binding.nucleus_ids) <= endpoints
+                and {r.type for r in relations} <= {"contrast", "evaluation_about_event"}):
+                for event in events:
+                    owned = tuple(r for r in relations if r.from_nucleus_id == event.nucleus_id)
+                    expected_mentions = (2 if {r.type for r in owned} == {"contrast", "evaluation_about_event"}
+                        and not {r.relation_id for r in owned} <= grouped_relations else 1)
+                    if event_mentions.get(event.nucleus_id, 0) != expected_mentions:
+                        failures.append(f"body_inverse_contrast_report_event_count_mismatch:{index}")
+                for row in witness.sentences:
+                    if row.section != "observation" or row.section_line_ordinal != parsed_line.section_ordinal:
+                        continue
+                    values = tuple(map(_body_inverse_normalized_anchor,
+                        re.findall(r"「([^「」]+)」", _body_inverse_visible_text(body, row))))
+                    if not any(value in _body_inverse_nucleus_source_values(event.nucleus_id, plan, resolver)
+                               for value in values for event in events):
+                        failures.append(f"body_inverse_contrast_report_unbound_sentence:{index}")
+            if (set(planned_line.binding.nucleus_ids) <= endpoints
+                and set(planned_line.binding.relation_ids) <= grouped_relations):
+                line_rows = tuple(row for row in witness.sentences if row.section == "observation"
+                                  and row.section_line_ordinal == parsed_line.section_ordinal)
+                expected = len(contrast_groups) + sum(r.type == "evaluation_about_event" for r in relations)
+                if len(line_rows) != expected:
+                    failures.append(f"body_inverse_contrast_report_scope_mismatch:{index}")
         for relation_id in planned_line.binding.relation_ids:
             relation = relation_index.get(relation_id)
             if relation is None:
@@ -4669,6 +4755,30 @@ def evaluate_grounded_surface_body_inverse(
                 and all(nucleus_index[nid].source_fields in {("memo",), ("memo_action",)}
                         and nucleus_index[nid].grounding_kind == "explicit"
                         for nid in (relation.from_nucleus_id, relation.to_nucleus_id)))
+            if (exact_contrast and planned_line.surface_function in {"observe_relation", "observe_nuclei_with_relations"}
+                and "scope_hedge" not in planned_line.binding.functional_atom_ids
+                and not any(r.type == "evaluation_about_event" and r.from_nucleus_id == relation.from_nucleus_id
+                            for r in plan.relations)
+                and relation_id not in grouped_relations):
+                # New reports must be consumed by their complete grammar.
+                # A marker in another pair or inside a quote cannot legitimize
+                # changing this pair to a cause, unrelated list or extra claim.
+                legacy_pairs = []
+                for row in witness.sentences:
+                    if row.section != "observation" or row.section_line_ordinal != parsed_line.section_ordinal:
+                        continue
+                    visible = _body_inverse_visible_text(body, row)
+                    singleton = re.fullmatch(r"「([^「」『』\n]+)」と「([^「」『』\n]+)」が、"
+                        r"異なる向きのまま同時にあります。", visible)
+                    operand = r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」"
+                    if singleton:
+                        legacy_pairs.append(singleton.groups())
+                    elif re.fullmatch(rf"(?:{operand}、また)+{operand}という、それぞれ異なる向きが並んでいます。", visible):
+                        legacy_pairs.extend(re.findall(operand, visible))
+                if not any(_body_inverse_normalized_anchor(left) in from_values
+                           and _body_inverse_normalized_anchor(right) in to_values
+                           for left, right in legacy_pairs):
+                    failures.append(f"body_inverse_contrast_report_missing:{index}")
             from_positions = tuple(
                 quote_index
                 for quote_index, quote_text in enumerate(normalized_quote_texts)
@@ -4693,7 +4803,7 @@ def evaluate_grounded_surface_body_inverse(
                 )
             if (
                 relation.type in DIRECTIONAL_GROUNDED_RELATION_TYPES
-                and relation_id not in grouped_answers
+                and relation_id not in grouped_relations
                 and relation_id not in shared_change_relations
                 and from_positions
                 and to_positions
@@ -4783,7 +4893,7 @@ def evaluate_grounded_surface_body_inverse(
                             matches = tuple(r for r in plan.relations
                                 if r.relation_id in planned_line.binding.relation_ids
                                 and r.type == "evaluation_about_event"
-                                and r.relation_id not in grouped_answers
+                                and r.relation_id not in grouped_relations
                                 and _body_inverse_nucleus_source_values(r.from_nucleus_id, plan, resolver)
                                     == (_body_inverse_normalized_anchor(event),)
                                 and _body_inverse_nucleus_source_values(r.to_nucleus_id, plan, resolver)
@@ -4815,7 +4925,7 @@ def evaluate_grounded_surface_body_inverse(
                     for operand, connector, ending in grammars:
                         if re.fullmatch(rf"(?:{operand}{connector})*{operand}{ending}", visible):
                             evaluation_clauses.extend(re.findall(operand, visible))
-                if relation_id not in grouped_answers and not (any(b == a + 1 for a in from_positions for b in to_positions) and
+                if relation_id not in grouped_relations and not (any(b == a + 1 for a in from_positions for b in to_positions) and
                         any(_body_inverse_normalized_anchor(left) in left_sources
                             and clause_time == when
                             and _body_inverse_normalized_anchor(right) in right_sources
@@ -4949,9 +5059,12 @@ def evaluate_grounded_surface_body_inverse(
                     answers = tuple(r for r in relations if r.type == "evaluation_about_event")
                     shared_events = {r.from_nucleus_id for r in contrasts} & {r.from_nucleus_id for r in answers}
                     remaining_contrasts = sum(r.from_nucleus_id not in shared_events for r in contrasts)
+                    compact_ids = {rid for group in contrast_groups for rid in group}
+                    remaining_contrasts -= sum(r.relation_id in compact_ids for r in contrasts)
                     separate_answer_times = {tuple(c for c in nucleus_index[r.to_nucleus_id].semantic_frame.attribute_codes
                         if c.startswith("thread_time:")) for r in answers if r.from_nucleus_id not in shared_events}
                     event_sentences = (len(shared_events)
+                        + len(contrast_groups)
                         + (remaining_contrasts if shared_events else int(bool(remaining_contrasts)))
                         + len(separate_answer_times))
                     if len(line_rows) != event_sentences + len(independent_ids):

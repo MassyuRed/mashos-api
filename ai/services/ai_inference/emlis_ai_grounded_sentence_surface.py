@@ -3407,6 +3407,11 @@ def _render_relation(
         and len(set(about_event_keys)) == len(about_event_keys)
         and set(binding.nucleus_ids) <= relation_endpoints)
     about_run_index, about_run_time, about_run_pairs = -1, None, []
+    contrast_run_index, contrast_run_pairs, contrast_run_slot = -1, [], -1
+    event_order = sorted({_nucleus_source_order(n) for n in nucleus_index.values()
+                          if n.kind == "event"})
+    event_quotes = [tuple(_quotes_for_nuclei((n.nucleus_id,), nucleus_index, resolver))
+                    for n in nucleus_index.values() if n.kind == "event"]
     for relation_id in relation_ids:
         while pending_events and _nucleus_source_order(nucleus_index[pending_events[0]]) < _nucleus_source_order(
                 nucleus_index[relation_index[relation_id].from_nucleus_id]):
@@ -3491,7 +3496,40 @@ def _render_relation(
                 "捉え方や動きが移っています。"
             )
         elif role == "coexisting_contrast":
-            if groups or inline_events or ordered_thread_relations:
+            event = nucleus_index[relation.from_nucleus_id]
+            reaction = nucleus_index[relation.to_nucleus_id]
+            compact_contrast = (
+                typed_semantic_duties
+                and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+                and not _hedge_prefix(binding)
+                and len(set(event_quotes)) == len(event_quotes)
+                and relation.type == "contrast" and event.kind == "event" and reaction.kind == "reaction"
+                and reaction.semantic_frame.predicate_kind == "feeling"
+                and all(n.grounding_kind == "explicit"
+                        and n.source_fields in {("memo",), ("memo_action",)}
+                        for n in (event, reaction))
+                and all(re.fullmatch(r"「[^「」『』\n]+」", value) for value in (left, right))
+                and sum((_final_stage1_typed_relation_endpoint(r.from_nucleus_id, nucleus_index, resolver),
+                         _final_stage1_typed_relation_endpoint(r.to_nucleus_id, nucleus_index, resolver)) == (left, right)
+                        for r in relation_index.values() if r.type == "contrast") == 1
+                and not any(r.type == "evaluation_about_event" and r.from_nucleus_id == event.nucleus_id
+                            for r in relation_index.values()))
+            if compact_contrast:
+                slot = event_order.index(_nucleus_source_order(event))
+                if contrast_run_index >= 0 and contrast_run_index == len(sentences) - 1 and slot == contrast_run_slot + 1:
+                    contrast_run_pairs.append((left, right))
+                else:
+                    contrast_run_index = len(sentences)
+                    contrast_run_pairs = [(left, right)]
+                    sentences.append("")
+                contrast_run_slot = slot
+                if len(contrast_run_pairs) > 1:
+                    sentences[contrast_run_index] = "、また".join(
+                        f"{event_quote}の一方で{reaction_quote}" for event_quote, reaction_quote in contrast_run_pairs
+                    ) + "とあります。"
+                else:
+                    sentences[contrast_run_index] = f"{left}と{right}が、異なる向きのまま同時にあります。"
+            elif groups or inline_events or ordered_thread_relations:
                 # Keep unanswered and answered events in the same original
                 # relation order across rounds, rather than moving them apart.
                 sentences.append(f"{left}と{right}が、異なる向きのまま同時にあります。")

@@ -1037,3 +1037,138 @@ def test_compact_report_saved_correction_and_withdrawal_reuses_dto(qcase, monkey
             assert run(service.get(user, parent)) == current
             assert run(service.start(user, parent)) == current
     assert current['state'] == 'COMPLETED' and not current['can_continue']
+
+
+@pytest.fixture(scope='module', params=[
+    (), ('今は嬉しい。',),
+    ('今は嬉しい。', '「嬉しくなかった」ではなく「重かった」です。'),
+    ('今は嬉しい。', '「褒められた」は誤りです。'),
+])
+def parallel_report_context(request):
+    req = begin()
+    for reply in request.param:
+        req = advance(req, reply)
+    pairs = [('褒められた', '嬉しくなかった'), ('誘われた', '悲しかった'), ('頼まれた', '寂しかった')]
+    if request.param:
+        pairs = pairs[1:]
+    report = '、また'.join(f'「{event}」の一方で「{feeling}」' for event, feeling in pairs) + 'とあります。'
+    return actual(request=req), pairs, report
+
+
+def test_parallel_report_preserves_every_ordered_pair(parallel_report_context):
+    from test_cmee_emlis_detached_observation import read_body
+    context, pairs, report = parallel_report_context
+    body = context[0].artifact.text
+    assert report in context[0].artifact.observation
+    assert all(body.count(f'「{event}」') == 1 for event, _ in pairs)
+    with patch.object(surface, '_render_relation', side_effect=AssertionError('no author oracle')):
+        assert read_body(context, body).passed
+
+
+@pytest.mark.parametrize('mutation', [
+    'drop_pair', 'swap_reactions', 'reverse_pairs', 'cause', 'unrelated',
+    'duplicate_pair', 'extra_clause', 'extra_sentence', 'quoted_extra_sentence', 'negation',
+])
+def test_parallel_report_rejects_changed_or_unconsumed_meaning(parallel_report_context, mutation):
+    from test_cmee_emlis_detached_observation import read_body
+    context, pairs, report = parallel_report_context
+    operands = [f'「{event}」の一方で「{feeling}」' for event, feeling in pairs]
+    crossed = list(pairs)
+    crossed[0], crossed[1] = (pairs[0][0], pairs[1][1]), (pairs[1][0], pairs[0][1])
+    changed = {
+        'drop_pair': '、また'.join(operands[1:]) + 'とあります。',
+        'swap_reactions': '、また'.join(f'「{e}」の一方で「{f}」' for e, f in crossed) + 'とあります。',
+        'reverse_pairs': '、また'.join(reversed(operands)) + 'とあります。',
+        'cause': report.replace('」の一方で「', '」ので「', 1),
+        'unrelated': report.replace('」の一方で「', '」そして「', 1),
+        'duplicate_pair': report.replace('とあります。', '、また' + operands[0] + 'とあります。'),
+        'extra_clause': report.replace('とあります。', 'とあり、気持ちが改善しています。'),
+        'extra_sentence': report + '気持ちが改善しています。',
+        'quoted_extra_sentence': report + f'「{pairs[0][0]}」から気持ちが改善しています。',
+        'negation': report.replace(f'「{pairs[-1][1]}」', '「寂しくなかった」', 1),
+    }[mutation]
+    assert changed != report and report in context[0].artifact.text
+    with patch.object(surface, '_render_relation', side_effect=AssertionError('no author oracle')):
+        assert not read_body(context, context[0].artifact.text.replace(report, changed, 1)).passed
+
+
+def test_parallel_report_keeps_complete_legacy_reading(parallel_report_context):
+    from test_cmee_emlis_detached_observation import read_body
+    context, pairs, report = parallel_report_context
+    old = '、また'.join(f'「{e}」の一方で「{f}」' for e, f in pairs) + 'という、それぞれ異なる向きが並んでいます。'
+    with patch.object(surface, '_render_relation', side_effect=AssertionError('no author oracle')):
+        assert read_body(context, context[0].artifact.text.replace(report, old, 1)).passed
+
+
+@pytest.mark.parametrize('connector', ['けど', 'けれど', 'けれども'])
+def test_parallel_report_does_not_add_expectation_violation(connector):
+    from test_cmee_emlis_detached_observation import read_body
+    memo = f'誘われた{connector}、悲しかった。頼まれた{connector}、寂しかった。'
+    context = actual(request=begin(memo))
+    report = '「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」とあります。'
+    body = context[0].artifact.text
+    assert context[0].artifact.observation == report
+    with patch.object(surface, '_render_relation', side_effect=AssertionError('no author oracle')):
+        assert read_body(context, body).passed
+        assert not read_body(context, body.replace(report, report.replace('の一方で', 'のに', 1), 1)).passed
+
+
+@pytest.mark.parametrize('old,new', [
+    ('あまり悲しくなかった', '悲しくなかった'),
+    ('あまり悲しくなかった', '友人はあまり悲しくなかった'),
+    ('あまり悲しくなかった', 'あまり悲しかった'),
+    ('とても寂しかった', 'とても寂しい'),
+])
+def test_parallel_report_preserves_each_sources_qualifiers(old, new):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin('断られたのに、あまり悲しくなかった。誘われたのに、とても寂しかった。'))
+    body = context[0].artifact.text
+    assert '、また「誘われた」の一方で「とても寂しかった」とあります。' in body
+    changed = body.replace(f'「{old}」', f'「{new}」', 1)
+    assert changed != body
+    with patch.object(surface, '_render_relation', side_effect=AssertionError('no author oracle')):
+        assert not read_body(context, changed).passed
+
+
+def test_parallel_report_cannot_move_before_its_answered_event():
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=advance(begin(), '今は嬉しい。'))
+    obs = context[0].artifact.observation
+    first, rest = obs.split('。 ', 1)
+    changed = context[0].artifact.text.replace(obs, rest + ' ' + first + '。', 1)
+    assert changed != context[0].artifact.text
+    assert not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('memo', [
+    '褒められたのに、嬉しくなかった。',
+    '誘われたのに、悲しかった。誘われたのに、悲しかった。',
+])
+def test_parallel_report_does_not_replace_single_or_ambiguous_sources(memo):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(memo))
+    assert 'とあります。' not in context[0].artifact.observation
+    assert read_body(context, context[0].artifact.text).passed
+
+
+@pytest.mark.parametrize('withdraw', ['褒められた', '誘われた'])
+def test_parallel_report_saved_flow_preserves_original_and_reuses_dto(qcase, monkeypatch, withdraw):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    assert '、また「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」とあります。' in current['current_observation']['text']
+    for i, reply in enumerate(('今は嬉しい。', '「嬉しい」ではなく「少し楽しい」です。', f'「{withdraw}」は誤りです。')):
+        if i:
+            current = run(cont(service, user, current, f'parallel-report-continue-{i}'))
+        current = run(answer(service, user, current, reply, f'parallel-report-answer-{i}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        if i < 2:
+            assert '「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」とあります。' in body
+        else:
+            assert withdraw not in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read must not regenerate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+    assert current['state'] == 'COMPLETED' and not current['can_continue']
