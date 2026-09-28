@@ -10352,7 +10352,7 @@ def _source_owned_detached_feeling_parts(move, realization, plan, resolver,
         or realization.context_slots or realization.relations
         or not _selected_material_appraisal(selected_decision)):
         return None
-    parts = _detached_feeling_source_parts(move, plan, resolver)
+    parts = _detached_feeling_source_parts(move, plan, resolver, allow_revised=True)
     if parts is not None and any(
         other.move_id != move.move_id
         and _detached_feeling_source_parts(other, plan, resolver) == parts
@@ -10486,7 +10486,7 @@ def _detached_feeling_finite_surface(source, *, allow_explanatory=False, allow_c
     return finite
 
 
-def _detached_feeling_source_parts(move, plan, resolver):
+def _detached_feeling_source_parts(move, plan, resolver, *, allow_revised=False):
     """Prove complete finite source operands before choosing clause topology."""
     if (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
         or not move.required or move not in plan.response_plan.human_reception_plan.moves
@@ -10498,7 +10498,11 @@ def _detached_feeling_source_parts(move, plan, resolver):
     nucleus = next(n for n in plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0])
     frame = nucleus.semantic_frame
     codes = set(frame.attribute_codes)
-    if ("thread_subject:withdrawn_source_event" not in codes
+    from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
+    revised = allow_revised and _thread_revised_original_reaction(nucleus, plan.relations)
+    # A corrected original reaction is also independent, but does not enter
+    # the withdrawal-only pair topology. Only its finite author opts in.
+    if (not ("thread_subject:withdrawn_source_event" in codes or revised)
         or nucleus.kind != "reaction" or frame.predicate_kind != "feeling"
         or frame.modality != "feeling" or frame.actor != "current_user"
         or nucleus.retention != "required" or nucleus.grounding_kind != "explicit"

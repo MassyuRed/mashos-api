@@ -2714,7 +2714,10 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
         return None
     frame = nucleus.semantic_frame
     codes = set(frame.attribute_codes)
-    if ("thread_subject:withdrawn_source_event" not in codes
+    from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
+    # Use the admitted meaning boundary, never the author's transformation.
+    revised = _thread_revised_original_reaction(nucleus, plan.relations)
+    if (not ("thread_subject:withdrawn_source_event" in codes or revised)
         or nucleus.kind != "reaction" or frame.predicate_kind != "feeling"
         or frame.modality != "feeling" or frame.actor != "current_user"
         or nucleus.retention != "required" or nucleus.grounding_kind != "explicit"

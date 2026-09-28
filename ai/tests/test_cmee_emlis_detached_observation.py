@@ -1251,3 +1251,117 @@ def test_third_original_revision_saves_body_and_unchanged_original(qcase, qdb, m
     assert ('その時の受け止めとして、「少し嬉しかった」' if '少し' in positive
             else '回答した時点の受け止めとして、「嬉しい」') in body
     assert not current['can_continue']
+
+
+@pytest.mark.parametrize('answers', [(), ('今は嬉しい。',)])
+@pytest.mark.parametrize('source,finite', [
+    ('苦しかったです', 'その時は苦しかった'),
+    ('私は苦しかったです', 'その時、あなたは苦しかった'),
+    ('私も少し怖くなかったです', 'その時、あなたも少し怖くなかった'),
+    ('少し私は苦しかったです', 'その時、少しあなたは苦しかった'),
+    ('私にはとても苦しかったです', 'その時、あなたにはとても苦しかった'),
+])
+def test_revised_finite_reception_preserves_speaker_particle_degree_and_past(answers, source, finite):
+    context = actual(request=revised_original_request(source, answers, old='寂しかった'))
+    result, plan, _, _, _ = context
+    follow = result.artifact.reception
+    assert follow.startswith(finite + 'のですね。')
+    assert 'これまで' not in follow and 'ですこと' not in follow
+    assert all(s in result.artifact.text for s in ('褒められた', '嬉しくなかった', '誘われた', '悲しかった'))
+    assert f'その時の気持ちとして、「{source}」' in result.artifact.observation
+    assert len(plan.response_plan.human_reception_plan.moves) == 2 + len(answers)
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.mark.parametrize('answers', [(), ('今は嬉しい。',)])
+def test_revised_finite_reception_does_not_admit_unsupported_replacement(answers):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    request = revised_original_request('僕にもあまり嬉しくなかったです', answers, old='寂しかった')
+    prepared = prepare_emlis_meaning(request)
+    assert not prepared.accepted_nuclei
+    assert prepared.checkpoint.assessment_status == 'PARTIAL'
+    assert any(p.reason_code == 'correction_replacement_unsupported'
+               for p in prepared.checkpoint.unresolved_parts)
+    context = actual(request=request)
+    assert '今回の観測に反映できていない部分があります' in context[0].artifact.observation
+    assert '嬉しくなかったです' not in context[0].artifact.reception
+    assert read_body(context, context[0].artifact.text).passed
+
+
+@pytest.fixture(scope='module')
+def revised_finite_context():
+    return actual(request=revised_original_request('私も少し怖くなかったです', ('今は嬉しい。',), old='寂しかった'))
+
+
+@pytest.mark.parametrize('old,new', [
+    ('あなたも', '私も'), ('あなたも', '友人も'), ('あなたも', 'あなたは'),
+    ('あなたも', ''), ('少し', ''), ('怖くなかった', '怖かった'),
+    ('怖くなかった', '怖くない'), ('その時、', '回答した時点で、'),
+    ('その時、', '先の回答時点で、'), ('その時、', ''),
+    ('その時、', 'これまで、その時、'), ('その時、', '頼まれたので、その時、'),
+    ('のですね。', 'のですね。寂しかったのですね。'),
+    ('のですね。', 'ので、今は安心なのですね。'),
+])
+def test_revised_finite_reception_rejects_changes_without_authors(revised_finite_context, old, new):
+    context = revised_finite_context
+    follow = context[0].artifact.reception
+    changed = follow.replace(old, new, 1)
+    assert changed != follow
+    body = context[0].artifact.text.replace(follow, changed)
+    assert not read_body(context, body).passed
+
+
+@pytest.mark.parametrize('ending', ['のです。', 'のだと受け取りました。'])
+def test_revised_finite_reception_reads_equivalent_acknowledgement(revised_finite_context, ending):
+    context = revised_finite_context
+    follow = context[0].artifact.reception
+    body = context[0].artifact.text.replace(follow, follow.replace('のですね。', ending, 1))
+    assert read_body(context, body).passed
+
+
+@pytest.mark.parametrize('field,value', [('actor', 'other_person'), ('time_scope', 'present'),
+                                        ('polarity', 'positive'), ('modality', 'fact')])
+def test_revised_finite_reception_requires_admitted_self_past(revised_finite_context, field, value):
+    result, plan, _, resolver, selected = revised_finite_context
+    nucleus = next(n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes)
+    move = next(m for m in plan.response_plan.human_reception_plan.moves if m.target_nucleus_ids == (nucleus.nucleus_id,))
+    changed = replace(nucleus, semantic_frame=replace(nucleus.semantic_frame, **{field: value}))
+    bad_plan = replace(plan, nuclei=tuple(changed if n == nucleus else n for n in plan.nuclei))
+    first = result.artifact.reception.split('。')[0] + '。'
+    assert gate._read_detached_feeling_discourse(first, move, bad_plan, resolver, selected) is None
+
+
+@pytest.mark.parametrize('marker', ['thread_subject:independent_source_replacement',
+                                  'thread_subject:revised_original_reaction',
+                                  'lexical:preserve_source_predicate', 'lexical:no_new_sensation_family'])
+def test_revised_finite_reception_requires_complete_revision_provenance(revised_finite_context, marker):
+    result, plan, _, resolver, selected = revised_finite_context
+    nucleus = next(n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes)
+    move = next(m for m in plan.response_plan.human_reception_plan.moves if m.target_nucleus_ids == (nucleus.nucleus_id,))
+    changed = replace(nucleus, semantic_frame=replace(nucleus.semantic_frame,
+        attribute_codes=tuple(c for c in nucleus.semantic_frame.attribute_codes if c != marker)))
+    bad_plan = replace(plan, nuclei=tuple(changed if n == nucleus else n for n in plan.nuclei))
+    first = result.artifact.reception.split('。')[0] + '。'
+    assert gate._read_detached_feeling_discourse(first, move, bad_plan, resolver, selected) is None
+
+
+@pytest.mark.parametrize('source,finite', [('私は苦しかったです', 'あなたは苦しかった'),
+                                         ('私も少し怖くなかったです', 'あなたも少し怖くなかった')])
+def test_revised_finite_reception_saved_reads_keep_original_and_corrected_body(qcase, qdb, monkeypatch, source, finite):
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    for i, text in enumerate((None, '今は嬉しい。', f'「寂しかった」ではなく「{source}」です。')):
+        if text is not None:
+            if i > 1:
+                current = run(cont(service, user, current, f'revised-finite-continue-{i}'))
+            current = run(answer(service, user, current, text, f'revised-finite-answer-{i}'))
+            assert current['body_state'] == 'REFINED', current
+        assert current['original'] == first['original']
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not regenerate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+    body = current['current_observation']['text']
+    assert f'その時、{finite}のですね。' in body
+    assert 'これまで' not in body and 'ですこと' not in body
+    assert not current['can_continue']
