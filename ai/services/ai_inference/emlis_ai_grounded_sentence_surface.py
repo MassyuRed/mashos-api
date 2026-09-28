@@ -153,7 +153,7 @@ _RECEPTION_QUOTE_RE: Final = re.compile(r"「([^」]*)」")
 _BODY_RELATION_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     ("from_to", re.compile(r"から.{0,160}(?:へ|に)")),
     ("coexistence", re.compile(r"一方で|同時に|重なり|異なる向き|並んで|両方|ともに|中にも|中でも")),
-    ("link", re.compile(r"つなが|表れ|生まれ|結びつ|に対する|その出来事について、|」ことについて、")),
+    ("link", re.compile(r"つなが|表れ|生まれ|結びつ|に対する|その出来事について、|」ことについて、|」ことには「")),
     ("counterdirection", re.compile(r"同意していない|終わらない|それでも|けれど")),
     ("change", re.compile(r"変化|動いて|進み|向き")),
 )
@@ -3391,6 +3391,22 @@ def _render_relation(
         relation_ids = sorted(relation_ids, key=lambda r:
             _nucleus_source_order(nucleus_index[relation_index[r].from_nucleus_id]))
     pending_events = list(inline_events)
+    # Only adjacent, fully sourced ABOUT pairs may share their explicit time
+    # frame. Independent facts and correction tails keep their own sentences.
+    relation_endpoints = {nid for r in relation_ids for nid in (
+        relation_index[r].from_nucleus_id, relation_index[r].to_nucleus_id)}
+    # Repeated event wording cannot identify an individual source position
+    # inside the shared frame. Keep the existing explicit clauses in that case.
+    about_event_keys = [tuple(re.sub(r"^(?:(?:とそれから|そして|それでも|けれど|だけど|でも|で))*", "",
+        re.sub(r"[\s\u3000、。,.!！?？「」『』（）()・:：;；'’\"]", "", quote).lower())
+        for quote in _quotes_for_nuclei((relation_index[r].from_nucleus_id,), nucleus_index, resolver))
+        for r in relation_ids if relation_index[r].type == "evaluation_about_event"
+        and r not in consumed]
+    can_share_about_time = (ordered_thread_relations and not inline_events
+        and not _hedge_prefix(binding)
+        and len(set(about_event_keys)) == len(about_event_keys)
+        and set(binding.nucleus_ids) <= relation_endpoints)
+    about_run_index, about_run_time, about_run_pairs = -1, None, []
     for relation_id in relation_ids:
         while pending_events and _nucleus_source_order(nucleus_index[pending_events[0]]) < _nucleus_source_order(
                 nucleus_index[relation_index[relation_id].from_nucleus_id]):
@@ -3501,7 +3517,21 @@ def _render_relation(
                 raise GroundedSentenceSurfaceError("thread_answer_target_time_unbound")
             clause = f"{left}ことについて、{when}の受け止めは{right}"
             if relation_id in intervening_evaluations or ordered_thread_relations:
-                sentences.append(clause + "と書かれています。")
+                if (can_share_about_time
+                    and all(re.fullmatch(r"「[^「」『』\n]+」", value) for value in (left, right))):
+                    if about_run_index == len(sentences) - 1 and about_run_time == when:
+                        about_run_pairs.append((left, right))
+                        pairs = "、".join(f"{event}ことには{answer}"
+                                         for event, answer in about_run_pairs)
+                        sentences[about_run_index] = (
+                            f"それぞれの出来事について、{when}の受け止めとして、{pairs}と書かれています。")
+                    else:
+                        about_run_index, about_run_time = len(sentences), when
+                        about_run_pairs = [(left, right)]
+                        sentences.append(clause + "と書かれています。")
+                else:
+                    about_run_index, about_run_time, about_run_pairs = -1, None, []
+                    sentences.append(clause + "と書かれています。")
             else:
                 evaluations.setdefault(when, []).append(clause)
         elif relation.type == "uncertain_connection":

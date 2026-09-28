@@ -10510,3 +10510,39 @@ Gateの独立event隣接readerは新旧それぞれの完成文を読む。gener
 **残件と再開先。** 次の直接対象は、共有観測と複数ABOUTが続く場合の説明・同語尾の反復と二層間の再掲。出来事ごとの帰属と時点を維持したまとまりとして既存作者で扱う。別Move訂正導入、撤回後の参照、引用中心の説明調、既存検査失敗は未完了のまま保持。9/30中間判断・10/3対象群・10/10内容判断、別枠の実機一往復10/2を変更しない。
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 同じ作者・reader・保存責務の内側の修正であり構造mapの更新なし。実DB・実機・実課金・外部生成AI・Ready/merge/deploy/enableは未実施。両Draft PRへ反映commitとexact6pathの全文再取得一致を結合する。API PR本文上限への対応は先頭の直近要約の更新だけとし、前unitの記録は本fileの前節に保持する。
+
+## 2026-09-29 継続 — 同じ時点の出来事別観測を一つの説明にまとめる
+
+MashのEmlisAI残件継続指示と前回作業TXT、最新weekly `Cocolon_Weekly_Review_20260926.md` §3.8/3.9/5.1〜5.9に基づくLEVEL_2 / DIRECT_PRODUCT_OR_ACCEPTANCE_WORK。開始headはAPI `8dda4254f1e417567488138c5d16b2a5a9899381`、Cocolon `7a2a48032d867663db2ac944eeaf16d5e7947436`、Draft #3/#30をfresh確認した。入口/CURRENT_RULES/Rule18、全体設計01・全ファイル地図02と関連分割、current_structure00/01/04、GitHub/runtime正本、恒久incident全文、Karen-Diary入口と行動原理を確認した。fresh remote inventoryはAPI2300/Cocolon1645 file。API全2300と必要なCocolon324 fileのローカル内容をremote blobに照合し、Cocolonの残1321 fileまでローカルで全文を読んだとは主張しない。System Context prepareはmaterial commitの祖先照合でexit2となり、許可された原典直接読みに戻った。context freshness成功には数えない。
+
+実行ownerは現在のCodex Workのroot華恋。未確認のPro/Ultra model identityは名乗らず、独立商品・技術担当はread-only。first effect前に既存Surface、Gate、detached observation test、current identity fixture、API handoffとCocolon06のexact6pathを固定した。責務・意味選択・Plan・Reception・Move数・保存方式を変更せず、既存作者の同時点ABOUT説明だけを対象にした。
+
+**本文と境界。** 同じbinding内で隣り合う非共有ABOUTを、出来事・回答の各引用と明示時点を残した一つの文にする。例は次のとおり。
+
+```text
+修正前：
+「褒められた」ことについて、その時の受け止めは「私も少し怖くなかったです」と書かれています。 「誘われた」ことについて、その時の受け止めは「少し私には苦しかったです」と書かれています。
+
+最終版：
+それぞれの出来事について、その時の受け止めとして、「褒められた」ことには「私も少し怖くなかったです」、「誘われた」ことには「少し私には苦しかったです」と書かれています。
+```
+
+出来事・本人・助詞・程度・否定・丁寧語は引用内に保持する。別時点、間の対比、独立出来事、訂正tail、hedgeを越えて結合しない。出来事・原反応・現在回答の既存共有文もそのまま残す。初稿の「その時」だけの導入は、直前の回答時点を指すように読めると商品reviewで指摘され、「それぞれの出来事について、」を加えて対応を明示した。これは局所的な説明反復の軽減であり、引用中心の語りや二層間の再掲が解消したという扱いではない。
+
+Gateは新しい完成文の各組を、同bindingの固有ABOUT relation・完全source・明示時点へ独立に照合する。順序、連続位置、欠落・余分な組・回答の交換・重複・全文groupの再掲を検査し、新旧grammar間の接続や因果/人物の追加は認めない。旧完成文の受入れも保持する。新markerがあるだけで成立する仕組みにはしていない。
+
+独立reviewとroot実測で、初稿のreaderは既存引用を使う偽のevent/answer組を余分に加えても受け入れることを確認し、各組の固有relation照合へ補正した。また、同じ出来事文言が別source位置に二つあり、両方を同じ回答へ訂正する場合に、開始版は提供できるが新候補だけ提供不能となった。出来事引用を既存readerと同条件で正規化し、非共有ABOUTのeventが一意な場合だけ共通化するよう作者を絞った。同じ出来事の同一/異なる回答は従来の個別節を保ち、追加2条件が成功した。この回帰を発見した時点で初回横断を中断し、未完了検査を最終証拠には数えなかった。
+
+**実本文比較。** 同じruntime・fresh importで、開始版の48系列と追加10系列・2event一文の1系列、計59行を最終版と比較した。checkpoint・Plan・Receptionは全59一致、本文成立と独立inverseは全59成功。Observation変更は14行（重複を除く10種類）、残り45行は全文一致。rootと商品担当が変更本文の前後両層を全文確認した。追加4行は48系列の変更0〜3と同一本文だった。正式human Product Read PASSや商品合格へ自己昇格しない。
+
+**検証。** 開始版は同一treeの前回XML1999件（1960PASS/39FAIL）を継承。最終production・fixtureの8target全2047件は2007PASS/40FAIL/2warning、ERROR/SKIP0（430.84秒）。増えた1失敗は、明示訂正referenceの既存検査が旧個別ABOUT字面だけを要求したもの。出来事・回答・原時点を同じ完成節内に保持する新表現も認めるよう、そのassertionだけを補正した。production source/fixtureは不変で、該当関数の全48条件を再実行し48PASS/1184deselected/1warning（26.67秒）。これを結合した最終集計は2047件＝2008PASS/既存39FAIL、新規48は全PASS。anchor補正後に2047件全量を再実行したとは呼ばない。同じ改変目的のparameter ID2件を対応付け、継承1999件の脱落、成功/失敗の変化、既存失敗のretained assertion式の変化は0。既存39FAILの解消や全tracebackのbyte一致は主張しない。
+
+新規48条件は、完成した組と引用の保持2、時点/本人/程度/否定/因果/帰属の改変拒否28、組の交換/欠落/重複/余分な組/回答交換10、境界越えの非結合2、既存共有eventへの偽回答追加1、保存系列1、完成group再掲拒否2、同じ出来事文言の個別節保持2。既存5関数の文面anchorと旧完成文の展開方法だけを更新し、個々のsource・時点改変拒否の目的を保持した。保護された検査、歴史的凍結証跡、意味/Plan/Reception sourceは変更していない。
+
+保存・再表示は既存18系列と、現在回答の後に隣接する過去2反応を訂正する新1系列の計19系列で確認。元入力DTOを保持し、生成を禁止したGETとservice.startで保存済みDTOが一致した。新系列は3回答状態を確認し、最終COMPLETED/can_continue=falseを保持。試験用保存系/PGliteであり、process再起動・実DB・実機の検証とは呼ばない。
+
+現在identityはlanguage=`d02d1b08d8d724b6e0835e93c36c881b0fb6edecb07e32da5b1bda482c7afa4b`、runtime=`febb5f7b7135bc70ee4637c39e60c136aa61e605d9e852bdd87d8235539b34a3`。既存導出の各18payload・source owner9、fixture key集合とscope、歴史的凍結証跡を保持した。利用可能なPython3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1をversion/import確認し、既存PGliteを使用、install0。初稿focusedは77PASS/4FAIL/8SKIP。4失敗は新grammarの順序/余分な組の検査不足であり、補正後81PASS/8SKIPとなった。PGlite指定不足の8skipは保存成功へ数えず、指定後は91PASS/1137deselectedとなった。その後の重複group/source補正と新2条件を含む最終productionは上記8targetで再検証し、最後のtest anchorのみ該当48条件を追加確認した。
+
+**残件と次の一作業。** 今回のcommon explanationは局所改善として保持する。次はObservationとReceptionにまたがる同じ出来事・回答の再掲を、出来事ごとの帰属と時点を落とさず一つの欠陥群として扱う。Receptionの列挙調、別Move訂正導入、撤回後の参照、既存39失敗も未完了。本文を単に短縮したり既存の意味を削って件数を減らしたりしない。weeklyの9/30中間判断・10/3対象群整理・10/10内容判断と別枠の実機一往復10/2を維持する。
+
+**TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 新owner・helper・engine、責務境界、API/DB/RN/schema、品質基準への変更なし。実DB・実機・実課金・外部生成AI・Ready/merge/deploy/enableは未実施。反映commitとexact6pathのremote全文再取得一致は両Draft PRの今回記録へ結合する。PR本文上限に合わせて先頭の直近要約を更新し、前unitの事実は両継続記録の前節へ保持する。

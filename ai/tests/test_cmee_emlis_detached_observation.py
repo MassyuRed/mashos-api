@@ -3,6 +3,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import patch
 import pytest
+import re
 
 import emlis_ai_grounded_human_reception as reception
 import emlis_ai_grounded_observation_gate as gate
@@ -1807,7 +1808,11 @@ def test_explicit_revision_reference_keeps_source_and_existing_about(old, answer
         assert REVISION_INTRO not in result.artifact.reception
         assert '言い直されています' not in result.artifact.observation
         event = ORIGINAL_EVENTS[len(answers)]
-        assert f'「{event}」ことについて、その時の受け止めは「{source}」' in result.artifact.observation
+        observation = result.artifact.observation
+        assert (f'「{event}」ことについて、その時の受け止めは「{source}」' in observation
+            or any(clause.strip().startswith('それぞれの出来事について、その時の受け止めとして、')
+                and f'「{event}」ことには「{source}」' in clause
+                and clause.endswith('と書かれています') for clause in observation.split('。')))
     else:
         nucleus, = revised
         assert not any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
@@ -1914,7 +1919,8 @@ def test_multiple_original_corrections_deliver_every_event_and_own_feeling(sourc
     result = context[0]
     assert '嬉しくなかった' not in result.artifact.text and '悲しかった' not in result.artifact.text
     for event, feeling in zip(('褒められた', '誘われた'), sources):
-        assert f'「{event}」ことについて、その時の受け止めは「{feeling}」' in result.artifact.observation
+        assert f'「{event}」ことには「{feeling}」' in result.artifact.observation
+    assert result.artifact.observation.count('その時の受け止めとして、') == 1
     assert '「頼まれた」と「寂しかった」' in result.artifact.observation
     assert '頼まれたのに、寂しさを感じたのですね。' in result.artifact.reception
     assert read_body(context, result.artifact.text).passed
@@ -1926,6 +1932,12 @@ def test_multiple_original_corrections_cannot_borrow_another_clause_time(
         multiple_original_correction_context, event, when):
     context = multiple_original_correction_context
     body = context[0].artifact.text
+    # Expand the shared time into independently accepted local clauses,
+    # then alter only one event's time. The other time must not discharge it.
+    body = re.sub(r'それぞれの出来事について、その時の受け止めとして、((?:「[^「」]+」ことには「[^「」]+」、)+「[^「」]+」ことには「[^「」]+」)と書かれています。',
+        lambda m: 'とあり、また'.join(f'「{e}」ことについて、その時の受け止めは「{v}」'
+            for e, v in re.findall(r'「([^「」]+)」ことには「([^「」]+)」', m[1])) + 'と書かれています。', body)
+    assert read_body(context, body).passed
     old = f'「{event}」ことについて、その時の受け止めは'
     new = f'「{event}」ことについて、{when + "の" if when else ""}受け止めは'
     assert old in body
@@ -1933,8 +1945,8 @@ def test_multiple_original_corrections_cannot_borrow_another_clause_time(
 
 
 @pytest.mark.parametrize('old,new', [
-    ('「褒められた」ことについて、', '「誘われた」ことについて、'),
-    ('「誘われた」ことについて、', '「頼まれた」ことについて、'),
+    ('「褒められた」ことには', '「誘われた」ことには'),
+    ('「誘われた」ことには', '「頼まれた」ことには'),
     ('少し', ''), ('私は', '友人は'), ('私は', '私も'),
     ('不安でした', '不安ではありませんでした'), ('不安でした', '不安です'),
 ])
@@ -1951,8 +1963,9 @@ def test_multiple_original_corrections_allow_equivalent_observation_ending(multi
     context = multiple_original_correction_context
     body = context[0].artifact.text
     assert 'と書かれています。' in body
-    legacy = body.replace('」ことについて、', '」ことに対する').replace('の受け止めは', 'の受け止めとして、')
-    legacy = legacy.replace('と書かれています。', 'が示されています。')
+    legacy = re.sub(r'それぞれの出来事について、その時の受け止めとして、((?:「[^「」]+」ことには「[^「」]+」、)+「[^「」]+」ことには「[^「」]+」)と書かれています。',
+        lambda m: '、また'.join(f'「{e}」ことに対するその時の受け止めとして、「{v}」'
+            for e, v in re.findall(r'「([^「」]+)」ことには「([^「」]+)」', m[1])) + 'が示されています。', body)
     assert legacy != body and read_body(context, legacy).passed
 
 
@@ -2586,3 +2599,135 @@ def test_nonshared_about_rejects_invented_link_between_complete_clauses(
     changed = observation.replace(connector, connector + addition, 1)
     assert changed != observation
     assert not read_body(context, context[0].artifact.text.replace(context[0].artifact.observation, changed, 1)).passed
+
+
+@pytest.fixture(scope='module', params=[False, True])
+def adjacent_about_time_context(request):
+    req = begin()
+    if request.param:
+        req = advance(req, '今は嬉しい。')
+    old = ('悲しかった', '寂しかった') if request.param else ('嬉しくなかった', '悲しかった')
+    for previous, source in zip(old, ('私も少し怖くなかったです', '少し私には苦しかったです')):
+        req = advance(req, f'「{previous}」ではなく「{source}」です。')
+    return actual(request=req), request.param
+
+
+def test_adjacent_about_shares_only_explanation_and_retains_each_pair(adjacent_about_time_context):
+    context, prior = adjacent_about_time_context
+    obs = context[0].artifact.observation
+    events = ('誘われた', '頼まれた') if prior else ('褒められた', '誘われた')
+    expected = (f'それぞれの出来事について、その時の受け止めとして、「{events[0]}」ことには「私も少し怖くなかったです」、'
+                f'「{events[1]}」ことには「少し私には苦しかったです」と書かれています。')
+    assert expected in obs and obs.count('の受け止めとして、') == 1
+    if prior:
+        assert obs.startswith('「褒められた」一方で「嬉しくなかった」とあり、')
+        assert '回答した時点の受け止めは「嬉しい」' in obs
+    with patch.object(surface, '_render_relation', side_effect=AssertionError('no author oracle')):
+        assert read_body(context, context[0].artifact.text).passed
+
+
+@pytest.mark.parametrize('old,new', [
+    ('その時の受け止めとして、', '回答した時点の受け止めとして、'),
+    ('その時の受け止めとして、', '先の回答時点の受け止めとして、'),
+    ('その時の受け止めとして、', '受け止めとして、'),
+    ('その時の受け止めとして、', '友人のその時の受け止めとして、'),
+    ('ことには', 'ことが原因で'),
+    ('怖くなかったです」、「', '怖くなかったです」、そのため「'),
+    ('怖くなかったです」、「', '怖くなかったです」、友人の反応として「'),
+    ('私も少し怖くなかったです', '私も少し怖かったです'),
+    ('私も少し怖くなかったです', '私も少し怖くないです'),
+    ('私も少し怖くなかったです', '私は少し怖くなかったです'),
+    ('少し私には苦しかったです', '私には苦しかったです'),
+    ('少し私には苦しかったです', '少し友人には苦しかったです'),
+    ('少し私には苦しかったです', '私も少し怖くなかったです'),
+    ('と書かれています。', 'ので、嬉しくなったのですね。'),
+])
+def test_adjacent_about_rejects_time_source_actor_and_link_changes(adjacent_about_time_context, old, new):
+    context, _ = adjacent_about_time_context
+    obs = context[0].artifact.observation
+    changed = obs.replace(old, new, 1)
+    assert changed != obs
+    with patch.object(surface, '_render_relation', side_effect=AssertionError('no author oracle')):
+        assert not read_body(context, context[0].artifact.text.replace(obs, changed, 1)).passed
+
+
+@pytest.mark.parametrize('mutation', ['swap', 'drop', 'duplicate', 'extra', 'swap_answers'])
+def test_adjacent_about_requires_ordered_unique_event_answer_pairs(adjacent_about_time_context, mutation):
+    context, prior = adjacent_about_time_context
+    obs = context[0].artifact.observation
+    events = ('誘われた', '頼まれた') if prior else ('褒められた', '誘われた')
+    a = f'「{events[0]}」ことには「私も少し怖くなかったです」'
+    b = f'「{events[1]}」ことには「少し私には苦しかったです」'
+    joined = a + '、' + b
+    changed = {'swap': b + '、' + a, 'drop': a, 'duplicate': a + '、' + a,
+               'extra': joined + '、' + a,
+               'swap_answers': f'「{events[0]}」ことには「少し私には苦しかったです」、「{events[1]}」ことには「私も少し怖くなかったです」'}[mutation]
+    assert joined in obs
+    assert not read_body(context, context[0].artifact.text.replace(joined, changed, 1)).passed
+
+
+@pytest.mark.parametrize('prior', [False, True])
+def test_adjacent_about_does_not_cross_middle_contrast_or_correction_tail(prior):
+    req = advance(begin(), '今は嬉しい。') if prior else begin()
+    for old, source in (('嬉しくなかった', '私は少し不安でした'), ('寂しかった', '私も少し怖くなかったです')):
+        req = advance(req, f'「{old}」ではなく「{source}」です。')
+    context = actual(request=req)
+    obs = context[0].artifact.observation
+    assert 'ことには' not in obs
+    assert '「誘われた」と「悲しかった」' in obs
+    assert read_body(context, context[0].artifact.text).passed
+
+
+def test_adjacent_about_cannot_reassign_a_shared_event_to_another_answer():
+    req = advance(begin(), '今は嬉しい。')
+    for old, source in (('悲しかった', '私も少し怖くなかったです'), ('寂しかった', '少し私には苦しかったです')):
+        req = advance(req, f'「{old}」ではなく「{source}」です。')
+    context = actual(request=req)
+    body = context[0].artifact.text
+    old = '「頼まれた」ことには「少し私には苦しかったです」と書かれています。'
+    new = '「頼まれた」ことには「少し私には苦しかったです」、「褒められた」ことには「私も少し怖くなかったです」と書かれています。'
+    assert old in body and not read_body(context, body.replace(old, new, 1)).passed
+
+
+@pytest.mark.parametrize('second', ['私は少し不安でした', '私も少し怖くなかったです'])
+def test_repeated_event_wording_keeps_individual_about_clauses(second):
+    req = begin('褒められたのに、嬉しくなかった。褒められたのに、悲しかった。頼まれたのに、寂しかった。')
+    for old, source in zip(('嬉しくなかった', '悲しかった'), ('私は少し不安でした', second)):
+        req = advance(req, f'「{old}」ではなく「{source}」です。')
+    context = actual(request=req)
+    observation = context[0].artifact.observation
+    assert 'ことには' not in observation
+    assert observation.count('「褒められた」ことについて、その時の受け止めは') == 2
+    for source in ('私は少し不安でした', second):
+        assert f'受け止めは「{source}」と書かれています。' in observation
+    with patch.object(surface, '_render_relation', side_effect=AssertionError('no author oracle')):
+        assert read_body(context, context[0].artifact.text).passed
+
+
+def test_adjacent_about_saved_current_answer_and_past_pair_keep_original_and_reads(qcase, qdb, monkeypatch):
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    first = current = run(service.start(user, parent))
+    for index, text in enumerate(('今は嬉しい。', '「悲しかった」ではなく「私は少し不安でした」です。',
+                                  '「寂しかった」ではなく「私も少し怖くなかったです」です。')):
+        if index:
+            current = run(cont(service, user, current, f'adjacent-about-continue-{index}'))
+        current = run(answer(service, user, current, text, f'adjacent-about-answer-{index}'))
+        assert current['body_state'] == 'REFINED'
+        assert current['original'] == first['original']
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not regenerate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+    body = current['current_observation']['text']
+    assert 'それぞれの出来事について、その時の受け止めとして、' in body
+    assert '回答した時点の受け止めは「嬉しい」' in body
+    assert '「誘われた」ことには「私は少し不安でした」、「頼まれた」ことには「私も少し怖くなかったです」' in body
+    assert current['state'] == 'COMPLETED' and not current['can_continue']
+
+
+def test_adjacent_about_cannot_repeat_a_complete_group(adjacent_about_time_context):
+    context, _ = adjacent_about_time_context
+    body = context[0].artifact.text
+    group = re.search(r'それぞれの出来事について、その時の受け止めとして、[^。]+。', body)[0]
+    assert not read_body(context, body.replace(group, group + ' ' + group, 1)).passed

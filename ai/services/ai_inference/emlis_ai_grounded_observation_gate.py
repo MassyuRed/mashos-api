@@ -4659,6 +4659,7 @@ def evaluate_grounded_surface_body_inverse(
                 # added cause or actor between them, nor borrow another
                 # clause's time when the two answers have identical text.
                 evaluation_clauses = []
+                shared_time_relation_ids = set()
                 grammars = (
                     (r"「([^「」]+)」ことについて、(先の回答時点|回答した時点|その時)"
                      r"の受け止めは「([^「」]+)」", "とあり、また", "と書かれています。"),
@@ -4669,6 +4670,46 @@ def evaluate_grounded_surface_body_inverse(
                     if row.section != "observation" or row.section_line_ordinal != parsed_line.section_ordinal:
                         continue
                     visible = _body_inverse_visible_text(body, row).removeprefix("今の入力だけを見ると、")
+                    shared_time = re.fullmatch(
+                        r"それぞれの出来事について、(先の回答時点|回答した時点|その時)の受け止めとして、"
+                        r"((?:「[^「」『』\n]+」ことには「[^「」『』\n]+」、)+"
+                        r"「[^「」『』\n]+」ことには「[^「」『』\n]+」)と書かれています。", visible)
+                    if shared_time:
+                        pairs = re.findall(r"「([^「」『』\n]+)」ことには「([^「」『』\n]+)」", shared_time[2])
+                        matched_relations = []
+                        for event, answer in pairs:
+                            matches = tuple(r for r in plan.relations
+                                if r.relation_id in planned_line.binding.relation_ids
+                                and r.type == "evaluation_about_event"
+                                and r.relation_id not in grouped_answers
+                                and _body_inverse_nucleus_source_values(r.from_nucleus_id, plan, resolver)
+                                    == (_body_inverse_normalized_anchor(event),)
+                                and _body_inverse_nucleus_source_values(r.to_nucleus_id, plan, resolver)
+                                    == (_body_inverse_normalized_anchor(answer),)
+                                and {c for c in nucleus_index[r.to_nucleus_id].semantic_frame.attribute_codes
+                                     if c.startswith("thread_time:")} == {"thread_time:" + {
+                                         "その時": "original_occasion", "回答した時点": "answer_time",
+                                         "先の回答時点": "prior_answer_time"}[shared_time[1]]})
+                            if len(matches) != 1:
+                                break
+                            matched_relations.append(matches[0])
+                        span_order = {sid: pos for pos, sid in enumerate(resolver.span_ids)}
+                        positions = [min((span_order[sid] for sid in nucleus_index[r.from_nucleus_id].source_span_ids),
+                                         default=-1) for r in matched_relations]
+                        bound_event_positions = sorted({min((span_order[sid]
+                            for sid in nucleus_index[r.from_nucleus_id].source_span_ids), default=-1)
+                            for r in plan.relations if r.relation_id in planned_line.binding.relation_ids})
+                        pair_slots = [bound_event_positions.index(pos) for pos in positions]
+                        matched_ids = {r.relation_id for r in matched_relations}
+                        if (len(matched_relations) != len(pairs)
+                            or len(matched_ids) != len(pairs)
+                            or shared_time_relation_ids & matched_ids
+                            or positions != sorted(set(positions))
+                            or pair_slots != list(range(pair_slots[0], pair_slots[0] + len(pair_slots)))):
+                            failures.append(f"body_inverse_answer_target_relation_missing:{index}")
+                        else:
+                            shared_time_relation_ids.update(matched_ids)
+                            evaluation_clauses.extend((event, shared_time[1], answer) for event, answer in pairs)
                     for operand, connector, ending in grammars:
                         if re.fullmatch(rf"(?:{operand}{connector})*{operand}{ending}", visible):
                             evaluation_clauses.extend(re.findall(operand, visible))
