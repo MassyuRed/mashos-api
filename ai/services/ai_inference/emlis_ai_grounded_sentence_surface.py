@@ -152,8 +152,8 @@ _RECEPTION_SENTENCE_END_RE: Final = re.compile(r"[。！？!?]+")
 _RECEPTION_QUOTE_RE: Final = re.compile(r"「([^」]*)」")
 _BODY_RELATION_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     ("from_to", re.compile(r"から.{0,160}(?:へ|に)")),
-    ("coexistence", re.compile(r"一方で|同時に|重なり|異なる向き|並んで|両方|ともに|中にも|中でも")),
-    ("link", re.compile(r"つなが|表れ|生まれ|結びつ|に対する|その出来事について、|」ことについて、|」ことには「")),
+    ("coexistence", re.compile(r"一方で|同時に|重なり|異なる向き|並んで|両方|ともに|中にも|中でも|」のに「")),
+    ("link", re.compile(r"つなが|表れ|生まれ|結びつ|に対する|その出来事について、|」ことについて、|」ことには「|」、(?:その時は|回答した時点では|先の回答時点では)「")),
     ("counterdirection", re.compile(r"同意していない|終わらない|それでも|けれど")),
     ("change", re.compile(r"変化|動いて|進み|向き")),
 )
@@ -3281,9 +3281,9 @@ def _thread_contrast_answer_groups(binding, nucleus_index, relation_index, resol
         if any(sum(anchor(part) in values for values in source_anchors.values()) != 1 for part in parts):
             continue
         left, right, received = parts
+        answer_time = when + ("は" if when == "その時" else "では")
         sentences.append((contrast.relation_id,
-                          f"{left}一方で{right}とあり、"
-                          f"その出来事について、{when}の受け止めは{received}と書かれています。"))
+                          f"{left}のに{right}、{answer_time}{received}とあります。"))
         consumed.update((contrast.relation_id, about[0].relation_id))
     return tuple(sentences), frozenset(consumed)
 

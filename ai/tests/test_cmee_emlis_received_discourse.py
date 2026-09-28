@@ -946,3 +946,94 @@ def test_two_positive_unadmitted_explanation_is_not_silently_retyped():
     assert '回答の「その時は楽しかったのです」には、今回の観測に反映できていない部分があります。' in result.artifact.text
     assert '楽しかった' not in result.artifact.reception
     assert inverse(context, result.artifact.reception, without_author=True).passed
+
+
+@pytest.fixture(scope='module', params=[
+    (('今は私も少し嬉しいです。',), '回答した時点では', '私も少し嬉しいです'),
+    (('その時は少し重かった。',), 'その時は', '少し重かった'),
+    (('今は嬉しい。', '「嬉しい」ではなく「少し楽しい」です。'), '先の回答時点では', '少し楽しい'),
+])
+def compact_report_context(request):
+    sequence, time, source = request.param
+    req = begin()
+    for reply in sequence:
+        req = advance(req, reply)
+    return actual(request=req), time, source
+
+
+def test_compact_report_keeps_three_sources_and_two_owned_relations(compact_report_context):
+    from test_cmee_emlis_detached_observation import read_body
+    context, time, source = compact_report_context
+    result, plan, _, _, _ = context
+    report = f'「褒められた」のに「嬉しくなかった」、{time}「{source}」とあります。'
+    assert result.artifact.observation.startswith(report)
+    assert result.artifact.observation.count('「褒められた」') == 1
+    assert all(q in result.artifact.observation for q in ('「誘われた」', '「悲しかった」', '「頼まれた」', '「寂しかった」'))
+    event = next(n for n in plan.nuclei if n.nucleus_id == 'nucleus:s1:event')
+    assert {r.type for r in plan.relations if r.from_nucleus_id == event.nucleus_id} == {'contrast', 'evaluation_about_event'}
+    with patch.object(surface, '_render_relation', side_effect=AssertionError('no report author')):
+        assert read_body(context, result.artifact.text).passed
+
+
+@pytest.mark.parametrize('mutation', [
+    'drop_event', 'drop_original', 'drop_answer', 'swap_feelings',
+    'cause_original', 'cause_answer', 'time_missing', 'time_wrong',
+    'wrong_event', 'original_polarity', 'degree_missing', 'extra_claim',
+])
+def test_compact_report_rejects_missing_or_crossed_duties(compact_report_context, mutation):
+    from test_cmee_emlis_detached_observation import read_body
+    context, time, source = compact_report_context
+    body = context[0].artifact.text
+    report = f'「褒められた」のに「嬉しくなかった」、{time}「{source}」とあります。'
+    changed = {
+        'drop_event': report.replace('「褒められた」', ''),
+        'drop_original': report.replace('「嬉しくなかった」', ''),
+        'drop_answer': report.replace(f'「{source}」', ''),
+        'swap_feelings': f'「褒められた」のに「{source}」、{time}「嬉しくなかった」とあります。',
+        'cause_original': report.replace('のに', 'ので'),
+        'cause_answer': report.replace('」、' + time, '」、そのため' + time),
+        'time_missing': report.replace(time, ''),
+        'time_wrong': report.replace(time, 'その時は' if time != 'その時は' else '回答した時点では'),
+        'wrong_event': report.replace('「褒められた」', '「誘われた」'),
+        'original_polarity': report.replace('「嬉しくなかった」', '「嬉しかった」'),
+        'degree_missing': report.replace(source, source.replace('少し', '')),
+        'extra_claim': report.replace('とあります。', 'とあり、気持ちが改善しています。'),
+    }[mutation]
+    assert changed != report and report in body
+    with patch.object(surface, '_render_relation', side_effect=AssertionError('no report author')):
+        assert not read_body(context, body.replace(report, changed, 1)).passed
+
+
+@pytest.mark.parametrize('legacy', [0, 1])
+def test_compact_report_retains_complete_legacy_readings(compact_report_context, legacy):
+    from test_cmee_emlis_detached_observation import read_body
+    context, time, source = compact_report_context
+    report = f'「褒められた」のに「嬉しくなかった」、{time}「{source}」とあります。'
+    when = time.removesuffix('では').removesuffix('は')
+    old = (f'「褒められた」一方で「嬉しくなかった」とあり、その出来事について、{when}の受け止めは「{source}」と書かれています。'
+           if legacy == 0 else
+           f'「褒められた」という出来事の一方で「嬉しくなかった」という反応があり、その出来事に対する{when}の受け止めとして、「{source}」が見えます。')
+    with patch.object(surface, '_render_relation', side_effect=AssertionError('no report author')):
+        assert read_body(context, context[0].artifact.text.replace(report, old, 1)).passed
+
+
+def test_compact_report_saved_correction_and_withdrawal_reuses_dto(qcase, monkeypatch):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    for i, reply in enumerate(('今は嬉しい。', '「嬉しい」ではなく「少し楽しい」です。', '「褒められた」は誤りです。')):
+        if i:
+            current = run(cont(service, user, current, f'compact-report-continue-{i}'))
+        current = run(answer(service, user, current, reply, f'compact-report-answer-{i}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        if i < 2:
+            time, source = ('回答した時点では', '嬉しい') if i == 0 else ('先の回答時点では', '少し楽しい')
+            assert f'「褒められた」のに「嬉しくなかった」、{time}「{source}」とあります。' in body
+        else:
+            assert '褒められた' not in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read must not regenerate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+    assert current['state'] == 'COMPLETED' and not current['can_continue']

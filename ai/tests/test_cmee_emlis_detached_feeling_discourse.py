@@ -399,8 +399,8 @@ def test_middle_withdrawal_keeps_an_answer_owned_by_the_first_event():
     request = advance(advance(begin(), '今は重い。'), '「誘われた」は誤りです。')
     context = actual(request=request)
     body = context[0].artifact.text
-    assert '「褒められた」一方で「嬉しくなかった」とあり、' in body
-    assert 'その出来事について、回答した時点の受け止めは「重い」' in body
+    assert '「褒められた」のに「嬉しくなかった」、' in body
+    assert '回答した時点では「重い」' in body
     assert '褒められた時は嬉しくなく、回答した時点では重い' in context[0].artifact.reception
     assert 'その時は悲しかった' in body and '誘われた' not in body
     assert read_body(context, body).passed

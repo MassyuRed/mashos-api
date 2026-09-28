@@ -321,8 +321,9 @@ def test_answer_observation_binds_one_event_without_repetition(answer_text, when
     assert prepared.checkpoint == checkpoint
     body = result.artifact.text
     assert result.artifact.observation.count('「褒められた」') == 1
-    assert '「褒められた」一方で「嬉しくなかった」とあり、' in result.artifact.observation
-    assert f'その出来事について、{when}の受け止めは' in result.artifact.observation
+    time = when + ('は' if when == 'その時' else 'では')
+    assert '「褒められた」のに「嬉しくなかった」、' in result.artifact.observation
+    assert f'」、{time}「' in result.artifact.observation
     projection = project_thread_meaning(prepared, plan)
     sentence = surface.build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
     def inverse(text):
@@ -330,13 +331,13 @@ def test_answer_observation_binds_one_event_without_repetition(answer_text, when
             sentence_plan=sentence, resolver=resolver, selected_subjective_input=projection.selected_reception).passed
     assert inverse(body)
     for before, after in [
-        ('その出来事について、', 'その反応について、'),
-        ('その出来事について、', 'その出来事が原因で、'),
-        ('とあり、', 'とはなく、'),
-        ('とあり、', 'とあり。'),
+        (f'」、{time}「', f'」、その反応について、{time}「'),
+        (f'」、{time}「', f'」、その出来事が原因で、{time}「'),
+        ('「嬉しくなかった」、', '「嬉しくなかった」とはなく、'),
+        ('「嬉しくなかった」、', '「嬉しくなかった」。'),
         ('「褒められた」', '「誘われた」'),
         ('「嬉しくなかった」', '「嬉しかった」'),
-        (f'について、{when}', 'について、先の回答時点'),
+        (f'」、{time}「', '」、先の回答時点では「'),
     ]:
         changed = body.replace(before, after)
         assert changed != body and not inverse(changed)
@@ -469,9 +470,10 @@ def test_compact_answer_observation_keeps_full_sources(compact_answer_observatio
     from test_cmee_emlis_detached_observation import read_body
     context, when, source = compact_answer_observation
     result = context[0]
+    time = when + ('は' if when == 'その時' else 'では')
     assert result.artifact.observation == (
-        '「褒められた」一方で「嬉しくなかった」とあり、'
-        f'その出来事について、{when}の受け止めは「{source}」と書かれています。')
+        '「褒められた」のに「嬉しくなかった」、'
+        f'{time}「{source}」とあります。')
     assert read_body(context, result.artifact.text).passed
 
 
@@ -485,19 +487,20 @@ def test_compact_answer_observation_rejects_changed_duties(compact_answer_observ
     context, when, source = compact_answer_observation
     result = context[0]
     observation = result.artifact.observation
+    time = when + ('は' if when == 'その時' else 'では')
     old, new = {
-        'cause': ('一方で', 'ので'),
-        'unrelated': ('一方で', 'そして'),
-        'reaction_target': ('その出来事について、', 'その反応について、'),
-        'other_event_target': ('その出来事について、', '頼まれたことについて、'),
-        'causal_target': ('その出来事について、', 'その出来事が原因で、'),
-        'denied_reaction': ('とあり、', 'とは書かれておらず、'),
-        'sentence_split': ('とあり、', 'とあり。'),
-        'extra_current': ('その出来事について、', 'その出来事について、今は'),
+        'cause': ('」のに「', '」ので「'),
+        'unrelated': ('」のに「', '」そして「'),
+        'reaction_target': (f'」、{time}「', f'」、その反応について、{time}「'),
+        'other_event_target': (f'」、{time}「', f'」、頼まれたことについて、{time}「'),
+        'causal_target': (f'」、{time}「', f'」、その出来事が原因で、{time}「'),
+        'denied_reaction': ('「嬉しくなかった」、', '「嬉しくなかった」とは書かれておらず、'),
+        'sentence_split': ('「嬉しくなかった」、', '「嬉しくなかった」。'),
+        'extra_current': (f'」、{time}「', f'」、今は{time}「'),
         'wrong_event': ('「褒められた」', '「誘われた」'),
         'wrong_reaction': ('「嬉しくなかった」', '「嬉しかった」'),
-        'missing_time': (when + 'の受け止めは', '受け止めは'),
-        'wrong_time': (when + 'の受け止めは', ('回答した時点' if when == 'その時' else 'その時') + 'の受け止めは'),
+        'missing_time': (f'」、{time}「', '」、「'),
+        'wrong_time': (f'」、{time}「', '」、' + ('回答した時点では' if when == 'その時' else 'その時は') + '「'),
         'missing_answer': (f'「{source}」', ''),
         'wrong_answer': (f'「{source}」', '「友人が悲しい」'),
     }[mutation]
