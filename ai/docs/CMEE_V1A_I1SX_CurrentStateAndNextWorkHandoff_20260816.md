@@ -10115,3 +10115,59 @@ Emlisから：
 **残件・次作業。** 二つの肯定回答後の肯定訂正に伴う限定欠落を今回閉じる。次は独立した訂正/撤回感情の参照と時点を、直前の別eventへ誤接続させずに読める共通表現へ進める。locatorからABOUTを捏造せず、同じ全source/時点を保持してObservation/Receptionの両層と保存本文を確認する。長い復唱・名詞列・定型末尾、元否定と肯定の説明なしの併存、対応外文法/複数主題も残る。肯定訂正一般や文章品質全体の完了とはしない。weeklyの9/30進捗確認・10/3限定family整理・10/10Emlis判定目標に向けた実本文改善として記録する。
 
 **TECHNICAL_CREDIT/STRUCTURE_MAP_DELTA_NONE/全体48%・商品合格0/3/NOT_CLEAR/default OFF/Draft・open・unmerged。** 変更はAPI production3、既存test1、current派生fixture1、既存handoff1、Cocolon既存06追記1の計7path。新file/engine/owner/routeなし。Ready・merge・deploy・enable・実DB・実機・実課金・外部生成AIは未実施。反映commit/変更path/remote全文一致/headは両Draft PR本文に記録する。
+
+
+## 2026-09-28 継続 — 独立した原反応訂正を隣接する出来事・残存感情から読み分ける
+
+**開始点と目的。** API `7a2d7e9dc94fba94f065ec75b03ed1a9e68e114b`、Cocolon `05c53eb1cc9c863bc5ad3b7606fb7593ebc6c0eb`、既存Draft PR #3/#30・open/unmerged。MashのEmlisAI残件継続指示により、直前handoffに残した「独立訂正のその時が隣の別eventへ接続して読める」欠陥を扱う。作業rule入口、恒久incident全文、CURRENT_RULES/Rule18、全体設計01・全file地図02/current_structureと適用正本、最新weekly 20260926の§3.8/§3.9/§5.2/§5.3/採用済み§5.9、既存handoffを確認した。前回txt参照記録・tracked集合API2300/Cocolon1645の照合は直前unitから継承し、今unitで全sourceを再監査したとは呼ばない。構造の追加・移動はない。
+
+System Context prepareはshallow checkoutのmaterial commit祖先確認でexit2、許容された原典直接参照を使用。Contextの最新化成功は主張しない。既存承認内LEVEL_2/DIRECT_PRODUCT_OR_ACCEPTANCE_WORK。商品・技術担当は同じhead/対象でread-only検討し、root華恋だけが編集・実行・反映した。
+
+**原因と変更。** 意味上はABOUTを持たない独立訂正なのに、Observation/Receptionが「その時の気持ち」「その時は…」だけで出していたため、直前の別eventが時点の先行詞として読まれた。既存の本人・過去・original_occasion・独立原反応訂正の証明が揃う核に限り、Observationを「『source』と、当時の気持ちを言い直されています」、Receptionを「言い直してくださった気持ちについては、当時は…」にする。SELF/助詞が明記されたsourceは「当時、あなたも…」等で完全な述語を保持する。実引用符は「」。
+
+Observationは単独行、relation行の独立tail、既存detached groupを対象とし、Receptionは単独、既存replacement IR、撤回原反応と独立訂正を含む既存burden groupへ適用。複合groupでは、残存する悲しさ/寂しさを直後の訂正で置き換えたようにも読める初稿を商品reviewが検出した。後続訂正に「それとは別に」を足し、別の原反応の訂正と明示する。「別の出来事」「別の時」という関係は加えない。
+
+Gateは作者のprefix helper・再生成本文・group表現をoracleにせず、実本文bytesからsource全体、本人/助詞/程度/否定、過去時点、訂正表示、groupの分離表示を逆読する。訂正表示と既存revision証明の一致を要求し、同義Observation末尾「言い換えられています」と既存Reception同義末尾も読める。時点tokenが行の別箇所にあるだけでは通さない。
+
+意味更新・語彙認定・inactive関係・ABOUT・質問枠・3Move上限・保存schema・公開API/DB/RNは不変。既存ABOUT付きの訂正は従来どおり出来事と時点を示し、撤回だけで残った感情へ「言い直し」を誤適用しない。locatorからevent関係を復活させない。変更ownerは既存Sentence Surface/Human Reception/Observation Gateの3つ。
+
+**実本文1。** 原入力「褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。」→「今は嬉しい。」→「その時は楽しかった。」→「『嬉しくなかった』ではなく『楽しかった』です。」（引用符は「」）。変更前の独立末尾「その時は楽しかった」を次のように改めた。
+
+```text
+見えたこと：
+「褒められた」ことに対する回答した時点の受け止めとして、「嬉しい」が見えます。
+「誘われた」の一方で「悲しかった」、また「頼まれた」の一方で「寂しかった」という、それぞれ異なる向きが並んでいます。 「誘われた」ことに対するその時の受け止めとして、「楽しかった」が見えます。また、「楽しかった」と、当時の気持ちを言い直されています。
+
+Emlisから：
+褒められたことについて、回答した時点では嬉しいし、誘われたことについて、その時は楽しかったのですね。誘われたのに、悲しさを感じ、頼まれたのに、寂しさを感じたのですね。言い直してくださった気持ちについては、当時は楽しかったのですね。
+```
+
+**実本文2。** 同じ原入力→「今は嬉しい。」→「『嬉しくなかった』ではなく『私も少し怖くなかったです』です。」→「『誘われた』は誤りです。」。残存感情と別の訂正を分ける最終本文。
+
+```text
+見えたこと：
+「褒められた」ことに対する回答した時点の受け止めとして、「嬉しい」が見えます。
+その時の「悲しかった」という気持ちが書かれており、それとは別に「私も少し怖くなかったです」と、当時の気持ちを言い直されています。
+「頼まれた」と「寂しかった」が、異なる向きのまま同時にあります。
+
+Emlisから：
+その時は悲しかったし、それとは別に言い直してくださった気持ちについては、当時、あなたも少し怖くなかったのですね。褒められたことについて、回答した時点では嬉しいのですね。頼まれたのに、寂しさを感じたのですね。
+```
+
+**比較と読後判断。** 元反応3位置×先行回答4構成（0/1/2回答の2時点配列）×正/負・通常/SELF少し否定の4形＝48、訂正後撤回group8、撤回のみ対照3、再訂正2の計61件を同一runtimeで開始/最終sourceからfresh比較した。checkpoint・当該turnのaccepted nuclei・plan全文・reason codesは61/61完全一致。前後とも61件の本文があり、未提供からの復旧ではない。変更対象42件以外のABOUT付き16件＋撤回専用3件は本文全体も完全一致。
+
+rootは基本6件・group8件・再訂正2件の両層実本文を読み、独立商品担当も同じ範囲を読み、修正後group8件を再読した。裸の時点指示による別eventへの誤参照と、groupの直前感情を訂正したように見える問題はこの対象範囲で解消。語順「当時、少しあなたは…」、導入句の硬さ、同じsourceの反復、陰性・肯定の説明なしの列挙、長い連結文は残る。正式Product Read PASS/商品合格は認定しない。
+
+**検証。** 最終横断 **1761件＝1727 PASS/既知34 FAIL、ERROR/SKIP0、193 deselected**（502.03秒）。追加96件は全PASS。既存1665件は、更新した26関数のパラメータ組順・件数を保った対応を含め、全件の成否が開始版と一致した。34失敗は同じtest identityで、workspace prefix・実行時memory address・fixture UUIDだけを正規化しmessage/tracebackも全一致。新規の失敗はないが、全件成功ではない。
+
+- 追加96件：0/1/2回答・3訂正位置・正負/SELF等の48、作者を止めた両層の参照/時点/主体/助詞/程度/誤ABOUT拒否36、同義終端4、再訂正2、group分離の欠落/因果化/同一化拒否6。最後の6追加前の90件は単独90 PASS。最終productionの関連選択235件は全PASS（52.20秒、382 deselected）。
+- 本文変更に伴い、非frozenの既存test26関数の期待文言と改変anchorを明示更新した。旧「その時…」から新しい訂正・当時・分離表示への追随であり、関数/パラメータ組数とsource・ABOUT・inactive・Move・保存・拒否目的を維持。技術reviewで、時点/否定等の変異と同時に訂正表示まで消していた箇所を指摘され、表示を残し当該軸だけを変える形へ修正した。旧assert全文不変とは報告しない。既知34失敗や旧容量期待を消す更新、protected/frozen acceptance test・分母・比較器・歴史的証跡の変更は行っていない。
+- 開始production＋開始testのfresh横断は1665件＝1631 PASS/34 FAIL、ERROR/SKIP0（479.413秒）。本文修正後に旧期待を残した限定521件は373 PASS/148 FAILとなり、文言更新の必要性を確認した。この途中結果を最終結果へ混ぜない。商品reviewによるgroup分離追加前の横断は中断し、最終source/最終testで横断を再実行した。
+- 既存PGlite SQL/RPC/serviceを通した保存検査は18系列・回答後48状態＋初期12状態＝60状態で成功。回答後はREFINED、original DTO不変。各状態でgenerateを禁止したGETおよびservice.start再呼出しが保存DTOと完全一致する。プロセス再起動、実DB、実機の確認ではない。
+- current shared-owner identity fixtureのみ既存導出関数で再生成し、language/runtime各18payload・9owner・scope・キー順・歴史的凍結証跡を維持。最終差分の独立技術reviewとgroup実本文の独立商品reviewに追加修正必須指摘なし。担当は編集・検査実行・GitHub書込みをしていない。
+
+今回の新scratchで旧runtime pathがないことを確認し、既存versionの検査用runtimeを再構築した。Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1、Node24.19.0/PGlite0.5.8。検査環境へのinstallはあり、repo依存manifest変更はない。横断は直前handoffと同じ13target、contractsは `active_final_language_owner_chain_has_zero_legacy_compose_calls` のみ。共通prefixは `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<PGlite path> <Python3.12> -m pytest -q`。旧必須59file・Q3全950・初回100・継承保存337全量を今回再実行したとは呼ばない。
+
+**残件と次の対象。** 今回は認定済み独立訂正の参照明示を限定して閉じる。次は各source/ABOUT/時点を保持したまま、反復と長い列挙、導入句やSELF/程度の語順を整理する必要がある。撤回専用感情の裸の時点指示、対応外文法/複数主題も別に残る。既知34失敗は現行仕様との期待衝突と未解決項目を保持し、全件成功とは扱わない。weeklyの9/30進捗確認・10/3限定family整理・10/10Emlis判定に向け、合成実本文の改善範囲と残件を分けて引き継ぐ。
+
+**TECHNICAL_CREDIT/STRUCTURE_MAP_DELTA_NONE/全体48%・商品合格0/3/NOT_CLEAR/default OFF/Draft・open・unmerged。** 変更はAPI production3、既存test1、current派生fixture1、既存handoff1、Cocolon既存06追記1の計7path。新file/engine/owner/routeなし。Ready・merge・deploy・enable・実DB・実機・実課金・外部生成AIは未実施。反映commit/変更path/remote全文一致/headは両Draft PR本文へ記録する。

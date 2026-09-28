@@ -2889,12 +2889,22 @@ def _render_observation(
             and not binding.relation_ids and all(detached_times)):
             # Resolve separately: a quote list may reorder fields or dedupe
             # equal words, which must not exchange these feelings' times.
-            operands = []
-            for nid, when in zip(binding.nucleus_ids, detached_times, strict=True):
+            from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
+            revised = tuple(_thread_revised_original_reaction(
+                nucleus_index[nid], (), polarity=nucleus_index[nid].semantic_frame.polarity)
+                for nid in binding.nucleus_ids)
+            operands, clauses = [], []
+            for nid, when, revision in zip(binding.nucleus_ids, detached_times, revised, strict=True):
                 source = _quotes_for_nuclei((nid,), nucleus_index, resolver)
                 if len(source) != 1:
                     raise GroundedSentenceSurfaceError("detached_feeling_source_ambiguous")
                 operands.append(f"{when}の{source[0]}")
+                separation = "それとは別に" if revision and clauses else ""
+                clauses.append(f"{separation}{source[0]}と、当時の気持ちを言い直されています" if revision
+                               else f"{when}の{source[0]}という気持ちが書かれています")
+            if any(revised):
+                return prefix + "、".join(clause.removesuffix("います") + "おり"
+                    for clause in clauses[:-1]) + "、" + clauses[-1] + "。"
             return f"{prefix}{'と、'.join(operands)}という気持ちが書かれています。"
         atoms = set(binding.functional_atom_ids)
         if typed_semantic_duties and "observation_surface_role:state_arc" in atoms:
@@ -2938,6 +2948,11 @@ def _render_observation(
             return f"{prefix}{joined}が、同じ入力に置かれた出来事として並んでいます。"
         return f"{prefix}{joined}が、同じ入力の中で一つの流れになっています。"
     nucleus = nucleus_index[binding.nucleus_ids[0]]
+    from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
+    if (getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+        and not binding.relation_ids and len(quotes) == 1
+        and _thread_revised_original_reaction(nucleus, (), polarity=nucleus.semantic_frame.polarity)):
+        return f"{prefix}{joined}と、当時の気持ちを言い直されています。"
     if (getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
         and not binding.relation_ids and _independent_original_event(nucleus, {})
         and "semantic_role:contrast_before" in nucleus.semantic_frame.attribute_codes):
@@ -3066,6 +3081,7 @@ def _render_extra_context(
     if detached:
         # An independent reaction does not become background for another
         # event when the user has withdrawn its former subject relation.
+        from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
         parts = []
         for nid in detached:
             nucleus = nucleus_index[nid]
@@ -3076,7 +3092,13 @@ def _render_extra_context(
                 {"thread_time:original_occasion"}, {"thread_time:answer_time"}, {"thread_time:prior_answer_time"}):
                 raise GroundedSentenceSurfaceError("thread_temporal_binding_ambiguous")
             quoted = _join_quotes(_quotes_for_nuclei((nid,), nucleus_index, resolver))
-            parts.append(f"また、{when}の気持ちとして、{quoted}が見えます。")
+            if (getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+                    and _thread_revised_original_reaction(
+                        nucleus, (), polarity=nucleus.semantic_frame.polarity)):
+                # extra_ids exclude every relation endpoint in this binding.
+                parts.append(f"また、{quoted}と、当時の気持ちを言い直されています。")
+            else:
+                parts.append(f"また、{when}の気持ちとして、{quoted}が見えます。")
         remaining = tuple(nid for nid in extra_ids if nid not in detached)
         return "".join(parts) + _render_extra_context(remaining, nucleus_index, resolver)
     # Field-independent feelings are separate source duties, not an

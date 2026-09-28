@@ -641,8 +641,8 @@ def test_revised_original_retains_both_positives_and_remaining_reactions(answers
     request = revised_original_request(source, answers)
     context = actual(request=request)
     result, plan, _, _, _ = context
-    assert f'その時の気持ちとして、「{source}」が見えます。' in result.artifact.observation
-    assert f'その時は{finite}のですね。' in result.artifact.reception
+    assert f'「{source}」と、当時の気持ちを言い直されています。' in result.artifact.observation
+    assert '言い直してくださった気持ちについては、' + ('当時、' if source.startswith('私') else '当時は') + finite + 'のですね。' in result.artifact.reception
     assert '嬉しくなかった' not in result.artifact.text
     assert all(s in result.artifact.reception for s in ('褒められた', '誘われた', '頼まれた', '悲し', '寂し'))
     moves = plan.response_plan.human_reception_plan.moves
@@ -668,37 +668,37 @@ def revised_original_context():
 
 
 @pytest.mark.parametrize('replacement', [
-    'また、回答した時点の気持ちとして、「苦しかった」が見えます。',
-    'また、先の回答時点の気持ちとして、「苦しかった」が見えます。',
-    'また、気持ちとして、「苦しかった」が見えます。',
-    'また、その時の気持ちとして、「苦しい」が見えます。',
-    'また、その時の気持ちとして、「苦しくなかった」が見えます。',
-    'また、その時の気持ちとして、「友人が苦しかった」が見えます。',
-    'また、その時の気持ちとして、「嬉しくなかった」が見えます。',
+    'また、「苦しかった」と、回答した時点の気持ちを言い直されています。',
+    'また、「苦しかった」と、先の回答時点の気持ちを言い直されています。',
+    'また、「苦しかった」と、気持ちを言い直されています。',
+    'また、「苦しい」と、当時の気持ちを言い直されています。',
+    'また、「苦しくなかった」と、当時の気持ちを言い直されています。',
+    'また、「友人が苦しかった」と、当時の気持ちを言い直されています。',
+    'また、「嬉しくなかった」と、当時の気持ちを言い直されています。',
     'その背景には、「苦しかった」という状態も重なっています。',
-    '褒められたので、その時の気持ちとして、「苦しかった」が見えます。',
-    'また、その時の気持ちとして、「苦しかった」が見えます。苦しさは誘われたことによるものです。',
-    '苦しさは誘われたことによるものです。また、その時の気持ちとして、「苦しかった」が見えます。',
-    '「誘われた」から「苦しかった」へつながっています。また、その時の気持ちとして、「苦しかった」が見えます。',
-    'また、その時の気持ちとして、「苦しかった」が見えます。また、その時の気持ちとして、「苦しかった」が見えます。',
+    '褒められたので、「苦しかった」と、当時の気持ちを言い直されています。',
+    'また、「苦しかった」と、当時の気持ちを言い直されています。苦しさは誘われたことによるものです。',
+    '苦しさは誘われたことによるものです。また、「苦しかった」と、当時の気持ちを言い直されています。',
+    '「誘われた」から「苦しかった」へつながっています。また、「苦しかった」と、当時の気持ちを言い直されています。',
+    'また、「苦しかった」と、当時の気持ちを言い直されています。また、「苦しかった」と、当時の気持ちを言い直されています。',
     '',
 ])
 def test_revised_original_observation_owns_its_time_even_with_other_time_tokens(revised_original_context, replacement):
     body = revised_original_context[0].artifact.text
-    original = 'また、その時の気持ちとして、「苦しかった」が見えます。'
+    original = 'また、「苦しかった」と、当時の気持ちを言い直されています。'
     assert original in body
     assert not read_body(revised_original_context, body.replace(original, replacement, 1)).passed
 
 
 @pytest.mark.parametrize('old,new', [
-    ('その時は苦しかったのですね。', ''),
-    ('その時は苦しかった', '回答した時点では苦しかった'),
-    ('その時は苦しかった', '苦しかった'),
-    ('その時は苦しかった', 'その時は苦しくなかった'),
-    ('その時は苦しかった', 'その時は苦しい'),
-    ('その時は苦しかった', 'その時は嬉しくなかった'),
-    ('その時は苦しかった', 'その時は友人が苦しかった'),
-    ('その時は苦しかった', '褒められたことについて、その時は苦しかった'),
+    ('言い直してくださった気持ちについては、当時は苦しかったのですね。', ''),
+    ('言い直してくださった気持ちについては、当時は苦しかった', '言い直してくださった気持ちについては、回答した時点では苦しかった'),
+    ('言い直してくださった気持ちについては、当時は苦しかった', '言い直してくださった気持ちについては、苦しかった'),
+    ('言い直してくださった気持ちについては、当時は苦しかった', '言い直してくださった気持ちについては、当時は苦しくなかった'),
+    ('言い直してくださった気持ちについては、当時は苦しかった', '言い直してくださった気持ちについては、当時は苦しい'),
+    ('言い直してくださった気持ちについては、当時は苦しかった', '言い直してくださった気持ちについては、当時は嬉しくなかった'),
+    ('言い直してくださった気持ちについては、当時は苦しかった', '言い直してくださった気持ちについては、当時は友人が苦しかった'),
+    ('言い直してくださった気持ちについては、当時は苦しかった', '褒められたことについて、言い直してくださった気持ちについては、当時は苦しかった'),
     ('、また、', 'ので、'),
     ('誘われたのに、悲しさを感じたのですね、また、', ''),
     ('頼まれたのに、寂しさを感じたのですね、また、', ''),
@@ -714,7 +714,7 @@ def test_revised_original_reception_rejects_missing_or_reassigned_duties(revised
 
 def test_revised_original_equivalent_endings_are_read_without_authors(revised_original_context):
     body = revised_original_context[0].artifact.text
-    changed = body.replace('「苦しかった」が見えます。', '「苦しかった」が読み取れます。').replace('のですね、また、', 'のです、また、')
+    changed = body.replace('言い直されています。', '言い換えられています。').replace('のですね、また、', 'のです、また、')
     assert read_body(revised_original_context, changed).passed
 
 
@@ -780,7 +780,7 @@ def test_revised_original_saved_reads_preserve_initial_and_all_answers(qcase, qd
             assert run(service.get(user, parent)) == current
             assert run(service.start(user, parent)) == current
     body = current['current_observation']['text']
-    assert 'その時の気持ちとして、「少し苦しかった」' in body and 'その時は少し苦しかった' in body
+    assert '「少し苦しかった」と、当時の気持ちを言い直されています' in body and '言い直してくださった気持ちについては、当時は少し苦しかった' in body
     assert all(s in body for s in ('褒められた', '誘われた', '頼まれた', '悲し', '寂し', '楽し'))
     assert '嬉しくなかった' not in body
 
@@ -790,7 +790,7 @@ def test_revised_original_can_be_corrected_again_without_reviving_old_relations(
         '「苦しかった」ではなく「少し怖かった」です。'))
     result, plan, _, _, _ = context
     assert '苦しかった' not in result.artifact.text and '嬉しくなかった' not in result.artifact.text
-    assert 'その時の気持ちとして、「少し怖かった」' in result.artifact.observation
+    assert '「少し怖かった」と、当時の気持ちを言い直されています' in result.artifact.observation
     assert '少し怖かった' in result.artifact.reception
     replacement, = [n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes]
     assert not any(replacement.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
@@ -810,7 +810,7 @@ def test_middle_revision_delivers_complete_contrasts_and_ordered_answer(answers,
     assert result.artifact.text == public.artifact.text
     observation = result.artifact.observation
     assert observation.index('褒められた') < observation.index('誘われた') < observation.index('頼まれた')
-    assert f'その時の気持ちとして、「{source}」が見えます。' in observation
+    assert f'「{source}」と、当時の気持ちを言い直されています。' in observation
     assert '悲しかった' not in result.artifact.text
     assert len([n for n in plan.nuclei if n.retention == 'required']) == 8
     assert len(plan.relations) == 4 and all(r.retention == 'required' for r in plan.relations)
@@ -847,15 +847,15 @@ def middle_revision_context():
     ('「誘われた」ことに対する回答した時点の', '「誘われた」ことに対するその時の'),
     ('「誘われた」ことに対する', '「頼まれた」ことに対する'),
     ('「誘われた」ことに対する', '「誘われた」ことのおかげで'),
-    ('その時の気持ちとして、「苦しかった」', '回答した時点の気持ちとして、「苦しかった」'),
-    ('その時の気持ちとして、「苦しかった」', '気持ちとして、「苦しかった」'),
-    ('その時の気持ちとして、「苦しかった」', 'その時の気持ちとして、「悲しかった」'),
-    ('その時の気持ちとして、「苦しかった」', '誘われたので、その時の気持ちとして、「苦しかった」'),
-    ('その時の気持ちとして、「苦しかった」が見えます。', ''),
+    ('「苦しかった」と、当時の気持ちを言い直されています', '「苦しかった」と、回答した時点の気持ちを言い直されています'),
+    ('「苦しかった」と、当時の気持ちを言い直されています', '「苦しかった」と、気持ちを言い直されています'),
+    ('「苦しかった」と、当時の気持ちを言い直されています', '「悲しかった」と、当時の気持ちを言い直されています'),
+    ('「苦しかった」と、当時の気持ちを言い直されています', '誘われたので、「苦しかった」と、当時の気持ちを言い直されています'),
+    ('「苦しかった」と、当時の気持ちを言い直されています。', ''),
     ('「誘われた」ことに対する回答した時点の受け止めとして、「楽しい」が見えます。', ''),
     ('「頼まれた」と「寂しかった」が、異なる向きのまま同時にあります。', ''),
-    ('その時の気持ちとして、「苦しかった」が見えます。',
-     'その時の気持ちとして、「苦しかった」が見えます。苦しさは誘われたことによるものです。'),
+    ('「苦しかった」と、当時の気持ちを言い直されています。',
+     '「苦しかった」と、当時の気持ちを言い直されています。苦しさは誘われたことによるものです。'),
 ])
 def test_middle_revision_rejects_observation_meaning_changes_without_authors(middle_revision_context, old, new):
     result = middle_revision_context[0]
@@ -888,7 +888,7 @@ def test_middle_revision_saved_reads_preserve_initial_and_all_answers(qcase, qdb
             assert run(service.start(user, parent)) == current
     body = current['current_observation']['text']
     assert '悲しかった' not in body
-    assert 'その時の気持ちとして、「少し苦しかった」' in body
+    assert '「少し苦しかった」と、当時の気持ちを言い直されています' in body
     assert all(s in body for s in ('褒められた', '誘われた', '頼まれた', '嬉し', '寂し', '楽し'))
 
 
@@ -1154,7 +1154,7 @@ def test_third_original_revision_preserves_separate_event_and_past_feeling(answe
     lines = result.artifact.observation.splitlines()
     assert len(lines) == 3
     assert lines[1] == '「頼まれた」という出来事がありました。'
-    assert lines[2] == f'その時の気持ちとして、「{source}」が見えます。'
+    assert lines[2] == f'「{source}」と、当時の気持ちを言い直されています。'
     assert all(value in lines[0] for value in ('褒められた', '嬉しくなかった', '誘われた', '悲しかった'))
     assert '寂しかった' not in body and '一つの流れ' not in body
     assert '出発点' not in body and '今回の中心' not in body
@@ -1194,11 +1194,11 @@ def third_original_revision_context():
     ('「頼まれた」という出来事がありました。', 'その出発点には、「頼まれた」という出来事がありました。'),
     ('「頼まれた」という出来事がありました。', '「頼まれた」という出来事がありました。寂しかったのですね。'),
     ('「頼まれた」という出来事がありました。', '「頼まれた」という出来事がありましたが、それが苦しさの原因です。'),
-    ('その時の気持ちとして、「少し怖くなかった」', '回答した時点の気持ちとして、「少し怖くなかった」'),
-    ('その時の気持ちとして、「少し怖くなかった」', 'その時の気持ちとして、「怖くなかった」'),
-    ('その時の気持ちとして、「少し怖くなかった」', 'その時の気持ちとして、「少し怖かった」'),
-    ('その時の気持ちとして、「少し怖くなかった」', 'その時の気持ちとして、「寂しかった」'),
-    ('その時の気持ちとして、「少し怖くなかった」', '頼まれたので、その時の気持ちとして、「少し怖くなかった」'),
+    ('「少し怖くなかった」と、当時の気持ちを言い直されています', '「少し怖くなかった」と、回答した時点の気持ちを言い直されています'),
+    ('「少し怖くなかった」と、当時の気持ちを言い直されています', '「怖くなかった」と、当時の気持ちを言い直されています'),
+    ('「少し怖くなかった」と、当時の気持ちを言い直されています', '「少し怖かった」と、当時の気持ちを言い直されています'),
+    ('「少し怖くなかった」と、当時の気持ちを言い直されています', '「寂しかった」と、当時の気持ちを言い直されています'),
+    ('「少し怖くなかった」と、当時の気持ちを言い直されています', '頼まれたので、「少し怖くなかった」と、当時の気持ちを言い直されています'),
     ('「嬉しくなかった」', '「嬉しかった」'),
     ('「悲しかった」', '「悲しくなかった」'),
     ('その出来事に対する回答した時点の', 'その出来事に対するその時の'),
@@ -1224,7 +1224,7 @@ def test_third_original_revision_requires_original_event_fact(third_original_rev
 def test_third_original_revision_accepts_equivalent_feeling_ending(third_original_revision_context):
     context = third_original_revision_context
     body = context[0].artifact.text
-    changed = body.replace('気持ちとして、「少し怖くなかった」が見えます。', '気持ちとして、「少し怖くなかった」が読み取れます。')
+    changed = body.replace('言い直されています。', '言い換えられています。')
     assert changed != body and read_body(context, changed).passed
 
 
@@ -1245,7 +1245,7 @@ def test_third_original_revision_saves_body_and_unchanged_original(qcase, qdb, m
             assert run(service.start(user, parent)) == current
     body = current['current_observation']['text']
     assert '「頼まれた」という出来事がありました。' in body
-    assert 'その時の気持ちとして、「苦しかった」' in body
+    assert '「苦しかった」と、当時の気持ちを言い直されています' in body
     assert '寂しかった' not in body
     assert all(s in body for s in ('褒められた', '嬉しくなかった', '誘われた', '悲しかった'))
     assert ('その時の受け止めとして、「少し嬉しかった」' if '少し' in positive
@@ -1255,11 +1255,11 @@ def test_third_original_revision_saves_body_and_unchanged_original(qcase, qdb, m
 
 @pytest.mark.parametrize('answers', [(), ('今は嬉しい。',)])
 @pytest.mark.parametrize('source,finite', [
-    ('苦しかったです', 'その時は苦しかった'),
-    ('私は苦しかったです', 'その時、あなたは苦しかった'),
-    ('私も少し怖くなかったです', 'その時、あなたも少し怖くなかった'),
-    ('少し私は苦しかったです', 'その時、少しあなたは苦しかった'),
-    ('私にはとても苦しかったです', 'その時、あなたにはとても苦しかった'),
+    ('苦しかったです', '言い直してくださった気持ちについては、当時は苦しかった'),
+    ('私は苦しかったです', '言い直してくださった気持ちについては、当時、あなたは苦しかった'),
+    ('私も少し怖くなかったです', '言い直してくださった気持ちについては、当時、あなたも少し怖くなかった'),
+    ('少し私は苦しかったです', '言い直してくださった気持ちについては、当時、少しあなたは苦しかった'),
+    ('私にはとても苦しかったです', '言い直してくださった気持ちについては、当時、あなたにはとても苦しかった'),
 ])
 def test_revised_finite_reception_preserves_speaker_particle_degree_and_past(answers, source, finite):
     context = actual(request=revised_original_request(source, answers, old='寂しかった'))
@@ -1268,7 +1268,7 @@ def test_revised_finite_reception_preserves_speaker_particle_degree_and_past(ans
     assert follow.startswith(finite + 'のですね。')
     assert 'これまで' not in follow and 'ですこと' not in follow
     assert all(s in result.artifact.text for s in ('褒められた', '嬉しくなかった', '誘われた', '悲しかった'))
-    assert f'その時の気持ちとして、「{source}」' in result.artifact.observation
+    assert f'「{source}」と、当時の気持ちを言い直されています' in result.artifact.observation
     assert len(plan.response_plan.human_reception_plan.moves) == 2 + len(answers)
     assert read_body(context, result.artifact.text).passed
 
@@ -1296,9 +1296,9 @@ def revised_finite_context():
 @pytest.mark.parametrize('old,new', [
     ('あなたも', '私も'), ('あなたも', '友人も'), ('あなたも', 'あなたは'),
     ('あなたも', ''), ('少し', ''), ('怖くなかった', '怖かった'),
-    ('怖くなかった', '怖くない'), ('その時、', '回答した時点で、'),
-    ('その時、', '先の回答時点で、'), ('その時、', ''),
-    ('その時、', 'これまで、その時、'), ('その時、', '頼まれたので、その時、'),
+    ('怖くなかった', '怖くない'), ('言い直してくださった気持ちについては、当時、', '言い直してくださった気持ちについては、回答した時点で、'),
+    ('言い直してくださった気持ちについては、当時、', '言い直してくださった気持ちについては、先の回答時点で、'), ('言い直してくださった気持ちについては、当時、', '言い直してくださった気持ちについては、'),
+    ('言い直してくださった気持ちについては、当時、', 'これまで、言い直してくださった気持ちについては、当時、'), ('言い直してくださった気持ちについては、当時、', '頼まれたので、言い直してくださった気持ちについては、当時、'),
     ('のですね。', 'のですね。寂しかったのですね。'),
     ('のですね。', 'ので、今は安心なのですね。'),
 ])
@@ -1362,7 +1362,7 @@ def test_revised_finite_reception_saved_reads_keep_original_and_corrected_body(q
             assert run(service.get(user, parent)) == current
             assert run(service.start(user, parent)) == current
     body = current['current_observation']['text']
-    assert f'その時、{finite}のですね。' in body
+    assert f'言い直してくださった気持ちについては、当時、{finite}のですね。' in body
     assert 'これまで' not in body and 'ですこと' not in body
     assert not current['can_continue']
 
@@ -1377,11 +1377,11 @@ def revised_then_withdrawn_request(source='私も少し怖くなかったです'
     ('誘われた', '悲しかった', '頼まれた'), ('頼まれた', '寂しかった', '誘われた')])
 @pytest.mark.parametrize('positive', ['今は嬉しい。', 'その時は少し嬉しかった。'])
 @pytest.mark.parametrize('source,finite', [
-    ('苦しかった', 'その時は苦しかった'),
-    ('私は苦しかったです', 'その時、あなたは苦しかった'),
-    ('私も少し怖くなかったです', 'その時、あなたも少し怖くなかった'),
-    ('少し私は苦しかったです', 'その時、少しあなたは苦しかった'),
-    ('私にはとても苦しかったです', 'その時、あなたにはとても苦しかった'),
+    ('苦しかった', '言い直してくださった気持ちについては、当時は苦しかった'),
+    ('私は苦しかったです', '言い直してくださった気持ちについては、当時、あなたは苦しかった'),
+    ('私も少し怖くなかったです', '言い直してくださった気持ちについては、当時、あなたも少し怖くなかった'),
+    ('少し私は苦しかったです', '言い直してくださった気持ちについては、当時、少しあなたは苦しかった'),
+    ('私にはとても苦しかったです', '言い直してくださった気持ちについては、当時、あなたにはとても苦しかった'),
 ])
 def test_revision_withdrawal_keeps_both_independent_reactions_and_existing_answer(
         withdrawn, detached, retained, positive, source, finite):
@@ -1394,11 +1394,11 @@ def test_revision_withdrawal_keeps_both_independent_reactions_and_existing_answe
     result, plan, sentence, _, _ = context
     body, follow = result.artifact.text, result.artifact.reception
     assert body == public.artifact.text
-    assert f'その時は{detached}し、{finite}のですね。' in follow
+    assert f'その時は{detached}し、それとは別に{finite}のですね。' in follow
     assert withdrawn not in body and '嬉しくなかった' not in body
     assert retained in follow and '褒められたことについて' in follow
     assert ('その時は少し嬉しかった' if '少し' in positive else '回答した時点では嬉しい') in follow
-    assert f'その時の「{detached}」と、その時の「{source}」' in result.artifact.observation
+    assert f'その時の「{detached}」という気持ちが書かれており、それとは別に「{source}」と、当時の気持ちを言い直されています' in result.artifact.observation
     moves = plan.response_plan.human_reception_plan.moves
     assert len(moves) == 3
     group, = (m for m in moves if len(m.target_nucleus_ids) == 2 and not m.support_nucleus_ids)
@@ -1420,14 +1420,14 @@ def revision_withdrawal_context():
 
 @pytest.mark.parametrize('old,new', [
     ('その時は悲しかったし、', ''),
-    ('し、その時、あなたも少し怖くなかった', ''),
+    ('し、それとは別に言い直してくださった気持ちについては、当時、あなたも少し怖くなかった', ''),
     ('あなたも', '私も'), ('あなたも', '友人も'), ('あなたも', 'あなたは'),
     ('あなたも', ''), ('少し', ''), ('怖くなかった', '怖かった'),
     ('怖くなかった', '怖くない'),
-    ('その時、', '回答した時点で、'), ('その時、', '先の回答時点で、'),
+    ('言い直してくださった気持ちについては、当時、', '言い直してくださった気持ちについては、回答した時点で、'), ('言い直してくださった気持ちについては、当時、', '言い直してくださった気持ちについては、先の回答時点で、'),
     ('その時は悲しかった', '回答した時点では悲しかった'),
     ('悲しかったし、', '悲しかったので、'),
-    ('その時、', '誘われたので、その時、'),
+    ('言い直してくださった気持ちについては、当時、', '誘われたので、言い直してくださった気持ちについては、当時、'),
     ('のですね。', 'のですね。嬉しくなかったのですね。'),
 ])
 def test_revision_withdrawal_rejects_missing_or_reassigned_meaning_without_authors(
@@ -1442,8 +1442,8 @@ def test_revision_withdrawal_rejects_missing_or_reassigned_meaning_without_autho
 def test_revision_withdrawal_rejects_swapping_whole_source_clauses(revision_withdrawal_context):
     context = revision_withdrawal_context
     body = context[0].artifact.text
-    old = 'その時は悲しかったし、その時、あなたも少し怖くなかった'
-    new = 'その時、あなたも少し怖くなかったし、その時は悲しかった'
+    old = 'その時は悲しかったし、それとは別に言い直してくださった気持ちについては、当時、あなたも少し怖くなかった'
+    new = '言い直してくださった気持ちについては、当時、あなたも少し怖くなかったし、その時は悲しかった'
     assert old in context[0].artifact.reception
     assert not read_body(context, body.replace(old, new)).passed
 
@@ -1486,7 +1486,7 @@ def test_revision_withdrawal_saved_sequence_keeps_original_and_reads(qcase, qdb,
             assert run(service.get(user, parent)) == current
             assert run(service.start(user, parent)) == current
     body = current['current_observation']['text']
-    assert f'その時の「悲しかった」と、その時の「{source}」' in body
+    assert f'その時の「悲しかった」という気持ちが書かれており、それとは別に「{source}」と、当時の気持ちを言い直されています' in body
     assert '誘われた' not in body and '嬉しくなかった' not in body
     assert '頼まれた' in body and '寂し' in body and '褒められた' in body
     assert not current['can_continue']
@@ -1498,9 +1498,9 @@ def test_revision_withdrawal_saved_sequence_keeps_original_and_reads(qcase, qdb,
     ('嬉しくなかった', ('今は嬉しい。',), ('誘われたのに、悲しさ', '頼まれたのに、寂しさ')),
     ('寂しかった', ('今は嬉しい。',), ('褒められた', '嬉しさにはつながらず', '誘われたのに、悲しさ')),
 ])
-@pytest.mark.parametrize('source,finite', [('楽しかった', 'その時は楽しかった'),
-    ('私は楽しかったです', 'その時、あなたは楽しかった'),
-    ('私も少し楽しかったです', 'その時、あなたも少し楽しかった')])
+@pytest.mark.parametrize('source,finite', [('楽しかった', '言い直してくださった気持ちについては、当時は楽しかった'),
+    ('私は楽しかったです', '言い直してくださった気持ちについては、当時、あなたは楽しかった'),
+    ('私も少し楽しかったです', '言い直してくださった気持ちについては、当時、あなたも少し楽しかった')])
 def test_positive_original_revision_keeps_independent_occasion_and_other_duties(old, answers, retained, source, finite):
     from cocolon_meaning_experience_engine import MeaningExperienceEngine
     from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
@@ -1513,7 +1513,7 @@ def test_positive_original_revision_keeps_independent_occasion_and_other_duties(
     assert f'{finite}のですね。' in result.artifact.reception
     assert all(s in result.artifact.reception for s in retained)
     assert old not in result.artifact.text
-    assert f'その時の気持ちとして、「{source}」' in result.artifact.observation
+    assert f'「{source}」と、当時の気持ちを言い直されています' in result.artifact.observation
     assert not any(s in result.artifact.reception for s in ('楽しくなった', '前向き', 'おかげ', 'これまで'))
     if answers:
         assert '褒められたことについて、回答した時点では嬉しい' in result.artifact.reception
@@ -1536,11 +1536,11 @@ def positive_original_revision_context():
 @pytest.mark.parametrize('old,new', [
     ('あなたも', '私も'), ('あなたも', '友人も'), ('あなたも', 'あなたは'), ('あなたも', ''),
     ('少し', ''), ('楽しかった', '楽しくなかった'), ('楽しかった', '楽しい'),
-    ('その時、', '回答した時点で、'), ('その時、', '先の回答時点で、'), ('その時、', ''),
-    ('その時、', '頼まれたことについて、その時、'), ('その時、', '褒められたので、その時、'),
+    ('言い直してくださった気持ちについては、当時、', '言い直してくださった気持ちについては、回答した時点で、'), ('言い直してくださった気持ちについては、当時、', '言い直してくださった気持ちについては、先の回答時点で、'), ('言い直してくださった気持ちについては、当時、', '言い直してくださった気持ちについては、'),
+    ('言い直してくださった気持ちについては、当時、', '頼まれたことについて、言い直してくださった気持ちについては、当時、'), ('言い直してくださった気持ちについては、当時、', '褒められたので、言い直してくださった気持ちについては、当時、'),
     ('楽しかったのですね。', '楽しかったのですね。寂しかったのですね。'),
-    ('その時、あなたも少し楽しかったのですね。', ''),
-    ('その時、あなたも少し楽しかったのですね。', '褒められたことについて、回答した時点では嬉しいのですね。'),
+    ('言い直してくださった気持ちについては、当時、あなたも少し楽しかったのですね。', ''),
+    ('言い直してくださった気持ちについては、当時、あなたも少し楽しかったのですね。', '褒められたことについて、回答した時点では嬉しいのですね。'),
 ])
 def test_positive_original_revision_rejects_lost_or_changed_reception_without_authors(positive_original_revision_context, old, new):
     context = positive_original_revision_context
@@ -1551,11 +1551,11 @@ def test_positive_original_revision_rejects_lost_or_changed_reception_without_au
 
 
 @pytest.mark.parametrize('old,new', [
-    ('その時の気持ちとして、', '回答した時点の気持ちとして、'),
-    ('その時の気持ちとして、', '先の回答時点の気持ちとして、'),
-    ('その時の気持ちとして、', '頼まれたことへの気持ちとして、'),
+    ('と、当時の気持ちを言い直されています', 'と、回答した時点の気持ちを言い直されています'),
+    ('と、当時の気持ちを言い直されています', 'と、先の回答時点の気持ちを言い直されています'),
+    ('と、当時の気持ちを言い直されています', 'と、頼まれたことへの当時の気持ちを言い直されています'),
     ('「私も少し楽しかったです」', '「私も少し楽しくなかったです」'),
-    ('その時の気持ちとして、「私も少し楽しかったです」が見えます。', ''),
+    ('「私も少し楽しかったです」と、当時の気持ちを言い直されています。', ''),
 ])
 def test_positive_original_revision_rejects_lost_or_changed_observation_without_authors(positive_original_revision_context, old, new):
     context = positive_original_revision_context
@@ -1605,7 +1605,7 @@ def test_positive_original_revision_can_be_corrected_again_without_inheriting_ev
     context = actual(request=request)
     result, plan, _, _, _ = context
     assert '私も少し楽しかった' not in result.artifact.text
-    assert f'その時の気持ちとして、「{replacement}」' in result.artifact.observation
+    assert f'「{replacement}」と、当時の気持ちを言い直されています' in result.artifact.observation
     assert '誘われたのに、悲しさ' in result.artifact.reception
     assert '褒められたことは、嬉しさにはつながらず' in result.artifact.reception
     revised, = (n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes)
@@ -1643,7 +1643,7 @@ def test_positive_original_revision_saved_sequence_keeps_original_and_reads(qcas
             assert run(service.get(user, parent)) == current
             assert run(service.start(user, parent)) == current
     body = current['current_observation']['text']
-    assert f'その時、{finite}のですね。' in body
+    assert f'言い直してくださった気持ちについては、当時、{finite}のですね。' in body
     assert old not in body
     assert all(s in body for s in ('褒められた', '誘われた', '頼まれた'))
     assert current['can_continue'] == (old == '嬉しくなかった')
@@ -1709,8 +1709,8 @@ def positive_answer_group_context():
     ('あなたは', '私は'), ('あなたは', '友人は'), ('あなたも', 'あなたは'), ('あなたも', ''),
     ('少し', ''), ('嬉しいし、', '嬉しくないし、'), ('楽しかった', '楽しい'),
     ('嬉しいし、', '嬉しいので、'),
-    ('その時は楽しかったのですね。', ''),
-    ('その時は楽しかったのですね。', '頼まれたことについて、その時は楽しかったのですね。'),
+    ('言い直してくださった気持ちについては、当時は楽しかったのですね。', ''),
+    ('言い直してくださった気持ちについては、当時は楽しかったのですね。', '頼まれたことについて、言い直してくださった気持ちについては、当時は楽しかったのですね。'),
 ])
 def test_positive_answer_group_rejects_omission_reassignment_and_added_cause_without_authors(
         positive_answer_group_context, old, new):
@@ -1788,3 +1788,97 @@ def test_positive_answer_group_saved_sequence_keeps_original_and_exact_reads(qca
     assert old not in body
     assert all(s in body for s in ('褒められたことについて、', '誘われたことについて、'))
     assert not current['can_continue']
+# Revision action and original occasion are separate body-visible facts. An
+# independent revision must not borrow the nearest event as its antecedent.
+REVISION_INTRO = '言い直してくださった気持ちについては、'
+
+
+@pytest.mark.parametrize('old', ['嬉しくなかった', '悲しかった', '寂しかった'])
+@pytest.mark.parametrize('answers', [(), ('今は嬉しい。',), *TWO_POSITIVE_PAIRS])
+@pytest.mark.parametrize('source,finite', [
+    ('楽しかった', '当時は楽しかった'), ('私も少し楽しかったです', '当時、あなたも少し楽しかった'),
+    ('苦しかった', '当時は苦しかった'), ('私も少し怖くなかったです', '当時、あなたも少し怖くなかった')])
+def test_explicit_revision_reference_keeps_source_and_existing_about(old, answers, source, finite):
+    context = actual(request=revised_original_request(source, answers, old))
+    result, plan, _, _, _ = context
+    revised = [n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes]
+    if ('嬉しくなかった', '悲しかった', '寂しかった').index(old) == len(answers):
+        assert not revised
+        assert REVISION_INTRO not in result.artifact.reception
+        assert '言い直されています' not in result.artifact.observation
+        event = ORIGINAL_EVENTS[len(answers)]
+        assert f'「{event}」ことに対するその時の受け止めとして、「{source}」' in result.artifact.observation
+    else:
+        nucleus, = revised
+        assert not any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+        assert result.artifact.observation.count(f'「{source}」と、当時の気持ちを言い直されています。') == 1
+        assert result.artifact.reception.count(REVISION_INTRO + finite + 'のですね。') == 1
+        assert nucleus.semantic_frame.actor == 'current_user'
+        assert nucleus.semantic_frame.time_scope == 'past'
+    assert old not in result.artifact.text
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.fixture(scope='module', params=['single', 'tail', 'relations', 'withdrawal'])
+def explicit_revision_reference_context(request):
+    if request.param == 'withdrawal':
+        req = revised_then_withdrawn_request()
+    else:
+        source = '私も少し楽しかったです' if request.param in ('single', 'tail') else '私も少し怖くなかったです'
+        req = revised_original_request(source,
+            ('今は嬉しい。',) if request.param == 'single' else TWO_POSITIVE_PAIRS[0],
+            old='寂しかった' if request.param == 'single' else '嬉しくなかった')
+    return actual(request=req)
+
+
+@pytest.mark.parametrize('part,old,new', [
+    ('observation', 'と、当時の気持ちを言い直されています。', 'という気持ちが書かれています。'),
+    ('observation', '当時の気持ち', '回答した時点の気持ち'),
+    ('observation', 'と、当時の気持ち', 'と、誘われたことについて当時の気持ち'),
+    ('reception', REVISION_INTRO, ''),
+    ('reception', REVISION_INTRO, '誘われたことについて、'),
+    ('reception', '当時、', 'その時、'),
+    ('reception', '当時、', '回答した時点で、'),
+    ('reception', 'あなたも', 'あなたは'),
+    ('reception', '少し', ''),
+])
+def test_explicit_revision_reference_rejects_ambiguous_or_reassigned_body_without_authors(
+        explicit_revision_reference_context, part, old, new):
+    context = explicit_revision_reference_context
+    original = getattr(context[0].artifact, part)
+    changed = original.replace(old, new, 1)
+    assert changed != original
+    body = context[0].artifact.text.replace(original, changed, 1)
+    with patch.object(reception, '_revised_feeling_discourse_prefix', side_effect=AssertionError('no prefix oracle')), patch.object(
+            surface, '_render_extra_context', side_effect=AssertionError('no tail oracle')), patch.object(
+            surface, '_render_relation', side_effect=AssertionError('no relation oracle')):
+        assert not read_body(context, body).passed
+
+
+def test_explicit_revision_reference_reads_equivalent_endings_without_authors(explicit_revision_reference_context):
+    context = explicit_revision_reference_context
+    body = context[0].artifact.text
+    changed = body.replace('言い直されています。', '言い換えられています。').replace('のですね。', 'のです。')
+    assert changed != body and read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('source', ['少し楽しかった', '少し苦しかった'])
+def test_explicit_revision_reference_recorrection_does_not_revive_event(source):
+    request = advance(revised_original_request('楽しかった', ('今は嬉しい。',)),
+                      f'「楽しかった」ではなく「{source}」です。')
+    context = actual(request=request)
+    body = context[0].artifact.text
+    assert f'「{source}」と、当時の気持ちを言い直されています。' in body
+    assert REVISION_INTRO + f'当時は{source}のですね。' in body
+    assert '嬉しくなかった' not in body and '「楽しかった」' not in body
+    assert read_body(context, body).passed
+
+
+@pytest.mark.parametrize('part', ['observation', 'reception'])
+@pytest.mark.parametrize('replacement', ['', 'そのため', '同じ気持ちについて'])
+def test_explicit_revision_reference_group_requires_separate_correction(revision_withdrawal_context, part, replacement):
+    context = revision_withdrawal_context
+    original = getattr(context[0].artifact, part)
+    assert original.count('それとは別に') == 1
+    changed = original.replace('それとは別に', replacement)
+    assert not read_body(context, context[0].artifact.text.replace(original, changed)).passed

@@ -9888,7 +9888,8 @@ def _source_grounded_received_discourse(realization) -> str | None:
         _, slot_text, feeling_text, link, *answer_code = code.split(":")
         event = fragments[int(slot_text)]
         if link in {"detached", "replacement"}:
-            parts.append("その時は" + _detached_feeling_finite_surface(event, allow_medial=True))
+            prefix = _revised_feeling_discourse_prefix(event) if link == "replacement" else "その時は"
+            parts.append(prefix + _detached_feeling_finite_surface(event, allow_medial=True))
             continue
         feeling = fragments[int(feeling_text)] if feeling_text != "none" else None
         negative = _received_discourse_negative_feeling(feeling) if feeling else None
@@ -10361,13 +10362,17 @@ def _source_owned_detached_burden_sentence(move, realization, plan, resolver,
     if not rows or tuple(realization.semantic_fragments) != tuple(row[1] for row in rows):
         return None
     parts = []
-    for _, source, when in rows:
+    from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    for nid, source, when in rows:
         prefix = {"original_occasion": "その時は", "answer_time": "回答した時点では",
                   "prior_answer_time": "先の回答時点では"}[when]
         if (re.match(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)", source)
             or _medial_feeling_owner(source) is not None):
             prefix = {"その時は": "その時、", "回答した時点では": "回答した時点で、",
                       "先の回答時点では": "先の回答時点で、"}[prefix]
+        if _thread_revised_original_reaction(index[nid], plan.relations):
+            prefix = ("それとは別に" if parts else "") + _revised_feeling_discourse_prefix(source)
         parts.append(prefix + _detached_feeling_finite_surface(source, allow_medial=True))
     return "し、".join(parts[:-1]) + "し、" + _feeling_acknowledgement(parts[-1])
 
@@ -10519,6 +10524,13 @@ def _detached_feeling_finite_surface(source, *, allow_explanatory=False, allow_c
     return finite
 
 
+def _revised_feeling_discourse_prefix(source):
+    """Anchor the past feeling to its explicit revision, not a nearby event."""
+    owner = (re.match(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)", source)
+             or _medial_feeling_owner(source))
+    return "言い直してくださった気持ちについては、" + ("当時、" if owner else "当時は")
+
+
 def _detached_feeling_source_parts(move, plan, resolver, *, allow_revised=False):
     """Prove complete finite source operands before choosing clause topology."""
     if (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
@@ -10577,6 +10589,8 @@ def _detached_feeling_source_parts(move, plan, resolver, *, allow_revised=False)
         or _medial_feeling_owner(source) is not None):
         time = {"その時は": "その時、", "回答した時点では": "回答した時点で、",
                 "先の回答時点では": "先の回答時点で、"}[time]
+    if revised:
+        time = _revised_feeling_discourse_prefix(source)
     return time, finite
 
 

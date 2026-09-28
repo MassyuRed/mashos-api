@@ -2373,20 +2373,43 @@ def _body_inverse_detached_observation(raw, nuclei, plan, resolver):
     if not nuclei:
         return False
     operand = r"(?:その時|回答した時点|先の回答時点)の「[^「」『』\n]+」"
-    if len(nuclei) == 1:
+    revised = tuple(_thread_revised_original_reaction(n, plan.relations, polarity=n.semantic_frame.polarity)
+                    for n in nuclei)
+    if any(revised):
+        # The revision is an explicit discourse operation. Keep it separate
+        # from the feeling's original time and from nearby event clauses.
+        text = raw.removeprefix("今の入力だけを見ると、")
+        pattern = re.compile(r'(?:(?P<when>その時|回答した時点|先の回答時点)の「(?P<original>[^「」『』\n]+)」'
+            r'という気持ちが書かれて|(?P<separation>それとは別に)?「(?P<revised>[^「」『』\n]+)」と、当時の気持ちを(?:言い直され|言い換えられ)て)'
+            r'(?P<ending>おり、|います。)')
+        pieces, cursor = [], 0
+        for i in range(len(nuclei)):
+            parsed = pattern.match(text, cursor)
+            if parsed is None or parsed['ending'] != ("います。" if i == len(nuclei) - 1 else "おり、"):
+                return False
+            if bool(parsed['separation']) != (parsed['revised'] is not None and i > 0):
+                return False
+            pieces.append(("当時" if parsed['revised'] is not None else parsed['when'],
+                           parsed['revised'] if parsed['revised'] is not None else parsed['original'],
+                           parsed['revised'] is not None))
+            cursor = parsed.end()
+        if cursor != len(text):
+            return False
+    elif len(nuclei) == 1:
         parsed = re.fullmatch(r"(?:今の入力だけを見ると、)?(その時|回答した時点|先の回答時点)"
                              r"の気持ちとして、「([^「」『』\n]+)」が(?:見えます|読み取れます)。", raw)
-        pieces = [parsed.groups()] if parsed else []
+        pieces = [(*parsed.groups(), False)] if parsed else []
     else:
         parsed = re.fullmatch(r"(?:今の入力だけを見ると、)?(" + operand
                              + r"(?:と、" + operand + r")+)という気持ちが(?:書かれています|記されています)。", raw)
-        pieces = re.findall(r"(その時|回答した時点|先の回答時点)の「([^「」『』\n]+)」", parsed[1]) if parsed else []
+        pieces = [(*p, False) for p in re.findall(
+            r"(その時|回答した時点|先の回答時点)の「([^「」『』\n]+)」", parsed[1])] if parsed else []
     if len(pieces) != len(nuclei):
         return False
-    for nucleus, (when, quoted) in zip(nuclei, pieces, strict=True):
+    for nucleus, revision, (when, quoted, marked_revision) in zip(nuclei, revised, pieces, strict=True):
         frame = nucleus.semantic_frame
         codes = set(frame.attribute_codes)
-        if (("thread_subject:withdrawn_source_event" not in codes
+        if (marked_revision != revision or ("thread_subject:withdrawn_source_event" not in codes
              and not _thread_revised_original_reaction(nucleus, plan.relations, polarity=frame.polarity))
             or nucleus.kind != "reaction" or frame.predicate_kind != "feeling"
             or frame.modality != "feeling" or frame.actor != "current_user"
@@ -2411,7 +2434,7 @@ def _body_inverse_detached_observation(raw, nuclei, plan, resolver):
                 return False
         elif (nucleus.source_fields == ("answer_text_private",)
               and nucleus.allowed_claim_scope == "explicit_supplemental_answer"):
-            expected = {"その時": "original_occasion", "回答した時点": "answer_time",
+            expected = {"その時": "original_occasion", "当時": "original_occasion", "回答した時点": "answer_time",
                         "先の回答時点": "prior_answer_time"}[when]
             if times != {expected}:
                 return False
@@ -2799,8 +2822,11 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
     if owner:
         expected_time = {"その時は": "その時、", "回答した時点では": "回答した時点で、",
                          "先の回答時点では": "先の回答時点で、"}[expected_time]
-    parsed = re.fullmatch(r"(?P<time>その時は|回答した時点では|先の回答時点では|"
-                          r"その時、|回答した時点で、|先の回答時点で、)"
+    if revised:
+        expected_time = "言い直してくださった気持ちについては、" + ("当時、" if owner else "当時は")
+    parsed = re.fullmatch(r"(?P<time>(?:言い直してくださった気持ちについては、)?"
+                          r"(?:その時は|回答した時点では|先の回答時点では|"
+                          r"その時、|回答した時点で、|先の回答時点で、|当時は|当時、))"
                           r"(?P<feeling>.+)(?P<ending>のでしたね|のですね|のです|のだと受け取りました)。", raw)
     if parsed is None or parsed['time'] != expected_time:
         return None
@@ -3315,6 +3341,9 @@ def _read_detached_burden_discourse(raw, move, plan, resolver, selected_subjecti
         if _thread_feeling_owner(source):
             expected_time = {"その時は": "その時、", "回答した時点では": "回答した時点で、",
                              "先の回答時点では": "先の回答時点で、"}[expected_time]
+        if _thread_revised_original_reaction(n, plan.relations):
+            expected_time = ("それとは別に" if offset else "") + "言い直してくださった気持ちについては、" + (
+                "当時、" if _thread_feeling_owner(source) else "当時は")
         if not clause.startswith(expected_time):
             return None
         finite = clause[len(expected_time):]
@@ -3488,11 +3517,13 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
             span = resolver.resolve(event.source_span_ids[0])
             source = _body_inverse_typed_source_fragment(event, span.raw_text)
             ending = re.search(r"(?:のですね|のです|のだと受け取りました)$", part)
+            prefix = "言い直してくださった気持ちについては、" + (
+                "当時、" if source and _thread_feeling_owner(source) else "当時は")
             if (not thread_group or resolver.source_fields_for(event.source_span_ids) != event.source_fields
-                or not source or ending is None or not part.startswith("その時は")
-                or _restore_thread_finite_answer(part[len("その時は"):ending.start()], source) != source):
+                or not source or ending is None or not part.startswith(prefix)
+                or _restore_thread_finite_answer(part[len(prefix):ending.start()], source) != source):
                 return None
-            start = len((raw[:offset] + "その時は").encode())
+            start = len((raw[:offset] + prefix).encode())
             end = len((raw[:offset] + part[:ending.start()]).encode())
             replacements.append((start, end, source.encode()))
             consumed.add(event_id)
@@ -4635,6 +4666,9 @@ def evaluate_grounded_surface_body_inverse(
                 times = {code.split(":", 1)[1] for code in nucleus.semantic_frame.attribute_codes
                          if code.startswith("thread_time:")}
                 expected = "先の回答時点" if times == {"prior_answer_time"} else "回答した時点" if times == {"answer_time"} else "その時" if times == {"original_occasion"} else None
+                if times == {"original_occasion"} and _thread_revised_original_reaction(
+                    nucleus, plan.relations, polarity=nucleus.semantic_frame.polarity):
+                    expected = "当時"
                 if expected is None or expected not in visible_line:
                     failures.append(f"body_inverse_answer_target_time_missing:{index}")
             from emlis_ai_grounded_observation_plan import is_grounded_current_answer_uncertainty
