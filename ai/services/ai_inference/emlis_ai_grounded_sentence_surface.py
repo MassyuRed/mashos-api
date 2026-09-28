@@ -1593,11 +1593,6 @@ def _merge_parallel_contrast_groups(groups, relation_ids, nucleus_index, relatio
         return frozenset(fields) if fields and fields <= {"memo", "memo_action"} else None
     linked = {nid for r in relation_index.values()
               for nid in (r.from_nucleus_id, r.to_nucleus_id)}
-    from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
-    revised_original = bridge_detached_feelings and any(
-        _thread_revised_original_reaction(nucleus_index[nid], tuple(relation_index.values()))
-        for group in groups for nid in group)
-
     def evaluation_component(group):
         relations = [relation_index[r] for r in _internal_relation_ids(group, relation_ids, relation_index)]
         return bool(relations and set(group) == {
@@ -1617,12 +1612,14 @@ def _merge_parallel_contrast_groups(groups, relation_ids, nucleus_index, relatio
                 merged.append(tuple(group))
             else:
                 merged[contrast_at] = (*merged[contrast_at], *group)
-        elif (revised_original and contrast_at is not None and evaluation_component(group)
+        elif (bridge_detached_feelings and contrast_at is not None and evaluation_component(group)
               and index > 0 and field(groups[index - 1]) is not None
               and index + 1 < len(groups) and field(groups[index + 1]) is not None):
             # A correction can remove only the middle event's old contrast.
             # Its complete ABOUT component still belongs between the surviving
-            # pairs in the same observation, without creating a new relation.
+            # pairs, including a revision bound to the current question target.
+            # Independent replacement provenance is not required for that ABOUT;
+            # the existing source endpoints own it, without a new relation.
             merged[contrast_at] = (*merged[contrast_at], *group)
         else:
             merged.append(tuple(group))
@@ -3271,7 +3268,6 @@ def _render_relation(
     contrast_pairs = []
     evaluations = {}
     relation_ids = tuple(r for r in binding.relation_ids if r in relation_index)
-    from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
     contrast_order = [_nucleus_source_order(nucleus_index[relation_index[r].from_nucleus_id])
                       for r in relation_ids
                       if relation_surface_role(relation_index[r], nucleus_index) == "coexisting_contrast"]
@@ -3281,9 +3277,7 @@ def _render_relation(
         and len(contrast_order) > 1
         and min(contrast_order) < _nucleus_source_order(nucleus_index[relation_index[r].from_nucleus_id]) < max(contrast_order)
     } if (groups and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
-          and all(relation_index[r].type in {"contrast", "evaluation_about_event"} for r in relation_ids)
-          and any(_thread_revised_original_reaction(n, tuple(relation_index.values()))
-                  for n in nucleus_index.values())) else set()
+          and all(relation_index[r].type in {"contrast", "evaluation_about_event"} for r in relation_ids)) else set()
     if intervening_evaluations:
         # The corrected event's surviving ABOUT stays at its source position
         # between the two intact contrasts, rather than moving to the tail.
