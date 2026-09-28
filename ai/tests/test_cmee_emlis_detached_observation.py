@@ -1006,3 +1006,134 @@ def test_current_focus_revision_saved_recorrection_and_known_withdrawal_gap(qcas
     assert '回答した時点では嬉しい' in body
     if '少し' in last:
         assert '少し怖かった' in body
+
+
+def withdrawn_current_focus_request(positive='今は嬉しい。', order=None):
+    pairs = order or (('褒められた', '嬉しくなかった'), ('誘われた', '悲しかった'), ('頼まれた', '寂しかった'))
+    request = begin(''.join(f'{event}のに、{reaction}。' for event, reaction in pairs))
+    for text in (positive, f'「{pairs[1][1]}」ではなく「苦しかった」です。', '「苦しかった」は誤りです。'):
+        request = advance(request, text)
+    return request
+
+
+from itertools import permutations
+
+
+@pytest.mark.parametrize('positive', ['今は嬉しい。', 'その時は少し嬉しかった。'])
+@pytest.mark.parametrize('order', tuple(permutations((
+    ('褒められた', '嬉しくなかった'), ('誘われた', '悲しかった'), ('頼まれた', '寂しかった')))))
+def test_withdrawn_current_focus_keeps_independent_event_in_source_order(positive, order):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    request = withdrawn_current_focus_request(positive, order)
+    public = MeaningExperienceEngine().generate(request)
+    assert public.artifact is not None, public.reason_codes
+    context = actual(request=request)
+    result, plan, sentence, _, _ = context
+    assert public.artifact.text == result.artifact.text
+    body, observation = result.artifact.text, result.artifact.observation
+    assert observation.index(order[0][0]) < observation.index(order[1][0]) < observation.index(order[2][0])
+    assert f'「{order[1][0]}」という出来事がありました。' in observation
+    assert order[1][1] not in body and '苦しかった' not in body
+    assert all(value in observation for value in (*order[0], *order[2]))
+    assert ('その時の受け止めとして、「少し嬉しかった」' if '少し' in positive
+            else '回答した時点の受け止めとして、「嬉しい」') in observation
+    assert len(plan.coverage_requirements.required_nucleus_ids) == 6
+    assert len(plan.relations) == 3
+    assert not any('nucleus:s2:event' in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    assert len(plan.response_plan.human_reception_plan.moves) == 2
+    lines = [line for line in sentence.lines if line.binding.line_role != 'human_follow']
+    assert len(lines) == 1 and 'nucleus:s2:event' in lines[0].binding.nucleus_ids
+    assert not any('semantic_arc_fragment:justified' in line.binding.functional_atom_ids for line in sentence.lines)
+    checkpoint = prepare_emlis_meaning(request).checkpoint
+    assert {'nucleus:s2:reaction', 'answer:s8', 'relation:r2'} <= set(checkpoint.inactive_claim_refs)
+    assert 'nucleus:s2:event' not in checkpoint.inactive_claim_refs
+    assert read_body(context, body).passed
+
+
+@pytest.fixture(scope='module')
+def withdrawn_current_focus_context():
+    return actual(request=withdrawn_current_focus_request('その時は少し嬉しかった。'))
+
+
+@pytest.mark.parametrize('replacement', [
+    '',
+    '「頼まれた」という出来事がありました。',
+    '「友人が誘われた」という出来事がありました。',
+    '「誘われなかった」という出来事がありました。',
+    '「誘われる」という出来事がありました。',
+    '「誘われた」という出来事があります。',
+    'その出発点には、「誘われた」という出来事がありました。',
+    '「誘われた」ために、苦しかったのですね。',
+    '「誘われた」という出来事がありました。悲しかったのですね。',
+    '「誘われた」という出来事がありました。苦しかったのですね。',
+    '「誘われた」という出来事がありました。感情はありません。',
+    '誘われたことが苦しさの原因です。「誘われた」という出来事がありました。',
+    '「誘われた」という出来事がありました。「誘われた」という出来事がありました。',
+])
+def test_withdrawn_current_focus_rejects_event_corruption_without_authors(withdrawn_current_focus_context, replacement):
+    context = withdrawn_current_focus_context
+    body = context[0].artifact.text
+    changed = body.replace('「誘われた」という出来事がありました。', replacement, 1)
+    assert changed != body
+    with patch.object(surface, '_render_relation', side_effect=AssertionError('no relation oracle')), patch.object(
+            surface, '_render_observation_with_relations', side_effect=AssertionError('no line oracle')):
+        report = read_body(context, changed)
+    assert not report.passed
+    assert any('body_inverse_independent_event_scope_mismatch' in reason for reason in report.failure_codes)
+
+
+@pytest.mark.parametrize('edge', ['start', 'end'])
+def test_withdrawn_current_focus_rejects_moved_event(withdrawn_current_focus_context, edge):
+    context = withdrawn_current_focus_context
+    original = context[0].artifact.observation
+    fact = '「誘われた」という出来事がありました。'
+    remaining = original.replace(fact, '').strip()
+    changed = (fact + ' ' + remaining) if edge == 'start' else (remaining + ' ' + fact)
+    assert changed != original
+    assert not read_body(context, context[0].artifact.text.replace(original, changed)).passed
+
+
+@pytest.mark.parametrize('field,value', [('actor', 'other_person'), ('time_scope', 'present'), ('modality', 'uncertain')])
+def test_withdrawn_current_focus_independent_inverse_requires_past_fact(withdrawn_current_focus_context, field, value):
+    result, plan, sentence, resolver, selected = withdrawn_current_focus_context
+    nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame, **{field: value}))
+                   if n.nucleus_id == 'nucleus:s2:event' else n for n in plan.nuclei)
+    changed = (result, replace(plan, nuclei=nuclei), sentence, resolver, selected)
+    assert not read_body(changed, result.artifact.text).passed
+
+
+def test_withdrawn_current_focus_accepts_equivalent_reception(withdrawn_current_focus_context):
+    context = withdrawn_current_focus_context
+    body = context[0].artifact.text
+    changed = body.replace('のですね。', 'のです。')
+    assert changed != body and read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('tail', ['が、誘われたせいです。', 'が、誘われたときは苦しかったのですね。'])
+def test_withdrawn_current_focus_rejects_extra_clause_in_neighbor(withdrawn_current_focus_context, tail):
+    context = withdrawn_current_focus_context
+    body = context[0].artifact.text
+    changed = body.replace('異なる向きのまま同時にあります。', '異なる向きのまま同時にあります' + tail)
+    assert changed != body and not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('positive', ['今は嬉しい。', 'その時は少し嬉しかった。'])
+def test_withdrawn_current_focus_saves_restored_body_and_unchanged_original(qcase, qdb, monkeypatch, positive):
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    for i, text in enumerate((None, positive, '「悲しかった」ではなく「苦しかった」です。', '「苦しかった」は誤りです。')):
+        if text is not None:
+            if i > 1:
+                current = run(cont(service, user, current, f'withdrawn-current-continue-{i}'))
+            current = run(answer(service, user, current, text, f'withdrawn-current-answer-{i}'))
+            assert current['body_state'] == 'REFINED', current
+        assert current['original'] == first['original']
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read must not regenerate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+    body = current['current_observation']['text']
+    assert '「誘われた」という出来事がありました。' in body
+    assert '悲しかった' not in body and '苦しかった' not in body
+    assert all(s in body for s in ('褒められた', '嬉しくなかった', '頼まれた', '寂しかった'))

@@ -1576,6 +1576,17 @@ def _relation_aware_groups(
     )
 
 
+def _independent_original_event(nucleus, relation_index):
+    frame = nucleus.semantic_frame
+    return (nucleus.kind == frame.predicate_kind == "event"
+            and frame.actor == "current_user" and frame.modality == "fact"
+            and frame.time_scope == "past" and nucleus.retention == "required"
+            and nucleus.grounding_kind == "explicit" and len(nucleus.source_span_ids) == 1
+            and nucleus.source_fields in {("memo",), ("memo_action",)}
+            and not any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
+                        for r in relation_index.values()))
+
+
 def _merge_parallel_contrast_groups(groups, relation_ids, nucleus_index, relation_index,
                                     *, bridge_detached_feelings=False):
     """Coordinate explicit contrast pairs, preserving each source, pair and order.
@@ -1612,7 +1623,9 @@ def _merge_parallel_contrast_groups(groups, relation_ids, nucleus_index, relatio
                 merged.append(tuple(group))
             else:
                 merged[contrast_at] = (*merged[contrast_at], *group)
-        elif (bridge_detached_feelings and contrast_at is not None and evaluation_component(group)
+        elif (bridge_detached_feelings and contrast_at is not None
+              and (evaluation_component(group) or len(group) == 1
+                   and _independent_original_event(nucleus_index[group[0]], relation_index))
               and index > 0 and field(groups[index - 1]) is not None
               and index + 1 < len(groups) and field(groups[index + 1]) is not None):
             # A correction can remove only the middle event's old contrast.
@@ -1620,6 +1633,8 @@ def _merge_parallel_contrast_groups(groups, relation_ids, nucleus_index, relatio
             # pairs, including a revision bound to the current question target.
             # Independent replacement provenance is not required for that ABOUT;
             # the existing source endpoints own it, without a new relation.
+            # After that answer is withdrawn, the original event still owns
+            # an independent fact sentence at the same source position.
             merged[contrast_at] = (*merged[contrast_at], *group)
         else:
             merged.append(tuple(group))
@@ -3089,6 +3104,21 @@ def _render_extra_context(
     return f"その前提には、{extras}という内容もあります。"
 
 
+def _thread_intervening_event_ids(binding, nucleus_index, relation_index, resolver):
+    if getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1":
+        return ()
+    relations = tuple(relation_index[r] for r in binding.relation_ids)
+    if not relations or any(r.type not in {"contrast", "evaluation_about_event"} for r in relations):
+        return ()
+    contrasts = tuple(_nucleus_source_order(nucleus_index[r.from_nucleus_id])
+        for r in relations if relation_surface_role(r, nucleus_index) == "coexisting_contrast")
+    if len(contrasts) < 2:
+        return ()
+    return tuple(nid for nid in binding.nucleus_ids
+        if _independent_original_event(nucleus_index[nid], relation_index)
+        and min(contrasts) < _nucleus_source_order(nucleus_index[nid]) < max(contrasts))
+
+
 def _render_observation_with_relations(
     binding: GroundedSentenceBinding,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
@@ -3124,7 +3154,9 @@ def _render_observation_with_relations(
             relation_index[relation_id].to_nucleus_id,
         )
     }
-    extra_ids = tuple(item for item in binding.nucleus_ids if item not in endpoint_ids)
+    inline_events = _thread_intervening_event_ids(binding, nucleus_index, relation_index, resolver)
+    extra_ids = tuple(item for item in binding.nucleus_ids
+                      if item not in endpoint_ids and item not in inline_events)
     extra_context = _render_extra_context(extra_ids, nucleus_index, resolver)
     if extra_context:
         return f"{relation_text}{extra_context}"
@@ -3278,12 +3310,23 @@ def _render_relation(
         and min(contrast_order) < _nucleus_source_order(nucleus_index[relation_index[r].from_nucleus_id]) < max(contrast_order)
     } if (groups and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
           and all(relation_index[r].type in {"contrast", "evaluation_about_event"} for r in relation_ids)) else set()
-    if intervening_evaluations:
+    inline_events = sorted(_thread_intervening_event_ids(
+        binding, nucleus_index, relation_index, resolver),
+        key=lambda nid: _nucleus_source_order(nucleus_index[nid]))
+    if intervening_evaluations or inline_events:
         # The corrected event's surviving ABOUT stays at its source position
         # between the two intact contrasts, rather than moving to the tail.
         relation_ids = sorted(relation_ids, key=lambda r:
             _nucleus_source_order(nucleus_index[relation_index[r].from_nucleus_id]))
+    pending_events = list(inline_events)
     for relation_id in relation_ids:
+        while pending_events and _nucleus_source_order(nucleus_index[pending_events[0]]) < _nucleus_source_order(
+                nucleus_index[relation_index[relation_id].from_nucleus_id]):
+            nid = pending_events.pop(0)
+            quotes = _quotes_for_nuclei((nid,), nucleus_index, resolver)
+            if len(quotes) != 1:
+                raise GroundedSentenceSurfaceError("independent_event_source_ambiguous")
+            sentences.append(f"{quotes[0]}という出来事がありました。")
         if relation_id in grouped_by_relation:
             sentences.append(grouped_by_relation[relation_id])
             continue
@@ -3360,7 +3403,7 @@ def _render_relation(
                 "捉え方や動きが移っています。"
             )
         elif role == "coexisting_contrast":
-            if groups:
+            if groups or inline_events:
                 # Keep unanswered and answered events in the same original
                 # relation order across rounds, rather than moving them apart.
                 sentences.append(f"{left}と{right}が、異なる向きのまま同時にあります。")

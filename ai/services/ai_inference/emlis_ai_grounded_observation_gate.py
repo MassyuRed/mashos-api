@@ -2272,6 +2272,78 @@ def _body_inverse_thread_contrast_answers(body, witness, line, plan, resolver):
 
 
 
+def _body_inverse_intervening_events(body, witness, line, planned_line, plan, resolver):
+    """Read a surviving original fact between event pairs, without author replay."""
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    relations = tuple(r for r in plan.relations if r.relation_id in planned_line.binding.relation_ids)
+    contrasts = tuple(r for r in relations if r.type == "contrast")
+    if len(contrasts) < 2:
+        return True
+    linked = {nid for r in plan.relations for nid in (r.from_nucleus_id, r.to_nucleus_id)}
+    span_order = {sid: i for i, sid in enumerate(resolver.span_ids)}
+    def position(n):
+        return min((span_order[sid] for sid in n.source_span_ids), default=-1)
+    contrast_positions = tuple(position(index[r.from_nucleus_id]) for r in contrasts)
+    independent = tuple(index[nid] for nid in planned_line.binding.nucleus_ids
+        if nid not in linked and index[nid].kind == "event"
+        and nid in plan.coverage_requirements.required_nucleus_ids
+        and min(contrast_positions) < position(index[nid]) < max(contrast_positions))
+    if not independent:
+        return True
+    rows = tuple(row for row in witness.sentences if row.section == "observation"
+                 and row.section_line_ordinal == line.section_ordinal)
+    shared_answers, shared_failures = _body_inverse_thread_contrast_answers(body, witness, line, plan, resolver)
+    if shared_failures:
+        return False
+    for nucleus in independent:
+        frame = nucleus.semantic_frame
+        sources = _body_inverse_nucleus_source_values(nucleus.nucleus_id, plan, resolver)
+        if (frame.predicate_kind != "event" or frame.actor != "current_user"
+            or frame.modality != "fact" or frame.time_scope != "past"
+            or nucleus.source_fields not in {("memo",), ("memo_action",)}
+            or nucleus.grounding_kind != "explicit" or nucleus.retention != "required"
+            or len(nucleus.source_span_ids) != 1 or len(sources) != 1):
+            return False
+        matches = []
+        for i, row in enumerate(rows):
+            parsed = re.fullmatch(r"「([^「」『』\n]+)」という出来事がありました。",
+                                 _body_inverse_visible_text(body, row))
+            if parsed and _body_inverse_normalized_anchor(parsed.group(1)) == sources[0]:
+                matches.append(i)
+        if len(matches) != 1:
+            return False
+        # A matching quote elsewhere cannot move this fact behind another
+        # event or make it that event's cause, background or reaction.
+        for relation in contrasts:
+            event = index[relation.from_nucleus_id]
+            event_sources = _body_inverse_nucleus_source_values(event.nucleus_id, plan, resolver)
+            event_rows = [i for i, row in enumerate(rows) if any(
+                value in _body_inverse_normalized_anchor(_body_inverse_visible_text(body, row))
+                for value in event_sources)]
+            if (len(event_rows) != 1 or (event_rows[0] < matches[0]) != (position(event) < position(nucleus))):
+                return False
+            shared = any(r.relation_id in shared_answers and r.from_nucleus_id == event.nucleus_id
+                         for r in relations)
+            if not shared:
+                # Consume the whole neighboring contrast too: an added cause
+                # before its full stop must not hide inside the same sentence.
+                contrast = re.fullmatch(r"「([^「」『』\n]+)」と「([^「」『』\n]+)」が、"
+                    r"異なる向きのまま同時にあります。", _body_inverse_visible_text(body, rows[event_rows[0]]))
+                reaction_sources = _body_inverse_nucleus_source_values(relation.to_nucleus_id, plan, resolver)
+                if (contrast is None or len(event_sources) != 1 or len(reaction_sources) != 1
+                    or tuple(map(_body_inverse_normalized_anchor, contrast.groups()))
+                       != (event_sources[0], reaction_sources[0])):
+                    return False
+    endpoints = {nid for r in relations for nid in (r.from_nucleus_id, r.to_nucleus_id)}
+    if (relations and {r.type for r in relations} <= {"contrast", "evaluation_about_event"}
+        and set(planned_line.binding.nucleus_ids) - endpoints == {n.nucleus_id for n in independent}
+        and all(r.type == "contrast" or r.from_nucleus_id in {c.from_nucleus_id for c in contrasts}
+                for r in relations)
+        and len(rows) != len(contrasts) + len(independent)):
+        return False
+    return True
+
+
 def _body_inverse_detached_observation(raw, nuclei, plan, resolver):
     """Read each quoted feeling with its own time, without author replay.
 
@@ -4441,6 +4513,8 @@ def evaluate_grounded_surface_body_inverse(
                 _thread_withdrawn_original_reaction, _thread_revised_original_reaction,
             )
             visible_line = _body_inverse_visible_text(body, parsed_line)
+            if not _body_inverse_intervening_events(body, witness, parsed_line, planned_line, plan, resolver):
+                failures.append(f"body_inverse_independent_event_scope_mismatch:{index}")
             detached_nuclei = tuple(nucleus_index[nid] for nid in planned_line.binding.nucleus_ids)
             if (detached_nuclei and not planned_line.binding.relation_ids
                 and (len(detached_nuclei) > 1 or all(
