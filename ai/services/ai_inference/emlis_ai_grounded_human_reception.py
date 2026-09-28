@@ -10602,8 +10602,9 @@ def _detached_feeling_source_parts(move, plan, resolver, *, allow_revised=False)
 
 def _source_owned_positive_answer_group_sentence(move, realization, plan, resolver,
                                                 selected_decision, recovery_stage):
-    """Coordinate the selected answers without sharing their event or time."""
-    if (move.reception_act != "recognize_lived_change" or recovery_stage != "full"
+    """Coordinate selected positive or burden answers with their own scopes."""
+    if (move.reception_act not in {"recognize_lived_change", "stay_with_current_burden"}
+        or not move.required or recovery_stage != "full"
         or realization.reference_mode == "ANAPHORIC" or realization.clause_form != "FINITE"
         or not _selected_material_appraisal(selected_decision)):
         return None
@@ -10613,7 +10614,9 @@ def _source_owned_positive_answer_group_sentence(move, realization, plan, resolv
         return None
     parts = []
     for row in rows:
-        finite = _detached_feeling_finite_surface(row.source, allow_medial=True)
+        finite = _detached_feeling_finite_surface(row.source, allow_medial=True,
+            allow_copular=move.reception_act == "stay_with_current_burden"
+                and row.source.endswith(("でした", "だった")))
         if (not _SOURCE_GROUNDED_FINITE_END_RE.search(finite)
             or re.search(r"(?:です|ます|でした|ました|だ)$", finite)
             or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", row.event_fragment)

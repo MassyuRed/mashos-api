@@ -1617,7 +1617,15 @@ def _merge_parallel_contrast_groups(groups, relation_ids, nucleus_index, relatio
     merged = []
     contrast_at = None
     for index, group in enumerate(groups):
-        if field(group) is not None:
+        if (bridge_detached_feelings and evaluation_component(group)
+            and merged and evaluation_component(merged[-1])):
+            # Once original reactions are corrected, their complete ABOUT
+            # components no longer contain a contrast. Compose adjacent
+            # evaluations together, retaining every event/answer endpoint;
+            # the existing renderer keeps each answer's own time scope.
+            merged[-1] = (*merged[-1], *group)
+            contrast_at = None
+        elif field(group) is not None:
             if contrast_at is None:
                 contrast_at = len(merged)
                 merged.append(tuple(group))

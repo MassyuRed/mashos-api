@@ -66,12 +66,19 @@ def test_answer_only_group_preserves_both_event_and_time_bindings():
                               'その時は重かったです。'), 'その時は怖くなかったです。')
     context = actual(request=request)
     follow = context[0].artifact.reception
-    assert 'その時に重かったこと' in follow
-    assert 'その時に怖くなかったこと' in follow
+    assert '褒められたことについて、その時は重かったし、' in follow
+    assert '誘われたことについて、その時は怖くなかったのですね。' in follow
     assert inverse(context, follow, without_author=True).passed
     swapped = follow.replace('褒められた', 'TEMP').replace('誘われた', '褒められた').replace('TEMP', '誘われた')
     assert swapped != follow
     assert not inverse(context, swapped, without_author=True).passed
+    for old, new in (
+        ('褒められたことについて、その時は', '褒められたことについて、回答した時点では'),
+        ('誘われたことについて、その時は', '誘われたことについて、'),
+        ('怖くなかった', '怖かった'),
+    ):
+        changed = follow.replace(old, new, 1)
+        assert changed != follow and not inverse(context, changed, without_author=True).passed
 
 
 @pytest.mark.parametrize('reply', ['その時は重かったです。', '今は怖くないです。',

@@ -2936,7 +2936,8 @@ def _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjectiv
     return _read_answer_feeling_clause(raw, *roles, plan, resolver, shared_event=shared_event)
 
 
-def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, shared_event=False):
+def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, shared_event=False,
+                               allow_past_copular=False):
     """Restore one complete answer and its own event/time from actual bytes."""
     index = {n.nucleus_id: n for n in plan.nuclei}
     event_text, source = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
@@ -2948,6 +2949,11 @@ def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, sha
     predicate = polite['predicate'] if polite else source
     explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", source)
     explanation_proven = False
+    copular = re.fullmatch(r"(?P<host>.+?)(?:でした|だった)", source) if allow_past_copular else None
+    noun = _thread_feeling_lexical_host(copular['host'], owner) if copular else ""
+    past_copular_proven = bool(noun and _FEELING_RE.fullmatch(noun) and not noun.endswith("い"))
+    if past_copular_proven:
+        predicate = copular['host'] + "だった"
     if explanatory is not None:
         host = _thread_feeling_lexical_host(explanatory['predicate'], owner)
         adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
@@ -2975,7 +2981,7 @@ def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, sha
     if (parsed is None or (parsed['event'] != event_text
             and not (parsed['event'] is None and shared_event)) or parsed['time'] != expected_time
         or _restore_thread_finite_answer(parsed['feeling'] + ("のだった" if past_explanation else ""), source,
-            copular_clause=explanation_proven,
+            copular_clause=explanation_proven or past_copular_proven,
             shared_explanatory_ending=explanation_proven) != source):
         return None
     return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
@@ -2984,12 +2990,12 @@ def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, sha
 
 
 def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_subjective_input):
-    """Read each complete positive answer at its unique source event boundary.
+    """Read each complete selected answer at its unique source event boundary.
 
     No author output is replayed. Each operand retains its own ABOUT endpoint,
     source time, subject, degree and polarity; coordination adds no relation.
     """
-    if (move.reception_act != "recognize_lived_change" or not move.required
+    if (move.reception_act not in {"recognize_lived_change", "stay_with_current_burden"} or not move.required
         or move not in plan.response_plan.human_reception_plan.moves
         or move.support_nucleus_ids or not 2 <= len(move.target_nucleus_ids) <= 3
         or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
@@ -2997,13 +3003,17 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
         return None
     index = {n.nucleus_id: n for n in plan.nuclei}
     rows = []
+    positive = move.reception_act == "recognize_lived_change"
     for nid in move.target_nucleus_ids:
         answer = index[nid]
         frame = answer.semantic_frame
         times = tuple(c.split(":", 1)[1] for c in frame.attribute_codes if c.startswith("thread_time:"))
         about = tuple(r for r in plan.relations if r.type == "evaluation_about_event"
             and r.to_nucleus_id == nid and r.relation_id in plan.coverage_requirements.required_relation_ids)
-        if (not is_grounded_positive_feeling(answer) or frame.actor != "current_user"
+        if ((not is_grounded_positive_feeling(answer) if positive else
+                (answer.kind, frame.predicate_kind, frame.modality, frame.polarity)
+                    != ("reaction", "feeling", "feeling", "negative"))
+            or frame.actor != "current_user"
             or answer.retention != "required" or answer.grounding_kind != "explicit"
             or answer.source_fields != ("answer_text_private",) or len(answer.source_span_ids) != 1
             or answer.allowed_claim_scope != "explicit_supplemental_answer"
@@ -3043,7 +3053,8 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
         end = len(raw) if last else cuts[i + 1] - len("し、")
         part = raw[start:end]
         proof = _read_answer_feeling_clause(
-            part if last else part + "のですね。", *row[:3], plan, resolver)
+            part if last else part + "のですね。", *row[:3], plan, resolver,
+            allow_past_copular=not positive)
         if proof is None or any(b > len(part.encode()) for _, b, _ in proof):
             return None
         offset = len(raw[:start].encode())
@@ -4565,14 +4576,22 @@ def evaluate_grounded_surface_body_inverse(
                             failures.append(f"body_inverse_past_feeling_contrast_scope_mismatch:{index}")
             if (relation.type == "evaluation_about_event"
                     and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"):
-                visible = _body_inverse_normalized_anchor(_body_inverse_visible_text(body, parsed_line))
+                visible = _body_inverse_visible_text(body, parsed_line)
                 left_sources = _body_inverse_nucleus_source_values(relation.from_nucleus_id, plan, resolver)
                 right_sources = _body_inverse_nucleus_source_values(relation.to_nucleus_id, plan, resolver)
                 target_codes = set(nucleus_index[relation.to_nucleus_id].semantic_frame.attribute_codes)
                 when = "先の回答時点" if "thread_time:prior_answer_time" in target_codes else "回答した時点" if "thread_time:answer_time" in target_codes else "その時"
+                # Read each complete event/time/answer clause locally. An
+                # identical answer elsewhere on this line cannot supply a
+                # missing or incorrect time marker for this event.
+                evaluation_clauses = re.findall(
+                    r"「([^「」]+)」ことに対する(先の回答時点|回答した時点|その時)"
+                    r"の受け止めとして、「([^「」]+)」", visible)
                 if relation_id not in grouped_answers and not (any(b == a + 1 for a in from_positions for b in to_positions) and
-                        any(re.search(re.escape(left) + r"[^。]*に対する" + when + r"の受け止めとして[^。]*" + re.escape(right), visible)
-                            for left in left_sources for right in right_sources)):
+                        any(_body_inverse_normalized_anchor(left) in left_sources
+                            and clause_time == when
+                            and _body_inverse_normalized_anchor(right) in right_sources
+                            for left, clause_time, right in evaluation_clauses)):
                     failures.append(f"body_inverse_answer_target_relation_missing:{index}")
         if (
             planned_line.binding.line_role == "fact_boundary"

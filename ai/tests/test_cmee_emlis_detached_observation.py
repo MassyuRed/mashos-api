@@ -1882,3 +1882,165 @@ def test_explicit_revision_reference_group_requires_separate_correction(revision
     assert original.count('それとは別に') == 1
     changed = original.replace('それとは別に', replacement)
     assert not read_body(context, context[0].artifact.text.replace(original, changed)).passed
+
+
+MULTIPLE_ORIGINAL_CORRECTIONS = [
+    ('少し私は苦しかったです', '私は少し苦しかったです'),
+    ('少し私は不安でした', '私は少し不安でした'),
+    ('私は少し不安でした', '私は少し不安でした'),
+    ('私も少し怖くなかったです', '少し私には苦しかったです'),
+]
+
+
+def multiple_original_correction_answers(sources):
+    return tuple(f'「{old}」ではなく「{source}」です。'
+                 for old, source in zip(('嬉しくなかった', '悲しかった'), sources))
+
+
+@pytest.fixture(scope='module', params=MULTIPLE_ORIGINAL_CORRECTIONS)
+def multiple_original_correction_context(request):
+    req = begin()
+    for text in multiple_original_correction_answers(request.param):
+        req = advance(req, text)
+    return actual(request=req)
+
+
+@pytest.mark.parametrize('sources', MULTIPLE_ORIGINAL_CORRECTIONS)
+def test_multiple_original_corrections_deliver_every_event_and_own_feeling(sources):
+    req = begin()
+    for text in multiple_original_correction_answers(sources):
+        req = advance(req, text)
+    context = actual(request=req)
+    result = context[0]
+    assert '嬉しくなかった' not in result.artifact.text and '悲しかった' not in result.artifact.text
+    for event, feeling in zip(('褒められた', '誘われた'), sources):
+        assert f'「{event}」ことに対するその時の受け止めとして、「{feeling}」' in result.artifact.observation
+    assert '「頼まれた」と「寂しかった」' in result.artifact.observation
+    assert '頼まれたのに、寂しさを感じたのですね。' in result.artifact.reception
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.mark.parametrize('event', ['褒められた', '誘われた'])
+@pytest.mark.parametrize('when', ['', '回答した時点', '先の回答時点'])
+def test_multiple_original_corrections_cannot_borrow_another_clause_time(
+        multiple_original_correction_context, event, when):
+    context = multiple_original_correction_context
+    body = context[0].artifact.text
+    old = f'「{event}」ことに対するその時の受け止めとして、'
+    new = f'「{event}」ことに対する{when + "の" if when else ""}受け止めとして、'
+    assert old in body
+    assert not read_body(context, body.replace(old, new, 1)).passed
+
+
+@pytest.mark.parametrize('old,new', [
+    ('「褒められた」ことに対する', '「誘われた」ことに対する'),
+    ('「誘われた」ことに対する', '「頼まれた」ことに対する'),
+    ('少し', ''), ('私は', '友人は'), ('私は', '私も'),
+    ('不安でした', '不安ではありませんでした'), ('不安でした', '不安です'),
+])
+def test_identical_corrected_feelings_still_require_each_exact_source(old, new):
+    req = begin()
+    for text in multiple_original_correction_answers(MULTIPLE_ORIGINAL_CORRECTIONS[2]):
+        req = advance(req, text)
+    context = actual(request=req)
+    body = context[0].artifact.text
+    assert old in body and not read_body(context, body.replace(old, new, 1)).passed
+
+
+def test_multiple_original_corrections_allow_equivalent_observation_ending(multiple_original_correction_context):
+    context = multiple_original_correction_context
+    body = context[0].artifact.text
+    assert 'が見えます。' in body
+    assert read_body(context, body.replace('が見えます。', 'が示されています。')).passed
+
+
+@pytest.mark.parametrize('sources', MULTIPLE_ORIGINAL_CORRECTIONS)
+@pytest.mark.parametrize('last', ['「寂しかった」ではなく「私も少し怖くなかったです」です。', '「頼まれた」は誤りです。'])
+def test_multiple_original_corrections_persist_and_reuse_exact_body(qcase, qdb, monkeypatch, sources, last):
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    first = current = run(service.start(user, parent))
+
+    def saved_reads():
+        assert current['original'] == first['original']
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not regenerate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+
+    saved_reads()
+    for index, text in enumerate((*multiple_original_correction_answers(sources), last)):
+        if index:
+            current = run(cont(service, user, current, f'multiple-correction-continue-{index}'))
+            saved_reads()
+        current = run(answer(service, user, current, text, f'multiple-correction-answer-{index}'))
+        assert current['body_state'] == 'REFINED', current
+        saved_reads()
+    body = current['current_observation']['text']
+    assert all(source in body for source in sources)
+    assert '嬉しくなかった' not in body and '悲しかった' not in body
+    assert ('頼まれた' not in body) == ('誤り' in last)
+    assert current['state'] == 'COMPLETED' and not current['can_continue']
+
+
+@pytest.fixture(scope='module', params=MULTIPLE_ORIGINAL_CORRECTIONS)
+def three_original_corrections_context(request):
+    req = begin()
+    for text in (*multiple_original_correction_answers(request.param),
+                 '「寂しかった」ではなく「私も少し怖くなかったです」です。'):
+        req = advance(req, text)
+    return actual(request=req)
+
+
+def test_three_original_corrections_use_complete_finite_feelings(three_original_corrections_context):
+    context = three_original_corrections_context
+    result, plan, _, resolver, selected = context
+    follow = result.artifact.reception
+    assert all(f'{event}ことについて、その時は' in follow
+               for event in ('褒められた', '誘われた', '頼まれた'))
+    assert follow.endswith('あなたも少し怖くなかったのですね。')
+    assert '私' not in follow and 'でしたこと' not in follow and '受け止めています' not in follow
+    move, = plan.response_plan.human_reception_plan.moves
+    assert len(move.target_nucleus_ids) == 3 and not move.support_nucleus_ids
+    with patch.object(reception, 'source_grounded_thread_answer_group',
+                      side_effect=AssertionError('no forward group oracle')):
+        proof = gate._read_positive_answer_group_discourse(follow, move, plan, resolver, selected)
+        assert proof is not None and len(proof) == 6
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.mark.parametrize('event', ['褒められた', '誘われた', '頼まれた'])
+@pytest.mark.parametrize('when', ['', '回答した時点では', '先の回答時点では'])
+def test_three_original_corrections_keep_each_reception_time(three_original_corrections_context, event, when):
+    context = three_original_corrections_context
+    body = context[0].artifact.text
+    old = event + 'ことについて、その時は'
+    assert old in body
+    assert not read_body(context, body.replace(old, event + 'ことについて、' + when, 1)).passed
+
+
+@pytest.mark.parametrize('old,new', [
+    ('褒められたことについて、', '誘われたことについて、'),
+    ('誘われたことについて、', ''),
+    ('あなたも少し怖くなかった', 'あなたも少し怖かった'),
+    ('あなたも少し怖くなかった', 'あなたも少し怖くない'),
+    ('あなたも少し怖くなかった', 'あなたも怖くなかった'),
+    ('あなたも少し怖くなかった', 'あなたは少し怖くなかった'),
+    ('あなたも少し怖くなかった', '友人も少し怖くなかった'),
+    ('し、頼まれたことについて、', 'ので、頼まれたことについて、'),
+])
+def test_three_original_corrections_reject_missing_or_changed_duties(three_original_corrections_context, old, new):
+    context = three_original_corrections_context
+    body = context[0].artifact.text
+    assert old in body and not read_body(context, body.replace(old, new, 1)).passed
+
+
+@pytest.mark.parametrize('field,value', [('actor', 'other_person'), ('time_scope', 'present'),
+    ('polarity', 'positive'), ('modality', 'fact')])
+def test_three_original_corrections_reader_requires_admitted_frames(three_original_corrections_context, field, value):
+    result, plan, _, resolver, selected = three_original_corrections_context
+    move, = plan.response_plan.human_reception_plan.moves
+    nucleus = next(n for n in plan.nuclei if n.nucleus_id == move.target_nucleus_ids[1])
+    changed = replace(nucleus, semantic_frame=replace(nucleus.semantic_frame, **{field: value}))
+    bad_plan = replace(plan, nuclei=tuple(changed if n == nucleus else n for n in plan.nuclei))
+    assert gate._read_positive_answer_group_discourse(result.artifact.reception, move, bad_plan, resolver, selected) is None
