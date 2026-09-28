@@ -271,7 +271,8 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
             (index[changed].kind, index[changed].semantic_frame.predicate_kind,
              index[changed].semantic_frame.modality, index[changed].semantic_frame.polarity,
              index[changed].semantic_frame.actor, index[changed].semantic_frame.time_scope)
-            == ("reaction", "feeling", "feeling", "negative", "current_user", "past")
+            in (("reaction", "feeling", "feeling", "negative", "current_user", "past"),
+                ("reaction", "feeling", "feeling", "positive", "current_user", "past"))
             and item.temporal_binding.about_time == "ORIGINAL_OCCASION"))
         and not any(changed in (r.from_nucleus_id, r.to_nucleus_id)
                                        for r in relations)}
@@ -284,7 +285,8 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
         and (index[changed].kind, index[changed].semantic_frame.predicate_kind,
              index[changed].semantic_frame.modality, index[changed].semantic_frame.polarity,
              index[changed].semantic_frame.actor, index[changed].semantic_frame.time_scope)
-            == ("reaction", "feeling", "feeling", "negative", "current_user", "past")}
+            in (("reaction", "feeling", "feeling", "negative", "current_user", "past"),
+                ("reaction", "feeling", "feeling", "positive", "current_user", "past"))}
     nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
         attribute_codes=tuple(dict.fromkeys((*n.semantic_frame.attribute_codes,
             replacement_proof, *((reaction_replacement_proof,) if n.nucleus_id in revised_reactions else ()))))))

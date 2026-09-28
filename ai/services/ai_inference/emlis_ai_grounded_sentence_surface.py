@@ -1654,7 +1654,7 @@ def _detached_observation_time(nucleus):
     frame = nucleus.semantic_frame
     codes = set(frame.attribute_codes)
     if (("thread_subject:withdrawn_source_event" not in codes
-         and not _thread_revised_original_reaction(nucleus, ()))
+         and not _thread_revised_original_reaction(nucleus, (), polarity=frame.polarity))
         or nucleus.kind != "reaction" or frame.predicate_kind != "feeling"
         or frame.actor != "current_user" or frame.modality != "feeling"
         or nucleus.retention != "required" or nucleus.grounding_kind != "explicit"

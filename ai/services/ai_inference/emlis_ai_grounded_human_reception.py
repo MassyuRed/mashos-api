@@ -10500,7 +10500,7 @@ def _detached_feeling_source_parts(move, plan, resolver, *, allow_revised=False)
     frame = nucleus.semantic_frame
     codes = set(frame.attribute_codes)
     from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
-    revised = allow_revised and _thread_revised_original_reaction(nucleus, plan.relations)
+    revised = allow_revised and _thread_revised_original_reaction(nucleus, plan.relations, polarity=frame.polarity)
     # A corrected original reaction is also independent, but does not enter
     # the withdrawal-only pair topology. Only its finite author opts in.
     if (not ("thread_subject:withdrawn_source_event" in codes or revised)

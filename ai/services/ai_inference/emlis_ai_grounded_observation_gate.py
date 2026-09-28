@@ -2387,7 +2387,7 @@ def _body_inverse_detached_observation(raw, nuclei, plan, resolver):
         frame = nucleus.semantic_frame
         codes = set(frame.attribute_codes)
         if (("thread_subject:withdrawn_source_event" not in codes
-             and not _thread_revised_original_reaction(nucleus, plan.relations))
+             and not _thread_revised_original_reaction(nucleus, plan.relations, polarity=frame.polarity))
             or nucleus.kind != "reaction" or frame.predicate_kind != "feeling"
             or frame.modality != "feeling" or frame.actor != "current_user"
             or nucleus.retention != "required" or nucleus.grounding_kind != "explicit"
@@ -2716,7 +2716,7 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
     codes = set(frame.attribute_codes)
     from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
     # Use the admitted meaning boundary, never the author's transformation.
-    revised = _thread_revised_original_reaction(nucleus, plan.relations)
+    revised = _thread_revised_original_reaction(nucleus, plan.relations, polarity=frame.polarity)
     if (not ("thread_subject:withdrawn_source_event" in codes or revised)
         or nucleus.kind != "reaction" or frame.predicate_kind != "feeling"
         or frame.modality != "feeling" or frame.actor != "current_user"
@@ -4545,7 +4545,7 @@ def evaluate_grounded_surface_body_inverse(
                          or _thread_withdrawn_original_reaction(n, plan.relations))
                     for n in detached_nuclei))
                 and all("thread_subject:withdrawn_source_event" in n.semantic_frame.attribute_codes
-                        or _thread_revised_original_reaction(n, plan.relations)
+                        or _thread_revised_original_reaction(n, plan.relations, polarity=n.semantic_frame.polarity)
                         for n in detached_nuclei)
                 and not _body_inverse_detached_observation(visible_line, detached_nuclei, plan, resolver)):
                 failures.append(f"body_inverse_detached_feeling_scope_mismatch:{index}")
@@ -4563,7 +4563,7 @@ def evaluate_grounded_surface_body_inverse(
                     failures.append(f"body_inverse_answer_target_time_missing:{index}")
             from emlis_ai_grounded_observation_plan import is_grounded_current_answer_uncertainty
             revised_reactions = tuple(n for n in required_nuclei
-                if _thread_revised_original_reaction(n, plan.relations))
+                if _thread_revised_original_reaction(n, plan.relations, polarity=n.semantic_frame.polarity))
             detached_states = tuple(n for n in required_nuclei
                 if "thread_subject:withdrawn_source_event" in n.semantic_frame.attribute_codes
                 and is_grounded_current_answer_uncertainty(n))

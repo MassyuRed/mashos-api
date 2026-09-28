@@ -1490,3 +1490,160 @@ def test_revision_withdrawal_saved_sequence_keeps_original_and_reads(qcase, qdb,
     assert '誘われた' not in body and '嬉しくなかった' not in body
     assert '頼まれた' in body and '寂し' in body and '褒められた' in body
     assert not current['can_continue']
+
+
+@pytest.mark.parametrize('old,answers,retained', [
+    ('悲しかった', (), ('褒められた', '嬉しさにはつながらず', '頼まれたのに、寂しさ')),
+    ('寂しかった', (), ('褒められた', '嬉しさにはつながらず', '誘われたのに、悲しさ')),
+    ('嬉しくなかった', ('今は嬉しい。',), ('誘われたのに、悲しさ', '頼まれたのに、寂しさ')),
+    ('寂しかった', ('今は嬉しい。',), ('褒められた', '嬉しさにはつながらず', '誘われたのに、悲しさ')),
+])
+@pytest.mark.parametrize('source,finite', [('楽しかった', 'その時は楽しかった'),
+    ('私は楽しかったです', 'その時、あなたは楽しかった'),
+    ('私も少し楽しかったです', 'その時、あなたも少し楽しかった')])
+def test_positive_original_revision_keeps_independent_occasion_and_other_duties(old, answers, retained, source, finite):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    request = revised_original_request(source, answers, old)
+    public = MeaningExperienceEngine().generate(request)
+    assert public.artifact is not None, public.reason_codes
+    context = actual(request=request)
+    result, plan, sentence, _, _ = context
+    assert result.artifact.text == public.artifact.text
+    assert f'{finite}のですね。' in result.artifact.reception
+    assert all(s in result.artifact.reception for s in retained)
+    assert old not in result.artifact.text
+    assert f'その時の気持ちとして、「{source}」' in result.artifact.observation
+    assert not any(s in result.artifact.reception for s in ('楽しくなった', '前向き', 'おかげ', 'これまで'))
+    if answers:
+        assert '褒められたことについて、回答した時点では嬉しい' in result.artifact.reception
+    revised, = (n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes)
+    assert revised.semantic_frame.polarity == 'positive'
+    assert not any(revised.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    assert len(plan.response_plan.human_reception_plan.moves) == 2 + len(answers)
+    assert set(plan.coverage_requirements.required_nucleus_ids) <= {
+        nid for line in sentence.lines if line.binding.line_role != 'human_follow' for nid in line.binding.nucleus_ids}
+    prepared = prepare_emlis_meaning(request)
+    assert prepared.accepted_nuclei and prepared.checkpoint.assessment_status == 'RESOLVED'
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.fixture(scope='module')
+def positive_original_revision_context():
+    return actual(request=revised_original_request('私も少し楽しかったです', ('今は嬉しい。',), old='寂しかった'))
+
+
+@pytest.mark.parametrize('old,new', [
+    ('あなたも', '私も'), ('あなたも', '友人も'), ('あなたも', 'あなたは'), ('あなたも', ''),
+    ('少し', ''), ('楽しかった', '楽しくなかった'), ('楽しかった', '楽しい'),
+    ('その時、', '回答した時点で、'), ('その時、', '先の回答時点で、'), ('その時、', ''),
+    ('その時、', '頼まれたことについて、その時、'), ('その時、', '褒められたので、その時、'),
+    ('楽しかったのですね。', '楽しかったのですね。寂しかったのですね。'),
+    ('その時、あなたも少し楽しかったのですね。', ''),
+    ('その時、あなたも少し楽しかったのですね。', '褒められたことについて、回答した時点では嬉しいのですね。'),
+])
+def test_positive_original_revision_rejects_lost_or_changed_reception_without_authors(positive_original_revision_context, old, new):
+    context = positive_original_revision_context
+    follow = context[0].artifact.reception
+    changed = follow.replace(old, new, 1)
+    assert changed != follow
+    assert not read_body(context, context[0].artifact.text.replace(follow, changed)).passed
+
+
+@pytest.mark.parametrize('old,new', [
+    ('その時の気持ちとして、', '回答した時点の気持ちとして、'),
+    ('その時の気持ちとして、', '先の回答時点の気持ちとして、'),
+    ('その時の気持ちとして、', '頼まれたことへの気持ちとして、'),
+    ('「私も少し楽しかったです」', '「私も少し楽しくなかったです」'),
+    ('その時の気持ちとして、「私も少し楽しかったです」が見えます。', ''),
+])
+def test_positive_original_revision_rejects_lost_or_changed_observation_without_authors(positive_original_revision_context, old, new):
+    context = positive_original_revision_context
+    observation = context[0].artifact.observation
+    changed = observation.replace(old, new, 1)
+    assert changed != observation
+    assert not read_body(context, context[0].artifact.text.replace(observation, changed)).passed
+
+
+@pytest.mark.parametrize('ending', ['のです。', 'のだと受け取りました。'])
+def test_positive_original_revision_reads_equivalent_acknowledgement(positive_original_revision_context, ending):
+    context = positive_original_revision_context
+    follow = context[0].artifact.reception
+    changed = follow.replace('楽しかったのですね。', '楽しかった' + ending)
+    assert read_body(context, context[0].artifact.text.replace(follow, changed)).passed
+
+
+@pytest.mark.parametrize('marker', ['thread_subject:independent_source_replacement',
+    'thread_subject:revised_original_reaction', 'lexical:preserve_source_predicate', 'lexical:no_new_sensation_family'])
+def test_positive_original_revision_requires_complete_provenance(positive_original_revision_context, marker):
+    result, plan, _, resolver, selected = positive_original_revision_context
+    nucleus = next(n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes)
+    move = next(m for m in plan.response_plan.human_reception_plan.moves if m.target_nucleus_ids == (nucleus.nucleus_id,))
+    changed = replace(nucleus, semantic_frame=replace(nucleus.semantic_frame,
+        attribute_codes=tuple(c for c in nucleus.semantic_frame.attribute_codes if c != marker)))
+    bad_plan = replace(plan, nuclei=tuple(changed if n == nucleus else n for n in plan.nuclei))
+    clause = result.artifact.reception.split('。')[-2] + '。'
+    assert gate._read_detached_feeling_discourse(clause, move, bad_plan, resolver, selected) is None
+
+
+@pytest.mark.parametrize('field,value', [('actor', 'other_person'), ('time_scope', 'present'),
+    ('polarity', 'negative'), ('modality', 'fact')])
+def test_positive_original_revision_requires_admitted_self_past(positive_original_revision_context, field, value):
+    result, plan, _, resolver, selected = positive_original_revision_context
+    nucleus = next(n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes)
+    move = next(m for m in plan.response_plan.human_reception_plan.moves if m.target_nucleus_ids == (nucleus.nucleus_id,))
+    changed = replace(nucleus, semantic_frame=replace(nucleus.semantic_frame, **{field: value}))
+    bad_plan = replace(plan, nuclei=tuple(changed if n == nucleus else n for n in plan.nuclei))
+    clause = result.artifact.reception.split('。')[-2] + '。'
+    assert gate._read_detached_feeling_discourse(clause, move, bad_plan, resolver, selected) is None
+
+
+@pytest.mark.parametrize('replacement', ['とても楽しかった', '私は苦しかったです'])
+def test_positive_original_revision_can_be_corrected_again_without_inheriting_event(replacement):
+    request = revised_original_request('私も少し楽しかったです', (), old='寂しかった')
+    request = advance(request, f'「私も少し楽しかったです」ではなく「{replacement}」です。')
+    context = actual(request=request)
+    result, plan, _, _, _ = context
+    assert '私も少し楽しかった' not in result.artifact.text
+    assert f'その時の気持ちとして、「{replacement}」' in result.artifact.observation
+    assert '誘われたのに、悲しさ' in result.artifact.reception
+    assert '褒められたことは、嬉しさにはつながらず' in result.artifact.reception
+    revised, = (n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes)
+    assert not any(revised.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    assert len(plan.response_plan.human_reception_plan.moves) == 2
+    assert read_body(context, result.artifact.text).passed
+
+
+def test_positive_original_revision_does_not_expand_negative_group_or_move_capacity():
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    from emlis_ai_grounded_observation_plan import (
+        _thread_revised_original_reaction, _thread_retained_reaction_groups)
+    request = revised_original_request('楽しかった', TWO_POSITIVE_PAIRS[0], old='嬉しくなかった')
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(request))
+    revised, = (n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes)
+    assert not _thread_revised_original_reaction(revised, plan.relations)
+    assert _thread_revised_original_reaction(revised, plan.relations, polarity='positive')
+    assert _thread_retained_reaction_groups(plan.nuclei, plan.relations) == ()
+
+
+@pytest.mark.parametrize('old,source,finite', [('嬉しくなかった', '私は楽しかったです', 'あなたは楽しかった'),
+    ('寂しかった', '私も少し楽しかったです', 'あなたも少し楽しかった')])
+def test_positive_original_revision_saved_sequence_keeps_original_and_reads(qcase, qdb, monkeypatch, old, source, finite):
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    for i, text in enumerate((None, '今は嬉しい。', f'「{old}」ではなく「{source}」です。')):
+        if text is not None:
+            if i > 1:
+                current = run(cont(service, user, current, f'positive-original-continue-{i}'))
+            current = run(answer(service, user, current, text, f'positive-original-answer-{i}'))
+            assert current['body_state'] == 'REFINED', current
+        assert current['original'] == first['original']
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not regenerate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+    body = current['current_observation']['text']
+    assert f'その時、{finite}のですね。' in body
+    assert old not in body
+    assert all(s in body for s in ('褒められた', '誘われた', '頼まれた'))
+    assert current['can_continue'] == (old == '嬉しくなかった')

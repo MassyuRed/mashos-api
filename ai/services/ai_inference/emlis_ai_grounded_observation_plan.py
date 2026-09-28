@@ -7603,7 +7603,7 @@ def _thread_withdrawn_original_reaction(nucleus, relations):
     )
 
 
-def _thread_revised_original_reaction(nucleus, relations):
+def _thread_revised_original_reaction(nucleus, relations, *, polarity="negative"):
     """An admitted original-reaction replacement, without an inherited edge."""
     frame = nucleus.semantic_frame
     return bool(
@@ -7611,7 +7611,8 @@ def _thread_revised_original_reaction(nucleus, relations):
         and nucleus.allowed_claim_scope == "explicit_supplemental_answer"
         and nucleus.retention == "required" and nucleus.grounding_kind == "explicit"
         and (nucleus.kind, frame.predicate_kind, frame.modality) == ("reaction", "feeling", "feeling")
-        and frame.actor == "current_user" and frame.polarity == "negative"
+        and frame.actor == "current_user" and polarity in {"negative", "positive"}
+        and frame.polarity == polarity
         and frame.time_scope == "past" and len(nucleus.source_span_ids) == 1
         and {"thread_subject:independent_source_replacement", "thread_subject:revised_original_reaction",
              "lexical:preserve_source_predicate", "lexical:no_new_sensation_family"} <= set(frame.attribute_codes)
@@ -7826,8 +7827,16 @@ def _thread_retained_reaction_groups(nuclei, relations):
     mixed_revision = bool(len(positive) == 2 and len(answers) == 3
         and len(revised_originals) == len(independent_answers) == 1
         and not (withdrawal or independent or actions or detached_answers))
+    positive_revisions = tuple(n for n in independent_answers
+        if _thread_revised_original_reaction(n, relations, polarity="positive"))
+    # A retained answer and an independent positive original correction each
+    # keep their own move; the remaining received pairs use the third move.
+    positive_revision = bool(len(positive) == len(answers) == 2
+        and len(positive_revisions) == len(independent_answers) == 1
+        and not (withdrawal or independent or actions or detached_answers))
     if not withdrawal and (len(positive) > 2
-                           or len(positive) == 2 and (independent or actions or independent_answers) and not mixed_revision
+                           or len(positive) == 2 and (independent or actions or independent_answers)
+                           and not (mixed_revision or positive_revision)
                            or len(events) == 1 and len(answers) != 1
                            and not ((independent or actions) and not answers)):
         return unsupported()
