@@ -685,7 +685,7 @@ def revised_original_context():
 ])
 def test_revised_original_observation_owns_its_time_even_with_other_time_tokens(revised_original_context, replacement):
     body = revised_original_context[0].artifact.text
-    original = 'また、「苦しかった」と、当時の気持ちを言い直されています。'
+    original = '「苦しかった」と、当時の気持ちを言い直されています。'
     assert original in body
     assert not read_body(revised_original_context, body.replace(original, replacement, 1)).passed
 
@@ -2044,3 +2044,123 @@ def test_three_original_corrections_reader_requires_admitted_frames(three_origin
     changed = replace(nucleus, semantic_frame=replace(nucleus.semantic_frame, **{field: value}))
     bad_plan = replace(plan, nuclei=tuple(changed if n == nucleus else n for n in plan.nuclei))
     assert gate._read_positive_answer_group_discourse(result.artifact.reception, move, bad_plan, resolver, selected) is None
+
+
+NONADJACENT_CORRECTION_SOURCES = [*MULTIPLE_ORIGINAL_CORRECTIONS, ('楽しかった', '私は不安でした')]
+
+
+def nonadjacent_correction_answers(prior, sources):
+    return (*(('今は嬉しい。',) if prior else ()),
+            f'「嬉しくなかった」ではなく「{sources[0]}」です。',
+            f'「寂しかった」ではなく「{sources[1]}」です。')
+
+
+@pytest.fixture(scope='module', params=[(prior, sources) for prior in (False, True)
+    for sources in NONADJACENT_CORRECTION_SOURCES])
+def nonadjacent_correction_context(request):
+    prior, sources = request.param
+    req = begin()
+    for text in nonadjacent_correction_answers(prior, sources):
+        req = advance(req, text)
+    return prior, sources, actual(request=req)
+
+
+def test_nonadjacent_corrections_keep_complete_duties_and_original_event_order(nonadjacent_correction_context):
+    prior, sources, context = nonadjacent_correction_context
+    result, plan, _, _, _ = context
+    body, observation, follow = result.artifact.text, result.artifact.observation, result.artifact.reception
+    assert observation.index('「褒められた」') < observation.index('「誘われた」') < observation.index('「頼まれた」')
+    assert '一つの流れ' not in body and 'その出発点' not in body
+    assert '嬉しくなかった' not in body and '寂しかった' not in body
+    assert '「誘われた」と「悲しかった」' in observation and '誘われたのに、悲しさ' in follow
+    independent = sources[0] if prior else sources[1]
+    assert f'「{independent}」と、当時の気持ちを言い直されています。' in observation
+    assert REVISION_INTRO in follow and 'でしたこと' not in follow
+    if prior:
+        assert '「褒められた」ことに対する回答した時点の受け止めとして、「嬉しい」' in observation
+        assert f'「頼まれた」ことに対するその時の受け止めとして、「{sources[1]}」' in observation
+        assert '回答した時点では嬉しいのですね。' in follow
+    else:
+        assert f'「褒められた」ことに対するその時の受け止めとして、「{sources[0]}」' in observation
+        assert '「頼まれた」という出来事がありました。' in observation
+        assert '頼まれたことについて' not in follow and '頼まれた時は' not in follow
+    moves = plan.response_plan.human_reception_plan.moves
+    owned = {nid for move in moves for nid in (*move.target_nucleus_ids, *move.support_nucleus_ids)}
+    required_feelings = {n.nucleus_id for n in plan.nuclei if n.kind == 'reaction' and n.retention == 'required'}
+    assert required_feelings <= owned and len(moves) <= 3
+    revised, = (n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes)
+    assert not any(revised.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    assert read_body(context, body).passed
+
+
+@pytest.mark.parametrize('part,old,new', [
+    ('observation', '当時の気持ちを言い直されています。', '回答した時点の気持ちを言い直されています。'),
+    ('observation', 'と、当時の気持ちを言い直されています。', 'という気持ちが書かれています。'),
+    ('observation', '「誘われた」と「悲しかった」', '「頼まれた」と「悲しかった」'),
+    ('observation', 'ことに対するその時の受け止めとして、', 'ことに対する受け止めとして、'),
+    ('reception', REVISION_INTRO, ''),
+    ('reception', REVISION_INTRO, '頼まれたことについて、'),
+    ('reception', '当時', '回答した時点'),
+    ('reception', '悲しさ', '嬉しさ'),
+])
+def test_nonadjacent_corrections_reject_lost_reassigned_or_retimed_meaning(nonadjacent_correction_context, part, old, new):
+    _, _, context = nonadjacent_correction_context
+    original = getattr(context[0].artifact, part)
+    changed = original.replace(old, new, 1)
+    assert changed != original
+    assert not read_body(context, context[0].artifact.text.replace(original, changed, 1)).passed
+
+
+@pytest.mark.parametrize('prior', [False, True])
+@pytest.mark.parametrize('sources', NONADJACENT_CORRECTION_SOURCES)
+def test_nonadjacent_corrections_saved_rounds_reuse_exact_body(qcase, qdb, monkeypatch, prior, sources):
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    first = current = run(service.start(user, parent))
+
+    def saved_reads():
+        assert current['original'] == first['original']
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not regenerate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+
+    saved_reads()
+    texts = nonadjacent_correction_answers(prior, sources)
+    for index, text in enumerate(texts):
+        if index:
+            current = run(cont(service, user, current, f'nonadjacent-continue-{index}'))
+            saved_reads()
+        current = run(answer(service, user, current, text, f'nonadjacent-answer-{index}'))
+        assert current['body_state'] == 'REFINED', current
+        saved_reads()
+    body = current['current_observation']['text']
+    assert all(source in body for source in sources)
+    assert '嬉しくなかった' not in body and '寂しかった' not in body
+    assert '一つの流れ' not in body and 'その出発点' not in body
+    assert '頼まれた' in body
+    assert current['state'] == 'COMPLETED' and not current['can_continue']
+
+
+@pytest.mark.parametrize('neighbor', ['contrast', 'other_relation', 'other_field', 'about_only'])
+def test_bare_event_never_partially_joins_an_unsupported_neighbor(neighbor):
+    plan = actual(request=begin())[1]
+    groups = (('nucleus:s1:event', 'nucleus:s1:reaction'), ('nucleus:s2:event',),
+              ('nucleus:s3:event', 'nucleus:s3:reaction'))
+    nuclei = {n.nucleus_id: n for n in plan.nuclei}
+    relations = {r.relation_id: r for r in plan.relations if r.from_nucleus_id != 'nucleus:s2:event'}
+    right = next(r for r in relations.values() if r.from_nucleus_id == 'nucleus:s3:event')
+    if neighbor == 'other_relation':
+        relations['unsupported'] = replace(right, relation_id='unsupported', type='user_stated_cause')
+    elif neighbor in {'other_field', 'about_only'}:
+        nucleus = nuclei['nucleus:s3:reaction']
+        nuclei[nucleus.nucleus_id] = replace(nucleus, source_fields=('answer_text_private',))
+        if neighbor == 'about_only':
+            relations[right.relation_id] = replace(right, type='evaluation_about_event')
+    merged = surface._merge_parallel_contrast_groups(groups, tuple(relations), nuclei, relations,
+        bridge_detached_feelings=True)
+    if neighbor == 'contrast':
+        assert merged == (('nucleus:s1:event', 'nucleus:s1:reaction', 'nucleus:s2:event',
+                           'nucleus:s3:event', 'nucleus:s3:reaction'),)
+    else:
+        assert merged == groups

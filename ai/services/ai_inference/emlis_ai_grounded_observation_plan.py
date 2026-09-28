@@ -7829,9 +7829,12 @@ def _thread_retained_reaction_groups(nuclei, relations):
         and not (withdrawal or independent or actions or detached_answers))
     positive_revisions = tuple(n for n in independent_answers
         if _thread_revised_original_reaction(n, relations, polarity="positive"))
-    # A retained answer and an independent positive original correction each
-    # keep their own move; the remaining received pairs use the third move.
-    positive_revision = bool(len(positive) == len(answers) == 2
+    # A retained positive answer and an independent positive correction each
+    # keep their own move. One additional ABOUT-owned burden stays with the
+    # remaining received pairs in the existing third move.
+    positive_revision = bool(len(positive) == 2 and len(answers) in {2, 3}
+        and len(negative) == len(answers) - 2
+        and all(n in by_event.values() and not is_grounded_current_answer_uncertainty(n) for n in negative)
         and len(positive_revisions) == len(independent_answers) == 1
         and not (withdrawal or independent or actions or detached_answers))
     # Three accepted positive answers are not three unrelated families to

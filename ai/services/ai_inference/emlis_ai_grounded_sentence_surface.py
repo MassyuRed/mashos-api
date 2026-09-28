@@ -1597,7 +1597,11 @@ def _merge_parallel_contrast_groups(groups, relation_ids, nucleus_index, relatio
     def field(group):
         relations = [relation_index[r] for r in _internal_relation_ids(group, relation_ids, relation_index)]
         contrasts = [r for r in relations if relation_surface_role(r, nucleus_index) == "coexisting_contrast"]
-        if not contrasts or any(r not in contrasts and r.type != "evaluation_about_event" for r in relations):
+        if not contrasts:
+            if not bridge_detached_feelings or not evaluation_component(group):
+                return None
+            return frozenset(f for r in relations for f in nucleus_index[r.from_nucleus_id].source_fields)
+        if any(r not in contrasts and r.type != "evaluation_about_event" for r in relations):
             return None
         fields = {f for r in contrasts for n in (r.from_nucleus_id, r.to_nucleus_id)
                   for f in nucleus_index[n].source_fields}
@@ -1617,32 +1621,27 @@ def _merge_parallel_contrast_groups(groups, relation_ids, nucleus_index, relatio
     merged = []
     contrast_at = None
     for index, group in enumerate(groups):
-        if (bridge_detached_feelings and evaluation_component(group)
-            and merged and evaluation_component(merged[-1])):
-            # Once original reactions are corrected, their complete ABOUT
-            # components no longer contain a contrast. Compose adjacent
-            # evaluations together, retaining every event/answer endpoint;
-            # the existing renderer keeps each answer's own time scope.
-            merged[-1] = (*merged[-1], *group)
-            contrast_at = None
-        elif field(group) is not None:
+        # In a thread, an original correction can leave a complete ABOUT
+        # component beside a surviving contrast. Coordinate both before the
+        # line budget can join an unrelated bare event to a revision.
+        if field(group) is not None:
             if contrast_at is None:
                 contrast_at = len(merged)
                 merged.append(tuple(group))
             else:
                 merged[contrast_at] = (*merged[contrast_at], *group)
         elif (bridge_detached_feelings and contrast_at is not None
-              and (evaluation_component(group) or len(group) == 1
-                   and _independent_original_event(nucleus_index[group[0]], relation_index))
-              and index > 0 and field(groups[index - 1]) is not None
-              and index + 1 < len(groups) and field(groups[index + 1]) is not None):
-            # A correction can remove only the middle event's old contrast.
-            # Its complete ABOUT component still belongs between the surviving
-            # pairs, including a revision bound to the current question target.
-            # Independent replacement provenance is not required for that ABOUT;
-            # the existing source endpoints own it, without a new relation.
-            # After that answer is withdrawn, the original event still owns
-            # an independent fact sentence at the same source position.
+              and len(group) == 1
+              and _independent_original_event(nucleus_index[group[0]], relation_index)
+              and index > 0 and index + 1 < len(groups)
+              and all(field(neighbor) is not None
+                      and any(relation_surface_role(relation_index[r], nucleus_index) == "coexisting_contrast"
+                          for r in _internal_relation_ids(neighbor, relation_ids, relation_index))
+                      for neighbor in (groups[index - 1], groups[index + 1]))):
+            # After a middle answer is withdrawn, its original event still
+            # owns an independent fact sentence between two surviving contrasts.
+            # Both neighbors must remain supported; never absorb only the event
+            # when an unsupported right component cannot join the same line.
             merged[contrast_at] = (*merged[contrast_at], *group)
         else:
             merged.append(tuple(group))
@@ -3343,6 +3342,11 @@ def _render_relation(
     contrast_pairs = []
     evaluations = {}
     relation_ids = tuple(r for r in binding.relation_ids if r in relation_index)
+    ordered_thread_relations = (
+        getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+        and any(relation_index[r].type == "contrast" for r in relation_ids)
+        and any(relation_index[r].type == "evaluation_about_event" and r not in consumed for r in relation_ids)
+        and all(relation_index[r].type in {"contrast", "evaluation_about_event"} for r in relation_ids))
     contrast_order = [_nucleus_source_order(nucleus_index[relation_index[r].from_nucleus_id])
                       for r in relation_ids
                       if relation_surface_role(relation_index[r], nucleus_index) == "coexisting_contrast"]
@@ -3356,7 +3360,7 @@ def _render_relation(
     inline_events = sorted(_thread_intervening_event_ids(
         binding, nucleus_index, relation_index, resolver),
         key=lambda nid: _nucleus_source_order(nucleus_index[nid]))
-    if intervening_evaluations or inline_events:
+    if intervening_evaluations or inline_events or ordered_thread_relations:
         # The corrected event's surviving ABOUT stays at its source position
         # between the two intact contrasts, rather than moving to the tail.
         relation_ids = sorted(relation_ids, key=lambda r:
@@ -3446,7 +3450,7 @@ def _render_relation(
                 "捉え方や動きが移っています。"
             )
         elif role == "coexisting_contrast":
-            if groups or inline_events:
+            if groups or inline_events or ordered_thread_relations:
                 # Keep unanswered and answered events in the same original
                 # relation order across rounds, rather than moving them apart.
                 sentences.append(f"{left}と{right}が、異なる向きのまま同時にあります。")
@@ -3471,7 +3475,7 @@ def _render_relation(
             if when is None or target.source_fields != ("answer_text_private",):
                 raise GroundedSentenceSurfaceError("thread_answer_target_time_unbound")
             clause = f"{left}ことに対する{when}の受け止めとして、{right}"
-            if relation_id in intervening_evaluations:
+            if relation_id in intervening_evaluations or ordered_thread_relations:
                 sentences.append(clause + "が見えます。")
             else:
                 evaluations.setdefault(when, []).append(clause)
