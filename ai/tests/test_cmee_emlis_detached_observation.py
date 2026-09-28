@@ -2164,3 +2164,163 @@ def test_bare_event_never_partially_joins_an_unsupported_neighbor(neighbor):
                            'nucleus:s3:event', 'nucleus:s3:reaction'),)
     else:
         assert merged == groups
+
+
+INDEPENDENT_REVISION_FINITE = {
+    '少し私は苦しかったです': 'あなたは少し苦しかった',
+    '私は少し苦しかったです': 'あなたは少し苦しかった',
+    '少し私は不安でした': 'あなたは少し不安だった',
+    '私は少し不安でした': 'あなたは少し不安だった',
+    '私も少し怖くなかったです': 'あなたも少し怖くなかった',
+    '少し私には苦しかったです': 'あなたには少し苦しかった',
+    '楽しかった': '楽しかった',
+    '私は不安でした': 'あなたは不安だった',
+}
+
+
+def two_independent_revision_answers(sources):
+    return ('今は嬉しい。', f'「嬉しくなかった」ではなく「{sources[0]}」です。',
+            f'「悲しかった」ではなく「{sources[1]}」です。')
+
+
+@pytest.fixture(scope='module', params=NONADJACENT_CORRECTION_SOURCES)
+def two_independent_revisions_context(request):
+    req = begin()
+    for text in two_independent_revision_answers(request.param):
+        req = advance(req, text)
+    return request.param, actual(request=req)
+
+
+def test_two_independent_revisions_keep_every_duty_and_fact(two_independent_revisions_context):
+    from collections import Counter
+    sources, context = two_independent_revisions_context
+    result, plan, _, _, _ = context
+    observation, follow = result.artifact.observation, result.artifact.reception
+    assert observation.index('「褒められた」') < observation.index('「誘われた」') < observation.index('「頼まれた」')
+    assert '「誘われた」という出来事がありました。' in observation
+    assert 'その出発点' not in observation and '一つの流れ' not in observation
+    assert '嬉しくなかった' not in result.artifact.text and '悲しかった' not in result.artifact.text
+    assert '褒められたことについて、回答した時点では嬉しいのですね。' in follow
+    assert '「頼まれた」と「寂しかった」' in observation and '頼まれたのに、寂しさを感じた' in follow
+    assert observation.count('当時の気持ちを言い直') == 2
+    assert follow.count(REVISION_INTRO) == 2
+    for source, count in Counter(sources).items():
+        assert observation.count(f'「{source}」') == count
+    for finite, count in Counter(INDEPENDENT_REVISION_FINITE[s] for s in sources).items():
+        assert follow.count(finite) == count
+    assert 'でしたの' not in follow and 'でしたこと' not in follow
+    assert '私' not in follow and '誘われた' not in follow
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == 3
+    owned = {nid for move in moves for nid in (*move.target_nucleus_ids, *move.support_nucleus_ids)}
+    assert {n.nucleus_id for n in plan.nuclei if n.kind == 'reaction' and n.retention == 'required'} <= owned
+    revisions = [n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes]
+    assert len(revisions) == 2
+    assert not any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for n in revisions for r in plan.relations)
+    assert all(any(move.reception_act == ('recognize_lived_change' if n.semantic_frame.polarity == 'positive'
+        else 'stay_with_current_burden') and n.nucleus_id in move.target_nucleus_ids for move in moves) for n in revisions)
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.mark.parametrize('permutation', ['reverse', 'rotate'])
+def test_two_independent_revisions_keep_source_order_across_plan_passes(two_independent_revisions_context, permutation):
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+    _, context = two_independent_revisions_context
+    plan = context[1]
+    nuclei = tuple(reversed(plan.nuclei)) if permutation == 'reverse' else (*plan.nuclei[2:], *plan.nuclei[:2])
+    assert _thread_retained_reaction_groups(nuclei, plan.relations) == _thread_retained_reaction_groups(plan.nuclei, plan.relations)
+
+
+@pytest.mark.parametrize('mutation', ['delete', 'duplicate', 'before_answer', 'cause', 'present', 'wrong_event'])
+def test_two_independent_revisions_reject_changed_compressed_fact(two_independent_revisions_context, mutation):
+    _, context = two_independent_revisions_context
+    original = context[0].artifact.observation
+    fact = '「誘われた」という出来事がありました。'
+    assert original.count(fact) == 1
+    if mutation == 'before_answer':
+        changed = fact + ' ' + original.replace(fact, '', 1)
+    else:
+        replacement = {'delete': '', 'duplicate': fact + ' ' + fact,
+            'cause': 'そのため、' + fact, 'present': fact.replace('ありました', 'あります'),
+            'wrong_event': fact.replace('誘われた', '褒められた')}[mutation]
+        changed = original.replace(fact, replacement, 1)
+    assert not read_body(context, context[0].artifact.text.replace(original, changed, 1)).passed
+
+
+@pytest.mark.parametrize('mutation', ['current_missing', 'current_time', 'pair_missing', 'pair_target',
+    'first_revision_time', 'second_revision_time', 'second_revision_missing', 'revision_cause'])
+def test_two_independent_revisions_reject_lost_or_reassigned_duties(two_independent_revisions_context, mutation):
+    _, context = two_independent_revisions_context
+    body = context[0].artifact.text
+    if mutation in {'first_revision_time', 'second_revision_time', 'second_revision_missing'}:
+        original = context[0].artifact.observation
+        before, second = original.split('それとは別に', 1)
+        if mutation == 'first_revision_time': before = before.replace('当時', '回答した時点', 1)
+        elif mutation == 'second_revision_time': second = second.replace('当時', '回答した時点', 1)
+        else: second = ''
+        changed = before + ('それとは別に' + second if second else '')
+    else:
+        original = context[0].artifact.reception
+        old, new = {
+            'current_missing': ('褒められたことについて、回答した時点では嬉しいのですね。', ''),
+            'current_time': ('回答した時点では嬉しい', 'その時は嬉しい'),
+            'pair_missing': ('頼まれたのに、寂しさを感じたのですね', ''),
+            'pair_target': ('頼まれたのに、寂しさ', '誘われたのに、寂しさ'),
+            'revision_cause': (REVISION_INTRO, '誘われたことが原因で、'),
+        }[mutation]
+        changed = original.replace(old, new, 1)
+    assert changed != original
+    assert not read_body(context, body.replace(original, changed, 1)).passed
+
+
+@pytest.mark.parametrize('slot', [0, 1])
+@pytest.mark.parametrize('mutation', ['person', 'degree', 'polarity', 'tense'])
+def test_two_independent_revisions_reject_each_feeling_change(two_independent_revisions_context, slot, mutation):
+    sources, context = two_independent_revisions_context
+    original = context[0].artifact.reception
+    finite = INDEPENDENT_REVISION_FINITE[sources[slot]]
+    offset = original.find(finite)
+    if slot and INDEPENDENT_REVISION_FINITE[sources[0]] == finite:
+        offset = original.find(finite, offset + len(finite))
+    assert offset >= 0
+    if mutation == 'person': changed_finite = finite.replace('あなた', '友人', 1) if 'あなた' in finite else '友人は' + finite
+    elif mutation == 'degree': changed_finite = finite.replace('少し', '', 1) if '少し' in finite else '少し' + finite
+    elif mutation == 'polarity':
+        changed_finite = (finite.replace('くなかった', 'かった') if 'くなかった' in finite else
+            finite[:-3] + 'ではなかった' if finite.endswith('だった') else finite[:-3] + 'くなかった')
+    else:
+        changed_finite = (finite[:-3] + 'だ' if finite.endswith('だった') else
+            finite[:-5] + 'くない' if finite.endswith('くなかった') else finite[:-3] + 'い')
+    changed = original[:offset] + changed_finite + original[offset + len(finite):]
+    assert changed != original
+    assert not read_body(context, context[0].artifact.text.replace(original, changed, 1)).passed
+
+
+@pytest.mark.parametrize('sources', NONADJACENT_CORRECTION_SOURCES)
+def test_two_independent_revisions_saved_rounds_reuse_every_source(qcase, qdb, monkeypatch, sources):
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    first = current = run(service.start(user, parent))
+
+    def saved_reads():
+        assert current['original'] == first['original']
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not regenerate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+
+    saved_reads()
+    for index, text in enumerate(two_independent_revision_answers(sources)):
+        if index:
+            current = run(cont(service, user, current, f'independent-revisions-continue-{index}'))
+            saved_reads()
+        current = run(answer(service, user, current, text, f'independent-revisions-answer-{index}'))
+        assert current['body_state'] == 'REFINED', current
+        saved_reads()
+    body = current['current_observation']['text']
+    assert all(source in body for source in sources)
+    assert '嬉しくなかった' not in body and '悲しかった' not in body
+    assert '「誘われた」という出来事がありました。' in body
+    assert '頼まれたのに、寂しさを感じた' in body
+    assert '回答した時点では嬉しいのですね。' in body
+    assert current['state'] == 'COMPLETED' and not current['can_continue']

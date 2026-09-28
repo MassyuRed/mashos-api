@@ -2294,16 +2294,23 @@ def _body_inverse_intervening_events(body, witness, line, planned_line, plan, re
                 and len(nucleus.source_span_ids) == 1 and len(sources) == 1
                 and parsed and _body_inverse_normalized_anchor(parsed.group(1)) == sources[0])
     contrasts = tuple(r for r in relations if r.type == "contrast")
-    if len(contrasts) < 2:
-        return True
     span_order = {sid: i for i, sid in enumerate(resolver.span_ids)}
     def position(n):
         return min((span_order[sid] for sid in n.source_span_ids), default=-1)
+    event_ids = {r.from_nucleus_id for r in relations}
+    extra_ids = set(planned_line.binding.nucleus_ids) - {
+        nid for r in relations for nid in (r.from_nucleus_id, r.to_nucleus_id)}
+    trailing = bool(extra_ids and len(event_ids) == 1
+        and all(r.type in {"contrast", "evaluation_about_event"} for r in relations)
+        and all(nid not in linked and index[nid].kind == "event"
+                and position(index[nid]) > position(index[next(iter(event_ids))]) for nid in extra_ids))
+    if len(contrasts) < 2 and not trailing:
+        return True
     contrast_positions = tuple(position(index[r.from_nucleus_id]) for r in contrasts)
     independent = tuple(index[nid] for nid in planned_line.binding.nucleus_ids
         if nid not in linked and index[nid].kind == "event"
         and nid in plan.coverage_requirements.required_nucleus_ids
-        and min(contrast_positions) < position(index[nid]) < max(contrast_positions))
+        and (trailing or min(contrast_positions) < position(index[nid]) < max(contrast_positions)))
     if not independent:
         return True
     rows = tuple(row for row in witness.sentences if row.section == "observation"
@@ -2311,6 +2318,7 @@ def _body_inverse_intervening_events(body, witness, line, planned_line, plan, re
     shared_answers, shared_failures = _body_inverse_thread_contrast_answers(body, witness, line, plan, resolver)
     if shared_failures:
         return False
+    fact_rows = []
     for nucleus in independent:
         frame = nucleus.semantic_frame
         sources = _body_inverse_nucleus_source_values(nucleus.nucleus_id, plan, resolver)
@@ -2328,9 +2336,10 @@ def _body_inverse_intervening_events(body, witness, line, planned_line, plan, re
                 matches.append(i)
         if len(matches) != 1:
             return False
+        fact_rows.append((position(nucleus), matches[0]))
         # A matching quote elsewhere cannot move this fact behind another
         # event or make it that event's cause, background or reaction.
-        for relation in contrasts:
+        for relation in (relations if trailing else contrasts):
             event = index[relation.from_nucleus_id]
             event_sources = _body_inverse_nucleus_source_values(event.nucleus_id, plan, resolver)
             event_rows = [i for i, row in enumerate(rows) if any(
@@ -2340,7 +2349,24 @@ def _body_inverse_intervening_events(body, witness, line, planned_line, plan, re
                 return False
             shared = any(r.relation_id in shared_answers and r.from_nucleus_id == event.nucleus_id
                          for r in relations)
-            if not shared:
+            if not shared and relation.type == "evaluation_about_event":
+                parsed = re.fullmatch(r"「([^「」『』\n]+)」ことに対する"
+                    r"(その時|回答した時点|先の回答時点)の受け止めとして、"
+                    r"「([^「」『』\n]+)」が(?:見えます|示されています)。",
+                    _body_inverse_visible_text(body, rows[event_rows[0]]))
+                answer = index[relation.to_nucleus_id]
+                answer_sources = _body_inverse_nucleus_source_values(answer.nucleus_id, plan, resolver)
+                times = {c.split(":", 1)[1] for c in answer.semantic_frame.attribute_codes
+                         if c.startswith("thread_time:")}
+                expected_time = {"original_occasion": "その時", "answer_time": "回答した時点",
+                                 "prior_answer_time": "先の回答時点"}
+                if (parsed is None or len(event_sources) != 1 or len(answer_sources) != 1
+                    or len(times) != 1 or not times <= expected_time.keys()
+                    or _body_inverse_normalized_anchor(parsed[1]) != event_sources[0]
+                    or parsed[2] != expected_time[next(iter(times))]
+                    or _body_inverse_normalized_anchor(parsed[3]) != answer_sources[0]):
+                    return False
+            elif not shared:
                 # Consume the whole neighboring contrast too: an added cause
                 # before its full stop must not hide inside the same sentence.
                 contrast = re.fullmatch(r"「([^「」『』\n]+)」と「([^「」『』\n]+)」が、"
@@ -2350,6 +2376,9 @@ def _body_inverse_intervening_events(body, witness, line, planned_line, plan, re
                     or tuple(map(_body_inverse_normalized_anchor, contrast.groups()))
                        != (event_sources[0], reaction_sources[0])):
                     return False
+    if trailing and (len(rows) != 1 + len(independent)
+        or [row for _, row in sorted(fact_rows)] != list(range(1, len(rows)))):
+        return False
     endpoints = {nid for r in relations for nid in (r.from_nucleus_id, r.to_nucleus_id)}
     if (relations and {r.type for r in relations} <= {"contrast", "evaluation_about_event"}
         and set(planned_line.binding.nucleus_ids) - endpoints == {n.nucleus_id for n in independent}
@@ -3362,7 +3391,8 @@ def _read_detached_burden_discourse(raw, move, plan, resolver, selected_subjecti
         if not clause.startswith(expected_time):
             return None
         finite = clause[len(expected_time):]
-        if _restore_thread_finite_answer(finite, source) != source:
+        if _restore_thread_finite_answer(finite, source,
+                copular_clause=source.endswith(("でした", "だった"))) != source:
             return None
         start = len(raw[:offset + len(expected_time)].encode())
         end = len(raw[:offset + len(clause)].encode())
@@ -3536,7 +3566,8 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                 "当時、" if source and _thread_feeling_owner(source) else "当時は")
             if (not thread_group or resolver.source_fields_for(event.source_span_ids) != event.source_fields
                 or not source or ending is None or not part.startswith(prefix)
-                or _restore_thread_finite_answer(part[len(prefix):ending.start()], source) != source):
+                or _restore_thread_finite_answer(part[len(prefix):ending.start()], source,
+                    copular_clause=source.endswith(("でした", "だった"))) != source):
                 return None
             start = len((raw[:offset] + prefix).encode())
             end = len((raw[:offset] + part[:ending.start()]).encode())

@@ -3199,6 +3199,23 @@ def _render_observation_with_relations(
     inline_events = _thread_intervening_event_ids(binding, nucleus_index, relation_index, resolver)
     extra_ids = tuple(item for item in binding.nucleus_ids
                       if item not in endpoint_ids and item not in inline_events)
+    relations = tuple(relation_index[rid] for rid in binding.relation_ids)
+    event_ids = {r.from_nucleus_id for r in relations}
+    if (extra_ids and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+        and len(event_ids) == 1
+        and all(r.type in {"contrast", "evaluation_about_event"} for r in relations)
+        and all(_independent_original_event(nucleus_index[nid], relation_index)
+                and _nucleus_source_order(nucleus_index[nid]) >
+                    _nucleus_source_order(nucleus_index[next(iter(event_ids))]) for nid in extra_ids)):
+        # Budget compression does not make a later independent fact the
+        # starting point, cause or target of this component's answer.
+        facts = []
+        for nid in sorted(extra_ids, key=lambda item: _nucleus_source_order(nucleus_index[item])):
+            anchors = _quotes_for_nuclei((nid,), nucleus_index, resolver)
+            if len(anchors) != 1:
+                raise GroundedSentenceSurfaceError("independent_event_source_ambiguous")
+            facts.append(f"{anchors[0]}という出来事がありました。")
+        return " ".join((relation_text, *facts))
     extra_context = _render_extra_context(extra_ids, nucleus_index, resolver)
     if extra_context:
         return f"{relation_text}{extra_context}"

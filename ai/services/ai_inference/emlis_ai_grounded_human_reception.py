@@ -9889,7 +9889,10 @@ def _source_grounded_received_discourse(realization) -> str | None:
         event = fragments[int(slot_text)]
         if link in {"detached", "replacement"}:
             prefix = _revised_feeling_discourse_prefix(event) if link == "replacement" else "その時は"
-            parts.append(prefix + _detached_feeling_finite_surface(event, allow_medial=True))
+            copula = _detached_feeling_copula_parts(event)
+            parts.append(prefix + _detached_feeling_finite_surface(event, allow_medial=True,
+                allow_copular=bool(link == "replacement" and copula
+                    and copula[1] in {"でした", "だった"})))
             continue
         feeling = fragments[int(feeling_text)] if feeling_text != "none" else None
         negative = _received_discourse_negative_feeling(feeling) if feeling else None
@@ -10373,7 +10376,9 @@ def _source_owned_detached_burden_sentence(move, realization, plan, resolver,
                       "先の回答時点では": "先の回答時点で、"}[prefix]
         if _thread_revised_original_reaction(index[nid], plan.relations):
             prefix = ("それとは別に" if parts else "") + _revised_feeling_discourse_prefix(source)
-        parts.append(prefix + _detached_feeling_finite_surface(source, allow_medial=True))
+        copula = _detached_feeling_copula_parts(source)
+        parts.append(prefix + _detached_feeling_finite_surface(source, allow_medial=True,
+            allow_copular=bool(copula and copula[1] in {"でした", "だった"})))
     return "し、".join(parts[:-1]) + "し、" + _feeling_acknowledgement(parts[-1])
 
 

@@ -7823,12 +7823,18 @@ def _thread_retained_reaction_groups(nuclei, relations):
     # An ADD does not supersede the original reaction, regardless of the
     # answer's polarity or whether the input contains one received event.
     # Single-event grouping still requires exactly one source-proven answer.
-    revised_originals = tuple(n for n in independent_answers if _thread_revised_original_reaction(n, relations))
-    mixed_revision = bool(len(positive) == 2 and len(answers) == 3
-        and len(revised_originals) == len(independent_answers) == 1
-        and not (withdrawal or independent or actions or detached_answers))
+    # Opportunity construction and selection may enumerate nuclei differently;
+    # independent revisions retain the same source order in both passes.
+    revised_originals = tuple(sorted((n for n in independent_answers
+        if _thread_revised_original_reaction(n, relations)),
+        key=lambda n: _span_number(n.source_span_ids[0])))
     positive_revisions = tuple(n for n in independent_answers
         if _thread_revised_original_reaction(n, relations, polarity="positive"))
+    mixed_revision = bool(len(positive) == 2 and len(answers) == 3
+        and len(revised_originals) == 1
+        and len(independent_answers) == 1 + len(positive_revisions)
+        and len(positive_revisions) <= 1
+        and not (withdrawal or independent or actions or detached_answers))
     # A retained positive answer and an independent positive correction each
     # keep their own move. One additional ABOUT-owned burden stays with the
     # remaining received pairs in the existing third move.
@@ -7882,7 +7888,8 @@ def _thread_retained_reaction_groups(nuclei, relations):
     if mixed_revision and targets and len(groups) == 4:
         groups = [row for row in groups if row[0] != "current_burden"]
         groups.append(("current_burden", (*targets, revised_originals[0].nucleus_id), tuple(supports)))
-    if (withdrawal and len(groups) > 3 and not (independent or actions)
+    if ((withdrawal or len(revised_originals) == len(independent_answers) == 2)
+        and len(groups) > 3 and not (independent or actions)
         and len(revised_originals) == len(independent_answers)):
         # A withdrawn event does not retract its independently stated
         # reaction or answer. Coordinate those detached burdens and admitted

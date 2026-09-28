@@ -10322,3 +10322,54 @@ Emlisから：
 **残件。** 先行現在回答後に[0,1]を訂正する4形の `human_reception_opportunity_missing` は前後同じ。さらに同位置のpositive訂正「楽しかった」＋negative訂正「私は不安でした」はpublic提供されるが、Receptionに「楽しかった」と存続する「頼まれたのに寂しかった」がない。本文全体は開始版と同じで、今回の改善へ含めない。この無例外欠落1形と計画例外4形は、ABOUT付きnegativeとは異なる独立negativeの義務構成として次単位で扱う。対照例に残る「その出発点には、誘われた」という無根拠な流れも未解決。横断の既知失敗や反復/定型句の硬さを継続対象とし、weeklyの9/30確認・10/3限定family整理・10/10Emlis判定へつなぐ。
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** Ready/merge/deploy/enable、実DB/実機/実課金、外部生成AIは未実施。反映commit・変更path・remote全文一致・最終headは両Draft PR本文へ記録する。
+
+
+## 2026-09-28 追加継続 — 二つの独立訂正と現在の受け止めを欠かさず本文へ残す
+
+**開始点と委任範囲。** MashのEmlisAI残件継続指示により、API `7c9b9698277d7650989b3c37e8de633940ab9059`、Cocolon `0383ee71092413f39158f22ee92be66d1ff417d7`、既存Draft #3/#30・open/unmergedから開始。同一会話で全文確認済みの前回txt・01全体設計・02全file地図を引き継ぎ、current_structure、rule入口/CURRENT_RULES/Rule18、恒久incident全文、最新weekly `Cocolon_Weekly_Review_20260926.md` §5.2/5.3と直前handoffを再確認した。System Context prepareはCocolonで実行し、shallow checkoutのmaterial commit祖先照合でexit2。原典を直接確認し、Context freshness成功とは呼ばない。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / LEVEL_2 standing delegation。first effect前に既存8pathを固定した。APIの既存Observation Plan・Human Reception・Sentence Surface・Observation Gate、detached observation test、current派生identity fixture、既存handoffとCocolon06である。root華恋だけが編集・検査実行・GitHub書込み、技術/商品担当はread-only。今回の対象は、先行現在回答の後に原反応[0,1]を独立訂正する残件5系列（計画例外4、部分本文1）。新owner/engine/route、語彙認定、意味選択、Move/IR上限、品質閾値、schema/API/DB/RN、dependency manifestは変更しない。
+
+**原因と修正。** 元の出来事に属する現在positive、独立した当時訂正2件、残る原contrastを受け取ると、既存Planは4 Movesを要求して例外になった。positive訂正を含む1形ではその組合せが既存mixed groupの対象外となり、例外は出ずに楽しさと存続する寂しさがReceptionから落ちていた。独立negative2件を既存detached burden groupへ収め、positive訂正は既存lived changeに残し、negative訂正と存続contrastは既存mixed burdenへ収める。3 Movesを維持し、原文が同じ二訂正も異なるsource義務として保持する。
+
+最初の組合せ修正後も4例外が残ったため、opportunity構築とselectionの核列挙順の相違を追跡した。独立negative訂正のsource span数値順を既存group構成内で統一し、両passのgroup tupleを一致させた。核・source・checkpoint・関係を並べ替えて意味を変える処理ではない。過去名詞述語「私は不安でした」は、既存finite作者と独立readerの双方でsourceが証明する過去形として「あなたは不安だった」へ戻す。現在形・説明形や別人への拡張はしない。
+
+同じ行へ圧縮された独立event「誘われた」が、現在の嬉しさの「出発点」と表示されていた点も直した。threadの既存Surfaceで、全plan関係から独立し、元のeventより後にある原eventだけを完全な事実文 `「誘われた」という出来事がありました。` として元順に置く。Gateは独立source/frame、元順、一意性、隣接するABOUTの内容と時点またはcontrastを本文から再読する。削除・重複・因果付加・現在形化・event差替えを拒否する。従来のcontrast間橋渡し条件、作者を使わない逆読解、品質閾値は保持する。
+
+**合成実本文。** 原入力は「褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。」。先行回答「今は嬉しい。」の後、最初と二番目の反応を「少し私は不安でした」「私は少し不安でした」へ訂正した最終本文。
+
+```text
+見えたこと：
+「褒められた」ことに対する回答した時点の受け止めとして、「嬉しい」が見えます。 「誘われた」という出来事がありました。
+「頼まれた」と「寂しかった」が、異なる向きのまま同時にあります。
+「少し私は不安でした」と、当時の気持ちを言い直されており、それとは別に「私は少し不安でした」と、当時の気持ちを言い直されています。
+
+Emlisから：
+言い直してくださった気持ちについては、当時、あなたは少し不安だったし、それとは別に言い直してくださった気持ちについては、当時、あなたは少し不安だったのですね。褒められたことについて、回答した時点では嬉しいのですね。頼まれたのに、寂しさを感じたのですね。
+```
+
+同じ二反応を「楽しかった」「私は不安でした」へ訂正した最終本文。
+
+```text
+見えたこと：
+「褒められた」ことに対する回答した時点の受け止めとして、「嬉しい」が見えます。 「誘われた」という出来事がありました。
+「頼まれた」と「寂しかった」が、異なる向きのまま同時にあります。
+「楽しかった」と、当時の気持ちを言い直されており、それとは別に「私は不安でした」と、当時の気持ちを言い直されています。
+
+Emlisから：
+褒められたことについて、回答した時点では嬉しいのですね。頼まれたのに、寂しさを感じたのですね、また、言い直してくださった気持ちについては、当時、あなたは不安だったのですね。言い直してくださった気持ちについては、当時は楽しかったのですね。
+```
+
+**前後比較と商品判断。** 開始版・最終版の同runtime30系列比較でcheckpointは全30一致。Plan変更は対象5系列だけ。提供26→30、計画例外4→0であり、従来providedだった部分本文1件にも二つの欠落が戻った。本文変更は対象5と、同じ無根拠な出発点接続を含んでいた先行回答なし[1,2]訂正5の計10件。残る20本文は一致する。最終production修正後の再probeもreview版の全JSONと30/30一致した。rootと独立商品担当が変更10本文のObservation/Receptionを全文比較し、新たな欠落・誤帰属は認めなかった。本人・助詞・程度・否定・時点を保持し、敬体も維持する。提供数を商品合格数へ読み替えない。
+
+**検証結果。** 最終production・fixture後の6target横断は **1554件＝1534 PASS/既知20 FAIL、ERROR/SKIP0、534.68秒**。detached observation / received discourse / answer attributive / initial received discourse / Q1 thread と、contractsのactive final owner zero legacy compose検査を実行した。前回横断1420件へ前回最終119件を上書きした1424件のbaselineを再利用し、全既存test identity/statusが一致、新規130件は全PASS。既知20件のmessage/tracebackもworkspace prefix・memory address・fixture UUIDだけの正規化後に全一致した。既存testの削除・期待値変更・失敗除外はない。本unitの既存test部分はbytes不変で、130件を末尾へ追加した。
+
+追加130件は対象本文5、核順の反転/回転10、圧縮fact改変30、義務欠落/帰属/時点改変40、二つの訂正それぞれの本人/程度/極性/時制改変40、保存5系列である。focusedは130 PASS、856 deselected、28.18秒。既存PGlite SQL/RPC/serviceで保存5系列・30状態（初期5＋回答後15＋continue後10）を確認した。original DTO不変、各回答後REFINED、最終COMPLETED/can_continue=false。各状態でgenerateを禁止したGET/service.startが保存DTOと完全一致する。process再起動・実DB・実機の検証ではない。
+
+独立技術担当の静的レビューで修正必須の問題はなかった。shared contrast＋ABOUT＋末尾factの組合せは既存shared全文readerで検証されることを静的に確認したが、追加130件の直接対象ではなく、通常の三回答系列でその形へ到達する検証を実行したとは呼ばない。広域検査を追加する具体的な新規不具合は見つかっていない。
+
+最終identityはlanguage=`b87ce318036e9b851e27c44d39c29584047f92eb226ce092ea88179c54a3ec59`、runtime=`aa7b0eca695b1ad4f6cfe23fef653f7632b4a75891407bdb1f2f438793d45427`。既存導出でcurrent fixtureだけ更新し、各18payload/source owner9と歴史的凍結証跡を保持した。同一会話の検査runtimeを再利用（Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1/python-dotenv1.2.3、Node24.19.0/PGlite0.5.8）、本unitのinstallなし。旧13target全量・59file・Q3全量・全保存履歴の再実行とは呼ばない。
+
+**残件と次の判断。** このunitの計画例外4＋部分本文1と、同一原因の無根拠な出発点接続は上記の範囲で閉じる。長い訂正導入句の反復、同文の気持ちが重複して見えること、「のですね、また、」の硬い接続、原文再掲の多さが残る。横断の既知20失敗は未解決で、従来13target全体の34失敗を今回20まで減らしたとは呼ばない。 次単位は既存残件の実本文を読み、意味保持と自然な受け取り方を両立できる限定familyを定める。weeklyの9/30確認・10/3限定family整理・10/10Emlis判定へつなぐ。
+
+**TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** Ready/merge/deploy/enable、実DB/実機/実課金、外部生成AIは未実施。反映commit・変更path・remote全文一致・最終headは両Draft PR本文へ記録する。
