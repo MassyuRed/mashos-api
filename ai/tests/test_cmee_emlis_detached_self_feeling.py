@@ -10,6 +10,147 @@ from test_emlis_q3_application import qdb, qcase, cont
 from test_emlis_q2_application import run, answer
 
 
+@pytest.mark.parametrize('occasion', ['今は', 'その時は'])
+@pytest.mark.parametrize('detached', [False, True])
+@pytest.mark.parametrize('source,visible', [
+    ('少し私は不安だったのだった', 'あなたは少し不安だった'),
+    ('少し私は嬉しかったのだった', 'あなたは少し嬉しかった'),
+    ('少し私は不安ではなかったのだ', 'あなたは少し不安ではなかった'),
+])
+def test_single_degree_keeps_explanation_negation_and_source_without_author(
+        occasion, detached, source, visible, monkeypatch):
+    request = advance(begin(), occasion + source + '。')
+    context = actual(request=advance(request, WITHDRAW) if detached else request)
+    follow = context[0].artifact.reception
+    assert visible in follow and '少しあなた' not in follow
+    assert source in context[0].artifact.observation
+    # Detached proof also works without the finite author or its owner proof.
+    # Live group referent construction still uses the existing nominal helper.
+    if detached:
+        monkeypatch.setattr(reception, '_detached_feeling_finite_surface',
+                            lambda *_a, **_k: pytest.fail('finite author is not an inverse oracle'))
+        monkeypatch.setattr(reception, '_medial_feeling_owner',
+                            lambda *_: pytest.fail('author owner proof is not an inverse oracle'))
+    assert inverse(context, follow, without_author=True).passed
+    changes = [('少し', ''), ('少し', '少し少し'), ('少し', 'とても'),
+               ('あなたは', 'あなたも'), ('あなたは', '友人は')]
+    if 'ではなかった' in visible:
+        changes.append(('ではなかった', 'だった'))
+    if source.endswith('のだった'):
+        changes.extend([('のでしたね', 'のですね'), ('のだったし', 'のだし')])
+    for old, new in changes:
+        if old not in follow:
+            continue  # The past explanation has one real clause position.
+        changed = follow.replace(old, new, 1)
+        assert changed != follow
+        assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('source,visible', [
+    ('少し私は苦しかったです', 'あなたは少し苦しかった'),
+    ('少し私は嬉しかったです', 'あなたは少し嬉しかった'),
+])
+@pytest.mark.parametrize('answer_count', [0, 1, 2])
+def test_single_degree_original_revision_keeps_about_and_independent_sources(
+        source, visible, answer_count):
+    from test_cmee_emlis_detached_observation import revised_original_request, TWO_POSITIVE_PAIRS
+    context = actual(request=revised_original_request(source, TWO_POSITIVE_PAIRS[0][:answer_count]))
+    follow = context[0].artifact.reception
+    assert ('あなたは少し苦しく' if answer_count == 0 and '苦し' in source else visible) in follow
+    assert '少しあなた' not in follow and source in context[0].artifact.observation
+    if answer_count:
+        assert '言い直してくださった気持ちについては、当時、' + visible in follow
+        assert '褒められたことについて、回答した時点では嬉しい' in follow
+    assert inverse(context, follow, without_author=True).passed
+    for old, new in [('少し', ''), ('少し', '少し少し'), ('少し', 'とても'),
+                     ('あなたは', 'あなたも'), ('あなたは', '友人は')]:
+        changed = follow.replace(old, new, 1)
+        assert changed != follow
+        assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('occasion', ['今は', 'その時は'])
+@pytest.mark.parametrize('sources', [
+    ('少し私は不安でした', '私は少し不安でした'),
+    ('私は少し不安でした', '少し私は不安でした'),
+])
+def test_single_degree_equal_surface_keeps_both_sources_and_separate_times(
+        occasion, sources, monkeypatch):
+    request = advance(advance(begin(), occasion + sources[0] + '。'), WITHDRAW)
+    context = actual(request=advance(request, '「嬉しくなかった」ではなく「' + sources[1] + '」です。'))
+    result, plan, _, resolver, selected = context
+    follow = result.artifact.reception
+    assert all(source in result.artifact.observation for source in sources)
+    moves = reception.reception_active_moves(plan.response_plan.human_reception_plan, 'full')
+    pair = moves[:2]
+    assert len(moves) == 3 and pair[0].target_nucleus_ids != pair[1].target_nucleus_ids
+    assert not set(pair[0].source_evidence_span_ids) & set(pair[1].source_evidence_span_ids)
+    refs = [set(d.selected_contribution_refs) for d in selected.decisions]
+    assert all(refs) and sum(map(len, refs)) == len(set().union(*refs))
+    assert set().union(*refs) == set(selected.decisions[0].subjective_proposition.target_contribution_refs)
+    monkeypatch.setattr(reception, '_detached_feeling_finite_surface',
+                        lambda *_a, **_k: pytest.fail('finite author is not an inverse oracle'))
+    monkeypatch.setattr(reception, '_medial_feeling_owner',
+                        lambda *_: pytest.fail('author owner proof is not an inverse oracle'))
+    shared = 'その時、あなたは少し不安だったという気持ちを、どちらの言葉からも受け取りました。'
+    if occasion == 'その時は':
+        assert follow.startswith(shared)
+        proof = gate.read_detached_feeling_pair(shared, pair, plan, resolver, selected)
+        assert proof is not None and len(proof) == 2
+        assert {part[0][2].decode() for part in proof} == set(sources)
+        for part in proof:
+            start, end, _ = part[0]
+            assert shared.encode()[start:end].decode() == 'あなたは少し不安だった'
+    else:
+        assert 'どちらの言葉' not in follow
+        assert '回答した時点で、あなたは少し不安だったのですね。' in follow
+        assert 'その時、あなたは少し不安だったのですね。' in follow
+        assert gate.read_detached_feeling_pair(shared, pair, plan, resolver, selected) is None
+    assert inverse(context, follow, without_author=True).passed
+    changes = [('少し', ''), ('少し', '少し少し'), ('少し', 'とても'),
+               ('あなたは', 'あなたも'), ('不安だった', '不安な')]
+    changes += ([('どちらの言葉からも', '一方の言葉から'), ('その時、', '回答した時点で、')]
+                if occasion == 'その時は' else [('回答した時点で、', 'その時、')])
+    for old, new in changes:
+        changed = follow.replace(old, new, 1)
+        assert changed != follow
+        assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('occasion', ['今は', 'その時は'])
+@pytest.mark.parametrize('sources', [
+    ('少し私は不安でした', '私は少し不安でした'),
+    ('私は少し不安でした', '少し私は不安でした'),
+])
+def test_single_degree_saved_shared_or_separate_times_reopen_without_generation(
+        qcase, qdb, monkeypatch, occasion, sources):
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    with monkeypatch.context() as m:
+        m.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved initial read must not generate'))
+        assert run(service.get(user, parent)) == first
+        assert run(service.start(user, parent)) == first
+    steps = (occasion + sources[0] + '。', WITHDRAW,
+             '「嬉しくなかった」ではなく「' + sources[1] + '」です。')
+    for index, text in enumerate(steps):
+        if index:
+            current = run(cont(service, user, current, 'continue-degree-' + str(index)))
+        current = run(answer(service, user, current, text, 'answer-degree-' + str(index)))
+        assert current['original'] == first['original']
+        body = current['current_observation']['text']
+        follow = body.split('Emlisから：', 1)[1]
+        assert 'あなたは少し不安だった' in follow and '少しあなた' not in follow
+        if index:
+            assert '褒められた' not in body
+        if index == 2:
+            assert all(source in body for source in sources)
+            assert ('どちらの言葉からも' in follow) == (occasion == 'その時は')
+        with monkeypatch.context() as m:
+            m.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read must not generate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+
+
 @pytest.mark.parametrize('text,finite', [
     ('その時は私は重かった。', 'その時、あなたは重かった'),
     ('その時は私は怖くなかったです。', 'その時、あなたは怖くなかった'),
@@ -183,7 +324,7 @@ def test_detached_explanation_intermediate_clause_retains_its_own_no():
 
 @pytest.mark.parametrize('source,invalid', [
     ('私は私には嬉しいのです', 'あなたは嬉しい'),
-    ('少し私は嬉しいのです', 'あなたは少し嬉しい'),
+    ('少し私は嬉しいのです', 'あなたは嬉しい'),
     ('私は嬉しいのだった', 'あなたは嬉しかった'),
     ('私は不安なのです', 'あなたは不安'),
 ])
@@ -318,7 +459,7 @@ def test_detached_nominal_explanation_intermediate_source_proof(source, visible,
 
 @pytest.mark.parametrize('source,invalid', [
     ('私は私には不安なのです', 'あなたは不安なのですね。'),
-    ('少し私は不安なのです', 'あなたは少し不安なのですね。'),
+    ('少し私は不安なのです', 'あなたは不安なのですね。'),
     ('私は不安なのだった', 'あなたは不安だったのですね。'),
 ])
 def test_detached_nominal_explanation_does_not_erase_unproven_parts(source, invalid):
@@ -459,7 +600,7 @@ def test_detached_copular_source_proof_distinguishes_attributive_from_additive(s
 
 
 @pytest.mark.parametrize('source,invalid', [('私は私には不安です', 'あなたは不安な'),
-                                          ('少し私は不安でした', 'あなたは少し不安だった')])
+                                          ('少し私は不安でした', 'あなたは不安だった')])
 def test_detached_copular_unproven_subject_is_not_erased(source, invalid):
     context = actual(request=advance(advance(begin(), '今は' + source + '。'), WITHDRAW))
     _, plan, _, resolver, selected = context
@@ -532,12 +673,12 @@ def test_detached_copular_saved_updates_and_authorless_reopen(qcase, qdb, monkey
 @pytest.mark.parametrize('occasion', ['今は', 'その時は'])
 @pytest.mark.parametrize('detached', [False, True])
 @pytest.mark.parametrize('source,visible', [
-    ('少し私は不安でした', '少しあなたは不安だった'),
-    ('少し私も不安です', '少しあなたも不安'),
-    ('少し私には不安です', '少しあなたには不安'),
-    ('少し私は嬉しかったのだ', '少しあなたは嬉しかった'),
+    ('少し私は不安でした', 'あなたは少し不安だった'),
+    ('少し私も不安です', 'あなたも少し不安'),
+    ('少し私には不安です', 'あなたには少し不安'),
+    ('少し私は嬉しかったのだ', 'あなたは少し嬉しかった'),
     ('まだ僕も不安なのです', 'まだあなたも不安'),
-    ('少し私は怖くないのです', '少しあなたは怖くない'),
+    ('少し私は怖くないのです', 'あなたは少し怖くない'),
 ])
 def test_medial_owner_keeps_full_feeling_across_live_and_detached_routes(occasion, detached, source, visible):
     request = advance(begin(), occasion + source + '。')
@@ -549,13 +690,18 @@ def test_medial_owner_keeps_full_feeling_across_live_and_detached_routes(occasio
     assert any(s in follow for s in ('嬉しくなかった', '嬉しくなく', '嬉しさにはつながらず'))
     assert '悲しさを感じ' in follow and '寂しさを感じた' in follow
     assert inverse(context, follow, without_author=True).passed
-    degree, recipient = visible.split('あなた', 1)
+    degree = '少し' if source.startswith('少し') else 'まだ'
+    recipient = visible.split('あなた', 1)[1]
     particle = next(p for p in ('には', 'にも', 'は', 'も') if recipient.startswith(p))
+    # A simple degree now follows the particle. Keep loss and duplication
+    # negative; the non-degree control must still reject a scope move.
+    misplaced = (visible.replace('少し', '少し少し', 1) if degree == '少し' else
+                 'あなた' + particle + degree + recipient[len(particle):])
     mutations = [
         (visible, visible.replace('あなた', '私', 1)),
         (visible, visible.replace('あなた', '友人', 1)),
-        (visible, 'あなた' + recipient),
-        (visible, 'あなた' + particle + degree + recipient[len(particle):]),
+        (visible, visible.replace(degree, '', 1)),
+        (visible, misplaced),
         ('あなた' + particle, 'あなた' + ('も' if particle != 'も' else 'は')),
         ('悲しさを感じ', '嬉しさを感じ'),
     ]
@@ -574,9 +720,9 @@ def test_medial_owner_keeps_full_feeling_across_live_and_detached_routes(occasio
 
 
 @pytest.mark.parametrize('source,terminal,continuing', [
-    ('少し私も不安です', '少しあなたも不安な', '少しあなたも不安だ'),
-    ('少し私も不安なのです', '少しあなたも不安な', '少しあなたも不安なのだ'),
-    ('少し私は怖くないのです', '少しあなたは怖くない', '少しあなたは怖くないのだ'),
+    ('少し私も不安です', 'あなたも少し不安な', 'あなたも少し不安だ'),
+    ('少し私も不安なのです', 'あなたも少し不安な', 'あなたも少し不安なのだ'),
+    ('少し私は怖くないのです', 'あなたは少し怖くない', 'あなたは少し怖くないのだ'),
 ])
 def test_medial_owner_inverse_restores_all_source_bytes_and_clause_position(source, terminal, continuing):
     context = actual(request=advance(advance(begin(), '今は' + source + '。'), WITHDRAW))
@@ -641,13 +787,13 @@ def test_medial_owner_saved_correction_withdrawal_and_authorless_reopen(qcase, q
         if stage != 'answer':
             assert '褒められた' not in body and 'その時は嬉しくなかった' in body
         if stage in ('answer', 'event_withdrawal'):
-            assert '少しあなたは不安だった' in body
+            assert 'あなたは少し不安だった' in body
         elif stage == 'correction':
             prefix = '先の回答時点で、' if occasion == '今は' else 'その時、'
-            assert prefix + '少しあなたは怖くないのですね' in body
+            assert prefix + 'あなたは少し怖くないのですね' in body
             assert '不安' not in body
         else:
-            assert '不安' not in body and '少しあなたは' not in body
+            assert '不安' not in body and 'あなたは少し' not in body
         with monkeypatch.context() as m:
             m.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved read must not generate'))
             assert run(service.get(user, parent)) == current

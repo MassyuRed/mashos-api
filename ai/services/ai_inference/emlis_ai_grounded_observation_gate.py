@@ -2833,6 +2833,10 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
     restored = parsed['feeling']
     if owner:
         recipient = source[:owner.start('self')] + "あなた" + owner['particle']
+        # Prove the bounded degree order from the source, without its author.
+        if (owner.groupdict().get('degree') == "少し"
+            and not re.match(r"(?:少し|とても|本当は|まだ|全然|あまり)", source[owner.end():])):
+            recipient = "あなた" + owner['particle'] + owner['degree']
         if not restored.startswith(recipient):
             return None
         restored = owner.group() + restored[len(recipient):]
@@ -3754,6 +3758,9 @@ def _restore_thread_finite_answer(actual, source, *, copular_clause=False,
     restored = actual
     if owner:
         recipient = source[:owner.start('self')] + "あなた" + owner['particle']
+        if (owner.groupdict().get('degree') == "少し"
+            and not re.match(r"(?:少し|とても|本当は|まだ|全然|あまり)", source[owner.end():])):
+            recipient = "あなた" + owner['particle'] + owner['degree']
         if not restored.startswith(recipient):
             return None
         restored = owner.group() + restored[len(recipient):]

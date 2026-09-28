@@ -434,7 +434,7 @@ def test_unproven_copula_host_does_not_gain_a_new_finite_reading(source, invalid
     if source == '少し私は不安です':
         # A single medial owner now has a proven finite reading. The
         # first-person candidate above must still be rejected.
-        expected = follow.replace('少し私は不安', '少しあなたは不安', 1)
+        expected = follow.replace('少し私は不安', 'あなたは少し不安', 1)
         assert context[0].artifact.reception == expected
         assert inverse(context, expected, without_author=True).passed
         return

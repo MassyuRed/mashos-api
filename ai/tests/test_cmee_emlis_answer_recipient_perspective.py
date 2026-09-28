@@ -400,7 +400,7 @@ def test_positive_explanation_keeps_owner_inner_tense_and_event(memo, occasion, 
 
 @pytest.mark.parametrize('source,invalid', [
     ('私は私には嬉しいのです', 'あなたは嬉しい'),
-    ('少し私は嬉しいのです', 'あなたは少し嬉しい'),
+    ('少し私は嬉しいのです', 'あなたは嬉しい'),
     ('私は嬉しいらしいのです', 'あなたは嬉しい'),
     ('私は嬉しいのだそうです', 'あなたは嬉しい'),
     ('私は嬉しいのだった', 'あなたは嬉しかった'),

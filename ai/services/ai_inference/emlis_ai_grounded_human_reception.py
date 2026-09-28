@@ -10491,15 +10491,21 @@ def _detached_feeling_finite_surface(source, *, allow_explanatory=False, allow_c
     """Address an explicitly SELF-owned feeling to its original speaker.
 
     A leading pronoun, or the single bounded medial owner when enabled,
-    changes perspective at its original position. Its particle, predicate,
-    polarity and tense remain intact; callers prove current-user ownership.
+    changes perspective. A single degree before SELF follows its particle
+    when no further modifier intervenes; compound modifier order is retained.
+    Its particle, predicate, polarity and tense remain intact; callers prove
+    current-user ownership.
     """
     finite = re.sub(r"(?<=[い])です$|(?<=かった)です$", "", source)
     finite = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?=には|にも|は|も)",
                     "あなた", finite, count=1)
     medial = _medial_feeling_owner(source) if allow_medial else None
     if medial is not None:
-        finite = finite[:medial.start('self')] + "あなた" + finite[medial.end('self'):]
+        if (medial['degree'] == "少し"
+            and not re.match(r"(?:少し|とても|本当は|まだ|全然|あまり)", source[medial.end():])):
+            finite = "あなた" + medial['particle'] + medial['degree'] + finite[medial.end():]
+        else:
+            finite = finite[:medial.start('self')] + "あなた" + finite[medial.end('self'):]
     if allow_copular:
         copular = _detached_feeling_copula_parts(source)
         if copular is not None:

@@ -10171,3 +10171,58 @@ rootは基本6件・group8件・再訂正2件の両層実本文を読み、独�
 **残件と次の対象。** 今回は認定済み独立訂正の参照明示を限定して閉じる。次は各source/ABOUT/時点を保持したまま、反復と長い列挙、導入句やSELF/程度の語順を整理する必要がある。撤回専用感情の裸の時点指示、対応外文法/複数主題も別に残る。既知34失敗は現行仕様との期待衝突と未解決項目を保持し、全件成功とは扱わない。weeklyの9/30進捗確認・10/3限定family整理・10/10Emlis判定に向け、合成実本文の改善範囲と残件を分けて引き継ぐ。
 
 **TECHNICAL_CREDIT/STRUCTURE_MAP_DELTA_NONE/全体48%・商品合格0/3/NOT_CLEAR/default OFF/Draft・open・unmerged。** 変更はAPI production3、既存test1、current派生fixture1、既存handoff1、Cocolon既存06追記1の計7path。新file/engine/owner/routeなし。Ready・merge・deploy・enable・実DB・実機・実課金・外部生成AIは未実施。反映commit/変更path/remote全文一致/headは両Draft PR本文へ記録する。
+
+
+## 2026-09-28 継続 — 単純な「少し＋本人」の語順を整え、二つの原文と時点を保持する
+
+**開始点・範囲。** API `06e12ed7f93ab58e43fa473d4b2232c644d155e8`、Cocolon `2d17e38305cfd573acc5d1b622ee8b851eea7ed2`、既存Draft #3/#30・open/unmergedをfresh確認。MashのEmlisAI残件継続指示とRule18のLEVEL_2 standing delegationにより、前回実本文の「当時、少しあなたは苦しかった」を共通ownerで修正するbounded work。rule入口・恒久incident全文・CURRENT_RULES/Rule18・01全体設計/02全file地図・current_structure・最新weekly 20260926（§3.8/3.9/5.2/5.3/採用済み5.9）・前回handoffを確認した。前回txtとtracked集合全体の照合は直前unitの確認を継承し、全source再監査とは呼ばない。System Context prepareはshallow checkoutのmaterial commit祖先照合でexit2、原典直接参照へ戻った。Context freshness成功は主張しない。
+
+first effect前にproduction2・test4・current fixture1・既存記録2のexact9paths、root華恋だけを編集/実行/GitHub書込みowner、意味/認定/契約/保護対象への拡張や未確認remote writeをSTOPとして固定した。独立商品・技術担当はread-onlyで同じ限定案と最終差分を検討し、追加必須指摘なし。Gate契約の緩和ではなく、既存意味の語順変更と独立した原文復元を対応させる実装・現行test-method修正である。
+
+**原因と修正。** Human Receptionの既存finite helperは、原文「少し私は…」のSELF位置を機械的に維持して「少しあなたは…」としていた。既存の完全な本人感情として証明でき、本人前のmodifierが「少し」exact1、本人後に既知modifierがない場合だけ、「あなた＋元の助詞＋少し＋元の述語」へ整える。形容詞、名詞述語、説明形、外側の過去に共通適用する。live ABOUT、撤回後独立感情、原反応訂正、既存burden/positive groupが同じ有限形を使う。
+
+本人/助詞/程度/否定/内側と外側の過去、元の引用・保存sourceを保持する。「まだ」「本当は」「全然」「あまり」、複数/分割modifier、本人後にmodifierがある形は並べ替えない。「とても」も既存認定外対照の実測後、今回の適用対象から除いた。新しい語彙認定、ABOUT、inactive、質問枠、Move上限、schema/API/DB/RNの変更はない。
+
+Gateのdetached discourseとthread finite answerの二つの逆読経路は、作者helperをoracleにせずsourceの同条件を独立に検証し、実本文の新prefixから元のowner全体へ戻して原文bytesを照合する。欠落/重複/程度変更、他者化/助詞変更、否定/時点/説明時制変更を受理しない。live groupの全体inverseでは既存referent用nominal構築がfinite helperを使うため、その経路までhelper不使用とは報告しない。実本文の認定は独立Gateが行い、detached/pairではfinite helperと作者owner proofも停止して成立を検査した。
+
+**修正後の実本文。** 原入力は「褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。」。回答「今は嬉しい。」→原反応を「少し私は苦しかったです」へ訂正→「誘われた」を撤回した例。Observationの原文引用は変更しない。
+
+```text
+見えたこと：
+「褒められた」ことに対する回答した時点の受け止めとして、「嬉しい」が見えます。
+その時の「悲しかった」という気持ちが書かれており、それとは別に「少し私は苦しかったです」と、当時の気持ちを言い直されています。
+「頼まれた」と「寂しかった」が、異なる向きのまま同時にあります。
+
+Emlisから：
+その時は悲しかったし、それとは別に言い直してくださった気持ちについては、当時、あなたは少し苦しかったのですね。褒められたことについて、回答した時点では嬉しいのですね。頼まれたのに、寂しさを感じたのですね。
+```
+
+**同文面と二つのsource。** 同じ原入力→「その時は少し私は不安でした。」→「褒められた」を撤回→「嬉しくなかった」を「私は少し不安でした」へ訂正する3回答系列（sourceの語順を逆にした対照も実行）。語順正規化により既存pair authorが同じ有限形を得るが、二つのsource/evidence/contributionを統合消去しない。同時点なら次の一文を既存shared topologyが出し、同じ実本文区間から異なる2source bytesをそれぞれ復元する。
+
+```text
+その時、あなたは少し不安だったという気持ちを、どちらの言葉からも受け取りました。誘われたのに、悲しさを感じ、頼まれたのに、寂しさを感じたのですね。
+```
+
+先行回答を「今は」にした場合は、原反応の当時と回答時点を分ける。どちらの時点も保持できない共有句は逆読で拒否する。
+
+```text
+回答した時点で、あなたは少し不安だったのですね。その時、あなたは少し不安だったのですね。誘われたのに、悲しさを感じ、頼まれたのに、寂しさを感じたのですね。
+```
+
+**前後比較と商品判断。** 開始版と最終版の内部実本文64件を比較し、checkpoint/accepted nuclei/plan全文/reason codesとObservationは64/64一致。Reception34件だけが変化し、残り30件は本文全体も同じ。34件はlive/detached24、原反応訂正4、訂正後撤回group2、同文面source4。比較には認定外入力の内部body対照も含むため、64件すべてをpublic engine提供成功とは呼ばない。とても/全然等の認定外を認定した実績へ数えない。最初のequal-pair probe2件は原memoのSELFが未認定でlegacy本文だったため、最終64件から外し、上記の実操作で到達する4件へ置き換えた。
+
+rootが変更34例のReceptionと代表両層を読み、独立商品担当は最初の62例の前後Reception/変更後Observationと到達pair4例を全文読んだ。対象の不自然な主語/程度語順は改善し、意味/時点/対象の新たな欠落は見られない。一方、「その時はあなたは」の重複、長い「し」「のですね、また」の列挙、訂正導入/定型末尾の硬さ、複合modifierの語順は残る。正式Product Read PASS/商品合格は認定しない。
+
+**検証結果。** 最終13target横断は **1787件＝1753 PASS/既知34 FAIL、ERROR/SKIP0、193 deselected、525.88秒**。追加26件は全PASS。既存1761件は、更新10関数のparameter組順/件数を保つ対応を含め、成否が開始版と全一致。34失敗のtest identity・message・tracebackはworkspace prefix/実行時address/fixture UUIDの正規化後に全一致し、行番号正規化も不要だった。新規の回帰失敗はないが、全件成功ではない。関連選択92件は全PASS（41.78秒）。新規18件は18 PASS（13.58秒）、pair/save8件は8 PASS（14.79秒）。
+
+既存の非frozen test4path/10関数は、対象となる成功文言とmutation anchorを明示更新した。旧「あなたは少し…」拒否を程度欠落/重複へ置換し、本人/助詞/否定/時点/説明/分割modifierの拒否目的を保持する。関数/既存parameter組数を削減せず、既知34失敗の期待や比較器、protected/frozen資料は変更していない。新規26件は説明形/外側過去12、原反応訂正6、同文面二原文4、保存4系列。新規検査の初稿7失敗は全体inverseの既存nominal構築までfinite helperを止めた検査方法によるものだった。停止範囲をdetached proofへ限定し、liveは作者/replay停止と意味変異拒否を継続した。最終sourceの新規18件とpair/save8件をそれぞれ全PASSで確認した後に横断した。
+
+保存の今回直接対象は既存medial4系列＋追加4系列、回答後24状態＋追加系列の初期4状態＝28状態。既存PGlite SQL/RPC/serviceでoriginal DTO不変、generateを禁止したGETとservice.start再呼出しが保存DTOと完全一致する。process再起動・実DB・実機ではない。
+
+current shared-owner identity fixtureのみ既存導出で更新し、language/runtime各18payload・source owner9・歴史的凍結証跡は維持。language=`f8111bdb39b188260fa5660e563e1f9dad69d929999ad243ac517afd16a750b5`、runtime=`ba852f98fae39ef33d2f6ce09ad32c2a8f0a2b5d1002d467d70bb166d1ea254e`。同一sessionの検査runtimeの実在/versionを再確認し再利用（Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1、Node24.19.0/PGlite0.5.8）。今unitのinstall・dependency manifest変更なし。前回1761件の同runtime横断結果と開始HEADの一致をbaselineとし、開始版全量を重複実行しない。最終横断は直前と同じ13target・contractsはactive final owner zero legacy compose検査だけ。旧59file/初回100/全保存履歴を今回再実行したとは呼ばない。
+
+**追加probeで確認した既存残件。** 原反応「嬉しくなかった」を「少し私は苦しかったです」へ訂正し、続けて「悲しかった」を「私は少し苦しかったです」へ訂正する系列は、第2訂正で`emlis_thread_body_independent_validation_failed`。名詞過去「少し私は不安でした」/「私は少し不安でした」でも同じ。開始版06e12edの別worktreeと最終版の両方で同じ失敗をfresh確認し、今回の回帰ではないが、成功へ含めない。撤回2回後に同じ訂正を二つ続ける試行は3回答後の次質問なしで到達不可。これらの探索結果は横断34失敗とは別の残件である。
+
+**次の作業。** 複数の原反応訂正で本文逆検証が失敗する上記2系列の共通原因を、元source/ABOUT/時点/Moveを保持して絞り込む。その後も長い反復、時点＋主語の「は」重複、導入句/末尾の硬さを実本文で整理する。weeklyの9/30確認、10/3限定family整理、10/10Emlis判定へつなぐ。未認定構文を今回の語順修正で提供可能にしたとは扱わない。
+
+**TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 変更はAPI Human Reception/Gate、既存test4、current identity fixture、既存handoff、Cocolon既存06の計9path。新file/engine/owner/route、Ready/merge/deploy/enable、実DB/実課金/外部生成AIなし。反映commit・changed paths・remote全文一致・最終headは両Draft PR本文へ記録する。
