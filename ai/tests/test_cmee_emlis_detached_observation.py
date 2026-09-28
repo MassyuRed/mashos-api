@@ -1647,3 +1647,144 @@ def test_positive_original_revision_saved_sequence_keeps_original_and_reads(qcas
     assert old not in body
     assert all(s in body for s in ('褒められた', '誘われた', '頼まれた'))
     assert current['can_continue'] == (old == '嬉しくなかった')
+
+
+@pytest.mark.parametrize('old,retained', [
+    ('嬉しくなかった', ('誘われたのに、悲しさ', '頼まれたのに、寂しさ')),
+    ('悲しかった', ('褒められたことは、嬉しさにはつながらず', '頼まれたのに、寂しさ')),
+    ('寂しかった', ('褒められたことは、嬉しさにはつながらず', '誘われたのに、悲しさ')),
+])
+@pytest.mark.parametrize('answers', TWO_POSITIVE_PAIRS)
+@pytest.mark.parametrize('source,finite', [('楽しかった', '楽しかった'),
+    ('私は楽しかったです', 'あなたは楽しかった'),
+    ('私も少し楽しかったです', 'あなたも少し楽しかった')])
+def test_positive_answer_group_retains_two_answers_correction_and_surviving_reactions(old, retained, answers, source, finite):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    request = revised_original_request(source, answers, old=old)
+    public = MeaningExperienceEngine().generate(request)
+    assert public.artifact is not None, public.reason_codes
+    context = actual(request=request)
+    result, plan, sentence, _, _ = context
+    assert result.artifact.text == public.artifact.text
+    follow = result.artifact.reception
+    assert all(text in follow for text in retained)
+    first = '回答した時点では嬉しい' if answers == TWO_POSITIVE_PAIRS[0] else 'その時は少し嬉しかった'
+    second = 'その時は楽しかった' if answers == TWO_POSITIVE_PAIRS[0] else '回答した時点では楽しい'
+    assert f'褒められたことについて、{first}' in follow
+    assert f'誘われたことについて、{second}' in follow
+    assert finite + 'のですね。' in follow
+    assert old not in result.artifact.text
+    moves = plan.response_plan.human_reception_plan.moves
+    group, = (m for m in moves if m.reception_act == 'recognize_lived_change' and len(m.target_nucleus_ids) > 1)
+    if old == '寂しかった':
+        assert len(group.target_nucleus_ids) == 3 and len(moves) == 2
+        assert f'頼まれたことについて、その時は{finite}' in follow
+    else:
+        assert len(group.target_nucleus_ids) == 2 and len(moves) == 3
+        revised, = (n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes)
+        assert revised.nucleus_id not in group.target_nucleus_ids
+        assert not any(revised.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+        assert '頼まれたことについて、その時は' not in follow
+    assert set(plan.coverage_requirements.required_nucleus_ids) <= {
+        nid for line in sentence.lines if line.binding.line_role != 'human_follow' for nid in line.binding.nucleus_ids}
+    assert not any(text in follow for text in ('楽しくなった', '前向き', 'おかげ', 'これまで'))
+    assert prepare_emlis_meaning(request).checkpoint.assessment_status == 'RESOLVED'
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.fixture(scope='module')
+def positive_answer_group_context():
+    answers = ('今は私は嬉しいです。', 'その時は私も少し楽しかったです。')
+    return actual(request=revised_original_request('楽しかった', answers, old='嬉しくなかった'))
+
+
+@pytest.mark.parametrize('old,new', [
+    ('褒められたことについて、回答した時点ではあなたは嬉しいし、', ''),
+    ('し、誘われたことについて、その時はあなたも少し楽しかった', ''),
+    ('褒められたことについて、', '頼まれたことについて、'),
+    ('誘われたことについて、', '褒められたことについて、'),
+    ('回答した時点では', 'その時は'), ('その時はあなたも', '回答した時点ではあなたも'),
+    ('回答した時点では', '先の回答時点では'), ('回答した時点では', ''),
+    ('あなたは', '私は'), ('あなたは', '友人は'), ('あなたも', 'あなたは'), ('あなたも', ''),
+    ('少し', ''), ('嬉しいし、', '嬉しくないし、'), ('楽しかった', '楽しい'),
+    ('嬉しいし、', '嬉しいので、'),
+    ('その時は楽しかったのですね。', ''),
+    ('その時は楽しかったのですね。', '頼まれたことについて、その時は楽しかったのですね。'),
+])
+def test_positive_answer_group_rejects_omission_reassignment_and_added_cause_without_authors(
+        positive_answer_group_context, old, new):
+    context = positive_answer_group_context
+    follow = context[0].artifact.reception
+    changed = follow.replace(old, new, 1)
+    assert changed != follow
+    assert not read_body(context, context[0].artifact.text.replace(follow, changed)).passed
+
+
+@pytest.mark.parametrize('ending', ['のです。', 'のだと受け取りました。'])
+def test_positive_answer_group_reads_equivalent_acknowledgement(positive_answer_group_context, ending):
+    context = positive_answer_group_context
+    follow = context[0].artifact.reception
+    changed = follow.replace('少し楽しかったのですね。', '少し楽しかった' + ending)
+    assert changed != follow
+    assert read_body(context, context[0].artifact.text.replace(follow, changed)).passed
+
+
+@pytest.mark.parametrize('field,value', [('actor', 'other_person'), ('time_scope', 'past'),
+    ('polarity', 'negative'), ('modality', 'fact')])
+def test_positive_answer_group_requires_each_admitted_source_frame(positive_answer_group_context, field, value):
+    result, plan, _, resolver, selected = positive_answer_group_context
+    move, = (m for m in plan.response_plan.human_reception_plan.moves if len(m.target_nucleus_ids) == 2 and not m.support_nucleus_ids)
+    nucleus = next(n for n in plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0])
+    changed = replace(nucleus, semantic_frame=replace(nucleus.semantic_frame, **{field: value}))
+    bad_plan = replace(plan, nuclei=tuple(changed if n == nucleus else n for n in plan.nuclei))
+    clause = next(s + '。' for s in result.artifact.reception.split('。') if '褒められたことについて、' in s)
+    assert gate._read_positive_answer_group_discourse(clause, move, bad_plan, resolver, selected) is None
+
+
+def test_positive_answer_group_reader_derives_every_duty_without_forward_group(positive_answer_group_context):
+    result, plan, _, resolver, selected = positive_answer_group_context
+    move, = (m for m in plan.response_plan.human_reception_plan.moves if len(m.target_nucleus_ids) == 2 and not m.support_nucleus_ids)
+    clause = next(s + '。' for s in result.artifact.reception.split('。') if '褒められたことについて、' in s)
+    with patch.object(reception, 'source_grounded_thread_answer_group', side_effect=AssertionError('no forward group oracle')):
+        proof = gate._read_positive_answer_group_discourse(clause, move, plan, resolver, selected)
+        assert proof is not None and len(proof) == 4
+        missing = clause.replace('褒められたことについて、回答した時点ではあなたは嬉しいし、', '')
+        assert gate._read_positive_answer_group_discourse(missing, move, plan, resolver, selected) is None
+
+
+@pytest.mark.parametrize('answers', TWO_POSITIVE_PAIRS)
+def test_positive_answer_group_also_retains_three_linked_adds(answers):
+    request = begin()
+    for text in (*answers, 'その時は楽しかった。'):
+        request = advance(request, text)
+    context = actual(request=request)
+    result, plan, _, _, _ = context
+    follow = result.artifact.reception
+    assert all(s in follow for s in ('褒められたことについて、', '誘われたことについて、',
+        '頼まれたことについて、その時は楽しかった', '嬉しさにはつながらず',
+        '誘われたのに、悲しさ', '頼まれたのに、寂しさ'))
+    assert len(plan.response_plan.human_reception_plan.moves) == 2
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.mark.parametrize('old', ['嬉しくなかった', '悲しかった', '寂しかった'])
+@pytest.mark.parametrize('answers', TWO_POSITIVE_PAIRS)
+def test_positive_answer_group_saved_sequence_keeps_original_and_exact_reads(qcase, qdb, monkeypatch, old, answers):
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    for i, text in enumerate((*answers, f'「{old}」ではなく「私も少し楽しかったです」です。')):
+        if i:
+            current = run(cont(service, user, current, f'positive-group-continue-{i}'))
+        current = run(answer(service, user, current, text, f'positive-group-answer-{i}'))
+        assert current['body_state'] == 'REFINED', current
+        assert current['original'] == first['original']
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not regenerate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+    body = current['current_observation']['text']
+    assert 'あなたも少し楽しかったのですね。' in body
+    assert old not in body
+    assert all(s in body for s in ('褒められたことについて、', '誘われたことについて、'))
+    assert not current['can_continue']

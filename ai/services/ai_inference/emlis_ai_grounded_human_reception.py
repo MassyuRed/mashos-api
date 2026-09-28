@@ -3072,13 +3072,21 @@ def source_grounded_thread_answer_group(move, plan, nucleus_index, resolver):
     """
     if (plan is None or getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
         or move not in plan.response_plan.human_reception_plan.moves
-        or move.reception_act != "stay_with_current_burden" or move.support_nucleus_ids
+        or move.reception_act not in {"stay_with_current_burden", "recognize_lived_change"} or move.support_nucleus_ids
         or not 2 <= len(move.target_nucleus_ids) <= 3):
         return ()
-    return _source_grounded_thread_answer_rows(move.target_nucleus_ids, plan, nucleus_index, resolver)
+    positive = move.reception_act == "recognize_lived_change"
+    if positive:
+        from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+        if (not move.required or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
+            or ("lived_change", move.target_nucleus_ids, ())
+                not in _thread_retained_reaction_groups(plan.nuclei, plan.relations)):
+            return ()
+    return _source_grounded_thread_answer_rows(move.target_nucleus_ids, plan, nucleus_index, resolver,
+                                               polarity="positive" if positive else "negative")
 
 
-def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver):
+def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver, *, polarity="negative"):
     rows = []
     for nid in targets:
         n = nucleus_index[nid]
@@ -3089,7 +3097,8 @@ def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver):
         if (n.source_fields != ("answer_text_private",) or n.allowed_claim_scope != "explicit_supplemental_answer"
             or not current_unknown and (n.kind != "reaction" or n.semantic_frame.predicate_kind != "feeling"
                 or n.semantic_frame.modality != "feeling")
-            or n.semantic_frame.polarity != "negative"
+            or n.semantic_frame.polarity != polarity
+            or polarity == "positive" and not is_grounded_positive_feeling(n)
             or len(n.source_span_ids) != 1 or len(times) != 1
             or not times <= _THREAD_ANSWER_TIME_NOMINAL_PREFIX.keys() or len(about) != 1):
             return ()
@@ -3106,6 +3115,12 @@ def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver):
             or event_profile.quoted_boundary or not _SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(event_fragment)):
             return ()
         when = next(iter(times))
+        if polarity == "positive" and (
+            n.semantic_frame.time_scope != ("past" if when == "original_occasion" else "present")
+            or about[0].grounding_kind != "user_stated_relation"
+            or about[0].retention != "required"
+        ):
+            return ()
         nominal = _thread_answer_nominal_morphology(source)
         grammar, value = nominal if nominal else ("FINITE", source)
         if grammar == "FINITE":
@@ -3135,10 +3150,10 @@ def source_grounded_reception_move_relations(move, plan):
         or move.reception_act != "stay_with_current_burden"
         or ("current_burden", move.target_nucleus_ids, move.support_nucleus_ids) not in groups):
         return relations
-    positive_ids = tuple(row[1][0] for row in groups if row[0] == "lived_change" and len(row[1]) == 1)
+    positive_ids = tuple(nid for row in groups if row[0] == "lived_change" for nid in row[1])
     owners = tuple(tuple(m for m in plan.response_plan.human_reception_plan.moves
         if m.required and m.reception_act == "recognize_lived_change"
-        and m.target_nucleus_ids == (nid,) and not m.support_nucleus_ids)
+        and nid in m.target_nucleus_ids and not m.support_nucleus_ids)
         for nid in positive_ids)
     if not positive_ids or any(len(matches) != 1 for matches in owners):
         return relations
@@ -3858,6 +3873,10 @@ def resolve_grounded_reception_move_referent(
         )
     if final_source_fidelity and effective_reference != "anaphoric_first":
         if referent.kind == "positive_feeling":
+            group = source_grounded_thread_answer_group(move, plan, nucleus_index, resolver)
+            if group:
+                return replace(referent, text=source_grounded_current_expression_nominal(
+                    move, plan, nucleus_index, resolver))
             answer = source_grounded_thread_answer_nominal(move, plan, nucleus_index, resolver)
             if answer is not None:
                 return replace(referent, text=answer[-1] + "という気持ち")
@@ -5060,7 +5079,8 @@ def final_reception_context_nucleus_ids(
     )
     if direct_support_ids:
         return direct_support_ids
-    if (2 <= len(target_ids) <= 3 and move.reception_act == "stay_with_current_burden"
+    if (2 <= len(target_ids) <= 3
+        and move.reception_act in {"stay_with_current_burden", "recognize_lived_change"}
         and all(n.source_fields == ("answer_text_private",)
                 and n.allowed_claim_scope == "explicit_supplemental_answer"
                 for n in plan.nuclei if n.nucleus_id in target_ids)):
@@ -6515,6 +6535,8 @@ def _project_source_grounded_reception_move_realization(
         )
     )
     detached_burdens = source_grounded_detached_burden_group(move, plan, nucleus_index, resolver)
+    positive_answers = (source_grounded_thread_answer_group(move, plan, nucleus_index, resolver)
+                        if move.reception_act == "recognize_lived_change" else ())
     received_rows = source_grounded_thread_received_group(move, plan, nucleus_index, resolver)
     mixed_originals = any(original and original[4] in {"detached", "replacement"} for original, _ in received_rows)
     if detached_burdens or mixed_originals:
@@ -6576,12 +6598,12 @@ def _project_source_grounded_reception_move_realization(
             tuple(frame.modality for frame in frames),
             default="source_bounded",
         ),
-        time_scope="source_bounded" if detached_burdens or mixed_originals else _source_grounded_axis(
+        time_scope="source_bounded" if detached_burdens or mixed_originals or positive_answers else _source_grounded_axis(
             tuple(frame.time_scope for frame in frames),
             default="current_input",
         ),
         aspect=aspect,
-        degree=_source_grounded_axis(
+        degree="source_bounded" if positive_answers else _source_grounded_axis(
             tuple(frame.degree for frame in frames),
             default="source_bounded",
         ),
@@ -7502,7 +7524,10 @@ def _validate_source_grounded_move_ir(
         expected_nominalization = (*expected_nominalization, *received_grammar)
     answer_grammar = tuple(p for p in move.nominalization_plan if p.startswith("answer-slot:"))
     if answer_grammar:
+        positive_group = bool(move.polarity == "positive" and len(answer_grammar) > 1
+                              and _thread_answer_group_ir_text(move))
         if (len(answer_grammar) != move.target_slot_count
+            or positive_group and (move.time_scope != "source_bounded" or move.degree != "source_bounded")
             or not _source_grounded_nominalization_shape_valid(move.nominalization_plan, semantic_count)):
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
         for expected_slot, code in enumerate(answer_grammar):
@@ -7515,14 +7540,14 @@ def _validate_source_grounded_move_ir(
                 or profile.nucleus_kind != "reaction" or profile.predicate_kind != "feeling"
                 or profile.actor_kind != "SELF" or profile.modality != "feeling"
                 or profile.quoted_boundary or profile.performed_action or profile.future_action
-                or (move.polarity != "negative" and not (move.polarity == "positive"
+                or (move.polarity != "negative" and not positive_group and not (move.polarity == "positive"
                     and len(answer_grammar) == move.target_slot_count == 1
                     and grammar in {"ADJECTIVE_PRESENT_POLITE", "COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE"}
                     and not move.relations))
                 or move.aspect not in {"unknown", "not_applicable"}
                 or not finite and (row is None or row[0] != grammar)
                 or finite and (row is not None or not _SOURCE_GROUNDED_FINITE_END_RE.search(move.semantic_fragments[slot]))
-                or move.time_scope != ("past" if when == "original_occasion" else "present")):
+                or not positive_group and move.time_scope != ("past" if when == "original_occasion" else "present")):
                 raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
         expected_nominalization = (*expected_nominalization, *answer_grammar)
     context_grammar = tuple(p for p in move.nominalization_plan
@@ -8250,6 +8275,9 @@ def _source_grounded_target_owner_slot(
     referent_kind: str,
 ) -> int:
     """Bind a typed referent only to a semantically compatible slot."""
+    if (referent_kind == "positive_feeling" and realization.polarity == "positive"
+        and _thread_answer_group_ir_text(realization)):
+        return 0
     if referent_kind == "current_expression" and (_detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)):
         # Slot zero anchors the collective grammar, whose core must cover
         # every target and its subject. It is not the sole selected answer.
@@ -8976,8 +9004,12 @@ def _source_grounded_target_np(
     )
     group_text = _detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
     if group_text:
-        if (referent_kind != "current_expression" or referent_text != group_text
-            or move.reception_act != "stay_with_current_burden" or target_owner_slot != 0):
+        positive_group = bool(referent_kind == "positive_feeling"
+            and move.reception_act == "recognize_lived_change" and realization.polarity == "positive"
+            and _thread_answer_group_ir_text(realization))
+        if (not positive_group and (referent_kind != "current_expression"
+                or move.reception_act != "stay_with_current_burden")
+            or referent_text != group_text or target_owner_slot != 0):
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_REFERENCE_GAP")
         core = _SourceGroundedClauseCoreV1(
             text=group_text, target_referent=group_text,
@@ -10548,6 +10580,32 @@ def _detached_feeling_source_parts(move, plan, resolver, *, allow_revised=False)
     return time, finite
 
 
+def _source_owned_positive_answer_group_sentence(move, realization, plan, resolver,
+                                                selected_decision, recovery_stage):
+    """Coordinate the selected answers without sharing their event or time."""
+    if (move.reception_act != "recognize_lived_change" or recovery_stage != "full"
+        or realization.reference_mode == "ANAPHORIC" or realization.clause_form != "FINITE"
+        or not _selected_material_appraisal(selected_decision)):
+        return None
+    rows = source_grounded_thread_answer_group(
+        move, plan, {n.nucleus_id: n for n in plan.nuclei}, resolver)
+    if not rows:
+        return None
+    parts = []
+    for row in rows:
+        finite = _detached_feeling_finite_surface(row.source, allow_medial=True)
+        if (not _SOURCE_GROUNDED_FINITE_END_RE.search(finite)
+            or re.search(r"(?:です|ます|でした|ました|だ)$", finite)
+            or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", row.event_fragment)
+            or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)
+            or re.search(r'[「」『』“”‘’"?？!！\r\n。]', row.event_fragment + row.source)):
+            return None
+        time = {"original_occasion": "その時は", "answer_time": "回答した時点では",
+                "prior_answer_time": "先の回答時点では"}[row.when]
+        parts.append(row.event_fragment + "ことについて、" + time + finite)
+    return "し、".join(parts[:-1]) + "し、" + _feeling_acknowledgement(parts[-1])
+
+
 def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
                                           selected_decision, recovery_stage,
                                           preceding_context=None, selected_subjective_input=None):
@@ -11177,6 +11235,11 @@ def _author_source_grounded_reception_clauses(
             )
             if answer_sentence is not None:
                 move_sentence = answer_sentence
+            positive_answers = _source_owned_positive_answer_group_sentence(
+                move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
+            )
+            if positive_answers is not None:
+                move_sentence = positive_answers
             focus_sentence = _source_owned_relational_focus_sentence(
                 move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
             )

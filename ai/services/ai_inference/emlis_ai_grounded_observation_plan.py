@@ -7834,7 +7834,13 @@ def _thread_retained_reaction_groups(nuclei, relations):
     positive_revision = bool(len(positive) == len(answers) == 2
         and len(positive_revisions) == len(independent_answers) == 1
         and not (withdrawal or independent or actions or detached_answers))
-    if not withdrawal and (len(positive) > 2
+    # Three accepted positive answers are not three unrelated families to
+    # rank. Their ABOUT-owned answers can share one collective duty while
+    # an independent original correction keeps its own separate duty.
+    positive_group = bool(len(positive) == len(answers) == 3
+        and len(positive_revisions) == len(independent_answers) <= 1
+        and not (withdrawal or independent or actions or detached_answers))
+    if not withdrawal and (len(positive) > 2 and not positive_group
                            or len(positive) == 2 and (independent or actions or independent_answers)
                            and not (mixed_revision or positive_revision)
                            or len(events) == 1 and len(answers) != 1
@@ -7858,6 +7864,13 @@ def _thread_retained_reaction_groups(nuclei, relations):
     groups.extend(("current_burden", (n.nucleus_id,), ()) for n in detached_answers if n in negative)
     groups.extend(("current_burden", (n.nucleus_id,), ()) for n in independent_answers if n in negative)
     groups.extend(("lived_change", (n.nucleus_id,), ()) for n in positive)
+    if positive_group:
+        linked_events = {n.nucleus_id: event_id for event_id, n in by_event.items()}
+        linked_ids = tuple(sorted((n.nucleus_id for n in positive if n not in independent_answers),
+            key=lambda nid: _span_number(index[linked_events[nid]].source_span_ids[0])))
+        groups = [row for row in groups if not (
+            row[0] == "lived_change" and row[1][0] in linked_ids)]
+        groups.append(("lived_change", linked_ids, ()))
     # An answer changes its own occasion. Separately stated original
     # feelings and actions remain independent duties in the same plan.
     groups.extend(("lived_change" if is_grounded_positive_feeling(n) else "current_burden",

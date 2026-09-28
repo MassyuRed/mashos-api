@@ -2901,7 +2901,13 @@ def _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjectiv
         if (appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
             or appraisal.operation != "RECEIVE_AS_MATERIAL"):
             return None
-    event, answer, when = roles
+    shared_event = _answer_feeling_preceding_event(
+        move, plan, resolver, selected_subjective_input, preceding_context)
+    return _read_answer_feeling_clause(raw, *roles, plan, resolver, shared_event=shared_event)
+
+
+def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, shared_event=False):
+    """Restore one complete answer and its own event/time from actual bytes."""
     index = {n.nucleus_id: n for n in plan.nuclei}
     event_text, source = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
                           for n in (event, answer))
@@ -2928,8 +2934,6 @@ def _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjectiv
         or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", source_predicate)
         or re.search(r'[「」『』“”‘’"?？!！\r\n。]', event_text + source)):
         return None
-    shared_event = _answer_feeling_preceding_event(
-        move, plan, resolver, selected_subjective_input, preceding_context)
     parsed = re.fullmatch(r"(?:(?P<event>.+)ことについて、)?"
         r"(?P<time>その時は|回答した時点では|先の回答時点では)"
         r"(?P<feeling>.+)(?P<ending>のでしたね|のですね|のです|のだと受け取りました)。", raw)
@@ -2947,6 +2951,74 @@ def _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjectiv
     return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
                  for key, value in (("event", event_text), ("feeling", source))
                  if parsed[key] is not None)
+
+
+def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Read each complete positive answer at its unique source event boundary.
+
+    No author output is replayed. Each operand retains its own ABOUT endpoint,
+    source time, subject, degree and polarity; coordination adds no relation.
+    """
+    if (move.reception_act != "recognize_lived_change" or not move.required
+        or move not in plan.response_plan.human_reception_plan.moves
+        or move.support_nucleus_ids or not 2 <= len(move.target_nucleus_ids) <= 3
+        or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
+        or getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"):
+        return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    rows = []
+    for nid in move.target_nucleus_ids:
+        answer = index[nid]
+        frame = answer.semantic_frame
+        times = tuple(c.split(":", 1)[1] for c in frame.attribute_codes if c.startswith("thread_time:"))
+        about = tuple(r for r in plan.relations if r.type == "evaluation_about_event"
+            and r.to_nucleus_id == nid and r.relation_id in plan.coverage_requirements.required_relation_ids)
+        if (not is_grounded_positive_feeling(answer) or frame.actor != "current_user"
+            or answer.retention != "required" or answer.grounding_kind != "explicit"
+            or answer.source_fields != ("answer_text_private",) or len(answer.source_span_ids) != 1
+            or answer.allowed_claim_scope != "explicit_supplemental_answer"
+            or "thread_subject:unique_source_clause" not in frame.attribute_codes
+            or len(times) != 1 or times[0] not in {"original_occasion", "answer_time", "prior_answer_time"}
+            or frame.time_scope != ("past" if times[0] == "original_occasion" else "present")
+            or len(about) != 1 or about[0].retention != "required"
+            or about[0].grounding_kind != "user_stated_relation"):
+            return None
+        event = index[about[0].from_nucleus_id]
+        if (event.kind != "event" or event.retention != "required" or event.grounding_kind != "explicit"
+            or event.source_fields not in {("memo",), ("memo_action",)}
+            or event.semantic_frame.actor != "current_user" or event.semantic_frame.modality != "fact"
+            or event.semantic_frame.time_scope != "past"):
+            return None
+        event_text = final_reception_source_anchor_text(event.nucleus_id, index, resolver)
+        if not event_text:
+            return None
+        rows.append((event, answer, times[0], event_text))
+    if len({event.nucleus_id for event, _, _, _ in rows}) != len(rows):
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if (appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
+            or appraisal.operation != "RECEIVE_AS_MATERIAL"):
+            return None
+    cuts = [0]
+    for _, _, _, event_text in rows[1:]:
+        boundaries = tuple(re.finditer(re.escape("し、" + event_text + "ことについて、"), raw))
+        if len(boundaries) != 1 or boundaries[0].start() <= cuts[-1]:
+            return None
+        cuts.append(boundaries[0].end() - len(event_text + "ことについて、"))
+    proofs = []
+    for i, (start, row) in enumerate(zip(cuts, rows)):
+        last = i == len(rows) - 1
+        end = len(raw) if last else cuts[i + 1] - len("し、")
+        part = raw[start:end]
+        proof = _read_answer_feeling_clause(
+            part if last else part + "のですね。", *row[:3], plan, resolver)
+        if proof is None or any(b > len(part.encode()) for _, b, _ in proof):
+            return None
+        offset = len(raw[:start].encode())
+        proofs.extend((a + offset, b + offset, source) for a, b, source in proof)
+    return tuple(proofs)
 
 
 def _read_independent_decision_discourse(raw, move, plan, resolver, selected_subjective_input):
@@ -3280,6 +3352,10 @@ def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_i
         raw, move, plan, resolver, selected_subjective_input)
     if independent_decision is not None:
         return independent_decision
+    positive_answers = _read_positive_answer_group_discourse(
+        raw, move, plan, resolver, selected_subjective_input)
+    if positive_answers is not None:
+        return positive_answers
     answer = _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjective_input,
                                            preceding_context)
     if answer is not None:
