@@ -9984,3 +9984,49 @@ runtimeは再発見して検証したPython3.12.14/pytest9.1.1/pydantic2.13.5/Fa
 独立肯定置換「楽しかった」の未提供、時点指示/語順/復唱/定型末尾、元否定と過去肯定の説明なしの併存も残る。元反応訂正/撤回全般・文章品質の完成は主張しない。
 
 **TECHNICAL_CREDIT/STRUCTURE_MAP_DELTA_NONE/全体48%・商品合格0/3/NOT_CLEAR/default OFF/Draft・open・unmerged。** 変更は既存API production2（Human Reception/Observation Gate）、test1、current派生fixture1、既存handoff1、Cocolon既存06追記1の計6path。新file/engine/owner/route、回答認定・質問枠・Move上限・保存schema・公開API/DB/RN・他中核の変更なし。Ready・merge・deploy・enable・実DB・実機・実課金・外部生成AIは未実施。反映後のcommit/変更path/remote全文一致/headは両Draft PR本文に記録する。
+
+
+## 2026-09-28 継続 — 原反応訂正後の別event撤回で全反応を保持して本文復旧
+
+**開始点・範囲。** API `4282dc64170fb6e79fab46c700a4dfc52d9acc2d`、Cocolon `b5884673a8b1e99b702d813a609a04c370f5ccdf` のDraft/open/unmergedから、Mashの残件継続指示で実施。前提資料・作業rule入口/適用条項・最新weekly 20260926 §3.8/§5.2/§5.3/採用済み§5.9・直前handoffを照合し、恒久incidentは今回も先頭からEOFまで全文読んだ。同一sessionの未変更の全体設計図・全file地図・current_structure・適用正本の確認を継承。tracked pathsはAPI2300/Cocolon1645のまま、全source本文の再監査とは呼ばない。
+
+System Context prepareはshallow checkoutのmaterial commit祖先確認でexit2。許容された原典直接参照を使い、Context復旧・最新化は主張しない。DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、既存承認内LEVEL_2。root華恋が編集・検査・GitHub反映し、技術/商品経路の2担当はread-only reviewした。対象は、1肯定→第1原反応の独立訂正→別event撤回で、受理済みの感情を欠落なく返す共通経路の限定修正である。
+
+**原因と修正。** 既存 `_thread_retained_reaction_groups` は、残存event/反応の組、撤回後の元反応、独立した訂正反応、肯定回答を4groupに分ける。撤回後の独立burdenを同じMoveに置く既存条件が独立回答を全除外しているため、3Move上限に収まらず `human_reception_opportunity_missing` で本文未提供になっていた。
+
+Planで、独立回答が全て既存 `_thread_revised_original_reaction` により証明された負の過去反応である場合だけ、既存撤回group処理へ含める。撤回残反応と訂正反応をそれぞれ独立targetとして既存複合burdenに置き、肯定回答のABOUTと残存contrastの所有を維持する。既存Human Receptionのgroup source証明とObservation Gateの独立readerにも同じ意味境界を適用した。有限形作者と逆読文法は既存のままで、各節の完全source・本人・助詞・程度・否定・時点を別々に検査する。
+
+新しいABOUT/因果関係をplanへ作らず、旧反応/撤回eventを復活させない。一般の独立回答・肯定置換には広げない。3Move上限・意味更新・回答認定・Observation作者・公開契約・保存schema・品質閾値は不変。単独感情間のpair topologyの適用拡張も行わない。
+
+**実本文。** 合成入力「褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。」に「今は嬉しい。」→「『嬉しくなかった』ではなく『苦しかった』です。」→「『誘われた』は誤りです。」と回答（実引用符は「」）。変更前は本文なし。変更後は次を返す。
+
+```text
+見えたこと：
+「褒められた」ことに対する回答した時点の受け止めとして、「嬉しい」が見えます。
+その時の「悲しかった」と、その時の「苦しかった」という気持ちが書かれています。
+「頼まれた」と「寂しかった」が、異なる向きのまま同時にあります。
+
+Emlisから：
+その時は悲しかったし、その時は苦しかったのですね。褒められたことについて、回答した時点では嬉しいのですね。頼まれたのに、寂しさを感じたのですね。
+```
+
+**比較・保存。** 従来24系列85状態はcheckpoint・そのturnのaccepted nucleiが全一致。rev-withdrawの最終1状態だけが本文未提供から提供へ復旧し、他84本文は不変。planもこの1状態だけerrorから成立へ変わり、他84の全planは一致。今回の85状態集合では全状態に本文があるが、他入力・撤回一般の完了とは呼ばない。開始版85状態は同じsource/runtimeの直前の実測を継承し、最終版をfresh実行した。
+
+別途、3訂正位置×別event撤回2位置×肯定の現在/当時×訂正の通常/SELF・も・少し・否定の24系列96行を、開始/最終productionでfresh比較した。比較可能88状態はcheckpoint/acceptedが全一致。第1訂正後の8状態が提供へ復旧し、他80本文は不変。planも同8状態だけerrorから3Moveのplan成立へ変わり、他80は全文不変。第3訂正の後段8行は両版とも次質問がなく、既存advance helperで進めないため、比較・提供成功に含めない。85状態との重複を独立欠陥数として合算しない。
+
+PGliteの既存SQL/RPC/serviceで、明示SELF＋現在肯定、も/少し/否定＋当時肯定の2系列、初回→肯定→第1訂正→別event撤回の8保存状態を実行した。初回2はPRE_QUESTION、回答後6はREFINEDで全8本文あり。original DTOは初回から不変。generateを停止したGET/再startは各保存DTOに完全一致し、最終can_continue=falseを保持した。実DB/実機確認ではない。
+
+rootと商品担当は復旧8本文（従来85の復旧例を含む）と保存8状態を全文確認した。今回の限定した意味保持復旧に追加必須指摘はない。一方、既存複合文法による「その時は悲しかったし、その時は苦しかった」は、同じ場面で両方感じたようにも読める。plan上の新しい関係がないことを、読者に独立した対象/時点が自然に伝わることと同一視しない。この参照曖昧さが連結文で表面化する点、引用/説明/Receptionの復唱、定型末尾は具体的残件として保持する。「偽結合の懸念なし」・文章品質完成・正式Product Read PASS・商品合格とは判定しない。
+
+**検証。** 最終横断 **1567件＝1534 PASS/既存33 FAIL、ERROR/SKIP0、193 deselected**（453.03秒）。旧1525件のtest identityと成否は全一致、追加42件は全PASS、新規失敗0。32失敗のmessage/tracebackはworkspace prefixと実行時memory addressのみ正規化して全一致。残1件はdiff全文を読み、同じREFINED対MEANING_UPDATED_BODY_UNAVAILABLEの期待不一致で、fixtureのuser/parent/thread UUIDだけが異なると確認した。そのUUIDのみの正規化で一致する。既存33失敗には過去修正による旧未提供期待との衝突5件を含む。開始版1525件は同じ開始source/runtimeの直前log/XML（1492 PASS/33 FAIL、434.67秒）を継承し、fresh全量再実行とは呼ばない。
+
+- 追加42件は初回から全PASS（24.52秒、381 deselected）。5形×肯定2時点×撤回2位置の20、作者を止めた欠落/主体/助詞/程度/否定/時点/因果/撤回対象復活の改変拒否15、節入替1、同義終端2、未証明独立回答のgroup拒否2、保存2。旧test全文88795bytesをprefixとして保持し旧assertは変更していない。
+- 同じ最終追加42件を開始productionで実行すると22 FAIL/20 ERROR、SKIP0（31.58秒）。ERRORは本文未提供でfixtureを作れないため。保持20・保存2は未提供によるFAILで、成功へ読み替えない。
+- 最初の一回限り本文probeはimport path不足で生成前に停止した。既存module pathを補い再実行し、実本文を確認した。production/test期待の補正や依存installは行っていない。
+- current shared-owner identity fixtureだけを既存導出関数で更新。language/runtime各18payload・9owner構成、scope/キー順・歴史的凍結証跡を維持。独立技術reviewは最終production3ownerと追加42検査に修正必須指摘なし。独立担当は編集・製品実行・GitHub書込みをしていない。`git diff --check`成功。
+
+runtimeは同一sessionで確認済みのPython3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1、Node24.19.0/PGlite0.5.8。追加install・依存manifest変更なし。横断path/selectorは直前1525件と同じ13 target（contractsは `active_final_language_owner_chain_has_zero_legacy_compose_calls` のみ）。追加単独は `ai/tests/test_cmee_emlis_detached_observation.py -k revision_withdrawal`。共通prefixは `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<既存PGlite path> <Python3.12> -m pytest -q`。旧必須59file・Q3全950・初回100・継承保存337全量は今回未再実行。
+
+**残件・次作業。** 今回の負の過去反応groupでは扱わない、認定済み独立肯定置換「楽しかった」の本文未提供が残る。次の最小対象として既存の肯定機会選択・作者のどこで必要内容が返せなくなるかを確認する。今回の負反応条件を無条件に肯定へ広げたり、旧出来事とのABOUT/contrastを復活させたりしない。復旧後の実本文では上記の独立性の読み分け、時点/語順/復唱/定型末尾も未解決である。元反応訂正/撤回一般・文章品質全体の完成は主張しない。
+
+**TECHNICAL_CREDIT/STRUCTURE_MAP_DELTA_NONE/全体48%・商品合格0/3/NOT_CLEAR/default OFF/Draft・open・unmerged。** 変更は既存API production3（Observation Plan/Human Reception/Observation Gate）、test1、current派生fixture1、既存handoff1、Cocolon既存06追記1の計7path。新file/engine/owner/route、回答認定・質問枠・Move上限・保存schema・公開API/DB/RN・他中核の変更なし。Ready・merge・deploy・enable・実DB・実機・実課金・外部生成AIは未実施。反映後のcommit/変更path/remote全文一致/headは両Draft PR本文に記録する。

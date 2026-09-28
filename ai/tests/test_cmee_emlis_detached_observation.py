@@ -1365,3 +1365,128 @@ def test_revised_finite_reception_saved_reads_keep_original_and_corrected_body(q
     assert f'その時、{finite}のですね。' in body
     assert 'これまで' not in body and 'ですこと' not in body
     assert not current['can_continue']
+
+
+def revised_then_withdrawn_request(source='私も少し怖くなかったです',
+                                   positive='今は嬉しい。', withdrawn='誘われた'):
+    request = revised_original_request(source, (positive,))
+    return advance(request, f'「{withdrawn}」は誤りです。')
+
+
+@pytest.mark.parametrize('withdrawn,detached,retained', [
+    ('誘われた', '悲しかった', '頼まれた'), ('頼まれた', '寂しかった', '誘われた')])
+@pytest.mark.parametrize('positive', ['今は嬉しい。', 'その時は少し嬉しかった。'])
+@pytest.mark.parametrize('source,finite', [
+    ('苦しかった', 'その時は苦しかった'),
+    ('私は苦しかったです', 'その時、あなたは苦しかった'),
+    ('私も少し怖くなかったです', 'その時、あなたも少し怖くなかった'),
+    ('少し私は苦しかったです', 'その時、少しあなたは苦しかった'),
+    ('私にはとても苦しかったです', 'その時、あなたにはとても苦しかった'),
+])
+def test_revision_withdrawal_keeps_both_independent_reactions_and_existing_answer(
+        withdrawn, detached, retained, positive, source, finite):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    request = revised_then_withdrawn_request(source, positive, withdrawn)
+    public = MeaningExperienceEngine().generate(request)
+    assert public.artifact is not None, public.reason_codes
+    context = actual(request=request)
+    result, plan, sentence, _, _ = context
+    body, follow = result.artifact.text, result.artifact.reception
+    assert body == public.artifact.text
+    assert f'その時は{detached}し、{finite}のですね。' in follow
+    assert withdrawn not in body and '嬉しくなかった' not in body
+    assert retained in follow and '褒められたことについて' in follow
+    assert ('その時は少し嬉しかった' if '少し' in positive else '回答した時点では嬉しい') in follow
+    assert f'その時の「{detached}」と、その時の「{source}」' in result.artifact.observation
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == 3
+    group, = (m for m in moves if len(m.target_nucleus_ids) == 2 and not m.support_nucleus_ids)
+    assert not any(nid in (r.from_nucleus_id, r.to_nucleus_id)
+                   for nid in group.target_nucleus_ids for r in plan.relations)
+    assert set(plan.coverage_requirements.required_nucleus_ids) <= {
+        nid for line in sentence.lines if line.binding.line_role != 'human_follow'
+        for nid in line.binding.nucleus_ids}
+    checkpoint = prepare_emlis_meaning(request).checkpoint
+    assert 'nucleus:s1:reaction' in checkpoint.inactive_claim_refs
+    assert set(group.target_nucleus_ids).isdisjoint(checkpoint.inactive_claim_refs)
+    assert read_body(context, body).passed
+
+
+@pytest.fixture(scope='module')
+def revision_withdrawal_context():
+    return actual(request=revised_then_withdrawn_request())
+
+
+@pytest.mark.parametrize('old,new', [
+    ('その時は悲しかったし、', ''),
+    ('し、その時、あなたも少し怖くなかった', ''),
+    ('あなたも', '私も'), ('あなたも', '友人も'), ('あなたも', 'あなたは'),
+    ('あなたも', ''), ('少し', ''), ('怖くなかった', '怖かった'),
+    ('怖くなかった', '怖くない'),
+    ('その時、', '回答した時点で、'), ('その時、', '先の回答時点で、'),
+    ('その時は悲しかった', '回答した時点では悲しかった'),
+    ('悲しかったし、', '悲しかったので、'),
+    ('その時、', '誘われたので、その時、'),
+    ('のですね。', 'のですね。嬉しくなかったのですね。'),
+])
+def test_revision_withdrawal_rejects_missing_or_reassigned_meaning_without_authors(
+        revision_withdrawal_context, old, new):
+    context = revision_withdrawal_context
+    follow = context[0].artifact.reception
+    changed = follow.replace(old, new, 1)
+    assert changed != follow
+    assert not read_body(context, context[0].artifact.text.replace(follow, changed)).passed
+
+
+def test_revision_withdrawal_rejects_swapping_whole_source_clauses(revision_withdrawal_context):
+    context = revision_withdrawal_context
+    body = context[0].artifact.text
+    old = 'その時は悲しかったし、その時、あなたも少し怖くなかった'
+    new = 'その時、あなたも少し怖くなかったし、その時は悲しかった'
+    assert old in context[0].artifact.reception
+    assert not read_body(context, body.replace(old, new)).passed
+
+
+@pytest.mark.parametrize('ending', ['のです。', 'のだと受け取りました。'])
+def test_revision_withdrawal_reads_equivalent_acknowledgement(revision_withdrawal_context, ending):
+    context = revision_withdrawal_context
+    follow = context[0].artifact.reception
+    assert read_body(context, context[0].artifact.text.replace(follow, follow.replace('のですね。', ending, 1))).passed
+
+
+@pytest.mark.parametrize('marker', ['thread_subject:revised_original_reaction',
+                                  'thread_subject:independent_source_replacement'])
+def test_revision_withdrawal_does_not_group_unproved_independent_answers(revision_withdrawal_context, marker):
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups, GroundedObservationPlanError
+    _, plan, _, _, _ = revision_withdrawal_context
+    nucleus = next(n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes)
+    changed = replace(nucleus, semantic_frame=replace(nucleus.semantic_frame,
+        attribute_codes=tuple(c for c in nucleus.semantic_frame.attribute_codes if c != marker)))
+    nuclei = tuple(changed if n == nucleus else n for n in plan.nuclei)
+    with pytest.raises(GroundedObservationPlanError):
+        _thread_retained_reaction_groups(nuclei, plan.relations)
+
+
+@pytest.mark.parametrize('source,positive', [('私は苦しかったです', '今は嬉しい。'),
+                                          ('私も少し怖くなかったです', 'その時は少し嬉しかった。')])
+def test_revision_withdrawal_saved_sequence_keeps_original_and_reads(qcase, qdb, monkeypatch, source, positive):
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    for i, text in enumerate((None, positive,
+            f'「嬉しくなかった」ではなく「{source}」です。', '「誘われた」は誤りです。')):
+        if text is not None:
+            if i > 1:
+                current = run(cont(service, user, current, f'revision-withdraw-continue-{i}'))
+            current = run(answer(service, user, current, text, f'revision-withdraw-answer-{i}'))
+            assert current['body_state'] == 'REFINED', current
+        assert current['original'] == first['original']
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not regenerate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+    body = current['current_observation']['text']
+    assert f'その時の「悲しかった」と、その時の「{source}」' in body
+    assert '誘われた' not in body and '嬉しくなかった' not in body
+    assert '頼まれた' in body and '寂し' in body and '褒められた' in body
+    assert not current['can_continue']

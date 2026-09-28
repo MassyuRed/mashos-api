@@ -3174,7 +3174,7 @@ def _read_temporal_material_discourse(raw, move, plan, resolver, selected_subjec
 
 
 def _read_detached_burden_discourse(raw, move, plan, resolver, selected_subjective_input):
-    """Read every independent withdrawn-source clause and its own time.
+    """Read each independent withdrawn or revised clause and its own time.
 
     This proof uses actual text and source fragments, never the group author,
     its nominalization markers, or the first operand as a representative.
@@ -3182,6 +3182,7 @@ def _read_detached_burden_discourse(raw, move, plan, resolver, selected_subjecti
     from emlis_ai_grounded_observation_plan import (
         _thread_retained_reaction_groups, _thread_withdrawn_original_reaction,
         _received_event_reaction_projections, is_grounded_current_answer_uncertainty,
+        _thread_revised_original_reaction,
     )
     if (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
         or move not in plan.response_plan.human_reception_plan.moves or not move.required
@@ -3210,7 +3211,8 @@ def _read_detached_burden_discourse(raw, move, plan, resolver, selected_subjecti
         n = index[nid]
         frame, codes = n.semantic_frame, set(n.semantic_frame.attribute_codes)
         unknown = is_grounded_current_answer_uncertainty(n)
-        if ("thread_subject:withdrawn_source_event" not in codes
+        if (not ("thread_subject:withdrawn_source_event" in codes
+                 or _thread_revised_original_reaction(n, plan.relations))
             or n.retention != "required" or n.grounding_kind != "explicit"
             or frame.actor != "current_user" or frame.polarity != "negative"
             or len(n.source_span_ids) != 1

@@ -2998,14 +2998,14 @@ class _ThreadAnswerGroupItem:
 
 
 def source_grounded_detached_burden_group(move, plan, nucleus_index, resolver):
-    """Prove each independent withdrawn-source duty in a selected group.
+    """Prove each independent withdrawn or revised duty in a selected group.
 
     An unknown stays an epistemic state. Each operand keeps its own source
     and time; the collective reception creates neither ABOUT nor causality.
     """
     from emlis_ai_grounded_observation_plan import (
         _thread_retained_reaction_groups, _thread_withdrawn_original_reaction,
-        _received_event_reaction_projections,
+        _received_event_reaction_projections, _thread_revised_original_reaction,
     )
     if (plan is None or getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
         or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
@@ -3022,7 +3022,8 @@ def source_grounded_detached_burden_group(move, plan, nucleus_index, resolver):
             return ()
         frame, codes = n.semantic_frame, set(n.semantic_frame.attribute_codes)
         unknown = is_grounded_current_answer_uncertainty(n)
-        if ("thread_subject:withdrawn_source_event" not in codes
+        if (not ("thread_subject:withdrawn_source_event" in codes
+                 or _thread_revised_original_reaction(n, plan.relations))
             or n.retention != "required" or n.grounding_kind != "explicit"
             or frame.actor != "current_user" or frame.polarity != "negative"
             or len(n.source_span_ids) != 1
