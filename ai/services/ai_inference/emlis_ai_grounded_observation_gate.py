@@ -2355,10 +2355,14 @@ def _body_inverse_intervening_events(body, witness, line, planned_line, plan, re
             shared = any(r.relation_id in shared_answers and r.from_nucleus_id == event.nucleus_id
                          for r in relations)
             if not shared and relation.type == "evaluation_about_event":
-                parsed = re.fullmatch(r"「([^「」『』\n]+)」ことに対する"
-                    r"(その時|回答した時点|先の回答時点)の受け止めとして、"
-                    r"「([^「」『』\n]+)」が(?:見えます|示されています)。",
-                    _body_inverse_visible_text(body, rows[event_rows[0]]))
+                visible = _body_inverse_visible_text(body, rows[event_rows[0]])
+                parsed = re.fullmatch(r"「([^「」『』\n]+)」ことについて、"
+                    r"(その時|回答した時点|先の回答時点)の受け止めは"
+                    r"「([^「」『』\n]+)」と書かれています。", visible)
+                if parsed is None:
+                    parsed = re.fullmatch(r"「([^「」『』\n]+)」ことに対する"
+                        r"(その時|回答した時点|先の回答時点)の受け止めとして、"
+                        r"「([^「」『』\n]+)」が(?:見えます|示されています)。", visible)
                 answer = index[relation.to_nucleus_id]
                 answer_sources = _body_inverse_nucleus_source_values(answer.nucleus_id, plan, resolver)
                 times = {c.split(":", 1)[1] for c in answer.semantic_frame.attribute_codes
@@ -4646,17 +4650,28 @@ def evaluate_grounded_surface_body_inverse(
                             failures.append(f"body_inverse_past_feeling_contrast_scope_mismatch:{index}")
             if (relation.type == "evaluation_about_event"
                     and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"):
-                visible = _body_inverse_visible_text(body, parsed_line)
                 left_sources = _body_inverse_nucleus_source_values(relation.from_nucleus_id, plan, resolver)
                 right_sources = _body_inverse_nucleus_source_values(relation.to_nucleus_id, plan, resolver)
                 target_codes = set(nucleus_index[relation.to_nucleus_id].semantic_frame.attribute_codes)
                 when = "先の回答時点" if "thread_time:prior_answer_time" in target_codes else "回答した時点" if "thread_time:answer_time" in target_codes else "その時"
-                # Read each complete event/time/answer clause locally. An
-                # identical answer elsewhere on this line cannot supply a
-                # missing or incorrect time marker for this event.
-                evaluation_clauses = re.findall(
-                    r"「([^「」]+)」ことに対する(先の回答時点|回答した時点|その時)"
-                    r"の受け止めとして、「([^「」]+)」", visible)
+                # Read the whole sentence before extracting its local
+                # event/time/answer clauses. Legal clauses must not hide an
+                # added cause or actor between them, nor borrow another
+                # clause's time when the two answers have identical text.
+                evaluation_clauses = []
+                grammars = (
+                    (r"「([^「」]+)」ことについて、(先の回答時点|回答した時点|その時)"
+                     r"の受け止めは「([^「」]+)」", "とあり、また", "と書かれています。"),
+                    (r"「([^「」]+)」ことに対する(先の回答時点|回答した時点|その時)"
+                     r"の受け止めとして、「([^「」]+)」", "、また", r"が(?:見えます|示されています)。"),
+                )
+                for row in witness.sentences:
+                    if row.section != "observation" or row.section_line_ordinal != parsed_line.section_ordinal:
+                        continue
+                    visible = _body_inverse_visible_text(body, row).removeprefix("今の入力だけを見ると、")
+                    for operand, connector, ending in grammars:
+                        if re.fullmatch(rf"(?:{operand}{connector})*{operand}{ending}", visible):
+                            evaluation_clauses.extend(re.findall(operand, visible))
                 if relation_id not in grouped_answers and not (any(b == a + 1 for a in from_positions for b in to_positions) and
                         any(_body_inverse_normalized_anchor(left) in left_sources
                             and clause_time == when

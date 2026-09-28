@@ -844,15 +844,15 @@ def middle_revision_context():
     ('「楽しい」', '「楽しくない」'),
     ('「寂しかった」', '「寂しくなかった」'),
     ('その出来事について、その時の', 'その出来事について、回答した時点の'),
-    ('「誘われた」ことに対する回答した時点の', '「誘われた」ことに対するその時の'),
-    ('「誘われた」ことに対する', '「頼まれた」ことに対する'),
-    ('「誘われた」ことに対する', '「誘われた」ことのおかげで'),
+    ('「誘われた」ことについて、回答した時点の', '「誘われた」ことについて、その時の'),
+    ('「誘われた」ことについて、', '「頼まれた」ことについて、'),
+    ('「誘われた」ことについて、', '「誘われた」ことのおかげで'),
     ('「苦しかった」と、当時の気持ちを言い直されています', '「苦しかった」と、回答した時点の気持ちを言い直されています'),
     ('「苦しかった」と、当時の気持ちを言い直されています', '「苦しかった」と、気持ちを言い直されています'),
     ('「苦しかった」と、当時の気持ちを言い直されています', '「悲しかった」と、当時の気持ちを言い直されています'),
     ('「苦しかった」と、当時の気持ちを言い直されています', '誘われたので、「苦しかった」と、当時の気持ちを言い直されています'),
     ('「苦しかった」と、当時の気持ちを言い直されています。', ''),
-    ('「誘われた」ことに対する回答した時点の受け止めとして、「楽しい」が見えます。', ''),
+    ('「誘われた」ことについて、回答した時点の受け止めは「楽しい」と書かれています。', ''),
     ('「頼まれた」と「寂しかった」が、異なる向きのまま同時にあります。', ''),
     ('「苦しかった」と、当時の気持ちを言い直されています。',
      '「苦しかった」と、当時の気持ちを言い直されています。苦しさは誘われたことによるものです。'),
@@ -909,7 +909,7 @@ def test_current_focus_revision_keeps_about_and_surviving_meaning(positive, sour
     body = result.artifact.text
     observation = result.artifact.observation
     assert observation.index('褒められた') < observation.index('誘われた') < observation.index('頼まれた')
-    assert f'「誘われた」ことに対するその時の受け止めとして、「{source}」' in observation
+    assert f'「誘われた」ことについて、その時の受け止めは「{source}」' in observation
     assert '悲しかった' not in body
     assert all(s in body for s in ('嬉しくなかった', '寂しかった', source))
     assert all(s in result.artifact.reception for s in ('褒められた', '誘われた', '頼まれた'))
@@ -946,11 +946,11 @@ def current_focus_revision_context():
     ('「少し怖くなかった」', '「怖くなかった」'),
     ('「少し怖くなかった」', '「少し怖くない」'),
     ('「少し怖くなかった」', '「悲しかった」'),
-    ('「誘われた」ことに対するその時の', '「頼まれた」ことに対するその時の'),
-    ('「誘われた」ことに対するその時の', '「誘われた」ことに対する回答した時点の'),
-    ('「誘われた」ことに対するその時の', '「誘われた」ことに対する'),
-    ('「誘われた」ことに対する', '「誘われた」ことのせいで'),
-    ('「誘われた」ことに対するその時の受け止めとして、「少し怖くなかった」が見えます。', ''),
+    ('「誘われた」ことについて、その時の', '「頼まれた」ことについて、その時の'),
+    ('「誘われた」ことについて、その時の', '「誘われた」ことについて、回答した時点の'),
+    ('「誘われた」ことについて、その時の', '「誘われた」ことについて、'),
+    ('「誘われた」ことについて、', '「誘われた」ことのせいで'),
+    ('「誘われた」ことについて、その時の受け止めは「少し怖くなかった」と書かれています。', ''),
     ('「頼まれた」と「寂しかった」が、異なる向きのまま同時にあります。', ''),
     ('回答した時点では嬉しいのですね。', 'その時は嬉しかったのですね。'),
     ('誘われた時は、少し怖くなく', '誘われた時は、少し怖く'),
@@ -994,7 +994,7 @@ def test_current_focus_revision_saved_recorrection_and_known_withdrawal_gap(qcas
         if index == 2:
             body = current['current_observation']['text']
             assert '悲しかった' not in body
-            assert '「誘われた」ことに対するその時の受け止めとして、「苦しかった」' in body
+            assert '「誘われた」ことについて、その時の受け止めは「苦しかった」' in body
     if final_state == 'MEANING_UPDATED_BODY_UNAVAILABLE':
         assert current['current_observation'] is None
         assert current['answer_saved'] and current['meaning_updated']
@@ -1807,7 +1807,7 @@ def test_explicit_revision_reference_keeps_source_and_existing_about(old, answer
         assert REVISION_INTRO not in result.artifact.reception
         assert '言い直されています' not in result.artifact.observation
         event = ORIGINAL_EVENTS[len(answers)]
-        assert f'「{event}」ことに対するその時の受け止めとして、「{source}」' in result.artifact.observation
+        assert f'「{event}」ことについて、その時の受け止めは「{source}」' in result.artifact.observation
     else:
         nucleus, = revised
         assert not any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
@@ -1914,7 +1914,7 @@ def test_multiple_original_corrections_deliver_every_event_and_own_feeling(sourc
     result = context[0]
     assert '嬉しくなかった' not in result.artifact.text and '悲しかった' not in result.artifact.text
     for event, feeling in zip(('褒められた', '誘われた'), sources):
-        assert f'「{event}」ことに対するその時の受け止めとして、「{feeling}」' in result.artifact.observation
+        assert f'「{event}」ことについて、その時の受け止めは「{feeling}」' in result.artifact.observation
     assert '「頼まれた」と「寂しかった」' in result.artifact.observation
     assert '頼まれたのに、寂しさを感じたのですね。' in result.artifact.reception
     assert read_body(context, result.artifact.text).passed
@@ -1926,15 +1926,15 @@ def test_multiple_original_corrections_cannot_borrow_another_clause_time(
         multiple_original_correction_context, event, when):
     context = multiple_original_correction_context
     body = context[0].artifact.text
-    old = f'「{event}」ことに対するその時の受け止めとして、'
-    new = f'「{event}」ことに対する{when + "の" if when else ""}受け止めとして、'
+    old = f'「{event}」ことについて、その時の受け止めは'
+    new = f'「{event}」ことについて、{when + "の" if when else ""}受け止めは'
     assert old in body
     assert not read_body(context, body.replace(old, new, 1)).passed
 
 
 @pytest.mark.parametrize('old,new', [
-    ('「褒められた」ことに対する', '「誘われた」ことに対する'),
-    ('「誘われた」ことに対する', '「頼まれた」ことに対する'),
+    ('「褒められた」ことについて、', '「誘われた」ことについて、'),
+    ('「誘われた」ことについて、', '「頼まれた」ことについて、'),
     ('少し', ''), ('私は', '友人は'), ('私は', '私も'),
     ('不安でした', '不安ではありませんでした'), ('不安でした', '不安です'),
 ])
@@ -1950,8 +1950,10 @@ def test_identical_corrected_feelings_still_require_each_exact_source(old, new):
 def test_multiple_original_corrections_allow_equivalent_observation_ending(multiple_original_correction_context):
     context = multiple_original_correction_context
     body = context[0].artifact.text
-    assert 'が見えます。' in body
-    assert read_body(context, body.replace('が見えます。', 'が示されています。')).passed
+    assert 'と書かれています。' in body
+    legacy = body.replace('」ことについて、', '」ことに対する').replace('の受け止めは', 'の受け止めとして、')
+    legacy = legacy.replace('と書かれています。', 'が示されています。')
+    assert legacy != body and read_body(context, legacy).passed
 
 
 @pytest.mark.parametrize('sources', MULTIPLE_ORIGINAL_CORRECTIONS)
@@ -2077,11 +2079,11 @@ def test_nonadjacent_corrections_keep_complete_duties_and_original_event_order(n
     assert f'「{independent}」と、当時の気持ちを言い直されています。' in observation
     assert REVISION_INTRO in follow and 'でしたこと' not in follow
     if prior:
-        assert '「褒められた」ことに対する回答した時点の受け止めとして、「嬉しい」' in observation
-        assert f'「頼まれた」ことに対するその時の受け止めとして、「{sources[1]}」' in observation
+        assert '「褒められた」ことについて、回答した時点の受け止めは「嬉しい」' in observation
+        assert f'「頼まれた」ことについて、その時の受け止めは「{sources[1]}」' in observation
         assert '回答した時点では嬉しいのですね。' in follow
     else:
-        assert f'「褒められた」ことに対するその時の受け止めとして、「{sources[0]}」' in observation
+        assert f'「褒められた」ことについて、その時の受け止めは「{sources[0]}」' in observation
         assert '「頼まれた」という出来事がありました。' in observation
         assert '頼まれたことについて' not in follow and '頼まれた時は' not in follow
     moves = plan.response_plan.human_reception_plan.moves
@@ -2097,7 +2099,7 @@ def test_nonadjacent_corrections_keep_complete_duties_and_original_event_order(n
     ('observation', '当時の気持ちを言い直されています。', '回答した時点の気持ちを言い直されています。'),
     ('observation', 'と、当時の気持ちを言い直されています。', 'という気持ちが書かれています。'),
     ('observation', '「誘われた」と「悲しかった」', '「頼まれた」と「悲しかった」'),
-    ('observation', 'ことに対するその時の受け止めとして、', 'ことに対する受け止めとして、'),
+    ('observation', 'ことについて、その時の受け止めは', 'ことについて、受け止めは'),
     ('reception', REVISION_INTRO, ''),
     ('reception', REVISION_INTRO, '頼まれたことについて、'),
     ('reception', '当時', '回答した時点'),
@@ -2488,3 +2490,99 @@ def test_shared_observation_revision_cannot_exchange_or_merge_distinct_sources(s
     changed = f'当時の気持ちを、{quoted}と言い直されています。'
     assert changed != original
     assert not read_body(context, context[0].artifact.text.replace(original, changed, 1)).passed
+
+
+# ABOUT remains tied to each event even after its original contrast is
+# revised. Read the new sentence independently, including polite/unknown
+# answers and a corrected prior answer; no author replay supplies its time.
+NONSHARED_ABOUT_ANSWERS = [
+    ('今は嬉しい。', '回答した時点', '嬉しい'),
+    ('その時は重かった。', 'その時', '重かった'),
+    ('今は少し不安です。', '回答した時点', '少し不安です'),
+    ('今は私も怖くないです。', '回答した時点', '私も怖くないです'),
+    ('今はわからない。', '回答した時点', 'わからない'),
+    ('prior', '先の回答時点', '私は苦しいです'),
+    ('grouped', 'その時', '私は少し不安でした'),
+]
+
+
+@pytest.fixture(scope='module', params=NONSHARED_ABOUT_ANSWERS)
+def nonshared_about_context(request):
+    answer_text, when, source = request.param
+    if answer_text == 'grouped':
+        req = begin('褒められたのに、嬉しくなかった。誘われたのに、悲しかった。')
+        sequence = multiple_original_correction_answers((source, source))
+    elif answer_text == 'prior':
+        req = begin()
+        sequence = ('今は私は重いです。', '「私は重いです」ではなく「私は苦しいです」です。',
+                    '「嬉しくなかった」ではなく「怖くなかった」です。')
+    else:
+        req = begin()
+        sequence = (answer_text, '「嬉しくなかった」ではなく「少し苦しかった」です。')
+    for text in sequence:
+        req = advance(req, text)
+    return actual(request=req), when, source, answer_text == 'grouped'
+
+
+def test_nonshared_about_reads_event_time_and_complete_answer(nonshared_about_context):
+    context, when, source, grouped = nonshared_about_context
+    observation = context[0].artifact.observation
+    clause = f'「褒められた」ことについて、{when}の受け止めは「{source}」'
+    if grouped:
+        assert observation == (clause + 'とあり、また'
+            f'「誘われた」ことについて、その時の受け止めは「{source}」と書かれています。')
+    else:
+        assert clause + 'と書かれています。' in observation
+    assert read_body(context, context[0].artifact.text).passed
+
+
+@pytest.mark.parametrize('ending', ['が見えます。', 'が示されています。'])
+def test_nonshared_about_reads_complete_legacy_grammar(nonshared_about_context, ending):
+    context, _, _, _ = nonshared_about_context
+    body = context[0].artifact.text
+    observation = context[0].artifact.observation
+    legacy = observation.replace('」ことについて、', '」ことに対する')
+    legacy = legacy.replace('の受け止めは', 'の受け止めとして、')
+    legacy = legacy.replace('とあり、また', '、また').replace('と書かれています。', ending)
+    assert legacy != observation
+    assert read_body(context, body.replace(observation, legacy, 1)).passed
+
+
+@pytest.mark.parametrize('mutation', ['event', 'time_missing', 'time_changed', 'answer',
+    'cause', 'mixed_prefix', 'mixed_ending', 'extra_cause'])
+def test_nonshared_about_rejects_reassignment_and_mixed_grammar(nonshared_about_context, mutation):
+    context, when, source, grouped = nonshared_about_context
+    observation = context[0].artifact.observation
+    left = f'「褒められた」ことについて、{when}の受け止めは'
+    changes = {
+        'event': ('「褒められた」ことについて、', '「誘われた」ことについて、'),
+        'time_missing': (left, '「褒められた」ことについて、受け止めは'),
+        'time_changed': (left, '「褒められた」ことについて、'
+                         + ('回答した時点' if when == 'その時' else 'その時') + 'の受け止めは'),
+        'answer': (f'「{source}」', '「友人は嬉しい」'),
+        'cause': ('「褒められた」ことについて、', '「褒められた」ことのせいで、'),
+        'mixed_prefix': ('「褒められた」ことについて、', '「褒められた」ことに対する'),
+        'mixed_ending': ('とあり、また', '、また') if grouped else ('と書かれています。', 'が見えます。'),
+        'extra_cause': (f'「{source}」', f'「{source}」、それが悲しさの原因だ'),
+    }
+    old, new = changes[mutation]
+    changed = observation.replace(old, new, 1)
+    assert changed != observation
+    assert not read_body(context, context[0].artifact.text.replace(observation, changed, 1)).passed
+
+
+@pytest.mark.parametrize('nonshared_about_context', [NONSHARED_ABOUT_ANSWERS[-1]], indirect=True)
+@pytest.mark.parametrize('legacy', [False, True])
+@pytest.mark.parametrize('addition', ['それが原因で', 'そのため', '友人の反応として'])
+def test_nonshared_about_rejects_invented_link_between_complete_clauses(
+        nonshared_about_context, legacy, addition):
+    context, _, _, _ = nonshared_about_context
+    observation = context[0].artifact.observation
+    if legacy:
+        observation = observation.replace('」ことについて、', '」ことに対する')
+        observation = observation.replace('の受け止めは', 'の受け止めとして、')
+        observation = observation.replace('とあり、また', '、また').replace('と書かれています。', 'が見えます。')
+    connector = '、また' if legacy else 'とあり、また'
+    changed = observation.replace(connector, connector + addition, 1)
+    assert changed != observation
+    assert not read_body(context, context[0].artifact.text.replace(context[0].artifact.observation, changed, 1)).passed

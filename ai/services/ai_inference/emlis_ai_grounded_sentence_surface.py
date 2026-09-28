@@ -153,7 +153,7 @@ _RECEPTION_QUOTE_RE: Final = re.compile(r"「([^」]*)」")
 _BODY_RELATION_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     ("from_to", re.compile(r"から.{0,160}(?:へ|に)")),
     ("coexistence", re.compile(r"一方で|同時に|重なり|異なる向き|並んで|両方|ともに|中にも|中でも")),
-    ("link", re.compile(r"つなが|表れ|生まれ|結びつ|に対する|その出来事について、")),
+    ("link", re.compile(r"つなが|表れ|生まれ|結びつ|に対する|その出来事について、|」ことについて、")),
     ("counterdirection", re.compile(r"同意していない|終わらない|それでも|けれど")),
     ("change", re.compile(r"変化|動いて|進み|向き")),
 )
@@ -3499,9 +3499,9 @@ def _render_relation(
             when = "先の回答時点" if times == {"prior_answer_time"} else "回答した時点" if times == {"answer_time"} else "その時" if times == {"original_occasion"} else None
             if when is None or target.source_fields != ("answer_text_private",):
                 raise GroundedSentenceSurfaceError("thread_answer_target_time_unbound")
-            clause = f"{left}ことに対する{when}の受け止めとして、{right}"
+            clause = f"{left}ことについて、{when}の受け止めは{right}"
             if relation_id in intervening_evaluations or ordered_thread_relations:
-                sentences.append(clause + "が見えます。")
+                sentences.append(clause + "と書かれています。")
             else:
                 evaluations.setdefault(when, []).append(clause)
         elif relation.type == "uncertain_connection":
@@ -3517,7 +3517,7 @@ def _render_relation(
         pairs = "、また".join(f"{left}の一方で{right}" for left, right in contrast_pairs)
         sentences.insert(0, f"{pairs}という、それぞれ異なる向きが並んでいます。")
     for clauses in evaluations.values():
-        sentences.append("、また".join(clauses) + "が見えます。")
+        sentences.append("とあり、また".join(clauses) + "と書かれています。")
     joined = " ".join(item for item in sentences if item)
     if not joined:
         return _render_observation(binding, nucleus_index, resolver)
