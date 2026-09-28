@@ -19,6 +19,119 @@ from test_emlis_q3_application import qdb, qcase
 from test_emlis_q2_application import run, answer
 
 
+OWNED_INITIAL = ('誘われたのに、私も少し不安だった。'
+                 '頼まれたのに、少し私は怖くなかった。'
+                 '言われたけど、僕には少し寂しかった。')
+
+
+@pytest.mark.parametrize('reply,correction,corrected,time', [
+    ('今は少し苦しい。', '「少し苦しい」ではなく「少し怖い」です。', '少し怖い', '先の回答時点では'),
+    ('その時は少し苦しかった。', '「少し苦しかった」ではなく「少し寂しかった」です。', '少し寂しかった', 'その時は'),
+    ('今は私も少し不安です。', '「私も少し不安です」ではなく「私も少し苦しいです」です。', 'あなたも少し苦しい', '先の回答時点では'),
+    ('今は嬉しい。', '「嬉しい」ではなく「少し楽しい」です。', '少し楽しい', '先の回答時点では'),
+])
+def test_owned_initial_answer_correction_and_event_withdrawal(reply, correction, corrected, time):
+    from test_cmee_emlis_detached_observation import read_body
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    req = begin(OWNED_INITIAL)
+    for index, text in enumerate((reply, correction, '「誘われた」は誤りです。')):
+        req = advance(req, text)
+        context = actual(request=req)
+        body = context[0].artifact.text
+        public = MeaningExperienceEngine().generate(req)
+        assert public.artifact is not None and public.artifact.text == body
+        assert '頼まれたのに、あなたは少し怖くなかった' in body
+        assert '言われたけど、あなたには少し寂しかった' in body
+        assert 'あなたも少し不安だった' in body
+        if index:
+            delivered_time = '先の回答時点で、' if index == 2 and corrected.startswith('あなた') else time
+            assert delivered_time + corrected in body
+        assert ('誘われた' in body) == (index != 2)
+        assert read_body(context, body).passed
+
+
+@pytest.mark.parametrize('time', ['今は', 'その時は'])
+@pytest.mark.parametrize('memo', ['誘われたのに、私も少し不安だった。', OWNED_INITIAL])
+def test_owned_initial_keeps_past_explanation_answer(time, memo):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=advance(begin(memo), time + '私は不安なのだった。'))
+    body = context[0].artifact.text
+    assert '私は不安なのだった' in body
+    assert 'あなたは不安な' in context[0].artifact.reception
+    assert read_body(context, body).passed
+    changed = body.replace('あなたは不安なのでしたね', 'あなたは不安なのですね').replace(
+        'あなたは不安なのだったし', 'あなたは不安なのだし')
+    assert changed != body and not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('old,new', [
+    ('回答した時点では少し苦しい', 'その時は少し苦しい'),
+    ('回答した時点では少し苦しい', '先の回答時点では少し苦しい'),
+    ('回答した時点では少し苦しい', '少し苦しい'),
+    ('回答した時点では少し苦しい', '回答した時点では苦しい'),
+    ('回答した時点では少し苦しい', '回答した時点では少し苦しかった'),
+    ('あなたも少し不安だった', 'あなたも少し不安だ'),
+    ('あなたも少し不安だった', 'あなたは少し不安だった'),
+    ('誘われたのに', '誘われたから'),
+    ('し、回答した時点では少し苦しい', ''),
+])
+def test_owned_initial_about_meaning_cannot_be_donated_by_another_layer(old, new):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=advance(begin(OWNED_INITIAL), '今は少し苦しい。'))
+    body = context[0].artifact.text
+    assert read_body(context, body).passed
+    changed = body.replace(old, new, 1)
+    assert changed != body and not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('polite', [False, True])
+def test_owned_initial_original_revision_and_withdrawal(polite):
+    from test_cmee_emlis_detached_observation import read_body
+    source = '私は少し怖くなかったです' if polite else '私も少し不安だった'
+    memo = '誘われたのに、' + source + '。頼まれたのに、私も少し不安でした。'
+    for reply in ('「' + source + '」ではなく「少し苦しかった」です。', '「誘われた」は誤りです。'):
+        context = actual(request=advance(begin(memo), reply))
+        body = context[0].artifact.text
+        assert '頼まれたのに、あなたも少し不安だった' in body
+        if 'ではなく' in reply:
+            assert source not in body and '少し苦しかった' in body
+        else:
+            assert '誘われた' not in body and source in body
+            assert 'という言葉' not in context[0].artifact.reception
+        assert read_body(context, body).passed
+
+
+@pytest.mark.parametrize('sequence', [
+    ('今は私も少し不安です。', '「私も少し不安です」ではなく「私も少し苦しいです」です。', '「誘われた」は誤りです。'),
+    ('今は嬉しい。', '「嬉しい」ではなく「少し楽しい」です。', '「少し楽しい」は誤りです。'),
+    ('「私も少し不安だった」ではなく「少し苦しかった」です。', '今は嬉しい。', '「頼まれた」は誤りです。'),
+])
+def test_owned_initial_saved_corrections_withdrawals_reuse_exact_body(qcase, qdb, monkeypatch, sequence):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$1 where id=$2', [OWNED_INITIAL, parent])
+    first = current = run(service.start(user, parent))
+    for index, text in enumerate(sequence):
+        if index:
+            current = run(cont(service, user, current, f'owned-continue-{index}'))
+        current = run(answer(service, user, current, text, f'owned-answer-{index}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        assert '言われたけど、あなたには少し寂しかった' in body
+        assert '今回の観測に反映できていない' not in body
+        if index == 2:
+            if text == '「誘われた」は誤りです。':
+                assert '誘われた' not in body and '先の回答時点で、あなたも少し苦しい' in body
+            elif text == '「頼まれた」は誤りです。':
+                assert '頼まれた' not in body and '少し苦しかった' in body
+            else:
+                assert '少し楽しい' not in body and '誘われたのに、あなたも少し不安だった' in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved body must not regenerate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+
+
 def actual(text=A, request=None):
     prepared = prepare_emlis_meaning(request or answered(text))
     plan = build_updated_grounded_plan(prepared)

@@ -12330,9 +12330,23 @@ def _received_event_reaction_projections(span, base_frame):
         r"(?:嬉し|うれし|寂し|さびし|悲し|苦し|つら|辛|怖|こわ|楽し)"
         r"(?:い|かった|くない|くなかった)(?:です)?)", text)
     if match is None:
+        # The same received-event proof also owns a complete past feeling
+        # with one explicit SELF and/or degree. Keep the entire reaction
+        # range: neither its owner nor its degree belongs to the event.
+        owner = r"(?:私|自分|わたし|僕|ぼく|俺|おれ)(?:には|にも|は|も)"
+        degree = r"(?:少し|とても|まだ|全然|あまり)"
+        match = re.fullmatch(
+            r"(?P<event>(?:(?:私|自分|わたし)(?:は|が))?"
+            r"(?:[一-鿿々ァ-ヶぁ-んー]{1,16}に)?"
+            r"(?:褒められ|ほめられ|言われ|伝えられ|評価され|断られ|誘われ|頼まれ|声をかけられ|声を掛けられ)"
+            r"(?:た|ました))(?P<link>のに|けれども?|けど)[、,]?"
+            rf"(?P<reaction>(?:(?:{owner})?(?:{degree})?|{degree}{owner})"
+            r"(?:(?:嬉し|うれし|寂し|さびし|悲し|苦し|つら|辛|怖|こわ|楽し)"
+            r"(?:かった|くなかった)(?:です)?|不安(?:だった|でした)))", text)
+    if match is None:
         return ()
     reaction = match.group("reaction")
-    negative = bool(re.search(r"くない|くなかった|寂|さび|悲|苦|つら|辛|怖|こわ", reaction))
+    negative = bool(re.search(r"くない|くなかった|寂|さび|悲|苦|つら|辛|怖|こわ|不安", reaction))
     rows = []
     for name, kind, predicate, polarity, modality, roles in (
         ("event", "event", "event", "neutral", "fact", ("semantic_role:contrast_before",)),
@@ -12346,7 +12360,7 @@ def _received_event_reaction_projections(span, base_frame):
              f"source_fragment_scalar_range:{start}:{end}", "source_fragment_scalar_source:normalized_raw_text",
              *roles, "time_scope:past",
              *(("source_received_event_link:" + {"のに": "noni", "けど": "kedo", "けれど": "keredo", "けれども": "keredomo"}[match.group("link")],)
-               if reaction.endswith("かった") else ())), relation_kind="contrast"))
+               if reaction.endswith(("かった", "かったです", "だった", "でした")) else ())), relation_kind="contrast"))
     return tuple(rows)
 
 

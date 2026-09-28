@@ -2930,7 +2930,7 @@ def _source_grounded_received_contrast_rows(targets, supports, nucleus_index, re
             profile = _source_grounded_semantic_profile(n, fragment)
             if (profile.actor_kind != "SELF" or profile.quoted_boundary or profile.performed_action or profile.future_action
                 or _typed_reception_source_fragment(n, raw) != fragment
-                or not _SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(fragment)
+                or not _SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(fragment.removesuffix("です"))
                 or re.search(r"[「」『』…‥?？!！]", raw)):
                 return ()
         link = next(c.split(":", 1)[1] for c in event.semantic_frame.attribute_codes
@@ -3250,7 +3250,7 @@ def source_grounded_thread_received_group(move, plan, nucleus_index, resolver):
                 or _typed_reception_source_fragment(target, span.raw_text) != source
                 or profile.actor_kind != "SELF" or profile.quoted_boundary
                 or profile.performed_action or profile.future_action
-                or not _SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(source)
+                or not _SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(source.removesuffix("です"))
                 or not any(row.kind == "reaction" and row.polarity == "negative"
                     and set(row.attribute_codes) <= set(target.semantic_frame.attribute_codes)
                     for row in _received_event_reaction_projections(span, target.semantic_frame))):
@@ -8425,7 +8425,7 @@ def _thread_received_group_ir_text(realization):
                 or (ep.nucleus_kind, ep.predicate_kind, ep.modality) != ("reaction", "feeling", "feeling")
                 or ep.actor_kind != "SELF" or ep.quoted_boundary or ep.performed_action or ep.future_action
                 or not (_SOURCE_GROUNDED_PAST_MORPHOLOGY_RE if link == "detached"
-                        else _SOURCE_GROUNDED_FINITE_END_RE).search(fragments[slot])
+                        else _SOURCE_GROUNDED_FINITE_END_RE).search(fragments[slot].removesuffix("です"))
                 or any(slot in r.endpoint_slots for r in realization.relations)):
                 raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
             parts.append(_detached_burden_nominal(fragments[slot], "original_occasion"))
@@ -8443,7 +8443,7 @@ def _thread_received_group_ir_text(realization):
             fp = profiles[feeling_slot]
             if (fp.nucleus_kind != "reaction" or fp.predicate_kind != "feeling" or fp.modality != "feeling"
                 or fp.actor_kind != "SELF" or fp.quoted_boundary or fp.performed_action or fp.future_action
-                or not _SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(fragments[feeling_slot])):
+                or not _SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(fragments[feeling_slot].removesuffix("です"))):
                 raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
             expected_relations.add(("contrast", (slot, feeling_slot)))
             part = fragments[slot] + _RECEIVED_EVENT_LINK_TEXT[link] + fragments[feeling_slot] + "こと"
@@ -8502,7 +8502,7 @@ def _received_contrast_group_ir_text(realization):
         if (ep.nucleus_kind != "event" or ep.predicate_kind != "event" or ep.modality != "fact"
             or fp.nucleus_kind != "reaction" or fp.predicate_kind != "feeling" or fp.modality != "feeling"
             or any(p.actor_kind != "SELF" or p.quoted_boundary or p.performed_action or p.future_action for p in (ep, fp))
-            or any(not _SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(fragment) for fragment in (event, feeling))
+            or any(not _SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(fragment.removesuffix("です")) for fragment in (event, feeling))
             or realization.relations[slot].relation_kind != "contrast"
             or realization.relations[slot].endpoint_roles != ("LEFT", "RIGHT")
             or realization.relations[slot].endpoint_slots != (slot, count + slot)):
@@ -9887,6 +9887,8 @@ def _received_discourse_negative_feeling(fragment: str) -> tuple[str, str] | Non
     event. It is not an additional object of Emlis's generic approval.
     Compound/quoted/actor-bearing clauses keep the existing source grammar.
     """
+    if re.search(r"(?:私|自分|わたし|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", fragment):
+        return None
     match = re.fullmatch(r"([^、,。\s]+?)(くなかった|かった)", fragment)
     if match is None:
         return None
@@ -9937,13 +9939,35 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str
             prefix = _revised_feeling_discourse_prefix(event) if link == "replacement" else "その時は"
             copula = _detached_feeling_copula_parts(event)
             parts.append(prefix + _detached_feeling_finite_surface(event, allow_medial=True,
-                allow_copular=bool(link == "replacement" and copula
+                allow_copular=bool(copula
                     and copula[1] in {"でした", "だった"})))
             continue
         feeling = fragments[int(feeling_text)] if feeling_text != "none" else None
         negative = _received_discourse_negative_feeling(feeling) if feeling else None
         if feeling is not None and negative is None:
-            return None
+            # A source-owned subject/degree/copula stays in a finite clause;
+            # nominalizing its whole prefix would create e.g. 私も少し怖さ.
+            finite_reaction = _detached_feeling_finite_surface(
+                feeling, allow_medial=True, allow_copular=True)
+            if (not finite_reaction.endswith(("かった", "だった"))
+                or re.search(r"(?:私|自分|わたし|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite_reaction)):
+                return None
+            original = event + _RECEIVED_EVENT_LINK_TEXT[link] + "、" + finite_reaction
+            if answer_code == ["none"]:
+                parts.append(original)
+            else:
+                answer_slot, grammar, when = int(answer_code[0]), *answer_code[1:]
+                source = fragments[answer_slot]
+                finite = _detached_feeling_finite_surface(source, allow_medial=True,
+                    allow_copular=True, allow_explanatory=True)
+                time = {"original_occasion": "その時は", "answer_time": "回答した時点では",
+                        "prior_answer_time": "先の回答時点では"}.get(when)
+                if (finite is None or time is None
+                    or re.search(r"(?:私|自分|わたし|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)):
+                    return None
+                parts.append(original + "し、" + time + finite)
+            separate_time_scopes = True
+            continue
         if answer_code == ["none"]:
             if feeling.endswith("くなかった"):
                 parts.append(event + "ことは、" + negative[0] + "にはつながらなかった")
@@ -10675,7 +10699,8 @@ def _detached_feeling_source_parts(move, plan, resolver, *, allow_revised=False)
     if nucleus.source_fields in {("memo",), ("memo_action",)}:
         from emlis_ai_grounded_observation_plan import _thread_withdrawn_original_reaction
         if (not _thread_withdrawn_original_reaction(nucleus, plan.relations)
-            or _source_grounded_current_expression_nominal(move, plan, index, resolver) != source + "こと"):
+            or _source_grounded_current_expression_nominal(move, plan, index, resolver)
+                not in {source + "こと", source + "という言葉"}):
             return None
         time = "その時は"
     elif (nucleus.source_fields == ("answer_text_private",)

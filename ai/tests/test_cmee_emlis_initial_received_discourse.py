@@ -164,3 +164,99 @@ def test_answer_time_and_original_correction_preserve_other_events(reply,withdra
     if time is not None:retained_assertion(lambda: (time in follow), 'time in follow')
     retained_assertion(lambda: (inverse(context,follow,without_author=True).passed), 'inverse(context, follow, without_author=True).passed')
     retained_assertion(lambda: (not inverse(context,follow.replace('悲しさ','楽しさ'),without_author=True).passed), "not inverse(context, follow.replace('悲しさ', '楽しさ'), without_author=True).passed")
+
+
+OWNED_PAST = (
+    '誘われたのに、私も少し不安だった。'
+    '頼まれたのに、少し私は怖くなかった。'
+    '言われたけど、僕には少し寂しかった。'
+)
+
+
+@pytest.mark.parametrize('source,finite', [
+    ('私も少し不安だった', 'あなたも少し不安だった'),
+    ('少し私は怖くなかった', 'あなたは少し怖くなかった'),
+    ('僕には少し寂しかった', 'あなたには少し寂しかった'),
+    ('少し不安だった', '少し不安だった'),
+    ('私も少し不安でした', 'あなたも少し不安だった'),
+    ('私は少し怖くなかったです', 'あなたは少し怖くなかった'),
+    ('少し私は不安だった', 'あなたは少し不安だった'),
+])
+@pytest.mark.parametrize('capability', ['Q3_FREE', 'Q3_PLUS', 'Q3_PREMIUM'])
+def test_owned_past_initial_body_keeps_complete_reaction(source, finite, capability):
+    from test_cmee_emlis_detached_observation import read_body
+    req = begin('誘われたのに、' + source + '。')
+    req = replace(req, emlis_thread=replace(req.emlis_thread,
+        capability_snapshot=capability,
+        question_control_context=EmlisQuestionControlV1(
+            question_limit=3 if capability == 'Q3_PREMIUM' else 1)))
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None, result.reason_codes
+    assert '誘われたのに、' + finite + 'のですね。' in result.artifact.reception
+    assert source in result.artifact.observation
+    assert result.question is not None and not result.automatic_progression
+    context = actual(request=req)
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.mark.parametrize('old,new', [
+    ('あなたも少し不安だった', 'あなたは少し不安だった'),
+    ('あなたも少し不安だった', '少し不安だった'),
+    ('あなたも少し不安だった', '友人も少し不安だった'),
+    ('あなたも少し不安だった', 'あなたも不安だった'),
+    ('あなたも少し不安だった', 'あなたも少し不安だ'),
+    ('あなたは少し怖くなかった', 'あなたは少し怖かった'),
+    ('あなたは少し怖くなかった', 'あなたは少し安心した'),
+    ('誘われたのに', '誘われたので'),
+    ('言われたけど', '言われたのに'),
+    ('頼まれたのに、あなたは少し怖くなかったし、', ''),
+    ('「私も少し不安だった」', '「私も不安だった」'),
+    ('「少し私は怖くなかった」', '「少し私は怖くない」'),
+])
+def test_owned_past_initial_meaning_is_read_without_either_author(old, new):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(OWNED_PAST))
+    body = context[0].artifact.text
+    assert read_body(context, body).passed
+    changed = body.replace(old, new, 1)
+    assert changed != body
+    assert not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('memo', [
+    '友人が誘われたのに、私も少し不安だった。',
+    '誘われたのに、友人も少し不安だった。',
+    '「誘われたのに、私も少し不安だった」と友人が言った。',
+    '誘われたのに、私も少し不安だったらしい。',
+    '誘われたなら、私も少し不安だったかもしれない。',
+    '誘われなかったのに、私も少し不安だった。',
+    '誘われたのに、私も少し不安だったと思う。',
+    '誘われたのに、私も少し不安だったわけではない。',
+    '誘われたのに、私も少し不安だ。',
+    '誘われたのに、少し私は少し不安だった。',
+    '誘われたのに、少しも怖くなかった。',
+])
+def test_owned_past_projection_does_not_promote_unproved_sources(memo):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(memo)))
+    assert not any(flag.startswith('source_received_event_link:')
+                   for nucleus in plan.nuclei for flag in nucleus.semantic_frame.attribute_codes)
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+def test_owned_past_initial_and_answer_saved_body_reuse(qcase, qdb, monkeypatch, tier):
+    user, parent, service = qcase
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
+    qdb.query('update public.emotions set memo=$1 where id=$2', [OWNED_PAST, parent])
+    first = run(service.start(user, parent))
+    follow = first['current_observation']['text'].split('Emlisから：', 1)[1]
+    for text in ('誘われたのに、あなたも少し不安だった',
+                 '頼まれたのに、あなたは少し怖くなかった',
+                 '言われたけど、あなたには少し寂しかった'):
+        assert text in follow
+    after = run(answer(service, user, first, '今は少し苦しい。'))
+    assert after['body_state'] == 'REFINED' and after['original'] == first['original']
+    assert '回答した時点では少し苦しい' in after['current_observation']['text']
+    monkeypatch.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved body must not regenerate'))
+    assert run(service.get(user, parent)) == after
+    assert run(service.start(user, parent)) == after

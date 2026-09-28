@@ -3747,9 +3747,10 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
             source = _body_inverse_typed_source_fragment(event, span.raw_text)
             ending = re.search(r"(?:のですね|のです|のだと受け取りました)$", part)
             if (not thread_group or resolver.source_fields_for(event.source_span_ids) != event.source_fields
-                or not source or not re.search(r"(?:かった|[てで]いた|た|だ)$", source)
+                or not source or not re.search(r"(?:かった(?:です)?|[てで]いた|た|だ|でした)$", source)
                 or ending is None or not part.startswith("その時は")
-                or _restore_thread_finite_answer(part[len("その時は"):ending.start()], source) != source
+                or _restore_thread_finite_answer(part[len("その時は"):ending.start()], source,
+                    copular_clause=source.endswith(("でした", "だった"))) != source
                 or not any(row.kind == "reaction" and row.polarity == "negative"
                     and set(row.attribute_codes) <= set(event.semantic_frame.attribute_codes)
                     for row in _received_event_reaction_projections(span, event.semantic_frame))):
@@ -3834,7 +3835,14 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                 candidates = {(clause[:m.start()], m.group(), clause[m.end():])
                               for m in re.finditer(r"けれども|けれど|けど|のに", clause)}
                 if (event_source, link, feeling_source) not in candidates:
-                    return None
+                    prefix = event_source + link + "、"
+                    if (not clause.startswith(prefix)
+                        or _restore_thread_finite_answer(clause[len(prefix):], feeling_source,
+                            copular_clause=True) != feeling_source):
+                        return None
+                    start = len((raw[:offset] + prefix).encode())
+                    end = len((raw[:offset] + clause).encode())
+                    replacements.append((start, end, feeling_source.encode()))
         else:
             relation = about[0]
             answer = nuclei[relation.to_nucleus_id]
@@ -3847,6 +3855,33 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                 or answer.semantic_frame.polarity != "negative"):
                 return None
             answer_source = final_reception_source_anchor_text(answer.nucleus_id, nuclei, resolver)
+            # Read a complete original feeling and a separately timed
+            # answer. A visible SELF conversion is reversed from the actual
+            # bytes; Layer 1 or the author cannot donate a missing modifier.
+            prefix = event_source + link + "、" if contrasts else ""
+            explicit = re.fullmatch(
+                re.escape(prefix) + r"(?P<feeling>.+)し、"
+                r"(?P<time>その時は|回答した時点では|先の回答時点では)(?P<answer>.+)", clause,
+            ) if prefix else None
+            if explicit is not None:
+                actual_time = {"その時は": "original_occasion", "回答した時点では": "answer_time",
+                               "先の回答時点では": "prior_answer_time"}[explicit['time']]
+                if (past_explanation and _thread_past_explanation_predicate(answer_source) is None
+                    or times != {actual_time}
+                    or _restore_thread_finite_answer(explicit['feeling'], feeling_source,
+                        copular_clause=True) != feeling_source
+                    or _restore_thread_finite_answer(
+                        explicit['answer'] + ("のだった" if past_explanation else ""), answer_source,
+                        copular_clause=True, shared_explanatory_ending=part_index >= coordinated_prefix_count) != answer_source):
+                    return None
+                for name, source_value in (("feeling", feeling_source), ("answer", answer_source)):
+                    start = len((raw[:offset] + clause[:explicit.start(name)]).encode())
+                    end = len((raw[:offset] + clause[:explicit.end(name)]).encode())
+                    replacements.append((start, end, source_value.encode()))
+                consumed.add(answer.nucleus_id)
+                consumed_relations.add(relation.relation_id)
+                offset += len(part) + len("、また、")
+                continue
             if past_explanation:
                 if _thread_past_explanation_predicate(answer_source) is None:
                     return None
