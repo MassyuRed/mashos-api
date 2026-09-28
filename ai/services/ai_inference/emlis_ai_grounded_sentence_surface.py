@@ -3005,7 +3005,8 @@ def _render_observation(
             return f"{prefix}今の入力には、{typed_endpoint}があります。"
     if (typed_semantic_duties
         and {"lexical:source_received_past_feeling", "lexical:source_nominal_past_feeling",
-             "lexical:source_finite_feeling"} & set(nucleus.semantic_frame.attribute_codes)):
+             "lexical:source_finite_feeling", "lexical:source_finite_contrast_feeling"}
+            & set(nucleus.semantic_frame.attribute_codes)):
         return f"{prefix}{joined}という気持ちが書かれています。"
     if (typed_semantic_duties
         and "lexical:source_self_appraisal" in nucleus.semantic_frame.attribute_codes):
@@ -3498,6 +3499,14 @@ def _render_relation(
         elif role == "coexisting_contrast":
             event = nucleus_index[relation.from_nucleus_id]
             reaction = nucleus_index[relation.to_nucleus_id]
+            if (typed_semantic_duties
+                and relation.grounding_kind == "user_stated_relation"
+                and all("lexical:source_finite_contrast_feeling" in n.semantic_frame.attribute_codes
+                        for n in (event, reaction))):
+                # The source states a contrast, not simultaneous current
+                # feelings. Each quoted endpoint keeps its own tense.
+                sentences.append(f"{left}の一方で{right}とあります。")
+                continue
             compact_contrast = (
                 typed_semantic_duties
                 and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"

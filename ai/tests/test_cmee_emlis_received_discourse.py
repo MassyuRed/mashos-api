@@ -24,6 +24,63 @@ OWNED_INITIAL = ('誘われたのに、私も少し不安だった。'
                  '言われたけど、僕には少し寂しかった。')
 
 
+FEELING_CONTRAST_MEMO = '褒められたのに、嬉しくなかった。悲しかったけど嬉しかった。'
+
+
+@pytest.mark.parametrize('reply,retained,removed', [
+    ('今は少し苦しい。', ('悲しかった', '嬉しかった', '少し苦しい'), ()),
+    ('「悲しかった」ではなく「少し怖かった」です。', ('少し怖かった', '嬉しかった'), ('悲しかった',)),
+    ('「悲しかった」は誤りです。', ('嬉しかった',), ('悲しかった',)),
+    ('「嬉しかった」は誤りです。', ('悲しかった',), ('嬉しかった',)),
+])
+def test_finite_contrast_correction_withdrawal_preserves_other_source(reply, retained, removed):
+    from test_cmee_emlis_detached_observation import read_body
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    req = begin(FEELING_CONTRAST_MEMO)
+    original = MeaningExperienceEngine().generate(req)
+    context = actual(request=advance(req, reply))
+    body = context[0].artifact.text
+    assert all(text in body for text in retained)
+    assert all(text not in body for text in removed)
+    assert '今は、「嬉しかった」' not in body and '今は、「悲しかった」' not in body
+    assert '変化' not in body
+    assert '悲しかったけど、嬉しかったのですね' in original.artifact.reception
+    # Updating another event does not attach this independent feeling pair to it.
+    plan = context[1]
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    for relation in plan.relations:
+        if relation.type == 'evaluation_about_event':
+            assert index[relation.to_nucleus_id].source_fields == ('answer_text_private',)
+    assert read_body(context, body).passed
+
+
+@pytest.mark.parametrize('reply,retained,removed', [
+    ('今は少し苦しい。', ('悲しかった', '嬉しかった', '少し苦しい'), ()),
+    ('「悲しかった」ではなく「少し怖かった」です。', ('少し怖かった', '嬉しかった'), ('悲しかった',)),
+    ('「悲しかった」は誤りです。', ('嬉しかった',), ('悲しかった',)),
+    ('「嬉しかった」は誤りです。', ('悲しかった',), ('嬉しかった',)),
+])
+def test_finite_contrast_saved_update_and_original_replay(qcase, qdb, monkeypatch, reply, retained, removed):
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$1 where id=$2', [FEELING_CONTRAST_MEMO, parent])
+    first = run(service.start(user, parent))
+    assert '悲しかったけど、嬉しかったのですね' in first['current_observation']['text']
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved initial body must not regenerate'))
+        assert run(service.get(user, parent)) == first
+        assert run(service.start(user, parent)) == first
+    current = run(answer(service, user, first, reply, 'feeling-contrast-answer'))
+    assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+    body = current['current_observation']['text']
+    assert all(text in body for text in retained) and all(text not in body for text in removed)
+    assert '今は、「嬉しかった」' not in body and '今は、「悲しかった」' not in body
+    assert '今回の観測に反映できていない' not in body
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved revised body must not regenerate'))
+        assert run(service.get(user, parent)) == current
+        assert run(service.start(user, parent)) == current
+
+
 @pytest.mark.parametrize('reply,correction,corrected,time', [
     ('今は少し苦しい。', '「少し苦しい」ではなく「少し怖い」です。', '少し怖い', '先の回答時点では'),
     ('その時は少し苦しかった。', '「少し苦しかった」ではなく「少し寂しかった」です。', '少し寂しかった', 'その時は'),

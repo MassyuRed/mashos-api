@@ -10756,3 +10756,39 @@ Emlisから：
 **残件・次の判断。** 今回閉じたのは限定された主体・程度付き初回過去反応と、その回答/訂正/撤回・保存への接続である。反応自体に逆接を含む複合文、対象外の初回文法、二層の再掲、長い「し」の列挙、定型締め、単独観測の抽象表現、受け取りの深さは未完。現行アプリのQ3_FREE/PLUS/PREMIUMは新検証で確認したが、旧FREE_Q1 helperの複数初回で残る汎用Receptionまで解消したとはしない。前unitの未提供例や既存失敗も今回の新ケース成功から完了へ読み替えない。次はweeklyどおり、複合反応の未認識とReceptionの意味品質を原文・両層・訂正系列で確認する。9/30中間・10/3対象群・10/10内容判断、別枠10/2開発実機一往復を維持。
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 既存地図のowner/route/lifecycle変更なし。実DB・実機・実課金・Ready/merge/deploy/enable未実施。最終8pathとcommit、remote変更全文照合は両Draft PRの今回記録へ結合する。
+
+## 2026-09-29 継続：二つの有限感情を変化・同時現在へ読み替えない
+
+**開始と境界。** Mashの継続指示に従い、開始headはAPI `e60282a435aea646d3b4aa4f0ec4f3849954929e` / Cocolon `2017bc3c2eaf7b715461a792d78634d0345fa97c`。現行Workのroot華恋を唯一の編集・実行・反映担当とし、商品・技術担当は読取専任とした。全体01/02、全ファイル地図01A/B/C、current_structure 00/01/04、CURRENT_RULES・09着手checklist、最新weekly 9/26のEmlis優先・§5.9、商品軽視事案全文を確認した。原典を直接確認し、System Contextのfreshnessは主張しない。着手前A〜FはLEVEL_2 / DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、既存Plan/HR/Surface/Gate・answer update、非凍結test2本、導出identity、両handoffの最大10pathに限定。構造地図・品質基準・API/RN/DB/schema・依存追加・公開操作は対象外。
+
+当初の「褒められたのに、悲しかったけど嬉しかった」という3意味の接続案は、既存Receptionの責務選択・因果traceまで閉じず、試作を全撤回した。着手時Fの境界どおり、新しい接続機構へ広げず、同じ調査で見つけた構成要素の誤認へ絞った。3意味全体を解決済みへ繰り上げない。
+
+**変更。** 既存の2端点対比で、完全な感情述語を明示的な変化より先に局所証明する。「嬉しかった」は感情であり、「嬉しくなった」の変化とは区別する。各sourceの語尾で過去／現在を判定し、全体の一括時制へ寄せない。同一span・同一field・本人の2端点・他required edgeなしの場合に、既存relational focus作者と独立readerへつなぐ。原文全体が両端点と原接続に一致することを確認し、主体・助詞・程度・否定・時制を保持して有限文へする。Observationは対比を「同時」と断定せず、片側訂正・撤回後に残った過去感情も「今は」「変化」へ読み替えない。新owner/helper/engineは追加0。answer update本体は変更不要だった。
+
+入力「悲しいけれど嬉しかった。」の前後全文：
+
+```text
+修正前：
+見えたこと：
+「悲しい」と「嬉しかった」という変化が、異なる向きのまま同時にあります。
+Emlisから：
+その反応が重なる中で、一方の向きと今ここに置かれた言葉との違いをどちらの側も残したまま、小さくせずに受け止めています。
+
+今回版：
+見えたこと：
+「悲しい」の一方で「嬉しかった」とあります。
+Emlisから：
+悲しいけれど、嬉しかったのですね。
+```
+
+**本文と保存。** 開始headの別worktreeと最終sourceを同じ既存runtimeでfresh生成し、22条件の入力・回答・前後両層をrootと商品担当が全文確認した。20本文変更・2全文一致、前後とも22本文提供。最後の5条件は独立した受領event＋二感情の初回、現在回答、左感情訂正、左撤回、右撤回。対象外の感情を残し、撤回した内容を復活させず、別eventとの因果・ABOUTを作らないことを確認。技術担当はsource範囲・時制・関係方向、Gate、identityを読取レビューし、具体的blockerなし。先行名詞節「不安なけど」の不適切な受理を指摘され、有限接続形の検査で修正した。正式Product Read PASSは自己認定しない。
+
+追加65条件は、3プラン×8原文の種類・時制24、対象外source5、明示変化除外3、本文の時制/関係/変化改変拒否10、主体/程度/否定/程度移動の拒否7、同義終止2、名詞述語4、既存別接続2、回答/訂正/左右撤回4、保存4。独立inverseは作者の再生成を禁止して読む。新保存4条件は初回と更新後それぞれでoriginal DTO不変、生成禁止GET/service.start完全一致を確認。試験用PGliteの証拠であり、実DB・実機・process再起動の証明ではない。新テストの当初5失敗は上流未対応の両側主体・両側程度文を使用したもの。既存境界を広げず、実際に認識される片側主体・程度文で意味改変を検証し直した。対象外文を対応済みには含めない。既存test関数・class宣言はAST比較で変更0。
+
+**最終検証。** source・test・identityを固定した継承8対象の全量は **2420条件＝2381PASS／既存39FAIL／2warnings（491.23秒）**。前回2355条件とcase IDを照合し、既存の脱落・合否変化0、追加65全PASS、ERROR/SKIP0。既存39の失敗メッセージも実行UUID・アドレス・workspace path・行位置だけを正規化して全一致した。部分再実行の合算ではない。focusedも65PASS（18.08秒）。既存失敗・protected/frozen test・品質基準は変更0。
+
+最終identityはlanguage=`ee771f90a03d1d4a52ca5d69d1e890be220a08e5555e7d3556c6bd7c1de3c14d`、runtime=`9b01167ad2c2171797bbfe858d6903f2640da9aaeb22ddd1f9197b1b90c97dea`。既存導出の各18payload・9owner、fixture key/scopeを維持。runtimeは既存Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1/PGlite0.5.8を再使用し、install0・商品lock変更0・追加費用/Mash操作0。
+
+**残件と再開先。** 今回閉じたのは、既に2端点へ分かれる感情対比の種類・時制誤認と、その原感情が訂正/撤回後に残る際の誤表現である。3意味の受領event＋複合反応、「不安ですけど楽しかったです」等の上流未対応、両側主体/程度、が/けどもの汎用Receptionは未解決。訂正時は既存規則で元contrast edgeを外すため、訂正後も逆接を再構成したとはしない。独立event・対比がReceptionに選ばれない制限、二層再掲、定型締め、受け取りの深さ、既存39失敗も残る。次は3意味のsource所有とReceptionの選択を実本文・訂正系列で閉じられるか確認する。単語追加やgenericな全文分割だけで進捗扱いしない。9/30中間・10/3対象群・10/10内容判断、別枠10/2開発実機一往復を維持する。
+
+**TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 変更はAPI8path＋Cocolon06＝9path。既存地図のowner/route/lifecycle変更なし。実DB・実機・実課金・Ready/merge/deploy/enable未実施。反映commitとremote変更全文照合は両Draft PRの今回記録へ結合する。

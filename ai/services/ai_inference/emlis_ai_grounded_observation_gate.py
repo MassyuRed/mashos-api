@@ -2610,6 +2610,21 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
     if (not first or not second or first == second
         or any(mark in first + second for mark in ("。", "？", "?", "「", "」", "\n"))):
         return None
+    if kind == "feeling_contrast":
+        source = str(resolver.resolve(left.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
+        joined = re.fullmatch(re.escape(first) + r"(?P<link>けれども|けれど|けど|のに)[、, ]*"
+                              + re.escape(second), source)
+        parsed = re.fullmatch(r"(?P<first>.+?)(?P<link>けれども|けれど|けど|のに)、"
+                              r"(?P<second>.+)(?:のですね|のです|のだと受け取りました)。", raw)
+        if (joined is None or parsed is None or parsed['link'] != joined['link']
+            or parsed['first'].endswith('な')
+            or _restore_thread_finite_answer(
+                parsed['first'][:-1] + 'な' if parsed['first'].endswith('だ') else parsed['first'],
+                first, copular_clause=True) != first
+            or _restore_thread_finite_answer(parsed['second'], second, copular_clause=True) != second):
+            return None
+        return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()),
+                      value.encode()) for key, value in (('first', first), ('second', second)))
     if kind == "received_experience_focus":
         from emlis_ai_grounded_observation_plan import (
             _source_nominal_past_feeling_parts, _LEADING_CONTRAST_RE,

@@ -19,6 +19,140 @@ SINGLE = '褒められたのに、嬉しくなかった。'
 MULTI = SINGLE + '誘われたのに、悲しかった。頼まれたのに、寂しかった。'
 
 
+@pytest.mark.parametrize('left,link,right,left_time,right_time', [
+    ('悲しかった', 'けど', '嬉しかった', 'past', 'past'),
+    ('悲しい', 'けれど', '嬉しかった', 'current_input', 'past'),
+    ('悲しかった', 'けれども', '嬉しい', 'past', 'current_input'),
+    ('嬉しかった', 'けど', '悲しかった', 'past', 'past'),
+    ('私も少し不安だった', 'けれど', '嬉しかった', 'past', 'past'),
+    ('悲しかった', 'けど', '怖くなかった', 'past', 'past'),
+    ('悲しかった', 'けど', '嬉しかったです', 'past', 'past'),
+    ('悲しかった', 'けれど', '私には嬉しい', 'past', 'current_input'),
+])
+@pytest.mark.parametrize('capability', ['Q3_FREE', 'Q3_PLUS', 'Q3_PREMIUM'])
+def test_finite_feeling_contrast_keeps_each_feeling_and_its_time(
+        left, link, right, left_time, right_time, capability):
+    from test_cmee_emlis_detached_observation import read_body
+    req = begin(left + link + right + '。')
+    req = replace(req, emlis_thread=replace(req.emlis_thread, capability_snapshot=capability,
+        question_control_context=EmlisQuestionControlV1(question_limit=3 if capability == 'Q3_PREMIUM' else 1)))
+    context = actual(request=req)
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None and result.artifact.text == context[0].artifact.text
+    # A contrast states neither becoming nor simultaneous current feelings.
+    body = result.artifact.text
+    assert '変化' not in body and '同時' not in body and '今は' not in body
+    assert '「' + left + '」' in body and '「' + right + '」' in body
+    assert link + '、' in result.artifact.reception and 'のですね' in result.artifact.reception
+    assert '今ここに置かれた言葉' not in body
+    nuclei = {n.nucleus_id: n for n in context[1].nuclei}
+    relation = next(r for r in context[1].relations if r.type == 'contrast')
+    for nucleus_id, time in ((relation.from_nucleus_id, left_time), (relation.to_nucleus_id, right_time)):
+        nucleus = nuclei[nucleus_id]
+        assert (nucleus.kind, nucleus.semantic_frame.predicate_kind, nucleus.semantic_frame.time_scope) == (
+            'reaction', 'feeling', time)
+    assert result.question is None  # No event or new question target is invented.
+    assert read_body(context, body).passed
+
+
+@pytest.mark.parametrize('memo', [
+    '友人は悲しかったけど嬉しかった。',
+    '私は悲しかったけど友人は嬉しかった。',
+    '「悲しかったけど嬉しかった」と言われた。',
+    '悲しかったけど嬉しかったかもしれない。',
+    '褒められたのに、悲しかったけど嬉しかった。',
+])
+def test_unproved_compound_feelings_are_not_promoted_to_self_finite_pair(memo):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    req = begin(memo)
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(req))
+    assert not any('lexical:source_finite_contrast_feeling' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is None or '悲しかったけど、嬉しかったのですね' not in result.artifact.reception
+
+
+@pytest.mark.parametrize('change', ['嬉しくなった', '不安になった', '落ち着いてきた'])
+def test_explicit_change_does_not_acquire_finite_feeling_proof(change):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
+    req = begin('悲しかったけど' + change + '。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    changed = [n for n in plan.nuclei if change in final_reception_source_anchor_text(
+        n.nucleus_id, index, prepared.thread.resolver())]
+    assert changed
+    assert all('lexical:source_finite_contrast_feeling' not in n.semantic_frame.attribute_codes for n in changed)
+
+
+@pytest.mark.parametrize('old,new', [
+    ('悲しいけれど', '悲しかったけれど'),
+    ('嬉しかったのですね', '嬉しいのですね'),
+    ('嬉しかったのですね', '嬉しくなったのですね'),
+    ('けれど、', 'から、'), ('けれど、', 'けど、'),
+    ('悲しいけれど、', ''),
+    ('悲しいけれど、', '今は悲しいけれど、'),
+    ('悲しいけれど、', '悲しいけれど、同時に'),
+    ('「悲しい」', '「悲しかった」'),
+    ('「嬉しかった」', '「嬉しい」'),
+])
+def test_contrast_tense_relation_and_no_added_change_are_read_from_actual_body(old, new):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin('悲しいけれど嬉しかった。'))
+    body = context[0].artifact.text
+    changed = body.replace(old, new, 1)
+    assert changed != body and read_body(context, body).passed
+    assert not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('old,new', [
+    ('あなたも', 'あなたは'), ('あなたも', '友人も'),
+    ('少し怖くなかった', '怖くなかった'),
+    ('少し怖くなかった', '少し怖かった'),
+    ('少し怖くなかった', '安心した'),
+    ('少し怖くなかった', '少し怖くない'),
+    ('あなたも少し怖くなかったけれど、嬉しかった',
+     'あなたも怖くなかったけれど、少し嬉しかった'),
+])
+def test_contrast_owner_degree_and_negation_cannot_move_between_feelings(old, new):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin('私も少し怖くなかったけれど嬉しかった。'))
+    body = context[0].artifact.text
+    changed = body.replace(old, new, 1)
+    assert changed != body and read_body(context, body).passed
+    assert not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('link', ['が', 'けども'])
+def test_other_existing_contrast_connectors_keep_fallback_and_local_times(link):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin('悲しかった' + link + '嬉しかった。'))
+    body = context[0].artifact.text
+    assert '「悲しかった」' in body and '「嬉しかった」' in body
+    assert '変化' not in body and '同時' not in body
+    assert read_body(context, body).passed
+
+
+@pytest.mark.parametrize('ending', ['のです。', 'のだと受け取りました。'])
+def test_contrast_independent_reader_accepts_equivalent_acknowledgement(ending):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin('悲しかったけど嬉しかった。'))
+    body = context[0].artifact.text.replace('のですね。', ending)
+    assert read_body(context, body).passed
+
+
+@pytest.mark.parametrize('memo', ['不安だけど嬉しかった。', '悲しかったけど不安だ。',
+                                 '不安だったけど悲しくなかった。', '悲しかったけど不安でした。'])
+def test_contrast_copula_keeps_finite_first_and_acknowledged_final_clause(memo):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(memo))
+    body = context[0].artifact.text
+    assert 'のですね' in context[0].artifact.reception and '今ここに置かれた言葉' not in body
+    assert read_body(context, body).passed
+    if '不安だけど、' in body:
+        assert not read_body(context, body.replace('不安だけど、', '不安なけど、')).passed
+
+
 @pytest.mark.parametrize('memo', [SINGLE, '誘われたのに、悲しかった。',
     '頼まれたけど、寂しかった。', '言われたけれど、嬉しくなかった。'])
 def test_initial_engine_receives_an_experience_not_a_placed_word(memo):

@@ -10830,6 +10830,15 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
         or set(realization.semantic_fragments) != {first, second}
         or any(mark in first + second for mark in ("。", "？", "?", "「", "」", "\n"))):
         return None
+    if kind == "feeling_contrast":
+        source = str(resolver.resolve(left.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
+        joined = re.fullmatch(re.escape(first) + r"(?P<link>けれども|けれど|けど|のに)[、, ]*"
+                              + re.escape(second), source)
+        if joined is None:
+            return None
+        first_finite, second_finite = (_detached_feeling_finite_surface(
+            value, allow_copular=True, allow_medial=True) for value in (first, second))
+        return first_finite + joined['link'] + "、" + _feeling_acknowledgement(second_finite)
     if kind == "received_experience_focus":
         from emlis_ai_grounded_observation_plan import (
             _source_nominal_past_feeling_parts, _LEADING_CONTRAST_RE,

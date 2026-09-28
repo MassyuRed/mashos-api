@@ -4550,6 +4550,25 @@ def _typed_nucleus_projections_for_span(
                 return ("state", "state", "negative", "fact",
                         ("operator:negation",), True)
 
+            # A complete feeling predicate is not a change merely because
+            # its stem is also in the positive-change lexicon. Prove the
+            # local inflection; explicit becoming/recovery stays below.
+            finite_feeling = re.fullmatch(
+                r"(?:(?:私|自分|わたし|僕|ぼく|俺|おれ)(?:には|にも|は|も))?"
+                r"(?:少し|とても|まだ|全然|あまり)?"
+                r"(?P<predicate>(?:嬉し|うれし|寂し|さびし|悲し|苦し|つら|辛|怖|こわ|楽し)"
+                r"(?:い|かった|くない|くなかった)(?:です)?|不安(?:だ|だった|です|でした))",
+                top_level_fragment)
+            if finite_feeling is not None:
+                predicate = finite_feeling['predicate']
+                negative = bool(re.search(r"くない|くなかった|寂|さび|悲|苦|つら|辛|怖|こわ|不安", predicate))
+                past = predicate.endswith(("かった", "かったです", "だった", "でした"))
+                return ("reaction", "feeling", "negative" if negative else "positive", "feeling",
+                        ("operator:feeling", "lexical:source_finite_contrast_feeling",
+                         "lexical:preserve_source_predicate", "lexical:no_new_sensation_family",
+                         "time_scope:" + ("past" if past else "current_input"),
+                         *(("operator:positive_change",) if not negative else ())), True)
+
             positive_wish, finite_wish_endpoint = affirmative_wish_proof(
                 top_level_fragment
             )
@@ -5250,7 +5269,8 @@ def _typed_nucleus_projections_for_span(
                     predicate_kind=left_predicate,
                     polarity=left_polarity,
                     modality=left_modality,
-                    time_scope=("past" if source_proven_negated_past_wish_report(left_text)
+                    time_scope=("past" if "time_scope:past" in left_codes
+                                or source_proven_negated_past_wish_report(left_text)
                                 else _time_scope_for_text(left_text)),
                     scalar_start=left_start,
                     scalar_end=left_end,
@@ -5268,7 +5288,7 @@ def _typed_nucleus_projections_for_span(
                     predicate_kind=right_predicate,
                     polarity=right_polarity,
                     modality=right_modality,
-                    time_scope=_time_scope_for_text(right_text),
+                    time_scope="past" if "time_scope:past" in right_codes else _time_scope_for_text(right_text),
                     scalar_start=right_start,
                     scalar_end=right_end,
                     attribute_codes=relation_fragment_codes(
@@ -7299,6 +7319,7 @@ def source_owned_relational_focus(move, plan=None, *, nuclei=None, relations=Non
     required_ids = (set(plan.coverage_requirements.required_relation_ids)
                     if plan is not None else {r.relation_id for r in relations if r.retention == "required"})
     index = {n.nucleus_id: n for n in nuclei}
+    all_relations = relations
     relations = tuple(r for r in relations
         if r.relation_id in required_ids and r.retention == "required"
         and move.target_nucleus_ids[0] in (r.from_nucleus_id, r.to_nucleus_id))
@@ -7313,6 +7334,23 @@ def source_owned_relational_focus(move, plan=None, *, nuclei=None, relations=Non
                or n.grounding_kind not in {"explicit", "user_stated_relation"}
                or n.retention != "required" for n in (left, right))):
         return None
+    if (relation.type == "contrast"
+        and relation.grounding_kind == "user_stated_relation"
+        and len(left.source_span_ids) == 1
+        and left.source_span_ids == right.source_span_ids
+        and left.source_fields == right.source_fields
+        and left.source_fields in {("memo",), ("memo_action",)}
+        and set((*move.target_nucleus_ids, *move.support_nucleus_ids))
+            == {left.nucleus_id, right.nucleus_id}
+        and all(n.kind == "reaction" and n.semantic_frame.predicate_kind == "feeling"
+                and n.semantic_frame.modality == "feeling"
+                and n.semantic_frame.time_scope in {"past", "current_input"}
+                and "lexical:source_finite_contrast_feeling" in n.semantic_frame.attribute_codes
+                for n in (left, right))
+        and not any(r != relation and r.retention == "required"
+                    and {r.from_nucleus_id, r.to_nucleus_id} & {left.nucleus_id, right.nucleus_id}
+                    for r in all_relations)):
+        return "feeling_contrast", left, right
     if (relation.type == "contrast"
         and relation.grounding_kind == "user_stated_relation"
         and left.kind == left.semantic_frame.predicate_kind == "event"
