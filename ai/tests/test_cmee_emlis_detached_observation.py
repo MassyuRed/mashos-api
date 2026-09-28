@@ -926,7 +926,7 @@ def test_current_focus_revision_keeps_about_and_surviving_meaning(positive, sour
     lines = [line for line in sentence.lines if line.binding.line_role != 'human_follow']
     assert len(lines) == 1 and set(lines[0].binding.relation_ids) == {r.relation_id for r in plan.relations}
     assert not any('semantic_arc_fragment:justified' in line.binding.functional_atom_ids for line in sentence.lines)
-    assert len(plan.response_plan.human_reception_plan.moves) == 2
+    assert len(plan.response_plan.human_reception_plan.moves) == (3 if positive == '今は嬉しい。' else 2)
     checkpoint = prepare_emlis_meaning(request).checkpoint
     assert len(checkpoint.accepted_update_refs) == 2
     assert {'nucleus:s2:reaction', 'relation:r2'} <= set(checkpoint.inactive_claim_refs)
@@ -1042,7 +1042,7 @@ def test_withdrawn_current_focus_keeps_independent_event_in_source_order(positiv
     assert len(plan.coverage_requirements.required_nucleus_ids) == 6
     assert len(plan.relations) == 3
     assert not any('nucleus:s2:event' in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
-    assert len(plan.response_plan.human_reception_plan.moves) == 2
+    assert len(plan.response_plan.human_reception_plan.moves) == (3 if positive == '今は嬉しい。' else 2)
     lines = [line for line in sentence.lines if line.binding.line_role != 'human_follow']
     assert len(lines) == 1 and 'nucleus:s2:event' in lines[0].binding.nucleus_ids
     assert not any('semantic_arc_fragment:justified' in line.binding.functional_atom_ids for line in sentence.lines)
@@ -2873,6 +2873,128 @@ def test_shared_event_feeling_saved_corrections_and_withdrawal_reuse_exact_dto(q
             assert '褒められた時も、誘われた時も、あなたは少し不安だった' in body
         if index == 2:
             assert '褒められた' not in body and '時も、' not in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not regenerate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+    assert current['state'] == 'COMPLETED' and not current['can_continue']
+
+
+@pytest.mark.parametrize('count', [2, 3])
+@pytest.mark.parametrize('last', [False, True])
+@pytest.mark.parametrize('positive,finite', [('今は嬉しい。', '嬉しい'),
+    ('今は私も少し嬉しいです。', 'あなたも少し嬉しい')])
+def test_temporal_edge_keeps_original_and_current_answer_adjacent(count, last, positive, finite):
+    clauses = ('褒められたのに、嬉しくなかった。', '誘われたのに、悲しかった。', '頼まれたのに、寂しかった。')
+    events = ('褒められた', '誘われた', '頼まれた')[:count]
+    req = begin(''.join(clauses[:count]))
+    for text in (*(('その時は重かった。', 'その時は怖かった。')[:count - 1] if last else ()), positive):
+        req = advance(req, text)
+    context = actual(request=req)
+    result, plan, _, _, _ = context
+    follow = result.artifact.reception
+    parts = follow.split('。')[:-1]
+    assert len(parts) == 3 and follow.count('のですね') == 2
+    focus = 1 if last else 0
+    assert parts[focus].startswith(events[-1] if last else events[0])
+    assert parts[focus + 1] == '回答した時点では' + finite + 'のですね'
+    assert all(follow.count(event) == 1 for event in events)
+    assert [follow.index(event) for event in events] == sorted(follow.index(event) for event in events)
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == 3 and all(m.required for m in moves)
+    assert moves[focus].reception_act == 'stay_with_current_burden'
+    assert moves[focus + 1].reception_act == 'recognize_lived_change'
+    assert moves[focus].move_role == moves[focus + 1].move_role == 'felt_response'
+    assert moves[2 if not last else 0].move_role == 'attention'
+    assert len({reception.reception_move_predicate_family(m) for m in moves}) == 3
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.fixture(scope='module', params=[False, True])
+def temporal_edge_context(request):
+    req = begin()
+    for text in (*(('その時は重かった。', 'その時は怖かった。') if request.param else ()),
+                 '今は私も少し嬉しいです。'):
+        req = advance(req, text)
+    return actual(request=req), request.param
+
+
+@pytest.mark.parametrize('mutation', ['drop_original', 'drop_answer', 'drop_remaining', 'interpose',
+    'swap_times', 'replace_event', 'answer_time', 'prior_time', 'original_polarity', 'answer_actor',
+    'answer_particle', 'answer_degree', 'answer_polarity', 'cause', 'original_tense'])
+def test_temporal_edge_independent_inverse_rejects_missing_or_reassigned_meaning(temporal_edge_context, mutation):
+    context, last = temporal_edge_context
+    follow = context[0].artifact.reception
+    parts = follow.split('。')[:-1]
+    focus, other = (1, 0) if last else (0, 2)
+    answer_slot = focus + 1
+    if mutation.startswith('drop_'):
+        slot = {'drop_original':focus, 'drop_answer':answer_slot, 'drop_remaining':other}[mutation]
+        parts.pop(slot)
+    elif mutation == 'interpose':
+        parts = [parts[focus], parts[other], parts[answer_slot]]
+    elif mutation == 'swap_times':
+        parts[focus], parts[answer_slot] = parts[answer_slot], parts[focus]
+    elif mutation == 'replace_event':
+        parts[focus] = parts[focus].replace('頼まれた' if last else '褒められた', '誘われた', 1)
+    elif mutation in {'answer_time', 'prior_time'}:
+        parts[answer_slot] = parts[answer_slot].replace('回答した時点では',
+            'その時は' if mutation == 'answer_time' else '先の回答時点では', 1)
+    elif mutation == 'original_polarity':
+        parts[focus] = parts[focus].replace('寂しさ', '嬉しさ') if last else parts[focus].replace('つながらなかった', 'つながった')
+    elif mutation == 'original_tense':
+        parts[focus] = parts[focus].replace('感じた', '感じる') if last else parts[focus].replace('つながらなかった', 'つながらない')
+    elif mutation == 'cause':
+        parts[answer_slot] = 'そのおかげで、' + parts[answer_slot]
+    else:
+        old, new = {'answer_actor':('あなたも', '友人も'), 'answer_particle':('あなたも', 'あなたは'),
+            'answer_degree':('少し', ''), 'answer_polarity':('嬉しい', '嬉しくない')}[mutation]
+        parts[answer_slot] = parts[answer_slot].replace(old, new, 1)
+    changed = '。'.join(parts) + '。'
+    assert changed != follow
+    assert not read_body(context, context[0].artifact.text.replace(follow, changed, 1)).passed
+
+
+def test_temporal_edge_prior_answer_and_complete_acknowledgement_remain_supported():
+    req = advance(advance(begin(), '今は嬉しい。'), '「嬉しい」ではなく「少し楽しい」です。')
+    context = actual(request=req)
+    follow = context[0].artifact.reception
+    assert 'つながらなかった。先の回答時点では少し楽しいのですね。' in follow
+    assert follow.count('褒められた') == 1
+    for ending in ('のですね', 'のです', 'のだと受け取りました'):
+        changed = follow.replace('つながらなかった。', 'つながらなかった' + ending + '。', 1)
+        assert read_body(context, context[0].artifact.text.replace(follow, changed, 1)).passed
+    assert not read_body(context, context[0].artifact.text.replace('先の回答時点では', '回答した時点では', 1)).passed
+
+
+@pytest.mark.parametrize('sequence', [('その時は重かった。', '今は嬉しい。'), ('その時は嬉しかった。',),
+    ('今は嬉しい。', '「褒められた」は誤りです。'), ('今は嬉しい。', '「嬉しくなかった」ではなく「重かった」です。')])
+def test_temporal_edge_does_not_reorder_middle_past_or_detached_duties(sequence):
+    req = begin()
+    for text in sequence:
+        req = advance(req, text)
+    context = actual(request=req)
+    assert 'selection:source_owned_answer_adjacent' not in context[1].response_plan.human_reception_plan.depth_policy.selection_reason_codes
+    assert read_body(context, context[0].artifact.text).passed
+
+
+@pytest.mark.parametrize('withdraw', ['褒められた', '誘われた'])
+def test_temporal_edge_saved_correction_and_withdrawal_reuse_original_and_body(qcase, qdb, monkeypatch, withdraw):
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    first = current = run(service.start(user, parent))
+    for index, text in enumerate(('今は嬉しい。', '「嬉しい」ではなく「少し楽しい」です。', f'「{withdraw}」は誤りです。')):
+        if index:
+            current = run(cont(service, user, current, f'temporal-edge-continue-{index}'))
+        current = run(answer(service, user, current, text, f'temporal-edge-answer-{index}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        follow = current['current_observation']['text'].split('Emlisから：', 1)[1]
+        if index < 2:
+            assert follow.count('褒められた') == 1
+            assert 'つながらなかった。' in follow
+            assert ('回答した時点では嬉しい' if not index else '先の回答時点では少し楽しい') in follow
+        else:
+            assert withdraw not in current['current_observation']['text']
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved reads must not regenerate'))
             assert run(service.get(user, parent)) == current

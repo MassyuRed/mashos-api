@@ -1458,6 +1458,20 @@ def reception_active_moves(
     for move in moves:
         reception_move_predicate_family(move)
     original_order = {move.move_id: index for index, move in enumerate(moves)}
+    answer_adjacent = (
+        "selection:source_owned_answer_adjacent" in reception_plan.depth_policy.selection_reason_codes
+        and reception_plan.depth_policy.safety_mode == "standard"
+        and len(moves) == 3 and all(move.required for move in moves)
+        and sum(move.reception_act == "recognize_lived_change" for move in moves) == 1
+        and sum(move.reception_act == "stay_with_current_burden" for move in moves) == 2
+        and any(left.move_role == right.move_role == "felt_response"
+            and left.reception_act == "stay_with_current_burden"
+            and right.reception_act == "recognize_lived_change"
+            and len(left.target_nucleus_ids) == len(left.support_nucleus_ids) == len(right.target_nucleus_ids) == 1
+            and not right.support_nucleus_ids for left, right in zip(moves, moves[1:]))
+        and sum(move.move_role == "attention" and move.reception_act == "stay_with_current_burden"
+                for move in moves) == 1
+    )
     # The source owner has already proved the retained reactions and the
     # independent performed action as complete, separate duties. Keep the
     # reactions together in their selected order, including corrected answers;
@@ -1498,7 +1512,7 @@ def reception_active_moves(
             moves,
             key=lambda move: (
                 (move.reception_act == "honor_concrete_effort") if (memo_duties_first or retained_reactions_first) else False,
-                0 if retained_reactions_first else
+                0 if retained_reactions_first or answer_adjacent else
                     -1 if primary_first and move.move_id == moves[0].move_id else _MOVE_ROLE_ORDER[move.move_role],
                 original_order[move.move_id],
             ),
@@ -9853,7 +9867,7 @@ def _received_discourse_negative_feeling(fragment: str) -> tuple[str, str] | Non
     return stem + "さ", stem + ("くなく" if match[2] == "くなかった" else "く")
 
 
-def _source_grounded_received_discourse(realization) -> str | None:
+def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str | None:
     """Realize selected event/reaction/answer relations as finite discourse.
 
     Existing source IR proves every endpoint, actor, time and ABOUT edge.
@@ -10067,7 +10081,7 @@ def _source_grounded_received_discourse(realization) -> str | None:
     # Ordinary present nouns instead take な before the final の.
     terminal = (parts[-1][:-2] if parts[-1].endswith("のだ") else
                 parts[-1][:-1] + "な" if parts[-1].endswith("だ") else parts[-1])
-    acknowledgement = terminal + "のですね"
+    acknowledgement = terminal + "のですね" if acknowledge else parts[-1]
     if (answer_code != ["none"] and _feeling_past_explanation_predicate(source) is not None
         and parts[-1].endswith(finite)):
         acknowledgement = parts[-1][:-len(finite)] + _feeling_acknowledgement(finite)
@@ -10092,6 +10106,7 @@ def _source_grounded_reception_fragment(
     selected_subjective_decision: SelectedSubjectiveReceptionDecisionV1,
     distributive_object: bool = False,
     unfinished_pair: bool = False,
+    acknowledge_received: bool = True,
 ) -> str:
     """Compose one content core with one role/focus reception predicate."""
 
@@ -10180,11 +10195,13 @@ def _source_grounded_reception_fragment(
                          for value in clauses)
         return first + "こととは別に、" + second + "のですね"
     if (move.reception_act == "stay_with_current_burden"
-        and move.move_role == "felt_response" and not context_prefix
+        and (move.move_role == "felt_response" or move.move_role == "attention"
+             and any(code.startswith("thread-received-slot:") for code in realization.nominalization_plan))
+        and not context_prefix
         and selected_subjective_decision.subjective_proposition.appraisal_content is not None
         and selected_subjective_decision.subjective_proposition.appraisal_content.operation
             in {"RECEIVE_AS_MATERIAL", "PRESERVE_BOTH_ENDPOINTS"}):
-        discourse = _source_grounded_received_discourse(realization)
+        discourse = _source_grounded_received_discourse(realization, acknowledge=acknowledge_received)
         if discourse is not None:
             return discourse
     if move.move_role == "bounded_counterposition":
@@ -11276,6 +11293,18 @@ def _author_source_grounded_reception_clauses(
                 and set(meaning_realization.relations[distributive_relation_slot].endpoint_slots)
                 == {target_owner_slot, meaning_realization.context_slots[0]}
             )
+            acknowledge_received = True
+            if ("selection:source_owned_answer_adjacent" in reception_plan.depth_policy.selection_reason_codes
+                and len(active_moves) == 3 and move.move_role == "felt_response"
+                and move.reception_act == "stay_with_current_burden"
+                and len(move.target_nucleus_ids) == len(move.support_nucleus_ids) == 1):
+                from emlis_ai_grounded_observation_plan import source_owned_answer_feeling
+                position = active_moves.index(move)
+                following = (source_owned_answer_feeling(active_moves[position + 1], plan)
+                             if position + 1 < len(active_moves) else None)
+                if (following and move.target_nucleus_ids == (following[0].nucleus_id,)
+                    and following[2] in {"answer_time", "prior_answer_time"}):
+                    acknowledge_received = False
             move_sentence = _source_grounded_reception_fragment(
                 move,
                 meaning_realization,
@@ -11287,6 +11316,7 @@ def _author_source_grounded_reception_clauses(
                 selected_subjective_decision=selected_decisions[move_id],
                 distributive_object=distributive_relation_slot is not None,
                 unfinished_pair=unfinished_pair,
+                acknowledge_received=acknowledge_received,
             )
             detached_parts = _source_owned_detached_feeling_parts(
                 move, meaning_realization, plan, resolver, selected_decision, recovery_stage,

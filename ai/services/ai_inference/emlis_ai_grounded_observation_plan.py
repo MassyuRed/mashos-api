@@ -7885,6 +7885,19 @@ def _thread_retained_reaction_groups(nuclei, relations):
     groups.extend(("lived_change" if is_grounded_positive_feeling(n) else "current_burden",
                    (n.nucleus_id,), ()) for n in independent)
     groups.extend(("concrete_effort", (n.nucleus_id,), ()) for n in actions)
+    # Keep a current positive answer beside its own original reaction.
+    # Only an edge event can be separated while retaining source order and
+    # the existing three-Move budget. The positive duty stays independent.
+    if (len(groups) == 2 and len(positive) == 1 and 2 <= len(targets) <= 3
+        and not (withdrawal or independent or actions or independent_answers or detached_answers)
+        and {c for c in positive[0].semantic_frame.attribute_codes if c.startswith("thread_time:")}
+            <= {"thread_time:answer_time", "thread_time:prior_answer_time"}):
+        focus = next((event for event, answer in by_event.items() if answer == positive[0]), None)
+        feeling = feelings.get(focus)
+        if focus in (targets[0], targets[-1]) and feeling is not None:
+            groups = [("current_burden", (focus,), (feeling,)), groups[1],
+                ("current_burden", tuple(event for event in targets if event != focus),
+                 tuple(nid for nid in supports if nid != feeling))]
     if mixed_revision and targets and len(groups) == 4:
         groups = [row for row in groups if row[0] != "current_burden"]
         groups.append(("current_burden", (*targets, revised_originals[0].nucleus_id), tuple(supports)))
@@ -8829,6 +8842,7 @@ def _build_reception_depth_policy_and_moves(
             and safety_kind == TRIAGE_SAFE_OBSERVATION
         ),
     )
+    source_owned_answer_adjacent = False
     contrast_selected = tuple(item for item in selected
         if (item.family, item.target_nucleus_ids, item.support_nucleus_ids) in explicit_contrast_duties)
     if contrast_selected and len(selected) == 3:
@@ -8874,7 +8888,13 @@ def _build_reception_depth_policy_and_moves(
             for item in burdens:
                 roles[item.opportunity_id] = "felt_response"
             standalone = tuple(item for item in burdens if not item.support_nucleus_ids)
-            roles[standalone[0].opportunity_id] = "attention"
+            if standalone:
+                roles[standalone[0].opportunity_id] = "attention"
+            elif len(burdens) == 2 and len(positives) == 1:
+                focus = selected[selected.index(positives[0]) - 1]
+                residual = next(item for item in burdens if item != focus)
+                roles[residual.opportunity_id] = "attention"
+                source_owned_answer_adjacent = True
         if len(burdens) == 3:
             roles[standalone[-1].opportunity_id] = "significance"
     moves: list[GroundedReceptionMovePlan] = []
@@ -8935,6 +8955,7 @@ def _build_reception_depth_policy_and_moves(
             "selection:semantic_opportunity_inventory",
             "selection:distinct_human_contributions",
             "selection:raw_character_count_unused",
+            *(("selection:source_owned_answer_adjacent",) if source_owned_answer_adjacent else ()),
             *(("selection:retained_reactions_before_independent_action",) if (
                 final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION
                 and retained_reaction_groups and 2 <= len(selected) <= 3

@@ -3613,7 +3613,10 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                     in _thread_retained_reaction_groups(plan.nuclei, plan.relations))
     has_answers = any(n.source_fields == ("answer_text_private",) for n in plan.nuclei)
     if (has_answers and getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
-        or not move.required or move.move_role != "felt_response"
+        or not move.required or not (move.move_role == "felt_response"
+            or move.move_role == "attention" and thread_group
+            and "selection:source_owned_answer_adjacent"
+                in plan.response_plan.human_reception_plan.depth_policy.selection_reason_codes)
         or move.reception_act != "stay_with_current_burden"
         or not (original or thread_group)
         or not raw.endswith("。") or raw.count("。") != 1
@@ -3702,9 +3705,25 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
             consumed_relations.add(relation.relation_id)
         ending = re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました)$", part)
         if ending is None:
-            return None
-        clause = part[:ending.start()]
-        past_explanation = ending.group() == "のでしたね"
+            # A complete original past clause can lead directly into its
+            # separately owned positive answer without repeating an ending.
+            # It still has to restore the entire contrast below; the full
+            # body reader also requires the following answer in this order.
+            from emlis_ai_grounded_observation_plan import source_owned_answer_feeling
+            moves = plan.response_plan.human_reception_plan.moves
+            position = next((i for i, candidate in enumerate(moves) if candidate == move), -1)
+            following = (source_owned_answer_feeling(moves[position + 1], plan)
+                         if 0 <= position < len(moves) - 1 else None)
+            if (not thread_group or len(moves) != 3 or len(parts) != 1
+                or move.move_role != "felt_response" or len(move.support_nucleus_ids) != 1
+                or "selection:source_owned_answer_adjacent"
+                    not in plan.response_plan.human_reception_plan.depth_policy.selection_reason_codes
+                or not contrasts or about or not following
+                or following[0].nucleus_id != event_id
+                or following[2] not in {"answer_time", "prior_answer_time"}):
+                return None
+        clause = part[:ending.start()] if ending else part
+        past_explanation = bool(ending and ending.group() == "のでしたね")
         if past_explanation and (not about or part_index < coordinated_prefix_count):
             return None
         consumed.add(event_id)

@@ -413,9 +413,17 @@ def test_answer_does_not_share_an_ambiguous_multiple_event_context():
     request = advance(begin('褒められたのに、嬉しくなかった。誘われたのに、悲しかった。'), '今は嬉しい。')
     context = actual(request=request)
     follow = context[0].artifact.reception
-    explicit = '褒められたことについて、回答した時点では嬉しい'
+    assert follow.startswith('褒められたことは、嬉しさにはつながらなかった。回答した時点では嬉しい')
+    assert inverse(context, follow, without_author=True).passed
+    # A middle focus still follows a multiple-event sentence. It cannot
+    # borrow the last event as its antecedent or omit its own explicit owner.
+    request = advance(advance(begin(), 'その時は重かった。'), '今は嬉しい。')
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    explicit = '誘われたことについて、回答した時点では嬉しい'
     assert explicit in follow
-    assert not inverse(context, follow.replace('褒められたことについて、', ''), without_author=True).passed
+    assert inverse(context, follow, without_author=True).passed
+    assert not inverse(context, follow.replace('誘われたことについて、', ''), without_author=True).passed
 
 
 @pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
@@ -594,7 +602,8 @@ def assert_multi_unknown_duties(context, sequence, count):
     result, plan, _, _, _ = context
     follow = result.artifact.reception
     moves = plan.response_plan.human_reception_plan.moves
-    assert len(moves) == (2 if MULTI_POSITIVE in sequence else 1)
+    adjacent = MULTI_POSITIVE in sequence and sequence.index(MULTI_POSITIVE) in (0, count - 1)
+    assert len(moves) == (3 if adjacent else 2 if MULTI_POSITIVE in sequence else 1)
     assert set(nid for move in moves for nid in (*move.target_nucleus_ids, *move.support_nucleus_ids)) == {
         n.nucleus_id for n in plan.nuclei if n.retention == 'required'
         and n.source_fields in {('memo',), ('answer_text_private',)}}
@@ -608,7 +617,16 @@ def assert_multi_unknown_duties(context, sequence, count):
             source = 'まだよく分からない' if text == MULTI_UNKNOWN else '分からない'
             assert event + '時は' in follow and '回答した時点では' + source in follow
         elif text == MULTI_POSITIVE:
-            assert event + 'ことについて、回答した時点では嬉しい' in follow
+            if adjacent:
+                parts = follow.split('。')[:-1]
+                position = 0 if index == 0 else 1
+                assert len(parts) == 3 and parts[position].startswith(event)
+                assert parts[position + 1] == '回答した時点では嬉しいのですね'
+                events = ('褒められた', '誘われた', '頼まれた')[:count]
+                assert all(follow.count(source) == 1 for source in events)
+                assert [follow.index(source) for source in events] == sorted(follow.index(source) for source in events)
+            else:
+                assert event + 'ことについて、回答した時点では嬉しい' in follow
         else:
             assert text.removeprefix('その時は').removesuffix('。') in follow
     for n in plan.nuclei:

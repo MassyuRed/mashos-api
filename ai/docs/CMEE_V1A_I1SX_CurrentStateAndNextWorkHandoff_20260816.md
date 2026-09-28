@@ -10579,3 +10579,39 @@ Gateの既存readerは、可視の「event時も」ごとにrequired ABOUTが一
 **残件・再開先。** 二層間の再掲全体、同じ出来事の当時と現在の肯定回答が別Moveへ分断される場合、Receptionの列挙調、別Move訂正導入、撤回後の参照、既存39失敗は未完了。次は同event二時点の再導入が生じる実Move・bindingの因果箇所を、必須意味を落とさない範囲で扱う。新しい汎用文章engineや周辺証明へ逃げず、9/30中間判断・10/3対象群整理・10/10内容判断と別枠の実機一往復10/2を維持する。
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 同じ作者・reader責務の内側の変更。実DB・実機・実課金・外部生成AI・Ready/merge/deploy/enableは未実施。反映commit・exact6path・remote全文一致は両Draft PRの今回記録へ結合する。
+
+
+## 2026-09-29 継続 — 同じ出来事の当時の反応と現在回答を隣接させる
+
+MashのEmlisAI残件継続指示により、API `b2df0e2ec66e995fadc5a2ea6f766894a2f213e9`／Cocolon `133bb19d2d75f0f3c96113d86786818302513dee`、Draft #3/#30から開始。入口・CURRENT_RULES・Rule18、全体設計01/02・全ファイル地図・current_structure00/01/04、恒久incident全文、最新weekly9/26 §3.8/5の採用方針と直前handoffを確認。前回TXTの継続位置をGitHub最新headへ照合し、API2300/Cocolon1645の全tracked inventoryは同じheadの既存確認を継承した。Karen-Diary入口と行動原理も確認。System Context prepareは`PUBLICATION_RECOVERY_AMBIGUOUS: residual without marker`でexit2、原典直接参照を継続し、freshness成功とはしない。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / LEVEL_2。現在のCodex Work root華恋が唯一の編集・実行・GitHub反映owner、独立商品・技術担当はread-only。未確認のPro/Ultra model名は名乗らない。first source effect前にOP・HR・Gate・detached observation test・current identity fixture・API handoff・Cocolon06のexact7pathを固定。全体検証で旧Move数・出来事再掲の期待が見つかったため、編集前に既存received discourse testを加えexact8pathへ限定拡張した。変更内容は末尾の検証欄に記録する。
+
+**共通原因と選択。** 肯定回答は既存の`recognize_lived_change`責務へ分かれ、当時の反応は他の出来事と一つの負担groupに入っていた。この配置では、別の出来事を読んだ後に最初の出来事へ戻るため、回答側で出来事名を再掲する必要があった。肯定を負担groupへ吸収する案は、既存の肯定責務・ABOUT所有・appraisalを失わせるため採用しなかった。
+
+既存2Move内に唯一の肯定ABOUT回答があり、対象が2〜3出来事の先頭または末尾、原反応が残る場合だけ、その原反応を残余から分ける。原反応→同じ出来事の回答を隣接させ、他の出来事の順序を維持する。既存最大3Moveの範囲で、焦点原反応のfelt_response・肯定回答のfelt_response・残余のattentionを保持し、source支持集合を排他的に全量分配する。役割順の再ソートで隣接を壊さないよう、既存selection reasonと実3Move形を併せて確認する。中間対象、当時への肯定回答、焦点の原反応が残らない場合、出来事撤回・独立訂正・独立感情・行動の併存はこの分割の対象外。他の出来事にABOUT訂正や不明回答がある場合は、その元の責務と時点を残余側で保持する。他の反応だけを撤回し出来事が残る場合は、従来通りObservationがその出来事を保持する。
+
+残余attentionも既存の有限文作者と完全source/required relationの独立読取りを使う。初稿の名詞列『に目が留まり、それを…』には戻さない。同じ出来事の直後の肯定回答が独立して選ばれる場合だけ、原反応を完結した過去の叙述文にし、結びを増やさない。従来の『のですね／のです／のだと受け取りました』も受理し、作者の一つの文面へ固定しない。肯定回答側の既存の直前単一出来事証明を緩めず、本文中の省略対象を他の出来事から借りない。
+
+```text
+修正前：褒められたことは、嬉しさにはつながらなかったし、誘われた時も、頼まれた時も、あなたは少し不安だったのですね。褒められたことについて、回答した時点では嬉しいのですね。
+最終版：褒められたことは、嬉しさにはつながらなかった。回答した時点では嬉しいのですね。誘われた時も、頼まれた時も、あなたは少し不安だったのですね。
+```
+
+当時と回答時点の間に変化・原因・改善判断を加えず、元の出来事→原反応の対比と回答の肯定を保持する。意味認定・checkpoint・元入力・公開API/DB/RN/schema・保存責務は変更0。新しいhelper・作者・engine・依存・外部生成AIは追加0。
+
+**実本文。** 最終productionの継承59例は全提供・独立inverse成功。checkpoint、nuclei、relations、required nucleus/relation coverage、Observationは全59一致。Receptionと内部Move計画は対象4行だけ変更、残55行は本文全文一致。原文引用が異なるため4つの両層本文、Receptionは3種類。別の同一runtime前後14条件では、先頭／末尾・2／3出来事・本人/程度/助詞・先の回答時点の9条件が変わり、提供された対象外4条件は全文一致。独立感情を加えた残1条件は前後とも同じ`emlis_q3_initial_body_unavailable`であり、成功13と区別する。提供13条件のcheckpoint・意味核・関係・required coverage・Observationも一致。rootと商品担当は変更前後の全対象本文を両層で読んだ。
+
+初稿では役割分配の未定義変数を修正し、残余attentionの旧名詞readerによる逆検証失敗を、同じsource全量を読む有限文経路で解消した。最初のreader編集が別の同形条件へ当たった差分は取り消し、対象readerに限定した。中間本文は『のですね』が2→3回へ増えたため、最終版では原反応を完結した叙述文にし2回を維持した。独立技術担当は責務集合・source分配・限定順序・意味復元に具体的な阻害を認めず、商品担当は対象への読み戻しが減ったことと、常体/丁寧体切替・二層再掲の残件を確認した。formal Product Read PASSは自己認定しない。
+
+**検証。** 継承8対象の全体実行は2145例＝2089PASS/56FAIL/2warning（453.28秒）。前回2100例＝2061PASS/39FAILとのcase ID照合で欠落0、追加45は全PASS。旧PASSからの17FAILは、16例の旧Move数2固定と1例の出来事再掲固定だった。sourceを全実行時と同一に保ち、該当する既存期待だけを更新して関連40例を再実行し40PASS/1558deselected/1warning（28.55秒）。case IDで上書きした統合結果は2145例＝2106PASS/既存39FAIL、追加45PASS・欠落0・既存caseのstatus変化0。これは全体の再実行結果ではなく、全実行＋影響40例の統合である。既存39FAILのうち1例は歴史的な「嬉しさにはつながらず」固定が新しい完結過去文で追加失敗するため、失敗内容まで不変とはしない。旧39FAILのテスト本文を変更して合格へ寄せていない。
+
+追加45条件は、2/3出来事×先頭/末尾×本人形2の隣接保持8、原反応・回答・残余の欠落/入替/介在/時点/人称/助詞/程度/極性/因果/時制改変拒否30、先の回答時点と旧同義終端保持1、非対象の中間/原時点/撤回/訂正4、Q4保存2。focusedは144PASS/1186deselected/1warning（29.09秒）。逆検証は作者と観測作者をoracleにせず、可視本文から読む。detachedの既存2関数は現在肯定回答のMove数を3、当時回答を2と明示し、意味核・ABOUT・inactive claims・観測・独立inverseを維持した。receivedのunknown helperは入力上の肯定対象が先頭/末尾なら3、中間なら2、不在なら1とし、全責務集合・不明のstate/uncertain/presentに加え、隣接・出来事1回・原順を検査する。旧曖昧参照例は合法な隣接例として残し、別の中間対象で明示参照なしの拒否を確認する。技術担当も目的の弱化がないことを確認した。17例のうち意味保持を再確認すべき16例を同一runtimeで前後生成し、全16のcheckpoint・意味核・関係・required coverage・Observation一致、両側の独立inverse成功、両層全文をrootと商品担当が読んだ。商品担当は、別出来事の程度・主体・否定、不明の未解決状態、撤回済み感情を復活させない点を確認し、自然さ全体は未解決とした。全原反応が残る場合だけへsourceを狭める案も検討したが、正当なABOUT訂正後の改善まで除くため、試験前に取り消し、最終sourceには入れていない。
+
+保存確認は継承20＋新2＝22系列。新2では現在の肯定回答→回答を訂正→焦点または別出来事の撤回の各3状態で、元入力DTO不変、保存済み本文、生成禁止のGET/service.start完全一致、最後のCOMPLETED/can_continue=falseを確認。試験用保存系/PGliteであり、実DB・実機・process再起動の確認ではない。
+
+最終identityはlanguage=`f49ba38c6b5768b8edc5fc8e3133d4c5ec614ace200fa70421713e30349f456a`、runtime=`3f89a0e0b74f33a1382992401cc072dc94032e9ec1c7598628b37ebf0ada8b5d`。各18payload・9owner、fixture keys・scope・source-owner symbolsを維持。Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1とPGliteを継承し、install0。歴史的凍結証跡・protected/frozen test・旧検証母数・quality閾値は変更0。
+
+**残件・再開先。** 中間の出来事を対象とする現在回答は、元の順序と3Move責務を維持するため引き続き明示再掲する。単一出来事の当時/現在の二文、二層全体の再掲、常体/丁寧体の切替、列挙調、独立訂正・撤回後の参照、既存39失敗は未解決。この局所改善を対象群全体の完了へ昇格しない。次は同じ出来事の二時点を返す際の文の分断と口調を、別責務・全source・独立読取りを保持した既存文章化の範囲で扱う。9/30中間確認、10/3対象群、10/10内容判断、別枠の10/2開発実機一往復を維持する。
+
+**TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 同じOP・HR・Gate責務内の配置と表現変更で、新しいowner・route・lifecycleは追加しない。実DB・実機・実課金・Ready/merge/deploy/enableは未実施。反映commit、exact changed paths、remote全文一致は両Draft PRの今回記録へ結合する。
