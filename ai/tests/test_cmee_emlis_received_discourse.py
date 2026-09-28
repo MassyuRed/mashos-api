@@ -413,7 +413,7 @@ def test_answer_does_not_share_an_ambiguous_multiple_event_context():
     request = advance(begin('褒められたのに、嬉しくなかった。誘われたのに、悲しかった。'), '今は嬉しい。')
     context = actual(request=request)
     follow = context[0].artifact.reception
-    assert follow.startswith('褒められたことは、嬉しさにはつながらなかった。回答した時点では嬉しい')
+    assert follow.startswith('当時、褒められたことは、嬉しさにはつながらず、回答した時点では嬉しい')
     assert inverse(context, follow, without_author=True).passed
     # A middle focus still follows a multiple-event sentence. It cannot
     # borrow the last event as its antecedent or omit its own explicit owner.
@@ -620,8 +620,8 @@ def assert_multi_unknown_duties(context, sequence, count):
             if adjacent:
                 parts = follow.split('。')[:-1]
                 position = 0 if index == 0 else 1
-                assert len(parts) == 3 and parts[position].startswith(event)
-                assert parts[position + 1] == '回答した時点では嬉しいのですね'
+                assert len(parts) == 2 and parts[position].startswith('当時、' + event)
+                assert parts[position].endswith('、回答した時点では嬉しいのですね')
                 events = ('褒められた', '誘われた', '頼まれた')[:count]
                 assert all(follow.count(source) == 1 for source in events)
                 assert [follow.index(source) for source in events] == sorted(follow.index(source) for source in events)

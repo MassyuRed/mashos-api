@@ -2894,10 +2894,10 @@ def test_temporal_edge_keeps_original_and_current_answer_adjacent(count, last, p
     result, plan, _, _, _ = context
     follow = result.artifact.reception
     parts = follow.split('。')[:-1]
-    assert len(parts) == 3 and follow.count('のですね') == 2
+    assert len(parts) == 2 and follow.count('のですね') == 2
     focus = 1 if last else 0
-    assert parts[focus].startswith(events[-1] if last else events[0])
-    assert parts[focus + 1] == '回答した時点では' + finite + 'のですね'
+    assert parts[focus].startswith('当時、' + (events[-1] if last else events[0]))
+    assert parts[focus].endswith('、回答した時点では' + finite + 'のですね')
     assert all(follow.count(event) == 1 for event in events)
     assert [follow.index(event) for event in events] == sorted(follow.index(event) for event in events)
     moves = plan.response_plan.human_reception_plan.moves
@@ -2926,7 +2926,10 @@ def test_temporal_edge_independent_inverse_rejects_missing_or_reassigned_meaning
     context, last = temporal_edge_context
     follow = context[0].artifact.reception
     parts = follow.split('。')[:-1]
-    focus, other = (1, 0) if last else (0, 2)
+    focus = 1 if last else 0
+    left, right = parts[focus].split('、回答した時点では', 1)
+    parts[focus:focus + 1] = [left, '回答した時点では' + right]
+    other = 0 if last else 2
     answer_slot = focus + 1
     if mutation.startswith('drop_'):
         slot = {'drop_original':focus, 'drop_answer':answer_slot, 'drop_remaining':other}[mutation]
@@ -2941,15 +2944,17 @@ def test_temporal_edge_independent_inverse_rejects_missing_or_reassigned_meaning
         parts[answer_slot] = parts[answer_slot].replace('回答した時点では',
             'その時は' if mutation == 'answer_time' else '先の回答時点では', 1)
     elif mutation == 'original_polarity':
-        parts[focus] = parts[focus].replace('寂しさ', '嬉しさ') if last else parts[focus].replace('つながらなかった', 'つながった')
+        parts[focus] = parts[focus].replace('寂しさ', '嬉しさ') if last else parts[focus].replace('つながらず', 'つながり')
     elif mutation == 'original_tense':
-        parts[focus] = parts[focus].replace('感じた', '感じる') if last else parts[focus].replace('つながらなかった', 'つながらない')
+        parts[focus] = parts[focus].replace('感じ', '感じる') if last else parts[focus].replace('つながらず', 'つながらない')
     elif mutation == 'cause':
         parts[answer_slot] = 'そのおかげで、' + parts[answer_slot]
     else:
         old, new = {'answer_actor':('あなたも', '友人も'), 'answer_particle':('あなたも', 'あなたは'),
             'answer_degree':('少し', ''), 'answer_polarity':('嬉しい', '嬉しくない')}[mutation]
         parts[answer_slot] = parts[answer_slot].replace(old, new, 1)
+    if mutation not in {'drop_original', 'drop_answer', 'drop_remaining', 'interpose', 'swap_times'}:
+        parts[focus:answer_slot + 1] = [parts[focus] + '、' + parts[answer_slot]]
     changed = '。'.join(parts) + '。'
     assert changed != follow
     assert not read_body(context, context[0].artifact.text.replace(follow, changed, 1)).passed
@@ -2959,10 +2964,10 @@ def test_temporal_edge_prior_answer_and_complete_acknowledgement_remain_supporte
     req = advance(advance(begin(), '今は嬉しい。'), '「嬉しい」ではなく「少し楽しい」です。')
     context = actual(request=req)
     follow = context[0].artifact.reception
-    assert 'つながらなかった。先の回答時点では少し楽しいのですね。' in follow
+    assert 'つながらず、先の回答時点では少し楽しいのですね。' in follow
     assert follow.count('褒められた') == 1
     for ending in ('のですね', 'のです', 'のだと受け取りました'):
-        changed = follow.replace('つながらなかった。', 'つながらなかった' + ending + '。', 1)
+        changed = follow.replace('楽しいのですね。', '楽しい' + ending + '。', 1)
         assert read_body(context, context[0].artifact.text.replace(follow, changed, 1)).passed
     assert not read_body(context, context[0].artifact.text.replace('先の回答時点では', '回答した時点では', 1)).passed
 
@@ -2991,7 +2996,7 @@ def test_temporal_edge_saved_correction_and_withdrawal_reuse_original_and_body(q
         follow = current['current_observation']['text'].split('Emlisから：', 1)[1]
         if index < 2:
             assert follow.count('褒められた') == 1
-            assert 'つながらなかった。' in follow
+            assert '当時、褒められたことは、嬉しさにはつながらず、' in follow
             assert ('回答した時点では嬉しい' if not index else '先の回答時点では少し楽しい') in follow
         else:
             assert withdraw not in current['current_observation']['text']
@@ -3000,3 +3005,62 @@ def test_temporal_edge_saved_correction_and_withdrawal_reuse_original_and_body(q
             assert run(service.get(user, parent)) == current
             assert run(service.start(user, parent)) == current
     assert current['state'] == 'COMPLETED' and not current['can_continue']
+
+
+@pytest.mark.parametrize('old,new', [
+    ('当時、', ''), ('当時、', '今、'), ('当時、', '当時からずっと、'),
+    ('当時、', '同時に、'), ('当時、', '当時、当時、'),
+    ('、回答した時点では', '、そのため回答した時点では'),
+    ('、回答した時点では', '、その後は'),
+    ('、回答した時点では', '、回答した時点でも'),
+    ('、回答した時点では', '、誘われたことについて、回答した時点では'),
+    ('嬉しいのですね', '嬉しくなれたのですね'),
+])
+def test_temporal_pair_keeps_each_time_and_adds_no_relation(temporal_edge_context, old, new):
+    context, _ = temporal_edge_context
+    follow = context[0].artifact.reception
+    changed = follow.replace(old, new, 1)
+    assert changed != follow
+    with patch.object(reception, '_source_grounded_received_discourse', side_effect=AssertionError('no author')):
+        assert not read_body(context, context[0].artifact.text.replace(follow, changed, 1)).passed
+
+
+@pytest.mark.parametrize('source_role,field,value', [
+    ('original', 'actor', 'other_person'), ('original', 'time_scope', 'present'),
+    ('original', 'polarity', 'positive'), ('answer', 'actor', 'other_person'),
+    ('answer', 'time_scope', 'past'), ('answer', 'polarity', 'negative'),
+])
+def test_temporal_pair_proves_both_source_frames(temporal_edge_context, source_role, field, value):
+    context, last = temporal_edge_context
+    result, plan, _, resolver, selected = context
+    moves = plan.response_plan.human_reception_plan.moves
+    pair = moves[1:3] if last else moves[:2]
+    nid = pair[0].support_nucleus_ids[0] if source_role == 'original' else pair[1].target_nucleus_ids[0]
+    target = next(n for n in plan.nuclei if n.nucleus_id == nid)
+    changed = replace(plan, nuclei=tuple(replace(n, semantic_frame=replace(n.semantic_frame, **{field:value}))
+        if n == target else n for n in plan.nuclei))
+    raw = result.artifact.reception.split('。')[1 if last else 0] + '。'
+    assert gate.read_detached_feeling_pair(raw, pair, plan, resolver, selected) is not None
+    assert gate.read_detached_feeling_pair(raw, pair, changed, resolver, selected) is None
+
+
+def test_temporal_pair_source_ranges_do_not_cross_time_boundary(temporal_edge_context):
+    context, last = temporal_edge_context
+    result, plan, _, resolver, selected = context
+    pair = plan.response_plan.human_reception_plan.moves[1:3] if last else plan.response_plan.human_reception_plan.moves[:2]
+    raw = result.artifact.reception.split('。')[1 if last else 0] + '。'
+    first, second = gate.read_detached_feeling_pair(raw, pair, plan, resolver, selected)
+    boundary = raw.encode().index('、回答した時点では'.encode())
+    assert first and second
+    assert all(0 <= a < b <= boundary for a, b, _ in first)
+    assert all(boundary < a < b <= len(raw.encode()) for a, b, _ in second)
+    assert {source.decode() for _, _, source in first} == {'寂しかった' if last else '嬉しくなかった'}
+    assert {source.decode() for _, _, source in second} == {'私も少し嬉しいです'}
+
+
+def test_temporal_pair_does_not_expand_single_event_sentence_budget():
+    context = actual(request=advance(begin('褒められたのに、嬉しくなかった。'), '今は嬉しい。'))
+    plan = context[1]
+    assert plan.response_plan.human_reception_plan.depth_policy.max_moves_per_sentence == 1
+    assert '当時、' not in context[0].artifact.reception
+    assert read_body(context, context[0].artifact.text).passed

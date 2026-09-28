@@ -2911,7 +2911,50 @@ def read_detached_feeling_pair(raw, moves, plan, resolver, selected_subjective_i
     Try every additive boundary; only one complete source-owned partition
     may succeed. A connective inside a source cannot shorten either operand.
     Return actual body byte intervals, with no author or replay dependency.
+
+    This existing two-duty reader also reads an original reaction followed
+    by its answer. They share an event, but not predicates or source times.
     """
+    reception_plan = plan.response_plan.human_reception_plan
+    if (len(moves) == 2 and selected_subjective_input is not None
+        and "selection:source_owned_answer_adjacent" in reception_plan.depth_policy.selection_reason_codes):
+        from emlis_ai_grounded_observation_plan import source_owned_answer_feeling
+        active = reception_active_moves(reception_plan, "full")
+        roles = source_owned_answer_feeling(moves[1], plan)
+        positions = tuple(i for i in range(len(active) - 1) if active[i:i + 2] == tuple(moves))
+        if (len(active) != 3 or len(positions) != 1
+            or reception_plan.depth_policy.max_moves_per_sentence < 2
+            or reception_plan.depth_policy.min_sentences > 2
+            or not roles or roles[2] not in {"answer_time", "prior_answer_time"}
+            or roles[1].semantic_frame.time_scope != "present"
+            or not all(m.required and m.move_role == "felt_response" for m in moves)
+            or moves[0].reception_act != "stay_with_current_burden"
+            or moves[0].target_nucleus_ids != (roles[0].nucleus_id,)
+            or len(moves[0].support_nucleus_ids) != 1
+            or not raw.startswith("当時、") or raw.count("。") != 1 or not raw.endswith("。")):
+            return None
+        matches = []
+        for boundary in re.finditer(r"、(?=回答した時点では|先の回答時点では)", raw):
+            left, right = raw[len("当時、"):boundary.start()], raw[boundary.end():]
+            if left.endswith("つながらず"):
+                finite = left[:-len("つながらず")] + "つながらなかった"
+            elif left.endswith("感じ"):
+                finite = left + "た"
+            else:
+                continue
+            first = read_received_discourse(finite + "。", moves[0], plan, resolver, selected_subjective_input)
+            second = _read_answer_feeling_discourse(right, moves[1], plan, resolver,
+                selected_subjective_input, preceding_context=(moves[0], finite + "。"))
+            if first is None or second is None:
+                continue
+            # Restore only source ranges actually present before the changed
+            # inflection; do not borrow bytes from the following answer.
+            if any(not 0 <= a < b <= len(left.encode()) for a, b, _ in first):
+                continue
+            prefix, offset = len("当時、".encode()), len(raw[:boundary.end()].encode())
+            matches.append((tuple((a + prefix, b + prefix, source) for a, b, source in first),
+                            tuple((a + offset, b + offset, source) for a, b, source in second)))
+        return matches[0] if len(matches) == 1 else None
     if (len(moves) != 2 or selected_subjective_input is None
         or any(len(move.target_nucleus_ids) != 1 for move in moves)
         or moves[0].target_nucleus_ids == moves[1].target_nucleus_ids

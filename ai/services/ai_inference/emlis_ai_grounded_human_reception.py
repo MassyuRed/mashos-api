@@ -1686,6 +1686,32 @@ def build_grounded_reception_clause_plans(
                        else (moves[:1], moves[1:]))
     elif _independent_recognition_pair(reception_plan, recovery_stage, plan=plan,):
         move_groups = (moves[:2], moves[2:])
+    elif (recovery_stage == "full" and plan is not None and resolver is not None
+        and len(moves) == 3 and reception_plan.depth_policy.max_moves_per_sentence >= 2
+        and reception_plan.depth_policy.min_sentences <= 2
+        and "selection:source_owned_answer_adjacent" in reception_plan.depth_policy.selection_reason_codes):
+        from emlis_ai_grounded_observation_plan import source_owned_answer_feeling
+        index = {n.nucleus_id: n for n in plan.nuclei}
+        for position in (0, 1):
+            original, answer = moves[position:position + 2]
+            roles = source_owned_answer_feeling(answer, plan)
+            source = (final_reception_source_anchor_text(roles[1].nucleus_id, index, resolver)
+                      if roles else "")
+            finite = _detached_feeling_finite_surface(source, allow_medial=True)
+            if (roles and roles[2] in {"answer_time", "prior_answer_time"}
+                # Keep the existing singleton author for unproven subjects.
+                and not re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)
+                and original.required and answer.required
+                and original.move_role == answer.move_role == "felt_response"
+                and original.reception_act == "stay_with_current_burden"
+                and original.target_nucleus_ids == (roles[0].nucleus_id,)
+                and len(original.support_nucleus_ids) == 1
+                and _received_discourse_negative_feeling(final_reception_source_anchor_text(
+                    original.support_nucleus_ids[0], index, resolver)) is not None):
+                # Share a sentence, not a meaning or source; retain event order.
+                move_groups = ((moves[:2], moves[2:]) if position == 0
+                               else (moves[:1], moves[1:]))
+                break
     elif (
         recovery_stage == "integrated"
         and len(moves) == 3
@@ -4416,7 +4442,10 @@ def _validate_clause_plan_binding(
             )
         if (len(moves) == 2 and recovery_stage != "integrated"
             and not ((_independent_recognition_pair(reception_plan, recovery_stage, plan=plan,)
-                      or _detached_feeling_pair(reception_plan, recovery_stage, plan=plan, resolver=resolver) is not None)
+                      or _detached_feeling_pair(reception_plan, recovery_stage, plan=plan, resolver=resolver) is not None
+                      or recovery_stage == "full" and plan is not None and resolver is not None
+                      and "selection:source_owned_answer_adjacent" in reception_plan.depth_policy.selection_reason_codes
+                      and len(canonical_clause.move_ids) == 2)
                      and clause.move_ids == canonical_clause.move_ids)):
             raise GroundedHumanReceptionSurfaceError(
                 "human_reception_multi_move_clause_wrong_stage"
@@ -9880,7 +9909,10 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str
                   if c.startswith("thread-received-slot:"))
     original_codes = tuple(c for c in realization.nominalization_plan
                            if c.startswith("received-contrast-group:"))
-    if (not (codes or original_codes) or realization.clause_form != "FINITE"
+    if (not (codes or original_codes)
+        or realization.clause_form != "FINITE" and not (
+            realization.clause_form == "CONTINUATIVE" and not acknowledge
+            and len(codes) == 1 and codes[0].endswith(":none"))
         or realization.recovery_form != "full"
         or realization.reference_mode == "ANAPHORIC"):
         return None
@@ -10931,6 +10963,10 @@ def _author_source_grounded_reception_clauses(
         move_sentences: list[str] = []
         coordination_terms = []
         detached_terms = []
+        temporal_pair = (recovery_stage == "full" and len(clause_plan.move_ids) == 2
+            and "selection:source_owned_answer_adjacent" in reception_plan.depth_policy.selection_reason_codes
+            and move_index[clause_plan.move_ids[0]].reception_act == "stay_with_current_burden"
+            and move_index[clause_plan.move_ids[1]].reception_act == "recognize_lived_change")
         for move_id, meaning_realization in zip(
             clause_plan.move_ids,
             realization.moves,
@@ -11329,6 +11365,9 @@ def _author_source_grounded_reception_clauses(
             )
             if detached_group is not None:
                 move_sentence = detached_group
+            if temporal_pair and move_sentences:
+                # Prove the elided event from the actual preceding clause.
+                preceding_context = (move_index[clause_plan.move_ids[0]], move_sentences[0] + "。")
             answer_sentence = _source_owned_answer_feeling_sentence(
                 move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
                 preceding_context, selected_subjective_input,
@@ -11467,6 +11506,22 @@ def _author_source_grounded_reception_clauses(
                                            selected_decision, move.move_role))
             move_sentences.append(move_sentence)
         shared_feelings = _source_grounded_shared_material_feelings(tuple(coordination_terms))
+        if temporal_pair:
+            # Explicit original time licenses these proven past predicates.
+            # This coordination adds no contrast, cause or improvement.
+            first, second = move_sentences
+            if first.endswith("つながらなかった"):
+                connected = first[:-len("つながらなかった")] + "つながらず"
+            elif first.endswith("感じた"):
+                connected = first[:-len("感じた")] + "感じ"
+            else:
+                raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAPABILITY_GAP")
+            shared_feelings = "当時、" + connected + "、" + second
+            from emlis_ai_grounded_observation_gate import read_detached_feeling_pair
+            if read_detached_feeling_pair(shared_feelings + "。",
+                tuple(move_index[mid] for mid in clause_plan.move_ids),
+                plan, resolver, selected_subjective_input) is None:
+                raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAPABILITY_GAP")
         if (recovery_stage == "full" and len(realization.moves) == len(detached_terms) == 2
             and (detached_terms[0] == detached_terms[1]
                  or detached_terms[0][1] != detached_terms[1][1])):

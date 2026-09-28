@@ -10615,3 +10615,37 @@ DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / LEVEL_2。現在のCodex Work root華恋が�
 **残件・再開先。** 中間の出来事を対象とする現在回答は、元の順序と3Move責務を維持するため引き続き明示再掲する。単一出来事の当時/現在の二文、二層全体の再掲、常体/丁寧体の切替、列挙調、独立訂正・撤回後の参照、既存39失敗は未解決。この局所改善を対象群全体の完了へ昇格しない。次は同じ出来事の二時点を返す際の文の分断と口調を、別責務・全source・独立読取りを保持した既存文章化の範囲で扱う。9/30中間確認、10/3対象群、10/10内容判断、別枠の10/2開発実機一往復を維持する。
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 同じOP・HR・Gate責務内の配置と表現変更で、新しいowner・route・lifecycleは追加しない。実DB・実機・実課金・Ready/merge/deploy/enableは未実施。反映commit、exact changed paths、remote全文一致は両Draft PRの今回記録へ結合する。
+
+
+## 2026-09-29 継続 — 当時の反応と回答を二時点の一文へつなぐ
+
+Mashの継続指示と添付TXTから、API `4ff767de998fefcc67e2457b9f56e041beaf3838`／Cocolon `961958d6a811d5bb4d0b7233e1eee9cf7118b8fa`、Draft #3/#30を開始点とした。入口・CURRENT_RULES・Rule18、全体設計01/02と適用分冊、全ファイル地図・current_structure00/01/04、恒久incident全文、最新weekly9/26 §3.8〜5.9、両継続記録とKaren-Diaryを確認。fresh GitHub treeの全trackedファイル（API2300/Cocolon1645）をGit blob SHAで照合した。System Context prepareは最初に実行場所不一致、正しいrootではsnapshotのcommit ancestry不一致でexit2。原典直接読みに戻り、freshness成功とはしていない。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / LEVEL_2。Codex Workのroot華恋が唯一の編集・実行・反映owner、独立商品・技術担当はread-only。未確認のPro/Ultra model名は使用しない。first source effect前にHR・Gate・detached observation test・received discourse test・current identity fixture・API handoff・Cocolon06のexact7pathを固定した。
+
+**共通原因と変更。** 前unitで隣接した同じ出来事の原反応と現在回答が、別の文へ固定され、常体終止から丁寧体へ切り替わっていた。既存3Move・最大2Move/文の範囲で、先頭または末尾の原反応と現在／先の回答を一文の二節へ配置する。原反応に「当時」を明示し、回答側の固有時点を維持する。
+
+```text
+修正前：褒められたことは、嬉しさにはつながらなかった。回答した時点では嬉しいのですね。誘われたのに、悲しさを感じたのですね。
+今回版：当時、褒められたことは、嬉しさにはつながらず、回答した時点では嬉しいのですね。誘われたのに、悲しさを感じたのですね。
+```
+
+「し」の列挙や「でも／そのため／その後」の関係は追加しない。原反応と回答のMove責務・source・ABOUT・核・関係・時点は分離したまま。既存作者が原反応を有限形から連用形へ変え、既存の二責務readerが実本文を二節に分けて各既存readerへ戻す。省略した出来事は実際の直前原反応からのみ証明する。左sourceのbyte範囲が右回答へ越境しないこと、回答frameのpresentとthread_timeが一致することも確認する。作者の期待文面再生成は逆検査の証拠にしない。
+
+対象は既存selection markerを持つfullの3Moveに限定。単一出来事の2Moveはmax1Move/文のため変更しない。中間の出来事、当時への回答、独立訂正・撤回、対象外の原反応形は既存経路を保つ。意味Plan（核・関係・Move・depth容量）・意味認定・Observation・API/DB/RN/schema・保存責務は変更0。文への配置を持つclause planだけを変更する。新helper・owner・engine・依存の追加0。新clause planへ旧3文全体を読ませる互換性は追加しておらず、保存済み旧DTOの再取得とは区別する。回答の同義終端「のですね／のです／のだと受け取りました」は保持する。
+
+**実本文と独立レビュー。** fresh importの継承59例でcheckpoint・意味Plan・Observationは全一致、両側の提供・独立inverseは59成功。変更4行（Reception3種類）、残55本文は全文一致。先頭/末尾・2/3出来事・本人/助詞/程度・先の回答を含む別14条件では9本文が変わり、対象外4本文は一致、残1は前後とも同じ`emlis_q3_initial_body_unavailable`。提供13例のcheckpoint・意味Plan・Observationは全一致。rootと商品担当は全変更行の前後両層を読んだ。対象の分断と常体/丁寧体切替は減り、残余の別出来事に属する主体・助詞・程度・否定は保持された。二層間の再掲、読点と説明調、残余の「のですね」列挙は残る。限定familyの改善候補であり、正式Product Read PASSとはしない。
+
+**検証。** 最終production・fixtureで全8対象2180条件を再実行し、2141PASS/既存39FAIL/2warnings、ERROR/SKIP0（460.70秒）。前回の確定2145条件（全体実行と影響40条件の統合）とのcase ID照合で、既存条件の脱落0・合否変化0、追加35条件は全PASS。既存39失敗は未解消。うち1例の歴史的な「嬉しさにはつながらず」固定は再び通るようになり、その例は時点anchorの失敗だけが残るため、失敗trace内容まで不変とはしていない。その他のretained assertion式は一致した。これは最終全量の実行結果であり、今回の初回実行との合成集計ではない。
+
+追加35条件は、時点欠落・因果/同時性/好転の混入拒否20、左右source frameの本人/時点/極性変更拒否12、実byte範囲の時点境界保持2、単一出来事の文容量を拡張しない確認1。既存の改変検査は実際の共有文を二operandへ展開してから変更・再結合し、従来の欠落/交換/介在・本人・程度・否定・時点拒否を維持した。旧3文/句点の固定anchorと合法隣接本文のanchorだけを新しい文の形へ更新し、中間対象の明示参照・省略拒否は保持した。保護された検査、既存39FAILの検査本文、歴史的凍結証跡、品質基準は変更0。
+
+最初の本文probeはmultiMove bindingの既存許可に新canonical形が未反映で失敗し、同じfull・marker・canonical IDsに限定して修正した。独立技術reviewで作者のfull限定を明示。focusedは121PASS/2FAILで、回答frameの時点変更を新readerが拒否できていないことを検出し、present一致を追加した。最終全体実行前に旧anchor1件を修正して開始直後のrunを中断。続く起動はPYTHONPATH不足でcollection errorとなり、`PYTHONPATH=ai`を明示して再実行した。中断・collection失敗を検証成功へ数えていない。最初の全2180条件は2139PASS/41FAIL（458.05秒）で、既存39に加えて「今は私が嬉しいです」「今は私は僕には嬉しいです」の2条件が本文未提供へ回帰した。有限作者が証明できない主体でも先に共有句へ固定したことが原因だった。既存の人称有限化後に未証明SELFが残る場合は共有しないよう限定し、旧singleton経路を保持した。関連129条件は129PASS/1677deselected/1warning（33.68秒）。語尾なども一括で限定する案は観測した原因より広いため最終版へ入れず、主体境界だけを補った後に全8対象を再実行した。
+
+保存確認は継承22系列。今回の二時点共有文を含む現在回答→回答訂正→出来事撤回の2系列でも、元入力DTO不変・保存本文・生成禁止のGET/service.start完全一致・最終COMPLETED/can_continue=falseを維持した。試験用保存系/PGliteであり、実DB・実機・process再起動の確認ではない。
+
+最終identityはlanguage=`68f0e9df534b96253ddb825036115ca2f7e851befde1bdaddcc84c92f78f7e9a`、runtime=`8d80dc2426b2ca52335bc8db21a4d8d7849a28442d6e3a5e371d5423f7f3a943`。既存導出の各18payload・9ownerとfixture key/scopeを保持。既存Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1、PGliteを確認し、install0。
+
+**残件・再開先。** 二層間の再掲全体、単一出来事の二文、中間eventの再導入、説明調と残余列挙、独立訂正・撤回後の参照、既存39失敗は未解決。次は二層間の役割分担と重複を実本文でまとめ、Observationの引用・時点とReceptionの必須意味を削らず扱える共通原因から進める。今回の句読点や終端だけを増殖させる作業へ戻さない。9/30中間確認、10/3対象群、10/10内容判断と、別枠の10/2開発実機一往復を維持する。
+
+**TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 既存作者・readerの責務内に限定し、構造地図のowner/route変更なし。実DB・実機・実課金・外部生成AI・Ready/merge/deploy/enableは未実施。反映commit・exact7path・remote全文一致は両Draft PRの今回記録へ結合する。
