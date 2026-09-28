@@ -10373,3 +10373,38 @@ Emlisから：
 **残件と次の判断。** このunitの計画例外4＋部分本文1と、同一原因の無根拠な出発点接続は上記の範囲で閉じる。長い訂正導入句の反復、同文の気持ちが重複して見えること、「のですね、また、」の硬い接続、原文再掲の多さが残る。横断の既知20失敗は未解決で、従来13target全体の34失敗を今回20まで減らしたとは呼ばない。 次単位は既存残件の実本文を読み、意味保持と自然な受け取り方を両立できる限定familyを定める。weeklyの9/30確認・10/3限定family整理・10/10Emlis判定へつなぐ。
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** Ready/merge/deploy/enable、実DB/実機/実課金、外部生成AIは未実施。反映commit・変更path・remote全文一致・最終headは両Draft PR本文へ記録する。
+
+
+## 2026-09-28 追加継続 — 二つの訂正を保持した受け取り文の反復軽減
+
+**開始点と対象。** Mashの残件継続指示と添付 `前回作業内容(20260928-094048).txt` を確認し、API `d78eb4b9734dfa01a2667d38d32f48e565a67a7f`、Cocolon `0ff313da6ef9e318e6ffd00965acaa28035861fe`、既存Draft #3/#30・open/unmergedから開始。01全体設計、02全file地図、current_structure、rule入口/CURRENT_RULES/Rule18、恒久incident全文、最新weekly `Cocolon_Weekly_Review_20260926.md` と直前handoffを確認した。tracked inventoryはAPI2300/Cocolon1645。System Context prepareはmaterial commitの祖先照合でexit2となり、原典を直接確認した。Context freshness成功とは呼ばない。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / LEVEL_2 standing delegation。first effect前にAPIの既存Human Reception・Observation Gate・detached observation test・current派生identity fixture・handoffとCocolon06の6pathを固定。root華恋が編集・検査・GitHub書込みを担当し、独立した商品/技術担当はread-onlyで確認した。weeklyが示すWorkでのEmlis優先に従い、前回残件の「長い訂正導入句、同文の重複、のですね、また、」を一単位とした。意味選択・Plan・Surface・Move数・語彙範囲・品質閾値・schema/API/DB/RN・dependency manifestは変更しない。新ownerや新たな合格判定機構は追加しない。
+
+**修正と意味保持。** 二つとも当時の独立訂正である既存groupでは、訂正の導入を一度だけ置き、各気持ちの本人・助詞・程度・否定・時点を保持する。時点を含む有限節が完全に一致するときだけ「二つの言い直しでは、どちらも」と数と対象を明記し、一つの述語で受け取る。二つのsource義務は残し、同じ瞬間に起きたとは表明しない。異なる節は「それとは別に」で区別する。存続contrastと訂正の混合groupでは、明示的な訂正導入を残して「し、」でつなぎ、末尾の受け取りを一度にする。
+
+独立Gate readerは作者を呼ばずに各sourceを別々に復元し、新しい導入での数・訂正対象・時点を検証する。同じ可視述語でも二sourceの証明を保持する。共有範囲に異なるsource文字列を上書きする正規化を導入したわけではない。異なる本人/助詞/程度/否定/気持ちを一述語へまとめる変更、数の欠落、因果や同時性の付加、現在への時点移動を拒否し、従来の明示的な二節表現も受け入れる。
+
+**実本文と商品確認。** 原入力は「褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。」、先行回答は「今は嬉しい。」。最初の二反応をそれぞれ「私は少し不安でした」へ訂正したReceptionは次のとおり。
+
+```text
+二つの言い直しでは、どちらも当時、あなたは少し不安だったのですね。褒められたことについて、回答した時点では嬉しいのですね。頼まれたのに、寂しさを感じたのですね。
+```
+
+「私も少し怖くなかったです」「少し私には苦しかったです」の組合せでは、最初の文は「言い直してくださった気持ちは、当時、あなたも少し怖くなかったし、それとは別に当時、あなたには少し苦しかったのですね。」となる。「楽しかった」「私は不安でした」の組合せでは、存続する寂しさと不安の間の「のですね、また、」を「し、」へ変更し、別Moveの楽しさも保持する。
+
+開始版と最終版を同runtime・fresh importで比較した。前回の30系列は提供30→30、Reception変更5、残る25本文は不変。追加の周辺14系列は提供14→14、訂正6のReceptionだけが変化し、初期/現在回答2と撤回6の全文は不変。合計44系列のcheckpoint・Plan・Observationは全一致し、Reception11件の反復を軽減した。最終30系列の全JSONは商品review時の候補と30/30一致した。rootは変更本文を読み、商品担当は対象5と初稿周辺変更12を前後比較した。
+
+初稿は撤回groupにも「し、」を適用したが、独立した「その時は悲しかった」が直前の存続eventに属して読める懸念を商品reviewで確認した。この拡張は取り下げ、撤回は既存の区切りを保持した。改善数には数えない。技術担当の最終静的確認で具体的な新規正当性問題は見つからなかった。提供44件は商品合格44件を意味せず、正式Product Read PASSへ上げない。
+
+**検証。** 最終production・fixture後の6target横断は **1587件＝1567 PASS/既知20 FAIL、ERROR/SKIP0、193 deselected、573.53秒**。detached observation / received discourse / answer attributive / initial received discourse / Q1 thread と、contractsのactive final owner zero legacy compose検査だけを実行した。開始HEAD・同runtimeの前回横断1554件（1534 PASS/20 FAIL）と比較し、既存関数ごとのparameter数とstatus列は全一致、新規33件は全PASS。文言anchorの変更で3 parameter IDだけが変わり、ほかの既存ID/statusは一致する。既知20のID・message・tracebackはworkspace prefix・memory address・fixture UUIDのみの正規化後に全一致した。新規の未解決失敗はない。
+
+既存の文言依存anchorと共有述語の出現数期待を、新しい本文に合わせて限定更新した。入力系列や意味改変の拒否を削っていない。共有述語の改変は両sourceに対して同じ可視範囲を変更して検証する。追加33件はsource別の独立復元5、数/対象/時点の改変拒否21、異なる気持ちの共有拒否3、旧明示表現との互換4。凍結test・既知失敗の期待値を編集していない。
+
+既存の保存5系列・30状態も最終横断に含む。original DTO不変、回答後REFINED、最終COMPLETED/can_continue=false、generate禁止のGET/service.startと保存DTOの一致を確認した。process再起動・実DB・実機の検証ではない。初稿の対象986件は949 PASS/37 FAIL（既知6＋旧本文anchor/反復期待31）、期待更新後の初稿focusedは163 PASS/856 deselected。初稿の横断は撤回の懸念を受けて途中終了したため、完了結果として扱わない。最終限定後の横断結果は上記へ区別して記録した。
+
+最終identityはlanguage=`b271a573ca2b9b2cdb1db602fdbc50d1dea5e88544f3a3badef9cb1708c314e9`、runtime=`09467ff0d8db32eb9127887f3831bbecc739e5af4e7c99d41240686296aef6b2`。既存導出でcurrent fixtureだけ更新し、各18payload/source owner9と歴史的凍結証跡を保持した。前回の検査runtimeを再利用（Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1、Node24.19.0/PGlite0.5.8）。本unitのinstallなし。旧13target全量・59file・Q3全量・全保存履歴を再実行したとは呼ばない。
+
+**残件。** 異なるMove間の長い訂正導入、Observationの原文再掲、撤回後の「その時」の参照の弱さ、全体の定型的な語り口、横断の既知20失敗は残る。今回の限定familyでは反復を軽減できたが、自然な受け取り文全体を完成扱いにしない。次はこれらの実本文から次の限定familyを定め、weeklyの9/30中間確認・10/3 family整理・10/10 Emlis判定へつなぐ。
+
+**TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** Ready/merge/deploy/enable、実DB/実機/実課金、外部生成AIは未実施。反映commit・remote全文一致・最終headは両Draft PR本文へ記録する。

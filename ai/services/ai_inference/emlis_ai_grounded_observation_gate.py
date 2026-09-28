@@ -3344,12 +3344,24 @@ def _read_detached_burden_discourse(raw, move, plan, resolver, selected_subjecti
     ending = re.search(r"(?:のですね|のです|のだと受け取りました)。$", raw)
     if ending is None:
         return None
-    clauses = raw[:ending.start()].split("し、")
+    shared_intro = "言い直してくださった気持ちは、"
+    equal_intro = "二つの言い直しでは、どちらも"
+    shared_revision = raw.startswith((shared_intro, equal_intro))
+    equal_revision = raw.startswith(equal_intro)
+    intro = equal_intro if equal_revision else shared_intro if shared_revision else ""
+    content = raw[len(intro):ending.start()]
+    clauses = [content, content] if equal_revision else content.split("し、")
     if len(clauses) != len(move.target_nucleus_ids):
         return None
     index = {n.nucleus_id: n for n in plan.nuclei}
-    offset, replacements = 0, []
-    for nid, clause in zip(move.target_nucleus_ids, clauses, strict=True):
+    if shared_revision and (len(clauses) != 2 or not all(
+            _thread_revised_original_reaction(index[nid], plan.relations)
+            and {c.split(":", 1)[1] for c in index[nid].semantic_frame.attribute_codes
+                 if c.startswith("thread_time:")} == {"original_occasion"}
+            for nid in move.target_nucleus_ids)):
+        return None
+    offset, replacements = len(intro), []
+    for slot, (nid, clause) in enumerate(zip(move.target_nucleus_ids, clauses, strict=True)):
         n = index[nid]
         frame, codes = n.semantic_frame, set(n.semantic_frame.attribute_codes)
         unknown = is_grounded_current_answer_uncertainty(n)
@@ -3386,8 +3398,10 @@ def _read_detached_burden_discourse(raw, move, plan, resolver, selected_subjecti
             expected_time = {"その時は": "その時、", "回答した時点では": "回答した時点で、",
                              "先の回答時点では": "先の回答時点で、"}[expected_time]
         if _thread_revised_original_reaction(n, plan.relations):
-            expected_time = ("それとは別に" if offset else "") + "言い直してくださった気持ちについては、" + (
-                "当時、" if _thread_feeling_owner(source) else "当時は")
+            time = "当時、" if _thread_feeling_owner(source) else "当時は"
+            expected_time = (("それとは別に" if slot and not equal_revision else "") + time
+                if shared_revision else ("それとは別に" if slot else "")
+                + "言い直してくださった気持ちについては、" + time)
         if not clause.startswith(expected_time):
             return None
         finite = clause[len(expected_time):]
@@ -3397,7 +3411,8 @@ def _read_detached_burden_discourse(raw, move, plan, resolver, selected_subjecti
         start = len(raw[:offset + len(expected_time)].encode())
         end = len(raw[:offset + len(clause)].encode())
         replacements.append((start, end, source.encode()))
-        offset += len(clause) + len("し、")
+        if not equal_revision:
+            offset += len(clause) + len("し、")
     return tuple(replacements)
 
 
@@ -3455,12 +3470,17 @@ def read_received_discourse(raw, move, plan, resolver, selected_subjective_input
     inflection is normalized for the independent role reader; the source,
     body, witness and response bindings are never rewritten.
     """
+    from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
     if len(move.target_nucleus_ids) <= 1 or "、また、" in raw:
         return _read_received_discourse_parts(raw, move, plan, resolver, selected_subjective_input)
     index = {n.nucleus_id: n for n in plan.nuclei}
     cuts = [0]
     for nid in move.target_nucleus_ids[1:]:
-        event = final_reception_source_anchor_text(nid, index, resolver)
+        nucleus = index[nid]
+        if _thread_revised_original_reaction(nucleus, plan.relations):
+            event = "言い直してくださった気持ちについては、"
+        else:
+            event = final_reception_source_anchor_text(nid, index, resolver)
         starts = [m.start() for m in re.finditer(re.escape("、" + event), raw)] if event else []
         if len(starts) != 1 or starts[0] <= cuts[-1]:
             return None

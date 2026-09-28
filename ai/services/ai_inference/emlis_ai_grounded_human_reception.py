@@ -10010,10 +10010,16 @@ def _source_grounded_received_discourse(realization) -> str | None:
                 separate_time_scopes = True
     # Independent events remain distinct. Each scope is closed before the
     # next begins; no cause, ranking or shared experiencer is manufactured.
-    if any(code.endswith((":none:detached:none", ":none:replacement:none")) for code in codes):
-        # Close each original scope explicitly; an independent reaction is
-        # not the reaction to the next surviving event.
+    if any(code.endswith(":none:detached:none") for code in codes):
+        # A withdrawn event leaves only an ambiguous "その時" antecedent.
+        # Keep its independent sentence scope; additive coordination could
+        # make that feeling sound attached to the preceding live event.
         return "、また、".join(part + "のですね" for part in parts)
+    if any(code.endswith(":none:replacement:none") for code in codes):
+        # Keep every independent finite scope, but acknowledge the group
+        # once. The explicit revision prefix still separates that feeling
+        # from the next surviving event; additive し supplies no causal link.
+        return "し、".join(parts[:-1]) + "し、" + _feeling_acknowledgement(parts[-1])
     coordinated = []
     for part in parts[:-1]:
         if separate_time_scopes:
@@ -10367,18 +10373,31 @@ def _source_owned_detached_burden_sentence(move, realization, plan, resolver,
     parts = []
     from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
     index = {n.nucleus_id: n for n in plan.nuclei}
+    revised_pair = len(rows) == 2 and all(
+        when == "original_occasion" and _thread_revised_original_reaction(index[nid], plan.relations)
+        for nid, _, when in rows)
     for nid, source, when in rows:
         prefix = {"original_occasion": "その時は", "answer_time": "回答した時点では",
                   "prior_answer_time": "先の回答時点では"}[when]
-        if (re.match(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)", source)
-            or _medial_feeling_owner(source) is not None):
+        has_owner = (re.match(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)", source)
+                     or _medial_feeling_owner(source) is not None)
+        if has_owner:
             prefix = {"その時は": "その時、", "回答した時点では": "回答した時点で、",
                       "先の回答時点では": "先の回答時点で、"}[prefix]
         if _thread_revised_original_reaction(index[nid], plan.relations):
-            prefix = ("それとは別に" if parts else "") + _revised_feeling_discourse_prefix(source)
+            prefix = (("当時、" if has_owner else "当時は") if revised_pair
+                      else ("それとは別に" if parts else "") + _revised_feeling_discourse_prefix(source))
         copula = _detached_feeling_copula_parts(source)
         parts.append(prefix + _detached_feeling_finite_surface(source, allow_medial=True,
             allow_copular=bool(copula and copula[1] in {"でした", "だった"})))
+    if revised_pair:
+        if parts[0] == parts[1]:
+            # Two distinct corrections remain two source duties. Only their
+            # fully realized equal feeling and original-occasion roles share
+            # a predicate. The two occasions need not be the same instant.
+            return "二つの言い直しでは、どちらも" + _feeling_acknowledgement(parts[0])
+        return ("言い直してくださった気持ちは、" + parts[0] + "し、それとは別に"
+                + _feeling_acknowledgement(parts[1]))
     return "し、".join(parts[:-1]) + "し、" + _feeling_acknowledgement(parts[-1])
 
 

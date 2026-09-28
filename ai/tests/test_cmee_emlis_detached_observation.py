@@ -699,9 +699,9 @@ def test_revised_original_observation_owns_its_time_even_with_other_time_tokens(
     ('言い直してくださった気持ちについては、当時は苦しかった', '言い直してくださった気持ちについては、当時は嬉しくなかった'),
     ('言い直してくださった気持ちについては、当時は苦しかった', '言い直してくださった気持ちについては、当時は友人が苦しかった'),
     ('言い直してくださった気持ちについては、当時は苦しかった', '褒められたことについて、言い直してくださった気持ちについては、当時は苦しかった'),
-    ('、また、', 'ので、'),
-    ('誘われたのに、悲しさを感じたのですね、また、', ''),
-    ('頼まれたのに、寂しさを感じたのですね、また、', ''),
+    ('し、', 'ので、'),
+    ('誘われたのに、悲しさを感じたし、', ''),
+    ('頼まれたのに、寂しさを感じたし、', ''),
     ('誘われたことについて、その時は楽しかったのですね。', ''),
     ('褒められたことについて、回答した時点では嬉しいのですね。', ''),
 ])
@@ -714,7 +714,7 @@ def test_revised_original_reception_rejects_missing_or_reassigned_duties(revised
 
 def test_revised_original_equivalent_endings_are_read_without_authors(revised_original_context):
     body = revised_original_context[0].artifact.text
-    changed = body.replace('言い直されています。', '言い換えられています。').replace('のですね、また、', 'のです、また、')
+    changed = body.replace('言い直されています。', '言い換えられています。').replace('のですね。', 'のです。')
     assert read_body(revised_original_context, changed).passed
 
 
@@ -867,7 +867,7 @@ def test_middle_revision_rejects_observation_meaning_changes_without_authors(mid
 
 def test_middle_revision_accepts_equivalent_reception_ending(middle_revision_context):
     body = middle_revision_context[0].artifact.text
-    changed = body.replace('のですね、また、', 'のです、また、')
+    changed = body.replace('のですね。', 'のです。')
     assert changed != body and read_body(middle_revision_context, changed).passed
 
 
@@ -2203,11 +2203,15 @@ def test_two_independent_revisions_keep_every_duty_and_fact(two_independent_revi
     assert '褒められたことについて、回答した時点では嬉しいのですね。' in follow
     assert '「頼まれた」と「寂しかった」' in observation and '頼まれたのに、寂しさを感じた' in follow
     assert observation.count('当時の気持ちを言い直') == 2
-    assert follow.count(REVISION_INTRO) == 2
+    shared = follow.startswith('二つの言い直しでは、どちらも')
+    assert follow.count(REVISION_INTRO) == (2 if sources[0] == '楽しかった' else 0)
+    assert shared == (INDEPENDENT_REVISION_FINITE[sources[0]] == INDEPENDENT_REVISION_FINITE[sources[1]])
+    if not shared and sources[0] != '楽しかった':
+        assert follow.startswith('言い直してくださった気持ちは、') and 'し、それとは別に当時' in follow
     for source, count in Counter(sources).items():
         assert observation.count(f'「{source}」') == count
     for finite, count in Counter(INDEPENDENT_REVISION_FINITE[s] for s in sources).items():
-        assert follow.count(finite) == count
+        assert follow.count(finite) == (1 if shared else count)
     assert 'でしたの' not in follow and 'でしたこと' not in follow
     assert '私' not in follow and '誘われた' not in follow
     moves = plan.response_plan.human_reception_plan.moves
@@ -2264,9 +2268,11 @@ def test_two_independent_revisions_reject_lost_or_reassigned_duties(two_independ
         old, new = {
             'current_missing': ('褒められたことについて、回答した時点では嬉しいのですね。', ''),
             'current_time': ('回答した時点では嬉しい', 'その時は嬉しい'),
-            'pair_missing': ('頼まれたのに、寂しさを感じたのですね', ''),
+            'pair_missing': ('頼まれたのに、寂しさを感じた', ''),
             'pair_target': ('頼まれたのに、寂しさ', '誘われたのに、寂しさ'),
-            'revision_cause': (REVISION_INTRO, '誘われたことが原因で、'),
+            'revision_cause': (('二つの言い直しでは、どちらも' if original.startswith('二つの言い直しでは、どちらも')
+                else '言い直してくださった気持ちは、' if original.startswith('言い直してくださった気持ちは、')
+                else REVISION_INTRO), '誘われたことが原因で、'),
         }[mutation]
         changed = original.replace(old, new, 1)
     assert changed != original
@@ -2280,7 +2286,8 @@ def test_two_independent_revisions_reject_each_feeling_change(two_independent_re
     original = context[0].artifact.reception
     finite = INDEPENDENT_REVISION_FINITE[sources[slot]]
     offset = original.find(finite)
-    if slot and INDEPENDENT_REVISION_FINITE[sources[0]] == finite:
+    if (slot and INDEPENDENT_REVISION_FINITE[sources[0]] == finite
+        and not original.startswith('二つの言い直しでは、どちらも')):
         offset = original.find(finite, offset + len(finite))
     assert offset >= 0
     if mutation == 'person': changed_finite = finite.replace('あなた', '友人', 1) if 'あなた' in finite else '友人は' + finite
@@ -2324,3 +2331,75 @@ def test_two_independent_revisions_saved_rounds_reuse_every_source(qcase, qdb, m
     assert '頼まれたのに、寂しさを感じた' in body
     assert '回答した時点では嬉しいのですね。' in body
     assert current['state'] == 'COMPLETED' and not current['can_continue']
+
+
+def test_shared_revision_reader_restores_each_distinct_source_without_authors(two_independent_revisions_context):
+    sources, context = two_independent_revisions_context
+    if sources[0] == '楽しかった':
+        assert read_body(context, context[0].artifact.text).passed
+        return  # Separate polarity Moves retain their existing individual readers.
+    result, plan, _, resolver, selected = context
+    move, = [m for m in plan.response_plan.human_reception_plan.moves
+             if not m.support_nucleus_ids and len(m.target_nucleus_ids) == 2]
+    raw = result.artifact.reception.split('。')[0] + '。'
+    with patch.object(reception, '_source_owned_detached_burden_sentence', side_effect=AssertionError('no author')), patch.object(
+            reception, '_detached_feeling_finite_surface', side_effect=AssertionError('no finite author')):
+        proof = gate._read_detached_burden_discourse(raw, move, plan, resolver, selected)
+    assert proof is not None and len(proof) == 2
+    assert [value.decode() for _, _, value in proof] == list(sources)
+    if raw.startswith('二つの言い直しでは、どちらも'):
+        assert proof[0][:2] == proof[1][:2]
+    else:
+        assert proof[0][1] < proof[1][0]
+    assert all(raw.encode()[start:end] for start, end, _ in proof)
+
+
+@pytest.mark.parametrize('old,new', [
+    ('二つの言い直しでは、どちらも', ''),
+    ('二つの言い直しでは、どちらも', '一つの言い直しでは、'),
+    ('二つの言い直しでは、どちらも', '二つの言い直しでは、一方は'),
+    ('二つの言い直しでは、どちらも', '二つの出来事が原因で、'),
+    ('当時、', ''), ('当時、', '同時に、'), ('当時、', '回答した時点で、'),
+])
+@pytest.mark.parametrize('sources', NONADJACENT_CORRECTION_SOURCES[:3])
+def test_shared_revision_rejects_lost_count_reference_or_time(sources, old, new):
+    request = begin()
+    for answer_text in two_independent_revision_answers(sources):
+        request = advance(request, answer_text)
+    context = actual(request=request)
+    original = context[0].artifact.reception
+    changed = original.replace(old, new, 1)
+    assert changed != original
+    assert not read_body(context, context[0].artifact.text.replace(original, changed, 1)).passed
+
+
+@pytest.mark.parametrize('sources', [
+    ('私も少し怖くなかったです', '私は少し怖くなかったです'),
+    ('私は不安でした', '私は少し不安でした'),
+    ('私は少し苦しかったです', '私は少し怖くなかったです'),
+])
+def test_unequal_revisions_cannot_borrow_one_shared_predicate(sources):
+    request = begin()
+    for answer_text in two_independent_revision_answers(sources):
+        request = advance(request, answer_text)
+    context = actual(request=request)
+    original = context[0].artifact.reception
+    intro = '言い直してくださった気持ちは、'
+    assert original.startswith(intro) and 'し、それとは別に' in original
+    first, rest = original[len(intro):].split('し、それとは別に', 1)
+    changed = '二つの言い直しでは、どちらも' + first + 'のですね。' + rest.split('。', 1)[1]
+    assert not read_body(context, context[0].artifact.text.replace(original, changed, 1)).passed
+
+
+@pytest.mark.parametrize('sources', NONADJACENT_CORRECTION_SOURCES[:4])
+def test_shared_revision_reader_keeps_previous_explicit_wording(sources):
+    request = begin()
+    for answer_text in two_independent_revision_answers(sources):
+        request = advance(request, answer_text)
+    context = actual(request=request)
+    original = context[0].artifact.reception
+    old_parts = [REVISION_INTRO + '当時、' + INDEPENDENT_REVISION_FINITE[s] for s in sources]
+    old = old_parts[0] + 'し、それとは別に' + old_parts[1] + 'のですね。'
+    changed = old + original.split('。', 1)[1]
+    assert changed != original
+    assert read_body(context, context[0].artifact.text.replace(original, changed, 1)).passed
