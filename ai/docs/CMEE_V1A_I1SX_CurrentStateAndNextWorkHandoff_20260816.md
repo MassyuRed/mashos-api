@@ -11379,17 +11379,44 @@ current identityは既存18payload/9ownerの派生値のみ更新。language `99
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 既存Plan内部の構成のみで責任・whole route・artifact lifecycle不変。Ready/merge/deploy/enableなし。
 
-## 2026-09-30 Work継続 u28：有効ABOUTを残す原反応訂正後の場面分離 — 作業中
+## 2026-09-30 Work継続 u28：有効ABOUTを残す原反応訂正後の場面分離
 
-開始API `03a92b3e3cf3bd2b2aa60398e19ae81983b3a920`／Cocolon `261e5d3b881c76a5da6a9b41a72e56e29230b7ad`、u27反映後と一致。全体01/02、全file地図01A/B/Cの領域と接点、current_structure00/01/04、作業ルール、恒久incident全文、最新weekly20260926の9/29合意とu27を確認。System Context prepareはmaterial commitの祖先確認でexit2、許可済み原典直接参照へ戻しfreshness成功とはしない。旧scratch消失後に同じheadを取得し、試験runtimeは実在するPython3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1/PGlite0.5.8を確認、install0。
+**開始と範囲。** Mashの残件継続指示により、API `03a92b3e3cf3bd2b2aa60398e19ae81983b3a920`／Cocolon `261e5d3b881c76a5da6a9b41a72e56e29230b7ad`から開始。u27反映後と一致。前提・作業ルール・恒久incident全文、全体01/02、全file地図01A/B/Cの領域と接点、current_structure00/01/04、最新weekly20260926内9/29合意、u27引継ぎを確認。現行tracked inventoryはAPI2300/Cocolon1645。旧scratch失効後に同headを取得した。System Context prepareはmaterial commitの祖先確認でexit2、許可済み原典直接参照へ戻しfreshness成功とはしない。
 
-開始判断：DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、Rule18 LEVEL_2、Mashの残件継続指示。product_destinationは訂正後も誰のどの出来事への回答かを追えるEmlis本文、current routeはQ4後の複数出来事/回答/訂正群。current_unfinished_conditionは『原反応pairが外れ有効ABOUTだけ残る場面を含むと、通常分離条件から外れ旧列挙へ戻る』一原因。既存Planの完全pair数要求とsupport構築の最小修正を候補とし、既存HR/Surface/独立Gateへ接続する。商品担当はwhole-route fit、技術担当は既存ABOUT単独grammarと除外境界を読取確認済み。root（Work ModeのGPT-based Codex）が編集・実行・GitHub writeの単一owner。確認していないPro/Ultra model identityは称さない。
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、Rule18 LEVEL_2。商品接続は、訂正後も誰のどの出来事への回答かを追えるEmlis本文。Q4後の複数出来事/回答/訂正群内で一原因を扱う。商品担当はwhole-route fit、技術担当は既存ABOUT単独grammarと除外境界を確認、root（Work ModeのGPT-based Codex）が編集・実行・GitHub writeの単一owner。確認していないPro/Ultra identityを称さない。
 
-first effect前の上限は既存8path：API `ai/services/ai_inference/emlis_ai_grounded_observation_plan.py`、同directoryの`emlis_ai_grounded_human_reception.py`／`emlis_ai_grounded_observation_gate.py`、`ai/tests/test_cmee_emlis_received_discourse.py`／`ai/tests/test_cmee_emlis_detached_observation.py`、`ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json`、本handoff、Cocolon `Cocolon_前提資料/designs/cmee/v1/06_implementation_order_migration_and_verification.md`。主候補はPlanのみ。完了は実本文の場面分離・意味/関係不変・作者禁止逆検証・保存再取得・関連回帰・remote全文照合。30〜45分程度の限定修正を見込み、追加費用とMash操作0。対象外へ広がる実退行・契約変更・新grammar機構が必要なら採用せず残件として記録する。source admission、品質基準、protected/frozen検査、上限、外部AI、新owner/helper、API/DB/RN、実機/課金、本番/公開は変更0。success creditはTECHNICAL_CREDITのみ、群完了/商品合格は別判断。STRUCTURE_MAP_DELTA_NONE、全体48%・商品0/3・NOT_CLEAR・default OFF・Draftを維持し、10/03休止／10/04以降分析の最新合意を継承する。
+first effect前の上限は既存8path：APIのPlan/HR/Gate、received/detached tests、current identity、本handoffとCocolon06。実変更はPlan・received tests・current identity・両handoffの5pathに閉じた。追加費用・Mash操作・依存追加0。実退行、契約変更または新機構が必要ならこのunitを拡張しない境界を固定した。完了条件は実本文分離、意味/関係保持、作者禁止逆検証、保存再取得、関連回帰とremote全文照合。群全体の商品合格とは分離する。
 
-**検証途中checkpoint。** Planの通常分離でtargets==eventsを維持したまま原反応pair数同一の条件だけを外し、原反応のない場面は有効ABOUT回答のみをsupportとして渡した。HR/Gate/roleは変更なし。新30検査（位置と本文/改変拒否20、解釈6、保存更新4）は全PASS、25.17秒。保存4系列の11回答後状態で原入力不変・生成禁止GET/start一致。開始版関連2191件＝2177PASS/既存14FAILはu27の同head・同runtime版の記録を継承し、既知失敗を含む27件だけfresh再実行（13PASS/14FAIL、22.11秒）。候補のreceived/detached＋identity全体は実行中で、回帰なし・全量完了は未確定。次はその結果と既知14のmessage/trace、既存identityの脱落/成否を照合する。
+**修正。** 原反応を現在の質問対象で訂正すると、元のcontrastは外れる一方で訂正回答のABOUTは存続する。その場面は以前の「全eventに完全な原反応pairがある」という分離条件から外れ、別場面まで旧列挙へ戻していた。既存Planの通常分離でtargets==eventsを維持し、原反応pair数との差を0または1に限定して、一場面だけABOUT回答へ置き換わった場合を分離可能にした。supportは存続原反応があれば原反応＋回答、なければ既に証明されたABOUT回答のみとする。元反応・contrastの復活、訂正の独立化や別出来事への再接続はしない。unknown、positive併存、withdrawal、独立訂正/行動、chain等の既存除外、source順序と3 Move上限は保持した。二場面以上がABOUTだけになった場合は既存の集合scopeに残し、既存HR/Gateの共有述語判定を維持する。述語が異なる複数訂正も今回は旧構成に残る。
 
-初期比較43実行記録には同一入力2組があり、異なる入力41種類として扱う。提供40、Reception26変更・14不変、checkpoint/核/関係/Observation不変、提供全件の公開本文一致・作者禁止逆読成功。複数節の訂正replacement5controlはPARTIAL／correction_replacement_unsupportedで旧反応のWITHDRAWだけ反映、新複合反応未追加・未反映案内あり。syntax拒否1も元からで、いずれも解消扱いにしない。受理可能なunknownと反復SELFの追加3controlは別に比較し、最終記録で合算を確定する。商品/技術担当は初期比較の全両層本文を読取確認済み。current identityはlanguage `0b75d4190c10e7a8fba441e4738eec74b19edb28248932577ab6009ac3f5dbae`／runtime `f29cdb733f18c7441eacb807326c441b4bc8404afa9225ed5d9773536ae1353d`、18payload/9owner不変。
+意味核・関係・source admission・本文grammar・HR/Gate・role配分規則（コード）・質問上限・API/DB/RN/schema/保存責務・依存・flagは不変。新owner/helper/classifier/engineなし。既存test期待・frozen/protected acceptance・品質基準の変更、削除、skip/xfail追加0。
 
+**実本文。** 合成入力「褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。」に「その時は少し苦しかった。」「「悲しかった」ではなく「少し怖かった」です。」を順に回答。
 
-**境界修正checkpoint。** 初案の関連2221件は2185PASS/36FAIL（574.61秒）。既知14件のmessage/正規化traceは同じだが、共有述語に新22退行があった。通常分離へ`len(events) - len(pairs[0]) <= 1`を加え、原反応を失いABOUT回答だけが残る場面を一つまでに限定した。同じ場面の再訂正を含み、複数場面のABOUT-onlyは従来の集合scope/共有述語grammarに残す。既存期待を変えず、新30＋共有53の83件が全PASS（36.78秒）。本文44種類は初案の改善出力を全フィールド維持、共有表現8系列は開始版と全フィールド一致し、全8の公開本文一致/作者禁止逆検証も成功。root/商品担当が追加8両層全文、技術担当が上流pair一意性と既存共有grammar境界を確認した。関連2221件の確定候補再実行中で、全量完了は未確定。確定候補identityはlanguage `3ec0e63e6c239a27ef93d70d7b8588ad8f23f6f1df47635470da3195ab723d52`／runtime `9f8e75b40900add56a08b003417ef66bd3da78e5c0571d187a77241d44980400`。
+```text
+見えたこと：
+「褒められた」のに「嬉しくなかった」、その時は「少し苦しかった」とあります。 「誘われた」ことについて、その時の受け止めは「少し怖かった」と書かれています。 「頼まれた」と「寂しかった」が、異なる向きのまま同時にあります。
+
+Emlisから：
+褒められた時は嬉しくなく、少し苦しかったのですね。誘われたことについて、その時に少し怖かったことを見失わず、小さくせずに受け止めています。頼まれたのに、寂しさを感じたのですね。
+```
+
+変更前は「褒められた時は嬉しくなく、少し苦しく、誘われた時は、少し怖く、頼まれたのに、寂しさを感じたのですね。」と一文で列挙していた。今回の改善は対応する回答を出来事ごとに読めること。長い中央名詞句、受領定型・のですね反復はこの例にも残り、商品合格の見本ではない。
+
+**本文比較。** 合成の異なる入力/回答44系列を同runtimeで開始版と候補比較。43提供（うち既存PARTIAL5）、既存syntax拒否1。提供43ではReception/Move28変更・15不変。checkpoint・核・関係・Observationは不変、全提供で公開entry本文一致・作者禁止inverse成功。raw実行記録は初期43＋追加3＝46だが先頭訂正に重複2組があり、44種類へ重複除去した。先頭訂正の重複を過去/現在の別条件として数えない。
+
+通常/現在時点/先の回答時点、先頭/中央/末尾訂正、再訂正、主体/助詞付き丁寧形・説明形、解釈A/B/C、受理可能unknown、肯定、撤回、u27の独立訂正、単一感情述語の反復SELFを比較した。複数節の訂正replacement5件は `assessment_status=PARTIAL`／`correction_replacement_unsupported` で旧原反応のWITHDRAWだけ反映、新複合反応未追加・未反映案内ありという既存境界。静かな意味欠落や新たな退行とは分類せず、未対応を解消扱いにもしない。rootと商品担当が入力・前後両層全文、技術担当がsource・所有・時点・除外境界とtest差分を確認した。追加3controlも各担当が読了し、反復SELFの単一述語と未対応の複数節を混同しない。限定修正後に44種類を再比較し、memo＋answersで対応づけると、診断名を除く全証拠フィールドが初案と一致して28種類の改善を維持した（重複代表の選択により先頭訂正2系列の診断名だけが異なる）。衝突原因に対応する共有表現8系列も別に開始版と比較し、入力・checkpoint・核・関係・Move・両層本文が全一致、公開本文一致/作者禁止inverse成功。root/商品担当は追加8の両層全文を読了した。
+
+**検証と修正過程。** 初案はpair数条件を完全に外したため、関連2221件の初回全量が2185PASS/36FAIL（574.61秒）となり、既知14のほか共有述語22件が退行した。失敗を期待変更で通さず、上記の単一ABOUT-only境界へ絞り直した。上流のpair一意性とtargets証明に基づく限定で、新owner/grammarは足していない。新30＋既存共有表現53の83件は全PASS（36.78秒）。この失敗候補や途中checkpointを最終成功と扱わない。確定候補の関連全量は **2221件＝2207PASS／既存14FAIL、error/skip0、562.58秒**。同一検査実行の内訳で、focusや本文probeを足さない。開始版2191件＝2177PASS/14FAILはu27の反映済み同source/test・同runtime版の記録を継承した。今回freshなのは既知失敗を含む27件＝13PASS/14FAIL（22.11秒）と全2191 IDのcollect（9.21秒）であり、開始版全量の再実行ではない。旧2191 IDの欠落0・成否変更0、新30全PASS、既知14のmessage/traceはrepository path・行番号・UUID・アドレスのみを正規化すると差0。既知失敗はreceived8（現在肯定の旧文形期待6、同旧anchorによる改変検査2）、detached6（肯定2責務の容量2、第二原反応訂正の旧fragmentation期待2、撤回後BODY_UNAVAILABLE期待1、肯定訂正の旧group期待1）。既存期待は変更せず、既知14を解消/全PASS扱いにしない。初案の22退行は確定版で全解消した。
+
+新30件は5位置×4回答/訂正形の本文・意味改変拒否20、二/三出来事×解釈3形の6、保存更新4。ABOUTのみの所有、元反応不存在、required関係の一意保持、文境界を確認し、対象交換・主体/助詞・程度・否定・時点・文欠落/複製・推測の断定化・主観/留保の削除を作者禁止で拒否する。保存4系列11回答後状態でoriginal不変、生成を禁止したGET/startの保存DTO完全一致。再訂正と撤回後の旧意味非復活を含む。PGliteでの確認で、実DB・実機・プロセス再起動の確認ではない。
+
+runtimeは実在するPython3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1/PGlite0.5.8を確認して再使用。install0。検査は `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<PGlite0.5.8 module> python -m pytest -q ai/tests/test_cmee_emlis_received_discourse.py ai/tests/test_cmee_emlis_detached_observation.py` に既存の `test_active_final_language_owner_chain_has_zero_legacy_compose_calls` を加えたもの。初回の小さい本文probeは生成/逆読成功後、診断表示の`vars()`がslots型へ使えず停止したが、dataclassesによる本比較へ修正。productionの回帰ではない。
+
+current identityは既存18payload/9ownerの派生値のみ更新。language `3ec0e63e6c239a27ef93d70d7b8588ad8f23f6f1df47635470da3195ab723d52`／runtime `9f8e75b40900add56a08b003417ef66bd3da78e5c0571d187a77241d44980400`。
+
+**反映と再開。** 初案checkpointはAPI `6e1fd840ad62046b33c428191ce445df8a7ae5fb`へ反映し、4file全文をremoteから再取得して一致確認。共有述語の境界修正checkpointは `a156816b54945bf4ade0ba27761b000da12d4dbf`（tree `5f28b7977fc4fc4e6a1c9152fea91885ba98a729`）へnon-forceで反映し、追加3file全文一致を再確認。最終5変更file（API4／Cocolon06の1）の確定head・tree・反映後全文照合は各Draft PR先頭u28を参照する。
+
+複数場面の原反応訂正、独立訂正＋三場面、肯定/不明併存、撤回後などの残存列挙、複数節の訂正replacement、長い名詞句・反復SELFの自然さ・受領定型反復・二層再掲、既知失敗は残る。同じ複数出来事/回答/訂正群を継続し、対象群全体の完了や正式商品合格とはしない。未説明残件を対象外へ付け替えず、群を閉じていないため次順位の二層改善へ自動移行しない。10/03未完でもEmlis休止、10/04以降Work分析／不可時Pro Piece、旧10/10 Emlis期限再設定待ちの合意を保持。
+
+**TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 既存Plan内部の構成のみで責任・whole route・artifact lifecycle不変。Ready/merge/deploy/enableなし。
