@@ -11306,3 +11306,38 @@ current identityは既存18payload/9ownerの派生値だけ更新。language `72
 長い中央名詞句、定型受領句・のですね反復、複数SELF、二層再掲、元反応訂正/event撤回後の旧列挙、既知失敗は残る。複数出来事/回答/訂正群の完了・正式商品合格とはしない。次は同じ群に残る更新後の本文構成を既存ownerから扱い、まだ群を閉じていないため次順位の二層改善へ自動移行しない。10/03は未完でもEmlis休止、10/04以降Workは分析、Work不可時Pro Piece、旧10/10 Emlis期限は再設定待ちという最新合意を維持する。
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 既存owner内の構成修正で責任・whole route・artifact lifecycle・cross-core構造は不変。Ready/merge/deploy/enableなし。
+
+## 2026-09-29 Work継続 u26：一出来事の撤回後も存続する二場面を分ける
+
+**開始と範囲。** Mashの残件継続指示によりAPI b67e80d553602941c6e98c8ef4c9e1c013efabb5／Cocolon45f795ec4a750f09e52f3a6aa8984dbfc0a7c0ddから開始。全体設計01/02・全file地図01A/B/C・current_structure00/01/04の現行経路とtracked inventoryは同headの前unit確認を継承し、本unitでも省略なしremote tree（API2300／Cocolon1645）と照合。最新weekly20260926内9/29合意、u25引継ぎ、current_structureのowner経路を確認し、恒久incidentを全文再読した。System Context prepareはmaterial commitの祖先不一致でexit2、許可済み原典直接参照を使用しfreshness成功とは記録しない。LEVEL_2／DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、first effect前に最大9既存pathを固定。rootのみ編集・実行・GitHub書込、商品/技術担当は読み取りレビュー。Work ModeのGPT-based Codexとして作業。
+
+**修正。** 三出来事の一つを撤回すると、存続する二出来事の原反応・回答が単一列挙に戻っていた。既存Planで、完全な二event/reaction、少なくとも一つの存続negative回答、一つのdetached原反応、detached回答0〜1、非unknown・非positive・独立訂正/行動/chainなしに限り二場面を分割する。既存detached mergerで独立して残る原反応と回答をまとめ、3 Move上限内に保つ。役割は独立群attention、存続先頭significance、後尾felt_response。既存source proofに一致する群だけを用い、Move/role/selected decisionは再導出する。意味核・関係・source admission・質問上限を変更しない。
+
+初稿では分割だけによる役割重複と、複数SELFをまとめた時の「あなたは私には不安だったのですのですね」が実在し、不採用とした。後者は既存同一残件ではなく今回の退行だった。既存HRの完全な本人帰属nominalへ戻し、通常原反応の丁寧形も既存copular/attributiveで全文を保持。Gateはrole末尾と各項のsource/時点を独立復元し、全項withdrawn・無関係・少なくとも一つの完全SELF nominalを要求する。部分的な人称変換で旧有限文へ戻す形も拒否する。新helper/classifier/engineは追加しない。横断では単一SELFの説明形にも今回の退行1を検出し、既存保存testの期待を変えず修正した。有限形にcopular/説明形の活用を行い、時点prefixを付ける前に終止を処理する。Gateは途中節・終端の共有・外側過去を独立復元し、既存equal_revisionの二sourceにも同じ実終止を対応させる。
+
+**本文比較。** 同runtimeで開始版と最終版54入力を比較。全54のcheckpoint/accepted/nuclei/relationsは一致。両側本文のある51ではObservation全文不変、Reception39変更・12不変。以前本文逆読で失敗したowned/self/withdraw-1も本文提供でき、最終提供52・作者なし逆読52成功。残る2は元からのanswer_syntax_unsupportedで受理成功とは扱わない。存在しない「悲しかった」を指すowned原反応訂正controlは未反映のままであり、訂正成立例に数えない。受理済みunknown、positive、無回答・存続回答なし、回答撤回、原反応訂正の対象外controlを保持。rootと商品担当は入力および両層全文、技術担当はsource/独立reader/role境界を確認。最終拒否補強後も先に読了した46結果とは完全一致。追加8例は単一SELFのcopula/説明形/外側過去×元/回答時点を、前後両層で読了した。
+
+**実本文例。** 初期入力「褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。」に「その時は少し苦しかった。」「その時は少し重かった。」「「誘われた」は誤りです。」を順に回答。
+
+```text
+見えたこと：
+「褒められた」のに「嬉しくなかった」、その時は「少し苦しかった」とあります。 「頼まれた」と「寂しかった」が、異なる向きのまま同時にあります。
+その時の「悲しかった」と、その時の「少し重かった」という気持ちが書かれています。
+
+Emlisから：
+その時は悲しかったし、その時は少し重かったのですね。褒められたのに嬉しくなかったことと、その時に少し苦しかったことを見失わず、小さくせずに受け止めています。頼まれたのに、寂しさを感じたのですね。
+```
+
+**検証。** 開始版の関連baselineは、u25最終1152件（1141PASS/11FAIL）を継承し、今回初めて加えたdetached_observationを開始headでfresh実行1365件（1359PASS/6FAIL、270.67秒）。合計2517 identity=2500PASS/既存17FAIL。候補横断4targetは2516件=2486PASS/30FAIL、638.33秒。30は既存17、旧文形/役割期待12、今回の単一SELF説明形退行1である。旧期待は非frozen既存2関数の完全文/role変異anchorのみ追随し、説明形の既存保存期待は変更せずproductionを修正した。
+
+その後の関連2target（receivedのwithdraw関連＋detached全体）は1502件=1496PASS/既存6FAIL、362.09秒、ERROR/SKIP0。最後に既存equal_revisionが共有する説明終止をslot両方で復元するGateの局所修正を行い、その最終sourceの追加2件PASS、identity1件PASS。1502はこの最後の共有終止修正前に起動しているため、全範囲を最終sourceで一括再実行したとは扱わない。重複除去した関連結果は2554 identity=2537PASS/既存17FAILであり、単独run件数ではない。開始2517 identityの脱落・最終成否変化0、新37は全PASS。既存17のmessage/traceはpath・行番号・UUID・memory addressだけの正規化後に全一致した。途中の27PASS、48PASS、99PASS、説明形12PASS、補強6PASS等は加算しない。superseded関連run一つは中断して最終照合へ含めない。17は選択した関連範囲の既知失敗数でありrepo全体数ではない。
+
+新37件は通常/本人原反応×過去/現在/解釈×撤回3位置の18、複数SELF回答×原反応3形×元/回答時点の6、保存3系列、単一SELFの4形×2時点8、既存の同一訂正二件が説明形の終止を共有する2。出来事・原反応・回答の保持、関係の非復活、全required source、否定/程度/助詞/人称/説明/時点/role、正しい末尾を保った項交換・複製・欠落、旧不正文形を作者なしで検査する。保存3系列各3回答後9状態でoriginal不変、生成を禁止したGET/startのDTO完全一致を確認。PGliteの試験であり実DB/実機/再起動の確認ではない。prior化＋別存続回答＋event撤回は現行3回答上限を超えるため新経路へ合成追加せず、既存prior保存controlを保持する。
+
+current identityは既存18payload/9ownerの派生値のみ更新。language `2ed7e4b6a4c1415cff90af1f9dc2e7cea320a0cfc41b4d94e49701531cc2c502`、runtime `aab7e7d3fa05a2bf8bf3534b2f5f537b1e031dd1f9c78e43530822f21d7c22a7`。protected/frozen acceptance、品質基準、API/DB/RN/schema/保存責務・依存・flagの変更なし。
+
+**反映と次回。** 最終変更はAPI6既存path（Plan/HR/Gate・received tests・current identity・本handoff）とCocolon06の計7。各preimageをfresh remote treeと照合し、反映後の全変更file全文・tree・parent/head・changed pathsを再取得して一致を確認する。確定commitと反映後証拠は各Draft PR先頭のu26記録を参照。
+
+長いnominal、self群での受領定型反復、複数SELFの自然さ、二層再掲、原反応訂正後などの残存列挙、既知失敗は残る。同じ複数出来事/回答/訂正群の残件から続け、群の完了や商品合格とは扱わない。10/03は未完でもEmlis休止、10/04以降Work分析・Work不可時Pro Piece、旧10/10 Emlis期限は再設定待ちの最新合意を維持。
+
+**TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 責任とwhole routeは不変、Ready/merge/deploy/enableなし。

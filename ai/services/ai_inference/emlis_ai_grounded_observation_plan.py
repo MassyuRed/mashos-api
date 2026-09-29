@@ -8003,6 +8003,20 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
                 groups[-1] = (family, (*prior_targets, event), (*prior_supports, feelings[event]))
             else:
                 groups.append(("current_burden", (event,), (feelings[event],)))
+    # With one occasion withdrawn, the two surviving complete pairs still
+    # own separate answer scopes. Detached feelings keep their independent
+    # duties; the existing merger below can coordinate their own sources
+    # within the three-Move budget without restoring the withdrawn event.
+    if (withdrawal and separate_later_scopes and len(detached_originals) == 1
+        and len(detached_answers) <= 1
+        and len(targets) == len(events) == len(pairs[0]) == 2
+        and any(answer in negative for answer in by_event.values())
+        and len(negative) == len(answers)
+        and not (chain_ids or independent or actions or independent_answers)
+        and all(not is_grounded_current_answer_uncertainty(answer) for answer in negative)):
+        groups = [("current_burden", (event,),
+                   (feelings[event], by_event[event].nucleus_id) if event in by_event
+                   else (feelings[event],)) for event in targets] + groups[1:]
     # Keep a current positive answer beside its own original reaction.
     # Only an edge event can be separated while retaining source order and
     # the existing three-Move budget. The positive duty stays independent.
@@ -9088,6 +9102,19 @@ def _build_reception_depth_policy_and_moves(
                 # or original/answer time is dropped to fit two sentences.
                 for item, role in zip(burdens, ("attention", "significance", "felt_response")):
                     roles[item.opportunity_id] = role
+            elif (len(standalone) == 1 and len(selected) == 3 and not explicit_contrast_duties
+                  and all((item.family, item.target_nucleus_ids, item.support_nucleus_ids)
+                          == retained_reaction_groups[position]
+                          for position, item in enumerate(selected))
+                  and all(len(item.target_nucleus_ids) == 1 and 1 <= len(item.support_nucleus_ids) <= 2
+                          for item in burdens if item not in standalone)
+                  and any(len(item.support_nucleus_ids) == 2 for item in burdens)):
+                # The independent duty keeps attention. Give the two complete
+                # occasions distinct existing roles in source order instead
+                # of repeating felt_response for both event/answer scopes.
+                live = tuple(item for item in burdens if item not in standalone)
+                roles[live[0].opportunity_id] = "significance"
+                roles[live[1].opportunity_id] = "felt_response"
             else:
                 roles[standalone[-1].opportunity_id] = "significance"
             if len(standalone) == 1 and explicit_contrast_duties:

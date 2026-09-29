@@ -2112,8 +2112,12 @@ def test_withdrawn_event_multiple_self_answer_keeps_independent_time(time, prefi
     context = actual(request=request)
     result, plan, _, _, _ = context
     nominal = finite + 'という、' + prefix + 'あなたの気持ち'
-    assert nominal + 'を見失わず、小さくせずに受け止めています。' in result.artifact.reception
-    assert 'その時は悲しかったのですね。' in result.artifact.reception
+    assert ('その時に悲しかったことと、' + nominal
+            + 'に目が留まり、それを小さくせずに受け止めています。') in result.artifact.reception
+    sentences = result.artifact.reception.split('。')[:-1]
+    assert len(sentences) == 3
+    assert '褒められたのに嬉しくなかったことと、回答した時点で少し苦しいこと' in sentences[1]
+    assert '頼まれたのに、寂しさを感じたのですね' == sentences[2]
     assert source in result.artifact.observation and '誘われた' not in result.artifact.text
     assert all(event in result.artifact.text for event in ('褒められた', '頼まれた'))
     assert not any(bad in result.artifact.reception for bad in ('これまで、', '今、', 'ですこと', 'でしたこと'))
@@ -2165,7 +2169,7 @@ def test_withdrawn_multiple_self_answer_rejects_meaning_changes(withdrawn_multip
         'quote': '「' + nominal + '」',
         'extra_predicate': nominal + 'が改善したこと',
     }
-    changed = (follow.replace('を見失わず、小さくせずに', 'を小さくせずに')
+    changed = (follow.replace('に目が留まり、それを小さくせずに', 'を小さくせずに')
                if mutation == 'role' else follow.replace(nominal, changes[mutation]))
     assert changed != follow
     assert not inverse(context, changed, without_author=True).passed
@@ -2729,4 +2733,159 @@ def test_interpretation_nominal_omission_keeps_own_time(source, when):
     for changed in (follow.replace(time, ''), follow.replace(time, other_time),
                     follow.replace('誘われたのに悲しかったことと、', ''),
                     follow.replace('ことと、', 'ことと、褒められたことについて、', 1)):
+        assert changed != follow and not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('memo,events', [
+    ('褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。',
+     ('褒められた', '誘われた', '頼まれた')),
+    (OWNED_INITIAL, ('誘われた', '頼まれた', '言われた')),
+])
+@pytest.mark.parametrize('sequence', [
+    ('その時は少し苦しかった。', 'その時は少し重かった。'),
+    ('今は少し苦しい。', '今は少し重い。'), (A, B),
+])
+@pytest.mark.parametrize('withdraw', [0, 1, 2])
+def test_withdrawal_keeps_two_complete_live_occasions(memo, events, sequence, withdraw):
+    request = begin(memo)
+    for reply in (*sequence, '「' + events[withdraw] + '」は誤りです。'):
+        request = advance(request, reply)
+    context = actual(request=request)
+    result, plan, _, _, _ = context
+    follow = result.artifact.reception
+    sentences = follow.split('。')[:-1]
+    assert len(sentences) == 3 and events[withdraw] not in result.artifact.text
+    surviving = tuple(event for i, event in enumerate(events) if i != withdraw)
+    assert all(sum(event in sentence for sentence in sentences) == 1 for event in surviving)
+    assert not any(all(event in sentence for event in surviving) for sentence in sentences)
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == 3 and {m.move_role for m in moves} == {'attention', 'significance', 'felt_response'}
+    detached = {n.nucleus_id for n in plan.nuclei
+                if 'thread_subject:withdrawn_source_event' in n.semantic_frame.attribute_codes}
+    assert len(detached) == (2 if withdraw < 2 else 1)
+    assert not any(detached & {r.from_nucleus_id, r.to_nucleus_id} for r in plan.relations)
+    expected = {nid for m in moves for nid in (*m.target_nucleus_ids, *m.support_nucleus_ids)}
+    assert expected == {n.nucleus_id for n in plan.nuclei if n.retention == 'required'
+                        and set(n.source_fields) & {'memo', 'answer_text_private'}}
+    assert inverse(context, follow, without_author=True).passed
+    for changed in (follow.replace(surviving[0], surviving[1], 1),
+                    '。'.join(sentences[1:]) + '。',
+                    follow.replace(sentences[1], sentences[2], 1),
+                    follow.replace('その時', '先の回答時点').replace('回答した時点', 'その時')):
+        assert changed != follow and not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('time', ['その時は', '今は'])
+@pytest.mark.parametrize('original', ['嬉しくなかった', '私も少し不安でした', '少し私は怖くなかった'])
+def test_withdrawal_repeated_self_keeps_whole_nominal_and_other_original(original, time):
+    source = '僕は自分には少し不安ではなかったのです'
+    memo = '褒められたのに、' + original + '。誘われたのに、悲しかった。頼まれたのに、寂しかった。'
+    request = begin(memo)
+    for reply in (time + source + '。', 'その時は少し重かった。', '「褒められた」は誤りです。'):
+        request = advance(request, reply)
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    temporal = 'その時の' if time == 'その時は' else '回答した時点の'
+    nominal = '僕は自分には少し不安ではなかったのだという、' + temporal + 'あなたの気持ち'
+    first = follow.split('。')[0]
+    assert nominal in first and first.endswith('に目が留まり、それを小さくせずに受け止めています')
+    assert 'その時に' in first and ('あなたも少し不安だったこと' in first if '不安でした' in original else True)
+    assert '褒められた' not in context[0].artifact.text
+    assert not any(bad in follow for bad in ('ですのですね', 'でしたこと', 'ですこと', 'あなたは自分には'))
+    assert inverse(context, follow, without_author=True).passed
+    for old, new in [('僕は自分には', '僕は'), ('僕は自分には', 'あなたは自分には'),
+                     ('自分には', '自分にも'), ('少し不安ではなかった', '不安ではなかった'),
+                     ('不安ではなかった', '不安だった'), ('のだという、', 'という、'),
+                     (temporal, ''), (temporal, '先の回答時点の'),
+                     ('その時に', '回答した時点で'),
+                     ('に目が留まり、それを', 'を見失わず、'),
+                     ('ことと、', 'ことと、誘われたことについて、')]:
+        changed = follow.replace(old, new, 1)
+        assert changed != follow and not inverse(context, changed, without_author=True).passed
+    ending = 'に目が留まり、それを小さくせずに受け止めています'
+    left, right = first[:-len(ending)].split('と、', 1)
+    for changed in (follow.replace(first, right + ending),
+                    follow.replace(first, right + 'と、' + left + ending),
+                    follow.replace(first, left + 'と、' + left + ending)):
+        assert changed != follow and not inverse(context, changed, without_author=True).passed
+    original_finite = {'嬉しくなかった': '嬉しくなかった', '私も少し不安でした': 'あなたも少し不安だった',
+                       '少し私は怖くなかった': 'あなたは少し怖くなかった'}[original]
+    prefix = 'その時、' if time == 'その時は' else '回答した時点で、'
+    broken = 'その時' + ('は' if original == '嬉しくなかった' else '、') + original_finite
+    broken += 'し、' + prefix + source.replace('僕は', 'あなたは', 1) + 'のですね'
+    changed = follow.replace(first, broken)
+    assert changed != follow and not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('sequence,withdraw', [
+    (('その時は少し苦しかった。', 'その時は少し重かった。'), '誘われた'),
+    (('今は少し苦しい。', '今は少し重い。'), '頼まれた'),
+    (('その時は私は私には不安だったのです。', 'その時は少し重かった。'), '褒められた'),
+])
+def test_withdrawal_separate_occasions_save_original_and_exact_replay(qcase, monkeypatch, sequence, withdraw):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    for position, reply in enumerate((*sequence, '「' + withdraw + '」は誤りです。')):
+        if position:
+            current = run(cont(service, user, current, f'withdrawal-scope-continue-{position}'))
+        current = run(answer(service, user, current, reply, f'withdrawal-scope-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        assert '今回の観測に反映できていない' not in body
+        if position == 2:
+            assert withdraw not in body
+            follow = body.split('Emlisから：', 1)[1].strip()
+            assert len(follow.split('。')[:-1]) == 3
+            assert 'を見失わず、小さくせずに受け止めています。' in follow
+            assert all(word in body for word in ('嬉しくなかった', '悲しかった', '寂し'))
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('withdrawal saved body must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('source,finite', [
+    ('私は少し不安です', 'あなたは少し不安なのですね'),
+    ('私は少し不安でした', 'あなたは少し不安だったのですね'),
+    ('私は少し不安だったのです', 'あなたは少し不安だったのですね'),
+    ('私は少し不安なのだった', 'あなたは少し不安なのでしたね'),
+])
+@pytest.mark.parametrize('time,prefix', [('今は', '回答した時点で、'), ('その時は', 'その時、')])
+def test_withdrawal_single_self_keeps_copula_and_explanation(source, finite, time, prefix):
+    request = begin()
+    for reply in ('今は少し苦しい。', time + source + '。', '「誘われた」は誤りです。'):
+        request = advance(request, reply)
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    assert 'その時は悲しかったし、' + prefix + finite + '。' in follow
+    assert '誘われた' not in context[0].artifact.text and source in context[0].artifact.observation
+    assert len(follow.split('。')[:-1]) == 3
+    assert inverse(context, follow, without_author=True).passed
+    for changed in (follow.replace(prefix, ''), follow.replace(prefix, '先の回答時点で、'),
+                    follow.replace('あなたは少し不安', 'あなたは不安'),
+                    follow.replace('あなたは少し不安', '友人は少し不安'),
+                    follow.replace('その時は悲しかったし、', ''),
+                    follow.replace('あなたは少し不安なのでしたね', 'あなたは少し不安なのですね')
+                        if source.endswith('のだった') else follow.replace(finite, 'あなたは少し不安ですのですね')):
+        assert changed != follow and not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('source,finite', [
+    ('私は少し不安だったのです', 'あなたは少し不安だったのですね'),
+    ('私は少し不安なのだった', 'あなたは少し不安なのでしたね'),
+])
+def test_shared_revision_explanation_keeps_both_sources_under_one_ending(source, finite):
+    from test_cmee_emlis_detached_observation import two_independent_revision_answers
+    request = begin()
+    for reply in two_independent_revision_answers((source, source)):
+        request = advance(request, reply)
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    assert '二つの言い直しでは、どちらも当時、' + finite + '。' in follow
+    assert inverse(context, follow, without_author=True).passed
+    for changed in (follow.replace('二つの言い直しでは、どちらも', '一つの言い直しでは、'),
+                    follow.replace('当時、', '回答した時点で、'),
+                    follow.replace('少し不安', '不安'),
+                    follow.replace('不安なのでしたね', '不安なのですね') if source.endswith('のだった')
+                        else follow.replace('不安だったのですね', '不安なのですね')):
         assert changed != follow and not inverse(context, changed, without_author=True).passed

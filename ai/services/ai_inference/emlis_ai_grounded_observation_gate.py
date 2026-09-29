@@ -3629,16 +3629,23 @@ def _read_detached_burden_discourse(raw, move, plan, resolver, selected_subjecti
         appraisal = decision.subjective_proposition.appraisal_content if decision else None
         if appraisal is None or (appraisal.dimension, appraisal.operation) != ("MATERIAL_WEIGHT", "RECEIVE_AS_MATERIAL"):
             return None
-    ending = re.search(r"(?:のですね|のです|のだと受け取りました)。$", raw)
-    if ending is None:
+    ending = re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました)。$", raw)
+    nominal_ending = {"attention": "に目が留まり、それを小さくせずに受け止めています。",
+                      "significance": "を見失わず、小さくせずに受け止めています。",
+                      "felt_response": "を小さくせずに受け止めています。"}.get(move.move_role)
+    nominal_group = bool(nominal_ending and raw.endswith(nominal_ending))
+    if ending is None and not nominal_group:
         return None
     shared_intro = "言い直してくださった気持ちは、"
     equal_intro = "二つの言い直しでは、どちらも"
     shared_revision = raw.startswith((shared_intro, equal_intro))
     equal_revision = raw.startswith(equal_intro)
     intro = equal_intro if equal_revision else shared_intro if shared_revision else ""
-    content = raw[len(intro):ending.start()]
-    clauses = [content, content] if equal_revision else content.split("し、")
+    if nominal_group and shared_revision:
+        return None
+    content = raw[:-len(nominal_ending)] if nominal_group else raw[len(intro):ending.start()]
+    separator = "と、" if nominal_group else "し、"
+    clauses = [content, content] if equal_revision else content.split(separator)
     if len(clauses) != len(move.target_nucleus_ids):
         return None
     index = {n.nucleus_id: n for n in plan.nuclei}
@@ -3648,7 +3655,7 @@ def _read_detached_burden_discourse(raw, move, plan, resolver, selected_subjecti
                  if c.startswith("thread_time:")} == {"original_occasion"}
             for nid in move.target_nucleus_ids)):
         return None
-    offset, replacements = len(intro), []
+    offset, replacements, owned_nominals = len(intro), [], 0
     for slot, (nid, clause) in enumerate(zip(move.target_nucleus_ids, clauses, strict=True)):
         n = index[nid]
         frame, codes = n.semantic_frame, set(n.semantic_frame.attribute_codes)
@@ -3682,6 +3689,31 @@ def _read_detached_burden_discourse(raw, move, plan, resolver, selected_subjecti
             expected_time = prefixes[next(iter(times))]
         else:
             return None
+        if nominal_group:
+            # A whole repeated-SELF proposition keeps its existing owned
+            # nominal. Prove every other detached source and time separately;
+            # none may borrow a source, pronoun or time from its neighbor.
+            if "thread_subject:withdrawn_source_event" not in codes:
+                return None
+            when = next(iter(times)) if times else "original_occasion"
+            if _read_multiple_self_answer_nominal(clause, source, when):
+                owned_nominals += 1
+            else:
+                prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で",
+                          "prior_answer_time": "先の回答時点で"}[when]
+                if (not clause.startswith(prefix) or not clause.endswith("こと")
+                    or _restore_thread_finite_answer(clause[len(prefix):-2], source,
+                                                     copular_clause=True, attributive=True) != source):
+                    return None
+            replacements.append((len(raw[:offset].encode()), len(raw[:offset + len(clause)].encode()), source.encode()))
+            offset += len(clause) + len(separator)
+            continue
+        if ("thread_subject:withdrawn_source_event" in codes and re.match(
+                r"(?:(?:少し|とても|本当は|まだ|全然|あまり)*"
+                r"(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)){2,}", source)):
+            # This existing owned-nominal form cannot be read by changing
+            # only the first SELF in a finite acknowledgement.
+            return None
         if _thread_feeling_owner(source):
             expected_time = {"その時は": "その時、", "回答した時点では": "回答した時点で、",
                              "先の回答時点では": "先の回答時点で、"}[expected_time]
@@ -3693,15 +3725,21 @@ def _read_detached_burden_discourse(raw, move, plan, resolver, selected_subjecti
         if not clause.startswith(expected_time):
             return None
         finite = clause[len(expected_time):]
-        if _restore_thread_finite_answer(finite, source,
-                copular_clause=source.endswith(("でした", "だった"))) != source:
+        acknowledged = equal_revision or slot == len(clauses) - 1
+        restored_form = finite[:-1] + "な" if not acknowledged and finite.endswith("だ") else finite
+        if acknowledged and raw.endswith("のでしたね。"):
+            if _thread_past_explanation_predicate(source) is None:
+                return None
+            restored_form += "のだった"
+        if _restore_thread_finite_answer(restored_form, source, copular_clause=True,
+                shared_explanatory_ending=acknowledged) != source:
             return None
         start = len(raw[:offset + len(expected_time)].encode())
         end = len(raw[:offset + len(clause)].encode())
         replacements.append((start, end, source.encode()))
         if not equal_revision:
             offset += len(clause) + len("し、")
-    return tuple(replacements)
+    return tuple(replacements) if not nominal_group or owned_nominals else None
 
 
 def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None,

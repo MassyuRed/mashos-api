@@ -3113,9 +3113,13 @@ def source_grounded_detached_burden_group(move, plan, nucleus_index, resolver):
 
 
 def _detached_burden_nominal(source, when):
+    owned = _multiple_self_answer_nominal(source, when)
+    if owned is not None:
+        return owned
     prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で",
               "prior_answer_time": "先の回答時点で"}[when]
-    return prefix + _detached_feeling_finite_surface(source, allow_medial=True) + "こと"
+    return prefix + _detached_feeling_finite_surface(
+        source, allow_medial=True, allow_copular=True, attributive=True) + "こと"
 
 
 def source_grounded_thread_answer_group(move, plan, nucleus_index, resolver):
@@ -10576,6 +10580,10 @@ def _source_owned_detached_burden_sentence(move, realization, plan, resolver,
         move, plan, {n.nucleus_id: n for n in plan.nuclei}, resolver)
     if not rows or tuple(realization.semantic_fragments) != tuple(row[1] for row in rows):
         return None
+    if any(_multiple_self_answer_nominal(source, when) is not None for _, source, when in rows):
+        # A repeated SELF proposition needs its complete owned nominal;
+        # converting only its first pronoun cannot form a finite acknowledgement.
+        return None
     parts = []
     from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
     index = {n.nucleus_id: n for n in plan.nuclei}
@@ -10593,18 +10601,21 @@ def _source_owned_detached_burden_sentence(move, realization, plan, resolver,
         if _thread_revised_original_reaction(index[nid], plan.relations):
             prefix = (("当時、" if has_owner else "当時は") if revised_pair
                       else ("それとは別に" if parts else "") + _revised_feeling_discourse_prefix(source))
-        copula = _detached_feeling_copula_parts(source)
-        parts.append(prefix + _detached_feeling_finite_surface(source, allow_medial=True,
-            allow_copular=bool(copula and copula[1] in {"でした", "だった"})))
+        finite = _detached_feeling_finite_surface(source, allow_medial=True,
+            allow_copular=True, allow_explanatory=True)
+        if finite is None:
+            return None
+        parts.append(prefix + finite)
+        acknowledgement = prefix + _feeling_acknowledgement(finite)
     if revised_pair:
         if parts[0] == parts[1]:
             # Two distinct corrections remain two source duties. Only their
             # fully realized equal feeling and original-occasion roles share
             # a predicate. The two occasions need not be the same instant.
-            return "二つの言い直しでは、どちらも" + _feeling_acknowledgement(parts[0])
+            return "二つの言い直しでは、どちらも" + acknowledgement
         return ("言い直してくださった気持ちは、" + parts[0] + "し、それとは別に"
-                + _feeling_acknowledgement(parts[1]))
-    return "し、".join(parts[:-1]) + "し、" + _feeling_acknowledgement(parts[-1])
+                + acknowledgement)
+    return "し、".join(parts[:-1]) + "し、" + acknowledgement
 
 
 def _source_owned_detached_feeling_parts(move, realization, plan, resolver,
