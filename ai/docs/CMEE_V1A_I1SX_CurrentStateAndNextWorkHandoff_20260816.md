@@ -11037,3 +11037,36 @@ current identityは既存各18payload／9source ownerとfixture key/scopeを保�
 **残件と再開点。** 今回は本人の発言とEmlisの視点の混在を限定して除いた。原文自体の複数SELFの不自然さ、元場面時点やevent撤回後の「ですこと」等、長い中央受領句、二層再掲、定型語尾の反復、受け取りの深さ、未反映境界、既知失敗は残る。次は残る元時点／event撤回後の実本文と更新系列を起点に、同じ本人・出来事・時点を保持できる既存経路の範囲を判断する。対象群全体の完了・正式Product Read PASSへ繰り上げず、10/03休止を延長しない。
 
 **TECHNICAL_CREDIT／STRUCTURE_MAP_DELTA_NONE／全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 構造地図のnode/route/source権限/lifecycle、新owner/API/DB/RN/schema/依存/flags、規範・凍結証跡・品質閾値の変更0。API5path＋Cocolon既存06の1pathを既存PR #3/#30へ結び付ける。反映時はfresh head、変更path集合、変更全fileのremote bytesを照合し、Ready/merge/deploy/enableは行わない。
+
+
+## 2026-09-29 Work継続 u19：複数出来事の元時点回答にも本人所有を保持
+
+**開始・範囲。** Mashの残件継続指示を受け、API `ef007dcace3513231c6872c297055ccfac28a72a`／Cocolon `5103f1fd0f1055a6573bb411ba77642b364774d2`のcleanな既存Draftから開始した。両remote headを確認し、最新作業ルールとweekly 20260926の9/29合意を再確認。同一セッションで確認済みの不変な全体設計01/02、全ファイル地図01A/B/C/current overlays、current_structure、canonical02/06、恒久incident全文、前回txt、u18記録を継承した。全歴史本文の再通読や生成System Context freshness成功とはしない。最優先は複数出来事と回答・訂正の受け取り、10/03休止と10/04以降の分析配分を維持する。LEVEL_2／DIRECT_PRODUCT_OR_ACCEPTANCE_WORKとして、効果前にA〜Fと既存HR/Gate・received test・current identity・API handoff・Cocolon06の最大6pathを固定。rootのみ編集・実行・反映、商品/技術担当は読取専任。
+
+**原因と変更。** 元場面時点を含む複数eventのreceived groupでは、u18の完全な複数SELF命題が使われず、先頭SELFだけ変換した「あなたは私には不安ですこと」等へ戻っていた。既存 `_source_grounded_thread_answer_rows` のreceived指定を対象数で渡し、received group内の複数SELFだけに既存 `_multiple_self_answer_nominal` を使う。IRの `_thread_received_group_ir_text` も同じ範囲へ接続した。通常のmedial/copular/attributive活用は単一targetだけ、一般answer groupは対象数0の従来処理を維持する。
+
+Gateは既存received専用reader内で、完全source・本人所有・時点を復元する箇所のsingle-target制限だけを外した。各eventのrequired contrast/ABOUT、完全な原反応、引用拒否、既存markerの完全終端、一意parseは維持する。複数群では「その出来事について、」が必須で、省略できる既存single/laterの範囲は拡げない。Plan・Surface・admission・一般SELF/host認定・quote予算・Move/文数容量を変えない。
+
+合成の三出来事へ「今は少し苦しい。」「その時は私は私には不安だったのです。」と回答した両層全文：
+
+```text
+見えたこと：
+「褒められた」のに「嬉しくなかった」、回答した時点では「少し苦しい」とあります。 「誘われた」のに「悲しかった」、その時は「私は私には不安だったのです」とあります。 「頼まれた」と「寂しかった」が、異なる向きのまま同時にあります。
+
+Emlisから：
+褒められたのに嬉しくなかったことと、その出来事について、回答した時点で少し苦しいことと、誘われたのに悲しかったことと、その出来事について、私は私には不安だったのだという、その時のあなたの気持ちと、頼まれたのに寂しかったことを小さくせずに受け止めています。
+```
+
+**実本文・検証。** freshな開始版と候補の18状態（6source×先頭/中央12、末尾2、訂正/回答撤回/event撤回/追加4）を比較し、16本文変更／2全文一致。全18のObservation・核・関係・Moveが一致し、作者なし独立読取に成功。rootと独立商品担当が前後両層全文を確認した。本人・助詞・程度・否定・説明・内外過去を保持し、訂正後の外側過去「なのだった」も元場面時点に結び付く。撤回内容の復活はない。u18の34状態も候補を生成して保存済みu18と比較し、元時点5だけ変更／29全文不変、全34の同じ意味項目と独立読取を確認した。18と34には重複があるため合計52の独立証拠とは数えない。前回の未反映回答6状態は未解決。
+
+新28条件はsource4×先頭/中央/末尾12、元時点と回答時点の混在した2回答に対する作者なし意味改変拒否12、三roundの訂正/回答撤回/event撤回/追加と保存4。参照の削除、別event化、回答/原反応交換、原反応欠落、元時点/回答時点変更、隣の時点の借用、本人所有変更、引用化、余計な述語を拒否する。保存4では試験用PGliteでoriginal DTO不変と、生成禁止GET/service.startの保存DTO完全一致を各更新後に確認した。実DB・実機・process再起動の証明ではない。
+
+最終はu18と同じ関連3ファイルの**963条件＝952PASS／既存11FAIL／ERROR・SKIP0**と、current owner-chain1PASSを合わせた**964条件＝953PASS／11FAIL**。同一セッション・同じ開始commit/runtimeで保存済みのu18最終935条件とcase IDで照合し、脱落0・既存成否変化0・追加28全PASS。11失敗のmessage/traceはworkspace path・行位置・UUID・メモリアドレスのみ正規化して一致した。開始版全量を今回freshに再実行したとはしない。重点31条件（新28＋既存3）も全PASS、重複合算しない。u17の2474条件全量や未再実行の既知44FAILを今回解消したとは扱わない。
+
+既存102トップレベル宣言の削除0、変更は `test_original_time_group_keeps_explicit_event_reference` の表面期待だけ。同じ入力・case ID・event参照欠落拒否の目的を保持した。3検査関数＋1fixtureを追加し、protected/frozen・閾値変更0。独立技術担当はsource/IRの範囲一致、一般answer group非拡張、独立readerと検査目的を確認し、追加blockerなし。
+
+再現対象はu18記載の3ファイルと単一owner-chain検査の同じ4対象。既存Python3.12.14／pytest9.1.1／pydantic2.13.5／FastAPI0.141.1／httpx0.28.1／PGlite0.5.8を再使用し、`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<既存module> python -m pytest -q`で実行する。current identityは各18payload／9source ownerとfixture key/scopeを保持して再導出、language=`5f775522ff2b41182c3773ffb0a84711b355d12965dca4b64bf1718ca66c190d`、runtime=`a9fd152a456ef5d3ed5e033e6d0e021ef1c15ad8a9ba9dea4cdcaf435d23b420`。install・商品lock変更・追加費用・Mash操作0。
+
+**残件・再開位置。** 本修正は複数SELFの本人帰属と名詞接続をreceived groupへ揃えた限定改善であり、長い列挙、二層再掲、定型受領句、受け取りの深さ、未反映境界・既知失敗は残る。event撤回後は別の単独answer／support0／relationなしの経路で、「これまで、その時に私は私には不安だったのですこと」や現時点の「…ですこと」が残る。これは `_detached_burden_nominal` ではなく、`_source_grounded_current_expression_nominal` → `_source_grounded_response_argument` → Gateのgeneric名詞照合が次の確認箇所。撤回eventやABOUTを復活させず、本人・元時点/回答時点を保つ範囲から続ける。今回はその経路を修正済みとしない。
+
+**TECHNICAL_CREDIT／STRUCTURE_MAP_DELTA_NONE／全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** API5path＋Cocolon本06の1path。構造node/route/source権限/lifecycle、新owner/API/DB/RN/schema/依存/flags、規範・凍結証跡・品質閾値の変更0。既存PR #3/#30へ反映し、fresh head・変更path集合・変更全fileのremote bytesを照合する。Ready/merge/deploy/enableは行わず、10/03休止を延長しない。

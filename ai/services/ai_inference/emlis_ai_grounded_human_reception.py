@@ -3130,7 +3130,7 @@ def source_grounded_thread_answer_group(move, plan, nucleus_index, resolver):
 
 
 def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver, *, polarity="negative",
-                                       received_attributive=False):
+                                       received_target_count=0):
     rows = []
     for nid in targets:
         n = nucleus_index[nid]
@@ -3169,10 +3169,10 @@ def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver, 
         grammar, value = nominal if nominal else ("FINITE", source)
         if grammar == "FINITE":
             prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で", "prior_answer_time": "先の回答時点で"}[when]
-            owned = _multiple_self_answer_nominal(source, when) if received_attributive else None
+            owned = _multiple_self_answer_nominal(source, when) if received_target_count else None
             value = owned or prefix + _detached_feeling_finite_surface(source,
-                allow_medial=received_attributive, allow_copular=received_attributive,
-                attributive=received_attributive) + "こと"
+                allow_medial=received_target_count == 1, allow_copular=received_target_count == 1,
+                attributive=received_target_count == 1) + "こと"
         else:
             value = _thread_answer_timed_nominal(value, grammar, when)
         rows.append(_ThreadAnswerGroupItem(nid, event.nucleus_id, source, grammar, when, value, event_fragment))
@@ -3182,7 +3182,7 @@ def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver, 
 def _multiple_self_answer_nominal(source, when):
     """Keep a whole repeated-SELF proposition under explicit user ownership.
 
-    Only the single received-answer nominal calls this. It does not license
+    Only received-answer nominals call this. It does not license
     a new finite reading, delete a repeated particle or change source admission.
     """
     parsed = re.fullmatch(
@@ -3315,7 +3315,7 @@ def source_grounded_thread_received_group(move, plan, nucleus_index, resolver):
             (event_id,), (contrasts[0].to_nucleus_id,), nucleus_index, resolver) if contrasts else ()
         answers = _source_grounded_thread_answer_rows(
             tuple(r.to_nucleus_id for r in about), plan, nucleus_index, resolver,
-            received_attributive=len(move.target_nucleus_ids) == 1)
+            received_target_count=len(move.target_nucleus_ids))
         if len(original) != len(contrasts) or len(answers) != len(about):
             return ()
         rows.append((original[0] if original else None, answers[0] if answers else None))
@@ -8520,7 +8520,7 @@ def _thread_received_group_ir_text(realization):
                 raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
             if grammar == "FINITE" and row is None and _SOURCE_GROUNDED_FINITE_END_RE.search(source):
                 prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で", "prior_answer_time": "先の回答時点で"}[when]
-                owned = _multiple_self_answer_nominal(source, when) if count == 1 else None
+                owned = _multiple_self_answer_nominal(source, when)
                 nominal = owned or prefix + _detached_feeling_finite_surface(source,
                     allow_medial=count == 1, allow_copular=count == 1, attributive=count == 1) + "こと"
             elif row is not None and row[0] == grammar:

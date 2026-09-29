@@ -4382,7 +4382,7 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
                     continue
                 nominal = piece[len(prefix):]
                 nominal_start = start + len(prefix)
-                if (len(move.target_nucleus_ids) == 1 and not prefix.endswith("への")
+                if (not prefix.endswith("への")
                     and _read_multiple_self_answer_nominal(nominal, wanted[2], wanted[3])):
                     interpretations.add(wanted[2:])
                 for when, temporal in (("original_occasion", "その時に"), ("answer_time", "回答した時点で"),
@@ -4408,8 +4408,7 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
                 and piece.endswith(("のだということ", "のだったということ"))
                 and wanted[2].endswith(("のです", "のだ", "のだった")))
             markers = {"thread_answer_nominal", "finite_clause_nominal"}
-            if (len(move.target_nucleus_ids) == 1
-                and _read_multiple_self_answer_nominal(nominal, wanted[2], wanted[3])):
+            if _read_multiple_self_answer_nominal(nominal, wanted[2], wanted[3]):
                 markers = {"target_feeling"}
         offset = sentence.utf8_byte_start + len(objects[:nominal_start].encode("utf-8"))
         finish = sentence.utf8_byte_start + len(objects[:end].encode("utf-8"))
