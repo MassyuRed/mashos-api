@@ -10956,3 +10956,40 @@ current identityはkey/scope、各18payload・9source ownerを保って再導出
 **次の再開点。** 今回閉じたのは単一eventの原反応＋後時点回答における参照再掲だけ。対象群全体を完了へ繰り上げず、残る中央受領句と主体付き名詞fallback、元場面時点・混在・chainの実本文を起点に、必要な意味・更新履歴を保ったまま長さや不自然さを生む共通原因を限定して進める。二層全体の再設計や新たなowner/品質基準には広げない。10/03の休止区切りを延長しない。
 
 **TECHNICAL_CREDIT／STRUCTURE_MAP_DELTA_NONE／全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 変更はAPIのHR/Gate・既存received test・current identity・本handoffの5pathとCocolon既存06の1path。構造地図のnode/route/source権限/lifecycle、新owner/API/DB/RN/schema/依存/flags、規範・凍結証跡・品質閾値の変更0。既存PR #3/#30へ結びつけ、反映後は両head・Draft状態・変更6pathの全文bytes/treeを照合する。Ready/merge/deploy/enableは行わない。
+
+
+## 2026-09-29 Work継続 u17：説明付きの中央回答を名詞句として保持し、本文提供を回復
+
+**開始根拠と限定範囲。** MashのEmlisAI残件継続指示を受け、API `d7bbd9b546ac3da3669ceba3335040c6e801b58f`／Cocolon `7edeb14f1e484420742f2152d26488fba4baf5c4` のcleanな既存Draftから開始した。作業ルール・Rule18・着手checklist、恒久incident全文、全体設計01/02・全ファイル地図01A/B/Cの該当ownerとcurrent overlays/canonical02/06、u16 handoff、前回txt、最新weeklyの9/29追加合意を確認・引き継いだ。同一セッションで確認済みの不変資料は再使用し、全歴史本文の再通読とはしない。System Context prepareはmaterial commit祖先不一致でexit2となり、正本直接読取を適用した。生成context freshness成功は主張しない。
+
+今週の最優先は複数出来事と回答・訂正の受け取り。10/03は未完了でもEmlisを休止し、10/04以降はWork/Ultra分析、Work不可時はPro Pieceへ移る。旧10/10のEmlis期限を復活させない。LEVEL_2／DIRECT_PRODUCT_OR_ACCEPTANCE_WORKとして、開始前にA〜F・既存HR/Gate・既存received test・current identity・API handoff・Cocolon06の最大6pathを固定した。root華恋のみが編集・実行・反映し、商品・技術担当は読取専任。確認できないPro/Ultra model identityは主張しない。
+
+**問題と実装。** u16の名詞fallbackに残る「不安ですこと」「不安なのですこと」を調べると、複数SELFだけでなく、通常の「今は私は少し不安なのです。」を中央の出来事へ答えた場合にも、独立検査に失敗して本文を返せなかった。既存の単一received名詞句に限定し、名詞コピュラと説明末尾を文法的に接続するよう補正した。
+
+既存Human Receptionのattributive経路で、完全末尾の既知感情名詞を「不安です→不安なこと」「不安でした→不安だったこと」とする。説明は全体を保ち、「不安なのです→不安なのだということ」「不安だったのです→不安だったのだということ」「不安なのだった→不安なのだったということ」とする。説明の「の」を削らず、内側の過去と外側の過去を入れ替えない。既存本人視点変換以外のprefix・助詞・程度・否定はそのまま保つ。同じ既存helperを使うsource/IR両方に作用する。
+
+Gateも既存名詞句の2読取箇所だけをopt-inし、本文から本人視点を逆変換した後、説明末尾を含む全sourceを独立復元する。汎用markerが持たない「のだということ／のだったということ」は、この全文復元の成功後だけ既存「なこと」と同様に扱う。引用・二次引用の拒否、required contrast/ABOUT、対象・回答時点、一意parse、受領述語の完全終端は維持する。初稿ではこのmarker不足で本文が返らない候補を作ったため不合格として補正した。一般のSELF/host認定・admission、Plan、Surface、通常の有限文、複数targetの旧名詞句は変更していない。
+
+**実本文。** 今回freshに生成した開始版と最終候補の20状態を比較した。10source×先頭/中央で、未提供4が提供へ回復、既提供9が変更、7は同文。全20で原核・関係・Moveは前後同一、候補全20で作者を使わない独立読取が成功した。回復4は中央の「私は少し不安なのです」「私は少し不安だったのです」「少し私は怖いのです」「少し私は怖くなかったのです」である。修正前の失敗理由は `emlis_thread_body_independent_validation_failed`。存在しなかった修正前本文を比較本文として補作していない。
+
+合成入力「褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。」へ「今は少し苦しい。」「今は私は少し不安だったのです。」と答えた候補の両層全文：
+
+```text
+見えたこと：
+「褒められた」のに「嬉しくなかった」、回答した時点では「少し苦しい」とあります。 「誘われた」のに「悲しかった」、回答した時点では「私は少し不安だったのです」とあります。 「頼まれた」と「寂しかった」が、異なる向きのまま同時にあります。
+
+Emlisから：
+褒められた時は嬉しくなく、回答した時点では少し苦しいのですね。誘われたのに悲しかったことと、回答した時点であなたは少し不安だったのだということを見失わず、小さくせずに受け止めています。頼まれたのに、寂しさを感じたのですね。
+```
+
+rootと独立商品担当は20状態のbefore/after両層全文を確認し、今回差分で意味欠落・時制反転・別出来事への誤帰属を認めなかった。さらに同じ中央説明回答後の訂正・回答撤回・出来事撤回・追加の4本文も両層を確認し、独立読取が成功した。訂正は内側過去から外側過去へsourceどおり変更し、撤回内容は再出現しない。出来事撤回後は既存detached経路の長い「し」列挙へ戻るため、これを解消したとはしない。独立技術担当は限定呼出し・全文復元・引用拒否・検査目的を静的確認し、具体的blockerなしと判断した。正式な人のProduct Read PASSではない。
+
+**検証。** 新26条件は、中央回答の完全source/時点/文法と公開engine一致10、作者禁止かつ候補自身をreplayへ渡す意味改変拒否12、初回から三roundの訂正・回答撤回・出来事撤回・追加と保存4。12改変は説明削除、内側/外側過去、過去の位置、程度・主語・助詞・時点、出来事交換、引用化、因果化を拒否する。既存トップレベル94宣言はASTで変更・削除0、3検査関数と1fixtureのみ追加した。既存の未証明copula/explanation・元時点・複数SELF境界を含む重点39条件は全PASS（24.59秒、警告1）。
+
+最終sourceでu16と同じ7ファイル＋単一owner-chain検査を2実行に分けて完走し、**2474条件＝2419PASS／既存55FAIL／ERROR・SKIP 0**。received discourse・answer attributive・initial received discourseは899条件＝888PASS/11FAIL（252.31秒、警告1）、残る4ファイル＋単一owner-chainは1575条件＝1531PASS/44FAIL（351.11秒、警告3）。同じセッション・同じruntimeで保存済みのu16最終2448条件＝2393PASS/55FAILをcase IDで照合し、脱落0・既存合否変化0・新26全PASS。55失敗のmessage/traceはworkspace path・行位置・実行UUID・メモリアドレスだけを正規化して全一致した。今回freshな開始版回帰の再実行ではなく、全量GREENや旧必須検査全体の完走も主張しない。重点39・実本文20比較・更新後4本文は2474へ重複合算しない。
+
+保存4条件は既存試験用PGliteでoriginal DTO不変と、生成を禁止したGET/service.startの完全一致を初回と各更新後に検査した。実DB・実機・プロセス再起動の証明ではない。再現はu15記載の同じ7ファイル＋単一owner-chain検査を既存Python3.12.14／pytest9.1.1／PGliteで実行する。install・商品lock変更・追加費用・Mash操作は0。current identityはkey/scope、各18payload・9source ownerを保持して再導出した。language=`36994ea68cbc3505dcfbd800662d2c417e47d4b317735b79677098a6c3ae3b9a`、runtime=`01266d85015880b5f3956dc15c25bbe3c2bbdca5a2399ec6e78f858bf649578e`。
+
+**残件と次の再開点。** 今回閉じたのは単一received名詞句の接続と、それに起因した通常の中央説明回答4例の未提供。複数SELFの「あなたは私には」は保持されたままで、人称の解決とは数えない。中央の長い固定受領句、二層再掲、両端の「のですね」、元場面時点・肯定混在・chain・detached等の長い旧経路、受け取りの深さ、既存55FAILは未解決。次は中央の受領句と残る旧経路の実本文・更新系列から、必要な意味を失わず長さを減らせる既存責務の範囲を選ぶ。二層再設計・新owner・品質基準変更へ広げず、10/03休止を延長しない。
+
+**TECHNICAL_CREDIT／STRUCTURE_MAP_DELTA_NONE／全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** API5path＋Cocolon既存06の1path。既存の構造地図node/route/source権限/lifecycle、API/DB/RN/schema/依存/flags、規範・凍結証跡・品質閾値の変更0。既存PR #3/#30へ反映し、反映後の両head・Draft状態・変更6pathの全文bytes/treeを照合する。Ready/merge/deploy/enableは行わない。

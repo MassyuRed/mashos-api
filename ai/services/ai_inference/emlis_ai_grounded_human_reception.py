@@ -10655,8 +10655,22 @@ def _detached_feeling_finite_surface(source, *, allow_explanatory=False, allow_c
             finite = "あなた" + medial['particle'] + medial['degree'] + finite[medial.end():]
         else:
             finite = finite[:medial.start('self')] + "あなた" + finite[medial.end('self'):]
+    if attributive:
+        explanatory = re.fullmatch(r".+の(?P<ending>です|だった|だ)", source)
+        if explanatory is not None:
+            # Nominalize the whole explanation, keeping its inner predicate
+            # and outer tense separate. Do not read another source owner.
+            ending = explanatory['ending']
+            return finite[:-len(ending)] + ("だった" if ending == "だった" else "だ") + "という"
     if allow_copular:
         copular = _detached_feeling_copula_parts(source)
+        if copular is None and attributive:
+            # A known noun at the complete terminal can inflect even when
+            # the unchanged prefix has no admitted finite-owner reading.
+            for token in _FEELING_RE.finditer(source):
+                copular = _detached_feeling_copula_parts(source[token.start():])
+                if copular is not None:
+                    break
         if copular is not None:
             finite = finite[:-len(copular[1])] + (
                 "だった" if copular[1] in {"でした", "だった"} else "な" if attributive else "だ")

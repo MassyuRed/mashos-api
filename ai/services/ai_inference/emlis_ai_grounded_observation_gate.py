@@ -4169,7 +4169,7 @@ def _received_discourse_equivalent(actual, canonical, reception_plan, clauses, p
 
 
 def _restore_thread_finite_answer(actual, source, *, copular_clause=False,
-                                   shared_explanatory_ending=False):
+                                   shared_explanatory_ending=False, attributive=False):
     """Restore an admitted answer from its complete attributive clause.
 
     Parse the actual recipient subject and terminal inflection independently
@@ -4193,6 +4193,11 @@ def _restore_thread_finite_answer(actual, source, *, copular_clause=False,
         if not restored.startswith(recipient):
             return None
         restored = owner.group() + restored[len(recipient):]
+    if attributive:
+        explanatory = re.fullmatch(r"(?P<predicate>.+)の(?P<ending>です|だった|だ)", source)
+        if explanatory is not None:
+            ending = "のだったという" if explanatory['ending'] == "だった" else "のだという"
+            return source if restored == explanatory['predicate'] + ending else None
     if copular_clause and polite is None:
         explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", source)
         if explanatory is not None:
@@ -4213,10 +4218,13 @@ def _restore_thread_finite_answer(actual, source, *, copular_clause=False,
         copular = re.fullmatch(r"(?P<host>.+?)(?P<ending>でした|だった|です|だ)", source)
         if copular is not None:
             noun = _thread_feeling_lexical_host(copular['host'], owner)
-            # Only proven noun copulas acquire a new inflection. Other
-            # admitted finite clauses retain their complete source match;
-            # embedded SELF and explanatory endings cannot be rewritten.
-            if _FEELING_RE.fullmatch(noun) and not noun.endswith("い"):
+            # Attributive clauses may inflect a known terminal noun while
+            # retaining the entire prefix. This does not admit that prefix
+            # as a new finite-owner reading.
+            terminal_noun = attributive and any(
+                token.end() == len(copular['host']) and not token.group().endswith("い")
+                for token in _FEELING_RE.finditer(copular['host']))
+            if _FEELING_RE.fullmatch(noun) and not noun.endswith("い") or terminal_noun:
                 ending = "だった" if copular['ending'] in {"でした", "だった"} else "な"
                 if not restored.endswith(ending):
                     return None
@@ -4303,7 +4311,7 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
         and expected[1][3] in {"answer_time", "prior_answer_time"})
     def read_piece(start, end, wanted):
         piece = objects[start:end]
-        attributive_copula_read = False
+        attributive_nominal_read = False
         if wanted[0] == "original":
             if not piece.endswith("こと"):
                 return None
@@ -4312,9 +4320,13 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
                       for m in re.finditer(r"けれども|けれど|けど|のに", clause)}
             if not any(left == wanted[2] and connector == wanted[3]
                        and (feeling == wanted[4] if len(move.target_nucleus_ids) > 1 else
-                            _restore_thread_finite_answer(feeling, wanted[4], copular_clause=True) == wanted[4])
+                            _restore_thread_finite_answer(feeling, wanted[4], copular_clause=True,
+                                                          attributive=True) == wanted[4])
                        for left, connector, feeling in parses):
                 return None
+            attributive_nominal_read = (len(move.target_nucleus_ids) == 1
+                and piece.endswith(("のだということ", "のだったということ"))
+                and wanted[4].endswith(("のです", "のだ", "のだった")))
             nominal_start = start
             markers = {"finite_clause_nominal"}
         else:
@@ -4339,21 +4351,26 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
                                 interpretations.add((value, when))
                     elif nominal.startswith(temporal) and nominal.endswith("こと"):
                         value = _restore_thread_finite_answer(nominal[len(temporal):-2], wanted[2],
-                                                              copular_clause=len(move.target_nucleus_ids) == 1)
+                            copular_clause=len(move.target_nucleus_ids) == 1,
+                            attributive=len(move.target_nucleus_ids) == 1)
                         if value is not None:
                             interpretations.add((value, when))
             if wanted[2:] not in interpretations:
                 return None
-            # The generic witness does not mark なこと. Its complete timed
-            # noun clause has already been independently restored above.
-            attributive_copula_read = piece.endswith("なこと") and wanted[2].endswith(("です", "だ"))
+            # The generic witness does not mark these attributive endings.
+            # Their complete timed clauses were independently restored above.
+            attributive_nominal_read = (
+                piece.endswith("なこと") and wanted[2].endswith(("です", "だ"))
+                or len(move.target_nucleus_ids) == 1
+                and piece.endswith(("のだということ", "のだったということ"))
+                and wanted[2].endswith(("のです", "のだ", "のだった")))
             markers = {"thread_answer_nominal", "finite_clause_nominal"}
         offset = sentence.utf8_byte_start + len(objects[:nominal_start].encode("utf-8"))
         finish = sentence.utf8_byte_start + len(objects[:end].encode("utf-8"))
         if (any(q.utf8_byte_start < finish and offset < q.utf8_byte_end for q in witness.quotes)
             or any(m.marker_code == "secondary_quote_boundary" and m.utf8_byte_start < finish
                    and offset < m.utf8_byte_end for m in witness.markers)
-            or not attributive_copula_read and not any(m.section == "reception" and m.marker_code in markers
+            or not attributive_nominal_read and not any(m.section == "reception" and m.marker_code in markers
                        and offset <= m.utf8_byte_start and m.utf8_byte_end == finish for m in witness.markers)):
             return None
         if wanted[0] == "original":

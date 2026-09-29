@@ -1785,3 +1785,105 @@ def test_multiple_answer_scope_saved_update_and_replay(qcase, qdb, monkeypatch, 
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved multiple answer response must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('source,nominal', [
+    ('私は少し不安です', 'あなたは少し不安なこと'),
+    ('私は少し不安なのです', 'あなたは少し不安なのだということ'),
+    ('私は少し不安だったのです', 'あなたは少し不安だったのだということ'),
+    ('私は少し不安なのだった', 'あなたは少し不安なのだったということ'),
+    ('少し私は怖いのです', 'あなたは少し怖いのだということ'),
+    ('少し私は怖くなかったのです', 'あなたは少し怖くなかったのだということ'),
+    ('私は私には不安です', 'あなたは私には不安なこと'),
+    ('私は私には不安なのです', 'あなたは私には不安なのだということ'),
+    ('私は私には不安でした', 'あなたは私には不安だったこと'),
+    ('私は私には不安だったのです', 'あなたは私には不安だったのだということ'),
+])
+def test_middle_nominal_keeps_whole_copula_or_explanation(source, nominal):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    initial = begin()
+    request = advance(advance(initial, '今は少し苦しい。'), '今は' + source + '。')
+    context = actual(request=request)
+    result, plan, _, _, _ = context
+    follow = result.artifact.reception
+    first, middle, last, empty = follow.split('。')
+    assert empty == '' and '褒められた' in first and '頼まれた' in last
+    assert '誘われたのに悲しかったことと、回答した時点で' + nominal in middle
+    assert '少し苦しい' not in middle and '回答した時点' not in last
+    assert not any(fragment in follow for fragment in ('ですこと', 'でしたこと', 'のなこと'))
+    assert source in result.artifact.observation
+    assert tuple(m.move_role for m in plan.response_plan.human_reception_plan.moves) == (
+        'attention', 'significance', 'felt_response')
+    assert request.current_input_bundle == initial.current_input_bundle
+    assert inverse(context, follow, without_author=True).passed
+    assert MeaningExperienceEngine().generate(request).artifact.text == result.artifact.text
+
+
+@pytest.fixture(scope='module')
+def explanatory_nominal_context():
+    return actual(request=advance(advance(begin(OWNED_INITIAL), '今は少し苦しい。'),
+                                  '今は私は少し不安だったのです。'))
+
+
+@pytest.mark.parametrize('mutation', [
+    'explanation', 'inner_past', 'outer_past', 'past_position', 'degree', 'owner',
+    'particle', 'time', 'drop_time', 'swap_events', 'quoted', 'cause',
+])
+def test_explanatory_nominal_rejects_changed_meaning_without_author(explanatory_nominal_context, mutation):
+    context = explanatory_nominal_context
+    follow = context[0].artifact.reception
+    assert inverse(context, follow, without_author=True).passed
+    changes = {
+        'explanation': follow.replace('不安だったのだということ', '不安だったこと'),
+        'inner_past': follow.replace('不安だったのだということ', '不安なのだということ'),
+        'outer_past': follow.replace('不安だったのだということ', '不安だったのだったということ'),
+        'past_position': follow.replace('不安だったのだということ', '不安なのだったということ'),
+        'degree': follow.replace('少し不安だったのだということ', '不安だったのだということ'),
+        'owner': follow.replace('あなたは少し不安だったのだ', '友人は少し不安だったのだ'),
+        'particle': follow.replace('あなたは少し不安だったのだ', 'あなたも少し不安だったのだ'),
+        'time': follow.replace('回答した時点であなたは', 'その時にあなたは'),
+        'drop_time': follow.replace('回答した時点であなたは', 'あなたは'),
+        'swap_events': follow.replace('誘われた', 'TEMP').replace('頼まれた', '誘われた').replace('TEMP', '頼まれた'),
+        'quoted': follow.replace('あなたは少し不安だったのだということ',
+                                '「あなたは少し不安だったのだということ」'),
+        'cause': follow.replace('頼まれたのに', '頼まれたから'),
+    }
+    assert changes[mutation] != follow
+    assert not inverse(context, changes[mutation], without_author=True).passed
+
+
+@pytest.mark.parametrize('operation', ['correct', 'withdraw_answer', 'withdraw_event', 'add'])
+def test_explanatory_nominal_saved_update_and_replay(qcase, monkeypatch, operation):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    source = '私は少し不安だったのです'
+    third = {'correct': '「' + source + '」ではなく「私は少し不安なのだった」です。',
+             'withdraw_answer': '「' + source + '」は誤りです。',
+             'withdraw_event': '「誘われた」は誤りです。', 'add': '今は少し重い。'}[operation]
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved initial body must not regenerate'))
+        assert run(service.get(user, parent)) == run(service.start(user, parent)) == first
+    for position, text in enumerate(('今は少し苦しい。', '今は' + source + '。', third)):
+        if position:
+            current = run(cont(service, user, current, f'explanatory-continue-{position}'))
+        current = run(answer(service, user, current, text, f'explanatory-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        follow = body.split('Emlisから：', 1)[1].strip()
+        assert all(event in body for event in ('褒められた', '頼まれた'))
+        if position == 1:
+            assert '回答した時点であなたは少し不安だったのだということ' in follow
+        elif position == 2:
+            if operation == 'correct':
+                assert source not in body and '不安だったのだということ' not in follow
+                assert '先の回答時点であなたは少し不安なのだったということ' in follow
+            elif operation == 'withdraw_answer':
+                assert '不安' not in body and '誘われた' in body
+            elif operation == 'withdraw_event':
+                assert '誘われた' not in body and source in body and '不安だったのですね' in follow
+            else:
+                assert '少し重い' in body and '不安だったのだということ' in follow
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved explanatory body must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
