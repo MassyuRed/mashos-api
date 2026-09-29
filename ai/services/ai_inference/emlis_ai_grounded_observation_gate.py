@@ -4295,6 +4295,12 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
         if not separator:
             return None
     divisions = tuple(m.start() for m in re.finditer("と、", objects))
+    # An omitted event anaphor is bound only by one fully read original
+    # object followed by its own later answer, never by a neighbouring event.
+    same_event_pair = (len(move.target_nucleus_ids) == 1 and len(expected) == 2
+        and expected[0][0] == "original" and expected[1][0] == "answer"
+        and expected[0][1] == expected[1][1]
+        and expected[1][3] in {"answer_time", "prior_answer_time"})
     def read_piece(start, end, wanted):
         piece = objects[start:end]
         attributive_copula_read = False
@@ -4315,7 +4321,11 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
             interpretations = set()
             nominal = ""
             event_anchor = "その出来事" if wanted[0] == "answer" else final_reception_source_anchor_text(wanted[1], index, resolver) + "こと"
-            for prefix in (event_anchor + "への", event_anchor + "について、"):
+            prefixes = (event_anchor + "への", event_anchor + "について、")
+            if (same_event_pair and wanted[0] == "answer"
+                and piece.startswith(("回答した時点で", "先の回答時点で"))):
+                prefixes += ("",)
+            for prefix in prefixes:
                 if not piece.startswith(prefix):
                     continue
                 nominal = piece[len(prefix):]

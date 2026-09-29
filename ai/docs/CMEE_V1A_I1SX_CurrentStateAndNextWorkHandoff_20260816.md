@@ -10926,3 +10926,33 @@ current identityは既存各18payload・9source ownerとfixtureのkey/scopeを�
 **残件と再開先。** 中央・複数の別時点回答の読み分けは前進したが、二層再掲、両端の「のですね」反復、significanceの長さ、主体付きの複合文、元場面時点・肯定/混在や三核chain等の長い旧経路、受け取りの深さ、今回選択範囲の既存55FAILと既知の未提供境界は残る。対象群を完了へ繰り上げず、次は今回の中央文と残る旧経路の実本文・更新系列から、必要な意味を保ちながら長い再掲が起きる共通原因を限定して扱う。10/03の休止区切りを自動延長しない。
 
 **TECHNICAL_CREDIT／STRUCTURE_MAP_DELTA_NONE／全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 既存owner内の責務分配で、構造地図のnode/route/source権限/lifecycle変更なし。変更はAPIのPlan/Reception/Gate、received discourse test、current identity fixture、本handoffの6pathと、Cocolon既存06の1path。Ready/merge/deploy/enableは行わず、既存PR #3/#30へ結びつける。
+
+## 2026-09-29 Work継続 u16：同一出来事の参照再掲を限定して短縮
+
+**開始と範囲。** Mashの残件継続指示を受け、API `935dc3b9f2118cfe46e1fb3dc8e3ddeb9805609b`／Cocolon `eef678fd7e9214c0cc00f405730f4cb169a1852c`のcleanな既存Draftから開始した。最新作業ルール、恒久incident全文、全体設計01/02と全ファイル地図01A/B/Cの該当経路、current overlays/canonical02/06、u15 handoff、前回txt、最新weeklyの9/29追加合意を確認・引継いだ。全歴史本文の再通読を主張しない。System Context prepareはmaterial commit祖先不一致でexit2のため正本直接読取へ戻り、生成context freshness成功とはしていない。
+
+今週の最優先は複数出来事と回答・訂正の受け取り。10/03は未完了でもEmlisを休止し、10/04以降のWork/Ultra分析、Work不可時のPro Pieceへ移る。旧10/10期限を復活させない。LEVEL_2／DIRECT_PRODUCT_OR_ACCEPTANCE_WORKとして、開始前にHR/Gate、既存received検査、current identity、既存API handoffとCocolon06の最大6pathを固定。rootのみが編集・実行・反映し、独立商品・技術担当は読取専任。Work ModeのGPT-based Codexとして作業し、確認できないPro/Ultra identityは主張しない。
+
+**本文の変更。** u15で出来事ごとに分離した中央文は、同一文の中で「その出来事について、」と参照を説明し直していた。既存Human Receptionのsource名詞句とIR組立で、単一eventの完全な原反応と、そのeventへのFINITEな後時点回答が並ぶ場合だけ、この再掲を省いた。原出来事・逆接・原反応の名詞句と、回答時点・回答の名詞句という二対象はそのまま保つ。中央significanceの例は次のとおり。
+
+> 誘われたのに悲しかったことと、回答した時点で少し怖いことを見失わず、小さくせずに受け止めています。
+
+同じ条件の既存attention名詞fallbackにも適用する。元場面時点、複数target、原反応なし、detached/replacement、非FINITE名詞文法には広げない。Plan・有限文生成・既存3 Move/3文・significanceの受領述語は変更しない。本文の完成後に文字列を置換する処理ではない。
+
+Gateは、同じeventのoriginal→answerという正確に二項を全文から一意に読めた場合だけ、後項が後時点句で始まる文法を認める。原反応の全source、required contrast/ABOUT、回答の全sourceと時点、引用境界・marker・受領述語を引き続き検査する。別eventの回答、原反応/時点の欠落、回答交換や引用化は作者なしで拒否する。旧explicit prefixの復元範囲は上書きしない。
+
+**実本文の読取。** 開始版と候補の63状態を今回生成して比較した。主48状態は20変更/28不変、追加の中央未回答・現在名詞・二出来事・三核chainの6状態は1変更/5不変、複数SELF fallbackの現時点・訂正・元時点9状態は6変更/3不変。計27変更は「その出来事について、」だけの削除、36本文は完全一致。全63で原核・関係は同一、主48ではMoveも同一、全状態で独立読取が成功した。rootと独立商品担当は前後の両層全文を読み、今回差分による対象・所有・時点の取り違えや二対象の片方の欠落を認めなかった。独立技術レビューでもsource/IR対称性とreader境界に具体的blockerなし。
+
+ただしfallbackの「あなたは私には」「不安ですこと」「不安なのですこと」は前後とも不自然なままである。今回の参照短縮を、これらの文法・人称解消や商品品質合格へ加算しない。二層再掲、両端の「のですね」、中央の長い受領句、元場面時点/肯定混在/chainの長い旧経路、受け取りの深さも未解決。
+
+**検証結果と再現範囲。** 重点46条件は全PASS（30.31秒）。新規8条件は、作者を禁止して候補自身をreplayへ渡す意味改変拒否5（原反応欠落、回答時点欠落、別eventへの付替え、回答交換、回答引用化）と、元場面時点の複数SELF名詞群でexplicitなevent参照を保つ3。既存の中央/複数回答14と名詞fallback3には参照重複の除去を追加確認し、既存drop_answerの対象文字列だけを新しい表面へ追従した。同じ入力・case ID・回答丸ごと欠落を拒否する目的を維持しており、期待緩和や除外ではない。既存93トップレベル宣言の削除0、変更は上記3検査関数、追加は1検査関数。protected/frozenの変更0。
+
+最終sourceで、u15と同じ7ファイル＋単一owner-chain検査を2実行に分けて完走し、**2448条件＝2393PASS／既存55FAIL／ERROR・SKIP 0**。received discourse・answer attributive・initial received discourseは873条件＝862PASS/11FAIL（247.01秒、警告1）。answer recipient perspective・q1 thread・answer correction source scope・detached observationと単一owner-chain検査は1575条件＝1531PASS/44FAIL（360.02秒、警告3）。同じセッション・同じ環境で保存済みのu15最終2440条件＝2385PASS/55FAILをcase ID単位で比較し、脱落0、既存合否変化0、追加8全PASS。55失敗のmessage/traceはworkspace path・行位置・実行UUID・メモリアドレスだけを正規化して全一致した。今回freshな開始版回帰を再実行したとはしない。全量GREENでも、旧必須検査全体の再実行でもない。重点46や実本文63状態を2448へ重複合算しない。
+
+再現はu15に列挙した同じ8対象を、既存Python3.12.14／pytest9.1.1とPGlite、`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<既存module> python -m pytest -q`で実行する。保存8条件では、初回から三roundの追加・訂正・回答/event撤回に伴うoriginal DTO不変と、生成を禁止したGET/service.startの保存DTO完全一致を再確認した。実DB・実機・プロセス再起動の証明ではない。install・商品lock変更・追加費用・Mash操作は0。
+
+current identityはkey/scope、各18payload・9source ownerを保って再導出した。language=`13b14349dcf21b5c5a2b72ee56f6fdccddc8aa239b5b813391564c381e9e1631`、runtime=`92336826bac27cc4f05e819294210dc1a00e1c77375462f696728989b6e22658`。
+
+**次の再開点。** 今回閉じたのは単一eventの原反応＋後時点回答における参照再掲だけ。対象群全体を完了へ繰り上げず、残る中央受領句と主体付き名詞fallback、元場面時点・混在・chainの実本文を起点に、必要な意味・更新履歴を保ったまま長さや不自然さを生む共通原因を限定して進める。二層全体の再設計や新たなowner/品質基準には広げない。10/03の休止区切りを延長しない。
+
+**TECHNICAL_CREDIT／STRUCTURE_MAP_DELTA_NONE／全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 変更はAPIのHR/Gate・既存received test・current identity・本handoffの5pathとCocolon既存06の1path。構造地図のnode/route/source権限/lifecycle、新owner/API/DB/RN/schema/依存/flags、規範・凍結証跡・品質閾値の変更0。既存PR #3/#30へ結びつけ、反映後は両head・Draft状態・変更6pathの全文bytes/treeを照合する。Ready/merge/deploy/enableは行わない。

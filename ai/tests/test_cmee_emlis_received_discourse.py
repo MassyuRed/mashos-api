@@ -1621,6 +1621,7 @@ def test_answer_scope_nominal_fallback_keeps_source_and_attention(source):
     assert read_body(context, body).passed
     first, second, empty = follow.split('。')
     assert empty == '' and 'あなたは私には' in first
+    assert 'その出来事' not in first and '回答した時点で' in first
     assert 'に目が留まり、それを小さくせずに受け止めています' in first
     assert '誘われた' in second and '頼まれた' in second and '回答した時点' not in second
     corruptions = [
@@ -1668,6 +1669,7 @@ def test_middle_and_multiple_answers_keep_complete_occasion_scopes(memo, sequenc
     moves = plan.response_plan.human_reception_plan.moves
     assert len(sentences) == len(moves) == 3
     assert tuple(m.move_role for m in moves) == ('attention', 'significance', 'felt_response')
+    assert 'その出来事' not in sentences[1]
     assert all(value in follow for value in retained) and all(value not in follow for value in removed)
     owned = [set((*m.target_nucleus_ids, *m.support_nucleus_ids)) for m in moves]
     assert all(owned[i].isdisjoint(owned[j]) for i in range(3) for j in range(i + 1, 3))
@@ -1700,6 +1702,7 @@ def multiple_answer_scope_context():
 @pytest.mark.parametrize('mutation', [
     'drop_middle', 'swap_sentences', 'drop_answer', 'time', 'tense', 'degree', 'polarity',
     'owner', 'answer_owner', 'answer_particle', 'cause', 'swap_events', 'drop_significance',
+    'drop_original', 'drop_time', 'other_event_answer', 'swap_answers', 'quoted_answer',
 ])
 def test_multiple_answer_scopes_reject_changed_meaning_without_author(multiple_answer_scope_context, mutation):
     context = multiple_answer_scope_context
@@ -1709,7 +1712,7 @@ def test_multiple_answer_scopes_reject_changed_meaning_without_author(multiple_a
     changes = {
         'drop_middle': first + '。' + last + '。',
         'swap_sentences': middle + '。' + first + '。' + last + '。',
-        'drop_answer': follow.replace('と、その出来事について、回答した時点であなたも少しもやもやだったこと', ''),
+        'drop_answer': follow.replace('と、回答した時点であなたも少しもやもやだったこと', ''),
         'time': follow.replace('回答した時点であなたも', 'その時にあなたも'),
         'tense': follow.replace('もやもやだったこと', 'もやもやなこと'),
         'degree': follow.replace('あなたは少し怖くなかった', 'あなたは怖くなかった'),
@@ -1720,9 +1723,29 @@ def test_multiple_answer_scopes_reject_changed_meaning_without_author(multiple_a
         'cause': follow.replace('頼まれたのに', '頼まれたから'),
         'swap_events': follow.replace('誘われた', 'TEMP').replace('頼まれた', '誘われた').replace('TEMP', '頼まれた'),
         'drop_significance': follow.replace('見失わず、', ''),
+        'drop_original': follow.replace('頼まれたのにあなたは少し怖くなかったことと、', ''),
+        'drop_time': follow.replace('回答した時点であなたも', 'あなたも'),
+        'other_event_answer': follow.replace('と、回答した時点であなたも',
+                                            'と、誘われたことについて、回答した時点であなたも'),
+        'swap_answers': follow.replace('少し不安な', 'TEMP').replace(
+            'あなたも少しもやもやだった', '少し不安な').replace('TEMP', 'あなたも少しもやもやだった'),
+        'quoted_answer': follow.replace('回答した時点であなたも少しもやもやだったこと',
+                                       '「回答した時点であなたも少しもやもやだったこと」'),
     }
     assert changes[mutation] != follow
     assert not inverse(context, changes[mutation], without_author=True).passed
+
+
+@pytest.mark.parametrize('source', [
+    '私は私には怖かったです', '私は私には不安です', '私は私には不安なのです',
+])
+def test_original_time_group_keeps_explicit_event_reference(source):
+    context = actual(request=advance(begin(), 'その時は' + source + '。'))
+    follow = context[0].artifact.reception
+    assert 'その出来事について、その時に' in follow
+    assert inverse(context, follow, without_author=True).passed
+    changed = follow.replace('その出来事について、', '')
+    assert changed != follow and not inverse(context, changed, without_author=True).passed
 
 
 @pytest.mark.parametrize('memo,event', [

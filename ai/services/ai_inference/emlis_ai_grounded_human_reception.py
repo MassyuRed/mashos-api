@@ -3303,7 +3303,13 @@ def _thread_received_group_nominal(rows):
                     + (_detached_feeling_finite_surface(feeling, allow_medial=True,
                         allow_copular=True, attributive=True) if len(rows) == 1 else feeling) + "こと")
             if answer is not None:
-                part += "と、その出来事" + ("について、" if answer.grammar == "FINITE" else "への") + answer.nominal
+                # One complete original object already names the answer's
+                # event. Keep both occasion objects without naming it twice.
+                if (len(rows) == 1 and link not in {"detached", "replacement"}
+                    and answer.grammar == "FINITE" and answer.when in {"answer_time", "prior_answer_time"}):
+                    part += "と、" + answer.nominal
+                else:
+                    part += "と、その出来事" + ("について、" if answer.grammar == "FINITE" else "への") + answer.nominal
         parts.append(part)
     return "と、".join(parts)
 
@@ -8490,8 +8496,11 @@ def _thread_received_group_ir_text(realization):
             else:
                 raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
             expected_relations.add(("evaluation_about_event", (slot, answer_slot)))
-            subject = "と、その出来事" if part else fragments[slot] + "こと"
-            part += subject + ("について、" if grammar == "FINITE" else "への") + nominal
+            if count == 1 and part and grammar == "FINITE" and when in {"answer_time", "prior_answer_time"}:
+                part += "と、" + nominal
+            else:
+                subject = "と、その出来事" if part else fragments[slot] + "こと"
+                part += subject + ("について、" if grammar == "FINITE" else "への") + nominal
         parts.append(part)
     actual_relations = {(r.relation_kind, r.endpoint_slots) for r in realization.relations
                         if r.endpoint_roles == ("LEFT", "RIGHT")}
