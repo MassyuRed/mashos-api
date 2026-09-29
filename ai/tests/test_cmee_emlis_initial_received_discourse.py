@@ -299,8 +299,10 @@ def test_initial_finite_prose_and_answer_are_saved_without_rerendering(qcase,qdb
     assert after['original']==first['original']
     assert after['body_state']=='REFINED'
     updated=after['current_observation']['text'].split('Emlisから：',1)[1]
-    expected_answer='次も同じ成果を求められるような重さとして' + ('届いた' if memo==SINGLE else '届き、誘われた')
+    expected_answer='次も同じ成果を求められるような重さとして届いたのですね。'
     assert expected_answer in updated
+    if memo != SINGLE:
+        assert expected_answer + '誘われた' in updated
     for event in ('褒められた','誘われた','頼まれた'):
         if event in memo: assert updated.count(event)==1
     monkeypatch.setattr(service.engine,'generate',lambda *_:pytest.fail('saved text must not rerender'))

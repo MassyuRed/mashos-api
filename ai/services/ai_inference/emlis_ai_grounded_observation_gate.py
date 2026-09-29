@@ -4394,7 +4394,9 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
             prefixes = (event_anchor + "への", event_anchor + "について、")
             if (same_event_pair and wanted[0] == "answer"
                 and (piece.startswith(("その時に", "回答した時点で", "先の回答時点で"))
-                     or _read_multiple_self_answer_nominal(piece, wanted[2], wanted[3]))):
+                     or _read_multiple_self_answer_nominal(piece, wanted[2], wanted[3])
+                     or any(restore_thread_answer_nominal(piece, grammar, wanted[3]) == wanted[2]
+                            for grammar in ("BELIEF", "PERCEIVED_0", "PERCEIVED_1")))):
                 prefixes += ("",)
             for prefix in prefixes:
                 if not piece.startswith(prefix):
@@ -4406,12 +4408,14 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
                     interpretations.add(wanted[2:])
                 for when, temporal in (("original_occasion", "その時に"), ("answer_time", "回答した時点で"),
                                        ("prior_answer_time", "先の回答時点で")):
-                    if prefix.endswith("への"):
-                        for grammar in ("BELIEF", "PAST_FEELING", "PERCEIVED_0", "PERCEIVED_1", "COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE", "ADJECTIVE_PRESENT_POLITE"):
+                    if prefix.endswith("への") or prefix == "":
+                        grammars = (("BELIEF", "PERCEIVED_0", "PERCEIVED_1") if prefix == "" else
+                            ("BELIEF", "PAST_FEELING", "PERCEIVED_0", "PERCEIVED_1", "COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE", "ADJECTIVE_PRESENT_POLITE"))
+                        for grammar in grammars:
                             value = restore_thread_answer_nominal(nominal, grammar, when)
                             if value is not None:
                                 interpretations.add((value, when))
-                    elif nominal.startswith(temporal) and nominal.endswith("こと"):
+                    if not prefix.endswith("への") and nominal.startswith(temporal) and nominal.endswith("こと"):
                         value = _restore_thread_finite_answer(nominal[len(temporal):-2], wanted[2],
                             copular_clause=True, attributive=True)
                         if value is not None:

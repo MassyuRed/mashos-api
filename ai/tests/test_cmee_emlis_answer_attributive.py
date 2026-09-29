@@ -19,6 +19,8 @@ def test_admitted_finite_answer_is_attributive_without_losing_source(reply, clau
     follow = context[0].artifact.reception
     if reply == 'その時は私は怖くなかったです。':
         clause = '褒められた時は嬉しくなく、あなたは怖くなかったのですね'
+    if reply in {'その時は重かったです。', 'その時は少し重かったです。'}:
+        clause = clause.removesuffix('重く') + '重かったのですね'
     assert clause in follow
     assert 'ですこと' not in follow
     assert inverse(context, follow, without_author=True).passed
@@ -52,8 +54,8 @@ def test_changed_meaning_is_rejected_without_author(attributed, old, new):
 def test_degree_is_not_lost_in_attributive_clause():
     context = actual(request=advance(begin(), 'その時は少し重かったです。'))
     follow = context[0].artifact.reception
-    assert '少し重く' in follow
-    assert not inverse(context, follow.replace('少し重く', '重く'),
+    assert '少し重かった' in follow
+    assert not inverse(context, follow.replace('少し重かった', '重かった'),
                        without_author=True).passed
 
 

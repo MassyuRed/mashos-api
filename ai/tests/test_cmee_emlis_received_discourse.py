@@ -278,11 +278,13 @@ def test_unasked_originals_and_separate_answers_keep_their_own_events(sequence):
     context=actual(request=request)
     result,plan,_,resolver,selected=context
     follow=result.artifact.reception
-    assert follow.count('のですね') == 1
-    assert '受け止めています' not in follow
+    assert follow.count('のですね') == 2
+    assert ('を見失わず、小さくせずに受け止めています' in follow) == (len(sequence) > 1)
+    groups = ((0,), (1, 2)) if len(sequence) == 1 else ((0,), (1,), (2,))
+    assert_complete_occasion_scopes(context, ('褒められた', '誘われた', '頼まれた'), groups)
     for event in ('褒められた','誘われた','頼まれた'):
         assert follow.count(event)==1
-    assert gate.read_received_discourse(follow,plan.response_plan.human_reception_plan.moves[0],
+    assert gate.read_received_discourse(follow.split('。')[0] + '。',plan.response_plan.human_reception_plan.moves[0],
         plan,resolver,selected) is not None
     assert inverse(context,follow,without_author=True).passed
     for original in ('誘われた','頼まれた'):
@@ -2265,11 +2267,11 @@ def test_two_original_feeling_scopes_retain_both_occasions(sequence):
 
 @pytest.mark.parametrize('first,second,correction,groups,retained,removed', [
     ('その時は少し苦しかった。', 'その時は少し怖かった。', '「少し怖かった」ではなく「少し重かった」です。',
-     ((0, 1, 2),), '少し重かった', '少し怖かった'),
+     ((0,), (1,), (2,)), '少し重かった', '少し怖かった'),
     ('その時は少し苦しかった。', 'その時は少し重かった。', '「少し重かった」ではなく「少し怖かった」です。',
      ((0,), (1,), (2,)), '少し怖かった', '少し重かった'),
     ('その時は少し苦しかった。', 'その時は少しこわかった。', None,
-     ((0, 1, 2),), '少しこわかった', ''),
+     ((0,), (1,), (2,)), '少しこわかった', ''),
 ])
 def test_original_feeling_operator_boundary_preserves_meaning(first, second, correction, groups, retained, removed):
     request = advance(advance(begin(), first), second)
@@ -2390,12 +2392,15 @@ def test_multiple_original_events_still_require_each_answer_reference(source):
     request = advance(advance(begin(), 'その時は' + source + '。'), 'その時は少し重かった。')
     context = actual(request=request)
     follow = context[0].artifact.reception
-    assert len(context[1].response_plan.human_reception_plan.moves) == 1
-    assert len(context[1].response_plan.human_reception_plan.moves[0].target_nucleus_ids) == 3
-    assert 'その出来事について、私は私には' in follow
+    assert_complete_occasion_scopes(context, ('褒められた', '誘われた', '頼まれた'), ((0,), (1,), (2,)))
+    assert '褒められたのに嬉しくなかったことと、私は私には' in follow
+    assert 'その出来事について、' not in follow
     assert inverse(context, follow, without_author=True).passed
-    changed = follow.replace('その出来事について、', '', 1)
-    assert changed != follow and not inverse(context, changed, without_author=True).passed
+    # The local omission now has its own complete original. Removing it or
+    # replacing it by another event must still fail the independent reader.
+    for changed in (follow.replace('褒められたのに嬉しくなかったことと、', '', 1),
+                    follow.replace('褒められた', '誘われた', 1)):
+        assert changed != follow and not inverse(context, changed, without_author=True).passed
 
 
 @pytest.mark.parametrize('source,predicate', [
@@ -2418,34 +2423,57 @@ def test_grouped_answer_nominal_keeps_own_copula_and_explanation(source, predica
     context = actual(request=request)
     result = context[0]
     follow = result.artifact.reception
-    originals = ('褒められたのに嬉しくなかった', '誘われたのに悲しかった', '頼まれたのに寂しかった')
-    nominal = temporal + predicate + 'こと'
-    bound = originals[position] + 'ことと、その出来事について、' + nominal
+    sentences = follow.split('。')[:-1]
+    original = ('褒められた時は嬉しくなく、', '誘われたのに悲しかったことと、')[position]
+    # The first event can now use its existing finite form; the middle
+    # significance duty keeps the fully timed nominal form. Inputs and all
+    # original semantic mutation categories remain covered.
+    finite = {
+        '不安です': '不安なのですね', '不安でした': '不安だったのですね',
+        '私も少し不安でした': 'あなたも少し不安だったのですね',
+        '少し私は不安なのです': 'あなたは少し不安なのですね',
+        '私は少し不安だったのです': 'あなたは少し不安だったのですね',
+        '私は少し不安なのだった': 'あなたは少し不安なのでしたね',
+    }[source]
+    nominal = temporal + predicate + 'こと' if position else finite
+    bound = original + (('回答した時点では' if time == '今は' else '') if not position else '') + nominal
     assert bound in follow and source in result.artifact.observation
     assert 'ですこと' not in follow and 'でしたこと' not in follow
     assert request.current_input_bundle == initial.current_input_bundle
-    assert_complete_occasion_scopes(context, ('褒められた', '誘われた', '頼まれた'), ((0, 1, 2),))
+    assert_complete_occasion_scopes(context, ('褒められた', '誘われた', '頼まれた'), ((0,), (1,), (2,)))
     assert MeaningExperienceEngine().generate(request).artifact.text == result.artifact.text
     other = '私は私には不安だったのだという、その時のあなたの気持ち'
     mutations = [
-        follow.replace(originals[position] + 'ことと、', '', 1),
-        follow.replace(originals[position], originals[1 - position], 1),
+        follow.replace(original, '', 1),
+        follow.replace('褒められた', '誘われた', 1),
         follow.replace(nominal, '「' + nominal + '」'),
-        follow.replace(nominal, nominal.replace(temporal, '先の回答時点で')),
-        follow.replace(nominal, nominal.removeprefix(temporal)),
         follow.replace(nominal, 'TEMP').replace(other, nominal).replace('TEMP', other),
-        follow.replace('と、その出来事について、その時に少し重かったこと', ''),
+        follow.replace(sentences[2] + '。', ''),
         follow.replace(nominal, nominal.replace('不安', '安心')),
     ]
-    if 'のだ' in predicate:
-        changed = predicate.replace('なの', 'だったの') if 'なの' in predicate else predicate.replace('だったの', 'なの')
-        mutations.append(follow.replace(nominal, temporal + changed + 'こと'))
-        changed = predicate.replace('のだったという', 'のだという') if 'のだったという' in predicate else predicate.replace('のだという', 'のだったという')
-        mutations.append(follow.replace(nominal, temporal + changed + 'こと'))
-        mutations.append(follow.replace(nominal, nominal.replace('のだという', '').replace('のだったという', '')))
+    if position:
+        mutations.extend((follow.replace(nominal, nominal.replace(temporal, '先の回答時点で')),
+                          follow.replace(nominal, nominal.removeprefix(temporal))))
+    elif time == '今は':
+        mutations.extend((follow.replace('回答した時点では', 'その時は'),
+                          follow.replace('回答した時点では', '')))
     else:
-        changed = predicate[:-1] + 'だった' if predicate.endswith('な') else predicate[:-3] + 'な'
-        mutations.append(follow.replace(nominal, temporal + changed + 'こと'))
+        mutations.append(follow.replace(original, '褒められたことについて、回答した時点では嬉しくなく、'))
+    if 'のだ' in predicate:
+        if position:
+            changed = predicate.replace('なの', 'だったの') if 'なの' in predicate else predicate.replace('だったの', 'なの')
+            mutations.append(follow.replace(nominal, temporal + changed + 'こと'))
+            changed = predicate.replace('のだったという', 'のだという') if 'のだったという' in predicate else predicate.replace('のだという', 'のだったという')
+            mutations.append(follow.replace(nominal, temporal + changed + 'こと'))
+            mutations.append(follow.replace(nominal, nominal.replace('のだという', '').replace('のだったという', '')))
+        else:
+            changed = finite.replace('不安なの', '不安だったの') if '不安なの' in finite else finite.replace('不安だったの', '不安なの')
+            mutations.extend((follow.replace(finite, changed),
+                follow.replace(finite, finite.replace('のでしたね', 'のですね') if 'のでしたね' in finite else finite.replace('のですね', 'のでしたね')),
+                follow.replace(finite, finite.replace('のでしたね', 'でしたね').replace('のですね', 'ですね'))))
+    else:
+        changed = nominal.replace('不安な', '不安だった') if '不安な' in nominal else nominal.replace('不安だった', '不安な')
+        mutations.append(follow.replace(nominal, changed))
     if 'あなた' in predicate:
         mutations.extend((
             follow.replace(nominal, nominal.replace('あなた', '友人')),
@@ -2455,6 +2483,7 @@ def test_grouped_answer_nominal_keeps_own_copula_and_explanation(source, predica
     for changed in mutations:
         assert changed != follow
         assert not inverse(context, changed, without_author=True).passed
+
 
 
 @pytest.mark.parametrize('source,nominal', [
@@ -2477,9 +2506,11 @@ def test_grouped_answer_nominal_third_answer_saved_replay(qcase, monkeypatch, so
         assert '今回の観測に反映できていない' not in body
         if position == 2:
             follow = body.split('Emlisから：', 1)[1].strip()
-            assert '褒められたのに嬉しくなかったことと、その出来事について、' + nominal in follow
+            expected = nominal.removeprefix('その時に').removesuffix('こと').removesuffix('のだという')
+            assert '褒められた時は嬉しくなく、' + expected + 'のですね' in follow.split('。')[0]
+            assert source in body and 'その出来事について、' not in follow
             assert all(event in follow for event in ('褒められた', '誘われた', '頼まれた'))
-            assert 'その時に少し重かったこと' in follow
+            assert '頼まれた時は寂しく、少し重かったのですね' in follow
             assert 'ですこと' not in follow and 'でしたこと' not in follow
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved grouped answer must not regenerate'))
@@ -2508,26 +2539,27 @@ def test_grouped_original_nominal_keeps_actor_degree_negation_and_past(source, p
     context = actual(request=request)
     result = context[0]
     follow = result.artifact.reception
-    original = events[position] + 'のに' + predicate + 'こと'
+    original = events[position] + ('のに、' + predicate if event_count == 2 and position == 1
+                                   else 'のに' + predicate + 'こと')
     assert original in follow
     assert source in result.artifact.observation
     assert 'ですこと' not in follow and 'でしたこと' not in follow
     assert request.current_input_bundle == initial.current_input_bundle
-    assert_complete_occasion_scopes(context, events, (tuple(range(event_count)),))
+    assert_complete_occasion_scopes(context, events, tuple((i,) for i in range(event_count)))
     assert MeaningExperienceEngine().generate(request).artifact.text == result.artifact.text
     assert inverse(context, follow, without_author=True).passed
     mutations = [
-        follow.replace(original, events[1 - position] + 'のに' + predicate + 'こと'),
+        follow.replace(original, original.replace(events[position], events[1 - position])),
         follow.replace(original, original.replace('のに', 'から')),
-        follow.replace(original + 'と、', ''),
+        follow.replace(original, ''),
         follow.replace(original, '「' + original + '」'),
-        follow.replace('と、その出来事について、その時に少し重かったこと', ''),
-        follow.replace('その出来事について、', '', 1),
-        follow.replace('その時に少し重かった', '回答した時点で少し重かった'),
+        follow.replace('少し重かった', ''),
+        follow.replace('少し重かった', '褒められたことについて、少し重かった'),
+        follow.replace('少し重かった', '回答した時点では少し重かった'),
     ]
     current_predicate = (predicate.replace('くなかった', 'くない') if 'くなかった' in predicate
         else predicate.replace('寂しかった', '寂しい').replace('不安だった', '不安な'))
-    mutations.append(follow.replace(original, events[position] + 'のに' + current_predicate + 'こと'))
+    mutations.append(follow.replace(original, original.replace(predicate, current_predicate)))
     if 'くなかった' in predicate:
         mutations.append(follow.replace(original, original.replace('くなかった', 'かった')))
     if 'あなた' in predicate:
@@ -2579,3 +2611,122 @@ def test_grouped_original_nominal_saved_updates_keep_original_and_replay(qcase, 
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved original nominal must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('source,old,new', [
+    (A, '求められるよう', '求められたから'),
+    (A.replace('、', ','), '求められるよう', '求められたから'),
+    (B, '見てもらえていない', '見てもらえている'),
+    (C, '相手が嫌なのではなく', '相手が嫌だから'),
+    ('その時は少し重かった。', '少し重', '重'),
+    ('その時は少しこわかった。', '少しこわ', '少しこわくな'),
+    ('その時は私は私には不安だったのです。', '私は私には', '私は友人には'),
+])
+@pytest.mark.parametrize('position', [0, 1, 2])
+def test_accepted_original_answers_keep_complete_independent_occasions(source, old, new, position):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    request = begin()
+    replies = ['その時は少し苦しかった。'] * 3
+    replies[position] = source
+    for reply in replies:
+        request = advance(request, reply)
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    assert_complete_occasion_scopes(context, ('褒められた', '誘われた', '頼まれた'), ((0,), (1,), (2,)))
+    assert MeaningExperienceEngine().generate(request).artifact.text == context[0].artifact.text
+    sentences = follow.split('。')[:-1]
+    target = sentences[position]
+    assert old in target
+    # Every answer retains its original source in the observation and its
+    # own full event/contrast/ABOUT duty in the independent body reader.
+    assert source.rstrip('。').removeprefix('その時は') in context[0].artifact.observation
+    mutations = [
+        follow.replace(target + '。', ''),
+        follow.replace(target, target.replace(old, new)),
+        follow.replace(target, '「' + target + '」'),
+        follow.replace('褒められた', '誘われた'),
+        follow.replace('見失わず、', ''),
+    ]
+    if source in {A, A.replace('、', ',')}:
+        mutations.extend(follow.replace(target, target.replace(word, '')) for word in ('次も', '同じ'))
+    elif source == B:
+        mutations.append(follow.replace(target, target.replace('だけ', '')))
+    elif source == C:
+        mutations.append(follow.replace(target, target.replace('まだ', '')))
+    if position == 1:
+        assert 'その出来事への' not in target
+        mutations.extend((
+            follow.replace(target, target.replace('その時', '回答した時点')),
+            follow.replace(target, target.replace('その時の', '').replace('その時に', '')),
+            follow.replace(target, target.replace('誘われたのに悲しかったことと、', '')),
+            follow.replace(target, target.replace('ことと、', 'ことと、褒められたことについて、', 1)),
+        ))
+    for changed in mutations:
+        assert changed != follow
+        assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('operation', ['correct_answer', 'withdraw_answer', 'correct_original', 'withdraw_event'])
+def test_interpretation_occasion_updates_save_and_replay(qcase, monkeypatch, operation):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    third = {
+        'correct_answer': '「' + B.rstrip('。') + '」ではなく「少し重かった」です。',
+        'withdraw_answer': '「' + B.rstrip('。') + '」は誤りです。',
+        'correct_original': '「悲しかった」ではなく「少し怖かった」です。',
+        'withdraw_event': '「誘われた」は誤りです。',
+    }[operation]
+    for position, reply in enumerate((A, B, third)):
+        if position:
+            current = run(cont(service, user, current, f'interpretation-continue-{position}'))
+        current = run(answer(service, user, current, reply, f'interpretation-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        assert '今回の観測に反映できていない' not in body
+        follow = body.split('Emlisから：', 1)[1].strip()
+        if position == 1:
+            sentences = follow.split('。')[:-1]
+            assert len(sentences) == 3
+            assert '誘われたのに悲しかったことと、結果だけで' in sentences[1]
+            assert 'その時の思いを見失わず' in sentences[1]
+            assert 'その出来事への結果' not in follow
+        if position == 2:
+            if operation in {'correct_answer', 'withdraw_answer'}:
+                assert '見てもらえていない' not in body
+                assert ('少し重かった' in body) == (operation == 'correct_answer')
+            elif operation == 'correct_original':
+                assert '悲しかった' not in body and '少し怖かった' in body
+            else:
+                assert '誘われた' not in body and '見てもらえていない' in body
+            assert '次も同じ成果を求められる' in body and '寂し' in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved interpretation must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('source', [A, A.replace('、', ','), B])
+@pytest.mark.parametrize('when', ['original_occasion', 'answer_time', 'prior_answer_time'])
+def test_interpretation_nominal_omission_keeps_own_time(source, when):
+    request = advance(begin(), 'その時は少し苦しかった。')
+    reply = source if when == 'original_occasion' else '今は' + source
+    request = advance(request, reply)
+    if when == 'prior_answer_time':
+        # The same full interpretation remains a prior-time answer after
+        # replacing its source through the real correction lifecycle.
+        changed = source.replace('重かった', '苦しかった').replace('苦労', '努力')
+        request = advance(request, '「' + source.rstrip('。') + '」ではなく「' + changed.rstrip('。') + '」です。')
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    assert_complete_occasion_scopes(context, ('褒められた', '誘われた', '頼まれた'), ((0,), (1,), (2,)))
+    time = {'original_occasion': 'その時の', 'answer_time': '回答した時点の',
+            'prior_answer_time': '先の回答時点の'}[when]
+    middle = follow.split('。')[1]
+    assert time in middle and 'その出来事への' not in middle
+    assert '誘われたのに悲しかったことと、' in middle
+    assert middle.endswith('を見失わず、小さくせずに受け止めています')
+    other_time = '先の回答時点の' if when == 'answer_time' else '回答した時点の'
+    for changed in (follow.replace(time, ''), follow.replace(time, other_time),
+                    follow.replace('誘われたのに悲しかったことと、', ''),
+                    follow.replace('ことと、', 'ことと、褒められたことについて、', 1)):
+        assert changed != follow and not inverse(context, changed, without_author=True).passed
