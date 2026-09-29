@@ -3354,7 +3354,8 @@ def _thread_received_group_nominal(rows):
                 # One complete original object already names the answer's
                 # event. Keep both occasion objects without naming it twice.
                 if (len(rows) == 1 and link not in {"detached", "replacement"}
-                    and answer.grammar == "FINITE" and answer.when in {"answer_time", "prior_answer_time"}):
+                    and answer.grammar == "FINITE"
+                    and answer.when in {"original_occasion", "answer_time", "prior_answer_time"}):
                     part += "と、" + answer.nominal
                 else:
                     part += "と、その出来事" + ("について、" if answer.grammar == "FINITE" else "への") + answer.nominal
@@ -8548,7 +8549,8 @@ def _thread_received_group_ir_text(realization):
             else:
                 raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
             expected_relations.add(("evaluation_about_event", (slot, answer_slot)))
-            if count == 1 and part and grammar == "FINITE" and when in {"answer_time", "prior_answer_time"}:
+            if (count == 1 and part and grammar == "FINITE"
+                and when in {"original_occasion", "answer_time", "prior_answer_time"}):
                 part += "と、" + nominal
             else:
                 subject = "と、その出来事" if part else fragments[slot] + "こと"

@@ -250,7 +250,7 @@ def test_copular_answer_retains_tense_event_and_reactions(occasion, copula, prec
         assert time + predicate in follow
     else:
         assert ('褒められた時は' if preceding in (None, 0) else
-                'その出来事について、その時に' if preceding == 1 else '頼まれた時は') in follow
+                'その時に' if preceding == 1 else '頼まれた時は') in follow
     assert request.current_input_bundle == initial.current_input_bundle
     assert ('受け止めています' in follow) == (preceding in (1, 2))
     assert 'だのですね' not in follow

@@ -1742,10 +1742,11 @@ def test_multiple_answer_scopes_reject_changed_meaning_without_author(multiple_a
 def test_original_time_group_keeps_explicit_event_reference(source):
     context = actual(request=advance(begin(), 'その時は' + source + '。'))
     follow = context[0].artifact.reception
-    assert 'その出来事について、私は私には' in follow
+    assert '褒められたのに嬉しくなかったことと、私は私には' in follow
+    assert 'その出来事について、' not in follow
     assert 'という、その時のあなたの気持ち' in follow
     assert inverse(context, follow, without_author=True).passed
-    changed = follow.replace('その出来事について、', '')
+    changed = follow.replace('褒められたのに', '')
     assert changed != follow and not inverse(context, changed, without_author=True).passed
 
 
@@ -2006,7 +2007,7 @@ def test_multiple_self_original_answer_keeps_its_event_and_time(position, source
     result, plan, _, _, _ = context
     follow = result.artifact.reception
     original = ('褒められたのに嬉しくなかった', '誘われたのに悲しかった', '頼まれたのに寂しかった')
-    bound = original[position] + 'ことと、その出来事について、' + finite + 'という、その時のあなたの気持ち'
+    bound = original[position] + 'ことと、' + finite + 'という、その時のあなたの気持ち'
     assert bound in follow and source in result.artifact.observation
     assert not any(part in follow for part in ('あなたは私には', 'あなたは自分には', 'ですこと', 'でしたこと'))
     groups = ((0,), (1, 2)) if position == 0 else ((0,), (1,), (2,))
@@ -2038,7 +2039,7 @@ def test_multiple_self_group_cannot_borrow_another_event_or_time(multiple_self_m
     context, first, second = multiple_self_mixed_time_group
     follow = context[0].artifact.reception
     changes = {
-        'drop_first_reference': follow.replace('その出来事について、' + first, first),
+        'drop_first_reference': follow.replace('褒められたのに嬉しくなかったことと、' + first, first),
         'drop_second_reference': follow.replace('誘われたのに悲しかったことと、' + second, second),
         'different_event': follow.replace('誘われたのに悲しかったことと、' + second,
                                          '頼まれたのに悲しかったことと、' + second),
@@ -2074,7 +2075,7 @@ def test_multiple_self_original_answer_saved_updates_retain_time(qcase, monkeypa
         follow = body.split('Emlisから：', 1)[1].strip()
         assert all(event in body for event in ('褒められた', '頼まれた'))
         if position == 1 or position == 2 and operation == 'add':
-            assert 'その出来事について、私は私には不安だったのだという、その時のあなたの気持ち' in follow
+            assert '誘われたのに悲しかったことと、私は私には不安だったのだという、その時のあなたの気持ち' in follow
         if position == 2:
             if operation == 'correct':
                 assert source not in body and '不安だったのだ' not in follow
@@ -2297,7 +2298,7 @@ def test_original_feeling_scopes_reject_changed_meaning_without_author(original_
     follow = context[0].artifact.reception
     first, middle, last, empty = follow.split('。')
     assert empty == '' and inverse(context, follow, without_author=True).passed
-    bound = 'と、その出来事について、その時にあなたも少し不安だったこと'
+    bound = 'と、その時にあなたも少し不安だったこと'
     changes = {
         'drop_middle': first + '。' + last + '。',
         'swap_sentences': middle + '。' + first + '。' + last + '。',
@@ -2313,8 +2314,8 @@ def test_original_feeling_scopes_reject_changed_meaning_without_author(original_
         'swap_events': follow.replace('誘われた', 'TEMP').replace('頼まれた', '誘われた').replace('TEMP', '頼まれた'),
         'drop_original': follow.replace('頼まれたのにあなたは少し怖くなかったことと、', ''),
         'drop_time': follow.replace('その時にあなたも', 'あなたも'),
-        'other_event_answer': follow.replace('その出来事について、', '誘われたことについて、'),
-        'quoted_answer': follow.replace(bound, 'と、「その出来事について、その時にあなたも少し不安だったこと」'),
+        'other_event_answer': follow.replace(bound, 'と、誘われたことについて、その時にあなたも少し不安だったこと'),
+        'quoted_answer': follow.replace(bound, 'と、「その時にあなたも少し不安だったこと」'),
     }
     assert changes[mutation] != follow
     assert not inverse(context, changes[mutation], without_author=True).passed
@@ -2351,3 +2352,47 @@ def test_original_feeling_scopes_saved_update_and_replay(qcase, monkeypatch, ope
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved original scope body must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('source,nominal', [
+    ('少し怖かった', 'その時に少し怖かったこと'),
+    ('私も少し不安でした', 'その時にあなたも少し不安だったこと'),
+    ('私は少し不安だったのです', 'その時にあなたは少し不安だったのだということ'),
+    ('私は私には少し不安だったのです', '私は私には少し不安だったのだという、その時のあなたの気持ち'),
+    ('不安です', 'その時に不安なこと'),
+    ('不安でした', 'その時に不安だったこと'),
+])
+def test_original_occasion_reference_is_owned_by_complete_same_event(source, nominal):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    request = advance(advance(begin(), '今は少し苦しい。'), 'その時は' + source + '。')
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    bound = '誘われたのに悲しかったことと、' + nominal
+    assert bound in follow and 'その出来事について、' not in follow
+    assert source in context[0].artifact.observation
+    assert_complete_occasion_scopes(context, ('褒められた', '誘われた', '頼まれた'), ((0,), (1,), (2,)))
+    assert MeaningExperienceEngine().generate(request).artifact.text == context[0].artifact.text
+    assert inverse(context, follow, without_author=True).passed
+    for changed in (
+        follow.replace(bound, nominal),
+        follow.replace('誘われたのに', '頼まれたのに'),
+        follow.replace(nominal, '褒められたことについて、' + nominal),
+        follow.replace(nominal, '「' + nominal + '」'),
+        follow.replace(nominal, nominal.replace('その時に', '回答した時点で').replace('その時の', '回答した時点の')),
+        follow.replace(nominal, nominal.replace('その時に', '').replace('その時の', '')),
+    ):
+        assert changed != follow
+        assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('source', ['私は私には不安です', '私は私には不安だったのです'])
+def test_multiple_original_events_still_require_each_answer_reference(source):
+    request = advance(advance(begin(), 'その時は' + source + '。'), 'その時は少し重かった。')
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    assert len(context[1].response_plan.human_reception_plan.moves) == 1
+    assert len(context[1].response_plan.human_reception_plan.moves[0].target_nucleus_ids) == 3
+    assert 'その出来事について、私は私には' in follow
+    assert inverse(context, follow, without_author=True).passed
+    changed = follow.replace('その出来事について、', '', 1)
+    assert changed != follow and not inverse(context, changed, without_author=True).passed
