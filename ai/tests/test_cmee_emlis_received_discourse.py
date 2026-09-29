@@ -1620,13 +1620,13 @@ def test_answer_scope_nominal_fallback_keeps_source_and_attention(source):
     body, follow = context[0].artifact.text, context[0].artifact.reception
     assert read_body(context, body).passed
     first, second, empty = follow.split('。')
-    assert empty == '' and 'あなたは私には' in first
-    assert 'その出来事' not in first and '回答した時点で' in first
+    assert empty == '' and '私は私には' in first and 'あなたは私には' not in first
+    assert 'その出来事' not in first and 'という、回答した時点のあなたの気持ち' in first
     assert 'に目が留まり、それを小さくせずに受け止めています' in first
     assert '誘われた' in second and '頼まれた' in second and '回答した時点' not in second
     corruptions = [
-        follow.replace('あなたは私には', 'あなたには', 1),
-        follow.replace('回答した時点で', 'その時に', 1),
+        follow.replace('私は私には', '私には', 1),
+        follow.replace('回答した時点の', 'その時の', 1),
         follow.replace('褒められた', '誘われた', 1),
         follow.replace('嬉しくなかった', '嬉しかった', 1),
         follow.replace('目が留まり、', '目が留まらず、', 1),
@@ -1808,7 +1808,15 @@ def test_middle_nominal_keeps_whole_copula_or_explanation(source, nominal):
     follow = result.artifact.reception
     first, middle, last, empty = follow.split('。')
     assert empty == '' and '褒められた' in first and '頼まれた' in last
-    assert '誘われたのに悲しかったことと、回答した時点で' + nominal in middle
+    owned = {
+        '私は私には不安です': '私は私には不安だ',
+        '私は私には不安なのです': '私は私には不安なのだ',
+        '私は私には不安でした': '私は私には不安だった',
+        '私は私には不安だったのです': '私は私には不安だったのだ',
+    }
+    expected = (owned[source] + 'という、回答した時点のあなたの気持ち'
+                if source in owned else '回答した時点で' + nominal)
+    assert '誘われたのに悲しかったことと、' + expected in middle
     assert '少し苦しい' not in middle and '回答した時点' not in last
     assert not any(fragment in follow for fragment in ('ですこと', 'でしたこと', 'のなこと'))
     assert source in result.artifact.observation
@@ -1886,4 +1894,96 @@ def test_explanatory_nominal_saved_update_and_replay(qcase, monkeypatch, operati
                 assert '少し重い' in body and '不安だったのだということ' in follow
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved explanatory body must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.fixture(scope='module', params=['不安だった', '不安ではなかった'])
+def multiple_self_nominal_context(request):
+    source = '僕は自分には少し' + request.param + 'のです'
+    context = actual(request=advance(advance(begin(), '今は少し苦しい。'), '今は' + source + '。'))
+    nominal = '僕は自分には少し' + request.param + 'のだという、回答した時点のあなたの気持ち'
+    assert nominal in context[0].artifact.reception and source in context[0].artifact.observation
+    assert inverse(context, context[0].artifact.reception, without_author=True).passed
+    return context, nominal
+
+
+@pytest.mark.parametrize('mutation', [
+    'first_self', 'second_self', 'drop_self', 'particle', 'degree', 'polarity',
+    'inner_past', 'outer_past', 'explanation', 'owner', 'time', 'drop_time',
+    'quoted', 'extra_predicate', 'swap_events',
+])
+def test_multiple_self_nominal_rejects_meaning_changes_without_author(multiple_self_nominal_context, mutation):
+    context, nominal = multiple_self_nominal_context
+    follow = context[0].artifact.reception
+    polarity = ('不安だった' if '不安ではなかった' in nominal else '不安ではなかった')
+    changes = {
+        'first_self': nominal.replace('僕は', '友人は'),
+        'second_self': nominal.replace('自分には', '友人には'),
+        'drop_self': nominal.replace('僕は', ''),
+        'particle': nominal.replace('自分には', '自分にも'),
+        'degree': nominal.replace('少し', ''),
+        'polarity': nominal.replace('不安ではなかった' if '不安ではなかった' in nominal else '不安だった', polarity),
+        'inner_past': nominal.replace('不安ではなかった', '不安ではない').replace('不安だった', '不安な'),
+        'outer_past': nominal.replace('のだという、', 'のだったという、'),
+        'explanation': nominal.replace('のだという、', 'という、'),
+        'owner': nominal.replace('あなたの気持ち', '私の気持ち'),
+        'time': nominal.replace('回答した時点の', 'その時の'),
+        'drop_time': nominal.replace('回答した時点の', ''),
+        'quoted': '「' + nominal + '」',
+        'extra_predicate': nominal + 'が改善したこと',
+    }
+    changed = (follow.replace('誘われた', 'TEMP').replace('頼まれた', '誘われた').replace('TEMP', '頼まれた')
+               if mutation == 'swap_events' else follow.replace(nominal, changes[mutation]))
+    assert changed != follow
+    assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('source,finite', [
+    ('私は少し不安です', '私は少し不安だ'),
+    ('私は少し不安だったのです', '私は少し不安だったのだ'),
+])
+def test_single_self_cannot_borrow_multiple_self_attribution(source, finite):
+    context = actual(request=advance(advance(begin(), '今は少し苦しい。'), '今は' + source + '。'))
+    follow = context[0].artifact.reception
+    assert 'という、回答した時点のあなたの気持ち' not in follow
+    first, middle, last, empty = follow.split('。')
+    assert empty == ''
+    start = middle.index('回答した時点で')
+    end = middle.index('を見失わず')
+    borrowed = middle[:start] + finite + 'という、回答した時点のあなたの気持ち' + middle[end:]
+    assert not inverse(context, first + '。' + borrowed + '。' + last + '。', without_author=True).passed
+
+
+@pytest.mark.parametrize('operation', ['correct', 'withdraw_answer', 'withdraw_event', 'add'])
+def test_multiple_self_nominal_saved_update_and_replay(qcase, monkeypatch, operation):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    source = '私は私には不安だったのです'
+    third = {'correct': '「' + source + '」ではなく「私は私には不安なのだった」です。',
+             'withdraw_answer': '「' + source + '」は誤りです。',
+             'withdraw_event': '「誘われた」は誤りです。', 'add': '今は少し重い。'}[operation]
+    for position, text in enumerate(('今は少し苦しい。', '今は' + source + '。', third)):
+        if position:
+            current = run(cont(service, user, current, f'multiple-self-continue-{position}'))
+        current = run(answer(service, user, current, text, f'multiple-self-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        follow = body.split('Emlisから：', 1)[1].strip()
+        assert all(event in body for event in ('褒められた', '頼まれた'))
+        if position == 1 or position == 2 and operation == 'add':
+            assert '私は私には不安だったのだという、回答した時点のあなたの気持ち' in follow
+            assert 'あなたは私には' not in follow
+        if position == 2:
+            if operation == 'correct':
+                assert source not in body and '不安だったのだ' not in follow
+                assert '私は私には不安なのだったという、先の回答時点のあなたの気持ち' in follow
+            elif operation == 'withdraw_answer':
+                assert '不安' not in body and '誘われた' in body
+            elif operation == 'withdraw_event':
+                assert '誘われた' not in body and source in body
+            else:
+                assert '少し重い' in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved multiple SELF body must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current

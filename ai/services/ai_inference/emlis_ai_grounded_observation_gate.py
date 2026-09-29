@@ -4234,6 +4234,45 @@ def _restore_thread_finite_answer(actual, source, *, copular_clause=False,
     return source if restored == source else None
 
 
+def _read_multiple_self_answer_nominal(nominal, source, when):
+    """Independently recover a complete repeated-SELF feeling and its time."""
+    parts = re.fullmatch(
+        r"(?P<prefix>(?:(?:少し|とても|本当は|まだ|全然|あまり)*"
+        r"(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)){2,})(?P<tail>.+)", source)
+    if parts is None:
+        return False
+    lexical = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)+", "", parts['tail'])
+    explanatory = re.fullmatch(r"(.+)の(?:です|だ|だった)", lexical)
+    host = explanatory[1] if explanatory else lexical
+    noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)" if explanatory
+                        else r"(.+?)(?:です|だ|でした|だった)", host)
+    adjective = re.fullmatch(r"(.+?)(?:くない|くなかった|かった|い)(?:です)?", host)
+    noun_proven = noun is not None and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い")
+    if not (noun_proven
+            or adjective and (_FEELING_RE.fullmatch(adjective[1])
+                or _FEELING_RE.fullmatch(adjective[1] + "い")
+                or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1]))):
+        return False
+    temporal = {"original_occasion": "その時の", "answer_time": "回答した時点の",
+                "prior_answer_time": "先の回答時点の"}.get(when)
+    if temporal is None:
+        return False
+    suffix = "という、" + temporal + "あなたの気持ち"
+    if not nominal.startswith(parts['prefix']) or not nominal.endswith(suffix):
+        return False
+    actual = nominal[len(parts['prefix']):-len(suffix)]
+    tail = parts['tail']
+    # Invert the actual ending only. Every preceding character, including
+    # all SELF tokens, particles and degrees, must match the original source.
+    if tail.endswith("でした"):
+        return actual.endswith("だった") and actual[:-3] + "でした" == tail
+    if tail.endswith("です"):
+        if explanatory or noun_proven:
+            return actual.endswith("だ") and actual[:-1] + "です" == tail
+        return actual + "です" == tail
+    return actual == tail
+
+
 def _body_inverse_thread_received_group(body, witness, sentence, move, plan, resolver):
     """Read original clauses and immediately bound answer anaphora from bytes.
 
@@ -4335,13 +4374,17 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
             event_anchor = "その出来事" if wanted[0] == "answer" else final_reception_source_anchor_text(wanted[1], index, resolver) + "こと"
             prefixes = (event_anchor + "への", event_anchor + "について、")
             if (same_event_pair and wanted[0] == "answer"
-                and piece.startswith(("回答した時点で", "先の回答時点で"))):
+                and (piece.startswith(("回答した時点で", "先の回答時点で"))
+                     or _read_multiple_self_answer_nominal(piece, wanted[2], wanted[3]))):
                 prefixes += ("",)
             for prefix in prefixes:
                 if not piece.startswith(prefix):
                     continue
                 nominal = piece[len(prefix):]
                 nominal_start = start + len(prefix)
+                if (len(move.target_nucleus_ids) == 1 and not prefix.endswith("への")
+                    and _read_multiple_self_answer_nominal(nominal, wanted[2], wanted[3])):
+                    interpretations.add(wanted[2:])
                 for when, temporal in (("original_occasion", "その時に"), ("answer_time", "回答した時点で"),
                                        ("prior_answer_time", "先の回答時点で")):
                     if prefix.endswith("への"):
@@ -4365,6 +4408,9 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
                 and piece.endswith(("のだということ", "のだったということ"))
                 and wanted[2].endswith(("のです", "のだ", "のだった")))
             markers = {"thread_answer_nominal", "finite_clause_nominal"}
+            if (len(move.target_nucleus_ids) == 1
+                and _read_multiple_self_answer_nominal(nominal, wanted[2], wanted[3])):
+                markers = {"target_feeling"}
         offset = sentence.utf8_byte_start + len(objects[:nominal_start].encode("utf-8"))
         finish = sentence.utf8_byte_start + len(objects[:end].encode("utf-8"))
         if (any(q.utf8_byte_start < finish and offset < q.utf8_byte_end for q in witness.quotes)

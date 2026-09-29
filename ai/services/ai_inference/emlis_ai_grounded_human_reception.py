@@ -3169,13 +3169,44 @@ def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver, 
         grammar, value = nominal if nominal else ("FINITE", source)
         if grammar == "FINITE":
             prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で", "prior_answer_time": "先の回答時点で"}[when]
-            value = prefix + _detached_feeling_finite_surface(source,
+            owned = _multiple_self_answer_nominal(source, when) if received_attributive else None
+            value = owned or prefix + _detached_feeling_finite_surface(source,
                 allow_medial=received_attributive, allow_copular=received_attributive,
                 attributive=received_attributive) + "こと"
         else:
             value = _thread_answer_timed_nominal(value, grammar, when)
         rows.append(_ThreadAnswerGroupItem(nid, event.nucleus_id, source, grammar, when, value, event_fragment))
     return tuple(rows) if len({r.event_id for r in rows}) == len(rows) else ()
+
+
+def _multiple_self_answer_nominal(source, when):
+    """Keep a whole repeated-SELF proposition under explicit user ownership.
+
+    Only the single received-answer nominal calls this. It does not license
+    a new finite reading, delete a repeated particle or change source admission.
+    """
+    parsed = re.fullmatch(
+        r"(?P<prefix>(?:(?:少し|とても|本当は|まだ|全然|あまり)*"
+        r"(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)){2,})(?P<tail>.+)", source)
+    if parsed is None:
+        return None
+    predicate = re.sub(r"^(?:少し|とても|本当は|まだ|全然|あまり)+", "", parsed['tail'])
+    explanation = re.fullmatch(r"(.+)の(?:です|だった|だ)", predicate)
+    host = explanation[1] if explanation else predicate
+    noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)" if explanation
+                        else r"(.+?)(?:でした|だった|です|だ)", host)
+    adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)(?:です)?", host)
+    if not (noun and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い")
+            or adjective and (_FEELING_RE.fullmatch(adjective[1])
+                or _FEELING_RE.fullmatch(adjective[1] + "い")
+                or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1]))):
+        return None
+    finite = _detached_feeling_finite_surface(parsed['tail'], allow_copular=True,
+                                              allow_explanatory=True)
+    if finite is None:
+        return None
+    return (parsed['prefix'] + finite + "という、"
+            + _THREAD_ANSWER_TIME_NOMINAL_PREFIX[when] + "あなたの気持ち")
 
 
 
@@ -8489,7 +8520,8 @@ def _thread_received_group_ir_text(realization):
                 raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
             if grammar == "FINITE" and row is None and _SOURCE_GROUNDED_FINITE_END_RE.search(source):
                 prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で", "prior_answer_time": "先の回答時点で"}[when]
-                nominal = prefix + _detached_feeling_finite_surface(source,
+                owned = _multiple_self_answer_nominal(source, when) if count == 1 else None
+                nominal = owned or prefix + _detached_feeling_finite_surface(source,
                     allow_medial=count == 1, allow_copular=count == 1, attributive=count == 1) + "こと"
             elif row is not None and row[0] == grammar:
                 nominal = _thread_answer_timed_nominal(row[1], grammar, when)
