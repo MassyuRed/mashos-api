@@ -1569,6 +1569,118 @@ def test_answer_scope_correction_withdrawal_and_saved_replay(qcase, qdb, monkeyp
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
 
 
+@pytest.mark.parametrize('count,slot', [(2, 0), (2, 1), (3, 0), (3, 1), (3, 2)])
+@pytest.mark.parametrize('reply,replacement,retained', [
+    ('その時は少し苦しかった。', '少し怖かった', '少し怖かった'),
+    ('今は少し苦しい。', '私も少し不安でした', 'あなたも少し不安だった'),
+    ('その時は少し苦しかった。', '私には少し不安だったのです', 'あなたには少し不安だった'),
+    ('今は少し苦しい。', '私も少し怖くなかった', 'あなたも少し怖くなかった'),
+])
+def test_current_original_revision_separates_about_owned_occasions(count, slot, reply, replacement, retained):
+    from test_cmee_emlis_q3_thread import MEMO
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    events = ('褒められた', '誘われた', '頼まれた')[:count]
+    removed = ('嬉しくなかった', '悲しかった', '寂しかった')[slot]
+    request = begin('。'.join(MEMO.split('。')[:count]) + '。')
+    for text in (reply, 'その時は少し重かった。')[:slot]:
+        request = advance(request, text)
+    request = advance(request, '「' + removed + '」ではなく「' + replacement + '」です。')
+    context = actual(request=request)
+    result, plan, _, _, _ = context
+    follow = result.artifact.reception
+    sentences = follow.split('。')[:-1]
+    assert len(sentences) == min(count, slot + 2)
+    assert retained in sentences[slot] and removed not in result.artifact.text
+    for position in range(slot + 1):
+        assert events[position] in sentences[position]
+        assert all(event not in sentences[position] for event in events if event != events[position])
+    if slot:
+        assert ('回答した時点では少し苦しい' if reply.startswith('今は') else '少し苦しかった') in sentences[0]
+    event_id = f'nucleus:s{slot + 1}:event'
+    assert not any(n.nucleus_id == f'nucleus:s{slot + 1}:reaction' for n in plan.nuclei)
+    about = [r for r in plan.relations if r.type == 'evaluation_about_event' and r.from_nucleus_id == event_id]
+    assert len(about) == 1
+    moves = plan.response_plan.human_reception_plan.moves
+    owned = [set((*m.target_nucleus_ids, *m.support_nucleus_ids)) for m in moves]
+    assert len(moves) == len(sentences)
+    assert {event_id, about[0].to_nucleus_id} in owned
+    assert all(a.isdisjoint(b) for i, a in enumerate(owned) for b in owned[i+1:])
+    for relation in plan.relations:
+        if relation.retention == 'required':
+            assert sum({relation.from_nucleus_id, relation.to_nucleus_id} <= ids for ids in owned) == 1
+    assert MeaningExperienceEngine().generate(request).artifact.text == result.artifact.text
+    assert inverse(context, follow, without_author=True).passed
+    polarity = retained.replace('怖くなかった', '怖かった') if '怖くなかった' in retained else (
+        retained.replace('怖かった', '怖くなかった').replace('不安だった', '不安ではなかった'))
+    timed = sentences[slot].replace('その時に', '回答した時点で') if 'その時に' in sentences[slot] else (
+        sentences[slot].replace('時は', '今は'))
+    mutations = [follow.replace(events[slot], events[(slot + 1) % count], 1),
+                 follow.replace(retained, retained.replace('少し', ''), 1),
+                 follow.replace(retained, polarity, 1), follow.replace(sentences[slot], timed, 1),
+                 follow.replace(sentences[slot] + '。', '', 1),
+                 follow.replace(sentences[slot], sentences[(slot + 1) % len(sentences)], 1)]
+    if 'あなた' in retained:
+        mutations += [follow.replace('あなた', '相手', 1), follow.replace('あなたも', 'あなたは', 1)
+                      if 'あなたも' in retained else follow.replace('あなたには', 'あなたも', 1)]
+    for changed in mutations:
+        assert changed != follow and not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('count', [2, 3])
+@pytest.mark.parametrize('reply,retained', [(A, '求められるような重さ'),
+    (B, '見てもらえていないと思った'), (C, '自分ではまだ納得していなかった')])
+def test_current_original_revision_keeps_other_answer_interpretation(count, reply, retained):
+    from test_cmee_emlis_q3_thread import MEMO
+    memo = '。'.join(MEMO.split('。')[:count]) + '。'
+    context = actual(request=advance(advance(begin(memo), reply), '「悲しかった」ではなく「少し怖かった」です。'))
+    follow = context[0].artifact.reception
+    sentences = follow.split('。')[:-1]
+    assert len(sentences) == count
+    assert '褒められた' in sentences[0] and retained in sentences[0] and '誘われた' not in sentences[0]
+    assert '誘われた' in sentences[1] and '少し怖かった' in sentences[1] and '褒められた' not in sentences[1]
+    assert inverse(context, follow, without_author=True).passed
+    changed = follow.replace('ような', 'という') if reply == A else (
+        follow.replace('いないと思った', 'いない') if reply == B else follow.replace('まだ', ''))
+    assert changed != follow and not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('count,replies', [
+    (2, ('今は少し苦しい。', '「悲しかった」ではなく「少し怖かった」です。')),
+    (3, ('その時は少し苦しかった。', '「悲しかった」ではなく「少し怖かった」です。',
+         '「少し怖かった」ではなく「少し寂しかった」です。')),
+    (3, ('その時は少し苦しかった。', '「悲しかった」ではなく「少し怖かった」です。',
+         '「少し怖かった」は誤りです。')),
+    (3, ('その時は少し苦しかった。', 'その時は少し重かった。', '「寂しかった」ではなく「少し怖かった」です。')),
+])
+def test_current_original_revision_separation_saved_updates(qcase, qdb, monkeypatch, count, replies):
+    from test_cmee_emlis_q3_thread import MEMO
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$1 where id=$2', ['。'.join(MEMO.split('。')[:count]) + '。', parent])
+    first = current = run(service.start(user, parent))
+    for position, reply in enumerate(replies):
+        if position:
+            current = run(cont(service, user, current, f'about-revision-continue-{position}'))
+        current = run(answer(service, user, current, reply, f'about-revision-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        if 'ではなく' in reply:
+            follow = body.split('Emlisから：', 1)[1].strip()
+            sentences = follow.split('。')[:-1]
+            assert len(sentences) == count
+            assert all(event in sentences[i] for i, event in enumerate(('褒められた', '誘われた', '頼まれた')[:count]))
+            assert '褒められた' not in sentences[1] and '誘われた' not in sentences[0]
+            old = reply.split('「')[1].split('」')[0]
+            new = reply.split('「')[2].split('」')[0]
+            assert old not in body and new in body
+        if reply == '「少し怖かった」は誤りです。':
+            assert '少し怖かった' not in body and '悲しかった' not in body
+            assert '褒められた' in body and '頼まれた' in body and '少し苦しかった' in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved current-target revision must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
 def test_answer_scope_moves_to_last_event_without_reordering_middle():
     from test_cmee_emlis_detached_observation import read_body
     request = begin()

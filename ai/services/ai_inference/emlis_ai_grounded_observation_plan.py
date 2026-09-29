@@ -7969,7 +7969,7 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
     groups.extend(("lived_change" if is_grounded_positive_feeling(n) else "current_burden",
                    (n.nucleus_id,), ()) for n in independent)
     groups.extend(("concrete_effort", (n.nucleus_id,), ()) for n in actions)
-    # Close each answer with its own event and original reaction. An
+    # Close each answer with its own event and any retained original reaction. An
     # original-occasion answer is still a distinct source, not a replacement
     # of the original reaction or a later emotional change. The checks above
     # already prove the accepted reaction and its unique ABOUT ownership;
@@ -7980,7 +7980,7 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
     # both sides of a middle answer would reorder the source. The existing
     # three-Move budget covers these complete, disjoint duties.
     if (len(groups) == 1 and 1 <= len(negative) == len(answers) <= 3
-        and len(targets) == len(events) == len(pairs[0]) and 2 <= len(targets) <= 3
+        and len(targets) == len(events) and 2 <= len(targets) <= 3
         and (separate_later_scopes or len(negative) == 1
              and by_event.get(targets[0], by_event.get(targets[-1])) == negative[0])
         and not (chain_ids or withdrawal or independent or actions
@@ -7996,8 +7996,11 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
         for event in targets:
             answer = by_event.get(event)
             if answer is not None:
+                # A current-target revision may leave only its ABOUT answer;
+                # do not require or restore the removed original contrast.
                 groups.append(("current_burden", (event,),
-                               (feelings[event], answer.nucleus_id)))
+                               tuple(nid for nid in (feelings.get(event), answer.nucleus_id)
+                                     if nid is not None)))
             elif groups and all(by_event.get(nid) is None for nid in groups[-1][1]):
                 family, prior_targets, prior_supports = groups[-1]
                 groups[-1] = (family, (*prior_targets, event), (*prior_supports, feelings[event]))

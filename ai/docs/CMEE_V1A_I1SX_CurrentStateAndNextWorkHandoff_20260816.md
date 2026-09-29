@@ -11378,3 +11378,15 @@ current identityは既存18payload/9ownerの派生値のみ更新。language `99
 二場面に閉じない訂正後の構成、長い名詞句、定型反復、複数SELFの自然さ、二層再掲、既知失敗は残る。同じ複数出来事/回答/訂正群を継続し、群完了や商品PASSと扱わず、次順位の二層改善へ自動移行しない。10/03は未完でもEmlis休止、10/04以降Work分析／Work不可時Pro Piece、旧10/10 Emlis期限は再設定待ちという最新合意を維持。
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 既存Plan内部の構成のみで責任・whole route・artifact lifecycle不変。Ready/merge/deploy/enableなし。
+
+## 2026-09-30 Work継続 u28：有効ABOUTを残す原反応訂正後の場面分離 — 作業中
+
+開始API `03a92b3e3cf3bd2b2aa60398e19ae81983b3a920`／Cocolon `261e5d3b881c76a5da6a9b41a72e56e29230b7ad`、u27反映後と一致。全体01/02、全file地図01A/B/Cの領域と接点、current_structure00/01/04、作業ルール、恒久incident全文、最新weekly20260926の9/29合意とu27を確認。System Context prepareはmaterial commitの祖先確認でexit2、許可済み原典直接参照へ戻しfreshness成功とはしない。旧scratch消失後に同じheadを取得し、試験runtimeは実在するPython3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1/PGlite0.5.8を確認、install0。
+
+開始判断：DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、Rule18 LEVEL_2、Mashの残件継続指示。product_destinationは訂正後も誰のどの出来事への回答かを追えるEmlis本文、current routeはQ4後の複数出来事/回答/訂正群。current_unfinished_conditionは『原反応pairが外れ有効ABOUTだけ残る場面を含むと、通常分離条件から外れ旧列挙へ戻る』一原因。既存Planの完全pair数要求とsupport構築の最小修正を候補とし、既存HR/Surface/独立Gateへ接続する。商品担当はwhole-route fit、技術担当は既存ABOUT単独grammarと除外境界を読取確認済み。root（Work ModeのGPT-based Codex）が編集・実行・GitHub writeの単一owner。確認していないPro/Ultra model identityは称さない。
+
+first effect前の上限は既存8path：API `ai/services/ai_inference/emlis_ai_grounded_observation_plan.py`、同directoryの`emlis_ai_grounded_human_reception.py`／`emlis_ai_grounded_observation_gate.py`、`ai/tests/test_cmee_emlis_received_discourse.py`／`ai/tests/test_cmee_emlis_detached_observation.py`、`ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json`、本handoff、Cocolon `Cocolon_前提資料/designs/cmee/v1/06_implementation_order_migration_and_verification.md`。主候補はPlanのみ。完了は実本文の場面分離・意味/関係不変・作者禁止逆検証・保存再取得・関連回帰・remote全文照合。30〜45分程度の限定修正を見込み、追加費用とMash操作0。対象外へ広がる実退行・契約変更・新grammar機構が必要なら採用せず残件として記録する。source admission、品質基準、protected/frozen検査、上限、外部AI、新owner/helper、API/DB/RN、実機/課金、本番/公開は変更0。success creditはTECHNICAL_CREDITのみ、群完了/商品合格は別判断。STRUCTURE_MAP_DELTA_NONE、全体48%・商品0/3・NOT_CLEAR・default OFF・Draftを維持し、10/03休止／10/04以降分析の最新合意を継承する。
+
+**検証途中checkpoint。** Planの通常分離でtargets==eventsを維持したまま原反応pair数同一の条件だけを外し、原反応のない場面は有効ABOUT回答のみをsupportとして渡した。HR/Gate/roleは変更なし。新30検査（位置と本文/改変拒否20、解釈6、保存更新4）は全PASS、25.17秒。保存4系列の11回答後状態で原入力不変・生成禁止GET/start一致。開始版関連2191件＝2177PASS/既存14FAILはu27の同head・同runtime版の記録を継承し、既知失敗を含む27件だけfresh再実行（13PASS/14FAIL、22.11秒）。候補のreceived/detached＋identity全体は実行中で、回帰なし・全量完了は未確定。次はその結果と既知14のmessage/trace、既存identityの脱落/成否を照合する。
+
+初期比較43実行記録には同一入力2組があり、異なる入力41種類として扱う。提供40、Reception26変更・14不変、checkpoint/核/関係/Observation不変、提供全件の公開本文一致・作者禁止逆読成功。複数節の訂正replacement5controlはPARTIAL／correction_replacement_unsupportedで旧反応のWITHDRAWだけ反映、新複合反応未追加・未反映案内あり。syntax拒否1も元からで、いずれも解消扱いにしない。受理可能なunknownと反復SELFの追加3controlは別に比較し、最終記録で合算を確定する。商品/技術担当は初期比較の全両層本文を読取確認済み。current identityはlanguage `0b75d4190c10e7a8fba441e4738eec74b19edb28248932577ab6009ac3f5dbae`／runtime `f29cdb733f18c7441eacb807326c441b4bc8404afa9225ed5d9773536ae1353d`、18payload/9owner不変。
