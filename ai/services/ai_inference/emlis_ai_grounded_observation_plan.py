@@ -7741,7 +7741,7 @@ def _source_independent_performed_action(nucleus, relations):
     )
 
 
-def _thread_retained_reaction_groups(nuclei, relations):
+def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes=True):
     """Keep unanswered original reactions alongside the accepted answer duties.
 
     Only active source-owned pairs participate. An ADD focuses its own event;
@@ -7765,7 +7765,7 @@ def _thread_retained_reaction_groups(nuclei, relations):
             if {r.from_nucleus_id, r.to_nucleus_id} <= rest_ids)
         if not any(n.retention == "required" and set(n.source_fields) & _TEXT_SOURCE_FIELDS for n in rest):
             return contrasts
-        retained = _thread_retained_reaction_groups(rest, rest_relations)
+        retained = _thread_retained_reaction_groups(rest, rest_relations, separate_later_scopes=False)
         if retained:
             return (*contrasts, *retained)
     withdrawal = any("thread_subject:withdrawn_source_event" in n.semantic_frame.attribute_codes
@@ -7969,24 +7969,31 @@ def _thread_retained_reaction_groups(nuclei, relations):
     groups.extend(("lived_change" if is_grounded_positive_feeling(n) else "current_burden",
                    (n.nucleus_id,), ()) for n in independent)
     groups.extend(("concrete_effort", (n.nucleus_id,), ()) for n in actions)
-    # A single later answer must not lend its time/topic to the
-    # unanswered original occasions. Partition complete source duties before
-    # sentence planning; each existing Move still owns exactly one sentence.
-    # Edge targets keep source order without interleaving the residual group.
-    # Triad recursion and detached/independent duties retain their topology.
-    if (len(groups) == 1 and len(negative) == len(answers) == 1
+    # Close each later answer with its own event and original reaction.
+    # Only adjacent unanswered occasions may share a residual group; joining
+    # both sides of a middle answer would reorder the source. The existing
+    # three-Move budget covers these complete, disjoint duties.
+    if (len(groups) == 1 and 1 <= len(negative) == len(answers) <= 3
         and len(targets) == len(events) == len(pairs[0]) and 2 <= len(targets) <= 3
+        and (separate_later_scopes or len(negative) == 1
+             and by_event.get(targets[0], by_event.get(targets[-1])) == negative[0])
         and not (chain_ids or withdrawal or independent or actions
                  or independent_answers or detached_answers)
-        and not is_grounded_current_answer_uncertainty(negative[0])
-        and {c for c in negative[0].semantic_frame.attribute_codes if c.startswith("thread_time:")}
-            <= {"thread_time:answer_time", "thread_time:prior_answer_time"}):
-        focus = next((event for event, answer in by_event.items() if answer == negative[0]), None)
-        if focus in (targets[0], targets[-1]):
-            focus_supports = (feelings[focus], negative[0].nucleus_id)
-            groups = [("current_burden", (focus,), focus_supports),
-                ("current_burden", tuple(event for event in targets if event != focus),
-                 tuple(nid for nid in supports if nid not in focus_supports))]
+        and all(not is_grounded_current_answer_uncertainty(answer)
+            and {c for c in answer.semantic_frame.attribute_codes if c.startswith("thread_time:")}
+                in ({"thread_time:answer_time"}, {"thread_time:prior_answer_time"})
+            for answer in negative)):
+        groups = []
+        for event in targets:
+            answer = by_event.get(event)
+            if answer is not None:
+                groups.append(("current_burden", (event,),
+                               (feelings[event], answer.nucleus_id)))
+            elif groups and all(by_event.get(nid) is None for nid in groups[-1][1]):
+                family, prior_targets, prior_supports = groups[-1]
+                groups[-1] = (family, (*prior_targets, event), (*prior_supports, feelings[event]))
+            else:
+                groups.append(("current_burden", (event,), (feelings[event],)))
     # Keep a current positive answer beside its own original reaction.
     # Only an edge event can be separated while retaining source order and
     # the existing three-Move budget. The positive duty stays independent.
@@ -9064,7 +9071,16 @@ def _build_reception_depth_policy_and_moves(
                 # collapse them back into duplicate felt-response duties.
                 roles[burdens[0].opportunity_id] = "attention"
         if len(burdens) == 3:
-            roles[standalone[-1].opportunity_id] = "significance"
+            if not standalone and not explicit_contrast_duties and len(selected) == 3 and all(
+                (item.family, item.target_nucleus_ids, item.support_nucleus_ids)
+                    == retained_reaction_groups[position]
+                for position, item in enumerate(selected)):
+                # Existing role order is also source order. No source duty
+                # or original/answer time is dropped to fit two sentences.
+                for item, role in zip(burdens, ("attention", "significance", "felt_response")):
+                    roles[item.opportunity_id] = role
+            else:
+                roles[standalone[-1].opportunity_id] = "significance"
             if len(standalone) == 1 and explicit_contrast_duties:
                 contrast = next((item for item in burdens if item not in standalone
                     and (item.family, item.target_nucleus_ids, item.support_nucleus_ids)

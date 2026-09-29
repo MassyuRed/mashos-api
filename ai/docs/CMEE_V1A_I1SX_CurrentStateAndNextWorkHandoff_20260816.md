@@ -10879,3 +10879,50 @@ Emlisから：
 **残件と再開先。** 二層の内容再掲、「のですね」の連続、主体付き残余列挙、中央回答や複数回答の長文、複合三核等の範囲外群、受け取りの深さ、既存39FAILと未提供1条件は未解決。語尾だけを次々に直すのではなく、次は残る中央・複数回答で、原文順と完全な意味所有を保ったまま受け取りが成立するかを実本文・訂正系列から判断する。今回の2文の改善を全群対応や商品受入へ繰り上げない。9/30中間確認・10/3対象群・10/10内容判断、別枠10/2開発実機一往復を維持する。
 
 **TECHNICAL_CREDIT／STRUCTURE_MAP_DELTA_NONE／全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 既存owner内の責務分配であり、構造地図のnode／route／source権限／lifecycleに変更なし。規範・凍結証跡・品質基準は変更0。実DB・実機・実課金・Ready／merge／deploy／enableは実施していない。反映commit・変更7path・remote全文照合は両Draft PRの今回記録へ結合する。
+
+## 2026-09-29 Work継続 u15：中央・複数の別時点回答を出来事単位で分離
+
+**開始根拠と現行優先順位。** MashのEmlisAI残件継続指示、添付の前回txt、最新作業ルール・恒久incident全文を確認し、API `3711625cf57d77acda0e064d46045b03789c9e52`／Cocolon `f13bc6e5bbe6e4666d49c68c7ca081ecbd304e81`から開始した。全体設計01/02、全ファイル地図01A/B/Cの該当ownerとcurrent overlays、current_structure00/01/04、canonical02/06、API handoff u14を確認した。全歴史本文を通読したとはしない。System Context PR37は`fa455117a363c7a464d241415cb1a3651902c0b4`を確認。既存prepareはCocolon material commitの祖先不一致でexit2となり、許可済みの正本直接読取へ戻った。生成contextのfreshness成功は主張しない。
+
+最新weeklyは9/26ファイル末尾の**9/29追加合意**を適用する。今週は中央・複数回答を含む「複数出来事と回答・訂正の受け取り」が最優先。10/03は未完了でもEmlisを休止し、10/04以降はWork/Ultraの分析、Work不可時はProのPieceへ移る。旧10/10のEmlis商品内容期限は再設定待ちであり、u14までの期限記述を現行前提として継承しない。9/30中間確認、別枠の10/02開発実機等は最新weeklyに従う。利用枠回復や購入済みは推測しない。
+
+LEVEL_2の既存委任内で、開始前に既存owner・検査・current identity・handoff・Cocolon06の最大7pathを固定した。root華恋のみが編集・実行・GitHub反映し、商品・技術担当は読取専任。実行環境はWork ModeのGPT-based Codexで、確認できないPro/Ultra model identityは主張しない。新しいowner、API、DB、RN、schema、依存、品質閾値、flagsは追加しない。
+
+**実装と本文差分。** 従来、三出来事の中央回答や二〜三回答は、元反応と各回答時点を保持していても一つの「し」列挙に戻っていた。既存Planで、二〜三組の完全な原出来事・原反応と、負の別時点回答だけから成る群を、出来事・元反応・その回答の単位へ分けた。隣り合う未回答の原体験だけは同じ残余群を共有し、中央を飛び越えてまとめない。二群では既存attention/felt_response、三群では既存順attention/significance/felt_responseを使い、既存最大3 Move／3文を維持する。元場面時点・肯定/混在・独立感情/行動・撤回event・三核chainの分割へは拡張しない。再帰先の新分割とchainへの新3 role適用も除外し、u14の端単独回答の扱いは維持した。
+
+Human Receptionでは、単一received groupの名詞句に限り、既存の本人視点・名詞コピュラ活用を用いる。原文の「少し私は怖くなかった」は「あなたは少し怖くなかった」、「私も少しもやもやでした」は「あなたも少しもやもやだったこと」、現在の「少し私は不安です」は「あなたは少し不安なこと」とし、原人称の粒度・程度・否定・時制を保つ。原文核や関係を書き換えず、source側とIR側を同じ文法にした。複数targetの旧名詞句は維持する。
+
+Gateは三群全体・役割順・完全なsource所有を確認し、原反応と回答を作者なしで独立復元する。活用した範囲だけを元sourceへ戻した検査用viewで既存context dutyを照合し、本文bytesは変更しない。generic witnessにない「なこと」は、完全な時点付き名詞句の独立復元成功と引用境界拒否を要件にする。significanceの既存「見失わず、小さくせずに受け止めています」も欠落を拒否する。語句の部分一致や作者のreplay一致だけで合格させない。
+
+例：原文「褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。」へ「今は少し苦しい。」「今は少し怖い。」と回答した場合、Receptionは次のようになった。
+
+> 褒められた時は嬉しくなく、回答した時点では少し苦しいのですね。誘われたのに悲しかったことと、その出来事について、回答した時点で少し怖いことを見失わず、小さくせずに受け止めています。頼まれたのに、寂しさを感じたのですね。
+
+初回からの既存処理、訂正・回答撤回・event撤回と保存再表示を含め、主比較48状態は20本文変更／28不変、全48で原核・関係が修正前と同一、独立読取成功。追加6状態は、中央未回答に両端回答2、現在名詞1、二出来事の複数回答2、三核chain不変control1で、5本文変更／1不変、全6で同じ原核・関係と独立読取成功。rootと独立商品担当は両層の前後全文を読み、今回差分による意味欠落・対象/主体/時点の誤帰属・撤回済み回答の復活を認めなかった。意味を保持した限定的な読み分け改善であり、長い受領句や二層再掲まで解消したとはしない。
+
+**検査の目的と結果。** 新35条件は、完全な出来事ごとの所有・中央/複数回答・訂正・現在/過去名詞14、作者を禁止し候補自身をreplayへ渡す意味改変拒否13、初回から三roundの訂正/撤回/追加と保存再読8。既存`test_answer_scope_moves_to_last_event_without_reordering_middle`だけは、中央時の文数を旧1から3へ追従した。同じ入力・case ID・原文順・旧回答除去・独立読取は保持し、期待緩和や入力除外ではない。既存トップレベル89宣言の削除0、変更はこの1宣言のみ、追加は3検査関数と1fixture。protected/frozen資料は変更していない。
+
+今回の最終検証は7ファイル＋単一owner-chain検査の8対象を3実行に分け、**2440条件＝2385PASS／修正前からの55FAIL／ERROR・SKIP 0**。内訳はreceived discourse・answer attributive・initial received discourseの865条件＝854PASS/11FAIL（256.00秒、警告1）、answer recipient perspective・q1 thread・answer correction source scope・detached observationの1574条件＝1530PASS/44FAIL（353.61秒、警告3）、current owner-chainの1PASS（24.50秒、警告1）。同じ7ファイルの開始版を今回freshで実行した2404条件＝2349PASS/55FAILとcase IDで照合し、脱落0、既存合否変化0、追加35全PASS。55失敗のmessage/traceはworkspace path・行位置・実行UUID・メモリアドレスだけを正規化して全一致した。全量GREENとはしない。u14の2518条件/39FAILとは選択集合が異なり、39→55の回帰や455→55の解消とは換算しない。旧必須全体を再実行した結果でもない。
+
+再現環境は `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<既存PGlite module>`、Python3.12で`-m pytest -q`を使い、以下の対象を指定する。
+
+```text
+ai/tests/test_cmee_emlis_received_discourse.py
+ai/tests/test_cmee_emlis_answer_attributive.py
+ai/tests/test_cmee_emlis_initial_received_discourse.py
+ai/tests/test_cmee_emlis_answer_recipient_perspective.py
+ai/tests/test_cmee_emlis_q1_thread.py
+ai/tests/test_cmee_emlis_answer_correction_source_scope.py
+ai/tests/test_cmee_emlis_detached_observation.py
+ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEEStage1AdditionalCorrectionStep2CompositionTest::test_active_final_language_owner_chain_has_zero_legacy_compose_calls
+```
+
+保存8条件は既存試験用PGliteでoriginal DTO不変と、生成を禁止したGET/service.startの完全一致を確認した。実DB・実機・プロセス再起動の証明ではない。直接比較の54状態は検査件数に合算しない。再現には既存begin/advance/actual/inverseと上記入力系列を使い、新たな恒久検査基盤は設けない。
+
+途中の初稿には一人称残存と「でしたこと」があり、不合格として修正した。追加検査の初回は33PASS/3FAILで、現在名詞のmarker不足2件とsignificance欠落の独立拒否不足1件を再現し、作者と独立readerを対称に補正した。補正後のfocusedは新35＋既存1＝36PASS。独立技術レビューが指摘した複数target旧文法・chain境界も補正し、最終sourceで関連範囲を再実行した。境界補正前に開始した3ファイル実行は中断し、その途中結果は完走件数へ合算しない。
+
+current identityは既存各18payload・9source ownerとfixtureのkey/scopeを保って再導出した。language=`ded137722a9f5dd80530b579d498718c2246b3a010ff834c7ba74398008f0e5a`、runtime=`0fecb3d169f3a51436bc765caee2f02f6381101441706a0e004b951f7b8e1bfc`。既存Python3.12.14／pytest9.1.1／pydantic2.13.5／FastAPI0.141.1／httpx0.28.1とPGliteを再利用し、install・商品lock変更・追加費用・Mash操作は0。
+
+**残件と再開先。** 中央・複数の別時点回答の読み分けは前進したが、二層再掲、両端の「のですね」反復、significanceの長さ、主体付きの複合文、元場面時点・肯定/混在や三核chain等の長い旧経路、受け取りの深さ、今回選択範囲の既存55FAILと既知の未提供境界は残る。対象群を完了へ繰り上げず、次は今回の中央文と残る旧経路の実本文・更新系列から、必要な意味を保ちながら長い再掲が起きる共通原因を限定して扱う。10/03の休止区切りを自動延長しない。
+
+**TECHNICAL_CREDIT／STRUCTURE_MAP_DELTA_NONE／全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 既存owner内の責務分配で、構造地図のnode/route/source権限/lifecycle変更なし。変更はAPIのPlan/Reception/Gate、received discourse test、current identity fixture、本handoffの6pathと、Cocolon既存06の1path。Ready/merge/deploy/enableは行わず、既存PR #3/#30へ結びつける。

@@ -3858,9 +3858,11 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
     reception_moves = plan.response_plan.human_reception_plan.moves
     source_groups = _thread_retained_reaction_groups(plan.nuclei, plan.relations)
     separate_received_scopes = bool(
-        len(reception_moves) == len(source_groups) == 2
+        2 <= len(reception_moves) == len(source_groups) <= 3
         and move == reception_moves[0] and move.move_role == "attention"
-        and reception_moves[1].move_role == "felt_response"
+        and tuple(m.move_role for m in reception_moves) == (
+            ("attention", "felt_response") if len(reception_moves) == 2
+            else ("attention", "significance", "felt_response"))
         and all(m.required and m.reception_act == "stay_with_current_burden"
                 and m.support_nucleus_ids for m in reception_moves)
         and tuple(("current_burden", m.target_nucleus_ids, m.support_nucleus_ids)
@@ -4279,6 +4281,9 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
             expected.append(("answer" if contrast else "direct", event_id,
                 final_reception_source_anchor_text(answer.nucleus_id, index, resolver), next(iter(times))))
     raw = body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8")
+    if (move.move_role == "significance"
+        and not raw.endswith("を見失わず、小さくせずに受け止めています。")):
+        return None
     attention_ending = "に目が留まり、それを小さくせずに受け止めています。"
     if (move.move_role == "attention" and move.reception_act == "stay_with_current_burden"
         and raw.endswith(attention_ending)):
@@ -4292,13 +4297,17 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
     divisions = tuple(m.start() for m in re.finditer("と、", objects))
     def read_piece(start, end, wanted):
         piece = objects[start:end]
+        attributive_copula_read = False
         if wanted[0] == "original":
             if not piece.endswith("こと"):
                 return None
             clause = piece[:-2]
             parses = {(clause[:m.start()], m.group(), clause[m.end():])
                       for m in re.finditer(r"けれども|けれど|けど|のに", clause)}
-            if wanted[2:] not in parses:
+            if not any(left == wanted[2] and connector == wanted[3]
+                       and (feeling == wanted[4] if len(move.target_nucleus_ids) > 1 else
+                            _restore_thread_finite_answer(feeling, wanted[4], copular_clause=True) == wanted[4])
+                       for left, connector, feeling in parses):
                 return None
             nominal_start = start
             markers = {"finite_clause_nominal"}
@@ -4319,21 +4328,29 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
                             if value is not None:
                                 interpretations.add((value, when))
                     elif nominal.startswith(temporal) and nominal.endswith("こと"):
-                        value = _restore_thread_finite_answer(nominal[len(temporal):-2], wanted[2])
+                        value = _restore_thread_finite_answer(nominal[len(temporal):-2], wanted[2],
+                                                              copular_clause=len(move.target_nucleus_ids) == 1)
                         if value is not None:
                             interpretations.add((value, when))
             if wanted[2:] not in interpretations:
                 return None
+            # The generic witness does not mark なこと. Its complete timed
+            # noun clause has already been independently restored above.
+            attributive_copula_read = piece.endswith("なこと") and wanted[2].endswith(("です", "だ"))
             markers = {"thread_answer_nominal", "finite_clause_nominal"}
         offset = sentence.utf8_byte_start + len(objects[:nominal_start].encode("utf-8"))
         finish = sentence.utf8_byte_start + len(objects[:end].encode("utf-8"))
         if (any(q.utf8_byte_start < finish and offset < q.utf8_byte_end for q in witness.quotes)
             or any(m.marker_code == "secondary_quote_boundary" and m.utf8_byte_start < finish
                    and offset < m.utf8_byte_end for m in witness.markers)
-            or not any(m.section == "reception" and m.marker_code in markers
+            or not attributive_copula_read and not any(m.section == "reception" and m.marker_code in markers
                        and offset <= m.utf8_byte_start and m.utf8_byte_end == finish for m in witness.markers)):
             return None
-        return ((offset, finish, wanted[2].encode("utf-8")),) if wanted[0] != "original" else ()
+        if wanted[0] == "original":
+            feeling_start = sentence.utf8_byte_start + len(
+                (objects[:start] + wanted[2] + wanted[3]).encode("utf-8"))
+            return ((feeling_start, finish - len("こと".encode("utf-8")), wanted[4].encode("utf-8")),)
+        return ((offset, finish, wanted[2].encode("utf-8")),)
 
     # Parse successive duties rather than enumerating combinations of every
     # conjunction in a potentially long answer. Cache ambiguous suffixes and
@@ -6333,6 +6350,18 @@ def evaluate_grounded_surface_body_inverse(
                         )
                         context_match_text = parsed_sentence_text
                         context_morphology_missing = False
+                        if (final_stage1_plan and not anaphoric_context
+                            and len(move.target_nucleus_ids) == 1 and move.support_nucleus_ids):
+                            received_proof = _body_inverse_thread_received_group(
+                                body, witness, parsed_sentence, move, plan, resolver)
+                            if received_proof:
+                                # Recover only independently read inflections;
+                                # every original context remains a full-source duty.
+                                restored = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end]
+                                for start, end, source in sorted(received_proof, reverse=True):
+                                    lo, hi = start - parsed_sentence.utf8_byte_start, end - parsed_sentence.utf8_byte_start
+                                    restored = restored[:lo] + source + restored[hi:]
+                                context_match_text = _body_inverse_normalized_anchor(restored.decode("utf-8"))
                         decision_context_matched = bool(
                             final_stage1_plan and not anaphoric_context
                             and len(context_ids) == 1

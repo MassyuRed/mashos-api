@@ -3129,7 +3129,8 @@ def source_grounded_thread_answer_group(move, plan, nucleus_index, resolver):
                                                polarity="positive" if positive else "negative")
 
 
-def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver, *, polarity="negative"):
+def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver, *, polarity="negative",
+                                       received_attributive=False):
     rows = []
     for nid in targets:
         n = nucleus_index[nid]
@@ -3168,7 +3169,9 @@ def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver, 
         grammar, value = nominal if nominal else ("FINITE", source)
         if grammar == "FINITE":
             prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で", "prior_answer_time": "先の回答時点で"}[when]
-            value = prefix + _detached_feeling_finite_surface(source) + "こと"
+            value = prefix + _detached_feeling_finite_surface(source,
+                allow_medial=received_attributive, allow_copular=received_attributive,
+                attributive=received_attributive) + "こと"
         else:
             value = _thread_answer_timed_nominal(value, grammar, when)
         rows.append(_ThreadAnswerGroupItem(nid, event.nucleus_id, source, grammar, when, value, event_fragment))
@@ -3280,7 +3283,8 @@ def source_grounded_thread_received_group(move, plan, nucleus_index, resolver):
         original = _source_grounded_received_contrast_rows(
             (event_id,), (contrasts[0].to_nucleus_id,), nucleus_index, resolver) if contrasts else ()
         answers = _source_grounded_thread_answer_rows(
-            tuple(r.to_nucleus_id for r in about), plan, nucleus_index, resolver)
+            tuple(r.to_nucleus_id for r in about), plan, nucleus_index, resolver,
+            received_attributive=len(move.target_nucleus_ids) == 1)
         if len(original) != len(contrasts) or len(answers) != len(about):
             return ()
         rows.append((original[0] if original else None, answers[0] if answers else None))
@@ -3295,7 +3299,9 @@ def _thread_received_group_nominal(rows):
         else:
             _, _, event, feeling, link = original
             part = (_detached_burden_nominal(feeling, "original_occasion") if link in {"detached", "replacement"}
-                    else event + _RECEIVED_EVENT_LINK_TEXT[link] + feeling + "こと")
+                    else event + _RECEIVED_EVENT_LINK_TEXT[link]
+                    + (_detached_feeling_finite_surface(feeling, allow_medial=True,
+                        allow_copular=True, attributive=True) if len(rows) == 1 else feeling) + "こと")
             if answer is not None:
                 part += "と、その出来事" + ("について、" if answer.grammar == "FINITE" else "への") + answer.nominal
         parts.append(part)
@@ -8457,7 +8463,9 @@ def _thread_received_group_ir_text(realization):
                 or not _SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(fragments[feeling_slot].removesuffix("です"))):
                 raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
             expected_relations.add(("contrast", (slot, feeling_slot)))
-            part = fragments[slot] + _RECEIVED_EVENT_LINK_TEXT[link] + fragments[feeling_slot] + "こと"
+            part = fragments[slot] + _RECEIVED_EVENT_LINK_TEXT[link] + (
+                _detached_feeling_finite_surface(fragments[feeling_slot], allow_medial=True,
+                    allow_copular=True, attributive=True) if count == 1 else fragments[feeling_slot]) + "こと"
         elif answer_code == ["none"]:
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP")
         if answer_code != ["none"]:
@@ -8475,7 +8483,8 @@ def _thread_received_group_ir_text(realization):
                 raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
             if grammar == "FINITE" and row is None and _SOURCE_GROUNDED_FINITE_END_RE.search(source):
                 prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で", "prior_answer_time": "先の回答時点で"}[when]
-                nominal = prefix + _detached_feeling_finite_surface(source) + "こと"
+                nominal = prefix + _detached_feeling_finite_surface(source,
+                    allow_medial=count == 1, allow_copular=count == 1, attributive=count == 1) + "こと"
             elif row is not None and row[0] == grammar:
                 nominal = _thread_answer_timed_nominal(row[1], grammar, when)
             else:
@@ -10618,7 +10627,7 @@ def _feeling_acknowledgement(finite):
 
 
 def _detached_feeling_finite_surface(source, *, allow_explanatory=False, allow_copular=False,
-                                     allow_medial=False):
+                                     allow_medial=False, attributive=False):
     """Address an explicitly SELF-owned feeling to its original speaker.
 
     A leading pronoun, or the single bounded medial owner when enabled,
@@ -10641,7 +10650,7 @@ def _detached_feeling_finite_surface(source, *, allow_explanatory=False, allow_c
         copular = _detached_feeling_copula_parts(source)
         if copular is not None:
             finite = finite[:-len(copular[1])] + (
-                "だった" if copular[1] in {"でした", "だった"} else "だ")
+                "だった" if copular[1] in {"でした", "だった"} else "な" if attributive else "だ")
     if allow_explanatory:
         explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", finite)
         if explanatory is not None:
