@@ -4171,6 +4171,7 @@ def _derive_candidate_semantic_loss_codes(
         mutation_by_ref=mutation_by_ref,
     )
     component_owner_by_key: dict[MeaningComponentSemanticKey, str] = {}
+    component_collision = False
     selected_projections = _material_interpretation_projections(
         grounded_view=grounded_view,
         configurations=values,
@@ -4189,6 +4190,7 @@ def _derive_candidate_semantic_loss_codes(
             prior_owner = component_owner_by_key.get(key)
             if prior_owner is not None and prior_owner != row.source_object_ref:
                 losses.add(DifferenceInvariantCode.ENDPOINT_COLLAPSE)
+                component_collision = True
             component_owner_by_key[key] = row.source_object_ref
     if candidate.primary_component_refs != expected_primary_refs:
         losses.add(DifferenceInvariantCode.ENDPOINT_COLLAPSE)
@@ -4241,6 +4243,11 @@ def _derive_candidate_semantic_loss_codes(
     )
     if candidate.forbidden_promotion_codes != expected_forbidden_promotions:
         losses.add(DifferenceInvariantCode.MODALITY_PROMOTION)
+    if component_collision:
+        # This candidate has already collapsed distinct source objects.
+        # Reject it before a deletion counterfactual operates on its deduped
+        # signature and becomes a no-op. The mutation guard stays strict.
+        return tuple(value for value in DifferenceInvariantCode if value in losses)
     source_rows = input_specific_meaning_candidate_source_component_rows(
         candidate,
         grounded_view=grounded_view,

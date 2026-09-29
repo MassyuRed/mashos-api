@@ -12127,7 +12127,9 @@ def _partition_shared_reception_move_contributions(rows, reception_plan, binding
         and (all(row.reception_act == "stay_with_current_burden" for row in rows)
              or mixed_answers or independent_cognition_action or current_material_action or nominal_constraint_action
              or nominal_cognition_action or explicit_original_feeling_action)
-        and rows[0].projected_claim_ref == rows[1].projected_claim_ref):
+        and rows[0].projected_claim_ref == rows[1].projected_claim_ref
+        and (not any(move.support_nucleus_ids for move in reception_plan.moves)
+             or current_material_action or nominal_cognition_action)):
         nominal_contrast = ()
         if nominal_cognition_action:
             feeling_id = next(r.target_nucleus_ids[0] for r in rows
@@ -12192,9 +12194,19 @@ def _partition_complete_shared_relation_duties(rows, reception_plan, binding):
         duties = []
         for row in shared:
             ids = set((*row.target_nucleus_ids, *row.support_nucleus_ids))
+            from emlis_ai_grounded_observation_plan import source_owned_relational_focus
+            closed = tuple(other for other in moves.values() if other.move_id != row.move_id
+                and (focus := source_owned_relational_focus(other,
+                    nuclei=tuple(binding.node_meta.values()), relations=tuple(binding.edge_meta.values())))
+                and focus[0] == "received_feeling_contrast")
             for relation in binding.edge_meta.values():
                 if relation.retention == "required" and set(row.target_nucleus_ids) & {
                         relation.from_nucleus_id, relation.to_nucleus_id}:
+                    endpoints = {relation.from_nucleus_id, relation.to_nucleus_id}
+                    if (relation.type == "contrast" and not endpoints <= ids
+                        and sum(endpoints <= set((*other.target_nucleus_ids, *other.support_nucleus_ids))
+                                for other in closed) == 1):
+                        continue
                     ids.update((relation.from_nucleus_id, relation.to_nucleus_id))
             if any(nid not in binding.nucleus_to_node for nid in ids):
                 raise CMEEStage1ContractError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")

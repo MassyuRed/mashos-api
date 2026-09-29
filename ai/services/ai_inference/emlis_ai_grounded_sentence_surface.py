@@ -152,7 +152,7 @@ _RECEPTION_SENTENCE_END_RE: Final = re.compile(r"[。！？!?]+")
 _RECEPTION_QUOTE_RE: Final = re.compile(r"「([^」]*)」")
 _BODY_RELATION_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     ("from_to", re.compile(r"から.{0,160}(?:へ|に)")),
-    ("coexistence", re.compile(r"一方で|同時に|重なり|異なる向き|並んで|両方|ともに|中にも|中でも|」のに「")),
+    ("coexistence", re.compile(r"一方で|同時に|重なり|異なる向き|並んで|両方|ともに|中にも|中でも|」(?:のに|けれども|けれど|けど)「")),
     ("link", re.compile(r"つなが|表れ|生まれ|結びつ|に対する|その出来事について、|」ことについて、|」ことには「|」、(?:その時は|回答した時点では|先の回答時点では)「")),
     ("counterdirection", re.compile(r"同意していない|終わらない|それでも|けれど")),
     ("change", re.compile(r"変化|動いて|進み|向き")),
@@ -2891,6 +2891,14 @@ def _render_observation(
         return ""
     prefix = _hedge_prefix(binding)
     if len(binding.nucleus_ids) > 1:
+        if (typed_semantic_duties and not binding.relation_ids
+            and all("semantic_dependency:received_feeling_contrast_chain"
+                    in nucleus_index[nid].semantic_frame.attribute_codes for nid in binding.nucleus_ids)):
+            # Withdrawing the middle operand removes both source edges.
+            # The two survivors are separate facts, never a new flow.
+            return "".join(_render_observation(replace(binding, nucleus_ids=(nid,),
+                evidence_span_ids=nucleus_index[nid].source_span_ids), nucleus_index, resolver,
+                typed_semantic_duties=True) for nid in binding.nucleus_ids)
         detached_times = tuple(_detached_observation_time(nucleus_index[nid]) for nid in binding.nucleus_ids)
         if (getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
             and not binding.relation_ids and all(detached_times)):
@@ -3260,6 +3268,26 @@ def _thread_contrast_answer_groups(binding, nucleus_index, relation_index, resol
                 or event.source_fields not in {("memo",), ("memo_action",)}
                 or reaction.source_fields not in {("memo",), ("memo_action",)}):
             continue
+        if all("semantic_dependency:received_feeling_contrast_chain" in n.semantic_frame.attribute_codes
+               for n in (event, reaction)):
+            inner = tuple(r for r in relations if r.type == "contrast"
+                and r.from_nucleus_id == reaction.nucleus_id
+                and r.grounding_kind == "user_stated_relation"
+                and "source_received_chain_slot:second" in nucleus_index[r.to_nucleus_id].semantic_frame.attribute_codes)
+            if len(inner) == 1 and contrast.grounding_kind == "user_stated_relation":
+                second = nucleus_index[inner[0].to_nucleus_id]
+                from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
+                event_text, first_text, second_text = (final_reception_source_anchor_text(n.nucleus_id, nucleus_index, resolver)
+                                                      for n in (event, reaction, second))
+                source = str(resolver.resolve(event.source_span_ids[0]).raw_text or '').strip(' \u3000、,。．.')
+                joined = re.fullmatch(re.escape(event_text) + r'(?P<outer>のに|けれども|けれど|けど)[、, ]*'
+                    + re.escape(first_text) + r'(?P<inner>けれども|けれど|けど)[、, ]*' + re.escape(second_text), source)
+                if (joined is not None and event.source_span_ids == reaction.source_span_ids == second.source_span_ids
+                    and len({event_text, first_text, second_text}) == 3):
+                    sentences.append((contrast.relation_id,
+                        f'「{event_text}」{joined["outer"]}「{first_text}」{joined["inner"]}「{second_text}」とあります。'))
+                    consumed.update((contrast.relation_id, inner[0].relation_id))
+                    continue
         about = tuple(r for r in relation_index.values() if r.type == "evaluation_about_event"
                       and r.from_nucleus_id == event.nucleus_id)
         contrasts = tuple(r for r in relation_index.values() if r.type == "contrast"
@@ -3501,7 +3529,8 @@ def _render_relation(
             reaction = nucleus_index[relation.to_nucleus_id]
             if (typed_semantic_duties
                 and relation.grounding_kind == "user_stated_relation"
-                and all("lexical:source_finite_contrast_feeling" in n.semantic_frame.attribute_codes
+                and all({"lexical:source_finite_contrast_feeling", "semantic_dependency:received_feeling_contrast_chain"}
+                        & set(n.semantic_frame.attribute_codes)
                         for n in (event, reaction))):
                 # The source states a contrast, not simultaneous current
                 # feelings. Each quoted endpoint keeps its own tense.

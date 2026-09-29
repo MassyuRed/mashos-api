@@ -673,6 +673,29 @@ def _semantic_subcheck_reasons(
             for span_id in current.binding.evidence_span_ids
             if not resolver.unresolved_ids((span_id,))
         }
+        # Different typed operands can share one original evidence span.
+        # Compare their independently proved scalar sources only when the
+        # lines actually share evidence. Keep each source's identity so the
+        # same feeling in separate events is not collapsed into repetition.
+        nucleus_index = {n.nucleus_id: n for n in plan.nuclei}
+        typed_anchors = []
+        for line in (previous, current):
+            fragments = []
+            for nid in line.binding.nucleus_ids:
+                nucleus = nucleus_index.get(nid)
+                if nucleus is None or len(nucleus.source_span_ids) != 1:
+                    break
+                raw = resolver.resolve(nucleus.source_span_ids[0]).raw_text
+                fragment = _body_inverse_typed_source_fragment(nucleus, raw)
+                if not fragment:
+                    break
+                fragments.append((nucleus.source_span_ids[0], _normalized(fragment)))
+            typed_anchors.append(set(fragments) if len(fragments) == len(line.binding.nucleus_ids) else None)
+        if (
+            set(previous.binding.evidence_span_ids).intersection(current.binding.evidence_span_ids)
+            and all(typed_anchors)
+        ):
+            previous_anchors, current_anchors = typed_anchors
         if (
             previous_text
             and previous_text == current_text
@@ -2231,13 +2254,58 @@ def _body_inverse_thread_contrast_answers(body, witness, line, plan, resolver):
         if sentence.section != "observation" or sentence.section_line_ordinal != line.section_ordinal:
             continue
         text = _body_inverse_visible_text(body, sentence)
-        if re.fullmatch(rf"(?:{pair_grammar}、また)+{pair_grammar}とあります。", text):
+        chain = re.fullmatch(
+            r"「([^「」『』\n]+)」(のに|けれども?|けど)"
+            r"「([^「」『』\n]+)」(けれども?|けど)"
+            r"「([^「」『』\n]+)」とあります。", text)
+        if chain is not None:
+            event_text, outer, first_text, inner, second_text = chain.groups()
+            nodes = []
+            for slot, value in zip(("event", "first", "second"), (event_text, first_text, second_text)):
+                candidates = tuple(n for n in plan.nuclei
+                    if "semantic_dependency:received_feeling_contrast_chain" in n.semantic_frame.attribute_codes
+                    and "source_received_chain_slot:" + slot in n.semantic_frame.attribute_codes
+                    and n.grounding_kind == "explicit"
+                    and n.source_fields in {("memo",), ("memo_action",)}
+                    and n.semantic_frame.actor == "current_user"
+                    and _body_inverse_nucleus_source_values(n.nucleus_id, plan, resolver)
+                        == (_body_inverse_normalized_anchor(value),))
+                if len(candidates) != 1:
+                    break
+                nodes.append(candidates[0])
+            edges = tuple((a.nucleus_id, b.nucleus_id) for a, b in zip(nodes, nodes[1:]))
+            relations = tuple(r for r in plan.relations if r.type == "contrast"
+                and r.grounding_kind == "user_stated_relation"
+                and (r.from_nucleus_id, r.to_nucleus_id) in edges)
+            ids = tuple(r.relation_id for r in relations)
+            same_source = (len(nodes) == 3 and len({n.nucleus_id for n in nodes}) == 3
+                and len(nodes[0].source_span_ids) == 1
+                and all(n.source_span_ids == nodes[0].source_span_ids for n in nodes))
+            raw = str(resolver.resolve(nodes[0].source_span_ids[0]).raw_text or "") if same_source else ""
+            if (not same_source or len(ids) != 2 or matched.intersection(ids)
+                or {(r.from_nucleus_id, r.to_nucleus_id) for r in relations} != set(edges)
+                or re.fullmatch(r"\s*" + re.escape(event_text) + re.escape(outer)
+                    + r"[、,\s]*" + re.escape(first_text) + re.escape(inner)
+                    + r"[、,\s]*" + re.escape(second_text) + r"[。\s]*", raw) is None):
+                failures.append("body_inverse_contrast_report_source_mismatch")
+            else:
+                matched.update(ids)
+                contrast_groups.append(ids)
+            continue
+        if re.fullmatch(rf"(?:{pair_grammar}、また)*{pair_grammar}とあります。", text):
             pairs = re.findall(pair_grammar, text)
+            if len(pairs) == 1 and not any((n.kind == "event"
+                    or "source_received_chain_slot:first" in n.semantic_frame.attribute_codes)
+                and _body_inverse_nucleus_source_values(n.nucleus_id, plan, resolver)
+                    == (_body_inverse_normalized_anchor(pairs[0][0]),) for n in plan.nuclei):
+                continue
             relations = []
             for event_text, reaction_text in pairs:
                 candidates = tuple(r for r in plan.relations
                     if r.type == "contrast"
-                    and index[r.from_nucleus_id].kind == "event"
+                    and (index[r.from_nucleus_id].kind == "event"
+                         or "source_received_chain_slot:first" in index[r.from_nucleus_id].semantic_frame.attribute_codes
+                         and "source_received_chain_slot:second" in index[r.to_nucleus_id].semantic_frame.attribute_codes)
                     and index[r.to_nucleus_id].kind == "reaction"
                     and index[r.to_nucleus_id].semantic_frame.predicate_kind == "feeling"
                     and all(index[nid].grounding_kind == "explicit"
@@ -2255,9 +2323,10 @@ def _body_inverse_thread_contrast_answers(body, witness, line, plan, resolver):
             ids = tuple(r.relation_id for r in relations)
             positions = [min((span_order[sid] for sid in index[r.from_nucleus_id].source_span_ids), default=-1)
                          for r in relations]
-            slots = [event_positions.index(pos) for pos in positions]
+            slots = ([0] if len(relations) == 1 and index[relations[0].from_nucleus_id].kind == "reaction"
+                     else [event_positions.index(pos) for pos in positions if pos in event_positions])
             if (len(ids) != len(pairs) or len(set(ids)) != len(ids) or matched.intersection(ids)
-                or not slots or slots != list(range(slots[0], slots[0] + len(slots)))):
+                or len(slots) != len(ids) or not slots or slots != list(range(slots[0], slots[0] + len(slots)))):
                 failures.append("body_inverse_contrast_report_source_mismatch")
             else:
                 matched.update(ids)
@@ -2326,6 +2395,22 @@ def _body_inverse_intervening_events(body, witness, line, planned_line, plan, re
     index = {n.nucleus_id: n for n in plan.nuclei}
     relations = tuple(r for r in plan.relations if r.relation_id in planned_line.binding.relation_ids)
     linked = {nid for r in plan.relations for nid in (r.from_nucleus_id, r.to_nucleus_id)}
+    if (len(planned_line.binding.nucleus_ids) > 1 and not planned_line.binding.relation_ids
+        and all("semantic_dependency:received_feeling_contrast_chain" in index[nid].semantic_frame.attribute_codes
+                for nid in planned_line.binding.nucleus_ids)):
+        rows = tuple(row for row in witness.sentences if row.section == "observation"
+                     and row.section_line_ordinal == line.section_ordinal)
+        if len(rows) != len(planned_line.binding.nucleus_ids):
+            return False
+        for row, nid in zip(rows, planned_line.binding.nucleus_ids):
+            n = index[nid]
+            ending = "という出来事がありました。" if n.kind == "event" else "という気持ちが書かれています。"
+            parsed = re.fullmatch(r"「([^「」『』\n]+)」" + re.escape(ending), _body_inverse_visible_text(body, row))
+            if (nid in linked or not parsed
+                or _body_inverse_nucleus_source_values(nid, plan, resolver)
+                    != (_body_inverse_normalized_anchor(parsed[1]),)):
+                return False
+        return True
     if len(planned_line.binding.nucleus_ids) == 1 and not planned_line.binding.relation_ids:
         nucleus = index[planned_line.binding.nucleus_ids[0]]
         frame = nucleus.semantic_frame
@@ -2603,8 +2688,36 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
                     "RECEIVE_AS_MATERIAL", "PRESERVE_BOTH_ENDPOINTS"}
                 or position is not None and position.stance_operator == "STAY_WITH_SPECIFIC_OBJECT"):
             return None
-    kind, left, right = focus
     index = {n.nucleus_id: n for n in plan.nuclei}
+    if focus[0] == "received_feeling_contrast":
+        event, first, second = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
+                                for n in focus[1:])
+        if not all((event, first, second)) or len({event, first, second}) != 3:
+            return None
+        source = str(resolver.resolve(focus[1].source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
+        joined = re.fullmatch(re.escape(event) + r"(?P<outer>のに|けれども|けれど|けど)[、, ]*"
+            + re.escape(first) + r"(?P<inner>けれども|けれど|けど)[、, ]*" + re.escape(second), source)
+        parsed = re.fullmatch(r"(?P<event>.+?)(?P<outer>のに|けれども|けれど|けど)、"
+            r"(?P<first>.+?)(?P<inner>けれども|けれど|けど)、"
+            r"(?P<second>.+)(?:のですね|のです|のだと受け取りました)。", raw)
+        if joined is None or parsed is None:
+            return None
+        actual_event = parsed['event']
+        owner = re.match(r"(?:私|自分|わたし)(?=は|が)", event)
+        if owner is not None:
+            if not actual_event.startswith('あなた'):
+                return None
+            actual_event = owner.group() + actual_event[len('あなた'):]
+        if (actual_event != event or parsed['outer'] != joined['outer'] or parsed['inner'] != joined['inner']
+            or parsed['first'].endswith('な')
+            or _restore_thread_finite_answer(
+                parsed['first'][:-1] + 'な' if parsed['first'].endswith('だ') else parsed['first'],
+                first, copular_clause=True) != first
+            or _restore_thread_finite_answer(parsed['second'], second, copular_clause=True) != second):
+            return None
+        return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
+                      for key, value in (('event', event), ('first', first), ('second', second)))
+    kind, left, right = focus
     first, second = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
                      for n in (left, right))
     if (not first or not second or first == second
@@ -2612,6 +2725,12 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
         return None
     if kind == "feeling_contrast":
         source = str(resolver.resolve(left.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
+        if "source_received_chain_slot:first" in left.semantic_frame.attribute_codes:
+            ranges = tuple(c.split(":")[1:] for c in left.semantic_frame.attribute_codes
+                           if c.startswith("source_fragment_scalar_range:"))
+            if len(ranges) != 1 or source[int(ranges[0][0]):int(ranges[0][1])] != first:
+                return None
+            source = source[int(ranges[0][0]):]
         joined = re.fullmatch(re.escape(first) + r"(?P<link>けれども|けれど|けど|のに)[、, ]*"
                               + re.escape(second), source)
         parsed = re.fullmatch(r"(?P<first>.+?)(?P<link>けれども|けれど|けど|のに)、"
@@ -2625,6 +2744,29 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
             return None
         return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()),
                       value.encode()) for key, value in (('first', first), ('second', second)))
+    if kind == "received_event_feeling":
+        source = str(resolver.resolve(left.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
+        ranges = tuple(c.split(":")[1:] for c in right.semantic_frame.attribute_codes
+                       if c.startswith("source_fragment_scalar_range:"))
+        if len(ranges) != 1 or source[int(ranges[0][0]):int(ranges[0][1])] != second:
+            return None
+        joined = re.fullmatch(re.escape(first) + r"(?P<link>のに|けれども|けれど|けど)[、, ]*"
+                              + re.escape(second), source[:int(ranges[0][1])])
+        parsed = re.fullmatch(r"(?P<event>.+?)(?P<link>のに|けれども|けれど|けど)、"
+                             r"(?P<feeling>.+)(?:のですね|のです|のだと受け取りました)。", raw)
+        if joined is None or parsed is None:
+            return None
+        event = parsed['event']
+        owner = re.match(r"(?:私|自分|わたし)(?=は|が)", first)
+        if owner is not None:
+            if not event.startswith('あなた'):
+                return None
+            event = owner.group() + event[len('あなた'):]
+        if (event != first or parsed['link'] != joined['link']
+            or _restore_thread_finite_answer(parsed['feeling'], second, copular_clause=True) != second):
+            return None
+        return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
+                     for key, value in (('event', first), ('feeling', second)))
     if kind == "received_experience_focus":
         from emlis_ai_grounded_observation_plan import (
             _source_nominal_past_feeling_parts, _LEADING_CONTRAST_RE,
@@ -4730,6 +4872,10 @@ def evaluate_grounded_surface_body_inverse(
             event_mentions = {}
             events = tuple(n for n in plan.nuclei if n.kind == "event"
                            and n.nucleus_id in planned_line.binding.nucleus_ids)
+            report_subjects = (*events, *(nucleus_index[relation_index[group[0]].from_nucleus_id]
+                for group in contrast_groups if len(group) == 1
+                and "source_received_chain_slot:first" in nucleus_index[
+                    relation_index[group[0]].from_nucleus_id].semantic_frame.attribute_codes))
             for quote_row in quote_rows:
                 value = _body_inverse_normalized_anchor(_body_inverse_quote_text(body, quote_row))
                 candidates = tuple(n for n in events
@@ -4760,7 +4906,7 @@ def evaluate_grounded_surface_body_inverse(
                     values = tuple(map(_body_inverse_normalized_anchor,
                         re.findall(r"「([^「」]+)」", _body_inverse_visible_text(body, row))))
                     if not any(value in _body_inverse_nucleus_source_values(event.nucleus_id, plan, resolver)
-                               for value in values for event in events):
+                               for value in values for event in report_subjects):
                         failures.append(f"body_inverse_contrast_report_unbound_sentence:{index}")
             if (set(planned_line.binding.nucleus_ids) <= endpoints
                 and set(planned_line.binding.relation_ids) <= grouped_relations):

@@ -1342,3 +1342,117 @@ def test_parallel_report_saved_flow_preserves_original_and_reuses_dto(qcase, mon
             assert run(service.get(user, parent)) == current
             assert run(service.start(user, parent)) == current
     assert current['state'] == 'COMPLETED' and not current['can_continue']
+
+
+RECEIVED_CHAIN = '褒められたのに、悲しかったけれど嬉しかった。'
+RECEIVED_CHAIN_MULTI = RECEIVED_CHAIN + '誘われたのに寂しかった。頼まれたのに怖かった。'
+
+
+@pytest.mark.parametrize('memo', [RECEIVED_CHAIN, RECEIVED_CHAIN_MULTI])
+@pytest.mark.parametrize('reply,retained,removed,edges', [
+    ('今は少し苦しい。', ('悲しかった', '嬉しかった', '少し苦しい'), (), 2),
+    ('「悲しかった」ではなく「少し怖かった」です。', ('嬉しかった', '少し怖かった'), ('悲しかった',), 0),
+    ('「嬉しかった」ではなく「少し不安だった」です。', ('悲しかった', '少し不安だった'), ('嬉しかった',), 1),
+    ('「褒められた」は誤りです。', ('悲しかった', '嬉しかった'), ('褒められた',), 1),
+    ('「悲しかった」は誤りです。', ('褒められた', '嬉しかった'), ('悲しかった',), 0),
+    ('「嬉しかった」は誤りです。', ('褒められた', '悲しかった'), ('嬉しかった',), 1),
+])
+def test_received_chain_update_keeps_only_surviving_source_relations(memo, reply, retained, removed, edges):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=advance(begin(memo), reply))
+    body = context[0].artifact.text
+    assert all(text in body for text in retained) and all(text not in body for text in removed)
+    assert '一つの流れ' not in body and '今は、「' not in body and '変化' not in body
+    relations = [r for r in context[1].relations if r.type == 'contrast' and r.source_span_ids == ('s1',)]
+    assert len(relations) == edges
+    if '少し怖かった' in reply:
+        assert '嬉しかった' in context[0].artifact.reception
+    if memo == RECEIVED_CHAIN_MULTI:
+        assert all(text in body for text in ('誘われた', '寂しかった', '頼まれた', '怖かった'))
+        assert all(text in context[0].artifact.reception for text in ('誘われた', '寂し', '頼まれた', '怖'))
+    assert read_body(context, body).passed
+
+
+@pytest.mark.parametrize('reply', ['今は少し苦しい。', 'その時は少し苦しかった。', '今は少し嬉しい。'])
+def test_received_chain_three_rounds_keep_answer_time_and_unrelated_groups(reply):
+    from test_cmee_emlis_detached_observation import read_body
+    replacement = '少し怖かった' if 'その時' in reply else '少し怖い'
+    old = reply.removeprefix('今は').removeprefix('その時は').removesuffix('。')
+    request = begin(RECEIVED_CHAIN_MULTI)
+    bodies = []
+    for text in (reply, f'「{old}」ではなく「{replacement}」です。', '「褒められた」は誤りです。'):
+        request = advance(request, text)
+        context = actual(request=request)
+        body = context[0].artifact.text
+        assert read_body(context, body).passed
+        assert all(source in body for source in ('悲しかった', '嬉しかった', '誘われた', '寂しかった', '頼まれた', '怖かった'))
+        bodies.append(body)
+    assert '褒められた' not in bodies[-1] and old not in bodies[-1]
+    assert replacement in bodies[-1] and ('その時' if 'その時' in reply else '先の回答時点') in bodies[-1]
+
+
+@pytest.mark.parametrize('old,new', [
+    ('「褒められた」という出来事がありました。「嬉しかった」という気持ちが書かれています。',
+     '「褒められた」から「嬉しかった」へ変わりました。'),
+    ('「嬉しかった」という気持ちが書かれています。', '「嬉しい」という気持ちが書かれています。'),
+])
+def test_received_chain_withdrawal_inverse_cannot_reconnect_survivors(old, new):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=advance(begin(RECEIVED_CHAIN_MULTI), '「悲しかった」は誤りです。'))
+    body = context[0].artifact.text
+    changed = body.replace(old, new, 1)
+    assert changed != body and read_body(context, body).passed
+    assert not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('reply', ['今は少し苦しい。', '「悲しかった」ではなく「少し怖かった」です。',
+                                   '「褒められた」は誤りです。', '「悲しかった」は誤りです。'])
+def test_received_chain_saved_update_and_original_replay(qcase, qdb, monkeypatch, reply):
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$1 where id=$2', [RECEIVED_CHAIN_MULTI, parent])
+    first = run(service.start(user, parent))
+    assert '悲しかったけれど、嬉しかったのですね' in first['current_observation']['text']
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved initial body must not regenerate'))
+        assert run(service.get(user, parent)) == first
+        assert run(service.start(user, parent)) == first
+    current = run(answer(service, user, first, reply, 'received-chain-update'))
+    assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+    assert '嬉しかった' in current['current_observation']['text']
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved revised body must not regenerate'))
+        assert run(service.get(user, parent)) == current
+        assert run(service.start(user, parent)) == current
+
+
+def test_received_chain_saved_three_round_sequence(qcase, qdb, monkeypatch):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$1 where id=$2', [RECEIVED_CHAIN_MULTI, parent])
+    first = run(service.start(user, parent))
+    current = first
+    for index, reply in enumerate(('今は少し苦しい。', '「少し苦しい」ではなく「少し怖い」です。', '「褒められた」は誤りです。')):
+        if index:
+            current = run(cont(service, user, current, 'received-chain-continue-' + str(index)))
+        current = run(answer(service, user, current, reply, 'received-chain-answer-' + str(index)))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved round must not regenerate'))
+            assert run(service.get(user, parent)) == current
+            assert run(service.start(user, parent)) == current
+    body = current['current_observation']['text']
+    assert '褒められた' not in body and '少し苦しい' not in body
+    assert all(text in body for text in ('悲しかった', '嬉しかった', '先の回答時点', '少し怖い', '誘われた', '頼まれた'))
+
+
+@pytest.mark.parametrize('withdraw', [False, True])
+def test_received_chain_event_owner_cannot_become_emlis_first_person(withdraw):
+    from test_cmee_emlis_detached_observation import read_body
+    request = begin('私は褒められたのに、悲しかったけど嬉しかった。')
+    if withdraw:
+        request = advance(request, '「嬉しかった」は誤りです。')
+    context = actual(request=request)
+    body = context[0].artifact.text
+    changed = body.replace('あなたは褒められた', '私は褒められた')
+    assert changed != body and read_body(context, body).passed
+    assert not read_body(context, changed).passed

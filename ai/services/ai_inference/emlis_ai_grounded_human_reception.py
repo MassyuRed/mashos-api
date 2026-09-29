@@ -2924,6 +2924,10 @@ def _source_grounded_received_contrast_rows(targets, supports, nucleus_index, re
     rows = []
     for event_id, feeling_id in zip(targets, supports, strict=True):
         event, feeling = nucleus_index[event_id], nucleus_index[feeling_id]
+        links = tuple(c.split(":", 1)[1] for c in event.semantic_frame.attribute_codes
+                      if c.startswith("source_received_event_link:"))
+        if event.kind != "event" or len(links) != 1 or links[0] not in _RECEIVED_EVENT_LINK_TEXT:
+            return ()
         fragments = tuple(_source_grounded_clause_candidate(n, resolver) for n in (event, feeling))
         for n, fragment in zip((event, feeling), fragments, strict=True):
             raw = resolver.resolve(n.source_span_ids[0]).raw_text
@@ -2933,8 +2937,7 @@ def _source_grounded_received_contrast_rows(targets, supports, nucleus_index, re
                 or not _SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(fragment.removesuffix("です"))
                 or re.search(r"[「」『』…‥?？!！]", raw)):
                 return ()
-        link = next(c.split(":", 1)[1] for c in event.semantic_frame.attribute_codes
-                    if c.startswith("source_received_event_link:"))
+        link = links[0]
         # Check the source connector itself, beyond the semantic contrast kind.
         raw = re.sub(r"\s+", " ", resolver.resolve(event.source_span_ids[0]).raw_text).strip(" 　、,。．.")
         if raw not in {fragments[0] + _RECEIVED_EVENT_LINK_TEXT[link] + sep + fragments[1] for sep in ("", "、", ",")}:
@@ -3184,12 +3187,20 @@ def source_grounded_reception_move_relations(move, plan):
     relations = tuple(r for r in plan.relations
         if r.relation_id in plan.coverage_requirements.required_relation_ids
         and targets.intersection((r.from_nucleus_id, r.to_nucleus_id)))
-    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups, source_owned_relational_focus
     groups = _thread_retained_reaction_groups(plan.nuclei, plan.relations)
     if (move not in plan.response_plan.human_reception_plan.moves or not move.required
         or move.reception_act != "stay_with_current_burden"
         or ("current_burden", move.target_nucleus_ids, move.support_nucleus_ids) not in groups):
         return relations
+    declared = set((*move.target_nucleus_ids, *move.support_nucleus_ids))
+    closed_owners = tuple(other for other in plan.response_plan.human_reception_plan.moves
+        if other != move and (focus := source_owned_relational_focus(other, plan))
+        and focus[0] == "received_feeling_contrast")
+    relations = tuple(r for r in relations if not (
+        r.type == "contrast" and not {r.from_nucleus_id, r.to_nucleus_id} <= declared
+        and sum({r.from_nucleus_id, r.to_nucleus_id} <= set((*other.target_nucleus_ids, *other.support_nucleus_ids))
+                for other in closed_owners) == 1))
     positive_ids = tuple(nid for row in groups if row[0] == "lived_change" for nid in row[1])
     owners = tuple(tuple(m for m in plan.response_plan.human_reception_plan.moves
         if m.required and m.reception_act == "recognize_lived_change"
@@ -10809,11 +10820,12 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
     """
     from emlis_ai_grounded_observation_plan import source_owned_relational_focus
     focus = source_owned_relational_focus(move, plan)
+    received_chain = focus is not None and focus[0] == "received_feeling_contrast"
     if (focus is None or recovery_stage != "full"
         or realization.reference_mode == "ANAPHORIC"
         or realization.clause_form != "FINITE"
-        or len(realization.semantic_fragments) != 2
-        or len(realization.relations) != 1
+        or len(realization.semantic_fragments) != (3 if received_chain else 2)
+        or len(realization.relations) != (2 if received_chain else 1)
         or any(p.actor_kind != "SELF" or p.quoted_boundary
                for p in realization.semantic_profiles)
         or not (_selected_material_appraisal(selected_decision)
@@ -10822,8 +10834,23 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
                     and selected_decision.subjective_proposition.relational_position.stance_operator
                         == "STAY_WITH_SPECIFIC_OBJECT"))):
         return None
-    kind, left, right = focus
     index = {n.nucleus_id: n for n in plan.nuclei}
+    if received_chain:
+        event, first, second = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
+                                for n in focus[1:])
+        if (not all((event, first, second)) or len({event, first, second}) != 3
+            or set(realization.semantic_fragments) != {event, first, second}):
+            return None
+        source = str(resolver.resolve(focus[1].source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
+        joined = re.fullmatch(re.escape(event) + r"(?P<outer>のに|けれども|けれど|けど)[、, ]*"
+            + re.escape(first) + r"(?P<inner>けれども|けれど|けど)[、, ]*" + re.escape(second), source)
+        if joined is None:
+            return None
+        event = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event, count=1)
+        first, second = (_detached_feeling_finite_surface(value, allow_copular=True, allow_medial=True)
+                         for value in (first, second))
+        return event + joined['outer'] + "、" + first + joined['inner'] + "、" + _feeling_acknowledgement(second)
+    kind, left, right = focus
     first, second = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
                      for n in (left, right))
     if (not first or not second or first == second
@@ -10832,6 +10859,12 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
         return None
     if kind == "feeling_contrast":
         source = str(resolver.resolve(left.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
+        if "source_received_chain_slot:first" in left.semantic_frame.attribute_codes:
+            ranges = tuple(c.split(":")[1:] for c in left.semantic_frame.attribute_codes
+                           if c.startswith("source_fragment_scalar_range:"))
+            if len(ranges) != 1 or source[int(ranges[0][0]):int(ranges[0][1])] != first:
+                return None
+            source = source[int(ranges[0][0]):]
         joined = re.fullmatch(re.escape(first) + r"(?P<link>けれども|けれど|けど|のに)[、, ]*"
                               + re.escape(second), source)
         if joined is None:
@@ -10839,6 +10872,19 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
         first_finite, second_finite = (_detached_feeling_finite_surface(
             value, allow_copular=True, allow_medial=True) for value in (first, second))
         return first_finite + joined['link'] + "、" + _feeling_acknowledgement(second_finite)
+    if kind == "received_event_feeling":
+        source = str(resolver.resolve(left.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
+        ranges = tuple(c.split(":")[1:] for c in right.semantic_frame.attribute_codes
+                       if c.startswith("source_fragment_scalar_range:"))
+        if len(ranges) != 1 or source[int(ranges[0][0]):int(ranges[0][1])] != second:
+            return None
+        joined = re.fullmatch(re.escape(first) + r"(?P<link>のに|けれども|けれど|けど)[、, ]*"
+                              + re.escape(second), source[:int(ranges[0][1])])
+        if joined is None:
+            return None
+        event = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", first, count=1)
+        finite = _detached_feeling_finite_surface(second, allow_copular=True, allow_medial=True)
+        return event + joined['link'] + "、" + _feeling_acknowledgement(finite)
     if kind == "received_experience_focus":
         from emlis_ai_grounded_observation_plan import (
             _source_nominal_past_feeling_parts, _LEADING_CONTRAST_RE,

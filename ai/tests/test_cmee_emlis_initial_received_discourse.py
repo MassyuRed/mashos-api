@@ -394,3 +394,64 @@ def test_owned_past_initial_and_answer_saved_body_reuse(qcase, qdb, monkeypatch,
     monkeypatch.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved body must not regenerate'))
     assert run(service.get(user, parent)) == after
     assert run(service.start(user, parent)) == after
+
+
+@pytest.mark.parametrize('memo,fragments,times', [
+    ('褒められたのに、悲しいけれど嬉しかった。', ('褒められた', '悲しい', '嬉しかった'), ('past', 'current_input', 'past')),
+    ('誘われたのに、悲しかったけど怖くなかった。', ('誘われた', '悲しかった', '怖くなかった'), ('past', 'past', 'past')),
+    ('頼まれたけど、私も少し不安だったけれど嬉しかった。', ('頼まれた', '私も少し不安だった', '嬉しかった'), ('past', 'past', 'past')),
+    ('評価されたけれど、嬉しかったけど悲しかった。', ('評価された', '嬉しかった', '悲しかった'), ('past', 'past', 'past')),
+])
+@pytest.mark.parametrize('capability', ['Q3_FREE', 'Q3_PLUS', 'Q3_PREMIUM'])
+def test_received_feeling_chain_keeps_three_operands_and_two_source_edges(memo, fragments, times, capability):
+    from test_cmee_emlis_detached_observation import read_body
+    req = begin(memo)
+    req = replace(req, emlis_thread=replace(req.emlis_thread, capability_snapshot=capability,
+        question_control_context=EmlisQuestionControlV1(question_limit=3 if capability == 'Q3_PREMIUM' else 1)))
+    context = actual(request=req)
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact and result.artifact.text == context[0].artifact.text
+    assert result.question is not None and not result.automatic_progression
+    body = result.artifact.text
+    assert all('「' + text + '」' in result.artifact.observation for text in fragments)
+    assert '変化' not in body and '同時' not in body and '安心' not in body and '今は' not in body
+    assert all(text.replace('私も', 'あなたも') in result.artifact.reception for text in fragments)
+    nodes = [n for n in context[1].nuclei if 'semantic_dependency:received_feeling_contrast_chain' in n.semantic_frame.attribute_codes]
+    assert len(nodes) == 3 and tuple(n.semantic_frame.time_scope for n in nodes) == times
+    assert [(r.from_nucleus_id, r.to_nucleus_id) for r in context[1].relations if r.retention == 'required'] == [
+        (nodes[0].nucleus_id, nodes[1].nucleus_id), (nodes[1].nucleus_id, nodes[2].nucleus_id)]
+    assert read_body(context, body).passed
+
+
+@pytest.mark.parametrize('old,new', [
+    ('「頼まれた」けど', '「頼まれた」から'),
+    ('「私も少し不安だった」けれど', '「私も少し不安だった」ので'),
+    ('「私も少し不安だった」', '「私も不安だった」'),
+    ('「嬉しかった」', '「嬉しい」'),
+    ('頼まれたけど、', '頼まれたから、'),
+    ('あなたも少し不安だった', 'あなたは少し不安だった'),
+    ('あなたも少し不安だった', 'あなたも不安だった'),
+    ('不安だったけれど、', '不安だったから、'),
+    ('嬉しかったのですね', '嬉しくなかったのですね'),
+    ('嬉しかったのですね', '嬉しいのですね'),
+])
+def test_received_feeling_chain_inverse_rejects_operand_and_edge_changes(old, new):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin('頼まれたけど、私も少し不安だったけれど嬉しかった。'))
+    body = context[0].artifact.text
+    changed = body.replace(old, new, 1)
+    assert changed != body and read_body(context, body).passed
+    assert not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('memo', [
+    '友人が褒められたのに、悲しかったけど嬉しかった。',
+    '褒められたのに、友人は悲しかったけど嬉しかった。',
+    '「褒められたのに、悲しかったけど嬉しかった」と友人が言った。',
+    '褒められたなら、悲しかったけど嬉しかったかもしれない。',
+    '褒められたのに、悲しかったけど嬉しかったらしい。',
+])
+def test_received_feeling_chain_does_not_split_unproved_owners_or_modality(memo):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(memo)))
+    assert not any('semantic_dependency:received_feeling_contrast_chain' in n.semantic_frame.attribute_codes for n in plan.nuclei)

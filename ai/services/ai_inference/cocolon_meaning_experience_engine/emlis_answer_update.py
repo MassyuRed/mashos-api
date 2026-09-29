@@ -181,6 +181,17 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
         for n in nuclei)
     relations = tuple(row for row in original.relations if row.relation_id not in inactive
                       and row.from_nucleus_id not in inactive and row.to_nucleus_id not in inactive)
+    # Ranking ownership lasts only while all three original operands survive.
+    # A withdrawn/revised operand cannot keep its untouched siblings hidden.
+    chain_spans = {n.source_span_ids for n in original.nuclei
+        if "semantic_dependency:received_feeling_contrast_chain" in n.semantic_frame.attribute_codes}
+    incomplete = {span for span in chain_spans if sum(n.source_span_ids == span
+        and "semantic_dependency:received_feeling_contrast_chain" in n.semantic_frame.attribute_codes
+        for n in nuclei) != 3}
+    nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+        attribute_codes=tuple(c for c in n.semantic_frame.attribute_codes
+            if c != "semantic_role:compound_reception_coowned_nonprimary")))
+        if n.source_span_ids in incomplete else n for n in nuclei)
     safety = classify_emlis_safety_triage_text(thread.answers[-1].source.answer_text_private)
     complexity = gp._semantic_complexity(nuclei=nuclei, relations=relations, meaning_artifacts=gp._MeaningArtifacts())
     unknowns = tuple(replace(row, affected_nucleus_ids=tuple(n for n in row.affected_nucleus_ids if n not in inactive))
@@ -213,6 +224,11 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
     def subject_targets(item):
         if item.operation == "ADD":
             return item.target_meaning_refs
+        if (item.operation == "REVISE" and item.binding_kind == "EXPLICIT_CORRECTION"
+            and any(n.nucleus_id in item.target_meaning_refs and n.kind == "reaction"
+                and "semantic_dependency:received_feeling_contrast_chain" in n.semantic_frame.attribute_codes
+                for n in original.nuclei)):
+            return ()
         if (item.operation == "REVISE" and set(item.target_meaning_refs).issubset(focus)
                 and focus and focus[0] in index):
             return (focus[0],)
@@ -244,6 +260,12 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
         and r.from_nucleus_id in original_index and r.to_nucleus_id in original_index
         and gp._received_contrast_group_targets(
             (original_index[r.from_nucleus_id], original_index[r.to_nucleus_id]), (r,), minimum=1)}
+    revised_reaction_targets.update(n.nucleus_id for n in original.nuclei
+        if n.nucleus_id in inactive and n.kind == "reaction"
+        and "semantic_dependency:received_feeling_contrast_chain" in n.semantic_frame.attribute_codes
+        and any(r.type == "contrast" and r.retention == "required"
+            and r.relation_id in inactive and n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
+            for r in original.relations))
     revised_reaction_targets.update(n.nucleus_id for n in original.nuclei
         if reaction_replacement_proof in n.semantic_frame.attribute_codes
         and replacement_proof in n.semantic_frame.attribute_codes

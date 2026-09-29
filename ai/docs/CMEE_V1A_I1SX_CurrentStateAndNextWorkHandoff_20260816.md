@@ -10792,3 +10792,29 @@ Emlisから：
 **残件と再開先。** 今回閉じたのは、既に2端点へ分かれる感情対比の種類・時制誤認と、その原感情が訂正/撤回後に残る際の誤表現である。3意味の受領event＋複合反応、「不安ですけど楽しかったです」等の上流未対応、両側主体/程度、が/けどもの汎用Receptionは未解決。訂正時は既存規則で元contrast edgeを外すため、訂正後も逆接を再構成したとはしない。独立event・対比がReceptionに選ばれない制限、二層再掲、定型締め、受け取りの深さ、既存39失敗も残る。次は3意味のsource所有とReceptionの選択を実本文・訂正系列で閉じられるか確認する。単語追加やgenericな全文分割だけで進捗扱いしない。9/30中間・10/3対象群・10/10内容判断、別枠10/2開発実機一往復を維持する。
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 変更はAPI8path＋Cocolon06＝9path。既存地図のowner/route/lifecycle変更なし。実DB・実機・実課金・Ready/merge/deploy/enable未実施。反映commitとremote変更全文照合は両Draft PRの今回記録へ結合する。
+
+## 2026-09-29 Work継続：受領した出来事と二つの感情を、回答・訂正・撤回まで保持（u13）
+
+Mashの継続指示で、前回API `5289669876c52d3253d81470d08e285f8319d3dd`／Cocolon `98d9c415d597a864b3fedef6f615ab5a21e05a09` を出発点に実施。CURRENT_RULES・09・Rule18、全体設計01/02、全ファイル地図01A/01B/01C、current_structure、事故原文205行、最新weekly 9/26の現在位置と期限、前回handoffを確認。既存owner内の可逆なLEVEL_2／DIRECT_PRODUCT_OR_ACCEPTANCE_WORKとしてA-Fと変更pathを作用前に固定した。root華恋が編集・実行・反映を担当し、商品・技術担当は読取レビューに限定。実測で見つかった候補衝突と既存partition誤分岐については、作用前に該当既存ownerをscopeへ追記。新engine・新contract・DB/API/RN/schema・承認経路は追加していない。
+
+**直した商品上の問題。** 「褒められたのに、悲しいけれど嬉しかった」のような受動の出来事＋有限感情二つが、従来は一つの現在の感覚として扱われ、各感情の訂正対象も特定できなかった。既存projectionで三つの原文範囲とevent→first／first→secondの二対比を保持する。各核の本人・程度・否定・時制を保ち、中央感情のdutyに両側の文脈を持たせることで、片側だけを同種の反応の代表として選ぶ欠落を防いだ。原文の二つの接続を有限文と三引用で表し、Gateは作者を再実行せず各原文と二辺を独立に照合する。悲しさと嬉しさを変化・同時現在へ変換せず、怖くなかったことから安心を推測しない。
+
+回答は既存ABOUTと固有時点へ結び、完全な原対比と別の受領pairを既存の意味所有・選択へ接続。共有eventを持つ別Moveへ原contrastを誤注入しないよう、完全な対比を所有するMoveと回答Moveの境界を既存partitionで証明する。同じsemantic keyに異なる原文objectを潰した候補は、既に検出したlossで棄却してからcounterfactualへ進めない。no-op検査や契約を緩めたものではない。
+
+訂正・撤回では、完全な組が失われた後も旧coowned属性で兄弟核を隠さない。明示的な原感情訂正は質問中のeventを借りず、その訂正自身の根拠を持つ。event撤回後には内側対比を残し、中央first撤回後にはeventとsecondを独立した事実として残す。行数調整で同じ行に並んでも「一つの流れ」や新しい対比を作らない。原secondを曖昧な「その気持ち」で訂正感情に取り違えず、別の未訂正2pairもReceptionへ保持した。孤立event自体はObservationに残し、消えた対比をReceptionで復活させていない。
+
+**実本文と独立レビュー。** 同runtime・同25条件を変更前後で取得し、rootと商品担当が存在する両層を全文確認した。変更前は12本文提供／13条件がcorrection_target_unresolved、変更後は25本文すべて提供。比較可能な12本文は全12変化、全文一致0。旧13未提供を通常の前後本文比較の成功件数へ混ぜない。混在時制、過去否定、本人＋程度、positive-first、event自己主語、単独と他2pair混在、現在/過去/肯定回答から訂正・event撤回までを確認。途中レビューの旧pair helper誤進入、異なるscalarを同一spanの反復とした拒否、別pairのReception欠落、意味のない「一つの流れ」、自己主語の逆読取漏れ、役割重複は修正して現物を再取得した。最終の商品本文・source読取では、確認した25条件に限定すると直接的な意味損失は見つからなかった。ただし後述の既存test期待との衝突1件は未解決であり、全量GREEN・回帰0・商品受入・全残件完了とはしない。
+
+追加51条件は、3プラン×4原文の初回12、意味改変拒否10、対象外owner/modality5、単独/混在の6操作12、3回答種の3round系列3、撤回後の偽関係/時制改変拒否2、event主語改変拒否2、保存5（単回4＋3round1）。作者を禁止した全文inverseで原文・主体・時制・対比を検査する。新保存5条件ではoriginal DTO不変、各更新本文の生成禁止GET/service.start完全一致を確認し、単回4条件では初回の同一再表示も確認した。試験用PGliteの証拠であり、実DB・実機・process再起動の証明ではない。focused最終51PASS（21.91秒）。既存testの関数/class宣言はAST比較で変更・脱落0。
+
+全量初回2471条件は2376PASS／86FAIL／9ERRORだった。u12の2420条件と比べ、既存39FAILの理由は不変、新たな変化56件。うち55件は異なる出来事の同じ感情をtyped fragmentだけで同一assertionと誤認した実回帰で、共有evidenceがある行だけscalar比較へ切り替え、(span_id, fragment)を保持するよう修正した。元の同一核・同一本文・同一source fragmentの反復検出は残す。該当55件の再実行は55PASS（29.83秒）、追加51件も再度51PASS。修正後の25条件の両層はレビュー済み本文と全25完全一致だった。
+
+最終sourceの全量8targetは2471条件＝2431PASS／40FAIL／0ERROR／0skip、502.97秒（警告2）。u12の既存2420条件は脱落0、既存39FAILの理由変更0、変化した既存条件は下記期待衝突1件のみ。新規51条件は全51PASS。全量GREEN・回帰0とは報告しない。
+
+**新規FAILとして残す期待衝突1件。** `test_unproved_compound_feelings_are_not_promoted_to_self_finite_pair` の「褒められたのに、悲しかったけど嬉しかった。」。priorはu12時点の三核未対応・未証明境界で、finite marker／内側Receptionを禁止している。proposedは原文の三核二辺をsourceで証明して全体を保持する今回の限定能力であり、projection・作者非依存inverse・実本文で新しい証拠がある。しかし既存assertionとは矛盾しており未解決である。既存39失敗へ吸収せず、新規FAILとして分母にも残した。既存testの削除・期待書換え・skip/xfail・当該例文除外・語尾回避は行っていない。CURRENT_RULES R3.9／R11、Rule18の区別に従い、Draft記録はacceptanceの免除や完了条件の代替ではない。
+
+最終identityはlanguage=`07bd417d9d76b9a8b0cf590e2bc033165f160721714d73005235903ba3b485d9`、runtime=`c1fcf8eb52438a4b66f9911f477399e3b412b8066a392910d92f88b706a2a195`。既存導出の各18payload・9ownerとfixture key/scopeを維持。全変更sourceは別途commit/tree/blob/全文で照合する。既存Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1/PGlite0.5.8を再使用し、install0・商品lock変更0・追加費用/Mash操作0。
+
+**残件・再開先。** 実装・実本文で進めた範囲は、限定された受領event＋二感情と、上記の回答/訂正/撤回・保存への接続。既存test期待1件との矛盾が残るため、unit全条件の完了とはしない。一般の逆接分割、複数の三核組、範囲外の感情・主語・程度・敬体、一部上流未対応文まで解決したとはしない。訂正した感情と元の逆接は既存規則で外すため、訂正後にその逆接を勝手に再構成しない。長い「し」の列挙、定型締め、二層再掲、単独の抽象表現、受け取りの深さ、既存39失敗と新たな期待衝突1件は残る。再開時はまず、既存testの未証明境界と新しい三核二辺証明の整合を、testの目的・受入基準を弱めずに解決する。その後、未対応の複合群を実本文・訂正系列で評価し、共通の意味所有で閉じられる限定範囲を選ぶ。語尾変更や検査器の追加だけで進捗扱いしない。9/30中間・10/3対象群・10/10内容判断、別枠10/2開発実機一往復を維持する。
+
+**TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** API11path＋Cocolon06＝12path。既存地図のowner/route/lifecycleを変更しない。実DB・実機・実課金・Ready/merge/deploy/enable未実施。反映commitとremote変更全文照合は両Draft PRの今回記録へ結合する。

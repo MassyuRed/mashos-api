@@ -7305,12 +7305,12 @@ def source_owned_answer_feeling(move, plan):
 def source_owned_relational_focus(move, plan=None, *, nuclei=None, relations=None):
     """Select an existing, complete relation for a finite reading, not a new claim.
 
-    This only names the two source roles already required by the plan. The
+    This only names the source roles already required by the plan. The
     author and the body reader separately realize/read their actual words.
     No field label, hypothetical question text or previous output is evidence.
     """
     if (not move.required or len(move.target_nucleus_ids) != 1
-        or len(move.support_nucleus_ids) > 1):
+        or len(move.support_nucleus_ids) > 2):
         return None
     nuclei = plan.nuclei if plan is not None else nuclei
     relations = plan.relations if plan is not None else relations
@@ -7320,6 +7320,16 @@ def source_owned_relational_focus(move, plan=None, *, nuclei=None, relations=Non
                     if plan is not None else {r.relation_id for r in relations if r.retention == "required"})
     index = {n.nucleus_id: n for n in nuclei}
     all_relations = relations
+    if len(move.support_nucleus_ids) == 2:
+        ids = (*move.target_nucleus_ids, *move.support_nucleus_ids)
+        group = tuple(index[nid] for nid in ids if nid in index)
+        if (len(group) != 3 or not all("semantic_dependency:received_feeling_contrast_chain"
+                in n.semantic_frame.attribute_codes for n in group)
+            or ("current_burden" if group[0].semantic_frame.polarity == "negative" else "lived_change",
+                move.target_nucleus_ids, move.support_nucleus_ids)
+                not in _source_explicit_contrast_reception_duties(nuclei, relations)):
+            return None
+        return "received_feeling_contrast", group[1], group[0], group[2]
     relations = tuple(r for r in relations
         if r.relation_id in required_ids and r.retention == "required"
         and move.target_nucleus_ids[0] in (r.from_nucleus_id, r.to_nucleus_id))
@@ -7351,6 +7361,17 @@ def source_owned_relational_focus(move, plan=None, *, nuclei=None, relations=Non
                     and {r.from_nucleus_id, r.to_nucleus_id} & {left.nucleus_id, right.nucleus_id}
                     for r in all_relations)):
         return "feeling_contrast", left, right
+    if (relation.type == "contrast" and relation.grounding_kind == "user_stated_relation"
+        and left.kind == "event" and right.kind == "reaction"
+        and left.source_span_ids == right.source_span_ids and len(left.source_span_ids) == 1
+        and left.source_fields == right.source_fields and left.source_fields in {("memo",), ("memo_action",)}
+        and "source_received_chain_slot:event" in left.semantic_frame.attribute_codes
+        and "source_received_chain_slot:first" in right.semantic_frame.attribute_codes
+        and set((*move.target_nucleus_ids, *move.support_nucleus_ids)) == {left.nucleus_id, right.nucleus_id}
+        and not any(r != relation and r.retention == "required"
+                    and {r.from_nucleus_id, r.to_nucleus_id} & {left.nucleus_id, right.nucleus_id}
+                    for r in all_relations)):
+        return "received_event_feeling", left, right
     if (relation.type == "contrast"
         and relation.grounding_kind == "user_stated_relation"
         and left.kind == left.semantic_frame.predicate_kind == "event"
@@ -7728,7 +7749,27 @@ def _thread_retained_reaction_groups(nuclei, relations):
     between them. Corrections and withdrawals have already removed inactive
     nuclei before this selector. No question wording or body is consulted.
     """
+    contrasts = _source_explicit_contrast_reception_duties(nuclei, relations)
+    chain_ids = {n.nucleus_id for n in nuclei
+        if "semantic_dependency:received_feeling_contrast_chain" in n.semantic_frame.attribute_codes}
+    if contrasts and all(set((*targets, *supports)) <= chain_ids for _, targets, supports in contrasts):
+        owned = {nid for _, targets, supports in contrasts for nid in (*targets, *supports)}
+        # The complete original contrast owns its operands. An event may
+        # separately remain the context of an admitted ABOUT answer.
+        about_events = {r.from_nucleus_id for r in relations
+            if r.type == "evaluation_about_event" and r.retention == "required"
+            and r.from_nucleus_id in owned and r.to_nucleus_id not in owned}
+        rest = tuple(n for n in nuclei if n.nucleus_id not in owned - about_events)
+        rest_ids = {n.nucleus_id for n in rest}
+        rest_relations = tuple(r for r in relations
+            if {r.from_nucleus_id, r.to_nucleus_id} <= rest_ids)
+        if not any(n.retention == "required" and set(n.source_fields) & _TEXT_SOURCE_FIELDS for n in rest):
+            return contrasts
+        retained = _thread_retained_reaction_groups(rest, rest_relations)
+        if retained:
+            return (*contrasts, *retained)
     withdrawal = any("thread_subject:withdrawn_source_event" in n.semantic_frame.attribute_codes
+                     and not any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations)
                      for n in nuclei)
     def unsupported():
         if withdrawal:
@@ -7789,6 +7830,11 @@ def _thread_retained_reaction_groups(nuclei, relations):
         and n.source_fields in {("memo",), ("memo_action",)} and n.retention == "required"
         and n.grounding_kind == "explicit" and n.allowed_claim_scope == "explicit_current_input"
         and (_source_finite_original_feeling(n) or _source_explicit_original_feeling(n) or _source_current_cognition(n) or _source_self_appraisal(n) or (
+            n.kind == "reaction" and n.semantic_frame.predicate_kind == "feeling"
+            and n.semantic_frame.actor == "current_user" and n.semantic_frame.modality == "feeling"
+            and n.semantic_frame.time_scope in {"past", "current_input"}
+            and {"semantic_dependency:received_feeling_contrast_chain", "lexical:source_finite_contrast_feeling"}
+                <= set(n.semantic_frame.attribute_codes)) or (
             is_grounded_positive_feeling(n) and n.semantic_frame.time_scope == "past"
             and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes))
         and not any(r.retention == "required" and n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
@@ -8060,6 +8106,53 @@ def _source_explicit_contrast_reception_duties(nuclei, relations):
     """
     index = {n.nucleus_id: n for n in nuclei}
     duties = []
+    chain = tuple(n for n in nuclei if "semantic_dependency:received_feeling_contrast_chain"
+                  in n.semantic_frame.attribute_codes)
+    if len(chain) == 2 and len({n.source_span_ids for n in chain}) == 1:
+        ids = {n.nucleus_id for n in chain}
+        links = tuple(r for r in relations if r.retention == "required"
+                      and ids & {r.from_nucleus_id, r.to_nucleus_id})
+        if (len(links) == 1 and links[0].type == "contrast"
+            and links[0].grounding_kind == "user_stated_relation"
+            and {links[0].from_nucleus_id, links[0].to_nucleus_id} == ids
+            and all(n.retention == "required" and n.grounding_kind == "explicit"
+                and n.allowed_claim_scope == "explicit_current_input"
+                and n.source_fields in {("memo",), ("memo_action",)}
+                and n.semantic_frame.actor == "current_user" for n in chain)):
+            left, right = (index[nid] for nid in (links[0].from_nucleus_id, links[0].to_nucleus_id))
+            if left.kind == "event":
+                return (("lived_change", (right.nucleus_id,), (left.nucleus_id,)),) if is_grounded_positive_feeling(right) else (
+                    ("current_burden", (left.nucleus_id,), (right.nucleus_id,)),)
+            positive = next((n for n in chain if is_grounded_positive_feeling(n)), None)
+            target = positive or left
+            support = right if target == left else left
+            return (("lived_change" if positive else "current_burden", (target.nucleus_id,), (support.nucleus_id,)),)
+    if len(chain) == 3 and len({n.source_span_ids for n in chain}) == 1:
+        slots = {c.split(":", 1)[1]: n for n in chain for c in n.semantic_frame.attribute_codes
+                 if c.startswith("source_received_chain_slot:")}
+        if set(slots) == {"event", "first", "second"} and all(
+                n.retention == "required" and n.grounding_kind == "explicit"
+                and n.allowed_claim_scope == "explicit_current_input"
+                and n.source_fields in {("memo",), ("memo_action",)}
+                and n.semantic_frame.actor == "current_user" for n in chain):
+            event, first, second = (slots[name] for name in ("event", "first", "second"))
+            required = tuple(r for r in relations if r.retention == "required" and r.type == "contrast"
+                             and {r.from_nucleus_id, r.to_nucleus_id} <= {n.nucleus_id for n in chain})
+            if ({(r.from_nucleus_id, r.to_nucleus_id) for r in required}
+                == {(event.nucleus_id, first.nucleus_id), (first.nucleus_id, second.nucleus_id)}
+                and len(required) == 2 and all(r.grounding_kind == "user_stated_relation" for r in required)):
+                external = tuple(r for r in relations if r.retention == "required" and r not in required
+                                 and {r.from_nucleus_id, r.to_nucleus_id} & {n.nucleus_id for n in chain})
+                if any(r.type != "evaluation_about_event" or r.from_nucleus_id != event.nucleus_id
+                       or (answer := index.get(r.to_nucleus_id)) is None
+                       or answer.source_fields != ("answer_text_private",)
+                       or answer.allowed_claim_scope != "explicit_supplemental_answer"
+                       or answer.retention != "required" for r in external):
+                    return ()
+                # The middle endpoint owns both edges, regardless of which
+                # feeling is positive. Its two contexts cannot be split by ranking.
+                family = "current_burden" if first.semantic_frame.polarity == "negative" else "lived_change"
+                return ((family, (first.nucleus_id,), (event.nucleus_id, second.nucleus_id)),)
     for relation in relations:
         if (relation.type != "contrast" or relation.retention != "required"
             or relation.grounding_kind != "user_stated_relation"):
@@ -8581,6 +8674,12 @@ def build_grounded_reception_opportunities(
         for family, targets, supports in _source_explicit_contrast_reception_duties(
             owned_nuclei, relations
         ):
+            if len(supports) == 2 and all(
+                    "semantic_dependency:received_feeling_contrast_chain" in nucleus_index[nid].semantic_frame.attribute_codes
+                    for nid in (*targets, *supports)):
+                # Replace partial representatives of this closed source duty;
+                # an appended row with the same target loses its full support.
+                rows = [row for row in rows if not set(row.target_nucleus_ids) & set((*targets, *supports))]
             if any(row.family == family and row.target_nucleus_ids == targets and row.support_nucleus_ids == supports
                    for row in rows):
                 continue
@@ -8928,6 +9027,14 @@ def _build_reception_depth_policy_and_moves(
             standalone = tuple(item for item in burdens if not item.support_nucleus_ids)
             if standalone:
                 roles[standalone[0].opportunity_id] = "attention"
+            elif len(burdens) == 2 and not positives and explicit_contrast_duties:
+                # A complete source contrast can itself carry context.
+                # Keep its distinct attention duty alongside the other group.
+                contrast = next((item for item in burdens
+                    if (item.family, item.target_nucleus_ids, item.support_nucleus_ids)
+                        in explicit_contrast_duties), None)
+                if contrast is not None:
+                    roles[contrast.opportunity_id] = "attention"
             elif len(burdens) == 2 and len(positives) == 1:
                 focus = selected[selected.index(positives[0]) - 1]
                 residual = next(item for item in burdens if item != focus)
@@ -8935,6 +9042,12 @@ def _build_reception_depth_policy_and_moves(
                 source_owned_answer_adjacent = True
         if len(burdens) == 3:
             roles[standalone[-1].opportunity_id] = "significance"
+            if len(standalone) == 1 and explicit_contrast_duties:
+                contrast = next((item for item in burdens if item not in standalone
+                    and (item.family, item.target_nucleus_ids, item.support_nucleus_ids)
+                        in explicit_contrast_duties), None)
+                if contrast is not None:
+                    roles[contrast.opportunity_id] = "attention"
     moves: list[GroundedReceptionMovePlan] = []
     for index, opportunity in enumerate(selected, start=1):
         role = roles[opportunity.opportunity_id]
@@ -9248,6 +9361,13 @@ def build_grounded_human_reception_plan(
         ) else ()),
     )
     reason_group = _source_current_material_group(nuclei, relations) if final_source_fidelity else ()
+    if final_source_fidelity and len(moves) > 1:
+        # A surviving chain operand remains distinguishable from a revised
+        # feeling in the preceding Move; "that feeling" cannot name both.
+        moves = tuple(replace(move, reference_mode="short_anchor_if_ambiguous")
+            if any("semantic_dependency:received_feeling_contrast_chain"
+                   in nucleus_index[nid].semantic_frame.attribute_codes for nid in move.target_nucleus_ids)
+            else move for move in moves)
     if (reason_group and tuple(human_follow_target_ids) == (reason_group[1].nucleus_id,)
         and _source_material_allows_reverse(reason_group)):
         reason_group = (reason_group[1], reason_group[0], *reason_group[2:])
@@ -12382,7 +12502,43 @@ def _received_event_reaction_projections(span, base_frame):
             r"(?:(?:嬉し|うれし|寂し|さびし|悲し|苦し|つら|辛|怖|こわ|楽し)"
             r"(?:かった|くなかった)(?:です)?|不安(?:だった|でした)))", text)
     if match is None:
-        return ()
+        owner = r"(?:私|自分|わたし|僕|ぼく|俺|おれ)(?:には|にも|は|も)"
+        degree = r"(?:少し|とても|まだ|全然|あまり)"
+        feeling = (rf"(?:(?:{owner})?(?:{degree})?|{degree}{owner})"
+                   r"(?:(?:嬉し|うれし|寂し|さびし|悲し|苦し|つら|辛|怖|こわ|楽し)"
+                   r"(?:い|かった|くない|くなかった)(?:です)?|不安(?:だ|だった|です|でした))")
+        chain = re.fullmatch(
+            r"(?P<event>(?:(?:私|自分|わたし)(?:は|が))?"
+            r"(?:[一-鿿々ァ-ヶぁ-んー]{1,16}に)?"
+            r"(?:褒められ|ほめられ|言われ|伝えられ|評価され|断られ|誘われ|頼まれ|声をかけられ|声を掛けられ)"
+            r"(?:た|ました))(?P<outer>のに|けれども?|けど)[、,]?"
+            rf"(?P<first>{feeling})(?P<inner>けれども?|けど)[、,]?(?P<second>{feeling})", text)
+        if chain is None:
+            return ()
+        rows = []
+        for name in ("event", "first", "second"):
+            source = chain[name]
+            start, end = chain.span(name)
+            past = name == "event" or source.endswith(("かった", "かったです", "だった", "でした"))
+            polarity = ("neutral" if name == "event" else "negative" if re.search(
+                r"くない|くなかった|寂|さび|悲|苦|つら|辛|怖|こわ|不安", source) else "positive")
+            rows.append(_TypedNucleusProjection(
+                ":" + name, "event" if name == "event" else "reaction",
+                "event" if name == "event" else "feeling", polarity,
+                "fact" if name == "event" else "feeling", "past" if past else "current_input", start, end,
+                ("semantic_role:generic_relation_fragment", "semantic_role:final_stage1_compound_meaning",
+                 f"source_fragment_scalar_range:{start}:{end}", "source_fragment_scalar_source:normalized_raw_text",
+                 "semantic_dependency:received_feeling_contrast_chain", "source_received_chain_slot:" + name,
+                 "time_scope:" + ("past" if past else "current_input"),
+                 *(("operator:feeling",) if name != "event" else ()),
+                 *(("semantic_role:contrast_before",) if name == "event" else ()),
+                 *(("lexical:source_finite_contrast_feeling",) if name != "event" else ()),
+                 *(("semantic_role:compound_reception_coowned_nonprimary",) if name != "first" else ()),
+                 *(("operator:positive_change",) if polarity == "positive" else ()),
+                 *(("lexical:preserve_source_predicate",) if name != "event" else ()),
+                 "lexical:no_new_sensation_family"),
+                relation_kind="contrast"))
+        return tuple(rows)
     reaction = match.group("reaction")
     negative = bool(re.search(r"くない|くなかった|寂|さび|悲|苦|つら|辛|怖|こわ|不安", reaction))
     rows = []
@@ -13259,7 +13415,14 @@ def _final_stage1_typed_nuclei(
             projection_codes = tuple(
                 set(projection.attribute_codes) for projection in projections
             )
-            if (
+            if (projections[0].kind == "event"
+                and all(p.kind == "reaction" and p.predicate_kind == "feeling" for p in projections[1:])
+                and all("semantic_dependency:received_feeling_contrast_chain" in codes for codes in projection_codes)):
+                compound_dependencies.extend((
+                    ("contrast", projected_ids[0], projected_ids[1]),
+                    ("contrast", projected_ids[1], projected_ids[2]),
+                ))
+            elif (
                 projections[0].kind in {"reaction", "state", "constraint"}
                 and projections[1].kind == "action"
                 and projections[2].kind == "change"
