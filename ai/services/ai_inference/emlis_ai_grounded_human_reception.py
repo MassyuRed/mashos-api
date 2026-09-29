@@ -3348,8 +3348,8 @@ def _thread_received_group_nominal(rows):
             _, _, event, feeling, link = original
             part = (_detached_burden_nominal(feeling, "original_occasion") if link in {"detached", "replacement"}
                     else event + _RECEIVED_EVENT_LINK_TEXT[link]
-                    + (_detached_feeling_finite_surface(feeling, allow_medial=True,
-                        allow_copular=True, attributive=True) if len(rows) == 1 else feeling) + "こと")
+                    + _detached_feeling_finite_surface(feeling, allow_medial=True,
+                        allow_copular=True, attributive=True) + "こと")
             if answer is not None:
                 # One complete original object already names the answer's
                 # event. Keep both occasion objects without naming it twice.
@@ -8518,9 +8518,9 @@ def _thread_received_group_ir_text(realization):
                 or not _SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(fragments[feeling_slot].removesuffix("です"))):
                 raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
             expected_relations.add(("contrast", (slot, feeling_slot)))
-            part = fragments[slot] + _RECEIVED_EVENT_LINK_TEXT[link] + (
-                _detached_feeling_finite_surface(fragments[feeling_slot], allow_medial=True,
-                    allow_copular=True, attributive=True) if count == 1 else fragments[feeling_slot]) + "こと"
+            part = (fragments[slot] + _RECEIVED_EVENT_LINK_TEXT[link]
+                + _detached_feeling_finite_surface(fragments[feeling_slot], allow_medial=True,
+                    allow_copular=True, attributive=True) + "こと")
         elif answer_code == ["none"]:
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP")
         if answer_code != ["none"]:

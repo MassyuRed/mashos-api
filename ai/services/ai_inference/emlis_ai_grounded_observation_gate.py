@@ -4379,13 +4379,11 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
             parses = {(clause[:m.start()], m.group(), clause[m.end():])
                       for m in re.finditer(r"けれども|けれど|けど|のに", clause)}
             if not any(left == wanted[2] and connector == wanted[3]
-                       and (feeling == wanted[4] if len(move.target_nucleus_ids) > 1 else
-                            _restore_thread_finite_answer(feeling, wanted[4], copular_clause=True,
-                                                          attributive=True) == wanted[4])
+                       and _restore_thread_finite_answer(feeling, wanted[4], copular_clause=True,
+                                                         attributive=True) == wanted[4]
                        for left, connector, feeling in parses):
                 return None
-            attributive_nominal_read = (len(move.target_nucleus_ids) == 1
-                and piece.endswith(("のだということ", "のだったということ"))
+            attributive_nominal_read = (piece.endswith(("のだということ", "のだったということ"))
                 and wanted[4].endswith(("のです", "のだ", "のだった")))
             nominal_start = start
             markers = {"finite_clause_nominal"}

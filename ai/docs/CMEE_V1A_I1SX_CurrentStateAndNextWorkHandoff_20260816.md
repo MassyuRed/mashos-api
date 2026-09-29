@@ -11241,3 +11241,29 @@ received既存119トップレベル宣言は変更/削除0、新2検査のみ追
 **残件と再開点。** 今回閉じたのは複数target受領群の回答名詞活用と、それに起因した確認24状態内の本文未提供である。長い一文の列挙、原文の複数SELF、中央significanceの定型受領句、二層再掲・受け取りの深さ、markerのない元時点/解釈文/肯定混在/chain/detached、他の未反映境界・既知失敗は残る。次は同じ群の原反応も含む名詞列挙と、役割を失わない本文構成をactual sourceから判断する。今回の回答名詞修正を原反応の修正済み扱いにせず、role短縮も達成としない。対象群全体の完了・正式Product Read PASSには繰り上げない。
 
 **TECHNICAL_CREDIT／STRUCTURE_MAP_DELTA_NONE／全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** API5path＋本06の1pathをPR #3/#30へ反映し、両fresh head・親/tree・変更path集合・全変更fileのremote bytesを照合する。構造node/route/source権限/lifecycle、owner/API/DB/RN/schema/依存/flags、規範・凍結証跡・品質閾値の変更0。Ready/merge/deploy/enableは行わない。10/03は未完でもEmlis休止、10/04以降Work/Ultra分析・Work不可時Pro Pieceを維持し、旧10/10のEmlis期限は復活させない。
+
+## 2026-09-29 Work継続 u24：複数出来事の原反応を本人と過去を保つ名詞形へ接続
+
+**開始・今回の単位。** MashのEmlis残件継続指示と添付txtを受け、API `3e5d4bfe6e93106da7b7737ac06af599fb3908c9`／Cocolon `eaad370c66f9efb99686257d5145091052ac2d94`から開始した。GitHubの両PR headと全tracked path（API2300／Cocolon1645）を確認。Karen-Diaryの必須3資料、作業ルールとRule18、恒久incident全文、全体設計01と全ファイル地図01A/B/Cの分担・現行overlay、current_structure00/01/04、canonical02/06・u23、最新weekly20260926の9/29追加合意を確認した。全歴史の本文再通読とはしない。System Context prepareはmaterial commit祖先不一致exit2で、正本直接読取へ戻った。実行者はWork ModeのGPT-based Codexであり、未確認のPro/Ultra model identityは主張しない。
+
+LEVEL_2／DIRECT_PRODUCT_OR_ACCEPTANCE_WORK。効果前にAPIの既存HR/Gate・received test・current identity・本handoffとCocolon既存06の最大6pathを固定。A=複数出来事の原反応名詞の不成立、B=既存singleton活用と独立全文復元を同じreceived原反応に適用、C=実本文改善と意味/保存回帰、D=既存helper内の最小差分、E=追加費用・Mash操作0、F=意味/role/admission変更が必要なら不採用、とした。rootのみ編集・実行・反映、商品/技術担当は読取専任。商品担当は同じ優先群との整合と比例性、技術担当は実sourceの境界を確認した。
+
+**原因・変更。** u23は回答側の活用を修正したが、元の感情はtarget1だけを活用し、target2/3では原文を直接「こと」へ接続していた。そのため「私も少し不安でしたこと」「少し私は怖くなかったですこと」が残り、Emlisの発話内でも本人の一人称に戻っていた。HR `_thread_received_group_nominal` と `_thread_received_group_ir_text` の原反応に、既存 `_detached_feeling_finite_surface` の本人帰属・助詞・程度・否定・過去を保つ活用を揃えた。Gate `_body_inverse_thread_received_group` も原反応を既存 `_restore_thread_finite_answer` で全文復元する。生成作者を正解にせず、event・原接続・完全source・required contrast/ABOUT・引用拒否・一意parse・role終端を維持する。
+
+回答枝、同一event参照を省略できるsingleton条件、Plan/Surface、受付文法、Move/文数容量、detached/replacementは変更しない。原反応の説明形は現行受付範囲で未成立であり、今回その受付や本文を直したとはしない。
+
+**実本文。** 開始commitの分離checkoutと候補から、6原反応×先頭/中央×初回/2回答後の24状態をfresh生成。全24提供・作者なし独立逆読成功、回答後12本文変更・初回12全文一致。checkpoint・accepted・核・関係・Move・Observationは全24一致した。rootと独立商品担当が入力・前後両層の全24本文を読み、原反応の活用・本人帰属の限定改善を確認した。時点、原反応と回答の対応、否定・助詞・程度を落としたとは認めなかった。原文そのものの反復SELF、長い一文の列挙、定型受領句、二層再掲・受け取りの深さは残る。
+
+合成例の原反応「褒められたのに、私も少し不安でした。」は、2回答後のReceptionで「褒められたのに私も少し不安でしたこと」から「褒められたのにあなたも少し不安だったこと」へ変わる。原sourceとObservationの引用は「私も少し不安でした」のままである。後続の各回答も各event・その時点とともに残る。これは群全体の自然さ・正式Product Read PASSの証明ではない。
+
+**検証。** 開始版の関連3ファイルを今回fresh実行し、1089条件＝1078PASS／既存11FAIL（317.251秒）。最終候補は同じ3ファイル＋current owner-chain1件の1118条件＝1107PASS／既存11FAIL／ERROR・SKIP0（346.713秒）。case IDで照合し、既存1089の脱落0・成否変化0、新28とowner-chain1は全PASS。11失敗のmessage/traceはworkspace path・行位置・UUID・メモリアドレスだけ正規化して全一致した。旧2474全量や今回対象外の既知44FAILを再検証・解消したとはしない。
+
+新28は6原反応×先頭/中央×2/3出来事の24と、原反応訂正/原反応撤回/event撤回/追加の保存4。意味改変拒否はevent交換、因果化、原反応欠落、引用化、回答欠落・参照欠落・時点交換、本人・助詞・程度・否定・過去の改変を作者なしで確認。複数assertを別caseへ数えない。保存4は各round後のoriginal DTO不変、生成禁止GET/service.startの保存DTO完全一致を既存試験用PGliteで確認し、実DB・実機・process再起動の証明にはしない。重点28PASS（25.04秒）は最終へ重複合算しない。既存receivedの121トップレベル宣言は全文不変で2検査を追加。protected/frozen/閾値/既存期待値変更0。
+
+current identityは各18payload・9source ownerとfixture scopeを維持し、language=`69f46a5797511b66408460a68892fb1ad5abbb9a420f59b2ca4a7b188c30badc`、runtime=`38e816cdaaa340eab4f6dc24c473ea15e935952a173522d7f60b31ebe8de37ed`。Python3.12.14／pytest9.1.1／pydantic2.13.5／FastAPI0.141.1／httpx0.28.1／PGlite0.5.8の既存runtimeを再使用し、再install・商品依存/lock変更なし。独立技術reviewは追加blockerを認めなかった。
+
+再現は `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<existing PGlite module> python -m pytest -q` で、`ai/tests/test_cmee_emlis_received_discourse.py`、`ai/tests/test_cmee_emlis_answer_attributive.py`、`ai/tests/test_cmee_emlis_initial_received_discourse.py`、`ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEEStage1AdditionalCorrectionStep2CompositionTest::test_active_final_language_owner_chain_has_zero_legacy_compose_calls`。初回launchはroot cwdで出力先指定を誤り、pytest開始前に失敗したためrepository cwdへ修正した。製品・検査内容の失敗として数えない。
+
+**残件・再開位置。** 今回閉じたのは、既存received群の原反応名詞に残っていた敬体直結と本人の呼び方の不整合だけ。同じ複数出来事/回答/訂正群の長い列挙、中央significanceの定型受領句、反復SELF、未反映/本文未提供境界、既知失敗は未解決。次も既存role・原反応/回答の完全性を保つ本文構成から判断し、単なる文言短縮やmarker拡張を先行させない。群の完了・正式商品合格へ繰り上げず、10/03は未完でもEmlis休止、10/04以降Work/Ultra分析・Work不可時Pro Piece、旧10/10 Emlis期限は再設定待ちを維持する。
+
+**TECHNICAL_CREDIT／STRUCTURE_MAP_DELTA_NONE／全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 構造node/route/source権限/lifecycle・新owner/API/DB/RN/schema/依存/flags・規範/凍結/閾値変更0。既存PR #3/#30へ6pathを反映し、最新head・changed paths・全変更内容を再取得して確認する。Ready/merge/deploy/enableは行わない。

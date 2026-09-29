@@ -2484,3 +2484,98 @@ def test_grouped_answer_nominal_third_answer_saved_replay(qcase, monkeypatch, so
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved grouped answer must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('source,predicate', [
+    ('私も少し不安でした', 'あなたも少し不安だった'),
+    ('少し私は怖くなかったです', 'あなたは少し怖くなかった'),
+    ('僕には少し寂しかった', 'あなたには少し寂しかった'),
+    ('私は少し不安だった', 'あなたは少し不安だった'),
+    ('不安でした', '不安だった'),
+    ('怖くなかったです', '怖くなかった'),
+])
+@pytest.mark.parametrize('position', [0, 1])
+@pytest.mark.parametrize('event_count', [2, 3])
+def test_grouped_original_nominal_keeps_actor_degree_negation_and_past(source, predicate, position, event_count):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    events = ('褒められた', '誘われた', '頼まれた')[:event_count]
+    feelings = ['嬉しくなかった', '悲しかった', '寂しかった'][:event_count]
+    feelings[position] = source
+    memo = ''.join(event + 'のに、' + feeling + '。' for event, feeling in zip(events, feelings))
+    initial = request = begin(memo)
+    for reply in ('その時は私は私には不安だったのです。', 'その時は少し重かった。'):
+        request = advance(request, reply)
+    context = actual(request=request)
+    result = context[0]
+    follow = result.artifact.reception
+    original = events[position] + 'のに' + predicate + 'こと'
+    assert original in follow
+    assert source in result.artifact.observation
+    assert 'ですこと' not in follow and 'でしたこと' not in follow
+    assert request.current_input_bundle == initial.current_input_bundle
+    assert_complete_occasion_scopes(context, events, (tuple(range(event_count)),))
+    assert MeaningExperienceEngine().generate(request).artifact.text == result.artifact.text
+    assert inverse(context, follow, without_author=True).passed
+    mutations = [
+        follow.replace(original, events[1 - position] + 'のに' + predicate + 'こと'),
+        follow.replace(original, original.replace('のに', 'から')),
+        follow.replace(original + 'と、', ''),
+        follow.replace(original, '「' + original + '」'),
+        follow.replace('と、その出来事について、その時に少し重かったこと', ''),
+        follow.replace('その出来事について、', '', 1),
+        follow.replace('その時に少し重かった', '回答した時点で少し重かった'),
+    ]
+    current_predicate = (predicate.replace('くなかった', 'くない') if 'くなかった' in predicate
+        else predicate.replace('寂しかった', '寂しい').replace('不安だった', '不安な'))
+    mutations.append(follow.replace(original, events[position] + 'のに' + current_predicate + 'こと'))
+    if 'くなかった' in predicate:
+        mutations.append(follow.replace(original, original.replace('くなかった', 'かった')))
+    if 'あなた' in predicate:
+        mutations.extend((
+            follow.replace(original, original.replace('あなた', '友人')),
+            follow.replace(original, original.replace('少し', '')),
+            follow.replace(original, original.replace('あなたには', 'あなたにも').replace('あなたも', 'あなたは')
+                if 'あなたは' not in original else original.replace('あなたは', 'あなたも')),
+        ))
+    for changed in mutations:
+        assert changed != follow
+        assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('operation', ['add', 'correct_original', 'withdraw_original', 'withdraw_event'])
+def test_grouped_original_nominal_saved_updates_keep_original_and_replay(qcase, qdb, monkeypatch, operation):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    memo = ('褒められたのに、私も少し不安でした。'
+            '誘われたのに、少し私は怖くなかったです。頼まれたのに、寂しかった。')
+    qdb.query('update public.emotions set memo=$1 where id=$2', [memo, parent])
+    first = current = run(service.start(user, parent))
+    third = {'add': 'その時は少し苦しかった。',
+             'correct_original': '「私も少し不安でした」ではなく「私も少し悲しかった」です。',
+             'withdraw_original': '「私も少し不安でした」は誤りです。',
+             'withdraw_event': '「褒められた」は誤りです。'}[operation]
+    for position, reply in enumerate(('その時は私は私には不安だったのです。', 'その時は少し重かった。', third)):
+        if position:
+            current = run(cont(service, user, current, f'group-original-continue-{position}'))
+        current = run(answer(service, user, current, reply, f'group-original-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        follow = body.split('Emlisから：', 1)[1].strip()
+        assert '今回の観測に反映できていない' not in body
+        if position == 1:
+            assert '褒められたのにあなたも少し不安だったこと' in follow
+            assert '誘われたのにあなたは少し怖くなかったこと' in follow
+            assert 'ですこと' not in follow and 'でしたこと' not in follow
+        if position == 2:
+            if operation == 'correct_original':
+                assert '私も少し不安でした' not in body and '少し悲しかった' in body
+            elif operation == 'withdraw_original':
+                assert '私も少し不安でした' not in body and 'あなたも少し不安だったこと' not in follow
+            elif operation == 'withdraw_event':
+                assert '褒められた' not in body
+            else:
+                assert '少し苦しかった' in body
+            assert '怖くなかった' in body and '少し重かった' in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved original nominal must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
