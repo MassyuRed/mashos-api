@@ -7981,6 +7981,9 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
     # three-Move budget covers these complete, disjoint duties.
     if (len(groups) == 1 and 1 <= len(negative) == len(answers) <= 3
         and len(targets) == len(events) and 2 <= len(targets) <= 3
+        # Multiple ABOUT-only revisions retain their existing collective
+        # scope, which can share one complete predicate across occasions.
+        and len(events) - len(pairs[0]) <= 1
         and (separate_later_scopes or len(negative) == 1
              and by_event.get(targets[0], by_event.get(targets[-1])) == negative[0])
         and not (chain_ids or withdrawal or independent or actions
