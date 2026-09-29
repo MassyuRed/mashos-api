@@ -7969,6 +7969,24 @@ def _thread_retained_reaction_groups(nuclei, relations):
     groups.extend(("lived_change" if is_grounded_positive_feeling(n) else "current_burden",
                    (n.nucleus_id,), ()) for n in independent)
     groups.extend(("concrete_effort", (n.nucleus_id,), ()) for n in actions)
+    # A single later answer must not lend its time/topic to the
+    # unanswered original occasions. Partition complete source duties before
+    # sentence planning; each existing Move still owns exactly one sentence.
+    # Edge targets keep source order without interleaving the residual group.
+    # Triad recursion and detached/independent duties retain their topology.
+    if (len(groups) == 1 and len(negative) == len(answers) == 1
+        and len(targets) == len(events) == len(pairs[0]) and 2 <= len(targets) <= 3
+        and not (chain_ids or withdrawal or independent or actions
+                 or independent_answers or detached_answers)
+        and not is_grounded_current_answer_uncertainty(negative[0])
+        and {c for c in negative[0].semantic_frame.attribute_codes if c.startswith("thread_time:")}
+            <= {"thread_time:answer_time", "thread_time:prior_answer_time"}):
+        focus = next((event for event, answer in by_event.items() if answer == negative[0]), None)
+        if focus in (targets[0], targets[-1]):
+            focus_supports = (feelings[focus], negative[0].nucleus_id)
+            groups = [("current_burden", (focus,), focus_supports),
+                ("current_burden", tuple(event for event in targets if event != focus),
+                 tuple(nid for nid in supports if nid not in focus_supports))]
     # Keep a current positive answer beside its own original reaction.
     # Only an edge event can be separated while retaining source order and
     # the existing three-Move budget. The positive duty stays independent.
@@ -9040,6 +9058,11 @@ def _build_reception_depth_policy_and_moves(
                 residual = next(item for item in burdens if item != focus)
                 roles[residual.opportunity_id] = "attention"
                 source_owned_answer_adjacent = True
+            elif independent_burdens:
+                # Two complete received groups keep their distinct existing
+                # roles, just like two separately stated burdens. Do not
+                # collapse them back into duplicate felt-response duties.
+                roles[burdens[0].opportunity_id] = "attention"
         if len(burdens) == 3:
             roles[standalone[-1].opportunity_id] = "significance"
             if len(standalone) == 1 and explicit_contrast_duties:

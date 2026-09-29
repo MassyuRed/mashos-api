@@ -193,7 +193,7 @@ def test_finite_answer_accepts_proven_noun_and_keeps_unproven_boundaries(reply, 
     if reply == '今は不安です。':
         context = actual(request=advance(begin(), reply))
         follow = outcome.artifact.reception
-        assert '回答した時点では不安だし' in follow
+        assert '回答した時点では不安なのですね。' in follow
         assert inverse(context, follow, without_author=True).passed
     elif outcome.artifact is not None:
         # These remain on the previous nominal path, including its known
@@ -212,6 +212,10 @@ def test_partial_self_conversion_cannot_become_a_new_finite_reading(occasion):
               '褒められた時は嬉しくなく、回答した時点ではあなたは私には怖かったし、'
               '誘われたのに、悲しさを感じたし、頼まれたのに、寂しさを感じたのですね。')
     assert not inverse(context, follow, without_author=True).passed
+    if occasion == '今は':
+        split_follow = ('褒められた時は嬉しくなく、回答した時点ではあなたは私には怖かったのですね。'
+                        '誘われたのに、悲しさを感じ、頼まれたのに、寂しさを感じたのですね。')
+        assert not inverse(context, split_follow, without_author=True).passed
 
 
 @pytest.mark.parametrize('occasion', ['今は', 'その時は'])
@@ -227,7 +231,7 @@ def test_copular_answer_retains_tense_event_and_reactions(occasion, copula, prec
     context = actual(request=request)
     follow = context[0].artifact.reception
     target = ('褒められた', '誘われた', '頼まれた')[preceding or 0]
-    final = single or preceding == 2
+    final = single or preceding == 2 or occasion == '今は' and preceding == 0
     predicate = '不安だった' if copula == 'でした' else '不安な' if final else '不安だ'
     assert predicate + ('のですね' if final else 'し') in follow
     assert target + '時は' in follow and '嬉しくなく' in follow
@@ -282,10 +286,12 @@ def test_copular_answer_keeps_event_after_original_reaction_withdrawal(occasion,
 def test_copular_grammar_preserves_another_admitted_noun(occasion):
     context = actual(request=advance(begin(), occasion + 'もやもやでした。'))
     follow = context[0].artifact.reception
-    assert 'もやもやだったし' in follow and '嬉しくなく' in follow
+    ending = 'のですね' if occasion == '今は' else 'し'
+    assert 'もやもやだった' + ending in follow and '嬉しくなく' in follow
     assert '悲しさ' in follow and '寂しさ' in follow
     assert inverse(context, follow, without_author=True).passed
-    changed = follow.replace('もやもやだったし', 'もやもやだし')
+    changed = follow.replace('もやもやだった' + ending,
+                             'もやもや' + ('な' if occasion == '今は' else 'だ') + ending)
     assert changed != follow and not inverse(context, changed, without_author=True).passed
 
 
@@ -305,8 +311,9 @@ def test_saved_copular_answer_correction_withdrawal_and_authorless_reopen(
     current = run(answer(service, user, current,
         f'「{old}」ではなく「{new}」です。', 'correct-copula'))
     body = current['current_observation']['text']
-    predicate = '不安だった' if new.endswith('でした') else '不安だ'
-    assert predicate + 'し' in body and old not in body
+    predicate = '不安だった' if new.endswith('でした') else '不安な' if occasion == '今は' else '不安だ'
+    ending = 'のですね' if occasion == '今は' else 'し'
+    assert predicate + ending in body and old not in body
     assert '嬉しくなく' in body and '悲しさ' in body and '寂しさ' in body
     if occasion == '今は':
         assert '先の回答時点では' + predicate in body
@@ -341,7 +348,7 @@ def test_scoped_copular_answer_is_finite_with_complete_meaning(memo, occasion, s
     request = advance(initial, occasion + source + '。')
     context = actual(request=request)
     follow = context[0].artifact.reception
-    final = memo != MEMO
+    final = memo != MEMO or occasion == '今は'
     predicate = visible + ('だった' if past else 'な' if final else 'だ')
     assert predicate + ('のですね' if final else 'し') in follow
     assert '褒められた時は嬉しくなく、' in follow
@@ -353,7 +360,7 @@ def test_scoped_copular_answer_is_finite_with_complete_meaning(memo, occasion, s
         assert '褒められた時は嬉しくなく、' + predicate in follow
     assert request.current_input_bundle == initial.current_input_bundle
     assert inverse(context, follow, without_author=True).passed
-    if not final:
+    if memo == MEMO:
         assert all(follow.count(event) == 1 for event in ('褒められた', '誘われた', '頼まれた'))
         assert '悲しさ' in follow and '寂しさ' in follow
     opposite = visible + ('な' if final else 'だ') if past else visible + 'だった'
@@ -413,7 +420,7 @@ def test_scoped_copular_answer_keeps_middle_and_last_event(preceding, source, pr
 def test_existing_finite_past_outside_noun_inflection_remains_readable(source, visible):
     context = actual(request=advance(begin(), '今は' + source + '。'))
     follow = context[0].artifact.reception
-    assert '回答した時点では' + visible + 'し' in follow
+    assert '回答した時点では' + visible + 'のですね。' in follow
     assert inverse(context, follow, without_author=True).passed
     assert not inverse(context, follow.replace(visible, '不安だった', 1),
                        without_author=True).passed
@@ -431,17 +438,22 @@ def test_unproven_copula_host_does_not_gain_a_new_finite_reading(source, invalid
               '誘われたのに、悲しさを感じたし、頼まれたのに、寂しさを感じたのですね。')
     if source == '私は不安なのです':
         # This explicit explanation now has its own proven finite reading.
-        # Its の must remain visible in an intermediate clause.
-        assert context[0].artifact.reception == follow
-        assert inverse(context, follow, without_author=True).passed
-        assert not inverse(context, follow.replace('不安なのだし', '不安だし'),
+        # Its の shares the final acknowledgement in this separate scope.
+        expected = ('褒められた時は嬉しくなく、回答した時点ではあなたは不安なのですね。'
+                    '誘われたのに、悲しさを感じ、頼まれたのに、寂しさを感じたのですね。')
+        assert context[0].artifact.reception == expected
+        assert inverse(context, expected, without_author=True).passed
+        assert not inverse(context, expected.replace('不安なのですね', '不安ですね'),
                            without_author=True).passed
         return
     assert not inverse(context, follow, without_author=True).passed
+    split_follow = ('褒められた時は嬉しくなく、回答した時点では' + invalid + 'なのですね。'
+                    '誘われたのに、悲しさを感じ、頼まれたのに、寂しさを感じたのですね。')
+    assert not inverse(context, split_follow, without_author=True).passed
     if source == '少し私は不安です':
         # A single medial owner now has a proven finite reading. The
         # first-person candidate above must still be rejected.
-        expected = follow.replace('少し私は不安', 'あなたは少し不安', 1)
+        expected = split_follow.replace('少し私は不安', 'あなたは少し不安', 1)
         assert context[0].artifact.reception == expected
         assert inverse(context, expected, without_author=True).passed
         return
@@ -484,7 +496,10 @@ def test_saved_scoped_copular_revision_withdrawal_and_authorless_reopen(
     current = run(answer(service, user, current,
         f'「{old}」ではなく「{new}」です。', 'correct-scoped-copula'))
     body = current['current_observation']['text']
-    assert visible + 'し' in body and old not in body
+    if occasion == '今は' and visible.endswith('だ'):
+        visible = visible[:-1] + 'な'
+    ending = 'のですね' if occasion == '今は' else 'し'
+    assert visible + ending in body and old not in body
     assert '嬉しくなく' in body and '悲しさ' in body and '寂しさ' in body
     assert ('先の回答時点では' + visible if occasion == '今は'
             else '褒められた時は嬉しくなく、' + visible) in body
@@ -523,7 +538,7 @@ def test_explanatory_answer_preserves_complete_source_in_finite_prose(
     request = advance(initial, occasion + source + '。')
     context = actual(request=request)
     follow = context[0].artifact.reception
-    final = memo != MEMO
+    final = memo != MEMO or occasion == '今は'
     ending = 'のですね' if final else 'のだし'
     assert visible + ending in follow
     assert '褒められた時は嬉しくなく、' in follow
@@ -534,7 +549,7 @@ def test_explanatory_answer_preserves_complete_source_in_finite_prose(
         assert '回答した時点では' + visible + ending in follow
     else:
         assert '褒められた時は嬉しくなく、' + visible + ending in follow
-    if not final:
+    if memo == MEMO:
         assert all(follow.count(event) == 1 for event in ('褒められた', '誘われた', '頼まれた'))
         assert '悲しさ' in follow and '寂しさ' in follow
     assert inverse(context, follow, without_author=True).passed
@@ -598,12 +613,28 @@ def test_explanatory_answer_keeps_intermediate_and_final_attachment(preceding, s
     ('私は不安なのだった', 'あなたは不安なのだったし', 'あなたは不安だったのだし'),
 ])
 def test_explanation_cannot_be_added_or_move_the_outer_past(source, original, changed):
-    context = actual(request=advance(begin(), '今は' + source + '。'))
-    follow = context[0].artifact.reception
-    assert original in follow
-    assert inverse(context, follow, without_author=True).passed
-    assert not inverse(context, follow.replace(original, changed, 1),
-                       without_author=True).passed
+    final_original, final_changed = {
+        '私は不安です': ('あなたは不安なのですね', '友人は不安なのですね'),
+        '私は怖かったです': ('あなたは怖かったのですね', 'あなたは怖いのですね'),
+        '私は不安なのだった': ('あなたは不安なのでしたね', 'あなたは不安だったのですね'),
+    }[source]
+    for preceding in (False, True):
+        request = advance(begin(), 'その時は怖かった。') if preceding else begin()
+        context = actual(request=advance(request, '今は' + source + '。'))
+        follow = context[0].artifact.reception
+        if preceding:
+            # A second active answer retains the intermediate clause. Keep
+            # the original explanation-addition / outer-past mutations intact.
+            assert original in follow
+            corrupt = follow.replace(original, changed, 1)
+        else:
+            # Plain/explanatory の already share the existing final grammar;
+            # verify the complete split body and a real meaning change here.
+            assert follow == ('褒められた時は嬉しくなく、回答した時点では' + final_original + '。'
+                              '誘われたのに、悲しさを感じ、頼まれたのに、寂しさを感じたのですね。')
+            corrupt = follow.replace(final_original, final_changed, 1)
+        assert inverse(context, follow, without_author=True).passed
+        assert corrupt != follow and not inverse(context, corrupt, without_author=True).passed
 
 
 @pytest.mark.parametrize('source,invalid', [
@@ -616,6 +647,10 @@ def test_unproven_explanation_cannot_erase_subject_or_hearsay(source, invalid):
     follow = ('褒められた時は嬉しくなく、回答した時点では' + invalid + '、'
               '誘われたのに、悲しさを感じたし、頼まれたのに、寂しさを感じたのですね。')
     assert not inverse(context, follow, without_author=True).passed
+    split_follow = ('褒められた時は嬉しくなく、回答した時点では'
+                    + invalid.removesuffix('のだし') + 'のですね。'
+                    '誘われたのに、悲しさを感じ、頼まれたのに、寂しさを感じたのですね。')
+    assert not inverse(context, split_follow, without_author=True).passed
 
 
 @pytest.mark.parametrize('occasion', ['今は', 'その時は'])
@@ -649,7 +684,10 @@ def test_saved_explanatory_revision_withdrawal_and_authorless_reopen(
             current = run(answer(service, user, current,
                 f'「{old}」ではなく「{new}」です。', 'correct-explanatory'))
             body = current['current_observation']['text']
-            assert visible + 'し' in body and old not in body
+            if occasion == '今は':
+                visible = visible[:-2]  # The source の shares the final acknowledgement.
+            ending = 'のですね' if occasion == '今は' else 'し'
+            assert visible + ending in body and old not in body
             assert '嬉しくなく' in body and '悲しさ' in body and '寂しさ' in body
             assert ('先の回答時点では' + visible if occasion == '今は'
                     else '褒められた時は嬉しくなく、' + visible) in body

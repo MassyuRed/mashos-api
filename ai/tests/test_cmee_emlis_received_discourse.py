@@ -1456,3 +1456,184 @@ def test_received_chain_event_owner_cannot_become_emlis_first_person(withdraw):
     changed = body.replace('あなたは褒められた', '私は褒められた')
     assert changed != body and read_body(context, body).passed
     assert not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('memo', [
+    '褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。',
+    OWNED_INITIAL,
+    '誘われたのに悲しかった。頼まれたのに寂しかった。',
+    '断られたのにあまり悲しくなかった。誘われたのにとても寂しかった。',
+])
+@pytest.mark.parametrize('reply,answer_fragment', [
+    ('今は少し苦しい。', '回答した時点では少し苦しい'),
+    ('今は私も少し不安です。', '回答した時点ではあなたも少し不安な'),
+])
+def test_answer_scope_closes_before_unanswered_original_occasions(memo, reply, answer_fragment):
+    from test_cmee_emlis_detached_observation import read_body
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    context = actual(request=advance(begin(memo), reply))
+    result, plan, _, resolver, _ = context
+    follow = result.artifact.reception
+    sentences = tuple(s for s in follow.split('。') if s)
+    assert len(sentences) == 2 and answer_fragment in sentences[0]
+    assert '回答した時点' not in sentences[1] and '少し苦し' not in sentences[1]
+    moves = plan.response_plan.human_reception_plan.moves
+    assert tuple(m.move_role for m in moves) == ('attention', 'felt_response')
+    assert plan.response_plan.human_reception_plan.depth_policy.max_sentences == 2
+    owned = [set((*m.target_nucleus_ids, *m.support_nucleus_ids)) for m in moves]
+    assert owned[0].isdisjoint(owned[1])
+    text_ids = {n.nucleus_id for n in plan.nuclei if n.retention == 'required'
+                and set(n.source_fields) & {'memo', 'memo_action', 'answer_text_private'}}
+    assert set.union(*owned) == text_ids
+    for relation in plan.relations:
+        if relation.relation_id in plan.coverage_requirements.required_relation_ids:
+            assert sum({relation.from_nucleus_id, relation.to_nucleus_id} <= ids for ids in owned) == 1
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    for position, move in enumerate(moves):
+        for nid in move.target_nucleus_ids:
+            event = reception.final_reception_source_anchor_text(nid, index, resolver)
+            assert event in sentences[position] and event not in sentences[1 - position]
+    assert MeaningExperienceEngine().generate(advance(begin(memo), reply)).artifact.text == result.artifact.text
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.fixture(scope='module')
+def answer_scope_context():
+    return actual(request=advance(begin(OWNED_INITIAL), '今は少し苦しい。'))
+
+
+@pytest.mark.parametrize('mutation', [
+    'drop_answer_sentence', 'drop_original_sentence', 'swap_sentences', 'duplicate_answer',
+    'drop_answer', 'time', 'tense', 'degree', 'polarity', 'owner', 'cause', 'swap_events',
+])
+def test_answer_scope_meaning_cannot_be_borrowed_across_sentences(answer_scope_context, mutation):
+    from test_cmee_emlis_detached_observation import read_body
+    context = answer_scope_context
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    first, second, empty = follow.split('。')
+    assert empty == '' and read_body(context, body).passed
+    changes = {
+        'drop_answer_sentence': second + '。',
+        'drop_original_sentence': first + '。',
+        'swap_sentences': second + '。' + first + '。',
+        'duplicate_answer': first + '。' + first + '。' + second + '。',
+        'drop_answer': follow.replace('し、回答した時点では少し苦しい', ''),
+        'time': follow.replace('回答した時点では', 'その時は'),
+        'tense': follow.replace('少し苦しい', '少し苦しかった'),
+        'degree': follow.replace('少し苦しい', '苦しい'),
+        'polarity': follow.replace('少し苦しい', '少し苦しくない'),
+        'owner': follow.replace('あなたも少し不安だった', '友人も少し不安だった'),
+        'cause': follow.replace('誘われたのに', '誘われたから'),
+        'swap_events': follow.replace('誘われた', 'TEMP').replace('頼まれた', '誘われた').replace('TEMP', '頼まれた'),
+    }
+    changed = body.replace(follow, changes[mutation])
+    assert changed != body and not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('memo,event', [
+    ('褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。', '褒められた'),
+    (OWNED_INITIAL, '誘われた'),
+])
+@pytest.mark.parametrize('withdraw_event', [False, True])
+def test_answer_scope_correction_withdrawal_and_saved_replay(qcase, qdb, monkeypatch, memo, event, withdraw_event):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$1 where id=$2', [memo, parent])
+    first = current = run(service.start(user, parent))
+    sequence = ('今は少し苦しい。', '「少し苦しい」ではなく「少し怖い」です。',
+                '「' + (event if withdraw_event else '少し怖い') + '」は誤りです。')
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('initial replay must not generate'))
+        assert run(service.get(user, parent)) == run(service.start(user, parent)) == first
+    for position, text in enumerate(sequence):
+        if position:
+            current = run(cont(service, user, current, f'scope-continue-{position}'))
+        current = run(answer(service, user, current, text, f'scope-answer-{position}'))
+        assert current['original'] == first['original'] and current['body_state'] == 'REFINED'
+        body = current['current_observation']['text']
+        follow = body.split('Emlisから：', 1)[1].strip()
+        if position < 2:
+            sentences = tuple(s for s in follow.split('。') if s)
+            assert len(sentences) == 2 and event in sentences[0] and event not in sentences[1]
+            assert ('回答した時点では少し苦しい' if position == 0 else '先の回答時点では少し怖い') in sentences[0]
+        else:
+            assert '少し苦しい' not in body
+            if withdraw_event:
+                assert event not in body and '先の回答時点' in body and '少し怖い' in body
+            else:
+                assert '少し怖い' not in body and event in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved response must not generate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+def test_answer_scope_moves_to_last_event_without_reordering_middle():
+    from test_cmee_emlis_detached_observation import read_body
+    request = begin()
+    for position, text in enumerate(('今は少し苦しい。',
+            '「少し苦しい」は誤りです。今は少し怖い。',
+            '「少し怖い」は誤りです。今は少し重い。')):
+        request = advance(request, text)
+        context = actual(request=request)
+        body, follow = context[0].artifact.text, context[0].artifact.reception
+        sentences = tuple(s for s in follow.split('。') if s)
+        assert len(sentences) == (1 if position == 1 else 2)
+        assert follow.index('褒められた') < follow.index('誘われた') < follow.index('頼まれた')
+        if position == 2:
+            assert '頼まれた' not in sentences[0]
+            assert '頼まれた時は寂しく、回答した時点では少し重い' in sentences[1]
+            assert '回答した時点' not in sentences[0]
+        if position:
+            assert '少し苦しい' not in body
+        if position == 2:
+            assert '少し怖い' not in body
+        assert read_body(context, body).passed
+
+
+def test_answer_scope_last_event_saved_withdraw_and_add(qcase, qdb, monkeypatch):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    for position, text in enumerate(('今は少し苦しい。',
+            '「少し苦しい」は誤りです。今は少し怖い。',
+            '「少し怖い」は誤りです。今は少し重い。')):
+        if position:
+            current = run(cont(service, user, current, f'scope-edge-continue-{position}'))
+        current = run(answer(service, user, current, text, f'scope-edge-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved edge response must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    body = current['current_observation']['text']
+    follow = body.split('Emlisから：', 1)[1].strip().split('。')
+    assert len(follow) == 3 and '頼まれた' not in follow[0]
+    assert '頼まれた時は寂しく、回答した時点では少し重い' in follow[1]
+    assert '少し苦しい' not in body and '少し怖い' not in body
+
+
+@pytest.mark.parametrize('source', [
+    '私は私には怖かったです', '私は私には不安です', '私は私には不安なのです',
+])
+def test_answer_scope_nominal_fallback_keeps_source_and_attention(source):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=advance(begin(), '今は' + source + '。'))
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    assert read_body(context, body).passed
+    first, second, empty = follow.split('。')
+    assert empty == '' and 'あなたは私には' in first
+    assert 'に目が留まり、それを小さくせずに受け止めています' in first
+    assert '誘われた' in second and '頼まれた' in second and '回答した時点' not in second
+    corruptions = [
+        follow.replace('あなたは私には', 'あなたには', 1),
+        follow.replace('回答した時点で', 'その時に', 1),
+        follow.replace('褒められた', '誘われた', 1),
+        follow.replace('嬉しくなかった', '嬉しかった', 1),
+        follow.replace('目が留まり、', '目が留まらず、', 1),
+        follow.replace('小さくせずに', '小さくして', 1),
+        first + '。',
+        second + '。' + first + '。',
+    ]
+    for corrupt in corruptions:
+        changed = body.replace(follow, corrupt)
+        assert changed != body and not read_body(context, changed).passed
+        assert not inverse(context, corrupt, without_author=True).passed

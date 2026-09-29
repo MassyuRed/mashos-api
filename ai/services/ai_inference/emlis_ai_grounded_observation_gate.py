@@ -3855,12 +3855,22 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                     (move.target_nucleus_ids, move.support_nucleus_ids))
     thread_group = (("current_burden", move.target_nucleus_ids, move.support_nucleus_ids)
                     in _thread_retained_reaction_groups(plan.nuclei, plan.relations))
+    reception_moves = plan.response_plan.human_reception_plan.moves
+    source_groups = _thread_retained_reaction_groups(plan.nuclei, plan.relations)
+    separate_received_scopes = bool(
+        len(reception_moves) == len(source_groups) == 2
+        and move == reception_moves[0] and move.move_role == "attention"
+        and reception_moves[1].move_role == "felt_response"
+        and all(m.required and m.reception_act == "stay_with_current_burden"
+                and m.support_nucleus_ids for m in reception_moves)
+        and tuple(("current_burden", m.target_nucleus_ids, m.support_nucleus_ids)
+                  for m in reception_moves) == source_groups)
     has_answers = any(n.source_fields == ("answer_text_private",) for n in plan.nuclei)
     if (has_answers and getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
         or not move.required or not (move.move_role == "felt_response"
             or move.move_role == "attention" and thread_group
-            and "selection:source_owned_answer_adjacent"
-                in plan.response_plan.human_reception_plan.depth_policy.selection_reason_codes)
+            and (separate_received_scopes or "selection:source_owned_answer_adjacent"
+                in plan.response_plan.human_reception_plan.depth_policy.selection_reason_codes))
         or move.reception_act != "stay_with_current_burden"
         or not (original or thread_group)
         or not raw.endswith("。") or raw.count("。") != 1
@@ -4269,9 +4279,16 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
             expected.append(("answer" if contrast else "direct", event_id,
                 final_reception_source_anchor_text(answer.nucleus_id, index, resolver), next(iter(times))))
     raw = body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode("utf-8")
-    objects, separator, _predicate = raw.rpartition("を")
-    if not separator:
-        return None
+    attention_ending = "に目が留まり、それを小さくせずに受け止めています。"
+    if (move.move_role == "attention" and move.reception_act == "stay_with_current_burden"
+        and raw.endswith(attention_ending)):
+        # The governed source object ends before the attention clause;
+        # its later それを is not part of the original answer's nominal.
+        objects = raw[:-len(attention_ending)]
+    else:
+        objects, separator, _predicate = raw.rpartition("を")
+        if not separator:
+            return None
     divisions = tuple(m.start() for m in re.finditer("と、", objects))
     def read_piece(start, end, wanted):
         piece = objects[start:end]
