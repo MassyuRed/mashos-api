@@ -11420,3 +11420,19 @@ current identityは既存18payload/9ownerの派生値のみ更新。language `3e
 複数場面の原反応訂正、独立訂正＋三場面、肯定/不明併存、撤回後などの残存列挙、複数節の訂正replacement、長い名詞句・反復SELFの自然さ・受領定型反復・二層再掲、既知失敗は残る。同じ複数出来事/回答/訂正群を継続し、対象群全体の完了や正式商品合格とはしない。未説明残件を対象外へ付け替えず、群を閉じていないため次順位の二層改善へ自動移行しない。10/03未完でもEmlis休止、10/04以降Work分析／不可時Pro Piece、旧10/10 Emlis期限再設定待ちの合意を保持。
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 既存Plan内部の構成のみで責任・whole route・artifact lifecycle不変。Ready/merge/deploy/enableなし。
+
+## 2026-09-30 Work継続 u29：隣接する二訂正のscopeと残存場面の分離 — 作業中
+
+Mashの残件継続指示により、API `a71116e6c2c38f0ff964565a550413ecd3a2956f`／Cocolon `9ce1e892accbd1d1425c02cac20632438e42c908`から開始。remote head・Draft/open/unmerged、clean materialization、u28引継ぎと2221件＝2207PASS/既知14FAILを照合。前提資料と作業姿勢ルール、恒久incident全文、全体01/02、全file地図01A/B/Cの領域/既読接点、current_structure00/01/04、最新weekly20260926内9/29合意、Karen-Diary指定3fileを確認。System Context prepareはmaterial commit祖先確認でexit2、許可済み原典直接参照へ戻しfreshness成功とはしない。Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1/PGlite0.5.8を再確認、install0。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。商品接続は、隣接する二場面の訂正回答と第三場面の原反応を読み分けられる本文。Q4後の複数出来事/回答/訂正群内で、既存集合Moveがこの三場面を同じ列挙へ閉じる一原因を扱う。Planは隣接ABOUT-only二場面と存続原反応pair一場面のscopeだけを分け、同一述語の共有/異なる完全述語の並列は既存HR/Gateへ残す。pair側の負の回答も元反応と同じscopeへ保持する。非隣接二、三ABOUT-only、不明/肯定/撤回/独立訂正等へ拡大しない。
+
+root（Work ModeのGPT-based Codex）が編集・実行・GitHub writeの単一owner。確認していないPro/Ultra identityを称さない。商品担当がwhole-route fitと比例性、技術担当が2event＋2ABOUTの既存HR/Gate、attention/felt_response、frame検査との接点を読取確認した。新helper/equality判定/作者/grammar/engineなし。first effect前の最大8既存pathはAPIのPlan/HR/Gate、received/detached tests、current identity、本handoff、Cocolon06。主変更はPlanとdetached tests。既存共有testの単一Move取得・中止形anchorだけは、意味改変拒否目的を保つtest methodへ適応し、production修正前の開始sourceでも全53件を確認する。品質期待の緩和、ID削除、skip/xfail、protected/frozen acceptance変更は禁止する。
+
+完了は実本文の二scope分離、核/関係/source順/時点/否定/主体/程度の保持、公開entry/作者禁止逆検証、保存再取得、関連回帰、remote全文照合。30〜45分程度の限定修正を見込み、追加費用/Mash操作0。新機構・契約変更・対象外の実退行が必要なら拡大しない。source admission・API/DB/RN/schema・role配分規則・上限・flag・依存・実DB/実機/課金/公開は不変。TECHNICAL_CREDITのみ、群未完了/商品NOT_CLEAR/default OFF/Draftを維持。STRUCTURE_MAP_DELTA_NONE：既存Plan内部の構成だけでwhole route/owner/責任/lifecycle不変。10/03休止、10/04以降分析、旧10/10期限再設定待ちを継承。
+
+**u29確定候補の中間checkpoint（全量検査中）。** Planは隣接ABOUT-only二場面を既存集合Moveへ残し、端の原反応pairを別Moveへ分離した。異なる完全述語を同一化する判定は追加していない。最初のPlan-only実本文probeでは反復SELF説明形1件が新たに独立検証を通らず、採用しなかった。Gateの既存received-group完全proofによる名詞形context復元を複数targetにも適用し、意味を削らず解消した。新author/grammar/helperなし。既存検査2methodを単一Move仮定と中止形固定anchorから適応したが、元sourceでも共有53PASS（21.04秒）、変更後共有53PASS（20.95秒）。新30＋共有53＝83PASS（38.81秒）。品質期待変更・検査削除・skip/xfailなし。
+
+実本文40入力の比較では38provided（変更27／不変11）、既存public unavailable2。provided38全件は公開entryと本文一致・作者禁止逆検証成功、Observation/核/関係/checkpointは開始版と不変。二場面の共有述語またはそれぞれの異なる完全述語と、第三場面の原反応/負回答を分離した。初案の新fail1は解消した。同じ回答文を二場面から再訂正/撤回する2入力はpublic correction_target_unresolvedが残り、probeのartifact=None参照によるAttributeErrorをproduction例外と扱わない。長い反復SELF名詞/受領定型や重複出来事labelの旧不自然さは商品合格扱いしない。新保存検査は4系列12回答後状態、original不変・再生成を禁止したGET/start完全一致を含む。PGliteでの確認で実DB/実機/再起動ではない。
+
+current identityは既存18payload/9ownerの派生値のみ更新：language `39bc0bb799a718251d46359af0a9f813a8b23613305e219143d12c5cc3195ddd`／runtime `3f930a377fd23d90cb17879e28465fa0c6d523bae19a1d2fcf2154c3bd2a3238`。関連全2251件は現在実行中で、結果確定前のこのcheckpointを全PASS/完了とはしない。API実変更はPlan/Gate/detached tests/current identity/本handoffの5既存file、Cocolon06を最終追記予定。全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmergedを維持。

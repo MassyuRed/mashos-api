@@ -2784,7 +2784,7 @@ def test_shared_event_feeling_rejects_lost_or_changed_meaning(shared_event_feeli
         'simultaneous': (pair, '同時に' + pair), 'cause': (pair, pair + 'そのため'),
         'actor': ('あなたも', '友人も'), 'particle': ('あなたも', 'あなたは'),
         'degree': ('少し', ''), 'negation': ('怖くな', '怖'),
-        'tense': ('怖くなく' if first == '褒められた' else '怖くなかった', '怖くない'),
+        'tense': ('怖くなかった' if '怖くなかった' in follow else '怖くなく', '怖くない'),
         'extra_event': (pair, pair + '断られた時も、'),
         'contrast_event': (pair, pair + ('褒められた' if first == '誘われた' else '頼まれた') + '時も、'),
     }[mutation]
@@ -2801,7 +2801,9 @@ def test_shared_event_feeling_requires_each_sources_own_frame(slot, field, value
     for old in ('嬉しくなかった', '悲しかった'):
         req = advance(req, f'「{old}」ではなく「私は少し不安でした」です。')
     result, plan, _, resolver, selected = actual(request=req)
-    move, = plan.response_plan.human_reception_plan.moves
+    move = plan.response_plan.human_reception_plan.moves[0]
+    assert {'nucleus:s1:event', 'nucleus:s2:event'} <= set(move.target_nucleus_ids)
+    follow = result.artifact.reception.split('。', 1)[0] + '。'
     answers = [n for n in plan.nuclei if n.source_fields == ('answer_text_private',)]
     target = answers[slot]
     if field == 'time':
@@ -2811,8 +2813,8 @@ def test_shared_event_feeling_requires_each_sources_own_frame(slot, field, value
         frame = replace(target.semantic_frame, **{field:value})
     altered = replace(plan, nuclei=tuple(replace(n, semantic_frame=frame) if n == target else n for n in plan.nuclei))
     with patch.object(reception, '_source_grounded_received_discourse', side_effect=AssertionError('no author oracle')):
-        assert gate.read_received_discourse(result.artifact.reception, move, plan, resolver, selected) is not None
-        assert gate.read_received_discourse(result.artifact.reception, move, altered, resolver, selected) is None
+        assert gate.read_received_discourse(follow, move, plan, resolver, selected) is not None
+        assert gate.read_received_discourse(follow, move, altered, resolver, selected) is None
 
 
 @pytest.mark.parametrize('sources', [
@@ -3064,3 +3066,132 @@ def test_temporal_pair_does_not_expand_single_event_sentence_budget():
     assert plan.response_plan.human_reception_plan.depth_policy.max_moves_per_sentence == 1
     assert '当時、' not in context[0].artifact.reception
     assert read_body(context, context[0].artifact.text).passed
+
+
+@pytest.mark.parametrize('layout', ['front', 'front-past', 'front-current', 'back'])
+@pytest.mark.parametrize('sources,finite', [
+    (('少し私は苦しかったです', '私は少し苦しかったです'), 'あなたは少し苦しかった'),
+    (('少し私は不安でした', '私は少し不安でした'), 'あなたは少し不安だった'),
+    (('私も少し怖くなかったです', '私も少し怖くなかったです'), 'あなたも少し怖くなかった'),
+    (('私は少し不安です', '私は少し不安です'), 'あなたは少し不安な'),
+])
+def test_adjacent_revisions_close_before_other_occasion(layout, sources, finite):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    req = begin()
+    old = ('嬉しくなかった', '悲しかった')
+    events, remaining, shared_position = ('褒められた', '誘われた'), '頼まれた', 0
+    if layout == 'back':
+        req = advance(req, 'その時は少し重かった。')
+        old, events, remaining, shared_position = ('悲しかった', '寂しかった'), ('誘われた', '頼まれた'), '褒められた', 1
+    for previous, source in zip(old, sources):
+        req = advance(req, f'「{previous}」ではなく「{source}」です。')
+    if layout in {'front-past', 'front-current'}:
+        req = advance(req, 'その時は少し重かった。' if layout == 'front-past' else '今は少し苦しい。')
+    context = actual(request=req)
+    result, plan, _, _, _ = context
+    follow = result.artifact.reception
+    sentences = follow.split('。')[:-1]
+    assert len(sentences) == 2
+    shared, separate = sentences[shared_position], sentences[1-shared_position]
+    assert shared == events[0] + '時も、' + events[1] + '時も、' + finite + 'のですね'
+    assert remaining not in shared and remaining in separate
+    assert all(event not in separate for event in events)
+    assert all(previous not in result.artifact.text for previous in old)
+    if layout == 'front-current':
+        assert '回答した時点では少し苦しい' in separate
+    elif layout in {'back', 'front-past'}:
+        assert '少し重かった' in separate
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == 2 and len(moves[shared_position].target_nucleus_ids) == 2
+    owned = [set((*m.target_nucleus_ids, *m.support_nucleus_ids)) for m in moves]
+    assert owned[0].isdisjoint(owned[1])
+    for relation in plan.relations:
+        if relation.retention == 'required':
+            assert sum({relation.from_nucleus_id, relation.to_nucleus_id} <= ids for ids in owned) == 1
+    assert MeaningExperienceEngine().generate(req).artifact.text == result.artifact.text
+    assert read_body(context, result.artifact.text).passed
+    changes = [follow.replace(shared + '。', '', 1), follow.replace(separate + '。', '', 1),
+               follow.replace(separate, shared, 1), follow.replace(events[1], remaining, 1),
+               follow.replace('時も', '回答した時点も', 1), follow.replace('あなた', '相手', 1),
+               follow.replace('少し', '', 1), follow.replace('あなたも', 'あなたは', 1)
+                   if 'あなたも' in follow else follow.replace('あなたは', 'あなたも', 1)]
+    for changed in changes:
+        assert changed != follow and not read_body(context, result.artifact.text.replace(follow, changed, 1)).passed
+
+
+@pytest.mark.parametrize('back', [False, True])
+@pytest.mark.parametrize('sources,retained', [
+    (('私は少し不安でした', '私も少し不安でした'), ('あなたは少し不安だった', 'あなたも少し不安だった')),
+    (('私は不安でした', '私は少し不安でした'), ('あなたは不安だった', 'あなたは少し不安だった')),
+    (('私は少し不安でした', '私は少し不安です'), ('あなたは少し不安だった', 'あなたは少し不安な')),
+    (('私も少し怖くなかったです', '私は少し怖かったです'), ('あなたも少し怖くなく', 'あなたは少し怖かった')),
+])
+def test_adjacent_revisions_keep_different_predicates(back, sources, retained):
+    req = advance(begin(), '今は少し重い。') if back else begin()
+    old = ('悲しかった', '寂しかった') if back else ('嬉しくなかった', '悲しかった')
+    events = ('誘われた', '頼まれた') if back else ('褒められた', '誘われた')
+    for previous, source in zip(old, sources):
+        req = advance(req, f'「{previous}」ではなく「{source}」です。')
+    context = actual(request=req)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    sentences = follow.split('。')[:-1]
+    assert len(sentences) == 2 and '時も、' not in follow
+    selected = sentences[int(back)]
+    assert all(event in selected for event in events) and all(value in selected for value in retained)
+    assert ('褒められた' if back else '頼まれた') not in selected
+    assert read_body(context, body).passed
+    changed = follow.replace(retained[1], retained[0], 1)
+    assert changed != follow and not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+@pytest.mark.parametrize('back', [False, True])
+def test_adjacent_revisions_read_complete_repeated_self_nominals(back):
+    req = advance(begin(), 'その時は少し重かった。') if back else begin()
+    old = ('悲しかった', '寂しかった') if back else ('嬉しくなかった', '悲しかった')
+    for previous in old:
+        req = advance(req, f'「{previous}」ではなく「私は私には少し不安だったのです」です。')
+    context = actual(request=req)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    sentences = follow.split('。')[:-1]
+    assert len(sentences) == 2
+    nominal = '私は私には少し不安だったのだという、その時のあなたの気持ち'
+    assert sentences[int(back)].count(nominal) == 2
+    assert read_body(context, body).passed
+    for old, new in [(nominal, ''), ('私には', '私にも'), ('私は', '相手は'),
+                     ('少し', ''), ('不安だった', '不安ではなかった'), ('その時の', '回答した時点の'),
+                     ('のだという', 'という')]:
+        changed = follow.replace(old, new, 1)
+        assert changed != follow and not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+@pytest.mark.parametrize('replies', [
+    ('「嬉しくなかった」ではなく「私は少し不安でした」です。',
+     '「悲しかった」ではなく「私は少し不安でした」です。', '今は少し苦しい。'),
+    ('その時は少し重かった。', '「悲しかった」ではなく「私は少し不安でした」です。',
+     '「寂しかった」ではなく「私も少し怖くなかったです」です。'),
+    ('「嬉しくなかった」ではなく「私は私には少し不安だったのです」です。',
+     '「悲しかった」ではなく「私は私には少し不安だったのです」です。', '「頼まれた」は誤りです。'),
+    ('「嬉しくなかった」ではなく「私は少し不安でした」です。',
+     '「悲しかった」ではなく「私も少し怖くなかったです」です。',
+     '「私も少し怖くなかったです」ではなく「私も少し寂しかったです」です。'),
+])
+def test_adjacent_revisions_saved_updates_keep_original_and_exact_reads(qcase, qdb, monkeypatch, replies):
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    first = current = run(service.start(user, parent))
+    for position, text in enumerate(replies):
+        if position:
+            current = run(cont(service, user, current, f'adjacent-scope-continue-{position}'))
+        current = run(answer(service, user, current, text, f'adjacent-scope-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        if 'ではなく' in text:
+            removed = text.split('「')[1].split('」')[0]
+            assert removed not in body
+        if position == 1 and replies[0].startswith('「嬉しくなかった」'):
+            assert len(body.split('Emlisから：', 1)[1].strip().split('。')[:-1]) == 2
+        if text == '「頼まれた」は誤りです。':
+            assert '頼まれた' not in body and '寂しかった' in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved adjacent revisions must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current

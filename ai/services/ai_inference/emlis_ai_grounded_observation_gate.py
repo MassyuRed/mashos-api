@@ -6482,7 +6482,7 @@ def evaluate_grounded_surface_body_inverse(
                         context_match_text = parsed_sentence_text
                         context_morphology_missing = False
                         if (final_stage1_plan and not anaphoric_context
-                            and len(move.target_nucleus_ids) == 1 and move.support_nucleus_ids):
+                            and move.target_nucleus_ids and move.support_nucleus_ids):
                             received_proof = _body_inverse_thread_received_group(
                                 body, witness, parsed_sentence, move, plan, resolver)
                             if received_proof:

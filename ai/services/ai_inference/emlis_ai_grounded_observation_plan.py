@@ -8009,6 +8009,27 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
                 groups[-1] = (family, (*prior_targets, event), (*prior_supports, feelings[event]))
             else:
                 groups.append(("current_burden", (event,), (feelings[event],)))
+    # Keep adjacent ABOUT-only revisions together so the existing realizer
+    # can retain a shared predicate, while closing the remaining original
+    # occasion separately. Predicate equality still belongs to that realizer.
+    if (separate_later_scopes and len(groups) == 1
+        and len(targets) == len(events) == 3 and len(pairs[0]) == 1
+        and pairs[0][0] in (targets[0], targets[-1])
+        and 2 <= len(negative) == len(answers) <= 3
+        and not (chain_ids or withdrawal or independent or actions
+                 or independent_answers or detached_answers)
+        and all(not is_grounded_current_answer_uncertainty(answer) for answer in negative)
+        and all({c for c in by_event[event].semantic_frame.attribute_codes
+                 if c.startswith("thread_time:")} == {"thread_time:original_occasion"}
+                for event in targets if event not in feelings)):
+        original = pairs[0][0]
+        revised = tuple(event for event in targets if event != original)
+        answer = by_event.get(original)
+        groups = [("current_burden", revised,
+                   tuple(by_event[event].nucleus_id for event in revised)),
+                  ("current_burden", (original,),
+                   (feelings[original], answer.nucleus_id) if answer is not None
+                   else (feelings[original],))]
     # An independent original correction does not reconnect its lost contrast.
     # The two remaining received occasions can still close their own scopes:
     # either their retained reaction, or an answer with an active ABOUT edge.
