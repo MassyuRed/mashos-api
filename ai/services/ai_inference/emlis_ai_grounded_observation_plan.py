@@ -7969,7 +7969,10 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
     groups.extend(("lived_change" if is_grounded_positive_feeling(n) else "current_burden",
                    (n.nucleus_id,), ()) for n in independent)
     groups.extend(("concrete_effort", (n.nucleus_id,), ()) for n in actions)
-    # Close each later answer with its own event and original reaction.
+    # Close each answer with its own event and original reaction. An
+    # original-occasion answer with a feeling operator is still a distinct source, not a
+    # replacement of the original reaction or a later emotional change.
+    # Other original-occasion answers keep their existing collective duty.
     # Only adjacent unanswered occasions may share a residual group; joining
     # both sides of a middle answer would reorder the source. The existing
     # three-Move budget covers these complete, disjoint duties.
@@ -7980,8 +7983,12 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
         and not (chain_ids or withdrawal or independent or actions
                  or independent_answers or detached_answers)
         and all(not is_grounded_current_answer_uncertainty(answer)
-            and {c for c in answer.semantic_frame.attribute_codes if c.startswith("thread_time:")}
-                in ({"thread_time:answer_time"}, {"thread_time:prior_answer_time"})
+            and ({c for c in answer.semantic_frame.attribute_codes if c.startswith("thread_time:")}
+                    in ({"thread_time:answer_time"}, {"thread_time:prior_answer_time"})
+                 or separate_later_scopes
+                    and "operator:feeling" in answer.semantic_frame.attribute_codes
+                    and {c for c in answer.semantic_frame.attribute_codes if c.startswith("thread_time:")}
+                        == {"thread_time:original_occasion"})
             for answer in negative)):
         groups = []
         for event in targets:

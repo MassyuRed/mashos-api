@@ -2008,10 +2008,9 @@ def test_multiple_self_original_answer_keeps_its_event_and_time(position, source
     original = ('褒められたのに嬉しくなかった', '誘われたのに悲しかった', '頼まれたのに寂しかった')
     bound = original[position] + 'ことと、その出来事について、' + finite + 'という、その時のあなたの気持ち'
     assert bound in follow and source in result.artifact.observation
-    assert all(part + 'こと' in follow for part in original)
     assert not any(part in follow for part in ('あなたは私には', 'あなたは自分には', 'ですこと', 'でしたこと'))
-    assert len(plan.response_plan.human_reception_plan.moves) == 1
-    assert len(plan.response_plan.human_reception_plan.moves[0].target_nucleus_ids) == 3
+    groups = ((0,), (1, 2)) if position == 0 else ((0,), (1,), (2,))
+    assert_complete_occasion_scopes(context, ('褒められた', '誘われた', '頼まれた'), groups)
     assert request.current_input_bundle == initial.current_input_bundle
     assert inverse(context, follow, without_author=True).passed
     assert MeaningExperienceEngine().generate(request).artifact.text == result.artifact.text
@@ -2025,7 +2024,7 @@ def multiple_self_mixed_time_group():
     first = '私は私には少し不安だったのだという、その時のあなたの気持ち'
     second = '僕は自分には少し怖かったのだという、回答した時点のあなたの気持ち'
     assert first in context[0].artifact.reception and second in context[0].artifact.reception
-    assert len(context[1].response_plan.human_reception_plan.moves) == 1
+    assert_complete_occasion_scopes(context, ('褒められた', '誘われた', '頼まれた'), ((0,), (1,), (2,)))
     assert inverse(context, context[0].artifact.reception, without_author=True).passed
     return context, first, second
 
@@ -2040,8 +2039,9 @@ def test_multiple_self_group_cannot_borrow_another_event_or_time(multiple_self_m
     follow = context[0].artifact.reception
     changes = {
         'drop_first_reference': follow.replace('その出来事について、' + first, first),
-        'drop_second_reference': follow.replace('その出来事について、' + second, second),
-        'different_event': follow.replace('その出来事について、' + second, '別の出来事について、' + second),
+        'drop_second_reference': follow.replace('誘われたのに悲しかったことと、' + second, second),
+        'different_event': follow.replace('誘われたのに悲しかったことと、' + second,
+                                         '頼まれたのに悲しかったことと、' + second),
         'swap_answers': follow.replace(first, 'TEMP').replace(second, first).replace('TEMP', second),
         'swap_originals': follow.replace('嬉しくなかった', 'TEMP').replace('悲しかった', '嬉しくなかった').replace('TEMP', '悲しかった'),
         'drop_original': follow.replace('褒められたのに嬉しくなかったことと、', ''),
@@ -2194,4 +2194,160 @@ def test_withdrawn_multiple_self_saved_correction_order_keeps_time(qcase, monkey
             assert not any(bad in follow for bad in ('これまで、', '今、', 'ですこと', 'でしたこと'))
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved detached SELF body must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+def assert_complete_occasion_scopes(context, events, groups):
+    result, plan, _, resolver, _ = context
+    sentences = tuple(s for s in result.artifact.reception.split('。') if s)
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(sentences) == len(moves) == len(groups)
+    owned = [set((*m.target_nucleus_ids, *m.support_nucleus_ids)) for m in moves]
+    assert all(owned[i].isdisjoint(owned[j]) for i in range(len(moves)) for j in range(i + 1, len(moves)))
+    required = {n.nucleus_id for n in plan.nuclei if n.retention == 'required'
+                and set(n.source_fields) & {'memo', 'memo_action', 'answer_text_private'}}
+    assert set.union(*owned) == required
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    for sentence, move, group in zip(sentences, moves, groups):
+        assert tuple(reception.final_reception_source_anchor_text(nid, index, resolver)
+                     for nid in move.target_nucleus_ids) == tuple(events[i] for i in group)
+        assert all((event in sentence) == (i in group) for i, event in enumerate(events))
+        assert [sentence.index(events[i]) for i in group] == sorted(sentence.index(events[i]) for i in group)
+    for relation in plan.relations:
+        if relation.relation_id in plan.coverage_requirements.required_relation_ids:
+            assert sum({relation.from_nucleus_id, relation.to_nucleus_id} <= ids for ids in owned) == 1
+    assert inverse(context, result.artifact.reception, without_author=True).passed
+
+
+@pytest.mark.parametrize('memo,events', [
+    ('褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。',
+     ('褒められた', '誘われた', '頼まれた')),
+    (OWNED_INITIAL, ('誘われた', '頼まれた', '言われた')),
+])
+@pytest.mark.parametrize('sequence,groups,retained,removed', [
+    (('その時は少し苦しかった。',), ((0,), (1, 2)), ('少し苦しかった',), ()),
+    (('今は少し苦しい。', 'その時は少し怖かった。'), ((0,), (1,), (2,)),
+     ('回答した時点では少し苦しい', 'その時に少し怖かった'), ()),
+    (('その時は少し苦しかった。', 'その時は少し怖かった。', 'その時は少し寂しかった。'),
+     ((0,), (1,), (2,)), ('少し苦しかった', '少し怖かった', '少し寂しかった'), ()),
+    (('その時は少し苦しかった。', 'その時は少し怖かった。', '「少し怖かった」ではなく「少し寂しかった」です。'),
+     ((0,), (1,), (2,)), ('その時に少し寂しかった',), ('少し怖かった', '先の回答時点')),
+    (('その時は少し苦しかった。', 'その時は少し怖かった。', '「少し苦しかった」は誤りです。'),
+     ((0,), (1,), (2,)), ('その時に少し怖かった',), ('少し苦しかった',)),
+    (('その時は少し苦しかった。', 'その時は私も少し不安でした。'), ((0,), (1,), (2,)),
+     ('その時にあなたも少し不安だったこと',), ('不安でしたこと',)),
+])
+def test_original_feeling_scopes_retain_each_complete_occasion(memo, events, sequence, groups, retained, removed):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    initial = request = begin(memo)
+    for reply in sequence:
+        request = advance(request, reply)
+    context = actual(request=request)
+    assert_complete_occasion_scopes(context, events, groups)
+    body = context[0].artifact.text
+    assert all(fragment in body for fragment in retained) and all(fragment not in body for fragment in removed)
+    assert request.current_input_bundle == initial.current_input_bundle
+    assert MeaningExperienceEngine().generate(request).artifact.text == body
+
+
+@pytest.mark.parametrize('sequence', [
+    ('その時は少し苦しかった。',),
+    ('今は少し苦しい。', 'その時は少し怖かった。'),
+    ('その時は少し苦しかった。', 'その時は私も少し不安でした。'),
+])
+def test_two_original_feeling_scopes_retain_both_occasions(sequence):
+    request = begin('褒められたのに、嬉しくなかった。誘われたのに、悲しかった。')
+    for reply in sequence:
+        request = advance(request, reply)
+    assert_complete_occasion_scopes(actual(request=request), ('褒められた', '誘われた'), ((0,), (1,)))
+
+
+@pytest.mark.parametrize('first,second,correction,groups,retained,removed', [
+    ('その時は少し苦しかった。', 'その時は少し怖かった。', '「少し怖かった」ではなく「少し重かった」です。',
+     ((0, 1, 2),), '少し重かった', '少し怖かった'),
+    ('その時は少し苦しかった。', 'その時は少し重かった。', '「少し重かった」ではなく「少し怖かった」です。',
+     ((0,), (1,), (2,)), '少し怖かった', '少し重かった'),
+    ('その時は少し苦しかった。', 'その時は少しこわかった。', None,
+     ((0, 1, 2),), '少しこわかった', ''),
+])
+def test_original_feeling_operator_boundary_preserves_meaning(first, second, correction, groups, retained, removed):
+    request = advance(advance(begin(), first), second)
+    if correction:
+        request = advance(request, correction)
+    context = actual(request=request)
+    assert_complete_occasion_scopes(context, ('褒められた', '誘われた', '頼まれた'), groups)
+    assert retained in context[0].artifact.text
+    assert not removed or removed not in context[0].artifact.text
+    assert '先の回答時点' not in context[0].artifact.text
+
+
+@pytest.fixture(scope='module')
+def original_feeling_scope_context():
+    return actual(request=advance(advance(begin(OWNED_INITIAL), 'その時は少し苦しかった。'),
+                                  'その時は私も少し不安でした。'))
+
+
+@pytest.mark.parametrize('mutation', [
+    'drop_middle', 'swap_sentences', 'drop_answer', 'time', 'tense', 'degree', 'polarity',
+    'owner', 'answer_owner', 'answer_particle', 'cause', 'swap_events', 'drop_original',
+    'drop_time', 'other_event_answer', 'quoted_answer',
+])
+def test_original_feeling_scopes_reject_changed_meaning_without_author(original_feeling_scope_context, mutation):
+    context = original_feeling_scope_context
+    follow = context[0].artifact.reception
+    first, middle, last, empty = follow.split('。')
+    assert empty == '' and inverse(context, follow, without_author=True).passed
+    bound = 'と、その出来事について、その時にあなたも少し不安だったこと'
+    changes = {
+        'drop_middle': first + '。' + last + '。',
+        'swap_sentences': middle + '。' + first + '。' + last + '。',
+        'drop_answer': follow.replace(bound, ''),
+        'time': follow.replace('その時にあなたも', '回答した時点であなたも'),
+        'tense': follow.replace('不安だったこと', '不安なこと'),
+        'degree': follow.replace('あなたは少し怖くなかった', 'あなたは怖くなかった'),
+        'polarity': follow.replace('怖くなかったこと', '怖かったこと'),
+        'owner': follow.replace('あなたは少し怖くなかった', '友人は少し怖くなかった'),
+        'answer_owner': follow.replace('あなたも少し不安', '友人も少し不安'),
+        'answer_particle': follow.replace('あなたも少し不安', 'あなたは少し不安'),
+        'cause': follow.replace('頼まれたのに', '頼まれたから'),
+        'swap_events': follow.replace('誘われた', 'TEMP').replace('頼まれた', '誘われた').replace('TEMP', '頼まれた'),
+        'drop_original': follow.replace('頼まれたのにあなたは少し怖くなかったことと、', ''),
+        'drop_time': follow.replace('その時にあなたも', 'あなたも'),
+        'other_event_answer': follow.replace('その出来事について、', '誘われたことについて、'),
+        'quoted_answer': follow.replace(bound, 'と、「その出来事について、その時にあなたも少し不安だったこと」'),
+    }
+    assert changes[mutation] != follow
+    assert not inverse(context, changes[mutation], without_author=True).passed
+
+
+@pytest.mark.parametrize('operation', ['add', 'correct', 'withdraw_answer', 'withdraw_event'])
+def test_original_feeling_scopes_saved_update_and_replay(qcase, monkeypatch, operation):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    third = {'add': 'その時は少し寂しかった。',
+             'correct': '「少し怖かった」ではなく「少し寂しかった」です。',
+             'withdraw_answer': '「少し苦しかった」は誤りです。',
+             'withdraw_event': '「誘われた」は誤りです。'}[operation]
+    for position, reply in enumerate(('その時は少し苦しかった。', 'その時は少し怖かった。', third)):
+        if position:
+            current = run(cont(service, user, current, f'original-scope-continue-{position}'))
+        current = run(answer(service, user, current, reply, f'original-scope-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        follow = body.split('Emlisから：', 1)[1].strip()
+        if position == 1 or position == 2 and operation != 'withdraw_event':
+            assert follow.count('。') == 3
+        assert '回答した時点' not in body and '先の回答時点' not in body
+        if position == 2:
+            if operation == 'correct':
+                assert '少し怖かった' not in body and 'その時に少し寂しかった' in follow
+            elif operation == 'withdraw_answer':
+                assert '少し苦しかった' not in body and '少し怖かった' in body
+            elif operation == 'withdraw_event':
+                assert '誘われた' not in body and 'その時の「少し怖かった」' in body
+            else:
+                assert '少し寂しかった' in follow
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved original scope body must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current

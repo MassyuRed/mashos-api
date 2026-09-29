@@ -3177,6 +3177,11 @@ def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver, 
         ):
             return ()
         nominal = _thread_answer_nominal_morphology(source)
+        # A single received occasion can retain the copula's own tense.
+        # Reducing both forms to a bare feeling noun would erase that contrast.
+        if received_target_count == 1 and nominal is not None and nominal[0] in {
+            "COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE"}:
+            nominal = None
         grammar, value = nominal if nominal else ("FINITE", source)
         if grammar == "FINITE":
             prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で", "prior_answer_time": "先の回答時点で"}[when]
@@ -8525,6 +8530,9 @@ def _thread_received_group_ir_text(realization):
             ap = profiles[answer_slot]
             source = fragments[answer_slot]
             row = _thread_answer_nominal_morphology(source)
+            if count == 1 and row is not None and row[0] in {
+                "COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE"}:
+                row = None
             current_unknown = (grammar == "FINITE" and when in {"answer_time", "prior_answer_time"}
                 and ap.nucleus_kind == ap.predicate_kind == "state" and ap.modality == "uncertain")
             if (not current_unknown and (ap.nucleus_kind != "reaction" or ap.predicate_kind != "feeling" or ap.modality != "feeling")
