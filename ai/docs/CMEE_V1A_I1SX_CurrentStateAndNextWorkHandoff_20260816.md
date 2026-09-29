@@ -11202,3 +11202,42 @@ received既存117トップレベル宣言の削除0、5検査の表面期待/mut
 **残件・再開点。** 元時点singletonの参照重複だけを閉じた。markerのない表現・解釈文・肯定混在/chain/detachedの旧列挙、中央の長い名詞化・定型句、二層再掲・受け取りの深さ、未反映境界・既知失敗は残る。次も同じ複数出来事/回答/訂正群の実本文から、中央名詞と既存roleの責務を保った改善範囲を先に判断する。marker追加やrole変更へ無断で広げない。群全体完了・正式商品合格へ繰り上げず、10/03は未完でもEmlis休止、10/04以降Work/Ultra分析・Work不可時Pro Pieceを維持し、旧10/10期限は復活させない。
 
 **TECHNICAL_CREDIT／STRUCTURE_MAP_DELTA_NONE／全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** API6path＋Cocolon本06の1pathを既存PR #3/#30へ反映し、両fresh head・親/tree・変更path集合・全変更fileのremote bytesを照合する。構造node/route/source権限/lifecycle、新owner/API/DB/RN/schema/依存/flags、規範・凍結証跡・品質閾値は変更0。Ready/merge/deploy/enableは行わない。
+
+
+## 2026-09-29 Work継続 u23：複数出来事の回答名詞を既存の活用へ統一
+
+**開始と選択。** Mashの残件継続指示を受け、API `20b1b5660f0f6d9fbf97a9c5c613e7d65a7e2fc3`／Cocolon `6c88f85fbf8c0cd7943fcda196cf01ee47c89493`のcleanな既存Draftから開始し、両remote headを確認した。最新入口・CURRENT_RULESのR1/R1.1、Rule18 §11.3、恒久incident全文、weekly 20260926の9/29合意とu22を再確認。同一セッションで読んだ不変な全体設計01/02・全ファイル地図01A/B/C/current overlays・current_structure00/01/04・canonical02/06・前回txtを継承し、今回の実sourceを読む。System Context prepareはmaterial commit祖先不一致exit2のため、正本直接読取を適用した。生成freshness成功・全歴史再通読は主張しない。実行環境はWork ModeのGPT-based Codexであり、未確認のPro/Ultra model identityを主張しない。
+
+当初調べた中央significanceの短縮は、既存finiteでは役割を落とし、既存distributiveは選択済みPRESERVE_BOTH_ENDPOINTSと単一focal relationを要するため、original contrast＋ABOUTの受領群へそのまま流用できない。「AもBも」への置換案は今回採用せず、role/marker/generic検査を変更して通すこともしない。実本文で確認した同じ対象群の回答名詞不成立と本文未提供を先に直す。
+
+効果前にLEVEL_2／DIRECT_PRODUCT_OR_ACCEPTANCE_WORKを固定。A=multi-target received回答の名詞不成立/未提供という一因果群、B=既存singletonのcopula/medial/attributive活用を同received各回答へ揃える、C=提供回復と実本文・意味/時点/独立逆読/保存、D=既存helperとreaderの限定利用、E=約20分目安・追加費用/Mash操作0、F=意味/role/原反応や一般answer groupの変更が必要なら不採用。最大6path（HR/Gate・received test・current identity・本handoff・Cocolon06）内でrootのみ編集/実行/GitHub反映、商品/技術担当は読取専任。
+
+**原因と変更。** 複数SELF回答とmarkerのない「少し重かった」が一つのreceived Moveへ残ると有限文から名詞経路へ戻る。その経路の回答活用がtarget1だけに限られ、target2/3では「あなたも少し不安でしたこと」「あなたは少し不安だったのですこと」が残り、裸copulaや文中SELFの一部は独立検証を通らず本文未提供になっていた。
+
+HR `_source_grounded_thread_answer_rows` のreceived_target_count>0だけに既存の完全名詞活用を適用し、source/IRを揃えた。裸copulaはFINITEへ回して「不安なこと／不安だったこと」を区別し、単独SELF/程度・説明の「の」・内外の過去を保持する。既存の複数SELF専用名詞は優先したまま。一般answer groupの既定count0と、原反応活用・参照省略のsingleton条件は維持する。Gateは既存received readerの回答枝だけでcopular/attributive復元と説明形の完全終端証明を揃えた。required contrast/ABOUT、eventごとの明示参照、各時点、全文source、引用拒否、一意parse、role終端を維持する。新owner/意味marker/Plan/Surface/admission/容量の変更はない。
+
+合成三出来事へ「その時は私も少し不安でした。」「その時は私は私には不安だったのです。」「その時は少し重かった。」と回答した候補の両層全文：
+
+```text
+見えたこと：
+「褒められた」のに「嬉しくなかった」、その時は「私も少し不安でした」とあります。 「誘われた」のに「悲しかった」、その時は「私は私には不安だったのです」とあります。 「頼まれた」のに「寂しかった」、その時は「少し重かった」とあります。
+
+Emlisから：
+褒められたのに嬉しくなかったことと、その出来事について、その時にあなたも少し不安だったことと、誘われたのに悲しかったことと、その出来事について、私は私には不安だったのだという、その時のあなたの気持ちと、頼まれたのに寂しかったことと、その出来事について、その時に少し重かったことを小さくせずに受け止めています。
+```
+
+**実本文。** 開始版commitの分離checkoutと候補で、同じ6source×元時点/回答時点×先頭/中央の24状態をfresh生成した。開始版12未提供が候補で提供され、残る12の本文は名詞活用/説明名詞化を修正した。未提供回復は裸copula2種×4配置の8と、文中SELF説明形×4配置の4。既に生成できた12は丁寧copula4、現在の説明4、外側過去の説明4である。全24のcheckpoint・accepted・核・関係・Moveが一致し、生成済み12のObservationも一致。候補24は作者なし独立逆読成功。未提供側に存在しない観測本文の不変を主張しない。
+
+rootと独立商品担当が全24の入力、存在する開始版両層、候補両層を全文確認した。本人/助詞/程度、現在と過去、説明の内外時制、元時点と回答時点、各eventの原反応と別回答を保持する限定改善である。u22からの対照41状態も候補で再生成し、保存済みu22と全record一致（生成37と同じprobeエラー4）。対照の開始版は今回fresh再生成ではない。初期診断の6/5/5入力はこの比較と重複し、未反映回答や有限文の対照も含むため改善数へ合算しない。
+
+**最終検証。** 関連3ファイル1089条件＝1078PASS／既存11FAIL／ERROR・SKIP0、単一current owner-chain1PASSを合わせて**1090条件＝1079PASS／既存11FAIL**。同一セッション・同じ開始commit/runtimeの保存済みu22最終1061とcase ID・成否を照合し、脱落0・既存成否変化0・新28全PASS。11失敗のmessage/traceはworkspace path・行位置・UUID・メモリアドレスだけ正規化して全一致した。開始版の関連3ファイル全量を今回freshに再実行したとはしない。旧2474全量の再検証や未再実行の既知44FAILの解消でもない。
+
+新28は6source×2時点×2配置の24と3round保存4。全required核/関係と元入力を保持し、作者なしで原反応欠落、event交換、回答交換、引用、時点交換/欠落、第三回答欠落、内外時制、説明、本人/助詞/程度の改変を拒否する。複数assertを独立caseへ数えない。保存4は裸copula現在/過去と丁寧copula/説明形で、各roundのoriginal DTO不変、生成禁止GET/service.startの保存DTO完全一致を既存PGliteで確認。実DB・実機・process再起動の証明ではない。重点28全PASS（29.85秒）は最終へ重複加算しない。既存の訂正/回答撤回/event撤回/追加も同じ3関連ファイル内の既存検査で実行したが、今回追加した保存4は3回答と再表示であり、全更新順序の新しい網羅証明とはしない。
+
+received既存119トップレベル宣言は変更/削除0、新2検査のみ追加。protected/frozen・閾値・既存期待値の変更0。独立技術reviewは限定呼出し、source/IR一致、Gate回答枝の完全復元、意味改変拒否に重大指摘なし。current identityは各18payload/9source ownerとfixture key/scopeを維持して再導出し、language=`1406411cdfc8dd9cd0da1e19f7b95b91f513338d31d8fde0976cc09ae74419e2`、runtime=`ae1b7dd0609f75af167baf5c4d71019c9357459f2cebc7ebaf8dd49979782f42`。
+
+再現対象はu22と同じreceived discourse・answer attributive・initial received discourseの3ファイル、および`CMEEStage1AdditionalCorrectionStep2CompositionTest::test_active_final_language_owner_chain_has_zero_legacy_compose_calls`。既存Python3.12.14／pytest9.1.1／FastAPI0.141.1／httpx0.28.1／pydantic2.13.5／PGlite0.5.8を再使用し、`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<既存module> python -m pytest -q`で実行。再install・商品lock/依存変更・追加費用・Mash操作は0。
+
+**残件と再開点。** 今回閉じたのは複数target受領群の回答名詞活用と、それに起因した確認24状態内の本文未提供である。長い一文の列挙、原文の複数SELF、中央significanceの定型受領句、二層再掲・受け取りの深さ、markerのない元時点/解釈文/肯定混在/chain/detached、他の未反映境界・既知失敗は残る。次は同じ群の原反応も含む名詞列挙と、役割を失わない本文構成をactual sourceから判断する。今回の回答名詞修正を原反応の修正済み扱いにせず、role短縮も達成としない。対象群全体の完了・正式Product Read PASSには繰り上げない。
+
+**TECHNICAL_CREDIT／STRUCTURE_MAP_DELTA_NONE／全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** API5path＋本06の1pathをPR #3/#30へ反映し、両fresh head・親/tree・変更path集合・全変更fileのremote bytesを照合する。構造node/route/source権限/lifecycle、owner/API/DB/RN/schema/依存/flags、規範・凍結証跡・品質閾値の変更0。Ready/merge/deploy/enableは行わない。10/03は未完でもEmlis休止、10/04以降Work/Ultra分析・Work不可時Pro Pieceを維持し、旧10/10のEmlis期限は復活させない。

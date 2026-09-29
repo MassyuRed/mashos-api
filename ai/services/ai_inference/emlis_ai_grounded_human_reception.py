@@ -3177,9 +3177,9 @@ def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver, 
         ):
             return ()
         nominal = _thread_answer_nominal_morphology(source)
-        # A single received occasion can retain the copula's own tense.
+        # Each received occasion retains the copula's own tense.
         # Reducing both forms to a bare feeling noun would erase that contrast.
-        if received_target_count == 1 and nominal is not None and nominal[0] in {
+        if received_target_count > 0 and nominal is not None and nominal[0] in {
             "COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE"}:
             nominal = None
         grammar, value = nominal if nominal else ("FINITE", source)
@@ -3187,8 +3187,8 @@ def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver, 
             prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で", "prior_answer_time": "先の回答時点で"}[when]
             owned = _multiple_self_answer_nominal(source, when) if received_target_count else None
             value = owned or prefix + _detached_feeling_finite_surface(source,
-                allow_medial=received_target_count == 1, allow_copular=received_target_count == 1,
-                attributive=received_target_count == 1) + "こと"
+                allow_medial=received_target_count > 0, allow_copular=received_target_count > 0,
+                attributive=received_target_count > 0) + "こと"
         else:
             value = _thread_answer_timed_nominal(value, grammar, when)
         rows.append(_ThreadAnswerGroupItem(nid, event.nucleus_id, source, grammar, when, value, event_fragment))
@@ -8531,7 +8531,7 @@ def _thread_received_group_ir_text(realization):
             ap = profiles[answer_slot]
             source = fragments[answer_slot]
             row = _thread_answer_nominal_morphology(source)
-            if count == 1 and row is not None and row[0] in {
+            if row is not None and row[0] in {
                 "COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE"}:
                 row = None
             current_unknown = (grammar == "FINITE" and when in {"answer_time", "prior_answer_time"}
@@ -8543,7 +8543,7 @@ def _thread_received_group_ir_text(realization):
                 prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で", "prior_answer_time": "先の回答時点で"}[when]
                 owned = _multiple_self_answer_nominal(source, when)
                 nominal = owned or prefix + _detached_feeling_finite_surface(source,
-                    allow_medial=count == 1, allow_copular=count == 1, attributive=count == 1) + "こと"
+                    allow_medial=True, allow_copular=True, attributive=True) + "こと"
             elif row is not None and row[0] == grammar:
                 nominal = _thread_answer_timed_nominal(row[1], grammar, when)
             else:

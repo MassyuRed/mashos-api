@@ -4415,8 +4415,7 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
                                 interpretations.add((value, when))
                     elif nominal.startswith(temporal) and nominal.endswith("こと"):
                         value = _restore_thread_finite_answer(nominal[len(temporal):-2], wanted[2],
-                            copular_clause=len(move.target_nucleus_ids) == 1,
-                            attributive=len(move.target_nucleus_ids) == 1)
+                            copular_clause=True, attributive=True)
                         if value is not None:
                             interpretations.add((value, when))
             if wanted[2:] not in interpretations:
@@ -4425,8 +4424,7 @@ def _body_inverse_thread_received_group(body, witness, sentence, move, plan, res
             # Their complete timed clauses were independently restored above.
             attributive_nominal_read = (
                 piece.endswith("なこと") and wanted[2].endswith(("です", "だ"))
-                or len(move.target_nucleus_ids) == 1
-                and piece.endswith(("のだということ", "のだったということ"))
+                or piece.endswith(("のだということ", "のだったということ"))
                 and wanted[2].endswith(("のです", "のだ", "のだった")))
             markers = {"thread_answer_nominal", "finite_clause_nominal"}
             if _read_multiple_self_answer_nominal(nominal, wanted[2], wanted[3]):
