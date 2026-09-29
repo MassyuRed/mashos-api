@@ -3017,6 +3017,27 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
     # acknowledgement. The returned proof restores the original source bytes.
     if not source:
         return None
+    # A detached answer can retain multiple source SELF expressions as one
+    # explicitly user-owned noun. Read its entire sentence independently;
+    # this does not admit it as a finite operand of a feeling pair.
+    if (sentence_ending and "thread_subject:withdrawn_source_event" in codes
+        and nucleus.source_fields == ("answer_text_private",)
+        and nucleus.allowed_claim_scope == "explicit_supplemental_answer"
+        and frame.polarity == "negative" and move.reception_act == "stay_with_current_burden"
+        and not _body_inverse_reception_context_ids(move, plan)):
+        times = [c.split(":", 1)[1] for c in frame.attribute_codes if c.startswith("thread_time:")]
+        scopes = {"original_occasion": "past", "answer_time": "present", "prior_answer_time": "present"}
+        endings = {"attention": "を見過ごさず、小さくせずに受け止めています。",
+                   "significance": "を見失わず、小さくせずに受け止めています。",
+                   "felt_response": "を小さくせずに受け止めています。"}
+        ending = endings.get(move.move_role)
+        if (len(times) == 1 and scopes.get(times[0]) == frame.time_scope
+            and ending and raw.endswith(ending)
+            and selected_subjective_input is not None
+            and not re.search(r'[「」『』“”‘’"?？!！\r\n。]', source)):
+            nominal = raw[:-len(ending)]
+            if _read_multiple_self_answer_nominal(nominal, source, times[0]):
+                return ((0, len(nominal.encode()), source.encode()),)
     owner = _thread_feeling_owner(source)
     polite_adjective = re.fullmatch(r"(?P<predicate>.+(?:い|かった))です", source)
     predicate = polite_adjective['predicate'] if polite_adjective else source

@@ -2090,3 +2090,108 @@ def test_multiple_self_original_answer_saved_updates_retain_time(qcase, monkeypa
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved original-time SELF body must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('time,prefix', [('今は', '回答した時点の'), ('その時は', 'その時の')])
+@pytest.mark.parametrize('source,finite', [
+    ('私は私には不安です', '私は私には不安だ'),
+    ('私は私には不安でした', '私は私には不安だった'),
+    ('私は私には不安なのです', '私は私には不安なのだ'),
+    ('私は私には不安だったのです', '私は私には不安だったのだ'),
+    ('私は私には怖かったです', '私は私には怖かった'),
+    ('僕は自分には少し不安ではなかったのです', '僕は自分には少し不安ではなかったのだ'),
+])
+def test_withdrawn_event_multiple_self_answer_keeps_independent_time(time, prefix, source, finite):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    request = begin()
+    for reply in ('今は少し苦しい。', time + source + '。', '「誘われた」は誤りです。'):
+        request = advance(request, reply)
+    context = actual(request=request)
+    result, plan, _, _, _ = context
+    nominal = finite + 'という、' + prefix + 'あなたの気持ち'
+    assert nominal + 'を見失わず、小さくせずに受け止めています。' in result.artifact.reception
+    assert 'その時は悲しかったのですね。' in result.artifact.reception
+    assert source in result.artifact.observation and '誘われた' not in result.artifact.text
+    assert all(event in result.artifact.text for event in ('褒められた', '頼まれた'))
+    assert not any(bad in result.artifact.reception for bad in ('これまで、', '今、', 'ですこと', 'でしたこと'))
+    detached = next(n for n in plan.nuclei if n.source_fields == ('answer_text_private',)
+                    and 'thread_subject:withdrawn_source_event' in n.semantic_frame.attribute_codes)
+    assert not any(detached.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    assert inverse(context, result.artifact.reception, without_author=True).passed
+    assert MeaningExperienceEngine().generate(request).artifact.text == result.artifact.text
+
+
+@pytest.fixture(scope='module', params=[('今は', '回答した時点の'), ('その時は', 'その時の')])
+def withdrawn_multiple_self_answer(request):
+    time, prefix = request.param
+    req = begin()
+    for reply in ('今は少し苦しい。', time + '僕は自分には少し不安ではなかったのです。',
+                  '「誘われた」は誤りです。'):
+        req = advance(req, reply)
+    context = actual(request=req)
+    nominal = '僕は自分には少し不安ではなかったのだという、' + prefix + 'あなたの気持ち'
+    assert nominal in context[0].artifact.reception
+    assert inverse(context, context[0].artifact.reception, without_author=True).passed
+    return context, nominal, prefix
+
+
+@pytest.mark.parametrize('mutation', [
+    'first_self', 'second_self', 'drop_self', 'particle', 'degree', 'negation',
+    'inner_past', 'outer_past', 'explanation', 'owner', 'time', 'drop_time',
+    'duration', 'now', 'event', 'quote', 'extra_predicate', 'role',
+])
+def test_withdrawn_multiple_self_answer_rejects_meaning_changes(withdrawn_multiple_self_answer, mutation):
+    context, nominal, prefix = withdrawn_multiple_self_answer
+    follow = context[0].artifact.reception
+    changes = {
+        'first_self': nominal.replace('僕は', '友人は'),
+        'second_self': nominal.replace('自分には', '友人には'),
+        'drop_self': nominal.replace('僕は', ''),
+        'particle': nominal.replace('自分には', '自分にも'),
+        'degree': nominal.replace('少し', ''),
+        'negation': nominal.replace('不安ではなかった', '不安だった'),
+        'inner_past': nominal.replace('不安ではなかった', '不安ではない'),
+        'outer_past': nominal.replace('のだという、', 'のだったという、'),
+        'explanation': nominal.replace('のだという、', 'という、'),
+        'owner': nominal.replace('あなたの気持ち', '私の気持ち'),
+        'time': nominal.replace(prefix, 'その時の' if prefix == '回答した時点の' else '回答した時点の'),
+        'drop_time': nominal.replace(prefix, ''),
+        'duration': 'これまで、' + nominal,
+        'now': '今、' + nominal,
+        'event': '誘われたことについて、' + nominal,
+        'quote': '「' + nominal + '」',
+        'extra_predicate': nominal + 'が改善したこと',
+    }
+    changed = (follow.replace('を見失わず、小さくせずに', 'を小さくせずに')
+               if mutation == 'role' else follow.replace(nominal, changes[mutation]))
+    assert changed != follow
+    assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('time', ['今は', 'その時は'])
+@pytest.mark.parametrize('correct_first', [True, False])
+def test_withdrawn_multiple_self_saved_correction_order_keeps_time(qcase, monkeypatch, time, correct_first):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    source, revised = '私は私には不安だったのです', '私は私には不安なのだった'
+    correction = '「' + source + '」ではなく「' + revised + '」です。'
+    withdrawal = '「褒められた」は誤りです。'
+    sequence = (time + source + '。',) + ((correction, withdrawal) if correct_first else (withdrawal, correction))
+    for position, reply in enumerate(sequence):
+        if position:
+            current = run(cont(service, user, current, f'detached-self-continue-{position}'))
+        current = run(answer(service, user, current, reply, f'detached-self-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        assert all(event in body for event in ('誘われた', '頼まれた'))
+        if position == 2:
+            follow = body.split('Emlisから：', 1)[1].strip()
+            prefix = 'その時の' if time == 'その時は' else '先の回答時点の'
+            assert revised + 'という、' + prefix + 'あなたの気持ち' in follow
+            assert 'その時は嬉しくなかったのですね。' in follow
+            assert source not in body and '褒められた' not in body
+            assert not any(bad in follow for bad in ('これまで、', '今、', 'ですこと', 'でしたこと'))
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved detached SELF body must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current

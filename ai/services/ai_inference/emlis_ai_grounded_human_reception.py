@@ -2724,6 +2724,17 @@ def _source_grounded_current_expression_nominal(
         when = "先の回答時点" if times == {"prior_answer_time"} else "回答した時点" if times == {"answer_time"} else "その時" if times == {"original_occasion"} else None
         if when is None:
             return ""
+        if ("thread_subject:withdrawn_source_event" in codes
+            and nucleus.kind == profile.nucleus_kind == "reaction"
+            and profile.predicate_kind == "feeling" and profile.modality == "feeling"
+            and nucleus.semantic_frame.polarity == "negative"
+            and nucleus.retention == "required" and nucleus.grounding_kind == "explicit"
+            and move.required and move.reference_mode != "anaphoric_first"
+            and not any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
+                        for r in plan.relations)):
+            owned = _multiple_self_answer_nominal(fragment, next(iter(times)))
+            if owned is not None:
+                return owned
         return f"{when}{'で' if times in ({'answer_time'},{'prior_answer_time'}) else 'に'}{fragment}こと"
     from emlis_ai_grounded_observation_plan import _source_action_change_contrast
     action_contrast = _source_action_change_contrast(plan.nuclei, plan.relations)
@@ -3182,8 +3193,9 @@ def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver, 
 def _multiple_self_answer_nominal(source, when):
     """Keep a whole repeated-SELF proposition under explicit user ownership.
 
-    Only received-answer nominals call this. It does not license
-    a new finite reading, delete a repeated particle or change source admission.
+    Received groups and independently retained withdrawn-event answers use
+    this nominal. It does not license a new finite reading, delete a repeated
+    particle or change source admission.
     """
     parsed = re.fullmatch(
         r"(?P<prefix>(?:(?:少し|とても|本当は|まだ|全然|あまり)*"
@@ -8827,6 +8839,27 @@ _SOURCE_GROUNDED_NONPAST_MORPHOLOGY_RE: Final = re.compile(
 )
 
 
+def _detached_multiple_self_nominal_time(realization, source, referent):
+    """Read one complete owned answer noun's existing temporal axis."""
+    if (realization.target_slot_count != 1 or realization.semantic_fragments != (source,)
+        or len(realization.semantic_profiles) != 1 or realization.context_slots
+        or realization.relations or realization.polarity != "negative"
+        or realization.modality != "feeling"
+        or realization.aspect not in {"unknown", "not_applicable"}):
+        return None
+    profile = realization.semantic_profiles[0]
+    if (profile.nucleus_kind != "reaction" or profile.predicate_kind != "feeling"
+        or profile.modality != "feeling" or profile.actor_kind != "SELF"
+        or profile.quoted_boundary or profile.performed_action or profile.future_action):
+        return None
+    for when, scope in (("original_occasion", "past"), ("answer_time", "present"),
+                        ("prior_answer_time", "present")):
+        if (realization.time_scope == scope
+            and referent == _multiple_self_answer_nominal(source, when)):
+            return when
+    return None
+
+
 def _source_grounded_temporal_aspect_realization(
     realization: _ReceptionMoveRealizationV1,
     semantic_head: str,
@@ -8855,6 +8888,9 @@ def _source_grounded_temporal_aspect_realization(
     if group_text:
         if target_referent != group_text or realization.aspect not in {"unknown", "not_applicable"}:
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+        return "TARGET_REFERENT", "SOURCE_CLAUSE", "", ""
+
+    if _detached_multiple_self_nominal_time(realization, semantic_head, target_referent):
         return "TARGET_REFERENT", "SOURCE_CLAUSE", "", ""
 
     # Past inflection was replaced by a reversible noun. Its explicit
@@ -9187,6 +9223,9 @@ def _source_grounded_target_np(
             and realization.quantity in {"not_applicable", "source_bounded", "unknown"}
             and (
                 referent_text == f"{meaning_fragment}という言葉"
+                or thread_answer_about_time in _THREAD_ANSWER_TIME_NOMINAL_PREFIX
+                and _detached_multiple_self_nominal_time(realization, meaning_fragment, referent_text)
+                    == thread_answer_about_time
                 or thread_answer_about_time in _THREAD_ANSWER_TIME_NOMINAL_PREFIX
                 and any(
                     code == f"answer-slot:0:{row[0]}:{thread_answer_about_time}"
