@@ -11436,3 +11436,45 @@ root（Work ModeのGPT-based Codex）が編集・実行・GitHub writeの単一o
 実本文40入力の比較では38provided（変更27／不変11）、既存public unavailable2。provided38全件は公開entryと本文一致・作者禁止逆検証成功、Observation/核/関係/checkpointは開始版と不変。二場面の共有述語またはそれぞれの異なる完全述語と、第三場面の原反応/負回答を分離した。初案の新fail1は解消した。同じ回答文を二場面から再訂正/撤回する2入力はpublic correction_target_unresolvedが残り、probeのartifact=None参照によるAttributeErrorをproduction例外と扱わない。長い反復SELF名詞/受領定型や重複出来事labelの旧不自然さは商品合格扱いしない。新保存検査は4系列12回答後状態、original不変・再生成を禁止したGET/start完全一致を含む。PGliteでの確認で実DB/実機/再起動ではない。
 
 current identityは既存18payload/9ownerの派生値のみ更新：language `39bc0bb799a718251d46359af0a9f813a8b23613305e219143d12c5cc3195ddd`／runtime `3f930a377fd23d90cb17879e28465fa0c6d523bae19a1d2fcf2154c3bd2a3238`。関連全2251件は現在実行中で、結果確定前のこのcheckpointを全PASS/完了とはしない。API実変更はPlan/Gate/detached tests/current identity/本handoffの5既存file、Cocolon06を最終追記予定。全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmergedを維持。
+
+## 2026-09-30 Work継続 u29：隣接する二訂正と残存原反応のscope分離 — 確定記録
+
+**開始・優先順位。** MashのEmlis残件継続指示により、API `a71116e6c2c38f0ff964565a550413ecd3a2956f`／Cocolon `9ce1e892accbd1d1425c02cac20632438e42c908`から開始した。前提・作業姿勢ルール・恒久incident全文、全体01/02、全file地図01A/B/Cの領域と既読接点、current_structure00/01/04、最新weekly20260926内9/29合意、Karen-Diary指定3file、u28引継ぎを確認。System Context prepareはmaterial commit祖先確認でexit2、許可済み原典直接参照を用い、freshness成功とはしない。同じ複数出来事/回答/訂正群を優先し、群未完了のため次順位の二層改善へ自動移行しない。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。商品接続は、隣接する二場面への訂正を保ちながら第三場面の原反応・回答を読み分けられる本文。first effect前に既存8path（API Plan/HR/Gate、received/detached tests、current identity、本handoff、Cocolon06）を上限として記録し、新機構・契約変更・対象外退行なら拡張しない境界を置いた。実変更はPlan/Gate/detached tests/current identity/本handoff/Cocolon06の6既存path。root（Work ModeのGPT-based Codex）が編集・実行・GitHub反映の単一owner、商品・技術担当は読取確認。確認していないPro/Ultra identityを称さない。追加費用・Mash操作0。30〜45分程度の限定修正見込みだったが、途中の処理停止と失効runtime復元・全量再実行が発生し、当初の時間見込みには収まらなかった。
+
+**原因と修正。** u28は原反応が一場面だけABOUT回答へ置き換わった場合を分離した。二場面がABOUT-onlyになる場合は既存集合Moveに残るため、隣接する二訂正と残る一場面まで同じ列挙になっていた。Planで三event＝targets、端に原反応pair一つ、残る隣接二つがoriginal_occasionのABOUT-onlyである証明済み経路だけを二Moveに分けた。二訂正は集合scopeを保持し、同一述語の共有または異なる完全述語の並列を既存HRに委ねる。残存pairの負回答は元反応と同じscopeに保持。上流の一意性証明、source順、required関係の所有、上限を維持する。非隣接二、三ABOUT-only、不明、肯定併存、撤回、独立訂正/行動、chain等へPlan境界を広げていない。
+
+初回Plan-only probeでは『私は私には少し不安だったのです』を二場面へ訂正した1系列が、新しい二target Moveの名詞形context照合に失敗した。第三場面に頼らず各ABOUTの完全な受領表現を証明できるよう、Gateで既存received-group完全proofによる名詞形復元をsingleton以外にも適用した。source『のです』は不変で、本文の『のだという』との照合用contextだけを証明済み範囲から復元する。完全proofがない本文は従来どおり拒否する。語句/述語一致の新classifier、owner/helper/author/grammar/engineは追加しない。Plan-onlyの新fail1を最終成功へ混ぜず、Gate修正後の実本文を確認した。
+
+意味核・関係・source admission・HR・role配分規則（コード）・質問上限・API/DB/RN/schema・保存責務・flagは不変。既存検査2methodは、単一Moveのunpackと旧中止形固定anchorを、対象二eventの所有確認と実際の完全形/中止形に対応する方法へ適応した。意味改変拒否・frame6の目的は保持し、production変更前のsourceでも共有53PASS（21.04秒）、変更後共有53PASS（20.95秒）。品質期待・ID・protected/frozen acceptanceの変更、削除、skip/xfail追加0。『既存testが一切無変更』とは記録しない。
+
+**実本文（合成入力）。** 『褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。』に『「嬉しくなかった」ではなく「少し私は苦しかったです」です。』『「悲しかった」ではなく「私は少し苦しかったです」です。』を順に回答。
+
+```text
+見えたこと：
+それぞれの出来事について、その時の受け止めとして、「褒められた」ことには「少し私は苦しかったです」、「誘われた」ことには「私は少し苦しかったです」と書かれています。 「頼まれた」と「寂しかった」が、異なる向きのまま同時にあります。
+
+Emlisから：
+褒められた時も、誘われた時も、あなたは少し苦しかったのですね。頼まれたのに、寂しさを感じたのですね。
+```
+
+変更前Receptionは『褒められた時も、誘われた時も、あなたは少し苦しく、頼まれたのに、寂しさを感じたのですね。』。第三場面との境界を作った改善であり、『のですね』反復等を解決した商品合格例ではない。
+
+**実本文比較と独立レビュー。** 異なる入力/回答40系列を開始版と比較。38provided＝Reception/Move変更27＋不変11、既存public unavailable2。提供38全件で公開entryと本文一致、作者禁止逆検証成功、checkpoint/核/関係/Observation差0。rootと商品担当が入力・前後両層全文を読み、技術担当が全40系列の構造、source/test差分、独立proofと所有を確認した。訂正二場面の同一述語は共有を維持し、異なる主体助詞・程度・過去/非過去・否定は同一化しない。第三場面の負回答も出来事・原反応と同じ文に残る。本文上の新たな意味追加・対象取り違え・明確な日本語退行は見当たらなかった。
+
+本文なし2件は、同じ答え文が二場面に存在し、その答えを再訂正/撤回する既存の曖昧対象。比較probeの`artifact.text`参照はartifact=NoneでAttributeErrorになったため、公開engineを両版で別に実行し、両版で公開status・reason_codes・artifact不在が`UNAVAILABLE / correction_target_unresolved / artifact=None`として一致することを確認した。production例外や今回新退行として数えず、未解決を隠さない。説明形『のだし』、反復SELFの長い名詞句、同名出来事の区別しにくさ、重複訂正labelの旧『ですこと』等は残る。
+
+**検査。** 新30件は共有述語16、異なる完全述語8、反復SELF名詞2、保存4。新30＋既存共有53＝83PASS（38.81秒）。文境界・元反応不存在・required関係の一意保持、対象/主体/助詞/程度/否定/時点/説明の削除や変更、文欠落/複製を作者禁止で拒否する。保存4系列12回答後状態ではoriginal不変、再訂正/撤回後の旧意味非復活、生成を禁止したGET/startの保存DTO完全一致を確認。PGlite上の確認で、実DB・実機・プロセス再起動の検査ではない。
+
+確定候補の関連全量は **2251件＝2237PASS／既存14FAIL、error/skip0、901.31秒**。この一回の完了した全量実行の内訳で、focus・本文probe・中断ログを合算しない。開始版の旧2221 IDの欠落0・成否変更0、新30全PASS。既知14のmessage/traceはrepository path・行番号・UUID・アドレスを正規化すると差0。received8（現在肯定の旧文形期待6と旧anchorの改変検査2）、detached6（肯定2責務の容量2、第二原反応訂正の旧fragmentation期待2、撤回後BODY_UNAVAILABLE期待1、肯定訂正の旧group期待1）を維持しており、既知14を解消/全PASS扱いにしない。source/testはcheckpointから検査終了まで無変更。
+
+開始版2221件＝2207PASS/14FAILは、u28の反映済み同source/test版の実XMLを継承し、開始版全量を再実行したとはしない。初回u29全量は73%表示後の途中で処理停止し、完了XMLなし。部分ログを保存し、通過数/成功の証拠へ足さない。再開時には旧runtimeが失効していたため、検証用環境へ同じ主要version（Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1/PGlite0.5.8）を復元した。再開時Starlette1.7.0。repo依存fileは変更していない。初回の環境再使用install0という中間記録を最終通算のinstall0として扱わない。失効pathでの一回の実行はexit127でtest未開始だった。
+
+検査コマンドは `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<PGlite0.5.8 module> <restored-python> -m pytest -q ai/tests/test_cmee_emlis_received_discourse.py ai/tests/test_cmee_emlis_detached_observation.py ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEEStage1AdditionalCorrectionStep2CompositionTest::test_active_final_language_owner_chain_has_zero_legacy_compose_calls --junitxml=<u29-final.xml>`。current identityは既存18payload/9ownerの派生値のみ更新：language `39bc0bb799a718251d46359af0a9f813a8b23613305e219143d12c5cc3195ddd`／runtime `3f930a377fd23d90cb17879e28465fa0c6d523bae19a1d2fcf2154c3bd2a3238`。
+
+**反映と残件。** source/test/identityと途中handoffのcheckpointはAPI `74193019f7727b235687978c93ee3053fdbe21c6`（tree `f0935400eafa7a7a129e7690ba7ef962574a0299`）へnon-force反映し、5file全文をremoteから再取得して一致確認した。最終6変更file（API5／Cocolon06の1）のhead/tree・反映後全文照合は各Draft PR先頭u29を参照する。
+
+三場面すべて/非隣接の原反応訂正、独立訂正＋三場面、肯定/不明併存、撤回後等の残存列挙、複数節の訂正replacement、曖昧な訂正対象、長い名詞句・反復SELF・受領定型反復・二層再掲、既知失敗は残る。隣接二訂正でも異なる述語の内部列挙を全面解消したわけではない。未説明残件を対象外へ付け替えず、同じ複数出来事/回答/訂正群の続きを扱う。10/03未完でもEmlis休止、10/04以降Work分析／不可時Pro Piece、旧10/10 Emlis期限再設定待ちという最新合意を保持する。
+
+**TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** Plan内部のscope構成とGate既存proofの適用修正で、責任・whole route・artifact lifecycle不変。Ready/merge/deploy/enableなし。
