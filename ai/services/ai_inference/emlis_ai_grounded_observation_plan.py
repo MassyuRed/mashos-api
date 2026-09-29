@@ -8003,6 +8003,19 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
                 groups[-1] = (family, (*prior_targets, event), (*prior_supports, feelings[event]))
             else:
                 groups.append(("current_burden", (event,), (feelings[event],)))
+    # An independent original correction does not reconnect its lost contrast.
+    # The two remaining received occasions can still close their own scopes:
+    # either their retained reaction, or an answer with an active ABOUT edge.
+    # Keep the separately proved correction as the existing third duty.
+    if (separate_later_scopes and len(groups) == 2 and len(targets) == 2
+        and len(revised_originals) == len(independent_answers) == 1
+        and by_event and len(negative) == len(answers)
+        and not (chain_ids or withdrawal or independent or actions or detached_answers)
+        and all(not is_grounded_current_answer_uncertainty(answer) for answer in negative)):
+        groups = [("current_burden", (event,),
+                   tuple(nid for nid in (feelings.get(event),
+                         by_event[event].nucleus_id if event in by_event else None)
+                         if nid is not None)) for event in targets] + groups[1:]
     # With one occasion withdrawn, the two surviving complete pairs still
     # own separate answer scopes. Detached feelings keep their independent
     # duties; the existing merger below can coordinate their own sources
@@ -9107,11 +9120,12 @@ def _build_reception_depth_policy_and_moves(
                           == retained_reaction_groups[position]
                           for position, item in enumerate(selected))
                   and all(len(item.target_nucleus_ids) == 1 and 1 <= len(item.support_nucleus_ids) <= 2
-                          for item in burdens if item not in standalone)
-                  and any(len(item.support_nucleus_ids) == 2 for item in burdens)):
+                          for item in burdens if item not in standalone)):
                 # The independent duty keeps attention. Give the two complete
                 # occasions distinct existing roles in source order instead
                 # of repeating felt_response for both event/answer scopes.
+                # A corrected occasion may retain only its ABOUT answer;
+                # the source-proved group need not also own a contrast.
                 live = tuple(item for item in burdens if item not in standalone)
                 roles[live[0].opportunity_id] = "significance"
                 roles[live[1].opportunity_id] = "felt_response"

@@ -11341,3 +11341,17 @@ current identityは既存18payload/9ownerの派生値のみ更新。language `2e
 長いnominal、self群での受領定型反復、複数SELFの自然さ、二層再掲、原反応訂正後などの残存列挙、既知失敗は残る。同じ複数出来事/回答/訂正群の残件から続け、群の完了や商品合格とは扱わない。10/03は未完でもEmlis休止、10/04以降Work分析・Work不可時Pro Piece、旧10/10 Emlis期限は再設定待ちの最新合意を維持。
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** 責任とwhole routeは不変、Ready/merge/deploy/enableなし。
+
+## 2026-09-29 Work継続 u27：原反応訂正後の二場面分離 — 検証途中checkpoint
+
+開始API `ef6e2e24efdd776063b521dbec62c8b8c82c81f9`／Cocolon `d3ebe607fb5a68d3e9bc4b9bceca6f65348dc873`。Mashの継続指示とRule18 LEVEL_2、既存複数出来事/回答/訂正群内の限定修正。Work ModeのGPT-based Codexが単一execution owner、独立商品/技術担当は読取専任。未確認のPro/Ultra model identityは名乗らない。前提・作業ルール・恒久incident全文・全体01/02・01A/B/Cの領域と接点・current_structure00/01/04・9/29追加合意・u26を確認。current tracked filesはAPI2300/Cocolon1645。System Context prepareはworkspace指定先にAPI checkoutが存在せずexit2。原典直接参照へ戻し、生成Contextのfreshness成功とはしない。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK。修正対象は既存Plan内の原反応訂正後の列挙。独立したnegative原反応訂正1と、原反応またはABOUT回答を保持する二場面が既存3 Move内に閉じる場合だけ分離する。失われたcontrastを訂正先へ再接続せず、既存role配分を独立訂正attention／存続先頭significance／後尾felt_responseへ割り当てる。新owner/helper/classifier/語彙受付/本文grammar/意味核/関係/契約/上限/閾値変更なし。最終変更予定はAPIのPlan・received test・current identity・本handoffとCocolon06の5既存path。追加費用・Mash操作0、商品合格/公開判定は別。実退行や既存境界の変更が必要なら採用せず、この群の未完了として残す。
+
+合成28系列を同runtimeで開始版と候補比較。提供24はcheckpoint/nuclei/relations/Observation不変、Reception7変更・17不変、全24でpublic entry本文一致・作者禁止inverse成功。追加回答の前提が成立せず3段目未到達のcontrol3と、answer_syntax_unsupported1は解消扱いにしない。商品担当は入力・両層全文、技術担当は所有・role・境界と実差分を確認。長い名詞句・定型受領句・二層再掲は未解決で、対象群完了・商品PASSではない。
+
+新規10検査（本文/意味改変拒否8、PGlite保存2）は全PASS、19.44秒。保存2系列・各2回答後状態はoriginal不変、生成禁止GET/startのDTO完全一致。実DB・実機・再起動試験ではない。開始版のreceived/detached関連横断は2180件＝2166PASS／14FAIL、608.41秒。候補は実行中で、現時点で既存失敗不変・回帰0・横断完了を主張しない。再開時は両実行結果を照合し、既知失敗・旧文面期待・実退行を分け、結果を本節へ確定する。検査実行は `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<PGlite0.5.8 module> python -m pytest -q ai/tests/test_cmee_emlis_received_discourse.py ai/tests/test_cmee_emlis_detached_observation.py`、候補は既存identity検査も追加。
+
+初稿は分割だけでfelt_response重複が発生し不採用。既存role条件の不要なsupport2要求を外し、証明済み三duty・独立1・単一event2・各support1〜2・順序一致を保持した。途中の未定義変数を使う試案は実行で検出し撤回済み。pytest初回launchは出力先cwd誤りで起動前失敗、正しいworktree cwdで起動。Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1/PGlite0.5.8を再使用し、install/依存変更0。current identityはlanguage `9965cff05349928badaad3e49309ffca03cd44a5ec71cd91e70d3035c6b9ef98`／runtime `56d2d934c02c28aac1cb7faa787fdeb1a1786110d44dc46058afee31a12ecf29`、既存18payload/9owner不変。
+
+STRUCTURE_MAP_DELTA_NONE：既存Planの内部構成のみで責任・経路・lifecycle不変。全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。10/03未完でもEmlis休止、10/04以降Work分析／不可時Pro Piece、旧10/10 Emlis期限再設定待ちを保持。Ready/merge/deploy/enable未実施。
