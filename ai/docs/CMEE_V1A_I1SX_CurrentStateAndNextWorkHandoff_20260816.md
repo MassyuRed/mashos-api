@@ -10818,3 +10818,19 @@ Mashの継続指示で、前回API `5289669876c52d3253d81470d08e285f8319d3dd`／
 **残件・再開先。** 実装・実本文で進めた範囲は、限定された受領event＋二感情と、上記の回答/訂正/撤回・保存への接続。既存test期待1件との矛盾が残るため、unit全条件の完了とはしない。一般の逆接分割、複数の三核組、範囲外の感情・主語・程度・敬体、一部上流未対応文まで解決したとはしない。訂正した感情と元の逆接は既存規則で外すため、訂正後にその逆接を勝手に再構成しない。長い「し」の列挙、定型締め、二層再掲、単独の抽象表現、受け取りの深さ、既存39失敗と新たな期待衝突1件は残る。再開時はまず、既存testの未証明境界と新しい三核二辺証明の整合を、testの目的・受入基準を弱めずに解決する。その後、未対応の複合群を実本文・訂正系列で評価し、共通の意味所有で閉じられる限定範囲を選ぶ。語尾変更や検査器の追加だけで進捗扱いしない。9/30中間・10/3対象群・10/10内容判断、別枠10/2開発実機一往復を維持する。
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品合格0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** API11path＋Cocolon06＝12path。既存地図のowner/route/lifecycleを変更しない。実DB・実機・実課金・Ready/merge/deploy/enable未実施。反映commitとremote変更全文照合は両Draft PRの今回記録へ結合する。
+
+## 2026-09-29 Work継続：u13の未証明境界と三核保持検査の不一致を解消
+
+前回の未完了u13を、Mashの継続指示とRule18 LEVEL_2の既存検査目的を保つ技術補正として継続した。開始headはAPI `430b4eaca4c3ff271b1eb228aac1f221acdec63a` / Cocolon `c8f8265f7a2d7a37b838c3796e0d980975e6492c`。前回txt、前提資料・作業ルール、恒久incident全文、全体設計01/02と全ファイル地図01A/B/Cの関連owner/current overlays、current_structure00/01/04、最新weekly9/26を確認した。System Context prepareは当該checkoutのtools module不在で失敗したため、正本の直接読取へ戻った。context freshness成功は主張しない。root華恋のみが編集・実行・GitHub反映し、商品・技術担当は読取専任。確認できないPro/Ultra model identityは主張しない。
+
+**旧判断と修正理由。** `test_unproved_compound_feelings_are_not_promoted_to_self_finite_pair` の元5入力は全て保持した。最初の4入力は他者・混合主体・引用・推量で、従来の禁止assertionを維持。第5入力はu12では未証明だった受領event＋二感情だが、u13で原文の三範囲と二つの対比を証明できるようになった。修正前の今回再実行も4PASS/1FAILで、この衝突を再現した。marker禁止や内側感情の部分文字列禁止をそのまま当てると、出来事を含めた正しい全体まで拒否する。productionの語尾変更、例文除外、skip/xfail、分母縮小で逃げず、第5入力に三核の原文scalar範囲・同一source・本人・型/極性/時制・required二辺・両層の完全本文を要求する検査へ置き換えた。内側二感情だけへ縮めたReceptionは作者を禁止した既存read_bodyで拒否する。品質・受入条件、protected/frozen test、意味認定の契約は変更していない。
+
+追加18条件は、出来事/第一感情/第二感情の欠落、二つの対比の因果化、単なる三引用列挙、時制/否定/順序の改変を拒否する14条件と、後半の他者・可能性・引用伝聞・明示変化を三核の本人有限感情と誤認しない4条件。前者はchanged!=bodyと原本文成功を要求し、既存作者非依存readerで変更本文を拒否した。focusedは元5＋新18の23PASS。独立技術担当は原文固定期待と意味保護を確認し、独立商品担当はu13の未完了補完としてPRODUCT_ROUTE_ALIGNEDと判断した。新たな商品品質改善やhuman Product Read PASSとは数えない。
+
+**今回実行した範囲。** `test_cmee_emlis_initial_received_discourse.py` と `test_cmee_emlis_received_discourse.py` の全628条件を実行し、**617PASS／既存11FAIL／0ERROR／0SKIP、142.65秒、警告1**。前回の同2ファイル610条件とcase IDで照合し、脱落0、既存PASS→FAIL0、当該1件だけFAIL→PASS、新18は全PASS。残る11FAILは失敗メッセージと本文が前回と一致し、3件のassertion位置だけが42行移動した。既存testの関数/class宣言は当該関数以外不変、追加2関数・削除0。実行後のmodule説明文修正は非実行docstringのみで、検査関数・productionは実行時と同一。
+
+前回全8target2471条件のうち、今回範囲外1861条件＝1833PASS/28FAILは継承した。production source・共有identity fixture・残り6targetは変更0。前回全量＋今回影響範囲を同じcase IDで統合した参照値は**2489条件＝2450PASS／既存39FAIL**であり、今回全2489件を再実行した結果ではない。全量GREENは主張しない。今回の628条件にはu13の更新12・三round3・保存5・撤回後の偽関係/時制2・event主体2を含み、初回・回答・原感情訂正・各撤回・保存GET/startを再確認した。保存は既存試験用PGliteで、実DB・実機ではない。
+
+**実本文と残件。** 対象第5入力の実生成では出来事と二つの過去感情、原文の二接続を両層で確認した。runtimeを変更しておらず、u13の本文改善と25条件の前後比較を継承する。今回新しい可視本文deltaは0。u13に残していた検査不一致1件は解消したが、二層再掲・長い列挙・定型締め・受け取りの深さ、一般複合群・既存39失敗は未完了。次は既存の意味所有を保ち、複数対比と回答が一文の長い「し」列挙になる共通原因を既存Human Reception/Surfaceの実本文から扱う。9/30中間確認、10/3対象群、10/10内容判断、別枠10/2開発実機目標は維持する。
+
+変更はAPIの当該testと本handoff、Cocolon既存06の計3path。source/fixture/API/DB/RN/schema/依存/構造地図/旧検証記録の変更0。既存Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1とPGliteを現存・import確認して使用し、install0。成果は前回u13の意味保護検査整合に限るTECHNICAL_CREDIT。STRUCTURE_MAP_DELTA_NONE（既存owner・route・lifecycle不変）、全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmergedを維持。実DB・実機・実課金・Ready/merge/deploy/enableは実施していない。GitHub反映commitと変更3pathのremote全文照合は両Draft PRの今回記録へ結合する。

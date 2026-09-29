@@ -1,6 +1,6 @@
 """Initial source-owned relations and later answers use one prose owner.
 
-Public synthetic cases only. Existing literal expectations remain unchanged.
+Public synthetic cases only. Preserve complete meaning and unproved boundaries.
 """
 
 from helpers.retained_assertions import continue_assertions, retained_assertion
@@ -65,7 +65,49 @@ def test_finite_feeling_contrast_keeps_each_feeling_and_its_time(
 def test_unproved_compound_feelings_are_not_promoted_to_self_finite_pair(memo):
     from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
     req = begin(memo)
-    plan = build_updated_grounded_plan(prepare_emlis_meaning(req))
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    if memo == '褒められたのに、悲しかったけど嬉しかった。':
+        # u13 proves this whole source, not an isolated inner feeling pair.
+        # Keep the original parameter and require the event and both edges;
+        # a marker alone or a two-feeling-only reception is insufficient.
+        from test_cmee_emlis_detached_observation import read_body
+        nodes = [n for n in plan.nuclei if n.source_fields == ('memo',)]
+        assert len(nodes) == 3
+        expected = (
+            ('event', 'event', 'neutral', 'fact', 0, 5, '褒められた'),
+            ('reaction', 'feeling', 'negative', 'feeling', 8, 13, '悲しかった'),
+            ('reaction', 'feeling', 'positive', 'feeling', 15, 20, '嬉しかった'),
+        )
+        resolver = prepared.thread.resolver()
+        for node, (kind, predicate, polarity, modality, start, end, fragment) in zip(nodes, expected):
+            assert (node.kind, node.semantic_frame.predicate_kind,
+                    node.semantic_frame.polarity, node.semantic_frame.modality) == (
+                        kind, predicate, polarity, modality)
+            assert (node.semantic_frame.actor, node.semantic_frame.time_scope,
+                    node.grounding_kind, node.retention, node.allowed_claim_scope) == (
+                        'current_user', 'past', 'explicit', 'required', 'explicit_current_input')
+            assert len(node.source_span_ids) == 1 and node.source_span_ids == nodes[0].source_span_ids
+            ranges = [code for code in node.semantic_frame.attribute_codes
+                      if code.startswith('source_fragment_scalar_range:')]
+            assert ranges == [f'source_fragment_scalar_range:{start}:{end}']
+            raw = resolver.resolve(node.source_span_ids[0]).raw_text
+            assert raw[start:end] == memo[start:end] == fragment
+        assert [(r.type, r.from_nucleus_id, r.to_nucleus_id, r.grounding_kind,
+                 r.source_span_ids) for r in plan.relations if r.retention == 'required'] == [
+            ('contrast', nodes[0].nucleus_id, nodes[1].nucleus_id, 'user_stated_relation', nodes[0].source_span_ids),
+            ('contrast', nodes[1].nucleus_id, nodes[2].nucleus_id, 'user_stated_relation', nodes[0].source_span_ids),
+        ]
+        result = MeaningExperienceEngine().generate(req)
+        assert result.artifact is not None
+        assert '「褒められた」のに「悲しかった」けど「嬉しかった」' in result.artifact.observation
+        assert '褒められたのに、悲しかったけど、嬉しかった' in result.artifact.reception
+        context = actual(request=req)
+        body = result.artifact.text
+        assert context[0].artifact.text == body and read_body(context, body).passed
+        partial = body.replace(result.artifact.reception, '悲しかったけど、嬉しかったのですね。')
+        assert partial != body and not read_body(context, partial).passed
+        return
     assert not any('lexical:source_finite_contrast_feeling' in n.semantic_frame.attribute_codes for n in plan.nuclei)
     result = MeaningExperienceEngine().generate(req)
     assert result.artifact is None or '悲しかったけど、嬉しかったのですね' not in result.artifact.reception
@@ -452,6 +494,44 @@ def test_received_feeling_chain_inverse_rejects_operand_and_edge_changes(old, ne
     '褒められたのに、悲しかったけど嬉しかったらしい。',
 ])
 def test_received_feeling_chain_does_not_split_unproved_owners_or_modality(memo):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(memo)))
+    assert not any('semantic_dependency:received_feeling_contrast_chain' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('old,new', [
+    ('「褒められた」のに', ''),
+    ('「悲しかった」けど', ''),
+    ('けど「嬉しかった」', ''),
+    ('「褒められた」のに', '「褒められた」から'),
+    ('「悲しかった」けど', '「悲しかった」から'),
+    ('「褒められた」のに「悲しかった」けど「嬉しかった」',
+     '「褒められた」と「悲しかった」と「嬉しかった」'),
+    ('褒められたのに、', ''),
+    ('悲しかったけど、', ''),
+    ('けど、嬉しかった', ''),
+    ('褒められたのに、', '褒められたから、'),
+    ('悲しかったけど、', '悲しかったから、'),
+    ('悲しかったけど、', '悲しいけど、'),
+    ('嬉しかったのですね', '嬉しくなかったのですね'),
+    ('悲しかったけど、嬉しかった', '嬉しかったけど、悲しかった'),
+])
+def test_proved_chain_boundary_rejects_partial_or_changed_body(old, new):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin('褒められたのに、悲しかったけど嬉しかった。'))
+    body = context[0].artifact.text
+    changed = body.replace(old, new, 1)
+    assert changed != body and read_body(context, body).passed
+    assert not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('memo', [
+    '褒められたのに、私は悲しかったけど友人は嬉しかった。',
+    '褒められたのに、悲しかったけど嬉しかったかもしれない。',
+    '褒められたのに、悲しかったけど「嬉しかった」と聞いた。',
+    '褒められたのに、悲しかったけど嬉しくなった。',
+])
+def test_chain_boundary_does_not_prove_foreign_report_uncertainty_or_change(memo):
     from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
     plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(memo)))
     assert not any('semantic_dependency:received_feeling_contrast_chain' in n.semantic_frame.attribute_codes for n in plan.nuclei)
