@@ -3792,26 +3792,35 @@ def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_i
 def read_received_discourse(raw, move, plan, resolver, selected_subjective_input=None):
     """Parse either finite or coordinated clauses with a shared past scope.
 
-    Source-owned event boundaries must be unique. Only the actual connective
-    inflection is normalized for the independent role reader; the source,
+    Source-owned event boundaries must match their ordered occurrences.
+    Only the actual connective inflection is normalized for the independent role reader; the source,
     body, witness and response bindings are never rewritten.
     """
     from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
     if len(move.target_nucleus_ids) <= 1 or "、また、" in raw:
         return _read_received_discourse_parts(raw, move, plan, resolver, selected_subjective_input)
     index = {n.nucleus_id: n for n in plan.nuclei}
-    cuts = [0]
+    later_events = []
     for nid in move.target_nucleus_ids[1:]:
         nucleus = index[nid]
-        if _thread_revised_original_reaction(nucleus, plan.relations):
+        revised = _thread_revised_original_reaction(nucleus, plan.relations)
+        if revised:
             event = "言い直してくださった気持ちについては、"
         else:
             event = final_reception_source_anchor_text(nid, index, resolver)
             event = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event or "", count=1)
+        later_events.append((event, revised))
+    cuts = [0]
+    for position, (event, revised) in enumerate(later_events):
         starts = [m.start() for m in re.finditer(re.escape("、" + event), raw)] if event else []
-        if len(starts) != 1 or starts[0] <= cuts[-1]:
+        # Repeated event labels retain each source ID in order. Require all
+        # expected boundaries, and reject surplus anchors inside an answer.
+        # Independent revision prefixes keep their existing unique rule.
+        expected = 1 if revised else sum(label == event for label, _ in later_events)
+        occurrence = 0 if revised else sum(label == event for label, _ in later_events[:position])
+        if len(starts) != expected or starts[occurrence] <= cuts[-1]:
             return None
-        cuts.append(starts[0] + 1)
+        cuts.append(starts[occurrence] + 1)
     actual_parts = [raw[start:end - 1] for start, end in zip(cuts, cuts[1:])]
     actual_parts.append(raw[cuts[-1]:])
     normalized_parts, shared_slots = [], []
@@ -3841,7 +3850,7 @@ def read_received_discourse(raw, move, plan, resolver, selected_subjective_input
             normalized = part
         elif part.endswith("し"):
             # Additive coordination preserves each complete finite clause.
-            # Cut only at the unique next source-owned event above; an
+            # Cut only at the proved next source-owned occurrence above; an
             # identical connective inside an answer remains part of it.
             finite = part[:-1]
             # A noun before additive し needs its finite copula だ. Treating
@@ -4173,7 +4182,8 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                                   perceived["positive"] + "かった" if perceived["positive"] is not None else None)
                 restored = {perceived["perception"] + "ようで" + comma
                             + perceived["burden"] + "かった" for comma in ("、", ",")}
-                if answer_source not in restored:
+                if not any(_restore_thread_finite_answer(value, answer_source) == answer_source
+                           for value in restored):
                     return None
                 begin = len((raw[:offset] + clause[:perceived.start("perception")]).encode("utf-8"))
                 finish = len((raw[:offset] + clause[:perceived.end()]).encode("utf-8"))

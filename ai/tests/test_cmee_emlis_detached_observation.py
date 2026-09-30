@@ -3395,3 +3395,131 @@ def test_repeated_edge_events_require_occurrence_provenance(corruption):
     else:
         nuclei[pos] = replace(n, semantic_frame=replace(n.semantic_frame, actor='other_person'))
     assert _thread_retained_reaction_groups(nuclei, relations) != groups
+
+
+@pytest.mark.parametrize('events,initial,middle', [
+    (('褒められた', '私は誘われた', '自分は誘われた'), True, 'その時は少し重かった。'),
+    (('私は誘われた', '自分は誘われた', 'わたしは誘われた'), True, 'その時は少し重かった。'),
+    (('褒められた', '私は誘われた', '自分は誘われた'), False, 'その時は少し重かった。'),
+    (('私は誘われた', '自分は誘われた', 'わたしは誘われた'), False, 'その時は少し重かった。'),
+    (('褒められた', '私が誘われた', '自分が誘われた'), False, 'その時は少し重かった。'),
+    (('褒められた', '私は誘われた', '自分は誘われた'), False, '今は少し苦しい。'),
+])
+def test_equal_visible_event_names_keep_finite_source_occurrences(events, initial, middle):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    memo = ''.join(event + 'のに、' + feeling + '。' for event, feeling in zip(events, ('嬉しくなかった', '悲しかった', '寂しかった')))
+    req = begin(memo)
+    if not initial:
+        for reply in ('「嬉しくなかった」ではなく「私は少し不安でした」です。', middle,
+                      '「寂しかった」ではなく「私も少し怖くなかったです」です。'):
+            req = advance(req, reply)
+    context = actual(request=req)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    assert '受け止めています' not in follow and follow.count('のですね') == 1
+    assert all(event in context[0].artifact.observation for event in events)
+    assert not re.search(r'(?:私|自分|わたし)(?:は|が)', follow)
+    if initial:
+        expected = ('嬉しさにはつながらず', '悲しさを感じ', '寂しさを感じた')
+    else:
+        expected = ('あなたは少し不安だった', '回答した時点では少し苦しい' if middle.startswith('今は') else '少し重かった',
+                    'あなたも少し怖くなかった')
+        assert '時は悲しく、' in follow
+        assert '嬉しくなかった' not in body and '寂しかった' not in body
+    positions = [follow.index(value) for value in expected]
+    assert positions == sorted(positions)
+    assert MeaningExperienceEngine().generate(req).artifact.text == body
+    assert read_body(context, body).passed
+
+
+@pytest.fixture(scope='module')
+def equal_visible_event_context():
+    memo = '褒められたのに、嬉しくなかった。私は誘われたのに、悲しかった。自分は誘われたのに、寂しかった。'
+    req = advance(begin(memo), '「嬉しくなかった」ではなく「私は少し不安でした」です。')
+    req = advance(req, 'その時は少し重かった。')
+    return actual(request=advance(req, '「寂しかった」ではなく「私も少し怖くなかったです」です。'))
+
+
+@pytest.mark.parametrize('change', ['missing', 'duplicate', 'swap', 'degree', 'negative', 'particle', 'actor', 'time', 'cause'])
+def test_equal_visible_event_names_reject_missing_extra_or_reassigned_clauses(equal_visible_event_context, change):
+    context = equal_visible_event_context
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    middle = 'あなたは誘われた時は悲しく、少し重かった'
+    last = 'あなたは誘われた時は、あなたも少し怖くなかった'
+    assert middle in follow and last in follow
+    if change == 'missing':
+        changed = follow.replace(middle + 'し、', '', 1)
+    elif change == 'duplicate':
+        changed = follow.replace(last, middle + 'し、' + last, 1)
+    elif change == 'swap':
+        changed = follow.replace(middle, '@middle@', 1).replace(last, middle, 1).replace('@middle@', last)
+    else:
+        old, new = {'degree': ('少し重かった', '重かった'), 'negative': ('怖くなかった', '怖かった'),
+                    'particle': ('あなたも少し', 'あなたは少し'), 'actor': (middle, middle.replace('あなた', '相手', 1)),
+                    'time': (middle, middle.replace('時は', '今は', 1)), 'cause': ('し、', 'ので、')}[change]
+        changed = follow.replace(old, new, 1)
+    assert changed != follow and not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+def test_equal_visible_event_names_restore_each_original_event_byte_range(equal_visible_event_context):
+    _, plan, _, resolver, selected = equal_visible_event_context
+    raw = equal_visible_event_context[0].artifact.reception
+    move, = plan.response_plan.human_reception_plan.moves
+    proof = gate.read_received_discourse(raw, move, plan, resolver, selected)
+    assert proof is not None
+    events = [(a, b, value.decode()) for a, b, value in proof if value.decode() in ('私は誘われた', '自分は誘われた')]
+    assert [value for _, _, value in events] == ['私は誘われた', '自分は誘われた']
+    assert events[0][1] < events[1][0]
+    assert all(raw.encode()[a:b].decode() == 'あなたは誘われた' for a, b, _ in events)
+
+
+@pytest.mark.parametrize('owner', ['私', '自分'])
+def test_perceived_answer_owner_is_recovered_from_its_complete_visible_clause(owner):
+    memo = '褒められたのに、嬉しくなかった。私は誘われたのに、悲しかった。自分は誘われたのに、寂しかった。'
+    req = advance(begin(memo), '「嬉しくなかった」ではなく「私は少し不安でした」です。')
+    req = advance(req, f'その時は{owner}は頼まれたようで、重かった。')
+    context = actual(request=advance(req, '「寂しかった」ではなく「私も少し怖くなかったです」です。'))
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    phrase = 'あなたは頼まれたような重さとして届いた'
+    assert phrase in follow and owner + 'は頼まれたようで、重かった' in context[0].artifact.observation
+    assert read_body(context, body).passed
+    for changed in (phrase.replace('あなたは', owner + 'は', 1), phrase.replace('は頼まれた', 'も頼まれた', 1),
+                    phrase.replace('ような', 'という', 1), phrase.replace('重さ', '軽さ', 1)):
+        assert not read_body(context, body.replace(follow, follow.replace(phrase, changed, 1), 1)).passed
+
+
+@pytest.mark.parametrize('answer_source', ['私は誘われたようで、重かった', '私が頼まれたようで、重かった', '私が頼まれたようで、少し重かった'])
+def test_unresolved_perceived_owner_or_surplus_visible_anchor_keeps_nominal(answer_source):
+    memo = '褒められたのに、嬉しくなかった。私は誘われたのに、悲しかった。自分は誘われたのに、寂しかった。'
+    req = advance(begin(memo), '「嬉しくなかった」ではなく「私は少し不安でした」です。')
+    req = advance(req, 'その時は' + answer_source + '。')
+    context = actual(request=advance(req, '「寂しかった」ではなく「私も少し怖くなかったです」です。'))
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    assert '受け止めています' in follow and '私は少し不安でした' in context[0].artifact.observation
+    assert answer_source in context[0].artifact.observation
+    assert '私も少し怖くなかったです' in context[0].artifact.observation
+    assert read_body(context, body).passed
+
+
+@pytest.mark.parametrize('all_same', [False, True])
+def test_equal_visible_event_names_saved_updates_keep_original_and_exact_reads(qcase, qdb, monkeypatch, all_same):
+    user, parent, _ = qcase
+    first_event = 'わたしは誘われた' if all_same else '褒められた'
+    memo = first_event + 'のに、嬉しくなかった。私は誘われたのに、悲しかった。自分は誘われたのに、寂しかった。'
+    assert 'code' not in qdb.query('update public.emotions set memo=$2 where id=$1', [parent, memo])
+    service = active(monkeypatch)
+    first = current = run(service.start(user, parent))
+    for position, text in enumerate(('「嬉しくなかった」ではなく「私は少し不安でした」です。',
+                                     'その時は少し重かった。',
+                                     '「寂しかった」ではなく「私も少し怖くなかったです」です。')):
+        if position:
+            current = run(cont(service, user, current, f'visible-event-continue-{position}'))
+        current = run(answer(service, user, current, text, f'visible-event-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        if position == 2:
+            _, follow = current['current_observation']['text'].split('Emlisから：', 1)
+            assert follow.count('あなたは誘われた時は') == (3 if all_same else 2)
+            assert all(value in follow for value in ('あなたは少し不安だった', '悲しく、少し重かった', 'あなたも少し怖くなかった'))
+            assert '受け止めています' not in follow
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved visible event occurrences must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current

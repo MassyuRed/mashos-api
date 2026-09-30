@@ -11581,3 +11581,41 @@ u31 Emlisから：
 商品/技術read-only reviewを受け、初案の出来事「私」/回答「あなた」の人称対立は修正済み。変換後同名の後続境界でnominalへ戻る長文化、未変換の原文一人称、あなたはの重複、同名場面の区別しにくさは実在する。今回の判断は受理済み意味の欠落回復に対するTECHNICAL_CREDITで、商品正式PASSではない。対象群の正式終結後だけ二層間重複へ進むこと、10/03休止と10/04分析、10/02実DB/実機を維持。
 
 **STRUCTURE_MAP_DELTA_NONE / 全体48%・商品0/3・NOT_CLEAR・default OFF / 両PR Draft/open/unmerged。** 追加費用/Mash操作/依存追加なし。確定sourceはcheckpointから変更せず、この最終検証追記だけを既存2引継ぎへ反映する。Ready/merge/deploy/enableなし。
+
+## 2026-09-30 JST u32開始：人称変換後の同名出来事で名詞列へ戻る原因を直す
+
+Mashの「許可するから進めて」とGitHub指定を受領。fresh API `d8c60640869db2424e46c45b8c06fd7ce8d969af`／Cocolon `5e57e2a3eea3b7b18af6b0905d0e301ad9801e5c`、clean、両PR Draft/openを確認。u31の反映・2274件の完了結果は再利用し、許可待ちへ戻さない。全体設計/分割地図/current mapsの接続とtracked inventory（API2300/App1645）は同一、mandatory incidentは今回も先頭〜EOF読了。最新weekly9/26 §5.3・9/29 C/D、前回txtとu31末尾を照合。今回の開始記録は以下に限定する。
+
+- product_destination: 複数出来事と回答の対応を見失わずに読めるEmlisの実返信。
+- current_gate_or_subgate: 既存Q4の複数出来事/回答/訂正群、Human Reception→Surface→独立Gate。
+- exact_work: u31で実測した『私は誘われた／自分は誘われた』→同じ『あなたは誘われた』となる境界で長いnominalへ退行する共通count原因の修正。
+- scope_classification: Rule18 LEVEL_2 / DIRECT_PRODUCT_OR_ACCEPTANCE_WORK。
+- approval_or_delegation_basis: 既存品質修正scopeとMashの今回継続許可。既存Draftへの反映を含む。
+- execution_owner: rootのみ編集/実行/write。Work ModeのGPT-based Codexとして作業し、確認できないPro/Ultra model名を名乗らない。商品/技術reviewはread-only。
+- success_credit: 限定した本文の長文化解消をTECHNICAL_CREDITとして記録。商品合格・全群完了には加点しない。
+- completion_condition: 同名の各occurrenceを原順とsource IDで保ち、主体/助詞/否定/程度/時点/原反応/回答を実本文・独立逆検証・保存再取得で維持。本文内の余剰anchorは現fallback保持。関連回帰とremote全文一致を完了する。
+- stop_condition: 意味の取り違え/欠落、新たな文章不成立、必要source proof不成立なら見直す。新engine/探索reader/証拠機構/contract変更へ広がる場合はこの単位を打ち切る。
+- prohibited_scope: source admission、Plan、意味更新、質問、API/DB/RN、protected acceptance、他core、release/enable/merge。編集上限は既存HR/Gate/detached tests/current identity/API handoff/Cocolon06の6path。
+- next_product_read_or_mash_decision_point: 同じ確定候補の全比較本文をrootと商品担当が読み、限定改善と残件を区別する。正式商品合格を代筆しない。
+- current_source_test_receipt: u31 final source/既存detached・received tests/current identity18payload/9owner、完了2274=2260PASS/既知14FAIL、identity eaf0969c790c4bcefec16851ffd418b570247ad96fd841df9bcec8276293d16e / 30b09ff93b97ba3ddf28569ece4de675b4e4356ec7270c9ecd02135d200c96b3。
+- current_docs_and_heads: 上記fresh2heads、current構造00/01/04、既存handoff/06、latest weekly、前回txt。旧system_context prepareのexit2を成功へ読み替えず直接原典を使用。
+- affected_current_structure_maps: 01 EmlisAI / 04 CMEE、STRUCTURE_MAP_DELTA_NONE（既存作者/reader内の原順境界解決だけ、責任配置・公開/保存contract不変）。
+
+商品reviewは現物の名詞列増加を必要性として認め、技術reviewは後続targetの同label必要数＝実出現数を要求して原順にconsumeする最小案を確認した。単に最初の候補を選ぶ方法や余剰境界の無視はしない。独立replacement固定prefixは従来の一意条件を維持する。予想40〜60分、追加費用/依存/Mash操作0。10/03休止・10/04分析、10/02実DB/実機、全体48%・商品0/3・NOT_CLEAR・default OFFを維持。今回scopeについてSTART_ALLOWED。
+
+
+## 2026-09-30 JST u32検証checkpoint：表示が同じ別出来事を原順に保持
+
+開始scopeの6path内で実装。HRは後続eventの表示名ごとの必要出現数と実本文出現数の完全一致を要求し、Gateは同じ必要数を独立確認したうえで各source IDを原順のoccurrenceへ割り当てる。完全source逆復元と実UTF-8区間を維持し、余剰anchorを無視しない。独立訂正の固定prefixは従来の一意条件を維持。Plan/source admission/意味更新/API/DB/RNは変更しない。
+
+本文reviewで『あなたは…私は…ような重さとして届いた』という候補の主語混在を阻害点として検出し、既存の有限形SELF変換をPERCEIVEDにも利用した。Gateは既存owner逆変換で『ようで』以下を含む完全answer sourceの一致を要求する。変換できない『私が』等や変換後の余剰event anchorは既存名詞形へ戻す。有限形側の既存残留SELF判定も、sourceから文字列が変わった場合だけという条件を除き、未変換主語を同様に保持した。が一般への新変換や新helper/tag/意味判断ownerは追加しない。
+
+**確定候補の本文比較。** 新規20入力＝19本文＋両版同じanswer_syntax_unsupported 1。Receptionだけ9変更/10本文不変で、checkpoint/nuclei/relations/moves/Observation/status不変。全19のpublic全文一致・作者禁止inverseはtrue。rootと商品担当が前後両層全文を確認。出来事ごとの訂正/ADDと中央原反応、否定/程度/も/時点を保持し、対象の長い名詞列を軽減した。PERCEIVEDのひらがな『わたしは』回答は開始版から未受理で、本文成功や改善件数へ加算しない。出来事sourceの『わたしは』対応と区別し、今回admissionを広げない。
+
+**検査方法。** 追加23＝finite本文6、本文改変拒否9、異なる原eventのUTF-8区間1、PERCEIVED owner2、既存名詞形保持3、保存2。既存detached3395行は開始版d8c6064とbyte-identicalなprefix、旧2274 testの期待変更/skip/xfail0。同じ追加testを開始版worktreeへoverlayすると23件中20FAIL/対照3PASS（31.711秒）、対照は余剰anchor・未変換PERCEIVEDが・未変換FINITEがの名詞形保持。候補初回focusは24中23PASS/1FAILだったが、失敗は『わたしは』回答を受理できると誤ったtest前提であり、開始版も同じunsupportedだった。未対応の成功期待1を取り除いた確定23について、関連全量2297 unique IDsを4つの重複なし区間に分け実行中。初回focus・baseline方法検査・本文probeを全量母数へ合算しない。全量は未完了につきPASS/既知14維持をまだ主張しない。
+
+保存2系列では各3回答後状態についてoriginal保持と、生成を禁止したGET/startのDTO全文一致を要求する。PGlite検査であり、10/02実DB/実機やプロセス再起動の代替にしない。従来runtimeが消失していたため保存済pip/npm cacheからローカル試験環境を復元した。Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1/Starlette1.7.0/PGlite0.5.8。新規network dependency download、project依存/config変更は0。source/test/current identity SHA256を固定して検証中。
+
+current identityは既存18payload/9owner構造の派生値のみ更新。language `94f1c0e726752363154bc849c53c0b3561ad00d5db8ccd234c27d6c5eec73b6c` / runtime `c2d7057380df6aa0d3df2a84b0f6b1e8a8dbf41d460d3d589c54256d207ba768`。商品/技術担当はread-only、rootが全編集・実行・write。両reviewはこの限定差分にblockingなし。ただし『あなたは誘われたことは』や『重さとして届いた』の硬さ、あなたはの反復、middle-positiveの別文に残る私は、fallback長文は未解決。自然さ全般・正式商品PASS・複数出来事群完了とはしない。
+
+**TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品0/3・NOT_CLEAR・default OFF。** 同群継続、正式終結後だけ二層重複へ移る。10/03休止・10/04分析、10/02実DB/実機を維持。両PRの既存Draft branchへ本checkpointをnon-force反映し、完了検証後に結果を追記する。Ready/merge/deploy/enableなし。

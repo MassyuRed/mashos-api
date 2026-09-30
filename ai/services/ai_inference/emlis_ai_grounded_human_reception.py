@@ -10178,8 +10178,11 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str
             separate_time_scopes = True
             continue
         if grammar.startswith("PERCEIVED_"):
-            parsed = re.fullmatch(r"(.+)ようで[、,]([^、,]+)かった", source)
-            if parsed is None or _thread_answer_nominal_morphology(parsed[2] + "かった") is None:
+            # The perceived content keeps its modality and complete owner;
+            # use the same proved SELF perspective as other finite answers.
+            parsed = re.fullmatch(r"(.+)ようで[、,]([^、,]+)かった", finite)
+            if (parsed is None or _thread_answer_nominal_morphology(parsed[2] + "かった") is None
+                or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)):
                 return None
             reception = parsed[1] + "ような" + parsed[2] + "さとして届いた"
             topic = event + "ことは"
@@ -10197,7 +10200,7 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str
                 return None
             if (not _SOURCE_GROUNDED_FINITE_END_RE.search(finite)
                 or re.search(r"(?:です|ます|でした|ました|だ)$", finite)
-                or finite != source and re.search(
+                or re.search(
                     r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)):
                 return None
             prefix = event + "時は"
@@ -10275,9 +10278,11 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str
         and parts[-1].endswith(finite)):
         acknowledgement = parts[-1][:-len(finite)] + _feeling_acknowledgement(finite)
     text = "、".join((*coordinated, acknowledgement))
-    # Avoid ambiguous event attachment, including an event repeated inside
-    # another event's answer. The original grammar remains available there.
-    if any(text.count("、" + event) != 1 for event in event_names[1:]):
+    # Each later source occurrence owns one boundary, even when SELF
+    # perspective makes distinct source labels equal. An extra occurrence
+    # inside an answer remains ambiguous and keeps the original grammar.
+    if any(text.count("、" + event) != event_names[1:].count(event)
+           for event in event_names[1:]):
         return None
     return text
 
