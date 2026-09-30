@@ -10616,7 +10616,7 @@ def _source_owned_detached_burden_sentence(move, realization, plan, resolver,
     for nid, source, when in rows:
         prefix = {"original_occasion": "その時は", "answer_time": "回答した時点では",
                   "prior_answer_time": "先の回答時点では"}[when]
-        has_owner = (re.match(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)", source)
+        has_owner = (re.match(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も|が(?=[^、,。]+れ(?:た|なかった)ようで[、,])(?!.*(?:わたし|ぼく|おれ|私|僕|俺|自分|あなた)))", source)
                      or _medial_feeling_owner(source) is not None)
         if has_owner:
             prefix = {"その時は": "その時、", "回答した時点では": "回答した時点で、",
@@ -10760,8 +10760,11 @@ def _detached_feeling_finite_surface(source, *, allow_explanatory=False, allow_c
     Its particle, predicate, polarity and tense remain intact; callers prove
     current-user ownership.
     """
+    # Read が only before the admitted past passive-like perception, with no
+    # later SELF/あなた. Bare feelings can use が for the feeling target (怖い),
+    # so a single person reference alone cannot justify changing perspective.
     finite = re.sub(r"(?<=[い])です$|(?<=かった)です$", "", source)
-    finite = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?=には|にも|は|も)",
+    finite = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?=には|にも|は|も|が(?=[^、,。]+れ(?:た|なかった)ようで[、,])(?!.*(?:わたし|ぼく|おれ|私|僕|俺|自分|あなた)))",
                     "あなた", finite, count=1)
     medial = _medial_feeling_owner(source) if allow_medial else None
     if medial is not None:
@@ -10810,7 +10813,7 @@ def _detached_feeling_finite_surface(source, *, allow_explanatory=False, allow_c
 
 def _revised_feeling_discourse_prefix(source):
     """Anchor the past feeling to its explicit revision, not a nearby event."""
-    owner = (re.match(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)", source)
+    owner = (re.match(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も|が(?=[^、,。]+れ(?:た|なかった)ようで[、,])(?!.*(?:わたし|ぼく|おれ|私|僕|俺|自分|あなた)))", source)
              or _medial_feeling_owner(source))
     return "言い直してくださった気持ちについては、" + ("当時、" if owner else "当時は")
 
@@ -10870,7 +10873,7 @@ def _detached_feeling_source_parts(move, plan, resolver, *, allow_revised=False)
                 "prior_answer_time": "先の回答時点では"}[times[0]]
     else:
         return None
-    if (re.match(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)", source)
+    if (re.match(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も|が(?=[^、,。]+れ(?:た|なかった)ようで[、,])(?!.*(?:わたし|ぼく|おれ|私|僕|俺|自分|あなた)))", source)
         or _medial_feeling_owner(source) is not None):
         time = {"その時は": "その時、", "回答した時点では": "回答した時点で、",
                 "先の回答時点では": "先の回答時点で、"}[time]

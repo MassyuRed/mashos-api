@@ -2921,9 +2921,13 @@ def _answer_feeling_preceding_event(move, plan, resolver, selected_subjective_in
 
 
 def _thread_feeling_owner(source):
-    """Read the source owner independently, including a bounded medial one."""
+    """Read the source owner independently, including a bounded medial one.
+
+    Read が only before the past passive-like perception, without later SELF/あなた.
+    A bare feeling does not distinguish its experiencer from its target.
+    """
     leading = re.match(r"(?P<self>わたし|ぼく|おれ|私|僕|俺|自分)"
-                       r"(?P<particle>には|にも|は|も)", source)
+                       r"(?P<particle>には|にも|は|も|が(?=[^、,。]+れ(?:た|なかった)ようで[、,])(?!.*(?:わたし|ぼく|おれ|私|僕|俺|自分|あなた)))", source)
     if leading is not None:
         return leading
     medial = re.match(r"(?P<degree>(?:少し|とても|本当は|まだ|全然|あまり)+)"

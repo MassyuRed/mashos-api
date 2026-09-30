@@ -3494,7 +3494,13 @@ def test_unresolved_perceived_owner_or_surplus_visible_anchor_keeps_nominal(answ
     req = advance(req, 'その時は' + answer_source + '。')
     context = actual(request=advance(req, '「寂しかった」ではなく「私も少し怖くなかったです」です。'))
     body, follow = context[0].artifact.text, context[0].artifact.reception
-    assert '受け止めています' in follow and '私は少し不安でした' in context[0].artifact.observation
+    # A repeated event anchor remains nominal; an admitted singleton が owner
+    # now keeps its case in the finite answer without changing either revision.
+    if answer_source.startswith('私が'):
+        assert answer_source.replace('私が', 'あなたが', 1) + 'し、' in follow
+    else:
+        assert '受け止めています' in follow
+    assert '私は少し不安でした' in context[0].artifact.observation
     assert answer_source in context[0].artifact.observation
     assert '私も少し怖くなかったです' in context[0].artifact.observation
     assert read_body(context, body).passed
@@ -3933,3 +3939,179 @@ def test_middle_received_scope_saved_updates_keep_exact_reads(qcase, qdb, monkey
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved middle scope must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+GA_OWNER_MEMO = ('褒められたのに、嬉しくなかった。私は誘われたのに、悲しかった。'
+                 '自分は誘われたのに、寂しかった。')
+
+
+@pytest.mark.parametrize('owner', ['私', '自分'])
+@pytest.mark.parametrize('position', [0, 1, 2])
+def test_single_ga_answer_keeps_particle_and_own_occasion(owner, position):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    source = owner + 'が頼まれたようで、重かった'
+    request = begin(GA_OWNER_MEMO)
+    for reply in ['その時は少し重かった。'] * position + ['その時は' + source + '。']:
+        request = advance(request, reply)
+    context = actual(request=request)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    assert source in context[0].artifact.observation
+    assert 'あなたが頼まれたようで、重かったのですね' in follow
+    assert follow.count('あなたが頼まれた') == 1
+    assert MeaningExperienceEngine().generate(request).artifact.text == body
+    assert read_body(context, body).passed
+
+
+@pytest.fixture(scope='module')
+def single_ga_context():
+    request = advance(begin(GA_OWNER_MEMO), 'その時は少し重かった。')
+    return actual(request=advance(request, 'その時は私が頼まれたようで、少し重かった。'))
+
+
+@pytest.mark.parametrize('old,new', [
+    ('あなたが頼まれた', 'あなたは頼まれた'), ('あなたが頼まれた', 'あなたも頼まれた'),
+    ('あなたが頼まれた', 'あなたには頼まれた'), ('あなたが頼まれた', '友人が頼まれた'),
+    ('頼まれたようで', '頼まれたので'), ('頼まれたようで', '頼まれなかったようで'),
+    ('少し重かった', '重かった'), ('少し重かった', '少し重くなかった'),
+    ('少し重かった', '少し軽かった'), ('少し重かった', '少し重い'),
+    ('悲しく、', ''), ('あなたは誘われた時は', 'あなたは褒められた時は'),
+    ('誘われた時は', '誘われた今は'),
+])
+def test_single_ga_inverse_rejects_changed_case_meaning_or_scope(single_ga_context, old, new):
+    context = single_ga_context
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    middle = 'あなたは誘われた時は悲しく、あなたが頼まれたようで、少し重かったのですね。'
+    assert middle in follow and read_body(context, body).passed
+    changed = middle.replace(old, new, 1)
+    assert changed != middle
+    assert not read_body(context, body.replace(follow, follow.replace(middle, changed, 1), 1)).passed
+
+
+@pytest.mark.parametrize('source,nominal', [
+    ('私が少し怖かったです', '私が少し怖かったこと'),
+    ('少し自分が不安だったのです', '少し自分が不安だったのだということ'),
+    ('私が少し不安でした', '私が少し不安だったこと'),
+    ('少し私が不安なのだった', '少し私が不安なのだったということ'),
+    ('私が怖かったようで、重かった', '私が怖かったようだという、その時の重さ'),
+    ('私が不安だったようで、重かった', '私が不安だったようだという、その時の重さ'),
+])
+def test_ga_feeling_target_is_not_reinterpreted_as_experiencer(source, nominal):
+    request = advance(begin(GA_OWNER_MEMO), 'その時は少し重かった。')
+    context = actual(request=advance(request, 'その時は' + source + '。'))
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    assert source in context[0].artifact.observation and nominal in follow
+    assert 'あなたが' not in follow and read_body(context, body).passed
+    changed = follow.replace(nominal, nominal.replace('自分が', 'あなたが').replace('私が', 'あなたが'), 1)
+    assert changed != follow and not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+def test_ga_feeling_target_correction_keeps_whole_prior_answer_perspective():
+    request = begin(GA_OWNER_MEMO)
+    for reply in ('その時は少し重かった。', '今は私が少し苦しい。',
+                  '「私が少し苦しい」ではなく「自分が少し怖い」です。'):
+        request = advance(request, reply)
+    context = actual(request=request)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    assert '先の回答時点では「自分が少し怖い」' in context[0].artifact.observation
+    assert '先の回答時点で自分が少し怖いこと' in follow
+    assert 'あなたが少し怖い' not in body and '私が少し苦しい' not in body
+    assert read_body(context, body).passed
+
+
+def test_ga_positive_feeling_keeps_existing_unavailable_boundary():
+    request = advance(begin(GA_OWNER_MEMO), 'その時は少し重かった。')
+    request = advance(request, 'その時は私が少し嬉しいです。')
+    with pytest.raises(ValueError, match='emlis_thread_body_independent_validation_failed'):
+        actual(request=request)
+
+
+@pytest.mark.parametrize('source,nominal', [
+    ('私が私には不安だったのです', '私が私には不安だったのだということ'),
+    ('私が私を責めたようで、重かった', '私が私を責めたようだという、その時の重さ'),
+    ('私が私に頼まれたようで、重かった', '私が私に頼まれたようだという、その時の重さ'),
+    ('私が私も頼まれたようで、重かった', '私が私も頼まれたようだという、その時の重さ'),
+    ('私が私が頼まれたようで、重かった', '私が私が頼まれたようだという、その時の重さ'),
+    ('私があなたに頼まれたようで、重かった', '私があなたに頼まれたようだという、その時の重さ'),
+])
+def test_ga_with_later_person_keeps_whole_source_perspective(source, nominal):
+    request = advance(begin(GA_OWNER_MEMO), 'その時は少し重かった。')
+    context = actual(request=advance(request, 'その時は' + source + '。'))
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    assert source in context[0].artifact.observation and nominal in follow
+    assert 'あなたが' not in follow and read_body(context, body).passed
+    changed = follow.replace(nominal, nominal.replace('私が', 'あなたが', 1), 1)
+    assert changed != follow and not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+@pytest.mark.parametrize('operation', ['answer_correction', 'original_correction', 'withdraw'])
+def test_single_ga_saved_updates_keep_original_and_exact_reads(qcase, qdb, monkeypatch, operation):
+    user, parent, _ = qcase
+    assert 'code' not in qdb.query('update public.emotions set memo=$2 where id=$1', [parent, GA_OWNER_MEMO])
+    service = active(monkeypatch)
+    first = current = run(service.start(user, parent))
+    source = '私が頼まれたようで、重かった'
+    reply = {'answer_correction': '「' + source + '」ではなく「自分が頼まれたようで、苦しかった」です。',
+             'original_correction': '「悲しかった」ではなく「怖かった」です。',
+             'withdraw': '「私は誘われた」は誤りです。'}[operation]
+    for position, text in enumerate(('その時は少し重かった。', 'その時は' + source + '。', reply)):
+        if position:
+            current = run(cont(service, user, current, f'ga-continue-{position}'))
+        current = run(answer(service, user, current, text, f'ga-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        observation, follow = body.split('Emlisから：', 1)
+        assert '今回の観測に反映できていない' not in body
+        if position == 1:
+            assert 'あなたは誘われた時は悲しく、あなたが頼まれたようで、重かった' in follow
+        elif position == 2 and operation == 'answer_correction':
+            assert source not in observation and '自分が頼まれたようで、苦しかった' in observation
+            assert 'あなたが頼まれたようで、苦しかった' in follow
+        elif position == 2 and operation == 'original_correction':
+            assert '悲しかった' not in body and '怖かった' in observation
+        elif position == 2:
+            assert '私は誘われた' not in body and 'その時は悲しかった' in follow
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved ga body must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+def test_single_ga_still_reads_prior_saved_nominal_wording(qcase, qdb, monkeypatch):
+    user, parent, _ = qcase
+    memo = '褒められたのに、嬉しくなかった。私は誘われたのに、悲しかった。自分は誘われたのに、寂しかった。'
+    assert 'code' not in qdb.query('update public.emotions set memo=$2 where id=$1', [parent, memo])
+    service = active(monkeypatch)
+    current = run(service.start(user, parent))
+    author = reception._source_grounded_reception_fragment
+
+    def prior_author(*args, **kwargs):
+        # Materialize the pre-u36 saved grammar through the existing fallback.
+        kwargs['middle_received_scope'] = False
+        return author(*args, **kwargs)
+
+    with monkeypatch.context() as prior:
+        prior.setattr(reception, '_source_grounded_reception_fragment', prior_author)
+        for position, text in enumerate(('その時は少し重かった。', 'その時は私が頼まれたようで、重かった。')):
+            if position:
+                current = run(cont(service, user, current, f'prior-ga-continue-{position}'))
+            current = run(answer(service, user, current, text, f'prior-ga-answer-{position}'))
+    assert current['body_state'] == 'REFINED'
+    assert '私が頼まれたようだという、その時の重さを見失わず、小さくせずに受け止めています。' in current['current_observation']['text']
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('prior saved wording must not regenerate'))
+        assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('comma', ['、', ','])
+def test_single_ga_negative_perception_preserves_source_negation(comma):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    source = '私が頼まれなかったようで' + comma + '重かった'
+    request = advance(begin(GA_OWNER_MEMO), 'その時は少し重かった。')
+    request = advance(request, 'その時は' + source + '。')
+    context = actual(request=request)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    assert source in context[0].artifact.observation
+    assert source.replace('私が', 'あなたが', 1) + 'のですね' in follow
+    assert MeaningExperienceEngine().generate(request).artifact.text == body
+    assert read_body(context, body).passed
+    changed = follow.replace('頼まれなかったようで', '頼まれたようで', 1)
+    assert changed != follow and not read_body(context, body.replace(follow, changed, 1)).passed
