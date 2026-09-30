@@ -989,7 +989,8 @@ def test_two_positive_answers_keep_unknown_or_burden_in_every_position(other, po
     assert_two_positive_duties(context, 3)
     follow = context[0].artifact.reception
     event = ('褒められた', '誘われた', '頼まれた')[position]
-    assert event + '時は' in follow
+    original = ('嬉しくなかった', '悲しかった', '寂しかった')[position]
+    assert event + ('のに、' + original + 'し、その時は' if other == MULTI_NEGATIVE else '時は') in follow
     expected = ('怖' if other == MULTI_NEGATIVE else
                 '回答した時点では' + ('まだよく分からない' if other == MULTI_UNKNOWN else '分からない'))
     assert expected in follow.split('。')[0]
@@ -2394,7 +2395,7 @@ def test_original_feeling_scopes_retain_each_complete_occasion(memo, events, seq
     assert_complete_occasion_scopes(context, events, groups)
     body = context[0].artifact.text
     original = ('頼まれたのに、あなたは少し怖くなかったし、その時は'
-                if memo == OWNED_INITIAL else '誘われた時は悲しく、')
+                if memo == OWNED_INITIAL else '誘われたのに、悲しかったし、その時は')
     retained = tuple(original + value.removeprefix('その時に').removesuffix('こと')
                      if value.startswith('その時に') else value for value in retained)
     assert all(fragment in body for fragment in retained) and all(fragment not in body for fragment in removed)
@@ -2493,7 +2494,7 @@ def test_original_feeling_scopes_saved_update_and_replay(qcase, monkeypatch, ope
         assert '回答した時点' not in body and '先の回答時点' not in body
         if position == 2:
             if operation == 'correct':
-                assert '少し怖かった' not in body and '誘われた時は悲しく、少し寂しかった' in follow
+                assert '少し怖かった' not in body and '誘われたのに、悲しかったし、その時は少し寂しかった' in follow
             elif operation == 'withdraw_answer':
                 assert '少し苦しかった' not in body and '少し怖かった' in body
             elif operation == 'withdraw_event':
@@ -2519,7 +2520,7 @@ def test_original_occasion_reference_is_owned_by_complete_same_event(source, nom
     context = actual(request=request)
     follow = context[0].artifact.reception
     legacy = source == '私は私には少し不安だったのです'
-    original = '誘われたのに悲しかったことと、' if legacy else '誘われた時は悲しく、'
+    original = '誘われたのに悲しかったことと、' if legacy else '誘われたのに、悲しかったし、その時は'
     nominal = nominal if legacy else {
         '少し怖かった': '少し怖かったのですね',
         '私も少し不安でした': 'あなたも少し不安だったのですね',
@@ -2538,9 +2539,9 @@ def test_original_occasion_reference_is_owned_by_complete_same_event(source, nom
         follow.replace(nominal, '褒められたことについて、' + nominal),
         follow.replace(nominal, '「' + nominal + '」'),
         (follow.replace(nominal, nominal.replace('その時の', '回答した時点の')) if legacy
-         else follow.replace(original, '誘われたことについて、回答した時点では悲しく、')),
+         else follow.replace(original, original.replace('その時は', '回答した時点では'))),
         (follow.replace(nominal, nominal.replace('その時の', '')) if legacy
-         else follow.replace(original, '誘われたことについて、悲しく、')),
+         else follow.replace(original, original.replace('その時は', ''))),
     ):
         assert changed != follow
         assert not inverse(context, changed, without_author=True).passed
@@ -2583,7 +2584,9 @@ def test_grouped_answer_nominal_keeps_own_copula_and_explanation(source, predica
     result = context[0]
     follow = result.artifact.reception
     sentences = follow.split('。')[:-1]
-    original = ('褒められた時は嬉しくなく、', '誘われた時は悲しく、')[position]
+    original = (('褒められたのに、嬉しくなかったし、その時は',
+                 '誘われたのに、悲しかったし、その時は') if time == 'その時は' else
+                ('褒められた時は嬉しくなく、', '誘われた時は悲しく、'))[position]
     # Each eligible event uses the same finite form while keeping its own
     # original time or explicit answer time and complete source scope.
     finite = {
@@ -2613,10 +2616,8 @@ def test_grouped_answer_nominal_keeps_own_copula_and_explanation(source, predica
         mutations.extend((follow.replace('回答した時点では', 'その時は'),
                           follow.replace('回答した時点では', '')))
     else:
-        mutations.append(follow.replace(original, ('褒められたことについて、回答した時点では嬉しくなく、',
-                    '誘われたことについて、回答した時点では悲しく、')[position]))
-        mutations.append(follow.replace(original, ('褒められたことについて、嬉しくなく、',
-                    '誘われたことについて、悲しく、')[position]))
+        mutations.append(follow.replace(original, original.replace('その時は', '回答した時点では')))
+        mutations.append(follow.replace(original, original.replace('その時は', '')))
     if 'のだ' in predicate:
         changed = finite.replace('不安なの', '不安だったの') if '不安なの' in finite else finite.replace('不安だったの', '不安なの')
         mutations.extend((follow.replace(finite, changed),
@@ -2658,10 +2659,10 @@ def test_grouped_answer_nominal_third_answer_saved_replay(qcase, monkeypatch, so
         if position == 2:
             follow = body.split('Emlisから：', 1)[1].strip()
             expected = nominal.removeprefix('その時に').removesuffix('こと').removesuffix('のだという')
-            assert '褒められた時は嬉しくなく、' + expected + 'のですね' in follow.split('。')[0]
+            assert '褒められたのに、嬉しくなかったし、その時は' + expected + 'のですね' in follow.split('。')[0]
             assert source in body and 'その出来事について、' not in follow
             assert all(event in follow for event in ('褒められた', '誘われた', '頼まれた'))
-            assert '頼まれた時は寂しく、少し重かったのですね' in follow
+            assert '頼まれたのに、寂しかったし、その時は少し重かったのですね' in follow
             assert 'ですこと' not in follow and 'でしたこと' not in follow
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved grouped answer must not regenerate'))
@@ -2856,7 +2857,7 @@ def test_interpretation_occasion_updates_save_and_replay(qcase, monkeypatch, ope
         if position == 1:
             sentences = follow.split('。')[:-1]
             assert len(sentences) == 3
-            assert '誘われた時は悲しく、結果だけで' in sentences[1]
+            assert '誘われたのに、悲しかったし、その時は結果だけで' in sentences[1]
             assert 'そこまでの苦労は見てもらえていないと思ったのですね' in sentences[1]
             assert 'その出来事への結果' not in follow
         if position == 2:
@@ -2887,7 +2888,7 @@ def test_interpretation_nominal_omission_keeps_own_time(source, when):
     context = actual(request=request)
     follow = context[0].artifact.reception
     assert_complete_occasion_scopes(context, ('褒められた', '誘われた', '頼まれた'), ((0,), (1,), (2,)))
-    explicit = when == 'original_occasion' and source in {A, A.replace('、', ',')}
+    explicit = when == 'original_occasion'
     original = '誘われたのに、悲しかったし、その時は' if explicit else '誘われた時は悲しく、'
     time = {'original_occasion': 'その時は' if explicit else '誘われた時は', 'answer_time': '回答した時点では',
             'prior_answer_time': '先の回答時点では'}[when]

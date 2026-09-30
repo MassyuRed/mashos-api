@@ -11954,3 +11954,49 @@ Emlisから（変更後）：
 current identityは既存owner／payload構成を保ちHRのAST／raw由来値と派生identityだけを更新：language `e3c5030907c4ef81dcd2a240bbe223db36bf79fbf87f6c0e80d706b06018f381`、runtime `9b33bd3a9c92b169552d240fb0a50486a79cd877b3d6f702b12c29f25e24af17`。HR SHA256 `328cb42f4ccd741c3bf8c55a28853d5f9b9cf6613f65a46b9e91a947d0cae1be`、Gate不変 `ecec98e7ffd1a9e241be1d6ff79ae73b1cadac312c521967e257b1b1e5bdc403`。API5path＝HR／received／detached／current identity／既存handoff、Cocolon1path＝既存06。STRUCTURE_MAP_DELTA_NONE。反映後にremote全文bytes・変更path・headを照合し、両PR要約へ結果を記録する。
 
 **次の同群残件。** 同名出来事の記述と回答の読者に見える区別、「あなたは」「し、その時は」「のですね」の反復、程度語を含むFINITE等の逆接明示、断片訂正未解決・既知14を残す。本文の記述順を現実の発生順や別日時へ変換しない。同群を閉じる前に二層再掲の別作業へ移らない。今回の有限文へ変わった例だけで同名区別が解決したとはしない。商品0/3・NOT_CLEAR・全体48%・default OFF。両PR Draft/open/unmergedを維持し、Ready／merge／deploy／enableなし。最新weeklyの10/03未完でも休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB／実機予定を保持。新たな外部課金操作・production依存追加・Mash操作0。
+
+
+## 2026-09-30 JST u38開始：当時回答の原関係を文型に依存せず保持
+
+Mashの継続指示、fresh API30d42472ce052145aa697da02d261f4764d941ed／Cocolonbaf27248ff2f778335371813e9d1aebaed519bd5を基準にする。前提入口・CURRENT_RULES／Rule18・恒久incident全文・全体設計／ファイル地図・両repo全tree・current Emlis／CMEE map・最新weekly9/26＋9/29合意・u37両handoffを確認。System Contextの既知不整合をfresh成功へ読み替えず、current原典／実sourceを直接参照。未確認のモデル名を称さず、rootが単独編集／実行／反映、二担当はread-only。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK／LEVEL_2。実出力で程度語入りFINITE・BELIEF・copularの回答では元の『のに』が『時は』へ弱まる共通原因を確認。商品担当PRODUCT_ROUTE_ALIGNED、技術担当TECHNICALLY_ADMISSIBLE：original_occasion＋原反応ありの既存受理済み回答へ、原connector／原反応全文／明示時点の同じlocal prefixを与える。各文法・主体・活用guardは残し、別作者／受付／helper／後処理を追加しない。
+
+allowed pathsはAPI HR・received／detached検査・current shared identity・既存handoff、Cocolon既存06。既存検査の入力／引数／decorator／ID／意味改変拒否目的と旧保存readerを保持した方法適応のみ。Gate／Plan／source受付／質問／意味更新／API／DB／RN／他core／production依存／flag／保護受入は不変更。未回答・原反応撤回・現在／先の回答時点の境界を維持する。同名出来事区別は未解決として保持し、記述順を現実の発生順へ昇格しない。
+
+成功条件は前後両層全文・source／nuclei／relations／Moves不変・作者禁止inverse・訂正／撤回／保存再取得・旧本文互換・関連回帰・remote全文照合。新しい意味欠落／未提供は採用せず、guard緩和や別機構を要すれば広げず戻す。実装検証目安35〜50分（原典取得別）、新規外部費用・Mash操作0。STRUCTURE_MAP_DELTA_NONE。同群未完・TECHNICAL_CREDITのみ、商品0/3・NOT_CLEAR・全体48%・default OFF、Draft/open/unmerged。10/03休止・10/04分析・10/02実DB／実機予定を保持。
+
+
+## 2026-09-30 JST u38結果：当時回答の文型をまたいで原関係を保持
+
+**TECHNICAL_CREDITのみ。複数出来事／回答／訂正群は未完、正式Product Read／商品PASSではない。** 原文の逆接を保持するlocal prefixを既存HR作者内で共有し、u37のPERCEIVEDに加え、程度語を含むFINITE・BELIEF・copular等の既存受理済みoriginal_occasion回答でも「出来事＋原connector＋原反応全文＋し、その時は＋回答」を使う。各文法・主体・活用の既存guardを通す構造は維持。新しい作者／helper／受付／後処理は追加せず、Gate／Plan／質問／意味更新／API／DB／RN／flag／保護受入／production依存は不変更。現在／先の回答時点、原反応撤回、未回答の経路も不変更。
+
+**前後両層の実本文確認。** synthetic43系列（10文型×3位置、connector混在3、境界10）を同じ入力で比較し、32はReception／bodyのみ変更、11は記録全体不変。全43でObservation・nuclei・relations・Moves・status／reason不変、作者禁止inverseは前後43/43。public本文一致は前後40/43で、残る3は「少し重かったのです」の既存answer_syntax_unsupported／UNAVAILABLE境界。内部候補の読取成功を公開提供成功に数えず、新たな未提供は0。商品読取担当が43系列の入力・回答・前後両層全文を確認し、限定修正に新しい意味欠落／帰属の阻害点なしと判断した。現在形の原回答による「その時は苦しい／不安なのですね」の時制上の読みにくさは残り、勝手な過去化はしない。
+
+代表例（synthetic、中央の程度語を含むFINITE回答）：
+
+入力：褒められたのに、嬉しくなかった。私は誘われたのに、悲しかった。自分は誘われたのに、寂しかった。
+回答順：その時は断れないようで、重かった。 → その時は少し重かった。
+
+```text
+見えたこと（前後同一）：
+「褒められた」のに「嬉しくなかった」、その時は「断れないようで、重かった」とあります。 「私は誘われた」のに「悲しかった」、その時は「少し重かった」とあります。 「自分は誘われた」と「寂しかった」が、異なる向きのまま同時にあります。
+
+Emlisから（変更前）：
+褒められたのに、嬉しくなかったし、その時は断れないようで、重かったのですね。あなたは誘われた時は悲しく、少し重かったのですね。あなたは誘われたのに、寂しさを感じたのですね。
+
+Emlisから（変更後）：
+褒められたのに、嬉しくなかったし、その時は断れないようで、重かったのですね。あなたは誘われたのに、悲しかったし、その時は少し重かったのですね。あなたは誘われたのに、寂しさを感じたのですね。
+```
+
+**最終関連検証：2492PASS／既知14FAIL、ERROR／SKIP0、2506 unique IDs。** received_discourse／detached_observation／current owner identity1件を対象。固定production source／identityで旧2476条件をfresh4分割し、初回2395PASS／81FAIL。81のうち14は前回からの既知失敗、67は新本文のprefixに対する旧期待・改変anchor不一致だった。既存14関数（received8／detached6）の方法を適応し、その全108条件を再実行して全PASS（121.53秒）。同名出来事の保存検査では旧「時は」部分の出現数に加え、出来事名の総出現数3／2と明示当時節1を保持するassertを補強し、該当2条件を再実行して全PASS。新規30条件も別fresh実行で全PASS（83.76秒）。未変更のXMLとID単位で統合し、108／2を二重計上していない。最後のtest変更後に全2506件を再実行したという意味ではない。
+
+旧2476全IDのmissing0・合否変化0。既知14のtraceはu37に対してrepo path／行番号／UUID／address正規化後の差0。内訳はreceived8（現在肯定の旧文形6・旧anchor改変2）／detached6（肯定2責務容量2・第二原反応訂正の旧fragmentation2・撤回後BODY_UNAVAILABLE期待1・肯定訂正の旧group期待1）。既存14関数の引数・decorator／ID・入力構築／回答呼出・意味改変拒否目的を保持し、非関数AST不変、削除／skip／xfail化なし。u37では対象外だったdegree入りFINITEのga13条件も今回の共通修正対象として、主体／助詞／意味／時点改変を拒否する目的のまま新prefixへ適応した。新30は9回答文型×3位置の27と、けど／けれど／けれどもに異なる3文型の回答を組み合わせる3。元connectorの因果化・原反応欠落・時点変更を作者禁止inverseで拒否する。
+
+既存の訂正／撤回・original保持・generate禁止GET/startのDTO全文一致・旧有限文／旧名詞文reader検査を維持。今回の検証はPGlite0.5.8／Python3.12.14／pytest9.1.1であり、実DB／実機／プロセス再起動は実施していない。読取専任の技術担当が既存入力とAST、独立Gateの復元、既知失敗trace、集計を別途照合。rootのみ編集／実行／反映した。
+
+current identityは既存owner／payload構成を保ちHRのAST／raw由来値と派生identityだけ更新：language `033124b4e9b5daa55ac4a5b4e192a1c44364ab3641a8de94a000ea54a155df68`、runtime `c00ef8450161ce5a4387113996d694f6e9552e3f531b9df23069f7c79b948085`。HR SHA256 `61daf051e7838ccfd8ac13d2ebc681a5addcd0e418768c79b2dc68e7391a6120`、Gate不変 `ecec98e7ffd1a9e241be1d6ff79ae73b1cadac312c521967e257b1b1e5bdc403`。全検査を通じてproduction source／identityを固定した。API5path＝HR／received／detached／current identity／既存handoff、Cocolon1path＝既存06。STRUCTURE_MAP_DELTA_NONE。remote反映後に全文bytes・変更path・親commit・final headをfresh照合し、両PR要約へ結果を記録する。
+
+**次の同群残件。** 現在／先の回答時点で原文の逆接が弱まる実本文、同名の出来事と回答の読者に見える区別、主語／「し、その時は」／「のですね」の反復、断片訂正未解決・既知14を残す。次は同じ群で現在／先の回答時点の前後両層を読み、原反応と回答の時点を混ぜず原関係を保持できる最小の共通修正を選ぶ。同名区別にはMove横断の対応と独立読取が必要で、記述順を現実の発生順や別日時へ昇格しない。群を閉じる前に二層再掲の別作業へ移らない。
+
+商品0/3・NOT_CLEAR・全体48%・default OFF。両PR Draft/open/unmerged、Ready／merge／deploy／enableなし。最新weeklyの10/03未完でも休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB／実機予定を維持。新たな外部課金操作・production依存追加・Mash操作0。

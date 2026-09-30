@@ -10110,6 +10110,14 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str
         answer_slot, grammar, when = int(answer_code[0]), *answer_code[1:]
         source = fragments[answer_slot]
         finite = _detached_feeling_finite_surface(source, allow_medial=True)
+        # The original event/reaction relation does not depend on the
+        # admitted answer's grammar. Keep its complete contrast and give
+        # the supplemental answer its own explicit original-time scope.
+        original_time_prefix = (event + _RECEIVED_EVENT_LINK_TEXT[link]
+            + "、" + feeling + "し、その時は"
+            if when == "original_occasion" and negative is not None else None)
+        if original_time_prefix is not None:
+            separate_time_scopes = True
         copular_predicate = None
         if grammar in {"COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE"}:
             nominal = _thread_answer_nominal_morphology(source)
@@ -10148,7 +10156,7 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str
                     "prior_answer_time": "先の回答時点では"}.get(when)
             if time is None:
                 return None
-            original = (event + "時は" + negative[1] + "、"
+            original = original_time_prefix or (event + "時は" + negative[1] + "、"
                         if negative is not None else event + (
                             "時は、" if when == "original_occasion" else "ことについて、"))
             parts.append(original + time + copular_predicate)
@@ -10187,15 +10195,7 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str
             # Keep the admitted perception as the user's complete predicate,
             # including its tentative ようで and its own subject and degree.
             # The existing finite reader restores that source independently.
-            if negative is not None:
-                # Keep the original contrast explicit when the answer adds
-                # a tentative perception about that same occasion. Reuse
-                # the complete-reaction/time grammar read independently by
-                # the existing Gate; do not turn のに into a temporal link.
-                prefix = event + _RECEIVED_EVENT_LINK_TEXT[link] + "、" + feeling + "し、その時は"
-                separate_time_scopes = True
-            else:
-                prefix = event + "時は、"
+            prefix = original_time_prefix or event + "時は、"
             parts.append(prefix + finite)
         else:
             # A belief remains a belief; a denial/qualification stays inside
@@ -10208,11 +10208,7 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str
                 or re.search(
                     r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)):
                 return None
-            prefix = event + "時は"
-            if negative is not None:
-                prefix += negative[1] + "、"
-            else:
-                prefix += "、"
+            prefix = original_time_prefix or event + "時は、"
             parts.append(prefix + finite)
             # A present adjective must keep its own tense when followed by
             # a different past event; additive coordination is reversible.

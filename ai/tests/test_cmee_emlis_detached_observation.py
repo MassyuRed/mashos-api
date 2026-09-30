@@ -3302,7 +3302,7 @@ def test_repeated_edge_events_retain_all_three_accepted_occasions(event):
     body, follow = context[0].artifact.text, context[0].artifact.reception
     visible = re.sub(r'^(?:私|わたし)(?=は|が)', 'あなた', event)
     clauses = [visible + '時は、あなたは少し不安だった',
-               '誘われた時は悲しく、少し重かった',
+               '誘われたのに、悲しかったし、その時は少し重かった',
                visible + '時は、あなたも少し怖くなかった']
     assert all(clause in follow for clause in clauses)
     assert [follow.index(clause) for clause in clauses] == sorted(follow.index(clause) for clause in clauses)
@@ -3310,7 +3310,7 @@ def test_repeated_edge_events_retain_all_three_accepted_occasions(event):
     assert MeaningExperienceEngine().generate(req).artifact.text == body
     assert read_body(context, body).passed
     for clause in clauses:
-        for changed in ('', clause.replace('少し', '', 1), clause.replace('時は', '今は', 1)):
+        for changed in ('', clause.replace('少し', '', 1), (clause.replace('その時は', '回答した時点では', 1) if 'その時は' in clause else clause.replace('時は', '今は', 1))):
             assert changed != clause
             assert not read_body(context, body.replace(follow, follow.replace(clause, changed, 1), 1)).passed
     changed = follow.replace(clauses[0], clauses[2], 1)
@@ -3339,7 +3339,7 @@ def test_repeated_edge_events_saved_reads_keep_all_occasions(qcase, qdb, monkeyp
             observation, follow = current['current_observation']['text'].split('Emlisから：', 1)
             assert f'{owner}は褒められた' in observation
             assert follow.count('あなたは褒められた時は') == 2
-            assert all(value in follow for value in ('あなたは少し不安だった', '誘われた時は悲しく、少し重かった', 'あなたも少し怖くなかった'))
+            assert all(value in follow for value in ('あなたは少し不安だった', '誘われたのに、悲しかったし、その時は少し重かった', 'あなたも少し怖くなかった'))
             assert '寂しかった' not in observation and '嬉しくなかった' not in observation
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved occurrence replies must not regenerate'))
@@ -3423,7 +3423,7 @@ def test_equal_visible_event_names_keep_finite_source_occurrences(events, initia
     else:
         expected = ('あなたは少し不安だった', '回答した時点では少し苦しい' if middle.startswith('今は') else '少し重かった',
                     'あなたも少し怖くなかった')
-        assert '時は悲しく、' in follow
+        assert ('時は悲しく、' if middle.startswith('今は') else 'のに、悲しかったし、その時は') in follow
         assert '嬉しくなかった' not in body and '寂しかった' not in body
     positions = [follow.index(value) for value in expected]
     assert positions == sorted(positions)
@@ -3443,7 +3443,7 @@ def equal_visible_event_context():
 def test_equal_visible_event_names_reject_missing_extra_or_reassigned_clauses(equal_visible_event_context, change):
     context = equal_visible_event_context
     body, follow = context[0].artifact.text, context[0].artifact.reception
-    middle = 'あなたは誘われた時は悲しく、少し重かった'
+    middle = 'あなたは誘われたのに、悲しかったし、その時は少し重かった'
     last = 'あなたは誘われた時は、あなたも少し怖くなかった'
     assert middle in follow and last in follow
     if change == 'missing':
@@ -3455,7 +3455,7 @@ def test_equal_visible_event_names_reject_missing_extra_or_reassigned_clauses(eq
     else:
         old, new = {'degree': ('少し重かった', '重かった'), 'negative': ('怖くなかった', '怖かった'),
                     'particle': ('あなたも少し', 'あなたは少し'), 'actor': (middle, middle.replace('あなた', '相手', 1)),
-                    'time': (middle, middle.replace('時は', '今は', 1)), 'cause': ('し、', 'ので、')}[change]
+                    'time': (middle, middle.replace('その時は', '回答した時点では', 1)), 'cause': ('し、', 'ので、')}[change]
         changed = follow.replace(old, new, 1)
     assert changed != follow and not read_body(context, body.replace(follow, changed, 1)).passed
 
@@ -3532,8 +3532,10 @@ def test_equal_visible_event_names_saved_updates_keep_original_and_exact_reads(q
         assert current['body_state'] == 'REFINED' and current['original'] == first['original']
         if position == 2:
             _, follow = current['current_observation']['text'].split('Emlisから：', 1)
-            assert follow.count('あなたは誘われた時は') == (3 if all_same else 2)
-            assert all(value in follow for value in ('あなたは少し不安だった', '悲しく、少し重かった', 'あなたも少し怖くなかった'))
+            assert follow.count('あなたは誘われた時は') == (2 if all_same else 1)
+            assert follow.count('あなたは誘われた') == (3 if all_same else 2)
+            assert follow.count('あなたは誘われたのに、悲しかったし、その時は') == 1
+            assert all(value in follow for value in ('あなたは少し不安だった', '悲しかったし、その時は少し重かった', 'あなたも少し怖くなかった'))
             assert '受け止めています' not in follow
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved visible event occurrences must not regenerate'))
@@ -4009,8 +4011,15 @@ def single_ga_context():
 def test_single_ga_inverse_rejects_changed_case_meaning_or_scope(single_ga_context, old, new):
     context = single_ga_context
     body, follow = context[0].artifact.text, context[0].artifact.reception
-    middle = 'あなたは誘われた時は悲しく、あなたが頼まれたようで、少し重かったのですね。'
+    middle = 'あなたは誘われたのに、悲しかったし、その時はあなたが頼まれたようで、少し重かったのですね。'
     assert middle in follow and read_body(context, body).passed
+    # Keep baseline parameter IDs and the same semantic mutation duties.
+    replacements = {'悲しく、': '悲しかったし、',
+                    'あなたは誘われた時は': 'あなたは誘われたのに',
+                    'あなたは褒められた時は': 'あなたは褒められたのに',
+                    '誘われた時は': 'その時は', '誘われた今は': '回答した時点では',
+                    '時は': 'その時は', '今は': '回答した時点では'}
+    old, new = replacements.get(old, old), replacements.get(new, new)
     changed = middle.replace(old, new, 1)
     assert changed != middle
     assert not read_body(context, body.replace(follow, follow.replace(middle, changed, 1), 1)).passed
@@ -4204,3 +4213,54 @@ def test_perceived_original_contrast_keeps_prior_finite_reader(perceived_origina
     assert current in follow
     legacy = follow.replace(current, '褒められた時は嬉しくなく、', 1)
     assert read_body(context, body.replace(follow, legacy, 1)).passed
+
+
+@pytest.mark.parametrize('source,visible', [
+    ('私が頼まれたようで、少し重かった', 'あなたが頼まれたようで、少し重かった'),
+    ('重かったと思った', '重かったと思った'),
+    ('少し重かった', '少し重かった'),
+    ('私は少し不安でした', 'あなたは少し不安だった'),
+    ('不安でした', '不安だった'), ('不安です', '不安な'),
+    ('不安だったのです', '不安だった'),
+    ('少し怖くなかった', '少し怖くなかった'), ('苦しいです', '苦しい'),
+])
+@pytest.mark.parametrize('position', [0, 1, 2])
+def test_original_contrast_is_independent_of_admitted_answer_grammar(source, visible, position):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    request = begin(GA_OWNER_MEMO)
+    for reply in ['その時は断れないようで、重かった。'] * position + ['その時は' + source + '。']:
+        request = advance(request, reply)
+    context = actual(request=request)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    event = ('褒められた', 'あなたは誘われた', 'あなたは誘われた')[position]
+    reaction = ('嬉しくなかった', '悲しかった', '寂しかった')[position]
+    prefix = event + 'のに、' + reaction + 'し、その時は'
+    clause = prefix + visible + 'のですね'
+    assert clause in follow
+    assert MeaningExperienceEngine().generate(request).artifact.text == body
+    assert read_body(context, body).passed
+    # Source type cannot donate the original relation or answer time.
+    for changed in (clause.replace('のに、', 'ので、', 1),
+                    clause.replace(reaction + 'し、', '', 1),
+                    clause.replace('その時は', '回答した時点では', 1)):
+        assert changed != clause
+        assert not read_body(context, body.replace(follow, follow.replace(clause, changed, 1), 1)).passed
+
+
+@pytest.mark.parametrize('connector', ['けど', 'けれど', 'けれども'])
+def test_multiple_answer_grammars_keep_each_original_connector(connector):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    request = begin(GA_OWNER_MEMO.replace('のに', connector))
+    for source in ('少し怖くなかった', '不安でした', '重かったと思った'):
+        request = advance(request, 'その時は' + source + '。')
+    context = actual(request=request)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    assert MeaningExperienceEngine().generate(request).artifact.text == body
+    assert read_body(context, body).passed
+    for event, reaction in zip(('褒められた', 'あなたは誘われた', 'あなたは誘われた'),
+                               ('嬉しくなかった', '悲しかった', '寂しかった')):
+        prefix = event + connector + '、' + reaction + 'し、その時は'
+        assert prefix in follow
+        changed = follow.replace(prefix, prefix.replace(connector + '、', 'のに、', 1), 1)
+        assert changed != follow
+        assert not read_body(context, body.replace(follow, changed, 1)).passed
