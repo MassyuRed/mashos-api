@@ -5973,6 +5973,26 @@ def evaluate_grounded_surface_body_inverse(
                                         nominal_target_visible and actual_nominal == nominal
                                         and restore_thread_answer_nominal(actual_nominal, grammar, when) == source
                                     )
+                                elif (expression_nominal_required and len(move.target_nucleus_ids) == 1
+                                      and not move.support_nucleus_ids):
+                                    answer = nucleus_index[move.target_nucleus_ids[0]]
+                                    source = final_reception_source_anchor_text(answer.nucleus_id, nucleus_index, resolver)
+                                    times = {c.split(":", 1)[1] for c in answer.semantic_frame.attribute_codes
+                                             if c.startswith("thread_time:")}
+                                    if (answer.source_fields == ("answer_text_private",)
+                                        and answer.allowed_claim_scope == "explicit_supplemental_answer"
+                                        and re.search(r"(?:い|かった)です$", source)
+                                        and len(times) == 1
+                                        and times <= {"original_occasion", "answer_time", "prior_answer_time"}):
+                                        prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で",
+                                                  "prior_answer_time": "先の回答時点で"}[next(iter(times))]
+                                        actual_nominal = body[start:end].decode("utf-8")
+                                        # Recover the entire admitted source, including its owner,
+                                        # from the visible attributive clause without an author replay.
+                                        if actual_nominal != prefix + source + "こと":
+                                            nominal_target_visible = bool(nominal_target_visible
+                                                and actual_nominal.startswith(prefix) and actual_nominal.endswith("こと")
+                                                and actual_nominal[len(prefix):-2] + "です" == source)
                                 # Independently restore a finite cognition from
                                 # its body-only こと object. A generic referent,
                                 # a quotation, or a source replay elsewhere in

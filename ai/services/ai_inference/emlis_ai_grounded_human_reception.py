@@ -2735,6 +2735,17 @@ def _source_grounded_current_expression_nominal(
             owned = _multiple_self_answer_nominal(fragment, next(iter(times)))
             if owned is not None:
                 return owned
+        # A proven adjectival feeling modifies こと in its plain form.
+        # Keep the complete owner/modifier prefix and the negative/past
+        # ending; only the terminal politeness marker changes here.
+        adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)です",
+                                 _feeling_predicate_host(fragment))
+        if (profile.nucleus_kind == "reaction" and profile.predicate_kind == "feeling"
+            and profile.modality == "feeling" and nucleus.semantic_frame.polarity == "negative"
+            and adjective is not None and (
+                _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+                or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1]))):
+            fragment = fragment[:-2]
         return f"{when}{'で' if times in ({'answer_time'},{'prior_answer_time'}) else 'に'}{fragment}こと"
     from emlis_ai_grounded_observation_plan import _source_action_change_contrast
     action_contrast = _source_action_change_contrast(plan.nuclei, plan.relations)
@@ -2908,7 +2919,8 @@ def source_grounded_thread_answer_nominal(
     else:
         finite = _source_grounded_current_expression_nominal(move, plan, nucleus_index, resolver)
         old_prefix = {"original_occasion": "その時に", "answer_time": "回答した時点で", "prior_answer_time": "先の回答時点で"}[when]
-        if finite != old_prefix + fragment + "こと":
+        if finite not in {old_prefix + fragment + "こと",
+                          old_prefix + re.sub(r"(?<=い)です$|(?<=かった)です$", "", fragment) + "こと"}:
             return None
     if row is None or restore_thread_answer_nominal(row[1], row[0]) != fragment:
         return None
@@ -9248,7 +9260,10 @@ def _source_grounded_target_np(
                     for code in realization.nominalization_plan
                 )
                 or thread_answer_about_time in {"original_occasion", "answer_time", "prior_answer_time"}
-                and referent_text == f"{'その時に' if thread_answer_about_time == 'original_occasion' else '先の回答時点で' if thread_answer_about_time == 'prior_answer_time' else '回答した時点で'}{meaning_fragment}こと"
+                and referent_text in {
+                    f"{'その時に' if thread_answer_about_time == 'original_occasion' else '先の回答時点で' if thread_answer_about_time == 'prior_answer_time' else '回答した時点で'}{fragment}こと"
+                    for fragment in (meaning_fragment,
+                        re.sub(r"(?<=い)です$|(?<=かった)です$", "", meaning_fragment))}
                 or profile.nucleus_kind == "reaction"
                 and profile.predicate_kind in {"feeling", "reaction"}
                 and profile.modality == "feeling"

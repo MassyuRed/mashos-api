@@ -3195,3 +3195,84 @@ def test_adjacent_revisions_saved_updates_keep_original_and_exact_reads(qcase, q
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved adjacent revisions must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('source', [
+    '私も少し怖くなかったです', '私は少し苦しかったです',
+    '少し私は苦しいです', '少し怖いです',
+])
+def test_answer_adjective_politeness_does_not_modify_koto(source):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    memo = '褒められたのに、嬉しくなかった。誘われたのに、悲しかった。褒められたのに、寂しかった。'
+    req = advance(begin(memo), '「嬉しくなかった」ではなく「私は少し不安でした」です。')
+    req = advance(req, 'その時は少し重かった。')
+    req = advance(req, f'「寂しかった」ではなく「{source}」です。')
+    context = actual(request=req)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    nominal = 'その時に' + source[:-2] + 'こと'
+    assert source in context[0].artifact.observation
+    assert nominal in follow and 'ですこと' not in follow
+    assert MeaningExperienceEngine().generate(req).artifact.text == body
+    assert read_body(context, body).passed
+    changes = [follow.replace(nominal, 'その時に' + source + 'こと', 1),
+               follow.replace(nominal, '回答した時点で' + source[:-2] + 'こと', 1),
+               follow.replace('少し', '', 1), follow.replace(nominal, '', 1),
+               follow.replace('褒められた', '誘われた', 1)]
+    if '私' in source:
+        changes += [follow.replace('私', '相手', 1),
+                    follow.replace('私も', '私は', 1) if '私も' in source
+                    else follow.replace('私は', '私も', 1)]
+    if '怖くなかった' in source:
+        changes.append(follow.replace('怖くなかった', '怖かった', 1))
+    for changed in changes:
+        assert changed != follow and not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+@pytest.mark.parametrize('when', ['その時は', '今は'])
+@pytest.mark.parametrize('source', ['私も少し怖くないです', '少し私は苦しいです'])
+def test_answer_adjective_politeness_keeps_added_answer_time(when, source):
+    memo = '褒められたのに、嬉しくなかった。誘われたのに、悲しかった。褒められたのに、寂しかった。'
+    req = advance(begin(memo), '「嬉しくなかった」ではなく「私は少し不安でした」です。')
+    req = advance(req, 'その時は少し重かった。')
+    context = actual(request=advance(req, when + source + '。'))
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    prefix = 'その時に' if when == 'その時は' else '回答した時点で'
+    nominal = prefix + source[:-2] + 'こと'
+    assert nominal in follow and 'ですこと' not in follow
+    assert source in context[0].artifact.observation
+    assert read_body(context, body).passed
+    changed = follow.replace(prefix, '回答した時点で' if when == 'その時は' else 'その時に', 1)
+    assert changed != follow and not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+@pytest.mark.parametrize('last', [
+    '「寂しかった」ではなく「私も少し怖くなかったです」です。',
+    '今は私も少し怖くないです。',
+])
+def test_answer_adjective_politeness_saved_updates_keep_original_and_exact_reads(qcase, qdb, monkeypatch, last):
+    user, parent, _ = qcase
+    memo = '褒められたのに、嬉しくなかった。誘われたのに、悲しかった。褒められたのに、寂しかった。'
+    assert 'code' not in qdb.query('update public.emotions set memo=$2 where id=$1', [parent, memo])
+    service = active(monkeypatch)
+    first = current = run(service.start(user, parent))
+    for position, text in enumerate((
+        '「嬉しくなかった」ではなく「私は少し不安でした」です。',
+        'その時は少し重かった。',
+        last,
+    )):
+        if position:
+            current = run(cont(service, user, current, f'adjective-continue-{position}'))
+        current = run(answer(service, user, current, text, f'adjective-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        if position == 2:
+            body = current['current_observation']['text']
+            assert 'ですこと' not in body
+            if last.startswith('「'):
+                assert 'その時に私も少し怖くなかったこと' in body
+                assert '寂しかった' not in body and '私も少し怖くなかったです' in body
+            else:
+                assert '回答した時点で私も少し怖くないこと' in body
+                assert '寂しかった' in body and '私も少し怖くないです' in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved adjective nominal must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current

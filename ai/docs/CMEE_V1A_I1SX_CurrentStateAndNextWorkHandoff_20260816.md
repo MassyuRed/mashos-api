@@ -11478,3 +11478,45 @@ Emlisから：
 三場面すべて/非隣接の原反応訂正、独立訂正＋三場面、肯定/不明併存、撤回後等の残存列挙、複数節の訂正replacement、曖昧な訂正対象、長い名詞句・反復SELF・受領定型反復・二層再掲、既知失敗は残る。隣接二訂正でも異なる述語の内部列挙を全面解消したわけではない。未説明残件を対象外へ付け替えず、同じ複数出来事/回答/訂正群の続きを扱う。10/03未完でもEmlis休止、10/04以降Work分析／不可時Pro Piece、旧10/10 Emlis期限再設定待ちという最新合意を保持する。
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品0/3・NOT_CLEAR・default OFF・Draft/open/unmerged。** Plan内部のscope構成とGate既存proofの適用修正で、責任・whole route・artifact lifecycle不変。Ready/merge/deploy/enableなし。
+
+
+## 2026-09-30 JST u30：丁寧形回答と「こと」の接続を限定修正・反映保留
+
+添付前回txt、両Draft PRの開始head（API 0ed5f74 / Cocolon 04aa774）、全体設計・分割ファイル地図・current_structureの現行経路、最新weekly 20260926の9/29追記、必須事故原本全文を確認。9/30中間確認時点で複数出来事/回答/訂正群は未完了。10/03未完でもEmlis休止、10/04以降Work分析／不可時Pro Piece、旧10/10期限再設定待ちを保持。System Context prepareは資料commitの祖先条件によりexit2で不成立だったため、許可済みの原本直読で継続し、freshness成功とは扱わない。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。rootはWork ModeのGPT-based Codexとして編集・実行・GitHub反映を担当し、商品・技術の二担当はread-only。Pro/Ultra identityは確認していない。
+
+初案はPlanだけで非隣接二訂正を原順三文に分けた。21系列の前後本文で8改善、反復SELF2件は「小さくせずに受け止めています」が1→3回となる悪化、11不変。新12＋既存隣接30＝42PASSだったが、商品レビューで悪化を認めたため、初案のPlan/test変更を開始版へ復元した。この42PASSを最終候補の証拠へ流用しない。Planに反復SELFを区別する既存構造属性はなく、単語/長さによる恣意的除外や新grammar機構は加えない。非隣接二訂正は未解決のまま残す。
+
+現在のbounded unitは、同じ残件群の実本文にある「私も少し怖くなかったですこと」の接続不良。既存HRの検証済み本人・負の感情回答で、既存の語彙/修飾部証明が通る形容詞丁寧形末尾の「です」だけを名詞修飾時に除き、主体・助詞・否定・程度・時点を保つ。既存IR検査・単純名詞化互換照合と独立Gateの全文復元を合わせる。新helper/owner/grammar tag/classifierなし。Plan/source admission/質問/API/DB/RN/schema/依存/flagsは変更しない。編集上限はAPIのHR/Gate、detached test、current identity、本handoff、Cocolon06の既存6path。異なる日本語退行、意味変更や新機構が必要になれば拡張せず見直す。
+
+完了条件は公開経路の実本文比較、主体/助詞/否定/程度/時点改変の作者禁止逆検証、保存再取得、関連回帰、独立レビューとremote全文照合。群の商品合格や提供範囲全体の改善とは別。追加費用/Mash操作/依存追加なし。既存失敗・保護された期待・acceptanceは変更しない。検査中。
+
+**u30 checkpoint。** 合成20系列（丁寧形12＋時点8）を開始版と比較。Receptionのみ8変更/12不変、全件でcheckpoint/意味核/関係/Move/Observation/status不変・公開本文一致/作者禁止inverse成功。丁寧形12のうち3は既存PARTIAL（各未解決1・correction_replacement_unsupported）で、補充reaction未追加、9はRESOLVED。この3例も単一述語であり、複数節の未対応と混同しない。商品担当が20系列の入力・両層前後全文を読み、新たな意味改変・反復増・日本語悪化なしを確認。技術担当はdiff、source/時点/全文復元/既存名詞化互換を確認し、阻害点なし。ただし重複出来事でReceptionが末尾に偏ること、外側の「これまで」、一人称、名詞/説明形の「でしたこと／ですこと」、定型受領等は残る。不採用の反復SELF三文案と混同しない（その案は不採用・復元済み）。
+
+追加10件（訂正4、時点4、保存2）は10PASS（20.90秒）。2保存系列の計6回答後状態でoriginal不変、生成を禁止したGET/startのDTO完全一致。PGliteの検査であり実DB/実機/プロセス再起動試験ではない。関連全量の実行を開始し、HR/Gate/test/current identityを固定中。開始版の前回u29全量2251件XMLは、同じcommitと対象source/testのbyte一致を確認して継承し、開始版全量を再実行したとはしない。実行環境は現存のPython3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.141.1/httpx0.28.1/Starlette1.7.0/PGlite0.5.8を再使用、依存install/変更0。
+
+**反映保留。** ローカルcheckpoint `7a9dbc7128d983b5bf6d616ac17f9cd1f1cc351c`（tree `f3d80fc258b810a586f72fbc5c5f1f23ef04447e`、parent `0ed5f74f4f4c5369aec2596a181c847f2abe6203`）へAPI5fileを保存した。既存API Draft branchへのnon-force pushは自動承認審査により「private source/tests/docsをGitHubへ送る特定宛先への明示許可不足」として拒否。別経路で再試行せず、read-onlyで両PRを再取得し、API `0ed5f74`・Cocolon `04aa774`の開始headから未更新、両方open/Draftを確認した。検査と反映用引継ぎを完成させてから、API PR #3 / Cocolon PR #30の既存Draft branchへの6file反映をMashへ明示確認する。remote反映済み/remote全文一致とは称さない。
+
+**次の群内優先。** 同じ文言の出来事が二つある場合の、受理済み意味のReception欠落を先に扱う。今回のRESOLVED例ではABOUT3本＋中央contrastと全Observationが残っているのに、受領Moveは最後のanswer:s9だけへ縮退し、先頭の不安・中央の悲しさ/重さが受領されない。既存経路は `emlis_answer_update.py:_active_plan` の同文event/answer_subjects判定（両端にunique_source_clauseなし）→ Plan `_thread_retained_reaction_groups` 不成立 → `build_grounded_reception_opportunities` の代表1件fallback。source順・個別ABOUT endpoint・中央contrastを保持し、同文の別出来事を本文でどう区別するかを次unitで検討する。unique markerの偽装付与やguard撤去は解決としない。PARTIAL3例の最終reaction自体の未追加とは区別する。名詞/説明形接続はその後の同HR名詞化ownerの残件で、説明の「の」や過去を単純削除しない。非隣接/全三訂正、肯定/不明併存、撤回等の残存列挙、複数節replacement、曖昧な訂正先、二層再掲・定型反復・既知失敗も未解決。
+
+**最終検証。** 確定候補の関連全量は **2261件＝2247PASS／既存14FAIL、error/skip0、980.80秒**。received/discourse・detached/observation・current owner identityを一回通した完了XMLの内訳で、focus10や棄却案42、本文probeを合算しない。前回u29の2251 IDの欠落0・成否変更0、新10全PASS。既知14のmessage/traceはrepo path・行番号・UUID・アドレス正規化後の差0。received8（現在肯定の旧文形期待6、旧anchor改変検査2）、detached6（肯定2責務容量2、第二原反応訂正の旧fragmentation期待2、撤回後BODY_UNAVAILABLE期待1、肯定訂正の旧group期待1）が残り、全PASS/失敗解消とは扱わない。最終実行の開始から終了までHR/Gate/test/current identityのSHA256不変を確認した。既存testは開始版全文を保持した末尾追加だけで、skip/xfail/期待緩和/保護proof変更0。
+
+検査コマンド：`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<PGlite0.5.8 module> <Python3.12.14> -m pytest -q ai/tests/test_cmee_emlis_received_discourse.py ai/tests/test_cmee_emlis_detached_observation.py ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEEStage1AdditionalCorrectionStep2CompositionTest::test_active_final_language_owner_chain_has_zero_legacy_compose_calls --junitxml=<u30-final.xml>`。既存18payload/9ownerのcurrent identity派生値はlanguage `63176fd3cd89aa9d4b2e817041243cd706344cbf3dd88e955d3a078642ec9de7` / runtime `26c85d25f675d03753de1d5444feabd851022ad37f34dc34690e4fb68b247642`。
+
+**実本文の限定差分。** 合成入力「褒められたのに、嬉しくなかった。誘われたのに、悲しかった。褒められたのに、寂しかった。」へ「「嬉しくなかった」ではなく「私は少し不安でした」です。」「その時は少し重かった。」「「寂しかった」ではなく「私も少し怖くなかったです」です。」を順に回答。Observationは両版で以下のまま、Reception末尾の丁寧形接続だけを変更した。
+
+```text
+見えたこと：
+「褒められた」ことについて、その時の受け止めは「私は少し不安でした」と書かれています。 「誘われた」のに「悲しかった」、その時は「少し重かった」とあります。 「褒められた」ことについて、その時の受け止めは「私も少し怖くなかったです」と書かれています。
+
+変更前 Emlisから：
+これまで、褒められたことについて、その時に私も少し怖くなかったですことを小さくせずに受け止めています。
+
+変更後 Emlisから：
+これまで、褒められたことについて、その時に私も少し怖くなかったことを小さくせずに受け止めています。
+```
+
+この本文は同名出来事の全義務保持・一人称・これまで等の未解決点を可視に残しており、商品合格見本ではない。初案の悪化を棄却したことも含めて9/30中間記録とする。最終変更はAPI5file／Cocolon06の1file。ローカル修正・検証・引継ぎ・反映用差分は準備済み、remote反映だけ明示許可待ち。拒否されたpushを別経路で迂回しない。
+
+**TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品0/3・NOT_CLEAR・default OFF・両PR open/Draft/unmerged。** 同じsource/意味/関係/保存本文のgrammar適用のみで、責任配置・whole route・artifact lifecycleは変わらない。Ready/merge/deploy/enableなし。
