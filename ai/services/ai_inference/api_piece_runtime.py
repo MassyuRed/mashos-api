@@ -2706,11 +2706,10 @@ MYMODEL_REFLECTIONS_TABLE = (
     os.getenv("MYMODEL_REFLECTIONS_TABLE", "mymodel_reflections") or "mymodel_reflections"
 ).strip() or "mymodel_reflections"
 MYMODEL_REFLECTIONS_READ_TABLE = (
-    os.getenv("COCOLON_PIECES_READ_TABLE")
-    or os.getenv("COCOLON_MYMODEL_REFLECTIONS_READ_TABLE")
+    os.getenv("COCOLON_MYMODEL_REFLECTIONS_READ_TABLE")
     or os.getenv("MYMODEL_REFLECTIONS_READ_TABLE")
-    or "pieces"
-).strip() or "pieces"
+    or "mymodel_reflections_read"
+).strip() or "mymodel_reflections_read"
 
 
 def _remove_registered_route(app: FastAPI, path: str, methods: Set[str]) -> None:

@@ -3423,7 +3423,7 @@ def test_equal_visible_event_names_keep_finite_source_occurrences(events, initia
     else:
         expected = ('あなたは少し不安だった', '回答した時点では少し苦しい' if middle.startswith('今は') else '少し重かった',
                     'あなたも少し怖くなかった')
-        assert ('時は悲しく、' if middle.startswith('今は') else 'のに、悲しかったし、その時は') in follow
+        assert ('のに、悲しかったし、回答した時点では' if middle.startswith('今は') else 'のに、悲しかったし、その時は') in follow
         assert '嬉しくなかった' not in body and '寂しかった' not in body
     positions = [follow.index(value) for value in expected]
     assert positions == sorted(positions)
@@ -4264,3 +4264,100 @@ def test_multiple_answer_grammars_keep_each_original_connector(connector):
         changed = follow.replace(prefix, prefix.replace(connector + '、', 'のに、', 1), 1)
         assert changed != follow
         assert not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+@pytest.mark.parametrize('source,visible', [
+    ('少し苦しい', '少し苦しい'),
+    ('少し不安です', '少し不安な'),
+    ('少し不安でした', '少し不安だった'),
+    ('私は少し不安です', 'あなたは少し不安な'),
+    ('断れないようで、重かった', '断れないようで、重かった'),
+    ('結果だけで、そこまでの苦労は見てもらえていないと思った',
+     '結果だけで、そこまでの苦労は見てもらえていないと思った'),
+])
+@pytest.mark.parametrize('position,correct', [(0, False), (1, False), (2, False), (0, True), (1, True)])
+def test_answer_time_original_relation_keeps_each_source_and_scope(source, visible, position, correct):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    request = begin(GA_OWNER_MEMO)
+    replies = ['その時は少し怖かった。'] * position + ['今は' + source + '。']
+    if correct:
+        replies.append('「' + source + '」ではなく「とても苦しかった」です。')
+        visible = 'とても苦しかった'
+    for reply in replies:
+        request = advance(request, reply)
+    context = actual(request=request)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    event = ('褒められた', 'あなたは誘われた', 'あなたは誘われた')[position]
+    reaction = ('嬉しくなかった', '悲しかった', '寂しかった')[position]
+    time = '先の回答時点では' if correct else '回答した時点では'
+    clause = event + 'のに、' + reaction + 'し、' + time + visible + 'のですね'
+    assert clause in follow and clause.count(time) == 1
+    assert MeaningExperienceEngine().generate(request).artifact.text == body
+    assert read_body(context, body).passed
+    # Read Reception independently: Observation must not supply a lost relation,
+    # original reaction, degree, or answer occasion.
+    for changed in (clause.replace('のに、', 'ので、', 1),
+                    clause.replace(reaction + 'し、', '', 1),
+                    clause.replace(reaction + 'し、', reaction.replace('かった', 'ない') + 'し、', 1),
+                    clause.replace(time, 'その時は', 1),
+                    clause.replace(time, '', 1),
+                    clause.replace(visible, visible.replace('少し', '').replace('とても', ''), 1)
+                        if '少し' in visible or 'とても' in visible
+                        else clause.replace(visible, '苦しかった', 1)):
+        assert changed != clause
+        assert not read_body(context, body.replace(follow, follow.replace(clause, changed, 1), 1)).passed
+
+
+@pytest.mark.parametrize('connector', ['のに', 'けど', 'けれど', 'けれども'])
+@pytest.mark.parametrize('correct', [False, True])
+def test_answer_time_relation_does_not_invent_a_cause(connector, correct):
+    request = advance(begin(GA_OWNER_MEMO.replace('のに', connector)), '今は少し苦しい。')
+    if correct:
+        request = advance(request, '「少し苦しい」ではなく「とても苦しい」です。')
+    context = actual(request=request)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    time = '先の回答時点では' if correct else '回答した時点では'
+    prefix = '褒められた' + connector + '、嬉しくなかったし、' + time
+    assert prefix in follow and read_body(context, body).passed
+    for altered in (prefix.replace(connector + '、', 'ので、', 1),
+                    prefix.replace(connector + '、', '、', 1),
+                    prefix.replace('嬉しくなかった', '嬉しかった', 1)):
+        assert altered != prefix
+        assert not read_body(context, body.replace(prefix, altered, 1)).passed
+
+
+@pytest.mark.parametrize('correct', [False, True])
+def test_answer_time_relation_still_reads_prior_finite_wording(correct):
+    request = advance(begin(GA_OWNER_MEMO), '今は少し苦しい。')
+    if correct:
+        request = advance(request, '「少し苦しい」ではなく「とても苦しい」です。')
+    context = actual(request=request)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    current = '褒められたのに、嬉しくなかったし、'
+    assert current in follow
+    legacy = body.replace(current, '褒められた時は嬉しくなく、', 1)
+    assert legacy != body and read_body(context, legacy).passed
+
+
+@pytest.mark.parametrize('last', ['「少し苦しい」ではなく「とても苦しい」です。', '「悲しかった」は誤りです。'])
+def test_answer_time_relation_saved_updates_reuse_original_and_exact_body(qcase, qdb, monkeypatch, last):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$1 where id=$2', [GA_OWNER_MEMO, parent])
+    first = current = run(service.start(user, parent))
+    for position, reply in enumerate(('その時は少し怖かった。', '今は少し苦しい。', last)):
+        if position:
+            current = run(cont(service, user, current, f'answer-time-relation-continue-{position}'))
+        current = run(answer(service, user, current, reply, f'answer-time-relation-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        assert '今回の観測に反映できていない' not in body
+        if position == 1:
+            assert 'あなたは誘われたのに、悲しかったし、回答した時点では少し苦しいのですね' in body
+        if position == 2 and 'ではなく' in last:
+            assert 'あなたは誘われたのに、悲しかったし、先の回答時点ではとても苦しいのですね' in body
+        if position == 2 and '誤り' in last:
+            assert '悲しかった' not in body and '少し苦しい' in body and '寂し' in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved body must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current

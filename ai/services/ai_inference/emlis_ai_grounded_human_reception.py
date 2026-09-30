@@ -10112,11 +10112,13 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str
         finite = _detached_feeling_finite_surface(source, allow_medial=True)
         # The original event/reaction relation does not depend on the
         # admitted answer's grammar. Keep its complete contrast and give
-        # the supplemental answer its own explicit original-time scope.
-        original_time_prefix = (event + _RECEIVED_EVENT_LINK_TEXT[link]
-            + "、" + feeling + "し、その時は"
-            if when == "original_occasion" and negative is not None else None)
-        if original_time_prefix is not None:
+        # the supplemental answer its own independently reported time scope.
+        answer_time = {"original_occasion": "その時は", "answer_time": "回答した時点では",
+                       "prior_answer_time": "先の回答時点では"}.get(when)
+        original_relation_prefix = (event + _RECEIVED_EVENT_LINK_TEXT[link]
+            + "、" + feeling + "し、" + answer_time
+            if answer_time is not None and negative is not None else None)
+        if original_relation_prefix is not None:
             separate_time_scopes = True
         copular_predicate = None
         if grammar in {"COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE"}:
@@ -10156,10 +10158,11 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str
                     "prior_answer_time": "先の回答時点では"}.get(when)
             if time is None:
                 return None
-            original = original_time_prefix or (event + "時は" + negative[1] + "、"
+            original = original_relation_prefix or (event + "時は" + negative[1] + "、"
                         if negative is not None else event + (
                             "時は、" if when == "original_occasion" else "ことについて、"))
-            parts.append(original + time + copular_predicate)
+            parts.append(original + ("" if original_relation_prefix is not None else time)
+                         + copular_predicate)
             separate_time_scopes = True
             continue
         # A later answer is a different time, not a revised past emotion.
@@ -10180,9 +10183,9 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str
                 return None
             time = {"answer_time": "回答した時点では",
                     "prior_answer_time": "先の回答時点では"}[when]
-            original = (event + "時は" + negative[1] + "、"
+            original = original_relation_prefix or (event + "時は" + negative[1] + "、"
                         if negative is not None else event + "ことについて、")
-            parts.append(original + time + finite)
+            parts.append(original + ("" if original_relation_prefix is not None else time) + finite)
             separate_time_scopes = True
             continue
         if grammar.startswith("PERCEIVED_"):
@@ -10195,7 +10198,7 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str
             # Keep the admitted perception as the user's complete predicate,
             # including its tentative ようで and its own subject and degree.
             # The existing finite reader restores that source independently.
-            prefix = original_time_prefix or event + "時は、"
+            prefix = original_relation_prefix or event + "時は、"
             parts.append(prefix + finite)
         else:
             # A belief remains a belief; a denial/qualification stays inside
@@ -10208,7 +10211,7 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str
                 or re.search(
                     r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)):
                 return None
-            prefix = original_time_prefix or event + "時は、"
+            prefix = original_relation_prefix or event + "時は、"
             parts.append(prefix + finite)
             # A present adjective must keep its own tense when followed by
             # a different past event; additive coordination is reversible.

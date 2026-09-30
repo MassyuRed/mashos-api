@@ -63,11 +63,10 @@ SUPABASE_SERVICE_ROLE_KEY = (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or "").strip
 
 REFLECTIONS_TABLE = (os.getenv("MYMODEL_REFLECTIONS_TABLE") or "mymodel_reflections").strip() or "mymodel_reflections"
 REFLECTIONS_READ_TABLE = (
-    os.getenv("COCOLON_PIECES_READ_TABLE")
-    or os.getenv("COCOLON_MYMODEL_REFLECTIONS_READ_TABLE")
+    os.getenv("COCOLON_MYMODEL_REFLECTIONS_READ_TABLE")
     or os.getenv("MYMODEL_REFLECTIONS_READ_TABLE")
-    or "pieces"
-).strip() or "pieces"
+    or "mymodel_reflections_read"
+).strip() or "mymodel_reflections_read"
 # This store only reads QnA metrics for capacity decisions; use the current-name
 # backend-readonly bridge view. Metrics write paths live elsewhere and remain legacy.
 QNA_METRICS_READ_TABLE = (

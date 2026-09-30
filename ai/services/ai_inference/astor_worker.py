@@ -297,11 +297,10 @@ SNAPSHOT_SCOPE_DEFAULT = (os.getenv("SNAPSHOT_SCOPE_DEFAULT") or "global").strip
 ANALYSIS_RESULTS_TABLE = (os.getenv("ANALYSIS_RESULTS_TABLE") or "analysis_results").strip() or "analysis_results"
 MYMODEL_REFLECTIONS_TABLE = (os.getenv("MYMODEL_REFLECTIONS_TABLE") or "mymodel_reflections").strip() or "mymodel_reflections"
 MYMODEL_REFLECTIONS_READ_TABLE = (
-    os.getenv("COCOLON_PIECES_READ_TABLE")
-    or os.getenv("COCOLON_MYMODEL_REFLECTIONS_READ_TABLE")
+    os.getenv("COCOLON_MYMODEL_REFLECTIONS_READ_TABLE")
     or os.getenv("MYMODEL_REFLECTIONS_READ_TABLE")
-    or "pieces"
-).strip() or "pieces"
+    or "mymodel_reflections_read"
+).strip() or "mymodel_reflections_read"
 
 # JST (UTC+9) fixed for MyWeb periods
 JST = timezone(timedelta(hours=9))

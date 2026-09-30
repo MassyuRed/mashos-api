@@ -12000,3 +12000,39 @@ current identityは既存owner／payload構成を保ちHRのAST／raw由来値�
 **次の同群残件。** 現在／先の回答時点で原文の逆接が弱まる実本文、同名の出来事と回答の読者に見える区別、主語／「し、その時は」／「のですね」の反復、断片訂正未解決・既知14を残す。次は同じ群で現在／先の回答時点の前後両層を読み、原反応と回答の時点を混ぜず原関係を保持できる最小の共通修正を選ぶ。同名区別にはMove横断の対応と独立読取が必要で、記述順を現実の発生順や別日時へ昇格しない。群を閉じる前に二層再掲の別作業へ移らない。
 
 商品0/3・NOT_CLEAR・全体48%・default OFF。両PR Draft/open/unmerged、Ready／merge／deploy／enableなし。最新weeklyの10/03未完でも休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB／実機予定を維持。新たな外部課金操作・production依存追加・Mash操作0。
+
+
+## 2026-09-30 JST u39開始：現在・以前の回答でも原関係を保持／Piece B2-A続行
+
+MashのGitHub選択とCocolon・Piece・EmlisAI続行指示を基準にする。開始API `f048790c42aede4ea70d39597252a0dbc5479185`／Cocolon `98b3df26d9ca6076885d6d41d74745e540491e1a`、両PR Draft/open/unmerged。添付前回txt、前提入口・CURRENT_RULES・Rule18・checklist/output gate・恒久incident全文、全体設計、全体ファイル地図、current_structure 00/01/02/04、Piece入口/manifest、最新weekly 20260926の9/29合意、u38両handoffを確認。両repoの全treeは1645＋2300＝3945path。歴史地図の377責務行を現行全ファイルの全文監査とは称さず、current ownerと呼出関係を照合した。System Context prepareはAPI checkout未解決で失敗し、成功や修復へ付け替えず、入口が許す原典直接参照で継続した。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK／LEVEL_2の限定単位。EmlisAIは同じ複数出来事/回答/訂正群で、原connector・原反応全文・独立した回答時点を既存HRのlocal prefixで保持する。`prior_answer_time`は未来ではなく以前の回答時点。新helper/作者/受付/後処理は追加せず、各文法/主体/活用guard・独立Gate・Plan・質問・意味更新は保持する。Pieceは既に承認済みB2-A exact6 read selectorとnative隔離DB凍結試験に限定。userの今回指示で両作業を進め、B2-B／live apply／公開契約変更へ広げない。
+
+allowed paths：API HR・received/detachedの意味拒否を保持する方法適応と新規試験・current shared identity・既存handoff、Piece6readers。Cocolon既存06・Piece current entry/map/manifest。SQL・requirements・Piece凍結試験・historical preimages・production依存・API interface／RN／flag／保護受入は不変更。rootのみ編集・実行・反映、3担当はread-only。実行環境は実際のCodex Workであり、未確認のPro／Ultra型名を称さない。
+
+成功条件は前後両層全文・source/Observation/nuclei/relations/Moves/status不変・作者禁止inverse・訂正/撤回/保存再取得・旧reader・関連回帰・remote bytes/path/parent/head照合。正式Product Readや群完了ではなくTECHNICAL_CREDITのみ。Emlisの商品0/3・NOT_CLEAR・全体48%・default OFF、同群10/03未完でも休止・10/04 Work分析（利用不可ならPro Piece）を保持。Pieceの内部本文/画像/bridgeの成立を保存preview／HTTP／RN／実機／商品完成へ昇格しない。追加の外部課金操作・Mash操作なし。
+
+
+## 2026-09-30 JST u39結果：現在・以前の回答でも原関係を保持／Piece橋渡しの技術受入れ
+
+**TECHNICAL_CREDITのみ。EmlisAIの同群と新Piece商品は未完。正式Product Read／商品PASSではない。** Emlisの既存HR作者で、原反応が残る受理済み回答のlocal prefixをoriginal_occasionだけでなくanswer_time／prior_answer_timeにも用い、「出来事＋原connector＋原反応全文＋し、回答した時点では／先の回答時点では＋回答」を生成する。回答時点の重複を避け、各文法・主体・活用guardを維持。原反応撤回・ABOUT-onlyには元関係を復活させない。Gate／Plan／source受付／質問／意味更新は不変更。Pieceの6selector変更は別責務で、Emlisの商品creditへ足さない。
+
+**前後両層全文。** synthetic25系列（FINITE／copular現在・過去／PERCEIVED／BELIEF、先頭・中央・末尾、以前の回答への訂正）を同じ入力で比較。21系列でReception／bodyだけが変化し、全25でObservation・nuclei・relations・Moves・status／reasonが不変。public本文一致と作者禁止inverseは前後25/25。read-only商品担当が25系列の前後両層全文を読み、新たな意味欠落・帰属変更・留保の原因化なしと確認。4不変は「少し不安です／でした」→「とても不安です／でした」の訂正を既存受付が未反映とする未解決境界であり、正常4件や修復4件に数えない。同名出来事が『あなたは誘われた』へ同じ表示になる問題、長さ・主語・『のですね』の反復、二層再掲、時制上の読みにくさは残る。
+
+synthetic代表：変更前『褒められた時は嬉しくなく、回答した時点では少し苦しいのですね。』→変更後『褒められたのに、嬉しくなかったし、回答した時点では少し苦しいのですね。』。以前の回答を訂正した例も、原反応の過去・否定を保持し『先の回答時点では』を一度だけ示す。本文の記述順を現実の発生順・別日時・別場面へ昇格しない。
+
+**関連試験の最終集計：2534 PASS／既知14 FAIL、ERROR0／SKIP0、2548 unique IDs。** received／detached／正しいcurrent owner identity1件を対象。初回fresh4分割の75 FAIL＝既知14＋新prefixに対する旧期待61。既存17 received関数（helper1を含む）とdetached1関数を方法適応し、原入力・引数・decorator／ID・意味改変の拒否目的を保持。適応した174条件＋current identity1件をfresh実行し174 PASS／1 FAIL。最後の1は撤回後の過去否定接続に対する方法誤りで、実本文の完全節『つながらなかったし、』へ修正し同関数全4条件をfresh実行、4 PASS。変更した方法の全条件を再確認し、XMLをID単位で置換して重複なく統合した。最後のtest変更後に全2548を一括再実行したとは主張しない。
+
+初回に誤選択したhistorical identity receipt1件の既存SKIPは別経過として除外し、保護されたskipを解除せず、正しい`test_active_final_language_owner_chain_has_zero_legacy_compose_calls`でsnapshotと18payload／9ownerを確認した。開始commitの分離worktreeで既知14だけをfresh実行して全14 FAIL、今回traceとの比較はrepo path／行番号／UUID／addressを正規化後の差0。既知関数のskip／xfail化・削除・期待変更なし。既知内訳はreceived8（現在肯定の旧文形6・旧anchor改変2）／detached6（肯定2責務容量2・第二原反応訂正の旧fragmentation2・撤回後BODY_UNAVAILABLE期待1・肯定訂正の旧group期待1）。全PASSや既知失敗解消へ読み替えない。
+
+新42全PASS＝6文型×現在3位置／以前2位置の30、原connector4×回答時点2の8、旧有限本文reader2、訂正／一意の原反応撤回の保存2。因果化・原反応欠落／時制変更・時点欠落／変更・程度欠落を独立readerで拒否。保存2系列6回答後状態はoriginal保持、生成禁止GET/startのDTO全文一致。最初の新保存入力で曖昧な同名『誘われた』撤回がANSWER_UNREFLECTEDになった既存境界を確認し、一意の原反応撤回へ試験入力を限定した。同名の曖昧撤回を修復したという証拠にはしない。旧有限／旧名詞の既存互換・訂正／撤回検査も維持。
+
+current shared snapshotは既存owner／payload構成を保ちHR派生値だけ更新：language `0420412cf43813c3583b3b00ca10a3b551b15371b2ce8bada9168947e11d2f2d`、runtime `e51b3779bb7221b9cca8c8baf1b5be67b8258a45c3b5c5aaf77417da3bc85949`。HR SHA256 `a05bf6b6ffe52479c5649529cdeb7b202574894c8da2d3b5a6a91cef23a7e293`、Gate不変 `ecec98e7ffd1a9e241be1d6ff79ae73b1cadac312c521967e257b1b1e5bdc403`。production source／identityは回帰中固定。試験はPGlite0.5.8／Python3.12.14／pytest9.1.1。sandbox内のasync保存待機をNONCREDITとして終了し、実行可能な隔離環境でfresh実行した。Emlisのlive DB／実機／プロセス再起動は未実施。
+
+**Piece B2-A。** 既存承認済みSQL・検証支援exact5を保持、`astor_worker`／`api_piece_runtime`／`emlis_ai_readers`／`piece_generated_metrics`／`piece_generation_store`／`piece_public_read_store`の6selectorで旧COCOLON_PIECES overrideを外し、既存MYMODEL override優先順を保持、既定・空文字fallbackを`mymodel_reflections_read`へ変更。query／write／認証／公開interfaceは不変。SQL・requirements・凍結試験・historical caller preimagesは不変更。凍結`test_b02_m0_m1_legacy_bridge.py`は隔離native PostgreSQL16.15／psycopg3.3.6／pytest8.4.1で1 PASS、FAIL／ERROR／SKIP0。21列・security_invoker、旧pieces定義/options保持、合成generated行読取り、catalog drift時の拒否とbridge不存在、rollbackを確認した。最初のsandbox socket接続失敗はNONCREDITであり、nativeの成功へ加算しない。6HTTP／REST経路、権限の全行列、live catalog／live apply／新Piece preview／RNは未確認。file-only B2-Aの限定技術受入れでありB2-Bを自動開始しない。Piece current entry／map／manifestを同じ資料更新単位で同期する。
+
+API11path＝Emlis5＋Piece6、Cocolon4path＝既存06＋Piece入口／map／manifest。Emlis STRUCTURE_MAP_DELTA_NONE（同じHR文法内）、Pieceは内部legacy read bridgeの現在地を同日mapへ反映。remote bytes・変更path・親commit・final headのfresh照合を両PR要約へ記録する。
+
+前後比較の保存UTC10:43:53〜最終集計UTC11:20:00は約36分（前提読取・環境確保・GitHub反映は別）。sandbox待機・収集選択ミス・旧期待FAILの経過を成功時間として隠さない。追加の外部課金操作・production依存変更・Mash操作0。rootのみ編集／実行／反映、3担当はread-only確認。未確認のPro／Ultra型名を称さず、Codex Workの実環境を記録する。
+
+**次の同群残件。** 同名出来事と回答の読者に見える区別、主語／回答時点／『のですね』反復、訂正受付の未解決境界・既知14を保持。現在／以前の回答の逆接保持のこの限定修正は成立したが、群を閉じる前に二層再掲の別作業へ移らない。Emlis商品0/3・NOT_CLEAR・全体48%・default OFF、10/03未完でも休止・10/04 Work分析（利用不可ならPro Piece）を維持。Pieceは保存preview発行・HTTP／RN・native renderer／実機・商品受入れが残る。両PR Draft/open/unmerged、Ready／merge／deploy／enable／live DB適用なし。
