@@ -254,6 +254,19 @@ def test_semantically_identical_acknowledgements_are_not_fixed_to_author_text(en
 ])
 def test_complete_semantic_mutations_fail_without_author_replay(old, new):
     context = actual(); follow = context[0].artifact.reception
+    # Keep each existing case and semantic mutation when its admitted
+    # PERCEIVED answer is expressed as a finite clause rather than a noun.
+    old, new = {
+        ('嬉しさにはつながらず', '嬉しさにつながり'): ('嬉しくなく', '嬉しく'),
+        ('嬉しさにはつながらず、', ''): ('嬉しくなく、', ''),
+        ('求められるような', '求められるための'): ('求められるようで', '求められるので'),
+        ('重さ', '軽さ'): ('重かった', '軽かった'),
+        ('重さ', '苦しさ'): ('重かった', '苦しかった'),
+        ('届いた', '届いている'): ('重かった', '重い'),
+        ('褒められたことは', '友人が褒められたことは'): ('褒められた時は', '友人が褒められた時は'),
+        ('褒められたことは', '今、褒められたことは'): ('褒められた時は', '今、褒められた時は'),
+        ('求められるような', '求められないような'): ('求められるようで', '求められないようで'),
+    }.get((old, new), (old, new))
     changed = follow.replace(old, new)
     assert changed != follow
     result = inverse(context, changed, without_author=True)

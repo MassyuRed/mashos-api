@@ -3479,11 +3479,11 @@ def test_perceived_answer_owner_is_recovered_from_its_complete_visible_clause(ow
     req = advance(req, f'その時は{owner}は頼まれたようで、重かった。')
     context = actual(request=advance(req, '「寂しかった」ではなく「私も少し怖くなかったです」です。'))
     body, follow = context[0].artifact.text, context[0].artifact.reception
-    phrase = 'あなたは頼まれたような重さとして届いた'
+    phrase = 'あなたは頼まれたようで、重かった'
     assert phrase in follow and owner + 'は頼まれたようで、重かった' in context[0].artifact.observation
     assert read_body(context, body).passed
     for changed in (phrase.replace('あなたは', owner + 'は', 1), phrase.replace('は頼まれた', 'も頼まれた', 1),
-                    phrase.replace('ような', 'という', 1), phrase.replace('重さ', '軽さ', 1)):
+                    phrase.replace('ようで', 'ので', 1), phrase.replace('重かった', '軽かった', 1)):
         assert not read_body(context, body.replace(follow, follow.replace(phrase, changed, 1), 1)).passed
 
 
@@ -3685,3 +3685,124 @@ def test_positive_owned_event_group_saved_updates_preserve_each_occurrence(qcase
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved positive group occurrences must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('position', [0, 1, 2])
+@pytest.mark.parametrize('source', ['次も説明を求められるようで、苦しかった', '断れないようで、重かった',
+                                     '私は頼まれたようで、重かった', '自分は頼まれたようで,重かった',
+                                     '私も頼まれたようで、重かった'])
+def test_perceived_answer_retains_each_source_and_existing_middle_fallback(position, source):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    events = ('褒められた', '私は誘われた', '自分は誘われた')
+    memo = ''.join(event + 'のに、' + feeling + '。' for event, feeling in zip(events, ('嬉しくなかった', '悲しかった', '寂しかった')))
+    req = begin(memo)
+    for _ in range(position):
+        req = advance(req, 'その時は少し重かった。')
+    req = advance(req, 'その時は' + source + '。')
+    context = actual(request=req)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    visible = re.sub(r'^(?:私|自分)(?=は|も)', 'あなた', source)
+    event = re.sub(r'^(?:私|自分)(?=は|が)', 'あなた', events[position])
+    reaction = ('嬉しくなく、', '悲しく、', '寂しく、')[position]
+    clause = event + '時は' + reaction + visible
+    if position == 1:
+        # This separate significance Move already keeps a nominal reading.
+        # Its unchanged limitation must not be counted as finite improvement.
+        assert '私は誘われたのに悲しかったことと、' in follow
+        assert 'を見失わず、小さくせずに受け止めています' in follow
+        assert source.split('ようで')[0] + 'ようだという、その時の' in follow
+    else:
+        assert clause in follow or clause[:-3] + 'く' in follow
+    assert source in context[0].artifact.observation and 'として届' not in follow
+    assert MeaningExperienceEngine().generate(req).artifact.text == body
+    assert read_body(context, body).passed
+
+
+@pytest.fixture(scope='module')
+def perceived_finite_group_context():
+    memo = '褒められたのに、嬉しくなかった。私は誘われたのに、悲しかった。自分は誘われたのに、寂しかった。'
+    req = advance(begin(memo), '「嬉しくなかった」ではなく「私は少し不安でした」です。')
+    req = advance(req, 'その時は私も頼まれたようで、重かった。')
+    return actual(request=advance(req, '「寂しかった」ではなく「私も少し怖くなかったです」です。'))
+
+
+@pytest.mark.parametrize('old,new', [
+    ('あなたも', 'あなたは'), ('頼まれたようで', '頼まれたので'), ('頼まれたようで', '頼まれなかったようで'),
+    ('頼まれたようで、重かった', '重かった'), ('頼まれたようで、重かった', '頼まれたようだった'),
+    ('重かった', '軽かった'), ('重かった', '重くなかった'), ('重かった', '重い'),
+    ('悲しく、', ''), ('悲しく、', '悲しくなく、'),
+    ('あなたは誘われた時は', '相手は誘われた時は'), ('あなたは誘われた時は', 'あなたが誘われた時は'),
+    ('時は', '今は'),
+])
+def test_perceived_finite_group_rejects_changed_subject_scope_or_predicate(perceived_finite_group_context, old, new):
+    context = perceived_finite_group_context
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    clause = 'あなたは誘われた時は悲しく、あなたも頼まれたようで、重かった'
+    assert clause in follow and read_body(context, body).passed
+    changed = clause.replace(old, new, 1)
+    assert changed != clause
+    assert not read_body(context, body.replace(follow, follow.replace(clause, changed, 1), 1)).passed
+
+
+@pytest.mark.parametrize('operation', ['answer_correction', 'original_correction', 'withdraw'])
+def test_perceived_finite_saved_updates_keep_sources_and_exact_reads(qcase, qdb, monkeypatch, operation):
+    user, parent, _ = qcase
+    memo = '誘われたのに、悲しかった。頼まれたのに、寂しかった。'
+    assert 'code' not in qdb.query('update public.emotions set memo=$2 where id=$1', [parent, memo])
+    service = active(monkeypatch)
+    first = current = run(service.start(user, parent))
+    reply = {'answer_correction': '「私は頼まれたようで、重かった」ではなく「自分は頼まれたようで、苦しかった」です。',
+             'original_correction': '「悲しかった」ではなく「怖かった」です。',
+             'withdraw': '「誘われた」は誤りです。'}[operation]
+    for position, text in enumerate(('その時は私は頼まれたようで、重かった。', reply)):
+        if position:
+            current = run(cont(service, user, current, f'perceived-finite-continue-{position}'))
+        current = run(answer(service, user, current, text, f'perceived-finite-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        _, follow = body.split('Emlisから：', 1)
+        assert 'として届' not in follow
+        if not position:
+            assert '誘われた時は悲しく、あなたは頼まれたようで、重かった' in follow
+        elif operation == 'answer_correction':
+            assert '重かった' not in body and 'あなたは頼まれたようで、苦しかった' in follow
+        elif operation == 'original_correction':
+            assert '悲しかった' not in body and '怖かった' in body
+        else:
+            assert '誘われた' not in body and 'その時は悲しかった' in follow
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved perceived replies must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+def test_perceived_finite_group_saved_updates_keep_all_occurrences(qcase, qdb, monkeypatch):
+    user, parent, _ = qcase
+    memo = '褒められたのに、嬉しくなかった。私は誘われたのに、悲しかった。自分は誘われたのに、寂しかった。'
+    assert 'code' not in qdb.query('update public.emotions set memo=$2 where id=$1', [parent, memo])
+    service = active(monkeypatch)
+    first = current = run(service.start(user, parent))
+    replies = ('「嬉しくなかった」ではなく「私は少し不安でした」です。', 'その時は私も頼まれたようで、重かった。',
+               '「寂しかった」ではなく「私も少し怖くなかったです」です。')
+    for position, text in enumerate(replies):
+        if position:
+            current = run(cont(service, user, current, f'perceived-group-continue-{position}'))
+        current = run(answer(service, user, current, text, f'perceived-group-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        if position == 2:
+            observation, follow = current['current_observation']['text'].split('Emlisから：', 1)
+            assert '嬉しくなかった' not in observation and '寂しかった' not in observation
+            assert 'あなたは誘われた時は悲しく、あなたも頼まれたようで、重かった' in follow
+            assert 'あなたは誘われた時は、あなたも少し怖くなかった' in follow
+            assert 'として届' not in follow
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved perceived group must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+def test_perceived_finite_reader_still_restores_the_prior_saved_wording(perceived_finite_group_context):
+    context = perceived_finite_group_context
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    current = 'あなたは誘われた時は悲しく、あなたも頼まれたようで、重かった'
+    prior = 'あなたは誘われたことは、悲しさを伴い、あなたも頼まれたような重さとして届いた'
+    assert current in follow
+    assert read_body(context, body.replace(follow, follow.replace(current, prior, 1), 1)).passed

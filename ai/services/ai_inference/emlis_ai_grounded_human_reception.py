@@ -10184,14 +10184,11 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str
             if (parsed is None or _thread_answer_nominal_morphology(parsed[2] + "かった") is None
                 or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)):
                 return None
-            reception = parsed[1] + "ような" + parsed[2] + "さとして届いた"
-            topic = event + "ことは"
-            if negative is not None:
-                topic += (negative[0] + "にはつながらず、" if feeling.endswith("くなかった")
-                          else "、" + negative[0] + "を伴い、")
-            else:
-                topic += "、"
-            parts.append(topic + reception)
+            # Keep the admitted perception as the user's complete predicate,
+            # including its tentative ようで and its own subject and degree.
+            # The existing finite reader restores that source independently.
+            prefix = event + "時は" + (negative[1] + "、" if negative is not None else "、")
+            parts.append(prefix + finite)
         else:
             # A belief remains a belief; a denial/qualification stays inside
             # its complete finite source clause. Conjoining it to the same

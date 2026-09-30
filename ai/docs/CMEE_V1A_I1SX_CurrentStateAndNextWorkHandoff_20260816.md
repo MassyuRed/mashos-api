@@ -11727,3 +11727,44 @@ u33 Emlisから：
 **残件と次。** 上例にも『あなたは』の反復と『あなたは…ことについて』の硬さが残る。表示名が同じ複数場面を読み手が区別する表現、二節/二層の再掲、unsupported主体のnominal、ひらがなSELFを含むPERCEIVED未受理も未解決。次は同じ複数出来事/回答/訂正群内で、同名場面と主語反復の共通文章化を実本文から扱う。群が正式に終わる前に二層重複の別作業へ進まない。明白な不足がある候補を正式Product Readへ渡さない。
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品0/3・NOT_CLEAR・default OFF / 両PR Draft/open/unmerged。** 主体対応の限定修正であり、自然さ全般・対象群・商品完成は未達。10/03未完でも休止、10/04分析（Work不可ならPro Piece）、10/02実DB/実機を維持。追加費用・依存・Mash操作0。確定source/test/identityを変更せず、この最終結果は既存2引継ぎへ追記する。Ready/merge/deploy/enableなし。
+
+
+## 2026-09-30 JST u34開始：推測を含む回答の不自然な名詞化を解消
+
+Mashの継続指示とGitHub指定を受領。fresh開始headはAPI `413401ee3f172f816bebc5c71ea07021a976d1a3`／Cocolon `ff1fef667b7b71ad8b39a7f563f8bc84ea3c76f6`、両PR Draft/open/unmerged、tracked差分なし。前回txt・全体設計/全file map・tracked inventory・current_structure00/01/04は同一の既読正本を継承し、最新weekly9/26の9/29 C〜Eとcurrent rule入口を再照合。恒久incidentは今回も先頭〜EOF全読。u33全関連2352＝2338PASS/既知14FAILを開始証拠として継承する。
+
+- product_destination: 複数出来事に対する本人の留保付き感覚を、主述が通るEmlisの文章として返す。
+- current_gate_or_subgate: 同じQ4複数出来事/回答/訂正群の既存HR→Surface→独立Gate。
+- exact_work: 既にPERCEIVEDとして受理済みの『〜ようで、重かった』を『〜ような重さとして届いた』へ再名詞化するHRの共通分岐を、既存finite文法へ戻す。
+- scope_classification: Rule18 LEVEL_2 / DIRECT_PRODUCT_OR_ACCEPTANCE_WORK。
+- approval_or_delegation_basis: MashのEmlis残件継続と既存品質修正scope。PR3/30 Draft反映を含む。
+- execution_owner: Work ModeのGPT-based Codex/rootが実装・検査・write。商品/技術はread-only独立review。確認不能なPro/Ultra model名を称さない。
+- success_credit: 留保付き実返信の限定改善に対するTECHNICAL_CREDIT。商品PASS/群完了にはしない。
+- completion_condition: 対象event・原反応・主体/助詞・ようでの留保・否定・程度・原時点を完全sourceと対応させ、独立逆検証・前後全文・訂正/撤回・保存再読・関連回帰・remote全文照合を成立させる。
+- stop_condition: sourceの誤帰属/欠落、新たな未提供、留保を事実/原因へ昇格する候補は採用しない。意味受付・Plan・IR/tag・新helper/文法ownerが必要なら拡張しない。
+- prohibited_scope: source admission/Plan/意味更新/質問/API/DB/RN/他core/依存/flag/保護受入/品質閾値/本番/merge。基本変更は既存HR・detached tests・current identity・API handoff・Cocolon06の5path、Gateは既存逆復元に不足が実証された場合の同reader最小差分だけ。
+- next_product_read_or_mash_decision_point: 確定候補の前後本文をrootと商品担当が全読し、明白な不足のある候補を正式Product Readへ送らない。
+- current_source_test_receipt: u33公開sourceと2352 unique IDの完了結果・同一hash、既知14。既存PERCEIVED文形を直接要求する2testsだけは意味保持/改変拒否の目的を維持して文形期待を適応する。他の旧期待/frozen proofは不変更。
+- current_docs_and_heads: 上記2headsとu33 API handoff/Cocolon06、weekly最新追加合意。system_context祖先不整合は原典直接参照を継続し成功に読み替えない。
+- affected_current_structure_maps: 01/04、STRUCTURE_MAP_DELTA_NONE（既存作者の同一受理sourceの文法選択のみ）。
+
+先に検討した主語省略は、既存shared-subjectが同一semantic_ref限定でevent/answer別nucleus間の主題共用を根拠付けないため今回採らない。商品担当はPERCEIVED有限化をPRODUCT_ROUTE_ALIGNED、技術担当は既存Gateの完全finite逆復元を確認して限定案にblockingなし。新たな主題共用・時系列labelを作らない。想定30〜45分、追加費用/依存/Mash操作0。10/03未完でも休止・10/04分析・10/02実DB/実機、全体48%・商品0/3・NOT_CLEAR・default OFFを維持しSTART_ALLOWED。
+
+2026-09-30 JST u34 scope補足：実test調査で、received_discourseの既存11paramも旧PERCEIVED名詞形を改変対象にしていると判明。同じinput・test ID・意味改変（原反応否定/欠落、次も/同じ、様態→原因、負担、時制、主体、出来事時点、推測内否定）と作者禁止の検査目的を保持し、method内の改変対象だけ現finiteへ適応する。既存detached2と合わせ13条件を適応し、protected/frozen期待を弱めない。これに必要な既存received test fileを追加して実変更上限6pathとする。Gateは変更せず、商品/技術read-only担当も意味保持の限定修正にblockingなし。
+
+u34検証中の新しい残件確認：最初のfocused63は58PASS/5FAIL。新設した位置比較で、中央が独立significance Moveになる5入力へ有限化を要求していたが、その5は開始版と候補の全recordが完全一致する既存nominal残件だった。追加15系列を両版で実生成し、先頭/末尾10のReception変更・中央5不変、他全field不変を確認。source修正を広げず、新testは先頭/末尾のfinite成立と中央5の元source/時点保持・既存fallbackを区別して検査する。5件を修復数に入れず、対象群の未完了条件と次の調査位置として残す。skip/xfailや保護期待の変更ではない。
+
+
+## 2026-09-30 JST u34検証checkpoint：受理済みPERCEIVEDを完全な述語で返す
+
+MashのEmlis継続指示に基づく同じQ4複数出来事/回答/訂正群。開始head API `413401ee3f172f816bebc5c71ea07021a976d1a3`／Cocolon `ff1fef667b7b71ad8b39a7f563f8bc84ea3c76f6`。最新weekly9/29合意・current rulesと前提地図を照合し、必須incidentは今回も全文読了。Context prepareは同じ祖先不整合でexit2、原典直接参照を継続。
+
+**実装。** HR既存PERCEIVED分岐の5行追加/8行削除だけで、受理済み『〜ようで、重かった』を、元出来事/元反応に結び付く完全なfinite predicateとして返す。『〜ような重さとして届いた』への不要な名詞化を除き、様態・主体・助詞・程度・否定・原時点を原sourceのまま保持する。従来の構文完全一致/末尾形態/残留SELF/余剰event anchorのguardは維持。既存Gateが全文を独立逆復元できるため、Gate・Plan・IR・意味受付・API/DB/RN・依存・flagは変更しない。主語の無条件削除や別nucleus間の新しい主題共用を作らない。
+
+**実本文。** 主比較33系列は28本文、Reception11変更/17本文不変、同じ最終UNAVAILABLE3・途中syntax不成立2。位置比較15は先頭/末尾10のReceptionだけ変更、中央5は全record不変。合計48系列43本文で、Reception21変更/22本文不変、その他全field（checkpoint/nuclei/relations/moves/Observation/可否理由）は全て不変。全43でpublic一致・作者禁止inverseがtrue。rootと商品担当が前後の両層全文を確認し、留保や主体の新しい欠落/誤帰属にblockingなし。主語反復、同名区別、二層再掲、未対応SELF、中央が独立significance Moveになる5ケースの名詞列は未解決。中央5を対象外として群を閉じる扱いはしない。
+
+**検査。** 既存13条件（receivedの11param＋detachedのowner2）は、同じinput/test ID/意味改変の検査目的を保ち、新しいfinite文面に対応する改変対象へmethodを適応。新33は位置15（改善10/現fallback5を分離）、独立意味改変13、保存4、旧nominalの独立読み取り互換1。初回focused63=58PASS/中央への過大なfinite要求5FAILは残件の両版比較で説明済み。最終focused64は64PASS。開始sourceへ最終testのみoverlayした対照64は25PASS/39FAIL、ERROR/SKIP0で、旧method適応11と新28が開始版では成立しない。旧13のうち修飾語を削除する2条件は開始版もPASS。検査目的の削除、skip/xfail、frozen proof変更はない。
+
+保存4系列9回答後状態はoriginal保持、訂正/撤回済み内容の不復活、生成禁止GET/startのDTO全文一致を確認。PGlite0.5.8上の検証で、実DB・実機・再起動の代替ではない。旧保存本文の名詞形も既存Gateで独立に読み戻せる。全関連2385 unique ID（旧2352＋新33）を固定source/test/current identityで重複なし4分割実行中。途中出力を完了扱いせず、全量結果をこの既存2引継ぎへ追記する。
+
+current identityは既存18payload/9ownerのHR派生値だけ：language `f1a31aae51d30b3a2aaac76bf46f974424c979b516847cded561ddc14573847a` / runtime `8768b25e55f2d1c70c64cf959d32517138a2933fde5bb3006673a2933ed305e8`。API変更はHR・received/detached tests・current identity・既存handoffの5path、Cocolonは既存06の1path。STRUCTURE_MAP_DELTA_NONE。TECHNICAL_CREDITの限定改善で商品PASS/群完了ではない。全体48%・商品0/3・NOT_CLEAR・default OFF、両PR Draft/open/unmerged、10/03未完でも休止・10/04分析・10/02実DB/実機を維持。追加費用・依存・Mash操作0。Ready/merge/deploy/enableなし。
