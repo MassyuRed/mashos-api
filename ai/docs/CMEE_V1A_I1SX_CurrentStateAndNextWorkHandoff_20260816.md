@@ -11693,3 +11693,37 @@ u32 Emlisから：
 current identityは既存18payload/9ownerの派生値だけ：language `623695645abe07a4d59d6a9fbccb64d60bad292f88f6aa04573bcfb5415096db` / runtime `c09a63b15a592317cc7ff9aab39bd2ea92c7ed00403404e4bd7cf213151d0256`。保存検査はPGlite上のoriginal保持と生成禁止GET/startのDTO全文一致であり、実DB/実機/再起動の代替ではない。
 
 編集は既存HR/Gate/detached tests/current identity/API handoff/Cocolon06の6pathのみ。STRUCTURE_MAP_DELTA_NONE。既存Draftへcheckpoint反映後、全関連の完了結果とfresh remote照合を同じ2引継ぎへ追記する。全体48%・商品0/3・NOT_CLEAR・default OFF、Ready/merge/deploy/enableなし。追加費用・依存・Mash操作0。
+
+
+## 2026-09-30 JST u33最終検証：肯定回答の出来事主語とsource対応を限定修正
+
+checkpointはAPI `90b7b445ad206e4950fc35b46ac86b672933f28c`（tree `f2451b8fedf798f3fe582559580a9d07e13f1ed7`）／Cocolon `1f98652505b5e747a2cc9ed090994107c398a73e`（tree `2987d8f2f7ece127ad7697cb5dd0a65d71223397`）へnon-force反映済み。認証のないgit pushは失敗したため接続済みGitHub pluginで同じ限定treeを反映。fresh fetchでAPI5/Cocolon1の変更path、両head/tree、全6fileの全文bytesが検証済みlocalと一致することを確認した。localも同一headへ整合し、tracked差分なし。cacheは公開しない。
+
+**全関連2352件＝2338PASS／既知14FAIL、ERROR/SKIP0。** 旧2297 IDの欠落・成否変更0、追加55全PASS、既知14のmessage/traceはrepo path・行番号・UUID・アドレス正規化後の差0。source/test/current identityのSHA256を維持した4分割の完了XML、終了値、収集ID集合を照合し、missing/duplicate0。各588件でfail数8/5/1/0、suite所要260.613/381.683/200.457/224.644秒、合計1067.397秒は並列suiteの合計でwall timeではない。既知14の解消や全PASSとは扱わない。
+
+対象は `ai/tests/test_cmee_emlis_received_discourse.py`、`ai/tests/test_cmee_emlis_detached_observation.py`、`ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEEStage1AdditionalCorrectionStep2CompositionTest::test_active_final_language_owner_chain_has_zero_legacy_compose_calls`。既存Python3.12.14/pytest9.1.1/PGlite0.5.8、`PYTHONPATH=ai Q2_PGLITE_MODULE=<existing PGlite module>`。収集順のunique nodeidを4等分し、各pytestへ明示指定して実行。先行53、開始版red55、本文probe34を最終2352へ加算しない。既存test期待・frozen proof・受入母数・skip/xfail・品質閾値は不変更。current identityの18payload/9ownerとlegacy compose call0もPASS。
+
+追加55の内訳は単独主体/助詞/時点12、group実UTF-8原source復元3、group欠落/重複/入替等の独立拒否27、訂正/撤回6、unsupported主体保持3、保存4。保存4系列10回答後状態で、initial original保持と生成禁止GET/startのDTO全文一致を確認した。PGlite検証であり、実DB・端末・再起動試験の未実施は保持する。新55全PASSと、開始版3PASS/22FAIL/30共有fixture setup ERRORを独立技術担当も確認した。
+
+同じ34系列の前後実本文をrootと独立商品担当が全読。前後とも本文がある14件のうち、中央出来事への現在肯定回答6件はReceptionだけを修正し、他8本文と意味/関係/Move/Observationは不変。最終本文未提供6件の回復と、途中advanceの本文未提供による到達不能9系列の解消を別計上する。候補29本文はpublic一致/作者禁止inverseが全true。同じ未提供3と質問前提不成立2は残る。
+
+実本文の対比（限定不具合の証拠で、商品合格見本ではない）：
+
+```text
+入力：褒められたのに、嬉しくなかった。私は誘われたのに、悲しかった。頼まれたのに、寂しかった。
+回答1：その時は少し重かった。
+回答2：今は私は少し嬉しいです。
+
+見えたこと（前後同一）：
+「褒められた」のに「嬉しくなかった」、その時は「少し重かった」とあります。 「私は誘われた」のに「悲しかった」、回答した時点では「私は少し嬉しいです」とあります。 「頼まれた」と「寂しかった」が、異なる向きのまま同時にあります。
+
+u32 Emlisから：
+褒められた時は嬉しくなく、少し重く、あなたは誘われたのに、悲しさを感じ、頼まれたのに、寂しさを感じたのですね。私は誘われたことについて、回答した時点で私は少し嬉しいですという気持ちを受け止めています。
+
+u33 Emlisから：
+褒められた時は嬉しくなく、少し重く、あなたは誘われたのに、悲しさを感じ、頼まれたのに、寂しさを感じたのですね。あなたは誘われたことについて、回答した時点ではあなたは少し嬉しいのですね。
+```
+
+**残件と次。** 上例にも『あなたは』の反復と『あなたは…ことについて』の硬さが残る。表示名が同じ複数場面を読み手が区別する表現、二節/二層の再掲、unsupported主体のnominal、ひらがなSELFを含むPERCEIVED未受理も未解決。次は同じ複数出来事/回答/訂正群内で、同名場面と主語反復の共通文章化を実本文から扱う。群が正式に終わる前に二層重複の別作業へ進まない。明白な不足がある候補を正式Product Readへ渡さない。
+
+**TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品0/3・NOT_CLEAR・default OFF / 両PR Draft/open/unmerged。** 主体対応の限定修正であり、自然さ全般・対象群・商品完成は未達。10/03未完でも休止、10/04分析（Work不可ならPro Piece）、10/02実DB/実機を維持。追加費用・依存・Mash操作0。確定source/test/identityを変更せず、この最終結果は既存2引継ぎへ追記する。Ready/merge/deploy/enableなし。
