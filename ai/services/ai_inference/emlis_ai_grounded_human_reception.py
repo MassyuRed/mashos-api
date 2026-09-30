@@ -10071,6 +10071,9 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str
                 allow_copular=bool(copula
                     and copula[1] in {"でした", "だった"})))
             continue
+        # The received event has the same source-owned SELF perspective as
+        # the relational-focus grammar. Keep its source IR intact.
+        event = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event, count=1)
         feeling = fragments[int(feeling_text)] if feeling_text != "none" else None
         negative = _received_discourse_negative_feeling(feeling) if feeling else None
         if feeling is not None and negative is None:
@@ -10210,7 +10213,8 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str
     # Equal complete feelings can govern adjacent, separately named
     # occasions. Only ABOUT-only original-time rows share a predicate;
     # an original contrast or independent revision remains its own scope.
-    event_names = [fragments[int(code.split(":")[1])] for code in codes]
+    event_names = [re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた",
+                          fragments[int(code.split(":")[1])], count=1) for code in codes]
     if (len(set(event_names)) == len(event_names)
         and not any(code.endswith((":none:detached:none", ":none:replacement:none")) for code in codes)):
         combined, run_events, run_finite = [], [], None
@@ -10273,8 +10277,7 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str
     text = "、".join((*coordinated, acknowledgement))
     # Avoid ambiguous event attachment, including an event repeated inside
     # another event's answer. The original grammar remains available there.
-    if any(text.count("、" + fragments[int(code.split(":")[1])]) != 1
-           for code in codes[1:]):
+    if any(text.count("、" + event) != 1 for event in event_names[1:]):
         return None
     return text
 

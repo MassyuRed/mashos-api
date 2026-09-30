@@ -11520,3 +11520,28 @@ DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。rootはWork ModeのGPT-base
 この本文は同名出来事の全義務保持・一人称・これまで等の未解決点を可視に残しており、商品合格見本ではない。初案の悪化を棄却したことも含めて9/30中間記録とする。最終変更はAPI5file／Cocolon06の1file。ローカル修正・検証・引継ぎ・反映用差分は準備済み、remote反映だけ明示許可待ち。拒否されたpushを別経路で迂回しない。
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品0/3・NOT_CLEAR・default OFF・両PR open/Draft/unmerged。** 同じsource/意味/関係/保存本文のgrammar適用のみで、責任配置・whole route・artifact lifecycleは変わらない。Ready/merge/deploy/enableなし。
+
+
+## 2026-09-30 JST u31開始：同文の両端出来事の受理済み意味を保持する
+
+u30の6file反映確認をお願いした後、MashからGitHub指定で残件継続の指示を受領。CLI pushは認証credential未構成で未送信となったため、接続済みGitHubのblob/tree/commit/refを使用し、API `95df68e28b1d39fcec2579ff4f17c33b372dc1d4`（tree `d96a37ca6a28c2c9811023bd972d16346ceb05ec`）／Cocolon `e2a8914b713133b90cbf8b60223d3e8da0bb5203`（tree `d479b0d6cd8f87a74cbbc3101d809e06b12822c1`）へnon-force反映した。fresh git fetchのhead/tree・変更path API5/Cocolon1・6file全文bytes一致を確認。u30の反映保留はこの追記で解消した。Contents APIは1MB超docのcontentが空になるため全文照合には使用できず、fresh git objectの全bytesを採用した。未検証の差分や前回棄却Planは含まない。
+
+最新weekly・current map・u30引継ぎを照合し、同じ複数出来事/回答/訂正群を継続する。DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2、rootが編集/実行/write、商品/技術はread-only。現在のbounded unitは、同じ文言の出来事が両端にある3場面で、各ABOUT回答と中央contrastが受理済みなのにReceptionが最後の回答だけになる欠落。既存Planのreceived-source proofと1対1ABOUTを確認して、原順の完全な3場面を既存の1集合Moveへ保持する。source admission/質問/意味更新やunique markerの意味は変えず、HR/Gateの既存の原順group文法を利用する。時系列・主体・新感情を推定しない。
+
+編集上限は既存Plan/HR/Gate、detached tests、current identity、本handoff/Cocolon06の7path。source proofの不成立、意味追加、新たな文章悪化、実退行や新機構が必要なら一律guard撤去へ逃げず見直す。完了条件は対象全義務・関係・原順・主体/助詞/否定/程度/時点を実本文で保持し、作者禁止逆検証・保存再取得・関連回帰・独立レビュー・remote照合を行うこと。追加費用/Mash操作/依存追加なし。対象群全体は未完了、10/03休止・10/04分析という最新合意を維持。
+
+## 2026-09-30 JST u31検証checkpoint：同名の両端出来事の受理済み3場面保持
+
+u30反映後の同一群を継続。DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。開始時にoverall/national設計、split file map、実tracked paths、必須incident、最新weekly9/26＋9/29合意、前回txtとu30引継ぎを照合した。履歴全行を再読したとの意味ではない。先のsystem_context prepare exit2を成功へ読み替えず原典直接照合を継続。10/03休止・10/04からWork分析（利用不可ならPro Piece）、9/30中間記録、10/02実DB/実機必須、全体48%・商品0/3・NOT_CLEAR・default OFFを維持する。
+
+**変更。** 同名の両端出来事がある原順3場面で、先頭/末尾の原反応は訂正済み、中央だけ原contrast＋回答を持つケースを既存1集合Moveに保持した。Planは完全なreceived projection（compound/normalized scalar先頭range/link/独立span/原順）と3event↔3原時点negative answerの1対1・両端非unique/中央unique・各ABOUTの明示根拠と正確な2spanを同時に要求する。単にunique guardを外したり、unique markerを捏造したり、source admissionや意味更新・質問を変更したりしない。
+
+本文比較で『私は褒められた時は、あなたは…』という新候補の人称対立を商品阻害として検出したため、既存relational-focusと同じ先頭SELF（私/自分/わたし＋は/が）→あなたの規則をreceived finite grammarにも適用した。source/IRは原文保持。HRのevent/boundary/shared predicateとGateの同箇所を揃え、Gateはsource eventの完全一致を要求し、本文上の実UTF-8区間を独立に元eventへ戻す。全文を事前置換してbyte証拠をずらす方式ではない。新helper/grammar tag/外部AI/意味判断ownerは追加しない。
+
+**実本文。** 最初の12系列では受理済み9系列のmoves/Receptionだけを変更し、PARTIAL3は不変。追加14系列のfinal source比較は13本文＋同じUNAVAILABLE1で、5本文のmoves/Reception変更・8本文不変、checkpoint/nuclei/relations/Observation/statusは不変。13本文のpublic一致・作者禁止inverseは全true。さらにevent owner適用範囲の6系列は6本文、5Reception変更・1不変、同様に全public/inverse一致。ここで『私はB／自分はB』が変換後同名となる後続境界は既存nominal fallbackへ戻り、全3場面保持と引き換えに文章が長くなった。**読みやすさの後退は実在し、日本語退行0/全変更で自然さ改善とは判定しない。** 長い名詞列、あなたはの重複、同名場面の区別しにくさ、fallback内の原文一人称は未解決。
+
+**検査。** 既存u30 ordinary tests4件＋saved1件は入力/ID/検査目的を保持してmethodを適応した。完全なsource-owned nominal/finiteの2形だけを受け付け、主体/助詞/否定/程度/時点/出来事/欠落の改変を対象answerのscope内で拒否する。ですこと拒否・Observation原文・public一致・作者禁止inverse・saved original/DTO一致を維持。凍結proof・受入母数・保護比較対象の変更、skip/xfail追加はない。API95df68eのsourceを保持した別worktreeへ同じtestだけoverlayし、旧10PASS、新13FAIL（3場面欠落で不成立）を確認。最後に旧4のevent改変対象を末尾answerへ限定して候補4PASS/旧source4PASS。候補新13は13PASS。新13内provenance6は完全group不成立を確認するもので、純粋な順序破壊だけの独立証明や全拒否形式の証拠として過大計上しない。保存検査はPGlite、生成禁止GET/startのDTO全文一致・original保持であり、実DB/実機/プロセス再起動ではない。
+
+rootが編集・実行・write、商品/技術2者はread-only。両者とも限定欠落回復にblocking所見なし、人称混在の初案阻害は修正済み。商品正式PASSや対象群完了は認めない。関連全量received/discourse＋detached/observation＋current owner identityは、source/test/identity SHA256を固定して実行中。**未完了のため全量PASS/既知14維持をまだ主張しない。** current identityは18payload/9owner構造の派生値だけ：language eaf0969c790c4bcefec16851ffd418b570247ad96fd841df9bcec8276293d16e / runtime 30b09ff93b97ba3ddf28569ece4de675b4e4356ec7270c9ecd02135d200c96b3。
+
+編集は開始scope通りAPIのPlan/HR/Gate/test/current identity/handoffの6path＋Cocolon06の1path。STRUCTURE_MAP_DELTA_NONE（責任配置/whole route/artifact lifecycle不変）。本checkpointを既存Draft PRへ反映してから全量結果を追記する。Ready/merge/deploy/enableなし。

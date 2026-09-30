@@ -7860,6 +7860,48 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
         return unsupported()
     index = {n.nucleus_id: n for n in nuclei}
     feelings = dict(zip(*pairs, strict=True))
+    # Three complete source occurrences can distinguish equal edge labels
+    # through the intervening unique occasion. Keep this whole window in
+    # source order; a missing uniqueness marker alone is not source proof.
+    # These typed received projections were proved from complete, unquoted
+    # past clauses, including the event's exact initial scalar range.
+    source_events = tuple(index[event] for event in events)
+    source_links = tuple(r for r in relations
+        if r.type == "evaluation_about_event" and r.retention == "required")
+    ordered_source_window = bool(
+        len(events) == len(answers) == len(source_links) == 3
+        and pairs[0] == (events[1],)
+        and not (chain_ids or withdrawal or independent or actions)
+        and len({n.source_fields for n in source_events}) == 1
+        and all(n.allowed_claim_scope == "explicit_current_input"
+                and n.semantic_frame.predicate_kind == "event"
+                and len(n.source_span_ids) == 1
+                and {"semantic_role:final_stage1_compound_meaning",
+                     "source_fragment_scalar_source:normalized_raw_text"}
+                    <= set(n.semantic_frame.attribute_codes)
+                and len([c for c in n.semantic_frame.attribute_codes
+                         if c.startswith("source_fragment_scalar_range:")]) == 1
+                and any(re.fullmatch(r"source_fragment_scalar_range:0:[1-9][0-9]*", c)
+                        for c in n.semantic_frame.attribute_codes)
+                and len([c for c in n.semantic_frame.attribute_codes
+                         if c.startswith("source_received_event_link:")]) == 1
+                and any(c in {"source_received_event_link:noni", "source_received_event_link:kedo",
+                              "source_received_event_link:keredo", "source_received_event_link:keredomo"}
+                        for c in n.semantic_frame.attribute_codes) for n in source_events)
+        and all(_span_number(left.source_span_ids[0]) < _span_number(right.source_span_ids[0])
+                for left, right in zip(source_events, source_events[1:]))
+        and {r.from_nucleus_id for r in source_links} == set(events)
+        and {r.to_nucleus_id for r in source_links} == {n.nucleus_id for n in answers}
+        and all(len(n.source_span_ids) == 1 and n.semantic_frame.polarity == "negative"
+                and not is_grounded_current_answer_uncertainty(n)
+                and {c for c in n.semantic_frame.attribute_codes if c.startswith("thread_time:")}
+                    == {"thread_time:original_occasion"} for n in answers)
+        and len({n.source_span_ids[0] for n in (*source_events, *answers)}) == 6
+        and all(r.grounding_kind == "user_stated_relation" and len(r.source_span_ids) == 2
+                and set(r.source_span_ids) == set((*index[r.from_nucleus_id].source_span_ids,
+                                                 *index[r.to_nucleus_id].source_span_ids))
+                and ("thread_subject:unique_source_clause" in index[r.to_nucleus_id].semantic_frame.attribute_codes)
+                    == (r.from_nucleus_id == events[1]) for r in source_links))
     by_event = {}
     positive = []
     negative = []
@@ -7884,7 +7926,8 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
             or frame.actor != "current_user"
             or not current_unknown and (n.kind != "reaction"
                 or frame.predicate_kind != "feeling" or frame.modality != "feeling")
-            or not (detached or independent_answer) and "thread_subject:unique_source_clause" not in frame.attribute_codes
+            or not (detached or independent_answer or ordered_source_window)
+                and "thread_subject:unique_source_clause" not in frame.attribute_codes
             or len(times) != 1 or not times <= {"thread_time:original_occasion",
                 "thread_time:answer_time", "thread_time:prior_answer_time"}
             or not (detached or independent_answer) and (len(about) != 1 or about[0].from_nucleus_id not in events

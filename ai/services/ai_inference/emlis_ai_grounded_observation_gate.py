@@ -3807,6 +3807,7 @@ def read_received_discourse(raw, move, plan, resolver, selected_subjective_input
             event = "言い直してくださった気持ちについては、"
         else:
             event = final_reception_source_anchor_text(nid, index, resolver)
+            event = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event or "", count=1)
         starts = [m.start() for m in re.finditer(re.escape("、" + event), raw)] if event else []
         if len(starts) != 1 or starts[0] <= cuts[-1]:
             return None
@@ -3817,6 +3818,7 @@ def read_received_discourse(raw, move, plan, resolver, selected_subjective_input
     for part_index, part in enumerate(actual_parts):
         event_id = move.target_nucleus_ids[part_index]
         event = final_reception_source_anchor_text(event_id, index, resolver)
+        event = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event or "", count=1)
         shared_prefix = event + "時も、" if event else ""
         shared = bool(event and (part == event + "時も" or part.startswith(shared_prefix)))
         if shared:
@@ -3868,6 +3870,7 @@ def read_received_discourse(raw, move, plan, resolver, selected_subjective_input
             # including exact source recovery and complete relation cover.
             for slot in shared_slots:
                 source_event = final_reception_source_anchor_text(move.target_nucleus_ids[slot], index, resolver)
+                source_event = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", source_event or "", count=1)
                 normalized_parts[slot] = source_event + "時は、" + suffix.removesuffix("。")
             normalized = event + "時は、" + suffix
             shared_slots = []
@@ -4019,6 +4022,19 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                 return None
             consumed.add(feeling.nucleus_id)
             consumed_relations.add(relation.relation_id)
+        # Reverse the visible event owner at its actual byte range. Source
+        # contrast validation above still uses the untouched source event.
+        # This is the same leading SELF rule as relational focus, not an
+        # unrestricted replacement of pronouns in the body or its proof.
+        event_visible = event_source
+        owner = re.match(r"(?:私|自分|わたし)(?=は|が)", event_source or "")
+        if owner is not None:
+            event_visible = "あなた" + event_source[owner.end():]
+            if not part.startswith(event_visible):
+                return None
+            start = len(raw[:offset].encode())
+            end = start + len(event_visible.encode())
+            replacements.append((start, end, event_source.encode()))
         ending = re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました)$", part)
         if ending is None:
             # A complete original past clause can lead directly into its
@@ -4051,7 +4067,7 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
             parsed = absent or present
             if parsed is not None:
                 restored = parsed["feeling"] + ("くなかった" if absent else "かった")
-                if (parsed["event"] != event_source or restored != feeling_source
+                if (parsed["event"] != event_visible or restored != feeling_source
                     or present is not None and present["link"] != link):
                     return None
                 start = len((raw[:offset] + clause[:parsed.start("feeling")]).encode("utf-8"))
@@ -4062,8 +4078,8 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                 # interpretable, but not a reason to require it verbatim.
                 candidates = {(clause[:m.start()], m.group(), clause[m.end():])
                               for m in re.finditer(r"けれども|けれど|けど|のに", clause)}
-                if (event_source, link, feeling_source) not in candidates:
-                    prefix = event_source + link + "、"
+                if (event_visible, link, feeling_source) not in candidates:
+                    prefix = event_visible + link + "、"
                     if (not clause.startswith(prefix)
                         or _restore_thread_finite_answer(clause[len(prefix):], feeling_source,
                             copular_clause=True) != feeling_source):
@@ -4086,7 +4102,7 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
             # Read a complete original feeling and a separately timed
             # answer. A visible SELF conversion is reversed from the actual
             # bytes; Layer 1 or the author cannot donate a missing modifier.
-            prefix = event_source + link + "、" if contrasts else ""
+            prefix = event_visible + link + "、" if contrasts else ""
             explicit = re.fullmatch(
                 re.escape(prefix) + r"(?P<feeling>.+)し、"
                 r"(?P<time>その時は|回答した時点では|先の回答時点では)(?P<answer>.+)", clause,
@@ -4137,7 +4153,7 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                 actual_answer = _restore_thread_finite_answer(temporal["answer"], answer_source,
                     copular_clause=True, shared_explanatory_ending=part_index >= coordinated_prefix_count)
                 if ((temporal["event"], actual_feeling, actual_answer)
-                    != (event_source, feeling_source, answer_source)
+                    != (event_visible, feeling_source, answer_source)
                     or times != {actual_time}):
                     return None
                 consumed.add(answer.nucleus_id)
@@ -4173,7 +4189,7 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                     return None
             else:
                 return None
-            if (actual_event, actual_feeling) != (event_source, feeling_source):
+            if (actual_event, actual_feeling) != (event_visible, feeling_source):
                 return None
             consumed.add(answer.nucleus_id)
             consumed_relations.add(relation.relation_id)

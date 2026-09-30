@@ -3210,20 +3210,32 @@ def test_answer_adjective_politeness_does_not_modify_koto(source):
     context = actual(request=req)
     body, follow = context[0].artifact.text, context[0].artifact.reception
     nominal = 'その時に' + source[:-2] + 'こと'
+    finite = {'私も少し怖くなかったです': 'あなたも少し怖くなかった',
+              '私は少し苦しかったです': 'あなたは少し苦しかった',
+              '少し私は苦しいです': 'あなたは少し苦しい',
+              '少し怖いです': '少し怖い'}[source]
+    # Test the source-owned adjective in either existing grammatical form.
+    # Scope every change to this answer, not an earlier owner or modifier.
+    target = nominal if nominal in follow else finite
     assert source in context[0].artifact.observation
-    assert nominal in follow and 'ですこと' not in follow
+    assert target in follow and 'ですこと' not in follow
     assert MeaningExperienceEngine().generate(req).artifact.text == body
     assert read_body(context, body).passed
-    changes = [follow.replace(nominal, 'その時に' + source + 'こと', 1),
-               follow.replace(nominal, '回答した時点で' + source[:-2] + 'こと', 1),
-               follow.replace('少し', '', 1), follow.replace(nominal, '', 1),
-               follow.replace('褒められた', '誘われた', 1)]
+    replacements = ['その時に' + source + 'こと',
+                    target.replace('その時に', '回答した時点で', 1)
+                    if target == nominal else '回答した時点では' + target,
+                    target.replace('少し', '', 1), '']
+    owner = '私' if target == nominal else 'あなた'
     if '私' in source:
-        changes += [follow.replace('私', '相手', 1),
-                    follow.replace('私も', '私は', 1) if '私も' in source
-                    else follow.replace('私は', '私も', 1)]
+        replacements += [target.replace(owner, '相手', 1),
+                         target.replace(owner + 'も', owner + 'は', 1) if '私も' in source
+                         else target.replace(owner + 'は', owner + 'も', 1)]
     if '怖くなかった' in source:
-        changes.append(follow.replace('怖くなかった', '怖かった', 1))
+        replacements.append(target.replace('怖くなかった', '怖かった', 1))
+    changes = [follow.replace(target, changed, 1) for changed in replacements]
+    scope = ('褒められたことについて、' if target == nominal else '褒められた時は、') + target
+    assert scope in follow
+    changes.append(follow.replace(scope, scope.replace('褒められた', '誘われた', 1), 1))
     for changed in changes:
         assert changed != follow and not read_body(context, body.replace(follow, changed, 1)).passed
 
@@ -3268,7 +3280,8 @@ def test_answer_adjective_politeness_saved_updates_keep_original_and_exact_reads
             body = current['current_observation']['text']
             assert 'ですこと' not in body
             if last.startswith('「'):
-                assert 'その時に私も少し怖くなかったこと' in body
+                assert ('その時に私も少し怖くなかったこと' in body
+                        or '褒められた時は、あなたも少し怖くなかった' in body)
                 assert '寂しかった' not in body and '私も少し怖くなかったです' in body
             else:
                 assert '回答した時点で私も少し怖くないこと' in body
@@ -3276,3 +3289,109 @@ def test_answer_adjective_politeness_saved_updates_keep_original_and_exact_reads
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved adjective nominal must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('event', ['褒められた', '頼まれた', '私は褒められた', 'わたしが褒められた'])
+def test_repeated_edge_events_retain_all_three_accepted_occasions(event):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    memo = f'{event}のに、嬉しくなかった。誘われたのに、悲しかった。{event}のに、寂しかった。'
+    req = advance(begin(memo), '「嬉しくなかった」ではなく「私は少し不安でした」です。')
+    req = advance(req, 'その時は少し重かった。')
+    req = advance(req, '「寂しかった」ではなく「私も少し怖くなかったです」です。')
+    context = actual(request=req)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    visible = re.sub(r'^(?:私|わたし)(?=は|が)', 'あなた', event)
+    clauses = [visible + '時は、あなたは少し不安だった',
+               '誘われた時は悲しく、少し重かった',
+               visible + '時は、あなたも少し怖くなかった']
+    assert all(clause in follow for clause in clauses)
+    assert [follow.index(clause) for clause in clauses] == sorted(follow.index(clause) for clause in clauses)
+    assert follow.count('のですね') == 1 and '寂しかった' not in body and '嬉しくなかった' not in body
+    assert MeaningExperienceEngine().generate(req).artifact.text == body
+    assert read_body(context, body).passed
+    for clause in clauses:
+        for changed in ('', clause.replace('少し', '', 1), clause.replace('時は', '今は', 1)):
+            assert changed != clause
+            assert not read_body(context, body.replace(follow, follow.replace(clause, changed, 1), 1)).passed
+    changed = follow.replace(clauses[0], clauses[2], 1)
+    assert not read_body(context, body.replace(follow, changed, 1)).passed
+    if visible != event:
+        for replacement in (event, visible.replace('あなた', '相手', 1), visible.replace('が', 'は') if 'が' in visible else visible.replace('は', 'が')):
+            changed = follow.replace(visible, replacement, 1)
+            assert changed != follow and not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+@pytest.mark.parametrize('owner', ['私', '自分'])
+def test_repeated_edge_events_saved_reads_keep_all_occasions(qcase, qdb, monkeypatch, owner):
+    user, parent, _ = qcase
+    memo = f'{owner}は褒められたのに、嬉しくなかった。誘われたのに、悲しかった。{owner}は褒められたのに、寂しかった。'
+    assert 'code' not in qdb.query('update public.emotions set memo=$2 where id=$1', [parent, memo])
+    service = active(monkeypatch)
+    first = current = run(service.start(user, parent))
+    for position, text in enumerate(('「嬉しくなかった」ではなく「私は少し不安でした」です。',
+                                     'その時は少し重かった。',
+                                     '「寂しかった」ではなく「私も少し怖くなかったです」です。')):
+        if position:
+            current = run(cont(service, user, current, f'edge-continue-{position}'))
+        current = run(answer(service, user, current, text, f'edge-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        if position == 2:
+            observation, follow = current['current_observation']['text'].split('Emlisから：', 1)
+            assert f'{owner}は褒められた' in observation
+            assert follow.count('あなたは褒められた時は') == 2
+            assert all(value in follow for value in ('あなたは少し不安だった', '誘われた時は悲しく、少し重かった', 'あなたも少し怖くなかった'))
+            assert '寂しかった' not in observation and '嬉しくなかった' not in observation
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved occurrence replies must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+def test_repeated_edge_events_preserve_complete_owned_nominal_scopes():
+    source = '私は私には少し不安だったのです'
+    memo = '褒められたのに、嬉しくなかった。誘われたのに、悲しかった。褒められたのに、寂しかった。'
+    req = advance(begin(memo), f'「嬉しくなかった」ではなく「{source}」です。')
+    req = advance(req, 'その時は少し重かった。')
+    context = actual(request=advance(req, f'「寂しかった」ではなく「{source}」です。'))
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    owned = '褒められたことについて、私は私には少し不安だったのだという、その時のあなたの気持ち'
+    assert follow.count(owned) == 2
+    assert '誘われたのに悲しかったこと' in follow and 'その時に少し重かったこと' in follow
+    assert 'のですこと' not in follow and follow.count('受け止めています') == 1
+    assert read_body(context, body).passed
+    for target, changed in ((owned, ''), (owned, owned.replace('私には', '相手には', 1)),
+                            (owned, owned.replace('その時の', '回答した時点の', 1)),
+                            ('少し重かったこと', '少し軽かったこと')):
+        assert not read_body(context, body.replace(follow, follow.replace(target, changed, 1), 1)).passed
+
+
+@pytest.mark.parametrize('corruption', ['source_range', 'source_order', 'relation_source', 'relation_owner', 'answer_time', 'answer_actor'])
+def test_repeated_edge_events_require_occurrence_provenance(corruption):
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+    memo = '褒められたのに、嬉しくなかった。誘われたのに、悲しかった。褒められたのに、寂しかった。'
+    req = advance(begin(memo), '「嬉しくなかった」ではなく「私は少し不安でした」です。')
+    req = advance(req, 'その時は少し重かった。')
+    plan = actual(request=advance(req, '「寂しかった」ではなく「私も少し怖くなかったです」です。'))[1]
+    nuclei, relations = list(plan.nuclei), list(plan.relations)
+    groups = _thread_retained_reaction_groups(nuclei, relations)
+    assert len(groups) == 1 and len(groups[0][1]) == 3
+    events = groups[0][1]
+    about = next(r for r in relations if r.type == 'evaluation_about_event' and r.from_nucleus_id == events[0])
+    nid = about.to_nucleus_id if corruption.startswith('answer_') else events[0]
+    pos = next(i for i, n in enumerate(nuclei) if n.nucleus_id == nid)
+    n = nuclei[pos]
+    if corruption == 'source_range':
+        codes = tuple(c for c in n.semantic_frame.attribute_codes if not c.startswith('source_fragment_scalar_range:'))
+        nuclei[pos] = replace(n, semantic_frame=replace(n.semantic_frame, attribute_codes=codes))
+    elif corruption == 'source_order':
+        last = next(n for n in nuclei if n.nucleus_id == events[-1])
+        nuclei[pos] = replace(n, source_span_ids=last.source_span_ids)
+    elif corruption == 'relation_source':
+        relations[relations.index(about)] = replace(about, source_span_ids=about.source_span_ids + about.source_span_ids[:1])
+    elif corruption == 'relation_owner':
+        relations[relations.index(about)] = replace(about, from_nucleus_id=events[-1])
+    elif corruption == 'answer_time':
+        codes = tuple('thread_time:answer_time' if c == 'thread_time:original_occasion' else c for c in n.semantic_frame.attribute_codes)
+        nuclei[pos] = replace(n, semantic_frame=replace(n.semantic_frame, attribute_codes=codes))
+    else:
+        nuclei[pos] = replace(n, semantic_frame=replace(n.semantic_frame, actor='other_person'))
+    assert _thread_retained_reaction_groups(nuclei, relations) != groups
