@@ -3327,3 +3327,162 @@ def test_answer_degree_original_occasion_correction_keeps_original_anchor(source
     for changed in (follow.replace('とても不安', '少し不安'),
                     follow.replace('その時は', '先の回答時点では')):
         assert changed != follow and not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('source', ['少し重かった', '私も少し苦しかった',
+                                    '私は嬉しくなかった', '僕には寂しかった'])
+@pytest.mark.parametrize('ending', ['のです', 'のだ', 'のだった'])
+@pytest.mark.parametrize('time', ['今は', 'その時は'])
+@pytest.mark.parametrize('position', [0, 1])
+def test_answer_explanation_revision_preserves_complete_source_and_about(source, ending, time, position):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    request = begin()
+    if position:
+        request = advance(request, 'その時は少し怖かった。')
+    request = advance(request, time + source + '。')
+    prior = prepare_emlis_meaning(request)
+    prior_plan = build_updated_grounded_plan(prior)
+    old_id = prior.accepted_nuclei[0].nucleus_id
+    old_about = next(r for r in prior_plan.relations
+                     if r.type == 'evaluation_about_event' and r.to_nucleus_id == old_id)
+    new = source + ending
+    request = advance(request, '「' + source + '」ではなく「' + new + '」です。')
+    prepared = prepare_emlis_meaning(request)
+    update = prepared.checkpoint.answer_update.updates[0]
+    assert prepared.checkpoint.assessment_status == 'RESOLVED' and update.operation == 'REVISE'
+    assert update.target_meaning_refs == (old_id,)
+    expected_time = 'ANSWER_TIME' if time == '今は' else 'ORIGINAL_OCCASION'
+    expected_anchor = (prior.thread.answers[-1].envelope.envelope_id if time == '今は'
+                       else prior.thread.original.envelope.envelope_id)
+    assert update.temporal_binding.about_time == expected_time
+    assert update.temporal_binding.anchor_source_ref == expected_anchor
+    context = actual(request=request)
+    result, plan, _, resolver, _ = context
+    new_id = prepared.accepted_nuclei[0].nucleus_id
+    assert reception.final_reception_source_anchor_text(
+        new_id, {n.nucleus_id: n for n in plan.nuclei}, resolver) == new
+    assert any(r.type == 'evaluation_about_event' and r.from_nucleus_id == old_about.from_nucleus_id
+               and r.to_nucleus_id == new_id for r in plan.relations)
+    assert old_id in prepared.checkpoint.inactive_claim_refs
+    assert all(n in plan.nuclei for n in prior_plan.nuclei if n.nucleus_id != old_id)
+    assert prior.thread.original == prepared.thread.original
+    public = MeaningExperienceEngine().generate(request)
+    assert public.artifact is not None and public.artifact.text == result.artifact.text
+    assert '「' + new + '」' in result.artifact.observation
+    assert '今回の観測に反映できていない' not in result.artifact.text
+    follow = result.artifact.reception
+    assert ('先の回答時点では' if time == '今は' else 'その時は') in follow
+    if ending == 'のだった':
+        assert 'のでしたね' in follow or 'のだったし' in follow
+    assert inverse(context, follow, without_author=True).passed
+
+
+@pytest.fixture(scope='module')
+def explained_revision_context():
+    request = advance(begin(), '今は私も少し重くなかった。')
+    return actual(request=advance(request,
+        '「私も少し重くなかった」ではなく「私も少し重くなかったのだった」です。'))
+
+
+@pytest.mark.parametrize('old,new', [
+    ('あなたも少し重くなかった', '友人も少し重くなかった'),
+    ('あなたも少し重くなかった', 'あなたは少し重くなかった'),
+    ('少し重くなかった', '重くなかった'),
+    ('重くなかった', '重かった'),
+    ('重くなかった', '重くない'),
+    ('のでしたね', 'のですね'),
+    ('先の回答時点では', 'その時は'),
+    ('先の回答時点では', ''),
+    ('褒められたのに', '褒められたから'),
+    ('嬉しくなかったし、', ''),
+])
+def test_answer_explanation_revision_inverse_rejects_semantic_mutations(explained_revision_context, old, new):
+    context = explained_revision_context
+    follow = context[0].artifact.reception
+    assert inverse(context, follow, without_author=True).passed
+    changed = follow.replace(old, new, 1)
+    assert changed != follow and not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('new', ['彼は少し重かったのです', 'あなたは少し重かったのです',
+    '少し重かったんです', '少し重かったですのです', '少し重かったのではない',
+    '少し重かったかもしれないのです', '少し重かったならのです', '少し重かったのですか',
+    '楽しかったのです', '軽かったのです', 'こわかったのです', 'さびしかったのです'])
+def test_answer_explanation_revision_keeps_unsupported_source_boundary(new):
+    request = advance(advance(begin(), '今は少し重かった。'),
+        '「少し重かった」ではなく「' + new + '」です。')
+    prepared = prepare_emlis_meaning(request)
+    assert prepared.checkpoint.assessment_status == 'PARTIAL'
+    assert prepared.checkpoint.answer_update.updates[0].operation == 'WITHDRAW'
+    assert not prepared.accepted_nuclei
+    assert prepared.checkpoint.unresolved_parts[0].reason_code == 'correction_replacement_unsupported'
+
+
+@pytest.mark.parametrize('boundary', ['initial', 'original_memo', 'ambiguous_answer'])
+def test_answer_explanation_revision_requires_unique_existing_answer(boundary):
+    request = begin()
+    if boundary == 'original_memo':
+        # Check the pure meaning boundary even when this original material
+        # cannot yet produce a Q3 initial body. Do not fabricate a public round.
+        request = answered('「少し重かった」ではなく「少し重かったのです」です。',
+                           initial(memo_action='少し重かった。'))
+    elif boundary == 'initial':
+        request = advance(request, 'その時は少し重かったのです。')
+    else:
+        if boundary == 'ambiguous_answer':
+            request = advance(advance(request, '今は少し重かった。'), '今は少し重かった。')
+        request = advance(request, '「少し重かった」ではなく「少し重かったのです」です。')
+    prepared = prepare_emlis_meaning(request)
+    assert not prepared.accepted_nuclei
+    if boundary == 'original_memo':
+        assert prepared.checkpoint.answer_update.updates[0].operation == 'WITHDRAW'
+        assert prepared.checkpoint.unresolved_parts[0].reason_code == 'correction_replacement_unsupported'
+    else:
+        assert prepared.checkpoint.assessment_status == 'UNRESOLVED'
+        assert not prepared.checkpoint.answer_update.updates and not prepared.checkpoint.inactive_claim_refs
+
+
+@pytest.mark.parametrize('third', ['「少し重かったのです」ではなく「少し苦しかったのだった」です。',
+                                  '「少し重かったのです」は誤りです。'])
+def test_answer_explanation_recorrection_or_withdrawal_keeps_original_anchor(third):
+    request = advance(begin(), '今は少し重かった。')
+    first_anchor = prepare_emlis_meaning(request).thread.answers[0].envelope.envelope_id
+    request = advance(advance(request,
+        '「少し重かった」ではなく「少し重かったのです」です。'), third)
+    prepared = prepare_emlis_meaning(request)
+    update = prepared.checkpoint.answer_update.updates[0]
+    assert prepared.checkpoint.assessment_status == 'RESOLVED'
+    assert update.temporal_binding.anchor_source_ref == first_anchor
+    context = actual(request=request)
+    assert '「少し重かったのです」' not in context[0].artifact.observation
+    if 'ではなく' in third:
+        assert update.operation == 'REVISE'
+        assert '「少し苦しかったのだった」' in context[0].artifact.observation
+        assert '先の回答時点では' in context[0].artifact.reception
+    else:
+        assert update.operation == 'WITHDRAW' and '重かった' not in context[0].artifact.text
+    assert inverse(context, context[0].artifact.reception, without_author=True).passed
+
+
+@pytest.mark.parametrize('time,ending', [('今は', 'のです'), ('その時は', 'のです'),
+                                       ('今は', 'のだった'), ('その時は', 'のだ')])
+def test_answer_explanation_saved_revision_withdrawal_and_original_replay(qcase, monkeypatch, time, ending):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    first = current = run(service.start(user, parent))
+    new = '私も少し重かった' + ending
+    replies = [time + '私も少し重かった。',
+               '「私も少し重かった」ではなく「' + new + '」です。', '「' + new + '」は誤りです。']
+    for index, reply in enumerate(replies):
+        if index:
+            current = run(cont(service, user, current, f'explanation-continue-{index}'))
+        current = run(answer(service, user, current, reply, f'explanation-answer-{index}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        if index == 1:
+            assert '「' + new + '」' in body and '今回の観測に反映できていない' not in body
+        if index == 2:
+            assert '重かった' not in body and '嬉しくなかった' in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved explanation must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current

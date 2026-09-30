@@ -12090,3 +12090,26 @@ answer_update SHA256 `e2d3f205716b5468e1050139da576fd8eecdf7f1b9bc31c0093e05eca7
 前後baseline保存20:58:09 JST〜最終集計21:19:44 JSTは約22分（開始原典読取・GitHub反映は別）。全1932の最長shard761.42秒、開始版1881の最長579.58秒、最終新55の最長106.28秒。rootのみ編集／実行／反映し、担当はread-only。Codex Workの実環境を記録、未確認のPro／Ultra型名は称さない。追加外部課金操作・production依存変更・Mash操作0。両PR Draft/open/unmergedのまま、remote全bytes・path・親commit・final head・PR要約をfresh照合する。
 
 **次の同群残件。** 同名出来事と回答の読者に見える区別、主語／時点／『のですね』反復、程度以外の未対応訂正文法、既知失敗、時制上の読みにくさは継続する。今回の単位だけで初回『とても不安』や任意のcopular全文法が受理されたとはしない。群を閉じる前に二層再掲の別作業へ移らない。10/03未完でもEmlis休止・10/04 Work分析（利用不可ならPro Piece）、10/02実DB／実機予定を維持。商品受入れ0/3・NOT_CLEAR・全体48%・default OFF。両PR Draft/open/unmerged、Ready／merge／deploy／enable／live適用なし。
+
+
+## 2026-10-01 JST u41結果：一意の既存回答を説明形へ訂正する際の意味・本文保持
+
+**TECHNICAL_CREDITのみ。** 前回u40後の同群残件から、ANSWER_FIELDの一意なactive回答に対する明示引用訂正を限定修復した。例：『今は少し重かった。』の後に『「少し重かった」ではなく「少し重かったのです」です。』を回答した際、旧版はnewをunsupportedとしてWITHDRAW/PARTIALにし、新しい説明回答を両層へ反映できなかった。新版はnew全sourceを採用してREVISE/RESOLVEDとなり、元出来事・原反応・ABOUT・程度・否定・内側時制・説明の外側時制・最初の回答時点を保持する。
+
+開始predecessorはAPI `4a08b37469508fc348ae73bf082e625ce92a02c1` / Cocolon `d714c91afcf2bd55a8307ac15c5971e36af69161`。前回txt、CURRENT_RULES / Rule18 / 開始・提出check、GitHub current transport契約、Karen-Diary current方針、恒久incident、全体設計/general地図、System Context入口とcurrent_structure 00/01/04、最新weekly 20260926の09/29合意、u39/u40の既存handoff/06を確認した。tracked実fileはAPI2300＋Cocolon1645＝3945。System Context保存inventory3714との差は追加231・削除0であり、全file本文の読了とは称さない。context prepareはmaterial commitが要求祖先から派生していないため失敗しNONCREDIT。入口が許すoriginal直接読取へ切り替え、System Context自体を修復しない。
+
+**固定scope / final judgment。** 現在の訂正設計内の内部適用条件修復としてLEVEL_2 standing delegationの限定scopeで進めた。実環境はCodex Work、root華恋が編集・実行・writeを単独所有、他担当はread-onlyの地図/商品経路/技術reviewのみ。未確認のPro/Ultra型名を称さない。独立商品reviewはPRODUCT_ROUTE_ALIGNED、技術reviewは今回のTECHNICAL_CREDITにblockingなし。scopeはAPI既存answer_update、既存received試験、既存handoffとCocolon既存06の4 modifyのみ。新owner/route/contract/語彙表/依存/公開DTO/保存schema/Gate/flag/RN変更はない。
+
+実装は `_answer_nucleus` のみ。既存target特定後の `prior_answer_source` がある時だけ、既存finite feelingを内包する `のです / のだ / のだった` を認識する。元の完全引用sourceを維持し、既存Surfaceと独立readerに共通の有限語彙に一致するものだけを通す。既存_FEELING regex、shared HR/Gate、original memo、初回ADDは不変更。広い候補は『楽しいのです』で新BODY_UNAVAILABLEを生んだため採用せず、最終sourceでは未対応形を従来どおりunsupportedに保つ。既存9 shared owner/18 payload/current identityは不変更でu40から継承。
+
+**fresh検証。** 最終sourceで追加79条件すべてPASS、FAIL/ERROR/SKIP0（140.31秒）。内訳は4source×3説明末尾×2時点×2位置の48、意味改変拒否10、unsupported12、初回/原メモ/曖昧target境界3、再訂正/撤回2、保存4。新source完全一致、旧inactive、元ABOUT/anchor、未訂正核、public engineとの本文一致、作者禁止inverseをassertする。保存4系列の各3回答後状態計12でoriginal保持と、generateを禁止したGET/startのDTO全文一致を確認した。初回の新79実行は新しい原メモ境界testのQ3初期本文未提供という前提不成立で1失敗した。既存testは変えず、新境界testをpure meaning経路へ直し、最終79をfresh再実行した。前提不成立をproduction修復へ読み替えない。
+
+開始版の分離worktreeと最終修正版で、同一の旧985 ID（Q1 thread75 / received910）を各4分割fresh実行。両版とも974 PASS / 11 FAIL、ERROR/SKIP0、ID差0・成否変化0。既知11（Q1 3 / received8）の失敗traceはrootがrepo pathとmemory addressを正規化して全文一致を確認した。最終unique対象1064＝旧985＋新79は1053 PASS / 11既存FAIL。全1064を一括実行したとは称さない。旧test prefix/入力/decorator/期待は不変更、削除/skip/xfail化0。u40の1936中270既存FAILのうちQ3 thread259とdetached等は今回再実行せず、11を270の解消へ読み替えない。
+
+合成probe12系列のbefore/after両層全文をrootと商品担当が読んだ。2系列はPARTIALの既存本文から説明回答を反映したRESOLVEDへ改善（beforeにも本文は存在）。既存成功6系列は両層/本文bytes不変。再訂正1・撤回1は新版で3回答後へ到達し旧回答を復活させず元anchorを保持したが、beforeは途中advance不能で同じ3回答後状態の全文比較ではない。初回説明形UNAVAILABLE1・未対応説明形PARTIAL1は前後不変。12全件修復、正式Product Read PASS、全群完了とはしない。
+
+試験環境はPython3.12.14 / pytest9.1.1 / pydantic2.13.5 / FastAPI0.142.2 / httpx0.28.1 / PGlite0.5.8。試験用Python依存はscratchへ導入、production requirements不変更。既存Supabase RPCのローカル合成fixtureであり、live DB/実機/プロセス再起動は未実施。Supabase changelogはmarkdown content-type読取エラーでNONCREDIT、Supabase feature/schema変更はない。新規外部課金操作・Mash操作0。
+
+確定answer_update Git blob `5c2e51beb618d6556011379c46292a51ca4dacea` / SHA256 `0fc3758fe0868542dfe2959b7f9d99c337d305bcad2b0a81520249aa518914b4`。received test Git blob `1dd8e9b8c2f235466bf4632e17e2500baca40216` / SHA256 `ece715ce0f0c5a5e08ae8405f578786837c3c6e3fe4f9ec049ca0463b0120876`。確定production sourceは回帰中固定。STRUCTURE_MAP_DELTA_NONE（既存作者内の適用条件だけ、責任配置/whole route/公開・保存contract不変）。Pieceへの変更0。反映後に4対象全文bytes・今回のchanged-path set・final headをfresh照合し、commitと検証結果を既存PR3/30要約へ記録する。
+
+**次の同群残件。** 初回『少し重かったのです』等の未対応説明形（既知u38初回3系列を含む）、訂正の未対応文法、同名出来事と回答の読者に見える区別、主語/時点/『のですね』反復、二層再掲、深さ不足、既知失敗は残る。本単位で群を閉じず、二層再掲の別作業へ自動進行しない。10/03未完でもEmlis休止・10/04 Work分析（利用不可ならPro Piece）、10/02実DB/実機予定を維持。商品受入れ0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmerged。Ready/merge/deploy/enable/live適用なし。

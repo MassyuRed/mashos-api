@@ -104,6 +104,23 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
     offset = source_start
     end = len(text) if source_end is None else source_end
     bounded = text[offset:end].strip()
+    # An explicit revision has already located one active answer. Its new
+    # quoted source can keep the existing finite adjective grammar inside
+    # an explanation; the explanation remains in the complete source range.
+    # This witness is unavailable to initial answers and original memo edits.
+    explanation = (re.fullmatch(r"(?P<predicate>.+)の(?:です|だ|だった)", bounded)
+                   if prior_answer_source is not None else None)
+    stem = (re.sub(r"(?:くなかった|くない|かった|い)$", "",
+                  re.sub(r"^(?:私は|私も|自分は|私には|僕には)?"
+                         r"(?:少し|とても|本当は|まだ|全然|あまり)?", "", explanation["predicate"]))
+            if explanation else "")
+    explained_feeling = bool(explanation
+        and not explanation["predicate"].endswith("です")
+        and _FEELING.fullmatch(explanation["predicate"])
+        # Match the existing finite Surface / independent-reader lexicon.
+        # An answer must not acquire meaning only to lose its public body.
+        and (gp._FEELING_RE.fullmatch(stem) or gp._FEELING_RE.fullmatch(stem + "い")
+             or stem.endswith("し") and gp._FEELING_RE.fullmatch(stem[:-1])))
     # Parse only the admitted claim range. The old text in a correction is a
     # locator, not a source of polarity/operators for the replacement claim.
     local = {ANSWER_FIELD: bounded}
@@ -126,7 +143,7 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
         kind = "reaction"
         frame = replace(frame, predicate_kind="feeling", modality="feeling",
                         polarity="negative" if re.search(r"ない|なかった|重|苦|つら|辛", bounded) else "neutral")
-    elif _FEELING.fullmatch(bounded):
+    elif _FEELING.fullmatch(bounded) or explained_feeling:
         kind = "reaction"
         negative = bool(re.search(r"くない|くなかった|寂|さび|悲|苦|つら|辛|怖|こわ|重", bounded))
         frame = replace(frame, predicate_kind="feeling", modality="feeling",
