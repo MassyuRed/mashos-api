@@ -11619,3 +11619,38 @@ Mashの「許可するから進めて」とGitHub指定を受領。fresh API `d8
 current identityは既存18payload/9owner構造の派生値のみ更新。language `94f1c0e726752363154bc849c53c0b3561ad00d5db8ccd234c27d6c5eec73b6c` / runtime `c2d7057380df6aa0d3df2a84b0f6b1e8a8dbf41d460d3d589c54256d207ba768`。商品/技術担当はread-only、rootが全編集・実行・write。両reviewはこの限定差分にblockingなし。ただし『あなたは誘われたことは』や『重さとして届いた』の硬さ、あなたはの反復、middle-positiveの別文に残る私は、fallback長文は未解決。自然さ全般・正式商品PASS・複数出来事群完了とはしない。
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品0/3・NOT_CLEAR・default OFF。** 同群継続、正式終結後だけ二層重複へ移る。10/03休止・10/04分析、10/02実DB/実機を維持。両PRの既存Draft branchへ本checkpointをnon-force反映し、完了検証後に結果を追記する。Ready/merge/deploy/enableなし。
+
+
+## 2026-09-30 JST u32最終検証：同名表示の出来事の名詞列退行を限定修正
+
+checkpointはAPI `a94831d119f6f978fcb5658c31143b656043d59b`（tree `3821011b6c1b4ee5e6404b4da51b4b1eab667c6b`）／Cocolon `ccd672befe6bb62439bfea89deb22709675542d6`（tree `5f1bf9995adc710e19c6d1bc16b1358d2878d063`）へnon-force反映済み。fresh fetchでhead/tree/parent、変更path API5/Cocolon1、全6fileの全文bytes一致を確認し、localを同じtreeへ整合した。確定候補のsource/test/current identityはcheckpointから変更していない。
+
+**関連全量2297件＝2283PASS／既存14FAIL、error/skip0。** 収集した2297 unique test IDを重複なし4区間へ分け、各完了XMLと終了値を照合。欠落/重複0、source/test/identityの開始終了SHA256不変。suite所要合計1124.915秒は並列検査の合計でありwall timeではない（shard0 574件 8FAIL 279.731秒 / shard1 574件 5FAIL 402.227秒 / shard2 574件 1FAIL 207.086秒 / shard3 575件 0FAIL 235.871秒）。開始版u31完了2274 IDの欠落/成否変更0、既知14のmessage/traceはrepo path・行番号・UUID・アドレス正規化後の差0、新23全PASS。既存2274の入力/期待/検査methodは今回変更していない。focusや開始版方法検査、本文probeを2297へ加算しない。
+
+対象集合はreceived_discourse、detached_observation、contractsのcurrent owner identity検査1件。コマンド相当：`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<PGlite0.5.8 module> <Python3.12.14> -m pytest -q <収集順nodeidの4分割> --junitxml=<各完了XML>`。旧u31全量は同じ開始commit/source/testの完了XMLを継承したもので、開始版全量を今回fresh再実行したとはしない。追加23だけは開始版でfresh実行し20FAIL/対照3PASS。既知14はreceived8（現在肯定の旧文形期待6、旧anchor改変2）・detached6（肯定2責務容量2、第二原反応訂正の旧fragmentation期待2、撤回後BODY_UNAVAILABLE期待1、肯定訂正の旧group期待1）のまま。
+
+追加保存2系列・計6回答後状態も最終全量内でPASS。original不変、生成を禁止したGET/startのDTO全文一致を確認。PGliteでの検査であり、実DB/実機/プロセス再起動ではない。主体/助詞/否定/程度/時点/因果・同じ表示名の節入替/欠落/余分な節・PERCEIVEDの断定化を拒否し、原eventごとの実UTF-8区間を確認した。actorが未変換のが、余剰event anchorは既存名詞形保持でPASS。
+
+**本文の読み合わせ。** 新20入力＝19本文＋同じsyntax未対応1、Reception9変更/10本文不変。全19でpublic本文一致・作者禁止inverse成功、checkpoint/nuclei/relations/moves/Observation/statusは全不変。最終sourceで従来40系列も再実行し39本文＋同じUNAVAILABLE1、今回と同じcollision-middle-lastのReception1件だけ変更し残る38本文は不変、全39 public/inverse成功。二集合には同じ入力が含まれるため、60の独立入力や改善10件とは数えない。新19本文はroot/商品担当が両層全文を読了し、技術担当は既存owner・境界・追加23と旧test不変をread-only確認。新しい意味欠落・誤帰属のblocking所見なし。
+
+実本文の限定差分（正式商品合格の見本ではない）：
+
+```text
+入力：褒められたのに、嬉しくなかった。私は誘われたのに、悲しかった。自分は誘われたのに、寂しかった。
+回答1：「嬉しくなかった」ではなく「私は少し不安でした」です。
+回答2：その時は少し重かった。
+回答3：「寂しかった」ではなく「私も少し怖くなかったです」です。
+
+見えたこと（前後同一）：
+「褒められた」ことについて、その時の受け止めは「私は少し不安でした」と書かれています。 「私は誘われた」のに「悲しかった」、その時は「少し重かった」とあります。 「自分は誘われた」ことについて、その時の受け止めは「私も少し怖くなかったです」と書かれています。
+
+u31 Emlisから：
+褒められたことについて、その時にあなたは少し不安だったことと、私は誘われたのに悲しかったことと、その出来事について、その時に少し重かったことと、自分は誘われたことについて、その時にあなたも少し怖くなかったことを小さくせずに受け止めています。
+
+u32 Emlisから：
+褒められた時は、あなたは少し不安だったし、あなたは誘われた時は悲しく、少し重かったし、あなたは誘われた時は、あなたも少し怖くなかったのですね。
+```
+
+表示が同じ後続出来事をsource順で保持する共通原因を修正したが、読み手が同名場面を容易に区別できる表現は未解決。『あなたは』の反復、PERCEIVEDの『あなたは誘われたことは』『重さとして届いた』、middle-positiveの別文に残る『私は』、安全に有限化できない場合の長い名詞列が残る。ひらがな『わたしは』を含むPERCEIVED回答の未受理も修正していない。次は同じ複数出来事/回答/訂正群内の残存する主体・列挙の共通原因を扱い、群の正式終結前に二層重複へ進まない。
+
+**TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品0/3・NOT_CLEAR・default OFF / 両PR Draft/open/unmerged。** 全群完了、自然さ全般の合格、既存14失敗解消とは扱わない。10/03休止・10/04分析、10/02実DB/実機を維持。この追記は既存2引継ぎだけへ反映する。Ready/merge/deploy/enableなし。
