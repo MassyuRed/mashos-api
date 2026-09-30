@@ -10892,20 +10892,30 @@ def _source_owned_positive_answer_group_sentence(move, realization, plan, resolv
     if not rows:
         return None
     parts = []
+    event_labels = []
     for row in rows:
+        event_visible = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", row.event_fragment, count=1)
         finite = _detached_feeling_finite_surface(row.source, allow_medial=True,
             allow_copular=move.reception_act == "stay_with_current_burden"
                 and row.source.endswith(("でした", "だった")))
         if (not _SOURCE_GROUNDED_FINITE_END_RE.search(finite)
             or re.search(r"(?:です|ます|でした|ました|だ)$", finite)
-            or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", row.event_fragment)
+            or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", event_visible)
             or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)
             or re.search(r'[「」『』“”‘’"?？!！\r\n。]', row.event_fragment + row.source)):
             return None
         time = {"original_occasion": "その時は", "answer_time": "回答した時点では",
                 "prior_answer_time": "先の回答時点では"}[row.when]
-        parts.append(row.event_fragment + "ことについて、" + time + finite)
-    return "し、".join(parts[:-1]) + "し、" + _feeling_acknowledgement(parts[-1])
+        event_labels.append(event_visible)
+        parts.append(event_visible + "ことについて、" + time + finite)
+    text = "し、".join(parts[:-1]) + "し、" + _feeling_acknowledgement(parts[-1])
+    # Distinct source events may share a recipient-facing name. Keep every
+    # occurrence in order, but do not mistake an embedded extra anchor for it.
+    later_labels = event_labels[1:]
+    if any(text.count("し、" + label + "ことについて、") != later_labels.count(label)
+           for label in later_labels):
+        return None
+    return text
 
 
 def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
@@ -10929,6 +10939,7 @@ def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
     index = {n.nucleus_id: n for n in plan.nuclei}
     event_text, source = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
                           for n in (event, answer))
+    event_visible = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event_text, count=1)
     finite = _detached_feeling_finite_surface(source, allow_medial=True)
     explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", finite)
     if explanatory is not None:
@@ -10944,7 +10955,7 @@ def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
     if (not event_text or not source or tuple(realization.semantic_fragments) != (source, event_text)
         or not _SOURCE_GROUNDED_FINITE_END_RE.search(finite)
         or re.search(r"(?:です|ます|でした|ました|だ)$", finite)
-        or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", event_text)
+        or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", event_visible)
         or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)
         or re.search(r'[「」『』“”‘’"?？!！\r\n。]', event_text + source)):
         return None
@@ -10953,7 +10964,7 @@ def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
     from emlis_ai_grounded_observation_gate import _answer_feeling_preceding_event
     shared_event = _answer_feeling_preceding_event(
         move, plan, resolver, selected_subjective_input, preceding_context)
-    topic = "" if shared_event else event_text + "ことについて、"
+    topic = "" if shared_event else event_visible + "ことについて、"
     return topic + time + _feeling_acknowledgement(finite)
 
 

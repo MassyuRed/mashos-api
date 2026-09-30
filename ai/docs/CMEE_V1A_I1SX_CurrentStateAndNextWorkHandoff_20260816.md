@@ -11654,3 +11654,42 @@ u32 Emlisから：
 表示が同じ後続出来事をsource順で保持する共通原因を修正したが、読み手が同名場面を容易に区別できる表現は未解決。『あなたは』の反復、PERCEIVEDの『あなたは誘われたことは』『重さとして届いた』、middle-positiveの別文に残る『私は』、安全に有限化できない場合の長い名詞列が残る。ひらがな『わたしは』を含むPERCEIVED回答の未受理も修正していない。次は同じ複数出来事/回答/訂正群内の残存する主体・列挙の共通原因を扱い、群の正式終結前に二層重複へ進まない。
 
 **TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品0/3・NOT_CLEAR・default OFF / 両PR Draft/open/unmerged。** 全群完了、自然さ全般の合格、既存14失敗解消とは扱わない。10/03休止・10/04分析、10/02実DB/実機を維持。この追記は既存2引継ぎだけへ反映する。Ready/merge/deploy/enableなし。
+
+
+## 2026-09-30 JST u33開始：独立した回答文の出来事主語を本人宛てへ揃える
+
+開始headはAPI `4795cb81963b41efc1a2d82b88149bf713fd9632` / Cocolon `dc71a3f03f07c12f4a38447305fa709a37fb8ae0`。添付txt、前提入口・current rules・Rule18・恒久incident全文、Karen-Diary指定3file、全体設計01/02・全file地図01A/B/Cの領域/接点とtracked tree（API2300/App1645）、current_structure00/01/04、weekly20260926の9/29合意とu32を確認。Context prepareは祖先確認でexit2、原典直接参照を使用し成功とはしない。
+
+- product_destination: 複数出来事と回答を本人の言葉として正しく読み取れるEmlis返信。
+- current_gate_or_subgate: Q4複数出来事/回答/訂正群、既存HRからSurfaceと独立Gate。
+- exact_work: 受理済みSELF eventを独立した肯定回答/回答groupに付ける際、一人称でnominalへ戻る共通原因を修正。
+- scope_classification: Rule18 LEVEL_2 / DIRECT_PRODUCT_OR_ACCEPTANCE_WORK。
+- approval_or_delegation_basis: MashのGitHub指定Emlis残件継続と既存LEVEL_2品質修正。既存PR3/30 Draft反映を含む。
+- execution_owner: rootのみ実装・実行・write。実行modelはGPT-based Codex / Work Mode、独立商品/技術reviewを利用するWORK_ULTRA_REQUIRED相当の作業。確認していないPro/Ultraモデル名は称さない。
+- success_credit: 限定本文修正のTECHNICAL_CREDIT。群完了/商品PASSにはしない。
+- completion_condition: 既存先頭SELF変換の主体/助詞保持、原event/source順/ABOUT/time/程度/否定保持、独立逆復元、前後実本文、保存再読、関連回帰とremote全文照合。
+- stop_condition: 意味欠落/誤帰属/新たな本文未提供は候補を見直す。新grammar/helper/意味受付/contractが必要ならscopeを広げない。
+- prohibited_scope: Plan/意味受付/質問/API/DB/RN/他core/依存/flag/保護検査/品質閾値/本番/merge変更。
+- next_product_read_or_mash_decision_point: rootと独立商品担当が全比較本文を読む。明白な不足を残した正式Product Readを依頼しない。
+- current_source_test_receipt: u32 HR/Gate/received/detached testsとcurrent identity。旧関連2297の完了XMLとsource/test hashを照合して継承し、開始版全量freshとはしない。
+- current_docs_and_heads: 上記headと既存API handoff/Cocolon06、latest weekly。10/03未完でも休止、10/04分析、10/02実DB/実機を維持。
+- affected_current_structure_maps: 01/04、STRUCTURE_MAP_DELTA_NONE（既存作者/独立reader内部の人称とsource対応のみ、責任/route/lifecycle不変）。
+
+編集上限はAPI `ai/services/ai_inference/emlis_ai_grounded_human_reception.py`、`ai/services/ai_inference/emlis_ai_grounded_observation_gate.py`、`ai/tests/test_cmee_emlis_detached_observation.py`、`ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json`、本handoff、およびCocolon `Cocolon_前提資料/designs/cmee/v1/06_implementation_order_migration_and_verification.md` の既存6path。商品担当はPRODUCT_ROUTE_ALIGNED、技術担当は同じowner内の限定変換と原文逆復元を確認、rootが最終採否を持つ。想定40〜60分、追加費用/依存/Mash操作0。未対応SELFはresidual guardで現nominal保持、同名表示は必要出現数と原順対応を既存方法で確認する。START_ALLOWED。
+
+
+## 2026-09-30 JST u33検証checkpoint：肯定回答に付く出来事の本人主語を保持
+
+既存Q4の複数出来事/回答/訂正群を継続。API開始head `4795cb81963b41efc1a2d82b88149bf713fd9632`、Cocolon開始head `dc71a3f03f07c12f4a38447305fa709a37fb8ae0`。前回txt、必須incident全文、全体設計/分割file地図とtracked inventory、current_structure00/01/04、weekly9/26の9/29更新を照合。Context prepare exit2は原典直接参照で継続し、成功に扱わない。10/03未完でも休止、10/04分析、10/02実DB/実機を維持。
+
+**限定修正。** 既存HRの単独回答/肯定回答groupで、既に受理済みの出来事先頭SELF（私/自分/わたし＋は/が）を、既存received-discourseと同じ本人宛ての『あなた』に揃えた。助詞は保持する。原source/semantic fragmentsは一切書き換えず、残留SELF・引用guardを保持。独立Gateは実本文のeventを原sourceへ完全逆復元し、本文上のUTF-8区間に元event bytesを対応付ける。同名の後続eventは必要出現数と実出現数の完全一致＋原順occurrenceで扱い、余剰anchorを無視しない。新helper/grammar/意味受付/Plan/API/DB/RN/依存/flagは追加・変更しない。
+
+**本文の照合。** 同じ34系列の前後比較は、両版GENERATED14（Reception6変更/8不変）、前版最終UNAVAILABLE6→GENERATED6、前版途中advance停止9→最終GENERATED9、同じ最終UNAVAILABLE3、同じ質問前提不成立2。途中停止9はadvance-2が8・advance-3が1で、未提供15件の一括修復とは数えない。全29本文のpublic一致と作者禁止inverseはtrue。旧14のcheckpoint/nuclei/relations/moves/Observationは不変。未対応『僕』『私も』『私は私が』の3本文と撤回後UNAVAILABLE3は不変。友人2のprobe AssertionErrorは製品例外解消へ数えない。
+
+商品担当は前14/後29本文の両層を全読、主体・助詞・程度・回答時点の限定改善をPRODUCT_ROUTE_ALIGNEDと判断。技術担当はsource保持/独立逆復元/同名境界の数と順をread-only確認しblocking所見なし。rootが実装・検査・writeを担当。Work ModeのGPT-based Codexによる独立reviewで、確認できないPro/Ultraモデル名・正式Product Readを名乗らない。同名出来事の読み手による区別、『あなたは』反復、『あなたは…ことについて』の硬さ、二層再掲、unsupported nominalは残件。商品合格・対象群完了にはしない。
+
+**検査途中。** 既存test全文bytesを保持して55件だけ末尾追加。先行53件は53PASS、最後のgroup保存2件は全関連実行に含めて検査中。開始sourceの別worktreeへ追加testのみoverlayした結果は55件＝3PASS/22FAIL/30ERRORで、30ERRORは3共有fixtureの本文が途中生成不可のため各10件がsetup到達不能。新規差分が開始sourceで成立しない証拠であり製品の30独立例外ではない。全関連2352 unique ID（旧2297＋新55）をsource/test/current identity SHA256固定、重複なし4分割で実行中。初回collectはrunnerのPYTHONPATH不足で0件・exit4、`PYTHONPATH=ai`で同じ対象を収集し直した。途中出力を完了件数にしない。
+
+current identityは既存18payload/9ownerの派生値だけ：language `623695645abe07a4d59d6a9fbccb64d60bad292f88f6aa04573bcfb5415096db` / runtime `c09a63b15a592317cc7ff9aab39bd2ea92c7ed00403404e4bd7cf213151d0256`。保存検査はPGlite上のoriginal保持と生成禁止GET/startのDTO全文一致であり、実DB/実機/再起動の代替ではない。
+
+編集は既存HR/Gate/detached tests/current identity/API handoff/Cocolon06の6pathのみ。STRUCTURE_MAP_DELTA_NONE。既存Draftへcheckpoint反映後、全関連の完了結果とfresh remote照合を同じ2引継ぎへ追記する。全体48%・商品0/3・NOT_CLEAR・default OFF、Ready/merge/deploy/enableなし。追加費用・依存・Mash操作0。

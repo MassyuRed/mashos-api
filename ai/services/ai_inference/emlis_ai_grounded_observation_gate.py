@@ -3260,7 +3260,9 @@ def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, sha
     event_text, source = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
                           for n in (event, answer))
     # A source-proven owner changes perspective at the same position.
-    # Unproven embedded subjects and event subjects still fail.
+    # The event has its own source-proven SELF owner. Embedded subjects still
+    # fail; a visible recipient must restore the complete original event.
+    event_owner = re.match(r"^(?:私|自分|わたし)(?=は|が)", event_text)
     owner = _thread_feeling_owner(source)
     polite = re.fullmatch(r"(?P<predicate>.+(?:い|かった))です", source)
     predicate = polite['predicate'] if polite else source
@@ -3283,7 +3285,8 @@ def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, sha
     if (not event_text or not source
         or not _SOURCE_GROUNDED_FINITE_END_RE.search(predicate)
         or re.search(r"(?:です|ます|でした|ました|だ)$", predicate)
-        or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", event_text)
+        or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)",
+                     event_text[event_owner.end():] if event_owner else event_text)
         or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", source_predicate)
         or re.search(r'[「」『』“”‘’"?？!！\r\n。]', event_text + source)):
         return None
@@ -3295,7 +3298,12 @@ def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, sha
     past_explanation = parsed is not None and parsed['ending'] == "のでしたね"
     if past_explanation and _thread_past_explanation_predicate(source) is None:
         return None
-    if (parsed is None or (parsed['event'] != event_text
+    parsed_event = parsed['event'] if parsed is not None else None
+    if parsed_event is not None and event_owner is not None:
+        if not parsed_event.startswith("あなた"):
+            return None
+        parsed_event = event_owner.group() + parsed_event[len("あなた"):]
+    if (parsed is None or (parsed_event != event_text
             and not (parsed['event'] is None and shared_event)) or parsed['time'] != expected_time
         or _restore_thread_finite_answer(parsed['feeling'] + ("のだった" if past_explanation else ""), source,
             copular_clause=explanation_proven or past_copular_proven,
@@ -3349,7 +3357,8 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
         event_text = final_reception_source_anchor_text(event.nucleus_id, index, resolver)
         if not event_text:
             return None
-        rows.append((event, answer, times[0], event_text))
+        event_visible = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event_text, count=1)
+        rows.append((event, answer, times[0], event_visible))
     if len({event.nucleus_id for event, _, _, _ in rows}) != len(rows):
         return None
     if selected_subjective_input is not None:
@@ -3359,11 +3368,13 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
             or appraisal.operation != "RECEIVE_AS_MATERIAL"):
             return None
     cuts = [0]
-    for _, _, _, event_text in rows[1:]:
+    later_labels = [row[3] for row in rows[1:]]
+    for position, event_text in enumerate(later_labels):
         boundaries = tuple(re.finditer(re.escape("し、" + event_text + "ことについて、"), raw))
-        if len(boundaries) != 1 or boundaries[0].start() <= cuts[-1]:
+        occurrence = later_labels[:position].count(event_text)
+        if len(boundaries) != later_labels.count(event_text) or boundaries[occurrence].start() <= cuts[-1]:
             return None
-        cuts.append(boundaries[0].end() - len(event_text + "ことについて、"))
+        cuts.append(boundaries[occurrence].end() - len(event_text + "ことについて、"))
     proofs = []
     for i, (start, row) in enumerate(zip(cuts, rows)):
         last = i == len(rows) - 1

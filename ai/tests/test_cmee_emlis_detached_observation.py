@@ -3523,3 +3523,165 @@ def test_equal_visible_event_names_saved_updates_keep_original_and_exact_reads(q
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved visible event occurrences must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+@pytest.mark.parametrize('owner', ['私', '自分', 'わたし'])
+@pytest.mark.parametrize('particle', ['は', 'が'])
+@pytest.mark.parametrize('when,source,visible', [
+    ('今は', '私は少し嬉しいです', '回答した時点ではあなたは少し嬉しい'),
+    ('その時は', '私も少し楽しかったです', 'その時はあなたも少し楽しかった'),
+])
+def test_positive_answer_keeps_event_owner_and_its_answer_time(owner, particle, when, source, visible):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    event = owner + particle + '誘われた'
+    memo = f'褒められたのに、嬉しくなかった。{event}のに、悲しかった。頼まれたのに、寂しかった。'
+    request = advance(advance(begin(memo), 'その時は少し重かった。'), when + source + '。')
+    context = actual(request=request)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    clause = 'あなた' + particle + '誘われたことについて、' + visible + 'のですね。'
+    assert follow.endswith(clause) and '受け止めています' not in follow
+    assert not re.search(r'(?:私|自分|わたし)(?:は|が|も)', follow)
+    assert all(value in context[0].artifact.observation for value in (event, source, '嬉しくなかった', '悲しかった', '寂しかった'))
+    assert MeaningExperienceEngine().generate(request).artifact.text == body
+    assert read_body(context, body).passed
+    for changed in (clause.replace('あなた' + particle, owner + particle, 1),
+                    clause.replace('あなた' + particle, '相手' + particle, 1),
+                    clause.replace('あなた' + particle, 'あなた' + ('が' if particle == 'は' else 'は'), 1),
+                    clause.replace('少し', '', 1), clause.replace('その時は', '回答した時点では', 1)
+                    if when == 'その時は' else clause.replace('回答した時点では', 'その時は', 1)):
+        assert changed != clause
+        assert not read_body(context, body.replace(follow, follow.replace(clause, changed, 1), 1)).passed
+
+
+@pytest.fixture(scope='module', params=[
+    ('私は褒められた', '自分が誘われた', 'わたしは頼まれた'),
+    ('私は誘われた', '自分は誘われた', 'わたしは誘われた'),
+    ('褒められた', '私は誘われた', '自分は誘われた'),
+])
+def positive_owned_event_group(request):
+    events = request.param
+    memo = ''.join(event + 'のに、' + feeling + '。' for event, feeling in zip(events, ('嬉しくなかった', '悲しかった', '寂しかった')))
+    req = begin(memo)
+    for reply in ('今は私も少し嬉しいです。', 'その時は私は楽しかったです。', 'その時は少し嬉しかった。'):
+        req = advance(req, reply)
+    return events, req, actual(request=req)
+
+
+def test_positive_owned_event_group_restores_each_original_source_byte_range(positive_owned_event_group):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    events, request, context = positive_owned_event_group
+    result, plan, _, resolver, selected = context
+    body, follow = result.artifact.text, result.artifact.reception
+    move, = (m for m in plan.response_plan.human_reception_plan.moves if m.reception_act == 'recognize_lived_change')
+    group = follow[follow.index('。') + 1:]
+    proof = gate._read_positive_answer_group_discourse(group, move, plan, resolver, selected)
+    assert proof is not None
+    event_proofs = [(a, b, value.decode()) for a, b, value in proof if value.decode() in events]
+    assert [value for _, _, value in event_proofs] == list(events)
+    assert all(group.encode()[a:b].decode() == re.sub(r'^(?:私|自分|わたし)(?=は|が)', 'あなた', value)
+               for a, b, value in event_proofs)
+    assert all(event_proofs[i][1] < event_proofs[i + 1][0] for i in range(2))
+    assert all(event in result.artifact.observation for event in events)
+    assert '受け止めています' not in follow and not re.search(r'(?:私|自分|わたし)(?:は|が|も)', follow)
+    assert MeaningExperienceEngine().generate(request).artifact.text == body
+    assert read_body(context, body).passed
+
+
+@pytest.mark.parametrize('change', ['missing', 'duplicate', 'swap', 'degree', 'polarity', 'particle', 'actor', 'time', 'cause'])
+def test_positive_owned_event_group_rejects_missing_extra_or_reassigned_answers(positive_owned_event_group, change):
+    events, _, context = positive_owned_event_group
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    visible = [re.sub(r'^(?:私|自分|わたし)(?=は|が)', 'あなた', event) for event in events]
+    middle = visible[1] + 'ことについて、その時はあなたは楽しかった'
+    last = visible[2] + 'ことについて、その時は少し嬉しかった'
+    assert middle in follow and last in follow
+    if change == 'missing':
+        changed = follow.replace(middle + 'し、', '', 1)
+    elif change == 'duplicate':
+        changed = follow.replace(last, middle + 'し、' + last, 1)
+    elif change == 'swap':
+        changed = follow.replace(middle, '@middle@', 1).replace(last, middle, 1).replace('@middle@', last)
+    else:
+        old, new = {'degree': ('少し嬉しかった', '嬉しかった'), 'polarity': ('少し嬉しかった', '少し嬉しくなかった'),
+                    'particle': ('あなたは楽しかった', 'あなたも楽しかった'),
+                    'actor': (middle, middle.replace('あなた', '相手', 1)),
+                    'time': (middle, middle.replace('その時は', '回答した時点では', 1)), 'cause': ('し、', 'ので、')}[change]
+        changed = follow.replace(old, new, 1)
+    assert changed != follow and not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+@pytest.mark.parametrize('owner', ['私', '自分', 'わたし'])
+@pytest.mark.parametrize('withdraw', [False, True])
+def test_positive_owned_event_answer_correction_and_withdrawal_keep_separate_times(owner, withdraw):
+    event = owner + 'は誘われた'
+    request = advance(begin(event + 'のに、悲しかった。頼まれたのに、寂しかった。'), '今は私は少し嬉しいです。')
+    reply = f'「{event}」は誤りです。' if withdraw else '「私は少し嬉しいです」ではなく「私も少し楽しいです」です。'
+    context = actual(request=advance(request, reply))
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    assert '受け止めています' not in follow and read_body(context, body).passed
+    assert '頼まれたのに、寂しさを感じた' in follow
+    if withdraw:
+        assert '誘われた' not in body
+        assert 'その時は悲しかった' in follow and '回答した時点で、あなたは少し嬉しい' in follow
+    else:
+        assert '少し嬉しい' not in body and '悲しさを感じ' in follow
+        assert '先の回答時点ではあなたも少し楽しい' in follow
+        changed = follow.replace('先の回答時点では', '回答した時点では', 1)
+        assert not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+@pytest.mark.parametrize('owner', ['僕', '私も', '私は私が'])
+def test_positive_owned_event_does_not_broaden_unresolved_subjects(owner):
+    event = owner + ('誘われた' if owner.endswith(('も', 'が')) else 'は誘われた')
+    request = advance(begin(event + 'のに、悲しかった。頼まれたのに、寂しかった。'), '今は私は少し嬉しいです。')
+    context = actual(request=advance(request, '「私は少し嬉しいです」ではなく「私も少し楽しいです」です。'))
+    assert event in context[0].artifact.reception and '受け止めています' in context[0].artifact.reception
+    assert read_body(context, context[0].artifact.text).passed
+
+
+@pytest.mark.parametrize('withdraw', [False, True])
+def test_positive_owned_event_saved_correction_and_withdrawal_keep_exact_reads(qcase, qdb, monkeypatch, withdraw):
+    user, parent, _ = qcase
+    memo = '私は誘われたのに、悲しかった。頼まれたのに、寂しかった。'
+    assert 'code' not in qdb.query('update public.emotions set memo=$2 where id=$1', [parent, memo])
+    service = active(monkeypatch)
+    first = current = run(service.start(user, parent))
+    replies = ('今は私は少し嬉しいです。', '「私は誘われた」は誤りです。' if withdraw
+               else '「私は少し嬉しいです」ではなく「私も少し楽しいです」です。')
+    for position, text in enumerate(replies):
+        if position:
+            current = run(cont(service, user, current, f'positive-owner-continue-{position}'))
+        current = run(answer(service, user, current, text, f'positive-owner-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        _, follow = body.split('Emlisから：', 1)
+        assert '受け止めています' not in follow
+        if position and withdraw:
+            assert '誘われた' not in body and '回答した時点で、あなたは少し嬉しい' in follow
+        elif position:
+            assert '少し嬉しい' not in body and '先の回答時点ではあなたも少し楽しい' in follow
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved positive owner replies must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('all_same', [False, True])
+def test_positive_owned_event_group_saved_updates_preserve_each_occurrence(qcase, qdb, monkeypatch, all_same):
+    user, parent, _ = qcase
+    events = ('わたしは誘われた' if all_same else '褒められた', '私は誘われた', '自分は誘われた')
+    memo = ''.join(event + 'のに、' + feeling + '。' for event, feeling in zip(events, ('嬉しくなかった', '悲しかった', '寂しかった')))
+    assert 'code' not in qdb.query('update public.emotions set memo=$2 where id=$1', [parent, memo])
+    service = active(monkeypatch)
+    first = current = run(service.start(user, parent))
+    for position, text in enumerate(('今は私も少し嬉しいです。', 'その時は私は楽しかったです。', 'その時は少し嬉しかった。')):
+        if position:
+            current = run(cont(service, user, current, f'positive-group-continue-{position}'))
+        current = run(answer(service, user, current, text, f'positive-group-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        if position == 2:
+            observation, follow = current['current_observation']['text'].split('Emlisから：', 1)
+            assert all(event in observation for event in events)
+            assert follow.count('あなたは誘われたことについて、') == (3 if all_same else 2)
+            assert all(value in follow for value in ('回答した時点ではあなたも少し嬉しい', 'その時はあなたは楽しかった', 'その時は少し嬉しかった'))
+            assert '受け止めています' not in follow
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved positive group occurrences must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
