@@ -12036,3 +12036,57 @@ API11path＝Emlis5＋Piece6、Cocolon4path＝既存06＋Piece入口／map／mani
 前後比較の保存UTC10:43:53〜最終集計UTC11:20:00は約36分（前提読取・環境確保・GitHub反映は別）。sandbox待機・収集選択ミス・旧期待FAILの経過を成功時間として隠さない。追加の外部課金操作・production依存変更・Mash操作0。rootのみ編集／実行／反映、3担当はread-only確認。未確認のPro／Ultra型名を称さず、Codex Workの実環境を記録する。
 
 **次の同群残件。** 同名出来事と回答の読者に見える区別、主語／回答時点／『のですね』反復、訂正受付の未解決境界・既知14を保持。現在／以前の回答の逆接保持のこの限定修正は成立したが、群を閉じる前に二層再掲の別作業へ移らない。Emlis商品0/3・NOT_CLEAR・全体48%・default OFF、10/03未完でも休止・10/04 Work分析（利用不可ならPro Piece）を維持。Pieceは保存preview発行・HTTP／RN・native renderer／実機・商品受入れが残る。両PR Draft/open/unmerged、Ready／merge／deploy／enable／live DB適用なし。
+
+
+## 2026-09-30 JST u40開始：一意の回答に対する不安の程度訂正
+
+MashのGitHub選択と「EmlisAIの残件作業を進めて」を基準に、u39で未反映だった「少し不安です／でした」→「とても不安です／でした」の4系列を同じ複数出来事／回答／訂正群の次単位として扱う。開始確認 2026-09-30 20:58 JST、API `1a215c511858a574bf76b15d0ed20ddce984744b`／Cocolon `5fe165c6fab96d3f59b4c2e1eb288eaf187b62ab`。両PR Draft/open/unmerged。最新weekly 20260926の9/29合意、前提入口・恒久incident全文・CURRENT_RULES／Rule18・全体設計／地図とcurrent_structure・u39handoffを照合。全tree2300＋1645＝3945path、歴史377責務行を現行全ファイル全文監査とは称さない。System Context prepareは今回 `PUBLICATION_RECOVERY_AMBIGUOUS: residual without marker` で失敗し、既存の原典直読fallbackを使う。repair作業へは広げない。前回txtの確認はu39の到達点として引継ぐ。Karen-Diaryの読み取りのみ、本文は公開repoへ転記しない。
+
+LEVEL_2の限定候補。既存answer_update ownerでexact1 active ANSWER_FIELD targetを伴うquoted REVISEのnew source範囲だけを扱い、closed SELF助詞・不安host・copula／時制がold/newで同じ、程度が少し／とてもに収まる場合だけ既存feeling frameを採用する。初回ADD、原memo、共有GPのprefix／語彙、HR作者、独立Gateは広げない。既存unsupported replacementのWITHDRAW、曖昧targetの未解決、元ABOUT／回答時点anchor、独立source、未訂正の出来事／反応を保持する。意味更新はWITHDRAWからREVISEへ変わることが意図した修復であり、u39の全meaning不変を今回の成功条件には流用しない。
+
+allowed pathsはAPI既存answer_update・既存Q3／received試験・必要ならcurrent shared identity・既存handoff、Cocolon既存06。公開contract／保存schema／質問／DB／RN／production依存／flag／Piece／historical receiptは不変更。rootのみ編集・実行・反映、担当はread-only確認。成功条件は同入力前後両層全文、新replacement sourceと元ABOUT／時点の反映、degree／SELF／時制／原反応改変を拒否する作者禁止inverse、連続訂正／撤回／original保持／generate禁止GET/start全文一致、関連回帰とremote bytes/path/parent/head照合。実装検証目安30〜45分、外部課金操作・Mash操作0。
+
+TECHNICAL_CREDITのみ、同群未完・商品0/3・NOT_CLEAR・全体48%・default OFF。10/03未完でも休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB／実機予定を保持。STRUCTURE_MAP_DELTA_NONE候補（内部source grammar修復のみ、owner／保存・公開経路は同じ）。実環境Codex Workを記録し、未確認のPro／Ultra型名を称さない。
+
+
+## 2026-09-30 JST u40結果：一意の不安回答の程度訂正を両層へ反映
+
+**TECHNICAL_CREDITのみ。複数出来事／回答／訂正群は未完、商品0/3・NOT_CLEAR・全体48%・default OFFを維持。** 既存 `emlis_answer_update._answer_nucleus` のsource owner fallbackと `_prepare_answer` の既存quoted REVISE呼出だけを修復した。exact1 active ANSWER_FIELD targetの旧sourceがある場合、closed SELF助詞・不安host・有限copulaがold/newで同一、程度が少し／とてもに収まる完全節を既存reaction/feeling frameで扱う。共有GP prefix・初回ADD・原memo受付・HR作者・Gateを広げない。です／でした／だ／だったを保持し、new引用だけをscalar source rangeへ採る。旧回答はsuperseded、新回答は元ABOUTへ再接続し、ANSWER_TIMEの訂正は最初の回答のanchor／prior_answer_time、ORIGINAL_OCCASIONの訂正は元original anchorを保つ。『とても→とても』も同じ完全sourceを持つ明示REVISEとして通るが、反復問題の修復に数えない。
+
+**同入力前後の両層全文33系列。** u39未反映4件を含む、4SELF表記（省略／私は／私も／僕には）×です／でした×先頭／中央の16訂正、当時回答4訂正、連続再訂正1、境界12を比較した。単独20はWITHDRAW＋未反映noticeからREVISE／REFINEDへ変わり、『とても不安』を両層へ反映。連続1は前版で次質問がなくadvanceのAssertionErrorを記録したが、修正後は元回答時点の『少し不安』へ戻る。残12はrecord全文同一（第三者／あなた、SELF変更、copula変更、否定・推量・条件、別感情、拡張構文、未整理、曖昧対象、初回とても）。unsupported replacementの明示WITHDRAWと曖昧targetのUNRESOLVEDを既存どおり維持する。
+
+比較可能なoriginal32/32が同一。単独20の元memo核・原contrast・未訂正の別回答・target／temporal_bindingは不変で、新ABOUTは元eventへ接続する。after実本文31/31で作者禁止inverseとpublic本文一致が成功した。内訳は改善21＋既存生成済み境界10で、境界10を修復成功へ加算しない。残る2は曖昧対象と初回未対応文の既存未反映。read-only技術／構造／商品担当が前後両層全文とsource範囲・主体・時点・元出来事／反応を照合し、新たな意味欠落や帰属変更のblockingを認めなかった。これは局所読取で、正式Product Read／商品PASSではない。
+
+synthetic代表（先頭の回答訂正）：
+
+入力：褒められたのに、嬉しくなかった。私は誘われたのに、悲しかった。自分は誘われたのに、寂しかった。
+回答順：今は少し不安です。 → 「少し不安です」ではなく「とても不安です」です。
+
+```text
+変更前・見えたこと：
+「褒められた」の一方で「嬉しくなかった」、また「私は誘われた」の一方で「悲しかった」、また「自分は誘われた」の一方で「寂しかった」とあります。
+回答の「「少し不安です」ではなく「とても不安です」です」には、今回の観測に反映できていない部分があります。
+
+変更前・Emlisから：
+褒められたことは、嬉しさにはつながらず、あなたは誘われたのに、悲しさを感じ、あなたは誘われたのに、寂しさを感じたのですね。
+
+変更後・見えたこと：
+「褒められた」のに「嬉しくなかった」、先の回答時点では「とても不安です」とあります。 「私は誘われた」の一方で「悲しかった」、また「自分は誘われた」の一方で「寂しかった」とあります。
+
+変更後・Emlisから：
+褒められたのに、嬉しくなかったし、先の回答時点ではとても不安なのですね。あなたは誘われたのに、悲しさを感じ、あなたは誘われたのに、寂しさを感じたのですね。
+```
+
+**関連試験の最終集計：1936 unique IDs＝1666 PASS／開始版と同じ270 FAIL、ERROR0／SKIP0。** Q1全75、Q3 thread全950、received全910、正しいcurrent owner identity1件を対象。初回1932条件をfresh4分割し1662 PASS／270 FAIL、追加original4をfresh実行し全PASS。技術読取で新試験の検出範囲を補強し、最後に新55全条件をfresh2分割して55 PASS。既存XMLの新51を最終55の同IDで置換／4IDを追加し、重複なく1936を集計した。最終方法変更後に全1936を一括再実行したとは称さない。production sourceは回帰中固定。
+
+開始API u39の分離worktreeで同じ旧1881IDをfresh4分割し、1611 PASS／270 FAIL、ERROR0／SKIP0。旧IDのmissing0・合否差0、270失敗traceはrepo path／line／UUID／address正規化後の差0。今回広く確認した既存失敗の内訳はQ1 3・Q3 thread259・received8であり、u39のreceived／detached範囲の既知14と別の母集団。u39のdetached6は今回再実行せず既存証拠を継承し、270を新規失敗や既知14解消へ読み替えない。全PASSとは称さない。既存test AST／入力／引数／decorator／IDは全不変、削除／skip／xfail化／旧期待の方法変更0。既存received末尾へ6関数55条件だけを追加した。
+
+新55＝SELF4×copula4×位置2の32、異主体／時制／host等の境界10、一意既存回答を要する境界3、連続再訂正2、保存4、当時回答4。新source完全一致・元ABOUT／anchor・未訂正核を照合し、程度／感情／主体／原否定／時点／copula改変を作者禁止inverseで拒否。主体変異は訂正回答の『あなたは／も／には＋とても不安』の1箇所だけを変え、元イベントを同時に壊して代わりにrejectさせない。連続2は最後のnew引用の採用も直接検査する。保存4系列12回答後状態でoriginal保持、generate禁止GET/startのDTO全文一致。2系列の撤回で新回答とsuperseded旧回答の双方が復活しないことを確認。旧有限／旧名詞reader、既存訂正／撤回・部分未解決・SOURCE境界も同じ関連範囲で照合した。
+
+試験はPGlite0.5.8／Python3.12.14／pytest9.1.1。Supabase保存RPCの既存ローカル合成fixtureであり、live DB／実機／プロセス再起動は未実施。Supabase changelog取得はmarkdown content-typeの読取エラーでNONCREDIT、Supabase機能／schema／CLIの変更はなく、既存保存ownerの実行で確認した。最初のscratch前後probeはbytes JSON化で終了しNONCREDIT、serializableに直して同じ開始sourceでfresh実行した33系列だけを採用した。
+
+answer_update SHA256 `e2d3f205716b5468e1050139da576fd8eecdf7f1b9bc31c0093e05eca71ecaa9`。HR／Gate／current shared identity snapshotは不変更、正しいcurrent identity試験1件PASSで18payload／9ownerを確認。language `0420412cf43813c3583b3b00ca10a3b551b15371b2ce8bada9168947e11d2f2d`／runtime `e51b3779bb7221b9cca8c8baf1b5be67b8258a45c3b5c5aaf77417da3bc85949`を継承。API3path＝answer_update／received試験／既存handoff、Cocolon1path＝既存06。STRUCTURE_MAP_DELTA_NONE（既存2関数内のsource grammar修復、owner・公開／保存contract・呼出経路不変）。Pieceへの変更0。
+
+前後baseline保存20:58:09 JST〜最終集計21:19:44 JSTは約22分（開始原典読取・GitHub反映は別）。全1932の最長shard761.42秒、開始版1881の最長579.58秒、最終新55の最長106.28秒。rootのみ編集／実行／反映し、担当はread-only。Codex Workの実環境を記録、未確認のPro／Ultra型名は称さない。追加外部課金操作・production依存変更・Mash操作0。両PR Draft/open/unmergedのまま、remote全bytes・path・親commit・final head・PR要約をfresh照合する。
+
+**次の同群残件。** 同名出来事と回答の読者に見える区別、主語／時点／『のですね』反復、程度以外の未対応訂正文法、既知失敗、時制上の読みにくさは継続する。今回の単位だけで初回『とても不安』や任意のcopular全文法が受理されたとはしない。群を閉じる前に二層再掲の別作業へ移らない。10/03未完でもEmlis休止・10/04 Work分析（利用不可ならPro Piece）、10/02実DB／実機予定を維持。商品受入れ0/3・NOT_CLEAR・全体48%・default OFF。両PR Draft/open/unmerged、Ready／merge／deploy／enable／live適用なし。

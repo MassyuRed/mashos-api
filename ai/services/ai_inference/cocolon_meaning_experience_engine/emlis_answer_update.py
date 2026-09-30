@@ -98,7 +98,7 @@ def _dependent_refs(plan, targets: tuple[str, ...]) -> tuple[str, ...]:
                  if row.from_nucleus_id in targets or row.to_nucleus_id in targets)
 
 
-def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, source_end: int | None = None, outcome_standard: bool = False):
+def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, source_end: int | None = None, outcome_standard: bool = False, prior_answer_source: str | None = None):
     """Use the shared source grammar with a real answer field and no labels."""
     text = span.raw_text
     offset = source_start
@@ -138,7 +138,18 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
                         attribute_codes=(frame.attribute_codes if negative else
                             tuple(dict.fromkeys((*frame.attribute_codes, "operator:feeling")))))
     elif not gp._source_operator_owner_scope_is_bound(bounded):
-        return None
+        # A uniquely located, admitted answer can keep its own finite
+        # copular grammar through a degree-only correction. Do not broaden
+        # initial answers or the shared memo grammar with this witness.
+        copular_source = (r"(?P<owner>(?:(?:私|わたし|自分|僕|ぼく|俺|おれ)"
+                          r"(?:には|にも|は|も|が))?)(?:少し|とても)"
+                          r"不安(?P<copula>です|でした|だ|だった)")
+        previous = re.fullmatch(copular_source, prior_answer_source or "")
+        revised = re.fullmatch(copular_source, bounded)
+        if not (kind == "reaction" and frame.predicate_kind == "feeling"
+                and frame.modality == "feeling" and previous and revised
+                and previous.groupdict() == revised.groupdict()):
+            return None
     if not bounded or kind in {"event", "other_explicit"} or _FOREIGN_HOST.search(bounded):
         return None
     time_scope = "present" if about_time in {"ANSWER_TIME","PRIOR_ANSWER_TIME"} else "past"
@@ -486,7 +497,8 @@ def _prepare_answer(thread, original):
                 temporal_anchor = next((x.split(":",1)[1] for x in target_times if x.startswith("thread_time_anchor:")),
                     resolver.qualified_ref(target_nucleus.source_span_ids[0]).source_envelope_id)
             nucleus = None if withdrawal else _answer_nucleus(span, raw=answer.source.answer_text_private,
-                about_time="PRIOR_ANSWER_TIME" if prior_answer_time else about, source_start=replacement.start("new"), source_end=replacement.end("new"), outcome_standard=outcome_standard)
+                about_time="PRIOR_ANSWER_TIME" if prior_answer_time else about, source_start=replacement.start("new"), source_end=replacement.end("new"), outcome_standard=outcome_standard,
+                prior_answer_source=quoted if target_nucleus.source_fields == (ANSWER_FIELD,) else None)
             if nucleus and prior_answer_time:
                 nucleus = replace(nucleus,semantic_frame=replace(nucleus.semantic_frame,
                     attribute_codes=(*nucleus.semantic_frame.attribute_codes,"thread_time_anchor:"+temporal_anchor)))
