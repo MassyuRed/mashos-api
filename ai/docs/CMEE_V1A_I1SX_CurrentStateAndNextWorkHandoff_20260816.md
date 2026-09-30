@@ -11545,3 +11545,39 @@ u30反映後の同一群を継続。DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 L
 rootが編集・実行・write、商品/技術2者はread-only。両者とも限定欠落回復にblocking所見なし、人称混在の初案阻害は修正済み。商品正式PASSや対象群完了は認めない。関連全量received/discourse＋detached/observation＋current owner identityは、source/test/identity SHA256を固定して実行中。**未完了のため全量PASS/既知14維持をまだ主張しない。** current identityは18payload/9owner構造の派生値だけ：language eaf0969c790c4bcefec16851ffd418b570247ad96fd841df9bcec8276293d16e / runtime 30b09ff93b97ba3ddf28569ece4de675b4e4356ec7270c9ecd02135d200c96b3。
 
 編集は開始scope通りAPIのPlan/HR/Gate/test/current identity/handoffの6path＋Cocolon06の1path。STRUCTURE_MAP_DELTA_NONE（責任配置/whole route/artifact lifecycle不変）。本checkpointを既存Draft PRへ反映してから全量結果を追記する。Ready/merge/deploy/enableなし。
+
+## 2026-09-30 JST u31最終検証：受理済み3場面保持を限定反映
+
+先のcheckpointはAPI `e6577cd1bd27128bf9c8424bf527444055f97f6d`（tree `48e16b4fb56d3af7014257de1f58e3e83144080f`）／Cocolon `e87283ae5f8b1e3fc3d5f4cfde3829a987392354`（tree `1237e1da44ba3f9a3637cf34b9ffda3f59eed09c`）へnon-force反映済み。fresh fetchでAPI6/Cocolon1の変更path・head/tree・7file全文bytes一致を確認し、同じ内容へlocal HEADを整合した。両PRのDraft/open/unmergedを確認。
+
+**全量の完了結果は2274件＝2260PASS／既存14FAIL、error/skip0。** 初回一括実行は91%表示後、結果XML未生成のまま実行sessionが失われたため、途中のdots/FAIL表示を完了実績へ使用していない。中断の基盤原因は未特定。source/test/current identityの同一SHA256を維持したまま同じ2274 unique test IDを重複なし4区間へ分け、全4完了XMLと終了値から統合した。追加/除外/skip/xfailなし、missing/duplicate0。4分割のsuite所要合計1032.233秒は並列実行の合計でありwall timeではない（shard0 568件 8FAIL 243.431秒 / shard1 569件 5FAIL 388.932秒 / shard2 568件 1FAIL 187.326秒 / shard3 569件 0FAIL 212.544秒）。前回u30の2261 IDの欠落0・成否変更0、新13全PASS。既知14のmessage/traceはrepo path・行番号・UUID・アドレス正規化後の差0。既存失敗解消/全PASSとは扱わない。
+
+対象集合：`ai/tests/test_cmee_emlis_received_discourse.py`、`ai/tests/test_cmee_emlis_detached_observation.py`、`ai/tests/test_cmee_v1a_i1sx_contracts.py::CMEEStage1AdditionalCorrectionStep2CompositionTest::test_active_final_language_owner_chain_has_zero_legacy_compose_calls`。再現環境は既存Python3.12.14/pytest9.1.1/PGlite0.5.8、`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<existing module>`。収集順test IDを4等分してpytestへ同じnodeidを明示指定し、XML集合が収集集合と完全一致することを確認した。focus13/16・baseline方法検査・本文probe・中断runをこの2274へ加算しない。最終判定までPlan/HR/Gate/test/current identityのSHA256不変。
+
+既知14はreceived8（現在肯定の旧文形期待6、旧anchor改変検査2）・detached6（肯定2責務容量2、第二原反応訂正の旧fragmentation期待2、撤回後BODY_UNAVAILABLE期待1、肯定訂正の旧group期待1）。同名出来事や非隣接scopeの全問題・複数出来事群は未完了。追加13は実本文4＋保存2＋完全SELF nominal1＋provenance不成立6。保存は2系列6更新状態についてoriginalと生成禁止GET/startのDTO一致を確認し、実DB/実機/プロセス再起動の代替にしない。
+
+確定sourceの本文probeは40系列＝39本文＋同じUNAVAILABLE1。nominal12の9変更/3不変、追加14の5本文変更/8本文不変/未提供1不変、owner6の5本文変更/1不変、time8は全不変。合計19本文変更/20本文不変。全39のpublic一致/作者禁止inverseはtrue。変化はmoves/Receptionに限定され、checkpoint/nuclei/relations/Observation/statusは全不変。probeは受入母数やpytest件数へ合算しない。
+
+実本文の対比（商品合格見本ではなく欠落回復の証拠）：
+
+```text
+入力：
+褒められたのに、嬉しくなかった。誘われたのに、悲しかった。褒められたのに、寂しかった。
+回答（順番通り）：
+「嬉しくなかった」ではなく「私は少し不安でした」です。
+その時は少し重かった。
+「寂しかった」ではなく「私も少し怖くなかったです」です。
+
+見えたこと（前後同一）：
+「褒められた」ことについて、その時の受け止めは「私は少し不安でした」と書かれています。 「誘われた」のに「悲しかった」、その時は「少し重かった」とあります。 「褒められた」ことについて、その時の受け止めは「私も少し怖くなかったです」と書かれています。
+
+u30 Emlisから：
+これまで、褒められたことについて、その時に私も少し怖くなかったことを小さくせずに受け止めています。
+
+u31 Emlisから：
+褒められた時は、あなたは少し不安だったし、誘われた時は悲しく、少し重かったし、褒められた時は、あなたも少し怖くなかったのですね。
+```
+
+商品/技術read-only reviewを受け、初案の出来事「私」/回答「あなた」の人称対立は修正済み。変換後同名の後続境界でnominalへ戻る長文化、未変換の原文一人称、あなたはの重複、同名場面の区別しにくさは実在する。今回の判断は受理済み意味の欠落回復に対するTECHNICAL_CREDITで、商品正式PASSではない。対象群の正式終結後だけ二層間重複へ進むこと、10/03休止と10/04分析、10/02実DB/実機を維持。
+
+**STRUCTURE_MAP_DELTA_NONE / 全体48%・商品0/3・NOT_CLEAR・default OFF / 両PR Draft/open/unmerged。** 追加費用/Mash操作/依存追加なし。確定sourceはcheckpointから変更せず、この最終検証追記だけを既存2引継ぎへ反映する。Ready/merge/deploy/enableなし。
