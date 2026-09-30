@@ -10187,7 +10187,15 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str
             # Keep the admitted perception as the user's complete predicate,
             # including its tentative ようで and its own subject and degree.
             # The existing finite reader restores that source independently.
-            prefix = event + "時は" + (negative[1] + "、" if negative is not None else "、")
+            if negative is not None:
+                # Keep the original contrast explicit when the answer adds
+                # a tentative perception about that same occasion. Reuse
+                # the complete-reaction/time grammar read independently by
+                # the existing Gate; do not turn のに into a temporal link.
+                prefix = event + _RECEIVED_EVENT_LINK_TEXT[link] + "、" + feeling + "し、その時は"
+                separate_time_scopes = True
+            else:
+                prefix = event + "時は、"
             parts.append(prefix + finite)
         else:
             # A belief remains a belief; a denial/qualification stays inside

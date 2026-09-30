@@ -257,14 +257,14 @@ def test_complete_semantic_mutations_fail_without_author_replay(old, new):
     # Keep each existing case and semantic mutation when its admitted
     # PERCEIVED answer is expressed as a finite clause rather than a noun.
     old, new = {
-        ('嬉しさにはつながらず', '嬉しさにつながり'): ('嬉しくなく', '嬉しく'),
-        ('嬉しさにはつながらず、', ''): ('嬉しくなく、', ''),
+        ('嬉しさにはつながらず', '嬉しさにつながり'): ('嬉しくなかった', '嬉しかった'),
+        ('嬉しさにはつながらず、', ''): ('嬉しくなかったし、', ''),
         ('求められるような', '求められるための'): ('求められるようで', '求められるので'),
         ('重さ', '軽さ'): ('重かった', '軽かった'),
         ('重さ', '苦しさ'): ('重かった', '苦しかった'),
         ('届いた', '届いている'): ('重かった', '重い'),
-        ('褒められたことは', '友人が褒められたことは'): ('褒められた時は', '友人が褒められた時は'),
-        ('褒められたことは', '今、褒められたことは'): ('褒められた時は', '今、褒められた時は'),
+        ('褒められたことは', '友人が褒められたことは'): ('褒められたのに', '友人が褒められたのに'),
+        ('褒められたことは', '今、褒められたことは'): ('褒められたのに', '今、褒められたのに'),
         ('求められるような', '求められないような'): ('求められるようで', '求められないようで'),
     }.get((old, new), (old, new))
     changed = follow.replace(old, new)
@@ -2805,7 +2805,15 @@ def test_accepted_original_answers_keep_complete_independent_occasions(source, o
         mutations.append(follow.replace(target, target.replace('だけ', '')))
     elif source == C:
         mutations.append(follow.replace(target, target.replace('まだ', '')))
-    if position == 1 and '誘われた時は悲しく、' in target:
+    if position == 1 and '誘われたのに、悲しかったし、その時は' in target:
+        original = '誘われたのに、悲しかったし、その時は'
+        mutations.extend((
+            follow.replace(target, target.replace('その時は', '回答した時点では')),
+            follow.replace(target, target.replace('その時は', '')),
+            follow.replace(target, target.replace(original, '')),
+            follow.replace(target, target.replace(original, original + '褒められたことについて、')),
+        ))
+    elif position == 1 and '誘われた時は悲しく、' in target:
         original = '誘われた時は悲しく、'
         mutations.extend((
             follow.replace(target, target.replace(original, '誘われたことについて、回答した時点では悲しく、')),
@@ -2879,16 +2887,18 @@ def test_interpretation_nominal_omission_keeps_own_time(source, when):
     context = actual(request=request)
     follow = context[0].artifact.reception
     assert_complete_occasion_scopes(context, ('褒められた', '誘われた', '頼まれた'), ((0,), (1,), (2,)))
-    time = {'original_occasion': '誘われた時は', 'answer_time': '回答した時点では',
+    explicit = when == 'original_occasion' and source in {A, A.replace('、', ',')}
+    original = '誘われたのに、悲しかったし、その時は' if explicit else '誘われた時は悲しく、'
+    time = {'original_occasion': 'その時は' if explicit else '誘われた時は', 'answer_time': '回答した時点では',
             'prior_answer_time': '先の回答時点では'}[when]
     middle = follow.split('。')[1]
     assert time in middle and 'その出来事への' not in middle
-    assert '誘われた時は悲しく、' in middle
+    assert original in middle
     assert middle.endswith('のですね')
     other_time = '先の回答時点では' if when == 'answer_time' else '回答した時点では'
     for changed in (follow.replace(time, ''), follow.replace(time, other_time),
-                    follow.replace('誘われた時は悲しく、', ''),
-                    follow.replace('誘われた時は悲しく、', '誘われた時は悲しく、褒められたことについて、', 1)):
+                    follow.replace(original, ''),
+                    follow.replace(original, original + '褒められたことについて、', 1)):
         assert changed != follow and not inverse(context, changed, without_author=True).passed
 
 

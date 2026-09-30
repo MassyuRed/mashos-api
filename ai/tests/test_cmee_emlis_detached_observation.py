@@ -3494,12 +3494,21 @@ def test_unresolved_perceived_owner_or_surplus_visible_anchor_keeps_nominal(answ
     req = advance(req, 'その時は' + answer_source + '。')
     context = actual(request=advance(req, '「寂しかった」ではなく「私も少し怖くなかったです」です。'))
     body, follow = context[0].artifact.text, context[0].artifact.reception
-    # A repeated event anchor remains nominal; an admitted singleton が owner
-    # now keeps its case in the finite answer without changing either revision.
+    # The complete contrast/time prefix separates a repeated answer event
+    # from the live event boundaries. Keep both revisions and every source
+    # duty; a surplus boundary must still fail the independent reader.
     if answer_source.startswith('私が'):
         assert answer_source.replace('私が', 'あなたが', 1) + 'し、' in follow
     else:
-        assert '受け止めています' in follow
+        clause = 'あなたは誘われたのに、悲しかったし、その時はあなたは誘われたようで、重かった'
+        assert clause + 'し、' in follow
+        for changed in (clause.replace('その時は', '', 1),
+                        clause.replace('その時は', '回答した時点では', 1),
+                        clause.replace('その時はあなたは', 'その時は相手は', 1),
+                        clause.replace('ようで', 'ので', 1),
+                        clause.replace('その時は', 'その時は、あなたは誘われた', 1)):
+            assert changed != clause
+            assert not read_body(context, body.replace(follow, follow.replace(clause, changed, 1), 1)).passed
     assert '私は少し不安でした' in context[0].artifact.observation
     assert answer_source in context[0].artifact.observation
     assert '私も少し怖くなかったです' in context[0].artifact.observation
@@ -3709,8 +3718,8 @@ def test_perceived_answer_retains_each_source_and_existing_middle_fallback(posit
     body, follow = context[0].artifact.text, context[0].artifact.reception
     visible = re.sub(r'^(?:私|自分)(?=は|も)', 'あなた', source)
     event = re.sub(r'^(?:私|自分)(?=は|が)', 'あなた', events[position])
-    reaction = ('嬉しくなく、', '悲しく、', '寂しく、')[position]
-    clause = event + '時は' + reaction + visible
+    reaction = ('嬉しくなかった', '悲しかった', '寂しかった')[position]
+    clause = event + 'のに、' + reaction + 'し、その時は' + visible
     # The middle significance Move now uses the same finite source grammar
     # only when all three ordered event/reaction/answer scopes are proved.
     assert clause in follow or clause[:-3] + 'く' in follow
@@ -3738,8 +3747,18 @@ def perceived_finite_group_context():
 def test_perceived_finite_group_rejects_changed_subject_scope_or_predicate(perceived_finite_group_context, old, new):
     context = perceived_finite_group_context
     body, follow = context[0].artifact.text, context[0].artifact.reception
-    clause = 'あなたは誘われた時は悲しく、あなたも頼まれたようで、重かった'
+    clause = 'あなたは誘われたのに、悲しかったし、その時はあなたも頼まれたようで、重かった'
     assert clause in follow and read_body(context, body).passed
+    # Keep the original parameter IDs and mutation purposes while targeting
+    # the explicit contrast / complete reaction in the current wording.
+    replacements = {'悲しく、': '悲しかったし、', '悲しくなく、': '悲しくなかったし、',
+                    'あなたは誘われた時は': 'あなたは誘われたのに',
+                    '相手は誘われた時は': '相手は誘われたのに',
+                    'あなたが誘われた時は': 'あなたが誘われたのに',
+                    'あなたは褒められた時は': 'あなたは褒められたのに',
+                    '誘われた時は': 'その時は', '誘われた今は': '回答した時点では',
+                    '時は': 'その時は', '今は': '回答した時点では'}
+    old, new = replacements.get(old, old), replacements.get(new, new)
     changed = clause.replace(old, new, 1)
     assert changed != clause
     assert not read_body(context, body.replace(follow, follow.replace(clause, changed, 1), 1)).passed
@@ -3764,7 +3783,7 @@ def test_perceived_finite_saved_updates_keep_sources_and_exact_reads(qcase, qdb,
         _, follow = body.split('Emlisから：', 1)
         assert 'として届' not in follow
         if not position:
-            assert '誘われた時は悲しく、あなたは頼まれたようで、重かった' in follow
+            assert '誘われたのに、悲しかったし、その時はあなたは頼まれたようで、重かった' in follow
         elif operation == 'answer_correction':
             assert '重かった' not in body and 'あなたは頼まれたようで、苦しかった' in follow
         elif operation == 'original_correction':
@@ -3792,7 +3811,7 @@ def test_perceived_finite_group_saved_updates_keep_all_occurrences(qcase, qdb, m
         if position == 2:
             observation, follow = current['current_observation']['text'].split('Emlisから：', 1)
             assert '嬉しくなかった' not in observation and '寂しかった' not in observation
-            assert 'あなたは誘われた時は悲しく、あなたも頼まれたようで、重かった' in follow
+            assert 'あなたは誘われたのに、悲しかったし、その時はあなたも頼まれたようで、重かった' in follow
             assert 'あなたは誘われた時は、あなたも少し怖くなかった' in follow
             assert 'として届' not in follow
         with monkeypatch.context() as saved:
@@ -3803,7 +3822,7 @@ def test_perceived_finite_group_saved_updates_keep_all_occurrences(qcase, qdb, m
 def test_perceived_finite_reader_still_restores_the_prior_saved_wording(perceived_finite_group_context):
     context = perceived_finite_group_context
     body, follow = context[0].artifact.text, context[0].artifact.reception
-    current = 'あなたは誘われた時は悲しく、あなたも頼まれたようで、重かった'
+    current = 'あなたは誘われたのに、悲しかったし、その時はあなたも頼まれたようで、重かった'
     prior = 'あなたは誘われたことは、悲しさを伴い、あなたも頼まれたような重さとして届いた'
     assert current in follow
     assert read_body(context, body.replace(follow, follow.replace(current, prior, 1), 1)).passed
@@ -3828,8 +3847,18 @@ def middle_received_scope_context():
 def test_middle_received_scope_rejects_changed_meaning(middle_received_scope_context, old, new):
     context = middle_received_scope_context
     body, follow = context[0].artifact.text, context[0].artifact.reception
-    middle = 'あなたは誘われた時は悲しく、あなたも頼まれたようで、重かったのですね。'
+    middle = 'あなたは誘われたのに、悲しかったし、その時はあなたも頼まれたようで、重かったのですね。'
     assert middle in follow and read_body(context, body).passed
+    # Keep the original parameter IDs and mutation purposes while targeting
+    # the explicit contrast / complete reaction in the current wording.
+    replacements = {'悲しく、': '悲しかったし、', '悲しくなく、': '悲しくなかったし、',
+                    'あなたは誘われた時は': 'あなたは誘われたのに',
+                    '相手は誘われた時は': '相手は誘われたのに',
+                    'あなたが誘われた時は': 'あなたが誘われたのに',
+                    'あなたは褒められた時は': 'あなたは褒められたのに',
+                    '誘われた時は': 'その時は', '誘われた今は': '回答した時点では',
+                    '時は': 'その時は', '今は': '回答した時点では'}
+    old, new = replacements.get(old, old), replacements.get(new, new)
     changed = middle.replace(old, new, 1)
     assert changed != middle
     assert not read_body(context, body.replace(follow, follow.replace(middle, changed, 1), 1)).passed
@@ -3928,9 +3957,9 @@ def test_middle_received_scope_saved_updates_keep_exact_reads(qcase, qdb, monkey
         body = current['current_observation']['text']
         observation, follow = body.split('Emlisから：', 1)
         if position == 1:
-            assert 'あなたは誘われた時は悲しく、あなたも頼まれたようで、重かった' in follow
+            assert 'あなたは誘われたのに、悲しかったし、その時はあなたも頼まれたようで、重かった' in follow
         elif position == 2 and operation == 'answer_correction':
-            assert 'あなたは誘われた時は悲しく、あなたは頼まれたようで、苦しかった' in follow
+            assert 'あなたは誘われたのに、悲しかったし、その時はあなたは頼まれたようで、苦しかった' in follow
             assert '私も頼まれたようで、重かった' not in observation
         elif position == 2 and operation == 'original_correction':
             assert '悲しかった' not in body and '怖かった' in observation
@@ -4062,7 +4091,7 @@ def test_single_ga_saved_updates_keep_original_and_exact_reads(qcase, qdb, monke
         observation, follow = body.split('Emlisから：', 1)
         assert '今回の観測に反映できていない' not in body
         if position == 1:
-            assert 'あなたは誘われた時は悲しく、あなたが頼まれたようで、重かった' in follow
+            assert 'あなたは誘われたのに、悲しかったし、その時はあなたが頼まれたようで、重かった' in follow
         elif position == 2 and operation == 'answer_correction':
             assert source not in observation and '自分が頼まれたようで、苦しかった' in observation
             assert 'あなたが頼まれたようで、苦しかった' in follow
@@ -4115,3 +4144,63 @@ def test_single_ga_negative_perception_preserves_source_negation(comma):
     assert read_body(context, body).passed
     changed = follow.replace('頼まれなかったようで', '頼まれたようで', 1)
     assert changed != follow and not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+@pytest.mark.parametrize('connector', ['のに', 'けど', 'けれど', 'けれども'])
+@pytest.mark.parametrize('position', [0, 1, 2])
+def test_perceived_original_answer_preserves_explicit_contrast(connector, position):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    events = ('褒められた', '私は誘われた', '自分は誘われた')
+    reactions = ('嬉しくなかった', '悲しかった', '寂しかった')
+    memo = ''.join(event + connector + '、' + feeling + '。'
+                   for event, feeling in zip(events, reactions))
+    request = begin(memo)
+    for reply in ['その時は少し重かった。'] * position + ['その時は私が頼まれたようで、重かった。']:
+        request = advance(request, reply)
+    context = actual(request=request)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    event = re.sub(r'^(?:私|自分)(?=は|が)', 'あなた', events[position])
+    clause = event + connector + '、' + reactions[position] + 'し、その時はあなたが頼まれたようで、重かった'
+    assert clause in follow
+    assert MeaningExperienceEngine().generate(request).artifact.text == body
+    assert read_body(context, body).passed
+    # The reader must not take the original connective from Observation.
+    changed = follow.replace(clause, clause.replace(connector + '、', 'ので、', 1), 1)
+    assert changed != follow
+    assert not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+@pytest.fixture(scope='module')
+def perceived_original_contrast_context():
+    request = advance(begin(GA_OWNER_MEMO), 'その時は私が頼まれなかったようで、重かった。')
+    return actual(request=request)
+
+
+@pytest.mark.parametrize('old,new', [
+    ('褒められたのに、', '褒められたので、'),
+    ('褒められたのに、', '褒められた、'),
+    ('褒められたのに、', '褒められたけど、'),
+    ('嬉しくなかったし、', ''),
+    ('嬉しくなかったし、', '嬉しかったし、'),
+    ('嬉しくなかったし、', '嬉しくないし、'),
+    ('その時は', ''), ('その時は', '回答した時点では'),
+    ('頼まれなかったようで、', '頼まれたようで、'),
+    ('頼まれなかったようで、', '頼まれなかったので、'),
+    ('重かった', '少し重かった'), ('あなたが', 'あなたは'),
+])
+def test_perceived_original_contrast_rejects_relation_time_and_meaning_changes(perceived_original_contrast_context, old, new):
+    context = perceived_original_contrast_context
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    assert read_body(context, body).passed
+    changed = follow.replace(old, new, 1)
+    assert changed != follow
+    assert not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+def test_perceived_original_contrast_keeps_prior_finite_reader(perceived_original_contrast_context):
+    context = perceived_original_contrast_context
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    current = '褒められたのに、嬉しくなかったし、その時は'
+    assert current in follow
+    legacy = follow.replace(current, '褒められた時は嬉しくなく、', 1)
+    assert read_body(context, body.replace(follow, legacy, 1)).passed
