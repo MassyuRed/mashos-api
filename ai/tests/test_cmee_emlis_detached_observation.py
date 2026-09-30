@@ -4361,3 +4361,149 @@ def test_answer_time_relation_saved_updates_reuse_original_and_exact_body(qcase,
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved body must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+RECORD_PAIR_MEMO = ('褒められたのに、嬉しくなかった。私は誘われたのに、悲しかった。'
+                    '自分は誘われたのに、寂しかった。')
+RECORD_TRIPLE_MEMO = ('私は誘われたのに、嬉しくなかった。自分は誘われたのに、悲しかった。'
+                      'わたしは誘われたのに、寂しかった。')
+RECORD_PREFIXES = ('先に書かれた方では、', '間に書かれた方では、', '後に書かれた方では、')
+
+
+@pytest.mark.parametrize('memo,prefixes,event', [
+    (RECORD_PAIR_MEMO, (RECORD_PREFIXES[0], RECORD_PREFIXES[2]), 'あなたは誘われた'),
+    (RECORD_TRIPLE_MEMO, RECORD_PREFIXES, 'あなたは誘われた'),
+    (RECORD_PAIR_MEMO.replace('私は', '私が').replace('自分は', '自分が'),
+     (RECORD_PREFIXES[0], RECORD_PREFIXES[2]), 'あなたが誘われた'),
+])
+@pytest.mark.parametrize('stage', ['initial', 'then', 'now'])
+def test_equal_event_records_are_visible_with_original_feelings_and_answers(memo, prefixes, event, stage):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    request = begin(memo)
+    if stage != 'initial':
+        for reply in ('「嬉しくなかった」ではなく「私は少し不安でした」です。',
+                      '今は少し苦しい。' if stage == 'now' else 'その時は少し重かった。',
+                      '「寂しかった」ではなく「私も少し怖くなかったです」です。'):
+            request = advance(request, reply)
+    meaning = prepare_emlis_meaning(request)
+    preserved = build_updated_grounded_plan(meaning)
+    context = actual(request=request)
+    result, plan, _, resolver, selected = context
+    follow = result.artifact.reception
+    assert MeaningExperienceEngine().generate(request).artifact.text == result.artifact.text
+    assert plan.nuclei == preserved.nuclei and plan.relations == preserved.relations
+    assert meaning.thread.original.normalized_current_input['memo'] == memo
+    positions = []
+    for prefix in prefixes:
+        assert follow.count(prefix) == 1 and prefix + event in follow
+        positions.append(follow.index(prefix))
+    assert positions == sorted(positions)
+    assert '先に起きた' not in follow and '後に起きた' not in follow and '別の日' not in follow
+    if stage == 'initial':
+        assert '悲しさを感じ' in follow and '寂しさを感じた' in follow
+    else:
+        assert 'あなたは少し不安だった' in follow and 'あなたも少し怖くなかった' in follow
+        assert ('回答した時点では少し苦しい' if stage == 'now' else 'その時は少し重かった') in follow
+    assert read_body(context, result.artifact.text).passed
+    # The independent reader restores only the actual event byte range;
+    # the written-position qualifier is not part of the original event.
+    restored = []
+    for move in plan.response_plan.human_reception_plan.moves:
+        proof = gate.read_received_discourse(follow, move, plan, resolver, selected)
+        if proof is not None:
+            restored += [(a, b, source) for a, b, source in proof
+                         if source.decode() in ('私は誘われた', '自分は誘われた', 'わたしは誘われた',
+                                                '私が誘われた', '自分が誘われた')]
+    assert len(restored) == len(prefixes)
+    assert all(follow.encode()[a:b].decode() == event for a, b, _ in restored)
+
+
+@pytest.fixture(scope='module')
+def equal_event_record_context():
+    request = advance(begin(RECORD_PAIR_MEMO), '「嬉しくなかった」ではなく「私は少し不安でした」です。')
+    request = advance(request, '今は少し苦しい。')
+    return actual(request=advance(request, '「寂しかった」ではなく「私も少し怖くなかったです」です。'))
+
+
+@pytest.mark.parametrize('mutation', ['swap_positions', 'middle', 'drop_one', 'duplicate', 'extra',
+                                     'real_time', 'actor', 'particle', 'degree', 'negative', 'answer_time', 'cause'])
+def test_equal_event_record_qualifiers_and_source_meanings_are_independently_read(equal_event_record_context, mutation):
+    context = equal_event_record_context
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    first, _, last = RECORD_PREFIXES
+    if mutation == 'swap_positions':
+        changed = follow.replace(first, '@first@').replace(last, first).replace('@first@', last)
+    else:
+        old, new = {
+            'middle': (first, RECORD_PREFIXES[1]), 'drop_one': (first, ''),
+            'duplicate': (first, first + first), 'extra': ('褒められた時は', first + '褒められた時は'),
+            'real_time': (first, '先に起きた方では、'),
+            'actor': (first + 'あなたは', first + '相手は'),
+            'particle': (first + 'あなたは', first + 'あなたが'),
+            'degree': ('少し苦しい', '苦しい'), 'negative': ('怖くなかった', '怖かった'),
+            'answer_time': ('回答した時点では', 'その時は'), 'cause': ('し、', 'ので、'),
+        }[mutation]
+        changed = follow.replace(old, new, 1)
+    assert changed != follow and not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+def test_unqualified_equal_event_legacy_body_still_restores_original_sources(equal_event_record_context):
+    context = equal_event_record_context
+    body = context[0].artifact.text
+    legacy = body
+    for prefix in RECORD_PREFIXES:
+        legacy = legacy.replace(prefix, '')
+    assert legacy != body and read_body(context, legacy).passed
+
+
+@pytest.mark.parametrize('memo,prefixes', [(RECORD_PAIR_MEMO, (RECORD_PREFIXES[0], RECORD_PREFIXES[2])),
+                                        (RECORD_TRIPLE_MEMO, RECORD_PREFIXES)])
+def test_equal_event_record_qualifiers_cross_independent_move_boundaries(memo, prefixes):
+    context = actual(request=advance(advance(begin(memo), '今は少し苦しい。'), 'その時は少し重かった。'))
+    result, plan, _, resolver, selected = context
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == 3
+    clauses = result.artifact.reception.split('。')[:-1]
+    assert len(clauses) == 3
+    assert all(prefix in result.artifact.reception for prefix in prefixes)
+    for clause, move in zip(clauses, moves, strict=True):
+        assert gate.read_received_discourse(clause + '。', move, plan, resolver, selected) is not None
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.mark.parametrize('memo', [MEMO + '褒められたのに、嬉しくなかった。',
+    RECORD_PAIR_MEMO.replace('自分は誘われた', '自分が誘われた')])
+def test_distinct_complete_event_names_keep_unqualified_grammar(memo):
+    context = actual(request=begin(memo))
+    body = context[0].artifact.text
+    assert not any(prefix in body for prefix in RECORD_PREFIXES)
+    assert read_body(context, body).passed
+    follow = context[0].artifact.reception
+    altered = RECORD_PREFIXES[0] + follow
+    assert not read_body(context, body.replace(follow, altered, 1)).passed
+
+
+@pytest.mark.parametrize('memo', [RECORD_PAIR_MEMO, RECORD_TRIPLE_MEMO])
+@pytest.mark.parametrize('last', ['「少し重かった」ではなく「少し苦しかったのです」です。',
+                                 '「少し重かった」は誤りです。'])
+def test_equal_event_record_saved_revisions_withdrawals_and_original_replay(qcase, qdb, monkeypatch, memo, last):
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$1 where id=$2', [memo, parent])
+    first = current = run(service.start(user, parent))
+    for position, reply in enumerate(('今は少し怖かった。', '今は少し重かった。', last)):
+        if position:
+            current = run(cont(service, user, current, f'record-continue-{position}'))
+        current = run(answer(service, user, current, reply, f'record-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        assert '先に書かれた方では、' in body and '後に書かれた方では、' in body
+        if position == 2:
+            assert '少し重かった' not in body
+            if 'ではなく' in last:
+                assert '「少し苦しかったのです」' in body and '先の回答時点では' in body
+            else:
+                assert '少し苦しかった' not in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved record body must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current

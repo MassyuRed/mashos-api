@@ -12113,3 +12113,22 @@ answer_update SHA256 `e2d3f205716b5468e1050139da576fd8eecdf7f1b9bc31c0093e05eca7
 確定answer_update Git blob `5c2e51beb618d6556011379c46292a51ca4dacea` / SHA256 `0fc3758fe0868542dfe2959b7f9d99c337d305bcad2b0a81520249aa518914b4`。received test Git blob `1dd8e9b8c2f235466bf4632e17e2500baca40216` / SHA256 `ece715ce0f0c5a5e08ae8405f578786837c3c6e3fe4f9ec049ca0463b0120876`。確定production sourceは回帰中固定。STRUCTURE_MAP_DELTA_NONE（既存作者内の適用条件だけ、責任配置/whole route/公開・保存contract不変）。Pieceへの変更0。反映後に4対象全文bytes・今回のchanged-path set・final headをfresh照合し、commitと検証結果を既存PR3/30要約へ記録する。
 
 **次の同群残件。** 初回『少し重かったのです』等の未対応説明形（既知u38初回3系列を含む）、訂正の未対応文法、同名出来事と回答の読者に見える区別、主語/時点/『のですね』反復、二層再掲、深さ不足、既知失敗は残る。本単位で群を閉じず、二層再掲の別作業へ自動進行しない。10/03未完でもEmlis休止・10/04 Work分析（利用不可ならPro Piece）、10/02実DB/実機予定を維持。商品受入れ0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmerged。Ready/merge/deploy/enable/live適用なし。
+
+
+## 2026-10-01 JST u42 checkpoint：同名finite出来事を原入力の記述位置で区別
+
+**検証継続中 / TECHNICAL_CREDITの限定候補 / 群未完。** API predecessor `66c0e23e73c86ade496794a0b13a5696127fa1c1`、Cocolon predecessor `d362e382d6784e48c9c66583ad006aad712b4b84`から開始。前回txt/u41、current rules・恒久incident全文、全体設計/general地図/current_structure 00/01/04、最新weekly 20260926/09-29合意を確認。current tracked3945、前回4modifyのみで追加/削除0、map/weeklyのbytes変更0。System Contextの要求祖先不一致によるprepare NONCREDITは継続し、原典直接読取を用いる。旧inventory3714をcurrent全file地図と称さない。
+
+同群の『回答対象を見失う列挙』に直接接続する修復として、原入力の別表記『私は誘われた』『自分は誘われた』等がSELF→あなたで同名になるfinite本文へ、衝突する2/3記述だけ『先に書かれた方では／間に書かれた方では／後に書かれた方では』を添える。元source fieldが同一・全visible event文字列一致・原span範囲非重複という現物根拠から位置順を導出し、Move順を現実の発生順/別日時/別場面へ読み替えない。別Moveへ分かれた同名も対象集合全体で区別する。語彙/初回ADD/訂正admission/意味核/ABOUT/回答時点/公開・保存schema/RNを変えない。新規owner/route/parser familyはなく、既存HR作者と独立received readerの内部文法で閉じるLEVEL_2 bounded work。root華恋のみ編集/実行/write、担当reviewはread-only、実環境Codex Workで未確認Pro/Ultra型名は称さない。
+
+作者のsource IRは不変更。独立readerは作者helperを呼ばず、planとresolverの原範囲からprefixを再導出し、実本文のprefix位置と対応eventを照合する。prefixを元eventのproof byte範囲へ含めず、原SELF sourceへ復元する。非同名本文とunqualified旧本文の既存読取を維持する。旧全文から全prefixを取り除いた本文を一律rejectする主張はしない。source回答内の同じ日本語を修飾prefixへ誤読しないため、非collisionでは既存readerへ直行し、collisionでも対応visible event直前に限ってprefixを読む。
+
+新30条件fresh PASS（FAIL/ERROR/SKIP0、34.41秒）：初回/当時/現在の意味・本文9、位置/主体/助詞/程度/否定/時点/因果改変の作者禁止inverse拒否12、別Move間2、legacy全文1、非同名2、保存4系列。保存4×3回答後状態計12でoriginal保持、訂正/撤回後に旧回答が復活しないこと、generate禁止GET/startのDTO全文一致を確認した。最初の新test実行は新assertの存在しないenvelope属性で9失敗し、actual normalized_current_inputへ直して同じ意味保持目的で最終30をfresh再実行。旧1692test本文/入力/期待/IDは不変更、末尾に新testのみ追加した。
+
+current identity既存試験は最終sourceで1 PASS（31.96秒）、18language/18runtime payload・9shared ownerを保持。HR/Gate AST/raw由来の派生値だけを既存snapshotへ反映：language `6e61662d64a215a8b2e6514db18ddcaf1326727c213d304b7e7cf3d49d336211` / runtime `4d37bd23806ac3b4925548584669a000edfeebbf294c85a8e18f3cb0f1a67532`。初回identity実行はai tools import path不足でcollection error、次はsourceの最終prefix限定変更と同時実行のidentity差でNONCREDIT。pathと最終固定source/snapshotからfresh実行した1 PASSだけを採用した。凍結historical identityのskipを変更しない。
+
+合成15系列の前後両層全文をrootと独立商品担当が読了。全15の原入力/回答/assessment/意味核/relations/Observation/reasons不変。10系列はReceptionの記述位置修飾だけ改善、非同名3とexact同名多訂正2はbody全文不変。最後の2は既存nominal fallbackでReceptionが最後の回答だけとなる重大残件を保持し、同名全般の解消へ数えない。反復/長さ/深さ不足/二層再掲は残る。商品route整合の限定候補であり正式Product Read PASS/商品提示準備ではない。
+
+旧2756 ID（Q1 thread75 / received989 / detached1692）を開始版分離worktreeと修正版の各4分割でfresh比較中。結果未確定、全関連PASS/新規失敗0/失敗trace一致をまだ称さない。最終production sourceは回帰中固定し、完了結果とremote反映後の全文bytes・changed paths・final headを同じ引継ぎ/PRへ追記する。runtimeは既存Python3.12.14/pytest9.1.1/PGlite0.5.8、Supabase既存ローカル合成RPC fixture。live DB/実機/プロセス再起動未実施、production依存/外部課金/Mash操作0。
+
+確定Git blobs：HR `e28fd795ba437a43265bb7019a2623d2ea52cd83`、Gate `01129e78f95c8ae80466744b36b2d1ab4a818c1b`、detached新test `bdfbef952b0f836fc471893d725b68d0973e1fcc`、current identity `523a2684e429b75677f48a5dcb6404d71d93669e`。変更exact6はAPI既存HR/Gate/detached試験/current identity/handoffの5modify＋Cocolon既存06の1modify。STRUCTURE_MAP_DELTA_NONE（既存作者/reader内のsource視点・記述位置修復、責任配置/whole route/contract不変）。Piece/分析等へ変更0。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmerged、Ready/merge/deploy/enable/live適用なし。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/実機予定を維持。

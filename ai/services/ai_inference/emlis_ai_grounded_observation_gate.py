@@ -3804,7 +3804,76 @@ def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_i
         raw, move, plan, resolver, selected_subjective_input)
 
 
+def _read_received_record_prefixes(plan, resolver):
+    """Recover written-position qualifiers from source ranges, not the author."""
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    ids = tuple(dict.fromkeys(nid for m in plan.response_plan.human_reception_plan.moves
+        if m.required and m.reception_act == "stay_with_current_burden"
+        for nid in m.target_nucleus_ids if index[nid].kind == "event"))
+    if not 2 <= len(ids) <= 3:
+        return {}
+    grouped = {}
+    for nid in ids:
+        nucleus = index[nid]
+        if len(nucleus.source_span_ids) != 1 or nucleus.source_fields not in {("memo",), ("memo_action",)}:
+            continue
+        span = resolver.resolve(nucleus.source_span_ids[0])
+        source = final_reception_source_anchor_text(nid, index, resolver)
+        if not source or not 0 <= span.start_index < span.end_index:
+            continue
+        visible = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", source, count=1)
+        grouped.setdefault((span.source_field, visible), []).append((span.start_index, span.end_index, nid))
+    result = {}
+    for occurrences in grouped.values():
+        occurrences.sort()
+        if not 2 <= len(occurrences) <= 3 or any(a[1] > b[0] for a, b in zip(occurrences, occurrences[1:])):
+            continue
+        words = ("先", "後") if len(occurrences) == 2 else ("先", "間", "後")
+        result.update((row[2], word + "に書かれた方では、")
+                      for row, word in zip(occurrences, words, strict=True))
+    return result
+
+
 def read_received_discourse(raw, move, plan, resolver, selected_subjective_input=None):
+    prefixes = _read_received_record_prefixes(plan, resolver)
+    expected = tuple((nid, prefixes[nid]) for nid in move.target_nucleus_ids if nid in prefixes)
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    if not expected:
+        return _read_received_discourse_unqualified(raw, move, plan, resolver, selected_subjective_input)
+    events = tuple(re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた",
+                         final_reception_source_anchor_text(nid, index, resolver), count=1)
+                   for nid, _ in expected)
+    markers = tuple(re.finditer(r"(?:先|間|後)に書かれた方では、(?="
+                               + "|".join(re.escape(event) for event in events) + ")", raw))
+    if not markers:
+        # Previously saved unqualified prose keeps its existing independent
+        # source reading. The current author supplies all known qualifiers.
+        return _read_received_discourse_unqualified(raw, move, plan, resolver, selected_subjective_input)
+    if len(markers) != len(expected):
+        return None
+    pieces, removed, cursor, shifts = [], 0, 0, []
+    for marker, (nid, prefix) in zip(markers, expected, strict=True):
+        event = final_reception_source_anchor_text(nid, index, resolver)
+        visible = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event, count=1)
+        if (marker.group() != prefix or marker.start() and raw[marker.start() - 1] != "、"
+            or not raw[marker.end():].startswith(visible)):
+            return None
+        pieces.append(raw[cursor:marker.start()])
+        at = len(raw[:marker.start()].encode()) - removed
+        size = len(prefix.encode())
+        shifts.append((at, size))
+        removed += size
+        cursor = marker.end()
+    pieces.append(raw[cursor:])
+    proof = _read_received_discourse_unqualified("".join(pieces), move, plan, resolver, selected_subjective_input)
+    if proof is None or any(start < at < end for start, end, _ in proof for at, _ in shifts):
+        return None
+    return tuple((start + sum(size for at, size in shifts if at <= start),
+                  end + sum(size for at, size in shifts if at < end), source)
+                 for start, end, source in proof)
+
+
+def _read_received_discourse_unqualified(raw, move, plan, resolver, selected_subjective_input=None):
     """Parse either finite or coordinated clauses with a shared past scope.
 
     Source-owned event boundaries must match their ordered occurrences.

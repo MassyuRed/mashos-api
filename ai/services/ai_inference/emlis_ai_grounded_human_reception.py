@@ -10027,7 +10027,38 @@ def _received_discourse_negative_feeling(fragment: str) -> tuple[str, str] | Non
     return stem + "さ", stem + ("くなく" if match[2] == "くなかった" else "く")
 
 
-def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str | None:
+def _received_event_record_prefixes(plan, resolver):
+    """Distinguish equal visible events by their original written positions."""
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    event_ids = tuple(dict.fromkeys(nid for move in plan.response_plan.human_reception_plan.moves
+        if move.required and move.reception_act == "stay_with_current_burden"
+        for nid in move.target_nucleus_ids if index[nid].kind == "event"))
+    if not 2 <= len(event_ids) <= 3:
+        return {}
+    occurrences = {}
+    for nid in event_ids:
+        n = index[nid]
+        if len(n.source_span_ids) != 1 or n.source_fields not in {("memo",), ("memo_action",)}:
+            continue
+        span = resolver.resolve(n.source_span_ids[0])
+        source = final_reception_source_anchor_text(nid, index, resolver)
+        if not source or not 0 <= span.start_index < span.end_index:
+            continue
+        visible = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", source, count=1)
+        occurrences.setdefault((span.source_field, visible), []).append((span.start_index, span.end_index, nid))
+    prefixes = {}
+    for rows in occurrences.values():
+        rows.sort()
+        if not 2 <= len(rows) <= 3 or any(a[1] > b[0] for a, b in zip(rows, rows[1:])):
+            continue
+        labels = ("先", "後") if len(rows) == 2 else ("先", "間", "後")
+        for (_, _, nid), label in zip(rows, labels, strict=True):
+            prefixes[nid] = label + "に書かれた方では、"
+    return prefixes
+
+
+def _source_grounded_received_discourse(realization, *, acknowledge=True,
+                                       record_prefixes=()) -> str | None:
     """Realize selected event/reaction/answer relations as finite discourse.
 
     Existing source IR proves every endpoint, actor, time and ABOUT edge.
@@ -10222,6 +10253,10 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str
     # an original contrast or independent revision remains its own scope.
     event_names = [re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた",
                           fragments[int(code.split(":")[1])], count=1) for code in codes]
+    if record_prefixes:
+        if len(record_prefixes) != len(parts):
+            return None
+        parts = [prefix + part for prefix, part in zip(record_prefixes, parts, strict=True)]
     if (len(set(event_names)) == len(event_names)
         and not any(code.endswith((":none:detached:none", ":none:replacement:none")) for code in codes)):
         combined, run_events, run_finite = [], [], None
@@ -10285,8 +10320,10 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True) -> str
     # Each later source occurrence owns one boundary, even when SELF
     # perspective makes distinct source labels equal. An extra occurrence
     # inside an answer remains ambiguous and keeps the original grammar.
-    if any(text.count("、" + event) != event_names[1:].count(event)
-           for event in event_names[1:]):
+    boundaries = [prefix + event for prefix, event in zip(
+        record_prefixes or ("",) * len(event_names), event_names, strict=True)]
+    if any(text.count("、" + event) != boundaries[1:].count(event)
+           for event in boundaries[1:]):
         return None
     return text
 
@@ -10305,6 +10342,7 @@ def _source_grounded_reception_fragment(
     unfinished_pair: bool = False,
     acknowledge_received: bool = True,
     middle_received_scope: bool = False,
+    received_record_prefixes: tuple[str, ...] = (),
 ) -> str:
     """Compose one content core with one role/focus reception predicate."""
 
@@ -10401,7 +10439,8 @@ def _source_grounded_reception_fragment(
         and selected_subjective_decision.subjective_proposition.appraisal_content is not None
         and selected_subjective_decision.subjective_proposition.appraisal_content.operation
             in {"RECEIVE_AS_MATERIAL", "PRESERVE_BOTH_ENDPOINTS"}):
-        discourse = _source_grounded_received_discourse(realization, acknowledge=acknowledge_received)
+        discourse = _source_grounded_received_discourse(realization, acknowledge=acknowledge_received,
+                                                       record_prefixes=received_record_prefixes)
         if discourse is not None:
             return discourse
     if move.move_role == "bounded_counterposition":
@@ -11187,6 +11226,7 @@ def _author_source_grounded_reception_clauses(
             == _thread_retained_reaction_groups(plan.nuclei, plan.relations)
     )
     move_index = {move.move_id: move for move in active_moves}
+    record_prefixes = _received_event_record_prefixes(plan, resolver) if recovery_stage == "full" else {}
     parts: list[str] = []
     bindings: list[ReceptionVisibleSegmentBindingV1] = []
     referent_kinds: list[str] = []
@@ -11617,6 +11657,7 @@ def _author_source_grounded_reception_clauses(
                 unfinished_pair=unfinished_pair,
                 acknowledge_received=acknowledge_received,
                 middle_received_scope=middle_received_scope and move == active_moves[1],
+                received_record_prefixes=tuple(record_prefixes.get(nid, "") for nid in move.target_nucleus_ids),
             )
             detached_parts = _source_owned_detached_feeling_parts(
                 move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
