@@ -11768,3 +11768,40 @@ MashのEmlis継続指示に基づく同じQ4複数出来事/回答/訂正群。�
 保存4系列9回答後状態はoriginal保持、訂正/撤回済み内容の不復活、生成禁止GET/startのDTO全文一致を確認。PGlite0.5.8上の検証で、実DB・実機・再起動の代替ではない。旧保存本文の名詞形も既存Gateで独立に読み戻せる。全関連2385 unique ID（旧2352＋新33）を固定source/test/current identityで重複なし4分割実行中。途中出力を完了扱いせず、全量結果をこの既存2引継ぎへ追記する。
 
 current identityは既存18payload/9ownerのHR派生値だけ：language `f1a31aae51d30b3a2aaac76bf46f974424c979b516847cded561ddc14573847a` / runtime `8768b25e55f2d1c70c64cf959d32517138a2933fde5bb3006673a2933ed305e8`。API変更はHR・received/detached tests・current identity・既存handoffの5path、Cocolonは既存06の1path。STRUCTURE_MAP_DELTA_NONE。TECHNICAL_CREDITの限定改善で商品PASS/群完了ではない。全体48%・商品0/3・NOT_CLEAR・default OFF、両PR Draft/open/unmerged、10/03未完でも休止・10/04分析・10/02実DB/実機を維持。追加費用・依存・Mash操作0。Ready/merge/deploy/enableなし。
+
+
+## 2026-09-30 JST u34最終検証：推測を含む回答の名詞化を限定修正
+
+checkpointはAPI `9b4b5e01b4e51f6dc6541a13877644cab286fb0d`（tree `ec9cb4259857ee0466237035df26c38b57debc32`）／Cocolon `8dae4c58ea32a76925b20663ac364ad807d4fd22`（tree `9ee66766b0b61f28dd8faee3539881f6cbe743bc`）へnon-force反映済み。GitHubからfresh fetchし、開始版からの変更path API5/Cocolon1、head/tree、全6fileの全文bytes一致を確認した。今回の最終追記までproduction HR/Gate/current identity/detached testsはcheckpointから不変。追加差分は下記received testの1関数bodyと既存2引継ぎだけ。
+
+**関連検証の確定結果は2371PASS／既知14FAIL、ERROR/SKIP0（2385 unique IDs）。最終版全量のfresh再実行ではなく、同一の2379結果継承＋変更した1関数6条件のfresh再実行による統合。** 最初の全量は固定source/test/identityで2385件＝2369PASS/16FAIL。重複なし4分割の完了XML・終了値・全ID・開始終了SHA256を照合しmissing/duplicate0。各件数596/596/596/597、FAIL10/5/1/0、suite所要270.656/362.722/210.987/266.210秒（合計1110.575秒は並列suite合計でwall timeではない）。旧2352のうち2件だけ旧文面期待で成否が変わり、既知14のmessage/traceはrepo path・行番号・UUID・アドレス正規化後の差0、新33全PASS。
+
+全量で判明した2件はreceivedの `test_current_original_revision_keeps_other_answer_interpretation` のA入力/count2・3で、別の出来事を訂正した後、未訂正の回答に旧文字列『求められるような重さ』が残ることを期待していた。実本文はsourceどおり『次も同じ成果を求められるようで、重かった』を保持していた。parameter decorator/入力/test IDを変えず、Aだけ関数内のretainedを『求められるようで、重かった』に適応。留保を消す改変も現finiteの『ようで→ために』へ替え、作者禁止inverseによる因果化の拒否を維持した。文数、別出来事と回答の分離、B/Cの否定・未了保持は不変。既存method適応は先行13＋今回2＝15条件であり、旧期待不変更とはしない。
+
+この関数の6param全件を最終版でfresh実行し6PASS（10.52秒）。再実行6 unique IDは初回全量内の同じ6と完全一致。AST差分はこの関数bodyだけ、関数外はdecoratorを含む全文bytes一致、HR/Gate/identity/他test・fixtureは初回全量から不変と確認したため、他2379を継承した。旧2352の欠落/最終成否変更0、追加33全PASS、既知14の正規化差0。先行focused64、開始source対照64、再実行6、本文probe48を2385へ加算しない。既知14の解消や全PASSとは扱わない。
+
+対象集合はreceived_discourse、detached_observationとcontractsのcurrent owner identity検査1件。Python3.12.14/pytest9.1.1/PGlite0.5.8、`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<existing module> <Python> -m pytest -q <4分割したnodeid> --junitxml=<完了XML>`。最終再検査は同じ環境で `ai/tests/test_cmee_emlis_received_discourse.py::test_current_original_revision_keeps_other_answer_interpretation` を指定。新helper/依存/skip/xfail/frozen proof/受入母数/品質閾値の変更なし。current identityは上記checkpointの18payload/9owner派生値を維持する。
+
+**実本文の読み合わせ。** 48系列43本文の前後両層をrootと独立商品担当が全読。Reception21変更/22本文不変、同じ最終UNAVAILABLE3/途中syntax不成立2を分けて確認し、可否・意味・関係・Move・Observationは全て不変。43本文全てpublic一致/作者禁止inverse成功。主体・助詞・否定・程度・時点・『ようで』の留保を新たに落とすblocking所見なし。独立技術担当も既存finite reader、最小HR差分、先行13＋追加2の意味検査維持、6再実行＋2379継承の条件をread-only確認した。正式Product Readや商品合格ではない。
+
+実本文の限定差分（商品合格見本ではない）：
+
+```text
+入力：誘われたのに、悲しかった。頼まれたのに、寂しかった。
+回答：その時は次も説明を求められるようで、苦しかった。
+
+見えたこと（前後同一）：
+「誘われた」のに「悲しかった」、その時は「次も説明を求められるようで、苦しかった」とあります。 「頼まれた」と「寂しかった」が、異なる向きのまま同時にあります。
+
+u33 Emlisから：
+誘われたことは、悲しさを伴い、次も説明を求められるような苦しさとして届いたのですね。頼まれたのに、寂しさを感じたのですね。
+
+u34 Emlisから：
+誘われた時は悲しく、次も説明を求められるようで、苦しかったのですね。頼まれたのに、寂しさを感じたのですね。
+```
+
+新規保存4系列9回答後状態は全関連内でPASS。original保持、訂正/撤回の不復活、生成禁止GET/startのDTO全文一致、旧nominal保存本文の独立読取互換を確認した。PGliteの検証であり、実DB/端末/プロセス再起動の未実施は保持する。
+
+**残件と次の確認位置。** 中央が独立significance Moveになる5ケースは開始版/候補で全文record一致の名詞列のまま。既存HRの `_source_grounded_received_discourse` 呼出し入口は `stay_with_current_burden` かつ `felt_response` またはthread-received-slot付き `attention` が対象で、significanceは含まれていない。次は同じ群で、中央回答のMove/semantic責任を保持したまま既存有限文へ渡せるかをこの接点から調べる。この入口が唯一の原因とは未確定で、guardの一律緩和や新helper追加はしない。主語反復、同名場面の判別、未対応SELF、長い名詞列も残る。中央5を除外して群完了とせず、正式終結前に二層重複の別作業へ進まない。
+
+TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品0/3・NOT_CLEAR・default OFF / 両PR Draft/open/unmerged。開始12:27 JSTから本文比較・検証と記録まで約30分、追加費用/依存/Mash操作0。10/03未完でも休止、10/04分析（Work不可ならPro Piece）、10/02実DB/実機を維持。Ready/merge/deploy/enableなし。最終received testとこの既存2引継ぎを同じDraftへ反映し、fresh取得によるhead/tree/全6file照合とPR要約更新を行う。

@@ -1644,6 +1644,8 @@ def test_current_original_revision_separates_about_owned_occasions(count, slot, 
     (B, '見てもらえていないと思った'), (C, '自分ではまだ納得していなかった')])
 def test_current_original_revision_keeps_other_answer_interpretation(count, reply, retained):
     from test_cmee_emlis_q3_thread import MEMO
+    if reply == A:
+        retained = '求められるようで、重かった'
     memo = '。'.join(MEMO.split('。')[:count]) + '。'
     context = actual(request=advance(advance(begin(memo), reply), '「悲しかった」ではなく「少し怖かった」です。'))
     follow = context[0].artifact.reception
@@ -1652,7 +1654,7 @@ def test_current_original_revision_keeps_other_answer_interpretation(count, repl
     assert '褒められた' in sentences[0] and retained in sentences[0] and '誘われた' not in sentences[0]
     assert '誘われた' in sentences[1] and '少し怖かった' in sentences[1] and '褒められた' not in sentences[1]
     assert inverse(context, follow, without_author=True).passed
-    changed = follow.replace('ような', 'という') if reply == A else (
+    changed = follow.replace('ようで', 'ために') if reply == A else (
         follow.replace('いないと思った', 'いない') if reply == B else follow.replace('まだ', ''))
     assert changed != follow and not inverse(context, changed, without_author=True).passed
 
