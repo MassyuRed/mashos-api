@@ -12132,3 +12132,29 @@ current identity既存試験は最終sourceで1 PASS（31.96秒）、18language/
 旧2756 ID（Q1 thread75 / received989 / detached1692）を開始版分離worktreeと修正版の各4分割でfresh比較中。結果未確定、全関連PASS/新規失敗0/失敗trace一致をまだ称さない。最終production sourceは回帰中固定し、完了結果とremote反映後の全文bytes・changed paths・final headを同じ引継ぎ/PRへ追記する。runtimeは既存Python3.12.14/pytest9.1.1/PGlite0.5.8、Supabase既存ローカル合成RPC fixture。live DB/実機/プロセス再起動未実施、production依存/外部課金/Mash操作0。
 
 確定Git blobs：HR `e28fd795ba437a43265bb7019a2623d2ea52cd83`、Gate `01129e78f95c8ae80466744b36b2d1ab4a818c1b`、detached新test `bdfbef952b0f836fc471893d725b68d0973e1fcc`、current identity `523a2684e429b75677f48a5dcb6404d71d93669e`。変更exact6はAPI既存HR/Gate/detached試験/current identity/handoffの5modify＋Cocolon既存06の1modify。STRUCTURE_MAP_DELTA_NONE（既存作者/reader内のsource視点・記述位置修復、責任配置/whole route/contract不変）。Piece/分析等へ変更0。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmerged、Ready/merge/deploy/enable/live適用なし。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/実機予定を維持。
+
+
+## 2026-10-01 JST u42 final：同名記述位置修復の回帰完了と残件
+
+**限定TECHNICAL_CREDIT / 商品群未完。** 上記checkpointの「比較中」は履歴であり、ここに最終実測を追記する。checkpoint API `dc0f1b65df2654f618a98ceae272325f2329253c` / Cocolon `41aac61b6806a9e641f27a40fb7bba5c7b8ddda3` の6対象はGitHub blob全文bytesとローカルexpected blobが一致し、public git fetchでparentと5＋1 modifyを照合済み。その後production HR/Gateとcurrent identityは固定、追加は回答内の同じ日本語を守るliteral4条件と本最終記録だけ。
+
+**fresh回帰結果。** 開始版API `66c0e23e73c86ade496794a0b13a5696127fa1c1` の分離worktreeと最終固定sourceへ同一の旧2756 ID（Q1 thread75 / received989 / detached1692）を各4分割実行。両版とも **2739 PASS / 17 FAIL / ERROR0 / SKIP0**、ID差0・成否変化0。既存17の内訳はQ1 thread3、received8、detached6。failure message＋trace全文はrepo root / memory address / UUIDだけを正規化して17/17一致。入力・期待・decorator・旧test本文は不変更で、削除/skip/xfail化0。既知17を修復済みとはしない。Q3 application threadの既知259失敗など、今回選択していない試験は未再実行であり、以前の270失敗の解消へ読み替えない。
+
+新30条件はcheckpointに記載のfresh30 PASS。最終追加literal4条件も **4 PASS / FAIL・ERROR・SKIP0**（18.01秒）：非同名／同名collisionそれぞれについて「私は先に書かれた方では、重いと思った」「私は先に書かれた方では、あなたは誘われたと思った」という回答原文を保持し、Observationの完全引用、Receptionの完全source視点、独立read_bodyを検査する。前後合成4系列はすべてaccepted1 / RESOLVED / 本文提供を維持、非同名2と同名nominal fallback1は全文不変、同名finite1だけ元回答の語句を保って原eventへ先／後の区別を追加。nominal fallback例を区別の改善へ数えない。
+
+現行identity既存試験1 PASSを合わせ、今回のunique選択対象は **2791＝旧2756＋新34＋identity1、2774 PASS / 17既存FAIL / ERROR0 / SKIP0**。これは旧ID各4分割＋新30＋literal4＋identity1のfresh結果の合算であり、全2791を一括実行した主張ではない。18language / 18runtime payload・9shared ownerは保持。production source固定後のfixture照合を採用し、先行の新test前提誤り・import error・source更新中のidentity失敗はNONCREDITの履歴として残す。
+
+**本文の読取と未解消箇所。** 合成15系列の両層全文をrootと独立商品担当が読了し、全15で原入力/回答/assessment/意味核/relations/Observation/reasonsは不変。10系列はReception内の記述位置修飾のみ改善、非同名3系列は全文不変。exact同名を複数回訂正する2系列も全文不変だが、既存nominal fallbackで最初の不安と中間の悲しみ/回答を受け取れず、最後の回答だけとなる重大残件がある。追加literal4前後全文もrootと技術担当が確認済み。実際の出来事の先後・別日時・別場面・新しい因果は補わない。反復、長さ、深さ不足、二層再掲、初回の説明形未対応、訂正未対応文法は残る。formal Product Read PASS・全同名解消・群完了・商品提示準備へ昇格させない。
+
+**最終blobと変更範囲。** HR `e28fd795ba437a43265bb7019a2623d2ea52cd83`、Gate `01129e78f95c8ae80466744b36b2d1ab4a818c1b`、current identity `523a2684e429b75677f48a5dcb6404d71d93669e` はcheckpointから不変更。detached testの最終Git blobは `3c99b9b96810662a83ed9aa5f77dec940dc038c0` / SHA256 `09fd12cbb54d8d38e767e50cdf866229a80622a076f23abe0af1b59eac1285d5`。旧test fileの完全prefixを保持して末尾164行だけ追加し、34条件を追加した。開始版からのchanged-path setは以下exact6、すべてmodifyでadd/delete0。
+
+- API `ai/services/ai_inference/emlis_ai_grounded_human_reception.py`
+- API `ai/services/ai_inference/emlis_ai_grounded_observation_gate.py`
+- API `ai/tests/test_cmee_emlis_detached_observation.py`
+- API `ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json`
+- API `ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md`
+- Cocolon `Cocolon_前提資料/designs/cmee/v1/06_implementation_order_migration_and_verification.md`
+
+既存作者/独立reader内のsource視点・原記述位置の表示文法修復だけで、責任配置/whole route/公開・保存contract/意味IR/回答admissionは不変更。**STRUCTURE_MAP_DELTA_NONE**、tracked3945（API2300＋Cocolon1645）・全file地図/weekly bytes不変更。最終反映は既存PR3/30のみ、remote head・6対象全文bytes・exact5＋1 modifyをfresh照合し、最終commitはPR要約へ記録する。
+
+試験環境はPython3.12.14 / pytest9.1.1 / pydantic2.13.5 / FastAPI0.142.2 / httpx0.28.1 / PGlite0.5.8、既存Supabase RPCのローカル合成fixture。live DB/実機/プロセス再起動は未実施、production依存/feature/schema/新規課金/Mash操作への変更0。System Context prepareの祖先不一致NONCREDITは継続し原典直接読取を使用。商品受入れ0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmerged。Ready/merge/deploy/enable/live適用なし。次の同群残件はexact同名の複数訂正時に既存内容を落とす箇所と未対応説明形/訂正文法。最新weekly・09/29合意どおり10/03は未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/実機予定を維持する。

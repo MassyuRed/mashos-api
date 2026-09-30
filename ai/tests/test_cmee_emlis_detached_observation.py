@@ -4507,3 +4507,21 @@ def test_equal_event_record_saved_revisions_withdrawals_and_original_replay(qcas
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved record body must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('memo', [RECORD_PAIR_MEMO,
+    '褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。'])
+@pytest.mark.parametrize('content', ['重い', 'あなたは誘われた'])
+def test_written_position_phrase_in_answer_remains_source_content(memo, content):
+    source = '私は先に書かれた方では、' + content + 'と思った'
+    request = advance(begin(memo), '今は' + source + '。')
+    context = actual(request=request)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    assert '「' + source + '」' in context[0].artifact.observation
+    assert source.replace('私は', 'あなたは', 1) in follow or source in follow
+    assert read_body(context, body).passed
+    if content == '重い' and memo == RECORD_PAIR_MEMO:
+        # One phrase belongs to the complete answer, another to the original
+        # later event group. Neither is consumed as the other's qualifier.
+        assert follow.count(RECORD_PREFIXES[0]) == 2
+        assert RECORD_PREFIXES[2] + 'あなたは誘われた' in follow
