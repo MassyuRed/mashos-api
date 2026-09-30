@@ -7921,12 +7921,21 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
                            and (detached or len(about) == 1))
         independent_answer = bool("thread_subject:independent_source_replacement" in frame.attribute_codes
             and not any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations))
+        # The preparation owner proves actual non-overlapping original
+        # ranges for equal event text. This proof names this exact ABOUT
+        # occurrence; it cannot be donated to another target or an unknown.
+        distinct_occurrence = bool(len(about) == 1 and about[0].from_nucleus_id in events
+            and len(index[about[0].from_nucleus_id].source_span_ids) == 1
+            and n.kind == "reaction" and frame.polarity == "negative"
+            and {c for c in frame.attribute_codes if c.startswith("thread_subject:distinct_source_occurrence:")}
+                == {"thread_subject:distinct_source_occurrence:"
+                    + index[about[0].from_nucleus_id].source_span_ids[0]})
         if (n.allowed_claim_scope != "explicit_supplemental_answer"
             or n.retention != "required" or n.grounding_kind != "explicit"
             or frame.actor != "current_user"
             or not current_unknown and (n.kind != "reaction"
                 or frame.predicate_kind != "feeling" or frame.modality != "feeling")
-            or not (detached or independent_answer or ordered_source_window)
+            or not (detached or independent_answer or ordered_source_window or distinct_occurrence)
                 and "thread_subject:unique_source_clause" not in frame.attribute_codes
             or len(times) != 1 or not times <= {"thread_time:original_occasion",
                 "thread_time:answer_time", "thread_time:prior_answer_time"}

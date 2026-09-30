@@ -345,6 +345,7 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
     # Bind distinguishable original source clauses before body-free reception
     # selection. Different evidence IDs alone cannot distinguish repeated text.
     answer_subjects = {}
+    subject_occurrences = {}
     for n in nuclei:
         if n.source_fields != (ANSWER_FIELD,):
             continue
@@ -358,11 +359,59 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
                 and len(event.source_span_ids) == 1 and text.endswith(("た", "だ"))
                 and not re.search(r"[「」『』…‥?？!！]", resolver.resolve(event.source_span_ids[0]).raw_text)):
                 answer_subjects[n.nucleus_id] = text
+                # Equal event words can still belong to separately written
+                # original clauses. Prove the actual occurrence here, where
+                # the admitted source envelope and its ranges are available;
+                # different local evidence IDs alone do not prove separation.
+                span = resolver.resolve(event.source_span_ids[0])
+                ref = resolver.qualified_ref(event.source_span_ids[0]).evidence
+                answer_ref = (resolver.qualified_ref(n.source_span_ids[0]).evidence
+                              if len(n.source_span_ids) == 1 else None)
+                ranges = tuple(c for c in event.semantic_frame.attribute_codes
+                               if c.startswith("source_fragment_scalar_range:"))
+                if (n.kind == "reaction" and n.semantic_frame.polarity == "negative"
+                    and n.semantic_frame.predicate_kind == n.semantic_frame.modality == "feeling"
+                    and len(n.source_span_ids) == 1
+                    and answer_ref.field_path == ANSWER_FIELD
+                    and answer_ref.source_envelope_id != ref.source_envelope_id
+                    and about[0].grounding_kind == "user_stated_relation"
+                    and len(about[0].source_span_ids) == 2
+                    and set(about[0].source_span_ids) == set((*event.source_span_ids, *n.source_span_ids))
+                    and event.allowed_claim_scope == "explicit_current_input"
+                    and {"semantic_role:final_stage1_compound_meaning",
+                         "source_fragment_scalar_source:normalized_raw_text"}
+                        <= set(event.semantic_frame.attribute_codes)
+                    and ranges == (f"source_fragment_scalar_range:0:{len(text)}",)
+                    and ref.source_envelope_id == thread.original.envelope.envelope_id
+                    and ref.field_path == span.source_field == event.source_fields[0]
+                    and (ref.scalar_start, ref.scalar_end) == (span.start_index, span.end_index)
+                    and 0 <= ref.scalar_start < ref.scalar_end
+                    and thread.original.envelope.raw_utf8[ref.utf8_start:ref.utf8_end].decode() == span.raw_text
+                    and re.sub(r"\s+", " ", span.raw_text).strip().startswith(text)):
+                    subject_occurrences[n.nucleus_id] = (event.nucleus_id, event.source_span_ids[0], ref,
+                                                        n.source_span_ids[0], answer_ref.evidence_id)
     subject_texts = tuple(answer_subjects.values())
     proof = "thread_subject:unique_source_clause"
+    occurrence_proof = "thread_subject:distinct_source_occurrence:"
+    distinct_occurrences = {}
+    for text in set(subject_texts):
+        ids = tuple(nid for nid, value in answer_subjects.items() if value == text)
+        if not 2 <= len(ids) <= 3 or any(nid not in subject_occurrences for nid in ids):
+            continue
+        rows = sorted((subject_occurrences[nid] for nid in ids), key=lambda row: row[2].scalar_start)
+        if (len({row[0] for row in rows}) != len(rows)
+            or len({row[1] for row in rows}) != len(rows)
+            or len({row[3] for row in rows}) != len(rows)
+            or len({row[4] for row in rows}) != len(rows)
+            or len({(row[2].source_envelope_id, row[2].field_path) for row in rows}) != 1
+            or any(left[2].scalar_end > right[2].scalar_start
+                   or left[2].utf8_end > right[2].utf8_start for left, right in zip(rows, rows[1:]))):
+            continue
+        distinct_occurrences.update({nid: occurrence_proof + subject_occurrences[nid][1] for nid in ids})
     nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame, attribute_codes=(
-        *(c for c in n.semantic_frame.attribute_codes if c != proof),
+        *(c for c in n.semantic_frame.attribute_codes if c != proof and not c.startswith(occurrence_proof)),
         *((proof,) if n.nucleus_id in answer_subjects and subject_texts.count(answer_subjects[n.nucleus_id]) == 1 else ()),
+        *((distinct_occurrences[n.nucleus_id],) if n.nucleus_id in distinct_occurrences else ()),
     ))) if n.source_fields == (ANSWER_FIELD,) else n for n in nuclei)
     # A withdrawal supplies no replacement claim. Keep the latest remaining
     # accepted answer in focus instead of reverting to the original memo.

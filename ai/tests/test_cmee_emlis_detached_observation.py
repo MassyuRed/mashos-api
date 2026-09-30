@@ -4525,3 +4525,140 @@ def test_written_position_phrase_in_answer_remains_source_content(memo, content)
         # later event group. Neither is consumed as the other's qualifier.
         assert follow.count(RECORD_PREFIXES[0]) == 2
         assert RECORD_PREFIXES[2] + 'あなたは誘われた' in follow
+
+
+EXACT_RECORD_MEMO = ('誘われたのに、嬉しくなかった。誘われたのに、悲しかった。'
+                     '誘われたのに、寂しかった。')
+
+
+def exact_record_request(revised, when='今は', last=None, memo=EXACT_RECORD_MEMO):
+    request = begin(memo)
+    replies = ('「嬉しくなかった」ではなく「私は少し不安でした」です。'
+               if revised else 'その時は少し重かった。', when + '少し苦しい。')
+    for reply in replies + ((last,) if last else ()):
+        request = advance(request, reply)
+    return request
+
+
+@pytest.mark.parametrize('revised', [False, True])
+@pytest.mark.parametrize('when', ['今は', 'その時は'])
+@pytest.mark.parametrize('last', [None, '「少し苦しい」ではなく「少し怖かった」です。',
+                                '「少し苦しい」は誤りです。'])
+def test_exact_event_occurrences_keep_every_active_reaction_and_answer(revised, when, last):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    request = exact_record_request(revised, when, last)
+    context = actual(request=request)
+    result, plan, _, resolver, selected = context
+    follow = result.artifact.reception
+    assert MeaningExperienceEngine().generate(request).artifact.text == result.artifact.text
+    assert prepare_emlis_meaning(request).thread.original.normalized_current_input['memo'] == EXACT_RECORD_MEMO
+    assert all(prefix + '誘われた' in follow for prefix in RECORD_PREFIXES)
+    assert '寂しさを感じ' in follow and '悲しかった' in result.artifact.observation
+    assert ('悲しさを感じ' if last and '誤り' in last else '悲しかった') in follow
+    assert ('あなたは少し不安だった' if revised else '少し重かった') in follow
+    assert ('嬉しくなかった' in follow) == (not revised)
+    if last:
+        assert '少し苦しい' not in follow
+        if 'ではなく' in last:
+            assert ('先の回答時点では' if when == '今は' else 'その時は') + '少し怖かった' in follow
+    else:
+        assert ('回答した時点では' if when == '今は' else 'その時は') + '少し苦しい' in follow
+    assert read_body(context, result.artifact.text).passed
+    for clause, move in zip(follow.split('。')[:-1], plan.response_plan.human_reception_plan.moves, strict=True):
+        assert gate.read_received_discourse(clause + '。', move, plan, resolver, selected) is not None
+
+
+def test_exact_three_original_revisions_keep_both_corrections_and_middle_answer():
+    request = exact_record_request(True, last='「寂しかった」ではなく「私も少し怖くなかったです」です。')
+    context = actual(request=request)
+    body = context[0].artifact.text
+    follow = context[0].artifact.reception
+    assert 'あなたは少し不安だった' in follow and '悲しかった' in follow
+    assert '回答した時点では少し苦しい' in follow and 'あなたも少し怖くなかった' in follow
+    assert '嬉しくなかった' not in body and '寂しかった' not in body
+    assert read_body(context, body).passed
+
+
+@pytest.mark.parametrize('when', ['今は', 'その時は'])
+def test_two_exact_event_occurrences_keep_both_originals_and_answers(when):
+    memo = '誘われたのに、悲しかった。誘われたのに、寂しかった。'
+    request = advance(advance(begin(memo), 'その時は少し重かった。'), when + '少し苦しい。')
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    assert RECORD_PREFIXES[0] + '誘われたのに、悲しかったし、その時は少し重かった' in follow
+    assert RECORD_PREFIXES[2] + '誘われたのに、寂しかったし、' in follow
+    assert ('回答した時点では' if when == '今は' else 'その時は') + '少し苦しい' in follow
+    assert read_body(context, context[0].artifact.text).passed
+
+
+@pytest.fixture(scope='module')
+def exact_record_context():
+    return actual(request=exact_record_request(True))
+
+
+@pytest.mark.parametrize('old,new', [
+    ('先に書かれた方では、', '後に書かれた方では、'),
+    ('間に書かれた方では、', '先に書かれた方では、'),
+    ('先に書かれた方では、', '先に起きた方では、'),
+    ('あなたは少し不安だった', '相手は少し不安だった'),
+    ('あなたは少し不安だった', 'あなたは不安だった'),
+    ('あなたは少し不安だった', 'あなたは少し不安だ'),
+    ('悲しかったし、', ''),
+    ('回答した時点では少し苦しい', 'その時は少し苦しい'),
+    ('回答した時点では少し苦しい', ''),
+    ('誘われたのに、悲しかった', '誘われたので、悲しかった'),
+])
+def test_exact_record_reception_cannot_borrow_or_drop_another_occurrences_meaning(exact_record_context, old, new):
+    context = exact_record_context
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    changed = follow.replace(old, new, 1)
+    assert changed != follow and not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+@pytest.mark.parametrize('mutation', ['missing', 'duplicate', 'same_event', 'wrong_proof', 'unknown'])
+def test_exact_record_occurrence_proof_does_not_replace_about_or_feeling_guards(exact_record_context, mutation):
+    import emlis_ai_grounded_observation_plan as gp
+    plan = exact_record_context[1]
+    links = [r for r in plan.relations if r.type == 'evaluation_about_event']
+    first, second = links
+    nuclei, relations = plan.nuclei, plan.relations
+    if mutation == 'missing':
+        relations = tuple(r for r in relations if r != first)
+    elif mutation == 'duplicate':
+        relations = (*relations, replace(first, relation_id='duplicate-about'))
+    elif mutation == 'same_event':
+        relations = tuple(replace(r, from_nucleus_id=first.from_nucleus_id) if r == second else r for r in relations)
+    else:
+        nuclei = tuple(replace(n, kind='state', semantic_frame=replace(n.semantic_frame,
+            predicate_kind='state', modality='uncertain')) if mutation == 'unknown' and n.nucleus_id == first.to_nucleus_id
+            else replace(n, semantic_frame=replace(n.semantic_frame, attribute_codes=tuple(
+                'thread_subject:distinct_source_occurrence:s999' if c.startswith('thread_subject:distinct_source_occurrence:') else c
+                for c in n.semantic_frame.attribute_codes))) if mutation == 'wrong_proof' and n.nucleus_id == first.to_nucleus_id
+            else n for n in nuclei)
+    assert not gp._thread_retained_reaction_groups(nuclei, relations)
+
+
+@pytest.mark.parametrize('revised', [False, True])
+@pytest.mark.parametrize('last', ['「少し苦しい」ではなく「少し怖かった」です。',
+                                '「少し苦しい」は誤りです。'])
+def test_exact_record_saved_corrections_withdrawals_and_generate_free_replay(qcase, qdb, monkeypatch, revised, last):
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$1 where id=$2', [EXACT_RECORD_MEMO, parent])
+    first = current = run(service.start(user, parent))
+    replies = ('「嬉しくなかった」ではなく「私は少し不安でした」です。'
+               if revised else 'その時は少し重かった。', '今は少し苦しい。', last)
+    for position, reply in enumerate(replies):
+        if position:
+            current = run(cont(service, user, current, f'exact-record-continue-{position}'))
+        current = run(answer(service, user, current, reply, f'exact-record-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        follow = current['current_observation']['text'].split('Emlisから\n')[-1]
+        assert all(prefix + '誘われた' in follow for prefix in RECORD_PREFIXES)
+        assert '悲し' in follow and '寂し' in follow
+        assert ('少し不安' if revised else '少し重かった') in follow
+        if position == 2:
+            assert '少し苦しい' not in follow
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved exact body must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
