@@ -291,8 +291,8 @@ def test_unasked_originals_and_separate_answers_keep_their_own_events(sequence):
     context=actual(request=request)
     result,plan,_,resolver,selected=context
     follow=result.artifact.reception
-    assert follow.count('のですね') == 2
-    assert ('を見失わず、小さくせずに受け止めています' in follow) == (len(sequence) > 1)
+    assert follow.count('のですね') == (2 if len(sequence) == 1 else 3)
+    assert 'を見失わず、小さくせずに受け止めています' not in follow
     groups = ((0,), (1, 2)) if len(sequence) == 1 else ((0,), (1,), (2,))
     assert_complete_occasion_scopes(context, ('褒められた', '誘われた', '頼まれた'), groups)
     for event in ('褒められた','誘われた','頼まれた'):
@@ -1799,6 +1799,11 @@ def test_middle_and_multiple_answers_keep_complete_occasion_scopes(memo, sequenc
     assert len(sentences) == len(moves) == 3
     assert tuple(m.move_role for m in moves) == ('attention', 'significance', 'felt_response')
     assert 'その出来事' not in sentences[1]
+    retained = tuple({
+        "先の回答時点で少し寂しい": "先の回答時点では少し寂しい",
+        "あなたも少しもやもやだったこと": "あなたも少しもやもやだったのですね",
+        "あなたは少し不安なこと": "あなたは少し不安なのですね",
+    }.get(value, value) for value in retained)
     assert all(value in follow for value in retained) and all(value not in follow for value in removed)
     owned = [set((*m.target_nucleus_ids, *m.support_nucleus_ids)) for m in moves]
     assert all(owned[i].isdisjoint(owned[j]) for i in range(3) for j in range(i + 1, 3))
@@ -1816,7 +1821,8 @@ def test_middle_and_multiple_answers_keep_complete_occasion_scopes(memo, sequenc
         if relation.relation_id in plan.coverage_requirements.required_relation_ids:
             assert sum({relation.from_nucleus_id, relation.to_nucleus_id} <= ids for ids in owned) == 1
     if memo == OWNED_INITIAL:
-        assert 'あなたは少し怖くなかったこと' in sentences[1]
+        ending = ('のですね' if '「少し怖い」は誤りです。今は少し重い。' in sequence else 'し、')
+        assert '頼まれたのに、あなたは少し怖くなかった' + ending in sentences[1]
         assert '少し私は怖くなかったこと' not in follow
     assert inverse(context, follow, without_author=True).passed
     assert MeaningExperienceEngine().generate(request).artifact.text == result.artifact.text
@@ -1841,25 +1847,25 @@ def test_multiple_answer_scopes_reject_changed_meaning_without_author(multiple_a
     changes = {
         'drop_middle': first + '。' + last + '。',
         'swap_sentences': middle + '。' + first + '。' + last + '。',
-        'drop_answer': follow.replace('と、回答した時点であなたも少しもやもやだったこと', ''),
-        'time': follow.replace('回答した時点であなたも', 'その時にあなたも'),
-        'tense': follow.replace('もやもやだったこと', 'もやもやなこと'),
+        'drop_answer': follow.replace('し、回答した時点ではあなたも少しもやもやだった', ''),
+        'time': follow.replace('回答した時点ではあなたも', 'その時はあなたも'),
+        'tense': follow.replace('もやもやだったのですね', 'もやもやなのですね'),
         'degree': follow.replace('あなたは少し怖くなかった', 'あなたは怖くなかった'),
-        'polarity': follow.replace('怖くなかったこと', '怖かったこと'),
+        'polarity': follow.replace('怖くなかったし', '怖かったし'),
         'owner': follow.replace('あなたは少し怖くなかった', '友人は少し怖くなかった'),
         'answer_owner': follow.replace('あなたも少しもやもや', '友人も少しもやもや'),
         'answer_particle': follow.replace('あなたも少しもやもや', 'あなたは少しもやもや'),
         'cause': follow.replace('頼まれたのに', '頼まれたから'),
         'swap_events': follow.replace('誘われた', 'TEMP').replace('頼まれた', '誘われた').replace('TEMP', '頼まれた'),
-        'drop_significance': follow.replace('見失わず、', ''),
-        'drop_original': follow.replace('頼まれたのにあなたは少し怖くなかったことと、', ''),
-        'drop_time': follow.replace('回答した時点であなたも', 'あなたも'),
-        'other_event_answer': follow.replace('と、回答した時点であなたも',
-                                            'と、誘われたことについて、回答した時点であなたも'),
+        'drop_significance': follow.replace(middle, middle.removesuffix('のですね')),
+        'drop_original': follow.replace('頼まれたのに、あなたは少し怖くなかったし、', ''),
+        'drop_time': follow.replace('回答した時点ではあなたも', 'あなたも'),
+        'other_event_answer': follow.replace('し、回答した時点ではあなたも',
+                                            'し、誘われたことについて、回答した時点ではあなたも'),
         'swap_answers': follow.replace('少し不安な', 'TEMP').replace(
             'あなたも少しもやもやだった', '少し不安な').replace('TEMP', 'あなたも少しもやもやだった'),
-        'quoted_answer': follow.replace('回答した時点であなたも少しもやもやだったこと',
-                                       '「回答した時点であなたも少しもやもやだったこと」'),
+        'quoted_answer': follow.replace('回答した時点ではあなたも少しもやもやだったのですね',
+                                       '「回答した時点ではあなたも少しもやもやだったのですね」'),
     }
     assert changes[mutation] != follow
     assert not inverse(context, changes[mutation], without_author=True).passed
@@ -1906,7 +1912,7 @@ def test_multiple_answer_scope_saved_update_and_replay(qcase, qdb, monkeypatch, 
             assert follow.count('。') == 3
         if position == 2:
             if operation == 'correct':
-                assert '少し怖い' not in body and '先の回答時点で少し寂しい' in follow
+                assert '少し怖い' not in body and '先の回答時点では少し寂しい' in follow
             elif operation == 'withdraw_answer':
                 assert '少し苦しい' not in body and '少し怖い' in body
             elif operation == 'withdraw_event':
@@ -1945,9 +1951,18 @@ def test_middle_nominal_keeps_whole_copula_or_explanation(source, nominal):
         '私は私には不安でした': '私は私には不安だった',
         '私は私には不安だったのです': '私は私には不安だったのだ',
     }
-    expected = (owned[source] + 'という、回答した時点のあなたの気持ち'
-                if source in owned else '回答した時点で' + nominal)
-    assert '誘われたのに悲しかったことと、' + expected in middle
+    finite = {
+        '私は少し不安です': 'あなたは少し不安なのですね',
+        '私は少し不安なのです': 'あなたは少し不安なのですね',
+        '私は少し不安だったのです': 'あなたは少し不安だったのですね',
+        '私は少し不安なのだった': 'あなたは少し不安なのでしたね',
+        '少し私は怖いのです': 'あなたは少し怖いのですね',
+        '少し私は怖くなかったのです': 'あなたは少し怖くなかったのですね',
+    }
+    expected = ('誘われたのに悲しかったことと、' + owned[source]
+                + 'という、回答した時点のあなたの気持ち' if source in owned
+                else '誘われた時は悲しく、回答した時点では' + finite[source])
+    assert expected in middle
     assert '少し苦しい' not in middle and '回答した時点' not in last
     assert not any(fragment in follow for fragment in ('ですこと', 'でしたこと', 'のなこと'))
     assert source in result.artifact.observation
@@ -1973,18 +1988,18 @@ def test_explanatory_nominal_rejects_changed_meaning_without_author(explanatory_
     follow = context[0].artifact.reception
     assert inverse(context, follow, without_author=True).passed
     changes = {
-        'explanation': follow.replace('不安だったのだということ', '不安だったこと'),
-        'inner_past': follow.replace('不安だったのだということ', '不安なのだということ'),
-        'outer_past': follow.replace('不安だったのだということ', '不安だったのだったということ'),
-        'past_position': follow.replace('不安だったのだということ', '不安なのだったということ'),
-        'degree': follow.replace('少し不安だったのだということ', '不安だったのだということ'),
-        'owner': follow.replace('あなたは少し不安だったのだ', '友人は少し不安だったのだ'),
-        'particle': follow.replace('あなたは少し不安だったのだ', 'あなたも少し不安だったのだ'),
-        'time': follow.replace('回答した時点であなたは', 'その時にあなたは'),
-        'drop_time': follow.replace('回答した時点であなたは', 'あなたは'),
+        'explanation': follow.replace('不安だったのですね', '不安でしたね'),
+        'inner_past': follow.replace('不安だったのですね', '不安なのですね'),
+        'outer_past': follow.replace('不安だったのですね', '不安だったのでしたね'),
+        'past_position': follow.replace('不安だったのですね', '不安なのでしたね'),
+        'degree': follow.replace('少し不安だったのですね', '不安だったのですね'),
+        'owner': follow.replace('あなたは少し不安だったの', '友人は少し不安だったの'),
+        'particle': follow.replace('あなたは少し不安だったの', 'あなたも少し不安だったの'),
+        'time': follow.replace('回答した時点ではあなたは', 'その時はあなたは'),
+        'drop_time': follow.replace('回答した時点ではあなたは', 'あなたは'),
         'swap_events': follow.replace('誘われた', 'TEMP').replace('頼まれた', '誘われた').replace('TEMP', '頼まれた'),
-        'quoted': follow.replace('あなたは少し不安だったのだということ',
-                                '「あなたは少し不安だったのだということ」'),
+        'quoted': follow.replace('あなたは少し不安だったのですね',
+                                '「あなたは少し不安だったのですね」'),
         'cause': follow.replace('頼まれたのに', '頼まれたから'),
     }
     assert changes[mutation] != follow
@@ -2012,17 +2027,17 @@ def test_explanatory_nominal_saved_update_and_replay(qcase, monkeypatch, operati
         follow = body.split('Emlisから：', 1)[1].strip()
         assert all(event in body for event in ('褒められた', '頼まれた'))
         if position == 1:
-            assert '回答した時点であなたは少し不安だったのだということ' in follow
+            assert '回答した時点ではあなたは少し不安だったのですね' in follow
         elif position == 2:
             if operation == 'correct':
-                assert source not in body and '不安だったのだということ' not in follow
-                assert '先の回答時点であなたは少し不安なのだったということ' in follow
+                assert source not in body and '不安だったのですね' not in follow
+                assert '先の回答時点ではあなたは少し不安なのでしたね' in follow
             elif operation == 'withdraw_answer':
                 assert '不安' not in body and '誘われた' in body
             elif operation == 'withdraw_event':
                 assert '誘われた' not in body and source in body and '不安だったのですね' in follow
             else:
-                assert '少し重い' in body and '不安だったのだということ' in follow
+                assert '少し重い' in body and '不安だったのですね' in follow
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved explanatory body must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
@@ -2079,9 +2094,8 @@ def test_single_self_cannot_borrow_multiple_self_attribution(source, finite):
     assert 'という、回答した時点のあなたの気持ち' not in follow
     first, middle, last, empty = follow.split('。')
     assert empty == ''
-    start = middle.index('回答した時点で')
-    end = middle.index('を見失わず')
-    borrowed = middle[:start] + finite + 'という、回答した時点のあなたの気持ち' + middle[end:]
+    assert '回答した時点では' in middle
+    borrowed = '誘われたのに悲しかったことと、' + finite + 'という、回答した時点のあなたの気持ち' + 'を見失わず、小さくせずに受け止めています'
     assert not inverse(context, first + '。' + borrowed + '。' + last + '。', without_author=True).passed
 
 
@@ -2379,6 +2393,10 @@ def test_original_feeling_scopes_retain_each_complete_occasion(memo, events, seq
     context = actual(request=request)
     assert_complete_occasion_scopes(context, events, groups)
     body = context[0].artifact.text
+    original = ('頼まれたのに、あなたは少し怖くなかったし、その時は'
+                if memo == OWNED_INITIAL else '誘われた時は悲しく、')
+    retained = tuple(original + value.removeprefix('その時に').removesuffix('こと')
+                     if value.startswith('その時に') else value for value in retained)
     assert all(fragment in body for fragment in retained) and all(fragment not in body for fragment in removed)
     assert request.current_input_bundle == initial.current_input_bundle
     assert MeaningExperienceEngine().generate(request).artifact.text == body
@@ -2431,24 +2449,24 @@ def test_original_feeling_scopes_reject_changed_meaning_without_author(original_
     follow = context[0].artifact.reception
     first, middle, last, empty = follow.split('。')
     assert empty == '' and inverse(context, follow, without_author=True).passed
-    bound = 'と、その時にあなたも少し不安だったこと'
+    bound = 'し、その時はあなたも少し不安だった'
     changes = {
         'drop_middle': first + '。' + last + '。',
         'swap_sentences': middle + '。' + first + '。' + last + '。',
         'drop_answer': follow.replace(bound, ''),
-        'time': follow.replace('その時にあなたも', '回答した時点であなたも'),
-        'tense': follow.replace('不安だったこと', '不安なこと'),
+        'time': follow.replace('その時はあなたも', '回答した時点ではあなたも'),
+        'tense': follow.replace('不安だったのですね', '不安なのですね'),
         'degree': follow.replace('あなたは少し怖くなかった', 'あなたは怖くなかった'),
-        'polarity': follow.replace('怖くなかったこと', '怖かったこと'),
+        'polarity': follow.replace('怖くなかったし', '怖かったし'),
         'owner': follow.replace('あなたは少し怖くなかった', '友人は少し怖くなかった'),
         'answer_owner': follow.replace('あなたも少し不安', '友人も少し不安'),
         'answer_particle': follow.replace('あなたも少し不安', 'あなたは少し不安'),
         'cause': follow.replace('頼まれたのに', '頼まれたから'),
         'swap_events': follow.replace('誘われた', 'TEMP').replace('頼まれた', '誘われた').replace('TEMP', '頼まれた'),
-        'drop_original': follow.replace('頼まれたのにあなたは少し怖くなかったことと、', ''),
-        'drop_time': follow.replace('その時にあなたも', 'あなたも'),
-        'other_event_answer': follow.replace(bound, 'と、誘われたことについて、その時にあなたも少し不安だったこと'),
-        'quoted_answer': follow.replace(bound, 'と、「その時にあなたも少し不安だったこと」'),
+        'drop_original': follow.replace('頼まれたのに、あなたは少し怖くなかったし、', ''),
+        'drop_time': follow.replace('その時はあなたも', 'あなたも'),
+        'other_event_answer': follow.replace(bound, 'し、誘われたことについて、その時はあなたも少し不安だった'),
+        'quoted_answer': follow.replace(bound, 'し、「その時はあなたも少し不安だった」'),
     }
     assert changes[mutation] != follow
     assert not inverse(context, changes[mutation], without_author=True).passed
@@ -2475,7 +2493,7 @@ def test_original_feeling_scopes_saved_update_and_replay(qcase, monkeypatch, ope
         assert '回答した時点' not in body and '先の回答時点' not in body
         if position == 2:
             if operation == 'correct':
-                assert '少し怖かった' not in body and 'その時に少し寂しかった' in follow
+                assert '少し怖かった' not in body and '誘われた時は悲しく、少し寂しかった' in follow
             elif operation == 'withdraw_answer':
                 assert '少し苦しかった' not in body and '少し怖かった' in body
             elif operation == 'withdraw_event':
@@ -2500,7 +2518,15 @@ def test_original_occasion_reference_is_owned_by_complete_same_event(source, nom
     request = advance(advance(begin(), '今は少し苦しい。'), 'その時は' + source + '。')
     context = actual(request=request)
     follow = context[0].artifact.reception
-    bound = '誘われたのに悲しかったことと、' + nominal
+    legacy = source == '私は私には少し不安だったのです'
+    original = '誘われたのに悲しかったことと、' if legacy else '誘われた時は悲しく、'
+    nominal = nominal if legacy else {
+        '少し怖かった': '少し怖かったのですね',
+        '私も少し不安でした': 'あなたも少し不安だったのですね',
+        '私は少し不安だったのです': 'あなたは少し不安だったのですね',
+        '不安です': '不安なのですね', '不安でした': '不安だったのですね',
+    }[source]
+    bound = original + nominal
     assert bound in follow and 'その出来事について、' not in follow
     assert source in context[0].artifact.observation
     assert_complete_occasion_scopes(context, ('褒められた', '誘われた', '頼まれた'), ((0,), (1,), (2,)))
@@ -2508,11 +2534,13 @@ def test_original_occasion_reference_is_owned_by_complete_same_event(source, nom
     assert inverse(context, follow, without_author=True).passed
     for changed in (
         follow.replace(bound, nominal),
-        follow.replace('誘われたのに', '頼まれたのに'),
+        follow.replace(original, original.replace('誘われた', '頼まれた')),
         follow.replace(nominal, '褒められたことについて、' + nominal),
         follow.replace(nominal, '「' + nominal + '」'),
-        follow.replace(nominal, nominal.replace('その時に', '回答した時点で').replace('その時の', '回答した時点の')),
-        follow.replace(nominal, nominal.replace('その時に', '').replace('その時の', '')),
+        (follow.replace(nominal, nominal.replace('その時の', '回答した時点の')) if legacy
+         else follow.replace(original, '誘われたことについて、回答した時点では悲しく、')),
+        (follow.replace(nominal, nominal.replace('その時の', '')) if legacy
+         else follow.replace(original, '誘われたことについて、悲しく、')),
     ):
         assert changed != follow
         assert not inverse(context, changed, without_author=True).passed
@@ -2555,10 +2583,9 @@ def test_grouped_answer_nominal_keeps_own_copula_and_explanation(source, predica
     result = context[0]
     follow = result.artifact.reception
     sentences = follow.split('。')[:-1]
-    original = ('褒められた時は嬉しくなく、', '誘われたのに悲しかったことと、')[position]
-    # The first event can now use its existing finite form; the middle
-    # significance duty keeps the fully timed nominal form. Inputs and all
-    # original semantic mutation categories remain covered.
+    original = ('褒められた時は嬉しくなく、', '誘われた時は悲しく、')[position]
+    # Each eligible event uses the same finite form while keeping its own
+    # original time or explicit answer time and complete source scope.
     finite = {
         '不安です': '不安なのですね', '不安でした': '不安だったのですね',
         '私も少し不安でした': 'あなたも少し不安だったのですね',
@@ -2566,8 +2593,8 @@ def test_grouped_answer_nominal_keeps_own_copula_and_explanation(source, predica
         '私は少し不安だったのです': 'あなたは少し不安だったのですね',
         '私は少し不安なのだった': 'あなたは少し不安なのでしたね',
     }[source]
-    nominal = temporal + predicate + 'こと' if position else finite
-    bound = original + (('回答した時点では' if time == '今は' else '') if not position else '') + nominal
+    nominal = finite
+    bound = original + ('回答した時点では' if time == '今は' else '') + nominal
     assert bound in follow and source in result.artifact.observation
     assert 'ですこと' not in follow and 'でしたこと' not in follow
     assert request.current_input_bundle == initial.current_input_bundle
@@ -2582,26 +2609,19 @@ def test_grouped_answer_nominal_keeps_own_copula_and_explanation(source, predica
         follow.replace(sentences[2] + '。', ''),
         follow.replace(nominal, nominal.replace('不安', '安心')),
     ]
-    if position:
-        mutations.extend((follow.replace(nominal, nominal.replace(temporal, '先の回答時点で')),
-                          follow.replace(nominal, nominal.removeprefix(temporal))))
-    elif time == '今は':
+    if time == '今は':
         mutations.extend((follow.replace('回答した時点では', 'その時は'),
                           follow.replace('回答した時点では', '')))
     else:
-        mutations.append(follow.replace(original, '褒められたことについて、回答した時点では嬉しくなく、'))
+        mutations.append(follow.replace(original, ('褒められたことについて、回答した時点では嬉しくなく、',
+                    '誘われたことについて、回答した時点では悲しく、')[position]))
+        mutations.append(follow.replace(original, ('褒められたことについて、嬉しくなく、',
+                    '誘われたことについて、悲しく、')[position]))
     if 'のだ' in predicate:
-        if position:
-            changed = predicate.replace('なの', 'だったの') if 'なの' in predicate else predicate.replace('だったの', 'なの')
-            mutations.append(follow.replace(nominal, temporal + changed + 'こと'))
-            changed = predicate.replace('のだったという', 'のだという') if 'のだったという' in predicate else predicate.replace('のだという', 'のだったという')
-            mutations.append(follow.replace(nominal, temporal + changed + 'こと'))
-            mutations.append(follow.replace(nominal, nominal.replace('のだという', '').replace('のだったという', '')))
-        else:
-            changed = finite.replace('不安なの', '不安だったの') if '不安なの' in finite else finite.replace('不安だったの', '不安なの')
-            mutations.extend((follow.replace(finite, changed),
-                follow.replace(finite, finite.replace('のでしたね', 'のですね') if 'のでしたね' in finite else finite.replace('のですね', 'のでしたね')),
-                follow.replace(finite, finite.replace('のでしたね', 'でしたね').replace('のですね', 'ですね'))))
+        changed = finite.replace('不安なの', '不安だったの') if '不安なの' in finite else finite.replace('不安だったの', '不安なの')
+        mutations.extend((follow.replace(finite, changed),
+            follow.replace(finite, finite.replace('のでしたね', 'のですね') if 'のでしたね' in finite else finite.replace('のですね', 'のでしたね')),
+            follow.replace(finite, finite.replace('のでしたね', 'でしたね').replace('のですね', 'ですね'))))
     else:
         changed = nominal.replace('不安な', '不安だった') if '不安な' in nominal else nominal.replace('不安だった', '不安な')
         mutations.append(follow.replace(nominal, changed))
@@ -2670,7 +2690,7 @@ def test_grouped_original_nominal_keeps_actor_degree_negation_and_past(source, p
     context = actual(request=request)
     result = context[0]
     follow = result.artifact.reception
-    original = events[position] + ('のに、' + predicate if event_count == 2 and position == 1
+    original = events[position] + ('のに、' + predicate if position == 1
                                    else 'のに' + predicate + 'こと')
     assert original in follow
     assert source in result.artifact.observation
@@ -2727,7 +2747,7 @@ def test_grouped_original_nominal_saved_updates_keep_original_and_replay(qcase, 
         assert '今回の観測に反映できていない' not in body
         if position == 1:
             assert '褒められたのにあなたも少し不安だったこと' in follow
-            assert '誘われたのにあなたは少し怖くなかったこと' in follow
+            assert '誘われたのに、あなたは少し怖くなかった' in follow
             assert 'ですこと' not in follow and 'でしたこと' not in follow
         if position == 2:
             if operation == 'correct_original':
@@ -2776,7 +2796,8 @@ def test_accepted_original_answers_keep_complete_independent_occasions(source, o
         follow.replace(target, target.replace(old, new)),
         follow.replace(target, '「' + target + '」'),
         follow.replace('褒められた', '誘われた'),
-        follow.replace('見失わず、', ''),
+        (follow.replace('見失わず、', '') if '見失わず、' in sentences[1]
+         else follow.replace(sentences[1], sentences[1].removesuffix('のですね'))),
     ]
     if source in {A, A.replace('、', ',')}:
         mutations.extend(follow.replace(target, target.replace(word, '')) for word in ('次も', '同じ'))
@@ -2784,7 +2805,15 @@ def test_accepted_original_answers_keep_complete_independent_occasions(source, o
         mutations.append(follow.replace(target, target.replace('だけ', '')))
     elif source == C:
         mutations.append(follow.replace(target, target.replace('まだ', '')))
-    if position == 1:
+    if position == 1 and '誘われた時は悲しく、' in target:
+        original = '誘われた時は悲しく、'
+        mutations.extend((
+            follow.replace(target, target.replace(original, '誘われたことについて、回答した時点では悲しく、')),
+            follow.replace(target, target.replace(original, '誘われたことについて、悲しく、')),
+            follow.replace(target, target.replace(original, '')),
+            follow.replace(target, target.replace(original, original + '褒められたことについて、')),
+        ))
+    elif position == 1:
         assert 'その出来事への' not in target
         mutations.extend((
             follow.replace(target, target.replace('その時', '回答した時点')),
@@ -2819,8 +2848,8 @@ def test_interpretation_occasion_updates_save_and_replay(qcase, monkeypatch, ope
         if position == 1:
             sentences = follow.split('。')[:-1]
             assert len(sentences) == 3
-            assert '誘われたのに悲しかったことと、結果だけで' in sentences[1]
-            assert 'その時の思いを見失わず' in sentences[1]
+            assert '誘われた時は悲しく、結果だけで' in sentences[1]
+            assert 'そこまでの苦労は見てもらえていないと思ったのですね' in sentences[1]
             assert 'その出来事への結果' not in follow
         if position == 2:
             if operation in {'correct_answer', 'withdraw_answer'}:
@@ -2850,16 +2879,16 @@ def test_interpretation_nominal_omission_keeps_own_time(source, when):
     context = actual(request=request)
     follow = context[0].artifact.reception
     assert_complete_occasion_scopes(context, ('褒められた', '誘われた', '頼まれた'), ((0,), (1,), (2,)))
-    time = {'original_occasion': 'その時の', 'answer_time': '回答した時点の',
-            'prior_answer_time': '先の回答時点の'}[when]
+    time = {'original_occasion': '誘われた時は', 'answer_time': '回答した時点では',
+            'prior_answer_time': '先の回答時点では'}[when]
     middle = follow.split('。')[1]
     assert time in middle and 'その出来事への' not in middle
-    assert '誘われたのに悲しかったことと、' in middle
-    assert middle.endswith('を見失わず、小さくせずに受け止めています')
-    other_time = '先の回答時点の' if when == 'answer_time' else '回答した時点の'
+    assert '誘われた時は悲しく、' in middle
+    assert middle.endswith('のですね')
+    other_time = '先の回答時点では' if when == 'answer_time' else '回答した時点では'
     for changed in (follow.replace(time, ''), follow.replace(time, other_time),
-                    follow.replace('誘われたのに悲しかったことと、', ''),
-                    follow.replace('ことと、', 'ことと、褒められたことについて、', 1)):
+                    follow.replace('誘われた時は悲しく、', ''),
+                    follow.replace('誘われた時は悲しく、', '誘われた時は悲しく、褒められたことについて、', 1)):
         assert changed != follow and not inverse(context, changed, without_author=True).passed
 
 

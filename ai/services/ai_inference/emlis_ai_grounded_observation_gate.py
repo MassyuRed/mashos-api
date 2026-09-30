@@ -3941,7 +3941,6 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
     source_groups = _thread_retained_reaction_groups(plan.nuclei, plan.relations)
     separate_received_scopes = bool(
         2 <= len(reception_moves) == len(source_groups) <= 3
-        and move == reception_moves[0] and move.move_role == "attention"
         and tuple(m.move_role for m in reception_moves) == (
             ("attention", "felt_response") if len(reception_moves) == 2
             else ("attention", "significance", "felt_response"))
@@ -3953,8 +3952,15 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
     if (has_answers and getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
         or not move.required or not (move.move_role == "felt_response"
             or move.move_role == "attention" and thread_group
-            and (separate_received_scopes or "selection:source_owned_answer_adjacent"
-                in plan.response_plan.human_reception_plan.depth_policy.selection_reason_codes))
+            and (separate_received_scopes and move == reception_moves[0]
+                or "selection:source_owned_answer_adjacent"
+                in plan.response_plan.human_reception_plan.depth_policy.selection_reason_codes)
+            # The middle contribution has the same fully proved event/answer
+            # scope. Keep its role and source group; do not admit arbitrary
+            # significance Moves merely because their text is finite.
+            or move.move_role == "significance" and thread_group
+            and separate_received_scopes and len(reception_moves) == 3
+            and move == reception_moves[1])
         or move.reception_act != "stay_with_current_burden"
         or not (original or thread_group)
         or not raw.endswith("。") or raw.count("。") != 1

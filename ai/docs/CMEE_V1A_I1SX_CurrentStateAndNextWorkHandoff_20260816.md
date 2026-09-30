@@ -1,4 +1,4 @@
-> 2026-09-20 最新現在地：独立した未決対象を共通フォローの一文へ構成。必須2,573件＝2,170 PASS／403 FAIL。same100・保存329ケース616状態をroot確認。本文変更は初手1件・保存4状態。商品NOT_CLEAR、Draft／既定OFF。詳細は末尾「独立した未決対象を共通フォローの一文へ構成」を参照。以前の集計は履歴。
+> 2026-09-30 u35現在地：中央の受理済み回答を既存有限文へ接続。関連2412 unique IDs＝2398PASS/既知14FAIL（不変結果継承＋変更条件fresh再検査）、新27全PASS。中央名詞列を限定改善、群未完了・商品NOT_CLEAR/0/3・既定OFF。最新結果と次の同群残件は末尾「u35最終結果」を参照。以下の過去集計は履歴。
 
 > 2026-09-20 最新現在地：背景を保持し、安堵した経験を共通フォローの焦点へ構成。追加24検査PASS、全体2119 PASS / 364 FAIL（従来350＋旧原文全文一致との新規不一致14）。same100と継承保存322ケース600状態をrootが全文確認。商品NOT_CLEAR。最終結果と次の残件は末尾「focus the experience behind a source-owned feeling」。以下の現在地は過去時点の履歴。
 
@@ -11805,3 +11805,57 @@ u34 Emlisから：
 **残件と次の確認位置。** 中央が独立significance Moveになる5ケースは開始版/候補で全文record一致の名詞列のまま。既存HRの `_source_grounded_received_discourse` 呼出し入口は `stay_with_current_burden` かつ `felt_response` またはthread-received-slot付き `attention` が対象で、significanceは含まれていない。次は同じ群で、中央回答のMove/semantic責任を保持したまま既存有限文へ渡せるかをこの接点から調べる。この入口が唯一の原因とは未確定で、guardの一律緩和や新helper追加はしない。主語反復、同名場面の判別、未対応SELF、長い名詞列も残る。中央5を除外して群完了とせず、正式終結前に二層重複の別作業へ進まない。
 
 TECHNICAL_CREDIT / STRUCTURE_MAP_DELTA_NONE / 全体48%・商品0/3・NOT_CLEAR・default OFF / 両PR Draft/open/unmerged。開始12:27 JSTから本文比較・検証と記録まで約30分、追加費用/依存/Mash操作0。10/03未完でも休止、10/04分析（Work不可ならPro Piece）、10/02実DB/実機を維持。Ready/merge/deploy/enableなし。最終received testとこの既存2引継ぎを同じDraftへ反映し、fresh取得によるhead/tree/全6file照合とPR要約更新を行う。
+
+## 2026-09-30 JST u35開始：中央の受理済み回答を既存の有限文へ接続
+
+MashのEmlisAI残件継続指示とGitHub指定に基づく。開始headはAPI `b91c4b4e77905970ffce44c68c4f7256ba095221`、Cocolon `282d245f52c8f5165e41e4291cdd82ad51d490b0`。添付txt、必須incident全文、work rules入口/CURRENT/18、全体構造01と分割file地図01A/B/C、両repo tracked tree、current_structure00/01/04、最新weekly9/26末尾9/29合意、既存handoff/06末尾u34を照合。旧資料全履歴の全行再読とはしない。System Context prepareは不足profileのmaterialization後も祖先条件でexit2となり、成功へ読み替えず原典直接参照を使う。
+
+- product_destination / current未完了条件：複数出来事・回答/訂正群で、中央のsignificance Moveに残る受理済み回答の長い名詞列を減らす。
+- scope：DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。既存HR入口と独立Gate入口の適用を最小修正し、同じ受理source・原反応・ABOUT・時点を既存finite grammarへ渡す。新engine/helper/文法・意味受付・Planを追加しない。
+- execution_owner：Work ModeのGPT-based Codex/rootだけが編集・検査・write。商品と技術の独立担当はread-only。確認できないPro/Ultraモデル名は名乗らない。
+- allowed paths：APIの既存HR/Gate、detached/received tests（文面変更に必要なmethod適応のみ）、current identity、既存handoff、Cocolon06。GitHub反映は既存Draft PR3/30へnon-force。source/意味更新/質問/API/DB/RN/他core/flag/依存・保護受入・品質条件・releaseは不変更。
+- success：中央の回答が元出来事と原反応に結びついた述語になり、主体/助詞/否定/程度/時点/留保・全source消費を維持する。前後全本文、作者禁止inverse、訂正/撤回、旧保存本文互換、生成禁止の保存再取得、影響回帰とremote内容を確認する。
+- stop：誤帰属/欠落・新しい未提供/意味昇格/文章悪化は採用せず、既存ownerの範囲で見直す。新しいcontract/意味判断/補助機構を必要としたらこの単位を拡張しない。
+- proportionality：既存の接続条件だけを直す案が最小。目安40〜60分、追加費用/Mash操作/production依存0。商品側はPRODUCT_ROUTE_ALIGNED、技術側は三Moveの原順・中央位置・既存source group全対応をGate条件に残す案を確認。
+- verification baseline：u34記録の2385＝2371PASS/既知14FAILは履歴として保持。今回fresh結果と継承を分離し、件数のための無関係な全repo検査を行わない。
+- STRUCTURE_MAP_DELTA_NONE：既存作者と独立readerの適用条件のみで、責任配置・whole route・保存/公開contract・artifact lifecycleは不変。
+- 商品0/3・NOT_CLEAR・全体48%・default OFF・Draft/open/unmerged。群完了や正式Product Readにしない。10/03未完でも休止、10/04 Work分析/利用不可時Pro Piece、10/02実DB/実機の予定を維持。
+
+## 2026-09-30 JST u35最終結果：中央の受理済み回答を同じ有限文へ接続
+
+**TECHNICAL_CREDIT / 群未完了 / 商品NOT_CLEAR・0/3 / 全体48%・default OFF。** 3つの出来事を別々に受け止める際、中央significance Moveだけが既存の有限文作者と独立readerの対象外だった接点を修正。HRはfull recovery、全3Moveのattention/significance/felt_response順、required、同じreception_act、support、元event/reaction/answer groupとの全順一致を確認したときだけ中央を接続する。Gateは同じsourceの対応と中央位置を独立に証明する。significance役割だけで通さず、Plan・受理source・意味更新・質問・既存finite文法を変えない。新production helper/依存/契約は追加しない。
+
+最初の広いrole追加では、出来事撤回後に独立感情と残る出来事が並ぶ1系列が新しく未提供になった。この候補は採用せず、作者にも上記3scope条件を設け、同系列の全recordが開始版と一致することを確認した。完成した候補で新たな未提供を許容した、または対象から外して合格としたものではない。
+
+**実本文比較。** 同一28系列を開始版と候補で生成。28/28提供、Reception/bodyのみ17変更・11不変。nuclei/relations/Move/Observationは全28で一致し、全28の公開経路一致・作者禁止inverseも成功。前回残った中央PERCEIVED5入力を含み、末尾への回答系列でもその前の中央回答が文章化された。別途、説明形・copula・回答時点/訂正・重複SELFを含む候補11本文を追加確認し、全11inverse成功。rootと商品担当が28系列の前後両層全文と追加11候補全文を読了。追加11を前後比較済みとは数えない。主体/助詞/否定/程度/時点/『ようで』『と思った』の新しい欠落・誤帰属にblocking所見なし。
+
+合格見本ではなく、限定差分の実例：
+
+```text
+入力：褒められたのに、嬉しくなかった。私は誘われたのに、悲しかった。自分は誘われたのに、寂しかった。
+回答1：その時は少し重かった。
+回答2：その時は次も説明を求められるようで、苦しかった。
+
+見えたこと（前後同一）：
+「褒められた」のに「嬉しくなかった」、その時は「少し重かった」とあります。 「私は誘われた」のに「悲しかった」、その時は「次も説明を求められるようで、苦しかった」とあります。 「自分は誘われた」と「寂しかった」が、異なる向きのまま同時にあります。
+
+u34 Emlisから：
+褒められた時は嬉しくなく、少し重かったのですね。私は誘われたのに悲しかったことと、次も説明を求められるようだという、その時の苦しさを見失わず、小さくせずに受け止めています。あなたは誘われたのに、寂しさを感じたのですね。
+
+u35 Emlisから：
+褒められた時は嬉しくなく、少し重かったのですね。あなたは誘われた時は悲しく、次も説明を求められるようで、苦しかったのですね。あなたは誘われたのに、寂しさを感じたのですね。
+```
+
+**最終関連検証：2398PASS / 既知14FAIL、ERROR/SKIP0、2412 unique IDs。** 集合はreceived_discourse、detached_observation、contractsのcurrent owner identity 1件。最終版全量のfresh再実行とはしない。初回全量2412＝2276PASS/136FAIL（4分割各603、FAIL33/29/40/34、所要488.956/528.974/539.322/550.261秒）。既知14以外の122は中央の旧名詞形を直接期待するmethodの不一致だった。入力/decorator/test ID/意味条件を保ち、received18関数195条件の本文期待・改変対象を有限形へ適応。195再検査は194PASS/1FAIL。残1は回答撤回後の中央原反応にも連結『し、』を要求したmethod誤りで、入力の撤回に応じて同じ原反応の終止形を要求するよう補正した。
+
+独立技術reviewで、単独SELFの不正帰属が文法混合で先に落ちないよう旧nominal全句から負例を作る点、原時点削除の負例を残す点も補正。最終変更3関数は実収集40条件（14+24+2）で、40PASS（63.69秒）。途中の64という見積もりは採用しない。初回全量の不変2217＋195再検査の不変155＋最終40を統合した。全IDのmissing/duplicate0、初回→最終はreceived18関数bodyのみ、195版→最終は同3関数bodyのみ、decorator/引数/関数外AST不変を照合。HR/Gate/identity/detachedは初回全量から不変で、HR/GateのSHA256をidentity記録と再照合した。検査目的の削除、skip/xfail、frozen proof・母数・品質閾値の変更なし。
+
+既存detachedの位置15条件も同じ入力/IDのまま中央5の期待を有限形へ適応。新規27は意味改変13、完全な順序付きsource/Move条件の負例9、撤回回帰1、更新保存3、旧名詞形保存互換1で全PASS。旧名詞形の互換検査は旧作者の既存fallbackを保存した後、現作者へ戻し、generate禁止GET/startのDTO全文一致を確認したもの。現在の作者が旧名詞形を同値生成するというclaimではない。更新保存3系列9回答後状態ではoriginal保持、訂正/撤回の不復活、generate禁止GET/startの全文一致を確認。PGlite0.5.8であり実DB/実機/プロセス再起動の代替ではない。先行focused41PASS/1FAILは現作者replayに旧名詞形を差し込む検査設定の不一致で、上記の実保存互換検査へ置き換えた。focused/probe/再検査を2412へ重複加算しない。
+
+既知14は開始commitの別worktreeでも同runtimeでfresh実行して14FAIL（35.24秒）。全14のtraceはrepo path/行番号/UUID/addressを正規化後の差0。内訳はreceived8（現在肯定の旧文形6、旧anchor改変2）・detached6（肯定2責務容量2、第二原反応訂正の旧fragmentation2、撤回後BODY_UNAVAILABLE期待1、肯定訂正の旧group期待1）。解消・全PASSとは扱わない。環境はPython3.12.14/pytest9.1.1/PGlite0.5.8、既存requirementsとscratch test runtimeを復元。production依存は不変更。検査指定は `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai Q2_PGLITE_MODULE=<PGlite module> python3 -m pytest -q <nodeids> --junitxml=<完了XML>`。
+
+current identityは既存18payload/9ownerのHR/Gate派生値のみ更新：language `6498799b830ae601d7f0318329166a1140d2544059f136c973a1025bccb7bdde` / runtime `30ce3ae80b9acbde43316f113133d64c942a257a549d6aee6881a66d7726a8f6`。API変更6path＝HR/Gate/received/detached/current identity/既存handoff、Cocolon変更1path＝既存06。STRUCTURE_MAP_DELTA_NONE。GitHubへのnon-force反映後、remote全文bytes・変更path・final headをfresh照合し、最終headと結果をPR3/30のu35要約へ記録する。
+
+**残件。** 『のですね』3文反復が増え、主語反復と合わせた定型感は改善していない。Reception単独では『のに→時は』により逆接の明示が弱まる（Observationには保持）。同名別場面の区別、未対応『私が』/重複SELF、撤回後に残る名詞列、二層再掲も未解決。正式Product Read/群完了へ昇格しない。次の同群の確認位置は、受理済み『私が頼まれたようで、重かった』の主体助詞を既存SELF変換とfinite適格条件がどう扱うか。新source受付を足さず、出来事・原反応・留保を保持して既存owner内で確認する。これらを除外して群を閉じたり、閉じる前に二層重複の別作業へ移ったりしない。
+
+本文比較開始15:05JST〜最終検査15:30JSTは約25分、原典/環境準備とGitHub反映は別。新たな外部課金操作・production依存追加・Mash操作0。両PR Draft/open/unmerged、Ready/merge/deploy/enableなし。10/03未完でも休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/実機の予定を維持する。

@@ -10297,6 +10297,7 @@ def _source_grounded_reception_fragment(
     distributive_object: bool = False,
     unfinished_pair: bool = False,
     acknowledge_received: bool = True,
+    middle_received_scope: bool = False,
 ) -> str:
     """Compose one content core with one role/focus reception predicate."""
 
@@ -10385,7 +10386,9 @@ def _source_grounded_reception_fragment(
                          for value in clauses)
         return first + "こととは別に、" + second + "のですね"
     if (move.reception_act == "stay_with_current_burden"
-        and (move.move_role == "felt_response" or move.move_role == "attention"
+        and (move.move_role == "felt_response"
+             or (move.move_role == "attention"
+                 or move.move_role == "significance" and middle_received_scope)
              and any(code.startswith("thread-received-slot:") for code in realization.nominalization_plan))
         and not context_prefix
         and selected_subjective_decision.subjective_proposition.appraisal_content is not None
@@ -11158,6 +11161,21 @@ def _author_source_grounded_reception_clauses(
             "REALIZABLE_RECEPTION_EXPRESSION_VISIBLE_BINDING_GAP"
         )
     active_moves = reception_active_moves(reception_plan, recovery_stage)
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+    # Only the middle of three complete, ordered event/reaction/answer scopes
+    # shares this finite grammar. A standalone feeling can also occupy the
+    # significance role, so the role alone does not establish eligibility.
+    middle_received_scope = bool(
+        recovery_stage == "full" and active_moves == reception_plan.moves
+        and len(active_moves) == 3
+        and tuple(move.move_role for move in active_moves)
+            == ("attention", "significance", "felt_response")
+        and all(move.required and move.reception_act == "stay_with_current_burden"
+                and move.support_nucleus_ids for move in active_moves)
+        and tuple(("current_burden", move.target_nucleus_ids, move.support_nucleus_ids)
+                  for move in active_moves)
+            == _thread_retained_reaction_groups(plan.nuclei, plan.relations)
+    )
     move_index = {move.move_id: move for move in active_moves}
     parts: list[str] = []
     bindings: list[ReceptionVisibleSegmentBindingV1] = []
@@ -11588,6 +11606,7 @@ def _author_source_grounded_reception_clauses(
                 distributive_object=distributive_relation_slot is not None,
                 unfinished_pair=unfinished_pair,
                 acknowledge_received=acknowledge_received,
+                middle_received_scope=middle_received_scope and move == active_moves[1],
             )
             detached_parts = _source_owned_detached_feeling_parts(
                 move, meaning_realization, plan, resolver, selected_decision, recovery_stage,

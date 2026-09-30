@@ -3705,14 +3705,9 @@ def test_perceived_answer_retains_each_source_and_existing_middle_fallback(posit
     event = re.sub(r'^(?:私|自分)(?=は|が)', 'あなた', events[position])
     reaction = ('嬉しくなく、', '悲しく、', '寂しく、')[position]
     clause = event + '時は' + reaction + visible
-    if position == 1:
-        # This separate significance Move already keeps a nominal reading.
-        # Its unchanged limitation must not be counted as finite improvement.
-        assert '私は誘われたのに悲しかったことと、' in follow
-        assert 'を見失わず、小さくせずに受け止めています' in follow
-        assert source.split('ようで')[0] + 'ようだという、その時の' in follow
-    else:
-        assert clause in follow or clause[:-3] + 'く' in follow
+    # The middle significance Move now uses the same finite source grammar
+    # only when all three ordered event/reaction/answer scopes are proved.
+    assert clause in follow or clause[:-3] + 'く' in follow
     assert source in context[0].artifact.observation and 'として届' not in follow
     assert MeaningExperienceEngine().generate(req).artifact.text == body
     assert read_body(context, body).passed
@@ -3806,3 +3801,135 @@ def test_perceived_finite_reader_still_restores_the_prior_saved_wording(perceive
     prior = 'あなたは誘われたことは、悲しさを伴い、あなたも頼まれたような重さとして届いた'
     assert current in follow
     assert read_body(context, body.replace(follow, follow.replace(current, prior, 1), 1)).passed
+
+
+@pytest.fixture(scope='module')
+def middle_received_scope_context():
+    memo = '褒められたのに、嬉しくなかった。私は誘われたのに、悲しかった。自分は誘われたのに、寂しかった。'
+    req = advance(begin(memo), 'その時は少し重かった。')
+    return actual(request=advance(req, 'その時は私も頼まれたようで、重かった。'))
+
+
+@pytest.mark.parametrize('old,new', [
+    ('あなたも', 'あなたは'), ('頼まれたようで', '頼まれたので'),
+    ('頼まれたようで', '頼まれなかったようで'),
+    ('あなたも頼まれたようで、', ''), ('、重かった', ''),
+    ('重かった', '軽かった'), ('重かった', '重くなかった'), ('重かった', '重い'),
+    ('悲しく、', ''), ('悲しく、', '悲しくなく、'),
+    ('あなたは誘われた時は', '相手は誘われた時は'),
+    ('あなたは誘われた時は', 'あなたが誘われた時は'), ('時は', '今は'),
+])
+def test_middle_received_scope_rejects_changed_meaning(middle_received_scope_context, old, new):
+    context = middle_received_scope_context
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    middle = 'あなたは誘われた時は悲しく、あなたも頼まれたようで、重かったのですね。'
+    assert middle in follow and read_body(context, body).passed
+    changed = middle.replace(old, new, 1)
+    assert changed != middle
+    assert not read_body(context, body.replace(follow, follow.replace(middle, changed, 1), 1)).passed
+
+
+@pytest.mark.parametrize('change', ['optional', 'act', 'role', 'missing', 'reverse',
+                                     'reaction', 'answer', 'target', 'foreign_move'])
+def test_middle_received_scope_requires_complete_ordered_plan(middle_received_scope_context, change):
+    _, plan, _, resolver, selected = middle_received_scope_context
+    reception_plan = plan.response_plan.human_reception_plan
+    moves = reception_plan.moves
+    middle = moves[1]
+    raw = 'あなたは誘われた時は悲しく、あなたも頼まれたようで、重かったのですね。'
+    assert gate.read_received_discourse(raw, middle, plan, resolver, selected) is not None
+    if change == 'optional':
+        changed = replace(middle, required=False)
+    elif change == 'act':
+        changed = replace(middle, reception_act=moves[0].reception_act + '_changed')
+    elif change == 'role':
+        changed = replace(middle, move_role='attention')
+    elif change in {'reaction', 'answer'}:
+        field = 'memo' if change == 'reaction' else 'answer_text_private'
+        source_ids = {n.nucleus_id for n in plan.nuclei if field in n.source_fields}
+        supports = tuple(value for value in middle.support_nucleus_ids if value not in source_ids)
+        assert supports != middle.support_nucleus_ids
+        changed = replace(middle, support_nucleus_ids=supports)
+    elif change == 'target':
+        changed = replace(middle, target_nucleus_ids=moves[0].target_nucleus_ids)
+    else:
+        changed = middle
+    altered_moves = (moves[0], changed, moves[2])
+    if change == 'missing':
+        altered_moves = moves[1:]
+    elif change == 'reverse':
+        altered_moves = tuple(reversed(moves))
+    elif change == 'foreign_move':
+        changed = replace(middle, move_id=middle.move_id + '_foreign')
+        altered_moves = moves
+    altered = replace(plan, response_plan=replace(plan.response_plan,
+        human_reception_plan=replace(reception_plan, moves=altered_moves)))
+    assert gate.read_received_discourse(raw, changed, altered, resolver, selected) is None
+
+
+def test_middle_received_scope_still_reads_prior_saved_nominal_wording(qcase, qdb, monkeypatch):
+    user, parent, _ = qcase
+    memo = '褒められたのに、嬉しくなかった。私は誘われたのに、悲しかった。自分は誘われたのに、寂しかった。'
+    assert 'code' not in qdb.query('update public.emotions set memo=$2 where id=$1', [parent, memo])
+    service = active(monkeypatch)
+    current = run(service.start(user, parent))
+    author = reception._source_grounded_reception_fragment
+
+    def prior_author(*args, **kwargs):
+        # Materialize the pre-u35 saved grammar through the existing fallback.
+        kwargs['middle_received_scope'] = False
+        return author(*args, **kwargs)
+
+    with monkeypatch.context() as prior:
+        prior.setattr(reception, '_source_grounded_reception_fragment', prior_author)
+        for position, text in enumerate(('その時は少し重かった。', 'その時は私も頼まれたようで、重かった。')):
+            if position:
+                current = run(cont(service, user, current, f'prior-middle-continue-{position}'))
+            current = run(answer(service, user, current, text, f'prior-middle-answer-{position}'))
+    assert current['body_state'] == 'REFINED'
+    assert '私も頼まれたようだという、その時の重さを見失わず、小さくせずに受け止めています。' in current['current_observation']['text']
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('prior saved wording must not regenerate'))
+        assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+def test_middle_received_scope_does_not_admit_standalone_feeling_after_withdrawal():
+    memo = '褒められたのに、嬉しくなかった。私は誘われたのに、悲しかった。自分は誘われたのに、寂しかった。'
+    req = advance(advance(begin(memo), 'その時は少し重かった。'), 'その時は私も頼まれたようで、重かった。')
+    req = advance(req, '「私は誘われた」は誤りです。')
+    context = actual(request=req)
+    assert context[0].artifact.reception == ('その時は悲しかったし、その時、あなたも頼まれたようで、重かったのですね。'
+        '褒められたのに嬉しくなかったことと、その時に少し重かったことを見失わず、小さくせずに受け止めています。'
+        'あなたは誘われたのに、寂しさを感じたのですね。')
+    assert read_body(context, context[0].artifact.text).passed
+
+
+@pytest.mark.parametrize('operation', ['answer_correction', 'original_correction', 'withdraw'])
+def test_middle_received_scope_saved_updates_keep_exact_reads(qcase, qdb, monkeypatch, operation):
+    user, parent, _ = qcase
+    memo = '褒められたのに、嬉しくなかった。私は誘われたのに、悲しかった。自分は誘われたのに、寂しかった。'
+    assert 'code' not in qdb.query('update public.emotions set memo=$2 where id=$1', [parent, memo])
+    service = active(monkeypatch)
+    first = current = run(service.start(user, parent))
+    reply = {'answer_correction': '「私も頼まれたようで、重かった」ではなく「私は頼まれたようで、苦しかった」です。',
+             'original_correction': '「悲しかった」ではなく「怖かった」です。',
+             'withdraw': '「私は誘われた」は誤りです。'}[operation]
+    for position, text in enumerate(('その時は少し重かった。', 'その時は私も頼まれたようで、重かった。', reply)):
+        if position:
+            current = run(cont(service, user, current, f'middle-scope-continue-{position}'))
+        current = run(answer(service, user, current, text, f'middle-scope-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        observation, follow = body.split('Emlisから：', 1)
+        if position == 1:
+            assert 'あなたは誘われた時は悲しく、あなたも頼まれたようで、重かった' in follow
+        elif position == 2 and operation == 'answer_correction':
+            assert 'あなたは誘われた時は悲しく、あなたは頼まれたようで、苦しかった' in follow
+            assert '私も頼まれたようで、重かった' not in observation
+        elif position == 2 and operation == 'original_correction':
+            assert '悲しかった' not in body and '怖かった' in observation
+        elif position == 2:
+            assert '私は誘われた' not in body and 'その時は悲しかった' in follow
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved middle scope must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
