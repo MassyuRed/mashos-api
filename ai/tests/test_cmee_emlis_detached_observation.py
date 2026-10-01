@@ -4848,7 +4848,8 @@ def test_original_quoted_explanation_keeps_each_actual_target_and_other_reaction
     assert span.raw_text == clauses[position]
     assert span.start_index == sum(len(c) + 1 for c in clauses[:position])
     if memo == INITIAL_EXPLANATION_MEMOS[1][0]:
-        assert RECORD_PREFIXES[position] + '誘われた時は、あなたも少し重くなかった' in result.artifact.reception
+        assert all(RECORD_PREFIXES[other] + '誘われた' in result.artifact.reception
+                   for other in range(3) if other != position)
     assert MeaningExperienceEngine().generate(request).artifact.text == result.artifact.text
     assert read_body(context, result.artifact.text).passed
 

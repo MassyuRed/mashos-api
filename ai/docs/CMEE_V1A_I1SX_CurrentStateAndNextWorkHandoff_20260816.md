@@ -12251,3 +12251,26 @@ rootと独立担当が実生成本文の両層を読了し、初回説明形が�
 本finalは既存API handoffとCocolon06だけの記録更新。今回累積はexact4 modify＝API answer_update/detached test/handoffの3＋Cocolon06の1、add/delete0。反映後に両資料全文・固定source/test blobs・parent/head・累積path集合・PR本文/状態をfresh照合し、最終headは既存PR3/30へ記録する。System Context PUBLICATION_RECOVERY_AMBIGUOUSとSupabase changelog.md読取エラーのNONCREDITを維持し、原典直接読取を使用。Ready/merge/deploy/enable/live適用0、追加外部課金/Mash操作0。最新weekly合意の10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/実機予定を維持する。
 
 通常回答の本人訂正「書き方を間違えた。その時は少し重かったのです。」の成功は、原memoの引用置換が成立した証拠へ転用しない。原memo引用置換はsource_start/source_end指定・prior_answer_source無しの別分岐で、新説明形不受理後に旧対象と依存関係が撤回されPARTIALになる。次の直接修正では引用対象一意性、新source全体の否定・主体・時点、actual body成立を一緒に確認する。
+
+
+## 2026-10-01 JST u45 final：原入力の一意引用説明形置換／元記述位置の残件検出
+
+Mashの継続指示に従い、u44最終API `d54ef134c7138a52704a00ecd0916aa555adb4ca` / Cocolon `9697a401cd62df469cc35377202a940f99836f95`から同群の次残件へ進めた。u44結果は既存両PRへ保存・照合済みで、コードをやり直していない。今回もLEVEL_2の内部最小修復、root華恋だけが編集/試験/write、独立担当はread-only。新owner/route/語彙/公開・保存contract/DB schema/RN/dependency/flag追加0。HR/Gate/GP/shared9owner identity不変更、STRUCTURE_MAP_DELTA_NONE。
+
+**修復した経路：** 原memo/memo_actionの一意な引用対象を説明形newへ置換する際、対象exact1とnew_start/new_endが既に証明されていても、prior_answer_source無しのため説明形witnessが閉じ、newがcorrection_replacement_unsupportedとなり旧対象だけWITHDRAWされていた。既存finite feelingの説明形判定を、通常回答と一意引用newに共通で適用する。旧引用はlocatorであり、否定/主体/述語をnewへ寄付しない。既存語彙交差・完全一致・他人主体/未完形等の拒否は残る。prior_answer_source引数は既存不安copularの程度訂正境界にも使うため削除しない。
+
+source checkpoint `107820fc5e58feb52e4e9067181a4ebf060498e0`。固定source blob `44b3a858c2f9e12b23003fd9d911cd9bfa11aa6a`、最終test blob `97c45299ef2cd875cd809a7ae8a707ddace575a1`。u44に対するproduction差分は説明形scope条件削除とコメントだけ。u44 test全318585 bytesを完全prefixとして保持し、末尾8859 bytes/30条件を追加した。旧test変更・削除・skip/xfail追加0。
+
+**source固定の完了選択249 unique ID：228 PASS / 21 FAIL、ERROR0/SKIP0。** 説明形関連217は213 PASS / 4 FAIL（190.05秒）、別の旧境界15は全PASS（9.74秒）、既存失敗17は全FAIL（31.57秒）。この217内にu44追加32全PASSとu45追加30（28 PASS / 2 FAIL）を含む。新testの非focus原引用訂正にもABOUTを必須とした方法誤りを新testだけで直し、さらに元位置検査を残存原記述へ限定した最終30をfresh再実行：28 PASS / 2 FAIL（24.76秒）。その30 IDを先行217の同IDと置き換え、重複加算せず249 uniqueに集約した。その他のsource/test条件は不変更。初期new30の26 PASS / 4 FAILは未成功履歴として残し、成功結果へ換算しない。
+
+21 FAILの内訳を分ける：既存17はu44以前とID集合・setup/call/teardown成否差0。旧説明形拒否期待2＝received_discourseのtest_answer_explanation_revision_requires_unique_existing_answer[initial] / [original_memo]はnewを拒否する旧期待と今回の受理が衝突する。前者のu43 fresh PASSはu44で確認済み、後者もu43でfresh PASS（13.13秒）を確認。旧testはそのまま保持し、検査成功や既存17へ混ぜない。残る2は追加した商品側の元位置/本文検査が検出した未解決条件で、下記へ引き継ぐ。未完了2865件の4分割はu44同様NONCREDIT、全API/全関連成功を称さない。
+
+新30は異名3/同名3の一意原反応引用6、本人/否定/程度/内側時制/外側説明形/完全new範囲6、memo/memo_action純意味2、不受理4、曖昧原引用1、作者oracle禁止の改変拒否7、保存4系列。保存4×3回答後状態ではoriginal不変、再訂正/撤回、generate禁止GET/start DTO全文一致を確認した。pure meaningの元memo_action fixtureは元からQ3初期bodyが未成立であり、可視本文成功へ換算しない。本文/独立reader/保存は既存bodyが成立する原contrast反応の引用訂正で検査した。unsupported語彙/主体等の引用newは旧WITHDRAW挙動を維持しており、全unsupported置換の改善とは称さない。
+
+同一入力のbefore/after純生成probeは異名3の12状態＋同名3の12状態。既存有限「私も少し重くなかった」と既に受理される怖さ説明形の12状態は結果全体が不変。新たに受け取る重さ説明形12状態はPARTIAL/WITHDRAWからRESOLVED/REVISEへ変わった。異名側本文6、同名側本文4がnewを含む本文へ変わる。同名中間への重さ説明形2状態はbefore/afterとも本文未提供で、意味修復を本文成功へ昇格させない。rootは代表の両層実本文と最終失敗本文を読み、独立担当はsource/旧境界/元位置の仕組みを照合した。全24本文の正式Product Readとは称さない。
+
+**次の直接残件は同名3原記述の中間/末尾を初回から引用訂正した時の元位置保持。** 中間「悲しかった」→newは独立本文validationで失敗する。before probeでも同名中間の既存有限置換と怖さ説明形がemlis_refined_body_unavailableであり、この本文欠落を今回解消とは称さない。末尾「寂しかった」→newは本文を出すが、残る元中間の悲しさを「後に書かれた方」と再番号付けする。最終new testは元「間」の保持を要求してFAILのまま保存した。
+
+独立診断ではHRの_received_event_record_prefixesとGateの_read_received_record_prefixesが、全original eventではなく現在のburden Moveのtarget eventだけを母集団にする。非focus REVISEで一件が母集団から外れると残る二件を先/後へ付け直し、author/readerが同じ誤った縮小母集団を使うためGateも通す。これは説明形の時制とは別の位置owner問題。非focus訂正がnewを独立反応にする既存境界と、残存原記述の位置の再番号付けを混同しない。新たなABOUT関係の創設をこの修復の成功条件へ混ぜず、原記述の実位置と初期原集合を確認する次の修復へ残す。
+
+群未完・商品0/3/NOT_CLEAR・全体48%・default OFF・両PR Draft/open/unmergedを維持。原記述位置の2条件、旧失敗/旧拒否期待整合、未対応文法、長い「し」連結・主題/「のですね」反復・深さ不足は残る。同群閉鎖前に二層再掲の別作業へ進行しない。最終記録は同じAPI handoffとCocolon06だけ。反映後、固定blobs・両資料全文prefix/追記・parent/head・path集合・PR本文/状態を照合し、最終headを既存PR3/30へ記録する。今回もローカル合成PGlite、live DB/実機/プロセス再起動未実施、Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/実機予定とContext/changelog取得エラーのNONCREDITを維持。
