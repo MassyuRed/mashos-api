@@ -10893,6 +10893,13 @@ def _detached_feeling_finite_surface(source, *, allow_explanatory=False, allow_c
     # later SELF/あなた. Bare feelings can use が for the feeling target (怖い),
     # so a single person reference alone cannot justify changing perspective.
     finite = re.sub(r"(?<=[い])です$|(?<=かった)です$", "", source)
+    if _THREAD_NEGATIVE_FEELING_COPULA_RE.fullmatch(source):
+        # Share the acknowledgement only after proving the complete negative
+        # feeling; its noun, negation and inner tense stay source-owned.
+        for polite, plain in (("ありませんでした", "なかった"), ("ありません", "ない")):
+            if source.endswith(polite):
+                finite = source[:-len(polite)] + plain
+                break
     finite = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?=には|にも|は|も|が(?=[^、,。]+れ(?:た|なかった)ようで[、,])(?!.*(?:わたし|ぼく|おれ|私|僕|俺|自分|あなた)))",
                     "あなた", finite, count=1)
     medial = _medial_feeling_owner(source) if allow_medial else None

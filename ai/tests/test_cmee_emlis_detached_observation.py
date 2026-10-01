@@ -6495,3 +6495,185 @@ def test_nominal_negation_and_medial_owner_original_revision_keeps_other_answers
                         visible.replace('当時、', '回答した時点で、')):
         changed = body.replace(follow, follow.replace(visible, replacement, 1), 1)
         assert changed != body and not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('memo', [EXACT_RECORD_MEMO, RECORD_TRIPLE_MEMO])
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('third,visible', [
+    ('今は安心ではありません。', '回答した時点では安心ではない'),
+    ('その時は私も幸せではありませんでした。', 'その時はあなたも幸せではなかった'),
+    ('今は少し私は安心ではありません。', '回答した時点ではあなたは少し安心ではない'),
+    ('その時は少し平穏ではありませんでした。', 'その時は少し平穏ではなかった'),
+])
+def test_polite_nominal_negation_keeps_originals_and_each_answer(memo, field, third, visible):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    req = begin(memo if field == 'memo' else '', memo if field == 'memo_action' else '')
+    for reply in (*TWO_POSITIVE_PAIRS[0], third):
+        req = advance(req, reply)
+    prepared = prepare_emlis_meaning(req)
+    assert not prepared.checkpoint.unresolved_parts
+    nucleus, = prepared.accepted_nuclei
+    frame = nucleus.semantic_frame
+    assert (nucleus.kind, frame.predicate_kind, frame.modality, frame.polarity) == (
+        'reaction', 'feeling', 'feeling', 'negative')
+    assert 'operator:feeling' in frame.attribute_codes
+    context = actual(request=req)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    assert all(value in follow for value in ('嬉し', '悲し', '寂し',
+        '回答した時点では嬉しい', 'その時は楽しかった', visible + 'のですね。'))
+    assert all(prefix in follow for prefix in RECORD_PREFIXES)
+    original_answer = third[4:-1] if third.startswith('その時は') else third[2:-1]
+    assert original_answer in context[0].artifact.observation
+    assert '不安' not in body and 'ありません' not in follow
+    assert read_body(context, body).passed
+    ending = 'なかった' if 'ではなかった' in visible else 'ない'
+    polite = 'ありませんでした' if ending == 'なかった' else 'ありません'
+    changes = [visible.replace(ending, 'ない' if ending == 'なかった' else 'なかった'),
+               visible.replace('では' + ending, 'だった' if ending == 'なかった' else 'な'),
+               visible.replace(ending, polite), visible.replace('安心では' + ending, '不安な'),
+               visible.replace('回答した時点では', 'その時は') if third.startswith('今は')
+               else visible.replace('その時は', '回答した時点では')]
+    if '少し' in visible:
+        changes.append(visible.replace('少し', ''))
+    if 'あなた' in visible:
+        changes.extend([visible.replace('あなた', '相手'),
+                        visible.replace('あなたも', 'あなたは') if 'あなたも' in visible
+                        else visible.replace('あなたは', 'あなたも')])
+    for changed in set(changes) - {visible}:
+        assert not read_body(context, body.replace(follow, follow.replace(visible, changed, 1), 1)).passed
+    for old in (visible, 'その時は楽しかった', '回答した時点では嬉しい'):
+        assert not read_body(context, body.replace(follow, follow.replace(old, '', 1), 1)).passed
+    changed = body.replace(follow, follow.replace(RECORD_PREFIXES[2], RECORD_PREFIXES[0], 1), 1)
+    assert not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('position', [0, 1, 2])
+@pytest.mark.parametrize('source,visible', [
+    ('少し私は安心ではありません', 'あなたは少し安心ではない'),
+    ('私も少し幸せではありませんでした', 'あなたも少し幸せではなかった'),
+])
+def test_polite_nominal_negation_each_answer_position(position, source, visible):
+    replies = list(TWO_POSITIVE_PAIRS[0])
+    replies.insert(position, '今は' + source + '。')
+    req = begin(EXACT_RECORD_MEMO)
+    for reply in replies:
+        req = advance(req, reply)
+    context = actual(request=req)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    assert all(value in follow for value in ('嬉し', '悲し', '寂し',
+        '回答した時点では嬉しい', 'その時は楽しかった', '回答した時点では' + visible))
+    assert read_body(context, body).passed
+    assert not read_body(context, body.replace(follow, follow.replace(visible, visible.replace('少し', ''), 1), 1)).passed
+
+
+def test_polite_nominal_negation_three_negative_answers_restore_actual_source_bytes():
+    sources = ['安心ではありません', '私も幸せではありませんでした', '少し私は平穏ではありません']
+    req = begin(EXACT_RECORD_MEMO)
+    for when, source in zip(('今は', 'その時は', '今は'), sources, strict=True):
+        req = advance(req, when + source + '。')
+    context = actual(request=req)
+    result, plan, _, resolver, selected = context
+    follow = result.artifact.reception
+    assert all(s in follow for s in ('嬉しくなかった', '悲しかった', '寂しかった',
+        '安心ではない', 'あなたも幸せではなかった', 'あなたは少し平穏ではない'))
+    sentences = [part + '。' for part in follow.removesuffix('。').split('。')]
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(sentences) == len(moves) == 3
+    with patch.object(reception, '_source_grounded_received_discourse', side_effect=AssertionError('no received author')):
+        for raw, move, source in zip(sentences, moves, sources, strict=True):
+            proof = gate.read_received_discourse(raw, move, plan, resolver, selected)
+            assert proof is not None and proof[-1][2].decode() == source
+            assert 'ありません' not in raw.encode()[proof[-1][0]:proof[-1][1]].decode()
+    # The standalone answer reader also serves negative group clauses. Read
+    # actual finite prose independently, including the polite past source.
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    finite_answers = ('安心ではない', 'あなたも幸せではなかった', 'あなたは少し平穏ではない')
+    for position, (source, finite) in enumerate(zip(sources, finite_answers, strict=True)):
+        answer_nucleus = index[f'answer:s{position + 7}']
+        relation, = [r for r in plan.relations if r.type == 'evaluation_about_event'
+                     and r.to_nucleus_id == answer_nucleus.nucleus_id]
+        when = 'original_occasion' if position == 1 else 'answer_time'
+        temporal = 'その時は' if position == 1 else '回答した時点では'
+        raw = RECORD_PREFIXES[position] + '誘われたことについて、' + temporal + finite + 'のですね。'
+        proof = gate._read_answer_feeling_clause(raw, index[relation.from_nucleus_id],
+            answer_nucleus, when, plan, resolver)
+        assert proof is not None and proof[-1][2].decode() == source
+        wrong = raw.replace(finite, finite.replace('なかった', 'ありませんでした')
+                            if position == 1 else finite.replace('ない', 'ありません'))
+        assert gate._read_answer_feeling_clause(wrong, index[relation.from_nucleus_id],
+            answer_nucleus, when, plan, resolver) is None
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.mark.parametrize('reply,visible', [
+    ('今は少し私は安心ではありません。', '回答した時点で、あなたは少し安心ではない'),
+    ('その時は私も幸せではありませんでした。', 'その時、あなたも幸せではなかった'),
+])
+def test_polite_nominal_negation_survives_event_withdrawal(reply, visible):
+    req = advance(advance(begin(), reply), '「褒められた」は誤りです。')
+    context = actual(request=req)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    assert '褒められた' not in body and '誘われた' in body and '頼まれた' in body
+    assert visible + 'のですね。' in follow
+    assert read_body(context, body).passed
+    for old, new in [('ではない', 'ではなかった'), ('ではなかった', 'ではない'),
+                     ('あなた', '相手'), ('少し', '')]:
+        if old in visible:
+            assert not read_body(context, body.replace(follow, follow.replace(visible, visible.replace(old, new), 1), 1)).passed
+
+
+@pytest.mark.parametrize('source,visible', [
+    ('少し私は安心ではありません', '当時、あなたは少し安心ではない'),
+    ('私も幸せではありませんでした', '当時、あなたも幸せではなかった'),
+])
+def test_polite_nominal_negation_original_revision_keeps_other_answers(source, visible):
+    req = begin(EXACT_RECORD_MEMO)
+    for reply in (*TWO_POSITIVE_PAIRS[0], f'「悲しかった」ではなく「{source}」です。'):
+        req = advance(req, reply)
+    context = actual(request=req)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    assert '悲しかった' not in body and '悲しさ' not in follow
+    assert all(value in follow for value in ('嬉し', '寂し', '回答した時点では嬉しい',
+        'その時は楽しかった', '言い直してくださった気持ちについては、' + visible))
+    assert read_body(context, body).passed
+    assert not read_body(context, body.replace(follow, follow.replace(visible, visible.replace('当時、', 'その時、'), 1), 1)).passed
+
+
+@pytest.mark.parametrize('last,retained,removed', [
+    ('その時は私も幸せではありませんでした。', 'その時はあなたも幸せではなかった', None),
+    ('「少し私は安心ではありません」ではなく「私も幸せではありませんでした」です。',
+     '先の回答時点ではあなたも幸せではなかった', '少し私は安心ではありません'),
+    ('「少し私は安心ではありません」は誤りです。', 'その時は楽しかった', '少し私は安心ではありません'),
+])
+def test_polite_nominal_negation_saved_add_revision_withdrawal(qcase, qdb, monkeypatch, last, retained, removed):
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    qdb.query('update public.emotions set memo=$1 where id=$2', [EXACT_RECORD_MEMO, parent])
+    first = current = run(service.start(user, parent))
+    for index, reply in enumerate(('今は少し私は安心ではありません。', 'その時は楽しかった。', last)):
+        if index:
+            current = run(cont(service, user, current, f'polite-negative-continue-{index}'))
+        current = run(answer(service, user, current, reply, f'polite-negative-answer-{index}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        follow = body.split('Emlisから：', 1)[1]
+        assert all(value in follow for value in ('嬉し', '悲し', '寂し'))
+        if index:
+            assert 'その時は楽しかった' in follow
+        if index == 2:
+            assert retained in follow
+            if removed:
+                assert removed not in body and 'あなたは少し安心ではない' not in follow
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved polite negation must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == EXACT_RECORD_MEMO
+
+
+@pytest.mark.parametrize('source', ['安心ではありませんか', '安心ではありませんと言われた',
+    '安心ではありませんなら嬉しい', '友人は安心ではありません', '少しあなたは安心ではありません',
+    'とても私は安心ではありません', '安心ではありませんかもしれない', '達成ではありません'])
+def test_polite_nominal_negation_keeps_unresolved_boundaries(source):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    prepared = prepare_emlis_meaning(advance(begin(), '今は' + source + '。'))
+    assert not prepared.accepted_nuclei and prepared.checkpoint.unresolved_parts

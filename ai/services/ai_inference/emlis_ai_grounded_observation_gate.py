@@ -3064,6 +3064,9 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
     owner = _thread_feeling_owner(source)
     polite_adjective = re.fullmatch(r"(?P<predicate>.+(?:い|かった))です", source)
     predicate = polite_adjective['predicate'] if polite_adjective else source
+    if _THREAD_NEGATIVE_FEELING_COPULA_RE.fullmatch(source):
+        predicate = re.sub(r"ありませんでした$", "なかった", predicate)
+        predicate = re.sub(r"ありません$", "ない", predicate)
     explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", source)
     explanation_proven = False
     nominal_explanation = False
@@ -3305,6 +3308,9 @@ def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, sha
     owner = _thread_feeling_owner(source)
     polite = re.fullmatch(r"(?P<predicate>.+(?:い|かった))です", source)
     predicate = polite['predicate'] if polite else source
+    if _THREAD_NEGATIVE_FEELING_COPULA_RE.fullmatch(source):
+        predicate = re.sub(r"ありませんでした$", "なかった", predicate)
+        predicate = re.sub(r"ありません$", "ない", predicate)
     explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", source)
     explanation_proven = False
     copular = re.fullmatch(r"(?P<host>.+?)(?:でした|だった)", source) if allow_past_copular else None
@@ -4508,6 +4514,16 @@ def _restore_thread_finite_answer(actual, source, *, copular_clause=False,
         if not restored.startswith(recipient):
             return None
         restored = owner.group() + restored[len(recipient):]
+    if _THREAD_NEGATIVE_FEELING_COPULA_RE.fullmatch(source):
+        for polite_ending, finite_ending in (("ありませんでした", "なかった"), ("ありません", "ない")):
+            if source.endswith(polite_ending):
+                # Read the actual finite negation, then require every source
+                # byte. Wrong tense or an unshared polite ending cannot fall
+                # through to the ordinary source-equality path.
+                if not restored.endswith(finite_ending):
+                    return None
+                restored = restored[:-len(finite_ending)] + polite_ending
+                return source if restored == source else None
     if attributive:
         explanatory = re.fullmatch(r"(?P<predicate>.+)の(?P<ending>です|だった|だ)", source)
         if explanatory is not None:

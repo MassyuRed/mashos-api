@@ -12667,3 +12667,44 @@ language identity `2fda1c95dba443dbcb59386431e9de762061f2ec308c764250e417ca09061
 「今は安心ではありません。」「今は少し私は少し安心です。」を同じ3記述・先の2回答へ追加すると、受理済みvalue/factのままReceptionが最初の回答だけへ縮退することを実測した。敬体否定と主体前後の複合程度は今回の限定文法に入らず、未対応入力へ付替えて対象群を閉じない。次はこの受理済みの敬体否定を、原否定・丁寧形のsource復元と既存FINITE処理に沿って修復する。複合程度、他の長い連結・主題反復・深さ・未対応文法・複数文引用scope・4件以上同名集合も継承する。
 
 対象群は未完で、二層再掲の別作業へ先行しない。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。最新weeklyの10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承する。
+
+
+## 2026-10-01 u57 — 敬体否定を既存の感情保持と有限本文へ接続
+
+### 開始位置と修復範囲
+
+MashのGitHub指定・EmlisAI残件継続指示に従い、u56が残した「安心ではありません」「幸せではありませんでした」を修復した。開始HEADはAPI `4997d3aca479d64a76ff431e5d510e959e66053f`、Cocolon `25cd8556f73e9120e5d14bd7850cd62824c67326`。fresh PRで両方open/Draft/unmergedを確認した。前提入口・current rule/18・恒久incident全文・最新weekly09/29合意・u56引継ぎを確認し、全体設計と全file地図は前回読取を継承、今回の既存owner内の変更範囲を照合した。全歴史本文の再通読とはしない。System Context prepareは今回もmaterial commitのdescendant確認未成立でexit2。shallow checkoutの祖先検査失敗を実履歴破損と断定せず、入口で認められた原典直接読取を使用した。
+
+必要性はOBSERVED_BLOCKER_MINIMAL_FIX、既存LEVEL_2内。root華恋が唯一の編集・実行・反映ownerで、read-only担当が商品ルート、6例の前後全文、source/test差分を別途確認した。今回の編集はAPI既存Plan/HR/Gate、既存detached test末尾、current共有owner identity、既存handoff、Cocolon正本06のexact7 modify。answer update自体は変更不要だった。新owner/renderer/entry、受付条件、一般共有語彙、公開contract、Move上限、DB/RN、依存、flagの拡張はしない。STRUCTURE_MAP_DELTA_NONE。
+
+### 共通原因と実本文
+
+敬体の否定名詞が既に受理されながらvalue/fact（平穏の一部はreaction/reaction）に残り、feelingの保持責務に入らなかった。また過去敬体がそのまま名詞化される経路には「ありませんでしたことを」という不正文があった。既存の否定名詞完全source証明に「ありません／ありませんでした」を接続し、既存answer updateの本人scope・kind条件を通るものだけreaction/feelingへ分類する。肯定コピュラとは分離を保ち、「安心ではありません」を「不安」へ置換しない。
+
+HRの既存有限表現内で、完全source証明がある敬体否定だけを「ない／なかった」に活用する。原名詞・否定・内側の時制・主体・助詞・程度は保持する。Gateは作者を呼ばず、detached/answerの各独立readerで述語を読み、実本文の有限否定終端から原敬体へ戻してsource全文と照合する。終端不一致時は明示拒否し、原敬体を残した「ありませんのですね」が単純全文一致で通ることを防ぐ。先頭の旧nominal復元も負敬体を迂回できないことを静的reviewで確認した。有限末尾RE・肯定copula parser・共有owner証明全体を緩めない。
+
+開始版との6入力比較はObservation6/6同一、対象4のReception改善、対照2は全文不変。rootと商品ルート担当は元memo・全回答・両層本文を全文読み、対象4では元3反応・先行2回答・第三の否定回答が残ること、現在/過去、私も→あなたも、少し、対象位置の保持を確認した。6例とも作者禁止inverseはPASSだが、複合程度の対照は依然欠落している。inverse成功だけでは全意味保持や商品合格を証明しない。
+
+開始版の否定regexと現行regexを用いた `_answer_nucleus` 36 source比較は受理/拒否36/36同一。対象10の意味分類/感情属性のみ変更し、他26はnucleus全体同一。最初の比較ではtime引数を小文字で渡していたため、正式なANSWER_TIMEでも再実行し、36件の記録と完全一致を確認した。疑問・引用報告・条件・他者・推量等の境界を通すための受付変更はない。
+
+### 検証の範囲
+
+追加38条件の初回は38 PASS（78.91秒）。裸/SELF同名×memo/memo_action×敬体現在/過去・主体/程度4形の16、回答3位置×2形の6、三つの否定回答1、出来事撤回後2、原反応訂正2、保存3系列、未受理境界8。原反応・先行回答欠落、本人/助詞、程度、否定/内側時制、回答時点、同名記録所属、対義語置換、敬体を残した不正文を作者禁止inverseで拒否する。旧detached test428112 bytes全文prefix、旧assert・skip/xfail・historical frozen identityは保持し、current共有owner identityだけを既存導出で更新した。
+
+初回後に16条件のsource非空assertをObservationで原sourceを保持するassertへ強化した。三つの否定回答1条件にはstandalone answer readerの現在/過去/medial直接入力を追加し、1 PASS（13.39秒）。このstandalone入力はテスト内で構築した文であり、artifact切出しと呼ばない。同条件の直前では実生成された三文をreceived readerへ直接渡し、実byte範囲から原敬体sourceへ戻ることを、received作者禁止下で確認している。production差分は初回38検査以降に変更していない。
+
+保存3系列は敬体否定回答→第二回答→第三回答追加/過去敬体への回答訂正/撤回。各更新後のgenerate禁止GET/start DTO全文一致、原DTOとDB原memo不変を確認した。原反応訂正・出来事撤回後も、訂正・撤回した意味を復活させず、それ以外の意味を保持する。Python3.12.14 / pytest9.1.1 / PGlite0.5.8を継続使用し、installなし。合成DBとmock RPCによる確認で、実DB・端末・プロセス再起動の検証ではない。
+
+current identityはlanguage `51f69b8cf287e4d6cccd3f9541bd1bbc1d950e3476e7055e6da4a26af8de3eff`、runtime `971efe6d79e591b10261e44ea21694fef5e37cb16171a431f8748413a608f74b`。共有owner identity検査1 PASS（39.94秒）。今回3sourceのhash/lengthと集約identityだけが変わっている。
+
+最終関連検査は218条件＝216 PASS / 2 FAIL（262.99秒）。内訳はu56までの関連202と、上記assertを強化した今回16。前回関連164のIDと成否は今回も全一致した。追加38の最終結果は、初回の変更なし21＋強化16＋reader追記1の成功を統合した38 PASSで、同じ条件を再実行分だけ加算しない。identityを含む最終全体は241 unique IDs＝239 PASS / 2 FAIL / ERROR0 / SKIP0。全suite・過去の別集合の失敗全量を再実行したとはしない。
+
+2 FAILは前回から継続するu55 `test_nominal_positive_answer_keeps_existing_nonfeeling_and_unresolved_boundaries` の「今は安心ではない」「今は少し私は安心です」。u56で意図的にreaction/feelingへ修正済みだが旧assertはvalue/value/factを期待している。今回新たな失敗ではなく、期待値を編集してPASSへ換算もしない。今回の分類比較・本文検査と旧失敗を並存させて記録する。
+
+関連選択はdetached_observation / detached_self_feeling / received_discourseの `nominal_positive_answer or same_name_positive or medial_owner or copular or test_answer_degree_correction_does_not_admit_different_owner_or_predicate or test_polite_nominal_negation_keeps_originals_and_each_answer`。current owner identityは既存contract testを単独実行した。diff --check・旧test prefix・変更path集合を確認し、既存PR3/30のDraft branchへnon-force反映する。反映後の正式HEAD、parent/tree、exact7ファイル全文一致は既存PR metadataに記録する。
+
+### 残件と次の一作業
+
+「今は少し私は少し安心です。」は開始版・修正後ともvalue/factで受理され、同じ3記述と先の2回答に加えるとReceptionが先頭回答だけに縮退することを実測した。次は本人主語の前後に程度がある場合の完全source証明を、既存主体・否定・時制の境界を保って修復する。今回の敬体否定4例の改善を、共通原因全体や複数出来事/回答/訂正群の閉鎖にはしない。
+
+長い「し」連結、同名出来事/主題の反復、二層再掲、定型終端、受け取りの深さ、未対応文法、複数文引用scope、4件以上同名集合は未完。現行優先群を閉じる前に二層再掲の別作業へ先行しない。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。最新weeklyの10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承する。
