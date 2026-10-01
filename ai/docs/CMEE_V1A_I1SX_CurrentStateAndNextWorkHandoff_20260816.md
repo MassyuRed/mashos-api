@@ -12399,3 +12399,33 @@ language identity `3ed66d79df6df27ef2223445979f34db46cf500d69f10548d771ca50303e0
 今回閉じたのは明示SELF topicと原否定反応の名詞化が作る二重主題だけ。長い「し」連結、出来事/主題/受け止め句の反復、受け取りの深さ、未対応文法、複数文引用scope、4件以上同名集合は残る。同群の実本文を共通原因単位で改善し、二層再掲の別作業へ先行しない。群閉鎖・Emlis完成・正式商品合格へ換算しない。
 
 限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・既存全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末予定の最新weekly合意を継承。反映後にexact5のremote全文、差分path集合、parentと最新HEADへの包含を照合し、最終SHAと結果を既存PR3/30に記録する。
+
+
+## 2026-10-01 u49 — 原入力の過去感情に不要な「し」連結を減らす
+
+開始HEADはAPI `28a611fa42993218a994b31afce3e9ec24ad3fe5`、Cocolon `dda770c6d6ec453e5fcf2d8ae4bd1fca161b918a`。添付前回txtとu48を照合し、前提資料・作業姿勢00/CURRENT/18/専門rule・恒久incident全文・全体01/01A/01B/01C・current_structure00/01/04・最新weekly 20260926の09/29合意を確認。GitHub全tree地図はCocolon1645/API2300の計3945 blobs、全本文読了とはしない。System Context prepareはshallow checkoutで要求祖先を確認できず未成立。実際のlineage不成立の証明にはせず、入口が認める原典直接読取で進めた。
+
+### 商品動作と範囲
+
+程度・SELF修飾を持つ原入力の過去形容詞でも、HRの既存 `_source_grounded_received_discourse` が無条件に時点分離flagを立て、同じ原入力の出来事間を一律に「し」で連結していた。回答なしの過去形容詞は既存の可逆的な連用形を使い、末尾の過去述語で結ぶ。既に立ったflagを消さず、補足回答または過去コピュラがある時は従来の独立時制を維持する。程度・主体・否定・原接続詞・記述順・同名位置・回答時点を保持する。Gate、意味計画、選択、受理文法、Move数、公開contractは変更0。
+
+rootによる前後10入力比較は8Reception変更/2全文不変。全10のObservation・意味計画は同一で、現行本文と旧本文の独立inverseはいずれも通過。rootが全10比較本文を読み、独立担当は修正後SELF修飾と回答→訂正→撤回の4本文を確認。長い「し」連結の原入力過去群だけを限定修復したもので、主題反復・定型性・受け取りの深さまで解消したとはしない。
+
+実行環境はCodex Work、LEVEL_2既存承認内のbounded修復。root華恋が唯一の編集・実行・GitHub反映owner、独立担当はread-only。exact5 modify、追加/削除0：API HR、既存detached検査末尾、current共有owner identity、既存handoff、Cocolon正本06。STRUCTURE_MAP_DELTA_NONE：既存関数内部の分岐修復でowner/route/API/DB/RN/dependency/flag追加0。外部生成AI、追加費用、Mash操作0。
+
+### 検証と旧期待
+
+- 新15条件は15 PASS（20.53秒）。memo/memo_action×程度位置6、同名/異名の全修飾2、過去コピュラ位置2、回答/訂正/撤回3、現行/旧本文保存更新2。主体・程度・否定・時制・原因への改変、対象/原位置交換、句欠落は両作者を禁止した独立inverseで拒否。保存2系列は初期と各更新後のgenerate禁止GET/start DTO全文一致、原DTO/DB原memo不変を確認。
+- 関連既存46条件は44 PASS / 2 FAIL（26.57秒）。2件はu48の程度検査が旧「嬉しくなかったし、」を固定期待するため。現行の程度・否定・過去を保持する連用形と衝突する。旧assertは変更せず、新6条件で意味保持・改変拒否を検証。旧2件の失敗を商品意味欠落とも解消済みとも記録しない。
+- current共有owner identity検査1はPASS。最終sourceで実行した重複なし62条件は60 PASS / 2 FAIL / ERROR0 / SKIP0。全量再実行ではない。identity検査の初回は実行path設定不足でcollection error、`PYTHONPATH=ai`を明示して修正。初回はtest実行0のNONCREDITで、最終62へ含めない。
+- 対照としてu48の作者関数だけを検査processへ注入した新主6条件は6 FAIL（15.05秒）。production sourceを差し戻していない。開始sourceでの旧程度2 PASSも対照であり、最終集計へ加算しない。
+- 旧detached検査355232 bytes全文prefixを保持。旧assert、historical frozen identity、skip/xfailは変更0。Gate bytes不変、git diff --check成功。u48の既知台帳21件は前版証拠を継承し、今回fresh21失敗または全件解消とは報告しない。今回の旧文面衝突2を加えた継続台帳は23件。
+
+Python3.12.14 / pytest9.1.1 / PGlite0.5.8。ローカル合成保存検査でありlive DB・端末・プロセス再起動は未検証。language identity `9547ea565676edef5cbd143b439f4a77d97f2d904750cc3922c09c0274d145b7`、runtime identity `e05beaab79d8677b6f28b7a9214b6c1d3d9e314f28ae799b553a5b420ec20a59`。最終HEAD・exact5・remote bytes・PR状態を反映後に照合して既存PR3/30へ記録する。
+
+### 残件と次の直接位置
+
+同群の補足回答・独立訂正を含む長い連結、出来事/主題/受け止め句の反復、受け取りの深さ、未対応文法、複数文引用scope、4件以上の同名集合は残る。単一Moveへ句点だけを追加する案は既存の文数・clause・bindingを壊すため採用していない。次は同群の回答時点と出来事の境界が重なった実本文を、既存の意味group/Move構成と照合し、意味・時点・単一作者を保つ最小修正を選ぶ。同群閉鎖前に二層再掲の別作業へ先行しない。
+
+限定TECHNICAL_CREDIT、群未完・商品0/3/NOT_CLEAR・全体48%・default OFF・両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末予定の最新weekly合意を継承する。
+

@@ -5369,3 +5369,120 @@ def test_explicit_received_topic_prior_saved_nominal_body_is_not_rewritten(qcase
     with monkeypatch.context() as saved:
         saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('prior saved nominal body must not regenerate'))
         assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('position', [0, 1, 2])
+def test_original_past_coordination_keeps_degree_negation_and_each_event(field, position):
+    events = ('私は誘われた', '自分は頼まれた', 'わたしは褒められた')
+    feelings = ['悲しかった', '怖かった', '寂しかった']
+    feelings[position] = '少し嬉しくなかった'
+    memo = ''.join(event + 'のに、' + feeling + '。' for event, feeling in zip(events, feelings))
+    context = actual(request=begin(memo if field == 'memo' else '', memo if field == 'memo_action' else ''))
+    result = context[0]
+    follow = result.artifact.reception
+    assert 'し、' not in follow
+    predicate = '少し嬉しくなかった' if position == 2 else '少し嬉しくなく'
+    assert predicate in follow and follow.endswith('のですね。')
+    assert read_body(context, result.artifact.text).passed
+    for old, new in [('少し', ''), ('嬉しくな', '嬉し'),
+                     (predicate, '少し嬉しくないし'), ('あなたは', '友人は'),
+                     ('のに、', 'ので、'), ('誘われた', '頼まれた')]:
+        changed = follow.replace(old, new, 1)
+        assert changed != follow
+        assert not read_body(context, result.artifact.text.replace(follow, changed, 1)).passed
+
+
+@pytest.mark.parametrize('same_names', [False, True])
+def test_original_past_coordination_keeps_every_qualified_source_position(same_names):
+    events = ('誘われた',) * 3 if same_names else ('誘われた', '頼まれた', '褒められた')
+    feelings = ('少し嬉しくなかった', 'とても怖かった', '少し寂しかった')
+    memo = ''.join(owner + event + 'のに、' + feeling + '。'
+                   for owner, event, feeling in zip(('私は', '自分は', 'わたしは'), events, feelings))
+    context = actual(request=begin(memo))
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    assert 'し、' not in follow
+    assert all(part in follow for part in ('少し嬉しくなく', 'とても怖く', '少し寂しかった'))
+    if same_names:
+        assert [follow.index(prefix) for prefix in RECORD_PREFIXES] == sorted(follow.index(prefix) for prefix in RECORD_PREFIXES)
+        swapped = follow.replace(RECORD_PREFIXES[1], RECORD_PREFIXES[2], 1)
+        assert not read_body(context, body.replace(follow, swapped, 1)).passed
+    assert read_body(context, body).passed
+    # Saved additive prose remains independently readable; it is not rewritten.
+    legacy = follow.replace('嬉しくなく、', '嬉しくなかったし、').replace('怖く、', '怖かったし、')
+    assert legacy != follow and read_body(context, body.replace(follow, legacy, 1)).passed
+    for old in ('少し嬉しくなく、', 'とても怖く、'):
+        changed = follow.replace(old, '', 1)
+        assert changed != follow and not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+@pytest.mark.parametrize('copular_first', [False, True])
+def test_original_past_coordination_keeps_copular_scope_separate(copular_first):
+    feelings = ('不安だった', '少し怖かった') if copular_first else ('少し怖かった', '不安だった')
+    memo = ''.join(event + 'のに、' + feeling + '。'
+                   for event, feeling in zip(('誘われた', '頼まれた'), feelings))
+    context = actual(request=begin(memo))
+    follow = context[0].artifact.reception
+    assert feelings[0] + 'し、' in follow and feelings[1] + 'のですね。' in follow
+    assert read_body(context, context[0].artifact.text).passed
+
+
+PAST_COORDINATION_MEMO = ('褒められたのに、少し嬉しくなかった。'
+                          '誘われたのに、少し悲しかった。頼まれたのに、寂しかった。')
+PAST_COORDINATION_STEPS = ('今は少し苦しい。', '「少し苦しい」ではなく「少し怖い」です。',
+                           '「褒められた」は誤りです。')
+
+
+@pytest.mark.parametrize('steps', [1, 2, 3])
+def test_original_past_coordination_preserves_answer_correction_and_withdrawal_times(steps):
+    request = begin(PAST_COORDINATION_MEMO)
+    for reply in PAST_COORDINATION_STEPS[:steps]:
+        request = advance(request, reply)
+    context = actual(request=request)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    assert '少し嬉しくなかったし、' in follow
+    assert '誘われたのに、少し悲しく、頼まれたのに、寂しさを感じたのですね。' in follow
+    when = '回答した時点では' if steps == 1 else '先の回答時点では'
+    assert when in follow
+    assert ('褒められた' in body) == (steps < 3)
+    assert ('少し苦しい' in body) == (steps == 1)
+    assert read_body(context, body).passed
+    for old, new in [(when, 'その時は'), ('少し悲しく', '少し悲しかったから'),
+                     ('嬉しくなかった', '嬉しくない')]:
+        changed = follow.replace(old, new, 1)
+        assert changed != follow and not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+@pytest.mark.parametrize('legacy', [False, True])
+def test_original_past_coordination_saved_body_and_updates_never_regenerate(qcase, qdb, monkeypatch, legacy):
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    qdb.query('update public.emotions set memo=$1 where id=$2', [PAST_COORDINATION_MEMO, parent])
+    author = reception._source_grounded_received_discourse
+
+    def prior_author(*args, **kwargs):
+        text = author(*args, **kwargs)
+        if not text:
+            return text
+        return text.replace('少し嬉しくなく、', '少し嬉しくなかったし、').replace(
+            '少し悲しく、', '少し悲しかったし、')
+
+    with monkeypatch.context() as old:
+        if legacy:
+            old.setattr(reception, '_source_grounded_received_discourse', prior_author)
+        first = current = run(service.start(user, parent))
+    initial_body = current['current_observation']['text']
+    assert ('少し悲しかったし、' in initial_body) == legacy
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved initial must not regenerate'))
+        assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    for index, reply in enumerate(PAST_COORDINATION_STEPS):
+        if index:
+            current = run(cont(service, user, current, f'past-continue-{index}'))
+        current = run(answer(service, user, current, reply, f'past-answer-{index}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        assert '誘われたのに、少し悲しく、頼まれたのに、寂しさを感じたのですね。' in current['current_observation']['text']
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved update must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == PAST_COORDINATION_MEMO

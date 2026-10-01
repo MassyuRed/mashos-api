@@ -10153,7 +10153,12 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True,
                     or re.search(r"(?:私|自分|わたし|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)):
                     return None
                 parts.append(original + "し、" + time + finite)
-            separate_time_scopes = True
+            # Degree/SELF-qualified original adjectives still share the
+            # group's past scope. Use the existing reversible continuative
+            # instead of forcing additive し at every event boundary.
+            # Supplemental answers and noun copulas keep independent tense.
+            if answer_code != ["none"] or finite_reaction.endswith("だった"):
+                separate_time_scopes = True
             continue
         if answer_code == ["none"]:
             if feeling.endswith("くなかった"):
