@@ -12230,3 +12230,24 @@ current failure17 IDを開始版API `537ac7449fb23e81fa5c0a184f0532d5e1b588ef`�
 独立read-only probeでは初回説明形の異名3位置/同名3位置/同名2位置の8入力が未提供から本文提供へ変わり、既存独立readerを通過。rootと独立担当が最終sourceの実本文を読む。長い「し」連結、主題/「のですね」反復、二層再掲、深さ不足は残る。原memo引用訂正の未対応説明形がcorrection_replacement_unsupportedとWITHDRAWを併記する既存挙動は今回不変更であり、正当な成功へ数えず同群の残件として保持する。
 
 同群を閉じる前に二層再掲の別作業へ進行しない。最新weeklyどおり10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/実機予定を維持。今回保存試験はローカル合成PGlite、live DB/実機/プロセス再起動未実施。Supabase changelog.md読取エラーはNONCREDITで、SDK/SQL変更は行わない。追加変更exact4 modify＝API既存answer_update/detached test/handoffの3＋Cocolon既存06の1、add/delete0。回帰完了後に同じ両引継ぎとPR本文へ結果/残件/最終headを更新する。
+
+
+## 2026-10-01 JST u44 final：初回回答の有限感情説明形／中断後の検証確定
+
+直前u44 checkpointの「全体回帰実行中」を更新する。Mashから処理落ち後の続行指示を受け、GitHub保存済みAPI `5634cd6ee44273aa2ab54e7f05bf2ebdeb8179b6` / Cocolon `aa14c395d4ad01e2f9c0e0ce14eaa79aa1e12a16`のhead・Draft/open/unmergedと、開始headからexact3＋1 modify・add/delete0をfresh確認した。コード再作成は不要だった。中断した旧2833＋新32＝2865の4分割実行には完了summaryがなく、全体実行はNONCREDIT。途中ログを完了件数や全関連PASSへ換算しない。
+
+**最終固定source：** answer_update `669b0dee46d57dae9b6fe1cb07b5f48c863bd42e` / detached test `942bf9dcfc5f89101b6737fa7e8d99e46f2b425e`。u43 sourceに対する変更は説明コメントと説明形条件1行だけで、通常回答のsource_end未指定にも既存finite feeling witnessを認める。HR/Gate/GP/shared9owner identityは不変更。旧detached test全311301 bytesは完全prefix一致、末尾7284 bytesのみ追加、旧test期待変更・削除・skip/xfail追加0。source/testは保存checkpointから最終検査終了まで不変。
+
+**今回fresh完了した選択219 unique ID：201 PASS / 18 FAIL、ERROR0/SKIP0。** 説明形関連187件は186 PASS / 1 FAIL（170.15秒）、別の旧境界15件は15 PASS（8.93秒）、既存失敗17 IDは全17 FAIL。三選択のID重複0を確認し、合計へ重複加算していない。新32条件はすべて説明形関連選択内でPASS。旧17のID集合とsetup/call/teardown成否はu43以前のbaseline再現と同一、phase成否差0。意味IR全文や診断全文一致をこの検査で証明したとはしない。u43の2833＋identity1完了結果はu43だけの履歴として保持し、u44全体成功へ転用しない。
+
+**新しくFAILになった旧期待1件を明示する。** received_discourseのtest_answer_explanation_revision_requires_unique_existing_answer[initial]は「その時は少し重かったのです。」にaccepted_nuclei空とUNRESOLVEDを求める。u43固定sourceでは同IDがfresh PASS（8.82秒）、u44では初回説明形のreactionを保持するため空期待のassertでFAIL。これは今回修復対象の受理と旧拒否期待の衝突であり、既存17へ混ぜず、検査成功とも称さない。旧testは変更していない。独立read-only担当が旧入力・FAIL位置・new testの同入力/public artifact/source/span/ABOUT/独立readerを照合した。original_memoとambiguous_answerの旧境界は説明形選択でPASS。
+
+新32は異名3位置/同名3位置/同名2位置の実原記述先8、意味・時点6、不受理6、本人の原反応訂正2、作者oracleを禁止した意味改変拒否6、保存4系列。原scalar開始位置、本人・否定・程度・内側感情時制・外側説明形・回答時点/当時・別原反応保持を確認した。保存4×3回答後状態ではoriginal不変、説明形の再訂正/撤回、generate禁止GET/start DTO全文一致を確認。旧境界15は時点不明/他人主体/無関係出来事、訂正対象一意性、旧否定の誤継承、明示撤回とunsupported置換の併存などを検査した。これらはローカル合成PGliteであり、live DB/実機/プロセス再起動の証拠ではない。
+
+rootと独立担当が実生成本文の両層を読了し、初回説明形が未提供から本文提供へ変わり、複数記述ごとの原反応・先の回答・後の回答/訂正が残ることを確認した。本人の明示訂正では旧原反応を復活させない。既存語彙外の「楽しい」、第三者主体、伝聞、未完形、時点不明は今回受理しない。新語彙/owner/route/公開・保存contract/DB schema/RN/dependency/flag変更0、STRUCTURE_MAP_DELTA_NONE。
+
+**同群の残件を閉じない。** 原memo引用訂正「『嬉しくなかった』ではなく『少し重かったのです』です。」等はcorrection_replacement_unsupportedとWITHDRAWが併存する既存挙動で、今回は不変更。未対応の原memo引用説明形・訂正文法、長い「し」連結、主題/「のですね」反復、深さ不足、旧17失敗と旧拒否期待1件の整合が残る。二層再掲の別作業へ先行しない。限定TECHNICAL_CREDITのみで、群未完・商品0/3/NOT_CLEAR・全体48%・default OFF・両PR Draft/open/unmergedを維持する。
+
+本finalは既存API handoffとCocolon06だけの記録更新。今回累積はexact4 modify＝API answer_update/detached test/handoffの3＋Cocolon06の1、add/delete0。反映後に両資料全文・固定source/test blobs・parent/head・累積path集合・PR本文/状態をfresh照合し、最終headは既存PR3/30へ記録する。System Context PUBLICATION_RECOVERY_AMBIGUOUSとSupabase changelog.md読取エラーのNONCREDITを維持し、原典直接読取を使用。Ready/merge/deploy/enable/live適用0、追加外部課金/Mash操作0。最新weekly合意の10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/実機予定を維持する。
+
+通常回答の本人訂正「書き方を間違えた。その時は少し重かったのです。」の成功は、原memoの引用置換が成立した証拠へ転用しない。原memo引用置換はsource_start/source_end指定・prior_answer_source無しの別分岐で、新説明形不受理後に旧対象と依存関係が撤回されPARTIALになる。次の直接修正では引用対象一意性、新source全体の否定・主体・時点、actual body成立を一緒に確認する。
