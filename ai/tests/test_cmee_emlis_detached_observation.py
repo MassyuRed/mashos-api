@@ -4616,7 +4616,8 @@ def test_exact_record_reception_cannot_borrow_or_drop_another_occurrences_meanin
     assert changed != follow and not read_body(context, body.replace(follow, changed, 1)).passed
 
 
-@pytest.mark.parametrize('mutation', ['missing', 'duplicate', 'same_event', 'wrong_proof', 'unknown'])
+@pytest.mark.parametrize('mutation', ['missing', 'duplicate', 'same_event', 'wrong_proof', 'unknown',
+    'source_range', 'range_value', 'source_order', 'source_link', 'relation_source', 'answer_time', 'event_kind'])
 def test_exact_record_occurrence_proof_does_not_replace_about_or_feeling_guards(exact_record_context, mutation):
     import emlis_ai_grounded_observation_plan as gp
     plan = exact_record_context[1]
@@ -4629,6 +4630,31 @@ def test_exact_record_occurrence_proof_does_not_replace_about_or_feeling_guards(
         relations = (*relations, replace(first, relation_id='duplicate-about'))
     elif mutation == 'same_event':
         relations = tuple(replace(r, from_nucleus_id=first.from_nucleus_id) if r == second else r for r in relations)
+    elif mutation == 'relation_source':
+        relations = tuple(replace(r, source_span_ids=(*r.source_span_ids, r.source_span_ids[0]))
+                          if r == first else r for r in relations)
+    elif mutation == 'answer_time':
+        nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame, attribute_codes=tuple(
+            'thread_time:answer_time' if c == 'thread_time:original_occasion' else c
+            for c in n.semantic_frame.attribute_codes))) if n.nucleus_id == first.to_nucleus_id else n for n in nuclei)
+    elif mutation in {'source_range', 'range_value', 'source_order', 'source_link', 'event_kind'}:
+        other = next(n for n in nuclei if n.nucleus_id == second.from_nucleus_id)
+        changed = []
+        for n in nuclei:
+            if n.nucleus_id == first.from_nucleus_id:
+                if mutation == 'source_order':
+                    n = replace(n, source_span_ids=other.source_span_ids)
+                elif mutation == 'event_kind':
+                    n = replace(n, semantic_frame=replace(n.semantic_frame, predicate_kind='state'))
+                else:
+                    codes = tuple(c for c in n.semantic_frame.attribute_codes
+                                  if mutation != 'source_range' or not c.startswith('source_fragment_scalar_range:'))
+                    codes = tuple('source_fragment_scalar_range:0:999' if mutation == 'range_value'
+                        and c.startswith('source_fragment_scalar_range:') else 'source_received_event_link:kedo'
+                        if mutation == 'source_link' and c.startswith('source_received_event_link:') else c for c in codes)
+                    n = replace(n, semantic_frame=replace(n.semantic_frame, attribute_codes=codes))
+            changed.append(n)
+        nuclei = tuple(changed)
     else:
         nuclei = tuple(replace(n, kind='state', semantic_frame=replace(n.semantic_frame,
             predicate_kind='state', modality='uncertain')) if mutation == 'unknown' and n.nucleus_id == first.to_nucleus_id
@@ -4637,6 +4663,18 @@ def test_exact_record_occurrence_proof_does_not_replace_about_or_feeling_guards(
                 for c in n.semantic_frame.attribute_codes))) if mutation == 'wrong_proof' and n.nucleus_id == first.to_nucleus_id
             else n for n in nuclei)
     assert not gp._thread_retained_reaction_groups(nuclei, relations)
+
+
+@pytest.mark.parametrize('memo', [
+    '誘われたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。',
+    '褒められたのに、嬉しくなかった。誘われたのに、悲しかった。褒められたのに、寂しかった。',
+])
+def test_distinct_occurrence_proof_does_not_expand_a_mixed_original_event_set(memo):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    request = advance(advance(begin(memo), 'その時は少し重かった。'), '今は少し苦しい。')
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(request))
+    assert not any(c.startswith('thread_subject:distinct_source_occurrence:')
+                   for n in plan.nuclei for c in n.semantic_frame.attribute_codes)
 
 
 @pytest.mark.parametrize('revised', [False, True])

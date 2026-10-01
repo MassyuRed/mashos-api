@@ -369,6 +369,9 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
                               if len(n.source_span_ids) == 1 else None)
                 ranges = tuple(c for c in event.semantic_frame.attribute_codes
                                if c.startswith("source_fragment_scalar_range:"))
+                links = tuple(c for c in event.semantic_frame.attribute_codes
+                              if c.startswith("source_received_event_link:"))
+                times = tuple(c for c in n.semantic_frame.attribute_codes if c.startswith("thread_time:"))
                 if (n.kind == "reaction" and n.semantic_frame.polarity == "negative"
                     and n.semantic_frame.predicate_kind == n.semantic_frame.modality == "feeling"
                     and len(n.source_span_ids) == 1
@@ -378,10 +381,16 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
                     and len(about[0].source_span_ids) == 2
                     and set(about[0].source_span_ids) == set((*event.source_span_ids, *n.source_span_ids))
                     and event.allowed_claim_scope == "explicit_current_input"
+                    and event.semantic_frame.predicate_kind == "event"
                     and {"semantic_role:final_stage1_compound_meaning",
                          "source_fragment_scalar_source:normalized_raw_text"}
                         <= set(event.semantic_frame.attribute_codes)
                     and ranges == (f"source_fragment_scalar_range:0:{len(text)}",)
+                    and len(links) == len(times) == 1
+                    and links[0] in {"source_received_event_link:noni", "source_received_event_link:kedo",
+                                     "source_received_event_link:keredo", "source_received_event_link:keredomo"}
+                    and times[0] in {"thread_time:original_occasion", "thread_time:answer_time",
+                                     "thread_time:prior_answer_time"}
                     and ref.source_envelope_id == thread.original.envelope.envelope_id
                     and ref.field_path == span.source_field == event.source_fields[0]
                     and (ref.scalar_start, ref.scalar_end) == (span.start_index, span.end_index)
@@ -389,14 +398,30 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
                     and thread.original.envelope.raw_utf8[ref.utf8_start:ref.utf8_end].decode() == span.raw_text
                     and re.sub(r"\s+", " ", span.raw_text).strip().startswith(text)):
                     subject_occurrences[n.nucleus_id] = (event.nucleus_id, event.source_span_ids[0], ref,
-                                                        n.source_span_ids[0], answer_ref.evidence_id)
+                        n.source_span_ids[0], answer_ref.evidence_id, times[0], ranges[0], links[0])
     subject_texts = tuple(answer_subjects.values())
     proof = "thread_subject:unique_source_clause"
     occurrence_proof = "thread_subject:distinct_source_occurrence:"
     distinct_occurrences = {}
+    # Selected category metadata is not a written occasion. Count every
+    # original text event before validating its field/scope, including a
+    # malformed mixed-field event, rather than filtering unproved rows out.
+    original_events = tuple(n for n in nuclei if n.kind == "event"
+        and any(f in {"memo", "memo_action"} for f in n.source_fields))
+    answer_ids = {n.nucleus_id for n in nuclei if n.source_fields == (ANSWER_FIELD,)}
+    active_about = tuple(r for r in relations if r.type == "evaluation_about_event"
+        and r.retention == "required" and r.to_nucleus_id in answer_ids)
     for text in set(subject_texts):
         ids = tuple(nid for nid, value in answer_subjects.items() if value == text)
-        if not 2 <= len(ids) <= 3 or any(nid not in subject_occurrences for nid in ids):
+        # The mixed edge/unique-middle window keeps its existing admission
+        # guards and body. This alternative is only for an entirely equal
+        # original event set, not a duplicate subgroup inside another set.
+        if (len(set(subject_texts)) != 1 or len(subject_texts) != len(active_about)
+            or not 2 <= len(original_events) <= 3
+            or any(event.source_fields not in {("memo",), ("memo_action",)}
+                   or event.allowed_claim_scope != "explicit_current_input"
+                   or _text(event, index, resolver) != text for event in original_events)
+            or not 2 <= len(ids) <= 3 or any(nid not in subject_occurrences for nid in ids)):
             continue
         rows = sorted((subject_occurrences[nid] for nid in ids), key=lambda row: row[2].scalar_start)
         if (len({row[0] for row in rows}) != len(rows)
@@ -407,7 +432,8 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
             or any(left[2].scalar_end > right[2].scalar_start
                    or left[2].utf8_end > right[2].utf8_start for left, right in zip(rows, rows[1:]))):
             continue
-        distinct_occurrences.update({nid: occurrence_proof + subject_occurrences[nid][1] for nid in ids})
+        distinct_occurrences.update({nid: occurrence_proof + subject_occurrences[nid][1]
+            + ":" + ":".join(subject_occurrences[nid][5:]) for nid in ids})
     nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame, attribute_codes=(
         *(c for c in n.semantic_frame.attribute_codes if c != proof and not c.startswith(occurrence_proof)),
         *((proof,) if n.nucleus_id in answer_subjects and subject_texts.count(answer_subjects[n.nucleus_id]) == 1 else ()),

@@ -7923,13 +7923,31 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
             and not any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations))
         # The preparation owner proves actual non-overlapping original
         # ranges for equal event text. This proof names this exact ABOUT
-        # occurrence; it cannot be donated to another target or an unknown.
-        distinct_occurrence = bool(len(about) == 1 and about[0].from_nucleus_id in events
-            and len(index[about[0].from_nucleus_id].source_span_ids) == 1
+        # occurrence, range, connector and answer time; changing any of
+        # these after preparation cannot borrow the earlier source proof.
+        occurrence_event = index.get(about[0].from_nucleus_id) if len(about) == 1 else None
+        occurrence_ranges = tuple(c for c in occurrence_event.semantic_frame.attribute_codes
+            if c.startswith("source_fragment_scalar_range:")) if occurrence_event else ()
+        occurrence_links = tuple(c for c in occurrence_event.semantic_frame.attribute_codes
+            if c.startswith("source_received_event_link:")) if occurrence_event else ()
+        distinct_occurrence = bool(occurrence_event and occurrence_event.nucleus_id in events
+            and len(occurrence_event.source_span_ids) == len(n.source_span_ids) == 1
+            and occurrence_event.allowed_claim_scope == "explicit_current_input"
+            and occurrence_event.semantic_frame.predicate_kind == "event"
+            and {"semantic_role:final_stage1_compound_meaning",
+                 "source_fragment_scalar_source:normalized_raw_text"}
+                <= set(occurrence_event.semantic_frame.attribute_codes)
+            and len(occurrence_ranges) == len(occurrence_links) == len(times) == 1
+            and re.fullmatch(r"source_fragment_scalar_range:0:[1-9][0-9]*", occurrence_ranges[0])
+            and occurrence_links[0] in {"source_received_event_link:noni", "source_received_event_link:kedo",
+                                       "source_received_event_link:keredo", "source_received_event_link:keredomo"}
+            and about[0].grounding_kind == "user_stated_relation" and len(about[0].source_span_ids) == 2
+            and set(about[0].source_span_ids) == set((*occurrence_event.source_span_ids, *n.source_span_ids))
             and n.kind == "reaction" and frame.polarity == "negative"
             and {c for c in frame.attribute_codes if c.startswith("thread_subject:distinct_source_occurrence:")}
                 == {"thread_subject:distinct_source_occurrence:"
-                    + index[about[0].from_nucleus_id].source_span_ids[0]})
+                    + occurrence_event.source_span_ids[0] + ":" + next(iter(times))
+                    + ":" + occurrence_ranges[0] + ":" + occurrence_links[0]})
         if (n.allowed_claim_scope != "explicit_supplemental_answer"
             or n.retention != "required" or n.grounding_kind != "explicit"
             or frame.actor != "current_user"

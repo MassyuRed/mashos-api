@@ -12177,3 +12177,16 @@ current identity既存試験は最終sourceで1 PASS（31.96秒）、18language/
 開始版分離worktreeと最終固定sourceで同一旧2790 ID（Q1 thread75 / received989 / detached1726）を各4分割fresh比較中。結果未確定、全関連PASS/成否差0/trace一致をまだ称さない。source固定Git blobs：answer_update `b12f3c1990e878a87fd7c26056f6ddcd3d20d3cd`、GP `5e389d18951a12571cf9ce549161b5f3c5b0991c`、detached test `b8988072e83b4825bd59d3f8ee317b21818a00d6`、current identity `d8b44d040b8175a94a1ec9786aae8c1f1d612b76`。exact6 modify＝API既存answer_update/GP/detached test/current identity/handoffの5＋Cocolon既存06の1、add/delete0。反映後fresh remote bytes/path/parent/head照合し、最終回帰は同じ2引継ぎとPR要約へ追記する。
 
 Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.142.2/httpx0.28.1/PGlite0.5.8。既存Supabase RPCのローカル合成fixture、live DB/実機/プロセス再起動未実施。Supabase changelogのmarkdown読取エラーはNONCREDIT。System Context prepareはshallow materializationで要求祖先関係を確認できず失敗、実際のGit lineage不成立を証明したとはしない。入口が許す原典直接読取を使用しContext修復へ広げない。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmerged。Ready/merge/deploy/enable/live適用なし。最新weeklyの10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/実機予定を維持。次の同群残件は未対応説明形/訂正文法と反復・長さ・深さ。同群を閉じる前に二層再掲の別作業へ自動進行しない。
+
+
+## 2026-10-01 JST u43再開 checkpoint：同名群限定と既存拒否条件の復旧
+
+処理落ち後にMashの続き再開指示を受けた。scratchと未完了の旧8並列回帰ログは失われたため、その実行はNONCREDIT。保存済みAPI `fe3a46b3a877e2d8fb0f92ef19469d1ee912308d` / Cocolon `93370b4799ef11b02a81fad883d17dcd1121e947`を再取得し、固定blob/parent/exact5＋1 modify・旧test完全prefixを照合した。codeを作り直した作業ではない。
+
+**fresh回帰で見つかった修復候補の誤り。** 旧2790＋新34の2824 IDをcurrent4分割でfresh実行すると2799 PASS / 25 FAIL、ERROR/SKIP0。新34はPASSだが、開始版へ25 failureをfresh再現すると既存17 FAIL / 新8 PASSとなり、8が今回の回帰だった。内訳はmixed edge『褒め／誘い／褒め』のnominal文型保持5と、source range/relation endpoints/answer time改変拒否3。局所duplicate subgroupへ発行したproofが、既存ordered_source_window全体guardを迂回していた。全関連PASSや既存17だけとする予定判断を採用せず、旧testを変えずproductionを修正した。
+
+**最小の最終修復。** 発行対象はmemo/memo_actionを一つでも持つ原text event全件を先に列挙し、全件が適正field/scope・同じevent textの2/3記述である場合だけ。active answer宛てrequired ABOUT全件数と認定済みsubject件数も一致させ、別名・未証明行を先に除いて部分群を証明しない。categoryのselected_label_onlyは出来事の原記述ではなく、GPのoriginal_text境界と同じく除外する。中間修正でcategory『仕事』も数えた結果、新条件25が失敗した経過はNONCREDIT、原text境界へ直した。
+
+source ownerは既存raw/scalar/UTF-8非重複と独立answer evidenceを保持し、内部markerを実認定event span・answer time・scalar range・received connectorへbindingする。Plan新branchだけでtyped event predicate/initial range/connector、answer span exact1、ABOUT user_stated_relation/endpoints exact2、time exact1とmarker全文一致を再確認する。既存mixed-edge window全文・unique guard・HR/Gate・admission・公開/保存contractは不変更。現sourceで新42＋関連旧16の58条件fresh PASS（53.91秒）。その後event predicate改変拒否1を追加し新43となるため、全体最終回帰で採用する。先行50 PASSは中間版、category誤り時の25 FAIL / 33 PASSは未成功記録として保持する。
+
+現行identityはGP AST/rawと派生値だけを更新し18language/18runtime payload・9owner保持。language `43607fd46d38efa45626842993fc92cc01b12990c813da81cd85a9255dcede99` / runtime `a607911267d83db042d5f5a50695c5c6a2bcb60249281732be2533cb2847b40c`。最終固定sourceへ旧2790＋新43のfresh4分割とcurrent identityを実行する。全体結果はまだ未確定。範囲は同じexact6 modify、STRUCTURE_MAP_DELTA_NONE。商品0/3・NOT_CLEAR・群未完、Draft/open/unmerged・default OFF、live DB/実機未実施、weeklyの10/03休止等を維持。結果とfinal headは同じ既存引継ぎ/PRへ追記する。
