@@ -12755,3 +12755,54 @@ production差分は既存Plan1fileのみ。answer update・HR・Gate・Surface�
 複合修飾語の保持は回復したが、「少しあなたは少し…」等の文章不自然、長い「し」連結、同名出来事/主題の反復、二層再掲、定型終端、受け取りの深さ、他の未対応文法・複数文引用scope・4件以上同名集合も未完。欠落・不正文・対象不明な列挙・未説明失敗/保存差分が残る間は、現在の複数出来事/回答/訂正群を閉じず、次の二層再掲群へ先行しない。
 
 限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。最新weeklyの10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承する。合成DBによる今回の保存検査を10/02目標達成へ置換しない。
+
+
+## 2026-10-01 u59 — 説明形の感情名詞を元反応・先行回答の保持へ接続
+
+### 開始位置・必要性・範囲
+
+MashのGitHub指定・添付前回txt・EmlisAI残件継続指示に従い、u58の実測残件「今は安心なのです。」「今は少し私は少し安心なのです。」によるReception欠落を修復した。開始HEADはAPI `3e551fc3254fef8e4dceacb7dd931e63a933aa05`、Cocolon `37d55015be1623e7204ccec2cee3e6019b42a6e1`。fresh PRとlocal HEADを照合し、追跡差分0から開始した。前提入口・current rule/18・恒久incident全文・Karen-Diaryの運用原則・最新weekly09/26本文と09/29合意・u58を確認。全体設計01の現行本文、01A/B/Cへの分割と全file地図、current_structureの入口・Emlis/CMEEの現行経路を確認した。蓄積された全歴史行の再通読とはしない。System Context prepareはmaterial commit `37d55015...` のshallow祖先確認未成立でexit2となり、入口に従い原典直接読取へ切り替えた。
+
+OBSERVED_BLOCKER_MINIMAL_FIX、既存LEVEL_2内。受理済みの説明形がfeelingの保持責務へ接続しない共通原因を、既存Plan・answer update・HR・Gate内で修復する。新owner/renderer/entry、一般受付、public contract/API/DB/RN、依存/flagの変更はない。追加費用・Mash操作0。root華恋が唯一の編集・実行・反映ownerで、read-only担当が商品本文と技術差分を独立確認した。担当の静的reviewを独立モデルによる商品合格や実行検査とは扱わない。
+
+### 原因と修復
+
+通常の感情名詞copula証明は説明の「の」を含まず、既存説明形の語彙証明にも安心/平穏/幸せが接続していなかった。既受理sourceがvalue/fact等に残り、元反応・先行回答の保持責務を満たさずReceptionが縮退した。否定側には説明形を名詞接続へ落とす不正文もあった。
+
+Planへ完全sourceの説明形証明を一つ追加し、通常copulaとは分離した。既存6語の修飾語列、最大一つの現行SELF、名詞3語、内側の現在/過去・肯定/否定、外側の説明現在/過去を別々に保持する。answer updateは既存kind・本人scope条件を満たす受理sourceをreaction/feelingへ接続する。共有 `_FEELING_RE` や通常copulaの終端を広げない。
+
+HRは完全sourceの証明から説明形を有限述語として保持し、groupの最終述語だけを説明終端へ接続する。中間回答の「のだし」と真の文末の「のですね」を混同せず、「だったのです」と「なのだった」の内外時制を保つ。Gateの対象本文readerは作者から正解文を生成せず、主体・助詞・修飾語の位置/重複・否定・説明の「の」・内外時制・回答時点・同名記録所属を実本文から元sourceへ復元する。作者側のあなた→私は過去説明の語彙証明だけに用い、出力predicateは置換しない。Gateは原sourceを直接証明する。ただし、下記の既存referent構築に残る作者helper依存を解消したとはしない。
+
+開始版と最終版8例の比較はObservation8/8同一、対象6のReception改善、通常名詞/既存不安説明形の対照2全文同一、最終inverse8 PASS。rootと商品担当は元memo・全回答・二層本文を全文実読し、対象6で元3反応・先行2回答・第三回答が残ることを確認した。新たな意味改変は見つからなかったが、「少しあなたは少し」「まだあなたは少し」、長い位置/主題反復、外側過去の不自然さは残る。機械検査や欠落改善を自然さ・深さの合格へ換算しない。
+
+開始版 `_answer_nucleus` と最終版を318 sourceで比較した。名詞3語×内側4形×外側3形×主体/修飾語8形の288と、通常形・他者・多重SELF・未証明助詞・疑問・条件・引用等の対照30。受理/拒否318/318同一、対象252の意味分類/感情属性だけ変化、他66はnucleus全体（未受理Noneを含む）同一。対象文法に合うだけで新規受付を許可しない。この比較を全入力・全非thread挙動の同一証明にはしない。
+
+### 実施済み検証
+
+追加56条件は56 PASS（75.81秒）。本文24（裸/SELF同名×memo/memo_action×説明現在・複合修飾語・内側過去・否定現在/過去・外側過去の6形）、回答3位置×3形の9、出来事撤回後3、原反応訂正2、三つの否定回答1、保存3系列、既存未受理8、完全証明不成立6。原反応・全回答の実本文保持をassertし、説明の削除/重複、主体/助詞、程度の片側削除/移動、否定、内外時制、回答時点/同名所属、対象/先行回答の欠落を作者禁止inverseで拒否した。三つの否定回答は実生成文の実byte範囲から元source全文へ独立復元した。
+
+保存3系列は説明形回答→第二回答→追加/訂正/撤回。各更新後のgenerate禁止GET/start DTO全文一致、原DTOとDB原memo不変を確認した。Python3.12.14 / pytest9.1.1 / PGlite0.5.8を継続使用しinstallなし。合成DB/mock RPCの検証であり、実DB・端末・プロセス再起動の確認ではない。
+
+実行準備の失敗も別記する。最初のtest追記はcwdを重ねた相対path指定で未作成となり、その直後の選択は対象0・2205 deselected・exit5（11.66秒）。正しいpathへ追記後の上記56が最初の対象実行で、対象assertの失敗・期待変更はない。identity初回はai/toolsのimport path未設定でcollection error1・exit2（10.02秒）となり、`PYTHONPATH=ai` を設定して同一source/検査を再実行した。これらをPASSや成功件数に換算しない。
+
+最終関連577条件＝562 PASS / 15 FAIL（611.78秒）、current owner identity1 PASS（24.09秒）。追加56・関連577・identity1はID重複なしで、最終634 unique IDs＝619 PASS / 15 FAIL / ERROR0 / SKIP0。準備段階のcollection errorは上記に別記した。u58の288 IDsと成否は全一致。今回の関連選択はdetached_observation / detached_self_feeling / received_discourseの `(nominal_positive_answer or same_name_positive or medial_owner or copular or test_answer_degree_correction_does_not_admit_different_owner_or_predicate or polite_nominal_negation or nominal_modifier_chains or explanation) and not nominal_explained_answer`。全suite・過去別集合の失敗全量の検証ではない。
+
+失敗15件は追跡差分0の開始HEADで同じIDを別途再実行し、全15 FAILと同じ失敗理由を確認した（8件19.21秒、5件21.45秒、2件10.61秒）。baseline再実行を最終unique IDsに二重加算しない。旧期待値・skip/xfailは変更せず、次の三種類を残件として保持する。
+
+- 意味分類/受付の旧期待4：u55の名詞回答2（今は安心ではない/今は少し私は安心です）は既知のreaction/feelingとvalue/fact期待の差。`test_answer_explanation_revision_requires_unique_existing_answer` のinitial/original_memo2も、開始版から少し重かったのですを受理する一方で未受理を期待している。
+- 作者helper依存6：`test_single_degree_keeps_explanation_negation_and_source_without_author` のdetached=True全6。少し私は不安だったのだった/嬉しかったのだった/不安ではなかったのだ×今は/その時は。`resolve_grounded_reception_move_referent → source_grounded_current_expression_nominal → _thread_received_group_nominal → _detached_feeling_finite_surface` が作者禁止patchに到達する。対象本文readerとは別の既存referent構築に残る依存であり、独立復元経路全体の閉鎖を主張しない。
+- 主語付き時点句の旧期待5：`test_middle_nominal_keeps_whole_copula_or_explanation` の私は少し不安です1と、`test_grouped_answer_nominal_keeps_own_copula_and_explanation` の私も少し不安でした×2位置×2時点の4。実際の「回答した時点で、/その時、」と、期待する「回答した時点では/その時は」の差が開始版から同じ。本文の意味・現行仕様の判断なしに期待文字列を修正してPASSへ換算しない。
+
+旧detached test453545 bytes全文prefix、旧assert・skip/xfail、historical frozen identityを保持し、current共有owner identityだけを既存導出で更新した。最終language identity `5953cffefa9203aeca8aa07239e17c542aea42ad9349161c94c1733aad2b2e1f`、runtime identity `9fbcc4c7315a3f94cf09dd944de38f31779fb76322909f484cc000e5958de2cc`。Plan/HR/Gateのhash/length・宣言/import数と集約identityのみが変わる。
+
+既存ownerの説明形保持修復で、STRUCTURE_MAP_DELTA_NONE。反映対象はAPIの既存4source、既存test末尾、current identity、既存handoffの7fileと、Cocolon正本06の1file、exact8 modify、追加/削除0。両repoのdiff --check・変更path集合を確認し、既存PR3/30のDraft branchへnon-force反映する。反映後の正式HEAD・parent/tree・exact8全文一致は既存PR metadataへ記録する。最終検査後のproduction変更なし。
+
+### 残件と次の一作業
+
+今回の説明形6例の欠落は回復したが、複数出来事/回答/訂正群は未完。次の一作業は、既存3記述×3回答で記録所属句と同名出来事の主題を反復して長く連結する共通原因を、既存HR/Gate内から修復すること。位置・時点・原反応と回答の対応を保ち、読み手が対象を追える本文へ近づける。新rendererや別処理経路の追加へ逃げない。
+
+その本文改善の独立検証に必要な範囲で、今回再確認した撤回後6失敗のreferent構築に残る作者helper依存も同じ商品改善unit内で解消する。独立性修復だけを新しい前段や完了成果にしない（CURRENT_RULES R1.5）。主体・程度・否定・内外時制・時点・所属の独立検証を維持し、作者禁止を緩めたり正解文との一致検査へ置き換えたりしない。今回の既存失敗を「今回由来でない」ことだけで対象群の合格へ換算しない。
+
+主語前後の複合修飾語の不自然さは別の残件として保持し、自然化のために原sourceの修飾語の重複・順序を勝手に削除/移動しない。二層再掲、定型終端、受け取りの深さ、他の未対応文法、複数文引用scope、4件以上同名集合も未完。欠落・不正文・対象不明な列挙・未説明失敗/保存差分が残る間は現在群を閉じず、二層再掲の別作業へ先行しない。
+
+限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。最新weeklyの10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承する。旧10/10 Emlis内容完成期限は撤回済みであり、今回も復活させない。合成DB確認を10/02目標達成へ置換しない。

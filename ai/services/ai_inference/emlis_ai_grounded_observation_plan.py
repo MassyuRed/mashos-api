@@ -293,6 +293,15 @@ _THREAD_NEGATIVE_FEELING_COPULA_RE: Final = re.compile(
     r"(?:少し|とても|本当は|まだ|全然|あまり)*)?"
     r"(?:安心|平穏|幸せ)では(?:(?:なかった|ない)(?:です)?|ありません(?:でした)?)"
 )
+# Explanation has an inner predicate and a separate outer tense. Keep this
+# witness apart from ordinary copulas so のです never becomes a noun + です.
+_THREAD_NOMINAL_FEELING_EXPLANATION_RE: Final = re.compile(
+    r"(?P<predicate>(?:少し|とても|本当は|まだ|全然|あまり)*"
+    r"(?:(?:私は|私も|自分は|私には|僕には)"
+    r"(?:少し|とても|本当は|まだ|全然|あまり)*)?"
+    r"(?:安心|平穏|幸せ)(?P<inner>な|だった|ではない|ではなかった))"
+    r"の(?P<ending>です|だ|だった)"
+)
 _HELP_SEEKING_RE: Final = re.compile(
     r"(?:相談|面談|受診|診察|予約|窓口|連絡先|相談先|支援先|助けを求め|話を聞いてもら)"
 )

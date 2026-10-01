@@ -43,6 +43,7 @@ from emlis_ai_grounded_observation_plan import (
     _FEELING_RE,
     _THREAD_POSITIVE_FEELING_COPULA_RE,
     _THREAD_NEGATIVE_FEELING_COPULA_RE,
+    _THREAD_NOMINAL_FEELING_EXPLANATION_RE,
     FINAL_STAGE1_GROUNDED_PROJECTION_VERSION,
     GroundedObservationPlan,
     is_grounded_positive_feeling,
@@ -2960,7 +2961,8 @@ def _thread_feeling_owner(source):
                         else r"(.+?)(?:でした|だった|です|だ)", host)
     if (noun is not None and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い")
         or _THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(source)
-        or _THREAD_NEGATIVE_FEELING_COPULA_RE.fullmatch(source)):
+        or _THREAD_NEGATIVE_FEELING_COPULA_RE.fullmatch(source)
+        or _THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(source)):
         return medial
     adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)(?:です)?", host)
     if adjective is not None and (
@@ -2985,7 +2987,8 @@ def _thread_past_explanation_predicate(source):
     predicate = parsed['predicate']
     host = _thread_feeling_lexical_host(predicate, _thread_feeling_owner(source))
     noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)", host)
-    if noun is not None and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い"):
+    if (_THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(source)
+        or noun is not None and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い")):
         return predicate
     adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
     if adjective is not None and (
@@ -3073,7 +3076,8 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
     if explanatory is not None:
         host = _thread_feeling_lexical_host(explanatory['predicate'], owner)
         noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)", host)
-        nominal_explanation = bool(noun is not None and _FEELING_RE.fullmatch(noun[1])
+        nominal_explanation = bool(_THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(source)
+            or noun is not None and _FEELING_RE.fullmatch(noun[1])
                                    and not noun[1].endswith("い"))
         adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
         explanation_proven = nominal_explanation or bool(adjective is not None and (
@@ -3289,7 +3293,7 @@ def _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjectiv
 
 
 def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, shared_event=False,
-                               allow_past_copular=False):
+                               allow_past_copular=False, shared_explanatory_ending=True):
     """Restore one complete answer and its own event/time from actual bytes."""
     qualifier = re.match(r"(?:先|間|後)に書かれた方では、", raw)
     offset = 0
@@ -3325,15 +3329,16 @@ def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, sha
     if explanatory is not None:
         host = _thread_feeling_lexical_host(explanatory['predicate'], owner)
         adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
-        explanation_proven = bool(adjective is not None and (
+        explanation_proven = bool(_THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(source)
+            or adjective is not None and (
             _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
             or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])))
         if explanation_proven:
             predicate = explanatory['predicate']
     source_predicate = predicate[owner.end():] if owner else predicate
     if (not event_text or not source
-        or not _SOURCE_GROUNDED_FINITE_END_RE.search(predicate)
-        or re.search(r"(?:です|ます|でした|ました|だ)$", predicate) and not nominal_feeling
+        or not (explanation_proven or _SOURCE_GROUNDED_FINITE_END_RE.search(predicate))
+        or re.search(r"(?:です|ます|でした|ました|だ)$", predicate) and not (nominal_feeling or explanation_proven)
         or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)",
                      event_text[event_owner.end():] if event_owner else event_text)
         or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", source_predicate)
@@ -3356,7 +3361,7 @@ def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, sha
             and not (parsed['event'] is None and shared_event)) or parsed['time'] != expected_time
         or _restore_thread_finite_answer(parsed['feeling'] + ("のだった" if past_explanation else ""), source,
             copular_clause=explanation_proven or past_copular_proven or bool(nominal_feeling),
-            shared_explanatory_ending=explanation_proven) != source):
+            shared_explanatory_ending=explanation_proven and shared_explanatory_ending) != source):
         return None
     return tuple((offset + len(raw[:parsed.start(key)].encode()), offset + len(raw[:parsed.end(key)].encode()), value.encode())
                  for key, value in (("event", event_text), ("feeling", source))
@@ -3459,7 +3464,8 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
         part = raw[start:end]
         parsed_part = part
         answer_source = final_reception_source_anchor_text(row[1].nucleus_id, index, resolver)
-        if (not last and _THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(answer_source)
+        if (not last and (_THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(answer_source)
+                         or _THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(answer_source))
             and answer_source.endswith(("です", "だ"))):
             # A continuing present copula is だし, not なし. Restore only
             # its same-width final kana for the synthetic acknowledgement;
@@ -3469,7 +3475,7 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
             parsed_part = part[:-1] + "な"
         proof = _read_answer_feeling_clause(
             parsed_part if last else parsed_part + "のですね。", *row[:3], plan, resolver,
-            allow_past_copular=not positive)
+            allow_past_copular=not positive, shared_explanatory_ending=last)
         if proof is None or any(b > len(part.encode()) for _, b, _ in proof):
             return None
         offset = len(raw[:start].encode())
@@ -4535,8 +4541,8 @@ def _restore_thread_finite_answer(actual, source, *, copular_clause=False,
             host = _thread_feeling_lexical_host(explanatory['predicate'], owner)
             noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)", host)
             adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
-            noun_proven = (noun is not None and _FEELING_RE.fullmatch(noun[1])
-                           and not noun[1].endswith("い"))
+            noun_proven = bool(_THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(source)
+                or noun is not None and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い"))
             adjective_proven = (adjective is not None and (
                 _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
                 or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])))

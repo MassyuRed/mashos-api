@@ -129,8 +129,11 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
                             safety_span_order={}, normalized_input=local)
     frame = gp._semantic_frame_for_span(local_span, kind=kind, roles=(), claim_ids=(),
                                         normalized_input=local)
-    negative_nominal = gp._THREAD_NEGATIVE_FEELING_COPULA_RE.fullmatch(bounded)
-    nominal_feeling = bool((gp._THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(bounded) or negative_nominal)
+    nominal_explanation = gp._THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(bounded)
+    negative_nominal = (gp._THREAD_NEGATIVE_FEELING_COPULA_RE.fullmatch(bounded)
+        or nominal_explanation and nominal_explanation['inner'].startswith('では'))
+    nominal_feeling = bool((gp._THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(bounded)
+        or negative_nominal or nominal_explanation)
         and kind not in {"event", "other_explicit"}
         and gp._source_operator_owner_scope_is_bound(bounded))
     # A finite self belief is retained as a belief, not its complement's
