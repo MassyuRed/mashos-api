@@ -10030,9 +10030,12 @@ def _received_discourse_negative_feeling(fragment: str) -> tuple[str, str] | Non
 def _received_event_record_prefixes(plan, resolver):
     """Distinguish equal visible events by their original written positions."""
     index = {n.nucleus_id: n for n in plan.nuclei}
-    event_ids = tuple(dict.fromkeys(nid for move in plan.response_plan.human_reception_plan.moves
-        if move.required and move.reception_act == "stay_with_current_burden"
-        for nid in move.target_nucleus_ids if index[nid].kind == "event"))
+    # A reaction correction may remove its event from the current burden
+    # Moves without removing the original event. Written position belongs
+    # to those source occurrences, not to the reduced realization targets.
+    event_ids = tuple(n.nucleus_id for n in plan.nuclei if n.kind == "event"
+        and n.allowed_claim_scope == "explicit_current_input"
+        and any(field in {"memo", "memo_action"} for field in n.source_fields))
     if not 2 <= len(event_ids) <= 3:
         return {}
     occurrences = {}
@@ -11227,6 +11230,22 @@ def _author_source_grounded_reception_clauses(
     )
     move_index = {move.move_id: move for move in active_moves}
     record_prefixes = _received_event_record_prefixes(plan, resolver) if recovery_stage == "full" else {}
+    from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
+    # A revised feeling can follow two retained original groups. Only their
+    # complete source order proves the first group's significance scope.
+    source_moves = reception_plan.moves
+    qualified_original_scope = bool(
+        recovery_stage == "full" and len(active_moves) == len(source_moves) == 3
+        and all(move in active_moves for move in source_moves)
+        and tuple(move.move_role for move in source_moves) == ("significance", "felt_response", "attention")
+        and all(move.required and move.reception_act == "stay_with_current_burden" for move in source_moves)
+        and all(move.support_nucleus_ids for move in source_moves[:2])
+        and tuple(("current_burden", move.target_nucleus_ids, move.support_nucleus_ids) for move in source_moves)
+            == _thread_retained_reaction_groups(plan.nuclei, plan.relations)
+        and any(record_prefixes.get(nid) for nid in source_moves[0].target_nucleus_ids)
+        and len(source_moves[2].target_nucleus_ids) == 1
+        and _thread_revised_original_reaction(nucleus_index[source_moves[2].target_nucleus_ids[0]], plan.relations)
+    )
     parts: list[str] = []
     bindings: list[ReceptionVisibleSegmentBindingV1] = []
     referent_kinds: list[str] = []
@@ -11656,7 +11675,10 @@ def _author_source_grounded_reception_clauses(
                 distributive_object=distributive_relation_slot is not None,
                 unfinished_pair=unfinished_pair,
                 acknowledge_received=acknowledge_received,
-                middle_received_scope=middle_received_scope and move == active_moves[1],
+                middle_received_scope=(middle_received_scope and move == active_moves[1]
+                    or qualified_original_scope and move == source_moves[0]
+                    and all(code.endswith(":none") for code in meaning_realization.nominalization_plan
+                            if code.startswith("thread-received-slot:"))),
                 received_record_prefixes=tuple(record_prefixes.get(nid, "") for nid in move.target_nucleus_ids),
             )
             detached_parts = _source_owned_detached_feeling_parts(

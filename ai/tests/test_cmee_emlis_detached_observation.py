@@ -4951,3 +4951,181 @@ def test_original_quoted_explanation_saved_recorrection_withdrawal_and_nonregene
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved original explanation must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('position', [1, 2])
+@pytest.mark.parametrize('new', ['少し重かった', '少し重かったのです', '私も少し重くなかったのだった'])
+def test_same_name_original_reaction_revision_keeps_source_positions(field, position, new):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    old = ('嬉しくなかった', '悲しかった', '寂しかった')[position]
+    request = begin(EXACT_RECORD_MEMO if field == 'memo' else '',
+                    EXACT_RECORD_MEMO if field == 'memo_action' else '')
+    request = advance(request, f'「{old}」ではなく「{new}」です。')
+    context = actual(request=request)
+    result, plan, _, resolver, _ = context
+    assert MeaningExperienceEngine().generate(request).artifact.text == result.artifact.text
+    assert old not in result.artifact.text and f'「{new}」' in result.artifact.observation
+    events = [n for n in plan.nuclei if n.kind == 'event' and n.source_fields == (field,)]
+    assert len(events) == 3
+    assert [resolver.resolve(n.source_span_ids[0]).start_index for n in events] == [0, 15, 28]
+    assert all(RECORD_PREFIXES[i] + '誘われた' in result.artifact.reception
+               for i in range(3) if i != position)
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.fixture(scope='module', params=[1, 2])
+def same_name_original_revision_context(request):
+    old = ('嬉しくなかった', '悲しかった', '寂しかった')[request.param]
+    return actual(request=advance(begin(EXACT_RECORD_MEMO),
+        f'「{old}」ではなく「私も少し重くなかったのだった」です。'))
+
+
+def test_same_name_original_revision_rejects_position_changes_without_authors(same_name_original_revision_context):
+    context = same_name_original_revision_context
+    body = context[0].artifact.text
+    present = [prefix for prefix in RECORD_PREFIXES if prefix in context[0].artifact.reception]
+    assert len(present) == 2
+    for prefix in present:
+        for wrong in RECORD_PREFIXES:
+            if wrong != prefix:
+                changed = body.replace(prefix, wrong, 1)
+                assert changed != body and not read_body(context, changed).passed
+        changed = body.replace(prefix, '', 1)
+        assert changed != body and not read_body(context, changed).passed
+    changed = body.replace(present[0], '__position__', 1).replace(present[1], present[0], 1).replace('__position__', present[1], 1)
+    assert changed != body and not read_body(context, changed).passed
+
+
+@pytest.fixture(scope='module')
+def same_name_middle_revision_context():
+    return actual(request=advance(begin(EXACT_RECORD_MEMO),
+        '「悲しかった」ではなく「私も少し重くなかったのだった」です。'))
+
+
+@pytest.mark.parametrize('mutation', ['missing', 'start', 'end', 'duplicate', 'swapped_pairs', 'swapped_reactions', 'cause'])
+def test_same_name_middle_revision_rejects_event_scope_corruption_without_authors(same_name_middle_revision_context, mutation):
+    context = same_name_middle_revision_context
+    body, observation = context[0].artifact.text, context[0].artifact.observation
+    fact = '「誘われた」という出来事がありました。'
+    first = '「誘われた」と「嬉しくなかった」が、異なる向きのまま同時にあります。'
+    last = '「誘われた」と「寂しかった」が、異なる向きのまま同時にあります。'
+    assert all(value in observation for value in (first, fact, last))
+    if mutation in {'missing', 'start', 'end', 'duplicate'}:
+        changed = observation.replace(fact, '', 1)
+        if mutation == 'start':
+            changed = fact + ' ' + changed
+        elif mutation == 'end':
+            changed += ' ' + fact
+        elif mutation == 'duplicate':
+            changed = observation.replace(fact, fact + ' ' + fact, 1)
+    elif mutation == 'swapped_pairs':
+        changed = observation.replace(first, '__pair__', 1).replace(last, first, 1).replace('__pair__', last, 1)
+    elif mutation == 'swapped_reactions':
+        changed = observation.replace('嬉しくなかった', '__reaction__', 1).replace('寂しかった', '嬉しくなかった', 1).replace('__reaction__', '寂しかった', 1)
+    else:
+        changed = observation.replace(first, first[:-1] + '、これが重さの原因です。', 1)
+    assert changed != observation
+    with patch.object(surface, '_render_relation', side_effect=AssertionError('no relation oracle')), patch.object(
+            surface, '_render_observation_with_relations', side_effect=AssertionError('no line oracle')):
+        assert not read_body(context, body.replace(observation, changed, 1)).passed
+
+
+@pytest.mark.parametrize('position', [1, 2])
+@pytest.mark.parametrize('last', ['「少し重かったのです」ではなく「少し苦しかったのです」です。',
+                                 '「少し重かったのです」は誤りです。'])
+def test_same_name_original_revision_saved_replay_keeps_original_and_positions(qcase, qdb, monkeypatch, position, last):
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$1 where id=$2', [EXACT_RECORD_MEMO, parent])
+    first = current = run(service.start(user, parent))
+    old = ('嬉しくなかった', '悲しかった', '寂しかった')[position]
+    replies = (f'「{old}」ではなく「少し重かったのです」です。', last)
+    for step, reply in enumerate(replies):
+        if step:
+            current = run(cont(service, user, current, f'same-name-revision-continue-{step}'))
+        current = run(answer(service, user, current, reply, f'same-name-revision-answer-{step}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        assert old not in body
+        assert all(RECORD_PREFIXES[i] + '誘われた' in body for i in range(3) if i != position), (step, body)
+        if step == 1:
+            assert '少し重かった' not in body
+            assert ('「少し苦しかったのです」' in body) == ('ではなく' in last)
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved same-name revision must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('position', [1, 2])
+def test_same_name_original_revision_first_saved_body_replays_without_regeneration(qcase, qdb, monkeypatch, position):
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$1 where id=$2', [EXACT_RECORD_MEMO, parent])
+    first = run(service.start(user, parent))
+    old = ('嬉しくなかった', '悲しかった', '寂しかった')[position]
+    current = run(answer(service, user, first,
+        f'「{old}」ではなく「私も少し重くなかったのだった」です。', f'same-name-first-revision-{position}'))
+    assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+    body = current['current_observation']['text']
+    assert old not in body and '私も少し重くなかったのだった' in body
+    assert all(RECORD_PREFIXES[i] + '誘われた' in body for i in range(3) if i != position)
+    assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == EXACT_RECORD_MEMO
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('first saved revision must not regenerate'))
+        assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('position', [1, 2])
+def test_same_name_original_revision_next_answer_keeps_each_source_scope_without_authors(position):
+    old = ('嬉しくなかった', '悲しかった', '寂しかった')[position]
+    request = advance(advance(begin(EXACT_RECORD_MEMO),
+        f'「{old}」ではなく「少し重かったのです」です。'), '今は少し怖かった。')
+    context = actual(request=request)
+    body = context[0].artifact.text
+    assert all(RECORD_PREFIXES[i] + '誘われた' in body for i in range(3) if i != position)
+    assert read_body(context, body).passed
+    for prefix in (RECORD_PREFIXES[i] for i in range(3) if i != position):
+        for wrong in RECORD_PREFIXES:
+            if wrong != prefix:
+                changed = body.replace(prefix, wrong, 1)
+                assert changed != body and not read_body(context, changed).passed
+    observation = context[0].artifact.observation
+    answer_fact = re.search(r'「誘われた」ことについて、回答した時点の受け止めは「少し怖かった」と書かれています。', observation)
+    assert answer_fact
+    for changed in (body.replace(answer_fact[0], '', 1),
+                    body.replace(answer_fact[0], answer_fact[0].replace('回答した時点', 'その時'), 1),
+                    body.replace(answer_fact[0], answer_fact[0].replace('少し怖かった', '少し重かった'), 1),
+                    body.replace(answer_fact[0], answer_fact[0][:-1] + '、これが重さの原因です。', 1)):
+        assert changed != body and not read_body(context, changed).passed
+    plan, resolver, selected = context[1], context[3], context[4]
+    reception_plan = plan.response_plan.human_reception_plan
+    moves = reception_plan.moves
+    assert moves[0].move_role == 'significance'
+    raw = next(part + '。' for part in context[0].artifact.reception.split('。') if part.startswith(RECORD_PREFIXES[0]))
+    assert gate.read_received_discourse(raw, moves[0], plan, resolver, selected) is not None
+    for changed_moves in (moves[1:], tuple(reversed(moves)),
+                          (replace(moves[0], required=False), *moves[1:]),
+                          (replace(moves[0], move_id='foreign-qualified-move'), *moves[1:])):
+        altered = replace(plan, response_plan=replace(plan.response_plan,
+            human_reception_plan=replace(reception_plan, moves=changed_moves)))
+        assert gate.read_received_discourse(raw, moves[0], altered, resolver, selected) is None
+
+
+@pytest.mark.parametrize('position', [1, 2])
+def test_same_name_original_revision_next_saved_answer_keeps_positions_and_terminal_replay(qcase, qdb, monkeypatch, position):
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$1 where id=$2', [EXACT_RECORD_MEMO, parent])
+    first = run(service.start(user, parent))
+    old = ('嬉しくなかった', '悲しかった', '寂しかった')[position]
+    current = run(answer(service, user, first,
+        f'「{old}」ではなく「少し重かったのです」です。', 'same-name-next-first'))
+    current = run(cont(service, user, current, 'same-name-next-continue'))
+    current = run(answer(service, user, current, '今は少し怖かった。', 'same-name-next-answer'))
+    assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+    body = current['current_observation']['text']
+    assert all(RECORD_PREFIXES[i] + '誘われた' in body for i in range(3) if i != position)
+    assert '少し怖かった' in body and '少し重かったのです' in body
+    assert not current['can_continue']
+    assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == EXACT_RECORD_MEMO
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('next saved revision must not regenerate'))
+        assert run(service.get(user, parent)) == run(service.start(user, parent)) == current

@@ -2476,13 +2476,27 @@ def _body_inverse_intervening_events(body, witness, line, planned_line, plan, re
         for relation in (relations if trailing else contrasts):
             event = index[relation.from_nucleus_id]
             event_sources = _body_inverse_nucleus_source_values(event.nucleus_id, plan, resolver)
-            event_rows = [i for i, row in enumerate(rows) if any(
-                value in _body_inverse_normalized_anchor(_body_inverse_visible_text(body, row))
-                for value in event_sources)]
-            if (len(event_rows) != 1 or (event_rows[0] < matches[0]) != (position(event) < position(nucleus))):
-                return False
             shared = any(r.relation_id in shared_relations and r.from_nucleus_id == event.nucleus_id
                          for r in relations)
+            if not shared and relation.type == "contrast":
+                # Equal event text cannot identify a neighboring pair. Read
+                # both operands and the complete sentence before its position.
+                reaction_sources = _body_inverse_nucleus_source_values(relation.to_nucleus_id, plan, resolver)
+                if len(event_sources) != 1 or len(reaction_sources) != 1:
+                    return False
+                event_rows = []
+                for i, row in enumerate(rows):
+                    parsed = re.fullmatch(r"「([^「」『』\n]+)」と「([^「」『』\n]+)」が、"
+                        r"異なる向きのまま同時にあります。", _body_inverse_visible_text(body, row))
+                    if parsed and tuple(map(_body_inverse_normalized_anchor, parsed.groups())) == (
+                            event_sources[0], reaction_sources[0]):
+                        event_rows.append(i)
+            else:
+                event_rows = [i for i, row in enumerate(rows) if any(
+                    value in _body_inverse_normalized_anchor(_body_inverse_visible_text(body, row))
+                    for value in event_sources)]
+            if (len(event_rows) != 1 or (event_rows[0] < matches[0]) != (position(event) < position(nucleus))):
+                return False
             if not shared and relation.type == "evaluation_about_event":
                 visible = _body_inverse_visible_text(body, rows[event_rows[0]])
                 parsed = re.fullmatch(r"「([^「」『』\n]+)」ことについて、"
@@ -2522,7 +2536,8 @@ def _body_inverse_intervening_events(body, witness, line, planned_line, plan, re
         and set(planned_line.binding.nucleus_ids) - endpoints == {n.nucleus_id for n in independent}
         and all(r.type == "contrast" or r.from_nucleus_id in {c.from_nucleus_id for c in contrasts}
                 for r in relations)
-        and len(rows) != len(contrasts) - sum(len(group) - 1 for group in contrast_groups) + len(independent)):
+        and len(rows) != len(contrasts) - sum(len(group) - 1 for group in contrast_groups) + len(independent)
+            + sum(r.type == "evaluation_about_event" and r.relation_id not in shared_relations for r in relations)):
         return False
     return True
 
@@ -3807,9 +3822,11 @@ def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_i
 def _read_received_record_prefixes(plan, resolver):
     """Recover written-position qualifiers from source ranges, not the author."""
     index = {n.nucleus_id: n for n in plan.nuclei}
-    ids = tuple(dict.fromkeys(nid for m in plan.response_plan.human_reception_plan.moves
-        if m.required and m.reception_act == "stay_with_current_burden"
-        for nid in m.target_nucleus_ids if index[nid].kind == "event"))
+    # Reconstruct positions independently from the surviving original
+    # event nuclei. A missing burden Move is not a missing source occurrence.
+    ids = tuple(n.nucleus_id for n in plan.nuclei if n.kind == "event"
+        and n.allowed_claim_scope == "explicit_current_input"
+        and any(field in {"memo", "memo_action"} for field in n.source_fields))
     if not 2 <= len(ids) <= 3:
         return {}
     grouped = {}
@@ -4021,6 +4038,21 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                 and m.support_nucleus_ids for m in reception_moves)
         and tuple(("current_burden", m.target_nucleus_ids, m.support_nucleus_ids)
                   for m in reception_moves) == source_groups)
+    nuclei = {n.nucleus_id: n for n in plan.nuclei}
+    qualified_original_scope = bool(
+        len(reception_moves) == 3
+        and tuple(m.move_role for m in reception_moves) == ("significance", "felt_response", "attention")
+        and all(m.required and m.reception_act == "stay_with_current_burden" for m in reception_moves)
+        and all(m.support_nucleus_ids for m in reception_moves[:2])
+        and tuple(("current_burden", m.target_nucleus_ids, m.support_nucleus_ids) for m in reception_moves) == source_groups
+        and move == reception_moves[0]
+        and any(nid in _read_received_record_prefixes(plan, resolver) for nid in move.target_nucleus_ids)
+        and len(reception_moves[2].target_nucleus_ids) == 1
+        and _thread_revised_original_reaction(nuclei[reception_moves[2].target_nucleus_ids[0]], plan.relations)
+        and not any(r.type == "evaluation_about_event" and r.from_nucleus_id in move.target_nucleus_ids
+                    and r.to_nucleus_id in move.support_nucleus_ids
+                    and r.relation_id in plan.coverage_requirements.required_relation_ids for r in plan.relations)
+    )
     has_answers = any(n.source_fields == ("answer_text_private",) for n in plan.nuclei)
     if (has_answers and getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
         or not move.required or not (move.move_role == "felt_response"
@@ -4032,8 +4064,9 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
             # scope. Keep its role and source group; do not admit arbitrary
             # significance Moves merely because their text is finite.
             or move.move_role == "significance" and thread_group
-            and separate_received_scopes and len(reception_moves) == 3
-            and move == reception_moves[1])
+            and (separate_received_scopes and len(reception_moves) == 3
+                 and move == reception_moves[1]
+                 or qualified_original_scope))
         or move.reception_act != "stay_with_current_burden"
         or not (original or thread_group)
         or not raw.endswith("。") or raw.count("。") != 1

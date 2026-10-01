@@ -12274,3 +12274,26 @@ source checkpoint `107820fc5e58feb52e4e9067181a4ebf060498e0`。固定source blob
 独立診断ではHRの_received_event_record_prefixesとGateの_read_received_record_prefixesが、全original eventではなく現在のburden Moveのtarget eventだけを母集団にする。非focus REVISEで一件が母集団から外れると残る二件を先/後へ付け直し、author/readerが同じ誤った縮小母集団を使うためGateも通す。これは説明形の時制とは別の位置owner問題。非focus訂正がnewを独立反応にする既存境界と、残存原記述の位置の再番号付けを混同しない。新たなABOUT関係の創設をこの修復の成功条件へ混ぜず、原記述の実位置と初期原集合を確認する次の修復へ残す。
 
 群未完・商品0/3/NOT_CLEAR・全体48%・default OFF・両PR Draft/open/unmergedを維持。原記述位置の2条件、旧失敗/旧拒否期待整合、未対応文法、長い「し」連結・主題/「のですね」反復・深さ不足は残る。同群閉鎖前に二層再掲の別作業へ進行しない。最終記録は同じAPI handoffとCocolon06だけ。反映後、固定blobs・両資料全文prefix/追記・parent/head・path集合・PR本文/状態を照合し、最終headを既存PR3/30へ記録する。今回もローカル合成PGlite、live DB/実機/プロセス再起動未実施、Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/実機予定とContext/changelog取得エラーのNONCREDITを維持。
+
+
+## 2026-10-01 Q4 continuation u46 — 原反応引用訂正後の元位置・独立本文照合（source checkpoint）
+
+開始HEADはAPI `87cc84f91d40a5e10b53c8ec13049774fbc82d97`、Cocolon `8c20124e3c1a7193b4d70a0669f5c3b9f922bb87`。前回txt、最新weekly（2026-09-26の9/29追記）、全体設計・01A/B/C全ファイル地図・current_structure 01/04・実source・恒久incidentを照合した。固定HEADのtracked filesはAPI2300/Cocolon1645。最新合意の同群修復を続行し、10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末予定を継承する。
+
+u45の直接残件2を修復。引用反応の訂正でevent核は残るが、そのeventがburden Moveから外れるため、HR/Gateが減ったMove集合を先/後へ再番号付けしていた。原memo/memo_actionの保持event核とsource rangeから元位置をそれぞれ導出する。event全体の撤回後まで初期母集団を保持する修復ではない。中間の本文未提供は別原因で、Observation逆検証が同名eventだけのsubstringで隣接文を拾っていた。完全contrast文とevent/reaction両sourceを照合して一意の文と元順序を検証し、原因追加・反応交換を許さない。
+
+後続回答でも同種の残件を確認し修復した。中央factに隣接する別文ABOUTを文数計算へ含める。本文の全文法・両source・本人・回答時点の検査は維持する。訂正後の先頭原記述はsignificanceとなり元位置表示が抜けたため、既存の作者eligibility flagを、全required Moveと元source groupの完全な順序、独立した原反応置換、原位置、当該寄与に補足回答がないことを証明した場合へ限定して使う。原source順と既存の表示順を混同しない。独立Readerも同じ事実を原planから再導出し、作者結果をoracleにしない。旧middle scope、保存済みnominal文、欠落/reverse/foreign/optional Move拒否は保持する。
+
+今回の許可scopeは既存exact6 modify、追加/削除0：APIのHR/Gate/detached test/current共有owner identity/本handoff、Cocolonの正本06。source固定blobs：
+- `ai/services/ai_inference/emlis_ai_grounded_human_reception.py` — `5c0b5b41d18990800bb95a5278d5086e805bb5d8` (592147 bytes; SHA-256 `5634034db37105eca3c85c3e1d6010ccf5c753b29d55512a00659f018dc013d5`)
+- `ai/services/ai_inference/emlis_ai_grounded_observation_gate.py` — `6e7d9b050de19a1facbe48faab7cb9327522fee7` (423122 bytes; SHA-256 `907cfe7fc94fbf180c4ed94146700c6a8a0782239dbf6e6f552fdad217a482f2`)
+- `ai/tests/test_cmee_emlis_detached_observation.py` — `27281919603b677a9dc299a7cb5674a0f5f16e00` (339261 bytes; SHA-256 `08d7477c92fd5b001b36c2387295f57541aa5a9031418e371bff6e980b246877`)
+- `ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json` — `b66a3e06df3598e10fbfd8ab5f12c3327bd5cffa` (6812 bytes; SHA-256 `ece338ff7dcb0828c89ba46bfbb55ffa06f4a6d1b6f30fc2f4c8f27b95e99495`)
+
+current派生identityはlanguage `f542e7d3d29158d3e07a2ddcddffb7fad03ff50a1a6daf9ee650c2c7659f9477` / runtime `657ae482992cfeb020d57d32dcb32d29fc8a1ef1c0101b5f13bc9a6bde5d8f72`。historical IM03/frozen fixture・旧test327444 bytes prefixは不変。追加31はmemo/memo_action・中間/末尾・finite/説明形/本人否定程度、原位置改変、中央fact/隣接contrast改変、次回答のABOUT/時点/全source group改変、保存8系列を検査する。保存本文GET/startはgenerate禁止でDTO全文一致、原DTO保持。first/next保存ではDBの原memoも照合した。既存の質問終了後に3回目を強制する初期new testは方法誤りで、新testだけ再訂正/撤回2回答と現在回答2回答へ分け、max/終了条件は不変更。
+
+このcheckpointでは最終guarded sourceのfocused48（new31＋元対象6＋既存順序/旧保存互換11）が48 PASS、ERROR/SKIP0（33.49秒）、current identity1 PASS（34.32秒）。開始sourceの元対象6は4 PASS/2 FAIL、最初のprefix修正だけは5 PASS/1 FAIL。既知19を開始HEADの別worktreeでfresh再現：19 FAIL（39.18秒）。内訳は従来17とu44/u45で判明した旧説明形拒否期待2であり、旧testは変更しない。nodeid再構成で重複pathを付けた初回baseline invocationは0件/exit4のNONCREDIT、修正した19 exact IDsの結果だけを採用する。
+
+途中のnew test文字位置誤算・終了後続行要求、および広過ぎたqualified significance条件は未成功履歴。広い条件の全関連2926完走は2903 PASS/23 FAILで、既知19に旧保存互換2＋欠落/reverse拒否2の回帰を追加したため不採用。作者/Readerの完全順序・補足回答なし条件へ限定後、48条件をfresh再実行し全成功。現在は最終sourceでQ1/received/detachedの全2926 unique IDs（75/989/1862）を6分割fresh実行中。先行sourceや部分完走を最終全件成功へ換算せず、集計を本節の次に追記する。
+
+群未完・商品0/3/NOT_CLEAR・既存全体48%・default OFF・両PR Draft/open/unmergedを維持。STRUCTURE_MAP_DELTA_NONE：既存作者/独立検証の内部修復でowner/route/schema/接続変更0。最新11→14の最小owner/07 milestone-only方針に従い、構造地図/07/新Receiptを増やさない。live DB・端末・課金・プロセス再起動は未実施、Ready/merge/deploy/enable/live適用0。ローカル合成PGliteだけの保存証拠である。shallow履歴によりContext prepareのlineage確認はエラーでNONCREDIT、原資料の直接読みにfallbackした。Karen-Diary取得はautomatic approval reviewが今回scopeとの関連/許可を未確認として拒否したため未読・迂回0。このsource checkpoint後も最終検査と反映後照合まで続行する。
