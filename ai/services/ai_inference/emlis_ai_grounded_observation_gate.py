@@ -41,6 +41,7 @@ from emlis_ai_grounded_human_reception import (
 )
 from emlis_ai_grounded_observation_plan import (
     _FEELING_RE,
+    _THREAD_POSITIVE_FEELING_COPULA_RE,
     FINAL_STAGE1_GROUNDED_PROJECTION_VERSION,
     GroundedObservationPlan,
     is_grounded_positive_feeling,
@@ -3079,7 +3080,8 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
     copular_proven = False
     if copular is not None:
         noun = _thread_feeling_lexical_host(copular['host'], owner)
-        copular_proven = bool(_FEELING_RE.fullmatch(noun) and not noun.endswith("い"))
+        copular_proven = bool(_FEELING_RE.fullmatch(noun) and not noun.endswith("い")
+            or _THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(source))
         if copular_proven:
             predicate = copular['host'] + (
                 "だった" if copular['ending'] in {"でした", "だった"} else "だ")
@@ -3307,6 +3309,10 @@ def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, sha
     past_copular_proven = bool(noun and _FEELING_RE.fullmatch(noun) and not noun.endswith("い"))
     if past_copular_proven:
         predicate = copular['host'] + "だった"
+    nominal_feeling = _THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(source)
+    if nominal_feeling:
+        copular = re.fullmatch(r"(?P<host>.+?)(?P<ending>でした|だった|です|だ)", source)
+        predicate = copular['host'] + ("だった" if copular['ending'] in {"でした", "だった"} else "だ")
     if explanatory is not None:
         host = _thread_feeling_lexical_host(explanatory['predicate'], owner)
         adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
@@ -3318,7 +3324,7 @@ def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, sha
     source_predicate = predicate[owner.end():] if owner else predicate
     if (not event_text or not source
         or not _SOURCE_GROUNDED_FINITE_END_RE.search(predicate)
-        or re.search(r"(?:です|ます|でした|ました|だ)$", predicate)
+        or re.search(r"(?:です|ます|でした|ました|だ)$", predicate) and not nominal_feeling
         or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)",
                      event_text[event_owner.end():] if event_owner else event_text)
         or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", source_predicate)
@@ -3340,7 +3346,7 @@ def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, sha
     if (parsed is None or qualifier is not None and parsed_event is None or (parsed_event != event_text
             and not (parsed['event'] is None and shared_event)) or parsed['time'] != expected_time
         or _restore_thread_finite_answer(parsed['feeling'] + ("のだった" if past_explanation else ""), source,
-            copular_clause=explanation_proven or past_copular_proven,
+            copular_clause=explanation_proven or past_copular_proven or bool(nominal_feeling),
             shared_explanatory_ending=explanation_proven) != source):
         return None
     return tuple((offset + len(raw[:parsed.start(key)].encode()), offset + len(raw[:parsed.end(key)].encode()), value.encode())
@@ -3442,8 +3448,18 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
         last = i == len(rows) - 1
         end = len(raw) if last else cuts[i + 1] - len("し、")
         part = raw[start:end]
+        parsed_part = part
+        answer_source = final_reception_source_anchor_text(row[1].nucleus_id, index, resolver)
+        if (not last and _THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(answer_source)
+            and answer_source.endswith(("です", "だ"))):
+            # A continuing present copula is だし, not なし. Restore only
+            # its same-width final kana for the synthetic acknowledgement;
+            # proof offsets still point to the actual finite source operand.
+            if not part.endswith("だ"):
+                return None
+            parsed_part = part[:-1] + "な"
         proof = _read_answer_feeling_clause(
-            part if last else part + "のですね。", *row[:3], plan, resolver,
+            parsed_part if last else parsed_part + "のですね。", *row[:3], plan, resolver,
             allow_past_copular=not positive)
         if proof is None or any(b > len(part.encode()) for _, b, _ in proof):
             return None
@@ -4520,7 +4536,8 @@ def _restore_thread_finite_answer(actual, source, *, copular_clause=False,
             terminal_noun = attributive and any(
                 token.end() == len(copular['host']) and not token.group().endswith("い")
                 for token in _FEELING_RE.finditer(copular['host']))
-            if _FEELING_RE.fullmatch(noun) and not noun.endswith("い") or terminal_noun:
+            if (_FEELING_RE.fullmatch(noun) and not noun.endswith("い") or terminal_noun
+                or _THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(source)):
                 ending = "だった" if copular['ending'] in {"でした", "だった"} else "な"
                 if not restored.endswith(ending):
                     return None

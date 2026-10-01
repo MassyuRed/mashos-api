@@ -129,6 +129,9 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
                             safety_span_order={}, normalized_input=local)
     frame = gp._semantic_frame_for_span(local_span, kind=kind, roles=(), claim_ids=(),
                                         normalized_input=local)
+    nominal_feeling = bool(gp._THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(bounded)
+        and kind not in {"event", "other_explicit"}
+        and gp._source_operator_owner_scope_is_bound(bounded))
     # A finite self belief is retained as a belief, not its complement's
     # truth. The question only supplies the omitted response target.
     if outcome_standard and _past_desire_source(bounded):
@@ -142,7 +145,7 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
         kind = "reaction"
         frame = replace(frame, predicate_kind="feeling", modality="feeling",
                         polarity="negative" if re.search(r"ない|なかった|重|苦|つら|辛", bounded) else "neutral")
-    elif _FEELING.fullmatch(bounded) or explained_feeling:
+    elif _FEELING.fullmatch(bounded) or explained_feeling or nominal_feeling:
         kind = "reaction"
         negative = bool(re.search(r"くない|くなかった|寂|さび|悲|苦|つら|辛|怖|こわ|重", bounded))
         frame = replace(frame, predicate_kind="feeling", modality="feeling",

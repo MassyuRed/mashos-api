@@ -274,6 +274,14 @@ _POSITIVE_CHANGE_RE: Final = re.compile(
 _FEELING_RE: Final = re.compile(
     r"(?:感じ|気持ち|悲し|不安|だる|しんど|つら|辛|焦|もやもや|怖|寂|苦し|嬉|うれ|落ち着|重い)"
 )
+# Complete supplemental states, not the shared positive-change/value lexicon.
+# Admission still requires the existing answer owner/scope proof. In particular,
+# achievement, a value placed on reassurance, and embedded feelings are not
+# licensed by finding one of these nouns inside a larger proposition.
+_THREAD_POSITIVE_FEELING_COPULA_RE: Final = re.compile(
+    r"(?:私は|私も|自分は|私には|僕には)?(?:少し|とても)?"
+    r"(?:安心|平穏|幸せ)(?:でした|だった|です|だ)"
+)
 _HELP_SEEKING_RE: Final = re.compile(
     r"(?:相談|面談|受診|診察|予約|窓口|連絡先|相談先|支援先|助けを求め|話を聞いてもら)"
 )

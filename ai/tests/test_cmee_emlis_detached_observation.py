@@ -6165,3 +6165,147 @@ def test_same_name_positive_and_negative_answers_keep_separate_sources(field, an
         altered = follow.replace(when + feeling, '先の回答時点では' + feeling, 1)
         assert not read_body(context, context[0].artifact.text.replace(follow, altered, 1)).passed
     assert read_body(context, context[0].artifact.text).passed
+
+
+@pytest.mark.parametrize('memo', [EXACT_RECORD_MEMO, RECORD_TRIPLE_MEMO])
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('third,finite', [
+    ('今は少し安心です。', '回答した時点では少し安心な'),
+    ('その時は私も幸せでした。', 'その時はあなたも幸せだった'),
+    ('今は少し平穏だ。', '回答した時点では少し平穏な'),
+])
+def test_nominal_positive_answer_keeps_originals_and_three_answer_sources(memo, field, third, finite):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    request = begin(memo if field == 'memo' else '', memo if field == 'memo_action' else '')
+    for reply in (*TWO_POSITIVE_PAIRS[0], third):
+        request = advance(request, reply)
+    prepared = prepare_emlis_meaning(request)
+    assert not prepared.checkpoint.unresolved_parts
+    answer_nucleus, = prepared.accepted_nuclei
+    frame = answer_nucleus.semantic_frame
+    assert (answer_nucleus.kind, frame.predicate_kind, frame.modality, frame.polarity) == (
+        'reaction', 'feeling', 'feeling', 'positive')
+    assert 'operator:feeling' in frame.attribute_codes
+    context = actual(request=request)
+    result, plan, _, resolver, selected = context
+    body, follow = result.artifact.text, result.artifact.reception
+    assert MeaningExperienceEngine().generate(request).artifact.text == body
+    assert all(s in follow for s in ('嬉し', '悲しさ', '寂しさ',
+        '回答した時点では嬉しい', 'その時は楽しかった', finite + 'のですね。'))
+    assert all(follow.count(prefix) == 2 for prefix in RECORD_PREFIXES)
+    assert len(plan.response_plan.human_reception_plan.moves) == 2
+    move, = [m for m in plan.response_plan.human_reception_plan.moves
+             if m.reception_act == 'recognize_lived_change']
+    assert len(move.target_nucleus_ids) == 3
+    raw = follow.split('。')[1] + '。'
+    with patch.object(reception, 'source_grounded_thread_answer_group', side_effect=AssertionError('no group author')):
+        proof = gate._read_positive_answer_group_discourse(raw, move, plan, resolver, selected)
+    assert proof is not None and len(proof) == 6
+    event = 'あなたは誘われた' if memo == RECORD_TRIPLE_MEMO else '誘われた'
+    assert [raw.encode()[a:b].decode() for a, b, _ in proof][::2] == [event] * 3
+    assert proof[-1][2].decode() == third.removesuffix('。').removeprefix('今は').removeprefix('その時は')
+    assert read_body(context, body).passed
+    for old, new in [(RECORD_PREFIXES[2], RECORD_PREFIXES[0]), (finite, 'その時は不安だった'),
+                     ('ことについて、', 'ことが原因で、'), ('その時は楽しかった', '回答した時点では楽しかった')]:
+        changed = raw.replace(old, new, 1)
+        assert changed != raw and not read_body(context, body.replace(raw, changed, 1)).passed
+    if '少し' in finite:
+        assert not read_body(context, body.replace(raw, raw.replace('少し', '', 1), 1)).passed
+    if 'あなたも' in finite:
+        assert not read_body(context, body.replace(raw, raw.replace('あなたも', '相手は', 1), 1)).passed
+    for position in range(3):
+        clauses = raw.removesuffix('のですね。').split('し、')
+        changed = 'し、'.join(clauses[:position] + clauses[position + 1:]) + 'のですね。'
+        assert not read_body(context, body.replace(raw, changed, 1)).passed
+
+
+@pytest.mark.parametrize('position', [0, 1, 2])
+@pytest.mark.parametrize('source', ['少し安心です', '私も少し幸せだ', '少し平穏でした'])
+def test_nominal_positive_answer_each_group_position_keeps_copula_and_time(position, source):
+    replies = ['今は嬉しい。', 'その時は楽しかった。']
+    replies.insert(position, '今は' + source + '。')
+    request = begin(EXACT_RECORD_MEMO)
+    for reply in replies:
+        request = advance(request, reply)
+    context = actual(request=request)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    assert all(s in follow for s in ('嬉し', '悲しさ', '寂しさ', '嬉しい', '楽しかった'))
+    visible = source.replace('私も', 'あなたも')
+    visible = (visible[:-3] + 'だった' if source.endswith('でした') else
+               visible[:-2] + 'だ' if source.endswith('です') else visible)
+    ending = visible[:-1] + 'な' if position == 2 and visible.endswith('だ') else visible
+    expected = '回答した時点では' + ending + ('のですね。' if position == 2 else 'し、')
+    assert expected in follow
+    assert read_body(context, body).passed
+    for changed in [expected.replace('回答した時点では', 'その時は'),
+                    expected.replace('少し', ''),
+                    expected.replace('だった', 'な') if 'だった' in expected else expected.replace('だし、', 'なし、')
+                    if position < 2 else expected.replace('なのですね', 'だったのですね')]:
+        assert changed != expected
+        assert not read_body(context, body.replace(expected, changed, 1)).passed
+
+
+@pytest.mark.parametrize('last,retained,removed', [
+    ('今は少し平穏です。', '回答した時点では少し平穏', None),
+    ('「少し安心です」ではなく「私も少し幸せです」です。', '先の回答時点ではあなたも少し幸せ', '少し安心'),
+    ('「少し安心です」は誤りです。', 'その時は楽しかった', '少し安心'),
+])
+def test_nominal_positive_answer_saved_add_revision_withdrawal(qcase, qdb, monkeypatch, last, retained, removed):
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    qdb.query('update public.emotions set memo=$1 where id=$2', [EXACT_RECORD_MEMO, parent])
+    first = current = run(service.start(user, parent))
+    for index, reply in enumerate(('今は少し安心です。', 'その時は楽しかった。', last)):
+        if index:
+            current = run(cont(service, user, current, f'nominal-continue-{index}'))
+        current = run(answer(service, user, current, reply, f'nominal-answer-{index}'))
+        assert current['body_state'] == 'REFINED'
+        assert current['original'] == first['original']
+        follow = current['current_observation']['text'].split('Emlisから：', 1)[1]
+        assert all(s in follow for s in ('嬉し', '悲しさ', '寂しさ'))
+        if index:
+            assert 'その時は楽しかった' in follow
+        if index == 2:
+            assert retained in follow
+            if removed:
+                assert removed not in current['current_observation']['text']
+        with monkeypatch.context() as stopped:
+            stopped.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved nominal read must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == EXACT_RECORD_MEMO
+
+
+def test_nominal_positive_answer_survives_its_event_withdrawal_without_reviving_it():
+    request = advance(advance(begin(), '今は少し安心です。'), '「褒められた」は誤りです。')
+    context = actual(request=request)
+    body = context[0].artifact.text
+    assert '褒められた' not in body
+    assert '回答した時点では少し安心なのですね。' in body
+    assert '誘われた' in body and '頼まれた' in body
+    assert read_body(context, body).passed
+    for old, new in [('少し安心な', '少し安心だった'), ('少し安心', '安心'),
+                     ('回答した時点では', 'その時は')]:
+        changed = body.replace(old, new, 1)
+        assert changed != body and not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('reply,polarity', [
+    ('今は達成です。', None), ('今は安心が大切です。', None),
+    ('今は友人は安心です。', None), ('今は安心なら嬉しい。', None),
+    ('今は「安心です」と言われた。', None), ('今は安心かもしれない。', None),
+    ('今はとても安心です。', None), ('今はあなたは安心です。', None),
+    ('今は安心ではない。', 'negative'), ('今は安心した。', 'positive'),
+    ('今は少し私は安心です。', 'positive'), ('今は安心を求めていた。', 'positive'),
+])
+def test_nominal_positive_answer_keeps_existing_nonfeeling_and_unresolved_boundaries(reply, polarity):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    prepared = prepare_emlis_meaning(advance(begin(), reply))
+    if polarity is None:
+        assert not prepared.accepted_nuclei and prepared.checkpoint.unresolved_parts
+    else:
+        nucleus, = prepared.accepted_nuclei
+        frame = nucleus.semantic_frame
+        assert (nucleus.kind, frame.predicate_kind, frame.modality, frame.polarity) == (
+            'value', 'value', 'fact', polarity)
+        assert 'operator:feeling' not in frame.attribute_codes

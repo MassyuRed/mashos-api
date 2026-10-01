@@ -33,6 +33,7 @@ from emlis_ai_grounded_observation_plan import (
     is_grounded_current_answer_uncertainty,
     past_reported_wish_finite,
     _FEELING_RE,
+    _THREAD_POSITIVE_FEELING_COPULA_RE,
     _direct_finite_carrier_shape,
     _bounded_nominal_wish_endpoint,
     _bounded_bare_wish_nominal,
@@ -10844,7 +10845,8 @@ def _detached_feeling_copula_parts(source):
     if copular is None:
         return None
     noun = _feeling_predicate_host(copular['host'])
-    if _FEELING_RE.fullmatch(noun) and not noun.endswith("い"):
+    if (_FEELING_RE.fullmatch(noun) and not noun.endswith("い")
+        or _THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(source)):
         return copular['host'], copular['ending']
     return None
 
@@ -11023,11 +11025,12 @@ def _source_owned_positive_answer_group_sentence(move, realization, plan, resolv
     record_prefixes = _received_event_record_prefixes(plan, resolver)
     for row in rows:
         event_visible = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", row.event_fragment, count=1)
+        nominal_feeling = _THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(row.source)
         finite = _detached_feeling_finite_surface(row.source, allow_medial=True,
-            allow_copular=move.reception_act == "stay_with_current_burden"
+            allow_copular=bool(nominal_feeling) or move.reception_act == "stay_with_current_burden"
                 and row.source.endswith(("でした", "だった")))
         if (not _SOURCE_GROUNDED_FINITE_END_RE.search(finite)
-            or re.search(r"(?:です|ます|でした|ました|だ)$", finite)
+            or re.search(r"(?:です|ます|でした|ました|だ)$", finite) and not nominal_feeling
             or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", event_visible)
             or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)
             or re.search(r'[「」『』“”‘’"?？!！\r\n。]', row.event_fragment + row.source)):
@@ -11069,7 +11072,9 @@ def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
     event_text, source = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
                           for n in (event, answer))
     event_visible = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event_text, count=1)
-    finite = _detached_feeling_finite_surface(source, allow_medial=True)
+    nominal_feeling = _THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(source)
+    finite = _detached_feeling_finite_surface(source, allow_medial=True,
+                                             allow_copular=bool(nominal_feeling))
     explanatory = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ)", finite)
     if explanatory is not None:
         host = _feeling_predicate_host(explanatory['predicate'])
@@ -11083,7 +11088,7 @@ def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
             finite = explanatory['predicate']
     if (not event_text or not source or tuple(realization.semantic_fragments) != (source, event_text)
         or not _SOURCE_GROUNDED_FINITE_END_RE.search(finite)
-        or re.search(r"(?:です|ます|でした|ました|だ)$", finite)
+        or re.search(r"(?:です|ます|でした|ました|だ)$", finite) and not nominal_feeling
         or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", event_visible)
         or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)
         or re.search(r'[「」『』“”‘’"?？!！\r\n。]', event_text + source)):
