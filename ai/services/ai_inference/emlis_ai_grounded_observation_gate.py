@@ -3181,6 +3181,8 @@ def read_detached_feeling_pair(raw, moves, plan, resolver, selected_subjective_i
                 finite = left[:-len("つながらず")] + "つながらなかった"
             elif left.endswith("感じ"):
                 finite = left + "た"
+            elif left.endswith("く"):
+                finite = left[:-1] + "かった"
             else:
                 continue
             first = read_received_discourse(finite + "。", moves[0], plan, resolver, selected_subjective_input)
@@ -3188,6 +3190,12 @@ def read_detached_feeling_pair(raw, moves, plan, resolver, selected_subjective_i
                 selected_subjective_input, preceding_context=(moves[0], finite + "。"))
             if first is None or second is None:
                 continue
+            if left.endswith("く"):
+                # Only the restored final adjective extends beyond actual
+                # bytes. Its full source was independently proved above;
+                # bind it to the actual continuative, never the next answer.
+                first = tuple((a, len(left.encode()) if b == len(finite.encode()) else b, source)
+                              for a, b, source in first)
             # Restore only source ranges actually present before the changed
             # inflection; do not borrow bytes from the following answer.
             if any(not 0 <= a < b <= len(left.encode()) for a, b, _ in first):

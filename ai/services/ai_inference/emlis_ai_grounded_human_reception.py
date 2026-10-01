@@ -11916,6 +11916,10 @@ def _author_source_grounded_reception_clauses(
                 connected = first[:-len("つながらなかった")] + "つながらず"
             elif first.endswith("感じた"):
                 connected = first[:-len("感じた")] + "感じ"
+            elif first.endswith("かった"):
+                # An explicit SELF topic keeps the original reaction finite.
+                # Its proved past adjective shares the explicit 当時 scope.
+                connected = first[:-len("かった")] + "く"
             else:
                 raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAPABILITY_GAP")
             shared_feelings = "当時、" + connected + "、" + second

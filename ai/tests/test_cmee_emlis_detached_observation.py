@@ -5835,3 +5835,114 @@ def test_independent_explanation_revision_saved_body_and_legacy_replay(qcase, qd
         saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved legacy explanation must not regenerate'))
         assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
     assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == memo
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('link', ['のに', 'けど', 'けれど', 'けれども'])
+@pytest.mark.parametrize('reply', ['今は嬉しい。', '今は少し嬉しい。'])
+def test_finite_original_temporal_pair_keeps_same_name_sources_and_times(field, link, reply):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    memo = RECORD_TRIPLE_MEMO.replace('のに', link)
+    request = advance(begin(memo if field == 'memo' else '', memo if field == 'memo_action' else ''), reply)
+    context = actual(request=request)
+    result, plan, _, resolver, selected = context
+    body, follow = result.artifact.text, result.artifact.reception
+    assert MeaningExperienceEngine().generate(request).artifact.text == body
+    assert follow.startswith('当時、' + RECORD_PREFIXES[0] + 'あなたは誘われた' + link + '、嬉しくなく、')
+    assert ('回答した時点では' + reply[2:-1] + 'のですね。') in follow
+    assert all(follow.count(prefix) == 1 for prefix in RECORD_PREFIXES)
+    assert '悲しさ' in follow and '寂しさ' in follow
+    assert len(plan.response_plan.human_reception_plan.moves) == 3
+    assert follow.count('。') == 2
+    assert read_body(context, body).passed
+    pair = plan.response_plan.human_reception_plan.moves[:2]
+    raw = follow.split('。')[0] + '。'
+    first, second = gate.read_detached_feeling_pair(raw, pair, plan, resolver, selected)
+    boundary = raw.encode().index('、回答した時点では'.encode())
+    assert all(0 <= a < b <= boundary for a, b, _ in first)
+    assert all(boundary < a < b <= len(raw.encode()) for a, b, _ in second)
+    assert {source.decode() for _, _, source in first} == {'私は誘われた', '嬉しくなかった'}
+    assert {source.decode() for _, _, source in second} == {reply[2:-1]}
+    assert next(raw.encode()[a:b].decode() for a, b, source in first
+                if source.decode() == '嬉しくなかった') == '嬉しくなく'
+    target = next(n for n in plan.nuclei if n.nucleus_id == pair[0].target_nucleus_ids[0])
+    span = resolver.resolve(target.source_span_ids[0])
+    assert span.source_field == field and span.start_index == 0
+    mutations = [
+        ('当時、', ''), ('当時、', '今、'),
+        (RECORD_PREFIXES[0], RECORD_PREFIXES[1]),
+        ('あなたは誘われた', '友人は誘われた'),
+        ('あなたは誘われた', 'あなたが誘われた'),
+        ('あなたは誘われた', 'あなたは頼まれた'),
+        ('嬉しくなく、', '嬉しく、'), ('嬉しくなく、', '嬉しくない、'),
+        ('嬉しくなく、', ''), ('嬉しくなく、', '嬉しくなかったので、'),
+        ('誘われた' + link + '、', '誘われたので、'),
+        ('回答した時点では', 'その時は'), ('回答した時点では', '先の回答時点では'),
+        ('回答した時点では', '回答した時点でも'),
+        ('嬉しいのですね', '嬉しかったのですね'),
+        ('嬉しいのですね', '嬉しくないのですね'),
+        ('回答した時点では' + reply[2:-1], '回答した時点では友人は' + reply[2:-1]),
+    ]
+    if '少し' in reply:
+        mutations.append(('少し嬉しい', '嬉しい'))
+    for old, new in mutations:
+        changed = follow.replace(old, new, 1)
+        assert changed != follow
+        assert not read_body(context, body.replace(follow, changed, 1)).passed
+    changed = follow.replace(raw, '', 1)
+    assert not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+def test_finite_original_temporal_pair_requires_actual_source_frames_and_about():
+    context = actual(request=advance(begin(RECORD_TRIPLE_MEMO), '今は嬉しい。'))
+    result, plan, _, resolver, selected = context
+    pair = plan.response_plan.human_reception_plan.moves[:2]
+    raw = result.artifact.reception.split('。')[0] + '。'
+    for source_role, field, value in [('original', 'actor', 'other_person'),
+        ('original', 'time_scope', 'present'), ('original', 'polarity', 'positive'),
+        ('answer', 'actor', 'other_person'), ('answer', 'time_scope', 'past'),
+        ('answer', 'polarity', 'negative')]:
+        nid = pair[0].support_nucleus_ids[0] if source_role == 'original' else pair[1].target_nucleus_ids[0]
+        changed = replace(plan, nuclei=tuple(replace(n, semantic_frame=replace(n.semantic_frame, **{field:value}))
+            if n.nucleus_id == nid else n for n in plan.nuclei))
+        assert gate.read_detached_feeling_pair(raw, pair, changed, resolver, selected) is None
+    about, = [r for r in plan.relations if r.type == 'evaluation_about_event']
+    other = next(n for n in plan.nuclei if n.kind == 'event' and n.nucleus_id != about.from_nucleus_id)
+    changed = replace(plan, relations=tuple(replace(r, from_nucleus_id=other.nucleus_id)
+        if r == about else r for r in plan.relations))
+    assert gate.read_detached_feeling_pair(raw, pair, changed, resolver, selected) is None
+
+
+@pytest.mark.parametrize('remaining', [
+    ('その時は楽しかった。', '「嬉しくなかった」ではなく「少し苦しかった」です。'),
+    ('「嬉しい」ではなく「少し楽しい」です。', '「少し楽しい」は誤りです。'),
+    ('「嬉しい」ではなく「少し楽しい」です。', '「少し楽しい」ではなく「とても楽しい」です。'),
+])
+def test_finite_original_temporal_pair_saved_progress_correction_and_withdrawal(qcase, qdb, monkeypatch, remaining):
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    qdb.query('update public.emotions set memo=$1 where id=$2', [RECORD_TRIPLE_MEMO, parent])
+    first = current = run(service.start(user, parent))
+    for index, reply in enumerate(('今は嬉しい。', *remaining)):
+        if index:
+            current = run(cont(service, user, current, f'finite-pair-continue-{index}'))
+        current = run(answer(service, user, current, reply, f'finite-pair-answer-{index}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        if not index:
+            assert '当時、' + RECORD_PREFIXES[0] + 'あなたは誘われたのに、嬉しくなく、回答した時点では嬉しい' in body
+        elif '楽しい' in reply and '誤り' not in reply:
+            assert '先の回答時点では' in body
+        if index == 2:
+            if '少し楽しい」は誤り' in reply:
+                assert '楽しい' not in body and '嬉しくなかった' in body
+            elif '苦しかった' in reply:
+                assert '少し苦しかった' in body and '嬉しくなかった' not in body
+                assert '回答した時点では嬉しい' in body and 'その時は楽しかった' in body
+            else:
+                assert 'とても楽しい' in body and '少し楽しい' not in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved finite pair must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    assert not current['can_continue']
+    assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == RECORD_TRIPLE_MEMO
