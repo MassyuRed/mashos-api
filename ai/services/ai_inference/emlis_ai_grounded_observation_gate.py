@@ -3384,6 +3384,7 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
     rows = []
     positive = move.reception_act == "recognize_lived_change"
     record_prefixes = _read_received_record_prefixes(plan, resolver)
+    event_sources = []
     qualified = re.search(r"(?:先|間|後)に書かれた方では、", raw) is not None
     for nid in move.target_nucleus_ids:
         answer = index[nid]
@@ -3412,6 +3413,7 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
         event_text = final_reception_source_anchor_text(event.nucleus_id, index, resolver)
         if not event_text:
             return None
+        event_sources.append(event_text)
         if "thread_subject:unique_source_clause" not in frame.attribute_codes:
             # Equal names remain distinct only through their original written
             # positions and this answer's exact ABOUT/range/time binding.
@@ -3447,21 +3449,38 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
         if (appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
             or appraisal.operation != "RECEIVE_AS_MATERIAL"):
             return None
-    cuts = [0]
-    if qualified and not raw.startswith(rows[0][3] + "ことについて、"):
+    common_event = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event_sources[0], count=1)
+    common_topic = common_event + "ことについて、"
+    shared_topic = bool(record_prefixes.get(rows[0][0].nucleus_id)
+        and raw.startswith(common_topic + record_prefixes[rows[0][0].nucleus_id]))
+    if shared_topic and (len(set(event_sources)) != 1
+        or not all(record_prefixes.get(row[0].nucleus_id) for row in rows)
+        or len({record_prefixes[row[0].nucleus_id] for row in rows}) != len(rows)):
         return None
-    later_labels = [row[3] for row in rows[1:]]
+    labels = ([record_prefixes[row[0].nucleus_id] for row in rows] if shared_topic else
+              [row[3] + "ことについて、" for row in rows])
+    cuts = [len(common_topic) if shared_topic else 0]
+    if (qualified or shared_topic) and not raw[cuts[0]:].startswith(labels[0]):
+        return None
+    later_labels = labels[1:]
     for position, event_text in enumerate(later_labels):
-        boundaries = tuple(re.finditer(re.escape("し、" + event_text + "ことについて、"), raw))
+        boundaries = tuple(re.finditer(re.escape("し、" + event_text), raw))
         occurrence = later_labels[:position].count(event_text)
         if len(boundaries) != later_labels.count(event_text) or boundaries[occurrence].start() <= cuts[-1]:
             return None
-        cuts.append(boundaries[occurrence].end() - len(event_text + "ことについて、"))
+        cuts.append(boundaries[occurrence].end() - len(event_text))
     proofs = []
     for i, (start, row) in enumerate(zip(cuts, rows)):
         last = i == len(rows) - 1
         end = len(raw) if last else cuts[i + 1] - len("し、")
         part = raw[start:end]
+        if shared_topic:
+            # Validate the actual written-position boundary before lending
+            # the shared event to this one answer. Offsets remain in raw.
+            if not part.startswith(labels[i]):
+                return None
+            start += len(labels[i])
+            part = part[len(labels[i]):]
         parsed_part = part
         answer_source = final_reception_source_anchor_text(row[1].nucleus_id, index, resolver)
         if (not last and (_THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(answer_source)
@@ -3475,9 +3494,15 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
             parsed_part = part[:-1] + "な"
         proof = _read_answer_feeling_clause(
             parsed_part if last else parsed_part + "のですね。", *row[:3], plan, resolver,
-            allow_past_copular=not positive, shared_explanatory_ending=last)
+            allow_past_copular=not positive, shared_explanatory_ending=last,
+            shared_event=shared_topic)
         if proof is None or any(b > len(part.encode()) for _, b, _ in proof):
             return None
+        if shared_topic:
+            # Every ABOUT edge still owns an event operand. Equal complete
+            # source events can point to the same actual shared-topic bytes;
+            # their answer/position operands remain distinct below.
+            proofs.append((0, len(common_event.encode()), event_sources[i].encode()))
         offset = len(raw[:start].encode())
         proofs.extend((a + offset, b + offset, source) for a, b, source in proof)
     return tuple(proofs)
@@ -5945,38 +5970,25 @@ def evaluate_grounded_surface_body_inverse(
                 move_index = {
                     move.move_id: move for move in reception_plan.moves
                 }
-                expected_referent_by_move: dict[str, Any] = {}
-                anchor_used = False
+                # Optional duties still keep their previous referent
+                # availability check. Only required finite duties can be
+                # discharged below by the complete independent body reader.
                 for clause in clause_plans:
                     for move_id in clause.move_ids:
                         move = move_index.get(move_id)
-                        if move is None:
+                        if move is None or move.required:
                             continue
                         try:
-                            referent = resolve_grounded_reception_move_referent(
-                                reception_plan,
-                                move,
-                                nucleus_index,
-                                resolver,
+                            resolve_grounded_reception_move_referent(
+                                reception_plan, move, nucleus_index, resolver,
                                 allow_short_anchor=False,
                                 recovery_stage=sentence_plan.recovery_stage,
                                 allow_anaphoric_topic=True,
                                 final_source_fidelity=final_stage1_plan,
                                 plan=plan,
                             )
-                        except (
-                            GroundedHumanReceptionSurfaceError,
-                            AttributeError,
-                            KeyError,
-                            TypeError,
-                        ):
-                            failures.append(
-                                "body_inverse_reception_referent_unavailable:"
-                                f"{move_id}"
-                            )
-                            continue
-                        anchor_used = anchor_used or referent.source_anchor_used
-                        expected_referent_by_move[move_id] = referent
+                        except (GroundedHumanReceptionSurfaceError, AttributeError, KeyError, TypeError):
+                            failures.append("body_inverse_reception_referent_unavailable:" + move_id)
                 for clause_index, (clause, parsed_sentence) in enumerate(zip(
                     clause_plans,
                     parsed_sentences,
@@ -6031,6 +6043,25 @@ def evaluate_grounded_surface_body_inverse(
                             # Complete body-owned proposition/edge verification
                             # replaces nominal/closing-token requirements only.
                             # Source, plan, clause, trace and safety gates remain.
+                            continue
+                        # A source-owned finite clause that fails its complete
+                        # reader must not be rescued by generating a nominal
+                        # paraphrase. Keep the legacy nominal path for actual
+                        # nominal forms; do not call an author to judge these
+                        # finite bytes, including corrupted pair clauses.
+                        if (final_stage1_plan and sentence_plan.recovery_stage == "full"
+                            and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+                            and move.reception_act in {"stay_with_current_burden", "recognize_lived_change"}
+                            and (len(clause.move_ids) == 1 or shared_objects is not True)
+                            and all(nid in nucleus_index
+                                and nucleus_index[nid].semantic_frame.actor == "current_user"
+                                and (nucleus_index[nid].source_fields in {("memo",), ("memo_action",)}
+                                     or nucleus_index[nid].source_fields == ("answer_text_private",)
+                                     and nucleus_index[nid].allowed_claim_scope == "explicit_supplemental_answer")
+                                for nid in (*move.target_nucleus_ids, *move.support_nucleus_ids))
+                            and re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました)。$",
+                                body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8"))):
+                            failures.append("body_inverse_reception_finite_duty_unverified:" + move_id)
                             continue
                         target_nuclei = tuple(
                             nucleus_index[nucleus_id]
@@ -6113,9 +6144,18 @@ def evaluate_grounded_surface_body_inverse(
                                 sentence_plan.recovery_stage,
                             )
                         )
-                        expected_referent = expected_referent_by_move.get(
-                            move.move_id
-                        )
+                        try:
+                            expected_referent = resolve_grounded_reception_move_referent(
+                                reception_plan, move, nucleus_index, resolver,
+                                allow_short_anchor=False,
+                                recovery_stage=sentence_plan.recovery_stage,
+                                allow_anaphoric_topic=True,
+                                final_source_fidelity=final_stage1_plan,
+                                plan=plan,
+                            )
+                        except (GroundedHumanReceptionSurfaceError, AttributeError, KeyError, TypeError):
+                            failures.append("body_inverse_reception_referent_unavailable:" + move_id)
+                            expected_referent = None
                         expected_referent_text = (
                             _body_inverse_normalized_anchor(
                                 expected_referent.text

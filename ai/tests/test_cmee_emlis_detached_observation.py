@@ -6041,6 +6041,10 @@ def test_same_name_positive_group_retains_three_answers_and_originals(memo, fiel
         assert [raw.encode()[a:b].decode() for a, b, _ in proof][::2] == [event] * 3
     assert read_body(context, result.artifact.text).passed
     legacy = raw
+    if raw.startswith(event + 'ことについて、' + RECORD_PREFIXES[0]):
+        legacy = raw[len(event + 'ことについて、'):]
+        for prefix in RECORD_PREFIXES:
+            legacy = legacy.replace(prefix, prefix + event + 'ことについて、', 1)
     for prefix in RECORD_PREFIXES:
         legacy = legacy.replace(prefix, '')
     assert read_body(context, result.artifact.text.replace(raw, legacy, 1)).passed
@@ -6141,7 +6145,8 @@ def test_same_name_positive_saved_add_revision_withdrawal_and_replay(qcase, qdb,
             elif '苦しかった' in reply:
                 assert '悲しかった' not in body and '少し苦しかった' in body
             else:
-                assert RECORD_PREFIXES[2] + '誘われたことについて、回答した時点では少し楽しい' in body
+                assert '誘われたことについて、' + RECORD_PREFIXES[0] in body
+                assert RECORD_PREFIXES[2] + '回答した時点では少し楽しい' in body
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved positive occurrences must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
@@ -7054,3 +7059,177 @@ def test_nominal_explained_answer_keeps_unresolved_boundaries(source):
 def test_nominal_explained_answer_does_not_prove_unbound_source(source):
     import emlis_ai_grounded_observation_plan as gp
     assert not gp._THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(source)
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('event', ['誘われた', '私は誘われた'])
+@pytest.mark.parametrize('source', ['安心なのです', '私も幸せだったのです',
+                                  '私は安心なのだった', '少し私は少し安心なのです'])
+def test_shared_answer_topic_keeps_every_occurrence_and_complete_source(field, event, source):
+    memo = EXACT_RECORD_MEMO.replace('誘われた', event)
+    req = begin(memo if field == 'memo' else '', memo if field == 'memo_action' else '')
+    for reply in (*TWO_POSITIVE_PAIRS[0], '今は' + source + '。'):
+        req = advance(req, reply)
+    context = actual(request=req)
+    result, plan, _, resolver, selected = context
+    body, follow = result.artifact.text, result.artifact.reception
+    raw = follow.split('。')[-2] + '。'
+    visible_event = event.replace('私は', 'あなたは')
+    topic = visible_event + 'ことについて、'
+    assert raw.startswith(topic) and raw.count(visible_event) == 1
+    assert all(raw.count(label) == 1 for label in RECORD_PREFIXES)
+    assert all(value in follow for value in ('嬉し', '悲し', '寂し',
+        '回答した時点では嬉しい', 'その時は楽しかった'))
+    assert source in result.artifact.observation
+    move = next(m for m in plan.response_plan.human_reception_plan.moves
+                if m.reception_act == 'recognize_lived_change' and len(m.target_nucleus_ids) == 3)
+    with patch.object(reception, '_source_owned_positive_answer_group_sentence', side_effect=AssertionError('no group author')), patch.object(
+            reception, '_detached_feeling_finite_surface', side_effect=AssertionError('no finite author')):
+        proof = gate.read_source_owned_discourse(raw, move, plan, resolver, selected)
+        assert proof is not None
+        assert [s.decode() for _, _, s in proof] == [event, '嬉しい', event, '楽しかった', event, source]
+        assert len({(a, b) for a, b, _ in proof[::2]}) == 1
+        assert raw.encode()[proof[0][0]:proof[0][1]].decode() == visible_event
+        assert all(raw.encode()[a:b] for a, b, _ in proof)
+        assert read_body(context, body).passed
+        mutations = [raw.replace(topic, '', 1), raw.replace(visible_event, '頼まれた', 1),
+            raw.replace(RECORD_PREFIXES[1], '', 1),
+            raw.replace(RECORD_PREFIXES[2], RECORD_PREFIXES[0], 1),
+            raw.replace(RECORD_PREFIXES[0], 'TEMP').replace(RECORD_PREFIXES[2], RECORD_PREFIXES[0]).replace('TEMP', RECORD_PREFIXES[2]),
+            raw.replace('回答した時点では嬉しい', 'その時は嬉しい'),
+            raw.replace('楽しかった', '嬉しかった'), raw.replace('その時は楽しかったし、', ''),
+            raw.replace('嬉しい', '嬉しくない', 1)]
+        for changed in mutations:
+            assert changed != raw
+            assert gate.read_source_owned_discourse(changed, move, plan, resolver, selected) is None
+            assert not read_body(context, body.replace(raw, changed, 1)).passed
+    # Old independently qualified clauses remain readable for saved content.
+    legacy = raw[len(topic):]
+    for label in RECORD_PREFIXES:
+        legacy = legacy.replace(label, label + visible_event + 'ことについて、', 1)
+    assert read_body(context, body.replace(raw, legacy, 1)).passed
+
+
+@pytest.mark.parametrize('position', [0, 1, 2])
+@pytest.mark.parametrize('source', ['少し私は少し安心なのです', '私も幸せだったのです', '私は安心なのだった'])
+def test_shared_answer_topic_retains_explanation_at_each_position(position, source):
+    replies = list(TWO_POSITIVE_PAIRS[0])
+    replies.insert(position, '今は' + source + '。')
+    req = begin(EXACT_RECORD_MEMO)
+    for reply in replies:
+        req = advance(req, reply)
+    context = actual(request=req)
+    raw = context[0].artifact.reception.split('。')[-2] + '。'
+    assert raw.startswith('誘われたことについて、先に書かれた方では、')
+    assert read_body(context, context[0].artifact.text).passed
+    move = next(m for m in context[1].response_plan.human_reception_plan.moves
+                if m.reception_act == 'recognize_lived_change' and len(m.target_nucleus_ids) == 3)
+    proof = gate.read_source_owned_discourse(raw, move, context[1], context[3], context[4])
+    assert proof[2 * position + 1][2].decode() == source
+    actual_finite = raw.encode()[proof[2 * position + 1][0]:proof[2 * position + 1][1]].decode()
+    assert actual_finite
+    for wrong in (actual_finite.replace('あなた', '友人'), actual_finite.replace('だった', 'な'),
+                  actual_finite.replace('少し', '', 1), actual_finite + 'らしい'):
+        if wrong == actual_finite:
+            continue
+        changed = raw.replace(actual_finite, wrong, 1)
+        assert gate.read_source_owned_discourse(changed, move, context[1], context[3], context[4]) is None
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('source', ['嬉しかった', '私は安心なのです'])
+def test_shared_answer_topic_keeps_two_answers_separate_from_original_revision(field, source):
+    req = begin(EXACT_RECORD_MEMO if field == 'memo' else '', EXACT_RECORD_MEMO if field == 'memo_action' else '')
+    for reply in (*TWO_POSITIVE_PAIRS[0], f'「悲しかった」ではなく「{source}」です。'):
+        req = advance(req, reply)
+    context = actual(request=req)
+    follow = context[0].artifact.reception
+    assert '誘われたことについて、先に書かれた方では、' in follow
+    assert '悲しかった' not in context[0].artifact.text and '悲しさ' not in follow
+    assert all(s in follow for s in ('嬉し', '寂し', '回答した時点では嬉しい',
+        'その時は楽しかった', '言い直してくださった気持ちについては、当時'))
+    assert read_body(context, context[0].artifact.text).passed
+    wrong = follow.replace('間に書かれた方では、その時は楽しかった', '後に書かれた方では、その時は楽しかった')
+    assert wrong != follow and not read_body(context, context[0].artifact.text.replace(follow, wrong)).passed
+
+
+@pytest.mark.parametrize('memo', [
+    '褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。',
+    '誘われたのに、嬉しくなかった。頼まれたのに、悲しかった。誘われたのに、寂しかった。',
+    '私は誘われたのに、嬉しくなかった。自分は誘われたのに、悲しかった。私は誘われたのに、寂しかった。'])
+def test_shared_answer_topic_does_not_merge_unequal_source_events(memo):
+    req = begin(memo)
+    for reply in (*TWO_POSITIVE_PAIRS[0], '今は安心なのです。'):
+        req = advance(req, reply)
+    context = actual(request=req)
+    follow = context[0].artifact.reception
+    assert follow.count('ことについて、') == 3
+    assert all(s in follow for s in ('嬉し', '悲し', '寂し', '回答した時点では嬉しい',
+                                    'その時は楽しかった', '安心なのですね'))
+    assert read_body(context, context[0].artifact.text).passed
+
+
+@pytest.mark.parametrize('legacy', [False, True])
+@pytest.mark.parametrize('last,shared', [('今は安心なのです。', True),
+    ('「悲しかった」ではなく「私は安心なのです」です。', True), ('「嬉しい」は誤りです。', False)])
+def test_shared_answer_topic_saved_add_revision_withdrawal_and_legacy(qcase, qdb, monkeypatch, last, shared, legacy):
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    qdb.query('update public.emotions set memo=$1 where id=$2', [EXACT_RECORD_MEMO, parent])
+    first = current = run(service.start(user, parent))
+    author = reception._source_owned_positive_answer_group_sentence
+    def previous_surface(*args, **kwargs):
+        text = author(*args, **kwargs)
+        if text and text.startswith('誘われたことについて、先に書かれた方では、'):
+            event, text = text.split('ことについて、', 1)
+            text = re.sub(r'(?:先|間|後)に書かれた方では、', lambda m: m.group() + event + 'ことについて、', text)
+        return text
+    with monkeypatch.context() as old:
+        if legacy:
+            old.setattr(reception, '_source_owned_positive_answer_group_sentence', previous_surface)
+        for index, reply in enumerate((*TWO_POSITIVE_PAIRS[0], last)):
+            if index:
+                current = run(cont(service, user, current, f'shared-topic-continue-{index}'))
+            current = run(answer(service, user, current, reply, f'shared-topic-answer-{index}'))
+            assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+            with monkeypatch.context() as saved:
+                saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved topic must not regenerate'))
+                assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    follow = current['current_observation']['text'].split('Emlisから：', 1)[1]
+    assert ('誘われたことについて、先に書かれた方では、' in follow) == (shared and not legacy)
+    assert 'その時は楽しかった' in follow and '寂し' in follow and '嬉し' in follow
+    if 'ではなく' in last:
+        assert '悲し' not in follow and '言い直してくださった' in follow
+    else:
+        assert '悲し' in follow
+    if last == '「嬉しい」は誤りです。':
+        assert '回答した時点では嬉しい' not in follow
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('legacy replay must not regenerate'))
+        assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == EXACT_RECORD_MEMO
+
+@pytest.fixture(scope='module')
+def shared_answer_topic_mixed_context():
+    req = begin('誘われたのに、嬉しくなかった。頼まれたのに、悲しかった。誘われたのに、寂しかった。')
+    for reply in (*TWO_POSITIVE_PAIRS[0], '今は安心なのです。'):
+        req = advance(req, reply)
+    return actual(request=req)
+
+
+@pytest.mark.parametrize('mutation', ['missing', 'duplicate', 'same_event', 'wrong_proof', 'unknown',
+    'source_range', 'range_value', 'source_order', 'source_link', 'relation_source', 'answer_time', 'event_kind'])
+def test_shared_answer_topic_mixed_window_preserves_source_and_about_guards(shared_answer_topic_mixed_context, mutation):
+    test_same_name_positive_occurrence_proof_keeps_existing_rejection_guards(
+        shared_answer_topic_mixed_context, mutation)
+
+
+@pytest.mark.parametrize('last', [None, '今は少し苦しい。'])
+def test_shared_answer_topic_mixed_window_does_not_prove_incomplete_or_negative_answers(last):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    req = begin('誘われたのに、嬉しくなかった。頼まれたのに、悲しかった。誘われたのに、寂しかった。')
+    for reply in (*TWO_POSITIVE_PAIRS[0], *((last,) if last else ())):
+        req = advance(req, reply)
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(req))
+    assert not any(c.startswith('thread_subject:distinct_source_occurrence:')
+                   for n in plan.nuclei for c in n.semantic_frame.attribute_codes)

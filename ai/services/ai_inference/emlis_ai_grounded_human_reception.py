@@ -11036,6 +11036,12 @@ def _source_owned_positive_answer_group_sentence(move, realization, plan, resolv
     parts = []
     event_labels = []
     record_prefixes = _received_event_record_prefixes(plan, resolver)
+    # Share a topic only across equal complete source events. The written
+    # positions still distinguish occurrences; equal recipient spellings
+    # alone cannot merge different source owners or event predicates.
+    shared_topic = (len({row.event_fragment for row in rows}) == 1
+        and all(record_prefixes.get(row.event_id) for row in rows)
+        and len({record_prefixes[row.event_id] for row in rows}) == len(rows))
     for row in rows:
         event_visible = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", row.event_fragment, count=1)
         nominal_feeling = _THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(row.source)
@@ -11052,18 +11058,19 @@ def _source_owned_positive_answer_group_sentence(move, realization, plan, resolv
             return None
         time = {"original_occasion": "その時は", "answer_time": "回答した時点では",
                 "prior_answer_time": "先の回答時点では"}[row.when]
-        event_label = record_prefixes.get(row.event_id, "") + event_visible
+        event_label = (record_prefixes[row.event_id] if shared_topic else
+                       record_prefixes.get(row.event_id, "") + event_visible + "ことについて、")
         event_labels.append(event_label)
-        parts.append(event_label + "ことについて、" + time + finite)
+        parts.append(event_label + time + finite)
     text = ("し、".join(parts[:-1]) + "し、" + parts[-1][:-len(finite)]
             + _feeling_acknowledgement(finite))
     # Distinct source events may share a recipient-facing name. Keep every
     # occurrence in order, but do not mistake an embedded extra anchor for it.
     later_labels = event_labels[1:]
-    if any(text.count("し、" + label + "ことについて、") != later_labels.count(label)
+    if any(text.count("し、" + label) != later_labels.count(label)
            for label in later_labels):
         return None
-    return text
+    return (event_visible + "ことについて、" if shared_topic else "") + text
 
 
 def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,

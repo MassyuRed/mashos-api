@@ -12806,3 +12806,47 @@ HRは完全sourceの証明から説明形を有限述語として保持し、gro
 主語前後の複合修飾語の不自然さは別の残件として保持し、自然化のために原sourceの修飾語の重複・順序を勝手に削除/移動しない。二層再掲、定型終端、受け取りの深さ、他の未対応文法、複数文引用scope、4件以上同名集合も未完。欠落・不正文・対象不明な列挙・未説明失敗/保存差分が残る間は現在群を閉じず、二層再掲の別作業へ先行しない。
 
 限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。最新weeklyの10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承する。旧10/10 Emlis内容完成期限は撤回済みであり、今回も復活させない。合成DB確認を10/02目標達成へ置換しない。
+
+## 2026-10-02 u60 — 同名回答群の主題反復を減らし、部分重複の保持欠落を修復
+
+### 開始位置・本文上の変化
+
+MashのEmlisAI残件継続指示に従い、u59の次作業を10/01に開始し、10/02 JSTまで継続した。開始HEADはAPI `83d24a19296e9d00c49d103debcf383213300251`、Cocolon `dce2d2d736ce4e9e64a4e76acb0b656fc06d1e2e`。fresh PRとlocal HEADを照合し追跡差分0から開始。直前に確認した全体設計01・01A/B/Cと全file地図、current_structure、前提入口・規則/18・恒久incident・Karen-Diary・最新weekly09/26と09/29合意、前回txt/u59の経路を継承し、CURRENT_RULES R1.5/R11を再確認した。設計・地図・weeklyの介在変更はない。System Contextのshallow祖先確認未成立と、入口に従う原典直接読取の扱いを継承する。全歴史の再通読や基盤修復を今回の成果に数えない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX、既存LEVEL_2内。検証補助だけを先行unitにせず、同名記録の回答対象を追いにくい主題反復を既存HR/Gateで直接減らす。追加費用・Mash操作0。root華恋のみが編集・実行・反映し、read-only担当が技術差分と全実本文を別途確認した。新owner/renderer/entry、一般受付、public contract/API/DB/RN、依存/flagは変更しない。
+
+同じ完全原eventを指す2〜3のpositive回答について、出来事の主題を先頭で一度示し、各回答には先/間/後の記述位置・時点・有限述語を残す。比較8例では5例が各22文字短縮し、回答群の同じ出来事名は3回から1回になった。元反応文・Observationは変更しない。原文eventが完全一致し、全回答の異なる記述位置を証明できる場合だけ適用し、同じ出来事が何回起きたかを新たに断定しない。異なる原文SELFを受け手表現に変えると同名になる場合も共通化しない。説明、内外時制、否定、主体助詞、修飾語の位置/反復を保持する。
+
+比較時に、部分重複（誘われた/頼まれた/誘われた）と原文SELF違い（私は/自分は/私は）の2例で、開始版から元反応・先行回答が消え最後の回答だけになることを確認した。answer updateが全event同名の場合だけoccurrence証明を付けるため、重複する先/後回答が保持群から落ちていた。旧全同名経路を維持し、原3event・required ABOUT3件・positive feeling回答3件の完全な1対1被覆と、全件の同envelope/field・scalar/UTF8範囲非重複・event/answer/evidence ID別々の証明が揃う場合にだけ、同じraw eventの部分集合へ既存証明を付ける。原eventのfield/scope検査も維持した。不完全なmixed群や負回答へ一般解禁せず、Planの保持ガードは変更しない。この2例では出来事名を各回答へ明示したまま、元3反応と3回答を回復した。
+
+rootと商品担当は前後10例の元memo・全回答・二層本文を全文確認した。5例の反復軽減、2例の欠落回復、3例全文不変。Observation10/10同一、最終inverse10 PASS、対象回答の受理分類/未解決数も10/10同一。全入力の受理同一検証には拡大しない。新しい意味改変・断定・明白な所属混同は見つからなかったが、長い二巡列挙、し連結、位置/時点反復、SELFと複合修飾語、外側過去の不自然さは残る。限定改善候補であり、商品合格ではない。
+
+### 独立読取と保存
+
+Gateは実際の共通主題と記述位置境界を読み、各ABOUT・原source・時点を個別に検証する。各eventの論理operandは共通主題の同じ実byte範囲を指せるが、各回答の実byte範囲と所属は別々に証明する。3回答なら従来どおりevent/feelingの6 operandを返す。旧形式の各回答に主題がある本文も読める。共通主題から位置句を消した曖昧な本文を旧形式扱いで許可しない。
+
+u59で残した作者helper依存6件は、required有限本文の独立証明より前にnominal referentを一律生成していたことが原因だった。required dutyは完全な実本文readerを先に通し、証明失敗した現行有限終端を名詞生成で救済しない。optional dutyの従来availability確認と、実際の旧nominal本文のfallbackは保つ。source・plan・clause・trace・safetyの条件も維持する。これを全終端/全経路の作者依存解消へ一般化しない。
+
+追加52条件：完全source/SELF/fieldの本文16、説明source×回答3位置の9、原反応訂正と2回答の4、異なる原event3、保存の追加/原反応訂正/撤回×新旧形式の6、mixed群のsource/ABOUT等改変拒否12、不完全/負mixed群の境界2。主題・位置句・回答時点・回答述語の置換/削除・肯否の改変は、作者禁止の実本文inverseで拒否する。説明source×各回答位置の主体・程度・時制/らしいの改変は、実byte範囲を使い独立readerへ直接入力して拒否する。この9条件には作者禁止patchを追加していない。mixed群12条件は既存のABOUT/範囲/順序/証明/時点/感情ガードをPlan/readerで確認した。
+
+保存6系列は毎更新後のgenerate禁止GET/start DTO全文一致、原DTOとDB原memo不変を確認する。旧各回答主題形式も保存後に新形式へ書き換えない。Python3.12.14 / pytest9.1.1 / PGlite0.5.8を継続使用、installなし。合成DB/mock RPCの確認で、実DB・端末・プロセス再起動の検証ではない。
+
+### 検証結果と境界
+
+最終関連687条件＝678 PASS / 9 FAIL（715.779秒）、current owner identity1 PASS（37.968秒）。両者はID重複なしで688 unique IDs＝679 PASS / 9 FAIL / ERROR0 / SKIP0。追加52条件は全件PASS。u59の関連633 IDsは欠落0、作者helper依存6件だけFAIL→PASS、他627件は成否同一。新規失敗0。旧mixed境界2条件もPASSした。準備・途中実行・後述historical SKIPは最終対象数へ重複加算しない。
+
+継続9 FAILはu59で開始版にも再現済みの同じID。意味分類/受付の旧期待4（u55名詞回答2、answer explanation revisionのinitial/original_memo2）と、主語付き時点句の旧期待5（middle nominal1、grouped answer nominal4）で、今回も同じ理由だった。現在本文と仕様の判断なしに期待文字列を編集せず、未解消として保持する。全suiteや過去別集合の失敗全量を再実行した結果ではない。
+
+選択対象はdetached_observation / detached_self_feeling / received_discourseの `nominal_positive_answer or same_name_positive or medial_owner or copular or test_answer_degree_correction_does_not_admit_different_owner_or_predicate or polite_nominal_negation or nominal_modifier_chains or explanation or nominal_explained_answer or shared_answer_topic or distinct_occurrence_proof_does_not_expand`。current identityは既存 `test_active_final_language_owner_chain_has_zero_legacy_compose_calls` を単独実行した。最終検証後のproduction変更なし。
+
+開発途中の失敗を最終成功へ加算しない。初期追加38条件は36 PASS / 2 FAILで、上記mixed保持欠落2件だった。同じ2件はu59 productionでも失敗し、今回の局所修復後に通過した。途中関連633は613 PASS / 20 FAILで、継続9件のほか、共有eventの論理operandを一つにしていた契約不整合と旧形式assertに起因する11件を含む。operandを6へ戻し、旧testは旧形式を明示的に構築する部分と保存本文の新配置を検証する部分の2箇所だけ修正した。時点句・分類等の継続失敗を期待編集でPASSにしない。
+
+追加mixed検査の最初の配置では既存保存検査の末尾を分断し、2件がNameErrorになった。新検査をファイル末尾へ移し、既存保存検査を原位置へ完全復元した。identityは誤ってhistorical testを選択し1 SKIPとなった回があるため、current owner検査を正しく選び直した。歴史的skipやfrozen identityは変更せず、skipを成功扱いにしない。
+
+current language identityは `3e6a5aa3bf6a15b70dbab77ea2730228a20a45080d7f305b2086903c525e861c`、runtime identityは `930470264b9213fb1235c3541bb5c12d7c3427f02365403876b964b016f2f8ed`。既存導出でcurrent共有owner snapshotを更新した。STRUCTURE_MAP_DELTA_NONE。反映対象はAPIの既存3source、test、current identity、handoffと、Cocolon正本06のexact7 modify、追加/削除0。既存PR3/30へnon-force反映し、正式HEAD・parent/tree・全7file全文・変更path集合・PR状態をfresh読取で照合する。詳細な反映識別子はPR metadataへ記録する。
+
+### 残件と次の一作業
+
+同名回答群の主題反復は減ったが、元反応群→回答群の長い二巡列挙と位置句の作用範囲の追いにくさが残る。次は同じ3記述×複数回答/訂正の既存出力で、記録位置・原反応と回答・時点を明確に保ちながら長いし連結を短い文のまとまりへ整理する共通箇所を調べ、実本文の改善として修復する。新rendererや検証専用の前段を作らず、複合修飾語の重複や順序も勝手に削らない。
+
+未対応文法、複数文引用scope、4件以上同名集合、定型終端、受け取りの深さ、継続9失敗は残る。欠落・不正文・対象不明な列挙・未説明失敗/保存差分が残る間は現在の複数出来事/回答/訂正群を閉じず、二層再掲の別作業へ先行しない。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承し、旧10/10期限を復活させない。合成DB確認を10/02目標達成へ置換しない。

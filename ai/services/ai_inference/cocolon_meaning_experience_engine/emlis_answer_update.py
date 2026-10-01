@@ -417,26 +417,35 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
     answer_ids = {n.nucleus_id for n in nuclei if n.source_fields == (ANSWER_FIELD,)}
     active_about = tuple(r for r in relations if r.type == "evaluation_about_event"
         and r.retention == "required" and r.to_nucleus_id in answer_ids)
+    def separate_occurrences(ids):
+        if any(nid not in subject_occurrences for nid in ids):
+            return False
+        rows = sorted((subject_occurrences[nid] for nid in ids), key=lambda row: row[2].scalar_start)
+        return (all(len({row[column] for row in rows}) == len(rows) for column in (0, 1, 3, 4))
+            and len({(row[2].source_envelope_id, row[2].field_path) for row in rows}) == 1
+            and all(left[2].scalar_end <= right[2].scalar_start
+                    and left[2].utf8_end <= right[2].utf8_start for left, right in zip(rows, rows[1:])))
+
+    # A complete three-answer positive window also proves repeated words
+    # inside a mixed event set. Incomplete or negative mixed windows keep
+    # their existing boundary; no event may borrow another answer's source.
+    full_positive_window = (len(original_events) == len(active_about) == len(answer_subjects) == 3
+        and {r.from_nucleus_id for r in active_about} == {n.nucleus_id for n in original_events}
+        and {r.to_nucleus_id for r in active_about} == set(answer_subjects)
+        and all((index[nid].kind, index[nid].semantic_frame.predicate_kind,
+                 index[nid].semantic_frame.modality, index[nid].semantic_frame.polarity)
+                == ("reaction", "feeling", "feeling", "positive") for nid in answer_subjects)
+        and separate_occurrences(answer_subjects))
     for text in set(subject_texts):
         ids = tuple(nid for nid, value in answer_subjects.items() if value == text)
-        # The mixed edge/unique-middle window keeps its existing admission
-        # guards and body. This alternative is only for an entirely equal
-        # original event set, not a duplicate subgroup inside another set.
-        if (len(set(subject_texts)) != 1 or len(subject_texts) != len(active_about)
-            or not 2 <= len(original_events) <= 3
-            or any(event.source_fields not in {("memo",), ("memo_action",)}
-                   or event.allowed_claim_scope != "explicit_current_input"
-                   or _text(event, index, resolver) != text for event in original_events)
-            or not 2 <= len(ids) <= 3 or any(nid not in subject_occurrences for nid in ids)):
+        if any(event.source_fields not in {("memo",), ("memo_action",)}
+               or event.allowed_claim_scope != "explicit_current_input" for event in original_events):
             continue
-        rows = sorted((subject_occurrences[nid] for nid in ids), key=lambda row: row[2].scalar_start)
-        if (len({row[0] for row in rows}) != len(rows)
-            or len({row[1] for row in rows}) != len(rows)
-            or len({row[3] for row in rows}) != len(rows)
-            or len({row[4] for row in rows}) != len(rows)
-            or len({(row[2].source_envelope_id, row[2].field_path) for row in rows}) != 1
-            or any(left[2].scalar_end > right[2].scalar_start
-                   or left[2].utf8_end > right[2].utf8_start for left, right in zip(rows, rows[1:]))):
+        entirely_equal = len(set(subject_texts)) == 1 and all(
+            _text(event, index, resolver) == text for event in original_events)
+        if (not (entirely_equal or full_positive_window) or len(subject_texts) != len(active_about)
+            or not 2 <= len(original_events) <= 3
+            or not 2 <= len(ids) <= 3 or not separate_occurrences(ids)):
             continue
         distinct_occurrences.update({nid: occurrence_proof + subject_occurrences[nid][1]
             + ":" + ":".join(subject_occurrences[nid][5:]) for nid in ids})
