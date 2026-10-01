@@ -5235,3 +5235,137 @@ def test_withdrawn_event_positions_survive_saved_replay(qcase, qdb, monkeypatch,
     with monkeypatch.context() as saved:
         saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved withdrawal must not regenerate'))
         assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('owner,link', [
+    ('私は', 'のに'), ('自分は', 'けど'), ('わたしは', 'けれど'), ('私は', 'けれども'),
+])
+def test_explicit_received_topic_keeps_finite_negative_contrast(field, owner, link):
+    memo = owner + '誘われた' + link + '、嬉しくなかった。頼まれたのに、悲しかった。'
+    context = actual(request=begin(memo if field == 'memo' else '', memo if field == 'memo_action' else ''))
+    result = context[0]
+    clause = 'あなたは誘われた' + link + '、嬉しくなく'
+    assert result.artifact.reception == clause + '、頼まれたのに、悲しさを感じたのですね。'
+    assert 'あなたは誘われたことは' not in result.artifact.reception
+    assert read_body(context, result.artifact.text).passed
+    # Change only reception: observation must not donate its missing meaning.
+    alternatives = [
+        clause.replace('あなたは', '友人は'), clause.replace('あなたは', 'あなたが'),
+        clause.replace('あなたは', ''), clause.replace('誘われた', '頼まれた'),
+        clause.replace('嬉しくなく', '嬉しく'), clause.replace('嬉しくなく', '嬉しくないし'),
+        clause.replace(link + '、', 'ので、'),
+        clause.replace(link + '、', ('けど' if link == 'のに' else 'のに') + '、'), '',
+    ]
+    for wrong in alternatives:
+        follow = result.artifact.reception.replace(clause, wrong, 1)
+        assert follow != result.artifact.reception
+        changed = result.artifact.text.replace(result.artifact.reception, follow, 1)
+        assert changed != result.artifact.text and not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('position', [0, 1, 2])
+def test_explicit_received_topic_preserves_same_name_positions_and_old_reading(position):
+    owners = ('私は', '自分は', 'わたしは')
+    feelings = ['悲しかった', '寂しかった', '怖かった']
+    feelings[position] = '嬉しくなかった'
+    memo = ''.join(owner + '誘われたのに、' + feeling + '。'
+                   for owner, feeling in zip(owners, feelings))
+    context = actual(request=begin(memo))
+    result = context[0]
+    finite = 'あなたは誘われたのに、嬉しくな' + ('かった' if position == 2 else 'く')
+    assert RECORD_PREFIXES[position] + finite in result.artifact.reception
+    assert read_body(context, result.artifact.text).passed
+    nominal = 'あなたは誘われたことは、嬉しさにはつながら' + ('なかった' if position == 2 else 'ず')
+    legacy = result.artifact.text.replace(result.artifact.reception,
+        result.artifact.reception.replace(finite, nominal, 1), 1)
+    assert legacy != result.artifact.text and read_body(context, legacy).passed
+    for wrong in set(RECORD_PREFIXES) - {RECORD_PREFIXES[position]}:
+        changed = result.artifact.text.replace(RECORD_PREFIXES[position], wrong, 1)
+        assert changed != result.artifact.text and not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('owner', ['', '私が'])
+def test_explicit_received_topic_keeps_other_nominal_owners(owner):
+    context = actual(request=begin(owner + '誘われたのに、嬉しくなかった。頼まれたのに、悲しかった。'))
+    expected = ('あなたが' if owner else '') + '誘われたことは、嬉しさにはつながらず'
+    assert context[0].artifact.reception.startswith(expected)
+    assert read_body(context, context[0].artifact.text).passed
+
+
+@pytest.mark.parametrize('degree', ['少し', 'とても'])
+def test_explicit_received_topic_keeps_existing_degree_scope(degree):
+    context = actual(request=begin('私は誘われたのに、' + degree + '嬉しくなかった。頼まれたのに、悲しかった。'))
+    result = context[0]
+    assert 'あなたは誘われたのに、' + degree + '嬉しくなかったし、' in result.artifact.reception
+    assert read_body(context, result.artifact.text).passed
+    changed = result.artifact.text.replace(result.artifact.reception,
+        result.artifact.reception.replace(degree, '', 1), 1)
+    assert changed != result.artifact.text and not read_body(context, changed).passed
+
+
+TOPIC_SEQUENCE_MEMO = ('褒められたのに、嬉しくなかった。私は誘われたのに、嬉しくなかった。'
+                       '自分は頼まれたのに、悲しかった。')
+TOPIC_SEQUENCE = ('今は少し怖い。', '「少し怖い」ではなく「私も少し重いです」です。',
+                  '「自分は頼まれた」は誤りです。')
+
+
+@pytest.mark.parametrize('steps', [1, 2, 3])
+def test_explicit_received_topic_survives_answer_revision_and_withdrawal(steps):
+    request = begin(TOPIC_SEQUENCE_MEMO)
+    for reply in TOPIC_SEQUENCE[:steps]:
+        request = advance(request, reply)
+    context = actual(request=request)
+    result = context[0]
+    assert 'あなたは誘われたのに、嬉しくな' in result.artifact.reception
+    assert 'あなたは誘われたことは' not in result.artifact.reception
+    assert ('自分は頼まれた' in result.artifact.text) == (steps < 3)
+    assert read_body(context, result.artifact.text).passed
+    for old, new in [('あなたは誘われた', '友人は誘われた'),
+                     ('あなたは誘われたのに、嬉しくな', 'あなたは誘われたのに、嬉し'),
+                     ('先の回答時点' if steps > 1 else '回答した時点', 'その時')]:
+        follow = result.artifact.reception.replace(old, new)
+        assert follow != result.artifact.reception
+        changed = result.artifact.text.replace(result.artifact.reception, follow, 1)
+        assert changed != result.artifact.text and not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('withdraw', ['褒められた', '自分は頼まれた'])
+def test_explicit_received_topic_saved_sequence_keeps_original_and_exact_replay(qcase, qdb, monkeypatch, withdraw):
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    qdb.query('update public.emotions set memo=$1 where id=$2', [TOPIC_SEQUENCE_MEMO, parent])
+    first = current = run(service.start(user, parent))
+    for index, reply in enumerate((*TOPIC_SEQUENCE[:2], f'「{withdraw}」は誤りです。')):
+        if index:
+            current = run(cont(service, user, current, f'topic-continue-{index}'))
+        current = run(answer(service, user, current, reply, f'topic-answer-{index}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        assert 'あなたは誘われたのに、嬉しくな' in body and 'あなたは誘われたことは' not in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved topic sequence must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    assert withdraw not in body and not current['can_continue']
+    assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == TOPIC_SEQUENCE_MEMO
+
+
+def test_explicit_received_topic_prior_saved_nominal_body_is_not_rewritten(qcase, qdb, monkeypatch):
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    memo = '私は誘われたのに、嬉しくなかった。頼まれたのに、悲しかった。'
+    qdb.query('update public.emotions set memo=$1 where id=$2', [memo, parent])
+    author = reception._source_grounded_received_discourse
+
+    def prior_author(*args, **kwargs):
+        text = author(*args, **kwargs)
+        return text.replace('あなたは誘われたのに、嬉しくなく',
+            'あなたは誘われたことは、嬉しさにはつながらず') if text else text
+
+    with monkeypatch.context() as prior:
+        prior.setattr(reception, '_source_grounded_received_discourse', prior_author)
+        current = run(service.start(user, parent))
+    assert 'あなたは誘われたことは、嬉しさにはつながらず' in current['current_observation']['text']
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('prior saved nominal body must not regenerate'))
+        assert run(service.get(user, parent)) == run(service.start(user, parent)) == current

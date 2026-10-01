@@ -12368,3 +12368,34 @@ HRと独立Gateは既存source grammarを使い、それぞれ原sourceから位
 次は同群の実本文に残る主語を含む出来事の名詞化時の主題重複、長い「し」連結、主題/「のですね」反復と受け取りの深さを、意味保持・単一作者を維持して共通原因で修正する。未対応文法、複数文に跨る引用のscope、4件以上の元同名集合、実DB/実機は今回の完了範囲外。旧検査の形式的20失敗とこれらの実残件を混同せず、対象群全体を閉じない。二層再掲の別作業へ先行しない。
 
 primary outcomeは限定TECHNICAL_CREDIT。群未完、商品0/3・NOT_CLEAR、既存全体48%、default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末予定の最新weekly合意を継承する。GitHub反映後にexact6のremote bytes、changed paths、final headsをfresh照合し、結果を既存PR3/30へ記録する。
+
+
+## 2026-10-01 u48 — 本人主題を含む否定反応の二重主題を解消
+
+開始HEADはAPI `8b15e53b075bfbf1c06bedbd00eb317ba40b3f77`、Cocolon `8f5ae8129582ec45ecdf0f8e1e16aa7c0d6545d0`。u47のGitHub保存全文とローカル対応を確認し、前提資料・作業姿勢・全体01/01A/01B/01C・current_structure00/01/04・全ファイル地図・最新weeklyの9/29追加合意を継承。恒久incident全文を再読し、実本文の共通原因修復を優先した。System Context prepareの既知未成立と原典直接読取はu47から継承し、復旧作業へ迂回していない。
+
+### 商品動作と最小差分
+
+原記述の本人主語をSELF視点へ変換した後、回答なしの否定過去反応を名詞化すると、本人の主題助詞と出来事全体の主題助詞が重なっていた。HRの既存 `_source_grounded_received_discourse` で、回答なし・否定過去感情・明示SELF topicの条件だけ原接続詞と有限感情を使う。主体・助詞・否定・過去時制・記述順を保持し、複数節の中間活用も既存経路を使う。主体省略・SELFの「が」・肯定反応・ABOUT回答・程度付き既存経路を拡張しない。
+
+独立Gateは旧名詞形とこの有限節を既に復元できるため、Gate変更0。検証条件や作者分離を緩和しない。旧保存本文の独立読取・生成禁止での完全一致取得を維持する。既に保存された本文を遡及書換した成果ではない。
+
+root華恋がsource編集・試験・GitHub反映を担当し、独立担当2名が原因・scope・Reader・新検査をread-only照合。既存承認LEVEL_2内のbounded修復。u47からexact5 modify、追加/削除0：API HR、detached test、current共有owner identity、既存handoff、Cocolon正本06。STRUCTURE_MAP_DELTA_NONE：既存関数の内部修復でowner/route/公開API/DB schema/RN/dependency/flag変更0。外部生成AI・新補助機構・追加費用・Mash操作0。
+
+### 検証と旧期待の扱い
+
+最終sourceで今回実行した64 unique IDsは63 PASS / 1 FAIL / ERROR0 / SKIP0。内訳は新21（20.670秒）、対象既存42の41 PASS / 1 FAIL（46.104秒）、current共有owner identity1 PASS（28.728秒）。全量fresh成功とは報告しない。u47の291件結果と既知20失敗の分類は前版証拠として維持し、今回はその20の再実行・解消を主張しない。
+
+新21は原接続詞4種×memo/memo_actionの8、同名3記述の各位置と旧名詞形読取3、対象外の主体省略/「が」2、既存程度保持2、回答/訂正/撤回の各段階3、保存更新2系列、旧名詞形互換本文の保存再読1。Receptionだけを変更し見出しとObservationを保持した本文で、主体・助詞・対象event・否定・時制・程度・接続詞・記述位置・回答時点・句削除を作者呼出し禁止で拒否する。保存2系列は各更新後のgenerate禁止GET/start DTO全文一致、原DTO/DB原memo不変を確認した。旧名詞形保存検査は互換本文をmaterializeして保存するもので、旧アプリ実行環境そのものの再現とはしない。
+
+対照として、u47の該当作者関数だけを検査プロセス内へ注入すると、新主検査8条件は全FAIL（11.797秒）、従来の同名event6条件は全PASS（15.991秒）。productionファイルを差し戻していない。新検査初回の旧文面互換3失敗は、検査が見出しを落として本文を再構成したためで、全文内Receptionだけを置換する方式へ修正した。同じ誤りがmutationの偽成功にならないよう全該当箇所とno-op拒否を修正して21を再実行した。旧検査本文346749 bytes prefixは全文保持し、旧assert・historical frozen identity・skip/xfailは変更していない。
+
+今回の唯一の既存FAILは `test_equal_visible_event_names_keep_finite_source_occurrences[events1-True-…]`。3原記述すべてSELF・初回の場合に、旧名詞形の部分文字列を探す固定期待が残り、有限節へ改善した本文でValueErrorとなる。意味欠落として扱わず、かといって旧期待を修正してGREENにもしない。新同名位置3と原接続詞8が現行本文・独立inverse・改変拒否を確認する。既知失敗台帳はu47の20にこの新たな旧文面衝突1を加えた21件であり、21全件を最終sourceでfresh再実行した数ではない。
+
+language identity `3ed66d79df6df27ef2223445979f34db46cf500d69f10548d771ca50303e0e1f`、runtime identity `4a28bab6a6738d738fd3beceac0ab6a3a638ba8db1f6af60ad9e577f3dde82c5`。Python3.12.14 / pytest9.1.1 / PGlite0.5.8。ローカル合成保存検査でありlive DB・端末・プロセス再起動は未検証。git diff --check成功。rootは初期、本人表記/助詞違い、同名位置、回答、訂正、撤回の生成本文を確認した。
+
+### 次の直接作業と維持条件
+
+今回閉じたのは明示SELF topicと原否定反応の名詞化が作る二重主題だけ。長い「し」連結、出来事/主題/受け止め句の反復、受け取りの深さ、未対応文法、複数文引用scope、4件以上同名集合は残る。同群の実本文を共通原因単位で改善し、二層再掲の別作業へ先行しない。群閉鎖・Emlis完成・正式商品合格へ換算しない。
+
+限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・既存全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末予定の最新weekly合意を継承。反映後にexact5のremote全文、差分path集合、parentと最新HEADへの包含を照合し、最終SHAと結果を既存PR3/30に記録する。

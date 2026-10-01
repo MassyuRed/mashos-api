@@ -10157,7 +10157,14 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True,
             continue
         if answer_code == ["none"]:
             if feeling.endswith("くなかった"):
-                parts.append(event + "ことは、" + negative[0] + "にはつながらなかった")
+                # An explicit SELF topic belongs to the finite event clause.
+                # Nesting it inside another topic (あなたは…ことは) obscures
+                # that ownership. Keep the source contrast and predicate;
+                # the existing independent reader already restores this form.
+                if event.startswith("あなたは"):
+                    parts.append(event + _RECEIVED_EVENT_LINK_TEXT[link] + "、" + feeling)
+                else:
+                    parts.append(event + "ことは、" + negative[0] + "にはつながらなかった")
             else:
                 parts.append(event + _RECEIVED_EVENT_LINK_TEXT[link]
                              + "、" + negative[0] + "を感じた")
