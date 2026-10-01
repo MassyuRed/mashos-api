@@ -5129,3 +5129,109 @@ def test_same_name_original_revision_next_saved_answer_keeps_positions_and_termi
     with monkeypatch.context() as saved:
         saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('next saved revision must not regenerate'))
         assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('position', [0, 1, 2])
+def test_withdrawn_event_keeps_immutable_written_positions(field, position):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    events = ('私は誘われた', '自分は誘われた', 'わたしは誘われた')
+    feelings = ('嬉しくなかった', '悲しかった', '寂しかった')
+    memo = ''.join(event + 'のに、' + feeling + '。' for event, feeling in zip(events, feelings))
+    request = begin(memo if field == 'memo' else '', memo if field == 'memo_action' else '')
+    request = advance(request, f'「{events[position]}」は誤りです。')
+    context = actual(request=request)
+    result, plan, _, resolver, _ = context
+    assert MeaningExperienceEngine().generate(request).artifact.text == result.artifact.text
+    active_events = [n for n in plan.nuclei if n.kind == 'event' and n.source_fields == (field,)]
+    assert len(active_events) == 2
+    assert events[position] not in result.artifact.text
+    assert all(feeling in result.artifact.observation for feeling in feelings)
+    expected = {RECORD_PREFIXES[i] for i in range(3) if i != position}
+    assert {prefix for prefix in RECORD_PREFIXES if prefix in result.artifact.reception} == expected
+    assert len(resolver.resolve_many(tuple(sid for sid in resolver.span_ids
+        if resolver.resolve(sid).source_field == field))) == 3
+    assert read_body(context, result.artifact.text).passed
+    for prefix in expected:
+        for wrong in set(RECORD_PREFIXES) - {prefix}:
+            changed = result.artifact.text.replace(prefix, wrong, 1)
+            assert changed != result.artifact.text and not read_body(context, changed).passed
+    # Recovering an original written position must not revive its withdrawn event.
+    changed = result.artifact.text.replace('その時は', events[position] + 'ので、その時は', 1)
+    assert changed != result.artifact.text and not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('position', [0, 1])
+def test_withdrawn_event_keeps_position_of_single_remaining_event(position):
+    events = ('私は誘われた', '自分は誘われた')
+    memo = events[0] + 'のに、悲しかった。' + events[1] + 'のに、寂しかった。'
+    context = actual(request=advance(begin(memo), f'「{events[position]}」は誤りです。'))
+    result, plan, _, _, _ = context
+    assert len([n for n in plan.nuclei if n.kind == 'event' and n.source_fields == ('memo',)]) == 1
+    correct = ('後' if position == 0 else '先') + 'に書かれた方では、'
+    wrong = ('先' if position == 0 else '後') + 'に書かれた方では、'
+    assert correct + 'あなたは誘われた' in result.artifact.reception
+    assert events[position] not in result.artifact.text
+    assert read_body(context, result.artifact.text).passed
+    assert not read_body(context, result.artifact.text.replace(correct, wrong)).passed
+
+
+def test_withdrawn_event_position_rejects_duplicate_active_source_ranges():
+    memo = '私は誘われたのに、悲しかった。自分は誘われたのに、寂しかった。'
+    context = actual(request=advance(begin(memo), '「私は誘われた」は誤りです。'))
+    _, plan, _, resolver, _ = context
+    event = next(n for n in plan.nuclei if n.kind == 'event' and n.source_fields == ('memo',))
+    altered = replace(plan, nuclei=plan.nuclei + (replace(event, nucleus_id='duplicate:event'),))
+    assert reception._received_event_record_prefixes(altered, resolver) == {}
+    with patch.object(reception, '_received_event_record_prefixes', side_effect=AssertionError('no position oracle')):
+        assert gate._read_received_record_prefixes(altered, resolver) == {}
+
+
+def test_withdrawn_event_position_preserves_received_answer_and_standalone_feeling_boundary():
+    memo = '褒められたのに、嬉しくなかった。私は誘われたのに、悲しかった。自分は誘われたのに、寂しかった。'
+    request = advance(advance(begin(memo), 'その時は少し重かった。'), 'その時は私も頼まれたようで、重かった。')
+    context = actual(request=advance(request, '「私は誘われた」は誤りです。'))
+    body = context[0].artifact.text
+    assert context[0].artifact.reception == (
+        'その時は悲しかったし、その時、あなたも頼まれたようで、重かったのですね。'
+        '褒められたのに嬉しくなかったことと、その時に少し重かったことを見失わず、小さくせずに受け止めています。'
+        '後に書かれた方では、あなたは誘われたのに、寂しさを感じたのですね。')
+    assert '私は誘われた' not in body
+    assert read_body(context, body).passed
+    for old, new in [('後に書かれた方では、', '先に書かれた方では、'),
+                     ('その時、あなたも頼まれたようで、重かった', 'その時、友人も頼まれたようで、重かった'),
+                     ('その時、あなたも頼まれたようで、重かった', '回答した時点で、あなたも頼まれたようで、重かった')]:
+        changed = body.replace(old, new)
+        assert changed != body and not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('prior_answer', [False, True])
+@pytest.mark.parametrize('position', [0, 1, 2])
+def test_withdrawn_event_positions_survive_saved_replay(qcase, qdb, monkeypatch, prior_answer, position):
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    events = ('私は誘われた', '自分は誘われた', 'わたしは誘われた')
+    memo = ''.join(event + 'のに、' + feeling + '。' for event, feeling in
+                   zip(events, ('嬉しくなかった', '悲しかった', '寂しかった')))
+    qdb.query('update public.emotions set memo=$1 where id=$2', [memo, parent])
+    first = current = run(service.start(user, parent))
+    if prior_answer:
+        current = run(answer(service, user, current, '今は少し怖い。', 'written-place-first-answer'))
+        current = run(cont(service, user, current, 'written-place-continue'))
+    current = run(answer(service, user, current, f'「{events[position]}」は誤りです。', 'written-place-withdraw'))
+    assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+    body = current['current_observation']['text']
+    assert events[position] not in body
+    # The first source with an existing answer uses the established complete
+    # answer discourse, not the original-only qualified significance form.
+    # Keep that eligibility boundary and check every displayed original place.
+    assert {prefix for prefix in RECORD_PREFIXES if prefix in body} == {
+        RECORD_PREFIXES[i] for i in range(3) if i != position and not (prior_answer and i == 0)}
+    for i in range(3):
+        assert (events[i] in body) == (i != position)
+    if prior_answer:
+        assert '少し怖い' in body and ('回答した時点' in body or '先の回答時点' in body)
+    assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == memo
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved withdrawal must not regenerate'))
+        assert run(service.get(user, parent)) == run(service.start(user, parent)) == current

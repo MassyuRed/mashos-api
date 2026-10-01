@@ -12324,3 +12324,47 @@ source checkpoint API `690f61869f1bde810417f50444dccc75cd011226`、Cocolon `3aff
 u45の「同名3原記述の中間引用訂正で本文が出ない」「末尾引用訂正後、元中間を後へ付け直す」という直接残件は今回の検査範囲で解消した。訂正反応へ新ABOUTを作らず、保持された原eventを順序どおり別factとして扱う。次回答の原event/当時の訂正/回答時点の怖さ、保存本文、再訂正/撤回も新31で保持を確認した。最終の原順序guardはsource順と既存表示順を分けて検証し、欠落/reverse/foreign/optionalの拒否と旧保存文互換を両立する。rootは生成された両層本文を読み、独立担当は原因と限定条件をread-only照合した。長さ・反復・深さの正式商品合格へ換算しない。
 
 次の同群作業は、この19の旧期待/旧mutation locatorと現行意味・本文の差を個別に照合し、実際の本文欠陥と検査期待の不整合を確定すること。旧assertを一括変更してGREENにはしない。未対応文法、長い「し」連結・主題/「のですね」反復・深さ不足、event全体撤回後の原集合保持は今回の完了範囲外。群閉鎖前に二層再掲の別作業へ進まない。商品0/3/NOT_CLEAR、既存全体48%、default OFF、Draft/open/unmerged、live DB/端末/公開未実施を維持する。10/03と10/04の最新weekly切替合意は変更しない。最終HEAD・exact6・PR本文/状態は反映後に照合し、PR3/30へ最終SHAを記録する。
+
+
+## 2026-10-01 u47 — 出来事全体の撤回後も元記述位置を保持、既知19失敗の原因を分類
+
+開始HEADはAPI `dec09d96115283eafeea52abaac5c6772762212c`、Cocolon `e565ffb27b17f005b71739a0451b0254ea1679b7`。添付「前回作業内容 65.txt」よりGitHubが進んでおり、u45の原反応引用訂正2件はu46で解消済みと照合した。前提資料・作業姿勢00/CURRENT/専門rule・恒久incident全文・全体01/01A/01B/01C・current_structure00/01/04・最新weeklyの9/29追加合意・正本06/API handoffの末尾を確認。System Context prepareは `PUBLICATION_RECOVERY_AMBIGUOUS: residual without marker` で未成立、原典直接読取を使用しContext成功へ換算しない。
+
+### 修復した商品動作と範囲
+
+3つの原記述がSELF表記違いから同じ表示eventへ変わる場合、先頭または末尾eventの一意引用撤回後、現存2eventだけで位置を付け直して元中間が「先」/「後」になっていた。rootの実生成で再現した。既存resolverが保持する元memo/memo_actionの完全なreceived-event hostとscalar範囲から、書かれた位置の母集団だけを回復する。撤回eventは意味核・ABOUT・観測内容へ戻さない。
+
+HRと独立Gateは既存source grammarを使い、それぞれ原sourceから位置を導出する。作者のprefix結果をReaderのoracleにしない。原2件から1件だけ残った時も元の先/後を保持する。別field・回答sourceを混ぜず、重複/重なるactive範囲を拒否し、元同名4件以上へ表示範囲を拡張しない。原先頭に補足回答がある既存significance表現は既存eligibilityのまま維持し、位置表示のない全文が一意に対象を示す場合へ一律prefixを要求しない。旧unqualified文の独立読取を保持する。既に保存された旧qualified本文を遡及修正した成果とはしない。
+
+今回のbounded scopeはLEVEL_2の既存承認内最小修復。root華恋が編集・試験・GitHub反映、独立担当はread-onlyで原因・商品目的・差分を照合した。既存exact6 modify、add/delete0：APIのHR/Gate/detached test/current共有owner identity/既存handoff、Cocolonの正本06。STRUCTURE_MAP_DELTA_NONE：既存2関数の内部修復で新owner/route/公開contract/DB schema/RN/dependency/flag変更0。外部生成AI・新補助機構・追加費用・Mash操作0。
+
+### 既知19件の分類と今回追加の旧期待衝突
+
+開始sourceで19 exact IDsをfresh実行し19 FAIL（26.426秒）。最終sourceでも同じ19 exact IDsがFAIL（30.070秒）。各assert、現行実source、生成本文、同じ意味条件の後続検査を個別照合した。19件全てを商品欠陥と数えない一方、旧testを変更・除外・skip/xfailしてGREENにはしない。
+
+| 旧test family | 件数 | 確認した失敗原因 |
+|---|---:|---|
+| Q1 design_answers_reach_selected_meaning_and_shared_human_reception | 2 | 原文の暫定性/思考を保つ有限文と、旧名詞形の固定文面期待の衝突 |
+| received positive_answer_is_a_time_bound_finite_feeling | 6 | 直前の完全な同一出来事を受ける現在回答で主題再掲を省く現行表現と、旧「ことについて」固定期待の衝突 |
+| Q1 inverse_rejects_answer_time_and_content_tampering / received positive_finite_answer_mutations_are_rejected_without_author | 1+2 | 旧置換文字列が現在本文に存在せず、mutationがno-op。時点・感情・原因・対象の現行改変検査は別途実施 |
+| received answer_explanation_revision_requires_unique_existing_answer | 2 | u44/u45で対応した初回説明形/一意原引用説明形を拒否する旧期待。曖昧対象等の拒否を撤回しない |
+| detached detached_burden_does_not_drop_two_positive_duties_to_fit | 2 | 原反応と肯定的回答2つを保持する現行3Moveに対し、旧capacity例外を要求 |
+| detached revised_original_second_position_keeps_existing_fragmentation_gap_visible | 2 | 訂正後の意味/本文/保存成立に対し旧本文未提供を要求 |
+| detached current_focus_revision_saved_recorrection_and_known_withdrawal_gap | 1 | 訂正反応撤回後の元event事実と保存成立に対し旧未提供状態を要求 |
+| detached positive_original_revision_does_not_expand_negative_group_or_move_capacity | 1 | ABOUT2の肯定的groupと独立訂正を保持する現行計画に対し旧groups空を要求 |
+
+今回新たに旧 `test_middle_received_scope_does_not_admit_standalone_feeling_after_withdrawal` の全文一致がFAILになる。差分は残る元後方eventへ正しい「後に書かれた方では、」が加わる一点で、残りの全文は不変。旧assertは保持し、新 `test_withdrawn_event_position_preserves_received_answer_and_standalone_feeling_boundary` で位置を含む全文・主体・時点・撤回event非復活・作者禁止inverseを確認した。従って今回確認範囲の失敗20件は旧19＋新たな旧全文期待1であり、0 FAILとは報告しない。
+
+### 検証結果
+
+最終production sourceで実行した重複除外291 unique IDs＝271 PASS / 20 FAIL / ERROR0 / SKIP0。内訳はfocused182（181 PASS/1旧全文期待FAIL、117.106秒）、既存の意味保持・改変拒否・保存の後続87（全PASS、94.883秒）、既知19（全FAIL、30.070秒）、最終追加16（全PASS、24.134秒）、共有owner identity1（PASS、26.507秒）。追加16のうち14はfocusedに含まれるため二重加算していない。開始sourceの再現19は最終集計へ加算しない。全関連2942件のfresh全量再実行は行っていない。u46の2926件結果は前版の保存済み証拠として保持し、新版全量成功へ換算しない。
+
+新16はmemo/memo_action×撤回位置6、原2件→1件2、重複active範囲拒否1、既存2回答後の撤回表現1、保存first/prior-answer×3位置6。位置交換・主体/時点変更・撤回事実復活を作者呼出し禁止の独立検査で拒否。保存6では原DTOとDB原memo不変、generate禁止GET/startのDTO全文一致を確認。初期追加14の10 PASS/4 FAILは新検査の範囲指定誤り（category eventも数えた2、既存補足回答significanceへ未承認のprefixを要求した2）で、対象を元memoと既存表示境界へ修正した。旧test全文339261 bytes prefixは完全保持。skip/xfail追加0、historical frozen identity不変更。
+
+実行はPython3.12.14/pytest9.1.1/PGlite0.5.8、明示した既存scratch runner。ローカル合成保存検査であり、live DB・端末・プロセス再起動を検証していない。rootはmemo/memo_actionの各撤回位置、先行回答後、1件残存および既存2回答後の生成された両層を本文として確認した。元位置誤表示は今回範囲で修復したが、自己主語と主題の重複、長さ・反復・深さなどの品質を正式合格へ換算しない。
+
+### 次の直接作業と維持条件
+
+次は同群の実本文に残る主語を含む出来事の名詞化時の主題重複、長い「し」連結、主題/「のですね」反復と受け取りの深さを、意味保持・単一作者を維持して共通原因で修正する。未対応文法、複数文に跨る引用のscope、4件以上の元同名集合、実DB/実機は今回の完了範囲外。旧検査の形式的20失敗とこれらの実残件を混同せず、対象群全体を閉じない。二層再掲の別作業へ先行しない。
+
+primary outcomeは限定TECHNICAL_CREDIT。群未完、商品0/3・NOT_CLEAR、既存全体48%、default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末予定の最新weekly合意を継承する。GitHub反映後にexact6のremote bytes、changed paths、final headsをfresh照合し、結果を既存PR3/30へ記録する。

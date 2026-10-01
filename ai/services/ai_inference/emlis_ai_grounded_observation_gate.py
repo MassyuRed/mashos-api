@@ -3821,13 +3821,14 @@ def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_i
 
 def _read_received_record_prefixes(plan, resolver):
     """Recover written-position qualifiers from source ranges, not the author."""
+    from emlis_ai_grounded_observation_plan import _received_event_reaction_projections
     index = {n.nucleus_id: n for n in plan.nuclei}
     # Reconstruct positions independently from the surviving original
     # event nuclei. A missing burden Move is not a missing source occurrence.
     ids = tuple(n.nucleus_id for n in plan.nuclei if n.kind == "event"
         and n.allowed_claim_scope == "explicit_current_input"
         and any(field in {"memo", "memo_action"} for field in n.source_fields))
-    if not 2 <= len(ids) <= 3:
+    if not 1 <= len(ids) <= 3:
         return {}
     grouped = {}
     for nid in ids:
@@ -3841,13 +3842,32 @@ def _read_received_record_prefixes(plan, resolver):
         visible = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", source, count=1)
         grouped.setdefault((span.source_field, visible), []).append((span.start_index, span.end_index, nid))
     result = {}
-    for occurrences in grouped.values():
-        occurrences.sort()
+    for (field, visible), active in grouped.items():
+        # Independently recover the written population from the immutable
+        # original spans. Never read the author's labels or revive withdrawn
+        # event semantics. The shared source grammar proves complete hosts.
+        positions = {(start, end) for start, end, _ in active}
+        if len(positions) != len(active):
+            continue
+        for sid in resolver.span_ids:
+            source_span = resolver.resolve(sid)
+            if source_span.source_field != field or not 0 <= source_span.start_index < source_span.end_index:
+                continue
+            rows = _received_event_reaction_projections(source_span, None)
+            event_rows = tuple(row for row in rows if row.kind == "event")
+            if len(event_rows) != 1:
+                continue
+            event = event_rows[0]
+            source = re.sub(r"\s+", " ", source_span.raw_text).strip()[event.scalar_start:event.scalar_end]
+            normalized = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", source, count=1)
+            if normalized == visible:
+                positions.add((source_span.start_index, source_span.end_index))
+        occurrences = sorted(positions)
         if not 2 <= len(occurrences) <= 3 or any(a[1] > b[0] for a, b in zip(occurrences, occurrences[1:])):
             continue
         words = ("先", "後") if len(occurrences) == 2 else ("先", "間", "後")
-        result.update((row[2], word + "に書かれた方では、")
-                      for row, word in zip(occurrences, words, strict=True))
+        for start, end, nid in active:
+            result[nid] = words[occurrences.index((start, end))] + "に書かれた方では、"
     return result
 
 

@@ -10029,6 +10029,7 @@ def _received_discourse_negative_feeling(fragment: str) -> tuple[str, str] | Non
 
 def _received_event_record_prefixes(plan, resolver):
     """Distinguish equal visible events by their original written positions."""
+    from emlis_ai_grounded_observation_plan import _received_event_reaction_projections
     index = {n.nucleus_id: n for n in plan.nuclei}
     # A reaction correction may remove its event from the current burden
     # Moves without removing the original event. Written position belongs
@@ -10036,7 +10037,7 @@ def _received_event_record_prefixes(plan, resolver):
     event_ids = tuple(n.nucleus_id for n in plan.nuclei if n.kind == "event"
         and n.allowed_claim_scope == "explicit_current_input"
         and any(field in {"memo", "memo_action"} for field in n.source_fields))
-    if not 2 <= len(event_ids) <= 3:
+    if not 1 <= len(event_ids) <= 3:
         return {}
     occurrences = {}
     for nid in event_ids:
@@ -10049,6 +10050,25 @@ def _received_event_record_prefixes(plan, resolver):
             continue
         visible = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", source, count=1)
         occurrences.setdefault((span.source_field, visible), []).append((span.start_index, span.end_index, nid))
+    # Withdrawal removes a semantic event, not its written place. Use only
+    # complete original received-event hosts to recover missing positions;
+    # these rows never become nuclei, claims, ABOUT edges or visible content.
+    for sid in resolver.span_ids:
+        span = resolver.resolve(sid)
+        if span.source_field not in {"memo", "memo_action"} or not 0 <= span.start_index < span.end_index:
+            continue
+        projected = _received_event_reaction_projections(span, None)
+        original_events = tuple(row for row in projected if row.kind == "event")
+        if len(original_events) != 1:
+            continue
+        event = original_events[0]
+        raw = _final_clean(span.raw_text)
+        source = raw[event.scalar_start:event.scalar_end]
+        visible = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", source, count=1)
+        rows = occurrences.get((span.source_field, visible))
+        if rows is not None and not any((start, end) == (span.start_index, span.end_index)
+                                       for start, end, _ in rows):
+            rows.append((span.start_index, span.end_index, None))
     prefixes = {}
     for rows in occurrences.values():
         rows.sort()
@@ -10056,7 +10076,8 @@ def _received_event_record_prefixes(plan, resolver):
             continue
         labels = ("先", "後") if len(rows) == 2 else ("先", "間", "後")
         for (_, _, nid), label in zip(rows, labels, strict=True):
-            prefixes[nid] = label + "に書かれた方では、"
+            if nid is not None:
+                prefixes[nid] = label + "に書かれた方では、"
     return prefixes
 
 
