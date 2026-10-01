@@ -5728,3 +5728,110 @@ def test_independent_past_revision_coordination_saved_body_keeps_all_updates(qca
         saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('final saved past revision must not regenerate'))
         assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
     assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == memo
+
+
+REVISED_EXPLANATIONS = (
+    ('私も少し怖くなかったのです', 'あなたも少し怖くなかったのですね'),
+    ('少し重かったのです', '少し重かったのですね'),
+    ('私も少し不安だったのです', 'あなたも少し不安だったのですね'),
+    ('少し重かったのだ', '少し重かったのですね'),
+    ('私も少し不安なのだった', 'あなたも少し不安なのでしたね'),
+    ('少し重かったのだった', '少し重かったのでしたね'),
+)
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('old', ['嬉しくなかった', '悲しかった'])
+@pytest.mark.parametrize('source,finite', REVISED_EXPLANATIONS)
+def test_independent_explanation_revision_preserves_complete_source_and_times(field, old, source, finite):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    memo = INITIAL_EXPLANATION_MEMOS[0][0]
+    request = begin(memo if field == 'memo' else '', memo if field == 'memo_action' else '')
+    answers = TWO_POSITIVE_PAIRS[old == '悲しかった']
+    for reply in (*answers, f'「{old}」ではなく「{source}」です。'):
+        request = advance(request, reply)
+    prepared = prepare_emlis_meaning(request)
+    assert not prepared.checkpoint.unresolved_parts
+    context = actual(request=request)
+    result, plan, _, _, _ = context
+    body, follow = result.artifact.text, result.artifact.reception
+    assert MeaningExperienceEngine().generate(request).artifact.text == body
+    prefix = REVISION_INTRO + ('当時、' if source.startswith('私も') else '当時は')
+    assert prefix + finite + '。' in follow
+    assert source in result.artifact.observation and old not in body
+    assert len(plan.response_plan.human_reception_plan.moves) == 3
+    revised, = [n for n in plan.nuclei
+                if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes]
+    assert revised.source_fields == ('answer_text_private',)
+    assert revised.semantic_frame.time_scope == 'past'
+    assert not any(revised.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    assert '頼まれたのに、寂しさを感じたし、' in follow
+    assert ('誘われたのに、悲しさを感じたし、' if old == '嬉しくなかった'
+            else '褒められたことは、嬉しさにはつながらなかったし、') in follow
+    assert read_body(context, body).passed
+    mutations = [
+        (prefix, ''), (REVISION_INTRO, '頼まれたことについて、'),
+        ('当時、' if source.startswith('私も') else '当時は', '回答した時点では'),
+        ('当時、' if source.startswith('私も') else '当時は', '先の回答時点では'),
+        (finite, finite.replace('少し', '', 1)),
+        (finite, '友人は' + finite),
+        ('頼まれたのに、寂しさを感じたし、', ''),
+        ('寂しさを感じたし、', '寂しさを感じたので、'),
+        (prefix + finite + '。', ''),
+        ('回答した時点では', 'その時は'),
+    ]
+    if 'あなたも' in finite:
+        mutations += [(finite, finite.replace('あなたも', 'あなたは', 1))]
+    for before, after in [('怖くなかった', '怖かった'), ('怖くなかった', '怖くない'),
+                          ('重かった', '重い'), ('不安だった', '不安な')]:
+        if before in finite:
+            mutations += [(finite, finite.replace(before, after, 1))]
+    ending = 'のでしたね' if source.endswith('のだった') else 'のですね'
+    mutations += [(finite, finite.replace(ending, 'のですね' if ending == 'のでしたね' else 'のでしたね', 1)),
+                  (finite, finite.replace(ending, 'ですね', 1))]
+    for before, after in mutations:
+        changed = follow.replace(before, after, 1)
+        assert changed != follow
+        assert not read_body(context, body.replace(follow, changed, 1)).passed
+    if source.endswith('のだった'):
+        legacy = follow.replace('のでしたね', 'のだったのですね', 1)
+        assert read_body(context, body.replace(follow, legacy, 1)).passed
+
+
+@pytest.mark.parametrize('source,legacy', [
+    ('私も少し怖くなかったのです', False),
+    ('私も少し不安なのだった', False),
+    ('私も少し不安なのだった', True),
+])
+def test_independent_explanation_revision_saved_body_and_legacy_replay(qcase, qdb, monkeypatch, source, legacy):
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    memo = INITIAL_EXPLANATION_MEMOS[0][0]
+    qdb.query('update public.emotions set memo=$1 where id=$2', [memo, parent])
+    first = current = run(service.start(user, parent))
+    author = reception._source_grounded_received_discourse
+
+    def prior_author(*args, **kwargs):
+        text = author(*args, **kwargs)
+        return text.replace('のでしたね', 'のだったのですね') if text else text
+
+    with monkeypatch.context() as old:
+        if legacy:
+            old.setattr(reception, '_source_grounded_received_discourse', prior_author)
+        for index, reply in enumerate((*TWO_POSITIVE_PAIRS[1], f'「悲しかった」ではなく「{source}」です。')):
+            if index:
+                current = run(cont(service, user, current, f'explanation-continue-{index}'))
+            current = run(answer(service, user, current, reply, f'explanation-answer-{index}'))
+            assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+            with monkeypatch.context() as saved:
+                saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved explanation must not regenerate'))
+                assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    assert source in current['current_observation']['text']
+    assert '悲しかった' not in current['current_observation']['text']
+    assert ('のだったのですね' in current['current_observation']['text']) == legacy
+    assert not current['can_continue']
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved legacy explanation must not regenerate'))
+        assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == memo

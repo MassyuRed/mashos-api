@@ -8509,11 +8509,19 @@ def _thread_received_group_ir_text(realization):
         _, actual, feeling_text, link, *answer_code = code.split(":")
         ep = profiles[slot]
         if slot in detached_slots:
+            # A replacement can already carry a complete admitted explanation.
+            # Prove its inner feeling with the existing finite reader; stripping
+            # only polite です would leave の and falsely reject that source.
+            replacement_finite = (_detached_feeling_finite_surface(
+                fragments[slot], allow_explanatory=True, allow_medial=True)
+                if link == "replacement" else None)
+            explanation = (replacement_finite is not None
+                and replacement_finite.endswith("のだ"))
             if (int(actual) != slot or feeling_text != "none" or answer_code != ["none"]
                 or (ep.nucleus_kind, ep.predicate_kind, ep.modality) != ("reaction", "feeling", "feeling")
                 or ep.actor_kind != "SELF" or ep.quoted_boundary or ep.performed_action or ep.future_action
-                or not (_SOURCE_GROUNDED_PAST_MORPHOLOGY_RE if link == "detached"
-                        else _SOURCE_GROUNDED_FINITE_END_RE).search(fragments[slot].removesuffix("です"))
+                or not (explanation or (_SOURCE_GROUNDED_PAST_MORPHOLOGY_RE if link == "detached"
+                        else _SOURCE_GROUNDED_FINITE_END_RE).search(fragments[slot].removesuffix("です")))
                 or any(slot in r.endpoint_slots for r in realization.relations)):
                 raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
             parts.append(_detached_burden_nominal(fragments[slot], "original_occasion"))
@@ -10143,6 +10151,7 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True,
             prefix = _revised_feeling_discourse_prefix(event) if link == "replacement" else "その時は"
             copula = _detached_feeling_copula_parts(event)
             parts.append(prefix + _detached_feeling_finite_surface(event, allow_medial=True,
+                allow_explanatory=link == "replacement",
                 allow_copular=bool(copula
                     and copula[1] in {"でした", "だった"})))
             continue
@@ -10349,7 +10358,12 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True,
             and all(len(code.split(":")) == 5 and code.endswith(":none") for code in codes)
             and all(part.endswith(("かった", "感じた")) for part in parts))
         if not original_past_revision:
-            return "し、".join(parts[:-1]) + "し、" + _feeling_acknowledgement(parts[-1])
+            prefix = (_revised_feeling_discourse_prefix(fragments[int(codes[-1].split(":")[1])])
+                      if replacements[-1] == len(codes) - 1 else "")
+            # The source predicate owns the explanation's outer tense. The
+            # revision introduction must not obstruct its lexical proof.
+            terminal = prefix + _feeling_acknowledgement(parts[-1][len(prefix):])
+            return "し、".join(parts[:-1]) + "し、" + terminal
     coordinated = []
     for part in parts[:-1]:
         if separate_time_scopes:

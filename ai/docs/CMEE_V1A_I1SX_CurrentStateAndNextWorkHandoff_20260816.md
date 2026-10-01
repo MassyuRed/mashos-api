@@ -12489,3 +12489,30 @@ language identity `052aee6c35e6da139f285ed9d7b7e26cb51e93eb66b47722c32fe13a790c8
 独立した過去訂正が末尾にある限定経路の連結を改善したが、対象群全体は未完。説明形訂正の本文未提供、同名集合の進行時の本文未提供、他の長い「し」連結、出来事/主題/受け止め句の反復、受け取りの深さ、未対応文法、複数文引用scope、4件以上の同名集合は残る。次は同群の説明形訂正または同名集合で本文を提供できない具体的境界を、既存の受付・意味計画・作者・独立Gateに沿って切り分ける。原時点と回答時点を一律に連結したり、1Moveへ句点だけを加えたりしない。同群閉鎖前に二層再掲の別作業へ先行しない。
 
 限定TECHNICAL_CREDIT、対象群未完・商品0/3/NOT_CLEAR・全体48%・default OFFを維持。両PR Draft/open/unmerged、Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末予定の最新weekly合意を継承する。
+
+## 2026-10-01 u52 — 複数出来事内の独立した説明形訂正の本文未提供を修復
+
+開始HEADはAPI `28eff8806aac7faadefe0d8de901e5d11951738f`、Cocolon `7b966fdea3c1d7b9daab5e5a9079395d7d1b108b`。添付前回txtとGitHub最新PR3/30を照合し、u51の次作業から継続。前提入口、作業姿勢00/CURRENT/18/専門rule、恒久incident全文、Karen-Diary指定3資料、全体01/01A/01B/01Cの主要本文と関係表、国家flow、current_structure00/01/04、08、最新weekly20260926の09/29合意をrootとread-only担当で確認。全tree地図はCocolon1645/API2300の計3945 pathsを確認し、全ファイル本文の通読とはしない。System Context prepareは前回と同じ `PUBLICATION_RECOVERY_AMBIGUOUS: residual without marker` で未成立。入口が許可する原典直接読取を使用し、Context修復を追加作業にしていない。
+
+### 原因と限定修復
+
+二つの肯定回答を別Moveへ保ち、独立した原反応訂正を残る原体験とまとめる既存mixed_revisionで、説明形訂正が意味として受理されても本文を返せなかった。HR `_thread_received_group_ir_text` が末尾の敬体だけを除去して有限形を検査し、説明の「の」を残して拒否していた。replacementだけ既存の感情述語全体を証明する説明形helperへ接続し、`_source_grounded_received_discourse`でも同じ有限形変換を使用する。過去説明形の終端は訂正導入句と述語を分けて既存acknowledgementへ渡し、説明の外側過去を保つ。
+
+独立Gate `_read_received_discourse_parts` は、原sourceから説明形の共有終端を復元する。「のでしたね」は原sourceの外側過去が証明された実終端だけに許可し、合成された中間節の終端と区別する。作者の再生成を意味判定の正解にはしない。旧過去説明本文も読める。受付、意味計画、Move/文数、source範囲、独立改変拒否、公開contractは維持。detached文法・別renderer・新routeは追加しない。現行mixed_revisionは訂正を末尾へ置くため、非末尾の新topologyへ拡大しない。
+
+開始版で保存した合成7入力との比較は、4未提供→本文提供、2過去説明終端改善、1全文不変。全7の意味計画は同一。修正後7本文と旧利用可能3本文は作者禁止inverseでPASS。rootは7比較のReceptionを実読し、訂正先・本人の助詞・程度・否定・説明の内外時制と二つの肯定回答の別時点を確認した。独立read-only担当はsource/Gate差分とscopeを点検し、阻害問題なしと判断した。原出来事の長い「し」連結・主題反復・受け取りの深さは今回の完了に含めない。
+
+### 検証・保存・既知失敗
+
+- 追加27条件は27 PASS（50.184秒）。memo/memo_action、原反応の先頭/中央訂正、本人/助詞/程度/否定、説明の内側・外側時制、二つの肯定回答時点を24条件で検証。作者を禁止した独立inverseで、反応欠落・因果化・訂正導入句/対象・主体/助詞・程度/極性・時制・訂正全体の欠落を拒否。
+- 保存3条件は、現行説明形2系列と旧過去説明本文1系列。初回→肯定回答2回→訂正の各段階で原DTO不変、生成禁止GET/start DTO全文一致、DB原memo不変。旧保存本文を再生成しない。
+- 関連既存回帰とcurrent共有owner identityは201条件＝194 PASS / 7 FAIL（198.165秒）。新27と重複0で、最終sourceの合計228 unique IDs＝221 PASS / 7 FAIL / ERROR0 / SKIP0。全量実行ではない。
+- 7失敗は、u51同様の旧「し」/過去形へのmutation no-op3、旧中央訂正の本文未提供期待2、u44/u45で受理済みの初回説明形/一意原引用説明形に対する旧拒否期待2。全assertを照合。中央訂正2は開始版の変更対象3関数だけを検査processへ注入した対照でも同じ2 FAIL（26.02秒）。後半2は既存u47分類にも同一ID/原因を記録済みで、意味更新ownerは今回不変。7を成功・解消済みへ換算せず、旧assert・skip/xfail・frozen identityを変更しない。
+- 補足の合成2系列は、肯定回答→説明形訂正→再訂正または撤回の6状態で本文提供と作者禁止inverseを確認し、rootがReceptionを実読した。最初の別probeは2訂正後に次の問いがなく、3回目のadvance helper前提で停止した。問いや受付を改変せず、既存の一回答を含む系列へ組み直した。成功件数へ重複加算しない。
+- 旧detached検査378116 bytes全文prefix、historical frozen identityを保持。git diff --check成功。Python3.12.14 / pytest9.1.1 / PGlite0.5.8のローカル合成検証。live DB・端末・プロセス再起動は未検証。
+
+language identity `9eae1082486f67b79ccf9c559d00d4da5cd3ddd314b87d52b56a2e0a3b56e044`、runtime identity `38297a98dc370e292d7464ca26f233d3c754fa3d3f2916e8ba15e4399c62ff07`。実行環境はCodex Work、LEVEL_2既存承認内の限定修復、root華恋が唯一の編集・実行・GitHub反映owner。read-only担当2名は実行/編集/公開0。exact6 modify、追加/削除0：API HR、独立Gate reader、既存detached test末尾、current共有owner identity、既存handoff、Cocolon正本06。STRUCTURE_MAP_DELTA_NONE：既存owner内部の修復でowner/entry/API/DB/RN/国家fanout/他中核/dependency/flag変更0。外部生成AI・追加費用・Mash操作0。最終HEAD、remote全文、exact6とPR状態は反映後に照合し既存PR3/30へ記録する。
+
+### 残件と再開位置
+
+対象群は未完。同名集合の訂正前進行での本文未提供、他の長い連結、出来事/主題/受け止め句の反復、受け取りの深さ、未対応文法、複数文引用scope、4件以上同名集合を継承。次はu51で残った同名集合の本文未提供を、既存の出典位置・回答対象・本文作者/独立readerに沿って具体化する。同群閉鎖前に二層再掲の別作業へ移らない。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末予定を継承する。

@@ -4111,13 +4111,21 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
         if _thread_revised_original_reaction(event, plan.relations):
             span = resolver.resolve(event.source_span_ids[0])
             source = _body_inverse_typed_source_fragment(event, span.raw_text)
-            ending = re.search(r"(?:のですね|のです|のだと受け取りました)$", part)
+            ending = re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました)$", part)
             prefix = "言い直してくださった気持ちについては、" + (
                 "当時、" if source and _thread_feeling_owner(source) else "当時は")
             if (not thread_group or resolver.source_fields_for(event.source_span_ids) != event.source_fields
-                or not source or ending is None or not part.startswith(prefix)
-                or _restore_thread_finite_answer(part[len(prefix):ending.start()], source,
-                    copular_clause=source.endswith(("でした", "だった"))) != source):
+                or not source or ending is None or not part.startswith(prefix)):
+                return None
+            finite = part[len(prefix):ending.start()]
+            acknowledged = part_index >= coordinated_prefix_count
+            if ending.group() == "のでしたね":
+                if not acknowledged or _thread_past_explanation_predicate(source) is None:
+                    return None
+                finite += "のだった"
+            if _restore_thread_finite_answer(finite, source,
+                    copular_clause=source.endswith(("でした", "だった", "のです", "のだ")),
+                    shared_explanatory_ending=acknowledged) != source:
                 return None
             start = len((raw[:offset] + prefix).encode())
             end = len((raw[:offset] + part[:ending.start()]).encode())
