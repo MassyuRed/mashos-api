@@ -8061,7 +8061,15 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
             key=lambda nid: _span_number(index[linked_events[nid]].source_span_ids[0])))
         groups = [row for row in groups if not (
             row[0] == "lived_change" and row[1][0] in linked_ids)]
-        groups.append(("lived_change", linked_ids, ()))
+        # Three ABOUT-owned answers need not share one long finite chain.
+        # Keep source order and the existing three-Move budget: the complete
+        # original group, a two-answer duty, and the last answer's own duty.
+        # A correction or an outer contrast retains its reserved allocation.
+        if len(linked_ids) == 3 and not independent_answers and separate_later_scopes:
+            groups.extend((("lived_change", linked_ids[:2], ()),
+                           ("lived_change", linked_ids[2:], ())))
+        else:
+            groups.append(("lived_change", linked_ids, ()))
     # An answer changes its own occasion. Separately stated original
     # feelings and actions remain independent duties in the same plan.
     groups.extend(("lived_change" if is_grounded_positive_feeling(n) else "current_burden",

@@ -12850,3 +12850,46 @@ current language identityは `3e6a5aa3bf6a15b70dbab77ea2730228a20a45080d7f305b20
 同名回答群の主題反復は減ったが、元反応群→回答群の長い二巡列挙と位置句の作用範囲の追いにくさが残る。次は同じ3記述×複数回答/訂正の既存出力で、記録位置・原反応と回答・時点を明確に保ちながら長いし連結を短い文のまとまりへ整理する共通箇所を調べ、実本文の改善として修復する。新rendererや検証専用の前段を作らず、複合修飾語の重複や順序も勝手に削らない。
 
 未対応文法、複数文引用scope、4件以上同名集合、定型終端、受け取りの深さ、継続9失敗は残る。欠落・不正文・対象不明な列挙・未説明失敗/保存差分が残る間は現在の複数出来事/回答/訂正群を閉じず、二層再掲の別作業へ先行しない。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承し、旧10/10期限を復活させない。合成DB確認を10/02目標達成へ置換しない。
+
+
+## 2026-10-02 u61 — 三つの回答の長い連結を既存の責務配分で分ける
+
+### 開始位置・範囲
+
+MashのEmlisAI残件継続指示に従い、u60の次作業を継続した。開始HEADはAPI `97bc3e1dca5505e3dfc123fe1d95592667f92c83`、Cocolon `f72aaaa24e9c83437093fc6338e1205c0009b13f`。fresh PRとlocal HEADを照合し追跡差分0から開始。全体設計01・01A/B/C、全file地図、current_structureの既読経路を継承し、入口と現行構造を再確認した。恒久incidentを全文再読し、前提規則R1/R1.5/R11、開始checklist、最新weekly09/26の09/29合意を確認した。設計・地図・weeklyの介在変更はない。前回txtからu60までの引継ぎ、System Contextのshallow祖先確認未成立と原典直接読取の扱いを継承する。
+
+OBSERVED_BLOCKER_MINIMAL_FIX、既存LEVEL_2内。長い三回答の列挙から最後の回答の対象・時点を追いやすくする実本文変更を行い、同じunit内で意味保持と保存互換を検証する。root華恋が唯一の編集・実行・反映ownerで、read-only担当が全本文と技術差分を確認した。追加費用・Mash操作・installなし。新owner/renderer/reader/entry、一般受付、public contract/API/DB/RN、依存/flagを変更しない。
+
+### 実本文の変化と限界
+
+Planの既存保持群で、原反応群と三つのABOUT付きpositive回答だけの場合を、原反応群・先の二回答・最後の一回答の3責務へ配分する。既存の最大3Move/3文を使い、同じsource順で既存二回答作者/readerと単一回答作者/readerへ渡す。最後の回答は自身の出来事・記録位置・時点を一文内で示し、前の文から主題を借りない。独立した原反応訂正が既に一枠を使う場合、外側の対比責務のため再帰している場合は旧配分を保つ。HR・Gate・Surface・answer updateのproduction変更は0。
+
+開始版と最終版の10例を比較し、対象7例のReceptionは2文から3文になった。回答を含む最長文は対象によって80〜114文字から57〜76文字へ短くなり、三回答を一息で追う長さが減った。この文字数は品質scoreや商品合格の代替ではない。対照3例は全文不変。Observation、元反応文、対象回答の受理分類・未解決数は10/10同一、最終inverseは10/10 PASS。rootと商品担当は元memo・全回答・両層本文を全文確認し、元反応や各回答の意味・時点・所属が新たに消えたり混ざったりする箇所は見つからなかった。
+
+ただし、同名回答の出来事主題は1回から2回へ増え、定型終端も3文で反復する。元反応群の長い列挙、原反応→回答の二巡、位置/時点句の多さ、SELF・複合修飾語・外側過去の不自然さは残る。今回の限定的な読み分け候補を、自然さ・非template性・深さ・商品合格へ換算しない。商品確認をMashへ依頼できる段階には達していない。
+
+### 検証と途中の判断
+
+既存9検査関数を新しい2+1の回答責務へ合わせた。検査helperは各実文を対応するMoveと独立readerへ渡し、文内UTF8範囲を実際の二文をつないだblockの範囲へ移す。3event/3feelingの完全source6 operand、所属・時点・主体/助詞・程度の位置/反復・否定・説明・内外時制の検証を残した。期待本文を作者から再生成して照合する方式にはしていない。旧3回答一文から記録位置句を全削除した形式は、新3文Planへ混ぜず、旧Plan/旧保存本文の明示的検査へ移した。既知失敗の期待、skip/xfail、historical frozen identityは変更しない。
+
+追加11条件は新本文8（memo/memo_action×全同名・全SELF同名・異なるSELFの部分重複・全異名）と旧形式3（共有主題・各回答主題＋位置句・各回答主題のみ）。新本文は3責務/3文を確認し、group/single/finite作者を禁止した実本文inverseと完全source6件の復元を検証する。回答文の交換・削除・連結、時点・主体助詞・内外時制・程度位置の改変を拒否した。
+
+旧形式は実際に旧2Move/2文を生成し、形式ごとの主題数・位置句数もassertする。旧3回答一文を旧Moveに対して作者禁止readerで読み、意味・時点・時制改変を拒否した。旧保存本文はpatch解除後のgenerate禁止GET/startでDTO全文一致、原DTOとDB原memo不変を確認した。新3文Planに旧2文本文を置換できるという主張ではない。既存の追加/訂正/撤回の保存検査も今回選択内で検証する。
+
+初回の関連185条件は110 PASS / 75 FAIL（264.134秒）。73件は旧2Move・3回答一文に固定された検査構造、2件は以前からの意味分類期待の差だった。上記9関数の修正後の関連236条件は234 PASS / 2 FAIL（292.470秒）、追加11は11 PASS（50.115秒）。u60と重なる185 IDsは成否全一致、残り51は今回追加で選択した既存positive_answer_group検査である。途中実行を最終unique件数へ重複加算しない。
+
+静的reviewで、外側対比＋再帰内の回答分割が文数予算を超える可能性を指摘された。既存testの `RECEIVED_CHAIN_MULTI` に「今は嬉しい。」「その時は楽しかった。」「今は安心なのです。」を順にADDする限定比較では、開始版/途中版とも第3回答前の生成で `emlis_refined_body_unavailable` となり、今回の退行は再現しなかった。開始版比較は変更した関数だけをHEADの定義に戻し、他のproductionは開始版から未変更である。到達できなかった3回答の実本文を成功扱いせず、既存の未到達境界として残す。新しい分割は既存 `separate_later_scopes` が有効な外側配分だけに限定し、再帰内は旧配分を維持した。最終検査へ既存received_chain系列を加えて、この既存経路の保存/訂正/撤回を確認した。新しい受付や予算上限緩和で救済しない。
+
+最終関連271条件＝269 PASS / 2 FAIL（318.768秒）、複合修飾語の既存10条件＝10 PASS（22.886秒）、current owner identity1 PASS（28.719秒）。ID重複なしで282 unique IDs＝280 PASS / 2 FAIL / ERROR0 / SKIP0。追加11条件は全件PASS。対比系列24条件も全件PASSし、新規失敗0。前回687件全体や全suiteの再実行ではない。途中のidentity1 PASSも最終件数へ二重加算しない。最終検査後のproduction変更なし。
+
+最終関連の選択はdetached_observation / received_discourseの `same_name_positive or nominal_positive_answer or shared_answer_topic or nominal_explained_answer or positive_answer_group or split_positive_answer or received_chain`。複合修飾語10条件はdetached_observationの `nominal_modifier_chains_each_answer_position or nominal_modifier_chains_keep_bare_leading_and_medial_order` で、今回分割により文中から文末/単一文へ移る通常名詞形の完全保持を確認した。current identityは既存 `test_active_final_language_owner_chain_has_zero_legacy_compose_calls` を単独実行した。
+
+Python3.12.14 / pytest9.1.1 / PGlite0.5.8を継続使用。合成DB/mock RPCの確認であり、実DB・端末・プロセス再起動は未検証。継続2 FAILは `test_nominal_positive_answer_keeps_existing_nonfeeling_and_unresolved_boundaries` の「今は安心ではない」「今は少し私は安心です」で、現行reaction/feelingと旧value/fact期待の差が同じ。前回の残り7 FAILを今回再実行・解消したとはしない。
+
+current共有owner snapshotは既存導出で更新。language identity `d71ecb48dae57ccbd46b374957cc5f6d03424743001ee9b356dd6dda041ed684`、runtime identity `78cafe80478918c1a9d6b01541f3cdb64de8c107f94f9e4c40c1b2260cb16562`。Plan1fileのhash/lengthと集約identityのみ変化。STRUCTURE_MAP_DELTA_NONE。反映はAPI Plan・既存test・current identity・handoffとCocolon正本06のexact5 modify、追加/削除0。diff --checkを確認し、既存PR3/30へnon-force反映後、正式HEAD・parent/tree・全5file全文とpath集合・Draft状態をfresh照合する。反映識別子はPR metadataへ記録する。
+
+### 残件と次の一作業
+
+次は今回の比較で両版に見つかった、原対比chainと別出来事が併存する入力で二つのpositive回答後に本文が取得できない原因を、既存責務・source・文数境界の共通箇所から修復する。その本文欠落を保持したまま自然さだけの完了へ進めない。元反応側の長い列挙、原反応から回答への対応の追いにくさも引き続き残件とする。原sourceの修飾語の重複・順序・助詞や時制を勝手に削ったり変えたりしない。今回の限定候補で現在群を閉じず、二層再掲の別作業へ先行しない。
+
+primary outcomeは限定TECHNICAL_CREDIT。既存の複数回答/単一回答の作者・独立reader・source証明を同じ3文上限で再利用できる。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。長い元反応列挙、定型終端、自然さ・受け取りの深さ、未対応文法、複数文引用scope、4件以上同名集合、継続9失敗は残件。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承し、旧10/10期限を復活させない。今回の合成DB確認を10/02目標達成へ置換しない。
