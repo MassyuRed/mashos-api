@@ -12428,4 +12428,3 @@ Python3.12.14 / pytest9.1.1 / PGlite0.5.8。ローカル合成保存検査であ
 同群の補足回答・独立訂正を含む長い連結、出来事/主題/受け止め句の反復、受け取りの深さ、未対応文法、複数文引用scope、4件以上の同名集合は残る。単一Moveへ句点だけを追加する案は既存の文数・clause・bindingを壊すため採用していない。次は同群の回答時点と出来事の境界が重なった実本文を、既存の意味group/Move構成と照合し、意味・時点・単一作者を保つ最小修正を選ぶ。同群閉鎖前に二層再掲の別作業へ先行しない。
 
 限定TECHNICAL_CREDIT、群未完・商品0/3/NOT_CLEAR・全体48%・default OFF・両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末予定の最新weekly合意を継承する。
-
