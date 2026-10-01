@@ -12428,3 +12428,33 @@ Python3.12.14 / pytest9.1.1 / PGlite0.5.8。ローカル合成保存検査であ
 同群の補足回答・独立訂正を含む長い連結、出来事/主題/受け止め句の反復、受け取りの深さ、未対応文法、複数文引用scope、4件以上の同名集合は残る。単一Moveへ句点だけを追加する案は既存の文数・clause・bindingを壊すため採用していない。次は同群の回答時点と出来事の境界が重なった実本文を、既存の意味group/Move構成と照合し、意味・時点・単一作者を保つ最小修正を選ぶ。同群閉鎖前に二層再掲の別作業へ先行しない。
 
 限定TECHNICAL_CREDIT、群未完・商品0/3/NOT_CLEAR・全体48%・default OFF・両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末予定の最新weekly合意を継承する。
+
+## 2026-10-01 u50 — 補足回答の時点主題とSELF主題の重なりを減らす
+
+開始HEADはAPI `169dd262be4ea9e64e40b477ce506f8e7e6c9946`、Cocolon `305428aaf3e4fac220bdf070414eaabd8f40c431`。Mashの継続指示によりu49から再開。GitHub PR3/30のfresh HEADを照合し、前ターンに確認した全体設計01/01A/01B/01C・current_structure00/01/04・計3945 blobsの全tree地図・前回txt・現行正本を継承。本ターンでは入口、恒久incident全文、最新weekly 20260926の09/29更新節、System Context入口と対象実装/検査を再確認した。System Context prepareは `PUBLICATION_RECOVERY_AMBIGUOUS: residual without marker` で未成立。前回失敗後の残置状態であり、Context成功とはせず、入口が認める原典直接読取で継続した。Context修復は今回の作業へ追加していない。
+
+### 商品動作と限定範囲
+
+複数出来事と回答・訂正群の長い連結を調べる中で、原反応に補足するSELF付き感情が、時点の主題と本人の主題を重ねていた。HRの既存 `_source_grounded_received_discourse` 内で、単一SELFと感情形容詞/通常名詞コピュラの全文が証明される場合に、時点を副詞へ変える。時点、本人の助詞、程度、否定、原反応と回答の時制、記述順、ABOUT関係を保持する。既存detached経路と同じ時点表現を使い、原時点・回答時点・先の回答時点を相互に置換しない。
+
+独立Gateの既存明示回答readerは、作者のhelperを呼ばずsource所有者と述語全体を別に確認して新表現を読む。旧時点表現も従来どおり受理する。知覚、信念、埋込み節、説明形、主体なし、bare が、ABOUT-only原時点の別文型は新しい表現へ広げない。回答の受付文法、意味計画、選択、Move/文数、source範囲、公開contractは変更0。
+
+rootによる11入力の前後比較は7Reception変更/4全文不変。全11でObservationと意味計画が一致し、旧本文・新本文の作者禁止inverseはいずれもPASS。rootが前後全11のReceptionを読み、時点と主体の重なりが減ることを確認。read-only独立担当2名がsource/Gate/test差分の範囲と独立性を確認した。集合の商品合格や受け取りの深さの解消には換算しない。
+
+### 検証結果と旧期待
+
+- 最終追加30条件は30 PASS（26.31秒）。memo/memo_action、原/回答時点、SELF・程度・否定・コピュラ16、同名出来事位置3、対象外述語4、原時点入力の既存未受理形式4、作者禁止の訂正後時点1、現行/旧本文の保存更新2。回答内の程度削除、主体変更、時点交換、句欠落、原因化、位置交換を拒否。助詞交換は訂正後の独立検査で確認し、主16内の助詞重複mutationと区別する。
+- 保存2系列は回答→訂正→出来事撤回の各段階で原DTO不変、生成禁止GET/start DTO全文一致、DB原memo不変。旧時点主題の保存本文も再生成しない。
+- 関連既存64条件は36 PASS / 28 FAIL（JUnit 70.698秒）。内訳は `test_answer_degree_correction_keeps_source_owner_copula_and_prior_time` の24件が旧「先の回答時点では」を固定期待する衝突、`test_owned_initial_answer_correction_and_event_withdrawal` の4件がu49の連用形と旧過去形固定期待の衝突。全28のfailure箇所を照合した。
+- 後者4件はu49のHR作者関数だけを検査processへ注入しても同じ箇所で4 FAIL（10.79秒）。production sourceは差し戻していない。この対照を最終sourceの実行件数へ加算しない。前者24件の旧assertも変更せず、新検査で現行の意味保持を確認した。28件は解消済みでも商品意味欠落でもない。
+- current共有owner identity検査1 PASS（24.16秒）。最終sourceで実行した重複なし95条件は67 PASS / 28 FAIL / ERROR0 / SKIP0。全量再実行ではない。u49の継続台帳23は前版証拠として保持し、今回と集合が異なるため件数を単純合算しない。
+- 開発中の新検査初回11 FAIL/14 PASS、次回4 FAIL/24 PASSは、初回回答として未受理の修飾形式を改善用fixtureへ置いた誤り。既存受理形式へfixtureを直し、未受理4形式は受付境界の検査として残した。受付実装は変更0。これらを最終30の追加通過へ重複加算しない。
+- 旧detached検査362536 bytes全文prefixを保持。旧assert、historical frozen identity、skip/xfailは変更0。git diff --check成功。Python3.12.14 / pytest9.1.1 / PGlite0.5.8のローカル合成検査で、live DB・端末・プロセス再起動は未検証。
+
+language identity `3bd717b08d217ba6e90d099f4e1bb643b2662fc16abfda454d8ed1a3187d89ec`、runtime identity `abceea6a4eb7af99f361d61ca45960ee88c9f7f01a658892a1c14650c1ac3faa`。LEVEL_2既存承認内、root華恋が唯一の実行・編集・GitHub反映owner。exact6 modify、追加/削除0：APIのHR、独立Gate、既存detached test末尾、current共有owner identity、既存handoff、Cocolon正本06。STRUCTURE_MAP_DELTA_NONE：既存owner内の限定表現修復でroute/API/DB/RN/dependency/flag追加0。最終HEAD、remote全文、exact6、PR状態は反映後に照合して既存PR3/30へ記録する。
+
+### 残件と再開先
+
+同群の長い「し」連結、出来事/主題/受け止め句の反復、受け取りの深さ、未対応文法、複数文引用scope、4件以上の同名集合は残る。今回の限定表現以外のSELFを含む信念・知覚・説明形やABOUT-only主題も未改善。次は同群の原時点の過去回答/独立訂正と出来事境界を、既存group・Move・時制の契約に沿って確認する。時点の違う感情を一律に連用形で連結したり、一文Moveへ句点だけを追加したりしない。同群閉鎖前に二層再掲の別作業へ先行しない。
+
+限定TECHNICAL_CREDIT、対象群未完・商品0/3/NOT_CLEAR・全体48%・default OFFを維持。両PR Draft/open/unmerged、Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末予定の最新weekly合意を継承する。

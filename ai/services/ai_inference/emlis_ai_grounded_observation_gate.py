@@ -4257,11 +4257,28 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
             prefix = event_visible + link + "、" if contrasts else ""
             explicit = re.fullmatch(
                 re.escape(prefix) + r"(?P<feeling>.+)し、"
-                r"(?P<time>その時は|回答した時点では|先の回答時点では)(?P<answer>.+)", clause,
+                r"(?P<time>その時は|回答した時点では|先の回答時点では|その時、|回答した時点で、|先の回答時点で、)(?P<answer>.+)", clause,
             ) if prefix else None
             if explicit is not None:
                 actual_time = {"その時は": "original_occasion", "回答した時点では": "answer_time",
-                               "先の回答時点では": "prior_answer_time"}[explicit['time']]
+                               "先の回答時点では": "prior_answer_time", "その時、": "original_occasion",
+                               "回答した時点で、": "answer_time", "先の回答時点で、": "prior_answer_time"}[explicit['time']]
+                if explicit['time'].endswith("、"):
+                    # Read the new time adjunct only for a complete owned
+                    # feeling. Neither the author nor another source may
+                    # donate the owner, predicate or any modifier.
+                    owner = _thread_feeling_owner(answer_source)
+                    host = _thread_feeling_lexical_host(answer_source, owner)
+                    noun = re.fullmatch(r"(.+?)(?:でした|だった|です|だ)", host)
+                    adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)(?:です)?", host)
+                    simple_noun = (noun is not None and _FEELING_RE.fullmatch(noun[1])
+                                   and not noun[1].endswith("い"))
+                    simple_adjective = adjective is not None and (
+                        _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+                        or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1]))
+                    if (owner is None or owner['particle'] not in {"は", "も", "には", "にも"}
+                        or not (simple_noun or simple_adjective)):
+                        return None
                 if (past_explanation and _thread_past_explanation_predicate(answer_source) is None
                     or times != {actual_time}
                     or _restore_thread_finite_answer(explicit['feeling'], feeling_source,

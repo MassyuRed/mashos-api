@@ -5486,3 +5486,144 @@ def test_original_past_coordination_saved_body_and_updates_never_regenerate(qcas
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved update must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
     assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == PAST_COORDINATION_MEMO
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('when,prefix', [('その時は', 'その時、'), ('今は', '回答した時点で、')])
+@pytest.mark.parametrize('source,finite', [
+    ('私は少し怖くなかったです', 'あなたは少し怖くなかった'),
+    ('少し私も怖かった', 'あなたも少し怖かった'),
+    ('僕には少し不安でした', 'あなたには少し不安だった'),
+    ('私も少し不安です', 'あなたも少し不安だ'),
+])
+def test_received_answer_time_adjunct_keeps_whole_self_feeling(field, when, prefix, source, finite):
+    original = '悲しかった' if field == 'memo' else '少し悲しかった'
+    memo = f'誘われたのに、{original}。頼まれたのに、寂しかった。'
+    request = begin(memo if field == 'memo' else '', memo if field == 'memo_action' else '')
+    context = actual(request=advance(request, when + source + '。'))
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    delivered = finite[:-1] + 'な' if finite.endswith('だ') else finite
+    assert original + 'し、' + prefix + delivered in follow
+    assert '頼まれたのに、寂しさを感じた' in follow
+    assert read_body(context, body).passed
+    old_prefix = {'その時、': 'その時は', '回答した時点で、': '回答した時点では'}[prefix]
+    legacy = follow.replace(prefix, old_prefix, 1)
+    assert legacy != follow and read_body(context, body.replace(follow, legacy, 1)).passed
+    changed_time = '回答した時点で、' if when == 'その時は' else 'その時、'
+    mutations = [(prefix, changed_time), (prefix, '先の回答時点で、'),
+                 (prefix, ''), ('あなた', '友人'),
+                 (prefix + delivered, prefix + delivered.replace('少し', '', 1)),
+                 (prefix + delivered, prefix + delivered.replace('あなた', 'あなたが', 1)),
+                 ('のに、', 'ので、'), (prefix + delivered, '')]
+    if '怖くな' in delivered:
+        mutations.append(('怖くな', '怖'))
+    elif delivered.endswith('かった'):
+        mutations.append((delivered, delivered[:-3] + 'い'))
+    else:
+        mutations.append((delivered, delivered.replace('だった', 'だ')
+                          if delivered.endswith('だった') else delivered[:-1] + 'だった'))
+    for old, new in mutations:
+        changed = follow.replace(old, new, 1)
+        assert changed != follow
+        assert not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+@pytest.mark.parametrize('position', [0, 1, 2])
+def test_received_answer_time_adjunct_keeps_equal_event_source_positions(position):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    request = begin(RECORD_TRIPLE_MEMO)
+    for _ in range(position):
+        request = advance(request, 'その時は少し重かった。')
+    request = advance(request, 'その時は少し私は怖かった。')
+    prepared = prepare_emlis_meaning(request)
+    context = actual(request=request)
+    result, plan, _, resolver, _ = context
+    follow, body = result.artifact.reception, result.artifact.text
+    assert 'その時、あなたは少し怖かった' in follow
+    assert all(follow.count(prefix) == 1 for prefix in RECORD_PREFIXES)
+    updated = prepared.checkpoint.answer_update.updates[-1]
+    about = [r for r in plan.relations if r.type == 'evaluation_about_event'
+             and r.to_nucleus_id in updated.changed_claim_refs]
+    assert len(about) == 1
+    target = next(n for n in plan.nuclei if n.nucleus_id == about[0].from_nucleus_id)
+    clauses = RECORD_TRIPLE_MEMO.split('。')
+    span = resolver.resolve(target.source_span_ids[0])
+    assert span.raw_text == clauses[position]
+    assert span.start_index == sum(len(clause) + 1 for clause in clauses[:position])
+    assert read_body(context, body).passed
+    changed = follow.replace(RECORD_PREFIXES[position], RECORD_PREFIXES[(position + 1) % 3], 1)
+    assert not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+@pytest.mark.parametrize('reply', ['今は少し怖い。', '今は私は重いと思った。',
+                                   '今は私は少し怖かったのです。', '今は私は不安なのだった。'])
+def test_received_answer_time_adjunct_does_not_expand_other_predicates(reply):
+    context = actual(request=advance(begin(MEMO), reply))
+    follow, body = context[0].artifact.reception, context[0].artifact.text
+    assert '回答した時点では' in follow and '回答した時点で、' not in follow
+    assert read_body(context, body).passed
+    changed = follow.replace('回答した時点では', '回答した時点で、', 1)
+    assert not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+@pytest.mark.parametrize('source', ['少し私も怖くないです', 'とても私にも少し不安です',
+                                    '少し私は怖くなかったです', '私にも少し不安です'])
+def test_received_answer_time_adjunct_keeps_existing_unadmitted_modifier_boundary(source):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    request = advance(begin(MEMO), 'その時は' + source + '。')
+    prepared = prepare_emlis_meaning(request)
+    assert not prepared.accepted_nuclei and prepared.checkpoint.unresolved_parts
+    context = actual(request=request)
+    assert context[0].artifact.reception == actual(request=begin(MEMO))[0].artifact.reception
+
+
+def test_received_answer_time_adjunct_correction_keeps_prior_time_without_authors():
+    request = advance(begin(MEMO), '今は私も少し不安です。')
+    context = actual(request=advance(request, '「私も少し不安です」ではなく「私も少し苦しいです」です。'))
+    follow, body = context[0].artifact.reception, context[0].artifact.text
+    prefix, answer = '先の回答時点で、', 'あなたも少し苦しい'
+    assert prefix + answer in follow and '少し不安' not in body
+    assert read_body(context, body).passed
+    for new in ('回答した時点で、', 'その時、', ''):
+        changed = follow.replace(prefix, new, 1)
+        assert not read_body(context, body.replace(follow, changed, 1)).passed
+    for new in ('あなたは少し苦しい', 'あなたも苦しい', 'あなたも少し苦しかった'):
+        changed = follow.replace(answer, new, 1)
+        assert not read_body(context, body.replace(follow, changed, 1)).passed
+    legacy = follow.replace(prefix, '先の回答時点では', 1)
+    assert read_body(context, body.replace(follow, legacy, 1)).passed
+
+
+@pytest.mark.parametrize('legacy', [False, True])
+def test_received_answer_time_adjunct_saved_correction_withdrawal_and_old_replay(qcase, qdb, monkeypatch, legacy):
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    qdb.query('update public.emotions set memo=$1 where id=$2', [RECORD_TRIPLE_MEMO, parent])
+    first = current = run(service.start(user, parent))
+    author = reception._source_grounded_received_discourse
+
+    def prior_author(*args, **kwargs):
+        text = author(*args, **kwargs)
+        return text.replace('回答した時点で、', '回答した時点では') if text else text
+
+    with monkeypatch.context() as old:
+        if legacy:
+            old.setattr(reception, '_source_grounded_received_discourse', prior_author)
+        current = run(answer(service, user, current, '今は私も少し不安です。', 'owned-time-first'))
+    expected = '回答した時点では' if legacy else '回答した時点で、'
+    assert expected + 'あなたも少し不安な' in current['current_observation']['text']
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved answer must not regenerate'))
+        assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    for index, reply in enumerate(('「私も少し不安です」ではなく「私も少し苦しいです」です。',
+                                   '「私は誘われた」は誤りです。')):
+        current = run(cont(service, user, current, f'owned-time-continue-{index}'))
+        current = run(answer(service, user, current, reply, f'owned-time-answer-{index}'))
+        body = current['current_observation']['text']
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        assert '先の回答時点で、あなたも少し苦しい' in body and '少し不安' not in body
+        assert ('「私は誘われた」' in body) == (index == 0)
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved update must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == RECORD_TRIPLE_MEMO

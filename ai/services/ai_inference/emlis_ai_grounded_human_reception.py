@@ -10114,6 +10114,26 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True,
         codes = tuple(f"thread-received-slot:{slot}:{count + slot}:{link}:none"
                       for slot, link in enumerate(links))
     fragments = realization.semantic_fragments
+
+    def answer_time_prefix(source, when):
+        prefix = {"original_occasion": "その時は", "answer_time": "回答した時点では",
+                  "prior_answer_time": "先の回答時点では"}.get(when)
+        # A complete SELF-owned feeling already carries its own topic.
+        # Keep time as an adjunct, as in the detached-feeling discourse.
+        # Full lexical proof excludes embedded events, beliefs and explanations.
+        owner = (re.match(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)", source)
+                 or _medial_feeling_owner(source))
+        adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)(?:です)?",
+                                 _feeling_predicate_host(source))
+        simple_adjective = adjective is not None and (
+            _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+            or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1]))
+        if prefix is not None and owner and (
+            simple_adjective or _detached_feeling_copula_parts(source) is not None):
+            return {"original_occasion": "その時、", "answer_time": "回答した時点で、",
+                    "prior_answer_time": "先の回答時点で、"}[when]
+        return prefix
+
     parts = []
     separate_time_scopes = False
     for code in codes:
@@ -10147,8 +10167,7 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True,
                 source = fragments[answer_slot]
                 finite = _detached_feeling_finite_surface(source, allow_medial=True,
                     allow_copular=True, allow_explanatory=True)
-                time = {"original_occasion": "その時は", "answer_time": "回答した時点では",
-                        "prior_answer_time": "先の回答時点では"}.get(when)
+                time = answer_time_prefix(source, when)
                 if (finite is None or time is None
                     or re.search(r"(?:私|自分|わたし|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)):
                     return None
@@ -10180,8 +10199,7 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True,
         # The original event/reaction relation does not depend on the
         # admitted answer's grammar. Keep its complete contrast and give
         # the supplemental answer its own independently reported time scope.
-        answer_time = {"original_occasion": "その時は", "answer_time": "回答した時点では",
-                       "prior_answer_time": "先の回答時点では"}.get(when)
+        answer_time = answer_time_prefix(source, when)
         original_relation_prefix = (event + _RECEIVED_EVENT_LINK_TEXT[link]
             + "、" + feeling + "し、" + answer_time
             if answer_time is not None and negative is not None else None)
