@@ -3620,3 +3620,146 @@ def test_received_chain_positive_group_does_not_admit_unresolved_third_answer():
     assert after[0].artifact.reception == before[0].artifact.reception
     assert after[0].artifact.observation.startswith(before[0].artifact.observation)
     assert '回答の「今はとても幸せです」には、今回の観測に反映できていない部分があります。' in after[0].artifact.observation
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('replies,visible', [
+    (('今は嬉しい。', 'その時は楽しかった。'), ('回答した時点では嬉しい', 'その時は楽しかった')),
+    (('その時は楽しかった。', '今は少し安心です。'), ('その時は楽しかった', '回答した時点では少し安心')),
+    (('今は少し私は少し安心です。', 'その時は私も楽しかった。'),
+     ('回答した時点では少しあなたは少し安心', 'その時はあなたも楽しかった')),
+    (('今は安心なのです。', 'その時は幸せだったのです。'),
+     ('回答した時点では安心なのだ', 'その時は幸せだったの')),
+])
+def test_received_chain_detached_positive_group_keeps_source_time_and_survivors(field, replies, visible):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from test_cmee_emlis_detached_observation import read_body
+    request = begin(RECEIVED_CHAIN_MULTI if field == 'memo' else '',
+                    RECEIVED_CHAIN_MULTI if field == 'memo_action' else '')
+    for text in (*replies, '「褒められた」は誤りです。'):
+        request = advance(request, text)
+    context = actual(request=request)
+    result, plan, sentence, resolver, selected = context
+    public = MeaningExperienceEngine().generate(request)
+    assert public.artifact is not None and public.artifact.text == result.artifact.text
+    follow = result.artifact.reception
+    assert '褒められた' not in result.artifact.text
+    assert '悲しかったけれど、嬉しかったのですね。' in follow
+    assert '誘われたのに、寂しさを感じ、頼まれたのに、怖さを感じたのですね。' in follow
+    assert '先の回答では、' + visible[0] in follow and visible[1] in follow
+    assert follow.count('。') == len(plan.response_plan.human_reception_plan.moves) == 3
+    group, = (m for m in plan.response_plan.human_reception_plan.moves
+              if len(m.target_nucleus_ids) == 2 and m.reception_act == 'recognize_lived_change')
+    assert not group.support_nucleus_ids
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    detached, linked = (index[nid] for nid in group.target_nucleus_ids)
+    assert 'thread_subject:withdrawn_source_event' in detached.semantic_frame.attribute_codes
+    assert not any(detached.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    about, = (r for r in plan.relations if r.type == 'evaluation_about_event' and r.to_nucleus_id == linked.nucleus_id)
+    expected = [reception.final_reception_source_anchor_text(nid, index, resolver).encode()
+                for nid in (detached.nucleus_id, about.from_nucleus_id, linked.nucleus_id)]
+    part, = (p + '。' for p in follow.removesuffix('。').split('。') if p.startswith('先の回答では、'))
+    with (patch.object(reception, '_source_owned_positive_answer_group_sentence', side_effect=AssertionError('no author')),
+          patch.object(reception, '_source_owned_answer_feeling_sentence', side_effect=AssertionError('no author')),
+          patch.object(reception, '_detached_feeling_finite_surface', side_effect=AssertionError('no author'))):
+        proof = gate.read_source_owned_discourse(part, group, plan, resolver, selected)
+        assert proof is not None and len(proof) == 3
+        assert [source for _, _, source in proof] == expected
+        assert all(0 <= a < b <= len(part.encode()) for a, b, _ in proof)
+        assert read_body(context, result.artifact.text).passed
+
+
+def test_received_chain_detached_positive_group_inverse_rejects_scope_or_meaning_changes():
+    from test_cmee_emlis_detached_observation import read_body
+    request = begin(RECEIVED_CHAIN_MULTI)
+    for text in ('今は嬉しい。', 'その時は楽しかった。', '「褒められた」は誤りです。'):
+        request = advance(request, text)
+    context = actual(request=request)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    changes = [
+        follow.replace('先の回答では、', ''),
+        follow.replace('先の回答では、', '褒められたことについて、先の回答では、'),
+        follow.replace('先の回答では、', '先の回答では、誘われたことについて、'),
+        follow.replace('回答した時点では嬉しい', 'その時は嬉しい'),
+        follow.replace('その時は楽しかった', '回答した時点では楽しかった'),
+        follow.replace('では嬉しい', 'では嬉しくない'),
+        follow.replace('その時は楽しかった', 'その時は楽しい'),
+        follow.replace('誘われたことについて、', '頼まれたことについて、'),
+        follow.replace('先の回答では、回答した時点では嬉しいし、', ''),
+        follow.replace('し、誘われたことについて、その時は楽しかったのですね。', 'のですね。'),
+        follow.replace('悲しかったけれど、嬉しかったのですね。', ''),
+        follow.replace('悲しかったけれど、', '悲しかったから、'),
+        follow.replace('頼まれたのに、怖さを感じた', '頼まれたのに、安心を感じた'),
+    ]
+    with patch.object(reception, '_source_owned_positive_answer_group_sentence', side_effect=AssertionError('no author')):
+        assert read_body(context, body).passed
+        for changed in changes:
+            assert changed != follow
+            assert not read_body(context, body.replace(follow, changed)).passed
+
+
+@pytest.mark.parametrize('change', ['marker', 'relation', 'time', 'polarity', 'field'])
+def test_received_chain_detached_positive_group_requires_detached_source_proof(change):
+    from dataclasses import replace
+    request = begin(RECEIVED_CHAIN_MULTI)
+    for text in ('今は嬉しい。', 'その時は楽しかった。', '「褒められた」は誤りです。'):
+        request = advance(request, text)
+    result, plan, _, resolver, selected = actual(request=request)
+    move, = (m for m in plan.response_plan.human_reception_plan.moves
+             if m.reception_act == 'recognize_lived_change' and len(m.target_nucleus_ids) == 2)
+    first = next(n for n in plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0])
+    follow, = (p + '。' for p in result.artifact.reception.removesuffix('。').split('。') if p.startswith('先の回答では、'))
+    if change == 'relation':
+        about, = (r for r in plan.relations if r.type == 'evaluation_about_event')
+        plan = replace(plan, relations=(*plan.relations, replace(about, relation_id='invalid-detached-about',
+                                                               to_nucleus_id=first.nucleus_id)))
+    else:
+        frame = first.semantic_frame
+        if change == 'marker':
+            frame = replace(frame, attribute_codes=tuple(c for c in frame.attribute_codes if c != 'thread_subject:withdrawn_source_event'))
+        elif change == 'time':
+            frame = replace(frame, attribute_codes=tuple('thread_time:original_occasion' if c == 'thread_time:answer_time' else c for c in frame.attribute_codes), time_scope='past')
+        elif change == 'polarity':
+            frame = replace(frame, polarity='negative')
+        changed = replace(first, semantic_frame=frame, source_fields=('memo',) if change == 'field' else first.source_fields)
+        plan = replace(plan, nuclei=tuple(changed if n.nucleus_id == first.nucleus_id else n for n in plan.nuclei))
+    with patch.object(reception, '_source_owned_positive_answer_group_sentence', side_effect=AssertionError('no author')):
+        assert gate._read_positive_answer_group_discourse(follow, move, plan, resolver, selected) is None
+
+
+@pytest.mark.parametrize('replies', [
+    ('今は嬉しい。', 'その時は楽しかった。'),
+    ('その時は楽しかった。', '今は少し安心です。'),
+    ('今は安心なのです。', 'その時は幸せだったのです。'),
+])
+def test_received_chain_detached_positive_group_saved_withdrawal(qcase, qdb, monkeypatch, replies):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$1 where id=$2', [RECEIVED_CHAIN_MULTI, parent])
+    first = current = run(service.start(user, parent))
+    for i, text in enumerate((*replies, '「褒められた」は誤りです。')):
+        if i:
+            current = run(cont(service, user, current, f'detached-positive-continue-{i}'))
+        current = run(answer(service, user, current, text, f'detached-positive-answer-{i}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        if i == 2:
+            body = current['current_observation']['text']
+            assert '褒められた' not in body and '先の回答では、' in body
+            assert all(x in body for x in ('悲しかった', '嬉しかった', '誘われた', '寂し', '頼まれた', '怖'))
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved withdrawal must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+        assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == RECEIVED_CHAIN_MULTI
+    assert current['state'] == 'COMPLETED' and not current['can_continue']
+
+
+
+def test_received_chain_detached_positive_group_does_not_promote_repeated_original_feeling():
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    request = advance(begin(RECEIVED_CHAIN_MULTI), 'その時は嬉しかった。')
+    prepared = prepare_emlis_meaning(request)
+    assert prepared.checkpoint.answer_update.disposition == 'NO_MATERIAL_UPDATE'
+    assert not prepared.accepted_nuclei
+    outcome = MeaningExperienceEngine().generate(request)
+    assert outcome.artifact is None and outcome.body_state == 'UNCHANGED'
+    assert outcome.reason_codes == ('reuse_saved_observation_required',)

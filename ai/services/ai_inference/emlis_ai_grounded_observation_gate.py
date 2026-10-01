@@ -3295,16 +3295,30 @@ def _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjectiv
 def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, shared_event=False,
                                allow_past_copular=False, shared_explanatory_ending=True):
     """Restore one complete answer and its own event/time from actual bytes."""
+    detached = event is None
+    if detached and ("thread_subject:withdrawn_source_event" not in answer.semantic_frame.attribute_codes
+        or any(answer.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+        or resolver.source_fields_for(answer.source_span_ids) != answer.source_fields):
+        return None
     qualifier = re.match(r"(?:先|間|後)に書かれた方では、", raw)
     offset = 0
+    if detached:
+        label = "先の回答では、"
+        if not raw.startswith(label):
+            return None
+        offset = len(label.encode())
+        raw = raw[len(label):]
     if qualifier is not None:
-        if qualifier.group() != _read_received_record_prefixes(plan, resolver).get(event.nucleus_id):
+        if detached or qualifier.group() != _read_received_record_prefixes(plan, resolver).get(event.nucleus_id):
             return None
         offset = len(qualifier.group().encode())
         raw = raw[qualifier.end():]
     index = {n.nucleus_id: n for n in plan.nuclei}
-    event_text, source = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
-                          for n in (event, answer))
+    event_text = final_reception_source_anchor_text(event.nucleus_id, index, resolver) if event else ""
+    source = final_reception_source_anchor_text(answer.nucleus_id, index, resolver)
+    if detached and source != _body_inverse_typed_source_fragment(
+        answer, resolver.resolve(answer.source_span_ids[0]).raw_text):
+        return None
     # A source-proven owner changes perspective at the same position.
     # The event has its own source-proven SELF owner. Embedded subjects still
     # fail; a visible recipient must restore the complete original event.
@@ -3336,7 +3350,7 @@ def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, sha
         if explanation_proven:
             predicate = explanatory['predicate']
     source_predicate = predicate[owner.end():] if owner else predicate
-    if (not event_text or not source
+    if (not detached and not event_text or not source
         or not (explanation_proven or _SOURCE_GROUNDED_FINITE_END_RE.search(predicate))
         or re.search(r"(?:です|ます|でした|ました|だ)$", predicate) and not (nominal_feeling or explanation_proven)
         or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)",
@@ -3357,8 +3371,8 @@ def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, sha
         if not parsed_event.startswith("あなた"):
             return None
         parsed_event = event_owner.group() + parsed_event[len("あなた"):]
-    if (parsed is None or qualifier is not None and parsed_event is None or (parsed_event != event_text
-            and not (parsed['event'] is None and shared_event)) or parsed['time'] != expected_time
+    if (parsed is None or qualifier is not None and parsed_event is None or (parsed_event != (None if detached else event_text)
+            and not (not detached and parsed['event'] is None and shared_event)) or parsed['time'] != expected_time
         or _restore_thread_finite_answer(parsed['feeling'] + ("のだった" if past_explanation else ""), source,
             copular_clause=explanation_proven or past_copular_proven or bool(nominal_feeling),
             shared_explanatory_ending=explanation_proven and shared_explanatory_ending) != source):
@@ -3392,6 +3406,10 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
         times = tuple(c.split(":", 1)[1] for c in frame.attribute_codes if c.startswith("thread_time:"))
         about = tuple(r for r in plan.relations if r.type == "evaluation_about_event"
             and r.to_nucleus_id == nid and r.relation_id in plan.coverage_requirements.required_relation_ids)
+        detached = bool(positive and len(move.target_nucleus_ids) == 2
+            and nid == move.target_nucleus_ids[0]
+            and "thread_subject:withdrawn_source_event" in frame.attribute_codes
+            and not any(nid in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations))
         if ((not is_grounded_positive_feeling(answer) if positive else
                 (answer.kind, frame.predicate_kind, frame.modality, frame.polarity)
                     != ("reaction", "feeling", "feeling", "negative"))
@@ -3401,9 +3419,13 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
             or answer.allowed_claim_scope != "explicit_supplemental_answer"
             or len(times) != 1 or times[0] not in {"original_occasion", "answer_time", "prior_answer_time"}
             or frame.time_scope != ("past" if times[0] == "original_occasion" else "present")
-            or len(about) != 1 or about[0].retention != "required"
-            or about[0].grounding_kind != "user_stated_relation"):
+            or not detached and (len(about) != 1 or about[0].retention != "required"
+                or about[0].grounding_kind != "user_stated_relation")):
             return None
+        if detached:
+            event_sources.append("")
+            rows.append((None, answer, times[0], ""))
+            continue
         event = index[about[0].from_nucleus_id]
         if (event.kind != "event" or event.retention != "required" or event.grounding_kind != "explicit"
             or event.source_fields not in {("memo",), ("memo_action",)}
@@ -3441,7 +3463,7 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
         if qualified:
             event_visible = record_prefixes.get(event.nucleus_id, "") + event_visible
         rows.append((event, answer, times[0], event_visible))
-    if len({event.nucleus_id for event, _, _, _ in rows}) != len(rows):
+    if len({event.nucleus_id if event else None for event, _, _, _ in rows}) != len(rows):
         return None
     if selected_subjective_input is not None:
         decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
@@ -3451,14 +3473,14 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
             return None
     common_event = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event_sources[0], count=1)
     common_topic = common_event + "ことについて、"
-    shared_topic = bool(record_prefixes.get(rows[0][0].nucleus_id)
+    shared_topic = bool(rows[0][0] is not None and record_prefixes.get(rows[0][0].nucleus_id)
         and raw.startswith(common_topic + record_prefixes[rows[0][0].nucleus_id]))
     if shared_topic and (len(set(event_sources)) != 1
         or not all(record_prefixes.get(row[0].nucleus_id) for row in rows)
         or len({record_prefixes[row[0].nucleus_id] for row in rows}) != len(rows)):
         return None
     labels = ([record_prefixes[row[0].nucleus_id] for row in rows] if shared_topic else
-              [row[3] + "ことについて、" for row in rows])
+              [row[3] + "ことについて、" if row[0] is not None else "先の回答では、" for row in rows])
     cuts = [len(common_topic) if shared_topic else 0]
     if (qualified or shared_topic) and not raw[cuts[0]:].startswith(labels[0]):
         return None

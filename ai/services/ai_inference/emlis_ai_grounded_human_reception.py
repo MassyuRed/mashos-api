@@ -3049,8 +3049,8 @@ def source_grounded_current_expression_nominal(
         return "と、".join(event + _RECEIVED_EVENT_LINK_TEXT[link] + feeling + "こと" for _, _, event, feeling, link in received)
     group = source_grounded_thread_answer_group(move, plan, nucleus_index, resolver)
     if group:
-        return "と、".join(row.event_fragment + ("ことについて、" if row.grammar == "FINITE" else "ことへの")
-                          + row.nominal for row in group)
+        return "と、".join((row.event_fragment + ("ことについて、" if row.grammar == "FINITE" else "ことへの")
+                           if row.event_id is not None else "") + row.nominal for row in group)
     answer = source_grounded_thread_answer_nominal(move, plan, nucleus_index, resolver)
     return answer[4] if answer else _source_grounded_current_expression_nominal(move, plan, nucleus_index, resolver)
 
@@ -3058,7 +3058,7 @@ def source_grounded_current_expression_nominal(
 @dataclass(frozen=True, repr=False)
 class _ThreadAnswerGroupItem:
     nucleus_id: str
-    event_id: str
+    event_id: str | None
     source: str
     grammar: str
     when: str
@@ -3156,11 +3156,12 @@ def source_grounded_thread_answer_group(move, plan, nucleus_index, resolver):
                 not in _thread_retained_reaction_groups(plan.nuclei, plan.relations)):
             return ()
     return _source_grounded_thread_answer_rows(move.target_nucleus_ids, plan, nucleus_index, resolver,
-                                               polarity="positive" if positive else "negative")
+                                               polarity="positive" if positive else "negative",
+                                               allow_detached=positive and len(move.target_nucleus_ids) == 2)
 
 
 def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver, *, polarity="negative",
-                                       received_target_count=0):
+                                       received_target_count=0, allow_detached=False):
     rows = []
     for nid in targets:
         n = nucleus_index[nid]
@@ -3168,31 +3169,36 @@ def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver, 
         times = {c.split(":", 1)[1] for c in n.semantic_frame.attribute_codes if c.startswith("thread_time:")}
         about = tuple(r for r in plan.relations if r.to_nucleus_id == nid
             and r.type == "evaluation_about_event" and r.relation_id in plan.coverage_requirements.required_relation_ids)
+        detached = bool(allow_detached and polarity == "positive" and len(targets) == 2
+            and "thread_subject:withdrawn_source_event" in n.semantic_frame.attribute_codes
+            and not any(nid in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations))
         if (n.source_fields != ("answer_text_private",) or n.allowed_claim_scope != "explicit_supplemental_answer"
             or not current_unknown and (n.kind != "reaction" or n.semantic_frame.predicate_kind != "feeling"
                 or n.semantic_frame.modality != "feeling")
             or n.semantic_frame.polarity != polarity
             or polarity == "positive" and not is_grounded_positive_feeling(n)
             or len(n.source_span_ids) != 1 or len(times) != 1
-            or not times <= _THREAD_ANSWER_TIME_NOMINAL_PREFIX.keys() or len(about) != 1):
+            or not times <= _THREAD_ANSWER_TIME_NOMINAL_PREFIX.keys()
+            or not detached and len(about) != 1
+            or detached and (n.retention != "required" or n.grounding_kind != "explicit")):
             return ()
         source = _source_grounded_clause_candidate(n, resolver)
         profile = _source_grounded_semantic_profile(n, source)
         raw = resolver.resolve(n.source_span_ids[0]).raw_text
-        event = nucleus_index[about[0].from_nucleus_id]
-        event_fragment = _source_grounded_clause_candidate(event, resolver)
-        event_profile = _source_grounded_semantic_profile(event, event_fragment)
+        event = None if detached else nucleus_index[about[0].from_nucleus_id]
+        event_fragment = _source_grounded_clause_candidate(event, resolver) if event else ""
+        event_profile = _source_grounded_semantic_profile(event, event_fragment) if event else None
         if (profile.actor_kind != "SELF" or profile.quoted_boundary or profile.performed_action or profile.future_action
             or _typed_reception_source_fragment(n, raw) != source
-            or event.kind != "event" or event.source_fields not in {("memo",), ("memo_action",)}
-            or event.semantic_frame.modality != "fact" or event.semantic_frame.time_scope != "past"
-            or event_profile.quoted_boundary or not _SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(event_fragment)):
+            or not detached and (event.kind != "event" or event.source_fields not in {("memo",), ("memo_action",)}
+                or event.semantic_frame.modality != "fact" or event.semantic_frame.time_scope != "past"
+                or event_profile.quoted_boundary or not _SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(event_fragment))):
             return ()
         when = next(iter(times))
         if polarity == "positive" and (
             n.semantic_frame.time_scope != ("past" if when == "original_occasion" else "present")
-            or about[0].grounding_kind != "user_stated_relation"
-            or about[0].retention != "required"
+            or not detached and (about[0].grounding_kind != "user_stated_relation"
+                                 or about[0].retention != "required")
         ):
             return ()
         nominal = _thread_answer_nominal_morphology(source)
@@ -3210,7 +3216,11 @@ def _source_grounded_thread_answer_rows(targets, plan, nucleus_index, resolver, 
                 attributive=received_target_count > 0) + "こと"
         else:
             value = _thread_answer_timed_nominal(value, grammar, when)
-        rows.append(_ThreadAnswerGroupItem(nid, event.nucleus_id, source, grammar, when, value, event_fragment))
+        rows.append(_ThreadAnswerGroupItem(nid, event.nucleus_id if event else None,
+                                           source, grammar, when, value, event_fragment))
+    if any(r.event_id is None for r in rows) and not (
+        len(rows) == 2 and rows[0].event_id is None and rows[1].event_id is not None):
+        return ()
     return tuple(rows) if len({r.event_id for r in rows}) == len(rows) else ()
 
 
@@ -3271,7 +3281,9 @@ def source_grounded_reception_move_relations(move, plan):
         r.type == "contrast" and not {r.from_nucleus_id, r.to_nucleus_id} <= declared
         and sum({r.from_nucleus_id, r.to_nucleus_id} <= set((*other.target_nucleus_ids, *other.support_nucleus_ids))
                 for other in closed_owners) == 1))
-    positive_ids = tuple(nid for row in groups if row[0] == "lived_change" for nid in row[1])
+    # A surviving feeling contrast owns its supports and is not an answer
+    # owner. It must not prevent delegation to the separate answer group.
+    positive_ids = tuple(nid for row in groups if row[0] == "lived_change" and not row[2] for nid in row[1])
     owners = tuple(tuple(m for m in plan.response_plan.human_reception_plan.moves
         if m.required and m.reception_act == "recognize_lived_change"
         and nid in m.target_nucleus_ids and not m.support_nucleus_ids)
@@ -6085,7 +6097,8 @@ def _source_grounded_nominalization_shape_valid(
                          for grammar in ("BELIEF", "PAST_FEELING", "PERCEIVED_0", "PERCEIVED_1", "COPULAR_PRESENT_POLITE", "COPULAR_PAST_POLITE", "ADJECTIVE_PRESENT_POLITE", "FINITE")
                          for when in _THREAD_ANSWER_TIME_NOMINAL_PREFIX}
                 for slot, code in enumerate(plan[1:]))
-        and 2 * (len(plan) - 1) == semantic_count):
+        and (2 * (len(plan) - 1) == semantic_count
+             or len(plan) == semantic_count == 3)):
         return True
     return bool(
         (semantic_count in {2, 4, 6}
@@ -6673,7 +6686,7 @@ def _project_source_grounded_reception_move_realization(
                         if move.reception_act == "recognize_lived_change" else ())
     received_rows = source_grounded_thread_received_group(move, plan, nucleus_index, resolver)
     mixed_originals = any(original and original[4] in {"detached", "replacement"} for original, _ in received_rows)
-    if detached_burdens or mixed_originals:
+    if detached_burdens or mixed_originals or any(row.event_id is None for row in positive_answers):
         # The aggregate has no shared event or predicate. Each unchanged
         # profile and timed source clause owns its own assertion.
         predicate_values = ("source_bounded",)
@@ -7096,7 +7109,13 @@ def _expression_source_grounded_move_realization(
     mixed_originals = (expression.predicate_kind == "source_bounded"
         and any(c.endswith((":none:detached:none", ":none:replacement:none")) for c in expression.nominalization_plan
                 if c.startswith("thread-received-slot:")))
-    if relation_rows and not mixed_originals and _dedupe(tuple(
+    detached_answers = bool(expression.predicate_kind == "source_bounded" and expression.polarity == "positive"
+        and target_slot_count == 2 and len(semantic_fragments) == 3 and context_slots == (2,)
+        and len(relation_rows) == 1 and relation_rows[0].relation_kind == "evaluation_about_event"
+        and relation_rows[0].endpoint_roles == ("LEFT", "RIGHT")
+        and relation_rows[0].endpoint_slots == (2, 1)
+        and len([c for c in expression.nominalization_plan if c.startswith("answer-slot:")]) == 2)
+    if relation_rows and not (mixed_originals or detached_answers) and _dedupe(tuple(
         relation_predicate_kinds[relation_slot]
         for relation_slot in governing_relation_slots
     )) != (expression.predicate_kind,):
@@ -7896,9 +7915,11 @@ def _validate_source_grounded_move_ir(
                     if code.startswith("thread-received-slot:"))
             and bool(_thread_received_group_ir_text(move))
         )
+        detached_answers = (move.predicate_kind == "source_bounded" and move.polarity == "positive"
+            and len(move.semantic_fragments) == 3 and bool(_thread_answer_group_ir_text(move)))
         if (
             move.governing_relation_slots != expected_governing_relation_slots
-            or not mixed_originals and (
+            or not (mixed_originals or detached_answers) and (
                 not expected_governing_relation_slots
                 or _dedupe(tuple(
                 move.relation_predicate_kinds[relation_slot]
@@ -8625,7 +8646,15 @@ def _thread_answer_group_ir_text(realization):
     codes = tuple(c for c in realization.nominalization_plan if c.startswith("answer-slot:"))
     if not 2 <= len(codes) == realization.target_slot_count <= 3:
         return ""
-    if (len(realization.relations) != len(codes)
+    # The selected source proof permits one detached positive answer only
+    # as the first slot of a two-answer group. It has no context or edge.
+    detached_first = bool(len(codes) == 2 and realization.polarity == "positive"
+        and len(realization.semantic_fragments) == 3 and realization.context_slots == (2,)
+        and len(realization.relations) == 1
+        and realization.relations[0].relation_kind == "evaluation_about_event"
+        and realization.relations[0].endpoint_roles == ("LEFT", "RIGHT")
+        and realization.relations[0].endpoint_slots == (2, 1))
+    if not detached_first and (len(realization.relations) != len(codes)
         or len(realization.semantic_fragments) != 2 * len(codes)):
         raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP")
     parts, subjects = [], []
@@ -8634,10 +8663,12 @@ def _thread_answer_group_ir_text(realization):
         relations = tuple(r for r in realization.relations
             if r.relation_kind == "evaluation_about_event" and r.endpoint_roles == ("LEFT", "RIGHT")
             and r.endpoint_slots[1] == slot and r.endpoint_slots[0] in realization.context_slots)
-        if int(actual_slot) != slot or len(relations) != 1:
+        detached = detached_first and slot == 0
+        if int(actual_slot) != slot or len(relations) != (0 if detached else 1):
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP")
-        subject = relations[0].endpoint_slots[0]
-        subjects.append(subject)
+        subject = None if detached else relations[0].endpoint_slots[0]
+        if subject is not None:
+            subjects.append(subject)
         source = realization.semantic_fragments[slot]
         nominal = _thread_answer_nominal_morphology(source)
         if grammar == "FINITE" and nominal is None:
@@ -8648,8 +8679,9 @@ def _thread_answer_group_ir_text(realization):
         else:
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
         connector = "ことについて、" if grammar == "FINITE" else "ことへの"
-        parts.append(realization.semantic_fragments[subject] + connector + value)
-    if set(subjects) != set(realization.context_slots) or len(set(subjects)) != len(codes):
+        parts.append((realization.semantic_fragments[subject] + connector if subject is not None else "") + value)
+    if (set(subjects) != set(realization.context_slots)
+        or len(set(subjects)) != len(codes) - int(detached_first)):
         raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP")
     return "と、".join(parts)
 
@@ -11039,7 +11071,8 @@ def _source_owned_positive_answer_group_sentence(move, realization, plan, resolv
     # Share a topic only across equal complete source events. The written
     # positions still distinguish occurrences; equal recipient spellings
     # alone cannot merge different source owners or event predicates.
-    shared_topic = (len({row.event_fragment for row in rows}) == 1
+    shared_topic = (all(row.event_id is not None for row in rows)
+        and len({row.event_fragment for row in rows}) == 1
         and all(record_prefixes.get(row.event_id) for row in rows)
         and len({record_prefixes[row.event_id] for row in rows}) == len(rows))
     for row in rows:
@@ -11058,7 +11091,7 @@ def _source_owned_positive_answer_group_sentence(move, realization, plan, resolv
             return None
         time = {"original_occasion": "その時は", "answer_time": "回答した時点では",
                 "prior_answer_time": "先の回答時点では"}[row.when]
-        event_label = (record_prefixes[row.event_id] if shared_topic else
+        event_label = ("先の回答では、" if row.event_id is None else record_prefixes[row.event_id] if shared_topic else
                        record_prefixes.get(row.event_id, "") + event_visible + "ことについて、")
         event_labels.append(event_label)
         parts.append(event_label + time + finite)

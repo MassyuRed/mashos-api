@@ -8035,6 +8035,12 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
             and not separate_later_scopes and not independent_answers)
         and len(positive_revisions) == len(independent_answers) <= 1
         and not (withdrawal or independent or actions or detached_answers))
+    # An outer surviving feeling contrast still owns a Move after its
+    # event is withdrawn. Coordinate the detached answer with the one
+    # remaining ABOUT answer, without borrowing or recreating its event.
+    detached_positive_group = bool(withdrawal and not separate_later_scopes
+        and len(positive) == len(answers) == 2 and len(detached_answers) == 1
+        and len(by_event) == 1 and not (independent or actions or independent_answers))
     if not withdrawal and (len(positive) > 2 and not positive_group
                            or len(positive) == 2 and (independent or actions or independent_answers)
                            and not (mixed_revision or positive_revision)
@@ -8074,6 +8080,12 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
                            ("lived_change", linked_ids[2:], ())))
         else:
             groups.append(("lived_change", linked_ids, ()))
+    if detached_positive_group:
+        # State the eventless scope first; a preceding live event topic must
+        # never become an implicit owner of the detached feeling.
+        groups = [row for row in groups if row[0] != "lived_change"]
+        groups.append(("lived_change", (detached_answers[0].nucleus_id,
+            next(n.nucleus_id for n in positive if n not in detached_answers)), ()))
     # An answer changes its own occasion. Separately stated original
     # feelings and actions remain independent duties in the same plan.
     groups.extend(("lived_change" if is_grounded_positive_feeling(n) else "current_burden",
