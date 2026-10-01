@@ -12297,3 +12297,30 @@ current派生identityはlanguage `f542e7d3d29158d3e07a2ddcddffb7fad03ff50a1a6daf
 途中のnew test文字位置誤算・終了後続行要求、および広過ぎたqualified significance条件は未成功履歴。広い条件の全関連2926完走は2903 PASS/23 FAILで、既知19に旧保存互換2＋欠落/reverse拒否2の回帰を追加したため不採用。作者/Readerの完全順序・補足回答なし条件へ限定後、48条件をfresh再実行し全成功。現在は最終sourceでQ1/received/detachedの全2926 unique IDs（75/989/1862）を6分割fresh実行中。先行sourceや部分完走を最終全件成功へ換算せず、集計を本節の次に追記する。
 
 群未完・商品0/3/NOT_CLEAR・既存全体48%・default OFF・両PR Draft/open/unmergedを維持。STRUCTURE_MAP_DELTA_NONE：既存作者/独立検証の内部修復でowner/route/schema/接続変更0。最新11→14の最小owner/07 milestone-only方針に従い、構造地図/07/新Receiptを増やさない。live DB・端末・課金・プロセス再起動は未実施、Ready/merge/deploy/enable/live適用0。ローカル合成PGliteだけの保存証拠である。shallow履歴によりContext prepareのlineage確認はエラーでNONCREDIT、原資料の直接読みにfallbackした。Karen-Diary取得はautomatic approval reviewが今回scopeとの関連/許可を未確認として拒否したため未読・迂回0。このsource checkpoint後も最終検査と反映後照合まで続行する。
+
+
+## 2026-10-01 u46最終結果 — 元位置・本文未提供の直接残件を解消、同群全体は未完
+
+source checkpoint API `690f61869f1bde810417f50444dccc75cd011226`、Cocolon `3aff0e091e0c071e5832a4db7dc4c05b8268d4cb`。両checkpointの全exact6 blobをGitHubから再取得し、作成byteと一致した。最終検査中・終了後のsource/test/current identity変更0。ここでは両既存ownerへ検証結果だけを追記する。
+
+最終sourceのQ1/received/detached全2926 unique IDs＝**2907 PASS / 19 FAIL / ERROR0 / SKIP0**。75/989/1862の収集全IDと6分割XMLの集合は完全一致し、重複/未実行0。内訳（PASS/FAIL/秒）はshard0 483/5/415.899、1 484/4/396.279、2 487/1/413.010、3 484/4/402.272、4 485/2/377.415、5 484/3/395.305。追加31は31 PASS。元対象6（u45残件2を含む）も全PASS。focused48とidentity1もPASSで、これらを2926へ重複加算しない。最終6分割は全てこのsourceでfresh完走しており、先行sourceの部分結果との置換集計ではない。
+
+再現方法はPython3.12.14/pytest9.1.1、Q2_PGLITE_MODULEでPGlite0.5.8を指定し、`ai/tests/test_cmee_emlis_q1_thread.py ai/tests/test_cmee_emlis_received_discourse.py ai/tests/test_cmee_emlis_detached_observation.py`を収集、収集順nodeidsを`nodes[i::6]`で分け、各shardを`python -m pytest -q --junitxml=...`で実行。shared owner確認は`PYTHONPATH=ai:ai/services/ai_inference`で既存`CMEEStage1AdditionalCorrectionStep2CompositionTest::test_active_final_language_owner_chain_has_zero_legacy_compose_calls`。初回のこの検査はPYTHONPATH不足によるcollection errorでNONCREDIT、正しい入口での最終1 PASSだけを採用した。依存導入はscratch検査用のみでproduction依存変更0。
+
+19 FAILのexact ID集合は開始HEADの別worktreeでfresh再現した19と同一、今回増加0。従来17＋旧説明形拒否期待2を保持する。以下は検査残件のfamily別内訳であり、19件すべてを新しい本文欠陥と断定しない。
+
+| 既存test family | FAIL |
+|---|---:|
+| Q1: design_answers_reach_selected_meaning_and_shared_human_reception | 2 |
+| Q1: inverse_rejects_answer_time_and_content_tampering | 1 |
+| received: positive_answer_is_a_time_bound_finite_feeling | 6 |
+| received: positive_finite_answer_mutations_are_rejected_without_author | 2 |
+| received: answer_explanation_revision_requires_unique_existing_answer | 2 |
+| detached: detached_burden_does_not_drop_two_positive_duties_to_fit | 2 |
+| detached: revised_original_second_position_keeps_existing_fragmentation_gap_visible | 2 |
+| detached: current_focus_revision_saved_recorrection_and_known_withdrawal_gap | 1 |
+| detached: positive_original_revision_does_not_expand_negative_group_or_move_capacity | 1 |
+
+u45の「同名3原記述の中間引用訂正で本文が出ない」「末尾引用訂正後、元中間を後へ付け直す」という直接残件は今回の検査範囲で解消した。訂正反応へ新ABOUTを作らず、保持された原eventを順序どおり別factとして扱う。次回答の原event/当時の訂正/回答時点の怖さ、保存本文、再訂正/撤回も新31で保持を確認した。最終の原順序guardはsource順と既存表示順を分けて検証し、欠落/reverse/foreign/optionalの拒否と旧保存文互換を両立する。rootは生成された両層本文を読み、独立担当は原因と限定条件をread-only照合した。長さ・反復・深さの正式商品合格へ換算しない。
+
+次の同群作業は、この19の旧期待/旧mutation locatorと現行意味・本文の差を個別に照合し、実際の本文欠陥と検査期待の不整合を確定すること。旧assertを一括変更してGREENにはしない。未対応文法、長い「し」連結・主題/「のですね」反復・深さ不足、event全体撤回後の原集合保持は今回の完了範囲外。群閉鎖前に二層再掲の別作業へ進まない。商品0/3/NOT_CLEAR、既存全体48%、default OFF、Draft/open/unmerged、live DB/端末/公開未実施を維持する。10/03と10/04の最新weekly切替合意は変更しない。最終HEAD・exact6・PR本文/状態は反映後に照合し、PR3/30へ最終SHAを記録する。
