@@ -3486,3 +3486,137 @@ def test_answer_explanation_saved_revision_withdrawal_and_original_replay(qcase,
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved explanation must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('replies,visible', [
+    (('今は嬉しい。', 'その時は楽しかった。', '今は安心なのです。'),
+     ('嬉しい', '楽しかった', '安心なの')),
+    (('今は少し私は少し安心です。', 'その時は私も楽しかった。', '今は私も嬉しい。'),
+     ('少しあなたは少し安心', 'あなたも楽しかった', 'あなたも嬉しい')),
+    (('今は安心なのです。', 'その時は幸せだったのです。', '今は私も嬉しい。'),
+     ('安心なの', '幸せだったの', 'あなたも嬉しい')),
+])
+def test_received_chain_positive_group_keeps_two_and_three_answers(field, replies, visible):
+    from test_cmee_emlis_detached_observation import read_body
+    from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
+    request = begin(RECEIVED_CHAIN_MULTI if field == 'memo' else '',
+                    RECEIVED_CHAIN_MULTI if field == 'memo_action' else '')
+    for count, reply in enumerate(replies, 1):
+        request = advance(request, reply)
+        context = actual(request=request)
+        result, plan, sentence, resolver, selected = context
+        follow = result.artifact.reception
+        assert len(plan.response_plan.human_reception_plan.moves) == 3
+        assert follow.count('。') == 3
+        assert '褒められたのに、悲しかったけれど、嬉しかったのですね。' in follow
+        assert '誘われたのに、寂しさを感じ、頼まれたのに、怖さを感じたのですね。' in follow
+        assert read_body(context, result.artifact.text).passed
+        if count == 1:
+            # The unchanged single-answer route can retain nominal source
+            # wording; the finite group starts with the second answer.
+            continue
+        assert all(fragment in follow for fragment in visible[:count])
+        moves = plan.response_plan.human_reception_plan.moves
+        group, = (m for m in moves if m.reception_act == 'recognize_lived_change')
+        assert len(group.target_nucleus_ids) == count and not group.support_nucleus_ids
+        line, = (line for line in sentence.lines if line.binding.line_role == 'human_follow')
+        parts = [part + '。' for part in follow.removesuffix('。').split('。')]
+        part, = (part for clause, part in zip(line.reception_clause_plans, parts, strict=True)
+                 if clause.move_ids == (group.move_id,))
+        index = {n.nucleus_id: n for n in plan.nuclei}
+        expected = []
+        for nid in group.target_nucleus_ids:
+            about, = (r for r in plan.relations if r.type == 'evaluation_about_event'
+                      and r.to_nucleus_id == nid and r.retention == 'required')
+            expected.extend(final_reception_source_anchor_text(source_id, index, resolver).encode()
+                            for source_id in (about.from_nucleus_id, nid))
+        with patch.object(reception, '_source_owned_positive_answer_group_sentence',
+                          side_effect=AssertionError('group author is not a reader')), patch.object(
+                reception, '_source_owned_answer_feeling_sentence',
+                side_effect=AssertionError('single author is not a reader')), patch.object(
+                reception, '_detached_feeling_finite_surface',
+                side_effect=AssertionError('finite author is not a reader')):
+            proof = gate.read_source_owned_discourse(part, group, plan, resolver, selected)
+            assert proof is not None and len(proof) == 2 * count
+            assert [source for _, _, source in proof] == expected
+            assert all(part.encode()[a:b] for a, b, _ in proof)
+            assert read_body(context, result.artifact.text).passed
+
+
+@pytest.mark.parametrize('count', [2, 3])
+def test_received_chain_positive_group_inverse_rejects_lost_or_changed_meaning(count):
+    from test_cmee_emlis_detached_observation import read_body
+    request = begin(RECEIVED_CHAIN_MULTI)
+    for reply in ('今は嬉しい。', 'その時は楽しかった。', '今は安心なのです。')[:count]:
+        request = advance(request, reply)
+    context = actual(request=request)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    mutations = [
+        follow.replace('褒められたことについて、回答した時点では嬉しいし、', '', 1),
+        follow.replace('褒められたことについて、', '頼まれたことについて、', 1),
+        follow.replace('誘われたことについて、', '褒められたことについて、', 1),
+        follow.replace('回答した時点では嬉しい', 'その時は嬉しい', 1),
+        follow.replace('その時は楽しかった', '回答した時点では楽しかった', 1),
+        follow.replace('では嬉しい', 'では嬉しくない', 1),
+        follow.replace('その時は楽しかった', 'その時は楽しい', 1),
+        follow.replace('悲しかったけれど、嬉しかった', '悲しかったから、嬉しかった', 1),
+        follow.replace('悲しかったけれど、', '', 1),
+        follow.replace('頼まれたのに、怖さを感じた', '頼まれたのに、安心を感じた', 1),
+    ]
+    with patch.object(reception, '_source_owned_positive_answer_group_sentence',
+                      side_effect=AssertionError('no group author')), patch.object(
+            reception, '_source_owned_answer_feeling_sentence', side_effect=AssertionError('no single author')):
+        assert read_body(context, body).passed
+        for changed in mutations:
+            assert changed != follow
+            assert not read_body(context, body.replace(follow, changed)).passed
+
+
+@pytest.mark.parametrize('third,retained,removed', [
+    ('今は安心なのです。', ('回答した時点では安心なのですね', 'その時は楽しかった'), ()),
+    ('「嬉しい」ではなく「少し楽しい」です。', ('先の回答時点では少し楽しい', 'その時は楽しかった'), ('では嬉しい',)),
+    ('「嬉しい」は誤りです。', ('その時に楽しかった',), ('では嬉しい', '時点で嬉しい')),
+])
+def test_received_chain_positive_group_saved_add_correct_withdraw(qcase, qdb, monkeypatch, third, retained, removed):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$1 where id=$2', [RECEIVED_CHAIN_MULTI, parent])
+    first = run(service.start(user, parent))
+    original = first['original']
+    current = first
+    for index, reply in enumerate(('今は嬉しい。', 'その時は楽しかった。', third)):
+        if index:
+            current = run(cont(service, user, current, f'chain-positive-continue-{index}'))
+        current = run(answer(service, user, current, reply, f'chain-positive-answer-{index}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == original
+        follow = current['current_observation']['text'].split('Emlisから：\n', 1)[1]
+        assert follow.count('。') == 3
+        assert '褒められたのに、悲しかったけれど、嬉しかったのですね。' in follow
+        assert '誘われたのに、寂しさを感じ、頼まれたのに、怖さを感じたのですね。' in follow
+        if index == 2:
+            assert all(value in follow for value in retained)
+            assert all(value not in follow for value in removed)
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved chain must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+        assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == RECEIVED_CHAIN_MULTI
+    assert current['state'] == 'COMPLETED' and not current['can_continue']
+
+
+def test_received_chain_positive_group_does_not_admit_unresolved_third_answer():
+    request = advance(advance(begin(RECEIVED_CHAIN_MULTI), '今は少し私は少し安心です。'),
+                      'その時は私も楽しかった。')
+    before = actual(request=request)
+    updated = advance(request, '今はとても幸せです。')
+    prepared = prepare_emlis_meaning(updated)
+    assert prepared.checkpoint.assessment_status == 'UNRESOLVED'
+    assert not prepared.accepted_nuclei
+    assert prepared.checkpoint.unresolved_parts[0].reason_code == 'answer_syntax_unsupported'
+    after = actual(request=updated)
+    retained = tuple(n for n in before[1].nuclei if n.source_fields == ('answer_text_private',))
+    assert len(retained) == 2
+    assert tuple(n for n in after[1].nuclei if n.source_fields == ('answer_text_private',)) == retained
+    assert after[0].artifact.reception == before[0].artifact.reception
+    assert after[0].artifact.observation.startswith(before[0].artifact.observation)
+    assert '回答の「今はとても幸せです」には、今回の観測に反映できていない部分があります。' in after[0].artifact.observation

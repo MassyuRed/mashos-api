@@ -8025,10 +8025,14 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
         and all(n in by_event.values() and not is_grounded_current_answer_uncertainty(n) for n in negative)
         and len(positive_revisions) == len(independent_answers) == 1
         and not (withdrawal or independent or actions or detached_answers))
-    # Three accepted positive answers are not three unrelated families to
-    # rank. Their ABOUT-owned answers can share one collective duty while
-    # an independent original correction keeps its own separate duty.
-    positive_group = bool(len(positive) == len(answers) == 3
+    # ABOUT-owned positive answers can share one collective duty. An outer
+    # received contrast reserves a Move before recursing here, so two answers
+    # must also share the existing group instead of producing a fourth Move.
+    # Independent corrections keep their own allocation; only the existing
+    # three-answer case can include one of them.
+    positive_group = bool((len(positive) == len(answers) == 3
+        or len(positive) == len(answers) == 2
+            and not separate_later_scopes and not independent_answers)
         and len(positive_revisions) == len(independent_answers) <= 1
         and not (withdrawal or independent or actions or detached_answers))
     if not withdrawal and (len(positive) > 2 and not positive_group
