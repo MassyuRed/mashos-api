@@ -104,12 +104,11 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
     offset = source_start
     end = len(text) if source_end is None else source_end
     bounded = text[offset:end].strip()
-    # A complete ordinary answer, or an explicitly located prior answer
-    # revision, can keep the existing finite adjective grammar inside an
-    # explanation. Its complete source range still owns every operator.
-    # Quoted replacements of original memo claims keep their existing grammar.
-    explanation = (re.fullmatch(r"(?P<predicate>.+)の(?:です|だ|だった)", bounded)
-                   if source_end is None or prior_answer_source is not None else None)
+    # A complete ordinary answer, or a uniquely located quoted replacement,
+    # can keep the existing finite adjective grammar inside an explanation.
+    # Only the new complete source range owns its operators; the old quote
+    # locates the target without donating its polarity or predicate.
+    explanation = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ|だった)", bounded)
     stem = (re.sub(r"(?:くなかった|くない|かった|い)$", "",
                   re.sub(r"^(?:私は|私も|自分は|私には|僕には)?"
                          r"(?:少し|とても|本当は|まだ|全然|あまり)?", "", explanation["predicate"]))

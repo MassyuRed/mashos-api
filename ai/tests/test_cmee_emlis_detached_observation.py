@@ -4818,3 +4818,135 @@ def test_initial_explanation_saved_revision_withdrawal_and_nonregenerating_repla
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved explanation must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('memo,position', [(memo, position)
+    for memo, _ in INITIAL_EXPLANATION_MEMOS[:2] for position in range(3)])
+def test_original_quoted_explanation_keeps_each_actual_target_and_other_reactions(memo, position):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    old = ('嬉しくなかった', '悲しかった', '寂しかった')[position]
+    new = '私も少し重くなかったのだった'
+    request = advance(begin(memo), '「' + old + '」ではなく「' + new + '」です。')
+    prepared = prepare_emlis_meaning(request)
+    update = prepared.checkpoint.answer_update.updates[0]
+    assert prepared.checkpoint.assessment_status == 'RESOLVED' and update.operation == 'REVISE'
+    assert not prepared.checkpoint.unresolved_parts
+    assert update.superseded_claim_refs == update.target_meaning_refs
+    context = actual(request=request)
+    result, plan, _, resolver, _ = context
+    assert old not in result.artifact.text and '「' + new + '」' in result.artifact.observation
+    assert 'あなたも少し重くなかったのでしたね' in result.artifact.reception
+    assert all(other in result.artifact.observation for other in
+               ('嬉しくなかった', '悲しかった', '寂しかった') if other != old)
+    prior_contrast = [r for r in prepared.original_plan.relations if r.type == 'contrast'
+                      and r.to_nucleus_id in update.target_meaning_refs]
+    assert len(prior_contrast) == 1
+    target = next(n for n in prepared.original_plan.nuclei if n.nucleus_id == prior_contrast[0].from_nucleus_id)
+    span = resolver.resolve(target.source_span_ids[0])
+    clauses = memo.split('。')
+    assert span.raw_text == clauses[position]
+    assert span.start_index == sum(len(c) + 1 for c in clauses[:position])
+    if memo == INITIAL_EXPLANATION_MEMOS[1][0]:
+        assert RECORD_PREFIXES[position] + '誘われた時は、あなたも少し重くなかった' in result.artifact.reception
+    assert MeaningExperienceEngine().generate(request).artifact.text == result.artifact.text
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.mark.parametrize('new', ['少し重かったのです', '私も少し重くなかったのです',
+    '私はとても重いのだ', '少し重くないのだった', '嬉しかったのです', '嬉しいのです'])
+def test_original_quoted_explanation_keeps_new_subject_polarity_degree_and_tenses(new):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    reply = '「嬉しくなかった」ではなく「' + new + '」です。'
+    request = advance(begin(INITIAL_EXPLANATION_MEMOS[0][0]), reply)
+    prepared = prepare_emlis_meaning(request)
+    assert prepared.checkpoint.answer_update.updates[0].operation == 'REVISE'
+    assert not prepared.checkpoint.unresolved_parts
+    nucleus = prepared.accepted_nuclei[0]
+    start = reply.index('「' + new + '」') + 1
+    assert f'source_fragment_scalar_range:{start}:{start + len(new)}' in nucleus.semantic_frame.attribute_codes
+    assert 'thread_time:original_occasion' in nucleus.semantic_frame.attribute_codes
+    context = actual(request=request)
+    assert '「' + new + '」' in context[0].artifact.observation
+    assert '嬉しくなかった' not in context[0].artifact.text
+    assert read_body(context, context[0].artifact.text).passed
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+def test_original_quoted_explanation_pure_meaning_keeps_memo_field_and_new_range(field):
+    from test_cmee_emlis_q1_thread import initial, answered, ORIGINAL
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    kwargs = {'memo': ORIGINAL + '少し重かった。'} if field == 'memo' else {'memo_action': '少し重かった。'}
+    reply = '「少し重かった」ではなく「少し重かったのです」です。'
+    prepared = prepare_emlis_meaning(answered(reply, initial(**kwargs)))
+    update = prepared.checkpoint.answer_update.updates[0]
+    assert prepared.checkpoint.assessment_status == 'RESOLVED' and update.operation == 'REVISE'
+    assert not prepared.checkpoint.unresolved_parts
+    old = next(n for n in prepared.original_plan.nuclei if n.nucleus_id in update.target_meaning_refs)
+    assert old.source_fields == (field,)
+    new = prepared.accepted_nuclei[0]
+    start = reply.index('「少し重かったのです」') + 1
+    assert f'source_fragment_scalar_range:{start}:{start + len("少し重かったのです")}' in new.semantic_frame.attribute_codes
+
+
+@pytest.mark.parametrize('new', ['友人は少し重かったのです', '少し楽しかったのです',
+    '少し重かったので', '少し重かったらしいのです'])
+def test_original_quoted_explanation_keeps_unsupported_replacement_boundary(new):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    prepared = prepare_emlis_meaning(advance(begin(), '「嬉しくなかった」ではなく「' + new + '」です。'))
+    assert not prepared.accepted_nuclei
+    assert prepared.checkpoint.assessment_status == 'PARTIAL'
+    assert prepared.checkpoint.unresolved_parts[0].reason_code == 'correction_replacement_unsupported'
+    assert prepared.checkpoint.answer_update.updates[0].operation == 'WITHDRAW'
+
+
+def test_original_quoted_explanation_does_not_guess_an_ambiguous_original_target():
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    memo = '誘われたのに、悲しかった。頼まれたのに、悲しかった。'
+    prepared = prepare_emlis_meaning(advance(begin(memo), '「悲しかった」ではなく「少し重かったのです」です。'))
+    assert not prepared.accepted_nuclei and not prepared.checkpoint.inactive_claim_refs
+    assert not prepared.checkpoint.answer_update.updates
+    assert prepared.checkpoint.unresolved_parts[0].reason_code == 'correction_target_unresolved'
+
+
+@pytest.fixture(scope='module')
+def original_quoted_explanation_context():
+    return actual(request=advance(begin(INITIAL_EXPLANATION_MEMOS[1][0]),
+        '「嬉しくなかった」ではなく「私も少し重くなかったのだった」です。'))
+
+
+@pytest.mark.parametrize('old,new', [('少し重くなかった', '重くなかった'),
+    ('重くなかった', '重かった'), ('あなたも', 'あなたは'), ('あなたも', '友人も'),
+    ('重くなかった', '重くない'), ('のでしたね', 'のですね'),
+    (RECORD_PREFIXES[0], RECORD_PREFIXES[2])])
+def test_original_quoted_explanation_mutations_fail_without_author_oracle(original_quoted_explanation_context, old, new):
+    context = original_quoted_explanation_context
+    before = context[0].artifact.text
+    changed = before.replace(old, new, 1)
+    assert changed != before and not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('memo', [INITIAL_EXPLANATION_MEMOS[0][0], INITIAL_EXPLANATION_MEMOS[1][0]])
+@pytest.mark.parametrize('last', ['「少し重かったのです」ではなく「少し苦しかったのです」です。',
+                                 '「少し重かったのです」は誤りです。'])
+def test_original_quoted_explanation_saved_recorrection_withdrawal_and_nonregenerating_replay(qcase, qdb, monkeypatch, memo, last):
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$1 where id=$2', [memo, parent])
+    first = current = run(service.start(user, parent))
+    replies = ('「嬉しくなかった」ではなく「少し重かったのです」です。', '今は少し怖かった。', last)
+    for position, reply in enumerate(replies):
+        if position:
+            current = run(cont(service, user, current, f'original-explanation-continue-{position}'))
+        current = run(answer(service, user, current, reply, f'original-explanation-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        assert '嬉しくなかった' not in body and '悲しかった' in body and '寂しかった' in body
+        if position == 2:
+            assert '少し重かった' not in body
+            if 'ではなく' in last:
+                assert '「少し苦しかったのです」' in body
+            else:
+                assert '少し苦しかった' not in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved original explanation must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
