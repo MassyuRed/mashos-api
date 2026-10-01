@@ -278,14 +278,19 @@ _FEELING_RE: Final = re.compile(
 # Admission still requires the existing answer owner/scope proof. In particular,
 # achievement, a value placed on reassurance, and embedded feelings are not
 # licensed by finding one of these nouns inside a larger proposition.
+# Use the same known modifier chains as the finite owner proof, with at most
+# one SELF. Their order and multiplicity remain part of the source predicate;
+# this grammatical witness never bypasses the existing answer admission scope.
 _THREAD_POSITIVE_FEELING_COPULA_RE: Final = re.compile(
-    r"(?:(?:私は|私も|自分は|私には|僕には)?(?:少し|とても)?"
-    r"|(?:少し|とても)(?:私は|私も|自分は|私には|僕には))"
+    r"(?:少し|とても|本当は|まだ|全然|あまり)*"
+    r"(?:(?:私は|私も|自分は|私には|僕には)"
+    r"(?:少し|とても|本当は|まだ|全然|あまり)*)?"
     r"(?:安心|平穏|幸せ)(?:でした|だった|です|だ)"
 )
 _THREAD_NEGATIVE_FEELING_COPULA_RE: Final = re.compile(
-    r"(?:(?:私は|私も|自分は|私には|僕には)?(?:少し|とても)?"
-    r"|(?:少し|とても)(?:私は|私も|自分は|私には|僕には))"
+    r"(?:少し|とても|本当は|まだ|全然|あまり)*"
+    r"(?:(?:私は|私も|自分は|私には|僕には)"
+    r"(?:少し|とても|本当は|まだ|全然|あまり)*)?"
     r"(?:安心|平穏|幸せ)では(?:(?:なかった|ない)(?:です)?|ありません(?:でした)?)"
 )
 _HELP_SEEKING_RE: Final = re.compile(

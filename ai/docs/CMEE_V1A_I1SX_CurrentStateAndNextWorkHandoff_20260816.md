@@ -12708,3 +12708,50 @@ current identityはlanguage `51f69b8cf287e4d6cccd3f9541bd1bbc1d950e3476e7055e6da
 「今は少し私は少し安心です。」は開始版・修正後ともvalue/factで受理され、同じ3記述と先の2回答に加えるとReceptionが先頭回答だけに縮退することを実測した。次は本人主語の前後に程度がある場合の完全source証明を、既存主体・否定・時制の境界を保って修復する。今回の敬体否定4例の改善を、共通原因全体や複数出来事/回答/訂正群の閉鎖にはしない。
 
 長い「し」連結、同名出来事/主題の反復、二層再掲、定型終端、受け取りの深さ、未対応文法、複数文引用scope、4件以上同名集合は未完。現行優先群を閉じる前に二層再掲の別作業へ先行しない。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。最新weeklyの10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承する。
+
+
+## 2026-10-01 u58 — 複合修飾語列と感情名詞の保持責務を接続
+
+### 開始位置・必要性・範囲
+
+MashのGitHub指定・EmlisAI残件継続指示から、u57の実測残件「今は少し私は少し安心です。」によるReception欠落を修復した。開始HEADはAPI `e68b022e7964376aea5dfdc0ca7bdd66a344fea2`、Cocolon `3e51bad05769d3efb87d8d5a0f3e2184b9e14544`。fresh PRとlocal HEADを照合し、追跡差分0から開始した。前提入口・current rule/18・恒久incident全文・最新weekly09/29合意・u57を確認。全体設計01/01A/B/C、全file地図、current_structureの既読内容を継承し、直前差分7pathが既存fileのmodifyのみ、設計/地図/作業規則/weekly差分0であることを確認した。全履歴の再通読とはしない。System Context prepareは今回もshallow checkoutのdescendant確認未成立でexit2（material commit `3e51bad...`）。入口に従い原典直接読取を使用し、基盤修復や生成資料最新化は今回へ混ぜない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX、既存LEVEL_2内。既受理の複合修飾語付き感情名詞が、元反応・先行回答を本文から落とす条件を直接減らす。成功条件は対象sourceの意味保持・実本文・更新/保存・関連回帰を同じ版で説明し、既存PRへ反映すること。一般受付・外部AI・新owner/renderer・public contract/API/DB/RN・依存/flagの変更が必要なら本unitへ自動拡大しない。追加費用・Mash操作0、既存runtimeを使用。root華恋が唯一の編集・実行・反映ownerで、read-only担当が商品ルート/全本文と技術差分を別途確認した。
+
+### 原因と最小修復
+
+Planの完全名詞文法だけが修飾語を一つに制限し、既存HR/Gateが既に扱う修飾語列と単一SELFの文法に接続していなかった。既受理sourceがvalue/fact（平穏の一部はreaction/reaction）に残り、feelingの保持責務へ入らず、三つの元反応・先行回答の本文が縮退した。
+
+Planの正負二つの名詞証明を、既存surfaceと同じ6語（少し/とても/本当は/まだ/全然/あまり）の列と、現行SELF集合の最大一つへ揃えた。単語ごとの例外追加や「後ろに少し一つ」だけへの追加にせず、前後・連続・主体省略を同じprefixで証明する。名詞3語と肯定/否定の終端、既存kind/本人scope条件は維持する。正規表現に入る形を回答の新規受理許可に読み替えない。
+
+production差分は既存Plan1fileのみ。answer update・HR・Gate・Surfaceのコードは変更0で、既存の作者と独立readerへ接続する。複合修飾語はその位置と重複を保持し、程度の加算、重複除去、片側への移動をしない。従来の単独「少し私は→あなたは少し」は、後続に修飾語がない既存条件のまま。Gateは作者を使わず、実本文の主体/終端を復元してsource全文と比較する。SELFを反復可能にせず、他主体・多重SELF・未証明助詞・任意埋込をこの文法へ入れない。
+
+開始版9例との比較はObservation9/9同一、対象7のReception改善、対照2全文不変。rootと商品担当は元memo・全回答・両層本文を読み、対象7で元3反応・先行2回答・第三回答、時点/助詞/否定/内側時制を保持することを確認した。「少し私は少し→少しあなたは少し」「まだ私は少し→まだあなたは少し」「少し少し私も→少し少しあなたも」を勝手に削らず保持する。9例の作者禁止inverseはPASS。ただし「少しあなたは少し安心なのですね」等の不自然さは残り、欠落保持の限定改善を自然さ・深さ・商品合格へ換算しない。
+
+開始版正負regexとの40 source比較は受理/拒否40/40同一。対象13だけ分類/感情属性が変化し、他27のnucleusは全体同一。「とても私には少し安心です」「全然私は少し安心です」「私は本当は少し安心です」等は未受理のまま。多重SELFや「私が」の一部は既受理valueのままなので、受付拒否したとは報告しない。今回の完全nominal witnessとmedial owner proofが成立しない境界として区別した。
+
+### 実施済み検証
+
+追加47条件は初回47 PASS（79.18秒）。本文16（裸/SELF同名×memo/memo_action×肯定現在/過去・否定普通/敬体過去）、主体なし/先頭/中途と異種・反復修飾語4、回答3位置×正負2の6、三つの否定回答1、出来事撤回後2、原反応訂正2、保存3系列、既存未受理8、完全文法/主体証明不成立5。新検査の失敗や期待の修正なし。
+
+原反応と各回答の保持を実本文assertで確認した。前後の程度を別々に消す、片側へ寄せる、異種修飾語の順を交換する、反復を削る、本人/助詞・否定・内側時制・回答時点・同名記録所属を変える、対象/先行回答を消す、といった実本文変更を作者禁止inverseで拒否。三つの否定回答は実生成文をreceived readerへ直接渡し、実byte範囲から元source全文へ戻ることをreceived作者禁止で確認した。
+
+保存3系列は複合修飾語の肯定回答→第二回答→否定回答追加/複合過去への訂正/撤回。各更新後にgenerate禁止GET/start DTO全文一致、原DTOとDB原memo不変。訂正・撤回した意味を復活させず、それ以外の原反応と回答を保持する。Python3.12.14 / pytest9.1.1 / PGlite0.5.8を継続使用しinstallなし。合成DB/mock RPCによる確認で、実DB・端末・プロセス再起動の確認ではない。
+
+旧detached test440511 bytes全文prefix、旧assert・skip/xfail、historical frozen identityを保持し、current共有owner identityだけを既存導出で更新した。既存owner内のprefix整合であり、STRUCTURE_MAP_DELTA_NONE。反映対象はAPI Plan・既存test末尾・current identity・既存handoffの4fileとCocolon正本06の1file、exact5 modify、追加/削除0。
+
+最終関連240条件＝238 PASS / 2 FAIL（274.42秒）。前回u57の本文/回帰240 unique IDsと今回のID・成否は全一致。identity1 PASS（32.09秒）を含む最終合計は288 unique IDs＝286 PASS / 2 FAIL / ERROR0 / SKIP0。今回は追加47・関連240・identity1の3実行が重複なく構成し、途中失敗を修正して統合した件数ではない。全suiteまたは過去別集合の失敗全量を再実行したとはしない。
+
+継続2 FAILはu55 `test_nominal_positive_answer_keeps_existing_nonfeeling_and_unresolved_boundaries` の「今は安心ではない」「今は少し私は安心です」。u56でreaction/feelingへ修正済みだが旧assertはvalue/value/factを期待する。今回の新規失敗ではなく、旧期待値を変更したりPASSへ換算したりもしない。関係しない過去集合の失敗が解消した証拠にはしない。
+
+関連選択はdetached_observation / detached_self_feeling / received_discourseの `nominal_positive_answer or same_name_positive or medial_owner or copular or test_answer_degree_correction_does_not_admit_different_owner_or_predicate or polite_nominal_negation`。current owner identityは既存contract testを単独実行。最終language identity `279985219fe9fc3d3040f1005e88dbdfda03cff86c6c3c1af885611b12e009e4`、runtime identity `1f0d56518419c38cdbbc0ce1bc3d6abd8bb3fa7efa4f423b8021f56333093a96`。Plan1fileのhash/lengthと集約identityだけが変わる。
+
+両repoのdiff --check・変更path集合を確認し、既存PR3/30のDraft branchへnon-force反映する。反映後の正式HEAD、parent/tree、exact5ファイル全文一致とPRの状態は既存PR metadataへ記録する。検証後にproduction sourceの変更はない。
+
+### 残件と次の一作業
+
+同じ3記述・先の2回答に「今は安心なのです。」または「今は少し私は少し安心なのです。」を加えると、未解決0でvalueとして受理されながら、Receptionが先頭回答だけに縮退することを実測した。両例もinverseはPASSであり、その成功だけでは意味保持を証明できない。次はこの説明形の感情名詞を、説明自体を落とさず既存意味/説明文法へ接続する因果箇所から修復する。未対応入力へ付替えて対象群を閉じない。
+
+複合修飾語の保持は回復したが、「少しあなたは少し…」等の文章不自然、長い「し」連結、同名出来事/主題の反復、二層再掲、定型終端、受け取りの深さ、他の未対応文法・複数文引用scope・4件以上同名集合も未完。欠落・不正文・対象不明な列挙・未説明失敗/保存差分が残る間は、現在の複数出来事/回答/訂正群を閉じず、次の二層再掲群へ先行しない。
+
+限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。最新weeklyの10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承する。合成DBによる今回の保存検査を10/02目標達成へ置換しない。
