@@ -5627,3 +5627,104 @@ def test_received_answer_time_adjunct_saved_correction_withdrawal_and_old_replay
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved update must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
     assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == RECORD_TRIPLE_MEMO
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('answers', TWO_POSITIVE_PAIRS)
+@pytest.mark.parametrize('old', ['嬉しくなかった', '悲しかった'])
+def test_independent_past_revision_coordination_keeps_sources_and_answer_times(field, answers, old):
+    memo = INITIAL_EXPLANATION_MEMOS[0][0]
+    request = begin(memo if field == 'memo' else '', memo if field == 'memo_action' else '')
+    for reply in (*answers, f'「{old}」ではなく「私も少し怖くなかったです」です。'):
+        request = advance(request, reply)
+    context = actual(request=request)
+    result, plan, _, _, _ = context
+    follow, body = result.artifact.reception, result.artifact.text
+    revision = REVISION_INTRO + '当時、あなたも少し怖くなかった'
+    assert 'し、' not in follow and revision + 'のですね。' in follow
+    assert '頼まれたのに、寂しさを感じ、' in follow
+    assert ('誘われたのに、悲しさを感じ、' if old == '嬉しくなかった'
+            else '褒められたことは、嬉しさにはつながらず、') in follow
+    assert old not in body and len(plan.response_plan.human_reception_plan.moves) == 3
+    revised, = [n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes]
+    assert revised.semantic_frame.time_scope == 'past'
+    assert not any(revised.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    positive = [n for n in plan.nuclei if n.source_fields == ('answer_text_private',)
+                and n.semantic_frame.polarity == 'positive']
+    assert len(positive) == 2
+    assert {code for n in positive for code in n.semantic_frame.attribute_codes
+            if code.startswith('thread_time:')} == {'thread_time:answer_time', 'thread_time:original_occasion'}
+    assert read_body(context, body).passed
+    legacy = follow.replace('感じ、', '感じたし、').replace('つながらず、', 'つながらなかったし、')
+    assert legacy != follow and read_body(context, body.replace(follow, legacy, 1)).passed
+    for before, after in [
+        ('頼まれたのに、寂しさを感じ、', ''),
+        ('頼まれたのに、寂しさを感じ、', '頼まれたのに、寂しさを感じたので、'),
+        (REVISION_INTRO, ''), (REVISION_INTRO, '頼まれたことについて、'),
+        ('当時、', '回答した時点で、'), ('当時、', '先の回答時点で、'),
+        ('あなたも', 'あなたは'), ('あなたも', '友人も'),
+        ('少し怖くなかった', '怖くなかった'), ('怖くなかった', '怖かった'),
+        ('怖くなかった', '怖くない'), (revision + 'のですね。', ''),
+        ('回答した時点では', 'その時は'),
+    ]:
+        changed = follow.replace(before, after, 1)
+        assert changed != follow
+        assert not read_body(context, body.replace(follow, changed, 1)).passed
+
+
+@pytest.mark.parametrize('old', ['嬉しくなかった', '悲しかった'])
+def test_independent_past_revision_coordination_keeps_corrected_copula_finite(old):
+    context = actual(request=revised_original_request('私も少し不安でした', old=old))
+    follow = context[0].artifact.reception
+    assert follow.count('し、') == 2
+    assert REVISION_INTRO + '当時、あなたも少し不安だったのですね。' in follow
+    assert read_body(context, context[0].artifact.text).passed
+
+
+@pytest.mark.parametrize('old', ['嬉しくなかった', '悲しかった'])
+def test_independent_past_revision_coordination_keeps_original_copula_finite(old):
+    memo = INITIAL_EXPLANATION_MEMOS[0][0].replace('寂しかった', '私も少し不安だった')
+    request = begin(memo)
+    for reply in (*TWO_POSITIVE_PAIRS[0], f'「{old}」ではなく「少し苦しかった」です。'):
+        request = advance(request, reply)
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    assert '頼まれたのに、あなたも少し不安だったし、' in follow
+    assert REVISION_INTRO + '当時は少し苦しかったのですね。' in follow
+    assert read_body(context, context[0].artifact.text).passed
+
+
+@pytest.mark.parametrize('legacy', [False, True])
+def test_independent_past_revision_coordination_saved_body_keeps_all_updates(qcase, qdb, monkeypatch, legacy):
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    memo = INITIAL_EXPLANATION_MEMOS[0][0]
+    qdb.query('update public.emotions set memo=$1 where id=$2', [memo, parent])
+    first = current = run(service.start(user, parent))
+    author = reception._source_grounded_received_discourse
+
+    def prior_author(*args, **kwargs):
+        text = author(*args, **kwargs)
+        if text and REVISION_INTRO in text:
+            return text.replace('感じ、', '感じたし、').replace('つながらず、', 'つながらなかったし、')
+        return text
+
+    with monkeypatch.context() as old:
+        if legacy:
+            old.setattr(reception, '_source_grounded_received_discourse', prior_author)
+        for index, reply in enumerate((*TWO_POSITIVE_PAIRS[1], '「悲しかった」ではなく「私も少し怖くなかったです」です。')):
+            if index:
+                current = run(cont(service, user, current, f'independent-past-continue-{index}'))
+            current = run(answer(service, user, current, reply, f'independent-past-answer-{index}'))
+            assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+            with monkeypatch.context() as saved:
+                saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved past revision must not regenerate'))
+                assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    body = current['current_observation']['text']
+    assert ('寂しさを感じたし、' in body) == legacy
+    assert REVISION_INTRO + '当時、あなたも少し怖くなかったのですね。' in body
+    assert '悲しかった' not in body and not current['can_continue']
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('final saved past revision must not regenerate'))
+        assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == memo

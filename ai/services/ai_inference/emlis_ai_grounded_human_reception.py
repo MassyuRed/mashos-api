@@ -10337,11 +10337,19 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True,
         # Keep its independent sentence scope; additive coordination could
         # make that feeling sound attached to the preceding live event.
         return "、また、".join(part + "のですね" for part in parts)
-    if any(code.endswith(":none:replacement:none") for code in codes):
-        # Keep every independent finite scope, but acknowledge the group
-        # once. The explicit revision prefix still separates that feeling
-        # from the next surviving event; additive し supplies no causal link.
-        return "し、".join(parts[:-1]) + "し、" + _feeling_acknowledgement(parts[-1])
+    replacements = [i for i, code in enumerate(codes) if code.endswith(":none:replacement:none")]
+    if replacements:
+        # Original past reactions can share the existing continuative even
+        # when the final duty is an independent past correction. Its explicit
+        # revision/occasion prefix keeps it apart from the preceding event.
+        # Answers, ordinary past copulas, explanations and other placements
+        # stay finite; this uses only the existing reversible past endings.
+        original_past_revision = (acknowledge and 2 <= len(codes) <= 3 and not separate_time_scopes
+            and replacements == [len(codes) - 1]
+            and all(len(code.split(":")) == 5 and code.endswith(":none") for code in codes)
+            and all(part.endswith(("かった", "感じた")) for part in parts))
+        if not original_past_revision:
+            return "し、".join(parts[:-1]) + "し、" + _feeling_acknowledgement(parts[-1])
     coordinated = []
     for part in parts[:-1]:
         if separate_time_scopes:
@@ -10374,8 +10382,10 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True,
     # Each later source occurrence owns one boundary, even when SELF
     # perspective makes distinct source labels equal. An extra occurrence
     # inside an answer remains ambiguous and keeps the original grammar.
-    boundaries = [prefix + event for prefix, event in zip(
-        record_prefixes or ("",) * len(event_names), event_names, strict=True)]
+    boundaries = [prefix + ("言い直してくださった気持ちについては、"
+                           if code.endswith(":none:replacement:none") else event)
+                  for prefix, event, code in zip(
+                      record_prefixes or ("",) * len(event_names), event_names, codes, strict=True)]
     if any(text.count("、" + event) != boundaries[1:].count(event)
            for event in boundaries[1:]):
         return None

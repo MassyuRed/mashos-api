@@ -12458,3 +12458,34 @@ language identity `3bd717b08d217ba6e90d099f4e1bb643b2662fc16abfda454d8ed1a3187d8
 同群の長い「し」連結、出来事/主題/受け止め句の反復、受け取りの深さ、未対応文法、複数文引用scope、4件以上の同名集合は残る。今回の限定表現以外のSELFを含む信念・知覚・説明形やABOUT-only主題も未改善。次は同群の原時点の過去回答/独立訂正と出来事境界を、既存group・Move・時制の契約に沿って確認する。時点の違う感情を一律に連用形で連結したり、一文Moveへ句点だけを追加したりしない。同群閉鎖前に二層再掲の別作業へ先行しない。
 
 限定TECHNICAL_CREDIT、対象群未完・商品0/3/NOT_CLEAR・全体48%・default OFFを維持。両PR Draft/open/unmerged、Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末予定の最新weekly合意を継承する。
+
+## 2026-10-01 u51 — 独立した過去の訂正を含む原体験の「し」連結を減らす
+
+開始HEADはAPI `2ea2486c4a106ff608f22ecb8e265d6ea286935b`、Cocolon `3d7ba04ca7bc1611e22dd1281513b45822ea9ecb`。Mashの継続指示によりu50から再開。GitHub PR3/30のfresh HEADを照合し、既読の前提・ルール、全体設計01/01A/01B/01C、地図00/01/04、全3945 blobのpath inventory（API2300/Cocolon1645）、前回txtを継承した。全ファイル本文の通読とは扱わない。今ターンは必須事故記録 `Cocolon_EmlisAI_ProductNeglect_and_CMEE_ProductReadFailure_20260816.md` 全205行、最新weekly `Cocolon_Weekly_Review_20260926.md` の09/29追記、Rule18 LEVEL_2、現行Emlis地図と対象実装・検査を再確認した。System Context prepareは `PUBLICATION_RECOVERY_AMBIGUOUS: residual without marker` で停止したため、入口が許可する原本直接読解を使用した。prepare成功や環境修復のcreditは付けない。
+
+### 原因と限定修復
+
+二つの肯定補足回答を別Moveに保持したmixed_revisionで、原体験の反応と独立した過去の訂正が同じcurrent_burden Moveに入ると、既存replacement分岐がすべてを一律に「し」で接続していた。既存HR owner `_source_grounded_received_discourse` 内だけを修正した。acknowledgeあり、2〜3節、末尾replacement1件、全codeが原時点・補足なしの5要素形式、separate_time_scopesなし、全節が既存の可逆末尾「かった／感じた」である場合に既存の連用変形へ進める。訂正導入句と「当時」、明示SELF・助詞・程度・否定・過去形を保持し、境界検査には実際の訂正導入句を用いる。
+
+対象は通常の過去コピュラ「だった」や説明形を含まない。「不安ではなかった」のように「かった」で終わる否定コピュラはsuffix条件だけでは除外されないため、全コピュラ除外・全構文対応とは記録しない。その形式が実際の受付からこの分岐へ到達するかは未検証。回答時点の異なる二つの肯定回答は既存の別Moveのまま、意味計画・選択・Move数/文数・受付・公開contractは変更0。独立Gateは今回変更0、新しい表現と旧「し」表現を既存の独立読解で受理する。新engine・別route・作者照合による合格は追加していない。
+
+### 実測・保存・検査
+
+rootが合成8入力の修正前後を比較した。4件はReceptionの「し」連結が連用形へ変わり、通常過去コピュラを含む2件は本文全文不変。利用可能な6件すべてでObservation・意味計画は同一、旧新の本文は作者禁止inverseでPASS。rootがこの6件のReceptionを前後とも読んだ。残る説明形2入力は前後とも `REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP` で本文未提供。同名集合の別probeも、訂正を渡す前の進行で `emlis_refined_body_unavailable` となった。これらを改善済みとは扱わず、受付を緩めて合成入力へ合わせてもいない。初回probe中断と再実行を独立した成功件数に重複加算しない。
+
+既存detached testの末尾に14条件だけ追加：
+- 8条件：memo/memo_action × 肯定回答の時点2系列 × 先頭/中央の訂正。残存反応、訂正の独立性、二つの回答時点、3Moveを確認。作者禁止inverseで、反応欠落・因果化・訂正導入句削除/対象替え・時点・SELF/助詞・程度・極性・現在形・訂正全体削除・肯定回答の時点交換を拒否。各mutationが実際に本文を変更することも確認。旧「し」本文も受理。
+- 4条件：訂正側/元反応側それぞれ通常過去コピュラを含む場合、従来の有限形接続と独立読解を維持。
+- 2条件：PGlite上で現行/旧「し」本文をそれぞれ保存し、初回から肯定回答2回・中央反応訂正までoriginal DTOとDB原memo不変。各更新後と最終状態で生成禁止GET/startのDTO全文一致を確認。旧本文は検査process内の作者wrapperで保存し、実sourceを差し戻さず、再読時に再生成しない。
+
+最終追加14条件は14 PASS。関連既存93条件は90 PASS / 3 FAIL。3件は `test_revised_original_reception_rejects_missing_or_reassigned_duties` の旧「し、」因果置換、および旧過去形の誘われた/頼まれた節削除で、いずれも旧断片が新本文にないため `changed != reception` が失敗した。Gateが意味改変を受理した失敗ではない。旧assertを変更・削除・skip/xfailせず保持し、新14内の実際に作用するmutationで意味拒否を別途確認した。
+
+current共有owner identity検査は1 PASS。最終挙動の108 unique IDsは105 PASS / 3 FAIL / ERROR0 / SKIP0であり、全量再実行ではない。説明コメントを「通常過去コピュラ」に正確化した後、raw source依存のruntime identityを再生成し、identity検査をもう一度実行した。同一IDを重複加算しない。u49/u50の継続失敗台帳は前版証拠を継承し、今回93条件と単純合算しない。旧detached test全文371607 bytesのprefix、historical frozen identity、Gate全文を保持。Python3.12.14 / pytest9.1.1 / PGlite0.5.8によるローカル合成検査で、live DB・端末・プロセス再起動は未検証。
+
+language identity `052aee6c35e6da139f285ed9d7b7e26cb51e93eb66b47722c32fe13a790c8f1b`、runtime identity `b5aa27b5e28fa110ace79038876c8b8fd91bf3d3427f15c07cef89dd5aff1388`。LEVEL_2既存承認内、root華恋が唯一の実行・編集・GitHub反映owner。read-only担当2名は実行・生成・編集0で差分と検査を点検し、適用範囲の説明を上記の通り正確化した。exact5 modify、追加/削除0：APIのHR、既存detached test末尾、current共有owner identity、既存handoff、Cocolon正本06。STRUCTURE_MAP_DELTA_NONE：既存owner内の限定表現修復でroute/API/DB/RN/dependency/flag追加0。最終HEAD、remote全文、exact5、PR状態は反映後に照合して既存PR3/30へ記録する。
+
+### 残件と再開先
+
+独立した過去訂正が末尾にある限定経路の連結を改善したが、対象群全体は未完。説明形訂正の本文未提供、同名集合の進行時の本文未提供、他の長い「し」連結、出来事/主題/受け止め句の反復、受け取りの深さ、未対応文法、複数文引用scope、4件以上の同名集合は残る。次は同群の説明形訂正または同名集合で本文を提供できない具体的境界を、既存の受付・意味計画・作者・独立Gateに沿って切り分ける。原時点と回答時点を一律に連結したり、1Moveへ句点だけを加えたりしない。同群閉鎖前に二層再掲の別作業へ先行しない。
+
+限定TECHNICAL_CREDIT、対象群未完・商品0/3/NOT_CLEAR・全体48%・default OFFを維持。両PR Draft/open/unmerged、Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末予定の最新weekly合意を継承する。
