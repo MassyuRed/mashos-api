@@ -12215,3 +12215,18 @@ current failure17 IDを開始版API `537ac7449fb23e81fa5c0a184f0532d5e1b588ef`�
 長い「し」連結、主題/「のですね」反復、二層再掲、深さ不足、未対応説明形/訂正文法、旧17失敗は残る。formal Product Read PASS・全同名解消・群完了・商品提示準備へ昇格させない。次は同群の未対応説明形/訂正文法と明白な本文品質不足。同群閉鎖前に二層再掲の別作業へ進行しない。前回txt/u42、全体設計・全file地図3945（API2300/Cocolon1645）、rules/incident/current_structure、最新weekly 20260926の09/29合意を確認済み。全3945本文読了とは称さない。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/実機予定を維持。
 
 既存Supabase RPCのローカルPGlite fixture、live DB/実機/プロセス再起動未実施。System Context prepare/Supabase changelog取得エラーのNONCREDITと原典直接読取は前checkpointどおり。追加外部課金/Mash操作/production依存変更0。両PR Draft/open/unmerged、Ready/merge/deploy/enable/live適用0。今回exact6 modify＝API既存answer_update/GP/detached test/current identity/handoffの5＋Cocolon既存06の1、add/delete0。本finalは資料だけの更新。反映後の両資料全文・target blobs・parent/head・累積path・PR本文と状態の照合結果/最終headは既存PR3/30へ記録する。
+
+
+## 2026-10-01 JST u44 checkpoint：初回回答の有限感情説明形を既存本文へ接続
+
+開始API `57649b835dd5810e5c2c416c9d3671cae41a38d5` / Cocolon `777da728e2f6545adcfa9e5a1812cb136fdfe4a5`。前回txtを最新remoteと照合しu43 finalの実source・選択回帰を継承。新規やり直しではない。fresh全treeはAPI2300＋Cocolon1645＝3945 files、前提入口/rules/恒久incident全文、全体設計01/01A/01B/01C、current Emlis/CMEE構造、最新weekly 20260926の09/29合意、最新両handoff、対象source/testを確認。保存Contextは旧refでありfresh確認へ転用せず、prepareのPUBLICATION_RECOVERY_AMBIGUOUSはNONCREDITとして原典直接読取を使用。Karen-Diaryはread-only。
+
+**bounded work:** 本人の同名・異名複数出来事への初回・後続の独立回答で、既存語彙の「少し重かったのです」等がanswer_syntax_unsupportedとなる欠落を最小修復する。LEVEL_2・今回Mashの続行指示と既存範囲内の内部実装修復。root華恋のみ編集/試験/GitHub write、独立担当はread-only。既存source owner/作者/Plan/独立reader/公開・保存contractを継承。新owner/route/語彙/API/DB schema/RN/dependency/flag/外部サービス/課金/Mash操作追加0。primaryは限定TECHNICAL_CREDIT候補、群未完・商品NOT_CLEAR・default OFF・Draft/open/unmergedを維持。STRUCTURE_MAP_DELTA_NONE。
+
+原因は_answer_nucleusが説明形witnessをprior_answer_source付き引用訂正だけへ限定していたこと。通常回答（source_end未指定）にも既存finite feeling証明を認め、完全source範囲・主体・否定・程度・内側時制・外側説明形を保持する。quoted原memo置換（source_end指定、prior_answer_source無し）は従来の文法境界を維持。HR/Gate/Planとshared9owner identityは不変更。「楽しい」等の未対応語彙、第三者主体、伝聞、未完形、時点不明を推測で受理しない。
+
+新32条件は実記述位置8、意味/時点6、不受理6、本人の原反応訂正2、作者oracleを禁止した改変拒否6、保存4。同名の位置は原scalar開始位置も直接照合し、保存4×3回答後状態では原入力不変・訂正/撤回・generate禁止GET/start全文一致を検証する。旧detached test311301 bytesは完全prefixとして不変更。初回追加検査14FAILは新testのcheckpoint参照名、次の8FAILはsource span全文とevent断片を混同した新assertの誤りで、旧testやproduct sourceの失敗へ換算しない。新testだけをactual型と実記述位置照合へ補正した。現在、固定source/testで旧2833＋新32のfresh4分割回帰を実行中。全体結果は未確定でありPASSや群閉鎖をまだ称さない。
+
+独立read-only probeでは初回説明形の異名3位置/同名3位置/同名2位置の8入力が未提供から本文提供へ変わり、既存独立readerを通過。rootと独立担当が最終sourceの実本文を読む。長い「し」連結、主題/「のですね」反復、二層再掲、深さ不足は残る。原memo引用訂正の未対応説明形がcorrection_replacement_unsupportedとWITHDRAWを併記する既存挙動は今回不変更であり、正当な成功へ数えず同群の残件として保持する。
+
+同群を閉じる前に二層再掲の別作業へ進行しない。最新weeklyどおり10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/実機予定を維持。今回保存試験はローカル合成PGlite、live DB/実機/プロセス再起動未実施。Supabase changelog.md読取エラーはNONCREDITで、SDK/SQL変更は行わない。追加変更exact4 modify＝API既存answer_update/detached test/handoffの3＋Cocolon既存06の1、add/delete0。回帰完了後に同じ両引継ぎとPR本文へ結果/残件/最終headを更新する。

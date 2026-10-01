@@ -4700,3 +4700,121 @@ def test_exact_record_saved_corrections_withdrawals_and_generate_free_replay(qca
         with monkeypatch.context() as saved:
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved exact body must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+INITIAL_EXPLANATION_MEMOS = (
+    ('褒められたのに、嬉しくなかった。誘われたのに、悲しかった。頼まれたのに、寂しかった。', 3),
+    (EXACT_RECORD_MEMO, 3),
+    ('誘われたのに、悲しかった。誘われたのに、寂しかった。', 2),
+)
+
+
+@pytest.mark.parametrize('memo,position', [(memo, position)
+    for memo, count in INITIAL_EXPLANATION_MEMOS for position in range(count)])
+def test_initial_finite_explanation_keeps_each_actual_answer_target(memo, position):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    request = begin(memo)
+    for _ in range(position):
+        request = advance(request, 'その時は少し怖かった。')
+    request = advance(request, 'その時は少し重かったのです。')
+    prepared = prepare_emlis_meaning(request)
+    assert not prepared.checkpoint.unresolved_parts
+    context = actual(request=request)
+    result, plan, _, resolver, _ = context
+    assert '「少し重かったのです」' in result.artifact.observation
+    assert '少し重かったの' in result.artifact.reception
+    assert read_body(context, result.artifact.text).passed
+    assert MeaningExperienceEngine().generate(request).artifact.text == result.artifact.text
+    updated = prepared.checkpoint.answer_update.updates[-1]
+    about = [relation for relation in plan.relations if relation.type == 'evaluation_about_event'
+             and relation.to_nucleus_id in updated.changed_claim_refs]
+    assert len(about) == 1
+    target = next(row for row in plan.nuclei if row.nucleus_id == about[0].from_nucleus_id)
+    target_span = resolver.resolve(target.source_span_ids[0])
+    original_clauses = memo.split('。')
+    assert target_span.raw_text == original_clauses[position]
+    assert target_span.start_index == sum(len(clause) + 1 for clause in original_clauses[:position])
+    if count := memo.count('誘われたのに'):
+        if count == len(memo.split('。')) - 1:
+            expected = RECORD_PREFIXES if count == 3 else (RECORD_PREFIXES[0], RECORD_PREFIXES[2])
+            assert all(prefix in result.artifact.reception for prefix in expected)
+
+
+@pytest.mark.parametrize('reply,source,when', [
+    ('その時は少し重かったのです。', '少し重かったのです', 'original_occasion'),
+    ('今は少し重いのです。', '少し重いのです', 'answer_time'),
+    ('今は私も少し怖くないのです。', '私も少し怖くないのです', 'answer_time'),
+    ('その時は少し怖くなかったのだった。', '少し怖くなかったのだった', 'original_occasion'),
+    ('その時は少し嬉しかったのです。', '少し嬉しかったのです', 'original_occasion'),
+    ('今は嬉しいのです。', '嬉しいのです', 'answer_time'),
+])
+def test_initial_explanation_preserves_inner_tense_polarity_owner_and_time(reply, source, when):
+    context = actual(request=advance(begin(), reply))
+    result, plan, _, resolver, _ = context
+    assert '「' + source + '」' in result.artifact.observation
+    answer_nucleus = next(n for n in plan.nuclei if n.source_fields == ('answer_text_private',))
+    assert 'thread_time:' + when in answer_nucleus.semantic_frame.attribute_codes
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.mark.parametrize('reply', ['その時は少し楽しかったのです。', '今は楽しいのです。',
+    'その時は友人は少し重かったのです。', 'その時は少し重かったので。',
+    'その時は少し重かったらしいのです。', '少し重いのです。'])
+def test_initial_explanation_does_not_invent_lexicon_owner_or_time(reply):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    prepared = prepare_emlis_meaning(advance(begin(), reply))
+    assert not prepared.accepted_nuclei
+    assert prepared.checkpoint.unresolved_parts
+    assert all(item.operation != 'WITHDRAW' for item in prepared.checkpoint.answer_update.updates)
+
+
+@pytest.mark.parametrize('memo', [INITIAL_EXPLANATION_MEMOS[0][0], EXACT_RECORD_MEMO])
+def test_initial_explanation_explicit_self_correction_keeps_other_original_reactions(memo):
+    request = advance(begin(memo), '書き方を間違えた。その時は少し重かったのです。')
+    context = actual(request=request)
+    result = context[0]
+    assert '「少し重かったのです」' in result.artifact.observation
+    assert '「嬉しくなかった」' not in result.artifact.observation
+    assert '悲し' in result.artifact.reception and '寂し' in result.artifact.reception
+    assert read_body(context, result.artifact.text).passed
+
+
+@pytest.fixture(scope='module')
+def initial_explanation_context():
+    return actual(request=advance(begin(EXACT_RECORD_MEMO), '今は私も少し怖くないのです。'))
+
+
+@pytest.mark.parametrize('old,new', [('少し怖くない', '怖くない'), ('怖くない', '怖い'),
+    ('あなたも', '相手も'), ('回答した時点では', 'その時は'),
+    ('怖くない', '怖くなかった'), (RECORD_PREFIXES[0], RECORD_PREFIXES[2])])
+def test_initial_explanation_meaning_mutations_fail_without_author_oracle(initial_explanation_context, old, new):
+    context = initial_explanation_context
+    result = context[0]
+    changed = result.artifact.reception.replace(old, new, 1)
+    assert changed != result.artifact.reception
+    assert not read_body(context, result.artifact.text.replace(result.artifact.reception, changed, 1)).passed
+
+
+@pytest.mark.parametrize('memo', [INITIAL_EXPLANATION_MEMOS[0][0], EXACT_RECORD_MEMO])
+@pytest.mark.parametrize('last', ['「少し重かったのです」ではなく「少し苦しかったのです」です。',
+                                 '「少し重かったのです」は誤りです。'])
+def test_initial_explanation_saved_revision_withdrawal_and_nonregenerating_replay(qcase, qdb, monkeypatch, memo, last):
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$1 where id=$2', [memo, parent])
+    first = current = run(service.start(user, parent))
+    for position, reply in enumerate(('今は少し重かったのです。', 'その時は少し怖かった。', last)):
+        if position:
+            current = run(cont(service, user, current, f'initial-explanation-continue-{position}'))
+        current = run(answer(service, user, current, reply, f'initial-explanation-answer-{position}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        if position == 2:
+            assert '少し重かった' not in body
+            if 'ではなく' in last:
+                assert '「少し苦しかったのです」' in body and '先の回答時点では' in body
+            else:
+                assert '少し苦しかった' not in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved explanation must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
