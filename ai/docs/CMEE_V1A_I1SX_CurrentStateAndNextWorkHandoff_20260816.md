@@ -12548,3 +12548,40 @@ language identity `e6c5ffa895fbe0cc963fd2ce54e23b6c9502de0f1e1ca974e1e1839b4b429
 同名集合の別残件を具体化した。`EXACT_RECORD_MEMO`（主語なし同名3記述）に `TWO_POSITIVE_PAIRS` のどちらを順に回答しても、2回答後のObservationには原3反応と2回答が残る一方、ReceptionのMoveがanswer:s8だけとなり最後の回答一文へ縮退する。今回の前後とも同じで、修復済み・対象外へ付替えない。次はこの2回答後縮退を、既存の回答ABOUT/原出典位置の証明と選択を照合して共通原因から直す。SELF同名3件の2回答後は3Moveを保持するが、個別肯定回答文の同名eventに位置修飾がなく、読み手が回答先を区別しにくい点も残る。
 
 対象群は未完。他の長い連結、出来事/主題/受け止め句の反復、受け取りの深さ、未対応文法、複数文引用scope、4件以上同名集合も継承。同群閉鎖前に二層再掲へ移らない。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承し、合成検証を実DB/端末完了へ換算しない。
+
+## 2026-10-01 u54 — 同名出来事への複数肯定回答で失われていた受け取りを修復
+
+### 開始位置と範囲
+
+Mashの継続指示により、u53の次作業「主語なし同名3記述に2肯定回答後、Receptionが最後の回答だけへ縮退する」を直接修復した。開始remote HEADはAPI `cd9e77b2d3e529ecb4b65a9f6cfb4c85e982cc0a` / Cocolon `77df4426f899d8277aa4223c19ff7ce82be19474`。PRをfresh取得しu53を確認。作業用git HEADはu51だが、反映済みu53のworking bytesをそのまま継承し、8対象preimageのGit blob SHAを開始版と照合した。恒久incident全文、前提資料・current rule/構造map・全file inventory、最新weekly09/29追記とu53 handoffを確認。既知のsystem_context residual without markerに対する補助修復は作らず、前回の原典直接読取を継承する。
+
+必要性はOBSERVED_BLOCKER_MINIMAL_FIX。既存の出典証明・保持選択・本文作者・独立reader内のLEVEL_2修復で、read-only担当はPRODUCT_ROUTE_ALIGNEDと差分に阻害問題なしを確認した。rootがtechnical判断・生成・編集・検証・反映を担当。今回のexact outcomeは受理済みの肯定的な感情回答2〜3件で原反応と全回答を保持し、同じ名のどの原記述への回答かを可視化すること。受付文法・品質基準・独立改変拒否・Move/文数上限・公開contract・DB/RN/依存/flagは変更しない。別kindや新文法へscopeを自動拡張しない。
+
+### 原因と修正
+
+開始版4合成ケースを保存し、EXACT_RECORD_MEMO＋TWO_POSITIVE_PAIRS両系列では2回答後にMoveがanswer:s8だけとなることを再現した。SELF表記違いのRECORD_TRIPLE_MEMOは3Moveを持つが、各肯定回答の同名eventに原位置修飾がなかった。
+
+emlis_answer_updateは同名2回答になるとunique_source_clauseを外す一方、その代替のdistinct_source_occurrenceをnegativeのreactionにだけ与えていた。既存Planの保持groupも同じnegative制限があり、positive2ではgroupが空になって最新回答の通常選択へ落ちていた。両箇所で既に受理済みのpositive feelingにも同じ出典位置証明を適用する。原source envelope・memo field・scalar/UTF-8範囲・非重複・ABOUT・回答source・時点・typed metadata・全原出来事集合の条件を保ち、unique markerを偽装しない。回答の受付と意味分類は変更0。
+
+既存HRの個別回答/回答groupは、既存の原位置mapを各event主題へ適用する。Gateは別に導出したmapでprefixとeventを照合し、prefix bytesをsource eventのproofへ混ぜず、実本文offsetへ戻す。groupの境界も原位置付きのlabelで切る。3肯定回答のreaderは、unique markerがない時に原位置map・exact occurrence marker・原event範囲/接続詞/型・ABOUT source・時点を独立照合する。既存の直前同一event省略は維持し、旧無prefix全文も読めるが、誤った位置・群内の一部欠落は拒否する。新owner/helper/routeは作らない。
+
+修復後の2回答は原3反応の受け取りに加え、先の記述への「回答した時点では嬉しい」、間の記述への「その時は楽しかった」をそれぞれ返す。3回答目「今は私も少し楽しいです。」は後の記述への回答として保持する。rootはこれらと肯定/否定混合、訂正/撤回の実本文を読み、元の否定・回答先・回答時点が混ざらないことを確認した。長い連結・主題反復・深さまで改善済みとするものではない。
+
+### 検証
+
+- 最終追加40 unique条件は40 PASS。主語なし同名2/3記述・SELF同名3記述×memo/memo_action×2回答系列の12、3肯定回答の8、正常な全3ABOUT planから一箇所ずつ出典/関係/型/時点を変える拒否12、保存4系列、肯定/否定混合4。36条件は52.003秒、混合4は13.866秒。
+- 本文改変は原位置交換、回答先・主体・助詞・程度・否定・時制・時点・因果化・句欠落を作者禁止inverseで拒否。groupの直接readerはforward group関数も禁止し、実byte区間から3つのeventを取り出してprefixが混入していないことを確認。原範囲欠落/範囲外は既存typed-source例外で拒否する。
+- 旧無位置修飾の個別回答/group全文は独立readerで読取互換を確認した。旧アプリ実行環境の再現ではない。保存4系列は2回答後の第三回答・回答訂正・回答撤回・元反応訂正。各3更新後のgenerate禁止GET/start DTO全文一致、原DTOとDB原memo不変を確認。
+- 関連回帰192条件は191 PASS / 1 FAIL（182.771秒）。失敗はu48/u53から継承する test_equal_visible_event_names_keep_finite_source_occurrences[events1-True-その時は少し重かった。] の旧名詞形substring検査（ValueError）だけ。今回追加分と合わせ232 unique条件、231 PASS / 1 FAIL / ERROR 0 / SKIP 0。全suiteを実行したというcreditではない。current共有owner identity検査もPASS。
+- 新36の初回は26 PASS / 10 FAIL（57.03秒）。8件は試験が本文作者だけでなく既存referent用metadata取得まで禁止したため、2件は不正typed-source範囲の拒否を例外ではなくNoneと期待したため。12guardの初稿は元のABOUTを予め一つ除く不適切な前提だったので、全3ABOUTの正常読取成功から各一変更へ直して全36をfresh再実行した。初稿を成功creditへ換算しない。混合4の初回2失敗は新testが原反応を「悲しかった」の固定形で探したためで、実本文の「悲しさを感じた」をrootが確認し、意味復元・時点改変拒否を維持した検査へ直して4を再実行した。既存旧assertの変更ではない。
+- 開始版4ケースと比べ、Observation4/4同一、出典位置証明codeを除く核意味4/4同一、関係4/4同一。裸同名2ケースは1Move→3Moveで欠落を修復。SELF同名2ケースは3Moveのまま回答先を可視化。新4本文と、旧全内容を持つSELF同名2本文は作者禁止inverse PASS。旧縮退本文を完全保持済みとして読取合格へ換算しない。
+
+旧detached test 392089 bytesの全文prefix、旧assert・skip/xfail・historical frozen identityは保持。current共有owner identityのみ再導出した。language `9b0ee3fa3f35b7a199468acc1c6b39ebaa8ef1e51fb27022bf1d437c95afaaf4` / runtime `44de97f7f7fb945fb62f6cd57035969efdba2a062ffe66d14d9e9c7a74d6e8f9`。Python3.12.14 / pytest9.1.1 / PGlite0.5.8の合成検証で、実DB・端末・プロセス再起動は未検証。
+
+反映対象はexact8 modify、追加/削除0：API emlis_answer_update・Plan・HR・Gate・既存detached test末尾・current共有owner identity・本handoff、Cocolon正本06。STRUCTURE_MAP_DELTA_NONE：既存owner内部で、entry/owner/API/DB/RN/国家fanout/他中核/依存/flag変更0。final HEAD、変更path集合、remote全文一致は両PRに記録する。
+
+### 残件・次の一作業
+
+第三回答「今は少し安心です。」の別縮退を実測した。受理後のanswer:s9はkind=value / predicate=value / modality=fact / polarity=positive、operator:feelingなしであり、今回扱ったreaction/feelingの出典証明・保持groupには入らない。原3反応と先の2回答もReceptionから縮退する。この縮退は今回も残り、未対応入力へ付替えて対象群を閉じない。今回の修復へ語彙やkindの一律変換は混ぜていない。次はこの受理済み感情名詞の既存意味分類と受け取り選択を照合し、原反応・他回答を失わない共通原因修復を行う。
+
+同群の他の長い連結、出来事/主題/受け止め句の反復、受け取りの深さ、未対応文法、複数文引用scope、4件以上同名集合を継承。群は未完で二層再掲の別作業へ先行しない。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmerged、Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を保持し、合成検証を実DB/端末完了へ換算しない。

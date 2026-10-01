@@ -5946,3 +5946,222 @@ def test_finite_original_temporal_pair_saved_progress_correction_and_withdrawal(
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
     assert not current['can_continue']
     assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == RECORD_TRIPLE_MEMO
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('memo', [EXACT_RECORD_MEMO, RECORD_TRIPLE_MEMO,
+                                 '誘われたのに、嬉しくなかった。誘われたのに、悲しかった。'])
+@pytest.mark.parametrize('answers', TWO_POSITIVE_PAIRS)
+def test_same_name_positive_answers_keep_all_originals_and_each_written_target(field, memo, answers):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning
+    request = begin(memo if field == 'memo' else '', memo if field == 'memo_action' else '')
+    for reply in answers:
+        request = advance(request, reply)
+    prepared = prepare_emlis_meaning(request)
+    context = actual(request=request)
+    result, plan, _, resolver, selected = context
+    body, follow = result.artifact.text, result.artifact.reception
+    assert MeaningExperienceEngine().generate(request).artifact.text == body
+    assert not prepared.checkpoint.unresolved_parts
+    assert len(plan.response_plan.human_reception_plan.moves) == 3
+    assert '嬉し' in follow and '悲しさ' in follow
+    count = memo.count('。')
+    if count == 3:
+        assert '寂しさ' in follow
+    prefixes = RECORD_PREFIXES if count == 3 else (RECORD_PREFIXES[0], RECORD_PREFIXES[2])
+    event = 'あなたは誘われた' if memo == RECORD_TRIPLE_MEMO else '誘われた'
+    answer_moves = [m for m in plan.response_plan.human_reception_plan.moves
+                    if m.reception_act == 'recognize_lived_change']
+    assert len(answer_moves) == 2
+    for position, (move, reply) in enumerate(zip(answer_moves, answers)):
+        answer_nid, = move.target_nucleus_ids
+        about, = [r for r in plan.relations if r.type == 'evaluation_about_event'
+                  and r.to_nucleus_id == answer_nid]
+        original = next(n for n in plan.nuclei if n.nucleus_id == about.from_nucleus_id)
+        span = resolver.resolve(original.source_span_ids[0])
+        assert span.source_field == field
+        clauses = memo.split('。')
+        assert span.start_index == sum(len(c) + 1 for c in clauses[:position])
+        when = '回答した時点では' if reply.startswith('今は') else 'その時は'
+        feeling = reply[2:-1] if reply.startswith('今は') else reply[4:-1]
+        clause = prefixes[position] + event + 'ことについて、' + when + feeling + 'のですね。'
+        assert clause in follow
+        proof = gate._read_answer_feeling_discourse(clause, move, plan, resolver, selected)
+        assert proof is not None
+        assert next(clause.encode()[a:b].decode() for a, b, source in proof
+                    if source.decode() == clauses[position].split('のに')[0]) == event
+        wrong = clause.replace(prefixes[position], prefixes[(position + 1) % len(prefixes)], 1)
+        assert not read_body(context, body.replace(clause, wrong, 1)).passed
+        assert not read_body(context, body.replace(clause, '', 1)).passed
+        for old, new in [(when, '先の回答時点では'), (feeling, '嬉しくない'),
+                         (feeling, '友人は' + feeling), ('ことについて、', 'ことが原因で、')]:
+            changed = clause.replace(old, new, 1)
+            assert changed != clause
+            assert not read_body(context, body.replace(clause, changed, 1)).passed
+    assert read_body(context, body).passed
+    # Old unqualified saved answers remain readable; current prose names
+    # each written target. Qualification must never alter the event proof.
+    legacy = follow
+    for prefix in prefixes:
+        legacy = legacy.replace(prefix + event + 'ことについて、', event + 'ことについて、')
+    assert legacy != follow and read_body(context, body.replace(follow, legacy, 1)).passed
+
+
+@pytest.fixture(scope='module')
+def same_name_positive_three_context():
+    request = begin(EXACT_RECORD_MEMO)
+    for reply in (*TWO_POSITIVE_PAIRS[0], '今は私も少し楽しいです。'):
+        request = advance(request, reply)
+    return actual(request=request)
+
+
+@pytest.mark.parametrize('memo', [EXACT_RECORD_MEMO, RECORD_TRIPLE_MEMO])
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('third', ['今は私も少し楽しいです。', 'その時は私は少し嬉しかったです。'])
+def test_same_name_positive_group_retains_three_answers_and_originals(memo, field, third):
+    request = begin(memo if field == 'memo' else '', memo if field == 'memo_action' else '')
+    for reply in (*TWO_POSITIVE_PAIRS[0], third):
+        request = advance(request, reply)
+    context = actual(request=request)
+    result, plan, _, resolver, selected = context
+    follow = result.artifact.reception
+    assert len(plan.response_plan.human_reception_plan.moves) == 2
+    assert all(token in follow for token in ('嬉し', '悲しさ', '寂しさ', '回答した時点では嬉しい', 'その時は楽しかった'))
+    assert all(follow.count(prefix) == 2 for prefix in RECORD_PREFIXES)
+    expected = '回答した時点ではあなたも少し楽しい' if third.startswith('今は') else 'その時はあなたは少し嬉しかった'
+    assert expected in follow
+    move, = [m for m in plan.response_plan.human_reception_plan.moves if m.reception_act == 'recognize_lived_change']
+    assert len(move.target_nucleus_ids) == 3
+    raw = follow.split('。')[1] + '。'
+    with patch.object(reception, 'source_grounded_thread_answer_group', side_effect=AssertionError('no group author')):
+        proof = gate._read_positive_answer_group_discourse(raw, move, plan, resolver, selected)
+        assert proof is not None and len(proof) == 6
+        event = 'あなたは誘われた' if memo == RECORD_TRIPLE_MEMO else '誘われた'
+        assert [raw.encode()[a:b].decode() for a, b, _ in proof][::2] == [event] * 3
+    assert read_body(context, result.artifact.text).passed
+    legacy = raw
+    for prefix in RECORD_PREFIXES:
+        legacy = legacy.replace(prefix, '')
+    assert read_body(context, result.artifact.text.replace(raw, legacy, 1)).passed
+    for old, new in [(RECORD_PREFIXES[0], RECORD_PREFIXES[2]),
+        (RECORD_PREFIXES[1], RECORD_PREFIXES[0]), (RECORD_PREFIXES[2], RECORD_PREFIXES[1]),
+        ('回答した時点では嬉しい', 'その時は嬉しい'), ('嬉しいし、', '嬉しいので、'),
+        ('その時は楽しかった', 'その時は楽しくなかった'), ('少し', ''),
+        ('あなたも' if third.startswith('今は') else 'あなたは', '相手は')]:
+        changed = raw.replace(old, new, 1)
+        assert changed != raw and not read_body(context, result.artifact.text.replace(raw, changed, 1)).passed
+    for position in range(3):
+        clauses = raw.removesuffix('のですね。').split('し、')
+        changed = 'し、'.join(clauses[:position] + clauses[position + 1:]) + 'のですね。'
+        assert not read_body(context, result.artifact.text.replace(raw, changed, 1)).passed
+
+
+@pytest.mark.parametrize('mutation', ['missing', 'duplicate', 'same_event', 'wrong_proof', 'unknown',
+    'source_range', 'range_value', 'source_order', 'source_link', 'relation_source', 'answer_time', 'event_kind'])
+def test_same_name_positive_occurrence_proof_keeps_existing_rejection_guards(same_name_positive_three_context, mutation):
+    import emlis_ai_grounded_observation_plan as gp
+    result, plan, _, resolver, selected = same_name_positive_three_context
+    move, = [m for m in plan.response_plan.human_reception_plan.moves if m.reception_act == 'recognize_lived_change']
+    raw = result.artifact.reception.split('。')[1] + '。'
+    assert gp._thread_retained_reaction_groups(plan.nuclei, plan.relations)
+    assert gate._read_positive_answer_group_discourse(raw, move, plan, resolver, selected) is not None
+    links = [r for r in plan.relations if r.type == 'evaluation_about_event']
+    first, second = links[:2]
+    nuclei, relations, coverage = plan.nuclei, plan.relations, plan.coverage_requirements
+    if mutation == 'missing':
+        relations = tuple(r for r in relations if r != first)
+    elif mutation == 'duplicate':
+        relations = (*relations, replace(first, relation_id='duplicate-about'))
+        coverage = replace(coverage, required_relation_ids=(*coverage.required_relation_ids, 'duplicate-about'))
+    elif mutation == 'same_event':
+        relations = tuple(replace(r, from_nucleus_id=first.from_nucleus_id) if r == second else r for r in relations)
+    elif mutation == 'relation_source':
+        relations = tuple(replace(r, source_span_ids=(*r.source_span_ids, r.source_span_ids[0]))
+                          if r == first else r for r in relations)
+    elif mutation == 'answer_time':
+        nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame, attribute_codes=tuple(
+            'thread_time:original_occasion' if c == 'thread_time:answer_time' else c
+            for c in n.semantic_frame.attribute_codes))) if n.nucleus_id == first.to_nucleus_id else n for n in nuclei)
+    elif mutation in {'source_range', 'range_value', 'source_order', 'source_link', 'event_kind'}:
+        other = next(n for n in nuclei if n.nucleus_id == second.from_nucleus_id)
+        changed = []
+        for n in nuclei:
+            if n.nucleus_id == first.from_nucleus_id:
+                if mutation == 'source_order':
+                    n = replace(n, source_span_ids=other.source_span_ids)
+                elif mutation == 'event_kind':
+                    n = replace(n, semantic_frame=replace(n.semantic_frame, predicate_kind='state'))
+                else:
+                    codes = tuple(c for c in n.semantic_frame.attribute_codes
+                                  if mutation != 'source_range' or not c.startswith('source_fragment_scalar_range:'))
+                    codes = tuple('source_fragment_scalar_range:0:999' if mutation == 'range_value'
+                        and c.startswith('source_fragment_scalar_range:') else 'source_received_event_link:kedo'
+                        if mutation == 'source_link' and c.startswith('source_received_event_link:') else c for c in codes)
+                    n = replace(n, semantic_frame=replace(n.semantic_frame, attribute_codes=codes))
+            changed.append(n)
+        nuclei = tuple(changed)
+    else:
+        nuclei = tuple(replace(n, kind='state', semantic_frame=replace(n.semantic_frame,
+            predicate_kind='state', modality='uncertain')) if mutation == 'unknown' and n.nucleus_id == first.to_nucleus_id
+            else replace(n, semantic_frame=replace(n.semantic_frame, attribute_codes=tuple(
+                'thread_subject:distinct_source_occurrence:s999' if c.startswith('thread_subject:distinct_source_occurrence:') else c
+                for c in n.semantic_frame.attribute_codes))) if mutation == 'wrong_proof' and n.nucleus_id == first.to_nucleus_id
+            else n for n in nuclei)
+    changed = replace(plan, nuclei=nuclei, relations=relations, coverage_requirements=coverage)
+    assert not gp._thread_retained_reaction_groups(nuclei, relations)
+    if mutation in {'source_range', 'range_value'}:
+        with pytest.raises(reception.GroundedHumanReceptionSurfaceError, match='typed_reception_source_fragment_contract_invalid'):
+            gate._read_positive_answer_group_discourse(raw, move, changed, resolver, selected)
+    else:
+        assert gate._read_positive_answer_group_discourse(raw, move, changed, resolver, selected) is None
+
+
+@pytest.mark.parametrize('last', ['今は少し楽しい。', '「嬉しい」ではなく「私も少し楽しいです」です。',
+                                 '「嬉しい」は誤りです。', '「悲しかった」ではなく「少し苦しかった」です。'])
+def test_same_name_positive_saved_add_revision_withdrawal_and_replay(qcase, qdb, monkeypatch, last):
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    qdb.query('update public.emotions set memo=$1 where id=$2', [EXACT_RECORD_MEMO, parent])
+    first = current = run(service.start(user, parent))
+    for index, reply in enumerate((*TWO_POSITIVE_PAIRS[0], last)):
+        if index:
+            current = run(cont(service, user, current, f'same-positive-continue-{index}'))
+        current = run(answer(service, user, current, reply, f'same-positive-answer-{index}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        body = current['current_observation']['text']
+        if index == 1:
+            assert all(s in body for s in ('嬉しさ', '悲しさ', '寂しさ', '回答した時点では嬉しい', 'その時は楽しかった'))
+        if index == 2:
+            assert 'その時は楽しかった' in body
+            if '誤り' in reply:
+                assert '回答した時点では嬉しい' not in body and '嬉しくなかった' in body
+            elif '私も' in reply:
+                assert '先の回答時点ではあなたも少し楽しい' in body
+            elif '苦しかった' in reply:
+                assert '悲しかった' not in body and '少し苦しかった' in body
+            else:
+                assert RECORD_PREFIXES[2] + '誘われたことについて、回答した時点では少し楽しい' in body
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved positive occurrences must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    assert not current['can_continue']
+    assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == EXACT_RECORD_MEMO
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('answers', [('今は嬉しい。', 'その時は少し苦しかった。'),
+                                    ('その時は少し重かった。', '今は楽しい。')])
+def test_same_name_positive_and_negative_answers_keep_separate_sources(field, answers):
+    request = begin(EXACT_RECORD_MEMO if field == 'memo' else '', EXACT_RECORD_MEMO if field == 'memo_action' else '')
+    for reply in answers:
+        request = advance(request, reply)
+    context = actual(request=request)
+    follow = context[0].artifact.reception
+    assert all(value in follow for value in ('嬉し', '悲し', '寂し'))
+    for reply in answers:
+        when, feeling = ('回答した時点では', reply[2:-1]) if reply.startswith('今は') else ('その時は', reply[4:-1])
+        assert when + feeling in follow
+        altered = follow.replace(when + feeling, '先の回答時点では' + feeling, 1)
+        assert not read_body(context, context[0].artifact.text.replace(follow, altered, 1)).passed
+    assert read_body(context, context[0].artifact.text).passed

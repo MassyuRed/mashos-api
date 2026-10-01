@@ -3283,6 +3283,13 @@ def _read_answer_feeling_discourse(raw, move, plan, resolver, selected_subjectiv
 def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, shared_event=False,
                                allow_past_copular=False):
     """Restore one complete answer and its own event/time from actual bytes."""
+    qualifier = re.match(r"(?:先|間|後)に書かれた方では、", raw)
+    offset = 0
+    if qualifier is not None:
+        if qualifier.group() != _read_received_record_prefixes(plan, resolver).get(event.nucleus_id):
+            return None
+        offset = len(qualifier.group().encode())
+        raw = raw[qualifier.end():]
     index = {n.nucleus_id: n for n in plan.nuclei}
     event_text, source = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
                           for n in (event, answer))
@@ -3330,13 +3337,13 @@ def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, sha
         if not parsed_event.startswith("あなた"):
             return None
         parsed_event = event_owner.group() + parsed_event[len("あなた"):]
-    if (parsed is None or (parsed_event != event_text
+    if (parsed is None or qualifier is not None and parsed_event is None or (parsed_event != event_text
             and not (parsed['event'] is None and shared_event)) or parsed['time'] != expected_time
         or _restore_thread_finite_answer(parsed['feeling'] + ("のだった" if past_explanation else ""), source,
             copular_clause=explanation_proven or past_copular_proven,
             shared_explanatory_ending=explanation_proven) != source):
         return None
-    return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
+    return tuple((offset + len(raw[:parsed.start(key)].encode()), offset + len(raw[:parsed.end(key)].encode()), value.encode())
                  for key, value in (("event", event_text), ("feeling", source))
                  if parsed[key] is not None)
 
@@ -3356,6 +3363,8 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
     index = {n.nucleus_id: n for n in plan.nuclei}
     rows = []
     positive = move.reception_act == "recognize_lived_change"
+    record_prefixes = _read_received_record_prefixes(plan, resolver)
+    qualified = re.search(r"(?:先|間|後)に書かれた方では、", raw) is not None
     for nid in move.target_nucleus_ids:
         answer = index[nid]
         frame = answer.semantic_frame
@@ -3369,7 +3378,6 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
             or answer.retention != "required" or answer.grounding_kind != "explicit"
             or answer.source_fields != ("answer_text_private",) or len(answer.source_span_ids) != 1
             or answer.allowed_claim_scope != "explicit_supplemental_answer"
-            or "thread_subject:unique_source_clause" not in frame.attribute_codes
             or len(times) != 1 or times[0] not in {"original_occasion", "answer_time", "prior_answer_time"}
             or frame.time_scope != ("past" if times[0] == "original_occasion" else "present")
             or len(about) != 1 or about[0].retention != "required"
@@ -3384,7 +3392,32 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
         event_text = final_reception_source_anchor_text(event.nucleus_id, index, resolver)
         if not event_text:
             return None
+        if "thread_subject:unique_source_clause" not in frame.attribute_codes:
+            # Equal names remain distinct only through their original written
+            # positions and this answer's exact ABOUT/range/time binding.
+            ranges = tuple(c for c in event.semantic_frame.attribute_codes
+                           if c.startswith("source_fragment_scalar_range:"))
+            links = tuple(c for c in event.semantic_frame.attribute_codes
+                          if c.startswith("source_received_event_link:"))
+            if (event.nucleus_id not in record_prefixes or len(event.source_span_ids) != 1
+                or event.allowed_claim_scope != "explicit_current_input"
+                or event.semantic_frame.predicate_kind != "event"
+                or not {"semantic_role:final_stage1_compound_meaning",
+                        "source_fragment_scalar_source:normalized_raw_text"}
+                    <= set(event.semantic_frame.attribute_codes)
+                or ranges != (f"source_fragment_scalar_range:0:{len(event_text)}",)
+                or len(links) != 1 or links[0] not in {"source_received_event_link:noni",
+                    "source_received_event_link:kedo", "source_received_event_link:keredo",
+                    "source_received_event_link:keredomo"}
+                or len(about[0].source_span_ids) != 2
+                or set(about[0].source_span_ids) != set((*event.source_span_ids, *answer.source_span_ids))
+                or {c for c in frame.attribute_codes if c.startswith("thread_subject:distinct_source_occurrence:")}
+                    != {"thread_subject:distinct_source_occurrence:" + event.source_span_ids[0]
+                        + ":thread_time:" + times[0] + ":" + ranges[0] + ":" + links[0]}):
+                return None
         event_visible = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event_text, count=1)
+        if qualified:
+            event_visible = record_prefixes.get(event.nucleus_id, "") + event_visible
         rows.append((event, answer, times[0], event_visible))
     if len({event.nucleus_id for event, _, _, _ in rows}) != len(rows):
         return None
@@ -3395,6 +3428,8 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
             or appraisal.operation != "RECEIVE_AS_MATERIAL"):
             return None
     cuts = [0]
+    if qualified and not raw.startswith(rows[0][3] + "ことについて、"):
+        return None
     later_labels = [row[3] for row in rows[1:]]
     for position, event_text in enumerate(later_labels):
         boundaries = tuple(re.finditer(re.escape("し、" + event_text + "ことについて、"), raw))

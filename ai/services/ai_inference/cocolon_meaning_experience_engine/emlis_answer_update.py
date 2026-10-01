@@ -371,7 +371,7 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
                 links = tuple(c for c in event.semantic_frame.attribute_codes
                               if c.startswith("source_received_event_link:"))
                 times = tuple(c for c in n.semantic_frame.attribute_codes if c.startswith("thread_time:"))
-                if (n.kind == "reaction" and n.semantic_frame.polarity == "negative"
+                if (n.kind == "reaction" and n.semantic_frame.polarity in {"negative", "positive"}
                     and n.semantic_frame.predicate_kind == n.semantic_frame.modality == "feeling"
                     and len(n.source_span_ids) == 1
                     and answer_ref.field_path == ANSWER_FIELD

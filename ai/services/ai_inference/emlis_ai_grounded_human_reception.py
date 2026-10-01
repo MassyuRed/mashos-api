@@ -11020,6 +11020,7 @@ def _source_owned_positive_answer_group_sentence(move, realization, plan, resolv
         return None
     parts = []
     event_labels = []
+    record_prefixes = _received_event_record_prefixes(plan, resolver)
     for row in rows:
         event_visible = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", row.event_fragment, count=1)
         finite = _detached_feeling_finite_surface(row.source, allow_medial=True,
@@ -11033,8 +11034,9 @@ def _source_owned_positive_answer_group_sentence(move, realization, plan, resolv
             return None
         time = {"original_occasion": "その時は", "answer_time": "回答した時点では",
                 "prior_answer_time": "先の回答時点では"}[row.when]
-        event_labels.append(event_visible)
-        parts.append(event_visible + "ことについて、" + time + finite)
+        event_label = record_prefixes.get(row.event_id, "") + event_visible
+        event_labels.append(event_label)
+        parts.append(event_label + "ことについて、" + time + finite)
     text = "し、".join(parts[:-1]) + "し、" + _feeling_acknowledgement(parts[-1])
     # Distinct source events may share a recipient-facing name. Keep every
     # occurrence in order, but do not mistake an embedded extra anchor for it.
@@ -11091,7 +11093,8 @@ def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
     from emlis_ai_grounded_observation_gate import _answer_feeling_preceding_event
     shared_event = _answer_feeling_preceding_event(
         move, plan, resolver, selected_subjective_input, preceding_context)
-    topic = "" if shared_event else event_visible + "ことについて、"
+    topic = "" if shared_event else (_received_event_record_prefixes(plan, resolver).get(event.nucleus_id, "")
+                                    + event_visible + "ことについて、")
     return topic + time + _feeling_acknowledgement(finite)
 
 

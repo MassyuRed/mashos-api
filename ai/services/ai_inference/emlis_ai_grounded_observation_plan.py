@@ -7943,7 +7943,7 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
                                        "source_received_event_link:keredo", "source_received_event_link:keredomo"}
             and about[0].grounding_kind == "user_stated_relation" and len(about[0].source_span_ids) == 2
             and set(about[0].source_span_ids) == set((*occurrence_event.source_span_ids, *n.source_span_ids))
-            and n.kind == "reaction" and frame.polarity == "negative"
+            and n.kind == "reaction" and frame.polarity in {"negative", "positive"}
             and {c for c in frame.attribute_codes if c.startswith("thread_subject:distinct_source_occurrence:")}
                 == {"thread_subject:distinct_source_occurrence:"
                     + occurrence_event.source_span_ids[0] + ":" + next(iter(times))
