@@ -279,8 +279,14 @@ _FEELING_RE: Final = re.compile(
 # achievement, a value placed on reassurance, and embedded feelings are not
 # licensed by finding one of these nouns inside a larger proposition.
 _THREAD_POSITIVE_FEELING_COPULA_RE: Final = re.compile(
-    r"(?:私は|私も|自分は|私には|僕には)?(?:少し|とても)?"
+    r"(?:(?:私は|私も|自分は|私には|僕には)?(?:少し|とても)?"
+    r"|(?:少し|とても)(?:私は|私も|自分は|私には|僕には))"
     r"(?:安心|平穏|幸せ)(?:でした|だった|です|だ)"
+)
+_THREAD_NEGATIVE_FEELING_COPULA_RE: Final = re.compile(
+    r"(?:(?:私は|私も|自分は|私には|僕には)?(?:少し|とても)?"
+    r"|(?:少し|とても)(?:私は|私も|自分は|私には|僕には))"
+    r"(?:安心|平穏|幸せ)では(?:なかった|ない)(?:です)?"
 )
 _HELP_SEEKING_RE: Final = re.compile(
     r"(?:相談|面談|受診|診察|予約|窓口|連絡先|相談先|支援先|助けを求め|話を聞いてもら)"

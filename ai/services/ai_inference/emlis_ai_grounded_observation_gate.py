@@ -42,6 +42,7 @@ from emlis_ai_grounded_human_reception import (
 from emlis_ai_grounded_observation_plan import (
     _FEELING_RE,
     _THREAD_POSITIVE_FEELING_COPULA_RE,
+    _THREAD_NEGATIVE_FEELING_COPULA_RE,
     FINAL_STAGE1_GROUNDED_PROJECTION_VERSION,
     GroundedObservationPlan,
     is_grounded_positive_feeling,
@@ -2957,7 +2958,9 @@ def _thread_feeling_owner(source):
     host = explanation[1] if explanation else tail
     noun = re.fullmatch(r"(.+?)(?:な|だった|ではない|ではなかった)" if explanation
                         else r"(.+?)(?:でした|だった|です|だ)", host)
-    if noun is not None and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い"):
+    if (noun is not None and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い")
+        or _THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(source)
+        or _THREAD_NEGATIVE_FEELING_COPULA_RE.fullmatch(source)):
         return medial
     adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)(?:です)?", host)
     if adjective is not None and (

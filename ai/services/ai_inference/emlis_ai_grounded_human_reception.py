@@ -34,6 +34,7 @@ from emlis_ai_grounded_observation_plan import (
     past_reported_wish_finite,
     _FEELING_RE,
     _THREAD_POSITIVE_FEELING_COPULA_RE,
+    _THREAD_NEGATIVE_FEELING_COPULA_RE,
     _direct_finite_carrier_shape,
     _bounded_nominal_wish_endpoint,
     _bounded_bare_wish_nominal,
@@ -10823,7 +10824,9 @@ def _medial_feeling_owner(source):
     adjective_proven = adjective is not None and (
         _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
         or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1]))
-    return owner if noun_proven or adjective_proven else None
+    return owner if (noun_proven or adjective_proven
+        or _THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(source)
+        or _THREAD_NEGATIVE_FEELING_COPULA_RE.fullmatch(source)) else None
 
 
 def _feeling_predicate_host(source):

@@ -129,7 +129,8 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
                             safety_span_order={}, normalized_input=local)
     frame = gp._semantic_frame_for_span(local_span, kind=kind, roles=(), claim_ids=(),
                                         normalized_input=local)
-    nominal_feeling = bool(gp._THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(bounded)
+    negative_nominal = gp._THREAD_NEGATIVE_FEELING_COPULA_RE.fullmatch(bounded)
+    nominal_feeling = bool((gp._THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(bounded) or negative_nominal)
         and kind not in {"event", "other_explicit"}
         and gp._source_operator_owner_scope_is_bound(bounded))
     # A finite self belief is retained as a belief, not its complement's
@@ -147,14 +148,14 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
                         polarity="negative" if re.search(r"ない|なかった|重|苦|つら|辛", bounded) else "neutral")
     elif _FEELING.fullmatch(bounded) or explained_feeling or nominal_feeling:
         kind = "reaction"
-        negative = bool(re.search(r"くない|くなかった|寂|さび|悲|苦|つら|辛|怖|こわ|重", bounded))
+        negative = bool(negative_nominal or re.search(r"くない|くなかった|寂|さび|悲|苦|つら|辛|怖|こわ|重", bounded))
         frame = replace(frame, predicate_kind="feeling", modality="feeling",
                         polarity="negative" if negative else "positive",
                         # The complete answer grammar is the feeling witness,
                         # including replacements whose source has no shared
                         # lexical operator. Preserve it for every admitted
-                        # positive form, independently of the self pronoun.
-                        attribute_codes=(frame.attribute_codes if negative else
+                        # positive or nominal form, independently of the self pronoun.
+                        attribute_codes=(frame.attribute_codes if negative and not nominal_feeling else
                             tuple(dict.fromkeys((*frame.attribute_codes, "operator:feeling")))))
     elif not gp._source_operator_owner_scope_is_bound(bounded):
         # A uniquely located, admitted answer can keep its own finite
