@@ -12190,3 +12190,28 @@ Python3.12.14/pytest9.1.1/pydantic2.13.5/FastAPI0.142.2/httpx0.28.1/PGlite0.5.8�
 source ownerは既存raw/scalar/UTF-8非重複と独立answer evidenceを保持し、内部markerを実認定event span・answer time・scalar range・received connectorへbindingする。Plan新branchだけでtyped event predicate/initial range/connector、answer span exact1、ABOUT user_stated_relation/endpoints exact2、time exact1とmarker全文一致を再確認する。既存mixed-edge window全文・unique guard・HR/Gate・admission・公開/保存contractは不変更。現sourceで新42＋関連旧16の58条件fresh PASS（53.91秒）。その後event predicate改変拒否1を追加し新43となるため、全体最終回帰で採用する。先行50 PASSは中間版、category誤り時の25 FAIL / 33 PASSは未成功記録として保持する。
 
 現行identityはGP AST/rawと派生値だけを更新し18language/18runtime payload・9owner保持。language `43607fd46d38efa45626842993fc92cc01b12990c813da81cd85a9255dcede99` / runtime `a607911267d83db042d5f5a50695c5c6a2bcb60249281732be2533cb2847b40c`。最終固定sourceへ旧2790＋新43のfresh4分割とcurrent identityを実行する。全体結果はまだ未確定。範囲は同じexact6 modify、STRUCTURE_MAP_DELTA_NONE。商品0/3・NOT_CLEAR・群未完、Draft/open/unmerged・default OFF、live DB/実機未実施、weeklyの10/03休止等を維持。結果とfinal headは同じ既存引継ぎ/PRへ追記する。
+
+
+## 2026-10-01 JST u43 final：同名の複数回答・訂正における内容欠落修復／選択回帰完了
+
+直前checkpointの「最終回帰未確定」を以下の確定結果で更新する。限定TECHNICAL_CREDITであり、商品0/3・NOT_CLEAR・群未完・全体48%・default OFFを維持する。
+
+最終source checkpoint：API `7fd6751716224ffc1ca128c3e932175904b403ab` / Cocolon `f4b12256564da81f2115e6fb17bdd857b73f09e0`。全原text eventが同名の2/3記述で、全active answerの実ABOUT先・独立source・実位置が証明できる時だけdistinct_source_occurrenceを認定する。mixed入力の部分群へ拡張しない。Planでもtyped event predicate/初期scalar範囲/connector、ABOUT endpoints、answer span、timeとmarker全文を照合し、既存ordered_source_window/provenance拒否条件を保持する。HR/Gate・回答admission・公開/保存contract・DB schema・RN・flag・production依存・owner/routeは不変更。STRUCTURE_MAP_DELTA_NONE。
+
+固定Git blobs：answer_update `cf26ec21273a72d58c3581e75aa7fe38076d79bc`、GP `a307a247c0fd827b46dd733df8462c9acae892cd`、detached test `fc683c3f3fd5560c0becf29617fc860bda252bea`、current identity `03b703524e2bd9e1b3007874cc23c6086c9131c0`。旧detached testの300012 bytes/4527行は完全prefixとして不変更、11289 bytes/175行だけ末尾追加。旧test削除・期待値変更・skip/xfail追加0。
+
+**最終fresh選択回帰：** Q1 thread75・received989・detached1769の全2833 ID（旧2790＋新43）を4 shardで実行。2816 PASS / 既存17 FAIL、ERROR0/SKIP0、旧ID欠落0・重複0、新43全PASS。shard709/708/708/708、pytest時間478.37/423.48/499.35/443.84秒。current identity既存試験1 PASS（28.77秒）を別実行で加えたunique選択2834 IDは**2817 PASS / 既存17 FAIL**。単一pytestの件数や全API/全アプリ試験成功とは称さない。
+
+current failure17 IDを開始版API `537ac7449fb23e81fa5c0a184f0532d5e1b588ef`でfresh再現し、全17 FAIL（23.1秒）、全phase成否差0。failure集合は従前の旧17（Q1 thread3/received8/detached6）と完全一致。初期候補の追加回帰8は最終currentで全PASS。repo root・memory address・生成UUIDだけを正規化したpytest診断17/17一致、差0。assert内容は削っていない。これは失敗診断比較で、意味IR全trace一致の証明ではない。rootと独立技術担当が件数/ID/開始版再現/診断を照合した。未選択Q3既知259等は再実行も解消判定もしていない。
+
+新43には同名2/3原記述への当時/回答時点の複数回答・原反応訂正・回答再訂正/撤回、保存4系列×3回答後状態計12のoriginal保持とgenerate禁止GET/start DTO全文一致、本文意味改変・ABOUT/proof/unknown・typed metadata/time/range/connector改変の拒否、mixed original集合の不拡張を含む。初期候補2824件の25 FAIL（旧17＋今回8）、categoryを原textへ数えた中間25 FAIL/33 PASSは未成功履歴のまま保持。最初の処理落ちで失われた8並列実行はNONCREDIT。以後の再開では保存済みsource/workspace/完了結果を使用した。
+
+現行identityは18language/18runtime payload・9shared ownerを保持。language `43607fd46d38efa45626842993fc92cc01b12990c813da81cd85a9255dcede99` / runtime `a607911267d83db042d5f5a50695c5c6a2bcb60249281732be2533cb2847b40c`。GP AST/rawと派生値だけ更新、owner symbol/signature集合追加0。
+
+**本文fresh比較：** 開始版/最終版で同一合成4系列15状態を生成し、rootと独立read-only担当が両層全文を読了。変更5＝exact3 stage2/3、exact2 stage2、revised3 stage2/3。先の感情/回答・中間の感情/回答・後の感情/訂正が各原記述へ戻り、最後の回答だけへの縮退を修復した。残10状態は記録全体が同一。全15の原入力・回答・Observation・relations・reasons同一。内部proof属性・retained groups・Movesは意図した差分で、意味IR全文不変とはしない。exact2の3回目は質問がなくbefore/afterともadvance不能で、既存境界を維持。
+
+代表例：同名3記述への先の原反応訂正「私は少し不安でした」、中間回答「今は少し苦しい」、後の原反応訂正「私も少し怖くなかったです」。旧Receptionは後の訂正だけへ縮退。最終は「先に書かれた方では、誘われた時は、あなたは少し不安だったし、間に書かれた方では、誘われたのに、悲しかったし、回答した時点では少し苦しいし、後に書かれた方では、誘われた時は、あなたも少し怖くなかったのですね。」となり、先の不安と中間の悲しみ/回答を保持。訂正前の原反応を復活させず、記述順を実際の発生順・別日時/場面・新因果へ補完しない。
+
+長い「し」連結、主題/「のですね」反復、二層再掲、深さ不足、未対応説明形/訂正文法、旧17失敗は残る。formal Product Read PASS・全同名解消・群完了・商品提示準備へ昇格させない。次は同群の未対応説明形/訂正文法と明白な本文品質不足。同群閉鎖前に二層再掲の別作業へ進行しない。前回txt/u42、全体設計・全file地図3945（API2300/Cocolon1645）、rules/incident/current_structure、最新weekly 20260926の09/29合意を確認済み。全3945本文読了とは称さない。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/実機予定を維持。
+
+既存Supabase RPCのローカルPGlite fixture、live DB/実機/プロセス再起動未実施。System Context prepare/Supabase changelog取得エラーのNONCREDITと原典直接読取は前checkpointどおり。追加外部課金/Mash操作/production依存変更0。両PR Draft/open/unmerged、Ready/merge/deploy/enable/live適用0。今回exact6 modify＝API既存answer_update/GP/detached test/current identity/handoffの5＋Cocolon既存06の1、add/delete0。本finalは資料だけの更新。反映後の両資料全文・target blobs・parent/head・累積path・PR本文と状態の照合結果/最終headは既存PR3/30へ記録する。
