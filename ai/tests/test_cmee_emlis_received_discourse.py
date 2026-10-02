@@ -3763,3 +3763,134 @@ def test_received_chain_detached_positive_group_does_not_promote_repeated_origin
     outcome = MeaningExperienceEngine().generate(request)
     assert outcome.artifact is None and outcome.body_state == 'UNCHANGED'
     assert outcome.reason_codes == ('reuse_saved_observation_required',)
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('replies,replacement,visible', [
+    (('今は嬉しい。', 'その時は楽しかった。'), '少し怖かった',
+     ('回答した時点では嬉しい', 'その時は楽しかった', '当時は少し怖かった')),
+    (('その時は楽しかった。', '今は少し安心です。'), '少し怖かった',
+     ('その時は楽しかった', '回答した時点では少し安心', '当時は少し怖かった')),
+    (('今は少し私は少し安心です。', 'その時は私も楽しかった。'), '私も少し怖かった',
+     ('回答した時点では少しあなたは少し安心', 'その時はあなたも楽しかった', '当時、あなたも少し怖かった')),
+    (('今は安心なのです。', 'その時は幸せだったのです。'), '少し怖かったのです',
+     ('回答した時点では安心なのだ', 'その時は幸せだったの', '当時は少し怖かったの')),
+])
+def test_received_chain_middle_revision_keeps_every_source_in_reception(field, replies, replacement, visible):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from test_cmee_emlis_detached_observation import read_body
+    request = begin(RECEIVED_CHAIN_MULTI if field == 'memo' else '',
+                    RECEIVED_CHAIN_MULTI if field == 'memo_action' else '')
+    for text in (*replies, '「悲しかった」ではなく「' + replacement + '」です。'):
+        request = advance(request, text)
+    context = actual(request=request)
+    result, plan, sentence, resolver, selected = context
+    public = MeaningExperienceEngine().generate(request)
+    assert public.artifact is not None and public.artifact.text == result.artifact.text
+    follow = result.artifact.reception
+    assert '悲しかった' not in result.artifact.text
+    assert all(s in follow for s in (*visible, '嬉しかった', '誘われたのに、寂し', '頼まれたのに、怖'))
+    assert '言い直してくださった気持ちについては、' in follow
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == follow.count('。') == 3
+    assert not any(r.type == 'contrast' and r.source_span_ids == ('s1',) for r in plan.relations)
+    revised, = (n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes)
+    survivor, = (n for n in plan.nuclei if 'source_received_chain_slot:second' in n.semantic_frame.attribute_codes)
+    assert not any({revised.nucleus_id, survivor.nucleus_id} & {r.from_nucleus_id, r.to_nucleus_id}
+                   for r in plan.relations)
+    # Every required text contribution owns a reception target, support or
+    # event context. Observation coverage alone cannot satisfy this check.
+    covered = {nid for move in moves for nid in (*move.target_nucleus_ids, *move.support_nucleus_ids,
+               *reception.final_reception_context_nucleus_ids(move=move, plan=plan))}
+    required = {n.nucleus_id for n in plan.nuclei if n.retention == 'required'
+                and n.source_fields in {(field,), ('answer_text_private',)}}
+    assert required <= covered
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    line, = (line for line in sentence.lines if line.binding.line_role == 'human_follow')
+    parts = [p + '。' for p in follow.removesuffix('。').split('。')]
+    with (patch.object(reception, '_source_owned_positive_answer_group_sentence', side_effect=AssertionError('no author')),
+          patch.object(reception, '_source_grounded_received_discourse', side_effect=AssertionError('no author')),
+          patch.object(reception, '_detached_feeling_finite_surface', side_effect=AssertionError('no author'))):
+        for clause, part in zip(line.reception_clause_plans, parts, strict=True):
+            move, = (m for m in moves if clause.move_ids == (m.move_id,))
+            if len(move.target_nucleus_ids) == 1:
+                continue
+            if move.reception_act == 'recognize_lived_change':
+                source_ids = []
+                for nid in move.target_nucleus_ids:
+                    about, = (r for r in plan.relations if r.type == 'evaluation_about_event' and r.to_nucleus_id == nid)
+                    source_ids.extend((about.from_nucleus_id, nid))
+            else:
+                source_ids = []
+                for nid in move.target_nucleus_ids:
+                    # The received reader proves event roles internally;
+                    # its returned byte ranges restore feeling predicates.
+                    if index[nid].kind == 'reaction':
+                        source_ids.append(nid)
+                    source_ids.extend(r.to_nucleus_id for r in plan.relations
+                                      if r.type == 'contrast' and r.from_nucleus_id == nid)
+            proof = gate.read_source_owned_discourse(part, move, plan, resolver, selected)
+            assert proof is not None
+            assert [source for _, _, source in proof] == [
+                reception.final_reception_source_anchor_text(nid, index, resolver).encode() for nid in source_ids]
+            assert all(0 <= a < b <= len(part.encode()) for a, b, _ in proof)
+        assert read_body(context, result.artifact.text).passed
+
+
+def test_received_chain_middle_revision_rejects_missing_or_relinked_reception():
+    from test_cmee_emlis_detached_observation import read_body
+    request = begin(RECEIVED_CHAIN_MULTI)
+    for text in ('今は嬉しい。', 'その時は楽しかった。', '「悲しかった」ではなく「少し怖かった」です。'):
+        request = advance(request, text)
+    context = actual(request=request)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    changes = [
+        follow.replace('嬉しかったという気持ちを受け止めています。', ''),
+        follow.replace('褒められたことについて、回答した時点では嬉しいし、', ''),
+        follow.replace('し、誘われたことについて、その時は楽しかったのですね。', 'のですね。'),
+        follow.replace('誘われたのに、寂しさを感じ、', ''),
+        follow.replace('頼まれたのに、怖さを感じ、', ''),
+        follow.replace('、言い直してくださった気持ちについては、当時は少し怖かったのですね。', 'たのですね。'),
+        follow.replace('嬉しかったという気持ち', '少し怖かったけれど嬉しかったという気持ち'),
+        follow.replace('言い直してくださった気持ちについては、', '褒められたから、'),
+        follow.replace('回答した時点では嬉しい', 'その時は嬉しい'),
+        follow.replace('その時は楽しかった', '回答した時点では楽しかった'),
+        follow.replace('誘われたことについて、', '頼まれたことについて、'),
+        follow.replace('当時は少し怖かった', '当時は少し怖くなかった'),
+        follow.replace('誘われたのに、寂しさ', '褒められたのに、寂しさ'),
+        follow.replace('頼まれたのに、怖さ', '頼まれたから、怖さ'),
+    ]
+    with (patch.object(reception, '_source_owned_positive_answer_group_sentence', side_effect=AssertionError('no author')),
+          patch.object(reception, '_source_grounded_received_discourse', side_effect=AssertionError('no author'))):
+        assert read_body(context, body).passed
+        for changed in changes:
+            assert changed != follow
+            assert not read_body(context, body.replace(follow, changed)).passed
+
+
+@pytest.mark.parametrize('replies,replacement,retained', [
+    (('今は嬉しい。', 'その時は楽しかった。'), '少し怖かった', ('では嬉しい', 'その時は楽しかった')),
+    (('その時は楽しかった。', '今は少し安心です。'), '少し怖かった', ('その時は楽しかった', '時点では少し安心')),
+    (('今は安心なのです。', 'その時は幸せだったのです。'), '少し怖かったのです', ('では安心なのだ', 'その時は幸せだったの')),
+])
+def test_received_chain_middle_revision_saved_body_retains_all_sources(qcase, qdb, monkeypatch, replies, replacement, retained):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$1 where id=$2', [RECEIVED_CHAIN_MULTI, parent])
+    first = current = run(service.start(user, parent))
+    for i, text in enumerate((*replies, '「悲しかった」ではなく「' + replacement + '」です。')):
+        if i:
+            current = run(cont(service, user, current, f'middle-revision-continue-{i}'))
+        current = run(answer(service, user, current, text, f'middle-revision-answer-{i}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        if i == 2:
+            body = current['current_observation']['text']
+            follow = body.split('Emlisから：\n', 1)[1]
+            assert '悲しかった' not in body and follow.count('。') == 3
+            assert all(s in follow for s in (*retained, '嬉しかった', '誘われたのに、寂し',
+                                             '頼まれたのに、怖', '当時は少し怖かった'))
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved revision must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+        assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == RECEIVED_CHAIN_MULTI
+    assert current['state'] == 'COMPLETED' and not current['can_continue']

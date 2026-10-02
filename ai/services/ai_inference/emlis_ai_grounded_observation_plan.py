@@ -8012,11 +8012,24 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
         key=lambda n: _span_number(n.source_span_ids[0])))
     positive_revisions = tuple(n for n in independent_answers
         if _thread_revised_original_reaction(n, relations, polarity="positive"))
+    # Revising the middle feeling severs both original contrast edges, not
+    # the surviving final feeling or either ABOUT answer. Keep that original
+    # feeling separate; coordinate the answers and use the existing mixed
+    # received/replacement duty for the remaining occasions and revision.
+    chain_revision = bool(len(independent) == 1
+        and is_grounded_positive_feeling(independent[0])
+        and {"semantic_dependency:received_feeling_contrast_chain",
+             "source_received_chain_slot:second"}
+            <= set(independent[0].semantic_frame.attribute_codes)
+        and len(revised_originals) == len(independent_answers) == 1
+        and len(positive) == len(by_event) == 2 and len(answers) == 3
+        and not (withdrawal or actions or detached_answers))
     mixed_revision = bool(len(positive) == 2 and len(answers) == 3
         and len(revised_originals) == 1
         and len(independent_answers) == 1 + len(positive_revisions)
         and len(positive_revisions) <= 1
-        and not (withdrawal or independent or actions or detached_answers))
+        and not (withdrawal or actions or detached_answers)
+        and (not independent or chain_revision))
     # A retained positive answer and an independent positive correction each
     # keep their own move. One additional ABOUT-owned burden stays with the
     # remaining received pairs in the existing third move.
@@ -8028,9 +8041,9 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
     # ABOUT-owned positive answers can share one collective duty. An outer
     # received contrast reserves a Move before recursing here, so two answers
     # must also share the existing group instead of producing a fourth Move.
-    # Independent corrections keep their own allocation; only the existing
-    # three-answer case can include one of them.
-    positive_group = bool((len(positive) == len(answers) == 3
+    # Independent corrections keep their own allocation. The severed-chain
+    # case coordinates only its two ABOUT answers, never the replacement.
+    positive_group = bool(chain_revision or (len(positive) == len(answers) == 3
         or len(positive) == len(answers) == 2
             and not separate_later_scopes and not independent_answers)
         and len(positive_revisions) == len(independent_answers) <= 1
