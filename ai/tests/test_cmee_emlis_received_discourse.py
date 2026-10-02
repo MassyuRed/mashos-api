@@ -4938,3 +4938,140 @@ def test_positive_final_revision_saved_body_keeps_every_source(qcase, qdb, monke
         assert qdb.query('select memo,memo_action from public.emotions where id=$1', [parent])['rows'][0] == {
             'memo': memo, 'memo_action': action}
     assert current['state'] == 'COMPLETED' and not current['can_continue']
+
+
+DETACHED_ANSWER_SOURCE_CASES = (
+    (('今は嬉しい。', 'その時は楽しかった。'), '回答した時点', '嬉しい'),
+    (('その時は少し楽しかった。', '今は少し安心です。'), 'その時', '少し楽しかった'),
+    (('今は少し私は少し安心です。', 'その時は私も楽しかった。'), '回答した時点', '少し私は少し安心です'),
+    (('今は安心なのです。', 'その時は幸せだったのです。'), '回答した時点', '安心なのです'),
+    (('今は嬉しい。', '「嬉しい」ではなく「少し楽しい」です。'), '先の回答時点', '少し楽しい'),
+)
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('replies,when,source', DETACHED_ANSWER_SOURCE_CASES)
+def test_detached_answer_source_report_reads_each_complete_scope(field, replies, when, source):
+    request = begin(RECEIVED_CHAIN_MULTI if field == 'memo' else '',
+                    RECEIVED_CHAIN_MULTI if field == 'memo_action' else '')
+    for reply in (*replies, '「褒められた」は誤りです。'):
+        request = advance(request, reply)
+    result, plan, sentence, resolver, selected = actual(request=request)
+    body, follow = result.artifact.text, result.artifact.reception
+    report = f'先の回答には、{when}の気持ちが「{source}」と書かれています。'
+    assert result.artifact.observation.endswith(report) and body.count(report) == 1
+    assert '褒められた' not in body and follow.count('。') == 3
+    assert all(value in body for value in ('悲しかった', '嬉しかった', '誘われた', '寂し', '頼まれた', '怖'))
+    detached, = (n for n in plan.nuclei if n.source_fields == ('answer_text_private',)
+                 and 'thread_subject:withdrawn_source_event' in n.semantic_frame.attribute_codes)
+    assert not any(detached.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    moves = plan.response_plan.human_reception_plan.moves
+    grouped = when != '先の回答時点'
+    if grouped:
+        assert '先の回答にあるとおり、' in follow and '先の回答では、' not in follow
+        move, = (m for m in moves if detached.nucleus_id in m.target_nucleus_ids)
+        part, = (p + '。' for p in follow.removesuffix('。').split('。')
+                 if p.startswith('先の回答にあるとおり、'))
+        index = {n.nucleus_id: n for n in plan.nuclei}
+        linked = index[move.target_nucleus_ids[1]]
+        about, = (r for r in plan.relations if r.type == 'evaluation_about_event'
+                  and r.to_nucleus_id == linked.nucleus_id)
+        expected = [reception.final_reception_source_anchor_text(nid, index, resolver).encode()
+                    for nid in (detached.nucleus_id, about.from_nucleus_id, linked.nucleus_id)]
+        with (patch.object(reception, '_source_owned_positive_answer_group_sentence', side_effect=AssertionError('no author')),
+              patch.object(reception, '_detached_feeling_finite_surface', side_effect=AssertionError('no author'))):
+            proof = gate.read_source_owned_discourse(part, move, plan, resolver, selected)
+            assert proof is not None and [v for _, _, v in proof] == expected
+            assert all(0 <= a < b <= len(part.encode()) for a, b, _ in proof)
+    legacy = body.replace(report, f'また、{when}の気持ちとして、「{source}」が見えます。').replace(
+        '先の回答にあるとおり、', '先の回答では、')
+    time_change = 'その時' if when != 'その時' else '回答した時点'
+    changes = [
+        body.replace(report, ''), body.replace(report, report + report),
+        body.replace('先の回答には、', ''),
+        body.replace('先の回答には、', '頼まれたことについて、'),
+        body.replace('先の回答には、', '褒められたことについて、先の回答には、'),
+        body.replace('。' + report, '、' + report),
+        body.replace(report, report.replace(when, time_change, 1)),
+        body.replace(report, report.replace(source, '友人は' + source, 1)),
+        body.replace(report, report.replace(source, '怖くなかった', 1)),
+    ]
+    if '少し' in source:
+        changes.append(body.replace(report, report.replace(source, source.replace('少し', '', 1))))
+    if grouped:
+        changes.extend(body.replace(follow, follow.replace(old, new, 1)) for old, new in (
+            ('先の回答にあるとおり、', ''),
+            ('先の回答にあるとおり、', '頼まれたことについて、'),
+            ('誘われたことについて、', '頼まれたことについて、'),
+            ('その時は', '回答した時点では'),
+            ('回答した時点では', '先の回答時点では'),
+        ))
+    assert all(candidate != body for candidate in changes)
+    with (patch.object(reception, '_author_source_grounded_reception_clauses', side_effect=AssertionError('no author')),
+          patch.object(reception, '_source_owned_positive_answer_group_sentence', side_effect=AssertionError('no author')),
+          patch.object(surface, '_render_observation', side_effect=AssertionError('no author'))):
+        for candidate in (body, legacy, *changes):
+            with patch.object(gate, 'replay_source_grounded_human_reception_from_plan',
+                              return_value=SimpleNamespace(text=candidate.split('Emlisから：\n', 1)[1])):
+                proof = gate.evaluate_grounded_surface_body_inverse(body=candidate.encode(), plan=plan,
+                    sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected)
+            assert proof.passed == (candidate in (body, legacy)), proof.failure_codes
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('replies,when,source', (DETACHED_ANSWER_SOURCE_CASES[0],
+    DETACHED_ANSWER_SOURCE_CASES[1], DETACHED_ANSWER_SOURCE_CASES[4]))
+def test_detached_answer_source_report_saved_reads_preserve_original(qcase, qdb, monkeypatch, field, replies, when, source):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    memo, action = (RECEIVED_CHAIN_MULTI, '') if field == 'memo' else ('', RECEIVED_CHAIN_MULTI)
+    qdb.query('update public.emotions set memo=$1,memo_action=$2 where id=$3', [memo, action, parent])
+    first = current = run(service.start(user, parent))
+    for index, reply in enumerate((*replies, '「褒められた」は誤りです。')):
+        if index:
+            current = run(cont(service, user, current, f'answer-source-continue-{index}'))
+        current = run(answer(service, user, current, reply, f'answer-source-answer-{index}'))
+        assert current['original'] == first['original'] and current['body_state'] == 'REFINED'
+        if index == 2:
+            text = current['current_observation']['text']
+            assert f'先の回答には、{when}の気持ちが「{source}」と書かれています。' in text
+            assert '褒められた' not in text
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved answer must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+        assert qdb.query('select memo,memo_action from public.emotions where id=$1', [parent])['rows'][0] == {
+            'memo': memo, 'memo_action': action}
+    assert current['state'] == 'COMPLETED' and not current['can_continue']
+
+
+@pytest.mark.parametrize('change', ['marker', 'relation', 'time', 'polarity', 'field'])
+def test_detached_answer_source_report_requires_independent_source_proof(change):
+    from dataclasses import replace
+    request = begin(RECEIVED_CHAIN_MULTI)
+    for reply in ('今は嬉しい。', 'その時は楽しかった。', '「褒められた」は誤りです。'):
+        request = advance(request, reply)
+    result, plan, _, resolver, selected = actual(request=request)
+    move, = (m for m in plan.response_plan.human_reception_plan.moves
+             if m.reception_act == 'recognize_lived_change' and len(m.target_nucleus_ids) == 2)
+    first = next(n for n in plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0])
+    part, = (p + '。' for p in result.artifact.reception.removesuffix('。').split('。')
+             if p.startswith('先の回答にあるとおり、'))
+    if change == 'relation':
+        about, = (r for r in plan.relations if r.type == 'evaluation_about_event')
+        altered = replace(plan, relations=(*plan.relations, replace(about, relation_id='invalid-detached-about',
+                                                                   to_nucleus_id=first.nucleus_id)))
+    else:
+        frame = first.semantic_frame
+        if change == 'marker':
+            frame = replace(frame, attribute_codes=tuple(c for c in frame.attribute_codes
+                                                         if c != 'thread_subject:withdrawn_source_event'))
+        elif change == 'time':
+            frame = replace(frame, attribute_codes=tuple('thread_time:original_occasion'
+                if c == 'thread_time:answer_time' else c for c in frame.attribute_codes), time_scope='past')
+        elif change == 'polarity':
+            frame = replace(frame, polarity='negative')
+        changed = replace(first, semantic_frame=frame, source_fields=('memo',) if change == 'field' else first.source_fields)
+        altered = replace(plan, nuclei=tuple(changed if n.nucleus_id == first.nucleus_id else n for n in plan.nuclei))
+    with patch.object(reception, '_source_owned_positive_answer_group_sentence', side_effect=AssertionError('no author')):
+        assert gate._read_positive_answer_group_discourse(part, move, plan, resolver, selected) is not None
+        assert gate._read_positive_answer_group_discourse(part, move, altered, resolver, selected) is None

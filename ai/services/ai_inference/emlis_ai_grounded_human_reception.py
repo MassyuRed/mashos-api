@@ -11144,7 +11144,7 @@ def _source_owned_positive_answer_group_sentence(move, realization, plan, resolv
             return None
         time = {"original_occasion": "その時は", "answer_time": "回答した時点では",
                 "prior_answer_time": "先の回答時点では"}[row.when]
-        event_label = ("先の回答では、" if row.event_id is None else record_prefixes[row.event_id] if shared_topic else
+        event_label = ("先の回答にあるとおり、" if row.event_id is None else record_prefixes[row.event_id] if shared_topic else
                        record_prefixes.get(row.event_id, "") + event_visible + "ことについて、")
         event_labels.append(event_label)
         parts.append(event_label + time + finite)

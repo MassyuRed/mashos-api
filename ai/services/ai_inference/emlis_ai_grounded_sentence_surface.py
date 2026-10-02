@@ -2999,6 +2999,12 @@ def _render_observation(
             # the remaining feelings. Do not give both the same state close.
             return f"{prefix}{when}では、{joined}と書かれています。"
         noun = "気持ち" if nucleus.semantic_frame.modality == "feeling" else "こと"
+        if (getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+            and not binding.relation_ids and len(quotes) == 1
+            and nucleus.source_fields == ("answer_text_private",)
+            and "thread_subject:withdrawn_source_event" in nucleus.semantic_frame.attribute_codes
+            and _detached_observation_time(nucleus) is not None):
+            return f"{prefix}先の回答には、{when}の気持ちが{joined}と書かれています。"
         return f"{prefix}{when}の{noun}として、{joined}が見えます。"
     if typed_semantic_duties:
         cognition = _source_bound_current_cognition(binding, nucleus_index, resolver)
@@ -3122,6 +3128,8 @@ def _render_extra_context(
                         nucleus, (), polarity=nucleus.semantic_frame.polarity)):
                 # extra_ids exclude every relation endpoint in this binding.
                 parts.append(f"訂正の回答では、当時の気持ちを{quoted}と言い直されています。")
+            elif nucleus.source_fields == ("answer_text_private",):
+                parts.append(f"先の回答には、{when}の気持ちが{quoted}と書かれています。")
             else:
                 parts.append(f"また、{when}の気持ちとして、{quoted}が見えます。")
         remaining = tuple(nid for nid in extra_ids if nid not in detached)

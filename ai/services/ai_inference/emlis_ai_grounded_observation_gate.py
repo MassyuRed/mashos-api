@@ -2642,8 +2642,14 @@ def _body_inverse_detached_observation(raw, nuclei, plan, resolver, *, correctio
         if cursor != len(text):
             return False
     elif len(nuclei) == 1:
-        parsed = re.fullmatch(r"(?:今の入力だけを見ると、)?(その時|回答した時点|先の回答時点)"
-                             r"の気持ちとして、「([^「」『』\n]+)」が(?:見えます|読み取れます)。", raw)
+        if raw.removeprefix("今の入力だけを見ると、").startswith("先の回答には、"):
+            if nuclei[0].source_fields != ("answer_text_private",):
+                return False
+            parsed = re.fullmatch(r"(?:今の入力だけを見ると、)?先の回答には、(その時|回答した時点|先の回答時点)"
+                                 r"の気持ちが「([^「」『』\n]+)」と(?:記されています|書かれています)。", raw)
+        else:
+            parsed = re.fullmatch(r"(?:今の入力だけを見ると、)?(その時|回答した時点|先の回答時点)"
+                                 r"の気持ちとして、「([^「」『』\n]+)」が(?:見えます|読み取れます)。", raw)
         pieces = [(*parsed.groups(), False)] if parsed else []
     else:
         parsed = re.fullmatch(r"(?:今の入力だけを見ると、)?(" + operand
@@ -3361,8 +3367,8 @@ def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, sha
     qualifier = re.match(r"(?:先|間|後)に書かれた方では、", raw)
     offset = 0
     if detached:
-        label = "先の回答では、"
-        if not raw.startswith(label):
+        label = next((p for p in ("先の回答にあるとおり、", "先の回答では、") if raw.startswith(p)), None)
+        if label is None:
             return None
         offset = len(label.encode())
         raw = raw[len(label):]
@@ -3539,7 +3545,9 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
         or len({record_prefixes[row[0].nucleus_id] for row in rows}) != len(rows)):
         return None
     labels = ([record_prefixes[row[0].nucleus_id] for row in rows] if shared_topic else
-              [row[3] + "ことについて、" if row[0] is not None else "先の回答では、" for row in rows])
+              [row[3] + "ことについて、" if row[0] is not None else
+               "先の回答にあるとおり、" if raw.startswith("先の回答にあるとおり、") else "先の回答では、"
+               for row in rows])
     cuts = [len(common_topic) if shared_topic else 0]
     if (qualified or shared_topic) and not raw[cuts[0]:].startswith(labels[0]):
         return None
@@ -5803,6 +5811,25 @@ def evaluate_grounded_surface_body_inverse(
             line_rows = tuple(row for row in witness.sentences
                 if row.section == "observation"
                 and row.section_line_ordinal == parsed_line.section_ordinal)
+            # A surviving answer is a complete source report even when it
+            # shares a planned line with unrelated events. Read its own
+            # sentence, not a source/time token borrowed from that line.
+            detached_answers = tuple(n for n in required_nuclei
+                if n.source_fields == ("answer_text_private",)
+                and "thread_subject:withdrawn_source_event" in n.semantic_frame.attribute_codes
+                and (n.kind, n.semantic_frame.predicate_kind, n.semantic_frame.modality)
+                    == ("reaction", "feeling", "feeling")
+                and not any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations))
+            if planned_line.binding.relation_ids or len(detached_nuclei) == 1:
+                answer_rows = []
+                for nucleus in detached_answers:
+                    rows = tuple(row for row in line_rows if _body_inverse_detached_observation(
+                        _body_inverse_visible_text(body, row).removeprefix("また、"),
+                        (nucleus,), plan, resolver))
+                    if len(rows) != 1 or rows[0] in answer_rows:
+                        failures.append(f"body_inverse_detached_answer_source_scope_mismatch:{index}")
+                    else:
+                        answer_rows.append(rows[0])
             independent_tail = line_rows[-len(revised_reactions) - len(detached_states):]
             if revised_reactions:
                 # In this bounded contrast/answer graph, every sentence

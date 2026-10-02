@@ -13297,3 +13297,39 @@ current共有owner identityは既存導出で更新。language `a360b24e3449b580
 u70で繰上げた肯定感情訂正6条件のPlan例外は解消。同じ複数出来事・回答・訂正群の完了とはしない。次はu70から残る、出来事撤回後に生存する先行回答の出典と時点が追いにくい表現。撤回eventを戻さず、先行回答自身の出典を既存Surface/HRと独立Gateで扱う。原感情の丁寧過去形/現在形、SELF名詞句、同名感情の追跡、長い列挙、定型性・二層再掲・深さ不足も残る。対象群が閉じる前に別の二層価値改善へ先行しない。
 
 primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用なし。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）を継承する。10/02実DB/端末一往復は未達のまま。旧10/10 Emlis内容期限は復活させず、合成検証で実利用目標を達成扱いにしない。
+
+
+## 2026-10-02 u72 — 出来事撤回後に残る回答の出典を独立文で示す
+
+### 開始状態と限定修正
+
+MashのEmlis残件継続指示を受け、u71次点の出典/時点表示を実施。開始HEADはAPI `34be30b45518281a84d460c9caee0feea680b344`（tree `158bc2bd16a894a74202a52fb7c71413b1c7043f`）、Cocolon `70ad1abace9eb7f861b953d01eaefc04fe479e94`（tree `46429b24c8c87bcd925f39b12facf49ed3c535d4`）。両Draft/open/unmergedと前回反映からの変更なしをfresh照合。全体設計01・全ファイル地図02・current_structure・CURRENT_RULES/作業姿勢ルール・最新weekly09/26末尾09/29合意の既読原典を継承し、恒久incident全文と既存handoffを再読。全path照合は全実装全文精読とはしない。rootのみ書込み、補助agentはread-only診断/本文/失敗分類。外部AIなし。
+
+実装は既存Surface/HR/Gateの3file内。撤回後の孤立回答を、直前の別eventへ寄りやすい「また」で導入せず、先行回答の出典から始まる独立文として表示。HRの孤立回答groupもsource導入を変え、二重の「では」を除いた。原時点・回答時点・先行回答時点、SELF・程度・肯否・finite語形を保持する。単独観測の既存scope_hedgeも保持した。
+
+独立Gateは生成文の再生を正解にせず、relation入り観測lineでも孤立回答の完全な1文をsource/time/辺なしで確認する。出来事への付替え、直前文への読点接合、重複/欠落、時点/主体/程度/肯否変更を拒否。旧観測/HRは限定された全文文法と元source証明を満たす場合に読める。旧保存DTOの再生成は行わない。
+
+Plan・意味受付・上限・新owner/helper/renderer・公開contract/API/DB/RN・依存宣言・flagに変更なし。STRUCTURE_MAP_DELTA_NONE：既存3owner内部の表示/独立読取だけで、route・schema・lifecycle・file配置が変わらないため構造地図の実質差分なし。変更はAPI6（3production、既存test末尾、current共有identity、既存handoff）＋Cocolon既存06の計7 modify、追加/削除なし。旧test330749 bytes prefixと旧期待/skip/xfail、historical frozen identityを保存。
+
+### 実本文と検証結果
+
+合成公開入力RECEIVED_CHAIN_MULTIをmemo/memo_actionで各8系列、計16系列比較。出典対象5系列×2＝10、u71正訂正対照2、以前から本文未成立の4。成立12の原入力・全回答・両層全文をrootとread-only補助が読んだ。Observation10/Reception8で限定改善、訂正済み先行回答2はObservationのみ変化、対照2は全文不変。全16でstatus・nuclei・relations・Move・成否は不変、成立12のindependent inverse PASS。今回の変更からevent復活/別event帰属/主体・程度・肯否・時制の欠落は見つからない。
+
+新規21条件＋identity1＝最終22 PASS、FAIL/ERROR/SKIP0（39.758秒）。内訳は5系列×2fieldの本文/独立UTF8復元/作者禁止matching-mutated-replay改変拒否10、3時点×2fieldの保存6、marker/relation/time/polarity/fieldを壊したPlanの独立reader拒否5。旧本文互換もsourceごとの全文読取で確認。保存は各更新REFINED、original DTO/DB原memo・memo_action不変、generate禁止GET/startの全文一致、第三回答後COMPLETED。
+
+関連選択383 ID：開始HEAD worktree349 PASS/34 FAIL（248.452秒）、変更側332 PASS/51 FAIL（246.614秒）。同383 IDで継承34の失敗箇所も同一、他の成否変化は旧HR prefix依存17だけ。17は旧prefix固定期待8＋旧置換無変化1＋旧prefix文抽出0件5＋保存旧prefix期待3。継承34は旧capacity例外期待2（実際は例外なし）＋旧保存名詞句期待1＋訂正旧prefix22＋訂正mutation3＋訂正reader6。未分類0。旧検査で後段へ未到達の条件をPASSへ換算せず、新21で今回対象の意味/保存/5種source-proofを補完した。
+
+関連383の実行中に単独観測の既存hedge保持を狭く補正したため、383すべてを最終byteで再実行したとはしない。補正後の最終production/identityで新21＋identity1を全再実行。重複なし記録405 ID＝354 PASS/51 FAIL/ERROR0/SKIP0。全suite成功・商品合格の主張なし。関連選択はdetached_observation/received_discourseのpartial_withdrawal、detached_unknown、compound_unknown、two_positive_withdrawal、received_chain、detached_burden、positive_final_revision、nominal_positive_answer_survives、nominal_explained_answer_event_withdrawal、correction_answer_source、revision_withdrawal。
+
+候補初回は観測末尾「記されています」が既存ledger-narration Gateに拒否された。自然な「書かれています」へ変更し、anti-template/機械的再掲Gateの規則は緩和していない。Python3.12.14/pytest9.1.1/PGlite0.5.8の既存runtimeを使用。合成DB/mock RPCであり、実DB・端末・プロセス再起動の確認ではない。
+
+current共有9owner/18payload構成は不変。language identity `0cdfd5df9bea3a2af07502d6c1dfa19bff54a7e2f536f9a1a31cf334fc814924`、runtime identity `c34876629335cbe0d71696a085d084b2400e98dab5c81cf46b0a6655d274a18e`。scratch出力/JSON/XMLは正式再利用証跡にはせず、再開原典はGitHubのproduction・追加test/fixtureとこの記録。反映commit/changed-path/remote全文確認は両PR本文へ確定値を記す。
+
+### 次の残件と商品判定
+
+同じ複数出来事・回答・撤回群に、開始版から4条件のhuman_reception_move_count_invalidが残る。再現原文は既存testのRECEIVED_CHAIN_MULTI、各系列をmemoとmemo_actionで行う。
+1. 「今は嬉しい。」→「その時は楽しかった。」→「『頼まれた』は誤りです。」：再帰内でpositive回答2個＋残存受領pair/孤立原感情groupの3、外側原contrast1で4Move。次はこの2fieldを最優先とし、既存withdrawal原感情合流を維持しつつABOUT所有のpositive2回答を既存collective dutyへまとめる候補を確認する。positive_groupのwithdrawal除外を外すだけでは、既存len(groups)>3合流の順序が変わり直らない。
+2. 「今は私も少し怖くないです。」→「その時は楽しかった。」→「『褒められた』は誤りです。」：再帰内で残存受領pair・linked positive回答・detached negative回答の3、外側原contrast1で4Move。正負混在は現在のHR answer-group読取/生成範囲と異なり、Planだけで直るとは未確認。
+上記引用内の撤回対象は入力時に通常の鉤括弧「」で指定する。欠落させず3Move以内で出すこと、独立読取・保存・original/replay保持を次の実本文で確認する。
+
+出典/時点表示の限定改善を認めるが、訂正済み回答のsource/time重複、SELF句、名詞説明形、原感情の丁寧過去形/現在形、同名感情追跡、長い列挙、二層再掲・固定終端・深さ不足は残る。対象群完了前に別の二層価値改善へ先行しない。primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmerged。Ready/merge/deploy/enable/live適用なし。10/03 Emlis休止、10/04 Work分析（利用不可ならPro Piece）を継承し、10/02実DB/端末目標は未達。旧10/10内容期限は復活させない。
