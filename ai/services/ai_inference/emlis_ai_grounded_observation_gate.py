@@ -3203,7 +3203,14 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
                          "先の回答時点では": "先の回答時点で、"}[expected_time]
     if revised:
         expected_time = "言い直してくださった気持ちについては、" + ("当時、" if owner else "当時は")
-    parsed = re.fullmatch(r"(?P<time>(?:言い直してくださった気持ちについては、)?"
+    elif (raw.startswith("最初の記録にあるとおり、")
+          and nucleus.source_fields in {("memo",), ("memo_action",)}
+          and len({r.to_nucleus_id for r in plan.relations
+                   if r.type == "evaluation_about_event"}) >= 2):
+        # The original source and withdrawn reaction were independently
+        # proved above. Keep earlier saved bare-time sentences readable too.
+        expected_time = "最初の記録にあるとおり、" + ("当時、" if owner else "当時は")
+    parsed = re.fullmatch(r"(?P<time>(?:言い直してくださった気持ちについては、|最初の記録にあるとおり、)?"
                           r"(?:その時は|回答した時点では|先の回答時点では|"
                           r"その時、|回答した時点で、|先の回答時点で、|当時は|当時、))"
                           r"(?P<feeling>.+)(?P<ending>のでしたね|のですね|のです|のだと受け取りました)。", raw)
@@ -4410,6 +4417,7 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
         if (len(contrasts) > 1 or len(about) > 1 or not (contrasts or about)
             or event.semantic_frame.actor != "current_user"
             or event.semantic_frame.time_scope != "past"
+            or resolver.source_fields_for(event.source_span_ids) != event.source_fields
             or event.source_fields not in {("memo",), ("memo_action",)}):
             return None
         event_source = final_reception_source_anchor_text(event_id, nuclei, resolver)

@@ -10437,7 +10437,7 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True,
         # A withdrawn event leaves only an ambiguous "その時" antecedent.
         # Keep its independent sentence scope; additive coordination could
         # make that feeling sound attached to the preceding live event.
-        return "、また、".join(detached_answer_endings.get(slot, part + "のですね")
+        return "、また、".join(detached_answer_endings.get(slot, _feeling_acknowledgement(part))
                              for slot, part in enumerate(parts))
     replacements = [i for i, code in enumerate(codes) if code.endswith(":none:replacement:none")]
     if replacements:
@@ -11154,6 +11154,12 @@ def _detached_feeling_source_parts(move, plan, resolver, *, allow_revised=False)
                 "先の回答時点では": "先の回答時点で、"}[time]
     if revised:
         time = _revised_feeling_discourse_prefix(source)
+    elif (nucleus.source_fields in {("memo",), ("memo_action",)}
+          and len({r.to_nucleus_id for r in plan.relations
+                   if r.type == "evaluation_about_event"}) >= 2):
+        # Beside multiple answered events, a bare "その時" can attach this
+        # independent original feeling to the preceding live event.
+        time = "最初の記録にあるとおり、" + ("当時、" if time == "その時、" else "当時は")
     return time, finite
 
 

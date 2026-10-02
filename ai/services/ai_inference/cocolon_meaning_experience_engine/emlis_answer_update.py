@@ -465,7 +465,7 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
         and "source_received_chain_slot:" + slot in n.semantic_frame.attribute_codes)
         for slot in ("event", "first", "second"))
     chain_nodes = tuple(rows[0] for rows in chain_slots) if all(len(rows) == 1 for rows in chain_slots) else ()
-    chain_positive_window = (len(chain_nodes) == 3 and 2 <= len(original_events) <= 3
+    chain_feeling_window = (len(chain_nodes) == 3 and 2 <= len(original_events) <= 3
         and len(active_about) == len(answer_subjects) == 2 and len(set(subject_texts)) == 1
         and chain_nodes[0].nucleus_id in {r.from_nucleus_id for r in active_about}
         and len(chain_nodes[0].source_span_ids) == 1
@@ -478,8 +478,8 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
              and r.from_nucleus_id in {n.nucleus_id for n in chain_nodes}}
             == {(a.nucleus_id, b.nucleus_id) for a, b in zip(chain_nodes, chain_nodes[1:])}
         and all((index[nid].kind, index[nid].semantic_frame.predicate_kind,
-                 index[nid].semantic_frame.modality, index[nid].semantic_frame.polarity)
-                == ("reaction", "feeling", "feeling", "positive") for nid in answer_subjects)
+                 index[nid].semantic_frame.modality) == ("reaction", "feeling", "feeling")
+                and index[nid].semantic_frame.polarity in {"positive", "negative"} for nid in answer_subjects)
         and separate_occurrences(answer_subjects))
     for text in set(subject_texts):
         ids = tuple(nid for nid, value in answer_subjects.items() if value == text)
@@ -488,7 +488,7 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
             continue
         entirely_equal = len(set(subject_texts)) == 1 and all(
             _text(event, index, resolver) == text for event in original_events)
-        if (not (entirely_equal or full_positive_window or chain_positive_window) or len(subject_texts) != len(active_about)
+        if (not (entirely_equal or full_positive_window or chain_feeling_window) or len(subject_texts) != len(active_about)
             or not 2 <= len(original_events) <= 3
             or not 2 <= len(ids) <= 3 or not separate_occurrences(ids)):
             continue

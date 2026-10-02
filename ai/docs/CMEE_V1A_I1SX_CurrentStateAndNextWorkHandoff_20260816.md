@@ -13446,3 +13446,44 @@ Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5/PGlite0.5.8�
 本文の読みやすさにも残差がある。「後に書かれた方では、褒められたのに、寂しさを感じ、頼まれたのに、怖さを感じた」は先頭限定が第三eventまで掛かるように読める。event名は両方あるため確定的な付替えとは断定しないが、同名eventだけに掛ける構成が必要。Observationの同名回答も記述順に頼る。長い列挙、「のですね、また」、原contrastへ戻る順序、二層再掲・固定終端・深さ不足、原感情の丁寧過去形/現在形、SELF句/名詞説明形も残る。商品提示用の完成候補ではない。
 
 primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用なし。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）の最新weekly合意を継承し、今回の継続指示から期限延長を推定しない。10/02実DB/端末一往復は未達、旧10/10 Emlis内容期限を復活させない。自動進行false。追加のユーザー操作負担なし、追加の外部有料サービス利用なし。所要は今回の開始05:04 JSTからPR反映完了までであり、正確な課金額は取得できていない。
+
+
+## 2026-10-03 u76 — 同名の出来事への否定・混合回答と、撤回後の本文停止を修復
+
+### 対象・前提・実装
+
+MashのEmlis残件継続指示を受け、u75の未対応negative窓を作業した。開始HEADはAPI `982703e5e7ae61d66280370c6dfba380de4653da`（tree `a99a897d646afa022f406c452bf800bd182d21e6`）、Cocolon `81c79af50c8e37e299853182336af36de7182dfa`（tree `1aaa4807b81dbaadf3dfa5c442f99eb18538f5bd`）。全体設計01/01A/01B/01C、全ファイル地図02、current_structure、CURRENT_RULES/Rule18と出力ゲート、恒久incident全文、最新weekly09/26末尾09/29合意、既存handoffを確認。fresh recursive treeはAPI2355/Cocolon1797 entries、truncated=false、開始時の手元195fileのGit blob SHA不一致0。全path照合を全実装全文精読とは扱わない。System Contextの原典直接確認fallbackを継承。既存LEVEL_2の限定修正、rootのみ編集・反映、補助はread-only診断/全本文・差分レビュー。外部AIなし。
+
+既存answer_updateの完全な三部分chain・同名event・2回答のsource occurrence証明窓を、肯定のみから肯定/否定feelingへ拡張。original envelope・field・scalar/UTF8範囲非重複・原event2〜3・exact ABOUT2・回答/証拠ID・時点の条件を保持する。別のfull-positive窓や意味受付は拡張しない。これにより同名原文で「今は少し苦しい。」→「その時は楽しかった。」または「その時は少し怖かった。」の先行回答と原感情を保持した本文が成立する。
+
+混合回答の後に「頼まれた」を撤回すると、原感情が独立した結果、外側contrastを含め4Moveとなる兄弟ケースも修復。既存Planのwithdrawal合流を、2 linked answer・positive/negative各1・detached original1・detached/independent answerなし・既存分離scopeなしの3groupへ限定適用する。原感情は独立targetのまま既存burdenへ加え、別eventのsupportへ付け替えず、positive Moveを別に保つ。3Move上限や意味を削らない。このPlan修正は同名限定ではなく、元の別名RECEIVED_CHAIN_MULTIの同系列も回復する。
+
+HRは既存の活用helperを使い、「不安だのですね」「怖いのだのですね」を避ける。新到達の全負回答→撤回本文を読むと、単独原感情「その時は怖かった」が直前の生存eventへ掛かって読めた。既存の単独原感情処理で、原文field・withdrawn reaction・別々のABOUT回答2件以上に限定し、「最初の記録にあるとおり、当時は／当時、」と出典を明示した。回答や訂正の出典へ流用しない。Gateは原reaction投影/source field/ABOUT構造から独立に新prefixを読み、実prefix長のUTF8範囲を使う。旧「その時は／その時、」本文の互換も維持する。
+
+新規source-proof検査で、ABOUT-onlyとなったchain eventの宣言fieldをmemoからmemo_actionへ変えても通る不足を発見。既存Gateの通常received event読取に、実source spanのfieldと宣言fieldの一致を追加した。作者再生が改変本文と一致していても独立検証を省略しない。
+
+productionは既存answer_update/Plan/HR/Gateの4file。Surface、新owner/helper/renderer、意味受付、公開contract/API/DB/RN、依存宣言、flagの変更なし。STRUCTURE_MAP_DELTA_NONE：既存意味更新/group構成/表示/独立読取の内部修正で、route・schema・lifecycle・file配置は不変。API7（production4・既存test末尾・current共有identity・既存handoff）＋Cocolon既存06の計8 modify、追加/削除0。旧test374034 bytes prefix・旧期待/skip/xfail・historical frozen identityを保存。
+
+### 本文・保存・検証
+
+同名の基本mixed、全負、名詞、説明形、mixed訂正、全負訂正と別名mixed撤回の7系列×2field＝対象14。対照は同名positive撤回、u74 detached negative回答、別名positive訂正の3系列×2field＝6。計20系列、初回＋3回答の80本文を比較した。開始版の同名12系列は第二回答でcapability gap、別名2系列は第三回答でmove count例外。最終版では全20系列が4段階とも成立し、既存停止14段階が回復、その先の未到達12段階へ進めた。
+
+開始版の成立54recordは本文/metadata全体同一。対照6系列24recordも全体同一。prepareが両版で成立した68段階はcheckpoint/accepted_nucleiが一致。開始版が停止した後の未到達段階まで意味graph前後一致を実証したとはしない。候補80すべてでpublic engine本文一致・作者禁止のindependent inverse PASS。原入力/全回答と両層全文をrootと補助が確認した。rootは80本文を完全UTF8一致で27全文へまとめて読んだ。最終出典修正の2本文も双方が再読し、他78本文・80件の本文以外metadataは修正前候補と同一。撤回event復活、回答先の交換、訂正前感情の復活、原contrast・原感情・SELF/も・程度・否定・回答/原時点の欠落は対象内で見つからない。
+
+新36条件は、6種の先行回答形×後続positive/negative×2fieldの本文/独立読取24、訂正/撤回の合成保存8、source/ABOUT帰属の改変拒否4。本文検査は2回答時と第三撤回後の両方で、全required target/support、別ABOUT2本・別source範囲・既存occurrence証明・3Move以内を確認。作者禁止かつmatching-mutated-replayで回答の欠落/時点/極性/SELF/程度/先後/contrast、原感情の出典/時点/極性/生存・撤回eventへの付替えを拒否し、旧本文互換も確認。source-proof4はspan交換・宣言field・occurrence marker欠落・時点・modality・ABOUT再帰属の6変異を拒否する。
+
+保存8は全更新REFINED、original DTOとDB原memo/memo_action不変、generate禁止GET/startの完全DTO一致、第三回答後COMPLETEDを確認。PGlite/mock RPCの合成検証であり、実DB/端末/プロセス再起動ではない。Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5/PGlite0.5.8の既存runtimeを使用し、repository依存宣言は不変。
+
+最終関連検証は最終production全byteで393 ID＝332 PASS/61 FAIL/ERROR0/SKIP0（260.990秒）。selectorはreceived_discourse/detached_observationのreceived_chain、same_name、parallel_report、mixed_withdrawal、two_positive_withdrawalでu75と同一。開始版の比較原典はu75最終357＝300 PASS/57 FAIL（223.886秒）であり、今ターンbaseline357を再実行したとはしない。開始HEAD・195file hash・runtimeの一致を確認して継承する。継承57のfailure node/traceはdirectory・メモリアドレス・合成UUIDのみ正規化して全一致。追加4 FAILは旧test_same_name_received_chain_unproved_negative_window_cannot_drop_dutiesの2field×2後続回答で、今回回復した処理へcapability gap例外を要求するDID NOT RAISE。旧prefix/旧期待を変更せず、新規36で現在の意味/保存/独立読取を検証した。未到達の旧後段をPASSへ換算しない。全suite成功・商品合格とはしない。
+
+新規初回28は16 PASS/12 FAIL。8件は旧「その時は」固定期待と許可される「褒められた時は」/連用形との差を新検査で調整した。残る4件は上記source fieldの実検証不足でproductionを修復。その後、新規36は50.15秒、出典修正後は50.92秒で全PASS。原文出典改変/旧本文互換を追加した最終36も上記最終関連に含まれ全PASS。current identityは最終byteで1 PASS（17.960秒）。重複なし394 ID＝333 PASS/61 FAIL/ERROR0/SKIP0。新36＋identity1＝37 PASS。
+
+共有9owner/18payload構成不変。language identity `e213267ed99ecc542578ba16d592db90203dd03024cfac25052f5853b27fd8ed`、runtime identity `db24cd4b8eaa175aa3a45a0486653c5a990b53cbe6cca4402c43c86801d8b505`。共有identityはanswer_update全体を証明しないため、当該fileを意味更新/本文/保存とremote blob照合で別に確認する。scratch JSON/XML/logは正式再利用証跡へ昇格させず、GitHubのproduction・追加test/fixtureとこの記録を再開原典にする。反映commit/tree・exact changed paths・remote UTF8/blob照合と最終HEADは既存Draft PR3/30本文へ確定値を記す。
+
+### 残件・再開位置
+
+今回のnegative/mixed窓は限定条件で回復したが、複数出来事・回答・訂正群は未完。同名原文で「今は嬉しい。」を2回答える同文・同時点は、Observationの同名識別が未解決で本文independent validationが成立しないというu75残件を継承する。今回この未変更系列の修復は主張しない。次は回答の同文性に頼らず元source occurrenceと各ABOUTを追い、本文の識別を保持すること。
+
+Observationの同名回答が記述順へ依存する点、HRの「後に書かれた方では」の修飾が第三eventへ掛かる読め方、長いし列挙・「のですね、また」・後→先→後の順序、二層再掲・固定終端・受け取りの浅さは残る。過去説明形の「怖かったのだったのですね」も診断で確認した残差で、正式36の成功へ混ぜない。上流の連結成分/anchor直接接続の潜在不一致も未解決。商品提示用の完成候補ではない。
+
+primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmerged。Ready/merge/deploy/enable/live適用なし。最新weeklyの10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）を継承し、今回の継続指示を期限延長とは解釈しない。10/02実DB/端末一往復は未達、旧10/10 Emlis内容期限を復活させない。対象群完了前に別の二層価値改善へ先行せず、自動進行false。追加ユーザー操作負担・外部有料サービス利用なし。所要は今回開始05:58 JSTからPR反映完了まで、正確な課金額は取得できていない。

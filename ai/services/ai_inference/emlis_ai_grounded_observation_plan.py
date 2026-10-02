@@ -8280,8 +8280,12 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
         groups = [row for row in groups if row[0] != "current_burden"
                   and row[1] != (replacement.nucleus_id,)]
         groups.append(("current_burden", (*targets, replacement.nucleus_id), tuple(supports)))
+    mixed_original_withdrawal = (withdrawal and not separate_later_scopes
+        and len(groups) == 3 and len(answers) == len(by_event) == 2
+        and len(positive) == len(negative) == 1 and len(detached_originals) == 1
+        and not (detached_answers or independent_answers))
     if ((withdrawal or len(revised_originals) == len(independent_answers) == 2)
-        and len(groups) > 3 and not (independent or actions)
+        and (len(groups) > 3 or mixed_original_withdrawal) and not (independent or actions)
         and len(revised_originals) == len(independent_answers)):
         # A withdrawn event does not retract its independently stated
         # reaction or answer. Coordinate those detached burdens and admitted
@@ -8296,16 +8300,18 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
                 row[0] == "current_burden" and not row[2]
                 and len(row[1]) == 1 and row[1][0] in detached_burdens)]
             groups.append(("current_burden", detached_burdens, ()))
-        elif (len(positive) == len(answers) == 2 and len(detached_originals) == 1
-              and targets and len(groups) == 4):
+        elif ((len(positive) == len(answers) == 2 and len(groups) == 4
+               or mixed_original_withdrawal)
+              and len(detached_originals) == 1 and targets):
             # The withdrawn original reaction remains an independent target,
             # alongside (never as a support of) the surviving event pairs.
-            # Positive answers keep their separate owners and ABOUT edges.
+            # Answers keep their separate owners and ABOUT edges. The
+            # mixed-polarity window retains its one positive Move separately.
             original_targets = tuple(sorted((*targets, detached_originals[0].nucleus_id),
                 key=lambda nid: _span_number(index[nid].source_span_ids[0])))
             groups = [row for row in groups if row[0] != "current_burden"]
             groups.append(("current_burden", original_targets, tuple(supports)))
-            if (not separate_later_scopes and len(by_event) == 2
+            if (not separate_later_scopes and len(positive) == 2 and len(by_event) == 2
                 and not (detached_answers or independent_answers)):
                 # The outer contrast reserves a Move. After retaining the
                 # withdrawn original feeling, coordinate only the two

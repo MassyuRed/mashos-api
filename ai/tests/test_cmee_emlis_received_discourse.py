@@ -5512,3 +5512,159 @@ def test_same_name_received_chain_unproved_negative_window_cannot_drop_duties(fi
     result = MeaningExperienceEngine().generate(req)
     assert result.artifact is None and result.meaning_checkpoint is not None
     assert result.body_state == 'MEANING_UPDATED_BODY_UNAVAILABLE'
+
+
+SAME_CHAIN_NEGATIVE_ANSWERS = (
+    ('今は少し苦しい。', '回答した時点では少し苦しい', '少し苦しくない'),
+    ('その時は少し苦しかった。', 'その時は少し苦しかった', '少し苦しくなかった'),
+    ('今は私も少し怖くないです。', '回答した時点ではあなたも少し怖くない', 'あなたも少し怖い'),
+    ('その時は私も不安でした。', 'その時はあなたも不安だった', 'あなたも不安ではなかった'),
+    ('今は私は不安です。', '回答した時点ではあなたは不安', 'あなたは不安ではない'),
+    ('今は私も少し怖いのです。', '回答した時点ではあなたも少し怖い', 'あなたも少し怖くない'),
+)
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('first,finite,opposite', SAME_CHAIN_NEGATIVE_ANSWERS)
+@pytest.mark.parametrize('second,second_finite', [
+    ('その時は楽しかった。', 'その時は楽しかった'),
+    ('その時は少し怖かった。', 'その時は少し怖かった'),
+])
+def test_same_name_received_chain_negative_answers_keep_every_owned_source(field, first, finite, opposite, second, second_finite):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    source = RECEIVED_CHAIN_MULTI.replace('誘われた', '褒められた')
+    request = begin(source if field == 'memo' else '', source if field == 'memo_action' else '')
+    for reply in (first, second):
+        request = advance(request, reply)
+    for withdrawn in (False, True):
+        if withdrawn:
+            request = advance(request, '「頼まれた」は誤りです。')
+        result, plan, sentence, resolver, selected = context = actual(request=request)
+        body, follow = result.artifact.text, result.artifact.reception
+        assert MeaningExperienceEngine().generate(request).artifact.text == body
+        first_forms = (finite,) if first.startswith('今は') else (
+            '褒められた時は、' + finite.removeprefix('その時は'),
+            *(('褒められた時は、少し苦しく',) if first == 'その時は少し苦しかった。' else ()))
+        visible_first = next((value for value in first_forms if value in follow), None)
+        assert visible_first and second_finite in follow
+        assert 'だのですね' not in follow
+        assert '悲しかったけれど、嬉しかった' in follow and '寂し' in follow
+        assert ('頼まれた' in body) == (not withdrawn)
+        assert ('最初の記録からは、当時の「怖かった」' in body) if withdrawn else ('怖さを感じ' in follow)
+        if withdrawn:
+            assert '最初の記録にあるとおり、当時は怖かった' in follow
+        moves = plan.response_plan.human_reception_plan.moves
+        required = {n.nucleus_id for n in plan.nuclei if n.retention == 'required'
+                    and set(n.source_fields) & {field, 'answer_text_private'}}
+        assert required == {nid for move in moves for nid in (*move.target_nucleus_ids, *move.support_nucleus_ids)}
+        assert 1 <= len(moves) <= 3
+        about = [r for r in plan.relations if r.type == 'evaluation_about_event']
+        assert len(about) == len({r.from_nucleus_id for r in about}) == len({r.to_nucleus_id for r in about}) == 2
+        nodes = {n.nucleus_id: n for n in plan.nuclei}
+        events = [nodes[r.from_nucleus_id] for r in about]
+        spans = [resolver.resolve(n.source_span_ids[0]) for n in events]
+        assert len({n.source_span_ids for n in events}) == 2 and spans[0].end_index <= spans[1].start_index
+        assert all(n.source_fields == (field,) and s.source_field == field for n,s in zip(events,spans))
+        for relation in about:
+            answer_node = nodes[relation.to_nucleus_id]
+            markers = [c for c in answer_node.semantic_frame.attribute_codes
+                       if c.startswith('thread_subject:distinct_source_occurrence:')]
+            assert len(markers) == 1 and nodes[relation.from_nucleus_id].source_span_ids[0] in markers[0]
+        when = '回答した時点では' if first.startswith('今は') else '褒められた時は、'
+        changed_time = 'その時は' if first.startswith('今は') else '褒められたことについて、回答した時点では'
+        follows = [follow.replace(visible_first, '', 1), follow.replace(second_finite, '', 1),
+            follow.replace(visible_first, when + opposite, 1), follow.replace(visible_first, visible_first.replace(when, changed_time), 1),
+            follow.replace('先に書かれた方では、', '後に書かれた方では、', 1),
+            follow.replace('後に書かれた方では、', '先に書かれた方では、', 1),
+            follow.replace('悲しかったけれど、嬉しかった', '嬉しかったけれど、悲しかった', 1),
+            follow.replace(second_finite, 'その時は楽しくなかった' if '楽しかった' in second_finite else 'その時は少し怖くなかった', 1)]
+        if '少し' in visible_first:
+            follows.append(follow.replace(visible_first, visible_first.replace('少し', ''), 1))
+        if 'あなたも' in visible_first:
+            follows.append(follow.replace(visible_first, visible_first.replace('あなたも', '相手は'), 1))
+        if withdrawn:
+            follows += [follow.replace('最初の記録にあるとおり、当時は怖かった', value, 1)
+                        for value in ('先の回答にあるとおり、当時は怖かった',
+                                      '最初の記録にあるとおり、今は怖い',
+                                      '最初の記録にあるとおり、当時は怖くなかった',
+                                      '褒められた時は怖かった', '頼まれた時は怖かった')]
+        assert all(v != follow for v in follows)
+        with (patch.object(reception, '_author_source_grounded_reception_clauses', side_effect=AssertionError('no author')),
+              patch.object(surface, '_render_observation', side_effect=AssertionError('no author'))):
+            if withdrawn:
+                legacy = follow.replace('最初の記録にあるとおり、当時は怖かった', 'その時は怖かった', 1)
+                with patch.object(gate, 'replay_source_grounded_human_reception_from_plan', return_value=SimpleNamespace(text=legacy)):
+                    proof = gate.evaluate_grounded_surface_body_inverse(body=body.replace(follow, legacy).encode(),
+                        plan=plan, sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected)
+                assert proof.passed, proof.failure_codes
+            for candidate in (follow, *follows):
+                with patch.object(gate, 'replay_source_grounded_human_reception_from_plan', return_value=SimpleNamespace(text=candidate)):
+                    proof = gate.evaluate_grounded_surface_body_inverse(body=body.replace(follow, candidate).encode(),
+                        plan=plan, sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected)
+                assert proof.passed == (candidate == follow), proof.failure_codes
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('second', ['その時は楽しかった。', 'その時は少し怖かった。'])
+@pytest.mark.parametrize('last', ['「頼まれた」は誤りです。', '「少し苦しい」ではなく「少し怖い」です。'])
+def test_same_name_received_chain_negative_saved_correction_withdrawal_and_replay(qcase, qdb, monkeypatch, field, second, last):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    source = RECEIVED_CHAIN_MULTI.replace('誘われた', '褒められた')
+    memo, action = (source, '') if field == 'memo' else ('', source)
+    qdb.query('update public.emotions set memo=$1,memo_action=$2 where id=$3', [memo, action, parent])
+    original = current = run(service.start(user, parent))
+    for step, reply in enumerate(('今は少し苦しい。', second, last)):
+        if step:
+            current = run(cont(service, user, current, f'negative-chain-continue-{step}'))
+        current = run(answer(service, user, current, reply, f'negative-chain-answer-{step}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == original['original']
+        assert qdb.query('select memo,memo_action from public.emotions where id=$1', [parent])['rows'][0] == {'memo':memo, 'memo_action':action}
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved body must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    assert current['state'] == 'COMPLETED' and not current['can_continue']
+    body = current['current_observation']['text']
+    assert '悲しかったけれど、嬉しかった' in body and '寂し' in body and second[4:-1] in body
+    if '誤り' in last:
+        assert '頼まれた' not in body and '最初の記録からは、当時の「怖かった」' in body
+        assert '最初の記録にあるとおり、当時は怖かった' in body
+        assert '回答した時点では少し苦しい' in body
+    else:
+        assert '先の回答時点では少し怖い' in body and '少し苦しい' not in body and '頼まれた' in body
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('second', ['その時は楽しかった。', 'その時は少し怖かった。'])
+def test_same_name_received_chain_negative_occurrence_requires_original_owner(field, second):
+    from dataclasses import replace
+    from emlis_ai_grounded_observation_plan import GroundedObservationPlanError
+    source = RECEIVED_CHAIN_MULTI.replace('誘われた', '褒められた')
+    req = begin(source if field == 'memo' else '', source if field == 'memo_action' else '')
+    for reply in ('今は少し苦しい。', second):
+        req = advance(req, reply)
+    result, plan, sentence, resolver, selected = actual(request=req)
+    links = [r for r in plan.relations if r.type == 'evaluation_about_event']
+    first, second_link = links
+    event = next(n for n in plan.nuclei if n.nucleus_id == first.from_nucleus_id)
+    other = next(n for n in plan.nuclei if n.nucleus_id == second_link.from_nucleus_id)
+    response = next(n for n in plan.nuclei if n.nucleus_id == first.to_nucleus_id)
+    changes = [replace(event, source_span_ids=other.source_span_ids),
+        replace(event, source_fields=('memo_action' if field == 'memo' else 'memo',)),
+        replace(response, semantic_frame=replace(response.semantic_frame, attribute_codes=tuple(c for c in response.semantic_frame.attribute_codes
+            if not c.startswith('thread_subject:distinct_source_occurrence:')))),
+        replace(response, semantic_frame=replace(response.semantic_frame, attribute_codes=tuple(
+            'thread_time:original_occasion' if c == 'thread_time:answer_time' else c for c in response.semantic_frame.attribute_codes))),
+        replace(response, semantic_frame=replace(response.semantic_frame, modality='uncertain'))]
+    altered = [replace(plan, nuclei=tuple(changed if n.nucleus_id == changed.nucleus_id else n for n in plan.nuclei)) for changed in changes]
+    altered.append(replace(plan, relations=tuple(replace(r, from_nucleus_id=second_link.from_nucleus_id) if r==first else r for r in plan.relations)))
+    with (patch.object(reception, '_author_source_grounded_reception_clauses', side_effect=AssertionError('no author')),
+          patch.object(surface, '_render_observation', side_effect=AssertionError('no author')),
+          patch.object(gate, 'replay_source_grounded_human_reception_from_plan', return_value=SimpleNamespace(text=result.artifact.reception))):
+        for changed in altered:
+            try:
+                proof = gate.evaluate_grounded_surface_body_inverse(body=result.artifact.text.encode(),plan=changed,
+                    sentence_plan=sentence,resolver=resolver,selected_subjective_input=selected)
+                assert not proof.passed
+            except (GroundedObservationPlanError, reception.GroundedHumanReceptionSurfaceError):
+                pass
