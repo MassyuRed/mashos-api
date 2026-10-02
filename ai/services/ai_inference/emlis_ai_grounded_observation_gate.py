@@ -4045,7 +4045,7 @@ def _read_received_discourse_unqualified(raw, move, plan, resolver, selected_sub
     later_events = []
     for nid in move.target_nucleus_ids[1:]:
         nucleus = index[nid]
-        revised = _thread_revised_original_reaction(nucleus, plan.relations)
+        revised = _thread_revised_original_reaction(nucleus, plan.relations, polarity=nucleus.semantic_frame.polarity)
         if revised:
             event = "言い直してくださった気持ちについては、"
         else:
@@ -4229,7 +4229,7 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
     offset, saw_answer = 0, False
     for part_index, (event_id, part) in enumerate(zip(move.target_nucleus_ids, parts)):
         event = nuclei[event_id]
-        if _thread_revised_original_reaction(event, plan.relations):
+        if _thread_revised_original_reaction(event, plan.relations, polarity=event.semantic_frame.polarity):
             span = resolver.resolve(event.source_span_ids[0])
             source = _body_inverse_typed_source_fragment(event, span.raw_text)
             ending = re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました)$", part)

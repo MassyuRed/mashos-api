@@ -3894,3 +3894,114 @@ def test_received_chain_middle_revision_saved_body_retains_all_sources(qcase, qd
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
         assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == RECEIVED_CHAIN_MULTI
     assert current['state'] == 'COMPLETED' and not current['can_continue']
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('replies,replacement,visible', [
+    (('今は嬉しい。', 'その時は楽しかった。'), '少し楽しかった',
+     ('回答した時点では嬉しい', 'その時は楽しかった', '当時は少し楽しかった')),
+    (('その時は楽しかった。', '今は少し安心です。'), '少し安心だった',
+     ('その時は楽しかった', '回答した時点では少し安心', '当時は少し安心だった')),
+    (('今は少し私は少し安心です。', 'その時は私も楽しかった。'), '私も少し楽しかった',
+     ('回答した時点では少しあなたは少し安心', 'その時はあなたも楽しかった', '当時、あなたも少し楽しかった')),
+])
+def test_received_chain_positive_revision_keeps_every_source_in_reception(field, replies, replacement, visible):
+    # Use the same complete source-coverage and independent byte-reading
+    # assertions for either polarity; no old case or expectation is replaced.
+    test_received_chain_middle_revision_keeps_every_source_in_reception(field, replies, replacement, visible)
+
+
+def test_received_chain_positive_revision_rejects_missing_or_relinked_reception():
+    from test_cmee_emlis_detached_observation import read_body
+    request = begin(RECEIVED_CHAIN_MULTI)
+    for text in ('今は嬉しい。', 'その時は楽しかった。', '「悲しかった」ではなく「少し楽しかった」です。'):
+        request = advance(request, text)
+    context = actual(request=request)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    changes = [
+        follow.replace('嬉しかったという気持ちを受け止めています。', ''),
+        follow.replace('褒められたことについて、回答した時点では嬉しいし、', ''),
+        follow.replace('し、誘われたことについて、その時は楽しかったのですね。', 'のですね。'),
+        follow.replace('誘われたのに、寂しさを感じ、', ''),
+        follow.replace('頼まれたのに、怖さを感じ、', ''),
+        follow.replace('、言い直してくださった気持ちについては、当時は少し楽しかったのですね。', 'たのですね。'),
+        follow.replace('嬉しかったという気持ち', '少し楽しかったけれど嬉しかったという気持ち'),
+        follow.replace('言い直してくださった気持ちについては、', '褒められたから、'),
+        follow.replace('回答した時点では嬉しい', 'その時は嬉しい'),
+        follow.replace('その時は楽しかった', '回答した時点では楽しかった'),
+        follow.replace('誘われたことについて、', '頼まれたことについて、'),
+        follow.replace('当時は少し楽しかった', '当時は少し楽しくなかった'),
+        follow.replace('誘われたのに、寂しさ', '褒められたのに、寂しさ'),
+        follow.replace('頼まれたのに、怖さ', '頼まれたから、怖さ'),
+        follow.replace('当時は少し楽しかった', '当時は楽しかった'),
+        follow.replace('当時は少し楽しかった', '当時は友人が少し楽しかった'),
+    ]
+    with (patch.object(reception, '_source_owned_positive_answer_group_sentence', side_effect=AssertionError('no author')),
+          patch.object(reception, '_source_grounded_received_discourse', side_effect=AssertionError('no author'))):
+        assert read_body(context, body).passed
+        for changed in changes:
+            assert changed != follow
+            assert not read_body(context, body.replace(follow, changed)).passed
+
+
+@pytest.mark.parametrize('change', ['marker', 'relation', 'time', 'unsupported_polarity', 'field', 'actor'])
+def test_received_chain_positive_revision_requires_independent_source_proof(change):
+    from dataclasses import replace
+    request = begin(RECEIVED_CHAIN_MULTI)
+    for text in ('今は嬉しい。', 'その時は楽しかった。', '「悲しかった」ではなく「少し楽しかった」です。'):
+        request = advance(request, text)
+    result, plan, _, resolver, selected = actual(request=request)
+    revised, = (n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes)
+    move, = (m for m in plan.response_plan.human_reception_plan.moves if revised.nucleus_id in m.target_nucleus_ids)
+    follow, = (p + '。' for p in result.artifact.reception.removesuffix('。').split('。')
+               if '言い直してくださった気持ちについては、' in p)
+    assert gate.read_source_owned_discourse(follow, move, plan, resolver, selected) is not None
+    if change == 'relation':
+        about = next(r for r in plan.relations if r.type == 'evaluation_about_event')
+        plan = replace(plan, relations=(*plan.relations, replace(about, relation_id='invalid-revision-about',
+                                                               to_nucleus_id=revised.nucleus_id)))
+    else:
+        frame = revised.semantic_frame
+        if change == 'marker':
+            frame = replace(frame, attribute_codes=tuple(c for c in frame.attribute_codes if c != 'thread_subject:independent_source_replacement'))
+        elif change == 'time':
+            frame = replace(frame, time_scope='present')
+        elif change == 'unsupported_polarity':
+            # Both positive and negative are admitted revision shapes.
+            # The independent reader proves visible polarity against the
+            # complete source; it does not rerun semantic classification.
+            frame = replace(frame, polarity='neutral')
+        elif change == 'actor':
+            frame = replace(frame, actor='other_person')
+        changed = replace(revised, semantic_frame=frame, source_fields=('memo',) if change == 'field' else revised.source_fields)
+        plan = replace(plan, nuclei=tuple(changed if n.nucleus_id == revised.nucleus_id else n for n in plan.nuclei))
+    with patch.object(reception, '_source_grounded_received_discourse', side_effect=AssertionError('no author')):
+        assert gate.read_source_owned_discourse(follow, move, plan, resolver, selected) is None
+
+
+@pytest.mark.parametrize('replies,replacement,retained', [
+    (('今は嬉しい。', 'その時は楽しかった。'), '少し楽しかった', ('では嬉しい', 'その時は楽しかった')),
+    (('その時は楽しかった。', '今は少し安心です。'), '少し楽しかった', ('その時は楽しかった', '時点では少し安心')),
+    (('今は少し私は少し安心です。', 'その時は私も楽しかった。'), '少し楽しかった', ('では少しあなたは少し安心', 'その時はあなたも楽しかった')),
+])
+def test_received_chain_positive_revision_saved_body_retains_all_sources(qcase, qdb, monkeypatch, replies, replacement, retained):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$1 where id=$2', [RECEIVED_CHAIN_MULTI, parent])
+    first = current = run(service.start(user, parent))
+    for i, text in enumerate((*replies, '「悲しかった」ではなく「' + replacement + '」です。')):
+        if i:
+            current = run(cont(service, user, current, f'positive-revision-continue-{i}'))
+        current = run(answer(service, user, current, text, f'positive-revision-answer-{i}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        if i == 2:
+            body = current['current_observation']['text']
+            follow = body.split('Emlisから：\n', 1)[1]
+            assert '悲しかった' not in body and follow.count('。') == 3
+            assert all(s in follow for s in (*retained, '嬉しかった', '誘われたのに、寂し',
+                                             '頼まれたのに、怖', '当時は少し楽しかった'))
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved revision must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+        assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == RECEIVED_CHAIN_MULTI
+    assert current['state'] == 'COMPLETED' and not current['can_continue']

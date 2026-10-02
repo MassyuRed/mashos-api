@@ -8012,6 +8012,7 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
         key=lambda n: _span_number(n.source_span_ids[0])))
     positive_revisions = tuple(n for n in independent_answers
         if _thread_revised_original_reaction(n, relations, polarity="positive"))
+    original_revisions = (*revised_originals, *positive_revisions)
     # Revising the middle feeling severs both original contrast edges, not
     # the surviving final feeling or either ABOUT answer. Keep that original
     # feeling separate; coordinate the answers and use the existing mixed
@@ -8021,10 +8022,11 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
         and {"semantic_dependency:received_feeling_contrast_chain",
              "source_received_chain_slot:second"}
             <= set(independent[0].semantic_frame.attribute_codes)
-        and len(revised_originals) == len(independent_answers) == 1
-        and len(positive) == len(by_event) == 2 and len(answers) == 3
+        and len(original_revisions) == len(independent_answers) == 1
+        and len(positive) - len(positive_revisions) == len(by_event) == 2
+        and len(answers) == 3
         and not (withdrawal or actions or detached_answers))
-    mixed_revision = bool(len(positive) == 2 and len(answers) == 3
+    mixed_revision = bool(chain_revision or len(positive) == 2 and len(answers) == 3
         and len(revised_originals) == 1
         and len(independent_answers) == 1 + len(positive_revisions)
         and len(positive_revisions) <= 1
@@ -8206,8 +8208,13 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
                 ("current_burden", tuple(event for event in targets if event != focus),
                  tuple(nid for nid in supports if nid != feeling))]
     if mixed_revision and targets and len(groups) == 4:
-        groups = [row for row in groups if row[0] != "current_burden"]
-        groups.append(("current_burden", (*targets, revised_originals[0].nucleus_id), tuple(supports)))
+        replacement = original_revisions[0] if chain_revision else revised_originals[0]
+        # A positive correction has its own lived-change singleton. Move
+        # that exact duty into the source-bounded mixed group, without
+        # removing the surviving original feeling or duplicating the revision.
+        groups = [row for row in groups if row[0] != "current_burden"
+                  and row[1] != (replacement.nucleus_id,)]
+        groups.append(("current_burden", (*targets, replacement.nucleus_id), tuple(supports)))
     if ((withdrawal or len(revised_originals) == len(independent_answers) == 2)
         and len(groups) > 3 and not (independent or actions)
         and len(revised_originals) == len(independent_answers)):

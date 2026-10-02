@@ -3314,7 +3314,7 @@ def source_grounded_thread_received_group(move, plan, nucleus_index, resolver):
     rows = []
     for event_id in move.target_nucleus_ids:
         target = nucleus_index[event_id]
-        if _thread_revised_original_reaction(target, plan.relations):
+        if _thread_revised_original_reaction(target, plan.relations, polarity=target.semantic_frame.polarity):
             if (len(move.target_nucleus_ids) < 2 or not move.support_nucleus_ids
                 or not any(nucleus_index[nid].kind == "event" for nid in move.target_nucleus_ids)):
                 return ()

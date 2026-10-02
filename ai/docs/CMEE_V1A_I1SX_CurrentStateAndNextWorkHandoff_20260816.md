@@ -13016,3 +13016,40 @@ Python3.12.14 / pytest9.1.1 / PGlite0.5.8を再利用。合成DB/mock RPCで、�
 Observationの「その背景には」は、独立して残る原感情を回答の背景へ見せる表現上の問題として残る。Receptionも「嬉しかったという気持ちを受け止めています」の定型、長い原反応列挙に訂正を接続する読みにくさ、訂正対象の追いやすさ、SELF複合修飾・説明形、二層再掲・深さは未完。意味の復帰を自然さ・所属明瞭さ全体の解決に換算せず、二層再掲の別作業へ先行しない。
 
 primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承し、旧10/10期限を復活させない。実DB/端末目標を合成DB確認で達成扱いにせず、Mashへ商品確認を依頼する段階とはしない。
+
+
+## 2026-10-02 u65 — 肯定的な原感情訂正後も他の原反応と二回答をReceptionへ保持する
+
+### 開始位置・原因・修復
+
+Mashの残件継続指示と前回txt（20261002-014626）を受け、u64の次作業を実施。開始HEADはAPI `bc886cf6c396531bcf537af0fe45fcd1056f264d`、Cocolon `acf8595e30abb2ffb6bc38216b90cd0671357b3f`。fresh PRのDraft/open/unmergedと作業preimageを確認。CURRENT_RULES・09/99・Rule18の既存限定委任、恒久incident、全体設計01・01A/B/Cの役割地図とEmlis current_structure、最新weekly09/26の09/29追加合意、u64を確認した。System Context prepareはshallow checkoutの祖先確認で未成立（acf8595がa77b79cのdescendantと判定できず）。原典を直接読取り、補助基盤の修復へは進まない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX、既存LEVEL_2内。root華恋が唯一の編集・実行・反映担当、read-only担当が原因・routeと全本文を確認。担当名を独立した特定モデルの証明や商品合格へ換算しない。目的は、受理済みの肯定訂正によって別の原反応・回答が消える残件の直接修復。既存Plan/HR/Gateの3source内、既存test末尾/current identity/両handoff内で完結する。新owner・renderer・reader・補助system・公開contract/API/DB/RN・受付・依存宣言・flagの変更はない。STRUCTURE_MAP_DELTA_NONE。
+
+`RECEIVED_CHAIN_MULTI`→「今は嬉しい。」→「その時は楽しかった。」→「悲しかった」を「少し楽しかった」へ訂正すると、従来Receptionは訂正だけへ縮退した。u64のchain_revisionは負の訂正だけを集約し、肯定訂正を第3の独立positive回答として扱っていた。既存の原感情訂正証明が正負を区別して返す値を合わせ、ABOUT付きpositive二回答と、関係を継承しない原感情訂正一件を分離する。二回答1Move、生存した元positive感情1Move、他の原反応＋独立訂正1Moveの計3Moveを維持する。肯定訂正のsingletonはそのexact dutyだけを混合集約へ移し、二重化や生存感情の削除をしない。
+
+HRの既存mixed source証明とGateの節境界/有限述語読取でも、訂正証明へ当該nucleusの正負を明示する。証明関数のSELF・過去・原時点・回答field・訂正marker・relation不在などの条件は保持。本文の時点・主体・程度・肯否はcomplete sourceとの逆読照合で保つ。mixed IRは既存source_boundedを使用し、positiveをnegativeと称したり、失効contrastや別出来事へのedgeを追加したりしない。途中のsmokeで残っていたGate節境界のnegative限定がVISIBLE_BINDING_GAPを起こしたため、同じ3source内で修復した。検査を迂回するproduction変更はない。
+
+### 実本文・検証
+
+開始HEADの完全worktreeと最終版を同じruntimeで22行（同一basic条件の重複1を除き21入力系列）比較。対象はmemo/memo_action×基本・過去時点・SELF複合修飾の6系列。重複を含む7行でReceptionの意味保持が回復し、Observationは全22行不変。他15行は両層全文不変。root/read-only担当が原memo・全回答・修正前後の両層を全文確認し、対象で訂正前の悲しさ・失効contrastの復活、訂正の別出来事への明示的な結び替えは見つからなかった。inverse22 PASSには未解消の縮退例も含まれるため、全意味保持や商品合格へ換算しない。
+
+新規16条件は16 PASS（24.166秒）。本文6は既存u64と同じ完全source被覆・独立UTF8逆読assertionを適用し、public/内部本文一致、3Move/3文、元感情・他原反応・二回答・訂正、全required textのtarget/support/context被覆と失効contrast不在を確認。本文改変1条件内の16変形で、各寄与の欠落、対象/時点/肯否、因果化、訂正の程度消失・他者化を拒否。source-shape6は訂正marker欠落、relation追加、時点変更、未対応neutral、field変更、他者化を拒否した。保存3系列は毎更新後REFINED、generate禁止GET/start DTO全文一致、原DTO/DB原memo不変、第三回答後COMPLETEDを確認した。
+
+初回新規16条件は15 PASS / 1 FAIL（25.674秒）。新規testがsourceを変えずtyped metadataのpositiveをnegativeへ変えた場合にも、readerが再分類して拒否すると誤って期待した。既存readerは受理済みshapeを前提に、可視本文を出典全文へ独立復元する責務で、正負の再分類ownerではない。新規testを未対応neutral拒否へ修正し、実本文の「楽しかった→楽しくなかった」改変拒否と正負両方の正例は維持した。旧test全文251826 bytesのprefix・旧期待/skip/xfail・historical frozen identityを保持。再分類lexiconや新検査機構を追加していない。
+
+関連432条件＝428 PASS / 4 FAIL（241.408秒）、current owner identity1 PASS（17.609秒）。新規16・関連432・identity1は重複0で、最終449 unique IDs＝445 PASS / 4 FAIL / ERROR0 / SKIP0。u64最終433 IDsは欠落0・成否全一致。新規の初回/再実行や比較の重複を加算しない。最終検査後のproduction変更なし。
+
+関連選択はdetached_observation / received_discourseの `(same_name_positive or nominal_positive_answer or shared_answer_topic or nominal_explained_answer or positive_answer_group or split_positive_answer or received_chain or two_positive_withdrawal or detached_burden or finite_contrast or independent_past_revision or independent_explanation_revision) and not received_chain_positive_revision`。identityは既存 `test_active_final_language_owner_chain_has_zero_legacy_compose_calls`。継続4 FAILは名詞回答のreaction/feeling対旧value/fact期待2と、detached_burdenの旧capacity-gap例外期待2。今回新たに開始HEADでも同じ4 IDsの失敗を確認（11.762秒）。未解消期待を消したり、全suite成功と扱ったりしない。
+
+以前のscratch runtimeが見つからず、scratchにPython3.12.14/pytest9.1.1/PGlite0.5.8と必要な既存test依存を再配置し、同じ環境でbefore/afterと検証を実行した。repositoryの依存宣言は変更なし。合成DB/mock RPCであり、実DB・端末・プロセス再起動は未検証。current共有owner identityは既存導出で更新し、language `7dcd74a522fa690929d2265a43e02abf42e024b61a3156478b4bddca3a398b7c`、runtime `fdf0b992ab075d49930cdbe7252e3cb3a0938c4007343d54d0959ff53b9f8cdb`。Plan/HR/Gateのhash/lengthと集約identityだけが変わり、owner構成/数は不変。
+
+反映対象はAPI3source・既存test末尾・current identity・既存handoff、Cocolon既存06のexact7 modify（追加/削除0）。既存Draft PR3/30へnon-force反映し、fresh HEAD・全7file bytes/blob・変更path集合を照合する。正式反映識別子と照合結果はPR metadataへ記録する。
+
+### 残件・次の一作業
+
+次は元「嬉しかった」を「少し怖かった」へ訂正した場合のReception縮退。今回は開始版/最終版の両層全文が同一で、訂正＋第1回答だけが残ることを確認した。read-only静的調査では、chainがevent/firstの2核になった時、残る原contrastと第1回答ABOUTの共存を既存2核のexact1 link条件が認めないことが第一原因候補。3核側との非対称、既存relational focusの同種条件、外側原contrast1Move＋二回答1Move＋他原反応/訂正1Moveへの配分を次に実測する。今回はこの次候補を実装・検証したとはしない。
+
+肯定説明形「少し楽しかったのです」への訂正も未完。memo/memo_actionの2行ともObservationに未反映案内があり、Receptionは第2回答だけへ縮退したまま。上流の受理/意味分類を今回のgroup修復へ混ぜず、現在の複数出来事/回答/訂正群の残件として保持する。
+
+Observationの曖昧な「その背景には」、Receptionの長い列挙と訂正対象の追いにくさ、独立「嬉しかった」の指示先、SELFの「少しあなたは少し」、定型性・二層再掲・深さ不足も残る。意味保持の限定回復を自然さ全体の完成へ換算しない。primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承し、旧10/10期限は復活させない。合成検証で実DB/端末目標を達成扱いにせず、Mashへ商品確認を依頼する段階としない。
