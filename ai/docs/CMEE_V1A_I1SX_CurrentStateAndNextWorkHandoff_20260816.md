@@ -13333,3 +13333,42 @@ current共有9owner/18payload構成は不変。language identity `0cdfd5df9bea3a
 上記引用内の撤回対象は入力時に通常の鉤括弧「」で指定する。欠落させず3Move以内で出すこと、独立読取・保存・original/replay保持を次の実本文で確認する。
 
 出典/時点表示の限定改善を認めるが、訂正済み回答のsource/time重複、SELF句、名詞説明形、原感情の丁寧過去形/現在形、同名感情追跡、長い列挙、二層再掲・固定終端・深さ不足は残る。対象群完了前に別の二層価値改善へ先行しない。primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmerged。Ready/merge/deploy/enable/live適用なし。10/03 Emlis休止、10/04 Work分析（利用不可ならPro Piece）を継承し、10/02実DB/端末目標は未達。旧10/10内容期限は復活させない。
+
+
+## 2026-10-02 u73 — 別の出来事を撤回した後の本文停止を修復し、原感情の出典を明示
+
+### 開始状態と限定修正
+
+MashのEmlis残件継続指示を受け、u72最優先の「正回答2件の後に別eventを撤回すると4Moveになる」系列を修復。開始HEADはAPI `b1a6a57bd50432d38d386f4adc04d7f867f8600a`（tree `6879dbd5668186b2933baad68821194d39d90782`）、Cocolon `542f60e0f603d62d525877dd4ac01d6b3abb7a85`（tree `15dbad8cc1e33e29b7c10db86c89d38355fb0f6a`）。両Draft/open/unmergedをfresh照合。全体設計01・全ファイル地図02・current_structure・CURRENT_RULES/作業姿勢ルールの既読原典を継承し、fresh全tree（API2355/Cocolon1797、truncated false）で参照path/hashと最新weekly09/26を確認。weekly末尾09/29合意、Q4/current_structure/01の担当境界、恒久incident全文と既存handoffを確認。全path照合を全実装全文精読とは扱わない。rootのみ書込み、補助agentはread-onlyの原因診断/本文/失敗分類。外部AIなし。
+
+既存Planのwithdrawal原感情合流の直後で、ABOUTが別々に所有するpositive回答2件を既存collective dutyへまとめる。withdrawal除外を広く外さず、linked2・detached/independent answerなし・既存分離scopeなしという限定条件。撤回原感情は残存eventのsupportにせず独立targetのまま。外側contrastを含む4Moveを3Moveへ収め、意味やsourceを削除しない。
+
+回復した全文を読むと、原感情「怖かった」が直前の別event「誘われた」への反応に読めた。既存Surfaceで「最初の記録からは、当時の『…』という気持ちが読み取れます」、既存HRのmixed original branchで「最初の記録にあるとおり、当時は…」と出典を明示。実本文の引用符は鉤括弧。原文/回答、原時点/回答時点、SELF・程度・肯否・有限形を区別する。
+
+既存Gateは原文専用の完全な文法をmemo/memo_actionに限定し、source逐語、撤回marker、原reaction投影、主体/時点、辺なしを独立に確認。relation入り観測行でも原感情自身の完全な1文を一度だけ読む。HRのUTF8復元は実prefix長を使い、旧本文も従来の限定文法とsource証明で読める。生成側replayとの一致だけを正解にしない。
+
+4既存production owner内の変更。新owner/helper/renderer・公開contract/API/DB/RN・意味受付・3Move上限・依存宣言・flagの変更なし。STRUCTURE_MAP_DELTA_NONE：既存4owner内のgroup構成/表示/独立読取で、route・schema・lifecycle・file配置は不変。API7（4production、既存test末尾、current共有identity、既存handoff）＋Cocolon既存06の計8 modify、追加/削除0。旧test340716 bytes prefix、旧期待/skip/xfail、historical frozen identityを保存。
+
+### 実本文と検証結果
+
+既存RECEIVED_CHAIN_MULTIをmemo/memo_actionで各10系列、計20系列比較。対象は基本・原/回答時点反転と程度・SELF・名詞説明形・別event同一感情の5系列×2＝10。開始版では10すべてhuman_reception_move_count_invalid、変更版では全文成立。対照6（u71原感情訂正、u72出来事撤回、訂正済み先行回答）は両層全文不変。既存未成立4は成否不変（同名event初回未成立2、正負混在の4Move2）。全20で入力/回答は同一、prepareに到達した18のstatus/update/accepted nucleiは同一。同名event2は初回未成立なので意味graph照合の成立例へ数えない。
+
+成立16の原入力・全回答・両層全文をrootとread-only補助が再読し、independent inverse16 PASS。対象10では原感情の出典が追いやすくなり、撤回event復活/元感情欠落は見つからない。代表基本例のraw Planをpolicy直前で旧関数と比較し、11 nuclei・5 relations・required coverage・証拠ID・unknown境界は完全同一、Moveのみ4→3。これを全入力一般の証明とはしない。
+
+新規15条件（本文/独立読取10、保存4、否定原感情のsource frame1）＋identity1＝最終16 PASS。新本文10はpublic engine一致、全必須target/support、別ABOUT2本とsource順、独立UTF8復元、作者禁止・matching-mutated-replayで欠落/重複/別event帰属/撤回復活/出典/時点/SELF/程度/肯否/説明形/contrast破損を拒否し、旧本文互換も確認。追加1は否定過去の原感情で9変異を拒否。出典prefixを残して肯否/過去/主体を変え、出典だけの原記録→回答変更も分離して確認した。
+
+保存4は各回答後REFINED、original DTOとDB原memo/memo_action不変、generate禁止GET/startの完全DTO一致、第三回答後COMPLETEDを確認。Python3.12.14/pytest9.1.1/PGlite0.5.8の既存runtime。合成DB/mock RPCの確認であり、実DB/端末/プロセス再起動を達成扱いにしない。
+
+初回関連選択ではbaseline458＝407 PASS/51 FAILに対し変更472＝398 PASS/74 FAIL。追加23のうち15は実生成回帰（unknown単独2、compound unknown6、positive＋unknown6、保存1）だった。原感情とunknownの文末「と書かれています」が既存anti-templateのstem反復に掛かったため、原感情を上記「読み取れます」へ修正。anti-template/ledger規則は緩和していない。修正後の重点45 PASSに保存1と新15を含む。
+
+最終production全byteで関連選択473を再実行し、414 PASS/59 FAIL/ERROR0/SKIP0（305.862秒）。baseline共通458では成否変化は旧HR文字列置換が無変化となる8のみ。旧「その時は嬉しくなかった」を探すためGateに届く前に停止する8を意味検査PASSに換算せず、追加1の9変異で現表現の失われた検査を補った。生成回帰15はすべて解消。継承51はbaselineと失敗箇所も一致（u72旧prefix17＋それ以前の旧capacity例外期待2/旧名詞句期待1/訂正旧prefix22/訂正mutation3/訂正reader6）。未分類0。関連473＋identity1の重複なし474 ID＝415 PASS/59 FAIL。全suite成功・商品合格とはしない。
+
+current共有9owner/18payload構成は不変。language identity `cf64b0d5e43c70eb49411b9bf95a963aa935e5567f0cac30c6fa3f9166cdd26e`、runtime identity `c293d71a13b85cd8ea048009ac56fcbe5d806c1ca6952521abff021a3d5a200b`。identity検査1 PASS（18.150秒）。scratchのJSON/XML/logを正式再利用証跡にはせず、再開原典はGitHubのproduction・追加test/fixtureとこの記録。反映commit、exact changed-path、remote全文/blob照合の確定値は両PR本文へ記す。
+
+### 残件・再開位置
+
+次は同じ複数出来事・回答・撤回群の正負混在4Moveを優先。原文はRECEIVED_CHAIN_MULTI、回答「今は私も少し怖くないです。」→「その時は楽しかった。」→「『褒められた』は誤りです。」（撤回入力の対象を通常の鉤括弧で囲む）。memo/memo_action双方で未成立。再帰内の残存受領pair・linked positive回答・detached negative回答の3に外側原contrast1が加わる。今回のlinked positive2限定では適用しない。既存answer groupは単一polarity、detached許可は正2件の先頭のみ。detached burdenも全負・全no-edgeを要求する。次の候補はlinked positiveを独立に保ち、detached negative回答を既存mixed received/current_burdenへ独立operandとして加えること。Planの外側contrast予約がある狭い再帰条件と、既存HR source_grounded_thread_received_group/_source_grounded_received_discourse、Gate _read_received_discourse_partsの回答source/time復元を揃える必要がある。原文専用の「最初の記録」を回答へ流用せず、SELF・も・少し・怖くない・回答時点・辺なしを保つ。既存positive-only/all-negativeの制約を広く緩めず、Plan-onlyで解決したとはしない。これは次手のread-only診断であり未実装。
+
+同名event（原文の「誘われた」を二つ目の「褒められた」へ置換し、基本2回答→「頼まれた」撤回）も初回emlis_q3_initial_body_unavailableで未成立。同一感情2回答が通ることを同名event対応の完了へ転用しない。原感情の丁寧過去形/現在形、SELF句「少しあなたは少し」、名詞説明形「安心なのだし」、長い列挙、「のですね、また」、原contrastへ戻る順序、二層再掲・定型性・深さ不足も残る。本文回復を商品提示用の完成候補とはしない。
+
+primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用なし。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）。10/02実DB/端末一往復は未達のまま。旧10/10 Emlis内容期限は復活させず、対象群完了前に別の二層価値改善へ先行しない。

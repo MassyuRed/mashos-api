@@ -10184,7 +10184,7 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True,
         event = fragments[int(slot_text)]
         if link in {"detached", "replacement"}:
             prefix = (_revised_feeling_discourse_prefix(event, answer_source=len(codes) > 1)
-                      if link == "replacement" else "その時は")
+                      if link == "replacement" else "最初の記録にあるとおり、当時は")
             copula = _detached_feeling_copula_parts(event)
             parts.append(prefix + _detached_feeling_finite_surface(event, allow_medial=True,
                 allow_explanatory=link == "replacement",

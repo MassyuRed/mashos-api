@@ -2642,7 +2642,12 @@ def _body_inverse_detached_observation(raw, nuclei, plan, resolver, *, correctio
         if cursor != len(text):
             return False
     elif len(nuclei) == 1:
-        if raw.removeprefix("今の入力だけを見ると、").startswith("先の回答には、"):
+        if raw.removeprefix("今の入力だけを見ると、").startswith("最初の記録からは、"):
+            if nuclei[0].source_fields not in {("memo",), ("memo_action",)}:
+                return False
+            parsed = re.fullmatch(r"(?:今の入力だけを見ると、)?最初の記録からは、(当時)"
+                                 r"の「([^「」『』\n]+)」という気持ちが読み取れます。", raw)
+        elif raw.removeprefix("今の入力だけを見ると、").startswith("先の回答には、"):
             if nuclei[0].source_fields != ("answer_text_private",):
                 return False
             parsed = re.fullmatch(r"(?:今の入力だけを見ると、)?先の回答には、(その時|回答した時点|先の回答時点)"
@@ -2678,7 +2683,7 @@ def _body_inverse_detached_observation(raw, nuclei, plan, resolver, *, correctio
             return False
         times = {c.split(":", 1)[1] for c in codes if c.startswith("thread_time:")}
         if nucleus.source_fields in {("memo",), ("memo_action",)}:
-            if (when != "その時" or times
+            if (when not in {"その時", "当時"} or times
                 or not _thread_withdrawn_original_reaction(nucleus, plan.relations)
                 or not any(row.kind == "reaction" and row.polarity == frame.polarity
                            and set(row.attribute_codes) <= codes
@@ -4329,16 +4334,18 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
             span = resolver.resolve(event.source_span_ids[0])
             source = _body_inverse_typed_source_fragment(event, span.raw_text)
             ending = re.search(r"(?:のですね|のです|のだと受け取りました)$", part)
+            prefix = next((p for p in ("最初の記録にあるとおり、当時は", "その時は")
+                           if part.startswith(p)), None)
             if (not thread_group or resolver.source_fields_for(event.source_span_ids) != event.source_fields
                 or not source or not re.search(r"(?:かった(?:です)?|[てで]いた|た|だ|でした)$", source)
-                or ending is None or not part.startswith("その時は")
-                or _restore_thread_finite_answer(part[len("その時は"):ending.start()], source,
+                or ending is None or prefix is None
+                or _restore_thread_finite_answer(part[len(prefix):ending.start()], source,
                     copular_clause=source.endswith(("でした", "だった"))) != source
                 or not any(row.kind == "reaction" and row.polarity == "negative"
                     and set(row.attribute_codes) <= set(event.semantic_frame.attribute_codes)
                     for row in _received_event_reaction_projections(span, event.semantic_frame))):
                 return None
-            start = len((raw[:offset] + "その時は").encode())
+            start = len((raw[:offset] + prefix).encode())
             end = len((raw[:offset] + part[:ending.start()]).encode())
             replacements.append((start, end, source.encode()))
             consumed.add(event_id)
@@ -5811,23 +5818,23 @@ def evaluate_grounded_surface_body_inverse(
             line_rows = tuple(row for row in witness.sentences
                 if row.section == "observation"
                 and row.section_line_ordinal == parsed_line.section_ordinal)
-            # A surviving answer is a complete source report even when it
+            # A surviving feeling is a complete source report even when it
             # shares a planned line with unrelated events. Read its own
             # sentence, not a source/time token borrowed from that line.
-            detached_answers = tuple(n for n in required_nuclei
-                if n.source_fields == ("answer_text_private",)
+            detached_reports = tuple(n for n in required_nuclei
+                if n.source_fields in {("answer_text_private",), ("memo",), ("memo_action",)}
                 and "thread_subject:withdrawn_source_event" in n.semantic_frame.attribute_codes
                 and (n.kind, n.semantic_frame.predicate_kind, n.semantic_frame.modality)
                     == ("reaction", "feeling", "feeling")
                 and not any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations))
             if planned_line.binding.relation_ids or len(detached_nuclei) == 1:
                 answer_rows = []
-                for nucleus in detached_answers:
+                for nucleus in detached_reports:
                     rows = tuple(row for row in line_rows if _body_inverse_detached_observation(
                         _body_inverse_visible_text(body, row).removeprefix("また、"),
                         (nucleus,), plan, resolver))
                     if len(rows) != 1 or rows[0] in answer_rows:
-                        failures.append(f"body_inverse_detached_answer_source_scope_mismatch:{index}")
+                        failures.append(f"body_inverse_detached_source_scope_mismatch:{index}")
                     else:
                         answer_rows.append(rows[0])
             independent_tail = line_rows[-len(revised_reactions) - len(detached_states):]

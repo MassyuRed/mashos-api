@@ -8279,6 +8279,16 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
                 key=lambda nid: _span_number(index[nid].source_span_ids[0])))
             groups = [row for row in groups if row[0] != "current_burden"]
             groups.append(("current_burden", original_targets, tuple(supports)))
+            if (not separate_later_scopes and len(by_event) == 2
+                and not (detached_answers or independent_answers)):
+                # The outer contrast reserves a Move. After retaining the
+                # withdrawn original feeling, coordinate only the two
+                # ABOUT-owned answers in their existing source order.
+                linked_ids = tuple(n.nucleus_id for event, n in sorted(
+                    by_event.items(), key=lambda row: _span_number(index[row[0]].source_span_ids[0])))
+                groups = [row for row in groups if not (
+                    row[0] == "lived_change" and row[1] in tuple((nid,) for nid in linked_ids))]
+                groups.append(("lived_change", linked_ids, ()))
     if (independent or actions or independent_answers) and len(groups) > 3:
         raise GroundedObservationPlanError("human_reception_opportunity_missing")
     if withdrawal and len(groups) > 3:

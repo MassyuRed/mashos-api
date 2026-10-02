@@ -2983,7 +2983,7 @@ def _render_observation(
     if ("thread_subject:withdrawn_source_event" in nucleus.semantic_frame.attribute_codes
         and nucleus.source_fields in {("memo",), ("memo_action",)}
         and nucleus.kind == "reaction" and nucleus.semantic_frame.time_scope == "past"):
-        return f"{prefix}その時の気持ちとして、{joined}が見えます。"
+        return f"{prefix}最初の記録からは、当時の{joined}という気持ちが読み取れます。"
     thread_times = {code for code in nucleus.semantic_frame.attribute_codes if code.startswith("thread_time:")}
     if thread_times:
         if len(thread_times) != 1:
@@ -3131,7 +3131,7 @@ def _render_extra_context(
             elif nucleus.source_fields == ("answer_text_private",):
                 parts.append(f"先の回答には、{when}の気持ちが{quoted}と書かれています。")
             else:
-                parts.append(f"また、{when}の気持ちとして、{quoted}が見えます。")
+                parts.append(f"最初の記録からは、当時の{quoted}という気持ちが読み取れます。")
         remaining = tuple(nid for nid in extra_ids if nid not in detached)
         return "".join(parts) + _render_extra_context(remaining, nucleus_index, resolver, relations)
     from emlis_ai_grounded_human_reception import source_grounded_original_record_feeling
