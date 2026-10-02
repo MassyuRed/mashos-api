@@ -1,5 +1,5 @@
 {
-  "language_identity": "e7603caa895abe9ad57e9f4b150c9f7013ea18e545d91aac03ec3a8c4947913b",
+  "language_identity": "fc989b2fb800606bd508d6f3353aee5a9f1bdac2990ffc06710b50f1789465c4",
   "language_payloads": [
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
@@ -28,18 +28,18 @@
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
-      "09961225476f2391e70dce8fa0ed5f7be403f9536db9b38599764670803f7192",
-      702261
+      "5cf6801072b1041759a85494f4afffeb288deee6bb2256bb75f5c393f8ad8823",
+      702273
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
-      "4e4f1036aaa49b0841a9e3d98011cf9ac16f3218cd222f3850ec24fdf7ed45f2",
-      1690863
+      "c7c9f59d6ddc988bae789a44c2845ff8795c5b0ff6c023099f1d319c71dc775d",
+      1691693
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
-      "962a73b4c7053853d455990d8fbdf44ead767701650e055284b54ac59e7d1530",
-      1308179
+      "984fbcf94d05e1bf48daf144231609554259713402833d17a029b9fe7aaeefbb",
+      1309646
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",
@@ -92,7 +92,7 @@
       8985
     ]
   ],
-  "runtime_identity": "42752c8d1af97cd81f928954451c64e38f4abf6e2cae56500c166ec19e2914e1",
+  "runtime_identity": "3a013b06d97dd7d16a19ae599fc37de32820ada8044484098c0cc160fd7a2758",
   "runtime_payloads": [
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
@@ -121,18 +121,18 @@
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
-      "73a1fa2370216739727e2a1da714fd440ef851d17e1c2953cda8fd51345787a0",
-      241591
+      "7a8df4a60c72f40392e96f1a7a739b62c98f1bea4a03750082ce417b9ffd2087",
+      241603
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
-      "c21ecb14e7865826736867b97fc820b2bbaf0a09b6e676b27c87554aa364f345",
-      607304
+      "cb464c68d82ba9095ca9341481cd8ccac7663eb67cdba43d9be2d7617e1277d1",
+      607600
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
-      "0a9836bcfa218065119ba7b13b70b7cc87ed1b61e317381432341b02cde357ae",
-      443055
+      "7a37c957b6f80f3b476b0b816255e1f20ee505d333b91c852c350dbb441e477e",
+      443555
     ],
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_input_specific_meaning.py",

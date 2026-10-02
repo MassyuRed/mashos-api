@@ -4676,3 +4676,187 @@ def test_original_record_feeling_reader_requires_raw_source_not_only_markers():
                           if sid == span.span_id else original_resolve(sid)), patch.object(
                           reception, 'source_grounded_original_record_feeling', side_effect=AssertionError('no author')):
             assert not gate._body_inverse_original_record_feeling(survivor, plan, resolver)
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('old', ['悲しかった', '嬉しかった'])
+@pytest.mark.parametrize('source,finite', [
+    ('少し怖かった', '当時は少し怖かったのですね'),
+    ('少し楽しかったのです', '当時は少し楽しかったのですね'),
+    ('少し楽しかった', '当時は少し楽しかったのですね'),
+    ('私も少し怖くなかったです', '当時、あなたも少し怖くなかったのですね'),
+    ('少し私は怖かった', '当時、あなたは少し怖かったのですね'),
+    ('私も少し不安でした', '当時、あなたも少し不安だったのですね'),
+    ('少し楽しかったのだった', '当時は少し楽しかったのでしたね'),
+    ('少し怖くなかったのだった', '当時は少し怖くなかったのでしたね'),
+])
+def test_correction_answer_source_preserves_every_mixed_source(field, old, source, finite):
+    # The final-chain positive replacements also reproduce a pre-existing
+    # four-Move Plan defect (six cases across both fields). Keep the failing
+    # delivery witnesses until that separate Plan owner is repaired.
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from test_cmee_emlis_detached_observation import read_body
+    request = begin(RECEIVED_CHAIN_MULTI if field == 'memo' else '',
+                    RECEIVED_CHAIN_MULTI if field == 'memo_action' else '')
+    original = prepare_emlis_meaning(request).thread.original
+    for reply in ('今は嬉しい。', 'その時は楽しかった。', f'「{old}」ではなく「{source}」です。'):
+        request = advance(request, reply)
+    prepared = prepare_emlis_meaning(request)
+    assert prepared.thread.original == original and prepared.checkpoint.assessment_status == 'RESOLVED'
+    assert [u.operation for u in prepared.checkpoint.answer_update.updates] == ['REVISE']
+    assert not prepared.checkpoint.unresolved_parts
+    context = actual(request=request)
+    result, plan, sentence, resolver, selected = context
+    assert MeaningExperienceEngine().generate(request).artifact.text == result.artifact.text
+    assert f'訂正の回答では、当時の気持ちを「{source}」と言い直されています。' in result.artifact.observation
+    follow = result.artifact.reception
+    assert follow.count('訂正の回答では、') == 1 and '訂正の回答では、' + finite + '。' in follow
+    assert old not in result.artifact.text
+    assert all(s in follow for s in ('回答した時点では嬉しい', 'その時は楽しかった',
+                                     '誘われたのに、寂し', '頼まれたのに、怖'))
+    if old == '悲しかった':
+        assert '最初の記録にある、嬉しかったという気持ちを受け止めています。' in follow
+    else:
+        assert '褒められたのに、悲しかった' in follow
+    revised, = (n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes)
+    assert revised.source_fields == ('answer_text_private',) and revised.semantic_frame.time_scope == 'past'
+    assert not any(revised.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == follow.count('。') == 3
+    covered = {nid for m in moves for nid in (*m.target_nucleus_ids, *m.support_nucleus_ids,
+               *reception.final_reception_context_nucleus_ids(move=m, plan=plan))}
+    assert {n.nucleus_id for n in plan.nuclei if n.retention == 'required'
+            and n.source_fields in {(field,), ('answer_text_private',)}} <= covered
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    line, = (line for line in sentence.lines if line.binding.line_role == 'human_follow')
+    parts = [p + '。' for p in follow.removesuffix('。').split('。')]
+    with (patch.object(reception, '_source_owned_positive_answer_group_sentence', side_effect=AssertionError('no author')),
+          patch.object(reception, '_source_grounded_received_discourse', side_effect=AssertionError('no author')),
+          patch.object(reception, '_revised_feeling_discourse_prefix', side_effect=AssertionError('no author')),
+          patch.object(reception, '_detached_feeling_finite_surface', side_effect=AssertionError('no author'))):
+        for clause, part in zip(line.reception_clause_plans, parts, strict=True):
+            move, = (m for m in moves if clause.move_ids == (m.move_id,))
+            if len(move.target_nucleus_ids) == 1:
+                continue
+            source_ids = []
+            for nid in move.target_nucleus_ids:
+                if move.reception_act == 'recognize_lived_change':
+                    about, = (r for r in plan.relations if r.type == 'evaluation_about_event' and r.to_nucleus_id == nid)
+                    source_ids.extend((about.from_nucleus_id, nid))
+                else:
+                    if index[nid].kind == 'reaction':
+                        source_ids.append(nid)
+                    source_ids.extend(r.to_nucleus_id for r in plan.relations if r.type == 'contrast' and r.from_nucleus_id == nid)
+            proof = gate.read_source_owned_discourse(part, move, plan, resolver, selected)
+            assert proof is not None and [s for _, _, s in proof] == [
+                reception.final_reception_source_anchor_text(nid, index, resolver).encode() for nid in source_ids]
+            assert all(0 <= a < b <= len(part.encode()) for a, b, _ in proof)
+        assert read_body(context, result.artifact.text).passed
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('source', ['私も少し怖くなかったです', '少し怖くなかったのだった'])
+def test_correction_answer_source_inverse_rejects_matching_replay_with_wrong_meaning(field, source):
+    request = begin(RECEIVED_CHAIN_MULTI if field == 'memo' else '',
+                    RECEIVED_CHAIN_MULTI if field == 'memo_action' else '')
+    for reply in ('今は嬉しい。', 'その時は楽しかった。', f'「悲しかった」ではなく「{source}」です。'):
+        request = advance(request, reply)
+    result, plan, sentence, resolver, selected = actual(request=request)
+    body, follow = result.artifact.text, result.artifact.reception
+    observed = f'訂正の回答では、当時の気持ちを「{source}」と言い直されています。'
+    changes = [
+        body.replace(observed, ''), body.replace(observed, observed + observed),
+        body.replace(observed, observed.replace('訂正の回答では、', '最初の記録には、')),
+        body.replace(observed, observed.replace('当時の', '今の')),
+        body.replace(observed, observed.replace('怖くなかった', '怖かった')),
+    ]
+    for old, new in [('訂正の回答では、', ''), ('訂正の回答では、', '頼まれたことについて、'),
+                     ('訂正の回答では、', '言い直してくださった気持ちについては、'),
+                     ('当時、' if source.startswith('私も') else '当時は', '回答した時点では'),
+                     ('少し怖くなかった', '怖くなかった'), ('怖くなかった', '怖かった'),
+                     ('怖くなかった', '怖くない'), ('誘われたのに、', '誘われたから、'),
+                     ('頼まれたのに、', '頼まれたので、'),
+                     ('最初の記録にある、嬉しかったという気持ちを受け止めています。', '')]:
+        changes.append(body.replace(follow, follow.replace(old, new, 1)))
+    if source.startswith('私も'):
+        changes += [body.replace(follow, follow.replace('あなたも', owner)) for owner in ('あなたは', '友人も')]
+    else:
+        changes.append(body.replace(follow, follow.replace('のでしたね', 'のですね')))
+    with (patch.object(reception, '_source_grounded_received_discourse', side_effect=AssertionError('no author')),
+          patch.object(reception, '_revised_feeling_discourse_prefix', side_effect=AssertionError('no author')),
+          patch.object(reception, '_detached_feeling_finite_surface', side_effect=AssertionError('no author')),
+          patch.object(reception, '_author_source_grounded_reception_clauses', side_effect=AssertionError('no author'))):
+        for candidate in (body, *changes):
+            with patch.object(gate, 'replay_source_grounded_human_reception_from_plan',
+                              return_value=SimpleNamespace(text=candidate.split('Emlisから：\n', 1)[1])):
+                proof = gate.evaluate_grounded_surface_body_inverse(body=candidate.encode(), plan=plan,
+                    sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected)
+            assert proof.passed == (candidate == body)
+    assert all(changed != body for changed in changes)
+
+
+def test_correction_answer_source_reader_requires_independent_source_proof():
+    from dataclasses import replace
+    request = begin(RECEIVED_CHAIN_MULTI)
+    for reply in ('今は嬉しい。', 'その時は楽しかった。', '「悲しかった」ではなく「少し楽しかった」です。'):
+        request = advance(request, reply)
+    result, plan, _, resolver, selected = actual(request=request)
+    revised, = (n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes)
+    move, = (m for m in plan.response_plan.human_reception_plan.moves if revised.nucleus_id in m.target_nucleus_ids)
+    part, = (p + '。' for p in result.artifact.reception.removesuffix('。').split('。') if '訂正の回答では、' in p)
+    assert gate.read_source_owned_discourse(part, move, plan, resolver, selected) is not None
+    frame = revised.semantic_frame
+    about = next(r for r in plan.relations if r.type == 'evaluation_about_event')
+    changed_plans = [replace(plan, relations=(*plan.relations,
+        replace(about, relation_id='invalid-revision-about', to_nucleus_id=revised.nucleus_id)))]
+    changed_nuclei = [replace(revised, source_fields=('memo',))]
+    for change in [dict(time_scope='present'), dict(polarity='neutral'), dict(actor='other_person'),
+                   dict(attribute_codes=tuple(c for c in frame.attribute_codes
+                        if c != 'thread_subject:independent_source_replacement'))]:
+        changed_nuclei.append(replace(revised, semantic_frame=replace(frame, **change)))
+    changed_plans += [replace(plan, nuclei=tuple(changed if n == revised else n for n in plan.nuclei))
+                     for changed in changed_nuclei]
+    with patch.object(reception, '_source_grounded_received_discourse', side_effect=AssertionError('no author')):
+        for changed in changed_plans:
+            assert gate.read_source_owned_discourse(part, move, changed, resolver, selected) is None
+
+
+@pytest.mark.parametrize('source', ['私も少し怖くなかったです', '少し楽しかったのだった'])
+def test_correction_answer_source_saved_body_retains_original_and_exact_display(qcase, qdb, monkeypatch, source):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$1 where id=$2', [RECEIVED_CHAIN_MULTI, parent])
+    first = current = run(service.start(user, parent))
+    for index, reply in enumerate(('今は嬉しい。', 'その時は楽しかった。', f'「悲しかった」ではなく「{source}」です。')):
+        if index:
+            current = run(cont(service, user, current, f'correction-source-continue-{index}'))
+        current = run(answer(service, user, current, reply, f'correction-source-answer-{index}'))
+        assert current['original'] == first['original'] and current['body_state'] == 'REFINED'
+        if index == 2:
+            assert current['current_observation']['text'].count('訂正の回答では、') == 2
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved correction must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+        assert qdb.query('select memo from public.emotions where id=$1', [parent])['rows'][0]['memo'] == RECEIVED_CHAIN_MULTI
+    assert current['state'] == 'COMPLETED' and not current['can_continue']
+
+
+def test_correction_answer_source_negative_copula_keeps_other_source_duties():
+    from test_cmee_emlis_detached_observation import EXACT_RECORD_MEMO, TWO_POSITIVE_PAIRS, read_body
+    request = begin(EXACT_RECORD_MEMO)
+    for reply in (*TWO_POSITIVE_PAIRS[0], '「悲しかった」ではなく「私も幸せではなかったのです」です。'):
+        request = advance(request, reply)
+    context = actual(request=request)
+    body, follow = context[0].artifact.text, context[0].artifact.reception
+    assert '悲しかった' not in body and '悲しさ' not in follow
+    assert all(value in follow for value in ('嬉し', '寂し', '回答した時点では嬉しい', 'その時は楽しかった',
+        '訂正の回答では、当時、あなたも幸せではなかったのですね'))
+    # Same-name events put this correction on its own Observation line;
+    # the ambiguous mixed Reception still needs the answer-source switch.
+    assert '「私も幸せではなかったのです」と、当時の気持ちを言い直されています。' in context[0].artifact.observation
+    assert read_body(context, body).passed
+    with patch.object(gate, 'replay_source_grounded_human_reception_from_plan',
+                      return_value=SimpleNamespace(text=follow.replace('あなたも', '相手も'))):
+        assert not gate.evaluate_grounded_surface_body_inverse(body=body.replace(follow,
+            follow.replace('あなたも', '相手も')).encode(), plan=context[1], sentence_plan=context[2],
+            resolver=context[3], selected_subjective_input=context[4]).passed

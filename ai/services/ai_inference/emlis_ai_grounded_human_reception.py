@@ -10183,7 +10183,8 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True,
         _, slot_text, feeling_text, link, *answer_code = code.split(":")
         event = fragments[int(slot_text)]
         if link in {"detached", "replacement"}:
-            prefix = _revised_feeling_discourse_prefix(event) if link == "replacement" else "その時は"
+            prefix = (_revised_feeling_discourse_prefix(event, answer_source=len(codes) > 1)
+                      if link == "replacement" else "その時は")
             copula = _detached_feeling_copula_parts(event)
             parts.append(prefix + _detached_feeling_finite_surface(event, allow_medial=True,
                 allow_explanatory=link == "replacement",
@@ -10394,7 +10395,8 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True,
             and all(len(code.split(":")) == 5 and code.endswith(":none") for code in codes)
             and all(part.endswith(("かった", "感じた")) for part in parts))
         if not original_past_revision:
-            prefix = (_revised_feeling_discourse_prefix(fragments[int(codes[-1].split(":")[1])])
+            prefix = (_revised_feeling_discourse_prefix(fragments[int(codes[-1].split(":")[1])],
+                                                       answer_source=len(codes) > 1)
                       if replacements[-1] == len(codes) - 1 else "")
             # The source predicate owns the explanation's outer tense. The
             # revision introduction must not obstruct its lexical proof.
@@ -10432,7 +10434,7 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True,
     # Each later source occurrence owns one boundary, even when SELF
     # perspective makes distinct source labels equal. An extra occurrence
     # inside an answer remains ambiguous and keeps the original grammar.
-    boundaries = [prefix + ("言い直してくださった気持ちについては、"
+    boundaries = [prefix + (("訂正の回答では、" if len(codes) > 1 else "言い直してくださった気持ちについては、")
                            if code.endswith(":none:replacement:none") else event)
                   for prefix, event, code in zip(
                       record_prefixes or ("",) * len(event_names), event_names, codes, strict=True)]
@@ -10994,11 +10996,12 @@ def _detached_feeling_finite_surface(source, *, allow_explanatory=False, allow_c
     return finite
 
 
-def _revised_feeling_discourse_prefix(source):
+def _revised_feeling_discourse_prefix(source, *, answer_source=False):
     """Anchor the past feeling to its explicit revision, not a nearby event."""
     owner = (re.match(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も|が(?=[^、,。]+れ(?:た|なかった)ようで[、,])(?!.*(?:わたし|ぼく|おれ|私|僕|俺|自分|あなた)))", source)
              or _medial_feeling_owner(source))
-    return "言い直してくださった気持ちについては、" + ("当時、" if owner else "当時は")
+    introduction = "訂正の回答では、" if answer_source else "言い直してくださった気持ちについては、"
+    return introduction + ("当時、" if owner else "当時は")
 
 
 def source_grounded_original_record_feeling(nucleus, relations, resolver):

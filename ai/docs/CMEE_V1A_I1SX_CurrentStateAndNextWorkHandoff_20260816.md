@@ -13219,3 +13219,44 @@ Python3.12.14/pytest9.1.1/PGlite0.5.8と既存scratch依存を再利用、今回
 原感情の丁寧過去形/現在形は今回の改善範囲外で、背景化などが残る。原文SELFを含む名詞句の不自然さ、長い列挙、同名感情の個別追跡、定型性・二層再掲・深さ不足も未解消。同群を閉じる前に、別の二層価値改善へ先行しない。
 
 primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承し、旧10/10期限を復活させない。実DB/端末目標は未達で、合成確認を達成扱いにせず、Mashへ商品確認を依頼する段階としない。
+
+
+## 2026-10-02 u70 — 別出来事の原反応に続く独立訂正を、訂正回答の出典へ切り替える
+
+### 開始位置・修復範囲
+
+MashのEmlis残件継続指示を受け、u69の次作業を実施。開始HEADはAPI `106bc36f35c09e5016063d0563b232300ffdde96`、Cocolon `2bfca3d26e70f54aefcba7078da3d59ee9b068a4`。fresh PR HEAD一致・Draft/open/unmerged・tracked clean、両repoのrecursive tree（truncated=false、API2355/Cocolon1797 entries）を確認した。全パス確認は全ファイル内容の精読ではない。CURRENT_RULES R1 exact3/exact6、恒久incident全文、全体設計01と01A/B/Cの地図・current_structureの既存役割、Emlis/CMEEのQ3/Q4、最新weekly09/26の09/29追加合意、前回txt/u69 handoffを確認・継承した。System Context prepareのshallow祖先判定未成立は原典直接読取で補い、基盤修復へ戻らない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX、既存LEVEL_2内。root華恋が唯一の編集・実行・反映担当、read-only担当が技術差分・全比較本文を確認。担当名を特定モデルによる独立商品合格へ換算しない。productionは既存HR/Surface/Gateの3file、21行追加/11行削除。新helper/owner/renderer/readerなし。Plan・意味受付・公開contract/API/DB/RN・依存宣言・flagは変更しない。STRUCTURE_MAP_DELTA_NONE。
+
+別eventの原反応を列挙した直後の「言い直してくださった気持ちについては」が、直前eventの訂正に読めることを扱った。既存mixed received-discourse内の独立訂正を「訂正の回答では、当時は…／当時、あなた…」とし、原反応から訂正回答への出典切替を明示した。既存helperの引数で複数targetに限り切り替え、単独訂正の既存prefixは維持する。有限形・SELF・助詞・程度・肯否・内側/外側時制・既存接続詞・選択済みact/述語は保持する。Surfaceのrelation後extra correctionも「訂正の回答では、当時の気持ちを『訂正source』と言い直されています」にする。同名eventなどで独立したObservation行へ出す既存形式は変更しない。
+
+Gateの既存readerはmixed境界と完全な有限形を独立して読む。Observation extraも新しい出典文をparseした後、既存のraw source/field/主体/時点/完全範囲/incident relation無しを証明する。失効eventのABOUT/contrastを復活させず、原文の撤回語を本文へ再掲しない。旧mixed生成文を新Gateで再検証するとprefix不一致になるが、保存済みGET/既存startは保存payloadの本文を再表示する経路であり、author/Gateを呼ばない。旧保存本文を新規生成として再受理する互換aliasは追加していない。
+
+### 実本文と検証
+
+同一runtimeの開始版/最終版32系列（16入力×memo/memo_action）を比較。受理済み訂正16で両層の訂正出典を明示し、未対応訂正/撤回/ADDなど16対照は両層全文不変。status/operations/unresolvedは全32不変、inverse32 PASS、memo/memo_actionの対応本文は全文一致。開始版の旧20系列はu69最終比較と全項目一致。root/read-only担当が原入力・全回答・両層全文を読み、今回の出典切替範囲で新しい主体/程度/肯否/時点欠落、撤回感情/関係復活、因果/持続追加は見つからなかった。長い列挙・定型性など商品上の残りは消えていない。
+
+新規40条件の最終結果は34 PASS/6 FAIL、既存current owner identity1 PASS。本文32条件中26 PASS/6 FAIL、matching-mutated-replay付き改変拒否4 PASS、Plan/source guard1 PASS（marker/relation/time/polarity/field/actorの6変形）、保存2 PASS、否定copula説明形1 PASS。改変拒否は、作者を禁止してreplayが改変本文自体を返しても、出典削除/直前event帰属/原記録偽装・時点・SELF/助詞・程度・否定・外側時制・別原反応の因果化/欠落を拒否する。本文PASS条件はpublic/内部全文一致、原DTO保持、全required target/support/context被覆、3Move/3文、独立訂正への関係不在、作者禁止の実UTF8復元を確認した。
+
+保存2系列は全更新後REFINED、generate禁止GET/start DTO全文一致、原DTO/DB原memo不変、第三回答後COMPLETEDを確認。合成PGlite/mock RPCであり、実DB・端末・プロセス再起動の確認には換算しない。
+
+関連622条件＝524 PASS/98 FAIL（395.668秒）。u69既知12件は全node id・失敗assert行が同一。増分86件は、旧prefix固定期待74、旧prefixのreplaceが無変化になるmutation5、旧prefix文抽出0件6、旧prefixを条件にしたlegacy-author fixtureが動作しない1。全98 failureを照合した。旧source guard6の未到達部分は新reader検査で6変形を拒否し、旧mutationの未到達部分も新matching-replay検査で補った。否定copula説明形も他4 duty・訂正主体・同名event用独立Observation行を直接確認済み。旧期待を改変して成功数へ換算していない。
+
+新規初回39は29 PASS/10 FAIL（48.44秒）。6件は下記の既存Plan欠陥、4件は新testが既存SELF正規化「あなたは少し」を「少しあなたは」と誤期待したもの。意味を変えず新testの語順期待を修正した。新規40＋identity1の次回は34 PASS/7 FAIL（62.622秒）。追加copula検査1が別の独立Observation行にもextra用新prefixを誤要求していたため、その新assertを既存配置の原文保持へ修正し、当該1件のみ再実行で1 PASS（10.436秒）。最終663 unique IDs＝559 PASS/104 FAIL/ERROR0/SKIP0。再実行は上書きし重複加算なし。全suite成功・新規全PASSとは報告しない。旧test310751 bytesのprefix・旧期待/skip/xfail・historical frozen identityは保持し、追加の実欠陥6も削除/skip/xfailせず再現testとして残した。最終検査後のproduction変更なし。
+
+関連選択はdetached_observation/received_discourseの既存u69選択に `original_record_feeling` を追加した622。新規は `correction_answer_source`、identityは既存 `test_active_final_language_owner_chain_has_zero_legacy_compose_calls`。前回scratch runtimeは消失しており再利用していない。今回Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5と既存test依存をscratchに復元し、PGlite0.5.8も再配置した。repositoryの依存宣言は不変。current共有identityは既存導出で更新し、language `fc989b2fb800606bd508d6f3353aee5a9f1bdac2990ffc06710b50f1789465c4`、runtime `3a013b06d97dd7d16a19ae599fc37de32820ada8044484098c0cc160fd7a2758`。共有9owner/18payload構成は不変。
+
+反映対象はAPI3source・既存test末尾・current identity・既存handoff、Cocolon既存06のexact7 modify、追加/削除0。既存Draft PR3/30へnon-forceで反映し、fresh HEAD・parent/tree・変更path集合・全7file全文/blobを照合する。正式識別子と照合結果はPR metadataへ記録する。
+
+### 残件・次の最優先
+
+追加本文検査で、同じ原文→「今は嬉しい。」→「その時は楽しかった。」→末尾原感情「嬉しかった」を「少し楽しかった」「少し楽しかったのです」「少し楽しかったのだった」へ訂正する6条件（各2field）が、`invalid_grounded_sentence_plan:human_reception_move_count_invalid` になると判明した。開始HEADの別worktreeでも6全件が同じ例外となることを実行確認し、今回のprefix変更による退行ではない。今回の範囲へ別原因を混ぜず、次の最優先をこの既存Plan欠陥へ繰り上げる。新たに観測した6件の失敗を改善対象から隠さない。
+
+静的追跡では `_thread_retained_reaction_groups` が残存event→chain firstを1 dutyとして確保し、残りへ再帰する。負の独立訂正は他2event原反応とmixed dutyへまとまり、二回答groupと合わせ再帰2＋外側1＝3Move。正の訂正ではpositiveが3件・negative専用revised_originalsが0となってmixed mergeから外れ、再帰3＋外側1＝4Moveとなる。次はpositive独立訂正のraw source/意味/非ABOUT証明を保持したまま既存mixed groupへ限定接続できるか確認する。Move上限緩和や有効原反応・回答の省略、再受付/時制変更、別作者追加で回避しない。この修復案は未実装・未検証。
+
+最小候補は既存Plan内のnested_mixed_revisionに上記再帰条件を追加し、既存mergerをnested条件でも開き、訂正選択をnegative専用revised_originalsではなく両極性のoriginal_revisionsへ揃える3点。withdrawal・独立原気持ち・action・detached回答を含む構造へ広げない。HR/Gateには両極性のsource proofが既にあるため、まずPlan局所差分と保持した6再現、negative-final/positive-middle対照、全required被覆・独立UTF8復元・保存後無再生成で確かめる。
+
+本文比較の別残件は、元event撤回後に残る先行回答の出典。case7/23のObservation末尾「また、回答した時点の気持ちとして、『嬉しい』が見えます」は直前の別eventに寄って読め、Reception「先の回答では、回答した時点では」も重なる。Plan欠陥後、撤回eventを戻さず先行回答自身の出典と時点を一度で分かる表現を検討する。原感情の丁寧過去形/現在形、SELF名詞句、同名感情の追跡、長い列挙、定型性・二層再掲・深さ不足も残る。同群完了前に別の二層価値改善へ先行しない。
+
+primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承し、旧10/10期限を復活させない。実DB/端末目標は未達で、合成確認を達成扱いにせず、Mashへ商品確認を依頼する段階としない。

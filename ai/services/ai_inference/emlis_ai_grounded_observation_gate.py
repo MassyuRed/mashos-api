@@ -2586,7 +2586,7 @@ def _body_inverse_intervening_events(body, witness, line, planned_line, plan, re
     return True
 
 
-def _body_inverse_detached_observation(raw, nuclei, plan, resolver):
+def _body_inverse_detached_observation(raw, nuclei, plan, resolver, *, correction_answer_source=False):
     """Read each quoted feeling with its own time, without author replay.
 
     Whole-line parsing excludes a revived event or a newly causal link. A
@@ -2613,7 +2613,13 @@ def _body_inverse_detached_observation(raw, nuclei, plan, resolver):
             # source and time. Equal visible text cannot erase a source duty.
             values = paired.groups() if paired else (equal[1], equal[1])
             shared_revision = [("当時", value, True) for value in values]
-    if shared_revision is not None:
+    if correction_answer_source:
+        parsed = re.fullmatch(r'訂正の回答では、当時の気持ちを「([^「」『』\n]+)」'
+                              r'と(?:言い直され|言い換えられ)ています。', raw)
+        if len(nuclei) != 1 or not all(revised) or parsed is None:
+            return False
+        pieces = [("当時", parsed[1], True)]
+    elif shared_revision is not None:
         pieces = shared_revision
     elif any(revised):
         # The revision is an explicit discourse operation. Keep it separate
@@ -4103,7 +4109,7 @@ def _read_received_discourse_unqualified(raw, move, plan, resolver, selected_sub
         nucleus = index[nid]
         revised = _thread_revised_original_reaction(nucleus, plan.relations, polarity=nucleus.semantic_frame.polarity)
         if revised:
-            event = "言い直してくださった気持ちについては、"
+            event = "訂正の回答では、"
         else:
             event = final_reception_source_anchor_text(nid, index, resolver)
             event = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event or "", count=1)
@@ -4289,7 +4295,8 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
             span = resolver.resolve(event.source_span_ids[0])
             source = _body_inverse_typed_source_fragment(event, span.raw_text)
             ending = re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました)$", part)
-            prefix = "言い直してくださった気持ちについては、" + (
+            prefix = ("訂正の回答では、" if len(move.target_nucleus_ids) > 1
+                      else "言い直してくださった気持ちについては、") + (
                 "当時、" if source and _thread_feeling_owner(source) else "当時は")
             if (not thread_group or resolver.source_fields_for(event.source_span_ids) != event.source_fields
                 or not source or ending is None or not part.startswith(prefix)):
@@ -5832,7 +5839,7 @@ def evaluate_grounded_surface_body_inverse(
                     and row.section_line_ordinal == parsed_line.section_ordinal
                     and _body_inverse_detached_observation(
                         _body_inverse_visible_text(body, row).removeprefix("また、"),
-                        (nucleus,), plan, resolver))
+                        (nucleus,), plan, resolver, correction_answer_source=True))
                 if (len(independent_tail) != len(revised_reactions) + len(detached_states)
                     or len(rows) != 1
                     or rows[0] != independent_tail[revised_reactions.index(nucleus)]):

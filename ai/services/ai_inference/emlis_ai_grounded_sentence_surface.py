@@ -3121,7 +3121,7 @@ def _render_extra_context(
                     and _thread_revised_original_reaction(
                         nucleus, (), polarity=nucleus.semantic_frame.polarity)):
                 # extra_ids exclude every relation endpoint in this binding.
-                parts.append(f"また、{quoted}と、当時の気持ちを言い直されています。")
+                parts.append(f"訂正の回答では、当時の気持ちを{quoted}と言い直されています。")
             else:
                 parts.append(f"また、{when}の気持ちとして、{quoted}が見えます。")
         remaining = tuple(nid for nid in extra_ids if nid not in detached)
