@@ -7815,6 +7815,17 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
         retained = _thread_retained_reaction_groups(rest, rest_relations, separate_later_scopes=False)
         if retained:
             return (*contrasts, *retained)
+        # A repeated, unproved answer subject cannot fall back to a single
+        # family representative and silently discard the other source duties.
+        if about_events and any(n.source_fields == ("answer_text_private",)
+            and n.retention == "required"
+            and "thread_subject:unique_source_clause" not in n.semantic_frame.attribute_codes
+            and not any(c.startswith("thread_subject:distinct_source_occurrence:")
+                        for c in n.semantic_frame.attribute_codes)
+            and any(r.type == "evaluation_about_event" and r.retention == "required"
+                    and r.from_nucleus_id in about_events and r.to_nucleus_id == n.nucleus_id
+                    for r in relations) for n in nuclei):
+            raise GroundedObservationPlanError("human_reception_answer_source_capability_gap")
     withdrawal = any("thread_subject:withdrawn_source_event" in n.semantic_frame.attribute_codes
                      and not any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations)
                      for n in nuclei)

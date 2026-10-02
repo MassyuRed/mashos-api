@@ -345,6 +345,32 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
         for n in nuclei)
     # Bind distinguishable original source clauses before body-free reception
     # selection. Different evidence IDs alone cannot distinguish repeated text.
+    # A chain needs the received-link operand only when an updated plan must
+    # distinguish equal event words. Keep ordinary and initial projections
+    # unchanged; their graph identities do not owe this occurrence proof.
+    linked_events = {}
+    for event in nuclei:
+        if (event.kind != "event" or event.source_fields not in {("memo",), ("memo_action",)}
+            or len(event.source_span_ids) != 1
+            or any(c.startswith("source_received_event_link:") for c in event.semantic_frame.attribute_codes)
+            or not {"semantic_dependency:received_feeling_contrast_chain", "source_received_chain_slot:event"}
+                <= set(event.semantic_frame.attribute_codes)):
+            continue
+        text = _text(event, index, resolver)
+        if not any(other.nucleus_id != event.nucleus_id and other.kind == "event"
+            and len(other.source_span_ids) == 1 and other.source_span_ids != event.source_span_ids
+            and other.source_fields == event.source_fields and _text(other, index, resolver) == text
+            for other in nuclei):
+            continue
+        link = re.match(re.escape(text) + r"(のに|けれども?|けど)",
+                        gp._clean(resolver.resolve(event.source_span_ids[0]).raw_text))
+        if link is not None:
+            code = "source_received_event_link:" + {"のに": "noni", "けど": "kedo",
+                "けれど": "keredo", "けれども": "keredomo"}[link[1]]
+            linked_events[event.nucleus_id] = replace(event, semantic_frame=replace(event.semantic_frame,
+                attribute_codes=tuple(dict.fromkeys((*event.semantic_frame.attribute_codes, code)))))
+    nuclei = tuple(linked_events.get(n.nucleus_id, n) for n in nuclei)
+    index = {n.nucleus_id: n for n in nuclei}
     answer_subjects = {}
     subject_occurrences = {}
     for n in nuclei:
@@ -431,6 +457,30 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
                  index[nid].semantic_frame.modality, index[nid].semantic_frame.polarity)
                 == ("reaction", "feeling", "feeling", "positive") for nid in answer_subjects)
         and separate_occurrences(answer_subjects))
+    # A retained three-part contrast can share its event words with one
+    # other answered occasion. Keep both answers and all original feelings;
+    # the same existing occurrence proof still owns each range and ABOUT.
+    chain_slots = tuple(tuple(n for n in nuclei
+        if "semantic_dependency:received_feeling_contrast_chain" in n.semantic_frame.attribute_codes
+        and "source_received_chain_slot:" + slot in n.semantic_frame.attribute_codes)
+        for slot in ("event", "first", "second"))
+    chain_nodes = tuple(rows[0] for rows in chain_slots) if all(len(rows) == 1 for rows in chain_slots) else ()
+    chain_positive_window = (len(chain_nodes) == 3 and 2 <= len(original_events) <= 3
+        and len(active_about) == len(answer_subjects) == 2 and len(set(subject_texts)) == 1
+        and chain_nodes[0].nucleus_id in {r.from_nucleus_id for r in active_about}
+        and len(chain_nodes[0].source_span_ids) == 1
+        and all(n.source_span_ids == chain_nodes[0].source_span_ids
+                and n.source_fields == chain_nodes[0].source_fields
+                and n.allowed_claim_scope == "explicit_current_input"
+                and n.retention == "required" and n.grounding_kind == "explicit" for n in chain_nodes)
+        and {(r.from_nucleus_id, r.to_nucleus_id) for r in relations
+             if r.type == "contrast" and r.retention == "required" and r.grounding_kind == "user_stated_relation"
+             and r.from_nucleus_id in {n.nucleus_id for n in chain_nodes}}
+            == {(a.nucleus_id, b.nucleus_id) for a, b in zip(chain_nodes, chain_nodes[1:])}
+        and all((index[nid].kind, index[nid].semantic_frame.predicate_kind,
+                 index[nid].semantic_frame.modality, index[nid].semantic_frame.polarity)
+                == ("reaction", "feeling", "feeling", "positive") for nid in answer_subjects)
+        and separate_occurrences(answer_subjects))
     for text in set(subject_texts):
         ids = tuple(nid for nid, value in answer_subjects.items() if value == text)
         if any(event.source_fields not in {("memo",), ("memo_action",)}
@@ -438,7 +488,7 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
             continue
         entirely_equal = len(set(subject_texts)) == 1 and all(
             _text(event, index, resolver) == text for event in original_events)
-        if (not (entirely_equal or full_positive_window) or len(subject_texts) != len(active_about)
+        if (not (entirely_equal or full_positive_window or chain_positive_window) or len(subject_texts) != len(active_about)
             or not 2 <= len(original_events) <= 3
             or not 2 <= len(ids) <= 3 or not separate_occurrences(ids)):
             continue

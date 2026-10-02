@@ -5364,3 +5364,151 @@ def test_received_chain_mixed_withdrawal_source_proof_rejects_changed_ownership(
             except GroundedObservationPlanError:
                 proof = None
             assert proof is None
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('event', ['褒められた', '誘われた'])
+@pytest.mark.parametrize('answers', [
+    ('今は嬉しい。', 'その時は楽しかった。'),
+    ('今は私も少し嬉しいです。', 'その時は私も少し楽しかった。'),
+])
+def test_same_name_received_chain_retains_initial_answers_and_withdrawal(field, event, answers):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    memo = RECEIVED_CHAIN_MULTI.replace('誘われた', '褒められた').replace('褒められた', event)
+    request = begin(memo if field == 'memo' else '', memo if field == 'memo_action' else '')
+    chain = f'「{event}」のに「悲しかった」けれど「嬉しかった」とあります。'
+    pair = f'「{event}」と「寂しかった」が、異なる向きのまま同時にあります。'
+    for step, reply in enumerate((None, *answers, '「頼まれた」は誤りです。')):
+        if reply:
+            request = advance(request, reply)
+        context = actual(request=request)
+        result, plan, sentence, resolver, selected = context
+        assert MeaningExperienceEngine().generate(request).artifact.text == result.artifact.text
+        body, obs, follow = result.artifact.text, result.artifact.observation, result.artifact.reception
+        assert chain in obs and pair in obs
+        assert '悲しかったけれど、嬉しかった' in follow and '寂しさ' in follow
+        assert ('怖さ' in follow) if step < 3 else ('当時は怖かった' in follow)
+        assert ('頼まれた' in body) == (step < 3)
+        moves = plan.response_plan.human_reception_plan.moves
+        required = {n.nucleus_id for n in plan.nuclei if n.retention == 'required'
+                    and set(n.source_fields) & {field, 'answer_text_private'}}
+        assert required == {nid for m in moves for nid in (*m.target_nucleus_ids, *m.support_nucleus_ids)}
+        assert 1 <= len(moves) <= 3
+        events = [n for n in plan.nuclei if n.kind == 'event'
+                  and reception.final_reception_source_anchor_text(n.nucleus_id,
+                      {v.nucleus_id: v for v in plan.nuclei}, resolver) == event]
+        assert len(events) == 2 and len({n.source_span_ids for n in events}) == 2
+        spans = [resolver.resolve(n.source_span_ids[0]) for n in events]
+        assert all(s.source_field == field for s in spans) and spans[0].end_index <= spans[1].start_index
+        if step:
+            assert '回答した時点' in follow and '嬉しい' in follow and '先に書かれた方では、' in follow
+        if step >= 2:
+            assert 'その時' in follow and '楽しかった' in follow and '後に書かれた方では、' in follow
+            about = [r for r in plan.relations if r.type == 'evaluation_about_event']
+            assert len(about) == len({r.from_nucleus_id for r in about}) == len({r.to_nucleus_id for r in about}) == 2
+            assert {r.from_nucleus_id for r in about} == {n.nucleus_id for n in events}
+        observations = [obs.replace(chain, ''), obs.replace(pair, ''), obs.replace(pair, pair + pair),
+            obs.replace(chain, chain.replace('のに', 'ので', 1)),
+            obs.replace(chain, chain.replace('けれど', 'ので', 1)),
+            obs.replace('「悲しかった」', '「寂しかった」', 1).replace('「寂しかった」が', '「悲しかった」が', 1),
+            obs.replace('「寂しかった」', '「寂しくなかった」', 1),
+            pair + ' ' + obs.replace(pair, '', 1)]
+        if step:
+            observations += [obs.replace('嬉しい', '嬉しくない', 1),
+                             obs.replace('回答した時点', 'その時', 1)]
+        if step >= 2:
+            observations.append(obs.replace('楽しかった', '楽しくなかった', 1))
+        candidates = [body.replace(obs, changed, 1) for changed in observations]
+        if step:
+            candidates += [body.replace(follow, follow.replace('先に書かれた方では、', '後に書かれた方では、', 1), 1),
+                           body.replace(follow, follow.replace('嬉しい', '嬉しくない', 1), 1)]
+        assert all(changed != body for changed in candidates)
+        with (patch.object(reception, '_author_source_grounded_reception_clauses', side_effect=AssertionError('no author')),
+              patch.object(surface, '_render_observation', side_effect=AssertionError('no author')),
+              patch.object(surface, '_render_relation', side_effect=AssertionError('no author'))):
+            for changed in (body, *candidates):
+                with patch.object(gate, 'replay_source_grounded_human_reception_from_plan',
+                                  return_value=SimpleNamespace(text=changed.split('Emlisから：\n', 1)[1])):
+                    proof = gate.evaluate_grounded_surface_body_inverse(body=changed.encode(), plan=plan,
+                        sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected)
+                assert proof.passed == (changed == body), proof.failure_codes
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('last', ['「頼まれた」は誤りです。', '「嬉しい」ではなく「少し楽しい」です。'])
+def test_same_name_received_chain_saved_replay_keeps_original(qcase, qdb, monkeypatch, field, last):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    source = RECEIVED_CHAIN_MULTI.replace('誘われた', '褒められた')
+    memo, action = (source, '') if field == 'memo' else ('', source)
+    qdb.query('update public.emotions set memo=$1,memo_action=$2 where id=$3', [memo, action, parent])
+    original = current = run(service.start(user, parent))
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved initial must not regenerate'))
+        assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    for step, reply in enumerate(('今は嬉しい。', 'その時は楽しかった。', last)):
+        if step:
+            current = run(cont(service, user, current, f'same-chain-continue-{step}'))
+        current = run(answer(service, user, current, reply, f'same-chain-answer-{step}'))
+        assert current['original'] == original['original'] and current['body_state'] == 'REFINED'
+        assert qdb.query('select memo,memo_action from public.emotions where id=$1', [parent])['rows'][0] == {
+            'memo': memo, 'memo_action': action}
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved update must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    assert current['state'] == 'COMPLETED' and not current['can_continue']
+    text = current['current_observation']['text']
+    assert '悲しかったけれど、嬉しかった' in text and '楽しかった' in text and '寂しさ' in text
+    assert ('当時は怖かった' in text and '頼まれた' not in text) if '誤り' in last else (
+        '先の回答時点では少し楽しい' in text and '頼まれた' in text)
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+def test_same_name_received_chain_occurrence_source_cannot_be_reassigned(field):
+    from dataclasses import replace
+    source = RECEIVED_CHAIN_MULTI.replace('誘われた', '褒められた')
+    req = begin(source if field == 'memo' else '', source if field == 'memo_action' else '')
+    for reply in ('今は嬉しい。', 'その時は楽しかった。'):
+        req = advance(req, reply)
+    result, plan, _, resolver, selected = actual(request=req)
+    move, = [m for m in plan.response_plan.human_reception_plan.moves if len(m.target_nucleus_ids) == 2
+             and m.reception_act == 'recognize_lived_change']
+    raw = result.artifact.reception.split('。')[0] + '。'
+    links = [r for r in plan.relations if r.type == 'evaluation_about_event']
+    first, second = links
+    event = next(n for n in plan.nuclei if n.nucleus_id == first.from_nucleus_id)
+    other = next(n for n in plan.nuclei if n.nucleus_id == second.from_nucleus_id)
+    answer_node = next(n for n in plan.nuclei if n.nucleus_id == first.to_nucleus_id)
+    altered = [replace(plan, relations=tuple(replace(r, from_nucleus_id=second.from_nucleus_id)
+        if r == first else r for r in plan.relations))]
+    changes = [replace(event, source_span_ids=other.source_span_ids),
+        replace(event, source_fields=('memo_action' if field == 'memo' else 'memo',)),
+        replace(event, semantic_frame=replace(event.semantic_frame, attribute_codes=tuple(
+            c for c in event.semantic_frame.attribute_codes if not c.startswith('source_received_event_link:')))),
+        replace(answer_node, semantic_frame=replace(answer_node.semantic_frame, attribute_codes=tuple(
+            c for c in answer_node.semantic_frame.attribute_codes if not c.startswith('thread_subject:distinct_source_occurrence:')))),
+        replace(answer_node, semantic_frame=replace(answer_node.semantic_frame, attribute_codes=tuple(
+            'thread_time:original_occasion' if c == 'thread_time:answer_time' else c
+            for c in answer_node.semantic_frame.attribute_codes)))]
+    altered.extend(replace(plan, nuclei=tuple(changed if n.nucleus_id == changed.nucleus_id else n
+        for n in plan.nuclei)) for changed in changes)
+    with patch.object(reception, '_source_owned_positive_answer_group_sentence', side_effect=AssertionError('no author')):
+        assert gate._read_positive_answer_group_discourse(raw, move, plan, resolver, selected) is not None
+        for changed in altered:
+            assert gate._read_positive_answer_group_discourse(raw, move, changed, resolver, selected) is None
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('second', ['その時は楽しかった。', 'その時は少し怖かった。'])
+def test_same_name_received_chain_unproved_negative_window_cannot_drop_duties(field, second):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from emlis_ai_grounded_observation_plan import GroundedObservationPlanError
+    source = RECEIVED_CHAIN_MULTI.replace('誘われた', '褒められた')
+    req = begin(source if field == 'memo' else '', source if field == 'memo_action' else '')
+    for reply in ('今は少し苦しい。', second):
+        req = advance(req, reply)
+    with pytest.raises(GroundedObservationPlanError, match='human_reception_answer_source_capability_gap'):
+        build_updated_grounded_plan(prepare_emlis_meaning(req))
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is None and result.meaning_checkpoint is not None
+    assert result.body_state == 'MEANING_UPDATED_BODY_UNAVAILABLE'

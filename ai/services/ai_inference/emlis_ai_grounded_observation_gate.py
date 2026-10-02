@@ -2398,17 +2398,22 @@ def _body_inverse_thread_contrast_answers(body, witness, line, plan, resolver):
             continue
         event_text, reaction_text, when, answer_text = parsed.groups()
         when = when.removesuffix("では").removesuffix("は")
-        ids = []
-        for value in (event_text, reaction_text, answer_text):
-            normalized = _body_inverse_normalized_anchor(value)
-            candidates = tuple(n.nucleus_id for n in plan.nuclei
-                               if normalized in _body_inverse_nucleus_source_values(n.nucleus_id, plan, resolver))
-            if len(candidates) != 1:
-                break
-            ids.append(candidates[0])
-        if len(ids) != 3 or len(set(ids)) != 3:
+        # Bind the complete event/reaction/answer relation, not three
+        # independently unique words. Repeated event names retain their IDs.
+        triples = tuple((contrast.from_nucleus_id, contrast.to_nucleus_id, about.to_nucleus_id)
+            for contrast in plan.relations if contrast.type == "contrast"
+            and _body_inverse_normalized_anchor(event_text) in _body_inverse_nucleus_source_values(
+                contrast.from_nucleus_id, plan, resolver)
+            and _body_inverse_normalized_anchor(reaction_text) in _body_inverse_nucleus_source_values(
+                contrast.to_nucleus_id, plan, resolver)
+            for about in plan.relations if about.type == "evaluation_about_event"
+            and about.from_nucleus_id == contrast.from_nucleus_id
+            and _body_inverse_normalized_anchor(answer_text) in _body_inverse_nucleus_source_values(
+                about.to_nucleus_id, plan, resolver))
+        if len(triples) != 1 or len(set(triples[0])) != 3:
             failures.append("body_inverse_answer_antecedent_ambiguous")
             continue
+        ids = triples[0]
         index = {n.nucleus_id: n for n in plan.nuclei}
         event, reaction, answer = (index[i] for i in ids)
         contrasts = tuple(r for r in plan.relations if r.type == "contrast"
@@ -3499,6 +3504,7 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
         event = index[about[0].from_nucleus_id]
         if (event.kind != "event" or event.retention != "required" or event.grounding_kind != "explicit"
             or event.source_fields not in {("memo",), ("memo_action",)}
+            or resolver.source_fields_for(event.source_span_ids) != event.source_fields
             or event.semantic_frame.actor != "current_user" or event.semantic_frame.modality != "fact"
             or event.semantic_frame.time_scope != "past"):
             return None
@@ -5495,6 +5501,58 @@ def evaluate_grounded_surface_body_inverse(
                 candidates = tuple(n for n in events
                     if _body_inverse_nucleus_source_values(n.nucleus_id, plan, resolver) == (value,))
                 if len(candidates) > 1:
+                    # Equal event words are not equal source occurrences.
+                    # Resolve only the event quote of a complete proven chain
+                    # or legacy pair, through its own contrast endpoint.
+                    hosts = tuple(row for row in witness.sentences
+                        if row.section == "observation"
+                        and row.section_line_ordinal == parsed_line.section_ordinal
+                        and row.utf8_byte_start <= quote_row.utf8_byte_start
+                        and quote_row.utf8_byte_end <= row.utf8_byte_end)
+                    if len(hosts) == 1:
+                        host = hosts[0]
+                        host_quotes = tuple(q for q in quote_rows
+                            if host.utf8_byte_start <= q.utf8_byte_start
+                            and q.utf8_byte_end <= host.utf8_byte_end)
+                        visible = _body_inverse_visible_text(body, host)
+                        chain = re.fullmatch(r"「([^「」『』\n]+)」(?:のに|けれども?|けど)"
+                            r"「([^「」『』\n]+)」(?:けれども?|けど)"
+                            r"「([^「」『』\n]+)」とあります。", visible)
+                        pair = re.fullmatch(r"「([^「」『』\n]+)」と「([^「」『』\n]+)」が、"
+                            r"異なる向きのまま同時にあります。", visible)
+                        answer_report = re.fullmatch(r"「([^「」『』\n]+)」ことについて、"
+                            r"(先の回答時点|回答した時点|その時)の受け止めは"
+                            r"「([^「」『』\n]+)」と書かれています。", visible)
+                        combined = re.fullmatch(r"「([^「」『』\n]+)」のに「([^「」『』\n]+)」、"
+                            r"(?:その時は|回答した時点では|先の回答時点では)"
+                            r"「([^「」『』\n]+)」とあります。", visible)
+                        report = chain or pair or combined
+                        if report is not None and host_quotes and quote_row == host_quotes[0]:
+                            reaction = _body_inverse_normalized_anchor(report[2])
+                            candidates = tuple(n for n in candidates if any(
+                                r.type == "contrast" and r.grounding_kind == "user_stated_relation"
+                                and r.relation_id in planned_line.binding.relation_ids
+                                and r.from_nucleus_id == n.nucleus_id
+                                and _body_inverse_nucleus_source_values(r.to_nucleus_id, plan, resolver) == (reaction,)
+                                and (r.relation_id in grouped_relations if chain is not None or combined is not None else
+                                     "source_received_chain_slot:event" not in n.semantic_frame.attribute_codes)
+                                for r in plan.relations))
+                        elif answer_report is not None and host_quotes and quote_row == host_quotes[0]:
+                            when = {"その時": "original_occasion", "回答した時点": "answer_time",
+                                    "先の回答時点": "prior_answer_time"}[answer_report[2]]
+                            answer_value = _body_inverse_normalized_anchor(answer_report[3])
+                            candidates = tuple(n for n in candidates if any(
+                                r.type == "evaluation_about_event"
+                                and r.relation_id in planned_line.binding.relation_ids
+                                and r.from_nucleus_id == n.nucleus_id
+                                and nucleus_index[r.to_nucleus_id].source_fields == ("answer_text_private",)
+                                and {c for c in nucleus_index[r.to_nucleus_id].semantic_frame.attribute_codes
+                                     if c.startswith("thread_time:")} == {"thread_time:" + when}
+                                and _body_inverse_nucleus_source_values(r.to_nucleus_id, plan, resolver) == (answer_value,)
+                                for r in plan.relations))
+                    if not candidates:
+                        failures.append(f"body_inverse_contrast_report_source_ambiguous:{index}")
+                if len(candidates) > 1:
                     failures.append(f"body_inverse_contrast_report_source_ambiguous:{index}")
                 elif candidates:
                     nid = candidates[0].nucleus_id
@@ -5557,9 +5615,18 @@ def evaluate_grounded_surface_body_inverse(
             # A thread's explicit contrast owes each complete source operand.
             # A shorter adjective cannot stand in for its degree or negation,
             # including when the complete words occur in another source group.
+            chain_from = nucleus_index[relation.from_nucleus_id]
+            chain_to = nucleus_index[relation.to_nucleus_id]
+            exact_chain = (len(chain_from.source_span_ids) == 1
+                and chain_from.source_span_ids == chain_to.source_span_ids
+                and all("semantic_dependency:received_feeling_contrast_chain" in n.semantic_frame.attribute_codes
+                        for n in (chain_from, chain_to))
+                and any("source_received_chain_slot:" + left in chain_from.semantic_frame.attribute_codes
+                        and "source_received_chain_slot:" + right in chain_to.semantic_frame.attribute_codes
+                        for left, right in (("event", "first"), ("first", "second"))))
             exact_contrast = (relation.type == "contrast"
                 and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
-                and nucleus_index[relation.from_nucleus_id].kind == "event"
+                and (nucleus_index[relation.from_nucleus_id].kind == "event" or exact_chain)
                 and nucleus_index[relation.to_nucleus_id].kind == "reaction"
                 and nucleus_index[relation.to_nucleus_id].semantic_frame.predicate_kind == "feeling"
                 and all(nucleus_index[nid].source_fields in {("memo",), ("memo_action",)}
@@ -5567,8 +5634,9 @@ def evaluate_grounded_surface_body_inverse(
                         for nid in (relation.from_nucleus_id, relation.to_nucleus_id)))
             if (exact_contrast and planned_line.surface_function in {"observe_relation", "observe_nuclei_with_relations"}
                 and "scope_hedge" not in planned_line.binding.functional_atom_ids
-                and not any(r.type == "evaluation_about_event" and r.from_nucleus_id == relation.from_nucleus_id
-                            for r in plan.relations)
+                and (exact_chain
+                     or not any(r.type == "evaluation_about_event" and r.from_nucleus_id == relation.from_nucleus_id
+                                for r in plan.relations))
                 and relation_id not in grouped_relations):
                 # New reports must be consumed by their complete grammar.
                 # A marker in another pair or inside a quote cannot legitimize
