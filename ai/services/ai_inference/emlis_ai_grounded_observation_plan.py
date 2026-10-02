@@ -8070,9 +8070,14 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
         and all(n in by_event.values() and not is_grounded_current_answer_uncertainty(n) for n in negative)
         and len(positive_revisions) == len(independent_answers) == 1
         and not (withdrawal or independent or actions or detached_answers))
-    nested_mixed_revision = bool(not separate_later_scopes and mixed_revision
-        and len(revised_originals) == len(independent_answers) == 1
-        and len(positive) == len(by_event) == 2)
+    # The outer contrast already owns a Move. A source-proven independent
+    # correction of either polarity shares the existing mixed duty; only
+    # the two ABOUT-owned positive answers form the collective answer duty.
+    nested_mixed_revision = bool(not separate_later_scopes
+        and len(original_revisions) == len(independent_answers) == 1
+        and len(positive) - len(positive_revisions) == len(by_event) == 2
+        and len(answers) == 3
+        and not (withdrawal or independent or actions or detached_answers))
     # ABOUT-owned positive answers can share one collective duty. An outer
     # received contrast reserves a Move before recursing here, so two answers
     # must also share the existing group instead of producing a fourth Move.
@@ -8240,8 +8245,9 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
             groups = [("current_burden", (focus,), (feeling,)), groups[1],
                 ("current_burden", tuple(event for event in targets if event != focus),
                  tuple(nid for nid in supports if nid != feeling))]
-    if mixed_revision and targets and (len(groups) == 4 or nested_mixed_revision and len(groups) == 3):
-        replacement = original_revisions[0] if chain_revision else revised_originals[0]
+    if ((mixed_revision or nested_mixed_revision) and targets
+        and (len(groups) == 4 or nested_mixed_revision and len(groups) == 3)):
+        replacement = original_revisions[0]
         # A positive correction has its own lived-change singleton. Move
         # that exact duty into the source-bounded mixed group, without
         # removing the surviving original feeling or duplicating the revision.

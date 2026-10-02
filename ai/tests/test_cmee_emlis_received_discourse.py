@@ -4860,3 +4860,81 @@ def test_correction_answer_source_negative_copula_keeps_other_source_duties():
         assert not gate.evaluate_grounded_surface_body_inverse(body=body.replace(follow,
             follow.replace('あなたも', '相手も')).encode(), plan=context[1], sentence_plan=context[2],
             resolver=context[3], selected_subjective_input=context[4]).passed
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('source', ['少し楽しかった', '少し楽しかったのです', '少し楽しかったのだった'])
+def test_positive_final_revision_inverse_rejects_matching_replay(field, source):
+    request = begin(RECEIVED_CHAIN_MULTI if field == 'memo' else '',
+                    RECEIVED_CHAIN_MULTI if field == 'memo_action' else '')
+    for reply in ('今は嬉しい。', 'その時は楽しかった。', f'「嬉しかった」ではなく「{source}」です。'):
+        request = advance(request, reply)
+    result, plan, sentence, resolver, selected = actual(request=request)
+    body, follow = result.artifact.text, result.artifact.reception
+    revised, = (n for n in plan.nuclei if 'thread_subject:revised_original_reaction' in n.semantic_frame.attribute_codes)
+    moves = plan.response_plan.human_reception_plan.moves
+    mixed, = (m for m in moves if revised.nucleus_id in m.target_nucleus_ids)
+    assert len(moves) == 3 and len(mixed.target_nucleus_ids) == 3
+    assert mixed.reception_act == 'stay_with_current_burden'
+    assert revised.semantic_frame.polarity == 'positive'
+    assert not any(revised.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    correction, = (part + '。' for part in follow.removesuffix('。').split('。') if '訂正の回答では、' in part)
+    replacements = [
+        (correction, ''), ('訂正の回答では、', ''),
+        ('訂正の回答では、', '頼まれたことについて、'),
+        ('当時は少し楽しかった', '回答した時点では少し楽しかった'),
+        ('当時は少し楽しかった', '当時は楽しかった'),
+        ('当時は少し楽しかった', '当時は少し楽しくなかった'),
+        ('当時は少し楽しかった', '当時は友人が少し楽しかった'),
+        ('当時は少し楽しかった', '当時は少し楽しい'),
+        ('褒められたのに、悲しかった', '褒められたから、悲しかった'),
+        ('誘われたのに、寂しさを感じ', '誘われたのに、寂しさを感じず'),
+        ('頼まれたのに、怖さを感じ', '頼まれたのに、怖さを感じず'),
+        ('回答した時点では嬉しい', 'その時は嬉しい'),
+        ('その時は楽しかった', '今は楽しかった'),
+    ]
+    if source.endswith('のだった'):
+        replacements.append(('のでしたね', 'のですね'))
+    changed = [body.replace(follow, follow.replace(old, new, 1)) for old, new in replacements]
+    assert all(candidate != body for candidate in changed)
+    with (patch.object(reception, '_source_grounded_received_discourse', side_effect=AssertionError('no author')),
+          patch.object(reception, '_revised_feeling_discourse_prefix', side_effect=AssertionError('no author')),
+          patch.object(reception, '_detached_feeling_finite_surface', side_effect=AssertionError('no author')),
+          patch.object(reception, '_author_source_grounded_reception_clauses', side_effect=AssertionError('no author'))):
+        for candidate in (body, *changed):
+            with patch.object(gate, 'replay_source_grounded_human_reception_from_plan',
+                              return_value=SimpleNamespace(text=candidate.split('Emlisから：\n', 1)[1])):
+                proof = gate.evaluate_grounded_surface_body_inverse(body=candidate.encode(), plan=plan,
+                    sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected)
+            assert proof.passed == (candidate == body)
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('source', ['少し楽しかった', '少し楽しかったのです', '少し楽しかったのだった'])
+def test_positive_final_revision_saved_body_keeps_every_source(qcase, qdb, monkeypatch, field, source):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    memo, action = (RECEIVED_CHAIN_MULTI, '') if field == 'memo' else ('', RECEIVED_CHAIN_MULTI)
+    qdb.query('update public.emotions set memo=$1,memo_action=$2 where id=$3', [memo, action, parent])
+    first = current = run(service.start(user, parent))
+    replies = ('今は嬉しい。', 'その時は楽しかった。', f'「嬉しかった」ではなく「{source}」です。')
+    for index, reply in enumerate(replies):
+        if index:
+            current = run(cont(service, user, current, f'positive-final-continue-{index}'))
+        current = run(answer(service, user, current, reply, f'positive-final-answer-{index}'))
+        assert current['original'] == first['original'] and current['body_state'] == 'REFINED'
+        if index == 2:
+            text = current['current_observation']['text']
+            follow = text.split('Emlisから：\n', 1)[1]
+            assert follow.count('。') == 3 and follow.count('訂正の回答では、') == 1
+            assert all(value in follow for value in ('褒められたのに、悲しかった',
+                '誘われたのに、寂しさを感じ', '頼まれたのに、怖さを感じ',
+                '回答した時点では嬉しい', 'その時は楽しかった', '当時は少し楽しかった'))
+            assert '嬉しかった' not in text
+            assert ('のでしたね' in follow) == source.endswith('のだった')
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved correction must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+        assert qdb.query('select memo,memo_action from public.emotions where id=$1', [parent])['rows'][0] == {
+            'memo': memo, 'memo_action': action}
+    assert current['state'] == 'COMPLETED' and not current['can_continue']

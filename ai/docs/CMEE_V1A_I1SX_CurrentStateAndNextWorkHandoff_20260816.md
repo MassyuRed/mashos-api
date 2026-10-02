@@ -13260,3 +13260,40 @@ Gateの既存readerはmixed境界と完全な有限形を独立して読む。Ob
 本文比較の別残件は、元event撤回後に残る先行回答の出典。case7/23のObservation末尾「また、回答した時点の気持ちとして、『嬉しい』が見えます」は直前の別eventに寄って読め、Reception「先の回答では、回答した時点では」も重なる。Plan欠陥後、撤回eventを戻さず先行回答自身の出典と時点を一度で分かる表現を検討する。原感情の丁寧過去形/現在形、SELF名詞句、同名感情の追跡、長い列挙、定型性・二層再掲・深さ不足も残る。同群完了前に別の二層価値改善へ先行しない。
 
 primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承し、旧10/10期限を復活させない。実DB/端末目標は未達で、合成確認を達成扱いにせず、Mashへ商品確認を依頼する段階としない。
+
+
+## 2026-10-02 u71 — 原contrastを残した肯定感情訂正の4Move例外を修復する
+
+### 対象・変更
+
+MashのEmlis残件継続指示と前回txt（20261002-091127）を受け、u70最優先の6条件を修復。開始HEADはAPI `fee7795c98046fc3849937772d837efbdc4b2495`、Cocolon `9046f1445ecc9538d8e8f8a85ce1db2ca2712df5`。両PRのDraft/open/unmerged、最新weekly09/26末尾09/29合意、CURRENT_RULES・Rule18・恒久incident全文、全体設計01・全ファイル地図02とcurrent_structureを確認。両repoのrecursive treeはAPI2355/Cocolon1797 entries・truncated=falseで全pathを確認した。全path確認は全実装全文精読ではない。System Contextの旧生成結果へ戻らず、対象原典を直接確認した。
+
+OBSERVED_BLOCKER_MINIMAL_FIX、既存LEVEL_2内。root華恋が唯一の編集・実行・反映担当、read-only補助が技術因果・商品routeと全12比較系列を確認。担当名から特定モデルによる独立商品合格を生成しない。production変更は既存Planの3箇所（11行追加/5行削除）だけ。既存HR/Surface/Gate、意味受付、3Move上限、公開contract/API/DB/RN、依存宣言・flagを維持。STRUCTURE_MAP_DELTA_NONE: 既存Plan内の選択条件と既存mergerの補修で、owner・route・source role・公開schema・他中核境界は不変。
+
+原contrastが1Moveを予約した再帰内で、負の独立訂正だけが既存mixed dutyへ入り、正の訂正はsingletonとして残り合計4Moveになることが原因。既存nested_mixed_revisionを、証明済みの原感情訂正exact1・独立回答exact1・ABOUT肯定回答exact2・全回答exact3・外側予約ありに限定して両極性対応した。withdrawal・独立原感情・action・detached回答は除外する。既存mergerをnested条件でも選び、replacementを両極性のoriginal_revisionsから選択する。原contrast1・他原反応と独立訂正1・ABOUT二回答group1で3Moveを保つ。元の失効した感情・relationを戻さず、新しい作者・helper・文章化経路は追加しない。
+
+### 実本文と検証
+
+GitHub実bytesをscratchへ復元して使用。対象を変更する前に取得済み191fileのGit blob一致を確認した。Python3.12.14、pytest9.1.1、FastAPI0.142.2、httpx0.28.1、Pydantic2.13.5、PGlite0.5.8は環境の既存runtime/cacheから配置し、外部ネット取得・repository依存宣言変更は行わない。未取得依存/fixtureの段階のimport/collection不成立は実行成功へ換算しない。
+
+開始版の既存32条件は26 PASS/6 FAIL（38.13秒）。6全てが既知のhuman_reception_move_count_invalidを再現。Plan修正後は同じ32条件が32 PASS（37.14秒）。元testの324843 bytes prefix、旧期待、skip/xfail、historical frozen identityは一切変更していない。
+
+開始版/修正版の12系列（対象6＋負の末尾訂正/正の中央訂正対照6）を同runtimeで比較。対象6は例外から両層本文へ回復、対照6は両層を含む比較record全文一致。全12の受付status・operation・unresolvedは不変、最終inverse12 PASS、3Move。root/read-only補助が原入力・全回答・両層全文を読んだ。原contrast、他2出来事の原反応、二回答の各時点、独立訂正の程度・肯否・内側過去/外側説明時制を保持し、訂正対象や失効辺の復活、新しい因果/出来事帰属は確認されなかった。原出来事へ文末で戻る構成・長い並列・定型終端は残る。
+
+既存test末尾へ12条件を追加。matching-mutated-replay付き逆検証6は、作者を禁止し、replayが改変本文自身を返しても、訂正文削除・出典削除/他event帰属・時点・程度・肯否・主体・時制・他の原反応/回答の改変を拒否する。保存6（3正訂正形×memo/memo_action）は、各更新REFINED、原DTO/DB原memo・memo_action不変、generate禁止GET/start DTO全文一致、第三回答後COMPLETEDを確認した。合成PGlite/mock RPCであり実DB・端末・プロセス再起動の検証ではない。
+
+新規初回12 FAILは検査側の文面指定誤り。実本文の「寂しさを感じ/怖さを感じ」に対して「寂しかった/怖かった」を期待・置換していた。新規assertion/mutation対象だけを実在する表現へ直し、production/Gateは変更せず、最終12 PASS（20.04秒）。初回を成功へ隠さず、再実行を件数へ重複加算しない。
+
+関連選択はu70のdetached_observation / received_discourseの既存662条件と新規12条件。関連実行674条件は564 PASS/110 FAIL（428.52秒）で、この実行は修正前の新規test12を既にcollect済みだった。変更していない旧662条件は564 PASS/98 FAIL。新規12は表現指定修正後に全12を再実行してPASS、identity1 PASSを加え、重複を除いた最終675 unique IDs＝577 PASS/98 FAIL/ERROR0/SKIP0。最終test全文で674全件を再実行したとはしない。旧662条件のbytes・productionは変わらず、新規12の最終結果だけを採用した。
+
+残る98 FAILは開始HEADの独立worktreeで同じ98 IDを再実行し、98全件FAILを確認（101.94秒）。root/read-only補助が全failureを旧12・旧prefix固定期待74・旧prefixを対象にした無変化mutation5・旧prefix文抽出0件6・legacy-author変換条件不成立1へ照合し、未分類0。旧検査の期待を書き換えて成功へ寄せず、旧prefixで後段意味検査へ未到達の条件もPASSとは扱わない。u70の直接reader/matching-replay補完を継承し、今回対象の6条件は旧32の独立UTF8復元と追加6の本文改変拒否で確認した。全suite成功とはしない。最終Plan変更後のproduction変更なし。
+
+current共有owner identityは既存導出で更新。language `a360b24e3449b5802a07324c119122f916bb332a902e58cf966b27aeb6b52e71`、runtime `f39b1040ef4d3b33676b05a8cc32f61ca0f61c8ffd7a700610ca913dffa5d339`。既存identity検査1 PASS（19.68秒）。共有9owner/18payload構成は不変で、Planのhash/lengthと集約identityだけが変わる。
+
+反映対象はAPI Plan・既存test末尾・current identity・既存handoffとCocolon既存06のexact5 modify、追加/削除0。既存Draft PR3/30へnon-force反映し、対象全文/blobとwrite commit changed pathsを照合する。正式commitと照合結果は両PR metadataへ記録する。
+
+### 残件・再開位置
+
+u70で繰上げた肯定感情訂正6条件のPlan例外は解消。同じ複数出来事・回答・訂正群の完了とはしない。次はu70から残る、出来事撤回後に生存する先行回答の出典と時点が追いにくい表現。撤回eventを戻さず、先行回答自身の出典を既存Surface/HRと独立Gateで扱う。原感情の丁寧過去形/現在形、SELF名詞句、同名感情の追跡、長い列挙、定型性・二層再掲・深さ不足も残る。対象群が閉じる前に別の二層価値改善へ先行しない。
+
+primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用なし。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）を継承する。10/02実DB/端末一往復は未達のまま。旧10/10 Emlis内容期限は復活させず、合成検証で実利用目標を達成扱いにしない。
