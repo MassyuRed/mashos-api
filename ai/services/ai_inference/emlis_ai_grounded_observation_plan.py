@@ -8118,6 +8118,21 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
     groups.extend(("current_burden", (n.nucleus_id,), ()) for n in detached_answers if n in negative)
     groups.extend(("current_burden", (n.nucleus_id,), ()) for n in independent_answers if n in negative)
     groups.extend(("lived_change", (n.nucleus_id,), ()) for n in positive)
+    if (withdrawal and not separate_later_scopes
+        and len(positive) == len(negative) == len(detached_answers) == len(by_event) == 1
+        and len(answers) == 2 and positive[0] in by_event.values()
+        and detached_answers[0] == negative[0]
+        and negative[0].kind == "reaction"
+        and negative[0].semantic_frame.predicate_kind == "feeling"
+        and negative[0].semantic_frame.modality == "feeling"
+        and len(negative[0].source_span_ids) == 1
+        and 1 <= len(targets) <= 2 and supports
+        and not (independent or actions or independent_answers or detached_originals)):
+        # The outer contrast already owns a Move. The withdrawn answer is
+        # an independent operand, never the reaction to a surviving event.
+        # Its source/time remain intact while the positive ABOUT stays apart.
+        groups = [row for row in groups if row[0] != "current_burden"]
+        groups.append(("current_burden", (*targets, negative[0].nucleus_id), tuple(supports)))
     if positive_group:
         linked_events = {n.nucleus_id: event_id for event_id, n in by_event.items()}
         linked_ids = tuple(sorted((n.nucleus_id for n in positive if n not in independent_answers),

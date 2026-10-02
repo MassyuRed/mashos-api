@@ -3314,6 +3314,35 @@ def source_grounded_thread_received_group(move, plan, nucleus_index, resolver):
     rows = []
     for event_id in move.target_nucleus_ids:
         target = nucleus_index[event_id]
+        if (target.source_fields == ("answer_text_private",)
+            and "thread_subject:withdrawn_source_event" in target.semantic_frame.attribute_codes):
+            frame = target.semantic_frame
+            times = {c.split(":", 1)[1] for c in frame.attribute_codes if c.startswith("thread_time:")}
+            if (target.allowed_claim_scope != "explicit_supplemental_answer"
+                or target.retention != "required" or target.grounding_kind != "explicit"
+                or (target.kind, frame.predicate_kind, frame.modality) != ("reaction", "feeling", "feeling")
+                or frame.actor != "current_user" or frame.polarity != "negative"
+                or len(target.source_span_ids) != 1 or len(times) != 1
+                or not times <= _THREAD_ANSWER_TIME_NOMINAL_PREFIX.keys()
+                or "thread_subject:withdrawn_source_event" not in frame.attribute_codes
+                or any(event_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+                or len(move.target_nucleus_ids) < 2 or not move.support_nucleus_ids
+                or not any(nucleus_index[nid].kind == "event" for nid in move.target_nucleus_ids)):
+                return ()
+            when = next(iter(times))
+            source = _source_grounded_clause_candidate(target, resolver)
+            span = resolver.resolve(target.source_span_ids[0])
+            profile = _source_grounded_semantic_profile(target, source)
+            if (frame.time_scope != ("past" if when == "original_occasion" else "present")
+                or resolver.source_fields_for(target.source_span_ids) != target.source_fields
+                or _typed_reception_source_fragment(target, span.raw_text) != source
+                or profile.actor_kind != "SELF" or profile.quoted_boundary
+                or profile.performed_action or profile.future_action
+                or not _SOURCE_GROUNDED_FINITE_END_RE.search(source)
+                or re.search(r'[「」『』“”‘’"?？!！\r\n。]', source)):
+                return ()
+            rows.append(((event_id, None, None, source, "detached_answer_" + when), None))
+            continue
         if _thread_revised_original_reaction(target, plan.relations, polarity=target.semantic_frame.polarity):
             if (len(move.target_nucleus_ids) < 2 or not move.support_nucleus_ids
                 or not any(nucleus_index[nid].kind == "event" for nid in move.target_nucleus_ids)):
@@ -3377,7 +3406,9 @@ def _thread_received_group_nominal(rows):
             part = answer.event_fragment + ("ことについて、" if answer.grammar == "FINITE" else "ことへの") + answer.nominal
         else:
             _, _, event, feeling, link = original
-            part = (_detached_burden_nominal(feeling, "original_occasion") if link in {"detached", "replacement"}
+            part = (_detached_burden_nominal(feeling, link.removeprefix("detached_answer_"))
+                    if link.startswith("detached_answer_") else
+                    _detached_burden_nominal(feeling, "original_occasion") if link in {"detached", "replacement"}
                     else event + _RECEIVED_EVENT_LINK_TEXT[link]
                     + _detached_feeling_finite_surface(feeling, allow_medial=True,
                         allow_copular=True, attributive=True) + "こと")
@@ -5963,7 +5994,7 @@ def derive_source_grounded_nominalization_plan(
             event = original[0] if original else answer.event_id
             if positions[event] != slot:
                 raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
-            if original and original[4] in {"detached", "replacement"}:
+            if original and (original[4] in {"detached", "replacement"} or original[4].startswith("detached_answer_")):
                 codes.append(f"thread-received-slot:{slot}:none:{original[4]}:none")
                 continue
             suffix = f":{positions[answer.nucleus_id]}:{answer.grammar}:{answer.when}" if answer else ":none"
@@ -6087,7 +6118,7 @@ def _source_grounded_nominalization_shape_valid(
         return True
     if (2 <= len(plan) <= 4 and plan[:1] == _SOURCE_GROUNDED_NOMINALIZATION_BASE
         and all(re.fullmatch(
-            rf"thread-received-slot:{slot}:(?:(?:[0-8]:(?:noni|kedo|keredo|keredomo)|none:none):(?:none|[0-8]:(?:BELIEF|PAST_FEELING|PERCEIVED_0|PERCEIVED_1|COPULAR_PRESENT_POLITE|COPULAR_PAST_POLITE|ADJECTIVE_PRESENT_POLITE|FINITE):(?:original_occasion|answer_time|prior_answer_time))|none:(?:detached|replacement):none)", code)
+            rf"thread-received-slot:{slot}:(?:(?:[0-8]:(?:noni|kedo|keredo|keredomo)|none:none):(?:none|[0-8]:(?:BELIEF|PAST_FEELING|PERCEIVED_0|PERCEIVED_1|COPULAR_PRESENT_POLITE|COPULAR_PAST_POLITE|ADJECTIVE_PRESENT_POLITE|FINITE):(?:original_occasion|answer_time|prior_answer_time))|none:(?:detached|replacement|detached_answer_(?:original_occasion|answer_time|prior_answer_time)):none)", code)
             for slot, code in enumerate(plan[1:]))
         and semantic_count == len(plan) - 1 + sum(c.split(":")[2] != "none" for c in plan[1:]) + sum(not c.endswith(":none") for c in plan[1:])):
         return True
@@ -6685,7 +6716,8 @@ def _project_source_grounded_reception_move_realization(
     positive_answers = (source_grounded_thread_answer_group(move, plan, nucleus_index, resolver)
                         if move.reception_act == "recognize_lived_change" else ())
     received_rows = source_grounded_thread_received_group(move, plan, nucleus_index, resolver)
-    mixed_originals = any(original and original[4] in {"detached", "replacement"} for original, _ in received_rows)
+    mixed_originals = any(original and (original[4] in {"detached", "replacement"}
+        or original[4].startswith("detached_answer_")) for original, _ in received_rows)
     if detached_burdens or mixed_originals or any(row.event_id is None for row in positive_answers):
         # The aggregate has no shared event or predicate. Each unchanged
         # profile and timed source clause owns its own assertion.
@@ -7107,7 +7139,7 @@ def _expression_source_grounded_move_realization(
             if 0 in relation.endpoint_slots
         )
     mixed_originals = (expression.predicate_kind == "source_bounded"
-        and any(c.endswith((":none:detached:none", ":none:replacement:none")) for c in expression.nominalization_plan
+        and any(c.endswith((":none:detached:none", ":none:replacement:none", ":none:detached_answer_original_occasion:none", ":none:detached_answer_answer_time:none", ":none:detached_answer_prior_answer_time:none")) for c in expression.nominalization_plan
                 if c.startswith("thread-received-slot:")))
     detached_answers = bool(expression.predicate_kind == "source_bounded" and expression.polarity == "positive"
         and target_slot_count == 2 and len(semantic_fragments) == 3 and context_slots == (2,)
@@ -7910,7 +7942,7 @@ def _validate_source_grounded_move_ir(
             )
         mixed_originals = (
             move.predicate_kind == "source_bounded"
-            and any(code.endswith((":none:detached:none", ":none:replacement:none"))
+            and any(code.endswith((":none:detached:none", ":none:replacement:none", ":none:detached_answer_original_occasion:none", ":none:detached_answer_answer_time:none", ":none:detached_answer_prior_answer_time:none"))
                     for code in move.nominalization_plan
                     if code.startswith("thread-received-slot:"))
             and bool(_thread_received_group_ir_text(move))
@@ -8517,7 +8549,7 @@ def _thread_received_group_ir_text(realization):
     count = realization.target_slot_count
     fragments, profiles = realization.semantic_fragments, realization.semantic_profiles
     detached_slots = tuple(slot for slot, code in enumerate(codes)
-                           if code.endswith((":none:detached:none", ":none:replacement:none")))
+                           if code.endswith((":none:detached:none", ":none:replacement:none", ":none:detached_answer_original_occasion:none", ":none:detached_answer_answer_time:none", ":none:detached_answer_prior_answer_time:none")))
     if (len(codes) != count or not 1 <= count <= 3
         or not _source_grounded_nominalization_shape_valid(realization.nominalization_plan, len(fragments))
         or realization.reference_mode == "ANAPHORIC"
@@ -8533,22 +8565,26 @@ def _thread_received_group_ir_text(realization):
         _, actual, feeling_text, link, *answer_code = code.split(":")
         ep = profiles[slot]
         if slot in detached_slots:
+            detached_when = (link.removeprefix("detached_answer_")
+                             if link.startswith("detached_answer_") else None)
             # A replacement can already carry a complete admitted explanation.
             # Prove its inner feeling with the existing finite reader; stripping
             # only polite です would leave の and falsely reject that source.
             replacement_finite = (_detached_feeling_finite_surface(
                 fragments[slot], allow_explanatory=True, allow_medial=True)
-                if link == "replacement" else None)
+                if link == "replacement" or detached_when is not None else None)
             explanation = (replacement_finite is not None
-                and replacement_finite.endswith("のだ"))
+                and (replacement_finite.endswith("のだ") or detached_when is not None
+                     and _feeling_past_explanation_predicate(replacement_finite) is not None))
             if (int(actual) != slot or feeling_text != "none" or answer_code != ["none"]
                 or (ep.nucleus_kind, ep.predicate_kind, ep.modality) != ("reaction", "feeling", "feeling")
                 or ep.actor_kind != "SELF" or ep.quoted_boundary or ep.performed_action or ep.future_action
-                or not (explanation or (_SOURCE_GROUNDED_PAST_MORPHOLOGY_RE if link == "detached"
+                or not (explanation or detached_when is not None and _detached_feeling_copula_parts(fragments[slot])
+                        or (_SOURCE_GROUNDED_PAST_MORPHOLOGY_RE if link == "detached"
                         else _SOURCE_GROUNDED_FINITE_END_RE).search(fragments[slot].removesuffix("です")))
                 or any(slot in r.endpoint_slots for r in realization.relations)):
                 raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
-            parts.append(_detached_burden_nominal(fragments[slot], "original_occasion"))
+            parts.append(_detached_burden_nominal(fragments[slot], detached_when or "original_occasion"))
             continue
         if (int(actual) != slot or ep.nucleus_kind != "event" or ep.predicate_kind != "event" or ep.modality != "fact"
             or ep.actor_kind != "SELF" or ep.quoted_boundary or ep.performed_action or ep.future_action
@@ -10179,9 +10215,28 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True,
 
     parts = []
     separate_time_scopes = False
+    detached_answer_endings = {}
     for code in codes:
         _, slot_text, feeling_text, link, *answer_code = code.split(":")
         event = fragments[int(slot_text)]
+        if link.startswith("detached_answer_"):
+            when = link.removeprefix("detached_answer_")
+            owner = (re.match(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)"
+                              r"(?:には|にも|は|も|が(?=[^、,。]+れ(?:た|なかった)ようで[、,])(?!.*(?:わたし|ぼく|おれ|私|僕|俺|自分|あなた)))", event)
+                     or _medial_feeling_owner(event))
+            prefix = ({"original_occasion": "その時、", "answer_time": "回答した時点で、",
+                       "prior_answer_time": "先の回答時点で、"} if owner else {
+                       "original_occasion": "その時は", "answer_time": "回答した時点では",
+                       "prior_answer_time": "先の回答時点では"}).get(when)
+            finite = _detached_feeling_finite_surface(event, allow_medial=True,
+                allow_copular=True, allow_explanatory=True)
+            if (prefix is None or finite is None
+                or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)):
+                return None
+            detached_answer_endings[len(parts)] = "先の回答にあるとおり、" + prefix + _feeling_acknowledgement(finite)
+            parts.append("先の回答にあるとおり、" + prefix + finite)
+            separate_time_scopes = True
+            continue
         if link in {"detached", "replacement"}:
             prefix = (_revised_feeling_discourse_prefix(event, answer_source=len(codes) > 1)
                       if link == "replacement" else "最初の記録にあるとおり、当時は")
@@ -10358,7 +10413,7 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True,
             return None
         parts = [prefix + part for prefix, part in zip(record_prefixes, parts, strict=True)]
     if (len(set(event_names)) == len(event_names)
-        and not any(code.endswith((":none:detached:none", ":none:replacement:none")) for code in codes)):
+        and not any(code.endswith((":none:detached:none", ":none:replacement:none", ":none:detached_answer_original_occasion:none", ":none:detached_answer_answer_time:none", ":none:detached_answer_prior_answer_time:none")) for code in codes)):
         combined, run_events, run_finite = [], [], None
         for code, event, part in zip(codes, event_names, parts, strict=True):
             fields = code.split(":")
@@ -10378,11 +10433,12 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True,
         parts = combined
     # Independent events remain distinct. Each scope is closed before the
     # next begins; no cause, ranking or shared experiencer is manufactured.
-    if any(code.endswith(":none:detached:none") for code in codes):
+    if any(code.endswith(":none:detached:none") or ":none:detached_answer_" in code for code in codes):
         # A withdrawn event leaves only an ambiguous "その時" antecedent.
         # Keep its independent sentence scope; additive coordination could
         # make that feeling sound attached to the preceding live event.
-        return "、また、".join(part + "のですね" for part in parts)
+        return "、また、".join(detached_answer_endings.get(slot, part + "のですね")
+                             for slot, part in enumerate(parts))
     replacements = [i for i, code in enumerate(codes) if code.endswith(":none:replacement:none")]
     if replacements:
         # Original past reactions can share the existing continuative even

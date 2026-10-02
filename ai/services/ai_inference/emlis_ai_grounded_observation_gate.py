@@ -4304,6 +4304,50 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
     offset, saw_answer = 0, False
     for part_index, (event_id, part) in enumerate(zip(move.target_nucleus_ids, parts)):
         event = nuclei[event_id]
+        if (event.source_fields == ("answer_text_private",)
+            and "thread_subject:withdrawn_source_event" in event.semantic_frame.attribute_codes):
+            frame = event.semantic_frame
+            times = {c.split(":", 1)[1] for c in frame.attribute_codes if c.startswith("thread_time:")}
+            if (not thread_group or event.allowed_claim_scope != "explicit_supplemental_answer"
+                or event.retention != "required" or event.grounding_kind != "explicit"
+                or (event.kind, frame.predicate_kind, frame.modality) != ("reaction", "feeling", "feeling")
+                or frame.actor != "current_user" or frame.polarity != "negative"
+                or len(event.source_span_ids) != 1 or len(times) != 1
+                or not times <= {"original_occasion", "answer_time", "prior_answer_time"}
+                or "thread_subject:withdrawn_source_event" not in frame.attribute_codes
+                or any(event_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+                or resolver.source_fields_for(event.source_span_ids) != event.source_fields):
+                return None
+            when = next(iter(times))
+            source = _body_inverse_typed_source_fragment(event, resolver.resolve(event.source_span_ids[0]).raw_text)
+            ending = re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました)$", part)
+            owner = _thread_feeling_owner(source) if source else None
+            prefix = "先の回答にあるとおり、" + ({
+                "original_occasion": "その時、", "answer_time": "回答した時点で、",
+                "prior_answer_time": "先の回答時点で、"} if owner else {
+                "original_occasion": "その時は", "answer_time": "回答した時点では",
+                "prior_answer_time": "先の回答時点では"})[when]
+            if (not source or frame.time_scope != ("past" if when == "original_occasion" else "present")
+                or ending is None or not part.startswith(prefix)):
+                return None
+            finite = part[len(prefix):ending.start()]
+            if re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite):
+                return None
+            if ending.group() == "のでしたね":
+                if _thread_past_explanation_predicate(source) is None:
+                    return None
+                finite += "のだった"
+            if _restore_thread_finite_answer(finite, source,
+                    copular_clause=source.endswith(("です", "でした", "だった", "だ")),
+                    shared_explanatory_ending=True) != source:
+                return None
+            start = len((raw[:offset] + prefix).encode())
+            end = len((raw[:offset] + part[:ending.start()]).encode())
+            replacements.append((start, end, source.encode()))
+            consumed.add(event_id)
+            saw_answer = True
+            offset += len(part) + len("、また、")
+            continue
         if _thread_revised_original_reaction(event, plan.relations, polarity=event.semantic_frame.polarity):
             span = resolver.resolve(event.source_span_ids[0])
             source = _body_inverse_typed_source_fragment(event, span.raw_text)

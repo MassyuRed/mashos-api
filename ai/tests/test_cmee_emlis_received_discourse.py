@@ -5221,3 +5221,146 @@ def test_two_positive_withdrawal_original_source_frame_keeps_negative_past_witho
                 proof = gate.evaluate_grounded_surface_body_inverse(body=candidate.encode(), plan=plan,
                     sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected)
             assert proof.passed == (candidate == body), proof.failure_codes
+
+
+MIXED_WITHDRAWAL_ANSWERS = (
+    ('今は私も少し怖くないです。', '回答した時点で、あなたも少し怖くないのですね'),
+    ('その時は私も少し怖くなかった。', 'その時、あなたも少し怖くなかったのですね'),
+    ('今は少し苦しい。', '回答した時点では少し苦しいのですね'),
+    ('その時は少し苦しかった。', 'その時は少し苦しかったのですね'),
+    ('今は私は不安です。', '回答した時点で、あなたは不安なのですね'),
+    ('その時は私も不安でした。', 'その時、あなたも不安だったのですね'),
+    ('今は私も少し怖いのです。', '回答した時点で、あなたも少し怖いのですね'),
+    ('その時は少し怖かったのだった。', 'その時は少し怖かったのでしたね'),
+    ('その時は私が頼まれたようで、重かった。', 'その時、あなたが頼まれたようで、重かったのですね'),
+    ('今は私が頼まれたようで、重かった。', '回答した時点で、あなたが頼まれたようで、重かったのですね'),
+)
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('reply,finite', MIXED_WITHDRAWAL_ANSWERS)
+def test_received_chain_mixed_withdrawal_keeps_independent_answer_source(field, reply, finite):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    request = begin(RECEIVED_CHAIN_MULTI if field == 'memo' else '',
+                    RECEIVED_CHAIN_MULTI if field == 'memo_action' else '')
+    for text in (reply, 'その時は楽しかった。', '「褒められた」は誤りです。'):
+        request = advance(request, text)
+    result, plan, sentence, resolver, selected = actual(request=request)
+    assert MeaningExperienceEngine().generate(request).artifact.text == result.artifact.text
+    body, follow = result.artifact.text, result.artifact.reception
+    phrase = '先の回答にあるとおり、' + finite
+    assert phrase in follow and '褒められた' not in body
+    assert all(value in follow for value in ('悲しかったけれど、嬉しかった',
+        '誘われたことについて、その時は楽しかった', '誘われたのに、寂しさを感じた',
+        '頼まれたのに、怖さを感じた'))
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == follow.count('。') == 3
+    required = {n.nucleus_id for n in plan.nuclei if n.retention == 'required'
+                and set(n.source_fields) & {field, 'answer_text_private'}}
+    assert {nid for m in moves for nid in (*m.target_nucleus_ids, *m.support_nucleus_ids)} == required
+    detached, = (n for n in plan.nuclei if n.source_fields == ('answer_text_private',)
+                 and 'thread_subject:withdrawn_source_event' in n.semantic_frame.attribute_codes)
+    assert not any(detached.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    mixed, = (m for m in moves if detached.nucleus_id in m.target_nucleus_ids)
+    positive, = (m for m in moves if m.reception_act == 'recognize_lived_change'
+                 and any(n.nucleus_id in m.target_nucleus_ids and n.source_fields == ('answer_text_private',)
+                         for n in plan.nuclei))
+    assert len(mixed.target_nucleus_ids) == 3 and len(mixed.support_nucleus_ids) == 2
+    assert positive.target_nucleus_ids != (detached.nucleus_id,) and len(positive.target_nucleus_ids) == 1
+    assert sum(r.type == 'evaluation_about_event' for r in plan.relations) == 1
+    part, = (p + '。' for p in follow.removesuffix('。').split('。') if phrase in p)
+    source = reception.final_reception_source_anchor_text(detached.nucleus_id,
+        {n.nucleus_id: n for n in plan.nuclei}, resolver)
+    changes = [body.replace(phrase, ''), body.replace(phrase, phrase + '、また、' + phrase),
+        body.replace(phrase, phrase.replace('先の回答', '最初の記録')),
+        body.replace(phrase, phrase.replace('先の回答にあるとおり、', '誘われたことについて、')),
+        body.replace(phrase, phrase.replace('先の回答にあるとおり、', '褒められたことについて、')),
+        body.replace(phrase, phrase.replace('その時', '回答した時点') if 'その時' in phrase
+                     else phrase.replace('回答した時点', 'その時')),
+        body.replace('悲しかったけれど、嬉しかった', '悲しかったから、嬉しかった', 1),
+        body.replace('誘われたのに、寂しさを感じた', '頼まれたのに、寂しさを感じた', 1)]
+    for old, new in (('あなた', '友人'), ('あなたも', 'あなたは'), ('少し', ''),
+                     ('怖くない', '怖い'), ('怖くなかった', '怖かった'),
+                     ('苦しかった', '苦しい'), ('不安だった', '不安だ'),
+                     ('のでしたね', 'のですね')):
+        if old in phrase:
+            changes.append(body.replace(phrase, phrase.replace(old, new, 1)))
+    if 'あなたが' in phrase:
+        changes.extend(body.replace(phrase, phrase.replace(old, new, 1)) for old, new in (
+            ('あなたが', 'あなたは'), ('ようで', 'ので'), ('重かった', '軽かった')))
+    assert all(changed != body for changed in changes)
+    with (patch.object(reception, '_source_grounded_received_discourse', side_effect=AssertionError('no author')),
+          patch.object(reception, '_author_source_grounded_reception_clauses', side_effect=AssertionError('no author')),
+          patch.object(surface, '_render_observation', side_effect=AssertionError('no author'))):
+        with patch.object(reception, '_detached_feeling_finite_surface', side_effect=AssertionError('no author helper')):
+            proof = gate._read_received_discourse_parts(part, mixed, plan, resolver, selected)
+        assert proof is not None and any(value == source.encode() for _, _, value in proof)
+        assert all(0 <= a < b <= len(part.encode()) for a, b, _ in proof)
+        for candidate in (body, *changes):
+            with patch.object(gate, 'replay_source_grounded_human_reception_from_plan',
+                              return_value=SimpleNamespace(text=candidate.split('Emlisから：\n', 1)[1])):
+                proof = gate.evaluate_grounded_surface_body_inverse(body=candidate.encode(), plan=plan,
+                    sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected)
+            assert proof.passed == (candidate == body), proof.failure_codes
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('reply,finite', [MIXED_WITHDRAWAL_ANSWERS[0], MIXED_WITHDRAWAL_ANSWERS[7]])
+def test_received_chain_mixed_withdrawal_saved_without_regeneration(qcase, qdb, monkeypatch, field, reply, finite):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    memo, action = (RECEIVED_CHAIN_MULTI, '') if field == 'memo' else ('', RECEIVED_CHAIN_MULTI)
+    qdb.query('update public.emotions set memo=$1,memo_action=$2 where id=$3', [memo, action, parent])
+    first = current = run(service.start(user, parent))
+    for index, text in enumerate((reply, 'その時は楽しかった。', '「褒められた」は誤りです。')):
+        if index:
+            current = run(cont(service, user, current, f'mixed-withdraw-continue-{index}'))
+        current = run(answer(service, user, current, text, f'mixed-withdraw-answer-{index}'))
+        assert current['original'] == first['original'] and current['body_state'] == 'REFINED'
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved mixed withdrawal must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+        assert qdb.query('select memo,memo_action from public.emotions where id=$1', [parent])['rows'][0] == {
+            'memo': memo, 'memo_action': action}
+    assert current['state'] == 'COMPLETED' and not current['can_continue']
+    assert '褒められた' not in current['current_observation']['text']
+    assert '先の回答にあるとおり、' + finite in current['current_observation']['text']
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+def test_received_chain_mixed_withdrawal_source_proof_rejects_changed_ownership(field):
+    from dataclasses import replace
+    from emlis_ai_grounded_observation_plan import GroundedObservationPlanError
+    request = begin(RECEIVED_CHAIN_MULTI if field == 'memo' else '',
+                    RECEIVED_CHAIN_MULTI if field == 'memo_action' else '')
+    for text in ('今は私も少し怖くないです。', 'その時は楽しかった。', '「褒められた」は誤りです。'):
+        request = advance(request, text)
+    result, plan, sentence, resolver, selected = actual(request=request)
+    target, = (n for n in plan.nuclei if n.source_fields == ('answer_text_private',)
+               and 'thread_subject:withdrawn_source_event' in n.semantic_frame.attribute_codes)
+    move, = (m for m in plan.response_plan.human_reception_plan.moves if target.nucleus_id in m.target_nucleus_ids)
+    part, = (p + '。' for p in result.artifact.reception.removesuffix('。').split('。')
+             if '先の回答にあるとおり、' in p)
+    frame = target.semantic_frame
+    changes = [replace(target, source_fields=('memo',)), replace(target, retention='optional'),
+        replace(target, semantic_frame=replace(frame, actor='other')),
+        replace(target, semantic_frame=replace(frame, polarity='positive')),
+        replace(target, semantic_frame=replace(frame, time_scope='past')),
+        replace(target, semantic_frame=replace(frame, modality='uncertain')),
+        replace(target, semantic_frame=replace(frame, attribute_codes=tuple(c for c in frame.attribute_codes
+            if c != 'thread_subject:withdrawn_source_event'))),
+        replace(target, semantic_frame=replace(frame, attribute_codes=tuple(
+            'thread_time:original_occasion' if c == 'thread_time:answer_time' else c for c in frame.attribute_codes)))]
+    altered = [replace(plan, nuclei=tuple(n if n.nucleus_id != target.nucleus_id else changed
+               for n in plan.nuclei)) for changed in changes]
+    relation = next(r for r in plan.relations if r.type == 'evaluation_about_event')
+    altered.append(replace(plan, relations=(*plan.relations, replace(relation,
+        relation_id='forged_answer_owner', to_nucleus_id=target.nucleus_id))))
+    with patch.object(reception, '_source_grounded_received_discourse', side_effect=AssertionError('no author')):
+        assert gate._read_received_discourse_parts(part, move, plan, resolver, selected) is not None
+        for changed in altered:
+            try:
+                proof = gate._read_received_discourse_parts(part, move, changed, resolver, selected)
+            except GroundedObservationPlanError:
+                proof = None
+            assert proof is None
