@@ -1815,6 +1815,47 @@ def _body_inverse_nucleus_source_values(
     return tuple(values)
 
 
+def _body_inverse_original_record_feeling(nucleus, plan, resolver):
+    """Recover the original-record object from raw source, without an author."""
+    frame = nucleus.semantic_frame
+    codes = set(frame.attribute_codes)
+    if (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+        or nucleus.source_fields not in {("memo",), ("memo_action",)}
+        or nucleus.allowed_claim_scope != "explicit_current_input"
+        or nucleus.retention != "required" or nucleus.grounding_kind != "explicit"
+        or (nucleus.kind, frame.predicate_kind, frame.modality) != ("reaction", "feeling", "feeling")
+        or frame.actor != "current_user" or frame.polarity != "positive" or frame.time_scope != "past"
+        or len(nucleus.source_span_ids) != 1 or nucleus.surface_anchor_ids != nucleus.source_span_ids
+        or not {"semantic_dependency:received_feeling_contrast_chain", "source_received_chain_slot:second",
+                "lexical:source_finite_contrast_feeling"} <= codes
+        or any(c.startswith(("thread_subject:", "thread_time:")) for c in codes)
+        or len({r.to_nucleus_id for r in plan.relations if r.type == "evaluation_about_event"}) < 2
+        or any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)):
+        return ""
+    span = resolver.resolve(nucleus.source_span_ids[0])
+    if span.source_field != nucleus.source_fields[0]:
+        return ""
+    raw = re.sub(r"\s+", " ", str(span.raw_text or "").replace("\u3000", " ")).strip()
+    owner = r"(?:私|自分|わたし|僕|ぼく|俺|おれ)(?:には|にも|は|も)"
+    degree = r"(?:少し|とても|まだ|全然|あまり)"
+    feeling = (rf"(?:(?:{owner})?(?:{degree})?|{degree}{owner})"
+               r"(?:(?:嬉し|うれし|寂し|さびし|悲し|苦し|つら|辛|怖|こわ|楽し)"
+               r"(?:い|かった|くない|くなかった)(?:です)?|不安(?:だ|だった|です|でした))")
+    match = re.fullmatch(
+        r"(?:(?:私|自分|わたし)(?:は|が))?(?:[一-鿿々ァ-ヶぁ-んー]{1,16}に)?"
+        r"(?:褒められ|ほめられ|言われ|伝えられ|評価され|断られ|誘われ|頼まれ|声をかけられ|声を掛けられ)"
+        rf"(?:た|ました)(?:のに|けれども?|けど)[、,]?{feeling}"
+        rf"(?:けれども?|けど)[、,]?(?P<second>{feeling})", raw)
+    source = _body_inverse_typed_source_fragment(nucleus, raw)
+    if (match is None or not source or source != match['second']
+        or {c for c in codes if c.startswith("source_fragment_scalar_range:")}
+            != {f"source_fragment_scalar_range:{match.start('second')}:{match.end('second')}"}
+        or not source.endswith("かった")
+        or re.search(r"くない|くなかった|寂|さび|悲|苦|つら|辛|怖|こわ|不安", source)):
+        return ""
+    return source
+
+
 def _body_inverse_limited_change_feeling(body, witness, line, planned_line, plan, resolver):
     """Recover a past episode from finite clauses, independently of its author.
 
@@ -5708,6 +5749,14 @@ def evaluate_grounded_surface_body_inverse(
                 _thread_withdrawn_original_reaction, _thread_revised_original_reaction,
             )
             visible_line = _body_inverse_visible_text(body, parsed_line)
+            original_feelings = tuple(source for n in required_nuclei
+                if (source := _body_inverse_original_record_feeling(n, plan, resolver)))
+            original_reports = tuple(_body_inverse_visible_text(body, row) for row in witness.sentences
+                if row.section == "observation" and row.section_line_ordinal == parsed_line.section_ordinal)
+            if (visible_line.count("最初の記録には、") != len(original_feelings)
+                or any(original_reports.count("最初の記録には、「" + source
+                    + "」という当時の気持ちも書かれています。") != 1 for source in original_feelings)):
+                failures.append(f"body_inverse_original_record_feeling_scope_mismatch:{index}")
             if not _body_inverse_intervening_events(body, witness, parsed_line, planned_line, plan, resolver):
                 failures.append(f"body_inverse_independent_event_scope_mismatch:{index}")
             detached_nuclei = tuple(nucleus_index[nid] for nid in planned_line.binding.nucleus_ids)
@@ -6581,6 +6630,19 @@ def evaluate_grounded_surface_body_inverse(
                                 )
                             )
                         )
+                        if (final_stage1_plan and sentence_plan.recovery_stage == "full"
+                            and len(clause.move_ids) == 1 and len(target_nuclei) == 1):
+                            original_feeling = _body_inverse_original_record_feeling(target_nuclei[0], plan, resolver)
+                            raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
+                            if original_feeling or raw.startswith("最初の記録にある、"):
+                                role = {"attention": "を見過ごさず、", "felt_response": "を"}.get(move.move_role)
+                                expected = ("最初の記録にある、" + original_feeling
+                                            + "という気持ち" + (role or "") + "受け止めています。")
+                                if (not original_feeling or role is None or raw != expected
+                                    or move.reception_act != "recognize_lived_change"
+                                    or move.support_nucleus_ids or _body_inverse_reception_context_ids(move, plan)
+                                    or effective_reference_mode == "anaphoric_first"):
+                                    failures.append(f"body_inverse_original_record_reception_scope_mismatch:{move_id}")
                         if (final_stage1_plan and sentence_plan.recovery_stage == "full"
                             and len(clause.move_ids) == 1 and len(target_nuclei) == 1
                             and move.reception_act == "recognize_lived_change"

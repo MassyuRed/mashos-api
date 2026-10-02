@@ -3076,6 +3076,7 @@ def _render_extra_context(
     extra_ids: Sequence[str],
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
+    relations: Sequence[GroundedSemanticRelation] = (),
 ) -> str:
     from emlis_ai_grounded_observation_plan import is_grounded_current_answer_uncertainty
     states = tuple(nid for nid in extra_ids if nid in nucleus_index
@@ -3086,7 +3087,7 @@ def _render_extra_context(
         # These answers no longer belong to an event. Keep each full state
         # and its own answer time, without making it another event's background.
         remaining = tuple(nid for nid in extra_ids if nid not in states)
-        parts = [_render_extra_context(remaining, nucleus_index, resolver)]
+        parts = [_render_extra_context(remaining, nucleus_index, resolver, relations)]
         for nid in states:
             nucleus = nucleus_index[nid]
             when = ("先の回答時点" if "thread_time:prior_answer_time" in nucleus.semantic_frame.attribute_codes
@@ -3124,7 +3125,15 @@ def _render_extra_context(
             else:
                 parts.append(f"また、{when}の気持ちとして、{quoted}が見えます。")
         remaining = tuple(nid for nid in extra_ids if nid not in detached)
-        return "".join(parts) + _render_extra_context(remaining, nucleus_index, resolver)
+        return "".join(parts) + _render_extra_context(remaining, nucleus_index, resolver, relations)
+    from emlis_ai_grounded_human_reception import source_grounded_original_record_feeling
+    original_feelings = tuple(nid for nid in extra_ids if nid in nucleus_index
+        and source_grounded_original_record_feeling(nucleus_index[nid], relations, resolver))
+    if original_feelings:
+        parts = [f"最初の記録には、{_join_quotes(_quotes_for_nuclei((nid,), nucleus_index, resolver))}"
+                 "という当時の気持ちも書かれています。" for nid in original_feelings]
+        remaining = tuple(nid for nid in extra_ids if nid not in original_feelings)
+        return "".join(parts) + _render_extra_context(remaining, nucleus_index, resolver, relations)
     # Field-independent feelings are separate source duties, not an
     # inferred background or an action supporting the adjacent event.
     from emlis_ai_grounded_observation_plan import _source_finite_original_feeling
@@ -3134,7 +3143,7 @@ def _render_extra_context(
         quoted = _join_quotes(_quotes_for_nuclei(finite_feelings, nucleus_index, resolver))
         remaining = tuple(nid for nid in extra_ids if nid not in finite_feelings)
         return f"また、{quoted}という気持ちも書かれています。" + _render_extra_context(
-            remaining, nucleus_index, resolver,
+            remaining, nucleus_index, resolver, relations,
         )
     extras = _join_quotes(_quotes_for_nuclei(extra_ids, nucleus_index, resolver))
     if not extras:
@@ -3233,7 +3242,7 @@ def _render_observation_with_relations(
                 raise GroundedSentenceSurfaceError("independent_event_source_ambiguous")
             facts.append(f"{anchors[0]}という出来事がありました。")
         return " ".join((relation_text, *facts))
-    extra_context = _render_extra_context(extra_ids, nucleus_index, resolver)
+    extra_context = _render_extra_context(extra_ids, nucleus_index, resolver, tuple(relation_index.values()))
     if extra_context:
         return f"{relation_text}{extra_context}"
     return relation_text

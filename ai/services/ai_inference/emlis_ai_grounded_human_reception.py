@@ -11001,6 +11001,39 @@ def _revised_feeling_discourse_prefix(source):
     return "言い直してくださった気持ちについては、" + ("当時、" if owner else "当時は")
 
 
+def source_grounded_original_record_feeling(nucleus, relations, resolver):
+    """Locate an original survivor beside multiple retained event answers."""
+    frame = nucleus.semantic_frame
+    codes = set(frame.attribute_codes)
+    if (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+        or nucleus.source_fields not in {("memo",), ("memo_action",)}
+        or nucleus.allowed_claim_scope != "explicit_current_input"
+        or nucleus.retention != "required" or nucleus.grounding_kind != "explicit"
+        or (nucleus.kind, frame.predicate_kind, frame.modality) != ("reaction", "feeling", "feeling")
+        or frame.actor != "current_user" or frame.polarity != "positive" or frame.time_scope != "past"
+        or len(nucleus.source_span_ids) != 1 or nucleus.surface_anchor_ids != nucleus.source_span_ids
+        or not {"semantic_dependency:received_feeling_contrast_chain", "source_received_chain_slot:second",
+                "lexical:source_finite_contrast_feeling"} <= codes
+        or any(c.startswith(("thread_subject:", "thread_time:")) for c in codes)
+        or len({r.to_nucleus_id for r in relations if r.type == "evaluation_about_event"}) < 2
+        or any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations)):
+        return ""
+    span = resolver.resolve(nucleus.source_span_ids[0])
+    if span.source_field != nucleus.source_fields[0]:
+        return ""
+    from emlis_ai_grounded_observation_plan import _received_event_reaction_projections, _clean
+    row = next((p for p in _received_event_reaction_projections(span, frame)
+                if "source_received_chain_slot:second" in p.attribute_codes), None)
+    source = final_reception_source_anchor_text(nucleus.nucleus_id, {nucleus.nucleus_id: nucleus}, resolver)
+    ranges = {c for c in codes if c.startswith("source_fragment_scalar_range:")}
+    if (row is None or row.polarity != "positive" or row.time_scope != "past"
+        or ranges != {c for c in row.attribute_codes if c.startswith("source_fragment_scalar_range:")}
+        or not source.endswith("かった")
+        or source != _clean(span.raw_text)[row.scalar_start:row.scalar_end]):
+        return ""
+    return source
+
+
 def _detached_feeling_source_parts(move, plan, resolver, *, allow_revised=False):
     """Prove complete finite source operands before choosing clause topology."""
     if (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
@@ -11733,6 +11766,22 @@ def _author_source_grounded_reception_clauses(
                     meaning_realization,
                     core_semantic_slots=target_core.semantic_slots,
                 )
+            if (recovery_stage == "full" and len(realization.moves) == 1
+                and len(move.target_nucleus_ids) == 1 and move.required
+                and not move.support_nucleus_ids and not context_ids and not context_prefix
+                and not applicable_relations and not meaning_realization.relations
+                and meaning_realization.reference_mode != "ANAPHORIC"
+                and referent.kind == "positive_feeling"
+                and move.reception_act == "recognize_lived_change"
+                and move.move_role in {"attention", "felt_response"}
+                and _selected_material_appraisal(selected_decision)):
+                original_feeling = source_grounded_original_record_feeling(
+                    nucleus_index[move.target_nucleus_ids[0]], plan.relations, resolver)
+                if (original_feeling and meaning_fragment == original_feeling
+                    and target_core.text == original_feeling + "という気持ち"):
+                    # This qualifies the recorded object, not a new event
+                    # relationship or a claim that the feeling continues now.
+                    context_prefix = "最初の記録にある、"
             adjacent = _source_grounded_adjacent_action_context(
                 reception_plan, move, plan, nucleus_index, resolver, recovery_stage,
             )

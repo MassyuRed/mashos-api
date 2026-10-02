@@ -13178,3 +13178,44 @@ Python3.12.14/pytest9.1.1/PGlite0.5.8と既存scratch依存を再利用し、今
 read-only静的確認では、Observationの既存 `_render_extra_context` が当該生存核をgeneric reaction/stateの背景表現へ渡し、Receptionの既存 `_source_grounded_target_np` と `_source_grounded_response_predicate` が出典なしの感情名詞＋受け止め文を生成している。次はSurface/HRと対応する既存Gateの独立照合で、原field・本人の過去感情・完全source範囲・active incident relation無しを確認して出典提示を検討する。出来事自体は撤回されていないため `withdrawn_source_event` markerを付ける修正はしない。この候補は今回未実装・未検証であり、Plan修復の成果に含めない。
 
 primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承し、旧10/10期限を復活させない。合成検証で実DB/端末目標を達成扱いにせず、Mashへ商品確認を依頼する段階としない。
+
+
+## 2026-10-02 u69 — 複数回答のそばに残る原感情の出典と過去時点を明示する
+
+### 開始位置・限定した修復
+
+MashのEmlis残件継続指示と前回txt（20261002-063304）を受け、u68の次作業を実施。開始HEADはAPI `31ccf53553ebed06d547896838e557443a360a09`、Cocolon `1f779ee07c5fcf4cedae4f6d967ebf09ca8ebd93`。両PRのfresh HEAD・Draft/open/unmerged、CURRENT_RULES・Rule18・恒久incident、全体設計01・01A/B/Cの役割地図とcurrent_structure、両repoのrecursive treeによる全ファイル配置、最新weekly09/26と09/29追加合意を確認した。Karen-Diaryの入口と運用原則も参照。System Context prepareはshallow checkoutの祖先確認で未成立だったため、規則が許可する原典直接読取で進めた。全パス確認を全ファイル内容の精読とは扱わず、補助基盤修復には移らない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX、既存LEVEL_2内。root華恋が編集・実行・反映担当、read-only担当が技術差分と全比較本文を確認。担当名を特定モデルによる独立商品合格へ換算しない。productionは既存Surface・HR・Gateの3file。新しい文章化経路・公開contract/API/DB/RN・依存宣言・flag・Plan/受付は変更しない。新file追加/削除0、STRUCTURE_MAP_DELTA_NONE。
+
+u68で保持を回復した原感情が、Observationでは回答文に続く「その背景には」に入り、Receptionでは出典なしの感情名詞として置かれていた。今回の対象は、複数のevent回答が残るplan内の、原memo/memo_actionから残った本人・肯定・平叙過去形のchain second原感情。required/explicit・完全source範囲・原field・active incident relation無しを確認する。Surfaceはextra contextの当該核を原記録の当時の感情として報告し、HRは既存の感情対象句へ原記録由来の短い修飾を付ける。選択済みreception act・述語・3Move/3文・他の原反応と回答・訂正/未対応区別は維持する。失効contrast/ABOUTの復活、新しいevent帰属・因果・持続の断定、withdrawn_source_event markerの付与は行わない。
+
+GateはHR作者やそのhelperを呼ばず、raw原文の完全な受け身出来事＋二感情文法とscalar範囲から対象を独立復元する。Observationの原記録報告とReceptionの出典付き全文を照合し、出典・時点・主体・程度・肯否・撤回済み感情の復活を拒否する。
+
+初期候補は初回撤回の単独Observationにも新しい報告文を要求してしまい、短い原記録の既存本文を拒否した。read-only指摘と実本文再現を受け、HR/Gateとも複数のABOUT回答が残る範囲へ揃えた。また、原感情末尾「かったです」は既存の時間実現が「これまで、」を付ける別形であることを開始HEADの本文と比較した。今回の平叙過去形修復へ無理に含めず、既存本文・逆検証が維持される対照を追加した。現在形と丁寧過去形の原感情は今回の出典改善の完了範囲に含めない。
+
+### 実本文・検証
+
+同一runtimeで開始版/最終版20系列を比較。開始版20はu68最終比較と全項目一致。未対応訂正3・明示撤回・受理済み訂正2×memo/memo_actionの12系列で、独立原感情を「最初の記録」「当時の気持ち」と分かる両層へ変更した。残る8対照は両層全文不変。全20のassessment status・update operation・unresolved reasonは不変、inverse20 PASS。root/read-only担当は原memo・全回答・両層全文を確認し、新しい意味欠落、主体/時点変更、event再結合、持続/因果断定は見つからなかった。修正後の文も長い列挙と定型終端が残るため、商品全体の合格とはしない。
+
+新規23条件は23 PASS（30.198秒）。本文12はpublic/内部全文一致、原DTO保持、原出典表示、他回答/原反応とrelation不在を確認。完全SELF/程度3、本文改変拒否2field（各17変形）、核/source条件1、現在形/丁寧形の境界2、保存2、raw原文根拠1。Receptionの10変形×2fieldは、作者を禁止し、replayが改変後のReceptionそのものを返しても専用scope mismatchで拒否された。元の作者出力との不一致だけを拒否根拠にしていない。raw sourceを同じ文字数で条件形/否定側の感情へ変えた2変形も、既存marker/範囲を残したままGateの独立復元が拒否する。
+
+保存2系列は、generate禁止GET/startのDTO全文一致、毎更新後の原DTO/DB原memo不変、第三回答後COMPLETEDを確認。明示撤回REFINED/未対応訂正PARTIALLY_REFINEDの区別を保持。合成DB/mock RPCであり、実DB・端末・プロセス再起動の確認には換算しない。
+
+初回新規22は21 PASS/1 FAIL（30.690秒）。新規scope検査で故意に壊した核と元のSentence/selected planを組み合わせ、既存Planが例外を出す条件にもfull-bodyの結果値を要求していた。新規testだけを修正し、9種の核変更と2種のrelation変更はHR/Gate双方の対象証明が空になることを検査する。実本文の改変拒否は別の2field検査で保持・強化し、raw原文検査を1件追加して最終23とした。旧test全文297092 bytesのprefix・旧期待/skip/xfail・historical frozen identityは保持。
+
+関連599条件＝587 PASS/12 FAIL（369.198秒）、current owner identity1 PASS（20.146秒）。新規23・関連599・identity1は重複0で、最終623 unique IDs＝611 PASS/12 FAIL/ERROR0/SKIP0。u68の関連599 IDsは欠落0・成否全一致、identityもPASSを維持。12 FAILは前回と同じ旧分類期待2、旧capacity-gap期待2、説明形initial/original_memoの旧未受理期待2、説明形の旧未対応期待5、撤回後生存回答の旧名詞句期待1。全suite成功・既知失敗解消とは報告しない。再実行を重複加算せず、最終検査後のproduction変更なし。
+
+関連選択はu68と同じdetached_observation / received_discourseの `same_name_positive or nominal_positive_answer or shared_answer_topic or nominal_explained_answer or positive_answer_group or split_positive_answer or received_chain or two_positive_withdrawal or detached_burden or finite_contrast or independent_past_revision or independent_explanation_revision or explanation_revision or two_positive_unadmitted or finite_explanation_alignment`。新規は `original_record_feeling`、identityは既存 `test_active_final_language_owner_chain_has_zero_legacy_compose_calls`。
+
+Python3.12.14/pytest9.1.1/PGlite0.5.8と既存scratch依存を再利用、今回installなし。current共有owner identityを既存導出で更新し、language `e7603caa895abe9ad57e9f4b150c9f7013ea18e545d91aac03ec3a8c4947913b`、runtime `42752c8d1af97cd81f928954451c64e38f4abf6e2cae56500c166ec19e2914e1`。共有9owner/18payload構成は不変で、既存HR/Gate内の限定helperと3sourceの内容差を反映した。
+
+反映対象はAPI3source・既存test末尾・current identity・既存handoff、Cocolon既存06のexact7 modify。既存Draft PR3/30へnon-force反映し、fresh HEAD・parent/tree・全7file全文/blob・変更path集合を照合する。正式識別子と照合結果はPR metadataへ記録する。
+
+### 残件・次の一作業
+
+次は同じ複数出来事・二回答後の受理済み訂正が、直前の別eventの感情を訂正しているように読める隣接を扱う。今回の実本文でも、他2出来事の原反応に続く独立訂正は、この所属の追いにくさが残る。失効した元eventとのrelationを推測で戻さず、訂正回答そのものを出典として区別できるか、既存HR/SurfaceとGateの意味・文単位の証明で検討する。今回この次候補は未実装。
+
+原感情の丁寧過去形/現在形は今回の改善範囲外で、背景化などが残る。原文SELFを含む名詞句の不自然さ、長い列挙、同名感情の個別追跡、定型性・二層再掲・深さ不足も未解消。同群を閉じる前に、別の二層価値改善へ先行しない。
+
+primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承し、旧10/10期限を復活させない。実DB/端末目標は未達で、合成確認を達成扱いにせず、Mashへ商品確認を依頼する段階としない。
