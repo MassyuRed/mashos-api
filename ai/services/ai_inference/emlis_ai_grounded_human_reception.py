@@ -10265,7 +10265,8 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True,
                 noun_proven = bool(_THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(source)
                     or noun is not None and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い"))
                 adjective_proven = (adjective is not None and (
-                    _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+                    adjective[1] in _THREAD_FINITE_ANSWER_FEELING_STEMS
+                     or _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
                     or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])))
                 if noun_proven or adjective_proven:
                     # Keep the explanatory の and every inner tense/polarity
@@ -10835,6 +10836,15 @@ def _source_owned_detached_feeling_parts(move, realization, plan, resolver,
     return parts if parts is not None and fragments == (parts[1],) else None
 
 
+# Finite adjective stems already admitted by the thread answer grammar.
+# Each owner proves its own complete host and preserves the full source;
+# this does not expand the shared memo feeling lexicon.
+_THREAD_FINITE_ANSWER_FEELING_STEMS = frozenset({
+    "嬉し", "うれし", "寂し", "さびし", "悲し", "苦し", "つら", "辛",
+    "怖", "こわ", "重", "楽し", "軽",
+})
+
+
 def _medial_feeling_owner(source):
     """Locate one SELF owner among known modifiers in a whole feeling.
 
@@ -10899,7 +10909,8 @@ def _feeling_past_explanation_predicate(source):
     if (_THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(source.replace("あなた", "私", 1))
         or noun is not None and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い")
         or adjective is not None and (
-            _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+            adjective[1] in _THREAD_FINITE_ANSWER_FEELING_STEMS
+             or _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
             or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1]))):
         return predicate
     return None
@@ -10972,7 +10983,8 @@ def _detached_feeling_finite_surface(source, *, allow_explanatory=False, allow_c
             noun_proven = bool(_THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(source)
                 or noun is not None and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い"))
             adjective_proven = (adjective is not None and (
-                _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+                adjective[1] in _THREAD_FINITE_ANSWER_FEELING_STEMS
+                 or _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
                 or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])))
             if not (noun_proven or adjective_proven):
                 return None
@@ -11080,11 +11092,16 @@ def _source_owned_positive_answer_group_sentence(move, realization, plan, resolv
         nominal_feeling = _THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(row.source)
         nominal_explanation = _THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(row.source)
         finite = _detached_feeling_finite_surface(row.source, allow_medial=True,
-            allow_explanatory=bool(nominal_explanation),
+            allow_explanatory=True,
             allow_copular=bool(nominal_feeling) or move.reception_act == "stay_with_current_burden"
                 and row.source.endswith(("でした", "だった")))
+        # The same complete-source proof applies when an adjective answer
+        # shares a sentence. Keep its のだ in a continuing clause and share
+        # the explanatory の only at the acknowledged sentence ending.
+        explanation_proven = bool(finite and (nominal_explanation
+            or finite.endswith("のだ") or _feeling_past_explanation_predicate(finite) is not None))
         if (not finite or not _SOURCE_GROUNDED_FINITE_END_RE.search(finite)
-            or re.search(r"(?:です|ます|でした|ました|だ)$", finite) and not (nominal_feeling or nominal_explanation)
+            or re.search(r"(?:です|ます|でした|ました|だ)$", finite) and not (nominal_feeling or explanation_proven)
             or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|も|が)", event_visible)
             or re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)
             or re.search(r'[「」『』“”‘’"?？!！\r\n。]', row.event_fragment + row.source)):
@@ -11138,7 +11155,8 @@ def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
         host = _feeling_predicate_host(explanatory['predicate'])
         adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
         if adjective is not None and (
-            _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+            adjective[1] in _THREAD_FINITE_ANSWER_FEELING_STEMS
+             or _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
             or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])
         ):
             # The actual sentence ending shares the source explanation's の.

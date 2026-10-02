@@ -7294,9 +7294,15 @@ def source_owned_answer_feeling(move, plan):
         positives = tuple(m for m in moves if m.required
             and m.reception_act == "recognize_lived_change"
             and len(m.target_nucleus_ids) == 1 and not m.support_nucleus_ids)
-        if (len(moves) != 3 or len(positives) != 2 or positives[0] != move
-            or positives[1].move_role != "felt_response"
-            or positives[0].target_nucleus_ids == positives[1].target_nucleus_ids):
+        paired_answers = (len(positives) == 2 and positives[0] == move
+            and positives[1].move_role == "felt_response"
+            and positives[0].target_nucleus_ids != positives[1].target_nucleus_ids)
+        # A single answer can occupy attention while the other two moves
+        # retain original reactions. It needs the same finite, source-owned
+        # event/time route; a nominal fallback cannot own explanation tense.
+        single_answer = (positives == (move,) and all(m == move or
+            m.required and m.reception_act == "stay_with_current_burden" for m in moves))
+        if len(moves) != 3 or not (paired_answers or single_answer):
             return None
     index = {n.nucleus_id: n for n in plan.nuclei}
     answer = index.get(move.target_nucleus_ids[0])

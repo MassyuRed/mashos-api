@@ -13094,3 +13094,46 @@ Python3.12.14 / pytest9.1.1 / PGlite0.5.8を同じscratchで再利用。今回in
 読みやすさは未完。回答2件→他2eventの原反応→独立訂正→末尾の元event/悲しさという順なので、同じ出来事の当時と回答時点を追いにくく、末尾だけ悲しさが強調される読後になり得る。「頼まれたのに怖さを感じ、言い直して…少し怖かった」は、明示的なedgeはないが直前の怖さの訂正にも読める。SELF/説明形の不自然さ、定型性・二層再掲・深さ不足も残る。限定した保持復帰を対象群完了へ換算せず、二層再掲の別作業へ先行しない。
 
 primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承し、旧10/10期限を復活させない。実DB/端末目標を合成検証で達成扱いにせず、Mashへ商品確認を依頼する段階としない。
+
+
+## 2026-10-02 u67 — 有限説明形の受理・本文・独立読取を揃え、訂正後の意味保持を回復する
+
+### 開始位置・原因・修復
+
+Mashの残件継続指示と前回txt（20261002-044626）を受け、u66の次作業を実施。開始HEADはAPI `79ca2187eb408f7f3801d822cd45a7cbdd2b351e`、Cocolon `7ceec4e5c47486d35513ebf52bf6f7d1ea0598d9`。両PRのfresh HEAD・Draft/open/unmergedを確認した。CURRENT_RULES・09/99・Rule18の限定委任、恒久incident、全体設計01・01A/B/Cの役割地図・国家システム図02/02A・current_structure、recursive treeによる全ファイル配置、最新weekly09/26と09/29追加合意を確認。Karen-Diaryの00_READ_FIRSTと運用原則・Mashとの関係も参照した。System Context prepareはshallow checkoutの祖先確認で未成立。許可された原典直接読取で進め、補助基盤修復へは移らなかった。
+
+OBSERVED_BLOCKER_MINIMAL_FIX、既存LEVEL_2内。root華恋が編集・実行・反映担当、read-only担当が原因/技術差分と商品route/全比較本文を確認。担当名を独立した特定モデルの商品合格へ換算しない。productionは既存answer_update・Plan・HR・Gateの4file。既存test末尾/current identity/両handoffを更新する。新owner・renderer・reader・公開contract/API/DB/RN・依存宣言・flag変更なし。STRUCTURE_MAP_DELTA_NONE。
+
+`RECEIVED_CHAIN_MULTI`→「今は嬉しい。」→「その時は楽しかった。」→「悲しかった」を「少し楽しかったのです」へ訂正すると、従来は未反映案内が出てReceptionが第2回答だけになった。answer_updateの説明形判定が、既存の完全有限形文法に加え、別の共有感情regexで語幹を再照合していた。「楽し/軽/こわ/さびし」は前者に存在しても後者に一致しない。説明形内部を既存13語幹・SELF/程度・肯否/時制の完全有限形で証明し、余分な語幹再制限を除いた。汎用memo感情regexは拡張していない。従来未反映の説明形訂正と通常ADDが受理されるため、受付挙動不変とはしない。
+
+HRとGateはそれぞれの既存説明形経路で同じ有限語幹の範囲を独立に証明する。sourceを丸ごと維持し、degree・SELFの「も」・内側の肯否/過去・外側の「のだった」を保持。肯定回答groupでは中間節の「のだし/のだったし」を残し、文末だけ説明の「の」を共有する。Gateの中間節正規化は仮のack構文用の同幅1文字で、その後に完全sourceを独立復元する。作者出力との一致を合格根拠にせず、未知語・他者・推量・条件・疑問・二重SELF・二重丁寧形は受理しない。
+
+検証中、通常の第1回答「今は嬉しいのだ/のだった」も既存Plan条件で有限本文経路を外れ、fallbackの出来事/時点照合に失敗することを確認した。新たに受理する説明形を同じ行き止まりへ通さないため、Planの既存 `source_owned_answer_feeling` に3Move中肯定attention exact1・他required burden2の限定枝を追加。旧positive2件の枝と、後続の本人/回答field/時点/required ABOUT方向・根拠/過去の原出来事factの全証明は維持した。Gateは緩めていない。この接続により既存の通常肯定第1回答も名詞的な定型から有限文へ変わる。
+
+### 実本文・検証
+
+開始HEADの完全worktreeと最終版を同じruntimeで比較。訂正24系列はmemo/memo_action×12で、対象14（7説明形×2field）の未反映が解消し、元の生存感情・二回答・別2出来事の原反応・訂正を両層へ保持した。他10系列の両層全文は同一。単独回答8系列は変更前6本文/2例外から全8本文成立へ回復した。元から生成できた通常形2と既存説明形1はObservation不変でReceptionが有限文に変化し、新規説明形3は未反映から本文へ入り、既存説明形2の独立検証例外も解消した。
+
+rootとread-only担当が原source・全回答・両層を確認し、訂正前の悲しさ/失効対比の復活、別出来事への明示的な付け替え、新しい因果断定は見つからなかった。最終inverseは32/32 PASS。ただし対照中の未対応訂正6系列はReception欠落が残ったままPASSするため、機械成功を意味保持全体や商品合格へ換算しない。
+
+最終関連579条件＝567 PASS/12 FAIL（340.473秒）、current owner identity1 PASS（17.667秒）、単独回答撤回後の保存1 PASS（9.628秒）。重複なし581 unique IDs＝569 PASS/12 FAIL/ERROR0/SKIP0。新規40は全PASSで、この581に含む。u66最終467 IDsは欠落0、うち成否差は下記の有限文への変更に伴う旧表現期待1件だけ。検査/比較の再実行や開始版再現を重複加算しない。最終production変更後に関連579・identity・追加保存を実行し、その後のproduction変更なし。
+
+12 FAILの内訳を開始HEADで同じ12 IDsを再実行して区別した（6 PASS/6 FAIL、15.889秒）。既存失敗6は、従来の名詞回答reaction/feeling対旧value/fact期待2、detached_burden旧capacity-gap期待2、今回関連範囲に追加した説明形initial/original_memoを未受理とする旧期待2。今回の挙動変更による6は、説明形を未対応とする旧期待5（楽/軽/こわ/さびしの訂正4と二回答1）、撤回後の生存回答を旧名詞句「その時に楽しかった」で期待する1。後者の最終本文は「誘われたことについて、その時は楽しかったのですね」で、原3出来事/対比と生存回答を保持し、撤回した現在の嬉しさは戻らない。新規保存1で同じ既存の全意味保持・GET/start再表示・原DTO/DB原文不変の検査を有限文に適用してPASSした。旧期待は編集せず、失敗を消したり全suite成功と扱ったりしない。
+
+関連選択はdetached_observation / received_discourseの `same_name_positive or nominal_positive_answer or shared_answer_topic or nominal_explained_answer or positive_answer_group or split_positive_answer or received_chain or two_positive_withdrawal or detached_burden or finite_contrast or independent_past_revision or independent_explanation_revision or explanation_revision or two_positive_unadmitted or finite_explanation_alignment`。追加保存は `finite_explanation_alignment_single_survivor`、identityは既存 `test_active_final_language_owner_chain_has_zero_legacy_compose_calls`。
+
+新規40条件は、説明形訂正14、2回答groupの位置/外側時制6、本文改変拒否2（各10変形）、未対応訂正境界8、保存3、単独attentionの配置/source境界6、撤回後の生存回答保存1。訂正14は既存のpublic/内部本文一致・3Move/3文・全required text被覆・失効contrast不在・作者禁止の独立UTF8復元assertionを再利用した。group6は各4本文改変も拒否。保存3は毎更新後REFINED、generate禁止GET/start DTO全文一致、原DTO/DB原memo不変、第三回答後COMPLETEDを確認した。
+
+初回新規33は14 PASS/19 FAIL。新規testの原DTO参照位置の誤りと、他の未変更節まで有限作者禁止を広げた検査指定を直し、target groupは作者禁止の直接reader検証を保持した。同時に実際に失敗した説明形groupを既存HR/Gate内で修復。次回31 PASS/2 FAILは通常第1回答のPlan経路問題で、上記限定枝を追加して33 PASSとなった。さらにsource境界6と撤回後保存1を加えた。旧test全文273774 bytesのprefix・旧期待/skip/xfail・historical frozen identityは保持している。identity補助呼出し/初回collectionではPYTHONPATHにaiがなくimportに失敗したため、実行環境の指定だけを修正した。
+
+Python3.12.14/pytest9.1.1と必要な既存test依存をscratchへ配置し、既存PGlite0.5.8を再利用。repository依存宣言変更なし。合成DB/mock RPCであり、実DB・端末・プロセス再起動は未検証。current identityは既存導出で更新し、language `b0d3be5b5f7cdefbd99fbcdde4be896e5e0aec015ab6e62c95340746e6176351`、runtime `b86a841be0caae22117a76b06c4169fea859751d096125a868b41159bcad8a8f`。owner構成/数は不変。
+
+反映対象はAPI4source・既存test末尾・current identity・既存handoff、Cocolon既存06のexact8 modify、追加/削除0。既存Draft PR3/30へnon-force反映し、fresh HEAD・parent/tree・全8file bytes/blob・変更path集合を照合する。正式識別子と結果はPR metadataへ記録する。
+
+### 残件・次の一作業
+
+同じ二回答後に未対応の「友人は楽しかったのです」「楽しかったかもしれない」「少し忙しかったのです」へ訂正した場合、訂正は保留されるがReceptionは第2回答だけになり、別の有効な原感情・原反応・第1回答まで消える。今回の対照6系列で変更前後の両層全文が同一であることを確認した。次は未対応内容を勝手に受理せず、既存のWITHDRAW＋unresolved処理で残る意味をReceptionへ保持する原因を調べる。元の否定対象を復活させたり、未対応部分を推測したりしない。
+
+自然さも未完。「その背景には」が独立原感情を回答の背景へ見せること、独立「嬉しかった」の指示先、長い原反応列挙、訂正対象の省略が直前の別eventの訂正に読める隣接、SELF/説明形の読みにくさ、定型性・二層再掲・深さ不足は残る。意味保持の限定回復を商品全体の完成へ換算せず、別作業へ先行しない。
+
+primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承し、旧10/10期限を復活させない。合成検証で実DB/端末目標を達成扱いにせず、Mashへ商品確認を依頼する段階としない。

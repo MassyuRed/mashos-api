@@ -2938,6 +2938,15 @@ def _answer_feeling_preceding_event(move, plan, resolver, selected_subjective_in
                                    selected_subjective_input) is not None
 
 
+# Finite adjective stems already admitted by the thread answer grammar.
+# Each owner proves its own complete host and preserves the full source;
+# this does not expand the shared memo feeling lexicon.
+_THREAD_FINITE_ANSWER_FEELING_STEMS = frozenset({
+    "嬉し", "うれし", "寂し", "さびし", "悲し", "苦し", "つら", "辛",
+    "怖", "こわ", "重", "楽し", "軽",
+})
+
+
 def _thread_feeling_owner(source):
     """Read the source owner independently, including a bounded medial one.
 
@@ -2992,7 +3001,8 @@ def _thread_past_explanation_predicate(source):
         return predicate
     adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
     if adjective is not None and (
-        _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+        adjective[1] in _THREAD_FINITE_ANSWER_FEELING_STEMS
+         or _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
         or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])):
         return predicate
     return None
@@ -3081,7 +3091,8 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
                                    and not noun[1].endswith("い"))
         adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
         explanation_proven = nominal_explanation or bool(adjective is not None and (
-            _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+            adjective[1] in _THREAD_FINITE_ANSWER_FEELING_STEMS
+             or _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
             or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])))
         if not explanation_proven:
             return None
@@ -3345,7 +3356,8 @@ def _read_answer_feeling_clause(raw, event, answer, when, plan, resolver, *, sha
         adjective = re.fullmatch(r"(.+?)(?:くなかった|くない|かった|い)", host)
         explanation_proven = bool(_THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(source)
             or adjective is not None and (
-            _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+            adjective[1] in _THREAD_FINITE_ANSWER_FEELING_STEMS
+             or _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
             or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])))
         if explanation_proven:
             predicate = explanatory['predicate']
@@ -3506,11 +3518,14 @@ def _read_positive_answer_group_discourse(raw, move, plan, resolver, selected_su
         parsed_part = part
         answer_source = final_reception_source_anchor_text(row[1].nucleus_id, index, resolver)
         if (not last and (_THREAD_POSITIVE_FEELING_COPULA_RE.fullmatch(answer_source)
-                         or _THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(answer_source))
+                         or _THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(answer_source)
+                         or answer_source.endswith(("のです", "のだ")) and part.endswith("のだ"))
             and answer_source.endswith(("です", "だ"))):
             # A continuing present copula is だし, not なし. Restore only
             # its same-width final kana for the synthetic acknowledgement;
             # proof offsets still point to the actual finite source operand.
+            # The clause reader below independently proves the complete
+            # adjective explanation before accepting this normalization.
             if not part.endswith("だ"):
                 return None
             parsed_part = part[:-1] + "な"
@@ -4591,7 +4606,8 @@ def _restore_thread_finite_answer(actual, source, *, copular_clause=False,
             noun_proven = bool(_THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(source)
                 or noun is not None and _FEELING_RE.fullmatch(noun[1]) and not noun[1].endswith("い"))
             adjective_proven = (adjective is not None and (
-                _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
+                adjective[1] in _THREAD_FINITE_ANSWER_FEELING_STEMS
+                 or _FEELING_RE.fullmatch(adjective[1]) or _FEELING_RE.fullmatch(adjective[1] + "い")
                 or adjective[1].endswith("し") and _FEELING_RE.fullmatch(adjective[1][:-1])))
             if noun_proven or adjective_proven:
                 # Only a real acknowledged ending can share its の. A

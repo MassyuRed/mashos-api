@@ -109,17 +109,12 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
     # Only the new complete source range owns its operators; the old quote
     # locates the target without donating its polarity or predicate.
     explanation = re.fullmatch(r"(?P<predicate>.+)の(?:です|だ|だった)", bounded)
-    stem = (re.sub(r"(?:くなかった|くない|かった|い)$", "",
-                  re.sub(r"^(?:私は|私も|自分は|私には|僕には)?"
-                         r"(?:少し|とても|本当は|まだ|全然|あまり)?", "", explanation["predicate"]))
-            if explanation else "")
     explained_feeling = bool(explanation
         and not explanation["predicate"].endswith("です")
-        and _FEELING.fullmatch(explanation["predicate"])
-        # Match the existing finite Surface / independent-reader lexicon.
-        # An answer must not acquire meaning only to lose its public body.
-        and (gp._FEELING_RE.fullmatch(stem) or gp._FEELING_RE.fullmatch(stem + "い")
-             or stem.endswith("し") and gp._FEELING_RE.fullmatch(stem[:-1])))
+        # The complete existing finite answer grammar proves the inner
+        # predicate. The shared memo lexicon is not a second admission rule:
+        # its stem inventory omits otherwise supported answers such as 楽し.
+        and _FEELING.fullmatch(explanation["predicate"]))
     # Parse only the admitted claim range. The old text in a correction is a
     # locator, not a source of polarity/operators for the replacement claim.
     local = {ANSWER_FIELD: bounded}
