@@ -7358,6 +7358,19 @@ def source_owned_relational_focus(move, plan=None, *, nuclei=None, relations=Non
                 not in _source_explicit_contrast_reception_duties(nuclei, relations)):
             return None
         return "received_feeling_contrast", group[1], group[0], group[2]
+    if len(move.support_nucleus_ids) == 1:
+        group = tuple(index[nid] for nid in (*move.target_nucleus_ids, *move.support_nucleus_ids)
+                      if nid in index)
+        event = next((n for n in group if "source_received_chain_slot:event" in n.semantic_frame.attribute_codes), None)
+        feeling = next((n for n in group if "source_received_chain_slot:first" in n.semantic_frame.attribute_codes), None)
+        if (len(group) == 2 and event is not None and feeling is not None
+            and event.kind == "event" and feeling.kind == "reaction"
+            and ("lived_change" if is_grounded_positive_feeling(group[0]) else "current_burden",
+                 move.target_nucleus_ids, move.support_nucleus_ids)
+                in _source_explicit_contrast_reception_duties(nuclei, relations)):
+            # A surviving original pair keeps its own contrast even when
+            # its event separately owns an accepted supplemental answer.
+            return "received_event_feeling", event, feeling
     relations = tuple(r for r in relations
         if r.relation_id in required_ids and r.retention == "required"
         and move.target_nucleus_ids[0] in (r.from_nucleus_id, r.to_nucleus_id))
@@ -8040,12 +8053,15 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
         and all(n in by_event.values() and not is_grounded_current_answer_uncertainty(n) for n in negative)
         and len(positive_revisions) == len(independent_answers) == 1
         and not (withdrawal or independent or actions or detached_answers))
+    nested_mixed_revision = bool(not separate_later_scopes and mixed_revision
+        and len(revised_originals) == len(independent_answers) == 1
+        and len(positive) == len(by_event) == 2)
     # ABOUT-owned positive answers can share one collective duty. An outer
     # received contrast reserves a Move before recursing here, so two answers
     # must also share the existing group instead of producing a fourth Move.
     # Independent corrections keep their own allocation. The severed-chain
     # case coordinates only its two ABOUT answers, never the replacement.
-    positive_group = bool(chain_revision or (len(positive) == len(answers) == 3
+    positive_group = bool(chain_revision or nested_mixed_revision or (len(positive) == len(answers) == 3
         or len(positive) == len(answers) == 2
             and not separate_later_scopes and not independent_answers)
         and len(positive_revisions) == len(independent_answers) <= 1
@@ -8207,7 +8223,7 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
             groups = [("current_burden", (focus,), (feeling,)), groups[1],
                 ("current_burden", tuple(event for event in targets if event != focus),
                  tuple(nid for nid in supports if nid != feeling))]
-    if mixed_revision and targets and len(groups) == 4:
+    if mixed_revision and targets and (len(groups) == 4 or nested_mixed_revision and len(groups) == 3):
         replacement = original_revisions[0] if chain_revision else revised_originals[0]
         # A positive correction has its own lived-change singleton. Move
         # that exact duty into the source-bounded mixed group, without
@@ -8340,8 +8356,9 @@ def _source_explicit_contrast_reception_duties(nuclei, relations):
                   in n.semantic_frame.attribute_codes)
     if len(chain) == 2 and len({n.source_span_ids for n in chain}) == 1:
         ids = {n.nucleus_id for n in chain}
-        links = tuple(r for r in relations if r.retention == "required"
-                      and ids & {r.from_nucleus_id, r.to_nucleus_id})
+        incident = tuple(r for r in relations if r.retention == "required"
+                         and ids & {r.from_nucleus_id, r.to_nucleus_id})
+        links = tuple(r for r in incident if {r.from_nucleus_id, r.to_nucleus_id} <= ids)
         if (len(links) == 1 and links[0].type == "contrast"
             and links[0].grounding_kind == "user_stated_relation"
             and {links[0].from_nucleus_id, links[0].to_nucleus_id} == ids
@@ -8350,6 +8367,15 @@ def _source_explicit_contrast_reception_duties(nuclei, relations):
                 and n.source_fields in {("memo",), ("memo_action",)}
                 and n.semantic_frame.actor == "current_user" for n in chain)):
             left, right = (index[nid] for nid in (links[0].from_nucleus_id, links[0].to_nucleus_id))
+            external = tuple(r for r in incident if r not in links)
+            if any(left.kind != "event" or r.type != "evaluation_about_event"
+                   or r.grounding_kind != "user_stated_relation"
+                   or r.from_nucleus_id != left.nucleus_id
+                   or (answer := index.get(r.to_nucleus_id)) is None
+                   or answer.source_fields != ("answer_text_private",)
+                   or answer.allowed_claim_scope != "explicit_supplemental_answer"
+                   or answer.retention != "required" for r in external):
+                return ()
             if left.kind == "event":
                 return (("lived_change", (right.nucleus_id,), (left.nucleus_id,)),) if is_grounded_positive_feeling(right) else (
                     ("current_burden", (left.nucleus_id,), (right.nucleus_id,)),)
