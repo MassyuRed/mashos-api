@@ -13137,3 +13137,44 @@ Python3.12.14/pytest9.1.1と必要な既存test依存をscratchへ配置し、�
 自然さも未完。「その背景には」が独立原感情を回答の背景へ見せること、独立「嬉しかった」の指示先、長い原反応列挙、訂正対象の省略が直前の別eventの訂正に読める隣接、SELF/説明形の読みにくさ、定型性・二層再掲・深さ不足は残る。意味保持の限定回復を商品全体の完成へ換算せず、別作業へ先行しない。
 
 primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承し、旧10/10期限を復活させない。合成検証で実DB/端末目標を達成扱いにせず、Mashへ商品確認を依頼する段階としない。
+
+
+## 2026-10-02 u68 — 未対応訂正・明示撤回の後にも生存原感情・二回答・他原反応を保持する
+
+### 開始位置・原因・修復
+
+MashのEmlis残件継続指示を受け、u67の次作業を実施。正式開始HEADはAPI `7930b8ba8f548c0ac894d698a18a04e4dd68aad1`、Cocolon `bf141d535ea189893aaedb510b65ffea126f4615`。fresh PRの同一HEAD・Draft/open/unmergedを確認。前回の送信用local commitは正式HEADと同じtreeで、tracked差分なしを確認して正式HEADへ揃えた。CURRENT_RULES、恒久incident全文、全体設計01・01A/B/Cの役割地図とcurrent_structure、最新weekly09/26の09/29追加合意、u67の本文比較/検証/残件を確認した。両repoのfresh recursive treeはtruncated=falseで全パスを取得。前回から構造地図・rules・weeklyの変更はなく、u67の記録と実装を継承した。System Contextのshallow祖先判定未成立と原典直接読取を継承し、補助基盤修復には戻らない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX、既存LEVEL_2内。root華恋が編集・実行・反映担当。read-only担当が原因と技術差分、商品routeと比較本文を確認し、担当名を独立した特定モデルの商品合格へ換算しない。productionは既存Plan1fileの3箇所に限定。既存test末尾/current identity/両handoffを更新する。新owner・renderer・reader・文法・受付・公開contract/API/DB/RN・依存宣言・flag変更なし。STRUCTURE_MAP_DELTA_NONE。
+
+`RECEIVED_CHAIN_MULTI`→「今は嬉しい。」→「その時は楽しかった。」→「悲しかった」を未対応の「友人は楽しかったのです」「楽しかったかもしれない」「少し忙しかったのです」へ訂正すると、WITHDRAW＋unresolvedは成立するがReceptionが第2回答だけになった。明示「悲しかった」は誤りですも同じ欠落だった。answer_updateは撤回対象とincident relationだけを除き、生存「嬉しかった」の非代表markerも解除済みだったため変更しない。
+
+原因はPlan `_thread_retained_reaction_groups`。生存したchain secondの肯定原感情1件とABOUT肯定回答2件が残り、replacementは0件になる。従来chain_revisionはreplacement1件必須、positive_groupは独立原感情を除外し、early rejectionで空集合を返してfamilyの代表選択へ戻っていた。既存のrequired/explicit/本人/原field/孤立原感情証明と、回答のABOUT・時点・主体・肯否証明を引き継ぎ、chain secondの独立肯定原感情exact1・ABOUT肯定回答exact2・replacement/他独立回答/action/detached無しの限定構造を既存positive_groupとearly rejection例外へ接続した。mixed_revisionには含めず、存在しないreplacementを参照しない。
+
+既存の二回答1Move・生存原感情1Move・他原反応1Moveで3Move/3文を維持する。未知内容を受理せず、旧「悲しかった」と失効contrastも復活させない。既存HR/Gateがevent/回答/原反応と実UTF8を独立照合し、予算上限や検査条件は変更しない。
+
+### 実本文・検証
+
+開始HEADの完全worktreeと最終版を同じ既存runtimeで20系列比較。対象8（未対応訂正3＋明示撤回×memo/memo_action）のReceptionへ第1回答・生存原感情・他2出来事の原反応が戻り、第2回答も保持。全20のObservation、assessment status、update operation、unresolved reasonは不変で、対照12は両層全文同一。root/read-only担当が原memo・全回答・両層を読み、未知内容の確定感情への受理、撤回対象/失効contrastの本文主張への復活、新しい明示的な別eventへの付替え・因果断定は見つからなかった。変更前/後ともinverse20 PASSで、変更前の欠落例も通るため、逆検証だけを意味保持の証明にしない。
+
+最終関連599条件＝587 PASS/12 FAIL（356.699秒）、current owner identity1 PASS（18.727秒）。重複なし600 unique IDs＝588 PASS/12 FAIL/ERROR0/SKIP0。新規19は全PASSで、この600に含む。u67最終581 IDsは欠落0・成否全一致。新規初回/保存再実行や比較を重複加算しない。最終検査後のproduction変更なし。
+
+12 FAILはu67と同一の全IDs。名詞回答の旧分類期待2、detached_burdenの旧capacity-gap期待2、説明形initial/original_memoの旧未受理期待2、およびu67の挙動変更で旧期待と不一致になった説明形未対応期待5・撤回後生存回答の旧名詞句期待1。u67で同じ開始版の再現/差分分類を確認済みで、今回その最終集合の成否を完全一致照合した。全suite成功や既知失敗解消とはしない。
+
+関連選択はdetached_observation / received_discourseの `same_name_positive or nominal_positive_answer or shared_answer_topic or nominal_explained_answer or positive_answer_group or split_positive_answer or received_chain or two_positive_withdrawal or detached_burden or finite_contrast or independent_past_revision or independent_explanation_revision or explanation_revision or two_positive_unadmitted or finite_explanation_alignment`。identityは既存 `test_active_final_language_owner_chain_has_zero_legacy_compose_calls`。
+
+新規19条件は本文14（2field×基本3未対応/明示撤回/過去時点/SELF複合修飾/名詞説明形）、本文改変拒否1（14変形）、保存4。本文はpublic/内部本文一致、3Move/3文、全required textのtarget/support/context被覆、受付判定とWITHDRAW/未対応reason維持、元DTO不変、replacement核と失効contrast不在を確認。作者を禁止して二回答4source・他原反応2sourceを実UTF8から独立復元し、全本文も検査した。各意味寄与の欠落・時点/対象/主体/程度/肯否/時制の変更、旧対比/因果化/未知内容の追加を拒否する。
+
+保存4系列は毎更新後の原DTO/DB原memo不変、generate禁止GET/startのDTO全文一致、第三回答後COMPLETEDを確認。未対応訂正3は第三回答後PARTIALLY_REFINED、明示撤回はREFINEDという既存区別を維持した。初回追加19は16 PASS/3 FAIL（28.070秒）。全3は新規保存testが未対応訂正のbody_stateにもREFINEDを期待した誤りであり、既存PARTIALLY_REFINEDへ期待を直した。production/受付を変更せず、保存4は再実行で4 PASS（13.205秒）。重複加算しない。旧test全文286803 bytesのprefix・旧期待/skip/xfail・historical frozen identityを保持した。
+
+Python3.12.14/pytest9.1.1/PGlite0.5.8と既存scratch依存を再利用し、今回installなし。合成DB/mock RPCであり、実DB・端末・プロセス再起動は未検証。current identityは既存導出で更新し、language `639e31b09264b201a4605607039a9b83370117393b53f1d425bebb68907ae040`、runtime `db787908594828f48a8ccada112262b16a19c67ed1eb9dc513c87cfdb49fa415`。Planのhash/lengthと集約identityだけが変わり、owner構成/数は不変。
+
+反映対象はAPI Plan・既存test末尾・current identity・既存handoff、Cocolon既存06のexact5 modify、追加/削除0。既存Draft PR3/30へnon-force反映し、fresh HEAD・parent/tree・変更path集合・全5file全文/blobを照合する。正式識別子と照合結果はPR metadataへ記録する。
+
+### 残件・次の一作業
+
+今回の欠落回復後も、生存原感情「嬉しかった」が独立した定型文になり、どの出来事・時点の気持ちなのか読者が追い直す構成が残る。Observationの「その背景には」も、原時点の嬉しさを現在の回答の背景と読ませ得る。次は、この同じ訂正/撤回後の原感情と回答の時点・所属を追いにくい表現を、既存の意味・文章化ownerで検討する。原記録から残る感情であることを出典として示し、出来事との新しい関係は作らない。失効した関係を復活させたり、独立感情へ新たなevent関係を推測で追加したりしない。別出来事の後置列挙、訂正が直前eventへ属するように見える隣接、SELF/説明形の不自然さ・定型性・二層再掲・深さ不足も未完。意味保持の限定修復を同群全完了へ換算しない。
+
+read-only静的確認では、Observationの既存 `_render_extra_context` が当該生存核をgeneric reaction/stateの背景表現へ渡し、Receptionの既存 `_source_grounded_target_np` と `_source_grounded_response_predicate` が出典なしの感情名詞＋受け止め文を生成している。次はSurface/HRと対応する既存Gateの独立照合で、原field・本人の過去感情・完全source範囲・active incident relation無しを確認して出典提示を検討する。出来事自体は撤回されていないため `withdrawn_source_event` markerを付ける修正はしない。この候補は今回未実装・未検証であり、Plan修復の成果に含めない。
+
+primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。Ready/merge/deploy/enable/live適用0。10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）、10/02実DB/端末目標を継承し、旧10/10期限を復活させない。合成検証で実DB/端末目標を達成扱いにせず、Mashへ商品確認を依頼する段階としない。

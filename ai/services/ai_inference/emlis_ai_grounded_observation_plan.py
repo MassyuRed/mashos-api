@@ -8045,6 +8045,17 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
         and len(positive) - len(positive_revisions) == len(by_event) == 2
         and len(answers) == 3
         and not (withdrawal or actions or detached_answers))
+    # Withdrawing the middle feeling leaves the same final original
+    # feeling and two ABOUT answers, without a replacement duty. Keep
+    # all three existing groups instead of falling back to one family
+    # representative. An unresolved replacement owns no accepted feeling.
+    chain_withdrawal = bool(len(independent) == 1
+        and is_grounded_positive_feeling(independent[0])
+        and {"semantic_dependency:received_feeling_contrast_chain",
+             "source_received_chain_slot:second"}
+            <= set(independent[0].semantic_frame.attribute_codes)
+        and len(positive) == len(by_event) == len(answers) == 2
+        and not (independent_answers or withdrawal or actions or detached_answers))
     mixed_revision = bool(chain_revision or len(positive) == 2 and len(answers) == 3
         and len(revised_originals) == 1
         and len(independent_answers) == 1 + len(positive_revisions)
@@ -8067,7 +8078,7 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
     # must also share the existing group instead of producing a fourth Move.
     # Independent corrections keep their own allocation. The severed-chain
     # case coordinates only its two ABOUT answers, never the replacement.
-    positive_group = bool(chain_revision or nested_mixed_revision or (len(positive) == len(answers) == 3
+    positive_group = bool(chain_revision or chain_withdrawal or nested_mixed_revision or (len(positive) == len(answers) == 3
         or len(positive) == len(answers) == 2
             and not separate_later_scopes and not independent_answers)
         and len(positive_revisions) == len(independent_answers) <= 1
@@ -8080,7 +8091,7 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
         and len(by_event) == 1 and not (independent or actions or independent_answers))
     if not withdrawal and (len(positive) > 2 and not positive_group
                            or len(positive) == 2 and (independent or actions or independent_answers)
-                           and not (mixed_revision or positive_revision)
+                           and not (mixed_revision or positive_revision or chain_withdrawal)
                            or len(events) == 1 and len(answers) != 1
                            and not ((independent or actions) and not answers)):
         return unsupported()
