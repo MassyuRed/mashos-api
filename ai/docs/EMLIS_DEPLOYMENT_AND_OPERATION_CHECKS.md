@@ -1,5 +1,7 @@
 # Cocolon CMEE 問いシステム — 後日の適用・運用確認
 
+> 2026-10-04 u99現在地：Mashが分析API配置・development有効化・新版TestFlight送信と必要な管理画面操作を承認済み。再承認不要。RenderはGoogleパスキー確認待ち、GitHub管理画面も未ログイン。配置/設定変更/新buildは未開始。再開は認証の続きから。詳細は末尾u99。
+
 作成日：2026-09-11 JST  
 担当：Ultra華恋  
 版：1.0  
@@ -417,3 +419,16 @@ Mashの「分析構造の実装に進んで」を受け、添付前回txt、必�
 Render連携のtrigger_deployにはcommit指定がなく、env更新MCPにはu87でmain deployを起動した実測があるため、この二つを使って対象版配置を代行しない。公式DashboardのEnvironment **Save only** → **Manual Deploy / Deploy a specific commit**を使う（[deploy docs](https://render.com/docs/deploys)、[env docs](https://render.com/docs/configure-environment-variables)）。GitHub連携にはworkflow_dispatchがない。承認後、利用可能な承認済み操作経路を確認し、必要な開始操作だけをMashへ依頼する。未承認のbrowser fallback、secret取得、新service追加、main mergeは行わない。
 
 Rule18 §11.3とu96/u97末尾が実配置・有効化・native配布をDB追加承認と分離しているため、この範囲の個別承認を求める。前回DB適用承認を再質問しない。今回は既存引継ぎと運用資料への記録のみで、API/RN source・test・SQL・稼働設定・deploy・native build/配布は未変更。STRUCTURE_MAP_DELTA_NONE（owner、route、source構成変更なし）。primary outcomeはBLOCKER_NARROWED、商品0/3・NOT_CLEAR・全体48%を保持し、分析完成とはしない。
+
+
+## 20. 2026-10-04 JST u99 — 配置・有効化・TestFlight送信の承認受領、管理画面認証から再開
+
+Mashはu98で提示した「必要な管理画面操作も含め、この範囲を進めてよいでしょうか？」に「進めていいよ、お願い」と明示承認した。指定API配置、分析development、PR30からの新規TestFlight作成/送信、本人入力から保存再表示までの確認と必要な管理画面操作は承認済み。同範囲の再承認を要求しない。u98の「個別判断待ち」は履歴であり、現在の残件は実行と認証である。
+
+- 配置対象APIは `315f5b5dacb866e62805cfd6a906984c193dcc76`、既存Render `srv-d4ppfpm3jp1c73952bj0`。Dashboardで `COCOLON_ANALYSIS_OBSERVED_MODE=development` を **Save only** し、**Deploy a specific commit** を使う。linked mainのdeployを起動するenv更新MCP/汎用triggerは使わない。Emlis設定・DB・料金・worker/cron・main/mergeは範囲外のまま。
+- 再開時にRender deploy一覧を再読し、`7f1f7d92d296caeb913b8cab9599acab3318437d` / `dep-db0cjh1srm7s73f10vb0` が依然liveと確認。新しい配置は開始していない。実環境の変数変更も未実施。
+- 承認済みbrowser経路で対象Render画面を開いたところ未ログイン。安全な認証UIでMashがGoogleを選択し、手動操作への移行後、再開時の表示はパスキー本人確認待ちだった。認証成功とは扱わない。認証情報の取得/転記はしない。GitHubのworkflow画面も未ログインで新規実行ボタンはまだ利用不可。
+- GitHub連携で最新iOS run61/37115985371、source74c7cab7…、successを再確認し、queued/in_progressに新しいiOS runなし。PR30確認時headは3c62e2cd…（u98記録のみ、product baseline dd47c0aa…）。今回の記録もdocs-onlyであり、新規dispatch時の実head/run SHAを改めて記録する。workflowは既存 `.github/workflows/ios-build.yml` の `workflow_dispatch`、branch `agent/three-core-cmee-current-structure-20260815`。run61のrerunを新sourceのbuildとして代用しない。新build番号は実run確定まで未確定。
+- 実機の最小確認は新版で「分析 → わたしマップ」を開き、文章・項目・件数・線・未確定表示を読み、入力変更や強制更新を挟まず「こころ天気」へ切替えてから「わたしマップ」を再表示する。初回最新artifactの再表示を確認し、月次用の「わたしマップの履歴」への出現を条件にしない。保存identityはAPI側で照合する。空/422等は実表示を記録し、未対応sourceを成功扱いしない。
+
+今回は既存3文書への承認/再開地点記録のみ。新規source/test/SQL/依存/workflow変更、DB適用、配置、環境変数変更、native build/送信、実本人往復の成功は0。STRUCTURE_MAP_DELTA_NONE。商品0/3・NOT_CLEAR・全体48%を保持。認証後に承認済み実行をそのまま再開し、準備や記録更新を商品進捗へ換算しない。
