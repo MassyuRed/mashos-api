@@ -13698,3 +13698,14 @@ u83の接続調査を継続。開始HEADはCocolon `83b99f8a5dd4a7fcce001ab65ae7
 primary outcomeは `BLOCKER_NARROWED`。残件は「配置版不明」から「問いシステム版が未配置、直近の実接続先は一致、現在設定と開発確認に使う対象の確定が必要」へ進んだ。詳細はAPI運用資料§11。次に必要なのは、Render Dashboardで当該serviceの `SUPABASE_URL` のhostと非secretのEmlis mode設定を限定して読むこと。pluginで取得不能な項目のbrowser fallbackは利用ツールの仕様上、事前のユーザー許可が必要なため、その範囲を提示する。今回のworkspace読取許可をDB適用・main変更・配置・有効化・配布へ拡張しない。
 
 既存4文書だけを更新し、source/test/SQL/依存の変更・新しいtest実行はない。`STRUCTURE_MAP_DELTA_NONE`。u82の31 PASS、旧商品0/3・NOT_CLEAR・全体48%・default OFF・両PR Draft/open/unmerged、weeklyの品質枠/Work配分を継承。live DB適用/merge/deploy/enable/課金/配布は未実施。確定commitとremote bytes/変更pathの照合結果は既存PR本文へ記す。
+
+
+## 2026-10-03 u85 — 接続DBを確定し、保存schema追加の承認範囲を固定
+
+MashがRender設定値として `SUPABASE_URL=https://oeahmpmigszggnkyiivq.supabase.co` を直接共有した。appの固定認証先とu84の実通信hostに一致し、API/認証/DBの同一性という前回の不足を解消した。共有画像では `COCOLON_ENV` と新しい `COCOLON_EMLIS_THREAD_*` 3項目は見当たらないが、全環境での不存在や稼働modeは断定しない。browserのGoogle sign-inはgeneric errorで停止し、設定値の取得成功として扱わない。追加のbrowser復旧や画像取得をschema準備の前提にしない。
+
+開始HEADはCocolon `caaa08e118d9a61789ac323c18be4f3712690112`、API `e49aa0565a59cbc7515d9f7838e8d430b5d29332`。全体設計/全ファイル地図/最新weekly/恒久incidentとu83/u84の確認を引継ぎ、両PRのfresh HEADと対象文書/既存SQLの実体を照合した。rootが読取・記録・GitHub反映を担当し、補助はscopeのread-onlyレビューを行った。対象DBのcatalogを再取得し、Emlis3table/5function不在・親参照列/型の存在・migration履歴が空であることを再確認した。利用者データ行は取得せず、DDL/DMLは未実行。
+
+次の一作業は、既存共有 `cocolon-project` へ、変更していないQ2→Q3 SQLだけを適用し、保存schemaを用意すること。具体的な対象・SQL identity・効果・成功/停止条件はAPI運用資料§12へ固定した。保存用3table/5functionとFK/index/RLS/grantを対象とし、親データの書換え、API/main変更、flag有効化、配布は含めない。共有DBを開発専用と呼ばず、適用を開発APIの選定や実機成功の証拠にしない。Rule18 §11.3と最新weeklyにより、実DB適用は個別のMash承認待ちである。今回のURL共有を適用承認に読み替えない。
+
+primary outcomeは `BLOCKER_NARROWED`。既存4文書のみの更新で `STRUCTURE_MAP_DELTA_NONE`、source/test/SQL/依存変更と新規test実行なし。旧商品0/3・NOT_CLEAR・全体48%・default OFF・両PR Draft/open/unmerged、weeklyの作業配分を維持する。u82の31 PASSは過去結果。DB適用/merge/deploy/enable/課金/配布は未実施。確定commit、全変更pathとremote bytesの照合結果は既存PR本文へ記す。

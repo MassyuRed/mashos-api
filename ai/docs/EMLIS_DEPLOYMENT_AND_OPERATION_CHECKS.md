@@ -203,3 +203,33 @@ service読取に環境変数値はなく、専用の環境変数GETもありま�
 当該serviceのDashboard Environmentで、`SUPABASE_URL` のhostと、`COCOLON_EMLIS_THREAD_MODE` / `COCOLON_ENV` / `COCOLON_EMLIS_THREAD_DEVELOPMENT` / `COCOLON_EMLIS_THREAD_RELEASE_APPROVED` の有無・非secret値だけを確認します。認証key/tokenは取得・表示・記録しません。旧配置版は問いシステム設定を使わないため、値があってもEmlis有効化の証拠にはしません。
 
 利用可能なpluginがこの読取を提供しないため、browserでの限定確認に切り替える許可を求めます（利用ツールがplugin不足時のbrowser fallbackに事前許可を要求）。この確認では保存・設定変更・deployを行いません。現在設定と開発対象を確定した後に、§6/§9の順序で既存Q2→Q3・API配置・read_onlyからの確認に必要な個別scopeを提示します。今回のworkspace利用許可は、共有DB適用・新service/課金・main更新・有効化・TestFlight送信を含みません。
+
+
+## 12. 2026-10-03 u85 — 確定した接続先とDB適用の限定提案（未承認・未実行）
+
+MashがRenderの設定値として `SUPABASE_URL=https://oeahmpmigszggnkyiivq.supabase.co` を直接共有しました。app固定認証先、§11の最近のAPI通信先、今回の設定値が一致します。§11で残したDB identity確認はこれで解消しました。browserのGoogleサインインはgeneric errorで停止したため、管理画面を華恋が読取完了したとはしません。共有画像に新mode用4項目が見当たらないことと、全環境に設定がないことは分けます。この限定DB準備に、追加のbrowser復旧や端末確認を必須前工程として足しません。
+
+### 承認を求める一作業
+
+目的は、既存の入力に紐づくEmlisの応答・問い・回答・frameを保存できるschemaを用意することです。適用しない間は、問いシステム版のAPIを配置しても、このDBで保存・再取得を確認できません。新規のAPI/DB環境やサービスを作らず、既に接続を確認した共有DBへ、既存SQLの追加だけを提案します。このDBを開発専用とは扱いません。
+
+| 項目 | 固定する範囲 |
+|---|---|
+| 対象 | Supabase `cocolon-project` / project `oeahmpmigszggnkyiivq` の既存DB |
+| SQL source | API commit `e49aa0565a59cbc7515d9f7838e8d430b5d29332`。§10の2本・SHA-256を維持。今回変更なし。 |
+| 1本目 | `supabase/migrations/20260911020509_emlis_input_threads_q2.sql` / Git blob `2a4d6ee5c1ebe752f16f4ac3a0942e203beabe73` |
+| 2本目 | `supabase/migrations/20260911041749_emlis_q3_plan_rounds.sql` / Git blob `b8d45a2748316f5440d0e9a4fe4f8e346a644724` |
+| 追加対象 | `emlis_input_threads` / `emlis_thread_events` / `emlis_frame_feedback`、計5function、専用FK/index/制約/RLS/grant。Q3はQ2のtable制約とcommit functionを拡張。 |
+| 実施方法 | 適用直前のcatalog/履歴/SQL identity照合→既存Q2→既存Q3の順でmigration適用→適用結果/catalog/権限照合。担当はrootの単一execution owner。 |
+| 変更しない範囲 | 既存emotions/profiles/auth.usersの行・現在のAPI配置/main・Render環境設定・機能flag・アプリbuild/配布。認証key/tokenの取得・共有も含めない。 |
+| 費用・作業量 | 新service作成・契約plan変更なし。SQL2本と適用前後の確認を一単位とし、別の補助基盤は作らない。所要時間は実施前のため未計測。 |
+
+今回のfresh catalogでは3table/5functionはすべて不在、migration履歴は空、必要な親列/型は存在しました。親id主キーの先行照合は§10の結果を継承し、role/参照権限と併せて実適用直前に照合します。履歴が空だから既存DB全体が空だとは解釈しません。SQLは親の入力行を書き換えませんが、稼働DBへFKや権限を含むDDLを行うため、短時間のlock・競合の可能性はあります。RLSとservice_role限定の権限を保ち、通常clientの直接操作を新たに許可しません。
+
+### 成功・停止条件
+
+成功は、2本の適用記録を確認し、3table/5function、列/制約/index/FK、RLSとgrantがSQLどおりであることをcatalogで照合できた状態です。現行APIや個人の入力を使う書込試験は、この承認対象に含めません。migration履歴の実際のversionはツール応答を記録し、file名のtimestampがそのまま付いたと仮定しません。
+
+対象project、SQL bytes、schema/履歴/権限に想定外の差があれば適用を止めます。失敗・応答不明では履歴とcatalogを読取り確認し、削除・再作成や盲目的な再実行をしません。Q2が成功しQ3が失敗した場合はQ2だけが残り得るため、到達状態を記録して止め、勝手に巻き戻しません。SQLや対象を変更して続ける許可へ広げません。
+
+Rule18 §11.3はdatabase migrationをstanding delegation外とし、最新weekly §2.4/§6.10も実DB適用の個別許可を維持しています。そのため、本提案をMashが承認するまで適用しません。URLの共有は接続先の証拠であり、適用承認ではありません。適用後も問いシステムのAPI版は未配置・機能default OFFのままで、次のAPI配置/開発確認/実機一往復/商品受入れは別の未完了作業として残します。
