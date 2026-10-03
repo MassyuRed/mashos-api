@@ -320,6 +320,143 @@ class AnalysisVerticalTests(unittest.TestCase):
                 result = self.generate(request(record(memo=memo)))
                 self.assertFalse(result.artifact and result.artifact.graph.edges)
 
+    def test_relative_days_reach_safe_text_and_graph_with_complete_evidence(self):
+        for prefix, day in [('今日、', '今日'), ('昨日，', '昨日'), ('今日\u3000', '今日')]:
+            with self.subTest(prefix=prefix):
+                req = request(record(memo='\u3000' + prefix + '私は資料を調べました。'))
+                artifact = self.generate(req).artifact
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                label = 'この記述時点の' + day + '：資料を調べる（実行済み）'
+                self.assertEqual([n['visible_label'] for n in visual['nodes']], [label])
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)
+                self.assertIn(label, text['text'])
+                self.assertEqual(visual['projection_of'], text['projection_of'])
+                node = artifact.graph.nodes[0]
+                p = node.proposition
+                self.assertEqual(set(i for _, a, b in p.source_parts for i in range(a, b)),
+                                 set(range(len(node.visible_label))))
+                envelope = freeze_analysis_sources(req).sources[0].envelope
+                for e in node.evidence_refs:
+                    literal = envelope.raw_utf8[e.utf8_start:e.utf8_end]
+                    field = envelope.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                    self.assertEqual(literal.decode(), field[e.scalar_start:e.scalar_end])
+                    self.assertEqual(hashlib.sha256(literal).hexdigest(), e.literal_sha256)
+                    self.assertIn(day, literal.decode())
+                self.assertNotIn('2026', label)
+                for private in ('relative_day', 'source_parts', 'analysis-source:', OWNER, '私は'):
+                    self.assertNotIn(private, json.dumps(visual, ensure_ascii=False))
+
+    def test_relative_day_does_not_overwrite_negation_wish_or_tense(self):
+        cases = [
+            ('昨日私は資料を調べなかった。', 'negative', 'fact', 'past', '行わなかった'),
+            ('今日私は仕事を続けたい。', 'positive', 'wish', 'current_input', '希望'),
+            ('昨日私は仕事を続けたかった。', 'positive', 'wish', 'past', '希望（当時）'),
+            ('昨日私は仕事を続けたくなかった。', 'negative', 'wish', 'past', '望まない（当時）'),
+        ]
+        for memo, polarity, modality, time, label in cases:
+            with self.subTest(memo=memo):
+                artifact = self.generate(request(record(memo=memo))).artifact
+                n = artifact.graph.nodes[0]
+                self.assertEqual((n.polarity, n.modality, n.temporal_scope), (polarity, modality, time))
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                self.assertIn(label, visual['nodes'][0]['visible_label'])
+                if modality == 'wish':
+                    self.assertEqual(n.node_kind, 'ATTENTION_OR_THOUGHT')
+                    self.assertNotIn('実行済み', visual['nodes'][0]['visible_label'])
+
+    def test_relative_day_aggregation_stays_with_its_own_source(self):
+        memo = '今日私は資料を調べた。今日わたしは資料を調べました。'
+        artifact = self.generate(request(record(memo=memo), record(2, memo=memo))).artifact
+        self.assertEqual(len(artifact.graph.nodes), 2)
+        self.assertTrue(all(len(n.record_refs) == 1 and len(n.evidence_refs) == 2
+                            for n in artifact.graph.nodes))
+        self.assertFalse(artifact.graph.edges)
+        artifact.safe_projection(authenticated_owner_scope=OWNER)
+        three = self.generate(request(record(memo='私は資料を調べた。'
+            '昨日私は資料を調べた。今日私は資料を調べた。'))).artifact
+        self.assertEqual(len(three.graph.nodes), 3)
+        self.assertFalse(three.graph.edges)
+
+    def test_relative_day_in_answer_keeps_its_separate_statement_source(self):
+        req = request(self.with_answer(record(memo='今日私は資料を調べた。'),
+                                       '今日私は資料を調べました。'))
+        artifact = self.generate(req).artifact
+        visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+        self.assertEqual(len(visual['nodes']), 2)
+        self.assertEqual([n['evidence_badge_count'] for n in visual['nodes']], [1, 1])
+        self.assertFalse(visual['edges'])
+        refs = [n.evidence_refs[0] for n in artifact.graph.nodes]
+        self.assertNotEqual(refs[0].source_envelope_id, refs[1].source_envelope_id)
+        sources = {s.envelope.envelope_id: s for s in freeze_analysis_sources(req).sources}
+        self.assertEqual([sources[e.source_envelope_id].envelope.source_role for e in refs],
+                         ['ORIGINAL_INPUT', 'SUPPLEMENTAL_ANSWER'])
+        answer = sources[refs[1].source_envelope_id].envelope
+        self.assertEqual(answer.raw_utf8[refs[1].utf8_start:refs[1].utf8_end].decode(),
+                         '今日私は資料を調べました')
+
+    def test_only_distinct_days_in_one_answer_can_disambiguate_opposition(self):
+        original = record(memo='私は考えを書いた。')
+        admitted = self.generate(request(self.with_answer(original,
+            '昨日私は資料を調べた。今日私は資料を調べなかった。')))
+        self.assertEqual(admitted.status, EngineStatus.GENERATED)
+        self.assertEqual(len(admitted.artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes']), 3)
+        for original_text, answer in [
+            ('今日私は資料を調べた。', '昨日私は資料を調べなかった。'),
+            ('昨日私は資料を調べた。', '今日私は資料を調べなかった。'),
+            ('今日私は資料を調べた。', '今日私は資料を調べなかった。'),
+            ('私は考えを書いた。', '今日私は資料を調べた。今日私は資料を調べなかった。'),
+            ('私は考えを書いた。', '昨日私は資料を調べた。私は資料を調べなかった。'),
+        ]:
+            with self.subTest(original=original_text, answer=answer):
+                r = self.generate(request(self.with_answer(record(memo=original_text), answer)))
+                self.assertEqual(r.status, EngineStatus.UNAVAILABLE)
+                self.assertIn('analysis_supplement_interpretation_pending', r.reason_codes)
+
+    def test_day_words_alone_never_create_order_or_inherit_to_next_claim(self):
+        separate = self.generate(request(record(memo=
+            '昨日私は資料を調べた。今日私は記録を残した。'))).artifact
+        self.assertFalse(separate.safe_projection(authenticated_owner_scope=OWNER)['edges'])
+        sequence = self.generate(request(record(memo=
+            '昨日私は資料を調べた。その後私は記録を残した。'))).artifact
+        visual = sequence.safe_projection(authenticated_owner_scope=OWNER)
+        self.assertEqual(len(visual['edges']), 1)
+        self.assertEqual(sequence.graph.nodes[1].proposition.relative_day, '')
+        self.assertNotIn('昨日', visual['nodes'][1]['visible_label'])
+
+    def test_day_qualified_correction_and_withdrawal_keep_exact_target(self):
+        original = record(memo='昨日私は資料を調べた。私は記録を残した。')
+        req = request(self.with_answer(original,
+            '「昨日私は資料を調べた」ではなく「今日私は資料を調べなかった」です。'))
+        corrected = self.generate(req).artifact
+        labels = [n['visible_label'] for n in corrected.safe_projection(authenticated_owner_scope=OWNER)['nodes']]
+        self.assertTrue(any('今日' in label and '行わなかった' in label for label in labels))
+        self.assertFalse(any('昨日' in label for label in labels))
+        updated = next(n for n in corrected.graph.nodes if n.update_refs)
+        sources = {s.envelope.envelope_id: s for s in freeze_analysis_sources(req).sources}
+        e = updated.evidence_refs[0]
+        envelope = sources[e.source_envelope_id].envelope
+        self.assertEqual(envelope.source_role, 'SUPPLEMENTAL_ANSWER')
+        self.assertEqual(envelope.raw_utf8[e.utf8_start:e.utf8_end].decode(), '今日私は資料を調べなかった')
+        withdrawn = self.generate(request(self.with_answer(original,
+            '「昨日私は資料を調べた」は取り消します。'))).artifact
+        self.assertEqual(len(withdrawn.graph.nodes), 1)
+        self.assertNotIn('昨日', withdrawn.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+        unqualified = self.generate(request(self.with_answer(original,
+            '「昨日私は資料を調べた」ではなく「私は資料を調べなかった」です。'))).artifact
+        self.assertTrue(all(not n.proposition.relative_day for n in unqualified.graph.nodes))
+
+    def test_unsupported_day_scopes_cannot_be_silently_shortened(self):
+        for memo in ('昨日私は仕事を続けたい。', '明日私は資料を調べた。',
+                     'その後今日私は資料を調べた。', '昨日私は資料を調べた？',
+                     '昨日友人は資料を調べた。', '昨日「私は資料を調べた」と聞いた。'):
+            with self.subTest(memo=memo):
+                result = self.generate(request(record(memo=memo)))
+                if result.artifact:
+                    with self.assertRaises(AnalysisSourceError):
+                        result.artifact.safe_projection(authenticated_owner_scope=OWNER)
+                else:
+                    self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+
     def test_application_mode_is_not_enabled(self):
         result = self.generate(replace(request(record()), execution_mode='ANALYSIS_APPLICATION'))
         self.assertEqual(result.status, EngineStatus.REJECTED)

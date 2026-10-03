@@ -36,6 +36,8 @@ def _safe_label(node):
     if parts.sequence_marker:
         phrase = {'AFTER_PREVIOUS': 'その後：',
                   'THEN_OR_ADDITION': 'それから：'}[parts.sequence_marker] + phrase
+    if parts.relative_day:
+        phrase = 'この記述時点の' + {'TODAY': '今日', 'YESTERDAY': '昨日'}[parts.relative_day] + '：' + phrase
     if parts.modality == 'wish':
         label = phrase + ('ことへの希望' if parts.polarity == 'positive'
                           else 'ことを望まない')

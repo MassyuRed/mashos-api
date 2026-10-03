@@ -104,6 +104,24 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         for private in ('私は', 'proposition', 'sequence_marker', 'source_parts', 'visible_label'):
             self.assertNotIn(private, encoded)
 
+    async def test_saved_relative_day_remains_statement_bound_when_read(self):
+        fx = fixture('昨日私は資料を調べた。今日私は資料を調べなかった。')
+        row = fx['row']
+        with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))), \
+             patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+            value = await service.read_saved(OWNER)
+        self.assertEqual(value['items'][0], row)
+        projection = value['items'][0]['content_json']['watashiMap']
+        self.assertEqual([n['visible_label'] for n in projection['nodes']], [
+            'この記述時点の昨日：資料を調べる（実行済み）',
+            'この記述時点の今日：資料を調べる（行わなかった）'])
+        self.assertFalse(projection['edges'])
+        for label in [n['visible_label'] for n in projection['nodes']]:
+            self.assertIn(label, value['items'][0]['content_text'])
+        encoded = json.dumps(fx['private'], ensure_ascii=False)
+        for private in ('relative_day', 'source_parts', 'visible_label', '昨日', '今日'):
+            self.assertNotIn(private, encoded)
+
     async def test_read_never_generates_and_preserves_wire(self):
         with patch.object(service, '_rpc', AsyncMock(return_value=result([self.row]))), \
              patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):

@@ -37,6 +37,7 @@ class ObservedProposition:
     temporal_scope: str
     source_parts: tuple[tuple[str, int, int], ...]
     sequence_marker: str = ''
+    relative_day: str = ''
 
 
 # A bounded verb/inflection inventory, not an input/topic-to-answer table.
@@ -83,23 +84,28 @@ def _finite_predicates():
 
 
 _FINITE_PREDICATES = _finite_predicates()
-_SEQUENCE_PREFIX = re.compile(r'^(その後|それから)[、，\s]*')
+_CLAUSE_PREFIX = re.compile(r'^(その後|それから|今日|昨日)[、，\s]*')
 
 
 def _proposition(value: str) -> ObservedProposition | None:
-    sequence = _SEQUENCE_PREFIX.match(value)
-    start = sequence.end() if sequence else 0
-    marker = ({'その後': 'AFTER_PREVIOUS', 'それから': 'THEN_OR_ADDITION'}
-              [sequence.group(1)] if sequence else '')
+    prefix = _CLAUSE_PREFIX.match(value)
+    start = prefix.end() if prefix else 0
+    token = prefix.group(1) if prefix else ''
+    marker = {'その後': 'AFTER_PREVIOUS', 'それから': 'THEN_OR_ADDITION'}.get(token, '')
+    relative_day = {'今日': 'TODAY', '昨日': 'YESTERDAY'}.get(token, '')
     subject = re.compile(r'(?:私|僕|わたし|自分)は').match(value, start)
     if subject is None:
         return None
     for finite, lemma, polarity, modality, time in _FINITE_PREDICATES:
         if not value.endswith(finite):
             continue
+        # Do not reinterpret a current wish as a past wish just to admit a
+        # yesterday modifier. Its tense must already be explicit in the source.
+        if relative_day == 'YESTERDAY' and time != 'past':
+            continue
         end = len(value) - len(finite)
         offset, arguments = subject.end(), []
-        parts = ([(marker, 0, start)] if sequence else [])
+        parts = ([(marker or 'RELATIVE_DAY_' + relative_day, 0, start)] if prefix else [])
         parts.append(('SELF_TOPIC', start, offset))
         while offset < end:
             argument = _ARGUMENT.match(value, offset, end)
@@ -116,7 +122,7 @@ def _proposition(value: str) -> ObservedProposition | None:
         parts.append(('FINITE_PREDICATE', end, len(value)))
         return ObservedProposition('SELF', tuple(arguments), lemma,
             polarity, modality, time, tuple(parts),
-            marker)
+            marker, relative_day)
     return None
 
 
@@ -231,7 +237,7 @@ def _fragment(source, nucleus):
         return None
     # current_user is the shared frame's default, not proof of its subject.
     # This initial cohort requires an explicit first-person finite host.
-    if not re.match(r'^(?:(?:今日|昨日|その後|それから)[、\s]*)?(?:私は|僕は|わたしは|自分は)', value):
+    if not re.match(r'^(?:(?:今日|昨日|その後|それから)[、，\s]*)?(?:私は|僕は|わたしは|自分は)', value):
         return None
     # The source helper already proved a length-preserving normalization.
     field = source.envelope.raw_utf8[ref.field_utf8_start:ref.field_utf8_end].decode('utf-8')
@@ -312,22 +318,27 @@ def _explicit_order_pairs(source, plan, withdrawn):
 
 def _admit_ordinary_supplement(answer, original):
     claims = _self_propositions(answer, require_complete=True)
-    earlier = [p for p, _ in _self_propositions(original)]
+    earlier = [(p, original.envelope.envelope_id) for p, _ in _self_propositions(original)]
     for current, _ in claims:
-        for previous in earlier:
+        for previous, source_id in earlier:
             # Without an explicit correction target, do not choose between
             # opposing descriptions of the same possible action/wish. Missing
             # arguments do not prove a different occasion or a different object.
             a, b = dict(current.arguments), dict(previous.arguments)
             compatible_arguments = all(a[case] == b[case] for case in a.keys() & b.keys())
+            # Relative days distinguish occasions only within one statement
+            # source. An answer's yesterday may be its original input's today.
+            separate_days = (source_id == answer.envelope.envelope_id
+                and current.relative_day and previous.relative_day
+                and current.relative_day != previous.relative_day)
             if (current.actor == previous.actor
                     and current.predicate_lemma == previous.predicate_lemma
                     and current.modality == previous.modality
                     and current.temporal_scope == previous.temporal_scope
                     and current.polarity != previous.polarity
-                    and compatible_arguments):
+                    and compatible_arguments and not separate_days):
                 raise AnalysisSourceError('analysis_supplement_interpretation_pending')
-        earlier.append(current)
+        earlier.append((current, answer.envelope.envelope_id))
 
 
 def _active_sources(source_set):
@@ -445,7 +456,12 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
             # Ordinary, unqualified claims retain their existing aggregation.
             occurrence_scope = (evidence.evidence_id if evidence.evidence_id in ordered_evidence
                 or (proposition and proposition.sequence_marker) else None)
-            signature = (kind, meaning, polarity, modality, time, occurrence_scope)
+            # A relative day is anchored to its own input/answer, not to the
+            # viewing date or the parent's created_at. Only equivalent claims
+            # in that same source and day retain ordinary aggregation.
+            day_scope = ((source.envelope.envelope_id, proposition.relative_day)
+                         if proposition and proposition.relative_day else None)
+            signature = (kind, meaning, polarity, modality, time, occurrence_scope, day_scope)
             index = by_signature.get(signature)
             if index is None:
                 index = len(nodes)

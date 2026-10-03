@@ -14048,3 +14048,20 @@ Python3.12.14でvertical **42 PASS**（既存33＋追加9）、saved period13＋
 検査初回はprimary runtimeにfastapi/httpxが無くimportで停止。repo requirementsに既存の2依存をscratchの隔離targetへ導入して実行した（fastapi0.142.2/httpx0.28.1、repo依存定義は変更0）。System Context prepareは material b0a561… is not a descendant of a77b79c… で停止したため、context更新成功とはせず、固定GitHub headと必要原本の直接読取で作業した。
 
 更新fileはAPIのintent_compiler/observed_route_realizer/vertical test/storage testと既存API handoff、Cocolon既存00/03/canonical04/06。地図の責務差分は03 §4.9。u102/u103 sourceは未配置。稼働API315f5b5…とTestFlight6201を維持し、実DB・配置・build・main/merge操作なし。任意日本語、省略主語、「昨日/今日」等の任意時点、複文、annotations/conflict/期間比較/IFは残る。次の内容作業候補は既存完全節に付く時点表現のsource-grounded解釈を一単位として原因確認すること。今回それらを実装済み/承認済みの新設計に昇格しない。
+
+
+## 2026-10-04 JST u104 — 今日/昨日を元の記述時点へ保持
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。Mashの継続指示に基づき、u103の次候補だった時点接頭句の因果箇所を修正。API7924576…/Cocolon cf7279a…のfresh head、前提資料/作業rules、current全体設計・file map、latest weekly 20261003、恒久incident全文を確認した。実機OKのMash報告を継承し、再確認を内容作業の前提へ戻さない。rootが実装・検査・GitHub反映、補助2名は読取reviewのみ。既存Analysis compiler/realizer/testと既存地図/設計/引継ぎの範囲に限定した。
+
+変更前は「昨日、私は資料を調べた」「今日私は考えをノートに書いた」がsafe projectionで analysis_safe_surface_unavailable となった。fragmentが受け取る日語を完全typed propositionが解釈できない因果を再現した。
+
+- 今日/昨日をrelative_dayとexact scalar/UTF-8 source partsへ保持し、時制・否定・希望から分離。「この記述時点の今日/昨日」とsafe表示する。閲覧日や暦日を計算せず、補足へ元入力created_atを流用しない。
+- source envelope＋明示日で集約を分け、同一source/同日の文法上同一内容だけをu102方式で束ねる。別record・元入力と回答は分離。u103順序参加節はoccurrence分離を優先。
+- 補足の反対極性は、同一回答内の明示異日だけ区別する。元入力と回答の今日/昨日は同じ実日を指す可能性があるため、日語の違いだけで対立を解消しない。日語から順序を推測せず、後続節への暗黙継承0。訂正/撤回は日語を含む完全節と回答出典を保持する。
+
+Python3.12.14、既存の隔離test依存でvertical50（追加8）/storage11（追加1）/saved period13/API6＝**80 PASS**。原文の全節/証拠範囲、source別集約、対立保留、否定/希望、順序非推測、訂正/撤回、保存読取の同一DTO/文章と再生成0を確認。既存RN contract/view modelにも新DTOを渡し、backend本文と一致した。公開合成本文8組をrootが全文確認。独立の意味/出典reviewと保存/API/RN整合reviewでblocking指摘なし。
+
+System Context prepareはcf7279a…がa77b79c…のdescendantでないという検査で停止。成功扱いせず、規定の原本直接読取を使用した。新規file/owner/API/DB/DTO/RN/依存定義変更0。変更責務は03 §4.10、canonical04 §3.5へ同期。u102〜u104 sourceは未配置、実DB/配置/build/main/merge操作なし。稼働API315f5b5…/TestFlight6201を変更せず、商品0/3・NOT_CLEAR・48%を再採点しない。
+
+対応は単一接頭辞と既存9動詞/名詞grammarに限定。「昨日＋現在の希望」、主語後の時点、任意日時/複数修飾/複文は未対応。場面/役割/考え/結果の広い解釈、annotations/conflict/期間比較/IFも残る。次は場面・考え・結果でsafe表示へ未到達の代表入力を共有planの意味型と照合し、次の直接修正箇所を特定する。今回を一般日本語や分析全体の完成とはしない。
