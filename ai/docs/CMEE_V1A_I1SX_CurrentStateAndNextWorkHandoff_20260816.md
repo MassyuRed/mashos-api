@@ -13634,3 +13634,31 @@ rootと補助の静的レビューでscope内の最小変更を確認。GitHub�
 次の実機接続はu79/u80のまま、対象開発API・認証/DB・配置版/migration状態・端末OS/導入経路の確定から始める。既存手順によるread_only→development→bootstrap/can_write→入力/回答/保存再表示は実機未確認。今回の回復導線修復を実機一往復成功にしない。対象が未指定のままlive設定・配置・DB適用を進めない。
 
 primary outcomeは限定TECHNICAL_CREDIT。旧商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmerged、10/03のEmlis品質枠の区切りと10/04以降のWork分析（利用不可ならPro Piece）を継承。merge/deploy/enable/live DB適用/課金/配布なし。新たなユーザー操作・有料外部serviceの追加なし。
+
+## 2026-10-03 u82 — 起動時の接続情報取得失敗からEmlis readerへ復帰する
+
+MashのEmlis残件継続指示と最新weekly 20261003 §6.6〜6.10に従う限定接続修復。開始HEADはCocolon `6d8df0790a5c6435bf2a36546b206c2947d7734b`、API `b107629b2d24633667858d1a959d30d8204a9d8e`。前回u81、全体設計01/01A/01B/01Cと全ファイル地図02、Emlis map、必須前提/作業ルール・最新weeklyの保存版をfresh treeと照合し、恒久incidentを先頭からEOFまで再読した。全path/役割地図の確認を全実装全文精読とは呼ばない。System Contextは原典直接確認。rootのみ編集・実行・反映、補助はread-onlyの接続調査と差分レビュー。既存LEVEL_2内のOBSERVED_BLOCKER_MINIMAL_FIXである。
+
+### 原因と変更
+
+起動時の `/app/bootstrap` が通信失敗すると、`AppRuntimeContext` はloaded=true/error保持で通常画面を開き、Emlisのfeature flagは既定OFFのまま残る。`AppRuntimeBootstrapGate` はmount時に取得するだけで、通信失敗から手動で再取得するUIがなかった。最低バージョン制限の画面にだけ再確認操作があるため、初回の一時失敗後に通常入力を再開しても、この入口から問い/履歴readerへ復帰できなかった。
+
+既存Gate内に非blockingの接続情報再確認案内を設け、既存 `runBootstrapCheck` を手動で呼ぶ。同じ親View・同じchild位置を正常/error/loaded後loadingで保ち、再取得のたびに未保存入力をremountして消さない。初回loadingと最低バージョン制限は従来の優先順を維持する。連打時は局所refで同じ取得中の重複実行を止める。案内にはAPIの生errorや個人情報を表示しない。既存themeとsafe-areaを使用し、新file/依存を追加しない。
+
+feature flagをclientで強制ONにせず、serverがtrueを返した場合だけreaderを有効化する。server false・再失敗は既存のOFFを維持し、polling/自動retryは追加しない。新API、runtime state schema、本文作者、認証、保存、公開wire、DB、default OFFに変更なし。通常入力を利用できる既存方針も維持する。変更はCocolonの既存Gate/test/map/正本06とAPI既存handoffの計5 modify、追加/削除0。mapは起動失敗からの再確認という利用者導線の差分だけを記す。
+
+### 検証と限界
+
+既存 `tests/emlis-thread.test.js` のu81全29条件・全文prefixを保持し、末尾へserver reader flag true/falseの2条件を追加した。実Gate・Context・Emlis hook・専用API・共通clientを通し、native部品と認証/fetchだけを合成する。初回失敗→入力draft保持→手動再試行中→再失敗→再試行成功を検査し、各状態でmount数1とdraft不変を確認する。自動retryなし、連打時のbootstrap GET重複なし、取得中button無効、bootstrapは認証不要の既存route、true時の保存thread読取、false時のthread通信0、最低version block優先も検査した。
+
+旧Gateでは追加2 FAIL（0.350秒）：通信失敗後のretry control不在を再現した。修正後の初回対象実行はmock側のURL/response.json不足により1 PASS/1 FAILとなり、実専用APIの既存route/responseへmockを修正後2 PASS（0.351秒）。製品APIの変更で検査を通したものではない。最終は既存実Metro bundleも含め31 PASS / FAIL0 / CANCELLED0 / SKIP0（6.848秒）。既存の回答/履歴再表示、認証切替、未知ACK、質問終了後の再送、API URL埋込み/cache回帰も成功した。
+
+Node24.19.0とu80/u81と同じ固定test/RN/Metro一時依存を再使用し、repository依存を変更していない。mock通信とReact rendererであり、実機の表示・キーボード操作・実ネットワーク回復、実DB、native build/署名/配布は未確認。Python/API suiteは今回実行せず、旧61失敗・意味/文章品質残差を解消扱いしない。技術的復帰の検証を商品品質合格・実機成功へ換算しない。
+
+rootと補助の静的レビューでscope内の修復を確認。GitHub直前head/target preimage、今回の変更path、反映後の全5fileの全文/byteと最終HEADを照合し、確定値は既存Draft PR30/3本文へ記す。
+
+### 残件と再開位置
+
+開発API・認証/DB・配置版/migration状態・端末OS/導入経路は未確定のまま。既存運用手順に沿うread_only→development→bootstrap/can_write→入力/回答/保存再表示の実機確認は未実施である。今回のコード修復を環境確定の代わりにせず、対象未指定のままlive設定/配置/DB適用は行わない。実環境の確認時には起動通信失敗後の再確認操作と入力保持も合わせて確認する。
+
+primary outcomeは限定TECHNICAL_CREDIT。旧商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmerged、10/03のEmlis品質枠の区切りと10/04以降のWork分析（利用不可ならPro Piece）を継承。文章の全面改善を実機接続の前提にせず、別の補助機構も作らない。merge/deploy/enable/live DB適用/課金/配布なし。新しい有料サービス利用・Mashへの操作依頼なし。
