@@ -203,6 +203,116 @@ class AnalysisVerticalTests(unittest.TestCase):
             text, commitment(text))
         return replace(original, supplements=(answer,))
 
+    def test_ordinary_answer_adds_own_wish_to_same_record_and_safe_text(self):
+        original = record(memo='私は考えをノートに書いた。')
+        answered = self.with_answer(original, '　私は仕事を続けたい。\n')
+        req = request(answered)
+        result = self.generate(req)
+        self.assertEqual(result.status, EngineStatus.GENERATED)
+        artifact = result.artifact
+        visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+        text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)
+        self.assertEqual([n['visible_label'] for n in visual['nodes']],
+            ['考えをノートに書く（実行済み）', '仕事を続けることへの希望'])
+        self.assertEqual([n['evidence_badge_count'] for n in visual['nodes']], [1, 1])
+        self.assertFalse(visual['edges'])
+        self.assertFalse(artifact.graph.source_updates)
+        self.assertEqual(original.original_json, answered.original_json)
+        self.assertEqual(visual['projection_of'], text['projection_of'])
+        for node in visual['nodes']:
+            self.assertIn(node['visible_label'], text['text'])
+        wish = artifact.graph.nodes[1]
+        source = next(s for s in freeze_analysis_sources(req).sources
+                      if s.envelope.source_role == 'SUPPLEMENTAL_ANSWER')
+        for evidence in wish.evidence_refs:
+            self.assertEqual(evidence.source_envelope_id, source.envelope.envelope_id)
+            raw = source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+            field = source.envelope.raw_utf8[
+                evidence.field_utf8_start:evidence.field_utf8_end].decode()
+            self.assertEqual(raw.decode(), field[evidence.scalar_start:evidence.scalar_end])
+            self.assertIn('私は仕事を続けたい', raw.decode())
+            self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+
+    def test_answer_can_add_multiple_complete_claims_without_inventing_order(self):
+        answered = self.with_answer(record(memo='私は考えをノートに書いた。'),
+            '私は資料を調べました。私は仕事を続けたくない。')
+        artifact = self.generate(request(answered)).artifact
+        self.assertIsNotNone(artifact)
+        self.assertEqual([n['visible_label'] for n in artifact.safe_projection(
+            authenticated_owner_scope=OWNER)['nodes']],
+            ['考えをノートに書く（実行済み）', '資料を調べる（実行済み）',
+             '仕事を続けることを望まない'])
+        self.assertFalse(artifact.graph.edges)
+
+    def test_answer_restatement_is_one_claim_and_never_self_cooccurrence(self):
+        answered = self.with_answer(record(memo='私は図書館で資料を調べた。'),
+            '僕は資料を図書館で調べました。')
+        for members, count in [((answered,), 1),
+                ((answered, record(2, memo='わたしは資料を図書館で調べました。')), 2)]:
+            with self.subTest(count=count):
+                artifact = self.generate(request(*members)).artifact
+                self.assertEqual(len(artifact.graph.nodes), 1)
+                node = artifact.graph.nodes[0]
+                self.assertEqual(len(node.evidence_refs), count + 1)
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                self.assertEqual(visual['nodes'][0]['evidence_badge_count'], count)
+                self.assertFalse(visual['edges'])
+
+    def test_repeated_original_and_answer_claims_require_independent_records(self):
+        first = self.with_answer(record(memo='私は資料を調べた。'), '私は仕事を続けたい。')
+        second = self.with_answer(record(2, memo='私は資料を調べました。'), '僕は仕事を続けたいです。')
+        second = replace(second, supplements=(replace(second.supplements[0],
+                         source_id='synthetic-second-answer'),))
+        artifact = self.generate(request(first, second)).artifact
+        visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+        self.assertEqual([n['evidence_badge_count'] for n in visual['nodes']], [2, 2])
+        self.assertEqual(len(visual['edges']), 1)
+        self.assertEqual(visual['edges'][0]['edge_kind'], 'REPEATED_COOCCURRENCE')
+        self.assertNotIn('from_ref', visual['edges'][0])
+
+    def test_ordinary_answer_must_not_drop_uninterpreted_or_corrective_text(self):
+        answers = [
+            '私は資料を調べた。でも、元の記録は間違いです。',
+            '違います。私は資料を調べた。',
+            '私は資料を調べた。まだわからない。',
+            '私は資料を調べた。友人は仕事を続けたい。',
+            '私は資料を調べた？',
+            '友人の話です。私は資料を調べた。',
+            '「私は資料を調べた」と聞いた。',
+            'もし私は資料を調べたなら、安心できる。',
+            '私は昨日、資料を調べた。',
+            '私は資料を調べた。※',
+        ]
+        for answer in answers:
+            with self.subTest(answer=answer):
+                result = self.generate(request(self.with_answer(record(), answer), record(2)))
+                self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+                self.assertIsNone(result.artifact)
+
+    def test_ordinary_answer_cannot_silently_choose_opposite_claim(self):
+        cases = [
+            ('私は図書館で資料を調べた。', '私は資料を図書館で調べなかった。'),
+            ('私は図書館で資料を調べた。', '私は調べなかった。'),
+            ('私は仕事を続けたい。', '私は仕事を続けたくない。'),
+            ('私は考えをノートに書いた。',
+             '私は資料を調べた。私は資料を調べなかった。'),
+        ]
+        for original, answer in cases:
+            with self.subTest(original=original, answer=answer):
+                result = self.generate(request(self.with_answer(record(memo=original), answer)))
+                self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+                self.assertIsNone(result.artifact)
+
+    def test_distinct_answer_objects_and_modalities_are_not_merged(self):
+        answered = self.with_answer(record(memo='私は資料を調べた。'),
+            '私は書類を調べなかった。私は資料を調べたい。')
+        artifact = self.generate(request(answered)).artifact
+        visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+        self.assertEqual([n['visible_label'] for n in visual['nodes']],
+            ['資料を調べる（実行済み）', '書類を調べる（行わなかった）',
+             '資料を調べることへの希望'])
+        self.assertFalse(visual['edges'])
+
     def test_withdrawal_removes_only_parent_occurrence_and_recomputes_cooccurrence(self):
         original = record()
         corrected = self.with_answer(original, '「私は考えをノートに書いた」は取り消します。')

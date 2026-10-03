@@ -1,3 +1,5 @@
+> 2026-10-04 u102現在地：Mashが6201の実機確認OKを報告し、内容改善へ移行。通常補足の完全な本人節を分析へ採用し、丁寧語/格順による同じ意味の二重計上を修正。33検査PASS、修正版は未配置。詳細は末尾u102／Analysis map §4.8。
+
 > 2026-10-04 u101現在地：Analysis V2対応TestFlight 1.0 (6201)のarchive/export/upload成功。run62/37155776248、build SHA b11d1b321…、JST06:51完了。Apple処理/端末導入・本人入力→保存→再表示は未確認。API指定版liveはu100、最新native結果は末尾u101。
 
 > 2026-10-04 u100現在地：指定Analysis API315f5b5…がRenderでlive。healthz/bootstrap200と未認証self-structure/status401を実確認。分析developmentはMashの設定手順実行報告、本人生成成功は未確認。次はPR30 branchから新規TestFlight build、本人入力→保存→再表示。詳細は末尾u100。
@@ -13993,3 +13995,31 @@ Mashが既存workflowの新規実行を開始した。華恋は新しいrunを�
 u100で確認済みの配置API315f5b5… / deploy dep-db0n8lnavr4c738g3s5g、health/bootstrap200・未認証status401を継承。このturnでAPI再配置・環境変数・DBを変更していない。development設定はMashの手順実行報告であり、未認証bootstrapによる独立証明とはしない。
 
 今回の記録変更は既存3文書と既存PR3/30の説明更新のみ。source/test/SQL/依存/workflowの新規変更・追加検査は0、STRUCTURE_MAP_DELTA_NONE。新版native archive/export/upload成功は実施済みの前進として記録するが、商品0/3・NOT_CLEAR・全体48%は保持し、本人実機の分析一往復を次の確認点とする。
+
+
+## 2026-10-04 JST u102 — 実機OK報告を受け、通常補足の分析採用と同一意味の重複計上を修正
+
+MashはTestFlight6201の案内後に「実機での確認はおっけーだから、分析構造の内容を修正していく方を進めて」と指示した。実機確認は**Mashの本人報告としてOK**を記録し、同じ操作を再要求せず内容改善へ進む。端末画面や保存UUIDを華恋が独立照合したという記録にはしない。API315f5b5…live / app build b11d1b321…・6201はu100/u101の実施事実を継承する。
+
+### 対象と判断
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。既存canonical04のORIGINAL_INPUT＋optional SUPPLEMENTAL_ANSWERから根拠付き分析を作る目的へ直接接続する。root華恋が実装・検証・反映、補助はread-only review。PRODUCT_ROUTE_ALIGNED / TECHNICALLY_ADMISSIBLEを同じheadと対象で確認した。対象はAPIの既存intent_compiler、既存Analysis vertical検査、既存地図/設計/引継ぎのみ。新しい文法体系・共有parser・外部service・dependency・DTO・DB・RN・flag・配置は追加/変更しない。未解釈部分の切捨てや契約変更が必要ならscopeを拡張しない。
+
+変更前の実CMEEで、元入力「私は考えをノートに書いた。」＋補足「私は仕事を続けたい。」が `UNAVAILABLE / analysis_supplement_interpretation_pending` になることを再現した。引用訂正/撤回以外を一律拒否する因果箇所だけを修正する。
+
+### 変更した分析内容
+
+- 引用訂正/撤回を優先したまま、既存grammarで全文を解釈できる明示本人の通常補足を採用する。実際の行動、非行動、希望、望まないこと、時点を分け、補足も元recordの一機会として扱う。
+- 共有semantic plan→exact fragment→完全なtyped propositionを使い、元answer fieldのscalar evidence範囲で全文を照合する。無視できるのは限定した空白/文末区切りのみ。訂正の意図、他者発話、質問、引用、条件、未対応修飾や未解釈の残りがあれば全体を未生成に保つ。
+- 元入力と補足、または補足内の対立する同一候補の記述を勝手に選ばない。同じ述語/modality/時点で反対極性かつ格項が両立する場合は未生成。省略項を「別の対象・機会」の証明にしない。新しいconflict解釈を発明しない。
+- 同じ主語種別・格と名詞・述語・極性・modality・時点は、丁寧語/主語表記/格の語順が違っても一つの観測へまとめる。同義語/話題の推測統合はしない。最初のlabel/propositionを対で保持し、全evidenceを保持、record件数は一意のまま。同一意味同士の誤った共起線を防ぐ。
+
+### 実確認と限界
+
+Python3.12.14/標準unittestで既存26＋追加7＝**33 PASS**。追加分は通常補足、複数の完全節、同義ではない文法上の同一内容、独立2記録の無方向共起、全文未解釈/訂正混在、反対極性、異なる目的語/modalityの保持を確認。元supplementのUTF-8/scalar/hash、safe文章/図、件数を検査した。既存引用訂正・撤回・owner/期間/出典検査は保持。公開合成入力3組の生成文章をrootが全文読んだ。read-only差分reviewでblocking指摘なし。
+
+上記例は行動と現在の希望の2観測・各1件・線0として文章/図へ出る。丁寧語と格順だけを変えた再記述は1観測・1件、2記録でも1観測・2件で自己共起線0。欠ける場面/役割/結果等はunknownのまま。
+
+対応は既存9動詞/名詞項の完全節に限定される。省略主語、任意の修飾/複文、通常補足中の未対応意味、複数保存回答、annotations/conflict/比較/IFは未完了。既存originalのsafe表現未対応を今回全解消したとはしない。実DB/HTTP/nativeで修正版を再検査していない。API315f5b5…の稼働版と今回の未配置sourceを区別する。保存済artifactを表示時に再生成/改変しない。
+
+既存PR3/30へ反映。新規file0、source2 file（compiler/test）の変更と既存4 Cocolon文書＋API handoffを同期。Analysis map §4.8へ既存file責務を更新、path/owner/外部interfaceの追加なし。商品0/3・NOT_CLEAR・全体48%を再採点しない。次は残る通常入力の意味範囲を既存設計から一単位ずつ拡げる。配置承認や実機確認を内容修正の毎回の前工程に戻さない。

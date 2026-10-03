@@ -241,6 +241,59 @@ def _fragment(source, nucleus):
     return value, evidence
 
 
+def _self_propositions(source, *, require_complete=False):
+    """Read existing grammatical claims, retaining original field coordinates.
+
+    An ordinary answer must stand on its own. Unread text may qualify, retract
+    or correct the apparent claim, so a parsed fragment is not enough.
+    """
+    plan = build_final_stage1_grounded_observation_plan(
+        source.normalized, evidence_spans=source.spans)
+    if plan.input_profile.material_quality == 'safety_routed':
+        raise AnalysisSourceError('analysis_separate_safety_required')
+    claims = []
+    for nucleus in plan.nuclei:
+        if (nucleus.grounding_kind not in ('explicit', 'user_stated_relation')
+                or nucleus.semantic_frame.actor != 'current_user'):
+            continue
+        fragment = _fragment(source, nucleus)
+        proposition = _proposition(fragment[0]) if fragment else None
+        if proposition is not None:
+            claims.append((proposition, fragment[1]))
+    if require_complete:
+        raw = source_field_text(source, 'memo')
+        covered = set()
+        for _, evidence in claims:
+            if evidence.field_path == 'memo':
+                covered.update(range(evidence.scalar_start, evidence.scalar_end))
+        # Deliberately not all punctuation: question marks, quotes and other
+        # unparsed operators cannot be treated as harmless sentence separators.
+        if not claims or any(i not in covered and char not in ' \t\r\n\u3000。．.'
+                             for i, char in enumerate(raw)):
+            raise AnalysisSourceError('analysis_supplement_interpretation_pending')
+    return tuple(claims)
+
+
+def _admit_ordinary_supplement(answer, original):
+    claims = _self_propositions(answer, require_complete=True)
+    earlier = [p for p, _ in _self_propositions(original)]
+    for current, _ in claims:
+        for previous in earlier:
+            # Without an explicit correction target, do not choose between
+            # opposing descriptions of the same possible action/wish. Missing
+            # arguments do not prove a different occasion or a different object.
+            a, b = dict(current.arguments), dict(previous.arguments)
+            compatible_arguments = all(a[case] == b[case] for case in a.keys() & b.keys())
+            if (current.actor == previous.actor
+                    and current.predicate_lemma == previous.predicate_lemma
+                    and current.modality == previous.modality
+                    and current.temporal_scope == previous.temporal_scope
+                    and current.polarity != previous.polarity
+                    and compatible_arguments):
+                raise AnalysisSourceError('analysis_supplement_interpretation_pending')
+        earlier.append(current)
+
+
 def _active_sources(source_set):
     """Apply whole-clause corrections to occurrences before period grouping."""
     originals = {s.record_ref: s for s in source_set.sources
@@ -254,11 +307,13 @@ def _active_sources(source_set):
         text = raw.strip().rstrip('。．.')
         replacement, withdrawal = _REPLACEMENT.fullmatch(text), _WITHDRAWAL.fullmatch(text)
         match = replacement or withdrawal
-        if match is None:
-            raise AnalysisSourceError('analysis_supplement_interpretation_pending')
         original = originals.get(answer.record_ref)
         if original is None:
             raise AnalysisSourceError('analysis_supplement_parent_missing')
+        if match is None:
+            _admit_ordinary_supplement(answer, original)
+            views.append(answer)
+            continue
         old = match['old'].rstrip('。．.')
         targets = []
         for ref in original.evidence:
@@ -341,7 +396,12 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
                 (frame.polarity, frame.modality, frame.time_scope))
             update_ref = replacement_updates.get(source.envelope.envelope_id)
             node_updates = (update_ref,) if update_ref else ()
-            signature = (kind, label, polarity, modality, time)
+            # Exact grammatical equivalence, not synonymous/topic matching.
+            # A polite restatement or reordered cases is still one claim;
+            # preserve each source witness without inventing a cooccurrence.
+            meaning = ((proposition.actor, tuple(sorted(proposition.arguments)),
+                        proposition.predicate_lemma) if proposition else label)
+            signature = (kind, meaning, polarity, modality, time)
             index = by_signature.get(signature)
             if index is None:
                 index = len(nodes)
