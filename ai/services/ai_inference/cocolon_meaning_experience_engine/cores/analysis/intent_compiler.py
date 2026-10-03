@@ -12,6 +12,7 @@ import re
 from emlis_ai_grounded_observation_plan import (
     build_final_stage1_grounded_observation_plan,
     source_proven_performed_action_status,
+    _source_current_cognition, _source_current_cognition_parts,
 )
 from ...contracts import EvidenceRef
 from ...emlis_answer_update import _WITHDRAWAL, _REPLACEMENT
@@ -38,6 +39,7 @@ class ObservedProposition:
     source_parts: tuple[tuple[str, int, int], ...]
     sequence_marker: str = ''
     relative_day: str = ''
+    possible_content: ObservedProposition | None = None
 
 
 # A bounded verb/inflection inventory, not an input/topic-to-answer table.
@@ -57,7 +59,7 @@ _ARGUMENT = re.compile(r'(?P<noun>' + _NOMINAL + r'(?:の' + _NOMINAL
                        + r')*)(?P<case>を|に|で|と)')
 
 
-def _finite_predicates():
+def _finite_predicates(*, include_nonpast=False):
     forms = []
     for lemma, stem, group in _VERBS:
         i, a, past = {
@@ -80,14 +82,28 @@ def _finite_predicates():
             (i + 'たくなかった', 'negative', 'wish', 'past'),
         ):
             forms.append((surface, lemma, polarity, modality, time))
+        if include_nonpast:
+            forms.extend(((lemma, lemma, 'positive', 'fact', 'nonpast'),
+                          (a + 'ない', lemma, 'negative', 'fact', 'nonpast')))
     return tuple(sorted(forms, key=lambda row: len(row[0]), reverse=True))
 
 
 _FINITE_PREDICATES = _finite_predicates()
+_CONTENT_PREDICATES = _finite_predicates(include_nonpast=True)
+_CANONICAL_CONTENT = {(lemma, polarity, time): surface
+    for surface, lemma, polarity, modality, time in _CONTENT_PREDICATES
+    if modality == 'fact'
+    and not surface.endswith(('ました', 'ませんでした'))}
 _CLAUSE_PREFIX = re.compile(r'^(その後|それから|今日|昨日)[、，\s]*')
+_COGNITIVE_HOSTS = {value: value for value in (
+    '考えてしまう', '思ってしまう', '考えている', '思っている', '考える', '思う')}
+_COGNITIVE_HOSTS['考えちゃう'] = '考えてしまう'
 
 
 def _proposition(value: str) -> ObservedProposition | None:
+    cognition = _cognitive_proposition(value)
+    if cognition is not None:
+        return cognition
     prefix = _CLAUSE_PREFIX.match(value)
     start = prefix.end() if prefix else 0
     token = prefix.group(1) if prefix else ''
@@ -96,7 +112,14 @@ def _proposition(value: str) -> ObservedProposition | None:
     subject = re.compile(r'(?:私|僕|わたし|自分)は').match(value, start)
     if subject is None:
         return None
-    for finite, lemma, polarity, modality, time in _FINITE_PREDICATES:
+    parts = ([(marker or 'RELATIVE_DAY_' + relative_day, 0, start)] if prefix else [])
+    parts.append(('SELF_TOPIC', start, subject.end()))
+    return _finite_proposition(value, subject.end(), 'SELF', parts, marker, relative_day)
+
+
+def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relative_day='', *, content_only=False):
+    inventory = _CONTENT_PREDICATES if content_only else _FINITE_PREDICATES
+    for finite, lemma, polarity, modality, time in inventory:
         if not value.endswith(finite):
             continue
         # Do not reinterpret a current wish as a past wish just to admit a
@@ -104,9 +127,8 @@ def _proposition(value: str) -> ObservedProposition | None:
         if relative_day == 'YESTERDAY' and time != 'past':
             continue
         end = len(value) - len(finite)
-        offset, arguments = subject.end(), []
-        parts = ([(marker or 'RELATIVE_DAY_' + relative_day, 0, start)] if prefix else [])
-        parts.append(('SELF_TOPIC', start, offset))
+        offset, arguments = body_start, []
+        parts = list(prefix_parts)
         while offset < end:
             argument = _ARGUMENT.match(value, offset, end)
             if argument is None:
@@ -120,10 +142,48 @@ def _proposition(value: str) -> ObservedProposition | None:
         if offset != end or len({case for case, _ in arguments}) != len(arguments):
             continue
         parts.append(('FINITE_PREDICATE', end, len(value)))
-        return ObservedProposition('SELF', tuple(arguments), lemma,
+        return ObservedProposition(actor, tuple(arguments), lemma,
             polarity, modality, time, tuple(parts),
             marker, relative_day)
     return None
+
+
+def _cognitive_proposition(value):
+    """A proved present thinker plus a fully parsed, non-factual complement.
+
+    The shared grammar owns the cognitive host. Its open lexical slot is not
+    safe content until Analysis also understands the whole embedded clause.
+    An omitted embedded subject stays unspecified, even under a SELF thinker.
+    """
+    subject = re.match(r'^(?:私|僕|わたし|自分)は', value)
+    scopes = _source_current_cognition_parts(value) if subject else None
+    if not scopes or {role for role, *_ in scopes} != {'possibility', 'cognition'}:
+        return None
+    bounds = {role: (a, b) for role, a, b, _ in scopes}
+    a, b = bounds['possibility']
+    c, d = bounds['cognition']
+    suffix = re.search(r'(?:かもしれない|かも知れない|かも)$', value[a:b])
+    if (a != subject.end() or d != len(value) or suffix is None
+            or value[b:c] not in {'と', 'って'} or value[c:d] not in _COGNITIVE_HOSTS):
+        return None
+    content_end = a + suffix.start()
+    content = _finite_proposition(value[:content_end], a, 'UNSPECIFIED', (), content_only=True)
+    if content is None or content.modality != 'fact':
+        return None
+    content = replace(content, modality='possibility')
+    parts = (('SELF_TOPIC', 0, a), *content.source_parts,
+        ('POSSIBILITY_OPERATOR', content_end, b), ('COGNITIVE_CONNECTOR', b, c),
+        ('PRESENT_COGNITIVE_HOST', c, d))
+    return ObservedProposition('SELF', (), _COGNITIVE_HOSTS[value[c:d]],
+        'neutral', 'fact', 'current_input', parts, possible_content=content)
+
+
+def _proposition_meaning(proposition):
+    content = proposition.possible_content
+    return (proposition.actor, tuple(sorted(proposition.arguments)),
+            proposition.predicate_lemma,
+            (_proposition_meaning(content), content.polarity, content.modality,
+             content.temporal_scope) if content else None)
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -195,7 +255,7 @@ def _node_kind(nucleus):
     return None
 
 
-def _fragment(source, nucleus):
+def _fragment(source, nucleus, plan=None):
     # Multi-span nuclei can contain unbounded relations. Keep them unknown in
     # this first consumer rather than stitching a new proposition together.
     if len(nucleus.source_span_ids) != 1:
@@ -223,8 +283,17 @@ def _fragment(source, nucleus):
     # Quote, report and conditional scopes need additional route semantics;
     # their presence is explicit in unknown gaps rather than silently dropped.
     context = source.normalized.get(span.source_field, '')
-    if re.search(r'[「」『』“”"?？]|(?:と言われ|と聞い|そうだ|なら|もし|かもしれ)', context):
+    if re.search(r'[「」『』“”"?？]|(?:と言われ|と聞い|そうだ|なら|(?<!か)もし)', context):
         return None
+    # An uncertain complement is allowed only inside a complete, shared-owner
+    # cognitive witness. Unread speculative scopes still block the field.
+    if re.search(r'かもしれ|かも知れ', context):
+        proved = {n.source_span_ids[0] for n in plan.nuclei
+                  if _source_current_cognition(n)} if plan is not None else set()
+        if any(s.span_id not in proved or _cognitive_proposition(s.raw_text) is None
+               for s in source.spans if s.source_field == span.source_field
+               and re.search(r'かもしれ|かも知れ', s.raw_text)):
+            return None
     # An open reported speaker can carry across sentences and source fields.
     # First-person grammar alone cannot close that attribution scope.
     record_context = '\n'.join(str(source.normalized.get(field, ''))
@@ -234,6 +303,8 @@ def _fragment(source, nucleus):
         return None
     value = span.raw_text[a:b].strip(' 、，。．')
     if not value:
+        return None
+    if _cognitive_proposition(value) is not None and not _source_current_cognition(nucleus):
         return None
     # current_user is the shared frame's default, not proof of its subject.
     # This initial cohort requires an explicit first-person finite host.
@@ -271,7 +342,7 @@ def _self_propositions(source, *, require_complete=False, plan=None):
         if (nucleus.grounding_kind not in ('explicit', 'user_stated_relation')
                 or nucleus.semantic_frame.actor != 'current_user'):
             continue
-        fragment = _fragment(source, nucleus)
+        fragment = _fragment(source, nucleus, plan)
         proposition = _proposition(fragment[0]) if fragment else None
         if proposition is not None:
             claims.append((proposition, fragment[1]))
@@ -382,7 +453,7 @@ def _active_sources(source_set):
                     or nucleus.grounding_kind not in ('explicit', 'user_stated_relation')
                     or nucleus.semantic_frame.actor != 'current_user'):
                 continue
-            fragment = _fragment(original, nucleus)
+            fragment = _fragment(original, nucleus, original_plan)
             if (fragment and (fragment[1].scalar_start, fragment[1].scalar_end) ==
                     (target.scalar_start, target.scalar_end)
                     and (_proposition(fragment[0]) or _node_kind(nucleus))):
@@ -428,9 +499,9 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
                 continue
             explicit = (nucleus.grounding_kind in ('explicit', 'user_stated_relation')
                         and nucleus.semantic_frame.actor == 'current_user')
-            fragment = _fragment(source, nucleus) if explicit else None
+            fragment = _fragment(source, nucleus, plan) if explicit else None
             proposition = _proposition(fragment[0]) if fragment else None
-            kind = ('ATTENTION_OR_THOUGHT' if proposition.modality == 'wish'
+            kind = ('ATTENTION_OR_THOUGHT' if proposition.modality == 'wish' or proposition.possible_content
                     else 'ACTION_OR_NONACTION') if proposition else _node_kind(nucleus)
             if not kind:
                 fragment = None
@@ -449,8 +520,7 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
             # Exact grammatical equivalence, not synonymous/topic matching.
             # A polite restatement or reordered cases is still one claim;
             # preserve each source witness without inventing a cooccurrence.
-            meaning = ((proposition.actor, tuple(sorted(proposition.arguments)),
-                        proposition.predicate_lemma) if proposition else label)
+            meaning = _proposition_meaning(proposition) if proposition else label
             # A sequence is about occurrences: collapsing A -> B -> A by
             # proposition would create a false cycle or erase repeated A.
             # Ordinary, unqualified claims retain their existing aggregation.

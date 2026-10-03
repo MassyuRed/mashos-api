@@ -122,6 +122,22 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         for private in ('relative_day', 'source_parts', 'visible_label', '昨日', '今日'):
             self.assertNotIn(private, encoded)
 
+    async def test_saved_cognition_keeps_uncertainty_without_private_content(self):
+        fx = fixture('私は記録を残した。私は資料を調べなかったかもしれないと思っている。')
+        row = fx['row']
+        with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))), \
+             patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+            value = await service.read_saved(OWNER)
+        self.assertEqual(value['items'][0], row)
+        projection = value['items'][0]['content_json']['watashiMap']
+        thought = next(n for n in projection['nodes'] if n['node_kind'] == 'ATTENTION_OR_THOUGHT')
+        self.assertEqual(thought['visible_label'], '資料を調べなかったかもしれないと思っている（この記述時点の考え）')
+        self.assertIn(thought['visible_label'], row['content_text'])
+        self.assertFalse(projection['edges'])
+        for encoded in (json.dumps(fx['private'], ensure_ascii=False), json.dumps(projection, ensure_ascii=False)):
+            for private in ('possible_content', 'source_parts', 'UNSPECIFIED', '私は'):
+                self.assertNotIn(private, encoded)
+
     async def test_read_never_generates_and_preserves_wire(self):
         with patch.object(service, '_rpc', AsyncMock(return_value=result([self.row]))), \
              patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):

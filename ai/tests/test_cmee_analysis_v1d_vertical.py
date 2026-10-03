@@ -3,6 +3,7 @@ from dataclasses import FrozenInstanceError, replace
 import hashlib
 import json
 import unittest
+from unittest.mock import patch
 
 from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
 from cocolon_meaning_experience_engine.contracts import EngineStatus, GenerationRequest
@@ -456,6 +457,141 @@ class AnalysisVerticalTests(unittest.TestCase):
                         result.artifact.safe_projection(authenticated_owner_scope=OWNER)
                 else:
                     self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+
+    def test_cognitive_content_is_possible_not_a_performed_action(self):
+        for content, polarity, time in [('資料を調べた', 'positive', 'past'),
+                ('資料を調べなかった', 'negative', 'past'),
+                ('資料を調べる', 'positive', 'nonpast'),
+                ('資料を調べない', 'negative', 'nonpast')]:
+            with self.subTest(content=content):
+                req = request(record(memo='\u3000私は' + content + 'かもしれないと思っている。'))
+                artifact = self.generate(req).artifact
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                self.assertEqual(len(visual['nodes']), 1)
+                n = artifact.graph.nodes[0]
+                self.assertEqual(n.node_kind, 'ATTENTION_OR_THOUGHT')
+                self.assertEqual((n.polarity, n.modality, n.temporal_scope), ('neutral', 'fact', 'current_input'))
+                inner = n.proposition.possible_content
+                self.assertEqual((inner.actor, inner.modality, inner.polarity, inner.temporal_scope),
+                                 ('UNSPECIFIED', 'possibility', polarity, time))
+                label = content + 'かもしれないと思っている（この記述時点の考え）'
+                self.assertEqual(visual['nodes'][0]['visible_label'], label)
+                self.assertIn(label, artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+                self.assertNotIn('実行済み', label)
+                self.assertFalse(visual['edges'])
+                self.assertIn('ACTION_OR_NONACTION', [g.missing_scope for g in artifact.graph.unknown_gaps])
+                self.assertEqual(set(i for _, a, b in n.proposition.source_parts for i in range(a, b)),
+                                 set(range(len(n.visible_label))))
+                e = n.evidence_refs[0]
+                envelope = freeze_analysis_sources(req).sources[0].envelope
+                literal = envelope.raw_utf8[e.utf8_start:e.utf8_end]
+                field = envelope.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                self.assertEqual(literal.decode(), field[e.scalar_start:e.scalar_end])
+                self.assertEqual(hashlib.sha256(literal).hexdigest(), e.literal_sha256)
+
+    def test_actual_action_survives_beside_cognition_without_inferred_order(self):
+        for memo in ('私は記録を残した。私は資料を調べたかもしれないと思っている。',
+                     '私は資料を調べたかもしれないと思っている。その後私は記録を残した。'):
+            with self.subTest(memo=memo):
+                artifact = self.generate(request(record(memo=memo))).artifact
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                self.assertEqual(sorted(n['node_kind'] for n in visual['nodes']),
+                                 ['ACTION_OR_NONACTION', 'ATTENTION_OR_THOUGHT'])
+                self.assertFalse(visual['edges'])
+                self.assertEqual(sum('実行済み' in n['visible_label'] for n in visual['nodes']), 1)
+
+    def test_cognitive_grouping_preserves_content_polarity_tense_and_host(self):
+        memo = ('私は資料を調べたかもしれないと思っている。'
+                '私は資料を調べなかったかもしれないと思っている。'
+                '私は資料を調べるかもしれないと思っている。'
+                '私は資料を調べたかもしれないと思ってしまう。'
+                '私は記録を残したかもしれないと思っている。')
+        artifact = self.generate(request(record(memo=memo))).artifact
+        self.assertEqual(len(artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes']), 5)
+        restated = ('私は考えをノートに書いたかもって考えちゃう。'
+                    '僕はノートに考えを書いたかもしれないと考えてしまう。')
+        artifact = self.generate(request(record(memo=restated), record(2, memo=restated))).artifact
+        self.assertEqual(len(artifact.graph.nodes), 1)
+        self.assertEqual(len(artifact.graph.nodes[0].evidence_refs), 4)
+        visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+        self.assertEqual(visual['nodes'][0]['evidence_badge_count'], 2)
+        self.assertFalse(visual['edges'])
+
+    def test_ordinary_cognitive_answer_retains_provenance_and_alternatives(self):
+        answer = ('私は資料を調べたかもしれないと思っている。'
+                  '私は資料を調べなかったかもしれないと思っている。')
+        req = request(self.with_answer(record(memo='私は記録を残した。'), answer))
+        artifact = self.generate(req).artifact
+        self.assertEqual(len(artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes']), 3)
+        sources = {s.envelope.envelope_id: s for s in freeze_analysis_sources(req).sources}
+        thoughts = [n for n in artifact.graph.nodes if n.proposition.possible_content]
+        self.assertEqual(len(thoughts), 2)
+        for n in thoughts:
+            e = n.evidence_refs[0]
+            self.assertEqual(sources[e.source_envelope_id].envelope.source_role, 'SUPPLEMENTAL_ANSWER')
+            self.assertEqual(len(n.record_refs), 1)
+        unavailable = self.generate(request(self.with_answer(record(),
+            '私は資料を調べたかもしれないと思っている。まだわからない。')))
+        self.assertEqual(unavailable.status, EngineStatus.UNAVAILABLE)
+
+    def test_cognitive_replacement_and_withdrawal_do_not_keep_old_scope(self):
+        thought = '私は資料を調べたかもしれないと思っている'
+        original = record(memo=thought + '。私は記録を残した。')
+        withdrawn = self.generate(request(self.with_answer(original, '「' + thought + '」は取り消します。'))).artifact
+        self.assertEqual(len(withdrawn.graph.nodes), 1)
+        self.assertNotIn('かもしれない', withdrawn.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+        for before, after in [('私は資料を調べた', thought), (thought, '私は資料を調べなかった')]:
+            with self.subTest(before=before):
+                req = request(self.with_answer(record(memo=before + '。'),
+                    '「' + before + '」ではなく「' + after + '」です。'))
+                artifact = self.generate(req).artifact
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                self.assertEqual(len(visual['nodes']), 1)
+                self.assertEqual(visual['nodes'][0]['node_kind'],
+                    'ATTENTION_OR_THOUGHT' if after == thought else 'ACTION_OR_NONACTION')
+                self.assertEqual(len(artifact.graph.source_updates), 1)
+                e = artifact.graph.nodes[0].evidence_refs[0]
+                sources = {s.envelope.envelope_id: s for s in freeze_analysis_sources(req).sources}
+                envelope = sources[e.source_envelope_id].envelope
+                self.assertEqual(envelope.source_role, 'SUPPLEMENTAL_ANSWER')
+                self.assertEqual(envelope.raw_utf8[e.utf8_start:e.utf8_end].decode(), after)
+
+    def test_unproved_cognitive_scopes_are_not_safe_surface_content(self):
+        for memo in ('友人は資料を調べたかもしれないと思っている。',
+                     '私は資料を調べたかもしれないと思っていない。',
+                     '私は資料を調べたかもしれないと思っていた。',
+                     '私は資料を調べたかもしれないと思っている？',
+                     'もし私は資料を調べたかもしれないと思っているなら、安心する。',
+                     '私は仕事が終わっただけなのに、資料を調べたかもしれないと思っている。',
+                     '私は資料を読んだかもしれないと思っている。',
+                     '私は資料を調べたいかもしれないと思っている。',
+                     '私は資料を調べたかもしれない。',
+                     '私は資料を調べる。',
+                     '友人の話によると、私は資料を調べたかもしれないと思っている。'):
+            with self.subTest(memo=memo):
+                result = self.generate(request(record(memo=memo)))
+                if result.artifact:
+                    with self.assertRaises(AnalysisSourceError):
+                        result.artifact.safe_projection(authenticated_owner_scope=OWNER)
+                else:
+                    self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+
+    def test_unread_uncertainty_still_blocks_other_claims_in_same_field(self):
+        for tail in ('まだ違うかもしれない。', '私は資料を読んだかもしれないと思っている。',
+                     'もし私は資料を見たなら、安心する。'):
+            result = self.generate(request(record(memo='私は記録を残した。'
+                '私は資料を調べたかもしれないと思っている。' + tail)))
+            if result.artifact:
+                with self.assertRaises(AnalysisSourceError):
+                    result.artifact.safe_projection(authenticated_owner_scope=OWNER)
+            else:
+                self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+
+    def test_cognitive_grammar_alone_cannot_replace_shared_semantic_witness(self):
+        target = 'cocolon_meaning_experience_engine.cores.analysis.intent_compiler._source_current_cognition'
+        with patch(target, return_value=False):
+            result = self.generate(request(record(memo='私は資料を調べたかもと思っている。')))
+        self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
 
     def test_application_mode_is_not_enabled(self):
         result = self.generate(replace(request(record()), execution_mode='ANALYSIS_APPLICATION'))
