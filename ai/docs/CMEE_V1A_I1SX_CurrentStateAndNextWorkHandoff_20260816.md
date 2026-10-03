@@ -1,3 +1,5 @@
+> 2026-10-04 u96/u97現在地：Mash承認のサーバー専用Analysis保存tableを同じDBへ適用。immutable保存、latest／status／monthly／履歴・詳細・既読のAPI接続を実装し、Python54・RN11＋旧互換2・隔離Postgres31項目を確認。稼働APIの配置／機能有効化／実機は未実施。最新結果は末尾u96/u97。以下の現在地は各時点の履歴。
+
 > 2026-10-03 u95現在地：認証済み保存期間loader→Analysis safe文章／図の内部生成を接続。新13＋既存26＝39検査PASS。現行tableのprivate／immutable保存不整合を確認し、canonical04 §15.1.1の専用保存先はMash判断待ち。実API／実機未接続。最新結果は末尾u95。
 
 > 2026-10-03 u94現在地：Analysisの引用補足訂正・撤回、本人向けsafe文章／図、RN latest／viewer受信を実装。backend26＋RN11＋旧互換2検査PASS。実DB・保存／API配信・実機は未完了。最新結果は末尾u94。
@@ -13865,3 +13867,42 @@ DBのemotions.created_atはtimestamp without time zoneで、既存saved-input ow
 検査環境はPython3.12.14。既存requirementsのFastAPI／HTTPXを一時test環境へ0.115.12／0.28.1で入れ、repo依存を変更しない。最初の合成回答fixtureは必須選択label欠落と未対応の引用文型で不成立だったため、現行保存形式／既存対応grammarへ修正。tier変更fixtureも実RPCのfresh tier応答へ揃えた。制限sandboxでは標準asyncio.to_threadだけの最小例もshutdownで停止し、途中実行を中断／timeout。auto-reviewで許可された通常実行に切替えて同じ実コードの39件を完走した。製品からthread処理を除去したり、実DB通信で通したりしていない。
 
 変更はAPI既存material／ASTOR／core source adapterの3file＋新test1。Analysis map §4.6とCMEE map／共有entry、canonical04／06、既存API handoffを更新する。新checker／台帳／service／外部AI／依存／SQLは追加しない。開始headはCocolon `651b38d88da7a48dbc58769912b4d1e3d4b9a9cf`、API `885c5d3299f2d88926f063786d1605ef4e49349a`。既存Draft PR30／3へ反映し、main／merge／deploy／DB設定／flag／native buildは変更しない。TestFlight6101送信済み・実機待ち、API7f1f7d92…read_onlyは前回引継ぎで今回はlive再確認していない。商品0/3・NOT_CLEAR・全体48%を保持。次の一作業は専用保存先の判断後に、immutable保存／API lifecycleを実装して既存RN受信へ結ぶこと。
+
+
+## 2026-10-04 JST u96/u97 — Analysis専用保存と既存API接続
+
+### 承認・再開と到達点
+
+Mashは「同じDBに、サーバー専用の分析保存テーブルを1つ設ける方針で、保存・API接続の実装へ進めていい？」へ明示的に「うん、進めていいよ。お願い」と承認した。u96でコードと合成検証を完了した後、migration toolの応答待ちで停止。u97の再開時、migration履歴・catalogで未適用（table／関数／triggerなし）を確認してから適用し、successと事後の実定義を確認した。応答不明のまま重複適用していない。
+
+稼働Supabase `cocolon-project / oeahmpmigszggnkyiivq` に `analysis_observed_artifacts` table 1つを追加済み。migration履歴は `20261003204421 / analysis_observed_artifacts`（UTC、JSTでは10/04）。repo sourceは `supabase/migrations/20261003134440_analysis_observed_artifacts.sql`、SHA-256 `dc72bcc744cab12b294e4609d78359b6365b2a3714e1268d3bbb77f2e400cfc3`。source filenameの時刻と実適用履歴を区別する。
+
+14列・14制約・4 index（全件valid/ready）・6関数・5 trigger（enabled）を照合した。6関数の保存本文がsource SQLと完全一致し、空search_path・definer範囲・実EXECUTE権限も確認。RLS有効、anon/authenticatedはSELECT/INSERT/UPDATE/DELETEすべて不可、service_roleはSELECT/INSERT/DELETEのみでUPDATE不可。auth.users削除はCASCADE。security advisorの新table通知は意図した `RLS Enabled No Policy / INFO` のみで、ユーザー直接アクセスを許すpolicyは作らない（[Supabase説明](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)）。既存schema全体の監査合格を主張しない。実利用者の入力行・本文は取得していない。
+
+### 実装
+
+全変更fileと責任の正本はCocolon `current_structure/03_analysis_current_structure.md` §4.7。
+
+- 新 `analysis_observed_service.py` が、認証済みAPI ownerの期間snapshot→既存CMEE→closed evidence serializer→原子的保存→safe読取を担当。生成時だけsource本文をメモリで扱い、private node labelや原入力JSONの丸ごと保存をしない。safeな本人向け文章・図とexact evidence/commitmentを保存する。
+- DB guardは期間全record＋thread/events＋tier/modeに結合したDB専用SHAで、CMEE canonical-byte commitmentとは別namespace。100件を超える期間は切り詰めず拒否する。
+- commitはREAD COMMITTEDを要求し、auth user行KEY SHARE NOWAIT→4source表SHARE NOWAIT→同transaction再照合→immutable INSERT。生成はlock外。同source/期間の再保存は既存identityへ解決。競合は409、失われたACKは503で成功と扱わず自動再試行しない。全userのsource書込や一部maintenanceと競合し得る短いtable lockのコストは残る。複数接続による高負荷競合試験は未実施。
+- 元入力追加・変更・削除、thread/events変更・削除、実tier変更で関連artifactを削除。期間外の新入力も本人latestをdirtyにする。no-op tier再保存は履歴を消さない。読取でもsource/tier/retentionを再照合し、削除triggerを逃しても旧結果を返さない。
+- 既存latest/status/monthly、履歴・詳細・unreadにV2分岐を接続。latest/statusは同じtier既定modeと期間日数で保存版を選ぶ。履歴は旧版とV2をaccess後に安定順で統合し、詳細は同じUUIDへ解決。Free履歴不可／Plus deep不可をserverで守る。monthlyはJST月初exclusive。
+- 読取で意味を生成し直さない。保存textと保存projectionの既存線形化の一致、closed keysとidentityを確認して返す。不一致／不正V2は旧本文へfallbackしない。RN既読は後から取得した別statusではなく、実際に表示したvalidated projection_ofを使う。
+
+### 設定と提供範囲
+
+`COCOLON_ANALYSIS_OBSERVED_MODE`: `off`がsource既定で旧経路、`read_only`はV2保存読取のみ、`development`は本人APIからV2生成・保存を許可。未知値はread_only。稼働環境変数を変更していない。いったんV2を利用した環境の生成停止はread_onlyを使い、単純off切戻しで保存V2を見えなくしない。
+
+V2 active request失敗から旧生成へ戻らない。`/mymodel/infer`、既存cron/workerの旧builderは今回変更しておらず、global cutoverの単一generation owner成立は別途確認が必要。一般公開activation packet完了を主張しない。monthlyのinclude_secret=falseと任意now_isoは未対応として明示400。limited grammar、1record当たり複数補足の未対応、annotations/conflict意味生成・期間比較、IF/SavedRouteIntent/exportの残件は継承する。プラン別の高度な意味品質完成を今回の権限実装と混同しない。
+
+### 検証結果と次の工程
+
+- Python `test_analysis_observed_api` 6、`test_analysis_observed_storage` 9、既存saved-period13、core26：計54 PASS。実FastAPI・認証helper・lifecycle・CMEEを使い、Auth/DB通信だけ合成応答。本人の実token・実入力による稼働API往復ではない。
+- RN V2実component/latest/viewer 11 PASS、旧Watashi Map Phase4/5 2 PASS。既読期待を表示artifact identityへ更新。native未確認。
+- 隔離PGlite上に既存Q2/Q3と今回SQLを実適用して31項目PASS。保存/再取得/同identity、ACL、mode境界、source変更、trigger迂回時read拒否、cascade、UPDATE禁止、no-op tier、期間絞込み、isolation拒否を検証。合成fixture 5486 bytes、保存5ms/読取3msはその隔離実行値で、稼働DBのlatency測定ではない。
+- 独立read-only reviewer2名の具体指摘（text/図不一致、CHECK NULL抜け、tier no-op、旧mode互換、read_onlyのage表示、mode/期間選択）を修正し、残存blocking指摘なし。機械成功を商品受入れへ換算しない。
+
+次は今回の指定API版を開発環境へ配置し、read_only/developmentの限定設定と既存workerの担当を確認したうえで、本人保存入力→分析→保存→再表示を実アプリで通す。必要な配置・有効化・native配布はこのDB承認へ黙って含めない。新しいtool待ちを繰り返す前に実stateを読んで再開する。
+
+既存Draft PR3/30へ反映する。main変更／merge／Render deploy／環境変数変更／native build・配布なし。既存TestFlight6101・配置API7f1f7d92…は過去の引継ぎで今回再確認していない。全体48%、商品0/3・NOT_CLEARを保持する。

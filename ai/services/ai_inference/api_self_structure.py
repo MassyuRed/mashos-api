@@ -1339,6 +1339,10 @@ def register_self_structure_routes(app: FastAPI) -> None:
 
         uid = await _resolve_user_id_from_token(access_token)
 
+        from analysis_observed_service import observed_enabled, saved_status
+        if observed_enabled():
+            return SelfStructureLatestStatusResponse(**(await saved_status(str(uid), period=DEFAULT_LATEST_PERIOD)))
+
         try:
             resp = await _sb_get(
                 f"/rest/v1/{SELF_STRUCTURE_REPORTS_READ_TABLE}",
@@ -1423,6 +1427,9 @@ def register_self_structure_routes(app: FastAPI) -> None:
             from subscription_store import get_subscription_tier_for_user
 
             tier = await get_subscription_tier_for_user(uid, default=SubscriptionTier.FREE)
+            from analysis_observed_service import observed_enabled, read_saved
+            if observed_enabled():
+                tier = SubscriptionTier((await read_saved(uid, limit=1))['subscription_tier'])
             default_mode = (
                 MyProfileMode.LIGHT
                 if tier == SubscriptionTier.FREE
@@ -1449,6 +1456,11 @@ def register_self_structure_routes(app: FastAPI) -> None:
         except Exception as exc:
             logger.warning("Failed to resolve subscription tier/report_mode (deny): %s", exc)
             raise HTTPException(status_code=403, detail="MyProfile report is not available")
+
+        from analysis_observed_service import observed_enabled, ensure_saved
+        if observed_enabled():
+            return SelfStructureLatestEnsureResponse(**(await ensure_saved(uid,
+                period=effective_period, report_mode=effective_report_mode, ensure=ensure, force=force)))
 
         # ---- Fetch latest self-structure analysis refs (stale source-of-truth) ----
         latest_analysis_rows: Dict[str, Optional[Dict[str, Any]]] = {}
@@ -1733,6 +1745,9 @@ def register_self_structure_routes(app: FastAPI) -> None:
             from subscription_store import get_subscription_tier_for_user
 
             tier = await get_subscription_tier_for_user(uid, default=SubscriptionTier.FREE)
+            from analysis_observed_service import observed_enabled, read_saved
+            if observed_enabled():
+                tier = SubscriptionTier((await read_saved(uid, limit=1))['subscription_tier'])
             if tier == SubscriptionTier.FREE:
                 raise HTTPException(status_code=403, detail="MyProfile report is available for Plus/Premium users only")
 
@@ -1762,6 +1777,13 @@ def register_self_structure_routes(app: FastAPI) -> None:
         except Exception as exc:
             logger.warning("Failed to resolve subscription tier/report_mode (deny): %s", exc)
             raise HTTPException(status_code=403, detail="MyProfile report is not available")
+
+        from analysis_observed_service import observed_enabled, ensure_saved
+        if observed_enabled():
+            if not include_secret or body.now_iso is not None:
+                raise HTTPException(400, 'analysis_period_override_unavailable')
+            return SelfStructureMonthlyEnsureResponse(**(await ensure_saved(uid,
+                period=effective_period, report_mode=effective_report_mode, force=force, monthly=True)))
 
         # ---- time helpers (JST fixed) ----
         JST = timezone(timedelta(hours=9))

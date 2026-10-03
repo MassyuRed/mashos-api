@@ -121,6 +121,20 @@ async def list_history(
     lim = max(1, min(int(limit or 60), 200))
     off = max(0, int(offset or 0))
     needed = off + lim + 1
+    from analysis_observed_service import observed_enabled, read_saved
+    observed = family == 'self_structure' and observed_enabled()
+    observed_rows = []
+    if observed:
+        if off > 10000:
+            raise HTTPException(400, 'analysis_page_invalid')
+        while len(observed_rows) < needed:
+            take = min(200, needed-len(observed_rows))
+            result = await read_saved(me, report_type=report_type, history=True,
+                limit=take, offset=len(observed_rows))
+            tier_str = result['subscription_tier']
+            observed_rows.extend(result['items'])
+            if len(result['items']) < take:
+                break
     raw_offset = 0
     raw_page_size = max(50, min(200, lim * 2))
     filtered_rows: List[Dict[str, Any]] = []
@@ -134,7 +148,7 @@ async def list_history(
             "select": REPORT_HISTORY_SELECT,
             "user_id": f"eq.{me}",
             "report_type": f"eq.{str(report_type or 'monthly')}",
-            "order": "period_end.desc,generated_at.desc,updated_at.desc",
+            "order": "period_end.desc,generated_at.desc,updated_at.desc,id.desc",
             "limit": str(raw_page_size),
             "offset": str(raw_offset),
         }
@@ -165,9 +179,12 @@ async def list_history(
         raw_offset += len(chunk)
 
         for row in chunk:
+            if observed and not _legacy_mode_allowed(row, tier_str):
+                continue
             published_row = config.access_fn(
                 row,
-                context=context,
+                context=None if observed else context,
+                tier_str=tier_str,
                 requested_report_type=str(report_type or "monthly"),
                 now_utc=now,
             )
@@ -179,6 +196,8 @@ async def list_history(
         if len(chunk) < raw_page_size:
             break
 
+    if observed:
+        filtered_rows = sorted(filtered_rows + observed_rows, key=_history_sort_key, reverse=True)
     page = filtered_rows[off : off + lim]
     has_more = len(filtered_rows) > (off + lim)
     next_offset = (off + lim) if has_more else None
@@ -220,7 +239,18 @@ async def get_detail(
     if not rid:
         raise HTTPException(status_code=400, detail="report_id is required")
 
-    tier_str = await _resolve_subscription_tier(me)
+    from analysis_observed_service import observed_enabled, read_saved
+    observed = family == 'self_structure' and observed_enabled()
+    observed_tier = None
+    if observed:
+        result = await read_saved(me, report_id=rid, history=True, limit=1)
+        observed_tier = result['subscription_tier']
+        if result['items']:
+            return {'status': 'ok', 'item': result['items'][0]}
+        if result['matched']:
+            raise HTTPException(404, 'analysis_report_unavailable')
+
+    tier_str = observed_tier or await _resolve_subscription_tier(me)
     now = now_utc or datetime.now(timezone.utc)
     context = await resolve_report_view_context(me, now_utc=now)
 
@@ -246,8 +276,11 @@ async def get_detail(
     rows = _pick_rows(resp)
     if not rows:
         raise HTTPException(status_code=404, detail=config.not_found_detail)
+    if observed and not _legacy_mode_allowed(rows[0], tier_str):
+        raise HTTPException(404, config.not_found_detail)
 
-    published_row = config.access_fn(rows[0], context=context, now_utc=now)
+    published_row = config.access_fn(rows[0], context=None if observed else context,
+                                   tier_str=tier_str, now_utc=now)
     if not published_row:
         raise HTTPException(status_code=404, detail=config.not_found_detail)
 
@@ -266,3 +299,19 @@ async def get_detail(
         "status": "ok",
         "item": item,
     }
+
+
+def _legacy_mode_allowed(row, tier):
+    from api_self_structure import _extract_saved_report_mode
+    mode = _extract_saved_report_mode(row) or 'standard'
+    return tier == 'premium' or (tier == 'plus' and mode in {'light', 'standard'})
+
+
+def _history_sort_key(row):
+    def instant(key):
+        try:
+            dt = datetime.fromisoformat(str(row.get(key) or '').replace('Z', '+00:00'))
+            return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+        except ValueError:
+            return datetime.min.replace(tzinfo=timezone.utc)
+    return (instant('period_end'), instant('generated_at'), instant('updated_at'), str(row.get('id') or ''))

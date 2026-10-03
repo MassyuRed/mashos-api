@@ -351,6 +351,12 @@ async def _fetch_latest_ready_myweb_ids(user_id: str, report_type: str, *, tier_
 
 
 async def _fetch_latest_self_structure_ids(user_id: str, *, tier_str: str, limit: int) -> List[str]:
+    from analysis_observed_service import observed_enabled
+    if observed_enabled():
+        from report_artifact_read_service import list_history
+        result = await list_history(user_id=user_id, family='self_structure', report_type='monthly',
+                                    limit=limit, offset=0)
+        return [row['id'] for row in result['items']]
     retention = history_retention_bounds_for_query(tier_str)
     gte_iso = str(retention.get("gte_iso") or "").strip()
     lt_iso = str(retention.get("lt_iso") or "").strip()
