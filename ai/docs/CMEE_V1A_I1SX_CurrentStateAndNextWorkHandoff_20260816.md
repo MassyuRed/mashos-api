@@ -1,3 +1,5 @@
+> 2026-10-04 u100現在地：指定Analysis API315f5b5…がRenderでlive。healthz/bootstrap200と未認証self-structure/status401を実確認。分析developmentはMashの設定手順実行報告、本人生成成功は未確認。次はPR30 branchから新規TestFlight build、本人入力→保存→再表示。詳細は末尾u100。
+
 > 2026-10-04 u99現在地：Mashが分析API配置・development有効化・新版TestFlight送信と必要な管理画面操作を承認済み。再承認不要。RenderはGoogleパスキー確認待ち、GitHub管理画面も未ログイン。配置/設定変更/新buildは未開始。再開は認証の続きから。詳細は末尾u99。
 
 > 2026-10-04 u98現在地：分析source/DBの既存実装を継承。稼働APIは分析追加前、TestFlight6101もV2表示追加前と再確認。次は指定API版の開発配置・分析development有効化・V2対応TestFlight更新と本人一往復。実配置/有効化/配布は個別判断待ち。詳細は末尾u98。
@@ -13947,3 +13949,25 @@ Mashはu98で提示した「必要な管理画面操作も含め、この範囲�
 - 実機の最小確認は新版で「分析 → わたしマップ」を開き、文章・項目・件数・線・未確定表示を読み、入力変更や強制更新を挟まず「こころ天気」へ切替えてから「わたしマップ」を再表示する。初回最新artifactの再表示を確認し、月次用の「わたしマップの履歴」への出現を条件にしない。保存identityはAPI側で照合する。空/422等は実表示を記録し、未対応sourceを成功扱いしない。
 
 今回は既存3文書への承認/再開地点記録のみ。新規source/test/SQL/依存/workflow変更、DB適用、配置、環境変数変更、native build/送信、実本人往復の成功は0。STRUCTURE_MAP_DELTA_NONE。商品0/3・NOT_CLEAR・全体48%を保持。認証後に承認済み実行をそのまま再開し、準備や記録更新を商品進捗へ換算しない。
+
+
+## 2026-10-04 JST u100 — 指定Analysis API配置liveと公開稼働/認証拒否確認、新版native開始待ち
+
+MashがRenderを自分のブラウザで操作すると指示したため、承認済み範囲のEnvironment `COCOLON_ANALYSIS_OBSERVED_MODE=development` → **Save only** → **Deploy a specific commit** の手順を渡した。Mashから「開始したー」と報告を受け、華恋はRender連携の読取と公開HTTPで事後確認した。Cloud Browserログイン待ちはRenderの実行blockerではなくなった。
+
+### 確認した実配置
+
+- service `mashos-api / srv-d4ppfpm3jp1c73952bj0`、deploy `dep-db0n8lnavr4c738g3s5g`、manual。
+- exact commit `315f5b5dacb866e62805cfd6a906984c193dcc76`。開始2026-10-03T21:32:06Z、**live/finished 21:33:30Z（2026-10-04 JST06:33）**。旧7f1f7d92…のままとは扱わない。
+- 配置後service再読取：linked branch=main、autoDeploy=no/off。source/依存/workflow/main/merge/料金/DBの追加変更なし。既存DB migrationを再適用していない。
+- live後の実HTTP GET：`/healthz` **200** / status=ok、`/app/bootstrap` **200** / emlis_threads_enabled=true、未認証 `/self-structure/latest/status` **401** / Bearer token required。private本文・本人tokenを使わず、生成/writeを伴う確認はしていない。
+- **Analysis modeは未認証APIでは判別できない**。exact sourceのbootstrapにAnalysis flagはなく、self-structureはmode分岐より先に認証する。development設定は手順に対するMashの実行報告であり、環境変数値の独立取得や本人生成成功とは区別する。emlis_threads_enabled=trueもEmlis developmentの証拠ではない。
+- ログ読取toolはworkspace未選択で取得不可だった。配置statusとHTTPの直接確認で必要な初期稼働を検証し、ログ取得成功とはしない。新規秘密情報取得・credential操作なし。
+
+### 残る最小一往復
+
+新しいiOS runはまだなく、最新run61/37115985371成功、TestFlight6101は分析V2前の版。GitHub管理画面は未ログインで、新規workflow_dispatchは接続toolにない。既存 `iOS TestFlight Build / .github/workflows/ios-build.yml` の **Run workflow** で `agent/three-core-cmee-current-structure-20260815` branchを選択し、新規開始する必要がある。旧run61の再実行はしない。開始前確認head a811481c…（u99文書のみ、app product baseline dd47c0aa…）、このu100も文書のみ。実runのhead SHA・build番号・送信結果は開始後に記録する。
+
+native更新後、本人の保存入力がある「分析 → わたしマップ」を開き、文章/図、入力を変えず「こころ天気」へ切替後の再表示を確認する。同UUID保存の検証は本人認証後に行う。空/422/unsupportedは未生成として記録する。月次履歴への出現は初回latest確認条件にしない。
+
+今回の前進は**指定APIの実配置と初期HTTP確認**。本人入力の生成・immutable保存・再表示、native build/送信・端末導入、商品受入れは未完了。既存3文書のみ更新し、STRUCTURE_MAP_DELTA_NONE、全体48%・商品0/3/NOT_CLEARを維持。配置/有効化/native配布の承認はu99から継続し、再承認待ちへ戻さない。
