@@ -100,11 +100,16 @@ class AnalysisSourceSet:
     sources: tuple[AnalysisSource, ...]
 
 
-def _time(value: str) -> datetime:
+def _time(value: str, *, saved_utc: bool = False) -> datetime:
     try:
         result = datetime.fromisoformat(value.replace('Z', '+00:00'))
         if result.tzinfo is None:
-            raise ValueError
+            # public.emotions.created_at is timestamp without time zone and
+            # its existing saved-input owner defines it as UTC. Preserve the
+            # exact stored string/commitment; only interpret its time here.
+            if not saved_utc or 'T' not in value:
+                raise ValueError
+            result = result.replace(tzinfo=timezone.utc)
         return result.astimezone(timezone.utc)
     except (ValueError, TypeError, AttributeError):
         raise AnalysisSourceError('analysis_timestamp_invalid') from None
@@ -238,8 +243,8 @@ def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSour
         originals[member.saved_record_ref] = (member, original)
     members, sources = [], []
     for ref, (member, original) in sorted(originals.items(),
-            key=lambda item: (_time(item[1][1]['created_at']), item[0])):
-        included = start <= _time(original['created_at']) < end
+            key=lambda item: (_time(item[1][1]['created_at'], saved_utc=True), item[0])):
+        included = start <= _time(original['created_at'], saved_utc=True) < end
         children = []
         for supplement in member.supplements:
             if (type(supplement) is not AnalysisSupplement or

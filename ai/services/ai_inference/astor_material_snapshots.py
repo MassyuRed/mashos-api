@@ -33,12 +33,15 @@ v1 のスコープ
 
 from __future__ import annotations
 
+import asyncio
+from dataclasses import dataclass, field
 import hashlib
 import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
+from uuid import UUID, uuid4
 
 import httpx
 
@@ -52,6 +55,176 @@ except Exception:  # pragma: no cover
 
 
 logger = logging.getLogger("astor_material_snapshots")
+
+
+class AnalysisSavedSourceError(ValueError):
+    """Fixed codes only; source bodies and database errors stay private."""
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AnalysisSavedPeriod:
+    """Request-local source snapshot, not a durable read/write authorization."""
+    request: Any = field(repr=False)
+    subscription_tier: str
+    report_mode: str
+    source_guards: tuple = field(repr=False)
+
+
+async def _analysis_period_ids(owner: str, start: str, end: str) -> tuple[str, ...]:
+    from supabase_client import sb_get
+    try:
+        response = await sb_get('/rest/v1/emotions', params={
+            'select': 'id', 'user_id': 'eq.' + owner,
+            'and': '(created_at.gte.' + start + ',created_at.lt.' + end + ')',
+            'order': 'created_at.asc,id.asc', 'limit': '101',
+        }, prefer='count=exact', timeout=8.0)
+        if response.status_code not in (200, 206):
+            raise AnalysisSavedSourceError('analysis_saved_source_unavailable')
+        rows = response.json()
+        total_text = response.headers.get('content-range', '').rsplit('/', 1)[-1]
+        if not total_text.isdecimal() or not isinstance(rows, list):
+            raise AnalysisSavedSourceError('analysis_period_incomplete')
+        total = int(total_text)
+        if total > 100 or len(rows) > 100:
+            raise AnalysisSavedSourceError('analysis_period_limit_exceeded')
+        ids = tuple(str(UUID(row['id'])) for row in rows if type(row) is dict and set(row) == {'id'})
+        if total != len(rows) or len(ids) != len(rows) or len(set(ids)) != len(ids):
+            raise AnalysisSavedSourceError('analysis_period_incomplete')
+        return ids
+    except AnalysisSavedSourceError:
+        raise
+    except (httpx.HTTPError, ValueError, TypeError, KeyError, AttributeError):
+        raise AnalysisSavedSourceError('analysis_saved_source_unavailable') from None
+
+
+def _analysis_saved_member(snapshot, *, owner, input_id, tier, start, end):
+    from cocolon_meaning_experience_engine.cores.analysis.source_adapter import (
+        AnalysisSavedRecord, AnalysisSupplement, ORIGINAL_FIELDS, canonical_bytes, commitment, _time,
+    )
+    from emlis_thread_service import _check, _request
+    from emlis_thread_store import ThreadStoreError
+    from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread
+    from cocolon_meaning_experience_engine.source_kernel import SourceAdmissionError
+    try:
+        original = snapshot['original']
+        if (type(original) is not dict or set(original) != ORIGINAL_FIELDS
+                or original['id'] != input_id or snapshot['tier'] != tier):
+            raise AnalysisSavedSourceError('analysis_saved_source_changed')
+        created = _time(original['created_at'], saved_utc=True)
+        if not start <= created < end:
+            raise AnalysisSavedSourceError('analysis_saved_source_changed')
+        thread = _check(snapshot)
+        events = snapshot['events']
+        if type(events) is not list or any(type(e) is not dict for e in events):
+            raise AnalysisSavedSourceError('analysis_saved_source_invalid')
+        if thread is None:
+            if events:
+                raise AnalysisSavedSourceError('analysis_saved_source_invalid')
+            answers, guard = (), None
+        else:
+            if (thread['user_id'] != owner or thread['original_emotion_id'] != input_id
+                    or type(thread['revision']) is not int or thread['revision'] < 1
+                    or any(e['thread_id'] != thread['id'] for e in events)):
+                raise AnalysisSavedSourceError('analysis_saved_source_invalid')
+            answer_events = [e for e in events if e['kind'] == 'ANSWER']
+            if len(answer_events) > 1:
+                raise AnalysisSavedSourceError('analysis_multiple_answers_not_supported')
+            request = _request(snapshot, include_context=False)
+            admitted = admit_emlis_thread(request)
+            question_events = [e for e in events if e['kind'] == 'QUESTION']
+            question_ids = [e['question_id'] for e in question_events]
+            if (len(set(question_ids)) != len(question_ids)
+                    or len(question_events) != thread['issued_count']
+                    or any(e['question_id'] != e['payload']['question_id']
+                        or e['thread_id'] != e['payload']['thread_id']
+                        or e['round_index'] != index
+                        or e['payload']['original_source_ref'] != request.emlis_thread.original_source_ref
+                        for index, e in enumerate(question_events, 1))
+                    or any(e['question_id'] not in question_ids for e in answer_events)):
+                raise AnalysisSavedSourceError('analysis_saved_source_invalid')
+            answers = tuple(a.source for a in admitted.answers)
+            if len(answers) != len(answer_events) or any(
+                    a.answer_id != e['id'] or a.question_id != e['question_id']
+                    or a.round_index != e['round_index'] for a, e in zip(answers, answer_events)):
+                raise AnalysisSavedSourceError('analysis_saved_source_invalid')
+            guard = commitment([thread['id'], thread['revision'], question_events,
+                                [e['payload']['source'] for e in answer_events]])
+        record_version = commitment(original)
+        supplements = tuple(AnalysisSupplement(a.answer_id, owner, input_id,
+            record_version, a.answer_text_private, commitment(a.answer_text_private), a.source_role)
+            for a in answers)
+        member = AnalysisSavedRecord(owner, input_id, record_version,
+            canonical_bytes(original).decode('utf-8'), supplements)
+        return member, (input_id, record_version, guard)
+    except AnalysisSavedSourceError:
+        raise
+    except (ThreadStoreError, SourceAdmissionError, ValueError, TypeError, KeyError, AttributeError):
+        raise AnalysisSavedSourceError('analysis_saved_source_invalid') from None
+
+
+async def load_analysis_saved_period(authorization: Optional[str], *,
+        period_start: str, period_end: str, report_mode: str) -> AnalysisSavedPeriod:
+    """Authenticate, read the complete retained period, bind original/answers.
+
+    Uses the existing owner/retention-checked saved-input RPC. No caller-owned
+    user ID, generated Emlis body, question text or derived snapshot is input.
+    This reader does not persist, activate a route or authorize a later write.
+    """
+    from api_account_visibility import _require_user_id
+    from fastapi import HTTPException
+    from subscription import SubscriptionTier, MyProfileMode, is_myprofile_mode_allowed
+    from subscription_store import get_subscription_tier_for_user
+    from emlis_thread_store import EmlisThreadStore, ThreadStoreError
+    from cocolon_meaning_experience_engine.cores.analysis.source_adapter import AnalysisObservedMapRequest, _time
+    from publish_governance import timestamp_in_history_retention
+    try:
+        owner = str(UUID(await _require_user_id(authorization)))
+    except (HTTPException, httpx.HTTPError, ValueError, TypeError, AttributeError):
+        raise AnalysisSavedSourceError('analysis_auth_unavailable') from None
+    try:
+        start, end = _time(period_start), _time(period_end)
+        if start >= end or end > datetime.now(timezone.utc):
+            raise AnalysisSavedSourceError('analysis_period_invalid')
+        modes = {'light': MyProfileMode.LIGHT, 'standard': MyProfileMode.STANDARD,
+                 'deep': MyProfileMode.STRUCTURAL}
+        tier = await get_subscription_tier_for_user(owner, default=SubscriptionTier.FREE)
+        if (tier not in tuple(SubscriptionTier) or report_mode not in modes
+                or not is_myprofile_mode_allowed(tier, modes[report_mode])):
+            raise AnalysisSavedSourceError('analysis_report_mode_unavailable')
+        # Never call a partially retained interval a complete period.
+        now = datetime.now(timezone.utc)
+        if not timestamp_in_history_retention(start.isoformat(), tier.value, now):
+            raise AnalysisSavedSourceError('analysis_period_not_retained')
+        ids = await _analysis_period_ids(owner, start.isoformat(), end.isoformat())
+        store, semaphore = EmlisThreadStore(), asyncio.Semaphore(4)
+        async def read(input_id):
+            async with semaphore:
+                snapshot = await store.read(owner, input_id=input_id)
+                return _analysis_saved_member(snapshot, owner=owner, input_id=input_id,
+                    tier=tier.value, start=start, end=end)
+        records = await asyncio.gather(*(read(input_id) for input_id in ids))
+        request = AnalysisObservedMapRequest('analysis-saved-' + uuid4().hex, owner,
+            start.isoformat(), end.isoformat(), tuple(member for member, guard in records))
+        return AnalysisSavedPeriod(request, tier.value, report_mode, tuple(guard for member, guard in records))
+    except AnalysisSavedSourceError:
+        raise
+    except (ThreadStoreError, HTTPException, httpx.HTTPError, ValueError, TypeError, KeyError, AttributeError):
+        raise AnalysisSavedSourceError('analysis_saved_source_unavailable') from None
+
+
+async def recheck_analysis_saved_period(authorization: Optional[str], saved: AnalysisSavedPeriod) -> None:
+    """Reject a changed cohort/answer/access before returning a generated view.
+
+    A second read is not an atomic save or an ongoing permission. Durable
+    publication must eventually recheck in the storage transaction itself.
+    """
+    fresh = await load_analysis_saved_period(authorization,
+        period_start=saved.request.period_start, period_end=saved.request.period_end,
+        report_mode=saved.report_mode)
+    if (fresh.request.authenticated_owner_scope != saved.request.authenticated_owner_scope
+            or fresh.subscription_tier != saved.subscription_tier
+            or fresh.source_guards != saved.source_guards):
+        raise AnalysisSavedSourceError('analysis_saved_source_changed')
 
 SUPABASE_URL = (os.getenv("SUPABASE_URL") or "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
@@ -2383,4 +2556,3 @@ async def generate_and_store_material_snapshots(
 def _merge_text_parts(parts: List[str]) -> str:
     cleaned = [str(x).strip() for x in parts if str(x or "").strip()]
     return "\n".join(cleaned) if cleaned else ""
-

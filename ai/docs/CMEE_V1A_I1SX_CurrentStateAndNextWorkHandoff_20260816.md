@@ -1,3 +1,5 @@
+> 2026-10-03 u95現在地：認証済み保存期間loader→Analysis safe文章／図の内部生成を接続。新13＋既存26＝39検査PASS。現行tableのprivate／immutable保存不整合を確認し、canonical04 §15.1.1の専用保存先はMash判断待ち。実API／実機未接続。最新結果は末尾u95。
+
 > 2026-10-03 u94現在地：Analysisの引用補足訂正・撤回、本人向けsafe文章／図、RN latest／viewer受信を実装。backend26＋RN11＋旧互換2検査PASS。実DB・保存／API配信・実機は未完了。最新結果は末尾u94。
 
 > 2026-10-03 u93現在地：Analysis V1-Dのoffline部分観測graphと同一artifactのprivate文章/図用previewを実装。18検査PASS。補足解釈・公開safe表現・実DB/API/RN/実機は未完了。最新結果は末尾u93。
@@ -13840,3 +13842,26 @@ RNに`watashiMapV2Contract.js`と`WatashiMapV2Renderer.js`を追加し、latest�
 完成範囲は補足の限定解釈＋offline safe producer＋RN receiver。実DB期間loader、immutable保存、latest／history／detailの保存identity解決と実API v2配信は未接続であり、次はこのlifecycleを接続して本人の保存入力から開発画面へ通す。画面に固定dummyを埋め込んで成立とはしない。順序線のpositive cohort、annotations／conflictの意味生成、期間比較も未完了。IF／SavedRouteIntent／外部exportはHOLD。
 
 開始headはCocolon `2012c4d3776b05e49d05c182f9e5fb902702cb2e`、API `ddf3bd7cb13c1d4922fa7aa5261e819ba70b1047`。既存Draft PR30／3へ反映するが、main／merge／deploy／DB／runtime flag／native buildは変更しない。TestFlight1.0(6101)送信済み・端末確認待ち、配置API7f1f7d92…／read_onlyは前回状態の引継ぎで今回再確認したlive状態ではない。商品0/3・NOT_CLEAR・全体48%を保持。実装検査を商品合格へ換算しない。
+
+
+## 2026-10-03 u95 — 認証済み保存期間入力からAnalysis生成へ接続、専用保存先の判断待ち
+
+Mashの継続実装指示を受け、u94結果とfresh PR30／PR3、全体設計／全ファイル地図の同一blob、最新weekly20261003 §6.6〜6.10、canonical04／05とAnalysis mapを照合。今回は保存入力→分析生成・保存／API接続を予定したが、実際の既存保存契約がprivate immutable artifactと両立しないことを確認した。rootだけが編集／検査／GitHub反映、補助はsourceとAPI契約のread-only review。
+
+既存 `astor_material_snapshots.py` に `load_analysis_saved_period`／`recheck_analysis_saved_period`、既存 `astor_self_structure_report.py` に `prepare_saved_analysis_observed_map` を実装した。既存bearer verifierで本人を確定し、tier／mode／保持期間を確認して、emotionsの期間ID集合を取得する。半開区間・created_at/idの安定順序・count=exact・101件目で全100件以内を確認し、欠落／上限超／保持期間外の窓を黙って切り詰めない。各recordは既存EmlisThreadStore.readで本人のlive原7fieldと保存回答を取得する。DBのLIVE／version列を捏造しない。
+
+原入力のexact commitmentと、thread source_snapshotの一致、親／質問／roundの束縛を既存Emlis ownerで検証する。原本文、memo_action、選択labelは保存された各fieldを保つ。QUESTIONは回答の結合確認だけに使い、Emlis生成本文／意味checkpointはsourceにしない。Q3複数回答は現Analysisの1補足範囲外としてUNAVAILABLE。reviewで見つかったQUESTION保存行とpayloadの不一致も修正し、question_id／thread_id／round順・一意性・original_source_refを検証、回答が実際の保存QUESTIONへ結び付くことを確認した。source guardは原入力commitment・thread revision・QUESTION metadata・補足の完全source metadataを持つ。
+
+DBのemotions.created_atはtimestamp without time zoneで、既存saved-input ownerはUTCと定義している。core source_adapterはこの保存時刻だけをUTC解釈できるよう変更し、原文字列・exact record commitmentを書き換えない。要求期間は引き続きtimezone必須。保存入力→CMEE→safe文章／図を実際のsourceで生成し、返却前に本人・tier・期間ID集合・原入力・補足metadataを再読取する。これで観測できる追加／削除／編集／降格等は結果を保留するが、将来のDB commitと原子的な保証ではない。
+
+新entryは内部read-onlyで未登録・未配置。原文labelを持つprivate artifact／previewは返さずsafe DTOだけを返す。旧builder、latest upsert、monthly、/mymodel/infer、cron／workerは変更せず、V2失敗から旧生成へfallbackしない。modeに対する権限は検査するが、light／standard／deepの分析深度の差はまだ共通部分graphのまま。商品tier別完成を主張しない。
+
+**保存先の実測と判断。** Supabase skillを使用し、公式changelog／RLS資料と既存ownerを確認。cocolon-projectのcatalog／columns／constraints／grants／policy／view定義をread-only SQLで確認した。入力／本人情報の実データは取得していない。myprofile_reportsはRLS enabledで本人direct SELECT policyがあり、全content_jsonがAPI serializerを通さず読める。self_structure_reports viewはsecurity_invoker=trueかつservice_role SELECTのみだが、基底tableの直接読取は残る。uniqueはowner/report_type/period_start/period_end、期間はdate。既存writerはlatest固定1970期間とmonthlyへmerge-upsertし、旧schema行削除分岐もある。
+
+従ってcurrent tableへprivate canonicalを足す案は `NO_SAFE_ANALYSIS_V1D_STORAGE_STOP`。canonical04 §15.1がchild／dedicated storageをseparate Mash decisionと明記しているため、無断で新table／schema／flag／公開routeを作らず、影響しないloader→生成を完了した。最小推奨案は**同じDBにbackend専用immutable analysis_observed_artifacts tableを1つ設ける**こと。raw body0、canonical identity／private evidence・source commitment／生成済safe projectionを保存し、anon／authenticated直アクセスなし、本人削除と元sourceの変更／削除に連動、transactionでsource/accessを再検証する。既存self-structure latest/history/detailから同じ保存identityへresolveし、server tier制限・read時削除検査を通してsafe投影だけ返す。旧レポートの権限全体を変える方式より差分が小さい。既存canonical04 §15.1.1に具体案を記録し、保存方式の変更判断をMashに依頼する。SQL／新table／新routeのmaterialize・実DB適用は0。
+
+検証：`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/tmp/cocolon-analysis-api-check:ai/services/ai_inference python -m unittest ai.tests.test_analysis_saved_period ai.tests.test_cmee_analysis_v1d_vertical`。新13＋既存26＝39 PASS（0.464s）。実loader／CMEE／ASTORを通し、HTTP／RPC・auth・tierだけ合成応答。訂正後の文章／nodeをrootが実読し、否定した1件と別記録の実行済み1件、希望2件が分かれ、成立しなくなった同時出現線は消えることを確認。未確定文の反復などの見せ方は残件で、商品合格とはしない。RNは未変更でu94の検査を今回再実行した件数に加えない。実ユーザー入力による生成、native／Product Readは未実行。
+
+検査環境はPython3.12.14。既存requirementsのFastAPI／HTTPXを一時test環境へ0.115.12／0.28.1で入れ、repo依存を変更しない。最初の合成回答fixtureは必須選択label欠落と未対応の引用文型で不成立だったため、現行保存形式／既存対応grammarへ修正。tier変更fixtureも実RPCのfresh tier応答へ揃えた。制限sandboxでは標準asyncio.to_threadだけの最小例もshutdownで停止し、途中実行を中断／timeout。auto-reviewで許可された通常実行に切替えて同じ実コードの39件を完走した。製品からthread処理を除去したり、実DB通信で通したりしていない。
+
+変更はAPI既存material／ASTOR／core source adapterの3file＋新test1。Analysis map §4.6とCMEE map／共有entry、canonical04／06、既存API handoffを更新する。新checker／台帳／service／外部AI／依存／SQLは追加しない。開始headはCocolon `651b38d88da7a48dbc58769912b4d1e3d4b9a9cf`、API `885c5d3299f2d88926f063786d1605ef4e49349a`。既存Draft PR30／3へ反映し、main／merge／deploy／DB設定／flag／native buildは変更しない。TestFlight6101送信済み・実機待ち、API7f1f7d92…read_onlyは前回引継ぎで今回はlive再確認していない。商品0/3・NOT_CLEAR・全体48%を保持。次の一作業は専用保存先の判断後に、immutable保存／API lifecycleを実装して既存RN受信へ結ぶこと。
