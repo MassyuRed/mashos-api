@@ -5668,3 +5668,95 @@ def test_same_name_received_chain_negative_occurrence_requires_original_owner(fi
                 assert not proof.passed
             except (GroundedObservationPlanError, reception.GroundedHumanReceptionSurfaceError):
                 pass
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('event', ['褒められた', '誘われた'])
+@pytest.mark.parametrize('reply,when,value', [
+    ('今は嬉しい。', '回答した時点', '嬉しい'),
+    ('その時は楽しかった。', 'その時', '楽しかった'),
+    ('今は少し苦しい。', '回答した時点', '少し苦しい'),
+])
+def test_same_name_identical_answer_occurrences_are_visible_and_independently_bound(field, event, reply, when, value):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    source = RECEIVED_CHAIN_MULTI.replace('誘われた', '褒められた').replace('褒められた', event)
+    req = begin(source if field == 'memo' else '', source if field == 'memo_action' else '')
+    for text in (reply, reply):
+        req = advance(req, text)
+    for third in (False, True):
+        if third:
+            req = advance(req, '「頼まれた」は誤りです。')
+        context = actual(request=req)
+        result, plan, sentence, resolver, selected = context
+        assert MeaningExperienceEngine().generate(req).artifact.text == result.artifact.text
+        body, obs = result.artifact.text, result.artifact.observation
+        first = f'先に書かれた「{event}」ことについて、{when}の受け止めは「{value}」と書かれています。'
+        second = first.replace('先に書かれた', '後に書かれた', 1)
+        assert obs.count(first) == obs.count(second) == 1
+        assert obs.index(first) < obs.index(second)
+        assert ('頼まれた' not in body) if third else ('頼まれた' in body)
+        assert '悲しかった' in obs and '嬉しかった' in obs and '寂しかった' in obs
+        links = [r for r in plan.relations if r.type == 'evaluation_about_event']
+        assert len(links) == len({r.from_nucleus_id for r in links}) == len({r.to_nucleus_id for r in links}) == 2
+        nodes = {n.nucleus_id: n for n in plan.nuclei}
+        assert len({nodes[r.to_nucleus_id].source_span_ids for r in links}) == 2
+        for link in links:
+            event_node, answer_node = nodes[link.from_nucleus_id], nodes[link.to_nucleus_id]
+            assert event_node.source_fields == (field,)
+            assert answer_node.source_fields == ('answer_text_private',)
+            markers = [c for c in answer_node.semantic_frame.attribute_codes
+                       if c.startswith('thread_subject:distinct_source_occurrence:')]
+            assert len(markers) == 1
+            assert markers[0].startswith('thread_subject:distinct_source_occurrence:' + event_node.source_span_ids[0] + ':')
+        moves = plan.response_plan.human_reception_plan.moves
+        required = {n.nucleus_id for n in plan.nuclei if n.retention == 'required'}
+        assert required == {n for m in moves for n in (*m.target_nucleus_ids, *m.support_nucleus_ids)}
+        assert 1 <= len(moves) <= 3
+        changed_observations = [
+            obs.replace(second, ''),
+            obs.replace(second, first),
+            obs.replace(second, second + second),
+            obs.replace(first, first.removeprefix('先に書かれた')),
+            obs.replace('先に書かれた', '間に書かれた', 1),
+            obs.replace(first, 'SWAPPED_SOURCE_REPORT').replace(second, first).replace('SWAPPED_SOURCE_REPORT', second),
+            obs.replace(first, first.replace(when, 'その時' if when != 'その時' else '回答した時点')),
+            obs.replace(second, second.replace(f'「{value}」', '「嬉しくない」')),
+            obs.replace(second, second.replace(f'「{event}」', '「頼まれた」')),
+        ]
+        assert all(changed != obs for changed in changed_observations)
+        with (patch.object(reception, '_author_source_grounded_reception_clauses', side_effect=AssertionError('no author')),
+              patch.object(surface, '_render_observation', side_effect=AssertionError('no author')),
+              patch.object(surface, '_render_relation', side_effect=AssertionError('no author'))):
+            for changed in (obs, *changed_observations):
+                candidate = body.replace(obs, changed, 1)
+                with patch.object(gate, 'replay_source_grounded_human_reception_from_plan',
+                                  return_value=SimpleNamespace(text=candidate.split('Emlisから：\n', 1)[1])):
+                    proof = gate.evaluate_grounded_surface_body_inverse(body=candidate.encode(), plan=plan,
+                        sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected)
+                assert proof.passed == (changed == obs), proof.failure_codes
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('reply', ['今は嬉しい。', '今は少し苦しい。'])
+def test_same_name_identical_answers_saved_replay_preserves_both_occurrences(qcase, qdb, monkeypatch, field, reply):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    source = RECEIVED_CHAIN_MULTI.replace('誘われた', '褒められた')
+    memo, action = (source, '') if field == 'memo' else ('', source)
+    qdb.query('update public.emotions set memo=$1,memo_action=$2 where id=$3', [memo, action, parent])
+    original = current = run(service.start(user, parent))
+    for step, text in enumerate((reply, reply, '「頼まれた」は誤りです。')):
+        if step:
+            current = run(cont(service, user, current, f'identical-continue-{step}'))
+        current = run(answer(service, user, current, text, f'identical-answer-{step}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == original['original']
+        if step >= 1:
+            body = current['current_observation']['text']
+            assert '先に書かれた「褒められた」ことについて' in body
+            assert '後に書かれた「褒められた」ことについて' in body
+        assert qdb.query('select memo,memo_action from public.emotions where id=$1', [parent])['rows'][0] == {
+            'memo': memo, 'memo_action': action}
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved output must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    assert current['state'] == 'COMPLETED' and not current['can_continue']

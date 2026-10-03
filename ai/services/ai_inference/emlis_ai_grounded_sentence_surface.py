@@ -3202,6 +3202,7 @@ def _render_observation_with_relations(
     resolver: EvidenceSpanResolver,
     *,
     typed_semantic_duties: bool = False,
+    record_prefixes: Mapping[str, str] | None = None,
 ) -> str:
     quotes = _quotes_for_nuclei(binding.nucleus_ids, nucleus_index, resolver)
     joined = _join_quotes(quotes)
@@ -3220,6 +3221,7 @@ def _render_observation_with_relations(
         relation_index,
         resolver,
         typed_semantic_duties=typed_semantic_duties,
+        record_prefixes=record_prefixes,
     )
     endpoint_ids = {
         nucleus_id
@@ -3394,6 +3396,7 @@ def _render_relation(
     resolver: EvidenceSpanResolver,
     *,
     typed_semantic_duties: bool = False,
+    record_prefixes: Mapping[str, str] | None = None,
 ) -> str:
     if not binding.relation_ids:
         return _render_observation(
@@ -3451,6 +3454,8 @@ def _render_relation(
     can_share_about_time = (ordered_thread_relations and not inline_events
         and not _hedge_prefix(binding)
         and len(set(about_event_keys)) == len(about_event_keys)
+        and not any((record_prefixes or {}).get(relation_index[r].from_nucleus_id)
+                    for r in relation_ids if relation_index[r].type == "evaluation_about_event")
         and set(binding.nucleus_ids) <= relation_endpoints)
     about_run_index, about_run_time, about_run_pairs = -1, None, []
     contrast_run_index, contrast_run_pairs, contrast_run_slot = -1, [], -1
@@ -3608,7 +3613,10 @@ def _render_relation(
             when = "先の回答時点" if times == {"prior_answer_time"} else "回答した時点" if times == {"answer_time"} else "その時" if times == {"original_occasion"} else None
             if when is None or target.source_fields != ("answer_text_private",):
                 raise GroundedSentenceSurfaceError("thread_answer_target_time_unbound")
-            clause = f"{left}ことについて、{when}の受け止めは{right}"
+            # Equal answers and times do not identify equal-named events.
+            # Qualify the event noun itself using its original written place.
+            position = (record_prefixes or {}).get(relation.from_nucleus_id, "").removesuffix("方では、")
+            clause = f"{position}{left}ことについて、{when}の受け止めは{right}"
             if relation_id in intervening_evaluations or ordered_thread_relations:
                 if (can_share_about_time
                     and all(re.fullmatch(r"「[^「」『』\n]+」", value) for value in (left, right))):
@@ -4284,6 +4292,11 @@ def _realize_line(
     resolver: EvidenceSpanResolver,
     selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> str:
+    record_prefixes = None
+    if (line.surface_function in {"observe_nuclei_with_relations", "observe_relation"}
+        and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"):
+        from emlis_ai_grounded_human_reception import _received_event_record_prefixes
+        record_prefixes = _received_event_record_prefixes(plan, resolver)
     if line.surface_function == "observe_nuclei":
         return _render_observation(
             line.binding,
@@ -4299,6 +4312,7 @@ def _realize_line(
             nucleus_index,
             relation_index,
             resolver,
+            record_prefixes=record_prefixes,
             typed_semantic_duties=(
                 _is_final_stage1_grounded_projection(plan)
             ),
@@ -4309,6 +4323,7 @@ def _realize_line(
             nucleus_index,
             relation_index,
             resolver,
+            record_prefixes=record_prefixes,
             typed_semantic_duties=(
                 _is_final_stage1_grounded_projection(plan)
             ),

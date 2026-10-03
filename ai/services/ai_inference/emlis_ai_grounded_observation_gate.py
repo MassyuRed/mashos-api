@@ -5528,9 +5528,10 @@ def evaluate_grounded_surface_body_inverse(
                             r"「([^「」『』\n]+)」とあります。", visible)
                         pair = re.fullmatch(r"「([^「」『』\n]+)」と「([^「」『』\n]+)」が、"
                             r"異なる向きのまま同時にあります。", visible)
-                        answer_report = re.fullmatch(r"「([^「」『』\n]+)」ことについて、"
-                            r"(先の回答時点|回答した時点|その時)の受け止めは"
-                            r"「([^「」『』\n]+)」と書かれています。", visible)
+                        answer_report = re.fullmatch(r"(?:(?P<position>先|間|後)に書かれた)?"
+                            r"「(?P<event>[^「」『』\n]+)」ことについて、"
+                            r"(?P<when>先の回答時点|回答した時点|その時)の受け止めは"
+                            r"「(?P<answer>[^「」『』\n]+)」と書かれています。", visible)
                         combined = re.fullmatch(r"「([^「」『』\n]+)」のに「([^「」『』\n]+)」、"
                             r"(?:その時は|回答した時点では|先の回答時点では)"
                             r"「([^「」『』\n]+)」とあります。", visible)
@@ -5547,8 +5548,9 @@ def evaluate_grounded_surface_body_inverse(
                                 for r in plan.relations))
                         elif answer_report is not None and host_quotes and quote_row == host_quotes[0]:
                             when = {"その時": "original_occasion", "回答した時点": "answer_time",
-                                    "先の回答時点": "prior_answer_time"}[answer_report[2]]
-                            answer_value = _body_inverse_normalized_anchor(answer_report[3])
+                                    "先の回答時点": "prior_answer_time"}[answer_report["when"]]
+                            answer_value = _body_inverse_normalized_anchor(answer_report["answer"])
+                            positions = _read_received_record_prefixes(plan, resolver)
                             candidates = tuple(n for n in candidates if any(
                                 r.type == "evaluation_about_event"
                                 and r.relation_id in planned_line.binding.relation_ids
@@ -5557,6 +5559,8 @@ def evaluate_grounded_surface_body_inverse(
                                 and {c for c in nucleus_index[r.to_nucleus_id].semantic_frame.attribute_codes
                                      if c.startswith("thread_time:")} == {"thread_time:" + when}
                                 and _body_inverse_nucleus_source_values(r.to_nucleus_id, plan, resolver) == (answer_value,)
+                                and (answer_report["position"] is None or positions.get(n.nucleus_id)
+                                     == answer_report["position"] + "に書かれた方では、")
                                 for r in plan.relations))
                     if not candidates:
                         failures.append(f"body_inverse_contrast_report_source_ambiguous:{index}")
@@ -5759,9 +5763,9 @@ def evaluate_grounded_surface_body_inverse(
                 evaluation_clauses = []
                 shared_time_relation_ids = set()
                 grammars = (
-                    (r"「([^「」]+)」ことについて、(先の回答時点|回答した時点|その時)"
+                    (r"((?:先|間|後)に書かれた)?「([^「」]+)」ことについて、(先の回答時点|回答した時点|その時)"
                      r"の受け止めは「([^「」]+)」", "とあり、また", "と書かれています。"),
-                    (r"「([^「」]+)」ことに対する(先の回答時点|回答した時点|その時)"
+                    (r"()「([^「」]+)」ことに対する(先の回答時点|回答した時点|その時)"
                      r"の受け止めとして、「([^「」]+)」", "、また", r"が(?:見えます|示されています)。"),
                 )
                 for row in witness.sentences:
@@ -5807,15 +5811,18 @@ def evaluate_grounded_surface_body_inverse(
                             failures.append(f"body_inverse_answer_target_relation_missing:{index}")
                         else:
                             shared_time_relation_ids.update(matched_ids)
-                            evaluation_clauses.extend((event, shared_time[1], answer) for event, answer in pairs)
+                            evaluation_clauses.extend(("", event, shared_time[1], answer) for event, answer in pairs)
                     for operand, connector, ending in grammars:
                         if re.fullmatch(rf"(?:{operand}{connector})*{operand}{ending}", visible):
                             evaluation_clauses.extend(re.findall(operand, visible))
+                positions = _read_received_record_prefixes(plan, resolver)
+                owned_clauses = [clause for clause in evaluation_clauses
+                        if _body_inverse_normalized_anchor(clause[1]) in left_sources
+                        and clause[2] == when
+                        and _body_inverse_normalized_anchor(clause[3]) in right_sources
+                        and (not clause[0] or positions.get(relation.from_nucleus_id) == clause[0] + "方では、")]
                 if relation_id not in grouped_relations and not (any(b == a + 1 for a in from_positions for b in to_positions) and
-                        any(_body_inverse_normalized_anchor(left) in left_sources
-                            and clause_time == when
-                            and _body_inverse_normalized_anchor(right) in right_sources
-                            for left, clause_time, right in evaluation_clauses)):
+                        owned_clauses and (not any(clause[0] for clause in owned_clauses) or len(owned_clauses) == 1)):
                     failures.append(f"body_inverse_answer_target_relation_missing:{index}")
         if (
             planned_line.binding.line_role == "fact_boundary"

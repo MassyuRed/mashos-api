@@ -13487,3 +13487,36 @@ productionは既存answer_update/Plan/HR/Gateの4file。Surface、新owner/helpe
 Observationの同名回答が記述順へ依存する点、HRの「後に書かれた方では」の修飾が第三eventへ掛かる読め方、長いし列挙・「のですね、また」・後→先→後の順序、二層再掲・固定終端・受け取りの浅さは残る。過去説明形の「怖かったのだったのですね」も診断で確認した残差で、正式36の成功へ混ぜない。上流の連結成分/anchor直接接続の潜在不一致も未解決。商品提示用の完成候補ではない。
 
 primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmerged。Ready/merge/deploy/enable/live適用なし。最新weeklyの10/03未完でもEmlis休止、10/04 Work分析（利用不可ならPro Piece）を継承し、今回の継続指示を期限延長とは解釈しない。10/02実DB/端末一往復は未達、旧10/10 Emlis内容期限を復活させない。対象群完了前に別の二層価値改善へ先行せず、自動進行false。追加ユーザー操作負担・外部有料サービス利用なし。所要は今回開始05:58 JSTからPR反映完了まで、正確な課金額は取得できていない。
+
+
+## 2026-10-03 u77 — 同名の出来事への同文・同時点回答で止まるObservationを修復
+
+### 現行方針・対象
+
+Mashの残件継続指示と添付の前回作業txtから、u76残件の同名event・同文回答を扱った。開始HEADはAPI `7a03d6785799d4bde07d62bd30d103ff113c1dbe`、Cocolon `66ba720b653d18657845ad6059635ce51842f079`。全体設計・全ファイル地図・current_structure、CURRENT_RULES/Rule18、恒久incident、両handoff、最新weekly `Cocolon_Weekly_Review_20261003.md`を確認。fresh recursive treeの全path照合と対象依存355fileの開始blob照合は、全実装の全文精読を意味しない。System Contextは原典直接確認fallbackを継承。rootだけが編集・実行・反映し、補助は読取診断と実本文/差分レビューに限定した。
+
+今回からの優先順は最新weekly §6.6〜6.10を適用する。入力→応答→必要な問い→回答→更新応答と保存/再表示の実動作を先に通し、自然さ・深さ・重複の全面改善を開発実機接続の前提にしない。重大な意味反転・出典混同、保存・本人権限等の保護は維持する。10/03でEmlis品質改善枠を区切り、10/04以降のWork主枠は分析（利用不可ならPro Piece）。Emlis接続は対象を限定した共通接続作業として、分析の高度品質完成まで待たせない。11/30接続済み確認版・12/01実機確認開始は管理目標で、成功/配布/公開の実施済みではない。旧10/10 Emlis内容期限や旧品質全合格待ちを復活させない。
+
+### 実装
+
+同じ「褒められた」に「今は嬉しい。」を二回答えると、Observationのevent/回答/時点の文字が同一となり、既存Gateがsourceを一意に読めず `emlis_refined_body_unavailable`となっていた。既存Sentence Surfaceで、原文の位置を示す既存HR読取の「先／後に書かれた」をevent名そのものに付ける。識別が必要なABOUTを共有時点の短縮でまとめない。独立Gateは自身の既存source readerで位置を求め、元event・時点・回答・出現数・原文順と照合する。修飾付きABOUT句は当該関係に一つだけを要求し、同文だから片方の句で二つの義務を満たすことを許さない。識別可能な旧無修飾文法は保持する。
+
+productionは既存Surface/Gateの2file。意味受付・answer_update・Plan・HR本文作者・3Move上限・公開contract/API/DB/RN・依存宣言・flagは不変。新owner/helper/rendererなし。STRUCTURE_MAP_DELTA_NONE：owner/route/schema/lifecycle/file配置は不変。対象current mapの冒頭は最新weeklyへの方針案内だけを同期する。API5（production2・既存test末尾・current共有identity・既存handoff）＋Cocolon2（既存06・Emlis current map）の計7 modify、追加/削除0。旧test386419 bytes prefix、旧期待/skip/xfail、historical frozen identityを保存。
+
+### 本文・保存・検証
+
+同文回答の現在肯定/過去肯定/現在否定3系列×memo/memo_action＝6系列と、同名別回答/別名同回答2系列×2field＝対照4系列を比較。候補は初回＋3回答の40段階が成立。開始版は34段階へ到達し28本文が成立、6段階は第二回答で停止した。今回6停止を修復し、その先の第三回答6段階へ到達した。共通34段階のcheckpoint/accepted_nucleiは一致。既存成立28本文のうち16は全文同一、変更12はObservationの位置表示だけでHRは全件同一。別名対照8本文は不変。候補40を完全一致で16全文へまとめ、原入力/回答と両層をroot・補助が全読。両回答・原感情・原contrast・程度・極性・各時点を保持し、撤回した「頼まれた」を復活させず、「怖かった」を元記録の感情として残すことを確認した。
+
+新規16条件は、3回答形×2event名×2fieldの本文/独立逆読取12と、現在肯定/否定×2fieldの保存4。本文検査は第二回答後・第三撤回後で、別ABOUT2本、異なる回答source、元eventとのoccurrence証明、全required target/support、3Move以内を確認。作者禁止かつ改変本文と一致するreplayでも、片方消去/複製/先後交換/修飾欠落/誤位置/時点/極性/別eventへの付替えを拒否する。保存4は全更新REFINED、original DTOとDB原memo/memo_action不変、generate禁止GET/startの完全DTO一致、第三回答後COMPLETED。旧無修飾Observationの対照6段階も作者禁止の独立読取でPASS。
+
+同じ関連selectorを開始版と最終productionで実行した。received_discourse/detached_observationの `received_chain or same_name or parallel_report or mixed_withdrawal or two_positive_withdrawal`：開始版393＝332 PASS/61 FAIL（259.03秒）、候補409＝348 PASS/61 FAIL（277.98秒）。既存393の成否はすべて一致。61 failure nodeと全文traceはcheckout path・メモリアドレス・合成UUIDのみ正規化して一致、新しい失敗0。既存失敗を解消/PASSへ換算せず、全suite成功とはしない。新16は全PASS、共有identity検査1もPASS（17.79秒）。重複なし410 ID＝349 PASS/61 FAIL/ERROR0/SKIP0。別途、保存を含む対象28選択も48.19秒で全PASS。
+
+Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5/PGlite0.5.8をscratchへ用意し、repository依存は変更していない。FB172の過去移行pluginは無効化して実行したが、GitHub原ledgerに今回の選択nodeが存在しないことを確認。sandbox内のNode起動待ちで旧2実行を中断し、同じローカルWASM検証をsandbox外で完走した。新pure初回12失敗はtest側のoccurrence marker完全一致と交換mutationの組み方を修正し、旧testは変更していない。identity初回はai import path不足のcollection error、path補正後に上記1 PASS。PGlite/mock RPCの合成検証であり、実DB/端末/プロセス再起動ではない。
+
+共有9owner/18payload構成不変。language identity `e5e1b19b337a0f631fe6c67684121cde08d6b730a18d9f2b63a5f08968d3bc0a`、runtime identity `98a955ebf29fa3172a3527d97562562590279bcb45fd862827d35c17cc04b7ab`。scratchの本文JSON/XML/logを正式再利用証跡にせず、GitHubのproduction・追加test/fixture・本記録を再開原典とする。commit/tree・changed paths・remote内容照合の確定結果は既存Draft PR3/30本文に記す。
+
+### 残件・次の作業
+
+同名/同文による今回の停止は限定条件で修復したが、複数出来事・回答・訂正群全体の完了ではない。HRの「後に書かれた方」の修飾範囲、長い列挙、二層再掲、「のですね」の反復、受け取りの浅さ、u76記載の過去説明形・上流anchor潜在不一致は残る。今回の実装をこれらの解消へ換算しない。文体改善を続けるために10/03の区切りを自動延長せず、次のWork主枠は分析、Emlisは最小実機接続に必要なAPI/DB/ビルド・未接続箇所の限定確認へつなぐ。
+
+primary outcomeは限定TECHNICAL_CREDIT。旧商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを保持。未完成と明示した開発動作確認と正式品質受入れを分け、未評価の最小公開条件を合格扱いしない。実DB・端末一往復は未確認のまま。merge/deploy/enable/live適用・課金/配布操作なし。外部有料サービス追加なし、正確な課金額は未取得。
