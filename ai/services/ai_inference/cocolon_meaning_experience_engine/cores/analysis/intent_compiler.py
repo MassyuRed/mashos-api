@@ -14,10 +14,102 @@ from emlis_ai_grounded_observation_plan import (
     source_proven_performed_action_status,
 )
 from ...contracts import EvidenceRef
-from .source_adapter import AnalysisSourceError, AnalysisSourceSet, commitment
+from ...emlis_answer_update import _WITHDRAWAL, _REPLACEMENT
+from .source_adapter import (AnalysisSourceError, AnalysisSourceSet, commitment,
+                            scoped_source_view, source_field_text)
 
 NODE_KINDS = ('SCENE', 'ROLE', 'ATTENTION_OR_THOUGHT',
               'ACTION_OR_NONACTION', 'IMMEDIATE_RESULT_OR_AFTERMATH')
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class ObservedProposition:
+    """Whole-clause grammatical interpretation, private and source-bound.
+
+    Arguments retain written case particles; a ni-case is not guessed to be
+    a recipient, location or cause. This is not anonymized telemetry.
+    """
+    actor: str
+    arguments: tuple[tuple[str, str], ...]
+    predicate_lemma: str
+    polarity: str
+    modality: str
+    temporal_scope: str
+    source_parts: tuple[tuple[str, int, int], ...]
+
+
+# A bounded verb/inflection inventory, not an input/topic-to-answer table.
+# The finite operator and every argument must consume the complete clause.
+_VERBS = (
+    ('書く', '書', 'k'), ('調べる', '調べ', 'vowel'),
+    ('試す', '試', 's'), ('見る', '見', 'vowel'),
+    ('作る', '作', 'r'), ('残す', '残', 's'),
+    ('記録する', '記録', 'suru'), ('メモする', 'メモ', 'suru'),
+    ('続ける', '続け', 'vowel'),
+)
+# Kana-bearing nouns need a lexical proof: allowing arbitrary okurigana would
+# misread 急いで / 読んで as a noun plus de-case and erase a second predicate.
+# These are nominal lexemes, not triggers selecting a response or a topic.
+_NOMINAL = r'(?:考え|思い|気持ち|学び|振り返り|取り組み|[一-鿿々]+|[ァ-ヴー]+)'
+_ARGUMENT = re.compile(r'(?P<noun>' + _NOMINAL + r'(?:の' + _NOMINAL
+                       + r')*)(?P<case>を|に|で|と)')
+
+
+def _finite_predicates():
+    forms = []
+    for lemma, stem, group in _VERBS:
+        i, a, past = {
+            'k': (stem + 'き', stem + 'か', stem + 'いた'),
+            's': (stem + 'し', stem + 'さ', stem + 'した'),
+            'r': (stem + 'り', stem + 'ら', stem + 'った'),
+            'vowel': (stem, stem, stem + 'た'),
+            'suru': (stem + 'し', stem + 'し', stem + 'した'),
+        }[group]
+        for surface, polarity, modality, time in (
+            (past, 'positive', 'fact', 'past'),
+            (i + 'ました', 'positive', 'fact', 'past'),
+            (a + 'なかった', 'negative', 'fact', 'past'),
+            (i + 'ませんでした', 'negative', 'fact', 'past'),
+            (i + 'たい', 'positive', 'wish', 'current_input'),
+            (i + 'たいです', 'positive', 'wish', 'current_input'),
+            (i + 'たくない', 'negative', 'wish', 'current_input'),
+            (i + 'たくないです', 'negative', 'wish', 'current_input'),
+            (i + 'たかった', 'positive', 'wish', 'past'),
+            (i + 'たくなかった', 'negative', 'wish', 'past'),
+        ):
+            forms.append((surface, lemma, polarity, modality, time))
+    return tuple(sorted(forms, key=lambda row: len(row[0]), reverse=True))
+
+
+_FINITE_PREDICATES = _finite_predicates()
+
+
+def _proposition(value: str) -> ObservedProposition | None:
+    subject = re.match(r'^(?:私|僕|わたし|自分)は', value)
+    if subject is None:
+        return None
+    for finite, lemma, polarity, modality, time in _FINITE_PREDICATES:
+        if not value.endswith(finite):
+            continue
+        end = len(value) - len(finite)
+        offset, arguments = subject.end(), []
+        parts = [('SELF_TOPIC', 0, offset)]
+        while offset < end:
+            argument = _ARGUMENT.match(value, offset, end)
+            if argument is None:
+                break
+            noun = argument['noun']
+            if re.search(r'(?:った|いた|した|んだ|ない|たい)$', noun):
+                break
+            arguments.append((argument['case'], noun))
+            parts.append(('CASE_' + argument['case'], offset, argument.end()))
+            offset = argument.end()
+        if offset != end or len({case for case, _ in arguments}) != len(arguments):
+            continue
+        parts.append(('FINITE_PREDICATE', end, len(value)))
+        return ObservedProposition('SELF', tuple(arguments), lemma,
+            polarity, modality, time, tuple(parts))
+    return None
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -30,6 +122,18 @@ class ObservedNode:
     polarity: str
     modality: str
     temporal_scope: str
+    proposition: ObservedProposition | None = None
+    update_refs: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class ObservedSourceUpdate:
+    update_ref: str
+    operation: str
+    record_ref: str
+    target_evidence: EvidenceRef
+    answer_evidence_refs: tuple[EvidenceRef, ...]
+    replacement_evidence_refs: tuple[EvidenceRef, ...]
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -53,6 +157,7 @@ class ObservedGraph:
     nodes: tuple[ObservedNode, ...]
     edges: tuple[ObservedEdge, ...]
     unknown_gaps: tuple[UnknownGap, ...]
+    source_updates: tuple[ObservedSourceUpdate, ...] = ()
 
 
 def _node_kind(nucleus):
@@ -136,24 +241,94 @@ def _fragment(source, nucleus):
     return value, evidence
 
 
+def _active_sources(source_set):
+    """Apply whole-clause corrections to occurrences before period grouping."""
+    originals = {s.record_ref: s for s in source_set.sources
+                 if s.envelope.source_role == 'ORIGINAL_INPUT'}
+    excluded, views, updates, replacement_updates = {}, [], [], {}
+    for answer in source_set.sources:
+        if answer.envelope.source_role != 'SUPPLEMENTAL_ANSWER':
+            views.append(answer)
+            continue
+        raw = source_field_text(answer, 'memo')
+        text = raw.strip().rstrip('。．.')
+        replacement, withdrawal = _REPLACEMENT.fullmatch(text), _WITHDRAWAL.fullmatch(text)
+        match = replacement or withdrawal
+        if match is None:
+            raise AnalysisSourceError('analysis_supplement_interpretation_pending')
+        original = originals.get(answer.record_ref)
+        if original is None:
+            raise AnalysisSourceError('analysis_supplement_parent_missing')
+        old = match['old'].rstrip('。．.')
+        targets = []
+        for ref in original.evidence:
+            field = source_field_text(original, ref.field_path)
+            literal = field[ref.scalar_start:ref.scalar_end]
+            prefix, suffix = field[:ref.scalar_start].rstrip(), field[ref.scalar_end:].lstrip()
+            if (literal.replace('\u3000', ' ').strip().rstrip('。．.') == old
+                    and (not prefix or prefix[-1] in '。．.!！?？')
+                    and (not suffix or suffix[0] in '。．.!！?？')):
+                targets.append(ref)
+        if len(targets) != 1:
+            raise AnalysisSourceError('analysis_correction_target_unresolved')
+        target = targets[0]
+        original_plan = build_final_stage1_grounded_observation_plan(
+            original.normalized, evidence_spans=original.spans)
+        target_is_self_claim = False
+        for nucleus in original_plan.nuclei:
+            if (nucleus.source_span_ids != (target.source_span_id,)
+                    or nucleus.grounding_kind not in ('explicit', 'user_stated_relation')
+                    or nucleus.semantic_frame.actor != 'current_user'):
+                continue
+            fragment = _fragment(original, nucleus)
+            if (fragment and (fragment[1].scalar_start, fragment[1].scalar_end) ==
+                    (target.scalar_start, target.scalar_end)
+                    and (_proposition(fragment[0]) or _node_kind(nucleus))):
+                target_is_self_claim = True
+        # Quote location alone cannot prove that a reported first-person
+        # clause belongs to the current user. Preserve its original scope.
+        if not target_is_self_claim:
+            raise AnalysisSourceError('analysis_correction_target_unresolved')
+        excluded.setdefault(original.envelope.envelope_id, set()).add(target.source_span_id)
+        view = None
+        if replacement:
+            leading = len(raw) - len(raw.lstrip())
+            view = scoped_source_view(answer, leading + match.start('new'),
+                                      leading + match.end('new'))
+            views.append(view)
+        update = ObservedSourceUpdate('analysis-update:' + commitment([
+            answer.envelope.envelope_id, target.evidence_id,
+            'REVISE' if replacement else 'WITHDRAW'])[7:],
+            'REVISE' if replacement else 'WITHDRAW', answer.record_ref,
+            target, answer.evidence, view.evidence if view else ())
+        updates.append(update)
+        if view:
+            replacement_updates[view.envelope.envelope_id] = update.update_ref
+    return tuple(views), excluded, tuple(updates), replacement_updates
+
+
 def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
-    # Binding a permitted answer is not equivalent to interpreting its effect
-    # on the original. Until correction/withdrawal semantics are connected,
-    # never show a possibly withdrawn original as an established observation.
-    if any(s.envelope.source_role == 'SUPPLEMENTAL_ANSWER' for s in source_set.sources):
-        raise AnalysisSourceError('analysis_supplement_interpretation_pending')
+    active_sources, excluded, updates, replacement_updates = _active_sources(source_set)
     nodes, edges, gaps = [], [], []
-    unresolved_sources = 0
+    unresolved_records = set()
     by_signature, occurrences = {}, {}
-    for source in source_set.sources:
+    for source in active_sources:
         plan = build_final_stage1_grounded_observation_plan(
             source.normalized, evidence_spans=source.spans)
         if plan.input_profile.material_quality == 'safety_routed':
             raise AnalysisSourceError('analysis_separate_safety_required')
         admitted, unresolved = {}, False
         for nucleus in plan.nuclei:
-            kind = _node_kind(nucleus)
-            fragment = _fragment(source, nucleus) if kind else None
+            if set(nucleus.source_span_ids) & excluded.get(source.envelope.envelope_id, set()):
+                continue
+            explicit = (nucleus.grounding_kind in ('explicit', 'user_stated_relation')
+                        and nucleus.semantic_frame.actor == 'current_user')
+            fragment = _fragment(source, nucleus) if explicit else None
+            proposition = _proposition(fragment[0]) if fragment else None
+            kind = ('ATTENTION_OR_THOUGHT' if proposition.modality == 'wish'
+                    else 'ACTION_OR_NONACTION') if proposition else _node_kind(nucleus)
+            if not kind:
+                fragment = None
             if fragment is None:
                 if any(s.source_field in ('memo', 'memo_action') and
                        s.span_id in nucleus.source_span_ids for s in source.spans):
@@ -161,22 +336,32 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
                 continue
             label, evidence = fragment
             frame = nucleus.semantic_frame
-            signature = (kind, label, frame.polarity, frame.modality, frame.time_scope)
+            polarity, modality, time = ((proposition.polarity, proposition.modality,
+                proposition.temporal_scope) if proposition else
+                (frame.polarity, frame.modality, frame.time_scope))
+            update_ref = replacement_updates.get(source.envelope.envelope_id)
+            node_updates = (update_ref,) if update_ref else ()
+            signature = (kind, label, polarity, modality, time)
             index = by_signature.get(signature)
             if index is None:
                 index = len(nodes)
                 by_signature[signature] = index
                 nodes.append(ObservedNode('n' + str(index + 1), kind, label,
-                    (source.record_ref,), (evidence,), frame.polarity,
-                    frame.modality, frame.time_scope))
+                    (source.record_ref,), (evidence,), polarity,
+                    modality, time, proposition, node_updates))
             else:
                 old = nodes[index]
                 nodes[index] = replace(old,
                     record_refs=tuple(dict.fromkeys((*old.record_refs, source.record_ref))),
-                    evidence_refs=tuple(dict.fromkeys((*old.evidence_refs, evidence))))
+                    evidence_refs=tuple(dict.fromkeys((*old.evidence_refs, evidence))),
+                    update_refs=tuple(dict.fromkeys((*old.update_refs, *node_updates))))
             node = nodes[index]
             admitted[nucleus.nucleus_id] = node.node_ref
             occurrences.setdefault(source.record_ref, set()).add(node.node_ref)
+        # The whole replacement, not just a convenient sub-clause, must be
+        # interpreted. Otherwise no old result can be returned as current.
+        if source.envelope.envelope_id in replacement_updates and (not admitted or unresolved):
+            raise AnalysisSourceError('analysis_correction_replacement_unsupported')
         for relation in plan.relations:
             endpoints = (admitted.get(relation.from_nucleus_id),
                          admitted.get(relation.to_nucleus_id))
@@ -194,22 +379,27 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
                 if marker:
                     edges.append(ObservedEdge('e' + str(len(edges) + 1),
                         'OBSERVED_ORDER', endpoints, refs))
-        if admitted:
-            anchors = tuple(dict.fromkeys(admitted.values()))
-            present = {n.node_kind for n in nodes if n.node_ref in anchors}
-            for kind in NODE_KINDS:
-                if kind not in present:
-                    gaps.append(UnknownGap('g' + str(len(gaps) + 1),
-                        anchors[:1], kind, 'NOT_ESTABLISHED_FROM_SOURCE'))
-            if unresolved:
+        if unresolved or (not admitted and any(
+                s.source_field in ('memo', 'memo_action') and
+                s.span_id not in excluded.get(source.envelope.envelope_id, set())
+                for s in source.spans)):
+            unresolved_records.add(source.record_ref)
+    # Original and supplemental content are one occasion. Determine gaps only
+    # after both have contributed, not independently for each source child.
+    for record_ref, ids in occurrences.items():
+        anchors = tuple(n.node_ref for n in nodes if n.node_ref in ids)
+        present = {n.node_kind for n in nodes if n.node_ref in ids}
+        for kind in NODE_KINDS:
+            if kind not in present:
                 gaps.append(UnknownGap('g' + str(len(gaps) + 1), anchors[:1],
-                    'SOURCE_SCOPE', 'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'))
-            if len(anchors) > 1:
-                gaps.append(UnknownGap('g' + str(len(gaps) + 1), anchors[:2],
-                    'ROUTE_CONNECTION', 'ONLY_EXPLICIT_ORDER_IS_SHOWN'))
-        elif any(s.source_field in ('memo', 'memo_action') for s in source.spans):
-            unresolved_sources += 1
-    if nodes and unresolved_sources:
+                    kind, 'NOT_ESTABLISHED_FROM_SOURCE'))
+        if record_ref in unresolved_records:
+            gaps.append(UnknownGap('g' + str(len(gaps) + 1), anchors[:1],
+                'SOURCE_SCOPE', 'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'))
+        if len(anchors) > 1:
+            gaps.append(UnknownGap('g' + str(len(gaps) + 1), anchors[:2],
+                'ROUTE_CONNECTION', 'ONLY_EXPLICIT_ORDER_IS_SHOWN'))
+    if nodes and unresolved_records - occurrences.keys():
         gaps.append(UnknownGap('g' + str(len(gaps) + 1), (nodes[0].node_ref,),
             'SOURCE_SCOPE', 'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'))
     # A supplemental answer shares its original's occasion. Two fields or two
@@ -226,4 +416,4 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
                                       if r.source_envelope_id in supporting_envelopes))
             edges.append(ObservedEdge('e' + str(len(edges) + 1),
                 'REPEATED_COOCCURRENCE', (left.node_ref, right.node_ref), refs))
-    return ObservedGraph(tuple(nodes), tuple(edges), tuple(gaps))
+    return ObservedGraph(tuple(nodes), tuple(edges), tuple(gaps), updates)

@@ -49,7 +49,8 @@ class AnalysisVerticalTests(unittest.TestCase):
         self.assertIn('順序や原因は確定していません', text['text'])
         self.assertEqual(visual['period_comparison']['state'], 'NO_PREVIOUS')
         self.assertEqual(visual['wire_kind'], 'watashi.map.v2.private-preview')
-        self.assertFalse(hasattr(artifact, 'safe_projection'))
+        self.assertNotEqual(visual['wire_kind'], artifact.safe_projection(
+            authenticated_owner_scope=OWNER)['wire_kind'])
         self.assertTrue(visual['unknown_gaps'])
         for node in visual['nodes']:
             self.assertIn(node['visible_label'], text['text'])
@@ -195,6 +196,131 @@ class AnalysisVerticalTests(unittest.TestCase):
         result = self.generate(GenerationRequest('', {}, 'synthetic-record'))
         self.assertEqual(result.status, EngineStatus.REJECTED)
         self.assertEqual(result.reason_codes, ('request_id_required',))
+
+    def with_answer(self, original, text):
+        answer = AnalysisSupplement('synthetic-answer', OWNER,
+            original.saved_record_ref, original.saved_record_version,
+            text, commitment(text))
+        return replace(original, supplements=(answer,))
+
+    def test_withdrawal_removes_only_parent_occurrence_and_recomputes_cooccurrence(self):
+        original = record()
+        corrected = self.with_answer(original, '「私は考えをノートに書いた」は取り消します。')
+        artifact = self.generate(request(corrected, record(2))).artifact
+        action = next(n for n in artifact.graph.nodes if n.node_kind == 'ACTION_OR_NONACTION')
+        self.assertEqual(action.record_refs, ('synthetic-record-2',))
+        self.assertFalse(artifact.graph.edges)
+        self.assertEqual(artifact.graph.source_updates[0].operation, 'WITHDRAW')
+        self.assertEqual(original.original_json, corrected.original_json)
+        one = self.generate(request(corrected)).artifact
+        self.assertEqual([n.node_kind for n in one.graph.nodes], ['ATTENTION_OR_THOUGHT'])
+
+    def test_replacement_preserves_negation_and_exact_supplement_ranges(self):
+        corrected = self.with_answer(record(),
+            '　「私は考えをノートに書いた」ではなく「私は考えをノートに書かなかった」です。')
+        req = request(corrected)
+        artifact = self.generate(req).artifact
+        node = next(n for n in artifact.graph.nodes if n.node_kind == 'ACTION_OR_NONACTION')
+        self.assertEqual((node.polarity, node.modality, node.temporal_scope),
+                         ('negative', 'fact', 'past'))
+        self.assertTrue(node.update_refs)
+        sources = {s.envelope.envelope_id: s for s in freeze_analysis_sources(req).sources}
+        for evidence in node.evidence_refs:
+            source = sources[evidence.source_envelope_id]
+            self.assertEqual(source.envelope.source_role, 'SUPPLEMENTAL_ANSWER')
+            literal = source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+            self.assertEqual(literal.decode(), '私は考えをノートに書かなかった')
+            self.assertEqual(hashlib.sha256(literal).hexdigest(), evidence.literal_sha256)
+        self.assertNotIn('ACTION_OR_NONACTION', [g.missing_scope for g in artifact.graph.unknown_gaps])
+        self.assertEqual(artifact.graph.source_updates[0].operation, 'REVISE')
+
+    def test_replacement_does_not_inherit_old_negation_or_wish(self):
+        original = record(memo='私は考えをノートに書かなかった。')
+        corrected = self.with_answer(original,
+            '「私は考えをノートに書かなかった」ではなく「私は考えをノートに書いた」です。')
+        node = self.generate(request(corrected)).artifact.graph.nodes[0]
+        self.assertEqual((node.polarity, node.modality), ('positive', 'fact'))
+        corrected = self.with_answer(record(),
+            '「私は仕事を続けたい」ではなく「私は仕事を続けたくない」です。')
+        node = next(n for n in self.generate(request(corrected)).artifact.graph.nodes
+                    if n.node_kind == 'ATTENTION_OR_THOUGHT')
+        self.assertEqual((node.polarity, node.modality), ('negative', 'wish'))
+
+    def test_correction_requires_unique_whole_parent_clause(self):
+        examples = [
+            (record(), '「考えをノートに書いた」は取り消します。'),
+            (record(memo=TEXT, action='私は考えをノートに書いた。'),
+             '「私は考えをノートに書いた」は取り消します。'),
+            (record(), '友人は「私は考えをノートに書いた」は取り消しますと言った。'),
+            (record(), '違います。'),
+            (record(), '「私は考えをノートに書いた」ではなく「まだわからない」です。'),
+        ]
+        for original, text in examples:
+            with self.subTest(text=text):
+                result = self.generate(request(self.with_answer(original, text), record(2)))
+                self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+                self.assertIsNone(result.artifact)
+
+    def test_owner_projection_reconstructs_whole_meaning_without_raw_body(self):
+        artifact = self.generate(request(record(), record(2))).artifact
+        visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+        text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)
+        self.assertEqual(visual['schema_version'],
+            'cocolon.cmee.analysis_watashi_map_safe_projection.v1alpha1')
+        self.assertEqual(visual['wire_kind'], 'watashi.map.v2')
+        self.assertEqual([n['visible_label'] for n in visual['nodes']],
+            ['考えをノートに書く（実行済み）', '仕事を続けることへの希望'])
+        self.assertEqual(visual['projection_of'], text['projection_of'])
+        self.assertEqual(visual['accessibility_linear_order'], text['accessibility_linear_order'])
+        self.assertIn('順序や原因は確定していません', text['text'])
+        for node in visual['nodes']:
+            self.assertIn(node['visible_label'], text['text'])
+        for raw in (TEXT, OWNER, '私は', 'synthetic-record', 'analysis-source:', 'sha256:'):
+            self.assertNotIn(raw, json.dumps(visual, ensure_ascii=False))
+        self.assertNotIn('text', visual)
+        self.assertEqual(set(visual['nodes'][0]),
+            {'node_ref', 'node_kind', 'visible_label', 'evidence_badge_count'})
+
+    def test_correction_cannot_reassign_reported_speaker_or_question_to_self(self):
+        for original in (
+            record(memo='友人の話です。私は考えをノートに書いた。'),
+            record(memo='私は考えをノートに書いた。', action='友人の報告です。'),
+            record(memo='私は考えをノートに書いた？'),
+        ):
+            corrected = self.with_answer(original,
+                '「私は考えをノートに書いた」ではなく「私は考えをノートに書かなかった」です。')
+            result = self.generate(request(corrected, record(2)))
+            self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+            self.assertIsNone(result.artifact)
+
+    def test_surface_keeps_all_arguments_and_finite_operators(self):
+        cases = [
+            ('私は図書館で資料を調べました。', '図書館で資料を調べる（実行済み）'),
+            ('私は仕事を続けたかった。', '仕事を続けることへの希望（当時）'),
+            ('私は記録を残しませんでした。', '記録を残す（行わなかった）'),
+            ('私は私の考えをノートに書いた。', '私の考えをノートに書く（実行済み）'),
+        ]
+        for source, label in cases:
+            with self.subTest(source=source):
+                artifact = self.generate(request(record(memo=source))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertEqual(artifact.safe_projection(authenticated_owner_scope=OWNER)
+                    ['nodes'][0]['visible_label'], label)
+
+    def test_safe_surface_cannot_drop_modifiers_or_accept_altered_parts(self):
+        for source in ('私は昨日、考えをノートに書いた。',
+                       '私は急いで考えをノートに書いた。'):
+            with self.subTest(source=source):
+                artifact = self.generate(request(record(memo=source))).artifact
+                self.assertIsNotNone(artifact)
+                with self.assertRaisesRegex(AnalysisSourceError, 'analysis_safe_surface_unavailable'):
+                    artifact.safe_projection(authenticated_owner_scope=OWNER)
+        artifact = self.generate(request(record())).artifact
+        node = artifact.graph.nodes[0]
+        broken = replace(artifact, graph=replace(artifact.graph,
+            nodes=(replace(node, proposition=replace(node.proposition, polarity='negative')),)))
+        with self.assertRaisesRegex(AnalysisSourceError, 'analysis_safe_surface_unavailable'):
+            broken.safe_projection(authenticated_owner_scope=OWNER)
 
 
 if __name__ == '__main__':

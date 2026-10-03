@@ -1,3 +1,5 @@
+> 2026-10-03 u94現在地：Analysisの引用補足訂正・撤回、本人向けsafe文章／図、RN latest／viewer受信を実装。backend26＋RN11＋旧互換2検査PASS。実DB・保存／API配信・実機は未完了。最新結果は末尾u94。
+
 > 2026-10-03 u93現在地：Analysis V1-Dのoffline部分観測graphと同一artifactのprivate文章/図用previewを実装。18検査PASS。補足解釈・公開safe表現・実DB/API/RN/実機は未完了。最新結果は末尾u93。
 
 > 2026-09-30 u36現在地：受理済み動詞知覚節の「が」を保持。関連2451 unique IDs＝2437PASS／既知14FAIL（全条件fresh）、新39全PASS。54系列中11本文改善、裸感情と複数人称は旧表現を保持。群未完了・商品NOT_CLEAR／0/3・既定OFF。最新結果と次の同群残件は末尾「u36最終結果」を参照。以下の過去集計は履歴。
@@ -13812,3 +13814,29 @@ Mashの「分析構造の実装に進んで」を受け、前回txtとfresh PR30
 構造変更は `current_structure/03_analysis_current_structure.md` §4.5とCMEE mapへ反映し、canonical04の古い未開始状態を更新。新package marker2個・source3個・test1個、既存engine1個を変更する。新しいchecker/台帳/依存/外部AIは追加しない。次はsafeな意味表現と補足訂正の消費を実装し、認証済み期間sourceから開発画面まで最小一本を接続する。IF/SavedRouteIntent/外部exportはHOLD。
 
 開始headはCocolon `4e8892bbaaebb6c010a63f9f477575d462c7ead8`、API `e6882f1009a03640357d83d8b9fec7c656611f7a`。既存Draft PR30/3へ記録・sourceを反映し、main/merge/deploy/DB/runtime flag変更は行わない。TestFlight1.0(6101)送信済み・端末確認待ち、配置API7f1f7d92…/read_onlyは前回状態の引継ぎで今回の再検証ではない。商品0/3・NOT_CLEAR・全体48%を保持。検査成功を商品合格へ換算しない。
+
+
+## 2026-10-03 u94 — Analysis補足訂正と本人向けsafe表現、RN受信を実装
+
+Mashの継続指示に従い、u93のoffline graphから次へ進めた。全体設計・全ファイル地図／国家system・最新weekly20261003 §6.6〜6.10と前回txtの確認を引き継ぎ、fresh PR30／PR3、Analysis current mapとcanonical04／05、RNのlatest／history／detail callerを再確認した。Emlis/Pieceの文章品質全体完了待ちへ戻さない。rootだけが編集・実行し、補助2名はsource／意味とRN／契約のread-only reviewを担当した。
+
+補足の引用付き撤回・置換を、共有の回答grammarを使って実装。親recordの原fieldに一意に存在する完全節だけを対象にし、集約前にそのoccurrenceを取り除く。他記録の同じ観測は残し、evidence count・同時出現・unknownを再計算する。置換先は元answer envelopeのfield/hash/scalar/UTF-8へ戻るparser viewで読み、派生文をauthentic sourceへ戻さない。置換の否定・願望・時点を再評価し、旧節のoperatorを継承しない。reviewで発見した「元節が開いた伝聞／質問scopeでも置換後に本人へ付け替えられる」問題を修正し、元fieldの共有planでも本人・scope・exact範囲を検証する。通常追加回答・部分／曖昧対象・未対応置換はUNAVAILABLEのままで、旧観測を現在へ付け替えない。
+
+owner向けsafe projectionと同一graphからのtext projectionを追加。9動詞の有限述語grammarで名詞項・格、極性、実行／願望、時点を保持するpropositionを作り、根拠との再検査後にラベルを構成する。例：`考えをノートに書く（実行済み）`、`考えをノートに書く（行わなかった）`、`仕事を続けることへの希望`。原有限節の丸写しや意味の切捨てをsafe化と呼ばない。初期検査で「急いで」の接尾部分を格と誤採用する1件が失敗したため、任意の送り仮名を名詞にするgrammarを廃し、限定名詞形へ狭めて再検査PASS。自由な複文／修飾／時点接頭句には未対応で、全入力でsafe projectionが出るとはしない。
+
+safe DTOはcanonical05の閉じた`cocolon.cmee.analysis_watashi_map_safe_projection.v1alpha1`／`watashi.map.v2`。private source ID／evidence locator／digest／raw bodyを含めず、private previewとは別APIにした。本人に意味を返すSELF_ONLY商品表示なのでsource-bound名詞は残りうる。匿名telemetry・外部共有向けと扱わない。offline requestのowner一致は二次的な束縛確認であり、将来のlifecycle callerの認証・tier・retention・削除再検査の代用ではない。
+
+RNに`watashiMapV2Contract.js`と`WatashiMapV2Renderer.js`を追加し、latest／viewerの実componentへ接続した。閉じたnested shape、artifact version、node／edge参照、読み順を検証し、同じmodelから図と文章を作る。同時出現は無方向で因果を示さず、unknown／注記／競合は対象refと表示labelを保持する。旧formatterはv1専用にし、private preview／未知version／不正JSON／不正DTOを旧content_textへ戻さない。review指摘によりunknown文字列だけのdedupeをやめ、Plusのdeep map制限、壊れたJSONのfail-closed、表示可能DTO＋許可modeだけの既読同期を修正した。Free最新light／Plus標準／Premium deepと履歴制限を保持する。
+
+検証はPython3.12.14とNode24.19.0。以下39件が最終PASS。
+- backend：`PYTHONPATH=ai/services/ai_inference python -m unittest ai.tests.test_cmee_analysis_v1d_vertical -v`、26件（0.166s）。
+- RN：`NODE_PATH=/tmp/cocolon-analysis-ui-check/node_modules node tests/analysis-watashi-map-v2-contracts.test.js`、11件（1.468s）。backendが生成した2合成caseのfixtureと実RN sourceをBabel／React test rendererで使い、文章・artifact ref一致、graph参照、tier、fallback拒否、latest既読を検証。
+- 既存互換：`node --test-name-pattern='Watashi Map Phase [45]' tests/rn-screen-contracts.test.js`、2件PASS。
+
+既存test toolsと同じReact18.3.1／test-renderer18.3.1／Babel7.25系を一時環境に導入し、repo依存・lockfileは変更していない。途中のRN実行はmockが毎renderで新しいallowedModes配列を返して再描画loopになったため中断し、stable mockへ修正した。環境再開時にPYTHONPATHを付け忘れた1実行はimport errorで未成立、上記コマンドで修正してPASS。これらを製品成功件数へ数えない。補助再reviewで指摘範囲の残存blockerなし。全API suite／native screenshot／実機Product Readは未実行で、この局所検査の代用外。
+
+変更はAPI既存source3＋test1、Cocolon新contract／renderer／test／合成fixtureの4fileと既存formatter／access policy／latest／viewerの4file。Analysis map §4.5、CMEE map、共有entry、canonical04／05／06と既存API handoffへ構造と限界を反映した。全体地図01A／01Cのowner配置は継続し、Analysisの詳細file差分は専用mapへ集約。新checker・台帳・外部AI・DB schemaは追加しない。
+
+完成範囲は補足の限定解釈＋offline safe producer＋RN receiver。実DB期間loader、immutable保存、latest／history／detailの保存identity解決と実API v2配信は未接続であり、次はこのlifecycleを接続して本人の保存入力から開発画面へ通す。画面に固定dummyを埋め込んで成立とはしない。順序線のpositive cohort、annotations／conflictの意味生成、期間比較も未完了。IF／SavedRouteIntent／外部exportはHOLD。
+
+開始headはCocolon `2012c4d3776b05e49d05c182f9e5fb902702cb2e`、API `ddf3bd7cb13c1d4922fa7aa5261e819ba70b1047`。既存Draft PR30／3へ反映するが、main／merge／deploy／DB／runtime flag／native buildは変更しない。TestFlight1.0(6101)送信済み・端末確認待ち、配置API7f1f7d92…／read_onlyは前回状態の引継ぎで今回再確認したlive状態ではない。商品0/3・NOT_CLEAR・全体48%を保持。実装検査を商品合格へ換算しない。

@@ -6,7 +6,7 @@ An arbitrary HTTP caller must never be allowed to construct these requests.
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -151,6 +151,44 @@ def _source(record, role, source_id, version, original):
             hashlib.sha256(literal).hexdigest()))
     return AnalysisSource(envelope, record.saved_record_ref,
         record.saved_record_version, normalized, spans, tuple(evidence))
+
+
+def source_field_text(source: AnalysisSource, field_name: str) -> str:
+    ref = next((e for e in source.evidence if e.field_path == field_name), None)
+    if ref is None:
+        raise AnalysisSourceError('analysis_source_field_unbound')
+    return source.envelope.raw_utf8[ref.field_utf8_start:ref.field_utf8_end].decode('utf-8')
+
+
+def scoped_source_view(source: AnalysisSource, start: int, end: int) -> AnalysisSource:
+    """Parse a proved answer range without creating a derived source envelope.
+
+    Local ledger coordinates belong only to the parser view. Every returned
+    EvidenceRef still addresses the complete, unchanged supplemental field.
+    """
+    raw = source_field_text(source, 'memo')
+    if not (0 <= start < end <= len(raw)):
+        raise AnalysisSourceError('analysis_answer_range_invalid')
+    base = next(e for e in source.evidence if e.field_path == 'memo')
+    fragment = raw[start:end]
+    normalized = normalize_emlis_current_input({'memo': fragment})
+    spans = tuple(build_evidence_ledger(normalized))
+    evidence = []
+    for span in spans:
+        if span.source_field != 'memo':
+            continue
+        a, b = _text_span_raw_subrange(raw_field_text=fragment,
+            normalized_field_text=normalized['memo'], span=span)
+        a, b = start + a, start + b
+        evidence.append(replace(base,
+            evidence_id='analysis-evidence:' + commitment([
+                source.envelope.envelope_id, 'memo', a, b])[7:],
+            source_span_id=span.span_id, scalar_start=a, scalar_end=b,
+            utf8_start=base.field_utf8_start + len(raw[:a].encode('utf-8')),
+            utf8_end=base.field_utf8_start + len(raw[:b].encode('utf-8')),
+            literal_sha256=hashlib.sha256(raw[a:b].encode('utf-8')).hexdigest()))
+    return replace(source, normalized=normalized, spans=spans,
+                   evidence=tuple(evidence))
 
 
 def freeze_analysis_sources(request: AnalysisObservedMapRequest) -> AnalysisSourceSet:

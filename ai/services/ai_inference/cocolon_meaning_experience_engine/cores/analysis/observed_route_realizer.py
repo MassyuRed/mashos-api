@@ -1,8 +1,8 @@
-"""Private offline previews of one observed artifact, never public DTOs.
+"""Owner-facing projections and private previews of one observed artifact.
 
-Labels currently preserve finite source clauses. These previews are private
-development output, not the canonical safe projection for API/RN publication.
-The lifecycle/public-surface integration must not return them to public APIs.
+Only safe_projection reconstructs labels from complete grammatical parts.
+Private previews retain source clauses and must never be returned by an API.
+Owner authorization, retention and deletion checks remain the caller's duty.
 """
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 from ...contracts import EngineStatus
-from .intent_compiler import ObservedGraph, compile_observed_graph
+from .intent_compiler import ObservedGraph, compile_observed_graph, _proposition
 from .source_adapter import (
     AnalysisObservedMapRequest, AnalysisSourceError, AnalysisSourceMember,
     freeze_analysis_sources,
@@ -22,6 +22,23 @@ LABELS = {'SCENE': '場面', 'ROLE': '役割',
           'IMMEDIATE_RESULT_OR_AFTERMATH': '結果・余韻',
           'SOURCE_SCOPE': 'まだ読み取れていない内容',
           'ROUTE_CONNECTION': '段階同士のつながり'}
+
+
+def _safe_label(node):
+    parts = node.proposition
+    # Replay the complete typed interpretation; never wrap an arbitrary raw
+    # clause in a label and call it a safe projection.
+    if (parts is None or parts != _proposition(node.visible_label)
+            or (parts.polarity, parts.modality, parts.temporal_scope) !=
+               (node.polarity, node.modality, node.temporal_scope)):
+        raise AnalysisSourceError('analysis_safe_surface_unavailable')
+    phrase = ''.join(noun + case for case, noun in parts.arguments) + parts.predicate_lemma
+    if parts.modality == 'wish':
+        label = phrase + ('ことへの希望' if parts.polarity == 'positive'
+                          else 'ことを望まない')
+        return label + ('（当時）' if parts.temporal_scope == 'past' else '')
+    return phrase + ('（実行済み）' if parts.polarity == 'positive'
+                     else '（行わなかった）')
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -73,6 +90,49 @@ class ObservedSelfStructureMap:
 
     def private_text_preview(self, *, authenticated_owner_scope: str) -> dict:
         visual = self.private_visual_preview(authenticated_owner_scope=authenticated_owner_scope)
+        return self._text_from_visual(visual)
+
+    def safe_projection(self, *, authenticated_owner_scope: str) -> dict:
+        """Canonical SELF_ONLY product DTO, not anonymized sharing/telemetry.
+
+        A matching scope string is a second-line binding check, not proof of
+        authentication. The future API must recheck its live owner lifecycle.
+        No source body, private identifier, locator or commitment is copied.
+        """
+        if authenticated_owner_scope != self.owner_scope:
+            raise AnalysisSourceError('analysis_projection_owner_mismatch')
+        labels = {node.node_ref: _safe_label(node) for node in self.graph.nodes}
+        return {
+            'schema_version': 'cocolon.cmee.analysis_watashi_map_safe_projection.v1alpha1',
+            'wire_kind': 'watashi.map.v2', 'projection_of': self.reference,
+            'artifact_version': self.artifact_version,
+            'period_label': ' ～ '.join(self.period),
+            'period_comparison': {'state': 'NO_PREVIOUS', 'reason_codes': [],
+                                  'safe_change_kinds': []},
+            'nodes': [{'node_ref': n.node_ref, 'node_kind': n.node_kind,
+                'visible_label': labels[n.node_ref],
+                'evidence_badge_count': len(n.record_refs)} for n in self.graph.nodes],
+            'edges': [dict({'edge_ref': e.edge_ref, 'edge_kind': e.edge_kind,
+                'visible_label': ('記録内に書かれた順序' if e.edge_kind == 'OBSERVED_ORDER'
+                                  else '複数の記録で一緒に現れた内容')},
+                **({'from_ref': e.endpoint_refs[0], 'to_ref': e.endpoint_refs[1]}
+                   if e.edge_kind == 'OBSERVED_ORDER'
+                   else {'endpoint_refs': list(e.endpoint_refs)})) for e in self.graph.edges],
+            'annotation_badges': [],
+            'unknown_gaps': [{'gap_ref': g.gap_ref,
+                'between_node_refs': list(g.between_node_refs),
+                'visible_label': LABELS[g.missing_scope] + 'は、この記録からは確定していません。'}
+                for g in self.graph.unknown_gaps],
+            'conflict_badges': [],
+            'accessibility_linear_order': [n.node_ref for n in self.graph.nodes],
+        }
+
+    def safe_text_projection(self, *, authenticated_owner_scope: str) -> dict:
+        return self._text_from_visual(self.safe_projection(
+            authenticated_owner_scope=authenticated_owner_scope))
+
+    @staticmethod
+    def _text_from_visual(visual):
         lines = [LABELS[n['node_kind']] + '：' + n['visible_label']
                  + '（' + str(n['evidence_badge_count']) + '件の記録）'
                  for n in visual['nodes']]
@@ -85,8 +145,9 @@ class ObservedSelfStructureMap:
                 lines.append('複数の記録で一緒に現れた内容：' + ' ／ '.join(
                     labels[ref] for ref in edge['endpoint_refs'])
                     + '。順序や原因は確定していません。')
-        lines.extend(dict.fromkeys(g['visible_label'] for g in visual['unknown_gaps']))
-        return {'projection_of': self.reference, 'text': '\n'.join(lines),
+        lines.extend('未確定（' + ' ／ '.join(labels[ref] for ref in g['between_node_refs'])
+                     + '）：' + g['visible_label'] for g in visual['unknown_gaps'])
+        return {'projection_of': visual['projection_of'], 'text': '\n'.join(lines),
                 'accessibility_linear_order': visual['accessibility_linear_order']}
 
 
