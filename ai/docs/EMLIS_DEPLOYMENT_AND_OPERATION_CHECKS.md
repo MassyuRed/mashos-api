@@ -233,3 +233,41 @@ MashがRenderの設定値として `SUPABASE_URL=https://oeahmpmigszggnkyiivq.su
 対象project、SQL bytes、schema/履歴/権限に想定外の差があれば適用を止めます。失敗・応答不明では履歴とcatalogを読取り確認し、削除・再作成や盲目的な再実行をしません。Q2が成功しQ3が失敗した場合はQ2だけが残り得るため、到達状態を記録して止め、勝手に巻き戻しません。SQLや対象を変更して続ける許可へ広げません。
 
 Rule18 §11.3はdatabase migrationをstanding delegation外とし、最新weekly §2.4/§6.10も実DB適用の個別許可を維持しています。そのため、本提案をMashが承認するまで適用しません。URLの共有は接続先の証拠であり、適用承認ではありません。適用後も問いシステムのAPI版は未配置・機能default OFFのままで、次のAPI配置/開発確認/実機一往復/商品受入れは別の未完了作業として残します。
+
+
+## 13. 2026-10-03 u86 — Q2/Q3適用済み・事後確認完了
+
+§12の「この2本の適用と、適用後の確認」にMashが明示承認したため、同節の固定範囲を実施しました。§12の承認待ち・未実行はu85時点の記録です。対象は共有Supabase `cocolon-project` / `oeahmpmigszggnkyiivq`。rootが単独で適用し、補助はread-only照合を担当しました。
+
+### 実行したSQLと履歴
+
+API commit `e49aa0565a59cbc7515d9f7838e8d430b5d29332` の2本を再取得し、§10/§12のblob/全文と一致することを確認して、変更せずQ2→Q3の順に適用しました。
+
+| source file（`supabase/migrations/`） | 実際のmigration version / name | 結果 |
+|---|---|---|
+| `20260911020509_emlis_input_threads_q2.sql` | `20261003085240` / `emlis_input_threads_q2` | success |
+| `20260911041749_emlis_q3_plan_rounds.sql` | `20261003085333` / `emlis_q3_plan_rounds` | success |
+
+Q2 blob `2a4d6ee5c1ebe752f16f4ac3a0942e203beabe73`、SHA-256 `8ec3369d5377046d933daaccc39123b7e92b7c1c33339136fdbc1a56a379c88f`。Q3 blob `b8d45a2748316f5440d0e9a4fe4f8e346a644724`、SHA-256 `75a40ed8560651280fe913d2051a03fe2e77ee8cab25c91e512a985cc9a8a719`。履歴のversionはツールが実際に付与した値で、source file名の日付ではありません。
+
+適用直前は対象3table/5function・衝突する型/indexが不在、履歴は空でした。親の必要列/型/主キー、実行roleのpublic CREATEと親REFERENCES、anon/authenticated/service_roleの存在を再照合しました。Q2成功後に2table/4functionとQ3前提制約3件・Q2履歴を確認してからQ3を適用しました。SQL実行失敗・部分適用・rollbackはなく、最終履歴は上表の2件です。
+
+### 事後catalog照合
+
+| 対象 | 確認結果 |
+|---|---|
+| テーブル/列 | `emlis_input_threads` 19列、`emlis_thread_events` 11列、`emlis_frame_feedback` 8列。全38列の型/NULL/default一致。 |
+| 保存制約 | 全28件、うちFK8件。3つのevent pointer FKはDEFERRABLE INITIALLY DEFERRED。Q3のAWAITING_CONTINUE・started_question_limitを含む最終定義に一致。 |
+| index | 全12件の列・式・unique・predicateが一致し、全件valid/ready。 |
+| 関数 | `emlis_parent_source` / `emlis_parent_visible` / `emlis_thread_read` / `emlis_thread_commit` / `emlis_thread_context` の5件。引数・NULL default・戻り型・language・volatility一致。最終SQLから取り出した本文と保存本文が5件とも全文一致。 |
+| 関数実行 | 全件security invoker、search_pathは空。PUBLIC/anon/authenticatedにEXECUTEなし、service_roleにEXECUTEあり。 |
+| RLS/table権限 | 全3tableでRLS有効、FORCEなし、policy0。ACLにPUBLIC/anon/authenticatedなし。anon/authenticatedのSELECT/INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGERは全false。service_roleには必要なDML権限があり、環境既定からの追加権限も保持。「4権限だけ」とは扱わない。 |
+| 親schema | `auth.users` / `public.emotions` / `public.profiles` の参照対象列/型/NULL性と主キーが適用前後で一致。利用者データ行は取得せず、行snapshot比較はしていない。 |
+
+catalog照合に不一致はなく、§12の成功条件を満たしました。これは保存schemaの配置確認であり、現行APIでの動作試験・実機確認・品質受入れの成功ではありません。適用SQLに親入力行の変更はなく、実API/RPCの書込試験も行っていません。
+
+### 残る作業と境界
+
+問いシステム版APIは未配置です。次は既存設計に沿って配置対象と開発確認の設定を具体化し、実機で入力→応答→回答→更新応答→保存再表示を確認する作業が残ります。API/main/Render設定・flag・build/配布は今回変更していません。追加承認が必要な配置等を今回のDB承認に含めません。
+
+商品0/3・NOT_CLEAR・全体48%・default OFF・両PR Draft/open/unmerged、最新weeklyの作業配分を継承します。source/test/SQL/依存の変更と新しいtest実行はありません。GitHubでは既存4文書に結果だけを記録します。

@@ -13709,3 +13709,16 @@ MashがRender設定値として `SUPABASE_URL=https://oeahmpmigszggnkyiivq.supab
 次の一作業は、既存共有 `cocolon-project` へ、変更していないQ2→Q3 SQLだけを適用し、保存schemaを用意すること。具体的な対象・SQL identity・効果・成功/停止条件はAPI運用資料§12へ固定した。保存用3table/5functionとFK/index/RLS/grantを対象とし、親データの書換え、API/main変更、flag有効化、配布は含めない。共有DBを開発専用と呼ばず、適用を開発APIの選定や実機成功の証拠にしない。Rule18 §11.3と最新weeklyにより、実DB適用は個別のMash承認待ちである。今回のURL共有を適用承認に読み替えない。
 
 primary outcomeは `BLOCKER_NARROWED`。既存4文書のみの更新で `STRUCTURE_MAP_DELTA_NONE`、source/test/SQL/依存変更と新規test実行なし。旧商品0/3・NOT_CLEAR・全体48%・default OFF・両PR Draft/open/unmerged、weeklyの作業配分を維持する。u82の31 PASSは過去結果。DB適用/merge/deploy/enable/課金/配布は未実施。確定commit、全変更pathとremote bytesの照合結果は既存PR本文へ記す。
+
+
+## 2026-10-03 u86 — 承認済みQ2/Q3の実DB適用と照合を完了
+
+Mashから「この2本の適用と、適用後の確認」に対する明示承認を受け、API運用資料§12の固定範囲を実施した。全体設計・全ファイル地図・最新weekly20261003 §6.6〜6.10・前回記録の確認を引継ぎ、rootを単一execution ownerとした。補助はSQL期待値と適用後catalogのread-only照合のみ。開始HEADはCocolon `b446a3b23186b78749b7fd2c29d2f7917e1c7761`、API `3079c23e8ae83d192fc17f09ae66992e8d102773`。
+
+共有Supabase `cocolon-project` / `oeahmpmigszggnkyiivq` に、§12で固定したAPI commit `e49aa0565a59cbc7515d9f7838e8d430b5d29332` のQ2→Q3 SQLを、blob/全文の一致と親列/型/主キー・role/参照権限・対象不在・履歴を再確認して無変更で適用した。両方success。実際のmigration履歴はQ2 `20261003085240 / emlis_input_threads_q2`、Q3 `20261003085333 / emlis_q3_plan_rounds` の2件。source file名のtimestampとは区別する。
+
+適用後は3table・38column（19/11/8）・28constraint（8FKを含む）・12index・5functionを照合し、不一致なし。index全件valid/ready、全3tableでRLS有効・policyなし、PUBLIC/anon/authenticatedの直接権限なし、service_roleに必要な権限あり。service_roleには環境既定からの追加権限も残るため「DML4権限だけ」とは扱わない。5functionはsecurity invoker・空search_path、引数/default/戻り型等が一致し、保存された関数本文もQ2/Q3の最終定義と全文一致した。親3tableの参照列/型/NULL性・主キーは適用前後で一致した。
+
+承認済み保存schemaの適用・catalog照合は完了。利用者データ行は読取せず、親入力行の変更や実API/RPC書込試験は行っていない。APIの問いシステム版の配置・開発確認対象の選定・実機一往復は未完了で、DB適用から動作成功や商品受入れを推定しない。今回の承認をAPI配置・flag有効化・配布へ広げない。詳細はAPI運用資料§13。
+
+既存4文書だけを更新し、source/test/SQL/依存変更・新規testなし。`STRUCTURE_MAP_DELTA_NONE` はsource owner/file graphに限定し、稼働DBには上記schema追加がある。u82の31 PASSは過去結果。旧商品0/3・NOT_CLEAR・全体48%・default OFF・両PR Draft/open/unmergedとweeklyの作業配分を維持する。main変更・merge・API deploy・enable・課金・配布なし。確定commit、変更path、remote全文の照合結果は既存PR本文へ記す。
