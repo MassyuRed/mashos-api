@@ -393,3 +393,27 @@ u91で共有画像を確認し、#60の送信はHTTP403 / `FORBIDDEN_ERROR.CONTR
 次はTestFlightで **1.0 (6101)** が利用可能になったことをMashが確認し、更新→起動→自分の入力履歴を確認します。既存ログインを保ち、まだ表示されない場合はApple側の処理/配布状態の確認が残ると扱います。現APIはread_onlyのため、この時点を新規Emlis生成・回答・保存成功の確認とはしません。
 
 生成の実機確認へ進む際は§14のdevelopment三値を揃えます。現Render連携にはsave-only/commit指定/branch更新がなく、env更新toolのmain自動deployというu87の実測は変わりません。既存Dashboardで **Save only → Deploy a specific commit（7f1f7d92d296caeb913b8cab9599acab3318437d）** を使う経路が残ります。今回その設定変更はまだ行っていません。
+
+
+## 19. 2026-10-04 JST u98 — Analysis開発配置の対象確認、配置・有効化の個別判断待ち
+
+Mashの「分析構造の実装に進んで」を受け、添付前回txt、必須前提・作業ルール、全体構造/国家system/Analysis全file map、weekly20261003の最小実機方針、u96/u97とfresh sourceを確認した。今回の実装前確認で新しい接続不良は見つからず、追加の意味品質作業へ逸れずに、未完了のAPI配置・native接続を次の一作業へ固定する。コード・検査の変更はない。System Contextの生成済みsnapshotをfresh判定の代用にせず、GitHubの固定head/treeと対象実ファイルを直接読んだ。
+
+### 今回の読取事実
+
+- PR3 source `315f5b5dacb866e62805cfd6a906984c193dcc76`、PR30 source `dd47c0aa31cd662a313aeb137b469252e36b3e19`。両方Draft/open/unmerged。
+- Render `mashos-api / srv-d4ppfpm3jp1c73952bj0` は `7f1f7d92d296caeb913b8cab9599acab3318437d` / `dep-db0cjh1srm7s73f10vb0` がlive、linked branch=main、autoDeploy=no/off。分析追加前の版である。環境変数の値は今回再取得しておらず、Emlis read_onlyは前回記録からの引継ぎ。
+- Supabase catalogの読取で `analysis_observed_artifacts` の存在、RLS=true、anon/authenticated SELECT=falseを再確認。migration再適用・実利用者の入力/本文取得は0。
+- 最新iOS workflow_dispatchはrun61/37115985371、source `74c7cab7e730a1903fc81e2d3ec34ce7441a2a98`、success。現sourceとのcompareでV2 renderer/contract/latest/viewer追加を確認したため、既存6101は分析V2確認版として使えず、新しいbuildが必要。端末導入の確認はまだない。
+- API/RNの独立read-only reviewとrootのsource確認では、latest要求→snapshot/CMEE→commit→同UUID再読取→V2表示/既読の接続に新しいblocking mismatchなし。これは実行検査・実利用者往復の成功ではない。u96/u97の検査数を今回再実行した件数へ加算しない。
+
+### Mashへ提示する限定実行範囲（未実行・承認待ち）
+
+1. 既存Render serviceに上記API source版を指定commitとして配置し、`COCOLON_ANALYSIS_OBSERVED_MODE=development` を設定する。これは共有serviceの認証済みself-structure経路全体への作用で、Mashだけのuser allowlistではない。Emlisの設定、料金、DB schema、旧worker/cronはこの操作で変更しない。全旧generation入口を止めたglobal cutoverとは扱わない。
+2. PR30 branch `agent/three-core-cmee-current-structure-20260815` から既存iOS TestFlight Buildを新規実行し、V2対応版を作成/送信する。上記app sourceが必須baseline。開始直前のhead差分を確認し、実際のrun SHAとversion/buildを記録する。旧runの再実行を新sourceのbuildにしない。
+3. 配置SHA/live・health・未認証拒否・build/送信結果を華恋が確認し、本人端末で保存済み入力→分析表示→閉じる/再表示の一往復を確認する。文章/図の一致と同じ保存identityを確認し、未対応sourceは未生成として扱う。private本文/tokenをGitHubへ記録しない。
+4. 生成停止が必要なら同じAPI版でread_onlyへ移し、保存済V2の読取を維持する。offや旧APIへの無条件切戻しでV2保存を不可視にしない。
+
+Render連携のtrigger_deployにはcommit指定がなく、env更新MCPにはu87でmain deployを起動した実測があるため、この二つを使って対象版配置を代行しない。公式DashboardのEnvironment **Save only** → **Manual Deploy / Deploy a specific commit**を使う（[deploy docs](https://render.com/docs/deploys)、[env docs](https://render.com/docs/configure-environment-variables)）。GitHub連携にはworkflow_dispatchがない。承認後、利用可能な承認済み操作経路を確認し、必要な開始操作だけをMashへ依頼する。未承認のbrowser fallback、secret取得、新service追加、main mergeは行わない。
+
+Rule18 §11.3とu96/u97末尾が実配置・有効化・native配布をDB追加承認と分離しているため、この範囲の個別承認を求める。前回DB適用承認を再質問しない。今回は既存引継ぎと運用資料への記録のみで、API/RN source・test・SQL・稼働設定・deploy・native build/配布は未変更。STRUCTURE_MAP_DELTA_NONE（owner、route、source構成変更なし）。primary outcomeはBLOCKER_NARROWED、商品0/3・NOT_CLEAR・全体48%を保持し、分析完成とはしない。
