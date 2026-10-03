@@ -13547,3 +13547,30 @@ rootと補助が最終差分を確認。remote commit/changed paths/全文一致
 残る接続作業は、対象API/認証/DB/migration/アプリ版と、端末用bundleに実際に入るAPI_BASE_URLを同じ開発環境として確認すること。現repositoryはRN CLIで、URL resolverが読む`EXPO_PUBLIC_API_BASE_URL`等をshellで指定しただけで実bundleへ反映したとは証明できていない。この環境値注入を今回修復済みとせず、次の限定確認点にする。具体的な対象環境を確認する前に新しい設定機構や有効化を追加しない。既存の入力保存→初回応答→本人回答→更新応答→履歴再取得が実機で成立したとのcreditはまだ付与しない。
 
 今回のprimary outcomeは限定TECHNICAL_CREDIT。文体・深さ等の全面改善を実機接続の前提にせず、10/03のEmlis品質改善枠の区切り、10/04以降のWork分析（利用不可ならPro Piece）、限定した共通接続作業を継承する。u77までの意味/文体残件、旧商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを保持。新しい最小公開条件の合格・実機成功・配布/公開へ換算しない。merge/deploy/enable/live DB適用なし。追加の有料サービス利用・Mashの操作負担なし、正確な課金額は未取得。
+
+
+## 2026-10-03 u79 — 開発API URLをRN CLIの実bundleへ接続
+
+### 対象・原因・変更
+
+Mashの残件継続指示から、u78のRN build環境値注入を限定して修復した。開始は15:02 JST。開始HEADはAPI `78826d2d9f796f36284d2d39fd007a267d73d776`、Cocolon `305d828edcb5234d7a920da32ed97d760dd1b75b`。全体設計・全ファイル地図・current_structure・最新weekly 20261003 §6.6〜6.10・前回引継ぎと現行ルールを確認し、fresh PR/treeと実装設定を照合。今回もrootだけが編集/実行/反映し、補助は読取レビューを担当した。
+
+現repositoryはRN CLI 0.77.3で、URL resolverは`process?.env?.[key]`を読むが、Babel/Metro/native/CIには公開API URLをJavaScriptへ渡す処理がなかった。端末のenvが不在/空ならshellで指定しても本番fallbackとなる。既存`babel.config.js`内で既存resolverの読取式だけを公開4値のliteralへ置換する。Program内の先行traverseでRN presetのoptional-chain展開より先に処理し、ローカルprocess binding・別file・他envを対象にしない。Reanimatedは末尾のまま。URLの4キー優先順位・trim・slash除去・fallbackは既存resolverをそのまま使う。
+
+既存`metro.config.js`は同じ4値をcacheVersionへ含める。値は設定読込時のsnapshotなので、変更時はMetroを停止して環境を設定し直し、再起動/再bundleする。runtime切替・dotenv・新native bridge・追加依存は作らない。既存SVG transformer、API/認証契約、既定hostは維持する。
+
+変更はCocolon5（既存Babel/Metro設定・既存test末尾・Emlis current map・正本06）、API2（既存運用手順・本handoff）の計7 modify、追加/削除0。mapは既存build設定→既存resolver→共通clientの接続責務を明記する。新しいowner/file/route/schema/本文作者は追加しない。APIコード・migration・依存manifest/lock・native設定・本文品質は今回変更しない。
+
+### 検証と限界
+
+既存test 29855 bytes prefixと22条件を保持し、末尾へbuild regression 1条件を追加。旧Babel/Metro設定では追加条件が1 FAIL（1.42秒）：合成開発URLを指定しても、process不在/空envのVMで両方とも本番fallbackとなる。候補は全23 PASS/0 FAIL/ERROR0/SKIP0（6.27秒）。新規条件は実RN presetによるresolver変換、process不在/空env VM、実MetroのiOS platform合成module bundleを使う。5つの別processで同じsource・同じFileStore cacheを維持し、BASE→PIECE→ANALYSIS→MYMODEL→全未指定を順にbuildし、優先順位・空白・末尾slash・fallback・cacheVersion変更を確認する。非公開sentinelが成果物へ入らないこと、別fileとshadowed processを改変しないことも確認した。
+
+合成entryは実resolverをimportする。実SVG/RN transformer・Reanimated pluginを通すが、native初期化とpolyfill起動を除き、dev=false/minify=falseで評価する。アプリ全体のbundle、Android/iOS native build、Hermes/minify、署名・配布・端末操作の検証ではない。既存22件にはu78の履歴→Emlis回答→再表示→履歴操作と本人切替・read_only等の合成回帰を含み、通信はmockのまま。Python/API suite・実DBは今回再実行していない。u77の既存61失敗等を今回の23 PASSで解消扱いしない。
+
+Node24.19.0、React/renderer18.3.1と既存test-tools固定BabelでUIを実行。build側は既存lockのBabel core7.29.0/runtime7.28.6、RN/preset/metro-config0.77.3、Metro0.81.5、Reanimated3.17.0、SVG transformer1.5.1を一時環境へ用意した。repository依存は不変。準備時のruntime版指定誤りによるnpm ETARGETはlock値へ訂正。初案のmember visitorでは実presetの変換順序により置換漏れが再現し、先行traverseへ修正。test準備のchild EPERMは同じローカル検査のsandbox外実行で解消、fixtureの外部node_modules監視漏れとroot監視除外はtest側のwatchFoldersを修正した。これらを製品成功へ混ぜず、最終設定を復元・照合した。rootの実行確認と補助の静的差分レビューで阻害なし。
+
+### 次の実機接続・現行方針
+
+運用資料§6へ公開4値のbuild設定、Metro再起動/再bundle、native bundle processへの環境引渡しを記した。確認した資料・workflowには使用すべき開発API URL、認証/DB対象、実機OS/配布先の具体的指定がなく、現時点で実環境の組合せは未確定。次は対象API/認証DB、配置する版・migration適用状態、端末OSと導入経路を確定して、既存手順のread_only確認→development条件→bootstrap/can_write→入力/回答/保存再表示を実機で行う。手順の記載を実施済みにしない。iOS workflowはarchive/TestFlight uploadを含むため、build検証目的でdispatchしていない。
+
+primary outcomeは限定TECHNICAL_CREDIT。旧商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。10/03のEmlis品質改善枠の区切り、10/04のWork分析（利用不可ならPro Piece）と限定した共通接続の優先順を継承する。文体全面改善を実機接続の前提にしない。merge/deploy/enable/live DB適用・配布は未実施。正確な課金額は未取得。remote commit/tree/changed paths/内容照合の確定値は既存Draft PR3/30本文へ記す。
