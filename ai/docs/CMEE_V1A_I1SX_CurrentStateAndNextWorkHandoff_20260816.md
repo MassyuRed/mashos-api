@@ -13603,3 +13603,34 @@ Python/API suite、実DB、native build/署名/実機/配布は未実行。本�
 u79の実機接続対象未確定を継承する。使用する開発APIと認証/DB、配置版・Q2/Q3 migration状態、端末OSと導入経路を確定し、既存手順でread_only確認→development設定→bootstrap/can_write→入力/回答/保存再表示を実機で確認する。具体的対象を未確認のまま選定済み・接続成功とはしない。u80はこの経路の既存本人保護の修復であり、別の環境整備systemや品質全面改善を前工程に追加しない。
 
 primary outcomeは限定TECHNICAL_CREDIT。旧商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmerged、10/03のEmlis品質枠の区切りと10/04以降のWork分析（利用不可ならPro Piece）、限定した共通接続の方針を維持する。merge/deploy/enable/live DB適用/課金/配布は行わない。追加ユーザー操作・有料外部serviceなし。
+
+
+## 2026-10-03 u81 — 質問終了後に消える未確定回答の再送導線を修復
+
+MashのEmlis残件継続指示と最新weekly 20261003 §6.6〜6.10に従う限定接続修復。開始HEADはCocolon `599ad449b8c03619504358161aa374a0561d4ef2`、API `7caeb92879860c6110a0b685cf714573f6eea999`。前回u80、前提資料・作業ルール・全体設計/全ファイル地図・最新weeklyを継承し、恒久incident全文を再読、両PR/treeの最新版と対象ソースを確認した。System Contextは原典直接確認。rootが編集・実行・反映、補助はread-onlyの接続調査と差分レビュー。
+
+### 原因と変更
+
+回答POSTの結果が不明な間に別端末から異なる回答またはskipが保存され、GETで質問終了を確認すると、hookは元の操作を未確定として保持する。異なる本文を本人の送信成功と誤認しないための既存挙動である。一方Modalは、質問がある時だけ回答再送を表示し、それ以外の再送ボタンは操作/frame専用だった。そのため未確定回答の再送ボタンが消え、続行/終了も無効のまま、同じ画面内に解消導線がなくなっていた。
+
+既存`EmlisThreadModal.js`の`replayPending`ボタンを、未確定回答があり質問がない時にも表示する。回答は「同じ回答を再送する」、操作/frameは既存の「同じ操作を再送する」とする。GET前・busy・read_only・既知拒否時は既存条件のまま無効。質問がある時の回答ボタンは従来どおりで二重表示しない。
+
+新しい送信/判定方式は追加しない。既存hookが元のthread ID・question ID・revision・idempotency key・回答・時刻をそのまま再送し、サーバーの既存idempotency処理または409拒否→GETで結果を確定する。別端末の回答を上書きせず、推測で未確定操作を成功扱いしない。backendの`_replay`・`answer`・`action`の現行実装を読取確認したが変更・実行していない。
+
+変更はCocolonの既存Modal/test/map/正本06とAPI既存handoffの計5 modify。既存hook、専用API、共通client、本文作者、保存/公開wire/DB/認証/flagは不変。新file・依存・自動再送なし。
+
+### 検証と限界
+
+既存test全文（u80の27条件）を保持し、末尾に2条件を追加。実Modal・実hook・実専用API・実共通clientを使い、別端末での別回答保存/skipをそれぞれ合成した。旧Modalでは2 FAIL（0.351秒）：GETで質問が閉じた後に再送ボタンが0件となることを再現した。
+
+修正後は全29 PASS / FAIL0 / ERROR0 / SKIP0（6.979秒）。新2条件で、GETだけでは再送しない、質問なしでもボタンが1つ残る、read_onlyでは再送しない、再送body全byteが元送信と同じ、409後に再取得して未確定/拒否状態を解消、保存済み回答/本文を保持、readerを閉じずに次の質問へ続行または終了状態を確認することを検証した。既存の認証切替4条件、履歴/再表示、未知ACK、競合、実Metro bundle回帰も成功。
+
+Node24.19.0とu80と同じ固定test/RN/Metro依存を再使用し、repository依存を変更していない。通信とサーバーの競合応答はmockであり、実DBの競合や実機操作を実行した証拠ではない。Python/API suite・native build・署名/配布は未実行。旧61失敗・意味/本文品質残差は継承し、29件成功を商品合格へ換算しない。
+
+rootと補助の静的レビューでscope内の最小変更を確認。GitHub対象preimage、今回の変更path、反映後の全5fileの全文/byteと最終HEADを確認し、確定値を既存PR本文に記す。
+
+### 残件と再開位置
+
+次の実機接続はu79/u80のまま、対象開発API・認証/DB・配置版/migration状態・端末OS/導入経路の確定から始める。既存手順によるread_only→development→bootstrap/can_write→入力/回答/保存再表示は実機未確認。今回の回復導線修復を実機一往復成功にしない。対象が未指定のままlive設定・配置・DB適用を進めない。
+
+primary outcomeは限定TECHNICAL_CREDIT。旧商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmerged、10/03のEmlis品質枠の区切りと10/04以降のWork分析（利用不可ならPro Piece）を継承。merge/deploy/enable/live DB適用/課金/配布なし。新たなユーザー操作・有料外部serviceの追加なし。
