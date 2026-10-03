@@ -33,6 +33,9 @@ def _safe_label(node):
                (node.polarity, node.modality, node.temporal_scope)):
         raise AnalysisSourceError('analysis_safe_surface_unavailable')
     phrase = ''.join(noun + case for case, noun in parts.arguments) + parts.predicate_lemma
+    if parts.sequence_marker:
+        phrase = {'AFTER_PREVIOUS': 'その後：',
+                  'THEN_OR_ADDITION': 'それから：'}[parts.sequence_marker] + phrase
     if parts.modality == 'wish':
         label = phrase + ('ことへの希望' if parts.polarity == 'positive'
                           else 'ことを望まない')

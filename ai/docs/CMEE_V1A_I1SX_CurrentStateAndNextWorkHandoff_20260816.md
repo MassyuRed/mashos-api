@@ -14023,3 +14023,28 @@ Python3.12.14/標準unittestで既存26＋追加7＝**33 PASS**。追加分は�
 対応は既存9動詞/名詞項の完全節に限定される。省略主語、任意の修飾/複文、通常補足中の未対応意味、複数保存回答、annotations/conflict/比較/IFは未完了。既存originalのsafe表現未対応を今回全解消したとはしない。実DB/HTTP/nativeで修正版を再検査していない。API315f5b5…の稼働版と今回の未配置sourceを区別する。保存済artifactを表示時に再生成/改変しない。
 
 既存PR3/30へ反映。新規file0、source2 file（compiler/test）の変更と既存4 Cocolon文書＋API handoffを同期。Analysis map §4.8へ既存file責務を更新、path/owner/外部interfaceの追加なし。商品0/3・NOT_CLEAR・全体48%を再採点しない。次は残る通常入力の意味範囲を既存設計から一単位ずつ拡げる。配置承認や実機確認を内容修正の毎回の前工程に戻さない。
+
+
+## 2026-10-04 JST u103 — 明示された記録内順序を文章と図へ反映
+
+### 対象・変更前
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。Mashの「分析構造の実装に進んで」と前回u102 txt、全体構造01/全file構造map（Analysis正本03、旧01Bは履歴）、最新weekly 20261003 §6.6〜6.10、canonical04、恒久incident記録を照合した。実機OKは既存のMash報告を継承し、内容修正の前提として再要求しない。rootが実装・検査・反映を担当、補助2名は読取reviewのみ。新規path/owner/API/DB/DTO/RN/本番依存の追加は0。
+
+変更前は合成入力「私は資料を調べた。その後、私は考えをノートに書いた。」からprivate artifactは作れても、safe projectionが analysis_safe_surface_unavailable となった。既存有限節grammarが接頭接続語を解釈せず、共有planの順序relationにも到達しなかった。既存Analysis compiler/realizerの因果箇所を修正した。
+
+### 実装した内容
+
+- 同一source・同一fieldの隣接する完全な本人の過去fact節に限り、「その後」「それから」を型と元位置へ保持し、記録内の順序線へ接続する。因果線ではない。safe表示も二つの接続語を区別し、否定と希望を保持する。希望を実行済みの順序へ昇格しない。
+- 順序の両端をevidence occurrenceごとに保持する。A→B→Aは3node/2edge、A→Aも2nodeとなり、同じ内容の集約による自己線や偽の循環を作らない。独立recordの順序は別々に保持し、反復routeへ推測集約しない。順序に関わらない再記述のu102集約は維持する。
+- 別field/source、元入力と補足の間、未解釈の中間節、引用訂正/撤回箇所を橋渡ししない。ordinary answer内の成立pairはanswer自身のexact UTF-8/scalar/hashへbindする。単なる記載順・共起から順序を作らない。成立したpairの不足表示だけを解消し、接続先不明はunknownに残す。
+
+### 実確認・残件
+
+Python3.12.14でvertical **42 PASS**（既存33＋追加9）、saved period13＋storage10（追加1）＋API6を含め計**71 PASS**。保存/APIは合成Auth/DB I/Oと実engineによる確認で、live DB検査ではない。A→B→Aの保存・再読取で3node/2edgeと文章/DTOの完全一致、読取時再生成0、private evidenceへのproposition/sequence_marker/source_parts漏出0を確認。実RN contract/view modelへ同DTOを渡す一回の検査でもbackend本文と完全一致した。
+
+合成生成本文6組（通常順序、同動作反復、否定、A→B→A、未解釈中間節、希望）をrootが全文確認し、接続語保持後のA→B→A表示も再読した。read-onlyの商品/出典reviewと保存/API/RN整合reviewでblocking指摘なし。「それから」の表示を一律「その後」にしないという指摘を反映した。機械成功を正式商品受入れには換算せず、商品0/3・NOT_CLEAR・全体48%は再採点しない。
+
+検査初回はprimary runtimeにfastapi/httpxが無くimportで停止。repo requirementsに既存の2依存をscratchの隔離targetへ導入して実行した（fastapi0.142.2/httpx0.28.1、repo依存定義は変更0）。System Context prepareは material b0a561… is not a descendant of a77b79c… で停止したため、context更新成功とはせず、固定GitHub headと必要原本の直接読取で作業した。
+
+更新fileはAPIのintent_compiler/observed_route_realizer/vertical test/storage testと既存API handoff、Cocolon既存00/03/canonical04/06。地図の責務差分は03 §4.9。u102/u103 sourceは未配置。稼働API315f5b5…とTestFlight6201を維持し、実DB・配置・build・main/merge操作なし。任意日本語、省略主語、「昨日/今日」等の任意時点、複文、annotations/conflict/期間比較/IFは残る。次の内容作業候補は既存完全節に付く時点表現のsource-grounded解釈を一単位として原因確認すること。今回それらを実装済み/承認済みの新設計に昇格しない。

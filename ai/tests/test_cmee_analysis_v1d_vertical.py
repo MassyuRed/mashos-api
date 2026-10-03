@@ -185,6 +185,141 @@ class AnalysisVerticalTests(unittest.TestCase):
         for private in (OWNER, 'synthetic-record-1', 'analysis-evidence:', 'analysis-source:', 'sha256:'):
             self.assertNotIn(private, visual)
 
+    def test_explicit_sequence_reaches_safe_text_and_graph_with_exact_evidence(self):
+        for marker in ('その後、', 'それから', 'その後\u3000'):
+            with self.subTest(marker=marker):
+                req = request(record(memo='\u3000私は資料を調べた。\n' + marker
+                    + '私は考えをノートに書いた。'))
+                artifact = self.generate(req).artifact
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)
+                self.assertEqual(len(visual['edges']), 1)
+                self.assertEqual(visual['edges'][0]['edge_kind'], 'OBSERVED_ORDER')
+                self.assertEqual((visual['edges'][0]['from_ref'], visual['edges'][0]['to_ref']),
+                                 ('n1', 'n2'))
+                self.assertEqual([n['visible_label'] for n in visual['nodes']],
+                    ['資料を調べる（実行済み）',
+                     marker.rstrip('、\u3000') + '：考えをノートに書く（実行済み）'])
+                self.assertEqual(visual['projection_of'], text['projection_of'])
+                self.assertIn('原因を示す線ではありません', text['text'])
+                self.assertFalse(any(g.missing_scope == 'ROUTE_CONNECTION'
+                                     for g in artifact.graph.unknown_gaps))
+                sources = {s.envelope.envelope_id: s for s in freeze_analysis_sources(req).sources}
+                edge = artifact.graph.edges[0]
+                self.assertEqual(len(edge.evidence_refs), 2)
+                for evidence in edge.evidence_refs:
+                    envelope = sources[evidence.source_envelope_id].envelope
+                    literal = envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                    field = envelope.raw_utf8[evidence.field_utf8_start:evidence.field_utf8_end].decode()
+                    self.assertEqual(literal.decode(), field[evidence.scalar_start:evidence.scalar_end])
+                    self.assertEqual(hashlib.sha256(literal).hexdigest(), evidence.literal_sha256)
+                for private in (OWNER, 'analysis-source:', 'synthetic-record-', 'sha256:', '私は'):
+                    self.assertNotIn(private, json.dumps(visual, ensure_ascii=False))
+
+    def test_repeated_actions_keep_sequence_occurrences_without_self_edges_or_cycles(self):
+        memo = ('私は資料を調べた。その後私は考えをノートに書いた。'
+                'それから私は資料を調べた。')
+        artifact = self.generate(request(record(memo=memo), record(2, memo=memo))).artifact
+        visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+        self.assertEqual(len(visual['nodes']), 6)
+        self.assertTrue(all(n['evidence_badge_count'] == 1 for n in visual['nodes']))
+        self.assertEqual([(e['from_ref'], e['to_ref']) for e in visual['edges']],
+                         [('n1', 'n2'), ('n2', 'n3'), ('n4', 'n5'), ('n5', 'n6')])
+        repeated = self.generate(request(record(memo=
+            '私は資料を調べた。その後私は資料を調べた。'))).artifact
+        self.assertEqual(len(repeated.graph.nodes), 2)
+        self.assertEqual(repeated.graph.edges[0].endpoint_refs, ('n1', 'n2'))
+
+    def test_unmarked_order_and_distinct_fields_or_sources_cannot_create_sequence(self):
+        cases = [
+            request(record(memo='私は資料を調べた。私は記録を残した。')),
+            request(record(memo='私は資料を調べた。', action='その後私は記録を残した。')),
+            request(record(memo='私は資料を調べた。'), record(2, memo='その後私は記録を残した。')),
+            request(self.with_answer(record(memo='私は資料を調べた。'),
+                                     'その後私は記録を残した。')),
+        ]
+        for req in cases:
+            with self.subTest():
+                artifact = self.generate(req).artifact
+                self.assertIsNotNone(artifact)
+                self.assertFalse(artifact.safe_projection(authenticated_owner_scope=OWNER)['edges'])
+                self.assertTrue(any(g.missing_scope == 'ROUTE_CONNECTION'
+                                    for g in artifact.graph.unknown_gaps))
+
+    def test_unread_clause_cannot_be_skipped_by_sequence(self):
+        artifact = self.generate(request(record(memo=
+            '私は資料を調べた。まだわからない。その後私は記録を残した。'))).artifact
+        self.assertFalse(artifact.safe_projection(authenticated_owner_scope=OWNER)['edges'])
+        self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+        self.assertIn('ROUTE_CONNECTION', [g.missing_scope for g in artifact.graph.unknown_gaps])
+
+    def test_sequence_retains_negation_and_does_not_promote_wish_to_action(self):
+        artifact = self.generate(request(record(memo=
+            '私は資料を調べませんでした。その後私は記録を残した。'))).artifact
+        visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+        self.assertIn('行わなかった', visual['nodes'][0]['visible_label'])
+        self.assertEqual(len(visual['edges']), 1)
+        for memo in ('私は仕事を続けたい。その後私は記録を残した。',
+                     '私は資料を調べた。その後私は仕事を続けたい。',
+                     '私は資料を調べた。それから私は仕事を続けたい。'):
+            with self.subTest(memo=memo):
+                artifact = self.generate(request(record(memo=memo))).artifact
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                self.assertFalse(visual['edges'])
+                wish = next(n for n in visual['nodes'] if n['node_kind'] == 'ATTENTION_OR_THOUGHT')
+                self.assertIn('希望', wish['visible_label'])
+                if 'それから' in memo:
+                    self.assertEqual(wish['visible_label'], 'それから：仕事を続けることへの希望')
+
+    def test_local_sequence_in_ordinary_answer_keeps_answer_provenance(self):
+        req = request(self.with_answer(record(memo='私は記録を残した。'),
+            '私は資料を調べた。その後私は考えをノートに書いた。'))
+        artifact = self.generate(req).artifact
+        self.assertEqual(len(artifact.graph.edges), 1)
+        self.assertEqual(artifact.graph.edges[0].endpoint_refs, ('n2', 'n3'))
+        sources = {s.envelope.envelope_id: s for s in freeze_analysis_sources(req).sources}
+        self.assertTrue(all(sources[e.source_envelope_id].envelope.source_role == 'SUPPLEMENTAL_ANSWER'
+                            for e in artifact.graph.edges[0].evidence_refs))
+        self.assertTrue(all(len(n.record_refs) == 1 for n in artifact.graph.nodes))
+        artifact.safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_withdrawal_or_replacement_does_not_restore_original_sequence(self):
+        original = record(memo='私は資料を調べた。その後私は記録を残した。')
+        for answer in ('「私は資料を調べた」は取り消します。',
+                       '「その後私は記録を残した」は取り消します。',
+                       '「私は資料を調べた」ではなく「私は資料を調べなかった」です。'):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(original, answer))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertFalse(artifact.safe_projection(authenticated_owner_scope=OWNER)['edges'])
+                self.assertEqual(len(artifact.graph.source_updates), 1)
+        chain = record(memo='私は資料を調べた。その後私は考えを書いた。それから私は記録を残した。')
+        artifact = self.generate(request(self.with_answer(chain,
+            '「その後私は考えを書いた」は取り消します。'))).artifact
+        self.assertFalse(artifact.safe_projection(authenticated_owner_scope=OWNER)['edges'])
+
+    def test_sequence_resolves_only_its_pair_and_orphan_connective_keeps_gap(self):
+        artifact = self.generate(request(record(memo=
+            '私は資料を調べた。その後私は考えを書いた。私は記録を残した。'))).artifact
+        self.assertEqual([e.endpoint_refs for e in artifact.graph.edges], [('n1', 'n2')])
+        self.assertEqual([g.between_node_refs for g in artifact.graph.unknown_gaps
+                          if g.missing_scope == 'ROUTE_CONNECTION'], [('n2', 'n3')])
+        orphan = self.generate(request(record(memo='その後私は記録を残した。'))).artifact
+        self.assertFalse(orphan.graph.edges)
+        self.assertTrue(any(g.reason_code == 'EXPLICIT_PREDECESSOR_NOT_ESTABLISHED'
+                            for g in orphan.graph.unknown_gaps))
+        self.assertIn('その後：', orphan.safe_projection(authenticated_owner_scope=OWNER)
+                      ['nodes'][0]['visible_label'])
+
+    def test_sequence_does_not_admit_other_speaker_quote_question_or_condition(self):
+        for memo in ('私は資料を調べた。その後友人は記録を残した。',
+                     '私は資料を調べた。その後私は記録を残した？',
+                     '私は資料を調べた。その後「私は記録を残した」と聞いた。',
+                     '私は資料を調べた。もしその後私は記録を残したなら、安心できる。'):
+            with self.subTest(memo=memo):
+                result = self.generate(request(record(memo=memo)))
+                self.assertFalse(result.artifact and result.artifact.graph.edges)
+
     def test_application_mode_is_not_enabled(self):
         result = self.generate(replace(request(record()), execution_mode='ANALYSIS_APPLICATION'))
         self.assertEqual(result.status, EngineStatus.REJECTED)

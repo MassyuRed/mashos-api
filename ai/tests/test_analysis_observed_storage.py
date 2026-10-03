@@ -20,9 +20,9 @@ START, END = '2026-10-01T00:00:00+00:00', '2026-10-03T00:00:00+00:00'
 GUARD = 'analysis-db-v1:' + 'a' * 64
 
 
-def fixture():
+def fixture(memo='私は考えをノートに書いた。私は仕事を続けたい。'):
     original = {'id': str(UUID(int=101)), 'created_at': '2026-10-01T01:00:00',
-        'memo': '私は考えをノートに書いた。私は仕事を続けたい。', 'memo_action': '',
+        'memo': memo, 'memo_action': '',
         'category': ['仕事'], 'emotions': ['平穏'], 'emotion_details': []}
     member = AnalysisSavedRecord(OWNER, original['id'], commitment(original), canonical_bytes(original).decode())
     artifact = MeaningExperienceEngine().generate(AnalysisObservedMapRequest(
@@ -70,6 +70,39 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('original_json', encoded)
         self.assertIn('evidence_refs', encoded)
         self.assertEqual(writes[0]['p_guard'], GUARD)
+
+    async def test_sequence_occurrences_survive_save_and_read_without_reinterpretation(self):
+        self.fx = fixture('私は資料を調べた。その後私は考えをノートに書いた。'
+                          'それから私は資料を調べた。')
+        self.row = self.fx['row']
+        writes = []
+        async def rpc(name, payload):
+            if name == 'analysis_observed_source_snapshot':
+                return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                    {'original': self.fx['original'], 'thread': None, 'events': []}]}
+            if name == 'analysis_observed_commit':
+                writes.append(payload)
+                self.row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                self.row['content_text'] = payload['p_text']
+                self.row['content_json']['watashiMap'] = payload['p_projection']
+                return self.row['id']
+            return result([self.row], matched=True)
+        with patch.object(service, '_rpc', side_effect=rpc):
+            saved = await service.generate_saved(OWNER, start=START, end=END,
+                report_mode='standard', report_type='latest')
+            with patch.object(MeaningExperienceEngine, 'generate',
+                              side_effect=AssertionError('read regenerated')):
+                reread = await service.read_saved(OWNER)
+        projection = saved['content_json']['watashiMap']
+        self.assertEqual(len(projection['nodes']), 3)
+        self.assertEqual([(e['from_ref'], e['to_ref']) for e in projection['edges']],
+                         [('n1', 'n2'), ('n2', 'n3')])
+        self.assertEqual(projection, writes[0]['p_projection'])
+        self.assertEqual(saved['content_text'], writes[0]['p_text'])
+        self.assertEqual(reread['items'][0], saved)
+        encoded = json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False)
+        for private in ('私は', 'proposition', 'sequence_marker', 'source_parts', 'visible_label'):
+            self.assertNotIn(private, encoded)
 
     async def test_read_never_generates_and_preserves_wire(self):
         with patch.object(service, '_rpc', AsyncMock(return_value=result([self.row]))), \

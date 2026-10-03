@@ -36,6 +36,7 @@ class ObservedProposition:
     modality: str
     temporal_scope: str
     source_parts: tuple[tuple[str, int, int], ...]
+    sequence_marker: str = ''
 
 
 # A bounded verb/inflection inventory, not an input/topic-to-answer table.
@@ -82,10 +83,15 @@ def _finite_predicates():
 
 
 _FINITE_PREDICATES = _finite_predicates()
+_SEQUENCE_PREFIX = re.compile(r'^(その後|それから)[、，\s]*')
 
 
 def _proposition(value: str) -> ObservedProposition | None:
-    subject = re.match(r'^(?:私|僕|わたし|自分)は', value)
+    sequence = _SEQUENCE_PREFIX.match(value)
+    start = sequence.end() if sequence else 0
+    marker = ({'その後': 'AFTER_PREVIOUS', 'それから': 'THEN_OR_ADDITION'}
+              [sequence.group(1)] if sequence else '')
+    subject = re.compile(r'(?:私|僕|わたし|自分)は').match(value, start)
     if subject is None:
         return None
     for finite, lemma, polarity, modality, time in _FINITE_PREDICATES:
@@ -93,7 +99,8 @@ def _proposition(value: str) -> ObservedProposition | None:
             continue
         end = len(value) - len(finite)
         offset, arguments = subject.end(), []
-        parts = [('SELF_TOPIC', 0, offset)]
+        parts = ([(marker, 0, start)] if sequence else [])
+        parts.append(('SELF_TOPIC', start, offset))
         while offset < end:
             argument = _ARGUMENT.match(value, offset, end)
             if argument is None:
@@ -108,7 +115,8 @@ def _proposition(value: str) -> ObservedProposition | None:
             continue
         parts.append(('FINITE_PREDICATE', end, len(value)))
         return ObservedProposition('SELF', tuple(arguments), lemma,
-            polarity, modality, time, tuple(parts))
+            polarity, modality, time, tuple(parts),
+            marker)
     return None
 
 
@@ -241,14 +249,15 @@ def _fragment(source, nucleus):
     return value, evidence
 
 
-def _self_propositions(source, *, require_complete=False):
+def _self_propositions(source, *, require_complete=False, plan=None):
     """Read existing grammatical claims, retaining original field coordinates.
 
     An ordinary answer must stand on its own. Unread text may qualify, retract
     or correct the apparent claim, so a parsed fragment is not enough.
     """
-    plan = build_final_stage1_grounded_observation_plan(
-        source.normalized, evidence_spans=source.spans)
+    if plan is None:
+        plan = build_final_stage1_grounded_observation_plan(
+            source.normalized, evidence_spans=source.spans)
     if plan.input_profile.material_quality == 'safety_routed':
         raise AnalysisSourceError('analysis_separate_safety_required')
     claims = []
@@ -272,6 +281,33 @@ def _self_propositions(source, *, require_complete=False):
                              for i, char in enumerate(raw)):
             raise AnalysisSourceError('analysis_supplement_interpretation_pending')
     return tuple(claims)
+
+
+def _explicit_order_pairs(source, plan, withdrawn):
+    """Bind a written connective to adjacent complete clauses in one field.
+
+    The shared plan establishes the claims, while Analysis owns this relation.
+    Never bridge an unread clause, another field/source, or a removed target.
+    A current wish is not proof that a later action occurred.
+    """
+    whole = {(r.field_path, r.scalar_start, r.scalar_end) for r in source.evidence}
+    claims = {e.evidence_id: (p, e) for p, e in _self_propositions(source, plan=plan)
+              if e.source_span_id not in withdrawn
+              and (e.field_path, e.scalar_start, e.scalar_end) in whole}
+    ordered = sorted(claims.values(), key=lambda item:
+                     (item[1].field_path, item[1].scalar_start, item[1].scalar_end))
+    pairs = []
+    for (left, a), (right, b) in zip(ordered, ordered[1:]):
+        if (a.field_path != b.field_path or a.scalar_end >= b.scalar_start
+                or right.sequence_marker not in {'AFTER_PREVIOUS', 'THEN_OR_ADDITION'}
+                or (left.modality, right.modality) != ('fact', 'fact')
+                or (left.temporal_scope, right.temporal_scope) != ('past', 'past')):
+            continue
+        separator = source_field_text(source, a.field_path)[a.scalar_end:b.scalar_start]
+        if (re.fullmatch(r'[。．.\s]+', separator)
+                and any(char in separator for char in '。．.\r\n')):
+            pairs.append((a, b))
+    return tuple(pairs)
 
 
 def _admit_ordinary_supplement(answer, original):
@@ -366,13 +402,16 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
     active_sources, excluded, updates, replacement_updates = _active_sources(source_set)
     nodes, edges, gaps = [], [], []
     unresolved_records = set()
-    by_signature, occurrences = {}, {}
+    by_signature, occurrences, record_orders = {}, {}, {}
     for source in active_sources:
         plan = build_final_stage1_grounded_observation_plan(
             source.normalized, evidence_spans=source.spans)
         if plan.input_profile.material_quality == 'safety_routed':
             raise AnalysisSourceError('analysis_separate_safety_required')
-        admitted, unresolved = {}, False
+        order_pairs = _explicit_order_pairs(source, plan,
+            excluded.get(source.envelope.envelope_id, set()))
+        ordered_evidence = {e.evidence_id for pair in order_pairs for e in pair}
+        admitted, by_evidence, unresolved = {}, {}, False
         for nucleus in plan.nuclei:
             if set(nucleus.source_span_ids) & excluded.get(source.envelope.envelope_id, set()):
                 continue
@@ -401,7 +440,12 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
             # preserve each source witness without inventing a cooccurrence.
             meaning = ((proposition.actor, tuple(sorted(proposition.arguments)),
                         proposition.predicate_lemma) if proposition else label)
-            signature = (kind, meaning, polarity, modality, time)
+            # A sequence is about occurrences: collapsing A -> B -> A by
+            # proposition would create a false cycle or erase repeated A.
+            # Ordinary, unqualified claims retain their existing aggregation.
+            occurrence_scope = (evidence.evidence_id if evidence.evidence_id in ordered_evidence
+                or (proposition and proposition.sequence_marker) else None)
+            signature = (kind, meaning, polarity, modality, time, occurrence_scope)
             index = by_signature.get(signature)
             if index is None:
                 index = len(nodes)
@@ -417,28 +461,18 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
                     update_refs=tuple(dict.fromkeys((*old.update_refs, *node_updates))))
             node = nodes[index]
             admitted[nucleus.nucleus_id] = node.node_ref
+            by_evidence[evidence.evidence_id] = node.node_ref
             occurrences.setdefault(source.record_ref, set()).add(node.node_ref)
         # The whole replacement, not just a convenient sub-clause, must be
         # interpreted. Otherwise no old result can be returned as current.
         if source.envelope.envelope_id in replacement_updates and (not admitted or unresolved):
             raise AnalysisSourceError('analysis_correction_replacement_unsupported')
-        for relation in plan.relations:
-            endpoints = (admitted.get(relation.from_nucleus_id),
-                         admitted.get(relation.to_nucleus_id))
-            refs = tuple(r for r in source.evidence
-                         if r.source_span_id in relation.source_span_ids)
-            if (relation.type == 'temporal_before_after' and
-                    relation.grounding_kind == 'user_stated_relation' and
-                    all(endpoints) and endpoints[0] != endpoints[1] and refs and
-                    {r.source_span_id for r in refs} == set(relation.source_span_ids)):
-                # Requires an explicit temporal marker in the same source;
-                # order in a list or in the period is not an order assertion.
-                marker = any(re.search(r'その後|それから|した後|終えてから',
-                    source.envelope.raw_utf8[r.utf8_start:r.utf8_end].decode('utf-8'))
-                    for r in refs)
-                if marker:
-                    edges.append(ObservedEdge('e' + str(len(edges) + 1),
-                        'OBSERVED_ORDER', endpoints, refs))
+        for a, b in order_pairs:
+            endpoints = (by_evidence.get(a.evidence_id), by_evidence.get(b.evidence_id))
+            if all(endpoints) and endpoints[0] != endpoints[1]:
+                edges.append(ObservedEdge('e' + str(len(edges) + 1),
+                    'OBSERVED_ORDER', endpoints, (a, b)))
+                record_orders.setdefault(source.record_ref, set()).add(endpoints)
         if unresolved or (not admitted and any(
                 s.source_field in ('memo', 'memo_action') and
                 s.span_id not in excluded.get(source.envelope.envelope_id, set())
@@ -456,9 +490,17 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
         if record_ref in unresolved_records:
             gaps.append(UnknownGap('g' + str(len(gaps) + 1), anchors[:1],
                 'SOURCE_SCOPE', 'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'))
-        if len(anchors) > 1:
-            gaps.append(UnknownGap('g' + str(len(gaps) + 1), anchors[:2],
-                'ROUTE_CONNECTION', 'ONLY_EXPLICIT_ORDER_IS_SHOWN'))
+        known_pairs = record_orders.get(record_ref, set())
+        for pair in zip(anchors, anchors[1:]):
+            if pair not in known_pairs and pair[::-1] not in known_pairs:
+                gaps.append(UnknownGap('g' + str(len(gaps) + 1), pair,
+                    'ROUTE_CONNECTION', 'ONLY_EXPLICIT_ORDER_IS_SHOWN'))
+        for node in nodes:
+            if (node.node_ref in ids and node.proposition
+                    and node.proposition.sequence_marker
+                    and not any(pair[1] == node.node_ref for pair in known_pairs)):
+                gaps.append(UnknownGap('g' + str(len(gaps) + 1), (node.node_ref,),
+                    'ROUTE_CONNECTION', 'EXPLICIT_PREDECESSOR_NOT_ESTABLISHED'))
     if nodes and unresolved_records - occurrences.keys():
         gaps.append(UnknownGap('g' + str(len(gaps) + 1), (nodes[0].node_ref,),
             'SOURCE_SCOPE', 'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'))
