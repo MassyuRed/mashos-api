@@ -1,3 +1,5 @@
+> 2026-10-03 u93現在地：Analysis V1-Dのoffline部分観測graphと同一artifactのprivate文章/図用previewを実装。18検査PASS。補足解釈・公開safe表現・実DB/API/RN/実機は未完了。最新結果は末尾u93。
+
 > 2026-09-30 u36現在地：受理済み動詞知覚節の「が」を保持。関連2451 unique IDs＝2437PASS／既知14FAIL（全条件fresh）、新39全PASS。54系列中11本文改善、裸感情と複数人称は旧表現を保持。群未完了・商品NOT_CLEAR／0/3・既定OFF。最新結果と次の同群残件は末尾「u36最終結果」を参照。以下の過去集計は履歴。
 
 > 2026-09-20 最新現在地：背景を保持し、安堵した経験を共通フォローの焦点へ構成。追加24検査PASS、全体2119 PASS / 364 FAIL（従来350＋旧原文全文一致との新規不一致14）。same100と継承保存322ケース600状態をrootが全文確認。商品NOT_CLEAR。最終結果と次の残件は末尾「focus the experience behind a source-owned feeling」。以下の現在地は過去時点の履歴。
@@ -13793,3 +13795,20 @@ u92でMashが「同意して、開始した」と報告したため、重複起�
 次はMashのTestFlightで **1.0 (6101)** の利用可能性を確認し、既存アプリを更新して起動・本人の入力履歴を確認する。既存sessionを保ち、ログアウト/再インストールを前工程にしない。APIは引き続きread_onlyで、生成/回答/保存往復は未確認。旧履歴のNOT_CREATEDでmodalが閉じることを故障とも保存済み応答の読取成功とも決めつけない。development三値は未変更であり、送信成功を実機での生成成功へ換算しない。
 
 全体設計・全ファイル地図・最新weekly20261003・前回記録の確認を引継ぎ、rootが監視と記録の単一変更owner、補助はsource差分/次工程/Renderのread-only確認を担当した。今回は既存4文書のみ、source/test/依存/SQL/workflow変更・新規test・main/merge変更なし、`STRUCTURE_MAP_DELTA_NONE`。Q2/Q3適用済み、商品0/3・NOT_CLEAR・全体48%・source既定OFF・両PR Draft/open/unmergedを保持。API運用資料§18を参照。
+
+
+## 2026-10-03 u93 — Analysis V1-Dの最初のoffline観測mapを実装
+
+Mashの「分析構造の実装に進んで」を受け、前回txtとfresh PR30/PR3、全体設計・全ファイル地図、国家system、三中核current map、canonical04/05、最新weekly20261003を確認して開始した。weekly §6.6〜6.10の最小一本を進め、Emlis/Pieceの文章品質全体完了待ちへ戻さない。rootが変更と検証の唯一の実行owner、補助2名は意味とsource/privacyの読取reviewを担当した。Codex WorkのPython3.12.14で実行。git cloneは接続不可のためGitHub connectorの固定refから必要sourceをmaterialize。System Context prepareはmodule不在で不成立、stale bundleを使わず原典を直接読んだ。
+
+初回はAnalysis専用の `cores/analysis/source_adapter.py` → `intent_compiler.py` → `observed_route_realizer.py` を実装し、`engine.py`に専用typed request dispatchを追加。保存原入力の厳密な7field形式とowner/LIVE/version/期間、重複record、補足の親versionを検証し、原文のscalar/UTF-8へ戻るEvidenceRefを保持する。共有のsource-grounded semantic frameを消費し、Analysis自身のnode/edge/unknownを作る。独立した2記録に同じ行動と考えが現れる合成入力で、根拠付き2nodeと無方向の同時出現線を生成し、同じartifact identityの文章と図用previewへ出力できた。記録順を因果・時系列へ昇格せず、場面/役割/結果/つながりの未成立部分はunknownとする。
+
+初回の意味範囲は明示本人の有限節に限定。報告・他者・引用・条件・疑問・予定などを実行行動として誤採用しない。共有frameのcurrent_user既定値を主体の証明にせず、欄をまたぐ伝聞も採用しない。補足の保存identityは結合できるが、訂正・撤回の意味反映は未接続のため、期間内の補足があれば全体を `analysis_supplement_interpretation_pending` のUNAVAILABLEにして訂正前の観測を返さない。frozen source memberとartifactを使う。
+
+**完成範囲はofflineの部分観測生成だけ。** ラベルに原文節を保つため、出力は `private_text_preview` / `private_visual_preview`、schema `cocolon.cmee.analysis_private_preview.v1`、wire `watashi.map.v2.private-preview`。公開safe DTOとして返したり、既存RNのwatashi.map.v2 formatterへ渡したりしない。実DBからの保存期間入力取得、補足の意味解釈、safeな公開表現、認証/tier/retention/削除再検査、永続化/API/RN接続、実機確認は未完了。順序線のpositive cohort、annotations/conflict/期間比較も未確認・未完了。旧Watashi Mapの置換や全Analysis実装完了を主張しない。
+
+検証：`PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ai/services/ai_inference python3 -m unittest discover -s ai/tests -p test_cmee_analysis_v1d_vertical.py -v`、18 tests PASS（0.087s）。source→graph/text、二重計数回避、願望/他者/引用/伝聞/条件、owner/削除/version/期間、Unicode exact evidence、補足の結合と生成保留、immutable member、private出力/本文なしdiagnostic、application mode拒否、既存Emlis不正request dispatchを確認した。合成入力のみで、実ユーザー入力・DBは使っていない。補助2名が修正後を再読し、指摘scopeの未解消blocker 0。全API/RN suiteや実機Product Readの代用ではない。
+
+構造変更は `current_structure/03_analysis_current_structure.md` §4.5とCMEE mapへ反映し、canonical04の古い未開始状態を更新。新package marker2個・source3個・test1個、既存engine1個を変更する。新しいchecker/台帳/依存/外部AIは追加しない。次はsafeな意味表現と補足訂正の消費を実装し、認証済み期間sourceから開発画面まで最小一本を接続する。IF/SavedRouteIntent/外部exportはHOLD。
+
+開始headはCocolon `4e8892bbaaebb6c010a63f9f477575d462c7ead8`、API `e6882f1009a03640357d83d8b9fec7c656611f7a`。既存Draft PR30/3へ記録・sourceを反映し、main/merge/deploy/DB/runtime flag変更は行わない。TestFlight1.0(6101)送信済み・端末確認待ち、配置API7f1f7d92…/read_onlyは前回状態の引継ぎで今回の再検証ではない。商品0/3・NOT_CLEAR・全体48%を保持。検査成功を商品合格へ換算しない。

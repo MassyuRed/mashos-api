@@ -15,6 +15,8 @@ from .contracts import (
 from .emlis_v1a import CMEEVerticalError, build_text_grounded_limited_artifact
 from .source_kernel import SourceAdmissionError, freeze_text_source
 from .piece_v1c import PieceEngineOutcome, PieceGenerationRequest, generate_piece_artifact
+from .cores.analysis.source_adapter import AnalysisObservedMapRequest
+from .cores.analysis.observed_route_realizer import AnalysisEngineOutcome, generate_observed_map
 
 
 class MeaningExperienceEngine:
@@ -25,7 +27,9 @@ class MeaningExperienceEngine:
     belongs to the application config, not this pure meaning engine.
     """
 
-    def generate(self, request: GenerationRequest | PieceGenerationRequest) -> EngineOutcome | PieceEngineOutcome:
+    def generate(self, request: GenerationRequest | PieceGenerationRequest | AnalysisObservedMapRequest) -> EngineOutcome | PieceEngineOutcome | AnalysisEngineOutcome:
+        if isinstance(request, AnalysisObservedMapRequest):
+            return generate_observed_map(request)
         if isinstance(request, PieceGenerationRequest):
             return generate_piece_artifact(request)
         if not isinstance(request, GenerationRequest):
