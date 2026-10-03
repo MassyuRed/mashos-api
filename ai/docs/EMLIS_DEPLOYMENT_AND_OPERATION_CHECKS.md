@@ -168,3 +168,38 @@ Q2はthread/eventとRPCを追加し、Q3はその保存構造を拡張してfram
 Renderの管理情報を読む連携は検索で見つかり、未導入・未接続だったため利用を提案しました。接続されたら、既存serviceの配置revision・実URL・接続project identityを読取りで確認します。secret値や利用者の本文を記録へ掲載しません。API/DB/appの対象を確定する前に、appの固定認証先へmigrationを先行適用しません。
 
 対象が一致し、開発確認に使う範囲が確定したら、直前のschema・migration履歴とSQL identityを再照合し、Rule18 §11.3でstanding delegation外とされる実DB適用の個別承認を得ます。対象不一致・既存objectとの衝突・SQL差分があれば適用を止めます。適用結果が不明なら履歴/catalogを確認し、削除・再作成や盲目的な再実行へ進みません。配置・mode変更・TestFlight送信も今回の読取作業には含めません。以後のread_only→development→入力/回答/保存再表示は§6/§9の順序で確認します。
+
+
+## 11. 2026-10-03 u84 — Renderの配置実態と次の限定読取
+
+MashがRenderを導入し、「まっしゅ's workspace」の読取利用を明示許可した後に確認しました。§10の未接続状態から前進した記録です。設定変更・配置操作は行っていません。
+
+| 項目 | Renderで取得した値 |
+|---|---|
+| Workspace | `まっしゅ's workspace` / `tea-d4pp61idbo4c73bf4hkg` |
+| Service | `mashos-api` / `srv-d4ppfpm3jp1c73952bj0` |
+| 公開URL | `https://mashos-api.onrender.com` |
+| Repository / branch | `MassyuRed/mashos-api` / `main` |
+| 最新deploy | `dep-d9v9a1k9v7es7399butg` / `live` |
+| 配置commit | `a8ca4ddf7b7ae76bf7b3d73e74e3a5808d623428` |
+| 配置完了日時 | `2026-08-14T04:10:58.28849Z`（JST 13:10） |
+| 自動配置 | `autoDeploy=yes` / `autoDeployTrigger=commit`。main更新が自動deployにつながる。 |
+| root directory | `ai/services/ai_inference` |
+| build / start | `pip install -r requirements.txt` / `uvicorn app:app --host 0.0.0.0 --port $PORT` |
+| 管理情報上の状態 | `not_suspended`、maintenance無効、1 instance、Virginia、現在free plan。health check pathは空。 |
+
+最新5件のdeploy履歴は先頭がlive、他4件がdeactivatedでした。previewを含む既存service全5件のうち同repoのweb serviceはこの1件のみ（他は3 cron / 1 worker）で、別の既存開発APIは確認できませんでした。
+
+配置commitのGitHub treeとbootstrap実装を照合すると、Emlis thread実装/Q2-Q3 migration/reader flagは含まれていません。現在のPR3 `457e8afa93086893ed1de3d73092515d468c7664` がそのまま稼働中だと扱えません。main更新は配置効果を伴うため、文書確認の延長でmerge・branch変更・deployしません。
+
+### 接続DBの証拠と限界
+
+service読取に環境変数値はなく、専用の環境変数GETもありませんでした。限定したappログ中のHTTP Request行のうち、直近の2026-10-01T20:42:37.508742357Z〜20:42:37.943946783Z（JST 10/02 05:42）の5件は、すべて `oeahmpmigszggnkyiivq.supabase.co` へのHTTP Requestでstatus 200でした。app固定認証projectと一致します。sourceの共有clientもこの配置commitとPR版で同一で、runtimeの `SUPABASE_URL` から接続URLを構成します。
+
+これは最新配置版の稼働期間中に観測した直近の接続実績です。現在の環境設定値の直接確認、Emlis schema導入、本人認証一往復や端末成功を証明しません。本日07:00 UTC以降をHTTP RequestとSupabase hostで絞った検索は0件で、一度だけ過去7日へ広げて上記5件を確認しました。抽出・記録したのはhost/時刻/statusだけで、利用者の本文やpath/query/UUID/tokenを保持・掲載していません。公開health/bootstrapは別の取得経路でも取得不能であり、Renderのliveを公開HTTP成功の代用にしません。
+
+### 次に確認する範囲
+
+当該serviceのDashboard Environmentで、`SUPABASE_URL` のhostと、`COCOLON_EMLIS_THREAD_MODE` / `COCOLON_ENV` / `COCOLON_EMLIS_THREAD_DEVELOPMENT` / `COCOLON_EMLIS_THREAD_RELEASE_APPROVED` の有無・非secret値だけを確認します。認証key/tokenは取得・表示・記録しません。旧配置版は問いシステム設定を使わないため、値があってもEmlis有効化の証拠にはしません。
+
+利用可能なpluginがこの読取を提供しないため、browserでの限定確認に切り替える許可を求めます（利用ツールがplugin不足時のbrowser fallbackに事前許可を要求）。この確認では保存・設定変更・deployを行いません。現在設定と開発対象を確定した後に、§6/§9の順序で既存Q2→Q3・API配置・read_onlyからの確認に必要な個別scopeを提示します。今回のworkspace利用許可は、共有DB適用・新service/課金・main更新・有効化・TestFlight送信を含みません。

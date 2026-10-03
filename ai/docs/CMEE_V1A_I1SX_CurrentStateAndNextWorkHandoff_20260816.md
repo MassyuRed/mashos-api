@@ -13684,3 +13684,17 @@ primary outcomeは `BLOCKER_NARROWED`。app認証先と配布方針、未導入s
 変更は既存map/正本06とAPI運用資料/handoffの計4文書のみ。mapは最新記録の案内で `STRUCTURE_MAP_DELTA_NONE`、source/test/SQL/依存/契約/構造は不変。新しいtest実行なし。u82の31 PASSは過去の結果として保持し、この回の検証へ再計上しない。catalog読取とSQL照合は実migration適用・認証一往復・端末成功を証明しない。個人の入力/回答行、認証secretは取得・掲載していない。
 
 旧商品0/3・NOT_CLEAR・全体48%・default OFF・両PR Draft/open/unmerged、10/03のEmlis品質枠の区切りと10/04以降のWork分析（利用不可ならPro Piece）を継承。merge/deploy/enable/live DB適用/課金/配布は未実施。remote対象preimage・変更path・反映後bytes/HEADの確定結果は既存PR本文に記す。
+
+
+## 2026-10-03 u84 — Renderの配置版と直近のDB接続先を確認
+
+u83の接続調査を継続。開始HEADはCocolon `83b99f8a5dd4a7fcce001ab65ae7aa8561d78989`、API `457e8afa93086893ed1de3d73092515d468c7664`。同一作業で確認済みの前提・全体設計・全ファイル地図・最新weekly・恒久incidentを引継ぎ、両PRの現在HEADを確認した。MashがRenderを導入し、「まっしゅ's workspace」の既存API配置版・接続先を読取確認することを明示許可した。rootのみ文書編集/GitHub反映、Render読取は当該機能を利用できる補助担当が実施した。
+
+- 既存 `mashos-api` は `main` の `a8ca4ddf7b7ae76bf7b3d73e74e3a5808d623428` を配置している。Renderの最新deployはlive、完了は2026-08-14 13:10 JST。現行PR3の問いシステム版は未配置である。rootがこの配置commitの非省略tree（2158 entries）とbootstrap実装をGitHubから再取得し、Emlis thread実装/Q2-Q3 migration/reader flagが含まれないことを確認した。
+- URLはapp既定値と同じ `https://mashos-api.onrender.com`。mainのcommit更新でauto deployされる設定。現在free plan、1 instance。previewを含む取得範囲で同repoのweb serviceはこの1件のみで、別の既存開発APIはなかった。これを既に開発用として選定・承認済みとは扱わない。
+- 環境変数値はRenderのservice読取応答に含まれず、専用の環境変数GETも利用できなかった。そこで直近のappログ中のHTTP Request行だけを絞り、host/時刻/statusだけを抽出した。10/02 05:42 JSTの5件が `oeahmpmigszggnkyiivq.supabase.co` へ200で到達し、app固定認証projectと一致した。現在の環境設定値そのものを確認した結果ではない。個人本文・path/query・UUID/tokenを記録していない。
+- 本日07:00 UTC以降をHTTP RequestとSupabase hostで絞った検索は0件。公開health/bootstrapは今回の別取得経路でも取得できなかった。Renderのliveを公開HTTP成功や実機一往復成功へ読み替えない。
+
+primary outcomeは `BLOCKER_NARROWED`。残件は「配置版不明」から「問いシステム版が未配置、直近の実接続先は一致、現在設定と開発確認に使う対象の確定が必要」へ進んだ。詳細はAPI運用資料§11。次に必要なのは、Render Dashboardで当該serviceの `SUPABASE_URL` のhostと非secretのEmlis mode設定を限定して読むこと。pluginで取得不能な項目のbrowser fallbackは利用ツールの仕様上、事前のユーザー許可が必要なため、その範囲を提示する。今回のworkspace読取許可をDB適用・main変更・配置・有効化・配布へ拡張しない。
+
+既存4文書だけを更新し、source/test/SQL/依存の変更・新しいtest実行はない。`STRUCTURE_MAP_DELTA_NONE`。u82の31 PASS、旧商品0/3・NOT_CLEAR・全体48%・default OFF・両PR Draft/open/unmerged、weeklyの品質枠/Work配分を継承。live DB適用/merge/deploy/enable/課金/配布は未実施。確定commitとremote bytes/変更pathの照合結果は既存PR本文へ記す。
