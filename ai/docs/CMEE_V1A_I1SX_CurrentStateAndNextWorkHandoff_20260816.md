@@ -13752,3 +13752,18 @@ rootが許可されたネットワーク経路でpublic GETを実行し、`/heal
 実機用の既存 `.github/workflows/ios-build.yml` をread-onlyで再照合し、u87から変更なし。対象PR30 branch `agent/three-core-cmee-current-structure-20260815` にiOS手動runはなく、確認範囲で重複実行もない。既存CI成功はnative build/現在の署名期限の成功とは分ける。GitHub連携にworkflow_dispatchがないため、次はMashへ既存Actionsの **iOS TestFlight Build → Run workflow → 上記branch → Run workflow** の一操作を依頼する。main merge・workflow改造・古いrunのrerunは不要。実runの対象SHA、archive/upload、TestFlight処理、端末導入を順に確認する。API hostは既存値なのでURL設定追加は不要。
 
 新規test/code/SQL/依存変更、環境変数の追加変更、DB変更、TestFlight送信はこの回にはない。既存4文書だけを記録更新、`STRUCTURE_MAP_DELTA_NONE`。商品0/3・NOT_CLEAR・全体48%・両PR Draft/open/unmergedを維持。source既定OFFと、配置APIのbootstrap reader=trueは分ける。API配置は完了、本人sessionの確認・developmentでの書込・実機一往復は未完了。詳細はAPI運用資料§15。
+
+
+## 2026-10-03 u89 — iOS archiveのfmt互換エラーを特定し、既存Podfileを修正
+
+Mashの「開始したよー」を受け、iOS TestFlight Build run #59（ID `37113624603`、attempt 1、job `111176104776`）を追跡した。対象はPR30 branch `agent/three-core-cmee-current-structure-20260815`、SHA `ce8b95b43a252cdd988e078081396bcf7080c376`。依存解決・Pods導入・署名証明書とprofileの導入・build番号設定は成功し、Build iOS archiveで失敗した。Export IPA/TestFlight uploadはskipped、予定版1.0 (5901)は送信されていない。
+
+Xcode 26.6 (17F113)、iPhoneOS SDK26.5、React Native 0.77.3、fmt 11.0.2の組合せで、`fmt/src/format.cc` のコンパイル時に `format-inl.h` の59/60/1387/1391/1394行がconstevalのconstant expressionエラーとなった。署名失敗とは扱わない。上流fmt #4740 / React Native #55601と、実際のfmt 11.0.2 base.hの分岐を照合した。同版はFMT_USE_CONSTEVALを検出結果で再定義するため、単なるcompiler -D上書きは採用しない。
+
+既存 `ios/Podfile` のRN post_install直後に、生成された共有headerの `FMT_VERSION 110002` と元のApple条件が一致する場合だけ、その条件を全Apple compilerへ広げる17行を追加した。既存fallbackをfmtと全consumerへ同時に適用する。再適用は無変更で、他fmt版・非Apple分岐・依存固定・C++規格・署名・workflowは変えない。新規source/owner/fileはない。全体地図01Cの既存iOS build補助領域内の互換修正で、Emlis runtimeのowner/file graphは `STRUCTURE_MAP_DELTA_NONE`。
+
+read-only補助レビューで具体的blockerなし。公式fmt 11.0.2ソースを使い、Linux g++ C++20の前処理でApple macro時のFMT_USE_CONSTEVAL=1→0と非Apple=1不変を確認し、fmt本体をコンパイルしてFMT_STRINGの整形・system_error・printを実行、成功した。置換1箇所・再適用無変更も確認した。これは補助検証であり、Ruby/CocoaPods・Apple Clang・native archive成功の代用ではない。恒久checkerや新規依存は追加しない。
+
+次は修正commitを使う**新しいRun workflow**を、同じPR30 branchで開始する。run #59のRe-run jobsは旧SHAを使うため、修正版の確認にはならない。GitHub連携にdispatchがなく、開始操作だけMashに依頼する。以後は実SHA→archive→upload→TestFlight処理→端末導入を順に確認する。本人sessionの接続、developmentでの入力→問い→回答→保存再表示は残件。
+
+全体設計・全ファイル地図・最新weekly20261003 §6.6〜6.10と前回記録の確認を引継ぎ、rootが唯一の変更owner、補助は読取のみ。開始API HEADは `1106abd74a75578e6ad1054674cd8ef8f7015627`。API指定版 `7f1f7d92d296caeb913b8cab9599acab3318437d` の配置・Q2/Q3適用済みを維持し、今回はAPI再配置・環境変数/DB変更なし。商品0/3・NOT_CLEAR・全体48%・source既定OFF・両PR Draft/open/unmergedを保持する。詳細はAPI運用資料§16。確定commit・変更path・remote全文照合は既存PR本文へ記す。

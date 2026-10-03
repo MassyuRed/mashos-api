@@ -337,3 +337,25 @@ public HTTPは許可されたネットワーク経路で実際に確認しまし
 初回の実機確認では本人のログイン・接続・read_onlyを確かめます。その後、§14の共有serviceへの作用を保ったままdevelopmentの3値を揃え、入力→応答→回答→更新応答→保存再表示を確認します。環境変数MCPはmain再配置を伴うため使いません。active/RELEASE_APPROVED=trueは不要です。TestFlight送信・端末導入・実機成功はまだ実施済みにしません。
 
 今回ソース・SQL・依存・DB・環境変数の追加変更なし。商品0/3・NOT_CLEAR・全体48%・source既定OFF・両PR Draft/open/unmergedを維持します。
+
+
+## 16. 2026-10-03 u89 — TestFlightビルド失敗の修正と再実行
+
+[run #59](https://github.com/MassyuRed/Cocolon/actions/runs/37113624603) はPR30 branch、SHA `ce8b95b43a252cdd988e078081396bcf7080c376`、attempt 1で開始しました。Pods・署名素材導入・番号設定までは成功しましたが、archiveはfmtのC++コンパイルで失敗しました。Export IPA/TestFlight uploadはskippedで、版1.0 (5901)は未送信です。
+
+| 確認対象 | 実結果・対応 |
+|---|---|
+| native環境 | Xcode26.6 (17F113)、iPhoneOS SDK26.5、RN0.77.3、fmt11.0.2 |
+| 失敗 | fmt/src/format.ccのcompile。format-inl.hの59/60/1387/1391/1394行でconstevalがconstant expressionではない。exit65。 |
+| 既存ownerの修正 | Cocolon ios/Podfileのpost_installで、fmt11.0.2の共有base.hのApple条件1箇所だけを変更し、既存fallbackを全consumerで揃える。17行追加。 |
+| 保持する範囲 | 依存版・C++規格・非Apple分岐・RN/署名設定・workflow・API接続先。他fmt版は変更しない。再適用は無変更。 |
+| 補助検証 | 公式fmt11.0.2の実ソースをg++ C++20で前処理し、Apple macro=1→0、非Apple=1不変。patched本体のcompileとFMT_STRING整形/system_error/print実行が成功。read-onlyレビューでblockerなし。 |
+| 未確認 | 修正版のRuby/CocoaPods処理、Apple Clang/archive、IPA export、TestFlight upload/処理、端末導入・実機往復。Linuxの成功で代用しない。 |
+
+上流の[fmt #4740](https://github.com/fmtlib/fmt/issues/4740)、[React Native #55601](https://github.com/react/react-native/issues/55601)と実headerを照合しました。fmt11.0.2は単純な `-DFMT_USE_CONSTEVAL=0` を検出chainで上書きするため、既存Podfileで共有headerを修正しています。依存更新や新しいbuild基盤は追加しません。
+
+次は[既存iOS workflow](https://github.com/MassyuRed/Cocolon/actions/workflows/ios-build.yml)から **Run workflow → branch agent/three-core-cmee-current-structure-20260815 → Run workflow** を新規実行します。**#59のRe-run jobsは旧SHAのため使いません。** 現GitHub連携はdispatch未対応なので、開始だけMashに依頼します。新runのhead SHAとarchive/uploadを華恋が確認します。TestFlightの表示名だけで判断せず、実際に送信されたversion/buildで識別します。
+
+端末では既存sessionが有効ならそのまま使い、**ホーム→入力履歴→Emlisの観測を開く**を確認します。保存済みthreadがない入力は、現実装でGETのNOT_CREATEDを受けてmodalが閉じる場合があります。これを障害とも保存本文の再表示成功とも決めつけず、保存threadがない時に読取成功を前提条件にして初回生成を止めません。実historyがない場合に、読取確認のためだけの入力作成は求めません。本人sessionのDTO/can_write=false/POST503は未確認として残します。
+
+その後は§14のdevelopment三値と共有serviceの作用範囲を守り、実入力・応答・回答・同じ保存threadの再表示へ進みます。配置済みAPI7f1f7d92…、read_only設定、Q2/Q3 schemaは今回変更していません。商品NOT_CLEAR・source既定OFF・Draft/open/unmergedを保持します。
