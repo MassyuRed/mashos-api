@@ -13574,3 +13574,32 @@ Node24.19.0、React/renderer18.3.1と既存test-tools固定BabelでUIを実行�
 運用資料§6へ公開4値のbuild設定、Metro再起動/再bundle、native bundle processへの環境引渡しを記した。確認した資料・workflowには使用すべき開発API URL、認証/DB対象、実機OS/配布先の具体的指定がなく、現時点で実環境の組合せは未確定。次は対象API/認証DB、配置する版・migration適用状態、端末OSと導入経路を確定して、既存手順のread_only確認→development条件→bootstrap/can_write→入力/回答/保存再表示を実機で行う。手順の記載を実施済みにしない。iOS workflowはarchive/TestFlight uploadを含むため、build検証目的でdispatchしていない。
 
 primary outcomeは限定TECHNICAL_CREDIT。旧商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを維持。10/03のEmlis品質改善枠の区切り、10/04のWork分析（利用不可ならPro Piece）と限定した共通接続の優先順を継承する。文体全面改善を実機接続の前提にしない。merge/deploy/enable/live DB適用・配布は未実施。正確な課金額は未取得。remote commit/tree/changed paths/内容照合の確定値は既存Draft PR3/30本文へ記す。
+
+
+## 2026-10-03 u80 — Emlis通信を送信開始時の本人認証へ結ぶ
+
+### 対象・修復
+
+MashのEmlis残件継続指示、前回txt、最新weekly 20261003 §6.6〜6.10から、実機の最小一往復へ向けた既存RN接続を確認した。開始HEADはCocolon `c42e2ac757a607a37171fe53c63d675a7b0170b4`、API `e2b499538b039bdf4f7a56743b8a633be81f6f01`。前提資料・現行作業ルール・恒久incident全文、全体設計01/01A/01B/01C、全ファイル地図02、両repositoryの非省略tree、Emlis current map、u77〜u79を確認した。System Contextは原典直接確認のfallback。全path/役割地図の確認を全実装全文精読とは呼ばない。
+
+`useEmlisThread.perform`は通信開始前と応答後に画面ownerを確認するが、共通clientの非同期`getSession()`へownerを渡していなかった。認証通知による画面更新より先にsessionが別人へ変わると、前の本人のthread要求を別人のBearerで送信できる。サーバーで他人のthread更新が成功することや、実際の漏えいを確認したものではない。通常入力で既に使う`getAccessToken(expectedUserId)`への配線漏れが原因で、新しい認証方式を追加する必要はない。
+
+既存hookからcaptured `c.userId`を、取得/回答/操作/フレーム訂正の全4メソッドを通じて既存`apiFetch.expectedUserId`へ渡す。取得された同じsessionから利用者とtokenを確認し、別人・logout・session取得失敗ならfetch前に中止する。hookは既存`AccountChangedError`を参照不可の分岐で扱い、旧DTO・回答下書き・pending操作を消去する。送信前に中止した操作を通信結果不明の再送候補へ残さない。同じ本人のtoken更新は許可する。
+
+公開URL/request/response、server所有権確認、本文生成/意味更新、DB、認証方式、timeout、操作キー、未知ACKの照合/再送、default OFFは不変。新file・依存・機構なし。Cocolonの既存source2/test1/map1/正本06とAPI既存handoffの計6 modify。rootが編集/実行/反映、補助はread-onlyの因果・差分レビュー。既存LEVEL_2の限定修復である。
+
+### 検証・限界
+
+既存`tests/emlis-thread.test.js`の23条件・全文prefixを保持し、末尾に4条件を追加。実hook→実専用API→実共通clientを接続し、非同期session取得だけを保留して認証イベント前の切替を再現する。4メソッドそれぞれで別人・logout・session取得失敗時のfetch 0、DTO/下書き/pending消去・再送なしと、同一本人の更新tokenでの成功・URL/body保持を確認する。合成sessionとmock fetchであり、実データ送信はない。
+
+旧sourceのまま追加4条件を実行すると4 FAIL（0.329秒）。すべて切替時の余分なfetchを検出した。修正後の追加4は4 PASS（0.648秒）。最終は既存Metro bundle検査も含め27 PASS / FAIL 0 / ERROR 0 / SKIP 0（6.512秒）。同時送信抑制、未知ACKと同一キー再送、競合、read_only、本人切替、履歴→回答→保存本文再表示、公開API URL注入/cache変更の既存回帰も通過した。
+
+Node24.19.0、React/renderer18.3.1、既存test-tools固定Babelを使用。bundle側はu79と同じRN/preset/metro-config0.77.3、Metro0.81.5、Babel core7.29.0/runtime7.28.6、Reanimated3.17.0、SVG transformer1.5.1を一時環境へ用意し、repositoryの依存宣言は変えていない。初回の既存検査は22 PASS/1 FAILで、失敗はMetro依存未準備によるMODULE_NOT_FOUND。CLIのnegative name patternが除外として働かず実行されたもので、製品不具合や最終成功へ混ぜない。固定依存を用意後に全27を再実行した。最初のsandbox内npm取得は未完で中止し、許可された実行で取得した。
+
+Python/API suite、実DB、native build/署名/実機/配布は未実行。本文品質の改善・商品合格の証明ではない。前版の61失敗や意味/文章品質の残差をこの27件で解消扱いしない。変更した6fileは同じDraft branchへ反映し、対象preimageと変更path、反映後の全文/byte一致を確認する。確定commit/確認結果は既存PR本文に記す。
+
+### 次の一作業
+
+u79の実機接続対象未確定を継承する。使用する開発APIと認証/DB、配置版・Q2/Q3 migration状態、端末OSと導入経路を確定し、既存手順でread_only確認→development設定→bootstrap/can_write→入力/回答/保存再表示を実機で確認する。具体的対象を未確認のまま選定済み・接続成功とはしない。u80はこの経路の既存本人保護の修復であり、別の環境整備systemや品質全面改善を前工程に追加しない。
+
+primary outcomeは限定TECHNICAL_CREDIT。旧商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmerged、10/03のEmlis品質枠の区切りと10/04以降のWork分析（利用不可ならPro Piece）、限定した共通接続の方針を維持する。merge/deploy/enable/live DB適用/課金/配布は行わない。追加ユーザー操作・有料外部serviceなし。
