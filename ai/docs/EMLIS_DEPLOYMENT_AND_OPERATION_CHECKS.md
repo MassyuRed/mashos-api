@@ -370,3 +370,26 @@ Upload to TestFlightはfailure。Apple側受領・processing完了・tester配�
 次はMashに[該当job](https://github.com/MassyuRed/Cocolon/actions/runs/37114827933/job/111179510393) の **Upload to TestFlight** を開き、**エラー部分のみ**をテキスト/スクリーンショットで共有してもらいます。ログ全文や認証情報は不要です。実エラーを読んで原因と必要な修正を決めるまで、再送信・secret交換・新しいworkflow基盤を追加しません。
 
 送信成功後の残件は§16のTestFlight処理/6001の実配布確認と端末導入です。既存ログインを維持して起動・本人履歴を確認し、APIが書込可能になった後で新しい確認入力→応答/問い→回答→更新→同じ保存threadの再表示へ進みます。NOT_CREATEDの閉じる挙動と、保存済み本文を読めたことを分けます。今回API再配置・環境変数・DB・source変更はありません。
+
+
+## 18. 2026-10-03 u91/u92 — 契約エラーの確認とTestFlight送信成功
+
+u91で共有画像を確認し、#60の送信はHTTP403 / `FORBIDDEN_ERROR.CONTRACT_NOT_VALID`でした。必要なApple契約が有効でないというエラーです。具体的な契約名・未同意の種類は画像だけでは特定しません。Apple公式資料を参照し、Mash本人へAccount Holderの契約確認を案内しました。u92でMashが同意と新しいビルド開始を報告したため、こちらから重複実行はしませんでした。
+
+| 対象 | 確認結果 |
+|---|---|
+| 新run | [#61](https://github.com/MassyuRed/Cocolon/actions/runs/37115985371)、ID37115985371、attempt1、job111182790896 |
+| app source | PR30 branch、`74c7cab7e730a1903fc81e2d3ec34ce7441a2a98`。前回archive成功版5266c80…から既存2文書のみ変更。 |
+| 版番号 | workflow式により1.0 (6101)。端末上の実表示は次工程で照合。 |
+| archive / IPA | 10:30:07Z archive success、10:30:11Z Export IPA success |
+| TestFlight送信 | 10:31:52Z Upload to TestFlight success |
+| run全体 | 10:32:06Z（JST19:32）completed/success |
+| 未確認 | Apple processing、testerへの配布可能性、端末導入、本人session接続、生成/回答/保存往復 |
+
+今回の送信は成功し、#60の契約エラーによる停止を解消しました。契約への同意はMashの報告であり、アシスタントがAppleアカウント内の契約を確認・承諾したものではありません。step/runの結果を取得し、大容量jobログは再取得していません。
+
+公開health/bootstrapは初回TimeoutError、1回の再試行で200/status=okと200/emlis_threads_enabled=true。Renderの指定live SHA7f1f7d92…・autoDeploy offを読取確認しました。最初のタイムアウト原因は未特定で、cold startと断定しません。API再配置・環境変数・DB変更はありません。
+
+次はTestFlightで **1.0 (6101)** が利用可能になったことをMashが確認し、更新→起動→自分の入力履歴を確認します。既存ログインを保ち、まだ表示されない場合はApple側の処理/配布状態の確認が残ると扱います。現APIはread_onlyのため、この時点を新規Emlis生成・回答・保存成功の確認とはしません。
+
+生成の実機確認へ進む際は§14のdevelopment三値を揃えます。現Render連携にはsave-only/commit指定/branch更新がなく、env更新toolのmain自動deployというu87の実測は変わりません。既存Dashboardで **Save only → Deploy a specific commit（7f1f7d92d296caeb913b8cab9599acab3318437d）** を使う経路が残ります。今回その設定変更はまだ行っていません。

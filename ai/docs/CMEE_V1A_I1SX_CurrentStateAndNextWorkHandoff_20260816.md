@@ -13778,3 +13778,18 @@ Mashの開始通知後、iOS TestFlight Build run #60（ID `37114827933`、attem
 詳細ログ取得 `fetch_workflow_job_logs` は2回ともTransport closedとなり、本文を取得できなかった。run/jobの状態は取得でき、artifactは0件。汎用fetchのjob直URL/check-runsは未対応URLの400であり、権限拒否や署名/Apple認証エラーの証拠にはしない。連携の通信失敗から送信失敗の原因を推定せず、再送信・secret交換・workflow変更を行わない。次はMashに同runの **Upload to TestFlightのエラー部分だけ**をテキストまたは画像で共有してもらい、その実エラーに沿って最小修正を行う。証明書・token・password・ログ全文は求めない。
 
 全体設計・全ファイル地図・最新weekly20261003とu89を引継ぎ、rootはread-only監視と既存記録の更新、補助は利用可能な取得手段と端末導線のread-only整理を担当した。今回は既存4文書のみ、source/test/依存/SQL/workflowの追加変更・新規test実行なし、`STRUCTURE_MAP_DELTA_NONE`。Render指定API7f1f7d92…・read_only設定・Q2/Q3 schemaは維持し、再配置/環境変数/DB変更なし。商品0/3・NOT_CLEAR・全体48%・source既定OFF・両PR Draft/open/unmergedを保持。本人接続・developmentでの保存一往復は残件。詳細はAPI運用資料§17。
+
+
+## 2026-10-03 u91/u92 — Apple契約エラー解消後、TestFlight送信に成功
+
+u91でMash提供のスクリーンショット2614を実読し、run #60のUpload to TestFlight失敗はHTTP403 / `FORBIDDEN_ERROR.CONTRACT_NOT_VALID` / required contracts不足と確認した。画像から対象契約名や未同意の詳細までは断定せず、Apple公式のAccount Holder/契約手順を案内した。アシスタントは契約同意・secret変更・再送信を行っていない。
+
+u92でMashが「同意して、開始した」と報告したため、重複起動せず、実際に開始された新run #61を追跡した。run `37115985371`、attempt1、job `111182790896`、PR30 branch、app SHA `74c7cab7e730a1903fc81e2d3ec34ce7441a2a98`。archive成功版5266c80…との差はu90の既存2文書だけで、native/runtime・Podfile・workflowは同じ。版番号のworkflow式は1.0 (6101)。
+
+**2026-10-03T10:18:33Z開始、10:31:52ZにUpload to TestFlight success、10:32:06Z（JST19:32）にworkflow全体success**。Pods・署名準備・archive・Export IPA・uploadがすべて成功した。これで今回送信を阻んだ契約エラーは再現せず、TestFlight送信を実完了とした。Appleのprocessing完了・tester配布可能性・端末導入はGitHubの成功だけでは確認できず、未確認のまま残す。再度の大容量jobログ取得は行っていない。
+
+端末準備として公開API GETを再確認。最初のhealth/bootstrapはTimeoutErrorだったが、1回の再試行でhealthは200/status=ok、bootstrapは200/emlis_threads_enabled=trueとなった。補助のRender読取では指定API `7f1f7d92d296caeb913b8cab9599acab3318437d` / `dep-db0cjh1srm7s73f10vb0` がlive、autoDeploy=no/off、not_suspended、maintenance=false。限定した直近error/startupログの一致は0件。タイムアウトの原因をcold startと断定しない。設定・配置・DBの変更なし。
+
+次はMashのTestFlightで **1.0 (6101)** の利用可能性を確認し、既存アプリを更新して起動・本人の入力履歴を確認する。既存sessionを保ち、ログアウト/再インストールを前工程にしない。APIは引き続きread_onlyで、生成/回答/保存往復は未確認。旧履歴のNOT_CREATEDでmodalが閉じることを故障とも保存済み応答の読取成功とも決めつけない。development三値は未変更であり、送信成功を実機での生成成功へ換算しない。
+
+全体設計・全ファイル地図・最新weekly20261003・前回記録の確認を引継ぎ、rootが監視と記録の単一変更owner、補助はsource差分/次工程/Renderのread-only確認を担当した。今回は既存4文書のみ、source/test/依存/SQL/workflow変更・新規test・main/merge変更なし、`STRUCTURE_MAP_DELTA_NONE`。Q2/Q3適用済み、商品0/3・NOT_CLEAR・全体48%・source既定OFF・両PR Draft/open/unmergedを保持。API運用資料§18を参照。
