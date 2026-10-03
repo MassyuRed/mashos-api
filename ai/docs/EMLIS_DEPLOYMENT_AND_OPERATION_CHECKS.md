@@ -313,3 +313,27 @@ read_onlyで止まるのは共有service全体のEmlis生成です。通常のem
 Cocolon固定source `10f94c2f6318f25b9ca3e2bf2077f2eb3dd79816` の `.github/workflows/ios-build.yml` は手動workflow、macos-26 / Node18 / iOS15.1以上、既存署名secretでRelease archive→IPA→TestFlight uploadを行います。対象branchは `agent/three-core-cmee-current-structure-20260815`。既存API hostを維持するのでAPI URL input追加やapp main mergeは不要です。APIの指定版配置後にActionsの **iOS TestFlight Build → Run workflow → 対象branch** を使います。pluginにはworkflow_dispatchがなく、古いrunのrerunは使いません。upload完了、TestFlight処理完了、Mash端末への導入、実機成功を別々に確認します。
 
 今回の新規test/ソース/SQL/依存変更・DB変更・TestFlight送信はありません。商品0/3・NOT_CLEAR・全体48%・source既定OFF・両PR Draft/open/unmergedを保持します。
+
+
+## 15. 2026-10-03 u88 — 指定API配置完了、次は実機用TestFlightビルド
+
+Mashが§14のspecific commit配置を開始したと通知し、rootが実deployを照合しました。
+
+| 確認 | 実際の結果 |
+|---|---|
+| 指定版 | `7f1f7d92d296caeb913b8cab9599acab3318437d` |
+| deploy | `dep-db0cjh1srm7s73f10vb0` / manual / 2026-10-03T09:25:49Z（JST18:25）live |
+| 対象 | 既存 `mashos-api / srv-d4ppfpm3jp1c73952bj0`、既存URL・build/start方式を維持 |
+| 自動deploy | autoDeploy=no、autoDeployTrigger=off。linked branchはmainのまま。 |
+| health | `GET /healthz` → HTTP200、status=ok |
+| reader通知 | `GET /app/bootstrap` → HTTP200、feature_flags.emlis_threads_enabled=true |
+| 未認証拒否 | ダミーinput UUIDへのthread GET、Authorizationなし→401/Missing bearer token、無効token→401/Invalid or expired access token |
+| 限定ログ確認 | 配置開始09:24:20Z以後のerror-level appログは取得範囲0件 |
+
+public HTTPは許可されたネットワーク経路で実際に確認しました。先行u87の接続失敗は履歴に残し、今回の200で上書きして過去の成功とはしません。ここまでで**問いシステム版APIの配置とpublic応答・未認証境界は確認済み**です。本人データ取得、認証済みDTOのcan_write=false、POST503、DB保存往復は未確認。MODE=read_onlyは保存済みですが、reader通知だけでmodeや本人権限の全動作を証明しません。
+
+次は[既存iOS workflow](https://github.com/MassyuRed/Cocolon/actions/workflows/ios-build.yml)の **Run workflow** で、branch `agent/three-core-cmee-current-structure-20260815` を選んで実行します。workflowはu87と同じblob `54c72248e9abf4535c41db75267b657b36359365`。このbranchのiOS手動runは取得時0件、確認した範囲に重複する待機/実行中buildはありません。現PRの既存CI成功と、native build/署名/配布成功は別です。現在のGitHub連携にdispatchがないため、この一操作だけMashへ依頼し、開始後のbuild/log監視・不具合対応は華恋が行います。
+
+初回の実機確認では本人のログイン・接続・read_onlyを確かめます。その後、§14の共有serviceへの作用を保ったままdevelopmentの3値を揃え、入力→応答→回答→更新応答→保存再表示を確認します。環境変数MCPはmain再配置を伴うため使いません。active/RELEASE_APPROVED=trueは不要です。TestFlight送信・端末導入・実機成功はまだ実施済みにしません。
+
+今回ソース・SQL・依存・DB・環境変数の追加変更なし。商品0/3・NOT_CLEAR・全体48%・source既定OFF・両PR Draft/open/unmergedを維持します。

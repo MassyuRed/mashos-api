@@ -13741,3 +13741,14 @@ Mashが「問いシステム版APIの配置と実機確認→進めて」と明�
 実機は既存TestFlight経路を使う。Cocolonの `.github/workflows/ios-build.yml` はworkflow_dispatch、PR30 branch指定で署名/archive/upload可能。既存hostを維持するのでAPI URL入力の追加は不要。GitHub連携にはdispatchがなく、古いrunの再実行を現行版buildの代用にしない。APIの指定版配置を先に完了し、その後必要なRun workflow操作と端末操作だけを依頼する。upload成功と配布可能・実機一往復は区別する。
 
 今回の新規test/ソース/SQL/依存変更はない。GitHub記録は既存4文書だけ、`STRUCTURE_MAP_DELTA_NONE`。実DBの追加変更はなく、Q2/Q3適用済みを維持。APIの指定版配置・実機確認は未完了、商品0/3・NOT_CLEAR・全体48%・両PR Draft/open/unmergedを保持。sourceの既定OFFは維持するが、Renderには上記read_only設定保存とmain再配置という実effectがあるため「deployなし」と記録しない。
+
+
+## 2026-10-03 u88 — 指定APIの配置成功・HTTPと未認証境界を確認
+
+Mashの「開始した」を受け、指定commit `7f1f7d92d296caeb913b8cab9599acab3318437d` のmanual deploy `dep-db0cjh1srm7s73f10vb0` を確認した。2026-10-03T09:24:20Z開始、09:25:49Z（JST18:25）にlive。既存service `srv-d4ppfpm3jp1c73952bj0` / `https://mashos-api.onrender.com`、branch mainは同じで、autoDeploy=no / trigger=off。u87のmain再配置と区別し、今回は問いシステム版APIの配置が実際に完了した。
+
+rootが許可されたネットワーク経路でpublic GETを実行し、`/healthz` は200/status=ok、`/app/bootstrap` は200/feature_flags.emlis_threads_enabled=true。さらにダミーinput UUIDへのthread GETはAuthorizationなしが401/Missing bearer token、無効tokenが401/Invalid or expired access tokenだった。本人データ取得・POST・DB変更はしていない。配置開始後のerror-level appログ検索は0件。これらを本人認証GET・can_write=false・POST503・保存一往復の成功へ換算しない。MODE=read_onlyはu87で保存済みだが、実本人sessionでの読取専用DTO/拒否確認は実機工程に残る。
+
+実機用の既存 `.github/workflows/ios-build.yml` をread-onlyで再照合し、u87から変更なし。対象PR30 branch `agent/three-core-cmee-current-structure-20260815` にiOS手動runはなく、確認範囲で重複実行もない。既存CI成功はnative build/現在の署名期限の成功とは分ける。GitHub連携にworkflow_dispatchがないため、次はMashへ既存Actionsの **iOS TestFlight Build → Run workflow → 上記branch → Run workflow** の一操作を依頼する。main merge・workflow改造・古いrunのrerunは不要。実runの対象SHA、archive/upload、TestFlight処理、端末導入を順に確認する。API hostは既存値なのでURL設定追加は不要。
+
+新規test/code/SQL/依存変更、環境変数の追加変更、DB変更、TestFlight送信はこの回にはない。既存4文書だけを記録更新、`STRUCTURE_MAP_DELTA_NONE`。商品0/3・NOT_CLEAR・全体48%・両PR Draft/open/unmergedを維持。source既定OFFと、配置APIのbootstrap reader=trueは分ける。API配置は完了、本人sessionの確認・developmentでの書込・実機一往復は未完了。詳細はAPI運用資料§15。
