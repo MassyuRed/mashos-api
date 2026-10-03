@@ -13722,3 +13722,22 @@ Mashから「この2本の適用と、適用後の確認」に対する明示承
 承認済み保存schemaの適用・catalog照合は完了。利用者データ行は読取せず、親入力行の変更や実API/RPC書込試験は行っていない。APIの問いシステム版の配置・開発確認対象の選定・実機一往復は未完了で、DB適用から動作成功や商品受入れを推定しない。今回の承認をAPI配置・flag有効化・配布へ広げない。詳細はAPI運用資料§13。
 
 既存4文書だけを更新し、source/test/SQL/依存変更・新規testなし。`STRUCTURE_MAP_DELTA_NONE` はsource owner/file graphに限定し、稼働DBには上記schema追加がある。u82の31 PASSは過去結果。旧商品0/3・NOT_CLEAR・全体48%・default OFF・両PR Draft/open/unmergedとweeklyの作業配分を維持する。main変更・merge・API deploy・enable・課金・配布なし。確定commit、変更path、remote全文の照合結果は既存PR本文へ記す。
+
+
+## 2026-10-03 u87 — API配置の指示を受け、read_only設定と手動配置経路を確定
+
+Mashが「問いシステム版APIの配置と実機確認→進めて」と明示したため、この作業に必要な配置・設定・実機確認を進める個別承認として扱う。旧u86の「次の配置は未承認」という時点境界を、新しい指示の後にも残して再承認を求めない。正式商品受入れ・active公開承認とは分ける。既読の全体設計・全ファイル地図・最新weekly20261003 §6.8〜6.10とDB適用結果を引継ぎ、PR HEAD/API設定owner/実機workflow/Render配置を再確認した。
+
+初回配置の固定sourceはAPI `7f1f7d92d296caeb913b8cab9599acab3318437d`、対象は既存Render `mashos-api / srv-d4ppfpm3jp1c73952bj0`、同じ共有Supabase。rootは `replace:false` で `COCOLON_EMLIS_THREAD_MODE=read_only` 一項目の設定更新を実行し、成功応答を得た。secret値の取得・掲載や全環境変数の置換はしていない。
+
+**想定外の自動deployを実測した。** raw Render API資料の「環境変数更新だけではdeployしない」をMCP操作にも当てはめ、rootは保存だけの準備だと判断した。しかし実際の `render_update_environment_variables` は保存に続いてdeployを起動した。事前のtool説明にはこの追加effectがなく、wrapperの動作確認不足だった。目的のPRではなくmain `2d2f06dad0d373373cdac63e10734385eefb53ca` がdeploy `dep-db0ceqe0tbcc73f811d0` として2026-10-03T09:14:17Zに開始され、09:15:28Zにliveとなった。rootは応答直後にMashへ報告して追加mutationを止め、状態と実commit差分を照合した。元live `a8ca4ddf7b7ae76bf7b3d73e74e3a5808d623428` との差は `ai/tests/contract/test_api_contract_registry.py` の1本だけで、API runtime/build sourceの変更はない。今回のmain更新・mergeは行っていない。PR metadataのbase_shaを現在mainのHEADと同一視しない。
+
+この再配置を問いシステム版の配置完了に数えない。public health/bootstrapの直接取得は接続失敗、限定startupログ検索は0件で、RenderのliveからHTTP/本人認証/reader/保存往復成功を推定しない。設定更新応答と新API上でのread_only有効性確認も別であり、後者は未完了。
+
+現Render連携にはcommit指定・取消・rollback・service branch更新がない。通常trigger_deployもmainが対象となるため実行しない。CLI認証は利用できず、browserは先行sign-in generic errorで止まっているので、再試行を前工程へ足さない。最小の続行は既存Dashboardで **Manual Deploy → Deploy a specific commit → 上記固定API SHA → Deploy Commit**。公式手順ではこの操作がautoDeployをOFFにし、main merge/branch変更/新service作成は不要。設定の追加変更はせず、対象commitの配置をMashに一操作として依頼する。詳細はAPI運用資料§14。
+
+配置後はread_onlyでhealth/bootstrap・本人の保存版GET・can_write=false・POST拒否を確認する。read_onlyはservice全体のEmlis生成停止であり、通常入力保存や他API書込の停止ではない。developmentも同APIへ来る全認証入力に作用し、Mash専用隔離環境と呼ばない。開発書込は既存3値を同時に揃え、active/公開承認値を使わない。以後のenv更新にもMCPの自動deploy effectがあるため、main再配置を起こす同じ操作を繰り返さない。
+
+実機は既存TestFlight経路を使う。Cocolonの `.github/workflows/ios-build.yml` はworkflow_dispatch、PR30 branch指定で署名/archive/upload可能。既存hostを維持するのでAPI URL入力の追加は不要。GitHub連携にはdispatchがなく、古いrunの再実行を現行版buildの代用にしない。APIの指定版配置を先に完了し、その後必要なRun workflow操作と端末操作だけを依頼する。upload成功と配布可能・実機一往復は区別する。
+
+今回の新規test/ソース/SQL/依存変更はない。GitHub記録は既存4文書だけ、`STRUCTURE_MAP_DELTA_NONE`。実DBの追加変更はなく、Q2/Q3適用済みを維持。APIの指定版配置・実機確認は未完了、商品0/3・NOT_CLEAR・全体48%・両PR Draft/open/unmergedを保持。sourceの既定OFFは維持するが、Renderには上記read_only設定保存とmain再配置という実effectがあるため「deployなし」と記録しない。

@@ -271,3 +271,45 @@ catalog照合に不一致はなく、§12の成功条件を満たしました。
 問いシステム版APIは未配置です。次は既存設計に沿って配置対象と開発確認の設定を具体化し、実機で入力→応答→回答→更新応答→保存再表示を確認する作業が残ります。API/main/Render設定・flag・build/配布は今回変更していません。追加承認が必要な配置等を今回のDB承認に含めません。
 
 商品0/3・NOT_CLEAR・全体48%・default OFF・両PR Draft/open/unmerged、最新weeklyの作業配分を継承します。source/test/SQL/依存の変更と新しいtest実行はありません。GitHubでは既存4文書に結果だけを記録します。
+
+
+## 14. 2026-10-03 u87 — read_only設定保存・意図しないmain再配置と続行手順
+
+Mashは§13の次の作業「問いシステム版APIの配置と実機確認」に「進めて」と明示しました。今回の配置と必要設定について承認を取り直しません。初回は§9のread_only確認から進め、正式商品受入れ・active公開承認へ拡張しません。
+
+### 現在の実態
+
+| 項目 | 実測・固定値 |
+|---|---|
+| 対象 | Render `まっしゅ's workspace / tea-d4pp61idbo4c73bf4hkg`、既存 `mashos-api / srv-d4ppfpm3jp1c73952bj0` |
+| 次に配置する固定source | API `7f1f7d92d296caeb913b8cab9599acab3318437d`（u86。以後のu87記録差分を自動で対象へ読み替えない） |
+| 実行済み設定要求 | `COCOLON_EMLIS_THREAD_MODE=read_only` だけをMCP `update_environment_variables` の `replace:false` で更新。成功応答あり。 |
+| 想定外の実effect | MCPが設定保存に続いてmain deployを自動起動した。単なるsave-onlyではなかった。 |
+| 実際のdeploy | `dep-db0ceqe0tbcc73f811d0`、commit `2d2f06dad0d373373cdac63e10734385eefb53ca`、09:14:17Z開始→09:15:28Z live（JST18:15）。 |
+| 前のliveとの差 | 親 `a8ca4ddf7b7ae76bf7b3d73e74e3a5808d623428` から `ai/tests/contract/test_api_contract_registry.py` 1本だけ。runtime/build source変更なし。依存の実解決内容や公開HTTP成功まで同一とは主張しない。 |
+| 新APIの確認 | 問いシステムPR版は未配置。設定更新成功は同版のread_only有効性確認ではない。 |
+| 今回のHTTP確認 | `/healthz` と `/app/bootstrap` は接続失敗。限定startupログ検索0件。RenderのliveをHTTP/認証/DB往復成功の証拠へ代用しない。 |
+
+raw [Render APIの環境変数更新資料](https://api-docs.render.com/reference/update-env-vars-for-service)は自動deployしないと説明しますが、使用したMCP wrapperはdeployを追加で呼びました。rootはAPI資料のeffect境界をMCPにも当てはめた確認不足を認め、応答直後にMashへ報告・追加mutation停止・deploy/commit差分照合を行いました。今後このMCP操作をsave-onlyとして使用しません。PR metadataのbase_shaは現在mainのHEADの代用にせず、必要な場合はbranch自体を読むことも今回の差として保持します。新しい防御基盤やcheckerは作りません。
+
+### 最小の続行操作
+
+既存[Render Dashboard](https://dashboard.render.com/web/srv-d4ppfpm3jp1c73952bj0)の **Manual Deploy → Deploy a specific commit** に、固定SHA `7f1f7d92d296caeb913b8cab9599acab3318437d` を入力して **Deploy Commit**。この一操作だけをMashに依頼します。現在のMCPにはcommit指定/取消/rollback/service branch更新がなく、通常trigger_deployではmainを再配置します。CLIの認証もなく、browserは前回generic sign-in errorで止まっているため、追加ログイン試行を積み重ねません。
+
+[Render公式手順](https://render.com/docs/deploys#deploying-a-specific-commit)ではDashboardのspecific commit配置はautoDeployをOFFにします。mainのmerge・branch変更・新service・plan変更は不要です。これにより、意図しないmain更新で指定版を上書きする経路も止まります。設定の再更新は依頼しません。
+
+### 指定版配置後の確認順
+
+1. Render deployのcommitが上記SHAでliveになったことを確認する。
+2. `GET /healthz`、`GET /app/bootstrap` のreader flag trueを確認する。healthはDB疎通を保証しない。
+3. 本人sessionで `GET /emlis/threads/by-input/{input_id}` のDTO・can_write=falseと、answers/actions/framesのPOST拒否を確認する。保存threadなしのNOT_CREATEDは保存済み往復成功とは別。実session/入力へ到達できない時は未実施として残す。
+4. 開発確認時だけMODE=development / COCOLON_ENV=development / COCOLON_EMLIS_THREAD_DEVELOPMENT=trueの3値を揃える。MCPの自動deployはmainを再選択するため、その時点の配置経路を確認してから行う。active/RELEASE_APPROVED=trueは使わない。
+5. TestFlight現行版で入力→初回応答と問い→回答→更新応答→履歴再表示を確認する。
+
+read_onlyで止まるのは共有service全体のEmlis生成です。通常のemotions保存・他API書込は止まりません。developmentもservice全体に作用し、共有Supabaseと合わせてMash専用sandboxとは呼びません。
+
+### 実機への既存経路
+
+Cocolon固定source `10f94c2f6318f25b9ca3e2bf2077f2eb3dd79816` の `.github/workflows/ios-build.yml` は手動workflow、macos-26 / Node18 / iOS15.1以上、既存署名secretでRelease archive→IPA→TestFlight uploadを行います。対象branchは `agent/three-core-cmee-current-structure-20260815`。既存API hostを維持するのでAPI URL input追加やapp main mergeは不要です。APIの指定版配置後にActionsの **iOS TestFlight Build → Run workflow → 対象branch** を使います。pluginにはworkflow_dispatchがなく、古いrunのrerunは使いません。upload完了、TestFlight処理完了、Mash端末への導入、実機成功を別々に確認します。
+
+今回の新規test/ソース/SQL/依存変更・DB変更・TestFlight送信はありません。商品0/3・NOT_CLEAR・全体48%・source既定OFF・両PR Draft/open/unmergedを保持します。
