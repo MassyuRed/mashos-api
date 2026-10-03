@@ -135,3 +135,36 @@ Q2の実装は完了しており、この資料を先に全件完了しないと
 7. threadを使い始めた後はlegacyへの単純切戻しを正常回復としない。旧I5は保存済みの本人回答・撤回・訂正を無視するため、互換版が準備できるまではread_onlyを維持する。table/eventを削除するdown migrationや古いcheckpointへのpointer巻戻しは行わない。
 
 current_observationがない場合、旧clientへ旧本文をpassedとして渡さない。新readerは履歴本文を別欄で表示する。処理中・結果不明・競合時のcacheは「前回確認した観測」と表示し、送信可否はserver側で再検証する。質問・回答・内部sourceを一般ログへ送らない。
+
+
+## 10. 2026-10-03 u83 — 接続先の読取結果と適用準備
+
+対象sourceはCocolon `84ada16b27066abe8d7255dff959c8edd8f95ad3`、API `773d2d9b5a1641538e2a79e994b8236f2dc7f5f1`。本節は§6の対象確定を進める記録であり、DB適用・配置・有効化・配布の実施記録や承認ではありません。
+
+| 対象 | 今回確認できたこと | 残る確認 |
+|---|---|---|
+| app→API | API既定値は `https://mashos-api.onrender.com`。公開URLをbuild時に変える仕組みは§6のとおり。 | 実機向けAPIの選定と稼働revision・mode。3つの公開GETはこの環境でread timeoutとなり、状態を取得できなかった。 |
+| app認証 | `lib/supabase.ts` はproject `oeahmpmigszggnkyiivq` に固定。API URL変更だけでは認証先は変わらない。 | serverが同じprojectの認証/DBを使うこと。固定認証先だけからAPIの実接続DBを推定しない。 |
+| DB候補 | Supabaseで `cocolon-project` / ACTIVE_HEALTHY、取得したbranch一覧はmainのみ。Emlis保存用schemaは未導入。 | この共有projectを今回の実機確認に使う対象として確定すること。mainであることは開発専用を意味しない。 |
+| iOS配布 | 過去のMashの明示選択はTestFlight。現行 `.github/workflows/ios-build.yml` は署名・archive・TestFlight uploadまで含む。 | 今回の端末OS版・build・接続先。workflowにAPI URLの選択input/envはなく、dispatchは未実施。 |
+
+### DB catalogと既存SQLの照合
+
+管理情報・catalogだけを読み、個人の入力/回答行は取得していません。migration履歴は空でしたが、それだけでSQL未導入とは判定していません。`public.emotions` / `public.profiles` は存在します。一方、`public.emlis_input_threads` / `public.emlis_thread_events` / `public.emlis_frame_feedback` と `emlis_parent_source` / `emlis_parent_visible` / `emlis_thread_read` / `emlis_thread_commit` / `emlis_thread_context` はcatalogにありません。
+
+SQLで参照する親列を照合しました。`auth.users.id`、`emotions.id`、`profiles.id` はuuidの主キーです。`emotions.user_id` はuuid、`emotions` / `category` はtext[]、`memo` / `memo_action` はtext、`emotion_details` はjsonb、`created_at` はtimestamp without time zone、`profiles.subscription_tier` はtextです。参照列/型/主キーの存在確認であり、実適用の成功や全権限・実データ互換を保証するものではありません。
+
+対象が確定した後に検討する既存migrationは、API上記HEADの次の2本です。SQLは変更していません。
+
+| 順 | path | SHA-256 |
+|---|---|---|
+| 1 | `supabase/migrations/20260911020509_emlis_input_threads_q2.sql` | `8ec3369d5377046d933daaccc39123b7e92b7c1c33339136fdbc1a56a379c88f` |
+| 2 | `supabase/migrations/20260911041749_emlis_q3_plan_rounds.sql` | `75a40ed8560651280fe913d2051a03fe2e77ee8cab25c91e512a985cc9a8a719` |
+
+Q2はthread/eventとRPCを追加し、Q3はその保存構造を拡張してframe feedback/contextを追加します。RLSを有効にし、一般clientへ直接操作を許可せずservice_roleへ必要な権限を与える既存SQLです。親入力やprofileの行を書換えるSQLではありませんが、共有DBへtable・function・FK・index・権限等を追加する変更です。Q3はQ2の後に適用する必要があります。実適用や実DBの互換検証は未実施です。
+
+### 再開位置
+
+Renderの管理情報を読む連携は検索で見つかり、未導入・未接続だったため利用を提案しました。接続されたら、既存serviceの配置revision・実URL・接続project identityを読取りで確認します。secret値や利用者の本文を記録へ掲載しません。API/DB/appの対象を確定する前に、appの固定認証先へmigrationを先行適用しません。
+
+対象が一致し、開発確認に使う範囲が確定したら、直前のschema・migration履歴とSQL identityを再照合し、Rule18 §11.3でstanding delegation外とされる実DB適用の個別承認を得ます。対象不一致・既存objectとの衝突・SQL差分があれば適用を止めます。適用結果が不明なら履歴/catalogを確認し、削除・再作成や盲目的な再実行へ進みません。配置・mode変更・TestFlight送信も今回の読取作業には含めません。以後のread_only→development→入力/回答/保存再表示は§6/§9の順序で確認します。

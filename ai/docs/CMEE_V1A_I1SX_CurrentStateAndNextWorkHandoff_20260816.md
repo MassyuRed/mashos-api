@@ -13662,3 +13662,25 @@ rootと補助の静的レビューでscope内の修復を確認。GitHub直前he
 開発API・認証/DB・配置版/migration状態・端末OS/導入経路は未確定のまま。既存運用手順に沿うread_only→development→bootstrap/can_write→入力/回答/保存再表示の実機確認は未実施である。今回のコード修復を環境確定の代わりにせず、対象未指定のままlive設定/配置/DB適用は行わない。実環境の確認時には起動通信失敗後の再確認操作と入力保持も合わせて確認する。
 
 primary outcomeは限定TECHNICAL_CREDIT。旧商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmerged、10/03のEmlis品質枠の区切りと10/04以降のWork分析（利用不可ならPro Piece）を継承。文章の全面改善を実機接続の前提にせず、別の補助機構も作らない。merge/deploy/enable/live DB適用/課金/配布なし。新しい有料サービス利用・Mashへの操作依頼なし。
+
+
+## 2026-10-03 u83 — 実機接続の対象とDB適用前の不足を絞る
+
+Mashの継続指示と前回txtを起点に、全体設計01/01A/01B/01C・全ファイル地図02・両repositoryの非省略tree、現行作業ルール、恒久incident全文、最新weekly 20261003とu82を確認した。開始HEADはCocolon `84ada16b27066abe8d7255dff959c8edd8f95ad3`、API `773d2d9b5a1641538e2a79e994b8236f2dc7f5f1`。System Contextのprepareは補助module不足で起動できず、許容された原典直接確認を使用した。全path/役割地図の確認を全実装全文精読とは呼ばない。Codex/Workのrootが読取・記録・GitHub反映を担当し、補助はread-onlyの接続経路・scope/SQLレビューを担当した。
+
+### 確認結果
+
+- 既存RNの入力→thread取得→回答→履歴から保存本文を再表示する経路を静的確認し、この回で修正すべき具体的なコード不具合は確認できなかった。新しい予防修正や本文全面改善は追加していない。
+- appのAPI既定値は `https://mashos-api.onrender.com`。認証先は `lib/supabase.ts` の `oeahmpmigszggnkyiivq` に固定され、API URL変更だけでは認証先は変わらない。
+- Supabaseの読取で同projectが `cocolon-project` / ACTIVE_HEALTHY、取得したbranch一覧がmainのみと確認した。Emlisの3tableと5functionはcatalogに存在しない。migration履歴は空だが、既存schemaなしとは解釈していない。weeklyに既出の未導入状態を再確認し、今回は既存Q2/Q3 SQLの参照親column/型・主キーまで照合した。詳細とSQL identityはAPI運用資料§10へ集約する。
+- 過去のMashの明示選択からiOS配布のTestFlight方針を再確認した。今回の端末OS版・導入済みbuild・API/DB対象は別途未確認。現行iOS workflowにはTestFlight uploadが含まれ、API URLの選択入力もないため、読取調査としてdispatchしていない。
+- 既定APIの `/healthz`、`/app/bootstrap`、`/openapi.json` への無認証GETは、この実行環境から各15秒でread timeoutとなった。API停止・特定版配置・mode・接続DBの証明にはならない。GitHub設定/履歴だけでも稼働APIの実DBは確定できなかった。
+- Render管理情報を読む連携を検索し、利用可能だが未導入・未接続のRender連携を確認して利用を提案した。APIの配置revisionと接続先を読取確認するために必要な次のアクセスであり、新規service作成やdeployの提案ではない。
+
+### 結果と次の作業
+
+primary outcomeは `BLOCKER_NARROWED`。app認証先と配布方針、未導入schema、適用候補2本を具体化したが、実機向けAPIの接続先DBはまだ確定していない。API運用資料§6の順序を守り、Render連携後に配置revision・実API URL・接続project identityを読取確認する。実機確認に使うAPI/DB/appの組合せを確定してから、既存Q2→Q3の適用範囲を提示する。現時点で共有mainへのDB適用を先行推奨しない。Rule18 §11.3とweeklyの実DB適用・有効化・配布の個別承認境界を維持する。
+
+変更は既存map/正本06とAPI運用資料/handoffの計4文書のみ。mapは最新記録の案内で `STRUCTURE_MAP_DELTA_NONE`、source/test/SQL/依存/契約/構造は不変。新しいtest実行なし。u82の31 PASSは過去の結果として保持し、この回の検証へ再計上しない。catalog読取とSQL照合は実migration適用・認証一往復・端末成功を証明しない。個人の入力/回答行、認証secretは取得・掲載していない。
+
+旧商品0/3・NOT_CLEAR・全体48%・default OFF・両PR Draft/open/unmerged、10/03のEmlis品質枠の区切りと10/04以降のWork分析（利用不可ならPro Piece）を継承。merge/deploy/enable/live DB適用/課金/配布は未実施。remote対象preimage・変更path・反映後bytes/HEADの確定結果は既存PR本文に記す。
