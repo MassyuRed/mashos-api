@@ -359,3 +359,14 @@ public HTTPは許可されたネットワーク経路で実際に確認しまし
 端末では既存sessionが有効ならそのまま使い、**ホーム→入力履歴→Emlisの観測を開く**を確認します。保存済みthreadがない入力は、現実装でGETのNOT_CREATEDを受けてmodalが閉じる場合があります。これを障害とも保存本文の再表示成功とも決めつけず、保存threadがない時に読取成功を前提条件にして初回生成を止めません。実historyがない場合に、読取確認のためだけの入力作成は求めません。本人sessionのDTO/can_write=false/POST503は未確認として残します。
 
 その後は§14のdevelopment三値と共有serviceの作用範囲を守り、実入力・応答・回答・同じ保存threadの再表示へ進みます。配置済みAPI7f1f7d92…、read_only設定、Q2/Q3 schemaは今回変更していません。商品NOT_CLEAR・source既定OFF・Draft/open/unmergedを保持します。
+
+
+## 17. 2026-10-03 u90 — native build/IPA成功、TestFlight送信工程で停止
+
+[run #60](https://github.com/MassyuRed/Cocolon/actions/runs/37114827933) は、修正SHA `5266c80b4c5c054e14311616bc44cc630bf0e7ef`、attempt 1、job `111179510393`。09:58:25Z開始、10:07:58Zまでにfailureで完了しました。Pods導入・署名素材導入・archive・Export IPAはすべてsuccessで、前回のfmtコンパイルエラーは実native buildで解消しました。workflow式の予定version/buildは **1.0 (6001)** です。
+
+Upload to TestFlightはfailure。Apple側受領・processing完了・tester配布可能性は未確認で、単なる未実行/skippedではありません。GitHubの詳細jobログ取得が2回Transport closedとなり本文を取得できず、artifactは0件でした。run/job状態は取得済みです。汎用fetchのjob/check-runs URL未対応400を、Apple側や利用者の権限エラーと混同しません。
+
+次はMashに[該当job](https://github.com/MassyuRed/Cocolon/actions/runs/37114827933/job/111179510393) の **Upload to TestFlight** を開き、**エラー部分のみ**をテキスト/スクリーンショットで共有してもらいます。ログ全文や認証情報は不要です。実エラーを読んで原因と必要な修正を決めるまで、再送信・secret交換・新しいworkflow基盤を追加しません。
+
+送信成功後の残件は§16のTestFlight処理/6001の実配布確認と端末導入です。既存ログインを維持して起動・本人履歴を確認し、APIが書込可能になった後で新しい確認入力→応答/問い→回答→更新→同じ保存threadの再表示へ進みます。NOT_CREATEDの閉じる挙動と、保存済み本文を読めたことを分けます。今回API再配置・環境変数・DB・source変更はありません。

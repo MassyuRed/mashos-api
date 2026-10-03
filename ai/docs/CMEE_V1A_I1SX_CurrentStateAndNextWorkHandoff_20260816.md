@@ -13767,3 +13767,14 @@ read-only補助レビューで具体的blockerなし。公式fmt 11.0.2ソース
 次は修正commitを使う**新しいRun workflow**を、同じPR30 branchで開始する。run #59のRe-run jobsは旧SHAを使うため、修正版の確認にはならない。GitHub連携にdispatchがなく、開始操作だけMashに依頼する。以後は実SHA→archive→upload→TestFlight処理→端末導入を順に確認する。本人sessionの接続、developmentでの入力→問い→回答→保存再表示は残件。
 
 全体設計・全ファイル地図・最新weekly20261003 §6.6〜6.10と前回記録の確認を引継ぎ、rootが唯一の変更owner、補助は読取のみ。開始API HEADは `1106abd74a75578e6ad1054674cd8ef8f7015627`。API指定版 `7f1f7d92d296caeb913b8cab9599acab3318437d` の配置・Q2/Q3適用済みを維持し、今回はAPI再配置・環境変数/DB変更なし。商品0/3・NOT_CLEAR・全体48%・source既定OFF・両PR Draft/open/unmergedを保持する。詳細はAPI運用資料§16。確定commit・変更path・remote全文照合は既存PR本文へ記す。
+
+
+## 2026-10-03 u90 — 修正版のnative archive成功、TestFlight送信エラーの詳細待ち
+
+Mashの開始通知後、iOS TestFlight Build run #60（ID `37114827933`、attempt 1、job `111179510393`）を確認した。PR30 branchの修正SHA `5266c80b4c5c054e14311616bc44cc630bf0e7ef` を使用し、2026-10-03T09:58:25Zに開始、10:07:58Zまでにfailureで完了した。Pods導入、署名素材導入、Build iOS archive、Export IPAはsuccess。u89のfmt互換修正は実際のApple Clang/native archiveでも通過した。workflowの式による予定版は1.0 (6001)。
+
+**Upload to TestFlightがfailure**であり、Apple側の受領・processing完了・testerへの配布可能性は未確認。送信工程が実行されたため、前回#59のupload skippedと区別する。archive/IPA成功をTestFlight送信・実機往復の成功へ換算しない。
+
+詳細ログ取得 `fetch_workflow_job_logs` は2回ともTransport closedとなり、本文を取得できなかった。run/jobの状態は取得でき、artifactは0件。汎用fetchのjob直URL/check-runsは未対応URLの400であり、権限拒否や署名/Apple認証エラーの証拠にはしない。連携の通信失敗から送信失敗の原因を推定せず、再送信・secret交換・workflow変更を行わない。次はMashに同runの **Upload to TestFlightのエラー部分だけ**をテキストまたは画像で共有してもらい、その実エラーに沿って最小修正を行う。証明書・token・password・ログ全文は求めない。
+
+全体設計・全ファイル地図・最新weekly20261003とu89を引継ぎ、rootはread-only監視と既存記録の更新、補助は利用可能な取得手段と端末導線のread-only整理を担当した。今回は既存4文書のみ、source/test/依存/SQL/workflowの追加変更・新規test実行なし、`STRUCTURE_MAP_DELTA_NONE`。Render指定API7f1f7d92…・read_only設定・Q2/Q3 schemaは維持し、再配置/環境変数/DB変更なし。商品0/3・NOT_CLEAR・全体48%・source既定OFF・両PR Draft/open/unmergedを保持。本人接続・developmentでの保存一往復は残件。詳細はAPI運用資料§17。
