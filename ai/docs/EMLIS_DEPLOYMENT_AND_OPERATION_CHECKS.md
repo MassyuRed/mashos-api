@@ -1,5 +1,7 @@
 # Cocolon CMEE 問いシステム — 後日の適用・運用確認
 
+> 2026-10-04 u101現在地：Analysis V2対応TestFlight 1.0 (6201)のarchive/export/upload成功。run62/37155776248、build SHA b11d1b321…、JST06:51完了。Apple処理/端末導入・本人入力→保存→再表示は未確認。API指定版liveはu100、最新native結果は末尾u101。
+
 > 2026-10-04 u100現在地：指定Analysis API315f5b5…がRenderでlive。healthz/bootstrap200と未認証self-structure/status401を実確認。分析developmentはMashの設定手順実行報告、本人生成成功は未確認。次はPR30 branchから新規TestFlight build、本人入力→保存→再表示。詳細は末尾u100。
 
 > 2026-10-04 u99現在地：Mashが分析API配置・development有効化・新版TestFlight送信と必要な管理画面操作を承認済み。再承認不要。RenderはGoogleパスキー確認待ち、GitHub管理画面も未ログイン。配置/設定変更/新buildは未開始。再開は認証の続きから。詳細は末尾u99。
@@ -456,3 +458,23 @@ MashがRenderを自分のブラウザで操作すると指示したため、承�
 native更新後、本人の保存入力がある「分析 → わたしマップ」を開き、文章/図、入力を変えず「こころ天気」へ切替後の再表示を確認する。同UUID保存の検証は本人認証後に行う。空/422/unsupportedは未生成として記録する。月次履歴への出現は初回latest確認条件にしない。
 
 今回の前進は**指定APIの実配置と初期HTTP確認**。本人入力の生成・immutable保存・再表示、native build/送信・端末導入、商品受入れは未完了。既存3文書のみ更新し、STRUCTURE_MAP_DELTA_NONE、全体48%・商品0/3/NOT_CLEARを維持。配置/有効化/native配布の承認はu99から継続し、再承認待ちへ戻さない。
+
+
+## 22. 2026-10-04 JST u101 — Analysis V2対応TestFlight 1.0 (6201)送信成功、本人端末確認へ
+
+Mashが既存workflowの新規実行を開始した。華恋は新しいrunを読取確認し、二重起動・旧runの再実行を行わず、工程完了まで監視した。
+
+- **iOS TestFlight Build run62 / 37155776248 / attempt1**、job `111298739887`。
+- branch `agent/three-core-cmee-current-structure-20260815`、実build SHA **`b11d1b321b4b1fb5497e866c8fc2edf3c25600ba`**。分析V2のcontract/renderer/latest/viewerを含むdd47c0aa…の後にu98〜u100の文書のみ追加した版。送信sourceと今後の記録HEADを区別する。
+- 実workflowの式は `62 * 100 + 1 = 6201`。iOS MARKETING_VERSION=1.0、CFBundleVersionをこの値でarchiveへ渡すため版は **1.0 (6201)**。
+- Build iOS archive **success**（21:49:39Z）、Export IPA **success**（21:49:49Z）、Upload to TestFlight **success**（21:51:38Z）。jobは21:51:44Z、workflow全体は21:51:45Z（JST06:51）**success/completed**。run metadataとsteps/timestampsを別読取で照合した。
+- [run62](https://github.com/MassyuRed/Cocolon/actions/runs/37155776248)。secret・署名素材・認証tokenの値は取得していない。途中のarchive継続表示と最終成功を区別し、機械待ちを失敗とは扱っていない。
+- Apple側processing完了・tester向け利用可能・本人端末への更新はまだ確認していない。送信成功を端末導入/本人接続成功へ換算しない。
+
+次はTestFlightで **1.0 (6201)** へ更新し、既存本人アカウント/保存入力で「分析 → わたしマップ」を開く。「記録から見えるわたし」「観測された内容」「まだ確定していない部分」「文章で読む」の実表示、観測カード/文章/図の一致を確認する。入力変更や強制更新を挟まず「こころ天気」へ切替えて戻り、同じ内容を再表示できるか確かめる。
+
+**保存identityの境界**：rendererは保存UUID/`projection_of`をユーザー画面へ表示しない。見た目が同じだけで同一immutable保存identityの実照合を完了したとはしない。認証済み本人API応答等との照合は残件。今回本人認証での生成・保存・再読取を実行していない。月次用履歴への出現は初回latest確認条件にしない。
+
+u100で確認済みの配置API315f5b5… / deploy dep-db0n8lnavr4c738g3s5g、health/bootstrap200・未認証status401を継承。このturnでAPI再配置・環境変数・DBを変更していない。development設定はMashの手順実行報告であり、未認証bootstrapによる独立証明とはしない。
+
+今回の記録変更は既存3文書と既存PR3/30の説明更新のみ。source/test/SQL/依存/workflowの新規変更・追加検査は0、STRUCTURE_MAP_DELTA_NONE。新版native archive/export/upload成功は実施済みの前進として記録するが、商品0/3・NOT_CLEAR・全体48%は保持し、本人実機の分析一往復を次の確認点とする。
