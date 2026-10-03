@@ -77,15 +77,15 @@ Q4には、現在の環境で確認できる実装統合・本文の確認と修
 
 旧生成経路へ戻すだけで、保存済み回答や確定した訂正が無視される場合、それを正常な復旧にしません。Q4で、処理停止・保存済み結果の閲覧・互換性を踏まえた回復方法を用意します。既存の運用手段で足りる場合は、新しい監査基盤や切替基盤を追加しません。
 
-## 6. Q2開発接続の具体的な手順
+## 6. Q2〜Q4開発接続の具体的な手順
 
-これは、対象となる開発環境が使える段階の手順です。現在のQ2を確認する場合に使い、Q3・Q4で契約や設定が変わった場合は対象版に合わせて更新します。
+これは、対象となる開発環境が使える段階の手順です。現行Q4の設定とbootstrap readerを使い、Q2/Q3の保存profileを確認します。初回配置の読取確認は§9に従います。以下の設定変更・DB適用・端末操作を、この資料の更新だけで実施済みまたは公開承認済みとはしません。
 
 1. 対象API・DB・アプリの版と接続先を確定します。開発用データで確認できる対象を選びます。
 2. `supabase/migrations/20260911020509_emlis_input_threads_q2.sql`と対象のmigration履歴・親schemaを照合します。同じオブジェクトが既にある場合、再作成や削除で押し通さず差分を確認します。
 3. 未適用で整合するmigrationを対象DBへ適用し、table／RPC／FK／権限を確認します。Q3の変更を含む版なら、その版の追加migrationまで必要な順に適用します。
-4. 開発APIに`COCOLON_ENV=development`、`COCOLON_EMLIS_THREAD_DEVELOPMENT=true`を設定し、接続先と認証経路を確認します。
-5. 開発checkoutの`lib/api/emlisThreadApi.js`にある`Q2_DEVELOPMENT_OPT_IN`をtrueにし、開発APIを向けたdebug buildを使用します。保存されている既定値はfalseです。
+4. §9の読取確認後、開発対象APIに`COCOLON_EMLIS_THREAD_MODE=development`、`COCOLON_ENV=development`、`COCOLON_EMLIS_THREAD_DEVELOPMENT=true`を設定します。明示MODEが優先されるため、read_onlyを残して後二つだけを設定しても書込みは始まりません。開発確認にactiveや公開承認値を使いません。API・認証・DBが手順1で選んだ同じ環境であることを確認します。
+5. 対象アプリが実際に採用する`lib/apiClient.js`の`API_BASE_URL`を確認し、開発APIへ接続するビルドを使います。`lib/compat/legacyWireContracts.js`は`EXPO_PUBLIC_API_BASE_URL`等を読みますが、現repositoryはRN CLI構成のため、shellへの値の設定だけで実bundleへ反映したとは扱いません。接続先へ反映できるビルド設定は実環境で確認する残件です。同じAPIから`/app/bootstrap`を再取得し、`feature_flags.emlis_threads_enabled=true`でreaderが有効になることを確認します。廃止済みの`Q2_DEVELOPMENT_OPT_IN`は変更しません。保存済みthread DTOの`can_write=true`を確認してから回答操作へ進みます。履歴検索・Emlis取得/回答・履歴操作も同じ設定APIへ到達することを確認します。
 6. 本書§3の入力保存・回答・履歴・失敗／再開を順に確認し、結果と実際の差分を残します。必要に応じて§4のQ3項目を続けます。
 
 Q4のreaderはdebug/release共通ですが、書込みはserverのmodeで制御します。公開用mode・経路はコードにあり、実際の有効化は§5です。開発設定を公開承認へ読み替えません。

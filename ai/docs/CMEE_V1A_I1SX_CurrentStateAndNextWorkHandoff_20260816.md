@@ -13520,3 +13520,30 @@ Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5/PGlite0.5.8�
 同名/同文による今回の停止は限定条件で修復したが、複数出来事・回答・訂正群全体の完了ではない。HRの「後に書かれた方」の修飾範囲、長い列挙、二層再掲、「のですね」の反復、受け取りの浅さ、u76記載の過去説明形・上流anchor潜在不一致は残る。今回の実装をこれらの解消へ換算しない。文体改善を続けるために10/03の区切りを自動延長せず、次のWork主枠は分析、Emlisは最小実機接続に必要なAPI/DB/ビルド・未接続箇所の限定確認へつなぐ。
 
 primary outcomeは限定TECHNICAL_CREDIT。旧商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを保持。未完成と明示した開発動作確認と正式品質受入れを分け、未評価の最小公開条件を合格扱いしない。実DB・端末一往復は未確認のまま。merge/deploy/enable/live適用・課金/配布操作なし。外部有料サービス追加なし、正確な課金額は未取得。
+
+
+## 2026-10-03 u78 — 履歴からEmlisを再開する開発接続先を統一
+
+### 対象と結果
+
+Mashの残件継続指示を受け、最新weekly 20261003 §6.6〜6.10の最小実動作・実機接続優先に従い、既存RN/API接続を照合した。開始HEADはAPI `4437c5e301724de0484bdf961684b4b2beaa5bdc`、Cocolon `9e848a889d5536ce4f7338636c4fd8f998ea3d46`。fresh recursive tree（API2355/Cocolon1798、truncated=false）、全体設計01・全ファイル地図02・最新weekly・Emlis map・u77引継ぎを照合した。全path確認を全実装全文精読とは扱わない。既存LEVEL_2内の原因修復、rootのみ編集/実行/反映、補助は接続経路と差分の読取レビュー。
+
+`AnalysisHistoryScreen.js`は履歴検索と公開範囲更新だけ本番hostに固定され、Emlis取得/回答と履歴削除は設定APIを使用していた。共通apiClientは絶対URLをそのまま使うため、開発API指定時に同じ画面の記録取得と操作先が異なる環境へ分裂する。2 URL定数を既存相対routeへ揃え、共通API_BASE_URLを使うよう修復した。新しい接続機構やrouteは作らない。既定の本番host・request/response・認証方式・保持期間・公開範囲の仕様は不変。
+
+APIの既存運用資料§6も現行Q4へ整合した。廃止済み`Q2_DEVELOPMENT_OPT_IN`の変更指示をbootstrap reader確認へ置換。§9のread_only読取確認後、開発環境で`MODE=development`と既存二つのdevelopment条件を明示し、bootstrapのreader通知と保存threadのcan_writeを確認する手順にした。明示MODEが優先されるため、read_onlyを残したまま後二変数だけを設定しても書込みは始まらない。設定owner・flag既定値・公開承認条件は変更せず、環境へ設定を適用していない。
+
+変更はCocolonの既存screen/test/正本06とAPIの既存運用資料/handoff、計5 modify（Cocolon3/API2）、追加/削除0。Emlis本文作者・意味更新・Gate・公開wire・DB・API実装・課金・依存宣言に変更なし。STRUCTURE_MAP_DELTA_NONE：既存のfrontend API boundaryへ接続を戻す内部修復で、owner/route/schema/lifecycle/画面導線は不変。u77で同期したEmlis mapの方針は維持し、mapを再変更しない。
+
+### 検証
+
+既存`tests/emlis-thread.test.js`の23390 bytes prefixと旧20条件を保存し、既定接続先/開発接続先の2条件を末尾へ追加。実AnalysisHistoryScreen・実Emlis hook/Modal・実apiClient・実URL resolverを使い、認証session・bootstrap・native部品・fetchは合成環境で検査した。履歴→Emlisを開く→回答→閉じる→保存本文を再表示→既存公開範囲handler→削除の6通信で、URL/method・認証header・元入力ID・質問ID/回答/revision/idempotency key・公開範囲payloadを確認する。非表示の公開範囲controlはhandlerの検査であり、端末上の操作性の証明とはしない。mock fetchが全通信を受け、外部API/実データへ送信しない。
+
+同じ22条件を修正前screen/修正後screenで実行。開始版21 PASS/1 FAIL（0.92秒）、候補22 PASS/0 FAIL/ERROR0/SKIP0（0.96秒）。開始版の失敗は開発指定時の履歴検索/公開範囲更新が本番hostへ向かう不一致そのもの。既定hostの対照、既存20件の回答/再開/競合/不明ACK/本人切替/read_only/bootstrap確認も候補で成功した。Node v24.19.0の`--test-isolation=none --test`を使用。通常のprocess isolationではfile単位の集約しか取得できなかったため、同一processで個別件数と失敗内容を確認した。React/react-test-renderer18.3.1、Babelは既存test-tools package.jsonの固定版をscratchへ用意し、repository依存を変えていない。Python/API suite・実DB・実bundle・端末検証は今回再実行していない。
+
+rootと補助が最終差分を確認。remote commit/changed paths/全文一致と最終HEADは既存Draft PR3/30の本文に確定値を記す。scratchログや検査用copyを恒久成果物へ増やさない。
+
+### 次の接続確認と境界
+
+残る接続作業は、対象API/認証/DB/migration/アプリ版と、端末用bundleに実際に入るAPI_BASE_URLを同じ開発環境として確認すること。現repositoryはRN CLIで、URL resolverが読む`EXPO_PUBLIC_API_BASE_URL`等をshellで指定しただけで実bundleへ反映したとは証明できていない。この環境値注入を今回修復済みとせず、次の限定確認点にする。具体的な対象環境を確認する前に新しい設定機構や有効化を追加しない。既存の入力保存→初回応答→本人回答→更新応答→履歴再取得が実機で成立したとのcreditはまだ付与しない。
+
+今回のprimary outcomeは限定TECHNICAL_CREDIT。文体・深さ等の全面改善を実機接続の前提にせず、10/03のEmlis品質改善枠の区切り、10/04以降のWork分析（利用不可ならPro Piece）、限定した共通接続作業を継承する。u77までの意味/文体残件、旧商品0/3・NOT_CLEAR・全体48%・default OFF、両PR Draft/open/unmergedを保持。新しい最小公開条件の合格・実機成功・配布/公開へ換算しない。merge/deploy/enable/live DB適用なし。追加の有料サービス利用・Mashの操作負担なし、正確な課金額は未取得。
