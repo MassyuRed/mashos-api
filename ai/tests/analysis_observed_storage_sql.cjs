@@ -1,6 +1,6 @@
 // Synthetic PostgreSQL behavior checks. Run with PGlite installed outside the repo:
 // NODE_PATH=/tmp/cocolon-analysis-db-check/node_modules node ai/tests/analysis_observed_storage_sql.cjs <fixture.json>
-// Fixture is produced by test_analysis_observed_storage.fixture(), not user data.
+// Fixture is produced by await test_analysis_observed_storage.storage_sql_fixture(), not user data.
 const { PGlite } = require('@electric-sql/pglite');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -65,6 +65,11 @@ async function insertEmotion(id, created='2026-10-01T01:00:00') {
   assert.deepEqual(visible.items[0].content_json,fx.row.content_json);
   assert.equal(visible.items[0].content_text,fx.row.content_text);
   assert(!JSON.stringify(visible).includes('private_evidence')); assert(!JSON.stringify(visible).includes(snap.guard)); checks++;
+  // Upgrade with an existing immutable row, then read identical saved bytes.
+  await db.exec('reset role');
+  await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261004041627_analysis_period_comparison.sql'),'utf8'));
+  await db.exec('set role service_role');
+  assert.deepEqual(await read(),visible); checks++;
   assert.equal((await read(other)).items.length,0); checks++;
   assert.equal((await one('select public.analysis_observed_read($1,p_days:=28) as value',[owner])).value.items.length,0);
   assert.equal((await one('select public.analysis_observed_read($1,p_days:=2) as value',[owner])).value.items.length,1); checks++;
@@ -127,7 +132,116 @@ async function insertEmotion(id, created='2026-10-01T01:00:00') {
   await commit((await snapshot('light')).guard,'light');
   await db.query('delete from auth.users where id=$1',[owner]);
   assert.equal(await count(),0); checks++;
+  // Real two-period save/read lifecycle, including changes only in the baseline.
+  const compared=fx.comparison, firstUse=fx.empty_comparison;
+  async function comparisonSnapshot() {
+    return (await one('select public.analysis_observed_comparison_snapshot($1,$2,$3,$4,$5) as value',
+      [owner,start,end,'standard','monthly'])).value;
+  }
+  async function comparisonCommit(snap, candidate=compared) {
+    return (await one('select public.analysis_observed_commit($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) as id',
+      [owner,start,end,'standard','monthly',snap.guard,candidate.row.content_json.watashiMap.projection_of.split('@')[0],
+       candidate.private,candidate.row.content_json.watashiMap,candidate.row.content_text])).id;
+  }
+  async function comparisonRead() {
+    return (await one("select public.analysis_observed_read($1,p_report_type:='monthly',p_history:=true) as value",[owner])).value;
+  }
+  async function insertPrevious(id=compared.previous_original.id) {
+    const p=compared.previous_original;
+    await db.query(`insert into public.emotions(id,user_id,created_at,memo,memo_action,category,emotions,emotion_details)
+      values($1,$2,$3,$4,$5,$6,$7,$8)`,[id,owner,p.created_at,p.memo,p.memo_action,p.category,p.emotions,p.emotion_details]);
+  }
+  await db.query('insert into auth.users values($1)',[owner]);
+  await db.query("insert into public.profiles values($1,'plus')",[owner]);
+  await insertEmotion(fx.original.id);
+  const empty=await comparisonSnapshot();
+  assert(empty.comparison_eligible); assert.equal(empty.previous.members.length,0);
+  await comparisonCommit(empty,firstUse);
+  assert.equal((await comparisonRead()).items[0].content_json.watashiMap.period_comparison.state,'NO_PREVIOUS'); checks++;
+  await insertPrevious(); assert.equal(await count(),0); checks++;
+  await expectError(()=>comparisonCommit(empty,firstUse),'40001');
+  const originalZone=(await one('show timezone')).TimeZone;
+  await db.exec("set timezone='America/New_York'");
+  const dst=(await one("select public.analysis_observed_comparison_snapshot($1,'2026-03-09T00:00:00Z','2026-03-10T00:00:00Z','standard','latest') as v",[owner])).v;
+  assert.equal(Date.parse(dst.previous_end)-Date.parse(dst.previous_start),86400000); checks++;
+  await db.query("select set_config('TimeZone',$1,false)",[originalZone]);
+  const pair=await comparisonSnapshot();
+  assert.equal(pair.previous.members.length,1); assert.equal(pair.current.members.length,1);
+  assert.match(pair.guard,/^analysis-db-compare-v1:[0-9a-f]{64}$/); checks++;
+  await db.exec('set role service_role');
+  await commit((await snapshot('standard','monthly')).guard,'standard','monthly');
+  await comparisonCommit(pair); await comparisonCommit(pair);
+  assert.equal(await count(),2); checks++;
+  const visiblePair=(await comparisonRead()).items.find(x=>x.id===compared.row.id);
+  assert.deepEqual(visiblePair.content_json,compared.row.content_json);
+  assert.equal(visiblePair.content_text,compared.row.content_text);
+  assert(!JSON.stringify(visiblePair).includes('previous_evidence'));
+  assert(!JSON.stringify(visiblePair).includes(pair.guard)); checks++;
+  assert.equal((await read(other,true)).items.length,0); checks++;
+  await db.exec('reset role');
+  for (const role of ['anon','authenticated']) {
+    await db.exec('set role '+role);
+    await expectError(()=>comparisonSnapshot(),'42501');
+    await expectError(()=>comparisonCommit(pair),'42501');
+    await db.exec('reset role');
+  }
+  const singleGuard=(await snapshot('standard','monthly')).guard;
+  await expectError(()=>comparisonCommit({...pair,guard:singleGuard}),'23514');
+  const broken=JSON.parse(JSON.stringify(compared));
+  broken.private.period_comparison.previous_artifact_ref=broken.private.projection_of;
+  await expectError(()=>comparisonCommit(pair,broken),'23514');
+  // Previous-only edit removes the comparison but keeps the single-period row.
+  await db.query("update public.emotions set memo='私は考えをノートに書いた。' where id=$1",[compared.previous_original.id]);
+  assert.equal(await count(),1); assert.equal((await comparisonRead()).items.length,1); checks++;
+  await expectError(()=>comparisonCommit(pair),'40001');
+  await comparisonCommit(await comparisonSnapshot());
+  await db.exec('alter table public.emotions disable trigger analysis_emotions_changed');
+  await db.query("update public.emotions set memo='私は考えをノートに書かなかった。' where id=$1",[compared.previous_original.id]);
+  assert.equal(await count(),2); assert.equal((await comparisonRead()).items.length,1); checks++;
+  await db.exec('alter table public.emotions enable trigger analysis_emotions_changed');
+  await db.query('delete from public.analysis_observed_artifacts where id=$1',[compared.row.id]);
+  await comparisonCommit(await comparisonSnapshot());
+  const previousThread='00000000-0000-0000-0000-000000000299';
+  await db.query(`insert into public.emlis_input_threads(id,user_id,original_emotion_id,revision,state,issued_count,source_snapshot,data)
+    select $1,$2,id,1,'COMPLETED',0,public.emlis_parent_source(e),'{}' from public.emotions e where id=$3`,
+    [previousThread,owner,compared.previous_original.id]);
+  assert.equal(await count(),1); checks++;
+  await comparisonCommit(await comparisonSnapshot());
+  await db.query(`insert into public.emlis_thread_events(id,thread_id,seq,kind,round_index,question_id,payload)
+    values('00000000-0000-0000-0000-000000000399',$1,1,'ANSWER',1,'q','{"source":{"answer_text_private":"synthetic correction"}}')`,[previousThread]);
+  assert.equal(await count(),1); checks++;
+  await comparisonCommit(await comparisonSnapshot());
+  await db.query('delete from public.emlis_thread_events where thread_id=$1',[previousThread]);
+  assert.equal(await count(),1); checks++;
+  await comparisonCommit(await comparisonSnapshot());
+  await db.query('delete from public.emlis_input_threads where id=$1',[previousThread]);
+  assert.equal(await count(),1); checks++;
+  await comparisonCommit(await comparisonSnapshot());
+  await db.query('delete from public.emotions where id=$1',[compared.previous_original.id]);
+  assert.equal(await count(),1); checks++;
+  await comparisonCommit(await comparisonSnapshot(),firstUse);
+  await db.query('delete from public.emotions where id=$1',[fx.original.id]);
+  assert.equal(await count(),0); checks++;
+  await insertEmotion(fx.original.id); await insertPrevious();
+  await db.query('update public.emotions set memo=$1 where id=$2',[fx.original.memo,compared.previous_original.id]);
+  await comparisonCommit(await comparisonSnapshot(),fx.unchanged_comparison);
+  const unchanged=(await comparisonRead()).items[0];
+  assert.deepEqual(unchanged.content_json.watashiMap.period_comparison,
+    {state:'COMPARABLE',reason_codes:[],safe_change_kinds:[]});
+  assert.equal(unchanged.content_text,fx.unchanged_comparison.row.content_text); checks++;
+  await db.query('delete from public.analysis_observed_artifacts');
+  // Force only the baseline out of retention without changing the tier:
+  // same effect as time advancing across a retention boundary.
+  await db.query('update public.emotions set memo=$1 where id=$2',[compared.previous_original.memo,compared.previous_original.id]);
+  await comparisonCommit(await comparisonSnapshot());
+  await db.exec(`create or replace function public.emlis_parent_visible(p_created timestamp,p_tier text,p_now timestamptz)
+    returns boolean language sql stable as $$ select p_created >= timestamp '2026-10-01' $$;`);
+  const expired=await comparisonSnapshot();
+  assert.equal(expired.comparison_eligible,false); assert.match(expired.guard,/^analysis-db-v1:/);
+  assert.equal((await comparisonRead()).items.length,0); checks++;
+  await commit(expired.guard,'standard','monthly');
+  assert.equal((await comparisonRead()).items[0].content_json.watashiMap.period_comparison.state,'NO_PREVIOUS'); checks++;
   console.log(JSON.stringify({checks,fixture_bytes:Buffer.byteLength(JSON.stringify(fx)),
     commit_ms:Math.round(committedMs),read_ms:Math.round(readMs),environment:'isolated synthetic PGlite; not live latency'}));
   await db.close();
-})().catch(async error=>{console.error(error.message,error.code || '');await db.close();process.exitCode=1;});
+})().catch(async error=>{console.error(error.message,error.code || '',{checks});await db.close();process.exitCode=1;});

@@ -1,5 +1,6 @@
 """Real FastAPI entrypoints; fake Auth/DB transport, real lifecycle and CMEE."""
 import copy
+from datetime import datetime, timedelta
 import os
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -51,6 +52,18 @@ class AnalysisApiTests(unittest.IsolatedAsyncioTestCase):
         if name == 'analysis_observed_source_snapshot':
             return {'guard':GUARD,'tier':self.tier,'now':payload['p_end'],
                 'members':[{'original':self.fx['original'],'thread':None,'events':[]}]}
+        if name == 'analysis_observed_comparison_snapshot':
+            start, end = datetime.fromisoformat(payload['p_start']), datetime.fromisoformat(payload['p_end'])
+            previous_start = start-(end-start)
+            current = dict(self.fx['original'], created_at=(end-timedelta(hours=1)).replace(tzinfo=None).isoformat())
+            previous = dict(current, id=str(UUID(int=99)), memo='私は考えをノートに書かなかった。',
+                created_at=(start-timedelta(hours=1)).replace(tzinfo=None).isoformat())
+            def snap(original):
+                return {'guard':GUARD,'tier':self.tier,'now':payload['p_end'],
+                    'members':[{'original':original,'thread':None,'events':[]}]}
+            return {'guard':'analysis-db-compare-v1:'+'b'*64,'tier':self.tier,'comparison_eligible':True,
+                'current':snap(current),'previous':snap(previous),
+                'previous_start':previous_start.isoformat(),'previous_end':start.isoformat()}
         if name == 'analysis_observed_commit':
             row = copy.deepcopy(self.fx['row'])
             row.update(id=str(UUID(payload['p_artifact_id'][9:])),report_type=payload['p_report_type'],
@@ -91,6 +104,24 @@ class AnalysisApiTests(unittest.IsolatedAsyncioTestCase):
             response=await self.client.get('/self-structure/reports/history',headers=headers)
             self.assertEqual(response.status_code,401)
         self.assertEqual(self.calls,[])
+
+    async def test_comparison_http_latest_history_detail_return_same_saved_text_and_graph(self):
+        with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='development'):
+            response=await self.get('/self-structure/latest?report_mode=standard&user_id='+OTHER)
+            self.assertEqual(response.status_code,200,response.text)
+            body=response.json(); row=self.saved[0]
+            self.assertEqual(body['meta']['period_comparison']['state'],'COMPARABLE')
+            again=await self.get('/self-structure/latest?ensure=false&report_mode=standard')
+            detail=await self.get('/self-structure/reports/'+row['id'])
+            self.assertEqual(again.json()['content_text'],body['content_text'])
+            self.assertEqual(detail.json()['item']['content_json']['watashiMap'],body['meta'])
+            self.assertEqual(detail.json()['item']['content_text'],body['content_text'])
+            row['report_type']='monthly'
+            history=await self.get('/self-structure/reports/history')
+            self.assertEqual(history.json()['items'][0]['id'],row['id'])
+            self.assertEqual(sum(n=='analysis_observed_commit' for n,_ in self.calls),1)
+            for private in ('previous_evidence','comparison_dependency','current_source_set_ref'):
+                self.assertNotIn(private,response.text+again.text+detail.text+history.text)
 
     async def test_plan_and_unsupported_secret_override(self):
         deep=await self.get('/self-structure/latest?report_mode=deep')

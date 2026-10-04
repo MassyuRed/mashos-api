@@ -14291,3 +14291,21 @@ rootが同じ記述内容、行動の肯否、負荷追加、未確定部分、�
 変更は既存15file：API source_adapter/intent_compiler/observed_route_realizer/astor_self_structure_report、vertical/saved period/storage test、既存API handoff。CocolonはwatashiMapV2Contract/WatashiMapV2Renderer/RN test、current00/03 §4.22、canonical04 §3.17、06本記録。新規path/共有意味owner/外部API・DTO/SQL/依存追加0。責務地図を同期し、既存draft/open/unmerged PR3/PR30 branchへfresh preimage/head確認→non-force反映→remote全文/変更path/parent/tree/headを照合する。main/merge/deploy/build/稼働DBへのeffect0。
 
 u102〜u116修正版は未配置。指定API315f5b5…/TestFlight6201と実機OKのMash報告を継承。今回のprimary outcomeは限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%を再採点しない。次は比較を保存/APIへ接続するため、既存一期間のsource guardと保存依存を両期間へ拡張する最小差分を具体化する。前期間の訂正/削除/保持期限・プラン変更と保存/読取の競合まで同じ境界で扱う必要がある。SQL/稼働DBの変更が必要な場合はstanding delegation外のeffectを実行せず、既存ownerと必要な個別判断を示す。IF・正式商品受入れ・global cutoverは残る。語彙や文章品質の網羅を実機接続前の追加条件へ戻さない。
+
+## 2026-10-04 JST u117 — 二期間比較の保存・既存API接続候補
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK。Mashの分析実装継続指示と既存PR3/PR30書込み許可を継承し、前提/作業rules、全体設計図、current00/03のfile/責務地図、canonical04/05、最新weekly20261003 §6.6〜6.10、u116現在地、恒久incident全文を確認した。基準headはAPI269941e559132321cd8469c922c49dc3244b3431 / Cocolonbe77fbfc79286ce086d1f51841c6e431d37ef7ef。前作業のSystem Context shallow ancestry失敗を成功へ替えず、既存規定の原本直接読取を継続。rootが実行/編集/write単一owner、補助2名はread-only review。モデル役割をPro/Ultraの別実体へ捏造しない。
+
+今回の未完了条件は「比較が保存/APIに未接続で、前期間の訂正/削除/期限を保存結果が追えない」こと。完成条件は既存一table/API形状のまま、両期間の依存を保持し、同じ保存本文/図を返すレビュー可能なコードと未適用SQL候補を作ること。新table・外部service・依存は追加せず、既存検査を拡張する。可逆な実装/レビューまでを進め、Rule18のstanding delegation外である稼働DB適用・有効化・配置のeffectは0。追加費用/Mash操作0。PRODUCT_ROUTE_ALIGNED / TECHNICALLY_ADMISSIBLEはread-only review結果であり商品合格ではない。
+
+新migrationはSupabase CLI migration newで20261004041627_analysis_period_comparison.sqlを作成。元20261003134440は不変（20261003204421は元SQLの実適用履歴名で別修正ではない）。比較snapshot RPC1を追加し、既存commit/read/invalidatorを拡張する。一statementで同owner/modeのcurrentと直前等長previousを読み、両source guardをanalysis-db-compare-v1へ結合。単期とのunique衝突を避け、既存auth→source locksの内側で両guardを再確認する。private-evidence.v2はcurrentの閉じた証拠へtyped比較/previous_evidence/dependencyをinline追加し、前artifact/source-set refを同一行で解決する。原文/意味命題/labelはprivateへ保存せず、前locatorは公開しない。
+
+既存serviceは比較flag=development時に二期間の真正sourceを同一CMEEへ渡し、保存後に既存readで同じidentity/本文/図を取得する。HTTP route/public DTO追加0、RN source変更0。読出しで意味生成しない。空前期間はNO_PREVIOUSで保存でき、空集合への後日追加も失効対象。記録あり未解釈は422で、単期へ失敗を隠さない。両期間の原入力/補足変更・削除・追加、tier変更、保持期限、read-time missed trigger確認へ接続した。
+
+独立reviewで、比較前期間がFree/Plus保持範囲外なら既存の利用可能なcurrentまで失う問題を指摘された。comparison_snapshot内でcurrent認可後に前期間の保持可否を判定し、明示comparison_eligible=falseだけ単期へ戻すよう修正。一般のP0002/403/409/通信/生成エラーはfallbackしない。保存済比較が後日期限外となる場合は非表示を維持する。SQL検査で元private CHECKの自動名が_check2だったこと、新snapshotのSET timezone UTCが既存+09単期guardを壊すこと、JSONB減算の演算子優先順位を確認して修正。UTCは期間演算へ局所化し、dependencyはtimestampとして同値を照合、guardの旧session契約を維持。期待を削らず再検査し、最終read-only reviewはblocking0。
+
+検証は既存隔離Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/pydantic2.13.5でvertical118/storage32/saved period16/API7＝173 PASS、548 subtests PASS、既存Pydantic非推奨warning1。実FastAPI latest→status/再読取/detail/history identity、owner、private非漏出を確認。合成PGliteへ実SQLを適用し58項目PASS：既存行を残したmigration、旧単期との共存/冪等identity、両期間commit guard、前期間の編集/追加/削除/補足追加/削除、trigger不実行時read拒否、ACL/別owner、初回、差分なし、保持期限、DST時のUTC等長を含む。単一接続の隔離DBであり、live DB/実同時接続/稼働latencyの証拠ではない。RN13 PASS。比較あり・差分なし・初回の実生成/保存候補本文3件をrootが全文読み、既存RN contractの本文とidentityが3/3一致した。
+
+変更はAPI6file（service、storage/API/SQL検査、SQL候補、既存handoff）とCocolon既存4文書（current00/03 §4.23、canonical04 §3.18、06）。既存PR3/PR30のfresh head/preimageを確認し、non-force反映後にremote全文/path/parent/tree/headを照合する。main/merge/deploy/build/live DB/flag effect0。比較flag既定off。既存rowは書換えず、SQL候補は未適用。公開repoには合成検査/source/既存技術記録だけを反映し、ユーザー行/本文/credentialは取得・公開しない。
+
+primary outcome=TECHNICAL_CREDIT。u102〜u117は未配置、指定API315f5b5…/TestFlight6201の実機OKはMash報告として継承。商品0/3・NOT_CLEAR・48%を再採点しない。次の一作業は、今回SQL候補と対応APIを適用する開発環境/対象版を固定し、DB→API→比較有効化→実機の一往復へ進むこと。DB適用/配置は別対象付きの明示判断が必要で、この実装を許可へ変換しない。flag offは新規比較生成の停止であり、比較保存行を扱えない旧API版へ戻すrollback成立ではない。IF・一般の解釈仮説・正式商品受入れ/global cutoverは残る。高度な文章品質や語彙網羅を次の接続の前提へ戻さない。

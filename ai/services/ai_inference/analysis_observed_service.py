@@ -6,6 +6,7 @@ persisted. Reads return stored text/graph and never run the meaning engine.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict, replace
 from datetime import datetime, timedelta, timezone
 import os
 import re
@@ -28,6 +29,10 @@ def observed_mode():
 
 def observed_enabled():
     return observed_mode() != 'off'
+
+
+def period_comparison_enabled():
+    return os.getenv('COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE', 'off').strip().lower() == 'development'
 
 
 async def _rpc(name, payload):
@@ -54,7 +59,7 @@ def _evidence(ref):
         'scalar_end', 'utf8_start', 'utf8_end', 'field_sha256', 'literal_sha256')}
 
 
-def private_storage_evidence(artifact):
+def private_storage_evidence(artifact, *, previous_artifact=None, comparison_dependency=None):
     """Explicit allowlist: no raw node label, proposition noun or source body."""
     from cocolon_meaning_experience_engine.cores.analysis.source_adapter import commitment
     graph = {
@@ -81,12 +86,25 @@ def private_storage_evidence(artifact):
             | {'evidence_refs': [_evidence(e) for e in a.evidence_refs]}
             for a in artifact.graph.annotations],
     }
-    return {'schema_version': 'analysis.private-evidence.v1', 'projection_of': artifact.reference,
+    private = {'schema_version': 'analysis.private-evidence.v1', 'projection_of': artifact.reference,
         'source_set_ref': artifact.source_set_ref, 'graph_commitment': commitment(graph), 'graph': graph,
         'source_members': [{key: getattr(m, key) for key in (
             'saved_record_ref', 'saved_record_version', 'member_role', 'source_commitment',
             'inclusion_status', 'inclusion_or_exclusion_reason', 'child_source_envelope_refs')}
             for m in artifact.source_members]}
+    if comparison_dependency is not None:
+        comparison = artifact.period_comparison
+        _require((comparison is None) == (previous_artifact is None))
+        if comparison is not None:
+            _require(comparison.previous_artifact_ref == previous_artifact.reference
+                     and comparison.previous_source_set_ref == previous_artifact.source_set_ref)
+        private.update(schema_version='analysis.private-evidence.v2',
+            comparison_dependency=comparison_dependency,
+            period_comparison=asdict(comparison) if comparison else None,
+            previous_evidence=private_storage_evidence(previous_artifact) if previous_artifact else None)
+    else:
+        _require(artifact.period_comparison is None and previous_artifact is None)
+    return private
 
 
 def _checked_projection(projection, report_id):
@@ -101,7 +119,18 @@ def _checked_projection(projection, report_id):
         _require(projection['wire_kind'] == 'watashi.map.v2' and projection['artifact_version'] == 1)
         _require(projection['projection_of'] == 'artifact:' + UUID(report_id).hex + '@1')
         _require(type(projection['period_label']) is str)
-        _require(projection['period_comparison'] == {'state': 'NO_PREVIOUS', 'reason_codes': [], 'safe_change_kinds': []})
+        from cocolon_meaning_experience_engine.cores.analysis.observed_route_realizer import COMPARISON_CHANGES, COMPARISON_REASONS
+        comparison = projection['period_comparison']
+        _require(type(comparison) is dict and set(comparison) == {'state', 'reason_codes', 'safe_change_kinds'})
+        state, reasons, changes = comparison['state'], comparison['reason_codes'], comparison['safe_change_kinds']
+        _require(type(reasons) is list and type(changes) is list)
+        _require(all(type(x) is str and x in COMPARISON_REASONS for x in reasons)
+                 and len(reasons) == len(set(reasons)))
+        _require(all(type(x) is str and x in COMPARISON_CHANGES for x in changes)
+                 and len(changes) == len(set(changes)))
+        _require((state == 'NO_PREVIOUS' and not reasons and not changes)
+                 or (state == 'COMPARABLE' and not reasons)
+                 or (state == 'NOT_COMPARABLE' and reasons and not changes))
         nodes = projection['nodes']
         _require(type(nodes) is list and nodes)
         refs = []
@@ -206,21 +235,44 @@ async def generate_saved(user_id, *, start, end, report_mode, report_type):
     owner = str(UUID(user_id))
     args = {'p_user_id': owner, 'p_start': start, 'p_end': end,
             'p_mode': report_mode, 'p_report_type': report_type}
-    snapshot = await _rpc('analysis_observed_source_snapshot', args)
+    comparison_on = period_comparison_enabled()
+    snapshot = await _rpc('analysis_observed_comparison_snapshot' if comparison_on
+                          else 'analysis_observed_source_snapshot', args)
     try:
-        _require(re.fullmatch(r'analysis-db-v1:[0-9a-f]{64}', snapshot['guard']))
-        _require(type(snapshot['members']) is list and len(snapshot['members']) <= 100)
-        records = tuple(_analysis_saved_member(dict(s, tier=snapshot['tier'], now=snapshot['now']),
-            owner=owner, input_id=s['original']['id'], tier=snapshot['tier'], start=_time(start), end=_time(end))[0]
-            for s in snapshot['members'])
-        request = AnalysisObservedMapRequest('analysis-saved-' + uuid4().hex, owner, start, end, records)
+        current_source = snapshot['current'] if comparison_on else snapshot
+        if comparison_on:
+            _require(type(snapshot['comparison_eligible']) is bool)
+            comparison_on = snapshot['comparison_eligible']
+        _require(re.fullmatch(r'analysis-db-' + ('compare-v1' if comparison_on else 'v1')
+                             + r':[0-9a-f]{64}', snapshot['guard']))
+        def source_request(source, period_start, period_end):
+            _require(type(source['members']) is list and len(source['members']) <= 100)
+            records = tuple(_analysis_saved_member(dict(s, tier=source['tier'], now=source['now']),
+                owner=owner, input_id=s['original']['id'], tier=source['tier'],
+                start=_time(period_start), end=_time(period_end))[0] for s in source['members'])
+            return AnalysisObservedMapRequest('analysis-saved-' + uuid4().hex, owner, period_start, period_end, records)
+        request = source_request(current_source, start, end)
+        dependency = None
+        if comparison_on:
+            previous_start = (_time(start) - (_time(end) - _time(start))).isoformat()
+            _require(_time(snapshot['previous_start']) == _time(previous_start)
+                     and _time(snapshot['previous_end']) == _time(start))
+            _require(snapshot['current']['tier'] == snapshot['previous']['tier'] == snapshot['tier'])
+            previous = source_request(snapshot['previous'], previous_start, start)
+            dependency = {'policy': 'adjacent-equal-v1', 'previous_period_start': snapshot['previous_start'],
+                          'previous_period_end': snapshot['previous_end']}
+            # An empty previous period is first-use, but remains a dependency:
+            # a later backdated input must invalidate this saved NO_PREVIOUS.
+            if previous.members:
+                request = replace(request, comparison_previous_request=previous)
         outcome = await asyncio.to_thread(MeaningExperienceEngine().generate, request)
         if outcome.artifact is None or outcome.status.value != 'GENERATED':
             raise HTTPException(422, 'analysis_observed_map_unavailable')
         artifact = outcome.artifact
         projection = artifact.safe_projection(authenticated_owner_scope=owner)
         text = artifact.safe_text_projection(authenticated_owner_scope=owner)['text']
-        private = private_storage_evidence(artifact)
+        private = private_storage_evidence(artifact, previous_artifact=outcome.previous_artifact,
+                                           comparison_dependency=dependency)
         _checked_projection(projection, str(UUID(artifact.artifact_id[9:])))
     except HTTPException:
         raise

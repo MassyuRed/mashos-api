@@ -40,12 +40,52 @@ def result(rows, tier='plus', matched=False):
     return {'items': rows, 'subscription_tier': tier, 'matched': matched}
 
 
+async def comparison_fixture(*, previous_memo='私は考えをノートに書かなかった。', empty=False, eligible=True):
+    """Real save service/engine, synthetic DB transport; also consumed by SQL tests."""
+    fx = fixture()
+    previous = dict(fx['original'], id=str(UUID(int=99)), created_at='2026-09-30T01:00:00', memo=previous_memo)
+    previous_start = '2026-09-29T00:00:00+00:00'
+    writes = []
+    async def rpc(name, payload):
+        if name == 'analysis_observed_comparison_snapshot':
+            def snapshot(originals):
+                return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                    {'original': s, 'thread': None, 'events': []} for s in originals]}
+            if not eligible:
+                return {'comparison_eligible': False, 'current': snapshot([fx['original']]),
+                        'guard': GUARD, 'tier': 'plus'}
+            return {'guard': 'analysis-db-compare-v1:' + 'b' * 64, 'tier': 'plus', 'comparison_eligible': True,
+                'current': snapshot([fx['original']]), 'previous': snapshot([] if empty else [previous]),
+                'previous_start': previous_start, 'previous_end': START}
+        if name == 'analysis_observed_commit':
+            writes.append(payload)
+            fx['row'].update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+            fx['row']['content_json']['watashiMap'] = payload['p_projection']
+            return fx['row']['id']
+        if name == 'analysis_observed_read':
+            return result([fx['row']], matched=True)
+        raise AssertionError(name)
+    with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='development'), \
+            patch.object(service, '_rpc', side_effect=rpc):
+        await service.generate_saved(OWNER, start=START, end=END, report_mode='standard', report_type='latest')
+    fx.update(private=writes[0]['p_private_evidence'], previous_original=None if empty else previous)
+    return fx
+
+
+async def storage_sql_fixture():
+    fx = fixture()
+    fx['comparison'] = await comparison_fixture()
+    fx['empty_comparison'] = await comparison_fixture(empty=True)
+    fx['unchanged_comparison'] = await comparison_fixture(previous_memo=fx['original']['memo'])
+    return fx
+
+
 class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.fx = fixture()
         self.row = self.fx['row']
 
-    async def test_preview_period_comparison_is_not_admitted_to_single_period_storage(self):
+    async def test_comparison_requires_matching_saved_text(self):
         for state, kinds, reasons in (('COMPARABLE', ['ROUTE_EVIDENCE_CHANGED'], []),
                 ('NOT_COMPARABLE', [], ['PERIOD_OVERLAP'])):
             with self.subTest(state=state):
@@ -56,6 +96,75 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                     with self.assertRaises(HTTPException) as caught:
                         await service.read_saved(OWNER)
                 self.assertEqual(caught.exception.status_code, 503)
+
+    async def test_comparison_save_read_preserves_both_private_artifacts_and_public_identity(self):
+        fx = await comparison_fixture()
+        row, private = fx['row'], fx['private']
+        self.assertEqual(row['content_json']['watashiMap']['period_comparison']['state'], 'COMPARABLE')
+        self.assertIn('読み取れた内容・つながり', row['content_text'])
+        self.assertEqual(private['schema_version'], 'analysis.private-evidence.v2')
+        c, previous = private['period_comparison'], private['previous_evidence']
+        self.assertEqual(c['current_artifact_ref'], private['projection_of'])
+        self.assertEqual(c['previous_artifact_ref'], previous['projection_of'])
+        self.assertEqual(c['previous_source_set_ref'], previous['source_set_ref'])
+        for claim in c['change_claims']:
+            self.assertTrue(claim['evidence_refs'])
+        for raw in ('visible_label', 'predicate_lemma', 'original_json', '私は', 'ノート'):
+            self.assertNotIn(raw, json.dumps(private, ensure_ascii=False))
+        for secret in ('previous_evidence', 'comparison_dependency', 'evidence_refs', c['previous_artifact_ref']):
+            self.assertNotIn(secret, json.dumps(row, ensure_ascii=False))
+        with patch.object(service, '_rpc', AsyncMock(return_value=result([row], matched=True))), \
+                patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+            reread = await service.read_saved(OWNER, report_id=row['id'])
+        self.assertEqual(reread['items'][0], row)
+
+    async def test_empty_previous_is_dependency_but_unreadable_previous_is_not_first_use(self):
+        fx = await comparison_fixture(empty=True)
+        self.assertEqual(fx['row']['content_json']['watashiMap']['period_comparison']['state'], 'NO_PREVIOUS')
+        self.assertIsNone(fx['private']['previous_evidence'])
+        self.assertIsNone(fx['private']['period_comparison'])
+        self.assertEqual(fx['private']['comparison_dependency']['policy'], 'adjacent-equal-v1')
+        with self.assertRaises(HTTPException) as caught:
+            await comparison_fixture(previous_memo='この文は未対応の合成記録です。')
+        self.assertEqual(caught.exception.status_code, 422)
+
+    async def test_comparison_flag_defaults_off_and_requires_exact_development_value(self):
+        for value in ('', 'off', 'true', 'enabled', 'invalid'):
+            with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE=value):
+                self.assertFalse(service.period_comparison_enabled())
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(service.period_comparison_enabled())
+
+    async def test_previous_outside_retention_keeps_current_single_period_available(self):
+        fx = await comparison_fixture(eligible=False)
+        self.assertEqual(fx['private']['schema_version'], 'analysis.private-evidence.v1')
+        self.assertNotIn('comparison_dependency', fx['private'])
+        self.assertEqual(fx['row']['content_json']['watashiMap']['period_comparison']['state'], 'NO_PREVIOUS')
+
+    async def test_comparison_storage_errors_never_fall_back_to_single_period(self):
+        for status in (403, 404, 409, 422, 503):
+            with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='development'), \
+                    patch.object(service, '_rpc', AsyncMock(side_effect=HTTPException(status, 'unavailable'))) as rpc:
+                with self.assertRaises(HTTPException) as caught:
+                    await service.generate_saved(OWNER, start=START, end=END, report_mode='standard', report_type='latest')
+                self.assertEqual(caught.exception.status_code, status)
+                self.assertEqual(rpc.await_count, 1)
+
+    async def test_saved_comparison_rejects_private_unknown_duplicate_and_inconsistent_fields(self):
+        fx = await comparison_fixture()
+        for mutation in ('private', 'kind', 'duplicate', 'reasons', 'state', 'not_comparable', 'not_list'):
+            with self.subTest(mutation=mutation):
+                row = copy.deepcopy(fx['row'])
+                c = row['content_json']['watashiMap']['period_comparison']
+                if mutation == 'private': c['previous_artifact_ref'] = 'private'
+                if mutation == 'kind': c['safe_change_kinds'] = ['IMPROVED']
+                if mutation == 'duplicate': c['safe_change_kinds'] *= 2
+                if mutation == 'reasons': c['reason_codes'] = ['PERIOD_OVERLAP']
+                if mutation == 'state': c['state'] = 'NO_PREVIOUS'
+                if mutation == 'not_comparable': c.update(state='NOT_COMPARABLE', reason_codes=[])
+                if mutation == 'not_list': c['safe_change_kinds'] = {}
+                with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))):
+                    with self.assertRaises(HTTPException): await service.read_saved(OWNER)
 
     async def test_protective_intention_survives_save_read_with_private_evidence_separate(self):
         self.fx = fixture('私は家族を守りたい。私は仕事を続けたいけれど、私はつらい。')
