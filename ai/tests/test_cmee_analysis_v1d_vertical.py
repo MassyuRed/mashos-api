@@ -2584,6 +2584,147 @@ class AnalysisVerticalTests(unittest.TestCase):
         with self.assertRaisesRegex(AnalysisSourceError, 'analysis_safe_surface_unavailable'):
             broken.safe_projection(authenticated_owner_scope=OWNER)
 
+    def test_self_topic_comma_keeps_meaning_and_complete_original_evidence(self):
+        cases = (
+            ('私', '、', '考えをノートに書いた'),
+            ('僕', '，', '資料を調べました'),
+            ('わたし', '、 ', '方法を試さなかった'),
+            ('自分', '、\u3000', '景色を見ませんでした'),
+            ('私', '， ', '作品を作りたい'),
+            ('僕', '、', '記録を残したくない'),
+            ('わたし', '，', '気持ちを記録したかった'),
+            ('自分', '、', '考えをメモしたくなかった'),
+            ('私', '、', '仕事を続けたいです'),
+            ('私', '、', '昨日資料を調べた'),
+            ('私', '、 ', '今日、資料を調べなかった'),
+        )
+        for actor, separator, body in cases:
+            with self.subTest(actor=actor, separator=separator, body=body):
+                literal = actor + 'は' + separator + body
+                original = record(memo=literal + '。')
+                req = request(original)
+                artifact = self.generate(req).artifact
+                baseline = self.generate(request(record(memo=actor + 'は' + body + '。'))).artifact
+                self.assertIsNotNone(artifact)
+                node, = artifact.graph.nodes
+                p = node.proposition
+                self.assertEqual(p.source_parts[0], ('SELF_TOPIC', 0, len(actor + 'は' + separator)))
+                self.assertEqual([i for _, a, b in p.source_parts for i in range(a, b)],
+                                 list(range(len(literal))))
+                self.assertEqual((p.actor, p.arguments, p.predicate_lemma, p.polarity,
+                                  p.modality, p.temporal_scope, p.relative_day),
+                    tuple(getattr(baseline.graph.nodes[0].proposition, key) for key in
+                          ('actor', 'arguments', 'predicate_lemma', 'polarity',
+                           'modality', 'temporal_scope', 'relative_day')))
+                evidence, = node.evidence_refs
+                source = freeze_analysis_sources(req).sources[0].envelope
+                raw = source.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                field = source.raw_utf8[evidence.field_utf8_start:evidence.field_utf8_end].decode()
+                self.assertEqual(raw.decode(), literal)
+                self.assertEqual(field[evidence.scalar_start:evidence.scalar_end], literal)
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)
+                self.assertEqual(text['projection_of'], visual['projection_of'])
+                self.assertEqual(text['text'], baseline.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+                self.assertIn(visual['nodes'][0]['visible_label'], text['text'])
+                self.assertEqual(req.members[0].original_json, original.original_json)
+
+    def test_self_topic_comma_does_not_skip_unparsed_scope_or_subject_boundaries(self):
+        for literal in (
+            '資料を調べた', '友人は、資料を調べた', '私は、友人は資料を調べた',
+            '私は、\n資料を調べた', '私は、\r\n資料を調べた', '私は、。資料を調べた',
+            '私は、、資料を調べた', '私は、，資料を調べた', '私は、\t資料を調べた',
+            '私は、急いで資料を調べた', '私は、明日資料を調べた',
+            '私は、昨日資料を調べたい', '私は、資料を調べたそうだ',
+            '私は、資料を調べたと聞いた', '私は、資料を調べた夢を見た',
+            '私は、資料を調べたなら', '私は、資料を調べた？', '「私は、資料を調べた」',
+        ):
+            with self.subTest(literal=literal):
+                result = self.generate(request(record(memo=literal + '。')))
+                self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+                self.assertIsNone(result.artifact)
+
+    def test_self_topic_comma_preserves_proved_order_change_and_burden(self):
+        for literal, node_count, edge_count, annotation_count in (
+            ('昨日、私は、資料を調べた', 1, 0, 0),
+            ('私は、資料を調べた。その後、私は、記録を残した', 2, 1, 0),
+            ('私は、資料を調べた後、疑問が減った', 2, 1, 0),
+            ('私は、仕事を続けたいけれど、私はつらい', 1, 0, 1),
+        ):
+            with self.subTest(literal=literal):
+                artifact = self.generate(request(record(memo=literal + '。'))).artifact
+                baseline = self.generate(request(record(memo=literal.replace('は、', 'は') + '。'))).artifact
+                self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges),
+                                  len(artifact.graph.annotations)), (node_count, edge_count, annotation_count))
+                self.assertEqual(artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'],
+                                 baseline.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+        partial = self.generate(request(record(memo='私は、資料を調べた。私は、明日記録を残した。'))).artifact
+        self.assertEqual(len(partial.graph.nodes), 1)
+        self.assertFalse(partial.graph.edges)
+        self.assertTrue(any(g.missing_scope == 'SOURCE_SCOPE' for g in partial.graph.unknown_gaps))
+        partial.safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_self_topic_comma_answers_corrections_and_withdrawals_keep_answer_evidence(self):
+        original = record(memo='私は、資料を調べた。私は記録を残した。')
+        for answer, expected in (
+            ('私は、仕事を続けたい。', '仕事を続けることへの希望'),
+            ('「私は、資料を調べた」ではなく「僕は、資料を調べなかった」です。',
+             '資料を調べる（行わなかった）'),
+        ):
+            with self.subTest(answer=answer):
+                req = request(self.with_answer(original, answer))
+                artifact = self.generate(req).artifact
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                index = next(i for i, n in enumerate(visual['nodes']) if n['visible_label'] == expected)
+                source = next(s.envelope for s in freeze_analysis_sources(req).sources
+                              if s.envelope.source_role == 'SUPPLEMENTAL_ANSWER')
+                for e in artifact.graph.nodes[index].evidence_refs:
+                    self.assertEqual(e.source_envelope_id, source.envelope_id)
+                    raw = source.raw_utf8[e.utf8_start:e.utf8_end]
+                    self.assertIn(raw.decode(), answer)
+                    self.assertIn('は、', raw.decode())
+                    self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+        withdrawn = self.generate(request(self.with_answer(original,
+            '「私は、資料を調べた」は取り消します。'))).artifact
+        self.assertEqual([n['visible_label'] for n in withdrawn.safe_projection(
+            authenticated_owner_scope=OWNER)['nodes']], ['記録を残す（実行済み）'])
+        for answer in ('私は、仕事を続けたい。まだわからない。',
+                       '「私は、資料を調べた」ではなく「友人は、資料を調べた」です。'):
+            self.assertIsNone(self.generate(request(self.with_answer(original, answer))).artifact)
+
+    def test_self_topic_comma_is_not_a_period_change_or_new_meaning(self):
+        for before, now in (
+            ('私は資料を調べた。', '僕は、資料を調べました。'),
+            ('昨日、私は資料を調べなかった。', '私は、昨日資料を調べなかった。'),
+            ('私は仕事を続けたい。', 'わたしは，仕事を続けたいです。'),
+        ):
+            with self.subTest(before=before):
+                artifact = self.compared(now, before).artifact
+                self.assertEqual(artifact.period_comparison.change_claims, ())
+                self.assertEqual(artifact.safe_projection(authenticated_owner_scope=OWNER)
+                    ['period_comparison']['state'], 'COMPARABLE')
+        changed = self.compared('私は、資料を調べなかった。', '私は資料を調べた。').artifact
+        self.assertIn('ROUTE_EVIDENCE_CHANGED', changed.safe_projection(authenticated_owner_scope=OWNER)
+                      ['period_comparison']['safe_change_kinds'])
+        repeated = self.generate(request(record(memo='私は資料を調べた。'),
+            record(2, memo='私は、資料を調べた。'))).artifact
+        self.assertEqual(len(repeated.graph.nodes), 1)
+        self.assertEqual(repeated.safe_projection(authenticated_owner_scope=OWNER)
+                         ['nodes'][0]['evidence_badge_count'], 2)
+
+    def test_self_topic_comma_does_not_relax_safe_proposition_revalidation(self):
+        artifact = self.generate(request(record(memo='私は、資料を調べた。'))).artifact
+        node, = artifact.graph.nodes
+        for altered in (replace(node.proposition, actor='UNSPECIFIED'),
+                        replace(node.proposition, polarity='negative'),
+                        replace(node.proposition, source_parts=(('SELF_TOPIC', 0, 2),
+                            *node.proposition.source_parts[1:]))):
+            with self.subTest(altered=altered), self.assertRaisesRegex(
+                    AnalysisSourceError, 'analysis_safe_surface_unavailable'):
+                replace(artifact, graph=replace(artifact.graph,
+                    nodes=(replace(node, proposition=altered),))).safe_projection(authenticated_owner_scope=OWNER)
+
     def test_unparsed_original_keeps_readable_clauses_fields_and_records(self):
         unread = '私は資料を明日ノートに書いた。'
         read = '私は記録を残した。'

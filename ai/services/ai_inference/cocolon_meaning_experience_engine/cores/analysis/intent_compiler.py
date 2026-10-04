@@ -393,7 +393,9 @@ def _parsed_proposition(value: str) -> ObservedProposition | None:
     token = prefix.group(1) if prefix else ''
     marker = {'その後': 'AFTER_PREVIOUS', 'それから': 'THEN_OR_ADDITION'}.get(token, '')
     relative_day = {'今日': 'TODAY', '昨日': 'YESTERDAY'}.get(token, '')
-    subject = re.compile(r'(?:私|僕|わたし|自分)は').match(value, start)
+    # A topic-adjacent comma is punctuation within this explicit SELF clause.
+    # Retain it in the exact source span; never skip a sentence or line break.
+    subject = re.compile(r'(?:私|僕|わたし|自分)は(?:[、，][ \u3000]*)?').match(value, start)
     if subject is None:
         return None
     parts = ([(marker or 'RELATIVE_DAY_' + relative_day, 0, start)] if prefix else [])

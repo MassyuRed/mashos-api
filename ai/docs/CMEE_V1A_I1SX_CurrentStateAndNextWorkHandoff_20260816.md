@@ -14551,3 +14551,19 @@ rootが合成6本文（同一入力、別field、別record、未解析節をま�
 変更はAPI既存compiler1／test2／handoff1、Cocolon既存current03／設計04／06。STRUCTURE_MAP_DELTA_NONE：既存Analysis内部のnode採用だけを補正し、共有Emlis／Piece作者、public API／DTO／DB／SQL／RN／依存仕様を変更しない。env／deploy／build／main／merge／IF操作0。Draft/open/unmerged、商品0/3・NOT_CLEAR・48%を維持。今回コードは未配置。最後の確認済み稼働API1a42b9e…／TestFlight6401送信成功を継承し、本人生成・保存再表示・比較の実機成功は未確認。
 
 残差：未解析節そのものの意味理解は増えていない。主語省略・未対応修飾、u131の固有名詞保留等は残る。次の内容作業は既存source／unknown契約内で、主語省略を含む未対応入力の実出力を確認し、既存設計で扱える最小の修正範囲を決める。本人の通常入力からの生成確認・指定版配置の残件を内容検査で代用しない。
+
+## 2026-10-05 JST u133 — 本人主語の直後の読点で内容を失わない
+
+Mashの分析内容修正の継続指示からu132を引き継いだ。確認済みの前提資料／作業規則・全体設計と01A/B/C全file地図・分析current03／設計04／06・最新weekly20261003を前提に、fresh両PR headと実fileを再照合し、恒久incidentは今回も全文再読した。開始headはAPI 9f5de3be7bada9bdfb20af78812d52954da77ebe／Cocolon 5338c7cda8acb0b5b655a0014db8ff324b6ff543。Rule18 LEVEL_2の既存Analysis内部補正、root華恋のみが実装・検証・GitHub writeを行い、補助担当はread-only調査と静的review。
+
+実CMEEで「私は、資料を調べた」「僕は、記録を残さなかった」「私は、仕事を続けたい」がUNAVAILABLEとなることを再現した。_parsed_propositionの明示SELF主語matchが読点直前で終わるため、本文の完全解析が成立しなかった。既存9動詞の入口で、主語に隣接した「、／，」1個と直後の半角・全角spaceだけをSELF_TOPICへ含める。原文を書換えず、有限述語・格・極性・希望・時制を保持して「資料を調べる（実行済み）」「記録を残す（行わなかった）」「仕事を続けることへの希望」を文章・図へ出す。
+
+文法を再利用する既存の過去行動→変化、希望＋対比負荷にも同じ読点許容が及ぶため、共有の完全なwitnessを伴う両形式も実出力で確認した。改行・句点・重複読点・第三者主語・省略主語・未対応修飾／時点・引用／伝聞／条件等の既存保留を維持。tabは既存の原文照合で拒否されるため最終regexの許容対象から除外した。場面／担当／保護意向／認識／te専用parserは変更しない。複数文の開いた夢語り全体の一般的理解が成立したという意味ではない。
+
+Python3.12.14でvertical152／storage41／saved-period16、合計209 tests PASS。verticalに6methodを追加し、保存側の既存1methodを読点付き原入力の生成→保存→再生成なし再表示へ強化。原文scalar／UTF-8／hash、source_parts全文非重複被覆、9動詞と有限形式、主語境界、日語、順序／変化／負荷、補足の独立出典、訂正／撤回、読点差だけの比較差0、否定の比較差維持、record件数、safe改竄拒否を検証。実service／CMEEと合成RPCで本文・図・identityを同じまま再読取した。実DBアクセスや製品依存の変更はない。
+
+rootが合成8本文（行動、否定、希望、日語＋明示順序、行動→変化、希望＋負荷、明示訂正、同義の期間比較）を全文読取し、実生成DTOを変更していないRN表示modelへ渡した。全文／artifact identity／node順／edge／unknown対象／注記がbackendと一致。read-only最終reviewに具体的blockerなし。React component suite／native／実DB／本人入力の今回検証ではなく、機械成功を商品受入れへ換算しない。
+
+変更はAPI既存compiler1／test2／handoff1、Cocolon既存current03／設計04／06。STRUCTURE_MAP_DELTA_NONE：既存Analysis compiler内の句読点解釈のみで、共有Emlis／Piece作者・API／DTO／SQL／DB／RN経路・依存仕様の変更なし。env／deploy／build／main／merge／IF操作0。Draft/open/unmerged、商品0/3・NOT_CLEAR・48%を維持。今回コードは未配置。最後の確認済み稼働API1a42b9e…／TestFlight6401送信成功を継承し、本人生成・保存再表示・比較の実機成功は未確認。
+
+残差：明示本人の場面／担当で主語直後に読点がある形式は今回対象外。漢字・カタカナ混在名詞（仕事メモ／メモ帳）も未解析で、主語省略の本人補完は現契約に含めない。次は同じ読点が場面／担当で保留される範囲を、既存shared witnessと原文境界を保って修正できるか確認する。実機確認と配置の残件を内容検査で代用しない。

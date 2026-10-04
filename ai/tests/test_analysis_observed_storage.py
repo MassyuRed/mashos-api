@@ -473,6 +473,8 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(raised.exception.status_code, 503)
 
     async def test_generate_commits_and_rereads_exact_identity(self):
+        self.fx = fixture('私は、考えをノートに書いた。僕は，仕事を続けたい。')
+        self.row = self.fx['row']
         writes = []
         async def rpc(name, payload):
             if name == 'analysis_observed_source_snapshot':
@@ -489,8 +491,13 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(service, '_rpc', side_effect=rpc):
             saved = await service.generate_saved(OWNER, start=START, end=END,
                 report_mode='standard', report_type='latest')
+            with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+        self.assertEqual(reread['items'][0], saved)
         self.assertEqual(saved['content_json']['watashiMap'], writes[0]['p_projection'])
         self.assertEqual(saved['content_text'], writes[0]['p_text'])
+        self.assertEqual([n['visible_label'] for n in saved['content_json']['watashiMap']['nodes']],
+            ['考えをノートに書く（実行済み）', '仕事を続けることへの希望'])
         encoded = json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False)
         self.assertNotIn('私は', encoded)
         self.assertNotIn('visible_label', encoded)
