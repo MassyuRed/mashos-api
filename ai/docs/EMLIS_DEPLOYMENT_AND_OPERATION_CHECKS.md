@@ -537,3 +537,20 @@ Mashが§23の全範囲へ「進めていいよ」と明示承認。再承認は
 4. 華恋が実run/deployのsource・結果を照合する。新native導入後のdevelopment2値への変更は§23手順5として続け、現段階のread_only確認と混ぜない。
 
 この時点のAPIはまだ315f5b5…、native最新は6201。設定/配置/新build成功や比較生成の完了へ読み替えない。生成停止と旧保存読取維持は§23の手順を使用する。同範囲の承認は継続しており、残件は実行・配置後確認・本人端末の往復である。
+
+
+## 25. 2026-10-04 JST u121 — API指定版live・新nativeの送信結果
+
+Mashの開始報告後、指定API `42ff019975a5d94c3c6de2a63623fb0864630ed4` のmanual deploy `dep-db0u5lid0e5s73d7if7g` が **05:24:47Z（JST14:24）live** と確認した。既存service/URL/plan、linked main・autoDeploy=no/offを維持。実HTTPはhealthz200/status=ok、bootstrap200、未認証self-structure/latest/status401。05:23:34〜05:25:19Zのapp/errorログ0件。DB比較migrationはu120で適用済み、今回は再適用なし。
+
+初期read_only/比較offはMashの設定手順実行報告を継承する。環境変数値を独立取得していないため、HTTP200やbootstrapをAnalysis modeの証明にはしない。
+
+**新nativeの作成・送信も成功。** [iOS run63 / 37179645655](https://github.com/MassyuRed/Cocolon/actions/runs/37179645655)、attempt1、job111369421691。実build SHAは `b5098c6001c3c2ee6f8952163164360da3f4eac6`、指定PR30 branch。製品基準cd83cf9…との差は既存2文書のみ。workflow式63×100+1とbuild番号設定成功・archive引数から **1.0（6301）** を確認。archive05:34:08Z、IPA export05:34:14Z、TestFlight upload05:35:41Zがsuccess。job完了・run更新は **05:35:48Z（JST14:35:48）completed/success**。rootは補助担当が取得したrun/全stepsの実tool結果を確認した。Apple側processing・tester利用可能・端末導入は未確認。署名素材/secretは取得していない。
+
+次はTestFlightに新版が表示されたら更新し、既存本人sessionで **分析 → わたしマップ** を開いて以前の保存結果を表示できるか確認する。Apple処理/配布可能性・端末導入・本人API/保存identityの照合は送信成功だけでは成立しない。空表示/エラーは実態を確認し、架空の保存行を作って通さない。
+
+通常の分析タブはembedded/hideHeaderで、単独screenの「更新」ボタンは表示しない。§23手順6の明示更新を通常タブのボタンとして案内しない。比較有効化後の生成確認は、本人の通常の新入力保存でlatestを失効させて分析を表示する等、実際に使える入口を用いる。入力内容や過去記録を検査のために捏造しない。
+
+新版導入・保存読取確認後、承認済みの次操作として **COCOLON_ANALYSIS_OBSERVED_MODE=development / COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE=development** をSave onlyし、**同じ指定API42ff019…** を再配置する。旧APIへの切戻しやmainの汎用deployは行わない。同範囲の再承認は不要。
+
+今回は配置/送信の事後確認と既存記録更新。source/test/SQL/依存の新規変更・追加検査0。本人端末往復・比較生成・正式商品判断は残件として保持する。

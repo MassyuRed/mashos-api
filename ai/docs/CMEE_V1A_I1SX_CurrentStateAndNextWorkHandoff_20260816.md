@@ -14373,3 +14373,18 @@ GitHubの既存workflow画面を承認済みfallback範囲で開いたところ�
 初期値は `COCOLON_ANALYSIS_OBSERVED_MODE=read_only`／`COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE=off`。Environment **Save only** → **Deploy a specific commit**。新native導入・保存読取確認後、同APIのまま2値developmentへ進む。比較だけでなく注記/不一致の保存後も旧315f5b5へ無条件に戻せない点を保持する。具体的順序は既存API運用資料§23/24。新build番号と実run SHAは開始後に確定する。
 
 今回はDB適用とcatalog照合が実施済みの前進。source/test/依存/新しい検査の追加0、STRUCTURE_MAP_DELTA_NONE。既存4文書とPR3/PR30へ結果を反映し、remote bytes/path/parent/tree/headを確認する。商品0/3・NOT_CLEAR・48%、IFのHOLDと正式商品判断/global cutoverの未成立は保持。追加サービス/料金プラン/課金契約/ユーザー設定を変更していない。
+
+
+## 2026-10-04 JST u121 — 修正版APIの配置完了、新TestFlightの確認
+
+Mashの「開始した」を受け、u120で承認済みの配置と新native実行を追跡した。前提/作業rules・全体設計/全file地図・最新weeklyと§23/24の適用順を継承し、恒久incident全文を今回再読。rootはRender・公開HTTP・記録反映、補助担当は新native run/stepsのread-only監視を担当し、重複deploy/buildは起動しない。
+
+**APIは指定版の配置を完了。** 既存Render `srv-d4ppfpm3jp1c73952bj0` のmanual deploy `dep-db0u5lid0e5s73d7if7g` は、commit `42ff019975a5d94c3c6de2a63623fb0864630ed4`、2026-10-04T05:23:34Z開始→**05:24:47Z（JST14:24）live**。service再取得でlinked main・autoDeploy=no/off・free planを維持。healthz200/status=ok、bootstrap200/emlis_threads_enabled=true、未認証self-structure/latest/status401を実HTTPで確認した。配置開始から05:25:19Zまでのapp/errorログは0件。これを全時間/全severity無障害やDB/本人認証往復の証拠とはしない。
+
+初期2値read_only/比較offはMashの手順実行報告として継承し、secretや環境変数値を独立取得していない。未認証bootstrapはAnalysis modeを示さない。比較SQLはu120で適用済み（実履歴20261004051211）で、今回再適用しない。
+
+**新nativeの作成・送信も成功。** [iOS run63 / 37179645655](https://github.com/MassyuRed/Cocolon/actions/runs/37179645655)、attempt1、job111369421691。実build SHAは `b5098c6001c3c2ee6f8952163164360da3f4eac6`、指定PR30 branch。製品基準cd83cf9…との差は既存2文書のみ。workflow式63×100+1とbuild番号設定成功・archive引数から **1.0（6301）** を確認。archive05:34:08Z、IPA export05:34:14Z、TestFlight upload05:35:41Zがsuccess。job完了・run更新は **05:35:48Z（JST14:35:48）completed/success**。rootは補助担当が取得したrun/全stepsの実tool結果を確認した。Apple側processing・tester利用可能・端末導入は未確認。署名素材/secretは取得していない。
+
+実機案内の確認で、通常の分析タブはembedded/hideHeaderのため「更新」ボタンを表示しないことをsourceで確認した。単独screenの更新ボタンを通常タブにあるとして案内しない。まず新native導入後の既存保存結果の表示を確認し、その後に§23のdevelopment2値を同じAPIへ反映する。比較生成の一往復は、通常の本人新入力保存によるlatest失効→分析表示等の実際に使える入口で確認する。本人入力を捏造して検査用の過去記録を作る、保存行を直接消す、当日の旧保存表示だけを比較成功とすることはしない。
+
+次の残件は本人端末への導入・read_only保存読取と、承認済みの比較development有効化・本人生成/再表示。今回の新API/native配置と正式な商品受入れは区別し、商品0/3・NOT_CLEAR・48%を維持する。既存5文書/PR説明のみ更新し、source/test/SQL/依存の追加変更0、STRUCTURE_MAP_DELTA_NONE。main/merge/IF/global cutover変更0。同範囲の再承認は不要である。
