@@ -25,6 +25,8 @@ LABELS = {'SCENE': '場面', 'ROLE': '役割',
           'SOURCE_SCOPE': 'まだ読み取れていない内容',
           'ROUTE_CONNECTION': '段階同士のつながり'}
 
+CONFLICT_LABEL = '同じ記録に肯定と否定の記述があります。同じ機会のことかは確定していません。'
+
 
 def _te_order_context(node, graph):
     """A dependent te fragment remains bound to its complete past episode."""
@@ -112,6 +114,10 @@ class ObservedSelfStructureMap:
     def reference(self):
         return self.artifact_id + '@' + str(self.artifact_version)
 
+    def _conflict_badges(self):
+        return [{'conflict_ref': c.conflict_ref, 'target_refs': list(c.target_refs),
+                 'visible_label': CONFLICT_LABEL} for c in self.graph.conflicts]
+
     def private_visual_preview(self, *, authenticated_owner_scope: str) -> dict:
         # Pure second-line owner binding, not a substitute for lifecycle auth,
         # tier, retention, deletion and audience policy in the future API.
@@ -138,7 +144,7 @@ class ObservedSelfStructureMap:
                 'between_node_refs': list(g.between_node_refs),
                 'visible_label': LABELS[g.missing_scope] + 'は、この記録からは確定していません。'}
                 for g in self.graph.unknown_gaps],
-            'conflict_badges': [],
+            'conflict_badges': self._conflict_badges(),
             'accessibility_linear_order': [n.node_ref for n in self.graph.nodes],
         }
 
@@ -177,7 +183,7 @@ class ObservedSelfStructureMap:
                 'between_node_refs': list(g.between_node_refs),
                 'visible_label': LABELS[g.missing_scope] + 'は、この記録からは確定していません。'}
                 for g in self.graph.unknown_gaps],
-            'conflict_badges': [],
+            'conflict_badges': self._conflict_badges(),
             'accessibility_linear_order': [n.node_ref for n in self.graph.nodes],
         }
 
@@ -201,6 +207,8 @@ class ObservedSelfStructureMap:
                     + '。順序や原因は確定していません。')
         lines.extend('未確定（' + ' ／ '.join(labels[ref] for ref in g['between_node_refs'])
                      + '）：' + g['visible_label'] for g in visual['unknown_gaps'])
+        lines.extend('一致していない記録（' + ' ／ '.join(labels[ref] for ref in c['target_refs'])
+                     + '）：' + c['visible_label'] for c in visual['conflict_badges'])
         return {'projection_of': visual['projection_of'], 'text': '\n'.join(lines),
                 'accessibility_linear_order': visual['accessibility_linear_order']}
 

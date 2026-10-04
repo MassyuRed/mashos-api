@@ -35,6 +35,79 @@ class AnalysisVerticalTests(unittest.TestCase):
     def generate(self, value):
         return MeaningExperienceEngine().generate(value)
 
+    def test_opposed_original_claims_keep_both_targets_and_exact_evidence(self):
+        pairs = [('私は資料を調べた', '私は資料を調べませんでした'),
+                 ('私は会議の司会を担当した', '私は会議の司会を担当しなかった'),
+                 ('私は職場にいた', '私は職場にいませんでした')]
+        for positive, negative in pairs:
+            with self.subTest(positive=positive):
+                value = request(record(memo=positive + '。' + negative + '。'))
+                artifact = self.generate(value).artifact
+                self.assertEqual(len(artifact.graph.conflicts), 1)
+                conflict = artifact.graph.conflicts[0]
+                nodes = {n.node_ref: n for n in artifact.graph.nodes}
+                self.assertEqual({nodes[r].polarity for r in conflict.target_refs}, {'positive', 'negative'})
+                self.assertEqual(set(conflict.evidence_refs),
+                    {e for r in conflict.target_refs for e in nodes[r].evidence_refs})
+                sources = freeze_analysis_sources(value)
+                envelopes = {s.envelope.envelope_id: s.envelope for s in sources.sources}
+                for evidence in conflict.evidence_refs:
+                    raw = envelopes[evidence.source_envelope_id].raw_utf8
+                    literal = raw[evidence.utf8_start:evidence.utf8_end]
+                    self.assertEqual(hashlib.sha256(literal).hexdigest(), evidence.literal_sha256)
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                badge = visual['conflict_badges'][0]
+                self.assertEqual(badge['target_refs'], list(conflict.target_refs))
+                self.assertIn('同じ機会のことかは確定していません', badge['visible_label'])
+                self.assertIn(badge['visible_label'], artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+                self.assertEqual(visual['conflict_badges'], artifact.private_visual_preview(
+                    authenticated_owner_scope=OWNER)['conflict_badges'])
+
+    def test_opposed_claims_are_not_inferred_across_occasions_fields_or_meanings(self):
+        values = [
+            request(record(memo='私は資料を調べた。'), record(2, memo='私は資料を調べなかった。')),
+            request(record(memo='私は資料を調べた。', action='私は資料を調べなかった。')),
+            request(record(memo='今日私は資料を調べた。昨日私は資料を調べなかった。')),
+            request(record(memo='私は資料を調べた。その後私は資料を調べなかった。')),
+            request(record(memo='私は資料を調べた。その後私は資料を見た。私は資料を調べなかった。')),
+            request(record(memo='私は資料を調べた。私は記録を調べなかった。')),
+            request(record(memo='私は資料を調べた。私は資料を調べたくない。')),
+            request(record(memo='私は資料を調べたい。私は資料を調べたくない。')),
+        ]
+        for value in values:
+            with self.subTest(value=value.members):
+                artifact = self.generate(value).artifact
+                self.assertIsNotNone(artifact)
+                self.assertEqual(artifact.graph.conflicts, ())
+                self.assertEqual(artifact.safe_projection(authenticated_owner_scope=OWNER)['conflict_badges'], [])
+
+    def test_opposed_claims_aggregate_witnesses_without_duplicate_badges(self):
+        memo = '今日私は資料を調べた。今日私は資料を調べなかった。'
+        one = record(memo=memo)
+        artifact = self.generate(request(one, one)).artifact
+        self.assertEqual(len(artifact.graph.conflicts), 1)
+        self.assertEqual(len(artifact.graph.conflicts[0].evidence_refs), 2)
+        memo = '私は資料を調べた。私は資料を調べなかった。'
+        artifact = self.generate(request(record(memo=memo), record(2, memo=memo))).artifact
+        self.assertEqual(len(artifact.graph.conflicts), 1)
+        self.assertEqual(len(artifact.graph.conflicts[0].evidence_refs), 4)
+        self.assertEqual([len(n.record_refs) for n in artifact.graph.nodes], [2, 2])
+
+    def test_correction_and_withdrawal_remove_only_the_opposed_original_claim(self):
+        original = record(memo='私は資料を調べた。私は資料を調べなかった。')
+        for answer in ('「私は資料を調べなかった」は取り消します。',
+                       '「私は資料を調べなかった」ではなく「私は記録を残した」です。'):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(original, answer))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertEqual(artifact.graph.conflicts, ())
+                self.assertFalse(any(n.polarity == 'negative' for n in artifact.graph.nodes))
+                self.assertTrue(any(n.proposition.predicate_lemma == '調べる' for n in artifact.graph.nodes))
+        result = self.generate(request(self.with_answer(record(memo='私は資料を調べた。'),
+                                                       '私は資料を調べなかった。')))
+        self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+        self.assertEqual(result.reason_codes, ('analysis_supplement_interpretation_pending',))
+
     def test_two_records_generate_matching_text_and_unordered_graph(self):
         result = self.generate(request(record(), record(2)))
         self.assertEqual(result.status, EngineStatus.GENERATED)

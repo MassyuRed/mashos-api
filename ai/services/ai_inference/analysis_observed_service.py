@@ -72,6 +72,9 @@ def private_storage_evidence(artifact):
             'answer_evidence_refs': [_evidence(e) for e in u.answer_evidence_refs],
             'replacement_evidence_refs': [_evidence(e) for e in u.replacement_evidence_refs]}
             for u in artifact.graph.source_updates],
+        'conflicts': [{'conflict_ref': c.conflict_ref, 'target_refs': c.target_refs,
+            'reason_code': c.reason_code, 'evidence_refs': [_evidence(e) for e in c.evidence_refs]}
+            for c in artifact.graph.conflicts],
     }
     return {'schema_version': 'analysis.private-evidence.v1', 'projection_of': artifact.reference,
         'source_set_ref': artifact.source_set_ref, 'graph_commitment': commitment(graph), 'graph': graph,
@@ -118,8 +121,23 @@ def _checked_projection(projection, report_id):
             _require(set(g) == {'gap_ref', 'between_node_refs', 'visible_label'})
             _require(type(g['visible_label']) is str and re.fullmatch(r'g[1-9][0-9]*', g['gap_ref']))
             _require(1 <= len(g['between_node_refs']) <= 2 and set(g['between_node_refs']) <= set(refs))
-        # These semantics are not implemented by the current observed compiler.
-        _require(projection['annotation_badges'] == [] and projection['conflict_badges'] == [])
+        # Protective/burden semantics remain unimplemented. Only the existing
+        # target-bound conflict DTO is now produced by the observed compiler.
+        _require(projection['annotation_badges'] == [])
+        from cocolon_meaning_experience_engine.cores.analysis.observed_route_realizer import CONFLICT_LABEL
+        conflicts = projection['conflict_badges']
+        _require(type(conflicts) is list)
+        seen_targets = set()
+        for index, c in enumerate(conflicts, 1):
+            _require(type(c) is dict and set(c) == {'conflict_ref', 'target_refs', 'visible_label'})
+            _require(c['conflict_ref'] == 'c' + str(index) and c['visible_label'] == CONFLICT_LABEL)
+            targets = c['target_refs']
+            _require(type(targets) is list and len(targets) == 2
+                     and all(type(ref) is str and ref in refs for ref in targets)
+                     and len(set(targets)) == 2)
+            pair = frozenset(targets)
+            _require(pair not in seen_targets)
+            seen_targets.add(pair)
     except (AssertionError, KeyError, TypeError, ValueError, AttributeError):
         raise HTTPException(503, 'analysis_saved_artifact_invalid') from None
     return projection

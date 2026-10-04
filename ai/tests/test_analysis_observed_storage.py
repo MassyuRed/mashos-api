@@ -71,6 +71,63 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('evidence_refs', encoded)
         self.assertEqual(writes[0]['p_guard'], GUARD)
 
+    async def test_opposed_claims_survive_save_read_with_private_evidence_only(self):
+        self.fx = fixture('私は資料を調べた。私は資料を調べなかった。')
+        self.row = self.fx['row']
+        writes = []
+        async def rpc(name, payload):
+            if name == 'analysis_observed_source_snapshot':
+                return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                    {'original': self.fx['original'], 'thread': None, 'events': []}]}
+            if name == 'analysis_observed_commit':
+                writes.append(payload)
+                self.row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                self.row['content_text'] = payload['p_text']
+                self.row['content_json']['watashiMap'] = payload['p_projection']
+                return self.row['id']
+            return result([self.row], matched=True)
+        with patch.object(service, '_rpc', side_effect=rpc):
+            saved = await service.generate_saved(OWNER, start=START, end=END,
+                report_mode='standard', report_type='latest')
+            with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+        self.assertEqual(saved, reread['items'][0])
+        self.assertEqual(saved['content_text'], writes[0]['p_text'])
+        projection = saved['content_json']['watashiMap']
+        self.assertEqual(projection, writes[0]['p_projection'])
+        self.assertEqual(len(projection['conflict_badges']), 1)
+        private = writes[0]['p_private_evidence']
+        conflict = private['graph']['conflicts'][0]
+        self.assertEqual(conflict['target_refs'], tuple(projection['conflict_badges'][0]['target_refs']))
+        self.assertEqual(len(conflict['evidence_refs']), 2)
+        encoded_private = json.dumps(private, ensure_ascii=False)
+        encoded_safe = json.dumps(saved, ensure_ascii=False)
+        for key in ('visible_label', 'original_json', '私は', '資料', 'proposition'):
+            self.assertNotIn(key, encoded_private)
+        for key in ('evidence_refs', 'source_envelope_id', 'literal_sha256', 'OPPOSING_POLARITY'):
+            self.assertNotIn(key, encoded_safe)
+        self.assertIn('同じ機会のことかは確定していません', saved['content_text'])
+
+    async def test_saved_conflict_rejects_invalid_targets_shape_and_text(self):
+        base = fixture('私は資料を調べた。私は資料を調べなかった。')['row']
+        for mutation in ('unknown', 'same', 'duplicate', 'private', 'label', 'non_list', 'missing_text'):
+            with self.subTest(mutation=mutation):
+                row = copy.deepcopy(base)
+                projection = row['content_json']['watashiMap']
+                badge = projection['conflict_badges'][0]
+                if mutation == 'unknown': badge['target_refs'][1] = 'n999'
+                if mutation == 'same': badge['target_refs'][1] = badge['target_refs'][0]
+                if mutation == 'duplicate':
+                    projection['conflict_badges'].append(dict(badge, conflict_ref='c2'))
+                if mutation == 'private': badge['evidence_refs'] = ['private']
+                if mutation == 'label': badge['visible_label'] = 'どちらかの記述は誤りです。'
+                if mutation == 'non_list': projection['conflict_badges'] = {}
+                if mutation == 'missing_text': row['content_text'] = row['content_text'].split('一致していない記録')[0]
+                with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))):
+                    with self.assertRaises(HTTPException) as raised:
+                        await service.read_saved(OWNER)
+                self.assertEqual(raised.exception.status_code, 503)
+
     async def test_sequence_occurrences_survive_save_and_read_without_reinterpretation(self):
         self.fx = fixture('私は資料を調べた。その後私は考えをノートに書いた。'
                           'それから私は資料を調べた。')

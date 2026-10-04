@@ -407,11 +407,34 @@ class UnknownGap:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
+class ObservedConflict:
+    """Opposed written claims; shared occasion and truth remain unresolved."""
+    conflict_ref: str
+    target_refs: tuple[str, str]
+    evidence_refs: tuple[EvidenceRef, ...]
+    reason_code: str = 'OPPOSING_POLARITY_OCCASION_UNRESOLVED'
+
+
+@dataclass(frozen=True, slots=True, repr=False)
 class ObservedGraph:
     nodes: tuple[ObservedNode, ...]
     edges: tuple[ObservedEdge, ...]
     unknown_gaps: tuple[UnknownGap, ...]
     source_updates: tuple[ObservedSourceUpdate, ...] = ()
+    conflicts: tuple[ObservedConflict, ...] = ()
+
+
+def _opposed_claim_pairs(claims):
+    # Called for one original source only. Written day and field must agree;
+    # never infer an occasion from created_at or compare different records.
+    for index, (left, a, p) in enumerate(claims):
+        for right, b, q in claims[index + 1:]:
+            if (left != right and a.field_path == b.field_path
+                    and a.source_envelope_id == b.source_envelope_id
+                    and p.relative_day == q.relative_day
+                    and p.polarity != q.polarity
+                    and _proposition_meaning(p) == _proposition_meaning(q)):
+                yield (left, right), (a, b)
 
 
 def _node_kind(nucleus):
@@ -780,6 +803,7 @@ def _active_sources(source_set):
 def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
     active_sources, excluded, updates, replacement_updates = _active_sources(source_set)
     nodes, edges, gaps = [], [], []
+    conflict_evidence = {}
     unresolved_records = set()
     by_signature, occurrences, record_orders = {}, {}, {}
     for source in active_sources:
@@ -791,6 +815,7 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
             excluded.get(source.envelope.envelope_id, set()))
         ordered_evidence = {e.evidence_id for pair in order_pairs for e in pair}
         admitted, by_evidence, unresolved = {}, {}, False
+        comparable_claims = []
         for nucleus in plan.nuclei:
             if set(nucleus.source_span_ids) & excluded.get(source.envelope.envelope_id, set()):
                 continue
@@ -842,9 +867,21 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
                     evidence_refs=tuple(dict.fromkeys((*old.evidence_refs, evidence))),
                     update_refs=tuple(dict.fromkeys((*old.update_refs, *node_updates))))
             node = nodes[index]
+            if (source.envelope.source_role == 'ORIGINAL_INPUT'
+                    and proposition and proposition.actor == 'SELF'
+                    and (modality, time) == ('fact', 'past')
+                    and polarity in {'positive', 'negative'}
+                    and kind in {'SCENE', 'ROLE', 'ACTION_OR_NONACTION'}
+                    and not proposition.sequence_marker and not proposition.dependent_form
+                    and evidence.evidence_id not in ordered_evidence):
+                comparable_claims.append((node.node_ref, evidence, proposition))
             admitted[nucleus.nucleus_id] = node.node_ref
             by_evidence[evidence.evidence_id] = node.node_ref
             occurrences.setdefault(source.record_ref, set()).add(node.node_ref)
+        for targets, evidence in _opposed_claim_pairs(comparable_claims):
+            targets = tuple(sorted(targets, key=lambda ref: int(ref[1:])))
+            conflict_evidence[targets] = tuple(dict.fromkeys(
+                (*conflict_evidence.get(targets, ()), *evidence)))
         # The whole replacement, not just a convenient sub-clause, must be
         # interpreted. Otherwise no old result can be returned as current.
         if source.envelope.envelope_id in replacement_updates and (not admitted or unresolved):
@@ -903,4 +940,6 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
                                       if r.source_envelope_id in supporting_envelopes))
             edges.append(ObservedEdge('e' + str(len(edges) + 1),
                 'REPEATED_COOCCURRENCE', (left.node_ref, right.node_ref), refs))
-    return ObservedGraph(tuple(nodes), tuple(edges), tuple(gaps), updates)
+    conflicts = tuple(ObservedConflict('c' + str(index), targets, evidence)
+        for index, (targets, evidence) in enumerate(conflict_evidence.items(), 1))
+    return ObservedGraph(tuple(nodes), tuple(edges), tuple(gaps), updates, conflicts)

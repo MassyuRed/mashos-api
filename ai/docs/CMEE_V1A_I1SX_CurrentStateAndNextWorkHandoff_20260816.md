@@ -14196,3 +14196,20 @@ product destinationは、本人が明記した担当を期間分析の文章/図
 新規file/共有owner/API/DB/DTO/RN/依存定義変更0。file配置不変、責務差分をcurrent03 §4.17とcanonical04 §3.12へ同期。GitHub反映先は既存draft/open/unmerged PR3/PR30 branch。local materialization commitは作業用cacheとしてremote parentに使わず、基準remote headからnon-forceで反映し、remote全文・変更path・parent/tree・最終PR head/bodyを照合する。
 
 u102〜u111修正版は未配置。指定稼働API315f5b5…/TestFlight6201と実機OKのMash報告を継承し、商品0/3・NOT_CLEAR・48%を再採点しない。main/merge/deploy/build/live DBへのeffect0。現在/未来/願望/可能、前置時点、他者/推測/伝聞/引用/夢/未解釈修飾、memo_actionは今回未対応。「記録を担当した」は共有の名詞keywordによるaction分類でevent witnessに一致せず保留。一般ROLE・場面の理解、注記/conflict/期間比較/IFは残る。5種類の限定表示が揃ったため、次の対象選択は語彙磨きを無期限に続けず、canonical04の未接続な注記・期間比較と現在の保存artifact/DTOを照合し、最小分析として利用者に届く不足を一単位選ぶ。高度な全入力理解を実機接続/公開前の新条件にしない。
+
+
+## 2026-10-04 JST u112 — 同じ原入力の肯定・否定を対象付き未確定表示へ接続
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。Mashの分析実装継続指示、weekly20261003 §5.3/§6.6〜6.10、u111の次作業選択に沿う。前回txtはu108で、fresh PR3/API4399cae9…・PR30/Cocolon659e3ec7…のu111を採用した。全体設計/全file map、前提/作業ルール・恒久incident全文、current03/canonical04/05と実sourceを確認。Workの華恋を単一execution ownerとし、補助agentはread-only。PRODUCT_ROUTE_ALIGNED / TECHNICALLY_ADMISSIBLE：既存の不一致badgeを実生成→保存→同じ文章/図へ接続する限定範囲。新しい意味owner・公開契約・DB・依存・配置を必要とする場合はscopeを広げず停止する。追加費用/Mash操作0。
+
+再現：同じ原入力の「私は資料を調べた。私は資料を調べなかった。」は両nodeを保持するがconflict_badgesが空だった。行動・場面・担当の既存SELF過去factに限定し、同じsource/field/相対日、完全命題の同一性、肯否だけが異なる原証拠を対象付きObservedConflictへ結ぶ。明示順序の参加evidence、接続語付きnode、従属形、願望/認識、別record/field/day/対象は比較しない。記述の真偽・同一機会・心理的葛藤を断定せず「同じ記録に肯定と否定の記述があります。同じ機会のことかは確定していません」と表示する。両nodeと原証拠を保持し、訂正/撤回を先に適用する。通常補足の正負不一致を保留する既存条件は維持。
+
+実装は既存intent_compiler / observed_route_realizer / analysis_observed_serviceの3source。private保存は対象・reason・exact evidenceのallowlistのみでraw原文/名詞/propositionを加えない。既存safe DTOのconflict_badgesと既存RN本文/図へ接続し、保存validatorで形・2対象・重複・labelを検査する。旧空badge artifactも再生成なしで読み取れる。SQL/DTO/RN source変更なし。原証拠の同時出現を因果・実行順序へ変えない。
+
+検証：現sessionで再確認したPython3.12.14 / pytest9.1.1 / FastAPI0.142.2 / httpx0.28.1 / pydantic2.13.5で、vertical97（追加4）/storage19（追加2）/saved period13/API6＝135 PASS、379 subtests PASS、既存Pydantic非推奨warning1。初回は追加testの診断名でrequest.records（実型はmembers）を誤参照し134 PASS/1 FAIL、修正後同じ対象を再実行した。対象・期待・製品条件の削減なし。既存RN11検査PASS。行動/場面/担当/別日/訂正/撤回の6合成出力をrootが全文読み、既存RN contract/view modelで本文・identity・node順・conflict件数が完全一致した。2件の独立read-only source reviewでblocking指摘なし。
+
+実generate_saved→合成RPC commit→read_savedで同一DTO/本文/identityと再生成0を確認。private evidence非漏出、破損したtarget/shape/label/本文の拒否を確認。Auth/DB I/Oは合成であり、live DB/実認証/端末の修正版試験ではない。System Context prepareはshallow cloneのpredecessor ancestry検証で停止したため、成功や最新contextとして使わず、規定の固定GitHub原本直接読取へ戻った。関連しないcontext生成物は反映しない。
+
+変更対象は既存10file：API上記3source、test_cmee_analysis_v1d_vertical.py、test_analysis_observed_storage.py、既存API handoff。Cocolonは共通入口00、Analysis03 §4.18、canonical04 §3.13、06本記録。ファイル配置は不変。GitHub反映は既存PR3/PR30 branchへnon-forceで行い、fresh head/preimage・changed paths・remote全文を照合する。main/merge/deploy/build/稼働DBへのeffect0。
+
+u102〜u112修正版は未配置。稼働API315f5b5…/TestFlight6201と実機OKのMash報告を継承する。今回のprimary outcomeは限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%の再採点なし。一般的な矛盾理解、protective/burden注記、期間比較、IF、global cutoverは未完了。次はcanonical04 §8の明示された負荷/守っているものを既存共有意味・対象node・safe DTOへ根拠付きで接続できる最小範囲を確認する。語彙網羅や高度品質を実機接続/公開前の追加条件へ戻さない。
