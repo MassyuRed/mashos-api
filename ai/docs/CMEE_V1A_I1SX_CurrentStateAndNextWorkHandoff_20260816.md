@@ -14517,3 +14517,21 @@ Mashの分析内容修正の継続指示に従い、u129に残した本人の過
 変更はAPI既存source1／test1／handoff1、Cocolon既存current03／canonical04／06。STRUCTURE_MAP_DELTA_NONE：既存Analysis-ownedの解釈だけを補正、共有Emlis／Piece作者・API／DTO／SQL／DB／RN／依存を変更しない。env／deploy／build／main／merge／IF操作0。Draft/open/unmerged、商品0/3・NOT_CLEAR・48%を維持。反映commitはPR3/30のu130先頭を参照。
 
 未修正の隣接欠陥：「私は明日職場にいた」は今回以前のparserでも「明日職場」を場面名に吸収する。今回今日／昨日の修正を一般的時点理解の完成とはしない。次はこの未対応時点語の名詞化を既存compiler内で止める修正。主語省略一般や時間表現全体への拡張を自動で完了扱いにしない。今回も未配置で、最後の確認済み稼働APIはu128の1a42b9e…、TestFlight6401送信成功を継承する。本人端末の正常空表示・通常入力からの生成／保存再表示／比較は未確認。
+
+## 2026-10-05 JST u131 — 未対応時点語を名詞へ吸収した確定表示を補正
+
+Mashの10/04 23:58 JSTの分析内容修正継続指示に従い、u130に残した「明日職場」の誤名詞化を補正した。前提資料／作業規則、全体設計と01A/B/C全file地図、最新weekly20261003 §5/§6.6〜6.10、current03／canonical04／06／API handoffのu130と実fileを照合。恒久incidentは今回全文読取。開始headはAPI b1c7f0258dfb5a6c28adb7ad2e18cab3b689ead8／Cocolon56a70b02d6dfc79edda7de025ae075565eaf87c5。root華恋が唯一の実装・検証・GitHub write owner、補助担当はread-only調査と静的差分review。Rule18 LEVEL_2、既存Analysis内部の内容補正。追加費用・Mash操作0。
+
+実CMEEで明日／明後日／一昨日／今朝／昨夜／先週／来週×場面／担当／行動の21例が、時点語を場所・担当・対象名詞に混ぜて表示することを再現した。例：「私は明日職場にいた。私は資料を調べた。」は修正前に「明日職場にいた（記録された場面）」を確定表示していた。修正後はこの誤った場面を出さず、「資料を調べる（実行済み）」と場面不足・まだ読み取れていない内容を同じ文章／図へ表示する。原文を今日／昨日へ読み替えず、未来を実行済みへ変換しない。
+
+既存compilerの完全解析候補と採用判定を分け、名詞項の各「の」区切りとpossible_contentを同じ判定で確認する。7語そのもの／直後が「の」の名詞用法は保持し、7語へ別の名詞文字列が続く未解決scopeは保留。_fragmentはこのケースを既存の未解釈source経路へ渡すため、raw nodeへのfallbackで読める別節までsafe表示不能にしない。_propositionの表示再解析にも同判定を適用し、通常入口を通らないte節とaction/change右端も確認する。出来事の両端が不成立なら片側だけを採用しない。
+
+Python3.12.14で既存vertical **141 tests PASS**（136＋5新規method）。7語×肯定／否定／希望を含む6形式、名詞修飾／日語そのものの格、第二格／複文／認識内容／保護意向、原文scalar／UTF-8／hash、partial mapの未知表示、表示再解析、期間比較を確認した。未対応節だけが加わった比較はUNKNOWN_SCOPE_CHANGEDのみで、架空の場面差を作らない。未解釈の通常補足・訂正先・訂正対象・撤回対象は既存の全体UNAVAILABLEを維持し、黙って無視して成功にしない。既存136の期待変更0。
+
+rootが合成6本文（誤場面／担当／行動の除去、名詞用法、認識内容、期間比較）を全文読取し、実生成DTOを変更していないRN表示modelへ渡した。6例の全文・artifact identity・node順・edge配列がbackendと一致。独立静的reviewはscope内blockerなし。検査実行はroot担当。React component suite・native・実DB・本人入力の今回検証ではなく、商品受入れに換算しない。
+
+制約：これは実測7語の曖昧な連結を保留する限定処理で、一般の時間解釈ではない。「明日香」「明日館」のような固有名詞、「先週末の資料」「明日提出の資料」も保留される。「明日の会議」「明日の資料」「明日を記録した」は維持。元々grammarが完全解析できない漢字・カタカナ混在の「明日ノート」は今回の候補判定前にNoneとなり、既存のsafe拒否が残る。追加検査でこの差を確認し、第二格の今回対象は完全解析可能な「明日手帳」で確認した。未対応全文を全てpartial mapへ変えたとはしない。
+
+変更はAPI既存source1／test1／handoff1、Cocolon既存current03／canonical04／06。STRUCTURE_MAP_DELTA_NONE：意味owner・共有Emlis／Piece・API／DTO／DB／SQL／RN／依存の変更なし。env／deploy／build／main／merge／IF操作0。Draft/open/unmerged、商品0/3・NOT_CLEAR・48%を保持。反映commitはPR3/30のu131先頭を参照。今回コードは未配置で、最後の確認済み稼働API1a42b9e…／TestFlight6401送信成功を継承し、本人端末の正常空表示・通常入力からの生成／保存再表示／比較は未確認。
+
+次の内容修正候補は、完全解析できない節を含む期間で、読み取れた別節まで表示不能になる既存境界（「私は資料を明日ノートに書いた。私は記録を残した。」等）。同じsource・unknown契約内で扱い、今回の新しい7語追加を無期限の時間語列挙へ広げない。実機確認・配置の残件を内容検査で代用しない。

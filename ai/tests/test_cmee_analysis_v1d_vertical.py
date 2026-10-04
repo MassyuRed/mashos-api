@@ -2056,6 +2056,100 @@ class AnalysisVerticalTests(unittest.TestCase):
             record(2, memo='その後私は会議の司会を担当した。'))).artifact
         self.assertFalse(split.graph.edges)
 
+    def test_unparsed_time_prefixes_do_not_become_scene_role_or_action_nouns(self):
+        for time in ('明日', '明後日', '一昨日', '今朝', '昨夜', '先週', '来週'):
+            for clause in ('職場にいた', '会議を担当した', '資料を調べた',
+                           '職場にいなかった', '会議を担当しなかった', '資料を調べたい'):
+                memo = '私は' + time + clause + '。'
+                with self.subTest(memo=memo):
+                    result = self.generate(request(record(memo=memo)))
+                    self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+                    self.assertIsNone(result.artifact)
+
+    def test_unparsed_time_scope_keeps_readable_nodes_source_and_unknown(self):
+        for clause in ('私は明日職場にいた', '私は来週会議を担当した',
+                       '私は今朝資料を調べた', '私は資料を明日手帳に書いた',
+                       '私は今日明日資料を調べた', '昨日私は明日職場にいた',
+                       '私は明日資料を調べてから、疑問が減った',
+                       '私は資料を調べてから、明日疑問が減った',
+                       '私は明日資料を調べたかもしれないと思っている',
+                       '私は家族の明日生活を守りたい'):
+            with self.subTest(clause=clause):
+                req = request(record(memo=clause + '。私は記録を残した。'))
+                artifact = self.generate(req).artifact
+                node, = artifact.graph.nodes
+                self.assertEqual(node.node_kind, 'ACTION_OR_NONACTION')
+                e, = node.evidence_refs
+                source = freeze_analysis_sources(req).sources[0].envelope
+                literal = '私は記録を残した'
+                field = source.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                self.assertEqual(source.raw_utf8[e.utf8_start:e.utf8_end].decode(), literal)
+                self.assertEqual(field[e.scalar_start:e.scalar_end], literal)
+                self.assertEqual(hashlib.sha256(literal.encode()).hexdigest(), e.literal_sha256)
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)
+                self.assertEqual([n['visible_label'] for n in visual['nodes']], ['記録を残す（実行済み）'])
+                self.assertTrue(any('まだ読み取れていない内容' in g['visible_label'] for g in visual['unknown_gaps']))
+                self.assertIn('まだ読み取れていない内容', text['text'])
+                self.assertEqual(visual['projection_of'], text['projection_of'])
+                self.assertFalse(visual['edges'])
+                self.assertFalse(visual['annotation_badges'])
+        artifact = self.compared('私は明日職場にいた。私は資料を調べた。',
+                                 '私は資料を調べた。').artifact
+        self.assertEqual(artifact.safe_projection(authenticated_owner_scope=OWNER)
+                         ['period_comparison']['safe_change_kinds'], ['UNKNOWN_SCOPE_CHANGED'])
+        # The mixed kanji/katakana argument was already outside the finite
+        # grammar; do not claim this correction makes every unread form partial.
+        result = self.generate(request(record(memo='私は資料を明日ノートに書いた。')))
+        if result.artifact:
+            with self.assertRaises(AnalysisSourceError):
+                result.artifact.safe_projection(authenticated_owner_scope=OWNER)
+        else:
+            self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+
+    def test_explicit_temporal_nominal_modifiers_and_objects_keep_their_meaning(self):
+        for memo, noun, label in (
+            ('私は明日の会議を担当した。', '明日の会議', '明日の会議を担当した（記録された担当）'),
+            ('私は明日の資料を調べた。', '明日の資料', '明日の資料を調べる（実行済み）'),
+            ('私は来週の資料を調べなかった。', '来週の資料', '来週の資料を調べる（行わなかった）'),
+            ('私は明日を記録した。', '明日', '明日を記録する（実行済み）'),
+        ):
+            with self.subTest(memo=memo):
+                artifact = self.generate(request(record(memo=memo))).artifact
+                node, = artifact.graph.nodes
+                self.assertEqual(node.proposition.arguments, (('を', noun),))
+                self.assertEqual(node.proposition.relative_day, '')
+                self.assertEqual(node.temporal_scope, 'past')
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                self.assertEqual(visual['nodes'][0]['visible_label'], label)
+                self.assertIn(label, artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+
+    def test_unparsed_time_supplements_and_updates_do_not_resolve_by_guessing(self):
+        valid, invalid = '私は職場にいた', '私は明日職場にいた'
+        for original, answer in (
+            (valid, invalid + '。'),
+            (valid, '「' + valid + '」ではなく「' + invalid + '」です。'),
+            (invalid, '「' + invalid + '」ではなく「' + valid + '」です。'),
+            (invalid, '「' + invalid + '」は取り消します。'),
+        ):
+            with self.subTest(original=original, answer=answer):
+                result = self.generate(request(self.with_answer(
+                    record(memo=original + '。私は資料を調べた。'), answer)))
+                self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+                self.assertIsNone(result.artifact)
+
+    def test_unparsed_time_nominal_cannot_be_reintroduced_into_safe_surface(self):
+        artifact = self.generate(request(record(memo='私は職場にいた。'))).artifact
+        node, = artifact.graph.nodes
+        forged = replace(node, visible_label='私は明日職場にいた',
+            proposition=replace(node.proposition, arguments=(('に', '明日職場'),),
+                source_parts=tuple((role, a if role in {'SELF_TOPIC', 'SCENE_NOMINAL'} else a + 2,
+                                    b if role == 'SELF_TOPIC' else b + 2)
+                                   for role, a, b in node.proposition.source_parts)))
+        with self.assertRaises(AnalysisSourceError):
+            replace(artifact, graph=replace(artifact.graph, nodes=(forged,))).safe_projection(
+                authenticated_owner_scope=OWNER)
+
     def test_post_topic_event_days_keep_kind_polarity_and_full_source(self):
         cases = (
             ('私は昨日職場にいた', 'SCENE', 'YESTERDAY', 'positive', '職場にいた（記録された場面）'),

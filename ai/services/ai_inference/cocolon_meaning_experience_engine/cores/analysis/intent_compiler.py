@@ -112,6 +112,9 @@ _POST_TOPIC_DAY = re.compile(r'(今日|昨日)(?!の|を|に|で|と|は|が|も
 _DAY_EXTENSION = re.compile(
     r'(?:分|以前|以後|以降|以来|当時|時点|現在|中|付|頃|ごろ|まで|から|より|だけ|'
     r'朝|昼|夜|晩|夕|午前|午後|早朝|深夜|未明|正午)')
+# Observed unsupported time prefixes must not be swallowed by the open
+# kanji nominal slot. This is not a new time interpretation or day enum.
+_UNPARSED_TIME_NOMINAL = re.compile(r'^(?:明後日|明日|一昨日|今朝|昨夜|先週|来週)(?=.)')
 _COGNITIVE_HOSTS = {value: value for value in (
     '考えてしまう', '思ってしまう', '考えている', '思っている', '考える', '思う')}
 _COGNITIVE_HOSTS['考えちゃう'] = '考えてしまう'
@@ -355,7 +358,24 @@ def _proposition_node_kind(proposition):
     return 'ACTION_OR_NONACTION'
 
 
+def _has_unparsed_time_nominal(proposition):
+    if proposition is None:
+        return False
+    # Explicit の and a standalone case-marked day remain nominal: e.g.
+    # 明日の資料 / 明日を記録した do not date the action. Check every
+    # genitive segment and possible content, not only the first argument.
+    return (any(_UNPARSED_TIME_NOMINAL.match(part)
+                for _, noun in proposition.arguments for part in noun.split('の'))
+            or _has_unparsed_time_nominal(proposition.possible_content))
+
+
 def _proposition(value: str) -> ObservedProposition | None:
+    proposition = _parsed_proposition(value)
+    return None if _has_unparsed_time_nominal(proposition) else proposition
+
+
+def _parsed_proposition(value: str) -> ObservedProposition | None:
+    """Internal grammatical candidate; callers must check unresolved time."""
     protective = _protective_wish_proposition(value)
     if protective is not None:
         return protective
@@ -445,6 +465,8 @@ def _te_action_proposition(value):
         return None
     proposition = _finite_proposition(value, subject.end(), 'SELF',
         [('SELF_TOPIC', 0, subject.end())], predicate_forms=_TE_PREDICATES)
+    if _has_unparsed_time_nominal(proposition):
+        return None
     return replace(proposition, source_parts=tuple(
         ('DEPENDENT_PREDICATE' if role == 'FINITE_PREDICATE' else role, a, b)
         for role, a, b in proposition.source_parts)) if proposition else None
@@ -755,7 +777,7 @@ def _action_change_pair(source, plan, span_id):
         return None
     left = _te_action_proposition(raw[a:b]) if te_after else _proposition(raw[a:b])
     right = _bounded_change_proposition(raw[c:d])
-    if (left is None or right is None or left.actor != 'SELF'
+    if (left is None or right is None or _has_unparsed_time_nominal(right) or left.actor != 'SELF'
             or left.result_state or left.scene_state or left.role_state or left.possible_content or left.relative_day or left.sequence_marker
             or any(re.search(r'(?:^|の)(?:何|誰|幾)', noun) for _, noun in left.arguments)
             or (left.polarity, left.modality, left.temporal_scope) !=
@@ -829,6 +851,11 @@ def _fragment(source, nucleus, plan=None):
     value = span.raw_text[a:b].strip(' 、，。．')
     if not value:
         return None
+    proposition = _parsed_proposition(value)
+    if _has_unparsed_time_nominal(proposition):
+        # Use the existing unresolved-source path; never fall back to a
+        # raw node that would also make unrelated readable nodes unsafe.
+        return None
     if _cognitive_proposition(value) is not None and not _source_current_cognition(nucleus):
         return None
     result = _unfinished_result_proposition(value)
@@ -878,7 +905,7 @@ def _fragment(source, nucleus, plan=None):
         utf8_start=ref.field_utf8_start + len(field[:start].encode('utf-8')),
         utf8_end=ref.field_utf8_start + len(field[:end].encode('utf-8')),
         literal_sha256=hashlib.sha256(literal.encode('utf-8')).hexdigest())
-    proposition = (pair[3] if nucleus.nucleus_id == pair[0] else pair[4]) if pair else _proposition(value)
+    proposition = (pair[3] if nucleus.nucleus_id == pair[0] else pair[4]) if pair else proposition
     return value, evidence, proposition
 
 
