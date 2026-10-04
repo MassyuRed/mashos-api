@@ -70,6 +70,9 @@ def _safe_label(node, graph):
         return phrase + _CHANGE_PAST[parts.predicate_lemma] + '（記録された変化）'
     if parts.result_state == 'PAST_FEELING':
         return _FEELING_PAST[parts.predicate_lemma] + '（記録された気持ち）'
+    if parts.scene_state == 'PAST_PRESENCE':
+        phrase = ''.join(noun + case for case, noun in parts.arguments)
+        return phrase + ('いた' if parts.polarity == 'positive' else 'いなかった') + '（記録された場面）'
     if parts.possible_content is not None:
         content = parts.possible_content
         phrase = ''.join(noun + case for case, noun in content.arguments)

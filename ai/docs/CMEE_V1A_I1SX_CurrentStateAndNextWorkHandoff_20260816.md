@@ -14158,3 +14158,22 @@ DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。Mashの分析実装継続�
 System Context prepareは指定workspace内のmashos-apiが見つからず停止。生成context更新済みとはせず、規定のoriginal直接読取を使用した。既存4 code/test＋API handoff、Cocolon既存00/03/04/06の計9 fileだけを更新。新規file/owner/共有意味実装/API/DB/DTO/RN/依存定義変更0。file配置不変、既存責務は03 §4.15・canonical04 §3.10へ同期。GitHub反映先は既存public PR3/PR30のagent branch、fresh head/preimage確認→non-force反映→remote全文/変更path照合。
 
 u102〜u109修正版は未配置。稼働API315f5b5…/TestFlight6201と実機OKのMash報告を継承。配置/build/main/merge/live DB変更なし、追加費用/Mash操作0。primary outcome=TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%を再採点しない。今回を一般感情理解・分析全体の完成とはしない。ほっとした/落ち着きました、程度修飾、否定感情、たら条件/3節、場面/役割、annotations/conflict/比較/IFは未完了。次は場面/役割の代表入力を既存共有意味と照合し、表示へ未到達の具体的な一箇所を選ぶ。語彙拡張を無期限の前工程にはしない。
+
+
+## 2026-10-04 JST u110 — 明示された本人の過去の所在を場面表示へ接続
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。Mashの分析実装継続指示に基づき、前回添付txtとu109反映済み状態を照合。今回の基準headはAPI d16c5ab2e6337754b300127ecab896e62abd5abf / Cocolon 5905b4ceb3df2c1beaf54bb06207f3821a0f3269。前提/作業rules、全体設計/全file地図、current03、canonical04/06と最新weekly20261003を継承照合し、恒久incident全文を今回再読した。指定API315f5b5…/TestFlight6201へのMash実機OK報告は継承し、内容改善の前提へ実機再確認を戻さない。
+
+今回のproduct destinationは保存済み本人入力の場面を文章と図へ到達させること。current unfinishedは「私は職場にいた」が共有generic eventになってもAnalysisで表示されない点。exact workは明示SELF＋既存名詞句＋に＋過去存在4形のSCENE接続。ユーザー継続指示と既存委任範囲に基づくPRODUCT_ROUTE_ALIGNED / TECHNICALLY_ADMISSIBLEとしてroot華恋が実装/実行/反映のsingle owner、補助2名はread-only review。success creditはTECHNICAL_CREDIT。完了条件は全文証拠/正負/補足更新を保持したSCENE生成、保存再読取と同一文章/図、既存PRへの内容照合。scope変更・共有owner/API/DB/RN変更が必要ならその追加を停止し、一般文法の無期限拡張へ迂回しない。追加費用/Mash操作0、商品受入れと修正版配置は別の判断地点。
+
+既存intent_compilerの内部propositionへPAST_PRESENCEを追加し、私/僕/わたし/自分は＋名詞句＋に＋いた/いました/いなかった/いませんでしたを全文解釈する。shared required/explicit/event/fact・極性・時制を照合し、共有default actorだけを本人根拠にしない。共有current_input時制は語尾由来のpastを否定しないため、Analysisが完全有限形からpastを保持する。safe realizerは「職場にいた／いなかった（記録された場面）」等へ型から再構成し、実行/勤務/所属/役割/原因へ変換しない。「で調べた」から場所を補わない。
+
+初回の関連検査は123 PASS・299 subtests PASS。read-only reviewで、ledgerが72字超を読点/固定長で切るためspan全文は元の文全文と同じではないという具体指摘があった。rootが長文「私は職場にいた、という夢を見たのですが、…」で先頭SCENEだけが生成されることを再現。新SCENEに限ってparser fieldの前後が句点/改行/field端かを検査し、読点/固定長/関係prefix由来の断片を拒否した。訂正の既存証明済viewと原回答の証拠座標は分離したまま。追加回帰は長文夢host/左修飾/でもを拒否し、本来の句点/改行を許可。レビュー指摘は閉鎖済み、他のblocking指摘なし。
+
+最終検証は既存Python3.12.14 / pytest9.1.1 / FastAPI0.142.2 / httpx0.28.1 / pydantic2.13.5、既存隔離依存pathを継承。vertical88（追加7）/storage17（追加1）/saved period13/API6＝**124 PASS、305 subtests PASS**、既存Pydantic非推奨warning1。正負4形/主語/名詞句、scalar/UTF-8/hashと全source parts、共有witness、未解釈scope、文境界、明示順序、補足/全文訂正/撤回、独立件数、正負別node、safe replayを確認。通常の隣接から順序は作らず、後続「その後/それから＋本人過去行動」にのみ既存順序線が成立する。
+
+実generate_saved→合成RPC commit→read_savedで肯定/否定場面と後続行動順序の同一文章/DTO/identityを保持、再生成0、内部scene_state/PAST_PRESENCE/source_parts非漏出。rootが場面/否定/順序/補足/訂正/撤回の6合成本文を全文読み、既存RN contract/view modelもbackendの同6本文/identity/graph orderと一致。Auth/DBは合成応答であり、修正版のlive DB/認証/端末試験や正式商品受入れではない。
+
+変更は既存API source2/test2/handoff1、Cocolon current00/03・canonical04/06の計9 file。新規file/共有owner/依存定義/API/DB/DTO/RN変更0、配置地図のpath構成不変。責務差分を03 §4.16とcanonical04 §3.11へ同期。前回System Context prepareのworkspace欠落は解消済みと扱わず、許可済みの原本直接読取を継続した。GitHub対象は既存public draft/open/unmerged PR3/PR30のagent branchで、fresh head/preimage確認→non-force反映→remote全文/変更path/parent/headを照合する。local cacheのmaterialization commitをremote parentに使用しない。
+
+u102〜u110修正版は未配置。稼働API315f5b5…/TestFlight6201、実機OKのMash報告、商品0/3・NOT_CLEAR・48%は再採点しない。main/merge/deploy/build/live DBへのeffect0。今回を一般場面理解や分析全体完成としない。前置の今日/昨日/その後、現在/未来/願望/推測/他者/夢/未解釈修飾、memo_actionの所在は今回の対象外。ROLE、一般場面、annotations/conflict/期間比較/IFは残る。次の直接候補は、ROLEの本人明示文が既存共有意味から表示へ届く最小単位を確認すること。共有producerが足りない場合は不足箇所と必要scopeを先に特定し、文字列だけで役割を推測しない。語彙磨きを分析全体の完成の前提にはしない。

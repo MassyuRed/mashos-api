@@ -43,6 +43,7 @@ class ObservedProposition:
     possible_content: ObservedProposition | None = None
     result_state: str = ''
     dependent_form: str = ''
+    scene_state: str = ''
 
 
 # A bounded verb/inflection inventory, not an input/topic-to-answer table.
@@ -122,6 +123,42 @@ _FEELING_PAST = {'安心する': '安心した', '落ち着く': '落ち着い�
 _FEELING_FORMS = {'安心した': '安心する', '安心しました': '安心する',
     '落ち着いた': '落ち着く',
     '嬉しかった': '嬉しい', 'うれしかった': 'うれしい'}
+_PAST_PRESENCE = re.compile(
+    r'(?P<subject>私|僕|わたし|自分)は(?P<noun>' + _NOMINAL
+    + r'(?:の' + _NOMINAL + r')*)(?P<case>に)'
+    r'(?P<predicate>いた|いました|いなかった|いませんでした)')
+
+
+def _past_presence_proposition(value):
+    match = _PAST_PRESENCE.fullmatch(value)
+    if match is None or re.search(r'(?:^|の)(?:何|誰|幾)', match['noun']):
+        return None
+    polarity = 'negative' if match['predicate'] in {'いなかった', 'いませんでした'} else 'positive'
+    return ObservedProposition('SELF', (('に', match['noun']),), 'いる',
+        polarity, 'fact', 'past', (
+            ('SELF_TOPIC', 0, match.start('noun')),
+            ('SCENE_NOMINAL', match.start('noun'), match.end('noun')),
+            ('CASE_に', match.start('case'), match.end('case')),
+            ('FINITE_PRESENCE', match.start('predicate'), len(value))),
+        scene_state='PAST_PRESENCE')
+
+
+def _past_presence_witness(nucleus, proposition):
+    # The shared generic event supplies grounding, not an inferred role.
+    # Its current_input time is unspecified; the whole finite clause proves
+    # past. Its default actor alone never proves SELF ownership.
+    frame = nucleus.semantic_frame
+    return (nucleus.grounding_kind == 'explicit'
+        and nucleus.allowed_claim_scope == 'explicit_current_input'
+        and nucleus.retention == 'required'
+        and nucleus.kind == frame.predicate_kind == 'event'
+        and nucleus.source_fields == ('memo',)
+        and len(nucleus.source_span_ids) == 1
+        and frame.actor == 'current_user' and frame.modality == 'fact'
+        and frame.polarity == ('negative' if proposition.polarity == 'negative' else 'neutral')
+        and frame.time_scope in {'past', 'current_input'}
+        and not any(code.startswith(('source_fragment_', 'surface_scalar_',
+                    'thread_time:', 'semantic_dependency:')) for code in frame.attribute_codes))
 
 
 def _past_feeling_proposition(value):
@@ -187,6 +224,8 @@ def _unfinished_result_witness(nucleus):
 
 
 def _proposition_node_kind(proposition):
+    if proposition.scene_state:
+        return 'SCENE'
     if proposition.result_state:
         return 'IMMEDIATE_RESULT_OR_AFTERMATH'
     if proposition.modality == 'wish' or proposition.possible_content:
@@ -195,6 +234,9 @@ def _proposition_node_kind(proposition):
 
 
 def _proposition(value: str) -> ObservedProposition | None:
+    scene = _past_presence_proposition(value)
+    if scene is not None:
+        return scene
     result = _unfinished_result_proposition(value) or _bounded_change_proposition(value)
     if result is not None:
         return result
@@ -291,7 +333,7 @@ def _cognitive_proposition(value):
 def _proposition_meaning(proposition):
     content = proposition.possible_content
     return (proposition.actor, tuple(sorted(proposition.arguments)),
-            proposition.predicate_lemma, proposition.result_state,
+            proposition.predicate_lemma, proposition.result_state, proposition.scene_state,
             (_proposition_meaning(content), content.polarity, content.modality,
              content.temporal_scope) if content else None)
 
@@ -419,7 +461,7 @@ def _action_change_pair(source, plan, span_id):
     left = _te_action_proposition(raw[a:b]) if te_after else _proposition(raw[a:b])
     right = _bounded_change_proposition(raw[c:d])
     if (left is None or right is None or left.actor != 'SELF'
-            or left.result_state or left.possible_content or left.relative_day or left.sequence_marker
+            or left.result_state or left.scene_state or left.possible_content or left.relative_day or left.sequence_marker
             or any(re.search(r'(?:^|の)(?:何|誰|幾)', noun) for _, noun in left.arguments)
             or (left.polarity, left.modality, left.temporal_scope) !=
                 ('positive', 'fact', 'dependent' if te_after else 'past')):
@@ -500,6 +542,20 @@ def _fragment(source, nucleus, plan=None):
         return None
     if result is not None and not _unfinished_result_witness(nucleus):
         return None
+    scene = _past_presence_proposition(value)
+    if scene is not None and (a != 0 or b != len(span.raw_text)
+            or not _past_presence_witness(nucleus, scene)):
+        return None
+    if scene is not None:
+        # The ledger also splits long sentences at commas or fixed lengths.
+        # A complete span is not necessarily a complete finite host. Check
+        # the parser field (or proved correction view), retaining newlines as
+        # boundaries; evidence below still addresses the unchanged original.
+        before = context[:span.start_index].rstrip(' \t\u3000')
+        after = context[span.end_index:].lstrip(' \t\u3000')
+        if ((before and before[-1] not in '。．.!！\r\n')
+                or (after and after[0] not in '。．.!！\r\n')):
+            return None
     # current_user is the shared frame's default, not proof of its subject.
     # Actions/thoughts require an explicit first-person finite host. Only a
     # witnessed, fully parsed non-agent result state is the bounded exception.

@@ -219,6 +219,43 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                             'action_supports_change', 'dependent_form', 'TE_BEFORE_PAST_CHANGE'):
                 self.assertNotIn(private, encoded)
 
+    async def test_scene_polarity_and_action_order_survive_save_and_read(self):
+        for ending, label in (('いました', '職場にいた（記録された場面）'),
+                              ('いませんでした', '職場にいなかった（記録された場面）')):
+            with self.subTest(ending=ending):
+                self.fx = fixture('私は職場に' + ending + '。その後、私は資料を調べた。')
+                self.row = self.fx['row']
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': self.fx['original'], 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                        self.row['content_text'] = payload['p_text']
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    return result([self.row], matched=True)
+                with patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                        reread = await service.read_saved(OWNER)
+                self.assertEqual(reread['items'][0], saved)
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual((projection, saved['content_text']), (writes[0]['p_projection'], writes[0]['p_text']))
+                scene, action = projection['nodes']
+                self.assertEqual((scene['node_kind'], scene['visible_label']), ('SCENE', label))
+                self.assertIn(label, saved['content_text'])
+                edge, = projection['edges']
+                self.assertEqual((edge['edge_kind'], edge['from_ref'], edge['to_ref']),
+                    ('OBSERVED_ORDER', scene['node_ref'], action['node_ref']))
+                for encoded in (json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False),
+                                json.dumps(projection, ensure_ascii=False)):
+                    for private in ('scene_state', 'PAST_PRESENCE', 'source_parts', '私は'):
+                        self.assertNotIn(private, encoded)
+
     async def test_read_never_generates_and_preserves_wire(self):
         with patch.object(service, '_rpc', AsyncMock(return_value=result([self.row]))), \
              patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
