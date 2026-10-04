@@ -913,6 +913,145 @@ class AnalysisVerticalTests(unittest.TestCase):
                     self.assertEqual(n.node_kind, 'ATTENTION_OR_THOUGHT')
                     self.assertNotIn('実行済み', visual['nodes'][0]['visible_label'])
 
+    def test_post_topic_day_preserves_arguments_operators_and_complete_evidence(self):
+        cases = (
+            ('私は昨日資料を調べた。', 'YESTERDAY', 'positive', 'fact', 'past',
+             'この記述時点の昨日：資料を調べる（実行済み）'),
+            ('僕は昨日，資料を調べませんでした。', 'YESTERDAY', 'negative', 'fact', 'past',
+             'この記述時点の昨日：資料を調べる（行わなかった）'),
+            ('わたしは今日\u3000仕事を続けたいです。', 'TODAY', 'positive', 'wish', 'current_input',
+             'この記述時点の今日：仕事を続けることへの希望'),
+            ('自分は昨日仕事を続けたくなかった。', 'YESTERDAY', 'negative', 'wish', 'past',
+             'この記述時点の昨日：仕事を続けることを望まない（当時）'),
+            ('私は昨日、考えをノートに書いた。', 'YESTERDAY', 'positive', 'fact', 'past',
+             'この記述時点の昨日：考えをノートに書く（実行済み）'),
+            ('私は昨日、仕事の資料を調べた。', 'YESTERDAY', 'positive', 'fact', 'past',
+             'この記述時点の昨日：仕事の資料を調べる（実行済み）'),
+        )
+        for memo, day, polarity, modality, time, label in cases:
+            with self.subTest(memo=memo):
+                req = request(record(memo=memo))
+                artifact = self.generate(req).artifact
+                node = artifact.graph.nodes[0]
+                p = node.proposition
+                self.assertEqual((p.relative_day, node.polarity, node.modality, node.temporal_scope),
+                                 (day, polarity, modality, time))
+                self.assertFalse(any(noun.startswith(('今日', '昨日')) for _, noun in p.arguments))
+                covered = [i for _, a, b in p.source_parts for i in range(a, b)]
+                self.assertEqual(covered, list(range(len(node.visible_label))))
+                source = freeze_analysis_sources(req).sources[0].envelope
+                e = node.evidence_refs[0]
+                literal = source.raw_utf8[e.utf8_start:e.utf8_end]
+                field = source.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                self.assertEqual(literal.decode(), field[e.scalar_start:e.scalar_end])
+                self.assertEqual(hashlib.sha256(literal).hexdigest(), e.literal_sha256)
+                self.assertIn('昨日' if day == 'YESTERDAY' else '今日', literal.decode())
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)
+                self.assertEqual(visual['nodes'][0]['visible_label'], label)
+                self.assertIn(label, text['text'])
+                self.assertEqual(visual['projection_of'], text['projection_of'])
+                self.assertFalse(visual['edges'])
+
+                altered = replace(artifact, graph=replace(artifact.graph, nodes=(
+                    replace(node, proposition=replace(p, relative_day='')),)))
+                with self.assertRaises(AnalysisSourceError):
+                    altered.safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_post_topic_day_keeps_nominal_modifiers_and_does_not_invent_operators(self):
+        for memo, noun in (('私は今日の資料を調べた。', '今日の資料'),
+                           ('私は昨日の記録を見た。', '昨日の記録'),
+                           ('私は昨日を記録した。', '昨日')):
+            with self.subTest(memo=memo):
+                artifact = self.generate(request(record(memo=memo))).artifact
+                p = artifact.graph.nodes[0].proposition
+                self.assertEqual(p.arguments, (('を', noun),))
+                self.assertEqual(p.relative_day, '')
+                self.assertNotIn('この記述時点の', artifact.safe_projection(
+                    authenticated_owner_scope=OWNER)['nodes'][0]['visible_label'])
+        artifact = self.generate(request(record(memo=
+            '私は昨日資料を調べた。私は記録を残した。'))).artifact
+        self.assertEqual([n.proposition.relative_day for n in artifact.graph.nodes], ['YESTERDAY', ''])
+        self.assertFalse(artifact.graph.edges)
+
+    def test_post_topic_day_does_not_erase_unsupported_temporal_scopes(self):
+        for memo in (
+            '私は昨日仕事を続けたい。', '私は今日昨日資料を調べた。',
+            '昨日私は今日資料を調べた。', 'その後私は今日資料を調べた。',
+            '私は昨日資料を調べてから、疑問が減った。',
+            '私は昨日資料を調べた後、疑問が減った。',
+            '私は昨日資料を調べたかもしれないと思っている。',
+            '私は資料を昨日ノートに書いた。',
+            '私は昨日急いで資料を調べた。', '私は昨日資料を調べた？',
+            '友人の話です。私は昨日資料を調べた。', '友人は昨日資料を調べた。',
+        ):
+            with self.subTest(memo=memo):
+                result = self.generate(request(record(memo=memo)))
+                if result.artifact:
+                    with self.assertRaises(AnalysisSourceError):
+                        result.artifact.safe_projection(authenticated_owner_scope=OWNER)
+                else:
+                    self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+
+    def test_post_topic_day_answers_corrections_and_withdrawals_keep_source(self):
+        original = record(memo='私は考えを書いた。')
+        for answer in ('私は昨日、資料を調べた。', '私は今日資料を調べた。'):
+            with self.subTest(answer=answer):
+                req = request(self.with_answer(original, answer))
+                artifact = self.generate(req).artifact
+                node = next(n for n in artifact.graph.nodes if n.proposition.relative_day)
+                sources = {s.envelope.envelope_id: s.envelope for s in freeze_analysis_sources(req).sources}
+                e = node.evidence_refs[0]
+                source = sources[e.source_envelope_id]
+                self.assertEqual(source.source_role, 'SUPPLEMENTAL_ANSWER')
+                self.assertEqual(source.raw_utf8[e.utf8_start:e.utf8_end].decode(), answer[:-1])
+                self.assertFalse(artifact.safe_projection(authenticated_owner_scope=OWNER)['edges'])
+        original = record(memo='私は昨日資料を調べた。私は記録を残した。')
+        req = request(self.with_answer(original,
+            '「私は昨日資料を調べた」ではなく「私は今日資料を調べなかった」です。'))
+        corrected = self.generate(req).artifact
+        labels = [n['visible_label'] for n in corrected.safe_projection(authenticated_owner_scope=OWNER)['nodes']]
+        self.assertIn('この記述時点の今日：資料を調べる（行わなかった）', labels)
+        self.assertFalse(any('昨日' in label for label in labels))
+        node = next(n for n in corrected.graph.nodes if n.update_refs)
+        source = next(s.envelope for s in freeze_analysis_sources(req).sources
+                      if s.envelope.envelope_id == node.evidence_refs[0].source_envelope_id)
+        e = node.evidence_refs[0]
+        self.assertEqual(source.raw_utf8[e.utf8_start:e.utf8_end].decode(), '私は今日資料を調べなかった')
+        withdrawn = self.generate(request(self.with_answer(original,
+            '「私は昨日資料を調べた」は取り消します。'))).artifact
+        self.assertEqual(len(withdrawn.graph.nodes), 1)
+        self.assertNotIn('昨日', withdrawn.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+
+    def test_post_topic_day_does_not_promote_nominal_suffixes_or_finer_times(self):
+        for extension in ('分の', '以前の', '以後の', '以降の', '時点の', '当時の',
+                          '現在の', '中の', '付の', '以来の', '頃の', 'までの',
+                          'からの', '朝の', '午前の', '午後の', '夜の',
+                          '版の', '提出の', '発行の', '仕事の'):
+            for day in ('今日', '昨日'):
+                memo = '私は' + day + extension + '資料を調べた。'
+                with self.subTest(memo=memo):
+                    result = self.generate(request(record(memo=memo)))
+                    if result.artifact:
+                        with self.assertRaises(AnalysisSourceError):
+                            result.artifact.safe_projection(authenticated_owner_scope=OWNER)
+                    else:
+                        self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+
+    def test_post_topic_day_comparison_uses_meaning_not_word_order(self):
+        for before, now in (
+            ('昨日私は資料を調べた。', '私は昨日資料を調べた。'),
+            ('今日私は仕事を続けたい。', '私は今日仕事を続けたいです。'),
+            ('昨日私は資料を調べなかった。', '私は昨日資料を調べなかった。'),
+        ):
+            with self.subTest(now=now):
+                artifact = self.compared(now, before).artifact
+                self.assertEqual(artifact.safe_projection(authenticated_owner_scope=OWNER)
+                                 ['period_comparison']['safe_change_kinds'], [])
+        artifact = self.compared('私は今日資料を調べた。', '私は昨日資料を調べた。').artifact
+        self.assertIn('ROUTE_EVIDENCE_CHANGED', artifact.safe_projection(
+            authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+
     def test_relative_day_aggregation_stays_with_its_own_source(self):
         memo = '今日私は資料を調べた。今日わたしは資料を調べました。'
         artifact = self.generate(request(record(memo=memo), record(2, memo=memo))).artifact
@@ -2093,7 +2232,7 @@ class AnalysisVerticalTests(unittest.TestCase):
             '友人の話です。私は資料を調べた。',
             '「私は資料を調べた」と聞いた。',
             'もし私は資料を調べたなら、安心できる。',
-            '私は昨日、資料を調べた。',
+            '私は明日、資料を調べた。',
             '私は資料を調べた。※',
         ]
         for answer in answers:
@@ -2231,7 +2370,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                     ['nodes'][0]['visible_label'], label)
 
     def test_safe_surface_cannot_drop_modifiers_or_accept_altered_parts(self):
-        for source in ('私は昨日、考えをノートに書いた。',
+        for source in ('私は明日、考えをノートに書いた。',
                        '私は急いで考えをノートに書いた。'):
             with self.subTest(source=source):
                 artifact = self.generate(request(record(memo=source))).artifact

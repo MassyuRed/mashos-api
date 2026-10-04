@@ -106,6 +106,12 @@ _CANONICAL_CONTENT = {(lemma, polarity, time): surface
     if modality == 'fact'
     and not surface.endswith(('ました', 'ませんでした'))}
 _CLAUSE_PREFIX = re.compile(r'^(その後|それから|今日|昨日)[、，\s]*')
+# A post-topic day modifies the finite clause. An explicit の or case
+# particle instead keeps 今日/昨日 inside the written nominal argument.
+_POST_TOPIC_DAY = re.compile(r'(今日|昨日)(?!の|を|に|で|と|は|が|も)[、，\s]*')
+_DAY_EXTENSION = re.compile(
+    r'(?:分|以前|以後|以降|以来|当時|時点|現在|中|付|頃|ごろ|まで|から|より|だけ|'
+    r'朝|昼|夜|晩|夕|午前|午後|早朝|深夜|未明|正午)')
 _COGNITIVE_HOSTS = {value: value for value in (
     '考えてしまう', '思ってしまう', '考えている', '思っている', '考える', '思う')}
 _COGNITIVE_HOSTS['考えちゃう'] = '考えてしまう'
@@ -352,6 +358,27 @@ def _proposition(value: str) -> ObservedProposition | None:
 
 
 def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relative_day='', *, content_only=False, predicate_forms=None):
+    day = _POST_TOPIC_DAY.match(value, body_start)
+    if day is not None:
+        # 昨日分の資料 / 昨日以前の資料 are not evidence that the action
+        # happened yesterday. Finer day/range scopes need their own parse.
+        if _DAY_EXTENSION.match(value, day.end()):
+            return None
+        first_argument = _ARGUMENT.match(value, day.end())
+        if (day.end() == day.end(1) and first_argument is not None
+                and 'の' in first_argument['noun']):
+            # 昨日提出の資料 can describe the material, not the action.
+            # Without a separator this bounded grammar leaves the whole
+            # genitive scope unresolved rather than selecting either reading.
+            return None
+        # Nested cognition and dependent te episodes have their own scope
+        # witnesses. Do not silently promote their day into this host.
+        if content_only or predicate_forms is not None or marker or relative_day:
+            return None
+        relative_day = {'今日': 'TODAY', '昨日': 'YESTERDAY'}[day.group(1)]
+        prefix_parts = [*prefix_parts,
+            ('RELATIVE_DAY_' + relative_day, body_start, day.end())]
+        body_start = day.end()
     inventory = predicate_forms if predicate_forms is not None else (
         _CONTENT_PREDICATES if content_only else _FINITE_PREDICATES)
     for finite, lemma, polarity, modality, time in inventory:
@@ -369,6 +396,10 @@ def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relat
             if argument is None:
                 break
             noun = argument['noun']
+            # A second/unparsed day cannot become a made-up compound noun.
+            # 今日の資料 remains a nominal modifier, not an event date.
+            if re.match(r'(?:今日|昨日)(?!の|$)', noun):
+                break
             if re.search(r'(?:った|いた|した|んだ|ない|たい)$', noun):
                 break
             arguments.append((argument['case'], noun))

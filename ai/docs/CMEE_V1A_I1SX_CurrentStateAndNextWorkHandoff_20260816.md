@@ -14484,3 +14484,20 @@ Mashの「開始した」を受け、u127で指定したAPI配置と新nativeの
 次はTestFlightに新しい版が表示されたら端末を更新し、既存本人sessionで **分析 → わたしマップ** を開く。直近28日に記録のない状態では「現在表示できるわたしマップはありません。」を正常表示する。Apple側processing・tester利用可能・端末導入・本人応答はupload成功だけでは成立しない。今回の空表示修正と、本人の通常入力からの分析生成・保存再表示・期間比較の成功を区別する。検査用の架空入力は求めない。
 
 前提資料・作業規則/Rule18・全体設計/全file地図の既読とfresh blob不変を照合し、current03・最新weekly20261003 §6.6〜6.10・u127運用手順を確認、恒久incidentは今回全文再読した。rootが唯一のwrite owner、補助担当はnativeのread-only確認のみ。LEVEL_1の既承認操作の事後確認と既存4文書/PR説明の同期。今回source/test/SQL/依存変更・test再実行0、DB/env変更・追加deploy/build起動・main/merge・IF/global cutoverなし。STRUCTURE_MAP_DELTA_NONE。配置とnative送信を本人生成復旧/商品受入れへ換算せず、商品0/3・NOT_CLEAR・48%と両PR Draft/open/unmergedを維持する。
+
+
+## 2026-10-04 JST u129 — 主語後の今日／昨日を対象名詞から分離
+
+Mashの「分析構造の内容修正関係を進めて」に従い、u128の実機待ちとは独立した内容修正を実施。今回の完了単位は、既存9動詞の完全な本人節で、主語直後の「今日／昨日」を格付き対象名詞へ誤混入させず、原文の時点・極性・希望を同じ文章／図へ保持すること。root華恋が唯一の実装・検証・GitHub write owner、補助agentはread-only原因調査と独立reviewを担当した。Rule18 LEVEL_2の既存Analysis実装内の限定修正。全体設計・01A/B/C全file地図、fresh両repository tree、前提資料／作業規則、weekly20261003 §5.1〜5.6・current03／canonical04／06・u128を確認。保存System Contextは2026-08の別refのためcurrent判定へ流用せず、正本の直接読取fallbackを使用した。追加費用・Mash操作は0。
+
+変更前の合成実出力で「私は昨日資料を調べた」が「昨日資料を調べる（実行済み）」となり、relative_dayが空で対象名詞に日語を吸収する問題を再現。既存intent_compilerの有限節解析で、主語後の日語と区切りを原文source_partsの独立範囲へ追加し、relative_dayへ保持した。原文の書換えなし。昨日＋現在の希望を過去の希望へ読み替えず、否定・過去の希望も元の有限述語どおりに扱う。前置型「昨日私は…」と主語後型「私は昨日…」の語順差だけで期間差を出さない。
+
+「今日の資料」「昨日を記録した」の明示的な名詞修飾／格は日付にしない。独立reviewで見つけた「昨日分の資料」「昨日以前の資料」「昨日版の資料」「昨日提出の資料」の誤日付化は再現して補正。時間接尾・範囲・日の細分と、日語直後に区切りなしで続く「…の…」名詞句は未解釈として保留する。この限定grammarでは「昨日仕事の資料」のような正当な解釈が可能な文も保留する制約がある。読点／空白で区切る「昨日、仕事の資料」は保持する。複数日語・認識内容の埋込み・te従属のaction/change節へ日語を新規許可しない。未対応範囲を名詞化して通さない。場面・担当の主語後日語や主語省略一般の理解は今回対象外。
+
+検証：Python 3.12.14、既存Analysis vertical **131 tests PASS**（既存125＋新規6）。原文のscalar／UTF-8／hash、source_parts全範囲と非重複、日語改変拒否、否定／希望／当時、名詞修飾、未対応範囲、補足の独立出典、訂正・撤回、時点非継承、語順に依存しない期間比較を確認した。従来未対応だった「私は昨日、…」2例は同じ原文を新規positive・出典確認へ移し、旧modifier拒否検査は「私は明日、…」で保持。保護すべき原文意味の削除を許す変更ではない。
+
+新しい合成6本文（昨日の行動／否定、今日の希望、複数の格、名詞修飾、前置／主語後の等価比較）をrootが全文確認。変更していないRNのwatashiMapV2Contractへ実生成DTOを渡し、6例すべての全文・artifact identity・node順・edge配列がbackendと一致した。これはNodeの実表示model検証であり、今回React component suiteの再実行・native実機確認は行っていない。独立read-only最終reviewは同scopeのblockerなし。機械成功を商品受入れへ換算しない。
+
+変更はAPI source1／既存test1／既存handoff1、Cocolon既存current03／canonical04／06の3文書。STRUCTURE_MAP_DELTA_NONE：既存Analysis compilerの内部解釈のみでowner・API・DB・DTO・RN経路の変更なし。共有Emlis／Piece作者・SQL・依存・実DB／個人データ・env・deploy・build・main／merge・IFは変更／実行0。商品0/3・NOT_CLEAR・48%、Draft/open/unmergedを維持。primary outcomeはTECHNICAL_CREDIT。反映commitはPR3／30のu129先頭を参照。
+
+今回の修正は未配置。最後の確認済み稼働APIはu128の1a42b9e…、TestFlightは6401送信成功のまま継承し、本人端末の正常空表示・通常入力からの生成／保存再表示／比較は未確認。内容修正の次候補は同じ主語後日語が場面／担当から保留される境界を既存shared witness内で扱えるかの確認であり、今回自動着手しない。実機確認の成立を内容検査で代用しない。
