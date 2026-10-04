@@ -14120,3 +14120,9 @@ DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。Mashの「ありがとう�
 u106/u107はlocal候補、計9 fileの累積差分。公開反映先はMassyuRed/mashos-api PR3の既存agent branchとMassyuRed/Cocolon PR30の既存agent branchで、publicなsource/test/docsの差分になる。Mashの明示公開許可後にfresh head/preimage照合、non-force反映、remote全文とchanged paths照合を行う。実DB/配置/build/main/mergeなし。u102〜u107修正版は未配置、稼働API315f5b5…/TestFlight6201と実機OKのMash報告、商品0/3・NOT_CLEAR・48%を継承し再採点しない。
 
 次の直接内容候補は共有pairが認定する「てから」のte形行動を、全文の時制と順序を保持して消費できるかの限定修正。たらの条件形、3節contrast、右端の感情変化、一般場面/役割、annotations/conflict/比較/IFは未完了。今回を分析全体の完成や公開許可に読み替えない。
+
+## 2026-10-04 JST u107 — 公開PR反映完了
+
+Mashは、確認用累積9 file差分を公開MassyuRed/mashos-api PR3・MassyuRed/Cocolon PR30へ公開・反映する具体的な相談に「いいよ、進めて」と明示許可した。通常git pushは承認審査ではなくHTTPS認証未設定で停止したため、認証済みGitHub connectorで同一内容を既存branchへnon-force反映した。API550f33f75828638300b020e9c77f8e47606f1d4f、Cocolon8e36e8e2f5066c1bd09fbd3263aa4d9802215a65。両方のremote treeが承認済みlocal treeと一致し、最新PR headと変更path（API5/Cocolon4、既存fileの変更のみ）を照合した。
+
+先のu106/u107節の未反映記録は当時の履歴。この追記時点では公開PR反映済み、未merge・未デプロイである。current00/03/canonical04とPR説明も現在状態へ同期する。製品sourceは104検査成功・6合成RN本文一致を確認した候補から変更していない。稼働API315f5b5…/TestFlight6201、商品0/3・NOT_CLEAR・48%を維持し、DB/build/main/merge操作なし。
