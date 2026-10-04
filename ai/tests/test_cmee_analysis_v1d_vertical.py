@@ -2,6 +2,7 @@
 from dataclasses import FrozenInstanceError, replace
 import hashlib
 import json
+import re
 import unittest
 from unittest.mock import patch
 
@@ -2147,6 +2148,109 @@ class AnalysisVerticalTests(unittest.TestCase):
         with self.assertRaises(AnalysisSourceError):
             replace(artifact, graph=replace(artifact.graph, nodes=(forged,))).safe_projection(
                 authenticated_owner_scope=OWNER)
+
+    def test_event_topic_comma_preserves_finite_meaning_and_original_evidence(self):
+        for literal in (
+            '私は、職場にいた', '僕は，職場にいました',
+            'わたしは、 職場にいなかった', '自分は、\u3000職場にいませんでした',
+            '私は、会議の司会を担当した', '僕は，会議を担当しました',
+            'わたしは、 会議を担当しなかった', '自分は、\u3000会議を担当しませんでした',
+            '私は、昨日職場にいた', '私は、今日、会議の司会を担当した',
+            '昨日、私は、職場にいた', 'その後、私は、会議を担当した',
+        ):
+            with self.subTest(literal=literal):
+                req = request(record(memo=literal + '。'))
+                artifact = self.generate(req).artifact
+                baseline = self.generate(request(record(memo=re.sub(r'は[、，][ \u3000]*', 'は', literal) + '。'))).artifact
+                self.assertIsNotNone(artifact)
+                node, = artifact.graph.nodes
+                e, = node.evidence_refs
+                source = freeze_analysis_sources(req).sources[0].envelope
+                raw = source.raw_utf8[e.utf8_start:e.utf8_end]
+                field = source.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                self.assertEqual(raw.decode(), literal)
+                self.assertEqual(field[e.scalar_start:e.scalar_end], literal)
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                self.assertEqual([i for _, a, b in node.proposition.source_parts for i in range(a, b)],
+                                 list(range(len(literal))))
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                self.assertEqual(text['text'], baseline.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+                self.assertEqual(text['projection_of'], visual['projection_of'])
+                self.assertEqual((node.node_kind, node.polarity, node.modality, node.temporal_scope),
+                    tuple(getattr(baseline.graph.nodes[0], k) for k in
+                          ('node_kind', 'polarity', 'modality', 'temporal_scope')))
+                broken = replace(node.proposition, source_parts=tuple(
+                    (role, a, b - 1 if role == 'SELF_TOPIC' else b)
+                    for role, a, b in node.proposition.source_parts))
+                with self.assertRaises(AnalysisSourceError):
+                    replace(artifact, graph=replace(artifact.graph, nodes=(replace(node,
+                        proposition=broken),))).safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_event_topic_comma_keeps_subject_scope_and_shared_witness_boundaries(self):
+        for literal in (
+            '職場にいた', '友人は、職場にいた', '私は、友人は職場にいた',
+            '私は、\n職場にいた', '私は、\r\n会議を担当した', '私は、。職場にいた',
+            '私は、、職場にいた', '私は、\t会議を担当した',
+            '私は、明日職場にいた', '私は、今日昨日会議を担当した',
+            '私は、昨日朝職場にいた', '私は、昨日開催の会議を担当した',
+            '今日、私は、昨日職場にいた', 'その後、私は、今日会議を担当した',
+            '私は、今日の会議を担当した', '私は、職場にいる', '私は、会議を担当したい',
+            '私は、職場にいたそうだ', '私は、職場にいたと聞いた',
+            '私は、職場にいた夢を見た', '私は、会議を担当したなら',
+            '「私は、職場にいた」', '私は、職場にいた？',
+            '私は、記録を担当した',
+        ):
+            with self.subTest(literal=literal):
+                self.assertIsNone(self.generate(request(record(memo=literal + '。'))).artifact)
+        # The event witness stays memo-only; memo_action cannot replace it.
+        artifact = self.generate(request(record(memo='私は資料を調べた。',
+            action='私は、職場にいた。'))).artifact
+        self.assertEqual([n.node_kind for n in artifact.graph.nodes], ['ACTION_OR_NONACTION'])
+        artifact.safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_event_topic_comma_keeps_order_and_period_comparison_semantics(self):
+        route = '私は、職場にいた。その後、私は、会議を担当した。それから、私は、資料を調べた。'
+        artifact = self.generate(request(record(memo=route))).artifact
+        self.assertEqual([n.node_kind for n in artifact.graph.nodes], ['SCENE', 'ROLE', 'ACTION_OR_NONACTION'])
+        self.assertEqual(len(artifact.graph.edges), 2)
+        self.assertEqual(artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'],
+            self.generate(request(record(memo=route.replace('は、', 'は')))).artifact
+                .safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+        for before, now in (('私は職場にいた。', '僕は、職場にいました。'),
+                            ('私は今日、会議を担当しなかった。', '私は、今日、会議を担当しませんでした。')):
+            compared = self.compared(now, before).artifact
+            self.assertEqual(compared.period_comparison.change_claims, ())
+            self.assertEqual(compared.safe_projection(authenticated_owner_scope=OWNER)
+                             ['period_comparison']['state'], 'COMPARABLE')
+        changed = self.compared('私は、職場にいなかった。', '私は職場にいた。').artifact
+        self.assertIn('ROUTE_EVIDENCE_CHANGED', changed.safe_projection(authenticated_owner_scope=OWNER)
+                      ['period_comparison']['safe_change_kinds'])
+
+    def test_event_topic_comma_supplements_and_corrections_keep_independent_evidence(self):
+        for old, new in (('私は、職場にいた', '僕は、職場にいませんでした'),
+                         ('私は、会議を担当した', '僕は、会議を担当しませんでした')):
+            original = record(memo=old + '。私は資料を調べた。')
+            answer = '「' + old + '」ではなく「' + new + '」です。'
+            req = request(self.with_answer(original, answer))
+            artifact = self.generate(req).artifact
+            node = next(n for n in artifact.graph.nodes if n.node_kind in {'SCENE', 'ROLE'})
+            self.assertEqual(node.polarity, 'negative')
+            source = next(s.envelope for s in freeze_analysis_sources(req).sources
+                          if s.envelope.source_role == 'SUPPLEMENTAL_ANSWER')
+            for e in node.evidence_refs:
+                self.assertEqual(e.source_envelope_id, source.envelope_id)
+                raw = source.raw_utf8[e.utf8_start:e.utf8_end]
+                self.assertEqual(raw.decode(), new)
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+            artifact.safe_projection(authenticated_owner_scope=OWNER)
+            withdrawn = self.generate(request(self.with_answer(original, '「' + old + '」は取り消します。'))).artifact
+            self.assertEqual([n.node_kind for n in withdrawn.graph.nodes], ['ACTION_OR_NONACTION'])
+            supplemented = self.generate(request(self.with_answer(record(memo='私は資料を調べた。'), new + '。'))).artifact
+            self.assertEqual(len(supplemented.graph.nodes), 2)
+            supplemented.safe_projection(authenticated_owner_scope=OWNER)
+            bad = '「' + old + '」ではなく「友人は、職場にいた」です。'
+            self.assertIsNone(self.generate(request(self.with_answer(original, bad))).artifact)
 
     def test_post_topic_event_days_keep_kind_polarity_and_full_source(self):
         cases = (

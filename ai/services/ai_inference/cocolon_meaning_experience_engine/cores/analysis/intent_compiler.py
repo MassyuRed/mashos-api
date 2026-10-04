@@ -134,7 +134,7 @@ _FEELING_FORMS = {'安心した': '安心する', '安心しました': '安心�
     '落ち着いた': '落ち着く',
     '嬉しかった': '嬉しい', 'うれしかった': 'うれしい'}
 _PAST_EVENT_TOPIC = (
-    r'(?P<subject>私|僕|わたし|自分)は'
+    r'(?P<subject>私|僕|わたし|自分)は(?:[、，][ \u3000]*)?'
     r'(?:(?P<day>今日|昨日)(?!の|を|に|で|と|は|が|も)(?P<day_separator>[、，\s]*))?')
 _PAST_PRESENCE = re.compile(
     _PAST_EVENT_TOPIC + r'(?P<noun>' + _NOMINAL

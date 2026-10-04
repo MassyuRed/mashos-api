@@ -14567,3 +14567,19 @@ rootが合成8本文（行動、否定、希望、日語＋明示順序、行動
 変更はAPI既存compiler1／test2／handoff1、Cocolon既存current03／設計04／06。STRUCTURE_MAP_DELTA_NONE：既存Analysis compiler内の句読点解釈のみで、共有Emlis／Piece作者・API／DTO／SQL／DB／RN経路・依存仕様の変更なし。env／deploy／build／main／merge／IF操作0。Draft/open/unmerged、商品0/3・NOT_CLEAR・48%を維持。今回コードは未配置。最後の確認済み稼働API1a42b9e…／TestFlight6401送信成功を継承し、本人生成・保存再表示・比較の実機成功は未確認。
 
 残差：明示本人の場面／担当で主語直後に読点がある形式は今回対象外。漢字・カタカナ混在名詞（仕事メモ／メモ帳）も未解析で、主語省略の本人補完は現契約に含めない。次は同じ読点が場面／担当で保留される範囲を、既存shared witnessと原文境界を保って修正できるか確認する。実機確認と配置の残件を内容検査で代用しない。
+
+## 2026-10-05 JST u134 — 場面・担当の主語直後の読点を保持
+
+Mashの内容修正継続指示に従い、u133で残した本人の過去の場面／担当を進めた。前提資料・作業規則、確認済み全体設計／01A・B・C全file地図と分析owner、最新weekly20261003、current03／設計04／06／API handoffを継承・照合。恒久incidentは今回全文再読した。fresh開始headはAPI2076cdcea2a15586b82552c66f0f0e5bd65a73f8／Cocolon7edf5c076aa0d69825a55d98b865d5bdf96538b3。Rule18 LEVEL_2の既存Analysis内部補正。root華恋のみが判断・実装・検証・GitHub writeを実施し、今回はsubagent／独立reviewを実施していない。
+
+実CMEEで「私は、職場にいた」「僕は，職場にいませんでした」「私は、今日、会議の司会を担当した」「私は、会議の司会を担当しなかった」の4例がUNAVAILABLEとなることを確認。_PAST_EVENT_TOPICの明示SELF主語部分だけに、隣接した読点1個と直後の半角／全角spaceを追加した。既存のSELF_TOPIC範囲へ含め、原文を加工せず場面・担当・否定・時点を文章／図へ残す。場所から職業、担当から仕事の完了は推定しない。
+
+既存の完全な有限節、共有event witness、場面のrequired／担当のrequired-or-should、memo出典、引用／報告／夢等のscope、日語重複・未対応時点・曖昧な名詞修飾、改行／句点／tab／重複読点の境界を維持。読点を取り除いて未知の範囲を読めた扱いにせず、safe表示時の命題再解析も変更しない。別parserの保護意向／認識／te節等は今回対象外。
+
+Python3.12.14でvertical156／storage42／saved-period16、計214 tests PASS。新規はvertical4method・保存読取1method。肯定／否定8有限形、4主語、読点2種、半角／全角space、日語・接続語、原文scalar／UTF-8／hash、source_parts全文非重複被覆と改変拒否、第三者／主語省略／全文scope／shared witness境界、場面→担当→行動の順序、比較差0と否定差維持、補足独立出典・訂正／撤回を確認。実CMEEで生成したsafe保存rowを合成RPCでreadし、再生成なしの同一本文・図・identityを確認。実DBの保存往復ではない。既存209検査の期待変更0。
+
+rootが合成6本文（否定場面、時点付き担当、否定担当、三段階、場所の明示訂正、同義比較）を全文読取し、変更していない実RN表示modelへDTOを渡した。全文／artifact identity／node順／edge／unknown対象／注記が一致。React component suite／native／本人入力／実DBの今回検証ではない。機械成功を商品受入れへ換算しない。
+
+API既存compiler1／test2／handoff1、Cocolon既存current03／設計04／06を更新。STRUCTURE_MAP_DELTA_NONE：Analysis内部の句読点解釈だけを補正し、共有Emlis／Piece作者・API／DTO／DB／SQL／RN経路・依存仕様は不変。env／deploy／build／main／merge／IF操作0。Draft/open/unmerged、商品0/3・NOT_CLEAR・48%を維持。u129〜u134は未配置。最後の確認済み稼働API1a42b9e…／TestFlight6401送信成功を継承し、本人生成・保存再表示・比較の実機成功は未確認。
+
+次の内容候補は、主語が明示されていても「メモ帳」「仕事メモ」等の漢字・カタカナ混在名詞で未解析になる範囲。既存の名詞と述語の境界を保ったまま扱えるかを調べる。主語省略を本人へ補う変更や未知内容の推定を自動で含めない。配置・本人実機の残件は内容検査とは別に保持する。

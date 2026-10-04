@@ -505,6 +505,19 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('evidence_refs', encoded)
         self.assertEqual(writes[0]['p_guard'], GUARD)
 
+    async def test_saved_event_topic_commas_keep_scene_role_and_text_without_regeneration(self):
+        fx = fixture('私は、職場にいた。僕は，今日、会議を担当しませんでした。')
+        row = fx['row']
+        with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))), \
+                patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+            reread = await service.read_saved(OWNER)
+        saved, = reread['items']
+        self.assertEqual(saved['content_text'], row['content_text'])
+        self.assertEqual(saved['content_json']['watashiMap'], row['content_json']['watashiMap'])
+        self.assertEqual([n['visible_label'] for n in saved['content_json']['watashiMap']['nodes']],
+            ['職場にいた（記録された場面）', 'この記述時点の今日：会議を担当しなかった（記録された担当）'])
+        self.assertNotIn('私は', json.dumps(fx['private'], ensure_ascii=False))
+
     async def test_partial_map_with_unparsed_original_is_saved_and_read_without_regeneration(self):
         original = dict(self.fx['original'], memo='私は資料を明日ノートに書いた。私は記録を残した。')
         writes = []
