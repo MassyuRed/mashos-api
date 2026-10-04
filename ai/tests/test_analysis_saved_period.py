@@ -85,6 +85,7 @@ class SavedPeriodTests(unittest.IsolatedAsyncioTestCase):
         self.on_scan = None
         self.range_override = None
         self.read_calls = []
+        self.period_ids = None
         self.auth = AsyncMock(return_value=OWNER)
         async def tier(user_id, **kwargs):
             self.assertEqual(user_id, OWNER)
@@ -106,13 +107,17 @@ class SavedPeriodTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(params['user_id'], 'eq.' + OWNER)
         self.assertEqual(params['order'], 'created_at.asc,id.asc')
         self.assertEqual(params['limit'], '101')
-        self.assertEqual(params['and'], '(created_at.gte.2026-10-01T00:00:00+00:00,created_at.lt.2026-10-03T00:00:00+00:00)')
+        if self.period_ids is None:
+            self.assertEqual(params['and'], '(created_at.gte.2026-10-01T00:00:00+00:00,created_at.lt.2026-10-03T00:00:00+00:00)')
+        else:
+            self.assertIn(params['and'], self.period_ids)
         self.assertEqual(prefer, 'count=exact')
         self.scans += 1
         if self.on_scan:
             self.on_scan(self.scans)
-        count = len(self.ids)
-        return httpx.Response(200, json=[{'id': i} for i in self.ids], headers={
+        ids = self.ids if self.period_ids is None else self.period_ids[params['and']]
+        count = len(ids)
+        return httpx.Response(200, json=[{'id': i} for i in ids], headers={
             'content-range': self.range_override if self.range_override is not None else f'0-{max(0, count-1)}/{count}',
         })
 
@@ -155,6 +160,66 @@ class SavedPeriodTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(private, body)
         self.assertEqual(self.scans, 2)
         self.assertEqual(self.auth.await_count, 2)
+
+    def setup_previous_period(self):
+        before = snapshot(3)
+        before['original']['created_at'] = '2026-09-30T01:00:00'
+        before['original']['memo'] = '私は家族を守りたい。'
+        old_id = before['original']['id']
+        self.rows[old_id] = before
+        self.period_ids = {
+            '(created_at.gte.2026-10-01T00:00:00+00:00,created_at.lt.2026-10-03T00:00:00+00:00)': self.ids,
+            '(created_at.gte.2026-09-29T00:00:00+00:00,created_at.lt.2026-10-01T00:00:00+00:00)': [old_id],
+        }
+        return old_id, dict(previous_period_start='2026-09-29T00:00:00Z', previous_period_end=START)
+
+    async def test_comparison_preview_loads_and_rechecks_both_authenticated_periods(self):
+        old_id, bounds = self.setup_previous_period()
+        result = await self.generate(**bounds)
+        self.assertEqual(result['status'], 'GENERATED', result)
+        self.assertEqual(result['meta']['period_comparison']['state'], 'COMPARABLE')
+        self.assertIn('期間比較：', result['content_text'])
+        self.assertEqual((self.scans, self.auth.await_count), (4, 4))
+        self.assertEqual(self.read_calls.count(old_id), 2)
+        self.assertEqual(set(self.read_calls), set(self.rows))
+        public = json.dumps(result, ensure_ascii=False)
+        for private in (old_id, OWNER, 'source_set_ref', 'previous_artifact', 'comparison_id', 'evidence_refs'):
+            self.assertNotIn(private, public)
+
+    async def test_comparison_preview_rejects_changed_previous_source_and_access(self):
+        for mutation in ('edited', 'deleted', 'added', 'answer', 'tier', 'current_edited'):
+            with self.subTest(mutation=mutation):
+                self.rows = {s['original']['id']: s for s in (snapshot(1), snapshot(2))}
+                self.ids = list(self.rows)
+                self.scans, self.tier = 0, SubscriptionTier.PLUS
+                old_id, bounds = self.setup_previous_period()
+                def change(scan):
+                    if mutation == 'current_edited':
+                        if scan == 3: self.rows[self.ids[0]]['original']['memo'] = '私は生活を守りたい。'
+                        return
+                    if scan != 4: return
+                    previous_ids = list(self.period_ids.values())[1]
+                    if mutation == 'edited': self.rows[old_id]['original']['memo'] = '私は生活を守りたい。'
+                    if mutation == 'deleted': previous_ids.clear()
+                    if mutation == 'added': previous_ids.append(str(UUID(int=999)))
+                    if mutation == 'answer': self.rows[old_id] = with_answer(self.rows[old_id], '私は生活を守りたい。')
+                    if mutation == 'tier':
+                        self.tier = SubscriptionTier.FREE
+                        for row in self.rows.values(): row['tier'] = 'free'
+                self.on_scan = change
+                result = await self.generate(**bounds)
+                self.assertEqual(result['status'], 'UNAVAILABLE', result)
+                self.assertNotIn('meta', result)
+                self.assertNotIn('content_text', result)
+        self.on_scan = None
+
+    async def test_comparison_preview_requires_complete_bounds_and_previous_access(self):
+        self.assertEqual((await self.generate(previous_period_start=START))['reason_codes'],
+                         ['analysis_comparison_period_incomplete'])
+        self.assertEqual(self.scans, 0)
+        _, bounds = self.setup_previous_period()
+        bounds['previous_period_start'] = '2024-01-01T00:00:00Z'
+        self.assertEqual((await self.generate(**bounds))['reason_codes'], ['analysis_period_not_retained'])
 
     async def test_saved_answer_updates_meaning_without_question_or_generated_body(self):
         self.rows[self.ids[0]] = with_answer(self.rows[self.ids[0]])

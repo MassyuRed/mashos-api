@@ -35,6 +35,127 @@ class AnalysisVerticalTests(unittest.TestCase):
     def generate(self, value):
         return MeaningExperienceEngine().generate(value)
 
+    def compared(self, current, previous):
+        old = replace(request(record(3, memo=previous, created_at='2026-09-30T01:00:00Z')),
+            period_start='2026-09-29T00:00:00Z', period_end='2026-10-01T00:00:00Z')
+        return self.generate(replace(request(record(memo=current)), comparison_previous_request=old))
+
+    def test_period_comparison_ignores_ids_inflection_order_and_dependent_proof_form(self):
+        for before, now in (
+            ('私は家族を守りたい。', '僕は家族を守りたいです。'),
+            ('私は資料を調べた後、疑問が減った。', '私は資料を調べてから、疑問が減った。'),
+            ('私は家族を守りたい。私は仕事を続けたい。', '私は仕事を続けたい。私は家族を守りたい。'),
+        ):
+            with self.subTest(before=before):
+                result = self.compared(now, before)
+                self.assertEqual(result.status, EngineStatus.GENERATED)
+                p = result.artifact.safe_projection(authenticated_owner_scope=OWNER)['period_comparison']
+                self.assertEqual(p, {'state': 'COMPARABLE', 'reason_codes': [], 'safe_change_kinds': []})
+                self.assertNotEqual(result.artifact.reference, result.previous_artifact.reference)
+                self.assertNotEqual(result.artifact.source_set_ref, result.previous_artifact.source_set_ref)
+        old = replace(request(record(3, memo='私は家族を守りたい。', created_at='2026-09-30T01:00:00Z')),
+            period_start='2026-09-29T00:00:00Z', period_end='2026-10-01T00:00:00Z')
+        result = self.generate(replace(request(record(memo='私は家族を守りたい。'),
+            record(2, memo='私は家族を守りたい。')), comparison_previous_request=old))
+        self.assertEqual(result.artifact.period_comparison.change_claims, ())
+        self.assertIn('記録の件数や、読み取れていない内容の変化は判断していません',
+            result.artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+
+    def test_period_comparison_detects_written_semantics_without_rating_the_person(self):
+        cases = (
+            ('私は資料を調べた。', '私は資料を調べなかった。', ['ROUTE_EVIDENCE_CHANGED']),
+            ('私は仕事を続けた。', '私は仕事を続けたい。', ['ROUTE_EVIDENCE_CHANGED', 'UNKNOWN_SCOPE_CHANGED']),
+            ('私は仕事を続けたい。', '私は仕事を続けたいけれど、私はつらい。', ['ANNOTATION_EVIDENCE_CHANGED']),
+            ('私は資料を調べた。', '私は資料を調べた。まだよくわからない。', ['UNKNOWN_SCOPE_CHANGED']),
+            ('私は資料を調べた。', '私は資料を調べた。私は資料を調べなかった。',
+                ['ROUTE_EVIDENCE_CHANGED', 'UNKNOWN_SCOPE_CHANGED', 'CONFLICT_STATE_CHANGED']),
+            ('私は資料を調べた。その後私は記録を残した。',
+                '私は記録を残した。その後私は資料を調べた。', ['ROUTE_EVIDENCE_CHANGED']),
+        )
+        for before, now, kinds in cases:
+            with self.subTest(before=before, now=now):
+                artifact = self.compared(now, before).artifact
+                p = artifact.safe_projection(authenticated_owner_scope=OWNER)['period_comparison']
+                self.assertEqual(p['safe_change_kinds'], kinds)
+                self.assertIn('改善・悪化や原因を示すものではありません',
+                    artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+
+    def test_period_comparison_has_inline_identity_and_evidence_without_public_locators(self):
+        result = self.compared('私は生活を守りたい。', '私は家族を守りたい。')
+        current, old = result.artifact, result.previous_artifact
+        c = current.period_comparison
+        self.assertEqual((c.current_artifact_ref, c.current_source_set_ref,
+            c.previous_artifact_ref, c.previous_source_set_ref),
+            (current.reference, current.source_set_ref, old.reference, old.source_set_ref))
+        current_ids = {e.evidence_id for n in current.graph.nodes for e in n.evidence_refs}
+        old_ids = {e.evidence_id for n in old.graph.nodes for e in n.evidence_refs}
+        for claim in c.change_claims:
+            self.assertTrue(claim.evidence_refs)
+            self.assertTrue(set(claim.evidence_refs) <= current_ids | old_ids)
+            self.assertTrue(set(claim.evidence_refs) & current_ids)
+            self.assertTrue(set(claim.evidence_refs) & old_ids)
+            self.assertEqual((claim.current_ref, claim.previous_ref), (current.reference, old.reference))
+        public = json.dumps(current.safe_projection(authenticated_owner_scope=OWNER))
+        for private in (OWNER, old.reference, old.source_set_ref, c.comparison_id, *current_ids, *old_ids):
+            self.assertNotIn(private, public)
+        with self.assertRaises(AnalysisSourceError):
+            current.safe_projection(authenticated_owner_scope='someone-else')
+
+    def test_period_comparison_requires_equal_adjacent_nonoverlapping_windows(self):
+        from datetime import timedelta
+        from cocolon_meaning_experience_engine.cores.analysis.source_adapter import _time
+        for start, end, reason in (
+            ('2026-09-28T00:00:00Z', '2026-10-01T00:00:00Z', 'PERIOD_LENGTH_MISMATCH'),
+            ('2026-09-30T00:00:00Z', '2026-10-02T00:00:00Z', 'PERIOD_OVERLAP'),
+            ('2026-10-03T00:00:00Z', '2026-10-05T00:00:00Z', 'PREVIOUS_PERIOD_NOT_EARLIER'),
+            ('2026-09-28T00:00:00Z', '2026-09-30T00:00:00Z', 'PERIOD_NOT_ADJACENT'),
+        ):
+            with self.subTest(reason=reason):
+                old = replace(request(record(3, created_at=(_time(start) + timedelta(hours=1)).isoformat())),
+                    period_start=start, period_end=end)
+                artifact = self.generate(replace(request(record()), comparison_previous_request=old)).artifact
+                c = artifact.period_comparison
+                self.assertEqual(c.comparability_state, 'NOT_COMPARABLE')
+                self.assertIn(reason, c.reason_codes)
+                self.assertEqual(c.change_claims, ())
+                self.assertIn('比較できません', artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+        # Equivalent UTC bounds expressed in JST are still adjacent.
+        old = replace(request(record(3, created_at='2026-09-30T01:00:00Z')),
+            period_start='2026-09-29T09:00:00+09:00', period_end='2026-10-01T09:00:00+09:00')
+        self.assertEqual(self.generate(replace(request(record()), comparison_previous_request=old))
+            .artifact.period_comparison.comparability_state, 'COMPARABLE')
+        same_id = replace(old, members=(record(created_at='2026-09-30T01:00:00Z'),))
+        self.assertIn('SHARED_RECORD_IDENTITY', self.generate(replace(request(record()),
+            comparison_previous_request=same_id)).artifact.period_comparison.reason_codes)
+
+    def test_period_comparison_rejects_other_owner_nested_or_unavailable_previous_source(self):
+        old = replace(request(record(3, created_at='2026-09-30T01:00:00Z')),
+            period_start='2026-09-29T00:00:00Z', period_end='2026-10-01T00:00:00Z')
+        for previous in (replace(old, authenticated_owner_scope='someone-else'),
+                replace(old, comparison_previous_request=old), {'text': TEXT},
+                replace(old, locale='en-US'), replace(old, members=()),
+                replace(old, members=(replace(old.members[0], record_state='DELETED'),))):
+            with self.subTest(previous_type=type(previous).__name__):
+                result = self.generate(replace(request(record()), comparison_previous_request=previous))
+                self.assertIsNone(result.artifact)
+                self.assertIsNone(result.previous_artifact)
+                self.assertNotEqual(result.status, EngineStatus.GENERATED)
+
+    def test_period_comparison_uses_corrected_previous_sources_and_rejects_broken_binding(self):
+        base = record(3, memo='私は家族を守りたい。私は記録を残した。', created_at='2026-09-30T01:00:00Z')
+        old = replace(request(self.with_answer(base,
+            '「私は家族を守りたい」ではなく「私は生活を守りたい」です。')),
+            period_start='2026-09-29T00:00:00Z', period_end='2026-10-01T00:00:00Z')
+        artifact = self.generate(replace(request(record(memo='私は生活を守りたい。私は記録を残した。')),
+            comparison_previous_request=old)).artifact
+        self.assertEqual(artifact.period_comparison.change_claims, ())
+        for changes in ({'current_artifact_ref': 'artifact:wrong@1'},
+                {'current_source_set_ref': 'wrong'}, {'previous_artifact_ref': artifact.reference},
+                {'comparability_state': 'NOT_COMPARABLE'}, {'reason_codes': ('private-raw-text',)}):
+            with self.subTest(changes=changes), self.assertRaises(AnalysisSourceError):
+                replace(artifact, period_comparison=replace(artifact.period_comparison, **changes))\
+                    .safe_projection(authenticated_owner_scope=OWNER)
+
     def test_protective_wish_preserves_explicit_object_and_full_source(self):
         for subject, noun, ending in (('私', '家族', '守りたい'),
                 ('僕', '生活', '守りたいです'), ('わたし', '家族の時間', '守りたい'),

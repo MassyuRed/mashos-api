@@ -3333,7 +3333,9 @@ MYPROFILE_LATEST_PERIOD = str(os.getenv("MYPROFILE_LATEST_PERIOD", "28d") or "28
 
 
 async def prepare_saved_analysis_observed_map(authorization: _Optional[str], *,
-        period_start: str, period_end: str, report_mode: str) -> _Dict[str, _Any]:
+        period_start: str, period_end: str, report_mode: str,
+        previous_period_start: _Optional[str] = None,
+        previous_period_end: _Optional[str] = None) -> _Dict[str, _Any]:
     """Read-only V2 generation from authenticated saved inputs.
 
     Intentionally separate from the legacy builder (also called by /mymodel,
@@ -3346,10 +3348,21 @@ async def prepare_saved_analysis_observed_map(authorization: _Optional[str], *,
     from cocolon_meaning_experience_engine import MeaningExperienceEngine
     from cocolon_meaning_experience_engine.contracts import EngineStatus
     from cocolon_meaning_experience_engine.cores.analysis.source_adapter import AnalysisSourceError
+    from dataclasses import replace
     try:
+        if (previous_period_start is None) != (previous_period_end is None):
+            raise AnalysisSavedSourceError('analysis_comparison_period_incomplete')
         saved = await load_analysis_saved_period(authorization, period_start=period_start,
             period_end=period_end, report_mode=report_mode)
-        outcome = await _asyncio.to_thread(MeaningExperienceEngine().generate, saved.request)
+        previous = None
+        request = saved.request
+        if previous_period_start is not None:
+            previous = await load_analysis_saved_period(authorization,
+                period_start=previous_period_start, period_end=previous_period_end, report_mode=report_mode)
+            if previous.subscription_tier != saved.subscription_tier:
+                raise AnalysisSavedSourceError('analysis_saved_source_changed')
+            request = replace(request, comparison_previous_request=previous.request)
+        outcome = await _asyncio.to_thread(MeaningExperienceEngine().generate, request)
         if outcome.status != EngineStatus.GENERATED or outcome.artifact is None:
             return {'status': 'UNAVAILABLE', 'reason_codes': list(outcome.reason_codes)}
         projection = outcome.artifact.safe_projection(
@@ -3357,6 +3370,8 @@ async def prepare_saved_analysis_observed_map(authorization: _Optional[str], *,
         text = outcome.artifact.safe_text_projection(
             authenticated_owner_scope=saved.request.authenticated_owner_scope)
         await recheck_analysis_saved_period(authorization, saved)
+        if previous is not None:
+            await recheck_analysis_saved_period(authorization, previous)
         return {'status': 'GENERATED', 'report_mode': report_mode,
                 'content_text': text['text'], 'meta': projection}
     except AnalysisSavedSourceError as exc:

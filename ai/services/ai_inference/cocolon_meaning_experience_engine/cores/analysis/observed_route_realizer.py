@@ -13,7 +13,8 @@ from ...contracts import EngineStatus
 from .intent_compiler import (ObservedGraph, compile_observed_graph, _proposition,
                               _CANONICAL_CONTENT, _RESULT_STEMS, _CHANGE_PAST,
                               _FEELING_PAST, _te_action_proposition, _burden_predicate,
-                              _protective_wish_proposition, _proposition_meaning)
+                              _protective_wish_proposition, _proposition_meaning,
+                              PeriodComparison, compare_period_meaning)
 from .source_adapter import (
     AnalysisObservedMapRequest, AnalysisSourceError, AnalysisSourceMember,
     freeze_analysis_sources,
@@ -31,6 +32,36 @@ BURDEN_LABELS = {predicate: 'この希望と対比して、' + predicate
     + 'と記述されています。原因や続いている期間は確定していません。'
     for predicate in ('つらい', '苦しい')}
 PROTECTIVE_LABEL = '守りたいという意向の記録です。実際に守れているかは確定していません。'
+COMPARISON_CHANGES = {
+    'ROUTE_EVIDENCE_CHANGED': '読み取れた内容・つながり',
+    'ANNOTATION_EVIDENCE_CHANGED': '守る対象・負荷の記述',
+    'UNKNOWN_SCOPE_CHANGED': '確定できない部分',
+    'CONFLICT_STATE_CHANGED': '一致していない記述の組み合わせ',
+}
+COMPARISON_REASONS = {
+    'PERIOD_LENGTH_MISMATCH': '期間の長さが異なります。',
+    'PREVIOUS_PERIOD_NOT_EARLIER': '比較対象が前の期間ではありません。',
+    'PERIOD_OVERLAP': '二つの期間が重なっています。',
+    'PERIOD_NOT_ADJACENT': '直前の期間ではありません。',
+    'SHARED_RECORD_IDENTITY': '同じ記録が両方の期間に含まれています。',
+}
+
+
+def _comparison_lines(comparison):
+    state = comparison['state']
+    if state == 'NO_PREVIOUS':
+        return []  # Preserve every previously saved text byte.
+    if state == 'NOT_COMPARABLE':
+        return ['期間比較：この二つの期間は比較できません。'] + [
+            COMPARISON_REASONS.get(code, '比較条件を確認できません。')
+            for code in comparison['reason_codes']]
+    changes = comparison['safe_change_kinds']
+    if not changes:
+        return ['期間比較：今回比較した記述内容では差分を検出していません。'
+                '記録の件数や、読み取れていない内容の変化は判断していません。']
+    return ['期間比較：前の同じ長さの期間と比べ、' + '、'.join(
+        COMPARISON_CHANGES[kind] for kind in changes) + 'が異なります。',
+        '記録上の違いであり、改善・悪化や原因を示すものではありません。']
 
 
 def _te_order_context(node, graph):
@@ -114,10 +145,29 @@ class ObservedSelfStructureMap:
     artifact_kind: str = 'ANALYSIS_OBSERVED_SELF_STRUCTURE_MAP'
     epistemic_partition: str = 'OBSERVED'
     wire_kind: str = 'watashi.map.v2'
+    period_comparison: PeriodComparison | None = None
 
     @property
     def reference(self):
         return self.artifact_id + '@' + str(self.artifact_version)
+
+    def _comparison_projection(self):
+        c = self.period_comparison
+        if c is None:
+            return {'state': 'NO_PREVIOUS', 'reason_codes': [], 'safe_change_kinds': []}
+        if (c.current_artifact_ref != self.reference or c.current_source_set_ref != self.source_set_ref
+                or c.previous_artifact_ref == self.reference
+                or c.comparability_state not in {'COMPARABLE', 'NOT_COMPARABLE'}
+                or (c.comparability_state == 'NOT_COMPARABLE' and (not c.reason_codes or c.change_claims))
+                or (c.comparability_state == 'COMPARABLE' and c.reason_codes)
+                or any(reason not in COMPARISON_REASONS for reason in c.reason_codes)
+                or len({x.change_kind for x in c.change_claims}) != len(c.change_claims)
+                or any(x.change_kind not in COMPARISON_CHANGES or not x.evidence_refs
+                    or x.current_ref != self.reference or x.previous_ref != c.previous_artifact_ref
+                    for x in c.change_claims)):
+            raise AnalysisSourceError('analysis_comparison_binding_invalid')
+        return {'state': c.comparability_state, 'reason_codes': list(c.reason_codes),
+                'safe_change_kinds': [x.change_kind for x in c.change_claims]}
 
     def _conflict_badges(self):
         return [{'conflict_ref': c.conflict_ref, 'target_refs': list(c.target_refs),
@@ -191,8 +241,7 @@ class ObservedSelfStructureMap:
             'wire_kind': 'watashi.map.v2.private-preview', 'projection_of': self.reference,
             'artifact_version': self.artifact_version,
             'period_label': ' ～ '.join(self.period),
-            'period_comparison': {'state': 'NO_PREVIOUS', 'reason_codes': [],
-                                  'safe_change_kinds': []},
+            'period_comparison': self._comparison_projection(),
             'nodes': [{'node_ref': n.node_ref, 'node_kind': n.node_kind,
                 'visible_label': n.visible_label,
                 'evidence_badge_count': len(n.record_refs)} for n in self.graph.nodes],
@@ -227,8 +276,7 @@ class ObservedSelfStructureMap:
             'wire_kind': 'watashi.map.v2', 'projection_of': self.reference,
             'artifact_version': self.artifact_version,
             'period_label': ' ～ '.join(self.period),
-            'period_comparison': {'state': 'NO_PREVIOUS', 'reason_codes': [],
-                                  'safe_change_kinds': []},
+            'period_comparison': self._comparison_projection(),
             'nodes': [{'node_ref': n.node_ref, 'node_kind': n.node_kind,
                 'visible_label': labels[n.node_ref],
                 'evidence_badge_count': len(n.record_refs)} for n in self.graph.nodes],
@@ -268,6 +316,7 @@ class ObservedSelfStructureMap:
                      for a in visual['annotation_badges'])
         lines.extend('一致していない記録（' + ' ／ '.join(labels[ref] for ref in c['target_refs'])
                      + '）：' + c['visible_label'] for c in visual['conflict_badges'])
+        lines.extend(_comparison_lines(visual['period_comparison']))
         return {'projection_of': visual['projection_of'], 'text': '\n'.join(lines),
                 'accessibility_linear_order': visual['accessibility_linear_order']}
 
@@ -278,6 +327,9 @@ class AnalysisEngineOutcome:
     reason_codes: tuple[str, ...]
     artifact: ObservedSelfStructureMap | None = None
     automatic_progression: bool = False
+    # Request-local baseline for resolving private comparison claims. It is
+    # never serialized into safe DTOs or accepted by the saved-map writer.
+    previous_artifact: ObservedSelfStructureMap | None = None
 
     def as_body_free(self):
         return {'core_id': 'analysis', 'execution_mode': 'OFFLINE_CANDIDATE',
@@ -287,7 +339,7 @@ class AnalysisEngineOutcome:
             'automatic_progression': False}
 
 
-def generate_observed_map(request: AnalysisObservedMapRequest) -> AnalysisEngineOutcome:
+def _generate_single_observed_map(request: AnalysisObservedMapRequest) -> AnalysisEngineOutcome:
     try:
         sources = freeze_analysis_sources(request)
     except AnalysisSourceError as exc:
@@ -310,3 +362,30 @@ def generate_observed_map(request: AnalysisObservedMapRequest) -> AnalysisEngine
     except Exception:
         return AnalysisEngineOutcome(EngineStatus.UNAVAILABLE,
             ('analysis_semantic_generation_unavailable',))
+
+
+def generate_observed_map(request: AnalysisObservedMapRequest) -> AnalysisEngineOutcome:
+    previous = request.comparison_previous_request
+    if previous is None:
+        return _generate_single_observed_map(request)
+    if (type(previous) is not AnalysisObservedMapRequest
+            or previous.comparison_previous_request is not None):
+        return AnalysisEngineOutcome(EngineStatus.REJECTED, ('analysis_comparison_request_invalid',))
+    if previous.authenticated_owner_scope != request.authenticated_owner_scope:
+        return AnalysisEngineOutcome(EngineStatus.REJECTED, ('analysis_comparison_owner_mismatch',))
+    # Both periods use this same invocation's interpretation policy. Do not
+    # replay an old stored map as if it was freshly generated under this code.
+    current = _generate_single_observed_map(request)
+    if current.artifact is None:
+        return current
+    before = _generate_single_observed_map(previous)
+    if before.artifact is None:
+        return AnalysisEngineOutcome(before.status, ('analysis_previous_map_unavailable',))
+    try:
+        current.artifact.safe_projection(authenticated_owner_scope=request.authenticated_owner_scope)
+        before.artifact.safe_projection(authenticated_owner_scope=request.authenticated_owner_scope)
+        comparison = compare_period_meaning(current.artifact, before.artifact)
+        return replace(current, artifact=replace(current.artifact, period_comparison=comparison),
+                       previous_artifact=before.artifact)
+    except (AnalysisSourceError, KeyError, TypeError, ValueError):
+        return AnalysisEngineOutcome(EngineStatus.UNAVAILABLE, ('analysis_comparison_unavailable',))

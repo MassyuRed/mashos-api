@@ -45,6 +45,18 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         self.fx = fixture()
         self.row = self.fx['row']
 
+    async def test_preview_period_comparison_is_not_admitted_to_single_period_storage(self):
+        for state, kinds, reasons in (('COMPARABLE', ['ROUTE_EVIDENCE_CHANGED'], []),
+                ('NOT_COMPARABLE', [], ['PERIOD_OVERLAP'])):
+            with self.subTest(state=state):
+                row = copy.deepcopy(self.row)
+                row['content_json']['watashiMap']['period_comparison'] = {
+                    'state': state, 'safe_change_kinds': kinds, 'reason_codes': reasons}
+                with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))):
+                    with self.assertRaises(HTTPException) as caught:
+                        await service.read_saved(OWNER)
+                self.assertEqual(caught.exception.status_code, 503)
+
     async def test_protective_intention_survives_save_read_with_private_evidence_separate(self):
         self.fx = fixture('私は家族を守りたい。私は仕事を続けたいけれど、私はつらい。')
         self.row = self.fx['row']

@@ -481,6 +481,111 @@ class ObservedGraph:
     annotations: tuple[ObservedAnnotation, ...] = ()
 
 
+@dataclass(frozen=True, slots=True, repr=False)
+class PeriodChange:
+    change_id: str
+    change_kind: str
+    current_ref: str
+    previous_ref: str
+    evidence_refs: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class PeriodComparison:
+    comparison_id: str
+    current_artifact_ref: str
+    current_source_set_ref: str
+    previous_artifact_ref: str
+    previous_source_set_ref: str
+    comparability_state: str
+    reason_codes: tuple[str, ...]
+    change_claims: tuple[PeriodChange, ...]
+
+
+def _period_meaning_groups(graph):
+    # IDs, source offsets, inflection and record counts are not semantic
+    # differences. Keep the complete proposition operators and graph targets.
+    def node_key(n):
+        p = n.proposition
+        if p is None:
+            raise AnalysisSourceError('analysis_comparison_meaning_unavailable')
+        return (n.node_kind, _proposition_meaning(p), n.polarity, n.modality,
+                n.temporal_scope, p.relative_day, p.sequence_marker)
+    nodes = {n.node_ref: n for n in graph.nodes}
+    keys = {ref: node_key(n) for ref, n in nodes.items()}
+    groups = {kind: {} for kind in ('ROUTE_EVIDENCE_CHANGED',
+        'ANNOTATION_EVIDENCE_CHANGED', 'UNKNOWN_SCOPE_CHANGED', 'CONFLICT_STATE_CHANGED')}
+    def add(kind, key, evidence):
+        bucket = groups[kind].setdefault(key, [])
+        bucket.extend(e.evidence_id for e in evidence if e.evidence_id not in bucket)
+    for n in graph.nodes:
+        add('ROUTE_EVIDENCE_CHANGED', ('node', keys[n.node_ref]), n.evidence_refs)
+    for e in graph.edges:
+        endpoints = tuple(keys[ref] for ref in e.endpoint_refs)
+        if e.edge_kind == 'REPEATED_COOCCURRENCE':
+            endpoints = frozenset(endpoints)
+        add('ROUTE_EVIDENCE_CHANGED', ('edge', e.edge_kind, endpoints), e.evidence_refs)
+    for a in graph.annotations:
+        add('ANNOTATION_EVIDENCE_CHANGED', (a.kind, keys[a.target_ref],
+            a.predicate_lemma, a.annotation_state, a.uncertainty), a.evidence_refs)
+    for g in graph.unknown_gaps:
+        # Missing-stage / unread-scope anchors and adjacent unknown pairs
+        # are presentation positions, not claims about those particular
+        # nodes. Compare the kinds of unresolved scope only. An explicit
+        # missing predecessor really is attached to its written successor.
+        target = (tuple(keys[ref] for ref in g.between_node_refs)
+            if g.reason_code == 'EXPLICIT_PREDECESSOR_NOT_ESTABLISHED' else ())
+        add('UNKNOWN_SCOPE_CHANGED', (target, g.missing_scope, g.reason_code),
+            tuple(e for ref in g.between_node_refs for e in nodes[ref].evidence_refs))
+    for c in graph.conflicts:
+        add('CONFLICT_STATE_CHANGED', (frozenset(keys[ref] for ref in c.target_refs),
+            c.reason_code), c.evidence_refs)
+    return groups
+
+
+def compare_period_meaning(current, previous):
+    """Compare freshly compiled artifacts, never different stored policy versions.
+
+    Called only by generation before current is returned. Absence from a
+    period is not proof of absence from the person's life.
+    """
+    from .source_adapter import _time
+    if current.owner_scope != previous.owner_scope:
+        raise AnalysisSourceError('analysis_comparison_owner_mismatch')
+    start, end = map(_time, current.period)
+    before_start, before_end = map(_time, previous.period)
+    reasons = []
+    if end - start != before_end - before_start:
+        reasons.append('PERIOD_LENGTH_MISMATCH')
+    if before_start >= start:
+        reasons.append('PREVIOUS_PERIOD_NOT_EARLIER')
+    elif before_end > start:
+        reasons.append('PERIOD_OVERLAP')
+    elif before_end != start:
+        reasons.append('PERIOD_NOT_ADJACENT')
+    shared_records = ({m.saved_record_ref for m in current.source_members if m.inclusion_status == 'INCLUDED'}
+        & {m.saved_record_ref for m in previous.source_members if m.inclusion_status == 'INCLUDED'})
+    if shared_records:
+        reasons.append('SHARED_RECORD_IDENTITY')
+    changes = []
+    if not reasons:
+        now, before = _period_meaning_groups(current.graph), _period_meaning_groups(previous.graph)
+        for kind in now:
+            difference = now[kind].keys() ^ before[kind].keys()
+            if not difference:
+                continue
+            # Keep evidence in deterministic graph order, not set iteration.
+            evidence = tuple(dict.fromkeys(e for groups in (now, before)
+                for key, refs in groups[kind].items() if key in difference for e in refs))
+            if not evidence:
+                raise AnalysisSourceError('analysis_comparison_evidence_unavailable')
+            changes.append(PeriodChange('change' + str(len(changes) + 1), kind,
+                current.reference, previous.reference, evidence))
+    return PeriodComparison('comparison:' + commitment([current.reference, previous.reference])[7:],
+        current.reference, current.source_set_ref, previous.reference, previous.source_set_ref,
+        'NOT_COMPARABLE' if reasons else 'COMPARABLE', tuple(reasons), tuple(changes))
+
+
 def _opposed_claim_pairs(claims):
     # Called for one original source only. Written day and field must agree;
     # never infer an occasion from created_at or compare different records.

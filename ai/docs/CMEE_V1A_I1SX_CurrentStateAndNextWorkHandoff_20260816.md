@@ -14266,3 +14266,28 @@ safe realizerは対象の希望型・原全文・同一証拠を再照合し、�
 変更は既存12file：APIのintent_compiler / observed_route_realizer / analysis_observed_service、vertical/storage test、既存API handoff。CocolonはWatashiMapV2Rendererと既存RN test、current00/03 §4.21、canonical04 §3.16と06本記録。新規path/共有意味owner/API契約/DTO/SQL/依存変更0。既存draft/open/unmerged PR3/PR30 branchへfresh head/preimage確認→non-force反映→remote全文/変更path/parent/tree/headを照合する。main/merge/deploy/build/稼働DBへのeffect0。
 
 u102〜u115修正版は未配置。指定API315f5b5…/TestFlight6201と実機OKのMash報告を継承する。primary outcome=限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%は再採点しない。今回で明示保護意向の最小注記を接続したが、一般の保護/負荷理解、解釈仮説、期間比較、IF、global cutoverは未完了。次はcanonical04 §9/§9.1の期間比較について、既存source-set/保存identity/DTOの現在地と不足を確認し、同じ条件の過去期間と比較できる最小実装単位を特定する。新しい契約/保存方針が必要なら先にscopeを明示する。語彙網羅や高度品質を最低限の動作・実機接続の前提へ戻さない。
+
+
+## 2026-10-04 JST u116 — 二期間の記述比較を認証付き開発previewへ接続
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。Mashの分析実装継続指示、u115と既存public PR反映許可を継承。fresh headはAPI7b02459aa9770ff636a5738b7c943a2d8d421f9a / Cocolonb699c7f2a3f81e00d03274a1d673d696d58411e8。前提/作業rules、全体設計とcurrent file/責務地図、最新weekly20261003 §6.6〜6.10、正本04 §9/9.1・05比較schema、前回txtから引き継いだu115反映を照合。恒久incident全文を今回再読。System Context prepareの前作業でのshallow ancestry失敗を成功へ読み替えず、許可済み原本直接読取を継続した。Work華恋が単一実行/write owner、補助2名はread-only review。PRODUCT_ROUTE_ALIGNED / TECHNICALLY_ADMISSIBLE。source/test/docsの既存設計内に限定し、外部API/DTO/SQL/依存/稼働配置の変更が必要ならその追加effect前に停止する。追加費用/Mash操作0。
+
+product destinationは、本人の記録を二期間で読み、同じ条件で比較できる場合に記述の差を文章/図へ表示すること。current unfinishedは、正本とRN DTOに比較3状態/4差分類がある一方、生成はNO_PREVIOUS固定で差分が表示されない点。rootと独立reviewは保存境界も確認し、現在のSQL guard/commit/read/無効化が当該一期間だけを対象にするため、比較入りcurrentをそのまま保存すると前期間の訂正/削除/期限切れを追えないと判断した。今回は既存の認証付きread-only prepare_saved_analysis_observed_mapを使い、二期間の比較生成→safe本文/図→両期間再確認を完了条件とする。公開HTTP route・永続保存の比較接続は行わない。
+
+内部AnalysisObservedMapRequest末尾へoptional comparison_previous_requestを追加。既存engine.generateは同じruntime/policyで二期間の真正入力をそれぞれfreeze/compileし、各々に別artifact identityを与える。旧保存本文/DTOや別解釈版のartifactを意味sourceにしない。別owner、nested比較、不正/空/安全に表示できない前期間は結果を返さない。currentを外へ返す前にPeriodComparison/PeriodChangeをinline保持し、前artifactもrequest-local private outcomeへ保持する。current/previous artifact・source-set refと差分のevidence IDを結び、差分classごとに最大1claimを作る。public DTOには前artifact ref/証拠locatorを出さない。
+
+比較可能な最小条件は同一owner、同一生成実装、UTC正規化後の等長の直前隣接半開区間である。期間長の相違、前期間が後にある、重複、非隣接、同じincluded record identityの両期間使用は理由付きNOT_COMPARABLE・claim0とする。nodeの型付き命題・極性/様相/時制・相対日/明示接続、順序edgeの方向、共起の無方向対象、注記対象/述語、不一致の対象集合を比較する。原evidence ID、node連番、丁寧形、件数の差そのものから人物の変化を作らない。
+
+独立reviewで2件の偽差分を発見した。成立pastの同じ出来事でも「調べた後/調べてから」のdependent_formが比較キーに入り、また欠落段階の先頭仮anchorと未接続の隣接pairが文の並べ替えだけでUNKNOWN_SCOPE_CHANGEDを生んでいた。rootが確認し、依存形の証拠形式を比較キーから除外、unknownは不足scope/reasonの種類集合に限定した。明示先行欠落だけは実際の対象node意味も保持。元graph/対象付きDTO/全証拠を変更せず、比較だけを最小範囲へ狭めた。同義形式・独立2文逆順・丁寧形/ID・単独内容の記録件数差は差分0の回帰を追加。最終read-only reviewでblocking指摘0。
+
+ASTOR既存entryは任意の前期間boundsを同じauth/report_modeでloadし、生成後に両期間を既存recheckで再確認する。欠けたbounds、対象期間外/未保持期間、source/補足/権限の変化はsafe結果を返さない。二度読みはtransactional保存や継続的な閲覧権限ではない。保存serviceのNO_PREVIOUS限定は維持し、比較DTOが単一期間保存へ紛れた場合は拒否する検査を追加。DB/公開API/flag変更は0。
+
+backendとRNは既存のperiod_comparison 3keyを使い、差分類と比較不可理由を同じ文章へ変換する。差分なしは「今回比較した記述内容では差分を検出していません。記録の件数や、読み取れていない内容の変化は判断していません。」とする。差分ありも記録上の違いで、改善/悪化/原因ではないと表示する。NO_PREVIOUSの旧保存本文/DTOは変更しない。
+
+検証は既存隔離Python3.12.14 / pytest9.1.1 / FastAPI0.142.2 / httpx0.28.1 / pydantic2.13.5。vertical118（追加6）/storage26（追加1）/saved period16（追加3）/API6＝166 PASS、541 subtests PASS、既存Pydantic非推奨warning1。初回も166 PASS/540 subtestsで、最終には二期間経路でcurrent側が変更された場合の直接回帰を同じ検査へ追加した。条件や期待の削減なし。RN13 PASS（追加1）。合成DB/auth I/Oから実saved loader/CMEE/ASTORへ通し、両期間それぞれのload/recheck、過去の原入力編集/削除/追加/補足/権限変更とcurrent編集で結果保留、private非漏出を確認した。live DB/実認証/実機試験ではない。
+
+rootが同じ記述内容、行動の肯否、負荷追加、未確定部分、記述不一致、期間条件不一致の6合成本文を全文読み、既存RN contract/view modelの本文・identity・node順・比較文がbackendと完全一致した。改善点は4分類の根拠付き記述差が表示可能になったこと。過去と現在の具体的な文言を左右に並べるUI、反復頻度/件数の比較、未読内容全体の比較、一般の解釈仮説を完成とはしない。
+
+変更は既存15file：API source_adapter/intent_compiler/observed_route_realizer/astor_self_structure_report、vertical/saved period/storage test、既存API handoff。CocolonはwatashiMapV2Contract/WatashiMapV2Renderer/RN test、current00/03 §4.22、canonical04 §3.17、06本記録。新規path/共有意味owner/外部API・DTO/SQL/依存追加0。責務地図を同期し、既存draft/open/unmerged PR3/PR30 branchへfresh preimage/head確認→non-force反映→remote全文/変更path/parent/tree/headを照合する。main/merge/deploy/build/稼働DBへのeffect0。
+
+u102〜u116修正版は未配置。指定API315f5b5…/TestFlight6201と実機OKのMash報告を継承。今回のprimary outcomeは限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%を再採点しない。次は比較を保存/APIへ接続するため、既存一期間のsource guardと保存依存を両期間へ拡張する最小差分を具体化する。前期間の訂正/削除/保持期限・プラン変更と保存/読取の競合まで同じ境界で扱う必要がある。SQL/稼働DBの変更が必要な場合はstanding delegation外のeffectを実行せず、既存ownerと必要な個別判断を示す。IF・正式商品受入れ・global cutoverは残る。語彙や文章品質の網羅を実機接続前の追加条件へ戻さない。

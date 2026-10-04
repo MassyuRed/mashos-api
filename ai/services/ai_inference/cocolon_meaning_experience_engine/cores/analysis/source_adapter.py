@@ -68,6 +68,9 @@ class AnalysisObservedMapRequest:
     operation: str = 'ANALYSIS_OBSERVED_MAP'
     execution_mode: str = 'OFFLINE_CANDIDATE'
     locale: str = 'ja-JP'
+    # Internal, owner-resolved raw sources only. Never a saved/public DTO or
+    # generated text used as input. One previous period, no comparison chain.
+    comparison_previous_request: AnalysisObservedMapRequest | None = None
 
 
 @dataclass(frozen=True, slots=True, repr=False)
