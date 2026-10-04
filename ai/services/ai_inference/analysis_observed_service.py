@@ -246,6 +246,7 @@ async def generate_saved(user_id, *, start, end, report_mode, report_type):
         _require(re.fullmatch(r'analysis-db-' + ('compare-v1' if comparison_on else 'v1')
                              + r':[0-9a-f]{64}', snapshot['guard']))
         def source_request(source, period_start, period_end):
+            _require(_time(period_start) < _time(period_end))
             _require(type(source['members']) is list and len(source['members']) <= 100)
             records = tuple(_analysis_saved_member(dict(s, tier=source['tier'], now=source['now']),
                 owner=owner, input_id=s['original']['id'], tier=source['tier'],
@@ -265,6 +266,10 @@ async def generate_saved(user_id, *, start, end, report_mode, report_type):
             # a later backdated input must invalidate this saved NO_PREVIOUS.
             if previous.members:
                 request = replace(request, comparison_previous_request=previous)
+        # A valid empty period has no report to generate or save. Keep this
+        # distinct from nonempty inputs that the meaning engine cannot resolve.
+        if not request.members:
+            return None
         outcome = await asyncio.to_thread(MeaningExperienceEngine().generate, request)
         if outcome.artifact is None or outcome.status.value != 'GENERATED':
             raise HTTPException(422, 'analysis_observed_map_unavailable')
@@ -333,7 +338,7 @@ async def ensure_saved(user_id, *, period, report_mode, ensure=True, force=False
     refreshed = False
     if ensure and (force or row is None) and observed_mode() == 'development':
         row = await generate_saved(user_id, start=start, end=end, report_mode=report_mode, report_type=report_type)
-        refreshed = True
+        refreshed = row is not None
     return _ensure_response(row, report_mode=report_mode, period=period, refreshed=refreshed,
                             monthly=monthly, start=start, end=end)
 

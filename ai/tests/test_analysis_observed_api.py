@@ -105,6 +105,64 @@ class AnalysisApiTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status_code,401)
         self.assertEqual(self.calls,[])
 
+    async def test_empty_current_http_latest_and_monthly_are_normal_unsaved_results(self):
+        async def empty_rpc(name, payload):
+            response = await self.rpc(name, payload)
+            if name == 'analysis_observed_source_snapshot':
+                response['members'] = []
+            elif name == 'analysis_observed_comparison_snapshot':
+                response['current']['members'] = []
+            return response
+        for mode in ('off', 'development'):
+            with self.subTest(comparison=mode), \
+                    patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE=mode), \
+                    patch.object(service, '_rpc', side_effect=empty_rpc):
+                latest_response = await self.get('/self-structure/latest?ensure=true&force=false')
+                monthly_response = await self.client.post('/self-structure/monthly/ensure',
+                    headers={'Authorization': 'Bearer valid'}, json={})
+                for response in (latest_response, monthly_response):
+                    self.assertEqual(response.status_code, 200, response.text)
+                    body = response.json()
+                    self.assertEqual(body['status'], 'ok')
+                    self.assertEqual(body['reason'], 'no_visible_content')
+                    self.assertFalse(body['refreshed'])
+                    self.assertFalse(body['has_visible_content'])
+                    self.assertEqual(body['skip_reason'], 'analysis_saved_map_unavailable')
+                    for key in ('meta', 'content_text', 'title', 'generated_at'):
+                        self.assertIsNone(body[key])
+                    self.assertLess(datetime.fromisoformat(body['period_start']),
+                                    datetime.fromisoformat(body['period_end']))
+                self.assertFalse(monthly_response.json()['history_saved'])
+        self.assertEqual(self.saved, [])
+        self.assertFalse(any(n == 'analysis_observed_commit' for n, _ in self.calls))
+        # Nothing is saved for absence: a later real input can generate normally.
+        with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='development'):
+            generated = await self.get('/self-structure/latest')
+        self.assertEqual(generated.status_code, 200, generated.text)
+        self.assertTrue(generated.json()['refreshed'])
+        self.assertTrue(generated.json()['has_visible_content'])
+        self.assertEqual(sum(n == 'analysis_observed_commit' for n, _ in self.calls), 1)
+
+    async def test_nonempty_unsupported_current_http_remains_unavailable(self):
+        self.fx['original']['memo'] = '未対応の合成記録です。'
+        with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='development'):
+            response = await self.get('/self-structure/latest')
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()['detail'], 'analysis_observed_map_unavailable')
+        self.assertFalse(any(n == 'analysis_observed_commit' for n, _ in self.calls))
+
+    async def test_snapshot_storage_failure_http_is_not_an_empty_result(self):
+        async def failed_rpc(name, payload):
+            if name == 'analysis_observed_comparison_snapshot':
+                raise HTTPException(503, 'analysis_saved_store_unavailable')
+            return await self.rpc(name, payload)
+        with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='development'), \
+                patch.object(service, '_rpc', side_effect=failed_rpc):
+            response = await self.get('/self-structure/latest')
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()['detail'], 'analysis_saved_store_unavailable')
+        self.assertFalse(any(n == 'analysis_observed_commit' for n, _ in self.calls))
+
     async def test_comparison_http_latest_history_detail_return_same_saved_text_and_graph(self):
         with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='development'):
             response=await self.get('/self-structure/latest?report_mode=standard&user_id='+OTHER)

@@ -88,10 +88,10 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         self.row = self.fx['row']
 
     async def test_generation_failure_logs_current_reason_without_saving(self):
-        for members in ([], [{'original': dict(self.fx['original'], memo='未対応の合成記録です。'),
-                              'thread': None, 'events': []}]):
+        for members in ([{'original': dict(self.fx['original'], memo=memo),
+                          'thread': None, 'events': []}] for memo in ('未対応の合成記録です。', '')):
             snapshot = {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': members}
-            with self.subTest(empty=not members), \
+            with self.subTest(memo=members[0]['original']['memo']), \
                     patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
                     patch.object(service, '_rpc', AsyncMock(return_value=snapshot)) as rpc, \
                     self.assertLogs(realizer.logger, level='WARNING') as logs:
@@ -105,6 +105,59 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([r.getMessage() for r in logs.records], [
                 'analysis_observed_generation_unavailable stage=current '
                 'reason=analysis_observed_route_not_established'])
+
+    async def test_empty_current_period_skips_engine_and_storage(self):
+        empty = {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': []}
+        previous = dict(empty, members=[{'original': dict(self.fx['original'],
+            id=str(UUID(int=99)), created_at='2026-09-30T01:00:00', memo='未対応の合成記録です。'),
+            'thread': None, 'events': []}])
+        snapshots = [
+            ('off', empty),
+            ('development', {'guard': GUARD, 'tier': 'plus', 'comparison_eligible': False,
+                             'current': empty}),
+        ]
+        for previous_source in (empty, previous):
+            snapshots.append(('development', {'guard': 'analysis-db-compare-v1:' + 'b' * 64,
+                'tier': 'plus', 'comparison_eligible': True, 'current': empty, 'previous': previous_source,
+                'previous_start': '2026-09-29T00:00:00+00:00', 'previous_end': START}))
+        for mode, snapshot in snapshots:
+            with self.subTest(mode=mode, eligible=snapshot.get('comparison_eligible')), \
+                    patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE=mode), \
+                    patch.object(service, '_rpc', AsyncMock(return_value=snapshot)) as rpc, \
+                    patch.object(MeaningExperienceEngine, 'generate') as engine, \
+                    patch('response_microcache.invalidate_prefix', AsyncMock()) as invalidate, \
+                    self.assertNoLogs(realizer.logger, level='WARNING'):
+                row = await service.generate_saved(OWNER, start=START, end=END,
+                    report_mode='standard', report_type='latest')
+            self.assertIsNone(row)
+            engine.assert_not_called()
+            invalidate.assert_not_awaited()
+            self.assertEqual([call.args[0] for call in rpc.await_args_list], [
+                'analysis_observed_source_snapshot' if mode == 'off' else 'analysis_observed_comparison_snapshot'])
+
+    async def test_empty_current_does_not_hide_invalid_snapshot_or_period(self):
+        empty = {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': []}
+        comparison = {'guard': 'analysis-db-compare-v1:' + 'b' * 64, 'tier': 'plus',
+            'comparison_eligible': True, 'current': empty, 'previous': empty,
+            'previous_start': '2026-09-29T00:00:00+00:00', 'previous_end': START}
+        cases = [('off', empty, 'invalid', END), ('off', empty, END, START),
+                 ('off', empty, START, START), ('off', dict(empty, guard='invalid'), START, END),
+                 ('off', dict(empty, members=None), START, END),
+                 ('development', dict(comparison, previous_end=END), START, END),
+                 ('development', dict(comparison, previous=dict(empty, tier='free')), START, END),
+                 ('development', dict(comparison, previous=dict(empty, members=None)), START, END)]
+        for mode, snapshot, start, end in cases:
+            with self.subTest(mode=mode, start=start, end=end, snapshot=snapshot), \
+                    patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE=mode), \
+                    patch.object(service, '_rpc', AsyncMock(return_value=snapshot)) as rpc, \
+                    patch.object(MeaningExperienceEngine, 'generate') as engine:
+                with self.assertRaises(HTTPException) as caught:
+                    await service.generate_saved(OWNER, start=start, end=end,
+                        report_mode='standard', report_type='latest')
+            self.assertEqual((caught.exception.status_code, caught.exception.detail),
+                             (422, 'analysis_saved_source_unavailable'))
+            engine.assert_not_called()
+            self.assertEqual(rpc.await_count, 1)
 
     async def test_generation_failure_logs_previous_reason_once(self):
         with self.assertLogs(realizer.logger, level='WARNING') as logs:

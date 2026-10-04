@@ -14454,3 +14454,20 @@ Supabaseでは既存source/comparison snapshot関数定義とemotions対象列�
 次はMashに、原因確認のための本人記録読取（直近28日の件数・本文有無、必要時は最大3件の原入力memo/memo_action）について明示許可を求める。更新/削除・生成済みEmlis/Pieceの流用・公開GitHubへのprivate本文/ID掲載は対象外。許可が得られるまでは、この個人データ取得を進めない。再deploy・再build・同じ端末操作の反復は今は不要。
 
 rootが唯一の記録write owner。全体設計/全file地図・current rules/Rule18・最新weekly/current03の既読とcurrent headを継承照合、恒久incidentを今回全文再読。LEVEL_1のログ/source/DB catalog読取と既存記録更新のみ。source/test/SQL/依存変更・検査実行・DB変更・env/deploy/build/main/merge/IF操作0。STRUCTURE_MAP_DELTA_NONE。primaryはBLOCKER_NARROWEDであり、生成復旧・保存再表示・商品合格ではない。実稼働API c4db3a3…を維持し、商品0/3・NOT_CLEAR・48%とDraft/open/unmergedを保持する。
+
+
+## 2026-10-04 JST u127 — 記録のない今回期間を正常な未表示として扱う
+
+Mashから直近28日の記録件数・本文有無、必要時最大3件のメモ/行動メモについて明示的読取許可を受領した。対象の許可された集計で今回期間が空と確認できたため、本文取得は不要で実行しなかった。過去6か月の記録検索・個人本文/IDの公開・DB変更は行っていない。最後の入力が半年近く前という説明はMashの申告であり、過去の最終日時を独立取得した結果ではない。同時刻のログと集計を確認したが、各失敗HTTPと本人認証の独立したrequest bindingは未取得。
+
+source上の原因は、正常な空snapshotまでCMEEへ渡し、graphの要素0件を通常の生成未成立422に変換していたこと。既存 `analysis_observed_service.generate_saved` を修正し、期間の正しい順序・guard・membersの形・比較snapshot整合の確認後、今回members=[]ならNoneを返す。エンジン・保存commit・保存後read・cache無効化は実行しない。`ensure_saved` のrefreshedはrowがある場合だけtrueとし、既存のstatus=ok/reason=no_visible_content/has_visible_content=false/skip_reason=analysis_saved_map_unavailable/content_text=null/meta=nullへ接続する。月次history_savedもfalse。架空の成果物や空の保存履歴を作らず、後日の通常入力では再度生成可能。
+
+記録が存在するが本文が空/未対応の場合、または非空の今回期間に対する前期間生成失敗は従来の422。DB/Auth/保存形状の失敗を空へ変換しない。CMEE自体の空request=UNAVAILABLE、前期間なしのNO_PREVIOUS、既存比較意味・公開DTO・保存identityは変更しない。サービス側の正常な不在処理だけである。
+
+検証は既存storage40/API10/saved-period16/vertical125、計 **191 PASS**。比較off/on・比較eligible外・前期間が空/非空、空期間のengine/commit/cache呼出し0、期間/guard/前期間形状不正の拒否、latest/月次200の未保存envelope、その後の正常生成1回、非空未対応422・保存層503を確認。既存RN17検査も **17 PASS / FAIL0 / SKIP0**。合成Auth/DBと実CMEE/実RN componentの検証で、本人の実生成やnative実機受入れではない。独立read-only reviewはPRODUCT_ROUTE_ALIGNED/TECHNICALLY_ADMISSIBLE、具体的blockerなし。rootが最終判断と全writeを担当。
+
+今回変更はAPI既存source1・test2・docs2、Cocolon既存docs2のみ。全体設計/01A〜C全file地図・current rules/Rule18・latest weekly20261003/current03/設計04/06の既読と対象のfresh内容を照合し、恒久incidentは今回全文読取済み。LEVEL_2の既存経路最小補正、STRUCTURE_MAP_DELTA_NONE。新file/owner/API/SQL/依存/環境設定変更なし。main/merge・IF・global cutoverは実施しない。商品0/3・NOT_CLEAR・48%と両PR Draft/open/unmergedを保持。
+
+**適用残件**：現在liveは診断版API `c4db3a3aae70d906ccb7a0c44c4862692b5287c1` / dep-db11ebe0tbcc7392hjn0で、今回の空期間補正は未配置。APIはこのu127を含むPR3の固定commitを既存Renderへ指定配置する。環境変数2値と比較SQLの追加変更は不要。u122の画面修正を含むPR30 branchから新規iOS TestFlight Buildも必要で、配布済み6301には未収録。APIのみの配置を6301の正常空表示完了とはしない。指定SHAと開始手順はPR3/30先頭・API運用§31を参照。Mash本人の開始操作希望と接続toolのdispatch/commit指定制限を維持し、華恋が汎用main deployやenv更新を代用しない。
+
+配置/新build後はまず正常空表示を実機確認する。生成・保存再表示・期間比較の確認には、後日の本人の通常入力が必要であり、空表示の成功をその代わりにしない。検査のための架空入力や過去入力の捏造は求めない。今回deploy/buildは開始していない。

@@ -609,3 +609,20 @@ Mashの再確認に対応するJST18:14の固定ログ2件は、いずれも `st
 既存関数/列型の読取は成立したが、本人記録件数・本文有無の集計SELECTは、自動承認レビューにより個人データの明示的読取許可不足で拒否された。記録データ取得なし、迂回再試行なし。次は直近28日の件数・本文有無と、必要時最大3件の原入力memo/memo_actionの非公開読取についてMashの確認を得る。書換え・削除・private本文/IDのGitHub掲載は含めない。
 
 現API c4db3a3…は維持。同じ端末操作・deploy・build・env変更を重ねない。確認後の実資料に合わせ、原因箇所だけの修正を判断する。詳細は06/API handoff末尾u126。
+
+
+## 31. 2026-10-04 JST u127 — 空期間422の修正候補と端末への反映
+
+許可された直近28日の集計で今回期間が空と確認できた。本文は取得していない。空snapshotをCMEEの生成未成立へ送っていたAPI側を修正し、正しい期間/guard/member形状/比較整合を検証した上で既存の正常空envelopeへ返す。生成・保存を行わずrefreshed=false、月次history_saved=false。記録ありの未解釈422や保存層障害は維持する。API関連191検査とRN17検査が成功、独立read-only reviewでblockingなし。詳細は06/API handoff末尾u127。
+
+今回は既存API1fileとtest2fileの補正で、SQL/共有DB/環境変数の変更は不要。稼働版は引き続き `c4db3a3aae70d906ccb7a0c44c4862692b5287c1`。修正版のexact commitはPR3先頭のu127配置候補として固定する。
+
+1. [Render mashos-api](https://dashboard.render.com/web/srv-d4ppfpm3jp1c73952bj0) → **Manual Deploy → Deploy a specific commit** に、PR3先頭のu127配置候補SHAを指定する。既存設定2値developmentを維持し、Environmentの再保存は不要。
+2. [iOS TestFlight Build](https://github.com/MassyuRed/Cocolon/actions/workflows/ios-build.yml) → **Run workflow** → branch `agent/three-core-cmee-current-structure-20260815` → **Run workflow**。u122の正常空画面修正を含む新規buildを開始する。6301のrerunは同修正を含まない。
+3. 華恋が実deploy/runのsource SHA、live、health・認証拒否、native archive/export/uploadと実build番号を照合する。API配置だけで6301の空表示が直ったとはしない。
+4. 新版がTestFlightで利用可能になった後、端末を更新し **分析 → わたしマップ** の正常空表示を確認する。「現在表示できるわたしマップはありません。」が対象。Apple側利用可能/端末導入をupload成功から推定しない。
+5. 本人の通常入力が後日追加されたら、生成・保存再表示・比較の確認へ進む。今の空期間でそれらの成功を確認したとはしない。架空の記録を入力させない。
+
+Mash本人の開始操作希望と、GitHub接続にworkflow_dispatchがなくRender連携にcommit指定deployがない制限を継承。汎用deploy/mainやenv更新MCPを使用しない。同範囲の再承認を求めず、開始後は読取照合を続ける。停止時は対応API/schemaを維持した既存read_only/比較off手順を使い、旧schema/旧APIへの切戻しや保存行削除はしない。
+
+今回の共有DB変更・env変更・deploy/build起動は0。STRUCTURE_MAP_DELTA_NONE。今回の前進は正常不在処理の実装/合成検証であり、本人生成復旧・保存再表示・商品受入れは未成立。商品0/3・NOT_CLEAR・48%を維持。
