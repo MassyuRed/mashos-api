@@ -14329,3 +14329,22 @@ reviewで指摘された開いた伝聞/夢を実測し、既存の保留条件�
 変更はAPI既存5file（intent_compiler、observed_route_realizer、vertical/storage test、既存handoff）とCocolon既存4文書（current00/03 §4.24、canonical04 §3.19、06）。新規path/共有意味owner/外部API/DTO/RN/SQL/依存変更0。既存source owner内の解釈・表示範囲を地図へ同期。既存Draft/open/unmerged PR3/PR30へfresh preimage/head確認後に反映し、remote bytes・変更path・最終headを確認する。
 
 primary outcome=TECHNICAL_CREDIT。u102〜u118未配置、指定API315f5b5…/TestFlight6201実機OKはMashの既報。商品0/3・NOT_CLEAR・48%は再採点しない。次はu117の未適用SQL候補と対応APIの対象を固定し、DB→API→比較有効化→実機の一往復へ接続する。新たな語彙網羅・IF・高度品質の前置きを増やさない。稼働DB適用・配置・有効化の個別effectは未実行。比較flagは既定off、main/merge/build/deploy変更0。
+
+
+## 2026-10-04 JST u119 — 期間比較を実機へ届ける適用対象と停止手順を確定
+
+Mashの分析実装継続指示に基づき、u118の反映済み状態、前提・作業rules、全体設計と全file/current責務地図、最新weekly20261003の最小実機方針を引継ぎ照合し、恒久incident全文を今回再読。fresh headはAPI `42ff019975a5d94c3c6de2a63623fb0864630ed4`／Cocolon `cd83cf9e70c7c7b603d65aac8a8d8afed7e892d8`。rootが読取・文書編集・GitHub反映の単一owner、補助担当はSQL/API/RNのread-only review。今回は語彙拡張を追加せず、u117の次作業であるDB/API/native接続の具体化を行う。System Context prepareのrepository unavailableを成功に替えず、GitHubの固定headと実ファイルを直接使用した。
+
+実環境の読取では、共有Supabase `cocolon-project / oeahmpmigszggnkyiivq` はACTIVE_HEALTHY、PG17.4.1.074。migration履歴はQ2/Q3と `20261003204421 / analysis_observed_artifacts` の3件で、比較SQLは未適用。旧CHECK名/定義、RLS、service_role限定のRPC/表権限、無効化trigger4本を確認。commit/read/invalidate/source_snapshotの稼働関数本文4件が、元SQL `20261003134440_analysis_observed_artifacts.sql` と全文一致した。個人入力/保存本文/ユーザーID/secretは取得しないcatalog確認であり、実認証往復の証拠ではない。
+
+以前Mashが明示選定した「まっしゅ's workspace」を一覧のidentityと照合して継承。既存Render `srv-d4ppfpm3jp1c73952bj0` はAPI `315f5b5dacb866e62805cfd6a906984c193dcc76`／`dep-db0n8lnavr4c738g3s5g` がlive、linked main・autoDeploy=no/off・free plan・1 instanceを再確認。環境変数値は今回取得していない。接続DB URLと分析developmentの設定は過去のMash報告を継承し、独立再確認済みとはしない。最新iOS workflow_dispatchはrun62/37155776248成功、build source `b11d1b321b4b1fb5497e866c8fc2edf3c25600ba`。6201の実機OKはMash既報、追加buildはまだない。
+
+GitHub compareで、稼働APIから候補まで13file（runtime5/test5/docs2/未適用SQL1）、6201から候補appまで7file（RN2/test1/docs4）を確認。runtime/画面の差分は既存分析owner内で、workflow/依存/料金/別coreは変更なし。**6201は比較DTOを受理するが、比較の本文を組み立てず、比較可能の案内しか表示しない。** u115/u116のrenderer/contractを含む新規TestFlight buildと端末導入を今回の接続へ含める。APIだけの配置を完了としない。
+
+停止条件も具体化した。旧315f5b5のvalidatorはNO_PREVIOUSに加えて注記/不一致が空であることを要求するため、**比較OFFでも新しい注記/不一致を保存した後は旧APIへ無条件に戻せない**。問題時は対応する新APIと拡張schemaを維持し、`COCOLON_ANALYSIS_OBSERVED_MODE=read_only`・比較offで新規生成を停止して保存読取を保つ。過去結果を削除して旧版へ戻す処理は加えない。
+
+具体的な対象・順序・照合/停止条件を既存API運用資料 `EMLIS_DEPLOYMENT_AND_OPERATION_CHECKS.md` §23へ固定した。対象SQLのSHA-256は `c8e107dbbfb8705641ba08ba639231f136baf7443caa3eacadb6e51fb507f4b2`。共有DBへの同SQL1本、API42ff019…指定配置と比較development、Cocolon cd83cf9…の製品sourceを含む新nativeが提案範囲。DB先行は旧単期を保持する。source/docsが以後変更された場合も無審査のlatestへすり替えず、実配置SHA/実run SHAを照合する。
+
+今回のsource/test/SQL変更・追加test実行は0。u118の181 PASS/606 subtests・RN13 PASS、u117の隔離SQL58項目PASSは過去の候補検証として継承し、今回の件数に再計上しない。Supabase公式の権限制御/changelogとRenderのspecific commit/Save only手順を確認し、既存SQLの明示ACLと既存操作経路を維持。Render env更新MCPがmain deployを起こした過去事実を保持し、commit指定のないtrigger_deployも使用しない。新しい接続/検査基盤は追加しない。
+
+変更は既存4文書（API運用資料・API handoff・正本06・current00の現在地）のみ。STRUCTURE_MAP_DELTA_NONE。既存Draft/open/unmerged PR3/PR30へfresh preimage/head確認後に反映し、remote bytes/parent/tree/path/headを照合する。primary outcome=BLOCKER_NARROWED。商品0/3・NOT_CLEAR・48%、IF別承認までHOLDを維持する。Rule18 §11.3とu117が今回の追加DB migration・新対象版配置/比較有効化を個別判断に分離しているため、この具体的範囲のMash承認前に実effectは行わない。u99で承認済みだった旧対象の実行を再承認待ちへ戻す意味ではない。稼働DB/設定/deploy/native/main/mergeへの新effect0。追加サービス/プラン/課金契約変更はなく、実行時は既存build枠を利用する。

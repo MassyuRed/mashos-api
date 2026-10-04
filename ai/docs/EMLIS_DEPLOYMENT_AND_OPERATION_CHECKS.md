@@ -478,3 +478,44 @@ Mashが既存workflowの新規実行を開始した。華恋は新しいrunを�
 u100で確認済みの配置API315f5b5… / deploy dep-db0n8lnavr4c738g3s5g、health/bootstrap200・未認証status401を継承。このturnでAPI再配置・環境変数・DBを変更していない。development設定はMashの手順実行報告であり、未認証bootstrapによる独立証明とはしない。
 
 今回の記録変更は既存3文書と既存PR3/30の説明更新のみ。source/test/SQL/依存/workflowの新規変更・追加検査は0、STRUCTURE_MAP_DELTA_NONE。新版native archive/export/upload成功は実施済みの前進として記録するが、商品0/3・NOT_CLEAR・全体48%は保持し、本人実機の分析一往復を次の確認点とする。
+
+
+## 23. 2026-10-04 JST u119 — 期間比較と内容修正版の適用候補
+
+**未実行・今回の追加対象についてMash承認待ち。** u118までの実装を共有API/DBと本人端末へ接続する範囲を固定する。§20の旧版315f5b5の配置承認は完了済みとして保持し、今回の新migration/比較有効化の許可へ拡張しない。Rule18 §11.3およびu117に従い、実環境を変える直前の判断として提示する。
+
+| 対象 | 固定する内容 |
+|---|---|
+| DB | 共有Supabase `cocolon-project / oeahmpmigszggnkyiivq`。専用開発DBとは呼ばない。 |
+| SQL | API `42ff019975a5d94c3c6de2a63623fb0864630ed4` の `supabase/migrations/20261004041627_analysis_period_comparison.sql` だけ。SHA-256 `c8e107dbbfb8705641ba08ba639231f136baf7443caa3eacadb6e51fb507f4b2`。 |
+| API | 既存Render `mashos-api / srv-d4ppfpm3jp1c73952bj0`、workspace `tea-d4pp61idbo4c73bf4hkg`、同URL。指定commitは `42ff019975a5d94c3c6de2a63623fb0864630ed4`。 |
+| app | Cocolon `cd83cf9e70c7c7b603d65aac8a8d8afed7e892d8` を製品source基準とし、既存PR30 branchから新規iOS TestFlight Build。今回以後のdocs-only commitは製品差分を照合して実run SHAを記録する。 |
+| 初期設定 | 新APIは `COCOLON_ANALYSIS_OBSERVED_MODE=read_only`、`COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE=off` で保存読取を確認する。 |
+| 確認用設定 | 対応APIと新nativeを確認後、上記2値をともに `development` にする。共有serviceの認証済み分析経路全体へ作用し、Mash専用allowlistではない。 |
+
+### 読取確認済みの実状態
+
+- SupabaseはACTIVE_HEALTHY／Postgres17.4.1.074。適用履歴はQ2、Q3、旧分析 `20261003204421` の3件。比較snapshot RPCはまだ存在しない。
+- 比較SQLが置換する旧CHECK名と定義、RLS=true、anon/authenticatedの表/RPC権限なし、service_roleの必要権限、親変更trigger4本が候補の前提に一致する。旧commit/read/invalidate/source_snapshotのDB関数本文4件も元SQLと全文一致。
+- Render liveは `315f5b5dacb866e62805cfd6a906984c193dcc76`／`dep-db0n8lnavr4c738g3s5g`、linked main・autoDeploy=no/off。設定値自体は今回未取得。接続先DB・分析developmentは過去のMash報告を継承する。
+- 最新nativeはrun62/37155776248、source `b11d1b321b4b1fb5497e866c8fc2edf3c25600ba`、TestFlight1.0(6201)。旧RNは比較状態を受理しても比較本文を表示しないため、新RN2fileを含むbuildが必要。
+- 稼働版との差はAPI13file（runtime5/test5/docs2/SQL1）、app7file（RN2/test1/docs4）。元migration、依存、workflow、別coreのsourceは変更しない。
+
+### 承認後の実行順
+
+1. 直前に対象DB/project、migration履歴、旧CHECK/関数/ACL、source SQLのbytesを再照合する。同migrationまたは新RPCが既にある、関数/制約の前提が違う場合は再適用せず差分を確認する。
+2. Supabase apply_migrationで上記SQLだけを適用する。新tableや既存保存行の書換えはなく、制約2件・比較snapshot RPC1・既存commit/read/invalidatorの拡張とRPC権限が対象。旧単期のguard/private v1/保存identityを維持する。適用後は実migration履歴名、関数本文、制約、RLS/ACL/triggerをcatalogで照合する。SQL sourceのtimestampを実履歴時刻と混同しない。失敗・相違ならAPI有効化へ進まない。
+3. 既存PR30 branchでiOS TestFlight Buildを新規開始する。旧runのrerunは使わない。開始直前のheadと上記製品sourceとの差を確認し、実run SHA・archive/export/upload・version/buildを記録する。6201を新比較版とみなさない。
+4. Render DashboardのEnvironmentで初期設定2値を **Save only**。**Manual Deploy → Deploy a specific commit** で上記API SHAを配置する。旧linked mainのLatest commit配置を使わない。live SHA、health200、未認証self-structure/status401、保存読取を確認する。healthだけでDB・本人認証の往復成功とはしない。
+5. 新nativeを本人端末へ導入した後、確認用の2値を **Save only** し、同じ指定API commitを再配置する。比較を有効化できたことを認証済み生成で確認する。設定値の変更報告だけを比較生成成功とみなさない。
+6. 既存本人sessionでわたしマップを明示更新し、比較表示と文章/図を確認する。当日の旧保存結果はflag変更だけでは自動再生成されないため、旧結果の再表示を比較生成の証拠にしない。以後は入力変更や強制更新を挟まず再表示し、同じ保存identity/本文/図を確認する。前期間なしはNO_PREVIOUS、未解釈は422、期限外は既存eligibilityに従う。端末の同じ見た目だけで保存UUIDの照合成功とはしない。実データの本文/tokenを公開GitHubへ載せない。
+
+Renderのenv更新MCPは過去にmain deployを追加実行し、現trigger_deployはcommit指定を持たない。この2つで上記操作を代替しない。既存Dashboardの [specific commit](https://render.com/docs/deploys#deploying-a-specific-commit) と [Save only](https://render.com/docs/configure-environment-variables) を使用する。GitHub連携に新規workflow_dispatchはなく、開始操作が必要なら既存workflow画面を使う。以前のMash本人ブラウザでの実行希望を尊重し、華恋はできる読取/照合/DB操作を担う。新たなsecret取得・新service・plan変更は不要。
+
+### 停止と復旧
+
+新版で作る保存結果には、比較がなくても注記/不一致が含まれ得る。旧315f5b5は比較NO_PREVIOUS・注記0・不一致0だけを受理するため、比較flag OFFを旧APIへ戻す許可や互換性の証拠にしない。停止時は対応する新API/schemaを維持し、`OBSERVED_MODE=read_only`・比較offへ移す。同じ指定commitで設定を反映し、新規分析生成を止めて既存保存読取を保つ。保存行を消して旧版へ戻すことや、旧schemaを逆適用することはこの範囲に含まない。
+
+この作業で増えるのはSQL1本の適用、既存APIの指定版配置/設定、既存経路の新native buildと確認。新サービス/依存/料金プラン/課金契約を追加せず、既存build枠を使用する。共有serviceの生成停止・developmentは全認証済み分析経路に及ぶ。Emlis設定、IF、global cutover、main/merge、正式商品受入れは今回の対象外。
+
+u118の181検査/606 subtests・RN13検査、u117の隔離SQL58項目は既存候補検証として継承する。今回は読取照合と手順確定で、新規test/稼働writeは未実行。商品0/3・NOT_CLEAR・48%を再採点しない。
