@@ -177,7 +177,13 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
     async def test_te_after_change_survives_commit_and_read_without_regeneration(self):
         await self._assert_action_change_saved('私は資料を調べてから、疑問が減った。')
 
-    async def _assert_action_change_saved(self, memo):
+    async def test_past_feeling_survives_commit_and_read_without_regeneration(self):
+        for memo, label in (('私は資料を調べた後、安心した。', '安心した（記録された気持ち）'),
+                ('私は資料を調べてから、落ち着いた。', '落ち着いた（記録された気持ち）')):
+            with self.subTest(memo=memo):
+                await self._assert_action_change_saved(memo, label)
+
+    async def _assert_action_change_saved(self, memo, expected_label='疑問が減った（記録された変化）'):
         self.fx = fixture(memo)
         self.row = self.fx['row']
         writes = []
@@ -205,11 +211,11 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         edge, = projection['edges']
         self.assertEqual((edge['edge_kind'], edge['from_ref'], edge['to_ref']),
                          ('OBSERVED_ORDER', action['node_ref'], change['node_ref']))
-        self.assertEqual(change['visible_label'], '疑問が減った（記録された変化）')
+        self.assertEqual(change['visible_label'], expected_label)
         self.assertIn(change['visible_label'], saved['content_text'])
         for encoded in (json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False),
                         json.dumps(projection, ensure_ascii=False)):
-            for private in ('result_state', 'BOUNDED_CHANGE', 'source_parts', '私は',
+            for private in ('result_state', 'BOUNDED_CHANGE', 'PAST_FEELING', 'source_parts', '私は',
                             'action_supports_change', 'dependent_form', 'TE_BEFORE_PAST_CHANGE'):
                 self.assertNotIn(private, encoded)
 

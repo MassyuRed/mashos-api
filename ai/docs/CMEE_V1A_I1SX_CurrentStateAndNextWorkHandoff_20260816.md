@@ -14141,3 +14141,20 @@ Python3.12.14、既存隔離test環境でvertical76（追加5）/storage15（追
 System Context prepareはPUBLICATION_RECOVERY_AMBIGUOUS: residual without markerで停止。生成context更新済みとはせず、既存規定の原本直接読取を使用。新規file/owner/共有意味実装/API/DB/DTO/RN/依存変更0。既存4 code/test＋API handoff、Cocolon既存00/03/canonical04/06の計9 fileに限定し、03 §4.14・04 §3.9へ責務を同期する。GitHubは認証済みconnectorの既存PR3/PR30 branchを対象にfresh head→non-force反映→remote byte/changed paths照合で扱う。
 
 u102〜u108修正版は未配置。稼働API315f5b5…/TestFlight6201と実機OKのMash報告、商品0/3・NOT_CLEAR・48%を継承。配置/build/main/merge/live DB変更なし。次の直接候補は、現在まで未接続の場面/役割または過去結果の感情表現について、既存共有意味ownerと完全節の証拠を照合して一単位を選ぶこと。たら条件/3節の同時拡張、annotations/conflict/比較/IFへ自動進行しない。
+
+
+## 2026-10-04 JST u109 — 行動後の過去の気持ちを分析表示へ接続
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。Mashの分析実装継続指示に基づき、API5895e192…/Cocolone83c36e…のfresh head、前回添付txt、前提/作業rules・恒久incident全文、全体構造/全file地図とcurrent03、最新weekly20261003 §6.6〜6.10、canonical04/06を確認。u108の次候補から、共有2核が認定済みの過去感情結果を既存Analysis表示へ接続する範囲を選んだ。PRODUCT_ROUTE_ALIGNED / TECHNICALLY_ADMISSIBLE。root華恋が単一実装・検査・反映owner、補助2名はread-only review。
+
+変更前は「私は資料を調べた後、安心した」「私は資料を調べてから、落ち着いた」「私は資料を調べた後、嬉しかった」が共有2核を持ってもAnalysis UNAVAILABLE。名詞変化だけを解釈する右端grammarと両端fact固定が原因だった。
+
+既存compilerに安心した/安心しました・落ち着いた・嬉しかった/うれしかったの5有限形を追加し、右端をPAST_FEELING/feeling/pastとして保持。明示SELFはSELF、主語省略はUNSPECIFIEDのままにし、左の行為者を自動継承しない。共有ownerが安心をfact、落ち着く/嬉しい等をfeelingにする差を完全節grammarへ照合する。後/あと/てから、完全な共有2核・relation・元全文証拠を引き続き要求し、単独感情を解放しない。表示は「安心した（記録された気持ち）」等で、実行済み行動・客観的改善・因果へ変換しない。te形はそのnode自身の同一source順序contextがある場合だけ過去行動として表示する。
+
+検証はPython3.12.14 / pytest9.1.1 / FastAPI0.142.2 / httpx0.28.1 / pydantic2.13.5。vertical81（追加5）/storage16（追加1）/saved period13/API6＝**116 PASS、242 subtests PASS**、既存Pydantic非推奨warning1。初回の追加検査は既存注意文との文言不一致と、共有未認定の「落ち着きました」をpositiveに含めたため計36 subtest失敗。注意文の期待を既存本文へ合わせた後も後者6件が残ったため、未認定形を今回の対応inventoryから外しnegativeへ保持。共有意味処理や既存testを緩めていない。最初の依存probeではpytest用path不足を観測し、既存隔離依存2pathを使って実version/importを確認した。
+
+全文のscalar/UTF-8証拠、主体/時制/気持ち型、他者/否定/推測/夢/未解釈scopeの非昇格、共有witness必須、反復episode、補足/全文訂正/撤回、te context欠落を確認。実generate_saved→合成RPC commit→read_savedで同じ文章/DTO/identityを保持し再生成0、内部PAST_FEELING/propositionの漏出なし。rootが後/te/嬉しさ/補足/訂正/撤回の6合成本文を全文読み、既存RN contract/view modelも同6件のbackend本文と完全一致した。read-only review2件の具体指摘は上記へ反映し、残存blockerなし。Auth/DBは合成応答であり、修正版の稼働DB・端末試験や正式商品受入れではない。
+
+System Context prepareは指定workspace内のmashos-apiが見つからず停止。生成context更新済みとはせず、規定のoriginal直接読取を使用した。既存4 code/test＋API handoff、Cocolon既存00/03/04/06の計9 fileだけを更新。新規file/owner/共有意味実装/API/DB/DTO/RN/依存定義変更0。file配置不変、既存責務は03 §4.15・canonical04 §3.10へ同期。GitHub反映先は既存public PR3/PR30のagent branch、fresh head/preimage確認→non-force反映→remote全文/変更path照合。
+
+u102〜u109修正版は未配置。稼働API315f5b5…/TestFlight6201と実機OKのMash報告を継承。配置/build/main/merge/live DB変更なし、追加費用/Mash操作0。primary outcome=TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%を再採点しない。今回を一般感情理解・分析全体の完成とはしない。ほっとした/落ち着きました、程度修飾、否定感情、たら条件/3節、場面/役割、annotations/conflict/比較/IFは未完了。次は場面/役割の代表入力を既存共有意味と照合し、表示へ未到達の具体的な一箇所を選ぶ。語彙拡張を無期限の前工程にはしない。

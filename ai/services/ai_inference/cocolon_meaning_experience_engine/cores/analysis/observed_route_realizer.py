@@ -12,7 +12,7 @@ from uuid import uuid4
 from ...contracts import EngineStatus
 from .intent_compiler import (ObservedGraph, compile_observed_graph, _proposition,
                               _CANONICAL_CONTENT, _RESULT_STEMS, _CHANGE_PAST,
-                              _te_action_proposition)
+                              _FEELING_PAST, _te_action_proposition)
 from .source_adapter import (
     AnalysisObservedMapRequest, AnalysisSourceError, AnalysisSourceMember,
     freeze_analysis_sources,
@@ -34,9 +34,11 @@ def _te_order_context(node, graph):
             continue
         right = next((n for n in graph.nodes if n.node_ref == edge.endpoint_refs[1]), None)
         a, b, whole = edge.evidence_refs
-        if (right and right.proposition and right.proposition.result_state == 'BOUNDED_CHANGE'
+        if (right and right.proposition
+                and (right.proposition.result_state, right.modality) in {
+                    ('BOUNDED_CHANGE', 'fact'), ('PAST_FEELING', 'feeling')}
                 and right.node_kind == 'IMMEDIATE_RESULT_OR_AFTERMATH'
-                and (right.modality, right.temporal_scope) == ('fact', 'past')
+                and right.temporal_scope == 'past'
                 and a in node.evidence_refs and b in right.evidence_refs
                 and len({(e.source_envelope_id, e.source_span_id, e.field_path)
                          for e in (a, b, whole)}) == 1
@@ -66,6 +68,8 @@ def _safe_label(node, graph):
     if parts.result_state == 'BOUNDED_CHANGE':
         phrase = ''.join(noun + case for case, noun in parts.arguments)
         return phrase + _CHANGE_PAST[parts.predicate_lemma] + '（記録された変化）'
+    if parts.result_state == 'PAST_FEELING':
+        return _FEELING_PAST[parts.predicate_lemma] + '（記録された気持ち）'
     if parts.possible_content is not None:
         content = parts.possible_content
         phrase = ''.join(noun + case for case, noun in content.arguments)

@@ -912,6 +912,110 @@ class AnalysisVerticalTests(unittest.TestCase):
         with self.assertRaises(AnalysisSourceError):
             wish.safe_projection(authenticated_owner_scope=OWNER)
 
+    def test_past_feeling_after_action_keeps_experience_and_exact_source(self):
+        forms = [('安心した', '安心する'), ('安心しました', '安心する'),
+            ('落ち着いた', '落ち着く'),
+            ('嬉しかった', '嬉しい'), ('うれしかった', 'うれしい')]
+        for action in ('私は資料を調べた後、', '私は資料を調べたあとに、',
+                       '私は資料を調べてから、'):
+            for feeling, lemma in forms:
+                for subject in ('', '私は'):
+                    with self.subTest(action=action, feeling=feeling, subject=subject):
+                        literal = action + subject + feeling
+                        req = request(record(memo='　' + literal + '。'))
+                        artifact = self.generate(req).artifact
+                        action_node, result = artifact.graph.nodes
+                        self.assertEqual(result.node_kind, 'IMMEDIATE_RESULT_OR_AFTERMATH')
+                        self.assertEqual((result.proposition.result_state, result.modality,
+                            result.temporal_scope, result.proposition.predicate_lemma),
+                            ('PAST_FEELING', 'feeling', 'past', lemma))
+                        self.assertEqual(result.proposition.actor, 'SELF' if subject else 'UNSPECIFIED')
+                        edge, = artifact.graph.edges
+                        self.assertEqual((edge.edge_kind, edge.endpoint_refs),
+                            ('OBSERVED_ORDER', (action_node.node_ref, result.node_ref)))
+                        sources = {s.envelope.envelope_id: s.envelope
+                                   for s in freeze_analysis_sources(req).sources}
+                        whole = edge.evidence_refs[-1]
+                        self.assertEqual(sources[whole.source_envelope_id].raw_utf8[
+                            whole.utf8_start:whole.utf8_end].decode(), literal)
+                        for node in artifact.graph.nodes:
+                            evidence, = node.evidence_refs
+                            raw = sources[evidence.source_envelope_id].raw_utf8[
+                                evidence.utf8_start:evidence.utf8_end]
+                            self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+                            covered = {i for _, a, b in node.proposition.source_parts for i in range(a, b)}
+                            self.assertEqual(covered, set(range(len(raw.decode()))))
+                        projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                        text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                        self.assertTrue(projection['nodes'][1]['visible_label'].endswith('（記録された気持ち）'))
+                        self.assertNotIn('実行済み', projection['nodes'][1]['visible_label'])
+                        self.assertIn(projection['nodes'][1]['visible_label'], text)
+                        self.assertIn('原因を示す線ではありません', text)
+
+    def test_past_feeling_requires_shared_pair_and_matching_modality(self):
+        from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
+        original_builder = compiler.build_final_stage1_grounded_observation_plan
+        for memo in ('私は資料を調べた後、安心した。', '私は資料を調べてから、落ち着いた。'):
+            for mismatch in ('relation', 'modality'):
+                def changed(*args, **kwargs):
+                    plan = original_builder(*args, **kwargs)
+                    if mismatch == 'relation':
+                        return replace(plan, relations=())
+                    return replace(plan, nuclei=tuple(replace(n, semantic_frame=replace(
+                        n.semantic_frame, modality='wish')) if n.kind == 'change' else n for n in plan.nuclei))
+                with self.subTest(memo=memo, mismatch=mismatch), patch.object(
+                        compiler, 'build_final_stage1_grounded_observation_plan', side_effect=changed):
+                    self.assertIsNone(self.generate(request(record(memo=memo))).artifact)
+
+    def test_past_feeling_does_not_erase_unread_scope_or_inherit_other_subject(self):
+        for ending in ('友人は安心した', '私も安心した', '少し安心した',
+                '安心しなかった', '安心したい', '安心する', '安心したと思う',
+                '安心したという夢を見た', '安心したと聞いた', '安心したかもしれない',
+                '安心した？', '嬉しくなかった', '落ち着いたが不安だった',
+                '落ち着きました', 'ほっとした'):
+            with self.subTest(ending=ending):
+                result = self.generate(request(record(memo='私は資料を調べてから、' + ending + '。')))
+                self.assertFalse(result.artifact and any(n.proposition and
+                    n.proposition.result_state == 'PAST_FEELING' for n in result.artifact.graph.nodes))
+                self.assertFalse(result.artifact and result.artifact.graph.edges)
+        for memo in ('安心した。', '私は落ち着いた。',
+                '友人は資料を調べた後、安心した。',
+                '私は資料を調べたら、安心した。'):
+            with self.subTest(memo=memo):
+                self.assertIsNone(self.generate(request(record(memo=memo))).artifact)
+
+    def test_past_feeling_supplement_revision_withdrawal_and_episode_identity(self):
+        old = '私は資料を調べた後、安心した'
+        new = '私は記録を残してから、落ち着いた'
+        base = record(memo='私は仕事を続けたい。' + old + '。')
+        for answer, count in ((new + '。', 2), ('「' + old + '」ではなく「' + new + '」です。', 1)):
+            with self.subTest(answer=answer):
+                req = request(self.with_answer(base, answer))
+                artifact = self.generate(req).artifact
+                self.assertEqual(len(artifact.graph.edges), count)
+                result = next(n for n in artifact.graph.nodes if n.proposition.predicate_lemma == '落ち着く')
+                sources = {s.envelope.envelope_id: s.envelope for s in freeze_analysis_sources(req).sources}
+                for e in result.evidence_refs:
+                    self.assertEqual(sources[e.source_envelope_id].source_role, 'SUPPLEMENTAL_ANSWER')
+                    self.assertEqual(sources[e.source_envelope_id].raw_utf8[e.utf8_start:e.utf8_end].decode(), '落ち着いた')
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        withdrawn = self.generate(request(self.with_answer(base, '「' + old + '」は取り消します。'))).artifact
+        self.assertEqual([n.node_kind for n in withdrawn.graph.nodes], ['ATTENTION_OR_THOUGHT'])
+        self.assertFalse(withdrawn.graph.edges)
+        for answer in ('「安心した」は取り消します。', new + '。別の意味です。'):
+            self.assertIsNone(self.generate(request(self.with_answer(base, answer))).artifact)
+        repeated = self.generate(request(record(memo=old + '。' + old + '。'), record(2, memo=old + '。'))).artifact
+        self.assertEqual((len(repeated.graph.nodes), len(repeated.graph.edges)), (6, 3))
+        self.assertEqual(len({ref for edge in repeated.graph.edges for ref in edge.endpoint_refs}), 6)
+
+    def test_te_feeling_result_requires_own_order_context_for_safe_display(self):
+        artifact = self.generate(request(record(memo='私は資料を調べてから、落ち着いた。'))).artifact
+        artifact.safe_projection(authenticated_owner_scope=OWNER)
+        for graph in (replace(artifact.graph, edges=()), replace(artifact.graph,
+                edges=tuple(replace(e, evidence_refs=e.evidence_refs[:2]) for e in artifact.graph.edges))):
+            with self.assertRaises(AnalysisSourceError):
+                replace(artifact, graph=graph).safe_projection(authenticated_owner_scope=OWNER)
+
     def test_unsupported_action_change_never_leaves_a_factual_action_fragment(self):
         for memo in (
             '私は資料を調べた後、疑問が減ったという夢を見た。',

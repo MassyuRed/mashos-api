@@ -115,9 +115,32 @@ _CHANGE_PAST = {'減る': '減った', '増える': '増えた', '変わる': '�
 _BOUNDED_CHANGE = re.compile(
     r'(?P<noun>' + _NOMINAL + r'(?:の' + _NOMINAL + r')*)'
     r'(?P<case>は|が|も)(?P<predicate>' + '|'.join(_CHANGE_PAST.values()) + r')')
+# Finite feelings already witnessed by the shared action/change pair. These
+# are predicate inflections, not an assessment that the preceding action helped.
+_FEELING_PAST = {'安心する': '安心した', '落ち着く': '落ち着いた',
+                 '嬉しい': '嬉しかった', 'うれしい': 'うれしかった'}
+_FEELING_FORMS = {'安心した': '安心する', '安心しました': '安心する',
+    '落ち着いた': '落ち着く',
+    '嬉しかった': '嬉しい', 'うれしかった': 'うれしい'}
+
+
+def _past_feeling_proposition(value):
+    subject = re.match(r'^(?:私|僕|わたし|自分)は', value)
+    start = subject.end() if subject else 0
+    lemma = _FEELING_FORMS.get(value[start:])
+    if lemma is None:
+        return None
+    parts = (('SELF_TOPIC', 0, start),) if subject else ()
+    return ObservedProposition('SELF' if subject else 'UNSPECIFIED', (),
+        lemma, 'positive', 'feeling', 'past',
+        parts + (('FINITE_FEELING', start, len(value)),),
+        result_state='PAST_FEELING')
 
 
 def _bounded_change_proposition(value):
+    feeling = _past_feeling_proposition(value)
+    if feeling is not None:
+        return feeling
     match = _BOUNDED_CHANGE.fullmatch(value)
     if match is None or re.search(r'(?:^|の)(?:何|誰|幾)', match['noun']):
         return None
@@ -367,7 +390,9 @@ def _action_change_pair(source, plan, span_id):
         if (n.source_span_ids != (span_id,) or n.source_fields != ('memo',)
                 or n.grounding_kind != 'explicit' or n.retention != 'required'
                 or n.allowed_claim_scope != 'explicit_current_input'
-                or f.actor != 'current_user' or f.modality != 'fact' or f.time_scope != 'past'
+                or f.actor != 'current_user' or f.time_scope != 'past'
+                or (n is action and f.modality != 'fact')
+                or (n is change and f.modality not in {'fact', 'feeling'})
                 or 'semantic_dependency:action_before_change' not in codes
                 or 'source_fragment_scalar_source:normalized_raw_text' not in codes
                 or len(bounds) != 1 or any(c.startswith(('surface_scalar_', 'thread_time:')) for c in codes)):
@@ -398,6 +423,13 @@ def _action_change_pair(source, plan, span_id):
             or any(re.search(r'(?:^|の)(?:何|誰|幾)', noun) for _, noun in left.arguments)
             or (left.polarity, left.modality, left.temporal_scope) !=
                 ('positive', 'fact', 'dependent' if te_after else 'past')):
+        return None
+    # The shared owner marks reassurance as fact and the other admitted
+    # feeling predicates as feeling. Match that witness exactly; Analysis
+    # retains all of these as a reported experience, never a performed action.
+    expected_modality = ('feeling' if right.result_state == 'PAST_FEELING'
+                         and right.predicate_lemma != '安心する' else 'fact')
+    if change.semantic_frame.modality != expected_modality:
         return None
     if te_after:
         # Past is established by this whole episode and its shared witness,
