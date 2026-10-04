@@ -14501,3 +14501,19 @@ Mashの「分析構造の内容修正関係を進めて」に従い、u128の実
 変更はAPI source1／既存test1／既存handoff1、Cocolon既存current03／canonical04／06の3文書。STRUCTURE_MAP_DELTA_NONE：既存Analysis compilerの内部解釈のみでowner・API・DB・DTO・RN経路の変更なし。共有Emlis／Piece作者・SQL・依存・実DB／個人データ・env・deploy・build・main／merge・IFは変更／実行0。商品0/3・NOT_CLEAR・48%、Draft/open/unmergedを維持。primary outcomeはTECHNICAL_CREDIT。反映commitはPR3／30のu129先頭を参照。
 
 今回の修正は未配置。最後の確認済み稼働APIはu128の1a42b9e…、TestFlightは6401送信成功のまま継承し、本人端末の正常空表示・通常入力からの生成／保存再表示／比較は未確認。内容修正の次候補は同じ主語後日語が場面／担当から保留される境界を既存shared witness内で扱えるかの確認であり、今回自動着手しない。実機確認の成立を内容検査で代用しない。
+
+## 2026-10-04 JST u130 — 場面・担当の主語後の今日／昨日を保持
+
+Mashの分析内容修正の継続指示に従い、u129に残した本人の過去の場面／担当を補正した。既存Analysis compiler内の限定修正（Rule18 LEVEL_2）。全体設計・01A/B/C全file地図・前提資料／作業規則・最新weekly20261003 §5/§6.6〜6.10・current03／canonical04／06／u129と実fileを照合、恒久incidentは今回全文再読。root華恋が唯一の判断・実装・検証・GitHub write owner、補助担当はread-only独立review。追加費用・Mash操作0。
+
+変更前の実CMEE合成出力は「私は昨日職場にいた」「私は今日、会議の司会を担当した」「僕は今日，職場にいませんでした」がUNAVAILABLEだった。既存の完全なSELF過去節のregex内へ主語後の日語を追加し、原文を書換えずSELF_TOPIC→RELATIVE_DAY→名詞→格→有限述語の座標を保持する。変更後は「この記述時点の昨日：職場にいた（記録された場面）」「この記述時点の今日：会議の司会を担当した（記録された担当）」を同じ文章／図へ投影できる。否定は「いなかった／担当しなかった」のまま。職業・恒久身分・担当作業の完了を推測しない。
+
+日語の重複、前置日語／接続語との組合せ、朝／午前／以前／分などの未解釈範囲、区切りなしの「昨日開催の会議／昨日会議の司会」は保留する。場面／担当の「今日の会議」は今回も未対応のまま日付へ昇格させない。共有event witness、SCENEのrequired条件、ROLEのrequired/should条件、完全な文の境界、伝聞／夢等の保留、safe表示時の命題再解析は維持した。日語を後続節へ継承せず、日付だけで順序・因果を作らない。
+
+検証はPython3.12.14の既存vertical **136 tests PASS**（131＋5新規method）。原文scalar／UTF-8／hash、source_partsの全文非重複被覆、改変拒否、日語／否定／名詞scope、共有witness改変、補足の独立出典、訂正／撤回、語順だけの比較差0を確認。旧negativeの「私は昨日職場にいた」は同じ入力のpositive＋出典検査へ移した。反対内容の通常補足を訂正とみなさない既存拒否も維持。初回の追加検査にあったACTION型名の誤りと、反対補足を自動訂正と扱う誤った期待を修正し、製品側の保護条件は変えていない。
+
+合成6本文（場面、担当、否定場面、二段階、明示訂正、等価比較）をrootが全文読取。変更していない実RN表示modelへ生成DTOを渡し、全文／artifact identity／node順／edge配列が全例一致。React component suite・native・実DBの今回再検証ではない。独立reviewは静的差分確認でscope内blockerなし。実入力／商品受入れへ換算しない。
+
+変更はAPI既存source1／test1／handoff1、Cocolon既存current03／canonical04／06。STRUCTURE_MAP_DELTA_NONE：既存Analysis-ownedの解釈だけを補正、共有Emlis／Piece作者・API／DTO／SQL／DB／RN／依存を変更しない。env／deploy／build／main／merge／IF操作0。Draft/open/unmerged、商品0/3・NOT_CLEAR・48%を維持。反映commitはPR3/30のu130先頭を参照。
+
+未修正の隣接欠陥：「私は明日職場にいた」は今回以前のparserでも「明日職場」を場面名に吸収する。今回今日／昨日の修正を一般的時点理解の完成とはしない。次はこの未対応時点語の名詞化を既存compiler内で止める修正。主語省略一般や時間表現全体への拡張を自動で完了扱いにしない。今回も未配置で、最後の確認済み稼働APIはu128の1a42b9e…、TestFlight6401送信成功を継承する。本人端末の正常空表示・通常入力からの生成／保存再表示／比較は未確認。

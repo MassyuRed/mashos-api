@@ -130,12 +130,15 @@ _FEELING_PAST = {'安心する': '安心した', '落ち着く': '落ち着い�
 _FEELING_FORMS = {'安心した': '安心する', '安心しました': '安心する',
     '落ち着いた': '落ち着く',
     '嬉しかった': '嬉しい', 'うれしかった': 'うれしい'}
+_PAST_EVENT_TOPIC = (
+    r'(?P<subject>私|僕|わたし|自分)は'
+    r'(?:(?P<day>今日|昨日)(?!の|を|に|で|と|は|が|も)(?P<day_separator>[、，\s]*))?')
 _PAST_PRESENCE = re.compile(
-    r'(?P<subject>私|僕|わたし|自分)は(?P<noun>' + _NOMINAL
+    _PAST_EVENT_TOPIC + r'(?P<noun>' + _NOMINAL
     + r'(?:の' + _NOMINAL + r')*)(?P<case>に)'
     r'(?P<predicate>いた|いました|いなかった|いませんでした)')
 _PAST_RESPONSIBILITY = re.compile(
-    r'(?P<subject>私|僕|わたし|自分)は(?P<noun>' + _NOMINAL
+    _PAST_EVENT_TOPIC + r'(?P<noun>' + _NOMINAL
     + r'(?:の' + _NOMINAL + r')*)(?P<case>を)'
     r'(?P<predicate>担当した|担当しました|担当しなかった|担当しませんでした)')
 _PROTECTIVE_WISH = re.compile(
@@ -177,33 +180,54 @@ def _protective_wish_witness(nucleus):
                     'thread_time:', 'semantic_dependency:')) for code in frame.attribute_codes))
 
 
+def _past_event_topic_parts(match):
+    if match is None or re.search(r'(?:^|の)(?:何|誰|幾)', match['noun']):
+        return None
+    # Keep an unparsed/repeated day out of the nominal argument. Nominal
+    # 今日の... remains unsupported here; it must never become an event day.
+    if re.match(r'(?:今日|昨日)', match['noun']):
+        return None
+    if match['day'] is None:
+        return (('SELF_TOPIC', 0, match.start('noun')),)
+    # Match the action grammar's bounded day scope: neither a finer time
+    # nor an unseparated genitive phrase establishes the event's day.
+    if (_DAY_EXTENSION.match(match['noun'])
+            or (not match['day_separator'] and 'の' in match['noun'])):
+        return None
+    day = {'今日': 'TODAY', '昨日': 'YESTERDAY'}[match['day']]
+    return (('SELF_TOPIC', 0, match.start('day')),
+            ('RELATIVE_DAY_' + day, match.start('day'), match.start('noun')))
+
+
 def _past_responsibility_proposition(value):
     # The explicit responsibility predicate, not the noun or a job-title
     # guess, establishes the role relation. It proves no completed task.
     match = _PAST_RESPONSIBILITY.fullmatch(value)
-    if match is None or re.search(r'(?:^|の)(?:何|誰|幾)', match['noun']):
+    topic_parts = _past_event_topic_parts(match)
+    if topic_parts is None:
         return None
     polarity = 'negative' if match['predicate'] in {'担当しなかった', '担当しませんでした'} else 'positive'
     return ObservedProposition('SELF', (('を', match['noun']),), '担当する',
-        polarity, 'fact', 'past', (
-            ('SELF_TOPIC', 0, match.start('noun')),
+        polarity, 'fact', 'past', topic_parts + (
             ('ROLE_NOMINAL', match.start('noun'), match.end('noun')),
             ('CASE_を', match.start('case'), match.end('case')),
             ('FINITE_RESPONSIBILITY', match.start('predicate'), len(value))),
+        relative_day={'今日': 'TODAY', '昨日': 'YESTERDAY'}.get(match['day'], ''),
         role_state='PAST_RESPONSIBILITY')
 
 
 def _past_presence_proposition(value):
     match = _PAST_PRESENCE.fullmatch(value)
-    if match is None or re.search(r'(?:^|の)(?:何|誰|幾)', match['noun']):
+    topic_parts = _past_event_topic_parts(match)
+    if topic_parts is None:
         return None
     polarity = 'negative' if match['predicate'] in {'いなかった', 'いませんでした'} else 'positive'
     return ObservedProposition('SELF', (('に', match['noun']),), 'いる',
-        polarity, 'fact', 'past', (
-            ('SELF_TOPIC', 0, match.start('noun')),
+        polarity, 'fact', 'past', topic_parts + (
             ('SCENE_NOMINAL', match.start('noun'), match.end('noun')),
             ('CASE_に', match.start('case'), match.end('case')),
             ('FINITE_PRESENCE', match.start('predicate'), len(value))),
+        relative_day={'今日': 'TODAY', '昨日': 'YESTERDAY'}.get(match['day'], ''),
         scene_state='PAST_PRESENCE')
 
 
@@ -217,9 +241,9 @@ def _past_event_proposition(value):
     start = prefix.end() if prefix else 0
     event = (_past_presence_proposition(value[start:])
              or _past_responsibility_proposition(value[start:]))
-    # A day after the subject is outside this prefix grammar. Do not absorb
-    # it into the permissive kanji noun as if 昨日職場 were a location name.
-    if event is not None and any(re.match(r'^(今日|昨日)', noun) for _, noun in event.arguments):
+    # This bounded grammar admits one day or connective, not a combination
+    # whose scope would need a separate interpretation.
+    if event is not None and prefix is not None and event.relative_day:
         return None
     if event is None or prefix is None:
         return event

@@ -2056,6 +2056,113 @@ class AnalysisVerticalTests(unittest.TestCase):
             record(2, memo='その後私は会議の司会を担当した。'))).artifact
         self.assertFalse(split.graph.edges)
 
+    def test_post_topic_event_days_keep_kind_polarity_and_full_source(self):
+        cases = (
+            ('私は昨日職場にいた', 'SCENE', 'YESTERDAY', 'positive', '職場にいた（記録された場面）'),
+            ('僕は今日，職場にいませんでした', 'SCENE', 'TODAY', 'negative', '職場にいなかった（記録された場面）'),
+            ('わたしは昨日\u3000図書館にいました', 'SCENE', 'YESTERDAY', 'positive', '図書館にいた（記録された場面）'),
+            ('私は今日、会議の司会を担当した', 'ROLE', 'TODAY', 'positive', '会議の司会を担当した（記録された担当）'),
+            ('自分は昨日、会議の司会を担当しなかった', 'ROLE', 'YESTERDAY', 'negative', '会議の司会を担当しなかった（記録された担当）'),
+            ('僕は今日会議を担当しました', 'ROLE', 'TODAY', 'positive', '会議を担当した（記録された担当）'),
+        )
+        for literal, kind, day, polarity, label in cases:
+            with self.subTest(literal=literal):
+                req = request(record(memo=literal + '。'))
+                artifact = self.generate(req).artifact
+                node, = artifact.graph.nodes
+                p = node.proposition
+                self.assertEqual((node.node_kind, node.polarity, node.modality,
+                                  node.temporal_scope, p.relative_day),
+                                 (kind, polarity, 'fact', 'past', day))
+                self.assertEqual([i for _, a, b in p.source_parts for i in range(a, b)],
+                                 list(range(len(literal))))
+                e, = node.evidence_refs
+                source = freeze_analysis_sources(req).sources[0].envelope
+                field = source.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                self.assertEqual(source.raw_utf8[e.utf8_start:e.utf8_end].decode(), literal)
+                self.assertEqual(field[e.scalar_start:e.scalar_end], literal)
+                self.assertEqual(hashlib.sha256(literal.encode()).hexdigest(), e.literal_sha256)
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)
+                expected = 'この記述時点の' + ('今日' if day == 'TODAY' else '昨日') + '：' + label
+                self.assertEqual(visual['nodes'][0]['visible_label'], expected)
+                self.assertIn(expected, text['text'])
+                self.assertEqual(visual['projection_of'], text['projection_of'])
+                self.assertFalse(visual['edges'])
+                for altered in (replace(p, relative_day=''), replace(p, source_parts=p.source_parts[1:])):
+                    with self.assertRaises(AnalysisSourceError):
+                        replace(artifact, graph=replace(artifact.graph,
+                            nodes=(replace(node, proposition=altered),))).safe_projection(
+                                authenticated_owner_scope=OWNER)
+
+    def test_post_topic_event_days_do_not_promote_unresolved_day_or_nominal_scope(self):
+        for memo in (
+            '今日私は昨日職場にいた。', 'その後私は今日職場にいた。',
+            '私は今日昨日職場にいた。', '私は昨日朝職場にいた。',
+            '私は昨日、午前の会議を担当した。', '私は昨日開催の会議を担当した。',
+            '私は昨日会議の司会を担当した。', '私は今日の会議を担当した。',
+            '私は昨日分の会議を担当した。', '私は昨日以前の職場にいた。',
+            '私は昨日職場にいる。', '私は昨日会議を担当したい。',
+            '私は昨日記録を担当した。', '友人は昨日職場にいた。',
+            '私は昨日、誰の会議を担当した。',
+        ):
+            with self.subTest(memo=memo):
+                artifact = self.generate(request(record(memo=memo))).artifact
+                self.assertFalse(artifact and any(n.node_kind in {'SCENE', 'ROLE'} for n in artifact.graph.nodes))
+
+    def test_post_topic_event_days_do_not_erase_report_dream_or_sentence_tail(self):
+        tail = 'その内容を忘れないように長い文章として残しています' * 4
+        for clause in ('私は昨日職場にいた', '私は今日、会議の司会を担当した'):
+            for memo in ('友人から聞いた話です。' + clause, '夢を見た。' + clause,
+                         clause + '？', clause + 'かもしれない',
+                         clause + '、という夢を見たのですが、' + tail,
+                         tail + '、' + clause):
+                with self.subTest(memo=memo):
+                    artifact = self.generate(request(record(memo=memo + '。'))).artifact
+                    self.assertFalse(artifact and any(n.node_kind in {'SCENE', 'ROLE'} for n in artifact.graph.nodes))
+
+    def test_post_topic_event_days_keep_supplement_revision_and_withdrawal_evidence(self):
+        for old, new in (('私は昨日職場にいた', '私は今日、図書館にいなかった'),
+                         ('私は昨日、会議の司会を担当した', '私は今日、会議の司会を担当しなかった')):
+            original = record(memo=old + '。私は資料を調べた。')
+            for answer in (new + '。', '「' + old + '」ではなく「' + new + '」です。'):
+                with self.subTest(answer=answer):
+                    base = original if answer.startswith('「') else record(memo='私は資料を調べた。')
+                    req = request(self.with_answer(base, answer))
+                    artifact = self.generate(req).artifact
+                    node = next(n for n in artifact.graph.nodes if n.polarity == 'negative')
+                    e, = node.evidence_refs
+                    source = next(s.envelope for s in freeze_analysis_sources(req).sources
+                                  if s.envelope.envelope_id == e.source_envelope_id)
+                    self.assertEqual(source.source_role, 'SUPPLEMENTAL_ANSWER')
+                    self.assertEqual(source.raw_utf8[e.utf8_start:e.utf8_end].decode(), new)
+                    self.assertEqual(node.proposition.relative_day, 'TODAY')
+                    artifact.safe_projection(authenticated_owner_scope=OWNER)
+            withdrawn = self.generate(request(self.with_answer(original,
+                '「' + old + '」は取り消します。'))).artifact
+            self.assertEqual([n.node_kind for n in withdrawn.graph.nodes], ['ACTION_OR_NONACTION'])
+            self.assertNotIn('昨日', withdrawn.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+        # A supplement's day belongs to its own source; an opposed answer
+        # is not silently treated as a correction of the original role.
+        self.assertIsNone(self.generate(request(self.with_answer(original, new + '。'))).artifact)
+
+    def test_post_topic_event_days_keep_comparison_and_do_not_inherit_time_or_order(self):
+        for before, now in (
+            ('昨日私は職場にいた。', '私は昨日職場にいた。'),
+            ('今日私は会議の司会を担当した。', '私は今日、会議の司会を担当しました。'),
+            ('今日私は職場にいなかった。', '私は今日職場にいませんでした。'),
+        ):
+            with self.subTest(now=now):
+                p = self.compared(now, before).artifact.safe_projection(authenticated_owner_scope=OWNER)
+                self.assertEqual(p['period_comparison']['safe_change_kinds'], [])
+        p = self.compared('私は今日職場にいた。', '私は昨日職場にいた。').artifact.safe_projection(
+            authenticated_owner_scope=OWNER)
+        self.assertIn('ROUTE_EVIDENCE_CHANGED', p['period_comparison']['safe_change_kinds'])
+        artifact = self.generate(request(record(memo=
+            '私は昨日職場にいた。私は会議の司会を担当した。'))).artifact
+        self.assertEqual([n.proposition.relative_day for n in artifact.graph.nodes], ['YESTERDAY', ''])
+        self.assertFalse(artifact.safe_projection(authenticated_owner_scope=OWNER)['edges'])
+
     def test_prefixed_events_do_not_erase_unread_operators_or_reported_speakers(self):
         tail = 'その内容を忘れないように長い文章として残しています' * 4
         for clause in ('私は職場にいた', '私は会議の司会を担当した'):
@@ -2071,7 +2178,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                     artifact = self.generate(request(record(memo=memo + '。'))).artifact
                     self.assertFalse(artifact and any(n.node_kind in {'SCENE', 'ROLE'} for n in artifact.graph.nodes))
         for memo in ('今日私は職場にいる。', '今日私は会議の司会を担当したい。',
-                     '私は昨日職場にいた。', '今日私は昨日職場にいた。',
+                     '今日私は昨日職場にいた。',
                      '私は今日会議の司会を担当した。', '昨日私は記録を担当した。'):
             with self.subTest(memo=memo):
                 artifact = self.generate(request(record(memo=memo))).artifact
@@ -2080,7 +2187,8 @@ class AnalysisVerticalTests(unittest.TestCase):
     def test_prefixed_events_still_require_shared_event_witness(self):
         from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
         builder = compiler.build_final_stage1_grounded_observation_plan
-        for clause in ('今日私は職場にいた。', 'その後私は会議の司会を担当した。'):
+        for clause in ('今日私は職場にいた。', 'その後私は会議の司会を担当した。',
+                       '私は今日職場にいた。', '私は昨日、会議の司会を担当した。'):
             for mismatch in ('kind', 'time', 'actor', 'fragment'):
                 def changed(*args, **kwargs):
                     plan = builder(*args, **kwargs)
