@@ -416,12 +416,29 @@ class ObservedConflict:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
+class ObservedAnnotation:
+    """A written contrast, never a route step or an inferred cause."""
+    annotation_ref: str
+    target_ref: str
+    predicate_lemma: str
+    source_labels: tuple[str, ...]
+    evidence_refs: tuple[EvidenceRef, ...]
+    update_refs: tuple[str, ...] = ()
+    kind: str = 'BURDEN'
+    annotation_state: str = 'SOURCE_EXPLICIT_ANNOTATION'
+    uncertainty: str = 'CAUSE_AND_DURATION_NOT_ESTABLISHED'
+    alternative_explanations: tuple[str, ...] = ()
+    forbidden_promotions: tuple[str, ...] = ('CAUSE', 'TRAIT', 'DIAGNOSIS', 'ROUTE_ORDER')
+
+
+@dataclass(frozen=True, slots=True, repr=False)
 class ObservedGraph:
     nodes: tuple[ObservedNode, ...]
     edges: tuple[ObservedEdge, ...]
     unknown_gaps: tuple[UnknownGap, ...]
     source_updates: tuple[ObservedSourceUpdate, ...] = ()
     conflicts: tuple[ObservedConflict, ...] = ()
+    annotations: tuple[ObservedAnnotation, ...] = ()
 
 
 def _opposed_claim_pairs(claims):
@@ -629,6 +646,71 @@ def _fragment(source, nucleus, plan=None):
     return value, evidence, proposition
 
 
+def _burden_predicate(value):
+    # Complete affirmative present inflections, not negative polarity alone.
+    # In particular, an absent positive feeling does not prove a burden.
+    match = re.fullmatch(r'(?:私|僕|わたし|自分)は(?P<predicate>つらい|苦しい)(?:です)?', value)
+    return match['predicate'] if match else None
+
+
+def _wish_burden_pair(source, plan, span_id):
+    """Consume one complete, shared-owner contrast with two explicit selves."""
+    rows = [n for n in plan.nuclei if span_id in n.source_span_ids]
+    if len(rows) != 2:
+        return None
+    wish, burden = rows
+    for n in rows:
+        f = n.semantic_frame
+        codes = f.attribute_codes
+        if (n.source_span_ids != (span_id,) or n.source_fields != ('memo',)
+                or n.grounding_kind not in {'explicit', 'user_stated_relation'}
+                or n.retention != 'required' or n.allowed_claim_scope != 'explicit_current_input'
+                or f.actor != 'current_user' or f.time_scope != 'current_input'
+                or 'semantic_role:generic_relation_fragment' not in codes
+                or 'source_fragment_scalar_source:normalized_raw_text' not in codes
+                or len([c for c in codes if c.startswith('source_fragment_scalar_range:')]) != 1
+                or any(c.startswith(('surface_scalar_', 'thread_time:', 'semantic_dependency:')) for c in codes)):
+            return None
+    w, b = wish.semantic_frame, burden.semantic_frame
+    if ((wish.kind, w.predicate_kind, w.polarity, w.modality) != ('wish', 'wish', 'positive', 'wish')
+            or (burden.kind, b.predicate_kind, b.polarity, b.modality) != ('reaction', 'feeling', 'negative', 'feeling')
+            or 'lexical:source_finite_contrast_feeling' not in b.attribute_codes):
+        return None
+    links = [r for r in plan.relations if r.from_nucleus_id == wish.nucleus_id
+             and r.to_nucleus_id == burden.nucleus_id]
+    if (len(links) != 1 or links[0].type != 'contrast'
+            or links[0].grounding_kind != 'user_stated_relation' or links[0].retention != 'required'
+            or links[0].source_span_ids != (span_id,)
+            or links[0].source_relation_ids != ('typed_projection:top_level_connective',)
+            or links[0].source_meaning_arc_keys != ('compound_span:top_level_relation',)):
+        return None
+    span = next((s for s in source.spans if s.span_id == span_id), None)
+    whole = next((r for r in source.evidence if r.source_span_id == span_id), None)
+    if span is None or whole is None or span.source_field != 'memo':
+        return None
+    # Long ledger fragments must not erase a reporting/dream host or modifier.
+    context = source.normalized.get('memo', '')
+    before, after = context[:span.start_index].rstrip(' \t\u3000'), context[span.end_index:].lstrip(' \t\u3000')
+    if ((before and before[-1] not in '。．.!！\r\n')
+            or (after and after[0] not in '。．.!！\r\n')):
+        return None
+    left, right = _fragment(source, wish, plan), _fragment(source, burden, plan)
+    if left is None or right is None or left[2] is None:
+        return None
+    p, a, z = left[2], left[1], right[1]
+    predicate = _burden_predicate(right[0])
+    if (predicate is None or p.actor != 'SELF' or p.possible_content
+            or p.sequence_marker or p.relative_day
+            or (p.polarity, p.modality, p.temporal_scope) != ('positive', 'wish', 'current_input')
+            or any(re.search(r'(?:^|の)(?:何|誰|幾)', noun) for _, noun in p.arguments)
+            or not (whole.scalar_start == a.scalar_start < a.scalar_end < z.scalar_start < z.scalar_end == whole.scalar_end)):
+        return None
+    connector = source_field_text(source, 'memo')[a.scalar_end:z.scalar_start]
+    if re.fullmatch(r'(?:けれども|けれど|けど|が)[、,]?\s*', connector) is None:
+        return None
+    return wish.nucleus_id, burden.nucleus_id, predicate, right[0], (a, z, whole)
+
+
 def _self_propositions(source, *, require_complete=False, plan=None):
     """Read existing grammatical claims, retaining original field coordinates.
 
@@ -661,6 +743,10 @@ def _self_propositions(source, *, require_complete=False, plan=None):
             if pair and sum(e.source_span_id == span.span_id for _, e in claims) == 2:
                 ref = next(r for r in source.evidence if r.source_span_id == span.span_id)
                 covered.update(range(ref.scalar_start, ref.scalar_end))
+            annotation = _wish_burden_pair(source, plan, span.span_id)
+            if annotation and any(e == annotation[4][0] for _, e in claims):
+                whole = annotation[4][2]
+                covered.update(range(whole.scalar_start, whole.scalar_end))
         # Deliberately not all punctuation: question marks, quotes and other
         # unparsed operators cannot be treated as harmless sentence separators.
         if not claims or any(i not in covered and char not in ' \t\r\n\u3000。．.'
@@ -781,6 +867,8 @@ def _active_sources(source_set):
             target_is_self_claim = sum(e.source_span_id == target.source_span_id
                 for _, e in _self_propositions(original, plan=original_plan)) == 2
         if not target_is_self_claim:
+            target_is_self_claim = _wish_burden_pair(original, original_plan, target.source_span_id) is not None
+        if not target_is_self_claim:
             raise AnalysisSourceError('analysis_correction_target_unresolved')
         excluded.setdefault(original.envelope.envelope_id, set()).add(target.source_span_id)
         view = None
@@ -804,6 +892,7 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
     active_sources, excluded, updates, replacement_updates = _active_sources(source_set)
     nodes, edges, gaps = [], [], []
     conflict_evidence = {}
+    annotation_claims = {}
     unresolved_records = set()
     by_signature, occurrences, record_orders = {}, {}, {}
     for source in active_sources:
@@ -816,8 +905,14 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
         ordered_evidence = {e.evidence_id for pair in order_pairs for e in pair}
         admitted, by_evidence, unresolved = {}, {}, False
         comparable_claims = []
+        annotation_pairs = [pair for span in source.spans
+            if span.span_id not in excluded.get(source.envelope.envelope_id, set())
+            and (pair := _wish_burden_pair(source, plan, span.span_id))]
+        annotation_nuclei = {pair[1] for pair in annotation_pairs}
         for nucleus in plan.nuclei:
             if set(nucleus.source_span_ids) & excluded.get(source.envelope.envelope_id, set()):
+                continue
+            if nucleus.nucleus_id in annotation_nuclei:
                 continue
             explicit = (nucleus.grounding_kind in ('explicit', 'user_stated_relation')
                         and nucleus.semantic_frame.actor == 'current_user')
@@ -878,6 +973,22 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
             admitted[nucleus.nucleus_id] = node.node_ref
             by_evidence[evidence.evidence_id] = node.node_ref
             occurrences.setdefault(source.record_ref, set()).add(node.node_ref)
+        for wish_id, _, predicate, label, evidence in annotation_pairs:
+            target = admitted.get(wish_id)
+            if target is None:
+                unresolved = True
+                continue
+            key = (target, predicate)
+            update_ref = replacement_updates.get(source.envelope.envelope_id)
+            old = annotation_claims.get(key)
+            if old is None:
+                annotation_claims[key] = ObservedAnnotation('a' + str(len(annotation_claims) + 1),
+                    target, predicate, (label,), evidence, (update_ref,) if update_ref else ())
+            else:
+                annotation_claims[key] = replace(old,
+                    source_labels=tuple(dict.fromkeys((*old.source_labels, label))),
+                    evidence_refs=tuple(dict.fromkeys((*old.evidence_refs, *evidence))),
+                    update_refs=tuple(dict.fromkeys((*old.update_refs, *((update_ref,) if update_ref else ())))))
         for targets, evidence in _opposed_claim_pairs(comparable_claims):
             targets = tuple(sorted(targets, key=lambda ref: int(ref[1:])))
             conflict_evidence[targets] = tuple(dict.fromkeys(
@@ -942,4 +1053,5 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
                 'REPEATED_COOCCURRENCE', (left.node_ref, right.node_ref), refs))
     conflicts = tuple(ObservedConflict('c' + str(index), targets, evidence)
         for index, (targets, evidence) in enumerate(conflict_evidence.items(), 1))
-    return ObservedGraph(tuple(nodes), tuple(edges), tuple(gaps), updates, conflicts)
+    return ObservedGraph(tuple(nodes), tuple(edges), tuple(gaps), updates, conflicts,
+                         tuple(annotation_claims.values()))

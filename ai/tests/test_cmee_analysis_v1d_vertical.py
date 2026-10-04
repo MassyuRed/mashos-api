@@ -35,6 +35,164 @@ class AnalysisVerticalTests(unittest.TestCase):
     def generate(self, value):
         return MeaningExperienceEngine().generate(value)
 
+    def test_explicit_wish_burden_is_a_targeted_annotation_with_whole_evidence(self):
+        for subject in ('私', '僕', 'わたし', '自分'):
+            for feeling in ('つらい', 'つらいです', '苦しい', '苦しいです'):
+                with self.subTest(subject=subject, feeling=feeling):
+                    memo = subject + 'は資料を調べたいけれど、' + subject + 'は' + feeling + '。'
+                    value = request(record(memo=memo))
+                    artifact = self.generate(value).artifact
+                    self.assertIsNotNone(artifact)
+                    self.assertEqual(len(artifact.graph.nodes), 1)
+                    self.assertEqual(artifact.graph.edges, ())
+                    self.assertEqual(artifact.graph.conflicts, ())
+                    self.assertNotIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+                    claim = artifact.graph.annotations[0]
+                    self.assertEqual((claim.target_ref, claim.kind, claim.annotation_state),
+                        ('n1', 'BURDEN', 'SOURCE_EXPLICIT_ANNOTATION'))
+                    self.assertEqual(len(claim.evidence_refs), 3)
+                    self.assertEqual(claim.evidence_refs[0], artifact.graph.nodes[0].evidence_refs[0])
+                    envelope = freeze_analysis_sources(value).sources[0].envelope
+                    for e in claim.evidence_refs:
+                        raw = envelope.raw_utf8
+                        literal = raw[e.utf8_start:e.utf8_end]
+                        field = raw[e.field_utf8_start:e.field_utf8_end].decode()
+                        self.assertEqual(literal.decode(), field[e.scalar_start:e.scalar_end])
+                        self.assertEqual(hashlib.sha256(literal).hexdigest(), e.literal_sha256)
+                    whole = claim.evidence_refs[2]
+                    self.assertEqual(envelope.raw_utf8[whole.utf8_start:whole.utf8_end].decode(), memo[:-1])
+                    visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                    badge = visual['annotation_badges'][0]
+                    self.assertEqual(badge['target_ref'], 'n1')
+                    self.assertIn(feeling.removesuffix('です') + 'と記述されています', badge['visible_label'])
+                    self.assertIn('原因や続いている期間は確定していません', badge['visible_label'])
+                    self.assertIn(badge['visible_label'], artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+                    self.assertEqual(visual['annotation_badges'], artifact.private_visual_preview(
+                        authenticated_owner_scope=OWNER)['annotation_badges'])
+
+    def test_burden_annotation_does_not_infer_absent_or_qualified_contrast(self):
+        prefix = '私は仕事を続けたいけれど、'
+        values = [prefix + ending + '。' for ending in (
+            'つらい', '友人はつらい', '私はつらかった', '私はつらくない',
+            '私はつらくなかった', '私は嬉しくない', '私はつらいかもしれない',
+            '私はつらいと思う', '私はつらいと聞いた', '私はつらいという夢を見た',
+            '私はとてもつらい', '私はつらい？', '私はつらいが、私は苦しい')]
+        values += ['私は仕事を続けたい。私はつらい。', '私はつらい。',
+            '私は仕事を続けたけれど、私はつらい。',
+            '私は仕事を続けたかったけれど、私はつらい。',
+            '私は仕事を続けたくないけれど、私はつらい。',
+            '友人は仕事を続けたいけれど、私はつらい。',
+            '私は仕事を続けたいなら、私はつらい。',
+            '「私は仕事を続けたいけれど、私はつらい」と友人が言った。',
+            '友人によると、私は仕事を続けたいけれど、私はつらい。',
+            prefix + '私はつらい、という夢を見たのですが、' + '詳細を考えた' * 15 + '。',
+            '詳細を考えた' * 15 + '、' + prefix + '私はつらい。']
+        for memo in values:
+            with self.subTest(memo=memo):
+                artifact = self.generate(request(record(memo=memo))).artifact
+                self.assertFalse(artifact and artifact.graph.annotations)
+        artifact = self.generate(request(record(memo='私は仕事を続けたい。',
+            action='私は仕事を続けたいけれど、私はつらい。'))).artifact
+        self.assertEqual(artifact.graph.annotations, ())
+
+    def test_burden_annotation_requires_the_shared_relation_and_finite_witness(self):
+        from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
+        build = compiler.build_final_stage1_grounded_observation_plan
+        for mismatch in ('relation', 'grounding', 'time', 'actor', 'witness', 'range', 'retention'):
+            def changed(*args, **kwargs):
+                plan = build(*args, **kwargs)
+                if mismatch == 'relation': return replace(plan, relations=())
+                n = plan.nuclei[1]
+                if mismatch == 'grounding': n = replace(n, grounding_kind='inferred')
+                elif mismatch == 'retention': n = replace(n, retention='optional')
+                else:
+                    f = n.semantic_frame
+                    if mismatch == 'time': f = replace(f, time_scope='past')
+                    if mismatch == 'actor': f = replace(f, actor='other')
+                    if mismatch == 'witness': f = replace(f, attribute_codes=tuple(
+                        c for c in f.attribute_codes if c != 'lexical:source_finite_contrast_feeling'))
+                    if mismatch == 'range': f = replace(f, attribute_codes=tuple(
+                        'source_fragment_scalar_range:14:18' if c.startswith('source_fragment_scalar_range:') else c
+                        for c in f.attribute_codes))
+                    n = replace(n, semantic_frame=f)
+                return replace(plan, nuclei=(plan.nuclei[0], n))
+            with self.subTest(mismatch=mismatch), patch.object(compiler,
+                    'build_final_stage1_grounded_observation_plan', side_effect=changed):
+                artifact = self.generate(request(record(memo='私は仕事を続けたいけれど、私はつらい。'))).artifact
+                self.assertEqual(artifact.graph.annotations, ())
+                self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+
+    def test_burden_annotation_aggregates_only_its_target_and_preserves_unread_scope(self):
+        memo = '私は仕事を続けたいけれど、私はつらい。'
+        one = record(memo=memo)
+        artifact = self.generate(request(one, one, record(2,
+            memo='僕は仕事を続けたいけれど、僕はつらいです。'))).artifact
+        self.assertEqual(len(artifact.graph.annotations), 1)
+        self.assertEqual(len(artifact.graph.annotations[0].evidence_refs), 6)
+        self.assertEqual(len(artifact.graph.nodes[0].record_refs), 2)
+        self.assertEqual(artifact.graph.edges, ())
+        self.assertEqual(set(artifact.graph.annotations[0].source_labels), {'私はつらい', '僕はつらいです'})
+        artifact.safe_projection(authenticated_owner_scope=OWNER)
+        artifact = self.generate(request(record(memo=memo + 'まだよくわからない。'))).artifact
+        self.assertEqual(len(artifact.graph.annotations), 1)
+        self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+        artifact = self.generate(request(record(memo=memo),
+            record(2, memo='私は資料を調べたいけど、私は苦しいです。'))).artifact
+        self.assertEqual([a.target_ref for a in artifact.graph.annotations], ['n1', 'n2'])
+
+    def test_burden_supplement_revision_and_withdrawal_follow_exact_source(self):
+        old = '私は仕事を続けたいけれど、私はつらい'
+        new = '私は資料を調べたいけど、私は苦しいです'
+        base = record(memo='私は記録を残した。' + old + '。')
+        for answer, count in ((new + '。', 2), ('「' + old + '」ではなく「' + new + '」です。', 1)):
+            with self.subTest(answer=answer):
+                value = request(self.with_answer(base, answer))
+                artifact = self.generate(value).artifact
+                self.assertEqual(len(artifact.graph.annotations), count)
+                claim = next(a for a in artifact.graph.annotations if a.predicate_lemma == '苦しい')
+                sources = {s.envelope.envelope_id: s.envelope for s in freeze_analysis_sources(value).sources}
+                for e in claim.evidence_refs:
+                    self.assertEqual(sources[e.source_envelope_id].source_role, 'SUPPLEMENTAL_ANSWER')
+                    raw = sources[e.source_envelope_id].raw_utf8[e.utf8_start:e.utf8_end]
+                    self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                if count == 1:
+                    self.assertEqual(claim.update_refs, (artifact.graph.source_updates[0].update_ref,))
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        artifact = self.generate(request(self.with_answer(base, '「' + old + '」は取り消します。'))).artifact
+        self.assertEqual(artifact.graph.annotations, ())
+        self.assertEqual(len(artifact.graph.nodes), 1)
+        artifact = self.generate(request(self.with_answer(base, '「' + old + '」は取り消します。'),
+            record(2, memo=old + '。'))).artifact
+        self.assertEqual(len(artifact.graph.annotations), 1)
+        self.assertEqual(len(artifact.graph.annotations[0].evidence_refs), 3)
+        self.assertEqual(artifact.graph.annotations[0].update_refs, ())
+        target = next(n for n in artifact.graph.nodes if n.node_ref == artifact.graph.annotations[0].target_ref)
+        self.assertEqual(len(target.record_refs), 1)
+        artifact.safe_projection(authenticated_owner_scope=OWNER)
+        artifact = self.generate(request(self.with_answer(record(memo='私は仕事を続けたい。'),
+            '「私は仕事を続けたい」ではなく「' + new + '」です。'))).artifact
+        self.assertEqual(len(artifact.graph.annotations), 1)
+        self.assertEqual(artifact.graph.annotations[0].update_refs, (artifact.graph.source_updates[0].update_ref,))
+        for answer in (new + '。でも、元の記録は間違いです。',
+                       '「' + old + '」ではなく「私は資料を調べたいけど、友人はつらい」です。'):
+            with self.subTest(answer=answer):
+                result = self.generate(request(self.with_answer(base, answer)))
+                self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+
+    def test_burden_safe_surface_rejects_broken_target_evidence_or_replay(self):
+        artifact = self.generate(request(record(memo='私は記録を残した。私は仕事を続けたいけれど、私はつらい。'))).artifact
+        claim = artifact.graph.annotations[0]
+        changes = [{'target_ref': 'n1'}, {'predicate_lemma': '苦しい'},
+            {'source_labels': ('私はつらくない',)}, {'kind': 'PROTECTIVE'},
+            {'annotation_state': 'EVIDENCE_BOUND_INTERPRETIVE_HYPOTHESIS'},
+            {'evidence_refs': claim.evidence_refs[:2]},
+            {'evidence_refs': (claim.evidence_refs[1], claim.evidence_refs[0], claim.evidence_refs[2])}]
+        for change in changes:
+            with self.subTest(change=change):
+                broken = replace(artifact, graph=replace(artifact.graph, annotations=(replace(claim, **change),)))
+                with self.assertRaisesRegex(AnalysisSourceError, 'analysis_safe_surface_unavailable'):
+                    broken.safe_projection(authenticated_owner_scope=OWNER)
+
     def test_opposed_original_claims_keep_both_targets_and_exact_evidence(self):
         pairs = [('私は資料を調べた', '私は資料を調べませんでした'),
                  ('私は会議の司会を担当した', '私は会議の司会を担当しなかった'),

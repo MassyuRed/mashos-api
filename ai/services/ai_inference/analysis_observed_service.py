@@ -75,6 +75,11 @@ def private_storage_evidence(artifact):
         'conflicts': [{'conflict_ref': c.conflict_ref, 'target_refs': c.target_refs,
             'reason_code': c.reason_code, 'evidence_refs': [_evidence(e) for e in c.evidence_refs]}
             for c in artifact.graph.conflicts],
+        'annotations': [{key: getattr(a, key) for key in ('annotation_ref', 'target_ref',
+            'kind', 'annotation_state', 'uncertainty', 'alternative_explanations',
+            'forbidden_promotions', 'update_refs')}
+            | {'evidence_refs': [_evidence(e) for e in a.evidence_refs]}
+            for a in artifact.graph.annotations],
     }
     return {'schema_version': 'analysis.private-evidence.v1', 'projection_of': artifact.reference,
         'source_set_ref': artifact.source_set_ref, 'graph_commitment': commitment(graph), 'graph': graph,
@@ -121,10 +126,19 @@ def _checked_projection(projection, report_id):
             _require(set(g) == {'gap_ref', 'between_node_refs', 'visible_label'})
             _require(type(g['visible_label']) is str and re.fullmatch(r'g[1-9][0-9]*', g['gap_ref']))
             _require(1 <= len(g['between_node_refs']) <= 2 and set(g['between_node_refs']) <= set(refs))
-        # Protective/burden semantics remain unimplemented. Only the existing
-        # target-bound conflict DTO is now produced by the observed compiler.
-        _require(projection['annotation_badges'] == [])
-        from cocolon_meaning_experience_engine.cores.analysis.observed_route_realizer import CONFLICT_LABEL
+        from cocolon_meaning_experience_engine.cores.analysis.observed_route_realizer import CONFLICT_LABEL, BURDEN_LABELS
+        annotations = projection['annotation_badges']
+        _require(type(annotations) is list)
+        seen_annotations = set()
+        thought_refs = {n['node_ref'] for n in nodes if n['node_kind'] == 'ATTENTION_OR_THOUGHT'}
+        for index, a in enumerate(annotations, 1):
+            _require(type(a) is dict and set(a) == {'annotation_ref', 'target_ref', 'kind', 'visible_label'})
+            _require(a['annotation_ref'] == 'a' + str(index) and a['kind'] == 'BURDEN')
+            _require(type(a['target_ref']) is str and a['target_ref'] in thought_refs
+                     and a['visible_label'] in BURDEN_LABELS.values())
+            key = (a['target_ref'], a['visible_label'])
+            _require(key not in seen_annotations)
+            seen_annotations.add(key)
         conflicts = projection['conflict_badges']
         _require(type(conflicts) is list)
         seen_targets = set()

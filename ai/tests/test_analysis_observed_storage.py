@@ -45,6 +45,64 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         self.fx = fixture()
         self.row = self.fx['row']
 
+    async def test_burden_annotation_survives_save_and_read_without_regeneration(self):
+        self.fx = fixture('私は仕事を続けたいけれど、私はつらい。')
+        self.row = self.fx['row']
+        writes = []
+        async def rpc(name, payload):
+            if name == 'analysis_observed_source_snapshot':
+                return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                    {'original': self.fx['original'], 'thread': None, 'events': []}]}
+            if name == 'analysis_observed_commit':
+                writes.append(payload)
+                self.row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                self.row['content_text'] = payload['p_text']
+                self.row['content_json']['watashiMap'] = payload['p_projection']
+                return self.row['id']
+            return result([self.row], matched=True)
+        with patch.object(service, '_rpc', side_effect=rpc):
+            saved = await service.generate_saved(OWNER, start=START, end=END,
+                report_mode='standard', report_type='latest')
+            with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+        self.assertEqual(saved, reread['items'][0])
+        self.assertEqual(saved['content_text'], writes[0]['p_text'])
+        projection = saved['content_json']['watashiMap']
+        self.assertEqual(projection, writes[0]['p_projection'])
+        self.assertEqual(len(projection['annotation_badges']), 1)
+        private = writes[0]['p_private_evidence']
+        claim = private['graph']['annotations'][0]
+        self.assertEqual(claim['target_ref'], projection['annotation_badges'][0]['target_ref'])
+        self.assertEqual(claim['annotation_state'], 'SOURCE_EXPLICIT_ANNOTATION')
+        self.assertEqual(len(claim['evidence_refs']), 3)
+        for key in ('visible_label', 'source_labels', 'predicate_lemma', 'original_json', '私は', 'つらい', '仕事'):
+            self.assertNotIn(key, json.dumps(private, ensure_ascii=False))
+        for key in ('evidence_refs', 'source_envelope_id', 'literal_sha256', 'forbidden_promotions', 'annotation_state'):
+            self.assertNotIn(key, json.dumps(saved, ensure_ascii=False))
+        self.assertIn('注記（仕事を続けることへの希望）', saved['content_text'])
+
+    async def test_saved_burden_rejects_invalid_shape_target_label_and_text(self):
+        base = fixture('私は記録を残した。私は仕事を続けたいけれど、私はつらい。')['row']
+        for mutation in ('unknown', 'action', 'edge', 'duplicate', 'kind', 'private', 'label', 'non_list', 'id', 'missing_text'):
+            with self.subTest(mutation=mutation):
+                row = copy.deepcopy(base)
+                projection = row['content_json']['watashiMap']
+                badge = projection['annotation_badges'][0]
+                if mutation == 'unknown': badge['target_ref'] = 'n999'
+                if mutation == 'action': badge['target_ref'] = 'n1'
+                if mutation == 'edge': badge['target_ref'] = 'e1'
+                if mutation == 'duplicate': projection['annotation_badges'].append(dict(badge, annotation_ref='a2'))
+                if mutation == 'kind': badge['kind'] = 'PROTECTIVE'
+                if mutation == 'private': badge['evidence_refs'] = ['private']
+                if mutation == 'label': badge['visible_label'] = '仕事が原因でつらくなっています。'
+                if mutation == 'non_list': projection['annotation_badges'] = {}
+                if mutation == 'id': badge['annotation_ref'] = 'a0'
+                if mutation == 'missing_text': row['content_text'] = row['content_text'].split('注記')[0]
+                with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))):
+                    with self.assertRaises(HTTPException) as raised:
+                        await service.read_saved(OWNER)
+                self.assertEqual(raised.exception.status_code, 503)
+
     async def test_generate_commits_and_rereads_exact_identity(self):
         writes = []
         async def rpc(name, payload):

@@ -14213,3 +14213,20 @@ DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。Mashの分析実装継続�
 変更対象は既存10file：API上記3source、test_cmee_analysis_v1d_vertical.py、test_analysis_observed_storage.py、既存API handoff。Cocolonは共通入口00、Analysis03 §4.18、canonical04 §3.13、06本記録。ファイル配置は不変。GitHub反映は既存PR3/PR30 branchへnon-forceで行い、fresh head/preimage・changed paths・remote全文を照合する。main/merge/deploy/build/稼働DBへのeffect0。
 
 u102〜u112修正版は未配置。稼働API315f5b5…/TestFlight6201と実機OKのMash報告を継承する。今回のprimary outcomeは限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%の再採点なし。一般的な矛盾理解、protective/burden注記、期間比較、IF、global cutoverは未完了。次はcanonical04 §8の明示された負荷/守っているものを既存共有意味・対象node・safe DTOへ根拠付きで接続できる最小範囲を確認する。語彙網羅や高度品質を実機接続/公開前の追加条件へ戻さない。
+
+
+## 2026-10-04 JST u113 — 明示された希望と現在の負荷を対象付き注記へ接続
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。Mashの分析実装継続指示と既存PR反映許可を継承。基準headはAPI9782804d75867ce44050cbb30c38362abbd1906f / Cocolonb2e837395bb3d415cbfd3e9696bd86558a029180でfresh確認。前提/作業rules、全体設計/全file地図、最新weekly20261003とu112記録を照合し、恒久incidentは今回も全文再読した。前回txtはu108で、その後の反映済みu112を現在地とする。System Contextの前回shallow ancestry失敗は修復済みとせず、許可済み原本直接読取を継続。Workの華恋がsingle execution/write owner、補助agentはread-only。PRODUCT_ROUTE_ALIGNED / TECHNICALLY_ADMISSIBLE：既存のannotation_badgesへ最小の明示負荷を実生成→保存→同じ文章/図として接続する。共有owner/公開契約/DB/依存/配置の追加が必要ならそのeffect前に止める。追加費用/Mash操作0。
+
+current unfinishedは、共有意味ownerが希望と気持ちの対比を型化しても、Analysisで負荷が未解釈となり注記が空になる点。対象を「私は仕事を続けたいけれど、私はつらい」のような、既存SELF現在肯定願望＋明示SELFの現在有限形つらい/苦しい（丁寧形含む）へ限定した。shared exact2核・finite contrast feeling witness・contrast relation・元文境界・完全接続語・両端全文をすべて要求する。否定/過去/推測/伝聞/引用/他者/未解釈修飾・別文の隣接・memo_actionは注記へ昇格しない。negative極性だけで負荷と判断しない。
+
+既存intent_compilerへObservedAnnotationを追加。kind=BURDEN、SOURCE_EXPLICIT_ANNOTATION、希望nodeへのtarget、両端＋接続を含む原全文の3証拠、未確定scope、禁止昇格、更新refを保持する。route node/順序edge/原因/性格/診断へ変換しない。型付き注記の負荷核だけを解釈済みとし、他の未解釈内容は残す。同一対象/同一有限述語の記述を集約し、別記録/丁寧形の証拠は保持。通常補足の全文coverage、全文訂正/撤回、旧span除外、独立記録の注記残存へ接続した。
+
+safe realizerは既存annotation_ref/target_ref/kind/visible_labelだけを出し、「この希望と対比して、つらいと記述されています。原因や続いている期間は確定していません」と表示。原節と有限述語、対象、同一sourceの3証拠の範囲を再照合する。文章は同じDTOから既存RNと同じ順序で組む。analysis_observed_serviceはprivate evidence allowlistと保存validatorを更新。private保存に原文/source_labels/predicate_lemmaを含めず、公開DTOへ証拠位置/hash/内部状態を出さない。旧空注記artifactは再生成せず読み取る。既存DB/DTO/RN契約は変更しない。
+
+検証は既存Python3.12.14 / pytest9.1.1 / FastAPI0.142.2 / httpx0.28.1 / pydantic2.13.5。vertical103（追加6）/storage21（追加2）/saved period13/API6＝143 PASS、447 subtests PASS、既存Pydantic非推奨warning1。最初の対象検査も143 PASSで、read-only reviewの具体確認点である丁寧形集約/撤回後の別記録残存/単節からcompoundへの訂正を同じ検査へ追加し、最終も同数PASS。検査失敗を通すための条件緩和なし。既存RN11 PASS。rootが負荷/別対象/複数記録/補足/訂正/撤回の6合成本文を全文読み、既存RN contract/view modelの本文・identity・node順・注記targetがbackendと完全一致した。2件の独立read-only reviewでblocking指摘なし。実generate_saved→合成RPC commit→read_savedでDTO/本文/identity同一・再生成0、private非漏出、破損target/kind/label/shape/本文拒否を確認。Auth/DB I/Oは合成で、live DB/実認証/端末の修正版試験や商品受入れではない。
+
+変更は既存10file：APIのintent_compiler / observed_route_realizer / analysis_observed_service、関連vertical/storage test、既存API handoff。Cocolonはcurrent00、03 §4.19、canonical04 §3.14、06本記録。新規file/共有owner/依存定義/API契約/DB/DTO/RN source変更0。file配置は不変、責務地図を同期。既存draft/open/unmerged PR3/PR30 branchへfresh head/preimage確認→non-force反映→remote全文/変更path/parent/tree/headを照合する。main/merge/deploy/build/稼働DB effect0。
+
+u102〜u113修正版は未配置。稼働API315f5b5…/TestFlight6201と実機OKのMash報告を継承。primary outcome=限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%は再採点しない。PROTECTIVE、解釈仮説、一般の負荷/願望理解、期間比較、IF、global cutoverは未完了。6本文の読取で、複数記録を同じnodeへまとめると既存の同じ未確定項目が重複表示されることも確認した。注記自体は1件に集約される。次の直接候補はこの期間表示の重複を原証拠を失わず解消する最小修正、または既存共有意味から明示PROTECTIVEへ届く不足一単位。語彙網羅や高度品質を実機接続/公開前の追加条件にしない。

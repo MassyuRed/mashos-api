@@ -12,7 +12,7 @@ from uuid import uuid4
 from ...contracts import EngineStatus
 from .intent_compiler import (ObservedGraph, compile_observed_graph, _proposition,
                               _CANONICAL_CONTENT, _RESULT_STEMS, _CHANGE_PAST,
-                              _FEELING_PAST, _te_action_proposition)
+                              _FEELING_PAST, _te_action_proposition, _burden_predicate)
 from .source_adapter import (
     AnalysisObservedMapRequest, AnalysisSourceError, AnalysisSourceMember,
     freeze_analysis_sources,
@@ -26,6 +26,9 @@ LABELS = {'SCENE': '場面', 'ROLE': '役割',
           'ROUTE_CONNECTION': '段階同士のつながり'}
 
 CONFLICT_LABEL = '同じ記録に肯定と否定の記述があります。同じ機会のことかは確定していません。'
+BURDEN_LABELS = {predicate: 'この希望と対比して、' + predicate
+    + 'と記述されています。原因や続いている期間は確定していません。'
+    for predicate in ('つらい', '苦しい')}
 
 
 def _te_order_context(node, graph):
@@ -118,6 +121,32 @@ class ObservedSelfStructureMap:
         return [{'conflict_ref': c.conflict_ref, 'target_refs': list(c.target_refs),
                  'visible_label': CONFLICT_LABEL} for c in self.graph.conflicts]
 
+    def _annotation_badges(self):
+        badges = []
+        nodes = {n.node_ref: n for n in self.graph.nodes}
+        for claim in self.graph.annotations:
+            target = nodes.get(claim.target_ref)
+            p = target.proposition if target else None
+            if (p is None or target.node_kind != 'ATTENTION_OR_THOUGHT'
+                    or (p.actor, p.polarity, p.modality, p.temporal_scope) !=
+                       ('SELF', 'positive', 'wish', 'current_input')
+                    or claim.kind != 'BURDEN' or claim.annotation_state != 'SOURCE_EXPLICIT_ANNOTATION'
+                    or claim.predicate_lemma not in BURDEN_LABELS or not claim.source_labels
+                    or any(_burden_predicate(label) != claim.predicate_lemma for label in claim.source_labels)
+                    or not claim.evidence_refs or len(claim.evidence_refs) % 3):
+                raise AnalysisSourceError('analysis_safe_surface_unavailable')
+            for i in range(0, len(claim.evidence_refs), 3):
+                left, right, whole = claim.evidence_refs[i:i + 3]
+                if (left not in target.evidence_refs
+                        or len({(e.source_envelope_id, e.source_span_id, e.field_path)
+                                for e in (left, right, whole)}) != 1
+                        or not (whole.scalar_start == left.scalar_start < left.scalar_end
+                                < right.scalar_start < right.scalar_end == whole.scalar_end)):
+                    raise AnalysisSourceError('analysis_safe_surface_unavailable')
+            badges.append({'annotation_ref': claim.annotation_ref, 'target_ref': claim.target_ref,
+                'kind': claim.kind, 'visible_label': BURDEN_LABELS[claim.predicate_lemma]})
+        return badges
+
     def private_visual_preview(self, *, authenticated_owner_scope: str) -> dict:
         # Pure second-line owner binding, not a substitute for lifecycle auth,
         # tier, retention, deletion and audience policy in the future API.
@@ -139,7 +168,7 @@ class ObservedSelfStructureMap:
                 **({'from_ref': e.endpoint_refs[0], 'to_ref': e.endpoint_refs[1]}
                    if e.edge_kind == 'OBSERVED_ORDER'
                    else {'endpoint_refs': list(e.endpoint_refs)})) for e in self.graph.edges],
-            'annotation_badges': [],
+            'annotation_badges': self._annotation_badges(),
             'unknown_gaps': [{'gap_ref': g.gap_ref,
                 'between_node_refs': list(g.between_node_refs),
                 'visible_label': LABELS[g.missing_scope] + 'は、この記録からは確定していません。'}
@@ -178,7 +207,7 @@ class ObservedSelfStructureMap:
                 **({'from_ref': e.endpoint_refs[0], 'to_ref': e.endpoint_refs[1]}
                    if e.edge_kind == 'OBSERVED_ORDER'
                    else {'endpoint_refs': list(e.endpoint_refs)})) for e in self.graph.edges],
-            'annotation_badges': [],
+            'annotation_badges': self._annotation_badges(),
             'unknown_gaps': [{'gap_ref': g.gap_ref,
                 'between_node_refs': list(g.between_node_refs),
                 'visible_label': LABELS[g.missing_scope] + 'は、この記録からは確定していません。'}
@@ -207,6 +236,8 @@ class ObservedSelfStructureMap:
                     + '。順序や原因は確定していません。')
         lines.extend('未確定（' + ' ／ '.join(labels[ref] for ref in g['between_node_refs'])
                      + '）：' + g['visible_label'] for g in visual['unknown_gaps'])
+        lines.extend('注記（' + labels[a['target_ref']] + '）：' + a['visible_label']
+                     for a in visual['annotation_badges'])
         lines.extend('一致していない記録（' + ' ／ '.join(labels[ref] for ref in c['target_refs'])
                      + '）：' + c['visible_label'] for c in visual['conflict_badges'])
         return {'projection_of': visual['projection_of'], 'text': '\n'.join(lines),
