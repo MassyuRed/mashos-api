@@ -14471,3 +14471,16 @@ source上の原因は、正常な空snapshotまでCMEEへ渡し、graphの要素
 **適用残件**：現在liveは診断版API `c4db3a3aae70d906ccb7a0c44c4862692b5287c1` / dep-db11ebe0tbcc7392hjn0で、今回の空期間補正は未配置。APIはこのu127を含むPR3の固定commitを既存Renderへ指定配置する。環境変数2値と比較SQLの追加変更は不要。u122の画面修正を含むPR30 branchから新規iOS TestFlight Buildも必要で、配布済み6301には未収録。APIのみの配置を6301の正常空表示完了とはしない。指定SHAと開始手順はPR3/30先頭・API運用§31を参照。Mash本人の開始操作希望と接続toolのdispatch/commit指定制限を維持し、華恋が汎用main deployやenv更新を代用しない。
 
 配置/新build後はまず正常空表示を実機確認する。生成・保存再表示・期間比較の確認には、後日の本人の通常入力が必要であり、空表示の成功をその代わりにしない。検査のための架空入力や過去入力の捏造は求めない。今回deploy/buildは開始していない。
+
+
+## 2026-10-04 JST u128 — 空期間補正版APIの配置とTestFlight 6401の送信成功
+
+Mashの「開始した」を受け、u127で指定したAPI配置と新nativeの実行を読取確認した。追加起動・再実行・設定変更は行わず、実sourceと結果を照合した。
+
+既存Render `mashos-api / srv-d4ppfpm3jp1c73952bj0` のdeploy `dep-db146o2d0e5s73e1bc3g` は、指定API `1a42b9ebc25ba9765bdb17658cf47dd631d9f40d` で12:15:29Z開始→**12:16:55Z（JST21:16:55）live**。一覧と個別deployの両方で一致。既存URL、linked main、autoDeploy=no/off、free plan/1instanceを維持。12:19:51Zの実HTTPはhealthz200/status=ok、bootstrap200、未認証self-structure/latest/status401。12:15:29〜12:20:00Zのapp/errorログ0件・hasMore=false。限定時間窓の検査であり、本人認証の正常空応答や全体無障害の証明とはしない。環境変数値・個人入力/保存本文・secretは取得していない。
+
+**新nativeも送信成功。** [iOS run64 / 37201625245](https://github.com/MassyuRed/Cocolon/actions/runs/37201625245)、attempt1、job111434330974。実build SHAは `166343c0b160e787b857a7b9d407b6f0afce756d`、指定PR30 branch、workflow_dispatch。u122の正常空画面修正を含む指定sourceに一致。exact workflowとiOS version設定、成功したbuild番号設定工程の式64×100+1から **1.0（6401）** を確認。archiveは12:33:59Z、IPA exportは12:34:07Z、TestFlight uploadは **12:35:58Z（JST21:35:58）success**。jobは12:36:07Z、runは12:36:08Z更新でcompleted/success。rootが補助担当の取得結果と、実run/jobのmetadata・stepsを照合した。署名素材やsecret値、ジョブ本文ログは取得していない。
+
+次はTestFlightに新しい版が表示されたら端末を更新し、既存本人sessionで **分析 → わたしマップ** を開く。直近28日に記録のない状態では「現在表示できるわたしマップはありません。」を正常表示する。Apple側processing・tester利用可能・端末導入・本人応答はupload成功だけでは成立しない。今回の空表示修正と、本人の通常入力からの分析生成・保存再表示・期間比較の成功を区別する。検査用の架空入力は求めない。
+
+前提資料・作業規則/Rule18・全体設計/全file地図の既読とfresh blob不変を照合し、current03・最新weekly20261003 §6.6〜6.10・u127運用手順を確認、恒久incidentは今回全文再読した。rootが唯一のwrite owner、補助担当はnativeのread-only確認のみ。LEVEL_1の既承認操作の事後確認と既存4文書/PR説明の同期。今回source/test/SQL/依存変更・test再実行0、DB/env変更・追加deploy/build起動・main/merge・IF/global cutoverなし。STRUCTURE_MAP_DELTA_NONE。配置とnative送信を本人生成復旧/商品受入れへ換算せず、商品0/3・NOT_CLEAR・48%と両PR Draft/open/unmergedを維持する。

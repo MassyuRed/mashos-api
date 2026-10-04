@@ -626,3 +626,14 @@ Mashの再確認に対応するJST18:14の固定ログ2件は、いずれも `st
 Mash本人の開始操作希望と、GitHub接続にworkflow_dispatchがなくRender連携にcommit指定deployがない制限を継承。汎用deploy/mainやenv更新MCPを使用しない。同範囲の再承認を求めず、開始後は読取照合を続ける。停止時は対応API/schemaを維持した既存read_only/比較off手順を使い、旧schema/旧APIへの切戻しや保存行削除はしない。
 
 今回の共有DB変更・env変更・deploy/build起動は0。STRUCTURE_MAP_DELTA_NONE。今回の前進は正常不在処理の実装/合成検証であり、本人生成復旧・保存再表示・商品受入れは未成立。商品0/3・NOT_CLEAR・48%を維持。
+
+
+## 32. 2026-10-04 JST u128 — 空期間補正版live・TestFlight 1.0（6401）送信成功
+
+Mashの開始報告後、指定API `1a42b9ebc25ba9765bdb17658cf47dd631d9f40d` / deploy `dep-db146o2d0e5s73e1bc3g` が **12:16:55Z（JST21:16:55）live** と確認。12:19:51Zの実HTTPはhealthz200/status=ok、bootstrap200、未認証self-structure/latest/status401。12:15:29〜12:20:00Zのapp/errorログ0件・hasMore=false。既存service・URL・linked main・autoDeploy=no/offを維持。環境変数値は今回独立取得していない。
+
+[iOS run64 / 37201625245](https://github.com/MassyuRed/Cocolon/actions/runs/37201625245) は指定source `166343c0b160e787b857a7b9d407b6f0afce756d`、attempt1。u122の正常空表示修正を含む **1.0（6401）** のarchive/export/uploadが全てsuccess。TestFlight送信は12:35:58Z（JST21:35:58）、job111434330974は12:36:07Zに完了、runも12:36:08Z更新でcompleted/success。
+
+次はTestFlightに **1.0（6401）** が表示されたら更新し、既存本人sessionで **分析 → わたしマップ** を開く。直近28日に記録がない状態では「現在表示できるわたしマップはありません。」の正常表示を確認する。Apple側の処理完了/配布可能性・本人端末導入・認証済みの実空応答はまだ未確認。送信成功から推定しない。生成・保存再表示・期間比較は、本人が通常の入力を行った後に別途確認する。
+
+華恋による追加deploy/build起動・DB/env変更はなく、今回は既承認操作の事後確認と既存4文書/PR説明の記録。source/test/SQL/依存変更・検査再実行0。STRUCTURE_MAP_DELTA_NONE。u127のAPI191/RN17 PASSは前回の候補検証として継承。商品0/3・NOT_CLEAR・48%とDraft/open/unmergedを維持する。詳細は06/API handoff末尾u128。
