@@ -554,3 +554,19 @@ Mashの開始報告後、指定API `42ff019975a5d94c3c6de2a63623fb0864630ed4` �
 新版導入・保存読取確認後、承認済みの次操作として **COCOLON_ANALYSIS_OBSERVED_MODE=development / COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE=development** をSave onlyし、**同じ指定API42ff019…** を再配置する。旧APIへの切戻しやmainの汎用deployは行わない。同範囲の再承認は不要。
 
 今回は配置/送信の事後確認と既存記録更新。source/test/SQL/依存の新規変更・追加検査0。本人端末往復・比較生成・正式商品判断は残件として保持する。
+
+## 26. 2026-10-04 JST u122 — 保存結果なし表示の修正と承認済み生成再開
+
+端末の「取得エラー」は、HTTP成功時の空本文/metaをRNが例外化する経路で発生する。画像時刻前後のlatest/ensure・statusは200、記録されたDB通信エラーは0。入力不足・本人データ消失・保存読取成功を断定しない。実応答本文とenv値の独立取得はしていない。
+
+APIは適格な保存結果がない場合に正常空envelopeを返し、read_onlyでは新規生成しない。RNをその正常空envelopeの専用表示へ修正し、空結果を既読にせず、HTTP/通信失敗・不正versionは引き続き拒否する。関連RN17検査成功、詳細は06/API handoff末尾u122。修正版RNは6301未収録、後続buildで反映する。
+
+旧保存の表示成功が得られないために生成を永久に止める前提にはしない。DB適用と対応API/newnative送信は成立済みで、次の生成再開はu120で承認済み。Mash本人のRender操作希望を継承し、同じ既存serviceで以下を実行する。
+
+1. [Render mashos-api](https://dashboard.render.com/web/srv-d4ppfpm3jp1c73952bj0) → Environment → `COCOLON_ANALYSIS_OBSERVED_MODE=development` と `COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE=development` を **Save only**。
+2. **Manual Deploy → Deploy a specific commit** で `42ff019975a5d94c3c6de2a63623fb0864630ed4`。最新mainや新しい記録commitを配置しない。
+3. 開始後、華恋が指定SHA/live/通信を確認する。本人端末の6301で「分析 → わたしマップ」を再取得する。空結果なら次のensureで生成可能になる。画面が保持される場合はアプリを開き直して再取得する。
+4. 既存の同日保存が表示された場合、flagだけで再生成されない。本人の通常の新入力保存→分析表示等の既存入口で生成・比較を確認する。検査用の架空入力・過去入力の捏造・DB保存行削除はしない。
+5. 生成結果の表示後、入力変更や強制更新を挟まず再表示を確認する。端末の同じ見た目は保存UUID照合の代替ではない。前期間なしのNO_PREVIOUS、材料未対応等の422を比較成功としない。
+
+今回の環境変更/再配置/新native開始は未実行。2値の設定は認証済み分析経路全体へ作用する。停止が必要なら対応APIを維持してread_only/比較offに戻し、旧315f5b5や旧schemaへ切り戻さない。同範囲の再承認不要。表示修正版の追加native buildを生成再開の必須条件にはしない。

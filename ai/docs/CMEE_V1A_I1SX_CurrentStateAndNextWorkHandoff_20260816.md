@@ -14388,3 +14388,19 @@ Mashの「開始した」を受け、u120で承認済みの配置と新native実
 実機案内の確認で、通常の分析タブはembedded/hideHeaderのため「更新」ボタンを表示しないことをsourceで確認した。単独screenの更新ボタンを通常タブにあるとして案内しない。まず新native導入後の既存保存結果の表示を確認し、その後に§23のdevelopment2値を同じAPIへ反映する。比較生成の一往復は、通常の本人新入力保存によるlatest失効→分析表示等の実際に使える入口で確認する。本人入力を捏造して検査用の過去記録を作る、保存行を直接消す、当日の旧保存表示だけを比較成功とすることはしない。
 
 次の残件は本人端末への導入・read_only保存読取と、承認済みの比較development有効化・本人生成/再表示。今回の新API/native配置と正式な商品受入れは区別し、商品0/3・NOT_CLEAR・48%を維持する。既存5文書/PR説明のみ更新し、source/test/SQL/依存の追加変更0、STRUCTURE_MAP_DELTA_NONE。main/merge/IF/global cutover変更0。同範囲の再承認は不要である。
+
+## 2026-10-04 JST u122 — 正常な分析未保存状態を取得エラーにしていたRN表示の修正
+
+Mashから端末のエラー表示報告を受け、添付画面を実読した。保存結果再表示は未成立であり、u121の次確認を成功へ置換しない。画像にはbuild番号がなく、6301導入を画像だけで独立確認したとはしない。本人の入力不足やデータ消失は断定しない。
+
+Renderは指定API `42ff019975a5d94c3c6de2a63623fb0864630ed4` / deploy `dep-db0u5lid0e5s73d7if7g` がlive。画像時刻前後JST15:53–15:54の既存serviceログでlatest/ensureとlatest/statusは200、記録されたrequest_perfのsupabase_errorsは0だった。個別本人へのrequest binding、応答本文、現在のenv値は取得していない。private input/保存本文/ID/token・画像は公開しない。
+
+原因は既存RN `screens/SelfStructureReportGenerateScreen.js` の成功応答後の空本文/meta判定だった。空を例外化し、catchと表示側で二重のエラー接頭辞と根拠のない入力不足説明を出していた。稼働API `analysis_observed_service._ensure_response` は、適格な保存結果なしをstatus=ok/reason=no_visible_content/has_visible_content=false/skip_reason=analysis_saved_map_unavailable/content_text=null/meta=nullで返す。read_onlyではensure=trueでも生成しない。端末と同じ表示を生む経路は特定したが、ログ200だけで特定の本人応答envelope全文を照合したとはしない。
+
+既存screenに明示的な空結果専用stateを追加した。正常な上記envelope（raw meta=null、本文nullまたは空文字）だけを「現在表示できるわたしマップはありません。」と通常表示し、既読同期前にreturnする。再取得時reset、既存本文との排他表示を行う。宣言のない空応答は形式確認エラー、HTTP/通信失敗と不正/未知/private DTOの拒否は維持する。API wire、権限、保存、生成、期間比較の意味は変更しない。
+
+既存React/Babel実screen suiteへ4検査を追加。空応答2形、空→実V2→空、401/403/409/422/503/network、偽empty宣言の不正/未知/private metaと未宣言空を確認し、既存含め **17 PASS / FAIL0 / SKIP0**。既存pinned React18.3.1/Babel版を使用し、依存追加なし。独立read-only reviewでblockingなし。実RN renderingの合成検証で、native archive・端末修正版の確認ではない。
+
+rootが唯一のwrite owner。OBSERVED_BLOCKER_MINIMAL_FIX / LEVEL_2、既存分析実装承認とRule18 standing delegation内の最小source/test補正。current rules・恒久incident全文、設計/01A〜C全file地図の既読を継承して対象箇所とfresh current00/03・latest weekly20261003 §6.6〜6.10を照合。scratchのrepository copyが失われていたためexact remote blobから対象を復元。System Context prepareはtools module不在で未成立、canonical direct read fallbackを使用し、generated freshness成功を称さない。既存screen責務内でowner/route追加0、STRUCTURE_MAP_DELTA_NONE。今回新規file・API source・SQL・DB操作・env更新・deploy・native build・main/merge・IF変更0。RN修正は6301に含まれず、後続buildで反映する。
+
+次は§26の承認済み2値developmentと同じAPI指定commitの反映、6301での本人生成・表示・再表示。保存結果がない状況で旧保存の表示成功を必須とし続けるとread_onlyのまま生成へ進めないため、正常空状態を失敗とするRN因果を解消し、既承認の生成段階へ進む。DBを直接変更して保存行を作らない。表示修正版native buildをAPI有効化の新しい前提にしない。今回のprimaryは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・48%、比較実生成/正式受入れ未成立を保持する。
