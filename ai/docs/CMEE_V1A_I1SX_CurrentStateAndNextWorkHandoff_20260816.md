@@ -14430,3 +14430,13 @@ PRO_PURPOSE_AND_ROUTE_FIT: PRODUCT_ROUTE_ALIGNED。実機の生成失敗原因�
 今回の到達点は診断可能な候補の完成であり、Mashのわたしマップ生成復旧・保存再表示・期間比較成功ではない。修正APIは未配置。既存Render serviceで今回のAPI commitを指定配置する必要があり、配置identityはPR3先頭へ固定する。Mash本人のRender操作希望を維持し、華恋は汎用main deployやenv更新MCPを使わない。DB/migration・env・native変更は不要、6301のまま同じ分析入口を再確認できる。旧42ff019への承認を新しいexact SHAの配置完了へ置換しない。開始後は実deploy SHA/liveと限定ログを確認する。
 
 今回のSQL/共有DB行・env・deploy/build・main/merge・IF変更0。u122のRN空表示修正は6301未収録のまま。別のPiece読取view不在404/502も同時間帯に観測したが、Analysis422の原因へ転用せず、今回の修正scopeに混ぜない。個人ID/本文/画像/rawログはGitHubへ公開しない。商品0/3・NOT_CLEAR・48%と両PR Draft/open/unmergedを保持する。
+
+## 2026-10-04 JST u125 — 診断版APIの指定配置live
+
+Mashがu124指定commitの配置開始を報告。既存Render `mashos-api / srv-d4ppfpm3jp1c73952bj0` のdeploy `dep-db11ebe0tbcc7392hjn0` は、API `c4db3a3aae70d906ccb7a0c44c4862692b5287c1` で09:06:53Z開始→**09:08:07Z（JST18:08）live**。rootが実deployを確認し、既存URL・linked main・autoDeploy=no/off・free plan/1instanceを維持していることを確認した。09:08:31Z開始の実HTTPでhealthz200/status=ok、bootstrap200、未認証self-structure/latest/status401。
+
+read-only補助担当の09:06:53〜09:08:20Zのapp/errorログ0件、analysis_observed_generation_unavailable検索0件（双方hasMore=false）。これは限定時間窓の確認であり、全体無障害・本人生成成功の証拠ではない。環境変数の値や本人入力/保存本文は取得していない。
+
+次は現在の端末アプリを完全終了して開き直し、**分析 → わたしマップ** を一度表示する。エラーが続いた場合、操作完了の報告または画面から時刻を合わせ、華恋が追加した固定stage/reasonログを確認する。新規build・DB/env変更・検査用入力は不要。通常タブに更新ボタンがあるとして案内しない。u122のRN空表示修正は6301未収録のままで、今回のAPI配置から導入済みにしない。
+
+LEVEL_1の配置後読取確認と既存4文書/PR説明の記録。rootが唯一のwrite owner。全体設計/全file地図・current rules/Rule18の既読とblob不変を照合し、恒久incidentを今回全文再読、最新weekly20261003 §6.6〜6.10/current03/u124手順を確認した。新たなsource/test/SQL/依存変更・検査再実行0、DB/env/deploy/buildの追加操作0。STRUCTURE_MAP_DELTA_NONE。診断版の配置成功と、分析生成復旧・本人保存再表示・商品受入れを分け、商品0/3・NOT_CLEAR・48%を維持する。

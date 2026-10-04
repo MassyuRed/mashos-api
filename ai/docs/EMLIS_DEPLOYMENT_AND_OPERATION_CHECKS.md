@@ -593,3 +593,11 @@ development2値の設定はMashの手順実施報告で、値を独立取得し�
 4. ログの段階・固定理由から次の最小修正を判断する。route_not_establishedだけでは空/未解釈を断定できず、表示できた場合も本人生成・保存再表示の確認を分ける。
 
 この節の作成時は未配置であり、旧exact SHAの配置承認や186 PASSを実機復旧へ読み替えない。停止は対応APIを維持したread_only/比較offという既存手順を使い、旧315f5b5へ戻さない。詳細は06/API handoff末尾u124。
+
+## 29. 2026-10-04 JST u125 — 診断版API live・次の端末確認
+
+Mashの指定commit配置後、deploy `dep-db11ebe0tbcc7392hjn0` がAPI `c4db3a3aae70d906ccb7a0c44c4862692b5287c1` で **09:08:07Z（JST18:08）live**。実HTTPでhealthz200/status=ok、bootstrap200、未認証status401。既存service・URL・linked main・autoDeploy=no/offを維持。09:06:53〜09:08:20Zのapp/errorと固定診断ログは各0件、hasMore=false。生成成功や全時間無障害を意味しない。
+
+次は本人のアプリを完全終了して開き直し、**分析 → わたしマップ** を一度表示する。エラーが続いても再配置は不要。操作報告の時刻または画面と合わせて、華恋が固定stage/reasonログを確認する。現在の端末版を使い、追加build・DB/env変更・検査用入力は求めない。通常タブに更新ボタンはない。本人生成/保存再表示は未確認であり、診断版の配置成功と区別する。
+
+今回は配置後の確認のみで、華恋から追加deploy/build/DB/env操作は行っていない。同じ範囲の再承認は不要。詳細は06/API handoff末尾u125。
