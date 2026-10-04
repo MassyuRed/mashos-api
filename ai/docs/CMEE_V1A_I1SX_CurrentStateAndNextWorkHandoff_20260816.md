@@ -14440,3 +14440,17 @@ read-only補助担当の09:06:53〜09:08:20Zのapp/errorログ0件、analysis_ob
 次は現在の端末アプリを完全終了して開き直し、**分析 → わたしマップ** を一度表示する。エラーが続いた場合、操作完了の報告または画面から時刻を合わせ、華恋が追加した固定stage/reasonログを確認する。新規build・DB/env変更・検査用入力は不要。通常タブに更新ボタンがあるとして案内しない。u122のRN空表示修正は6301未収録のままで、今回のAPI配置から導入済みにしない。
 
 LEVEL_1の配置後読取確認と既存4文書/PR説明の記録。rootが唯一のwrite owner。全体設計/全file地図・current rules/Rule18の既読とblob不変を照合し、恒久incidentを今回全文再読、最新weekly20261003 §6.6〜6.10/current03/u124手順を確認した。新たなsource/test/SQL/依存変更・検査再実行0、DB/env/deploy/buildの追加操作0。STRUCTURE_MAP_DELTA_NONE。診断版の配置成功と、分析生成復旧・本人保存再表示・商品受入れを分け、商品0/3・NOT_CLEAR・48%を維持する。
+
+## 2026-10-04 JST u126 — 実機再確認でcurrentの要素0件まで原因を限定
+
+Mashの端末再確認後、09:12:00〜09:15:30Zの固定診断ログを確認。09:14:12.731Zと09:14:59.450Z（JST18:14）に `stage=current reason=analysis_observed_route_not_established` を各1件、hasMore=false。対応するlatest?ensure=true&force=falseは双方422、request_perfのsupabase_calls=3/supabase_errors=0。直後のstatusは200。比較snapshot RPCの200も確認した。本人と各HTTPの独立したrequest bindingは取得していない。
+
+配置実装ではsource freezeとgraph compileが正常に戻った後、graph.nodesが空の時だけこの理由を記録する。今回期間の生成が止まり、前期間の生成・比較処理には進んでいない。原材料形状/回答binding違反・安全経路例外・意味生成内部例外の理由とは区別できた。ただし空の期間と、記録はあるが全節が未解釈の期間をこの固定コードでは区別できない。
+
+read-only補助担当とrootがsourceを確認し、memo/memo_actionからcanonical original・正規化・根拠への接続に欠落は見つからなかった。現行compilerは限定結果状態を除いて明示的な一人称主語を要求し、引用/疑問/条件等の未解決scopeも保留する。通常の主語省略文が未対応となる制約はあるが、実入力を見ずにMashの原因とは断定しない。ダミー生成・主語の推定・比較除外へ変更しない。
+
+Supabaseでは既存source/comparison snapshot関数定義とemotions対象列の型だけを読取り確認。続く、同時刻の操作ログに現れたアカウントを対象とする「直近1/7/28日の件数とmemo/memo_action有無」の集計SELECTは、**自動承認レビューが、実ユーザーの非公開データへの明示的読取承認が確認できないとして拒否**した。実行・データ取得は未成立、別経路での再試行なし。UUID・本文・rawログはGitHubへ公開しない。
+
+次はMashに、原因確認のための本人記録読取（直近28日の件数・本文有無、必要時は最大3件の原入力memo/memo_action）について明示許可を求める。更新/削除・生成済みEmlis/Pieceの流用・公開GitHubへのprivate本文/ID掲載は対象外。許可が得られるまでは、この個人データ取得を進めない。再deploy・再build・同じ端末操作の反復は今は不要。
+
+rootが唯一の記録write owner。全体設計/全file地図・current rules/Rule18・最新weekly/current03の既読とcurrent headを継承照合、恒久incidentを今回全文再読。LEVEL_1のログ/source/DB catalog読取と既存記録更新のみ。source/test/SQL/依存変更・検査実行・DB変更・env/deploy/build/main/merge/IF操作0。STRUCTURE_MAP_DELTA_NONE。primaryはBLOCKER_NARROWEDであり、生成復旧・保存再表示・商品合格ではない。実稼働API c4db3a3…を維持し、商品0/3・NOT_CLEAR・48%とDraft/open/unmergedを保持する。

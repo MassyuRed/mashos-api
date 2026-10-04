@@ -601,3 +601,11 @@ Mashの指定commit配置後、deploy `dep-db11ebe0tbcc7392hjn0` がAPI `c4db3a3
 次は本人のアプリを完全終了して開き直し、**分析 → わたしマップ** を一度表示する。エラーが続いても再配置は不要。操作報告の時刻または画面と合わせて、華恋が固定stage/reasonログを確認する。現在の端末版を使い、追加build・DB/env変更・検査用入力は求めない。通常タブに更新ボタンはない。本人生成/保存再表示は未確認であり、診断版の配置成功と区別する。
 
 今回は配置後の確認のみで、華恋から追加deploy/build/DB/env操作は行っていない。同じ範囲の再承認は不要。詳細は06/API handoff末尾u125。
+
+## 30. 2026-10-04 JST u126 — current生成の要素0件、個人記録読取の確認待ち
+
+Mashの再確認に対応するJST18:14の固定ログ2件は、いずれも `stage=current reason=analysis_observed_route_not_established`。latest422・supabase_errors0、直後status200。source freeze/graph compile後の要素0件であり、前期間比較前に停止している。対象期間が空か、文章の解釈未成立かは未確定。主語省略等の現行coverage制約だけから原因を断定しない。
+
+既存関数/列型の読取は成立したが、本人記録件数・本文有無の集計SELECTは、自動承認レビューにより個人データの明示的読取許可不足で拒否された。記録データ取得なし、迂回再試行なし。次は直近28日の件数・本文有無と、必要時最大3件の原入力memo/memo_actionの非公開読取についてMashの確認を得る。書換え・削除・private本文/IDのGitHub掲載は含めない。
+
+現API c4db3a3…は維持。同じ端末操作・deploy・build・env変更を重ねない。確認後の実資料に合わせ、原因箇所だけの修正を判断する。詳細は06/API handoff末尾u126。
