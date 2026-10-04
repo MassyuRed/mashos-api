@@ -1122,7 +1122,7 @@ def _active_sources(source_set):
             fragment = _fragment(original, nucleus, original_plan)
             if (fragment and (fragment[1].scalar_start, fragment[1].scalar_end) ==
                     (target.scalar_start, target.scalar_end)
-                    and (fragment[2] or _node_kind(nucleus))):
+                    and fragment[2] is not None):
                 target_is_self_claim = True
         # Quote location alone cannot prove that a reported first-person
         # clause belongs to the current user. Preserve its original scope.
@@ -1181,7 +1181,10 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
                         and nucleus.semantic_frame.actor == 'current_user')
             fragment = _fragment(source, nucleus, plan) if explicit else None
             proposition = fragment[2] if fragment else None
-            kind = _proposition_node_kind(proposition) if proposition else _node_kind(nucleus)
+            # A shared nucleus alone does not prove the complete clause.
+            # Keep unparsed original text in the existing unknown scope so
+            # it cannot make independently readable nodes unprojectable.
+            kind = _proposition_node_kind(proposition) if proposition else None
             if not kind:
                 fragment = None
             if fragment is None:

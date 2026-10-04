@@ -1591,13 +1591,11 @@ class AnalysisVerticalTests(unittest.TestCase):
             with self.subTest(memo=memo):
                 self.assertIsNone(self.generate(request(record(memo=memo))).artifact)
 
-        # The existing private wish preview may remain; it must never become
-        # a completed te action, an order edge, or an unsupported safe label.
-        wish = self.generate(request(record(memo='私は資料を調べてから、疑問を減らしたい。'))).artifact
-        self.assertTrue(all(n.node_kind == 'ATTENTION_OR_THOUGHT' for n in wish.graph.nodes))
-        self.assertFalse(wish.graph.edges)
-        with self.assertRaises(AnalysisSourceError):
-            wish.safe_projection(authenticated_owner_scope=OWNER)
+        # An unparsed wish is unknown, not a raw private node whose safe
+        # projection would also block independently readable content.
+        wish = self.generate(request(record(memo='私は資料を調べてから、疑問を減らしたい。')))
+        self.assertEqual(wish.status, EngineStatus.UNAVAILABLE)
+        self.assertIsNone(wish.artifact)
 
     def test_past_feeling_after_action_keeps_experience_and_exact_source(self):
         forms = [('安心した', '安心する'), ('安心しました', '安心する'),
@@ -2575,14 +2573,106 @@ class AnalysisVerticalTests(unittest.TestCase):
         for source in ('私は明日、考えをノートに書いた。',
                        '私は急いで考えをノートに書いた。'):
             with self.subTest(source=source):
-                artifact = self.generate(request(record(memo=source))).artifact
-                self.assertIsNotNone(artifact)
-                with self.assertRaisesRegex(AnalysisSourceError, 'analysis_safe_surface_unavailable'):
-                    artifact.safe_projection(authenticated_owner_scope=OWNER)
+                result = self.generate(request(record(memo=source)))
+                self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+                self.assertEqual(result.reason_codes, ('analysis_observed_route_not_established',))
+                self.assertIsNone(result.artifact)
         artifact = self.generate(request(record())).artifact
         node = artifact.graph.nodes[0]
         broken = replace(artifact, graph=replace(artifact.graph,
             nodes=(replace(node, proposition=replace(node.proposition, polarity='negative')),)))
+        with self.assertRaisesRegex(AnalysisSourceError, 'analysis_safe_surface_unavailable'):
+            broken.safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_unparsed_original_keeps_readable_clauses_fields_and_records(self):
+        unread = '私は資料を明日ノートに書いた。'
+        read = '私は記録を残した。'
+        cases = (
+            request(record(memo=unread + read)),
+            request(record(memo=read + unread)),
+            request(record(memo=read, action=unread)),
+            request(record(memo=unread, action=read)),
+            request(record(memo=unread), record(2, memo=read)),
+            request(record(memo=read), record(2, memo=unread)),
+        )
+        for req in cases:
+            with self.subTest(members=[r.original_json for r in req.members]):
+                result = self.generate(req)
+                self.assertEqual(result.status, EngineStatus.GENERATED)
+                artifact = result.artifact
+                node, = artifact.graph.nodes
+                self.assertIsNotNone(node.proposition)
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)
+                self.assertEqual([n['visible_label'] for n in visual['nodes']],
+                                 ['記録を残す（実行済み）'])
+                self.assertEqual(visual['projection_of'], text['projection_of'])
+                self.assertTrue(any(g.missing_scope == 'SOURCE_SCOPE' and
+                    g.reason_code == 'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'
+                    for g in artifact.graph.unknown_gaps))
+                self.assertFalse(artifact.graph.edges)
+                self.assertNotIn('明日ノート', text['text'])
+                sources = {s.envelope.envelope_id: s.envelope
+                           for s in freeze_analysis_sources(req).sources}
+                for evidence in node.evidence_refs:
+                    envelope = sources[evidence.source_envelope_id]
+                    raw = envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                    field = envelope.raw_utf8[evidence.field_utf8_start:evidence.field_utf8_end].decode()
+                    self.assertEqual(raw.decode(), read.rstrip('。'))
+                    self.assertEqual(raw.decode(), field[evidence.scalar_start:evidence.scalar_end])
+                    self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+
+    def test_unparsed_original_cannot_bridge_order_or_invent_repetition(self):
+        unread = '私は急いで考えをノートに書いた。'
+        artifact = self.generate(request(record(memo='私は資料を調べた。' + unread
+            + 'その後私は記録を残した。'))).artifact
+        self.assertEqual(len(artifact.graph.nodes), 2)
+        self.assertFalse(artifact.graph.edges)
+        self.assertIn('EXPLICIT_PREDECESSOR_NOT_ESTABLISHED',
+                      {g.reason_code for g in artifact.graph.unknown_gaps})
+        artifact.safe_projection(authenticated_owner_scope=OWNER)
+        repeated = self.generate(request(record(memo=unread + '私は記録を残した。'),
+            record(2, memo=unread + '私は記録を残した。'))).artifact
+        node, = repeated.graph.nodes
+        self.assertEqual(len(node.record_refs), 2)
+        self.assertFalse(repeated.graph.edges)
+
+    def test_unparsed_original_adds_only_unknown_change_to_period_comparison(self):
+        read = '私は記録を残した。'
+        unread = '私は資料を明日ノートに書いた。'
+        for before, now in ((read, unread + read), (unread + read, read)):
+            with self.subTest(before=before):
+                artifact = self.compared(now, before).artifact
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                self.assertEqual(visual['period_comparison'], {'state': 'COMPARABLE',
+                    'reason_codes': [], 'safe_change_kinds': ['UNKNOWN_SCOPE_CHANGED']})
+
+    def test_unparsed_supplement_or_correction_still_blocks_the_whole_update(self):
+        unread = '私は資料を明日ノートに書いた'
+        read = '私は記録を残した'
+        cases = (
+            (read + '。', unread + '。'),
+            (read + '。', '私は資料を調べた。' + unread + '。'),
+            (read + '。', '「' + read + '」ではなく「' + unread + '」です。'),
+            (unread + '。' + read + '。', '「' + unread + '」ではなく「私は資料を調べた」です。'),
+            (unread + '。' + read + '。', '「' + unread + '」は取り消します。'),
+        )
+        for original, answer in cases:
+            with self.subTest(answer=answer):
+                result = self.generate(request(self.with_answer(record(memo=original), answer)))
+                self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+                self.assertIsNone(result.artifact)
+
+    def test_unparsed_original_keeps_typed_burden_and_rejects_raw_surface_tampering(self):
+        artifact = self.generate(request(record(memo='私は資料を明日ノートに書いた。'
+            '私は仕事を続けたいけれど、私はつらい。'))).artifact
+        self.assertEqual(len(artifact.graph.nodes), 1)
+        self.assertEqual(len(artifact.graph.annotations), 1)
+        self.assertIn('つらいと記述されています',
+                      artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+        node = artifact.graph.nodes[0]
+        broken = replace(artifact, graph=replace(artifact.graph,
+            nodes=(replace(node, proposition=None),)))
         with self.assertRaisesRegex(AnalysisSourceError, 'analysis_safe_surface_unavailable'):
             broken.safe_projection(authenticated_owner_scope=OWNER)
 

@@ -14535,3 +14535,19 @@ rootが合成6本文（誤場面／担当／行動の除去、名詞用法、認
 変更はAPI既存source1／test1／handoff1、Cocolon既存current03／canonical04／06。STRUCTURE_MAP_DELTA_NONE：意味owner・共有Emlis／Piece・API／DTO／DB／SQL／RN／依存の変更なし。env／deploy／build／main／merge／IF操作0。Draft/open/unmerged、商品0/3・NOT_CLEAR・48%を保持。反映commitはPR3/30のu131先頭を参照。今回コードは未配置で、最後の確認済み稼働API1a42b9e…／TestFlight6401送信成功を継承し、本人端末の正常空表示・通常入力からの生成／保存再表示／比較は未確認。
 
 次の内容修正候補は、完全解析できない節を含む期間で、読み取れた別節まで表示不能になる既存境界（「私は資料を明日ノートに書いた。私は記録を残した。」等）。同じsource・unknown契約内で扱い、今回の新しい7語追加を無期限の時間語列挙へ広げない。実機確認・配置の残件を内容検査で代用しない。
+
+## 2026-10-05 JST u132 — 未解析の原入力が読めた内容の表示まで止める問題を補正
+
+Mashの「分析構造の内容修正関係を進めて」と添付u131作業報告から継続。前提資料と作業規則、全体設計／01A・B・Cの全file地図と対象経路、fresh両repository tree、最新weekly20261003 §5・§6.6〜6.10、current03／設計04／06／API handoff末尾と実fileを確認した。恒久incidentは全文読取。保存System Contextの旧refをcurrentとして流用せず正本直接読取を使用。開始headはAPI 100c67b17e9b292e8e71744f5eb50f99759bd75d、Cocolon b22cfc9baf2a548c42c8d2feac1daf8e848df136。Rule18 LEVEL_2の既存Analysis内部補正。root華恋が唯一の実装・検証・GitHub write owner、補助agentはread-only調査と静的差分review。追加費用・Mash操作0。
+
+変更前、合成「私は資料を明日ノートに書いた。私は記録を残した。」「私は急いで考えをノートに書いた。私は記録を残した。」では、前節をproposition=Noneのraw nodeとして採用し、safe表示でanalysis_safe_surface_unavailableとなっていた。既存compileのnode採用を完全なtyped propositionに限定し、未解析の原入力は既存unresolved／SOURCE_SCOPEへ送る。変更後は「記録を残す（実行済み）」と未確定部分を同じ文章と図へ出す。未解析節の文法を補完・削除したり、別節の順序・因果・反復を推定したりしない。
+
+訂正対象の判定に残っていたraw node fallbackも除き、未解析originalを明示訂正／撤回の確定対象にしない。通常補足の全文被覆、未解析replacementの全体保留、完全なaction/change・wish/burden pairの訂正／撤回は維持。_fragmentとsafe再解析は緩めず、負荷注記の右端fragmentを保持する。引用・疑問・条件・報告者等の既存scope判定を継承し、それらをpartial表示のために回避しない。全文が未解析ならUNAVAILABLEのまま。
+
+Python3.12.14でvertical146／storage41／saved-period16、合計203 tests PASS。新規はvertical5 methodと保存再表示1 method。既存2methodの「未解析raw artifact生成→表示拒否」は「生成時点でUNAVAILABLE」へ期待を変更し、意味の不当採用拒否と改竄拒否を維持した。別節の前後、別field、別record、原scalar／UTF-8／hash、未解析節をまたぐ順序線なし、独立record件数、期間比較のUNKNOWN_SCOPE_CHANGEDのみ、補足／訂正／撤回、負荷注記とsafe改竄拒否を検証。実service＋合成RPCで生成→保存→再生成なしの同一本文・図の再読取も確認した。初回の追加検査のfield名誤りと、公開DTOにないprivate fieldを参照した誤りはテスト側を訂正。最初の保存検査は実行環境の既存依存fastapi/httpx不足でimport不可だったため、repositoryのrequirementsに既存の依存を隔離領域へ用意して再実行。製品requirements変更0、実DBアクセス0。
+
+rootが合成6本文（同一入力、別field、別record、未解析節をまたぐ順序、期間比較、負荷注記）を全文確認し、実生成DTOを変更していないRN表示modelへ渡した。全文／artifact identity／node順／edge／unknown対象が全例一致。独立静的reviewに具体的blockerなし。React component suite／native／本人入力／実DBの今回検証ではなく、商品受入れに換算しない。
+
+変更はAPI既存compiler1／test2／handoff1、Cocolon既存current03／設計04／06。STRUCTURE_MAP_DELTA_NONE：既存Analysis内部のnode採用だけを補正し、共有Emlis／Piece作者、public API／DTO／DB／SQL／RN／依存仕様を変更しない。env／deploy／build／main／merge／IF操作0。Draft/open/unmerged、商品0/3・NOT_CLEAR・48%を維持。今回コードは未配置。最後の確認済み稼働API1a42b9e…／TestFlight6401送信成功を継承し、本人生成・保存再表示・比較の実機成功は未確認。
+
+残差：未解析節そのものの意味理解は増えていない。主語省略・未対応修飾、u131の固有名詞保留等は残る。次の内容作業は既存source／unknown契約内で、主語省略を含む未対応入力の実出力を確認し、既存設計で扱える最小の修正範囲を決める。本人の通常入力からの生成確認・指定版配置の残件を内容検査で代用しない。
