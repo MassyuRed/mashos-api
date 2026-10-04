@@ -126,16 +126,24 @@ def _checked_projection(projection, report_id):
             _require(set(g) == {'gap_ref', 'between_node_refs', 'visible_label'})
             _require(type(g['visible_label']) is str and re.fullmatch(r'g[1-9][0-9]*', g['gap_ref']))
             _require(1 <= len(g['between_node_refs']) <= 2 and set(g['between_node_refs']) <= set(refs))
-        from cocolon_meaning_experience_engine.cores.analysis.observed_route_realizer import CONFLICT_LABEL, BURDEN_LABELS
+        from cocolon_meaning_experience_engine.cores.analysis.observed_route_realizer import CONFLICT_LABEL, BURDEN_LABELS, PROTECTIVE_LABEL
+        from cocolon_meaning_experience_engine.cores.analysis.intent_compiler import _protective_wish_proposition
         annotations = projection['annotation_badges']
         _require(type(annotations) is list)
         seen_annotations = set()
         thought_refs = {n['node_ref'] for n in nodes if n['node_kind'] == 'ATTENTION_OR_THOUGHT'}
         for index, a in enumerate(annotations, 1):
             _require(type(a) is dict and set(a) == {'annotation_ref', 'target_ref', 'kind', 'visible_label'})
-            _require(a['annotation_ref'] == 'a' + str(index) and a['kind'] == 'BURDEN')
-            _require(type(a['target_ref']) is str and a['target_ref'] in thought_refs
-                     and a['visible_label'] in BURDEN_LABELS.values())
+            _require(a['annotation_ref'] == 'a' + str(index) and a['kind'] in {'BURDEN', 'PROTECTIVE'})
+            _require(type(a['target_ref']) is str and a['target_ref'] in thought_refs)
+            if a['kind'] == 'PROTECTIVE':
+                label = next(n['visible_label'] for n in nodes if n['node_ref'] == a['target_ref'])
+                suffix = '守ることへの希望'
+                _require(label.endswith(suffix) and _protective_wish_proposition(
+                    '私は' + label[:-len(suffix)] + '守りたい') is not None)
+                _require(a['visible_label'] == PROTECTIVE_LABEL)
+            else:
+                _require(a['visible_label'] in BURDEN_LABELS.values())
             key = (a['target_ref'], a['visible_label'])
             _require(key not in seen_annotations)
             seen_annotations.add(key)

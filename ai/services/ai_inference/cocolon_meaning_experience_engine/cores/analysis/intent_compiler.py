@@ -132,6 +132,43 @@ _PAST_RESPONSIBILITY = re.compile(
     r'(?P<subject>私|僕|わたし|自分)は(?P<noun>' + _NOMINAL
     + r'(?:の' + _NOMINAL + r')*)(?P<case>を)'
     r'(?P<predicate>担当した|担当しました|担当しなかった|担当しませんでした)')
+_PROTECTIVE_WISH = re.compile(
+    r'(?P<subject>私|僕|わたし|自分)は(?P<noun>' + _NOMINAL
+    + r'(?:の' + _NOMINAL + r')*)(?P<case>を)(?P<predicate>守りたい(?:です)?)')
+
+
+def _protective_wish_proposition(value):
+    # A written current intention with an explicit object; no other forms of
+    # 守る, inferred benefit, or motive for another action are admitted here.
+    match = _PROTECTIVE_WISH.fullmatch(value)
+    if match is None or re.search(r'(?:^|の)(?:何|誰|幾)', match['noun']):
+        return None
+    return ObservedProposition('SELF', (('を', match['noun']),), '守る',
+        'positive', 'wish', 'current_input', (
+            ('SELF_TOPIC', 0, match.start('noun')),
+            ('PROTECTIVE_OBJECT', match.start('noun'), match.end('noun')),
+            ('CASE_を', match.start('case'), match.end('case')),
+            ('FINITE_PROTECTIVE_WISH', match.start('predicate'), len(value))))
+
+
+def _protective_wish_witness(nucleus):
+    frame = nucleus.semantic_frame
+    # The shared keyword frame can classify a nominal object such as 気持ち
+    # as feeling before wish. The full finite surface, nucleus kind and
+    # modality must still independently witness the current intention.
+    predicate_matches = (frame.predicate_kind == 'wish'
+        or (frame.predicate_kind == 'feeling'
+            and 'operator:feeling' in frame.attribute_codes))
+    return (nucleus.grounding_kind == 'explicit'
+        and nucleus.allowed_claim_scope == 'explicit_current_input'
+        and nucleus.retention in {'required', 'should'}
+        and nucleus.kind == 'wish' and predicate_matches
+        and nucleus.source_fields == ('memo',) and len(nucleus.source_span_ids) == 1
+        and (frame.actor, frame.polarity, frame.modality, frame.time_scope)
+            == ('current_user', 'positive', 'wish', 'current_input')
+        and 'operator:wish' in frame.attribute_codes
+        and not any(code.startswith(('source_fragment_', 'surface_scalar_',
+                    'thread_time:', 'semantic_dependency:')) for code in frame.attribute_codes))
 
 
 def _past_responsibility_proposition(value):
@@ -262,6 +299,9 @@ def _proposition_node_kind(proposition):
 
 
 def _proposition(value: str) -> ObservedProposition | None:
+    protective = _protective_wish_proposition(value)
+    if protective is not None:
+        return protective
     event = _past_presence_proposition(value) or _past_responsibility_proposition(value)
     if event is not None:
         return event
@@ -417,7 +457,7 @@ class ObservedConflict:
 
 @dataclass(frozen=True, slots=True, repr=False)
 class ObservedAnnotation:
-    """A written contrast, never a route step or an inferred cause."""
+    """A source-bound annotation, never a route step or an inferred cause."""
     annotation_ref: str
     target_ref: str
     predicate_lemma: str
@@ -614,7 +654,15 @@ def _fragment(source, nucleus, plan=None):
     if event is not None and (a != 0 or b != len(span.raw_text)
             or not _past_event_witness(nucleus, event)):
         return None
-    if event is not None:
+    protective = _protective_wish_proposition(value)
+    if protective is not None and (a != 0 or b != len(span.raw_text)
+            or not _protective_wish_witness(nucleus)
+            # An open report/dream can carry across a sentence boundary;
+            # the local SELF wish alone cannot close that attribution.
+            or re.search(r'(?:聞いた|聞きました|読んだ|読みました)(?:話|内容)|夢を見',
+                         record_context)):
+        return None
+    if event is not None or protective is not None:
         # The ledger also splits long sentences at commas or fixed lengths.
         # A complete span is not necessarily a complete finite host. Check
         # the parser field (or proved correction view), retaining newlines as
@@ -973,6 +1021,21 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
             admitted[nucleus.nucleus_id] = node.node_ref
             by_evidence[evidence.evidence_id] = node.node_ref
             occurrences.setdefault(source.record_ref, set()).add(node.node_ref)
+            if proposition and _protective_wish_proposition(label) == proposition:
+                key = ('PROTECTIVE', node.node_ref)
+                old = annotation_claims.get(key)
+                if old is None:
+                    annotation_claims[key] = ObservedAnnotation(
+                        'a' + str(len(annotation_claims) + 1), node.node_ref,
+                        '守る', (label,), (evidence,), node_updates, kind='PROTECTIVE',
+                        uncertainty='PROTECTION_OUTCOME_AND_ACTION_MOTIVE_NOT_ESTABLISHED',
+                        forbidden_promotions=('PROTECTION_OUTCOME', 'ACTION_MOTIVE',
+                                              'CAUSE', 'TRAIT', 'DIAGNOSIS', 'ROUTE_ORDER'))
+                else:
+                    annotation_claims[key] = replace(old,
+                        source_labels=tuple(dict.fromkeys((*old.source_labels, label))),
+                        evidence_refs=tuple(dict.fromkeys((*old.evidence_refs, evidence))),
+                        update_refs=tuple(dict.fromkeys((*old.update_refs, *node_updates))))
         for wish_id, _, predicate, label, evidence in annotation_pairs:
             target = admitted.get(wish_id)
             if target is None:

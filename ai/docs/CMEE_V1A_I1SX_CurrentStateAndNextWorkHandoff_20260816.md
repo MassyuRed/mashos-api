@@ -14247,3 +14247,22 @@ observed_route_realizerの生成projectionに共通helperを追加。順序を�
 新規file/共有意味owner/API契約/DTO/RN source/SQL/依存変更0。file配置不変、realizerの表示責務差分をcurrent03 §4.20・canonical04 §3.15へ同期。既存draft/open/unmerged PR3/PR30へfresh head/preimage確認→non-force反映→remote全文/変更path/parent/tree/headを照合する。main/merge/deploy/build/稼働DBへのeffect0。
 
 u102〜u114修正版は未配置。指定稼働API315f5b5…/TestFlight6201と実機OKのMash報告を継承する。primary outcome=限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%を再採点しない。今回の重複表示修正は新規生成に適用し、既存保存artifactの再解釈/書換えはしない。PROTECTIVE、解釈仮説、一般の負荷/願望理解、期間比較、IF、global cutoverは残る。次はcanonical04 §8の未接続な明示PROTECTIVEを既存共有意味と照合し、本人が書いた守る対象を既存nodeへ結べる最小単位を特定する。期間分析の最低限の動作を語彙網羅や高度品質待ちへ戻さない。
+
+
+## 2026-10-04 JST u115 — 本人が明記した守る対象を注記・保存・画面へ接続
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。Mashの分析実装継続指示と既存public PR反映許可を継承。基準headはAPI0488b30a4e6b0ef0de07a9de909340ca1771711e / Cocolon0caf2e22a69986c315ed970e31dce6c5cc3ec070。前回txtのu114とfresh GitHubの現在地を照合し、前提/作業rules、全体設計図とfile/責務地図、current03、canonical04/06、最新weekly20261003 §6.6〜6.10、恒久incident全文を確認。System Context prepareはshallow ancestry検証で停止したため、最新生成成功とはせず、規定の原本直接読取へ戻った。関連しないcontext生成物は反映しない。Work華恋がsingle execution/write owner、補助2名はread-only review。PRODUCT_ROUTE_ALIGNED / TECHNICALLY_ADMISSIBLE。新owner/共有意味owner/API契約/DB/依存/配置の追加が必要なら追加effect前に停止。追加費用/Mash操作0。
+
+product destinationは、本人の「守りたい」という記述とその対象が期間分析の文章/図で読めること。current unfinishedは「私は家族を守りたい」が共有wishとして読まれてもsafe表示へ届かず、PROTECTIVEが未接続な点。exact workは明示SELF＋既存名詞句＋を＋守りたい/守りたいですの現在肯定希望に限定した。既存希望nodeへ同じ全文証拠を持つ注記を結び、実際に守れているという成果や別行動の動機を推測しないこと、保存後も同じ文章/図を読むことを完了条件とした。
+
+intent_compilerへこの完全有限形と共有wish witnessを追加。明示grounding/current-input claim scope、required/should retention、本人/肯定/希望/現在、単一memo span、元文境界を要求する。PROTECTIVE / SOURCE_EXPLICIT_ANNOTATIONは対象nodeと同じ全文証拠・更新refを持ち、同じ対象の別記録/丁寧形を集約する。通常補足、完全引用訂正/撤回、別記録の注記残存に接続。過去/否定/推測/他者/伝聞/夢/未解釈修飾・複文/memo_actionは新注記へ昇格しない。原因/成果/性格/診断/順序を作らない。
+
+read-only reviewで、別文の前置き「友人から聞いた話です。私は家族を守りたい。」が本人の意向として通る問題を指摘された。rootが再現し、伝聞/読んだ話・夢の未解決な帰属を新PROTECTIVEに限って保留した。長文の読点/固定長分割から有限希望だけが抜ける場合も元field文境界で拒否する。初回検査では「自分は気持ちを守りたいです」のsubtestが1件失敗。共有ownerは名詞「気持ち」のoperator:feelingを先に見てpredicate_kindをfeelingとするが、nucleus.kindとmodalityはwishを保持していた。共有実装を確認し、完全希望文法・wish nucleus・positive/wish/current/self・operator:wishを維持したまま、predicate_kind=feelingかつoperator:feelingの組合せだけを局所許可した。独立レビューもこの修正を確認。predicate不一致とfeeling witness欠落の拒否を加え、入力/期待の削減なしで同じ検査を再実行した。blocking指摘は解消済み。
+
+safe realizerは対象の希望型・原全文・同一証拠を再照合し、既存4key annotation DTOへ「守りたいという意向の記録です。実際に守れているかは確定していません。」と投影する。保存validatorはPROTECTIVEの対象が同じ完全希望形かを確認し、他対象/成果断定/破損表示を拒否。既存private evidence allowlistはそのまま使い、原文や内部意味型をAPIへ漏らさない。RN見出しを「守っているもの」から「守る対象」へ変え、成果を断定しない。本文と図は既存単一DTO、旧artifactは再生成しない。
+
+最終検証は既存隔離Python3.12.14 / pytest9.1.1 / FastAPI0.142.2 / httpx0.28.1 / pydantic2.13.5で、vertical112（追加6）/storage25（追加2）/saved period13/API6＝156 PASS、509 subtests PASS、既存Pydantic非推奨warning1。RN12 PASS（追加1）。実generate_saved→合成RPC commit→read_savedでPROTECTIVE/BURDENを共存保存し、DTO/本文/identity同一・再生成0・private非漏出を確認。破損target/kind/成果断定/余分なprivate field/重複/本文を拒否。rootが本人の希望/複数記録/別対象と負荷/通常補足/訂正/撤回と別記録の6合成本文を全文読み、RN contract/view modelと本文・identity・node順・注記targetが完全一致した。Auth/DB I/Oは合成であり、live DB/実認証/修正版の端末試験や正式商品受入れではない。
+
+変更は既存12file：APIのintent_compiler / observed_route_realizer / analysis_observed_service、vertical/storage test、既存API handoff。CocolonはWatashiMapV2Rendererと既存RN test、current00/03 §4.21、canonical04 §3.16と06本記録。新規path/共有意味owner/API契約/DTO/SQL/依存変更0。既存draft/open/unmerged PR3/PR30 branchへfresh head/preimage確認→non-force反映→remote全文/変更path/parent/tree/headを照合する。main/merge/deploy/build/稼働DBへのeffect0。
+
+u102〜u115修正版は未配置。指定API315f5b5…/TestFlight6201と実機OKのMash報告を継承する。primary outcome=限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%は再採点しない。今回で明示保護意向の最小注記を接続したが、一般の保護/負荷理解、解釈仮説、期間比較、IF、global cutoverは未完了。次はcanonical04 §9/§9.1の期間比較について、既存source-set/保存identity/DTOの現在地と不足を確認し、同じ条件の過去期間と比較できる最小実装単位を特定する。新しい契約/保存方針が必要なら先にscopeを明示する。語彙網羅や高度品質を最低限の動作・実機接続の前提へ戻さない。

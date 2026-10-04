@@ -12,7 +12,8 @@ from uuid import uuid4
 from ...contracts import EngineStatus
 from .intent_compiler import (ObservedGraph, compile_observed_graph, _proposition,
                               _CANONICAL_CONTENT, _RESULT_STEMS, _CHANGE_PAST,
-                              _FEELING_PAST, _te_action_proposition, _burden_predicate)
+                              _FEELING_PAST, _te_action_proposition, _burden_predicate,
+                              _protective_wish_proposition, _proposition_meaning)
 from .source_adapter import (
     AnalysisObservedMapRequest, AnalysisSourceError, AnalysisSourceMember,
     freeze_analysis_sources,
@@ -29,6 +30,7 @@ CONFLICT_LABEL = '同じ記録に肯定と否定の記述があります。同�
 BURDEN_LABELS = {predicate: 'この希望と対比して、' + predicate
     + 'と記述されています。原因や続いている期間は確定していません。'
     for predicate in ('つらい', '苦しい')}
+PROTECTIVE_LABEL = '守りたいという意向の記録です。実際に守れているかは確定していません。'
 
 
 def _te_order_context(node, graph):
@@ -142,6 +144,23 @@ class ObservedSelfStructureMap:
         for claim in self.graph.annotations:
             target = nodes.get(claim.target_ref)
             p = target.proposition if target else None
+            if claim.kind == 'PROTECTIVE':
+                if (p is None or target.node_kind != 'ATTENTION_OR_THOUGHT'
+                        or _protective_wish_proposition(target.visible_label) != p
+                        or (target.polarity, target.modality, target.temporal_scope)
+                            != ('positive', 'wish', 'current_input')
+                        or claim.predicate_lemma != '守る'
+                        or claim.annotation_state != 'SOURCE_EXPLICIT_ANNOTATION'
+                        or not claim.source_labels or not claim.evidence_refs
+                        or claim.evidence_refs != target.evidence_refs):
+                    raise AnalysisSourceError('analysis_safe_surface_unavailable')
+                for label in claim.source_labels:
+                    parsed = _protective_wish_proposition(label)
+                    if parsed is None or _proposition_meaning(parsed) != _proposition_meaning(p):
+                        raise AnalysisSourceError('analysis_safe_surface_unavailable')
+                badges.append({'annotation_ref': claim.annotation_ref, 'target_ref': claim.target_ref,
+                    'kind': claim.kind, 'visible_label': PROTECTIVE_LABEL})
+                continue
             if (p is None or target.node_kind != 'ATTENTION_OR_THOUGHT'
                     or (p.actor, p.polarity, p.modality, p.temporal_scope) !=
                        ('SELF', 'positive', 'wish', 'current_input')
