@@ -35,6 +35,58 @@ class AnalysisVerticalTests(unittest.TestCase):
     def generate(self, value):
         return MeaningExperienceEngine().generate(value)
 
+    def test_repeated_period_gaps_display_once_without_losing_records_or_burden(self):
+        value = request(record(memo='私は仕事を続けたいけれど、私はつらい。'),
+            record(2, memo='僕は仕事を続けたいけれど、僕はつらいです。'))
+        artifact = self.generate(value).artifact
+        before = artifact.graph
+        self.assertEqual(len(before.unknown_gaps), 8)
+        self.assertEqual(len(before.nodes[0].record_refs), 2)
+        self.assertEqual(len(before.nodes[0].evidence_refs), 2)
+        self.assertEqual(len(before.annotations[0].evidence_refs), 6)
+        visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+        self.assertEqual([g['gap_ref'] for g in visual['unknown_gaps']], ['g1', 'g2', 'g3', 'g4'])
+        self.assertEqual(visual['unknown_gaps'], artifact.private_visual_preview(
+            authenticated_owner_scope=OWNER)['unknown_gaps'])
+        self.assertEqual(visual['nodes'][0]['evidence_badge_count'], 2)
+        text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+        self.assertEqual(text.count('未確定（'), 4)
+        self.assertEqual(text.count('注記（'), 1)
+        self.assertIs(artifact.graph, before)
+        self.assertEqual(len(before.unknown_gaps), 8)
+
+    def test_unknown_gap_display_retains_other_targets_and_unread_material(self):
+        artifact = self.generate(request(
+            record(memo='私は仕事を続けたい。まだよくわからない。'),
+            record(2, memo='僕は仕事を続けたいです。まだよくわからない。'),
+            record(3, memo='私は資料を調べたい。', created_at='2026-10-02T10:00:00Z'))).artifact
+        visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+        gaps = visual['unknown_gaps']
+        self.assertEqual(len(artifact.graph.unknown_gaps), 14)
+        self.assertEqual(len(gaps), 9)
+        self.assertEqual([g['gap_ref'] for g in gaps], ['g1', 'g2', 'g3', 'g4', 'g5', 'g11', 'g12', 'g13', 'g14'])
+        unread = [g for g in gaps if 'まだ読み取れていない内容' in g['visible_label']]
+        self.assertEqual(len(unread), 1)
+        self.assertEqual(unread[0]['between_node_refs'], ['n1'])
+        scene = [g for g in gaps if g['visible_label'].startswith('場面は')]
+        self.assertEqual([g['between_node_refs'] for g in scene], [['n1'], ['n2']])
+        self.assertEqual(artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'].count('未確定（'), 9)
+
+    def test_unknown_gap_display_preserves_reason_and_endpoint_order(self):
+        from cocolon_meaning_experience_engine.cores.analysis.intent_compiler import UnknownGap
+        artifact = self.generate(request(record())).artifact
+        # Distinct uncertainty claims can share the same current surface.
+        # Neither a reason nor endpoint order may disappear through display.
+        gaps = (UnknownGap('g1', ('n1', 'n2'), 'ROUTE_CONNECTION', 'ONLY_EXPLICIT_ORDER_IS_SHOWN'),
+            UnknownGap('g2', ('n1', 'n2'), 'ROUTE_CONNECTION', 'EXPLICIT_PREDECESSOR_NOT_ESTABLISHED'),
+            UnknownGap('g3', ('n2', 'n1'), 'ROUTE_CONNECTION', 'ONLY_EXPLICIT_ORDER_IS_SHOWN'))
+        artifact = replace(artifact, graph=replace(artifact.graph, unknown_gaps=gaps))
+        visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+        self.assertEqual([g['gap_ref'] for g in visual['unknown_gaps']], ['g1', 'g2', 'g3'])
+        self.assertEqual([g['between_node_refs'] for g in visual['unknown_gaps']],
+                         [['n1', 'n2'], ['n1', 'n2'], ['n2', 'n1']])
+        self.assertEqual(artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'].count('未確定（'), 3)
+
     def test_explicit_wish_burden_is_a_targeted_annotation_with_whole_evidence(self):
         for subject in ('私', '僕', 'わたし', '自分'):
             for feeling in ('つらい', 'つらいです', '苦しい', '苦しいです'):

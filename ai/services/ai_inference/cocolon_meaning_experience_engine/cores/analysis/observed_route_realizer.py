@@ -121,6 +121,21 @@ class ObservedSelfStructureMap:
         return [{'conflict_ref': c.conflict_ref, 'target_refs': list(c.target_refs),
                  'visible_label': CONFLICT_LABEL} for c in self.graph.conflicts]
 
+    def _unknown_gap_projection(self):
+        # Several records may share a node and the same missing scope. Keep
+        # every private gap, but show that exact target/scope/reason once.
+        # Preserve the first gap identity and order; labels alone are not keys.
+        gaps, seen = [], set()
+        for gap in self.graph.unknown_gaps:
+            key = (gap.between_node_refs, gap.missing_scope, gap.reason_code)
+            if key in seen:
+                continue
+            seen.add(key)
+            gaps.append({'gap_ref': gap.gap_ref,
+                'between_node_refs': list(gap.between_node_refs),
+                'visible_label': LABELS[gap.missing_scope] + 'は、この記録からは確定していません。'})
+        return gaps
+
     def _annotation_badges(self):
         badges = []
         nodes = {n.node_ref: n for n in self.graph.nodes}
@@ -169,10 +184,7 @@ class ObservedSelfStructureMap:
                    if e.edge_kind == 'OBSERVED_ORDER'
                    else {'endpoint_refs': list(e.endpoint_refs)})) for e in self.graph.edges],
             'annotation_badges': self._annotation_badges(),
-            'unknown_gaps': [{'gap_ref': g.gap_ref,
-                'between_node_refs': list(g.between_node_refs),
-                'visible_label': LABELS[g.missing_scope] + 'は、この記録からは確定していません。'}
-                for g in self.graph.unknown_gaps],
+            'unknown_gaps': self._unknown_gap_projection(),
             'conflict_badges': self._conflict_badges(),
             'accessibility_linear_order': [n.node_ref for n in self.graph.nodes],
         }
@@ -208,10 +220,7 @@ class ObservedSelfStructureMap:
                    if e.edge_kind == 'OBSERVED_ORDER'
                    else {'endpoint_refs': list(e.endpoint_refs)})) for e in self.graph.edges],
             'annotation_badges': self._annotation_badges(),
-            'unknown_gaps': [{'gap_ref': g.gap_ref,
-                'between_node_refs': list(g.between_node_refs),
-                'visible_label': LABELS[g.missing_scope] + 'は、この記録からは確定していません。'}
-                for g in self.graph.unknown_gaps],
+            'unknown_gaps': self._unknown_gap_projection(),
             'conflict_badges': self._conflict_badges(),
             'accessibility_linear_order': [n.node_ref for n in self.graph.nodes],
         }

@@ -14230,3 +14230,20 @@ safe realizerは既存annotation_ref/target_ref/kind/visible_labelだけを出�
 変更は既存10file：APIのintent_compiler / observed_route_realizer / analysis_observed_service、関連vertical/storage test、既存API handoff。Cocolonはcurrent00、03 §4.19、canonical04 §3.14、06本記録。新規file/共有owner/依存定義/API契約/DB/DTO/RN source変更0。file配置は不変、責務地図を同期。既存draft/open/unmerged PR3/PR30 branchへfresh head/preimage確認→non-force反映→remote全文/変更path/parent/tree/headを照合する。main/merge/deploy/build/稼働DB effect0。
 
 u102〜u113修正版は未配置。稼働API315f5b5…/TestFlight6201と実機OKのMash報告を継承。primary outcome=限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%は再採点しない。PROTECTIVE、解釈仮説、一般の負荷/願望理解、期間比較、IF、global cutoverは未完了。6本文の読取で、複数記録を同じnodeへまとめると既存の同じ未確定項目が重複表示されることも確認した。注記自体は1件に集約される。次の直接候補はこの期間表示の重複を原証拠を失わず解消する最小修正、または既存共有意味から明示PROTECTIVEへ届く不足一単位。語彙網羅や高度品質を実機接続/公開前の追加条件にしない。
+
+
+## 2026-10-04 JST u114 — 期間分析で同じ未確定項目を重複表示しない
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。Mashの分析実装継続指示と既存public PR反映許可を継承。基準headはAPIeed79c6672aaa3fcac56cd74e591fe54eb12dc8f / Cocolona72e713d8718d7cd7d13937eb4af4b85ece87752でfresh確認。前提/作業rules、全体設計とcurrentのfile/責務地図、最新weekly20261003 §5.3/§6.6〜6.10、u113反映済み記録を確認し、恒久incidentは今回も先頭からEOFまで全文再読した。前回System Context prepareのshallow ancestry失敗を成功へ読み替えず、規定の原本直接読取を継続。Work華恋がsingle execution/write owner、補助agentはread-only。PRODUCT_ROUTE_ALIGNED / TECHNICALLY_ADMISSIBLE。既存表示contract内の最小修正に限定し、新owner/公開契約/DB/依存/配置が必要なら追加effect前に停止。追加費用/Mash操作0。
+
+product destinationとcurrent unfinishedは、同じnodeへまとめられた複数記録が同じ未確定項目を反復し、期間分析の文章/図を冗長にする点。u113の実出力で発見した「希望とつらさ」の2記録を今回再生成し、1node/8private gap/8visible gapを再現。原証拠を消さず、表示だけ4項目へまとめることを完了条件とした。scopeは既存realizer、vertical/storage test、API handoff、Cocolon current00/03とcanonical04/06の8file。compiler・保存service・RN・DB・公開DTOは変更しない。
+
+observed_route_realizerの生成projectionに共通helperを追加。順序を含むbetween_node_refs・missing_scope・reason_codeが完全一致する場合だけ初出gap_ref/読み順を採用する。同じ文言でも別対象・別理由・別の対象順はまとめない。ObservedGraph.unknown_gaps、nodeの各record/evidence、注記の両端/全文証拠、private保存の全gapを維持。private previewとsafe projectionは同じまとめ方を使い、文章は既存の同じDTOから生成する。_text_from_visualと保存readでは重複を除去しないため、旧artifactの重複DTO/本文/identityはそのまま再読取できる。既存API/RNはgap_ref連番を要求せず、初出IDに欠番があっても変更不要。
+
+既存Python3.12.14 / pytest9.1.1環境でvertical106（追加3）/storage23（追加2）/saved period13/API6＝148 PASS、447 subtests PASS、既存Pydantic非推奨warning1。初回は147 PASS/1 FAIL。追加保存検査のprivate単数key reason_codeを単純部分文字列で検出したため、既存safe period_comparison.reason_codesまで誤検出した。JSONの完全key一致へ検査を修正し、同じ対象/期待を維持して再実行した。製品コードの条件緩和なし。既存RN11 PASS。独立read-only reviewでblocking指摘なし。
+
+実generate_saved→合成RPC commit→read_savedで、visible gap4/private gap8、2record/node evidence2/annotation evidence6、同じDTO/本文/identityと再生成0を確認。旧重複gap8の保存行も本文/identityを変えず読み取れる。rootが新規3例（同じ希望と負荷、別対象と未読内容、同時出現と未確定な接続）およびu113の旧保存形式1例の計4本文を全文読み、既存RN contract/view modelと本文・identity・node順・unknown対象が完全一致。新規のvisible件数は4/9/4、旧保存形式は8のまま。Auth/DBは合成で、live DB/端末の修正版試験ではない。
+
+新規file/共有意味owner/API契約/DTO/RN source/SQL/依存変更0。file配置不変、realizerの表示責務差分をcurrent03 §4.20・canonical04 §3.15へ同期。既存draft/open/unmerged PR3/PR30へfresh head/preimage確認→non-force反映→remote全文/変更path/parent/tree/headを照合する。main/merge/deploy/build/稼働DBへのeffect0。
+
+u102〜u114修正版は未配置。指定稼働API315f5b5…/TestFlight6201と実機OKのMash報告を継承する。primary outcome=限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%を再採点しない。今回の重複表示修正は新規生成に適用し、既存保存artifactの再解釈/書換えはしない。PROTECTIVE、解釈仮説、一般の負荷/願望理解、期間比較、IF、global cutoverは残る。次はcanonical04 §8の未接続な明示PROTECTIVEを既存共有意味と照合し、本人が書いた守る対象を既存nodeへ結べる最小単位を特定する。期間分析の最低限の動作を語彙網羅や高度品質待ちへ戻さない。

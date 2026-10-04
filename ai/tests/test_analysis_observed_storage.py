@@ -45,6 +45,60 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         self.fx = fixture()
         self.row = self.fx['row']
 
+    async def test_repeated_period_saves_compact_gaps_and_keeps_all_private_sources(self):
+        self.fx = fixture('私は仕事を続けたいけれど、私はつらい。')
+        self.row = self.fx['row']
+        second = dict(self.fx['original'], id=str(UUID(int=102)),
+            created_at='2026-10-02T01:00:00', memo='僕は仕事を続けたいけれど、僕はつらいです。')
+        writes = []
+        async def rpc(name, payload):
+            if name == 'analysis_observed_source_snapshot':
+                return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                    {'original': original, 'thread': None, 'events': []}
+                    for original in (self.fx['original'], second)]}
+            if name == 'analysis_observed_commit':
+                writes.append(payload)
+                self.row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                self.row['content_text'] = payload['p_text']
+                self.row['content_json']['watashiMap'] = payload['p_projection']
+                return self.row['id']
+            return result([self.row], matched=True)
+        with patch.object(service, '_rpc', side_effect=rpc):
+            saved = await service.generate_saved(OWNER, start=START, end=END,
+                report_mode='standard', report_type='latest')
+            with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+        self.assertEqual(saved, reread['items'][0])
+        projection = saved['content_json']['watashiMap']
+        self.assertEqual(projection, writes[0]['p_projection'])
+        self.assertEqual(saved['content_text'], writes[0]['p_text'])
+        self.assertEqual(len(projection['unknown_gaps']), 4)
+        self.assertEqual(saved['content_text'].count('未確定（'), 4)
+        private = writes[0]['p_private_evidence']
+        self.assertEqual(len(private['source_members']), 2)
+        self.assertEqual(len(private['graph']['unknown_gaps']), 8)
+        self.assertEqual(len(private['graph']['nodes'][0]['evidence_refs']), 2)
+        self.assertEqual(len(private['graph']['annotations'][0]['evidence_refs']), 6)
+        for key in ('reason_code', 'missing_scope', 'evidence_refs', 'source_members'):
+            self.assertNotIn(json.dumps(key) + ':', json.dumps(saved, ensure_ascii=False))
+
+    async def test_previous_saved_duplicate_gaps_keep_their_original_text_and_identity(self):
+        row = fixture('私は仕事を続けたいけれど、私はつらい。')['row']
+        projection = row['content_json']['watashiMap']
+        old_gaps = copy.deepcopy(projection['unknown_gaps'])
+        projection['unknown_gaps'].extend(dict(g, gap_ref='g' + str(i))
+                                         for i, g in enumerate(old_gaps, 5))
+        lines = row['content_text'].splitlines()
+        # Historical wire text: node, both sets of gaps, then the annotation.
+        row['content_text'] = '\n'.join(lines[:-1] + lines[1:-1] + lines[-1:])
+        before = copy.deepcopy(row)
+        with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))), \
+                patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+            saved = await service.read_saved(OWNER, report_id=row['id'], report_mode='standard')
+        self.assertEqual(saved['items'][0], before)
+        self.assertEqual(saved['items'][0]['content_text'].count('未確定（'), 8)
+        self.assertEqual(row, before)
+
     async def test_burden_annotation_survives_save_and_read_without_regeneration(self):
         self.fx = fixture('私は仕事を続けたいけれど、私はつらい。')
         self.row = self.fx['row']
