@@ -201,6 +201,30 @@ def _past_presence_proposition(value):
         scene_state='PAST_PRESENCE')
 
 
+def _past_event_proposition(value):
+    """Retain one written day/connective on a complete scene or role clause.
+
+    The finite host still proves past and SELF. Offsets address the full
+    source clause, including its prefix; no rewritten source is introduced.
+    """
+    prefix = _CLAUSE_PREFIX.match(value)
+    start = prefix.end() if prefix else 0
+    event = (_past_presence_proposition(value[start:])
+             or _past_responsibility_proposition(value[start:]))
+    # A day after the subject is outside this prefix grammar. Do not absorb
+    # it into the permissive kanji noun as if 昨日職場 were a location name.
+    if event is not None and any(re.match(r'^(今日|昨日)', noun) for _, noun in event.arguments):
+        return None
+    if event is None or prefix is None:
+        return event
+    token = prefix.group(1)
+    marker = {'その後': 'AFTER_PREVIOUS', 'それから': 'THEN_OR_ADDITION'}.get(token, '')
+    day = {'今日': 'TODAY', '昨日': 'YESTERDAY'}.get(token, '')
+    return replace(event, sequence_marker=marker, relative_day=day,
+        source_parts=((marker or 'RELATIVE_DAY_' + day, 0, start),)
+            + tuple((kind, a + start, b + start) for kind, a, b in event.source_parts))
+
+
 def _past_event_witness(nucleus, proposition):
     # The shared generic event supplies grounding, not an inferred role.
     # Its current_input time is unspecified; the whole finite clause proves
@@ -219,7 +243,10 @@ def _past_event_witness(nucleus, proposition):
         and len(nucleus.source_span_ids) == 1
         and frame.actor == 'current_user' and frame.modality == 'fact'
         and frame.polarity == ('negative' if proposition.polarity == 'negative' else 'neutral')
-        and frame.time_scope in {'past', 'current_input'}
+        # Shared 'present' marks 今日, not the finite host's tense. Accept
+        # that witness only when this complete clause explicitly carries it.
+        and (frame.time_scope in {'past', 'current_input'}
+             or (frame.time_scope == 'present' and proposition.relative_day == 'TODAY'))
         and not any(code.startswith(('source_fragment_', 'surface_scalar_',
                     'thread_time:', 'semantic_dependency:')) for code in frame.attribute_codes))
 
@@ -302,7 +329,7 @@ def _proposition(value: str) -> ObservedProposition | None:
     protective = _protective_wish_proposition(value)
     if protective is not None:
         return protective
-    event = _past_presence_proposition(value) or _past_responsibility_proposition(value)
+    event = _past_event_proposition(value)
     if event is not None:
         return event
     result = _unfinished_result_proposition(value) or _bounded_change_proposition(value)
@@ -755,19 +782,20 @@ def _fragment(source, nucleus, plan=None):
         return None
     if result is not None and not _unfinished_result_witness(nucleus):
         return None
-    event = _past_presence_proposition(value) or _past_responsibility_proposition(value)
+    event = _past_event_proposition(value)
     if event is not None and (a != 0 or b != len(span.raw_text)
             or not _past_event_witness(nucleus, event)):
         return None
     protective = _protective_wish_proposition(value)
     if protective is not None and (a != 0 or b != len(span.raw_text)
-            or not _protective_wish_witness(nucleus)
-            # An open report/dream can carry across a sentence boundary;
-            # the local SELF wish alone cannot close that attribution.
-            or re.search(r'(?:聞いた|聞きました|読んだ|読みました)(?:話|内容)|夢を見',
-                         record_context)):
+            or not _protective_wish_witness(nucleus)):
         return None
     if event is not None or protective is not None:
+        # An open report/dream can carry across a sentence boundary; a
+        # local SELF event or wish cannot close that attribution scope.
+        if re.search(r'(?:聞いた|聞きました|読んだ|読みました)(?:話|内容)|夢を見',
+                     record_context):
+            return None
         # The ledger also splits long sentences at commas or fixed lengths.
         # A complete span is not necessarily a complete finite host. Check
         # the parser field (or proved correction view), retaining newlines as

@@ -86,6 +86,15 @@ def _te_order_context(node, graph):
     return False
 
 
+def _source_prefix(phrase, parts):
+    if parts.sequence_marker:
+        phrase = {'AFTER_PREVIOUS': 'その後：',
+                  'THEN_OR_ADDITION': 'それから：'}[parts.sequence_marker] + phrase
+    if parts.relative_day:
+        phrase = 'この記述時点の' + {'TODAY': '今日', 'YESTERDAY': '昨日'}[parts.relative_day] + '：' + phrase
+    return phrase
+
+
 def _safe_label(node, graph):
     parts = node.proposition
     replay = _proposition(node.visible_label)
@@ -110,21 +119,17 @@ def _safe_label(node, graph):
         return _FEELING_PAST[parts.predicate_lemma] + '（記録された気持ち）'
     if parts.scene_state == 'PAST_PRESENCE':
         phrase = ''.join(noun + case for case, noun in parts.arguments)
-        return phrase + ('いた' if parts.polarity == 'positive' else 'いなかった') + '（記録された場面）'
+        return _source_prefix(phrase + ('いた' if parts.polarity == 'positive' else 'いなかった'), parts) + '（記録された場面）'
     if parts.role_state == 'PAST_RESPONSIBILITY':
         phrase = ''.join(noun + case for case, noun in parts.arguments)
-        return phrase + ('担当した' if parts.polarity == 'positive' else '担当しなかった') + '（記録された担当）'
+        return _source_prefix(phrase + ('担当した' if parts.polarity == 'positive' else '担当しなかった'), parts) + '（記録された担当）'
     if parts.possible_content is not None:
         content = parts.possible_content
         phrase = ''.join(noun + case for case, noun in content.arguments)
         phrase += _CANONICAL_CONTENT[(content.predicate_lemma, content.polarity, content.temporal_scope)]
         return phrase + 'かもしれないと' + parts.predicate_lemma + '（この記述時点の考え）'
     phrase = ''.join(noun + case for case, noun in parts.arguments) + parts.predicate_lemma
-    if parts.sequence_marker:
-        phrase = {'AFTER_PREVIOUS': 'その後：',
-                  'THEN_OR_ADDITION': 'それから：'}[parts.sequence_marker] + phrase
-    if parts.relative_day:
-        phrase = 'この記述時点の' + {'TODAY': '今日', 'YESTERDAY': '昨日'}[parts.relative_day] + '：' + phrase
+    phrase = _source_prefix(phrase, parts)
     if parts.modality == 'wish':
         label = phrase + ('ことへの希望' if parts.polarity == 'positive'
                           else 'ことを望まない')

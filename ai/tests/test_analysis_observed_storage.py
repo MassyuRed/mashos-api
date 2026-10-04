@@ -568,7 +568,11 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                 ('私は職場にいました', 'SCENE', '職場にいた（記録された場面）'),
                 ('私は職場にいませんでした', 'SCENE', '職場にいなかった（記録された場面）'),
                 ('私は会議の司会を担当しました', 'ROLE', '会議の司会を担当した（記録された担当）'),
-                ('私は会議の司会を担当しませんでした', 'ROLE', '会議の司会を担当しなかった（記録された担当）')):
+                ('私は会議の司会を担当しませんでした', 'ROLE', '会議の司会を担当しなかった（記録された担当）'),
+                ('今日私は職場にいました', 'SCENE', 'この記述時点の今日：職場にいた（記録された場面）'),
+                ('昨日私は職場にいませんでした', 'SCENE', 'この記述時点の昨日：職場にいなかった（記録された場面）'),
+                ('その後私は会議の司会を担当しました', 'ROLE', 'その後：会議の司会を担当した（記録された担当）'),
+                ('それから私は会議の司会を担当しませんでした', 'ROLE', 'それから：会議の司会を担当しなかった（記録された担当）')):
             with self.subTest(clause=clause):
                 self.fx = fixture(clause + '。その後、私は資料を調べた。')
                 self.row = self.fx['row']
@@ -602,6 +606,19 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                                 json.dumps(projection, ensure_ascii=False)):
                     for private in ('scene_state', 'PAST_PRESENCE', 'role_state', 'PAST_RESPONSIBILITY', 'source_parts', '私は'):
                         self.assertNotIn(private, encoded)
+
+    async def test_saved_scene_role_action_chain_is_read_without_reinterpretation(self):
+        fx = fixture('今日私は職場にいた。その後私は会議の司会を担当した。'
+                     'それから私は資料を調べた。')
+        with patch.object(service, '_rpc', AsyncMock(return_value=result([fx['row']]))), \
+             patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+            value = await service.read_saved(OWNER)
+        self.assertEqual(value['items'][0], fx['row'])
+        p = value['items'][0]['content_json']['watashiMap']
+        self.assertEqual([n['node_kind'] for n in p['nodes']], ['SCENE', 'ROLE', 'ACTION_OR_NONACTION'])
+        self.assertEqual([(e['from_ref'], e['to_ref']) for e in p['edges']], [('n1', 'n2'), ('n2', 'n3')])
+        for n in p['nodes']:
+            self.assertIn(n['visible_label'], value['items'][0]['content_text'])
 
     async def test_read_never_generates_and_preserves_wire(self):
         with patch.object(service, '_rpc', AsyncMock(return_value=result([self.row]))), \

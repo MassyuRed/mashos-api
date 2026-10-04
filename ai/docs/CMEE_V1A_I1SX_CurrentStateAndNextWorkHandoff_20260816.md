@@ -14309,3 +14309,23 @@ DIRECT_PRODUCT_OR_ACCEPTANCE_WORK。Mashの分析実装継続指示と既存PR3/
 変更はAPI6file（service、storage/API/SQL検査、SQL候補、既存handoff）とCocolon既存4文書（current00/03 §4.23、canonical04 §3.18、06）。既存PR3/PR30のfresh head/preimageを確認し、non-force反映後にremote全文/path/parent/tree/headを照合する。main/merge/deploy/build/live DB/flag effect0。比較flag既定off。既存rowは書換えず、SQL候補は未適用。公開repoには合成検査/source/既存技術記録だけを反映し、ユーザー行/本文/credentialは取得・公開しない。
 
 primary outcome=TECHNICAL_CREDIT。u102〜u117は未配置、指定API315f5b5…/TestFlight6201の実機OKはMash報告として継承。商品0/3・NOT_CLEAR・48%を再採点しない。次の一作業は、今回SQL候補と対応APIを適用する開発環境/対象版を固定し、DB→API→比較有効化→実機の一往復へ進むこと。DB適用/配置は別対象付きの明示判断が必要で、この実装を許可へ変換しない。flag offは新規比較生成の停止であり、比較保存行を扱えない旧API版へ戻すrollback成立ではない。IF・一般の解釈仮説・正式商品受入れ/global cutoverは残る。高度な文章品質や語彙網羅を次の接続の前提へ戻さない。
+
+## 2026-10-04 JST u118 — 場面・担当の明示日と順序を分析へ接続
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK。Mashの分析実装継続指示に基づき、前回txt、fresh PR3/PR30、前提・作業rules、全体設計図とcurrent00/03のfile/責務地図、canonical04、最新weekly20261003、恒久incident全文を確認。開始headはAPI aa87c02fcebc7e950e3dabdb4a289cb53141a3bf / Cocolon b9f3041a9ea0eecffd6a733663976b7d0de9e598。System Context prepareはmaterialized copyにGit metadataがなくrepository unavailableで停止した。成功とは扱わず、原本直接読取へ移行し、GitHub treeのblob hashと一致する実ファイルを使用した。rootが編集・検証・writeの単一owner、subagentはread-only review。モデル役割を別実体のPro/Ultraと捏造しない。
+
+今回の未完了は、共有側で根拠を得た場面・担当も「今日/昨日/その後/それから」が付くと分析から欠落し、場面→担当→行動の明示順序を表示できないこと。既存の完全有限節、共有event witness、OBSERVED_ORDER、safe DTOを使い、元の日・否定・証拠位置を保持して文章/図/保存再表示へ接続する限定実装とした。追加費用・Mash操作0、LEVEL_2相当の既存設計内可逆実装。u117のDB/API配置待ちを完了へ変更せず、この内容修正を配置前の新しい必須条件にしない。IFは別approvalまでHOLDを維持。
+
+既存intent_compilerの_past_event_propositionで単一接頭辞を解析し、元節のsource_partsをprefix込み位置へ保持する。_propositionと_fragmentの両入口で同じ解釈を使い、共有event witness/文境界を迂回しない。共有presentは全文TODAYが成立した時だけ認め、過去の有限述語を現在/未来へ変更しない。SCENE retention、ROLEの既存required/should、9動詞や名詞grammar、本人主語・正負の既存条件を保持する。realizerでは場面/担当の早期returnにも同じ日語・接続語を付ける。safe出力は完全命題を再照合する。
+
+before：合成「私は職場にいた。その後、私は会議の司会を担当した。その後、私は資料を調べた。」は場面/行動2node、順序0で役割とつながりが未確定。after：場面/役割/行動3node、記述通りの順序2本。原因・勤務・能力・恒久身分・担当仕事の完了は補わない。「今日/昨日」は記述時点に固定し、後続節や別sourceへ日を継承しない。反復A→B→Aは3occurrence、日語だけの列挙は順序0。
+
+reviewで指摘された開いた伝聞/夢を実測し、既存の保留条件を場面/担当へ接続。「友人から聞いた話です。昨日、私は職場にいた。」等を本人の事実にしない。追加検査で「私は昨日職場にいた」の昨日を名詞へ吸収する旧grammar上の問題も確認し、主語後の日語を未対応のまま保留する最小補正を入れた。複数prefix、未解釈修飾、別主体、引用、条件、長文の機械分割を切り落として通さない。補足・全文訂正・撤回は元回答の証拠へbindし、削除された中間の役割を順序線が飛び越えない。
+
+検証：確認済み既存隔離Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/pydantic2.13.5でvertical125/storage33/saved period16/API7＝181 PASS、606 subtests PASS、既存Pydantic非推奨warning1。旧unsupported prefix4条件は今回positive cohortへ移し、他の拒否期待は維持。現session初回のprimary runtime pytest import不可は検査成功へ計上せず、その後既存隔離runtimeを発見・確認した。新規依存導入0。実serviceの保存/再読取、再生成禁止、閉じたprivate evidence、旧本文互換を合成Auth/DB I/Oで確認。SQL/DB変更0のため隔離SQL検査は再実行していない。
+
+既存RN13 PASS。3段階の順序、否定担当、明示異日、反復、訂正、撤回の合成6本文をrootが全文確認し、既存RN view modelの本文・artifact identity・node/edge順と6/6一致。独立read-only reviewと6例のfocused probeでblocking指摘なし。これは実DB・実機・正式商品受入れではない。
+
+変更はAPI既存5file（intent_compiler、observed_route_realizer、vertical/storage test、既存handoff）とCocolon既存4文書（current00/03 §4.24、canonical04 §3.19、06）。新規path/共有意味owner/外部API/DTO/RN/SQL/依存変更0。既存source owner内の解釈・表示範囲を地図へ同期。既存Draft/open/unmerged PR3/PR30へfresh preimage/head確認後に反映し、remote bytes・変更path・最終headを確認する。
+
+primary outcome=TECHNICAL_CREDIT。u102〜u118未配置、指定API315f5b5…/TestFlight6201実機OKはMashの既報。商品0/3・NOT_CLEAR・48%は再採点しない。次はu117の未適用SQL候補と対応APIの対象を固定し、DB→API→比較有効化→実機の一往復へ接続する。新たな語彙網羅・IF・高度品質の前置きを増やさない。稼働DB適用・配置・有効化の個別effectは未実行。比較flagは既定off、main/merge/build/deploy変更0。
