@@ -14177,3 +14177,22 @@ DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。Mashの分析実装継続�
 変更は既存API source2/test2/handoff1、Cocolon current00/03・canonical04/06の計9 file。新規file/共有owner/依存定義/API/DB/DTO/RN変更0、配置地図のpath構成不変。責務差分を03 §4.16とcanonical04 §3.11へ同期。前回System Context prepareのworkspace欠落は解消済みと扱わず、許可済みの原本直接読取を継続した。GitHub対象は既存public draft/open/unmerged PR3/PR30のagent branchで、fresh head/preimage確認→non-force反映→remote全文/変更path/parent/headを照合する。local cacheのmaterialization commitをremote parentに使用しない。
 
 u102〜u110修正版は未配置。稼働API315f5b5…/TestFlight6201、実機OKのMash報告、商品0/3・NOT_CLEAR・48%は再採点しない。main/merge/deploy/build/live DBへのeffect0。今回を一般場面理解や分析全体完成としない。前置の今日/昨日/その後、現在/未来/願望/推測/他者/夢/未解釈修飾、memo_actionの所在は今回の対象外。ROLE、一般場面、annotations/conflict/期間比較/IFは残る。次の直接候補は、ROLEの本人明示文が既存共有意味から表示へ届く最小単位を確認すること。共有producerが足りない場合は不足箇所と必要scopeを先に特定し、文字列だけで役割を推測しない。語彙磨きを分析全体の完成の前提にはしない。
+
+
+## 2026-10-04 JST u111 — 本人が明記した過去の担当をROLE表示へ接続
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。Mashの分析実装継続指示と既存public PR反映許可を継承。基準headはAPI0568c4f333f936139c748ee8eac909ac566346e7 / Cocolona632a6de897849c7e677016cf240cfc03d0a5bffでfresh確認。前提/作業rules、全体構造/全file地図、current03/canonical04/06、最新weekly20261003 §6.6〜6.10、前回txtから引き継いだu110完了状態を照合。恒久incidentを今回も全文再読。System Context prepareは指定workspace内のmashos-api欠落で停止し、許可済み原本直接読取を使用。生成context更新済みとはしない。
+
+product destinationは、本人が明記した担当を期間分析の文章/図へ届かせること。current unfinishedはgeneric eventとして読まれた担当節のROLE接続欠落。exact workは明示SELF＋既存名詞句＋を＋過去の担当4形に限定し、既存compiler/realizerと関連2test、current00/03/04/06・API handoffの9 fileを更新する。PRODUCT_ROUTE_ALIGNED / TECHNICALLY_ADMISSIBLE、root華恋がsingle execution/write owner、補助2名はread-only。primary outcome=TECHNICAL_CREDIT。完了条件は完全な根拠/正負/補足更新を保持したROLE生成、保存再読取、同一文章/図、remote反映照合。共有owner/API/DB/RN/新依存変更、一般名詞の肩書き推論、配置/merge/buildは対象外。scope拡大が必要なら追加effect前に止める。費用/Mash操作0、正式商品受入れと修正版配置は別判断。
+
+既存intent_compilerにPAST_RESPONSIBILITYを追加。「私は会議の司会を担当した/担当しました/担当しなかった/担当しませんでした」を既存名詞文法と明示SELFから全文解析する。担当述語を役割関係の根拠とし、名詞分類や「私は司会者です」をROLEへ自動昇格しない。safe realizerは「会議の司会を担当した／担当しなかった（記録された担当）」等へ型から再構成し、能力/恒久身分/責任感/仕事の完了を補わない。共有generic event/fact、極性、past/current_input、memo単独span、元文境界と全文出典を要求。u110のSCENE witnessを共通関数へ移し、SCENEの条件は維持した。
+
+初回は128 PASS/1 FAIL・358 subtests PASS。5種類のnodeを同じ記録から作る追加検査でROLEが消えた。共有_retention_by_spanは4節以上の通常の明示本文をshouldにし、arcを持つ節をrequiredへ保つ実装だった。_priority_for_nucleusと_build_nucleiも確認し、retentionがgrounding/allowed_claim_scope/certaintyと独立した表示保持優先度であることを確認。ROLEに限ってrequired/shouldを許可し、optional断片は拒否、共有の保持値は書き換えず、SCENEのrequired条件も変更しなかった。全文/主体/格/有限形/極性/時制/文境界の条件を緩めず、失敗した5段階検査をそのまま通した。read-only reviewでもこの限定修正にblocking指摘なし。
+
+最終は既存Python3.12.14 / pytest9.1.1環境でvertical93（追加5）/storage17（既存testへROLE正負追加）/saved period13/API6＝**129 PASS、359 subtests PASS**、既存Pydantic非推奨warning1。4形/主語/名詞句、全文scalar/UTF-8/hash、safe replay、共有witness、長文分割/未解釈scope拒否、通常補足と全文訂正/撤回、独立記録件数、正負別node、5種類のnodeを確認。担当単独から実行結果や順序を作らず、後続「その後＋本人過去行動」の明示接続を既存条件で表示する。
+
+実generate_saved→合成RPC commit→read_savedでROLE肯定/否定と後続行動順序を保存し、文章/DTO/identity一致・再生成0・role_state/PAST_RESPONSIBILITY等の非漏出を確認。既存SCENE正負の保存検査も維持。rootが担当/否定/5種類/補足/訂正/撤回の6合成出力を全文読み、既存RN contract/view modelで同じ6本文・identity・graph orderがbackendと一致。Auth/DBは合成応答であり、修正版のlive DB/実認証/端末確認や商品合格ではない。
+
+新規file/共有owner/API/DB/DTO/RN/依存定義変更0。file配置不変、責務差分をcurrent03 §4.17とcanonical04 §3.12へ同期。GitHub反映先は既存draft/open/unmerged PR3/PR30 branch。local materialization commitは作業用cacheとしてremote parentに使わず、基準remote headからnon-forceで反映し、remote全文・変更path・parent/tree・最終PR head/bodyを照合する。
+
+u102〜u111修正版は未配置。指定稼働API315f5b5…/TestFlight6201と実機OKのMash報告を継承し、商品0/3・NOT_CLEAR・48%を再採点しない。main/merge/deploy/build/live DBへのeffect0。現在/未来/願望/可能、前置時点、他者/推測/伝聞/引用/夢/未解釈修飾、memo_actionは今回未対応。「記録を担当した」は共有の名詞keywordによるaction分類でevent witnessに一致せず保留。一般ROLE・場面の理解、注記/conflict/期間比較/IFは残る。5種類の限定表示が揃ったため、次の対象選択は語彙磨きを無期限に続けず、canonical04の未接続な注記・期間比較と現在の保存artifact/DTOを照合し、最小分析として利用者に届く不足を一単位選ぶ。高度な全入力理解を実機接続/公開前の新条件にしない。

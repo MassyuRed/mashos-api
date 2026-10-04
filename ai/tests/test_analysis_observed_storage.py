@@ -219,11 +219,14 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                             'action_supports_change', 'dependent_form', 'TE_BEFORE_PAST_CHANGE'):
                 self.assertNotIn(private, encoded)
 
-    async def test_scene_polarity_and_action_order_survive_save_and_read(self):
-        for ending, label in (('いました', '職場にいた（記録された場面）'),
-                              ('いませんでした', '職場にいなかった（記録された場面）')):
-            with self.subTest(ending=ending):
-                self.fx = fixture('私は職場に' + ending + '。その後、私は資料を調べた。')
+    async def test_scene_and_role_polarity_and_action_order_survive_save_and_read(self):
+        for clause, kind, label in (
+                ('私は職場にいました', 'SCENE', '職場にいた（記録された場面）'),
+                ('私は職場にいませんでした', 'SCENE', '職場にいなかった（記録された場面）'),
+                ('私は会議の司会を担当しました', 'ROLE', '会議の司会を担当した（記録された担当）'),
+                ('私は会議の司会を担当しませんでした', 'ROLE', '会議の司会を担当しなかった（記録された担当）')):
+            with self.subTest(clause=clause):
+                self.fx = fixture(clause + '。その後、私は資料を調べた。')
                 self.row = self.fx['row']
                 writes = []
                 async def rpc(name, payload):
@@ -245,15 +248,15 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(reread['items'][0], saved)
                 projection = saved['content_json']['watashiMap']
                 self.assertEqual((projection, saved['content_text']), (writes[0]['p_projection'], writes[0]['p_text']))
-                scene, action = projection['nodes']
-                self.assertEqual((scene['node_kind'], scene['visible_label']), ('SCENE', label))
+                context_node, action = projection['nodes']
+                self.assertEqual((context_node['node_kind'], context_node['visible_label']), (kind, label))
                 self.assertIn(label, saved['content_text'])
                 edge, = projection['edges']
                 self.assertEqual((edge['edge_kind'], edge['from_ref'], edge['to_ref']),
-                    ('OBSERVED_ORDER', scene['node_ref'], action['node_ref']))
+                    ('OBSERVED_ORDER', context_node['node_ref'], action['node_ref']))
                 for encoded in (json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False),
                                 json.dumps(projection, ensure_ascii=False)):
-                    for private in ('scene_state', 'PAST_PRESENCE', 'source_parts', '私は'):
+                    for private in ('scene_state', 'PAST_PRESENCE', 'role_state', 'PAST_RESPONSIBILITY', 'source_parts', '私は'):
                         self.assertNotIn(private, encoded)
 
     async def test_read_never_generates_and_preserves_wire(self):

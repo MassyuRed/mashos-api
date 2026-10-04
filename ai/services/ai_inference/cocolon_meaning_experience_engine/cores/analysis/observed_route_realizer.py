@@ -73,6 +73,9 @@ def _safe_label(node, graph):
     if parts.scene_state == 'PAST_PRESENCE':
         phrase = ''.join(noun + case for case, noun in parts.arguments)
         return phrase + ('いた' if parts.polarity == 'positive' else 'いなかった') + '（記録された場面）'
+    if parts.role_state == 'PAST_RESPONSIBILITY':
+        phrase = ''.join(noun + case for case, noun in parts.arguments)
+        return phrase + ('担当した' if parts.polarity == 'positive' else '担当しなかった') + '（記録された担当）'
     if parts.possible_content is not None:
         content = parts.possible_content
         phrase = ''.join(noun + case for case, noun in content.arguments)
