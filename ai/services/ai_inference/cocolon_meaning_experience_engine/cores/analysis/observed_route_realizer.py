@@ -7,6 +7,7 @@ Owner authorization, retention and deletion checks remain the caller's duty.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import logging
 from uuid import uuid4
 
 from ...contracts import EngineStatus
@@ -19,6 +20,43 @@ from .source_adapter import (
     AnalysisObservedMapRequest, AnalysisSourceError, AnalysisSourceMember,
     freeze_analysis_sources,
 )
+
+logger = logging.getLogger(__name__)
+# Exact literals only: exceptions and source values must never enter logs.
+_FAILURE_LOG_REASONS = frozenset({
+    'analysis_answer_range_invalid',
+    'analysis_comparison_binding_invalid',
+    'analysis_comparison_evidence_unavailable',
+    'analysis_comparison_meaning_unavailable',
+    'analysis_comparison_owner_mismatch',
+    'analysis_comparison_request_invalid',
+    'analysis_comparison_unavailable',
+    'analysis_correction_replacement_unsupported',
+    'analysis_correction_target_unresolved',
+    'analysis_duplicate_record_conflict',
+    'analysis_fragment_evidence_mismatch',
+    'analysis_observed_route_not_established',
+    'analysis_original_invalid',
+    'analysis_original_shape_invalid',
+    'analysis_owner_mismatch',
+    'analysis_period_invalid',
+    'analysis_previous_map_unavailable',
+    'analysis_projection_owner_mismatch',
+    'analysis_record_not_live',
+    'analysis_record_version_mismatch',
+    'analysis_request_out_of_scope',
+    'analysis_safe_surface_unavailable',
+    'analysis_semantic_generation_unavailable',
+    'analysis_separate_safety_required',
+    'analysis_source_field_unbound',
+    'analysis_source_invalid',
+    'analysis_supplement_binding_invalid',
+    'analysis_supplement_cardinality',
+    'analysis_supplement_interpretation_pending',
+    'analysis_supplement_parent_missing',
+    'analysis_text_field_invalid',
+    'analysis_timestamp_invalid',
+})
 
 LABELS = {'SCENE': '場面', 'ROLE': '役割',
           'ATTENTION_OR_THOUGHT': '考え・注意',
@@ -344,18 +382,31 @@ class AnalysisEngineOutcome:
             'automatic_progression': False}
 
 
-def _generate_single_observed_map(request: AnalysisObservedMapRequest) -> AnalysisEngineOutcome:
+def _failed_outcome(status, reason, *, stage, diagnostic_reason=None):
+    """Log closed diagnostics without changing the existing failure contract."""
+    candidate = reason if diagnostic_reason is None else diagnostic_reason
+    safe_reason = (candidate if type(candidate) is str and candidate in _FAILURE_LOG_REASONS
+                   else 'analysis_generation_reason_unclassified')
+    safe_stage = (stage if type(stage) is str and stage in {'current', 'previous', 'comparison'}
+                  else 'unclassified')
+    logger.warning('analysis_observed_generation_unavailable stage=%s reason=%s',
+                   safe_stage, safe_reason)
+    return AnalysisEngineOutcome(status, (reason,))
+
+
+def _generate_single_observed_map(request: AnalysisObservedMapRequest, *,
+                                  period_role='current') -> AnalysisEngineOutcome:
     try:
         sources = freeze_analysis_sources(request)
     except AnalysisSourceError as exc:
-        return AnalysisEngineOutcome(EngineStatus.REJECTED, (str(exc),))
+        return _failed_outcome(EngineStatus.REJECTED, str(exc), stage=period_role)
     except Exception:
-        return AnalysisEngineOutcome(EngineStatus.REJECTED, ('analysis_source_invalid',))
+        return _failed_outcome(EngineStatus.REJECTED, 'analysis_source_invalid', stage=period_role)
     try:
         graph = compile_observed_graph(sources)
         if not graph.nodes:
-            return AnalysisEngineOutcome(EngineStatus.UNAVAILABLE,
-                ('analysis_observed_route_not_established',))
+            return _failed_outcome(EngineStatus.UNAVAILABLE,
+                'analysis_observed_route_not_established', stage=period_role)
         artifact = ObservedSelfStructureMap('artifact:' + uuid4().hex, 1,
             sources.owner_scope, sources.source_set_ref, sources.period,
             graph, sources.members)
@@ -363,10 +414,10 @@ def _generate_single_observed_map(request: AnalysisObservedMapRequest) -> Analys
         return AnalysisEngineOutcome(EngineStatus.GENERATED,
             ('analysis_partial_observed_map',), artifact)
     except AnalysisSourceError as exc:
-        return AnalysisEngineOutcome(EngineStatus.UNAVAILABLE, (str(exc),))
+        return _failed_outcome(EngineStatus.UNAVAILABLE, str(exc), stage=period_role)
     except Exception:
-        return AnalysisEngineOutcome(EngineStatus.UNAVAILABLE,
-            ('analysis_semantic_generation_unavailable',))
+        return _failed_outcome(EngineStatus.UNAVAILABLE,
+            'analysis_semantic_generation_unavailable', stage=period_role)
 
 
 def generate_observed_map(request: AnalysisObservedMapRequest) -> AnalysisEngineOutcome:
@@ -375,15 +426,17 @@ def generate_observed_map(request: AnalysisObservedMapRequest) -> AnalysisEngine
         return _generate_single_observed_map(request)
     if (type(previous) is not AnalysisObservedMapRequest
             or previous.comparison_previous_request is not None):
-        return AnalysisEngineOutcome(EngineStatus.REJECTED, ('analysis_comparison_request_invalid',))
+        return _failed_outcome(EngineStatus.REJECTED, 'analysis_comparison_request_invalid',
+                               stage='comparison')
     if previous.authenticated_owner_scope != request.authenticated_owner_scope:
-        return AnalysisEngineOutcome(EngineStatus.REJECTED, ('analysis_comparison_owner_mismatch',))
+        return _failed_outcome(EngineStatus.REJECTED, 'analysis_comparison_owner_mismatch',
+                               stage='comparison')
     # Both periods use this same invocation's interpretation policy. Do not
     # replay an old stored map as if it was freshly generated under this code.
     current = _generate_single_observed_map(request)
     if current.artifact is None:
         return current
-    before = _generate_single_observed_map(previous)
+    before = _generate_single_observed_map(previous, period_role='previous')
     if before.artifact is None:
         return AnalysisEngineOutcome(before.status, ('analysis_previous_map_unavailable',))
     try:
@@ -392,5 +445,7 @@ def generate_observed_map(request: AnalysisObservedMapRequest) -> AnalysisEngine
         comparison = compare_period_meaning(current.artifact, before.artifact)
         return replace(current, artifact=replace(current.artifact, period_comparison=comparison),
                        previous_artifact=before.artifact)
-    except (AnalysisSourceError, KeyError, TypeError, ValueError):
-        return AnalysisEngineOutcome(EngineStatus.UNAVAILABLE, ('analysis_comparison_unavailable',))
+    except (AnalysisSourceError, KeyError, TypeError, ValueError) as exc:
+        return _failed_outcome(EngineStatus.UNAVAILABLE, 'analysis_comparison_unavailable',
+            stage='comparison', diagnostic_reason=(str(exc) if isinstance(exc, AnalysisSourceError)
+                                                    else 'analysis_comparison_unavailable'))

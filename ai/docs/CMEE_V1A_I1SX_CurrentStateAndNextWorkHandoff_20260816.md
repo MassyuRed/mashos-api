@@ -14414,3 +14414,19 @@ read-only補助担当が07:11:07〜07:12:43.931Zのapp/errorログ0件、request
 次は本人端末の6301を開き直して **分析 → わたしマップ** を取得し、生成・表示を確認する。表示後は入力変更・強制更新を挟まず再表示を確認する。正常空表示修正u122はGitHub上だけで6301未収録、今回native buildなし。エラーなら画面の文面と確認時刻から既存ログ/sourceを追う。本人tokenやprivate本文を公開しない。比較stateは前期間なし/比較不可/比較あり等を実際に確認して区別する。
 
 rootは唯一の記録write owner。前提/rules・全体設計/全file地図・latest weekly/current mapの既読を継承、恒久incident全文を今回再読。今回は既承認操作のread-only事後確認と既存文書5件/PR説明だけで、source/test/SQL/依存・DB・envの追加変更0、追加deploy/build起動0。STRUCTURE_MAP_DELTA_NONE。API再配置成功と本人生成/保存再表示・正式商品受入れを区別し、商品0/3・NOT_CLEAR・48%、Draft/open/unmergedを維持する。同範囲の再承認は不要。
+
+## 2026-10-04 JST u124 — 実機422の生成失敗理由を閉じたログで確認する最小修正
+
+Mashの新しい端末画面を確認し、今回は `analysis_observed_map_unavailable` と表示されていた。前回u122の成功応答の空表示とは別経路である。画像にbuild番号はなく、本人へのrequest bindingや応答本文は独立取得していない。指定API `42ff019975a5d94c3c6de2a63623fb0864630ed4` / deploy `dep-db0vo2ou01pc73c5psa0` は引き続きlive。08:09:55Z（JST17:09:55）のlatest?ensure=true&force=falseは422、同request_perfはsupabase_calls=3・supabase_errors=0。直後のstatusは200。AnalysisのDB通信失敗や本人の入力不足とは断定しない。
+
+実sourceでは生成成果物なしをAPI serviceが一律422にまとめ、意味エンジンのreason_codesを記録していなかった。現在期間の未成立・原材料の拘束違反・補足解釈保留・前期間の未成立・比較内部失敗を既存ログから区別できない。原入力・補足のprivate本文やIDを取得して推測せず、既存realizer内の失敗返却だけに固定理由と段階を記録する。
+
+変更sourceは既存 `cocolon_meaning_experience_engine/cores/analysis/observed_route_realizer.py` のみ。stageはcurrent/previous/comparison（未知値unclassified）、reasonは固定32値への完全一致だけを許し、未知値はanalysis_generation_reason_unclassifiedへ置換する。本文・owner/record/request ID・artifact・例外文字列/tracebackをログへ渡さない。前期間の実理由は外側でgeneric化される前に一度だけ記録し、成功時は記録しない。比較の返却reason・HTTP422・保存条件・公開DTO・生成意味は不変。route_not_establishedは空と未解釈の双方にあり、このコードだけで入力不足を断定しない。
+
+既存 `test_analysis_observed_storage.py` に5検査を追加し、current失敗/保存0回、previous失敗の一回記録、比較の固定理由とgeneric返却維持、未知本文/UUID/改行/非文字列の非公開、成功時ログ0回を確認した。storage38/API7/saved-period16/vertical125の **186 PASS**。Auth/DBは合成I/O、意味エンジンは実実装。前提の222 Python fileはfresh Git treeのblobと照合して復元した。初回素材照合コマンドは相対pathが不適合で失敗し、正しいcwdから再照合したところ不一致0。独立read-only reviewはblocking0であり、検査の重複実行はしていない。
+
+PRO_PURPOSE_AND_ROUTE_FIT: PRODUCT_ROUTE_ALIGNED。実機の生成失敗原因を確認するための最小変更であり、最新weekly20261003の実際に使える分析を優先する方針に接続する。ULTRA_TECHNICAL_JUDGMENT: TECHNICALLY_ADMISSIBLE。rootが唯一のsource/test/docs/GitHub write owner。Rule18 §11.3のLEVEL_2内で可逆的な既存実装の診断を補正。全体設計/全file地図・current rules/current03・canonical04/06の既読とfresh対象を照合し、恒久incidentは今回全文確認済み。STRUCTURE_MAP_DELTA_NONE：既存の生成失敗返却内だけで、新しいowner/route/subsystemなし。
+
+今回の到達点は診断可能な候補の完成であり、Mashのわたしマップ生成復旧・保存再表示・期間比較成功ではない。修正APIは未配置。既存Render serviceで今回のAPI commitを指定配置する必要があり、配置identityはPR3先頭へ固定する。Mash本人のRender操作希望を維持し、華恋は汎用main deployやenv更新MCPを使わない。DB/migration・env・native変更は不要、6301のまま同じ分析入口を再確認できる。旧42ff019への承認を新しいexact SHAの配置完了へ置換しない。開始後は実deploy SHA/liveと限定ログを確認する。
+
+今回のSQL/共有DB行・env・deploy/build・main/merge・IF変更0。u122のRN空表示修正は6301未収録のまま。別のPiece読取view不在404/502も同時間帯に観測したが、Analysis422の原因へ転用せず、今回の修正scopeに混ぜない。個人ID/本文/画像/rawログはGitHubへ公開しない。商品0/3・NOT_CLEAR・48%と両PR Draft/open/unmergedを保持する。

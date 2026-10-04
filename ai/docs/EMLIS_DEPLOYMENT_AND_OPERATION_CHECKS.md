@@ -580,3 +580,16 @@ development2値の設定はMashの手順実施報告で、値を独立取得し�
 次は6301のアプリを終了して開き直し、**分析 → わたしマップ**。表示結果を確認し、その後は入力変更/強制更新なしの再表示へ進む。通常タブに「更新」ボタンはない。空状態の表示修正u122は未buildであり、6301は以前の表示処理のまま。エラーが続いた場合は実際の文面・時刻をもとに確認する。新入力や過去記録の捏造、保存行直接変更、旧APIへのrollbackは行わない。
 
 今回、新たなenv変更・deploy/build起動・SQL適用なし。本人生成/保存再表示・期間比較の実確認は次の残件。承認済み範囲の継続で再承認不要。
+
+## 28. 2026-10-04 JST u124 — 生成失敗の診断版API候補
+
+端末のanalysis_observed_map_unavailableと同時刻のlatest422を確認した。DB通信エラーは同request_perfで0だが、生成の内部理由は現行ログに残らず、入力不足や前期間の問題とは断定できない。既存realizerに、current/previous/comparisonの段階と固定許可リストの理由だけを記録する限定修正を用意した。raw本文・ID・例外/tracebackを出さず、HTTP/保存/公開DTO/意味生成は変更しない。関連186検査PASS、独立review blocking0。実機の生成復旧は未確認。
+
+新しい配置対象SHAは[PR3先頭](https://github.com/MassyuRed/mashos-api/pull/3)のu124実装commitへ固定する。42ff019は現在稼働中の旧診断版であり、今回の修正を含まない。Mash本人の指定commit配置で進める。通常のtrigger_deployとenv更新MCPは使わない。
+
+1. [既存Render mashos-api](https://dashboard.render.com/web/srv-d4ppfpm3jp1c73952bj0)の **Manual Deploy → Deploy a specific commit** へ、PR3先頭のu124 API SHAを貼り付ける。
+2. DB・env値・native buildは今回変更不要。現行development設定と6301で診断できる。latest mainを選ばない。
+3. 開始報告後、華恋が配置SHA/liveを確認する。その後、本人アプリを開き直し **分析 → わたしマップ** を一度表示し、失敗時刻のanalysis_observed_generation_unavailableを確認する。
+4. ログの段階・固定理由から次の最小修正を判断する。route_not_establishedだけでは空/未解釈を断定できず、表示できた場合も本人生成・保存再表示の確認を分ける。
+
+この節の作成時は未配置であり、旧exact SHAの配置承認や186 PASSを実機復旧へ読み替えない。停止は対応APIを維持したread_only/比較offという既存手順を使い、旧315f5b5へ戻さない。詳細は06/API handoff末尾u124。

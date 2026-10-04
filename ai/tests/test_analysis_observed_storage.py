@@ -11,8 +11,10 @@ from fastapi import HTTPException
 import httpx
 import analysis_observed_service as service
 from cocolon_meaning_experience_engine import MeaningExperienceEngine
+from cocolon_meaning_experience_engine.contracts import EngineStatus
+from cocolon_meaning_experience_engine.cores.analysis import observed_route_realizer as realizer
 from cocolon_meaning_experience_engine.cores.analysis.source_adapter import (
-    AnalysisObservedMapRequest, AnalysisSavedRecord, canonical_bytes, commitment,
+    AnalysisObservedMapRequest, AnalysisSavedRecord, AnalysisSourceError, canonical_bytes, commitment,
 )
 
 OWNER, OTHER = str(UUID(int=1)), str(UUID(int=2))
@@ -84,6 +86,91 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.fx = fixture()
         self.row = self.fx['row']
+
+    async def test_generation_failure_logs_current_reason_without_saving(self):
+        for members in ([], [{'original': dict(self.fx['original'], memo='未対応の合成記録です。'),
+                              'thread': None, 'events': []}]):
+            snapshot = {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': members}
+            with self.subTest(empty=not members), \
+                    patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                    patch.object(service, '_rpc', AsyncMock(return_value=snapshot)) as rpc, \
+                    self.assertLogs(realizer.logger, level='WARNING') as logs:
+                with self.assertRaises(HTTPException) as caught:
+                    await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+            self.assertEqual((caught.exception.status_code, caught.exception.detail),
+                             (422, 'analysis_observed_map_unavailable'))
+            self.assertEqual([call.args[0] for call in rpc.await_args_list],
+                             ['analysis_observed_source_snapshot'])
+            self.assertEqual([r.getMessage() for r in logs.records], [
+                'analysis_observed_generation_unavailable stage=current '
+                'reason=analysis_observed_route_not_established'])
+
+    async def test_generation_failure_logs_previous_reason_once(self):
+        with self.assertLogs(realizer.logger, level='WARNING') as logs:
+            with self.assertRaises(HTTPException) as caught:
+                await comparison_fixture(previous_memo='未対応の合成記録です。')
+        self.assertEqual((caught.exception.status_code, caught.exception.detail),
+                         (422, 'analysis_observed_map_unavailable'))
+        self.assertEqual([r.getMessage() for r in logs.records], [
+            'analysis_observed_generation_unavailable stage=previous '
+            'reason=analysis_observed_route_not_established'])
+
+    async def test_comparison_failure_logs_detail_but_keeps_generic_outcome(self):
+        original_generate = realizer.generate_observed_map
+        outcomes = []
+        def generate(request):
+            outcome = original_generate(request)
+            outcomes.append(outcome)
+            return outcome
+        for exception, reason in (
+                (AnalysisSourceError('analysis_comparison_evidence_unavailable'),
+                 'analysis_comparison_evidence_unavailable'),
+                (AnalysisSourceError('合成秘密本文\n' + OWNER), 'analysis_generation_reason_unclassified'),
+                (ValueError('合成秘密本文\n' + OWNER), 'analysis_comparison_unavailable')):
+            with self.subTest(reason=reason), \
+                    patch.object(realizer, 'compare_period_meaning', side_effect=exception), \
+                    patch('cocolon_meaning_experience_engine.engine.generate_observed_map', side_effect=generate), \
+                    self.assertLogs(realizer.logger, level='WARNING') as logs:
+                with self.assertRaises(HTTPException) as caught:
+                    await comparison_fixture()
+            self.assertEqual((caught.exception.status_code, caught.exception.detail),
+                             (422, 'analysis_observed_map_unavailable'))
+            self.assertEqual(outcomes[-1].reason_codes, ('analysis_comparison_unavailable',))
+            self.assertIsNone(outcomes[-1].artifact)
+            self.assertEqual([r.getMessage() for r in logs.records], [
+                'analysis_observed_generation_unavailable stage=comparison reason=' + reason])
+            self.assertTrue(all(r.exc_info is None and r.stack_info is None for r in logs.records))
+
+    async def test_generation_failure_log_rejects_unclassified_values(self):
+        class PrivateValue:
+            def __str__(self):
+                raise AssertionError('must not stringify diagnostic data')
+        for value in ('合成秘密本文\n' + OWNER, 'analysis_source_invalid\n' + OWNER,
+                      '', [], {}, PrivateValue()):
+            with self.subTest(value_type=type(value).__name__), \
+                    self.assertLogs(realizer.logger, level='WARNING') as logs:
+                realizer._failed_outcome(EngineStatus.UNAVAILABLE, 'analysis_source_invalid',
+                    stage=value, diagnostic_reason=value)
+            self.assertEqual([r.getMessage() for r in logs.records], [
+                'analysis_observed_generation_unavailable stage=unclassified '
+                'reason=analysis_generation_reason_unclassified'])
+            self.assertTrue(all(r.exc_info is None and r.stack_info is None for r in logs.records))
+        with patch.object(realizer, 'compile_observed_graph',
+                          side_effect=RuntimeError('合成秘密本文\n' + OWNER)), \
+                self.assertLogs(realizer.logger, level='WARNING') as logs:
+            outcome = MeaningExperienceEngine().generate(AnalysisObservedMapRequest(
+                'synthetic-log-request', OWNER, START, END, ()))
+        self.assertEqual(outcome.reason_codes, ('analysis_semantic_generation_unavailable',))
+        self.assertEqual([r.getMessage() for r in logs.records], [
+            'analysis_observed_generation_unavailable stage=current '
+            'reason=analysis_semantic_generation_unavailable'])
+
+    async def test_successful_generation_emits_no_failure_log(self):
+        with self.assertNoLogs(realizer.logger, level='WARNING'):
+            for options in ({}, {'empty': True}, {'eligible': False}):
+                fx = await comparison_fixture(**options)
+                self.assertTrue(fx['row']['content_json']['watashiMap']['nodes'])
 
     async def test_comparison_requires_matching_saved_text(self):
         for state, kinds, reasons in (('COMPARABLE', ['ROUTE_EVIDENCE_CHANGED'], []),
