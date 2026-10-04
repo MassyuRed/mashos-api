@@ -782,7 +782,9 @@ class AnalysisVerticalTests(unittest.TestCase):
     def test_action_change_requires_shared_relation_and_exact_ranges(self):
         from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
         build = compiler.build_final_stage1_grounded_observation_plan
-        for corruption in ('relation', 'range', 'actor'):
+        for memo, corruption in ((memo, corruption)
+                for memo in ('私は資料を調べた後、疑問が減った。', '私は資料を調べてから、疑問が減った。')
+                for corruption in ('relation', 'range', 'actor')):
             def corrupt(*args, **kwargs):
                 plan = build(*args, **kwargs)
                 if corruption == 'relation':
@@ -796,9 +798,119 @@ class AnalysisVerticalTests(unittest.TestCase):
                         'source_fragment_scalar_range:0:1' if c.startswith('source_fragment_scalar_range:') else c
                         for c in frame.attribute_codes))
                 return replace(plan, nuclei=(plan.nuclei[0], replace(n, semantic_frame=frame)))
-            with self.subTest(corruption=corruption), patch.object(compiler,
+            with self.subTest(memo=memo, corruption=corruption), patch.object(compiler,
                     'build_final_stage1_grounded_observation_plan', side_effect=corrupt):
-                self.assertIsNone(self.generate(request(record(memo='私は資料を調べた後、疑問が減った。'))).artifact)
+                self.assertIsNone(self.generate(request(record(memo=memo))).artifact)
+
+    def test_te_after_past_change_preserves_all_nine_inflections_and_source(self):
+        for action, lemma in (('考えをノートに書いて', '書く'), ('資料を調べて', '調べる'),
+                ('方法を試して', '試す'), ('資料を見て', '見る'), ('資料を作って', '作る'),
+                ('記録を残して', '残す'), ('考えを記録して', '記録する'),
+                ('考えをメモして', 'メモする'), ('仕事を続けて', '続ける')):
+            with self.subTest(action=action):
+                clause = '私は' + action
+                memo = clause + 'から、疑問が減った'
+                req = request(record(memo='　' + memo + '。'))
+                artifact = self.generate(req).artifact
+                left, right = artifact.graph.nodes
+                self.assertEqual(left.visible_label, clause)
+                self.assertEqual((left.proposition.predicate_lemma, left.polarity,
+                    left.modality, left.temporal_scope), (lemma, 'positive', 'fact', 'past'))
+                self.assertEqual(left.proposition.dependent_form, 'TE_BEFORE_PAST_CHANGE')
+                self.assertEqual([i for _, a, b in left.proposition.source_parts for i in range(a, b)],
+                                 list(range(len(clause))))
+                edge, = artifact.graph.edges
+                self.assertEqual(edge.endpoint_refs, (left.node_ref, right.node_ref))
+                source, = freeze_analysis_sources(req).sources
+                literals = []
+                for e in edge.evidence_refs:
+                    literal = source.envelope.raw_utf8[e.utf8_start:e.utf8_end]
+                    field = source.envelope.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                    self.assertEqual(literal.decode(), field[e.scalar_start:e.scalar_end])
+                    self.assertEqual(hashlib.sha256(literal).hexdigest(), e.literal_sha256)
+                    literals.append(literal.decode())
+                self.assertEqual(literals, [clause, '疑問が減った', memo])
+                projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                self.assertIn('疑問が減った（記録された変化）', text)
+                self.assertIn(lemma + '（実行済み）', text)
+                self.assertIn('原因を示す線ではありません', text)
+                self.assertNotIn('dependent_form', json.dumps(projection))
+
+    def test_te_surface_requires_its_own_whole_order_context(self):
+        artifact = self.generate(request(record(memo='私は資料を調べてから、疑問が減った。'))).artifact
+        edge, = artifact.graph.edges
+        a, b, whole = edge.evidence_refs
+        for edges in ((), (replace(edge, evidence_refs=(a, b)),),
+                (replace(edge, evidence_refs=(a, b, replace(whole, scalar_end=whole.scalar_end + 1))),),
+                (replace(edge, evidence_refs=(a, b, replace(whole, source_envelope_id='different-source'))),),
+                (replace(edge, endpoint_refs=tuple(reversed(edge.endpoint_refs))),)):
+            with self.subTest(edges=len(edges)), self.assertRaises(AnalysisSourceError):
+                replace(artifact, graph=replace(artifact.graph, edges=edges)).safe_projection(
+                    authenticated_owner_scope=OWNER)
+
+    def test_te_after_answer_revision_and_withdrawal_keep_whole_source(self):
+        old = '私は資料を調べた後、疑問が減った'
+        new = '私は記録を残してから、疑問が増えた'
+        original = record(memo='私は仕事を続けたい。' + old + '。')
+        for answer in (new + '。', '「' + old + '」ではなく「' + new + '」です。'):
+            with self.subTest(answer=answer):
+                req = request(self.with_answer(original, answer))
+                artifact = self.generate(req).artifact
+                te_node = next(n for n in artifact.graph.nodes if n.proposition.dependent_form)
+                edge = next(e for e in artifact.graph.edges if e.endpoint_refs[0] == te_node.node_ref)
+                sources = {s.envelope.envelope_id: s.envelope for s in freeze_analysis_sources(req).sources}
+                for evidence in edge.evidence_refs:
+                    self.assertEqual(sources[evidence.source_envelope_id].source_role, 'SUPPLEMENTAL_ANSWER')
+                e = edge.evidence_refs[-1]
+                self.assertEqual(sources[e.source_envelope_id].raw_utf8[e.utf8_start:e.utf8_end].decode(), new)
+                self.assertEqual(len(te_node.record_refs), 1)
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        original_te = record(memo='私は仕事を続けたい。' + new + '。')
+        withdrawn = self.generate(request(self.with_answer(original_te, '「' + new + '」は取り消します。'))).artifact
+        self.assertEqual([n.node_kind for n in withdrawn.graph.nodes], ['ATTENTION_OR_THOUGHT'])
+        self.assertFalse(withdrawn.graph.edges)
+        for answer in ('「私は記録を残して」は取り消します。',
+                '「' + new + '」ではなく「私は記録を残して」です。',
+                new + '。別の意味です。'):
+            with self.subTest(answer=answer):
+                self.assertIsNone(self.generate(request(self.with_answer(original_te, answer))).artifact)
+
+    def test_te_and_past_after_keep_distinct_episodes_without_cross_links(self):
+        te = '私は資料を調べてから、疑問が減った。'
+        past = '私は資料を調べた後、疑問が減った。'
+        artifact = self.generate(request(record(memo=te + past), record(2, memo=te))).artifact
+        self.assertEqual(len(artifact.graph.nodes), 6)
+        self.assertEqual(len(artifact.graph.edges), 3)
+        self.assertEqual(len({ref for e in artifact.graph.edges for ref in e.endpoint_refs}), 6)
+        self.assertEqual(sum(bool(n.proposition.dependent_form) for n in artifact.graph.nodes), 2)
+        artifact.safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_te_ending_never_asserts_a_standalone_or_unread_action(self):
+        for memo in ('私は資料を調べて。', '私は資料を調べてから。',
+                '私は資料を調べてから、疑問が減る。',
+                '私は資料を調べてから、疑問が減ったという夢を見た。',
+                '私は資料を調べてから、記録を残してから、疑問が減った。',
+                '私は資料を調べてから、疑問が減ったら安心した。',
+                '私は資料を調べてから、疑問が減ったかもしれない。',
+                '私は資料を調べてから、疑問が減らなかった。',
+                '私は資料を調べてから、疑問が減ったと聞いた。',
+                '私は資料を調べてから、疑問が減った？',
+                '私は資料を調べなくてから、疑問が減った。',
+                '友人は資料を調べてから、疑問が減った。',
+                '私は何を調べてから、疑問が減った。',
+                '私は資料を調べてから、幾人が減った。',
+                '私は資料を調べたから、疑問が減った。'):
+            with self.subTest(memo=memo):
+                self.assertIsNone(self.generate(request(record(memo=memo))).artifact)
+
+        # The existing private wish preview may remain; it must never become
+        # a completed te action, an order edge, or an unsupported safe label.
+        wish = self.generate(request(record(memo='私は資料を調べてから、疑問を減らしたい。'))).artifact
+        self.assertTrue(all(n.node_kind == 'ATTENTION_OR_THOUGHT' for n in wish.graph.nodes))
+        self.assertFalse(wish.graph.edges)
+        with self.assertRaises(AnalysisSourceError):
+            wish.safe_projection(authenticated_owner_scope=OWNER)
 
     def test_unsupported_action_change_never_leaves_a_factual_action_fragment(self):
         for memo in (
@@ -816,7 +928,6 @@ class AnalysisVerticalTests(unittest.TestCase):
             '私は資料を調べなかった後、疑問が減った。',
             '友人は資料を調べた後、疑問が減った。',
             '友人によると、私は資料を調べた後、疑問が減った。',
-            '私は資料を調べてから、疑問が減った。',
             '私は資料を調べたら、疑問が減った。',
             '私は資料を調べた後、議論が進んだ。',
             '私は資料を調べた後、友人の不安が減った。',

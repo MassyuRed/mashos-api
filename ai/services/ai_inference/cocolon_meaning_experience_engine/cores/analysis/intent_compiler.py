@@ -42,6 +42,7 @@ class ObservedProposition:
     relative_day: str = ''
     possible_content: ObservedProposition | None = None
     result_state: str = ''
+    dependent_form: str = ''
 
 
 # A bounded verb/inflection inventory, not an input/topic-to-answer table.
@@ -91,6 +92,12 @@ def _finite_predicates(*, include_nonpast=False):
 
 
 _FINITE_PREDICATES = _finite_predicates()
+# Only the existing nine verbs: their plain perfective forms supply the
+# corresponding te inflection. These forms carry no independent past tense.
+_TE_PREDICATES = tuple((surface[:-1] + 'て', lemma, 'positive', 'fact', 'dependent')
+    for surface, lemma, polarity, modality, time in _FINITE_PREDICATES
+    if (polarity, modality, time) == ('positive', 'fact', 'past')
+    and not surface.endswith('ました'))
 _CONTENT_PREDICATES = _finite_predicates(include_nonpast=True)
 _CANONICAL_CONTENT = {(lemma, polarity, time): surface
     for surface, lemma, polarity, modality, time in _CONTENT_PREDICATES
@@ -184,8 +191,9 @@ def _proposition(value: str) -> ObservedProposition | None:
     return _finite_proposition(value, subject.end(), 'SELF', parts, marker, relative_day)
 
 
-def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relative_day='', *, content_only=False):
-    inventory = _CONTENT_PREDICATES if content_only else _FINITE_PREDICATES
+def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relative_day='', *, content_only=False, predicate_forms=None):
+    inventory = predicate_forms if predicate_forms is not None else (
+        _CONTENT_PREDICATES if content_only else _FINITE_PREDICATES)
     for finite, lemma, polarity, modality, time in inventory:
         if not value.endswith(finite):
             continue
@@ -213,6 +221,18 @@ def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relat
             polarity, modality, time, tuple(parts),
             marker, relative_day)
     return None
+
+
+def _te_action_proposition(value):
+    """Parse a dependent action without asserting that it happened."""
+    subject = re.match(r'^(?:私|僕|わたし|自分)は', value)
+    if subject is None:
+        return None
+    proposition = _finite_proposition(value, subject.end(), 'SELF',
+        [('SELF_TOPIC', 0, subject.end())], predicate_forms=_TE_PREDICATES)
+    return replace(proposition, source_parts=tuple(
+        ('DEPENDENT_PREDICATE' if role == 'FINITE_PREDICATE' else role, a, b)
+        for role, a, b in proposition.source_parts)) if proposition else None
 
 
 def _cognitive_proposition(value):
@@ -365,16 +385,25 @@ def _action_change_pair(source, plan, span_id):
         return None
     raw = span.raw_text
     (a, b), (c, d) = ranges
-    if (not (a == 0 < b < c < d == len(raw))
-            or re.fullmatch(r'(?:後|あと)(?:に)?[、,]\s*', raw[b:c]) is None):
+    if not (a == 0 < b < c < d == len(raw)):
         return None
-    left, right = _proposition(raw[a:b]), _bounded_change_proposition(raw[c:d])
+    connector = raw[b:c]
+    te_after = re.fullmatch(r'から[、,]\s*', connector) is not None
+    if not te_after and re.fullmatch(r'(?:後|あと)(?:に)?[、,]\s*', connector) is None:
+        return None
+    left = _te_action_proposition(raw[a:b]) if te_after else _proposition(raw[a:b])
+    right = _bounded_change_proposition(raw[c:d])
     if (left is None or right is None or left.actor != 'SELF'
             or left.result_state or left.possible_content or left.relative_day or left.sequence_marker
             or any(re.search(r'(?:^|の)(?:何|誰|幾)', noun) for _, noun in left.arguments)
-            or (left.polarity, left.modality, left.temporal_scope) != ('positive', 'fact', 'past')):
+            or (left.polarity, left.modality, left.temporal_scope) !=
+                ('positive', 'fact', 'dependent' if te_after else 'past')):
         return None
-    return action.nucleus_id, change.nucleus_id, ranges
+    if te_after:
+        # Past is established by this whole episode and its shared witness,
+        # never by the te ending. Source parts still point to the written te.
+        left = replace(left, temporal_scope='past', dependent_form='TE_BEFORE_PAST_CHANGE')
+    return action.nucleus_id, change.nucleus_id, ranges, left, right
 
 
 def _fragment(source, nucleus, plan=None):
@@ -457,7 +486,8 @@ def _fragment(source, nucleus, plan=None):
         utf8_start=ref.field_utf8_start + len(field[:start].encode('utf-8')),
         utf8_end=ref.field_utf8_start + len(field[:end].encode('utf-8')),
         literal_sha256=hashlib.sha256(literal.encode('utf-8')).hexdigest())
-    return value, evidence
+    proposition = (pair[3] if nucleus.nucleus_id == pair[0] else pair[4]) if pair else _proposition(value)
+    return value, evidence, proposition
 
 
 def _self_propositions(source, *, require_complete=False, plan=None):
@@ -477,7 +507,7 @@ def _self_propositions(source, *, require_complete=False, plan=None):
                 or nucleus.semantic_frame.actor != 'current_user'):
             continue
         fragment = _fragment(source, nucleus, plan)
-        proposition = _proposition(fragment[0]) if fragment else None
+        proposition = fragment[2] if fragment else None
         if proposition is not None:
             claims.append((proposition, fragment[1]))
     if require_complete:
@@ -604,7 +634,7 @@ def _active_sources(source_set):
             fragment = _fragment(original, nucleus, original_plan)
             if (fragment and (fragment[1].scalar_start, fragment[1].scalar_end) ==
                     (target.scalar_start, target.scalar_end)
-                    and (_proposition(fragment[0]) or _node_kind(nucleus))):
+                    and (fragment[2] or _node_kind(nucleus))):
                 target_is_self_claim = True
         # Quote location alone cannot prove that a reported first-person
         # clause belongs to the current user. Preserve its original scope.
@@ -651,7 +681,7 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
             explicit = (nucleus.grounding_kind in ('explicit', 'user_stated_relation')
                         and nucleus.semantic_frame.actor == 'current_user')
             fragment = _fragment(source, nucleus, plan) if explicit else None
-            proposition = _proposition(fragment[0]) if fragment else None
+            proposition = fragment[2] if fragment else None
             kind = _proposition_node_kind(proposition) if proposition else _node_kind(nucleus)
             if not kind:
                 fragment = None
@@ -660,7 +690,7 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
                        s.span_id in nucleus.source_span_ids for s in source.spans):
                     unresolved = True
                 continue
-            label, evidence = fragment
+            label, evidence, _ = fragment
             frame = nucleus.semantic_frame
             polarity, modality, time = ((proposition.polarity, proposition.modality,
                 proposition.temporal_scope) if proposition else

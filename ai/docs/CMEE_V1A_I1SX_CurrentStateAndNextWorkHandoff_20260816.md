@@ -14126,3 +14126,18 @@ u106/u107はlocal候補、計9 fileの累積差分。公開反映先はMassyuRed
 Mashは、確認用累積9 file差分を公開MassyuRed/mashos-api PR3・MassyuRed/Cocolon PR30へ公開・反映する具体的な相談に「いいよ、進めて」と明示許可した。通常git pushは承認審査ではなくHTTPS認証未設定で停止したため、認証済みGitHub connectorで同一内容を既存branchへnon-force反映した。API550f33f75828638300b020e9c77f8e47606f1d4f、Cocolon8e36e8e2f5066c1bd09fbd3263aa4d9802215a65。両方のremote treeが承認済みlocal treeと一致し、最新PR headと変更path（API5/Cocolon4、既存fileの変更のみ）を照合した。
 
 先のu106/u107節の未反映記録は当時の履歴。この追記時点では公開PR反映済み、未merge・未デプロイである。current00/03/canonical04とPR説明も現在状態へ同期する。製品sourceは104検査成功・6合成RN本文一致を確認した候補から変更していない。稼働API315f5b5…/TestFlight6201、商品0/3・NOT_CLEAR・48%を維持し、DB/build/main/merge操作なし。
+
+
+## 2026-10-04 JST u108 — 「てから」の行動と過去変化を分析表示へ接続
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。Mashの継続指示に基づきAPI9dea6347…/Cocoloncaf388f0…のfresh head、前提/rules、全体設計とfile map、最新weekly20261003 §6.6〜6.10、恒久incident全文、current03/canonical04と前回handoffを確認。既存共有ownerが認定する9動詞のte形pairを、Analysisでまだ表示できない原因を実CMEEで再現し、既存compiler/realizerへ限定修正した。root単一writer、2名はread-onlyの意味/設計review。
+
+通常の主文grammarを広げず、既存9動詞のte形を時制未定として解析。共有の完全2核・required typed relation・両frame past/fact・exactから接続・右の過去有限4述語を全て揃えるpair内だけでleftをpast/TE_BEFORE_PAST_CHANGEへ束縛した。元te形のsource_parts/scalar/UTF-8/hashを保持し、仮想の過去形原文へ置換しない。fragmentが同じ文脈付きpropositionを通常補足・全文訂正/撤回・compileへ渡す。safe表示にもそのnode自身の順序・同一envelope/field/spanの両端とexact全文証拠が必須。単独te、marker単独、別recordを使って実行済みへ昇格しない。因果・改善評価は追加しない。
+
+Python3.12.14、既存隔離test環境でvertical76（追加5）/storage15（追加1）/saved period13/API6＝**110 PASS、185 subtests PASS**、既存Pydantic非推奨warning1。初回は新規negative caseの願望についてartifactなしを期待して1 subtest FAIL（110 testsはPASS）。実確認では既存private ATTENTIONだけが残りsafeはanalysis_safe_surface_unavailable、行動/順序は0だったため、新規期待を既存境界へ合わせた。製品側で願望を許可する緩和はしていない。u107のてから拒否1例は新positiveへ移し、通常主文・他の保留条件を維持した。
+
+9活用の元証拠、順序context欠落、非過去/否定/夢/他者/疑問、反復、補足/全文訂正/撤回、単独te置換の保留を確認。実generate_saved→合成RPC commit→read_savedでDTO/文章/identity一致・再生成0・private marker非漏出。6合成本文（te/増加/後との反復/補足/訂正/撤回）をrootが全文読み、既存RN contract/view modelで同6本文がbackendと一致。2件read-only reviewでblocking指摘なし。live Auth/DB/端末試験や正式商品受入れではない。
+
+System Context prepareはPUBLICATION_RECOVERY_AMBIGUOUS: residual without markerで停止。生成context更新済みとはせず、既存規定の原本直接読取を使用。新規file/owner/共有意味実装/API/DB/DTO/RN/依存変更0。既存4 code/test＋API handoff、Cocolon既存00/03/canonical04/06の計9 fileに限定し、03 §4.14・04 §3.9へ責務を同期する。GitHubは認証済みconnectorの既存PR3/PR30 branchを対象にfresh head→non-force反映→remote byte/changed paths照合で扱う。
+
+u102〜u108修正版は未配置。稼働API315f5b5…/TestFlight6201と実機OKのMash報告、商品0/3・NOT_CLEAR・48%を継承。配置/build/main/merge/live DB変更なし。次の直接候補は、現在まで未接続の場面/役割または過去結果の感情表現について、既存共有意味ownerと完全節の証拠を照合して一単位を選ぶこと。たら条件/3節の同時拡張、annotations/conflict/比較/IFへ自動進行しない。

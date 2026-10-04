@@ -6,12 +6,13 @@ Owner authorization, retention and deletion checks remain the caller's duty.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from uuid import uuid4
 
 from ...contracts import EngineStatus
 from .intent_compiler import (ObservedGraph, compile_observed_graph, _proposition,
-                              _CANONICAL_CONTENT, _RESULT_STEMS, _CHANGE_PAST)
+                              _CANONICAL_CONTENT, _RESULT_STEMS, _CHANGE_PAST,
+                              _te_action_proposition)
 from .source_adapter import (
     AnalysisObservedMapRequest, AnalysisSourceError, AnalysisSourceMember,
     freeze_analysis_sources,
@@ -25,11 +26,36 @@ LABELS = {'SCENE': '場面', 'ROLE': '役割',
           'ROUTE_CONNECTION': '段階同士のつながり'}
 
 
-def _safe_label(node):
+def _te_order_context(node, graph):
+    """A dependent te fragment remains bound to its complete past episode."""
+    for edge in graph.edges:
+        if (edge.edge_kind != 'OBSERVED_ORDER' or edge.endpoint_refs[0] != node.node_ref
+                or len(edge.evidence_refs) != 3):
+            continue
+        right = next((n for n in graph.nodes if n.node_ref == edge.endpoint_refs[1]), None)
+        a, b, whole = edge.evidence_refs
+        if (right and right.proposition and right.proposition.result_state == 'BOUNDED_CHANGE'
+                and right.node_kind == 'IMMEDIATE_RESULT_OR_AFTERMATH'
+                and (right.modality, right.temporal_scope) == ('fact', 'past')
+                and a in node.evidence_refs and b in right.evidence_refs
+                and len({(e.source_envelope_id, e.source_span_id, e.field_path)
+                         for e in (a, b, whole)}) == 1
+                and whole.scalar_start == a.scalar_start < a.scalar_end < b.scalar_start
+                and b.scalar_end == whole.scalar_end):
+            return True
+    return False
+
+
+def _safe_label(node, graph):
     parts = node.proposition
+    replay = _proposition(node.visible_label)
+    if parts and parts.dependent_form == 'TE_BEFORE_PAST_CHANGE' and _te_order_context(node, graph):
+        dependent = _te_action_proposition(node.visible_label)
+        if dependent is not None:
+            replay = replace(dependent, temporal_scope='past', dependent_form='TE_BEFORE_PAST_CHANGE')
     # Replay the complete typed interpretation; never wrap an arbitrary raw
     # clause in a label and call it a safe projection.
-    if (parts is None or parts != _proposition(node.visible_label)
+    if (parts is None or parts != replay
             or (parts.polarity, parts.modality, parts.temporal_scope) !=
                (node.polarity, node.modality, node.temporal_scope)):
         raise AnalysisSourceError('analysis_safe_surface_unavailable')
@@ -119,7 +145,7 @@ class ObservedSelfStructureMap:
         """
         if authenticated_owner_scope != self.owner_scope:
             raise AnalysisSourceError('analysis_projection_owner_mismatch')
-        labels = {node.node_ref: _safe_label(node) for node in self.graph.nodes}
+        labels = {node.node_ref: _safe_label(node, self.graph) for node in self.graph.nodes}
         return {
             'schema_version': 'cocolon.cmee.analysis_watashi_map_safe_projection.v1alpha1',
             'wire_kind': 'watashi.map.v2', 'projection_of': self.reference,

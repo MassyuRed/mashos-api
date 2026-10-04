@@ -172,7 +172,13 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn(private, encoded)
 
     async def test_action_change_order_survives_commit_and_read_without_regeneration(self):
-        self.fx = fixture('私は資料を調べた後、疑問が減った。')
+        await self._assert_action_change_saved('私は資料を調べた後、疑問が減った。')
+
+    async def test_te_after_change_survives_commit_and_read_without_regeneration(self):
+        await self._assert_action_change_saved('私は資料を調べてから、疑問が減った。')
+
+    async def _assert_action_change_saved(self, memo):
+        self.fx = fixture(memo)
         self.row = self.fx['row']
         writes = []
         async def rpc(name, payload):
@@ -203,7 +209,8 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(change['visible_label'], saved['content_text'])
         for encoded in (json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False),
                         json.dumps(projection, ensure_ascii=False)):
-            for private in ('result_state', 'BOUNDED_CHANGE', 'source_parts', '私は', 'action_supports_change'):
+            for private in ('result_state', 'BOUNDED_CHANGE', 'source_parts', '私は',
+                            'action_supports_change', 'dependent_form', 'TE_BEFORE_PAST_CHANGE'):
                 self.assertNotIn(private, encoded)
 
     async def test_read_never_generates_and_preserves_wire(self):
