@@ -14348,3 +14348,28 @@ GitHub compareで、稼働APIから候補まで13file（runtime5/test5/docs2/未
 今回のsource/test/SQL変更・追加test実行は0。u118の181 PASS/606 subtests・RN13 PASS、u117の隔離SQL58項目PASSは過去の候補検証として継承し、今回の件数に再計上しない。Supabase公式の権限制御/changelogとRenderのspecific commit/Save only手順を確認し、既存SQLの明示ACLと既存操作経路を維持。Render env更新MCPがmain deployを起こした過去事実を保持し、commit指定のないtrigger_deployも使用しない。新しい接続/検査基盤は追加しない。
 
 変更は既存4文書（API運用資料・API handoff・正本06・current00の現在地）のみ。STRUCTURE_MAP_DELTA_NONE。既存Draft/open/unmerged PR3/PR30へfresh preimage/head確認後に反映し、remote bytes/parent/tree/path/headを照合する。primary outcome=BLOCKER_NARROWED。商品0/3・NOT_CLEAR・48%、IF別承認までHOLDを維持する。Rule18 §11.3とu117が今回の追加DB migration・新対象版配置/比較有効化を個別判断に分離しているため、この具体的範囲のMash承認前に実effectは行わない。u99で承認済みだった旧対象の実行を再承認待ちへ戻す意味ではない。稼働DB/設定/deploy/native/main/mergeへの新effect0。追加サービス/プラン/課金契約変更はなく、実行時は既存build枠を利用する。
+
+
+## 2026-10-04 JST u120 — 比較用DB変更を適用・照合、指定APIと新nativeの開始へ
+
+Mashはu119で提示した「共有DBへの比較SQL1本、API42ff019…の指定配置/比較有効化、新TestFlight作成・送信」の範囲へ「進めていいよ」と明示承認した。同範囲の再承認は不要。前提/作業rules・全体設計/全file地図・最新weekly/u119の確認を継承し、恒久incident全文を今回再読。実行ownerはroot、補助担当は事後catalogの期待値をread-onlyレビューした。開始headはAPI `ac40a62d0354f97806c3e5c3f75bfc342b22aabb`／Cocolon `e39dddfaa2347e43160e5d5801d4f81298e015c5`、両Draft/open/unmerged。
+
+### 実施済み
+
+共有Supabase `cocolon-project / oeahmpmigszggnkyiivq` のmigration履歴とcatalogを直前に再取得。u119の旧制約/関数hash/ACL/RLS/triggerから変化なし、比較RPC/履歴なしを確認。指定API42ff019…からSQLをfresh取得し、blob `b5d34590f8f1ef3632f86a14e6bffb8eed0ee867`、SHA-256 `c8e107dbbfb8705641ba08ba639231f136baf7443caa3eacadb6e51fb507f4b2` が候補と一致することを確認して無変更でapply_migrationを実行した。
+
+適用はsuccess。実履歴は **`20261004051211 / analysis_period_comparison`**。repo source filename `20261004041627_analysis_period_comparison.sql` のtimestampとは区別する。既存3件の履歴を保持し、新しい1件が追加された。
+
+事後catalogで追加/置換4関数の本文が適用SQLと全文一致した。comparison_snapshotはSTABLE/INVOKER、commitはVOLATILE/DEFINER、readはVOLATILE/INVOKER、invalidateはVOLATILE/DEFINER。全てsearch_path空で、TimeZone=UTCはinvalidateだけ。PUBLIC/anon/authenticatedに実行権限なし、service_roleはsnapshot/commit/readのみ実行可能。非変更3関数の定義hashを保持。
+
+制約14件は全てvalidated。旧private CHECKをv1/v2対応の明示名へ置換し、source_guardはv1/compare-v1を許可。他のunique/FK/サイズ上限を含む制約は不変。RLS=true、表権限はservice_roleのSELECT/INSERT/DELETEのみ、anon/authenticatedの7権限は全false、service_roleのUPDATE/TRUNCATE/REFERENCES/TRIGGERはfalse。無効化4本とimmutable1本のtriggerは有効。既存保存行を更新するSQLや、利用者本文/ユーザーID/secretの取得、実RPCでの生成/書込試験は行っていない。schema配置・照合成功を本人の生成/保存/再表示成功とはしない。
+
+### 残る承認済み作業
+
+Renderの最新は旧API315f5b5…/dep-db0n8lnavr4c738g3s5gがlive、iOS最新はrun62/37155776248の6201成功のまま。新しいAPI配置/設定変更/native開始は未実施。Cocolon cd83cf9…→e39dddf…とAPI42ff019…→ac40a62…の差分は各2文書のみで、製品sourceが変わっていないことをGitHub compareで確認した。
+
+GitHubの既存workflow画面を承認済みfallback範囲で開いたところ未ログインで、Run workflowを操作できない。連携に新規workflow_dispatchはない。以前のMash本人ブラウザ操作を用い、既存iOS TestFlight BuildをPR30 branch `agent/three-core-cmee-current-structure-20260815` で新規開始する操作と、Renderの初期2値保存→指定API42ff019…配置を案内する。旧run再実行、mainの汎用deploy、env更新MCPの自動deploy、認証情報取得による代替はしない。
+
+初期値は `COCOLON_ANALYSIS_OBSERVED_MODE=read_only`／`COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE=off`。Environment **Save only** → **Deploy a specific commit**。新native導入・保存読取確認後、同APIのまま2値developmentへ進む。比較だけでなく注記/不一致の保存後も旧315f5b5へ無条件に戻せない点を保持する。具体的順序は既存API運用資料§23/24。新build番号と実run SHAは開始後に確定する。
+
+今回はDB適用とcatalog照合が実施済みの前進。source/test/依存/新しい検査の追加0、STRUCTURE_MAP_DELTA_NONE。既存4文書とPR3/PR30へ結果を反映し、remote bytes/path/parent/tree/headを確認する。商品0/3・NOT_CLEAR・48%、IFのHOLDと正式商品判断/global cutoverの未成立は保持。追加サービス/料金プラン/課金契約/ユーザー設定を変更していない。

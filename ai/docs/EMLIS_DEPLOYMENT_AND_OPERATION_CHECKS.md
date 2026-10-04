@@ -482,7 +482,7 @@ u100で確認済みの配置API315f5b5… / deploy dep-db0n8lnavr4c738g3s5g、he
 
 ## 23. 2026-10-04 JST u119 — 期間比較と内容修正版の適用候補
 
-**未実行・今回の追加対象についてMash承認待ち。** u118までの実装を共有API/DBと本人端末へ接続する範囲を固定する。§20の旧版315f5b5の配置承認は完了済みとして保持し、今回の新migration/比較有効化の許可へ拡張しない。Rule18 §11.3およびu117に従い、実環境を変える直前の判断として提示する。
+**u120でMash承認を受領し、DB適用・照合まで完了。現在地は§24。以下はu119で固定した実行範囲。** u118までの実装を共有API/DBと本人端末へ接続する範囲を固定する。§20の旧版315f5b5の配置承認は完了済みとして保持し、今回の新migration/比較有効化の許可へ拡張しない。Rule18 §11.3およびu117に従い、実環境を変える直前の判断として提示する。
 
 | 対象 | 固定する内容 |
 |---|---|
@@ -519,3 +519,21 @@ Renderのenv更新MCPは過去にmain deployを追加実行し、現trigger_depl
 この作業で増えるのはSQL1本の適用、既存APIの指定版配置/設定、既存経路の新native buildと確認。新サービス/依存/料金プラン/課金契約を追加せず、既存build枠を使用する。共有serviceの生成停止・developmentは全認証済み分析経路に及ぶ。Emlis設定、IF、global cutover、main/merge、正式商品受入れは今回の対象外。
 
 u118の181検査/606 subtests・RN13検査、u117の隔離SQL58項目は既存候補検証として継承する。今回は読取照合と手順確定で、新規test/稼働writeは未実行。商品0/3・NOT_CLEAR・48%を再採点しない。
+
+
+## 24. 2026-10-04 JST u120 — 承認受領・比較migration適用完了
+
+Mashが§23の全範囲へ「進めていいよ」と明示承認。再承認は求めず、同節の対象/順序を維持して実行する。
+
+**DBは適用済み。** `cocolon-project / oeahmpmigszggnkyiivq` へ指定SQLを無変更で適用し、successを確認した。実migration履歴は `20261004051211 / analysis_period_comparison`（source filenameは `20261004041627_analysis_period_comparison.sql`）。直前の旧schema/権限/履歴とSQL blob/hashは§23の前提どおりだった。
+
+追加/置換4関数の実本文がSQLと全文一致。security/volatility/search_path、invalidateだけのUTC設定、service_role限定RPC権限、validatedな制約14件、RLSと表権限、既存trigger5本を確認。非変更3関数・他の制約/表権限も不変。個人入力/保存本文/ユーザーID/secretの取得、既存行の書換えや本人生成試験は行っていない。
+
+**次は開始操作。** GitHub連携には新規workflow_dispatchがなく、確認したworkflow画面も未ログイン。Renderは前回のMash本人ブラウザでの操作希望を継承する。
+
+1. [iOS TestFlight Build](https://github.com/MassyuRed/Cocolon/actions/workflows/ios-build.yml) → **Run workflow** → branch `agent/three-core-cmee-current-structure-20260815` → **Run workflow**。旧runのrerunをしない。現在の製品sourceはcd83cf9…と同じで、今回の記録もdocs-only。
+2. [Render mashos-api](https://dashboard.render.com/web/srv-d4ppfpm3jp1c73952bj0) → **Environment**。次の2値を保存する。`COCOLON_ANALYSIS_OBSERVED_MODE=read_only`、`COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE=off`。保存は **Save only**。
+3. **Manual Deploy → Deploy a specific commit** に `42ff019975a5d94c3c6de2a63623fb0864630ed4` を指定して開始する。Latest commit/mainを選ばない。
+4. 華恋が実run/deployのsource・結果を照合する。新native導入後のdevelopment2値への変更は§23手順5として続け、現段階のread_only確認と混ぜない。
+
+この時点のAPIはまだ315f5b5…、native最新は6201。設定/配置/新build成功や比較生成の完了へ読み替えない。生成停止と旧保存読取維持は§23の手順を使用する。同範囲の承認は継続しており、残件は実行・配置後確認・本人端末の往復である。
