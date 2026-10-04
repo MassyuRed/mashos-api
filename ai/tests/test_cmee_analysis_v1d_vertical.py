@@ -593,6 +593,237 @@ class AnalysisVerticalTests(unittest.TestCase):
             result = self.generate(request(record(memo='私は資料を調べたかもと思っている。')))
         self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
 
+    def test_unfinished_result_reaches_text_and_graph_without_inventing_actor(self):
+        for noun, particle, predicate in (
+            ('方法', 'が', '見つかっていない'), ('方針', 'は', '決まっていません'),
+            ('仕事の方針', 'も', '定まっていない')):
+            memo = 'まだ' + noun + particle + predicate
+            with self.subTest(memo=memo):
+                req = request(record(memo=memo + '。'))
+                artifact = self.generate(req).artifact
+                node, = artifact.graph.nodes
+                self.assertEqual(node.node_kind, 'IMMEDIATE_RESULT_OR_AFTERMATH')
+                self.assertEqual((node.polarity, node.modality, node.temporal_scope),
+                                 ('negative', 'fact', 'current_input'))
+                self.assertEqual(node.proposition.actor, 'UNSPECIFIED')
+                self.assertEqual(node.proposition.arguments, ((particle, noun),))
+                self.assertEqual(node.proposition.result_state, 'NOT_YET')
+                parts = node.proposition.source_parts
+                self.assertEqual([i for _, a, b in parts for i in range(a, b)], list(range(len(memo))))
+                source, = freeze_analysis_sources(req).sources
+                evidence, = node.evidence_refs
+                literal = source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                self.assertEqual(literal.decode(), memo)
+                self.assertEqual(hashlib.sha256(literal).hexdigest(), evidence.literal_sha256)
+                label = artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes'][0]['visible_label']
+                self.assertEqual(label, memo.replace('いません', 'いない') + '（この記述時点）')
+                self.assertIn(label, artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+                scopes = {g.missing_scope for g in artifact.graph.unknown_gaps}
+                self.assertNotIn('IMMEDIATE_RESULT_OR_AFTERMATH', scopes)
+                self.assertIn('ACTION_OR_NONACTION', scopes)
+
+    def test_unfinished_result_and_action_do_not_imply_order_or_cause(self):
+        one = record(memo='私は資料を調べた。まだ方法が見つかっていない。')
+        artifact = self.generate(request(one)).artifact
+        self.assertEqual([n.node_kind for n in artifact.graph.nodes],
+                         ['ACTION_OR_NONACTION', 'IMMEDIATE_RESULT_OR_AFTERMATH'])
+        self.assertEqual(artifact.graph.edges, ())
+        self.assertIn('ROUTE_CONNECTION', {g.missing_scope for g in artifact.graph.unknown_gaps})
+        repeated = self.generate(request(one, record(2, memo=json.loads(one.original_json)['memo']))).artifact
+        self.assertEqual([e.edge_kind for e in repeated.graph.edges], ['REPEATED_COOCCURRENCE'])
+
+    def test_unfinished_result_equivalence_preserves_particle_and_predicate(self):
+        memo = ('まだ方法が見つかっていない。まだ方法が見つかっていません。'
+                'まだ方法も見つかっていない。まだ方法が決まっていない。')
+        artifact = self.generate(request(record(memo=memo))).artifact
+        self.assertEqual(len(artifact.graph.nodes), 3)
+        self.assertEqual(len(artifact.graph.nodes[0].evidence_refs), 2)
+        self.assertEqual([len(n.record_refs) for n in artifact.graph.nodes], [1, 1, 1])
+        self.assertFalse(artifact.graph.edges)
+
+    def test_unfinished_result_answer_keeps_answer_source_and_record_count(self):
+        original = record(memo='まだ方法が見つかっていない。')
+        value = self.with_answer(original, 'まだ方法が見つかっていません。')
+        req = request(value)
+        artifact = self.generate(req).artifact
+        node, = artifact.graph.nodes
+        self.assertEqual(len(node.record_refs), 1)
+        self.assertEqual(len(node.evidence_refs), 2)
+        sources = {s.envelope.envelope_id: s.envelope for s in freeze_analysis_sources(req).sources}
+        self.assertEqual({sources[e.source_envelope_id].source_role for e in node.evidence_refs},
+                         {'ORIGINAL_INPUT', 'SUPPLEMENTAL_ANSWER'})
+        bad = self.with_answer(original, 'まだ方法が見つかっていません。別の意味です。')
+        self.assertIn('analysis_supplement_interpretation_pending', self.generate(request(bad)).reason_codes)
+
+    def test_unfinished_result_correction_and_withdrawal_keep_exact_scope(self):
+        old, new = 'まだ方法が見つかっていない', 'まだ方針は決まっていない'
+        original = record(memo='私は資料を調べた。' + old + '。')
+        corrected = self.with_answer(original, '「' + old + '」ではなく「' + new + '」です。')
+        req = request(corrected)
+        artifact = self.generate(req).artifact
+        result_node = next(n for n in artifact.graph.nodes if n.proposition.result_state)
+        self.assertEqual(result_node.visible_label, new)
+        self.assertEqual(artifact.graph.source_updates[0].operation, 'REVISE')
+        envelope = next(s.envelope for s in freeze_analysis_sources(req).sources
+                        if s.envelope.source_role == 'SUPPLEMENTAL_ANSWER')
+        e, = result_node.evidence_refs
+        self.assertEqual(envelope.raw_utf8[e.utf8_start:e.utf8_end].decode(), new)
+        withdrawn = self.with_answer(original, '「' + old + '」は取り消します。')
+        artifact = self.generate(request(withdrawn)).artifact
+        self.assertEqual(len(artifact.graph.nodes), 1)
+        self.assertEqual(artifact.graph.nodes[0].node_kind, 'ACTION_OR_NONACTION')
+        self.assertIn('IMMEDIATE_RESULT_OR_AFTERMATH', {g.missing_scope for g in artifact.graph.unknown_gaps})
+
+    def test_unfinished_result_requires_shared_full_clause_witness(self):
+        from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
+        build = compiler.build_final_stage1_grounded_observation_plan
+        def without_witness(*args, **kwargs):
+            plan = build(*args, **kwargs)
+            return replace(plan, nuclei=tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+                attribute_codes=tuple(c for c in n.semantic_frame.attribute_codes
+                                      if c != 'semantic_role:present_unfinished'))) for n in plan.nuclei))
+        with patch.object(compiler, 'build_final_stage1_grounded_observation_plan', side_effect=without_witness):
+            self.assertIsNone(self.generate(request(record(memo='まだ方法が見つかっていない。'))).artifact)
+
+    def test_unfinished_result_never_shortens_unsupported_scope(self):
+        cases = ('まだ方法が見つかっていなかった。', 'まだ方法が見つかっている。',
+                 'まだ方法が見つかっていないわけではない。', 'まだ方法が見つかっていない？',
+                 'まだ方法が見つかっていないかもしれない。', 'もしまだ方法が見つかっていないなら。',
+                 '友人によると、まだ方法が見つかっていない。', '「まだ方法が見つかっていない」と聞いた。',
+                 'どちらも本当で、まだ方法が見つかっていない。', 'まだ実行する方法が見つかっていない。',
+                 '昨日まだ方法が見つかっていない。', 'まだ何が決まっていない。',
+                 'まだ誰が見つかっていない。', 'まだ誰の方針が決まっていない。')
+        for memo in cases:
+            with self.subTest(memo=memo):
+                result = self.generate(request(record(memo=memo)))
+                self.assertFalse(result.artifact and any(n.proposition and n.proposition.result_state
+                                                        for n in result.artifact.graph.nodes))
+        result = self.generate(request(record(memo='', action='まだ方法が見つかっていない。')))
+        self.assertIsNone(result.artifact)
+
+    def test_action_change_pair_preserves_complete_evidence_and_order(self):
+        for connector, result_clause in (
+            ('後、', '疑問が減った'), ('あとに、', '負担が増えた'),
+            ('後に, ', '仕事の方針は変わった'), ('あと、', '状態も戻った')):
+            memo = '私は資料を調べた' + connector + result_clause
+            with self.subTest(memo=memo):
+                req = request(record(memo='　' + memo + '。'))
+                artifact = self.generate(req).artifact
+                action, result_node = artifact.graph.nodes
+                self.assertEqual([n.node_kind for n in artifact.graph.nodes],
+                    ['ACTION_OR_NONACTION', 'IMMEDIATE_RESULT_OR_AFTERMATH'])
+                self.assertEqual((result_node.proposition.actor, result_node.polarity,
+                    result_node.modality, result_node.temporal_scope), ('UNSPECIFIED', 'positive', 'fact', 'past'))
+                self.assertEqual(result_node.proposition.result_state, 'BOUNDED_CHANGE')
+                edge, = artifact.graph.edges
+                self.assertEqual((edge.edge_kind, edge.endpoint_refs),
+                    ('OBSERVED_ORDER', (action.node_ref, result_node.node_ref)))
+                source, = freeze_analysis_sources(req).sources
+                literals = []
+                for e in edge.evidence_refs:
+                    literal = source.envelope.raw_utf8[e.utf8_start:e.utf8_end]
+                    field = source.envelope.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                    self.assertEqual(literal.decode(), field[e.scalar_start:e.scalar_end])
+                    self.assertEqual(hashlib.sha256(literal).hexdigest(), e.literal_sha256)
+                    literals.append(literal.decode())
+                self.assertEqual(literals, ['私は資料を調べた', result_clause, memo])
+                for node in artifact.graph.nodes:
+                    self.assertEqual([i for _, a, b in node.proposition.source_parts for i in range(a, b)],
+                                     list(range(len(node.visible_label))))
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                self.assertIn(result_clause + '（記録された変化）', text)
+                self.assertIn('原因を示す線ではありません', text)
+                self.assertNotIn('ROUTE_CONNECTION', {g.missing_scope for g in artifact.graph.unknown_gaps})
+                self.assertIn('SCENE', {g.missing_scope for g in artifact.graph.unknown_gaps})
+
+    def test_action_change_pair_does_not_merge_distinct_episodes(self):
+        memo = '私は資料を調べた後、疑問が減った。'
+        artifact = self.generate(request(record(memo=memo + memo), record(2, memo=memo))).artifact
+        self.assertEqual(len(artifact.graph.nodes), 6)
+        self.assertEqual(len(artifact.graph.edges), 3)
+        self.assertTrue(all(e.edge_kind == 'OBSERVED_ORDER' for e in artifact.graph.edges))
+        self.assertEqual([len(n.record_refs) for n in artifact.graph.nodes], [1] * 6)
+        self.assertEqual(len({ref for e in artifact.graph.edges for ref in e.endpoint_refs}), 6)
+
+    def test_action_change_answer_consumes_connector_and_keeps_answer_evidence(self):
+        original = record(memo='私は記録を残した。')
+        answer = '私は資料を調べた後、疑問が減った。'
+        req = request(self.with_answer(original, answer))
+        artifact = self.generate(req).artifact
+        self.assertEqual(len(artifact.graph.nodes), 3)
+        edge, = artifact.graph.edges
+        envelopes = {s.envelope.envelope_id: s.envelope for s in freeze_analysis_sources(req).sources}
+        self.assertTrue(all(envelopes[e.source_envelope_id].source_role == 'SUPPLEMENTAL_ANSWER'
+                            for e in edge.evidence_refs))
+        self.assertTrue(all(len(n.record_refs) == 1 for n in artifact.graph.nodes))
+        bad = self.with_answer(original, answer + '別の意味です。')
+        self.assertIn('analysis_supplement_interpretation_pending', self.generate(request(bad)).reason_codes)
+
+    def test_action_change_correction_and_withdrawal_apply_to_whole_episode(self):
+        old, new = '私は資料を調べた後、疑問が減った', '私は記録を残したあとに、疑問が増えた'
+        original = record(memo='私は仕事を続けたい。' + old + '。')
+        req = request(self.with_answer(original, '「' + old + '」ではなく「' + new + '」です。'))
+        artifact = self.generate(req).artifact
+        self.assertEqual([n.visible_label for n in artifact.graph.nodes],
+                         ['私は仕事を続けたい', '私は記録を残した', '疑問が増えた'])
+        edge, = artifact.graph.edges
+        envelope = next(s.envelope for s in freeze_analysis_sources(req).sources
+                        if s.envelope.source_role == 'SUPPLEMENTAL_ANSWER')
+        self.assertEqual(envelope.raw_utf8[edge.evidence_refs[-1].utf8_start:edge.evidence_refs[-1].utf8_end].decode(), new)
+        self.assertEqual(artifact.graph.source_updates[0].operation, 'REVISE')
+        withdrawn = self.generate(request(self.with_answer(original, '「' + old + '」は取り消します。'))).artifact
+        self.assertEqual(len(withdrawn.graph.nodes), 1)
+        self.assertFalse(withdrawn.graph.edges)
+        partial = self.with_answer(original, '「私は資料を調べた」は取り消します。')
+        self.assertIn('analysis_correction_target_unresolved', self.generate(request(partial)).reason_codes)
+        unsupported = self.with_answer(original, '「' + old + '」ではなく「私は資料を調べた後、疑問が減ったという夢を見た」です。')
+        self.assertIsNone(self.generate(request(unsupported)).artifact)
+
+    def test_action_change_requires_shared_relation_and_exact_ranges(self):
+        from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
+        build = compiler.build_final_stage1_grounded_observation_plan
+        for corruption in ('relation', 'range', 'actor'):
+            def corrupt(*args, **kwargs):
+                plan = build(*args, **kwargs)
+                if corruption == 'relation':
+                    return replace(plan, relations=())
+                n = plan.nuclei[1]
+                frame = n.semantic_frame
+                if corruption == 'actor':
+                    frame = replace(frame, actor='other_person')
+                else:
+                    frame = replace(frame, attribute_codes=tuple(
+                        'source_fragment_scalar_range:0:1' if c.startswith('source_fragment_scalar_range:') else c
+                        for c in frame.attribute_codes))
+                return replace(plan, nuclei=(plan.nuclei[0], replace(n, semantic_frame=frame)))
+            with self.subTest(corruption=corruption), patch.object(compiler,
+                    'build_final_stage1_grounded_observation_plan', side_effect=corrupt):
+                self.assertIsNone(self.generate(request(record(memo='私は資料を調べた後、疑問が減った。'))).artifact)
+
+    def test_unsupported_action_change_never_leaves_a_factual_action_fragment(self):
+        for memo in (
+            '私は資料を調べた後、疑問が減ったという夢を見た。',
+            '私は資料を調べたら、疑問が減ったという夢を見た。',
+            '私は資料を調べた後、疑問が減ったかもしれない。',
+            '私は資料を調べた後、疑問が減ったと聞いた。',
+            '私は資料を調べた後、疑問が減った？',
+            '私は資料を調べた後、疑問が減らなかった。',
+            '私は資料を調べた後、何が減った。',
+            '私は資料を調べた後、誰の負担が減った。',
+            '私は資料を調べた後、幾人が減った。',
+            '私は何を調べた後、疑問が減った。',
+            '私は誰の資料を調べた後、疑問が減った。',
+            '私は資料を調べなかった後、疑問が減った。',
+            '友人は資料を調べた後、疑問が減った。',
+            '友人によると、私は資料を調べた後、疑問が減った。',
+            '私は資料を調べてから、疑問が減った。',
+            '私は資料を調べたら、疑問が減った。',
+            '私は資料を調べた後、議論が進んだ。',
+            '私は資料を調べた後、友人の不安が減った。',
+            '疑問が減った。'):
+            with self.subTest(memo=memo):
+                self.assertIsNone(self.generate(request(record(memo=memo))).artifact)
+
     def test_application_mode_is_not_enabled(self):
         result = self.generate(replace(request(record()), execution_mode='ANALYSIS_APPLICATION'))
         self.assertEqual(result.status, EngineStatus.REJECTED)

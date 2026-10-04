@@ -13,6 +13,7 @@ from emlis_ai_grounded_observation_plan import (
     build_final_stage1_grounded_observation_plan,
     source_proven_performed_action_status,
     _source_current_cognition, _source_current_cognition_parts,
+    _source_unfinished_result_clause_is_bound,
 )
 from ...contracts import EvidenceRef
 from ...emlis_answer_update import _WITHDRAWAL, _REPLACEMENT
@@ -40,6 +41,7 @@ class ObservedProposition:
     sequence_marker: str = ''
     relative_day: str = ''
     possible_content: ObservedProposition | None = None
+    result_state: str = ''
 
 
 # A bounded verb/inflection inventory, not an input/topic-to-answer table.
@@ -98,9 +100,74 @@ _CLAUSE_PREFIX = re.compile(r'^(その後|それから|今日|昨日)[、，\s]*
 _COGNITIVE_HOSTS = {value: value for value in (
     '考えてしまう', '思ってしまう', '考えている', '思っている', '考える', '思う')}
 _COGNITIVE_HOSTS['考えちゃう'] = '考えてしまう'
+_UNFINISHED_RESULT = re.compile(
+    r'(?P<still>まだ)(?P<noun>' + _NOMINAL + r'(?:の' + _NOMINAL + r')*)'
+    r'(?P<case>は|が|も)(?P<stem>見つか|決ま|定ま)って(?P<negative>いない|いません)')
+_RESULT_STEMS = {'見つかる': '見つか', '決まる': '決ま', '定まる': '定ま'}
+_CHANGE_PAST = {'減る': '減った', '増える': '増えた', '変わる': '変わった', '戻る': '戻った'}
+_BOUNDED_CHANGE = re.compile(
+    r'(?P<noun>' + _NOMINAL + r'(?:の' + _NOMINAL + r')*)'
+    r'(?P<case>は|が|も)(?P<predicate>' + '|'.join(_CHANGE_PAST.values()) + r')')
+
+
+def _bounded_change_proposition(value):
+    match = _BOUNDED_CHANGE.fullmatch(value)
+    if match is None or re.search(r'(?:^|の)(?:何|誰|幾)', match['noun']):
+        return None
+    lemma = next(k for k, v in _CHANGE_PAST.items() if v == match['predicate'])
+    return ObservedProposition('UNSPECIFIED', ((match['case'], match['noun']),),
+        lemma, 'positive', 'fact', 'past', (
+            ('RESULT_NOMINAL', 0, match.end('noun')),
+            ('CASE_' + match['case'], match.start('case'), match.end('case')),
+            ('FINITE_CHANGE', match.start('predicate'), len(value))),
+        result_state='BOUNDED_CHANGE')
+
+
+def _unfinished_result_proposition(value):
+    match = _UNFINISHED_RESULT.fullmatch(value)
+    if (match is None or not _source_unfinished_result_clause_is_bound(value)
+            or re.search(r'(?:^|の)(?:何|誰)', match['noun'])):
+        return None
+    # The noun is the written topic/subject, not proof of a first-person
+    # agent, an earlier action, or the cause of this unachieved state.
+    return ObservedProposition('UNSPECIFIED', ((match['case'], match['noun']),),
+        match['stem'] + 'る', 'negative', 'fact', 'current_input', (
+            ('STILL_OPERATOR', 0, match.end('still')),
+            ('RESULT_NOMINAL', match.start('noun'), match.end('noun')),
+            ('CASE_' + match['case'], match.start('case'), match.end('case')),
+            ('RESULT_PREDICATE', match.start('stem'), match.start('negative')),
+            ('NEGATIVE_STATE', match.start('negative'), len(value))),
+        result_state='NOT_YET')
+
+
+def _unfinished_result_witness(nucleus):
+    frame = nucleus.semantic_frame
+    return (nucleus.grounding_kind == 'explicit'
+        and nucleus.allowed_claim_scope == 'explicit_current_input'
+        and nucleus.retention == 'required'
+        and nucleus.kind == frame.predicate_kind == 'event'
+        and nucleus.source_fields == ('memo',)
+        and len(nucleus.source_span_ids) == 1
+        and frame.actor == 'current_user' and frame.modality == 'fact'
+        and frame.polarity == 'negative'
+        and frame.time_scope in {'present', 'current_input', 'continuing'}
+        and 'semantic_role:present_unfinished' in frame.attribute_codes
+        and not any(code.startswith(('source_fragment_', 'surface_scalar_',
+                    'thread_time:', 'semantic_dependency:')) for code in frame.attribute_codes))
+
+
+def _proposition_node_kind(proposition):
+    if proposition.result_state:
+        return 'IMMEDIATE_RESULT_OR_AFTERMATH'
+    if proposition.modality == 'wish' or proposition.possible_content:
+        return 'ATTENTION_OR_THOUGHT'
+    return 'ACTION_OR_NONACTION'
 
 
 def _proposition(value: str) -> ObservedProposition | None:
+    result = _unfinished_result_proposition(value) or _bounded_change_proposition(value)
+    if result is not None:
+        return result
     cognition = _cognitive_proposition(value)
     if cognition is not None:
         return cognition
@@ -181,7 +248,7 @@ def _cognitive_proposition(value):
 def _proposition_meaning(proposition):
     content = proposition.possible_content
     return (proposition.actor, tuple(sorted(proposition.arguments)),
-            proposition.predicate_lemma,
+            proposition.predicate_lemma, proposition.result_state,
             (_proposition_meaning(content), content.polarity, content.modality,
              content.temporal_scope) if content else None)
 
@@ -255,6 +322,61 @@ def _node_kind(nucleus):
     return None
 
 
+def _action_change_pair(source, plan, span_id):
+    """Prove both endpoints and the whole written past-after episode.
+
+    The shared relation is necessary but may also wrap dreams/reports. Its
+    marker alone cannot license either endpoint. Analysis consumes every
+    character and only projects order, never causal support or improvement.
+    """
+    if plan is None:
+        return None
+    rows = [n for n in plan.nuclei if span_id in n.source_span_ids]
+    if len(rows) != 2:
+        return None
+    action, change = rows
+    if (action.kind != 'action' or change.kind != 'change'
+            or not source_proven_performed_action_status(action)
+            or change.semantic_frame.predicate_kind != 'change'):
+        return None
+    ranges = []
+    for n in rows:
+        f = n.semantic_frame
+        codes = f.attribute_codes
+        bounds = [c for c in codes if c.startswith('source_fragment_scalar_range:')]
+        if (n.source_span_ids != (span_id,) or n.source_fields != ('memo',)
+                or n.grounding_kind != 'explicit' or n.retention != 'required'
+                or n.allowed_claim_scope != 'explicit_current_input'
+                or f.actor != 'current_user' or f.modality != 'fact' or f.time_scope != 'past'
+                or 'semantic_dependency:action_before_change' not in codes
+                or 'source_fragment_scalar_source:normalized_raw_text' not in codes
+                or len(bounds) != 1 or any(c.startswith(('surface_scalar_', 'thread_time:')) for c in codes)):
+            return None
+        ranges.append(tuple(map(int, bounds[0].split(':')[1:])))
+    links = [r for r in plan.relations if r.from_nucleus_id == action.nucleus_id
+             and r.to_nucleus_id == change.nucleus_id]
+    if (len(links) != 1 or links[0].type != 'action_supports_change'
+            or links[0].grounding_kind != 'user_stated_relation' or links[0].retention != 'required'
+            or links[0].source_span_ids != (span_id,)
+            or links[0].source_relation_ids != ('typed_projection:perfective_action_before_bounded_change',)):
+        return None
+    span = next((s for s in source.spans if s.span_id == span_id), None)
+    if span is None or span.source_field != 'memo':
+        return None
+    raw = span.raw_text
+    (a, b), (c, d) = ranges
+    if (not (a == 0 < b < c < d == len(raw))
+            or re.fullmatch(r'(?:後|あと)(?:に)?[、,]\s*', raw[b:c]) is None):
+        return None
+    left, right = _proposition(raw[a:b]), _bounded_change_proposition(raw[c:d])
+    if (left is None or right is None or left.actor != 'SELF'
+            or left.result_state or left.possible_content or left.relative_day or left.sequence_marker
+            or any(re.search(r'(?:^|の)(?:何|誰|幾)', noun) for _, noun in left.arguments)
+            or (left.polarity, left.modality, left.temporal_scope) != ('positive', 'fact', 'past')):
+        return None
+    return action.nucleus_id, change.nucleus_id, ranges
+
+
 def _fragment(source, nucleus, plan=None):
     # Multi-span nuclei can contain unbounded relations. Keep them unknown in
     # this first consumer rather than stitching a new proposition together.
@@ -267,6 +389,11 @@ def _fragment(source, nucleus, plan=None):
         return None
     a, b = 0, len(span.raw_text)
     codes = nucleus.semantic_frame.attribute_codes
+    compound = any('semantic_dependency:action_before_change' in n.semantic_frame.attribute_codes
+                   for n in plan.nuclei if span_id in n.source_span_ids) if plan else False
+    pair = _action_change_pair(source, plan, span_id) if compound else None
+    if compound and pair is None:
+        return None
     ranges = [c for c in codes if c.startswith((
         'surface_scalar_range:', 'source_fragment_scalar_range:'))]
     if ranges:
@@ -306,9 +433,16 @@ def _fragment(source, nucleus, plan=None):
         return None
     if _cognitive_proposition(value) is not None and not _source_current_cognition(nucleus):
         return None
+    result = _unfinished_result_proposition(value)
+    change = _bounded_change_proposition(value)
+    if change is not None and (pair is None or nucleus.nucleus_id != pair[1]):
+        return None
+    if result is not None and not _unfinished_result_witness(nucleus):
+        return None
     # current_user is the shared frame's default, not proof of its subject.
-    # This initial cohort requires an explicit first-person finite host.
-    if not re.match(r'^(?:(?:今日|昨日|その後|それから)[、，\s]*)?(?:私は|僕は|わたしは|自分は)', value):
+    # Actions/thoughts require an explicit first-person finite host. Only a
+    # witnessed, fully parsed non-agent result state is the bounded exception.
+    if result is None and change is None and not re.match(r'^(?:(?:今日|昨日|その後|それから)[、，\s]*)?(?:私は|僕は|わたしは|自分は)', value):
         return None
     # The source helper already proved a length-preserving normalization.
     field = source.envelope.raw_utf8[ref.field_utf8_start:ref.field_utf8_end].decode('utf-8')
@@ -352,6 +486,12 @@ def _self_propositions(source, *, require_complete=False, plan=None):
         for _, evidence in claims:
             if evidence.field_path == 'memo':
                 covered.update(range(evidence.scalar_start, evidence.scalar_end))
+        # The connector belongs to the pair, not to either finite endpoint.
+        for span in source.spans:
+            pair = _action_change_pair(source, plan, span.span_id)
+            if pair and sum(e.source_span_id == span.span_id for _, e in claims) == 2:
+                ref = next(r for r in source.evidence if r.source_span_id == span.span_id)
+                covered.update(range(ref.scalar_start, ref.scalar_end))
         # Deliberately not all punctuation: question marks, quotes and other
         # unparsed operators cannot be treated as harmless sentence separators.
         if not claims or any(i not in covered and char not in ' \t\r\n\u3000。．.'
@@ -368,7 +508,8 @@ def _explicit_order_pairs(source, plan, withdrawn):
     A current wish is not proof that a later action occurred.
     """
     whole = {(r.field_path, r.scalar_start, r.scalar_end) for r in source.evidence}
-    claims = {e.evidence_id: (p, e) for p, e in _self_propositions(source, plan=plan)
+    all_claims = _self_propositions(source, plan=plan)
+    claims = {e.evidence_id: (p, e) for p, e in all_claims
               if e.source_span_id not in withdrawn
               and (e.field_path, e.scalar_start, e.scalar_end) in whole}
     ordered = sorted(claims.values(), key=lambda item:
@@ -384,6 +525,13 @@ def _explicit_order_pairs(source, plan, withdrawn):
         if (re.fullmatch(r'[。．.\s]+', separator)
                 and any(char in separator for char in '。．.\r\n')):
             pairs.append((a, b))
+    for span in source.spans:
+        if span.span_id in withdrawn or not _action_change_pair(source, plan, span.span_id):
+            continue
+        endpoints = sorted((e for _, e in all_claims if e.source_span_id == span.span_id),
+                           key=lambda e: e.scalar_start)
+        if len(endpoints) == 2:
+            pairs.append(tuple(endpoints))
     return tuple(pairs)
 
 
@@ -460,6 +608,9 @@ def _active_sources(source_set):
                 target_is_self_claim = True
         # Quote location alone cannot prove that a reported first-person
         # clause belongs to the current user. Preserve its original scope.
+        if not target_is_self_claim and _action_change_pair(original, original_plan, target.source_span_id):
+            target_is_self_claim = sum(e.source_span_id == target.source_span_id
+                for _, e in _self_propositions(original, plan=original_plan)) == 2
         if not target_is_self_claim:
             raise AnalysisSourceError('analysis_correction_target_unresolved')
         excluded.setdefault(original.envelope.envelope_id, set()).add(target.source_span_id)
@@ -501,8 +652,7 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
                         and nucleus.semantic_frame.actor == 'current_user')
             fragment = _fragment(source, nucleus, plan) if explicit else None
             proposition = _proposition(fragment[0]) if fragment else None
-            kind = ('ATTENTION_OR_THOUGHT' if proposition.modality == 'wish' or proposition.possible_content
-                    else 'ACTION_OR_NONACTION') if proposition else _node_kind(nucleus)
+            kind = _proposition_node_kind(proposition) if proposition else _node_kind(nucleus)
             if not kind:
                 fragment = None
             if fragment is None:
@@ -556,8 +706,11 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
         for a, b in order_pairs:
             endpoints = (by_evidence.get(a.evidence_id), by_evidence.get(b.evidence_id))
             if all(endpoints) and endpoints[0] != endpoints[1]:
+                # A compound's whole source also witnesses its connective.
+                relation_evidence = ((a, b) + tuple(r for r in source.evidence
+                    if r.source_span_id == a.source_span_id)) if a.source_span_id == b.source_span_id else (a, b)
                 edges.append(ObservedEdge('e' + str(len(edges) + 1),
-                    'OBSERVED_ORDER', endpoints, (a, b)))
+                    'OBSERVED_ORDER', endpoints, relation_evidence))
                 record_orders.setdefault(source.record_ref, set()).add(endpoints)
         if unresolved or (not admitted and any(
                 s.source_field in ('memo', 'memo_action') and

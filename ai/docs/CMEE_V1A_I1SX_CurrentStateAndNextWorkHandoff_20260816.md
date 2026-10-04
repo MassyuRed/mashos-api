@@ -14082,3 +14082,41 @@ Python3.12.14でvertical58（追加8）/storage12（追加1）/saved period13/AP
 System Context prepareは PUBLICATION_RECOVERY_AMBIGUOUS: residual without marker で停止。前回prepare残差を成功や最新contextへ換算せず、規定の原本直接読取を使用した。既存のcompiler/realizer/vertical/storageと地図00/03・canonical04・06/API handoffのみ更新。責務mapは03 §4.11、設計は04 §3.6。新規file/owner/API/DB/DTO/RN/依存定義変更0、共有意味owner変更0。
 
 u102〜u105修正版は未配置。稼働API315f5b5…/TestFlight6201を維持し、実DB・配置・build・main/merge操作なし。商品0/3・NOT_CLEAR・48%は再採点しない。認識の背景/複文、過去/否定host、任意補文、場面/役割/結果、annotations/conflict/比較/IFは残る。次は残る場面/結果のshared意味とsafe表示の未接続を原因から選ぶ。今回を一般認知理解・分析全体の完成とはしない。
+
+
+## 2026-10-04 JST u106 — 明記された未成立の結果を分析へ接続
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。Mashの分析実装継続指示に基づく。API a6bae051… / Cocolon 53120d8…のfresh head、前回添付txt、前提/作業rules、全体設計とcurrent file map、最新weekly 20261003、恒久incident全文、canonical04/06を確認した。root華恋が実装・検査・GitHub反映の単一owner、補助2名は読取review。共有認定済みの未成立結果を文章・図へ出す既存compiler/realizerの範囲でPRODUCT_ROUTE_ALIGNED / TECHNICALLY_ADMISSIBLEを確認した。新しいowner/API/DB/DTO/RN/依存/共有意味処理の変更、配置/build/main/mergeは対象外。
+
+変更前の実CMEEで「まだ方法が見つかっていない」「まだ方針は決まっていません」は共有のpresent_unfinished完全節認定があってもAnalysis UNAVAILABLE。本人主語を要求するconsumerで結果が失われていた。行動併記時も結果は欠落していた。
+
+- 共有の完全節witnessと、Analysisの既存名詞/の連結＋は/が/も＋見つかる/決まる/定まるの否定状態を両方要求する。marker単独、部分投影、複文、疑問名詞、未解釈修飾、過去/肯定/二重否定、伝聞/引用/条件は採用しない。
+- actor=UNSPECIFIED、negative/fact/current_input、NOT_YETと全source partsを保持。結果・余韻へ「まだ方法が見つかっていない（この記述時点）」等を表示する。本人の未実行、失敗、永続的不可能、先行行動の原因/順序へ変換しない。
+- 丁寧語の同一内容は元evidenceを残して集約し、名詞・助詞・述語が異なる記述は区別。通常補足の全文解釈、同一親recordの件数、明示訂正/撤回の元範囲と回答出典を維持する。結果の不足表示だけ解消し、他段階やつながりのunknownは残す。
+
+検証：Python3.12.14 / pytest9.1.1 / FastAPI0.142.2 / httpx0.28.1 / pydantic2.13.5の既存隔離環境で必要importを確認後、vertical65（追加7）＋storage13（追加1）＋saved period13＋API6＝**97 PASS**。既存Pydantic非推奨warning1。初回追加検査の撤回例が既存文法の「は」でなく「を」だったため1 FAILを観測し、新規例だけを既存文法へ修正した。既存検査/共有文法を緩めていない。reviewで「何/誰」の疑問名詞が事実扱いになる具体例を確認し、今回の結果grammar内だけで保留へ修正、全97件を再確認した。
+
+保存時のsafe文章/DTOと再読取が完全一致し、再生成0・内部result_state/source_parts非漏出を確認。合成生成6本文をrootが全文読取り、既存RN contract/view modelも同6件のbackend本文と一致した。通信/Auth/DBは合成応答であり、修正版の実DB/端末試験ではない。2件の独立読取reviewの指摘は対応済み。正式商品受入れは別。
+
+System Context prepareは指定workspace内のmashos-apiが見つからず停止。成功や最新contextと扱わず、規定の固定GitHub原本直接読取を使用した。既存Analysis地図03 §4.12、canonical04 §3.7、共通入口00、06/API handoffへ同期。追加費用/Mash操作0。
+
+u102〜u106修正版は未配置。稼働API315f5b5…/TestFlight6201と実機OKのMash報告を継承し、商品0/3・NOT_CLEAR・48%を再採点しない。今回を一般結果理解・分析全体の完成とはしない。次の内容候補は、共有ownerが明示する複文の行動→変化/結果endpointを完全意味と出典のまま接続できるかの原因確認。場面/役割、一般日時/複文、annotations/conflict/期間比較/IFは残る。
+
+反映状態追記：実装commit 813fda2472eb3a684873f19488af8994449e5eccの既存public PR3 branchへのpushが自動承認審査で拒否された。public destinationへのend-user-authored explicit disclosure authorization不足が理由。公開repo/既存承認/合成差分を再確認後の同一pushも同理由で拒否。remoteはa6bae051…のまま、Cocolonは53120d8…のままで未送信。ソース・検査・設計のlocal候補は完成したが、GitHub反映完了とは扱わない。次はMashが公開MassyuRed/mashos-api PR3およびMassyuRed/Cocolon PR30への今回9 file差分の反映を明示許可した後、fresh head/対象preimage確認→non-force反映→remote全文/changed paths照合。別経路による拒否回避、main/merge/deployなし。
+
+
+## 2026-10-04 JST u107 — 明示された行動の後の変化を分析へ接続（local未反映）
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / Rule18 LEVEL_2。Mashの「ありがとう、華恋。分析構造の実装に進んで」に基づく。前回txt、全体設計/file map、前提/rulesと恒久incident、最新weekly 20261003 §6.6〜6.10、current03/canonical04/06を継続参照した。u106の公開反映相談に続く指示として既存PR3へのnon-force pushを1回再試行したが、自動承認審査は今回も「この正確な差分をpublic GitHubへ公開する明示許可不足」として拒否。別経路のwriteやPR本文更新で回避せず、影響を受けない実装/検証を継続した。fresh GitHub読取でAPI a6bae051e0562051bb0eae53e5e422dc700e72b7、Cocolon 53120d8a692beae49568de5f109c7521f9fa295fのまま確認。u106/u107を反映済みとは扱わない。
+
+共有のaction_before_changeを追跡し、「私は資料を調べた後、疑問が減った」は共有2核/relationがあるのに結果が分析へ届かないこと、夢hostを含む文で行動だけが実行済みとして残ることを合成実CMEEで確認。共有markerを完全文理解の代用にせず、同一spanの2核・required typed relation・exact範囲・明示SELF過去行動・後/あと（に）読点・名詞の有限変化を全て要求した。右端は減った/増えた/変わった/戻ったの4述語、主体は未指定、文法上の肯定/fact/pastを保持し、結果・余韻へ接続する。sharedの意味処理自体は変更しない。
+
+接続は既存OBSERVED_ORDERだけ。原因/改善評価を補わず、connectorを含む元全文と両端のevidenceを保持。成立しないcompoundは行動片側も採らない。順序の端点はoccurrence単位を守り、同じ行動の反復を混ぜない。補足全文の被覆へ成立pairのconnectorだけを含め、全文引用による訂正/撤回は2核を一緒に処理する。部分引用は拒否し、置換後のexact証拠は回答原文へ戻す。
+
+検証：Python3.12.14、既存隔離pytest9.1.1/FastAPI0.142.2/httpx0.28.1/pydantic2.13.5環境でvertical71（追加6）/storage14（追加1）/saved period13/API6＝**104 PASS、149 subtests PASS**、既存Pydantic非推奨warning1。2名の独立read-only reviewで、疑問object「何を/誰の資料を」と疑問数量「幾人」が新pairを通る反例が見つかり、今回pairの両端だけを保留へ修正した後に全104件を再確認。他のblocking指摘なし。rootが単一writer。新規file/依存/契約/API/DB/RNの追加変更0。
+
+実generate_saved→合成RPC commit→read_savedで文章/DTO/順序・identityの一致、読取時再生成0、内部型の非漏出を確認。減少/増加/反復/補足/訂正/撤回の6合成出力をrootが全文読取し、既存RN contract/view modelも同6件のbackend本文と完全一致。live Auth/DB/端末試験ではない。全体地図のfile配置は不変、03 §4.13に既存責務を追記、canonical04 §3.8・入口00・06/API handoffを同期した。System Context prepareの前回停止を解消済み/更新済みとはせず、既存規定の原本直接読取を維持。
+
+u106/u107はlocal候補、計9 fileの累積差分。公開反映先はMassyuRed/mashos-api PR3の既存agent branchとMassyuRed/Cocolon PR30の既存agent branchで、publicなsource/test/docsの差分になる。Mashの明示公開許可後にfresh head/preimage照合、non-force反映、remote全文とchanged paths照合を行う。実DB/配置/build/main/mergeなし。u102〜u107修正版は未配置、稼働API315f5b5…/TestFlight6201と実機OKのMash報告、商品0/3・NOT_CLEAR・48%を継承し再採点しない。
+
+次の直接内容候補は共有pairが認定する「てから」のte形行動を、全文の時制と順序を保持して消費できるかの限定修正。たらの条件形、3節contrast、右端の感情変化、一般場面/役割、annotations/conflict/比較/IFは未完了。今回を分析全体の完成や公開許可に読み替えない。

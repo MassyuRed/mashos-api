@@ -10,7 +10,8 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 from ...contracts import EngineStatus
-from .intent_compiler import ObservedGraph, compile_observed_graph, _proposition, _CANONICAL_CONTENT
+from .intent_compiler import (ObservedGraph, compile_observed_graph, _proposition,
+                              _CANONICAL_CONTENT, _RESULT_STEMS, _CHANGE_PAST)
 from .source_adapter import (
     AnalysisObservedMapRequest, AnalysisSourceError, AnalysisSourceMember,
     freeze_analysis_sources,
@@ -32,6 +33,13 @@ def _safe_label(node):
             or (parts.polarity, parts.modality, parts.temporal_scope) !=
                (node.polarity, node.modality, node.temporal_scope)):
         raise AnalysisSourceError('analysis_safe_surface_unavailable')
+    if parts.result_state == 'NOT_YET':
+        phrase = ''.join(noun + case for case, noun in parts.arguments)
+        return ('まだ' + phrase + _RESULT_STEMS[parts.predicate_lemma]
+                + 'っていない（この記述時点）')
+    if parts.result_state == 'BOUNDED_CHANGE':
+        phrase = ''.join(noun + case for case, noun in parts.arguments)
+        return phrase + _CHANGE_PAST[parts.predicate_lemma] + '（記録された変化）'
     if parts.possible_content is not None:
         content = parts.possible_content
         phrase = ''.join(noun + case for case, noun in content.arguments)
