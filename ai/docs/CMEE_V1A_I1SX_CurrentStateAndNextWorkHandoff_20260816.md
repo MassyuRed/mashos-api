@@ -14583,3 +14583,21 @@ rootが合成6本文（否定場面、時点付き担当、否定担当、三段
 API既存compiler1／test2／handoff1、Cocolon既存current03／設計04／06を更新。STRUCTURE_MAP_DELTA_NONE：Analysis内部の句読点解釈だけを補正し、共有Emlis／Piece作者・API／DTO／DB／SQL／RN経路・依存仕様は不変。env／deploy／build／main／merge／IF操作0。Draft/open/unmerged、商品0/3・NOT_CLEAR・48%を維持。u129〜u134は未配置。最後の確認済み稼働API1a42b9e…／TestFlight6401送信成功を継承し、本人生成・保存再表示・比較の実機成功は未確認。
 
 次の内容候補は、主語が明示されていても「メモ帳」「仕事メモ」等の漢字・カタカナ混在名詞で未解析になる範囲。既存の名詞と述語の境界を保ったまま扱えるかを調べる。主語省略を本人へ補う変更や未知内容の推定を自動で含めない。配置・本人実機の残件は内容検査とは別に保持する。
+
+## 2026-10-05 JST u135 — 漢字・カタカナ混在名詞を分析の文章と図へ保持
+
+Mashの「分析構造の内容修正関係を進めて」と添付u134作業報告から継続。fresh開始headはAPI `487b3ef495f1661bab9d8b592bae9ff49a18f4a3`／Cocolon `060246745aa661bd96d3507d1d80cba43ed73738`。必須前提・作業規則、恒久incident全文、全体設計と01A/B/Cのfile地図、最新weekly20261003、分析current03／設計04／06／API handoffと実fileを照合した。System Context prepareは浅いcloneの祖先照合で不成立となったため、その生成結果を使わず正本直接読取fallbackを使用した。
+
+今回の未完了条件は、明示本人の完全な節でも混在名詞だけで分析不能になること。`OBSERVED_BLOCKER_MINIMAL_FIX`／Rule18 LEVEL_2の既存Analysis内部補正として、root華恋が唯一の実装・検証・GitHub write owner、独立補助担当2名は読取監査／最終静的reviewに限定。商品・route整合と技術上の限定修正を確認し、別modelのPro reviewを実施したとは記録しない。対象はAPI compiler1／test2／handoff1、Cocolon current03／設計04／06の既存7file。追加費用・Mash操作0、意味owner・契約の変更が必要なら今回scopeに含めない。
+
+修正前に「私は仕事メモを残した」「私は考えをメモ帳に書いた」「私は、昨日、会議室ロビーにいた」「私はイベント企画を担当しなかった」「私は資料を調べた後、ストレス量が減った」の5例がUNAVAILABLEになることを実CMEEで再現。原因は `_NOMINAL` が漢字列とカタカナ列の択一だったこと。既存の両文字範囲を一つの文字クラスへ統合し、名詞全体を消費できるようにした。ひらがなは既存lexemeに限定し、助詞と有限述語の全文消費、shared witness、本人主語、否定・希望・時制・出典座標を変えない。realizerや共有Emlis／Piece ownerの追加・変更はない。
+
+修正後は「考えをメモ帳に書く（実行済み）」「仕事メモを残すことを望まない」、混在名詞の場面／担当／未成立結果、行動後の変化、守る意向、可能性についての考えを既存のtyped nodeと文章・図へ保持した。明日ノート等の未対応時点は引き続き保留する。認識の内側を実行済みにせず、日語・接続語・否定・補足出典を維持し、未知の節をまたぐ順序線を作らない。任意修飾や他者・伝聞・疑問・条件を本人の事実へ昇格しない。
+
+Python3.12.14、既存Analysis検査は **vertical161／storage43／saved-period16、計220 PASS**。追加はvertical5method・storage1method。既存214の期待変更0、旧「混在名詞は文法外」のコメントのみ現在の時点保留説明へ更新。原文scalar／UTF-8／hashと全文非重複被覆、safe命題改変拒否、全parserへの代表波及、未対応修飾／時点／話者境界、補足／明示訂正／撤回、同義語順・敬体で比較差0、異なる名詞・否定で差を保持することを確認。実service＋CMEEと合成RPCで生成→保存→同じ文章・図の再生成なし再読取が成立。実DBへは接続していない。既存requirementsのfastapi／httpxを隔離test環境へ用意し、製品依存仕様は変更していない。
+
+rootが合成8本文（第二格、否定希望、三段階順序、行動後変化、認識、訂正、時点保留、同義比較）を全文読取し、変更していない実RN表示modelへ生成DTOを渡した。文章全文／artifact identity／node順／edge／unknown対象／注記が一致。独立最終静的reviewにblockerなし。React component suite・native・本人入力・実DBの今回検証ではなく、商品受入れへ換算しない。
+
+STRUCTURE_MAP_DELTA_NONE：既存Analysis内部の名詞認識補正だけで、API／DTO／DB／SQL／RN／共有意味owner／依存仕様は不変。env／deploy／build／main／merge／IF操作0。両PR Draft/open/unmerged、商品0/3・NOT_CLEAR・48%は継承値で据置。primary outcomeは限定TECHNICAL_CREDIT。u129〜u135は未配置、最後の確認済み稼働API `1a42b9e…`／TestFlight6401送信成功を継承する。本人生成・保存再表示・比較の実機成功は未確認。
+
+残差：任意ひらがなを含む名詞・修飾（例「新しいメモ帳」）、主語省略、一般的な時点理解は未対応。次の内容作業では、既存の明示本人・有限述語の範囲で未対応修飾の実出力を調べ、意味を落とさず扱える最小範囲を決める。今回の名詞文字種補正を日本語全体の理解完成とせず、配置・本人実機の残件は別に保持する。反映commitとremote照合結果はPR3／30のu135先頭を参照する。

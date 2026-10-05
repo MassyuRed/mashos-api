@@ -59,7 +59,10 @@ _VERBS = (
 # Kana-bearing nouns need a lexical proof: allowing arbitrary okurigana would
 # misread 急いで / 読んで as a noun plus de-case and erase a second predicate.
 # These are nominal lexemes, not triggers selecting a response or a topic.
-_NOMINAL = r'(?:考え|思い|気持ち|学び|振り返り|取り組み|[一-鿿々]+|[ァ-ヴー]+)'
+# Kanji and katakana may coexist in one nominal (仕事メモ / メモ帳).
+# Keep hiragana limited to the existing explicit lexemes; particles and verb
+# endings must still be consumed separately by the whole-clause grammar.
+_NOMINAL = r'(?:考え|思い|気持ち|学び|振り返り|取り組み|[一-鿿々ァ-ヴー]+)'
 _ARGUMENT = re.compile(r'(?P<noun>' + _NOMINAL + r'(?:の' + _NOMINAL
                        + r')*)(?P<case>を|に|で|と)')
 

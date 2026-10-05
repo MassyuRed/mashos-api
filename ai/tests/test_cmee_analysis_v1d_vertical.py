@@ -2097,8 +2097,8 @@ class AnalysisVerticalTests(unittest.TestCase):
                                  '私は資料を調べた。').artifact
         self.assertEqual(artifact.safe_projection(authenticated_owner_scope=OWNER)
                          ['period_comparison']['safe_change_kinds'], ['UNKNOWN_SCOPE_CHANGED'])
-        # The mixed kanji/katakana argument was already outside the finite
-        # grammar; do not claim this correction makes every unread form partial.
+        # Mixed-script nouns are parseable, but the unparsed time prefix
+        # still cannot establish a route when no other clause is readable.
         result = self.generate(request(record(memo='私は資料を明日ノートに書いた。')))
         if result.artifact:
             with self.assertRaises(AnalysisSourceError):
@@ -2148,6 +2148,131 @@ class AnalysisVerticalTests(unittest.TestCase):
         with self.assertRaises(AnalysisSourceError):
             replace(artifact, graph=replace(artifact.graph, nodes=(forged,))).safe_projection(
                 authenticated_owner_scope=OWNER)
+
+    def test_mixed_script_nominals_keep_arguments_operators_and_exact_source(self):
+        cases = (
+            ('私は仕事メモを残した', (('を', '仕事メモ'),), 'positive', 'fact', 'past'),
+            ('僕は考えをメモ帳に書かなかった', (('を', '考え'), ('に', 'メモ帳')), 'negative', 'fact', 'past'),
+            ('私は、今日、会議メモの内容を調べたい', (('を', '会議メモの内容'),), 'positive', 'wish', 'current_input'),
+            ('私は仕事メモを残したくない', (('を', '仕事メモ'),), 'negative', 'wish', 'current_input'),
+            ('私は、昨日、会議室ロビーにいた', (('に', '会議室ロビー'),), 'positive', 'fact', 'past'),
+            ('私はイベント企画を担当しなかった', (('を', 'イベント企画'),), 'negative', 'fact', 'past'),
+            ('まだイベント会場が決まっていない', (('が', 'イベント会場'),), 'negative', 'fact', 'current_input'),
+            ('私は家族サービスの時間を守りたい', (('を', '家族サービスの時間'),), 'positive', 'wish', 'current_input'),
+        )
+        for literal, arguments, polarity, modality, time in cases:
+            with self.subTest(literal=literal):
+                req = request(record(memo='　' + literal + '。'))
+                artifact = self.generate(req).artifact
+                self.assertIsNotNone(artifact)
+                node, = artifact.graph.nodes
+                p = node.proposition
+                self.assertEqual((p.arguments, p.polarity, p.modality, p.temporal_scope),
+                                 (arguments, polarity, modality, time))
+                self.assertEqual([i for _, a, b in p.source_parts for i in range(a, b)],
+                                 list(range(len(literal))))
+                e, = node.evidence_refs
+                source = freeze_analysis_sources(req).sources[0].envelope
+                raw = source.raw_utf8[e.utf8_start:e.utf8_end]
+                field = source.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                self.assertEqual(raw.decode(), literal)
+                self.assertEqual(field[e.scalar_start:e.scalar_end], literal)
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)
+                self.assertEqual(text['projection_of'], visual['projection_of'])
+                self.assertIn(visual['nodes'][0]['visible_label'], text['text'])
+                broken = replace(p, arguments=((arguments[0][0], '別ノート'),))
+                with self.assertRaises(AnalysisSourceError):
+                    replace(artifact, graph=replace(artifact.graph, nodes=(replace(node,
+                        proposition=broken),))).safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_mixed_script_nominals_keep_cognitive_and_order_scopes(self):
+        cognition = self.generate(request(record(memo='私はメモ帳に書くかもしれないと思う。'))).artifact
+        node, = cognition.graph.nodes
+        self.assertEqual(node.node_kind, 'ATTENTION_OR_THOUGHT')
+        content = node.proposition.possible_content
+        self.assertEqual((content.actor, content.arguments, content.modality),
+                         ('UNSPECIFIED', (('に', 'メモ帳'),), 'possibility'))
+        self.assertNotIn('実行済み', cognition.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+        for memo, kinds, edge_count in (
+            ('私は会議室ロビーにいた。その後、私はイベント企画を担当した。それから、私は仕事メモを残した。',
+             ['SCENE', 'ROLE', 'ACTION_OR_NONACTION'], 2),
+            ('私は仕事メモを残してから、ストレス量が減った。',
+             ['ACTION_OR_NONACTION', 'IMMEDIATE_RESULT_OR_AFTERMATH'], 1),
+            ('私は仕事メモを残した後、ストレス量が減った。',
+             ['ACTION_OR_NONACTION', 'IMMEDIATE_RESULT_OR_AFTERMATH'], 1),
+        ):
+            with self.subTest(memo=memo):
+                artifact = self.generate(request(record(memo=memo))).artifact
+                self.assertEqual([n.node_kind for n in artifact.graph.nodes], kinds)
+                self.assertEqual(len(artifact.graph.edges), edge_count)
+                self.assertIn('原因を示す線ではありません',
+                              artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+        plain = self.generate(request(record(memo='私は仕事メモを残した。私はメモ帳を見た。'))).artifact
+        self.assertEqual(plain.graph.edges, ())
+
+    def test_mixed_script_nominals_do_not_erase_unread_grammar_or_actor(self):
+        for literal in (
+            '仕事メモを残した', '友人は仕事メモを残した',
+            '私は急いで仕事メモを残した', '私は読んで仕事メモを残した',
+            '私は仕事メモを残したと聞いた', '私は仕事メモを残したなら',
+            '私は仕事メモを残した？', '「私は仕事メモを残した」',
+            '私は仕事メモを残した夢を見た', '私は仕事メモを残して',
+            '私は仕事メモを残したあと', '私は新しいメモ帳を見た',
+        ):
+            with self.subTest(literal=literal):
+                self.assertIsNone(self.generate(request(record(memo=literal + '。'))).artifact)
+        partial = self.generate(request(record(memo=
+            '私は仕事メモを残した。私は急いでメモ帳を見た。その後私は資料を調べた。'))).artifact
+        self.assertEqual(len(partial.graph.nodes), 2)
+        self.assertEqual(partial.graph.edges, ())
+        self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in partial.graph.unknown_gaps])
+
+    def test_mixed_script_nominals_keep_unparsed_time_out_of_every_argument(self):
+        for literal in (
+            '私は明日メモ帳を見た', '私は来週イベント企画を担当した',
+            '私は今朝会議室ロビーにいた', '私は考えを明日ノートに書いた',
+            '私は会議メモの来週イベントを記録した',
+            '私は明日メモ帳に書くかもしれないと思う',
+            '私は来週家族サービスの時間を守りたい',
+            '私は仕事メモを残してから、来週ストレス量が減った',
+            '私は明日仕事メモを残してから、疑問が減った',
+        ):
+            with self.subTest(literal=literal):
+                artifact = self.generate(request(record(memo=literal + '。私は記録を残した。'))).artifact
+                self.assertEqual([n.proposition.arguments for n in artifact.graph.nodes], [(('を', '記録'),)])
+                self.assertEqual(artifact.graph.edges, ())
+                self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        nominal = self.generate(request(record(memo='私は明日の仕事メモを残した。'))).artifact
+        self.assertEqual(nominal.graph.nodes[0].proposition.arguments, (('を', '明日の仕事メモ'),))
+        self.assertEqual(nominal.graph.nodes[0].proposition.relative_day, '')
+
+    def test_mixed_script_nominals_keep_update_lineage_and_comparison_meaning(self):
+        old, new = '私は仕事メモを残した', '私は会議メモを残さなかった'
+        original = record(memo=old + '。私は資料を調べた。')
+        req = request(self.with_answer(original, '「' + old + '」ではなく「' + new + '」です。'))
+        artifact = self.generate(req).artifact
+        node = next(n for n in artifact.graph.nodes if n.proposition.predicate_lemma == '残す')
+        self.assertEqual((node.proposition.arguments, node.polarity), ((('を', '会議メモ'),), 'negative'))
+        source = next(s.envelope for s in freeze_analysis_sources(req).sources
+                      if s.envelope.source_role == 'SUPPLEMENTAL_ANSWER')
+        for e in node.evidence_refs:
+            self.assertEqual(e.source_envelope_id, source.envelope_id)
+            self.assertEqual(source.raw_utf8[e.utf8_start:e.utf8_end].decode(), new)
+        withdrawn = self.generate(request(self.with_answer(original, '「' + old + '」は取り消します。'))).artifact
+        self.assertEqual([n.proposition.arguments for n in withdrawn.graph.nodes], [(('を', '資料'),)])
+        supplemented = self.generate(request(self.with_answer(record(memo='私は資料を調べた。'), old + '。'))).artifact
+        self.assertEqual(len(supplemented.graph.nodes), 2)
+        for answer in ('私は急いでメモ帳を見た。', '「' + old + '」ではなく「私は明日メモ帳を見た」です。'):
+            self.assertIsNone(self.generate(request(self.with_answer(original, answer))).artifact)
+        same = self.compared('僕は、メモ帳に考えを書きました。', '私は考えをメモ帳に書いた。').artifact
+        self.assertEqual(same.period_comparison.change_claims, ())
+        for changed in ('私は会議メモを残した。', '私は仕事メモを残さなかった。'):
+            artifact = self.compared(changed, old + '。').artifact
+            self.assertIn('ROUTE_EVIDENCE_CHANGED', artifact.safe_projection(authenticated_owner_scope=OWNER)
+                          ['period_comparison']['safe_change_kinds'])
 
     def test_event_topic_comma_preserves_finite_meaning_and_original_evidence(self):
         for literal in (
