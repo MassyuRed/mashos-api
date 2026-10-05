@@ -384,10 +384,13 @@ def _has_unparsed_nominal_segment(part):
     head = part[modifier.end():] if modifier else part
     kana_head = _KANA_NOMINAL_PREFIX.match(head)
     suffix = head[kana_head.end():] if kana_head else ''
+    # Bare 何/誰 heads are unresolved objects too, not completed claims.
+    # Do not broaden 幾 here: plain 幾何/幾何学 are ordinary nominals.
     # A modifier cannot hide an unresolved time or interrogative head.
     # Apply the additional 今日/昨日 check only to newly admitted modified
     # segments, leaving existing explicit nominal time scopes unchanged.
     return bool(_UNPARSED_TIME_NOMINAL.match(head)
+        or re.match(r'^(?:何|誰)', head)
         or (modifier and (re.match(r'^(?:今日|昨日)(?=.)', head)
                           or re.match(r'^(?:何|誰|幾)', head)))
         # Check the new compound boundary without changing old plain nouns

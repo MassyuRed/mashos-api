@@ -2916,6 +2916,80 @@ class AnalysisVerticalTests(unittest.TestCase):
             self.assertIn('ROUTE_EVIDENCE_CHANGED', artifact.safe_projection(authenticated_owner_scope=OWNER)
                           ['period_comparison']['safe_change_kinds'])
 
+    def test_interrogative_nominals_do_not_become_completed_actions_or_wishes(self):
+        for clause in ('私は何を調べた', '私は誰を見なかった', '私は誰の資料を見た',
+                       '私は資料の何を調べた', '私は何語を調べた', '私は何度ノートを見た',
+                       '私は何を調べたい', '私は誰の資料を見たくなかった',
+                       '私は何を調べるかもしれないと思う',
+                       '私は、誰の資料を見なかったかもしれないと思っている',
+                       '私は新しい何を見た', '私は考えを誰のノートに書いた',
+                       '私は何を調べてから、疑問が減った', 'まだ誰の方針が決まっていない'):
+            with self.subTest(clause=clause):
+                self.assertIsNone(self.generate(request(record(memo=clause + '。'))).artifact)
+                req = request(record(memo=clause + '。私は記録を残した。'))
+                artifact = self.generate(req).artifact
+                self.assertIsNotNone(artifact)
+                node, = artifact.graph.nodes
+                self.assertEqual(node.proposition.arguments, (('を', '記録'),))
+                self.assertFalse(artifact.graph.edges)
+                self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+                e, = node.evidence_refs
+                source, = freeze_analysis_sources(req).sources
+                raw = source.envelope.raw_utf8[e.utf8_start:e.utf8_end]
+                field = source.envelope.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                self.assertEqual(raw.decode(), '私は記録を残した')
+                self.assertEqual(field[e.scalar_start:e.scalar_end], raw.decode())
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                self.assertIn('まだ読み取れていない内容', text)
+                self.assertNotRegex(text, '何|誰')
+        # A graph built while admission is bypassed must still fail safe replay.
+        target = 'cocolon_meaning_experience_engine.cores.analysis.intent_compiler._has_unparsed_nominal_scope'
+        for clause in ('私は何を調べた', '私は誰の資料を見るかもしれないと思う'):
+            with self.subTest(replay=clause):
+                with patch(target, return_value=False):
+                    unsafe = self.generate(request(record(memo=clause + '。'))).artifact
+                self.assertIsNotNone(unsafe)
+                with self.assertRaises(AnalysisSourceError):
+                    unsafe.safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_interrogative_nominals_do_not_supply_update_targets_or_period_claims(self):
+        valid, unknown = '私は記録を残した', '私は誰の資料を見た'
+        base = record(memo=valid + '。' + unknown + '。')
+        for answer in (unknown + '。',
+                       '「' + valid + '」ではなく「' + unknown + '」です。',
+                       '「' + unknown + '」ではなく「私は資料を見た」です。',
+                       '「' + unknown + '」は取り消します。'):
+            with self.subTest(answer=answer):
+                self.assertIsNone(self.generate(request(self.with_answer(base, answer))).artifact)
+        safe = self.generate(request(self.with_answer(base,
+            '「' + valid + '」ではなく「私は記録を残さなかった」です。'))).artifact
+        self.assertEqual(len(safe.graph.nodes), 1)
+        self.assertIn('行わなかった', safe.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+        self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in safe.graph.unknown_gaps])
+        same = self.compared(valid + '。' + unknown + '。', valid + '。私は何を調べた。').artifact
+        self.assertEqual(same.period_comparison.change_claims, ())
+        self.assertIn('読み取れていない内容の変化は判断していません',
+                      same.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+        interrupted = self.generate(request(record(memo=
+            '私は資料を調べた。私は何を見た。それから私は記録を残した。'))).artifact
+        self.assertEqual(len(interrupted.graph.nodes), 2)
+        self.assertFalse(interrupted.graph.edges)
+        interrupted.safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_interrogative_guard_keeps_written_ordinary_nominals(self):
+        for noun in ('幾何学', '幾何の資料', '新しい幾何学', '仕事の資料', '疑問', '何か'):
+            with self.subTest(noun=noun):
+                result = self.generate(request(record(memo='私は' + noun + 'を調べた。')))
+                if noun in ('新しい幾何学', '何か'):
+                    # Existing modified 幾 and arbitrary kana remain unparsed.
+                    self.assertIsNone(result.artifact)
+                    continue
+                node, = result.artifact.graph.nodes
+                self.assertEqual(node.proposition.arguments, (('を', noun),))
+                self.assertIn(noun + 'を調べる（実行済み）',
+                              result.artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+
     def test_attributive_nominals_keep_whole_arguments_and_exact_source(self):
         cases = [(f'私は{word}メモ帳を見た', (('を', word + 'メモ帳'),), 'positive', 'fact')
             for word in ('新しい', '古い', '大きい', '小さい', '長い', '短い',

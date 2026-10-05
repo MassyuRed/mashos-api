@@ -14779,3 +14779,24 @@ rootが合成8本文（基本、否定過去、修飾・否定非過去、行動
 対象はAPI既存compiler1／test2／handoff1、Cocolon既存current03／設計04／06の7file。STRUCTURE_MAP_DELTA_NONE：既存Analysis内のtopic境界整合だけで、新file／owner／共有意味処理／Emlis／Piece／API／DTO／DB／SQL／RN／依存仕様変更0。追加費用・Mash操作0、env／deploy／build／DB／main／merge／IF操作0。両PR Draft/open/unmerged、商品0/3・NOT_CLEAR・48%は継承値、primary outcomeは限定TECHNICAL_CREDIT。u129〜u144は未配置。最後の確認済み稼働API `1a42b9e…`／TestFlight6401送信成功と本人生成・保存再表示・比較の実機残件を継承する。今回の反映commitとremote実gitの全7file byte照合はPR3／30先頭へ記録する。
 
 u143で指定した内容残差は今回解消。未対応の読点後space等は共有ownerからの検討が必要で、今回のAnalysisだけの変更に混ぜない。以後の内容修正も実本文と共有根拠を確認して選び、未対応範囲の全解消を配置・本人実機確認の前提にはしない。
+
+
+## 2026-10-05 JST u145 — 疑問の対象を確定した行動へ昇格させない
+
+Mashの分析内容修正継続指示から再開。開始headはAPI `6b6bd9d5925cfe7be42f9923519e6ed2b1f09ea7`／Cocolon `56cfeedf1dcf2f49711a6d31845d2212ada78d2f`。前提・作業入口／CURRENT_RULES、恒久incident全文、分析current03と詳細04、最新weekly20261003 §5の完成単位／期限を再確認。全体設計01・01A/B/C全file地図の読取を継承し、Analysisの所属・現行ownerとの関係を再確認した。System Contextは既知のmodule不在を継承し、追跡正本を直接参照。生成Contextの現行性は主張しない。
+
+実CMEE本文で「私は何を調べた」→「何を調べる（実行済み）」、「私は誰の資料を見た」→「誰の資料を見る（実行済み）」を確認。疑問／対象未確定を、通常の名詞項と同じ確定命題へ変えていた。原入力の保留部分を隠さないcurrent03 §7とweekly §5.3への直接修正として、Rule18 LEVEL_2・OBSERVED_BLOCKER_MINIMAL_FIXを選択した。過去願望の丁寧形が未解析という別候補より、確定できない内容を確定する欠陥を優先。完成条件は誤った行動・希望・考えへの昇格を止め、読める別節・原文証拠・unknown・補足／訂正／比較／保存再表示を維持すること。
+
+既存 `_has_unparsed_nominal_segment` へ、修飾語を除いた名詞頭が何／誰の場合の判定を追加した。既存の属格分割とpossible_content再帰を使い、第一項だけでなく「資料の何」「考えを誰のノートに」や認知内側も同じ保留へ戻す。_fragmentの既存未解析経路とsafe再解析へ反映し、新しい出力ownerや判定systemは作らない。原入力に読める節が併存する場合はその節とSOURCE_SCOPEの未確定表示が残り、未解析節を越した順序を作らない。通常補足／置換先は全文が解釈できなければ保留。未解析原文を訂正／撤回対象へ格上げせず、読める別節の訂正は維持する。未解析の何／誰だけの差を期間の意味差へ変換しない。
+
+今回の追加判定は何／誰に限定する。「幾」を一律に広げると、実際に表示できる通常名詞「幾何学」「幾何の資料」を新たに落とすため、plain幾の疑問／不定数量／通常名詞の区別は未解決の別残件とした。既存の修飾語付き幾・かなsuffixの保留条件は変更しない。「何か／誰か」は既存kana文法で未解析のまま。一般的な疑問文理解を完成したとは記録しない。
+
+修正前は追加3methodで誤った表示・更新・safe再解析を再現（pytest summary 18 failed／2 passed／195 deselected／9 subtests passed、2.14秒）。修正後の対象3methodは3 PASS／26 subtests PASS（0.67秒）。既存3suiteはPython3.12.14と既存隔離依存で **vertical198／storage47／saved-period16、計261 tests PASS／1232 subtests PASS（6.90秒）**。既存期待緩和0、製品依存変更0、既存Pydantic非推奨warning1件。原文scalar／UTF-8／hash、部分表示、別の認知／希望の保留、訂正対象と全文条件、safe再解析の拒否、未解析節を越す順序なし、比較の保留、通常名詞の維持を確認した。
+
+storageの既存部分表示検査を3入力へ拡張し、実service＋合成RPCで生成→commit→再生成禁止readの同一文章・図・identityとunknownを確認。最終read-only reviewで保存失敗検査への予定2入力が未追加と分かったため、正確な差分で追加し、当該methodを含むgeneration_failure_logsの2methodを別途再実行して2 PASS／4 subtests PASS（0.53秒）を確認した。製品sourceは3suite実行後変更0。疑問対象しかない入力では422を返しcommitを呼ばない。上記261検査の後に追加2caseを確認したもので、最終全caseを一回で実行したとはしない。実DB接続なし、旧generic0058期待差は未再検証・未修正で、全repo検査PASSではない。
+
+rootが合成7本文（何＋行動、誰＋希望、未解析認知、未解析節を越す順序の不成立、読める節の訂正、未解析差の比較、幾何学）を全文確認。実RN buildWatashiMapV2ViewModelへ生成DTOを渡し、全文・artifact identity・node順／edge・注記・unknown・競合・比較state一致。read-onlyの独立memory-only検証と最終差分reviewに製品上の具体的blockerなし。実行環境Codex Work、編集・GitHub反映はroot華恋のみ。補助agentは同環境のread-only調査／reviewで、別model Pro reviewではない。
+
+変更はAPI既存compiler1／test2／handoff1、Cocolon既存current03／設計04／06の7file。STRUCTURE_MAP_DELTA_NONE：既存名詞判定の内容補正のみで、新file／owner／共有意味処理／Emlis／Piece／API契約／DTO／DB／SQL／RN変更0。追加費用・Mash操作0、env／deploy／build／DB／main／merge／IF操作0。両PR Draft/open/unmergedを維持し、未配置。実DB・React component suite・native・本人入力・商品受入れは今回未確認。商品0/3・NOT_CLEAR・48%、稼働API `1a42b9e…`／TestFlight6401送信成功と実機残件は継承値。今回commitとremote7fileのbyte照合結果はPR3／30先頭へ記録する。
+
+今回の何／誰の確定昇格は解消。次の候補は実測した過去願望の丁寧形「私は仕事を続けたかったです／続けたくなかったです」。常体は成立し丁寧形は未解析、共有根拠は同じためAnalysis有限形での不一致が候補になるが、未修正。幾の判別は上記の語義衝突を残す。網羅対応を配置・本人実機確認の前提にしない。
