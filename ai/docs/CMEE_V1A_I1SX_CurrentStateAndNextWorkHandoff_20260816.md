@@ -14820,3 +14820,21 @@ STRUCTURE_MAP_DELTA_NONE：既存Analysisの活用解釈補正のみ。共有意
 
 u145の過去願望丁寧形の内容残差は今回解消。plain幾は別残件のまま。今回のread-only確認では「私は幾冊の資料を調べた」と「私は幾何学を調べた」は共に実行済みとして表示された。次の内容候補は未確定数量・通常名詞を混同しない境界の確認であり、幾の一律拒否は採用しない。表現網羅を配置・本人実機の前提へ戻さない。
 
+
+## 2026-10-05 JST u147 — 否定希望の「ありません／ありませんでした」を保持
+
+Mashの分析内容修正継続指示からu146の次へ進めた。開始headはAPI `7d64adb69172a1dd73e7cb3a577fbde5cf53a818`／Cocolon `abdf6676be6dab9bdbb975f366ec277f3d1a4871`。最新GitHubと直前に読んだ前提・作業規則・全体設計01／01A/B/C全file地図・current03／設計04・weekly20261003 §5.3／6.6〜6.10の確認を継承し、恒久incident全文は今回再読。System Contextのnested checkout不在は継承し、許可された追跡正本の直接読取を使用した。生成Contextの現行性は主張しない。
+
+u146のplain幾候補は見直した。「幾冊／幾人／幾度の失敗」は不定数量の通常名詞としても読め、出力も数量を特定せず原文の語を保持している。今回の実測だけで誤った確定と断定できない。幾何／幾何学／幾何学的構造／幾帳面を含む名詞を一律拒否する変更は採用しない。既存の未確定数量候補を解消済みとせず、意味判別は保留する。
+
+一方「私は仕事を続けたくありません／続けたくありませんでした」はUNAVAILABLE、「たくないです／たくなかったです」はGENERATEDという不一致を再現。行動と同じ記録に書くと、否定希望だけが読み落とされSOURCE_SCOPEになる。既存共有ownerには明示された本人の否定意向の核があり、Analysis側の有限形が欠けていた。OBSERVED_BLOCKER_MINIMAL_FIX／Rule18 LEVEL_2として、既存 `_finite_predicates` にnegative/wish/current_inputの「たくありません」とnegative/wish/pastの「たくありませんでした」の2行だけを追加した。既存9動詞、全文消費、名詞・格、shared explicit source、safe再解析は維持。過去の時制は全文有限形から読み、共有側のrefusal分類を現時点や行動へ昇格させない。共有owner・realizer変更0。
+
+完成条件は、否定希望の現在／過去を同一artifactの文章・図へ保持し、原文・訂正／撤回・比較・保存再表示を維持すること。対象は既存compiler1／test2／API handoff1とCocolon current03／設計04／06の7file。root華恋がCodex Workで唯一の編集・検証・GitHub反映owner。同環境read-only agentが独立原因／境界probeと最終差分reviewを担当し、別model Pro reviewとは記録しない。追加費用・Mash操作0。共有owner／契約変更や対象preimage衝突が必要になればscopeを広げず停止する。
+
+追加vertical2methodは修正前21 failure（20 subcase＋後続artifact欠落）／1 passedを再現。修正後の最終対象はPython3.12.14と既存隔離test依存で **vertical203／storage49／saved-period16＝268 tests PASS／1306 subtests PASS（7.66秒）**。既存期待変更0、製品依存変更0、既存Pydantic非推奨warning1件。9動詞×現在／過去18形、今日／昨日・本人読点、原文scalar／UTF-8／hash／全文parts、既存否定形との期間差0、正負／時制／非行動との意味差、safe改竄拒否、補足／明示訂正／撤回、反対意向の通常補足保留、疑問／伝聞／他者／何／誰の保留を確認。希望から行動順序を作らない。実service＋合成RPCで両形と別行動を保存し、再生成禁止readで同一文章・図・identityを確認。実DB接続なし。
+
+rootが合成8本文（現在、昨日の過去、補足、訂正、撤回、希望後の行動、同義比較、時制比較）を全文確認。実RN `buildWatashiMapV2ViewModel` と全文・identity・node順／edge・unknown・注記・競合・比較stateが一致。独立read-only最終実差分reviewの結果と反映commit・remote全7file byte／SHA256／blob／parent／変更path集合の確認はPR3／30先頭に記録する。React component suite／native／本人入力／商品受入れの今回確認ではない。旧generic0058期待差は未再検証・未修正で、全repo PASSとはしない。
+
+STRUCTURE_MAP_DELTA_NONE：既存Analysis内の活用補正だけで、新owner／共有意味／Emlis／Piece／API契約／DTO／DB／SQL／RN変更0。env／deploy／build／main／merge／IF操作0。Draft/open/unmerged、u129〜u147未配置。primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・48%、確認済み稼働API `1a42b9e…`／TestFlight6401送信成功、本人生成・保存再表示・比較の実機残件は継承値。
+
+今回の2形は解消。強調助詞付きの否定希望「たくはありません」等は今回の対象外で、対応済みとはしない。次の内容作業は実本文・共有根拠から未解析部分を選び、plain幾を一律拒否する方向には進めない。表現網羅の完了を配置・本人実機の前提にしない。

@@ -97,10 +97,12 @@ def _finite_predicates(*, include_nonpast=False):
             (i + 'たいです', 'positive', 'wish', 'current_input'),
             (i + 'たくない', 'negative', 'wish', 'current_input'),
             (i + 'たくないです', 'negative', 'wish', 'current_input'),
+            (i + 'たくありません', 'negative', 'wish', 'current_input'),
             (i + 'たかった', 'positive', 'wish', 'past'),
             (i + 'たかったです', 'positive', 'wish', 'past'),
             (i + 'たくなかった', 'negative', 'wish', 'past'),
             (i + 'たくなかったです', 'negative', 'wish', 'past'),
+            (i + 'たくありませんでした', 'negative', 'wish', 'past'),
         ):
             forms.append((surface, lemma, polarity, modality, time))
         if include_nonpast:
