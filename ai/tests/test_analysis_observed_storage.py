@@ -92,7 +92,9 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                           'thread': None, 'events': []}] for memo in (
                               '未対応の合成記録です。', '', '私は何を調べた。', '私は誰の資料を見た。',
                               '夢を見た。私は資料を調べた。',
-                              '友人から聞いた話です。私は仕事を続けたい。')):
+                              '友人から聞いた話です。私は仕事を続けたい。',
+                              '私は仕事を続けたい、とは思いません、'
+                              + 'その内容を忘れないように長い文章として残しています' * 4 + '。')):
             snapshot = {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': members}
             with self.subTest(memo=members[0]['original']['memo']), \
                     patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
@@ -729,6 +731,42 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(projection['edges'])
                 self.assertIn('まだ読み取れていない内容', saved['content_text'])
                 self.assertNotIn('資料を調べる', saved['content_text'])
+                self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
+
+    async def test_split_sentence_preserves_only_complete_statement_after_save_read(self):
+        tail = 'その内容を忘れないように長い文章として残しています' * 4
+        for unresolved in ('私は仕事を続けたい、とは思いません、',
+                           '私は資料を調べた、と思います、'):
+            with self.subTest(unresolved=unresolved):
+                original = dict(self.fx['original'],
+                    memo=unresolved + tail + '。私は記録を残した。')
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': original, 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    if name == 'analysis_observed_read':
+                        return result([self.row], matched=True)
+                    raise AssertionError(name)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(len(writes), 1)
+                self.assertEqual(reread['items'][0], saved)
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                self.assertEqual([n['visible_label'] for n in projection['nodes']], ['記録を残す（実行済み）'])
+                self.assertFalse(projection['edges'])
+                self.assertIn('まだ読み取れていない内容', saved['content_text'])
                 self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
 
     async def test_polite_past_wishes_survive_save_and_read_without_regeneration(self):

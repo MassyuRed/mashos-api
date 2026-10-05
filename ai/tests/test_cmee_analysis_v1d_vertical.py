@@ -797,6 +797,62 @@ class AnalysisVerticalTests(unittest.TestCase):
             self.assertIsNone(self.generate(request(self.with_answer(
                 record(memo='私は記録を残した。'), context + clause + '。'))).artifact)
 
+    def test_split_sentence_does_not_erase_uncertainty_or_negation_host(self):
+        tail = 'その内容を忘れないように長い文章として残しています' * 4
+        for head in ('私は資料を調べた、と思います、',
+                     '私は資料を調べた、とは言えないのですが、',
+                     '私は仕事を続けたい、とは思いません、'):
+            for ending in ('', tail):
+                memo = head + ending + '。'
+                for original in (record(memo=memo), record(memo='', action=memo)):
+                    with self.subTest(head=head, long=bool(ending), field=original.original_json):
+                        self.assertIsNone(self.generate(request(original)).artifact)
+        # A mechanically cut leading context is not a sentence boundary.
+        self.assertIsNone(self.generate(request(record(memo=tail + '、私は資料を調べた。'))).artifact)
+
+    def test_split_sentence_keeps_separate_statement_and_its_exact_evidence(self):
+        tail = 'その内容を忘れないように長い文章として残しています' * 4
+        unresolved = '私は仕事を続けたい、とは思いません、' + tail
+        for separator in ('。', '。　', '\n', '\r\n', ';', '；'):
+            with self.subTest(separator=separator):
+                req = request(record(memo=unresolved + separator + '　私は記録を残した。'))
+                artifact = self.generate(req).artifact
+                self.assertIsNotNone(artifact)
+                projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                self.assertEqual([n['visible_label'] for n in projection['nodes']], ['記録を残す（実行済み）'])
+                self.assertFalse(projection['edges'])
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                self.assertIn('まだ読み取れていない内容', text)
+                self.assertNotIn('続けることへの希望', text)
+                node, = artifact.graph.nodes
+                evidence, = node.evidence_refs
+                envelope = freeze_analysis_sources(req).sources[0].envelope
+                raw = envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                field = envelope.raw_utf8[evidence.field_utf8_start:evidence.field_utf8_end].decode()
+                self.assertEqual(raw.decode(), '私は記録を残した')
+                self.assertEqual(field[evidence.scalar_start:evidence.scalar_end], raw.decode())
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+        for separator in (';', '；'):
+            artifact = self.generate(request(record(memo=
+                '私は資料を調べた' + separator + '私は記録を残した。'))).artifact
+            self.assertEqual(len(artifact.graph.nodes), 2)
+            self.assertFalse(artifact.graph.edges)
+
+    def test_split_sentence_stays_unresolved_in_updates_and_period_comparison(self):
+        tail = 'その内容を忘れないように長い文章として残しています' * 4
+        unresolved = '私は仕事を続けたい、とは思いません、' + tail + '。'
+        clean = '私は記録を残した。'
+        self.assertIsNone(self.generate(request(self.with_answer(record(memo=clean), unresolved))).artifact)
+        original = record(memo=unresolved + clean)
+        for answer in ('「私は仕事を続けたい」ではなく「私は仕事を続けたくありません」です。',
+                       '「私は仕事を続けたい」は取り消します。'):
+            with self.subTest(answer=answer):
+                self.assertIsNone(self.generate(request(self.with_answer(original, answer))).artifact)
+        artifact = self.compared(unresolved + clean,
+            '私は資料を調べた、とは言えないのですが、' + tail + '。' + clean).artifact
+        self.assertEqual(artifact.period_comparison.change_claims, ())
+        self.assertEqual(artifact.period_comparison.comparability_state, 'COMPARABLE')
+
     def test_period_is_half_open_and_timezone_aware(self):
         inside = record(created_at='2026-10-01T09:00:00+09:00')
         outside = record(2, created_at='2026-10-03T00:00:00Z')

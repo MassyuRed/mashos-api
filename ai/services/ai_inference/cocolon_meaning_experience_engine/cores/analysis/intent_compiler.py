@@ -939,16 +939,20 @@ def _fragment(source, nucleus, plan=None):
     if protective is not None and (a != 0 or b != len(span.raw_text)
             or not _protective_wish_witness(nucleus)):
         return None
-    if event is not None or protective is not None:
-        # The ledger also splits long sentences at commas or fixed lengths.
-        # A complete span is not necessarily a complete finite host. Check
-        # the parser field (or proved correction view), retaining newlines as
-        # boundaries; evidence below still addresses the unchanged original.
-        before = context[:span.start_index].rstrip(' \t\u3000')
-        after = context[span.end_index:].lstrip(' \t\u3000')
-        if ((before and before[-1] not in '。．.!！\r\n')
-                or (after and after[0] not in '。．.!！\r\n')):
-            return None
+    # The ledger also splits long sentences at commas or fixed lengths.
+    # Every observed claim needs the whole finite host, including any later
+    # negation or uncertainty. Check the full span, not an endpoint inside a
+    # proven compound; evidence still addresses the unchanged original.
+    before = context[:span.start_index].rstrip(' \t\u3000')
+    after = context[span.end_index:].lstrip(' \t\u3000')
+    boundaries = '。．.!！\r\n'
+    if event is None and protective is None:
+        # Preserve existing ordinary-clause semicolon boundaries from the
+        # ledger without expanding the prior scene/role/protective grammar.
+        boundaries += ';；'
+    if ((before and before[-1] not in boundaries)
+            or (after and after[0] not in boundaries)):
+        return None
     # current_user is the shared frame's default, not proof of its subject.
     # Actions/thoughts require an explicit first-person finite host. Only a
     # witnessed, fully parsed non-agent result state is the bounded exception.

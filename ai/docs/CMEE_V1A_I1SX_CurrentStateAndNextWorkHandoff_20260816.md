@@ -14855,3 +14855,22 @@ rootは夢／伝聞だけの2例のUNAVAILABLEと、独立記録併存4例・正
 STRUCTURE_MAP_DELTA_NONE：既存Analysisの帰属境界の適用漏れ補正のみ。共有owner／Emlis／Piece／API契約／DTO／DB／SQL／RN／製品依存変更0。env／deploy／build／main／merge／IF操作0。Draft/open/unmerged、u129〜u148未配置。実DB・native・本人入力・商品受入れは未確認。primary outcomeは限定TECHNICAL_CREDIT。旧generic0058期待差は未再検証・未修正で、全repo PASSではない。商品0/3・NOT_CLEAR・48%、最後の確認済み稼働API1a42b9e…／TestFlight6401送信成功と実機残件は継承値。反映commit・remote全7fileのbytes／変更path／parent照合はPR3／30先頭に記録する。
 
 残る制約：同一record内で夢／伝聞が閉じて現実の話へ戻る境界は判別せず、既存のrecord単位保留を維持する。別recordの直接記述は利用する。plain幾の意味判別、その他の未対応日本語、配置後の本人生成・保存再表示・比較は未完了。網羅対応を配置や本人実機の新しい前提にしない。次の内容作業も実際の本文と共有根拠の不一致から選び、今回を一般的な夢／伝聞理解の完成とは扱わない。
+
+
+## 2026-10-05 JST u149 — 長文分割で後半の否定・不確実性を落とさない
+
+Mashの分析内容修正継続指示から再開。fresh PRはAPI `d5b949c4f23ed4e9a929331b9b840584420b708e`／Cocolon `34eabe11dc884ed03e24aa741b37fdb647ec2184`、Draft/open/unmerged。u148で確認した前提・作業規則・全体設計01／01A/B/C全file地図・current03／設計04・最新weekly20261003の完成条件と§6.6〜6.10を継承し、恒久incident全文は今回再読。System Contextのshallow ancestry確認失敗は既知として正本の直接読取を継続。生成Contextのfreshnessは主張しない。前回全byte照合済みの7fileを再確認してlocal基準をremote u148へ進め、前回差分を重ねていない。
+
+実CMEEで、長い「私は資料を調べた、と思います、…」が実行済みへ、「私は仕事を続けたい、とは思いません、…」が肯定希望へ変換されることを再現。共有ledgerは72文字超の文を読点／固定長で分割するため、span単位の有限節だけでは後半の否定・不確実hostが落ちる。場面／担当／守る希望だけにあった既存 `_fragment` の前後文境界確認を全claimへ適用し、元field上で独立した完全文ではないspanを既存unknown経路へ戻した。新しい意味や否定の解釈は推測しない。
+
+同じspanの中の証明済みaction→change／wish+burdenは、endpoint断片でなくspan全体の前後を確認するため保持する。通常節のセミコロン（;／；）区切りは修正前に成立することを実測し、その2境界を通常節だけで維持した。既存scene／role／protectiveの文法範囲は広げない。句点・改行・CRLFと前後の空白を保持し、原文のscalar／UTF-8出典は変更しない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX／既存設計内Rule18 LEVEL_2。完成条件は長文分割による肯否定・確定性の誤昇格を止め、独立文、出典、unknown、補足・比較・保存再表示を保持すること。Codex Work、root華恋が単一の編集・検証・反映owner。同環境read-only agentが独立原因調査／最終差分reviewを担当し、別model Pro reviewではない。対象は既存compiler1／test2／API handoff1とCocolon current03／設計04／06の7file。共有owner／契約変更、対象preimage衝突が必要なら範囲を広げず停止する。追加費用・Mash操作0。
+
+修正前の追加vertical3methodは14 failures（subcaseを含む）／1 passed／8 subtests passedを確認。修正後は確認済みPython3.12.14・既存隔離pytest9.1.1等を用い、**vertical209／storage51／saved-period16＝276 tests PASS／1367 subtests PASS（7.51秒）**。既存期待の削除・緩和0、既存Pydantic warning1件。長短とmemo／memo_action、句点／改行／CRLF／セミコロンで別文が残ること、原文scalar／UTF-8／hash、通常補足・誤った訂正／撤回対象の拒否、未解析部分だけの期間差0を確認。実service＋合成RPCで不確実／否定希望の2形と正常別文を生成→保存→再生成禁止readし、同一文章・図・identityを確認。長い否定希望だけでは422・commitなしも確認した。
+
+rootは2例のUNAVAILABLEと合成6全文（不確実＋別文、否定希望＋別文、改行、セミコロン、証明済みcompound、未解析差の期間比較）を実出力で確認。全6例で実RN buildWatashiMapV2ViewModelの全文・identity・node順／edge／unknown／注記／競合／比較stateが一致。同環境read-onlyの最終source/test reviewに具体的blockerなし。React component suite／実DB／native／本人入力／商品受入れではない。旧generic0058期待差は未再検証・未修正で、全repo PASSを主張しない。
+
+STRUCTURE_MAP_DELTA_NONE：既存Analysisの完全文確認の適用漏れ補正で、新owner／共有意味／Emlis／Piece／API契約／DTO／DB／SQL／RN／製品依存変更0。env／deploy／build／main／merge／IF操作0。Draft/open/unmerged、u129〜u149未配置。primary outcomeは限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%、確認済み稼働API1a42b9e…／TestFlight6401と本人実機残件は継承値。反映commitとremote全7fileのbytes／SHA256／parent／変更path集合はPR3／30先頭へ記録する。
+
+残る制約：「でも」等の前置文脈がledgerで別spanになった通常節も、scene等と同じく全文確認できず保留する。接続語を消して本人の独立した主張へ変換しない。任意の長文や二重否定を理解したのではなく、未知のhostを欠落させて確定表示する事故を止めた範囲である。同一record内の夢／伝聞からの現実復帰、plain幾、その他未対応文法は未完了。次も実出力に現れる不一致を選び、全表現対応を配置・本人実機の前提にしない。
