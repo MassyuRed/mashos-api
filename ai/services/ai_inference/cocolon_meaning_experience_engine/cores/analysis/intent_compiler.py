@@ -138,10 +138,10 @@ _UNFINISHED_RESULT = re.compile(
 _RESULT_STEMS = {'見つかる': '見つか', '決まる': '決ま', '定まる': '定ま'}
 _CHANGE_PAST = {'減る': '減った', '増える': '増えた', '変わる': '変わった', '戻る': '戻った'}
 # Preserve the canonical past surface used by the realizer. Only admit a
-# polite inflection whose complete episode already has a shared witness;
-# 減りました / 増えました / 戻りました remain outside that witness.
+# polite inflection only when its complete episode has a shared witness.
 _CHANGE_FORMS = {surface: lemma for lemma, surface in _CHANGE_PAST.items()}
-_CHANGE_FORMS['変わりました'] = '変わる'
+_CHANGE_FORMS.update({'変わりました': '変わる', '減りました': '減る',
+                      '増えました': '増える', '戻りました': '戻る'})
 _BOUNDED_CHANGE = re.compile(
     r'(?P<noun>' + _NOMINAL + r'(?:の' + _NOMINAL + r')*)'
     r'(?P<case>は|が|も)(?P<predicate>' + '|'.join(_CHANGE_FORMS) + r')')

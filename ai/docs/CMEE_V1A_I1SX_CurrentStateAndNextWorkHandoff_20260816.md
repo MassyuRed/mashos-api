@@ -14682,3 +14682,24 @@ rootが合成7本文（気持ち、取り組み方、連体修飾、通常属格
 変更はAPI既存compiler1／test2／handoff1、Cocolon既存current03／設計04／06の計7file。STRUCTURE_MAP_DELTA_NONE：既存Analysisの有限語形解釈だけを補正し、共有意味owner／realizer／API／DTO／DB／SQL／RN／依存仕様は不変。env／deploy／build／DB／main／merge／IF操作0、追加費用・Mash操作0。両PR Draft/open/unmerged、商品0/3・NOT_CLEAR・48%は継承値。primary outcomeは限定TECHNICAL_CREDIT。u129〜u139は未配置、最後の確認済みAPI `1a42b9e…`／TestFlight6401送信成功を継承し、本人生成・保存再表示・比較の実機成功は未確認。反映commitとremote実gitによる全7file byte照合の結果はPR3／30先頭へ記載する。
 
 次の内容候補は未対応の過去変化敬体3形について、共有ownerの同じ有限語形証拠をどこまで保持できるかを確認すること。共有ownerを変更する場合はEmlis／Piece側の意味・境界への影響も同じ作業単位で確認し、Analysisの語彙追加だけで対応済みにしない。今回から共有変更・一般日本語理解へ自動拡大しない。配置・本人実機の残件を合成検証で代用しない。
+
+
+## 2026-10-05 JST u140 — 行動後の減少・増加・復帰の敬体を出典付きで保持
+
+Mashの「分析構造の内容修正関係を進めて」の継続指示に基づく。開始headはAPI `c079c4900b76b78c942a5a39af2236bbbd7c969e`／Cocolon `bf5cc309a6c35e836ca4fe77726af1f993c4fce3`。u139引継ぎ、前提／作業規則、全体設計と01A/B/C全file地図、current03／設計04／06、最新weekly20261003の完成条件・§6.6〜6.10の確認を継承し、恒久incident全文を今回再読した。追跡正本を直接参照し、生成System Contextの現行性を主張しない。Rule18 LEVEL_2の既存設計内の限定補正。実行環境はCodex Work、root華恋が唯一の実装・検証・GitHub反映owner、同環境の補助agentはread-only原因／依存影響／最終静的reviewのみ。別modelのPro reviewとは記録しない。
+
+u139の残差3形を実planで再確認。共有 `_typed_nucleus_projections_for_span` で「変わりました」は既存の変化語幹に一致するが、「減りました／増えました／戻りました」には行動・変化の2核と関係証拠がなかった。Analysisだけへ語形を追加せず、既存共有action/change分岐に閉じた有限節証拠を追加し、Analysisのsurface→lemma対応にも3形を追加した。常体を表示する既存 `_CHANGE_PAST` は変更しない。新Analysis肯定検査は修正前9 failure（8subcase＋更新比較method）を再現した。u139の未対応3例は、新しい肯定・出典検査へ明示的に移動した。
+
+共有証拠はmemo内の本人を明記した行動、既存完了動詞、格付き名詞1〜2個、後／あと／てからの明示順序、名詞＋格＋有限敬体の全節に限定。原fieldとspanの一致、独立文境界、top-level、伝聞prefixを照合する。台帳が落とす末尾疑問符も原fieldで拒否する。引用・疑問・条件・否定・別主体・属格・既知の未対応時間／疑問名詞は保留し、報告の後続文や「と聞いた」、聞いた内容も新根拠にしない。グローバル `_CHANGE_RE`／`_POSITIVE_CHANGE_RE` は変更しない。新変化はneutralでpositive_changeを付けず、増減・復帰を良いことと判定しない。Analysisではactor=UNSPECIFIED／fact／pastとして元の対象・格・出典・順序を保持する。shared内部の関係名を、表示上の原因や効果へ転換しない。
+
+共有ownerはfinal EmlisとAnalysisが使用し、Pieceは独立consumerであることを追跡した。実Emlis本文を読むと初期修正は「行動が支えている」「大切に思う」という元入力にない評価へ落ちたため、その状態を採用しなかった。既存 `source_owned_action_change` の受取経路に新neutral markerの完全episodeだけを接続。原節・接続・関係出典・肯定過去を照合し、support欄が空でも既に束縛されたrelation endpointを使う新familyに限って受け取る。旧taraの条件は維持した。作者は元の本人topicを省略し敬体を常体化して「資料を調べた後、資料が戻ったのですね」と表現し、独立readerが元SELF節と有限語尾へ復元して照合する。共有plan／既存human reception／既存body inverseの3owner内の内容補正で、品質threshold・受入れ条件・外部契約を緩めない。full／optional_removed／integrated／hedgedの試行で因果・価値文へ戻らず、現在はfullだけが既存inverseを通って採用される。Emlisで不安の増減が感情owner未確定のためUNAVAILABLEとなる状態は修正前と同じで、今回は解消したとしない。
+
+検証：Python3.12.14、既存fastapi/httpx隔離依存を再利用し、pytestは一時testディレクトリへ導入（製品requirements変更0）。最終対象 **381 passed／1113 subtests passed／3 deselected、36.89秒**。Analysis内訳はvertical182／storage47／saved-period16の245検査。ほかにlimited_change_feeling、final exact8意味継承、past_episode_discourseのDB不要部分、Piece consumer分離を確認。新shared検査はsource scalar／関係／neutral・旧active隔離／否定境界、Emlis6本文・復旧経路・独立逆検証30改竄を含む。最初の新source改竄検査は既存ledgerのstrict exceptionを空planと誤って期待していたため、新検査のみ正しい例外期待へ補正。作者を止める新検査も既存のwithout_author helperへ合わせ、再演一致をstub化した状態でも本文のactor・接続・対象・欠落・価値化を独立拒否した。既存検査の期待を通過目的で緩和しない。
+
+別途generic projectionの `test_0058_action_change_uses_final_typed_fragments_and_compiles_two_units` は旧「…したこと」が現本文「…したら」に無いという期待1件で失敗。開始HEADの共有plan／human reception／inverseを隔離読取して同じ検査を再実行し、同じ箇所の失敗を確認した（127.99秒）。既存の意味・原文fragment・gate判定はその前まで通り、今回の新3形分岐による回帰とは扱わない。凍結期待は変更せず未解消として保持する。381件のPASSとこの既存1件の失敗を合算して全検査合格とは記録しない。既存Pydantic非推奨warning1件あり。実DBに接続する3paramは明示除外した。
+
+rootがAnalysis合成8本文（不安減少、メモ増加、復帰、連体修飾、未解析部分、訂正、常体との差0、増減の期間差）とEmlis合成6本文を全文読取。生成DTOを変更していない実RN `buildWatashiMapV2ViewModel` へ渡し、文章全文／identity／node順／edge／unknown対象／注記／競合／比較stateが8例全て一致。実service＋合成RPCは生成→保存→再生成なし再読取を確認。独立最終静的reviewに具体的blockerなし。React component suite／native／本人入力／実DBの検証ではなく、商品受入れへ換算しない。
+
+変更はAPI既存compiler1／共有plan・human reception・inverse3／test3／handoff1、Cocolon既存current03／設計04／06の計11file。STRUCTURE_MAP_DELTA_NONE：既存ownerと呼出し経路内の有限形・受取補正で、新ファイル／API／DTO／DB／SQL／RN／Piece source／依存仕様は不変。共有owner変更0とは記録しない。env／deploy／build／DB／main／merge／IF操作0、追加費用・Mash操作0。両PR Draft/open/unmerged、商品0/3・NOT_CLEAR・48%は継承値。primary outcomeは限定TECHNICAL_CREDIT。u129〜u140は未配置、最後の確認済み稼働API `1a42b9e…`／TestFlight6401送信成功を継承し、本人生成・保存再表示・比較の実機成功は未確認。反映commitとremote実gitによる11file全byte照合の結果はPR3／30先頭へ記載する。
+
+残差：新共有証拠は属格・日時・主語省略・一部行動語形・任意かな名詞・単独変化を扱わない。一般日本語理解やEmlisの感情owner課題を完了扱いにしない。既存generic0058期待差も残る。次の内容作業ではこの保留範囲と実本文を起点に必要な項目を選ぶ。配置・本人実機の残件を合成検査で代用しない。

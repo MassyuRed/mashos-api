@@ -4935,7 +4935,16 @@ def validate_grounded_human_reception_surface(
             or any(_source_grounded_burden_nominal_responsibility(surface.text, nominal, allow_relation_object=True)
                    for nominal in expression_nominals)
         )
-        if not visible and plan is not None and surface.recovery_stage == "full":
+        neutral_order_moves = tuple(move for move in active_moves if move.reception_act == act)
+        if not visible and plan is not None:
+            from emlis_ai_grounded_observation_plan import source_owned_action_change
+            neutral_order = bool(neutral_order_moves) and all(
+                (parts := source_owned_action_change(move, plan, resolver)) is not None
+                and parts[2].endswith(("減りました", "増えました", "戻りました"))
+                for move in neutral_order_moves)
+        else:
+            neutral_order = False
+        if not visible and plan is not None and (surface.recovery_stage == "full" or neutral_order):
             from emlis_ai_grounded_observation_gate import read_source_owned_discourse, read_detached_feeling_pair
             sentences = tuple(part + "。" for part in surface.text.split("。") if part)
             clauses = build_grounded_reception_clause_plans(reception_plan, surface.recovery_stage, plan=plan, resolver=resolver)
@@ -10799,13 +10808,26 @@ def _source_owned_action_purpose_sentence(move, realization, plan, resolver,
 def _source_owned_action_change_sentence(move, realization, plan, resolver,
                                         selected_decision, recovery_stage):
     from emlis_ai_grounded_observation_plan import source_owned_action_change
+    parts = source_owned_action_change(move, plan, resolver)
+    if parts is not None and parts[2].endswith(("減りました", "増えました", "戻りました")):
+        # The neutral change proves sequence, not causal support or value.
+        # Keep its complete episode in every recovery mode; a shortened
+        # realization must not fall through to the causal effort template.
+        if (tuple(realization.semantic_fragments) != (parts[0], parts[2])
+            or realization.context_slots != (1,) or len(realization.relations) != 1
+            or not _selected_material_appraisal(selected_decision)):
+            raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+        left = re.sub(r"^(?:私|僕|わたし|自分)(?:は|が|も)", "", parts[0], count=1)
+        right = re.sub(r"(?:減りました|増えました|戻りました)$", lambda m: {
+            "減りました": "減った", "増えました": "増えた", "戻りました": "戻った",
+        }[m.group()], parts[2])
+        return left + parts[1] + right + "のですね"
     if (recovery_stage != "full" or realization.reference_mode == "ANAPHORIC"
         or realization.clause_form != "FINITE" or realization.context_slots != (1,)
         or len(realization.semantic_fragments) != 2 or len(realization.relations) != 1
         or any(p.actor_kind != "SELF" or p.quoted_boundary for p in realization.semantic_profiles)
         or not _selected_material_appraisal(selected_decision)):
         return None
-    parts = source_owned_action_change(move, plan, resolver)
     if parts is None or tuple(realization.semantic_fragments) != (parts[0], parts[2]):
         return None
     return "".join(parts) + "のですね"

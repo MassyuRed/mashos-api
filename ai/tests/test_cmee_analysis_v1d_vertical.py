@@ -1582,9 +1582,6 @@ class AnalysisVerticalTests(unittest.TestCase):
             '私は資料を調べた後、友人の気持ちが変わりました。',
             '私は資料を調べた後、私の気持ちが変わりました。',
             '私は資料を調べた後、気持ち来週メモが変わりました。',
-            '私は資料を調べた後、不安が減りました。',
-            '私は資料を調べた後、気持ちメモが増えました。',
-            '私は資料を調べた後、資料が戻りました。',
         ):
             with self.subTest(memo=memo):
                 self.assertIsNone(self.generate(request(record(memo=memo))).artifact)
@@ -1622,6 +1619,83 @@ class AnalysisVerticalTests(unittest.TestCase):
         same = self.compared(old + '。', '僕は資料を調べてから、気持ちが変わった。').artifact
         self.assertEqual(same.period_comparison.change_claims, ())
         changed = self.compared(new + '。', old + '。').artifact
+        self.assertIn('ROUTE_EVIDENCE_CHANGED', changed.safe_projection(
+            authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+
+    def test_polite_decrease_increase_return_keep_complete_meaning_and_evidence(self):
+        # These three episodes were deliberately unavailable in u139: the
+        # shared owner now proves their complete finite clauses as well.
+        for noun, case, polite, lemma, plain in (
+            ('不安', 'が', '減りました', '減る', '減った'),
+            ('気持ちメモ', 'も', '増えました', '増える', '増えた'),
+            ('資料', 'は', '戻りました', '戻る', '戻った'),
+            ('新しい学びノート', 'が', '増えました', '増える', '増えた'),
+        ):
+            for action in ('私は資料を調べた後、', '僕は記録を残してから、'):
+                memo = action + noun + case + polite
+                with self.subTest(memo=memo):
+                    req = request(record(memo=memo + '。'))
+                    artifact = self.generate(req).artifact
+                    self.assertIsNotNone(artifact)
+                    first, change = artifact.graph.nodes
+                    self.assertEqual((change.proposition.arguments,
+                        change.proposition.predicate_lemma, change.proposition.actor,
+                        change.modality, change.temporal_scope),
+                        (((case, noun),), lemma, 'UNSPECIFIED', 'fact', 'past'))
+                    edge, = artifact.graph.edges
+                    self.assertEqual((edge.edge_kind, edge.endpoint_refs),
+                        ('OBSERVED_ORDER', (first.node_ref, change.node_ref)))
+                    source, = freeze_analysis_sources(req).sources
+                    for e in edge.evidence_refs:
+                        raw = source.envelope.raw_utf8[e.utf8_start:e.utf8_end]
+                        field = source.envelope.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                        self.assertEqual(raw.decode(), field[e.scalar_start:e.scalar_end])
+                        self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                    self.assertEqual([i for _, a, b in change.proposition.source_parts
+                        for i in range(a, b)], list(range(len(change.visible_label))))
+                    text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                    self.assertIn(noun + case + plain + '（記録された変化）', text)
+                    self.assertIn('原因を示す線ではありません', text)
+                    self.assertEqual(artifact.graph.annotations, ())
+
+    def test_polite_decrease_increase_return_keep_unproven_scope_unavailable(self):
+        for ending in ('不安が減りませんでした', '不安が減ります',
+                       '気持ちメモが増えましたか', '資料が戻りましたと聞いた',
+                       '不安が減りましたなら', '友人の不安が減りました',
+                       '私の不安が減りました', '気持ち来週メモが増えました',
+                       '何が戻りました'):
+            with self.subTest(ending=ending):
+                self.assertIsNone(self.generate(request(record(
+                    memo='私は資料を調べた後、' + ending + '。'))).artifact)
+        for memo in ('私は資料を調べた後、不安が減りました？',
+                     '友人は資料を調べた後、不安が減りました。',
+                     '資料を調べた後、不安が減りました。',
+                     '私は資料を調べなかった後、不安が減りました。',
+                     '「私は資料を調べた後、不安が減りました」と友人が言った。'):
+            with self.subTest(memo=memo):
+                self.assertIsNone(self.generate(request(record(memo=memo))).artifact)
+
+    def test_polite_decrease_increase_return_preserve_updates_and_comparison(self):
+        old = '私は資料を調べた後、不安が減りました'
+        new = '私は記録を残してから、気持ちメモが増えました'
+        original = record(memo='私は仕事を続けたい。' + old + '。')
+        artifact = self.generate(request(self.with_answer(original,
+            '「' + old + '」ではなく「' + new + '」です。'))).artifact
+        self.assertEqual([n.visible_label for n in artifact.graph.nodes],
+            ['私は仕事を続けたい', '私は記録を残して', '気持ちメモが増えました'])
+        withdrawn = self.generate(request(self.with_answer(original,
+            '「' + old + '」は取り消します。'))).artifact
+        self.assertEqual([n.visible_label for n in withdrawn.graph.nodes], ['私は仕事を続けたい'])
+        added = self.generate(request(self.with_answer(record(memo='私は記録を残した。'),
+            '私は資料を調べた後、資料が戻りました。'))).artifact
+        self.assertEqual(len(added.graph.nodes), 3)
+        for polite, plain in (('不安が減りました', '不安が減った'),
+                              ('気持ちメモが増えました', '気持ちメモが増えた'),
+                              ('資料が戻りました', '資料が戻った')):
+            same = self.compared('私は資料を調べた後、' + polite + '。',
+                '僕は資料を調べてから、' + plain + '。').artifact
+            self.assertEqual(same.period_comparison.change_claims, ())
+        changed = self.compared(old.replace('減りました', '増えました') + '。', old + '。').artifact
         self.assertIn('ROUTE_EVIDENCE_CHANGED', changed.safe_projection(
             authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
 

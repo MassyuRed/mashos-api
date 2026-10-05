@@ -14,6 +14,123 @@ from cocolon_meaning_experience_engine import MeaningExperienceEngine
 from emlis_ai_grounded_observation_gate import evaluate_grounded_surface_body_inverse
 import emlis_ai_grounded_sentence_surface as surface
 import emlis_ai_grounded_observation_gate as gate
+import emlis_ai_grounded_observation_plan as plan_owner
+from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
+from emlis_ai_evidence_ledger_service import EvidenceLedgerResolutionError
+
+
+def _polite_change_plan(memo, *, source_override=None):
+    source = freeze_text_source(initial(memo))
+    normalized = dict(source.normalized_current_input)
+    if source_override is not None:
+        normalized['memo'] = source_override
+    return plan_owner.build_final_stage1_grounded_observation_plan(
+        normalized, evidence_spans=source.evidence_spans)
+
+
+def _action_change_relations(plan):
+    return tuple(r for r in plan.relations if r.source_relation_ids == (
+        'typed_projection:perfective_action_before_bounded_change',))
+
+
+@pytest.mark.parametrize('change', ['不安が減りました', '気持ちメモが増えました', '資料が戻りました'])
+@pytest.mark.parametrize('action', ['私は資料を調べた後、', '僕は記録を残してから、'])
+def test_polite_nominal_changes_have_neutral_source_bound_final_witness(action, change):
+    memo = action + change + '。'
+    plan = _polite_change_plan(memo)
+    relation, = _action_change_relations(plan)
+    nodes = {n.nucleus_id: n for n in plan.nuclei}
+    first, second = nodes[relation.from_nucleus_id], nodes[relation.to_nucleus_id]
+    assert (first.kind, second.kind) == ('action', 'change')
+    assert (relation.grounding_kind, relation.retention) == ('user_stated_relation', 'required')
+    assert second.semantic_frame.polarity == 'neutral'
+    assert second.semantic_frame.time_scope == 'past'
+    assert 'operator:positive_change' not in second.semantic_frame.attribute_codes
+    for node, fragment in ((first, action.split('後')[0] if '後' in action else action[:-3]),
+                           (second, change)):
+        code, = (c for c in node.semantic_frame.attribute_codes
+                 if c.startswith('source_fragment_scalar_range:'))
+        start, end = map(int, code.split(':')[1:])
+        assert memo[start:end] == fragment
+        assert 'source_fragment_scalar_source:normalized_raw_text' in node.semantic_frame.attribute_codes
+    # The old builder is not reached through the new final-only projector.
+    source = freeze_text_source(initial(memo))
+    with patch.object(plan_owner, '_typed_nucleus_projections_for_span', side_effect=AssertionError('final owner')):
+        plan_owner.build_grounded_observation_plan(source.normalized_current_input,
+            evidence_spans=source.evidence_spans)
+
+
+@pytest.mark.parametrize('memo', [
+    '私は資料を調べた後、不安が減りました？',
+    '私は資料を調べた後、不安が減りましたか。',
+    '私は資料を調べた後、不安が減りましたと聞いた。',
+    '私は資料を調べた後、不安が減りましたなら。',
+    '私は資料を調べなかった後、不安が減りました。',
+    '私は資料を調べたら、不安が減りました。',
+    '私は資料を調べた後、友人の不安が減りました。',
+    '私は資料を調べた後、何が戻りました。',
+    '私は資料を調べた後、気持ち来週メモが増えました。',
+    '友人は資料を調べた後、不安が減りました。',
+    '私は友人が資料を調べた後、不安が減りました。',
+    '資料を調べた後、不安が減りました。',
+    '「私は資料を調べた後、不安が減りました」と友人が言った。',
+    '友人の話です。私は資料を調べた後、不安が減りました。',
+    '友人は言った。私は資料を調べた後、不安が減りました。',
+    '私は資料を調べた後、不安が減りました。と聞いた。',
+    '友人から聞いた内容です。私は資料を調べた後、不安が減りました。',
+])
+def test_polite_nominal_changes_do_not_borrow_foreign_or_unasserted_scope(memo):
+    assert not _action_change_relations(_polite_change_plan(memo))
+
+
+def test_polite_nominal_changes_require_original_source_and_keep_independent_sentences():
+    memo = '私は資料を調べた後、不安が減りました。'
+    assert not _action_change_relations(_polite_change_plan(memo, source_override=memo[:-1] + '？'))
+    with pytest.raises(EvidenceLedgerResolutionError, match='source_slice_mismatch'):
+        _polite_change_plan(memo, source_override='友人は' + memo)
+    assert len(_action_change_relations(_polite_change_plan('私は仕事を続けたい。' + memo))) == 1
+
+
+@pytest.mark.parametrize('change,plain', [('資料が減りました', '資料が減った'),
+    ('気持ちメモが増えました', '気持ちメモが増えた'), ('資料が戻りました', '資料が戻った')])
+@pytest.mark.parametrize('action,visible', [('私は資料を調べた後、', '資料を調べた後、'),
+    ('僕は記録を残してから、', '記録を残してから、')])
+def test_polite_changes_reach_emlis_without_causal_or_value_appraisal(action, visible, change, plain):
+    import cocolon_meaning_experience_engine.emlis_stage1_response as response
+    from test_cmee_emlis_received_discourse import inverse
+    attempts = []
+    def capture(**kwargs):
+        verdict = evaluate_grounded_surface_body_inverse(**kwargs)
+        attempts.append((kwargs, verdict))
+        return verdict
+    with patch.object(response, 'evaluate_grounded_surface_body_inverse', capture):
+        result = MeaningExperienceEngine().generate(initial(action + change + '。'))
+    assert result.artifact is not None, result.reason_codes
+    assert result.artifact.reception == visible + plain + 'のですね。'
+    actual = next(kwargs for kwargs, verdict in reversed(attempts)
+                  if verdict.passed and kwargs['body'] == result.artifact.text.encode())
+    assert {k['sentence_plan'].recovery_stage for k, _ in attempts} >= {'full', 'optional_removed', 'integrated', 'hedged'}
+    for kwargs, _ in attempts:
+        assert '支えている' not in kwargs['body'].decode()
+        assert '大切に思っています' not in kwargs['body'].decode()
+    context = (result, actual['plan'], actual['sentence_plan'], actual['resolver'],
+               actual['selected_subjective_input'])
+    # Disable author replay through the existing independent-reader helper;
+    # the source/meaning checks must reject even a replay agreeing with a lie.
+    assert inverse(context, result.artifact.reception, without_author=True).passed
+    for changed in (result.artifact.reception.replace('から、', 'ので、').replace('後、', 'ので、'),
+                    '友人が' + result.artifact.reception,
+                    result.artifact.reception.replace(plain, '不安が増えた'),
+                    result.artifact.reception.replace(plain, ''),
+                    result.artifact.reception.replace('のですね', 'ことを大切に思っています')):
+        assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('change', ['不安が減りました', '不安が増えました'])
+def test_emlis_existing_unbound_feeling_scope_is_not_relaxed(change):
+    result = MeaningExperienceEngine().generate(initial('私は資料を調べた後、' + change + '。'))
+    assert result.artifact is None
+    assert result.reason_codes == ('current_experiencer_or_time_scope_unsupported',)
 
 
 @pytest.mark.parametrize('q3', [False, True])

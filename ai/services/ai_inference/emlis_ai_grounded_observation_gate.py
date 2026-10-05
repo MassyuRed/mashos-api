@@ -2959,6 +2959,20 @@ def _read_action_change_discourse(raw, move, plan, resolver, selected_subjective
             or appraisal.operation != "RECEIVE_AS_MATERIAL"):
             return None
     left, connector, right = parts
+    if right.endswith(("減りました", "増えました", "戻りました")):
+        # Independently parse the omitted self-topic and plain past ending.
+        # The source still owns SELF/past; a different actor or connective
+        # cannot borrow that proof, nor can a causal/value appraisal.
+        visible_left = re.sub(r"^(?:私|僕|わたし|自分)(?:は|が|も)", "", left, count=1)
+        visible_right = re.sub(r"(?:減りました|増えました|戻りました)$", lambda m: {
+            "減りました": "減った", "増えました": "増えた", "戻りました": "戻った",
+        }[m.group()], right)
+        parsed = re.fullmatch(r"(?P<episode>.+)(?:のですね|のです|のだと受け取りました)。", raw)
+        if parsed is None or parsed['episode'] != visible_left + connector + visible_right:
+            return None
+        start = len((visible_left + connector).encode())
+        return ((0, len(visible_left.encode()), left.encode()),
+                (start, start + len(visible_right.encode()), right.encode()))
     parsed = re.fullmatch(r"(?P<episode>.+)(?:のですね|のです|のだと受け取りました)。", raw)
     if parsed is None or parsed['episode'] != left + connector + right:
         return None

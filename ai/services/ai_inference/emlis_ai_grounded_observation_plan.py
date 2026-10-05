@@ -4047,6 +4047,39 @@ def _typed_nucleus_projections_for_span(
             }
         ) and not bool(_FEELING_RE.search(fragment) or _NEGATION_RE.search(fragment))
 
+    def source_proven_polite_nominal_change(action: str, link: str, change: str) -> bool:
+        # A finite inflection proof local to this final-only compound owner.
+        # Do not widen the global change/positive keyword classifiers. Both
+        # clauses must be closed, and the source must still assert the episode
+        # outside reports, quotations and questions (the ledger drops ?).
+        nominal = (r"(?:新しい|古い|大きい|小さい|長い|短い|詳しい|難しい|易しい|良い|悪い)?"
+                   r"(?:(?:考え|思い|気持ち|学び|振り返り|取り組み)[一-鿿々ァ-ヶー]*|"
+                   r"[一-鿿々ァ-ヶー]+)")
+        action_past = action[:-1] + {"て": "た", "で": "だ"}.get(action[-1:], action[-1:])
+        performed = re.fullmatch(
+            r"(?:私|僕|わたし|自分)(?:は|が|も)(?:" + nominal
+            + r"(?:を|に|へ|で|から|と|まで)){1,2}(?P<predicate>.+)", action_past,
+        )
+        source = str((normalized_input or {}).get(source_field) or "")
+        start, end = span.start_index, span.end_index
+        return bool(
+            source_field == "memo"
+            and re.fullmatch(r"(?:後|あと)(?:に)?[、,]\s*|から[、,]\s*", link)
+            and performed is not None
+            and _COMPLETED_ACTION_RE.fullmatch(performed.group("predicate"))
+            and re.fullmatch(nominal + r"(?:は|が|も)(?:減りました|増えました|戻りました)", change)
+            and not re.search(r"[何誰幾]|明日|明後日|一昨日|今朝|昨夜|先週|来週|今日|昨日", action + change)
+            and 0 <= start < end <= len(source)
+            and source[start:end] == span.raw_text
+            and _top_level_text(source) == source
+            and (not source[:start].strip() or source[:start].rstrip().endswith(("。", "．", ".")))
+            and (not source[end:].strip() or re.match(r"\s*[。．.]", source[end:]))
+            and not re.search(r"[!?！？…‥]", text)
+            and not _source_prefix_opens_report(source[:start])
+            and not re.search(r"によると|いわく|曰く|の(?:話|感想|発言)(?:です|だ)|と言|と話|と語|と聞|"
+                              r"(?:聞いた|聞きました|読んだ|読みました)(?:話|内容)", source)
+        )
+
     action_change_link = _ACTION_CHANGE_LINK_RE.search(text)
     if action_change_link is not None:
         action_start, action_end = trimmed_range(0, action_change_link.start())
@@ -4069,8 +4102,12 @@ def _typed_nucleus_projections_for_span(
             _operator_codes_for_text(change_text, source_field=source_field)
         )
         performed_action = structurally_performed_action(action_text)
+        polite_nominal_change = change_text.endswith(("減りました", "増えました", "戻りました"))
         observed_change = bool(
-            (_POSITIVE_CHANGE_RE.search(change_text) or _CHANGE_RE.search(change_text))
+            (source_proven_polite_nominal_change(text[action_start:surface_action_end],
+                                                text[surface_action_end:change_start], change_text)
+             if polite_nominal_change
+             else _POSITIVE_CHANGE_RE.search(change_text) or _CHANGE_RE.search(change_text))
             and _OBSERVED_PAST_OUTCOME_RE.search(change_text)
             and "operator:uncertainty" not in change_operators
             and "operator:wish" not in change_operators
@@ -4085,7 +4122,10 @@ def _typed_nucleus_projections_for_span(
                 "semantic_role:compound_reception_coowned_nonprimary",
                 "semantic_dependency:action_before_change",
             ]
-            if _POSITIVE_CHANGE_RE.search(change_text):
+            positive_change = not polite_nominal_change and bool(_POSITIVE_CHANGE_RE.search(change_text))
+            if polite_nominal_change:
+                change_codes.append("semantic_role:neutral_polite_nominal_change")
+            if positive_change:
                 change_codes.append("operator:positive_change")
             return (
                 _TypedNucleusProjection(
@@ -4110,7 +4150,7 @@ def _typed_nucleus_projections_for_span(
                     nucleus_suffix=":change",
                     kind="change",
                     predicate_kind="change",
-                    polarity="positive" if _POSITIVE_CHANGE_RE.search(change_text) else "neutral",
+                    polarity="positive" if positive_change else "neutral",
                     modality=(
                         "feeling"
                         if _FEELING_RE.search(change_text)
@@ -7230,9 +7270,9 @@ def source_owned_action_purpose(nucleus, resolver) -> tuple[str, str, str] | Non
 
 
 def source_owned_action_change(move, plan, resolver):
-    """Keep a completed action/result relation in its original conditional form.
+    """Keep a completed action/result relation in its source connector scope.
 
-    A past ``tara`` episode is not evidence of continuing causal support.
+    A past ``tara`` episode or finite nominal sequence does not prove support.
     Read the two already selected, coowned clauses and their actual connector;
     do not derive another event, feeling, cause or present-tense claim.
     """
@@ -7240,19 +7280,22 @@ def source_owned_action_change(move, plan, resolver):
         final_reception_source_anchor_text, source_grounded_reception_move_relations,
     )
     if (not move.required or move.reception_act != "honor_concrete_effort"
-        or len(move.target_nucleus_ids) != 1 or len(move.support_nucleus_ids) != 1):
+        or len(move.target_nucleus_ids) != 1 or len(move.support_nucleus_ids) > 1):
         return None
     links = source_grounded_reception_move_relations(move, plan)
     if (len(links) != 1 or links[0].type != "action_supports_change"
         or links[0].grounding_kind != "user_stated_relation"
         or links[0].retention != "required"
         or links[0].relation_id not in plan.coverage_requirements.required_relation_ids
-        or (links[0].from_nucleus_id, links[0].to_nucleus_id)
-            != (move.target_nucleus_ids[0], move.support_nucleus_ids[0])):
+        or links[0].from_nucleus_id != move.target_nucleus_ids[0]
+        or move.support_nucleus_ids and links[0].to_nucleus_id != move.support_nucleus_ids[0]):
         return None
     index = {n.nucleus_id: n for n in plan.nuclei}
     action, change = (index[nid] for nid in
-                      (move.target_nucleus_ids[0], move.support_nucleus_ids[0]))
+                      (links[0].from_nucleus_id, links[0].to_nucleus_id))
+    if (not move.support_nucleus_ids
+        and "semantic_role:neutral_polite_nominal_change" not in change.semantic_frame.attribute_codes):
+        return None
     if (not source_proven_performed_action_status(action)
         or change.kind != "change" or change.semantic_frame.predicate_kind != "change"
         or change.semantic_frame.modality not in {"fact", "feeling"}
@@ -7268,11 +7311,22 @@ def source_owned_action_change(move, plan, resolver):
     left, right = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
                    for n in (action, change))
     raw = str(resolver.resolve(action.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
-    if (not left or not right or left == right or not left.endswith(("た", "だ"))
+    if (not left or not right or left == right
         or not raw.startswith(left) or not raw.endswith(right)
         or _top_level_text(raw) != raw or re.search(r'[「」『』“”‘’"?？!！;；…‥\r\n]', raw)):
         return None
     connector = raw[len(left):-len(right)]
+    if "semantic_role:neutral_polite_nominal_change" in change.semantic_frame.attribute_codes:
+        if (change.semantic_frame.polarity != "neutral"
+            or "operator:positive_change" in change.semantic_frame.attribute_codes
+            or links[0].source_relation_ids != ("typed_projection:perfective_action_before_bounded_change",)
+            or not right.endswith(("減りました", "増えました", "戻りました"))
+            or not ((left.endswith(("た", "だ")) and re.fullmatch(r"(?:後|あと)(?:に)?[、,]\s*", connector))
+                    or (left.endswith(("て", "で")) and re.fullmatch(r"から[、,]\s*", connector)))):
+            return None
+        return left, connector, right
+    if not left.endswith(("た", "だ")):
+        return None
     if re.fullmatch(r"ら[、,]?", connector) is None:
         return None
     return left, connector, right
