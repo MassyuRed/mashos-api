@@ -692,6 +692,44 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                     self.assertNotIn(hidden, json.dumps(saved, ensure_ascii=False))
                 self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
 
+    async def test_polite_past_wishes_survive_save_and_read_without_regeneration(self):
+        for ending, expected in (
+            ('たかったです', '仕事を続けることへの希望（当時）'),
+            ('たくなかったです', '仕事を続けることを望まない（当時）'),
+        ):
+            with self.subTest(ending=ending):
+                original = dict(self.fx['original'], memo='私は仕事を続け' + ending + '。')
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': original, 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    if name == 'analysis_observed_read':
+                        return result([self.row], matched=True)
+                    raise AssertionError(name)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(len(writes), 1)
+                self.assertEqual(reread['items'][0], saved)
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                self.assertEqual([n['visible_label'] for n in projection['nodes']], [expected])
+                self.assertEqual(projection['nodes'][0]['node_kind'], 'ATTENTION_OR_THOUGHT')
+                self.assertIn(expected, saved['content_text'])
+                self.assertNotIn('実行済み', saved['content_text'])
+                self.assertFalse(projection['edges'])
+                self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
+
     async def test_opposed_claims_survive_save_read_with_private_evidence_only(self):
         self.fx = fixture('私は資料を調べた。私は資料を調べなかった。')
         self.row = self.fx['row']

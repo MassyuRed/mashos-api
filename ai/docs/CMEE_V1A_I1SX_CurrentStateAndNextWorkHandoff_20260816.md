@@ -14800,3 +14800,23 @@ rootが合成7本文（何＋行動、誰＋希望、未解析認知、未解析
 変更はAPI既存compiler1／test2／handoff1、Cocolon既存current03／設計04／06の7file。STRUCTURE_MAP_DELTA_NONE：既存名詞判定の内容補正のみで、新file／owner／共有意味処理／Emlis／Piece／API契約／DTO／DB／SQL／RN変更0。追加費用・Mash操作0、env／deploy／build／DB／main／merge／IF操作0。両PR Draft/open/unmergedを維持し、未配置。実DB・React component suite・native・本人入力・商品受入れは今回未確認。商品0/3・NOT_CLEAR・48%、稼働API `1a42b9e…`／TestFlight6401送信成功と実機残件は継承値。今回commitとremote7fileのbyte照合結果はPR3／30先頭へ記録する。
 
 今回の何／誰の確定昇格は解消。次の候補は実測した過去願望の丁寧形「私は仕事を続けたかったです／続けたくなかったです」。常体は成立し丁寧形は未解析、共有根拠は同じためAnalysis有限形での不一致が候補になるが、未修正。幾の判別は上記の語義衝突を残す。網羅対応を配置・本人実機確認の前提にしない。
+
+
+## 2026-10-05 JST u146 — 過去の希望の丁寧形を文章と図へ保持
+
+Mashの分析内容修正継続指示と添付u145報告から再開。開始headはAPI `0815cce2ee17a3d1f5bbb5c37f512d2fe222b435`／Cocolon `3b86deef3e0f99509e2a09e11de48d72c73de7a7`。前提・作業入口／CURRENT_RULES／Rule18、恒久incident全文、全体設計01と01A/B/Cの全file地図経路、分析current03／詳細04、最新weekly20261003の完成条件と§6.6〜6.10を確認した。System Context prepareはnested mashos-api checkout不在で失敗し、許可された追跡正本の直接読取へ戻した。生成Contextの現行性は主張しない。Karen-Diary必須3資料と専門ruleの追加確認はread-only agentが担当し、rootは対象の設計・実ファイルを照合した。
+
+既存設計内のOBSERVED_BLOCKER_MINIMAL_FIX／Rule18 LEVEL_2。実行環境Codex Work、root華恋が単一の編集・検証・GitHub反映owner。同環境の補助agentはread-only原因調査・境界probe・最終reviewであり、別model Pro reviewではない。対象は既存compiler1／test2／API handoff1とCocolon current03／設計04／06の7file。完成条件は過去希望の肯否定・原文証拠・訂正／撤回・比較・保存再表示と文章／図の一致。新契約・共有owner変更・対象preimage衝突が必要ならscopeを広げず停止する。追加費用・Mash操作0。
+
+修正前の実CMEEで、常体「私は仕事を続けたかった／続けたくなかった」はGENERATED、丁寧形「…です」はUNAVAILABLEを再現した。既存 `_finite_predicates` に `i + たかったです` positive/wish/pastと `i + たくなかったです` negative/wish/pastの2行を追加。既存exact9動詞の範囲、全文有限節解析、共有明示根拠、safe再解析を維持。対象・格・本人主語・時点・原文scalar／UTF-8／hashを保ち、既存realizerが「希望（当時）／望まない（当時）」として文章と図へ返す。現在の希望・実行済みの行動と区別し、願望から行動順序や因果を作らない。
+
+追加vertical3methodは修正前21 failure（20 subcase＋後続artifact欠落）、2 passed／10 subtests passed。最初の修正後suiteで新検査が反対意向の通常補足を採用すると誤って期待した1 subcaseが失敗した。常体でも同じ既存保留になることを確認し、通常補足の基準を行動だけの原入力へ訂正、反対意向の通常補足は保留のassertを残した。その修正patchが類似した既存検査へ当たったことをdiffで検出し、当該既存検査を開始HEADへ完全復元してから新検査へ適用した。最終差分の既存期待変更は0。
+
+最終検証：Python3.12.14、再発見した隔離test依存（pytest9.1.1／FastAPI0.142.2／httpx0.28.1）、製品依存変更0。vertical201／storage48／saved-period16、**計265 tests PASS／1273 subtests PASS（7.57秒）**。既存Pydantic非推奨warning1件。9動詞×肯否定の18形、昨日・読点・全原文範囲、常体との期間比較差0、極性／時制／行動の意味差、補足／明示訂正／撤回、safe意味改竄拒否、疑問／伝聞／別主体／何の保留を確認。実service＋合成RPCで両形の生成→commit→再生成禁止readの同一文章・図・identityを確認した。実DBには接続していない。
+
+rootが合成8本文（昨日の希望、否定、補足、訂正、撤回、希望後の行動、常体比較、極性比較）を全文確認し、実RN `buildWatashiMapV2ViewModel` へ同じ生成DTOを渡して全文・identity・node順／edge・unknown・注記・競合・比較stateの一致を確認。独立read-onlyの原因／境界probeと最終実差分reviewに具体的blockerなし。React component suite／native／本人入力／商品受入れの今回確認ではない。旧generic0058期待差は未再検証・未修正であり、全repo PASSとはしない。
+
+STRUCTURE_MAP_DELTA_NONE：既存Analysisの活用解釈補正のみ。共有意味owner／Emlis／Piece／API契約／DTO／DB／SQL／RN／製品依存変更0。env／deploy／build／main／merge／IF操作0。Draft/open/unmergedを維持し未配置。商品0/3・NOT_CLEAR・48%、最後の確認済み稼働API `1a42b9e…`／TestFlight6401送信成功と、本人生成・保存再表示・比較の実機残件は継承値。反映commit・remote全7file byte／変更path／parent照合結果はPR3／30先頭へ記録する。
+
+u145の過去願望丁寧形の内容残差は今回解消。plain幾は別残件のまま。今回のread-only確認では「私は幾冊の資料を調べた」と「私は幾何学を調べた」は共に実行済みとして表示された。次の内容候補は未確定数量・通常名詞を混同しない境界の確認であり、幾の一律拒否は採用しない。表現網羅を配置・本人実機の前提へ戻さない。
+

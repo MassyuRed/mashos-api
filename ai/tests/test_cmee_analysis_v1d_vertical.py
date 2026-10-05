@@ -3753,6 +3753,96 @@ class AnalysisVerticalTests(unittest.TestCase):
                 self.assertEqual(artifact.safe_projection(authenticated_owner_scope=OWNER)
                     ['nodes'][0]['visible_label'], label)
 
+    def test_polite_past_wishes_keep_full_meaning_evidence_and_plain_equivalence(self):
+        for body, lemma in (
+            ('考えをノートに書き', '書く'), ('資料を調べ', '調べる'),
+            ('方法を試し', '試す'), ('景色を見', '見る'), ('作品を作り', '作る'),
+            ('記録を残し', '残す'), ('気持ちを記録し', '記録する'),
+            ('考えをメモし', 'メモする'), ('仕事を続け', '続ける'),
+        ):
+            for ending, polarity in (('たかった', 'positive'), ('たくなかった', 'negative')):
+                with self.subTest(body=body, ending=ending):
+                    literal = '私は、昨日、' + body + ending + 'です'
+                    req = request(record(memo='　' + literal + '。'))
+                    artifact = self.generate(req).artifact
+                    self.assertIsNotNone(artifact)
+                    node, = artifact.graph.nodes
+                    p = node.proposition
+                    self.assertEqual((node.node_kind, p.actor, p.predicate_lemma,
+                        p.polarity, p.modality, p.temporal_scope, p.relative_day),
+                        ('ATTENTION_OR_THOUGHT', 'SELF', lemma, polarity, 'wish', 'past', 'YESTERDAY'))
+                    self.assertEqual([i for _, a, b in p.source_parts for i in range(a, b)],
+                                     list(range(len(literal))))
+                    e, = node.evidence_refs
+                    envelope = freeze_analysis_sources(req).sources[0].envelope
+                    raw = envelope.raw_utf8[e.utf8_start:e.utf8_end]
+                    field = envelope.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                    self.assertEqual(raw.decode(), literal)
+                    self.assertEqual(field[e.scalar_start:e.scalar_end], literal)
+                    self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                    visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                    text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)
+                    plain = self.generate(request(record(memo=literal[:-2] + '。'))).artifact
+                    self.assertEqual(text['text'], plain.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+                    self.assertEqual(visual['projection_of'], text['projection_of'])
+                    self.assertIn(visual['nodes'][0]['visible_label'], text['text'])
+                    self.assertIn('（当時）', text['text'])
+                    self.assertNotIn('実行済み', text['text'])
+                    self.assertFalse(visual['edges'])
+                    compared = self.compared(literal + '。', literal[:-2] + '。').artifact
+                    self.assertEqual(compared.period_comparison.change_claims, ())
+                    self.assertEqual(compared.period_comparison.comparability_state, 'COMPARABLE')
+
+    def test_polite_past_wishes_keep_revision_withdrawal_and_semantic_differences(self):
+        old = '私は仕事を続けたかったです'
+        new = '僕は仕事を続けたくなかったです'
+        original = record(memo=old + '。私は記録を残した。')
+        for base, answer in (
+            (record(memo='私は記録を残した。'), new + '。'),
+            (original, '「' + old + '」ではなく「' + new + '」です。'),
+        ):
+            with self.subTest(answer=answer):
+                req = request(self.with_answer(base, answer))
+                artifact = self.generate(req).artifact
+                node = next(n for n in artifact.graph.nodes if n.proposition.polarity == 'negative')
+                source = next(s.envelope for s in freeze_analysis_sources(req).sources
+                              if s.envelope.source_role == 'SUPPLEMENTAL_ANSWER')
+                self.assertTrue(all(e.source_envelope_id == source.envelope_id for e in node.evidence_refs))
+                self.assertIn('仕事を続けることを望まない（当時）',
+                    artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+        withdrawn = self.generate(request(self.with_answer(original, '「' + old + '」は取り消します。'))).artifact
+        self.assertEqual([n['visible_label'] for n in withdrawn.safe_projection(
+            authenticated_owner_scope=OWNER)['nodes']], ['記録を残す（実行済み）'])
+        # An opposing ordinary answer cannot silently act as a correction.
+        self.assertIsNone(self.generate(request(self.with_answer(original, new + '。'))).artifact)
+        ordered = self.generate(request(record(memo=old + '。その後私は記録を残した。'))).artifact
+        self.assertFalse(ordered.safe_projection(authenticated_owner_scope=OWNER)['edges'])
+        for other in (new, '私は仕事を続けたいです', '私は仕事を続けました'):
+            with self.subTest(other=other):
+                visual = self.compared(other + '。', old + '。').artifact.safe_projection(authenticated_owner_scope=OWNER)
+                self.assertIn('ROUTE_EVIDENCE_CHANGED', visual['period_comparison']['safe_change_kinds'])
+        artifact = self.generate(request(record(memo=old + '。'))).artifact
+        node, = artifact.graph.nodes
+        for changed in (replace(node.proposition, polarity='negative'),
+                        replace(node.proposition, modality='fact'),
+                        replace(node.proposition, temporal_scope='current_input'),
+                        replace(node.proposition, source_parts=node.proposition.source_parts[:-1])):
+            with self.subTest(changed=changed):
+                broken = replace(artifact, graph=replace(artifact.graph,
+                    nodes=(replace(node, proposition=changed),)))
+                with self.assertRaises(AnalysisSourceError):
+                    broken.safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_polite_past_wishes_do_not_admit_unparsed_or_reported_scope(self):
+        for memo in ('仕事を続けたかったです。', '友人は仕事を続けたかったです。',
+            '私は仕事を続けたかったですか。', '私は仕事を続けたかったです？',
+            '「私は仕事を続けたかったです」と聞いた。',
+            '私は仕事を続けたかったですが。', '私は仕事を続けたかったですです。',
+            '明日私は仕事を続けたかったです。', '私は何を調べたかったです。',
+            '私は仕事を続けたかったですかもしれないと思う。'):
+            with self.subTest(memo=memo):
+                self.assertIsNone(self.generate(request(record(memo=memo))).artifact)
+
     def test_safe_surface_cannot_drop_modifiers_or_accept_altered_parts(self):
         for source in ('私は明日、考えをノートに書いた。',
                        '私は急いで考えをノートに書いた。'):
