@@ -120,3 +120,96 @@ def test_free_short_text_stays_unavailable_without_padding():
 def test_non_nominal_or_split_source_not_silently_rewritten(text):
     with pytest.raises(PieceContractError):
         generate(text, tier='premium')
+
+
+@pytest.mark.parametrize('comma', ['、', '，', ','])
+@pytest.mark.parametrize('speaker', ['私', 'わたし', '僕', 'ぼく', '俺', 'おれ'])
+@pytest.mark.parametrize('predicate', [
+    '大切にしたい', '大切にしたくない', '大切にしていた', '望んでいなかった',
+    '選びたかった', '大切にしたいかもしれない',
+    '望んでいないとは限らない', '選びたくなかったかもしれない',
+])
+def test_focal_author_comma_keeps_capture_values_and_original_coordinates(comma, speaker, predicate):
+    from piece_v2_generation import _FOCUS
+    obj = '今は答えを急がず、自分で納得してから選ぶこと'
+    plain = f'{speaker}が{predicate}のは、{obj}です。'
+    raw = f'{speaker}が{comma}{predicate}のは、{obj}です。'
+    expected = _FOCUS.fullmatch(plain)
+    actual = _FOCUS.fullmatch(raw)
+    assert expected is not None and actual is not None
+    assert actual.groupdict() == expected.groupdict()
+    for name in ('speaker', 'predicate', 'past_predicate', 'modal', 'object'):
+        start, end = actual.span(name)
+        if start == -1:
+            assert end == -1 and actual[name] is None
+            continue
+        assert raw[start:end] == actual[name]
+        utf8_start = len(raw[:start].encode('utf-8'))
+        utf8_end = len(raw[:end].encode('utf-8'))
+        assert raw.encode('utf-8')[utf8_start:utf8_end].decode('utf-8') == actual[name]
+    assert actual['speaker'] == speaker
+    assert actual['predicate'] == predicate
+    assert actual['object'] == obj
+
+
+@pytest.mark.parametrize('comma', ['、', '，', ','])
+@pytest.mark.parametrize('predicate', [
+    '大切にしたい', '大切にしたくない', '大切にしていた',
+    '望んでいなかった', '大切にしたいかもしれない',
+    '選びたくなかったかもしれない',
+])
+def test_focal_author_comma_reuses_the_same_canonical_body_and_format(comma, predicate):
+    obj = '今は答えを急がず、自分で納得してから選ぶこと'
+    raw = f'私が{comma}{predicate}のは、{obj}です。'
+    snap = source(raw)
+    expected = generate(f'私が{predicate}のは、{obj}です。', tier='premium')
+    actual = generate_piece_candidate(snap, authenticated_owner_id='synthetic-owner', tier='premium')
+    assert actual == expected
+    assert actual['piece_text'] == f'私は、{obj}を{predicate}。'
+    assert snap.original_text == raw
+    assert validate_piece_text_binding(actual['content_payload'], actual['piece_text'],
+                                       actual['piece_text_hash']) == actual['piece_text']
+    assert actual['record_effect'] == actual['quota_effect'] == 0
+    assert not actual['production_enabled']
+    if predicate not in ('大切にしたい', '大切にしたくない'):
+        assert 'declaration' not in actual['eligible_formats']
+
+
+@pytest.mark.parametrize('prefix', ['今は、', '時間があるなら、', '気持ちが揺れているけれど、'])
+def test_focal_author_comma_does_not_detach_the_written_scope(prefix):
+    focal = '私が大切にしたいのは、自分で納得してから答えを選ぶことです。'
+    plain = prefix + focal
+    punctuated = prefix + focal.replace('私が', '私が、', 1)
+    expected = generate(plain, tier='premium')
+    actual = generate(punctuated, tier='premium')
+    assert actual == expected
+    assert actual['piece_text'].startswith(prefix)
+    assert 'declaration' not in actual['eligible_formats']
+
+
+def test_focal_author_comma_preserves_a_bound_nominal_reference():
+    plain = '私が大切にしたいのは、自分で考える時間です。その時間なら、私は答えを急がずに待ちたい。'
+    raw = plain.replace('私が', '私が、', 1)
+    assert generate(raw, tier='premium') == generate(plain, tier='premium')
+
+
+@pytest.mark.parametrize('text', [
+    '私が、、大切にしたいのは、自分で決めることです。',
+    '私が，,大切にしたいのは、自分で決めることです。',
+    '私が、 大切にしたいのは、自分で決めることです。',
+    '私が、\t大切にしたいのは、自分で決めることです。',
+    '私が、\u3000大切にしたいのは、自分で決めることです。',
+    '私が、\n大切にしたいのは、自分で決めることです。',
+    '友人が、大切にしたいのは、自分で決めることです。',
+    'が、大切にしたいのは、自分で決めることです。',
+    '私が、大切にしたいのは、自分で決めることでした。',
+    '私が、大切にしたいですのは、自分で決めることです。',
+    '私が、大切にしたいかもしれないとは限らないのは、自分で決めることです。',
+    '私が、大切にしたいのは、自分で決めることです',
+    '「私が、大切にしたいのは、自分で決めることです。」と友人が言った。',
+])
+def test_focal_author_comma_does_not_guess_an_author_or_repair_unsupported_syntax(text):
+    from piece_v2_generation import _FOCUS
+    assert _FOCUS.fullmatch(text) is None
+    with pytest.raises(PieceContractError):
+        generate(text, tier='premium')

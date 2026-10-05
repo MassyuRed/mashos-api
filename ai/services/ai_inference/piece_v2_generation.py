@@ -70,7 +70,11 @@ def _transitive_predicate_forms() -> tuple[tuple[str, ...], tuple[str, ...], fro
 # the direct word order. Keep its literal wording inside the predicate span
 # for the unchanged author and uncertainty/format checks; never infer a vow.
 _FINITE_PREDICATES, _PAST_PREDICATES, _PLAIN_PREDICATES = _transitive_predicate_forms()
-_FOCUS = re.compile(r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)が(?P<predicate>(?:(?:'
+# One written comma after the explicit author's が is a clause pause,
+# not part of the predicate or an inferred subject. Keep capture spans
+# in the untouched source for the existing resolver and writer. Multiple
+# separators, whitespace and missing/other authors gain no admission.
+_FOCUS = re.compile(r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)が[、，,]?(?P<predicate>(?:(?:'
                     + '|'.join(map(re.escape, _PREDICATES)) + r')|(?P<past_predicate>'
                     + '|'.join(re.escape(p) for p in _PAST_PREDICATES if p in _PLAIN_PREDICATES)
                     + r'))(?P<modal>' + _PLAIN_EVALUATION_MODAL
