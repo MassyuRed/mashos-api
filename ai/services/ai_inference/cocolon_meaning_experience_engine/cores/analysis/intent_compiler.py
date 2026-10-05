@@ -137,9 +137,14 @@ _UNFINISHED_RESULT = re.compile(
     r'(?P<case>は|が|も)(?P<stem>見つか|決ま|定ま)って(?P<negative>いない|いません)')
 _RESULT_STEMS = {'見つかる': '見つか', '決まる': '決ま', '定まる': '定ま'}
 _CHANGE_PAST = {'減る': '減った', '増える': '増えた', '変わる': '変わった', '戻る': '戻った'}
+# Preserve the canonical past surface used by the realizer. Only admit a
+# polite inflection whose complete episode already has a shared witness;
+# 減りました / 増えました / 戻りました remain outside that witness.
+_CHANGE_FORMS = {surface: lemma for lemma, surface in _CHANGE_PAST.items()}
+_CHANGE_FORMS['変わりました'] = '変わる'
 _BOUNDED_CHANGE = re.compile(
     r'(?P<noun>' + _NOMINAL + r'(?:の' + _NOMINAL + r')*)'
-    r'(?P<case>は|が|も)(?P<predicate>' + '|'.join(_CHANGE_PAST.values()) + r')')
+    r'(?P<case>は|が|も)(?P<predicate>' + '|'.join(_CHANGE_FORMS) + r')')
 # Finite feelings already witnessed by the shared action/change pair. These
 # are predicate inflections, not an assessment that the preceding action helped.
 _FEELING_PAST = {'安心する': '安心した', '落ち着く': '落ち着いた',
@@ -318,7 +323,7 @@ def _bounded_change_proposition(value):
     match = _BOUNDED_CHANGE.fullmatch(value)
     if match is None or re.search(r'(?:^|の)(?:何|誰|幾)', match['noun']):
         return None
-    lemma = next(k for k, v in _CHANGE_PAST.items() if v == match['predicate'])
+    lemma = _CHANGE_FORMS[match['predicate']]
     return ObservedProposition('UNSPECIFIED', ((match['case'], match['noun']),),
         lemma, 'positive', 'fact', 'past', (
             ('RESULT_NOMINAL', 0, match.end('noun')),

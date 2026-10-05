@@ -619,7 +619,8 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_feeling_word_changes_survive_save_and_read_without_regeneration(self):
         original = dict(self.fx['original'], memo=
-            '私は資料を調べた後、不安が減った。私は記録を残してから、気持ちメモが増えた。')
+            '私は資料を調べた後、不安が減った。私は記録を残してから、気持ちメモが増えた。'
+            '私は振り返りメモを残した後、取り組み方が変わりました。')
         writes = []
         async def rpc(name, payload):
             if name == 'analysis_observed_source_snapshot':
@@ -646,9 +647,10 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(saved['content_text'], writes[0]['p_text'])
         self.assertEqual([n['visible_label'] for n in projection['nodes']], [
             '資料を調べる（実行済み）', '不安が減った（記録された変化）',
-            '記録を残す（実行済み）', '気持ちメモが増えた（記録された変化）'])
+            '記録を残す（実行済み）', '気持ちメモが増えた（記録された変化）',
+            '振り返りメモを残す（実行済み）', '取り組み方が変わった（記録された変化）'])
         self.assertEqual([e['edge_kind'] for e in projection['edges']],
-            ['OBSERVED_ORDER', 'OBSERVED_ORDER'])
+            ['OBSERVED_ORDER', 'OBSERVED_ORDER', 'OBSERVED_ORDER'])
         self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
 
     async def test_partial_map_with_unparsed_original_is_saved_and_read_without_regeneration(self):

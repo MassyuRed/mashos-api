@@ -1536,6 +1536,95 @@ class AnalysisVerticalTests(unittest.TestCase):
             self.assertIn('ROUTE_EVIDENCE_CHANGED', artifact.safe_projection(
                 authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
 
+    def test_polite_change_keeps_nominal_meaning_order_and_original_evidence(self):
+        for noun, case in (('気持ち', 'が'), ('取り組み方', 'は'),
+                           ('新しい気持ちメモ', 'も'), ('仕事の資料', 'が')):
+            for action in ('私は資料を調べた後、', '僕は記録を残してから、'):
+                memo = action + noun + case + '変わりました'
+                with self.subTest(memo=memo):
+                    req = request(record(memo=memo + '。'))
+                    artifact = self.generate(req).artifact
+                    self.assertIsNotNone(artifact)
+                    first, change = artifact.graph.nodes
+                    self.assertEqual((change.proposition.arguments,
+                        change.proposition.predicate_lemma, change.proposition.actor,
+                        change.polarity, change.modality, change.temporal_scope),
+                        (((case, noun),), '変わる', 'UNSPECIFIED', 'positive', 'fact', 'past'))
+                    edge, = artifact.graph.edges
+                    self.assertEqual((edge.edge_kind, edge.endpoint_refs),
+                        ('OBSERVED_ORDER', (first.node_ref, change.node_ref)))
+                    source, = freeze_analysis_sources(req).sources
+                    for node in artifact.graph.nodes:
+                        self.assertEqual([i for _, a, b in node.proposition.source_parts
+                            for i in range(a, b)], list(range(len(node.visible_label))))
+                    for e in edge.evidence_refs:
+                        raw = source.envelope.raw_utf8[e.utf8_start:e.utf8_end]
+                        field = source.envelope.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                        self.assertEqual(raw.decode(), field[e.scalar_start:e.scalar_end])
+                        self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                    text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                    self.assertIn(noun + case + '変わった（記録された変化）', text)
+                    self.assertIn('原因を示す線ではありません', text)
+                    self.assertEqual(artifact.graph.annotations, ())
+
+    def test_polite_change_does_not_promote_unproven_scope_or_tampered_meaning(self):
+        for memo in (
+            '私は資料を調べた後、気持ちが変わりませんでした。',
+            '私は資料を調べた後、気持ちが変わります。',
+            '私は資料を調べた後、気持ちが変わりましたか。',
+            '私は資料を調べた後、気持ちが変わりました？',
+            '私は資料を調べた後、気持ちが変わりましたと聞いた。',
+            '私は資料を調べた後、気持ちが変わりましたなら。',
+            '「私は資料を調べた後、気持ちが変わりました」と友人が言った。',
+            '友人は資料を調べた後、気持ちが変わりました。',
+            '資料を調べた後、気持ちが変わりました。',
+            '私は資料を調べなかった後、気持ちが変わりました。',
+            '私は資料を調べた後、友人の気持ちが変わりました。',
+            '私は資料を調べた後、私の気持ちが変わりました。',
+            '私は資料を調べた後、気持ち来週メモが変わりました。',
+            '私は資料を調べた後、不安が減りました。',
+            '私は資料を調べた後、気持ちメモが増えました。',
+            '私は資料を調べた後、資料が戻りました。',
+        ):
+            with self.subTest(memo=memo):
+                self.assertIsNone(self.generate(request(record(memo=memo))).artifact)
+        artifact = self.generate(request(record(memo=
+            '私は資料を調べた後、気持ちが変わりました。'))).artifact
+        self.assertIsNotNone(artifact)
+        first, change = artifact.graph.nodes
+        for proposition in (replace(change.proposition, predicate_lemma='減る'),
+                            replace(change.proposition, polarity='negative'),
+                            replace(change.proposition, temporal_scope='current_input'),
+                            replace(change.proposition, arguments=(('が', '資料'),)),
+                            replace(change.proposition, actor='SELF')):
+            with self.subTest(proposition=proposition), self.assertRaises(AnalysisSourceError):
+                altered = replace(change, proposition=proposition)
+                replace(artifact, graph=replace(artifact.graph, nodes=(first, altered))).safe_projection(
+                    authenticated_owner_scope=OWNER)
+
+    def test_polite_change_preserves_updates_and_semantic_period_comparison(self):
+        old = '私は資料を調べた後、気持ちが変わりました'
+        new = '私は記録を残してから、取り組み方が変わりました'
+        original = record(memo='私は仕事を続けたい。' + old + '。')
+        req = request(self.with_answer(original, '「' + old + '」ではなく「' + new + '」です。'))
+        artifact = self.generate(req).artifact
+        self.assertIsNotNone(artifact)
+        self.assertEqual([n.visible_label for n in artifact.graph.nodes],
+            ['私は仕事を続けたい', '私は記録を残して', '取り組み方が変わりました'])
+        source = next(s.envelope for s in freeze_analysis_sources(req).sources
+                      if s.envelope.source_role == 'SUPPLEMENTAL_ANSWER')
+        self.assertTrue(all(e.source_envelope_id == source.envelope_id
+                            for e in artifact.graph.edges[0].evidence_refs))
+        withdrawn = self.generate(request(self.with_answer(original, '「' + old + '」は取り消します。'))).artifact
+        self.assertEqual([n.visible_label for n in withdrawn.graph.nodes], ['私は仕事を続けたい'])
+        added = self.generate(request(self.with_answer(record(memo='私は記録を残した。'), old + '。'))).artifact
+        self.assertEqual(len(added.graph.nodes), 3)
+        same = self.compared(old + '。', '僕は資料を調べてから、気持ちが変わった。').artifact
+        self.assertEqual(same.period_comparison.change_claims, ())
+        changed = self.compared(new + '。', old + '。').artifact
+        self.assertIn('ROUTE_EVIDENCE_CHANGED', changed.safe_projection(
+            authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+
     def test_action_change_pair_does_not_merge_distinct_episodes(self):
         memo = '私は資料を調べた後、疑問が減った。'
         artifact = self.generate(request(record(memo=memo + memo), record(2, memo=memo))).artifact

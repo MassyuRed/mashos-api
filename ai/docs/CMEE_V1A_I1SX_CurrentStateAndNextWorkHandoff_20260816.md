@@ -14665,3 +14665,20 @@ rootが合成7本文（不安の変化、複合名詞、気持ちの変化、連
 STRUCTURE_MAP_DELTA_NONE：既存Analysis内部の受け取り補正のみ。env／deploy／build／DB／main／merge／IF操作0、両PR Draft/open/unmerged、商品0/3・NOT_CLEAR・48%は継承値。限定TECHNICAL_CREDIT。u129〜u138は未配置、最後の確認済みAPI `1a42b9e…`／TestFlight6401送信成功を継承。本人生成・保存再表示・比較の実機成功は未確認。反映commitと実git取得による7fileの全byte照合はPR3／30のu138先頭へ記載する。
 
 次の内容作業は同じ行動後変化の敬体（「不安が減りました」等）を、既存共有witnessと全文解釈の範囲で確認する。属格の所有者推測、主語省略、一般時間理解へ自動拡大しない。配置・本人実機の残件を今回の合成検証で代用しない。
+
+
+## 2026-10-05 JST u139 — 明示行動の後の「変わりました」を分析へ保持
+
+Mashの分析内容修正継続指示と添付u138報告から再開。開始headはAPI `6ad14a4f0a291564887af3cfc82f73b56009c07b`（他作業のPiece差分を含む）／Cocolon `d26eced3226861e89308020b0ac1d8fd11437533`。前提・作業規則、恒久incident全文、全体設計／01A・B・C地図、分析current03／設計04／06、最新weekly20261003の完成条件と§6.6〜6.10を確認。System Contextは追跡済み正本の直接読取を使用し、生成Contextの現行性を主張しない。Rule18 LEVEL_2の既存Analysis内部補正、実行環境Codex Work、root華恋が唯一の編集・検証・GitHub反映owner。同環境の独立agentはread-only原因調査と最終静的reviewのみで、別modelのPro reviewとは記録しない。
+
+実CMEEで「私は資料を調べた後、気持ちが変わりました」がUNAVAILABLEとなることを再現。共有ownerにはaction/changeの2核と既存relationがあるが、Analysisの完全節parserが常体の過去形だけを受け付けていた。既存compiler内にaccepted surface→lemmaの対応を置き、「変わりました→変わる」1形を追加した。既存realizerが使うlemma→常体の`_CHANGE_PAST`は不変。名詞・格・肯定過去・原文出典を保持し、文章と図へ「気持ちが変わった（記録された変化）」と明示順序を出す。結果のactorはUNSPECIFIED、modalityはfactのままで、本人の感情所有者・行動の効果・原因・改善を推測しない。
+
+当初候補の「不安が減りました／気持ちメモが増えました／資料が戻りました」は、今回の実plan取得では共有ownerのaction/change witnessが不成立だった。4形全てを対応済みとせず、今回の修正は「変わりました」だけに限定した。共有ownerは変更0。通常factの属格は保持し、feeling語を含む「友人の気持ち／私の気持ち」等の属格保留、主語省略・単独変化・別文の「その後」・否定・疑問・引用・伝聞・仮定・未対応時点の既存境界を維持する。
+
+検証はPython3.12.14、既存隔離依存を再発見して使用（fastapi/httpx等、製品requirements変更0）。追加vertical3methodは修正前10 failureを確認。修正後はvertical179／storage46／saved-period16、**計241 tests PASS（4.902秒）**。既存storage1methodには常体2episodeを残したまま丁寧形の第三episodeを追加。対象・格・原scalar／UTF-8／hash・全文被覆、後／てからの順序、保留条件、safe意味改竄拒否、補足・訂正／撤回、常体との期間差0と意味差の保持、実service＋合成RPCによる生成→保存→再生成なし再読取を確認した。実DBへは接続していない。
+
+rootが合成7本文（気持ち、取り組み方、連体修飾、通常属格、訂正、未解析部分の保持、同義期間比較）を全文読取。生成DTOを変更していない実RN `buildWatashiMapV2ViewModel`へ渡し、文章全文・identity・node順・edge・unknown対象・比較state・閉じたDTOの受理が一致。独立最終静的reviewに具体的blockerなし。React component suite／native／実ユーザー／実DBの今回確認ではなく、商品合格に換算しない。
+
+変更はAPI既存compiler1／test2／handoff1、Cocolon既存current03／設計04／06の計7file。STRUCTURE_MAP_DELTA_NONE：既存Analysisの有限語形解釈だけを補正し、共有意味owner／realizer／API／DTO／DB／SQL／RN／依存仕様は不変。env／deploy／build／DB／main／merge／IF操作0、追加費用・Mash操作0。両PR Draft/open/unmerged、商品0/3・NOT_CLEAR・48%は継承値。primary outcomeは限定TECHNICAL_CREDIT。u129〜u139は未配置、最後の確認済みAPI `1a42b9e…`／TestFlight6401送信成功を継承し、本人生成・保存再表示・比較の実機成功は未確認。反映commitとremote実gitによる全7file byte照合の結果はPR3／30先頭へ記載する。
+
+次の内容候補は未対応の過去変化敬体3形について、共有ownerの同じ有限語形証拠をどこまで保持できるかを確認すること。共有ownerを変更する場合はEmlis／Piece側の意味・境界への影響も同じ作業単位で確認し、Analysisの語彙追加だけで対応済みにしない。今回から共有変更・一般日本語理解へ自動拡大しない。配置・本人実機の残件を合成検証で代用しない。
