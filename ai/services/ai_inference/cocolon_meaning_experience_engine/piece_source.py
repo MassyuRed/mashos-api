@@ -233,7 +233,7 @@ def _direct_transitive_expression(sentence: str) -> re.Match[str] | None:
     # Relative focus, reported speech and stacked modals remain separate.
     predicates, past_predicates, modal_predicates = _transitive_predicate_forms()
     match = re.fullmatch(
-        r'(?P<speaker>私|わたし|僕|ぼく|俺|おれ)は[、，,]?'
+        r'(?P<speaker>私|わたし|僕|ぼく|俺|おれ)は[、，,]?[ \t\u3000]*'
         r'(?P<object>.+?)を(?P<predicate>(?:(?:'
         + '|'.join(map(re.escape, predicates)) + r')|(?P<past_predicate>'
         + '|'.join(map(re.escape, past_predicates)) + r'))(?P<modal>'
