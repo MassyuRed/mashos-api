@@ -14895,3 +14895,22 @@ rootが合成8本文（非行動、昨日＋順序、補足、訂正、撤回、
 STRUCTURE_MAP_DELTA_NONE：既存Analysisの有限形補正のみ。共有owner／Emlis／Piece／API契約／DTO／DB／SQL／RN／製品依存変更0。env／deploy／build／main／merge／IF操作0。Draft/open/unmerged、u129〜u150未配置。限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・48%、最後の確認済み稼働API1a42b9e…／TestFlight6401と本人実機残件は継承値。旧generic0058期待差は未再検証・未修正で、全repo PASSは主張しない。
 
 次も実出力と共有根拠の不一致から内容対象を選ぶ。「たくはありません」等の対比、夢／伝聞から現実へ戻る境界、plain幾と任意長文理解は未完了。全表現対応を配置・本人実機の前提にせず、指定版の本人生成・保存再表示・比較の確認を別の残件として保持する。
+
+
+## 2026-10-06 JST u151 — 所在・担当の「なかったです」を文章と図へ保持
+
+Mashの分析内容修正指示から再開。前回txtはu147の結果だったが、fresh GitHubはu150まで反映済みであり、API `1749c0b24ba83bcc25fbe98f25a7fdb508ac5fc5`／Cocolon `ea07cf0db0b12c5be0aed272ddd66b3aef3db99d`を基準にした。前提・作業入口／CURRENT_RULES／Rule18、恒久incident全文、全体設計01と01A/B/Cの全file地図経路、分析current03／設計04、最新weekly20261003 §5.3／6.6〜6.10を確認。Karen-Diary必須3fileと専門ruleは同環境read-only agentが確認。System Context prepareはshallow cloneで指定祖先との関係を確認できず失敗し、許可された追跡正本の直接読取を使用した。生成Contextのfreshnessは主張しない。
+
+実CMEEで「私は職場にいなかったです」「私は会議を担当しなかったです」がUNAVAILABLE、常体はGENERATEDとなる不一致を再現した。共有ownerは本人のexplicit／negative／factのevent根拠を既に持っていたが、Analysisの所在／担当regexと否定判定に丁寧形がなかった。既存2regexの過去否定へだけ任意の「です」を追加し、2否定判定も合わせた。所在を行動、担当を業務の実行済みへ変換しない。通常動詞の有限表・埋込認知・共有意味・realizerは変更0。候補「落ち着きました／嬉しかったです」は共有の行動後感情証拠が未成立であり、今回のscopeへ混ぜない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX／既存設計内の限定内容修正。完成条件は所在・担当の否定過去、原文・補足・明示順序・競合・比較・保存再表示を同じ文章／図へ保持すること。実行環境はCodex Work、root華恋が単一編集・実行・反映owner。補助agentは同環境read-onlyで商品経路・技術原因・最終実差分を独立確認し、別model Pro reviewではない。既存の内容修正・PR反映承認範囲を継承し、共有契約／対象preimage衝突等が必要なら範囲を拡大しない。追加費用・Mash操作0。
+
+対象は既存compiler1／test2／API handoff1とCocolon current03／設計04／06の7file。修正前の新vertical3methodは15 failure（subcaseを含む）／2 passed／24 subtests passed（2.40秒）。初稿でmemo_actionにも所在／担当を期待したが、共有根拠がmemo専用であることを独立reviewと実行で確認し、新検査だけを「常体／丁寧形とも保留」へ訂正した。source側の根拠条件を緩和していない。最終Python3.12.14・隔離scratchのpytest9.1.1／FastAPI0.142.2／httpx0.28.1で、**vertical215／storage53／saved-period16＝284 tests PASS／1441 subtests PASS（8.57秒）**。既存期待の削除・緩和0、製品依存変更0、Pydantic既存warning1件。
+
+原文scalar／UTF-8／hash、本人主語読点・今日／昨日、否定・過去のsafe再解析改竄拒否、常体との意味差0、肯定との期間差、通常補足・明示訂正／撤回、明示順序・肯否定併存を確認。疑問・伝聞・夢・未対応時点・他者・重複語尾・未知hostを受理せず、未解析節を跨ぐ順序を作らない。実service＋合成RPCで所在→担当→行動を生成・保存し、engine再生成を禁止したreadでも同じ本文／図／identityになることを確認。実DBは使用していない。
+
+rootが合成8全文（所在、担当を含む順序、補足、訂正、撤回、肯否定併存、常体比較、意味差比較）を読取確認。同じDTOを実RN `buildWatashiMapV2ViewModel`へ渡し、全文・identity・node順／edge・unknown・注記・競合・比較stateが一致した。一回限りの初稿照合にはUIの派生targetLabelsまでDTO同一とする誤りと、badge keyの取り違えがあり、実modelを再読して共通の全field＋本文／順序／比較stateを確認した。製品sourceや期待を照合に合わせて変更していない。独立read-only最終source/test reviewに具体的blockerなし。React component suite／native／本人入力／商品受入れの確認ではない。
+
+STRUCTURE_MAP_DELTA_NONE：既存Analysis内の所在／担当活用補正で、新owner・共有意味・Emlis・Piece・API契約・DTO・DB・SQL・RN変更0。env／deploy／build／main／merge／IF操作0。Draft/open/unmerged、今回u151未配置。primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・48%、最後の確認済み稼働API1a42b9e…／TestFlight6401と本人生成・保存再表示・比較の実機残件は継承値。旧generic0058期待差は未修正・未再検証、全repo PASSではない。反映commit・変更path・remote全7file bytesの照合結果はPR3／30先頭へ記録する。
+
+今回の2形の読み落としは修正済み。memo_actionの所在／担当、対比「たくはありません」、同一recordの夢／伝聞から現実へ戻る境界、plain幾・任意長文理解は未対応を保持する。次の内容対象も実出力の不一致から選び、全表現対応を配置・本人実機の前提にしない。指定版で本人の生成・保存再表示・比較を確認する別残件は継承する。

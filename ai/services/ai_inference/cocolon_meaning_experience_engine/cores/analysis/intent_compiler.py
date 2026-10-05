@@ -166,11 +166,11 @@ _PAST_EVENT_TOPIC = (
 _PAST_PRESENCE = re.compile(
     _PAST_EVENT_TOPIC + r'(?P<noun>' + _NOMINAL
     + r'(?:の' + _NOMINAL + r')*)(?P<case>に)'
-    r'(?P<predicate>いた|いました|いなかった|いませんでした)')
+    r'(?P<predicate>いた|いました|いなかった(?:です)?|いませんでした)')
 _PAST_RESPONSIBILITY = re.compile(
     _PAST_EVENT_TOPIC + r'(?P<noun>' + _NOMINAL
     + r'(?:の' + _NOMINAL + r')*)(?P<case>を)'
-    r'(?P<predicate>担当した|担当しました|担当しなかった|担当しませんでした)')
+    r'(?P<predicate>担当した|担当しました|担当しなかった(?:です)?|担当しませんでした)')
 _PROTECTIVE_WISH = re.compile(
     r'(?P<subject>私|僕|わたし|自分)は(?:[、，][ \u3000]*)?(?P<noun>' + _NOMINAL
     + r'(?:の' + _NOMINAL + r')*)(?P<case>を)(?P<predicate>守りたい(?:です)?)')
@@ -236,7 +236,7 @@ def _past_responsibility_proposition(value):
     topic_parts = _past_event_topic_parts(match)
     if topic_parts is None:
         return None
-    polarity = 'negative' if match['predicate'] in {'担当しなかった', '担当しませんでした'} else 'positive'
+    polarity = 'negative' if match['predicate'] in {'担当しなかった', '担当しなかったです', '担当しませんでした'} else 'positive'
     return ObservedProposition('SELF', (('を', match['noun']),), '担当する',
         polarity, 'fact', 'past', topic_parts + (
             ('ROLE_NOMINAL', match.start('noun'), match.end('noun')),
@@ -251,7 +251,7 @@ def _past_presence_proposition(value):
     topic_parts = _past_event_topic_parts(match)
     if topic_parts is None:
         return None
-    polarity = 'negative' if match['predicate'] in {'いなかった', 'いませんでした'} else 'positive'
+    polarity = 'negative' if match['predicate'] in {'いなかった', 'いなかったです', 'いませんでした'} else 'positive'
     return ObservedProposition('SELF', (('に', match['noun']),), 'いる',
         polarity, 'fact', 'past', topic_parts + (
             ('SCENE_NOMINAL', match.start('noun'), match.end('noun')),

@@ -4135,6 +4135,104 @@ class AnalysisVerticalTests(unittest.TestCase):
             with self.subTest(literal=literal):
                 self.assertIsNone(self.generate(request(record(memo=literal + '。'))).artifact)
 
+    def test_polite_negative_past_events_keep_kind_time_and_exact_source(self):
+        for body, kind, lemma in (
+            ('職場にいなかった', 'SCENE', 'いる'),
+            ('会議の司会を担当しなかった', 'ROLE', '担当する'),
+        ):
+            for field in ('memo', 'memo_action'):
+                for topic in ('私は', '僕は、昨日、', '今日、私は、'):
+                    with self.subTest(body=body, field=field, topic=topic):
+                        literal = topic + body + 'です'
+                        req = request(record(memo='　' + literal + '。' if field == 'memo' else '',
+                            action='　' + literal + '。' if field == 'memo_action' else ''))
+                        artifact = self.generate(req).artifact
+                        if field == 'memo_action':
+                            # Scene/role shared witnesses remain memo-only,
+                            # just as for the existing plain negative form.
+                            self.assertIsNone(artifact)
+                            self.assertIsNone(self.generate(request(record(memo='',
+                                action=topic + body + '。'))).artifact)
+                            continue
+                        self.assertIsNotNone(artifact)
+                        node, = artifact.graph.nodes
+                        p = node.proposition
+                        self.assertEqual((node.node_kind, p.actor, p.predicate_lemma,
+                            p.polarity, p.modality, p.temporal_scope),
+                            (kind, 'SELF', lemma, 'negative', 'fact', 'past'))
+                        self.assertEqual(p.relative_day,
+                            'YESTERDAY' if '昨日' in topic else 'TODAY' if '今日' in topic else '')
+                        self.assertEqual([i for _, a, b in p.source_parts for i in range(a, b)],
+                                         list(range(len(literal))))
+                        e, = node.evidence_refs
+                        source = freeze_analysis_sources(req).sources[0].envelope
+                        raw = source.raw_utf8[e.utf8_start:e.utf8_end]
+                        source_field = source.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                        self.assertEqual(raw.decode(), literal)
+                        self.assertEqual(source_field[e.scalar_start:e.scalar_end], literal)
+                        self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                        visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                        text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)
+                        self.assertEqual(text['projection_of'], visual['projection_of'])
+                        self.assertIn(visual['nodes'][0]['visible_label'], text['text'])
+                        self.assertNotIn('実行済み', text['text'])
+                        plain = topic + body + '。'
+                        self.assertEqual(text['text'], self.generate(request(record(memo=plain))).artifact
+                            .safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+                        self.assertEqual(self.compared(literal + '。', plain).artifact
+                                         .period_comparison.change_claims, ())
+                        for changed in (replace(p, polarity='positive'), replace(p, modality='wish'),
+                                        replace(p, temporal_scope='current_input')):
+                            with self.assertRaises(AnalysisSourceError):
+                                replace(artifact, graph=replace(artifact.graph, nodes=(replace(node,
+                                    proposition=changed),))).safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_polite_negative_past_events_keep_supplement_correction_and_withdrawal(self):
+        for old, new in (('私は職場にいた', '私は職場にいなかったです'),
+                         ('私は会議を担当した', '私は会議を担当しなかったです')):
+            with self.subTest(new=new):
+                for base, answer in (
+                    (record(memo='私は記録を残した。'), new + '。'),
+                    (record(memo=old + '。私は記録を残した。'),
+                     '「' + old + '」ではなく「' + new + '」です。'),
+                ):
+                    req = request(self.with_answer(base, answer))
+                    artifact = self.generate(req).artifact
+                    self.assertIsNotNone(artifact)
+                    node = next(n for n in artifact.graph.nodes if n.polarity == 'negative')
+                    source = next(s.envelope for s in freeze_analysis_sources(req).sources
+                                  if s.envelope.source_role == 'SUPPLEMENTAL_ANSWER')
+                    for e in node.evidence_refs:
+                        self.assertEqual(e.source_envelope_id, source.envelope_id)
+                        self.assertEqual(source.raw_utf8[e.utf8_start:e.utf8_end].decode(), new)
+                withdrawn = self.generate(request(self.with_answer(
+                    record(memo=new + '。私は記録を残した。'), '「' + new + '」は取り消します。'))).artifact
+                self.assertEqual([n['visible_label'] for n in withdrawn.safe_projection(
+                    authenticated_owner_scope=OWNER)['nodes']], ['記録を残す（実行済み）'])
+                for tail in ('その後私は記録を残した。', old + '。'):
+                    actual = self.generate(request(record(memo=new + '。' + tail))).artifact
+                    baseline = self.generate(request(record(memo=new[:-2] + '。' + tail))).artifact
+                    self.assertEqual(actual.safe_text_projection(authenticated_owner_scope=OWNER)['text'],
+                                     baseline.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+                    self.assertEqual(bool(actual.graph.edges), tail.startswith('その後'))
+                self.assertIn('ROUTE_EVIDENCE_CHANGED', self.compared(new + '。', old + '。').artifact
+                    .safe_projection(authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+
+    def test_polite_negative_past_events_preserve_unresolved_scopes(self):
+        for body in ('職場にいなかったです', '会議を担当しなかったです'):
+            for literal in (body, '友人は' + body, '私は' + body + 'か',
+                '私は' + body + '？', '私は' + body + 'です', '私は' + body + 'が',
+                '私は' + body + 'かもしれないと思う', '私は' + body + 'とは言えません',
+                '夢を見た。私は' + body, '「私は' + body + '」と聞いた',
+                '私は明日、' + body, '私は誰の' + body):
+                with self.subTest(literal=literal):
+                    self.assertIsNone(self.generate(request(record(memo=literal + '。'))).artifact)
+        partial = self.generate(request(record(memo=
+            '私は職場にいなかったです。私は急いで資料を調べた。その後私は記録を残した。'))).artifact
+        self.assertEqual([n.node_kind for n in partial.graph.nodes], ['SCENE', 'ACTION_OR_NONACTION'])
+        self.assertEqual(partial.graph.edges, ())
+        self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in partial.graph.unknown_gaps])
+
     def test_safe_surface_cannot_drop_modifiers_or_accept_altered_parts(self):
         for source in ('私は明日、考えをノートに書いた。',
                        '私は急いで考えをノートに書いた。'):
