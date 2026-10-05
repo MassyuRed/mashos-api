@@ -14703,3 +14703,18 @@ rootがAnalysis合成8本文（不安減少、メモ増加、復帰、連体修�
 変更はAPI既存compiler1／共有plan・human reception・inverse3／test3／handoff1、Cocolon既存current03／設計04／06の計11file。STRUCTURE_MAP_DELTA_NONE：既存ownerと呼出し経路内の有限形・受取補正で、新ファイル／API／DTO／DB／SQL／RN／Piece source／依存仕様は不変。共有owner変更0とは記録しない。env／deploy／build／DB／main／merge／IF操作0、追加費用・Mash操作0。両PR Draft/open/unmerged、商品0/3・NOT_CLEAR・48%は継承値。primary outcomeは限定TECHNICAL_CREDIT。u129〜u140は未配置、最後の確認済み稼働API `1a42b9e…`／TestFlight6401送信成功を継承し、本人生成・保存再表示・比較の実機成功は未確認。反映commitとremote実gitによる11file全byte照合の結果はPR3／30先頭へ記載する。
 
 残差：新共有証拠は属格・日時・主語省略・一部行動語形・任意かな名詞・単独変化を扱わない。一般日本語理解やEmlisの感情owner課題を完了扱いにしない。既存generic0058期待差も残る。次の内容作業ではこの保留範囲と実本文を起点に必要な項目を選ぶ。配置・本人実機の残件を合成検査で代用しない。
+
+
+## 2026-10-05 JST u141 — 読点付きの「守りたい」を分析の文章・図へ保持
+
+Mashの分析内容修正継続指示と添付u140報告から再開。開始headはAPI `5609965e276db8729a087c226ac1f81ad294aa73`／Cocolon `892f8c39dca107c7831c39f478dc97869167dc92`。前提・作業ルール、恒久incident全文、全体設計と01A/B/C地図の役割・対象経路、current03／設計04、latest weekly20261003 §6.6〜6.10とu140を確認。System Context prepareは現checkoutの祖先照合で不成立となり、追跡正本の直接読取fallbackを使用。生成Contextの現行性は主張しない。実行環境Codex Work、root華恋が唯一の編集・検証・GitHub反映owner、同環境の補助agentはread-only原因確認・最終差分review。別modelのPro reviewとは記録しない。既存設計内の限定修正（Rule18 LEVEL_2／OBSERVED_BLOCKER_MINIMAL_FIX）として実施。
+
+「私は家族を守りたい」はGENERATEDだが「私は、家族を守りたい」はUNAVAILABLEになることを実CMEEで再現。両者には既存共有planのwish根拠があり、Analysisの `_PROTECTIVE_WISH` だけが主語直後の読点を拒否していた。既存compilerで四つの明示本人主語の後に読点1個（、／，）と半角・全角空白を許容し、SELF_TOPICの原文範囲へ含める。名詞全体・修飾・属格・格・現在の希望と原文出典を保持する。文章／図の「守ることへの希望」と注記を返し、実際に守れている結果・原因・人格を推測しない。fullmatch、共有wish根拠、safe再解析は不変。否定・過去願望・質問・引用・伝聞・未対応時点・別主体・主語省略・連続読点・tab／改行は保留。
+
+追加vertical3methodは修正前に7 failure＋1 dependent error（artifact欠落）を確認。修正後はvertical185検査が3.924秒でPASS、storage47＋saved-period16の63検査が1.118秒でPASS、合計248検査PASS。既存期待の緩和0。四つの本人主語、読点・空白、敬体、対象全体、scalar／UTF-8／hashと全文被覆、補足・訂正／撤回、意味集約、読点差だけの期間差0、対象差、safe意味改竄拒否を確認。既存保存検査の元例を維持し読点付き2例を追加し、実service＋合成RPCで保存→再生成なしの同一文章・図・identity再読取を確認。Python3.12.14、既存隔離test依存を再発見して利用、製品依存変更0。最初のstorage呼出しはcwdによるmodule未発見で未収集だったため、正しいrepo rootから実行した。
+
+rootが合成7本文（基本、修飾、負荷・未確定との併存、訂正、撤回、同義期間比較、対象差）を全文読取。生成DTOを変更していない実RN `buildWatashiMapV2ViewModel` へ渡し、文章全文・identity・node／edge・注記対象・unknown対象・比較stateが一致。read-only最終差分reviewで具体的blockerなし。実DB・React component suite・native・本人入力の確認ではなく、正式商品受入れへ換算しない。
+
+対象はAPI既存compiler1／test2／handoff1とCocolon既存current03／設計04／06の7file。STRUCTURE_MAP_DELTA_NONE：既存Analysis内の句読点認識のみで、共有意味owner／Emlis／Piece／API／DTO／DB／RN／依存仕様の変更0。追加費用・Mash操作0、env／deploy／build／DB／main／merge／IF操作0。両PR Draft/open/unmerged、商品0/3・NOT_CLEAR・48%は継承値。primary outcomeは限定TECHNICAL_CREDIT。未配置。最後の確認済み稼働API `1a42b9e…`／TestFlight6401送信成功を継承し、本人生成・保存再表示・比較の実機成功は別残件。反映commitとremote全7file照合はPR3／30先頭へ記録する。
+
+残差：行動後変化の「私は、資料を調べてから…」も未解析となる。常体の後節では共有根拠がありAnalysisのte-action parserが読点を拒否する一方、u140の敬体増減では共有側の完全節根拠も読点を受け付けないことをread-only確認した。次の内容候補はこの既存episode内の読点境界を、共有根拠の成立／不成立を分けて確認すること。今回その範囲へ拡張しない。u140に記録されたgeneric0058期待差は今回未再検証・未修正のまま継承する。配置と本人実機を合成検査で代用しない。

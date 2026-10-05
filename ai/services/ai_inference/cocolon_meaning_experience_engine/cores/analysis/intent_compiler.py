@@ -164,7 +164,7 @@ _PAST_RESPONSIBILITY = re.compile(
     + r'(?:の' + _NOMINAL + r')*)(?P<case>を)'
     r'(?P<predicate>担当した|担当しました|担当しなかった|担当しませんでした)')
 _PROTECTIVE_WISH = re.compile(
-    r'(?P<subject>私|僕|わたし|自分)は(?P<noun>' + _NOMINAL
+    r'(?P<subject>私|僕|わたし|自分)は(?:[、，][ \u3000]*)?(?P<noun>' + _NOMINAL
     + r'(?:の' + _NOMINAL + r')*)(?P<case>を)(?P<predicate>守りたい(?:です)?)')
 
 

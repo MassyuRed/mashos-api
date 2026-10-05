@@ -307,37 +307,41 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                     with self.assertRaises(HTTPException): await service.read_saved(OWNER)
 
     async def test_protective_intention_survives_save_read_with_private_evidence_separate(self):
-        self.fx = fixture('私は家族を守りたい。私は仕事を続けたいけれど、私はつらい。')
-        self.row = self.fx['row']
-        writes = []
-        async def rpc(name, payload):
-            if name == 'analysis_observed_source_snapshot':
-                return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
-                    {'original': self.fx['original'], 'thread': None, 'events': []}]}
-            if name == 'analysis_observed_commit':
-                writes.append(payload)
-                self.row['id'] = str(UUID(payload['p_artifact_id'][9:]))
-                self.row['content_text'] = payload['p_text']
-                self.row['content_json']['watashiMap'] = payload['p_projection']
-                return self.row['id']
-            return result([self.row], matched=True)
-        with patch.object(service, '_rpc', side_effect=rpc):
-            saved = await service.generate_saved(OWNER, start=START, end=END,
-                report_mode='standard', report_type='latest')
-            with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
-                reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
-        self.assertEqual(saved, reread['items'][0])
-        projection = saved['content_json']['watashiMap']
-        self.assertEqual(projection, writes[0]['p_projection'])
-        self.assertEqual(saved['content_text'], writes[0]['p_text'])
-        self.assertEqual([a['kind'] for a in projection['annotation_badges']], ['PROTECTIVE', 'BURDEN'])
-        private = writes[0]['p_private_evidence']
-        self.assertEqual(private['graph']['annotations'][0]['evidence_refs'],
-                         private['graph']['nodes'][0]['evidence_refs'])
-        for key in ('source_labels', 'predicate_lemma', 'visible_label', 'original_json', '家族', '守りたい'):
-            self.assertNotIn(key, json.dumps(private, ensure_ascii=False))
-        for key in ('evidence_refs', 'source_envelope_id', 'literal_sha256', 'annotation_state'):
-            self.assertNotIn(key, json.dumps(saved, ensure_ascii=False))
+        for memo in ('私は家族を守りたい。私は仕事を続けたいけれど、私はつらい。',
+                     '私は、家族を守りたい。私は仕事を続けたいけれど、私はつらい。',
+                     '僕は，　家族を守りたいです。私は仕事を続けたいけれど、私はつらい。'):
+            with self.subTest(memo=memo):
+                self.fx = fixture(memo)
+                self.row = self.fx['row']
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': self.fx['original'], 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                        self.row['content_text'] = payload['p_text']
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    return result([self.row], matched=True)
+                with patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(saved, reread['items'][0])
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                self.assertEqual([a['kind'] for a in projection['annotation_badges']], ['PROTECTIVE', 'BURDEN'])
+                private = writes[0]['p_private_evidence']
+                self.assertEqual(private['graph']['annotations'][0]['evidence_refs'],
+                                 private['graph']['nodes'][0]['evidence_refs'])
+                for key in ('source_labels', 'predicate_lemma', 'visible_label', 'original_json', '家族', '守りたい'):
+                    self.assertNotIn(key, json.dumps(private, ensure_ascii=False))
+                for key in ('evidence_refs', 'source_envelope_id', 'literal_sha256', 'annotation_state'):
+                    self.assertNotIn(key, json.dumps(saved, ensure_ascii=False))
 
     async def test_saved_protective_rejects_other_target_and_false_outcome(self):
         base = fixture('私は仕事を続けたい。私は記録を残した。私は家族を守りたい。')['row']

@@ -188,6 +188,94 @@ class AnalysisVerticalTests(unittest.TestCase):
                 self.assertIn(visual['annotation_badges'][0]['visible_label'],
                     artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
 
+    def test_protective_topic_comma_keeps_wish_object_and_exact_source(self):
+        for subject, separator, noun, ending in (
+            ('私', '、', '家族', '守りたい'),
+            ('僕', '， ', '生活', '守りたいです'),
+            ('わたし', '、　', '家族の時間', '守りたい'),
+            ('自分', '，', '新しい気持ちメモ', '守りたいです'),
+        ):
+            with self.subTest(subject=subject, noun=noun):
+                clause = subject + 'は' + separator + noun + 'を' + ending
+                req = request(record(memo='　' + clause + '。'))
+                artifact = self.generate(req).artifact
+                self.assertIsNotNone(artifact)
+                node, = artifact.graph.nodes
+                claim, = artifact.graph.annotations
+                self.assertEqual((node.proposition.actor, node.proposition.arguments,
+                    node.modality, node.temporal_scope),
+                    ('SELF', (('を', noun),), 'wish', 'current_input'))
+                self.assertEqual(node.proposition.source_parts[0],
+                    ('SELF_TOPIC', 0, len(subject + 'は' + separator)))
+                self.assertEqual([i for _, a, b in node.proposition.source_parts
+                    for i in range(a, b)], list(range(len(clause))))
+                self.assertEqual(claim.evidence_refs, node.evidence_refs)
+                evidence, = claim.evidence_refs
+                envelope = freeze_analysis_sources(req).sources[0].envelope
+                raw = envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                field = envelope.raw_utf8[evidence.field_utf8_start:evidence.field_utf8_end].decode()
+                self.assertEqual(raw.decode(), clause)
+                self.assertEqual(field[evidence.scalar_start:evidence.scalar_end], clause)
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+                projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                self.assertEqual(projection['nodes'][0]['visible_label'], noun + 'を守ることへの希望')
+                self.assertIn('実際に守れているかは確定していません',
+                    artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+                self.assertEqual(artifact.graph.edges, ())
+
+    def test_protective_topic_comma_keeps_updates_aggregation_and_period_meaning(self):
+        old, new = '私は、家族を守りたい', '僕は， 生活を守りたいです'
+        base = record(memo='私は記録を残した。' + old + '。')
+        for answer, count in ((new + '。', 2), ('「' + old + '」ではなく「' + new + '」です。', 1)):
+            with self.subTest(answer=answer):
+                req = request(self.with_answer(base, answer))
+                artifact = self.generate(req).artifact
+                self.assertIsNotNone(artifact)
+                self.assertEqual(len(artifact.graph.annotations), count)
+                claim = next(a for a in artifact.graph.annotations if new in a.source_labels)
+                evidence, = claim.evidence_refs
+                envelopes = {s.envelope.envelope_id: s.envelope for s in freeze_analysis_sources(req).sources}
+                envelope = envelopes[evidence.source_envelope_id]
+                self.assertEqual(envelope.source_role, 'SUPPLEMENTAL_ANSWER')
+                self.assertEqual(envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end].decode(), new)
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        withdrawn = self.generate(request(self.with_answer(base, '「' + old + '」は取り消します。'))).artifact
+        self.assertEqual(withdrawn.graph.annotations, ())
+        aggregated = self.generate(request(record(memo=old + '。'),
+            record(2, memo='私は家族を守りたい。'))).artifact
+        self.assertEqual(len(aggregated.graph.nodes), 1)
+        self.assertEqual(len(aggregated.graph.annotations[0].evidence_refs), 2)
+        self.assertEqual(self.compared(old + '。', '私は家族を守りたい。')
+            .artifact.period_comparison.change_claims, ())
+        different = self.compared(new + '。', old + '。').artifact
+        self.assertIn('ANNOTATION_EVIDENCE_CHANGED', different.safe_projection(
+            authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+
+    def test_protective_topic_comma_does_not_erase_unread_scope_or_forge_meaning(self):
+        for clause in (
+            '私は、、家族を守りたい', '私は、\t家族を守りたい',
+            '私は、\n家族を守りたい', '私は、友人は家族を守りたい',
+            '友人は、家族を守りたい', '私は、家族を守りたくない',
+            '私は、家族を守りたかった', '私は、家族を守った',
+            '私は、家族を守りたいかもしれない', '私は、家族を守りたいと聞いた',
+            '私は、家族を守りたい？', '「私は、家族を守りたい」と友人が言った',
+            '私は、何を守りたい', '私は、来週家族を守りたい',
+            '私は、今日家族を守りたい', '私は、絶対に家族を守りたい',
+        ):
+            with self.subTest(clause=clause):
+                artifact = self.generate(request(record(memo=clause + '。'))).artifact
+                self.assertFalse(artifact and artifact.graph.annotations)
+        artifact = self.generate(request(record(memo='私は、家族を守りたい。'))).artifact
+        self.assertIsNotNone(artifact)
+        node, = artifact.graph.nodes
+        for changes in ({'arguments': (('を', '生活'),)}, {'actor': 'UNSPECIFIED'},
+                {'modality': 'fact'}, {'temporal_scope': 'past'}, {'polarity': 'negative'},
+                {'source_parts': node.proposition.source_parts[1:]}):
+            with self.subTest(changes=changes), self.assertRaises(AnalysisSourceError):
+                altered = replace(node, proposition=replace(node.proposition, **changes))
+                replace(artifact, graph=replace(artifact.graph, nodes=(altered,)))\
+                    .safe_projection(authenticated_owner_scope=OWNER)
+
     def test_protective_does_not_infer_other_forms_speakers_or_unread_hosts(self):
         values = ['私は家族を' + ending + '。' for ending in (
             '守った', '守る', '守っている', '守りたかった', '守りたくない',
