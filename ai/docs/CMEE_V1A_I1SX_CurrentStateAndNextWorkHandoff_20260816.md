@@ -14644,3 +14644,24 @@ rootが合成8本文（複合名詞と否定、希望、時点と順序、行動
 対象はAPI既存compiler1／test2／handoff1、Cocolon既存current03／設計04／06の7file。STRUCTURE_MAP_DELTA_NONE：Analysis内部の名詞認識だけの変更で、API／DTO／DB／SQL／RN／共有意味owner／Emlis／Piece／依存仕様は不変。追加費用・Mash操作0、env／deploy／build／main／merge／IF操作0。両PR Draft/open/unmerged、商品0/3・NOT_CLEAR・48%は継承値のまま。primary outcomeは限定TECHNICAL_CREDIT。u129〜u137は未配置。最後の確認済み稼働API `1a42b9e…`／TestFlight6401送信成功を継承し、本人生成・保存再表示・比較の実機成功は未確認。反映commit／最終実git照合はPR3／30のu137先頭へ記載する。
 
 残差：「学び直し」等の任意かな名詞、副詞・複数修飾・形容詞活用、主語省略、一般時間理解は未対応。「振り返りメモを残してから、学びノートが減った」は成立したが、「気持ちメモが増えた」を後節にした同型は共有witnessが成立せず未対応のまま。今回共有ownerを広げず、一般的な名詞・変化の理解が完成したとはしない。次の内容作業では、この実測した後節差と既存共有witnessの責任範囲を先に確認し、追加語彙だけで未成立を覆い隠さない。配置と本人実機の残件は別に保持する。
+
+
+## 2026-10-05 JST u138 — 行動後の名詞変化と感情分類の不一致を補正
+
+Mashの分析内容修正継続指示と添付u137作業報告から再開。開始headはAPI `fd62391c05dc8fe18e5dd3571ca347e64b4f7563`／Cocolon `6852d2067289aee773821bf69b4f1a8b727952b6`。必須前提・作業規則、恒久incident全文、全体設計と01A/B/Cのfile地図・対象のcurrent03、設計04、latest weekly20261003 §6.6〜6.10、API handoffを確認した。System Context prepareは浅い履歴の祖先照合で不成立となり、正本直接読取fallbackを使用。生成Contextの現行性を主張しない。
+
+既存Analysis compiler内のOBSERVED_BLOCKER_MINIMAL_FIX／Rule18 LEVEL_2。実行環境はCodex Work、root華恋が唯一の実装・検証・GitHub反映owner、補助agentは独立read-only原因調査／最終静的review。別modelのPro reviewとは記録しない。対象は既存compiler1／vertical・storage test2／API handoff1とCocolon current03／設計04／06の計7file。完成条件は行動後の明示変化・出典・訂正／撤回・比較・保存再表示の保持とGitHub照合。共有owner・契約拡張、対象preimage衝突をscope拡大の停止条件とし、追加費用・Mash操作0。
+
+原因説明を訂正する。u137で「気持ちメモが増えた」は共有witness未成立と記録したが、今回実CMEEと共有planを確認すると、action／changeの2核・required関係・出典は存在した。共有ownerは後節全体の感情語を検索するため「気持ちメモ」「不安」でもchange.modality=feelingとなり、Analysisの完全な名詞＋過去変化解析（BOUNDED_CHANGE/fact）との照合で拒否していた。「学びノート」はfactで成立する。同じ原因で「不安が減った」「気持ちが変わった」もUNAVAILABLEとなることを再現した。初回read-only probeはscoped_source_view引数不足で失敗し、既存実generate経路のplanを取得する方法へ修正。source変更前の追加2検査で11 failureを記録した。
+
+修正は `_action_change_pair` の照合だけ。完全解析されたBOUNDED_CHANGEで、既存operator:bounded_change証拠があり、属格のない名詞の過去変化に限って共有feeling分類を受け取る。対象全体、格、過去・肯定、原文scalar／UTF-8出典、明示順序を保持する。Analysis側はUNSPECIFIED/fact/pastの記録された変化であり、本人の感情所有者、行動の効果、因果、改善を作らない。PAST_FEELING（安心した／落ち着いた等）の厳密照合とaction fact・actor・relation・rangeの条件は不変。
+
+一律許可だと既存の「友人の不安が減った」保留を変えるため、新feeling分岐では属格「の」を保留する最小範囲とした。「私の不安」「仕事の気持ちメモ」も未対応のまま。元からfactで成立する「友人の資料」等の属格は変更しない。共有meaning owner・語彙表・DTO・serializer・API・DB・RNは変更していない。
+
+検証：Python3.12.14、既存隔離test依存、vertical176／storage46／saved-period16、**計238 tests PASS（4.712秒）**。既存233の期待変更0、追加vertical4method／storage1method。完全命題・出典hash／全文非重複被覆・後／てからの順序、原文対象／述語／modality／actorのsafe改変拒否、共有relation／range／actor／wish／bounded marker欠落の拒否、未対応否定／疑問／伝聞／条件／時点、補足・訂正／撤回、同義語順の比較差0と対象／増減差の維持を確認。実service＋合成RPCで生成→保存→再生成なしの同一文章・図・identity再読取を確認。実DB接続なし。
+
+rootが合成7本文（不安の変化、複合名詞、気持ちの変化、連体修飾、訂正、未対応範囲を含む記録、期間差）を全文読取し、実RN buildWatashiMapV2ViewModelへ生成DTOを渡した。文章全文・identity・node順・edge・unknown対象・closed DTOが一致。独立read-only最終reviewにblockerなし。感情述語の誤modalityは拒否され、既存fact属格は成立することも独立probeで確認。React component suite／native／本人入力／実DBの今回検証ではない。機械成功を商品受入れへ換算しない。
+
+STRUCTURE_MAP_DELTA_NONE：既存Analysis内部の受け取り補正のみ。env／deploy／build／DB／main／merge／IF操作0、両PR Draft/open/unmerged、商品0/3・NOT_CLEAR・48%は継承値。限定TECHNICAL_CREDIT。u129〜u138は未配置、最後の確認済みAPI `1a42b9e…`／TestFlight6401送信成功を継承。本人生成・保存再表示・比較の実機成功は未確認。反映commitと実git取得による7fileの全byte照合はPR3／30のu138先頭へ記載する。
+
+次の内容作業は同じ行動後変化の敬体（「不安が減りました」等）を、既存共有witnessと全文解釈の範囲で確認する。属格の所有者推測、主語省略、一般時間理解へ自動拡大しない。配置・本人実機の残件を今回の合成検証で代用しない。

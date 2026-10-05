@@ -822,7 +822,18 @@ def _action_change_pair(source, plan, span_id):
     # retains all of these as a reported experience, never a performed action.
     expected_modality = ('feeling' if right.result_state == 'PAST_FEELING'
                          and right.predicate_lemma != '安心する' else 'fact')
-    if change.semantic_frame.modality != expected_modality:
+    # The shared feeling flag searches the entire endpoint, including nouns
+    # such as 気持ちメモ / 不安. A completely parsed nominal past change is
+    # still a reported change, not a performed action or a feeling attribution.
+    # Keep possessive/genitive feeling scopes pending: the shared default actor
+    # does not establish whose experience a phrase such as 友人の不安 describes.
+    nominal_change_with_feeling_word = (
+        right.result_state == 'BOUNDED_CHANGE'
+        and change.semantic_frame.modality == 'feeling'
+        and 'operator:bounded_change' in change.semantic_frame.attribute_codes
+        and all('の' not in noun for _, noun in right.arguments))
+    if (change.semantic_frame.modality != expected_modality
+            and not nominal_change_with_feeling_word):
         return None
     if te_after:
         # Past is established by this whole episode and its shared witness,

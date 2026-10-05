@@ -1424,6 +1424,118 @@ class AnalysisVerticalTests(unittest.TestCase):
                 self.assertNotIn('ROUTE_CONNECTION', {g.missing_scope for g in artifact.graph.unknown_gaps})
                 self.assertIn('SCENE', {g.missing_scope for g in artifact.graph.unknown_gaps})
 
+    def test_nominal_changes_with_feeling_words_keep_whole_meaning_and_evidence(self):
+        for ending in ('気持ちメモが増えた', '不安が減った', '気持ちが変わった',
+                       '不安メモは戻った', '新しい気持ちメモも増えた'):
+            for action in ('私は振り返りメモを残した後、', '僕は資料を調べてから、'):
+                memo = action + ending
+                with self.subTest(memo=memo):
+                    req = request(record(memo=memo + '。'))
+                    artifact = self.generate(req).artifact
+                    self.assertIsNotNone(artifact)
+                    first, change = artifact.graph.nodes
+                    self.assertEqual((change.node_kind, change.proposition.result_state,
+                        change.proposition.actor, change.modality, change.temporal_scope),
+                        ('IMMEDIATE_RESULT_OR_AFTERMATH', 'BOUNDED_CHANGE',
+                         'UNSPECIFIED', 'fact', 'past'))
+                    edge, = artifact.graph.edges
+                    self.assertEqual((edge.edge_kind, edge.endpoint_refs),
+                        ('OBSERVED_ORDER', (first.node_ref, change.node_ref)))
+                    source, = freeze_analysis_sources(req).sources
+                    for node in artifact.graph.nodes:
+                        self.assertEqual([i for _, a, b in node.proposition.source_parts
+                                          for i in range(a, b)], list(range(len(node.visible_label))))
+                        for e in node.evidence_refs:
+                            raw = source.envelope.raw_utf8[e.utf8_start:e.utf8_end]
+                            field = source.envelope.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                            self.assertEqual(raw.decode(), field[e.scalar_start:e.scalar_end])
+                            self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                    text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                    self.assertIn(ending + '（記録された変化）', text)
+                    self.assertIn('原因を示す線ではありません', text)
+                    self.assertEqual(artifact.graph.annotations, ())
+
+    def test_feeling_word_changes_still_require_shared_episode_witness(self):
+        from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
+        build = compiler.build_final_stage1_grounded_observation_plan
+        for corruption in ('relation', 'range', 'actor', 'wish', 'bounded_marker', 'action_modality'):
+            def corrupt(*args, **kwargs):
+                plan = build(*args, **kwargs)
+                if corruption == 'relation':
+                    return replace(plan, relations=())
+                index = 0 if corruption == 'action_modality' else 1
+                n = plan.nuclei[index]
+                frame = n.semantic_frame
+                if corruption == 'actor':
+                    frame = replace(frame, actor='other_person')
+                elif corruption in ('wish', 'action_modality'):
+                    frame = replace(frame, modality='wish')
+                elif corruption == 'bounded_marker':
+                    frame = replace(frame, attribute_codes=tuple(c for c in frame.attribute_codes
+                        if c != 'operator:bounded_change'))
+                else:
+                    frame = replace(frame, attribute_codes=tuple(
+                        'source_fragment_scalar_range:0:1' if c.startswith('source_fragment_scalar_range:') else c
+                        for c in frame.attribute_codes))
+                nuclei = list(plan.nuclei)
+                nuclei[index] = replace(n, semantic_frame=frame)
+                return replace(plan, nuclei=tuple(nuclei))
+            with self.subTest(corruption=corruption), patch.object(compiler,
+                    'build_final_stage1_grounded_observation_plan', side_effect=corrupt):
+                self.assertIsNone(self.generate(request(record(memo=
+                    '私は資料を調べた後、不安が減った。'))).artifact)
+
+    def test_feeling_word_changes_preserve_unread_scope_and_safe_reparse(self):
+        for memo in ('私は資料を調べた後、不安が減らなかった。',
+                     '私は資料を調べた後、不安が減ったかもしれない。',
+                     '私は資料を調べた後、不安が減ったと聞いた。',
+                     '私は資料を調べた後、不安が減ったなら。',
+                     '私は資料を調べた後、不安が減った？',
+                     '友人は資料を調べた後、不安が減った。',
+                     '資料を調べた後、不安が減った。',
+                     '私は資料を調べなかった後、不安が減った。',
+                     '私は資料を調べてから、気持ち来週メモが増えた。',
+                     '私は資料を調べた後、友人の不安が減った。',
+                     '私は資料を調べた後、私の不安が減った。',
+                     '私は資料を調べた後、仕事の気持ちメモが増えた。'):
+            with self.subTest(memo=memo):
+                self.assertIsNone(self.generate(request(record(memo=memo))).artifact)
+        artifact = self.generate(request(record(memo='私は資料を調べた後、不安が減った。'))).artifact
+        first, change = artifact.graph.nodes
+        for proposition in (replace(change.proposition, arguments=(('が', '気持ちメモ'),)),
+                            replace(change.proposition, predicate_lemma='増える'),
+                            replace(change.proposition, modality='feeling'),
+                            replace(change.proposition, actor='SELF')):
+            with self.subTest(proposition=proposition), self.assertRaises(AnalysisSourceError):
+                changed = replace(change, proposition=proposition)
+                replace(artifact, graph=replace(artifact.graph, nodes=(first, changed))).safe_projection(
+                    authenticated_owner_scope=OWNER)
+
+    def test_feeling_word_changes_preserve_updates_and_period_meaning(self):
+        old = '私は資料を調べた後、不安が減った'
+        new = '私は記録を残してから、気持ちメモが増えた'
+        original = record(memo='私は仕事を続けたい。' + old + '。')
+        req = request(self.with_answer(original, '「' + old + '」ではなく「' + new + '」です。'))
+        artifact = self.generate(req).artifact
+        self.assertIsNotNone(artifact)
+        self.assertEqual([n.visible_label for n in artifact.graph.nodes],
+            ['私は仕事を続けたい', '私は記録を残して', '気持ちメモが増えた'])
+        source = next(s.envelope for s in freeze_analysis_sources(req).sources
+                      if s.envelope.source_role == 'SUPPLEMENTAL_ANSWER')
+        self.assertTrue(all(e.source_envelope_id == source.envelope_id
+                            for e in artifact.graph.edges[0].evidence_refs))
+        withdrawn = self.generate(request(self.with_answer(original, '「' + old + '」は取り消します。'))).artifact
+        self.assertEqual([n.visible_label for n in withdrawn.graph.nodes], ['私は仕事を続けたい'])
+        added = self.generate(request(self.with_answer(record(memo='私は記録を残した。'), old + '。'))).artifact
+        self.assertEqual(len(added.graph.nodes), 3)
+        same = self.compared('僕は資料を調べてから、不安が減った。', old + '。').artifact
+        self.assertEqual(same.period_comparison.change_claims, ())
+        for changed in ('私は資料を調べた後、不安が増えた。',
+                        '私は資料を調べた後、気持ちメモが減った。'):
+            artifact = self.compared(changed, old + '。').artifact
+            self.assertIn('ROUTE_EVIDENCE_CHANGED', artifact.safe_projection(
+                authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+
     def test_action_change_pair_does_not_merge_distinct_episodes(self):
         memo = '私は資料を調べた後、疑問が減った。'
         artifact = self.generate(request(record(memo=memo + memo), record(2, memo=memo))).artifact
