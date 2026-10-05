@@ -520,7 +520,9 @@ def _cognitive_proposition(value):
     safe content until Analysis also understands the whole embedded clause.
     An omitted embedded subject stays unspecified, even under a SELF thinker.
     """
-    subject = re.match(r'^(?:私|僕|わたし|自分)は', value)
+    # Keep the topic comma inside the source span, matching the shared
+    # cognition boundary; the embedded clause remains only a possibility.
+    subject = re.match(r'^(?:私|僕|わたし|自分)は(?:[、,])?', value)
     scopes = _source_current_cognition_parts(value) if subject else None
     if not scopes or {role for role, *_ in scopes} != {'possibility', 'cognition'}:
         return None

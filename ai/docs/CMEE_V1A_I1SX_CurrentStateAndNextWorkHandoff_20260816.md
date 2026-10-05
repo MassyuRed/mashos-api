@@ -14758,3 +14758,24 @@ rootが合成8本文（安心・te後の落ち着き・全角空白・未読併�
 対象はAPI既存compiler1／test2／handoff1、Cocolon既存current03／設計04／06の7file。STRUCTURE_MAP_DELTA_NONE：Analysis内部の本人topic読点だけの補正で、owner・API／DTO／DB／SQL／RN／共有意味処理／Emlis／Piece／依存仕様は不変。env／deploy／build／DB／main／merge／IF操作0。両PR Draft/open/unmerged、商品0/3・NOT_CLEAR・48%は継承値、primary outcomeは限定TECHNICAL_CREDIT。u129〜u143は未配置。最後の確認済み稼働API `1a42b9e…`／TestFlight6401送信成功と、本人生成・保存再表示・比較の実機残件は継承する。今回の反映commitとremote実gitの全byte照合はPR3／30先頭へ記録する。
 
 次の内容候補は実測した現在認知の読点境界。「私は資料を調べるかもしれないと思う」は成立、「私は、資料を調べるかもしれないと思う」は共有認知根拠が成立するがAnalysisで未解析。今回変更していない。後続ではshared partsの一致範囲と、不確実な内側の内容を実行済みに昇格しないことを確認して選ぶ。未対応範囲の全解消を配置・本人実機確認の前提にはしない。
+
+
+## 2026-10-05 JST u144 — 現在の考えの読点境界を合わせ、内側の可能性を保持
+
+Mashの分析内容修正継続指示から、u143に残した実測済みの不一致を修正。開始headはAPI `62af28fa02d4323234514d05a3416491c1ea3595`／Cocolon `2522208f67b1269684857e6d819370e8ae885261`。前提・作業入口／規則、アプリ全体設計01・01A/B/C全file地図、current03／設計04／06、最新weekly20261003 §5.3／5.5／5.6／6.6〜6.10の確認を継承し、恒久incident全文を今回再読した。追跡正本を直接参照。直前にtools module不在だったSystem Context prepareの成功や生成Contextの現行性は主張しない。
+
+Rule18 LEVEL_2・既存設計内のOBSERVED_BLOCKER_MINIMAL_FIX。Codex Workでroot華恋が編集・検証・GitHub反映を担当し、同環境の補助agentはread-only境界調査・最終差分reviewだけを実施。別modelのPro reviewではない。完成条件は、原文の考えと不確実さを同一artifactの文章・図へ保持し、出典・補足訂正／撤回・比較・保存再表示を確認すること。
+
+「私は資料を調べるかもしれないと思う」は成立、「私は、資料を調べるかもしれないと思う」は共有の現在認知witnessとpartsが成立するのにAnalysisでUNAVAILABLEだった。既存 `_cognitive_proposition` の主語終端が共有possibility開始位置より1文字手前だったため、共有文法が既に認める読点（、／ASCII ,）1個をSELF_TOPICの原文範囲に含めた。製品変更は既存regex1か所と説明2行だけ。subject終端＝共有content開始、全文一致、認知host whitelist、内側の有限述語解析、共有witness必須とsafe再解析を維持。outerはSELFの現在の考え、innerはUNSPECIFIED／possibilityのまま。内側の肯定／否定・過去／非過去を保持し、本人の実行済みの行動や原因へ昇格しない。
+
+全角読点「，」は共有partsとの境界が合わず、読点後space／tab／改行・二重読点も共有根拠が不成立のため今回許容しない。別主体・内側の別主語・日語・過去／否定の認知host・疑問・伝聞・内側の希望・未対応述語は保留を維持。読めない不確実節が同じfieldに残る場合も確定へ進めない。
+
+修正前の追加3methodで、正常4例と補足／訂正2例がartifact欠落、撤回の後続参照が1error相当となることを再現（pytest summary 7 failed／2 passed／192 deselected／15 subtests passed、1.12秒）。修正後はPython3.12.14、既存隔離依存を使い、**vertical195／storage47／saved-period16、計258 tests PASS／1203 subtests PASS（6.71秒）**。既存期待の緩和0。四つの本人主語、両読点、内側の正負・時制、原文scalar／UTF-8／hash・重複なし全文被覆、inner actor／modality／polarity改竄拒否、共有証拠欠落の拒否、補足出典・訂正／撤回、読点差のみの期間差0と内側否定の差を確認した。
+
+既存storage認知検査を、読点なし・日本語読点・ASCII読点の3例で実service＋合成RPCの生成→commit→再生成禁止readまで強化。同じ文章・図・identityの再読取とprivate情報の非漏出を確認した。実DB接続なし。製品requirements変更0、既存Pydantic非推奨warning1件。旧generic0058期待差は未再検証・未修正のまま継承し、全repo検査PASSとはしない。
+
+rootが合成8本文（基本、否定過去、修飾・否定非過去、行動と補足、訂正、撤回、読点比較、内側否定比較）を全文読取。生成DTOを実RN buildWatashiMapV2ViewModelへ渡し、文章全文・artifact identity・node順／edge・注記・unknown・競合・比較stateが全8例一致。補助agentは独立memory-onlyの32正常例／16境界例も確認し、最終差分reviewに具体的blockerなし。React component suite・native・本人入力・実DBの確認や正式商品受入れではない。
+
+対象はAPI既存compiler1／test2／handoff1、Cocolon既存current03／設計04／06の7file。STRUCTURE_MAP_DELTA_NONE：既存Analysis内のtopic境界整合だけで、新file／owner／共有意味処理／Emlis／Piece／API／DTO／DB／SQL／RN／依存仕様変更0。追加費用・Mash操作0、env／deploy／build／DB／main／merge／IF操作0。両PR Draft/open/unmerged、商品0/3・NOT_CLEAR・48%は継承値、primary outcomeは限定TECHNICAL_CREDIT。u129〜u144は未配置。最後の確認済み稼働API `1a42b9e…`／TestFlight6401送信成功と本人生成・保存再表示・比較の実機残件を継承する。今回の反映commitとremote実gitの全7file byte照合はPR3／30先頭へ記録する。
+
+u143で指定した内容残差は今回解消。未対応の読点後space等は共有ownerからの検討が必要で、今回のAnalysisだけの変更に混ぜない。以後の内容修正も実本文と共有根拠を確認して選び、未対応範囲の全解消を配置・本人実機確認の前提にはしない。

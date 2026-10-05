@@ -1265,6 +1265,94 @@ class AnalysisVerticalTests(unittest.TestCase):
                 self.assertEqual(literal.decode(), field[e.scalar_start:e.scalar_end])
                 self.assertEqual(hashlib.sha256(literal).hexdigest(), e.literal_sha256)
 
+    def test_cognitive_topic_comma_keeps_possible_content_and_whole_source(self):
+        for topic, content, suffix, host, polarity, time in (
+            ('私は、', '資料を調べる', 'かもしれないと', '思う', 'positive', 'nonpast'),
+            ('僕は,', '資料を調べなかった', 'かも知れないと', '考えている', 'negative', 'past'),
+            ('わたしは、', '考えをノートに書いた', 'かもって', '考えちゃう', 'positive', 'past'),
+            ('自分は,', '新しい資料を調べない', 'かもしれないと', '思ってしまう', 'negative', 'nonpast'),
+        ):
+            with self.subTest(topic=topic, content=content):
+                clause = topic + content + suffix + host
+                req = request(record(memo='　' + clause + '。'))
+                artifact = self.generate(req).artifact
+                self.assertIsNotNone(artifact)
+                node, = artifact.graph.nodes
+                p = node.proposition
+                inner = p.possible_content
+                self.assertEqual((p.actor, node.node_kind, node.polarity, node.modality, node.temporal_scope),
+                                 ('SELF', 'ATTENTION_OR_THOUGHT', 'neutral', 'fact', 'current_input'))
+                self.assertEqual((inner.actor, inner.modality, inner.polarity, inner.temporal_scope),
+                                 ('UNSPECIFIED', 'possibility', polarity, time))
+                self.assertEqual([i for _, a, b in p.source_parts for i in range(a, b)], list(range(len(clause))))
+                source, = freeze_analysis_sources(req).sources
+                e, = node.evidence_refs
+                raw = source.envelope.raw_utf8[e.utf8_start:e.utf8_end]
+                field = source.envelope.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                self.assertEqual(raw.decode(), clause)
+                self.assertEqual(field[e.scalar_start:e.scalar_end], clause)
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                plain = self.generate(request(record(memo=topic[:-1] + content + suffix + host + '。'))).artifact
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                self.assertEqual(text, plain.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+                self.assertIn('（この記述時点の考え）', text)
+                self.assertNotIn('実行済み', text)
+                self.assertFalse(artifact.graph.edges)
+                for changed in (replace(inner, modality='fact'), replace(inner, actor='SELF'),
+                                replace(inner, polarity='negative' if polarity == 'positive' else 'positive')):
+                    forged = replace(node, proposition=replace(p, possible_content=changed))
+                    with self.assertRaises(AnalysisSourceError):
+                        replace(artifact, graph=replace(artifact.graph, nodes=(forged,))).safe_projection(
+                            authenticated_owner_scope=OWNER)
+
+    def test_cognitive_topic_comma_keeps_updates_and_semantic_comparison(self):
+        old = '私は、資料を調べるかもしれないと思う'
+        new = '僕は,資料を調べなかったかも知れないと考えている'
+        base = record(memo='私は記録を残した。' + old + '。')
+        for answer, count in ((new + '。', 3), ('「' + old + '」ではなく「' + new + '」です。', 2)):
+            with self.subTest(answer=answer):
+                req = request(self.with_answer(base, answer))
+                artifact = self.generate(req).artifact
+                self.assertIsNotNone(artifact)
+                self.assertEqual(len(artifact.graph.nodes), count)
+                self.assertFalse(artifact.graph.edges)
+                node = next(n for n in artifact.graph.nodes if n.proposition.possible_content
+                            and n.proposition.possible_content.polarity == 'negative')
+                source = next(s.envelope for s in freeze_analysis_sources(req).sources
+                              if s.envelope.source_role == 'SUPPLEMENTAL_ANSWER')
+                e, = node.evidence_refs
+                self.assertEqual(e.source_envelope_id, source.envelope_id)
+                self.assertEqual(source.raw_utf8[e.utf8_start:e.utf8_end].decode(), new)
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        withdrawn = self.generate(request(self.with_answer(base, '「' + old + '」は取り消します。'))).artifact
+        self.assertEqual([n.visible_label for n in withdrawn.graph.nodes], ['私は記録を残した'])
+        same = self.compared(old + '。', old.replace('、', '') + '。').artifact
+        self.assertEqual(same.period_comparison.change_claims, ())
+        changed = self.compared(old.replace('調べる', '調べない') + '。', old + '。').artifact
+        self.assertEqual(changed.safe_projection(authenticated_owner_scope=OWNER)['period_comparison']
+                         ['safe_change_kinds'], ['ROUTE_EVIDENCE_CHANGED'])
+
+    def test_cognitive_topic_comma_keeps_unproved_scopes_pending(self):
+        for clause in ('私は，資料を調べるかもしれないと思う',
+                       '私は、、資料を調べるかもしれないと思う',
+                       '私は、 資料を調べるかもしれないと思う',
+                       '私は、　資料を調べるかもしれないと思う',
+                       '私は、\t資料を調べるかもしれないと思う',
+                       '私は、\n資料を調べるかもしれないと思う',
+                       '私は、今日資料を調べるかもしれないと思う',
+                       '友人は、資料を調べるかもしれないと思う',
+                       '私は、友人が資料を調べるかもしれないと思う',
+                       '私は、資料を調べるかもしれないと思っていた',
+                       '私は、資料を調べるかもしれないと思っていない',
+                       '私は、資料を調べるかもしれないと思う？',
+                       '私は、資料を調べるかもしれないと思うと聞いた',
+                       '私は、資料を調べたいかもしれないと思う',
+                       '私は、資料を読んだかもしれないと思う'):
+            with self.subTest(clause=clause):
+                self.assertIsNone(self.generate(request(record(memo=clause + '。'))).artifact)
+        self.assertIsNone(self.generate(request(record(memo=
+            '私は記録を残した。私は、資料を調べるかもしれないと思う。まだ違うかもしれない。'))).artifact)
+
     def test_actual_action_survives_beside_cognition_without_inferred_order(self):
         for memo in ('私は記録を残した。私は資料を調べたかもしれないと思っている。',
                      '私は資料を調べたかもしれないと思っている。その後私は記録を残した。'):
@@ -1365,9 +1453,10 @@ class AnalysisVerticalTests(unittest.TestCase):
 
     def test_cognitive_grammar_alone_cannot_replace_shared_semantic_witness(self):
         target = 'cocolon_meaning_experience_engine.cores.analysis.intent_compiler._source_current_cognition'
-        with patch(target, return_value=False):
-            result = self.generate(request(record(memo='私は資料を調べたかもと思っている。')))
-        self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+        for topic in ('私は', '私は、', '僕は,'):
+            with self.subTest(topic=topic), patch(target, return_value=False):
+                result = self.generate(request(record(memo=topic + '資料を調べたかもと思っている。')))
+            self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
 
     def test_unfinished_result_reaches_text_and_graph_without_inventing_actor(self):
         for noun, particle, predicate in (
