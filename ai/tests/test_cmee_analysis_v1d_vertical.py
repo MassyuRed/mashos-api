@@ -2386,6 +2386,64 @@ class AnalysisVerticalTests(unittest.TestCase):
         self.assertEqual([n.visible_label for n in partial.graph.nodes], ['私は記録を残した'])
         self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in partial.graph.unknown_gaps])
 
+    def test_past_feeling_spelling_alone_is_not_a_period_change(self):
+        for topic in ('', '私は、'):
+            kanji = '私は資料を調べた後、' + topic + '嬉しかった。'
+            kana = kanji.replace('嬉しかった', 'うれしかった')
+            for before, now in ((kanji, kana), (kana, kanji)):
+                with self.subTest(before=before, now=now):
+                    result = self.compared(now, before)
+                    self.assertEqual(result.status, EngineStatus.GENERATED)
+                    artifact = result.artifact
+                    self.assertEqual(artifact.period_comparison.change_claims, ())
+                    visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                    self.assertEqual(visual['period_comparison'], {'state': 'COMPARABLE',
+                        'reason_codes': [], 'safe_change_kinds': []})
+                    text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                    self.assertIn('今回比較した記述内容では差分を検出していません', text)
+                    spelling = 'うれしかった' if 'うれしかった' in now else '嬉しかった'
+                    self.assertIn(spelling + '（記録された気持ち）', text)
+
+    def test_past_feeling_spelling_keeps_meaning_differences_and_episode_evidence(self):
+        kanji = '私は資料を調べた後、嬉しかった。'
+        kana = kanji.replace('嬉しかった', 'うれしかった')
+        for now in (kana.replace('うれしかった', '安心した'),
+                    kana.replace('うれしかった', '落ち着いた'),
+                    kana.replace('、うれしかった', '、私はうれしかった'),
+                    kana.replace('資料を調べた後', '記録を残した後')):
+            with self.subTest(now=now):
+                artifact = self.compared(now, kanji).artifact
+                self.assertEqual(artifact.safe_projection(authenticated_owner_scope=OWNER)
+                    ['period_comparison']['safe_change_kinds'], ['ROUTE_EVIDENCE_CHANGED'])
+        req = request(record(memo=kanji), record(2, memo=kana))
+        artifact = self.generate(req).artifact
+        self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)), (4, 2))
+        self.assertEqual(len({ref for edge in artifact.graph.edges for ref in edge.endpoint_refs}), 4)
+        sources = {s.envelope.envelope_id: s.envelope for s in freeze_analysis_sources(req).sources}
+        feelings = [n for n in artifact.graph.nodes if n.proposition.result_state == 'PAST_FEELING']
+        self.assertEqual([n.proposition.predicate_lemma for n in feelings], ['嬉しい', 'うれしい'])
+        for node, literal in zip(feelings, ('嬉しかった', 'うれしかった')):
+            p = node.proposition
+            self.assertEqual((p.actor, p.polarity, p.modality, p.temporal_scope),
+                             ('UNSPECIFIED', 'positive', 'feeling', 'past'))
+            e, = node.evidence_refs
+            source = sources[e.source_envelope_id]
+            raw = source.raw_utf8[e.utf8_start:e.utf8_end]
+            field = source.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+            self.assertEqual(raw.decode(), literal)
+            self.assertEqual(field[e.scalar_start:e.scalar_end], literal)
+            self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+            edge, = [edge for edge in artifact.graph.edges if edge.endpoint_refs[-1] == node.node_ref]
+            self.assertEqual(edge.edge_kind, 'OBSERVED_ORDER')
+        artifact.safe_projection(authenticated_owner_scope=OWNER)
+        for node in feelings:
+            forged = replace(node, proposition=replace(node.proposition,
+                predicate_lemma='うれしい' if node.proposition.predicate_lemma == '嬉しい' else '嬉しい'))
+            with self.assertRaises(AnalysisSourceError):
+                replace(artifact, graph=replace(artifact.graph, nodes=tuple(
+                    forged if n.node_ref == node.node_ref else n for n in artifact.graph.nodes))).safe_projection(
+                        authenticated_owner_scope=OWNER)
+
     def test_past_feeling_requires_shared_pair_and_matching_modality(self):
         from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
         original_builder = compiler.build_final_stage1_grounded_observation_plan

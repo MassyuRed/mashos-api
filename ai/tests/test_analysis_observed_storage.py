@@ -42,9 +42,11 @@ def result(rows, tier='plus', matched=False):
     return {'items': rows, 'subscription_tier': tier, 'matched': matched}
 
 
-async def comparison_fixture(*, previous_memo='私は考えをノートに書かなかった。', empty=False, eligible=True):
+async def comparison_fixture(*, previous_memo='私は考えをノートに書かなかった。',
+                             current_memo='私は考えをノートに書いた。私は仕事を続けたい。',
+                             empty=False, eligible=True):
     """Real save service/engine, synthetic DB transport; also consumed by SQL tests."""
-    fx = fixture()
+    fx = fixture(current_memo)
     previous = dict(fx['original'], id=str(UUID(int=99)), created_at='2026-09-30T01:00:00', memo=previous_memo)
     previous_start = '2026-09-29T00:00:00+00:00'
     writes = []
@@ -262,6 +264,26 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                 patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
             reread = await service.read_saved(OWNER, report_id=row['id'])
         self.assertEqual(reread['items'][0], row)
+
+    async def test_feeling_spelling_comparison_survives_save_read_without_regeneration(self):
+        kanji = '私は資料を調べた後、嬉しかった。'
+        kana = kanji.replace('嬉しかった', 'うれしかった')
+        for before, now in ((kanji, kana), (kana, kanji)):
+            with self.subTest(now=now):
+                fx = await comparison_fixture(current_memo=now, previous_memo=before)
+                row, private = fx['row'], fx['private']
+                projection = row['content_json']['watashiMap']
+                self.assertEqual(projection['period_comparison'], {'state': 'COMPARABLE',
+                    'reason_codes': [], 'safe_change_kinds': []})
+                self.assertFalse(private['period_comparison']['change_claims'])
+                self.assertNotEqual(private['projection_of'], private['previous_evidence']['projection_of'])
+                spelling = 'うれしかった' if 'うれしかった' in now else '嬉しかった'
+                self.assertIn(spelling + '（記録された気持ち）', row['content_text'])
+                self.assertIn('今回比較した記述内容では差分を検出していません', row['content_text'])
+                with patch.object(service, '_rpc', AsyncMock(return_value=result([row], matched=True))), \
+                        patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                    reread = await service.read_saved(OWNER, report_id=row['id'])
+                self.assertEqual(reread['items'][0], row)
 
     async def test_empty_previous_is_dependency_but_unreadable_previous_is_not_first_use(self):
         fx = await comparison_fixture(empty=True)

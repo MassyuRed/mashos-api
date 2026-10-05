@@ -14914,3 +14914,22 @@ rootが合成8全文（所在、担当を含む順序、補足、訂正、撤回
 STRUCTURE_MAP_DELTA_NONE：既存Analysis内の所在／担当活用補正で、新owner・共有意味・Emlis・Piece・API契約・DTO・DB・SQL・RN変更0。env／deploy／build／main／merge／IF操作0。Draft/open/unmerged、今回u151未配置。primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・48%、最後の確認済み稼働API1a42b9e…／TestFlight6401と本人生成・保存再表示・比較の実機残件は継承値。旧generic0058期待差は未修正・未再検証、全repo PASSではない。反映commit・変更path・remote全7file bytesの照合結果はPR3／30先頭へ記録する。
 
 今回の2形の読み落としは修正済み。memo_actionの所在／担当、対比「たくはありません」、同一recordの夢／伝聞から現実へ戻る境界、plain幾・任意長文理解は未対応を保持する。次の内容対象も実出力の不一致から選び、全表現対応を配置・本人実機の前提にしない。指定版で本人の生成・保存再表示・比較を確認する別残件は継承する。
+
+
+## 2026-10-06 JST u152 — 感情の表記差による期間比較の偽差分を除く
+
+Mashの分析内容修正継続指示から再開。fresh PR headはAPI `d5a6bb25c14ee2855b5502586b497e7902479974`／Cocolon `7cb3aa30a4c6df1e5edfcb38e6d7fbe10576d04b`、Draft/open/unmerged。前回変更7fileのremote/local byte一致を確認して基準を進めた。前提・作業入口／CURRENT_RULES／Rule18、全体設計01→01A/B/Cの全file地図、分析current03／設計04、最新weekly20261003 §5.3／6.6〜6.10はu151の既読を継承。恒久incident全文は今回再読した。System Contextの既知shallow ancestry確認失敗から、追跡正本の直接読取を継続し、生成Contextのfreshnessは主張しない。Karen-Diary必須3fileの既読も継承し、非公開内容は転記しない。
+
+実CMEEで「私は資料を調べた後、嬉しかった」と「私は資料を調べた後、うれしかった」を直前等長期間同士で比較すると、両方向ともROUTE_EVIDENCE_CHANGEDとなった。両方に共有のaction/change根拠は成立しており、同じ語の表記差が別predicate_lemmaとして意味keyへ残ることが原因だった。既存 `_proposition_meaning` 内でPAST_FEELINGかつlemmaが「うれしい」の場合だけ「嬉しい」と同じkeyにする。原命題・原文・出典hash・表示表記は変更しない。意味keyは期間比較だけでなく集約等にも使用されるが、現行の過去感情にはordered_evidence由来のoccurrence_scopeが付き、別episodeは統合されない。安心する／落ち着く等の別感情、actor、対象、極性／様相／時制、順序は維持する。
+
+OBSERVED_BLOCKER_MINIMAL_FIX／既存設計内の限定内容修正。完成条件は表記差だけの偽差分を除き、実際の意味差、別episodeの順序、原文証拠、保存後の文章／図の同一性を保持すること。Codex Workのroot華恋が単一編集・検証・反映owner。同環境read-only agentが作用域と要件、最終source/test差分を独立確認し、別model Pro reviewではない。既存の継続修正・PR反映承認内で実施。共有契約変更や対象preimage衝突へは範囲を広げない。追加費用・Mash操作0。
+
+修正前の新vertical2methodで、表記差の4subcase失敗を再現した。併せて新検査のedge名をEXPLICIT_ORDERと誤記した1失敗があり、既存enum OBSERVED_ORDERへ新期待だけを訂正。初回は5 failed／1 passed／4 subtests passed（1.14秒）。最終sourceではPython3.12.14・隔離pytest9.1.1等を再利用し、**vertical217／storage54／saved-period16＝287 tests PASS／1451 subtests PASS（8.82秒）**。既存期待の削除・緩和0、製品依存変更0、Pydantic既存warning1件。
+
+本人主語の有無それぞれで表記差の両方向比較が差分なし、別感情・主体の明示／未確定・別行動は内容差あり、別recordの2episodeは4node／2順序線のままであることを確認した。原文のscalar／UTF-8／hashを照合し、原命題の表記lemma改竄もsafe再解析で拒否される。実service＋合成RPCの両方向比較を生成・保存し、engine再生成を禁止したreadでも同じ本文／図／identityとなる。実DBは使用していない。
+
+rootが合成6全文（表記差の両方向、明示本人主語、別感情、主体scope差、2episode）を実出力で読取。実RN buildWatashiMapV2ViewModelへ同じDTOを渡し、全文・identity・node順／edge・unknown・注記・競合・比較stateが全6例で一致した。React component suite／native／本人入力／商品受入れの確認ではない。独立read-only最終reviewと反映commit・remote全7file bytes／SHA256／parent／変更path集合の照合結果はPR3／30に記録する。
+
+STRUCTURE_MAP_DELTA_NONE：既存compiler1／test2／API handoff1、Cocolon current03／設計04／06の計7file、新規repo file0。共有owner／Emlis／Piece／API契約／DTO／DB／SQL／RN変更0。env／deploy／build／main／merge／IF操作0。今回u152未配置。primary outcomeは限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%と最後の確認済み稼働API1a42b9e…／TestFlight6401・本人実機残件は継承値。旧generic0058期待差は未再検証・未修正、全repo PASSではない。
+
+一般の同義語理解や感情文法を広げたものではない。「嬉しかったです／落ち着きました」、単独感情、今回探索した負荷節「私は、つらい」の読点形は既存共有根拠の境界を含むため、この意味key補正へ混ぜない。その他未対応日本語と、配置後の本人生成・保存再表示・比較は別残件。全表現対応を配置・本人実機の前提にせず、次も実際の内容の不一致から対象を選ぶ。

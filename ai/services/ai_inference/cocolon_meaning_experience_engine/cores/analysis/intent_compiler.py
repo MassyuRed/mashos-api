@@ -558,8 +558,13 @@ def _cognitive_proposition(value):
 
 def _proposition_meaning(proposition):
     content = proposition.possible_content
+    # One lexeme, two source spellings. Preserve the original proposition and
+    # evidence for rendering; only its meaning key is spelling-independent.
+    lemma = proposition.predicate_lemma
+    if proposition.result_state == 'PAST_FEELING' and lemma == 'うれしい':
+        lemma = '嬉しい'
     return (proposition.actor, tuple(sorted(proposition.arguments)),
-            proposition.predicate_lemma, proposition.result_state, proposition.scene_state, proposition.role_state,
+            lemma, proposition.result_state, proposition.scene_state, proposition.role_state,
             (_proposition_meaning(content), content.polarity, content.modality,
              content.temporal_scope) if content else None)
 
