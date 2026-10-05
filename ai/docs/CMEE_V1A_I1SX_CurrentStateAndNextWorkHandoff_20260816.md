@@ -14737,3 +14737,24 @@ rootが合成Analysis8本文（減少、増加、気持ち、未解析併存、�
 変更はAPI既存compiler1／共有plan・human reception・inverse3／test3／handoff1、Cocolon既存current03／設計04／06の計11file。STRUCTURE_MAP_DELTA_NONE：既存owner内の読点認識・省略処理だけで、新file／API／DTO／DB／SQL／RN／Piece source／依存仕様は不変。共有owner変更0とは記録しない。追加費用・Mash操作0、env／deploy／build／DB／main／merge／IF操作0。両PR Draft/open/unmerged、商品0/3・NOT_CLEAR・48%は継承値、primary outcomeは限定TECHNICAL_CREDIT。未配置。最後の確認済み稼働API `1a42b9e…`／TestFlight6401送信成功を継承し、本人生成・保存再表示・比較の実機成功は別残件。反映commitとremote実gitによる全11file byte照合結果はPR3／30先頭へ記載する。
 
 今回の具体的な読点残差は解消。有限語彙・未対応時点・属格・主語省略等の既存保留範囲は残るが、この確認だけで次の不具合を推定しない。以後も実本文と共有根拠の成立／不成立を確認して内容修正を選ぶ。配置と本人実機の残件を合成検証で代用しない。
+
+
+## 2026-10-05 JST u143 — 行動後の本人感情に付く読点を文章と図へ保持
+
+Mashの「分析構造の内容修正関係を進めて」と添付u142報告から再開。開始headはAPI `b7da0cad3b584de31d71646bcdd99dfda23d38ff`／Cocolon `d962cf148a73744589d6d74099d274e5e3b6f04a`。前提・作業入口、恒久incident全文、全体設計01と01A/B/Cの領域・対象file地図、分析current03／設計04／06、weekly20261003 §5.3／5.5／5.6／6.6〜6.10を確認した。System Context prepareはこのcheckoutのtools module不在で起動不成立。入口が認める追跡済み正本の直接読取を使用し、生成Contextの現行性は主張しない。
+
+今回のbounded workは既存Analysis内のOBSERVED_BLOCKER_MINIMAL_FIX、Rule18 LEVEL_2と現行の継続指示の範囲。実行環境Codex Work、root華恋が実装・検証・GitHub反映の単一owner。同環境の補助agentはread-onlyの方針確認・原因調査・最終差分reviewで、別model Pro reviewとは記録しない。完成条件は明示された感情と行動後順序を同じ文章・図へ保持し、出典・補足／訂正／撤回・比較・保存再表示を確認すること。共有owner／契約変更と対象preimage衝突は範囲拡大の停止条件。追加費用・Mash操作0。
+
+実CMEEで「私は資料を調べた後、私は安心しました」は成立し、「私は資料を調べた後、私は、安心しました」はUNAVAILABLEとなることを再現した。共有planにはどちらもaction/changeの2核、必須関係、全節の正確な範囲があり、Analysis `_past_feeling_proposition` の本人topicが読点を受理しないことが原因。既存の4本人主語＋はの直後に読点1個（、／，）と半角／全角spaceを認め、SELF_TOPICの原文範囲へ含める。変更は同parserの1regexと説明2行だけ。既存5感情形の完全一致、PAST_FEELING／feeling／past、明示主語のSELF／主語なしUNSPECIFIED、共有pair・modality照合は維持。因果・改善・新しい感情所有者を推測しない。
+
+二重読点、tab／改行、日語、別主体／属格、否定、希望、引用・疑問・伝聞・夢、未対応敬体、単独の感情は保留を維持する。「落ち着きました／嬉しかったです」は今回の共有pair未成立を確認したため追加しない。未読併存では読めたnodeとunknownを保持する。
+
+修正前の追加3methodは、6 subtest失敗とartifact未成立に続く1method失敗を確認（出力summaryは7 failed／2 passed／189 deselected／15 subtests passed、1.18秒）。修正後はPython3.12.14、**vertical192／storage47／saved-period16、計255 tests PASS／1176 subtests PASS（6.23秒）**。既存期待の緩和0。原文scalar／UTF-8／hash、topicを含む全節被覆、safe表示時のactor／述語／modality／source_parts改竄拒否、共有証拠欠落の拒否、補足出典・訂正／撤回、読点・敬体差だけの期間差0と感情差の保持を確認。storageの既存実service＋合成RPCに3例を追加し、生成→保存→再生成を禁止した同じ文章・図・identityの再読取を確認した。実DB接続はない。
+
+初回pytestはfastapi探索path不足で収集不成立。既存隔離依存を再発見して補い修正前検証を実施。修正後suiteの最初の起動はsaved-periodのfile名指定誤りで実行0、実pathへ直して上記255件を実行した。製品依存／requirements変更0、既存Pydantic非推奨warning1件。全repo検査PASSではなく、旧generic0058期待差は今回未再検証・未修正。
+
+rootが合成8本文（安心・te後の落ち着き・全角空白・未読併存・訂正・撤回・同義比較・感情比較）を全文確認。生成DTOを変更していない実RN buildWatashiMapV2ViewModelへ渡し、本文全文・artifact identity・node順／edge・注記・unknown・競合・比較stateが8例全て一致。最終read-only差分reviewに具体的blockerなし。React component suite・native・本人入力・実DBの今回確認や、正式商品受入れではない。
+
+対象はAPI既存compiler1／test2／handoff1、Cocolon既存current03／設計04／06の7file。STRUCTURE_MAP_DELTA_NONE：Analysis内部の本人topic読点だけの補正で、owner・API／DTO／DB／SQL／RN／共有意味処理／Emlis／Piece／依存仕様は不変。env／deploy／build／DB／main／merge／IF操作0。両PR Draft/open/unmerged、商品0/3・NOT_CLEAR・48%は継承値、primary outcomeは限定TECHNICAL_CREDIT。u129〜u143は未配置。最後の確認済み稼働API `1a42b9e…`／TestFlight6401送信成功と、本人生成・保存再表示・比較の実機残件は継承する。今回の反映commitとremote実gitの全byte照合はPR3／30先頭へ記録する。
+
+次の内容候補は実測した現在認知の読点境界。「私は資料を調べるかもしれないと思う」は成立、「私は、資料を調べるかもしれないと思う」は共有認知根拠が成立するがAnalysisで未解析。今回変更していない。後続ではshared partsの一致範囲と、不確実な内側の内容を実行済みに昇格しないことを確認して選ぶ。未対応範囲の全解消を配置・本人実機確認の前提にはしない。

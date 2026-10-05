@@ -868,7 +868,10 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
     async def test_past_feeling_survives_commit_and_read_without_regeneration(self):
         for memo, label in (('私は資料を調べた後、安心した。', '安心した（記録された気持ち）'),
                 ('私は資料を調べてから、落ち着いた。', '落ち着いた（記録された気持ち）'),
-                ('私は、資料を調べてから、安心した。', '安心した（記録された気持ち）')):
+                ('私は、資料を調べてから、安心した。', '安心した（記録された気持ち）'),
+                ('私は資料を調べた後、私は、安心しました。', '安心した（記録された気持ち）'),
+                ('私は、資料を調べてから、僕は， 落ち着いた。', '落ち着いた（記録された気持ち）'),
+                ('私は記録を残した後、わたしは、　嬉しかった。', '嬉しかった（記録された気持ち）')):
             with self.subTest(memo=memo):
                 await self._assert_action_change_saved(memo, label)
 

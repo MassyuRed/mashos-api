@@ -304,7 +304,9 @@ def _past_event_witness(nucleus, proposition):
 
 
 def _past_feeling_proposition(value):
-    subject = re.match(r'^(?:私|僕|わたし|自分)は', value)
+    # Retain topic punctuation in the complete endpoint's source range.
+    # The surrounding action/change pair still owns admission and order.
+    subject = re.match(r'^(?:私|僕|わたし|自分)は(?:[、，][ \u3000]*)?', value)
     start = subject.end() if subject else 0
     lemma = _FEELING_FORMS.get(value[start:])
     if lemma is None:
