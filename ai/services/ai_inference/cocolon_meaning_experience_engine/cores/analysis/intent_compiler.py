@@ -1001,8 +1001,10 @@ def _fragment(source, nucleus, plan=None):
 def _burden_predicate(value):
     # Complete affirmative present inflections, not negative polarity alone.
     # In particular, an absent positive feeling does not prove a burden.
-    match = re.fullmatch(r'(?:私|僕|ぼく|わたし|自分)は(?P<predicate>つらい|苦しい)(?:です)?', value)
-    return match['predicate'] if match else None
+    match = re.fullmatch(r'(?:私|僕|ぼく|わたし|自分)は(?P<predicate>つらい|辛い|苦しい)(?:です)?', value)
+    # Normalize this proved self-feeling predicate only; source labels and
+    # evidence retain their original spelling, including correction targets.
+    return ('つらい' if match['predicate'] == '辛い' else match['predicate']) if match else None
 
 
 def _wish_burden_pair(source, plan, span_id):

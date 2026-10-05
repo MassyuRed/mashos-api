@@ -527,8 +527,8 @@ class AnalysisVerticalTests(unittest.TestCase):
         self.assertEqual(artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'].count('未確定（'), 3)
 
     def test_explicit_wish_burden_is_a_targeted_annotation_with_whole_evidence(self):
-        for subject in ('私', '僕', 'わたし', '自分'):
-            for feeling in ('つらい', 'つらいです', '苦しい', '苦しいです'):
+        for subject in ('私', '僕', 'ぼく', 'わたし', '自分'):
+            for feeling in ('つらい', 'つらいです', '辛い', '辛いです', '苦しい', '苦しいです'):
                 with self.subTest(subject=subject, feeling=feeling):
                     memo = subject + 'は資料を調べたいけれど、' + subject + 'は' + feeling + '。'
                     value = request(record(memo=memo))
@@ -555,7 +555,10 @@ class AnalysisVerticalTests(unittest.TestCase):
                     visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
                     badge = visual['annotation_badges'][0]
                     self.assertEqual(badge['target_ref'], 'n1')
-                    self.assertIn(feeling.removesuffix('です') + 'と記述されています', badge['visible_label'])
+                    predicate = feeling.removesuffix('です').replace('辛い', 'つらい')
+                    self.assertEqual(claim.predicate_lemma, predicate)
+                    self.assertEqual(claim.source_labels, (subject + 'は' + feeling,))
+                    self.assertIn(predicate + 'と記述されています', badge['visible_label'])
                     self.assertIn('原因や続いている期間は確定していません', badge['visible_label'])
                     self.assertIn(badge['visible_label'], artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
                     self.assertEqual(visual['annotation_badges'], artifact.private_visual_preview(
@@ -609,9 +612,80 @@ class AnalysisVerticalTests(unittest.TestCase):
                 return replace(plan, nuclei=(plan.nuclei[0], n))
             with self.subTest(mismatch=mismatch), patch.object(compiler,
                     'build_final_stage1_grounded_observation_plan', side_effect=changed):
-                artifact = self.generate(request(record(memo='私は仕事を続けたいけれど、私はつらい。'))).artifact
-                self.assertEqual(artifact.graph.annotations, ())
-                self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+                for feeling in ('つらい', '辛い'):
+                    artifact = self.generate(request(record(memo='私は仕事を続けたいけれど、私は' + feeling + '。'))).artifact
+                    self.assertEqual(artifact.graph.annotations, ())
+                    self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+
+    def test_burden_spelling_keeps_target_meaning_and_exact_source_updates(self):
+        kanji = '私は仕事を続けたいけれど、私は辛い'
+        kana = kanji.replace('辛い', 'つらい')
+        artifact = self.generate(request(record(memo=kanji + '。'),
+            record(2, memo=kana + 'です。'))).artifact
+        claim, = artifact.graph.annotations
+        self.assertEqual(claim.predicate_lemma, 'つらい')
+        self.assertEqual(set(claim.source_labels), {'私は辛い', '私はつらいです'})
+        self.assertEqual(len(claim.evidence_refs), 6)
+        self.assertEqual(len(artifact.graph.nodes), 1)
+        self.assertEqual(len(artifact.graph.nodes[0].record_refs), 2)
+        self.assertFalse(artifact.graph.edges)
+        artifact.safe_projection(authenticated_owner_scope=OWNER)
+        for before, now in ((kanji, kana), (kana, kanji)):
+            with self.subTest(now=now):
+                compared = self.compared(now + '。', before + '。').artifact
+                self.assertEqual(compared.period_comparison.change_claims, ())
+                compared.safe_projection(authenticated_owner_scope=OWNER)
+        for now in (kanji.replace('辛い', '苦しい'), kanji.replace('仕事を続けたい', '資料を調べたい')):
+            with self.subTest(now=now):
+                compared = self.compared(now + '。', kanji + '。').artifact
+                self.assertIn('ANNOTATION_EVIDENCE_CHANGED', compared.safe_projection(
+                    authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+        new = '私は資料を調べたいけど、私は辛いです'
+        original = record(memo='私は記録を残した。' + kanji + '。')
+        for answer, count in ((new + '。', 2),
+                ('「' + kanji + '」ではなく「' + new + '」です。', 1),
+                ('「' + kanji + '」は取り消します。', 0)):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(original, answer))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertEqual(len(artifact.graph.annotations), count)
+                if count:
+                    claim = next(a for a in artifact.graph.annotations if '私は辛いです' in a.source_labels)
+                    target = next(n for n in artifact.graph.nodes if n.node_ref == claim.target_ref)
+                    self.assertEqual(target.proposition.predicate_lemma, '調べる')
+                    self.assertEqual(len(claim.update_refs), 1 if count == 1 else 0)
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        # Only the proved predicate meaning is normalized, never the original
+        # text used to identify a correction or withdrawal target.
+        self.assertIsNone(self.generate(request(self.with_answer(original,
+            '「' + kana + '」は取り消します。'))).artifact)
+
+    def test_burden_spelling_does_not_promote_food_or_qualified_feelings(self):
+        prefix = '私は仕事を続けたいけれど、'
+        for right in ('辛い', 'カレーは辛い', '友人は辛い', '私はカレーが辛い',
+                      '私は辛い料理を見た', '私は辛いものを食べたい',
+                      '私は辛かった', '私は辛くない', '私は辛くなかった',
+                      '私は辛いかもしれない', '私は辛いと思う',
+                      '私は辛いと聞いた', '私は辛いという夢を見た',
+                      '私はとても辛い', '私は辛い？'):
+            with self.subTest(right=right):
+                artifact = self.generate(request(record(memo=prefix + right + '。'))).artifact
+                if artifact:
+                    self.assertFalse(artifact.graph.annotations)
+                    artifact.safe_projection(authenticated_owner_scope=OWNER)
+        for memo in ('私は辛い。', '私は仕事を続けたい。私は辛い。',
+                     '私は仕事を続けたけれど、私は辛い。',
+                     '私は仕事を続けたくないけれど、私は辛い。',
+                     '「私は仕事を続けたいけれど、私は辛い」と友人が言った。'):
+            with self.subTest(memo=memo):
+                artifact = self.generate(request(record(memo=memo))).artifact
+                if artifact:
+                    self.assertFalse(artifact.graph.annotations)
+        artifact = self.generate(request(record(memo='', action=prefix + '私は辛い。'))).artifact
+        self.assertIsNotNone(artifact)
+        self.assertFalse(artifact.graph.annotations)
+        self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+        artifact.safe_projection(authenticated_owner_scope=OWNER)
 
     def test_burden_annotation_aggregates_only_its_target_and_preserves_unread_scope(self):
         memo = '私は仕事を続けたいけれど、私はつらい。'

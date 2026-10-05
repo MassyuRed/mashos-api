@@ -14996,3 +14996,26 @@ rootが合成7全文（4時点、明示訂正、撤回、未解析差だけの�
 STRUCTURE_MAP_DELTA_NONE：API既存compiler1／test2／handoff1、Cocolon current03／設計04／06の計7file、新規repo file0。共有owner／Emlis／Piece／API契約／DTO／DB／SQL／RN／製品依存変更0。env／deploy／build／main／merge／IF操作0。u155未配置。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%と最後の確認済み稼働API1a42b9e…／TestFlight6401・本人実機残件は継承値。旧generic0058期待差は未再検証・未修正、全repo PASSではない。
 
 残件は、未対応の認知内容そのものの読取、辛い表記、夢／伝聞から現実へ戻る境界、plain幾等、指定版での本人生成・保存再表示・比較。全表現対応を配置・本人実機の前提にせず、次も実際の内容不一致から限定対象を選ぶ。PR説明の文字数上限に合わせ先頭u154要約をu155へ更新し、u154の全文記録は本handoff／06とGit履歴に保持する。
+
+
+## 2026-10-06 JST u156 — 本人の希望と対比された「辛い」を注記へ保持
+
+Mashの分析内容修正継続指示から、u155までの残件「辛い」表記を実測。開始PR headはAPI `dbaf2dee5739952cf309601e9b85a886e74bff92`／Cocolon `d56d2e1d26525a557676e851a7daac7d3ec56874`、Draft/open/unmerged。前提・作業姿勢current、全体設計01／01B・国家システム02、current03と全file地図、詳細設計04、Karen-Diary必須3fileは同session既読を継承し、入口/current対象条項・最新weekly20261003 §5.3／6.6〜6.10を再確認。恒久incidentは今回全文再読。既知System Context ancestor確認不成立のため追跡正本を直接参照し、生成Contextのfreshnessは主張しない。
+
+実出力で「私は仕事を続けたいけれど、私はつらい」は希望と負荷注記を返す一方、「私は辛い／辛いです」は希望だけを返し、後半を未読として落とす不一致を確認した。共有ownerは既に完全な辛いの現在感情と対比関係を証明しており、漏れはAnalysis `_burden_predicate` の限定述語表にあった。
+
+既存の明示本人主語＋現在肯定述語の完全一致に「辛い」を加え、その一致で得た意味lemmaだけを「つらい」へ揃える。元本文・source_labels・scalar／UTF-8／hash・訂正対象は変更しない。既存 `_wish_burden_pair` の現在肯定希望、本人同士、共有feeling witness、明示対比関係、原文全体境界を全て必要とする。表示は既存「つらいと記述されています。原因や続いている期間は確定していません。」へ接続。同対象の注記集約と期間比較も既存経路で表記差を同じ意味として扱う。一般の「辛い」置換、味覚判定、負荷原因や継続期間の推定は追加しない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。完成条件は読み落としていた本人の負荷を希望に対応する注記へ戻し、原文出典・更新・比較・保存表示を維持すること。root華恋がCodex Workの単一編集・検証・反映owner。同環境read-only agentが共有根拠と最小修正案、技術差分を独立確認した。別model Pro reviewではない。既存の継続修正・PR反映承認内、追加費用・Mash操作0。共有owner／契約の変更や対象preimage衝突が必要ならscopeを広げない。
+
+修正前の対象4methodは14 failed／2 passed／40 subtests passed（2.36秒、失敗数はsubcaseを含む）。この中には新検査のmemo_action期待誤りも含まれる。初回修正後suiteは298 passed／新規1 failed／1637 subtests passed（9.31秒）。memo_action全体をUNAVAILABLEとする新期待が誤りだったため、u155の元関数をそのまま読込み、修正前後どちらも希望1node・注記0・同一全文であることを実測した。新期待だけを正常希望＋負荷保留へ訂正し、既存期待の削除・緩和はしていない。製品sourceは初回suite後変更0。
+
+最終Python3.12.14・隔離pytest9.1.1で **vertical227／storage56／saved-period16＝299 tests PASS／1637 subtests PASS（9.80秒）**。既存Pydantic warning1件。本人5表記と常体／敬体、完全な3出典の原文scalar／UTF-8／hash、共有relation／grounding／time／actor／witness／range／retention欠落時の保留を確認。食品主体・辛い料理／もの・他者・過去・否定・推測・伝聞・夢・強度修飾・疑問・単独感情をこの注記へ昇格しない。
+
+「辛い／つらい」両方向の期間比較は意味差0、苦しいや希望対象の違いは注記内容差を保持。別recordの同対象・同意味注記は原文2表記と6出典を保持して集約する。通常補足・明示訂正／撤回、対象の変更、元が辛いなのに「つらい」を引用した撤回の不成立を確認し、意味同値を原文identityへ流用しない。実service＋合成RPCで表記差の両方向比較を生成・保存し、engine再生成禁止readの同一本文／図／identityとprivate非漏出を確認。実DBは使用していない。
+
+rootが合成7全文（本人の希望と辛さ、二記録集約、通常補足、訂正、撤回、表記差比較、別負荷比較）を読み、実RN buildWatashiMapV2ViewModelの全文／identity／node順／edge／unknown／注記／競合／比較state一致を確認。既存unknown反復表示は残る。React component suite／native／本人入力／商品受入れの確認ではない。最終独立read-only本文・資料reviewと反映commit・remote照合結果はPR3／30へ記録する。
+
+STRUCTURE_MAP_DELTA_NONE：既存Analysis compiler1／test2／API handoff1、Cocolon current03／設計04／06の計7file、新規repo file0。共有owner／Emlis／Piece／realizer／API契約／DTO／DB／SQL／RN／製品依存変更0。env／deploy／build／main／merge／IF操作0。u156未配置。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%と最後の確認済み稼働API1a42b9e…／TestFlight6401・本人実機残件は継承値。旧generic0058期待差は未再検証・未修正、全repo PASSではない。
+
+一般感情、今回実測した負荷側の主語読点「私は、つらい」、未対応認知そのもの、夢／伝聞から現実へ戻る境界、plain幾等、指定版の本人生成・保存再表示・比較は別残件。全表現対応を配置・本人実機の前提にせず、次も実出力の内容不一致から対象を選ぶ。PR説明上限に合わせ先頭u155要約をu156へ更新し、u155全文記録はhandoff／06とGit履歴に保持する。
