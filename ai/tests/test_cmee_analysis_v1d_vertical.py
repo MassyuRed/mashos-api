@@ -612,7 +612,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                 return replace(plan, nuclei=(plan.nuclei[0], n))
             with self.subTest(mismatch=mismatch), patch.object(compiler,
                     'build_final_stage1_grounded_observation_plan', side_effect=changed):
-                for feeling in ('つらい', '辛い'):
+                for feeling in ('つらい', '辛い', '、つらい', '、 辛いです'):
                     artifact = self.generate(request(record(memo='私は仕事を続けたいけれど、私は' + feeling + '。'))).artifact
                     self.assertEqual(artifact.graph.annotations, ())
                     self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
@@ -659,6 +659,87 @@ class AnalysisVerticalTests(unittest.TestCase):
         # text used to identify a correction or withdrawal target.
         self.assertIsNone(self.generate(request(self.with_answer(original,
             '「' + kana + '」は取り消します。'))).artifact)
+
+    def test_burden_topic_comma_preserves_full_original_and_annotation(self):
+        for subject in ('私', '僕', 'ぼく', 'わたし', '自分'):
+            for separator in ('、', '、 ', '、\u3000'):
+                for feeling in ('つらい', '辛いです', '苦しいです'):
+                    with self.subTest(subject=subject, separator=separator, feeling=feeling):
+                        right = subject + 'は' + separator + feeling
+                        memo = '私は仕事を続けたいけれど、' + right + '。'
+                        req = request(record(memo=memo))
+                        artifact = self.generate(req).artifact
+                        self.assertIsNotNone(artifact)
+                        claim, = artifact.graph.annotations
+                        self.assertEqual(claim.source_labels, (right.replace('\u3000', ' '),))
+                        self.assertEqual(claim.target_ref, artifact.graph.nodes[0].node_ref)
+                        self.assertEqual(len(artifact.graph.nodes), 1)
+                        self.assertFalse(artifact.graph.edges)
+                        self.assertEqual(len(claim.evidence_refs), 3)
+                        envelope = freeze_analysis_sources(req).sources[0].envelope
+                        for e in claim.evidence_refs:
+                            literal = envelope.raw_utf8[e.utf8_start:e.utf8_end]
+                            field = envelope.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                            self.assertEqual(literal.decode(), field[e.scalar_start:e.scalar_end])
+                            self.assertEqual(hashlib.sha256(literal).hexdigest(), e.literal_sha256)
+                        right_ref = claim.evidence_refs[1]
+                        self.assertEqual(envelope.raw_utf8[right_ref.utf8_start:right_ref.utf8_end].decode(), right)
+                        # Compare by replacing only the topic separator; the
+                        # connective comma and original evidence are distinct.
+                        baseline = self.generate(request(record(memo=memo.replace(right, subject + 'は' + feeling))))
+                        self.assertEqual(artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'],
+                            baseline.artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+                        self.assertNotIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+
+    def test_burden_topic_comma_keeps_exact_updates_comparison_and_safe_replay(self):
+        old = '私は仕事を続けたいけれど、私は、辛い'
+        plain = old.replace('私は、', '私は')
+        new = '私は資料を調べたいけれど、私は、\u3000苦しいです'
+        for before, now in ((old, plain), (plain, old)):
+            with self.subTest(before=before):
+                artifact = self.compared(now + '。', before + '。').artifact
+                self.assertEqual(artifact.period_comparison.change_claims, ())
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        changed = self.compared(new + '。', old + '。').artifact
+        self.assertIn('ANNOTATION_EVIDENCE_CHANGED', changed.safe_projection(
+            authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+        combined = self.generate(request(record(memo=old + '。'), record(2, memo=plain + '。'))).artifact
+        claim, = combined.graph.annotations
+        self.assertEqual(len(claim.evidence_refs), 6)
+        self.assertEqual(set(claim.source_labels), {'私は、辛い', '私は辛い'})
+        original = record(memo='私は記録を残した。' + old + '。')
+        for answer, burdens in ((new + '。', 2),
+                ('「' + old + '」ではなく「' + new + '」です。', 1),
+                ('「' + old + '」は取り消します。', 0)):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(original, answer))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertEqual(len([a for a in artifact.graph.annotations if a.kind == 'BURDEN']), burdens)
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        self.assertIsNone(self.generate(request(self.with_answer(original,
+            '「' + plain + '」は取り消します。'))).artifact)
+        artifact = self.generate(request(record(memo=old + '。'))).artifact
+        claim, = artifact.graph.annotations
+        for changes in ({'predicate_lemma': '苦しい'}, {'source_labels': ('友人は、辛い',)},
+                        {'evidence_refs': claim.evidence_refs[:2]}):
+            with self.subTest(changes=changes), self.assertRaises(AnalysisSourceError):
+                forged = replace(artifact, graph=replace(artifact.graph,
+                    annotations=(replace(claim, **changes),)))
+                forged.safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_burden_topic_comma_does_not_promote_unproved_or_nonpresent_feelings(self):
+        prefix = '私は仕事を続けたいけれど、'
+        for right in ('私は、、つらい', '私は、\tつらい', '私は、\nつらい',
+                      '私は，つらい', '私は,つらい',
+                      '友人は、つらい', '私は、つらかった', '私は、つらくない',
+                      '私は、つらいかもしれない', '私は、つらいと聞いた',
+                      '私は、とてもつらい', '私は、辛い料理を見た', '私は、つらい？',
+                      '私は、嬉しい', '私は、不安です'):
+            with self.subTest(right=right):
+                artifact = self.generate(request(record(memo=prefix + right + '。'))).artifact
+                self.assertFalse(artifact and artifact.graph.annotations)
+        artifact = self.generate(request(record(memo='', action=prefix + '私は、つらい。'))).artifact
+        self.assertFalse(artifact and artifact.graph.annotations)
 
     def test_burden_spelling_does_not_promote_food_or_qualified_feelings(self):
         prefix = '私は仕事を続けたいけれど、'

@@ -4626,6 +4626,12 @@ def _typed_nucleus_projections_for_span(
                 r"(?:少し|とても|まだ|全然|あまり)?"
                 r"(?P<predicate>(?:嬉し|うれし|寂し|さびし|悲し|苦し|つら|辛|怖|こわ|楽し)"
                 r"(?:い|かった|くない|くなかった)(?:です)?|不安(?:だ|だった|です|でした))",
+                top_level_fragment) or re.fullmatch(
+                # Match a complete explicit-self present burden with the
+                # same topic punctuation as Analysis. Keep the source span
+                # intact; this does not admit other feeling/copula forms.
+                r"(?:私|自分|わたし|僕|ぼく)は、[ \u3000]*"
+                r"(?P<predicate>(?:つらい|辛い|苦しい)(?:です)?)",
                 top_level_fragment)
             if finite_feeling is not None:
                 predicate = finite_feeling['predicate']

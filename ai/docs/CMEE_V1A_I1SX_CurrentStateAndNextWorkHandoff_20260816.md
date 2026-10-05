@@ -15019,3 +15019,27 @@ rootが合成7全文（本人の希望と辛さ、二記録集約、通常補足
 STRUCTURE_MAP_DELTA_NONE：既存Analysis compiler1／test2／API handoff1、Cocolon current03／設計04／06の計7file、新規repo file0。共有owner／Emlis／Piece／realizer／API契約／DTO／DB／SQL／RN／製品依存変更0。env／deploy／build／main／merge／IF操作0。u156未配置。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%と最後の確認済み稼働API1a42b9e…／TestFlight6401・本人実機残件は継承値。旧generic0058期待差は未再検証・未修正、全repo PASSではない。
 
 一般感情、今回実測した負荷側の主語読点「私は、つらい」、未対応認知そのもの、夢／伝聞から現実へ戻る境界、plain幾等、指定版の本人生成・保存再表示・比較は別残件。全表現対応を配置・本人実機の前提にせず、次も実出力の内容不一致から対象を選ぶ。PR説明上限に合わせ先頭u155要約をu156へ更新し、u155全文記録はhandoff／06とGit履歴に保持する。
+
+## 2026-10-06 JST u157 — 本人の主語読点で負荷注記を落とさない
+
+Mashの分析内容修正指示と添付u156作業記録から再開。開始PR headはAPI `620d4f6aa6114bf90fe4f1a8ea20fc12d1b1a707`／Cocolon `0793515efdd1d56c2fb0fdb60012fe7bec2c0d92`、Draft/open/unmerged。必須入口・作業姿勢currentと関連規則、全体設計01・全file地図の導線とcurrent03 owner表、国家システム02、詳細設計04、最新weekly20261003、Karen-Diary必須3fileを確認し、恒久incidentを全文読取。System Context prepareは既知のancestor判定不成立で終了したため追跡正本を直接参照した。生成Contextのfreshnessは主張しない。weeklyの10/10単一縦route、11/30接続build・12/1三大要素実機の区別を維持し、全表現対応を配置の前提にしない。
+
+実出力で「私は仕事を続けたいけれど、私は、つらい。」の負荷注記が落ち、読点なしでは注記が残る不一致を確認した。Analysisの完全述語一致と共有finite feeling witnessの両方が主語読点を未対応だった。既存共有owner内に明示本人5表記＋「は、」＋任意の半角／全角空白＋現在肯定の「つらい／辛い／苦しい」（任意のです）だけの完全一致を追加し、Analysis側も同じ限定形を受理する。既存の本人希望、明示対比、共有witness、原文全体境界の要求は維持し、根拠なしで注記へ通さない。一般感情・名詞copula・過去・否定・推測・他者へは広げない。
+
+原文evidenceのscalar／UTF-8／hashを保持し、既存source_labelsの全角空白正規化を原文identityと混同しない。Analysisの元fieldにあるタブは保留。Emlisでは共有parserより前の既存ledgerがタブを半角空白へ正規化するため、その既存挙動を維持する。独立reviewでこの差を指摘され、実Emlis本文・根拠・独立readerの検査を追加した。改行／CRは別spanになり同じfinite witnessにはしないことも実測。全角コンマ「，」・ASCIIコンマは今回受理しない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。完成条件は読点だけで落ちる負荷注記の復元と、原文・更新・比較・保存表示の整合。root華恋がCodex Workの単一編集・検証・反映owner。同環境read-only agentが技術作用域と最終差分を独立reviewし、別model Pro reviewではない。既存の継続修正・PR反映承認の範囲内で、追加費用・Mash操作0。既存共有owner内の限定文法補正を含み、所有境界・契約変更はない。
+
+検証経過：修正前の新検査は3 failed／1 passed／13 subtests passed（231対象中227 deselected）。初回の拡張案に含めた全角コンマは共有根拠が成立せず、対象を和文読点へ限定した。新検査のsource_labels全角空白期待は既存正規化に合わせて訂正し、原文evidenceの一致要求は維持した。新訂正fixtureの「家族を守りたい」は既存の保護意向複合境界でUNAVAILABLEだったため、既存対応の「資料を調べたい」へ新fixtureだけを訂正した。初回suite指定には不存在のsaved-periodファイル名誤記がありcollection 0、正しい対象へ直して再実行。既存期待の削除・緩和0。
+
+Python3.12.14の隔離環境（pytest8.4.1／pytest-subtests0.14.2／FastAPI0.116.1／httpx0.28.1／Pydantic2.13.5）を構築し、製品依存は変更していない。最終 **Analysis vertical230／storage57／saved-period16＝303 tests PASS・1707 subtests PASS（10.03秒）**。共有Emlisの既存contrastと新規境界を選択した **74 tests PASS・143 deselected（17.48秒）**。合計377 tests PASS、各実行に既存Pydantic warning1件。全repo／共有file全体のPASSとは扱わない。最終suite後の製品source変更0。
+
+再実行対象：`ai/tests/test_cmee_analysis_v1d_vertical.py ai/tests/test_analysis_observed_storage.py ai/tests/test_analysis_saved_period.py`。共有側は `ai/tests/test_cmee_emlis_initial_received_discourse.py -k 'burden_topic_comma or finite_feeling_contrast_keeps or unproved_compound_feelings or explicit_change_does_not or contrast_tense_relation or contrast_owner_degree or other_existing_contrast_connectors or contrast_independent_reader or contrast_copula'`。
+
+本人5表記・3空白形・3負荷、共有根拠欠落時の保留、通常補足・明示訂正／撤回、読点なし引用で読点あり原文を撤回しないこと、safe再解析のlemma／主体／出典改竄拒否を確認。読点だけの両方向期間比較は差分なし、別負荷・別希望は内容差あり。同意味2record集約でも6出典を保持する。実service＋合成RPCで両方向比較を生成・保存し、engine再生成禁止readの同一本文／図／identity・private非漏出を確認。実DBは使用していない。実Emlisの限定感情対比本文と独立readerを検査し、原因化・主体・時制・否定・感情改竄を拒否する。
+
+rootが合成7全文（主語読点、僕＋全角空白、二記録集約、通常補足、訂正、撤回、読点差だけの比較）を読取。実RN buildWatashiMapV2ViewModelで本文／identity／node順／edge／unknown／注記／競合／比較stateが全7例一致。既存unknown反復表示は残る。React component suite／native／本人入力／商品受入れの確認ではない。Emlisの希望＋負荷に対する一般的な返信品質を解消したとは扱わない。反映commit・remote全9file bytes／SHA256・parent・変更path集合と最終独立reviewはPR3／30へ記録する。
+
+STRUCTURE_MAP_DELTA_NONE：既存Analysis compiler1／共有plan1／test3／API handoff1、Cocolon current03／設計04／06の計9file、新規repo file0。共有意味owner内の既存parserを変更しているがownerの追加・移動はない。Piece／realizer／API契約／DTO／DB／SQL／RN／製品依存変更0。env／deploy／build／main／merge／IF操作0。u157未配置。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%、最後の確認済み稼働API1a42b9e…／TestFlight6401・本人実機残件は継承値で、今回再確認していない。旧generic0058期待差も未再検証・未修正。
+
+残件は一般感情、全角／ASCIIコンマ、保護意向を含む希望と負荷の複合、未対応認知そのもの、夢／伝聞から現実へ戻る境界、plain幾等と、指定版での本人生成・保存再表示・比較。次も実出力の内容不一致から限定対象を選ぶ。PR説明上限に合わせ先頭u156要約をu157へ更新し、u156全文は本handoff／06とGit履歴に保持する。

@@ -19,6 +19,68 @@ SINGLE = '褒められたのに、嬉しくなかった。'
 MULTI = SINGLE + '誘われたのに、悲しかった。頼まれたのに、寂しかった。'
 
 
+@pytest.mark.parametrize('left,right', [
+    ('私は悲しい', '私は、つらい'),
+    ('私は悲しい', '僕は、 辛いです'),
+    ('ぼくは、苦しいです', '嬉しかった'),
+    ('わたしは、つらい', '嬉しかった'),
+    ('自分は、苦しい', '嬉しかった'),
+])
+def test_explicit_present_burden_topic_comma_keeps_shared_meaning_and_inverse(left, right):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(left + 'けれど' + right + '。'))
+    result, plan, _, resolver, _ = context
+    assert result.artifact is not None
+    body = result.artifact.text
+    assert '「' + left + '」' in body and '「' + right + '」' in body
+    nodes = {n.nucleus_id: n for n in plan.nuclei}
+    relation = next(r for r in plan.relations if r.type == 'contrast')
+    for ref, text in ((relation.from_nucleus_id, left), (relation.to_nucleus_id, right)):
+        n = nodes[ref]
+        f = n.semantic_frame
+        assert n.kind == 'reaction' and f.predicate_kind == 'feeling'
+        assert 'lexical:source_finite_contrast_feeling' in f.attribute_codes
+        if '、' in text:
+            assert (f.actor, f.time_scope, f.polarity, f.modality) == (
+                'current_user', 'current_input', 'negative', 'feeling')
+            code, = (c for c in f.attribute_codes if c.startswith('source_fragment_scalar_range:'))
+            start, end = map(int, code.split(':')[1:])
+            assert resolver.resolve(n.source_span_ids[0]).raw_text[start:end] == text
+    assert read_body(context, body).passed
+    for old, new in (('けれど、', 'から、'), ('あなたは、', '友人は、'),
+                     ('つらい', 'つらかった'), ('辛い', '辛くない'), ('苦しい', '嬉しい')):
+        if old in body:
+            changed = body.replace(old, new, 1)
+            assert changed != body and not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('right', [
+    '私は、不安です', '私は、嬉しい', '私は、つらかった', '私は、つらくない',
+    '私は、とてもつらい', '私は、、つらい', '私は，つらい', '私は,つらい',
+    '友人は、つらい', '私は、つらいかもしれない', '私は、つらいと聞いた',
+])
+def test_burden_topic_comma_does_not_expand_other_shared_finite_feeling_forms(right):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin('私は仕事を続けたいけれど' + right + '。')))
+    assert not any('lexical:source_finite_contrast_feeling' in n.semantic_frame.attribute_codes
+                   for n in plan.nuclei)
+
+
+def test_shared_burden_topic_comma_uses_existing_ledger_tab_normalization():
+    from test_cmee_emlis_detached_observation import read_body
+    memo = '私は悲しいけれど私は、\tつらい。'
+    context = actual(request=begin(memo))
+    plain = actual(request=begin(memo.replace('\t', ' ')))
+    assert context[0].artifact.text == plain[0].artifact.text
+    nodes = [n for n in context[1].nuclei if n.source_fields == ('memo',)]
+    assert len(nodes) == 2
+    assert all('lexical:source_finite_contrast_feeling' in n.semantic_frame.attribute_codes for n in nodes)
+    assert all('\t' not in context[3].resolve(n.source_span_ids[0]).raw_text for n in nodes)
+    assert read_body(context, context[0].artifact.text).passed
+    # Analysis separately checks original field bytes and keeps tabs unknown;
+    # this shared Emlis ledger has already normalized them before the parser.
+
+
 @pytest.mark.parametrize('left,link,right,left_time,right_time', [
     ('悲しかった', 'けど', '嬉しかった', 'past', 'past'),
     ('悲しい', 'けれど', '嬉しかった', 'current_input', 'past'),

@@ -311,6 +311,30 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                     reread = await service.read_saved(OWNER, report_id=row['id'])
                 self.assertEqual(reread['items'][0], row)
 
+    async def test_burden_topic_comma_survives_save_read_without_regeneration(self):
+        plain = '私は仕事を続けたいけれど、私は辛い。'
+        comma = plain.replace('私は辛い', '私は、\u3000辛い')
+        for before, now in ((plain, comma), (comma, plain)):
+            with self.subTest(now=now):
+                fx = await comparison_fixture(current_memo=now, previous_memo=before)
+                row, private = fx['row'], fx['private']
+                projection = row['content_json']['watashiMap']
+                self.assertEqual(projection['period_comparison'], {'state': 'COMPARABLE',
+                    'reason_codes': [], 'safe_change_kinds': []})
+                self.assertFalse(private['period_comparison']['change_claims'])
+                self.assertEqual(len(projection['annotation_badges']), 1)
+                self.assertEqual(projection['projection_of'], private['projection_of'])
+                self.assertIn('この希望と対比して、つらいと記述されています', row['content_text'])
+                self.assertNotIn('まだ読み取れていない内容', row['content_text'])
+                for evidence in (private, private['previous_evidence']):
+                    self.assertEqual(len(evidence['graph']['annotations'][0]['evidence_refs']), 3)
+                for raw in ('source_labels', 'predicate_lemma', '私は', '辛い'):
+                    self.assertNotIn(raw, json.dumps(private, ensure_ascii=False))
+                with patch.object(service, '_rpc', AsyncMock(return_value=result([row], matched=True))), \
+                        patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                    reread = await service.read_saved(OWNER, report_id=row['id'])
+                self.assertEqual(reread['items'][0], row)
+
     async def test_boku_self_claims_survive_save_read_and_spelling_comparison(self):
         for memo in ('ぼくは職場にいなかったです。ぼくは会議を担当した。'
                      'その後、ぼくは資料を調べた。',
