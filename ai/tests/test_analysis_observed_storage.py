@@ -93,6 +93,7 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         for members in ([{'original': dict(self.fx['original'], memo=memo),
                           'thread': None, 'events': []}] for memo in (
                               '未対応の合成記録です。', '', '私は何を調べた。', '私は誰の資料を見た。',
+                              '私は今週資料を調べた。', '私は今年仕事を続けたい。',
                               '夢を見た。私は資料を調べた。',
                               '友人から聞いた話です。私は仕事を続けたい。',
                               '私は仕事を続けたい、とは思いません、'
@@ -707,7 +708,8 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
 
     async def test_partial_map_with_unparsed_original_is_saved_and_read_without_regeneration(self):
-        for unparsed in ('私は資料を明日ノートに書いた', '私は何を調べた', '私は誰の資料を見た'):
+        for unparsed in ('私は資料を明日ノートに書いた', '私は何を調べた', '私は誰の資料を見た',
+                         '私は今週資料を調べた', '私は今年仕事を続けたい'):
             with self.subTest(unparsed=unparsed):
                 original = dict(self.fx['original'], memo=unparsed + '。私は記録を残した。')
                 writes = []
@@ -736,7 +738,7 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(any('まだ読み取れていない内容' in g['visible_label']
                                     for g in projection['unknown_gaps']))
                 self.assertEqual(saved['content_text'], writes[0]['p_text'])
-                for hidden in ('明日ノート', '何', '誰'):
+                for hidden in ('明日ノート', '何', '誰', '今週資料', '今年仕事'):
                     self.assertNotIn(hidden, json.dumps(saved, ensure_ascii=False))
                 self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
 

@@ -14954,3 +14954,24 @@ rootが合成7本文（action fieldの非行動、所在／担当／順序、否
 STRUCTURE_MAP_DELTA_NONE：既存compiler1／test2／API handoff1とCocolon current03／設計04／06の7file、新規repo file0。共有owner／Emlis／Piece／API契約／DTO／DB／SQL／RN変更0。env／deploy／build／main／merge／IF操作0。今回u153未配置。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%と最後の確認済み稼働API1a42b9e…／TestFlight6401・本人実機残件は継承値。旧generic0058期待差は未再検証・未修正で、全repo PASSではない。
 
 「ぼく」の全面的な言語対応ではない。「ぼくら／ぼくたち／ぼく自身／ぼくも／ぼくが」・他者・主語省略や、共有証拠未成立の敬体名詞変化は保留のまま。別候補の「辛い」表記、未対応時点が名詞へ混入する「今週資料／今年仕事」の実出力も今回は変更せず、次の内容候補として保持する。全表現対応を配置・本人実機の前提にせず、指定版での本人生成・保存再表示・比較は別残件として継承する。
+
+
+## 2026-10-06 JST u154 — 未対応の週・月・年を対象名詞へ混ぜない
+
+Mashの分析構造の内容修正継続指示と添付u153作業記録から再開。開始PR headはAPI `d93b03462fedb73d373ab3e9d3e7f4ad06e2abe2`／Cocolon `ccdcc151a57e78070b5a0c67e67498d29bfa172c`、Draft/open/unmerged。前提・作業姿勢のcurrent rule、全体設計01／01B・国家システム02とcurrent03の全file owner表、設計04、最新weekly20261003の完成条件・§6.6〜6.10、恒久incident全文を確認。System Context prepareは既知のancestor判定不成立で終了したため正本を直接読取。生成Contextのfreshnessは主張しない。
+
+実CMEEで「私は今週資料を調べた」が「今週資料を調べる（実行済み）」へ、「私は今年仕事を続けたい」が「今年仕事を続けることへの希望」へ誤名詞化することを確認。今週／今月／今年／先月／来月／昨年／来年の全7語で同じ原因を再現した。既存compilerの `_UNPARSED_TIME_NOMINAL` の有限語一覧だけを拡張し、名詞区間ごとの既存再帰・元field保留経路へ接続する。時点の新解釈、日付enum、期間推測は追加しない。
+
+普通名詞の退行を避け、完全な「今月号／先月号／来月号」「今年度／昨年度／来年度」は従来どおり受理する。これは区間末尾が号／度のexact例外であり、「今年度資料／今月号資料」等の長い複合まで通さない。「今週の資料」「今年を記録した」は明示された名詞として維持し、行動日時へ変換しない。未解析節以外の独立内容・原文scalar／UTF-8／hash、unknown、否定、期間比較を保持し、未解析節を越す順序を作らない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX／既存設計内の限定修正。対象はAPI既存compiler1／test2／handoff1、Cocolon current03／設計04／06の計7file、新規repo file0。root華恋がCodex Workで編集・実行・反映を担当し、同環境read-only agentが原因・技術差分・合成本文を独立reviewした。別model Pro reviewとは扱わない。追加費用・Mash操作0。既存の継続修正・PR反映承認の範囲内で、共有ownerや契約変更、対象preimage衝突が必要なら範囲を広げない。
+
+検証経過：修正前の対象4methodは59 failed／3 passed／64 subtests passed（7.42秒）。失敗数はsubcaseを含む。初回修正後suiteは293 passed／新規subcase1 failed／1567 subtests passed（9.01秒）。その一例「私は今月資料を調べないかもしれないと思う。私は記録を残した。」は修正前regex・修正後regexのどちらもUNAVAILABLEで、今回の退行ではなかった。新検査だけを、修正前に誤名詞化を再現し修正後に正常独立節が残る「来月」へ訂正した。既存の期待は削除・緩和していない。製品sourceは初回suite後変更0。
+
+最終Python3.12.14・隔離pytest9.1.1で **vertical222／storage55／saved-period16＝293 tests PASS／1568 subtests PASS（8.82秒）**。既存Pydantic warning1件。場面・担当・行動・非行動・希望、別格引数、連体修飾、仮名複合suffix、認知の内側、行動後変化、原文出典、通常補足・訂正／撤回、両入力fieldでの順序保留、未解析部分だけの差を期間の意味差にしないことを確認。実service＋合成RPCで生成→保存→engine再生成禁止read、誤名詞なしの同一本文・図・identityを確認。対象だけの未解析入力では422・commitなしも確認。
+
+rootが合成7全文（時点＋正常節、否定希望、可能性認知、順序保留、年度／月号名詞、明示名詞時点、未解析差の期間比較）を読み、実RN buildWatashiMapV2ViewModelの全文／identity／node順／edge／unknown／注記／競合／比較stateとの一致を確認した。独立read-onlyの最終source/test・本文reviewに具体的blockerなし。既存unknownの反復表現は残る。React component suite、実DB、native、本人入力、商品受入れの確認ではない。旧generic0058期待差は未修正・未再検証で、全repo PASSを主張しない。
+
+STRUCTURE_MAP_DELTA_NONE：既存Analysis名詞保留の漏れ修正のみ。共有意味owner／Emlis／Piece／API契約／DTO／DB／SQL／RN／製品依存変更0。env／deploy／build／main／merge／IF操作0。今回u154未配置。primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・48%、最後の確認済み稼働API1a42b9e…／TestFlight6401・本人生成／保存再表示／比較の実機残件は継承値であり今回再確認していない。反映commitとremote全7file bytes／SHA256・parent・変更path集合はPR3／30先頭へ記録する。
+
+残る境界：任意の週・月・年、日時の網羅対応ではない。今月／今週／今年の可能性認知を含む同fieldがUNAVAILABLEになる既存現象を確認し、今回解消していない。辛い表記、夢／伝聞から現実へ戻る境界、plain幾等も残る。次の内容修正は、正常な独立節まで失う認知scopeの実原因を確認する候補とする。全表現対応を配置・本人実機の前提にせず、指定版で本人記録を生成し保存再表示・比較する残件を別に保持する。

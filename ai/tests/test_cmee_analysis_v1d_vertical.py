@@ -2948,7 +2948,8 @@ class AnalysisVerticalTests(unittest.TestCase):
         self.assertFalse(split.graph.edges)
 
     def test_unparsed_time_prefixes_do_not_become_scene_role_or_action_nouns(self):
-        for time in ('明日', '明後日', '一昨日', '今朝', '昨夜', '先週', '来週'):
+        for time in ('明日', '明後日', '一昨日', '今朝', '昨夜', '先週', '来週',
+                     '今週', '今月', '今年', '先月', '来月', '昨年', '来年'):
             for clause in ('職場にいた', '会議を担当した', '資料を調べた',
                            '職場にいなかった', '会議を担当しなかった', '資料を調べたい'):
                 memo = '私は' + time + clause + '。'
@@ -2964,7 +2965,13 @@ class AnalysisVerticalTests(unittest.TestCase):
                        '私は明日資料を調べてから、疑問が減った',
                        '私は資料を調べてから、明日疑問が減った',
                        '私は明日資料を調べたかもしれないと思っている',
-                       '私は家族の明日生活を守りたい'):
+                       '私は家族の明日生活を守りたい',
+                       '私は今週資料を調べた', '私は今年仕事を続けたくない',
+                       '私は資料を昨年手帳に書いた', '私は新しい先月資料を見た',
+                       '私は学び来月メモを残した', '私は家族の来年生活を守りたい',
+                       '私は来月資料を調べないかもしれないと思う',
+                       '私は資料を調べた後、今年疑問が減った',
+                       '私は今年度資料を調べた', '私は今月号資料を見た'):
             with self.subTest(clause=clause):
                 req = request(record(memo=clause + '。私は記録を残した。'))
                 artifact = self.generate(req).artifact
@@ -3004,6 +3011,8 @@ class AnalysisVerticalTests(unittest.TestCase):
             ('私は明日の資料を調べた。', '明日の資料', '明日の資料を調べる（実行済み）'),
             ('私は来週の資料を調べなかった。', '来週の資料', '来週の資料を調べる（行わなかった）'),
             ('私は明日を記録した。', '明日', '明日を記録する（実行済み）'),
+            ('私は今週の資料を調べた。', '今週の資料', '今週の資料を調べる（実行済み）'),
+            ('私は今年を記録した。', '今年', '今年を記録する（実行済み）'),
         ):
             with self.subTest(memo=memo):
                 artifact = self.generate(request(record(memo=memo))).artifact
@@ -3014,6 +3023,45 @@ class AnalysisVerticalTests(unittest.TestCase):
                 visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
                 self.assertEqual(visual['nodes'][0]['visible_label'], label)
                 self.assertIn(label, artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+
+    def test_period_time_nominal_heads_preserve_existing_year_and_issue_objects(self):
+        # These are complete nominal segments, not a date for the action.
+        for noun in ('今年度', '昨年度', '来年度', '今月号', '先月号', '来月号'):
+            for target in (noun, noun + 'の資料'):
+                with self.subTest(target=target):
+                    req = request(record(memo='私は' + target + 'を見なかった。'))
+                    artifact = self.generate(req).artifact
+                    self.assertIsNotNone(artifact)
+                    node, = artifact.graph.nodes
+                    self.assertEqual(node.proposition.arguments, (('を', target),))
+                    self.assertEqual(node.proposition.relative_day, '')
+                    self.assertEqual(node.proposition.polarity, 'negative')
+                    self.assertIn(target + 'を見る（行わなかった）',
+                        artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+
+    def test_period_time_scope_preserves_updates_comparison_and_order_barrier(self):
+        invalid, valid = '私は今週資料を調べた', '私は資料を調べた'
+        for original, answer in ((valid, invalid + '。'),
+                (valid, '「' + valid + '」ではなく「' + invalid + '」です。'),
+                (invalid, '「' + invalid + '」ではなく「' + valid + '」です。'),
+                (invalid, '「' + invalid + '」は取り消します。')):
+            with self.subTest(answer=answer):
+                outcome = self.generate(request(self.with_answer(
+                    record(memo=original + '。私は記録を残した。'), answer)))
+                self.assertEqual(outcome.status, EngineStatus.UNAVAILABLE)
+        for field in ('memo', 'memo_action'):
+            with self.subTest(field=field):
+                text = '私は記録を残した。' + invalid + '。その後私は作品を作った。'
+                member = record(memo=text) if field == 'memo' else record(memo='', action=text)
+                artifact = self.generate(request(member)).artifact
+                self.assertEqual([n.proposition.predicate_lemma for n in artifact.graph.nodes],
+                                 ['残す', '作る'])
+                self.assertFalse(artifact.graph.edges)
+                self.assertIn('まだ読み取れていない内容',
+                    artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+        artifact = self.compared(invalid + '。私は記録を残した。',
+                                 '私は今年仕事を続けたい。私は記録を残した。').artifact
+        self.assertEqual(artifact.period_comparison.change_claims, ())
 
     def test_unparsed_time_supplements_and_updates_do_not_resolve_by_guessing(self):
         valid, invalid = '私は職場にいた', '私は明日職場にいた'

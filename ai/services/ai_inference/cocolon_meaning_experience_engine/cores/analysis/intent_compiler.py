@@ -136,7 +136,11 @@ _DAY_EXTENSION = re.compile(
     r'朝|昼|夜|晩|夕|午前|午後|早朝|深夜|未明|正午)')
 # Observed unsupported time prefixes must not be swallowed by the open
 # kanji nominal slot. This is not a new time interpretation or day enum.
-_UNPARSED_TIME_NOMINAL = re.compile(r'^(?:明後日|明日|一昨日|今朝|昨夜|先週|来週)(?=.)')
+# Keep complete issue/year nominals (今月号 / 今年度) and their の modifiers.
+# A longer suffix remains unresolved; these exceptions never date an event.
+_UNPARSED_TIME_NOMINAL = re.compile(
+    r'^(?:明後日|明日|一昨日|今朝|昨夜|先週|来週|今週|'
+    r'(?:今月|先月|来月)(?!号$)|(?:今年|昨年|来年)(?!度$))(?=.)')
 _COGNITIVE_HOSTS = {value: value for value in (
     '考えてしまう', '思ってしまう', '考えている', '思っている', '考える', '思う')}
 _COGNITIVE_HOSTS['考えちゃう'] = '考えてしまう'
