@@ -285,6 +285,28 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                     reread = await service.read_saved(OWNER, report_id=row['id'])
                 self.assertEqual(reread['items'][0], row)
 
+    async def test_boku_self_claims_survive_save_read_and_spelling_comparison(self):
+        for memo in ('ぼくは職場にいなかったです。ぼくは会議を担当した。'
+                     'その後、ぼくは資料を調べた。',
+                     'ぼくは家族を守りたい。ぼくは資料を調べないかもしれないと思う。'
+                     'ぼくは仕事を続けたいけれど、ぼくはつらいです。'):
+            with self.subTest(memo=memo):
+                fx = await comparison_fixture(current_memo=memo, previous_memo=memo.replace('ぼく', '僕'))
+                row = fx['row']
+                p = row['content_json']['watashiMap']
+                self.assertEqual(p['period_comparison'], {'state': 'COMPARABLE',
+                    'reason_codes': [], 'safe_change_kinds': []})
+                self.assertEqual(p['projection_of'], fx['private']['projection_of'])
+                self.assertFalse(fx['private']['period_comparison']['change_claims'])
+                for node in p['nodes']:
+                    self.assertIn(node['visible_label'], row['content_text'])
+                self.assertEqual([a['kind'] for a in p['annotation_badges']],
+                                 ['PROTECTIVE', 'BURDEN'] if 'つらい' in memo else [])
+                with patch.object(service, '_rpc', AsyncMock(return_value=result([row], matched=True))), \
+                        patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                    reread = await service.read_saved(OWNER, report_id=row['id'])
+                self.assertEqual(reread['items'][0], row)
+
     async def test_empty_previous_is_dependency_but_unreadable_previous_is_not_first_use(self):
         fx = await comparison_fixture(empty=True)
         self.assertEqual(fx['row']['content_json']['watashiMap']['period_comparison']['state'], 'NO_PREVIOUS')

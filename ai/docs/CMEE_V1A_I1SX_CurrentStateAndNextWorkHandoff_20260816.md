@@ -14933,3 +14933,24 @@ rootが合成6全文（表記差の両方向、明示本人主語、別感情、
 STRUCTURE_MAP_DELTA_NONE：既存compiler1／test2／API handoff1、Cocolon current03／設計04／06の計7file、新規repo file0。共有owner／Emlis／Piece／API契約／DTO／DB／SQL／RN変更0。env／deploy／build／main／merge／IF操作0。今回u152未配置。primary outcomeは限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%と最後の確認済み稼働API1a42b9e…／TestFlight6401・本人実機残件は継承値。旧generic0058期待差は未再検証・未修正、全repo PASSではない。
 
 一般の同義語理解や感情文法を広げたものではない。「嬉しかったです／落ち着きました」、単独感情、今回探索した負荷節「私は、つらい」の読点形は既存共有根拠の境界を含むため、この意味key補正へ混ぜない。その他未対応日本語と、配置後の本人生成・保存再表示・比較は別残件。全表現対応を配置・本人実機の前提にせず、次も実際の内容の不一致から対象を選ぶ。
+
+
+## 2026-10-06 JST u153 — 明示された「ぼくは」を本人記述として保持
+
+Mashの分析内容修正継続指示から再開。fresh PR headはAPI `875c2d0eb5c2808e7edf7535e98f17ad126ddcd9`／Cocolon `a69307830951dc10d20a686a3652b41fb2f5a44c`、Draft/open/unmergedでlocal基準と一致。作業入口とcurrent規則の対象条項、分析current03を再確認し、恒久incidentは今回全文再読。全体設計01→01A/B/Cの全file地図、詳細設計04、最新weekly20261003の完成条件§5.3／6.6〜6.10、Karen-Diary必須3fileと専門ruleは既読を継承。System Contextの既知shallow ancestry確認失敗から追跡正本を直接読取し、生成Contextのfreshnessは主張しない。
+
+実CMEEで「僕は資料を調べた」はGENERATED、「ぼくは資料を調べた」はUNAVAILABLEとなる不一致を確認。共有planを正しいnormalized入力＋evidence_spansで調べ、通常行動・否定・希望・所在・担当・守る意向・認知・行動後感情・希望と負荷の全対象例に根拠が既存成立していると確認した。最初の一回限りprobeはsource wrapperを直接渡したため空planになり、これは根拠なしとは扱わず、実callerの引数へ直して確認した。
+
+原因はAnalysis内の明示主語一覧から「ぼく」だけが欠けていること。既存7subject regexと_fragmentの本人節入口1箇所に追加する計8行の限定修正。直後の「は」、全文一致、共有根拠、原文座標、否定／様相／時制、帰属境界を変えない。行動・非行動・希望・所在・担当・守る意向・認知・行動後の感情・負荷のうち、既存の各証明が成立する完全な節だけを保持する。認知の内側の省略主体はUNSPECIFIEDのままで、本人へ補完しない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX／既存設計内の限定内容修正。完成条件は明示された同じ自己主語の表記による欠落を除き、否定・希望・原文出典・更新・順序・比較・保存後文章／図の一致を保つこと。root華恋がCodex Workで単一編集・検証・反映owner。同環境read-only agentが技術作用域・要件・最終実差分と商品本文を独立確認し、別model Pro reviewではない。継続修正・PR反映の既存承認範囲を継承。追加費用・Mash操作0。共有契約変更や対象preimage衝突が必要ならscopeを増やさない。
+
+修正前の新vertical3methodは**21 failed／1 passed／13 subtests passed（2.87秒）**。読み落としによるassertion失敗とartifact欠落の後続参照を含む。限定修正後の新methodは3 PASS／38 subtests PASS（0.60秒）。その後、別主体等の保留期待をUNAVAILABLEへ明確化し、共有未成立の「ぼくは資料を調べた後、不安が減りました」の保留を実測して追加した。storage1methodも追加し、最終Python3.12.14・隔離pytest9.1.1等で **vertical220／storage55／saved-period16＝291 tests PASS／1492 subtests PASS（8.84秒）**。既存期待の削除・緩和0、製品依存変更0、既存Pydantic warning1件。
+
+原文scalar／UTF-8／hash、memoと対象memo_action、主語読点、昨日、否定・希望・内側可能性、通常補足・明示訂正／撤回、明示順序、「僕」との同義集約と期間差0、否定／希望／別行動の実差分を確認。actor・polarity・source_partsの改竄はsafe再解析で拒否する。実service＋合成RPCで所在／担当／行動と、意向／認知／負荷の2組を比較生成・保存し、engine再生成禁止readで同じ本文・図・identityになることを確認。実DBは使っていない。
+
+rootが合成7本文（action fieldの非行動、所在／担当／順序、否定可能性、守る意向＋負荷、行動後感情、訂正、表記差比較）を全文読取。実RN buildWatashiMapV2ViewModelの本文・identity・node順／edge・unknown・注記・競合・比較stateが全7例で一致。独立read-only最終source/test／本文reviewに具体的blockerなし。React component suite／native／本人入力／商品受入れの確認ではない。remote全7file bytes／SHA256・parent・変更path集合の照合結果と反映commitはPR3／30に記録する。PR説明の文字数上限のため直前u152先頭summaryをu153へ更新し、u152の全記録は本handoff／06末尾とGit履歴で保持する。
+
+STRUCTURE_MAP_DELTA_NONE：既存compiler1／test2／API handoff1とCocolon current03／設計04／06の7file、新規repo file0。共有owner／Emlis／Piece／API契約／DTO／DB／SQL／RN変更0。env／deploy／build／main／merge／IF操作0。今回u153未配置。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%と最後の確認済み稼働API1a42b9e…／TestFlight6401・本人実機残件は継承値。旧generic0058期待差は未再検証・未修正で、全repo PASSではない。
+
+「ぼく」の全面的な言語対応ではない。「ぼくら／ぼくたち／ぼく自身／ぼくも／ぼくが」・他者・主語省略や、共有証拠未成立の敬体名詞変化は保留のまま。別候補の「辛い」表記、未対応時点が名詞へ混入する「今週資料／今年仕事」の実出力も今回は変更せず、次の内容候補として保持する。全表現対応を配置・本人実機の前提にせず、指定版での本人生成・保存再表示・比較は別残件として継承する。

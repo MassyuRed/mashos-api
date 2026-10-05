@@ -41,6 +41,91 @@ class AnalysisVerticalTests(unittest.TestCase):
             period_start='2026-09-29T00:00:00Z', period_end='2026-10-01T00:00:00Z')
         return self.generate(replace(request(record(memo=current)), comparison_previous_request=old))
 
+    def test_boku_spelling_preserves_explicit_self_claims_and_original_evidence(self):
+        clauses = (
+            'ぼくは、資料を調べました。', 'ぼくは昨日資料を調べなかったです。',
+            'ぼくは仕事を続けたい。', 'ぼくは仕事を続けたくありませんでした。',
+            'ぼくは、職場にいた。', 'ぼくは昨日、職場にいなかったです。',
+            'ぼくは会議を担当した。', 'ぼくは会議を担当しなかったです。',
+            'ぼくは、家族を守りたいです。',
+            'ぼくは、資料を調べないかもしれないと思う。',
+            'ぼくは資料を調べた後、ぼくは嬉しかった。',
+            'ぼくは資料を調べてから、ぼくは、安心しました。',
+            'ぼくは仕事を続けたいけれど、ぼくはつらいです。',
+        )
+        for memo in clauses:
+            with self.subTest(memo=memo):
+                req = request(record(memo=memo))
+                result = self.generate(req)
+                self.assertEqual(result.status, EngineStatus.GENERATED)
+                artifact = result.artifact
+                baseline = self.generate(request(record(memo=memo.replace('ぼく', '僕')))).artifact
+                self.assertEqual(artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'],
+                    baseline.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+                source = freeze_analysis_sources(req).sources[0].envelope
+                for node in artifact.graph.nodes:
+                    self.assertEqual(node.proposition.actor, 'SELF')
+                    if node.proposition.possible_content:
+                        self.assertEqual(node.proposition.possible_content.actor, 'UNSPECIFIED')
+                    for e in node.evidence_refs:
+                        raw = source.raw_utf8[e.utf8_start:e.utf8_end]
+                        field = source.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                        self.assertIn('ぼくは', raw.decode())
+                        self.assertEqual(field[e.scalar_start:e.scalar_end], raw.decode())
+                        self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                compared = self.compared(memo, memo.replace('ぼく', '僕')).artifact
+                self.assertEqual(compared.period_comparison.change_claims, ())
+        for action in ('ぼくは資料を調べた。', 'ぼくは資料を調べなかった。', 'ぼくは仕事を続けたい。'):
+            with self.subTest(action=action):
+                artifact = self.generate(request(record(memo='', action=action))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertEqual(artifact.graph.nodes[0].evidence_refs[0].field_path, 'memo_action')
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_boku_spelling_keeps_supplement_updates_order_and_meaning_differences(self):
+        old = 'ぼくは資料を調べた'
+        new = 'ぼくは記録を残した'
+        original = record(memo=old + '。私は仕事を続けたい。')
+        for answer, expected in ((new + '。', ('調べる', '続ける', '残す')),
+                ('「' + old + '」ではなく「' + new + '」です。', ('続ける', '残す')),
+                ('「' + old + '」は取り消します。', ('続ける',))):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(original, answer))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertEqual(tuple(n.proposition.predicate_lemma for n in artifact.graph.nodes), expected)
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        ordered = self.generate(request(record(memo=old + '。その後、' + new + '。'))).artifact
+        first, second = ordered.graph.nodes
+        self.assertEqual([(e.edge_kind, e.endpoint_refs) for e in ordered.graph.edges],
+                         [('OBSERVED_ORDER', (first.node_ref, second.node_ref))])
+        repeated = self.generate(request(record(memo=old + '。'), record(2, memo=old.replace('ぼく', '僕') + '。'))).artifact
+        node, = repeated.graph.nodes
+        self.assertEqual(len(node.evidence_refs), 2)
+        for now in ('ぼくは資料を調べなかった。', 'ぼくは資料を調べたい。', 'ぼくは記録を残した。'):
+            with self.subTest(now=now):
+                self.assertIn('ROUTE_EVIDENCE_CHANGED', self.compared(now, old + '。').artifact.safe_projection(
+                    authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+
+    def test_boku_spelling_does_not_infer_collective_other_or_unsupported_subjects(self):
+        for topic in ('ぼくらは', 'ぼくたちは', 'ぼく自身は', 'ぼくも', 'ぼくが', '友人は', 'あなたは', ''):
+            with self.subTest(topic=topic):
+                self.assertIsNone(self.generate(request(record(memo=topic + '資料を調べた。'))).artifact)
+        for memo in ('ぼくは資料を調べた？', 'ぼくは資料を調べたと聞いた。',
+                     '夢を見た。ぼくは資料を調べた。',
+                     'ぼくは資料を調べた後、友人は安心した。',
+                     'ぼくは仕事を続けたいけれど、友人はつらい。',
+                     'ぼくは資料を調べた後、不安が減りました。'):
+            with self.subTest(memo=memo):
+                self.assertIsNone(self.generate(request(record(memo=memo))).artifact)
+        artifact = self.generate(request(record(memo='ぼくは資料を調べた。'))).artifact
+        node, = artifact.graph.nodes
+        for changes in ({'actor': 'UNSPECIFIED'}, {'polarity': 'negative'},
+                        {'source_parts': node.proposition.source_parts[1:]}):
+            with self.subTest(changes=changes), self.assertRaises(AnalysisSourceError):
+                forged = replace(node, proposition=replace(node.proposition, **changes))
+                replace(artifact, graph=replace(artifact.graph, nodes=(forged,))).safe_projection(
+                    authenticated_owner_scope=OWNER)
+
     def test_period_comparison_ignores_ids_inflection_order_and_dependent_proof_form(self):
         for before, now in (
             ('私は家族を守りたい。', '僕は家族を守りたいです。'),
