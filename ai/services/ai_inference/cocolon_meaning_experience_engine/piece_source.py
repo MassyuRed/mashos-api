@@ -134,7 +134,7 @@ _SCOPE_RELATIONS = {
 }
 _SCOPED_EXPRESSION = re.compile(
     r'^(?P<scope>(?P<premise>.+?)(?P<marker>'
-    + '|'.join(map(re.escape, _SCOPE_RELATIONS)) + r'))[、，,][ \t]*'
+    + '|'.join(map(re.escape, _SCOPE_RELATIONS)) + r'))[、，,][ \t\u3000]*'
     r'(?P<intention>(?:私|わたし|僕|ぼく|俺|おれ)(?:は|にとって|が)[、，,]?.+。)$')
 # A sentence-initial time topic qualifies an explicit evaluation. The comma
 # fixes its boundary; time words inside the nominal target are not extracted.
