@@ -14838,3 +14838,20 @@ rootが合成8本文（現在、昨日の過去、補足、訂正、撤回、希
 STRUCTURE_MAP_DELTA_NONE：既存Analysis内の活用補正だけで、新owner／共有意味／Emlis／Piece／API契約／DTO／DB／SQL／RN変更0。env／deploy／build／main／merge／IF操作0。Draft/open/unmerged、u129〜u147未配置。primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・48%、確認済み稼働API `1a42b9e…`／TestFlight6401送信成功、本人生成・保存再表示・比較の実機残件は継承値。
 
 今回の2形は解消。強調助詞付きの否定希望「たくはありません」等は今回の対象外で、対応済みとはしない。次の内容作業は実本文・共有根拠から未解析部分を選び、plain幾を一律拒否する方向には進めない。表現網羅の完了を配置・本人実機の前提にしない。
+
+
+## 2026-10-05 JST u148 — 夢・伝聞の中の行動を本人の事実へ変換しない
+
+Mashの分析内容修正指示と添付u147報告から再開。開始headはAPI `4251b31d0a4134cc661a4cabf9b05f1c83910398`／Cocolon `0924c9b456f7ea2c50a6315dde526f4106f68679`。前提・作業入口／CURRENT_RULES／Rule18、恒久incident全文、全体設計01と01A/B/C全file地図の区分・Analysis関係、current03／設計04、最新weekly20261003 §5・§6.6〜6.10を確認。Karen-Diary必須3fileと専門ruleは同環境read-only agentが確認。System Context prepareはshallow cloneで指定祖先との関係を確認できず失敗し、許可された追跡正本の直接読取へ戻した。生成Contextをfreshとは扱わない。
+
+実CMEEで「夢を見た。私は資料を調べた。」「友人から聞いた話です。私は資料を調べた。」が「資料を調べる（実行済み）」となる誤昇格を再現した。希望も同様で、場面・担当では既に保留されていた。既存 `_fragment` の夢／聞いた話／読んだ内容の判定がevent/protective限定だったため、同じ判定を共通のrecord_context境界へ移した。patternとmemo／memo_actionの範囲は不変。語彙や別の文末判定は拡張せず、通常行動・非行動・希望・認知・行動後の変化・希望と負荷にも、未確定の帰属を保つ既存条件を適用する。
+
+OBSERVED_BLOCKER_MINIMAL_FIX／既存設計内Rule18 LEVEL_2。完成条件は夢・伝聞内の誤った本人事実を止め、独立した別recordの行動・元出典・unknown・保存再表示を保持すること。実行環境Codex Work、root華恋が単一の編集・検証・反映owner。補助agentの調査／最終差分reviewは同環境read-onlyで、別model Pro reviewではない。対象は既存compiler1／test2／API handoff1とCocolon current03／設計04／06の7file。追加費用・Mash操作0。共有owner／契約／対象preimageに変更が必要なら範囲を広げず停止する。
+
+追加vertical3methodの修正前実行で49 subcase failure、3 methods passed表示を確認した。初稿に含めた不自然な「聞きました話／読みました内容」の2前置形は新検査から外し、自然な夢／聞いた話／読んだ内容の3形を最終対象とした。既存検査期待は削除・緩和0。修正後は再発見したPython3.12.14・pytest9.1.1・FastAPI0.142.2・httpx0.28.1を実import確認し、対象 **vertical206／storage50／saved-period16＝272 tests PASS／1344 subtests PASS（7.66秒）**。既存Pydantic warning1件。通常節、field横断、行動順序の非生成、別record保持、原文UTF-8／hash、通常補足、誤った訂正／撤回対象の拒否を確認。storageの既存生成失敗検査に2例を追加し422・commitなしを確認。実service＋合成RPCで3形の保留recordと独立recordを生成→保存→再生成禁止readし、文章・図・identity・unknownが同一であることを確認した。
+
+rootは夢／伝聞だけの2例のUNAVAILABLEと、独立記録併存4例・正常な明示順序1例・未解析部分だけが異なる期間比較1例の合成6本文を全文確認した。最後の比較はCOMPARABLE・safe_change_kinds空で、読めない内容の差を意味差へ変換しない。全6例を実RN buildWatashiMapV2ViewModelへ渡し、文章全文・identity・node順／edge／unknown／注記／競合／比較stateの一致を確認。同環境の独立read-only最終source/test reviewに具体的blockerなし。
+
+STRUCTURE_MAP_DELTA_NONE：既存Analysisの帰属境界の適用漏れ補正のみ。共有owner／Emlis／Piece／API契約／DTO／DB／SQL／RN／製品依存変更0。env／deploy／build／main／merge／IF操作0。Draft/open/unmerged、u129〜u148未配置。実DB・native・本人入力・商品受入れは未確認。primary outcomeは限定TECHNICAL_CREDIT。旧generic0058期待差は未再検証・未修正で、全repo PASSではない。商品0/3・NOT_CLEAR・48%、最後の確認済み稼働API1a42b9e…／TestFlight6401送信成功と実機残件は継承値。反映commit・remote全7fileのbytes／変更path／parent照合はPR3／30先頭に記録する。
+
+残る制約：同一record内で夢／伝聞が閉じて現実の話へ戻る境界は判別せず、既存のrecord単位保留を維持する。別recordの直接記述は利用する。plain幾の意味判別、その他の未対応日本語、配置後の本人生成・保存再表示・比較は未完了。網羅対応を配置や本人実機の新しい前提にしない。次の内容作業も実際の本文と共有根拠の不一致から選び、今回を一般的な夢／伝聞理解の完成とは扱わない。

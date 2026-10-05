@@ -90,7 +90,9 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
     async def test_generation_failure_logs_current_reason_without_saving(self):
         for members in ([{'original': dict(self.fx['original'], memo=memo),
                           'thread': None, 'events': []}] for memo in (
-                              '未対応の合成記録です。', '', '私は何を調べた。', '私は誰の資料を見た。')):
+                              '未対応の合成記録です。', '', '私は何を調べた。', '私は誰の資料を見た。',
+                              '夢を見た。私は資料を調べた。',
+                              '友人から聞いた話です。私は仕事を続けたい。')):
             snapshot = {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': members}
             with self.subTest(memo=members[0]['original']['memo']), \
                     patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
@@ -690,6 +692,43 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(saved['content_text'], writes[0]['p_text'])
                 for hidden in ('明日ノート', '何', '誰'):
                     self.assertNotIn(hidden, json.dumps(saved, ensure_ascii=False))
+                self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
+
+    async def test_open_attribution_keeps_only_independent_record_after_save_and_read(self):
+        for context in ('夢を見た。', '友人から聞いた話です。', '本で読んだ内容です。'):
+            with self.subTest(context=context):
+                original = dict(self.fx['original'], memo='私は記録を残した。')
+                reported = dict(original, id=str(UUID(int=102)),
+                    memo=context + '私は資料を調べた。その後私は作品を作った。')
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': member, 'thread': None, 'events': []}
+                            for member in (reported, original)]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    if name == 'analysis_observed_read':
+                        return result([self.row], matched=True)
+                    raise AssertionError(name)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(len(writes), 1)
+                self.assertEqual(reread['items'][0], saved)
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                self.assertEqual([n['visible_label'] for n in projection['nodes']], ['記録を残す（実行済み）'])
+                self.assertFalse(projection['edges'])
+                self.assertIn('まだ読み取れていない内容', saved['content_text'])
+                self.assertNotIn('資料を調べる', saved['content_text'])
                 self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
 
     async def test_polite_past_wishes_survive_save_and_read_without_regeneration(self):

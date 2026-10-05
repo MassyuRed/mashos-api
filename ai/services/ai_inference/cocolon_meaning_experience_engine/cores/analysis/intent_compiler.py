@@ -909,6 +909,12 @@ def _fragment(source, nucleus, plan=None):
     if re.search(r'によると|いわく|曰く|の(?:話|感想|気持ち|説明|報告|発言)(?:です|だ|[。．.])',
                  record_context):
         return None
+    # Dream/heard/read attribution also remains open across sentences and
+    # fields. Apply the existing boundary to every observed claim, not only
+    # scenes, roles and protective wishes: SELF grammar cannot close it.
+    if re.search(r'(?:聞いた|聞きました|読んだ|読みました)(?:話|内容)|夢を見',
+                 record_context):
+        return None
     value = span.raw_text[a:b].strip(' 、，。．')
     if not value:
         return None
@@ -934,11 +940,6 @@ def _fragment(source, nucleus, plan=None):
             or not _protective_wish_witness(nucleus)):
         return None
     if event is not None or protective is not None:
-        # An open report/dream can carry across a sentence boundary; a
-        # local SELF event or wish cannot close that attribution scope.
-        if re.search(r'(?:聞いた|聞きました|読んだ|読みました)(?:話|内容)|夢を見',
-                     record_context):
-            return None
         # The ledger also splits long sentences at commas or fixed lengths.
         # A complete span is not necessarily a complete finite host. Check
         # the parser field (or proved correction view), retaining newlines as

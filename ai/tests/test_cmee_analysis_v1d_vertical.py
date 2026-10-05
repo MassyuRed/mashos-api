@@ -746,6 +746,57 @@ class AnalysisVerticalTests(unittest.TestCase):
                 field = envelope.raw_utf8[evidence.field_utf8_start:evidence.field_utf8_end].decode()
                 self.assertEqual(field[evidence.scalar_start:evidence.scalar_end], literal.decode())
 
+    def test_open_dream_and_heard_read_scope_do_not_become_observed_claims(self):
+        for prefix in ('夢を見た。', '友人から聞いた話です。', '本で読んだ内容です。'):
+            for clause in ('私は資料を調べた。', '私は資料を調べなかった。',
+                           '私は仕事を続けたくありませんでした。',
+                           '私は資料を調べるかもしれないと思う。',
+                           '私は資料を調べた後、疑問が減った。',
+                           '私は仕事を続けたいけれど、私はつらい。'):
+                with self.subTest(prefix=prefix, clause=clause):
+                    self.assertIsNone(self.generate(request(record(memo=prefix + clause))).artifact)
+            for memo, action in ((prefix, '私は資料を調べた。'),
+                                 ('私は資料を調べた。', prefix)):
+                with self.subTest(memo=memo, action=action):
+                    self.assertIsNone(self.generate(request(record(memo=memo, action=action))).artifact)
+
+    def test_open_dream_scope_keeps_independent_record_and_unresolved_source(self):
+        for context in ('夢を見た。', '友人から聞いた話です。', '本で読んだ内容です。'):
+            with self.subTest(context=context):
+                req = request(record(memo=context + '私は資料を調べた。その後私は作品を作った。'),
+                              record(2, memo='私は記録を残した。'))
+                artifact = self.generate(req).artifact
+                self.assertIsNotNone(artifact)
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                self.assertEqual([n['visible_label'] for n in visual['nodes']], ['記録を残す（実行済み）'])
+                self.assertFalse(visual['edges'])
+                self.assertIn('まだ読み取れていない内容', text)
+                self.assertNotIn('資料を調べる', text)
+                node, = artifact.graph.nodes
+                evidence, = node.evidence_refs
+                source = next(s.envelope for s in freeze_analysis_sources(req).sources
+                              if s.envelope.envelope_id == evidence.source_envelope_id)
+                literal = source.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                self.assertEqual(literal.decode(), '私は記録を残した')
+                self.assertEqual(hashlib.sha256(literal).hexdigest(), evidence.literal_sha256)
+        # The same clear clause outside an open attribution retains its fact.
+        clean = self.generate(request(record(memo='私は資料を調べた。'))).artifact
+        self.assertEqual(clean.safe_projection(authenticated_owner_scope=OWNER)['nodes'][0]['visible_label'],
+                         '資料を調べる（実行済み）')
+
+    def test_open_dream_scope_cannot_be_adopted_by_supplement_or_correction(self):
+        clause = '私は資料を調べた'
+        for context in ('夢を見た。', '友人から聞いた話です。', '本で読んだ内容です。'):
+            original = record(memo=context + clause + '。')
+            for answer in ('「' + clause + '」ではなく「私は資料を調べなかった」です。',
+                           '「' + clause + '」は取り消します。'):
+                with self.subTest(context=context, answer=answer):
+                    self.assertIsNone(self.generate(request(self.with_answer(original, answer),
+                        record(2, memo='私は記録を残した。'))).artifact)
+            self.assertIsNone(self.generate(request(self.with_answer(
+                record(memo='私は記録を残した。'), context + clause + '。'))).artifact)
+
     def test_period_is_half_open_and_timezone_aware(self):
         inside = record(created_at='2026-10-01T09:00:00+09:00')
         outside = record(2, created_at='2026-10-03T00:00:00Z')
