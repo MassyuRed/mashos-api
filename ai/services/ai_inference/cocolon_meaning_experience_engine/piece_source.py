@@ -782,7 +782,7 @@ _EVALUATIVE_FOCUS = re.compile(
     + r'のは[、，,]?(?P<target>.+?)(?P<copula>です|だ)。$')
 _EVALUATIVE_FINITE = re.compile(
     r'^(?P<speaker>私|わたし|僕|ぼく|俺|おれ)'
-    r'(?P<construction>にとって|は)[、，,]?'
+    r'(?P<construction>にとって|は)[、，,]?[ \t\u3000]*'
     r'(?P<target>.+?)が'
     # A complete finite evaluation may leave its nonpast affirmative copula
     # unwritten. The explicit speaker, target particle and predicate still
