@@ -14975,3 +14975,24 @@ rootが合成7全文（時点＋正常節、否定希望、可能性認知、順
 STRUCTURE_MAP_DELTA_NONE：既存Analysis名詞保留の漏れ修正のみ。共有意味owner／Emlis／Piece／API契約／DTO／DB／SQL／RN／製品依存変更0。env／deploy／build／main／merge／IF操作0。今回u154未配置。primary outcomeは限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・48%、最後の確認済み稼働API1a42b9e…／TestFlight6401・本人生成／保存再表示／比較の実機残件は継承値であり今回再確認していない。反映commitとremote全7file bytes／SHA256・parent・変更path集合はPR3／30先頭へ記録する。
 
 残る境界：任意の週・月・年、日時の網羅対応ではない。今月／今週／今年の可能性認知を含む同fieldがUNAVAILABLEになる既存現象を確認し、今回解消していない。辛い表記、夢／伝聞から現実へ戻る境界、plain幾等も残る。次の内容修正は、正常な独立節まで失う認知scopeの実原因を確認する候補とする。全表現対応を配置・本人実機の前提にせず、指定版で本人記録を生成し保存再表示・比較する残件を別に保持する。
+
+
+## 2026-10-06 JST u155 — 未対応の時点を含む認知で独立した記述まで失わない
+
+Mashの分析内容修正継続指示から、u154末尾の実出力残件を継続。開始PR headはAPI `05bbd4f600df8c69c964d7584e0502dc47ac067f`／Cocolon `a075fe4cdd0ddb2f03ef20333296b2ffcdc02c5a`、Draft/open/unmerged。前提・作業姿勢current、全体設計01／01B・国家システム02とcurrent03の全file地図、設計04、最新weekly20261003の完成条件と§6.6〜6.10、Karen-Diary必須3fileは同session既読を継承。恒久incidentは今回全文再読。既知のSystem Context ancestor確認不成立については追跡正本を直接読み、生成Contextのfreshnessを主張しない。
+
+「私は今月資料を調べないかもしれないと思う。私は記録を残した。」がUNAVAILABLEになる原因を確認。共有の現在時点prefixが今朝／今週／今月／今年の先頭「今」だけを消費し、Analysisの本人主語直後という完全内容境界とずれていた。そのため同fieldの不確実性guardが独立した正常節まで止めていた。
+
+既存Analysis `_cognitive_proposition` 内だけを補正。主語後の隙間が正確に「今」1字で、元の内容が既存未解析時点prefixに一致するときだけ、元本文上の開始位置へ戻す。既存の完全有限節解析後にも未解析名詞scopeであることを要求する。対象認知は従来の保留経路で除外し、別の独立した証明済み記述だけを残す。新しい時点解釈・認知名詞の受理、主体補完、未解析節を越した順序線は追加しない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。完成条件は未解析認知に巻き込まれた独立節の復元と、原文証拠・更新・比較・保存後表示の整合。同環境read-only agentが原因と差分を独立確認し、root華恋がCodex Workで単一編集・実行・反映owner。別model Pro reviewではない。既存の継続修正・PR反映承認内、追加費用・Mash操作0。共有契約変更や対象preimage衝突が必要なら範囲を広げない。
+
+修正前の新vertical3methodは9 failed／2 passed／9 subtests passed（1.51秒、失敗数はsubcaseを含む）。最初の修正後は296 tests／1593 subtests PASS。独立reviewで、別引数の未解析scopeだけで対象外の「今」も復元し得る条件漏れを指摘され、開始prefix照合と「私は今資料を明日ノートに書いたかもしれないと思う」の保留検査を追加した。最終Python3.12.14・隔離pytest9.1.1で **vertical225／storage55／saved-period16＝296 tests PASS／1594 subtests PASS（8.95秒）**。既存期待削除・緩和0、既存Pydantic warning1件。最終suite後source変更0。
+
+今朝／今週／今月／今年・肯定／否定内容・前後両配置で正常節だけを保持し、原文scalar／UTF-8／hashを確認。通常補足・正常節の明示訂正／撤回、未解析対象の更新保留、明示順序の非接続、来月との未解析差を意味差にしないことを確認。未知動詞・希望内容・開いた推測・共有根拠なしは保留を維持する。今月号／今年度の資料／今週の資料や今、／現在／今日を含む新しい認知は今回受理を拡張しない。実service＋合成RPCで生成→保存→engine再生成禁止readの同一本文・図・identityを確認。未解析認知だけの場合は422・commitなし。実DB未使用。
+
+rootが合成7全文（4時点、明示訂正、撤回、未解析差だけの期間比較）を読み、実RN buildWatashiMapV2ViewModelの全文／identity／node順／edge／unknown／注記／競合／比較state一致を確認。prefix条件追加後も全7例を再生成し、本文・graph内容が同一、各生成内の文章／図／RN identity一致を再照合した。再生成間のartifact identityは変わるため同一とは扱わない。既存unknown反復表現は残る。React component suite／native／本人入力／商品受入れの確認ではない。最終独立reviewと反映commit・remote照合結果はPR3／30に記録する。
+
+STRUCTURE_MAP_DELTA_NONE：API既存compiler1／test2／handoff1、Cocolon current03／設計04／06の計7file、新規repo file0。共有owner／Emlis／Piece／API契約／DTO／DB／SQL／RN／製品依存変更0。env／deploy／build／main／merge／IF操作0。u155未配置。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%と最後の確認済み稼働API1a42b9e…／TestFlight6401・本人実機残件は継承値。旧generic0058期待差は未再検証・未修正、全repo PASSではない。
+
+残件は、未対応の認知内容そのものの読取、辛い表記、夢／伝聞から現実へ戻る境界、plain幾等、指定版での本人生成・保存再表示・比較。全表現対応を配置・本人実機の前提にせず、次も実際の内容不一致から限定対象を選ぶ。PR説明の文字数上限に合わせ先頭u154要約をu155へ更新し、u154の全文記録は本handoff／06とGit履歴に保持する。

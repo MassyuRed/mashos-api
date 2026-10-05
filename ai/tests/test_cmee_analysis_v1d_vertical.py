@@ -1545,6 +1545,82 @@ class AnalysisVerticalTests(unittest.TestCase):
         self.assertIsNone(self.generate(request(record(memo=
             '私は記録を残した。私は、資料を調べるかもしれないと思う。まだ違うかもしれない。'))).artifact)
 
+    def test_unparsed_cognitive_time_preserves_independent_original_claims(self):
+        for time in ('今朝', '今週', '今月', '今年'):
+            for predicate in ('調べた', '調べない'):
+                with self.subTest(time=time, predicate=predicate):
+                    unresolved = '私は' + time + '資料を' + predicate + 'かもしれないと思う'
+                    for memo in (unresolved + '。私は記録を残した。',
+                                 '私は記録を残した。' + unresolved + '。'):
+                        req = request(record(memo=memo))
+                        result = self.generate(req)
+                        self.assertEqual(result.status, EngineStatus.GENERATED)
+                        artifact = result.artifact
+                        node, = artifact.graph.nodes
+                        self.assertEqual(node.proposition.arguments, (('を', '記録'),))
+                        self.assertEqual(node.proposition.predicate_lemma, '残す')
+                        e, = node.evidence_refs
+                        source = freeze_analysis_sources(req).sources[0].envelope
+                        literal = '私は記録を残した'
+                        field = source.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                        self.assertEqual(source.raw_utf8[e.utf8_start:e.utf8_end].decode(), literal)
+                        self.assertEqual(field[e.scalar_start:e.scalar_end], literal)
+                        self.assertEqual(hashlib.sha256(literal.encode()).hexdigest(), e.literal_sha256)
+                        p = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                        text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)
+                        self.assertEqual(p['projection_of'], text['projection_of'])
+                        self.assertEqual([n['visible_label'] for n in p['nodes']], ['記録を残す（実行済み）'])
+                        self.assertIn('まだ読み取れていない内容', text['text'])
+                        self.assertNotIn(time + '資料', text['text'])
+                        self.assertFalse(p['edges'])
+
+    def test_unparsed_cognitive_time_keeps_order_updates_and_period_meaning(self):
+        unresolved = '私は今月資料を調べないかもしれないと思う'
+        normal = '私は記録を残した'
+        base = record(memo=normal + '。' + unresolved + '。その後私は作品を作った。')
+        artifact = self.generate(request(base)).artifact
+        self.assertEqual([n.proposition.predicate_lemma for n in artifact.graph.nodes], ['残す', '作る'])
+        self.assertFalse(artifact.graph.edges)
+        for answer, expected in (('私は資料を調べた。', ['残す', '作る', '調べる']),
+                ('「' + normal + '」ではなく「私は考えを書いた」です。', ['作る', '書く']),
+                ('「' + normal + '」は取り消します。', ['作る'])):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(base, answer))).artifact
+                self.assertEqual([n.proposition.predicate_lemma for n in artifact.graph.nodes], expected)
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        for answer in ('「' + unresolved + '」は取り消します。',
+                       '「' + unresolved + '」ではなく「私は資料を調べた」です。'):
+            with self.subTest(answer=answer):
+                self.assertIsNone(self.generate(request(self.with_answer(base, answer))).artifact)
+        compared = self.compared(unresolved + '。' + normal + '。',
+                                 unresolved.replace('今月', '来月') + '。' + normal + '。').artifact
+        self.assertEqual(compared.period_comparison.change_claims, ())
+
+    def test_cognitive_time_recovery_does_not_admit_unparsed_or_open_uncertainty(self):
+        unresolved = '私は今月資料を調べないかもしれないと思う'
+        self.assertIsNone(self.generate(request(record(memo=unresolved + '。'))).artifact)
+        # No expansion to new cognition nouns, other time markers or unknown
+        # predicates; open speculation still blocks the complete source field.
+        for bad in ('私は今月号を見たかもしれないと思う',
+                    '私は今年度の資料を調べたかもしれないと思う',
+                    '私は今週の資料を調べたかもしれないと思う',
+                    '私は今、資料を調べたかもしれないと思う',
+                    '私は今資料を明日ノートに書いたかもしれないと思う',
+                    '私は現在資料を調べたかもしれないと思う',
+                    '私は今日資料を調べたかもしれないと思う',
+                    '私は今月資料を読んだかもしれないと思う',
+                    '私は今月資料を調べたいかもしれないと思う',
+                    'まだ違うかもしれない'):
+            with self.subTest(bad=bad):
+                self.assertIsNone(self.generate(request(record(
+                    memo='私は記録を残した。' + unresolved + '。' + bad + '。'))).artifact)
+        target = 'cocolon_meaning_experience_engine.cores.analysis.intent_compiler._source_current_cognition'
+        with patch(target, return_value=False):
+            self.assertIsNone(self.generate(request(record(
+                memo=unresolved + '。私は記録を残した。'))).artifact)
+        with_answer = self.with_answer(record(memo='私は記録を残した。'), unresolved + '。')
+        self.assertIsNone(self.generate(request(with_answer)).artifact)
+
     def test_actual_action_survives_beside_cognition_without_inferred_order(self):
         for memo in ('私は記録を残した。私は資料を調べたかもしれないと思っている。',
                      '私は資料を調べたかもしれないと思っている。その後私は記録を残した。'):

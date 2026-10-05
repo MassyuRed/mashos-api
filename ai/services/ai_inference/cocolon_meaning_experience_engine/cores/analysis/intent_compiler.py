@@ -544,6 +544,14 @@ def _cognitive_proposition(value):
     bounds = {role: (a, b) for role, a, b, _ in scopes}
     a, b = bounds['possibility']
     c, d = bounds['cognition']
+    # The shared present-time prefix can consume the first 今 of an unsupported
+    # time nominal. Restore the original clause only to recognize that pending
+    # scope; it must not block independent, proved statements in the same field.
+    recovered_time_prefix = (a == subject.end() + 1
+        and value[subject.end():a] == '今'
+        and _UNPARSED_TIME_NOMINAL.match(value[subject.end():]) is not None)
+    if recovered_time_prefix:
+        a = subject.end()
     suffix = re.search(r'(?:かもしれない|かも知れない|かも)$', value[a:b])
     if (a != subject.end() or d != len(value) or suffix is None
             or value[b:c] not in {'と', 'って'} or value[c:d] not in _COGNITIVE_HOSTS):
@@ -551,6 +559,8 @@ def _cognitive_proposition(value):
     content_end = a + suffix.start()
     content = _finite_proposition(value[:content_end], a, 'UNSPECIFIED', (), content_only=True)
     if content is None or content.modality != 'fact':
+        return None
+    if recovered_time_prefix and not _has_unparsed_nominal_scope(content):
         return None
     content = replace(content, modality='possibility')
     parts = (('SELF_TOPIC', 0, a), *content.source_parts,
