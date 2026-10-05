@@ -10817,7 +10817,7 @@ def _source_owned_action_change_sentence(move, realization, plan, resolver,
             or realization.context_slots != (1,) or len(realization.relations) != 1
             or not _selected_material_appraisal(selected_decision)):
             raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
-        left = re.sub(r"^(?:私|僕|わたし|自分)(?:は|が|も)", "", parts[0], count=1)
+        left = re.sub(r"^(?:私|僕|わたし|自分)(?:は|が|も)(?:[、，][ \u3000]*)?", "", parts[0], count=1)
         right = re.sub(r"(?:減りました|増えました|戻りました)$", lambda m: {
             "減りました": "減った", "増えました": "増えた", "戻りました": "戻った",
         }[m.group()], parts[2])

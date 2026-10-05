@@ -1888,6 +1888,111 @@ class AnalysisVerticalTests(unittest.TestCase):
                 self.assertIn('原因を示す線ではありません', text)
                 self.assertNotIn('dependent_form', json.dumps(projection))
 
+    def test_action_change_topic_comma_keeps_whole_episode_and_raw_evidence(self):
+        for topic, action, connector, change in (
+            ('私は、', '資料を調べて', 'から、', '疑問が減った'),
+            ('僕は， ', '記録を残して', 'から、', '気持ちメモが増えました'),
+            ('わたしは、　', '考えをノートに書いた', '後、', '資料が戻りました'),
+            ('自分は，', '資料を調べて', 'から、', '不安が減りました'),
+            ('私は、 ', '資料を調べた', 'あとに、', '不安が増えました'),
+            ('僕は、', '資料を調べて', 'から、', '気持ちが変わりました'),
+        ):
+            with self.subTest(topic=topic, change=change):
+                left = topic + action
+                episode = left + connector + change
+                req = request(record(memo='　' + episode + '。'))
+                artifact = self.generate(req).artifact
+                self.assertIsNotNone(artifact)
+                first, second = artifact.graph.nodes
+                self.assertEqual([n.visible_label for n in artifact.graph.nodes],
+                                 [left.replace('\u3000', ' '), change])
+                self.assertEqual(first.proposition.source_parts[0], ('SELF_TOPIC', 0, len(topic)))
+                for node in (first, second):
+                    self.assertEqual([i for _, a, b in node.proposition.source_parts for i in range(a, b)],
+                                     list(range(len(node.visible_label))))
+                self.assertEqual((first.proposition.actor, first.modality, first.temporal_scope),
+                                 ('SELF', 'fact', 'past'))
+                self.assertEqual((second.proposition.actor, second.modality, second.temporal_scope),
+                                 ('UNSPECIFIED', 'fact', 'past'))
+                edge, = artifact.graph.edges
+                self.assertEqual((edge.edge_kind, edge.endpoint_refs),
+                                 ('OBSERVED_ORDER', (first.node_ref, second.node_ref)))
+                source, = freeze_analysis_sources(req).sources
+                for e, expected in zip(edge.evidence_refs, (left, change, episode), strict=True):
+                    raw = source.envelope.raw_utf8[e.utf8_start:e.utf8_end]
+                    field = source.envelope.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                    self.assertEqual(raw.decode(), expected)
+                    self.assertEqual(field[e.scalar_start:e.scalar_end], expected)
+                    self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                baseline = self.generate(request(record(memo=re.sub(r'[、，][ \u3000]*$', '', topic)
+                    + action + connector + change + '。'))).artifact
+                self.assertEqual(artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'],
+                                 baseline.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+                if first.proposition.dependent_form == 'TE_BEFORE_PAST_CHANGE':
+                    for edges in ((), (replace(edge, evidence_refs=edge.evidence_refs[:2]),),
+                                  (replace(edge, endpoint_refs=tuple(reversed(edge.endpoint_refs))),)):
+                        with self.assertRaises(AnalysisSourceError):
+                            replace(artifact, graph=replace(artifact.graph, edges=edges)).safe_projection(
+                                authenticated_owner_scope=OWNER)
+
+    def test_action_change_topic_comma_keeps_past_feeling_scope(self):
+        artifact = self.generate(request(record(memo='私は、資料を調べてから、安心した。'))).artifact
+        self.assertIsNotNone(artifact)
+        first, feeling = artifact.graph.nodes
+        self.assertEqual(first.proposition.dependent_form, 'TE_BEFORE_PAST_CHANGE')
+        self.assertEqual((feeling.proposition.result_state, feeling.proposition.actor,
+                          feeling.modality, feeling.temporal_scope),
+                         ('PAST_FEELING', 'UNSPECIFIED', 'feeling', 'past'))
+        self.assertFalse(artifact.graph.annotations)
+        text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+        self.assertIn('安心した（記録された気持ち）', text)
+        self.assertIn('原因を示す線ではありません', text)
+
+    def test_action_change_topic_comma_keeps_updates_and_semantic_comparison(self):
+        old = '私は、資料を調べてから、不安が減りました'
+        new = '僕は，　記録を残してから、資料が戻りました'
+        original = record(memo='私は仕事を続けたい。' + old + '。')
+        for answer in (new + '。', '「' + old + '」ではなく「' + new + '」です。'):
+            with self.subTest(answer=answer):
+                req = request(self.with_answer(original, answer))
+                artifact = self.generate(req).artifact
+                self.assertIsNotNone(artifact)
+                source = next(s.envelope for s in freeze_analysis_sources(req).sources
+                              if s.envelope.source_role == 'SUPPLEMENTAL_ANSWER')
+                edge = next(e for e in artifact.graph.edges
+                            if e.evidence_refs[-1].source_envelope_id == source.envelope_id)
+                whole = edge.evidence_refs[-1]
+                self.assertEqual(source.raw_utf8[whole.utf8_start:whole.utf8_end].decode(), new)
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        withdrawn = self.generate(request(self.with_answer(original,
+            '「' + old + '」は取り消します。'))).artifact
+        self.assertEqual([n.visible_label for n in withdrawn.graph.nodes], ['私は仕事を続けたい'])
+        self.assertFalse(withdrawn.graph.edges)
+        partial = self.generate(request(self.with_answer(original, '「私は、資料を調べて」は取り消します。')))
+        self.assertIsNone(partial.artifact)
+        same = self.compared(old + '。', '私は資料を調べた後、不安が減った。').artifact
+        self.assertEqual(same.period_comparison.change_claims, ())
+        changed = self.compared(old.replace('減りました', '増えました') + '。', old + '。').artifact
+        self.assertIn('ROUTE_EVIDENCE_CHANGED', changed.safe_projection(
+            authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+
+    def test_action_change_topic_comma_does_not_skip_unread_scope(self):
+        for memo in (
+            '私は、、資料を調べてから、疑問が減った。',
+            '私は、\t資料を調べてから、疑問が減った。',
+            '私は、\n資料を調べてから、疑問が減った。',
+            '私は、明日資料を調べてから、不安が減りました。',
+            '友人は、資料を調べてから、不安が減りました。',
+            '私は、友人が資料を調べてから、不安が減りました。',
+            '私は、資料を調べなかった後、不安が減りました。',
+            '私は、資料を調べてから、不安が減りましたと聞いた。',
+            '私は、資料を調べてから、不安が減りました？',
+            '「私は、資料を調べてから、不安が減りました」と友人が言った。',
+            '私は、資料を調べて。',
+        ):
+            with self.subTest(memo=memo):
+                self.assertIsNone(self.generate(request(record(memo=memo))).artifact)
+
     def test_te_surface_requires_its_own_whole_order_context(self):
         artifact = self.generate(request(record(memo='私は資料を調べてから、疑問が減った。'))).artifact
         edge, = artifact.graph.edges

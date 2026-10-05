@@ -14718,3 +14718,22 @@ rootが合成7本文（基本、修飾、負荷・未確定との併存、訂正
 対象はAPI既存compiler1／test2／handoff1とCocolon既存current03／設計04／06の7file。STRUCTURE_MAP_DELTA_NONE：既存Analysis内の句読点認識のみで、共有意味owner／Emlis／Piece／API／DTO／DB／RN／依存仕様の変更0。追加費用・Mash操作0、env／deploy／build／DB／main／merge／IF操作0。両PR Draft/open/unmerged、商品0/3・NOT_CLEAR・48%は継承値。primary outcomeは限定TECHNICAL_CREDIT。未配置。最後の確認済み稼働API `1a42b9e…`／TestFlight6401送信成功を継承し、本人生成・保存再表示・比較の実機成功は別残件。反映commitとremote全7file照合はPR3／30先頭へ記録する。
 
 残差：行動後変化の「私は、資料を調べてから…」も未解析となる。常体の後節では共有根拠がありAnalysisのte-action parserが読点を拒否する一方、u140の敬体増減では共有側の完全節根拠も読点を受け付けないことをread-only確認した。次の内容候補はこの既存episode内の読点境界を、共有根拠の成立／不成立を分けて確認すること。今回その範囲へ拡張しない。u140に記録されたgeneric0058期待差は今回未再検証・未修正のまま継承する。配置と本人実機を合成検査で代用しない。
+
+
+## 2026-10-05 JST u142 — 読点付きの行動後変化を全節の根拠とともに保持
+
+Mashの分析内容修正継続指示から、u141で確認した具体的残差を修正。開始headはAPI `9e0634162cd1aa7daf1c3fa71592ca8acfab0355`／Cocolon `f29311007b5fb4ff0b7d4fe69b392e2a0c4fe407`。前提・作業規則、全体設計と01A/B/C全file地図、current03／設計04／06、最新weekly20261003 §6.6〜6.10の確認を継承し、恒久incident全文を今回再読。追跡正本を直接参照し、前回prepare祖先照合で不成立だった生成System Contextの現行性は主張しない。Rule18 LEVEL_2の既存設計内の限定修正。実行環境Codex Work、root華恋だけが編集・検証・GitHub反映を担当。同環境の補助agentはread-only依存調査・最終差分reviewのみで、別modelのPro reviewではない。
+
+「私は資料を調べてから、疑問が減った」は成立するが、本人主語直後の読点が入るとAnalysisのte節解析で拒否される。さらにu140の「減りました／増えました／戻りました」では、共有ownerの有限全節witnessも読点を許容していなかった。既存 `_te_action_proposition` と共有 `source_proven_polite_nominal_change` の本人主語直後に読点1個（、／，）と半角・全角空白を許容。共通の語彙分類や動詞・名詞の範囲を増やさず、原文field／span照合、全節一致、top-level、過去行動と変化の明示順序を維持する。te形単体を実行済みとせず、全episodeの証拠と関係が成立した場合だけ過去へ束縛する。今回拡張した敬体増減・復帰の共有witnessはneutralのまま。既存常体変化・PAST_FEELINGの共有分類は変更せず、対象・格・原文座標を保持し、原因・改善・感情所有者を追加しない。二重読点、tab／改行、未対応時点、別主体、否定、引用・伝聞・疑問は保留。
+
+共有変更の必要影響として、既存Emlis作者と独立readerのtopic省略も同じ読点境界へ合わせた。共有witnessだけを広げると文頭に読点が残り、旧readerもその不自然な文章を通すことを静的に確認した。修正後は「資料を調べた後、資料が戻ったのですね」のように原episodeを保持する。readerは省略前の元 `left.encode()` へ復元し、接続・対象・語尾を独立照合する。因果・価値評価、別主体、対象差、endpoint欠落、文頭読点混入は受け付けない。Emlisの感情所有者未確定による不安増減UNAVAILABLEは変更せず、読点付きでも同じ保留を確認した。Emlis一般内容改善を再開したものではなく、今回の共有owner変更に必要な影響修正である。
+
+修正前の新Analysis3methodは8 failure＋1 dependent error（artifact欠落）を再現。共有witness／Emlis本文の対象30例では18 failure／12 PASS（19.25秒）を確認し、読点付きが汎用受取文へ落ちていた。修正後の対象suiteは、Analysis vertical189／storage47／saved-period16、limited_change_feeling、final exact8意味継承、past_episode_discourseのDB不要部分、Piece consumer分離を実行。初回は416 PASS／新検査の期待1 failure／3 deselected／1174 subtests PASS（43.93秒）。失敗は原文全角空白を内部visible_labelにもそのまま期待した新検査だけで、既存spanの全角→半角表示規則に合わせて修正。raw証拠のscalar／UTF-8／hash期待は一切変更せず、そのmethodを再実行し1 PASS／6 subtests PASS（0.56秒）。製品sourceは初回suite以降変更0。対象417検査の確認が完了したが、1回の全suite一括PASSと記録しない。別途u140のgeneric0058旧期待差は今回未実行・未修正で継承し、全リポジトリ検査PASSとも記録しない。DBを使用する3paramは明示除外、既存Pydantic非推奨warning1件あり。
+
+Python3.12.14、pytest／fastapi／httpxは既存隔離test依存を再利用、製品requirements変更0。最初のpytestはfastapi path不足、その後の横断suiteはai/tools path不足で収集不成立となり、必要pathを指定して上記を実行した。本文読取の初回もpytest path不足で未実行、修正して完遂。新検査の辺改竄期待はread-only reviewで従属teだけに必要な証拠と確認し、製品契約を広げず新検査をte限定へ修正。既存検査の期待緩和0。四つの本人主語、読点・空白、常体／敬体、過去形／te形、PAST_FEELING、原文全域被覆、補足・訂正／撤回、読点だけの期間差0、増減差、safe再解析、全recovery modeと独立inverse改竄拒否を確認した。
+
+rootが合成Analysis8本文（減少、増加、気持ち、未解析併存、訂正、撤回、同義比較、増減比較）とEmlis3本文を全文確認。生成DTOを変更していない実RN `buildWatashiMapV2ViewModel` に渡し、文章全文／identity／node順／edge／注記対象／unknown対象／競合／比較stateが全8例一致。実service＋合成RPCで生成→保存→再生成なし再読取を確認。最終read-only静的reviewに具体的blockerなし。実DB・React component suite・native・本人入力の確認ではなく、正式商品受入れへ換算しない。
+
+変更はAPI既存compiler1／共有plan・human reception・inverse3／test3／handoff1、Cocolon既存current03／設計04／06の計11file。STRUCTURE_MAP_DELTA_NONE：既存owner内の読点認識・省略処理だけで、新file／API／DTO／DB／SQL／RN／Piece source／依存仕様は不変。共有owner変更0とは記録しない。追加費用・Mash操作0、env／deploy／build／DB／main／merge／IF操作0。両PR Draft/open/unmerged、商品0/3・NOT_CLEAR・48%は継承値、primary outcomeは限定TECHNICAL_CREDIT。未配置。最後の確認済み稼働API `1a42b9e…`／TestFlight6401送信成功を継承し、本人生成・保存再表示・比較の実機成功は別残件。反映commitとremote実gitによる全11file byte照合結果はPR3／30先頭へ記載する。
+
+今回の具体的な読点残差は解消。有限語彙・未対応時点・属格・主語省略等の既存保留範囲は残るが、この確認だけで次の不具合を推定しない。以後も実本文と共有根拠の成立／不成立を確認して内容修正を選ぶ。配置と本人実機の残件を合成検証で代用しない。

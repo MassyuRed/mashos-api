@@ -499,7 +499,7 @@ def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relat
 
 def _te_action_proposition(value):
     """Parse a dependent action without asserting that it happened."""
-    subject = re.match(r'^(?:私|僕|わたし|自分)は', value)
+    subject = re.match(r'^(?:私|僕|わたし|自分)は(?:[、，][ \u3000]*)?', value)
     if subject is None:
         return None
     proposition = _finite_proposition(value, subject.end(), 'SELF',

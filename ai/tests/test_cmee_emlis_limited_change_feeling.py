@@ -34,7 +34,8 @@ def _action_change_relations(plan):
 
 
 @pytest.mark.parametrize('change', ['不安が減りました', '気持ちメモが増えました', '資料が戻りました'])
-@pytest.mark.parametrize('action', ['私は資料を調べた後、', '僕は記録を残してから、'])
+@pytest.mark.parametrize('action', ['私は資料を調べた後、', '僕は記録を残してから、',
+    '私は、資料を調べた後、', '僕は，　記録を残してから、', 'わたしは、 資料を調べてから、'])
 def test_polite_nominal_changes_have_neutral_source_bound_final_witness(action, change):
     memo = action + change + '。'
     plan = _polite_change_plan(memo)
@@ -78,6 +79,14 @@ def test_polite_nominal_changes_have_neutral_source_bound_final_witness(action, 
     '友人は言った。私は資料を調べた後、不安が減りました。',
     '私は資料を調べた後、不安が減りました。と聞いた。',
     '友人から聞いた内容です。私は資料を調べた後、不安が減りました。',
+    '私は、、資料を調べてから、不安が減りました。',
+    '私は、\t資料を調べてから、不安が減りました。',
+    '私は、\n資料を調べてから、不安が減りました。',
+    '私は、明日資料を調べてから、不安が減りました。',
+    '友人は、資料を調べてから、不安が減りました。',
+    '私は、資料を調べてから、不安が減りましたと聞いた。',
+    '私は、資料を調べてから、不安が減りました？',
+    '「私は、資料を調べてから、不安が減りました」と友人が言った。',
 ])
 def test_polite_nominal_changes_do_not_borrow_foreign_or_unasserted_scope(memo):
     assert not _action_change_relations(_polite_change_plan(memo))
@@ -94,7 +103,10 @@ def test_polite_nominal_changes_require_original_source_and_keep_independent_sen
 @pytest.mark.parametrize('change,plain', [('資料が減りました', '資料が減った'),
     ('気持ちメモが増えました', '気持ちメモが増えた'), ('資料が戻りました', '資料が戻った')])
 @pytest.mark.parametrize('action,visible', [('私は資料を調べた後、', '資料を調べた後、'),
-    ('僕は記録を残してから、', '記録を残してから、')])
+    ('僕は記録を残してから、', '記録を残してから、'),
+    ('私は、資料を調べた後、', '資料を調べた後、'),
+    ('僕は，　記録を残してから、', '記録を残してから、'),
+    ('わたしは、 資料を調べてから、', '資料を調べてから、')])
 def test_polite_changes_reach_emlis_without_causal_or_value_appraisal(action, visible, change, plain):
     import cocolon_meaning_experience_engine.emlis_stage1_response as response
     from test_cmee_emlis_received_discourse import inverse
@@ -119,6 +131,7 @@ def test_polite_changes_reach_emlis_without_causal_or_value_appraisal(action, vi
     # the source/meaning checks must reject even a replay agreeing with a lie.
     assert inverse(context, result.artifact.reception, without_author=True).passed
     for changed in (result.artifact.reception.replace('から、', 'ので、').replace('後、', 'ので、'),
+                    '、' + result.artifact.reception,
                     '友人が' + result.artifact.reception,
                     result.artifact.reception.replace(plain, '不安が増えた'),
                     result.artifact.reception.replace(plain, ''),
@@ -127,8 +140,9 @@ def test_polite_changes_reach_emlis_without_causal_or_value_appraisal(action, vi
 
 
 @pytest.mark.parametrize('change', ['不安が減りました', '不安が増えました'])
-def test_emlis_existing_unbound_feeling_scope_is_not_relaxed(change):
-    result = MeaningExperienceEngine().generate(initial('私は資料を調べた後、' + change + '。'))
+@pytest.mark.parametrize('action', ['私は資料を調べた後、', '私は、資料を調べてから、'])
+def test_emlis_existing_unbound_feeling_scope_is_not_relaxed(change, action):
+    result = MeaningExperienceEngine().generate(initial(action + change + '。'))
     assert result.artifact is None
     assert result.reason_codes == ('current_experiencer_or_time_scope_unsupported',)
 

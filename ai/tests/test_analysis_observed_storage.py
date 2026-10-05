@@ -849,19 +849,26 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         await self._assert_action_change_saved('私は資料を調べた後、疑問が減った。')
 
     async def test_te_after_change_survives_commit_and_read_without_regeneration(self):
-        await self._assert_action_change_saved('私は資料を調べてから、疑問が減った。')
+        for memo in ('私は資料を調べてから、疑問が減った。',
+                     '私は、資料を調べてから、疑問が減った。'):
+            with self.subTest(memo=memo):
+                await self._assert_action_change_saved(memo)
 
     async def test_polite_decrease_increase_return_survive_save_and_read(self):
         for clause, plain in (('不安が減りました', '不安が減った'),
                               ('気持ちメモが増えました', '気持ちメモが増えた'),
                               ('資料が戻りました', '資料が戻った')):
             with self.subTest(clause=clause):
-                await self._assert_action_change_saved('私は資料を調べた後、' + clause + '。',
-                    plain + '（記録された変化）')
+                for action in ('私は資料を調べた後、', '私は、資料を調べた後、',
+                               '僕は，　資料を調べてから、'):
+                    with self.subTest(action=action):
+                        await self._assert_action_change_saved(action + clause + '。',
+                            plain + '（記録された変化）')
 
     async def test_past_feeling_survives_commit_and_read_without_regeneration(self):
         for memo, label in (('私は資料を調べた後、安心した。', '安心した（記録された気持ち）'),
-                ('私は資料を調べてから、落ち着いた。', '落ち着いた（記録された気持ち）')):
+                ('私は資料を調べてから、落ち着いた。', '落ち着いた（記録された気持ち）'),
+                ('私は、資料を調べてから、安心した。', '安心した（記録された気持ち）')):
             with self.subTest(memo=memo):
                 await self._assert_action_change_saved(memo, label)
 

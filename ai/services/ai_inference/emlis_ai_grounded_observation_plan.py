@@ -4057,7 +4057,7 @@ def _typed_nucleus_projections_for_span(
                    r"[一-鿿々ァ-ヶー]+)")
         action_past = action[:-1] + {"て": "た", "で": "だ"}.get(action[-1:], action[-1:])
         performed = re.fullmatch(
-            r"(?:私|僕|わたし|自分)(?:は|が|も)(?:" + nominal
+            r"(?:私|僕|わたし|自分)(?:は|が|も)(?:[、，][ \u3000]*)?(?:" + nominal
             + r"(?:を|に|へ|で|から|と|まで)){1,2}(?P<predicate>.+)", action_past,
         )
         source = str((normalized_input or {}).get(source_field) or "")
