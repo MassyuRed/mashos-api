@@ -2219,7 +2219,7 @@ class AnalysisVerticalTests(unittest.TestCase):
             '私は仕事メモを残したと聞いた', '私は仕事メモを残したなら',
             '私は仕事メモを残した？', '「私は仕事メモを残した」',
             '私は仕事メモを残した夢を見た', '私は仕事メモを残して',
-            '私は仕事メモを残したあと', '私は新しいメモ帳を見た',
+            '私は仕事メモを残したあと', '私は新しくないメモ帳を見た',
         ):
             with self.subTest(literal=literal):
                 self.assertIsNone(self.generate(request(record(memo=literal + '。'))).artifact)
@@ -2273,6 +2273,128 @@ class AnalysisVerticalTests(unittest.TestCase):
             artifact = self.compared(changed, old + '。').artifact
             self.assertIn('ROUTE_EVIDENCE_CHANGED', artifact.safe_projection(authenticated_owner_scope=OWNER)
                           ['period_comparison']['safe_change_kinds'])
+
+    def test_attributive_nominals_keep_whole_arguments_and_exact_source(self):
+        cases = [(f'私は{word}メモ帳を見た', (('を', word + 'メモ帳'),), 'positive', 'fact')
+            for word in ('新しい', '古い', '大きい', '小さい', '長い', '短い',
+                         '詳しい', '難しい', '易しい', '良い', '悪い')]
+        cases += [
+            ('僕は、詳しい仕事メモを古いノートに書かなかった',
+             (('を', '詳しい仕事メモ'), ('に', '古いノート')), 'negative', 'fact'),
+            ('私は新しい仕事を続けたくない', (('を', '新しい仕事'),), 'negative', 'wish'),
+            ('私は昨日、新しい会議室にいた', (('に', '新しい会議室'),), 'positive', 'fact'),
+            ('私は新しいイベント企画を担当しなかった', (('を', '新しいイベント企画'),), 'negative', 'fact'),
+            ('私は良い生活を守りたい', (('を', '良い生活'),), 'positive', 'wish'),
+            ('まだ新しいイベント会場が決まっていない', (('が', '新しいイベント会場'),), 'negative', 'fact'),
+            ('私は新しいメモ帳の詳しい説明を調べた', (('を', '新しいメモ帳の詳しい説明'),), 'positive', 'fact'),
+        ]
+        for literal, arguments, polarity, modality in cases:
+            with self.subTest(literal=literal):
+                req = request(record(memo='　' + literal + '。'))
+                artifact = self.generate(req).artifact
+                self.assertIsNotNone(artifact)
+                node, = artifact.graph.nodes
+                p = node.proposition
+                self.assertEqual((p.arguments, p.polarity, p.modality), (arguments, polarity, modality))
+                self.assertEqual([i for _, a, b in p.source_parts for i in range(a, b)], list(range(len(literal))))
+                e, = node.evidence_refs
+                source = freeze_analysis_sources(req).sources[0].envelope
+                raw = source.raw_utf8[e.utf8_start:e.utf8_end]
+                field = source.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                self.assertEqual((raw.decode(), field[e.scalar_start:e.scalar_end]), (literal, literal))
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)
+                self.assertEqual(text['projection_of'], visual['projection_of'])
+                for _, noun in arguments:
+                    self.assertIn(noun, visual['nodes'][0]['visible_label'])
+                    self.assertIn(noun, text['text'])
+                self.assertEqual(artifact.graph.edges, ())
+
+    def test_attributive_nominals_preserve_cognition_order_and_result_scope(self):
+        artifact = self.generate(request(record(memo='私は新しいメモ帳に書くかもしれないと思う。'))).artifact
+        content = artifact.graph.nodes[0].proposition.possible_content
+        self.assertEqual((content.actor, content.arguments, content.modality),
+            ('UNSPECIFIED', (('に', '新しいメモ帳'),), 'possibility'))
+        self.assertNotIn('実行済み', artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+        for memo, expected in (
+            ('私は新しい会議室にいた。その後、私は新しい企画を担当した。それから、私は詳しいメモを書いた。',
+             ['SCENE', 'ROLE', 'ACTION_OR_NONACTION']),
+            ('私は新しい仕事メモを残してから、古い資料が減った。',
+             ['ACTION_OR_NONACTION', 'IMMEDIATE_RESULT_OR_AFTERMATH']),
+        ):
+            with self.subTest(memo=memo):
+                artifact = self.generate(request(record(memo=memo))).artifact
+                self.assertEqual([n.node_kind for n in artifact.graph.nodes], expected)
+                self.assertEqual(len(artifact.graph.edges), len(expected) - 1)
+                self.assertIn('原因を示す線ではありません', artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+
+    def test_attributive_nominals_leave_unproved_inflection_actor_and_scope_unknown(self):
+        for literal in (
+            '私は新しくないメモ帳を見た', '私は新しかったメモ帳を見た',
+            '私は新しくメモ帳を見た', '私は新しくて大きいメモ帳を見た',
+            '私はとても新しいメモ帳を見た', '私は新しい大きいメモ帳を見た',
+            '私は楽しいメモ帳を見た', '私は新しいを見た',
+            '新しいメモ帳を見た', '友人は新しいメモ帳を見た',
+            '「私は新しいメモ帳を見た」', '私は新しいメモ帳を見た？',
+            '私は新しいメモ帳を見たと聞いた', '私は新しいメモ帳を見たなら',
+        ):
+            with self.subTest(literal=literal):
+                self.assertIsNone(self.generate(request(record(memo=literal + '。'))).artifact)
+        # The shared event witness still limits admission; this change must
+        # not turn a modifier into a different event/polarity interpretation.
+        self.assertIsNone(self.generate(request(record(memo='私は難しいイベント企画を担当した。'))).artifact)
+
+    def test_attributive_nominals_cannot_hide_unparsed_time_or_question_heads(self):
+        for literal in (
+            '私は新しい来週資料を見た', '私は詳しい仕事の古い今朝メモを残した',
+            '私は考えを新しい昨日ノートに書いた', '私は新しい今日会議室にいた',
+            '私は新しい何を見た', '私は新しい誰のメモを見た',
+            '私は新しい来週資料に書くかもしれないと思う',
+            '私は新しい来週仕事を守りたい',
+            '私は新しい資料を見てから、古い来週資料が減った',
+        ):
+            with self.subTest(literal=literal):
+                artifact = self.generate(request(record(memo=literal + '。私は記録を残した。'))).artifact
+                self.assertEqual([n.proposition.arguments for n in artifact.graph.nodes], [(('を', '記録'),)])
+                self.assertEqual(artifact.graph.edges, ())
+                self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        for noun in ('明日の新しい資料', '今日の新しいメモ帳', '仕事の昨日分'):
+            with self.subTest(noun=noun):
+                artifact = self.generate(request(record(memo='私は' + noun + 'を調べた。'))).artifact
+                self.assertEqual(artifact.graph.nodes[0].proposition.arguments, (('を', noun),))
+                self.assertEqual(artifact.graph.nodes[0].proposition.relative_day, '')
+
+    def test_attributive_nominals_keep_correction_withdrawal_and_comparison(self):
+        old, new = '私は新しいメモ帳を見た', '私は古いメモ帳を見なかった'
+        original = record(memo=old + '。私は資料を調べた。')
+        req = request(self.with_answer(original, '「' + old + '」ではなく「' + new + '」です。'))
+        artifact = self.generate(req).artifact
+        node = next(n for n in artifact.graph.nodes if n.proposition.predicate_lemma == '見る')
+        self.assertEqual((node.proposition.arguments, node.polarity), ((('を', '古いメモ帳'),), 'negative'))
+        source = next(s.envelope for s in freeze_analysis_sources(req).sources if s.envelope.source_role == 'SUPPLEMENTAL_ANSWER')
+        self.assertTrue(all(e.source_envelope_id == source.envelope_id and
+            source.raw_utf8[e.utf8_start:e.utf8_end].decode() == new for e in node.evidence_refs))
+        withdrawn = self.generate(request(self.with_answer(original, '「' + old + '」は取り消します。'))).artifact
+        self.assertEqual([n.proposition.arguments for n in withdrawn.graph.nodes], [(('を', '資料'),)])
+        added = self.generate(request(self.with_answer(record(memo='私は資料を調べた。'), old + '。'))).artifact
+        self.assertEqual(len(added.graph.nodes), 2)
+        for answer in ('私は新しくないメモ帳を見た。', '「' + old + '」ではなく「私は新しい来週資料を見た」です。'):
+            self.assertIsNone(self.generate(request(self.with_answer(original, answer))).artifact)
+        same = self.compared('僕は古いノートに新しい考えを書きました。', '私は新しい考えを古いノートに書いた。').artifact
+        self.assertEqual(same.period_comparison.change_claims, ())
+        for changed in ('私は古いメモ帳を見た。', '私は新しいメモ帳を見なかった。'):
+            artifact = self.compared(changed, old + '。').artifact
+            self.assertIn('ROUTE_EVIDENCE_CHANGED', artifact.safe_projection(authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+
+    def test_attributive_nominal_cannot_be_removed_or_swapped_in_safe_projection(self):
+        artifact = self.generate(request(record(memo='私は新しいメモ帳を見た。'))).artifact
+        node, = artifact.graph.nodes
+        for noun in ('メモ帳', '古いメモ帳', '新しい来週資料'):
+            with self.subTest(noun=noun), self.assertRaises(AnalysisSourceError):
+                changed = replace(node, proposition=replace(node.proposition, arguments=(('を', noun),)))
+                replace(artifact, graph=replace(artifact.graph, nodes=(changed,))).safe_projection(authenticated_owner_scope=OWNER)
 
     def test_event_topic_comma_preserves_finite_meaning_and_original_evidence(self):
         for literal in (

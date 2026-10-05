@@ -62,7 +62,12 @@ _VERBS = (
 # Kanji and katakana may coexist in one nominal (仕事メモ / メモ帳).
 # Keep hiragana limited to the existing explicit lexemes; particles and verb
 # endings must still be consumed separately by the whole-clause grammar.
-_NOMINAL = r'(?:考え|思い|気持ち|学び|振り返り|取り組み|[一-鿿々ァ-ヴー]+)'
+# One written attributive form may qualify each nominal segment. Keep it
+# inside the argument, not as an independent assessment or result. Other
+# inflections, adverbs and stacked modifiers require their own scope proof.
+_ATTRIBUTIVE = r'(?:新しい|古い|大きい|小さい|長い|短い|詳しい|難しい|易しい|良い|悪い)'
+_ATTRIBUTIVE_PREFIX = re.compile('^' + _ATTRIBUTIVE)
+_NOMINAL = (_ATTRIBUTIVE + r'?(?:考え|思い|気持ち|学び|振り返り|取り組み|[一-鿿々ァ-ヴー]+)')
 _ARGUMENT = re.compile(r'(?P<noun>' + _NOMINAL + r'(?:の' + _NOMINAL
                        + r')*)(?P<case>を|に|で|と)')
 
@@ -361,20 +366,31 @@ def _proposition_node_kind(proposition):
     return 'ACTION_OR_NONACTION'
 
 
-def _has_unparsed_time_nominal(proposition):
+def _has_unparsed_nominal_segment(part):
+    modifier = _ATTRIBUTIVE_PREFIX.match(part)
+    head = part[modifier.end():] if modifier else part
+    # A modifier cannot hide an unresolved time or interrogative head.
+    # Apply the additional 今日/昨日 check only to newly admitted modified
+    # segments, leaving existing explicit nominal time scopes unchanged.
+    return bool(_UNPARSED_TIME_NOMINAL.match(head)
+        or (modifier and (re.match(r'^(?:今日|昨日)(?=.)', head)
+                          or re.match(r'^(?:何|誰|幾)', head))))
+
+
+def _has_unparsed_nominal_scope(proposition):
     if proposition is None:
         return False
     # Explicit の and a standalone case-marked day remain nominal: e.g.
     # 明日の資料 / 明日を記録した do not date the action. Check every
     # genitive segment and possible content, not only the first argument.
-    return (any(_UNPARSED_TIME_NOMINAL.match(part)
+    return (any(_has_unparsed_nominal_segment(part)
                 for _, noun in proposition.arguments for part in noun.split('の'))
-            or _has_unparsed_time_nominal(proposition.possible_content))
+            or _has_unparsed_nominal_scope(proposition.possible_content))
 
 
 def _proposition(value: str) -> ObservedProposition | None:
     proposition = _parsed_proposition(value)
-    return None if _has_unparsed_time_nominal(proposition) else proposition
+    return None if _has_unparsed_nominal_scope(proposition) else proposition
 
 
 def _parsed_proposition(value: str) -> ObservedProposition | None:
@@ -470,7 +486,7 @@ def _te_action_proposition(value):
         return None
     proposition = _finite_proposition(value, subject.end(), 'SELF',
         [('SELF_TOPIC', 0, subject.end())], predicate_forms=_TE_PREDICATES)
-    if _has_unparsed_time_nominal(proposition):
+    if _has_unparsed_nominal_scope(proposition):
         return None
     return replace(proposition, source_parts=tuple(
         ('DEPENDENT_PREDICATE' if role == 'FINITE_PREDICATE' else role, a, b)
@@ -782,7 +798,7 @@ def _action_change_pair(source, plan, span_id):
         return None
     left = _te_action_proposition(raw[a:b]) if te_after else _proposition(raw[a:b])
     right = _bounded_change_proposition(raw[c:d])
-    if (left is None or right is None or _has_unparsed_time_nominal(right) or left.actor != 'SELF'
+    if (left is None or right is None or _has_unparsed_nominal_scope(right) or left.actor != 'SELF'
             or left.result_state or left.scene_state or left.role_state or left.possible_content or left.relative_day or left.sequence_marker
             or any(re.search(r'(?:^|の)(?:何|誰|幾)', noun) for _, noun in left.arguments)
             or (left.polarity, left.modality, left.temporal_scope) !=
@@ -857,7 +873,7 @@ def _fragment(source, nucleus, plan=None):
     if not value:
         return None
     proposition = _parsed_proposition(value)
-    if _has_unparsed_time_nominal(proposition):
+    if _has_unparsed_nominal_scope(proposition):
         # Use the existing unresolved-source path; never fall back to a
         # raw node that would also make unrelated readable nodes unsafe.
         return None
