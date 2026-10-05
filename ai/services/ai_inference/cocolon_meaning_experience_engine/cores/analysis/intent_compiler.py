@@ -105,6 +105,10 @@ def _finite_predicates(*, include_nonpast=False):
             (i + 'たくありませんでした', 'negative', 'wish', 'past'),
         ):
             forms.append((surface, lemma, polarity, modality, time))
+        if not include_nonpast:
+            # Sentence-final politeness cannot sit before the embedded
+            # possibility host ("なかったですかもしれない").
+            forms.append((a + 'なかったです', lemma, 'negative', 'fact', 'past'))
         if include_nonpast:
             forms.extend(((lemma, lemma, 'positive', 'fact', 'nonpast'),
                           (a + 'ない', lemma, 'negative', 'fact', 'nonpast')))

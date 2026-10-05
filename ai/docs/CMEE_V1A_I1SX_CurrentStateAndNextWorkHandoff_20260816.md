@@ -14874,3 +14874,24 @@ rootは2例のUNAVAILABLEと合成6全文（不確実＋別文、否定希望＋
 STRUCTURE_MAP_DELTA_NONE：既存Analysisの完全文確認の適用漏れ補正で、新owner／共有意味／Emlis／Piece／API契約／DTO／DB／SQL／RN／製品依存変更0。env／deploy／build／main／merge／IF操作0。Draft/open/unmerged、u129〜u149未配置。primary outcomeは限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%、確認済み稼働API1a42b9e…／TestFlight6401と本人実機残件は継承値。反映commitとremote全7fileのbytes／SHA256／parent／変更path集合はPR3／30先頭へ記録する。
 
 残る制約：「でも」等の前置文脈がledgerで別spanになった通常節も、scene等と同じく全文確認できず保留する。接続語を消して本人の独立した主張へ変換しない。任意の長文や二重否定を理解したのではなく、未知のhostを欠落させて確定表示する事故を止めた範囲である。同一record内の夢／伝聞からの現実復帰、plain幾、その他未対応文法は未完了。次も実出力に現れる不一致を選び、全表現対応を配置・本人実機の前提にしない。
+
+
+## 2026-10-06 JST u150 — 「なかったです」の過去非行動を文章と図へ保持
+
+Mashの分析内容修正継続指示からu149の次へ進めた。開始PR headはAPI `3a1f28116522194ca7d2b23070645e0db36ffbb0`／Cocolon `378defc6bea7082ce46c5920cf10ce5a2ab42526`、Draft/open/unmerged。両repoの追跡内容がremote u149に一致することを確認してlocal基準を進めた。前提・作業入口／CURRENT_RULES／Rule18、全体設計01→01A/B/Cの全file地図経路、分析current03／設計04、最新weekly20261003 §5.3／6.6〜6.10を再確認。恒久incidentは今回も全文再読。System Context prepareは `PUBLICATION_RECOVERY_AMBIGUOUS: residual without marker` で失敗したため、許可された追跡正本の直接読取を継続。生成Contextのfreshnessを主張せず、その修復を内容作業の前工程にしない。
+
+実CMEEで「私は資料を調べなかったです」「私は仕事を続けなかったです」がUNAVAILABLE、常体「なかった」はGENERATEDという読み落としを再現。共有ownerは既に本人のexplicit negative/factの根拠を持ち、Analysisの有限形だけが欠けていた。既存9動詞の未然形に `なかったです` を追加し、negative/fact/pastとして全文を解析する。希望「たくなかったです」や非過去へ変換せず、既存realizerの「行わなかった」を使う。
+
+最初の実装では共通有限表へ1行を追加したが、追加検査で不自然な「なかったですかもしれないと思う」を受理する副作用を発見した。最終sourceは `if not include_nonpast` の独立文側だけへ限定する4行。埋込認知の `_CONTENT_PREDICATES` はu149の関数から導出したtupleと完全一致を一回限り比較した。語彙・共有owner・realizerは変更しない。「たくはありません」は対比の意味保持が必要なため、今回へ混ぜず保留した。
+
+OBSERVED_BLOCKER_MINIMAL_FIX／既存設計内Rule18 LEVEL_2。完成条件は過去非行動の読み落としを減らし、原文・否定・時点・補足・順序／競合・比較・保存再表示を同一文章／図へ保持すること。Codex Workのroot華恋が単一編集・検証・GitHub反映owner。同環境read-only agentが原因調査と最終差分reviewを担当し、別model Pro reviewではない。変更は既存compiler1／test2／API handoff1とCocolon current03／設計04／06の7file、新規repo file0。共有契約変更や対象preimage衝突が必要なら範囲を広げず停止する。追加費用・Mash操作0。
+
+検証経過：旧test依存pathのFastAPI消失を確認。初回pytestはplugin importで停止して検査未実行、製品のFAILには数えない。修正前の新vertical3methodを標準unittestで実行し20 failures／1 error（artifact欠落の後続参照）を確認した。Python3.12.14とpytest9.1.1は再利用し、隔離scratchへFastAPI0.142.2／httpx0.28.1等を再導入・import確認。製品依存は変更0。最初の新検査のrelative_day期待は内部enumを誤って日本語にしていたためYESTERDAYへ訂正した。
+
+最終sourceでvertical212／storage52／saved-period16の計280methodを対象に実行。**279 PASS／新storage期待1 FAIL／1403 subtests PASS（8.39秒）**。失敗は新検査が既存の「この記述時点の昨日」を短い「昨日」と期待した誤りで、既存表示を保持するよう当該新期待だけを訂正。該当storage methodの再実行は **1 PASS（0.48秒）**。製品sourceはこのsuite後に変更0、既存期待の削除・緩和0。1回の全suite一括PASSと記録しない。Pydantic既存warning1件。9動詞×memo／memo_action、完全原文scalar／UTF-8／hash、safe意味改竄拒否、通常補足・明示訂正／撤回、明示順序と肯否定競合、常体との期間差0、希望／実行済みとの差、疑問・伝聞・未対応host保留を確認した。実service＋合成RPCの生成→保存→再生成禁止readで同一本文／図／identityを確認し、実DBは使っていない。
+
+rootが合成8本文（非行動、昨日＋順序、補足、訂正、撤回、肯否定併存、常体比較、否定希望との差）を全文読取。全8例を実RN `buildWatashiMapV2ViewModel` へ渡し、全文・identity・node順・edge・unknown・注記・競合・比較stateの一致を確認した。独立read-only最終review結果とremote反映commit／全7file bytes・parent・変更path照合はPR3／30先頭に記録する。React component suite／native／本人入力／商品受入れの確認ではない。
+
+STRUCTURE_MAP_DELTA_NONE：既存Analysisの有限形補正のみ。共有owner／Emlis／Piece／API契約／DTO／DB／SQL／RN／製品依存変更0。env／deploy／build／main／merge／IF操作0。Draft/open/unmerged、u129〜u150未配置。限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・48%、最後の確認済み稼働API1a42b9e…／TestFlight6401と本人実機残件は継承値。旧generic0058期待差は未再検証・未修正で、全repo PASSは主張しない。
+
+次も実出力と共有根拠の不一致から内容対象を選ぶ。「たくはありません」等の対比、夢／伝聞から現実へ戻る境界、plain幾と任意長文理解は未完了。全表現対応を配置・本人実機の前提にせず、指定版の本人生成・保存再表示・比較の確認を別の残件として保持する。
