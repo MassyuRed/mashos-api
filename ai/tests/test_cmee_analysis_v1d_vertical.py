@@ -2396,6 +2396,123 @@ class AnalysisVerticalTests(unittest.TestCase):
                 changed = replace(node, proposition=replace(node.proposition, arguments=(('を', noun),)))
                 replace(artifact, graph=replace(artifact.graph, nodes=(changed,))).safe_projection(authenticated_owner_scope=OWNER)
 
+    def test_kana_compounds_keep_whole_arguments_and_exact_source(self):
+        cases = [
+            ('私は振り返りメモを書いた', (('を', '振り返りメモ'),), 'positive', 'fact'),
+            ('私は気持ちメモを残した', (('を', '気持ちメモ'),), 'positive', 'fact'),
+            ('私は学びノートを見た', (('を', '学びノート'),), 'positive', 'fact'),
+            ('私は取り組み方を記録した', (('を', '取り組み方'),), 'positive', 'fact'),
+            ('私は考え方を思い出ノートに書いた', (('を', '考え方'), ('に', '思い出ノート')), 'positive', 'fact'),
+            ('私は新しい振り返りメモを古い学びノートに書かなかった',
+             (('を', '新しい振り返りメモ'), ('に', '古い学びノート')), 'negative', 'fact'),
+            ('私は振り返りメモの考え方を学びノートに書きたい',
+             (('を', '振り返りメモの考え方'), ('に', '学びノート')), 'positive', 'wish'),
+        ]
+        for literal, arguments, polarity, modality in cases:
+            with self.subTest(literal=literal):
+                req = request(record(memo='　' + literal + '。'))
+                artifact = self.generate(req).artifact
+                self.assertIsNotNone(artifact)
+                node, = artifact.graph.nodes
+                p = node.proposition
+                self.assertEqual((p.arguments, p.polarity, p.modality), (arguments, polarity, modality))
+                self.assertEqual([i for _, a, b in p.source_parts for i in range(a, b)], list(range(len(literal))))
+                e, = node.evidence_refs
+                source = freeze_analysis_sources(req).sources[0].envelope
+                raw = source.raw_utf8[e.utf8_start:e.utf8_end]
+                field = source.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                self.assertEqual((raw.decode(), field[e.scalar_start:e.scalar_end]), (literal, literal))
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)
+                self.assertEqual(text['projection_of'], visual['projection_of'])
+                for _, noun in arguments:
+                    self.assertIn(noun, visual['nodes'][0]['visible_label'])
+                    self.assertIn(noun, text['text'])
+                self.assertEqual(artifact.graph.edges, ())
+
+    def test_kana_compounds_preserve_cognition_day_and_result_scope(self):
+        artifact = self.generate(request(record(memo='私は振り返りメモを書くかもしれないと思う。'))).artifact
+        content = artifact.graph.nodes[0].proposition.possible_content
+        self.assertEqual((content.actor, content.arguments, content.modality),
+            ('UNSPECIFIED', (('を', '振り返りメモ'),), 'possibility'))
+        self.assertNotIn('実行済み', artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+        artifact = self.generate(request(record(memo=
+            '私は昨日、振り返りメモを書いた。その後、私は学びノートを見なかった。'))).artifact
+        self.assertEqual([n.proposition.relative_day for n in artifact.graph.nodes], ['YESTERDAY', ''])
+        self.assertEqual([n.polarity for n in artifact.graph.nodes], ['positive', 'negative'])
+        self.assertEqual(len(artifact.graph.edges), 1)
+        artifact = self.generate(request(record(memo='私は振り返りメモを残してから、学びノートが減った。'))).artifact
+        self.assertEqual([n.proposition.arguments for n in artifact.graph.nodes],
+            [(('を', '振り返りメモ'),), (('が', '学びノート'),)])
+        self.assertEqual([n.node_kind for n in artifact.graph.nodes],
+            ['ACTION_OR_NONACTION', 'IMMEDIATE_RESULT_OR_AFTERMATH'])
+        self.assertIn('原因を示す線ではありません', artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+
+    def test_kana_compounds_do_not_hide_unproved_clauses_or_suffix_scope(self):
+        # These scopes are rejected for the entire source, even beside a
+        # supported clause. Keep that existing source-admission boundary.
+        for literal in (
+            '「私は振り返りメモを書いた」', '私は振り返りメモを書いた？',
+            '私は振り返りメモを書いたと聞いた', '私は振り返りメモを書いたなら',
+        ):
+            self.assertIsNone(self.generate(request(record(memo=literal + '。'))).artifact)
+            self.assertIsNone(self.generate(request(record(memo=literal + '。私は記録を残した。'))).artifact)
+        for literal in (
+            '私は学び直しを記録した', '私は考えてメモを書いた',
+            '私は思い出してメモを書いた', '私は取り組み続けた',
+            '私は振り返り学びノートを見た', '私は急いで気持ちメモを書いた',
+            '振り返りメモを書いた', '友人は振り返りメモを書いた',
+            '私は気持ち明日メモを残した', '私は新しい振り返り来週資料を見た',
+            '私は学び今日ノートを見た', '私は考え昨日資料を見た',
+            '私は気持ち何メモを残した', '私は思い誰メモを見た',
+            '私は取り組み幾資料を見た', '私は資料の気持ち今朝メモを残した',
+            '私は学び来週ノートに書くかもしれないと思う',
+            '私は考え来週生活を守りたい',
+            '私は振り返りメモを残してから、気持ち来週メモが増えた',
+        ):
+            with self.subTest(literal=literal):
+                self.assertIsNone(self.generate(request(record(memo=literal + '。'))).artifact)
+                artifact = self.generate(request(record(memo=literal + '。私は記録を残した。'))).artifact
+                self.assertEqual([n.proposition.arguments for n in artifact.graph.nodes], [(('を', '記録'),)])
+                self.assertEqual(artifact.graph.edges, ())
+                self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        for noun in ('明日の振り返りメモ', '仕事の昨日分', '振り返りメモの昨日分'):
+            artifact = self.generate(request(record(memo='私は' + noun + 'を見た。'))).artifact
+            self.assertEqual(artifact.graph.nodes[0].proposition.arguments, (('を', noun),))
+            self.assertEqual(artifact.graph.nodes[0].proposition.relative_day, '')
+
+    def test_kana_compounds_keep_correction_withdrawal_and_comparison(self):
+        old, new = '私は振り返りメモを書いた', '私は気持ちメモを書かなかった'
+        original = record(memo=old + '。私は資料を調べた。')
+        req = request(self.with_answer(original, '「' + old + '」ではなく「' + new + '」です。'))
+        artifact = self.generate(req).artifact
+        node = next(n for n in artifact.graph.nodes if n.proposition.predicate_lemma == '書く')
+        self.assertEqual((node.proposition.arguments, node.polarity), ((('を', '気持ちメモ'),), 'negative'))
+        source = next(s.envelope for s in freeze_analysis_sources(req).sources if s.envelope.source_role == 'SUPPLEMENTAL_ANSWER')
+        self.assertTrue(all(e.source_envelope_id == source.envelope_id and
+            source.raw_utf8[e.utf8_start:e.utf8_end].decode() == new for e in node.evidence_refs))
+        withdrawn = self.generate(request(self.with_answer(original, '「' + old + '」は取り消します。'))).artifact
+        self.assertEqual([n.proposition.arguments for n in withdrawn.graph.nodes], [(('を', '資料'),)])
+        added = self.generate(request(self.with_answer(record(memo='私は資料を調べた。'), old + '。'))).artifact
+        self.assertEqual(len(added.graph.nodes), 2)
+        bad = '「' + old + '」ではなく「私は振り返り来週メモを書いた」です。'
+        self.assertIsNone(self.generate(request(self.with_answer(original, bad))).artifact)
+        same = self.compared('僕は学びノートに気持ちメモを書きました。', '私は気持ちメモを学びノートに書いた。').artifact
+        self.assertEqual(same.period_comparison.change_claims, ())
+        for changed in ('私は気持ちメモを書いた。', '私は振り返りメモを書かなかった。'):
+            artifact = self.compared(changed, old + '。').artifact
+            self.assertIn('ROUTE_EVIDENCE_CHANGED', artifact.safe_projection(authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+
+    def test_kana_compounds_cannot_be_shortened_or_swapped_in_safe_projection(self):
+        artifact = self.generate(request(record(memo='私は振り返りメモを書いた。'))).artifact
+        node, = artifact.graph.nodes
+        for noun in ('振り返り', 'メモ', '気持ちメモ', '振り返り来週メモ'):
+            with self.subTest(noun=noun), self.assertRaises(AnalysisSourceError):
+                changed = replace(node, proposition=replace(node.proposition, arguments=(('を', noun),)))
+                replace(artifact, graph=replace(artifact.graph, nodes=(changed,))).safe_projection(authenticated_owner_scope=OWNER)
+
     def test_event_topic_comma_preserves_finite_meaning_and_original_evidence(self):
         for literal in (
             '私は、職場にいた', '僕は，職場にいました',

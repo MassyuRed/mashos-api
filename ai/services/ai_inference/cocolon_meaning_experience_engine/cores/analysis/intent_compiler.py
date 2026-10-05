@@ -67,7 +67,13 @@ _VERBS = (
 # inflections, adverbs and stacked modifiers require their own scope proof.
 _ATTRIBUTIVE = r'(?:新しい|古い|大きい|小さい|長い|短い|詳しい|難しい|易しい|良い|悪い)'
 _ATTRIBUTIVE_PREFIX = re.compile('^' + _ATTRIBUTIVE)
-_NOMINAL = (_ATTRIBUTIVE + r'?(?:考え|思い|気持ち|学び|振り返り|取り組み|[一-鿿々ァ-ヴー]+)')
+_KANA_NOMINAL = r'(?:考え|思い|気持ち|学び|振り返り|取り組み)'
+_KANA_NOMINAL_PREFIX = re.compile('^' + _KANA_NOMINAL)
+# One proven kana lexeme can head a compound such as 振り返りメモ.
+# Its suffix stays kanji/katakana; arbitrary kana and repeated lexemes are
+# not admitted. Preserve the complete compound as one written argument.
+_NOMINAL = (_ATTRIBUTIVE + r'?(?:' + _KANA_NOMINAL
+            + r'[一-鿿々ァ-ヴー]*|[一-鿿々ァ-ヴー]+)')
 _ARGUMENT = re.compile(r'(?P<noun>' + _NOMINAL + r'(?:の' + _NOMINAL
                        + r')*)(?P<case>を|に|で|と)')
 
@@ -369,12 +375,19 @@ def _proposition_node_kind(proposition):
 def _has_unparsed_nominal_segment(part):
     modifier = _ATTRIBUTIVE_PREFIX.match(part)
     head = part[modifier.end():] if modifier else part
+    kana_head = _KANA_NOMINAL_PREFIX.match(head)
+    suffix = head[kana_head.end():] if kana_head else ''
     # A modifier cannot hide an unresolved time or interrogative head.
     # Apply the additional 今日/昨日 check only to newly admitted modified
     # segments, leaving existing explicit nominal time scopes unchanged.
     return bool(_UNPARSED_TIME_NOMINAL.match(head)
         or (modifier and (re.match(r'^(?:今日|昨日)(?=.)', head)
-                          or re.match(r'^(?:何|誰|幾)', head))))
+                          or re.match(r'^(?:何|誰|幾)', head)))
+        # Check the new compound boundary without changing old plain nouns
+        # such as 仕事の昨日分 or treating any noun as an event's date.
+        or _UNPARSED_TIME_NOMINAL.match(suffix)
+        or re.match(r'^(?:今日|昨日)(?=.)', suffix)
+        or re.match(r'^(?:何|誰|幾)', suffix))
 
 
 def _has_unparsed_nominal_scope(proposition):
