@@ -1,5 +1,5 @@
-# Piece B2-B/B3 verification only. No Supabase/live credentials or deployment.
-name: Piece B2-B/B3 isolated PostgreSQL
+# Piece B2-B/B3/B4 verification only. No Supabase/live credentials or deployment.
+name: Piece B2-B/B3/B4 isolated PostgreSQL
 
 'on':
   push:
@@ -13,6 +13,10 @@ name: Piece B2-B/B3 isolated PostgreSQL
       - ai/services/ai_inference/piece_v2_access.py
       - ai/tests/piece_v2/db/test_b03_piece_v2_access_rls.py
       - ai/tests/piece_v2/test_b03_piece_v2_access_api_policy.py
+      - supabase/migrations/20260808_004_piece_v2_atomic_functions.sql
+      - ai/services/ai_inference/piece_v2_store.py
+      - ai/services/ai_inference/piece_v2_quota.py
+      - ai/tests/piece_v2/db/test_b04_piece_v2_atomic_transactions.py
 
 permissions:
   contents: read
@@ -70,7 +74,11 @@ jobs:
             supabase/migrations/20260808_003_piece_v2_rls_and_staging.sql \
             ai/services/ai_inference/piece_v2_access.py \
             ai/tests/piece_v2/db/test_b03_piece_v2_access_rls.py \
-            ai/tests/piece_v2/test_b03_piece_v2_access_api_policy.py
+            ai/tests/piece_v2/test_b03_piece_v2_access_api_policy.py \
+            supabase/migrations/20260808_004_piece_v2_atomic_functions.sql \
+            ai/services/ai_inference/piece_v2_store.py \
+            ai/services/ai_inference/piece_v2_quota.py \
+            ai/tests/piece_v2/db/test_b04_piece_v2_atomic_transactions.py
           python - <<'PY'
           import os
           import platform
@@ -99,3 +107,10 @@ jobs:
           python -m pytest -v --tb=short -ra -p no:cacheprovider \
             -c /dev/null --noconftest \
             ai/tests/piece_v2/test_b03_piece_v2_access_api_policy.py
+      - name: Run B4 atomic transactions and adapter tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -v --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --confcutdir=ai/tests/piece_v2/db \
+            ai/tests/piece_v2/db/test_b04_piece_v2_atomic_transactions.py
