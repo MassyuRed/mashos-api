@@ -76,9 +76,10 @@ class PieceSaveService:
         """The HTTP owner authenticates every call, including committed replay.
 
         For a first save, B5 rechecks current source eligibility without calling
-        the Piece author. SQL then holds the exact original/profile/thread
-        through the atomic save. Q3 historical context, complete public-safety
-        issuance, and production registration remain separate acceptance work.
+        the Piece author. SQL holds the exact original/profile/thread and
+        consumed Q3 history/feedback through the atomic save, using the current
+        Emlis writer lock protocol. Public-safety issuance and production
+        registration remain separate acceptance work.
         """
         try:
             args = save_request_arguments(authenticated_user_id, request, idempotency_key)

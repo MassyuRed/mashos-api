@@ -200,6 +200,15 @@ BEGIN
         source_snapshot jsonb;
         source_created timestamp;
         source_thread record;
+        q3_context boolean := false;
+        context_guards jsonb;
+        context_feedback jsonb;
+        current_context jsonb;
+        g jsonb;
+        history_source record;
+        history_thread record;
+        history_times timestamp[] := ARRAY[]::timestamp[];
+        history_time timestamp;
     BEGIN
         IF p_owner_user_id IS NULL THEN RAISE EXCEPTION 'PIECE_AUTH_REQUIRED'; END IF;
         IF p_preview_id IS NULL OR p_expected_preview_revision IS NULL
@@ -295,6 +304,59 @@ BEGIN
                OR source_thread.latest_answer_event_id IS NOT NULL THEN
                 RAISE EXCEPTION 'PIECE_CONFLICT';
             END IF;
+            IF source_thread.data->>'runtime_profile' = 'q3.plan.sequential.v1' THEN
+                q3_context := true;
+                context_guards := coalesce(source_thread.data->'context_guards','[]'::jsonb);
+                context_feedback := coalesce(source_thread.data->'context_feedback','[]'::jsonb);
+                IF jsonb_typeof(context_guards) IS DISTINCT FROM 'array'
+                   OR jsonb_typeof(context_feedback) IS DISTINCT FROM 'array'
+                   OR coalesce(source_thread.data->'evaluated_tier',to_jsonb(tier)) IS DISTINCT FROM to_jsonb(tier) THEN
+                    RAISE EXCEPTION 'PIECE_CONFLICT';
+                END IF;
+                IF jsonb_array_length(context_guards) >
+                    (CASE tier WHEN 'premium' THEN 6 WHEN 'plus' THEN 3 ELSE 0 END) THEN
+                    RAISE EXCEPTION 'PIECE_CONFLICT';
+                END IF;
+                -- Match the Q3 writer's profile -> thread -> sorted history
+                -- order. The profile SHARE lock serializes the established
+                -- Emlis thread/feedback writers (which take profile UPDATE).
+                -- Guarded history rows also protect against direct source
+                -- edits/deletes. No history body enters the Piece record.
+                FOR g IN SELECT value FROM jsonb_array_elements(context_guards) ORDER BY value->>0 LOOP
+                    IF jsonb_typeof(g) IS DISTINCT FROM 'array' THEN
+                        RAISE EXCEPTION 'PIECE_CONFLICT';
+                    END IF;
+                    IF jsonb_array_length(g) <> 3 OR jsonb_typeof(g->0) IS DISTINCT FROM 'string'
+                       OR jsonb_typeof(g->1) IS DISTINCT FROM 'string'
+                       OR jsonb_typeof(g->2) IS DISTINCT FROM 'number'
+                       OR (g->>2) !~ '^(0|[1-9][0-9]*)$' THEN
+                        RAISE EXCEPTION 'PIECE_CONFLICT';
+                    END IF;
+                    SELECT h.id,h.created_at,md5(public.emlis_parent_source(h)::text) AS source_hash
+                        INTO history_source FROM public.emotions h
+                        WHERE h.id::text=g->>0 AND h.user_id=p_owner_user_id FOR SHARE OF h;
+                    IF NOT FOUND THEN RAISE EXCEPTION 'PIECE_CONFLICT'; END IF;
+                    IF history_source.id::text=r.source_input_id
+                       OR (history_source.created_at,history_source.id) >= (source_created,r.source_input_id::uuid)
+                       OR history_source.source_hash IS DISTINCT FROM g->>1 THEN
+                        RAISE EXCEPTION 'PIECE_CONFLICT';
+                    END IF;
+                    SELECT ht.revision INTO history_thread FROM public.emlis_input_threads ht
+                        WHERE ht.original_emotion_id=history_source.id AND ht.user_id=p_owner_user_id
+                        FOR SHARE OF ht;
+                    IF coalesce(history_thread.revision,0)::text IS DISTINCT FROM g->>2 THEN
+                        RAISE EXCEPTION 'PIECE_CONFLICT';
+                    END IF;
+                    history_times := array_append(history_times,history_source.created_at);
+                END LOOP;
+                IF tier='premium' THEN
+                    -- Existing feedback updates/deletes (including source
+                    -- cascade) wait here; new feedback through the Q3 owner
+                    -- is serialized by the profile lock above.
+                    PERFORM 1 FROM public.emlis_frame_feedback f WHERE f.user_id=p_owner_user_id
+                        ORDER BY f.frame_key FOR SHARE OF f;
+                END IF;
+            END IF;
         END IF;
         save_limit := CASE tier WHEN 'free' THEN 5 WHEN 'plus' THEN 30 ELSE NULL END;
         LOOP
@@ -311,6 +373,33 @@ BEGIN
         IF p_expected_source_state IS NOT NULL THEN
             IF public.emlis_parent_visible(source_created,tier,at_time) IS NOT TRUE THEN
                 RAISE EXCEPTION 'PIECE_NOT_FOUND';
+            END IF;
+        END IF;
+        IF q3_context THEN
+            -- Q3's read owner uses statement time. Explicitly check consumed
+            -- rows with the post-wait clock so a quota/row wait cannot keep
+            -- an expired historical input eligible.
+            FOREACH history_time IN ARRAY history_times LOOP
+                IF public.emlis_parent_visible(history_time,tier,at_time) IS NOT TRUE
+                   OR history_time < at_time AT TIME ZONE 'UTC' -
+                        (CASE WHEN tier='premium' THEN interval '3650 days' ELSE interval '365 days' END) THEN
+                    RAISE EXCEPTION 'PIECE_CONFLICT';
+                END IF;
+            END LOOP;
+            -- Reuse current Q3 selection semantics, including history limits,
+            -- answer resolution and the exact feedback version vector.
+            current_context := public.emlis_thread_context(p_owner_user_id,r.source_input_id::uuid);
+            IF jsonb_typeof(current_context->'history') IS DISTINCT FROM 'array'
+               OR jsonb_typeof(current_context->'feedback') IS DISTINCT FROM 'array' THEN
+                RAISE EXCEPTION 'PIECE_CONFLICT';
+            END IF;
+            IF EXISTS (SELECT 1 FROM jsonb_array_elements(context_guards) expected
+                WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(current_context->'history') live
+                    WHERE live->'guard'=expected))
+               OR context_feedback IS DISTINCT FROM coalesce((SELECT jsonb_agg(
+                    jsonb_build_array(f->'frame_key',f->'version') ORDER BY f->>'frame_key')
+                    FROM jsonb_array_elements(current_context->'feedback') f),'[]'::jsonb) THEN
+                RAISE EXCEPTION 'PIECE_CONFLICT';
             END IF;
         END IF;
         -- Another preview may have consumed this key while the month lock waited.
