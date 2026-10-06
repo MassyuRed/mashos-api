@@ -290,8 +290,9 @@ def _scoped_focal_expression(sentence: str) -> tuple[re.Match[str], re.Match[str
     # The written time topic scopes the complete expression in either
     # already-admitted word order. Parse its own author, argument and
     # predicate, including a plain past focal predicate, without converting
-    # its tense from the time word. Nominal links still require the same
-    # source resolver; evaluation frames retain their separate owner.
+    # its tense from the time word. Nominal links still require their separate owner.
+    # Nominal links still require the same source resolver; evaluation frames
+    # retain their separate owner.
     focal = (_FOCUS.fullmatch(scoped['intention'])
              or _direct_transitive_expression(scoped['intention']))
     if focal is None:
@@ -393,8 +394,8 @@ _ROLE_OWNER = r'(?:(?:私|わたし|僕|ぼく|俺|おれ)の)?'
 # Halfwidth voiced marks remain separate source scalars. Width and the two
 # middle-dot spellings are NOT aliases; each exact name needs its own proof.
 # ASCII/fullwidth Latin names use the same complete-token source proof; case
-# and width never become identity aliases. Hiragana remains outside this
-# grammar: particles and ordinary words such as たくさん are not name evidence.
+# and width never become identity aliases. Hiragana stays outside this legacy
+# script scanner; its bounded, role-proven references are handled below.
 # This is not general PII recognition or public-safety admission.
 _PERSON_NAME_CHARS = '一-龥々ァ-ヺーｦ-ﾟA-Za-zＡ-Ｚａ-ｚ'
 _PERSON_NAME = (r'[' + _PERSON_NAME_CHARS + r']+'
@@ -425,6 +426,57 @@ _HONORIFIC_NAME = re.compile(
     r'(?:' + _PERSON_NAME_POTENTIAL_CHAR + r'|(?<!さん)[・･]|[' + _PERSON_NAME_UNSUPPORTED_JOINS + r'])'
     r'(?:' + _PERSON_NAME_POTENTIAL_CHAR + r'|[' + _PERSON_NAME_POTENTIAL_JOINS + r'])*さん')
 
+# Pure hiragana is admitted only through a written role, never by adding
+# particles and ordinary words to the legacy script-based name scanner.
+# Non-greedy honorific matching preserves a following particle/role phrase.
+_HIRAGANA_NAME = re.compile(r'[ぁ-ゖ]+?さん')
+_HIRAGANA_ROLE_NAME = re.compile(
+    _PERSON_NAME_LEFT_BOUNDARY + r'(?P<role>' + _ROLE_OWNER + _ROLE
+    + r'(?:の' + _ROLE + r')*)の(?P<name>[ぁ-ゖ]+?さん)')
+_HIRAGANA_NAME_RIGHT = re.compile(r'(?:$|[\s、，,。！？!?・･]|[はがをにへでとのも]|から|まで|より|だけ|さえ)')
+# Ambiguous quantity, collective and kinship forms do not prove an identity.
+# Refuse their role-looking readings, rather than silently singularizing or
+# dropping a relationship. This is not an exhaustive ordinary-word lexicon.
+_HIRAGANA_NON_IDENTITY = re.compile(
+    r'(?:たく|みな|お?(?:とう|かあ|にい|ねえ|じい|ばあ|じ|ば)|だんな|よめ|むすめ)さん')
+_HIRAGANA_SELF_PREFIX = re.compile(
+    r'(?:^|[\s、，,。！？!?])(?:私|わたし|僕|ぼく|俺|おれ)(?:は|が|にとって)$')
+
+
+def _piece_name_mentions(text: str, bound_names: tuple[str, ...]) -> tuple[re.Match[str], ...]:
+    """Read exact role-proven hiragana references at written boundaries.
+
+    Unpunctuated prose is not a general word segmenter. A known spelling
+    inside a longer token or after an unproved prefix remains unavailable,
+    rather than exposing its suffix to the writer. Ordinary hiragana words
+    with no explicit name binding do not become people. No aliases, new
+    roles, normalization or public-safety admission are supplied here.
+    """
+    legacy = tuple(_HONORIFIC_NAME.finditer(text))
+    hira = {name for name in bound_names if _HIRAGANA_NAME.fullmatch(name)}
+    if not hira:
+        return legacy
+    anchors = {m.span('name') for m in _HIRAGANA_ROLE_NAME.finditer(text)
+               if m['name'] in hira}
+    pattern = re.compile('|'.join(map(re.escape, sorted(hira, key=len, reverse=True))))
+    mentions = list(legacy)
+    previous_ends = {m.end() for m in legacy}
+    for match in pattern.finditer(text):
+        start, end = match.span()
+        prefix = text[:start]
+        direct = (start == 0 or prefix[-1].isspace()
+                  or prefix[-1] in '、，,。！？!?'
+                  or prefix.endswith(('さん・', 'さん･')))
+        coordinated = (start > 0 and prefix[-1] in 'とや'
+                       and start - 1 in previous_ends)
+        if (not (match.span() in anchors or direct or coordinated
+                 or _HIRAGANA_SELF_PREFIX.search(prefix))
+                or _HIRAGANA_NAME_RIGHT.match(text, end) is None):
+            raise unavailable('public_role_binding_missing')
+        mentions.append(match)
+        previous_ends.add(end)
+    return tuple(sorted(mentions, key=lambda m: m.start()))
+
 
 def _digest(text: str) -> str:
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
@@ -439,8 +491,9 @@ def piece_public_role_aliases(bindings: tuple[PieceRoleBinding, ...]) -> dict[st
     written qualification also reaches the person's dependent relationships.
     """
     relations: dict[str, list[tuple[str | None, str]]] = {}
+    known_names = tuple(binding.name for binding in bindings)
     for binding in bindings:
-        owners = tuple(_HONORIFIC_NAME.finditer(binding.role))
+        owners = _piece_name_mentions(binding.role, known_names)
         if owners:
             owner = owners[-1]
             # The nearest named owner includes the earlier links through its
@@ -488,11 +541,15 @@ def piece_public_role_aliases(bindings: tuple[PieceRoleBinding, ...]) -> dict[st
 
 
 def _role_bindings(text: str) -> tuple[PieceRoleBinding, ...]:
-    names = tuple(_HONORIFIC_NAME.finditer(text))
+    matches = tuple(sorted((*_ROLE_NAME.finditer(text), *_HIRAGANA_ROLE_NAME.finditer(text)),
+                           key=lambda m: m.start()))
+    if any(_HIRAGANA_NON_IDENTITY.fullmatch(match['name']) for match in matches):
+        raise unavailable('public_role_binding_ambiguous')
+    names = _piece_name_mentions(text, tuple(match['name'] for match in matches))
     names_by_end = {match.end(): match for match in names}
     by_end: dict[int, PieceRoleBinding] = {}
     collected = []
-    for match in _ROLE_NAME.finditer(text):
+    for match in matches:
         start = match.start()
         if text[:start].rstrip().endswith('の'):
             owner = names_by_end.get(start - 1)
