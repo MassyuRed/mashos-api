@@ -1,5 +1,5 @@
-# Mash-approved B2-B verification only. No Supabase/live credentials or deployment.
-name: Piece B2-B isolated PostgreSQL
+# Piece B2-B/B3 verification only. No Supabase/live credentials or deployment.
+name: Piece B2-B/B3 isolated PostgreSQL
 
 'on':
   push:
@@ -9,6 +9,10 @@ name: Piece B2-B isolated PostgreSQL
       - .github/workflows/piece-b2b-isolated-postgres.yml
       - supabase/migrations/20260808_002_piece_v2_foundation.sql
       - ai/tests/piece_v2/db/test_b02_piece_v2_foundation.py
+      - supabase/migrations/20260808_003_piece_v2_rls_and_staging.sql
+      - ai/services/ai_inference/piece_v2_access.py
+      - ai/tests/piece_v2/db/test_b03_piece_v2_access_rls.py
+      - ai/tests/piece_v2/test_b03_piece_v2_access_api_policy.py
 
 permissions:
   contents: read
@@ -62,7 +66,11 @@ jobs:
             supabase/migrations/20260808_001_piece_v2_legacy_read_bridge.sql \
             supabase/migrations/20260808_002_piece_v2_foundation.sql \
             ai/services/ai_inference/piece_v2_contract.py \
-            ai/services/ai_inference/piece_v2_visual.py
+            ai/services/ai_inference/piece_v2_visual.py \
+            supabase/migrations/20260808_003_piece_v2_rls_and_staging.sql \
+            ai/services/ai_inference/piece_v2_access.py \
+            ai/tests/piece_v2/db/test_b03_piece_v2_access_rls.py \
+            ai/tests/piece_v2/test_b03_piece_v2_access_api_policy.py
           python - <<'PY'
           import os
           import platform
@@ -81,3 +89,13 @@ jobs:
           python -m pytest -v --tb=short -ra \
             -c /dev/null --confcutdir=ai/tests/piece_v2/db \
             ai/tests/piece_v2/db/test_b02_piece_v2_foundation.py
+      - name: Run B3 access and native RLS tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -v --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --confcutdir=ai/tests/piece_v2/db \
+            ai/tests/piece_v2/db/test_b03_piece_v2_access_rls.py
+          python -m pytest -v --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/test_b03_piece_v2_access_api_policy.py
