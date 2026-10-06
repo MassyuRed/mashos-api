@@ -1,0 +1,83 @@
+# Mash-approved B2-B verification only. No Supabase/live credentials or deployment.
+name: Piece B2-B isolated PostgreSQL
+
+'on':
+  push:
+    branches:
+      - agent/cmee-v1a-i1sx-source-explicit-20260815
+    paths:
+      - .github/workflows/piece-b2b-isolated-postgres.yml
+      - supabase/migrations/20260808_002_piece_v2_foundation.sql
+      - ai/tests/piece_v2/db/test_b02_piece_v2_foundation.py
+
+permissions:
+  contents: read
+
+jobs:
+  b2b-foundation:
+    if: github.repository == 'MassyuRed/mashos-api'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: piece_b2b_disposable_only
+          POSTGRES_DB: piece_v2_test_b2b
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d piece_v2_test_b2b"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+      PIECE_V2_TEST_DATABASE_URL: postgresql://postgres:piece_b2b_disposable_only@127.0.0.1:5432/piece_v2_test_b2b
+      PIECE_V2_TEST_DATABASE_DISPOSABLE_ACK: I_ACKNOWLEDGE_DISPOSABLE_DATABASE
+    steps:
+      - name: Check out the triggering commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install unchanged isolated-test dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements-piece-v2-test.txt
+      - name: Record tested source and runtime identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          sha256sum \
+            requirements-piece-v2-test.txt \
+            ai/tests/piece_v2/db/conftest.py \
+            ai/tests/piece_v2/db/test_b02_piece_v2_foundation.py \
+            supabase/migrations/20260808_001_piece_v2_legacy_read_bridge.sql \
+            supabase/migrations/20260808_002_piece_v2_foundation.sql \
+            ai/services/ai_inference/piece_v2_contract.py \
+            ai/services/ai_inference/piece_v2_visual.py
+          python - <<'PY'
+          import os
+          import platform
+          import psycopg
+          import pytest
+          print('Python:', platform.python_version())
+          print('pytest:', pytest.__version__)
+          print('psycopg:', psycopg.__version__)
+          with psycopg.connect(os.environ['PIECE_V2_TEST_DATABASE_URL'], connect_timeout=3) as conn:
+              print('PostgreSQL:', conn.execute('SHOW server_version').fetchone()[0])
+          PY
+      - name: Run only the existing B2-B tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -v --tb=short -ra \
+            -c /dev/null --confcutdir=ai/tests/piece_v2/db \
+            ai/tests/piece_v2/db/test_b02_piece_v2_foundation.py
