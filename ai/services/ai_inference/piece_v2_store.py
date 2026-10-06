@@ -100,22 +100,15 @@ async def _execute(rpc: RpcCall, name: str, args: dict, fields: set[str]) -> dic
     return result
 
 
-async def save_piece(*, authenticated_user_id: str, request: Mapping[str, Any],
-                     idempotency_key: str, rpc: RpcCall,
-                     expected_subscription_tier: str | None = None) -> dict:
-    """Save through B4, optionally binding a server-side B5/B6 tier check.
-
-    The expectation is a separate internal argument, never accepted in request.
-    It grants no plan and does not replace source/format/visual/safety admission.
-    SQL compares it with the locked current profile before first save/quota.
-    Saved replay remains the same record/consumption after a plan change.
-    Unfenced low-level callers remain supported; a future B6 route must supply
-    the server-derived expectation and its other admission checks explicitly.
-    """
+def save_request_arguments(authenticated_user_id: str, request: Mapping[str, Any],
+                           idempotency_key: str) -> dict:
+    """Validate the closed save request before any server read can yield."""
     owner = _uuid(authenticated_user_id, owner=True)
+    if UUID(owner).int == 0:
+        raise PieceContractError('PIECE_AUTH_REQUIRED')
     r = _request(request, {'preview_id', 'expected_preview_revision', 'piece_text_hash',
                           'content_payload_hash', 'visual_recipe_hash'}, {'visibility_scope'})
-    args = {
+    return {
         'p_owner_user_id': owner,
         'p_preview_id': _uuid(r['preview_id']),
         'p_expected_preview_revision': _positive(r['expected_preview_revision']),
@@ -125,10 +118,49 @@ async def save_piece(*, authenticated_user_id: str, request: Mapping[str, Any],
         'p_idempotency_key_hash': _key_hash(idempotency_key),
         'p_visibility_scope': normalize_visibility_scope(r.get('visibility_scope')),
     }
+
+
+async def save_piece(*, authenticated_user_id: str, request: Mapping[str, Any],
+                     idempotency_key: str, rpc: RpcCall,
+                     expected_subscription_tier: str | None = None,
+                     expected_source_state: Mapping[str, Any] | None = None,
+                     replay_only: bool = False) -> dict:
+    """Save through B4, optionally binding a server-side B5/B6 tier check.
+
+    The expectation is a separate internal argument, never accepted in request.
+    It grants no plan and does not replace source/format/visual/safety admission.
+    SQL compares it with the locked current profile before first save/quota.
+    Saved replay remains the same record/consumption after a plan change.
+    B6 supplies the server-only original/thread expectation as well. SQL locks
+    those current owners through commit; no source body is added to the public
+    request or response. replay_only may never enter the first-save branch.
+    Unfenced low-level B4 callers remain supported, not HTTP admission.
+    """
+    args = save_request_arguments(authenticated_user_id, request, idempotency_key)
     if expected_subscription_tier is not None:
         if type(expected_subscription_tier) is not str or expected_subscription_tier not in ('free', 'plus', 'premium'):
             raise PieceContractError('PIECE_REQUEST_INVALID')
         args['p_expected_subscription_tier'] = expected_subscription_tier
+    if type(replay_only) is not bool:
+        raise PieceContractError('PIECE_REQUEST_INVALID')
+    if replay_only:
+        args['p_replay_only'] = True
+    if expected_source_state is not None:
+        import json
+        from piece_v2_contract import canonical_json_bytes
+        try:
+            value = json.loads(canonical_json_bytes(_request(expected_source_state,
+                {'original', 'thread_id', 'thread_revision', 'lineage'})))
+            value['thread_id'] = _uuid(value['thread_id'])
+            _positive(value['thread_revision'])
+            if (expected_subscription_tier is None or type(value['original']) is not dict
+                    or type(value['lineage']) is not dict
+                    or value['lineage']['source_input']['source_owner_user_id'] != args['p_owner_user_id']
+                    or value['original']['id'] != value['lineage']['source_input']['source_input_id']):
+                raise ValueError
+        except (PieceContractError, KeyError, ValueError, TypeError, UnicodeError, RecursionError):
+            raise PieceContractError('PIECE_REQUEST_INVALID') from None
+        args['p_expected_source_state'] = value
     return await _execute(rpc, 'piece_save_v2', args, {
         'piece_id', 'consumption_id', 'lifecycle_status', 'visibility_scope',
         'row_version', 'saved_at', 'idempotency_replayed',

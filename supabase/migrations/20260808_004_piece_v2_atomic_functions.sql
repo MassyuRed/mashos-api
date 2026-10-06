@@ -184,7 +184,9 @@ BEGIN
         p_owner_user_id uuid, p_preview_id uuid, p_expected_preview_revision bigint,
         p_piece_text_hash text, p_content_payload_hash text, p_visual_recipe_hash text,
         p_idempotency_key_hash text, p_visibility_scope text DEFAULT 'private',
-        p_expected_subscription_tier text DEFAULT NULL
+        p_expected_subscription_tier text DEFAULT NULL,
+        p_expected_source_state jsonb DEFAULT NULL,
+        p_replay_only boolean DEFAULT false
     ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $save$
     DECLARE
         r public.piece_records%ROWTYPE;
@@ -195,6 +197,9 @@ BEGIN
         at_time timestamptz;
         month_value text;
         visibility text := coalesce(p_visibility_scope, 'private');
+        source_snapshot jsonb;
+        source_created timestamp;
+        source_thread record;
     BEGIN
         IF p_owner_user_id IS NULL THEN RAISE EXCEPTION 'PIECE_AUTH_REQUIRED'; END IF;
         IF p_preview_id IS NULL OR p_expected_preview_revision IS NULL
@@ -209,6 +214,18 @@ BEGIN
            AND p_expected_subscription_tier NOT IN ('free','plus','premium') THEN
             RAISE EXCEPTION 'PIECE_REQUEST_INVALID';
         END IF;
+        IF p_replay_only IS NULL THEN RAISE EXCEPTION 'PIECE_REQUEST_INVALID'; END IF;
+        IF p_expected_source_state IS NOT NULL AND (
+            jsonb_typeof(p_expected_source_state)='object'
+            AND p_expected_source_state ?& ARRAY['original','thread_id','thread_revision','lineage']
+            AND p_expected_source_state-ARRAY['original','thread_id','thread_revision','lineage']='{}'::jsonb
+            AND jsonb_typeof(p_expected_source_state->'original')='object'
+            AND jsonb_typeof(p_expected_source_state->'lineage')='object'
+            AND jsonb_typeof(p_expected_source_state->'thread_id')='string'
+            AND jsonb_typeof(p_expected_source_state->'thread_revision')='number'
+            AND (p_expected_source_state->>'thread_revision') ~ '^[1-9][0-9]*$'
+            AND p_expected_subscription_tier IS NOT NULL
+        ) IS NOT TRUE THEN RAISE EXCEPTION 'PIECE_REQUEST_INVALID'; END IF;
         SELECT * INTO r FROM public.piece_records
             WHERE id=p_preview_id AND owner_user_id=p_owner_user_id FOR UPDATE;
         IF NOT FOUND THEN RAISE EXCEPTION 'PIECE_NOT_FOUND'; END IF;
@@ -233,6 +250,7 @@ BEGIN
                 'row_version',r.row_version,'saved_at',r.saved_at,'idempotency_replayed',true);
         END IF;
         IF r.lifecycle_status <> 'preview_draft' THEN RAISE EXCEPTION 'PIECE_CONFLICT'; END IF;
+        IF p_replay_only THEN RAISE EXCEPTION 'PIECE_CONFLICT'; END IF;
         IF r.expires_at IS NULL OR r.expires_at <= clock_timestamp() THEN
             RAISE EXCEPTION 'PIECE_PREVIEW_EXPIRED';
         END IF;
@@ -240,12 +258,43 @@ BEGIN
         -- B5/B6 must derive it from current server state, not a request field.
         -- NULL preserves the low-level B4 caller; it is not B6 admission.
         -- Current DB tier remains authoritative for both the comparison and quota.
+        -- Keep the shared source owner's lock order: original -> profile ->
+        -- thread. These are reads only, bound to the authenticated server
+        -- snapshot. NULL retains B4 compatibility, never B6 admission.
+        IF p_expected_source_state IS NOT NULL THEN
+            IF r.source_lineage IS DISTINCT FROM p_expected_source_state->'lineage' THEN
+                RAISE EXCEPTION 'PIECE_CONFLICT';
+            END IF;
+            SELECT public.emlis_parent_source(e), e.created_at
+                INTO source_snapshot, source_created FROM public.emotions e
+                WHERE e.id::text=r.source_input_id AND e.user_id=p_owner_user_id FOR SHARE OF e;
+            IF NOT FOUND THEN RAISE EXCEPTION 'PIECE_NOT_FOUND'; END IF;
+            IF source_snapshot IS DISTINCT FROM p_expected_source_state->'original' THEN
+                RAISE EXCEPTION 'PIECE_CONFLICT';
+            END IF;
+        END IF;
         SELECT subscription_tier INTO tier FROM public.profiles
             WHERE id=p_owner_user_id FOR SHARE;
         tier := CASE WHEN tier IN ('free','plus','premium') THEN tier ELSE 'free' END;
         IF p_expected_subscription_tier IS NOT NULL
            AND tier IS DISTINCT FROM p_expected_subscription_tier THEN
             RAISE EXCEPTION 'PIECE_CONFLICT';
+        END IF;
+        IF p_expected_source_state IS NOT NULL THEN
+            SELECT t.* INTO source_thread FROM public.emlis_input_threads t
+                WHERE t.original_emotion_id::text=r.source_input_id
+                  AND t.user_id=p_owner_user_id FOR SHARE OF t;
+            IF NOT FOUND THEN RAISE EXCEPTION 'PIECE_CONFLICT'; END IF;
+            IF source_thread.id::text IS DISTINCT FROM p_expected_source_state->>'thread_id'
+               OR source_thread.revision::text IS DISTINCT FROM p_expected_source_state->>'thread_revision'
+               OR source_thread.source_snapshot IS DISTINCT FROM source_snapshot
+               OR source_thread.last_observation_event_id::text IS DISTINCT FROM
+                    r.source_lineage#>>'{observation,emlis_observation_result_identity}'
+               OR source_thread.state NOT IN ('COMPLETED','AWAITING_ANSWER')
+               OR source_thread.active_operation_id IS NOT NULL
+               OR source_thread.latest_answer_event_id IS NOT NULL THEN
+                RAISE EXCEPTION 'PIECE_CONFLICT';
+            END IF;
         END IF;
         save_limit := CASE tier WHEN 'free' THEN 5 WHEN 'plus' THEN 30 ELSE NULL END;
         LOOP
@@ -259,6 +308,11 @@ BEGIN
             EXIT WHEN month_value=to_char(at_time AT TIME ZONE 'Asia/Tokyo','YYYY-MM');
         END LOOP;
         IF r.expires_at <= at_time THEN RAISE EXCEPTION 'PIECE_PREVIEW_EXPIRED'; END IF;
+        IF p_expected_source_state IS NOT NULL THEN
+            IF public.emlis_parent_visible(source_created,tier,at_time) IS NOT TRUE THEN
+                RAISE EXCEPTION 'PIECE_NOT_FOUND';
+            END IF;
+        END IF;
         -- Another preview may have consumed this key while the month lock waited.
         IF EXISTS (SELECT 1 FROM public.piece_quota_consumptions
             WHERE owner_user_id=p_owner_user_id AND save_idempotency_key_hash=p_idempotency_key_hash) THEN
@@ -350,7 +404,7 @@ BEGIN
     $delete$;
 
     FOREACH signature IN ARRAY ARRAY[
-        'public.piece_save_v2(uuid,uuid,bigint,text,text,text,text,text,text)',
+        'public.piece_save_v2(uuid,uuid,bigint,text,text,text,text,text,text,jsonb,boolean)',
         'public.piece_set_visibility_v2(uuid,uuid,bigint,text)',
         'public.piece_delete_v2(uuid,uuid,bigint,text)',
         'public.piece_issue_preview_v2(uuid,text,text,jsonb,integer)',

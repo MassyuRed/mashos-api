@@ -21,6 +21,8 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/services/ai_inference/api_piece_v2.py
       - ai/tests/piece_v2/db/test_b05_preview_cancel_http.py
       - ai/tests/piece_v2/db/test_b06_save_tier_fence.py
+      - ai/services/ai_inference/piece_v2_save_service.py
+      - ai/tests/piece_v2/test_b06_piece_v2_save_api.py
 
 permissions:
   contents: read
@@ -149,3 +151,11 @@ jobs:
           python -m pytest -v --tb=short -ra -p no:cacheprovider \
             -c /dev/null --confcutdir=ai/tests/piece_v2/db \
             ai/tests/piece_v2/db/test_b06_save_tier_fence.py
+      - name: Run B6 authenticated save and native source-lock integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum ai/services/ai_inference/piece_v2_save_service.py ai/tests/piece_v2/test_b06_piece_v2_save_api.py
+          python -m pytest -v --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/test_b06_piece_v2_save_api.py

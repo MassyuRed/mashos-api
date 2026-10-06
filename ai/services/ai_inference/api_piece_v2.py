@@ -1,9 +1,9 @@
-"""Unregistered B5 Piece v2 HTTP routes: authenticated preview cancellation.
+"""Unregistered Piece v2 HTTP routes: preview cancellation and B6 save.
 
 PCE-6 owns the wire shape; the existing B5 store/SQL owns cancellation and
 revision locking. Mount this router only in a dedicated test application until
 the separately approved B12-C clean cutover. Production app.py is unchanged.
-No preview issuance, safety approval, source author, save or quota is invented.
+No preview issuance, safety approval or source author is invented.
 """
 from __future__ import annotations
 
@@ -124,4 +124,27 @@ async def cancel_preview(preview_id: str, request: Request) -> JSONResponse:
         return _response({'code': code}, _CANCEL_STATUS[code])
     except Exception:
         # Do not catch BaseException: task cancellation still propagates.
+        return _response({'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}, 503)
+
+
+@router.post('/save')
+async def save_preview(request: Request) -> JSONResponse:
+    """Save only a persisted admitted preview; never accept replacement text."""
+    from piece_v2_save_service import PieceSaveService, SAVE_STATUS
+    try:
+        owner = await _authenticated_owner(request)
+        keys = request.headers.getlist('idempotency-key')
+        if len(keys) != 1 or not keys[0].strip() or request.query_params:
+            raise PieceContractError('PIECE_REQUEST_INVALID')
+        try:
+            value = await request.json()
+        except (ValueError, UnicodeError):
+            raise PieceContractError('PIECE_REQUEST_INVALID') from None
+        result = await PieceSaveService().save(request.headers['authorization'],
+            authenticated_user_id=owner, request=value, idempotency_key=keys[0])
+        return _response(result)
+    except PieceContractError as exc:
+        code = exc.code if exc.code in SAVE_STATUS else 'PIECE_TEMPORARILY_UNAVAILABLE'
+        return _response({'code': code}, SAVE_STATUS[code])
+    except Exception:
         return _response({'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}, 503)
