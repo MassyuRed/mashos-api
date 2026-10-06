@@ -134,6 +134,8 @@ REJECT = (
     ('apostrophe_join_is_not_a_bound_suffix', "私は友人のConnorさんと話したい。O'Connorさんとはまだ会っていない。"),
     ('curly_apostrophe_join_is_not_a_bound_suffix', '私は友人のConnorさんと話したい。O’Connorさんとはまだ会っていない。'),
     ('fullwidth_hyphen_join_is_not_a_bound_suffix', '私は友人のLucさんと話したい。Jean－Lucさんとはまだ会っていない。'),
+    ('hyphen_between_bound_people_is_not_an_admitted_separator', '私は友人のAliceさんと上司のBobさんに話を聞きたい。Aliceさん-Bobさんの都合はまだ分からない。'),
+    ('apostrophe_between_bound_people_is_not_an_admitted_separator', "私は友人のAliceさんと上司のBobさんに話を聞きたい。Aliceさん'Bobさんの都合はまだ分からない。"),
     ('case_is_not_an_alias', '私は友人のAliceさんと話したい。aliceさんとはまだ会っていない。'),
     ('width_is_not_an_alias', '私は友人のAliceさんと話したい。Ａｌｉｃｅさんとはまだ会っていない。'),
     ('malformed_dot_does_not_expose_bound_suffix', '私は友人のLucさんと話したい。上司のJean・・Lucさんとはまだ会っていない。'),
