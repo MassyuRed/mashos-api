@@ -1,4 +1,4 @@
-"""Unregistered Piece v2 HTTP routes: cancellation, B6 save and B7 owner reads.
+"""Unregistered Piece v2 HTTP routes: cancellation, B6 save and B7 owner operations.
 
 PCE-6 owns the wire shape; the existing B5 store/SQL owns cancellation and
 revision locking. Mount this router only in a dedicated test application until
@@ -12,7 +12,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from piece_v2_contract import PieceContractError
+from piece_v2_contract import PieceContractError, normalize_visibility_scope
 from piece_v2_store import cancel_piece_preview
 
 router = APIRouter(prefix='/emotion/piece')
@@ -187,3 +187,95 @@ async def owner_detail(piece_id: str, request: Request) -> JSONResponse:
         return _response({'code': code}, OWNER_READ_STATUS[code])
     except Exception:
         return _response({'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}, 503)
+
+
+_OWNER_MUTATION_STATUS = {
+    'PIECE_REQUEST_INVALID': 400,
+    'PIECE_AUTH_REQUIRED': 401,
+    'PIECE_NOT_FOUND': 404,
+    'PIECE_CONFLICT': 409,
+    'PIECE_TEMPORARILY_UNAVAILABLE': 503,
+}
+
+
+async def _owner_mutation_rpc(name: str, args: dict) -> dict:
+    """Call only the existing B4 visibility/delete terminal, once.
+
+    Ownership, row-version conflict, same-key delete replay and purge remain
+    the SQL terminal's responsibilities. Do not pre-read the former input or
+    saved row: doing so would both race and reject a valid deletion replay.
+    A transport failure is an unknown outcome, not permission or absence.
+    """
+    if name not in ('piece_set_visibility_v2', 'piece_delete_v2'):
+        raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE')
+    try:
+        from supabase_client import sb_post_rpc
+        response = await sb_post_rpc(name, args, timeout=8.0)
+        value = response.json()
+        if response.status_code == 200 and type(value) is dict:
+            return value
+        code = 'PIECE_TEMPORARILY_UNAVAILABLE'
+        if (response.status_code == 400 and type(value) is dict
+                and value.get('code') == 'P0001'
+                and type(value.get('message')) is str
+                and value['message'] in _OWNER_MUTATION_STATUS):
+            code = value['message']
+        raise PieceContractError(code)
+    except PieceContractError:
+        raise
+    except Exception:
+        # No retry: a timeout/invalid ACK may follow a committed write.
+        # BaseException, including task cancellation, must still propagate.
+        raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE') from None
+
+
+async def _mutate_saved_piece(piece_id: str, request: Request,
+                              *, operation: str) -> JSONResponse:
+    from piece_v2_store import delete_piece, set_piece_visibility
+    try:
+        owner = await _authenticated_owner(request)
+        if request.query_params:
+            raise PieceContractError('PIECE_REQUEST_INVALID')
+        try:
+            value = await request.json()
+            raw = piece_id[6:] if piece_id.startswith('piece:') else piece_id
+            pid = UUID(raw)
+            if pid.int == 0 or type(value) is not dict:
+                raise ValueError
+        except (ValueError, UnicodeError, AttributeError):
+            # Closed errors, not FastAPI's body-echoing validation response.
+            raise PieceContractError('PIECE_REQUEST_INVALID') from None
+        if operation == 'visibility':
+            result = await set_piece_visibility(authenticated_user_id=owner,
+                piece_id=str(pid), request=value, rpc=_owner_mutation_rpc)
+            # Compare with the same canonical scope that the unchanged store sent.
+            # Otherwise an accepted padded value reports failure after a write.
+            if result['visibility_scope'] != normalize_visibility_scope(value['visibility_scope']):
+                raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE')
+        elif operation == 'delete':
+            keys = request.headers.getlist('idempotency-key')
+            if len(keys) != 1 or not keys[0].strip():
+                raise PieceContractError('PIECE_REQUEST_INVALID')
+            result = await delete_piece(authenticated_user_id=owner,
+                piece_id=str(pid), request=value, idempotency_key=keys[0],
+                rpc=_owner_mutation_rpc)
+        else:
+            raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE')
+        return _response(result)
+    except PieceContractError as exc:
+        code = exc.code if exc.code in _OWNER_MUTATION_STATUS else 'PIECE_TEMPORARILY_UNAVAILABLE'
+        return _response({'code': code}, _OWNER_MUTATION_STATUS[code])
+    except Exception:
+        return _response({'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}, 503)
+
+
+@router.patch('/{piece_id}/visibility')
+async def owner_visibility(piece_id: str, request: Request) -> JSONResponse:
+    """Change this owner's saved visibility without rewriting the artifact."""
+    return await _mutate_saved_piece(piece_id, request, operation='visibility')
+
+
+@router.delete('/{piece_id}')
+async def owner_delete(piece_id: str, request: Request) -> JSONResponse:
+    """Delete through the existing owner/version/key-bound purge terminal."""
+    return await _mutate_saved_piece(piece_id, request, operation='delete')
