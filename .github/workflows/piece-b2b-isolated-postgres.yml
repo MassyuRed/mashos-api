@@ -23,6 +23,7 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/piece_v2/db/test_b06_save_tier_fence.py
       - ai/services/ai_inference/piece_v2_save_service.py
       - ai/tests/piece_v2/test_b06_piece_v2_save_api.py
+      - ai/tests/piece_v2/db/test_b06_save_context_fence.py
 
 permissions:
   contents: read
@@ -159,3 +160,11 @@ jobs:
           python -m pytest -v --tb=short -ra -p no:cacheprovider \
             -c /dev/null --noconftest \
             ai/tests/piece_v2/test_b06_piece_v2_save_api.py
+      - name: Run B6 saved Q3 context with native lock-wait verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum ai/tests/piece_v2/db/test_b06_save_context_fence.py
+          python -m pytest -v --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/db/test_b06_save_context_fence.py
