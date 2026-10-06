@@ -162,3 +162,93 @@ def test_unresolved_or_meaning_bearing_latin_identity_has_no_candidate(name, tex
 def test_ordinary_hiragana_words_are_not_newly_classified_as_people(text, expected):
     source, out = outcome(text)
     assert_source_and_candidate(source, out, expected, {})
+
+
+# Bounded hiragana extension: the source must state the person's role. This
+# does not turn standalone hiragana words into a general person detector.
+HIRAGANA_CASES = tuple(
+    ('direct_' + name,
+     '私は友人の' + name + 'さんと落ち着いて話したい。' + name + 'さんの都合はまだ分からない。',
+     '私は、友人と落ち着いて話したい。友人の都合はまだ分からない。',
+     {name + 'さん': '友人'})
+    for name in ('あい', 'まこと', 'はる', 'のの', 'かなた')
+) + (
+    ('hiragana_owned_chain',
+     '私は私の友人のあいさんの上司のまことさんと話したい。あいさんとまことさんの都合はまだ分からない。',
+     '私は、私の友人の上司と話したい。私の友人と私の友人の上司の都合はまだ分からない。',
+     {'あいさん': '私の友人', 'まことさん': '私の友人の上司'}),
+    ('hiragana_owner_bound_later',
+     '私はあいさんの上司のまりさんと話したい。友人のあいさんとはまだ会っていない。まりさんの都合はまだ分からない。',
+     '私は、友人の上司と話したい。友人とはまだ会っていない。友人の上司の都合はまだ分からない。',
+     {'あいさん': '友人', 'まりさん': '友人の上司'}),
+    ('hiragana_conditional_negative',
+     '私は友人のあいさんが来られるなら、あいさんと急いで話したくない。まだ、会う日は決めていない。',
+     '私は、友人が来られるなら、友人と急いで話したくない。まだ、会う日は決めていない。',
+     {'あいさん': '友人'}),
+    ('hiragana_personal_value',
+     '私にとって友人のあいさんと話す時間が大切です。あいさんと毎日会えるとは限らない。',
+     '私にとって、友人と話す時間が大切です。友人と毎日会えるとは限らない。',
+     {'あいさん': '友人'}),
+    ('hiragana_focal_value',
+     '私が大切にしたいのは、友人のあいさんと話す時間です。あいさんとはまだ会っていない。',
+     '私は、友人と話す時間を大切にしたい。\n\n友人とはまだ会っていない。',
+     {'あいさん': '友人'}),
+    ('hiragana_distinct_bound_suffixes',
+     '私は友人のあいさんと上司のまあいさんに話を聞きたい。あいさんとまあいさんは別々の部署で働いている。',
+     '私は、友人と上司に話を聞きたい。友人と上司は別々の部署で働いている。',
+     {'あいさん': '友人', 'まあいさん': '上司'}),
+    ('latin_owner_hiragana_child',
+     '私は私の友人のAliceさんの上司のまりさんと話したい。Aliceさんとまりさんの都合はまだ分からない。',
+     '私は、私の友人の上司と話したい。私の友人と私の友人の上司の都合はまだ分からない。',
+     {'Aliceさん': '私の友人', 'まりさん': '私の友人の上司'}),
+    ('hiragana_owner_latin_child',
+     '私は私の友人のあいさんの上司のBobさんと話したい。あいさんとBobさんの都合はまだ分からない。',
+     '私は、私の友人の上司と話したい。私の友人と私の友人の上司の都合はまだ分からない。',
+     {'あいさん': '私の友人', 'Bobさん': '私の友人の上司'}),
+    ('hiragana_bound_name_and_ordinary_word',
+     '私は友人のあいさんと話したい。みなさんの都合はまだ分からない。',
+     '私は、友人と話したい。みなさんの都合はまだ分からない。',
+     {'あいさん': '友人'}),
+)
+
+
+@pytest.mark.parametrize('name,text,expected,aliases', HIRAGANA_CASES,
+                         ids=[case[0] for case in HIRAGANA_CASES])
+def test_written_hiragana_identity_preserves_original_propositions(name, text, expected, aliases):
+    source, out = outcome(text)
+    assert_source_and_candidate(source, out, expected, aliases)
+
+
+HIRAGANA_REJECT = (
+    ('hira_longer_suffix', '私は友人のあいさんと話したい。なあいさんとはまだ会っていない。'),
+    ('hira_unknown_han_prefix', '私は友人のあいさんと話したい。山田あいさんとはまだ会っていない。'),
+    ('hira_unknown_latin_prefix', '私は友人のあいさんと話したい。Éあいさんとはまだ会っていない。'),
+    ('hira_unknown_join', '私は友人のあいさんと話したい。まり・あいさんとはまだ会っていない。'),
+    ('hira_unknown_hyphen', '私は友人のあいさんと話したい。まり-あいさんとはまだ会っていない。'),
+    ('hira_unknown_left_phrase', '私は友人のあいさんと話したい。今あいさんとはまだ会っていない。'),
+    ('hira_unknown_role', '私は友人のあいさんと話したい。家族のあいさんとはまだ会っていない。'),
+    ('hira_identity_material', '私は友人のあいさんという名前を書きたい。まだ、書く日は決めていない。'),
+    ('hira_identity_later_material', '私は友人のあいさんと話したい。名前はあいさん。'),
+    ('hira_two_people_same_role', '私は友人のあいさんと友人のまりさんに話を聞きたい。まだ、会う日は決めていない。'),
+    ('hira_conflicting_roles', '私は友人のあいさんと話したい。上司のあいさんとはまだ会っていない。'),
+    ('hira_unbound_owner', '私はあいさんの上司のまりさんと話したい。まだ、会う日は決めていない。'),
+    ('hira_cyclic_owners', '私はあいさんの上司のまりさんと話したい。まりさんの同僚のあいさんとはまだ会っていない。'),
+    ('hira_script_is_not_alias', '私は友人のあいさんと話したい。アイさんとはまだ会っていない。'),
+    ('hira_suffix_inside_quantity', '私は友人のくさんと話したい。たくさん本を読みたい。'),
+    ('hira_unproved_right_boundary', '私は友人のあいさんと話したい。あいさんごさんとはまだ会っていない。'),
+    ('hira_quantity_is_not_identity', '私は友人のたくさんの作品を読みたい。まだ、読む日は決めていない。'),
+    ('hira_collective_is_not_identity', '私は友人のみなさんと話したい。まだ、会う日は決めていない。'),
+    ('hira_kinship_is_not_identity', '私は友人のおかあさんと話したい。まだ、会う日は決めていない。'),
+)
+
+
+@pytest.mark.parametrize('name,text', HIRAGANA_REJECT,
+                         ids=[case[0] for case in HIRAGANA_REJECT])
+def test_hiragana_identity_without_a_proved_boundary_has_no_candidate(name, text):
+    _, out = outcome(text)
+    assert out.status == EngineStatus.UNAVAILABLE
+    assert out.artifact is None
+    body_free = out.as_body_free()
+    assert body_free['record_effect'] == body_free['quota_effect'] == 0
+    assert body_free['production_enabled'] is False
+    assert text not in str(body_free)
