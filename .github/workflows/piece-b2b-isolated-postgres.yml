@@ -20,6 +20,7 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/piece_v2/db/test_b05_preview_persistence.py
       - ai/services/ai_inference/api_piece_v2.py
       - ai/tests/piece_v2/db/test_b05_preview_cancel_http.py
+      - ai/tests/piece_v2/db/test_b06_save_tier_fence.py
 
 permissions:
   contents: read
@@ -140,3 +141,11 @@ jobs:
           python -m pytest -v --tb=short -ra -p no:cacheprovider \
             -c /dev/null --confcutdir=ai/tests/piece_v2/db \
             ai/tests/piece_v2/db/test_b05_preview_cancel_http.py
+      - name: Run pre-save tier fence with native lock-wait verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum ai/tests/piece_v2/db/test_b06_save_tier_fence.py
+          python -m pytest -v --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --confcutdir=ai/tests/piece_v2/db \
+            ai/tests/piece_v2/db/test_b06_save_tier_fence.py

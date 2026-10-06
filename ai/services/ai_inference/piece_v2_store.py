@@ -101,7 +101,17 @@ async def _execute(rpc: RpcCall, name: str, args: dict, fields: set[str]) -> dic
 
 
 async def save_piece(*, authenticated_user_id: str, request: Mapping[str, Any],
-                     idempotency_key: str, rpc: RpcCall) -> dict:
+                     idempotency_key: str, rpc: RpcCall,
+                     expected_subscription_tier: str | None = None) -> dict:
+    """Save through B4, optionally binding a server-side B5/B6 tier check.
+
+    The expectation is a separate internal argument, never accepted in request.
+    It grants no plan and does not replace source/format/visual/safety admission.
+    SQL compares it with the locked current profile before first save/quota.
+    Saved replay remains the same record/consumption after a plan change.
+    Unfenced low-level callers remain supported; a future B6 route must supply
+    the server-derived expectation and its other admission checks explicitly.
+    """
     owner = _uuid(authenticated_user_id, owner=True)
     r = _request(request, {'preview_id', 'expected_preview_revision', 'piece_text_hash',
                           'content_payload_hash', 'visual_recipe_hash'}, {'visibility_scope'})
@@ -115,6 +125,10 @@ async def save_piece(*, authenticated_user_id: str, request: Mapping[str, Any],
         'p_idempotency_key_hash': _key_hash(idempotency_key),
         'p_visibility_scope': normalize_visibility_scope(r.get('visibility_scope')),
     }
+    if expected_subscription_tier is not None:
+        if type(expected_subscription_tier) is not str or expected_subscription_tier not in ('free', 'plus', 'premium'):
+            raise PieceContractError('PIECE_REQUEST_INVALID')
+        args['p_expected_subscription_tier'] = expected_subscription_tier
     return await _execute(rpc, 'piece_save_v2', args, {
         'piece_id', 'consumption_id', 'lifecycle_status', 'visibility_scope',
         'row_version', 'saved_at', 'idempotency_replayed',

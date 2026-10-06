@@ -183,7 +183,8 @@ BEGIN
     CREATE FUNCTION public.piece_save_v2(
         p_owner_user_id uuid, p_preview_id uuid, p_expected_preview_revision bigint,
         p_piece_text_hash text, p_content_payload_hash text, p_visual_recipe_hash text,
-        p_idempotency_key_hash text, p_visibility_scope text DEFAULT 'private'
+        p_idempotency_key_hash text, p_visibility_scope text DEFAULT 'private',
+        p_expected_subscription_tier text DEFAULT NULL
     ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $save$
     DECLARE
         r public.piece_records%ROWTYPE;
@@ -202,6 +203,10 @@ BEGIN
            OR p_content_payload_hash IS NULL OR p_content_payload_hash !~ '^[0-9a-f]{64}$'
            OR p_visual_recipe_hash IS NULL OR p_visual_recipe_hash !~ '^[0-9a-f]{64}$'
            OR p_idempotency_key_hash IS NULL OR p_idempotency_key_hash !~ '^[0-9a-f]{64}$' THEN
+            RAISE EXCEPTION 'PIECE_REQUEST_INVALID';
+        END IF;
+        IF p_expected_subscription_tier IS NOT NULL
+           AND p_expected_subscription_tier NOT IN ('free','plus','premium') THEN
             RAISE EXCEPTION 'PIECE_REQUEST_INVALID';
         END IF;
         SELECT * INTO r FROM public.piece_records
@@ -231,10 +236,17 @@ BEGIN
         IF r.expires_at IS NULL OR r.expires_at <= clock_timestamp() THEN
             RAISE EXCEPTION 'PIECE_PREVIEW_EXPIRED';
         END IF;
-        -- No caller tier/limit parameter, no process-local entitlement cache.
+        -- Optional backend pre-save expectation, NEVER an entitlement grant.
+        -- B5/B6 must derive it from current server state, not a request field.
+        -- NULL preserves the low-level B4 caller; it is not B6 admission.
+        -- Current DB tier remains authoritative for both the comparison and quota.
         SELECT subscription_tier INTO tier FROM public.profiles
             WHERE id=p_owner_user_id FOR SHARE;
         tier := CASE WHEN tier IN ('free','plus','premium') THEN tier ELSE 'free' END;
+        IF p_expected_subscription_tier IS NOT NULL
+           AND tier IS DISTINCT FROM p_expected_subscription_tier THEN
+            RAISE EXCEPTION 'PIECE_CONFLICT';
+        END IF;
         save_limit := CASE tier WHEN 'free' THEN 5 WHEN 'plus' THEN 30 ELSE NULL END;
         LOOP
             at_time := clock_timestamp();
@@ -338,7 +350,7 @@ BEGIN
     $delete$;
 
     FOREACH signature IN ARRAY ARRAY[
-        'public.piece_save_v2(uuid,uuid,bigint,text,text,text,text,text)',
+        'public.piece_save_v2(uuid,uuid,bigint,text,text,text,text,text,text)',
         'public.piece_set_visibility_v2(uuid,uuid,bigint,text)',
         'public.piece_delete_v2(uuid,uuid,bigint,text)',
         'public.piece_issue_preview_v2(uuid,text,text,jsonb,integer)',
