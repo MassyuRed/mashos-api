@@ -392,25 +392,38 @@ _ROLE_OWNER = r'(?:(?:私|わたし|僕|ぼく|俺|おれ)の)?'
 # truncate a longer name to a known suffix or normalize its original spelling.
 # Halfwidth voiced marks remain separate source scalars. Width and the two
 # middle-dot spellings are NOT aliases; each exact name needs its own proof.
-# Hiragana/Latin are still outside this grammar. In particular ordinary words
-# such as たくさん are not people. This is not general PII recognition.
-_PERSON_NAME_CHARS = '一-龥々ァ-ヺーｦ-ﾟ'
-_PERSON_NAME_TOKEN_CHARS = _PERSON_NAME_CHARS + '・･'
+# ASCII/fullwidth Latin names use the same complete-token source proof; case
+# and width never become identity aliases. Hiragana remains outside this
+# grammar: particles and ordinary words such as たくさん are not name evidence.
+# This is not general PII recognition or public-safety admission.
+_PERSON_NAME_CHARS = '一-龥々ァ-ヺーｦ-ﾟA-Za-zＡ-Ｚａ-ｚ'
 _PERSON_NAME = (r'[' + _PERSON_NAME_CHARS + r']+'
                 r'(?:[・･][' + _PERSON_NAME_CHARS + r']+)*さん')
+# The potential-token boundary is wider than the admitted spelling. Unicode
+# word characters and combining marks must not expose a known ASCII suffix
+# (e.g. ÉAlice / Jo\u0301Alice / 1Alice -> Alice). Hiragana remains a separate
+# grammar boundary; this does not interpret arbitrary hiragana names. Latin
+# hyphen/apostrophe joins likewise cannot expose a separately bound suffix.
+_PERSON_NAME_MARKS = '\u0300-\u036f\u1ab0-\u1aff\u1dc0-\u1dff\u20d0-\u20ff\ufe20-\ufe2f'
+_PERSON_NAME_UNSUPPORTED_JOINS = r"'\-‐-―‘’＇－"
+_PERSON_NAME_POTENTIAL_JOINS = '・･' + _PERSON_NAME_UNSUPPORTED_JOINS
+_PERSON_NAME_POTENTIAL_CHAR = r'(?:[^\Wぁ-ゖ]|[' + _PERSON_NAME_MARKS + r'])'
 # A dot inside a name is not the same boundary as a dot AFTER a completed
 # さん. The latter can separate two named people or two role phrases.
-_PERSON_NAME_LEFT_BOUNDARY = (r'(?:(?<![' + _PERSON_NAME_TOKEN_CHARS
-                              + r'])|(?<=さん・)|(?<=さん･))')
+_PERSON_NAME_LEFT_BOUNDARY = (r'(?:(?<![^\Wぁ-ゖ])(?<![' + _PERSON_NAME_MARKS
+                              + _PERSON_NAME_POTENTIAL_JOINS + r'])|(?<=さん・)|(?<=さん･))')
 _ROLE_NAME = re.compile(_PERSON_NAME_LEFT_BOUNDARY + r'(?P<role>' + _ROLE_OWNER + _ROLE
                         + r'(?:の' + _ROLE + r')*)の'
                         r'(?P<name>' + _PERSON_NAME + r')')
 # Scan a whole potential token, including malformed joins, before checking its
 # binding. A leading/trailing/doubled dot must not expose a shorter known
 # suffix to the writer or silently escape the existing unbound-name check.
+# Only the admitted middle dots separate completed honorific tokens. A new
+# unsupported join stays in the scanned token even after a completed さん,
+# matching the writer's refusal to replace a suffix after that join.
 _HONORIFIC_NAME = re.compile(
-    r'(?:[' + _PERSON_NAME_CHARS + r']|(?<!さん)[・･])'
-    r'[' + _PERSON_NAME_TOKEN_CHARS + r']*さん')
+    r'(?:' + _PERSON_NAME_POTENTIAL_CHAR + r'|(?<!さん)[・･]|[' + _PERSON_NAME_UNSUPPORTED_JOINS + r'])'
+    r'(?:' + _PERSON_NAME_POTENTIAL_CHAR + r'|[' + _PERSON_NAME_POTENTIAL_JOINS + r'])*さん')
 
 
 def _digest(text: str) -> str:
