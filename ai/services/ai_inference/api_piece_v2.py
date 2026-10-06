@@ -1,4 +1,4 @@
-"""Unregistered Piece v2 HTTP routes: preview cancellation and B6 save.
+"""Unregistered Piece v2 HTTP routes: cancellation, B6 save and B7 owner reads.
 
 PCE-6 owns the wire shape; the existing B5 store/SQL owns cancellation and
 revision locking. Mount this router only in a dedicated test application until
@@ -146,5 +146,44 @@ async def save_preview(request: Request) -> JSONResponse:
     except PieceContractError as exc:
         code = exc.code if exc.code in SAVE_STATUS else 'PIECE_TEMPORARILY_UNAVAILABLE'
         return _response({'code': code}, SAVE_STATUS[code])
+    except Exception:
+        return _response({'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}, 503)
+
+
+# Static owner paths must precede /{piece_id}; production remains unregistered.
+@router.get('/history')
+async def owner_history(request: Request) -> JSONResponse:
+    """Read only the authenticated owner's saved private/public artifacts."""
+    from piece_v2_owner_service import PieceOwnerService, OWNER_READ_STATUS
+    try:
+        owner = await _authenticated_owner(request)
+        pairs = list(request.query_params.multi_items())
+        query = dict(pairs)
+        if (len(query) != len(pairs) or set(query) - {'limit', 'cursor'}
+                or await request.body()):
+            raise PieceContractError('PIECE_REQUEST_INVALID')
+        result = await PieceOwnerService().history(authenticated_user_id=owner,
+            limit=query.get('limit', '20'), cursor=query.get('cursor'))
+        return _response(result)
+    except PieceContractError as exc:
+        code = exc.code if exc.code in OWNER_READ_STATUS else 'PIECE_TEMPORARILY_UNAVAILABLE'
+        return _response({'code': code}, OWNER_READ_STATUS[code])
+    except Exception:
+        return _response({'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}, 503)
+
+
+@router.get('/{piece_id}')
+async def owner_detail(piece_id: str, request: Request) -> JSONResponse:
+    """Return the exact saved body and recipe for subsequent owner display."""
+    from piece_v2_owner_service import PieceOwnerService, OWNER_READ_STATUS
+    try:
+        owner = await _authenticated_owner(request)
+        if request.query_params or await request.body():
+            raise PieceContractError('PIECE_REQUEST_INVALID')
+        result = await PieceOwnerService().detail(authenticated_user_id=owner, piece_id=piece_id)
+        return _response(result)
+    except PieceContractError as exc:
+        code = exc.code if exc.code in OWNER_READ_STATUS else 'PIECE_TEMPORARILY_UNAVAILABLE'
+        return _response({'code': code}, OWNER_READ_STATUS[code])
     except Exception:
         return _response({'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}, 503)
