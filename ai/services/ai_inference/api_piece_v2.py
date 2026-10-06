@@ -1,0 +1,127 @@
+"""Unregistered B5 Piece v2 HTTP routes: authenticated preview cancellation.
+
+PCE-6 owns the wire shape; the existing B5 store/SQL owns cancellation and
+revision locking. Mount this router only in a dedicated test application until
+the separately approved B12-C clean cutover. Production app.py is unchanged.
+No preview issuance, safety approval, source author, save or quota is invented.
+"""
+from __future__ import annotations
+
+from uuid import UUID
+
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
+
+from piece_v2_contract import PieceContractError
+from piece_v2_store import cancel_piece_preview
+
+router = APIRouter(prefix='/emotion/piece')
+_CANCEL_STATUS = {
+    'PIECE_REQUEST_INVALID': 400,
+    'PIECE_AUTH_REQUIRED': 401,
+    'PIECE_NOT_FOUND': 404,
+    'PIECE_PREVIEW_STALE': 409,
+    'PIECE_PREVIEW_EXPIRED': 409,
+    'PIECE_CONFLICT': 409,
+    'PIECE_TEMPORARILY_UNAVAILABLE': 503,
+}
+
+
+async def _verify_bearer(authorization: str) -> str:
+    # Reuse the established verifier; never decode a caller's UUID/JWT claim
+    # here or accept a service-role claim as the Piece's owner.
+    from api_account_visibility import _require_user_id
+    return await _require_user_id(authorization)
+
+
+async def _authenticated_owner(request: Request) -> str:
+    headers = request.headers.getlist('authorization')
+    if len(headers) != 1:
+        raise PieceContractError('PIECE_AUTH_REQUIRED')
+    parts = headers[0].split()
+    if len(parts) != 2 or parts[0].lower() != 'bearer':
+        raise PieceContractError('PIECE_AUTH_REQUIRED')
+    try:
+        verified = await _verify_bearer(headers[0])
+        if type(verified) is not str:
+            raise PieceContractError('PIECE_AUTH_REQUIRED')
+        owner = UUID(verified)
+        if owner.int == 0:
+            raise PieceContractError('PIECE_AUTH_REQUIRED')
+        return str(owner)
+    except HTTPException as exc:
+        raise PieceContractError('PIECE_AUTH_REQUIRED' if exc.status_code in (401, 403)
+                                 else 'PIECE_TEMPORARILY_UNAVAILABLE') from None
+    except (ValueError, AttributeError):
+        raise PieceContractError('PIECE_AUTH_REQUIRED') from None
+    except PieceContractError:
+        raise
+    except Exception:
+        raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE') from None
+
+
+async def _cancel_rpc(name: str, args: dict) -> dict:
+    """Use the existing service-only HTTP client once; do not retry a POST.
+
+    PostgREST puts our SQL RAISE code in message and SQLSTATE in code. Accept
+    only the exact P0001 + known-message pair, never details, hints, substrings
+    or infrastructure 404/401 as an application's not-found/auth result.
+    The store validates the successful response's closed field set and IDs.
+    """
+    if name != 'piece_cancel_preview_v2':
+        raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE')
+    try:
+        from supabase_client import sb_post_rpc
+        response = await sb_post_rpc(name, args, timeout=8.0)
+        value = response.json()
+        if response.status_code == 200 and type(value) is dict:
+            return value
+        code = 'PIECE_TEMPORARILY_UNAVAILABLE'
+        if (response.status_code == 400 and type(value) is dict
+                and value.get('code') == 'P0001'
+                and type(value.get('message')) is str
+                and value['message'] in _CANCEL_STATUS):
+            code = value['message']
+        raise PieceContractError(code)
+    except PieceContractError:
+        raise
+    except Exception:
+        # Timeout/invalid ACK may follow a committed cancellation. Keep the
+        # outcome unknown; a caller can repeat the SAME ID/revision explicitly.
+        raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE') from None
+
+
+def _response(value: dict, status: int = 200) -> JSONResponse:
+    headers = {'Cache-Control': 'no-store'}
+    if status == 401:
+        headers['WWW-Authenticate'] = 'Bearer'
+    return JSONResponse(value, status_code=status, headers=headers)
+
+
+@router.delete('/preview/{preview_id}')
+async def cancel_preview(preview_id: str, request: Request) -> JSONResponse:
+    """Cancel only the authenticated owner's current preview revision.
+
+    Parse the closed JSON request inside the route, so framework validation
+    errors cannot echo a submitted token, source text or replacement payload.
+    Every repeat is authenticated again; SQL decides its idempotent outcome.
+    """
+    try:
+        owner = await _authenticated_owner(request)
+        try:
+            value = await request.json()
+        except (ValueError, UnicodeError):
+            raise PieceContractError('PIECE_REQUEST_INVALID') from None
+        if (type(value) is not dict or set(value) != {'expected_preview_revision'}
+                or request.query_params):
+            raise PieceContractError('PIECE_REQUEST_INVALID')
+        result = await cancel_piece_preview(
+            authenticated_user_id=owner, preview_id=preview_id,
+            expected_preview_revision=value['expected_preview_revision'], rpc=_cancel_rpc)
+        return _response(result)
+    except PieceContractError as exc:
+        code = exc.code if exc.code in _CANCEL_STATUS else 'PIECE_TEMPORARILY_UNAVAILABLE'
+        return _response({'code': code}, _CANCEL_STATUS[code])
+    except Exception:
+        # Do not catch BaseException: task cancellation still propagates.
+        return _response({'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}, 503)

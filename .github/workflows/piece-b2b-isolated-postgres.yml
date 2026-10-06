@@ -18,6 +18,8 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/services/ai_inference/piece_v2_quota.py
       - ai/tests/piece_v2/db/test_b04_piece_v2_atomic_transactions.py
       - ai/tests/piece_v2/db/test_b05_preview_persistence.py
+      - ai/services/ai_inference/api_piece_v2.py
+      - ai/tests/piece_v2/db/test_b05_preview_cancel_http.py
 
 permissions:
   contents: read
@@ -123,3 +125,18 @@ jobs:
           python -m pytest -v --tb=short -ra -p no:cacheprovider \
             -c /dev/null --confcutdir=ai/tests/piece_v2/db \
             ai/tests/piece_v2/db/test_b05_preview_persistence.py
+      - name: Install existing backend requirements for HTTP cancellation tests
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Run B5 cancellation HTTP and native SQL integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum requirements.txt ai/services/ai_inference/api_piece_v2.py ai/tests/piece_v2/db/test_b05_preview_cancel_http.py
+          python - <<'PYHTTP'
+          from importlib.metadata import version
+          for name in ('fastapi', 'starlette', 'pydantic', 'httpx', 'pytest', 'psycopg'):
+              print(name + ':', version(name))
+          PYHTTP
+          python -m pytest -v --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --confcutdir=ai/tests/piece_v2/db \
+            ai/tests/piece_v2/db/test_b05_preview_cancel_http.py
