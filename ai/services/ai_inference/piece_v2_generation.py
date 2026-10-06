@@ -29,7 +29,10 @@ class PieceSourceSnapshot:
 # This is a grammar operation, not a table of input sentences or generated
 # closures. Only these unambiguously transitive predicates admit を insertion.
 # Past copulas and quoted/nested focal clauses are deliberately not admitted.
-_PREDICATES = ('大切にしたい', '大切にしている', '大切にしたくない',
+# The negative ongoing state is the same source-written valuing predicate,
+# not the distinct wish 大切にしたくない. Existing finite inflection, source
+# binding and authorship preserve its negation/time; no intent is inferred.
+_PREDICATES = ('大切にしたい', '大切にしている', '大切にしていない', '大切にしたくない',
                '望んでいる', '望んでいない', '選びたい', '選びたくない')
 
 
