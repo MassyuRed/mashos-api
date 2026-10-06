@@ -1,4 +1,4 @@
--- B4 / M4 FILE-ONLY CANDIDATE. No production application or route activation.
+-- B4 / M4 + B5 preview persistence FILE-ONLY CANDIDATE. No production application or route activation.
 -- PCE-3/6/8: first save + immutable consumption; visibility; physical delete.
 -- The backend supplies an authenticated owner, NOT a client-provided user_id.
 -- B5/B6 still own source/preview admission and current format/visual eligibility.
@@ -38,9 +38,147 @@ BEGIN
     IF EXISTS (SELECT 1 FROM pg_catalog.pg_proc p
         JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname IN
-            ('piece_save_v2','piece_set_visibility_v2','piece_delete_v2')) THEN
+            ('piece_save_v2','piece_set_visibility_v2','piece_delete_v2',
+             'piece_issue_preview_v2','piece_cancel_preview_v2')) THEN
         RAISE EXCEPTION 'PIECE_B4_TARGET_EXISTS';
     END IF;
+
+    -- B5 persistence extension of the still-unapplied M4 candidate. These two
+    -- metadata columns describe preview retries; neither replaces save identity.
+    -- No new table, client grant, source reader, safety verdict or API is added.
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_attribute
+        WHERE attrelid='public.piece_records'::regclass AND NOT attisdropped
+          AND attname IN ('preview_request_hash','preview_eligible_formats')) THEN
+        RAISE EXCEPTION 'PIECE_B5_TARGET_EXISTS';
+    END IF;
+    ALTER TABLE public.piece_records
+        ADD COLUMN preview_request_hash text,
+        ADD COLUMN preview_eligible_formats jsonb,
+        ADD CONSTRAINT piece_records_preview_request_shape CHECK ((
+            (preview_request_hash IS NULL AND preview_eligible_formats IS NULL)
+            OR (preview_request_hash ~ '^[0-9a-f]{64}$'
+                AND jsonb_typeof(preview_eligible_formats)='array'
+                AND jsonb_array_length(preview_eligible_formats) BETWEEN 1 AND 3
+                AND preview_eligible_formats <@ '["short_essay","quote","declaration"]'::jsonb
+                AND preview_eligible_formats ? format_type)
+        ) IS TRUE);
+
+    CREATE FUNCTION public.piece_issue_preview_v2(
+        p_owner_user_id uuid, p_idempotency_key_hash text, p_request_hash text,
+        p_record jsonb, p_ttl_seconds integer
+    ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $issue$
+    DECLARE
+        r public.piece_records%ROWTYPE;
+        preview_id uuid;
+        replayed boolean := false;
+        at_time timestamptz;
+        fields text[] := ARRAY['source_lineage','format_type','content_payload',
+            'content_payload_hash','piece_text','piece_text_hash','safety_state',
+            'visual_recipe','visual_recipe_hash','renderer_version','eligible_formats'];
+    BEGIN
+        IF p_owner_user_id IS NULL OR p_owner_user_id='00000000-0000-0000-0000-000000000000'::uuid THEN
+            RAISE EXCEPTION 'PIECE_AUTH_REQUIRED';
+        END IF;
+        IF p_idempotency_key_hash IS NULL OR p_idempotency_key_hash !~ '^[0-9a-f]{64}$'
+           OR p_request_hash IS NULL OR p_request_hash !~ '^[0-9a-f]{64}$'
+           OR p_ttl_seconds IS NULL OR p_ttl_seconds<1 THEN
+            RAISE EXCEPTION 'PIECE_REQUEST_INVALID';
+        END IF;
+        IF (jsonb_typeof(p_record)='object' AND p_record ?& fields
+            AND p_record-fields='{}'::jsonb
+            AND jsonb_typeof(p_record->'eligible_formats')='array') IS NOT TRUE THEN
+            RAISE EXCEPTION 'PIECE_REQUEST_INVALID';
+        END IF;
+        IF (jsonb_array_length(p_record->'eligible_formats') BETWEEN 1 AND 3
+            AND p_record->'eligible_formats' <@ '["short_essay","quote","declaration"]'::jsonb
+            AND (p_record->'eligible_formats') ? (p_record->>'format_type')
+            AND (SELECT count(DISTINCT value) FROM jsonb_array_elements(p_record->'eligible_formats'))
+                =jsonb_array_length(p_record->'eligible_formats')
+            AND p_record#>>'{source_lineage,source_input,source_owner_user_id}'=p_owner_user_id::text
+        ) IS NOT TRUE THEN
+            RAISE EXCEPTION 'PIECE_REQUEST_INVALID';
+        END IF;
+        -- Stable opaque logical ID permits the existing delete receipt to stop
+        -- resurrection, without a new receipt/ledger table. A hash collision
+        -- can only serialize or reject; it can never adopt another owner's row.
+        preview_id := substr(encode(sha256(convert_to(
+            'piece.preview.v2:'||p_owner_user_id::text||':'||p_idempotency_key_hash,'UTF8')),'hex'),1,32)::uuid;
+        PERFORM pg_advisory_xact_lock(hashtextextended('piece.preview.v2:'||preview_id::text,0));
+        SELECT * INTO r FROM public.piece_records WHERE id=preview_id FOR UPDATE;
+        IF FOUND THEN
+            IF r.owner_user_id<>p_owner_user_id OR r.preview_request_hash IS DISTINCT FROM p_request_hash
+               OR r.lifecycle_status<>'preview_draft' THEN
+                RAISE EXCEPTION 'PIECE_CONFLICT';
+            END IF;
+            IF r.expires_at IS NULL OR r.expires_at<=clock_timestamp() THEN
+                RAISE EXCEPTION 'PIECE_PREVIEW_EXPIRED';
+            END IF;
+            replayed := true;
+        ELSE
+            -- SELECT is deliberately after the row-lock wait: a concurrent
+            -- delete may have committed its retained receipt while we waited.
+            IF EXISTS (SELECT 1 FROM public.piece_delete_receipts WHERE piece_id=preview_id) THEN
+                RAISE EXCEPTION 'PIECE_CONFLICT';
+            END IF;
+            at_time := clock_timestamp();
+            INSERT INTO public.piece_records(id,owner_user_id,source_input_id,source_input_version,
+                source_input_bundle_commitment,source_lineage,expires_at,format_type,
+                content_payload,content_payload_hash,piece_text,piece_text_hash,safety_state,
+                visual_recipe,visual_recipe_hash,renderer_version,preview_request_hash,
+                preview_eligible_formats,created_at,updated_at)
+            VALUES(preview_id,p_owner_user_id,
+                p_record#>>'{source_lineage,source_input,source_input_id}',
+                p_record#>>'{source_lineage,source_input,source_input_version}',
+                p_record#>>'{source_lineage,source_input,source_input_bundle_commitment}',
+                p_record->'source_lineage',at_time+make_interval(secs=>p_ttl_seconds),
+                p_record->>'format_type',p_record->'content_payload',p_record->>'content_payload_hash',
+                p_record->>'piece_text',p_record->>'piece_text_hash',p_record->>'safety_state',
+                p_record->'visual_recipe',p_record->>'visual_recipe_hash',p_record->>'renderer_version',
+                p_request_hash,p_record->'eligible_formats',at_time,at_time) RETURNING * INTO r;
+        END IF;
+        -- Return the persisted first candidate, not the caller's possibly
+        -- recomputed body. Replay never extends expiry or consumes quota.
+        RETURN jsonb_build_object('preview_id',r.id,'preview_revision',r.preview_revision,
+            'row_version',r.row_version,'expires_at',r.expires_at,'visibility_scope',r.visibility_scope,
+            'format_type',r.format_type,'eligible_formats',r.preview_eligible_formats,
+            'content_payload',r.content_payload,'content_payload_hash',r.content_payload_hash,
+            'piece_text',r.piece_text,'piece_text_hash',r.piece_text_hash,'safety_state',r.safety_state,
+            'visual_recipe',r.visual_recipe,'visual_recipe_hash',r.visual_recipe_hash,
+            'renderer_version',r.renderer_version,'idempotency_replayed',replayed);
+    EXCEPTION WHEN unique_violation THEN
+        RAISE EXCEPTION 'PIECE_CONFLICT';
+    WHEN check_violation OR not_null_violation OR invalid_text_representation THEN
+        RAISE EXCEPTION 'PIECE_REQUEST_INVALID';
+    END;
+    $issue$;
+
+    CREATE FUNCTION public.piece_cancel_preview_v2(
+        p_owner_user_id uuid, p_preview_id uuid, p_expected_preview_revision bigint
+    ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $cancel$
+    DECLARE r public.piece_records%ROWTYPE;
+    BEGIN
+        IF p_owner_user_id IS NULL THEN RAISE EXCEPTION 'PIECE_AUTH_REQUIRED'; END IF;
+        IF p_preview_id IS NULL OR p_expected_preview_revision IS NULL OR p_expected_preview_revision<1 THEN
+            RAISE EXCEPTION 'PIECE_REQUEST_INVALID';
+        END IF;
+        SELECT * INTO r FROM public.piece_records
+            WHERE id=p_preview_id AND owner_user_id=p_owner_user_id FOR UPDATE;
+        IF NOT FOUND THEN RAISE EXCEPTION 'PIECE_NOT_FOUND'; END IF;
+        IF r.preview_revision<>p_expected_preview_revision THEN RAISE EXCEPTION 'PIECE_PREVIEW_STALE'; END IF;
+        IF r.lifecycle_status='cancelled' THEN
+            RETURN jsonb_build_object('preview_id',r.id,'preview_revision',r.preview_revision,
+                'row_version',r.row_version,'lifecycle_status','cancelled','idempotency_replayed',true);
+        END IF;
+        IF r.lifecycle_status<>'preview_draft' THEN RAISE EXCEPTION 'PIECE_CONFLICT'; END IF;
+        IF r.expires_at IS NULL OR r.expires_at<=clock_timestamp() THEN
+            RAISE EXCEPTION 'PIECE_PREVIEW_EXPIRED';
+        END IF;
+        UPDATE public.piece_records SET lifecycle_status='cancelled',row_version=row_version+1,
+            updated_at=clock_timestamp() WHERE id=r.id RETURNING * INTO r;
+        RETURN jsonb_build_object('preview_id',r.id,'preview_revision',r.preview_revision,
+            'row_version',r.row_version,'lifecycle_status','cancelled','idempotency_replayed',false);
+    END;
+    $cancel$;
 
     CREATE FUNCTION public.piece_save_v2(
         p_owner_user_id uuid, p_preview_id uuid, p_expected_preview_revision bigint,
@@ -151,6 +289,9 @@ BEGIN
             WHERE id=p_piece_id AND owner_user_id=p_owner_user_id AND lifecycle_status='saved' FOR UPDATE;
         IF NOT FOUND THEN RAISE EXCEPTION 'PIECE_NOT_FOUND'; END IF;
         IF r.row_version <> p_expected_row_version THEN RAISE EXCEPTION 'PIECE_CONFLICT'; END IF;
+        IF r.visibility_scope=p_visibility_scope THEN
+            RETURN jsonb_build_object('piece_id',r.id,'visibility_scope',r.visibility_scope,'row_version',r.row_version);
+        END IF;
         UPDATE public.piece_records SET visibility_scope=p_visibility_scope,
             row_version=row_version+1,updated_at=clock_timestamp() WHERE id=r.id RETURNING * INTO r;
         RETURN jsonb_build_object('piece_id',r.id,'visibility_scope',r.visibility_scope,'row_version',r.row_version);
@@ -199,7 +340,9 @@ BEGIN
     FOREACH signature IN ARRAY ARRAY[
         'public.piece_save_v2(uuid,uuid,bigint,text,text,text,text,text)',
         'public.piece_set_visibility_v2(uuid,uuid,bigint,text)',
-        'public.piece_delete_v2(uuid,uuid,bigint,text)'] LOOP
+        'public.piece_delete_v2(uuid,uuid,bigint,text)',
+        'public.piece_issue_preview_v2(uuid,text,text,jsonb,integer)',
+        'public.piece_cancel_preview_v2(uuid,uuid,bigint)'] LOOP
         EXECUTE 'REVOKE ALL ON FUNCTION ' || signature || ' FROM PUBLIC, anon, authenticated, service_role';
         -- Remove inherited function default ACLs too, without changing defaults.
         FOR acl_entry IN SELECT DISTINCT roles.rolname

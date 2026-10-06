@@ -1,5 +1,5 @@
-# Piece B2-B/B3/B4 verification only. No Supabase/live credentials or deployment.
-name: Piece B2-B/B3/B4 isolated PostgreSQL
+# Piece B2-B/B3/B4/B5 verification only. No Supabase/live credentials or deployment.
+name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
 
 'on':
   push:
@@ -17,6 +17,7 @@ name: Piece B2-B/B3/B4 isolated PostgreSQL
       - ai/services/ai_inference/piece_v2_store.py
       - ai/services/ai_inference/piece_v2_quota.py
       - ai/tests/piece_v2/db/test_b04_piece_v2_atomic_transactions.py
+      - ai/tests/piece_v2/db/test_b05_preview_persistence.py
 
 permissions:
   contents: read
@@ -78,7 +79,8 @@ jobs:
             supabase/migrations/20260808_004_piece_v2_atomic_functions.sql \
             ai/services/ai_inference/piece_v2_store.py \
             ai/services/ai_inference/piece_v2_quota.py \
-            ai/tests/piece_v2/db/test_b04_piece_v2_atomic_transactions.py
+            ai/tests/piece_v2/db/test_b04_piece_v2_atomic_transactions.py \
+            ai/tests/piece_v2/db/test_b05_preview_persistence.py
           python - <<'PY'
           import os
           import platform
@@ -114,3 +116,10 @@ jobs:
           python -m pytest -v --tb=short -ra -p no:cacheprovider \
             -c /dev/null --confcutdir=ai/tests/piece_v2/db \
             ai/tests/piece_v2/db/test_b04_piece_v2_atomic_transactions.py
+      - name: Run B5 preview persistence and B4 connection tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -v --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --confcutdir=ai/tests/piece_v2/db \
+            ai/tests/piece_v2/db/test_b05_preview_persistence.py
