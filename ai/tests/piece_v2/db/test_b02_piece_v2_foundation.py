@@ -22,7 +22,7 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(_ROOT / 'ai/services/ai_inference'))
 from piece_v2_contract import (  # noqa: E402
-    canonical_sha256_hex, reconstruct_piece_text, validate_piece_text_binding,
+    PieceContractError, canonical_sha256_hex, reconstruct_piece_text, validate_piece_text_binding,
 )
 from piece_v2_visual import build_visual_recipe, validate_visual_recipe  # noqa: E402
 
@@ -35,6 +35,22 @@ _TABLES = (
 )
 _ROLES = ('anon', 'authenticated', 'service_role')
 _STAGES = ('normal_observation', 'pre_question_observation', 'refined_observation')
+# Explicit expectations from the unchanged B9 saved-recipe owner, not current tier.
+# All hashes below are recomputed, so rejection is not a stale-hash artefact.
+_VISUAL_SELECTIONS = (
+    ('required_small', 'soft_paper', '4:5', True),
+    ('required_small', 'soft_paper', '9:16', False),
+    ('required_small', 'quiet_night', '4:5', False),
+    ('required_small', 'quiet_night', '9:16', False),
+    ('required_subtle', 'soft_paper', '4:5', True),
+    ('required_subtle', 'soft_paper', '9:16', True),
+    ('required_subtle', 'quiet_night', '4:5', True),
+    ('required_subtle', 'quiet_night', '9:16', True),
+    ('off', 'soft_paper', '4:5', True),
+    ('off', 'soft_paper', '9:16', True),
+    ('off', 'quiet_night', '4:5', True),
+    ('off', 'quiet_night', '9:16', True),
+)
 _OWNER = UUID('10000000-0000-4000-8000-000000000001')
 _VIEWER = UUID('20000000-0000-4000-8000-000000000002')
 _WHEN = datetime(2026, 9, 30, 15, 0, tzinfo=timezone.utc)  # October in JST.
@@ -123,6 +139,34 @@ def test_b02_synthetic_fixture_uses_existing_content_and_visual_owners(stage, fm
     assert row['source_lineage']['body_free'] is True
     assert row['source_lineage']['source_input']['source_owner_user_id'] == str(row['owner_user_id'])
     assert len(row['source_lineage']['semantic_source_roles']) == (2 if stage == _STAGES[2] else 1)
+
+
+def _record_with_visual_selection(fmt, mark, theme, ratio):
+    row = _record(fmt=fmt)
+    recipe = row['visual_recipe']
+    recipe['branding']['branding_mode'] = mark
+    recipe['theme']['theme_id'] = theme
+    recipe['aspect_ratio'] = ratio
+    row['visual_recipe_hash'] = canonical_sha256_hex(recipe)
+    return row
+
+
+@pytest.mark.parametrize('mark,theme,ratio,admitted', _VISUAL_SELECTIONS)
+@pytest.mark.parametrize('fmt', ('quote', 'short_essay', 'declaration'))
+def test_b02_visual_fixture_matches_saved_recipe_owner(fmt, mark, theme, ratio, admitted):
+    """Fixture-only B9 evidence. The SQL acceptance cases remain in the native test."""
+    row = _record_with_visual_selection(fmt, mark, theme, ratio)
+    assert validate_piece_text_binding(row['content_payload'], row['piece_text'],
+                                     row['piece_text_hash']) == row['piece_text']
+    if admitted:
+        assert validate_visual_recipe(row['visual_recipe'], format_type=fmt, language='ja',
+            expected_hash=row['visual_recipe_hash']) == row['visual_recipe']
+    else:
+        with pytest.raises(PieceContractError) as rejected:
+            validate_visual_recipe(row['visual_recipe'], format_type=fmt, language='ja',
+                expected_hash=row['visual_recipe_hash'])
+        assert rejected.value.code == 'PIECE_REQUEST_INVALID'
+        assert rejected.value.detail == 'visual_recipe'
 
 
 @contextmanager
@@ -243,6 +287,26 @@ def test_b02_foundation_native_postgresql():
                 assert stored == ('piece:' + str(row['id']), 'private', 'preview_draft',
                     row['piece_text'], row['piece_text_hash'], row['source_lineage'],
                     row['content_payload'], row['visual_recipe'])
+
+        # A schema-admitted recipe must survive the actual saved B9 reader.
+        # In particular required_small cannot pair with quiet_night or 9:16.
+        # Preserve all existing premium/subtle/off combinations; do not infer
+        # or reapply an owner's current subscription during saved validation.
+        for fmt in ('quote', 'short_essay', 'declaration'):
+            for mark, theme, ratio, admitted in _VISUAL_SELECTIONS:
+                row = _record_with_visual_selection(fmt, mark, theme, ratio)
+                if admitted:
+                    _insert(conn, 'piece_records', row)
+                    recipe, recipe_hash = conn.execute(
+                        'SELECT visual_recipe,visual_recipe_hash FROM public.piece_records WHERE id=%s',
+                        (row['id'],)).fetchone()
+                    assert validate_visual_recipe(recipe, format_type=fmt, language='ja',
+                        expected_hash=recipe_hash) == row['visual_recipe']
+                else:
+                    with pytest.raises(pg.errors.CheckViolation) as rejected:
+                        with conn.transaction():
+                            _insert(conn, 'piece_records', row)
+                    assert rejected.value.diag.constraint_name == 'piece_records_recipe_shape'
 
         invalid_rows = []
         for key, value in (

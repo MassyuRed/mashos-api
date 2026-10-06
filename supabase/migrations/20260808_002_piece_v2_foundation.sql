@@ -231,6 +231,11 @@ BEGIN
                 'branding_mode', visual_recipe#>>'{branding,branding_mode}',
                 'branding_mark_id', 'cocolon_text_mark', 'branding_mark_version', 1)
             AND visual_recipe#>>'{branding,branding_mode}' IN ('required_small','required_subtle','off')
+            -- Keep the same saved-recipe combinations as B9 validate_visual_recipe.
+            -- This neither checks today's tier nor rewrites branding on downgrade.
+            AND (visual_recipe#>>'{branding,branding_mode}' <> 'required_small'
+                OR (visual_recipe#>>'{theme,theme_id}' = 'soft_paper'
+                    AND visual_recipe->>'aspect_ratio' = '4:5'))
         ) IS TRUE)
     );
 
