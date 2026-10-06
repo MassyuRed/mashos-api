@@ -26,6 +26,8 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/piece_v2/db/test_b06_save_context_fence.py
       - ai/services/ai_inference/piece_v2_owner_service.py
       - ai/tests/piece_v2/test_b07_piece_v2_owner_api.py
+      - ai/tests/piece_v2/test_b07_piece_v2_mutation_http.py
+      - ai/tests/piece_v2/db/test_b07_piece_v2_mutation_http_native.py
       - ai/services/ai_inference/cocolon_meaning_experience_engine/piece_source.py
       - ai/tests/piece_v2/test_b08_piece_latin_role_binding.py
       - ai/tests/piece_v2/test_b08_piece_script_role_binding.py
@@ -183,6 +185,19 @@ jobs:
           python -m pytest -v --tb=short -ra -p no:cacheprovider \
             -c /dev/null --noconftest \
             ai/tests/piece_v2/test_b07_piece_v2_owner_api.py
+      - name: Run B7 mutation HTTP and native transaction integration
+        shell: bash
+        env:
+          PYTHONPATH: ai/services/ai_inference
+        run: |
+          set -euo pipefail
+          sha256sum ai/services/ai_inference/api_piece_v2.py ai/tests/piece_v2/test_b07_piece_v2_mutation_http.py ai/tests/piece_v2/db/test_b07_piece_v2_mutation_http_native.py
+          python -m pytest -v --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/test_b07_piece_v2_mutation_http.py
+          python -m pytest -v --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --confcutdir=ai/tests/piece_v2/db \
+            ai/tests/piece_v2/db/test_b07_piece_v2_mutation_http_native.py
       - name: Run B8 source-role regressions and Latin name abstraction
         shell: bash
         env:
