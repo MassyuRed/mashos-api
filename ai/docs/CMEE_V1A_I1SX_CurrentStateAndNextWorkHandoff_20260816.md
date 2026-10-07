@@ -15139,3 +15139,26 @@ production変更は既存Gate `_semantic_subcheck_reasons` の16行のみ。実�
 current共有identityだけを最終Gateへ同期し、9owner/18payloadとhistorical frozen manifestを保持。language `e77931e2ed693624f039c77ebfbf87239122403096a24a451b2e2acf34353ff4`／runtime `2d62e84de42818f0297bd2c1763dce366a43fc75d1f2edab62bf04c8e4746437`。STRUCTURE_MAP_DELTA_NONE：API既存Gate1/test1/current identity1/handoff1、Cocolon既存06の計5file modify、新規repo file0。owner/route/schema/lifecycle/配置不変、Plan/HR/Observation作者/answer_update/質問選択/API/DTO/DB/RN/Piece/Analysis専用コード変更0。main/merge/deploy/env/native build操作0。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR維持。remote全5fileの本文/blob・parent・変更path集合と反映commitの照合結果は既存PR3/30へ記録する。
 
 残件：「気持ちが重いと思った」自体の認知admissionは未修正。今回直ったのは、一部を採用できる回答で未対応節の引用が本文全体を止める誤判定であり、認知回答全般の対応完了ではない。次はこの受付の非本人主語判定と、前回の出来事撤回後に「その時」が直前の別eventを指すように読める出典表現が候補。従来の長event位置修飾、列挙/二層再掲/語尾反復/受け取りの浅さ、過去説明形・anchor不一致、指定版配置と本人生成→保存→再表示も残る。scratchのJSON/XML/logを正式再開原典とせず、本節と追跡source/testから再開する。
+
+
+## 2026-10-07 JST u158 — 保護意向と負荷の対比を同じ希望へ保持
+
+Mashの分析内容修正指示と添付のu157作業記録から再開。開始headはAPI `3fd5f0abe2803eb3cbbd62a6b74d23e328a68a49`／Cocolon `83668285404fab541d77b6a217e16f12100669b9`、Draft/open/unmerged。必須前提・作業姿勢current・恒久incident全文、全体設計01／国家システム02・全file地図の導線とAnalysis current03のowner表、詳細04、最新weekly20261003 §5.3と継続方針、Karen-Diary必須3fileを確認。System Context prepareは既存のancestor判定で不成立となったため原典を直接参照し、生成Contextをfreshとは扱わない。
+
+修正前の実CMEEで「私は家族を守りたい」は生成できる一方、「私は家族を守りたいけれど、私はつらい」「私は生活を守りたいけれど、私は苦しい」はUNAVAILABLEだった。共有の本人現在肯定希望・負荷・明示対比は成立していたが、Analysis `_fragment` と `_protective_wish_witness` の単独文専用条件が希望側のfragmentを拒否していた。
+
+既存Analysis compiler内だけで、完全な `_wish_burden_pair` が成立し希望nucleusが一致する場合に限り保護意向endpointを受理する。pair内部の左endpointに限定した再帰回避指定を使い、本人・field・explicit・現在肯定wish・operator:wishの条件を保持。許可するfragment属性は既存のscalar source/rangeの2種だけ。exact2核、負荷finite witness、共有対比relation、全体境界、左右＋接続語の連続被覆を確認し終える前に通常入口へ採用しない。共有owner／realizer／公開DTOは変更しない。
+
+結果は同一希望nodeにPROTECTIVEとBURDENが付く。保護が実際に成功した、希望が負荷の原因である、行動の動機である等を推測しない。原文scalar／UTF-8／hash、通常補足、全文引用の訂正／撤回、同意味の集約、期間比較とsafe再解析を維持する。希望側だけの引用や同義置換した引用による全文撤回は拒否する。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。今回の完成条件は上記の生成停止を解消し、同じ文章・図・保存再表示まで整合させること。root華恋がCodex Workの単一編集・検証・反映owner、同環境read-only agentが原因と最終差分を独立review。別model Pro reviewではない。継続修正・既存PR反映承認内の限定修正で、追加費用・Mash操作0。owner／契約／稼働環境の変更へは拡張しない。
+
+検証：初回の新5methodは5 passed／3 subcase failed／48 subtests passed。1件は「家族の時間」が共有の別semantic_dependency分岐に入りfinite feeling witnessを持たないため、製品sourceを広げず新しいpositive fixtureを「生活」へ訂正し、「家族の時間」は保留検査として明示した。残り2件は新しい関係改変testがplanのrelation数を1と誤認したためで、対象contrastだけを改変するよう検査を訂正。既存期待の削除・緩和0、製品sourceの追加修正0。
+
+最終Python3.12.14・隔離pytest8.4.1／pytest-subtests0.14.2／FastAPI0.116.1／httpx0.28.1／Pydantic2.13.5で **vertical234／storage58／saved-period16＝308 tests PASS、1759 subtests PASS（9.29秒）**、既存Pydantic warning1件。実行対象は `ai/tests/test_cmee_analysis_v1d_vertical.py ai/tests/test_analysis_observed_storage.py ai/tests/test_analysis_saved_period.py`。製品依存は不変。関係欠落・逆向き、scope、主体、時点、operator、保持、range、未知fragment属性、finite witness欠落で注記を作らず、別の正常記述を保持。否定・過去・他者・夢・伝聞・未対応修飾の保留、改竄拒否も確認。
+
+rootが合成7全文（希望＋負荷、読点／表記差、二記録集約、通常補足、全文訂正、全文撤回、表記差の期間比較）を読取。実RN `buildWatashiMapV2ViewModel` の全文／identity／node順／edge／unknown／注記／競合／比較stateが全7例で一致。実service＋合成RPCで同義差両方向と別対象／負荷の比較を生成・保存し、engine再生成を禁止したreadで同一保存本文／図／identityを確認。private evidenceへ本文・source_labelsを流していない。独立read-only最終source/test reviewに具体的blockerなし。既存unknown反復表示は残る。React component suite、実DB、native、本人入力、商品受入れの確認ではない。
+
+STRUCTURE_MAP_DELTA_NONE：既存Analysis compiler1／test2／API handoff1、Cocolon current03／詳細04／06の7file modify、新規repo file0。所有境界・保存lifecycle不変。共有意味owner／Emlis／Piece／API契約／DTO／DB／SQL／RN／製品依存変更0。main／merge／deploy／env／build／IF操作0。u158未配置、限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・48%と稼働版／本人実機残件は過去記録の継承で今回再確認していない。全repo PASSではない。反映commitとremote全7file bytes・変更path集合の照合結果は既存PR3／30先頭へ記録する。
+
+残件：「家族の時間」等が使う共有semantic_dependency分岐の保護意向＋負荷、一般感情、未対応認知、夢／伝聞から現実へ戻る境界、plain幾等。次の内容候補は今回保留した共有分岐の実原因確認。全表現対応を配置の前提にしない。指定版で本人生成→保存再表示→比較の実機残件は別に保持する。本節と追跡source/testを再開原典とし、scratchを正式保存先にしない。

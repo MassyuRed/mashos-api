@@ -194,7 +194,7 @@ def _protective_wish_proposition(value):
             ('FINITE_PROTECTIVE_WISH', match.start('predicate'), len(value))))
 
 
-def _protective_wish_witness(nucleus):
+def _protective_wish_witness(nucleus, *, contrast_fragment=False):
     frame = nucleus.semantic_frame
     # The shared keyword frame can classify a nominal object such as 気持ち
     # as feeling before wish. The full finite surface, nucleus kind and
@@ -211,7 +211,11 @@ def _protective_wish_witness(nucleus):
             == ('current_user', 'positive', 'wish', 'current_input')
         and 'operator:wish' in frame.attribute_codes
         and not any(code.startswith(('source_fragment_', 'surface_scalar_',
-                    'thread_time:', 'semantic_dependency:')) for code in frame.attribute_codes))
+                    'thread_time:', 'semantic_dependency:'))
+                    and not (contrast_fragment and (
+                        code == 'source_fragment_scalar_source:normalized_raw_text'
+                        or code.startswith('source_fragment_scalar_range:')))
+                    for code in frame.attribute_codes))
 
 
 def _past_event_topic_parts(match):
@@ -881,7 +885,7 @@ def _action_change_pair(source, plan, span_id):
     return action.nucleus_id, change.nucleus_id, ranges, left, right
 
 
-def _fragment(source, nucleus, plan=None):
+def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     # Multi-span nuclei can contain unbounded relations. Keep them unknown in
     # this first consumer rather than stitching a new proposition together.
     if len(nucleus.source_span_ids) != 1:
@@ -959,9 +963,20 @@ def _fragment(source, nucleus, plan=None):
             or not _past_event_witness(nucleus, event)):
         return None
     protective = _protective_wish_proposition(value)
-    if protective is not None and (a != 0 or b != len(span.raw_text)
-            or not _protective_wish_witness(nucleus)):
-        return None
+    if protective is not None:
+        if a == 0 and b == len(span.raw_text):
+            if not _protective_wish_witness(nucleus):
+                return None
+        else:
+            if not _protective_wish_witness(nucleus, contrast_fragment=True):
+                return None
+            # A protective endpoint is usable only after the complete
+            # wish/burden contrast has been proved. The pair's left-side
+            # call skips this recursive check, never the other source checks.
+            if not _protective_contrast:
+                contrast = _wish_burden_pair(source, plan, span_id) if plan else None
+                if contrast is None or contrast[0] != nucleus.nucleus_id:
+                    return None
     # The ledger also splits long sentences at commas or fixed lengths.
     # Every observed claim needs the whole finite host, including any later
     # negation or uncertainty. Check the full span, not an endpoint inside a
@@ -1049,7 +1064,8 @@ def _wish_burden_pair(source, plan, span_id):
     if ((before and before[-1] not in '。．.!！\r\n')
             or (after and after[0] not in '。．.!！\r\n')):
         return None
-    left, right = _fragment(source, wish, plan), _fragment(source, burden, plan)
+    left = _fragment(source, wish, plan, _protective_contrast=True)
+    right = _fragment(source, burden, plan)
     if left is None or right is None or left[2] is None:
         return None
     p, a, z = left[2], left[1], right[1]

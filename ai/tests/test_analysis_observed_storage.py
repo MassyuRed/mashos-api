@@ -335,6 +335,30 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                     reread = await service.read_saved(OWNER, report_id=row['id'])
                 self.assertEqual(reread['items'][0], row)
 
+    async def test_protective_burden_survives_save_read_without_regeneration(self):
+        plain = '私は家族を守りたいけれど、私はつらい。'
+        equivalent = 'ぼくは、家族を守りたいですけど、ぼくは、辛いです。'
+        changed = '私は生活を守りたいけれど、私は苦しいです。'
+        for before, now, differs in ((plain, equivalent, False), (equivalent, plain, False),
+                (plain, changed, True)):
+            with self.subTest(now=now):
+                fx = await comparison_fixture(current_memo=now, previous_memo=before)
+                row, private = fx['row'], fx['private']
+                projection = row['content_json']['watashiMap']
+                self.assertEqual(len(projection['annotation_badges']), 2)
+                self.assertEqual(projection['projection_of'], private['projection_of'])
+                self.assertEqual(bool(projection['period_comparison']['safe_change_kinds']), differs)
+                self.assertIn('実際に守れているかは確定していません', row['content_text'])
+                self.assertIn('原因や続いている期間は確定していません', row['content_text'])
+                for evidence in (private, private['previous_evidence']):
+                    self.assertEqual([len(a['evidence_refs']) for a in evidence['graph']['annotations']], [1, 3])
+                for raw in ('source_labels', 'predicate_lemma', '私は', 'ぼくは', '辛い'):
+                    self.assertNotIn(raw, json.dumps(private, ensure_ascii=False))
+                with patch.object(service, '_rpc', AsyncMock(return_value=result([row], matched=True))), \
+                        patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                    reread = await service.read_saved(OWNER, report_id=row['id'])
+                self.assertEqual(reread['items'][0], row)
+
     async def test_boku_self_claims_survive_save_read_and_spelling_comparison(self):
         for memo in ('ぼくは職場にいなかったです。ぼくは会議を担当した。'
                      'その後、ぼくは資料を調べた。',

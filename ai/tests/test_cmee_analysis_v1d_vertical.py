@@ -273,6 +273,156 @@ class AnalysisVerticalTests(unittest.TestCase):
                 self.assertIn(visual['annotation_badges'][0]['visible_label'],
                     artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
 
+    def test_protective_burden_contrast_keeps_both_annotations_and_exact_source(self):
+        cases = (
+            ('私', '', '家族', '守りたい', 'けれど', 'つらい'),
+            ('僕', '、 ', '生活', '守りたいです', 'けれども', '苦しいです'),
+            ('ぼく', '、\u3000', '生活', '守りたい', 'けど', '辛いです'),
+            ('わたし', '、', '気持ち', '守りたいです', 'が', 'つらいです'),
+            ('自分', '', '新しい生活', '守りたい', 'けれど', '辛い'),
+        )
+        for subject, comma, noun, ending, connector, feeling in cases:
+            with self.subTest(subject=subject, noun=noun):
+                left = subject + 'は' + comma + noun + 'を' + ending
+                right = subject + 'は' + comma + feeling
+                memo = left + connector + '、' + right
+                req = request(record(memo=memo + '。'))
+                artifact = self.generate(req).artifact
+                self.assertIsNotNone(artifact)
+                node, = artifact.graph.nodes
+                protective, burden = artifact.graph.annotations
+                self.assertEqual((node.node_kind, node.modality, node.proposition.arguments),
+                    ('ATTENTION_OR_THOUGHT', 'wish', (('を', noun),)))
+                self.assertEqual((protective.kind, burden.kind), ('PROTECTIVE', 'BURDEN'))
+                self.assertEqual((protective.target_ref, burden.target_ref), (node.node_ref,) * 2)
+                self.assertEqual(protective.evidence_refs, node.evidence_refs)
+                self.assertEqual(burden.evidence_refs[0], node.evidence_refs[0])
+                self.assertFalse(artifact.graph.edges)
+                self.assertFalse(artifact.graph.conflicts)
+                self.assertNotIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+                envelope = freeze_analysis_sources(req).sources[0].envelope
+                for ref, expected in zip(burden.evidence_refs, (left, right, memo)):
+                    raw = envelope.raw_utf8[ref.utf8_start:ref.utf8_end]
+                    field = envelope.raw_utf8[ref.field_utf8_start:ref.field_utf8_end].decode()
+                    self.assertEqual(raw.decode(), expected)
+                    self.assertEqual(field[ref.scalar_start:ref.scalar_end], expected)
+                    self.assertEqual(hashlib.sha256(raw).hexdigest(), ref.literal_sha256)
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                for badge in visual['annotation_badges']:
+                    self.assertIn(badge['visible_label'], text)
+                self.assertIn('実際に守れているかは確定していません', text)
+                self.assertIn('原因や続いている期間は確定していません', text)
+
+    def test_protective_burden_requires_complete_shared_pair(self):
+        from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
+        build = compiler.build_final_stage1_grounded_observation_plan
+        memo = '私は家族を守りたいけれど、私はつらい。私は記録を残した。'
+        for mismatch in ('relation', 'reverse', 'relation_scope', 'wish_operator',
+                'wish_grounding', 'wish_scope', 'wish_time', 'wish_retention',
+                'wish_unknown_fragment', 'wish_range', 'feeling_witness', 'feeling_actor'):
+            def changed(*args, **kwargs):
+                plan = build(*args, **kwargs)
+                if mismatch == 'relation': return replace(plan, relations=())
+                if mismatch in ('reverse', 'relation_scope'):
+                    relations = tuple((replace(r, from_nucleus_id=r.to_nucleus_id,
+                        to_nucleus_id=r.from_nucleus_id) if mismatch == 'reverse'
+                        else replace(r, grounding_kind='inferred')) if r.type == 'contrast' else r
+                        for r in plan.relations)
+                    return replace(plan, relations=relations)
+                index = 1 if mismatch.startswith('feeling_') else 0
+                nuclei = list(plan.nuclei)
+                n = nuclei[index]
+                if mismatch == 'wish_grounding': n = replace(n, grounding_kind='inferred')
+                elif mismatch == 'wish_scope': n = replace(n, allowed_claim_scope='unsupported')
+                elif mismatch == 'wish_retention': n = replace(n, retention='optional')
+                else:
+                    f, codes = n.semantic_frame, n.semantic_frame.attribute_codes
+                    if mismatch == 'wish_time': f = replace(f, time_scope='past')
+                    elif mismatch == 'feeling_actor': f = replace(f, actor='other')
+                    else:
+                        if mismatch == 'wish_operator': codes = tuple(c for c in codes if c != 'operator:wish')
+                        elif mismatch == 'feeling_witness': codes = tuple(c for c in codes if c != 'lexical:source_finite_contrast_feeling')
+                        elif mismatch == 'wish_unknown_fragment': codes += ('source_fragment_unproved:yes',)
+                        elif mismatch == 'wish_range': codes = tuple(
+                            'source_fragment_scalar_range:1:9' if c.startswith('source_fragment_scalar_range:') else c
+                            for c in codes)
+                        f = replace(f, attribute_codes=codes)
+                    n = replace(n, semantic_frame=f)
+                nuclei[index] = n
+                return replace(plan, nuclei=tuple(nuclei))
+            with self.subTest(mismatch=mismatch), patch.object(compiler,
+                    'build_final_stage1_grounded_observation_plan', side_effect=changed):
+                artifact = self.generate(request(record(memo=memo))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertFalse(artifact.graph.annotations)
+                self.assertEqual(len(artifact.graph.nodes), 1)
+                self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+
+    def test_protective_burden_keeps_unsupported_hosts_and_partial_updates_unresolved(self):
+        old = '私は家族を守りたいけれど、私はつらい'
+        cases = [old.replace('私はつらい', right) for right in (
+            '友人はつらい', 'つらい', '私はつらかった', '私はつらくない',
+            '私はつらいかもしれない', '私はとてもつらい', '私はつらいと思う')]
+        cases += [old.replace('守りたい', wish) for wish in ('守った', '守りたかった', '守りたくない')]
+        # This shared semantic-dependency branch has no finite-feeling
+        # witness. Do not widen its admission to repair protective endpoints.
+        cases += [old.replace('家族を', '家族の時間を')]
+        cases += [old.replace('けれど', 'なら'), old + '？',
+            '「' + old + '」と友人が言った', '夢を見た。' + old,
+            '友人から聞いた話です。' + old, old + '、という夢を見たのですが、' + '詳細を考えた' * 15]
+        for memo in cases:
+            with self.subTest(memo=memo):
+                artifact = self.generate(request(record(memo=memo + '。'))).artifact
+                self.assertFalse(artifact and artifact.graph.annotations)
+        artifact = self.generate(request(record(memo='私は記録を残した。', action=old + '。'))).artifact
+        self.assertFalse(artifact.graph.annotations)
+        original = record(memo='私は記録を残した。' + old + '。')
+        for quoted in ('私は家族を守りたい', old.replace('つらい', '辛い')):
+            with self.subTest(quoted=quoted):
+                result = self.generate(request(self.with_answer(original, '「' + quoted + '」は取り消します。')))
+                self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+
+    def test_protective_burden_preserves_updates_aggregation_comparison_and_safe_projection(self):
+        old = '私は家族を守りたいけれど、私はつらい'
+        equivalent = 'ぼくは、家族を守りたいですけど、ぼくは、辛いです'
+        new = '私は生活を守りたいけれど、私は苦しいです'
+        artifact = self.generate(request(record(memo=old + '。'), record(2, memo=equivalent + '。'))).artifact
+        self.assertIsNotNone(artifact)
+        self.assertEqual(len(artifact.graph.nodes), 1)
+        self.assertEqual([len(a.evidence_refs) for a in artifact.graph.annotations], [2, 6])
+        for before, now in ((old, equivalent), (equivalent, old)):
+            with self.subTest(now=now):
+                compared = self.compared(now + '。', before + '。').artifact
+                self.assertEqual(compared.period_comparison.change_claims, ())
+                compared.safe_projection(authenticated_owner_scope=OWNER)
+        for now in (new, old.replace('つらい', '苦しい')):
+            compared = self.compared(now + '。', old + '。').artifact
+            self.assertIn('ANNOTATION_EVIDENCE_CHANGED', compared.safe_projection(
+                authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+        original = record(memo='私は記録を残した。' + old + '。')
+        for answer, count in ((new + '。', 4),
+                ('「' + old + '」ではなく「' + new + '」です。', 2),
+                ('「' + old + '」は取り消します。', 0)):
+            with self.subTest(answer=answer):
+                value = request(self.with_answer(original, answer))
+                result = self.generate(value).artifact
+                self.assertIsNotNone(result)
+                self.assertEqual(len(result.graph.annotations), count)
+                result.safe_projection(authenticated_owner_scope=OWNER)
+                if count == 2:
+                    for claim in result.graph.annotations:
+                        self.assertEqual(claim.update_refs, (result.graph.source_updates[0].update_ref,))
+                    self.assertEqual(result.graph.nodes[1].proposition.arguments, (('を', '生活'),))
+        for index in (0, 1):
+            for changes in ({'target_ref': 'absent'}, {'evidence_refs': ()},
+                    {'predicate_lemma': '続ける'}, {'source_labels': ('友人は家族を守りたい',)}):
+                with self.subTest(index=index, changes=changes), self.assertRaises(AnalysisSourceError):
+                    claims = list(artifact.graph.annotations)
+                    claims[index] = replace(claims[index], **changes)
+                    replace(artifact, graph=replace(artifact.graph, annotations=tuple(claims))).safe_projection(
+                        authenticated_owner_scope=OWNER)
+
     def test_protective_topic_comma_keeps_wish_object_and_exact_source(self):
         for subject, separator, noun, ending in (
             ('私', '、', '家族', '守りたい'),
