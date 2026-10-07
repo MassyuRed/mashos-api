@@ -19,6 +19,8 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/piece_v2/db/test_b04_piece_v2_atomic_transactions.py
       - ai/tests/piece_v2/db/test_b05_preview_persistence.py
       - ai/services/ai_inference/piece_v2_preview_service.py
+      - ai/services/ai_inference/piece_v2_safety_review.py
+      - ai/tests/piece_v2/db/test_b05_reviewed_preview_issuance.py
       - ai/tests/piece_v2/db/test_b05_generated_preview_issuance.py
       - ai/tests/piece_v2/db/test_b05_preview_replay_read.py
       - ai/services/ai_inference/api_piece_v2.py
@@ -241,3 +243,13 @@ jobs:
           python -m pytest -q --tb=short -ra -p no:cacheprovider \
             -c /dev/null --noconftest \
             ai/tests/piece_v2/db/test_b05_preview_replay_read.py
+      - name: Run B5 actual bounded review and native issuance (synthetic Auth/source)
+        shell: bash
+        env:
+          PYTHONPATH: ai/services/ai_inference
+        run: |
+          set -euo pipefail
+          sha256sum ai/services/ai_inference/piece_v2_safety_review.py ai/tests/piece_v2/db/test_b05_reviewed_preview_issuance.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/db/test_b05_reviewed_preview_issuance.py
