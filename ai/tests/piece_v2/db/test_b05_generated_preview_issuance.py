@@ -28,11 +28,29 @@ AUTH = 'Bearer synthetic-owner'
 PRIVATE = 'SYNTHETIC_PRIVATE_DIAGNOSTIC_NOT_FOR_RESPONSE'
 
 
+def _source_created_at(value):
+    # Build synthetic source bytes in the native timestamp JSON representation
+    # before handoff/hash creation. Never normalize an admitted source later.
+    text = value.replace(tzinfo=None).isoformat()
+    return text.rstrip('0').rstrip('.') if '.' in text else text
+
+
+@pytest.mark.parametrize('microsecond', [0, 100000, 838320, 297540, 123456])
+def test_synthetic_source_timestamp_matches_native_json_without_precision_loss(database, microsecond):
+    conn, _, _ = database
+    value = datetime(2026, 10, 7, 7, 8, 55, microsecond, tzinfo=timezone.utc)
+    expected = conn.execute('SELECT to_jsonb(%s::timestamp)',
+                            (value.replace(tzinfo=None),)).fetchone()[0]
+    actual = _source_created_at(value)
+    assert actual == expected
+    assert datetime.fromisoformat(actual) == value.replace(tzinfo=None)
+
+
 def _setup(monkeypatch, *, tier='free', named=False):
     row = _B6['_row'](tier=tier)
     text = ('私は友人のAliceさんと落ち着いて話したい。Aliceさんの都合はまだ分からない。'
             if named else '私は一人で落ち着いて考える時間を大切にしていない。')
-    original = {'id': INPUT, 'created_at': datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+    original = {'id': INPUT, 'created_at': _source_created_at(datetime.now(timezone.utc)),
                 'memo': text, 'memo_action': None, 'category': [],
                 'emotions': [], 'emotion_details': []}
     row['source_lineage']['source_input']['source_recorded_at'] = original['created_at']
