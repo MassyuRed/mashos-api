@@ -5,8 +5,9 @@ connects an already prepared CMEE/B9 artifact to the existing B5 store only
 when a supplied server reviewer accepts that exact source and artifact.
 No reviewer, renderer or TTL default, HTTP registration or production effect
 is introduced. The B5 SQL overload binds current source/tier through the write.
-The concrete safety owner, restart replay lookup and HTTP/UI remain unfinished;
-this internal connection is not a complete public preview issuer.
+Read-only restart lookup is available without the in-memory prepared object.
+Concrete safety, replay orchestration and HTTP/UI remain unfinished; this is
+not a complete public preview issuer.
 """
 from __future__ import annotations
 
@@ -84,6 +85,31 @@ def _request_snapshot(request: object) -> dict:
         raise _error(exc.code if exc.code in _SERVICE_ERRORS else 'PIECE_REQUEST_INVALID') from None
     except (ValueError, TypeError, UnicodeError, RecursionError):
         raise _error('PIECE_REQUEST_INVALID') from None
+
+
+_REPLAY_COLUMNS = (
+    'id', 'owner_user_id', 'piece_contract_version', 'lifecycle_status',
+    'preview_request_hash', 'preview_revision', 'row_version', 'expires_at',
+    'visibility_scope', 'source_lineage', 'format_type', 'preview_eligible_formats',
+    'content_payload', 'content_payload_hash', 'piece_text', 'piece_text_hash',
+    'safety_state', 'visual_recipe', 'visual_recipe_hash', 'renderer_version',
+)
+
+
+async def _load_owned_preview_for_replay(owner: str, preview_id: str) -> dict | None:
+    """Existing service-only table read; neither identity comes from a body."""
+    from piece_v2_store import _uuid
+    owner, preview_id = _uuid(owner, owner=True), _uuid(preview_id)
+    from supabase_client import sb_get
+    response = await sb_get('/rest/v1/piece_records', params={
+        'select': ','.join(_REPLAY_COLUMNS), 'id': 'eq.' + preview_id,
+        'owner_user_id': 'eq.' + owner, 'limit': '2'}, timeout=8.0)
+    if response.status_code != 200:
+        raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+    rows = response.json()
+    if type(rows) is not list or len(rows) > 1:
+        raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+    return rows[0] if rows else None
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -358,4 +384,121 @@ class PiecePreviewService:
         except Exception:
             # Cancellation still propagates; no arbitrary reviewer/DB body or
             # diagnostic is surfaced and no recovery write is attempted here.
+            raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None
+
+
+    async def read_original_preview(
+        self, authorization: str | None, request: dict, *, idempotency_key: str,
+        load_record: Callable[[str, str], Awaitable[dict | None]] = _load_owned_preview_for_replay,
+    ) -> dict:
+        """Read an issued preview after losing the in-memory prepared object.
+
+        This is a READ-ONLY internal path, not first issuance or an HTTP route.
+        The same authenticated owner, request and key locate the existing row.
+        Missing, expired, cancelled, saved or changed rows never cause a new
+        author call, safety verdict, RPC write, quota charge or renewed expiry.
+        Only the persisted safety state is read; no safety PASS is invented.
+
+        Source/tier revalidation is bracketed by equal record reads. This is
+        optimistic read validation, NOT a transactionally locked snapshot or
+        a replacement for the existing SQL fence at issuance/save. Concrete
+        PCE-4 review, orchestration and HTTP/UI acceptance remain unfinished.
+        """
+        import hashlib
+        from datetime import datetime, timezone
+        from uuid import UUID
+        from piece_v2_content_policy import choose_format
+        from piece_v2_store import (
+            _key_hash, _positive, _preview_content, _request, _uuid,
+            _PREVIEW_RESPONSE_FIELDS,
+        )
+        errors = _SERVICE_ERRORS | {'PIECE_NOT_FOUND', 'PIECE_PREVIEW_EXPIRED'}
+        try:
+            value = _request_snapshot(request)
+            key = _key_hash(idempotency_key)
+            if not callable(load_record):
+                raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+            handoff = await self._source_adapter.resolve_original_handoff(
+                authorization, value['source_ref']['source_input_id'])
+            if type(handoff) is not PieceSavedHandoff:
+                raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+            owner = _uuid(handoff.original.authenticated_owner_id, owner=True)
+            if UUID(owner).int == 0:
+                raise _error('PIECE_AUTH_REQUIRED')
+            lineage = handoff.lineage_payload()
+            expected = {k: lineage['source_input'][k] for k in (
+                'source_input_id', 'source_input_version', 'source_input_bundle_commitment')}
+            expected.update({k: lineage['observation'][k] for k in (
+                'emlis_observation_stage', 'emlis_observation_result_identity',
+                'question_need_decision_identity', 'supplemental_answer_identity')})
+            if value['source_ref'] != expected:
+                raise _error('PIECE_CONFLICT')
+            preview_id = str(UUID(hashlib.sha256(
+                f'piece.preview.v2:{owner}:{key}'.encode('utf-8')).hexdigest()[:32]))
+            raw = await load_record(owner, preview_id)
+            if raw is None:
+                raise _error('PIECE_NOT_FOUND')
+            row = json.loads(canonical_json_bytes(_request(raw, set(_REPLAY_COLUMNS))))
+            if (row['id'] != preview_id or row['owner_user_id'] != owner
+                    or row['piece_contract_version'] != PIECE_V2_CONTRACT_VERSIONS['piece_contract_version']):
+                raise _error('PIECE_NOT_FOUND')
+            if (row['preview_request_hash'] != canonical_sha256_hex(value)
+                    or row['lifecycle_status'] != 'preview_draft'
+                    or row['visibility_scope'] != 'private'
+                    or canonical_json_bytes(row['source_lineage']) != canonical_json_bytes(lineage)):
+                raise _error('PIECE_CONFLICT')
+            _positive(row['preview_revision']); _positive(row['row_version'])
+            if type(row['expires_at']) is not str:
+                raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+            expiry = datetime.fromisoformat(row['expires_at'].replace('Z', '+00:00'))
+            if expiry.utcoffset() is None:
+                raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+            if expiry <= datetime.now(timezone.utc):
+                raise _error('PIECE_PREVIEW_EXPIRED')
+            if row['safety_state'] not in ('ready', 'adjusted'):
+                raise _error('PIECE_SAFETY_UNAVAILABLE')
+            content = dict(row, eligible_formats=row['preview_eligible_formats'])
+            try:
+                _preview_content(content)
+            except PieceContractError:
+                raise _error('PIECE_HASH_MISMATCH') from None
+            tier, fmt = handoff.original.subscription_tier, row['format_type']
+            try:
+                chosen = choose_format(tier=tier, requested=value['requested_format'],
+                    eligible=tuple(content['eligible_formats']), recommended=fmt)
+                if chosen != fmt:
+                    raise _error('PIECE_FORMAT_NOT_ELIGIBLE')
+            except PieceContractError:
+                raise _error('PIECE_FORMAT_NOT_ELIGIBLE') from None
+            selection = value['visual_selection']
+            try:
+                recipe = build_visual_recipe(fmt, tier=tier,
+                    language=row['content_payload']['language'], theme=selection['theme_id'],
+                    aspect_ratio=selection['aspect_ratio'], branding=selection['branding_mode'])
+                if recipe != row['visual_recipe']:
+                    raise _error('PIECE_VISUAL_SELECTION_NOT_ALLOWED')
+            except PieceContractError:
+                raise _error('PIECE_VISUAL_SELECTION_NOT_ALLOWED') from None
+            current = await self._source_adapter.revalidate_original_handoff(authorization, handoff)
+            if current != handoff:
+                raise _error('PIECE_CONFLICT')
+            # The second read catches cancellation/deletion or revision changes
+            # while current source/plan were being checked. It never repairs a row.
+            latest = await load_record(owner, preview_id)
+            if latest is None:
+                raise _error('PIECE_NOT_FOUND')
+            if canonical_json_bytes(_request(latest, set(_REPLAY_COLUMNS))) != canonical_json_bytes(row):
+                raise _error('PIECE_CONFLICT')
+            current = await self._source_adapter.revalidate_original_handoff(authorization, handoff)
+            if current != handoff:
+                raise _error('PIECE_CONFLICT')
+            if expiry <= datetime.now(timezone.utc):
+                raise _error('PIECE_PREVIEW_EXPIRED')
+            content.update(preview_id=preview_id, idempotency_replayed=True)
+            return {k: content[k] for k in _PREVIEW_RESPONSE_FIELDS}
+        except PieceContractError as exc:
+            raise _error(exc.code if exc.code in errors else 'PIECE_TEMPORARILY_UNAVAILABLE') from None
+        except Exception:
+            # No provider body or private diagnostic is returned. Cancellation
+            # remains a BaseException and propagates without another read/write.
             raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None
