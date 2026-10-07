@@ -20,6 +20,51 @@ MULTI = SINGLE + '誘われたのに、悲しかった。頼まれたのに、�
 
 
 @pytest.mark.parametrize('left,right', [
+    ('私は家族の時間を守りたい', '私はつらい'),
+    ('ぼくは、生活の基盤を守りたいです', 'ぼくは、苦しいです'),
+    ('自分は自分の家族の時間を守りたい', '自分は辛い'),
+    ('私は資料の内容を調べたい', '私はつらい'),
+])
+def test_genitive_wish_contrast_preserves_shared_finite_proof_and_actual_body(left, right):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(left + 'けれど、' + right + '。'))
+    result, plan, _sentence, resolver, _selected = context
+    nodes = [n for n in plan.nuclei if n.source_fields == ('memo',)]
+    assert len(nodes) == 2
+    wish, burden = nodes
+    assert (wish.kind, wish.semantic_frame.modality) == ('wish', 'wish')
+    assert 'lexical:source_finite_contrast_feeling' in burden.semantic_frame.attribute_codes
+    assert not any(c.startswith('semantic_dependency:') for n in nodes for c in n.semantic_frame.attribute_codes)
+    assert any((r.type, r.from_nucleus_id, r.to_nucleus_id) ==
+        ('contrast', wish.nucleus_id, burden.nucleus_id) for r in plan.relations)
+    for node, expected in zip(nodes, (left, right)):
+        code, = (c for c in node.semantic_frame.attribute_codes if c.startswith('source_fragment_scalar_range:'))
+        start, end = map(int, code.split(':')[1:])
+        assert resolver.resolve(node.source_span_ids[0]).raw_text[start:end] == expected
+        assert node.semantic_frame.actor == 'current_user'
+    body = result.artifact.text
+    assert left in body and right in body
+    assert read_body(context, body).passed
+    for old, new in ((left, left.replace('時間', '予定').replace('基盤', '資金').replace('内容', '題名')),
+                     (right, right.replace('つらい', 'つらかった').replace('苦しい', '嬉しい').replace('辛い', '辛くない'))):
+        assert old != new
+        assert not read_body(context, body.replace(old, new)).passed
+
+
+@pytest.mark.parametrize('fragment', [
+    '友人は家族の時間を守りたい', '家族の時間を守りたい',
+    '私は友人は家族の時間を守りたい', '私は家族の時間を友人は守りたい',
+    '私は家族の時間を守りたいと友人は思う', '私は家族の時間を守りたいと聞いた',
+    '私は家族の時間を守りたかった', '私は家族の時間を守りたくない',
+    '私は家族の時間を守りたい気持ちがある', '私は家族の時間を守りたいかもしれない',
+    '私は家族のつらさが苦しい', '私は家族の気持ちを守りたい',
+])
+def test_genitive_wish_owner_repair_does_not_lend_self_to_unproved_hosts(fragment):
+    from emlis_ai_grounded_observation_plan import _source_operator_owner_scope_is_bound
+    assert not _source_operator_owner_scope_is_bound(fragment)
+
+
+@pytest.mark.parametrize('left,right', [
     ('私は悲しい', '私は、つらい'),
     ('私は悲しい', '僕は、 辛いです'),
     ('ぼくは、苦しいです', '嬉しかった'),

@@ -15162,3 +15162,28 @@ rootが合成7全文（希望＋負荷、読点／表記差、二記録集約、
 STRUCTURE_MAP_DELTA_NONE：既存Analysis compiler1／test2／API handoff1、Cocolon current03／詳細04／06の7file modify、新規repo file0。所有境界・保存lifecycle不変。共有意味owner／Emlis／Piece／API契約／DTO／DB／SQL／RN／製品依存変更0。main／merge／deploy／env／build／IF操作0。u158未配置、限定TECHNICAL_CREDIT。商品0/3・NOT_CLEAR・48%と稼働版／本人実機残件は過去記録の継承で今回再確認していない。全repo PASSではない。反映commitとremote全7file bytes・変更path集合の照合結果は既存PR3／30先頭へ記録する。
 
 残件：「家族の時間」等が使う共有semantic_dependency分岐の保護意向＋負荷、一般感情、未対応認知、夢／伝聞から現実へ戻る境界、plain幾等。次の内容候補は今回保留した共有分岐の実原因確認。全表現対応を配置の前提にしない。指定版で本人生成→保存再表示→比較の実機残件は別に保持する。本節と追跡source/testを再開原典とし、scratchを正式保存先にしない。
+
+
+## 2026-10-07 JST u159 — 希望の目的語内の属格を別の話し手と誤認する停止を修正
+
+Mashの「分析構造の内容修正関係を進めて」からu158の明示残件を継続。開始headはAPI `db5ecc4e1a04cbcb824f2a36c535fd7137469fa4`／Cocolon `288148192728365530813f3d88ee348439c147a1`。current作業規則、恒久incident全文、全体設計01と全file地図の導線、current03／詳細04／06、最新weekly20261003 §5と§6.6〜6.10を原典で再確認。前回のSystem Context ancestor不成立をfreshへ読み替えず、直接原典を使用。既存Draft PRの内容修正範囲を継続し、全表現対応を配置の前提にしない。
+
+実測原因：共有Planの `_source_operator_owner_scope_is_bound` が「私は」を消費した後、「家族の時間」の「の」を別の話し手／所有者と誤認し、正規の有限対比分解を拒否していた。その後のfallbackは `semantic_dependency:top_level_compound_relation` と `wish_and_constraint` を生成し、完全な負荷述語witnessを持たない。Analysisが保留すること自体は必要な境界であり、今回もその条件は緩めない。
+
+既存共有ownerの21行だけを追加。明示SELFの「は」の直後と完全一致する残り全文に、漢字／カタカナ名詞の属格連鎖＋「を」＋現在の「たい／たいです」があり、既存のfinite wish／左文脈閉包が成立する時だけ、目的語内部の「の」を主語変更と区別する。SELF／非SELF分岐前に置き、「自分の家族の時間」も目的語全体として保持する。後続の別主体・帰属・否定・過去・名詞化された希望・未閉包hostはこの分岐へ入れない。語句固定例外、新しい意味owner、Analysis grammarへの逆依存、semantic_dependencyの一括許可はない。
+
+結果：「家族の時間」「生活の基盤」を守りたい意向と現在の負荷が、共有の正規contrast＋finite feeling witnessを通って文章・図へ届く。「資料の内容を調べたい」の同型の通常希望も負荷を保持する。保護意向には同一nodeのPROTECTIVE／BURDEN、通常希望にはBURDENのみで、原因・実行済み・保護の成功は推測しない。Analysis compiler／realizer、原文scalar／UTF-8、訂正／撤回、集約、期間比較、safe DTOの条件は不変。
+
+検証：新しい対象selectorは23 tests／80 subtests PASS（9.05秒）。最終Analysis3suiteはvertical236／storage58／saved-period16＝310 tests PASS、1787 subtests PASS（9.85秒）。共有の既存contrast／burden_topic_commaは開始版70 PASS（18.92秒）、同じ70＋新16は86 PASS（14.97秒）。共有identityの既存 `test_active_final_language_owner_chain_has_zero_legacy_compose_calls` もPASS。Python3.12.14・pytest8.4.1／pytest-subtests0.14.2・FastAPI0.116.1・httpx0.28.1・Pydantic2.13.5、既存Pydantic warning1件。製品依存変更0。u158で「家族の時間」を保留していた期待1件は、今回の原因修復に合わせ原文と完全witnessを要求するpositiveへ移した。未対応の「家族の気持ち」は保留へ残し、旧境界の一括緩和はしていない。
+
+共有確認時の一括selectorがcontractsの旧3methodも拾い、pytest表示は89 passed／86 failed／1 setup error／206 subtests passed（321.13秒）となった。この87診断を無視せず、同じ旧3methodを開始時と共有source／testが同一のu158前worktreeで実行し、2 passed／86 failed／1 setup error／206 subtests passed（291.11秒）を取得。XMLの全87 failure／errorについて、case名・状態・診断messageが修正前後で完全一致した。共有既存70件もcase／成否が一致し、新16件とidentity1件はPASS。旧契約の全成功は主張せず、その既存不一致は別残件として保持する。途中の実行状態照会で出た`fatal library error, lookup self`は検査logではなくps側の異常だったため、検査本体の異常終了という途中説明を訂正。製品／検査sourceの追加変更はしていない。
+
+rootが合成Analysis8全文（属格対象、自己を含む二重属格、通常希望、二記録集約、通常補足、全文訂正、全文撤回、同意味期間比較）を読取。実RN `buildWatashiMapV2ViewModel` で全文／identity／node順／edge／unknown／注記／競合／比較stateが8/8一致。実service＋合成RPCの保存と、再生成を禁止したreadで同じ保存本文／図／identityを確認。同義の比較両方向と別対象／負荷の差を扱う。React component／native／実DB／本人入力の検証ではない。
+
+共有Emlisへの影響も合成4本文で確認。修正前は4例とも `LIMITED_RECEPTION_CAPABILITY_GAP_STOP`、修正後は両端の対象・希望・負荷を保持する本文が成立し、独立readerが対象／感情の改変を拒否。本文の集合は復唱・定型的な受け取りが残っており、Emlis商品品質の完成・human Product Read PASSとはしない。今回の目的はAnalysisの実測停止の解消であり、別のEmlis表現改修へ拡張しない。
+
+共有current identity fixtureのみ最終sourceへ同期。language `1ad1f2c224e5eea37421333a45eab88c38ec2568bce83f82d1ed94a4d4c9cb8a`／runtime `ef18cdae05633008121938ec81f22eacd026179a28d408ce71f532e378f69446`。historical frozen manifestと9owner／18payloadは不変。root華恋がCodex Workの単一編集・検証・反映owner、同環境read-only agentが因果・権限境界・最終source/test差分を独立確認し、具体的blockerなし。別model Pro reviewではない。OBSERVED_BLOCKER_MINIMAL_FIX、限定TECHNICAL_CREDIT、商品NOT_CLEAR。
+
+STRUCTURE_MAP_DELTA_NONE：API既存共有Plan1／test3／current identity1／handoff1、Cocolon current03／詳細04／06の計9file modify、新規repo file0。意味owner・route・保存lifecycle不変、Analysis専用コード／Piece／API契約／DB／SQL／RN／依存の変更0。main／merge／deploy／env／native build／IF操作0、u159未配置。反映commitとremote全9fileの全文/blob・parent・変更path集合照合は既存PR3／30先頭へ記録する。
+
+残件：「家族の気持ち」等のひらがなを含む属格名詞、時点接頭句や未対応host、一般感情／認知、夢・伝聞から現実へ戻る境界、unknown反復表示。指定版で本人生成→保存再表示→比較する実機残件は別に保持する。全repo PASS／実機成功／商品受入れは主張しない。本節と追跡source/testを再開原典とし、scratch log／JSONを正式保存先にしない。

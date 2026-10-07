@@ -3334,6 +3334,9 @@ def _source_operator_owner_scope_is_bound(fragment: str) -> bool:
     # be removed; an opaque token before an operator fails closed.
     owner_scope = top_level_fragment
     attribution_scope = owner_scope
+    self_topic = re.fullmatch(
+        r"(?:私|僕|ぼく|わたし|自分)は(?:[、,][ \u3000]*)?"
+        r"(?P<remainder>.+)", top_level_fragment)
     # Consume only a chain of explicit self owners and bounded temporal
     # prefixes.  Any subsequent grammatical owner/beneficiary remains a
     # third-party authority and makes the projection ineligible.
@@ -3483,6 +3486,24 @@ def _source_operator_owner_scope_is_bound(fragment: str) -> bool:
             break
         owner = leading_owner.group("owner")
         marker = leading_owner.group("marker")
+        # In an explicit self wish, NのNを is an object, not a
+        # different experiencer. Consume only this complete nominal
+        # case frame and the existing finite wish proof. A later
+        # subject, attribution, nominalized wish or open host cannot
+        # borrow the initial SELF through this exception.
+        genitive_wish_object = bool(
+            marker == "の"
+            and self_topic is not None
+            and owner_scope == self_topic.group("remainder")
+            and re.fullmatch(
+                r"[一-鿿々〆〇ァ-ヶー]+(?:の[一-鿿々〆〇ァ-ヶー]+)+"
+                r"を.+?たい(?:です)?", owner_scope)
+            and any(pattern is _WISH_RE
+                    for pattern, _match in finite_owned_operator_matches(owner_scope))
+        )
+        if genitive_wish_object:
+            owner_scope = ""
+            continue
         if _SELF_REFERENCE_RE.fullmatch(owner) is None:
             marker_start = leading_owner.start("marker")
             marker_is_inside_operator = any(

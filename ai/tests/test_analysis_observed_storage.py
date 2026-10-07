@@ -340,7 +340,10 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         equivalent = 'ぼくは、家族を守りたいですけど、ぼくは、辛いです。'
         changed = '私は生活を守りたいけれど、私は苦しいです。'
         for before, now, differs in ((plain, equivalent, False), (equivalent, plain, False),
-                (plain, changed, True)):
+                (plain, changed, True),
+                (plain.replace('家族', '家族の時間'), equivalent.replace('家族', '家族の時間'), False),
+                (equivalent.replace('家族', '家族の時間'), plain.replace('家族', '家族の時間'), False),
+                (plain.replace('家族', '家族の時間'), changed.replace('生活', '生活の基盤'), True)):
             with self.subTest(now=now):
                 fx = await comparison_fixture(current_memo=now, previous_memo=before)
                 row, private = fx['row'], fx['private']
