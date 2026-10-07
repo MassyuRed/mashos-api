@@ -5968,3 +5968,87 @@ def test_reserved_outer_contrast_saved_last_eligible_answer(qcase, qdb, monkeypa
     with monkeypatch.context() as saved:
         saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved body must not regenerate'))
         assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('withdrawn', ['誘われた', '頼まれた'])
+@pytest.mark.parametrize('reply,time,feeling', [
+    ('今は嬉しい。', '回答した時点', '嬉しい'),
+    ('今は少し苦しい。', '回答した時点', '少し苦しい'),
+    ('その時は楽しかった。', 'その時', '楽しかった'),
+    ('その時は少し苦しかった。', 'その時', '少し苦しかった'),
+])
+def test_reserved_outer_contrast_event_withdrawal_keeps_sources(field, withdrawn, reply, time, feeling):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    source = f'{LONG_CHAIN_EVENT}のに悲しかったけれど嬉しかった。誘われたのに寂しかった。頼まれたのに怖かった。'
+    req = advance(begin(source if field == 'memo' else '', source if field == 'memo_action' else ''), reply)
+    before = actual(request=req)
+    req = advance(req, f'「{withdrawn}」は誤りです。')
+    context = actual(request=req)
+    result, plan, sentence, resolver, selected = context
+    body, follow = result.artifact.text, result.artifact.reception
+    assert MeaningExperienceEngine().generate(req).artifact.text == body
+    assert withdrawn not in body
+    assert all(text in body for text in (LONG_CHAIN_EVENT, '悲しかった', '嬉しかった', '寂し', '怖', time, feeling))
+    assert '悲しかったけれど、嬉しかった' in follow
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == 3
+    required = {n.nucleus_id for n in plan.nuclei if n.retention == 'required'}
+    owned = [nid for m in moves for nid in (*m.target_nucleus_ids, *m.support_nucleus_ids)]
+    assert set(owned) == required and len(owned) == len(set(owned))
+    nodes = {n.nucleus_id: n for n in plan.nuclei}
+    answer_node, = (n for n in plan.nuclei if n.source_fields == ('answer_text_private',))
+    about = [r for r in plan.relations if r.type == 'evaluation_about_event']
+    if withdrawn == '誘われた':
+        assert not about
+        assert 'thread_subject:withdrawn_source_event' in answer_node.semantic_frame.attribute_codes
+    else:
+        link, = about
+        assert link.to_nucleus_id == answer_node.nucleus_id
+        assert reception.final_reception_source_anchor_text(link.from_nucleus_id, nodes, resolver) == '誘われた'
+    for detached in (n for n in plan.nuclei
+                     if 'thread_subject:withdrawn_source_event' in n.semantic_frame.attribute_codes):
+        assert not any(detached.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    for sid in before[3].span_ids:
+        assert resolver.qualified_ref(sid) == before[3].qualified_ref(sid)
+    surviving_ids = set(nodes)
+    assert {r for r in before[1].relations if {r.from_nucleus_id, r.to_nucleus_id} <= surviving_ids} <= set(plan.relations)
+    changed_follow = [follow.replace('悲しかったけれど、嬉しかった', '悲しかったから、嬉しかった'),
+        follow.replace('寂し', '楽し'), follow.replace(feeling, '平気'),
+        follow.replace(time, 'その時' if time == '回答した時点' else '回答した時点'),
+        follow + f'{withdrawn}のですね。']
+    candidates = [body, *(body.replace(follow, changed) for changed in changed_follow),
+        body.replace('「寂しかった」', '「友人が寂しかった」')]
+    assert all(candidate != body for candidate in candidates[1:])
+    with (patch.object(reception, '_author_source_grounded_reception_clauses', side_effect=AssertionError('no author')),
+          patch.object(surface, '_render_observation', side_effect=AssertionError('no author'))):
+        for candidate in candidates:
+            with patch.object(gate, 'replay_source_grounded_human_reception_from_plan',
+                              return_value=SimpleNamespace(text=candidate.split('Emlisから：\n', 1)[1])):
+                proof = gate.evaluate_grounded_surface_body_inverse(body=candidate.encode(), plan=plan,
+                    sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected)
+            assert proof.passed == (candidate == body), proof.failure_codes
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('withdrawn', ['誘われた', '頼まれた'])
+@pytest.mark.parametrize('reply', ['今は嬉しい。', 'その時は少し苦しかった。'])
+def test_reserved_outer_contrast_event_withdrawal_saved_without_regeneration(qcase, qdb, monkeypatch, field, withdrawn, reply):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    source = f'{LONG_CHAIN_EVENT}のに悲しかったけれど嬉しかった。誘われたのに寂しかった。頼まれたのに怖かった。'
+    memo, action = (source, '') if field == 'memo' else ('', source)
+    qdb.query('update public.emotions set memo=$1,memo_action=$2 where id=$3', [memo, action, parent])
+    original = current = run(service.start(user, parent))
+    for step, text in enumerate((reply, f'「{withdrawn}」は誤りです。')):
+        if step:
+            current = run(cont(service, user, current, 'event-withdrawal-continue'))
+        current = run(answer(service, user, current, text, f'event-withdrawal-answer-{step}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == original['original']
+        assert qdb.query('select memo,memo_action from public.emotions where id=$1', [parent])['rows'][0] == {
+            'memo': memo, 'memo_action': action}
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved output must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    body = current['current_observation']['text']
+    assert withdrawn not in body and all(s in body for s in ('悲しかった', '嬉しかった', '寂し', '怖'))

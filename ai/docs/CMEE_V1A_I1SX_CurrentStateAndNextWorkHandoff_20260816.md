@@ -15093,3 +15093,24 @@ productionは既存Planの2条件だけ。肯定回答の隣接分割に既存se
 STRUCTURE_MAP_DELTA_NONE：API既存Plan1/test1/current identity1/handoff1＋Cocolon既存06の計5file modify、新規file0。既存owner/route/schema/lifecycle/配置不変。HR/Gate/Observation作者/answer_update/質問選択/API/DTO/DB/RN/Piece/Analysis専用コードは変更0。main/merge/deploy/env/native build操作0。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEARを維持。remote全5file bytes/SHA256・parent・変更path集合と反映commitはPR3/30へ記録する。
 
 残件：この長いchainを持つ入力で、回答後にevent自体の「誘われた」を撤回すると後続で4 Moveになり本文が停止する。今回成立したのは回答自身の撤回であり、出来事の撤回全体ではない。「今は気持ちが重いと思った」の認知回答は独立検証で未成立。従来の長event位置修飾、列挙/二層再掲/語尾反復/受け取りの浅さ、過去説明形・anchor不一致、実機設定/指定版配置と本人生成→保存→再表示も残る。今回の内容修復を実機復旧や商品品質全体の合格へ換算しない。
+
+
+## 2026-10-07 — 回答後の出来事撤回で本文が停止する残件を修復（未配置）
+
+MashのEmlisAI内容修正継続指示と添付前回記録から再開。開始HEADはAPI `47ddeb4e9b36e2403f5ae7411fb88444fe05f3cf`／Cocolon `cc53f8f557d28c87d229bc593f2e1eb9855e75e6`、fresh PRのDraft/open/unmergedとlocal preimageが一致。前提・作業姿勢currentと対象専門規則、恒久incident全文、全体設計01/01A〜C・国家システム02・全file地図の導線とEmlis/CMEE current owner、設計02の意味更新・時点、最新weekly20261003 §6.6〜6.10と最新06/API handoffを確認した。全実装の全文精読を主張しない。System Context prepareはworkspace内mashos-api不在で終了し、正本直接読取を使用、生成Contextのfreshnessは主張しない。Karen-Diaryは前回の自動承認拒否の記録を保持し、今回も再取得していない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。対象は、元の感情対比と複数の出来事を含む入力で、回答後に出来事自体を撤回すると本文が4 Moveになって停止する既知残件。回答自身の撤回と区別する。完成条件は、撤回対象を復活させず、残る原感情・原対比・回答内容／時点を保持して生成・保存・再読取すること。既存の内容修正・PR反映承認内でroot華恋がCodex Workの単一編集・検証・反映ownerを担当。同環境read-only補助が作用域・最終差分・全合成本文を独立確認した。別model Pro reviewではない。weeklyの最小動作優先を維持し、全文章品質の完成待ちや新しい期限・費用・Mash操作を追加しない。
+
+原因は既存Plan `_thread_retained_reaction_groups` の再帰内のwithdrawal集約条件。外側の感情対比が1 Moveを予約していても、残る出来事群・撤回後の独立した元感情・回答が3 Moveへ分かれ、全体で4になる。外側対比あり、残り3群、回答1件、撤回後の元感情1件、証明済みの生存出来事とsupportあり、独立行動／別訂正なしの窓だけを、既存の集約へ渡す。否定回答は元感情と独立した回答の既存群、肯定回答は元感情をtargetとして生存出来事と並べる既存混在群を用い、回答を別に保つ。撤回したeventへのABOUTやcontrastを再作成せず、source・意味受付・質問選択・3 Move上限・作者・逆検証は変更しない。
+
+追加24条件PASS（29.52秒）：2field×4回答（現在/当時、肯定/否定）×2撤回対象（回答の対象/別出来事）の16条件と、実service＋隔離PGlite保存8条件。実callable一致、required核の重複なし全被覆、生きているrelationと原文qualified evidenceの不変、撤回先へのrelation消去、改変した原因・感情・主体・時点・撤回event再掲の独立拒否を確認。作者を禁止し、改変本文と一致するreplayでも拒否する。保存8では原memo/memo_actionとoriginal DTO不変、生成禁止GET/startの保存DTO一致を確認した。実DB・本人端末・process再起動の検証ではない。
+
+本文比較は初回2＋回答後8＋出来事撤回後16＝26状態。開始版は14成立/12停止、修正版は26成立。共通成立14の両層全文は一致、memo/memo_actionの13組も全文一致。rootと補助が両層を全件読取し、停止していた6種類×2fieldの生成、撤回event非復活、元対比・残る寂しさ/怖さ・回答の時点/程度を確認した。一方、撤回後の既存「その時は楽しかった」「その時は寂しかった」が直前の出来事を指すようにも読める表現上の曖昧さは残る。意味graphに誤関係を追加したとは確認していないが、出典表示の明瞭さ・自然さの全解消とはしない。
+
+最終関連検査は316件＝294 PASS／既存22 FAIL、ERROR/SKIP0（317.36秒）。開始版の同対象291件＝269 PASS／22 FAIL（275.04秒）と共通291件の成否が全一致、新規24＋identity1は全PASS。旧22失敗のmessageは21件一致、1件はgeneratorのメモリアドレスだけが異なり正規化後一致。既存期待の削除・緩和0。前回よりpartial_withdrawalを加えた範囲であり、全repo PASSではない。対象はreceived_discourse/detached_observationの `same_name or position_annotation or received_chain_positive_group or received_chain_detached_positive_group or received_chain_other_event_withdrawal or received_chain_mixed_withdrawal or reserved_outer_contrast or partial_withdrawal` とcontractsのactive_final_language_owner_chain検査。最終suite後の製品source変更0。
+
+実行環境は再発見したPython3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5/PGlite0.5.8。製品依存変更0、過去FB172移行pluginは対象実行で無効化、skip/xfail追加0。最初の関連suiteはcontract testのimport path不足（No module named tools）でcollection error1・検査実行0。実行コマンドに既存ai import rootを指定して修正し、製品source/testを変更せず再実行した。current共有identityだけを最終Planへ同期し、9owner/18payloadとhistorical frozen manifestを保つ。language `75ec1b37b2a9d9bbf011b7cf565b080dcfd7eb8f04a714e29c07e04114e5a993`／runtime `190aa8b6a3df9230453627605c0d5a82ad2f4f37c65e841e2b39464fa7c901b9`。
+
+STRUCTURE_MAP_DELTA_NONE：API既存Plan1/test1/current identity1/handoff1、Cocolon既存06の計5file modify、新規repo file0。既存owner/route/schema/lifecycle/配置不変、HR/Gate/Observation作者/answer_update/質問選択/API/DTO/DB/RN/Piece/Analysis専用コード変更0。main/merge/deploy/env/native build操作0。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR維持、進捗率は再算定しない。反映commit・remote全5file本文/parent/変更path集合の照合結果はPR3/30へ記録する。
+
+次の内容残件は「今は気持ちが重いと思った」の認知回答の未成立原因と、上記の撤回後の出典表現。今回その認知回答は未修正・未再検証。従来の長event位置修飾、長い列挙/二層再掲/語尾反復/受け取りの浅さ、過去説明形・anchor不一致、実機設定/指定版配置と本人生成→保存→再表示も継承する。この修正を実機復旧・全repo成功・商品品質全体の合格へ換算しない。後続は本節と追跡source/testから再開でき、scratchのJSON/XML/logを正式再開原典としない。

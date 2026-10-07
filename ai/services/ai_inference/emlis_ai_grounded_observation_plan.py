@@ -8346,8 +8346,18 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
         and len(groups) == 3 and len(answers) == len(by_event) == 2
         and len(positive) == len(negative) == 1 and len(detached_originals) == 1
         and not (detached_answers or independent_answers))
+    # The outer contrast already consumes one Move. With one accepted
+    # answer, withdrawing another event can leave three residual duties:
+    # live occasions, a detached original feeling, and the answer. Reuse
+    # the existing detached/mixed grammar before that becomes four Moves.
+    nested_single_answer_withdrawal = (withdrawal and not separate_later_scopes
+        and len(groups) == 3 and len(answers) == 1
+        and len(detached_originals) == 1 and targets and supports
+        and len(detached_answers) + len(by_event) == 1
+        and not (independent or actions or independent_answers))
     if ((withdrawal or len(revised_originals) == len(independent_answers) == 2)
-        and (len(groups) > 3 or mixed_original_withdrawal) and not (independent or actions)
+        and (len(groups) > 3 or mixed_original_withdrawal or nested_single_answer_withdrawal)
+        and not (independent or actions)
         and len(revised_originals) == len(independent_answers)):
         # A withdrawn event does not retract its independently stated
         # reaction or answer. Coordinate those detached burdens and admitted
@@ -8363,7 +8373,7 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
                 and len(row[1]) == 1 and row[1][0] in detached_burdens)]
             groups.append(("current_burden", detached_burdens, ()))
         elif ((len(positive) == len(answers) == 2 and len(groups) == 4
-               or mixed_original_withdrawal)
+               or mixed_original_withdrawal or nested_single_answer_withdrawal and len(positive) == 1)
               and len(detached_originals) == 1 and targets):
             # The withdrawn original reaction remains an independent target,
             # alongside (never as a support of) the surviving event pairs.
