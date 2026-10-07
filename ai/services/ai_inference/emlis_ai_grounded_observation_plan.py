@@ -1706,6 +1706,16 @@ _BOUNDED_OPERATOR_PREFIX_RE: Final = re.compile(
     r"もう少し|少し(?:だけ|ずつ)?|やや|ずっと|強く|まだ|なお"
     r")[、,\s]*"
 )
+# Nominal arguments of a wish can contain kana-bearing lexical nouns.
+# Prove each whole segment, so 気持ち is not an embedded feeling predicate
+# and arbitrary kana cannot hide another subject, case or finite clause.
+_WISH_OBJECT_NOMINAL_SOURCE: Final = (
+    r"(?:(?:考え|思い|気持ち|学び|振り返り|取り組み)[一-鿿々〆〇ァ-ヶー]*|"
+    r"[一-鿿々〆〇ァ-ヶー]+)"
+)
+_WISH_OBJECT_ARGUMENT_RE: Final = re.compile(
+    _WISH_OBJECT_NOMINAL_SOURCE + r"(?:の" + _WISH_OBJECT_NOMINAL_SOURCE + r")*"
+)
 
 
 def _operator_match_has_finite_closure(
@@ -1962,9 +1972,14 @@ def _operator_match_left_context_is_bounded(
             return bool(
                 action_host.start() > 0
                 and action_host.end() == len(prefix)
-                and _semantic_content_is_bounded(
-                    prefix[: action_host.start()],
-                    require_finite=False,
+                and (
+                    _WISH_OBJECT_ARGUMENT_RE.fullmatch(
+                        _strip_bounded_operator_prefix(prefix[: action_host.start()])
+                    ) is not None
+                    or _semantic_content_is_bounded(
+                        prefix[: action_host.start()],
+                        require_finite=False,
+                    )
                 )
                 and re.search(
                     r"(?:は|が|も)",
@@ -3496,8 +3511,9 @@ def _source_operator_owner_scope_is_bound(fragment: str) -> bool:
             and self_topic is not None
             and owner_scope == self_topic.group("remainder")
             and re.fullmatch(
-                r"[一-鿿々〆〇ァ-ヶー]+(?:の[一-鿿々〆〇ァ-ヶー]+)+"
-                r"を.+?たい(?:です)?", owner_scope)
+                _WISH_OBJECT_NOMINAL_SOURCE + r"(?:の"
+                + _WISH_OBJECT_NOMINAL_SOURCE + r")+を.+?たい(?:です)?",
+                owner_scope)
             and any(pattern is _WISH_RE
                     for pattern, _match in finite_owned_operator_matches(owner_scope))
         )

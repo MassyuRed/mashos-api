@@ -24,6 +24,10 @@ MULTI = SINGLE + '誘われたのに、悲しかった。頼まれたのに、�
     ('ぼくは、生活の基盤を守りたいです', 'ぼくは、苦しいです'),
     ('自分は自分の家族の時間を守りたい', '自分は辛い'),
     ('私は資料の内容を調べたい', '私はつらい'),
+    ('私は家族の気持ちを守りたい', '私はつらい'),
+    ('自分は自分の家族の気持ちを守りたい', '自分は辛い'),
+    ('ぼくは、学びノートの振り返りを守りたいです', 'ぼくは、苦しいです'),
+    ('私は資料の振り返りを調べたい', '私はつらい'),
 ])
 def test_genitive_wish_contrast_preserves_shared_finite_proof_and_actual_body(left, right):
     from test_cmee_emlis_detached_observation import read_body
@@ -45,7 +49,8 @@ def test_genitive_wish_contrast_preserves_shared_finite_proof_and_actual_body(le
     body = result.artifact.text
     assert left in body and right in body
     assert read_body(context, body).passed
-    for old, new in ((left, left.replace('時間', '予定').replace('基盤', '資金').replace('内容', '題名')),
+    for old, new in ((left, left.replace('時間', '予定').replace('基盤', '資金').replace('内容', '題名')
+                     .replace('気持ち', '記録').replace('振り返り', '予定')),
                      (right, right.replace('つらい', 'つらかった').replace('苦しい', '嬉しい').replace('辛い', '辛くない'))):
         assert old != new
         assert not read_body(context, body.replace(old, new)).passed
@@ -57,7 +62,11 @@ def test_genitive_wish_contrast_preserves_shared_finite_proof_and_actual_body(le
     '私は家族の時間を守りたいと友人は思う', '私は家族の時間を守りたいと聞いた',
     '私は家族の時間を守りたかった', '私は家族の時間を守りたくない',
     '私は家族の時間を守りたい気持ちがある', '私は家族の時間を守りたいかもしれない',
-    '私は家族のつらさが苦しい', '私は家族の気持ちを守りたい',
+    '私は家族のつらさが苦しい', '私は家族のつらさを守りたい',
+    '私は家族の読んでメモを守りたい', '私は家族の気持ちがつらい',
+    '私は家族の気持ちを友人は守りたい', '私は家族の気持ちを守りたいと聞いた',
+    '私は家族の気持ちを守りたい気持ちがある', '私は家族の気持ちを守りたいかもしれない',
+    '私は家族の気持ちを守りたくない', '私は家族の気持ちを守りたかった',
 ])
 def test_genitive_wish_owner_repair_does_not_lend_self_to_unproved_hosts(fragment):
     from emlis_ai_grounded_observation_plan import _source_operator_owner_scope_is_bound

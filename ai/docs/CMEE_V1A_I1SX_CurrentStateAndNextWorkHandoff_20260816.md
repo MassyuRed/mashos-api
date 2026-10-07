@@ -15187,3 +15187,27 @@ rootが合成Analysis8全文（属格対象、自己を含む二重属格、通�
 STRUCTURE_MAP_DELTA_NONE：API既存共有Plan1／test3／current identity1／handoff1、Cocolon current03／詳細04／06の計9file modify、新規repo file0。意味owner・route・保存lifecycle不変、Analysis専用コード／Piece／API契約／DB／SQL／RN／依存の変更0。main／merge／deploy／env／native build／IF操作0、u159未配置。反映commitとremote全9fileの全文/blob・parent・変更path集合照合は既存PR3／30先頭へ記録する。
 
 残件：「家族の気持ち」等のひらがなを含む属格名詞、時点接頭句や未対応host、一般感情／認知、夢・伝聞から現実へ戻る境界、unknown反復表示。指定版で本人生成→保存再表示→比較する実機残件は別に保持する。全repo PASS／実機成功／商品受入れは主張しない。本節と追跡source/testを再開原典とし、scratch log／JSONを正式保存先にしない。
+
+
+## 2026-10-07 u160 — 仮名入り属格目的語の希望と負荷を保持（未配置）
+
+Mashの分析内容修正継続指示と添付「前回作業内容(20261007-140438).txt」からu159の残件を再開。開始HEADはAPI `990b1b2c80e9b5b5d4ec7c646427b885b9a483a4`／Cocolon `fec84a4501c3f894c09bf48e0a4ee36511463d8a`。前提・作業姿勢のcurrentと対象専門規則、恒久incident全文、全体設計01/01A〜Cと全file地図の導線、Analysis current03/詳細04/実source、最新weekly20261003の最小実動作優先と前回handoffを確認。全repo全文精読とはしない。Karen-Diary入口と指定memory2本は今回取得・読取できた。private本文を公開資料へ転載しない。System Context prepareは指定workspace内mashos-api不在で終了し、正本直接読取を使用。生成Contextのfreshnessは主張しない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX、既存の内容修正・PR反映承認内の実装詳細修正。Codex Workのroot華恋が単一編集・検証・反映owner、補助は同環境read-only原因調査と最終差分review。別model Pro reviewとはしない。完成条件は、前回保留した仮名入り名詞の対象・希望・現在負荷が文章/図/保存へ届くこと。一般文法・共有契約・環境適用へscopeを拡大する必要が出れば停止する。追加費用・Mash操作0、商品受入れの自己認定0。
+
+原因は共有Planの二箇所。u159の属格目的語regexが漢字/カタカナ限定であり、希望の左文脈判定も目的語内の「気持ち」を感情operatorとして誤認した。既存共有Planで用いる名詞語彙（考え/思い/気持ち/学び/振り返り/取り組み）と漢字/カタカナ接尾・「の」連鎖を、希望目的語の完全な名詞句として照合する。希望の左文脈と既存の属格分岐だけで使用し、一般semantic_content判定は変更しない。明示SELF・元残部一致・有限希望・完全な節閉包を維持。Analysis文法への逆依存、入力固有の例外表、作者・Gate・API/DTO/DB/RN/依存変更はない。
+
+修正前の合成5例では「家族の気持ち」「自分の家族の気持ち」「学びノートの振り返り」の保護意向＋負荷はUNAVAILABLE、「資料の振り返りを調べたい＋つらい」は希望のみ生成され負荷が未解析。「家族の時間」の既存成功は対照。修正後は5例全てGENERATED、対照本文は同一、前3例は同一対象へPROTECTIVE/BURDEN、通常希望はBURDENのみとなった。守れた事実・因果・負荷の継続期間は推測しない。
+
+検証（Python3.12.14、pytest8.4.1/pytest-subtests0.14.2、FastAPI0.116.1/httpx0.28.1/Pydantic2.13.5。既存runtimeを再発見し版を確認、製品依存変更0）：
+
+- Analysis vertical237/storage58/saved-period16＝311 tests／1810 subtests PASS（12.25秒）。原文scalar/UTF-8/hash、6名詞・複合/二重属格、完全訂正/撤回・部分撤回の既存保留、同義集約/比較差0、対象/負荷変更による期間差、実service＋合成RPCの保存と再生成禁止readを確認。
+- 共有initial_received_discourseの `genitive or contrast or burden_topic_comma` は98 PASS（18.90秒）。共有finite feeling witness、両端原文・actor・contrast、独立readerの対象/感情改変拒否、別主体/伝聞/否定/過去/未閉包/任意仮名の保留を確認。u159で未対応としていた「家族の気持ち」2箇所は原因修復に対応するpositiveへ移し、隣接する未対応条件を保持・追加した。検査期待の一括緩和・skip/xfail追加0。
+- 共有current identityの既存active_final_language_owner_chain検査1 PASS（20.21秒）。current fixtureのみ同期し、historical frozen manifest・9owner/18payloadは維持。language `80a04d9e2fc19324a89b55b349530292dcc317de561064b98f2ac5b486292739`／runtime `f1f447a2d02b844b7f5cecf8deb9f5a96580830ed7b1a58a7f884ed0477b95d4`。
+- rootが合成Analysis10本文（保護/二重属格/複合/通常希望/集約/補足/訂正/撤回/同義比較/変更比較）を全文読取。実 `buildWatashiMapV2ViewModel` の全文・identity・node順・edge・注記・unknown・競合・比較stateが10/10一致。Emlisへの影響は合成4全文でも読取。元の定型的な受け取りは残り、Emlis商品品質の完成とはしない。
+
+通常git pushはHTTPS認証情報不在で失敗し、GitHub連携へ切り替えた。未反映のlocal commitをremote成功とは扱わない。初回runtime確認ではprimary Pythonにpytestがなかったため、対象検査を開始せず既存test runtimeを再発見した。新たな依存導入なし。旧contractsの86 subfail/1 setup error等はu159の記録を継承し、今回未再検証・未修正。全repo PASSとはしない。同環境read-only最終reviewは具体的blockerなし。製品sourceは上記suite後変更0。
+
+STRUCTURE_MAP_DELTA_NONE：既存の意味owner/route/保存lifecycle内の名詞句判定修正。API既存Plan1/test3/current identity1/handoff1、Cocolon current03/詳細04/06の全9file modify、新規repo file0。Analysis専用コード/IF/Piece/共有API契約/DB/SQL/RNは変更0。main/merge/deploy/env/native build操作0、u160未配置。実DB・React component/native・本人入力・商品受入れ未確認、限定TECHNICAL_CREDIT、商品NOT_CLEAR維持。反映commit・全9file remote bytesと変更path照合結果は既存PR3/30へ記録する。
+
+残件：任意の仮名名詞（「家族のつらさ」等）、未対応修飾/時点/host、一般感情/認知、夢・伝聞から現実へ戻る境界、unknown反復表示。本人生成→保存再表示→比較する指定版の実機残件は別に維持し、未対応文法の全解消を配置/実機の新しい前提にしない。次回は本節と追跡source/testから続け、scratch log/JSONへ依存しない。

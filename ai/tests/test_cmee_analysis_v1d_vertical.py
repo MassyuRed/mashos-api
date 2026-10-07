@@ -283,6 +283,13 @@ class AnalysisVerticalTests(unittest.TestCase):
             ('私', '', '家族の時間', '守りたい', 'けれど', 'つらい'),
             ('ぼく', '、\u3000', '生活の基盤', '守りたいです', 'けど', '辛いです'),
             ('自分', '', '自分の家族の時間', '守りたい', 'けれども', '苦しい'),
+            ('私', '', '家族の気持ち', '守りたい', 'けれど', 'つらい'),
+            ('自分', '', '自分の家族の気持ち', '守りたいです', 'けど', '辛いです'),
+            ('ぼく', '、　', '学びノートの振り返り', '守りたいです', 'けれども', '苦しいです'),
+            ('私', '', '家族の考え', '守りたい', 'けれど', 'つらい'),
+            ('私', '', '家族の思い', '守りたい', 'けれど', 'つらい'),
+            ('私', '', '家族の学び', '守りたい', 'けれど', 'つらい'),
+            ('私', '', '家族の取り組み', '守りたい', 'けれど', 'つらい'),
         )
         for subject, comma, noun, ending, connector, feeling in cases:
             with self.subTest(subject=subject, noun=noun):
@@ -368,9 +375,9 @@ class AnalysisVerticalTests(unittest.TestCase):
             '友人はつらい', 'つらい', '私はつらかった', '私はつらくない',
             '私はつらいかもしれない', '私はとてもつらい', '私はつらいと思う')]
         cases += [old.replace('守りたい', wish) for wish in ('守った', '守りたかった', '守りたくない')]
-        # 家族の時間 now has the full shared finite-contrast proof above.
-        # Hiragana nominal objects remain outside that bounded owner repair.
-        cases += [old.replace('家族を', '家族の気持ちを')]
+        # Lexical kana nouns have a complete shared proof; free kana does not.
+        cases += [old.replace('家族を', noun + 'を') for noun in
+                  ('家族のつらさ', '家族の読んでメモ', '家族の気持ちなら')]
         cases += [old.replace('けれど', 'なら'), old + '？',
             '「' + old + '」と友人が言った', '夢を見た。' + old,
             '友人から聞いた話です。' + old, old + '、という夢を見たのですが、' + '詳細を考えた' * 15]
@@ -479,6 +486,45 @@ class AnalysisVerticalTests(unittest.TestCase):
                 self.assertEqual(len(artifact.graph.nodes), 1)
                 self.assertEqual(artifact.graph.nodes[0].proposition.predicate_lemma, '残す')
                 self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+
+    def test_kana_genitive_wish_keeps_updates_aggregation_and_comparison(self):
+        old = '私は家族の気持ちを守りたいけれど、私はつらい'
+        new = '私は家族の考えを守りたいけれど、私は苦しい'
+        equivalent = 'ぼくは、家族の気持ちを守りたいですけど、ぼくは、辛いです'
+        artifact = self.generate(request(record(memo=old + '。'),
+            record(2, memo=equivalent + '。'))).artifact
+        self.assertEqual(len(artifact.graph.nodes), 1)
+        self.assertEqual([len(a.evidence_refs) for a in artifact.graph.annotations], [2, 6])
+        self.assertEqual(self.compared(old + '。', equivalent + '。').artifact.period_comparison.change_claims, ())
+        self.assertIn('ANNOTATION_EVIDENCE_CHANGED', self.compared(new + '。', old + '。').artifact.safe_projection(
+            authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+        original = record(memo='私は記録を残した。' + old + '。')
+        for answer, count in ((new + '。', 4),
+                ('「' + old + '」ではなく「' + new + '」です。', 2),
+                ('「' + old + '」は取り消します。', 0)):
+            with self.subTest(answer=answer):
+                updated = self.generate(request(self.with_answer(original, answer))).artifact
+                self.assertIsNotNone(updated)
+                self.assertEqual(len(updated.graph.annotations), count)
+                updated.safe_projection(authenticated_owner_scope=OWNER)
+                if count == 2:
+                    self.assertEqual(updated.graph.nodes[1].proposition.arguments, (('を', '家族の考え'),))
+                    for annotation in updated.graph.annotations:
+                        self.assertEqual(annotation.update_refs, (updated.graph.source_updates[0].update_ref,))
+        partial = '「私は家族の気持ちを守りたい」は取り消します。'
+        self.assertEqual(self.generate(request(self.with_answer(original, partial))).status, EngineStatus.UNAVAILABLE)
+        ordinary = self.generate(request(record(memo='私は資料の振り返りを調べたいけれど、私はつらい。'))).artifact
+        self.assertEqual(ordinary.graph.nodes[0].proposition.arguments, (('を', '資料の振り返り'),))
+        self.assertEqual([a.kind for a in ordinary.graph.annotations], ['BURDEN'])
+        for memo in (old.replace('私は家族', '友人は家族'), old.replace('私は家族', '家族'),
+                old.replace('守りたい', '守りたいと思う'), old.replace('私はつらい', '友人はつらい'),
+                '夢を見た。' + old, '友人から聞いた話です。' + old, '「' + old + '」と友人が言った', old + '？'):
+            with self.subTest(memo=memo):
+                result = self.generate(request(record(memo=memo + '。'), record(2, memo='私は記録を残した。'))).artifact
+                self.assertIsNotNone(result)
+                self.assertFalse(result.graph.annotations)
+                self.assertEqual(len(result.graph.nodes), 1)
+                self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in result.graph.unknown_gaps])
 
     def test_protective_topic_comma_keeps_wish_object_and_exact_source(self):
         for subject, separator, noun, ending in (
