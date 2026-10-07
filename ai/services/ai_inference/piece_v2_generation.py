@@ -118,7 +118,11 @@ def generate_piece_candidate(source: PieceSourceSnapshot, *, authenticated_owner
     the immutable saved source; no API, DB, quota or native route is enabled.
     """
     from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
-    from cocolon_meaning_experience_engine.piece_v1c import PieceGenerationRequest, PieceEngineOutcome
+    from cocolon_meaning_experience_engine.piece_source import build_piece_source_meaning
+    from cocolon_meaning_experience_engine.piece_v1c import (
+        PieceGenerationRequest, PieceEngineOutcome,
+        compile_piece_artifact_plan, realize_piece_artifact,
+    )
     from cocolon_meaning_experience_engine.contracts import EngineStatus
     if type(source) is not PieceSourceSnapshot:
         raise unavailable('source_type')
@@ -134,4 +138,29 @@ def generate_piece_candidate(source: PieceSourceSnapshot, *, authenticated_owner
     if (outcome.status != EngineStatus.GENERATED or outcome.artifact is None
             or outcome.artifact_plan is None or outcome.source_meaning is None):
         raise unavailable(outcome.reason_codes[0] if outcome.reason_codes else 'piece_content_unavailable')
+    # A GENERATED result is not authority to attach another input's text to
+    # this request. Rebind the returned meaning to the complete original,
+    # including saved fields/metadata, using the existing CMEE source owner.
+    # Hash consistency inside an artifact cannot prove that source relation.
+    expected_meaning = build_piece_source_meaning(
+        source, expected_owner_id=authenticated_owner_id,
+        expected_saved_input_id=source.saved_input_id,
+        expected_source_version=source.source_version)
+    if (type(outcome.source_meaning) is not type(expected_meaning)
+            or outcome.source_meaning != expected_meaning):
+        raise unavailable('piece_engine_source_binding')
+    expected_plan = compile_piece_artifact_plan(expected_meaning)
+    if (type(outcome.artifact_plan) is not type(expected_plan)
+            or outcome.artifact_plan != expected_plan):
+        raise unavailable('piece_engine_plan_binding')
+    # Reuse the sole author, not a second set of text templates. This catches
+    # source/plan/result substitutions at the engine-to-B8 seam; it is NOT an
+    # independent semantic review of that author or complete PCE-4 safety.
+    # Run only during candidate generation, never on save/export/retrieval.
+    expected_artifact = realize_piece_artifact(
+        expected_meaning, expected_plan, tier=tier,
+        requested_format=requested_format)
+    if (type(outcome.artifact) is not type(expected_artifact)
+            or outcome.artifact != expected_artifact):
+        raise unavailable('piece_engine_artifact_binding')
     return outcome.artifact.as_candidate()
