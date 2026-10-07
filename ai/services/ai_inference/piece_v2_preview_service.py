@@ -1,13 +1,15 @@
-"""Disabled B5-B artifact preparation, before preview persistence/issuance.
+"""Disabled B5-B preparation and internal reviewed-artifact issuance.
 
-Bind the PCE-6 source reference to B5-A's saved-state handoff, then assemble
-CMEE's canonical body and B9's versioned recipe under the same current tier.
-This is NOT an HTTP response or a saved preview: no ID, revision, expiry,
-safety-ready state, quota result or idempotency claim is fabricated. B5-B's
-storage/API and actual renderer acceptance remain separate unfinished work.
+prepare_original retains its pre-issuance contract. issue_prepared_original
+connects an already prepared CMEE/B9 artifact to the existing B5 store only
+when a supplied server reviewer accepts that exact source and artifact.
+No reviewer, renderer or TTL default, HTTP registration or production effect
+is introduced. The concrete safety owner and final transaction fence remain
+unfinished; this internal connection is not a complete public preview issuer.
 """
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 import json
 import re
@@ -235,4 +237,119 @@ class PiecePreviewService:
         except PieceContractError as exc:
             raise _error(exc.code if exc.code in _SERVICE_ERRORS else 'PIECE_TEMPORARILY_UNAVAILABLE') from None
         except Exception:
+            raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None
+
+
+    async def issue_prepared_original(
+        self, authorization: str | None, request: dict, previous: PreparedPiecePreview,
+        *, idempotency_key: str, ttl_seconds: int, renderer_version: str,
+        rpc: Callable[[str, dict], Awaitable[dict]],
+        safety_review: Callable[[PreparedPiecePreview], Awaitable[str]] | None = None,
+    ) -> dict:
+        """Connect a server-held CMEE/B9 assembly to the existing B5 store.
+
+        This is an INTERNAL orchestration seam, not a mounted HTTP issuer.
+        A supplied server reviewer must inspect this exact source AND artifact
+        under all applicable PCE-4 stages. Only its ready/transformed decision
+        can proceed; the default is unavailable. Detector non-match, a frozen
+        dataclass and these transport tests do not supply that decision.
+
+        The reviewer cannot return replacement text. The original request is
+        copied before any await and rebound to the prepared source/selection.
+        Repeats with the same server-held assembly never call a text author;
+        SQL alone owns replay, expiry, revision and atomic insertion. A lost
+        reply is not retried automatically. TTL and renderer identity have no
+        invented defaults and must come from the server's admitted runtime.
+
+        Source/tier are revalidated around review, NOT transactionally locked
+        through the following RPC. That final read/write fence, a concrete
+        PCE-4 reviewer, restart-time replay retrieval and HTTP/UI activation
+        remain prerequisites to exposing this path. No live route is changed.
+        """
+        from piece_v2_content_policy import choose_format
+        from piece_v2_store import issue_piece_preview, _key_hash
+        errors = _SERVICE_ERRORS | {
+            'PIECE_NOT_FOUND', 'PIECE_PREVIEW_STALE', 'PIECE_PREVIEW_EXPIRED',
+        }
+        try:
+            value = _request_snapshot(request)
+            if (type(previous) is not PreparedPiecePreview
+                    or type(previous.handoff) is not PieceSavedHandoff):
+                raise _error('PIECE_REQUEST_INVALID')
+            _key_hash(idempotency_key)
+            if (type(ttl_seconds) is not int or not 0 < ttl_seconds <= 2147483647
+                    or type(renderer_version) is not str
+                    or re.fullmatch(r'[A-Za-z0-9_.:\-]{1,128}', renderer_version) is None):
+                raise _error('PIECE_REQUEST_INVALID')
+            if not callable(safety_review):
+                raise _error('PIECE_SAFETY_UNAVAILABLE')
+            if not callable(rpc):
+                raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+            handoff = previous.handoff
+            lineage = handoff.lineage_payload()
+            expected = {key: lineage['source_input'][key] for key in (
+                'source_input_id', 'source_input_version', 'source_input_bundle_commitment')}
+            expected.update({key: lineage['observation'][key] for key in (
+                'emlis_observation_stage', 'emlis_observation_result_identity',
+                'question_need_decision_identity', 'supplemental_answer_identity')})
+            if value['source_ref'] != expected:
+                raise _error('PIECE_CONFLICT')
+            # Hold a detached copy; neither the request nor a reviewer's copy
+            # of artifact_payload can alter the actual bytes submitted below.
+            artifact = previous.artifact_payload()
+            content_fields = {
+                'format_type', 'eligible_formats', 'content_payload', 'content_payload_hash',
+                'piece_text', 'piece_text_hash', 'visual_recipe', 'visual_recipe_hash',
+            }
+            if (type(artifact) is not dict or set(artifact) != content_fields | {
+                    'api_contract_version', 'piece_contract_version', 'visibility_scope'}
+                    or artifact['api_contract_version'] != PIECE_V2_CONTRACT_VERSIONS['api_contract_version']
+                    or artifact['piece_contract_version'] != PIECE_V2_CONTRACT_VERSIONS['piece_contract_version']
+                    or artifact['visibility_scope'] != 'private'):
+                raise _error('PIECE_HASH_MISMATCH')
+            payload = artifact['content_payload']
+            validate_piece_text_binding(payload, artifact['piece_text'], artifact['piece_text_hash'])
+            if (canonical_sha256_hex(payload) != artifact['content_payload_hash']
+                    or payload['format_type'] != artifact['format_type']):
+                raise _error('PIECE_HASH_MISMATCH')
+            try:
+                selected = choose_format(tier=handoff.original.subscription_tier,
+                    requested=value['requested_format'], eligible=tuple(artifact['eligible_formats']),
+                    recommended=artifact['format_type'])
+                if selected != artifact['format_type']:
+                    raise _error('PIECE_FORMAT_NOT_ELIGIBLE')
+            except PieceContractError:
+                raise _error('PIECE_FORMAT_NOT_ELIGIBLE') from None
+            selection = value['visual_selection']
+            try:
+                validate_visual_recipe(artifact['visual_recipe'], format_type=selected,
+                    language=payload['language'], expected_hash=artifact['visual_recipe_hash'])
+                expected_recipe = build_visual_recipe(selected, tier=handoff.original.subscription_tier,
+                    language=payload['language'], theme=selection['theme_id'],
+                    aspect_ratio=selection['aspect_ratio'], branding=selection['branding_mode'])
+                if expected_recipe != artifact['visual_recipe']:
+                    raise _error('PIECE_VISUAL_SELECTION_NOT_ALLOWED')
+            except PieceContractError:
+                raise _error('PIECE_VISUAL_SELECTION_NOT_ALLOWED') from None
+            current = await self._source_adapter.revalidate_original_handoff(authorization, handoff)
+            if current != handoff:
+                raise _error('PIECE_CONFLICT')
+            decision = await safety_review(previous)
+            if type(decision) is not str or decision not in ('ready', 'transformed'):
+                raise _error('PIECE_SAFETY_UNAVAILABLE')
+            current = await self._source_adapter.revalidate_original_handoff(authorization, handoff)
+            if current != handoff:
+                raise _error('PIECE_CONFLICT')
+            record = {key: artifact[key] for key in content_fields}
+            record.update(source_lineage=lineage, renderer_version=renderer_version,
+                          safety_state='adjusted' if decision == 'transformed' else 'ready')
+            return await issue_piece_preview(
+                authenticated_user_id=handoff.original.authenticated_owner_id,
+                record=record, request_fingerprint=canonical_sha256_hex(value),
+                idempotency_key=idempotency_key, ttl_seconds=ttl_seconds, rpc=rpc)
+        except PieceContractError as exc:
+            raise _error(exc.code if exc.code in errors else 'PIECE_TEMPORARILY_UNAVAILABLE') from None
+        except Exception:
+            # Cancellation still propagates; no arbitrary reviewer/DB body or
+            # diagnostic is surfaced and no recovery write is attempted here.
             raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None
