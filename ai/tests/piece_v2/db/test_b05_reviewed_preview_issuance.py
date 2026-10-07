@@ -110,12 +110,27 @@ def test_hash_consistent_unfaithful_body_cannot_pass_real_review_or_write(databa
     else:
         blocks = [b.replace('友人', '同僚') for b in blocks]
     altered = _changed(prepared, blocks=blocks)
+    assert altered._artifact_json != prepared._artifact_json
     assert asyncio.run(review.review_prepared_original(altered)) == 'ineligible'
-    # The service's existing canonical/visual checks may reject even earlier.
+    reviewed = []
+
+    async def actual_review(candidate):
+        reviewed.append(candidate)
+        return await review.review_prepared_original(candidate)
+
     with pytest.raises(PieceContractError) as error:
-        _B5['_issue'](owner, request, altered, review.review_prepared_original,
+        _B5['_issue'](owner, request, altered, actual_review,
                       state, _B5['_native_rpc'](conn, state))
-    assert error.value.code in {'PIECE_SAFETY_UNAVAILABLE', 'PIECE_HASH_MISMATCH', 'PIECE_TEMPORARILY_UNAVAILABLE'}
+    if mutation == 'empty':
+        # Empty body_blocks violates the existing content contract before the
+        # service calls its reviewer. Do not weaken that early rejection.
+        assert error.value.code == 'PIECE_REQUEST_INVALID'
+        assert reviewed == []
+    else:
+        # Well-shaped, hash-consistent meaning changes must reach the actual
+        # reviewer and fail there, not pass via an unrelated transient error.
+        assert error.value.code == 'PIECE_SAFETY_UNAVAILABLE'
+        assert reviewed == [altered]
     assert not state['posts']
     assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
     assert _B5['_B4']['_used'](conn) == 0
