@@ -566,14 +566,55 @@ class AnalysisVerticalTests(unittest.TestCase):
         self.assertEqual(ordinary.graph.nodes[0].proposition.arguments, (('を', '資料の詳しい振り返り'),))
         self.assertEqual([a.kind for a in ordinary.graph.annotations], ['BURDEN'])
 
+    def test_bad_attributive_wish_keeps_target_updates_and_comparison(self):
+        old = '私は家族の悪い取り組みを守りたいけれど、私はつらい'
+        new = old.replace('悪い', '良い')
+        equivalent = 'ぼくは、家族の悪い取り組みを守りたいですけど、ぼくは、辛いです'
+        artifact = self.generate(request(record(memo=old + '。'),
+            record(2, memo=equivalent + '。'))).artifact
+        node, = artifact.graph.nodes
+        self.assertEqual(node.proposition.arguments, (('を', '家族の悪い取り組み'),))
+        self.assertEqual([len(a.evidence_refs) for a in artifact.graph.annotations], [2, 6])
+        self.assertEqual(self.compared(old + '。', equivalent + '。').artifact.period_comparison.change_claims, ())
+        self.assertIn('ANNOTATION_EVIDENCE_CHANGED', self.compared(new + '。', old + '。').artifact.safe_projection(
+            authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+        source = freeze_analysis_sources(request(record(memo=old + '。'))).sources[0].envelope
+        for ref in node.evidence_refs[:1]:
+            raw = source.raw_utf8[ref.utf8_start:ref.utf8_end]
+            field = source.raw_utf8[ref.field_utf8_start:ref.field_utf8_end].decode()
+            self.assertEqual(field[ref.scalar_start:ref.scalar_end], raw.decode())
+            self.assertEqual(hashlib.sha256(raw).hexdigest(), ref.literal_sha256)
+            self.assertEqual(raw.decode(), '私は家族の悪い取り組みを守りたい')
+        for noun in ('家族の取り組み', '家族の良い取り組み', '悪い家族の取り組み'):
+            with self.subTest(noun=noun), self.assertRaises(AnalysisSourceError):
+                forged = replace(node, proposition=replace(node.proposition, arguments=(('を', noun),)))
+                replace(artifact, graph=replace(artifact.graph, nodes=(forged,))).safe_projection(
+                    authenticated_owner_scope=OWNER)
+        original = record(memo='私は記録を残した。' + old + '。')
+        for answer, count in ((new + '。', 4),
+                ('「' + old + '」ではなく「' + new + '」です。', 2),
+                ('「' + old + '」は取り消します。', 0)):
+            with self.subTest(answer=answer):
+                updated = self.generate(request(self.with_answer(original, answer))).artifact
+                self.assertIsNotNone(updated)
+                self.assertEqual(len(updated.graph.annotations), count)
+                updated.safe_projection(authenticated_owner_scope=OWNER)
+                if count == 2:
+                    self.assertEqual(updated.graph.nodes[1].proposition.arguments, (('を', '家族の良い取り組み'),))
+                    for annotation in updated.graph.annotations:
+                        self.assertEqual(annotation.update_refs, (updated.graph.source_updates[0].update_ref,))
+        partial = '「私は家族の悪い取り組みを守りたい」は取り消します。'
+        self.assertEqual(self.generate(request(self.with_answer(original, partial))).status, EngineStatus.UNAVAILABLE)
+        ordinary = self.generate(request(record(memo='私は資料の悪い振り返りを調べたいけれど、私はつらい。'))).artifact
+        self.assertEqual(ordinary.graph.nodes[0].proposition.arguments, (('を', '資料の悪い振り返り'),))
+        self.assertEqual([a.kind for a in ordinary.graph.annotations], ['BURDEN'])
+
     def test_attributive_genitive_wish_keeps_unproved_forms_and_scope_unresolved(self):
         old = '私は家族の新しい生活を守りたいけれど、私はつらい'
         cases = [old.replace('新しい生活', noun) for noun in ('新しくない生活', '新しかった生活',
             '新しく生活', 'とても新しい生活', '新しい大きい生活', '楽しい生活', '新しい',
             '新しい来週生活', '新しい何', '大きい取り組み来週メモ',
-            # Existing self-evaluation detection also owns 悪い; nominal
-            # syntax alone must not bypass that separate unresolved boundary.
-            '悪い取り組み')]
+            '悪いやり方')]
         cases += [old.replace('私は家族', '友人は家族'), old.replace('私は家族', '家族'),
             old.replace('生活を守りたい', '生活を友人は守りたい'), old.replace('守りたい', '守りたいと思う'),
             old.replace('守りたい', '守りたかった'), old.replace('守りたい', '守りたくない'),

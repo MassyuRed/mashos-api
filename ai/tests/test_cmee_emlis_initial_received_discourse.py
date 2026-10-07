@@ -58,6 +58,7 @@ def test_genitive_wish_contrast_preserves_shared_finite_proof_and_actual_body(le
 
 @pytest.mark.parametrize('noun', [
     '新しい家族の生活', '新しい学びノートの長い振り返り',
+    '悪い家族の取り組み', '家族の悪い取り組み', '悪い学びノートの長い振り返り',
 ] + ['家族の' + adjective + '取り組み' for adjective in (
     '新しい', '古い', '大きい', '小さい', '長い', '短い', '詳しい', '難しい', '易しい', '良い')])
 def test_attributive_genitive_wish_preserves_source_argument_and_actual_body(noun):
@@ -92,7 +93,7 @@ def test_attributive_genitive_wish_preserves_source_argument_and_actual_body(nou
 ])
 def test_attributive_genitive_wish_has_bounded_nominal_owner(adjective):
     from emlis_ai_grounded_observation_plan import _source_operator_owner_scope_is_bound
-    # Syntax proof does not override separate safety/self-evaluation detection.
+    # Syntax proof remains separate from safety/self-evaluation detection.
     assert _source_operator_owner_scope_is_bound('私は家族の' + adjective + '取り組みを守りたい')
 
 

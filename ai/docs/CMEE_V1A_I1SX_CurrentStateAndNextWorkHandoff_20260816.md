@@ -15234,3 +15234,30 @@ OBSERVED_BLOCKER_MINIMAL_FIX。root華恋がCodex Workの単一編集・検証�
 STRUCTURE_MAP_DELTA_NONE：既存意味owner／route／保存lifecycle内の名詞句判定補正。API既存Plan1／test3／current identity1／handoff1、Cocolon current03／詳細04／06の全9file modify、新規repo file0。Analysis専用コード／Safety実装／IF／Piece／共有API契約／DB／SQL／RN変更0。最終suite後の製品source変更0。既存contractsの86 subfail／1 setup error等は今回未再検証・未修正、全repo PASSではない。実DB・React component／native・本人入力・商品受入れ未確認、限定TECHNICAL_CREDIT・商品NOT_CLEAR維持。main／merge／deploy／env／native build操作0、u161未配置。反映commit・全9file remote bytes／parent／変更path集合の照合結果は既存PR3／30へ記録する。
 
 残件：「悪い」の名詞修飾を自己否定／自己評価として拾う既存判定は上記原因を保存し、通常希望やAnalysisだけの例外で迂回しない。任意の仮名名詞・未対応修飾／時点／host、一般感情／認知、夢・伝聞から現実へ戻る境界、unknown反復表示も残る。指定版での本人生成→保存再表示→比較の実機残件は別に維持する。次回は本節と追跡source/testから続け、scratch log／JSONを正式再開原典にしない。
+
+
+## 2026-10-08 JST u162 — 名詞を修飾する「悪い」を本人の自己評価と混同しない
+
+Mashの分析内容修正継続指示と添付「前回作業内容(20261007-144824).txt」からu161の明示残件を再開。開始HEADはAPI `9ed5ddd5ce09bc352ab594edc334c3baca382ea2`／Cocolon `cdd2f0d2675293f780a4bb317c73fb1f0ffb988b`、Draft/open/unmerged。前提と作業姿勢current、恒久incident全文、全体設計01と01A〜Cの地図導線、Analysis current03のowner表／詳細04／対象実ファイル、最新weekly20261003の§5と§6.6〜6.10、Karen-Diary入口とmemory2本を確認。System Context prepareは保存基準commitへのancestor照合で不成立。追跡原典を直接参照し、生成Contextをfreshと扱わない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。利用者の希望対象と負荷を正しい文章・図へ届ける既存設計内の限定原因修正。既存の内容修正・Draft PR反映承認範囲で、root華恋がCodex Workの単一編集・実行・反映owner。同環境read-only agentが原因と差分を独立reviewし、別model Pro reviewとは報告しない。追加費用・Mash操作0。完成条件は実生成、原文出典、更新・比較・保存再読・同一RN表示modelの一致。新しいSafety方針・契約・依存・稼働環境への拡張は対象外。全文法の対応完了を配置／実機の前提にしない。
+
+開始版の実engineで「家族の悪い取り組み」「悪い家族の取り組み」「資料の悪い振り返りを調べたい」の希望＋つらい3例はUNAVAILABLE、良い取り組みはGENERATED。SafetyのSELFから24字以内の否定評価と、Planの非否定自己評価regexの両方が「悪い」を拾っていた。
+
+製品sourceは共有Safetyと既存Planだけ。Safety内の小さな共有regex fragmentを双方が使用し、「悪い」の直後が既存の漢字／カタカナ・仮名入り名詞、任意の属格連鎖、終端の格「を」と証明できる場合だけ自己評価検出と区別する。原文をmask／置換せず、Analysis grammarや作者へ逆依存しない。SELF表記／人／奴／やつで始まる名詞は保守的に除外対象外とし、悪い自分・僕自身・俺自身・人間・人間性・人格などは従来判定を残す。独立した「私は悪い」「悪いと思う」、前後や同文の別の自己否定、悪く／弱い／遅い、未証明仮名・不完全格、緊急・支援・自己攻撃の判定と優先順は保持。完全名詞句の自己評価誤認修正であり、Safetyの一般無効化やAnalysisだけの迂回ではない。
+
+修正後、上記3例はいずれもGENERATED。保護意向は同じ希望にPROTECTIVEとBURDEN、通常希望はBURDENを保持。修飾位置・原文scalar／UTF-8／hashを保ち、守れた事実、本人の人格、因果・改善を推測しない。名詞修飾を削除／交換／係り先変更したsafe DTOやEmlis本文の逆検証は拒否する。
+
+検証環境は再発見・版確認したPython3.12.14／pytest8.4.1／pytest-subtests0.14.2／FastAPI0.116.1／httpx0.28.1／Pydantic2.13.5。絶対entrypointを使用、既存FB172移行pluginは無効化。製品依存変更0。
+
+- 最終 `test_cmee_analysis_v1d_vertical.py test_analysis_observed_storage.py test_analysis_saved_period.py test_emlis_ai_safety_triage_response_contract.py test_cmee_0066_self_denial_dependency_and_exact_cover.py` は **327 PASS／1 FAIL／1895 subtests PASS（16.85秒）**。内訳はAnalysis vertical240／storage58／saved-period16、Safety7、0066の6PASS・1FAIL。補足／全文訂正／撤回／部分撤回保留・同義集約・比較差0／修飾差、実service＋合成RPCの保存と再生成を禁止したreadを確認。
+- FAILは既存0066の `test_01_accountability_returns_to_normal_two_move_plan`。Reception moveの旧期待2個に対し実際3個となる差。未変更の開始commit専用worktreeで同じ1件を実行し、1FAIL／6deselected（7.74秒）。XMLのcase名・message・tracebackが最終版と完全一致。期待を変更せず既存残差として保持し、全repo PASSとしない。
+- 最終 `test_cmee_emlis_initial_received_discourse.py -k 'genitive or contrast or burden_topic_comma'` は **132 PASS／147 deselected（18.52秒）**。実本文・有限witness・原文range・主体・対比・独立readerによる改変拒否を確認。
+- 最終 `test_cmee_v1a_i1sx_contracts.py -k test_active_final_language_owner_chain_has_zero_legacy_compose_calls` は **1 PASS／193 deselected（22.17秒）**。共有current snapshotだけを同期し、9owner／18payloadとhistorical frozen manifestは保持。language `d794ccd551a6dd27f15145f7845261199ad50e33f7b1c42725783c8451192fd2`／runtime `44a9d38cd3480336863a62bbd65863c74485a72332dbd7de3ed45258d03c3f40`。最終対象合計 **460 PASS／既存1FAIL**。
+- rootがAnalysis合成9全文（基本、修飾位置、通常希望、集約、補足、訂正、撤回、同義比較、変更比較）を読取。実 `buildWatashiMapV2ViewModel` の全文・identity・node順・edge・注記・unknown・競合・比較stateが9/9一致。Emlis合成3全文も読取、独立reader PASS。既存の定型的な受け取り・unknown反復は残り、商品品質完成とはしない。
+
+途中経過：最初の対象検査は31PASS／新subcase1FAIL／33subtests PASS。代替保留例に置いた「取り組み方」は既存名詞として受理可能だったため、未証明の「やり方」へ検査を訂正。旧「悪い取り組み」は今回の原因修復によりpositive検査へ移し、その他の既存保留期待は維持。最初の結合検査も327PASS／既存1FAILで、旧期待差を上記baselineにより確認。read-only reviewが指摘したSELF＋自身と人間性／人格の見落としは、保守的prefix除外と回帰追加で修正し、最終同一scopeを再実行した。skip／xfail・既存期待の一括緩和0。最終suite後の製品source変更0。
+
+STRUCTURE_MAP_DELTA_NONE：既存意味owner／依存方向／route／保存lifecycle内の修正。API既存Safety1／Plan1／test4／current identity1／handoff1、Cocolon current03／詳細04／06の11file modify、新規repo file0。Analysis専用source・Piece・API契約・DTO・DB・SQL・RN変更0。main／merge／deploy／env／native build操作0。u162未配置。実DB・React component／native・本人入力・商品受入れ未確認。限定TECHNICAL_CREDIT、商品NOT_CLEAR維持。過去の旧contracts86 subfail／1setup errorは今回再検証していない。反映commitと全11fileのremote内容／変更path照合は既存PR3／30へ記録する。
+
+残件：今回保守的に残したSELF／人prefix名詞、任意仮名、他の形容詞の名詞修飾と自己評価の区別、未対応時点／host、一般感情／認知、夢・伝聞から現実へ戻る境界、unknown反復、上記0066の既存Reception期待差。実機の指定版生成→保存再表示→比較は別残件。次は最新の対象資料とこの記録から残件を選び、scratch JSON／logを正式再開原典にしない。

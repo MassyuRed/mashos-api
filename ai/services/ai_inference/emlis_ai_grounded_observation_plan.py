@@ -33,6 +33,7 @@ from emlis_ai_observation_integrator_service import integrate_perspective_board
 from emlis_ai_perspective_board import build_perspective_board
 from emlis_ai_perspective_observers import run_perspective_observers
 from emlis_ai_safety_triage import (
+    SELF_APPRAISAL_BAD_SOURCE,
     TRIAGE_SAFE_OBSERVATION,
     TRIAGE_SAFETY_BLOCKED_EMERGENCY,
     TRIAGE_SAFETY_SUPPORT_REQUIRED,
@@ -365,7 +366,7 @@ _CHANGE_RE: Final = re.compile(
 _BOUNDED_NON_DENIAL_SELF_EVALUATION_RE: Final = re.compile(
     r"(?:(?:自分|私|わたし|僕|ぼく|俺|おれ)(?:自身)?"
     r"(?:には|に|なんか|なんて|など|は|が|も|こそ|だけ)"
-    r"[^。！？!?\n]{0,24}(?:弱(?:い|く)|悪(?:い|く)|遅(?:い|く)|"
+    r"[^。！？!?\n]{0,24}(?:弱(?:い|く)|" + SELF_APPRAISAL_BAD_SOURCE + r"|悪く|遅(?:い|く)|"
     r"責任(?:がある|を感じ))|"
     r"(?:自分|私|わたし|僕|ぼく|俺|おれ)(?:自身)?(?:のこと)?を"
     r"[^。！？!?\n]{0,20}比べ(?:て|る))"

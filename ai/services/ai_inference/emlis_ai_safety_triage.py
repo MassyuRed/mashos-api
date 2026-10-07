@@ -54,11 +54,23 @@ _SUPPORT_REQUIRED_RE: Final = re.compile(
     re.IGNORECASE,
 )
 _SELF_REFERENCE_SOURCE: Final = r"(?:自分|私|わたし|俺|おれ|僕|ぼく)"
+# A closed nominal object makes 悪い attributive, not a speaker appraisal.
+# Keep self/person heads and unproved kana conservative; do not change raw text.
+_APPRAISAL_OBJECT_NOMINAL_SOURCE: Final = (
+    r"(?!(?:" + _SELF_REFERENCE_SOURCE + r"|人|奴|やつ))"
+    r"(?:(?:考え|思い|気持ち|学び|振り返り|取り組み)[一-鿿々〆〇ァ-ヶー]*|"
+    r"[一-鿿々〆〇ァ-ヶー]+)"
+)
+SELF_APPRAISAL_BAD_SOURCE: Final = (
+    r"悪い(?!" + _APPRAISAL_OBJECT_NOMINAL_SOURCE
+    + r"(?:の(?:新しい|古い|大きい|小さい|長い|短い|詳しい|難しい|易しい|良い|悪い)?"
+    + _APPRAISAL_OBJECT_NOMINAL_SOURCE + r")*を)"
+)
 _SELF_WORTH_NEGATION_SOURCE: Final = (
     # ``最低でも15分`` is a lower-bound adverb, not a self-worth claim.
     r"(?:嫌い|きらい|駄目|だめ|ダメ(?!ージ)|最低(?!でも|限)|クズ|いらない|必要ない|"
     r"価値(?:が|は|も)?(?:ない|無い)|役に立たない|好きになれない|許せない|"
-    r"中途半端|失敗ばかり|悪い(?:人間|人|奴|やつ)?)"
+    r"中途半端|失敗ばかり|" + SELF_APPRAISAL_BAD_SOURCE + r"(?:人間|人|奴|やつ)?)"
 )
 _SELF_DIRECTED_NEGATIVE_ACTION_SOURCE: Final = (
     r"(?:責め(?:た|て|る|続け)|追い込(?:ん|む|んで)|傷つけ(?:た|て|る|続け)|"

@@ -22,6 +22,46 @@ from emlis_ai_self_denial_safe_state_answer import build_self_denial_safe_state_
 from emlis_ai_types import EvidenceSpan, GraphClaim, ObservationGraph
 
 
+def test_bad_attributive_object_is_not_speaker_appraisal() -> None:
+    from emlis_ai_grounded_observation_plan import _operator_codes_for_text
+    from emlis_ai_safety_triage import is_bounded_self_denial_text, classify_emlis_safety_triage_text
+    for subject in ('私', 'わたし', '僕', 'ぼく', '自分', '俺', 'おれ'):
+        for noun in ('家族の悪い取り組み', '悪い取り組み', '悪い学びノートの長い振り返り',
+                     '悪い資料の内容', '家族の悪い考え'):
+            text = subject + 'は' + noun + 'を守りたいけれど、' + subject + 'はつらい。'
+            assert not is_bounded_self_denial_text(text), text
+            assert 'operator:self_evaluation' not in _operator_codes_for_text(text), text
+            assert classify_emlis_safety_triage_text(text).safety_triage_kind == 'safe_observation'
+
+
+def test_bad_object_does_not_hide_self_denial_or_emergency() -> None:
+    from emlis_ai_grounded_observation_plan import _operator_codes_for_text
+    from emlis_ai_safety_triage import is_bounded_self_denial_text, classify_emlis_safety_triage_text
+    wish = '私は家族の悪い取り組みを守りたい。'
+    for appraisal in ('私は悪い。', '私は悪いと思う。', '私は悪いから謝った。',
+                      '私は悪い人間だ。', '私は悪い自分を変えたい。', '私は悪い人間をやめたい。',
+                      '僕は悪い僕自身を変えたい。', '俺は悪い俺自身を変えたい。',
+                      '私は悪い人間性を直したい。', '私は悪い人格を変えたい。',
+                      '私はダメ。', '自分には価値がない。', '自分を責め続けている。'):
+        for text in (appraisal, appraisal + wish, wish + appraisal):
+            assert is_bounded_self_denial_text(text), text
+            assert 'operator:self_evaluation' in _operator_codes_for_text(text), text
+            assert classify_emlis_safety_triage_text(text).safety_triage_kind == 'self_denial_safe_state_answer'
+    for text in ('私はダメだけど悪い取り組みを守りたい。',
+                 '私は悪い取り組みを守りたいけれど私は悪い。',
+                 '私は悪い取り組みを守りたいけれど自分には価値がない。'):
+        assert is_bounded_self_denial_text(text), text
+        assert 'operator:self_evaluation' in _operator_codes_for_text(text), text
+    for unresolved in ('私は悪い取り組み。', '私は悪い取り組みの。', '私は悪いやり方を変えたい。'):
+        assert is_bounded_self_denial_text(unresolved), unresolved
+    for text in ('私は悪く思う。', '私は弱い。', '私は遅い。'):
+        assert 'operator:self_evaluation' in _operator_codes_for_text(text), text
+    for signal, kind in (('死にたい。', 'safety_blocked_emergency'),
+                         ('助けが必要。', 'safety_support_required')):
+        for text in (signal + wish, wish + signal):
+            assert classify_emlis_safety_triage_text(text).safety_triage_kind == kind, text
+
+
 def _span(text: str, *, detected_type: str = "event", span_id: str = "memo.1") -> EvidenceSpan:
     return EvidenceSpan(
         span_id=span_id,
