@@ -346,7 +346,10 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                 (plain.replace('家族', '家族の時間'), changed.replace('生活', '生活の基盤'), True),
                 (plain.replace('家族', '家族の気持ち'), equivalent.replace('家族', '家族の気持ち'), False),
                 (equivalent.replace('家族', '家族の気持ち'), plain.replace('家族', '家族の気持ち'), False),
-                (plain.replace('家族', '家族の気持ち'), changed.replace('生活', '家族の考え'), True)):
+                (plain.replace('家族', '家族の気持ち'), changed.replace('生活', '家族の考え'), True),
+                (plain.replace('家族', '家族の新しい生活'), equivalent.replace('家族', '家族の新しい生活'), False),
+                (equivalent.replace('家族', '家族の新しい生活'), plain.replace('家族', '家族の新しい生活'), False),
+                (plain.replace('家族', '家族の新しい生活'), plain.replace('家族', '家族の古い生活'), True)):
             with self.subTest(now=now):
                 fx = await comparison_fixture(current_memo=now, previous_memo=before)
                 row, private = fx['row'], fx['private']

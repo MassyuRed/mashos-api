@@ -56,6 +56,46 @@ def test_genitive_wish_contrast_preserves_shared_finite_proof_and_actual_body(le
         assert not read_body(context, body.replace(old, new)).passed
 
 
+@pytest.mark.parametrize('noun', [
+    '新しい家族の生活', '新しい学びノートの長い振り返り',
+] + ['家族の' + adjective + '取り組み' for adjective in (
+    '新しい', '古い', '大きい', '小さい', '長い', '短い', '詳しい', '難しい', '易しい', '良い')])
+def test_attributive_genitive_wish_preserves_source_argument_and_actual_body(noun):
+    from test_cmee_emlis_detached_observation import read_body
+    left, right = '私は' + noun + 'を守りたい', '私はつらい'
+    context = actual(request=begin(left + 'けれど、' + right + '。'))
+    result, plan, _sentence, resolver, _selected = context
+    wish, burden = [n for n in plan.nuclei if n.source_fields == ('memo',)]
+    assert (wish.kind, wish.semantic_frame.modality) == ('wish', 'wish')
+    assert 'lexical:source_finite_contrast_feeling' in burden.semantic_frame.attribute_codes
+    assert not any(c.startswith('semantic_dependency:') for n in (wish, burden)
+                   for c in n.semantic_frame.attribute_codes)
+    assert any((r.type, r.from_nucleus_id, r.to_nucleus_id) ==
+        ('contrast', wish.nucleus_id, burden.nucleus_id) for r in plan.relations)
+    for node, expected in ((wish, left), (burden, right)):
+        code, = (c for c in node.semantic_frame.attribute_codes if c.startswith('source_fragment_scalar_range:'))
+        start, end = map(int, code.split(':')[1:])
+        assert resolver.resolve(node.source_span_ids[0]).raw_text[start:end] == expected
+        assert node.semantic_frame.actor == 'current_user'
+    body = result.artifact.text
+    assert left in body and right in body
+    assert read_body(context, body).passed
+    adjective = next(a for a in ('新しい', '古い', '大きい', '小さい', '長い', '短い',
+        '詳しい', '難しい', '易しい', '良い', '悪い') if a in noun)
+    for replacement in ('', '古い' if adjective != '古い' else '新しい'):
+        mutated = body.replace(adjective, replacement, 1)
+        assert mutated != body and not read_body(context, mutated).passed
+
+
+@pytest.mark.parametrize('adjective', [
+    '新しい', '古い', '大きい', '小さい', '長い', '短い', '詳しい', '難しい', '易しい', '良い', '悪い',
+])
+def test_attributive_genitive_wish_has_bounded_nominal_owner(adjective):
+    from emlis_ai_grounded_observation_plan import _source_operator_owner_scope_is_bound
+    # Syntax proof does not override separate safety/self-evaluation detection.
+    assert _source_operator_owner_scope_is_bound('私は家族の' + adjective + '取り組みを守りたい')
+
+
 @pytest.mark.parametrize('fragment', [
     '友人は家族の時間を守りたい', '家族の時間を守りたい',
     '私は友人は家族の時間を守りたい', '私は家族の時間を友人は守りたい',
@@ -67,6 +107,10 @@ def test_genitive_wish_contrast_preserves_shared_finite_proof_and_actual_body(le
     '私は家族の気持ちを友人は守りたい', '私は家族の気持ちを守りたいと聞いた',
     '私は家族の気持ちを守りたい気持ちがある', '私は家族の気持ちを守りたいかもしれない',
     '私は家族の気持ちを守りたくない', '私は家族の気持ちを守りたかった',
+    '私は家族の新しくない生活を守りたい', '私は家族の新しかった生活を守りたい',
+    '私は家族の新しく生活を守りたい', '私は家族のとても新しい生活を守りたい',
+    '私は家族の新しい大きい生活を守りたい', '私は家族の楽しい生活を守りたい',
+    '私は家族の新しいを守りたい', '私は家族の新しい生活を友人は守りたい',
 ])
 def test_genitive_wish_owner_repair_does_not_lend_self_to_unproved_hosts(fragment):
     from emlis_ai_grounded_observation_plan import _source_operator_owner_scope_is_bound

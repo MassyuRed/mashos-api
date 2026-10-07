@@ -1709,7 +1709,9 @@ _BOUNDED_OPERATOR_PREFIX_RE: Final = re.compile(
 # Nominal arguments of a wish can contain kana-bearing lexical nouns.
 # Prove each whole segment, so 気持ち is not an embedded feeling predicate
 # and arbitrary kana cannot hide another subject, case or finite clause.
+# A bounded attributive stays inside its nominal argument, not a new assessment.
 _WISH_OBJECT_NOMINAL_SOURCE: Final = (
+    r"(?:新しい|古い|大きい|小さい|長い|短い|詳しい|難しい|易しい|良い|悪い)?"
     r"(?:(?:考え|思い|気持ち|学び|振り返り|取り組み)[一-鿿々〆〇ァ-ヶー]*|"
     r"[一-鿿々〆〇ァ-ヶー]+)"
 )

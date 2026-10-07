@@ -290,7 +290,11 @@ class AnalysisVerticalTests(unittest.TestCase):
             ('私', '', '家族の思い', '守りたい', 'けれど', 'つらい'),
             ('私', '', '家族の学び', '守りたい', 'けれど', 'つらい'),
             ('私', '', '家族の取り組み', '守りたい', 'けれど', 'つらい'),
-        )
+            ('私', '', '新しい家族の生活', '守りたい', 'けれど', 'つらい'),
+            ('ぼく', '、　', '新しい学びノートの長い振り返り', '守りたいです', 'けれども', '苦しいです'),
+        ) + tuple(('私', '', '家族の' + adjective + '取り組み', '守りたい', 'けれど', 'つらい')
+            for adjective in ('新しい', '古い', '大きい', '小さい', '長い', '短い', '詳しい',
+                              '難しい', '易しい', '良い'))
         for subject, comma, noun, ending, connector, feeling in cases:
             with self.subTest(subject=subject, noun=noun):
                 left = subject + 'は' + comma + noun + 'を' + ending
@@ -525,6 +529,65 @@ class AnalysisVerticalTests(unittest.TestCase):
                 self.assertFalse(result.graph.annotations)
                 self.assertEqual(len(result.graph.nodes), 1)
                 self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in result.graph.unknown_gaps])
+
+    def test_attributive_genitive_wish_keeps_target_updates_and_comparison(self):
+        old = '私は家族の新しい生活を守りたいけれど、私はつらい'
+        new = old.replace('新しい', '古い')
+        equivalent = 'ぼくは、家族の新しい生活を守りたいですけど、ぼくは、辛いです'
+        artifact = self.generate(request(record(memo=old + '。'),
+            record(2, memo=equivalent + '。'))).artifact
+        node, = artifact.graph.nodes
+        self.assertEqual(node.proposition.arguments, (('を', '家族の新しい生活'),))
+        self.assertEqual([len(a.evidence_refs) for a in artifact.graph.annotations], [2, 6])
+        self.assertEqual(self.compared(old + '。', equivalent + '。').artifact.period_comparison.change_claims, ())
+        self.assertIn('ANNOTATION_EVIDENCE_CHANGED', self.compared(new + '。', old + '。').artifact.safe_projection(
+            authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+        for noun in ('家族の生活', '家族の古い生活', '新しい家族の生活'):
+            with self.subTest(noun=noun), self.assertRaises(AnalysisSourceError):
+                forged = replace(node, proposition=replace(node.proposition, arguments=(('を', noun),)))
+                replace(artifact, graph=replace(artifact.graph, nodes=(forged,))).safe_projection(
+                    authenticated_owner_scope=OWNER)
+        original = record(memo='私は記録を残した。' + old + '。')
+        for answer, count in ((new + '。', 4),
+                ('「' + old + '」ではなく「' + new + '」です。', 2),
+                ('「' + old + '」は取り消します。', 0)):
+            with self.subTest(answer=answer):
+                updated = self.generate(request(self.with_answer(original, answer))).artifact
+                self.assertIsNotNone(updated)
+                self.assertEqual(len(updated.graph.annotations), count)
+                updated.safe_projection(authenticated_owner_scope=OWNER)
+                if count == 2:
+                    self.assertEqual(updated.graph.nodes[1].proposition.arguments, (('を', '家族の古い生活'),))
+                    for annotation in updated.graph.annotations:
+                        self.assertEqual(annotation.update_refs, (updated.graph.source_updates[0].update_ref,))
+        partial = '「私は家族の新しい生活を守りたい」は取り消します。'
+        self.assertEqual(self.generate(request(self.with_answer(original, partial))).status, EngineStatus.UNAVAILABLE)
+        ordinary = self.generate(request(record(memo='私は資料の詳しい振り返りを調べたいけれど、私はつらい。'))).artifact
+        self.assertEqual(ordinary.graph.nodes[0].proposition.arguments, (('を', '資料の詳しい振り返り'),))
+        self.assertEqual([a.kind for a in ordinary.graph.annotations], ['BURDEN'])
+
+    def test_attributive_genitive_wish_keeps_unproved_forms_and_scope_unresolved(self):
+        old = '私は家族の新しい生活を守りたいけれど、私はつらい'
+        cases = [old.replace('新しい生活', noun) for noun in ('新しくない生活', '新しかった生活',
+            '新しく生活', 'とても新しい生活', '新しい大きい生活', '楽しい生活', '新しい',
+            '新しい来週生活', '新しい何', '大きい取り組み来週メモ',
+            # Existing self-evaluation detection also owns 悪い; nominal
+            # syntax alone must not bypass that separate unresolved boundary.
+            '悪い取り組み')]
+        cases += [old.replace('私は家族', '友人は家族'), old.replace('私は家族', '家族'),
+            old.replace('生活を守りたい', '生活を友人は守りたい'), old.replace('守りたい', '守りたいと思う'),
+            old.replace('守りたい', '守りたかった'), old.replace('守りたい', '守りたくない'),
+            old.replace('私はつらい', '友人はつらい'), '夢を見た。' + old,
+            '友人から聞いた話です。' + old, '「' + old + '」と友人が言った', old + '？']
+        for memo in cases:
+            with self.subTest(memo=memo):
+                artifact = self.generate(request(record(memo=memo + '。'),
+                    record(2, memo='私は記録を残した。'))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertFalse(artifact.graph.annotations)
+                node, = artifact.graph.nodes
+                self.assertEqual(node.proposition.predicate_lemma, '残す')
+                self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
 
     def test_protective_topic_comma_keeps_wish_object_and_exact_source(self):
         for subject, separator, noun, ending in (

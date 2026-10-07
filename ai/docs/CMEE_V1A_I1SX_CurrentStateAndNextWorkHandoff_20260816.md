@@ -15211,3 +15211,26 @@ OBSERVED_BLOCKER_MINIMAL_FIX、既存の内容修正・PR反映承認内の実�
 STRUCTURE_MAP_DELTA_NONE：既存の意味owner/route/保存lifecycle内の名詞句判定修正。API既存Plan1/test3/current identity1/handoff1、Cocolon current03/詳細04/06の全9file modify、新規repo file0。Analysis専用コード/IF/Piece/共有API契約/DB/SQL/RNは変更0。main/merge/deploy/env/native build操作0、u160未配置。実DB・React component/native・本人入力・商品受入れ未確認、限定TECHNICAL_CREDIT、商品NOT_CLEAR維持。反映commit・全9file remote bytesと変更path照合結果は既存PR3/30へ記録する。
 
 残件：任意の仮名名詞（「家族のつらさ」等）、未対応修飾/時点/host、一般感情/認知、夢・伝聞から現実へ戻る境界、unknown反復表示。本人生成→保存再表示→比較する指定版の実機残件は別に維持し、未対応文法の全解消を配置/実機の新しい前提にしない。次回は本節と追跡source/testから続け、scratch log/JSONへ依存しない。
+
+
+## 2026-10-07 JST u161 — 希望対象の連体修飾と負荷を保持
+
+Mashの分析内容修正継続指示からu160残件を再開。開始headはAPI `aa152c962836c90e0651316abd2a9a6101ca8560`／Cocolon `1ae61532fbb6a08f66beea765a20b2c2e3bec871`、fresh PR3／30のDraft/open/unmergedを確認。同sessionで確認済みの前提・作業姿勢current、全体設計・全file地図・Analysis current03／詳細04、最新weekly20261003 §6.6〜6.10とu160記録を継承。恒久incidentは今回も全文再読。System Contextの既知workspace不在は追跡正本の直接読取で補い、生成Contextをfreshとは扱わない。Karen-Diary必須3fileの同session確認を継承し、この作業のための再取得はしていない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。root華恋がCodex Workの単一編集・検証・GitHub反映owner。同環境read-only補助が原因、最終source/testと全本文をreviewし、具体的blockerなし。別model Pro reviewではない。継続修正・既存PR反映承認の範囲内、追加費用・Mash操作0。最新weeklyの最小実動作優先を維持し、全文法対応を配置／実機の新たな前提にしない。
+
+開始版の実engineでは「家族の生活」「新しい生活」の希望＋つらいは生成できるが、「家族の新しい生活」「新しい家族の生活」「家族の大きい取り組み」「新しい学びノートの長い振り返り」の4例はUNAVAILABLE。「資料の詳しい振り返りを調べたい＋つらい」は希望だけ生成しBURDENを失っていた。Analysis既存名詞文法は各区間の連体修飾を受理する一方、u160の共有 `_WISH_OBJECT_NOMINAL_SOURCE` に同じ修飾がなく、希望主体／finite対比の証明が成立しなかった。
+
+製品変更は共有Planの既存名詞SOURCEへ任意1個の連体形prefixを加える1行と説明comment1行だけ。新しい／古い／大きい／小さい／長い／短い／詳しい／難しい／易しい／良い／悪いは既存Analysis・共有名詞変化文法と同じ語彙。属格各区間を完全一致させ、修飾位置も目的語の意味に保持する。「生活が新しい」「取り組みが良い」等の独立評価を作らない。既存の明示SELF、有限現在希望、action stem、範囲・出典・同じfield・対比証明・Safety条件は変更しない。否定形／過去形／副詞／二重修飾／未知形／名詞欠落／別主体／時点・疑問語混入を通さない。
+
+初回検査はAnalysis313 PASS＋新subcase1 FAIL、共有118 PASS＋新parameter1 FAIL。ともに「悪い取り組み」の新しい成功期待が誤りだった。11語の名詞構文は成立するが、既存SafetyのSELFから24字以内の自己否定検出とPlanの自己評価分類が「悪い」を拾い、通常対比へ分解しない。別ownerの既存問題なのでこの拒否だけを迂回しない。新規成功期待を10語へ訂正し、11語の構文確認と、Analysisが「悪い」を保留して別の正常節を残す確認を追加。既存期待の削除・緩和、skip／xfail化0。今回の実出力対応を11語成功とは扱わない。
+
+最終検証（Python3.12.14／pytest8.4.1／pytest-subtests0.14.2／FastAPI0.116.1／httpx0.28.1／Pydantic2.13.5、既存隔離runtime、製品依存変更0）：
+- `test_cmee_analysis_v1d_vertical.py test_analysis_observed_storage.py test_analysis_saved_period.py`：313 tests／1853 subtests PASS（11.72秒）。原文scalar／UTF-8／hash、同一希望へのPROTECTIVE＋BURDEN、通常希望のBURDEN、修飾の削除／交換／係り先改変のsafe再解析拒否、集約、通常補足・全文訂正・全文撤回・部分撤回保留、表記差の期間差0／修飾差の内容差を確認。実service＋合成RPCで保存し、engine再生成を禁止したreadが同じ保存本文／図／identityを返すことを確認。
+- `test_cmee_emlis_initial_received_discourse.py -k 'genitive or contrast or burden_topic_comma'`：129 PASS／147 deselected（16.82秒）。対比2核と原文range、本人・有限希望／感情、実本文と独立reader、修飾削除／交換拒否、未証明host保留を確認。
+- `test_cmee_v1a_i1sx_contracts.py -k test_active_final_language_owner_chain_has_zero_legacy_compose_calls`：1 PASS／193 deselected（20.89秒）。合計443 tests PASS。current共有identityのみ最終Planへ同期し、9owner／18payloadとhistorical frozen manifestは維持。language `3113176af2b5a4cdf83de4f591ef0526beaa22edf99f59c1fcafa0d89490e1ae`、runtime `aa1b86483e95195362cbc33de8b63555bef715b0f2586a767fa4b9e805f8dcaa`。
+- 開始版7例を再生成し、対照2全文は不変、停止4例は生成、通常希望1例は負荷を保持。rootが別途10全文（修飾位置・両区間修飾・通常希望・集約・補足／訂正／撤回・同義／修飾差比較）を全読し、実 `buildWatashiMapV2ViewModel` の全文・identity・node順・edge・注記・unknown・競合・比較stateが10/10一致。Emlis4全文も読取済み。定型的な受け取りは残り、Emlis商品品質完成とはしない。
+
+STRUCTURE_MAP_DELTA_NONE：既存意味owner／route／保存lifecycle内の名詞句判定補正。API既存Plan1／test3／current identity1／handoff1、Cocolon current03／詳細04／06の全9file modify、新規repo file0。Analysis専用コード／Safety実装／IF／Piece／共有API契約／DB／SQL／RN変更0。最終suite後の製品source変更0。既存contractsの86 subfail／1 setup error等は今回未再検証・未修正、全repo PASSではない。実DB・React component／native・本人入力・商品受入れ未確認、限定TECHNICAL_CREDIT・商品NOT_CLEAR維持。main／merge／deploy／env／native build操作0、u161未配置。反映commit・全9file remote bytes／parent／変更path集合の照合結果は既存PR3／30へ記録する。
+
+残件：「悪い」の名詞修飾を自己否定／自己評価として拾う既存判定は上記原因を保存し、通常希望やAnalysisだけの例外で迂回しない。任意の仮名名詞・未対応修飾／時点／host、一般感情／認知、夢・伝聞から現実へ戻る境界、unknown反復表示も残る。指定版での本人生成→保存再表示→比較の実機残件は別に維持する。次回は本節と追跡source/testから続け、scratch log／JSONを正式再開原典にしない。
