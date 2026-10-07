@@ -86,3 +86,165 @@ def choose_format(*, tier: str, requested: str | None, eligible: tuple[str, ...]
     if selected not in eligible:
         raise unavailable('format_not_eligible')
     return selected
+
+
+def validate_source_meaning_preservation(meaning, plan, artifact) -> None:
+    """Inspect a Piece artifact against source arguments, without author replay.
+
+    The existing source owner supplies validated explicit grammar and spans.
+    This review checks complete proposition multiplicity, argument order,
+    predicate wording (including negation/time/modality), written scope and
+    public role identity. Only the current finite editorial operations are
+    recognized; it is not a general paraphrase judge or public-safety issuer.
+    Nothing here produces/rewrites a candidate, calls an author/plan compiler,
+    reads stored data, or grants ready/adjusted. Source-parser independence and
+    an independent human review are NOT claimed by this author-free check.
+    """
+    from piece_v2_contract import validate_piece_text_binding
+    from piece_v2_generation import _FOCUS
+    from piece_v2_expression import _SELF_TOPIC, _WISH_END
+    from cocolon_meaning_experience_engine.piece_source import (
+        PieceSourceMeaning, _direct_transitive_expression, _PERSON_NAME_LEFT_BOUNDARY,
+        piece_public_role_aliases, validate_piece_saved_fields,
+        validate_piece_nominal_references, validate_piece_personal_evaluations,
+        validate_piece_expression_scopes,
+    )
+    from cocolon_meaning_experience_engine.piece_v1c import PieceArtifact, PieceArtifactPlan
+
+    def reject():
+        raise unavailable('piece_meaning_not_preserved')
+
+    if (type(meaning) is not PieceSourceMeaning or type(plan) is not PieceArtifactPlan
+            or type(artifact) is not PieceArtifact):
+        reject()
+    validate_piece_saved_fields(meaning)
+    validate_piece_nominal_references(meaning)
+    validate_piece_personal_evaluations(meaning)
+    validate_piece_expression_scopes(meaning)
+    validate_piece_text_binding(artifact.content_payload(), artifact.piece_text,
+                                artifact.piece_text_hash)
+    original = meaning.envelope.raw_utf8.decode('utf-8')
+    nodes = meaning.graph.nodes
+    ids = tuple(node.node_id for node in nodes)
+    ordered = tuple(node_id for group in plan.block_node_ids for node_id in group)
+    if (plan.graph_id != meaning.graph.graph_id
+            or plan.source_version != meaning.graph.source_version
+            or len(set(ids)) != len(ids) or sorted(ordered) != sorted(ids)
+            or tuple(d.node_id for d in plan.duties) != ids
+            or len(artifact.body_blocks) != len(plan.block_node_ids)
+            or not ids or any(not group for group in plan.block_node_ids)):
+        reject()
+    spans = {s.node_id: s for s in meaning.sentences}
+    if set(spans) != set(ids) or len(meaning.evidence) != len(nodes):
+        reject()
+    for node, evidence in zip(nodes, meaning.evidence, strict=True):
+        span = spans[node.node_id]
+        if (original[span.source_start:span.source_end] != node.value
+                or node.evidence_ids != (evidence.evidence_id,)
+                or meaning.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                != node.value.encode('utf-8')):
+            reject()
+
+    # Match source nouns to their already-proved public role, never infer a
+    # relationship or replace a detected unsafe token with a generic phrase.
+    aliases = piece_public_role_aliases(meaning.role_bindings)
+    phrases = {}
+    for binding in meaning.role_bindings:
+        phrase = binding.role + 'の' + binding.name
+        if original[binding.source_start:binding.source_end] != phrase:
+            reject()
+        phrases[phrase] = aliases[binding.name]
+    replacements = {**phrases, **aliases}
+    matcher = None
+    if aliases:
+        matcher = re.compile('|'.join(re.escape(p) for p in sorted(phrases, key=len, reverse=True))
+                             + '|' + _PERSON_NAME_LEFT_BOUNDARY + '(?:'
+                             + '|'.join(re.escape(n) for n in sorted(aliases, key=len, reverse=True)) + ')')
+
+    def anchor(fragment):
+        """An escaped matching pattern, not generated Piece text."""
+        if matcher is None:
+            return re.escape(fragment)
+        parts, end = [], 0
+        for match in matcher.finditer(fragment):
+            parts.extend((re.escape(fragment[end:match.start()]),
+                          re.escape(replacements[match.group()])))
+            end = match.end()
+        return ''.join(parts) + re.escape(fragment[end:])
+
+    evaluations = {f.node_id: f for f in meaning.personal_evaluations}
+    scopes = {s.node_id: s for s in meaning.expression_scopes}
+    duties = {d.node_id: d.operation for d in plan.duties}
+    source_nodes = {n.node_id: n for n in nodes}
+    positions = {node_id: i for i, node_id in enumerate(ids)}
+
+    def arguments(node_id, expression):
+        frame = evaluations.get(node_id)
+        if frame is not None:
+            author, predicate, target = (original[a:b] for a, b in frame.scalar_parts)
+            finite = predicate[:-1] + frame.copula if predicate.endswith('な') else predicate
+            viewpoint = 'にとって' if frame.construction == 'にとって' else 'は'
+            return author, viewpoint, anchor(target) + 'が' + anchor(finite) + '。'
+        focal = _FOCUS.fullmatch(expression)
+        direct = _direct_transitive_expression(expression) if focal is None else None
+        if focal is not None or direct is not None:
+            parsed = focal if focal is not None else direct
+            target = parsed['object'].lstrip('、，,') if focal is not None else parsed['object']
+            return parsed['speaker'], 'は', anchor(target) + 'を' + anchor(parsed['predicate']) + '。'
+        topic = _SELF_TOPIC.fullmatch(expression)
+        if topic is None or not _WISH_END.search(topic['body']):
+            reject()
+        return topic['speaker'], 'は', anchor(topic['body']) + '。'
+
+    for group, block in zip(plan.block_node_ids, artifact.body_blocks, strict=True):
+        sentences = re.findall(r'[^。！？!?]+[。！？!?]', block)
+        if ''.join(sentences) != block or len(sentences) != len(group):
+            reject()
+        previous_id, previous_author = None, None
+        for node_id, visible in zip(group, sentences, strict=True):
+            node, operation = source_nodes[node_id], duties[node_id]
+            if operation == 'KEEP_COMPLETE_SOURCE_CONTEXT':
+                if re.fullmatch(anchor(node.value), visible) is None:
+                    reject()
+                previous_id, previous_author = node_id, None
+                continue
+            if operation not in {
+                    'SOURCE_FIRST_PERSON_TOPIC', 'SOURCE_TRANSITIVE_SELF_TOPIC',
+                    'SOURCE_FOCAL_TO_FIRST_PERSON', 'SOURCE_PERSONAL_EVALUATION',
+                    'SOURCE_SCOPED_EXPRESSION_TO_FIRST_PERSON'}:
+                reject()
+            scope = scopes.get(node_id)
+            if (operation == 'SOURCE_SCOPED_EXPRESSION_TO_FIRST_PERSON') != (scope is not None):
+                reject()
+            expression = original[slice(*scope.expression_scalar_span)] if scope else node.value
+            author, viewpoint, body = arguments(node_id, expression)
+            prefix = re.escape(author + viewpoint) + '[、，,]?'
+            same_author = (previous_id is not None and previous_author == author
+                           and positions[node_id] == positions[previous_id] + 1
+                           and not re.search(r'[\r\n]', original[
+                               spans[previous_id].source_end:spans[node_id].source_start]))
+            # This only recognizes an already explicit adjacent author. It
+            # never infers the first author, crosses a field/paragraph/newline,
+            # or elides an explicit にとって value viewpoint.
+            optional_prefix = '(?:' + prefix + ')?' if same_author and viewpoint == 'は' else prefix
+            if scope is None:
+                pattern = optional_prefix + body
+            else:
+                premise = original[slice(*scope.scope_scalar_span)]
+                if premise.startswith(author + 'は') and viewpoint == 'は':
+                    optional_prefix = '(?:' + prefix + ')?'
+                premise_pattern = anchor(premise) + '、'
+                pattern = premise_pattern + optional_prefix + body
+                # Existing simple-wish grammar may front its self topic, but
+                # an explicit concession/reference keeps the premise first.
+                referenced = any(ref.reference_node_id == node_id
+                                 and scope.scope_scalar_span[0] <= ref.reference_scalar_span[0]
+                                 and ref.reference_scalar_span[1] <= scope.scope_scalar_span[1]
+                                 for ref in meaning.nominal_references)
+                simple = (node_id not in evaluations and _FOCUS.fullmatch(expression) is None
+                          and _direct_transitive_expression(expression) is None)
+                if simple and scope.relation != 'SOURCE_EXPLICIT_CONCESSION' and not referenced:
+                    pattern = '(?:' + pattern + '|' + optional_prefix + premise_pattern + body + ')'
+            if re.fullmatch(pattern, visible) is None:
+                reject()
+            previous_id, previous_author = node_id, author

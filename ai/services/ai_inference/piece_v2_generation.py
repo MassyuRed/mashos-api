@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-from piece_v2_content_policy import unavailable
+from piece_v2_content_policy import unavailable, validate_source_meaning_preservation
 from cocolon_meaning_experience_engine.piece_source import _PLAIN_EVALUATION_MODAL
 
 
@@ -163,4 +163,8 @@ def generate_piece_candidate(source: PieceSourceSnapshot, *, authenticated_owner
     if (type(outcome.artifact) is not type(expected_artifact)
             or outcome.artifact != expected_artifact):
         raise unavailable('piece_engine_artifact_binding')
+    # S7 checks the supplied body against source arguments independently of
+    # the author replay above. A matching faulty author cannot certify itself.
+    # This finite grammar review does not issue a public safety status.
+    validate_source_meaning_preservation(expected_meaning, expected_plan, outcome.artifact)
     return outcome.artifact.as_candidate()
