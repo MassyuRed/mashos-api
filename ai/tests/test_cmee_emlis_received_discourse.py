@@ -6052,3 +6052,101 @@ def test_reserved_outer_contrast_event_withdrawal_saved_without_regeneration(qca
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
     body = current['current_observation']['text']
     assert withdrawn not in body and all(s in body for s in ('悲しかった', '嬉しかった', '寂し', '怖'))
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('unresolved,sensation', [
+    ('今は気持ちが重いと思った。', '重い'),
+    ('今は同僚が圧迫されたと思った。', '圧迫'),
+    ('今は同僚が痛いと言った。', '痛い'),
+    ('今は同僚が息苦しいと言った。', '息苦しい'),
+    ('今は「重い」と同僚が言った。', '重い'),
+])
+def test_unresolved_sensation_disclosure_keeps_partial_answer_without_adopting_quote(field, unresolved, sensation):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from test_cmee_emlis_detached_observation import read_body
+    source = f'{LONG_CHAIN_EVENT}のに悲しかったけれど嬉しかった。誘われたのに寂しかった。頼まれたのに怖かった。'
+    req = begin(source if field == 'memo' else '', source if field == 'memo_action' else '')
+    accepted = '今は少し苦しい。'
+    before = actual(request=advance(req, accepted))
+    updated = advance(req, accepted + unresolved)
+    prepared = prepare_emlis_meaning(updated)
+    context = actual(request=updated)
+    result, plan, sentence, resolver, selected = context
+    output = MeaningExperienceEngine().generate(updated)
+    assert output.body_state == 'PARTIALLY_REFINED' and output.question is None
+    assert output.artifact.text == result.artifact.text
+    assert prepared.checkpoint.assessment_status == 'PARTIAL'
+    assert len(prepared.checkpoint.answer_update.updates) == len(prepared.accepted_nuclei) == 1
+    assert prepared.checkpoint.unresolved_parts
+    assert plan.nuclei == before[1].nuclei
+    assert tuple(r for r in plan.relations if r.type != 'evaluation_about_event') == tuple(
+        r for r in before[1].relations if r.type != 'evaluation_about_event')
+    about, = (r for r in plan.relations if r.type == 'evaluation_about_event')
+    prior, = (r for r in before[1].relations if r.type == 'evaluation_about_event')
+    # Update identities bind the complete submitted answer. Only the
+    # accepted clause supplies this relation's endpoints and evidence.
+    assert (about.from_nucleus_id, about.to_nucleus_id, about.source_span_ids) == (
+        prior.from_nucleus_id, prior.to_nucleus_id, prior.source_span_ids)
+    assert result.artifact.reception == before[0].artifact.reception
+    assert sensation not in result.artifact.reception
+    disclosure = f'回答の「{unresolved.removesuffix("。")}」には、今回の観測に反映できていない部分があります。'
+    assert result.artifact.observation == before[0].artifact.observation + '\n' + disclosure
+    body = result.artifact.text
+    # The quoted source is evidence only for the disclosure, never a new
+    # sensation the author may donate to the user's observation/reception.
+    with patch.object(surface, '_render_limited_scope', side_effect=AssertionError('no disclosure author')):
+        assert read_body(context, body).passed
+        for changed in (body + f'{sensation}のですね。', body.replace(disclosure, disclosure + f'{sensation}のですね。')):
+            reasons, _, _ = gate._semantic_subcheck_reasons(plan=plan, sentence_plan=sentence,
+                surface_result=SimpleNamespace(text=changed, lines=()), resolver=resolver)
+            assert 'ungrounded_sensation_family_added' in reasons
+            assert not read_body(context, changed).passed
+
+
+def test_unresolved_sensation_disclosure_requires_exact_source_and_bound_line():
+    from dataclasses import replace
+    from test_cmee_emlis_detached_observation import read_body
+    source = f'{LONG_CHAIN_EVENT}のに悲しかったけれど嬉しかった。誘われたのに寂しかった。頼まれたのに怖かった。'
+    context = actual(request=advance(begin(source), '今は少し苦しい。今は「重い」と同僚が言った。'))
+    result, plan, sentence, resolver, selected = context
+    body = result.artifact.text
+    disclosure = result.artifact.observation.splitlines()[-1]
+    mutations = [body.replace('今は「重い」', 'その時は「重い」'),
+        body.replace('同僚が言った', '私が言った'),
+        body.replace('同僚が言った」', '同僚が言った』'),
+        body.replace('には、今回の観測に反映できていない部分があります', 'は、あなたの気持ちです'),
+        body.replace(disclosure, disclosure + '\n' + disclosure)]
+    limit, = (line for line in sentence.lines if line.binding.claim_scope == 'unresolved_answer_interpretation')
+    altered = replace(sentence, lines=tuple(replace(line, binding=replace(line.binding,
+        evidence_span_ids=('s1',))) if line == limit else line for line in sentence.lines))
+    with patch.object(surface, '_render_limited_scope', side_effect=AssertionError('no disclosure author')):
+        for changed, planned in [*( (text, sentence) for text in mutations), (body, altered)]:
+            reasons, _, _ = gate._semantic_subcheck_reasons(plan=plan, sentence_plan=planned,
+                surface_result=SimpleNamespace(text=changed, lines=()), resolver=resolver)
+            assert 'ungrounded_sensation_family_added' in reasons
+            assert not read_body((result, plan, planned, resolver, selected), changed).passed
+        assert not read_body(context, body.replace(disclosure + '\n', '')).passed
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('unresolved', ['今は気持ちが重いと思った。', '今は「重い」と同僚が言った。'])
+def test_unresolved_sensation_disclosure_saved_partial_answer(qcase, qdb, monkeypatch, field, unresolved):
+    user, parent, service = qcase
+    source = f'{LONG_CHAIN_EVENT}のに悲しかったけれど嬉しかった。誘われたのに寂しかった。頼まれたのに怖かった。'
+    memo, action = (source, '') if field == 'memo' else ('', source)
+    qdb.query('update public.emotions set memo=$1,memo_action=$2 where id=$3', [memo, action, parent])
+    original = run(service.start(user, parent))
+    current = run(answer(service, user, original, '今は少し苦しい。' + unresolved, 'partial-sensation-answer'))
+    assert current['body_state'] == 'PARTIALLY_REFINED' and current['original'] == original['original']
+    assert current['state'] == 'COMPLETED' and not current['can_continue']
+    body = current['current_observation']['text']
+    observation, follow = body.split('Emlisから：\n', 1)
+    assert unresolved.removesuffix('。') in observation and '反映できていない部分があります' in observation
+    assert '回答した時点では少し苦しい' in follow and '重い' not in follow
+    assert all(s in follow for s in (LONG_CHAIN_EVENT, '悲しかったけれど、嬉しかった', '誘われた', '寂し', '頼まれた', '怖'))
+    assert qdb.query('select memo,memo_action from public.emotions where id=$1', [parent])['rows'][0] == {
+        'memo': memo, 'memo_action': action}
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved partial body must not regenerate'))
+        assert run(service.get(user, parent)) == run(service.start(user, parent)) == current

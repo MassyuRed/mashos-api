@@ -15114,3 +15114,28 @@ OBSERVED_BLOCKER_MINIMAL_FIX。対象は、元の感情対比と複数の出来�
 STRUCTURE_MAP_DELTA_NONE：API既存Plan1/test1/current identity1/handoff1、Cocolon既存06の計5file modify、新規repo file0。既存owner/route/schema/lifecycle/配置不変、HR/Gate/Observation作者/answer_update/質問選択/API/DTO/DB/RN/Piece/Analysis専用コード変更0。main/merge/deploy/env/native build操作0。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR維持、進捗率は再算定しない。反映commit・remote全5file本文/parent/変更path集合の照合結果はPR3/30へ記録する。
 
 次の内容残件は「今は気持ちが重いと思った」の認知回答の未成立原因と、上記の撤回後の出典表現。今回その認知回答は未修正・未再検証。従来の長event位置修飾、長い列挙/二層再掲/語尾反復/受け取りの浅さ、過去説明形・anchor不一致、実機設定/指定版配置と本人生成→保存→再表示も継承する。この修正を実機復旧・全repo成功・商品品質全体の合格へ換算しない。後続は本節と追跡source/testから再開でき、scratchのJSON/XML/logを正式再開原典としない。
+
+
+## 2026-10-07 — 未反映部分の引用で部分回答の本文まで停止する問題を修復（未配置）
+
+MashのEmlisAI内容残件継続指示から、認知回答の未成立原因を調査。開始HEADはAPI `a74158f66adcf4032a42faf5cc4bf34e304f28c7`／Cocolon `33b3695737747bcbcf398a61467afe3add7cfe1f`、fresh PRのDraft/open/unmergedを確認。前提・作業姿勢current、全体設計01/01A〜C・国家システム02・全file地図の導線とEmlis/CMEE current owner、最新weekly20261003 §6.6〜6.10の同session確認を継承し、最新handoff/06とactual ownerを再確認、恒久incidentを今回も全文読取。System Contextの既知workspace不在は追跡正本の直接読取で補い、生成Contextのfreshnessは主張しない。Karen-Diaryは前回automatic approval review拒否後の未取得を維持し、確認済みとはしない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。root華恋がCodex Workの単一編集・検証・反映owner。同環境read-only補助が原因、最終source/test、前後全本文を確認した。別model Pro reviewではない。weeklyの最小実動作優先を維持し、全面的な文体完成を配置の前提にせず、新しい期限・費用・Mash操作を追加しない。
+
+原因を二つに分離した。`emlis_answer_update._answer_nucleus` は「今は気持ちが重いと思った」の「気持ちが」を非本人主語候補として拒否し、認知の回答核/ABOUTを作らない。単独回答ではengineが既存の `ANSWER_UNREFLECTED` を返す。これと別に、「今は少し苦しい。」等の採用できる節を同じ回答に含めると、既存の未反映説明が認知の原文を引用する。その「重い」をGateがEmlisによる新しい感覚の追加として誤判定し、実callable/保存経路が `MEANING_UPDATED_BODY_UNAVAILABLE` になる。直接realizeの停止だけを、単独回答のpublic経路の退行と混同しない。
+
+production変更は既存Gate `_semantic_subcheck_reasons` の16行のみ。実本文の観測行と予定行の数/位置を合わせ、`unresolved_answer_interpretation` の行に既存独立reader `_body_inverse_answer_limit` を適用する。原回答・answer field・unknown boundary・完全な未反映説明が一致した実byte範囲だけを、既存の感覚語検査用局所文字列から除く。本文bytes・source_text・核/関係・認知admission・作者・独立逆検証・public stateの定義/判定コードは変更しない。引用された語をsource_textへ足して未反映説明の外への感覚追加を許す処理ではない。入力例の語句をruntime条件にせず、全て既存の出典/説明行の契約で判定する。
+
+追加15条件PASS（26.03秒）。2field×5未対応節の10条件で、重さ/圧迫/痛み/息苦しさ/入れ子引用を含むPARTIAL回答が生成でき、採用済み節だけの本文に正確な未反映説明が加わることを確認。原核と元relation不変、採用済みABOUTのendpoint/evidence保持を確認した。1条件の複数改変では引用の時点・主体・引用閉じ・説明述語・行重複・evidence付替えを拒否する。引用と同じ感覚語をHRや観測へ追加した場合も拒否し、作者禁止で独立readerを検査する。保存4条件は実service＋隔離PGliteを使用し、original DTO/DB原memo・memo_action不変、生成禁止GET/startの同一保存DTO、PARTIALLY_REFINED/COMPLETEDを確認。実DB・本人端末・process再起動の確認ではない。
+
+初回の追加検査は10 FAIL/5 PASSだった。追加テストが異なる全回答から作られる更新relation identityまで同一と期待した誤りであり、原核/元relationとABOUT endpoint/evidenceの不変を検査する形へ訂正した。製品sourceの追加変更・既存期待の削除/緩和・skip/xfail化は行っていない。
+
+実callableの前後比較20状態（2field×初回・5種PARTIAL・既存肯定/否定/採用済み認知・単独未対応認知）。開始版は本文8/停止10/単独未反映2、修正版は本文18/単独未反映2。共通8本文は両層全文一致、10組のfield対照も同一。rootと補助が全18本文を読み、元対比・寂しさ/怖さ・回答した時点の少し苦しいを保持し、同僚の感覚や引用内の認知を本人の感情として断定しないことを確認した。入れ子の「」や既存の列挙/語尾反復は残る。
+
+最終関連検査は566件＝517 PASS／既存49 FAIL、ERROR/SKIP0（233.36秒）。開始版は551件＝502 PASS／49 FAIL（226.59秒）。実際の開始commitを別checkoutで実行し、共通551件の成否が全一致、新規15は全PASS。旧49件のfailure messageはworkspace pathとメモリアドレスを正規化して全一致した。前回の22失敗から検査範囲をq1/retained/detached_self_feelingへ変えており、49件を今回の新規退行や修復成果へ換算しない。既存期待は保持、全repo PASSとは扱わない。最終suite後のproduction変更0。
+
+再実行対象は `test_cmee_emlis_q1_thread.py test_cmee_emlis_retained_failure_recovery.py test_cmee_emlis_detached_self_feeling.py test_cmee_emlis_received_discourse.py test_cmee_v1a_i1sx_contracts.py`、selectorは `q1_thread or retained_failure_recovery or detached_self_feeling or unresolved_sensation_disclosure or positive_group_does_not_admit_unresolved or reserved_outer_contrast or position_annotation_keeps_literal_answer_words or active_final_language_owner_chain_has_zero_legacy_compose_calls`。Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5/PGlite0.5.8、`PYTHONPATH=ai` と既存隔離PGliteを指定、過去FB172移行pluginは無効化。製品依存変更0。
+
+current共有identityだけを最終Gateへ同期し、9owner/18payloadとhistorical frozen manifestを保持。language `e77931e2ed693624f039c77ebfbf87239122403096a24a451b2e2acf34353ff4`／runtime `2d62e84de42818f0297bd2c1763dce366a43fc75d1f2edab62bf04c8e4746437`。STRUCTURE_MAP_DELTA_NONE：API既存Gate1/test1/current identity1/handoff1、Cocolon既存06の計5file modify、新規repo file0。owner/route/schema/lifecycle/配置不変、Plan/HR/Observation作者/answer_update/質問選択/API/DTO/DB/RN/Piece/Analysis専用コード変更0。main/merge/deploy/env/native build操作0。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR維持。remote全5fileの本文/blob・parent・変更path集合と反映commitの照合結果は既存PR3/30へ記録する。
+
+残件：「気持ちが重いと思った」自体の認知admissionは未修正。今回直ったのは、一部を採用できる回答で未対応節の引用が本文全体を止める誤判定であり、認知回答全般の対応完了ではない。次はこの受付の非本人主語判定と、前回の出来事撤回後に「その時」が直前の別eventを指すように読める出典表現が候補。従来の長event位置修飾、列挙/二層再掲/語尾反復/受け取りの浅さ、過去説明形・anchor不一致、指定版配置と本人生成→保存→再表示も残る。scratchのJSON/XML/logを正式再開原典とせず、本節と追跡source/testから再開する。

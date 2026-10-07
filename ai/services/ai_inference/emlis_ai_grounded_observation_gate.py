@@ -355,6 +355,22 @@ def _semantic_subcheck_reasons(
     sensation_witness = None
     replacements = set()
     focused_source_nuclei = set()
+    planned_observation = tuple(line for line in sentence_plan.lines
+        if line.binding.line_role != "human_follow")
+    if any(line.binding.claim_scope == "unresolved_answer_interpretation"
+           for line in planned_observation):
+        sensation_witness = parse_grounded_surface_body_bytes(sensation_body)
+        observed = tuple(line for line in sensation_witness.lines if line.section == "observation")
+        if len(observed) == len(planned_observation):
+            for parsed, planned in zip(observed, planned_observation):
+                if (planned.binding.claim_scope == "unresolved_answer_interpretation"
+                    and _body_inverse_answer_limit(sensation_body, parsed, planned, plan, resolver)):
+                    # This exact source-bound line reports an unreflected
+                    # answer; it does not assert its quoted sensation. Only
+                    # remove this proved byte range from the local check.
+                    # Adding its source to source_text would incorrectly
+                    # license the same sensation outside the disclosure.
+                    replacements.add((parsed.utf8_byte_start, parsed.utf8_byte_end, b""))
     reception_plan = plan.response_plan.human_reception_plan
     for move in reception_plan.moves if reception_plan is not None else ():
         if len(move.target_nucleus_ids) > 1 or move.support_nucleus_ids:
