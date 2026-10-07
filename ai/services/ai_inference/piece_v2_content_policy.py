@@ -16,6 +16,21 @@ ENVELOPES = {'short_essay': (24, 420, 6), 'quote': (12, 120, 2),
              'declaration': (12, 180, 4)}
 
 
+# PCE-4 bounded refusal only. Removing a written name does not verify an
+# assertion about the remaining relationship. Require a complete affirmative
+# clause; label words inside negation, uncertainty, quotation or conditions
+# are not proof of this form. A non-match is never public-safety admission.
+_ROLE_ASSERTION = re.compile(
+    r'(?:^|[。！？!?\r\n])\s*'
+    r'(?:(?:私|わたし|僕|ぼく|俺|おれ)の)?'
+    r'(?:友人|同僚|上司|家族|先輩|後輩|知人)'
+    r'(?:の(?:友人|同僚|上司|家族|先輩|後輩|知人))*'
+    r'[はが]\s*[、,]?\s*'
+    r'(?:詐欺師|犯罪者|泥棒|嘘つき|うそつき)\s*'
+    r'(?:だった|でした|である|です|だ)\s*(?=[。！？!?\r\n]|\Z)'
+)
+
+
 def unavailable(code: str) -> PieceContractError:
     return PieceContractError('PIECE_CONTENT_UNAVAILABLE', code)
 
@@ -55,7 +70,7 @@ def check_existing_detectors(text: str) -> None:
     adjacent_url = re.search(r'(?i)(?:https?://|www\.)[^\s<>()]+', scan)
     adjacent_handle = re.search(r'(?<![A-Za-z0-9_@])@[A-Za-z0-9_][A-Za-z0-9_.-]{0,31}', scan)
     if (result.flags or result.display_text is None or adjacent_mail
-            or adjacent_url or adjacent_handle):
+            or adjacent_url or adjacent_handle or _ROLE_ASSERTION.search(scan)):
         raise unavailable('existing_safety_detector')
     if re.search(r'(?i)(?:bearer\s+|(?:api[_ -]?key|password|token)\s*[:=]|postgres(?:ql)?://)', scan):
         raise unavailable('credential_like_material')
