@@ -502,3 +502,75 @@ class PiecePreviewService:
             # No provider body or private diagnostic is returned. Cancellation
             # remains a BaseException and propagates without another read/write.
             raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None
+
+
+    async def issue_original(
+        self, authorization: str | None, request: dict, *, idempotency_key: str,
+        ttl_seconds: int, renderer_version: str,
+        rpc: Callable[[str, dict], Awaitable[dict]],
+        load_record: Callable[[str, str], Awaitable[dict | None]] = _load_owned_preview_for_replay,
+    ) -> dict:
+        """Internal original-only creation/replay with the actual bounded reviewer.
+
+        A successful initial lookup returning None is the only creation branch.
+        Once a row has been seen, every replay error is terminal: a later 404,
+        cancellation, expiry or conflict must never fall back to generation.
+        A repeat returns the persisted body/recipe without authoring or review.
+        Concurrent first requests still use the existing SQL identity/locks;
+        this read probe is not a reservation or an exactly-once author claim.
+
+        TTL, renderer and RPC remain mandatory server inputs, not client fields
+        or production defaults. The concrete reviewer is not caller-selectable.
+        No HTTP route, public safety acceptance, renderer or live activation is
+        supplied here; the existing methods and their contracts remain intact.
+        """
+        import hashlib
+        from uuid import UUID
+        from piece_v2_store import _key_hash, _uuid
+        errors = _SERVICE_ERRORS | {
+            'PIECE_NOT_FOUND', 'PIECE_PREVIEW_STALE', 'PIECE_PREVIEW_EXPIRED',
+        }
+        try:
+            value = _request_snapshot(request)
+            key = _key_hash(idempotency_key)
+            if (type(ttl_seconds) is not int or not 0 < ttl_seconds <= 2147483647
+                    or type(renderer_version) is not str
+                    or re.fullmatch(r'[A-Za-z0-9_.:\-]{1,128}', renderer_version) is None):
+                raise _error('PIECE_REQUEST_INVALID')
+            if not callable(rpc) or not callable(load_record):
+                raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+            handoff = await self._source_adapter.resolve_original_handoff(
+                authorization, value['source_ref']['source_input_id'])
+            if type(handoff) is not PieceSavedHandoff:
+                raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+            owner = _uuid(handoff.original.authenticated_owner_id, owner=True)
+            if UUID(owner).int == 0:
+                raise _error('PIECE_AUTH_REQUIRED')
+            lineage = handoff.lineage_payload()
+            expected = {k: lineage['source_input'][k] for k in (
+                'source_input_id', 'source_input_version', 'source_input_bundle_commitment')}
+            expected.update({k: lineage['observation'][k] for k in (
+                'emlis_observation_stage', 'emlis_observation_result_identity',
+                'question_need_decision_identity', 'supplemental_answer_identity')})
+            if value['source_ref'] != expected:
+                raise _error('PIECE_CONFLICT')
+            preview_id = str(UUID(hashlib.sha256(
+                f'piece.preview.v2:{owner}:{key}'.encode('utf-8')).hexdigest()[:32]))
+            if await load_record(owner, preview_id) is not None:
+                return await self.read_original_preview(authorization, value,
+                    idempotency_key=idempotency_key, load_record=load_record)
+            prepared = await self.prepare_original(authorization, value)
+            if prepared.handoff != handoff:
+                raise _error('PIECE_CONFLICT')
+            # Lazy import: the reviewer uses PreparedPiecePreview from this module.
+            from piece_v2_safety_review import review_prepared_original
+            return await self.issue_prepared_original(authorization, value, prepared,
+                idempotency_key=idempotency_key, ttl_seconds=ttl_seconds,
+                renderer_version=renderer_version, rpc=rpc,
+                safety_review=review_prepared_original)
+        except PieceContractError as exc:
+            raise _error(exc.code if exc.code in errors else 'PIECE_TEMPORARILY_UNAVAILABLE') from None
+        except Exception:
+            # No fallback or retry, including after a possibly committed write.
+            # BaseException cancellation continues to propagate unchanged.
+            raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None

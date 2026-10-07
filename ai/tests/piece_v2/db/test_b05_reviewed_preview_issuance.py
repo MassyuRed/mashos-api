@@ -249,3 +249,199 @@ def test_review_failure_is_body_free_and_cancellation_propagates(monkeypatch, fa
 @pytest.mark.parametrize('candidate', [None, {}, True, 'ready'])
 def test_client_values_are_not_server_prepared_artifacts(candidate):
     assert asyncio.run(review.review_prepared_original(candidate)) == 'ineligible'
+
+
+# The same existing native fixture, now entered before preparation. These
+# counters exclude the fixture's initial reference artifact construction.
+def _orchestration(database, monkeypatch, *, tier='free', named=False):
+    conn, _, _ = database
+    generate = service.generate_piece_candidate
+    actual_review = review.review_prepared_original
+    owner, request, prepared, _, state = _B5['_setup'](monkeypatch, tier=tier, named=named)
+    state.update(authors=0, actual_reviews=0, reads=[])
+
+    def author(*args, **kwargs):
+        state['authors'] += 1
+        return generate(*args, **kwargs)
+
+    async def reviewer(candidate):
+        state['actual_reviews'] += 1
+        return await actual_review(candidate)
+
+    monkeypatch.setattr(service, 'generate_piece_candidate', author)
+    monkeypatch.setattr(review, 'review_prepared_original', reviewer)
+    rpc = _B5['_native_rpc'](conn, state)
+
+    async def load(owner_id, preview_id):
+        assert owner_id == _B5['OWNER']
+        state['reads'].append((owner_id, preview_id))
+        row = conn.execute('SELECT to_jsonb(r) FROM (SELECT ' +
+            ','.join(service._REPLAY_COLUMNS) +
+            ' FROM public.piece_records WHERE id=%s AND owner_user_id=%s) r',
+            (preview_id, owner_id)).fetchone()
+        return deepcopy(row[0]) if row else None
+
+    return owner, request, prepared, state, rpc, load
+
+
+def _orchestrate(owner, request, rpc, load, **overrides):
+    kwargs = dict(idempotency_key='synthetic-generated-preview', ttl_seconds=600,
+                  renderer_version='synthetic-renderer.v1', rpc=rpc, load_record=load)
+    kwargs.update(overrides)
+    return asyncio.run(owner.issue_original(_B5['AUTH'], request, **kwargs))
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('named', [False, True], ids=['ready', 'role-transformed'])
+def test_orchestrated_first_issue_and_restart_use_one_author_and_actual_review(database, monkeypatch, tier, named):
+    conn, _, _ = database
+    owner, request, prepared, state, rpc, load = _orchestration(database, monkeypatch, tier=tier, named=named)
+    first = _orchestrate(owner, request, rpc, load)
+    assert not first['idempotency_replayed']
+    assert first['safety_state'] == ('adjusted' if named else 'ready')
+    for field in ('piece_text', 'content_payload', 'visual_recipe', 'piece_text_hash',
+                  'content_payload_hash', 'visual_recipe_hash'):
+        assert first[field] == prepared.artifact_payload()[field]
+    before = conn.execute('SELECT to_jsonb(r) FROM public.piece_records r').fetchone()[0]
+    _no_author(monkeypatch)
+
+    async def no_review(*args):
+        raise AssertionError('Replay must not review again.')
+
+    monkeypatch.setattr(review, 'review_prepared_original', no_review)
+    restarted = service.PiecePreviewService(source_adapter=owner._source_adapter)
+    second = _orchestrate(restarted, request, rpc, load, ttl_seconds=1200)
+    assert second == dict(first, idempotency_replayed=True)
+    assert conn.execute('SELECT to_jsonb(r) FROM public.piece_records r').fetchone()[0] == before
+    assert state['authors'] == state['actual_reviews'] == len(state['posts']) == 1
+    assert len(state['reads']) == 4
+    assert _B5['_B4']['_used'](conn) == 0
+
+
+@pytest.mark.parametrize('kind,code', [
+    ('cancelled', 'PIECE_CONFLICT'), ('expired', 'PIECE_PREVIEW_EXPIRED'),
+    ('request', 'PIECE_CONFLICT'), ('text', 'PIECE_HASH_MISMATCH'),
+    ('missing-first-read', 'PIECE_NOT_FOUND'), ('missing-second-read', 'PIECE_NOT_FOUND'),
+])
+def test_orchestration_never_recreates_nonreplayable_or_disappearing_rows(database, monkeypatch, kind, code):
+    conn, _, _ = database
+    owner, request, _, state, rpc, load = _orchestration(database, monkeypatch)
+    _orchestrate(owner, request, rpc, load)
+    before = conn.execute('SELECT to_jsonb(r) FROM public.piece_records r').fetchone()[0]
+    calls = 0
+
+    async def changed(owner_id, preview_id):
+        nonlocal calls
+        calls += 1
+        row = await load(owner_id, preview_id)
+        # Call one is the existence probe. Later errors must not become create.
+        if (kind == 'missing-first-read' and calls == 2
+                or kind == 'missing-second-read' and calls == 3):
+            return None
+        if kind == 'cancelled':
+            row['lifecycle_status'] = 'cancelled'
+        elif kind == 'expired':
+            row['expires_at'] = '2000-01-01T00:00:00+00:00'
+        elif kind == 'request':
+            row['preview_request_hash'] = '0' * 64
+        elif kind == 'text':
+            row['piece_text'] = _B5['PRIVATE']
+        return row
+
+    with pytest.raises(PieceContractError) as error:
+        _orchestrate(owner, request, rpc, changed)
+    assert error.value.code == code
+    assert state['authors'] == state['actual_reviews'] == len(state['posts']) == 1
+    assert conn.execute('SELECT to_jsonb(r) FROM public.piece_records r').fetchone()[0] == before
+    assert _B5['_B4']['_used'](conn) == 0
+
+
+@pytest.mark.parametrize('failure', ['not-found', 'unexpected', 'cancel'])
+def test_initial_lookup_error_is_not_an_absent_row_or_a_creation_retry(database, monkeypatch, failure):
+    conn, _, _ = database
+    owner, request, _, state, rpc, _ = _orchestration(database, monkeypatch)
+
+    async def failing_load(*args):
+        if failure == 'cancel':
+            raise asyncio.CancelledError()
+        if failure == 'not-found':
+            raise PieceContractError('PIECE_NOT_FOUND', _B5['PRIVATE'])
+        raise RuntimeError(_B5['PRIVATE'])
+
+    with pytest.raises(asyncio.CancelledError if failure == 'cancel' else PieceContractError) as error:
+        _orchestrate(owner, request, rpc, failing_load)
+    if failure != 'cancel':
+        assert error.value.code == ('PIECE_NOT_FOUND' if failure == 'not-found' else 'PIECE_TEMPORARILY_UNAVAILABLE')
+        assert _B5['PRIVATE'] not in str(error.value)
+    assert state['authors'] == state['actual_reviews'] == len(state['posts']) == 0
+    assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
+
+
+def test_orchestrated_lost_reply_recovers_by_read_without_second_generation_or_write(database, monkeypatch):
+    conn, _, _ = database
+    owner, request, _, state, native, load = _orchestration(database, monkeypatch)
+
+    async def lost_reply(name, args):
+        await native(name, args)
+        raise TimeoutError(_B5['PRIVATE'])
+
+    with pytest.raises(PieceContractError) as error:
+        _orchestrate(owner, request, lost_reply, load)
+    assert error.value.code == 'PIECE_TEMPORARILY_UNAVAILABLE'
+    assert _B5['PRIVATE'] not in str(error.value)
+    assert state['authors'] == state['actual_reviews'] == len(state['posts']) == 1
+    _no_author(monkeypatch)
+    restarted = service.PiecePreviewService(source_adapter=owner._source_adapter)
+    result = _orchestrate(restarted, request, lost_reply, load)
+    assert result['idempotency_replayed'] is True
+    assert state['authors'] == state['actual_reviews'] == len(state['posts']) == 1
+    assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (1,)
+    assert _B5['_B4']['_used'](conn) == 0
+
+
+@pytest.mark.parametrize('overrides', [
+    {'ttl_seconds': True}, {'ttl_seconds': 0}, {'ttl_seconds': 2147483648},
+    {'renderer_version': ''}, {'renderer_version': '/private/renderer'},
+    {'idempotency_key': ''},
+])
+def test_orchestrated_invalid_server_configuration_stops_before_lookup_or_generation(database, monkeypatch, overrides):
+    conn, _, _ = database
+    owner, request, _, state, rpc, load = _orchestration(database, monkeypatch)
+    with pytest.raises(PieceContractError) as error:
+        _orchestrate(owner, request, rpc, load, **overrides)
+    assert error.value.code == 'PIECE_REQUEST_INVALID'
+    assert not state['reads']
+    assert state['authors'] == state['actual_reviews'] == len(state['posts']) == 0
+    assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
+
+
+@pytest.mark.parametrize('change_at', [1, 2, 3])
+def test_orchestrated_current_source_change_still_prevents_issue(database, monkeypatch, change_at):
+    conn, _, _ = database
+    owner, request, _, state, rpc, load = _orchestration(database, monkeypatch)
+    state['change_at'] = change_at
+    with pytest.raises(PieceContractError) as error:
+        _orchestrate(owner, request, rpc, load)
+    assert error.value.code == 'PIECE_CONFLICT'
+    assert not state['posts']
+    assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
+    assert _B5['_B4']['_used'](conn) == 0
+
+
+def test_orchestrated_candidate_must_pass_actual_review_before_native_write(database, monkeypatch):
+    conn, _, _ = database
+    owner, request, prepared, state, rpc, load = _orchestration(database, monkeypatch)
+    blocks = [b.replace('大切にしていない', '大切にしている')
+              for b in prepared.artifact_payload()['content_payload']['body_blocks']]
+    altered = _changed(prepared, blocks=blocks)
+    assert altered._artifact_json != prepared._artifact_json
+
+    async def altered_preparation(*args):
+        return altered
+
+    monkeypatch.setattr(owner, 'prepare_original', altered_preparation)
+    with pytest.raises(PieceContractError) as error:
+        _orchestrate(owner, request, rpc, load)
+    assert error.value.code == 'PIECE_SAFETY_UNAVAILABLE'
+    assert state['actual_reviews'] == 1 and not state['posts']
+    assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
