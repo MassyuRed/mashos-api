@@ -4103,7 +4103,7 @@ def read_received_discourse(raw, move, plan, resolver, selected_subjective_input
     events = tuple(re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた",
                          final_reception_source_anchor_text(nid, index, resolver), count=1)
                    for nid, _ in expected)
-    markers = tuple(re.finditer(r"(?:先|間|後)に書かれた方では、(?="
+    markers = tuple(re.finditer(r"(?:先|間|後)に書かれた(?:方では、|「)(?="
                                + "|".join(re.escape(event) for event in events) + ")", raw))
     if not markers:
         # Previously saved unqualified prose keeps its existing independent
@@ -4111,19 +4111,36 @@ def read_received_discourse(raw, move, plan, resolver, selected_subjective_input
         return _read_received_discourse_unqualified(raw, move, plan, resolver, selected_subjective_input)
     if len(markers) != len(expected):
         return None
-    pieces, removed, cursor, shifts = [], 0, 0, []
+    removals = []
     for marker, (nid, prefix) in zip(markers, expected, strict=True):
         event = final_reception_source_anchor_text(nid, index, resolver)
         visible = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event, count=1)
-        if (marker.group() != prefix or marker.start() and raw[marker.start() - 1] != "、"
+        if (marker.start() and raw[marker.start() - 1] != "、"
             or not raw[marker.end():].startswith(visible)):
             return None
-        pieces.append(raw[cursor:marker.start()])
-        at = len(raw[:marker.start()].encode()) - removed
-        size = len(prefix.encode())
+        if marker.group() == prefix:
+            removals.append((marker.start(), marker.end()))
+        elif marker.group() == prefix.removesuffix("方では、") + "「":
+            end = marker.end() + len(visible)
+            close = "」ということがあった"
+            if not raw[end:].startswith(close) or not re.match(
+                    r"(?:のに|けれども|けれど|けど)、", raw[end + len(close):]):
+                return None
+            # The source-proven event and its original contrast are read by
+            # the existing role reader. Remove only the verified annotation.
+            removals.extend(((marker.start(), marker.end()), (end, end + len(close))))
+        else:
+            return None
+    pieces, removed, cursor, shifts = [], 0, 0, []
+    for start, end in removals:
+        if start < cursor:
+            return None
+        pieces.append(raw[cursor:start])
+        at = len(raw[:start].encode()) - removed
+        size = len(raw[start:end].encode())
         shifts.append((at, size))
         removed += size
-        cursor = marker.end()
+        cursor = end
     pieces.append(raw[cursor:])
     proof = _read_received_discourse_unqualified("".join(pieces), move, plan, resolver, selected_subjective_input)
     if proof is None or any(start < at < end for start, end, _ in proof for at, _ in shifts):

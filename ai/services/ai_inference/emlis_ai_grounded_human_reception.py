@@ -10170,7 +10170,7 @@ def _received_event_record_prefixes(plan, resolver):
 
 
 def _source_grounded_received_discourse(realization, *, acknowledge=True,
-                                       record_prefixes=()) -> str | None:
+                                       record_prefixes=(), record_quote_limit=0) -> str | None:
     """Realize selected event/reaction/answer relations as finite discourse.
 
     Existing source IR proves every endpoint, actor, time and ABOUT edge.
@@ -10417,10 +10417,30 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True,
     # an original contrast or independent revision remains its own scope.
     event_names = [re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた",
                           fragments[int(code.split(":")[1])], count=1) for code in codes]
+    record_boundaries = list(event_names)
     if record_prefixes:
         if len(record_prefixes) != len(parts):
             return None
-        parts = [prefix + part for prefix, part in zip(record_prefixes, parts, strict=True)]
+        for slot, (prefix, event, code, part) in enumerate(zip(
+                record_prefixes, event_names, codes, parts, strict=True)):
+            connector = _RECEIVED_EVENT_LINK_TEXT.get(code.split(":")[3])
+            if (prefix and connector and slot + 1 < len(parts)
+                and not record_prefixes[slot + 1]
+                and codes[slot + 1].split(":")[3] in _RECEIVED_EVENT_LINK_TEXT
+                and event == fragments[int(code.split(":")[1])]
+                and 0 < len(event) <= record_quote_limit
+                and part.startswith(event + connector + "、")
+                and not re.search(r'[「」『』“”‘’"\r\n]', event)):
+                # Bind written position to this event alone. A clause-wide
+                # "方では" can otherwise appear to include the next event
+                # when that different event has no position label of its own.
+                # A SELF perspective conversion is not a verbatim quotation.
+                label = prefix.removesuffix("方では、") + "「" + event + "」ということがあった"
+                parts[slot] = label + part[len(event):]
+                record_boundaries[slot] = label
+            else:
+                parts[slot] = prefix + part
+                record_boundaries[slot] = prefix + event
     if (len(set(event_names)) == len(event_names)
         and not any(code.endswith((":none:detached:none", ":none:replacement:none", ":none:detached_answer_original_occasion:none", ":none:detached_answer_answer_time:none", ":none:detached_answer_prior_answer_time:none")) for code in codes)):
         combined, run_events, run_finite = [], [], None
@@ -10499,10 +10519,10 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True,
     # Each later source occurrence owns one boundary, even when SELF
     # perspective makes distinct source labels equal. An extra occurrence
     # inside an answer remains ambiguous and keeps the original grammar.
-    boundaries = [prefix + (("訂正の回答では、" if len(codes) > 1 else "言い直してくださった気持ちについては、")
-                           if code.endswith(":none:replacement:none") else event)
-                  for prefix, event, code in zip(
-                      record_prefixes or ("",) * len(event_names), event_names, codes, strict=True)]
+    boundaries = [prefix + ("訂正の回答では、" if len(codes) > 1 else "言い直してくださった気持ちについては、")
+                  if code.endswith(":none:replacement:none") else boundary
+                  for prefix, boundary, code in zip(
+                      record_prefixes or ("",) * len(event_names), record_boundaries, codes, strict=True)]
     if any(text.count("、" + event) != boundaries[1:].count(event)
            for event in boundaries[1:]):
         return None
@@ -10524,6 +10544,7 @@ def _source_grounded_reception_fragment(
     acknowledge_received: bool = True,
     middle_received_scope: bool = False,
     received_record_prefixes: tuple[str, ...] = (),
+    received_record_quote_limit: int = 0,
 ) -> str:
     """Compose one content core with one role/focus reception predicate."""
 
@@ -10621,7 +10642,8 @@ def _source_grounded_reception_fragment(
         and selected_subjective_decision.subjective_proposition.appraisal_content.operation
             in {"RECEIVE_AS_MATERIAL", "PRESERVE_BOTH_ENDPOINTS"}):
         discourse = _source_grounded_received_discourse(realization, acknowledge=acknowledge_received,
-                                                       record_prefixes=received_record_prefixes)
+                                                       record_prefixes=received_record_prefixes,
+                                                       record_quote_limit=received_record_quote_limit)
         if discourse is not None:
             return discourse
     if move.move_role == "bounded_counterposition":
@@ -11975,6 +11997,8 @@ def _author_source_grounded_reception_clauses(
                     and all(code.endswith(":none") for code in meaning_realization.nominalization_plan
                             if code.startswith("thread-received-slot:"))),
                 received_record_prefixes=tuple(record_prefixes.get(nid, "") for nid in move.target_nucleus_ids),
+                received_record_quote_limit=(reception_plan.quote_policy.max_anchor_visible_chars
+                    if reception_plan.quote_policy.max_anchor_count > 0 else 0),
             )
             detached_parts = _source_owned_detached_feeling_parts(
                 move, meaning_realization, plan, resolver, selected_decision, recovery_stage,

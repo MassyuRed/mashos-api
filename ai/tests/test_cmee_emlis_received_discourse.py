@@ -5574,8 +5574,8 @@ def test_same_name_received_chain_negative_answers_keep_every_owned_source(field
         changed_time = 'その時は' if first.startswith('今は') else '褒められたことについて、回答した時点では'
         follows = [follow.replace(visible_first, '', 1), follow.replace(second_finite, '', 1),
             follow.replace(visible_first, when + opposite, 1), follow.replace(visible_first, visible_first.replace(when, changed_time), 1),
-            follow.replace('先に書かれた方では、', '後に書かれた方では、', 1),
-            follow.replace('後に書かれた方では、', '先に書かれた方では、', 1),
+            follow.replace('先に書かれた', '後に書かれた', 1),
+            follow.replace('後に書かれた', '先に書かれた', 1),
             follow.replace('悲しかったけれど、嬉しかった', '嬉しかったけれど、悲しかった', 1),
             follow.replace(second_finite, 'その時は楽しくなかった' if '楽しかった' in second_finite else 'その時は少し怖くなかった', 1)]
         if '少し' in visible_first:
@@ -5760,3 +5760,118 @@ def test_same_name_identical_answers_saved_replay_preserves_both_occurrences(qca
             saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved output must not regenerate'))
             assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
     assert current['state'] == 'COMPLETED' and not current['can_continue']
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('event', ['褒められた', '誘われた'])
+@pytest.mark.parametrize('connector', ['のに', 'けど', 'けれど', 'けれども'])
+def test_received_position_annotation_binds_only_its_contrast_event(field, event, connector):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    source = RECEIVED_CHAIN_MULTI.replace('誘われた', '褒められた').replace('褒められた', event)
+    source = source.replace('のに寂しかった', connector + '寂しかった')
+    req = begin(source if field == 'memo' else '', source if field == 'memo_action' else '')
+    label = f'後に書かれた「{event}」ということがあった'
+    legacy_label = f'後に書かれた方では、{event}'
+    for text in (None, '今は嬉しい。', 'その時は楽しかった。', '「頼まれた」は誤りです。'):
+        if text:
+            req = advance(req, text)
+        context = actual(request=req)
+        result, plan, sentence, resolver, selected = context
+        follow = result.artifact.reception
+        assert MeaningExperienceEngine().generate(req).artifact.text == result.artifact.text
+        # Once the following distinct event is withdrawn, the original
+        # single-event scope has no ambiguous following event to annotate.
+        active_label = legacy_label if text == '「頼まれた」は誤りです。' else label
+        assert active_label + connector + '、寂しさを感じ' in follow
+        if active_label == label:
+            assert legacy_label + connector not in follow
+        assert '悲しかったけれど、嬉しかった' in follow
+        assert ('頼まれた' not in follow) == (text == '「頼まれた」は誤りです。')
+        if text == '「頼まれた」は誤りです。':
+            assert '最初の記録にあるとおり、当時は怖かった' in follow
+        legacy = follow.replace(label, legacy_label)
+        changes = [
+            follow.replace(active_label, active_label.replace('後', '先', 1)),
+            follow.replace(active_label, active_label.replace('後', '間', 1)),
+            follow.replace(active_label, active_label.replace(event, '頼まれた')),
+            follow.replace(active_label, active_label + active_label),
+            follow.replace(active_label, ''),
+            follow.replace(active_label + connector, active_label + 'から'),
+            follow.replace('寂しさを感じ', '怖さを感じ'),
+        ]
+        if active_label == label:
+            changes.append(follow.replace(label, label.replace('」ということがあった', '」')))
+        assert all(changed != follow for changed in changes)
+        with (patch.object(reception, '_author_source_grounded_reception_clauses', side_effect=AssertionError('no author')),
+              patch.object(surface, '_render_observation', side_effect=AssertionError('no author'))):
+            for candidate in (follow, legacy, *changes):
+                # Matching replay cannot hide a wrong written position or
+                # donate the event/reaction from the Observation layer.
+                with patch.object(gate, 'replay_source_grounded_human_reception_from_plan',
+                                  return_value=SimpleNamespace(text=candidate)):
+                    proof = gate.evaluate_grounded_surface_body_inverse(
+                        body=result.artifact.text.replace(follow, candidate).encode(), plan=plan,
+                        sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected)
+                assert proof.passed == (candidate in (follow, legacy)), proof.failure_codes
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('reply', ['今は嬉しい。', '今は少し苦しい。'])
+def test_received_position_annotation_saved_correction_and_withdrawal(qcase, qdb, monkeypatch, field, reply):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    source = RECEIVED_CHAIN_MULTI.replace('誘われた', '褒められた')
+    memo, action = (source, '') if field == 'memo' else ('', source)
+    qdb.query('update public.emotions set memo=$1,memo_action=$2 where id=$3', [memo, action, parent])
+    original = current = run(service.start(user, parent))
+    for step, text in enumerate((reply, '「寂しかった」ではなく「少し怖かった」です。', '「頼まれた」は誤りです。')):
+        if step:
+            current = run(cont(service, user, current, f'position-continue-{step}'))
+        current = run(answer(service, user, current, text, f'position-answer-{step}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == original['original']
+        assert qdb.query('select memo,memo_action from public.emotions where id=$1', [parent])['rows'][0] == {
+            'memo': memo, 'memo_action': action}
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved output must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    body = current['current_observation']['text']
+    assert '少し怖かった' in body and '寂しかった' not in body and '頼まれた' not in body
+    assert current['state'] == 'COMPLETED' and not current['can_continue']
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('source,replies', [
+    ('私は褒められたのに悲しかったけれど嬉しかった。私は褒められたのに寂しかった。頼まれたのに怖かった。', (None, '今は嬉しい。')),
+    ('誘われたのに嬉しくなかった。誘われたのに悲しかった。誘われたのに寂しかった。', (None, '今は嬉しい。')),
+    # A reply to this long-event source already fails in the unchanged
+    # upstream plan. This checks the previously supported initial body.
+    ('昔から親しくしている先生に褒められたのに悲しかったけれど嬉しかった。昔から親しくしている先生に褒められたのに寂しかった。頼まれたのに怖かった。', (None,)),
+])
+def test_received_position_annotation_preserves_other_source_scopes(field, source, replies):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    req = begin(source if field == 'memo' else '', source if field == 'memo_action' else '')
+    for reply in replies:
+        if reply:
+            req = advance(req, reply)
+        context = actual(request=req)
+        result = context[0]
+        assert MeaningExperienceEngine().generate(req).artifact.text == result.artifact.text
+        assert '」ということがあった' not in result.artifact.reception
+        assert '後に書かれた方では、' in result.artifact.reception
+        assert inverse(context, result.artifact.reception, without_author=True).passed
+        assert '悲し' in result.artifact.reception and '寂し' in result.artifact.reception
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+def test_received_position_annotation_keeps_literal_answer_words(field):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    source = RECEIVED_CHAIN_MULTI.replace('誘われた', '褒められた')
+    req = begin(source if field == 'memo' else '', source if field == 'memo_action' else '')
+    req = advance(req, '今は私は先に書かれた方では、重いと思った。')
+    context = actual(request=req)
+    result = context[0]
+    assert MeaningExperienceEngine().generate(req).artifact.text == result.artifact.text
+    follow = result.artifact.reception
+    assert '回答した時点ではあなたは先に書かれた方では、重いと思った' in follow
+    assert '後に書かれた「褒められた」ということがあったのに、寂しさを感じ' in follow
+    assert inverse(context, follow, without_author=True).passed

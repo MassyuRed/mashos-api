@@ -15043,3 +15043,30 @@ rootが合成7全文（主語読点、僕＋全角空白、二記録集約、通
 STRUCTURE_MAP_DELTA_NONE：既存Analysis compiler1／共有plan1／test3／API handoff1、Cocolon current03／設計04／06の計9file、新規repo file0。共有意味owner内の既存parserを変更しているがownerの追加・移動はない。Piece／realizer／API契約／DTO／DB／SQL／RN／製品依存変更0。env／deploy／build／main／merge／IF操作0。u157未配置。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEAR・48%、最後の確認済み稼働API1a42b9e…／TestFlight6401・本人実機残件は継承値で、今回再確認していない。旧generic0058期待差も未再検証・未修正。
 
 残件は一般感情、全角／ASCIIコンマ、保護意向を含む希望と負荷の複合、未対応認知そのもの、夢／伝聞から現実へ戻る境界、plain幾等と、指定版での本人生成・保存再表示・比較。次も実出力の内容不一致から限定対象を選ぶ。PR説明上限に合わせ先頭u156要約をu157へ更新し、u156全文は本handoff／06とGit履歴に保持する。
+
+
+## 2026-10-07 — Emlisの同名出来事に付く位置修飾を対象へ限定（未配置）
+
+Mashの「EmlisAIの内容修正系の残件」指示により、内容修正のu77末尾から再開した。開始HEADはAPI `db915a909422de0c4eed3fe83e2a23aac4286d5c`／Cocolon `fe4946bd230328be961e122f2c91758e5e76ca2f`。全体設計01・01A/B/Cと国家システム02、全file地図の導線・current Emlis/CMEE owner表、詳細設計、最新weekly20261003 §6.6〜6.10、作業姿勢currentと関連規則、恒久incident全文を確認した。全path確認を全実装全文精読とは扱わない。System Context prepareはworkspaceのmashos-api不在で失敗し、追跡正本を直接確認した。Karen-Diary取得は個人情報の広い取得としてautomatic approval reviewに拒否され、別手段で再取得していない。今回その内容を確認済みとはしない。
+
+weeklyの最小実動作優先を維持し、今回の明示指示でEmlisの一つの内容残件を限定修正する。文体の全面完成を実機接続の前提にせず、期限を延長しない。root華恋がCodex Workで単一編集・検証・反映owner、同環境read-only agentが原因・最終差分・合成本文を独立reviewした。別model Pro reviewではない。
+
+再現例は同名の「褒められた」二件と「頼まれた」が続く入力。旧HRは「後に書かれた方では、褒められたのに、寂しさを感じ、頼まれたのに、怖さを感じたのですね。」となり、後に書かれたという修飾が次の別eventまで及ぶように読めた。新HRは「後に書かれた『褒められた』ということがあったのに、寂しさを感じ、頼まれたのに、怖さを感じたのですね。」相当（実本文の引用符は「」）とし、位置をevent自体へ付ける。意味graphの付替えが実証された問題とは区別し、原contrast・感情・回答対象・時点・程度を保つ。
+
+既存HR内の有限文法に限定し、原contrastを持つ位置付きeventの次に無修飾の別eventが続く場合だけ適用する。原文逐語一致と既存quote_policyの可否・長さ上限を要求し、SELF視点変換、長いevent、同名三件には旧文法を維持する。既存Gateは自身のsource readerで位置とeventを確認し、検証済みの注釈だけを外して既存の役割読取へ渡し、UTF-8証拠範囲を戻す。旧文法も受理する。回答中の単なる「先に書かれた方では」をmarkerへ誤認しないよう、旧来のevent lookaheadを保持する。新owner/helper/rendererなし、共有prefix helper・意味受付・answer_update・Plan・Observation作者・API/DTO/DB/RN変更なし。
+
+初稿の広い適用は既存同名selector132件で42 PASS／69 FAIL／21 ERRORとなった。独立reviewで同名三件の引用数、SELF非逐語引用、18字eventの引用長、回答中のliteral位置語句の実退行を確認し、guardを緩和せず適用条件と旧marker境界を修復した。既存mutationの2箇所は「方では、」まで含む置換を位置語だけの置換へ変え、新旧文法の双方で先後交換を実際に行うようにした。拒否期待は維持し、既存test無変更とは扱わない。
+
+本文は4系列（肯定回答・否定回答・訂正・別名対照）×2field×初回/3回答の32件をbaselineと比較。Observation全32不変、HRは20変更/12不変。memo/memo_actionで一致する16組を両層全文でrootと補助が読了し、最終sourceで32件を再生成して読了本文との一致を確認した。原感情・二回答の対象/時点・訂正後の感情を保持し、撤回した「頼まれた」を復活させず元の「怖かった」を残す。新たな意味反転・原因追加・別event付替えは確認範囲で認めなかった。これは全入力品質の合格ではない。
+
+新28条件はevent2×contrast4×field2の独立逆読取16、保存4、SELF/同名三件/長eventの対照6、literal回答2。作者禁止・改変本文と一致するreplayでも先後交換、誤位置/対象、重複/消去、引用閉じ欠損、原因化、感情交換を拒否する。保存4は実service＋隔離PGliteで初回→回答→感情訂正→event撤回、original DTO/DB原入力不変、generate禁止GET/startの保存DTO一致、COMPLETEDを確認する。実DB・本人端末・process再起動ではない。
+
+長event対照の初稿は回答後も成功を期待して新2件が失敗した。HEAD元のHR/Gateでも初回成功・回答後は未変更Planの `standalone[-1]` で同じIndexErrorを独立再現した。新対照だけを既存成立の初回維持へ訂正し、回答後停止は残件として保持する。旧停止期待4件もbaselineから失敗しており、今回の成功へ換算しない。
+
+検証確定：最終productionの関連selector＋identityは189件中183 PASS／6 FAIL（191.89秒）。うち4件は開始版132件の128 PASS／4 FAIL（112.31秒）と同じ失敗で、共通132件の成否と旧4件のfailure messageが一致した。残り2件は上記の長event新対照の誤った回答後成功期待。新対照だけを訂正後、対象6件を再実行して6 PASS（10.37秒）。重複を除いた189条件の最終判定は185 PASS／既存4 FAIL、ERROR/SKIP0。新28条件と共有identity1はすべてPASS。全suite成功とはしない。最終production後のsource変更0。再実行対象は `test_cmee_emlis_received_discourse.py test_cmee_emlis_detached_observation.py -k 'same_name or position_annotation'` と contractsの `test_active_final_language_owner_chain_has_zero_legacy_compose_calls`。別途保存smoke1 PASS。language identity `3a4fafc2945e354345b2dea319ace46945c29f50e7b0496ce318f8ad49021deb`、runtime identity `58d830f79dec351ea619a7e788be0d1da42331255a8be364f9f89ede1dc22fc7`。
+
+Python3.12.14／pytest9.1.1／FastAPI0.142.2／httpx0.28.1／Pydantic2.13.5／PGlite0.5.8をscratchに用意し、製品依存変更0。対象実行では過去FB172移行pluginを無効化した。skip/xfail追加なし。共有9owner/18payload構成を保ち、current identity fixtureを最終sourceへ同期した。既存fixtureに未反映だった直前Analysisの共有Plan変更分も含むが、今回Plan sourceは変更していない。historical frozen manifestは変更しない。
+
+STRUCTURE_MAP_DELTA_NONE：既存HR/Gate2、既存test1、current identity fixture1、API handoff1、Cocolon06の計6file modify、新規repo file0。owner/route/schema/lifecycle/配置は不変のため、地図への架空の構造変更を追加しない。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEARを継承し、進捗率は再算定しない。PR3/30はDraft/open/unmerged。main/merge/deploy/env/実DB/native build変更なし。反映commitとremote全6file bytes/parent/変更path集合の確認結果は既存PR本文へ記録する。scratch JSON/XML/logを正式再開原典とせず、追跡source/testと本記録を使用する。
+
+残件は適用外の位置修飾、長い列挙・二層再掲・「のですね」の反復・受け取りの浅さ、u76の過去説明形と上流anchor不一致、今回再確認した長event回答後の上流停止。実機無応答の設定/指定版配置と本人生成→保存→再表示も未完了であり、本内容修正を実機復旧へ換算しない。
