@@ -279,3 +279,123 @@ async def owner_visibility(piece_id: str, request: Request) -> JSONResponse:
 async def owner_delete(piece_id: str, request: Request) -> JSONResponse:
     """Delete through the existing owner/version/key-bound purge terminal."""
     return await _mutate_saved_piece(piece_id, request, operation='delete')
+
+
+_PREVIEW_STATUS = {
+    **_CANCEL_STATUS,
+    'PIECE_SOURCE_NOT_FOUND': 404,
+    'PIECE_HASH_MISMATCH': 409,
+    'PIECE_SOURCE_NOT_ELIGIBLE': 422,
+    'PIECE_FORMAT_NOT_ELIGIBLE': 422,
+    'PIECE_VISUAL_SELECTION_NOT_ALLOWED': 422,
+    'PIECE_SAFETY_UNAVAILABLE': 422,
+}
+
+
+async def _preview_rpc(name: str, args: dict) -> dict:
+    """One call to the existing fenced B5 terminal, with closed SQL errors."""
+    if name != 'piece_issue_preview_v2':
+        raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE')
+    try:
+        from supabase_client import sb_post_rpc
+        response = await sb_post_rpc(name, args, timeout=8.0)
+        value = response.json()
+        if response.status_code == 200 and type(value) is dict:
+            return value
+        code = 'PIECE_TEMPORARILY_UNAVAILABLE'
+        if (response.status_code == 400 and type(value) is dict
+                and value.get('code') == 'P0001'
+                and type(value.get('message')) is str
+                and value['message'] in _PREVIEW_STATUS):
+            code = value['message']
+        raise PieceContractError(code)
+    except PieceContractError:
+        raise
+    except Exception:
+        # A missing ACK is not an absent row. Only a later explicit request
+        # with the same key may recover through issue_original's read path.
+        raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE') from None
+
+
+def _preview_runtime(request: Request) -> tuple[int, str]:
+    """Explicit server configuration; no env/defaults or client authority.
+
+    Dedicated test applications supply app.state.piece_preview_runtime with
+    ttl_seconds and renderer_version. Production admission of those values,
+    router registration, capabilities/quota and RN delivery remain separate.
+    Missing or malformed server configuration must never issue a preview.
+    """
+    import re
+    runtime = getattr(request.app.state, 'piece_preview_runtime', None)
+    if (type(runtime) is not dict
+            or set(runtime) != {'ttl_seconds', 'renderer_version'}):
+        raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE')
+    ttl, renderer = runtime['ttl_seconds'], runtime['renderer_version']
+    if (type(ttl) is not int or not 0 < ttl <= 2147483647
+            or type(renderer) is not str
+            or re.fullmatch(r'[A-Za-z0-9_.:\-]{1,128}', renderer) is None):
+        raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE')
+    return ttl, renderer
+
+
+def _preview_public_response(result: object) -> dict:
+    """Project the persisted artifact, not the source or internal review."""
+    import json
+    from datetime import datetime
+    from piece_v2_contract import PIECE_V2_CONTRACT_VERSIONS, canonical_json_bytes
+    from piece_v2_store import _PREVIEW_RESPONSE_FIELDS, _positive, _preview_content, _uuid
+    try:
+        if type(result) is not dict or set(result) != _PREVIEW_RESPONSE_FIELDS:
+            raise ValueError
+        value = json.loads(canonical_json_bytes(result))
+        _preview_content(value)
+        if (UUID(_uuid(value['preview_id'])).int == 0
+                or value['visibility_scope'] != 'private'
+                or type(value['idempotency_replayed']) is not bool
+                or type(value['expires_at']) is not str
+                or datetime.fromisoformat(value['expires_at']).utcoffset() is None):
+            raise ValueError
+        _positive(value['preview_revision'])
+        _positive(value['row_version'])
+        public = {k: value[k] for k in _PREVIEW_RESPONSE_FIELDS - {
+            'safety_state', 'idempotency_replayed'}}
+        public.update(
+            api_contract_version=PIECE_V2_CONTRACT_VERSIONS['api_contract_version'],
+            piece_contract_version=PIECE_V2_CONTRACT_VERSIONS['piece_contract_version'],
+            content_status=value['safety_state'])
+        return public
+    except Exception:
+        # Corruption is not a caller error and must not return a partial body.
+        raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE') from None
+
+
+@router.post('/preview')
+async def create_preview(request: Request) -> JSONResponse:
+    """Original-only first issuance and same-key replay via the existing B5.
+
+    This router stays unregistered in production. No raw source, caller tier,
+    TTL, renderer, safety verdict or replacement body is accepted. The actual
+    bounded reviewer is chosen by issue_original, never by this HTTP request.
+    """
+    try:
+        from piece_v2_preview_service import PiecePreviewService, _request_snapshot
+        await _authenticated_owner(request)
+        keys = request.headers.getlist('idempotency-key')
+        if len(keys) != 1 or not keys[0].strip() or request.query_params:
+            raise PieceContractError('PIECE_REQUEST_INVALID')
+        try:
+            raw = await request.json()
+        except (ValueError, UnicodeError):
+            raise PieceContractError('PIECE_REQUEST_INVALID') from None
+        value = _request_snapshot(raw)
+        ttl, renderer = _preview_runtime(request)
+        result = await PiecePreviewService().issue_original(
+            request.headers['authorization'], value, idempotency_key=keys[0],
+            ttl_seconds=ttl, renderer_version=renderer, rpc=_preview_rpc)
+        return _response(_preview_public_response(result))
+    except PieceContractError as exc:
+        code = exc.code if exc.code in _PREVIEW_STATUS else 'PIECE_TEMPORARILY_UNAVAILABLE'
+        return _response({'code': code}, _PREVIEW_STATUS[code])
+    except Exception:
+        # Cancellation (BaseException) is deliberately not converted to HTTP.
+        return _response({'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}, 503)

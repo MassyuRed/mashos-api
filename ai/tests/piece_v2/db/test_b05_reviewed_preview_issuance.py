@@ -445,3 +445,285 @@ def test_orchestrated_candidate_must_pass_actual_review_before_native_write(data
     assert error.value.code == 'PIECE_SAFETY_UNAVAILABLE'
     assert state['actual_reviews'] == 1 and not state['posts']
     assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
+
+
+# HTTP below calls the real orchestration, CMEE/B9, bounded reviewer, store
+# and disposable SQL. Bearer lookup, source/state reads and PostgREST transport
+# remain synthetic. Nothing is registered in the production application.
+def _preview_http_harness(database, monkeypatch, *, tier='free', named=False):
+    import httpx
+    from fastapi import FastAPI, HTTPException
+    import api_piece_v2 as api
+    import supabase_client
+
+    owner, request, prepared, state, native, load = _orchestration(
+        database, monkeypatch, tier=tier, named=named)
+    actual_issue = owner.issue_original
+    state.update(http_auth=0, http_rpc=0)
+
+    async def verify(authorization):
+        state['http_auth'] += 1
+        if authorization != _B5['AUTH']:
+            raise HTTPException(401, detail=_B5['PRIVATE'])
+        return _B5['OWNER']
+
+    async def issue(authorization, value, **kwargs):
+        assert set(kwargs) == {'idempotency_key', 'ttl_seconds', 'renderer_version', 'rpc'}
+        result = await actual_issue(authorization, value, load_record=load, **kwargs)
+        state['last_internal_result'] = deepcopy(result)
+        return result
+
+    async def transport(name, args, *, timeout):
+        assert name == 'piece_issue_preview_v2' and timeout == 8.0
+        state['http_rpc'] += 1
+        if 'provider_response' in state:
+            status, value = state['provider_response']
+            return httpx.Response(status, json=value)
+        result = await native(name, args)
+        if state.get('lose_ack'):
+            raise TimeoutError(_B5['PRIVATE'])
+        return httpx.Response(200, json=result)
+
+    monkeypatch.setattr(api, '_verify_bearer', verify)
+    monkeypatch.setattr(owner, 'issue_original', issue)
+    monkeypatch.setattr(service, 'PiecePreviewService', lambda: owner)
+    monkeypatch.setattr(supabase_client, 'sb_post_rpc', transport)
+    app = FastAPI()
+    app.state.piece_preview_runtime = {
+        'ttl_seconds': 600, 'renderer_version': 'synthetic-renderer.v1'}
+    app.include_router(api.router)
+    return app, owner, request, prepared, state
+
+
+def _preview_http_post(app, value, *, headers=None, raw=None, suffix=''):
+    import httpx
+    if headers is None:
+        headers = [('authorization', _B5['AUTH']),
+                   ('idempotency-key', 'synthetic-generated-preview')]
+
+    async def call():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                    base_url='http://piece-test.invalid') as client:
+            kwargs = {'json': value} if raw is None else {'content': raw}
+            return await client.post('/emotion/piece/preview' + suffix,
+                                     headers=headers, **kwargs)
+    return asyncio.run(call())
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('named', [False, True])
+def test_http_first_issue_and_replay_deliver_exact_persisted_artifact(database, monkeypatch, tier, named):
+    from piece_v2_contract import PIECE_V2_CONTRACT_VERSIONS
+    conn, _, _ = database
+    app, _, request, prepared, state = _preview_http_harness(
+        database, monkeypatch, tier=tier, named=named)
+    first = _preview_http_post(app, request)
+    assert first.status_code == 200
+    assert first.headers['cache-control'] == 'no-store'
+    value = first.json()
+    assert set(value) == {
+        'api_contract_version', 'piece_contract_version', 'preview_id',
+        'preview_revision', 'row_version', 'expires_at', 'visibility_scope',
+        'format_type', 'eligible_formats', 'piece_text', 'piece_text_hash',
+        'content_payload', 'content_payload_hash', 'visual_recipe',
+        'visual_recipe_hash', 'renderer_version', 'content_status'}
+    assert value['api_contract_version'] == PIECE_V2_CONTRACT_VERSIONS['api_contract_version']
+    assert value['piece_contract_version'] == PIECE_V2_CONTRACT_VERSIONS['piece_contract_version']
+    assert value['content_status'] == ('adjusted' if named else 'ready')
+    assert value['visibility_scope'] == 'private'
+    for field in ('piece_text', 'piece_text_hash', 'content_payload',
+                  'content_payload_hash', 'visual_recipe', 'visual_recipe_hash'):
+        assert value[field] == prepared.artifact_payload()[field]
+    before = conn.execute('SELECT to_jsonb(r) FROM public.piece_records r').fetchone()[0]
+    assert (value['piece_text'], value['content_payload'], value['visual_recipe']) == (
+        before['piece_text'], before['content_payload'], before['visual_recipe'])
+    _no_author(monkeypatch)
+
+    async def no_review(*args):
+        raise AssertionError('HTTP replay must not review again.')
+
+    monkeypatch.setattr(review, 'review_prepared_original', no_review)
+    app.state.piece_preview_runtime['ttl_seconds'] = 1200
+    second = _preview_http_post(app, request)
+    assert second.status_code == 200 and second.json() == value
+    assert state['http_auth'] == 2
+    assert state['authors'] == state['actual_reviews'] == state['http_rpc'] == len(state['posts']) == 1
+    assert conn.execute('SELECT to_jsonb(r) FROM public.piece_records r').fetchone()[0] == before
+    assert _B5['_B4']['_used'](conn) == 0
+
+
+def test_http_lost_ack_is_503_then_same_key_read_without_rewrite(database, monkeypatch):
+    conn, _, _ = database
+    app, _, request, _, state = _preview_http_harness(database, monkeypatch)
+    state['lose_ack'] = True
+    first = _preview_http_post(app, request)
+    assert first.status_code == 503
+    assert first.json() == {'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}
+    before = conn.execute('SELECT to_jsonb(r) FROM public.piece_records r').fetchone()[0]
+    _no_author(monkeypatch)
+    second = _preview_http_post(app, request)
+    assert second.status_code == 200
+    assert second.json()['piece_text'] == before['piece_text']
+    assert second.json()['visual_recipe'] == before['visual_recipe']
+    assert state['authors'] == state['actual_reviews'] == state['http_rpc'] == len(state['posts']) == 1
+    assert conn.execute('SELECT to_jsonb(r) FROM public.piece_records r').fetchone()[0] == before
+    assert _B5['_B4']['_used'](conn) == 0
+
+
+@pytest.mark.parametrize('runtime', [None, {},
+    {'ttl_seconds': True, 'renderer_version': 'synthetic-renderer.v1'},
+    {'ttl_seconds': 0, 'renderer_version': 'synthetic-renderer.v1'},
+    {'ttl_seconds': 600, 'renderer_version': '/private/renderer'},
+    {'ttl_seconds': 600, 'renderer_version': ''},
+])
+def test_http_unadmitted_server_config_never_issues(database, monkeypatch, runtime):
+    conn, _, _ = database
+    app, _, request, _, state = _preview_http_harness(database, monkeypatch)
+    if runtime is None:
+        del app.state.piece_preview_runtime
+    else:
+        app.state.piece_preview_runtime = runtime
+    result = _preview_http_post(app, request)
+    assert result.status_code == 503
+    assert result.json() == {'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}
+    assert state['authors'] == state['actual_reviews'] == state['http_rpc'] == 0
+    assert not state['reads']
+    assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
+
+
+@pytest.mark.parametrize('field', ['owner_user_id', 'piece_text', 'content_payload',
+    'safety_state', 'ttl_seconds', 'renderer_version', 'subscription_tier'])
+def test_http_client_cannot_replace_server_truth(database, monkeypatch, field):
+    conn, _, _ = database
+    app, _, request, _, state = _preview_http_harness(database, monkeypatch)
+    request[field] = _B5['PRIVATE']
+    result = _preview_http_post(app, request)
+    assert result.status_code == 400
+    assert result.json() == {'code': 'PIECE_REQUEST_INVALID'}
+    assert state['authors'] == state['actual_reviews'] == state['http_rpc'] == 0
+    assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
+
+
+@pytest.mark.parametrize('case,code,status', [
+    ('no-auth', 'PIECE_AUTH_REQUIRED', 401),
+    ('duplicate-auth', 'PIECE_AUTH_REQUIRED', 401),
+    ('wrong-auth', 'PIECE_AUTH_REQUIRED', 401),
+    ('no-key', 'PIECE_REQUEST_INVALID', 400),
+    ('duplicate-key', 'PIECE_REQUEST_INVALID', 400),
+    ('blank-key', 'PIECE_REQUEST_INVALID', 400),
+    ('query', 'PIECE_REQUEST_INVALID', 400),
+    ('malformed-json', 'PIECE_REQUEST_INVALID', 400),
+    ('array-body', 'PIECE_REQUEST_INVALID', 400),
+])
+def test_http_request_failures_are_closed_and_do_not_generate(database, monkeypatch, case, code, status):
+    app, _, request, _, state = _preview_http_harness(database, monkeypatch)
+    headers = [('authorization', _B5['AUTH']), ('idempotency-key', 'synthetic-generated-preview')]
+    kwargs = {}
+    if case == 'no-auth':
+        headers = headers[1:]
+    elif case == 'duplicate-auth':
+        headers.append(headers[0])
+    elif case == 'wrong-auth':
+        headers[0] = ('authorization', 'Bearer wrong-synthetic-user')
+    elif case == 'no-key':
+        headers = headers[:1]
+    elif case == 'duplicate-key':
+        headers.append(headers[1])
+    elif case == 'blank-key':
+        headers[1] = ('idempotency-key', ' ')
+    elif case == 'query':
+        kwargs['suffix'] = '?ttl_seconds=600'
+    elif case == 'malformed-json':
+        kwargs['raw'] = ('{"memo":"' + _B5['PRIVATE']).encode()
+    else:
+        request = [_B5['PRIVATE']]
+    result = _preview_http_post(app, request, headers=headers, **kwargs)
+    assert result.status_code == status and result.json() == {'code': code}
+    assert result.headers['cache-control'] == 'no-store'
+    if status == 401:
+        assert result.headers['www-authenticate'] == 'Bearer'
+    assert state['authors'] == state['actual_reviews'] == state['http_rpc'] == 0
+
+
+@pytest.mark.parametrize('status,value,expected_status,code', [
+    (400, {'code': 'P0001', 'message': 'PIECE_CONFLICT'}, 409, 'PIECE_CONFLICT'),
+    (400, {'code': 'P0001', 'message': 'PIECE_PREVIEW_EXPIRED'}, 409, 'PIECE_PREVIEW_EXPIRED'),
+    (401, {'code': 'P0001', 'message': 'PIECE_AUTH_REQUIRED'}, 503, 'PIECE_TEMPORARILY_UNAVAILABLE'),
+    (404, {'code': 'P0001', 'message': 'PIECE_NOT_FOUND'}, 503, 'PIECE_TEMPORARILY_UNAVAILABLE'),
+    (400, {'code': 'XX000', 'message': 'PIECE_CONFLICT'}, 503, 'PIECE_TEMPORARILY_UNAVAILABLE'),
+    (400, {'code': 'P0001', 'message': 'private diagnostic'}, 503, 'PIECE_TEMPORARILY_UNAVAILABLE'),
+    (200, {}, 503, 'PIECE_TEMPORARILY_UNAVAILABLE'),
+    (200, [], 503, 'PIECE_TEMPORARILY_UNAVAILABLE'),
+])
+def test_http_rpc_protocol_failure_is_not_auth_absence_or_success(database, monkeypatch, status, value, expected_status, code):
+    conn, _, _ = database
+    app, _, request, _, state = _preview_http_harness(database, monkeypatch)
+    state['provider_response'] = (status, value)
+    result = _preview_http_post(app, request)
+    assert result.status_code == expected_status and result.json() == {'code': code}
+    assert state['http_rpc'] == 1 and not state['posts']
+    assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
+
+
+def test_http_actual_safety_rejection_never_reaches_sql(database, monkeypatch):
+    conn, _, _ = database
+    app, owner, request, prepared, state = _preview_http_harness(database, monkeypatch)
+    blocks = [b.replace('大切にしていない', '大切にしている')
+              for b in prepared.artifact_payload()['content_payload']['body_blocks']]
+    altered = _changed(prepared, blocks=blocks)
+
+    async def altered_preparation(*args):
+        return altered
+
+    monkeypatch.setattr(owner, 'prepare_original', altered_preparation)
+    result = _preview_http_post(app, request)
+    assert result.status_code == 422
+    assert result.json() == {'code': 'PIECE_SAFETY_UNAVAILABLE'}
+    assert state['actual_reviews'] == 1 and state['http_rpc'] == 0
+    assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
+
+
+@pytest.mark.parametrize('kind', ['extra-source', 'text', 'public', 'expiry', 'review-state'])
+def test_http_never_serializes_corrupted_or_unclosed_service_output(database, monkeypatch, kind):
+    app, owner, request, _, state = _preview_http_harness(database, monkeypatch)
+    assert _preview_http_post(app, request).status_code == 200
+    result = state['last_internal_result']
+    if kind == 'extra-source':
+        result['source_lineage'] = {'private': _B5['PRIVATE']}
+    elif kind == 'text':
+        result['piece_text'] = _B5['PRIVATE']
+    elif kind == 'public':
+        result['visibility_scope'] = 'public'
+    elif kind == 'expiry':
+        result['expires_at'] = '2026-10-08T00:00:00'
+    else:
+        result['safety_state'] = 'unreviewed'
+
+    async def invalid_result(*args, **kwargs):
+        return result
+
+    monkeypatch.setattr(owner, 'issue_original', invalid_result)
+    response = _preview_http_post(app, request)
+    assert response.status_code == 503
+    assert response.json() == {'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}
+    assert state['http_rpc'] == 1
+
+
+@pytest.mark.parametrize('cancel', [False, True])
+def test_http_unexpected_failure_is_closed_and_task_cancellation_propagates(database, monkeypatch, cancel):
+    app, owner, request, _, state = _preview_http_harness(database, monkeypatch)
+
+    async def fail(*args, **kwargs):
+        if cancel:
+            raise asyncio.CancelledError()
+        raise RuntimeError(_B5['PRIVATE'])
+
+    monkeypatch.setattr(owner, 'issue_original', fail)
+    if cancel:
+        with pytest.raises(asyncio.CancelledError):
+            _preview_http_post(app, request)
+    else:
+        response = _preview_http_post(app, request)
+        assert response.status_code == 503
+        assert response.json() == {'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}
+    assert state['http_rpc'] == 0
