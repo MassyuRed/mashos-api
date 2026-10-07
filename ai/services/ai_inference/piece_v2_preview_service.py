@@ -4,8 +4,9 @@ prepare_original retains its pre-issuance contract. issue_prepared_original
 connects an already prepared CMEE/B9 artifact to the existing B5 store only
 when a supplied server reviewer accepts that exact source and artifact.
 No reviewer, renderer or TTL default, HTTP registration or production effect
-is introduced. The concrete safety owner and final transaction fence remain
-unfinished; this internal connection is not a complete public preview issuer.
+is introduced. The B5 SQL overload binds current source/tier through the write.
+The concrete safety owner, restart replay lookup and HTTP/UI remain unfinished;
+this internal connection is not a complete public preview issuer.
 """
 from __future__ import annotations
 
@@ -261,10 +262,11 @@ class PiecePreviewService:
         reply is not retried automatically. TTL and renderer identity have no
         invented defaults and must come from the server's admitted runtime.
 
-        Source/tier are revalidated around review, NOT transactionally locked
-        through the following RPC. That final read/write fence, a concrete
-        PCE-4 reviewer, restart-time replay retrieval and HTTP/UI activation
-        remain prerequisites to exposing this path. No live route is changed.
+        Source/tier are revalidated around review and passed as server-only
+        expectations to the SQL overload, which holds the original/profile/
+        thread and consumed Q3 context through issuance, including replay.
+        A concrete PCE-4 reviewer, restart-time replay retrieval and HTTP/UI
+        activation remain unfinished. No live route is changed.
         """
         from piece_v2_content_policy import choose_format
         from piece_v2_store import issue_piece_preview, _key_hash
@@ -346,7 +348,11 @@ class PiecePreviewService:
             return await issue_piece_preview(
                 authenticated_user_id=handoff.original.authenticated_owner_id,
                 record=record, request_fingerprint=canonical_sha256_hex(value),
-                idempotency_key=idempotency_key, ttl_seconds=ttl_seconds, rpc=rpc)
+                idempotency_key=idempotency_key, ttl_seconds=ttl_seconds, rpc=rpc,
+                expected_subscription_tier=handoff.original.subscription_tier,
+                expected_source_state={'original': handoff.original.original_payload(),
+                    'thread_id': handoff.thread_id, 'thread_revision': handoff.thread_revision,
+                    'lineage': lineage})
         except PieceContractError as exc:
             raise _error(exc.code if exc.code in errors else 'PIECE_TEMPORARILY_UNAVAILABLE') from None
         except Exception:

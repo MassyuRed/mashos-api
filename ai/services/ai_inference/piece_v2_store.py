@@ -227,7 +227,9 @@ def _preview_content(value: Mapping[str, Any]) -> None:
 
 async def issue_piece_preview(*, authenticated_user_id: str, record: Mapping[str, Any],
                               request_fingerprint: str, idempotency_key: str,
-                              ttl_seconds: int, rpc: RpcCall) -> dict:
+                              ttl_seconds: int, rpc: RpcCall,
+                              expected_subscription_tier: str | None = None,
+                              expected_source_state: Mapping[str, Any] | None = None) -> dict:
     """Persist an already-admitted server candidate, without consuming quota.
 
     INTERNAL STORE ENTRY, NOT an HTTP request parser or a safety approval.
@@ -237,6 +239,12 @@ async def issue_piece_preview(*, authenticated_user_id: str, record: Mapping[str
     its separately chosen lifetime. Never pass client replacement text here.
     The fingerprint binds the original canonical request; retry returns the
     persisted candidate, not a newly generated candidate or extended lifetime.
+
+    B5 passes BOTH server-only expectations to the fenced SQL overload. It
+    holds the original/profile/thread and consumed Q3 context through issuance
+    and replay. Neither expectation is a safety decision or a client field.
+    Omitting both preserves the existing low-level five-argument primitive,
+    not public admission; an incomplete pair never falls back to that path.
     """
     import json
     from piece_v2_contract import canonical_json_bytes
@@ -253,12 +261,31 @@ async def issue_piece_preview(*, authenticated_user_id: str, record: Mapping[str
             raise PieceContractError('PIECE_REQUEST_INVALID')
     except (PieceContractError, KeyError, TypeError, ValueError, OverflowError, RecursionError):
         raise PieceContractError('PIECE_REQUEST_INVALID') from None
+    args = {
+        'p_owner_user_id': owner, 'p_idempotency_key_hash': key,
+        'p_request_hash': fingerprint, 'p_record': value, 'p_ttl_seconds': ttl_seconds,
+    }
+    if expected_subscription_tier is not None or expected_source_state is not None:
+        try:
+            if (type(expected_subscription_tier) is not str
+                    or expected_subscription_tier not in ('free', 'plus', 'premium')):
+                raise ValueError
+            expected = json.loads(canonical_json_bytes(_request(expected_source_state,
+                {'original', 'thread_id', 'thread_revision', 'lineage'})))
+            expected['thread_id'] = _uuid(expected['thread_id'])
+            _positive(expected['thread_revision'])
+            if (type(expected['original']) is not dict or type(expected['lineage']) is not dict
+                    or expected['lineage']['source_input']['source_owner_user_id'] != owner
+                    or expected['original']['id'] != expected['lineage']['source_input']['source_input_id']
+                    or canonical_json_bytes(expected['lineage']) != canonical_json_bytes(value['source_lineage'])):
+                raise ValueError
+        except (PieceContractError, KeyError, TypeError, ValueError, OverflowError, RecursionError):
+            raise PieceContractError('PIECE_REQUEST_INVALID') from None
+        args.update(p_expected_subscription_tier=expected_subscription_tier,
+                    p_expected_source_state=expected)
     expected_id = str(UUID(hashlib.sha256(f'piece.preview.v2:{owner}:{key}'.encode()).hexdigest()[:32]))
     try:
-        response = await rpc('piece_issue_preview_v2', {
-            'p_owner_user_id': owner, 'p_idempotency_key_hash': key,
-            'p_request_hash': fingerprint, 'p_record': value, 'p_ttl_seconds': ttl_seconds,
-        })
+        response = await rpc('piece_issue_preview_v2', args)
     except Exception as exc:
         code = getattr(exc, 'code', None)
         raise PieceContractError(code if isinstance(code, str) and code in _ERRORS
