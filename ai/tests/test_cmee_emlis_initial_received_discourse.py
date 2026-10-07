@@ -35,6 +35,37 @@ def test_bad_past_location_keeps_event_and_complete_actual_body(text):
         assert not read_body(context, body.replace('悪い', replacement)).passed
 
 
+@pytest.mark.parametrize('text', ['私は良い職場にいた。', '私は家族の良い職場にいませんでした。'])
+def test_good_past_location_keeps_event_and_complete_actual_body(text):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(text))
+    result, plan, _sentence, resolver, _selected = context
+    node, = (n for n in plan.nuclei if n.source_fields == ('memo',))
+    assert (node.kind, node.semantic_frame.predicate_kind, node.semantic_frame.modality) == ('event', 'event', 'fact')
+    assert node.semantic_frame.actor == 'current_user'
+    assert 'operator:value' not in node.semantic_frame.attribute_codes
+    assert resolver.resolve(node.source_span_ids[0]).raw_text == text.removesuffix('。')
+    body = result.artifact.text
+    assert text.removesuffix('。') in body
+    assert read_body(context, body).passed
+    for replacement in ('', '悪い'):
+        assert not read_body(context, body.replace('良い', replacement)).passed
+
+
+@pytest.mark.parametrize('text', [
+    '私は良い。', '私には良い。', '私は職場が良い。', '良くなった。',
+    '良いと思う。', '良い職場にいたと思う。', '良い職場にいたと聞いた。',
+    '良い職場にいたい。', '良い職場にいたら。', '良い職場にいたずらした。',
+    '良い職場にいる。', '良い職場になった。', '良い職場にいたけれど。',
+    '良い良い職場にいた。', '良いところにいた。',
+    '良い職場にいた。私には大切だ。', '大切な良い職場にいた。',
+    '良い職場にいた。私は良い。', '私は良い。良い職場にいた。',
+])
+def test_good_past_location_does_not_erase_other_values_or_unclosed_hosts(text):
+    from emlis_ai_grounded_observation_plan import _operator_codes_for_text
+    assert 'operator:value' in _operator_codes_for_text(text)
+
+
 @pytest.mark.parametrize('left,right', [
     ('私は家族の時間を守りたい', '私はつらい'),
     ('ぼくは、生活の基盤を守りたいです', 'ぼくは、苦しいです'),

@@ -2274,6 +2274,19 @@ def _time_scope_for_text(text: str) -> str:
     return "current_input"
 
 
+def _has_predicative_value_operator(text: str) -> bool:
+    """Keep a closed past-location modifier inside its nominal argument."""
+    for match in _VALUE_RE.finditer(text):
+        if match.group(0) == "良い" and re.fullmatch(
+            _WISH_OBJECT_ARGUMENT_RE.pattern
+            + r"に(?:いた|いました|いなかった(?:です)?|いませんでした)[。．.!！?？]*",
+            text[match.start():],
+        ):
+            continue
+        return True
+    return False
+
+
 def _operator_codes_for_text(text: str, *, source_field: str = "") -> tuple[str, ...]:
     checks: tuple[tuple[str, re.Pattern[str]], ...] = (
         ("operator:positive_change", _POSITIVE_CHANGE_RE),
@@ -2305,7 +2318,8 @@ def _operator_codes_for_text(text: str, *, source_field: str = "") -> tuple[str,
     values.extend(
         code
         for code, pattern in checks
-        if pattern.search(wish_scope if code == "operator:wish" else text)
+        if (_has_predicative_value_operator(text) if pattern is _VALUE_RE else
+            pattern.search(wish_scope if code == "operator:wish" else text))
     )
     if is_bounded_self_denial_text(text) or (
         source_field != "memo_action"
@@ -3163,7 +3177,7 @@ def _kind_for_span(
         return "constraint"
     if _FEELING_RE.search(text):
         return "reaction"
-    if _VALUE_RE.search(text):
+    if _has_predicative_value_operator(text):
         return "value"
     if _ACTION_RE.search(text):
         return "action"
