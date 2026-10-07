@@ -371,13 +371,16 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                     reread = await service.read_saved(OWNER, report_id=row['id'])
                 self.assertEqual(reread['items'][0], row)
 
-    async def test_boku_self_claims_survive_save_read_and_spelling_comparison(self):
-        for memo in ('ぼくは職場にいなかったです。ぼくは会議を担当した。'
+    async def test_explicit_self_spellings_survive_save_read_and_spelling_comparison(self):
+        clauses = ('ぼくは職場にいなかったです。ぼくは会議を担当した。'
                      'その後、ぼくは資料を調べた。',
                      'ぼくは家族を守りたい。ぼくは資料を調べないかもしれないと思う。'
-                     'ぼくは仕事を続けたいけれど、ぼくはつらいです。'):
+                     'ぼくは仕事を続けたいけれど、ぼくはつらいです。',
+                     'ぼくは、家族の新しい生活を守りたいけれど、ぼくは、つらいです。')
+        for subject, memo in ((subject, clause.replace('ぼく', subject))
+                              for subject in ('ぼく', '俺', 'おれ') for clause in clauses):
             with self.subTest(memo=memo):
-                fx = await comparison_fixture(current_memo=memo, previous_memo=memo.replace('ぼく', '僕'))
+                fx = await comparison_fixture(current_memo=memo, previous_memo=memo.replace(subject, '僕'))
                 row = fx['row']
                 p = row['content_json']['watashiMap']
                 self.assertEqual(p['period_comparison'], {'state': 'COMPARABLE',

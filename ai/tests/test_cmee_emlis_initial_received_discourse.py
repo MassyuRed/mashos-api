@@ -75,6 +75,10 @@ def test_good_past_location_does_not_erase_other_values_or_unclosed_hosts(text):
     ('自分は自分の家族の気持ちを守りたい', '自分は辛い'),
     ('ぼくは、学びノートの振り返りを守りたいです', 'ぼくは、苦しいです'),
     ('私は資料の振り返りを調べたい', '私はつらい'),
+    ('俺は家族の時間を守りたい', '俺はつらい'),
+    ('おれは、家族の気持ちを守りたいです', 'おれは、苦しいです'),
+    ('俺は家族の新しい時間を守りたい', 'おれはつらい'),
+    ('おれは学びノートの悪い振り返りを守りたい', '俺は辛い'),
 ])
 def test_genitive_wish_contrast_preserves_shared_finite_proof_and_actual_body(left, right):
     from test_cmee_emlis_detached_observation import read_body
@@ -159,10 +163,14 @@ def test_attributive_genitive_wish_has_bounded_nominal_owner(adjective):
     '私は家族の新しく生活を守りたい', '私は家族のとても新しい生活を守りたい',
     '私は家族の新しい大きい生活を守りたい', '私は家族の楽しい生活を守りたい',
     '私は家族の新しいを守りたい', '私は家族の新しい生活を友人は守りたい',
+    '私らは家族の時間を守りたい', '私たちは家族の時間を守りたい',
+    '私自身は家族の時間を守りたい', '私も家族の時間を守りたい',
+    '私が家族の時間を守りたい',
 ])
-def test_genitive_wish_owner_repair_does_not_lend_self_to_unproved_hosts(fragment):
+@pytest.mark.parametrize('subject', ['私', '俺', 'おれ'])
+def test_genitive_wish_owner_repair_does_not_lend_self_to_unproved_hosts(fragment, subject):
     from emlis_ai_grounded_observation_plan import _source_operator_owner_scope_is_bound
-    assert not _source_operator_owner_scope_is_bound(fragment)
+    assert not _source_operator_owner_scope_is_bound(fragment.replace('私', subject))
 
 
 @pytest.mark.parametrize('left,right', [
@@ -171,6 +179,8 @@ def test_genitive_wish_owner_repair_does_not_lend_self_to_unproved_hosts(fragmen
     ('ぼくは、苦しいです', '嬉しかった'),
     ('わたしは、つらい', '嬉しかった'),
     ('自分は、苦しい', '嬉しかった'),
+    ('俺は、つらい', '嬉しかった'),
+    ('おれは悲しい', 'おれは、 苦しいです'),
 ])
 def test_explicit_present_burden_topic_comma_keeps_shared_meaning_and_inverse(left, right):
     from test_cmee_emlis_detached_observation import read_body
@@ -205,9 +215,11 @@ def test_explicit_present_burden_topic_comma_keeps_shared_meaning_and_inverse(le
     '私は、とてもつらい', '私は、、つらい', '私は，つらい', '私は,つらい',
     '友人は、つらい', '私は、つらいかもしれない', '私は、つらいと聞いた',
 ])
-def test_burden_topic_comma_does_not_expand_other_shared_finite_feeling_forms(right):
+@pytest.mark.parametrize('subject', ['私', '俺', 'おれ'])
+def test_burden_topic_comma_does_not_expand_other_shared_finite_feeling_forms(right, subject):
+    right = right.replace('私', subject)
     from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
-    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin('私は仕事を続けたいけれど' + right + '。')))
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(subject + 'は仕事を続けたいけれど' + right + '。')))
     assert not any('lexical:source_finite_contrast_feeling' in n.semantic_frame.attribute_codes
                    for n in plan.nuclei)
 

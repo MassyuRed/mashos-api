@@ -1,3 +1,5 @@
+**u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
+
 > 2026-10-04 u102現在地：Mashが6201の実機確認OKを報告し、内容改善へ移行。通常補足の完全な本人節を分析へ採用し、丁寧語/格順による同じ意味の二重計上を修正。33検査PASS、修正版は未配置。詳細は末尾u102／Analysis map §4.8。
 
 > 2026-10-04 u101現在地：Analysis V2対応TestFlight 1.0 (6201)のarchive/export/upload成功。run62/37155776248、build SHA b11d1b321…、JST06:51完了。Apple処理/端末導入・本人入力→保存→再表示は未確認。API指定版liveはu100、最新native結果は末尾u101。
@@ -15312,3 +15314,29 @@ OBSERVED_BLOCKER_MINIMAL_FIX、既存内容修正・Draft PR反映承認内の�
 STRUCTURE_MAP_DELTA_NONE：既存共有Planの意味判定内の修正。API既存Plan1／test3／current identity1／handoff1、Cocolon current03／詳細04／06の計9file modify、新規repo file0。意味owner／依存方向／route／保存lifecycle不変。Safety・Analysis専用source・Piece・API契約・DTO・DB・SQL・RN・製品依存変更0。最終suite後の製品source変更0。main／merge／deploy／env／native build操作0、u164未配置。実DB・React component/native・本人実機・商品受入れ未確認。限定TECHNICAL_CREDIT、商品NOT_CLEAR維持。u163以前の0066旧期待差・旧contracts86 subfail／1setup error等は今回未再検証・未修正。反映後に実branch head・parent・変更path集合・全対象fileのremote bytesを照合する。
 
 残件：他のvalue語・形容詞、未対応主語／任意仮名／未閉包host、一般感情・認知、夢・伝聞から現実へ戻る境界、unknown反復と既記録のEmlis停止／旧期待差。本人の指定版生成→保存再表示→比較の実機残件は別に維持する。次は最新の対象正本と本節から残件を選び、scratch JSON/logを正式再開原典にしない。
+
+
+## 2026-10-08 JST u165 — 明示本人の「俺／おれ」の分析内容を保持する
+
+Mashの「分析構造の内容修正関係を進めて」から継続。開始HEADはAPI `3d182ce55e7d5841053399c5635c2b4952a9a6d2`／Cocolon `dbca2006cdb54d554aa36e10ea011f822fae229b`、両PR Draft/open/unmerged、tracked worktree clean。前回u164と添付txtの同session読取を継承。前提・work_attitude current／rule18・GitHub反映／runtime／永続保存等の対象rule、全体設計01・全file地図01A〜C、Karen-Diary入口／memory2本の同session読取を継承し、最新weekly20261003 §6.8〜6.10、current03のowner表、詳細04／06／対象source、u164 handoffを再確認。恒久incident「Cocolon_EmlisAI_ProductNeglect_and_CMEE_ProductReadFailure_20260816.md」は全文再読。private本文は転載しない。System Context prepareのancestor不成立は前回どおり、追跡正本を直接使用し生成Contextのfreshnessを主張しない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX、既存内容修正・Draft PR反映承認内。root華恋が単一の編集・実行・反映owner。同環境read-only補助による原因／差分reviewを実施し、別model Pro reviewとはしない。weeklyの最小実動作優先を保持し、全表現対応を配置／実機確認の前提にしない。追加費用・Mash操作0。今回の完成条件は明示本人表記の限定補正、原文・否定／希望／認知／所在／担当／順序・更新／比較・保存再表示・同一RN表示modelの保持。
+
+開始実測：「私」では生成される所在、通常行動、希望、担当、認知、希望＋負荷の6例が「俺／おれ」では12/12 UNAVAILABLE。共有側の通常本人認識は既に両表記を含む一方、Analysis compilerが除外していた。既存u153の検査を同じ期待のまま拡張し、製品変更前にpositive16例×追加2表記の32 subFAIL、既存ぼく16 subPASSを確認。Analysis内の既存7主語regexと本人節入口1箇所へ `俺|おれ` を追加した。
+
+実際の全文確認で「俺は家族の生活／家族の新しい生活を守りたいけれど、おれはつらいです」がなお停止。私は生成され、同一／混在表記の俺・おれでは属格2対象×3主語組合せの6例がUNAVAILABLEだった。既存共有Plan `_source_operator_owner_scope_is_bound` の `self_topic` が5表記に限定されていたため、同じ2表記だけ追加した。さらに共有実本文検査で「おれは、苦しいです」のfinite feeling証拠欠落を観測し、既存の完全な現在肯定負荷＋和文読点の本人一覧にも追加した。製品source変更はAnalysis8行と共有Plan2行の計10一覧のみ。完全名詞句／属格連鎖／格／現在希望／有限負荷／読点／原文座標／shared witnessを維持し、regexやhelperの新設、文法一般化、原文置換はない。
+
+通常行動・非行動、希望、所在、担当、可能性を考える記述、行動後の気持ち、保護意向・負荷、補足／全文訂正／撤回、同義集約・比較へ同じ主体を保持する。認知内側の省略主体はUNSPECIFIEDのまま、願望を実行済みへ変換しない。俺ら／俺たち／俺自身／俺も／俺がとおれの対応表記、他者、主語省略、質問、伝聞、夢、未閉包host、未証明の敬体名詞変化は保留を維持。原文scalar／UTF-8／hashを保持し、表記のみの違いは内容差にしない。
+
+最終検証runtime：既存Python3.12.14／pytest8.4.1／pytest-subtests0.14.2／FastAPI0.116.1／httpx0.28.1／Pydantic2.13.5。絶対entrypoint、FB172移行pluginとcacheproviderを無効化。製品依存変更0。
+
+- Analysis3suite（vertical242／storage58／saved-period16＝316）とexact node ID指定のactive_final_language_owner_chain1件：**317 PASS／2027 subtests PASS（30.05秒）**。同義／意味差・原文証拠・改竄拒否、実service＋合成RPCで保存後のengine再生成を禁止したreadにより本文・図・保存identityを確認。
+- 共有initial_received_discourseの `genitive or contrast or burden_topic_comma`：**231 PASS／170 deselected（19.95秒）**。同一／混在本人表記、属格／修飾／読点／負荷・現在有限witness・原文range・実本文と独立reader・改変拒否・保留境界を確認。最終対象合計 **548 tests PASS**。全repo PASSではない。
+- current identity fixtureだけ同期。language `009ef91ef0eebf99817ec8e50653b5a10cab731210081dc1b29da7f2b66e94f5`／runtime `6273b35dc4cbc9ceb2ad9f313e472f05dc915e4677fd00962cea2a9ffd37bd61`。historical manifest、9owner／18payloadは変更なし。
+- rootがAnalysis合成10全文（所在／担当／順序、認知、修飾付き保護希望＋負荷、行動と余韻、補足、訂正、撤回、同義集約、同義比較、否定比較）を全読。最終sourceで再生成し、希望＋負荷例を両主語読点付きにしても既読10本文と一致。実 `buildWatashiMapV2ViewModel` の全文・identity・node順・edge・unknown・注記・競合・比較state/本文が最終10/10一致。Emlisも属格希望／読点付き負荷の合成2全文を全読し、独立reader PASS。定型的受け取り・unknown反復は残り、商品品質完成とはしない。
+
+途中結果を最終成功へ混ぜない：Analysisのみの初修正では316 PASS／2015 subtests PASS、共有属格修正後の最初の共有検査は206 PASS／新規1 FAIL。後者は読点付き負荷の同じ表記漏れとして修正し、期待を緩和せず最終対象を再実行した。identity検査を混ぜる際の `-k` にclass名を誤記し、対象外の旧contractsも開始してしまったため中断（exit130）。途中に2件のF表示があり、case名／原因を確定していないため、既存差・回帰どちらとも断定せず未診断のまま記録する。その中断runは最終成功件数に含めない。直後に正確な1node IDとAnalysis3suiteのみを指定し上記317PASSを得た。skip／xfail・既存期待削除／緩和0。最終suite後の製品source変更0。
+
+STRUCTURE_MAP_DELTA_NONE：既存意味owner／依存方向／route／保存lifecycle内の修正。API compiler1／Plan1／test3／current identity1／handoff1、Cocolon current03／詳細04／06の計10file modify、新規repo file0。Safety・Piece・API契約・DTO・DB・SQL・RN・依存変更0。最終read-only reviewに具体的blockerなし。main／merge／deploy／env／native build操作0、u165未配置。実DB・React component/native・本人実機・商品受入れ未確認。限定TECHNICAL_CREDIT、商品NOT_CLEAR維持。旧0066期待差等は今回の修正対象外。反映後に実branch head・parent・変更path集合・全10fileのremote bytesを照合する。
+
+残件：共有の別の限定表現（敬体名詞変化、名詞感情、否定解決、発話後の本人reset等）の未対応表記、一般感情／認知、他の形容詞、夢・伝聞から現実へ戻る境界、unknown反復と既記録のEmlis停止・旧期待差。俺／おれの全日本語表現対応とはしない。本人の指定版生成→保存再表示→比較の実機残件は別に保持。本節と追跡source/testを再開原典とし、scratch JSON/logを正式保存先にしない。

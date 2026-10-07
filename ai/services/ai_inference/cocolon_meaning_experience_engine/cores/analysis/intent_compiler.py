@@ -165,7 +165,7 @@ _FEELING_FORMS = {'安心した': '安心する', '安心しました': '安心�
     '落ち着いた': '落ち着く',
     '嬉しかった': '嬉しい', 'うれしかった': 'うれしい'}
 _PAST_EVENT_TOPIC = (
-    r'(?P<subject>私|僕|ぼく|わたし|自分)は(?:[、，][ \u3000]*)?'
+    r'(?P<subject>私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?'
     r'(?:(?P<day>今日|昨日)(?!の|を|に|で|と|は|が|も)(?P<day_separator>[、，\s]*))?')
 _PAST_PRESENCE = re.compile(
     _PAST_EVENT_TOPIC + r'(?P<noun>' + _NOMINAL
@@ -176,7 +176,7 @@ _PAST_RESPONSIBILITY = re.compile(
     + r'(?:の' + _NOMINAL + r')*)(?P<case>を)'
     r'(?P<predicate>担当した|担当しました|担当しなかった(?:です)?|担当しませんでした)')
 _PROTECTIVE_WISH = re.compile(
-    r'(?P<subject>私|僕|ぼく|わたし|自分)は(?:[、，][ \u3000]*)?(?P<noun>' + _NOMINAL
+    r'(?P<subject>私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?(?P<noun>' + _NOMINAL
     + r'(?:の' + _NOMINAL + r')*)(?P<case>を)(?P<predicate>守りたい(?:です)?)')
 
 
@@ -322,7 +322,7 @@ def _past_event_witness(nucleus, proposition):
 def _past_feeling_proposition(value):
     # Retain topic punctuation in the complete endpoint's source range.
     # The surrounding action/change pair still owns admission and order.
-    subject = re.match(r'^(?:私|僕|ぼく|わたし|自分)は(?:[、，][ \u3000]*)?', value)
+    subject = re.match(r'^(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?', value)
     start = subject.end() if subject else 0
     lemma = _FEELING_FORMS.get(value[start:])
     if lemma is None:
@@ -453,7 +453,7 @@ def _parsed_proposition(value: str) -> ObservedProposition | None:
     relative_day = {'今日': 'TODAY', '昨日': 'YESTERDAY'}.get(token, '')
     # A topic-adjacent comma is punctuation within this explicit SELF clause.
     # Retain it in the exact source span; never skip a sentence or line break.
-    subject = re.compile(r'(?:私|僕|ぼく|わたし|自分)は(?:[、，][ \u3000]*)?').match(value, start)
+    subject = re.compile(r'(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?').match(value, start)
     if subject is None:
         return None
     parts = ([(marker or 'RELATIVE_DAY_' + relative_day, 0, start)] if prefix else [])
@@ -520,7 +520,7 @@ def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relat
 
 def _te_action_proposition(value):
     """Parse a dependent action without asserting that it happened."""
-    subject = re.match(r'^(?:私|僕|ぼく|わたし|自分)は(?:[、，][ \u3000]*)?', value)
+    subject = re.match(r'^(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?', value)
     if subject is None:
         return None
     proposition = _finite_proposition(value, subject.end(), 'SELF',
@@ -541,7 +541,7 @@ def _cognitive_proposition(value):
     """
     # Keep the topic comma inside the source span, matching the shared
     # cognition boundary; the embedded clause remains only a possibility.
-    subject = re.match(r'^(?:私|僕|ぼく|わたし|自分)は(?:[、,])?', value)
+    subject = re.match(r'^(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、,])?', value)
     scopes = _source_current_cognition_parts(value) if subject else None
     if not scopes or {role for role, *_ in scopes} != {'possibility', 'cognition'}:
         return None
@@ -994,7 +994,7 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     # current_user is the shared frame's default, not proof of its subject.
     # Actions/thoughts require an explicit first-person finite host. Only a
     # witnessed, fully parsed non-agent result state is the bounded exception.
-    if result is None and change is None and not re.match(r'^(?:(?:今日|昨日|その後|それから)[、，\s]*)?(?:私は|僕は|ぼくは|わたしは|自分は)', value):
+    if result is None and change is None and not re.match(r'^(?:(?:今日|昨日|その後|それから)[、，\s]*)?(?:私は|僕は|ぼくは|俺は|おれは|わたしは|自分は)', value):
         return None
     # The source helper already proved a length-preserving normalization.
     field = source.envelope.raw_utf8[ref.field_utf8_start:ref.field_utf8_end].decode('utf-8')
@@ -1016,7 +1016,7 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
 def _burden_predicate(value):
     # Complete affirmative present inflections, not negative polarity alone.
     # In particular, an absent positive feeling does not prove a burden.
-    match = re.fullmatch(r'(?:私|僕|ぼく|わたし|自分)は(?:、[ \u3000]*)?'
+    match = re.fullmatch(r'(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:、[ \u3000]*)?'
                          r'(?P<predicate>つらい|辛い|苦しい)(?:です)?', value)
     # Normalize this proved self-feeling predicate only; source labels and
     # evidence retain their original spelling, including correction targets.

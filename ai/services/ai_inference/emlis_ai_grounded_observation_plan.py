@@ -3367,7 +3367,7 @@ def _source_operator_owner_scope_is_bound(fragment: str) -> bool:
     owner_scope = top_level_fragment
     attribution_scope = owner_scope
     self_topic = re.fullmatch(
-        r"(?:私|僕|ぼく|わたし|自分)は(?:[、,][ \u3000]*)?"
+        r"(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、,][ \u3000]*)?"
         r"(?P<remainder>.+)", top_level_fragment)
     # Consume only a chain of explicit self owners and bounded temporal
     # prefixes.  Any subsequent grammatical owner/beneficiary remains a
@@ -4684,7 +4684,7 @@ def _typed_nucleus_projections_for_span(
                 # Match a complete explicit-self present burden with the
                 # same topic punctuation as Analysis. Keep the source span
                 # intact; this does not admit other feeling/copula forms.
-                r"(?:私|自分|わたし|僕|ぼく)は、[ \u3000]*"
+                r"(?:私|自分|わたし|僕|ぼく|俺|おれ)は、[ \u3000]*"
                 r"(?P<predicate>(?:つらい|辛い|苦しい)(?:です)?)",
                 top_level_fragment)
             if finite_feeling is not None:
