@@ -15261,3 +15261,28 @@ OBSERVED_BLOCKER_MINIMAL_FIX。利用者の希望対象と負荷を正しい文�
 STRUCTURE_MAP_DELTA_NONE：既存意味owner／依存方向／route／保存lifecycle内の修正。API既存Safety1／Plan1／test4／current identity1／handoff1、Cocolon current03／詳細04／06の11file modify、新規repo file0。Analysis専用source・Piece・API契約・DTO・DB・SQL・RN変更0。main／merge／deploy／env／native build操作0。u162未配置。実DB・React component／native・本人入力・商品受入れ未確認。限定TECHNICAL_CREDIT、商品NOT_CLEAR維持。過去の旧contracts86 subfail／1setup errorは今回再検証していない。反映commitと全11fileのremote内容／変更path照合は既存PR3／30へ記録する。
 
 残件：今回保守的に残したSELF／人prefix名詞、任意仮名、他の形容詞の名詞修飾と自己評価の区別、未対応時点／host、一般感情／認知、夢・伝聞から現実へ戻る境界、unknown反復、上記0066の既存Reception期待差。実機の指定版生成→保存再表示→比較は別残件。次は最新の対象資料とこの記録から残件を選び、scratch JSON／logを正式再開原典にしない。
+
+
+## 2026-10-08 JST u163 — 過去の所在の「悪い」を自己評価と混同しない
+
+Mashの分析内容修正継続指示から開始。fresh fetchの開始HEADはAPI `2719b795d9fb74846dab7d5fe95fb3ed1fb7bf52`／Cocolon `98cc6bdca003995dc81129347ba382bebfb255f5`で手元と一致。前回u162のコード・資料11fileはこの2commitへ反映済み。前回のPR説明更新は連携エラーで未反映だったため、古いPR表示head/bodyを最新sourceの代用にせず実branchを確認した。前提・作業姿勢のcurrentと対象専門rule、恒久incident全文、全体設計01と全file地図01A〜Cの導線・01B、Analysis current03のowner表／詳細04／06／対象source、最新weekly20261003 §5・§6.6〜6.10、前回handoffを確認。Karen-Diary必須3fileの同session読取を継承し、private本文は転載しない。System Context prepareは `PUBLICATION_RECOVERY_AMBIGUOUS: residual without marker` で終了したため、追跡原典を直接読み、生成Contextのfreshnessを主張しない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX、既存の内容修正・Draft PR反映承認内の実装詳細補正。root華恋がCodex Workの単一編集・実行・反映owner、同環境のread-only補助が原因と最終差分を独立確認。別model Pro reviewとはしない。目的は既に文法として読める本人の所在を文章・図へ届けること。完成条件は完全な場面・原文・訂正／撤回・比較・保存再表示・同一RN表示modelの保持。新しいSafety方針・API/DB/公開条件・一般格文法への拡張は行わず、必要になれば停止する。追加費用・Mash操作0。weeklyの最小実動作優先を維持し、全表現対応を配置／実機の前提にしない。
+
+実測原因：既存Analysisの完全な所在grammarは「私は悪い職場にいた」を読めるが、共有Safety／Planが「悪い」を自己評価へ分類し、Analysisの必須event witnessが成立しなかった。開始版で所在4例（基本、否定、属格の修飾、両区間修飾）はUNAVAILABLE。昨日の所在→その後の行動の例は行動だけを返し、所在と順序線を失っていた。bad付きの通常行動3例は元から生成可能で、今回の改善数には含めない。
+
+製品source変更は共有Safetyの既存 `SELF_APPRAISAL_BAD_SOURCE` の小さな末尾拡張だけ。名詞句／属格連鎖の直後が従来の「を」、または「に＋いた／いました／いなかった／いなかったです／いませんでした＋文末・文終止記号」と完全に閉じる場合に限り、「悪い」を名詞修飾と区別する。共有Planは既存importを使うためsource変更不要。SELF／人prefixの保守的除外、別の自己否定、緊急・支援要求は保持。「いたい／いたら／いたと思う／いたずら／になった」をprefixだけで除外しない。一般の「に／で／と」許可、原文mask、Analysisだけの迂回はない。Analysis compilerの主体・極性・有限時制・範囲・出典・shared witness、safe再解析、DTOは無変更。
+
+修正後は上記所在4例が生成され、昨日の所在と書いた行動の順序も同じ本文・図へ戻った。属格と修飾位置を保持し、本人の人格・場所の客観評価・行動の原因・守れた事実等を追加しない。途中説明で未実測の「良い職場」を成功対照と述べた点は訂正した。実際にはこれも別の共有value分類で保留する。「悪い」の修正成功へ混ぜず、次の既存内容残件として残す。
+
+検証runtimeはPython3.12.14／pytest8.4.1／pytest-subtests0.14.2／FastAPI0.116.1／httpx0.28.1／Pydantic2.13.5。既存絶対entrypointとFB172移行plugin無効化を使用し、製品依存変更0。
+
+- 対象初回selectorは11 PASS／100 subtests PASS（1.66秒）。最終Analysis3suite＋Safety＋0066は **330 PASS／既存1 FAIL／1933 subtests PASS（18.92秒）**。Analysis内訳vertical241／storage58／saved-period16＝315 PASS、Safety9 PASS、0066は6 PASS／1 FAIL。所在5形・本人表記・原文scalar/UTF-8/hash・訂正/撤回/部分撤回保留・同義集約・時点と順序・修飾削除/交換/係り先改竄拒否・同義期間差0/否定や名詞の差を確認。実service＋合成RPCの保存と再生成を禁止したreadで同一本文・図・保存identityを確認。
+- FAILはu162でも記録した `test_01_accountability_returns_to_normal_two_move_plan` のReception旧期待2moveに対する実際3move。同じ開始commitの未変更worktreeで再実行し、1 FAIL／6 deselected（6.91秒）。XMLのcase名・message・tracebackが最終版と完全一致。期待変更・skip・xfailなし。
+- 共有initial_received_discourseの `bad_past_location or genitive or contrast or burden_topic_comma` は **134 PASS／147 deselected（17.23秒）**。新しい所在2例はevent/fact・原文全体・実本文・独立readerを確認し、修飾削除/交換を拒否する。共有identityの既存active_final_language_owner_chain検査も **1 PASS／193 deselected（18.91秒）**。current fixtureは変更不要で、historical manifest／9owner/18payloadも無変更。最終対象合計 **465 PASS／既存1 FAIL**。全repo PASSではない。
+- rootがAnalysis合成9全文（基本、否定属格、昨日と順序、集約、補足、訂正、撤回、同義比較、否定比較）を読取。実RN `buildWatashiMapV2ViewModel` の全文・identity・node順・edge・unknown・注記・競合・比較state/本文が9/9一致。途中の一回限り比較scriptでcomparisonText配列を文字列として扱った誤りは、実契約に合わせ行配列比較へ直して再実行した。製品source・期待を変更したものではない。
+- Emlisへの影響も所在2全文を読取。開始版は場所の記述を「自己評価」と呼んでいたが、修正後は所在の記述そのものを保持し、独立reader PASS。定型的な受け取りは残り、商品品質完成とはしない。所在＋後続行動の別例は `LIMITED_RECEPTION_CAPABILITY_GAP_STOP`、開始版でも同一STOPであり別残件。今回Emlis全表現改修へ拡張しない。
+
+STRUCTURE_MAP_DELTA_NONE：既存意味owner／依存方向／route／保存lifecycle内の修正。API既存Safety1／test4／handoff1、Cocolon current03／詳細04／06の計9file modify、新規repo file0。共有Plan・Analysis専用source・Piece・API契約・DB・SQL・RN・依存変更0。最終suite後の製品source変更0。同環境read-only reviewに具体的blockerなし。main／merge／deploy／env／native build操作0、u163未配置。実DB・React component/native・本人実機・商品受入れ未確認。限定TECHNICAL_CREDIT、商品NOT_CLEAR維持。旧contracts86 subfail／1setup errorは今回未再検証。反映後に実branch head・parent・変更path集合・全対象fileのremote bytesを照合する。
+
+残件：「良い職場」等で名詞修飾を独立valueと拾う共有判定、今回保守的に残したSELF／人prefix名詞・未閉包host・任意仮名、一般感情/認知、夢・伝聞から現実へ戻る境界、unknown反復、上記Emlisの既存STOPと0066旧期待差。指定版の本人生成→保存再表示→比較の実機残件も別に維持する。本節と追跡source/testを再開原典とし、scratch JSON/logを正式保存先にしない。

@@ -54,7 +54,7 @@ _SUPPORT_REQUIRED_RE: Final = re.compile(
     re.IGNORECASE,
 )
 _SELF_REFERENCE_SOURCE: Final = r"(?:自分|私|わたし|俺|おれ|僕|ぼく)"
-# A closed nominal object makes 悪い attributive, not a speaker appraisal.
+# A closed nominal object or finite past location makes 悪い attributive.
 # Keep self/person heads and unproved kana conservative; do not change raw text.
 _APPRAISAL_OBJECT_NOMINAL_SOURCE: Final = (
     r"(?!(?:" + _SELF_REFERENCE_SOURCE + r"|人|奴|やつ))"
@@ -64,7 +64,8 @@ _APPRAISAL_OBJECT_NOMINAL_SOURCE: Final = (
 SELF_APPRAISAL_BAD_SOURCE: Final = (
     r"悪い(?!" + _APPRAISAL_OBJECT_NOMINAL_SOURCE
     + r"(?:の(?:新しい|古い|大きい|小さい|長い|短い|詳しい|難しい|易しい|良い|悪い)?"
-    + _APPRAISAL_OBJECT_NOMINAL_SOURCE + r")*を)"
+    + _APPRAISAL_OBJECT_NOMINAL_SOURCE
+    + r")*(?:を|に(?:いた|いました|いなかった(?:です)?|いませんでした)(?=$|[。．.!！?？])))"
 )
 _SELF_WORTH_NEGATION_SOURCE: Final = (
     # ``最低でも15分`` is a lower-bound adverb, not a self-worth claim.

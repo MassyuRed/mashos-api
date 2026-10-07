@@ -3207,9 +3207,12 @@ class AnalysisVerticalTests(unittest.TestCase):
 
     def test_explicit_past_presence_is_a_scene_with_exact_whole_clause_evidence(self):
         for subject, noun in (('私', '職場'), ('僕', '会議の会場'),
-                              ('わたし', '図書館'), ('自分', 'オフィス')):
+                              ('わたし', '図書館'), ('自分', 'オフィス'),
+                              ('私', '悪い職場'), ('ぼく', '家族の悪い職場'),
+                              ('自分', '悪い会社の新しい職場')):
             for ending, polarity in (('いた', 'positive'), ('いました', 'positive'),
-                                     ('いなかった', 'negative'), ('いませんでした', 'negative')):
+                                     ('いなかった', 'negative'), ('いなかったです', 'negative'),
+                                     ('いませんでした', 'negative')):
                 with self.subTest(subject=subject, noun=noun, ending=ending):
                     literal = subject + 'は' + noun + 'に' + ending
                     req = request(record(memo='　' + literal + '。'))
@@ -3239,6 +3242,49 @@ class AnalysisVerticalTests(unittest.TestCase):
                     self.assertNotIn('SCENE', gaps)
                     self.assertIn('ROLE', gaps)
                     self.assertIn('ACTION_OR_NONACTION', gaps)
+
+    def test_bad_scene_keeps_updates_comparison_order_and_modifier_scope(self):
+        old, new = '私は悪い職場にいた', '私は家族の悪い職場にいませんでした'
+        base = record(memo=old + '。私は資料を調べた。')
+        for answer, expected in ((new + '。', ('positive', 'negative')),
+                ('「' + old + '」ではなく「' + new + '」です。', ('negative',)),
+                ('「' + old + '」は取り消します。', ())):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(base, answer))).artifact
+                self.assertIsNotNone(artifact)
+                scenes = [n for n in artifact.graph.nodes if n.node_kind == 'SCENE']
+                self.assertEqual(tuple(n.polarity for n in scenes), expected)
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        self.assertIsNone(self.generate(request(self.with_answer(base,
+            '「悪い職場にいた」は取り消します。'))).artifact)
+        memo = '私は昨日、悪い職場にいた。その後、私は資料を調べた。'
+        artifact = self.generate(request(record(memo=memo))).artifact
+        scene, action = artifact.graph.nodes
+        self.assertEqual(scene.proposition.relative_day, 'YESTERDAY')
+        self.assertEqual([(e.edge_kind, e.endpoint_refs) for e in artifact.graph.edges],
+                         [('OBSERVED_ORDER', (scene.node_ref, action.node_ref))])
+        merged = self.generate(request(record(memo=old + '。'),
+            record(2, memo='ぼくは悪い職場にいました。'))).artifact
+        node, = merged.graph.nodes
+        self.assertEqual((len(node.record_refs), len(node.evidence_refs)), (2, 2))
+        for now in ('ぼくは悪い職場にいました。', '私は悪い職場にいなかった。',
+                    '私は職場にいた。', '私は悪い会社の職場にいた。'):
+            with self.subTest(now=now):
+                changed = self.compared(now, old + '。').artifact.safe_projection(
+                    authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds']
+                self.assertEqual('ROUTE_EVIDENCE_CHANGED' in changed, not now.startswith('ぼく'))
+        original = self.generate(request(record(memo='私は家族の悪い職場にいた。'))).artifact
+        node, = original.graph.nodes
+        for noun in ('家族の職場', '家族の良い職場', '悪い家族の職場'):
+            with self.subTest(noun=noun), self.assertRaises(AnalysisSourceError):
+                forged = replace(node, proposition=replace(node.proposition, arguments=(('に', noun),)))
+                replace(original, graph=replace(original.graph, nodes=(forged,))).safe_projection(
+                    authenticated_owner_scope=OWNER)
+        for text in ('私は悪い職場にいたい。', '私は悪い職場にいたと思う。',
+                     '私は悪い職場にいたと聞いた。', '私は悪い職場にいた？',
+                     '友人は悪い職場にいた。', '夢を見た。私は悪い職場にいた。'):
+            with self.subTest(text=text):
+                self.assertIsNone(self.generate(request(record(memo=text))).artifact)
 
     def test_past_presence_requires_matching_full_shared_event_witness(self):
         from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler

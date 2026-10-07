@@ -19,6 +19,22 @@ SINGLE = '褒められたのに、嬉しくなかった。'
 MULTI = SINGLE + '誘われたのに、悲しかった。頼まれたのに、寂しかった。'
 
 
+@pytest.mark.parametrize('text', ['私は悪い職場にいた。', '私は家族の悪い職場にいませんでした。'])
+def test_bad_past_location_keeps_event_and_complete_actual_body(text):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(text))
+    result, plan, _sentence, resolver, _selected = context
+    node, = (n for n in plan.nuclei if n.source_fields == ('memo',))
+    assert (node.kind, node.semantic_frame.predicate_kind, node.semantic_frame.modality) == ('event', 'event', 'fact')
+    assert node.semantic_frame.actor == 'current_user'
+    assert resolver.resolve(node.source_span_ids[0]).raw_text == text.removesuffix('。')
+    body = result.artifact.text
+    assert text.removesuffix('。') in body
+    assert read_body(context, body).passed
+    for replacement in ('', '良い'):
+        assert not read_body(context, body.replace('悪い', replacement)).passed
+
+
 @pytest.mark.parametrize('left,right', [
     ('私は家族の時間を守りたい', '私はつらい'),
     ('ぼくは、生活の基盤を守りたいです', 'ぼくは、苦しいです'),
