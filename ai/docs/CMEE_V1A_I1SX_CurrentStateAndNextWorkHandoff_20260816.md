@@ -15070,3 +15070,26 @@ Python3.12.14／pytest9.1.1／FastAPI0.142.2／httpx0.28.1／Pydantic2.13.5／PG
 STRUCTURE_MAP_DELTA_NONE：既存HR/Gate2、既存test1、current identity fixture1、API handoff1、Cocolon06の計6file modify、新規repo file0。owner/route/schema/lifecycle/配置は不変のため、地図への架空の構造変更を追加しない。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEARを継承し、進捗率は再算定しない。PR3/30はDraft/open/unmerged。main/merge/deploy/env/実DB/native build変更なし。反映commitとremote全6file bytes/parent/変更path集合の確認結果は既存PR本文へ記録する。scratch JSON/XML/logを正式再開原典とせず、追跡source/testと本記録を使用する。
 
 残件は適用外の位置修飾、長い列挙・二層再掲・「のですね」の反復・受け取りの浅さ、u76の過去説明形と上流anchor不一致、今回再確認した長event回答後の上流停止。実機無応答の設定/指定版配置と本人生成→保存→再表示も未完了であり、本内容修正を実機復旧へ換算しない。
+
+
+## 2026-10-07 — 元の対比を含む入力で後続の回答が停止する問題を修復（未配置）
+
+MashのEmlis内容残件継続指示から、直前checkpointの長event回答後停止を再開した。開始HEADはAPI `da5c13d501b125112e079cb1d481b86eb674cf9e`／Cocolon `5bdd4d1c531e6c14e0cc9ddedba78ca3fb8f4a44`。fresh PRとlocalが一致し、Draft/open/unmerged。前提・作業姿勢current、全体設計01/01A〜C・国家システム02・全file地図/current Emlis/CMEE mapの同session読取と配置を継承し、current規則・最新weekly20261003 §6.6〜6.10と対象実装を再確認、恒久incidentは今回も全文読取。System Contextは前回確認済みworkspace不在の正本直接読取を継続し、生成Contextのfreshnessを主張しない。Karen-Diaryは前回の自動承認拒否後に再取得していない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。完成条件は、既に根拠が成立した元の感情対比と後続の出来事を残し、問いへの現在の肯定/否定回答を本文へ反映・保存すること。root華恋がCodex Workで単一編集・実行・反映owner、同環境read-only補助が原因・source/test・実本文を独立review。別model Pro reviewではない。weeklyの最小実動作優先を維持し、全表現の完成待ちや新しい期限を追加しない。
+
+原因は出来事名の長さそのものではなく、この入力で問いが後続の出来事に向くと露出する既存の構成分岐だった。長い同名event二件＋頼まれたの入力では問いは第三event、第二を誘われたにした対照では第二eventを選ぶ。現在の肯定回答では、外側の原contrastが1 Moveを予約している再帰内で原反応と回答をさらに分割し、合計4 Moveとなる。現在の否定回答では3 Move内に収まっているが、全てsupport付きかつ明示contrastを含む3義務の役割配置がなく、存在しないstandalone[-1]を参照していた。両方でIndexErrorを再現した。
+
+productionは既存Planの2条件だけ。肯定回答の隣接分割に既存separate_later_scopes条件を足し、外側の予約枠がある場合は残りの原反応を既存の一つの群へ保つ。否定側は、retained groupsと選択済み3義務が完全一致しstandaloneがない既存枝で、明示contrastがあることだけを除外理由にしない。元contrast/後続の反応/回答に既存attention・significance・felt_responseを割り当てる。質問対象・意味受付・ABOUT・元source・3 Move上限・guard・本文作者は変更しない。例外を握りつぶすfallbackや新helperは追加していない。
+
+合成本文比較は2入力形×4回答（現在肯定/否定・原時点肯定/否定）×2field＝16、短eventと外側contrastなしの対照2×2field＝4、計20。HEADの変更対象2関数をprocess内だけで復元したbaselineは8停止/12成立、候補は全20成立。共通成立12の両層全文は一致した。2fieldで一致する10組をrootと補助が両層全文で読取。原chainの悲しさと嬉しさ、残る寂しさ/怖さ、問いの実対象と回答の現在/原時点を保持した。過去の感情が現在の回答によって消えたり、後続eventへ原因を追加したりしていない。位置修飾・列挙・反復を全面解消したとは扱わない。
+
+新28条件は、上記16の実callable/全required義務/3 Move以内/元の証拠範囲と必須関係/ABOUT検査、回答自身の訂正または撤回の保存8、最後の適格な問いへの回答保存4。作者禁止・改変本文に一致するreplayでも、原contrastの原因化、原感情・回答内容・時点・対象の交換を拒否する。実service＋隔離PGliteで原memo/memo_actionとoriginal DTOを保ち、保存後のgenerate禁止GET/startが同一DTO、問いの完了状態まで確認。前回の長event対照2件は初回のみから肯定回答後まで強化し、旧期待を削除・緩和していない。実DB・本人端末・process再起動の検証ではない。
+
+最終検証：関連selector＋新規＋identity **287件＝265 PASS／既存22 FAIL／ERROR・SKIP0（279.24秒）**。開始版の関連258件は236 PASS／22 FAIL（245.52秒）。HEADのgroup関数をprocess内で復元し、role関数は変更前に読込んだbaselineで比較した。共通258件の成否がすべて一致、新しい失敗0。旧22件のfailure messageは21件完全一致、1件はgeneratorのメモリアドレスだけが異なり、その箇所の正規化後に一致した。新28条件とidentity1は全PASS（新28単独も29.02秒でPASS）。前回の189条件よりselectorを広げたため、既存失敗は前回報告の4件だけでなく22件を含む。成功へ換算せず、旧期待の削除・skip/xfail化はしない。対象は received_discourse/detached_observation の `same_name or position_annotation or received_chain_positive_group or received_chain_detached_positive_group or received_chain_other_event_withdrawal or received_chain_mixed_withdrawal or reserved_outer_contrast` と contracts の active_final_language_owner_chain 検査。最終suite後のproduction変更0。別途、回答自身の訂正/撤回8本文（2fieldで一致する4組）もrootと補助が全文読取した。language identity `55953db83e29a9da25a7e4f7348e8c6d06efb97f169c0632b2ad43ad282dc57e`、runtime identity `08f150c97ab1dbccb2a7c27381a503378bd0c6ab2b215dd4a27f49ab5b2c59cb`。
+
+実行環境は同sessionのPython3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5/PGlite0.5.8。過去FB172移行pluginを無効化し、skip/xfail・製品依存の追加変更0。current共有identityを最終Planへ同期し、9owner/18payload構成とhistorical frozen manifestを保つ。
+
+STRUCTURE_MAP_DELTA_NONE：API既存Plan1/test1/current identity1/handoff1＋Cocolon既存06の計5file modify、新規file0。既存owner/route/schema/lifecycle/配置不変。HR/Gate/Observation作者/answer_update/質問選択/API/DTO/DB/RN/Piece/Analysis専用コードは変更0。main/merge/deploy/env/native build操作0。限定TECHNICAL_CREDIT、商品0/3・NOT_CLEARを維持。remote全5file bytes/SHA256・parent・変更path集合と反映commitはPR3/30へ記録する。
+
+残件：この長いchainを持つ入力で、回答後にevent自体の「誘われた」を撤回すると後続で4 Moveになり本文が停止する。今回成立したのは回答自身の撤回であり、出来事の撤回全体ではない。「今は気持ちが重いと思った」の認知回答は独立検証で未成立。従来の長event位置修飾、列挙/二層再掲/語尾反復/受け取りの浅さ、過去説明形・anchor不一致、実機設定/指定版配置と本人生成→保存→再表示も残る。今回の内容修復を実機復旧や商品品質全体の合格へ換算しない。

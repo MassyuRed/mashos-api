@@ -8320,8 +8320,10 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
                    else (feelings[event],)) for event in targets] + groups[1:]
     # Keep a current positive answer beside its own original reaction.
     # Only an edge event can be separated while retaining source order and
-    # the existing three-Move budget. The positive duty stays independent.
-    if (len(groups) == 2 and len(positive) == 1 and 2 <= len(targets) <= 3
+    # the existing three-Move budget. An outer contrast already reserves a
+    # Move, so its recursive remainder keeps the received pairs together.
+    # The positive duty stays independent in either case.
+    if (separate_later_scopes and len(groups) == 2 and len(positive) == 1 and 2 <= len(targets) <= 3
         and not (withdrawal or independent or actions or independent_answers or detached_answers)
         and {c for c in positive[0].semantic_frame.attribute_codes if c.startswith("thread_time:")}
             <= {"thread_time:answer_time", "thread_time:prior_answer_time"}):
@@ -9427,12 +9429,14 @@ def _build_reception_depth_policy_and_moves(
                 # collapse them back into duplicate felt-response duties.
                 roles[burdens[0].opportunity_id] = "attention"
         if len(burdens) == 3:
-            if not standalone and not explicit_contrast_duties and len(selected) == 3 and all(
+            if not standalone and len(selected) == 3 and all(
                 (item.family, item.target_nucleus_ids, item.support_nucleus_ids)
                     == retained_reaction_groups[position]
                 for position, item in enumerate(selected)):
                 # Existing role order is also source order. No source duty
                 # or original/answer time is dropped to fit two sentences.
+                # A complete outer contrast can own the first attention
+                # duty; it does not require an absent standalone feeling.
                 for item, role in zip(burdens, ("attention", "significance", "felt_response")):
                     roles[item.opportunity_id] = role
             elif (len(standalone) == 1 and len(selected) == 3 and not explicit_contrast_duties

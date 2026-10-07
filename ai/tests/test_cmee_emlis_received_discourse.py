@@ -5843,9 +5843,8 @@ def test_received_position_annotation_saved_correction_and_withdrawal(qcase, qdb
 @pytest.mark.parametrize('source,replies', [
     ('私は褒められたのに悲しかったけれど嬉しかった。私は褒められたのに寂しかった。頼まれたのに怖かった。', (None, '今は嬉しい。')),
     ('誘われたのに嬉しくなかった。誘われたのに悲しかった。誘われたのに寂しかった。', (None, '今は嬉しい。')),
-    # A reply to this long-event source already fails in the unchanged
-    # upstream plan. This checks the previously supported initial body.
-    ('昔から親しくしている先生に褒められたのに悲しかったけれど嬉しかった。昔から親しくしている先生に褒められたのに寂しかった。頼まれたのに怖かった。', (None,)),
+    # A long event keeps the unquoted form after its answer as well.
+    ('昔から親しくしている先生に褒められたのに悲しかったけれど嬉しかった。昔から親しくしている先生に褒められたのに寂しかった。頼まれたのに怖かった。', (None, '今は嬉しい。')),
 ])
 def test_received_position_annotation_preserves_other_source_scopes(field, source, replies):
     from cocolon_meaning_experience_engine import MeaningExperienceEngine
@@ -5875,3 +5874,97 @@ def test_received_position_annotation_keeps_literal_answer_words(field):
     assert '回答した時点ではあなたは先に書かれた方では、重いと思った' in follow
     assert '後に書かれた「褒められた」ということがあったのに、寂しさを感じ' in follow
     assert inverse(context, follow, without_author=True).passed
+
+
+LONG_CHAIN_EVENT = '昔から親しくしている先生に褒められた'
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('middle,focus', [(LONG_CHAIN_EVENT, '頼まれた'), ('誘われた', '誘われた')])
+@pytest.mark.parametrize('reply,time,feeling', [
+    ('今は嬉しい。', '回答した時点', '嬉しい'),
+    ('今は少し苦しい。', '回答した時点', '少し苦しい'),
+    ('その時は楽しかった。', 'その時', '楽しかった'),
+    ('その時は少し苦しかった。', 'その時', '少し苦しかった'),
+])
+def test_reserved_outer_contrast_keeps_later_answer_and_every_original(field, middle, focus, reply, time, feeling):
+    from cocolon_meaning_experience_engine import MeaningExperienceEngine
+    from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
+    source = f'{LONG_CHAIN_EVENT}のに悲しかったけれど嬉しかった。{middle}のに寂しかった。頼まれたのに怖かった。'
+    req = begin(source if field == 'memo' else '', source if field == 'memo_action' else '')
+    first = actual(request=req)
+    out = MeaningExperienceEngine().generate(req)
+    assert out.question and f'「{focus}」' in out.question.prompt_private
+    req = advance(req, reply)
+    context = actual(request=req)
+    result, plan, sentence, resolver, selected = context
+    assert MeaningExperienceEngine().generate(req).artifact.text == result.artifact.text
+    follow = result.artifact.reception
+    assert all(s in follow for s in (LONG_CHAIN_EVENT, middle, '頼まれた',
+        '悲しかったけれど、嬉しかった', '寂し', '怖', time, feeling))
+    moves = plan.response_plan.human_reception_plan.moves
+    assert 1 <= len(moves) <= 3
+    assert {n.nucleus_id for n in plan.nuclei if n.retention == 'required'} == {
+        nid for m in moves for nid in (*m.target_nucleus_ids, *m.support_nucleus_ids)}
+    nodes = {n.nucleus_id: n for n in plan.nuclei}
+    about, = (r for r in plan.relations if r.type == 'evaluation_about_event')
+    assert final_reception_source_anchor_text(about.from_nucleus_id, nodes, resolver) == focus
+    assert nodes[about.to_nucleus_id].source_fields == ('answer_text_private',)
+    assert nodes[about.from_nucleus_id].source_fields == (field,)
+    assert {r.relation_id for r in first[1].relations if r.retention == 'required'} <= {
+        r.relation_id for r in plan.relations if r.retention == 'required'}
+    for sid in first[3].span_ids:
+        assert resolver.qualified_ref(sid) == first[3].qualified_ref(sid)
+    changes = [follow.replace('悲しかったけれど、嬉しかった', '悲しかったから、嬉しかった'),
+        follow.replace('寂し', '楽し'), follow.replace(feeling, '平気'),
+        follow.replace(time, 'その時' if time == '回答した時点' else '回答した時点'),
+        follow.replace(focus, '断られた')]
+    assert inverse(context, follow, without_author=True).passed
+    assert all(changed != follow for changed in changes)
+    for changed in changes:
+        assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('reply,old,new', [('今は嬉しい。', '嬉しい', '少し楽しい'),
+                                         ('今は少し苦しい。', '少し苦しい', '少し怖い')])
+@pytest.mark.parametrize('withdraw', [False, True])
+def test_reserved_outer_contrast_saved_answer_correction_or_withdrawal(qcase, qdb, monkeypatch, field, reply, old, new, withdraw):
+    from test_emlis_q3_application import cont
+    user, parent, service = qcase
+    source = f'{LONG_CHAIN_EVENT}のに悲しかったけれど嬉しかった。誘われたのに寂しかった。頼まれたのに怖かった。'
+    memo, action = (source, '') if field == 'memo' else ('', source)
+    qdb.query('update public.emotions set memo=$1,memo_action=$2 where id=$3', [memo, action, parent])
+    first = current = run(service.start(user, parent))
+    change = f'「{old}」は誤りです。' if withdraw else f'「{old}」ではなく「{new}」です。'
+    for step, text in enumerate((reply, change)):
+        if step:
+            current = run(cont(service, user, current, 'reserved-continue'))
+        current = run(answer(service, user, current, text, f'reserved-answer-{step}'))
+        assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+        assert qdb.query('select memo,memo_action from public.emotions where id=$1', [parent])['rows'][0] == {
+            'memo': memo, 'memo_action': action}
+        with monkeypatch.context() as saved:
+            saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved body must not regenerate'))
+            assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
+    follow = current['current_observation']['text'].split('Emlisから：\n', 1)[1]
+    assert all(s in follow for s in ('悲しかったけれど、嬉しかった', '誘われた', '寂し', '頼まれた', '怖'))
+    assert old not in follow
+    assert ('先の回答時点' not in follow) if withdraw else (new in follow and '先の回答時点' in follow)
+    assert current['state'] == 'COMPLETED' and not current['can_continue']
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('reply', ['今は嬉しい。', '今は少し苦しい。'])
+def test_reserved_outer_contrast_saved_last_eligible_answer(qcase, qdb, monkeypatch, field, reply):
+    user, parent, service = qcase
+    source = f'{LONG_CHAIN_EVENT}のに悲しかったけれど嬉しかった。{LONG_CHAIN_EVENT}のに寂しかった。頼まれたのに怖かった。'
+    memo, action = (source, '') if field == 'memo' else ('', source)
+    qdb.query('update public.emotions set memo=$1,memo_action=$2 where id=$3', [memo, action, parent])
+    first = run(service.start(user, parent))
+    current = run(answer(service, user, first, reply, 'reserved-last-answer'))
+    assert current['body_state'] == 'REFINED' and current['original'] == first['original']
+    assert current['state'] == 'COMPLETED' and not current['can_continue']
+    with monkeypatch.context() as saved:
+        saved.setattr(service.engine, 'generate', lambda *_: pytest.fail('saved body must not regenerate'))
+        assert run(service.get(user, parent)) == run(service.start(user, parent)) == current
