@@ -290,6 +290,10 @@ def _sf_setup(source_fence_database, source_fence_harness, tier='premium'):
         'lineage': h.lineage_payload()}
     state['tier'] = tier
     state['issue_posts'] = []
+    assert h.original.subscription_tier == tier
+    assert conn.execute('SELECT subscription_tier FROM public.profiles WHERE id=%s',
+                        (SF_OWNER,)).fetchone() == (tier,)
+    assert state['q3_data']['evaluated_tier'] == tier
     return state
 
 
@@ -314,7 +318,9 @@ def _sf_issue(source_fence_database, state, *, mutate=None, **overrides):
         try:
             return _SF_B4['_rpc'](conn, name, values)
         except pg.Error as exc:
-            # Model only the established RPC machine-code translation.
+            # Diagnostic is confined to synthetic native tests and contains
+            # SQL function/line information, never a provider response body.
+            state['sql_error_context'] = exc.diag.context
             raise PieceContractError(exc.diag.message_primary) from None
     kwargs = dict(authenticated_user_id=SF_OWNER, record=state['candidate'],
         idempotency_key=SF_KEY, request_fingerprint=SF_REQUEST_HASH, ttl_seconds=600,
@@ -352,8 +358,16 @@ def test_current_source_issues_and_replays_the_exact_bundle_without_quota(source
     state = _sf_setup(source_fence_database, source_fence_harness, tier)
     conn, _, _ = source_fence_database
     before = deepcopy(state['candidate'])
-    first = _sf_issue(source_fence_database, state)
-    again = _sf_issue(source_fence_database, state, ttl_seconds=1200)
+    try:
+        first = _sf_issue(source_fence_database, state)
+    except PieceContractError:
+        pytest.fail('Synthetic current-source issuance failed at: ' +
+                    str(state.get('sql_error_context')), pytrace=False)
+    try:
+        again = _sf_issue(source_fence_database, state, ttl_seconds=1200)
+    except PieceContractError:
+        pytest.fail('Synthetic current-source replay failed at: ' +
+                    str(state.get('sql_error_context')), pytrace=False)
     assert again == dict(first, idempotency_replayed=True)
     assert first['idempotency_replayed'] is False
     for key in before.keys() - {'source_lineage'}:
