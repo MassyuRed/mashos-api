@@ -6,6 +6,7 @@ Original and supplemental admission/CMEE integration remain separate work.
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Mapping
 from piece_v2_contract import PieceContractError, reconstruct_piece_text
 from piece_text_formatter import format_reflection_text
@@ -42,13 +43,21 @@ def check_existing_detectors(text: str) -> None:
     if any(ord(c) in {*range(0x202A, 0x202F), *range(0x2066, 0x206A),
                      0x200B, 0xFEFF} for c in text):
         raise unavailable('hidden_control')
-    result = format_reflection_text(text)
-    # ASCII mail addresses can touch Japanese words on both sides; Unicode
-    # word-boundary checks in the legacy detector do not cover that form.
-    adjacent_mail = re.search(r'(?i)[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}', text)
-    if result.flags or result.display_text is None or adjacent_mail:
+    # Detection-only view: never use compatibility normalization or the
+    # legacy formatter's display_text as canonical Piece/source bytes. This
+    # catches fullwidth contact syntax without folding the visible wording,
+    # evidence coordinates, emoji sequences or content hashes.
+    result = format_reflection_text(unicodedata.normalize('NFKC', text))
+    scan = result.normalized_text
+    # Japanese letters are Unicode word characters. ASCII contact syntax can
+    # touch them, so the legacy \b / \w boundaries cannot protect this path.
+    adjacent_mail = re.search(r'(?i)[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}', scan)
+    adjacent_url = re.search(r'(?i)(?:https?://|www\.)[^\s<>()]+', scan)
+    adjacent_handle = re.search(r'(?<![A-Za-z0-9_@])@[A-Za-z0-9_][A-Za-z0-9_.-]{0,31}', scan)
+    if (result.flags or result.display_text is None or adjacent_mail
+            or adjacent_url or adjacent_handle):
         raise unavailable('existing_safety_detector')
-    if re.search(r'(?i)(?:bearer\s+|(?:api[_ -]?key|password|token)\s*[:=]|postgres(?:ql)?://)', text):
+    if re.search(r'(?i)(?:bearer\s+|(?:api[_ -]?key|password|token)\s*[:=]|postgres(?:ql)?://)', scan):
         raise unavailable('credential_like_material')
 
 
