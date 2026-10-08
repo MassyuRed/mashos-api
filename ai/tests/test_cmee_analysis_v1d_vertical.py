@@ -3728,6 +3728,84 @@ class AnalysisVerticalTests(unittest.TestCase):
             record(2, memo='その後私は会議の司会を担当した。'))).artifact
         self.assertFalse(split.graph.edges)
 
+    def test_result_day_prefixes_stay_unresolved_without_erasing_other_complete_clauses(self):
+        invalid = (
+            '私は資料を調べた後、今日疑問が減った',
+            '私は資料を調べてから、昨日疑問が減った',
+            '私は資料を調べた後、今日分疑問が減った',
+            '私は資料を調べた後、昨日午前疑問が減った',
+            'まだ今日方針が決まっていない',
+            'まだ昨日方針が見つかっていません',
+            'まだ今日分方針が定まっていない',
+            'まだ昨日以前方針が決まっていない',
+        )
+        for clause in invalid:
+            with self.subTest(clause=clause):
+                self.assertIsNone(self.generate(request(record(memo=clause + '。'))).artifact)
+                req = request(record(memo='私は職場にいた。' + clause + '。その後私は記録を残した。'))
+                artifact = self.generate(req).artifact
+                self.assertEqual([n.node_kind for n in artifact.graph.nodes], ['SCENE', 'ACTION_OR_NONACTION'])
+                self.assertEqual([n.proposition.predicate_lemma for n in artifact.graph.nodes], ['いる', '残す'])
+                self.assertFalse(artifact.graph.edges)
+                source = freeze_analysis_sources(req).sources[0].envelope
+                for node, literal in zip(artifact.graph.nodes, ('私は職場にいた', 'その後私は記録を残した')):
+                    e, = node.evidence_refs
+                    raw = source.raw_utf8[e.utf8_start:e.utf8_end]
+                    field = source.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                    self.assertEqual(raw.decode(), literal)
+                    self.assertEqual(field[e.scalar_start:e.scalar_end], literal)
+                    self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)
+                self.assertEqual(visual['projection_of'], text['projection_of'])
+                self.assertIn('まだ読み取れていない内容', text['text'])
+                for node in visual['nodes']:
+                    self.assertIn(node['visible_label'], text['text'])
+                self.assertNotIn('疑問', text['text'])
+                self.assertNotIn('方針', text['text'])
+
+    def test_result_day_nominal_boundaries_keep_explicit_nominals_and_existing_day_parsers(self):
+        for noun in ('今日の疑問', '昨日の疑問', '今日分の疑問', '昨日分の疑問',
+                     '仕事の昨日分', '今日', '昨日分'):
+            for clause, state in (('私は資料を調べた後、' + noun + 'が減った', 'BOUNDED_CHANGE'),
+                                  ('まだ' + noun + 'が決まっていない', 'NOT_YET')):
+                with self.subTest(clause=clause):
+                    artifact = self.generate(request(record(memo=clause + '。'))).artifact
+                    # The shared unfinished witness already rejects past
+                    # time scopes, even when 昨日 occurs in a nominal.
+                    # Preserve that boundary; do not broaden it here.
+                    if state == 'NOT_YET' and '昨日' in noun:
+                        self.assertIsNone(artifact)
+                        continue
+                    self.assertIsNotNone(artifact)
+                    result = artifact.graph.nodes[-1].proposition
+                    self.assertEqual(result.result_state, state)
+                    self.assertEqual(result.arguments, (('が', noun),))
+                    self.assertEqual(result.relative_day, '')
+                    self.assertIn(noun, artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+        for clause in ('私は今日資料を調べた', '私は昨日職場にいた', '私は今日会議を担当した'):
+            with self.subTest(clause=clause):
+                node, = self.generate(request(record(memo=clause + '。'))).artifact.graph.nodes
+                self.assertEqual(node.proposition.relative_day, 'YESTERDAY' if '昨日' in clause else 'TODAY')
+
+    def test_result_unparsed_day_keeps_updates_and_period_comparison_conservative(self):
+        for invalid, valid in (('私は資料を調べた後、今日疑問が減った', '私は資料を調べた後、疑問が減った'),
+                               ('まだ今日方針が決まっていない', 'まだ方針が決まっていない')):
+            for original, answer in ((valid, invalid + '。'),
+                    (valid, '「' + valid + '」ではなく「' + invalid + '」です。'),
+                    (invalid, '「' + invalid + '」ではなく「' + valid + '」です。'),
+                    (invalid, '「' + invalid + '」は取り消します。')):
+                with self.subTest(answer=answer):
+                    result = self.generate(request(self.with_answer(record(
+                        memo=original + '。私は記録を残した。'), answer)))
+                    self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+            partial = invalid + '。私は記録を残した。'
+            comparison = self.compared(partial, '私は記録を残した。').artifact
+            self.assertEqual(comparison.safe_projection(authenticated_owner_scope=OWNER)
+                ['period_comparison']['safe_change_kinds'], ['UNKNOWN_SCOPE_CHANGED'])
+            comparison = self.compared(partial, partial.replace('今日', '昨日')).artifact
+            self.assertEqual(comparison.period_comparison.change_claims, ())
+
     def test_unparsed_time_prefixes_do_not_become_scene_role_or_action_nouns(self):
         for time in ('明日', '明後日', '一昨日', '今朝', '昨夜', '先週', '来週',
                      '今週', '今月', '今年', '先月', '来月', '昨年', '来年'):

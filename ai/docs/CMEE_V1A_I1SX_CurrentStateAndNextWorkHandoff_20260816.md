@@ -15362,3 +15362,26 @@ OBSERVED_BLOCKER_MINIMAL_FIX。既存の分析内容修正・Draft反映指示�
 STRUCTURE_MAP_DELTA_NONE：既存の意味owner、依存方向、route、artifact/保存lifecycle内の修正。共有Plan/Safety/Piece・API/DTO/DB/SQL/RN・製品依存変更0。main/merge/deploy/env/native build操作0、未配置。実DB・本人実機・商品受入れ未確認、限定TECHNICAL_CREDIT・商品NOT_CLEAR維持。既存PR3/30への反映後に対象7fileのremote全文/blob・parent・変更path集合を照合する。
 
 残件：本人の指定版生成→保存再表示→比較の実機確認を保持する。一般感情/認知、夢/伝聞から現実へ戻る境界、unknown反復、未対応名詞/時点と共有表現の残差は継承。補助reviewでは結果名詞内へ今日/昨日が吸収される可能性を挙げたが、今回は実行未確認の候補であり確定欠陥や修正済みにしない。次回は本節と追跡source/testを再開原典として残件を選ぶ。scratch出力・JSON・logを正式保存先にしない。
+
+## 2026-10-08 JST u167 — 結果の「今日／昨日」を名詞へ吸収して確定しない
+
+Mashの分析内容修正継続指示からu166の未検証候補を実測。開始remote HEADはAPI `30043e732d532291cc5b5fadce88a6ec74220ed5`／Cocolon `fc0948962c2ec4dfefe6ad53840b0fc720e73d64`、両PR Draft/open/unmergedをfresh確認。tracked worktreeはcleanで、前回remoteと同treeのlocal commitから上記remote HEADへ切り替えて継続した。前回txt、前提・work_attitude current／rule18・GitHub/runtime/保存rule、全体設計01・全file地図01A〜C、Analysis current03のowner表／詳細04／06、最新weekly20261003 §5/§6.6〜6.10、Karen-Diary入口／memory2本の同session読取を継承。恒久incidentは今回開始時に全文再読。System Context doctor/prepareは実行せず、生成Contextのfreshnessを主張しない。追跡原典と今回対象source/testを直接確認した。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。既存の分析内容修正・Draft反映指示内で、Codex Workのroot華恋が単一編集・実行・反映owner、同環境read-only補助が原因と最終diffを確認。別model Pro reviewではない。完成条件は誤った時点の確定防止、独立した明示内容と原文証拠・更新／比較・保存再表示・同一RN表示modelの保持。追加費用・Mash操作0。新しい時点文法、共有owner、実DB、配置、有効化へは拡張しない。weeklyの最小実動作優先を維持し、全表現対応を実機確認の前提にしない。
+
+開始版の実engineで「私は資料を調べた後、今日疑問が減った」「私は資料を調べてから、昨日疑問が減った」が今日疑問／昨日疑問を一つの名詞として変化nodeと順序線を生成した。「まだ今日方針が決まっていない」も同じ吸収で確定した。結果parserは今日／昨日の時点を解析していないが、全漢字のnominal slotが受理し、既存の未解析時点checkはこの2語の無修飾先頭を対象にしていなかった。
+
+製品変更は既存 `cores/analysis/intent_compiler.py::_has_unparsed_nominal_scope` のresult_state限定判定1箇所（説明込み9行）のみ。BOUNDED_CHANGE／NOT_YETのargument全体の先頭に今日／昨日が直結し、完全な名詞headでない場合は既存unknown経路へ戻す。今日／昨日／今日分／昨日分の直後が終端または「の」の場合は名詞境界を保持し、「今日分疑問」等の長い連結は保留する。仕事の昨日分のような内側属格へ新判定を広げない。通常行動／場面／担当の既存day parser、全節証拠、shared witness、極性／時制は不変。結果の時点を推測・新規解釈しない。
+
+不成立の行動→結果pairは既存の完全pair契約どおり両端を保留し、別の完全な場面／行動は残して未読内容を示す。未読文を飛び越す順序線を作らない。日語だけ異なる未読部分から内容の改善／悪化を推測しない。今回「今日／昨日」の全構文対応を達成したとはしない。特に「まだ昨日の疑問が決まっていない」等は共有unfinished witnessの既存past判定で開始版からUNAVAILABLEであり、この残件は変えていない。
+
+実行runtimeは前回発見の既存Python3.12.14／pytest9.1.1（組込subtests）／FastAPI0.142.2／httpx0.28.1／Pydantic2.13.5を継続。絶対entrypointと既存FB172移行plugin／cacheprovider無効化、依存導入・製品lock変更0。
+
+- 初回の新3methodは15 failed（14 subtest failure＋1 method failure）／2 passed／15 subtests passed。うち4 subFAILは未実測のNOT_YET＋昨日nominalを新しいpositive対照とした検査側の誤り。開始sourceで元から停止しているため、既存保留を維持する期待へ訂正した。残る6 subFAILは誤node採用、4 subFAILは補足更新での誤採用、1 method FAILは期間比較での誤ったroute差を実証。昨日を含む未完了の2保留例は開始版から成功しており改善数へ含めない。既存期待削除／緩和・skip／xfail 0。
+- 修正後の新3method：3 PASS／33 subtests PASS（0.95秒）。最終Analysis3suiteはvertical248／storage59／saved-period16＝**323 tests PASS／2087 subtests PASS（13.56秒）**。独立内容、scalar／UTF-8／hash、未読節の順序barrier、明示名詞・既存day parser、補足／全文訂正／撤回、比較unknown-onlyと未読日語差0を確認。実保存service＋合成RPC、engine再生成を禁止したreadで同じ保存本文／図／identityを確認。実DB検査ではない。
+- rootが合成8全文（今日／昨日の結果保留、未完了の間に残る場面と行動、今日の疑問、昨日分の疑問、今日の未完了名詞、昨日の場面と順序、unknown比較）を全読。実 `buildWatashiMapV2ViewModel` の全文・identity・node順・edge・unknown・注記・競合・比較が8/8一致。最初の一回限りscriptはmodelが付加するtargetLabels等もDTOそのものと比較して失敗したため、実modelの型に合わせ付加labelと元fieldを両方照合するscriptへ直して再実行。製品コードや検査期待を変えたものではない。
+- 同環境read-onlyの最終diff reviewに具体的blockerなし。最終suite後の製品source変更0。共有／Emlis／旧contracts suiteは未実行で、全repo PASSとはしない。u165中断runの未診断F2件、それ以前の旧期待差は未解消として継承する。
+
+STRUCTURE_MAP_DELTA_NONE：意味owner／依存方向／route／artifact・保存lifecycleは不変。API compiler1／vertical test1／storage test1／handoff1、Cocolon current03／詳細04／06の計7file modify、新規repo file0。共有Plan／Safety／Piece・API契約／DTO／DB／SQL／RN・製品依存変更0。main／merge／deploy／env／native build操作0、u167未配置。実DB・React component/native・本人実機・商品受入れ未確認。限定TECHNICAL_CREDIT・商品NOT_CLEAR維持。既存PR3/30への反映後にremote head／parent／tree／変更path集合と対象7fileの全bytesを照合する。
+
+残件：結果の明示日語を正しく構造化する文法、昨日を名詞修飾とする未完了の共有時制判定、一般感情／認知、夢／伝聞から現実へ戻る境界、unknown反復、既記録の共有表現残差を保持する。本人の指定版生成→保存再表示→比較の実機確認も別に維持。本節と追跡source/testを再開原典とし、scratch出力・JSON・logを正式再開原典にしない。

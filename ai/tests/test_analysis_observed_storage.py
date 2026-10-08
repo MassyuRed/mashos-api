@@ -799,7 +799,11 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         for unparsed in ('私は資料を明日ノートに書いた', '私は何を調べた', '私は誰の資料を見た',
                          '私は今週資料を調べた', '私は今年仕事を続けたい',
                          '私は今月資料を調べないかもしれないと思う',
-                         '私は今年資料を調べたかもしれないと思っている'):
+                         '私は今年資料を調べたかもしれないと思っている',
+                         '私は資料を調べた後、今日疑問が減った',
+                         '私は資料を調べてから、昨日疑問が減った',
+                         'まだ今日方針が決まっていない',
+                         'まだ昨日方針が見つかっていません'):
             with self.subTest(unparsed=unparsed):
                 original = dict(self.fx['original'], memo=unparsed + '。私は記録を残した。')
                 writes = []
@@ -828,7 +832,8 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(any('まだ読み取れていない内容' in g['visible_label']
                                     for g in projection['unknown_gaps']))
                 self.assertEqual(saved['content_text'], writes[0]['p_text'])
-                for hidden in ('明日ノート', '何', '誰', '今週資料', '今年仕事', '今月資料', '今年資料'):
+                for hidden in ('明日ノート', '何', '誰', '今週資料', '今年仕事', '今月資料', '今年資料',
+                               '今日疑問', '昨日疑問', '今日方針', '昨日方針'):
                     self.assertNotIn(hidden, json.dumps(saved, ensure_ascii=False))
                 self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
 

@@ -420,6 +420,15 @@ def _has_unparsed_nominal_segment(part):
 def _has_unparsed_nominal_scope(proposition):
     if proposition is None:
         return False
+    # Result clauses have no day parser. A leading 今日/昨日 must not be
+    # swallowed into their subject as if its time had been understood.
+    # Preserve complete nominal heads (今日の疑問 / 昨日分の疑問), not
+    # longer unparsed compounds (昨日分疑問). Inner genitives such as
+    # 仕事の昨日分 do not date the result and keep their existing scope.
+    if proposition.result_state in {'BOUNDED_CHANGE', 'NOT_YET'} and any(
+            re.match(r'^(?:今日|昨日)(?!分?(?:の|$))', noun)
+            for _, noun in proposition.arguments):
+        return True
     # Explicit の and a standalone case-marked day remain nominal: e.g.
     # 明日の資料 / 明日を記録した do not date the action. Check every
     # genitive segment and possible content, not only the first argument.
