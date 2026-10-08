@@ -298,6 +298,14 @@ def _past_event_witness(nucleus, proposition):
     # Its current_input time is unspecified; the whole finite clause proves
     # past. Its default actor alone never proves SELF ownership.
     frame = nucleus.semantic_frame
+    # A nominal 記録/メモ can give the shared clause an action/action
+    # classification. Only a fully parsed responsibility may consume that
+    # consistent witness; the finite 担当 predicate supplies ROLE, not a
+    # completed task. Scenes still require the generic event witness.
+    predicate_matches = (nucleus.kind == frame.predicate_kind == 'event'
+        or (proposition.role_state == 'PAST_RESPONSIBILITY'
+            and nucleus.kind == frame.predicate_kind == 'action'
+            and 'operator:action' in frame.attribute_codes))
     # The shared surface planner lowers ordinary clauses to should when
     # there are more than three. This is a display priority, not uncertainty.
     # Both fully parsed scenes and responsibilities retain that priority;
@@ -307,7 +315,7 @@ def _past_event_witness(nucleus, proposition):
     return (nucleus.grounding_kind == 'explicit'
         and nucleus.allowed_claim_scope == 'explicit_current_input'
         and nucleus.retention in retention
-        and nucleus.kind == frame.predicate_kind == 'event'
+        and predicate_matches
         and nucleus.source_fields == ('memo',)
         and len(nucleus.source_span_ids) == 1
         and frame.actor == 'current_user' and frame.modality == 'fact'

@@ -3668,6 +3668,109 @@ class AnalysisVerticalTests(unittest.TestCase):
                         replace(artifact, graph=replace(artifact.graph, nodes=(replace(node,
                             proposition=replace(node.proposition, role_state='')),))).safe_projection(authenticated_owner_scope=OWNER)
 
+    def test_keyword_action_responsibility_preserves_role_and_whole_source(self):
+        for noun in ('記録', 'メモ', '仕事メモ', '会議の記録'):
+            for ending in ('担当した', '担当しました', '担当しなかった',
+                           '担当しなかったです', '担当しませんでした'):
+                literal = '私は' + noun + 'を' + ending
+                with self.subTest(literal=literal):
+                    req = request(record(memo=literal + '。'))
+                    artifact = self.generate(req).artifact
+                    self.assertIsNotNone(artifact)
+                    node, = artifact.graph.nodes
+                    negative = ending.startswith(('担当しなかった', '担当しません'))
+                    self.assertEqual((node.node_kind, node.proposition.role_state, node.proposition.actor),
+                                     ('ROLE', 'PAST_RESPONSIBILITY', 'SELF'))
+                    self.assertEqual((node.polarity, node.modality, node.temporal_scope),
+                                     ('negative' if negative else 'positive', 'fact', 'past'))
+                    self.assertEqual(node.proposition.arguments, (('を', noun),))
+                    source, = freeze_analysis_sources(req).sources
+                    e, = node.evidence_refs
+                    raw = source.envelope.raw_utf8[e.utf8_start:e.utf8_end]
+                    field = source.envelope.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                    self.assertEqual((raw.decode(), field[e.scalar_start:e.scalar_end]), (literal, literal))
+                    self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                    label = noun + 'を' + ('担当しなかった' if negative else '担当した') + '（記録された担当）'
+                    self.assertEqual(artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes'][0]['visible_label'], label)
+                    text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                    self.assertIn(label, text)
+                    self.assertNotIn('実行済み', text)
+                    self.assertFalse(artifact.graph.edges)
+                    self.assertNotIn('ROLE', {g.missing_scope for g in artifact.graph.unknown_gaps})
+                    self.assertIn('ACTION_OR_NONACTION', {g.missing_scope for g in artifact.graph.unknown_gaps})
+                    with self.assertRaises(AnalysisSourceError):
+                        replace(artifact, graph=replace(artifact.graph, nodes=(replace(node,
+                            proposition=replace(node.proposition, arguments=(('を', '資料'),))),))).safe_projection(
+                                authenticated_owner_scope=OWNER)
+
+    def test_keyword_action_responsibility_keeps_order_updates_and_comparison(self):
+        old, new = '私は記録を担当した', '私はメモを担当しなかった'
+        base = record(memo=old + '。その後、私は資料を調べた。')
+        for answer, labels in ((new + '。', [old, new]),
+                ('「' + old + '」ではなく「' + new + '」です。', [new]),
+                ('「' + old + '」は取り消します。', [])):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(base, answer))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertEqual([n.visible_label for n in artifact.graph.nodes if n.node_kind == 'ROLE'], labels)
+                self.assertEqual(len(artifact.graph.edges), 1 if answer == new + '。' else 0)
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        repeated = self.generate(request(self.with_answer(record(memo=old + '。'),
+            '僕は記録を担当しました。'), record(2, memo=old + '。'))).artifact
+        node, = repeated.graph.nodes
+        self.assertEqual((len(node.evidence_refs), len(node.record_refs)), (3, 2))
+        opposed = self.generate(request(record(memo=old + '。私は記録を担当しなかった。'))).artifact
+        self.assertEqual({n.polarity for n in opposed.graph.nodes}, {'positive', 'negative'})
+        self.assertEqual(len(opposed.graph.conflicts), 1)
+        self.assertFalse(opposed.graph.edges)
+        self.assertEqual(self.compared(old + '。', '僕は記録を担当しました。').artifact.period_comparison.change_claims, ())
+        for other in (new, '私は記録を担当しなかった'):
+            self.assertIn('ROUTE_EVIDENCE_CHANGED', self.compared(old + '。', other + '。').artifact.safe_projection(
+                authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+        route = self.generate(request(record(memo='昨日、私は職場にいた。その後、私は会議の記録を担当した。'
+            'それから、私は資料を調べた。'))).artifact
+        self.assertEqual([n.node_kind for n in route.graph.nodes], ['SCENE', 'ROLE', 'ACTION_OR_NONACTION'])
+        self.assertEqual([e.endpoint_refs for e in route.graph.edges], [('n1', 'n2'), ('n2', 'n3')])
+        route.safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_keyword_action_responsibility_requires_consistent_shared_witness(self):
+        from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
+        build = compiler.build_final_stage1_grounded_observation_plan
+        for mismatch in ('kind', 'predicate', 'operator', 'actor', 'modality', 'polarity',
+                         'future', 'optional', 'fragment', 'dependency'):
+            def changed(*args, **kwargs):
+                plan = build(*args, **kwargs)
+                n, = plan.nuclei
+                f = n.semantic_frame
+                if mismatch == 'kind': n = replace(n, kind='event')
+                elif mismatch == 'optional': n = replace(n, retention='optional')
+                else:
+                    fields = {'predicate': {'predicate_kind': 'event'}, 'actor': {'actor': 'other'},
+                        'modality': {'modality': 'wish'}, 'polarity': {'polarity': 'negative'},
+                        'future': {'time_scope': 'future'},
+                        'operator': {'attribute_codes': tuple(c for c in f.attribute_codes if c != 'operator:action')},
+                        'fragment': {'attribute_codes': f.attribute_codes + ('source_fragment_scalar_range:0:12',)},
+                        'dependency': {'attribute_codes': f.attribute_codes + ('semantic_dependency:unknown',)}}
+                    n = replace(n, semantic_frame=replace(f, **fields[mismatch]))
+                return replace(plan, nuclei=(n,))
+            with self.subTest(mismatch=mismatch), patch.object(
+                    compiler, 'build_final_stage1_grounded_observation_plan', side_effect=changed):
+                self.assertIsNone(self.generate(request(record(memo='私は記録を担当した。'))).artifact)
+
+    def test_keyword_action_responsibility_does_not_promote_unread_or_reported_scope(self):
+        for memo in ('私は記録にいた。', '私はメモにいました。', '私は記録係です。',
+                '記録を担当した。', '友人は記録を担当した。', '私は記録を担当したい。',
+                '私は記録を担当している。', '私は記録を担当したと思う。',
+                '私は記録を担当したかもしれない。', '私は記録を担当した？',
+                '私は何を担当した。', '私は昨日記録の確認を担当した。',
+                '友人の報告です。私は記録を担当した。',
+                '夢を見た。私は記録を担当した。', '「私は記録を担当した」と聞いた。'):
+            with self.subTest(memo=memo):
+                outcome = self.generate(request(record(memo=memo)))
+                self.assertFalse(outcome.artifact and any(n.node_kind in {'ROLE', 'SCENE'}
+                                                        for n in outcome.artifact.graph.nodes))
+        self.assertIsNone(self.generate(request(record(memo='', action='私は記録を担当した。'))).artifact)
+
     def test_responsibility_requires_matching_shared_event_not_keyword_action(self):
         from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
         original_builder = compiler.build_final_stage1_grounded_observation_plan
@@ -3688,9 +3791,12 @@ class AnalysisVerticalTests(unittest.TestCase):
             with self.subTest(mismatch=mismatch), patch.object(
                     compiler, 'build_final_stage1_grounded_observation_plan', side_effect=changed):
                 self.assertIsNone(self.generate(request(record(memo='私は会議の司会を担当した。'))).artifact)
-        # The shared owner reads this nominal keyword as action. Do not
-        # turn it into either a responsibility or an actually completed log.
-        self.assertIsNone(self.generate(request(record(memo='私は記録を担当した。'))).artifact)
+        # A consistent shared action witness can ground a complete written
+        # responsibility, but must never claim that its nominal task was done.
+        artifact = self.generate(request(record(memo='私は記録を担当した。'))).artifact
+        node, = artifact.graph.nodes
+        self.assertEqual((node.node_kind, node.proposition.predicate_lemma), ('ROLE', '担当する'))
+        self.assertNotIn('実行済み', artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
 
     def test_responsibility_does_not_infer_identity_or_drop_unread_scope(self):
         long_tail = 'その内容を忘れないように長い文章として残しています' * 4
@@ -4521,10 +4627,13 @@ class AnalysisVerticalTests(unittest.TestCase):
             '私は、職場にいたそうだ', '私は、職場にいたと聞いた',
             '私は、職場にいた夢を見た', '私は、会議を担当したなら',
             '「私は、職場にいた」', '私は、職場にいた？',
-            '私は、記録を担当した',
         ):
             with self.subTest(literal=literal):
                 self.assertIsNone(self.generate(request(record(memo=literal + '。'))).artifact)
+        artifact = self.generate(request(record(memo='私は、記録を担当した。'))).artifact
+        node, = artifact.graph.nodes
+        self.assertEqual((node.node_kind, node.proposition.arguments), ('ROLE', (('を', '記録'),)))
+        artifact.safe_projection(authenticated_owner_scope=OWNER)
         # The event witness stays memo-only; memo_action cannot replace it.
         artifact = self.generate(request(record(memo='私は資料を調べた。',
             action='私は、職場にいた。'))).artifact
@@ -4621,12 +4730,18 @@ class AnalysisVerticalTests(unittest.TestCase):
             '私は昨日会議の司会を担当した。', '私は今日の会議を担当した。',
             '私は昨日分の会議を担当した。', '私は昨日以前の職場にいた。',
             '私は昨日職場にいる。', '私は昨日会議を担当したい。',
-            '私は昨日記録を担当した。', '友人は昨日職場にいた。',
+            '友人は昨日職場にいた。',
             '私は昨日、誰の会議を担当した。',
         ):
             with self.subTest(memo=memo):
                 artifact = self.generate(request(record(memo=memo))).artifact
                 self.assertFalse(artifact and any(n.node_kind in {'SCENE', 'ROLE'} for n in artifact.graph.nodes))
+
+        artifact = self.generate(request(record(memo='私は昨日記録を担当した。'))).artifact
+        node, = artifact.graph.nodes
+        self.assertEqual((node.node_kind, node.proposition.relative_day), ('ROLE', 'YESTERDAY'))
+        self.assertEqual(node.proposition.arguments, (('を', '記録'),))
+        artifact.safe_projection(authenticated_owner_scope=OWNER)
 
     def test_post_topic_event_days_do_not_erase_report_dream_or_sentence_tail(self):
         tail = 'その内容を忘れないように長い文章として残しています' * 4
@@ -4697,10 +4812,16 @@ class AnalysisVerticalTests(unittest.TestCase):
                     self.assertFalse(artifact and any(n.node_kind in {'SCENE', 'ROLE'} for n in artifact.graph.nodes))
         for memo in ('今日私は職場にいる。', '今日私は会議の司会を担当したい。',
                      '今日私は昨日職場にいた。',
-                     '私は今日会議の司会を担当した。', '昨日私は記録を担当した。'):
+                     '私は今日会議の司会を担当した。'):
             with self.subTest(memo=memo):
                 artifact = self.generate(request(record(memo=memo))).artifact
                 self.assertFalse(artifact and any(n.node_kind in {'SCENE', 'ROLE'} for n in artifact.graph.nodes))
+
+        artifact = self.generate(request(record(memo='昨日私は記録を担当した。'))).artifact
+        node, = artifact.graph.nodes
+        self.assertEqual((node.node_kind, node.proposition.relative_day), ('ROLE', 'YESTERDAY'))
+        self.assertEqual(node.proposition.arguments, (('を', '記録'),))
+        artifact.safe_projection(authenticated_owner_scope=OWNER)
 
     def test_prefixed_events_still_require_shared_event_witness(self):
         from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler

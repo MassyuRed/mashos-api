@@ -15436,3 +15436,26 @@ Mashの分析内容修正継続指示と添付「前回作業内容(20261008-104
 STRUCTURE_MAP_DELTA_NONE：既存共有意味owner/依存方向/route/保存lifecycle内の限定補正。既存9file modify、新規repo file0。Analysis専用compiler/realizer、Safety、Piece、API契約/DTO/DB/SQL/RN・依存変更0。main/merge/deploy/env/native build操作0、u169未配置。実DB・本人実機・商品受入れ未確認、限定TECHNICAL_CREDIT・商品NOT_CLEAR。最終suite後の製品source変更0。反映commitと全9fileのremote bytes/parent/変更path集合は両PRへ記録する。
 
 残件：一般の属格書字/報告内容・今回保守的に残した名詞、今回以外の時点/一般感情・認知、夢/伝聞から現実へ戻る境界、unknown反復。u168既存共有6FAIL、旧0066/旧contracts差、u165未診断F2等は今回再検証・解消していない。上記Emlis複合2例のLIMITED_RECEPTION_CAPABILITY_GAP_STOPも追加記録した。本人指定版での生成→保存再表示→比較は別の実機残件。次回は本節と追跡source/testから継続し、scratch log/JSONやbaseline worktreeを正式再開原典にしない。
+
+
+## 2026-10-08 JST u170 — 記録・メモの担当を役割として保持（未配置）
+
+Mashの分析内容修正継続指示を受け、開始remote HEAD API `4e866a7b0718b87f665be14bcad42888b2bb0b6a`／Cocolon `83161b267d985b4fe8e719b577c040ed658053bc` をfresh PR3/30で確認。Draft/open/unmerged、両repoのremote treeとlocal tree一致後に実remote HEADから継続。前回txt、必須前提とwork_attitude CURRENT/対象専門rule、全体設計01・全file地図01A〜C・system02の関連地図、current03と最新weekly20261003 §5.3/§6.6〜6.10の同session確認を継承し、恒久incident全文を再読、詳細04 §3.12とu169 handoff・実source/testを確認。System Context生成物のfreshnessは主張せず、追跡正本を参照。
+
+OBSERVED_BLOCKER_MINIMAL_FIX、既存設計内の実装補正。Codex Work root華恋が単一編集・実行・GitHub反映owner、同環境read-only補助が原因と差分を確認（別model Pro reviewではない）。完成条件は完全な本人の過去担当を本文・図へ戻し、原文/否定/相対日/順序/更新/比較/保存再表示を保持すること。追加費用・Mash操作0。weeklyどおり全表現対応を実機接続の前提にしない。
+
+開始実測では「私は記録を担当した」「私はメモを担当しました」とその否定が単独UNAVAILABLE、場面・担当・行動の複合ではROLEとその明示順序が落ちた。共有Planは名詞の記録/メモに反応してkindとpredicate_kindをaction/action、operator:actionへ揃えており、Analysisの過去event witnessがevent/eventだけを許可していた。肯定のshared performed_action markerを担当対象の作業完了へ転用してはならない。
+
+製品変更は既存Analysis `intent_compiler.py::_past_event_witness` のみ。既存parserで完全に解釈したPAST_RESPONSIBILITYに限り、kind/predicate_kindがともにactionかつoperator:actionの一貫した共有根拠を追加受理する。ROLEは有限述語「担当した/しました/しなかった/しなかったです/しませんでした」から作る。explicit claim、required/should、memo単独span、current_user/fact、対応極性、past/current_input、fragment/dependency拒否、全原文境界・夢/伝聞/引用保留は全て継続。SCENEはevent/event条件のまま。共有Plan/Safetyや語分類を書き換えず、名詞だけからROLEを推測せず、実行完了・身分・能力・原因を加えない。
+
+検証runtimeは既存Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5。絶対entrypoint、bytecode/cacheprovider/FB172移行plugin無効、依存導入と製品lock変更0。
+
+- 製品修正前の新4method：24 failed（23 subFAIL＋1 method FAIL）／3 passed／25 subtests passed（4.96秒）。4名詞×5語尾、通常補足/訂正/撤回と集約の欠落を実測。修正後の担当・保存に関する選択検査：8 tests／114 subtests PASS（2.36秒）。
+- 最初の全Analysis実行はファイル名末尾のservice誤記でno tests ran。正しい3suiteで330 tests PASS／旧保留3 subFAIL（14.01秒）。読点付き「私は、記録を担当した」、主語後「私は昨日記録を担当した」、前置「昨日私は記録を担当した」は今回回復した完全な担当であり、元の保留loopから同じmethod内のROLE/対象/相対日確認へ移した。初めに更新した裸の「私は記録を担当した」も含め、旧保留4期待を限定変更した。その他の未読/伝聞/夢/主体/共有根拠改変の拒否期待は維持、skip/xfail 0。
+- 最終 `test_cmee_analysis_v1d_vertical.py`／`test_analysis_observed_storage.py`／`test_analysis_saved_period.py`：**330 tests PASS／2176 subtests PASS（14.17秒）**（vertical255/storage59/saved-period16）。原文scalar/UTF-8/hash、正負・敬体・属格対象、根拠改変拒否、明示順序、同義集約、補足/全文訂正/撤回、同一記録の相反、期間比較を確認。実保存service＋合成RPCで4例を追加し、保存後のengine再生成を禁止したreadの同じ本文/図/identityを確認。実DB検査ではない。
+- rootが合成9全文（肯定、否定、昨日否定、場面→担当→行動、補足、訂正、撤回、同一記録の相反、期間比較）を全読。役割だけの入力に行動実行済みを足さず、明示された別行動と順序を保持、訂正/撤回で消えた旧担当を跨ぐ線は作らない。実RN `buildWatashiMapV2ViewModel` と本文全文/identity/node順/edge/unknown/注記/競合/比較stateが9/9一致。React component/nativeの実機確認ではない。訂正後のunknown反復は残る。
+- 同環境read-only source/test reviewに具体的blockerなし。最終suite後の製品source変更0。共有source/identityを変更していないため共有/Emlis suiteは今回未実行、全repo PASSとはしない。
+
+STRUCTURE_MAP_DELTA_NONE：既存Analysis owner・依存方向・route・artifact/保存lifecycle内の補正。API compiler1/test2/handoff1、Cocolon current03/詳細04/06の計7file modify、新規repo file0。共有Plan/Safety/Emlis/Piece・API契約/DTO/DB/SQL/RN・依存変更0。main/merge/deploy/env/native build操作0。未配置、実DB・本人実機・商品受入れ未確認、限定TECHNICAL_CREDIT・商品NOT_CLEAR。既存PR3/30への反映時にremote head/parent/tree/変更path集合と対象7fileの全bytesを照合する。
+
+残件：一般の現在担当/主語省略/未対応名詞や時点、一般感情・認知、夢/伝聞から現実へ戻る境界、unknown反復。u169で記録したEmlis複合2例のLIMITED_RECEPTION_CAPABILITY_GAP_STOP、u168共有6FAIL、旧0066/旧contracts差、u165未診断F2は今回未再検証・未解消として継承。本人指定版の生成→保存再表示→比較は別の実機残件。本節と追跡source/testを再開正本にし、scratch log/JSONを正式再開原典にしない。
