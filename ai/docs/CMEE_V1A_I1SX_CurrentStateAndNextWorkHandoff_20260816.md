@@ -15459,3 +15459,25 @@ OBSERVED_BLOCKER_MINIMAL_FIX、既存設計内の実装補正。Codex Work root�
 STRUCTURE_MAP_DELTA_NONE：既存Analysis owner・依存方向・route・artifact/保存lifecycle内の補正。API compiler1/test2/handoff1、Cocolon current03/詳細04/06の計7file modify、新規repo file0。共有Plan/Safety/Emlis/Piece・API契約/DTO/DB/SQL/RN・依存変更0。main/merge/deploy/env/native build操作0。未配置、実DB・本人実機・商品受入れ未確認、限定TECHNICAL_CREDIT・商品NOT_CLEAR。既存PR3/30への反映時にremote head/parent/tree/変更path集合と対象7fileの全bytesを照合する。
 
 残件：一般の現在担当/主語省略/未対応名詞や時点、一般感情・認知、夢/伝聞から現実へ戻る境界、unknown反復。u169で記録したEmlis複合2例のLIMITED_RECEPTION_CAPABILITY_GAP_STOP、u168共有6FAIL、旧0066/旧contracts差、u165未診断F2は今回未再検証・未解消として継承。本人指定版の生成→保存再表示→比較は別の実機残件。本節と追跡source/testを再開正本にし、scratch log/JSONを正式再開原典にしない。
+
+
+## 2026-10-08 JST u171 — 「その後／それから」の接続先が未確定であることを表示（未配置）
+
+Mashの分析内容修正継続指示から、u170の実生成文で確認した未確定表示の区別不足を修正。開始fresh PR3/30 HEADはAPI `286676ef3d3b35ae1c9c7a7532e494ecc4dd659e`／Cocolon `9201a7f77512743657a04c5664aacb4bec4c954b`、Draft/open/unmerged。clean localとremoteのtree一致後、実remote HEADへ揃えて継続した。前回txt・前提/current owner・全体設計01/01A〜Cとsystem02関連地図・対象専門ruleの同session確認を継承。work_attitude入口/CURRENT、恒久incident全文、最新weekly20261003 §5/§6.8〜6.10、current03/u170、詳細04 §3.15と実realizer/compiler/RN/保存validatorを再確認。生成System Contextのfreshnessを主張せず追跡正本を使う。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。目的は、既存artifactが区別している二つの未確定理由を同じ文章・図へ伝えること。Codex Work root華恋が単一編集・実行・反映owner、同環境read-only補助が意味差と最終source/test diffを確認（別model Pro reviewではない）。完成条件は理由別の文面、対象/ID/順序/比較の保持、保存後の再生成なしreadと旧保存互換。追加費用・Mash操作0。未知内容の新規推論や新しい図の仕様へ広げず、最小実動作を先に揃えるweekly方針を維持する。
+
+開始版では訂正後に、二つのnodeを対象とするONLY_EXPLICIT_ORDER_IS_SHOWNと、残った「その後」のnodeだけを対象とするEXPLICIT_PREDECESSOR_NOT_ESTABLISHEDが、同じ「段階同士のつながりは、この記録からは確定していません。」になる。前者は二つの内容の順序未確定、後者は明示接続語が何に続くか未確定であり、graph上の重複ではない。統合/削除すると別の不明点を失うため、realizerの文面選択だけを補正した。
+
+既存 `observed_route_realizer.py::_unknown_gap_projection` でROUTE_CONNECTIONかつEXPLICIT_PREDECESSOR_NOT_ESTABLISHEDの場合に限り、**「この記述がどの内容に続くのかは、この記録からは確定していません。」**と表示する。それからには追加の用法もあるため、「前の段階が不明」と時系列へ限定しない。既存のgap_ref/between_node_refs、順序付きtarget/scope/reasonの重複排除、全private gap、compiler/期間比較は無変更。pairの既存説明、未読sourceの説明、その他の不足段階も残す。公開キーや内部理由コードをDTOへ追加しない。
+
+検証runtimeは既存Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5。絶対entrypoint、bytecode/cacheprovider/FB172移行plugin無効、依存導入・製品lock変更0。
+- 製品修正前の新/拡張vertical2methodは7 failed（6 subFAIL＋1 method FAIL）／1 passed（2.48秒）。実生成6例の具体的な理由説明欠落と、理由/対象順を保つ既存検査の文面差を確認した。
+- 最終Analysis3suiteはvertical256/storage61/saved-period16＝**333 tests PASS／2185 subtests PASS（13.73秒）**。単独のその後/それから、否定、未読節を挟む場合、訂正/撤回、通常補足、既知順序で未確定を増やさないこと、同義期間比較を確認。旧検査の拒否/target/件数期待変更0、skip/xfail 0。
+- 実保存service＋合成RPCで3例の新説明と元のprivate理由を保存し、engine再生成を禁止したreadで同じ本文/図/identityを確認。旧generic labelを持つ保存済み結果も、本文・図・identityをそのまま返す。実DBや過去データmigrationを実行したものではない。
+- rootが合成6全文（その後、否定それから、未読節とpair、訂正、撤回、成立済み明示順序）を全読。実RN `buildWatashiMapV2ViewModel` と本文全文/identity/node順/edge/unknown/注記/競合/比較stateが6/6一致。未知の前件を補わず、不成立の順序線も作らない。表示文の反復一般は未解消で、今回区別できたのはこの二理由のみ。
+- 同環境read-only最終reviewに具体的blockerなし。最終suite後の製品source変更0。共有/Emlis suiteは未実行で、全repo PASSや商品受入れ成立とはしない。
+
+STRUCTURE_MAP_DELTA_NONE：既存Analysis realizer内の表示だけを修正し、意味owner・graph・依存方向・route・保存lifecycleは不変。API realizer1/test2/handoff1、Cocolon current03/詳細04/06の計7file modify、新規repo file0。共有Plan/Safety/Emlis/Piece・API契約/DTO/DB/SQL/RN・依存変更0。main/merge/deploy/env/native build操作0、未配置。実DB・React component/native・本人実機・商品受入れ未確認、限定TECHNICAL_CREDIT・商品NOT_CLEAR。既存PR3/30反映後にremote head/parent/tree/変更path集合と全7fileの内容一致を確認する。
+
+残件はu170を継承：一般の未対応表現/時点・感情/認知、夢/伝聞から現実へ戻る境界、他のunknown反復、Emlis複合2例の生成停止、以前の共有/旧契約検査差は未再検証・未解消。本人指定版の生成→保存再表示→比較も実機残件。本節と追跡source/testを正式再開点とし、scratch出力を再開正本にしない。

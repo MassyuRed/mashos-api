@@ -226,9 +226,13 @@ class ObservedSelfStructureMap:
             if key in seen:
                 continue
             seen.add(key)
+            label = LABELS[gap.missing_scope] + 'は、この記録からは確定していません。'
+            if (gap.missing_scope == 'ROUTE_CONNECTION'
+                    and gap.reason_code == 'EXPLICIT_PREDECESSOR_NOT_ESTABLISHED'):
+                label = 'この記述がどの内容に続くのかは、この記録からは確定していません。'
             gaps.append({'gap_ref': gap.gap_ref,
                 'between_node_refs': list(gap.between_node_refs),
-                'visible_label': LABELS[gap.missing_scope] + 'は、この記録からは確定していません。'})
+                'visible_label': label})
         return gaps
 
     def _annotation_badges(self):

@@ -556,6 +556,57 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(saved['items'][0]['content_text'].count('未確定（'), 8)
         self.assertEqual(row, before)
 
+    async def test_missing_predecessor_explanation_survives_save_and_read(self):
+        label = 'この記述がどの内容に続くのかは、この記録からは確定していません。'
+        for memo in ('その後、私は資料を調べた。', 'それから、私は資料を調べなかった。',
+                     '私は記録を担当した。まだわからない。その後、私は資料を調べた。'):
+            with self.subTest(memo=memo):
+                fx = fixture(memo)
+                row, writes = fx['row'], []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': fx['original'], 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                        row['content_text'] = payload['p_text']
+                        row['content_json']['watashiMap'] = payload['p_projection']
+                        return row['id']
+                    return result([row], matched=True)
+                with patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(saved, reread['items'][0])
+                self.assertEqual(saved['content_text'].count(label), 1)
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                specific, = [g for g in projection['unknown_gaps'] if g['visible_label'] == label]
+                private = writes[0]['p_private_evidence']['graph']['unknown_gaps']
+                self.assertEqual(next(g['reason_code'] for g in private if g['gap_ref'] == specific['gap_ref']),
+                                 'EXPLICIT_PREDECESSOR_NOT_ESTABLISHED')
+                for key in ('reason_code', 'missing_scope', 'evidence_refs'):
+                    self.assertNotIn(json.dumps(key) + ':', json.dumps(saved, ensure_ascii=False))
+
+    async def test_previous_saved_predecessor_label_keeps_original_text_without_regeneration(self):
+        row = fixture('その後、私は資料を調べた。')['row']
+        specific = 'この記述がどの内容に続くのかは、この記録からは確定していません。'
+        historical = '段階同士のつながりは、この記録からは確定していません。'
+        for gap in row['content_json']['watashiMap']['unknown_gaps']:
+            if gap['visible_label'] == specific:
+                gap['visible_label'] = historical
+        row['content_text'] = row['content_text'].replace(specific, historical)
+        before = copy.deepcopy(row)
+        with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))), \
+                patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+            saved = await service.read_saved(OWNER, report_id=row['id'], report_mode='standard')
+        self.assertEqual(saved['items'][0], before)
+        self.assertIn(historical, saved['items'][0]['content_text'])
+        self.assertEqual(row, before)
+
     async def test_burden_annotation_survives_save_and_read_without_regeneration(self):
         self.fx = fixture('私は仕事を続けたいけれど、私はつらい。')
         self.row = self.fx['row']

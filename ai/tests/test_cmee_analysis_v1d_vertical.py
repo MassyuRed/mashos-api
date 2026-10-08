@@ -883,7 +883,6 @@ class AnalysisVerticalTests(unittest.TestCase):
     def test_unknown_gap_display_preserves_reason_and_endpoint_order(self):
         from cocolon_meaning_experience_engine.cores.analysis.intent_compiler import UnknownGap
         artifact = self.generate(request(record())).artifact
-        # Distinct uncertainty claims can share the same current surface.
         # Neither a reason nor endpoint order may disappear through display.
         gaps = (UnknownGap('g1', ('n1', 'n2'), 'ROUTE_CONNECTION', 'ONLY_EXPLICIT_ORDER_IS_SHOWN'),
             UnknownGap('g2', ('n1', 'n2'), 'ROUTE_CONNECTION', 'EXPLICIT_PREDECESSOR_NOT_ESTABLISHED'),
@@ -893,7 +892,47 @@ class AnalysisVerticalTests(unittest.TestCase):
         self.assertEqual([g['gap_ref'] for g in visual['unknown_gaps']], ['g1', 'g2', 'g3'])
         self.assertEqual([g['between_node_refs'] for g in visual['unknown_gaps']],
                          [['n1', 'n2'], ['n1', 'n2'], ['n2', 'n1']])
+        self.assertEqual([g['visible_label'] for g in visual['unknown_gaps']], [
+            '段階同士のつながりは、この記録からは確定していません。',
+            'この記述がどの内容に続くのかは、この記録からは確定していません。',
+            '段階同士のつながりは、この記録からは確定していません。'])
         self.assertEqual(artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'].count('未確定（'), 3)
+
+    def test_missing_predecessor_explains_its_own_unknown_without_erasing_pair_or_source(self):
+        original = record(memo='私は記録を担当した。その後、私は資料を調べた。')
+        cases = (
+            (request(record(memo='その後、私は資料を調べた。')), 0, False),
+            (request(record(memo='それから、私は資料を調べなかった。')), 0, False),
+            (request(record(memo='私は記録を担当した。まだわからない。その後、私は資料を調べた。')), 1, True),
+            (request(self.with_answer(original, '「私は記録を担当した」は取り消します。')), 0, False),
+            (request(self.with_answer(original, '「私は記録を担当した」ではなく「私はメモを担当しなかった」です。')), 1, False),
+            (request(self.with_answer(record(memo='私は記録を担当した。'), 'それから、私は資料を調べた。')), 1, False),
+        )
+        label = 'この記述がどの内容に続くのかは、この記録からは確定していません。'
+        for req, pair_count, unread in cases:
+            with self.subTest(req=req):
+                artifact = self.generate(req).artifact
+                before = artifact.graph
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                gaps = visual['unknown_gaps']
+                specific, = [g for g in gaps if g['visible_label'] == label]
+                target, = specific['between_node_refs']
+                node = next(n for n in before.nodes if n.node_ref == target)
+                self.assertIn(node.proposition.sequence_marker, ('AFTER_PREVIOUS', 'THEN_OR_ADDITION'))
+                self.assertEqual(sum(g['visible_label'].startswith('段階同士のつながりは') for g in gaps), pair_count)
+                self.assertEqual(any('まだ読み取れていない内容' in g['visible_label'] for g in gaps), unread)
+                self.assertFalse(visual['edges'])
+                self.assertEqual(gaps, artifact.private_visual_preview(authenticated_owner_scope=OWNER)['unknown_gaps'])
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                self.assertEqual(text.count(label), 1)
+                self.assertIs(artifact.graph, before)
+                self.assertEqual(next(g for g in before.unknown_gaps if g.gap_ref == specific['gap_ref']).reason_code,
+                                 'EXPLICIT_PREDECESSOR_NOT_ESTABLISHED')
+        resolved = self.generate(request(original)).artifact
+        self.assertEqual(len(resolved.graph.edges), 1)
+        self.assertNotIn(label, resolved.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+        same = self.compared('その後、私は資料を調べた。', 'その後、僕は資料を調べました。').artifact
+        self.assertEqual(same.period_comparison.change_claims, ())
 
     def test_explicit_wish_burden_is_a_targeted_annotation_with_whole_evidence(self):
         for subject in ('私', '僕', 'ぼく', 'わたし', '自分'):
