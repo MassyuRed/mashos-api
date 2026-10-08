@@ -1258,7 +1258,8 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unfinished_result_survives_commit_and_read_without_regeneration(self):
         for action, clause in ((action, clause)
-                for action in ('私は資料を調べた。', '私は記録を書いた。')
+                for action in ('私は資料を調べた。', '私は記録を書いた。',
+                               '私は考えをノートに書いた。', '私は職場で記録を書きました。')
                 for clause in ('まだ方法が見つかっていない', 'まだ昨日の方針が決まっていない',
                                'まだ仕事の昨日分が見つかっていません')):
             with self.subTest(action=action, clause=clause):

@@ -2421,6 +2421,57 @@ class AnalysisVerticalTests(unittest.TestCase):
         self.assertIn('ROUTE_EVIDENCE_CHANGED', changed.safe_projection(authenticated_owner_scope=OWNER)
                       ['period_comparison']['safe_change_kinds'])
 
+    def test_unfinished_state_survives_writing_with_medium_or_location(self):
+        unfinished = 'まだ昨日の方針が決まっていない'
+        for writing in ('私は考えをノートに書いた', '私はノートに考えを書いた',
+                        '僕は、職場で記録を書きました', '俺は記録を職場で書いた'):
+            for memo, action in ((writing + '。' + unfinished + '。', ''),
+                                 (unfinished + '。' + writing + '。', ''),
+                                 (unfinished + '。', writing + '。')):
+                with self.subTest(memo=memo, action=action):
+                    req = request(record(memo=memo, action=action))
+                    artifact = self.generate(req).artifact
+                    self.assertIsNotNone(artifact)
+                    self.assertEqual([n.node_kind for n in artifact.graph.nodes].count('ACTION_OR_NONACTION'), 1)
+                    node, = (n for n in artifact.graph.nodes if n.proposition.result_state == 'NOT_YET')
+                    self.assertEqual((node.proposition.actor, node.polarity, node.modality, node.temporal_scope),
+                                     ('UNSPECIFIED', 'negative', 'fact', 'current_input'))
+                    self.assertEqual(node.proposition.relative_day, '')
+                    self.assertFalse(artifact.graph.edges)
+                    source, = freeze_analysis_sources(req).sources
+                    e, = node.evidence_refs
+                    raw = source.envelope.raw_utf8[e.utf8_start:e.utf8_end]
+                    field = source.envelope.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                    self.assertEqual((raw.decode(), field[e.scalar_start:e.scalar_end]), (unfinished, unfinished))
+                    self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                    text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                    self.assertIn(unfinished + '（この記述時点）', text)
+                    visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                    self.assertIn(unfinished + '（この記述時点）', [n['visible_label'] for n in visual['nodes']])
+
+    def test_writing_medium_keeps_unfinished_updates_and_period_meaning(self):
+        old, new = 'まだ昨日の方針が決まっていない', 'まだ仕事の昨日分が定まっていない'
+        writing = '私は考えをノートに書いた。'
+        original = record(memo=writing + old + '。')
+        for answer, expected in ((old.replace('いない', 'いません') + '。', [old]),
+                ('「' + old + '」ではなく「' + new + '」です。', [new]),
+                ('「' + old + '」は取り消します。', [])):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(original, answer))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertEqual([n.visible_label for n in artifact.graph.nodes
+                                  if n.proposition.result_state == 'NOT_YET'], expected)
+                self.assertEqual(artifact.graph.nodes[0].proposition.arguments, (('を', '考え'), ('に', 'ノート')))
+                self.assertFalse(artifact.graph.edges)
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        same = self.compared(writing + old + '。', writing + old.replace('いない', 'いません') + '。').artifact
+        self.assertIsNotNone(same)
+        self.assertEqual(same.period_comparison.change_claims, ())
+        changed = self.compared(writing + old + '。', writing + old.replace('昨日', '今日') + '。').artifact
+        self.assertIsNotNone(changed)
+        self.assertIn('ROUTE_EVIDENCE_CHANGED', changed.safe_projection(authenticated_owner_scope=OWNER)
+                      ['period_comparison']['safe_change_kinds'])
+
     def test_unfinished_nominal_yesterday_keeps_updates_evidence_and_comparison(self):
         old, new = 'まだ昨日の方針が決まっていない', 'まだ仕事の昨日分が定まっていない'
         original = record(memo='私は資料を調べた。' + old + '。')

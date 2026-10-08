@@ -15532,3 +15532,27 @@ runtimeは既存Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.1
 STRUCTURE_MAP_DELTA_NONE：既存共有意味owner内の補正、依存方向/Analysis route/保存lifecycle不変。API Plan1/test3/current identity1/handoff1、Cocolon current03/詳細04/06の計9file modify、新規repo file0。Analysis専用source/Safety/Piece・API/DTO/DB/SQL/RN・依存変更0。main/merge/deploy/env/native build操作0。未配置、実DB/React component/native/本人実機/商品受入れ未確認、限定TECHNICAL_CREDIT・商品NOT_CLEAR。反映後に両repo変更fileのremote bytes・parent・変更path集合・最終headを照合する。
 
 残件：一般の未対応名詞/時点/感情/認知、夢/伝聞から現実へ戻る境界、unknown反復、Emlis複合2例の既存生成停止、u168共有6FAIL/旧0066/旧contracts差/u165未診断F2は今回未再検証・未解消。今回の修正を全日本語対応へ拡大しない。本人指定版の生成→保存再表示→比較は別の実機残件。次回は本節と追跡source/test、最新weeklyの完成条件から再開し、scratch出力を正式再開原典にしない。
+
+
+## 2026-10-08 JST u174 — 媒体・場所付きの書字で後続の未完了状態を落とさない（未配置）
+
+Mashの分析内容修正継続指示から再開。開始HEADはAPI `96b7c5ab3bd2b18edf0c08bfa1c3859a40aa78e9`／Cocolon `51bef30c7349dddbb58c4ac23118dbc4f966bee0`、既存PR3/30のDraft/open/unmergedをfresh確認。前提/作業姿勢入口・Rule18・恒久incident全文・全体構造01/01A〜Cの地図と関連owner・current03/詳細04・u173と最新weekly20261003の完成条件を参照。前回turnで確認した同refの原典を継承し、今回のSystem Context prepareは `PUBLICATION_RECOVERY_AMBIGUOUS: residual without marker` で失敗。生成Contextのfreshnessを主張せず、既存入口が認める追跡正本の直接参照で続行。
+
+OBSERVED_BLOCKER_MINIMAL_FIX、既存設計内の可逆な内容補正。Codex Work root華恋が単一編集・検証・GitHub反映owner。同環境read-only補助が独立に再現/原因確認と最終差分reviewを行い、別model Pro reviewとは扱わない。目的/完了条件は、完結した本人書字と独立した現在未完了を両方文章/図へ保持し、更新・出典・比較・保存を維持すること。追加費用・Mash操作0。新商品機能/公開契約/実DB/配置へ拡張せず、weeklyの最小実動作優先を維持する。
+
+開始実測：「私は考えをノートに書いた。まだ昨日の方針が決まっていない。」では行動のみ残り、未完了が欠落。「ノートに考えを書いた」「職場で記録を書きました」「記録を職場で書いた」も同じ。共有 `_source_prefix_opens_report` のu169例外が単一目的語だけに閉じており、Analysisで読める媒体/場所付き書字を伝聞導入へ誤分類していた。新Analysis2methodの修正前実行は15 subFAIL・2 methods PASS（3.75秒）。補足で別出典だけ残る、訂正/撤回が成立しない差も確認した。
+
+製品差分は既存共有Planの同helper内だけ。明示SELF＋既存目的語1項＋書いた/書きましたへ、既存単一名詞の場所/媒体（に/で）1項を前後どちらかに許す。前後両方の追加/3項/格重複を拒否し、既存report/deictic禁止語を全名詞に適用する。一般属格・主語省略・他者・引用/報告内容・未閉包は既存判定へ戻す。別文/別fieldの伝聞を消さない。Analysis parser・共有Safety・未完了witnessの意味/出典条件は変更0。未完了はnegative/fact/current_input、actor=UNSPECIFIEDを保ち、書字との因果・順序を作らない。
+
+runtimeは既存Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5、絶対entrypoint・PYTHONPATH=ai・bytecode/cacheprovider/FB172移行plugin無効。依存導入/lock変更0。
+- 初回修正後targetは23 tests PASS・新検査12 subFAIL。safe visual DTOに存在しないtext keyを新検査が参照したKeyErrorで、製品不具合ではない。既存の別text projectionとvisual nodeラベルを比較する正しい検査へ訂正。製品条件と旧検査期待は変更しない。
+- 最終Analysis3suite（vertical262/storage61/saved-period16）：**339 tests PASS／2297 subtests PASS（14.63秒）**。追加2methodは4書字×同field前後/別field、原文scalar/UTF-8/hash、否定/時点/主体非推定、補足/訂正/撤回・比較を確認。既存保存検査へ2prefix×3未完了を追加し、実service＋合成RPCで保存後のengine再生成を禁止した同一本文/図/identity再読を確認。実DB検査ではない。
+- 共有限定selector `writing or unfinished_nominal_yesterday`：**58 tests PASS（14.18秒）**、うち新21（正常6＋境界15）。引用/報告語・他者・属格・3項・格重複・別文/別fieldを確認。active final language owner identity exact1は**1 PASS（23.27秒）**。合計398 tests PASSは限定scopeで、全repo PASSではない。skip/xfail0。
+- current shared identityだけ同期：language `6b2dfe6d5be8771298950aa211878c61730d20611af19ce6956c9cfb80ae8854`／runtime `898dddad6c3daa72a02246a0d46208d6e079cf507987dba1cceb9d63064caff5`。historical frozen manifestは保持。
+- rootが合成Analysis8全文（媒体/語順/場所敬体/別field/補足/訂正/撤回/比較）を全読。実RN buildWatashiMapV2ViewModelの全文・identity・node順・edge・unknown・注記・競合・比較stateが8/8一致。unknown反復は未解消。
+- Emlis単独書字3全文をrootが読み、開始HEADの同helper関数だけを復元した比較実行と最終実装で本文が完全一致。複合2例は両版とも `LIMITED_RECEPTION_CAPABILITY_GAP_STOP`。この限定helper比較を開始repo全suite実行と呼ばず、Emlisの定型受取/複合生成停止を解消扱いしない。
+- read-only最終差分reviewに具体的blockerなし。最終suite後の製品source変更0。
+
+STRUCTURE_MAP_DELTA_NONE：既存共有owner内の修正、依存方向・Analysis route/保存lifecycle不変。API Plan1/test3/current identity1/handoff1、Cocolon current03/詳細04/06の計9file modify、新規repo file0。Analysis専用source/Safety/Piece/API/DTO/DB/SQL/RN・依存変更0。main/merge/deploy/env/native build操作0。未配置・実DB/React component/native/本人実機/商品受入れ未確認、限定TECHNICAL_CREDIT・商品NOT_CLEAR。既存PR3/30反映後にremote parent/tree/変更path集合/全9file内容と最終headを照合する。
+
+残件：今回対象外の属格/3項書字、一般時点/感情/認知、夢/伝聞から現実へ戻る境界、unknown反復。探索で「私は資料を調べた後、私は落ち着きました」は共有typed relation未認定を再確認し、Analysisだけを緩めず保留。Emlis複合生成停止、u168共有6FAIL/旧0066/旧contracts差/u165未診断F2は未解消で、今回全scope再検証ではない。本人指定版の生成→保存再表示→比較は別の実機残件。次回は本節/追跡source/testとlatest weeklyから再開し、scratch出力を正式再開原典にしない。

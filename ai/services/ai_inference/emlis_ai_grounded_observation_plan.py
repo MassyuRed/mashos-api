@@ -15768,13 +15768,19 @@ def _source_prefix_opens_report(prefix: str) -> bool:
         if not re.search(speech + r"$", clause):
             continue
         # A fully closed, explicitly self-owned writing act is not an
-        # introduction to quoted content. Keep this to one bounded nominal
-        # object; genitive/report/deictic content retains the existing check.
+        # introduction to quoted content. One bounded nominal object may
+        # carry one medium/place, before or after it. Genitive/report/deictic
+        # content and additional arguments retain the existing check.
         writing = re.fullmatch(
             r"(?:私|わたし|僕|ぼく|自分|俺|おれ)(?:は|が|も)[、,]?[ 　]*"
-            r"(?P<object>" + _WISH_OBJECT_NOMINAL_SOURCE + r")を(?:書いた|書きました)", clause)
-        if writing is not None and not re.search(
-            r"何|誰|次|以下|上記|下記|話|発言|引用|説明|報告|内容", writing["object"]
+            r"(?:(?P<place_before>" + _WISH_OBJECT_NOMINAL_SOURCE + r")(?:に|で))?"
+            r"(?P<object>" + _WISH_OBJECT_NOMINAL_SOURCE + r")を"
+            r"(?:(?P<place_after>" + _WISH_OBJECT_NOMINAL_SOURCE + r")(?:に|で))?"
+            r"(?:書いた|書きました)", clause)
+        if (writing is not None and not (writing["place_before"] and writing["place_after"])
+            and not re.search(
+            r"何|誰|次|以下|上記|下記|話|発言|引用|説明|報告|内容",
+            "".join(part or "" for part in writing.groups()))
         ):
             continue
         completed = re.fullmatch(r"(?P<before>.*?)(?:私|わたし|僕|ぼく|自分)の[一-鿿々]+を" + speech, clause)

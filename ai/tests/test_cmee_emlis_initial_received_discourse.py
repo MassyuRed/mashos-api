@@ -30,6 +30,42 @@ def test_completed_self_writing_is_not_a_report_introduction(subject):
             assert _source_prefix_opens_report('友人が話した。' + sentence)
 
 
+@pytest.mark.parametrize('writing', ['私は考えをノートに書いた', '私はノートに考えを書いた',
+    '僕は、職場で記録を書きました', '俺は記録を職場で書いた',
+    'ぼくが新しいメモを古いノートに書きました', '自分も新しい職場で考えを書いた'])
+def test_completed_two_argument_writing_keeps_independent_unfinished_scope(writing):
+    from emlis_ai_grounded_observation_plan import _source_prefix_opens_report
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    assert not _source_prefix_opens_report(writing + '。')
+    assert _source_prefix_opens_report(writing + '。友人が話した。')
+    assert _source_prefix_opens_report('友人が話した。' + writing + '。')
+    unfinished = 'まだ昨日の方針が決まっていない'
+    for memo, action in ((writing + '。' + unfinished + '。', ''), (unfinished + '。', writing + '。')):
+        prepared = prepare_emlis_meaning(begin(memo, action))
+        plan = build_updated_grounded_plan(prepared)
+        node, = (n for n in plan.nuclei if 'semantic_role:present_unfinished' in n.semantic_frame.attribute_codes)
+        assert (node.semantic_frame.polarity, node.semantic_frame.modality, node.semantic_frame.time_scope) == (
+            'negative', 'fact', 'current_input')
+        assert prepared.thread.resolver().resolve(node.source_span_ids[0]).raw_text == unfinished
+
+
+@pytest.mark.parametrize('writing', ['友人は考えをノートに書いた', '考えをノートに書いた',
+    '私は話をノートに書いた', '私はノートに内容を書いた', '私は引用に考えを書いた',
+    '私は次をノートに書いた', '私は何をノートに書いた', '私はノートに以下を書いた',
+    '私は友人の考えをノートに書いた', '私は考えを友人のノートに書いた',
+    '私は職場で考えをノートに書いた', '私は考えを記録を書いた',
+    '私は考えにノートに書いた', '私は考えとノートを書いた',
+    '私は考えをノートにこう書いた'])
+def test_completed_two_argument_writing_keeps_report_and_unproved_arguments(writing):
+    from emlis_ai_grounded_observation_plan import _source_prefix_opens_report
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    assert _source_prefix_opens_report(writing + '。')
+    for memo, action in ((writing + '。まだ昨日の方針が決まっていない。', ''),
+                         ('まだ昨日の方針が決まっていない。', writing + '。')):
+        plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(memo, action)))
+        assert not any('semantic_role:present_unfinished' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
 @pytest.mark.parametrize('writing', ['友人は記録を書いた', '記録を書いた',
     '私はこう書いた', '私は次の記録を書いた', '私は以下を書いた',
     '私は話を書いた', '私は報告を書いた', '私は内容を書いた',
