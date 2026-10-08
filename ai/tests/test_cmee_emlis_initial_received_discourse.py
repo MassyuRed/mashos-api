@@ -108,6 +108,48 @@ def test_unfinished_nominal_yesterday_keeps_other_field_report_scope():
     assert not any('semantic_role:present_unfinished' in n.semantic_frame.attribute_codes for n in plan.nuclei)
 
 
+@pytest.mark.parametrize('text,polarity', [
+    ('私は難しい会議を担当した。', 'neutral'),
+    ('私は家族の難しい会議を担当しませんでした。', 'negative'),
+    ('私は難しい記録を担当した。', 'neutral'),
+    ('私は難しい職場にいた。', 'neutral'),
+    ('私は家族の難しい職場にいませんでした。', 'negative'),
+])
+def test_difficult_past_nominals_keep_shared_meaning_and_actual_body(text, polarity):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(text))
+    result, plan, _sentence, resolver, _selected = context
+    node, = (n for n in plan.nuclei if n.source_fields == ('memo',))
+    frame = node.semantic_frame
+    assert (node.kind, frame.predicate_kind, frame.modality, frame.polarity) == ('event', 'event', 'fact', polarity)
+    assert not {'operator:constraint', 'operator:action', 'operator:performed_action'} & set(frame.attribute_codes)
+    assert resolver.resolve(node.source_span_ids[0]).raw_text == text.removesuffix('。')
+    body = result.artifact.text
+    assert text.removesuffix('。') in body
+    assert read_body(context, body).passed
+    for replacement in ('', '易しい'):
+        assert not read_body(context, body.replace('難しい', replacement)).passed
+    for added in ('行動に移しています', '実際の行動', '大切に思っています'):
+        assert added not in body
+
+
+@pytest.mark.parametrize('text', [
+    '難しい。', '会議は難しい。', '難しかった。', '難しくない。',
+    '難しい会議を担当したと思う。', '難しい会議を担当したと聞いた。',
+    '難しい会議を担当したなら。', '難しい会議を担当したい。',
+    '難しい会議を担当している。', '難しい会議を担当したかもしれない。',
+    '難しい職場にいたと思う。', '難しい職場にいたと聞いた。',
+    '難しい職場にいたい。', '難しい職場にいる。', '難しい職場でいた。',
+    '難しくない会議を担当した。', '難しい良い会議を担当した。',
+    '難しいが、私は会議を担当した。', '無理な会議を担当した。',
+    '難しい制約を担当した。', '難しい限界にいた。',
+    '私は難しい会議を担当した。難しい。', '難しい。私は難しい職場にいた。',
+])
+def test_difficult_past_nominals_keep_independent_constraints_and_unclosed_hosts(text):
+    from emlis_ai_grounded_observation_plan import _operator_codes_for_text
+    assert 'operator:constraint' in _operator_codes_for_text(text)
+
+
 @pytest.mark.parametrize('text', ['私は悪い職場にいた。', '私は家族の悪い職場にいませんでした。'])
 def test_bad_past_location_keeps_event_and_complete_actual_body(text):
     from test_cmee_emlis_detached_observation import read_body

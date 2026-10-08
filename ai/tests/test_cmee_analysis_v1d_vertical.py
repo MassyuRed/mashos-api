@@ -3707,6 +3707,72 @@ class AnalysisVerticalTests(unittest.TestCase):
                         replace(artifact, graph=replace(artifact.graph, nodes=(replace(node,
                             proposition=replace(node.proposition, role_state='')),))).safe_projection(authenticated_owner_scope=OWNER)
 
+    def test_difficult_nominals_keep_past_role_scene_and_exact_source(self):
+        for kind, case, endings in (
+                ('ROLE', 'を', ('担当した', '担当しました', '担当しなかった', '担当しなかったです', '担当しませんでした')),
+                ('SCENE', 'に', ('いた', 'いました', 'いなかった', 'いなかったです', 'いませんでした'))):
+            for noun in ('難しい会議', '家族の難しい会議', '難しい会社の難しい会議'):
+                for ending in endings:
+                    literal = '私は、昨日、' + noun + case + ending
+                    with self.subTest(literal=literal):
+                        req = request(record(memo=literal + '。'))
+                        artifact = self.generate(req).artifact
+                        self.assertIsNotNone(artifact)
+                        node, = artifact.graph.nodes
+                        negative = 'なかった' in ending or 'ません' in ending
+                        self.assertEqual((node.node_kind, node.polarity, node.modality, node.temporal_scope),
+                            (kind, 'negative' if negative else 'positive', 'fact', 'past'))
+                        self.assertEqual(node.proposition.arguments, ((case, noun),))
+                        self.assertEqual(node.proposition.relative_day, 'YESTERDAY')
+                        source, = freeze_analysis_sources(req).sources
+                        e, = node.evidence_refs
+                        raw = source.envelope.raw_utf8[e.utf8_start:e.utf8_end]
+                        field = source.envelope.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                        self.assertEqual((raw.decode(), field[e.scalar_start:e.scalar_end]), (literal, literal))
+                        self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                        text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                        self.assertIn(noun + case, text)
+                        self.assertNotIn('実行済み', text)
+                        self.assertFalse(artifact.graph.edges)
+                        with self.assertRaises(AnalysisSourceError):
+                            replace(artifact, graph=replace(artifact.graph, nodes=(replace(node,
+                                proposition=replace(node.proposition, arguments=((case, noun.replace('難しい', '易しい')),))),))).safe_projection(
+                                    authenticated_owner_scope=OWNER)
+
+    def test_difficult_nominals_keep_updates_order_comparison_and_boundaries(self):
+        old, new = '私は難しい会議を担当した', '私は家族の難しい会議を担当しなかった'
+        base = record(memo=old + '。その後、私は資料を調べた。')
+        self.assertIsNone(self.generate(request(self.with_answer(base,
+            '私は難しい会議を担当しなかった。'))).artifact)
+        for answer, expected in ((new + '。', ('positive', 'negative')),
+                ('「' + old + '」ではなく「' + new + '」です。', ('negative',)),
+                ('「' + old + '」は取り消します。', ())):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(base, answer))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertEqual(tuple(n.polarity for n in artifact.graph.nodes if n.node_kind == 'ROLE'), expected)
+                self.assertEqual(len(artifact.graph.edges), 1 if answer == new + '。' else 0)
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        route = self.generate(request(record(memo='私は難しい職場にいた。'
+            'その後、私は難しい会議を担当した。それから、私は資料を調べた。'))).artifact
+        self.assertIsNotNone(route)
+        self.assertEqual([n.node_kind for n in route.graph.nodes], ['SCENE', 'ROLE', 'ACTION_OR_NONACTION'])
+        self.assertEqual([e.endpoint_refs for e in route.graph.edges], [('n1', 'n2'), ('n2', 'n3')])
+        route.safe_projection(authenticated_owner_scope=OWNER)
+        for now, changed in (('ぼくは難しい会議を担当しました。', False),
+                             ('私は易しい会議を担当した。', True), (new + '。', True)):
+            with self.subTest(now=now):
+                comparison = self.compared(now, old + '。').artifact
+                self.assertIsNotNone(comparison)
+                kinds = comparison.safe_projection(authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds']
+                self.assertEqual('ROUTE_EVIDENCE_CHANGED' in kinds, changed)
+        for clause in ('難しい会議を担当した', '難しい職場にいた'):
+            for memo in ('私は' + clause + 'と思う。', '私は' + clause + 'と聞いた。',
+                         '私は' + clause + '？', '友人は' + clause + '。',
+                         '夢を見た。私は' + clause + '。', '私は' + clause + 'なら。'):
+                with self.subTest(memo=memo):
+                    self.assertIsNone(self.generate(request(record(memo=memo))).artifact)
+
     def test_good_responsibility_keeps_nominal_modifier_and_complete_role_evidence(self):
         for noun in ('良い会議', '家族の良い会議', '良い会社の新しい会議', '良い記録'):
             for ending in ('担当した', '担当しました', '担当しなかった',
@@ -4519,9 +4585,16 @@ class AnalysisVerticalTests(unittest.TestCase):
         ):
             with self.subTest(literal=literal):
                 self.assertIsNone(self.generate(request(record(memo=literal + '。'))).artifact)
-        # The shared event witness still limits admission; this change must
-        # not turn a modifier into a different event/polarity interpretation.
-        self.assertIsNone(self.generate(request(record(memo='私は難しいイベント企画を担当した。'))).artifact)
+        # The formerly unproved shared witness now distinguishes the nominal
+        # modifier from a constraint. Preserve the whole target and past role.
+        artifact = self.generate(request(record(memo='私は難しいイベント企画を担当した。'))).artifact
+        self.assertIsNotNone(artifact)
+        node, = artifact.graph.nodes
+        self.assertEqual((node.node_kind, node.polarity, node.modality, node.temporal_scope),
+                         ('ROLE', 'positive', 'fact', 'past'))
+        self.assertEqual(node.proposition.arguments, (('を', '難しいイベント企画'),))
+        self.assertIn('難しいイベント企画を担当した（記録された担当）',
+                      artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
 
     def test_attributive_nominals_cannot_hide_unparsed_time_or_question_heads(self):
         for literal in (

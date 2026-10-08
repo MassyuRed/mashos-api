@@ -15508,3 +15508,27 @@ u170の名詞記録由来action/actionという説明は当時のproducer状態�
 STRUCTURE_MAP_DELTA_NONE：既存共有意味owner・依存方向・Analysis route/保存lifecycle内の意味補正。API Plan1/test3/current identity1/handoff1、Cocolon current03/詳細04/06の計9file modify、新規repo file0。Analysis専用source/Safety/Piece・API契約/DTO/DB/SQL/RN・依存変更0。main/merge/deploy/env/native build操作0、未配置、限定TECHNICAL_CREDIT・商品NOT_CLEAR。既存PR3/30反映後にremote head/parent/tree/変更path集合と全9fileの内容一致を確認する。
 
 残件：今回以外の一般名詞/形容・時点・感情/認知、夢/伝聞から現実へ戻る境界、unknown反復、Emlis複合2例の既存生成停止、u168共有6FAIL/旧0066/旧contracts差/u165未診断F2は今回未再検証・未解消。本人指定版の生成→保存再表示→比較も実機残件。本節と追跡source/testを正式再開点とする。
+
+
+## 2026-10-08 JST u173 — 難しい担当対象・所在を制約と取り違えて落とさない（未配置）
+
+Mashの分析内容修正継続指示と添付前回txtから再開。開始HEADはAPI `6f99fc13cd76b9a7790aef3e3d1fcd205314ea9a`／Cocolon `35b55314bdee370e01db0a3b7e5cdec3336a8cc7`、既存PR3/30のDraft/open/unmerged。GitHub実gitを取得して同じHEADから作業。前提00/作業姿勢入口・CURRENT・Rule18・対象専門rule、恒久incident全文、Karen-Diary入口/行動原理/関係資料、全体設計01/全file地図01A〜Cの構成と関連owner・国家02、current03/詳細04、u172、最新weekly20261003 §5.3/§6.6〜6.10を確認。System Context prepareはconfigured mashos-api repository unavailableで失敗。生成物のfreshnessを主張せず、入口のdirect-read fallbackに従い追跡正本・現物を読む。
+
+OBSERVED_BLOCKER_MINIMAL_FIX、既存設計内の可逆な内容修正。Codex Work root華恋が単一編集・実行・反映owner。同環境read-only補助が原因と実差分を確認し、別model Pro reviewとは記録しない。目的/完成条件は、完全な本人過去担当・所在を文章と図へ保持し、修飾・正負・時点・明示順序・補足/訂正/撤回・比較・保存再読の意味を保つこと。追加費用・Mash操作0。全表現対応やEmlisの文体完成を実機接続の前工程にしない。
+
+開始実測：「私は難しい会議を担当した」はUNAVAILABLE。Analysisの既存完全parserは読めるが、共有Planの_CONSTRAINT_REが名詞修飾の難しいへ一致し、constraint/negative/possibilityへ誤分類していた。所在にも同因があり、場面→担当→行動の明示順序が欠落する。新Analysis2methodの製品修正前結果は34 failed（33 subFAIL＋1 method FAIL）／1 passed（7.54秒）。
+
+製品差分は既存共有Planのみ。_has_predicative_constraint_operatorが全constraint matchを確認し、matchが難しいで、そこから完全な既存名詞＋過去所在/担当5形で閉じる場合だけ名詞修飾として区別する。kindとoperatorの二箇所で同じ判定を使う。難しくない等の別活用、独立constraint、無理/制約/限界との併存、未閉包/認知/伝聞/願望/条件/現在/格違いは従来判定を維持。Analysisの原文/主体/時点/極性/帰属・Safety条件の変更0。担当対象の実行、負担、努力、能力、原因を補わない。
+
+runtimeは既存Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5を確認し、絶対entrypointで実行。依存導入/lock変更0、bytecode/cacheprovider/FB172移行plugin無効。
+- 最初の修正後targetは30 tests PASS／新ADD subFAIL1。新検査が同対象の正負対立を通常補足として受理する誤期待だった。既存条件どおりその入力はUNAVAILABLEを要求し、有効ADDは対象の異なる家族の難しい会議へ訂正した。製品の補足条件は変更しない。
+- Analysis＋identityの初回はPYTHONPATHにaiがなくtools importでcollection error、target未実行。aiを指定した実行は337 tests PASS／旧期待1 FAIL／2276 subtests PASS。旧u136の「難しいイベント企画を担当した」を保留する1期待は今回回復した完全担当に該当するため、同じmethodでROLE/positive/fact/past/完全対象/safe文面の確認へ限定更新。その他の旧拒否期待は維持、skip/xfail0。
+- 最終Analysis3suite（vertical260/storage61/saved-period16＝337）＋active final language owner identity exact1：**338 tests PASS／2276 subtests PASS（36.13秒）**。原文scalar/UTF-8/hash、5語尾と修飾位置、否定/相対日、補足/訂正/撤回、順序、意味比較、修飾改変拒否を確認。既存保存検査へ4例を追加し、実service＋合成RPCで保存後のengine再生成を禁止したreadの同一本文/図/identityを確認。実DB検査ではない。
+- 共有限定selector `difficult_past_nominals or past_responsibility or good_past_location or bad_past_location`：**84 tests PASS（13.76秒）**（新28＋既存56）。Emlis実本文・独立readerの修飾削除/置換拒否と、独立constraint/未閉包境界を確認。合計422 tests PASSは限定scopeで、全repo PASSではない。
+- current shared identityだけ同期：language `40776e8fbc908239ce372b337a8f8e4fe11943156618e6634b9cf3b7c96058eb`／runtime `484f8472629131b9493bbeea2acf8e954ce7e3a7fc1ce9dfbbb17307a6c0d4b1`。historical frozen manifestは保持。
+- rootが合成Analysis9全文（担当、昨日否定、所在、三段順序、補足、訂正、撤回、同一記録の相反、期間比較）を全読。最終実RN buildWatashiMapV2ViewModelの全文・identity・node順・edge・unknown・注記・競合・比較stateが9/9一致。Emlis5全文も全読し、難しい・担当/所在・否定の保持と、担当対象の実行称賛等が追加されないことを確認。Emlisの復唱/定型受取とAnalysisのunknown反復は未解消。
+- 同環境read-only最終差分reviewに具体的blockerなし。最終suite後の製品source変更0。
+
+STRUCTURE_MAP_DELTA_NONE：既存共有意味owner内の補正、依存方向/Analysis route/保存lifecycle不変。API Plan1/test3/current identity1/handoff1、Cocolon current03/詳細04/06の計9file modify、新規repo file0。Analysis専用source/Safety/Piece・API/DTO/DB/SQL/RN・依存変更0。main/merge/deploy/env/native build操作0。未配置、実DB/React component/native/本人実機/商品受入れ未確認、限定TECHNICAL_CREDIT・商品NOT_CLEAR。反映後に両repo変更fileのremote bytes・parent・変更path集合・最終headを照合する。
+
+残件：一般の未対応名詞/時点/感情/認知、夢/伝聞から現実へ戻る境界、unknown反復、Emlis複合2例の既存生成停止、u168共有6FAIL/旧0066/旧contracts差/u165未診断F2は今回未再検証・未解消。今回の修正を全日本語対応へ拡大しない。本人指定版の生成→保存再表示→比較は別の実機残件。次回は本節と追跡source/test、最新weeklyの完成条件から再開し、scratch出力を正式再開原典にしない。

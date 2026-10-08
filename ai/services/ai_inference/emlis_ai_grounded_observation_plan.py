@@ -2287,6 +2287,20 @@ def _has_predicative_action_operator(text: str) -> bool:
     return False
 
 
+def _has_predicative_constraint_operator(text: str) -> bool:
+    """A difficult nominal setting/task is not an uncertain presence/role."""
+    for match in _CONSTRAINT_RE.finditer(text):
+        if match.group(0) == "難しい" and re.fullmatch(
+            _WISH_OBJECT_ARGUMENT_RE.pattern
+            + r"(?:に(?:いた|いました|いなかった(?:です)?|いませんでした)"
+            r"|を(?:担当した|担当しました|担当しなかった(?:です)?|担当しませんでした))[。．.!！?？]*",
+            text[match.start():],
+        ):
+            continue
+        return True
+    return False
+
+
 def _has_predicative_value_operator(text: str) -> bool:
     """Keep closed past-location/responsibility modifiers inside their nouns."""
     for match in _VALUE_RE.finditer(text):
@@ -2333,6 +2347,7 @@ def _operator_codes_for_text(text: str, *, source_field: str = "") -> tuple[str,
         code
         for code, pattern in checks
         if (_has_predicative_value_operator(text) if pattern is _VALUE_RE else
+            _has_predicative_constraint_operator(text) if pattern is _CONSTRAINT_RE else
             pattern.search(wish_scope if code == "operator:wish" else text))
     )
     if is_bounded_self_denial_text(text) or (
@@ -3187,7 +3202,7 @@ def _kind_for_span(
         return "wish"
     if "operator:change" in _operator_codes_for_span(span, normalized_input=normalized_input):
         return "change"
-    if _CONSTRAINT_RE.search(text):
+    if _has_predicative_constraint_operator(text):
         return "constraint"
     if _FEELING_RE.search(text):
         return "reaction"
