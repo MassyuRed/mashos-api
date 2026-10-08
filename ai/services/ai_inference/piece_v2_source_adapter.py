@@ -279,6 +279,46 @@ class PieceSavedSourceAdapter:
         except (ValueError, TypeError, KeyError, AttributeError, UnicodeError):
             raise _error('PIECE_SOURCE_NOT_ELIGIBLE') from None
 
+    async def resolve_original_source_ref(
+        self, authorization: str | None, saved_input_id: str,
+    ) -> dict:
+        """Supply PCE-6's seven references from the existing saved-state owner.
+
+        This is an internal read, not a new HTTP route or a flag/CTA decision.
+        The client need not hash raw input or infer an Emlis stage. The later
+        preview request must still revalidate the source and every reference;
+        this result is neither an access token nor continuing eligibility.
+        """
+        allowed_errors = {
+            'PIECE_REQUEST_INVALID', 'PIECE_AUTH_REQUIRED',
+            'PIECE_SOURCE_NOT_FOUND', 'PIECE_SOURCE_NOT_ELIGIBLE',
+            'PIECE_CONFLICT', 'PIECE_TEMPORARILY_UNAVAILABLE',
+        }
+        try:
+            handoff = await self.resolve_original_handoff(authorization, saved_input_id)
+            if type(handoff) is not PieceSavedHandoff:
+                raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+            lineage = handoff.lineage_payload()
+            source = lineage['source_input']
+            observation = lineage['observation']
+            # Explicit projection: never serialize the private handoff, source
+            # fields, owner, context, or any Emlis/Analysis text into this DTO.
+            result = {key: source[key] for key in (
+                'source_input_id', 'source_input_version', 'source_input_bundle_commitment')}
+            result.update({key: observation[key] for key in (
+                'emlis_observation_stage', 'emlis_observation_result_identity',
+                'question_need_decision_identity', 'supplemental_answer_identity')})
+            current = await self.revalidate_original_handoff(authorization, handoff)
+            if current != handoff:
+                raise _error('PIECE_CONFLICT')
+            return result
+        except PieceContractError as exc:
+            raise _error(exc.code if exc.code in allowed_errors else
+                         'PIECE_TEMPORARILY_UNAVAILABLE') from None
+        except Exception:
+            # A partial projection is not returned; cancellation still escapes.
+            raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None
+
     async def revalidate_original_handoff(
         self, authorization: str | None, previous: PieceSavedHandoff,
     ) -> PieceSavedHandoff:

@@ -350,3 +350,103 @@ def test_no_caller_stage_or_eligibility_parameter():
         adapter.generate_original_candidate_from_saved_state(AUTH, INPUT, source_stage='normal_observation')
     with pytest.raises(TypeError):
         adapter.resolve_original_handoff(AUTH, INPUT, eligible=True)
+
+
+# PCE-6 source_ref continuation: use the same original-state fixture and owner.
+# These are internal read/projection tests, not HTTP, flags, or RN activation.
+@pytest.mark.parametrize('pre', [False, True])
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+def test_source_ref_is_exact_seven_fields_from_current_saved_handoff(pre, tier):
+    store = Store(snapshot(pre, tier, Q3_PROFILE))
+    adapter = adapter_type()(store=store)
+    result = run(adapter.resolve_original_source_ref(AUTH, INPUT))
+    expected = resolve(snapshot(pre, tier, Q3_PROFILE)).lineage_payload()
+    assert result == {
+        **{k: expected['source_input'][k] for k in (
+            'source_input_id', 'source_input_version', 'source_input_bundle_commitment')},
+        **{k: expected['observation'][k] for k in (
+            'emlis_observation_stage', 'emlis_observation_result_identity',
+            'question_need_decision_identity', 'supplemental_answer_identity')},
+    }
+    assert store.calls == [(OWNER, INPUT), (OWNER, INPUT)]
+    serialized = json.dumps(result, ensure_ascii=False)
+    for private in (THOUGHT, ACTION, OWNER, THREAD, 'PRIVATE', 'eligible', 'tier'):
+        assert private not in serialized
+    assert len(result) == 7 and result['supplemental_answer_identity'] is None
+
+
+@pytest.mark.parametrize('change', ['no_thread', 'unfinished', 'answer', 'source', 'foreign'])
+def test_source_ref_never_promotes_unavailable_saved_state(change):
+    s = snapshot()
+    if change == 'no_thread': s['thread'] = None
+    elif change == 'unfinished': s['thread']['state'] = 'INITIALIZING'
+    elif change == 'answer': s['thread']['latest_answer_event_id'] = INPUT
+    elif change == 'source': s['original']['memo'] += ' '
+    elif change == 'foreign': s['thread']['user_id'] = INPUT
+    with pytest.raises(mod.PieceContractError) as error:
+        run(adapter_type()(store=Store(s)).resolve_original_source_ref(AUTH, INPUT))
+    assert error.value.code in {'PIECE_SOURCE_NOT_ELIGIBLE', 'PIECE_CONFLICT', 'PIECE_SOURCE_NOT_FOUND'}
+    assert 'PRIVATE' not in str(error.value)
+
+
+@pytest.mark.parametrize('change', ['revision', 'source', 'tier', 'answer', 'auth'])
+def test_source_ref_rechecks_before_return_instead_of_returning_stale_identity(monkeypatch, change):
+    store = Store(snapshot()); read = store.read
+    async def changing_read(owner, *, input_id=None):
+        result = await read(owner, input_id=input_id)
+        if len(store.calls) == 1:
+            if change == 'revision': store.value['thread']['revision'] += 1
+            elif change == 'source': store.value['original']['memo'] += ' '
+            elif change == 'tier': store.value['tier'] = 'premium'
+            elif change == 'answer': store.value['thread']['latest_answer_event_id'] = INPUT
+            elif change == 'auth':
+                async def rejected(token): raise HTTPException(401, 'PRIVATE')
+                monkeypatch.setattr(api_account_visibility, '_resolve_user_id_from_token', rejected)
+        return result
+    store.read = changing_read
+    with pytest.raises(mod.PieceContractError) as error:
+        run(adapter_type()(store=store).resolve_original_source_ref(AUTH, INPUT))
+    assert error.value.code in {'PIECE_CONFLICT', 'PIECE_SOURCE_NOT_ELIGIBLE', 'PIECE_AUTH_REQUIRED'}
+
+
+def test_source_ref_is_detached_and_does_not_mutate_saved_original_or_control():
+    store = Store(snapshot(True)); before = copy.deepcopy(store.value)
+    adapter = adapter_type()(store=store)
+    first = run(adapter.resolve_original_source_ref(AUTH, INPUT))
+    first['emlis_observation_stage'] = 'caller_mutation'
+    first['raw_source'] = THOUGHT
+    second = run(adapter.resolve_original_source_ref(AUTH, INPUT))
+    assert second['emlis_observation_stage'] == 'pre_question_observation'
+    assert 'raw_source' not in second and store.value == before
+
+
+@pytest.mark.parametrize('failure', ['raw', 'unknown_code', 'not_found', 'malformed'])
+def test_source_ref_sanitizes_errors_and_never_returns_a_partial_mapping(failure):
+    adapter = adapter_type()(store=Store(snapshot()))
+    async def fail(*args):
+        if failure == 'raw': raise RuntimeError('PRIVATE SOURCE AND TOKEN')
+        if failure == 'unknown_code': raise mod.PieceContractError('PRIVATE_INTERNAL_CODE')
+        if failure == 'not_found': raise mod.PieceContractError('PIECE_SOURCE_NOT_FOUND')
+        return {'source_input': {'source_input_id': INPUT}}
+    adapter.resolve_original_handoff = fail
+    with pytest.raises(mod.PieceContractError) as error:
+        run(adapter.resolve_original_source_ref(AUTH, INPUT))
+    assert error.value.code == ('PIECE_SOURCE_NOT_FOUND' if failure == 'not_found' else 'PIECE_TEMPORARILY_UNAVAILABLE')
+    assert 'PRIVATE' not in str(error.value) and error.value.__suppress_context__
+
+
+def test_source_ref_cancellation_propagates_without_a_fake_result():
+    adapter = adapter_type()(store=Store(snapshot()))
+    async def cancel(*args): raise asyncio.CancelledError()
+    adapter.resolve_original_handoff = cancel
+    with pytest.raises(asyncio.CancelledError):
+        run(adapter.resolve_original_source_ref(AUTH, INPUT))
+
+
+def test_source_ref_accepts_no_caller_stage_body_owner_tier_or_eligibility():
+    store = Store(snapshot()); adapter = adapter_type()(store=store)
+    for keyword, value in {'source_stage': 'normal_observation', 'raw_body': THOUGHT,
+                           'owner_user_id': OWNER, 'tier': 'premium', 'eligible': True}.items():
+        with pytest.raises(TypeError):
+            adapter.resolve_original_source_ref(AUTH, INPUT, **{keyword: value})
+    assert store.calls == []
