@@ -529,8 +529,10 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         projection = saved['content_json']['watashiMap']
         self.assertEqual(projection, writes[0]['p_projection'])
         self.assertEqual(saved['content_text'], writes[0]['p_text'])
-        self.assertEqual(len(projection['unknown_gaps']), 4)
-        self.assertEqual(saved['content_text'].count('未確定（'), 4)
+        self.assertEqual(len(projection['unknown_gaps']), 1)
+        self.assertEqual(projection['unknown_gaps'][0]['visible_label'],
+                         '確定していない項目：場面、役割、行動・非行動、結果・余韻。')
+        self.assertEqual(saved['content_text'].count('未確定（'), 1)
         private = writes[0]['p_private_evidence']
         self.assertEqual(len(private['source_members']), 2)
         self.assertEqual(len(private['graph']['unknown_gaps']), 8)
@@ -539,15 +541,63 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         for key in ('reason_code', 'missing_scope', 'evidence_refs', 'source_members'):
             self.assertNotIn(json.dumps(key) + ':', json.dumps(saved, ensure_ascii=False))
 
+    async def test_corrected_and_withdrawn_stage_gaps_survive_saved_read_without_regeneration(self):
+        from test_analysis_saved_period import with_answer, NOW
+        episode = 'それから私は資料を調べてから、落ち着いた'
+        for answer, scopes, node_count in (
+                ('「' + episode + '」ではなく「' + episode.replace('落ち着いた', '嬉しかった') + '」です。',
+                 '場面、考え・注意', 4),
+                ('「' + episode + '」は取り消します。', '場面、考え・注意、結果・余韻', 2)):
+            with self.subTest(answer=answer):
+                fx = fixture('私は会議を担当した。' + episode + '。その後、私は記録を残した。')
+                # The supplemental-answer binding uses the saved Emlis source
+                # contract, which requires a nonempty emotion_details array.
+                fx['original']['emotion_details'] = [{'type': '平穏', 'strength': 'medium'}]
+                member = with_answer({'original': fx['original']}, answer)
+                row, writes = fx['row'], []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': NOW, 'members': [member]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                        row['content_text'] = payload['p_text']
+                        row['content_json']['watashiMap'] = payload['p_projection']
+                        return row['id']
+                    return result([row], matched=True)
+                with patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(saved, reread['items'][0])
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                self.assertEqual(len(projection['nodes']), node_count)
+                self.assertIn('確定していない項目：' + scopes + '。', saved['content_text'])
+                self.assertNotIn('落ち着いた', saved['content_text'])
+                private = writes[0]['p_private_evidence']['graph']
+                self.assertEqual(len(private['source_updates']), 1)
+                self.assertEqual(len(private['unknown_gaps']),
+                    len(projection['unknown_gaps']) + len(scopes.split('、')) - 1)
+
     async def test_previous_saved_duplicate_gaps_keep_their_original_text_and_identity(self):
         row = fixture('私は仕事を続けたいけれど、私はつらい。')['row']
         projection = row['content_json']['watashiMap']
-        old_gaps = copy.deepcopy(projection['unknown_gaps'])
-        projection['unknown_gaps'].extend(dict(g, gap_ref='g' + str(i))
-                                         for i, g in enumerate(old_gaps, 5))
+        # Preserve the old per-stage wire text explicitly; current generation
+        # now groups the scopes and cannot serve as a historical fixture.
+        scopes = ('場面', '役割', '行動・非行動', '結果・余韻')
+        projection['unknown_gaps'] = [
+            {'gap_ref': 'g' + str(i + 1), 'between_node_refs': ['n1'],
+             'visible_label': scope + 'は、この記録からは確定していません。'}
+            for i, scope in enumerate(scopes * 2)]
         lines = row['content_text'].splitlines()
         # Historical wire text: node, both sets of gaps, then the annotation.
-        row['content_text'] = '\n'.join(lines[:-1] + lines[1:-1] + lines[-1:])
+        target = projection['nodes'][0]['visible_label']
+        row['content_text'] = '\n'.join(lines[:1] + [
+            '未確定（' + target + '）：' + g['visible_label']
+            for g in projection['unknown_gaps']] + lines[-1:])
         before = copy.deepcopy(row)
         with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))), \
                 patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):

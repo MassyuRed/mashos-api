@@ -1128,6 +1128,54 @@ class AnalysisVerticalTests(unittest.TestCase):
                 with self.assertRaisesRegex(AnalysisSourceError, 'analysis_safe_surface_unavailable'):
                     broken.safe_projection(authenticated_owner_scope=OWNER)
 
+    def test_missing_stage_display_groups_correction_gaps_without_changing_meaning(self):
+        episode = 'それから私は資料を調べてから、落ち着いた'
+        original = record(memo='私は会議を担当した。' + episode + '。その後、私は記録を残した。')
+        for answer, scopes, node_count in (
+                ('「' + episode + '」ではなく「' + episode.replace('落ち着いた', '嬉しかった') + '」です。',
+                 ('場面', '考え・注意'), 4),
+                ('「' + episode + '」は取り消します。',
+                 ('場面', '考え・注意', '結果・余韻'), 2)):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(original, answer))).artifact
+                before = artifact.graph
+                self.assertEqual(len(before.nodes), node_count)
+                visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                grouped, = [g for g in visual['unknown_gaps']
+                            if g['visible_label'].startswith('確定していない項目：')]
+                self.assertEqual(grouped['visible_label'], '確定していない項目：' + '、'.join(scopes) + '。')
+                self.assertEqual(grouped['between_node_refs'], ['n1'])
+                self.assertEqual(grouped['gap_ref'], before.unknown_gaps[0].gap_ref)
+                others = [g for g in before.unknown_gaps if g.reason_code != 'NOT_ESTABLISHED_FROM_SOURCE']
+                self.assertEqual([g['gap_ref'] for g in visual['unknown_gaps'][1:]],
+                                 [g.gap_ref for g in others])
+                self.assertEqual(len(visual['unknown_gaps']), 1 + len(others))
+                self.assertEqual(len(visual['edges']), len(before.edges))
+                self.assertIs(artifact.graph, before)
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                self.assertIn('会議を担当した', text)
+                self.assertIn('記録を残す', text)
+                self.assertNotIn('落ち着いた', text)
+                self.assertEqual('嬉しかった' in text, node_count == 4)
+
+    def test_missing_stage_display_lists_cross_record_scopes_without_joint_absence_claim(self):
+        artifact = self.generate(request(
+            record(memo='私は仕事を続けたい。私は会議を担当した。'),
+            record(2, memo='僕は仕事を続けたいです。僕は職場にいた。'))).artifact
+        before = artifact.graph
+        visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+        grouped, = [g for g in visual['unknown_gaps']
+                    if g['visible_label'].startswith('確定していない項目：')]
+        self.assertEqual(grouped['visible_label'],
+                         '確定していない項目：場面、行動・非行動、結果・余韻、役割。')
+        self.assertEqual(grouped['between_node_refs'], ['n1'])
+        self.assertNotIn('この記録', grouped['visible_label'])
+        self.assertEqual(len(before.unknown_gaps), 8)
+        self.assertEqual(len(visual['unknown_gaps']), 3)
+        self.assertEqual(len(visual['nodes']), 3)
+        self.assertEqual(visual['nodes'][0]['evidence_badge_count'], 2)
+        self.assertIs(artifact.graph, before)
+
     def test_repeated_period_gaps_display_once_without_losing_records_or_burden(self):
         value = request(record(memo='私は仕事を続けたいけれど、私はつらい。'),
             record(2, memo='僕は仕事を続けたいけれど、僕はつらいです。'))
@@ -1138,12 +1186,14 @@ class AnalysisVerticalTests(unittest.TestCase):
         self.assertEqual(len(before.nodes[0].evidence_refs), 2)
         self.assertEqual(len(before.annotations[0].evidence_refs), 6)
         visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
-        self.assertEqual([g['gap_ref'] for g in visual['unknown_gaps']], ['g1', 'g2', 'g3', 'g4'])
+        self.assertEqual([g['gap_ref'] for g in visual['unknown_gaps']], ['g1'])
+        self.assertEqual(visual['unknown_gaps'][0]['visible_label'],
+                         '確定していない項目：場面、役割、行動・非行動、結果・余韻。')
         self.assertEqual(visual['unknown_gaps'], artifact.private_visual_preview(
             authenticated_owner_scope=OWNER)['unknown_gaps'])
         self.assertEqual(visual['nodes'][0]['evidence_badge_count'], 2)
         text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
-        self.assertEqual(text.count('未確定（'), 4)
+        self.assertEqual(text.count('未確定（'), 1)
         self.assertEqual(text.count('注記（'), 1)
         self.assertIs(artifact.graph, before)
         self.assertEqual(len(before.unknown_gaps), 8)
@@ -1156,14 +1206,36 @@ class AnalysisVerticalTests(unittest.TestCase):
         visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
         gaps = visual['unknown_gaps']
         self.assertEqual(len(artifact.graph.unknown_gaps), 14)
-        self.assertEqual(len(gaps), 9)
-        self.assertEqual([g['gap_ref'] for g in gaps], ['g1', 'g2', 'g3', 'g4', 'g5', 'g11', 'g12', 'g13', 'g14'])
+        self.assertEqual(len(gaps), 3)
+        self.assertEqual([g['gap_ref'] for g in gaps], ['g1', 'g5', 'g11'])
         unread = [g for g in gaps if 'まだ読み取れていない内容' in g['visible_label']]
         self.assertEqual(len(unread), 1)
         self.assertEqual(unread[0]['between_node_refs'], ['n1'])
-        scene = [g for g in gaps if g['visible_label'].startswith('場面は')]
+        scene = [g for g in gaps if g['visible_label'].startswith('確定していない項目：場面')]
         self.assertEqual([g['between_node_refs'] for g in scene], [['n1'], ['n2']])
-        self.assertEqual(artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'].count('未確定（'), 9)
+        self.assertEqual(artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'].count('未確定（'), 3)
+
+    def test_missing_stage_display_keeps_single_scope_other_reasons_and_target_order(self):
+        from cocolon_meaning_experience_engine.cores.analysis.intent_compiler import UnknownGap
+        artifact = self.generate(request(record())).artifact
+        gaps = (UnknownGap('g1', ('n1', 'n2'), 'SCENE', 'NOT_ESTABLISHED_FROM_SOURCE'),
+            UnknownGap('g2', ('n1', 'n2'), 'ROLE', 'NOT_ESTABLISHED_FROM_SOURCE'),
+            UnknownGap('g3', ('n2', 'n1'), 'SCENE', 'NOT_ESTABLISHED_FROM_SOURCE'),
+            UnknownGap('g4', ('n1', 'n2'), 'ROLE', 'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'),
+            UnknownGap('g5', ('n1', 'n2'), 'SOURCE_SCOPE', 'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'),
+            UnknownGap('g6', ('n1', 'n2'), 'SCENE', 'NOT_ESTABLISHED_FROM_SOURCE'))
+        artifact = replace(artifact, graph=replace(artifact.graph, unknown_gaps=gaps))
+        visual = artifact.safe_projection(authenticated_owner_scope=OWNER)
+        self.assertEqual(visual['unknown_gaps'], [
+            {'gap_ref': 'g1', 'between_node_refs': ['n1', 'n2'],
+             'visible_label': '確定していない項目：場面、役割。'},
+            {'gap_ref': 'g3', 'between_node_refs': ['n2', 'n1'],
+             'visible_label': '場面は、この記録からは確定していません。'},
+            {'gap_ref': 'g4', 'between_node_refs': ['n1', 'n2'],
+             'visible_label': '役割は、この記録からは確定していません。'},
+            {'gap_ref': 'g5', 'between_node_refs': ['n1', 'n2'],
+             'visible_label': 'まだ読み取れていない内容は、この記録からは確定していません。'}])
+        self.assertEqual(artifact.graph.unknown_gaps, gaps)
 
     def test_unknown_gap_display_preserves_reason_and_endpoint_order(self):
         from cocolon_meaning_experience_engine.cores.analysis.intent_compiler import UnknownGap

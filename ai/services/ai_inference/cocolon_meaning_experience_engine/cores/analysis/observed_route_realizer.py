@@ -11,7 +11,7 @@ import logging
 from uuid import uuid4
 
 from ...contracts import EngineStatus
-from .intent_compiler import (ObservedGraph, compile_observed_graph, _proposition,
+from .intent_compiler import (ObservedGraph, NODE_KINDS, compile_observed_graph, _proposition,
                               _CANONICAL_CONTENT, _RESULT_STEMS, _CHANGE_PAST,
                               _FEELING_PAST, _te_action_proposition, _burden_predicate,
                               _protective_wish_proposition, _proposition_meaning,
@@ -217,22 +217,33 @@ class ObservedSelfStructureMap:
                  'visible_label': CONFLICT_LABEL} for c in self.graph.conflicts]
 
     def _unknown_gap_projection(self):
-        # Several records may share a node and the same missing scope. Keep
-        # every private gap, but show that exact target/scope/reason once.
-        # Preserve the first gap identity and order; labels alone are not keys.
-        gaps, seen = [], set()
+        # Keep every private gap. In the display, list missing stages once per
+        # ordered target and ordinary absence reason, retaining every scope.
+        # Sources may differ: the list must not claim one shared missing episode.
+        # Other reasons stay separate; preserve first identities and order.
+        gaps, seen, stage_groups = [], set(), {}
         for gap in self.graph.unknown_gaps:
             key = (gap.between_node_refs, gap.missing_scope, gap.reason_code)
             if key in seen:
                 continue
             seen.add(key)
+            ordinary_stage = (gap.reason_code == 'NOT_ESTABLISHED_FROM_SOURCE'
+                              and gap.missing_scope in NODE_KINDS)
+            if ordinary_stage and gap.between_node_refs in stage_groups:
+                item, scopes = stage_groups[gap.between_node_refs]
+                scopes.append(LABELS[gap.missing_scope])
+                item['visible_label'] = '確定していない項目：' + '、'.join(scopes) + '。'
+                continue
             label = LABELS[gap.missing_scope] + 'は、この記録からは確定していません。'
             if (gap.missing_scope == 'ROUTE_CONNECTION'
                     and gap.reason_code == 'EXPLICIT_PREDECESSOR_NOT_ESTABLISHED'):
                 label = 'この記述がどの内容に続くのかは、この記録からは確定していません。'
-            gaps.append({'gap_ref': gap.gap_ref,
+            item = {'gap_ref': gap.gap_ref,
                 'between_node_refs': list(gap.between_node_refs),
-                'visible_label': label})
+                'visible_label': label}
+            gaps.append(item)
+            if ordinary_stage:
+                stage_groups[gap.between_node_refs] = (item, [LABELS[gap.missing_scope]])
         return gaps
 
     def _annotation_badges(self):

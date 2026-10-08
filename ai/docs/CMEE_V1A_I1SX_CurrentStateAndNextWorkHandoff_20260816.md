@@ -15803,3 +15803,24 @@ rootはAnalysis合成8全文（常体/名詞変化/未知文/前件なし/補足
 STRUCTURE_MAP_DELTA_NONE：同じ共有3ownerとAnalysis保存/表示routeの内部補正。API8/Cocolon3の既存11file、新規repository file0。API契約/DTO/DB/SQL/RN/依存/Safety policy、main/merge/deploy/env/native build変更0。限定TECHNICAL_CREDIT、商品NOT_CLEAR。既存branchへnon-force反映し、remote parent・変更11path・全file blob内容・final headをfresh照合する。
 
 残件・次の優先：今回の有限常体群の欠落と連動するsupport誤表現は解消。先頭markerなしの旧常体受取、他SELF/程度/否定/他時点/一般認知、既存Emlis失敗と文体は別残件。weeklyに従い、追加活用網羅を配置/実機の前提にせず、指定修正版で本人の保存入力→生成→同じ文章/図→保存後再表示の確認を優先する。最終配置証拠はu128 APIとTestFlight1.0(6401)送信であり、今回を含むu129以降の内容修正は未配置。既存の具体的配置承認対象を照合し、端末導入/本人生成/再表示/比較の未確認を別環境の機械成功で代用しない。次の実行担当はWorkの技術owner、本記録からdeployや次Gateを自動実施しない。
+
+
+## 2026-10-09 JST u185 — 同じ対象の不足段階説明を、意味を保持した一覧へ補修（未配置）
+
+Mashの分析内容修正継続指示でu184から再開。fresh API PR3 `32ce0a0e038892787a1779b8d3498b2b4681f93f`／Cocolon PR30 `4b41e9e721bb8b8d825488e5c4cc379e99ccc59c`を確認し、fetchした同一treeから作業。前提・作業姿勢入口/CURRENT/Rule18/開始check/対象非破壊条件、恒久incident全文、Karen-Diary必須3file、最新weekly20261003 §5/§6.6〜6.10、current03/詳細04/06を確認。全体設計01/全file地図01A〜C/02の前回読了を同じ追跡treeで継承し、01B/対象routeを再確認。System Contextは前回partial checkoutのtask_profiles欠落を解消したとは扱わず、同じ正本のdirect read fallbackを使用。生成context有効性は主張しない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX、既存設計内の可逆な内容表示補修。Codex Work root華恋が単一編集・検証・GitHub反映owner。同環境read-only補助で原因と商品/週次整合、最終製品差分を確認し、別model Pro reviewとは扱わない。対象はAnalysis realizer1/既存test2/既存handoffとcurrent03・詳細04・06の計7file。完了条件は不足項目を消さず同一対象の説明反復を減らし、異なる不明理由と元graphを保持し、文章/図/保存再読が一致すること。解釈・新文法・新機能・実環境へ拡大しない。追加費用・依存導入・Mash操作0。配置や実機を追加の文体完成待ちにしない。
+
+開始出力の訂正例は会議・後続記録・置換後調査/嬉しかったの4nodeを保持しており、既知内容欠落は再現していない。外側の順序線が消えるのも訂正/撤回を跨いで橋渡ししない設計どおり。この箇所を欠陥と誤認して補完しない。一方、同じ対象へ場面/考え・注意/結果・余韻の通常不足を別々に説明する反復は実測した。
+
+既存 `_unknown_gap_projection` だけで、同一順序付きtarget・NOT_ESTABLISHED_FROM_SOURCE・既存NODE_KINDSの不足scopeを全列挙する。初出gap_ref/表示位置を保ち、単一scopeは旧label。複数記録から異なる不足が来る場合もあるため『この記録で全部が不足』とは書かず、『確定していない項目：…』とする。別target/対象順/理由、未読内容、接続先不明と一般接続不明は別に保持し、完全一致dedupeは継承する。private graphの全gap・node・edge・evidence・source update・比較意味を変更しない。RN/DTO形/保存readの変更はなく、同じprojectionから両表示が作られる。旧保存wireは旧本文/identityのまま再読する。
+
+検証：追加対象の修正前は3FAIL（2subFAIL含む）/1PASS、288 deselectedで反復を確認。製品修正と既存表示期待の限定更新後、Analysis3suiteは373 tests／3101 subtests PASS（18.54秒）。訂正/撤回の保存再読をさらに追加し、初回は検査fixtureのemotion_details空配列が既存の補足bind用正準sourceに不適合で2subFAIL/67PASSだった。検査用原入力を既存保存source契約に合わせ、最終storageは67 tests／247 subtests PASS（4.04秒）。採用sourceに対する3suiteの重複なし最終集合は **374 tests／3103 subtests PASS**（vertical291/storage67/saved-period16）、skip/xfail0。全repo/全Emlis検査ではなく、共有owner/current identityは変更0。
+
+同一sessionの既存runtimeをread-only再確認：Python3.12.14、pytest9.1.1、FastAPI0.142.2、httpx0.28.1、Pydantic2.14.0。絶対entrypoint、bytecode/cacheprovider/FB172移行plugin無効。製品依存変更0。実service＋合成RPCで新集約と訂正/撤回後の保存→engine再生成禁止再読を確認し、private全gap/source updateの保持も照合。旧8行形式の保存検査はcurrent生成から作らず旧wireを明示して固定し、元の再読条件を保った。
+
+rootは通常/訂正/撤回/未読介在/反復2記録/別対象/異なる不足を持つ2記録/期間比較の生成8全文と、u184旧保存1全文を読解。実RN buildWatashiMapV2ViewModelへ同じDTOを渡し、全文・identity・node順・edge/unknown/注記/競合・比較stateが9/9一致。訂正後の未確定は6→5行、撤回後5→3行、同じ希望2記録はu114表示4→1行で、private8gapと2記録・負荷根拠は保持。未読内容/順序不明の説明、訂正後の保守的な外側接続保留、Emlisの品質残件は今回解消していない。
+
+STRUCTURE_MAP_DELTA_NONE：既存Analysis realizerの表示責務内だけの補修で、owner path・依存・保存/表示route・原文解釈は不変。API製品1/test2/handoff1、Cocolon current03/詳細04/06の既存7file、新規repo file0。compiler/共有owner/API契約/DTO/DB/SQL/RN/Safety/製品依存、main/merge/deploy/env/native build変更0。限定TECHNICAL_CREDIT、商品NOT_CLEAR。既存PR3/30へnon-force反映し、remote parent/tree/変更path集合/全7file blob SHA/最終headを照合する。
+
+次の優先：本有限表示反復は解消。残る別理由のunknownを単純削除したり、実測のない訂正欠落を作業理由にしない。本人指定の修正版で保存入力→生成→同じ文章と図→保存後再表示へ到達することがweekly上の未完了条件。最終配置証拠はu128 APIとTestFlight1.0(6401)送信で、u129以降は未配置のまま。実DB・React/native実画面・本人実機・正式商品受入れを今回の合成検査へ換算しない。配置の具体的承認対象を照合して扱い、本記録だけでdeployや次Gateを自動実施しない。
