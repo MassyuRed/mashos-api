@@ -1206,10 +1206,12 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                         self.assertNotIn(private, encoded)
 
     async def test_unfinished_result_survives_commit_and_read_without_regeneration(self):
-        for clause in ('まだ方法が見つかっていない', 'まだ昨日の方針が決まっていない',
-                       'まだ仕事の昨日分が見つかっていません'):
-            with self.subTest(clause=clause):
-                self.fx = fixture('私は資料を調べた。' + clause + '。')
+        for action, clause in ((action, clause)
+                for action in ('私は資料を調べた。', '私は記録を書いた。')
+                for clause in ('まだ方法が見つかっていない', 'まだ昨日の方針が決まっていない',
+                               'まだ仕事の昨日分が見つかっていません')):
+            with self.subTest(action=action, clause=clause):
+                self.fx = fixture(action + clause + '。')
                 self.row = self.fx['row']
                 writes = []
                 async def rpc(name, payload):

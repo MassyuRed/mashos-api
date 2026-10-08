@@ -15411,3 +15411,28 @@ u167で意図的に保留したNOT_YET＋昨日nominalの4期待を、今回の�
 STRUCTURE_MAP_DELTA_NONE：既存の共有意味owner・依存方向・route・artifact/保存lifecycle内の修正。API Plan1/test3/current identity1/handoff1、Cocolon current03/詳細04/06の計9file modify、新規repo file0。Analysis専用製品source、Safety、Piece、API契約/DTO/DB/SQL/RN・依存変更0。main/merge/deploy/env/native build操作0、u168未配置。実DB・React component/native・本人実機・商品受入れ未確認。限定TECHNICAL_CREDIT・商品NOT_CLEAR維持。既存PR3/30への反映後にremote head/parent/tree/変更path集合と全9fileのbytesを照合する。
 
 残件：今回の完全昨日名詞以外の時点、一般感情/認知、夢/伝聞から現実へ戻る境界、unknown反復、共有の旧期待差を維持。既存report helperは「私は記録を書いた。」の併存にも保守的に反応し得るため、この組合せの一般対応は主張しない（静的制約、今回の回帰ではない）。本人の指定版生成→保存再表示→比較の実機確認も別に保持。本節と追跡source/testを再開原典とし、scratch JSON/logやbaseline worktreeを正式再開原典にしない。
+
+
+## 2026-10-08 JST u169 — 本人の完結した書字を伝聞の導入と混同しない
+
+Mashの分析内容修正継続指示と添付「前回作業内容(20261008-104904).txt」からu168の明示残件を再開。開始remote HEADはAPI `4736f31286562a2f19794283c85f295b44b9bb3e`／Cocolon `b19a114d42042632db2641be9e8f57d469ea1f5a`、Draft/open/unmerged。必須前提・作業姿勢CURRENT/対象専門rule、恒久incident全文、全体設計01と01A〜C/国家system02の分析関連地図、current03/詳細04 §3.7、最新weekly20261003 §5.3/§6.6〜6.10、u168 handoffと実source/testを確認。巨大な歴史追記全件の再読とはしない。System Contextの生成物は使用せず追跡正本を直接参照。
+
+既存設計内の原因修正（LEVEL_2相当のimplementation detail、OBSERVED_BLOCKER_MINIMAL_FIX）。今回のMash継続指示・既存Draft PR反映の承認範囲で、Codex Workのroot華恋が単一編集・実行・GitHub反映owner。同環境read-only agentが必要性/全体経路とsource/test差分を確認し、具体的blockerなし。別model Pro reviewの成立とは報告しない。完成条件は実際の分析文/図に書字と未完了の両方を残し、出典・否定・主体非推定・更新・比較・保存再表示を維持すること。既存Plan1/test3/current identity1/API handoff1とCocolon current03/詳細04/06の9fileに限定し、追加費用・Mash操作0。新しい方針・外部依存・DB/API/公開境界を必要とすれば対象外として止める。全表現対応を実機接続の前提にしない。
+
+開始実測：「私は記録を書いた。まだ昨日の方針が決まっていない。」は書字のACTIONだけを返し、未完了をSOURCE_SCOPE/結果未確定に落としていた。逆順とmemo_actionの書字でも同じ。一方、昨日のない未完了と「私は私の記録を書いた」は両方保持。共有 `_source_prefix_opens_report` が書いた/書きましたを含む全speech終端を報告開始と見なし、本人所有内容の狭い例外にしか通さなかったため、u168のnominal_day/present_unfinishedが不成立だった。新Analysis2methodの修正前確認は15 subFAIL/2 method PASS（3.75秒）で、12配置例と通常補足・訂正・撤回の不成立を確認した。初稿の属格「仕事の記録」は対象を単一名詞区間へ限定する判断に合わせ「新しい記録」へ差替えたため、最終12配置例全てと完全同一入力のbaselineとはしない。
+
+製品変更は既存共有helperの10行だけ。明示SELF7表記＋は/が/も＋任意の読点/半角・全角空白＋既存の単一名詞区間＋を＋書いた/書きましたを完全一致させ、この完結した書字だけを報告の開始から除く。属格一般・主語なし・別主体・こう/そう・引用導入・疑問/次/以下等・話/説明/報告/内容等は従来の判定に残す。別の文や別fieldにある実際の報告を打ち消さない。原文の書換え、Analysis marker必須の迂回、時制/主体の一般推論はない。通常名詞でも保留語を含めば保守的に止まる制限は維持。
+
+修正後は上記の基本・逆順・別fieldで行動と現在の未完了の両方が生成される。未完了はUNSPECIFIED/negative/fact/current_inputのまま、名詞の昨日を保持し、因果・順序線・成功/失敗・本人の結果所有者を追加しない。通常補足、訂正、撤回、同義比較と名詞差の比較、実保存service＋合成RPCの保存後再生成なしreadも確認した。
+
+検証は既存絶対runtime Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5、bytecode/cacheprovider/FB172移行plugin無効、製品依存変更0。
+- 最終Analysis3suiteはvertical251/storage59/saved-period16＝326 PASS、active final language identityのexact node ID1を加え **327 tests PASS／2127 subtests PASS（34.26秒）**。初回同結合runは`tools` import path不足でcollection error。実行時PYTHONPATHに既存ai rootを指定して上記同scopeを再実行、source/testをその理由で変更していない。
+- 共有initial_received_discourse/q3の限定selector `unfinished_nominal_yesterday or completed_self_writing or denied_resolution_does_not_treat_completed_self_expression_as_report or denied_resolution_does_not_borrow_foreign_or_nonfinite_hosts` は **68 PASS／1320 deselected（13.02秒）**。SELF7表記、報告前後/別field、名詞/原文/否定/時点の共有根拠、既存自己表現と他人/非有限host保留を確認。既存単独未完了の実本文/独立reader検査も含む。
+- 合計395 tests PASSはこの限定scopeだけ。共有current identityを同期：language `1b18427a1818ac1611ff8863ebcb9afa593c3a79bdd356548a7e81ab9f3f2eb5`／runtime `71d4dbe055e3cd91d088141477450ece5ee52dac62960d7e28e37c81fc961ba8`。historical frozen manifest/9owner/18payloadは変更0。
+- rootがAnalysis合成8本文（基本、逆順、別field、丁寧語と修飾、訂正、撤回、同義期間、名詞差期間）を全読。実RN `buildWatashiMapV2ViewModel` の本文全文/identity/node順/edge/unknown/注記/競合/比較stateが8/8一致。React component/nativeでの確認ではない。
+
+途中の共有新検査2例では、Emlis実本文を無条件に期待した初稿が`LIMITED_RECEPTION_CAPABILITY_GAP_STOP`で停止（対象46PASS/2FAIL/57subPASS）。未変更開始commitのworktreeで同じ実本文経路を実行し、2例とも同じ例外を確認した。今回の共有marker回復とEmlisの受取文能力を分け、新検査2例は今回の共有source witness/原文/時制/否定を確認する形へ訂正。既存検査の期待変更・skip/xfailは0。この複合文2例のEmlis本文は修正前後とも未成立として残し、共有本文品質の改善とはしない。
+
+STRUCTURE_MAP_DELTA_NONE：既存共有意味owner/依存方向/route/保存lifecycle内の限定補正。既存9file modify、新規repo file0。Analysis専用compiler/realizer、Safety、Piece、API契約/DTO/DB/SQL/RN・依存変更0。main/merge/deploy/env/native build操作0、u169未配置。実DB・本人実機・商品受入れ未確認、限定TECHNICAL_CREDIT・商品NOT_CLEAR。最終suite後の製品source変更0。反映commitと全9fileのremote bytes/parent/変更path集合は両PRへ記録する。
+
+残件：一般の属格書字/報告内容・今回保守的に残した名詞、今回以外の時点/一般感情・認知、夢/伝聞から現実へ戻る境界、unknown反復。u168既存共有6FAIL、旧0066/旧contracts差、u165未診断F2等は今回再検証・解消していない。上記Emlis複合2例のLIMITED_RECEPTION_CAPABILITY_GAP_STOPも追加記録した。本人指定版での生成→保存再表示→比較は別の実機残件。次回は本節と追跡source/testから継続し、scratch log/JSONやbaseline worktreeを正式再開原典にしない。

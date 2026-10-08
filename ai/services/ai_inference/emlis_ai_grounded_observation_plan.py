@@ -15738,6 +15738,16 @@ def _source_prefix_opens_report(prefix: str) -> bool:
             return True
         if not re.search(speech + r"$", clause):
             continue
+        # A fully closed, explicitly self-owned writing act is not an
+        # introduction to quoted content. Keep this to one bounded nominal
+        # object; genitive/report/deictic content retains the existing check.
+        writing = re.fullmatch(
+            r"(?:私|わたし|僕|ぼく|自分|俺|おれ)(?:は|が|も)[、,]?[ 　]*"
+            r"(?P<object>" + _WISH_OBJECT_NOMINAL_SOURCE + r")を(?:書いた|書きました)", clause)
+        if writing is not None and not re.search(
+            r"何|誰|次|以下|上記|下記|話|発言|引用|説明|報告|内容", writing["object"]
+        ):
+            continue
         completed = re.fullmatch(r"(?P<before>.*?)(?:私|わたし|僕|ぼく|自分)の[一-鿿々]+を" + speech, clause)
         if completed is None:
             return True

@@ -2334,6 +2334,54 @@ class AnalysisVerticalTests(unittest.TestCase):
         self.assertEqual(artifact.graph.nodes[0].node_kind, 'ACTION_OR_NONACTION')
         self.assertIn('IMMEDIATE_RESULT_OR_AFTERMATH', {g.missing_scope for g in artifact.graph.unknown_gaps})
 
+    def test_unfinished_nominal_yesterday_survives_completed_self_writing(self):
+        unfinished = 'まだ昨日の方針が決まっていない'
+        for writing in ('私は記録を書いた', '僕は、新しい記録を書きました',
+                        'ぼくは新しいメモを書いた', '俺は振り返りを書いた'):
+            for memo, action in ((writing + '。' + unfinished + '。', ''),
+                                 (unfinished + '。' + writing + '。', ''),
+                                 (unfinished + '。', writing + '。')):
+                with self.subTest(memo=memo, action=action):
+                    req = request(record(memo=memo, action=action))
+                    artifact = self.generate(req).artifact
+                    self.assertIsNotNone(artifact)
+                    nodes = [n for n in artifact.graph.nodes if n.proposition.result_state == 'NOT_YET']
+                    self.assertEqual(len(nodes), 1)
+                    node, = nodes
+                    self.assertEqual((node.proposition.actor, node.polarity, node.modality,
+                                      node.temporal_scope), ('UNSPECIFIED', 'negative', 'fact', 'current_input'))
+                    source, = freeze_analysis_sources(req).sources
+                    e, = node.evidence_refs
+                    raw = source.envelope.raw_utf8[e.utf8_start:e.utf8_end]
+                    self.assertEqual(raw.decode(), unfinished)
+                    self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                    self.assertEqual(e.field_path, 'memo')
+                    self.assertFalse(artifact.graph.edges)
+                    label = unfinished + '（この記述時点）'
+                    self.assertIn(label, artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+                    self.assertIn(label, [n['visible_label'] for n in
+                        artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes']])
+
+    def test_unfinished_nominal_yesterday_writing_preserves_updates_and_comparison(self):
+        old, new = 'まだ昨日の方針が決まっていない', 'まだ仕事の昨日分が定まっていない'
+        writing = '私は記録を書いた。'
+        original = record(memo=writing + old + '。')
+        for answer, expected in ((old.replace('いない', 'いません') + '。', [old]),
+                ('「' + old + '」ではなく「' + new + '」です。', [new]),
+                ('「' + old + '」は取り消します。', [])):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(original, answer))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertEqual([n.visible_label for n in artifact.graph.nodes
+                                  if n.proposition.result_state == 'NOT_YET'], expected)
+                self.assertFalse(artifact.graph.edges)
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        same = self.compared(writing + old + '。', writing + old.replace('いない', 'いません') + '。').artifact
+        self.assertEqual(same.period_comparison.change_claims, ())
+        changed = self.compared(writing + old + '。', writing + old.replace('昨日', '今日') + '。').artifact
+        self.assertIn('ROUTE_EVIDENCE_CHANGED', changed.safe_projection(authenticated_owner_scope=OWNER)
+                      ['period_comparison']['safe_change_kinds'])
+
     def test_unfinished_nominal_yesterday_keeps_updates_evidence_and_comparison(self):
         old, new = 'まだ昨日の方針が決まっていない', 'まだ仕事の昨日分が定まっていない'
         original = record(memo='私は資料を調べた。' + old + '。')

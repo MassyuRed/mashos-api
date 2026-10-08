@@ -19,6 +19,47 @@ SINGLE = '褒められたのに、嬉しくなかった。'
 MULTI = SINGLE + '誘われたのに、悲しかった。頼まれたのに、寂しかった。'
 
 
+@pytest.mark.parametrize('subject', ['私', 'わたし', '僕', 'ぼく', '自分', '俺', 'おれ'])
+def test_completed_self_writing_is_not_a_report_introduction(subject):
+    from emlis_ai_grounded_observation_plan import _source_prefix_opens_report
+    for particle in ('は', 'が', 'も'):
+        for sentence in (subject + particle + '記録を書いた。',
+                         subject + particle + '、　新しいメモを書きました。'):
+            assert not _source_prefix_opens_report(sentence)
+            assert _source_prefix_opens_report(sentence + '友人が話した。')
+            assert _source_prefix_opens_report('友人が話した。' + sentence)
+
+
+@pytest.mark.parametrize('writing', ['友人は記録を書いた', '記録を書いた',
+    '私はこう書いた', '私は次の記録を書いた', '私は以下を書いた',
+    '私は話を書いた', '私は報告を書いた', '私は内容を書いた',
+    '私は友人の感想を書いた', '私は友人の記録を書いた',
+    '私は何を書いた', '私は誰の記録を書いた'])
+def test_completed_self_writing_keeps_unproved_report_boundaries(writing):
+    from emlis_ai_grounded_observation_plan import _source_prefix_opens_report
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    assert _source_prefix_opens_report(writing + '。')
+    unfinished = 'まだ昨日の方針が決まっていない。'
+    for memo, action in ((writing + '。' + unfinished, ''),
+                         (unfinished, writing + '。')):
+        plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(memo, action)))
+        assert not any('semantic_role:present_unfinished' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('text', ['私は記録を書いた。まだ昨日の方針が決まっていない。',
+                                  'まだ昨日の方針が決まっていない。私はメモを書きました。'])
+def test_unfinished_nominal_yesterday_keeps_completed_writing_and_shared_witness(text):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    prepared = prepare_emlis_meaning(begin(text))
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    node, = (n for n in plan.nuclei if 'semantic_role:present_unfinished' in n.semantic_frame.attribute_codes)
+    assert node.semantic_frame.time_scope == 'current_input'
+    assert resolver.resolve(node.source_span_ids[0]).raw_text == 'まだ昨日の方針が決まっていない'
+    assert node.semantic_frame.polarity == 'negative'
+    assert node.semantic_frame.modality == 'fact'
+
+
 @pytest.mark.parametrize('text', ['まだ昨日の方針が決まっていない。',
                                   'まだ仕事の昨日分が見つかっていません。'])
 def test_unfinished_nominal_yesterday_keeps_current_host_and_actual_body(text):
@@ -61,6 +102,9 @@ def test_unfinished_nominal_yesterday_keeps_other_field_report_scope():
     from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
     plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(
         'まだ昨日の方針が決まっていない。', '友人の報告。')))
+    assert not any('semantic_role:present_unfinished' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(
+        '私は記録を書いた。まだ昨日の方針が決まっていない。', '友人の報告。')))
     assert not any('semantic_role:present_unfinished' in n.semantic_frame.attribute_codes for n in plan.nuclei)
 
 
