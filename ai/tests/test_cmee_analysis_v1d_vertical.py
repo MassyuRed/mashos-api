@@ -2253,7 +2253,10 @@ class AnalysisVerticalTests(unittest.TestCase):
     def test_unfinished_result_reaches_text_and_graph_without_inventing_actor(self):
         for noun, particle, predicate in (
             ('方法', 'が', '見つかっていない'), ('方針', 'は', '決まっていません'),
-            ('仕事の方針', 'も', '定まっていない')):
+            ('仕事の方針', 'も', '定まっていない'),
+            ('昨日の方針', 'が', '決まっていない'), ('昨日分の方法', 'は', '見つかっていません'),
+            ('仕事の昨日分', 'も', '定まっていない'),
+            ('昨日の新しい方針', 'が', '決まっていません')):
             memo = 'まだ' + noun + particle + predicate
             with self.subTest(memo=memo):
                 req = request(record(memo=memo + '。'))
@@ -2331,6 +2334,44 @@ class AnalysisVerticalTests(unittest.TestCase):
         self.assertEqual(artifact.graph.nodes[0].node_kind, 'ACTION_OR_NONACTION')
         self.assertIn('IMMEDIATE_RESULT_OR_AFTERMATH', {g.missing_scope for g in artifact.graph.unknown_gaps})
 
+    def test_unfinished_nominal_yesterday_keeps_updates_evidence_and_comparison(self):
+        old, new = 'まだ昨日の方針が決まっていない', 'まだ仕事の昨日分が定まっていない'
+        original = record(memo='私は資料を調べた。' + old + '。')
+        repeated = self.generate(request(self.with_answer(original, old.replace('いない', 'いません') + '。'))).artifact
+        node = next(n for n in repeated.graph.nodes if n.proposition.result_state)
+        self.assertEqual((len(node.record_refs), len(node.evidence_refs)), (1, 2))
+        for answer, expected in (('「' + old + '」ではなく「' + new + '」です。', new),
+                                  ('「' + old + '」は取り消します。', None)):
+            with self.subTest(answer=answer):
+                req = request(self.with_answer(original, answer))
+                artifact = self.generate(req).artifact
+                self.assertIsNotNone(artifact)
+                self.assertFalse(artifact.graph.edges)
+                results = [n for n in artifact.graph.nodes if n.proposition.result_state]
+                self.assertEqual([n.visible_label for n in results], [] if expected is None else [expected])
+                for node in results:
+                    e, = node.evidence_refs
+                    source = next(s.envelope for s in freeze_analysis_sources(req).sources
+                                  if s.envelope.envelope_id == e.source_envelope_id)
+                    self.assertEqual(source.source_role, 'SUPPLEMENTAL_ANSWER')
+                    self.assertEqual(source.raw_utf8[e.utf8_start:e.utf8_end].decode(), new)
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        self.assertEqual(self.compared(old + '。', old.replace('いない', 'いません') + '。')
+                         .artifact.period_comparison.change_claims, ())
+        changed = self.compared(old + '。', old.replace('昨日', '今日') + '。').artifact
+        self.assertIn('ROUTE_EVIDENCE_CHANGED', changed.safe_projection(authenticated_owner_scope=OWNER)
+                      ['period_comparison']['safe_change_kinds'])
+        for memo in ('まだ昨日方針が決まっていない。', '昨日まだ方針が決まっていない。',
+                     'まだ昨日の方針が決まっていなかった。', 'まだ昨日の方針が決まっていない？',
+                     'まだ昨日の方針が決まっていないかもしれない。',
+                     'まだ昨日の方針が決まっていないわけではない。',
+                     '夢を見た。' + old + '。', '友人によると、' + old + '。',
+                     '友人が話した。' + old + '。', '友人から聞いた話です。' + old + '。'):
+            with self.subTest(memo=memo):
+                outcome = self.generate(request(record(memo=memo)))
+                self.assertFalse(outcome.artifact and any(n.proposition.result_state
+                    for n in outcome.artifact.graph.nodes))
+
     def test_unfinished_result_requires_shared_full_clause_witness(self):
         from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
         build = compiler.build_final_stage1_grounded_observation_plan
@@ -2340,7 +2381,9 @@ class AnalysisVerticalTests(unittest.TestCase):
                 attribute_codes=tuple(c for c in n.semantic_frame.attribute_codes
                                       if c != 'semantic_role:present_unfinished'))) for n in plan.nuclei))
         with patch.object(compiler, 'build_final_stage1_grounded_observation_plan', side_effect=without_witness):
-            self.assertIsNone(self.generate(request(record(memo='まだ方法が見つかっていない。'))).artifact)
+            for noun in ('方法', '昨日の方法', '仕事の昨日分'):
+                with self.subTest(noun=noun):
+                    self.assertIsNone(self.generate(request(record(memo='まだ' + noun + 'が見つかっていない。'))).artifact)
 
     def test_unfinished_result_never_shortens_unsupported_scope(self):
         cases = ('まだ方法が見つかっていなかった。', 'まだ方法が見つかっている。',
@@ -3771,12 +3814,6 @@ class AnalysisVerticalTests(unittest.TestCase):
                                   ('まだ' + noun + 'が決まっていない', 'NOT_YET')):
                 with self.subTest(clause=clause):
                     artifact = self.generate(request(record(memo=clause + '。'))).artifact
-                    # The shared unfinished witness already rejects past
-                    # time scopes, even when 昨日 occurs in a nominal.
-                    # Preserve that boundary; do not broaden it here.
-                    if state == 'NOT_YET' and '昨日' in noun:
-                        self.assertIsNone(artifact)
-                        continue
                     self.assertIsNotNone(artifact)
                     result = artifact.graph.nodes[-1].proposition
                     self.assertEqual(result.result_state, state)

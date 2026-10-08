@@ -1206,37 +1206,40 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                         self.assertNotIn(private, encoded)
 
     async def test_unfinished_result_survives_commit_and_read_without_regeneration(self):
-        self.fx = fixture('私は資料を調べた。まだ方法が見つかっていない。')
-        self.row = self.fx['row']
-        writes = []
-        async def rpc(name, payload):
-            if name == 'analysis_observed_source_snapshot':
-                return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
-                    {'original': self.fx['original'], 'thread': None, 'events': []}]}
-            if name == 'analysis_observed_commit':
-                writes.append(payload)
-                self.row['id'] = str(UUID(payload['p_artifact_id'][9:]))
-                self.row['content_text'] = payload['p_text']
-                self.row['content_json']['watashiMap'] = payload['p_projection']
-                return self.row['id']
-            return result([self.row], matched=True)
-        with patch.object(service, '_rpc', side_effect=rpc):
-            saved = await service.generate_saved(OWNER, start=START, end=END,
-                report_mode='standard', report_type='latest')
-            with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
-                reread = await service.read_saved(OWNER)
-        self.assertEqual(reread['items'][0], saved)
-        projection = saved['content_json']['watashiMap']
-        self.assertEqual(projection, writes[0]['p_projection'])
-        self.assertEqual(saved['content_text'], writes[0]['p_text'])
-        result_node = next(n for n in projection['nodes'] if n['node_kind'] == 'IMMEDIATE_RESULT_OR_AFTERMATH')
-        self.assertEqual(result_node['visible_label'], 'まだ方法が見つかっていない（この記述時点）')
-        self.assertIn(result_node['visible_label'], saved['content_text'])
-        self.assertFalse(projection['edges'])
-        for encoded in (json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False),
-                        json.dumps(projection, ensure_ascii=False)):
-            for private in ('result_state', 'NOT_YET', 'UNSPECIFIED', 'source_parts'):
-                self.assertNotIn(private, encoded)
+        for clause in ('まだ方法が見つかっていない', 'まだ昨日の方針が決まっていない',
+                       'まだ仕事の昨日分が見つかっていません'):
+            with self.subTest(clause=clause):
+                self.fx = fixture('私は資料を調べた。' + clause + '。')
+                self.row = self.fx['row']
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': self.fx['original'], 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                        self.row['content_text'] = payload['p_text']
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    return result([self.row], matched=True)
+                with patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                        reread = await service.read_saved(OWNER)
+                self.assertEqual(reread['items'][0], saved)
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                result_node = next(n for n in projection['nodes'] if n['node_kind'] == 'IMMEDIATE_RESULT_OR_AFTERMATH')
+                self.assertEqual(result_node['visible_label'], clause.replace('いません', 'いない') + '（この記述時点）')
+                self.assertIn(result_node['visible_label'], saved['content_text'])
+                self.assertFalse(projection['edges'])
+                for encoded in (json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False),
+                                json.dumps(projection, ensure_ascii=False)):
+                    for private in ('result_state', 'NOT_YET', 'UNSPECIFIED', 'source_parts'):
+                        self.assertNotIn(private, encoded)
 
     async def test_action_change_order_survives_commit_and_read_without_regeneration(self):
         await self._assert_action_change_saved('私は資料を調べた後、疑問が減った。')

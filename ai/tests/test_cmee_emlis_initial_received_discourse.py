@@ -19,6 +19,51 @@ SINGLE = '褒められたのに、嬉しくなかった。'
 MULTI = SINGLE + '誘われたのに、悲しかった。頼まれたのに、寂しかった。'
 
 
+@pytest.mark.parametrize('text', ['まだ昨日の方針が決まっていない。',
+                                  'まだ仕事の昨日分が見つかっていません。'])
+def test_unfinished_nominal_yesterday_keeps_current_host_and_actual_body(text):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(text))
+    result, plan, _sentence, resolver, _selected = context
+    node, = (n for n in plan.nuclei if n.source_fields == ('memo',))
+    frame = node.semantic_frame
+    assert (frame.time_scope, frame.polarity, frame.modality) == ('current_input', 'negative', 'fact')
+    assert [c for c in frame.attribute_codes if c.startswith('time_scope:')] == ['time_scope:current_input']
+    assert 'semantic_role:present_unfinished' in frame.attribute_codes
+    assert resolver.resolve(node.source_span_ids[0]).raw_text == text.removesuffix('。')
+    body = result.artifact.text
+    assert text.removesuffix('。') in body
+    assert read_body(context, body).passed
+    for changed in (body.replace('昨日', '今日'), body.replace('いない', 'いた').replace('いません', 'いました')):
+        assert changed != body and not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('text', [
+    'まだ昨日方針が決まっていない。', '昨日まだ方針が決まっていない。',
+    'まだ昨日の方針が決まっていなかった。', 'まだ昨日の方針が決まっていない？',
+    'まだ昨日の方針が決まっていないかもしれない。',
+    'まだ昨日の方針が決まっていないわけではない。',
+    '夢を見た。まだ昨日の方針が決まっていない。',
+    '友人が話した。まだ昨日の方針が決まっていない。',
+    '友人によると、まだ昨日の方針が決まっていない。',
+    '友人から聞いた話です。まだ昨日の方針が決まっていない。',
+    '友人の感想。まだ昨日の方針が決まっていない。',
+    '「まだ昨日の方針が決まっていない」と聞いた。',
+    'まだ昨日以前の方針が決まっていない。',
+])
+def test_unfinished_nominal_yesterday_does_not_promote_unclosed_or_reported_hosts(text):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(text)))
+    assert not any('semantic_role:present_unfinished' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
+def test_unfinished_nominal_yesterday_keeps_other_field_report_scope():
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(
+        'まだ昨日の方針が決まっていない。', '友人の報告。')))
+    assert not any('semantic_role:present_unfinished' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
 @pytest.mark.parametrize('text', ['私は悪い職場にいた。', '私は家族の悪い職場にいませんでした。'])
 def test_bad_past_location_keeps_event_and_complete_actual_body(text):
     from test_cmee_emlis_detached_observation import read_body

@@ -15385,3 +15385,29 @@ OBSERVED_BLOCKER_MINIMAL_FIX。既存の分析内容修正・Draft反映指示�
 STRUCTURE_MAP_DELTA_NONE：意味owner／依存方向／route／artifact・保存lifecycleは不変。API compiler1／vertical test1／storage test1／handoff1、Cocolon current03／詳細04／06の計7file modify、新規repo file0。共有Plan／Safety／Piece・API契約／DTO／DB／SQL／RN・製品依存変更0。main／merge／deploy／env／native build操作0、u167未配置。実DB・React component/native・本人実機・商品受入れ未確認。限定TECHNICAL_CREDIT・商品NOT_CLEAR維持。既存PR3/30への反映後にremote head／parent／tree／変更path集合と対象7fileの全bytesを照合する。
 
 残件：結果の明示日語を正しく構造化する文法、昨日を名詞修飾とする未完了の共有時制判定、一般感情／認知、夢／伝聞から現実へ戻る境界、unknown反復、既記録の共有表現残差を保持する。本人の指定版生成→保存再表示→比較の実機確認も別に維持。本節と追跡source/testを再開原典とし、scratch出力・JSON・logを正式再開原典にしない。
+
+## 2026-10-08 JST u168 — 名詞の「昨日」を現在の未完了状態の時制へ混ぜない
+
+Mashの分析内容修正継続指示からu167の明示残件を扱った。fresh PR headはAPI `8f1e8c888cc433362c0de4a67f462f258cf608a4`／Cocolon `d626948510de11b6bcc2eb1d20710840ecc60ceb`、Draft/open/unmerged。tracked worktree clean、remoteと同treeのlocal commitから実remote HEADへ移して継続。前回txt・対象専門rule・Karen-Diary入口/memoryの同session確認を継承し、前提/work_attitude入口・CURRENT_RULES、恒久incident全文、全体設計01と全file地図01A〜Cの導線、current03のowner表、詳細04 §3.7、最新weekly20261003 §5/§6.6〜6.10、u167 handoffと実source/testを確認。System Context doctor/prepareは今回未実行、生成Contextのfreshnessを主張せず追跡原典を直接参照。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。Codex Work root華恋が単一編集・実行・反映owner、同環境read-only補助が原因・最終diff確認。別model Pro reviewではない。目的は既存名詞文法で完全に読める現在の未完了結果を本文・図へ戻すこと。完成条件は原文/名詞/否定/current host・主体非推定・補足更新/比較・保存再表示・同一RN表示model。追加費用・Mash操作0。新時点文法やAPI/DB/配置へ拡張せず、全表現対応を実機確認の前提にしない。
+
+開始実測：「まだ昨日の方針が決まっていない」「まだ仕事の昨日分が決まっていない」はUNAVAILABLE。昨日が名詞の修飾/区間として書かれていても共有 `_time_scope_for_text` が単語だけでpastを付け、既存 `_final_source_unfinished_result_nuclei` が現在系を先に要求するためpresent_unfinishedの根拠marker自体が欠けていた。Analysisのtime許可だけでは解決せず、marker必須を外す迂回も行わない。新/拡張した3methodの修正前検査は9 failed（8 subFAIL＋1 method FAIL）／2 passed／16 subtests passedで欠落・通常補足の停止を確認。
+
+製品source変更は共有Planの既存 `_final_source_unfinished_result_nuclei` 内だけ。既存の厳密なnominal grammarで「まだ＋完全名詞＋は/が/も＋見つか/決ま/定まっていない/いません」を全文照合し、名詞の独立した区間が昨日/昨日分で、他のpast cueがない場合だけ、現在の有限hostが状態の時点を所有する。frame.time_scopeとtime_scope属性をcurrent_inputへ同期し、正規producerからpresent_unfinishedを付ける。語の削除/原文置換なし。元のexact範囲、memo一節、event/fact/negative、explicit/actor、fragment/dependency拒否、文境界を維持。時制一般関数とAnalysis専用compiler/realizerは無変更。
+
+新branchへだけ、既存共有report検出とAnalysisのrecord両fieldの帰属境界を適用した。read-only reviewが挙げたbare報告headをroot実測すると、「友人の感想。」の後とmemo_actionの「友人の報告。」で新markerが付いた。この2経路を既存の「の話/感想/気持ち/説明/報告/発言＋文末」の条件で閉じ、2検査を追加。夢・伝聞・前置日語・昨日方針/昨日以前の連結・実過去・疑問・推測・二重否定は現在結果へ昇格しない。単語の昨日だけで全面的に現在へ変換しない。
+
+u167で意図的に保留したNOT_YET＋昨日nominalの4期待を、今回の正規共有根拠成立に合わせpositiveへ更新。境界を弱めた成功化ではなく、製品修正前の失敗を実測した機能回復。u167の未分離「今日疑問/昨日方針」保留は維持。UNSPECIFIED主体・現在否定の未完了は実行済み/失敗/原因へ変えず、独立行動との線を捏造しない。今日の方針と昨日の方針は名詞の内容差として保持し、改善/悪化とはしない。
+
+検証runtimeは既存Python3.12.14／pytest9.1.1（組込subtests）／FastAPI0.142.2／httpx0.28.1／Pydantic2.13.5。絶対entrypoint、FB172移行plugin/cacheprovider無効化。依存導入・製品lock変更0。
+
+- 最終Analysis3suite（vertical249/storage59/saved-period16＝324）＋exact node IDのactive_final_language_owner_chain1：**325 tests PASS／2109 subtests PASS（36.13秒）**。原文scalar/UTF-8/hash、否定/主体、完全節marker必須、補足/訂正/撤回、丁寧語集約、名詞の比較差、保存service＋合成RPCの保存後に再生成を禁止したreadで同じ本文/図/identityを確認。実DB検査ではない。
+- 最終共有限定 `unfinished_nominal_yesterday or unfinished_result_duty or action_change_contrast`：**35 PASS／既存6 FAIL（18.47秒）**。新対象16件は全PASS、独立readerが原文の日語/否定変更を拒否。6 FAILは全て既存 `test_action_change_contrast_receives_both_duties_in_actual_body` のReception旧文字列/2move期待。開始commitの未変更worktreeで同じselectorの既存25件を実行し、**19 PASS／同じ6 FAIL（14.07秒）**。同一case・同じ失敗assert（2441の2move、2448/2449の「こと」表現）を確認。期待変更・skip/xfailなし。最終対象合計は **360 PASS／既存6 FAIL**、全repo PASSではない。
+- 最終current identity fixtureだけ同期。language `34f9ac6578580d14a354c7a00c028c74f1b559822b33482702cb5782e5d4a7e6`／runtime `e966272fc4275ebe70e6696ffe74665d77fddaf22334890c6b8a61337e39f1d0`。historical manifest、9owner/18payloadは維持。
+- rootがAnalysis合成8全文（昨日名詞、内側昨日分、修飾、独立行動、未分離保留、訂正、撤回、名詞比較）とEmlis2全文を全読。帰属境界の最終補正後も8本文全一致、実RN `buildWatashiMapV2ViewModel` の全文/identity/node順/edge/unknown/注記/競合/比較が8/8一致。Emlisは名詞/現在否定を保持し独立reader PASSだが定型的受け取りは残り、Emlis商品品質完成とはしない。
+- 同環境read-onlyの最終reviewに具体的blockerなし。最終suite後の製品source変更0。旧0066差、旧contracts86 subfail/1setup error、u165中断runの未診断F2件等は今回未再検証・未解消として継承する。
+
+STRUCTURE_MAP_DELTA_NONE：既存の共有意味owner・依存方向・route・artifact/保存lifecycle内の修正。API Plan1/test3/current identity1/handoff1、Cocolon current03/詳細04/06の計9file modify、新規repo file0。Analysis専用製品source、Safety、Piece、API契約/DTO/DB/SQL/RN・依存変更0。main/merge/deploy/env/native build操作0、u168未配置。実DB・React component/native・本人実機・商品受入れ未確認。限定TECHNICAL_CREDIT・商品NOT_CLEAR維持。既存PR3/30への反映後にremote head/parent/tree/変更path集合と全9fileのbytesを照合する。
+
+残件：今回の完全昨日名詞以外の時点、一般感情/認知、夢/伝聞から現実へ戻る境界、unknown反復、共有の旧期待差を維持。既存report helperは「私は記録を書いた。」の併存にも保守的に反応し得るため、この組合せの一般対応は主張しない（静的制約、今回の回帰ではない）。本人の指定版生成→保存再表示→比較の実機確認も別に保持。本節と追跡source/testを再開原典とし、scratch JSON/logやbaseline worktreeを正式再開原典にしない。
