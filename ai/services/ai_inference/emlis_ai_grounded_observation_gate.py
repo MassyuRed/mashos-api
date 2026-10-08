@@ -2967,22 +2967,38 @@ def _read_action_change_discourse(raw, move, plan, resolver, selected_subjective
     parts = source_owned_action_change(move, plan, resolver)
     if parts is None:
         return None
+    polite_feeling = parts[2].endswith(("落ち着きました", "嬉しかったです", "うれしかったです"))
     if selected_subjective_input is not None:
         decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
         proposition = decision.subjective_proposition if decision else None
         appraisal = proposition.appraisal_content if proposition else None
-        if (appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
-            or appraisal.operation != "RECEIVE_AS_MATERIAL"):
+        from emlis_ai_grounded_human_reception import source_grounded_reception_move_relations
+        links = source_grounded_reception_move_relations(move, plan)
+        noncollapse = bool(polite_feeling and appraisal is not None
+            and appraisal.dimension == "RELATIONAL_NONCOLLAPSE"
+            and appraisal.operation == "PRESERVE_BOTH_ENDPOINTS"
+            and proposition.focal_relation_ref is not None
+            and appraisal.focal_relation_ref == proposition.focal_relation_ref
+            and len(links) == 1
+            and dict(selected_subjective_input.relation_pairs).get(proposition.focal_relation_ref)
+                == links[0].relation_id)
+        if not (appraisal is not None and appraisal.dimension == "MATERIAL_WEIGHT"
+                and appraisal.operation == "RECEIVE_AS_MATERIAL" or noncollapse):
             return None
     left, connector, right = parts
-    if right.endswith(("減りました", "増えました", "戻りました")):
+    if right.endswith(("減りました", "増えました", "戻りました", "落ち着きました", "嬉しかったです", "うれしかったです")):
         # Independently parse the omitted self-topic and plain past ending.
         # The source still owns SELF/past; a different actor or connective
         # cannot borrow that proof, nor can a causal/value appraisal.
-        visible_left = re.sub(r"^(?:私|僕|わたし|自分)(?:は|が|も)(?:[、，][ \u3000]*)?", "", left, count=1)
-        visible_right = re.sub(r"(?:減りました|増えました|戻りました)$", lambda m: {
+        visible_left = re.sub(r"^(?:私|僕|ぼく|俺|おれ|わたし|自分)(?:は|が|も)(?:[、，][ \u3000]*)?", "", left, count=1)
+        visible_right = re.sub(r"(?:減りました|増えました|戻りました|落ち着きました|嬉しかったです|うれしかったです)$", lambda m: {
             "減りました": "減った", "増えました": "増えた", "戻りました": "戻った",
+            "落ち着きました": "落ち着いた", "嬉しかったです": "嬉しかった", "うれしかったです": "うれしかった",
         }[m.group()], right)
+        # A written first-person feeling belongs to the source writer;
+        # do not make it Emlis's own first-person utterance.
+        if polite_feeling:
+            visible_right = re.sub(r"^(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?", "", visible_right, count=1)
         parsed = re.fullmatch(r"(?P<episode>.+)(?:のですね|のです|のだと受け取りました)。", raw)
         if parsed is None or parsed['episode'] != visible_left + connector + visible_right:
             return None

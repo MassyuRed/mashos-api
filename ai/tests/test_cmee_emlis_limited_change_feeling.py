@@ -60,13 +60,43 @@ def test_polite_standalone_feeling_does_not_borrow_unasserted_or_foreign_scope(m
     assert not any('operator:positive_change' in n.semantic_frame.attribute_codes for n in plan.nuclei)
 
 
-@pytest.mark.parametrize('feeling', ['落ち着きました', '嬉しかったです', 'うれしかったです'])
-@pytest.mark.parametrize('action', ['私は資料を調べた後、', '私は資料を調べてから、'])
-def test_polite_feeling_compound_support_is_not_newly_admitted(feeling, action):
-    assert not _action_change_relations(_polite_change_plan(action + '私は' + feeling + '。'))
-    result = MeaningExperienceEngine().generate(initial(action + '私は' + feeling + '。'))
+@pytest.mark.parametrize('feeling,plain', [('落ち着きました', '落ち着いた'),
+    ('嬉しかったです', '嬉しかった'), ('うれしかったです', 'うれしかった')])
+@pytest.mark.parametrize('action,visible', [('私は資料を調べた後、', '資料を調べた後、'),
+    ('俺は、資料を調べてから、', '資料を調べてから、')])
+@pytest.mark.parametrize('subject', ['', '私は、'])
+@pytest.mark.parametrize('following', ['', 'その後、私は記録を残した。',
+    'その後、私は記録を残さなかった。', '散歩していた猫を眺めた。その後、私は記録を残した。'])
+def test_polite_feeling_compound_retains_sequence_without_causal_support(feeling, plain, action, visible, subject, following):
+    import cocolon_meaning_experience_engine.emlis_stage1_response as response
+    from test_cmee_emlis_received_discourse import inverse
+    memo = action + subject + feeling + '。' + following
+    relation, = _action_change_relations(_polite_change_plan(memo))
+    assert relation.retention == 'required'
+    attempts = []
+    def capture(**kwargs):
+        verdict = evaluate_grounded_surface_body_inverse(**kwargs)
+        attempts.append((kwargs, verdict))
+        return verdict
+    with patch.object(response, 'evaluate_grounded_surface_body_inverse', capture):
+        result = MeaningExperienceEngine().generate(initial(memo))
     assert result.artifact is not None, result.reason_codes
-    assert '支えている' not in result.artifact.text
+    assert (visible + plain + 'のですね。') in result.artifact.reception
+    actual = next(kwargs for kwargs, verdict in reversed(attempts)
+                  if verdict.passed and kwargs['body'] == result.artifact.text.encode())
+    assert {k['sentence_plan'].recovery_stage for k, _ in attempts} >= {'full', 'optional_removed', 'integrated', 'hedged'}
+    for kwargs, _ in attempts:
+        assert '支えている' not in kwargs['body'].decode()
+        assert '大切に思っています' not in kwargs['body'].decode()
+    context = (result, actual['plan'], actual['sentence_plan'], actual['resolver'],
+               actual['selected_subjective_input'])
+    assert inverse(context, result.artifact.reception, without_author=True).passed
+    for changed in (result.artifact.reception.replace('から、', 'ので、').replace('後、', 'ので、'),
+                    '友人が' + result.artifact.reception,
+                    result.artifact.reception.replace(plain, '不安だった'),
+                    result.artifact.reception.replace(plain, ''),
+                    result.artifact.reception.replace('のですね', 'ことを支えています')):
+        assert not inverse(context, changed, without_author=True).passed
 
 
 def test_polite_standalone_feeling_requires_unchanged_complete_source():
@@ -75,6 +105,20 @@ def test_polite_standalone_feeling_requires_unchanged_complete_source():
         _polite_change_plan(memo, source_override='友人は' + memo)
     plan = _polite_change_plan(memo, source_override=memo[:-1] + '？')
     assert not any('operator:positive_change' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('feeling', ['落ち着きました', '嬉しかったです', 'うれしかったです'])
+@pytest.mark.parametrize('prefix,suffix', [('友人が言っていた。', ''),
+    ('', 'と私は思う。'), ('', 'なんて嘘だった。')])
+def test_polite_compound_does_not_detach_report_cognition_or_retraction(feeling, prefix, suffix):
+    memo = prefix + '私は資料を調べた後、' + feeling + '。' + suffix
+    assert not _action_change_relations(_polite_change_plan(memo))
+
+
+def test_polite_nominal_change_keeps_self_word_as_original_argument():
+    result = MeaningExperienceEngine().generate(initial('私は資料を調べた後、自分は減りました。'))
+    assert result.artifact is not None, result.reason_codes
+    assert result.artifact.reception == '資料を調べた後、自分は減ったのですね。'
 
 
 @pytest.mark.parametrize('change', ['不安が減りました', '気持ちメモが増えました', '資料が戻りました'])

@@ -15682,3 +15682,29 @@ runtimeは前turnの隔離venv（Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0
 STRUCTURE_MAP_DELTA_NONE：既存共有意味owner→Analysis compilerの依存とroute/保存lifecycleを維持。API Plan1/compiler1/test3/current identity1/handoff1、Cocolon current03/詳細04/06の全10既存fileを変更、新規repo file0。API契約/DTO/DB/SQL/RN/Safety/製品依存変更0。main/merge/deploy/env/native build操作0。未配置・実DB/本人実機/商品受入れ未確認、限定TECHNICAL_CREDIT、商品NOT_CLEAR。既存PR3/30へnon-force反映し、remote parent/tree/変更path集合/全10fileの内容と最終headを照合する。
 
 残件：今回3丁寧形の行動後compoundは未完了。共有pair追加でEmlisのsupport断定が増える実出力を次の修正対象の根拠とする。単独の主語省略/程度/否定/他時点、複合文への前方接続、一般認知、旧plainの開いた報告帰属、夢/伝聞から現実へ戻る境界、unknown反復、共有/Emlis既存失敗は残る。本人指定版の生成→保存再表示→比較は実機残件。本節・追跡source/test・latest weeklyを正式再開点とし、scratch出力を正本にしない。
+
+
+## 2026-10-09 JST u180 — 行動後の丁寧な過去感情と原文の順序を保持（未配置）
+
+Mashの分析内容修正継続指示・前回txtから、u179で見送ったcompound3形を再開。開始HEADはAPI `5486fd7a6c13608c4aabfb5761c82985f544c307`／Cocolon `c95233bd6dfe11e87266bd101d3c1656ac05b326`、既存PR3/30のDraft/open/unmergedとfresh headを確認。前提入口/CURRENT_RULES、Rule18、恒久incident全文、Karen-Diary必須3file、全体設計01と全file地図01A〜Cの関連owner、current_structure/Analysis詳細、最新weekly20261003の§5.3/§6.6〜6.10を確認した。System Context prepareは `PUBLICATION_RECOVERY_AMBIGUOUS: residual without marker` で停止。生成freshnessを主張せず、追跡正本を直接参照した。既存残留物の修正へ範囲を広げない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。Codex Work root華恋を単一編集・実行・GitHub反映ownerとし、同環境read-only補助2者が出力と差分を確認。別model Pro reviewではない。三核の本人実機での最小往復を優先するweekly方針を維持し、日本語全活用の完成を実機接続の前工程にしない。
+
+今回の成立範囲：完全な明示SELFの実行済み行動に「後／あと（に）、」「て／でから、」で続く落ち着きました／嬉しかったです／うれしかったですを、既存共有final pairで証明する。格付き名詞1〜2項、有限行動、右端の省略または明示SELF、全文source一致・境界・帰属を要求する。Analysis compiler自体は変更せず、既存PAST_FEELING/feeling/past、原文scalar/UTF-8/hash、後続の明示順序、補足・訂正・撤回・期間比較を維持する。省略された感情主体をSELFへ補わない。
+
+u179の撤去理由だったEmlisのsupport断定は、既存 `source_owned_action_change` → author → independent readerの原文順序経路で解消する。新3形についてsource relation/両端/connectorを照合し、通常・短縮・統合・hedgedの全recoveryで過去episodeを保持する。有限丁寧語尾だけを常体へ戻し、明記SELFはEmlis自身の一人称にしない。右端SELF除去は新3感情だけに限定し、既存名詞変化の「自分」等は保持する。通常のMATERIAL_WEIGHTに加え、後続文がある場合の既存RELATIONAL_NONCOLLAPSEも新3形だけで認める。作者上流と独立readerがselected focal relation identityを検証し、因果・支援・価値の説明へ変換しない。global positive keyword規則とshared Safetyは変更0。
+
+途中レビューで発見した3系統のblockerは採用前に修正した。進行形の報告prefix、句点後の「と私は思う」「なんて嘘だった」は新compoundだけ保留する。右端SELF除去による名詞「自分」の欠落を解消。後続の肯定/否定/未知文追加でEmlisがUNAVAILABLEとなるappraisal不一致を解消した。旧名詞変化3形とtaraの受理条件は維持。旧4件の丁寧形compound拒否例は今回正常範囲へ移し、未対応の否定丁寧形を拒否対照にした。他の旧条件は緩めない。
+
+検証は前turnの隔離runtime（Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5）を絶対entrypointで継承し、依存導入/製品lock変更0。bytecode/cacheprovider/FB172移行plugin無効。
+- 最終5suite：**565 tests PASS／2889 subtests PASS／3 SKIP（99.15秒）**。内訳Analysis vertical281＋storage64＋saved-period16＝361、共有limited-change186＋past-episode18＝204成功。3 skipはEmlis actual saved terminalのfree/plus/premiumで、`Q2_PGLITE_MODULE`未設定。実DB保存の成功とはしない。
+- 新compoundの3形×2行動形×2主語有無×4後続条件の**48 PASS（53.39秒）**。全recoveryの実body、authorを無効化した独立inverse、因果connector/他者/感情差替え/感情欠落/価値説明の拒否を確認。報告等9例と既存名詞保持も最終suiteに含む。
+- current language/runtime identityを最終ownerに同期し、active final language owner exact1は**1 PASS（21.90秒）**。最終成功合計566 tests。historical frozen manifest、scope metadata、9owner/18payloadを維持。language `aa6f74d98fd83e4d87c0acb94ce4525b6ad6184ba10a629f0b15812cd629d181`、runtime `88eae9013149636ca05c7b396f7a6ebc0077940fc8803a5f21c9bae173f0db64`。
+- 実Analysis保存service＋合成RPCへcompound3例を追加し、engine再生成を禁止した再読で同一本文/図/identityを確認。実DB検査ではない。
+- rootが最終合成Analysis8全文を全読。通常、後続否定、未知文介在、補足、訂正、撤回、同義期間比較、意味差の各出力と実RN `buildWatashiMapV2ViewModel` の全文/identity/node順/edge/unknown/注記/競合/比較stateが**8/8一致**。React/native実画面確認ではない。
+- read-only出力担当の開始版比較と最終3本文をrootが全読。以前停止した後続肯定/否定/未知文の3件すべて生成成功し、Receptionは原文の過去順序を保持する。名詞「自分」の全文は開始版と一致。「不安が減りました」の既存shared制約、否定/報告hostの粗いEmlis表現は開始版から不変。Emlisの原文復唱・過去の出来事を今の状態と呼ぶ既存Observation文言・定型受取は残り、商品品質完成とはしない。
+- 最終read-only差分reviewに追加blockerなし。検証途中の新test誤り/旧拒否期待を区別し、誤ったtest file名での1回のcollection停止は正しい既存pathで再実行した。
+
+STRUCTURE_MAP_DELTA_NONE：共有Plan/Reception author/independent gateの既存責務と依存、Analysis route/保存lifecycleを維持。API製品3/test3/current identity1/handoff1、Cocolon current03/詳細04/06の**全11既存file**、新規repo file0。Analysis compiler/API契約/DTO/DB/SQL/RN/Safety/製品依存変更0。main/merge/deploy/env/native build操作0。既存PR3/30へnon-force反映し、parent/tree/変更path集合/全11fileのblob hash/最終headを照合する。未配置・実DB/本人実機/商品受入れ未確認。限定TECHNICAL_CREDIT、商品NOT_CLEAR。
+
+次の再開点：今回の3丁寧形compound欠落と新support断定の連動は限定解消。程度・否定・他時点など未認定形、複合文への前方接続、一般認知、旧plain/単独形の開いた報告帰属、夢/伝聞から現実へ戻る境界、unknown反復、共有/Emlis既存失敗は残る。本人指定版の生成→保存再表示→比較は実機残件。latest weeklyと本節・追跡source/testを正本として継続する。
