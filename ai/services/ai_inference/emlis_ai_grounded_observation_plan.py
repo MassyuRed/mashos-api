@@ -3770,13 +3770,17 @@ def _source_operator_owner_scope_is_bound(fragment: str) -> bool:
     return True
 
 
-def _source_polite_past_feeling_is_bound(span, normalized_input, *, action=None, connector=None):
+def _source_polite_past_feeling_is_bound(span, normalized_input, *, action=None, connector=None, plain_compound=False):
     """Prove the three polite finite feelings without widening keyword rules."""
     if span is None or normalized_input is None or span.source_field != "memo":
         return False
     raw = str(span.raw_text)
     subject = r"(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?"
     feeling = r"(?:落ち着きました|嬉しかったです|うれしかったです)"
+    if plain_compound:
+        if action is None:
+            return False
+        feeling = r"(?:落ち着いた|嬉しかった|うれしかった)"
     if action is None:
         if re.fullmatch(subject + feeling, raw) is None:
             return False
@@ -4182,7 +4186,7 @@ def _typed_nucleus_projections_for_span(
             }
         ) and not bool(_FEELING_RE.search(fragment) or _NEGATION_RE.search(fragment))
 
-    def source_proven_polite_nominal_change(action: str, link: str, change: str) -> bool:
+    def source_proven_polite_nominal_change(action: str, link: str, change: str, *, plain=False) -> bool:
         # A finite inflection proof local to this final-only compound owner.
         # Do not widen the global change/positive keyword classifiers. Both
         # clauses must be closed, and the source must still assert the episode
@@ -4219,7 +4223,8 @@ def _typed_nucleus_projections_for_span(
             and re.fullmatch(r"(?:後|あと)(?:に)?[、,]\s*|から[、,]\s*", link)
             and performed is not None
             and _COMPLETED_ACTION_RE.fullmatch(performed.group("predicate"))
-            and re.fullmatch(nominal + r"(?:は|が|も)(?:減りました|増えました|戻りました)", change)
+            and re.fullmatch(nominal + r"(?:は|が|も)" + (
+                r"(?:減った|増えた|戻った)" if plain else r"(?:減りました|増えました|戻りました)"), change)
             and not re.search(r"[何誰幾]|明日|明後日|一昨日|今朝|昨夜|先週|来週|今日|昨日", action + change)
             and 0 <= start < end <= len(source)
             and source[start:end] == span.raw_text
@@ -4258,8 +4263,21 @@ def _typed_nucleus_projections_for_span(
         proved_polite_feeling = polite_feeling_change and _source_polite_past_feeling_is_bound(
             span, normalized_input, action=text[action_start:surface_action_end],
             connector=text[surface_action_end:change_start])
+        # Detect the candidate before stripping reports or quotations: a
+        # suffix such as と聞いた must fail the full proof, not fall back to
+        # keyword-only admission. Only these prefixed finite forms change.
+        prefixed_plain_change = bool(not (polite_feeling_change or polite_nominal_change)
+            and re.match(r"(?:その後|それから)", action_text.lstrip('「『“‘"'))
+            and re.search(r"落ち着いた|嬉しかった|うれしかった|減った|増えた|戻った", change_text))
+        plain_feeling = change_text.endswith(("落ち着いた", "嬉しかった", "うれしかった"))
+        proved_plain_change = prefixed_plain_change and (
+            _source_polite_past_feeling_is_bound(span, normalized_input,
+                action=text[action_start:surface_action_end], connector=text[surface_action_end:change_start],
+                plain_compound=True) if plain_feeling else
+            source_proven_polite_nominal_change(text[action_start:surface_action_end],
+                text[surface_action_end:change_start], change_text, plain=True))
         observed_change = bool(
-            (proved_polite_feeling if polite_feeling_change
+            (proved_plain_change if prefixed_plain_change else proved_polite_feeling if polite_feeling_change
              else source_proven_polite_nominal_change(
                  text[action_start:surface_action_end], text[surface_action_end:change_start], change_text)
              if polite_nominal_change
@@ -4269,14 +4287,13 @@ def _typed_nucleus_projections_for_span(
             and "operator:wish" not in change_operators
             and "operator:refusal" not in change_operators
         )
-        # Skip a discourse marker's internal から only for an already proven
-        # polite compound with an explicit SELF clause. Plain-form compounds
-        # keep their existing admission until their shared reception is ready.
+        # Skip a discourse marker's internal から only for a complete,
+        # source-proven compound with an explicit SELF clause.
         # Operators and source coordinates still use the unchanged fragment.
         discourse_prefix = re.match(
             r"^(?:その後|それから)[、， \u3000]*(?=(?:私|僕|わたし|自分)(?:は|が|も))",
             action_text,
-        ) if observed_change and (polite_feeling_change or polite_nominal_change) else None
+        ) if observed_change and (polite_feeling_change or polite_nominal_change or proved_plain_change) else None
         performed_action = structurally_performed_action(
             action_text, argument_start=discourse_prefix.end() if discourse_prefix else 0,
         )
@@ -4292,6 +4309,8 @@ def _typed_nucleus_projections_for_span(
             positive_change = proved_polite_feeling or (not polite_nominal_change and bool(_POSITIVE_CHANGE_RE.search(change_text)))
             if polite_nominal_change:
                 change_codes.append("semantic_role:neutral_polite_nominal_change")
+            if proved_plain_change:
+                change_codes.append("semantic_role:source_proven_plain_sequence")
             if positive_change:
                 change_codes.append("operator:positive_change")
             return (
@@ -7486,6 +7505,16 @@ def source_owned_action_change(move, plan, resolver):
         or _top_level_text(raw) != raw or re.search(r'[「」『』“”‘’"?？!！;；…‥\r\n]', raw)):
         return None
     connector = raw[len(left):-len(right)]
+    if "semantic_role:source_proven_plain_sequence" in change.semantic_frame.attribute_codes:
+        if (change.semantic_frame.polarity != "positive"
+            or "operator:positive_change" not in change.semantic_frame.attribute_codes
+            or change.semantic_frame.modality != ("feeling" if _FEELING_RE.search(right) else "fact")
+            or links[0].source_relation_ids != ("typed_projection:perfective_action_before_bounded_change",)
+            or not right.endswith(("落ち着いた", "嬉しかった", "うれしかった", "減った", "増えた", "戻った"))
+            or not ((left.endswith(("た", "だ")) and re.fullmatch(r"(?:後|あと)(?:に)?[、,]\s*", connector))
+                    or (left.endswith(("て", "で")) and re.fullmatch(r"から[、,]\s*", connector)))):
+            return None
+        return left, connector, right
     if right.endswith(("落ち着きました", "嬉しかったです", "うれしかったです")):
         # Admission already proved the complete source host. Recheck exact
         # endpoints and temporal connector here; the public relation name

@@ -2967,14 +2967,17 @@ def _read_action_change_discourse(raw, move, plan, resolver, selected_subjective
     parts = source_owned_action_change(move, plan, resolver)
     if parts is None:
         return None
-    polite_feeling = parts[2].endswith(("落ち着きました", "嬉しかったです", "うれしかったです"))
+    sequence = re.fullmatch(r"(?:後|あと)(?:に)?[、,]\s*|から[、,]\s*", parts[1])
+    finite_feeling = parts[2].endswith(("落ち着きました", "嬉しかったです", "うれしかったです")) or bool(
+        sequence and re.fullmatch(r"(?:(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?)?(?:落ち着いた|嬉しかった|うれしかった)", parts[2]))
     if selected_subjective_input is not None:
         decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
         proposition = decision.subjective_proposition if decision else None
         appraisal = proposition.appraisal_content if proposition else None
         from emlis_ai_grounded_human_reception import source_grounded_reception_move_relations
         links = source_grounded_reception_move_relations(move, plan)
-        noncollapse = bool(polite_feeling and appraisal is not None
+        noncollapse = bool((finite_feeling or sequence and parts[2].endswith(("減った", "増えた", "戻った")))
+            and appraisal is not None
             and appraisal.dimension == "RELATIONAL_NONCOLLAPSE"
             and appraisal.operation == "PRESERVE_BOTH_ENDPOINTS"
             and proposition.focal_relation_ref is not None
@@ -2986,7 +2989,7 @@ def _read_action_change_discourse(raw, move, plan, resolver, selected_subjective
                 and appraisal.operation == "RECEIVE_AS_MATERIAL" or noncollapse):
             return None
     left, connector, right = parts
-    if right.endswith(("減りました", "増えました", "戻りました", "落ち着きました", "嬉しかったです", "うれしかったです")):
+    if sequence or right.endswith(("減りました", "増えました", "戻りました", "落ち着きました", "嬉しかったです", "うれしかったです")):
         # Independently parse the omitted self-topic and plain past ending.
         # The source still owns SELF/past; a different actor or connective
         # cannot borrow that proof, nor can a causal/value appraisal.
@@ -2997,7 +3000,7 @@ def _read_action_change_discourse(raw, move, plan, resolver, selected_subjective
         }[m.group()], right)
         # A written first-person feeling belongs to the source writer;
         # do not make it Emlis's own first-person utterance.
-        if polite_feeling:
+        if finite_feeling:
             visible_right = re.sub(r"^(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?", "", visible_right, count=1)
         parsed = re.fullmatch(r"(?P<episode>.+)(?:のですね|のです|のだと受け取りました)。", raw)
         if parsed is None or parsed['episode'] != visible_left + connector + visible_right:

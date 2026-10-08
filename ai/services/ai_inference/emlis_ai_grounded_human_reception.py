@@ -4940,7 +4940,8 @@ def validate_grounded_human_reception_surface(
             from emlis_ai_grounded_observation_plan import source_owned_action_change
             neutral_order = bool(neutral_order_moves) and all(
                 (parts := source_owned_action_change(move, plan, resolver)) is not None
-                and parts[2].endswith(("減りました", "増えました", "戻りました", "落ち着きました", "嬉しかったです", "うれしかったです"))
+                and (parts[2].endswith(("減りました", "増えました", "戻りました", "落ち着きました", "嬉しかったです", "うれしかったです"))
+                     or re.fullmatch(r"(?:後|あと)(?:に)?[、,]\s*|から[、,]\s*", parts[1]))
                 for move in neutral_order_moves)
         else:
             neutral_order = False
@@ -10831,15 +10832,18 @@ def _source_owned_action_change_sentence(move, realization, plan, resolver,
                                         selected_decision, recovery_stage):
     from emlis_ai_grounded_observation_plan import source_owned_action_change
     parts = source_owned_action_change(move, plan, resolver)
-    if parts is not None and parts[2].endswith(("減りました", "増えました", "戻りました", "落ち着きました", "嬉しかったです", "うれしかったです")):
-        polite_feeling = parts[2].endswith(("落ち着きました", "嬉しかったです", "うれしかったです"))
+    sequence = parts is not None and re.fullmatch(r"(?:後|あと)(?:に)?[、,]\s*|から[、,]\s*", parts[1])
+    if parts is not None and (sequence or parts[2].endswith(("減りました", "増えました", "戻りました", "落ち着きました", "嬉しかったです", "うれしかったです"))):
+        finite_feeling = parts[2].endswith(("落ち着きました", "嬉しかったです", "うれしかったです")) or bool(
+            sequence and re.fullmatch(r"(?:(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?)?(?:落ち着いた|嬉しかった|うれしかった)", parts[2]))
         # This nominal change or feeling proves sequence, not causal support.
         # Keep its complete episode in every recovery mode; a shortened
         # realization must not fall through to the causal effort template.
         if (tuple(realization.semantic_fragments) != (parts[0], parts[2])
             or realization.context_slots != (1,) or len(realization.relations) != 1
             or not (_selected_material_appraisal(selected_decision)
-                or polite_feeling and _selected_noncollapse_appraisal(selected_decision))):
+                or (finite_feeling or sequence and parts[2].endswith(("減った", "増えた", "戻った")))
+                    and _selected_noncollapse_appraisal(selected_decision))):
             raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
         left = re.sub(r"^((?:(?:その後|それから)[、， \u3000]*)?)(?:私|僕|ぼく|俺|おれ|わたし|自分)(?:は|が|も)(?:[、，][ \u3000]*)?", r"\1", parts[0], count=1)
         right = re.sub(r"(?:減りました|増えました|戻りました|落ち着きました|嬉しかったです|うれしかったです)$", lambda m: {
@@ -10848,7 +10852,7 @@ def _source_owned_action_change_sentence(move, realization, plan, resolver,
         }[m.group()], parts[2])
         # A written first-person feeling belongs to the source writer;
         # do not make it Emlis's own first-person utterance.
-        if polite_feeling:
+        if finite_feeling:
             right = re.sub(r"^(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?", "", right, count=1)
         return left + parts[1] + right + "のですね"
     if (recovery_stage != "full" or realization.reference_mode == "ANAPHORIC"

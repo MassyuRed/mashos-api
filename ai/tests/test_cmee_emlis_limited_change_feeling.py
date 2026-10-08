@@ -357,7 +357,11 @@ def test_changed_source_scope_cannot_borrow_a_valid_finite_body(context, field, 
 @pytest.mark.parametrize('ending,plain', [('落ち着きました', '落ち着いた'),
     ('私は、嬉しかったです', '嬉しかった'), ('うれしかったです', 'うれしかった'),
     ('疑問が減りました', '疑問が減った'), ('気持ちメモが増えました', '気持ちメモが増えた'),
-    ('資料が戻りました', '資料が戻った')])
+    ('資料が戻りました', '資料が戻った'),
+    ('落ち着いた', '落ち着いた'), ('私は、嬉しかった', '嬉しかった'),
+    ('うれしかった', 'うれしかった'), ('疑問が減った', '疑問が減った'),
+    ('気持ちメモが増えた', '気持ちメモが増えた'), ('資料が戻った', '資料が戻った'),
+    ('自分が戻った', '自分が戻った')])
 def test_prefixed_polite_episode_keeps_marker_without_first_person_or_support(marker, action, visible, ending, plain):
     import cocolon_meaning_experience_engine.emlis_stage1_response as response
     from test_cmee_emlis_received_discourse import inverse
@@ -391,7 +395,7 @@ def test_prefixed_polite_episode_keeps_marker_without_first_person_or_support(ma
         assert not inverse(context, changed, without_author=True).passed
 
 
-@pytest.mark.parametrize('ending', ['落ち着きました', '資料が戻りました'])
+@pytest.mark.parametrize('ending', ['落ち着きました', '資料が戻りました', '落ち着いた', '資料が戻った'])
 @pytest.mark.parametrize('prefix,action,suffix', [
     ('その後昨日、', '私は資料を調べた後、', ''),
     ('それからその後、', '私は資料を調べた後、', ''),
@@ -416,7 +420,19 @@ def test_prefixed_polite_episode_requires_complete_self_source(prefix, action, s
 
 
 @pytest.mark.parametrize('ending', ['落ち着いた', '嬉しかった', '疑問が減った', '資料が戻った'])
-def test_unpunctuated_plain_compound_keeps_existing_admission_pending(ending):
-    # Newly opening the plain compound also opens its old causal reception.
-    assert not _action_change_relations(_polite_change_plan(
-        'それから私は資料を調べた後、' + ending + '。'))
+def test_unpunctuated_plain_compound_has_source_proven_sequence(ending):
+    plan = _polite_change_plan('それから私は資料を調べた後、' + ending + '。')
+    relation, = _action_change_relations(plan)
+    result = next(n for n in plan.nuclei if n.nucleus_id == relation.to_nucleus_id)
+    assert 'semantic_role:source_proven_plain_sequence' in result.semantic_frame.attribute_codes
+
+
+@pytest.mark.parametrize('ending', ['落ち着いた', '私は、嬉しかった', '疑問が減った', '自分が戻った'])
+@pytest.mark.parametrize('following', ['その後、私は記録を残した。', 'その後、私は記録を残さなかった。'])
+def test_plain_prefixed_episode_with_following_action_keeps_noncausal_reception(ending, following):
+    memo = 'それから私は資料を調べてから、' + ending + '。' + following
+    result = MeaningExperienceEngine().generate(initial(memo))
+    assert result.artifact is not None, result.reason_codes
+    body = result.artifact.reception
+    assert ('それから資料を調べてから、' + ending.replace('私は、', '') + 'のですね。') in body
+    assert '支えて' not in body and '大切に思っています' not in body

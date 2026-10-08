@@ -3297,7 +3297,9 @@ class AnalysisVerticalTests(unittest.TestCase):
         for marker in ('その後、', 'それから、', 'その後', 'それから'):
             for action in ('私は資料を調べた後、', '僕は、資料を調べてから、'):
                 for ending in ('落ち着きました', '私は、嬉しかったです', 'うれしかったです',
-                               '疑問が減りました', '気持ちメモが増えました', '資料が戻りました'):
+                               '疑問が減りました', '気持ちメモが増えました', '資料が戻りました',
+                               '落ち着いた', '私は、嬉しかった', 'うれしかった',
+                               '疑問が減った', '気持ちメモが増えた', '資料が戻った'):
                     episode = marker + action + ending
                     with self.subTest(episode=episode):
                         req = request(record(memo='私は会議を担当しなかった。' + episode
@@ -3326,7 +3328,7 @@ class AnalysisVerticalTests(unittest.TestCase):
 
     def test_prefixed_polite_compounds_keep_unknown_and_source_boundaries(self):
         for marker, ending in ((m, e) for m in ('その後、', 'それから')
-                               for e in ('落ち着きました', '資料が戻りました')):
+                               for e in ('落ち着きました', '資料が戻りました', '落ち着いた', '資料が戻った')):
             episode = marker + '私は資料を調べてから、' + ending + '。'
             for req in (request(record(memo=episode)),
                         request(record(memo='私は会議を担当した。未知の出来事。' + episode)),
@@ -3343,7 +3345,9 @@ class AnalysisVerticalTests(unittest.TestCase):
     def test_prefixed_polite_compounds_preserve_updates_and_comparison(self):
         for marker, ending, plain in ((m, e, p) for m in ('その後、', 'それから')
                 for e, p in (('落ち着きました', '落ち着いた'),
-                             ('嬉しかったです', 'うれしかった'), ('資料が戻りました', '資料が戻った'))):
+                             ('嬉しかったです', 'うれしかった'), ('資料が戻りました', '資料が戻った'),
+                             ('落ち着いた', '落ち着いた'), ('嬉しかった', 'うれしかった'),
+                             ('資料が戻った', '資料が戻った'))):
             first = '私は会議を担当した'
             episode = marker + '私は資料を調べてから、' + ending
             original = record(memo=first + '。' + episode + '。その後、私は記録を残した。')

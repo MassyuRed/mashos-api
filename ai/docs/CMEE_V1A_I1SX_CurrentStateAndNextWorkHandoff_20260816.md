@@ -15780,3 +15780,26 @@ OBSERVED_BLOCKER_MINIMAL_FIX。欠落の因果箇所を既存owner内で修正�
 STRUCTURE_MAP_DELTA_NONE。既存共有ownerの責務と依存、保存/表示routeを維持。API製品1/test3/current identity1/handoff1、Cocolon current03/詳細04/06の全9既存file。新規repo file、API契約/DTO/DB/SQL/RN/Safety/依存変更0。main merge/deploy/env/native build操作0。検証済みの既存公開repository・branchへ接続済みGitHubからnon-force反映し、parent・changed paths・全9file remote bytes・headを照合する。限定TECHNICAL_CREDIT、商品NOT_CLEAR。
 
 残件：no-comma常体compoundの欠落と連動するEmlis support誤表現、他SELF表記/程度/否定/他時点/一般認知、既存共有/Emlis失敗、unknown反復と訂正後の保守的な未確定表示、本人指定版の生成→保存再表示→比較の実機確認。今回の丁寧形修正を全表記対応・配置済みへ拡大解釈しない。次はこの常体の共有出力の共通原因を確認しつつ、weeklyの配置/実機到達を磨き込み待ちにしない。
+
+
+## 2026-10-09 JST u184 — 常体の先頭順序語付き行動・結果を保持し、因果への転換を防止（未配置）
+
+Mashの分析内容修正継続指示と添付の前回txtから、u183残件の常体欠落を再開。開始GitHubはAPI PR3 `348e0712845c72f6e9eafc1eac011db6d7c74aaa`／Cocolon PR30 `b9b73fdd8de90e06dfda09f943abab3966b3a238`、両PR open/Draft/unmerged。前提・作業姿勢のcurrent入口、恒久incident全文、全体設計01と01B/02・current全体/Analysisファイル地図、最新weekly20261003 §5/§6.6〜6.10、Analysis04/06とAPI handoffの該当原典を確認。System Context prepareは今回partial checkoutにtask_profiles.jsonがなく不成立。生成contextの有効性を主張せず、Git追跡原典を直接確認した。
+
+OBSERVED_BLOCKER_MINIMAL_FIX / LEVEL_2相当の既存範囲。実行はCodex Work root華恋の単一編集・検証・反映owner、同環境read-only補助によるroute整合と原因/差分review。別model Pro reviewを実施したとは扱わない。対象は共有Plan/作者/独立reader、対応する既存test3/current identity、既存API handoff/current03/詳細04/06。原文→Analysis文章/図→保存再読と、連動するEmlis非因果受取が終了条件。契約/DB/RN/依存/公開/IFの変更、一般日本語への連鎖拡大は対象外。追加サービス・費用・Mash操作要求0。
+
+開始HEADの原典3ownerを別import先へ展開して比較。読点なし「それから私は資料を調べた後、落ち着いた」は共有pair0、前後を含むAnalysis2nodes/0edges。読点ありはpair1/4nodes/3edgesだが、Emlis受取が行動を『支えている』『大切に思っています』へ転換していた。
+
+既存の全文証明を先頭『その後/それから』付き常体3感情（落ち着いた/嬉しかった/うれしかった）と名詞3変化（減った/増えた/戻った）へ限定して適用。明示SELF行動と完全節・原文範囲・帰属を証明した場合だけmarker内『から』を格検索から外す。引用/報告の候補も全文証明へ送り、suffixを切り捨ててgeneric keyword経路へ戻さない。既存の丁寧形は元の分岐を優先する。global keyword/positive分類やAnalysis compilerは変更しない。
+
+証明済み常体sequenceを既存source_owned_action_changeへ結び、作者・独立reader・全recoveryの責務判定で実際の後/てからを保持する。順序から支援/因果/価値を追加しない。後続文の既存RELATIONAL_NONCOLLAPSEは同じsource relationとfocal identityを照合し、常体名詞にも適用。感情の明示SELFだけを受取文で省略し、名詞『自分が戻った』は保持。共有frameのpolarity/operator/modalityとsourceの整合も照合する。
+
+検証過程：最初の対象実行230 PASS/8 FAIL（236 subtests PASS）。4件は常体の引用/伝聞がgeneric側へ抜ける、4件は名詞変化＋後続文の既存appraisal条件による停止で、同じ因果箇所を補正し限定120 PASS。次の全5suiteは786 PASS/48 FAIL/3 SKIP（3067 subtests PASS）。追加候補検出が既存丁寧形の内部『嬉しかった』等を拾ったため、丁寧形優先を明示して修復した。これらを成功と記録しない。検査path誤記の収集不成立1回、対象外contract suiteを含めた起動は実検査前に中断して対象を訂正。保留を記録していた常体4例は今回の正しい受理・証明assertへ移し、品質閾値や引用/主体境界の期待を緩めない。
+
+最終同一sourceの5suiteは **802 tests PASS／3099 subtests PASS／3 SKIP（192.36秒）**。Analysis vertical288/storage66/saved-period16＝370、共有限定414/past-episode18＝432。3skipは既存Emlis実保存fixtureのPostgreSQL WASM（Q2_PGLITE_MODULE）未設定で、実保存成功に換算しない。active final language owner exact1も **1 PASS（20.65秒）**、限定成功合計803 tests。全repo/全Emlis PASSではない。Python3.12.14、scratch隔離pytest9.1.1/FastAPI0.142.2/httpx0.28.1、製品依存変更0。既存Pydantic非推奨warning1件。current identityだけを同期し、historical manifestは不変。language `af7f359707ff1277c0b0cb92edc0058fafcb6a12a49b77ae7ca4b8786c834c46`／runtime `4b135c4f9ef29d3121da6f765576d47b1f7ed85402f3bcbbf24b6d1c4c18ff4d`。
+
+rootはAnalysis合成8全文（常体/名詞変化/未知文/前件なし/補足/訂正/撤回/読点差比較）とEmlis後続文付き4全文を確認。実RN buildWatashiMapV2ViewModelへ生成safe DTOを渡し、8例の本文全文・identity・node順・edge・比較stateが一致。新常体の実service＋合成RPC保存→engine再生成禁止の再読を既存保存suiteで確認。別の4後続文ケースでも全recoveryを通し、作者を無効にした独立readerが接続/marker/因果化の改変を拒否した。unknownの反復、訂正後の保守的な未確定表示、Emlis本文の復唱/定型性は未解消。React/native実画面、実DB、本人入力、正式商品受入れの確認ではない。
+
+STRUCTURE_MAP_DELTA_NONE：同じ共有3ownerとAnalysis保存/表示routeの内部補正。API8/Cocolon3の既存11file、新規repository file0。API契約/DTO/DB/SQL/RN/依存/Safety policy、main/merge/deploy/env/native build変更0。限定TECHNICAL_CREDIT、商品NOT_CLEAR。既存branchへnon-force反映し、remote parent・変更11path・全file blob内容・final headをfresh照合する。
+
+残件・次の優先：今回の有限常体群の欠落と連動するsupport誤表現は解消。先頭markerなしの旧常体受取、他SELF/程度/否定/他時点/一般認知、既存Emlis失敗と文体は別残件。weeklyに従い、追加活用網羅を配置/実機の前提にせず、指定修正版で本人の保存入力→生成→同じ文章/図→保存後再表示の確認を優先する。最終配置証拠はu128 APIとTestFlight1.0(6401)送信であり、今回を含むu129以降の内容修正は未配置。既存の具体的配置承認対象を照合し、端末導入/本人生成/再表示/比較の未確認を別環境の機械成功で代用しない。次の実行担当はWorkの技術owner、本記録からdeployや次Gateを自動実施しない。
