@@ -2956,7 +2956,6 @@ class AnalysisVerticalTests(unittest.TestCase):
             request(record(memo=episode + following.replace('その後、', ''))),
             request(record(memo=episode, action=following)),
             request(record(memo=episode), record(2, memo=following)),
-            request(record(memo='私は資料を調べてから、私は嬉しかった。' + following)),
             request(record(memo='私は資料を調べてから、疑問が減ったかもしれない。' + following)),
             request(record(memo='夢を見た。' + episode + following)),
         )
@@ -2992,6 +2991,90 @@ class AnalysisVerticalTests(unittest.TestCase):
         self.assertEqual(same.period_comparison.change_claims, ())
         changed = self.compared(old + '。' + following,
             old + '。' + following.replace('その後、', '')).artifact
+        self.assertIn('ROUTE_EVIDENCE_CHANGED', changed.safe_projection(
+            authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+
+    def test_past_feeling_outgoing_order_preserves_experience_and_source(self):
+        for prefix in ('私は資料を調べた後、', '私は資料を調べてから、'):
+            for feeling in ('安心した', '安心しました', '落ち着いた', '嬉しかった', 'うれしかった'):
+                for subject in ('', '私は', '私は、'):
+                    marker, action = (('その後、', '私は記録を残した') if subject
+                                      else ('それから、', '私は記録を残さなかった'))
+                    memo = prefix + subject + feeling + '。' + marker + action + '。'
+                    with self.subTest(memo=memo):
+                        req = request(record(memo=memo))
+                        artifact = self.generate(req).artifact
+                        self.assertEqual(len(artifact.graph.nodes), 3)
+                        self.assertEqual([e.endpoint_refs for e in artifact.graph.edges],
+                                         [('n1', 'n2'), ('n2', 'n3')])
+                        emotion = artifact.graph.nodes[1]
+                        self.assertEqual((emotion.modality, emotion.temporal_scope,
+                            emotion.proposition.result_state, emotion.proposition.actor),
+                            ('feeling', 'past', 'PAST_FEELING', 'SELF' if subject else 'UNSPECIFIED'))
+                        self.assertEqual([len(e.evidence_refs) for e in artifact.graph.edges], [3, 2])
+                        self.assertEqual(artifact.graph.edges[1].evidence_refs[0], emotion.evidence_refs[0])
+                        source, = freeze_analysis_sources(req).sources
+                        for edge in artifact.graph.edges:
+                            for e in edge.evidence_refs:
+                                raw = source.envelope.raw_utf8[e.utf8_start:e.utf8_end]
+                                field = source.envelope.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                                self.assertEqual(field[e.scalar_start:e.scalar_end], raw.decode())
+                                self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                        text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                        self.assertIn('（記録された気持ち）', text)
+                        self.assertEqual(text.count('記録内の順序：'), 2)
+                        self.assertNotIn('どの内容に続くのか', text)
+                        self.assertIn('原因を示す線ではありません', text)
+                        # An outgoing order must never retype the feeling.
+                        broken_node = replace(emotion, modality='fact',
+                            proposition=replace(emotion.proposition, modality='fact'))
+                        broken = replace(artifact, graph=replace(artifact.graph,
+                            nodes=(artifact.graph.nodes[0], broken_node, artifact.graph.nodes[2])))
+                        with self.assertRaisesRegex(AnalysisSourceError, 'analysis_safe_surface_unavailable'):
+                            broken.safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_past_feeling_outgoing_order_does_not_bridge_or_infer_experience(self):
+        episode = '私は資料を調べてから、私は嬉しかった。'
+        following = 'その後、私は記録を残した。'
+        cases = [request(record(memo=episode + middle + following)) for middle in (
+            'まだ方針を考えている。', '私は仕事を続けたい。')]
+        cases += [request(record(memo=episode + following.replace('その後、', ''))),
+            request(record(memo=episode, action=following)),
+            request(record(memo=episode), record(2, memo=following)),
+            request(record(memo='私は嬉しかった。' + following)),
+            request(record(memo='友人から聞いた話です。' + episode + following)),
+            request(record(memo='夢を見た。' + episode + following))]
+        for feeling in ('私は嬉しくなかった', '私は嬉しかったかもしれない',
+                        '友人は嬉しかった', '私は落ち着きました'):
+            cases.append(request(record(memo='私は資料を調べてから、' + feeling + '。' + following)))
+        for req in cases:
+            with self.subTest(records=[r.original_json for r in req.members]):
+                artifact = self.generate(req).artifact
+                if artifact is not None:
+                    for edge in artifact.graph.edges:
+                        if edge.edge_kind == 'OBSERVED_ORDER':
+                            target = next(n for n in artifact.graph.nodes if n.node_ref == edge.endpoint_refs[1])
+                            self.assertEqual(target.node_kind, 'IMMEDIATE_RESULT_OR_AFTERMATH')
+
+    def test_past_feeling_outgoing_order_keeps_updates_and_period_meaning(self):
+        episode = '私は資料を調べてから、私は嬉しかった'
+        following = 'その後、私は記録を残した。'
+        original = record(memo=episode + '。' + following)
+        for answer in ('「' + episode + '」は取り消します。',
+                       '「' + episode + '」ではなく「私は資料を調べた後、安心した」です。'):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(original, answer))).artifact
+                self.assertIn('EXPLICIT_PREDECESSOR_NOT_ESTABLISHED',
+                    {g.reason_code for g in artifact.graph.unknown_gaps})
+                self.assertFalse(any(e.endpoint_refs[1] == 'n1' for e in artifact.graph.edges))
+        answered = self.generate(request(self.with_answer(record(memo='私は仕事を続けたい。'),
+            episode + '。' + following))).artifact
+        self.assertEqual([e.endpoint_refs for e in answered.graph.edges], [('n2', 'n3'), ('n3', 'n4')])
+        same = self.compared(episode + '。' + following,
+            episode.replace('調べてから', '調べた後') + '。' + following).artifact
+        self.assertEqual(same.period_comparison.change_claims, ())
+        changed = self.compared(episode + '。' + following,
+            episode + '。' + following.replace('その後、', '')).artifact
         self.assertIn('ROUTE_EVIDENCE_CHANGED', changed.safe_projection(
             authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
 

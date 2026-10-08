@@ -15604,3 +15604,26 @@ OBSERVED_BLOCKER_MINIMAL_FIX。目的は、明記された行動→変化→次�
 STRUCTURE_MAP_DELTA_NONE：既存Analysis compiler内の意味接続補正で、owner/依存方向/route/保存lifecycle不変。API compiler1/test2/handoff1、Cocolon current03/詳細04/06の全7既存fileを変更。共有Plan/Safety/Emlis/Piece/API契約/DTO/DB/SQL/RN/依存変更0。main/merge/deploy/env/native build操作0。未配置・実DB/本人実機/商品受入れ未確認、限定TECHNICAL_CREDIT、商品NOT_CLEAR。既存PR3/30へ反映後、最新remoteに全7fileが含まれ内容/変更pathが一致することを確認する。
 
 残件はu175を継承。ただし同節の「行動→変化の複合文後のその後」は今回のBOUNDED_CHANGE/fact/past範囲で解消。PAST_FEELING末尾からの後続順序、複合文への前方接続、一般未対応感情/時点/認知、夢/伝聞から現実へ戻る境界、unknown反復、共有/Emlis既存失敗は残る。本人指定版の生成→保存再表示→比較も実機残件。本節と追跡source/test・最新weeklyが再開点。次の内容修正では感情結果の後続接続の根拠を確認し、配置/実機を全日本語対応待ちにしない。
+
+
+## 2026-10-08 JST u177 — 行動後の過去感情から次の明示順序を保持（未配置）
+
+Mashの分析内容修正継続指示から再開。開始HEADはAPI `1c4d3be4592192b1833d428ebb2bfe6434b12790`／Cocolon `b8b44d5b0d309a43c7bc605703d6418e54df76b6`、既存PR3/30 Draft/open/unmergedをfresh確認。同一sessionで確認した前提/作業姿勢・Rule18・全体設計01/全file地図01A〜Cの関連owner・current03/詳細04・latest weekly20261003 §6.6〜6.10を継承し、恒久incident全文を今回も再読。u176末尾のPAST_FEELING後続接続を対象とした。前turnのSystem Context prepareは設定commitの祖先関係不成立で失敗しており、fresh生成の主張はせず、入口が認める追跡正本の直接参照を継続。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。Codex Work root華恋が単一編集・検証・GitHub反映owner、同環境read-only補助が設計適合/原因/最終差分を確認。別model Pro reviewではない。目的/完了条件は、完全解析できる行動→過去感情の後に明記された順序を、感情の型・主体・原文根拠を維持して文章と図へ残すこと。追加費用・Mash操作0。全日本語対応や文体完成を配置/実機接続の前工程にしない。
+
+開始実測：「私は資料を調べてから、安心しました。その後、私は記録を残した。」等で3nodeは残るが行動→感情の1線だけになり、末尾の接続先を未確定表示にしていた。u176の末尾候補はBOUNDED_CHANGE/fact/pastのみ、隣接条件も両端factのみでPAST_FEELINGを除外していた。
+
+製品変更は既存Analysis `_explicit_order_pairs`のみ。既存の非撤回・完全pair証明・両端fragment受理・全文終端一致の下で、末尾PAST_FEELING/feeling/pastも候補とし、その証拠IDだけを後続線の感情起点として許す。次節のfact/past、同一field、明示「その後／それから」、文末区切りだけの隣接条件は維持。感情をfactへ変えず、SELF/UNSPECIFIEDも維持。単独感情・他者・未認定活用・推量・引用/夢・希望・未解析文・別field/source・撤回/置換箇所を飛び越えない。内部3証拠と後続2証拠、原文scalar/UTF-8/hashを保持し、原因や改善を追加しない。
+
+runtimeは既存Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5。絶対entrypoint・PYTHONPATH=ai・bytecode/cacheprovider/FB172移行plugin無効、依存導入/lock変更0。
+- 製品変更前の新vertical3methodは**31 failed（30 subFAIL＋1 method FAIL）／2 passed／14 subtests PASS（6.91秒）**。製品変更後の新vertical3＋storage1は**4 PASS／49 subtests PASS（2.21秒）**。
+- 最終Analysis3suite（vertical270/storage63/saved-period16）は**349 tests PASS／2417 subtests PASS（15.69秒）**。全repo検査ではない。既存5感情形×た後/てから×省略/明示主語/主語読点、後続肯定/否定、出典、fact改変拒否、補足/訂正/撤回、同義期間比較と明示順序の有無を確認。
+- u176の拒否集合にあった「私は資料を調べてから、私は嬉しかった。その後…」の1例だけは今回の対象なので新正常検査へ移した。他の拒否期待は維持、skip/xfail0。
+- 実保存service＋合成RPCの新5例で、engine再生成を禁止した保存後readの本文/図/identity一致を確認。実DB検査ではない。
+- rootが合成7全文（丁寧形感情、後続否定、未解析介在、通常補足、撤回、訂正、期間比較）を全読。実RN `buildWatashiMapV2ViewModel` の全文・identity・node順・edge・unknown・注記・競合・比較stateが7/7一致。unknown反復は残る。React/native実画面の確認ではない。
+- read-only最終差分reviewに具体的blockerなし。最終suite後の製品source変更0。共有/Emlis suiteは今回未実行で、以前の失敗を解消扱いしない。
+
+STRUCTURE_MAP_DELTA_NONE：既存Analysis compiler内の意味接続修正、owner/依存方向/route/保存lifecycle不変。API compiler1/test2/handoff1、Cocolon current03/詳細04/06の全7既存fileを変更、新規repo file0。共有Plan/Safety/Emlis/Piece/API契約/DTO/DB/SQL/RN/依存変更0。main/merge/deploy/env/native build操作0。未配置・実DB/本人実機/商品受入れ未確認、限定TECHNICAL_CREDIT、商品NOT_CLEAR。既存PR3/30反映後、remote parent/tree/変更path集合/全7fileの内容と最終headを照合する。
+
+残件はu176を継承。ただしPAST_FEELING末尾の後続順序は上記の既存完全pair範囲で解消。単独感情、複合文への前方接続、未認定の落ち着きました、一般時点/認知、夢/伝聞から現実へ戻る境界、unknown反復、共有/Emlis既存失敗は残る。本人指定版の生成→保存再表示→比較は別の実機残件。本節・追跡source/test・最新weeklyを再開点とし、scratch出力を正本にしない。

@@ -1157,6 +1157,7 @@ def _explicit_order_pairs(source, plan, withdrawn):
               if e.source_span_id not in withdrawn
               and (e.field_path, e.scalar_start, e.scalar_end) in whole}
     compound_pairs = []
+    feeling_predecessors = set()
     for span in source.spans:
         if span.span_id in withdrawn or not _action_change_pair(source, plan, span.span_id):
             continue
@@ -1167,20 +1168,25 @@ def _explicit_order_pairs(source, plan, withdrawn):
         compound_pairs.append(tuple(e for _, e in endpoints))
         terminal, evidence = endpoints[-1]
         # A completely proved episode may precede the next written "then".
-        # Use only its terminal change, never its initial action, and keep
+        # Use only its terminal result, never its initial action, and keep
         # the original end coordinate so unread intervening text still blocks.
-        if (terminal.result_state == 'BOUNDED_CHANGE'
-                and (terminal.modality, terminal.temporal_scope) == ('fact', 'past')
+        if ((terminal.result_state, terminal.modality, terminal.temporal_scope) in {
+                    ('BOUNDED_CHANGE', 'fact', 'past'),
+                    ('PAST_FEELING', 'feeling', 'past')}
                 and (evidence.field_path, endpoints[0][1].scalar_start,
                      evidence.scalar_end) in whole):
             claims[evidence.evidence_id] = (terminal, evidence)
+            if terminal.modality == 'feeling':
+                feeling_predecessors.add(evidence.evidence_id)
     ordered = sorted(claims.values(), key=lambda item:
                      (item[1].field_path, item[1].scalar_start, item[1].scalar_end))
     pairs = []
     for (left, a), (right, b) in zip(ordered, ordered[1:]):
         if (a.field_path != b.field_path or a.scalar_end >= b.scalar_start
                 or right.sequence_marker not in {'AFTER_PREVIOUS', 'THEN_OR_ADDITION'}
-                or (left.modality, right.modality) != ('fact', 'fact')
+                or right.modality != 'fact'
+                or not (left.modality == 'fact' or (left.modality == 'feeling'
+                        and a.evidence_id in feeling_predecessors))
                 or (left.temporal_scope, right.temporal_scope) != ('past', 'past')):
             continue
         separator = source_field_text(source, a.field_path)[a.scalar_end:b.scalar_start]

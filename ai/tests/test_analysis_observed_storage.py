@@ -1336,6 +1336,22 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(memo=memo):
                 await self._assert_action_change_saved(memo, label)
 
+    async def test_past_feeling_outgoing_order_survives_save_and_read(self):
+        for episode, label, following, following_label in (
+                ('私は資料を調べた後、安心した。', '安心した（記録された気持ち）',
+                 'その後、私は記録を残した。', 'その後：記録を残す（実行済み）'),
+                ('私は資料を調べてから、私は、安心しました。', '安心した（記録された気持ち）',
+                 'その後、私は記録を残した。', 'その後：記録を残す（実行済み）'),
+                ('私は資料を調べてから、落ち着いた。', '落ち着いた（記録された気持ち）',
+                 'それから、私は記録を残さなかった。', 'それから：記録を残す（行わなかった）'),
+                ('私は資料を調べた後、私は嬉しかった。', '嬉しかった（記録された気持ち）',
+                 'その後、私は記録を残した。', 'その後：記録を残す（実行済み）'),
+                ('私は資料を調べてから、うれしかった。', 'うれしかった（記録された気持ち）',
+                 'その後、私は記録を残した。', 'その後：記録を残す（実行済み）')):
+            with self.subTest(episode=episode):
+                await self._assert_action_change_saved(episode + following, label,
+                    expected_following_label=following_label)
+
     async def _assert_action_change_saved(self, memo, expected_label='疑問が減った（記録された変化）',
                                          *, expected_following_label=None):
         self.fx = fixture(memo)
