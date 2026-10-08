@@ -2274,12 +2274,26 @@ def _time_scope_for_text(text: str) -> str:
     return "current_input"
 
 
+def _has_predicative_action_operator(text: str) -> bool:
+    """Responsibility for a nominal task does not prove that task was performed."""
+    for match in _ACTION_RE.finditer(text):
+        if re.fullmatch(
+            _WISH_OBJECT_ARGUMENT_RE.pattern
+            + r"を(?:担当した|担当しました|担当しなかった(?:です)?|担当しませんでした)[。．.!！?？]*",
+            text[match.start():],
+        ):
+            continue
+        return True
+    return False
+
+
 def _has_predicative_value_operator(text: str) -> bool:
-    """Keep a closed past-location modifier inside its nominal argument."""
+    """Keep closed past-location/responsibility modifiers inside their nouns."""
     for match in _VALUE_RE.finditer(text):
         if match.group(0) == "良い" and re.fullmatch(
             _WISH_OBJECT_ARGUMENT_RE.pattern
-            + r"に(?:いた|いました|いなかった(?:です)?|いませんでした)[。．.!！?？]*",
+            + r"(?:に(?:いた|いました|いなかった(?:です)?|いませんでした)"
+            r"|を(?:担当した|担当しました|担当しなかった(?:です)?|担当しませんでした))[。．.!！?？]*",
             text[match.start():],
         ):
             continue
@@ -2326,7 +2340,7 @@ def _operator_codes_for_text(text: str, *, source_field: str = "") -> tuple[str,
         and _BOUNDED_NON_DENIAL_SELF_EVALUATION_RE.search(text)
     ):
         values.append("operator:self_evaluation")
-    if source_field == "memo_action" or _ACTION_RE.search(text):
+    if source_field == "memo_action" or _has_predicative_action_operator(text):
         values.append("operator:action")
     if _HELP_SEEKING_RE.search(text):
         values.append("operator:help_seeking")
@@ -3179,7 +3193,7 @@ def _kind_for_span(
         return "reaction"
     if _has_predicative_value_operator(text):
         return "value"
-    if _ACTION_RE.search(text):
+    if _has_predicative_action_operator(text):
         return "action"
 
     # Upstream roles remain provenance/fallback only. Canonical semantics above

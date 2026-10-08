@@ -3707,6 +3707,77 @@ class AnalysisVerticalTests(unittest.TestCase):
                         replace(artifact, graph=replace(artifact.graph, nodes=(replace(node,
                             proposition=replace(node.proposition, role_state='')),))).safe_projection(authenticated_owner_scope=OWNER)
 
+    def test_good_responsibility_keeps_nominal_modifier_and_complete_role_evidence(self):
+        for noun in ('良い会議', '家族の良い会議', '良い会社の新しい会議', '良い記録'):
+            for ending in ('担当した', '担当しました', '担当しなかった',
+                           '担当しなかったです', '担当しませんでした'):
+                literal = '私は' + noun + 'を' + ending
+                with self.subTest(literal=literal):
+                    req = request(record(memo=literal + '。'))
+                    artifact = self.generate(req).artifact
+                    self.assertIsNotNone(artifact)
+                    node, = artifact.graph.nodes
+                    negative = ending.startswith(('担当しなかった', '担当しません'))
+                    self.assertEqual((node.node_kind, node.proposition.role_state, node.proposition.actor),
+                                     ('ROLE', 'PAST_RESPONSIBILITY', 'SELF'))
+                    self.assertEqual((node.polarity, node.modality, node.temporal_scope),
+                                     ('negative' if negative else 'positive', 'fact', 'past'))
+                    self.assertEqual(node.proposition.arguments, (('を', noun),))
+                    source, = freeze_analysis_sources(req).sources
+                    e, = node.evidence_refs
+                    raw = source.envelope.raw_utf8[e.utf8_start:e.utf8_end]
+                    field = source.envelope.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                    self.assertEqual((raw.decode(), field[e.scalar_start:e.scalar_end]), (literal, literal))
+                    self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                    label = noun + 'を' + ('担当しなかった' if negative else '担当した') + '（記録された担当）'
+                    self.assertEqual(artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes'][0]['visible_label'], label)
+                    text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                    self.assertIn(label, text)
+                    self.assertNotIn('実行済み', text)
+                    self.assertFalse(artifact.graph.edges)
+                    for altered in (noun.replace('良い', ''), noun.replace('良い', '悪い')):
+                        with self.assertRaises(AnalysisSourceError):
+                            replace(artifact, graph=replace(artifact.graph, nodes=(replace(node,
+                                proposition=replace(node.proposition, arguments=(('を', altered),))),))).safe_projection(
+                                    authenticated_owner_scope=OWNER)
+
+    def test_good_responsibility_keeps_updates_order_comparison_and_unread_boundaries(self):
+        old, new = '私は良い会議を担当した', '私は家族の良い会議を担当しませんでした'
+        base = record(memo=old + '。その後、私は資料を調べた。')
+        for answer, polarities in ((new + '。', ('positive', 'negative')),
+                ('「' + old + '」ではなく「' + new + '」です。', ('negative',)),
+                ('「' + old + '」は取り消します。', ())):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(base, answer))).artifact
+                self.assertIsNotNone(artifact)
+                roles = [n for n in artifact.graph.nodes if n.node_kind == 'ROLE']
+                self.assertEqual(tuple(n.polarity for n in roles), polarities)
+                self.assertEqual(len(artifact.graph.edges), 1 if answer == new + '。' else 0)
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        self.assertIsNone(self.generate(request(self.with_answer(base,
+            '「良い会議を担当した」は取り消します。'))).artifact)
+        route = self.generate(request(record(memo='私は昨日、良い職場にいた。'
+            'その後、私は良い会議を担当した。それから、私は資料を調べた。'))).artifact
+        self.assertEqual([n.node_kind for n in route.graph.nodes], ['SCENE', 'ROLE', 'ACTION_OR_NONACTION'])
+        self.assertEqual([e.endpoint_refs for e in route.graph.edges], [('n1', 'n2'), ('n2', 'n3')])
+        route.safe_projection(authenticated_owner_scope=OWNER)
+        repeated = self.generate(request(record(memo=old + '。'),
+            record(2, memo='ぼくは良い会議を担当しました。'))).artifact
+        node, = repeated.graph.nodes
+        self.assertEqual((len(node.record_refs), len(node.evidence_refs)), (2, 2))
+        for now in ('ぼくは良い会議を担当しました。', '私は会議を担当した。',
+                    '私は悪い会議を担当した。', '私は良い会議を担当しなかった。'):
+            with self.subTest(now=now):
+                changed = self.compared(now, old + '。').artifact.safe_projection(
+                    authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds']
+                self.assertEqual('ROUTE_EVIDENCE_CHANGED' in changed, not now.startswith('ぼく'))
+        for memo in ('私は良い会議を担当したい。', '私は良い会議を担当したと思う。',
+                     '私は良い会議を担当したと聞いた。', '私は良い会議を担当した？',
+                     '私は良い会議に担当した。', '友人は良い会議を担当した。',
+                     '夢を見た。私は良い会議を担当した。', '私は良い会議を担当したなら。'):
+            with self.subTest(memo=memo):
+                self.assertIsNone(self.generate(request(record(memo=memo))).artifact)
+
     def test_keyword_action_responsibility_preserves_role_and_whole_source(self):
         for noun in ('記録', 'メモ', '仕事メモ', '会議の記録'):
             for ending in ('担当した', '担当しました', '担当しなかった',
@@ -3780,7 +3851,11 @@ class AnalysisVerticalTests(unittest.TestCase):
             def changed(*args, **kwargs):
                 plan = build(*args, **kwargs)
                 n, = plan.nuclei
-                f = n.semantic_frame
+                # Keep the bounded consumer contract exercised even after
+                # the shared producer distinguishes nominal 記録 from an act.
+                f = replace(n.semantic_frame, predicate_kind='action',
+                    attribute_codes=tuple(dict.fromkeys((*n.semantic_frame.attribute_codes, 'operator:action'))))
+                n = replace(n, kind='action', semantic_frame=f)
                 if mismatch == 'kind': n = replace(n, kind='event')
                 elif mismatch == 'optional': n = replace(n, retention='optional')
                 else:

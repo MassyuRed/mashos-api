@@ -155,6 +155,67 @@ def test_good_past_location_does_not_erase_other_values_or_unclosed_hosts(text):
     assert 'operator:value' in _operator_codes_for_text(text)
 
 
+@pytest.mark.parametrize('text,kind,polarity', [
+    ('私は良い会議を担当した。', 'event', 'neutral'),
+    ('私は家族の良い会議を担当しませんでした。', 'event', 'negative'),
+    ('私は良い記録を担当した。', 'event', 'neutral'),
+])
+def test_good_past_responsibility_keeps_shared_kind_and_complete_actual_body(text, kind, polarity):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(text))
+    result, plan, _sentence, resolver, _selected = context
+    node, = (n for n in plan.nuclei if n.source_fields == ('memo',))
+    frame = node.semantic_frame
+    assert (node.kind, frame.predicate_kind, frame.modality, frame.polarity) == (kind, kind, 'fact', polarity)
+    assert frame.actor == 'current_user'
+    assert 'operator:value' not in frame.attribute_codes
+    assert resolver.resolve(node.source_span_ids[0]).raw_text == text.removesuffix('。')
+    body = result.artifact.text
+    assert text.removesuffix('。') in body
+    assert read_body(context, body).passed
+    for replacement in ('', '悪い'):
+        assert not read_body(context, body.replace('良い', replacement)).passed
+
+
+@pytest.mark.parametrize('text', ['私は記録を担当した。', '私は良い記録を担当した。',
+                                  '私は会議のメモを担当しませんでした。'])
+def test_past_responsibility_is_not_execution_of_its_nominal_task(text):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(text))
+    result, plan, _sentence, resolver, _selected = context
+    node, = (n for n in plan.nuclei if n.source_fields == ('memo',))
+    assert (node.kind, node.semantic_frame.predicate_kind) == ('event', 'event')
+    assert not {'operator:action', 'operator:performed_action'} & set(node.semantic_frame.attribute_codes)
+    assert resolver.resolve(node.source_span_ids[0]).raw_text == text.removesuffix('。')
+    assert text.removesuffix('。') in result.artifact.text
+    assert read_body(context, result.artifact.text).passed
+    for added in ('行動に移しています', '実際の行動', '大切に思っています'):
+        assert added not in result.artifact.text
+
+
+@pytest.mark.parametrize('text', ['私は記録を書いた。', '私はメモした。',
+    '記録を担当したと思う。', '記録を担当したと聞いた。', '記録を担当したい。',
+    '記録を担当している。', '記録を担当したなら。', '記録に担当した。',
+    '私は記録を書いた。私は記録を担当した。'])
+def test_past_responsibility_keeps_other_action_predicates_and_unclosed_hosts(text):
+    from emlis_ai_grounded_observation_plan import _operator_codes_for_text
+    assert 'operator:action' in _operator_codes_for_text(text)
+
+
+@pytest.mark.parametrize('text', [
+    '私は良い。', '私には良い。', '私は会議が良い。', '良くなった。',
+    '良い会議を担当したと思う。', '良い会議を担当したと聞いた。',
+    '良い会議を担当したい。', '良い会議を担当したなら。',
+    '良い会議を担当している。', '良い会議を担当する。', '良い会議を担当したけれど。',
+    '良い会議に担当した。', '良い良い会議を担当した。', '良いところを担当した。',
+    '良い会議を担当した。私には大切だ。', '大切な良い会議を担当した。',
+    '良い会議を担当した。私は良い。', '私は良い。良い会議を担当した。',
+])
+def test_good_past_responsibility_keeps_other_values_unclosed_hosts_and_case(text):
+    from emlis_ai_grounded_observation_plan import _operator_codes_for_text
+    assert 'operator:value' in _operator_codes_for_text(text)
+
+
 @pytest.mark.parametrize('left,right', [
     ('私は家族の時間を守りたい', '私はつらい'),
     ('ぼくは、生活の基盤を守りたいです', 'ぼくは、苦しいです'),

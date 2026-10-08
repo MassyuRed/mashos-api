@@ -15481,3 +15481,30 @@ OBSERVED_BLOCKER_MINIMAL_FIX。目的は、既存artifactが区別している�
 STRUCTURE_MAP_DELTA_NONE：既存Analysis realizer内の表示だけを修正し、意味owner・graph・依存方向・route・保存lifecycleは不変。API realizer1/test2/handoff1、Cocolon current03/詳細04/06の計7file modify、新規repo file0。共有Plan/Safety/Emlis/Piece・API契約/DTO/DB/SQL/RN・依存変更0。main/merge/deploy/env/native build操作0、未配置。実DB・React component/native・本人実機・商品受入れ未確認、限定TECHNICAL_CREDIT・商品NOT_CLEAR。既存PR3/30反映後にremote head/parent/tree/変更path集合と全7fileの内容一致を確認する。
 
 残件はu170を継承：一般の未対応表現/時点・感情/認知、夢/伝聞から現実へ戻る境界、他のunknown反復、Emlis複合2例の生成停止、以前の共有/旧契約検査差は未再検証・未解消。本人指定版の生成→保存再表示→比較も実機残件。本節と追跡source/testを正式再開点とし、scratch出力を再開正本にしない。
+
+
+## 2026-10-08 JST u172 — 良い担当対象を保持し、担当と対象作業の実行を分ける（未配置）
+
+Mashの分析内容修正継続指示で開始。fresh PR3/30 HEADはAPI `ea461459481b4ab06e79f918c3354b5184698fbb`／Cocolon `3270fdc2570c1c8e12e53ef0c2bb0aa8d5027f53`、Draft/open/unmerged。clean localとremote tree一致後、実remote HEADへ揃えて継続した。前回txt・前提/作業姿勢CURRENTと対象専門rule・全体設計01と全file地図01A〜C/system02関連部の同session確認を継承。恒久incident全文を再読、current03/u171、詳細04 §3.12、01B分析導線、最新weekly20261003 §5.3と§6.6〜6.10、実Plan/Analysis/RN/保存経路を確認。生成System Contextのfreshnessは主張せず追跡正本を使用。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。完成条件は既存文法で完全に読める「良い会議を担当した」等をROLEとして本文と図へ戻し、原文修飾/正負/時点/明示順序/更新/比較/保存と、共有処理の影響先でも担当の意味を保つこと。Codex Work root華恋が単一編集・実行・反映owner、同環境read-only補助が原因と最終diffを確認（別model Pro reviewではない）。追加費用・Mash操作0。新しい名詞文法・商品方針・API/DB/配置へは拡張せず、weeklyの最小実動作優先を維持する。
+
+開始実測：「私は良い会議を担当した／担当しなかった」「私は良い記録を担当した」はUNAVAILABLE、場面→担当→行動の例ではROLEとその順序が欠落した。Analysisの既存名詞/担当parser自体は完全解釈できるが、共有Planの `_has_predicative_value_operator` が過去所在だけを名詞修飾として区別し、担当対象の良いを独立valueと分類、極性もpositiveへ寄せていた。新Analysis2methodの修正前結果は24 failed（23 subFAIL＋1 method FAIL）／1 passed（5.52秒）。
+
+最初の補正では同helperの完全名詞＋格＋有限形に、既存の「を＋担当した/しました/しなかった/しなかったです/しませんでした」を追加。初回Analysis335＋identity1、共有限定44はPASSしたが、rootの実本文確認で「良い記録を担当した」がEmlisで「という行動に移しています」「実際の行動に目が留まり…」へ変わった。単語の記録に由来する既存action分類がvalue除去後に前面化したためで、検査成功だけで反映せず、同じ名詞/述語混同の因果箇所を補修した。
+
+最終製品差分は既存共有Plan内のみ。上記value補正に加え `_has_predicative_action_operator` を置き、ACTION語の出現位置から末尾が完全名詞＋を＋過去担当5形で閉じる場合だけ、名詞内のaction語として区別する。既存kind選択とoperator生成の2箇所が同じ判定を使用。memoの担当はevent/event、肯定neutral/否定negative、action/performed_actionなしとなり、後段の既存条件で担当対象の実行へ昇格しない。実際の「記録を書いた／メモした」、別の独立action語、未閉包/認知/伝聞/願望/現在/条件/格違い、独立valueは従来判定を維持。memo_actionの無条件action扱いは変更0。Analysisの全節/原文/帰属/主体/時点witnessを緩めない。
+
+u170の名詞記録由来action/actionという説明は当時のproducer状態であり、今回その共有原因も上記範囲で修正した。Analysisに残る一貫したaction根拠の限定受理を削除せず、既存10種類の根拠改変拒否検査ではまず検査用のcoherent action/action＋operator:actionを明示構成してから同じ改変を行うよう調整した。自然入力の分類がeventへ直った後のno-opを失敗と誤認しないためであり、拒否検査の削除/緩和ではない。
+
+検証runtimeは既存Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5。絶対entrypoint、bytecode/cacheprovider/FB172移行plugin無効、依存導入と製品lock変更0。
+- action追加補正前に、名詞記録/メモの担当3例のactual-body検査を新設して3FAIL（10.80秒）を確認。新検査の「良い記録」のkind期待も、最初のaction維持案からeventへ更新して実行marker不在を要求した。
+- 最終Analysis3suite（vertical258/storage61/saved-period16＝335）＋active final language owner identityのexact node ID1：**336 tests PASS／2224 subtests PASS（34.27秒）**。4名詞×5語尾、原文scalar/UTF-8/hash、修飾削除/置換の拒否、更新/撤回、日語・三段階順序、同義集約/期間差、夢/伝聞/疑問等の保留を確認。保存service＋合成RPCへ4例を追加し、保存後の再生成を禁止したreadで同じ本文/図/identityを確認。
+- 最終共有限定selector `past_responsibility or good_past_location or bad_past_location`：**56 PASS（13.05秒）**。新対象33＋既存23、実Emlis本文と独立reader、modifier改変拒否、event/action区別、独立動作/value/未閉包保持を確認。合計**392 tests PASS**は限定scopeであり、全repo PASSではない。skip/xfail 0。
+- 最終current identityのみ同期：language `8e577601b2ae2aba0b1218ba70fd77f20ac20e2835c910f5a1152496b1c38bf5`／runtime `9f835eaf7ea8c992bc5f6da423d60e0df45dc2b191491354da1f18ee62d1dce0`。historical frozen manifest・9owner/18payloadは維持。
+- rootが合成Analysis9全文を全読。追加action補正後も9本文は全一致し、最終生成版の実RN `buildWatashiMapV2ViewModel` で全文/identity/node順/edge/unknown/注記/競合/比較stateが9/9一致。Emlis最終5全文も全読し、担当対象/否定を保持、追加の行動称賛は消えた。Emlis本文の復唱・定型的受け取りは残り、商品品質完成とはしない。
+- 最終read-only reviewに具体的blockerなし。最終suite後の製品source変更0。実DB/React component/native/本人実機/商品受入れは未確認。
+
+STRUCTURE_MAP_DELTA_NONE：既存共有意味owner・依存方向・Analysis route/保存lifecycle内の意味補正。API Plan1/test3/current identity1/handoff1、Cocolon current03/詳細04/06の計9file modify、新規repo file0。Analysis専用source/Safety/Piece・API契約/DTO/DB/SQL/RN・依存変更0。main/merge/deploy/env/native build操作0、未配置、限定TECHNICAL_CREDIT・商品NOT_CLEAR。既存PR3/30反映後にremote head/parent/tree/変更path集合と全9fileの内容一致を確認する。
+
+残件：今回以外の一般名詞/形容・時点・感情/認知、夢/伝聞から現実へ戻る境界、unknown反復、Emlis複合2例の既存生成停止、u168共有6FAIL/旧0066/旧contracts差/u165未診断F2は今回未再検証・未解消。本人指定版の生成→保存再表示→比較も実機残件。本節と追跡source/testを正式再開点とする。
