@@ -1309,6 +1309,14 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                     await self._assert_action_change_saved(prefix + '疑問が減った。' + clause,
                         expected_following_label=label)
 
+    async def test_compound_incoming_order_survives_commit_and_read_without_regeneration(self):
+        for action in ('その後、私は資料を調べた後、', 'それから、僕は、資料を調べてから、'):
+            for preceding, label in (('私は会議を担当した。', '会議を担当した（記録された担当）'),
+                    ('私は会議を担当しなかった。', '会議を担当しなかった（記録された担当）')):
+                with self.subTest(action=action, preceding=preceding):
+                    await self._assert_action_change_saved(preceding + action + '疑問が減った。',
+                        expected_preceding_label=label)
+
     async def test_te_after_change_survives_commit_and_read_without_regeneration(self):
         for memo in ('私は資料を調べてから、疑問が減った。',
                      '私は、資料を調べてから、疑問が減った。'):
@@ -1398,7 +1406,7 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                     expected_following_label=following_label)
 
     async def _assert_action_change_saved(self, memo, expected_label='疑問が減った（記録された変化）',
-                                         *, expected_following_label=None):
+                                         *, expected_following_label=None, expected_preceding_label=None):
         self.fx = fixture(memo)
         self.row = self.fx['row']
         writes = []
@@ -1422,15 +1430,22 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         projection = saved['content_json']['watashiMap']
         self.assertEqual(projection, writes[0]['p_projection'])
         self.assertEqual(saved['content_text'], writes[0]['p_text'])
+        nodes = list(projection['nodes'])
+        preceding = nodes.pop(0) if expected_preceding_label is not None else None
+        if preceding is not None:
+            self.assertEqual(preceding['visible_label'], expected_preceding_label)
+            self.assertIn(expected_preceding_label, saved['content_text'])
         if expected_following_label is None:
-            action, change = projection['nodes']
+            action, change = nodes
             expected_edges = [('OBSERVED_ORDER', action['node_ref'], change['node_ref'])]
         else:
-            action, change, following = projection['nodes']
+            action, change, following = nodes
             self.assertEqual(following['visible_label'], expected_following_label)
             self.assertIn(expected_following_label, saved['content_text'])
             expected_edges = [('OBSERVED_ORDER', action['node_ref'], change['node_ref']),
                               ('OBSERVED_ORDER', change['node_ref'], following['node_ref'])]
+        if preceding is not None:
+            expected_edges.insert(0, ('OBSERVED_ORDER', preceding['node_ref'], action['node_ref']))
         self.assertEqual([(e['edge_kind'], e['from_ref'], e['to_ref'])
                           for e in projection['edges']], expected_edges)
         self.assertEqual(change['visible_label'], expected_label)

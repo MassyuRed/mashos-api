@@ -564,11 +564,18 @@ def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relat
 
 def _te_action_proposition(value):
     """Parse a dependent action without asserting that it happened."""
-    subject = re.match(r'^(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?', value)
+    prefix = _CLAUSE_PREFIX.match(value)
+    marker = {'その後': 'AFTER_PREVIOUS', 'それから': 'THEN_OR_ADDITION'}.get(
+        prefix.group(1), '') if prefix else ''
+    if prefix and not marker:
+        return None
+    start = prefix.end() if prefix else 0
+    subject = re.compile(r'(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?').match(value, start)
     if subject is None:
         return None
+    parts = ([(marker, 0, start)] if prefix else []) + [('SELF_TOPIC', start, subject.end())]
     proposition = _finite_proposition(value, subject.end(), 'SELF',
-        [('SELF_TOPIC', 0, subject.end())], predicate_forms=_TE_PREDICATES)
+        parts, marker=marker, predicate_forms=_TE_PREDICATES)
     if _has_unparsed_nominal_scope(proposition):
         return None
     return replace(proposition, source_parts=tuple(
@@ -899,7 +906,8 @@ def _action_change_pair(source, plan, span_id):
     left = _te_action_proposition(raw[a:b]) if te_after else _proposition(raw[a:b])
     right = _bounded_change_proposition(raw[c:d])
     if (left is None or right is None or _has_unparsed_nominal_scope(right) or left.actor != 'SELF'
-            or left.result_state or left.scene_state or left.role_state or left.possible_content or left.relative_day or left.sequence_marker
+            or left.result_state or left.scene_state or left.role_state or left.possible_content or left.relative_day
+            or left.sequence_marker not in {'', 'AFTER_PREVIOUS', 'THEN_OR_ADDITION'}
             or any(re.search(r'(?:^|の)(?:何|誰|幾)', noun) for _, noun in left.arguments)
             or (left.polarity, left.modality, left.temporal_scope) !=
                 ('positive', 'fact', 'dependent' if te_after else 'past')):
@@ -1208,6 +1216,14 @@ def _explicit_order_pairs(source, plan, withdrawn):
         if len(endpoints) != 2:
             continue
         compound_pairs.append(tuple(e for _, e in endpoints))
+        initial, first = endpoints[0]
+        # A written "then" scopes over the complete action/result episode.
+        # Keep its actual first endpoint for the existing adjacency proof;
+        # neither the marker nor source order creates a predecessor by itself.
+        if (initial.sequence_marker in {'AFTER_PREVIOUS', 'THEN_OR_ADDITION'}
+                and (first.field_path, first.scalar_start,
+                     endpoints[-1][1].scalar_end) in whole):
+            claims[first.evidence_id] = (initial, first)
         terminal, evidence = endpoints[-1]
         # A completely proved episode may precede the next written "then".
         # Use only its terminal result, never its initial action, and keep

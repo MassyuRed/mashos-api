@@ -15708,3 +15708,27 @@ u179の撤去理由だったEmlisのsupport断定は、既存 `source_owned_acti
 STRUCTURE_MAP_DELTA_NONE：共有Plan/Reception author/independent gateの既存責務と依存、Analysis route/保存lifecycleを維持。API製品3/test3/current identity1/handoff1、Cocolon current03/詳細04/06の**全11既存file**、新規repo file0。Analysis compiler/API契約/DTO/DB/SQL/RN/Safety/製品依存変更0。main/merge/deploy/env/native build操作0。既存PR3/30へnon-force反映し、parent/tree/変更path集合/全11fileのblob hash/最終headを照合する。未配置・実DB/本人実機/商品受入れ未確認。限定TECHNICAL_CREDIT、商品NOT_CLEAR。
 
 次の再開点：今回の3丁寧形compound欠落と新support断定の連動は限定解消。程度・否定・他時点など未認定形、複合文への前方接続、一般認知、旧plain/単独形の開いた報告帰属、夢/伝聞から現実へ戻る境界、unknown反復、共有/Emlis既存失敗は残る。本人指定版の生成→保存再表示→比較は実機残件。latest weeklyと本節・追跡source/testを正本として継続する。
+
+
+## 2026-10-09 JST u181 — 明示順序で始まる行動・結果の複合文を保持（未配置）
+
+Mashの分析内容修正継続指示からu180の次へ進む。fresh API HEAD `c594c4df8b9fa64c22c373807022f8bd0150239d`／Cocolon HEAD `1410729f8d4873a952cb24d5d94bdeee484b40cd`、PR3/30 Draft/open/unmergedを確認。前提入口/CURRENT_RULES、恒久incident全文、Rule18のscope、全体設計01/全file地図01A〜Cの関連owner、Analysis詳細、latest weekly20261003 §6.6〜6.10を再確認。Karen-Diary等の同session原典読了を継承。System Context prepareは同session u180でPUBLICATION_RECOVERY_AMBIGUOUS停止のため、生成freshnessを主張せず追跡正本を直接参照する。local HEADはu179のままだが、u180のindex/worktree treeがremote treeと一致することを確認し、そのindexを差分基準にした。古いHEADをu180 baselineにしない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。今回の未完了条件は、既存共有pairが証明済みでも「その後／それから」で始まる行動・結果の複合文がAnalysisから丸ごと落ち、前件からの明示順序も失われること。Codex Work root華恋が単一編集・実行・GitHub反映owner、read-only補助2者が原因/差分と実出力を確認。別model Pro reviewではない。weeklyの最小動作・本人実機への到達方針を維持し、全日本語文法の完成を前工程にしない。
+
+開始実測では、先行ROLEと「その後、私は資料を調べた後、落ち着いた」等を記録すると、先行ROLEだけが表示された。共有finalにはplain感情や疑問減少等のexact2核とrequired typed relationが既に存在するが、Analysis _action_change_pairのsequence_marker一律拒否、te parserの先頭SELF限定、隣接順序候補へcompound初端を登録しない3条件が欠落の原因だった。一方、落ち着きました等の新3丁寧感情や減りました等の一部語形に先頭markerを足すと、共有pair自体が未成立になる別原因も確認し、このturnの成功範囲へ混ぜない。
+
+製品変更は既存Analysis intent_compilerだけ。2種類の既存sequence markerを行動側へ保持し、te parserでもそのmarker/SELF/格/述語のsource_partsを原文座標で保持する。今日/昨日、重複prefix、未解析主語や格の許可は追加しない。完全pairの両端とwhole evidenceが一致する場合だけ初端を既存隣接候補へ加え、同field・句点/改行による隣接・後件の明示marker・past/factと既存感情末端条件を通ったときだけ前件→初端を接続する。内部の行動→結果と末端→後続の既存順序は維持する。shared exact2核/required relation/全文/帰属/時制の条件を弱めない。
+
+前件が不明でもcompound自体を落とさず、内部順序とEXPLICIT_PREDECESSOR_NOT_ESTABLISHEDを表示する。未知文、希望、別field/source、撤回、訂正で除去された範囲は橋渡ししない。compound→compoundでも別occurrenceを保持して前の結果から次の行動へ接続する。teの実行済み表示は引き続き内部の3証拠順序線が必要で、前件からの線だけを根拠に過去へ昇格しない。
+
+検証は継承済み隔離runtime（Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5）で、依存導入/製品lock変更0。絶対entrypoint、bytecode/cacheprovider/FB172移行plugin無効。
+- 新対象5method：5 PASS／38 subtests PASS（2.46秒）。前後3線、2marker×2接続形×5結果、否定の保持、scalar/UTF-8/hash/全文、前件未確定、未知/希望/別source、補足・訂正・撤回、期間同義/順序差、反復occurrence、te内部3証拠線の除去/改竄拒否を確認。旧期待変更0。
+- 最終Analysis3suiteは **366 tests PASS／2927 subtests PASS（19.46秒）**。vertical285/storage65/saved-period16。current shared owner identity exact1も **1 PASS（23.48秒）**。限定合計367 tests成功、skip/xfail0。共有/Emlis全suiteではない。
+- 実Analysis保存service＋合成RPCへ前方順序4例を追加し、engine再生成禁止の再読で同一本文/図/identityを確認。実DB検査ではない。
+- rootが最終Analysis8全文を全読。通常、先行否定＋te＋後続、未知介在、前件なし、完全補足、訂正、撤回、期間同義と実RN表示modelの全文/identity/node順/edge/unknown/注記/競合/比較stateが **8/8一致**。React/native実画面確認ではない。
+- read-only出力review7件と差分reviewにblockerなし。rootも届いた全7本文を確認。unknown反復、保守的な訂正後の未確定表示などは残り、これを商品品質完成とはしない。Emlis/shared製品codeとcurrent identity fixtureは変更0。
+
+STRUCTURE_MAP_DELTA_NONE：既存Analysis compiler/realizerの責務と共有根拠の利用、保存/表示routeを維持。API compiler1/test2/handoff1、Cocolon current03/詳細04/06の全7既存file、新規repo file0。共有owner/API契約/DTO/DB/SQL/RN/Safety/製品依存変更0。main/merge/deploy/env/native build操作0。既存PR3/30へnon-force反映し、remote parent/tree/変更path集合/全7file bytes/最終headを照合する。未配置・実DB/本人実機/商品受入れ未確認、限定TECHNICAL_CREDIT、商品NOT_CLEAR。
+
+次の残件：前方明示順序は共有pair成立済みの範囲で解消。先頭marker＋u180丁寧3感情、減りました/増えました/戻りました等の共有側で全文を認定できない組合せは未完了。程度・否定・他時点、一般認知、開いた帰属/夢/伝聞の境界、unknown反復、共有/Emlis既存失敗、本人指定版の生成→保存再表示→比較の実機確認も残る。latest weeklyと本節・追跡source/testから再開する。
