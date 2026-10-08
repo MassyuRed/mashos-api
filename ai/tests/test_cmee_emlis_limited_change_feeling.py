@@ -348,3 +348,65 @@ def test_changed_source_scope_cannot_borrow_a_valid_finite_body(context, field, 
     nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame, **{field: value}))
                    if n.nucleus_id == support.to_nucleus_id else n for n in plan.nuclei)
     assert not _read(context, result.artifact.observation, replace(plan, nuclei=nuclei)).passed
+
+
+
+@pytest.mark.parametrize('marker', ['その後、', 'それから、'])
+@pytest.mark.parametrize('action,visible', [('私は資料を調べた後、', '資料を調べた後、'),
+    ('僕は、資料を調べてから、', '資料を調べてから、')])
+@pytest.mark.parametrize('ending,plain', [('落ち着きました', '落ち着いた'),
+    ('私は、嬉しかったです', '嬉しかった'), ('うれしかったです', 'うれしかった'),
+    ('疑問が減りました', '疑問が減った'), ('気持ちメモが増えました', '気持ちメモが増えた'),
+    ('資料が戻りました', '資料が戻った')])
+def test_prefixed_polite_episode_keeps_marker_without_first_person_or_support(marker, action, visible, ending, plain):
+    import cocolon_meaning_experience_engine.emlis_stage1_response as response
+    from test_cmee_emlis_received_discourse import inverse
+    memo = marker + action + ending + '。'
+    relation, = _action_change_relations(_polite_change_plan(memo))
+    assert relation.retention == 'required'
+    attempts = []
+    def capture(**kwargs):
+        verdict = evaluate_grounded_surface_body_inverse(**kwargs)
+        attempts.append((kwargs, verdict))
+        return verdict
+    with patch.object(response, 'evaluate_grounded_surface_body_inverse', capture):
+        result = MeaningExperienceEngine().generate(initial(memo))
+    assert result.artifact is not None, result.reason_codes
+    body = result.artifact.reception
+    assert body == marker + visible + plain + 'のですね。'
+    actual = next(kwargs for kwargs, verdict in reversed(attempts)
+                  if verdict.passed and kwargs['body'] == result.artifact.text.encode())
+    assert {k['sentence_plan'].recovery_stage for k, _ in attempts} >= {'full', 'optional_removed', 'integrated', 'hedged'}
+    for kwargs, _ in attempts:
+        assert '支えている' not in kwargs['body'].decode()
+        assert '大切に思っています' not in kwargs['body'].decode()
+    context = (result, actual['plan'], actual['sentence_plan'], actual['resolver'], actual['selected_subjective_input'])
+    assert inverse(context, body, without_author=True).passed
+    for changed in (body.replace(marker, '', 1), body.replace(marker, '翌日、', 1),
+                    body.replace(marker, 'それから、' if marker == 'その後、' else 'その後、', 1),
+                    body.replace(marker, marker + '友人が', 1),
+                    body.replace('から、', 'ので、').replace('後、', 'ので、'),
+                    body.replace(plain, ''), body.replace('のですね', 'ことが支えています')):
+        assert changed != body
+        assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('ending', ['落ち着きました', '資料が戻りました'])
+@pytest.mark.parametrize('prefix,action,suffix', [
+    ('その後昨日、', '私は資料を調べた後、', ''),
+    ('それからその後、', '私は資料を調べた後、', ''),
+    ('その後、', '友人は資料を調べた後、', ''),
+    ('その後、', '資料を調べた後、', ''),
+    ('その後、', '私は何を調べた後、', ''),
+    ('その後、', '私は資料を調べなかった後、', ''),
+    ('「その後、', '私は資料を調べた後、', '」と聞いた'),
+    ('友人は言った。その後、', '私は資料を調べた後、', ''),
+    ('夢を見た。その後、', '私は資料を調べた後、', ''),
+    ('その後、', '私は資料を調べた後、', 'か'),
+    ('その後、', '私は資料を調べた後、', 'と聞いた'),
+    ('友人が言っていた。その後、', '私は資料を調べた後、', ''),
+    ('その後、', '私は資料を調べた後、', '。と私は思う'),
+    ('その後、', '私は資料を調べた後、', '。なんて嘘だった'),
+])
+def test_prefixed_polite_episode_requires_complete_self_source(prefix, action, suffix, ending):
+    assert not _action_change_relations(_polite_change_plan(prefix + action + ending + suffix + '。'))

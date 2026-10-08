@@ -2990,7 +2990,7 @@ def _read_action_change_discourse(raw, move, plan, resolver, selected_subjective
         # Independently parse the omitted self-topic and plain past ending.
         # The source still owns SELF/past; a different actor or connective
         # cannot borrow that proof, nor can a causal/value appraisal.
-        visible_left = re.sub(r"^(?:私|僕|ぼく|俺|おれ|わたし|自分)(?:は|が|も)(?:[、，][ \u3000]*)?", "", left, count=1)
+        visible_left = re.sub(r"^((?:(?:その後|それから)[、， \u3000]*)?)(?:私|僕|ぼく|俺|おれ|わたし|自分)(?:は|が|も)(?:[、，][ \u3000]*)?", r"\1", left, count=1)
         visible_right = re.sub(r"(?:減りました|増えました|戻りました|落ち着きました|嬉しかったです|うれしかったです)$", lambda m: {
             "減りました": "減った", "増えました": "増えた", "戻りました": "戻った",
             "落ち着きました": "落ち着いた", "嬉しかったです": "嬉しかった", "うれしかったです": "うれしかった",

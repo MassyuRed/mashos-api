@@ -3288,11 +3288,82 @@ class AnalysisVerticalTests(unittest.TestCase):
                 + prefix + '私は資料を調べてから、落ち着いた。')))
             with self.subTest(prefix=prefix):
                 self.assertFalse(result.artifact and result.artifact.graph.edges)
-        # Newly admitted sequence markers cannot supply the missing shared
-        # witness for the separately deferred polite-feeling prefix grammar.
+        # A marker cannot supply a witness for an unproven negative feeling.
         result = self.generate(request(record(memo='私は会議を担当した。'
-            + episode.replace('落ち着いた', '落ち着きました'))))
+            + episode.replace('落ち着いた', '落ち着きませんでした'))))
         self.assertFalse(result.artifact and result.artifact.graph.edges)
+
+    def test_prefixed_polite_compounds_preserve_complete_order_and_evidence(self):
+        for marker in ('その後、', 'それから、'):
+            for action in ('私は資料を調べた後、', '僕は、資料を調べてから、'):
+                for ending in ('落ち着きました', '私は、嬉しかったです', 'うれしかったです',
+                               '疑問が減りました', '気持ちメモが増えました', '資料が戻りました'):
+                    episode = marker + action + ending
+                    with self.subTest(episode=episode):
+                        req = request(record(memo='私は会議を担当しなかった。' + episode
+                            + '。その後、私は記録を残した。'))
+                        artifact = self.generate(req).artifact
+                        self.assertIsNotNone(artifact)
+                        self.assertEqual(len(artifact.graph.nodes), 4)
+                        self.assertEqual(artifact.graph.nodes[0].polarity, 'negative')
+                        self.assertEqual([e.endpoint_refs for e in artifact.graph.edges],
+                            [('n1', 'n2'), ('n2', 'n3'), ('n3', 'n4')])
+                        self.assertEqual([len(e.evidence_refs) for e in artifact.graph.edges], [2, 3, 2])
+                        result = artifact.graph.nodes[2].proposition
+                        self.assertEqual(result.actor, 'SELF' if ending.startswith('私は') else 'UNSPECIFIED')
+                        source, = freeze_analysis_sources(req).sources
+                        for edge in artifact.graph.edges:
+                            for e in edge.evidence_refs:
+                                raw = source.envelope.raw_utf8[e.utf8_start:e.utf8_end]
+                                field = source.envelope.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                                self.assertEqual(field[e.scalar_start:e.scalar_end], raw.decode())
+                                self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                        whole = artifact.graph.edges[1].evidence_refs[-1]
+                        self.assertEqual(source.envelope.raw_utf8[whole.utf8_start:whole.utf8_end].decode(), episode)
+                        text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                        self.assertEqual(text.count('記録内の順序：'), 3)
+                        self.assertIn('原因を示す線ではありません', text)
+
+    def test_prefixed_polite_compounds_keep_unknown_and_source_boundaries(self):
+        for ending in ('落ち着きました', '資料が戻りました'):
+            episode = 'その後、私は資料を調べてから、' + ending + '。'
+            for req in (request(record(memo=episode)),
+                        request(record(memo='私は会議を担当した。未知の出来事。' + episode)),
+                        request(record(memo='私は仕事を続けたい。' + episode)),
+                        request(record(memo='私は会議を担当した。'), record(2, memo=episode)),
+                        request(record(memo=episode, action='私は会議を担当した。'))):
+                with self.subTest(ending=ending, request=req):
+                    artifact = self.generate(req).artifact
+                    self.assertIsNotNone(artifact)
+                    self.assertEqual(len(artifact.graph.edges), 1)
+                    self.assertIn('EXPLICIT_PREDECESSOR_NOT_ESTABLISHED',
+                        {g.reason_code for g in artifact.graph.unknown_gaps})
+
+    def test_prefixed_polite_compounds_preserve_updates_and_comparison(self):
+        for ending, plain in (('落ち着きました', '落ち着いた'),
+                              ('嬉しかったです', 'うれしかった'), ('資料が戻りました', '資料が戻った')):
+            first = '私は会議を担当した'
+            episode = 'その後、私は資料を調べてから、' + ending
+            original = record(memo=first + '。' + episode + '。その後、私は記録を残した。')
+            with self.subTest(ending=ending):
+                withdrawn = self.generate(request(self.with_answer(original,
+                    '「' + episode + '」は取り消します。'))).artifact
+                self.assertEqual(len(withdrawn.graph.nodes), 2)
+                self.assertFalse(withdrawn.graph.edges)
+                revised = self.generate(request(self.with_answer(original,
+                    '「' + episode + '」ではなく「' + episode.replace(ending, 'うれしかったです') + '」です。'))).artifact
+                self.assertEqual(len(revised.graph.edges), 1)
+                self.assertEqual(len({e.source_envelope_id for e in revised.graph.edges[0].evidence_refs}), 1)
+                added = self.generate(request(self.with_answer(record(memo='私は仕事を続けたい。'),
+                    first + '。' + episode + '。'))).artifact
+                self.assertEqual(len(added.graph.edges), 2)
+                same = self.compared(first + '。' + episode + '。',
+                    first + '。' + episode.replace(ending, plain).replace('調べてから', '調べた後') + '。').artifact
+                self.assertEqual(same.period_comparison.change_claims, ())
+                changed = self.compared(first + '。' + episode + '。',
+                    first + '。' + episode.replace('その後、', '') + '。').artifact
+                self.assertIn('ROUTE_EVIDENCE_CHANGED', changed.safe_projection(
+                    authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
 
     def test_compound_incoming_order_keeps_updates_and_period_meaning(self):
         first = '私は会議を担当した'

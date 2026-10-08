@@ -3786,7 +3786,9 @@ def _source_polite_past_feeling_is_bound(span, normalized_input, *, action=None,
         nominal = (r"(?:新しい|古い|大きい|小さい|長い|短い|詳しい|難しい|易しい|良い|悪い)?"
                    r"(?:(?:考え|思い|気持ち|学び|振り返り|取り組み)[一-鿿々ァ-ヶー]*|[一-鿿々ァ-ヶー]+)")
         past = action[:-1] + {"て": "た", "で": "だ"}.get(action[-1:], action[-1:])
-        performed = re.fullmatch(subject + r"(?:" + nominal
+        # The marker belongs to the same complete source action. Recognize
+        # only the two existing sequence markers; keep its original range.
+        performed = re.fullmatch(r"(?:(?:その後|それから)[、， \u3000]*)?" + subject + r"(?:" + nominal
             + r"(?:の" + nominal + r")*(?:を|に|で|と)){1,2}(?P<predicate>.+)", past)
         if (not connector or not raw.startswith(action + connector)
             or not re.fullmatch(r"(?:後|あと)(?:に)?[、,]\s*|から[、,]\s*", connector)
@@ -4190,11 +4192,28 @@ def _typed_nucleus_projections_for_span(
                    r"[一-鿿々ァ-ヶー]+)")
         action_past = action[:-1] + {"て": "た", "で": "だ"}.get(action[-1:], action[-1:])
         performed = re.fullmatch(
+            r"(?:(?:その後|それから)[、， \u3000]*)?"
             r"(?:私|僕|わたし|自分)(?:は|が|も)(?:[、，][ \u3000]*)?(?:" + nominal
             + r"(?:を|に|へ|で|から|と|まで)){1,2}(?P<predicate>.+)", action_past,
         )
         source = str((normalized_input or {}).get(source_field) or "")
         start, end = span.start_index, span.end_index
+        if re.match(r"(?:その後|それから)", action):
+            # Newly admitted prefixed episodes must not detach a dream,
+            # another field's report, or an open host across punctuation.
+            record = "\n".join(str((normalized_input or {}).get(field) or "")
+                               for field in ("memo", "memo_action"))
+            after = source[end:].lstrip(" \t\u3000。．.!！\r\n;；")
+            if (re.search(r"[!?！？…‥]|によると|いわく|曰く|夢を見|と言|と話|と語|と聞|"
+                          r"の(?:話|感想|気持ち|説明|報告|発言)(?:です|だ|[。．.])|"
+                          r"(?:聞いた|聞きました|読んだ|読みました)(?:話|内容)", record)
+                or re.search(r"(?:言って|話して|語って|述べて|書いて|伝えて|答えて|説明して)"
+                             r"(?:いた|いました|いる|います)(?:[。．.\s]|$)", source[:start])
+                or re.match(r"(?:と(?:は|も)?(?:(?:私|僕|ぼく|俺|おれ|わたし|自分)"
+                            r"(?:は|が|も)(?:[、，][ \u3000]*)?)?"
+                            r"(?:思|考|感|言|い|聞|書|読|伝|認|信|報)|なんて|などと|"
+                            r"って|わけ|訳|のでは|のか|かも|かどうか|はず)", after)):
+                return False
         return bool(
             source_field == "memo"
             and re.fullmatch(r"(?:後|あと)(?:に)?[、,]\s*|から[、,]\s*", link)

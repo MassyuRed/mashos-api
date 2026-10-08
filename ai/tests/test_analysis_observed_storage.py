@@ -1323,6 +1323,19 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(memo=memo):
                 await self._assert_action_change_saved(memo)
 
+    async def test_prefixed_polite_compounds_survive_commit_and_read_without_regeneration(self):
+        for ending, label in (('落ち着きました', '落ち着いた（記録された気持ち）'),
+                ('私は、嬉しかったです', '嬉しかった（記録された気持ち）'),
+                ('うれしかったです', 'うれしかった（記録された気持ち）'),
+                ('疑問が減りました', '疑問が減った（記録された変化）'),
+                ('気持ちメモが増えました', '気持ちメモが増えた（記録された変化）'),
+                ('資料が戻りました', '資料が戻った（記録された変化）')):
+            with self.subTest(ending=ending):
+                await self._assert_action_change_saved('私は会議を担当した。'
+                    + 'その後、私は資料を調べてから、' + ending + '。その後、私は記録を残した。',
+                    label, expected_preceding_label='会議を担当した（記録された担当）',
+                    expected_following_label='その後：記録を残す（実行済み）')
+
     async def test_polite_decrease_increase_return_survive_save_and_read(self):
         for clause, plain in (('不安が減りました', '不安が減った'),
                               ('気持ちメモが増えました', '気持ちメモが増えた'),

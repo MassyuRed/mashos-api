@@ -15732,3 +15732,28 @@ OBSERVED_BLOCKER_MINIMAL_FIX。今回の未完了条件は、既存共有pairが
 STRUCTURE_MAP_DELTA_NONE：既存Analysis compiler/realizerの責務と共有根拠の利用、保存/表示routeを維持。API compiler1/test2/handoff1、Cocolon current03/詳細04/06の全7既存file、新規repo file0。共有owner/API契約/DTO/DB/SQL/RN/Safety/製品依存変更0。main/merge/deploy/env/native build操作0。既存PR3/30へnon-force反映し、remote parent/tree/変更path集合/全7file bytes/最終headを照合する。未配置・実DB/本人実機/商品受入れ未確認、限定TECHNICAL_CREDIT、商品NOT_CLEAR。
 
 次の残件：前方明示順序は共有pair成立済みの範囲で解消。先頭marker＋u180丁寧3感情、減りました/増えました/戻りました等の共有側で全文を認定できない組合せは未完了。程度・否定・他時点、一般認知、開いた帰属/夢/伝聞の境界、unknown反復、共有/Emlis既存失敗、本人指定版の生成→保存再表示→比較の実機確認も残る。latest weeklyと本節・追跡source/testから再開する。
+
+
+## 2026-10-09 JST u182 — 先頭順序語に続く丁寧形の行動・結果を保持（未配置）
+
+Mashの分析内容修正継続指示と添付前回txtからu181を再開。開始HEADはAPI `82bd82e9ba842296922aedb58b7f8e3b40dbb3f2`／Cocolon `0e9c2d0209c1ca0d0fac52c9fbc5530840eb99de`、PR3/30 Draft/open/unmergedをfresh確認。前提入口・作業姿勢CURRENT/Rule18/開始check/出力Gate・恒久incident全文・Karen-Diary必須3file、全体設計01/全file地図01A〜Cと02の構成/対象owner、current03/詳細04、最新weekly20261003 §5.2/§6.6〜6.10を確認。System Context prepareは設定基準commitとの祖先関係不成立で停止し、生成Contextのfreshnessを主張せず追跡正本を直接参照。Contextの修理へ拡張していない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。対象は既存設計・委任内の可逆な内容修正、検査、既存PR反映。Codex Work root華恋が単一編集・実行・反映owner。同環境read-only補助が商品/週次整合と原因/最終差分を確認し、別model Pro reviewとは扱わない。完了条件は既存の原文順序と丁寧な過去感情/名詞変化を文章・図へ保持し、訂正/撤回/比較/保存を守ること。新商品機能・method・公開契約・実DB・配置・依存へ広げず、scope超過/具体的意味不整合時に止める。追加費用・Mash操作0。全日本語理解・文体の完成を配置/実機接続の前工程にしない。
+
+開始実測：「私は会議を担当した。その後、私は資料を調べた後、落ち着きました。その後、私は記録を残した。」では会議と最後の記録だけが残り、中の行動/感情が欠落。嬉しかったです/うれしかったです、減りました/増えました/戻りましたの名詞変化も共有finalの有限前件判定が直接SELF始まりを要求するためpair未成立だった。新Analysis3methodの修正前実行は37 subFAIL／3 methods PASS（8.39秒）、修正後は3 PASS／37 subtests PASS（1.75秒）。
+
+製品変更は既存共有Plan/Reception作者/独立readerの3file。Planの2完全形判定へ既存「その後／それから」の単一先頭markerを許し、元の全文・scalar・connector・有限形・帰属の条件を保持する。新規の先頭marker付き名詞変化だけは夢、両fieldの報告/疑問、前件の進行形報告、句点後の認知/撤回hostを拒否し、旧prefixなし経路は変更しない。作者/独立readerは同じ原文markerを残してその直後のSELFだけを省略し、独立readerは元SELFを含む完全bytesへ戻す。感情右端のSELF省略と名詞の「自分」保持を区別する。因果・support・価値判断へ変換せず、global keyword分類・shared Safety・Analysis compilerを変更しない。
+
+途中の新共有限定検査は45 PASS／1 FAIL（31.01秒）。「夢を見た。その後、…資料が戻りました」で新pairが成立する問題だったため、上記の新prefix限定host条件で補正し、後続認知/撤回/進行形報告も追加検証した。patch編集位置の誤りは実行前の行位置確認で訂正済み。旧u181の今回正常形1例を受理範囲へ移し、拒否対照を未対応の否定丁寧形へ変更。他の既存期待は緩めない。
+
+runtimeは既存の隔離環境を再発見し、Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5を確認。絶対entrypoint、PYTHONPATH=ai、bytecode/cacheprovider/FB172移行plugin無効。依存導入・製品lock変更0。
+- 最終5suite：**626 tests PASS／2970 subtests PASS／3 SKIP（120.67秒）**。Analysis vertical288/storage66/saved-period16＝370、共有limited-change238/past-episode18＝256成功。3 skipは既存Emlis actual saved terminalのfree/plus/premiumで、実保存test runtime未設定。実DB検査ではない。全repo/全Emlis検査ではない。
+- 新規対象は両marker×後/てから×3感情/3名詞変化、前後3線とscalar/UTF-8/hash/whole evidence、原文の主体非推定、前件なし/未知/希望/別source、補足/訂正/撤回、常体との同義比較と順序差。Emlis新24正常は全recoveryと作者を無効化した独立readerでmarker削除/差替え・他者・因果・結果欠落/支持断定の拒否を確認。新境界28例も成功。
+- 実Analysis保存service＋合成RPCで新6例の保存と、engine再生成禁止の同一本文/図/identity再読を確認。実DB/本人実機ではない。
+- current shared identityだけ同期。active final language owner exact1 **1 PASS（22.88秒）**。language `b0c27ccbf27d6f0fcf5192305c2e5bac8bca257dfee95bcede151e8770601c57`／runtime `8bd1094aa01856b95a9002288c86408d21e40c7bc610c85f4a2b3d5aaf82c49b`。historical frozen manifest、scope metadata、9owner/18payloadを保持。限定成功合計627 tests。
+- rootがAnalysis合成8全文（通常/名詞変化/未知介在/前件なし/補足/訂正/撤回/期間同義）を全読。実RN `buildWatashiMapV2ViewModel` の本文全文/identityが8/8一致。React/native実画面確認ではない。
+- rootがEmlis4全文も全読し、順序の保持、話し手の取り違え回避、名詞「自分」の保持を確認。原文復唱と定型受取、Analysis unknown反復、保守的な訂正後の未確定表示は残り、商品品質完成とはしない。read-only最終差分reviewに今回範囲のblockerなし。
+
+STRUCTURE_MAP_DELTA_NONE：既存共有意味owner/作者/独立readerの責務と依存、Analysis route/保存lifecycleを維持。API製品3/test3/current identity1/handoff1、Cocolon current03/詳細04/06の計11既存file、新規repo file0。Analysis compiler/API契約/DTO/DB/SQL/RN/Safety/依存変更0。main/merge/deploy/env/native build操作0。PR3/30へnon-force反映し、remote changed-path集合・対象全file blob内容・最終headを照合する。未配置・実DB/本人実機/商品受入れ未確認、限定TECHNICAL_CREDIT、商品NOT_CLEAR。
+
+残件：u181の先頭marker＋上記丁寧6形の欠落は今回の読点付き・完全SELF行動の有限範囲で解消。読点なし「それから私は…」は既存格解析との干渉が疑われ、今回の成功範囲へ含めない。程度/否定/他時点/一般認知、旧prefixなしの開いた帰属/夢/伝聞、unknown反復、共有/Emlis既存失敗、本人指定版の生成→保存再表示→比較の実機確認は残る。次回はlatest weekly、本節、追跡source/testへ戻り、配置/実機を全日本語活用の完成待ちにしない。
