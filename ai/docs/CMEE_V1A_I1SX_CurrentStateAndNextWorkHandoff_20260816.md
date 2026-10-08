@@ -15340,3 +15340,25 @@ OBSERVED_BLOCKER_MINIMAL_FIX、既存内容修正・Draft PR反映承認内。ro
 STRUCTURE_MAP_DELTA_NONE：既存意味owner／依存方向／route／保存lifecycle内の修正。API compiler1／Plan1／test3／current identity1／handoff1、Cocolon current03／詳細04／06の計10file modify、新規repo file0。Safety・Piece・API契約・DTO・DB・SQL・RN・依存変更0。最終read-only reviewに具体的blockerなし。main／merge／deploy／env／native build操作0、u165未配置。実DB・React component/native・本人実機・商品受入れ未確認。限定TECHNICAL_CREDIT、商品NOT_CLEAR維持。旧0066期待差等は今回の修正対象外。反映後に実branch head・parent・変更path集合・全10fileのremote bytesを照合する。
 
 残件：共有の別の限定表現（敬体名詞変化、名詞感情、否定解決、発話後の本人reset等）の未対応表記、一般感情／認知、他の形容詞、夢・伝聞から現実へ戻る境界、unknown反復と既記録のEmlis停止・旧期待差。俺／おれの全日本語表現対応とはしない。本人の指定版生成→保存再表示→比較の実機残件は別に保持。本節と追跡source/testを再開原典とし、scratch JSON/logを正式保存先にしない。
+
+
+## 2026-10-08 JST u166 — 文の位置だけで本人の過去の場面を読み落とさない
+
+Mashの分析内容修正継続指示と添付「前回作業内容(20261008-095111).txt」からu165を継承。開始HEADはAPI `0312a0fc3b07f8e46344d5746cafd7760458badd`／Cocolon `df88a0e0f46cdbfc005039177983dbec740efb3f`。後続Piece変更を含むcurrent branchを使用し、前回分析だけのSHAへ戻していない。前提・work_attitude入口/current/Rule18、開始/出力check、恒久incident全文、全体設計01と全file地図01A〜Cの導線、Analysis current03のsource/RN/lifecycle owner表・詳細04・対象実ファイル、最新weekly20261003 §5/§6.6〜6.10、Karen-Diary入口・memory2本を確認。System Context PR37のfresh head `fa455117a363c7a464d241415cb1a3651902c0b4` とtechnical entryを確認。今回はdoctor/prepareを実行しておらず生成Contextのfreshnessは未成立、current追跡原典を直接参照した。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。既存の分析内容修正・Draft反映指示内で、Codex Workのroot華恋が単一の実装・実行・反映owner。同環境の補助agentはread-only原因確認と最終diff reviewだけを行い、別model Pro reviewと称さない。本文/図の根拠ある場面欠落を直す限定単位。完成条件は実生成、原文証拠、位置替えの無差分、更新・保存再読・同じRN表示model。対象はAPI既存compiler/vertical test/storage test/handoffとCocolon current03/詳細04/06の計7file、新規repo file0。追加費用・Mash操作0。新契約・依存・共有意味・実DB・配置・有効化が必要ならscopeを拡大しない。全文法対応を実機確認の前提にしない。
+
+開始版では「私は会議を担当した。私は資料を調べた。私は記録を残した。私は職場にいた。」の場面だけが消え、場面未確定と未解析内容を表示。同じ所在を先頭へ移すと4node全てを生成した。共有Planが4節以上の通常本文へ付けるshouldは表示優先度だが、既存 `_past_event_witness` がSCENEだけrequiredに限定していた。ROLEは既にrequired/shouldを受理していた。新規3methodによる修正前検査は8 failed（7 subtest failure＋1 method failure）／2 passed／14 subtests passedで欠落と補足/訂正の停止を再現した。
+
+製品変更は `cores/analysis/intent_compiler.py` の当該retention判定1箇所と説明commentだけ。完全解析された過去の所在でもrequired/shouldを受理する。共有Planの優先度自体は変更せず、explicit grounding/current_input claim、SELF・event/fact・対応極性/時制・memo単独span・元fieldの全文境界・fragment/dependency拒否を全て維持する。optional、他者、願望、推測、伝聞、夢、疑問等を事実へ昇格しない。順序接続がない列挙から線を作らず、書かれた「その後」だけを既存順序へ接続する。u110/u111/u118のSCENE required条件は当時の限定実装履歴として保持し、今回の修正をcurrent deltaとして04と03に明記した。
+
+実行環境は今回発見・実版確認した既存venvのPython3.12.14／pytest9.1.1（組込subtests）／FastAPI0.142.2／httpx0.28.1／Pydantic2.13.5。前回pytest8.4.1等と同じruntimeと偽らず、絶対entrypointを使用。依存導入・製品lock変更0。汎用primary runtimeにはpytestがなく、既存venvにはpytest-subtests別distributionがないことを検査前に確認した。旧FB172移行pluginとcacheproviderを無効化した対象実行であり、旧single-use authorityの再実行ではない。
+
+- 修正後の新3method：3 PASS／21 subtests PASS（0.98秒）。期待修正・既存期待削除/緩和・skip/xfail 0。
+- 最終 `test_cmee_analysis_v1d_vertical.py`（245）／`test_analysis_observed_storage.py`（59）／`test_analysis_saved_period.py`（16）：**320 tests PASS／2050 subtests PASS（12.72秒）**。所在の位置替え・原文scalar/UTF-8/hash・修飾/肯否定/日語・比較の差0と否定差・明示順序・競合・通常補足/全文訂正/撤回・偽造witness拒否を確認。保存service＋合成RPCで書き、engine再生成を禁止したreadで同じ保存本文/図/identityを確認。実DB検査ではない。
+- rootが合成7全文（後置場面、否定日語、明示順序、訂正、撤回、競合、位置替え比較）を全読。Cocolonの実 `buildWatashiMapV2ViewModel` で全文・identity・node順・edge・unknown・注記・競合・比較stateが7/7一致。文章と図の場面欠落を補正し、unknown反復表示自体は今回変更していない。native/React componentの実機検証ではない。
+- 同環境read-onlyの最終差分reviewに具体的blockerなし。最終suite以降の製品source変更0。共有/Emlis/旧contracts suiteは未実行で、全repo PASSとはしない。u165中断runの未診断F2件と、それ以前の旧期待差等は未修正・未解消のまま継承する。
+
+STRUCTURE_MAP_DELTA_NONE：既存の意味owner、依存方向、route、artifact/保存lifecycle内の修正。共有Plan/Safety/Piece・API/DTO/DB/SQL/RN・製品依存変更0。main/merge/deploy/env/native build操作0、未配置。実DB・本人実機・商品受入れ未確認、限定TECHNICAL_CREDIT・商品NOT_CLEAR維持。既存PR3/30への反映後に対象7fileのremote全文/blob・parent・変更path集合を照合する。
+
+残件：本人の指定版生成→保存再表示→比較の実機確認を保持する。一般感情/認知、夢/伝聞から現実へ戻る境界、unknown反復、未対応名詞/時点と共有表現の残差は継承。補助reviewでは結果名詞内へ今日/昨日が吸収される可能性を挙げたが、今回は実行未確認の候補であり確定欠陥や修正済みにしない。次回は本節と追跡source/testを再開原典として残件を選ぶ。scratch出力・JSON・logを正式保存先にしない。

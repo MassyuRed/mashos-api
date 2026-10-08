@@ -1349,6 +1349,41 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                     for private in ('scene_state', 'PAST_PRESENCE', 'role_state', 'PAST_RESPONSIBILITY', 'source_parts', '私は'):
                         self.assertNotIn(private, encoded)
 
+    async def test_late_scene_is_saved_and_read_with_the_same_text_and_graph(self):
+        context = '私は会議を担当した。私は資料を調べた。私は記録を残した。'
+        for scene, label in (
+                ('私は職場にいた。', '職場にいた（記録された場面）'),
+                ('私は昨日、職場にいなかったです。', 'この記述時点の昨日：職場にいなかった（記録された場面）')):
+            with self.subTest(scene=scene):
+                original = dict(self.fx['original'], memo=context + scene)
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': original, 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    if name == 'analysis_observed_read':
+                        return result([self.row], matched=True)
+                    raise AssertionError(name)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(len(writes), 1)
+                self.assertEqual(reread['items'][0], saved)
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual((projection, saved['content_text']), (writes[0]['p_projection'], writes[0]['p_text']))
+                self.assertEqual(projection['nodes'][-1]['visible_label'], label)
+                self.assertIn('場面：' + label, saved['content_text'])
+                self.assertNotIn('場面は、この記録からは確定していません', saved['content_text'])
+                self.assertFalse(projection['edges'])
+
     async def test_saved_scene_role_action_chain_is_read_without_reinterpretation(self):
         fx = fixture('今日私は職場にいた。その後私は会議の司会を担当した。'
                      'それから私は資料を調べた。')

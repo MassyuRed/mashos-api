@@ -300,9 +300,10 @@ def _past_event_witness(nucleus, proposition):
     frame = nucleus.semantic_frame
     # The shared surface planner lowers ordinary clauses to should when
     # there are more than three. This is a display priority, not uncertainty.
-    # Admit that priority for the fully parsed responsibility route; optional
-    # fragments stay excluded and the existing scene admission is unchanged.
-    retention = {'required', 'should'} if proposition.role_state else {'required'}
+    # Both fully parsed scenes and responsibilities retain that priority;
+    # sentence position must not erase an explicit event. Optional fragments
+    # stay excluded and every semantic/source witness below remains required.
+    retention = {'required', 'should'}
     return (nucleus.grounding_kind == 'explicit'
         and nucleus.allowed_claim_scope == 'explicit_current_input'
         and nucleus.retention in retention

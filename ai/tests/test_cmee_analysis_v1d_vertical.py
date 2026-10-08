@@ -3217,6 +3217,96 @@ class AnalysisVerticalTests(unittest.TestCase):
             with self.subTest(memo=memo):
                 self.assertIsNone(self.generate(request(record(memo=memo))).artifact)
 
+    def test_late_past_scene_keeps_evidence_and_does_not_depend_on_sentence_position(self):
+        context = '私は会議を担当した。私は資料を調べた。私は記録を残した。'
+        for scene, polarity, day in (
+                ('私は職場にいた', 'positive', ''),
+                ('俺は、家族の良い職場にいました', 'positive', ''),
+                ('私は昨日、図書館にいなかったです', 'negative', 'YESTERDAY'),
+                ('僕は今日職場にいませんでした', 'negative', 'TODAY')):
+            with self.subTest(scene=scene):
+                req = request(record(memo=context + scene + '。'))
+                artifact = self.generate(req).artifact
+                self.assertIsNotNone(artifact)
+                scenes = [n for n in artifact.graph.nodes if n.node_kind == 'SCENE']
+                self.assertEqual(len(scenes), 1)
+                node, = scenes
+                self.assertEqual((node.polarity, node.temporal_scope, node.proposition.relative_day),
+                                 (polarity, 'past', day))
+                self.assertEqual(node.proposition.actor, 'SELF')
+                evidence, = node.evidence_refs
+                envelope = freeze_analysis_sources(req).sources[0].envelope
+                raw = envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                field = envelope.raw_utf8[evidence.field_utf8_start:evidence.field_utf8_end].decode()
+                self.assertEqual(raw.decode(), scene)
+                self.assertEqual(field[evidence.scalar_start:evidence.scalar_end], scene)
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+                self.assertFalse(artifact.graph.edges)
+                self.assertNotIn('SCENE', {g.missing_scope for g in artifact.graph.unknown_gaps})
+                self.assertNotIn('SOURCE_SCOPE', {g.missing_scope for g in artifact.graph.unknown_gaps})
+                front = self.generate(request(record(memo=scene + '。' + context))).artifact
+                self.assertEqual(artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes'][-1]['visible_label'],
+                    front.safe_projection(authenticated_owner_scope=OWNER)['nodes'][0]['visible_label'])
+                compared = self.compared(context + scene + '。', scene + '。' + context).artifact
+                self.assertEqual(compared.period_comparison.change_claims, ())
+
+    def test_late_past_scene_preserves_order_updates_and_opposed_claims(self):
+        context = '私は会議を担当した。私は資料を調べた。私は記録を残した。'
+        old, new = '私は職場にいた', '私は図書館にいませんでした'
+        base = record(memo=context + old + '。')
+        for answer, expected in ((new + '。', ('positive', 'negative')),
+                ('「' + old + '」ではなく「' + new + '」です。', ('negative',)),
+                ('「' + old + '」は取り消します。', ())):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(base, answer))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertEqual(tuple(n.polarity for n in artifact.graph.nodes if n.node_kind == 'SCENE'), expected)
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        supplemented = self.generate(request(self.with_answer(record(memo='私は仕事を続けたい。'),
+            context + old + '。'))).artifact
+        self.assertIsNotNone(supplemented)
+        self.assertEqual(len([n for n in supplemented.graph.nodes if n.node_kind == 'SCENE']), 1)
+        ordered = self.generate(request(record(memo=context + 'その後、' + old + '。'))).artifact
+        edge, = ordered.graph.edges
+        self.assertEqual((edge.edge_kind, edge.endpoint_refs), ('OBSERVED_ORDER', ('n3', 'n4')))
+        self.assertIn('その後：職場にいた', ordered.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+        opposed = self.generate(request(record(memo=context + old + '。私は職場にいなかった。'))).artifact
+        self.assertEqual({n.polarity for n in opposed.graph.nodes if n.node_kind == 'SCENE'}, {'positive', 'negative'})
+        self.assertEqual(len(opposed.graph.conflicts), 1)
+        changed = self.compared(context + '私は職場にいなかった。', context + old + '。').artifact
+        self.assertIn('ROUTE_EVIDENCE_CHANGED', changed.safe_projection(
+            authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+
+    def test_late_past_scene_still_requires_complete_explicit_shared_witness(self):
+        from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
+        build = compiler.build_final_stage1_grounded_observation_plan
+        context = '私は会議を担当した。私は資料を調べた。私は記録を残した。'
+        for mismatch in ('retention', 'grounding', 'scope', 'actor', 'modality', 'time', 'polarity', 'fragment'):
+            def altered(*args, **kwargs):
+                plan = build(*args, **kwargs)
+                n = plan.nuclei[-1]
+                self.assertEqual(n.retention, 'should')
+                changes = {'retention': {'retention': 'optional'},
+                    'grounding': {'grounding_kind': 'interpretive_hypothesis'},
+                    'scope': {'allowed_claim_scope': 'unknown'}}
+                frames = {'actor': {'actor': 'other'}, 'modality': {'modality': 'wish'},
+                    'time': {'time_scope': 'future'}, 'polarity': {'polarity': 'negative'},
+                    'fragment': {'attribute_codes': n.semantic_frame.attribute_codes + ('semantic_dependency:unknown',)}}
+                n = replace(n, **changes[mismatch]) if mismatch in changes else replace(
+                    n, semantic_frame=replace(n.semantic_frame, **frames[mismatch]))
+                return replace(plan, nuclei=plan.nuclei[:-1] + (n,))
+            with self.subTest(mismatch=mismatch), patch.object(
+                    compiler, 'build_final_stage1_grounded_observation_plan', side_effect=altered):
+                artifact = self.generate(request(record(memo=context + '私は職場にいた。'))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertFalse(any(n.node_kind == 'SCENE' for n in artifact.graph.nodes))
+                self.assertIn('SOURCE_SCOPE', {g.missing_scope for g in artifact.graph.unknown_gaps})
+        for scene in ('友人は職場にいた', '私は職場にいたい', '私は職場にいたかもしれない',
+                      '私は職場にいたと聞いた', '夢を見た。私は職場にいた', '私は職場にいた？'):
+            with self.subTest(scene=scene):
+                artifact = self.generate(request(record(memo=context + scene + '。'))).artifact
+                self.assertFalse(artifact and any(n.node_kind == 'SCENE' for n in artifact.graph.nodes))
+
     def test_explicit_past_presence_is_a_scene_with_exact_whole_clause_evidence(self):
         for subject, noun in (('私', '職場'), ('僕', '会議の会場'),
                               ('わたし', '図書館'), ('自分', 'オフィス'),
