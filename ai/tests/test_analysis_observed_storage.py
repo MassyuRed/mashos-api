@@ -1339,7 +1339,8 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
     async def test_standalone_self_feeling_survives_save_and_read_without_regeneration(self):
         for clause, label in (('私は安心した', '安心した'), ('私は、安心しました', '安心した'),
                 ('僕は落ち着いた', '落ち着いた'), ('私は嬉しかった', '嬉しかった'),
-                ('わたしは、　うれしかった', 'うれしかった')):
+                ('わたしは、　うれしかった', 'うれしかった'), ('私は落ち着きました', '落ち着いた'),
+                ('僕は、嬉しかったです', '嬉しかった'), ('わたしは，　うれしかったです', 'うれしかった')):
             with self.subTest(clause=clause):
                 self.fx = fixture(clause + '。その後、私は記録を残した。')
                 self.row = self.fx['row']

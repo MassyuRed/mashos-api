@@ -33,6 +33,50 @@ def _action_change_relations(plan):
         'typed_projection:perfective_action_before_bounded_change',))
 
 
+@pytest.mark.parametrize('feeling', ['落ち着きました', '嬉しかったです', 'うれしかったです'])
+@pytest.mark.parametrize('prefix', ['', '私は資料を調べた。', '私は会議を担当した。私は資料を調べた。私は記録を残した。'])
+def test_polite_standalone_feelings_have_bound_positive_shared_witness(feeling, prefix):
+    plan = _polite_change_plan(prefix + '私は、' + feeling + '。')
+    node = [n for n in plan.nuclei if n.source_fields == ('memo',)][-1]
+    frame = node.semantic_frame
+    assert (node.kind, frame.predicate_kind, frame.polarity, frame.modality) == (
+        'reaction', 'feeling', 'positive', 'feeling')
+    assert {'operator:feeling', 'operator:positive_change', 'semantic_role:current_change'} <= set(frame.attribute_codes)
+    assert not _action_change_relations(plan)
+    # The global positive keyword rule is intentionally unchanged.
+    assert plan_owner._POSITIVE_CHANGE_RE.search('落ち着きました') is None
+
+
+@pytest.mark.parametrize('memo', [
+    '落ち着きました。', '友人は落ち着きました。', '私は少し落ち着きました。',
+    '私は落ち着きましたか。', '私は落ち着きました？', '私は落ち着きましたと聞いた。',
+    '私は落ち着きました。とは言えない。', '私は落ち着きました\nわけではない。',
+    '私は落ち着きました。と思う。', '「私は落ち着きました」。',
+    '夢を見た。私は落ち着きました。', '友人の話です。私は落ち着きました。',
+    '友人は言った。私は落ち着きました。',
+])
+def test_polite_standalone_feeling_does_not_borrow_unasserted_or_foreign_scope(memo):
+    plan = _polite_change_plan(memo)
+    assert not any('operator:positive_change' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('feeling', ['落ち着きました', '嬉しかったです', 'うれしかったです'])
+@pytest.mark.parametrize('action', ['私は資料を調べた後、', '私は資料を調べてから、'])
+def test_polite_feeling_compound_support_is_not_newly_admitted(feeling, action):
+    assert not _action_change_relations(_polite_change_plan(action + '私は' + feeling + '。'))
+    result = MeaningExperienceEngine().generate(initial(action + '私は' + feeling + '。'))
+    assert result.artifact is not None, result.reason_codes
+    assert '支えている' not in result.artifact.text
+
+
+def test_polite_standalone_feeling_requires_unchanged_complete_source():
+    memo = '私は落ち着きました。'
+    with pytest.raises(EvidenceLedgerResolutionError, match='source_slice_mismatch'):
+        _polite_change_plan(memo, source_override='友人は' + memo)
+    plan = _polite_change_plan(memo, source_override=memo[:-1] + '？')
+    assert not any('operator:positive_change' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
 @pytest.mark.parametrize('change', ['不安が減りました', '気持ちメモが増えました', '資料が戻りました'])
 @pytest.mark.parametrize('action', ['私は資料を調べた後、', '僕は記録を残してから、',
     '私は、資料を調べた後、', '僕は，　記録を残してから、', 'わたしは、 資料を調べてから、'])

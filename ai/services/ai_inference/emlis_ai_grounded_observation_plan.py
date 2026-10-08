@@ -3770,6 +3770,31 @@ def _source_operator_owner_scope_is_bound(fragment: str) -> bool:
     return True
 
 
+def _source_polite_past_feeling_is_bound(span, normalized_input):
+    """Prove the three polite finite feelings without widening keyword rules."""
+    if span is None or normalized_input is None or span.source_field != "memo":
+        return False
+    raw = str(span.raw_text)
+    subject = r"(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?"
+    feeling = r"(?:落ち着きました|嬉しかったです|うれしかったです)"
+    if re.fullmatch(subject + feeling, raw) is None:
+        return False
+    source = str(normalized_input.get("memo") or "")
+    record = "\n".join(str(normalized_input.get(field) or "") for field in ("memo", "memo_action"))
+    start, end = span.start_index, span.end_index
+    after = source[end:].lstrip(" \t\u3000。．.!！\r\n;；")
+    return bool(0 <= start < end <= len(source) and source[start:end] == raw
+        and _top_level_text(source) == source
+        and (not source[:start].strip() or source[:start].rstrip().endswith(("。", "．", ".")))
+        and (not source[end:].strip() or re.match(r"[ \t\u3000]*[。．.\r\n]", source[end:]))
+        and not _source_prefix_opens_report(source[:start])
+        and not re.search(r"[!?！？…‥]|によると|いわく|曰く|"
+                         r"の(?:話|感想|気持ち|説明|報告|発言)(?:です|だ|[。．.])|"
+                         r"と言|と話|と語|と聞|(?:聞いた|聞きました|読んだ|読みました)(?:話|内容)|夢を見", record)
+        and not re.match(r"(?:と(?:は|も)?(?:思|考|感|言|い|聞|書|読|伝|認|信|報)|"
+                         r"って|わけ|訳|のでは|のか|かも|かどうか|はず)", after))
+
+
 def _typed_nucleus_projections_for_span(
     span: EvidenceSpan,
     *,
@@ -13216,6 +13241,23 @@ def _final_stage1_typed_nuclei(
         )
         if not projections:
             frame = nucleus.semantic_frame
+            if (nucleus.kind == "reaction" and frame.predicate_kind == "feeling"
+                and frame.modality == "feeling" and frame.polarity == "negative"
+                and frame.actor == "current_user" and frame.time_scope == "current_input"
+                and nucleus.source_fields == ("memo",) and nucleus.grounding_kind == "explicit"
+                and nucleus.allowed_claim_scope == "explicit_current_input"
+                and nucleus.retention in {"required", "should"}
+                and "operator:feeling" in frame.attribute_codes
+                and not any(code.startswith(("source_fragment_scalar_", "surface_scalar_",
+                                             "semantic_dependency:", "thread_time:"))
+                            for code in frame.attribute_codes)
+                and _source_polite_past_feeling_is_bound(span, normalized_input)):
+                # The reaction default was negative only because the global
+                # lexicon lacks this polite inflection. Keep its whole source.
+                nucleus = replace(nucleus, semantic_frame=replace(frame, polarity="positive",
+                    attribute_codes=tuple(_dedupe((*frame.attribute_codes,
+                        "operator:positive_change", "semantic_role:current_change")))))
+                frame = nucleus.semantic_frame
             if (span is not None and normalized_input is not None
                 and nucleus.source_fields == ("memo",) and span.source_field == "memo"
                 and (nucleus.grounding_kind, nucleus.allowed_claim_scope) in {

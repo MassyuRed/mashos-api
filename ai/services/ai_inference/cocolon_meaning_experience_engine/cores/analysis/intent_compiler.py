@@ -14,6 +14,7 @@ from emlis_ai_grounded_observation_plan import (
     source_proven_performed_action_status,
     _source_current_cognition, _source_current_cognition_parts,
     _source_unfinished_result_clause_is_bound,
+    _source_polite_past_feeling_is_bound,
 )
 from ...contracts import EvidenceRef
 from ...emlis_answer_update import _WITHDRAWAL, _REPLACEMENT
@@ -157,13 +158,14 @@ _CHANGE_FORMS.update({'変わりました': '変わる', '減りました': '減
 _BOUNDED_CHANGE = re.compile(
     r'(?P<noun>' + _NOMINAL + r'(?:の' + _NOMINAL + r')*)'
     r'(?P<case>は|が|も)(?P<predicate>' + '|'.join(_CHANGE_FORMS) + r')')
-# Finite feelings already witnessed by the shared action/change pair. These
-# are predicate inflections, not an assessment that the preceding action helped.
+# Finite feelings still require a shared pair or a complete standalone witness.
+# These inflections never assess whether a preceding action helped.
 _FEELING_PAST = {'安心する': '安心した', '落ち着く': '落ち着いた',
                  '嬉しい': '嬉しかった', 'うれしい': 'うれしかった'}
 _FEELING_FORMS = {'安心した': '安心する', '安心しました': '安心する',
-    '落ち着いた': '落ち着く',
-    '嬉しかった': '嬉しい', 'うれしかった': 'うれしい'}
+    '落ち着いた': '落ち着く', '落ち着きました': '落ち着く',
+    '嬉しかった': '嬉しい', '嬉しかったです': '嬉しい',
+    'うれしかった': 'うれしい', 'うれしかったです': 'うれしい'}
 _PAST_EVENT_TOPIC = (
     r'(?P<subject>私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?'
     r'(?:(?P<day>今日|昨日)(?!の|を|に|で|と|は|が|も)(?P<day_separator>[、，\s]*))?')
@@ -999,6 +1001,11 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     if change is not None and (pair is None or nucleus.nucleus_id != pair[1]):
         if (pair is not None or a != 0 or b != len(span.raw_text)
                 or not _standalone_past_feeling_witness(nucleus, change)):
+            return None
+        # All three newly admitted polite forms need the same source-host
+        # proof, including those already positive in the shared keyword plan.
+        if (value.endswith(('落ち着きました', '嬉しかったです', 'うれしかったです'))
+                and not _source_polite_past_feeling_is_bound(span, source.normalized)):
             return None
         # Ledger punctuation is not proof that a feeling's finite host is
         # closed: a following dependent suffix can negate or embed it. Keep

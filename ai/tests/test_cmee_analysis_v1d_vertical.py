@@ -77,10 +77,89 @@ class AnalysisVerticalTests(unittest.TestCase):
                         self.assertIn(label, text)
                         self.assertIn('原因を示す線ではありません', text)
 
+    def test_polite_past_feelings_preserve_single_and_following_order(self):
+        for polite, plain in (('落ち着きました', '落ち着いた'),
+                              ('嬉しかったです', '嬉しかった'), ('うれしかったです', 'うれしかった')):
+            for subject in ('私は', '僕は、', 'ぼくは', '俺は', 'おれは', 'わたしは， ', '自分は'):
+                with self.subTest(polite=polite, subject=subject):
+                    literal = subject + polite
+                    req = request(record(memo=literal + '。その後、私は記録を残した。'))
+                    artifact = self.generate(req).artifact
+                    self.assertIsNotNone(artifact)
+                    feelings = [n for n in artifact.graph.nodes if n.proposition.result_state == 'PAST_FEELING']
+                    feeling, = feelings
+                    self.assertEqual((feeling.proposition.actor, feeling.modality,
+                        feeling.temporal_scope, feeling.proposition.polarity), ('SELF', 'feeling', 'past', 'positive'))
+                    self.assertEqual(len(artifact.graph.nodes), 2)
+                    self.assertEqual(len(artifact.graph.edges), 1)
+                    source, = freeze_analysis_sources(req).sources
+                    evidence, = feeling.evidence_refs
+                    raw = source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                    self.assertEqual(raw.decode(), subject + polite)
+                    self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+                    self.assertEqual(artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'],
+                        self.generate(request(record(memo=(subject + plain)
+                            + '。その後、私は記録を残した。'))).artifact.safe_text_projection(
+                                authenticated_owner_scope=OWNER)['text'])
+
+    def test_polite_past_feelings_keep_unread_scope_pending(self):
+        for feeling in ('落ち着きました', '嬉しかったです', 'うれしかったです'):
+            for prefix, suffix in (('友人は', '。'), ('私は少し', '。'), ('私は', 'か。'),
+                    ('私は', '？'), ('私は', 'と聞いた。'), ('私は', '。とは言えない。'),
+                    ('私は', '\nわけではない。'), ('私は', '。と思う。'), ('「私は', '」。'),
+                    ('夢を見た。私は', '。'), ('友人によると。私は', '。'),
+                    ('友人は言った。私は', '。')):
+                for action in ('', '私は資料を調べた後、'):
+                    with self.subTest(feeling=feeling, prefix=prefix, suffix=suffix, action=action):
+                        result = self.generate(request(record(memo=action + prefix + feeling + suffix)))
+                        self.assertFalse(result.artifact and any(n.proposition.result_state == 'PAST_FEELING'
+                            for n in result.artifact.graph.nodes))
+            self.assertIsNone(self.generate(request(record(memo=feeling + '。'))).artifact)
+            self.assertIsNone(self.generate(request(record(memo='', action='私は' + feeling + '。'))).artifact)
+            for action in ('私は資料を調べた後、', '私は資料を調べてから、'):
+                for subject in ('', '私は、'):
+                    with self.subTest(action=action, subject=subject, feeling=feeling):
+                        self.assertIsNone(self.generate(request(record(memo=action + subject + feeling + '。'))).artifact)
+
+    def test_polite_past_feelings_keep_answer_sources_and_period_meaning(self):
+        for polite, plain in (('落ち着きました', '落ち着いた'),
+                              ('嬉しかったです', '嬉しかった'), ('うれしかったです', 'うれしかった')):
+            new = '私は、' + polite
+            old = '私は安心した'
+            original = record(memo=old + '。その後、私は記録を残した。')
+            for answer in (new + '。', '「' + old + '」ではなく「' + new + '」です。'):
+                with self.subTest(polite=polite, answer=answer):
+                    req = request(self.with_answer(original, answer))
+                    artifact = self.generate(req).artifact
+                    self.assertIsNotNone(artifact)
+                    feeling = next(n for n in artifact.graph.nodes if n.visible_label == new)
+                    sources = {s.envelope.envelope_id: s.envelope for s in freeze_analysis_sources(req).sources}
+                    evidence, = feeling.evidence_refs
+                    source = sources[evidence.source_envelope_id]
+                    self.assertEqual(source.source_role, 'SUPPLEMENTAL_ANSWER')
+                    self.assertEqual(source.raw_utf8[evidence.utf8_start:evidence.utf8_end].decode(), new)
+                    if answer.startswith('「'):
+                        self.assertFalse(artifact.graph.edges)
+                    artifact.safe_projection(authenticated_owner_scope=OWNER)
+            withdrawn = self.generate(request(self.with_answer(record(memo=new + '。その後、私は記録を残した。'),
+                '「' + new + '」は取り消します。'))).artifact
+            self.assertEqual(len(withdrawn.graph.nodes), 1)
+            self.assertFalse(withdrawn.graph.edges)
+            compared = self.compared(new + '。その後、私は記録を残した。',
+                '僕は' + plain + '。その後、私は記録を残した。').artifact
+            self.assertEqual(compared.period_comparison.change_claims, ())
+            repeated = self.generate(request(record(memo=new + '。'), record(2, memo='僕は' + plain + '。'))).artifact
+            node, = repeated.graph.nodes
+            self.assertEqual(len(node.evidence_refs), 2)
+            with self.assertRaises(AnalysisSourceError):
+                replace(repeated, graph=replace(repeated.graph, nodes=(replace(node,
+                    proposition=replace(node.proposition, polarity='negative')),))).safe_projection(
+                        authenticated_owner_scope=OWNER)
+
     def test_standalone_self_past_feeling_keeps_unknown_and_source_boundaries(self):
         for memo in ('安心した。', '落ち着いた。', '友人は安心した。', '私も安心した。',
                 '私は少し安心した。', '私は安心しなかった。', '私は安心したい。',
-                '私は安心する。', '私は落ち着きました。', '私はほっとした。',
+                '私は安心する。', '私は落ち着きませんでした。', '私はほっとした。',
                 '私は安心したかもしれない。', '私は安心した？',
                 '私は安心したと聞いた。', '夢を見た。私は安心した。',
                 '友人によると。私は安心した。', '「私は安心した」。',

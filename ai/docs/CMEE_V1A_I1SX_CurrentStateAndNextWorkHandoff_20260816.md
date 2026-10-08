@@ -15653,3 +15653,32 @@ OBSERVED_BLOCKER_MINIMAL_FIX、既存設計内の可逆な内容修正。Codex W
 STRUCTURE_MAP_DELTA_NONE：既存Analysis compiler内の受理/意味接続補正、owner/依存方向/route/保存lifecycle不変。API compiler1/test2/handoff1、Cocolon current03/詳細04/06の全7既存fileを変更、新規repo file0。共有Plan/Safety/Emlis/Piece/API契約/DTO/DB/SQL/RN/製品依存変更0。main/merge/deploy/env/native build操作0。未配置・実DB/本人実機/商品受入れ未確認、限定TECHNICAL_CREDIT、商品NOT_CLEAR。既存PR3/30反映後、remote parent/tree/変更path集合/全7fileの内容と最終headを照合する。
 
 残件：主語省略の単独感情、未認定の落ち着きました/新活用・程度・否定・時点、複合文への前方接続、一般認知、夢/伝聞から現実へ戻る境界、unknown反復、共有/Emlis既存失敗は継続。今回の接尾保留は任意の後文による訂正の一般理解を完成させるものではない。本人指定版の生成→保存再表示→比較は実機残件。本節・追跡source/test・最新weeklyを正式再開点とし、scratch出力を正本にしない。
+
+
+## 2026-10-08 JST u179 — 丁寧形で明記した単独の過去感情を保持（未配置）
+
+Mashの分析内容修正継続指示から再開。開始HEADはAPI `defd582dcb0cb27e5054a1bc51207bb1ae6b0bc2`／Cocolon `e5fea502f4f86e7ec08ae3be2c20c9e4a0eedb35`、既存PR3/30 Draft/open/unmergedをfresh確認。同一sessionで読んだ前提/作業姿勢・全体設計01/全file地図01A〜Cと関連owner・国家02・Karen-Diary必須3fileを継承し、Rule18の該当範囲、恒久incident全文、latest weekly20261003 §5.3/§6.6〜6.10を再確認。直前u178のSystem Context prepareは設定commitとの祖先関係不成立で停止しており、生成freshnessを主張せず追跡正本の直接参照を継続した。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。Codex Work root華恋が単一編集・実行・GitHub反映owner、同環境read-only補助が別候補の原因調査と最終差分を確認。別model Pro reviewではない。今回成立させる内容は、完全な明示SELFの単独「落ち着きました／嬉しかったです／うれしかったです」を文章/図へ保持し、既存の後続順序・更新・比較・保存を維持すること。未対応の全活用を実機接続の前工程にしない。配置・実DB・公開契約へ拡張しない。
+
+開始実測：3丁寧形はいずれもAnalysisで欠落。嬉/うれの2形は共有positive feelingが成立済みだがAnalysisの有限形表にない。落ち着きましたは同表にないことに加え、共有global positive語形が常体だけを認識し、reaction既定のnegativeになっていた。共有有限活用文法自体には3形がある。行動後の複合文にも同じ欠落があり、嬉/うれの丁寧形は共有past結果末尾にも一致しない。
+
+**調査候補から不採用にした範囲を保持する。** 最初に単独＋行動後の3形×7主語×3形態を検査し、製品変更前に63 subFAIL／2 methods PASS／66 subtests PASS（12.28秒）。共有final pairの局所的な追加を試すとAnalysisの129 subtestsは通ったが、Emlis実本文の複合3例で、順序を「行動が感情を支えている」という根拠のないsupport断定へ広げる出力を確認した。このpair差分は採用せず撤去した。今回の単独修正へ限定する理由はそのactual出力であり、行動後の42正常候補を成功扱いせず、複合3形の欠落とsupport断定の連動を次の内容修正残件に残す。
+
+採用した製品差分は共有Planと既存Analysis compiler。共有finalのno-projection部で、memo単独span・明示SELF・3丁寧形全文・元source一致・文境界・引用/報告/夢/疑問/後続依存host不在が証明され、explicit/current-input claim・required/should・current_user・reaction/feeling/negative/feeling/current_inputの整合がある場合だけ、落ち着きましたの誤った既定極性をpositiveへ補正し既存positive_change/current_changeを付ける。global keyword regex・既存pair投影・shared Safetyは変更0。
+
+Analysisは有限形表に3形を追加し、u178の単独SELF witnessへ同じshared source-host判定を追加する。独立reviewで、既にpositiveの嬉/うれ2形が「友人は言った。」の後でも受理される非対称を確認したため、新3形全てにこの出典/帰属条件を要求した。旧plainの挙動を変更せず、新3形の報告・否定/認知への未閉包を保留する。PAST_FEELING/SELF/positive/feeling/pastと原文scalar/UTF-8/hashを保持し、丁寧さを意味差にしない。主語省略から本人を補わず、後続の明示順序だけを既存条件で残す。
+
+runtimeは前turnの隔離venv（Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5）を継承。今回の依存導入/製品lock変更0。絶対entrypoint、PYTHONPATH=ai、bytecode/cacheprovider/FB172移行plugin無効。
+- 初回統合は483 PASS／新shared検査9 FAIL／2793 subtests PASS（60.18秒）。新検査がmemoの感情でなく、fixture末尾の別fieldのeventを選んだ誤りだった。memo核を選ぶよう新検査だけを訂正し、9/9 PASS（8.60秒）。製品条件・既存共有期待を緩めない。
+- 最終Analysis3suite（vertical278/storage64/saved-period16）は**358 tests PASS／2799 subtests PASS（16.96秒）**。新3method、3形×7主語、原文、後続肯定/否定、報告・未閉包保留、補足/訂正/撤回、同義期間比較/集約、safe極性改変拒否を確認。旧u178の「私は落ち着きました」の拒否1例だけを今回の正常対象へ移し、その対照は未対応否定形へ更新。他の旧pair/他者/未認定形の保留を維持。
+- 共有既存limited-change-feeling fileは**134検査成功（初回125 PASS＋新9の訂正後PASS）**。うち新29、既存105。最終shared製品bytesでの結果であり、全共有/Emlis suiteではない。active final language owner identity exact1は**1 PASS（22.52秒）**。限定合計493検査、skip/xfail0。
+- current shared identityだけを同期：language `51dd4222587ad18fa74ebf156c1e53e88568a5b30273033a7c823c1d0ee60599`／runtime `18b94da753147953a1173565a782ffd5446ad0933969db139a1c682a161d3c4f`。初回更新scriptは既存scope metadataを想定せずassert停止、未書込み。scopeを保持した再実行で同期し、historical frozen manifest・9owner/18payloadは維持した。
+- 実保存service＋合成RPCの既存検査へ丁寧3例を追加し、engine再生成を禁止した保存後readの同一本文/図/identityを確認。実DB検査ではない。
+- rootが最終合成Analysis8全文（単独、後続否定、未解析介在、補足、撤回、訂正、比較、未対応複合文保留）を全読。実RN `buildWatashiMapV2ViewModel` の全文/identity/node順/edge/unknown/注記/競合/比較stateが8/8一致。React/native実画面確認ではない。unknown反復は残る。
+- rootが開始前/最終Emlis6全文も全読。最終版は5本文が開始版と一致、単独の落ち着きましただけ既存の感情受取へ変化。試行で生じた複合3例のsupport断定は最終版へ入らず、元の本文を保持。Emlisの原文復唱と定型受取は未解消で、商品品質完成とはしない。
+- 最終read-only再reviewの15確認で報告漏れ解消、普通の順序、訂正出典と橋渡し0、既存plain compoundを確認しblocking指摘なし。最終検査後はcompiler説明commentと資料のみを整備し、実行意味の変更0。
+
+STRUCTURE_MAP_DELTA_NONE：既存共有意味owner→Analysis compilerの依存とroute/保存lifecycleを維持。API Plan1/compiler1/test3/current identity1/handoff1、Cocolon current03/詳細04/06の全10既存fileを変更、新規repo file0。API契約/DTO/DB/SQL/RN/Safety/製品依存変更0。main/merge/deploy/env/native build操作0。未配置・実DB/本人実機/商品受入れ未確認、限定TECHNICAL_CREDIT、商品NOT_CLEAR。既存PR3/30へnon-force反映し、remote parent/tree/変更path集合/全10fileの内容と最終headを照合する。
+
+残件：今回3丁寧形の行動後compoundは未完了。共有pair追加でEmlisのsupport断定が増える実出力を次の修正対象の根拠とする。単独の主語省略/程度/否定/他時点、複合文への前方接続、一般認知、旧plainの開いた報告帰属、夢/伝聞から現実へ戻る境界、unknown反復、共有/Emlis既存失敗は残る。本人指定版の生成→保存再表示→比較は実機残件。本節・追跡source/test・latest weeklyを正式再開点とし、scratch出力を正本にしない。
