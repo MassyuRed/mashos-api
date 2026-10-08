@@ -4152,8 +4152,8 @@ def _typed_nucleus_projections_for_span(
             )
         )
 
-    def structurally_performed_action(fragment: str) -> bool:
-        argument_match = _ACTION_ARGUMENT_STEM_RE.search(fragment)
+    def structurally_performed_action(fragment: str, *, argument_start: int = 0) -> bool:
+        argument_match = _ACTION_ARGUMENT_STEM_RE.search(fragment, argument_start)
         if argument_match is None or _NON_ACTION_CONDITION_END_RE.search(fragment):
             return False
         predicate = argument_match.group("predicate")
@@ -4253,7 +4253,6 @@ def _typed_nucleus_projections_for_span(
         change_operators = set(
             _operator_codes_for_text(change_text, source_field=source_field)
         )
-        performed_action = structurally_performed_action(action_text)
         polite_nominal_change = change_text.endswith(("減りました", "増えました", "戻りました"))
         polite_feeling_change = change_text.endswith(("落ち着きました", "嬉しかったです", "うれしかったです"))
         proved_polite_feeling = polite_feeling_change and _source_polite_past_feeling_is_bound(
@@ -4269,6 +4268,17 @@ def _typed_nucleus_projections_for_span(
             and "operator:uncertainty" not in change_operators
             and "operator:wish" not in change_operators
             and "operator:refusal" not in change_operators
+        )
+        # Skip a discourse marker's internal から only for an already proven
+        # polite compound with an explicit SELF clause. Plain-form compounds
+        # keep their existing admission until their shared reception is ready.
+        # Operators and source coordinates still use the unchanged fragment.
+        discourse_prefix = re.match(
+            r"^(?:その後|それから)[、， \u3000]*(?=(?:私|僕|わたし|自分)(?:は|が|も))",
+            action_text,
+        ) if observed_change and (polite_feeling_change or polite_nominal_change) else None
+        performed_action = structurally_performed_action(
+            action_text, argument_start=discourse_prefix.end() if discourse_prefix else 0,
         )
         if action_text and performed_action and observed_change:
             change_codes = [

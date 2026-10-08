@@ -351,7 +351,7 @@ def test_changed_source_scope_cannot_borrow_a_valid_finite_body(context, field, 
 
 
 
-@pytest.mark.parametrize('marker', ['その後、', 'それから、'])
+@pytest.mark.parametrize('marker', ['その後、', 'それから、', 'その後', 'それから'])
 @pytest.mark.parametrize('action,visible', [('私は資料を調べた後、', '資料を調べた後、'),
     ('僕は、資料を調べてから、', '資料を調べてから、')])
 @pytest.mark.parametrize('ending,plain', [('落ち着きました', '落ち着いた'),
@@ -408,5 +408,15 @@ def test_prefixed_polite_episode_keeps_marker_without_first_person_or_support(ma
     ('その後、', '私は資料を調べた後、', '。と私は思う'),
     ('その後、', '私は資料を調べた後、', '。なんて嘘だった'),
 ])
-def test_prefixed_polite_episode_requires_complete_self_source(prefix, action, suffix, ending):
+@pytest.mark.parametrize('unpunctuated', [False, True])
+def test_prefixed_polite_episode_requires_complete_self_source(prefix, action, suffix, ending, unpunctuated):
+    if unpunctuated:
+        prefix = prefix.replace('その後、', 'それから').replace('それから、', 'それから')
     assert not _action_change_relations(_polite_change_plan(prefix + action + ending + suffix + '。'))
+
+
+@pytest.mark.parametrize('ending', ['落ち着いた', '嬉しかった', '疑問が減った', '資料が戻った'])
+def test_unpunctuated_plain_compound_keeps_existing_admission_pending(ending):
+    # Newly opening the plain compound also opens its old causal reception.
+    assert not _action_change_relations(_polite_change_plan(
+        'それから私は資料を調べた後、' + ending + '。'))

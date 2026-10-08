@@ -15757,3 +15757,26 @@ runtimeは既存の隔離環境を再発見し、Python3.12.14/pytest9.1.1/FastA
 STRUCTURE_MAP_DELTA_NONE：既存共有意味owner/作者/独立readerの責務と依存、Analysis route/保存lifecycleを維持。API製品3/test3/current identity1/handoff1、Cocolon current03/詳細04/06の計11既存file、新規repo file0。Analysis compiler/API契約/DTO/DB/SQL/RN/Safety/依存変更0。main/merge/deploy/env/native build操作0。PR3/30へnon-force反映し、remote changed-path集合・対象全file blob内容・最終headを照合する。未配置・実DB/本人実機/商品受入れ未確認、限定TECHNICAL_CREDIT、商品NOT_CLEAR。
 
 残件：u181の先頭marker＋上記丁寧6形の欠落は今回の読点付き・完全SELF行動の有限範囲で解消。読点なし「それから私は…」は既存格解析との干渉が疑われ、今回の成功範囲へ含めない。程度/否定/他時点/一般認知、旧prefixなしの開いた帰属/夢/伝聞、unknown反復、共有/Emlis既存失敗、本人指定版の生成→保存再表示→比較の実機確認は残る。次回はlatest weekly、本節、追跡source/testへ戻り、配置/実機を全日本語活用の完成待ちにしない。
+
+
+## 2026-10-09 JST u183 — 読点なし順序語に続く丁寧compoundの欠落補修（未配置）
+
+Mashの分析内容修正継続指示でu182残件を再開。fresh branch refはAPI `db849446db973edeb82f87fa41a87f018b4566bf`／Cocolon `04dcd641e7494d794d46d00bdad0001a133e42a6`、両PR Draft/open/unmerged。前回記録したAPI PR metadataの遅れは開始時に解消し、branch refと同じu182を返した。local開始treeとremote treeも一致。全体設計01、全file地図01A〜C/02、current03/詳細04/06とAPI handoff、最新weekly20261003 §5.2/§6.6〜6.10、作業姿勢の適用条件を継承・対象箇所再確認し、恒久incidentを今回も全文読了。既知のContext prepare祖先関係不成立は修理せず追跡正本を直接参照する。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。欠落の因果箇所を既存owner内で修正し、原文→文章/図→保存再読を確認する一単位。Codex Work root華恋が単一編集・実行・反映owner、同環境read-only補助が設計/週次と原因/最終差分を確認。別model Pro reviewではない。新機能・外部依存・公開契約・実DB・配置へ広げず、別経路で意味の誤りを増やす候補は採用しない。追加費用とMashの操作負担0。全日本語理解・文体完成を実機接続の前提にしない。
+
+開始実測：`それから私は資料を調べた後、落ち着きました` と `疑問が減りました` はshared pair0、前後に明示記録を置いたAnalysisも2nodes/0edges。読点ありの `それから、` と読点なし `その後` はpair1/4nodes/3edges。原因は格検索がmarker内部の「から」を選び、後続の「私は…」を述語へ取り込み拒否することだった。
+
+製品変更は共有Planの1file。既存の全文・有限形・帰属が成立した丁寧compoundだけで、単一の先頭順序語＋明示SELF（私/僕/わたし/自分）の後ろから格を検索する。原文への読点追加/削除は行わず、否定・operatorは元全文、scalar/UTF-8/whole evidence・connectorも元のまま。generic endpoint callerは既定の検索位置0を維持する。Analysis compiler、Emlis作者/独立readerは既存経路を使う。
+
+途中試行で常体にも同じ補正を開くと、Emlis実本文が「行動したことが支えている」という根拠のないsupportを返した。常体への拡張は採用せず、今回を落ち着きました/嬉しかったです/うれしかったです、および名詞の減りました/増えました/戻りましたの既存完全形へ限定した。常体の読点なし4例は保留検査を残す。比較検査は読点あり常体との同義性と、丁寧形の読点差だけの同義性を分けた。
+
+- 最終5suite **682 tests PASS／3013 subtests PASS／3 SKIP（141.67秒）**。Analysis vertical288/storage66/saved-period16＝370、共有limited-change294/past-episode18＝312。3 skipは既存Emlis実保存test runtime未設定。全repo/全Emlis検査ではない。
+- 両markerの読点あり/なし、後/てから、3感情/3名詞変化、前後3線、原文範囲/hash、主体非推定、前件なし・未知/希望/別source、補足/訂正/撤回、同義比較/順序差を確認。新no-comma境界でも他者・主語省略・疑問・否定行動・重複marker・引用/報告/夢/後続認知・撤回を拒否。Emlisの全recoveryと作者無効の独立readerでmarker/主体/因果/結果の改変拒否を確認。
+- 実Analysis保存service＋合成RPCで読点なし6例を追加し、保存後はengine再生成禁止で同一本文/図/identityを再読。実DB確認ではない。
+- current shared identityのみ同期。active final owner exact1 **1 PASS（22.66秒）**。language `d164cdc511bf97c25694805d6267cc7d0d2fe3be1fafef626ded127306e17400`／runtime `b05a60865ca4ed58292549bd807f4f739ea762cedf5cde0492e98b5fa74f5d50`。historical manifest不変。限定成功合計683 tests。
+- rootがAnalysis合成8全文（通常/名詞変化/前件なし/未知文/補足/訂正/撤回/読点差比較）を全読し、実RN表示modelの全文・identityと8/8一致。Emlis最終4全文も読み、順序語、本人発話の帰属、名詞「自分」の保持を確認。read-only最終差分reviewにblockerなし。React/native実画面、実DB、本人実機、商品受入れは未確認。
+
+STRUCTURE_MAP_DELTA_NONE。既存共有ownerの責務と依存、保存/表示routeを維持。API製品1/test3/current identity1/handoff1、Cocolon current03/詳細04/06の全9既存file。新規repo file、API契約/DTO/DB/SQL/RN/Safety/依存変更0。main merge/deploy/env/native build操作0。検証済みの既存公開repository・branchへ接続済みGitHubからnon-force反映し、parent・changed paths・全9file remote bytes・headを照合する。限定TECHNICAL_CREDIT、商品NOT_CLEAR。
+
+残件：no-comma常体compoundの欠落と連動するEmlis support誤表現、他SELF表記/程度/否定/他時点/一般認知、既存共有/Emlis失敗、unknown反復と訂正後の保守的な未確定表示、本人指定版の生成→保存再表示→比較の実機確認。今回の丁寧形修正を全表記対応・配置済みへ拡大解釈しない。次はこの常体の共有出力の共通原因を確認しつつ、weeklyの配置/実機到達を磨き込み待ちにしない。

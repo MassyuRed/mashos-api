@@ -3294,7 +3294,7 @@ class AnalysisVerticalTests(unittest.TestCase):
         self.assertFalse(result.artifact and result.artifact.graph.edges)
 
     def test_prefixed_polite_compounds_preserve_complete_order_and_evidence(self):
-        for marker in ('その後、', 'それから、'):
+        for marker in ('その後、', 'それから、', 'その後', 'それから'):
             for action in ('私は資料を調べた後、', '僕は、資料を調べてから、'):
                 for ending in ('落ち着きました', '私は、嬉しかったです', 'うれしかったです',
                                '疑問が減りました', '気持ちメモが増えました', '資料が戻りました'):
@@ -3325,8 +3325,9 @@ class AnalysisVerticalTests(unittest.TestCase):
                         self.assertIn('原因を示す線ではありません', text)
 
     def test_prefixed_polite_compounds_keep_unknown_and_source_boundaries(self):
-        for ending in ('落ち着きました', '資料が戻りました'):
-            episode = 'その後、私は資料を調べてから、' + ending + '。'
+        for marker, ending in ((m, e) for m in ('その後、', 'それから')
+                               for e in ('落ち着きました', '資料が戻りました')):
+            episode = marker + '私は資料を調べてから、' + ending + '。'
             for req in (request(record(memo=episode)),
                         request(record(memo='私は会議を担当した。未知の出来事。' + episode)),
                         request(record(memo='私は仕事を続けたい。' + episode)),
@@ -3340,10 +3341,11 @@ class AnalysisVerticalTests(unittest.TestCase):
                         {g.reason_code for g in artifact.graph.unknown_gaps})
 
     def test_prefixed_polite_compounds_preserve_updates_and_comparison(self):
-        for ending, plain in (('落ち着きました', '落ち着いた'),
-                              ('嬉しかったです', 'うれしかった'), ('資料が戻りました', '資料が戻った')):
+        for marker, ending, plain in ((m, e, p) for m in ('その後、', 'それから')
+                for e, p in (('落ち着きました', '落ち着いた'),
+                             ('嬉しかったです', 'うれしかった'), ('資料が戻りました', '資料が戻った'))):
             first = '私は会議を担当した'
-            episode = 'その後、私は資料を調べてから、' + ending
+            episode = marker + '私は資料を調べてから、' + ending
             original = record(memo=first + '。' + episode + '。その後、私は記録を残した。')
             with self.subTest(ending=ending):
                 withdrawn = self.generate(request(self.with_answer(original,
@@ -3358,10 +3360,14 @@ class AnalysisVerticalTests(unittest.TestCase):
                     first + '。' + episode + '。'))).artifact
                 self.assertEqual(len(added.graph.edges), 2)
                 same = self.compared(first + '。' + episode + '。',
-                    first + '。' + episode.replace(ending, plain).replace('調べてから', '調べた後') + '。').artifact
+                    first + '。' + episode.replace(marker, marker.rstrip('、') + '、', 1)
+                    .replace(ending, plain).replace('調べてから', '調べた後') + '。').artifact
                 self.assertEqual(same.period_comparison.change_claims, ())
+                punctuation_only = self.compared(first + '。' + episode + '。',
+                    first + '。' + episode.replace(marker, marker.rstrip('、') + '、', 1) + '。').artifact
+                self.assertEqual(punctuation_only.period_comparison.change_claims, ())
                 changed = self.compared(first + '。' + episode + '。',
-                    first + '。' + episode.replace('その後、', '') + '。').artifact
+                    first + '。' + episode.replace(marker, '', 1) + '。').artifact
                 self.assertIn('ROUTE_EVIDENCE_CHANGED', changed.safe_projection(
                     authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
 
