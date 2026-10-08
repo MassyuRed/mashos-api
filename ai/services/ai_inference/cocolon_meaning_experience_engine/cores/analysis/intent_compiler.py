@@ -330,7 +330,7 @@ def _past_event_witness(nucleus, proposition):
 
 def _past_feeling_proposition(value):
     # Retain topic punctuation in the complete endpoint's source range.
-    # The surrounding action/change pair still owns admission and order.
+    # Admission requires either the complete pair or a standalone SELF witness.
     subject = re.match(r'^(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?', value)
     start = subject.end() if subject else 0
     lemma = _FEELING_FORMS.get(value[start:])
@@ -341,6 +341,30 @@ def _past_feeling_proposition(value):
         lemma, 'positive', 'feeling', 'past',
         parts + (('FINITE_FEELING', start, len(value)),),
         result_state='PAST_FEELING')
+
+
+def _standalone_past_feeling_witness(nucleus, proposition):
+    # A shared current_user default cannot establish an omitted experiencer.
+    # The complete finite SELF clause proves tense; current_input is the shared
+    # standalone frame's scope, not evidence of a present feeling or an action.
+    if (proposition.result_state != 'PAST_FEELING' or proposition.actor != 'SELF'
+            or (proposition.polarity, proposition.modality, proposition.temporal_scope)
+                != ('positive', 'feeling', 'past')):
+        return False
+    frame = nucleus.semantic_frame
+    expected = (('value', 'value', 'fact') if proposition.predicate_lemma == '安心する'
+                else ('reaction', 'feeling', 'feeling'))
+    return (nucleus.grounding_kind == 'explicit'
+        and nucleus.allowed_claim_scope == 'explicit_current_input'
+        and nucleus.retention in {'required', 'should'}
+        and nucleus.source_fields == ('memo',) and len(nucleus.source_span_ids) == 1
+        and (nucleus.kind, frame.predicate_kind, frame.modality) == expected
+        and frame.actor == 'current_user' and frame.polarity == 'positive'
+        and frame.time_scope in {'current_input', 'past'}
+        and {'operator:positive_change', 'semantic_role:current_change'} <= set(frame.attribute_codes)
+        and (expected[1] != 'feeling' or 'operator:feeling' in frame.attribute_codes)
+        and not any(code.startswith(('source_fragment_', 'surface_scalar_',
+                    'thread_time:', 'semantic_dependency:')) for code in frame.attribute_codes))
 
 
 def _bounded_change_proposition(value):
@@ -973,7 +997,16 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     result = _unfinished_result_proposition(value)
     change = _bounded_change_proposition(value)
     if change is not None and (pair is None or nucleus.nucleus_id != pair[1]):
-        return None
+        if (pair is not None or a != 0 or b != len(span.raw_text)
+                or not _standalone_past_feeling_witness(nucleus, change)):
+            return None
+        # Ledger punctuation is not proof that a feeling's finite host is
+        # closed: a following dependent suffix can negate or embed it. Keep
+        # this new admission pending instead of dropping that unread suffix.
+        continuation = context[span.end_index:].lstrip(' \t\u3000。．.!！\r\n;；')
+        if re.match(r'(?:と(?:は|も)?(?:思|考|感|言|い|聞|書|読|伝|認|信|報)|'
+                    r'って|わけ|訳|のでは|のか|かも|かどうか|はず)', continuation):
+            return None
     if result is not None and not _unfinished_result_witness(nucleus):
         return None
     event = _past_event_proposition(value)
@@ -1157,7 +1190,9 @@ def _explicit_order_pairs(source, plan, withdrawn):
               if e.source_span_id not in withdrawn
               and (e.field_path, e.scalar_start, e.scalar_end) in whole}
     compound_pairs = []
-    feeling_predecessors = set()
+    feeling_predecessors = {e.evidence_id for p, e in claims.values()
+        if (p.result_state, p.actor, p.modality, p.temporal_scope)
+            == ('PAST_FEELING', 'SELF', 'feeling', 'past')}
     for span in source.spans:
         if span.span_id in withdrawn or not _action_change_pair(source, plan, span.span_id):
             continue

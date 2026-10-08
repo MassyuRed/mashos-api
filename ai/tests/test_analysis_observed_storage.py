@@ -1336,6 +1336,47 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(memo=memo):
                 await self._assert_action_change_saved(memo, label)
 
+    async def test_standalone_self_feeling_survives_save_and_read_without_regeneration(self):
+        for clause, label in (('私は安心した', '安心した'), ('私は、安心しました', '安心した'),
+                ('僕は落ち着いた', '落ち着いた'), ('私は嬉しかった', '嬉しかった'),
+                ('わたしは、　うれしかった', 'うれしかった')):
+            with self.subTest(clause=clause):
+                self.fx = fixture(clause + '。その後、私は記録を残した。')
+                self.row = self.fx['row']
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': self.fx['original'], 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    if name == 'analysis_observed_read':
+                        return result([self.row], matched=True)
+                    raise AssertionError(name)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                        reread = await service.read_saved(OWNER)
+                self.assertEqual(reread['items'][0], saved)
+                self.assertEqual(len(writes), 1)
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual((projection, saved['content_text']), (writes[0]['p_projection'], writes[0]['p_text']))
+                feeling, action = projection['nodes']
+                self.assertEqual(feeling['visible_label'], label + '（記録された気持ち）')
+                edge, = projection['edges']
+                self.assertEqual((edge['edge_kind'], edge['from_ref'], edge['to_ref']),
+                    ('OBSERVED_ORDER', feeling['node_ref'], action['node_ref']))
+                self.assertIn(feeling['visible_label'], saved['content_text'])
+                for encoded in (json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False),
+                                json.dumps(projection, ensure_ascii=False)):
+                    for private in ('PAST_FEELING', 'source_parts', clause):
+                        self.assertNotIn(private, encoded)
+
     async def test_past_feeling_outgoing_order_survives_save_and_read(self):
         for episode, label, following, following_label in (
                 ('私は資料を調べた後、安心した。', '安心した（記録された気持ち）',

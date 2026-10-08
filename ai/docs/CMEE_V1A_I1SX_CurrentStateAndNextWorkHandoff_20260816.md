@@ -15627,3 +15627,29 @@ runtimeは既存Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.1
 STRUCTURE_MAP_DELTA_NONE：既存Analysis compiler内の意味接続修正、owner/依存方向/route/保存lifecycle不変。API compiler1/test2/handoff1、Cocolon current03/詳細04/06の全7既存fileを変更、新規repo file0。共有Plan/Safety/Emlis/Piece/API契約/DTO/DB/SQL/RN/依存変更0。main/merge/deploy/env/native build操作0。未配置・実DB/本人実機/商品受入れ未確認、限定TECHNICAL_CREDIT、商品NOT_CLEAR。既存PR3/30反映後、remote parent/tree/変更path集合/全7fileの内容と最終headを照合する。
 
 残件はu176を継承。ただしPAST_FEELING末尾の後続順序は上記の既存完全pair範囲で解消。単独感情、複合文への前方接続、未認定の落ち着きました、一般時点/認知、夢/伝聞から現実へ戻る境界、unknown反復、共有/Emlis既存失敗は残る。本人指定版の生成→保存再表示→比較は別の実機残件。本節・追跡source/test・最新weeklyを再開点とし、scratch出力を正本にしない。
+
+
+## 2026-10-08 JST u178 — 本人を明記した単独の過去感情を分析へ保持（未配置）
+
+Mashの分析内容修正継続指示と添付の前回作業txtから再開。開始HEADはAPI `d5b1154d91d89930c17b094785f8f368ebc84b23`／Cocolon `78735af3b575cff59cd72588510c03c8f38ca6f4`、既存PR3/30 Draft/open/unmergedをfresh確認。前提/作業姿勢入口・CURRENT_RULES/Rule18等、恒久incident全文、Karen-Diary必須3file、全体設計01/全file地図01A〜Cの構成と関連owner・国家02、current03/詳細04、u177、最新weekly20261003 §5.3/§6.6〜6.10を確認。System Context prepareはCocolon material commitと設定commit `a77b79c5c8b0ce498c2ca5674460b3be267164b5` の祖先関係不成立で停止。生成Contextのfreshnessは主張せず、入口が認める追跡正本の直接参照で続行した。
+
+OBSERVED_BLOCKER_MINIMAL_FIX、既存設計内の可逆な内容修正。Codex Work root華恋が単一編集・検証・GitHub反映owner。同環境read-only補助が原因と最終差分を独立確認し、別model Pro reviewとは扱わない。目的/完了条件は、本人が明記した完全な過去感情を文章/図へ保持し、その後に明記された順序、原文証拠、補足/訂正/撤回、期間比較、保存再読を維持すること。全日本語対応や文体完成を配置/実機接続の前工程にせず、新公開契約・実DB・配置へ拡張しない。
+
+開始実測：「私は安心した」「私は嬉しかった」等の単独節は、既存感情parserと共有根拠があっても、Analysis fragmentがaction/change pairを必須とするためUNAVAILABLEとなる。製品変更前の新正常1methodは35 subFAIL（0.084秒）。u177までの単独感情保留を、明示SELF＋既存5有限形の範囲だけ更新した。
+
+製品差分は既存Analysis compilerのみ。完全な「私/僕/ぼく/俺/おれ/わたし/自分は（既存主語読点可）＋安心した/安心しました/落ち着いた/嬉しかった/うれしかった」の単独memo節へ専用witnessを追加。explicit/current-input claim、required/should、memo単独span、current_user/positive、安心のvalue/value/fact・他のreaction/feeling/feeling、既存positive_change/current_change等の整合を要求する。時制は全文有限形でpastと証明し、sharedのcurrent_inputを現在感情と取り違えない。fragment/range/thread/dependency付き核は許可しない。actor既定値から省略主語をSELFにしない。原文scalar/UTF-8/hash/source_partsとPAST_FEELING/feeling/pastを保つ。
+
+この完全なSELF感情の証拠IDだけを明示順序の起点へ加え、同一fieldの隣接する完全fact/past節に「その後／それから」がある場合だけ接続する。未解析文・希望・別field/source・撤回/置換箇所を越えず、原因・改善・本人の実行を補わない。共有Plan/Safety、realizer、保存契約は変更しない。
+
+独立reviewで「私は安心した\nわけではない」「私は安心した。とは言えない」等5例の誤肯定を発見した。ledgerの改行/句点等は有限hostの終結証明にならないため、新しい単独受理内だけで直後の依存接尾（と思う/とは言えない等、って、わけ/訳、のでは/のか/かも/かどうか/はず）の未解析継続を保留する補正を追加。5感情×5境界×7接尾の175 subtestsで、感情の断定と後続への誤順序がないことを確認。既存compound条件は変更しない。再reviewの5否定/留保は全て解消、通常5形×2markerの10例は2node/1順序線を保持し、差分範囲のblocking指摘は解消した。
+
+検証runtimeはPython3.12.14と、scratchの隔離venvへ導入したpytest9.1.1/FastAPI0.142.2/httpx0.28.1（Pydantic2.13.5）を使用。製品依存定義/lock変更0。絶対entrypoint・PYTHONPATH=ai・bytecode/cacheprovider/FB172移行plugin無効。
+- 初回Analysis全対象は351 PASS／既存期待3 FAIL／2481 subtests PASS（16.80秒）。3件はいずれも今回対象の明示SELF単独感情を保留する旧期待であり、対応範囲は型付き受理へ、依然保留する対照は主語省略へ限定更新した。他者/未認定形等の拒否を緩めない。
+- 最終Analysis3suite（vertical275/storage64/saved-period16）：**355 tests PASS／2685 subtests PASS（16.43秒）**。skip/xfail0、全repo検査ではない。5感情形×7主語、読点、肯定/否定の後続、原文、共有witness改変拒否、補足/訂正/撤回、同義集約/期間差、safe再解析改変拒否を確認。
+- 実保存service＋合成RPCの新5例で、保存後のengine再生成を禁止したreadの本文/図/identity一致を確認。private result_state/source_parts等を公開projectionへ追加しない。実DB検査ではない。
+- rootが合成7全文（単独、後続否定、未解析介在、通常補足、撤回、訂正、期間比較）を全読。最終sourceで再生成した7本文は補正前の正常本文と全一致し、実RN `buildWatashiMapV2ViewModel` の全文・identity・node順・edge・unknown・注記・競合・比較stateも7/7一致。最終再生成の初回は補助scriptのimport path不足で停止し、ai/services/ai_inferenceを追加して再実行した。unknown反復は残り、React/native実画面確認ではない。
+- 最終suite後の製品source変更0。共有/Emlis suiteは今回未実行で、既存失敗を解消扱いしない。
+
+STRUCTURE_MAP_DELTA_NONE：既存Analysis compiler内の受理/意味接続補正、owner/依存方向/route/保存lifecycle不変。API compiler1/test2/handoff1、Cocolon current03/詳細04/06の全7既存fileを変更、新規repo file0。共有Plan/Safety/Emlis/Piece/API契約/DTO/DB/SQL/RN/製品依存変更0。main/merge/deploy/env/native build操作0。未配置・実DB/本人実機/商品受入れ未確認、限定TECHNICAL_CREDIT、商品NOT_CLEAR。既存PR3/30反映後、remote parent/tree/変更path集合/全7fileの内容と最終headを照合する。
+
+残件：主語省略の単独感情、未認定の落ち着きました/新活用・程度・否定・時点、複合文への前方接続、一般認知、夢/伝聞から現実へ戻る境界、unknown反復、共有/Emlis既存失敗は継続。今回の接尾保留は任意の後文による訂正の一般理解を完成させるものではない。本人指定版の生成→保存再表示→比較は実機残件。本節・追跡source/test・最新weeklyを正式再開点とし、scratch出力を正本にしない。
