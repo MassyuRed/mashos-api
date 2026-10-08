@@ -15556,3 +15556,28 @@ runtimeは既存Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.1
 STRUCTURE_MAP_DELTA_NONE：既存共有owner内の修正、依存方向・Analysis route/保存lifecycle不変。API Plan1/test3/current identity1/handoff1、Cocolon current03/詳細04/06の計9file modify、新規repo file0。Analysis専用source/Safety/Piece/API/DTO/DB/SQL/RN・依存変更0。main/merge/deploy/env/native build操作0。未配置・実DB/React component/native/本人実機/商品受入れ未確認、限定TECHNICAL_CREDIT・商品NOT_CLEAR。既存PR3/30反映後にremote parent/tree/変更path集合/全9file内容と最終headを照合する。
 
 残件：今回対象外の属格/3項書字、一般時点/感情/認知、夢/伝聞から現実へ戻る境界、unknown反復。探索で「私は資料を調べた後、私は落ち着きました」は共有typed relation未認定を再確認し、Analysisだけを緩めず保留。Emlis複合生成停止、u168共有6FAIL/旧0066/旧contracts差/u165未診断F2は未解消で、今回全scope再検証ではない。本人指定版の生成→保存再表示→比較は別の実機残件。次回は本節/追跡source/testとlatest weeklyから再開し、scratch出力を正式再開原典にしない。
+
+
+## 2026-10-08 JST u175 — 感情語を含む名詞の現在未完了を分析へ保持（未配置）
+
+Mashの分析内容修正継続指示から再開。開始HEADはAPI `95b03c7ce27a4fe90aed46d5eb3d67102cf35f62`／Cocolon `549e72137c1711c9280c8c2af79fffb5a901ce8c`、既存PR3/30 Draft/open/unmergedをfresh確認。前提/作業姿勢入口・current rules/Rule18等、全体設計/全file地図の既読正本と関連ownerを継承し、恒久incidentは今回も全文確認。u174/current03/詳細04 §3.7とlatest weekly20261003 §5/§6の完成条件へ戻った。System Context prepareはPUBLICATION_RECOVERY_AMBIGUOUS: residual without markerで失敗、生成物freshnessを主張せず追跡正本を直接参照。
+
+OBSERVED_BLOCKER_MINIMAL_FIX、既存内容修正・PR反映範囲内。Codex Work root華恋が単一編集・検証・反映owner。同環境read-only補助が再現/原因/設計適合と最終差分を確認し、別model Pro reviewとは扱わない。目的/完了条件は、既存の完全な現在未完了を文章と図へ保持し、原文・否定・時点・対象・訂正/撤回・比較・保存を維持すること。追加費用・Mash操作0。全表現対応、Emlis文体完成、周辺機構を実機接続の前工程にしない。新機能/公開契約/実DB/配置へは拡張しない。
+
+開始実測：「まだ気持ちが定まっていない」はUNAVAILABLE。「私は記録を残した。まだ気持ちが定まっていない」では行動だけで未完了が欠落。「まだ不安の原因が見つかっていない／まだ昨日の気持ちが決まっていません」も欠落。Analysisの完全parserと共有の未完了節helperは成立するが、先行する名詞内感情語分類がreaction/feeling/modality feelingとなり、event/factだけを受ける既存未完了markerが付かない因果を確認した。
+
+製品差分は共有Plan `_final_source_unfinished_result_nuclei` 内だけ。既存の完全名詞/属格文法、まだ＋は/が/も＋見つかる/決まる/定まるの現在否定に一致し、reaction/predicate feeling/modality feeling/negativeが整合した節だけevent/factへ戻す。operator:feelingを除去し、原文座標・全節・explicit根拠とpresent_unfinishedの同じ条件を使う。新分岐には既存nominal_dayと同じ両fieldの報告/夢/引用境界を適用。昨日/昨日分は同じ名詞内時点条件だけで現在hostへ戻す。AnalysisのactorはUNSPECIFIED、名詞/否定/現在時点を保持し、感情所有者・原因・順序・解消を補わない。独立した感情や過去/推量/疑問/条件/未閉包を未完了へ変換しない。
+
+検証runtimeは既存Python3.12.14/pytest9.1.1/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5、絶対entrypoint・PYTHONPATH=ai・bytecode/cacheprovider/FB172移行plugin無効。依存導入/lock変更0。
+- 新Analysis2methodの修正前実行：22 failed（21 subFAIL＋1 method FAIL）／1 passed（5.35秒）。初修正後は2 PASS／30 subtests PASS、初回全Analysis＋identityは342 PASS／2339 subtests（37.75秒）、共有限定81 PASS（13.99秒）。これらを最終境界修正後の証拠に流用しない。
+- rootの追加probeで「まだ誰の気持ちが定まっていない／まだ何の不安が定まっていない」が新共有分岐によりevent/factへ上がると判明。Analysisは既存疑問名詞条件で保留していたが、共有の新補正でも昇格を止める必要があった。境界検査を追加して2 FAIL／18 PASS（9.99秒）を再現し、新nominal_feeling条件に名詞区間先頭の何/誰/幾を除外する1行を追加。既存event/nominal_day経路は変更しない。
+- 最終Analysis3suite（vertical264/storage61/saved-period16＝341）＋active final language owner identity exact1：**342 tests PASS／2339 subtests PASS（36.51秒）**。3名詞×3助詞×2語尾、原文scalar/UTF-8/hash、主体/否定/名詞の改変拒否、更新/比較、独立感情/伝聞等を確認。既存保存検査へ3未完了×4prefixを追加し、実service＋合成RPCでengine再生成を禁止した同一本文/図/identityの再読を確認。実DBではない。
+- 最終共有限定selector `unfinished or writing`：**84 tests PASS（13.01秒）**（既存58＋新26）。実Emlis本文・独立readerの名詞/時制改変拒否、疑問名詞・未閉包・過去/推量/疑問・引用/夢/伝聞・別field帰属を確認。合計426 tests PASSは限定scopeであり全repo PASSではない。旧期待変更/skip/xfail0。
+- current shared identityのみ同期：language `23eaa68bdbeb4073e44d8999f8622b3e8a2ded3197c0a671221689c5ea655fb7`／runtime `2c98395af345c7f79d6a55539e16b87fab5ed81538671a39cad4ebd399d357e8`。historical frozen manifestは維持。
+- rootが合成Analysis8全文（単独/行動併存/原因未発見/名詞内昨日敬体/補足/訂正/撤回/期間比較）を全読。最終sourceで再生成した8本文は既読版と一致し、実RN buildWatashiMapV2ViewModelの全文/identity/node順/edge/unknown/注記/競合/比較stateが8/8一致。
+- Emlis単独4全文（対象3＋独立感情1）と複合1例を、開始HEADの同helperだけを復元した比較実行で確認。4本文は初修正後と全一致、複合は両版ともLIMITED_RECEPTION_CAPABILITY_GAP_STOP。最終sourceでも対象3本文の独立reader確認を含む上記shared回帰が成功。感覚への定型化・一般的な受取と複合停止は未解消で、この比較を開始repo全suite実行やEmlis品質完成とは扱わない。
+- read-only最終差分reviewに具体的blockerなし。疑問名詞の追加1行も再確認。最終suite後の製品source変更0。
+
+STRUCTURE_MAP_DELTA_NONE：既存共有意味owner/依存方向/Analysis route・保存lifecycle内の修正。API Plan1/test3/current identity1/handoff1、Cocolon current03/詳細04/06の計9file modify、新規repo file0。Analysis専用source/Safety/Piece/API/DTO/DB/SQL/RN・依存変更0。main/merge/deploy/env/native build操作0。未配置、実DB/React component/native/本人実機/商品受入れ未確認、限定TECHNICAL_CREDIT・商品NOT_CLEAR。既存PR3/30反映後にremote parent/tree/変更path集合/全9file内容と最終headを照合する。
+
+残件：一般時点/未対応感情・認知、夢/伝聞から現実へ戻る境界、unknown反復、未認定の落ち着きました、u174で残した属格/3項書字。探索した行動→変化の複合文後にある「その後」の外側順序も未対応で、今回の新機能へ広げていない。u165 F2は中断した旧contractsのcase名/原因未確定という正本を確認しただけで未診断を解消していない。u168共有6FAIL/旧0066/旧contracts差とEmlis複合停止も残る。本人指定版の生成→保存再表示→比較は別の実機残件。次は本節・追跡source/test・latest weeklyを再開正本とする。

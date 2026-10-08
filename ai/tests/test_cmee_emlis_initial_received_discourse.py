@@ -144,6 +144,59 @@ def test_unfinished_nominal_yesterday_keeps_other_field_report_scope():
     assert not any('semantic_role:present_unfinished' in n.semantic_frame.attribute_codes for n in plan.nuclei)
 
 
+@pytest.mark.parametrize('text', ['まだ気持ちが定まっていない。',
+    'まだ不安の原因が見つかっていない。', 'まだ昨日の気持ちが決まっていません。'])
+def test_unfinished_feeling_nominal_keeps_host_meaning_and_actual_body(text):
+    from test_cmee_emlis_detached_observation import read_body
+    context = actual(request=begin(text))
+    result, plan, _sentence, resolver, _selected = context
+    node, = (n for n in plan.nuclei if n.source_fields == ('memo',))
+    frame = node.semantic_frame
+    assert (node.kind, frame.predicate_kind, frame.modality, frame.polarity, frame.time_scope) == (
+        'event', 'event', 'fact', 'negative', 'current_input')
+    assert 'semantic_role:present_unfinished' in frame.attribute_codes
+    assert 'operator:feeling' not in frame.attribute_codes
+    assert resolver.resolve(node.source_span_ids[0]).raw_text == text.removesuffix('。')
+    body = result.artifact.text
+    assert text.removesuffix('。') in body
+    assert read_body(context, body).passed
+    for replacement in (text.replace('気持ち', '方針').replace('不安', '不満'),
+                        text.replace('いない', 'いた').replace('いません', 'いました')):
+        assert replacement != text
+        changed = body.replace(text.removesuffix('。'), replacement.removesuffix('。'))
+        assert changed != body and not read_body(context, changed).passed
+
+
+@pytest.mark.parametrize('text', [
+    'まだ気持ちがつらい。', 'まだ気持ちが定まっていなかった。',
+    'まだ気持ちが定まっている。', '気持ちが定まっていない。',
+    'まだ気持ちが定まっていない？', 'まだ気持ちが定まっていないかもしれない。',
+    'まだ気持ちが定まっていないと思う。', 'まだ気持ちが定まっていないなら。',
+    'まだ気持ちが定まっていないわけではない。',
+    'まだあの気持ちが定まっていない。', 'まだ昨日気持ちが定まっていない。',
+    'まだ誰の気持ちが定まっていない。', 'まだ何の不安が定まっていない。',
+    'まだ気持ちが定まっていないと聞いた。',
+    'まだ昨日以前の気持ちが定まっていない。',
+    '夢を見た。まだ気持ちが定まっていない。',
+    '友人が話した。まだ気持ちが定まっていない。',
+    '友人によると、まだ気持ちが定まっていない。',
+    '友人の感想。まだ気持ちが定まっていない。',
+    '「まだ気持ちが定まっていない」と聞いた。',
+])
+def test_unfinished_feeling_nominal_keeps_unproved_or_reported_hosts(text):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(text)))
+    assert not any('semantic_role:present_unfinished' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
+@pytest.mark.parametrize('action', ['友人が話した。', '友人の報告。', '夢を見た。'])
+def test_unfinished_feeling_nominal_keeps_other_field_report_scope(action):
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    for text in ('まだ気持ちが定まっていない。', 'まだ昨日の気持ちが定まっていない。'):
+        plan = build_updated_grounded_plan(prepare_emlis_meaning(begin(text, action)))
+        assert not any('semantic_role:present_unfinished' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
 @pytest.mark.parametrize('text,polarity', [
     ('私は難しい会議を担当した。', 'neutral'),
     ('私は家族の難しい会議を担当しませんでした。', 'negative'),

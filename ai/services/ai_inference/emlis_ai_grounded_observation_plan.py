@@ -15428,26 +15428,36 @@ def _final_source_unfinished_result_nuclei(nuclei, evidence_spans, normalized_in
     for nucleus in nuclei:
         frame = nucleus.semantic_frame
         span = spans.get(nucleus.source_span_ids[0]) if len(nucleus.source_span_ids) == 1 else None
+        match = (re.fullmatch(r"まだ(?P<noun>" + _WISH_OBJECT_ARGUMENT_RE.pattern
+            + r")(?:は|が|も)(?:見つか|決ま|定ま)って(?:いない|いません)", span.raw_text)
+            if span is not None else None)
+        # A feeling word inside a complete nominal argument does not turn
+        # the current unfinished predicate into an asserted feeling.
+        nominal_feeling = bool(match and _FEELING_RE.search(match["noun"])
+            and not re.search(r"(?:^|の)(?:何|誰|幾)", match["noun"])
+            and nucleus.kind == "reaction" and frame.predicate_kind == "feeling"
+            and frame.modality == "feeling")
         nominal_day = False
         if span is not None and frame.time_scope == "past":
             # Reuse the complete nominal grammar. Every past cue must be a
             # whole genitive segment, never a prefix such as 昨日方針 or
             # 昨日以前. Do not rewrite the source to obtain a current clause.
-            match = re.fullmatch(r"まだ(?P<noun>" + _WISH_OBJECT_ARGUMENT_RE.pattern
-                + r")(?:は|が|も)(?:見つか|決ま|定ま)って(?:いない|いません)", span.raw_text)
             parts = match["noun"].split("の") if match else ()
             nominal_day = (any(p in {"昨日", "昨日分"} for p in parts)
                 and all(not _PAST_RE.search(p) or p in {"昨日", "昨日分"} for p in parts))
+        if nominal_day or nominal_feeling:
             context = "\n".join(str(normalized_input.get(f) or "") for f in ("memo", "memo_action"))
             if (_source_prefix_opens_report(context)
                 or re.search(r"によると|いわく|曰く|夢を見|"
                              r"の(?:話|感想|気持ち|説明|報告|発言)(?:です|だ|[。．.])|"
                              r"(?:聞いた|聞きました|読んだ|読みました)(?:話|内容)", context)):
                 nominal_day = False
+                nominal_feeling = False
         if (span is not None and nucleus.source_fields == ("memo",) and span.source_field == "memo"
             and nucleus.grounding_kind == "explicit" and nucleus.allowed_claim_scope == "explicit_current_input"
-            and frame.actor == "current_user" and frame.modality == "fact" and frame.polarity == "negative"
-            and nucleus.kind == frame.predicate_kind == "event"
+            and frame.actor == "current_user" and frame.polarity == "negative"
+            and ((nucleus.kind == frame.predicate_kind == "event" and frame.modality == "fact")
+                 or nominal_feeling)
             and (frame.time_scope in {"present", "current_input", "continuing"} or nominal_day)
             and not any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:", "semantic_dependency:"))
                         for c in frame.attribute_codes)
@@ -15457,6 +15467,10 @@ def _final_source_unfinished_result_nuclei(nuclei, evidence_spans, normalized_in
             and (span.end_index == len(source) or source[span.end_index] in "。．.")
             and not re.search(r"[?？!！…‥\r\n]|もし|たら|なら|れば", span.raw_text)
             and _source_unfinished_result_clause_is_bound(span.raw_text)):
+            if nominal_feeling:
+                nucleus = replace(nucleus, kind="event")
+                frame = replace(frame, predicate_kind="event", modality="fact",
+                    attribute_codes=tuple(c for c in frame.attribute_codes if c != "operator:feeling"))
             if nominal_day:
                 frame = replace(frame, time_scope="current_input", attribute_codes=tuple(
                     c for c in frame.attribute_codes if not c.startswith("time_scope:"))

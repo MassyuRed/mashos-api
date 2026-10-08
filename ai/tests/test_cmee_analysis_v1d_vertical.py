@@ -2510,6 +2510,65 @@ class AnalysisVerticalTests(unittest.TestCase):
                 self.assertFalse(outcome.artifact and any(n.proposition.result_state
                     for n in outcome.artifact.graph.nodes))
 
+    def test_feeling_nominal_keeps_unfinished_fact_and_exact_evidence(self):
+        for noun, stem in (('気持ち', '定ま'), ('不安の原因', '見つか'), ('昨日の気持ち', '決ま')):
+            for particle in ('が', 'は', 'も'):
+                for ending in ('いない', 'いません'):
+                    literal = 'まだ' + noun + particle + stem + 'って' + ending
+                    with self.subTest(literal=literal):
+                        req = request(record(memo='私は記録を残した。' + literal + '。'))
+                        artifact = self.generate(req).artifact
+                        self.assertIsNotNone(artifact)
+                        node, = (n for n in artifact.graph.nodes if n.proposition.result_state == 'NOT_YET')
+                        self.assertEqual((node.node_kind, node.proposition.actor, node.polarity,
+                                          node.modality, node.temporal_scope),
+                            ('IMMEDIATE_RESULT_OR_AFTERMATH', 'UNSPECIFIED', 'negative', 'fact', 'current_input'))
+                        self.assertEqual(node.proposition.arguments, ((particle, noun),))
+                        self.assertEqual(node.proposition.relative_day, '')
+                        source, = freeze_analysis_sources(req).sources
+                        e, = node.evidence_refs
+                        raw = source.envelope.raw_utf8[e.utf8_start:e.utf8_end]
+                        field = source.envelope.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                        self.assertEqual((raw.decode(), field[e.scalar_start:e.scalar_end]), (literal, literal))
+                        self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                        label = literal.replace('いません', 'いない') + '（この記述時点）'
+                        self.assertIn(label, artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+                        self.assertFalse(artifact.graph.edges)
+                        self.assertFalse(artifact.graph.annotations)
+                        for changes in ({'actor': 'SELF'}, {'polarity': 'positive'}, {'arguments': ((particle, '方針'),)}):
+                            with self.assertRaises(AnalysisSourceError):
+                                forged = replace(node, proposition=replace(node.proposition, **changes))
+                                replace(artifact, graph=replace(artifact.graph, nodes=(artifact.graph.nodes[0], forged))).safe_projection(
+                                    authenticated_owner_scope=OWNER)
+
+    def test_feeling_nominal_unfinished_keeps_updates_and_period_differences(self):
+        old, new = 'まだ気持ちが定まっていない', 'まだ不安の原因が見つかっていない'
+        prefix = '私は記録を残した。'
+        original = record(memo=prefix + old + '。')
+        for answer, expected in ((new + '。', [old, new]),
+                ('「' + old + '」ではなく「' + new + '」です。', [new]),
+                ('「' + old + '」は取り消します。', [])):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(original, answer))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertEqual([n.visible_label for n in artifact.graph.nodes
+                                  if n.proposition.result_state == 'NOT_YET'], expected)
+                self.assertFalse(artifact.graph.edges)
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        same = self.compared(prefix + old + '。', prefix + old.replace('いない', 'いません') + '。').artifact
+        self.assertIsNotNone(same)
+        self.assertEqual(same.period_comparison.change_claims, ())
+        changed = self.compared(prefix + new + '。', prefix + old + '。').artifact
+        self.assertIsNotNone(changed)
+        self.assertIn('ROUTE_EVIDENCE_CHANGED', changed.safe_projection(authenticated_owner_scope=OWNER)
+                      ['period_comparison']['safe_change_kinds'])
+        for text in ('まだ気持ちがつらい。', 'まだ気持ちが定まっていなかった。',
+                old + '？', old + 'と思う。', old + 'かもしれない。', old + 'なら。',
+                '夢を見た。' + old + '。', '友人が話した。' + old + '。', '「' + old + '」と聞いた。'):
+            with self.subTest(text=text):
+                artifact = self.generate(request(record(memo=text))).artifact
+                self.assertFalse(artifact and any(n.proposition.result_state == 'NOT_YET' for n in artifact.graph.nodes))
+
     def test_unfinished_result_requires_shared_full_clause_witness(self):
         from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
         build = compiler.build_final_stage1_grounded_observation_plan

@@ -1261,7 +1261,9 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                 for action in ('私は資料を調べた。', '私は記録を書いた。',
                                '私は考えをノートに書いた。', '私は職場で記録を書きました。')
                 for clause in ('まだ方法が見つかっていない', 'まだ昨日の方針が決まっていない',
-                               'まだ仕事の昨日分が見つかっていません')):
+                               'まだ仕事の昨日分が見つかっていません',
+                               'まだ気持ちが定まっていない', 'まだ不安の原因が見つかっていない',
+                               'まだ昨日の気持ちが決まっていません')):
             with self.subTest(action=action, clause=clause):
                 self.fx = fixture(action + clause + '。')
                 self.row = self.fx['row']
