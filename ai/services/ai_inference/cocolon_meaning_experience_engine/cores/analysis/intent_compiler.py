@@ -1156,6 +1156,24 @@ def _explicit_order_pairs(source, plan, withdrawn):
     claims = {e.evidence_id: (p, e) for p, e in all_claims
               if e.source_span_id not in withdrawn
               and (e.field_path, e.scalar_start, e.scalar_end) in whole}
+    compound_pairs = []
+    for span in source.spans:
+        if span.span_id in withdrawn or not _action_change_pair(source, plan, span.span_id):
+            continue
+        endpoints = sorted(((p, e) for p, e in all_claims if e.source_span_id == span.span_id),
+                           key=lambda item: item[1].scalar_start)
+        if len(endpoints) != 2:
+            continue
+        compound_pairs.append(tuple(e for _, e in endpoints))
+        terminal, evidence = endpoints[-1]
+        # A completely proved episode may precede the next written "then".
+        # Use only its terminal change, never its initial action, and keep
+        # the original end coordinate so unread intervening text still blocks.
+        if (terminal.result_state == 'BOUNDED_CHANGE'
+                and (terminal.modality, terminal.temporal_scope) == ('fact', 'past')
+                and (evidence.field_path, endpoints[0][1].scalar_start,
+                     evidence.scalar_end) in whole):
+            claims[evidence.evidence_id] = (terminal, evidence)
     ordered = sorted(claims.values(), key=lambda item:
                      (item[1].field_path, item[1].scalar_start, item[1].scalar_end))
     pairs = []
@@ -1169,14 +1187,11 @@ def _explicit_order_pairs(source, plan, withdrawn):
         if (re.fullmatch(r'[。．.\s]+', separator)
                 and any(char in separator for char in '。．.\r\n')):
             pairs.append((a, b))
-    for span in source.spans:
-        if span.span_id in withdrawn or not _action_change_pair(source, plan, span.span_id):
-            continue
-        endpoints = sorted((e for _, e in all_claims if e.source_span_id == span.span_id),
-                           key=lambda e: e.scalar_start)
-        if len(endpoints) == 2:
-            pairs.append(tuple(endpoints))
-    return tuple(pairs)
+    # Order the already-proved links for reading; source position alone
+    # never establishes a link or changes its direction.
+    return tuple(sorted(pairs + compound_pairs,
+        key=lambda pair: (pair[0].field_path, pair[0].scalar_start,
+                          pair[0].scalar_end, pair[1].scalar_start, pair[1].scalar_end)))
 
 
 def _admit_ordinary_supplement(answer, original):

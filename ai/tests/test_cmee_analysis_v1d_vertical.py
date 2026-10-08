@@ -2917,6 +2917,84 @@ class AnalysisVerticalTests(unittest.TestCase):
         self.assertEqual([len(n.record_refs) for n in artifact.graph.nodes], [1] * 6)
         self.assertEqual(len({ref for e in artifact.graph.edges for ref in e.endpoint_refs}), 6)
 
+    def test_compound_change_keeps_explicit_outgoing_order_and_source(self):
+        for prefix in ('私は資料を調べた後、', '私は資料を調べてから、'):
+            for change in ('疑問が減った', '気持ちが変わりました'):
+                for marker in ('その後、', 'それから、'):
+                    for ending in ('私は記録を残した', '私は記録を残さなかった'):
+                        memo = prefix + change + '。' + marker + ending + '。'
+                        with self.subTest(memo=memo):
+                            req = request(record(memo=memo))
+                            artifact = self.generate(req).artifact
+                            self.assertEqual(len(artifact.graph.nodes), 3)
+                            self.assertEqual([e.endpoint_refs for e in artifact.graph.edges],
+                                             [('n1', 'n2'), ('n2', 'n3')])
+                            self.assertEqual([len(e.evidence_refs) for e in artifact.graph.edges], [3, 2])
+                            self.assertNotIn('EXPLICIT_PREDECESSOR_NOT_ESTABLISHED',
+                                {g.reason_code for g in artifact.graph.unknown_gaps})
+                            source, = freeze_analysis_sources(req).sources
+                            for edge in artifact.graph.edges:
+                                for e in edge.evidence_refs:
+                                    raw = source.envelope.raw_utf8[e.utf8_start:e.utf8_end]
+                                    field = source.envelope.raw_utf8[e.field_utf8_start:e.field_utf8_end].decode()
+                                    self.assertEqual(field[e.scalar_start:e.scalar_end], raw.decode())
+                                    self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
+                            outgoing = artifact.graph.edges[1]
+                            self.assertEqual(outgoing.evidence_refs[0], artifact.graph.nodes[1].evidence_refs[0])
+                            self.assertEqual(outgoing.evidence_refs[1], artifact.graph.nodes[2].evidence_refs[0])
+                            text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                            self.assertEqual(text.count('記録内の順序：'), 2)
+                            self.assertIn('原因を示す線ではありません', text)
+                            self.assertNotIn('どの内容に続くのか', text)
+
+    def test_compound_outgoing_order_does_not_bridge_unread_or_separate_sources(self):
+        episode = '私は資料を調べてから、疑問が減った。'
+        following = 'その後、私は記録を残した。'
+        cases = (
+            request(record(memo=episode + 'まだ方針を考えている。' + following)),
+            request(record(memo=episode + '私は仕事を続けたい。' + following)),
+            request(record(memo=episode + following.replace('その後、', ''))),
+            request(record(memo=episode, action=following)),
+            request(record(memo=episode), record(2, memo=following)),
+            request(record(memo='私は資料を調べてから、私は嬉しかった。' + following)),
+            request(record(memo='私は資料を調べてから、疑問が減ったかもしれない。' + following)),
+            request(record(memo='夢を見た。' + episode + following)),
+        )
+        for req in cases:
+            with self.subTest(records=[r.original_json for r in req.members]):
+                result = self.generate(req)
+                if result.artifact is not None:
+                    graph = result.artifact.graph
+                    for edge in graph.edges:
+                        target = next(n for n in graph.nodes if n.node_ref == edge.endpoint_refs[1])
+                        if edge.edge_kind == 'OBSERVED_ORDER':
+                            self.assertEqual(target.node_kind, 'IMMEDIATE_RESULT_OR_AFTERMATH')
+
+    def test_compound_outgoing_order_preserves_updates_and_period_meaning(self):
+        old = '私は資料を調べてから、疑問が減った'
+        new = '私は資料を調べた後、疑問が増えた'
+        following = 'その後、私は記録を残した。'
+        original = record(memo=old + '。' + following)
+        for answer in ('「' + old + '」は取り消します。',
+                       '「' + old + '」ではなく「' + new + '」です。'):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(original, answer))).artifact
+                self.assertIn('EXPLICIT_PREDECESSOR_NOT_ESTABLISHED',
+                    {g.reason_code for g in artifact.graph.unknown_gaps})
+                for edge in artifact.graph.edges:
+                    target = next(n for n in artifact.graph.nodes if n.node_ref == edge.endpoint_refs[1])
+                    self.assertEqual(target.node_kind, 'IMMEDIATE_RESULT_OR_AFTERMATH')
+        answered = self.generate(request(self.with_answer(record(memo='私は仕事を続けたい。'),
+            old + '。' + following))).artifact
+        self.assertEqual([e.endpoint_refs for e in answered.graph.edges], [('n2', 'n3'), ('n3', 'n4')])
+        same = self.compared(old + '。' + following,
+            old.replace('調べてから', '調べた後') + '。' + following).artifact
+        self.assertEqual(same.period_comparison.change_claims, ())
+        changed = self.compared(old + '。' + following,
+            old + '。' + following.replace('その後、', '')).artifact
+        self.assertIn('ROUTE_EVIDENCE_CHANGED', changed.safe_projection(
+            authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+
     def test_action_change_answer_consumes_connector_and_keeps_answer_evidence(self):
         original = record(memo='私は記録を残した。')
         answer = '私は資料を調べた後、疑問が減った。'
