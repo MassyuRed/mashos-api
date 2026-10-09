@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 
 from piece_v2_contract import PieceContractError, normalize_visibility_scope
 from piece_v2_store import cancel_piece_preview
-from piece_v2_runtime_control import require_piece_feature_enabled
+from piece_v2_runtime_control import require_piece_feature_enabled, validate_piece_preview_runtime
 
 router = APIRouter(prefix='/emotion/piece')
 _CANCEL_STATUS = {
@@ -327,17 +327,8 @@ def _preview_runtime(request: Request) -> tuple[int, str]:
     router registration, capabilities/quota and RN delivery remain separate.
     Missing or malformed server configuration must never issue a preview.
     """
-    import re
-    runtime = getattr(request.app.state, 'piece_preview_runtime', None)
-    if (type(runtime) is not dict
-            or set(runtime) != {'ttl_seconds', 'renderer_version'}):
-        raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE')
-    ttl, renderer = runtime['ttl_seconds'], runtime['renderer_version']
-    if (type(ttl) is not int or not 0 < ttl <= 2147483647
-            or type(renderer) is not str
-            or re.fullmatch(r'[A-Za-z0-9_.:\-]{1,128}', renderer) is None):
-        raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE')
-    return ttl, renderer
+    return validate_piece_preview_runtime(
+        getattr(request.app.state, 'piece_preview_runtime', None))
 
 
 def _preview_public_response(result: object) -> dict:

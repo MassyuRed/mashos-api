@@ -60,3 +60,68 @@ def require_piece_feature_enabled(app: object, name: str) -> None:
     """Reject an unavailable/unknown operation with a body-free stable code."""
     if type(name) is not str or piece_feature_flags_for_app(app).get(name) is not True:
         raise PieceContractError('PIECE_FEATURE_DISABLED')
+
+
+def validate_piece_preview_runtime(runtime: object) -> tuple[int, str]:
+    """Validate the existing server TTL/renderer shape; grant no readiness.
+
+    Shared by composition and every preview POST. Keep the former HTTP owner's
+    exact type/range/identifier rules, with no defaults or normalization.
+    """
+    import re
+    if (type(runtime) is not dict
+            or set(runtime) != {'ttl_seconds', 'renderer_version'}):
+        raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE')
+    ttl, renderer = runtime['ttl_seconds'], runtime['renderer_version']
+    if (type(ttl) is not int or not 0 < ttl <= 2147483647
+            or type(renderer) is not str
+            or re.fullmatch(r'[A-Za-z0-9_.:\-]{1,128}', renderer) is None):
+        raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE')
+    return ttl, renderer
+
+
+def create_piece_preview_application(*, preview_requested: bool = False,
+                                     preview_ready: bool = False,
+                                     preview_runtime: object = None):
+    """Compose only existing preview/source and bootstrap handlers for testing.
+
+    This is NOT production app.py, a deployed service, or a clean-cutover
+    switch. It never imports/mutates the shared application or mounts the full
+    Piece router. No module-level application, environment keys, remote IO,
+    new wire contract, or automatic source/preview operation is introduced.
+
+    The caller must independently establish PCE-7 readiness for its explicitly
+    authorized target. Requested, TTL and renderer values are not evidence of
+    that readiness. Defaults are OFF; there is no default TTL or renderer.
+    This preview-only composition cannot enable saved/public/export operations.
+    Actual Auth/DB/device admission and production cutover remain separate.
+    """
+    requested = dict.fromkeys(PIECE_FEATURE_NAMES, False)
+    ready = dict.fromkeys(PIECE_FEATURE_NAMES, False)
+    requested['piece_v2_preview_enabled'] = preview_requested is True
+    ready['piece_v2_preview_enabled'] = preview_ready is True
+    configuration = {'requested': requested, 'ready': ready}
+    values = None
+    if (preview_runtime is not None
+            or resolve_piece_feature_flags(configuration)['piece_v2_preview_enabled']):
+        values = validate_piece_preview_runtime(preview_runtime)
+
+    # Imports and application construction occur only on an explicit call,
+    # after invalid supplied runtime values have been rejected without IO.
+    from fastapi import APIRouter, FastAPI
+    from api_app_bootstrap import register_app_bootstrap_routes
+    from api_piece_v2 import create_preview
+    from piece_v2_source_ref_http import read_original_source_ref
+
+    app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
+    app.state.piece_v2_runtime = configuration
+    if values is not None:
+        ttl, renderer = values
+        app.state.piece_preview_runtime = {'ttl_seconds': ttl, 'renderer_version': renderer}
+    preview_routes = APIRouter(prefix='/emotion/piece')
+    preview_routes.add_api_route('/source-ref/{saved_input_id}', read_original_source_ref,
+                                 methods=['GET'])
+    preview_routes.add_api_route('/preview', create_preview, methods=['POST'])
+    app.include_router(preview_routes)
+    register_app_bootstrap_routes(app)
+    return app
