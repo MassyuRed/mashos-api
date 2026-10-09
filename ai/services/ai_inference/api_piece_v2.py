@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 
 from piece_v2_contract import PieceContractError, normalize_visibility_scope
 from piece_v2_store import cancel_piece_preview
+from piece_v2_runtime_control import require_piece_feature_enabled
 
 router = APIRouter(prefix='/emotion/piece')
 _CANCEL_STATUS = {
@@ -283,6 +284,7 @@ async def owner_delete(piece_id: str, request: Request) -> JSONResponse:
 
 _PREVIEW_STATUS = {
     **_CANCEL_STATUS,
+    'PIECE_FEATURE_DISABLED': 503,
     'PIECE_SOURCE_NOT_FOUND': 404,
     'PIECE_HASH_MISMATCH': 409,
     'PIECE_SOURCE_NOT_ELIGIBLE': 422,
@@ -373,13 +375,32 @@ def _preview_public_response(result: object) -> dict:
 async def create_preview(request: Request) -> JSONResponse:
     """Original-only first issuance and same-key replay via the existing B5.
 
-    This router stays unregistered in production. No raw source, caller tier,
-    TTL, renderer, safety verdict or replacement body is accepted. The actual
-    bounded reviewer is chosen by issue_original, never by this HTTP request.
+    Server feature state is checked after authentication, before the service,
+    immediately before RPC dispatch, and before returning a candidate. A stop
+    observed here survives B5's closed error mapping. An already dispatched
+    RPC cannot be undone by a later stop; no rollback or retry is attempted.
+    Production registration/readiness and capability delivery remain separate.
     """
+    disabled = False
+
+    def require_preview() -> None:
+        nonlocal disabled
+        if disabled:
+            raise PieceContractError('PIECE_FEATURE_DISABLED')
+        try:
+            require_piece_feature_enabled(request.app, 'piece_v2_preview_enabled')
+        except PieceContractError:
+            disabled = True
+            raise
+
+    async def gated_rpc(name: str, args: dict) -> dict:
+        require_preview()
+        return await _preview_rpc(name, args)
+
     try:
-        from piece_v2_preview_service import PiecePreviewService, _request_snapshot
         await _authenticated_owner(request)
+        require_preview()
+        from piece_v2_preview_service import PiecePreviewService, _request_snapshot
         keys = request.headers.getlist('idempotency-key')
         if len(keys) != 1 or not keys[0].strip() or request.query_params:
             raise PieceContractError('PIECE_REQUEST_INVALID')
@@ -389,13 +410,17 @@ async def create_preview(request: Request) -> JSONResponse:
             raise PieceContractError('PIECE_REQUEST_INVALID') from None
         value = _request_snapshot(raw)
         ttl, renderer = _preview_runtime(request)
+        require_preview()
         result = await PiecePreviewService().issue_original(
             request.headers['authorization'], value, idempotency_key=keys[0],
-            ttl_seconds=ttl, renderer_version=renderer, rpc=_preview_rpc)
+            ttl_seconds=ttl, renderer_version=renderer, rpc=gated_rpc)
+        require_preview()
         return _response(_preview_public_response(result))
     except PieceContractError as exc:
-        code = exc.code if exc.code in _PREVIEW_STATUS else 'PIECE_TEMPORARILY_UNAVAILABLE'
+        code = ('PIECE_FEATURE_DISABLED' if disabled else
+                exc.code if exc.code in _PREVIEW_STATUS else 'PIECE_TEMPORARILY_UNAVAILABLE')
         return _response({'code': code}, _PREVIEW_STATUS[code])
     except Exception:
         # Cancellation (BaseException) is deliberately not converted to HTTP.
-        return _response({'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}, 503)
+        code = 'PIECE_FEATURE_DISABLED' if disabled else 'PIECE_TEMPORARILY_UNAVAILABLE'
+        return _response({'code': code}, 503)

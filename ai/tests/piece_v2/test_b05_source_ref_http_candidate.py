@@ -54,6 +54,11 @@ def setup(monkeypatch):
     adapter_module.PieceSavedSourceAdapter = Adapter
     monkeypatch.setitem(sys.modules, 'piece_v2_source_adapter', adapter_module)
     app = FastAPI()
+    # Synthetic server composition; does not activate a deployed environment.
+    app.state.piece_v2_runtime = {
+        'requested': {'piece_v2_preview_enabled': True},
+        'ready': {'piece_v2_preview_enabled': True},
+    }
     app.include_router(mod.source_ref_router)
     async def send(path=PATH, *, headers=None, content=b'', method='GET'):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:

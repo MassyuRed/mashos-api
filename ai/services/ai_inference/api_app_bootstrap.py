@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
 from client_compat import extract_client_meta
 from emlis_thread_config import read_enabled
+from piece_v2_runtime_control import piece_feature_flags_for_app
 
 logger = logging.getLogger("api_app_bootstrap")
 
@@ -28,8 +29,9 @@ class AppStartupResponse(AppBootstrapResponse):
     startup: Dict[str, Any] = Field(default_factory=dict)
 
 
-def _feature_flags() -> Dict[str, bool]:
+def _feature_flags(app: Optional[FastAPI] = None) -> Dict[str, bool]:
     return {
+        **piece_feature_flags_for_app(app),
         "account_delete_enabled": True,
         "emlis_threads_enabled": read_enabled(),
         "myweb_mock_enabled": False,
@@ -39,12 +41,13 @@ def _feature_flags() -> Dict[str, bool]:
     }
 
 
-def _bootstrap_payload(*, client_meta: Optional[Mapping[str, Optional[str]]] = None) -> Dict[str, Any]:
+def _bootstrap_payload(*, client_meta: Optional[Mapping[str, Optional[str]]] = None,
+                       app: Optional[FastAPI] = None) -> Dict[str, Any]:
     return {
         "minimum_supported_version": (os.getenv("APP_MINIMUM_SUPPORTED_VERSION") or "").strip() or None,
         "recommended_version": (os.getenv("APP_RECOMMENDED_VERSION") or "").strip() or None,
         "maintenance_message": (os.getenv("APP_MAINTENANCE_MESSAGE") or "").strip() or None,
-        "feature_flags": _feature_flags(),
+        "feature_flags": _feature_flags(app),
         "client_meta": dict(client_meta or {}),
     }
 
@@ -132,7 +135,7 @@ async def _build_startup_response(
         )
 
     return AppStartupResponse(
-        **_bootstrap_payload(client_meta=client_meta),
+        **_bootstrap_payload(client_meta=client_meta, app=request.app),
         timezone_name=resolved_timezone_name,
         startup=_normalize_startup_payload(startup_payload, timezone_name=resolved_timezone_name),
     )
@@ -142,7 +145,7 @@ def register_app_bootstrap_routes(app: FastAPI) -> None:
     @app.get("/app/bootstrap", response_model=AppBootstrapResponse)
     async def get_app_bootstrap(request: Request) -> AppBootstrapResponse:
         client_meta = extract_client_meta(request.headers)
-        return AppBootstrapResponse(**_bootstrap_payload(client_meta=client_meta))
+        return AppBootstrapResponse(**_bootstrap_payload(client_meta=client_meta, app=request.app))
 
     @app.get("/app/startup", response_model=AppStartupResponse)
     async def get_app_startup(

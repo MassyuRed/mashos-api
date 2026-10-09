@@ -489,6 +489,11 @@ def _preview_http_harness(database, monkeypatch, *, tier='free', named=False):
     monkeypatch.setattr(service, 'PiecePreviewService', lambda: owner)
     monkeypatch.setattr(supabase_client, 'sb_post_rpc', transport)
     app = FastAPI()
+    # Synthetic readiness for this isolated fixture, not live admission.
+    app.state.piece_v2_runtime = {
+        'requested': {'piece_v2_preview_enabled': True},
+        'ready': {'piece_v2_preview_enabled': True},
+    }
     app.state.piece_preview_runtime = {
         'ttl_seconds': 600, 'renderer_version': 'synthetic-renderer.v1'}
     app.include_router(api.router)

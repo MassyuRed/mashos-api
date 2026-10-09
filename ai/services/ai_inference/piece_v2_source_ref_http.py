@@ -4,7 +4,7 @@ The 2026-10-08 binding is GET /emotion/piece/source-ref/{saved_input_id}.
 This separate router is NOT included in api_piece_v2.router or production app.
 The binding's adoption does not authorize registration, deployment or activation.
 Importing this module performs no reads or writes. Explicitly mounted test apps
-can exercise it; effective server gates remain a prerequisite for live use.
+can exercise it with explicit server readiness; live admission is separate.
 Source eligibility belongs to the saved adapter. References do not authorize
 preview, save or image export.
 """
@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse
 
 from api_piece_v2 import _authenticated_owner, _response
 from piece_v2_contract import PieceContractError
+from piece_v2_runtime_control import require_piece_feature_enabled
 
 source_ref_router = APIRouter(prefix='/emotion/piece')
 _SOURCE_REF_FIELDS = frozenset({
@@ -30,6 +31,7 @@ _SOURCE_REF_STATUS = {
     'PIECE_REQUEST_INVALID': 400, 'PIECE_AUTH_REQUIRED': 401,
     'PIECE_SOURCE_NOT_FOUND': 404, 'PIECE_SOURCE_NOT_ELIGIBLE': 422,
     'PIECE_CONFLICT': 409, 'PIECE_TEMPORARILY_UNAVAILABLE': 503,
+    'PIECE_FEATURE_DISABLED': 503,
 }
 
 
@@ -69,6 +71,7 @@ async def read_original_source_ref(saved_input_id: str, request: Request) -> JSO
     """
     try:
         await _authenticated_owner(request)
+        require_piece_feature_enabled(request.app, 'piece_v2_preview_enabled')
         if request.query_params or await request.body():
             raise PieceContractError('PIECE_REQUEST_INVALID')
         try:
@@ -77,9 +80,11 @@ async def read_original_source_ref(saved_input_id: str, request: Request) -> JSO
                 raise ValueError
         except (ValueError, AttributeError):
             raise PieceContractError('PIECE_REQUEST_INVALID') from None
+        require_piece_feature_enabled(request.app, 'piece_v2_preview_enabled')
         from piece_v2_source_adapter import PieceSavedSourceAdapter
         result = await PieceSavedSourceAdapter().resolve_original_source_ref(
             request.headers['authorization'], saved_input_id)
+        require_piece_feature_enabled(request.app, 'piece_v2_preview_enabled')
         return _response(_source_ref_response(result, saved_input_id))
     except PieceContractError as exc:
         code = exc.code if exc.code in _SOURCE_REF_STATUS else 'PIECE_TEMPORARILY_UNAVAILABLE'
