@@ -108,7 +108,7 @@ def create_piece_preview_application(*, preview_requested: bool = False,
 
     # Imports and application construction occur only on an explicit call,
     # after invalid supplied runtime values have been rejected without IO.
-    from fastapi import APIRouter, FastAPI
+    from fastapi import FastAPI
     from api_app_bootstrap import register_app_bootstrap_routes
     from api_piece_v2 import create_preview
     from piece_v2_source_ref_http import read_original_source_ref
@@ -118,10 +118,10 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     if values is not None:
         ttl, renderer = values
         app.state.piece_preview_runtime = {'ttl_seconds': ttl, 'renderer_version': renderer}
-    preview_routes = APIRouter(prefix='/emotion/piece')
-    preview_routes.add_api_route('/source-ref/{saved_input_id}', read_original_source_ref,
-                                 methods=['GET'])
-    preview_routes.add_api_route('/preview', create_preview, methods=['POST'])
-    app.include_router(preview_routes)
+    # Register the two admitted handlers directly, without a version-dependent
+    # included-router wrapper. The full Piece router remains unmounted.
+    app.add_api_route('/emotion/piece/source-ref/{saved_input_id}',
+                      read_original_source_ref, methods=['GET'])
+    app.add_api_route('/emotion/piece/preview', create_preview, methods=['POST'])
     register_app_bootstrap_routes(app)
     return app
