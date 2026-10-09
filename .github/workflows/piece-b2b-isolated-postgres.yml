@@ -24,6 +24,13 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/piece_v2/db/test_b05_generated_preview_issuance.py
       - ai/tests/piece_v2/db/test_b05_preview_replay_read.py
       - ai/services/ai_inference/api_piece_v2.py
+      - ai/services/ai_inference/piece_v2_runtime_control.py
+      - ai/services/ai_inference/piece_v2_source_ref_http.py
+      - ai/services/ai_inference/api_app_bootstrap.py
+      - ai/tests/piece_v2/test_b14a_piece_v2_runtime_control.py
+      - ai/tests/piece_v2/test_b14a_piece_preview_composition.py
+      - ai/tests/piece_v2/test_b05_source_ref_http_candidate.py
+      - ai/tests/piece_v2/db/test_b10_preview_application_native.py
       - ai/tests/piece_v2/db/test_b05_preview_cancel_http.py
       - ai/tests/piece_v2/db/test_b06_save_tier_fence.py
       - ai/services/ai_inference/piece_v2_save_service.py
@@ -253,3 +260,25 @@ jobs:
           python -m pytest -q --tb=short -ra -p no:cacheprovider \
             -c /dev/null --noconftest \
             ai/tests/piece_v2/db/test_b05_reviewed_preview_issuance.py
+      - name: Run existing preview composition and source-reference contracts
+        shell: bash
+        env:
+          PYTHONPATH: ai/services/ai_inference
+        run: |
+          set -euo pipefail
+          sha256sum ai/services/ai_inference/piece_v2_runtime_control.py ai/services/ai_inference/api_piece_v2.py ai/services/ai_inference/piece_v2_source_ref_http.py ai/services/ai_inference/api_app_bootstrap.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/test_b14a_piece_v2_runtime_control.py \
+            ai/tests/piece_v2/test_b14a_piece_preview_composition.py \
+            ai/tests/piece_v2/test_b05_source_ref_http_candidate.py
+      - name: Run composed preview through actual CMEE review and native persistence
+        shell: bash
+        env:
+          PYTHONPATH: ai/services/ai_inference
+        run: |
+          set -euo pipefail
+          sha256sum ai/tests/piece_v2/db/test_b10_preview_application_native.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/db/test_b10_preview_application_native.py
