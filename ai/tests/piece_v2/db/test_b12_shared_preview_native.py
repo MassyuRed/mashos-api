@@ -398,6 +398,7 @@ def test_composed_owner_reads_persisted_private_public_pages_without_generation(
         assert hidden.status_code == 404 and hidden.json() == {'code': 'PIECE_NOT_FOUND'}
     assert get(unsaved['preview_id']).status_code == 404
     assert h['_native_state'](conn) == before
+
     # Stop after SQL returned the saved body. The HTTP boundary must suppress
     # that body, and subsequent reads must stop before database IO.
     original_handler = state['handler']
@@ -412,3 +413,120 @@ def test_composed_owner_reads_persisted_private_public_pages_without_generation(
     count = len(reads)
     assert get().status_code == 503 and len(reads) == count
     assert h['_native_state'](conn) == before
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
+@pytest.mark.parametrize('outcome', ['success', 'lost_ack', 'stop_after_commit'])
+def test_composed_owner_delete_purges_and_recovers_same_receipt_without_quota_refund(
+        database, monkeypatch, kind, outcome):
+    """Real SQL purge/replay; saved artifacts, bearer and PostgREST are synthetic."""
+    import api_piece_v2 as api
+    from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
+    from piece_v2_source_adapter import PieceSavedSourceAdapter
+    from piece_v2_runtime_control import PIECE_FEATURE_NAMES, piece_feature_flags_for_app
+    h = runpy.run_path(str(Path(__file__).parents[1] / 'test_b07_piece_v2_owner_api.py'))
+    conn, pg, _ = database
+    row = h['_native_save'](conn, visibility='public')
+    b4 = _B5['_B4']
+    b2 = b4['_B2']
+    b2['_insert'](conn, 'piece_record_metrics', dict(piece_id=row['id']))
+    b2['_insert'](conn, 'piece_record_reads', dict(piece_id=row['id'], viewer_user_id=b4['_VIEWER']))
+    b2['_insert'](conn, 'piece_record_resonances', dict(piece_id=row['id'],
+        owner_user_id=b4['_OWNER'], viewer_user_id=b4['_VIEWER']))
+    legacy = b2['_legacy_identity'](conn)
+    quota = conn.execute('SELECT to_jsonb(q) FROM public.piece_quota_consumptions q').fetchall()
+    assert b4['_used'](conn) == 1
+    # Deletion has no source/current tier/renderer dependency.
+    conn.execute("UPDATE public.profiles SET subscription_tier='unknown'")
+    settings = dict(owner_read_requested=True, owner_read_ready=True,
+                    owner_delete_requested=True, owner_delete_ready=True)
+    app = shared.create_application(piece_preview_configuration=settings) if kind == 'shared' else (
+        create_piece_preview_application(**settings))
+    assert piece_feature_flags_for_app(app) == {
+        name: name in ('piece_v2_owner_read_enabled', 'piece_v2_delete_enabled')
+        for name in PIECE_FEATURE_NAMES}
+    assert not hasattr(app.state, 'piece_preview_runtime')
+    state = {'handler': None, 'rpc': [], 'failure': None, 'reads': 0}
+    h['_native_connect'](state, database)
+    async def verify(authorization):
+        assert authorization in ('Bearer synthetic-owner', 'Bearer synthetic-viewer')
+        return h['VIEWER'] if authorization.endswith('viewer') else h['OWNER']
+    async def load(path, *, params, timeout):
+        assert path == '/rest/v1/piece_records' and timeout == 8.0
+        state['reads'] += 1
+        return state['handler'](params)
+    async def rpc(name, args, *, timeout):
+        assert name == 'piece_delete_v2' and timeout == 8.0
+        state['rpc'].append(deepcopy(args))
+        try:
+            value = b4['_rpc'](conn, name, args)
+        except pg.Error as exc:
+            return httpx.Response(400, json={'code': exc.sqlstate,
+                'message': exc.diag.message_primary, 'details': 'SYNTHETIC PRIVATE'})
+        if state['failure'] == 'lost_ack':
+            raise httpx.ReadTimeout('SYNTHETIC PRIVATE')
+        if state['failure'] == 'stop_after_commit':
+            app.state.piece_v2_runtime['ready']['piece_v2_delete_enabled'] = False
+        return httpx.Response(200, json=value)
+    def forbidden(*args, **kwargs):
+        pytest.fail('saved deletion must not generate or reread its source')
+    monkeypatch.setattr(api, '_verify_bearer', verify)
+    monkeypatch.setattr(supabase_client, 'sb_get', load)
+    monkeypatch.setattr(supabase_client, 'sb_post_rpc', rpc)
+    monkeypatch.setattr(MeaningExperienceEngine, 'generate', forbidden)
+    monkeypatch.setattr(PieceSavedSourceAdapter, 'resolve_original_handoff', forbidden)
+    def call(method='DELETE', *, identity=None, owner='owner', version=None, key='synthetic-owner-delete'):
+        async def request():
+            options = dict(headers={'Authorization': 'Bearer synthetic-' + owner,
+                                    'Idempotency-Key': key})
+            if method == 'DELETE':
+                options['json'] = {'expected_row_version': row['row_version'] if version is None else version}
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                        base_url='http://piece-test.invalid') as client:
+                return await client.request(method, '/emotion/piece/' + (identity or row['public_id']), **options)
+        return asyncio.run(request())
+    def error(response, status, code):
+        assert response.status_code == status and response.json() == {'code': code}
+        assert response.headers['cache-control'] == 'no-store'
+        assert row['piece_text'] not in response.text and 'SYNTHETIC PRIVATE' not in response.text
+    for stopped_flag in ('piece_v2_owner_read_enabled', 'piece_v2_delete_enabled'):
+        app.state.piece_v2_runtime['ready'][stopped_flag] = False
+        error(call(), 503, 'PIECE_FEATURE_DISABLED')
+        assert state['rpc'] == [] and state['reads'] == 0
+        app.state.piece_v2_runtime['ready'][stopped_flag] = True
+    error(call(owner='viewer'), 404, 'PIECE_NOT_FOUND')
+    error(call(version=row['row_version'] - 1), 409, 'PIECE_CONFLICT')
+    assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (1,)
+    assert conn.execute('SELECT count(*) FROM public.piece_delete_receipts').fetchone() == (0,)
+    state['rpc'].clear()
+    state['failure'] = outcome
+    deleted = call()
+    assert len(state['rpc']) == 1 and state['reads'] == 0
+    if outcome == 'success':
+        assert deleted.status_code == 200 and deleted.json()['idempotency_replayed'] is False
+    else:
+        error(deleted, 503, 'PIECE_FEATURE_DISABLED' if outcome == 'stop_after_commit'
+              else 'PIECE_TEMPORARILY_UNAVAILABLE')
+    if kind == 'shared':
+        assert deleted.headers['x-cocolon-contract-id'] == 'emotion.piece.delete.v2'
+    for table in ('piece_records', 'piece_record_metrics', 'piece_record_reads', 'piece_record_resonances'):
+        assert conn.execute('SELECT count(*) FROM public.' + table).fetchone() == (0,)
+    receipt_id = conn.execute('SELECT receipt_id::text FROM public.piece_delete_receipts').fetchone()[0]
+    if outcome == 'stop_after_commit':
+        error(call(), 503, 'PIECE_FEATURE_DISABLED')
+        assert len(state['rpc']) == 1
+    error(call('GET'), 404, 'PIECE_NOT_FOUND')
+    assert call('GET', identity='history').json()['items'] == []
+    # Only an explicit same-key retry recovers the committed terminal receipt.
+    state['failure'] = None
+    app.state.piece_v2_runtime['ready']['piece_v2_delete_enabled'] = True
+    replay = call(identity=row['id'])
+    assert replay.status_code == 200
+    assert replay.json() == dict(piece_id=row['id'], receipt_id=receipt_id,
+                                 outcome='succeeded', idempotency_replayed=True)
+    assert len(state['rpc']) == 2 and state['rpc'][0] == state['rpc'][1]
+    error(call(owner='viewer'), 404, 'PIECE_NOT_FOUND')
+    error(call(key='different-delete-key'), 404, 'PIECE_NOT_FOUND')
+    assert conn.execute('SELECT count(*) FROM public.piece_delete_receipts').fetchone() == (1,)
+    assert conn.execute('SELECT to_jsonb(q) FROM public.piece_quota_consumptions q').fetchall() == quota
+    assert b4['_used'](conn) == 1 and b2['_legacy_identity'](conn) == legacy

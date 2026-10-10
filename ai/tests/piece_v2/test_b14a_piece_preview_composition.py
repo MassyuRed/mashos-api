@@ -99,6 +99,7 @@ def test_default_composition_has_only_existing_preview_and_bootstrap_handlers(co
         ('/emotion/piece/source-ref/{saved_input_id}', ('GET',)),
         ('/emotion/piece/history', ('GET',)),
         ('/emotion/piece/{piece_id}', ('GET',)),
+        ('/emotion/piece/{piece_id}', ('DELETE',)),
     }
     assert next(r.endpoint for r in app.routes if r.path == PREVIEW_PATH) is api.create_preview
     assert next(r.endpoint for r in app.routes if 'PATCH' in r.methods) is api.mutate_preview_visual
@@ -106,6 +107,7 @@ def test_default_composition_has_only_existing_preview_and_bootstrap_handlers(co
     assert next(r.endpoint for r in app.routes if 'source-ref/' in r.path) is source_api.read_original_source_ref
     assert next(r.endpoint for r in app.routes if r.path == '/emotion/piece/history') is api.owner_history
     assert next(r.endpoint for r in app.routes if r.path == '/emotion/piece/{piece_id}') is api.owner_detail
+    assert next(r.endpoint for r in app.routes if r.path == '/emotion/piece/{piece_id}' and 'DELETE' in r.methods) is api.owner_delete
     assert tuple(api.router.routes) == before
     assert runtime.piece_feature_flags_for_app(app) == dict.fromkeys(FLAGS, False)
     assert not hasattr(app.state, 'piece_preview_runtime')
@@ -221,7 +223,7 @@ def test_composed_get_then_explicit_post_keeps_reference_request_key_and_setting
 
 
 @pytest.mark.parametrize('method,path', [
-    ('POST', '/emotion/piece/save'), ('DELETE', '/emotion/piece/' + INPUT),
+    ('POST', '/emotion/piece/save'),
     ('PATCH', '/emotion/piece/' + INPUT + '/visibility'),
     ('POST', '/emotion/piece/publish'),
     ('POST', '/emotion/reflection/preview'), ('GET', '/nexus'),
@@ -242,7 +244,7 @@ def test_factory_does_not_import_or_modify_production_or_legacy_application(comp
         return original(name, *args, **kwargs)
     monkeypatch.setattr(builtins, '__import__', guarded)
     app = enabled()
-    assert len(app.routes) == 8
+    assert len(app.routes) == 9
     assert app is not composition_env['app']
 
 

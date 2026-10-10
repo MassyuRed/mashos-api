@@ -127,6 +127,7 @@ def test_candidate_reuses_factory_without_changing_default_routes_or_registry(sh
     expected[('DELETE', VISUAL_ROUTE)] = 1
     expected[('GET', '/emotion/piece/history')] = 1
     expected[('GET', '/emotion/piece/{piece_id}')] = 1
+    expected[('DELETE', '/emotion/piece/{piece_id}')] = 1
     assert counts == expected
     assert [(m, p, r.endpoint) for m, p, r in routes(shared.app)] == default_routes
     assert iter_public_api_contracts() is registry
@@ -377,9 +378,11 @@ def test_composed_owner_history_detail_preserve_artifact_with_generation_off(own
     assert owner_env['rows'] == before
     # Reading never opens save, deletion, public visibility or export.
     for method, path in [('POST', '/emotion/piece/save'),
-            ('DELETE', '/emotion/piece/' + private['id']),
             ('PATCH', '/emotion/piece/' + private['id'] + '/visibility')]:
         assert send(app, method, path).status_code in (404, 405)
+    denied_delete = send(app, 'DELETE', '/emotion/piece/' + private['id'],
+                         headers={'Authorization': 'Bearer synthetic-owner'})
+    assert denied_delete.status_code == 503 and denied_delete.json() == DISABLED
 
 
 @pytest.mark.parametrize('kind', ['preview', 'shared'])
@@ -443,3 +446,73 @@ def test_shared_owner_detail_does_not_shadow_existing_static_quota(shared_env):
         result = send(shared.app, 'GET', '/emotion/piece/' + path, headers={})
         assert result.status_code == 404
         assert 'x-cocolon-contract-id' not in result.headers
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
+@pytest.mark.parametrize('side', ['owner_delete_requested', 'owner_delete_ready',
+                                  'owner_read_requested', 'owner_read_ready'])
+@pytest.mark.parametrize('value', [False, None, 1, 'true'])
+def test_owner_delete_requires_explicit_read_and_delete_readiness(owner_env, kind, side, value):
+    options = dict(owner_delete_requested=True, owner_delete_ready=True)
+    options[side] = value
+    app = owner_candidate(kind, **options)
+    path = '/emotion/piece/' + owner_env['rows'][0]['id']
+    assert runtime.piece_feature_flags_for_app(app)['piece_v2_delete_enabled'] is False
+    unauth = send(app, 'DELETE', path, headers={}, content=b'SYNTHETIC PRIVATE INVALID JSON')
+    assert unauth.status_code == 401 and unauth.json() == {'code': 'PIECE_AUTH_REQUIRED'}
+    stopped = send(app, 'DELETE', path, headers={'Authorization': 'Bearer synthetic-owner'},
+                   content=b'SYNTHETIC PRIVATE INVALID JSON')
+    assert stopped.status_code == 503 and stopped.json() == DISABLED
+    assert stopped.headers['cache-control'] == 'no-store'
+    assert owner_env['reads'] == []  # RPC/generation also forbidden by the fixture.
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
+@pytest.mark.parametrize('prefixed', [False, True])
+def test_owner_recovery_delete_reuses_terminal_without_source_or_artifact_read(
+        owner_env, monkeypatch, kind, prefixed):
+    import hashlib
+    import supabase_client
+    row = owner_env['rows'][0]
+    calls = []
+    receipt = dict(piece_id=row['id'], receipt_id=INPUT, outcome='succeeded',
+                   idempotency_replayed=False)
+    async def rpc(name, args, *, timeout):
+        calls.append((name, copy.deepcopy(args), timeout))
+        return httpx.Response(200, json=dict(receipt, idempotency_replayed=len(calls) > 1))
+    monkeypatch.setattr(supabase_client, 'sb_post_rpc', rpc)
+    app = owner_candidate(kind, owner_delete_requested=True, owner_delete_ready=True)
+    assert runtime.piece_feature_flags_for_app(app) == {
+        name: name in ('piece_v2_owner_read_enabled', 'piece_v2_delete_enabled') for name in FLAGS}
+    assert not hasattr(app.state, 'piece_preview_runtime')
+    path = '/emotion/piece/' + ('piece:' if prefixed else '') + row['id']
+    options = dict(headers={'Authorization': 'Bearer synthetic-owner',
+                            'Idempotency-Key': 'synthetic-recovery-delete'},
+                   json={'expected_row_version': row['row_version']})
+    first = send(app, 'DELETE', path, **options)
+    assert first.status_code == 200 and first.json() == receipt
+    again = send(app, 'DELETE', path, **options)
+    assert again.json() == dict(receipt, idempotency_replayed=True)
+    assert first.headers['cache-control'] == 'no-store'
+    assert calls == [('piece_delete_v2', dict(p_owner_user_id=owner_env['helper']['OWNER'],
+        p_piece_id=row['id'], p_expected_row_version=row['row_version'],
+        p_idempotency_key_hash=hashlib.sha256(b'synthetic-recovery-delete').hexdigest()), 8.0)] * 2
+    assert owner_env['reads'] == []
+    if kind == 'shared':
+        assert first.headers['x-cocolon-contract-id'] == 'emotion.piece.delete.v2'
+        assert next(r.endpoint for m, p, r in routes(app)
+                    if (m, p) == ('DELETE', '/emotion/piece/{piece_id}')) is preview_api.owner_delete
+    assert get_contract_entry(method='DELETE', path='/emotion/piece/{piece_id}') is None
+    assert not any(runtime.piece_feature_flags_for_app(shared.app).values())
+
+
+def test_owner_recovery_bootstrap_projects_deletion_and_dependency_stop(shared_env):
+    app = owner_candidate('shared', owner_delete_requested=True, owner_delete_ready=True)
+    for path in ('/app/bootstrap', '/app/startup'):
+        response = send(app, 'GET', path)
+        assert response.status_code == 200
+        assert {name: response.json()['feature_flags'][name] for name in FLAGS} == {
+            name: name in ('piece_v2_owner_read_enabled', 'piece_v2_delete_enabled') for name in FLAGS}
+        assert not any(word in response.text for word in ('requested', 'ready', 'renderer_version'))
+    app.state.piece_v2_runtime['ready']['piece_v2_owner_read_enabled'] = False
+    assert not any(send(app, 'GET', '/app/bootstrap').json()['feature_flags'][name] for name in FLAGS)

@@ -84,8 +84,10 @@ def create_piece_preview_application(*, preview_requested: bool = False,
                                      preview_ready: bool = False,
                                      preview_runtime: object = None,
                                      owner_read_requested: bool = False,
-                                     owner_read_ready: bool = False):
-    """Compose existing preview, owner-read, source and bootstrap handlers.
+                                     owner_read_ready: bool = False,
+                                     owner_delete_requested: bool = False,
+                                     owner_delete_ready: bool = False):
+    """Compose existing preview, owner recovery, source and bootstrap handlers.
 
     This is NOT production app.py, a deployed service, or a clean-cutover
     switch. It never imports/mutates the shared application or mounts the full
@@ -96,8 +98,10 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     authorized target. Requested, TTL and renderer values are not evidence of
     that readiness. Defaults are OFF; there is no default TTL or renderer.
     Owner history/detail have their own requested/ready pair and do not need
-    generation, a preview TTL or a current renderer. No save, saved mutation,
-    public read or export operation can be enabled by this composition.
+    generation, a preview TTL or a current renderer. Owner deletion requires
+    its own requested/ready pair AND effective owner read, retaining PCE-7's
+    recovery-only state. No save, visibility mutation, public read or export
+    operation can be enabled by this composition.
     Actual Auth/DB/device admission and production cutover remain separate.
     """
     requested = dict.fromkeys(PIECE_FEATURE_NAMES, False)
@@ -106,6 +110,8 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     ready['piece_v2_preview_enabled'] = preview_ready is True
     requested['piece_v2_owner_read_enabled'] = owner_read_requested is True
     ready['piece_v2_owner_read_enabled'] = owner_read_ready is True
+    requested['piece_v2_delete_enabled'] = owner_delete_requested is True
+    ready['piece_v2_delete_enabled'] = owner_delete_ready is True
     configuration = {'requested': requested, 'ready': ready}
     values = None
     if (preview_runtime is not None
@@ -117,7 +123,7 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     from fastapi import FastAPI
     from api_app_bootstrap import register_app_bootstrap_routes
     from api_piece_v2 import (create_preview, mutate_preview_visual, cancel_preview,
-                             owner_history, owner_detail)
+                             owner_history, owner_detail, owner_delete)
     from piece_v2_source_ref_http import read_original_source_ref
 
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
@@ -141,4 +147,5 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     # Keep static paths before the owner-ID path. Shared composition also
     # preserves its additional static legacy paths before this same route.
     app.add_api_route('/emotion/piece/{piece_id}', owner_detail, methods=['GET'])
+    app.add_api_route('/emotion/piece/{piece_id}', owner_delete, methods=['DELETE'])
     return app
