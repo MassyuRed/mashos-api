@@ -199,6 +199,27 @@ async def save_preview(request: Request) -> JSONResponse:
 
 
 # Static owner paths must precede /{piece_id}; production remains unregistered.
+@router.get('/quota')
+async def read_quota(request: Request) -> JSONResponse:
+    """B5 preview quota display; can_save is quota-only, not save authority."""
+    from piece_v2_quota import read_piece_quota
+    from supabase_client import sb_post_rpc
+    # PCE-8 assigns quota to B5's preview surface. Saving can be stopped while
+    # its read-only preview quota remains visible; no new flag is invented.
+    features = _OperationFeatures(request, 'piece_v2_preview_enabled')
+    try:
+        owner = await _authenticated_owner(request)
+        features.require()
+        if request.query_params or await request.body():
+            raise PieceContractError('PIECE_REQUEST_INVALID')
+        result = await read_piece_quota(authenticated_user_id=owner,
+            post_rpc=features.wrap(sb_post_rpc))
+        features.require()
+        return _response(result)
+    except Exception as exc:
+        return features.failure(exc, _CANCEL_STATUS)
+
+
 @router.get('/history')
 async def owner_history(request: Request) -> JSONResponse:
     """Read only the authenticated owner's saved private/public artifacts."""

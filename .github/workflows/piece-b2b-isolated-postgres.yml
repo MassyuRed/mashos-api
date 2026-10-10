@@ -24,6 +24,8 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/piece_v2/db/test_b05_generated_preview_issuance.py
       - ai/tests/piece_v2/db/test_b05_preview_replay_read.py
       - ai/services/ai_inference/api_piece_v2.py
+      - ai/tests/piece_v2/test_b05_piece_v2_quota_api.py
+      - supabase/migrations/20261010_005_piece_v2_quota_read.sql
       - ai/services/ai_inference/piece_v2_runtime_control.py
       - ai/services/ai_inference/piece_v2_source_ref_http.py
       - ai/services/ai_inference/api_app_bootstrap.py
@@ -177,6 +179,13 @@ jobs:
           python -m pytest -q --tb=short -ra -p no:cacheprovider \
             -c /dev/null --confcutdir=ai/tests/piece_v2/db \
             ai/tests/piece_v2/db/test_b05_preview_cancel_http.py
+      - name: Run B5 quota HTTP and native retained consumption
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/test_b05_piece_v2_quota_api.py
       - name: Run pre-save tier fence with native lock-wait verification
         shell: bash
         run: |

@@ -1,13 +1,15 @@
-"""Piece v2 body-free quota projection, NOT terminal save admission.
+"""Piece v2 body-free quota read/projection, NOT terminal save admission.
 
 The atomic SQL owner re-reads profiles and the ledger under locks. This pure
 projection consumes a server-read count and aware server time; it neither reads
-old published rows nor writes quota. No HTTP route is registered here.
+old published rows nor writes quota. The HTTP owner supplies authenticated
+identity and the existing guarded service-role RPC transport.
 """
 from __future__ import annotations
 
 from datetime import datetime
 from types import MappingProxyType
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from piece_v2_contract import PieceContractError
@@ -32,3 +34,38 @@ def project_piece_quota(*, server_tier: str, saved_count: int, server_now: datet
         'remaining_count': None if limit is None else max(0, limit - saved_count),
         'can_save': limit is None or saved_count < limit,
     }
+
+
+async def read_piece_quota(*, authenticated_user_id: str, post_rpc) -> dict:
+    """Read a body-free DB snapshot, without reserving or admitting a save.
+
+    The service-only function reads the plan and immutable usage with one DB
+    timestamp/snapshot. A concurrent save, plan change or month rollover may
+    supersede this display; terminal SQL remains authoritative.
+    """
+    try:
+        owner = str(UUID(authenticated_user_id))
+        if not UUID(owner).int:
+            raise ValueError
+        response = await post_rpc('piece_read_quota_v2',
+            {'p_owner_user_id': owner}, timeout=8.0)
+        if response.status_code != 200:
+            raise ValueError
+        value = response.json()
+        if (type(value) is not dict
+                or set(value) != {'subscription_tier', 'saved_count', 'server_now'}
+                or type(value['subscription_tier']) is not str
+                or value['subscription_tier'] not in SAVE_LIMITS
+                or type(value['saved_count']) is not int
+                or not 0 <= value['saved_count'] <= 9223372036854775807
+                or type(value['server_now']) is not str
+                or len(value['server_now']) > 64):
+            raise ValueError
+        server_now = datetime.fromisoformat(value['server_now'].replace('Z', '+00:00'))
+        return project_piece_quota(server_tier=value['subscription_tier'],
+            saved_count=value['saved_count'], server_now=server_now)
+    except Exception:
+        # Missing RPC, denied read and malformed ACK never become free/zero.
+        # The request guard retains OFF through this closed error mapping.
+        # BaseException (including task cancellation) deliberately propagates.
+        raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE') from None
