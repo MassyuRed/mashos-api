@@ -330,7 +330,7 @@ def test_composed_visual_unknown_outcome_recovers_same_native_record(
 @pytest.mark.parametrize('kind', ['preview', 'shared'])
 def test_composed_owner_reads_persisted_private_public_pages_without_generation(
         database, monkeypatch, kind):
-    """Real saved records/SQL and projection, with synthetic Auth/HTTP only."""
+    """Persist synthetic artifacts through real SQL/projection; Auth/HTTP are doubles."""
     import api_piece_v2 as api
     from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
     from piece_v2_source_adapter import PieceSavedSourceAdapter
