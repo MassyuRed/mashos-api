@@ -302,7 +302,7 @@ class MyProfileLatestEnsureResponse(BaseModel):
     refreshed: bool = Field(..., description="True if report was regenerated & saved")
     reason: str = Field(
         ...,
-        description="missing | stale_analysis | schema_mismatch | force | up_to_date | no_analysis | no_visible_content | in_progress",
+        description="missing | stale_analysis | schema_mismatch | force | up_to_date | no_analysis | no_visible_content | insufficient_input | in_progress",
     )
     report_mode: str = Field(..., description="light | standard | deep")
     period: str = Field(..., description="lookback period (e.g. 28d)")
@@ -451,7 +451,7 @@ async def _enqueue_self_structure_monthly_distribution_candidate(
 class MyProfileMonthlyEnsureResponse(BaseModel):
     status: str = Field("ok", description="ok")
     refreshed: bool = Field(..., description="True if regenerated & saved")
-    reason: str = Field(..., description="missing | force | mode_mismatch | schema_mismatch | up_to_date | no_visible_content | unchanged | in_progress")
+    reason: str = Field(..., description="missing | force | mode_mismatch | schema_mismatch | up_to_date | no_visible_content | insufficient_input | unchanged | in_progress")
     report_mode: str = Field(..., description="light | standard | deep")
     period: str = Field(..., description="lookback period (e.g. 28d)")
     period_start: str = Field(..., description="period_start (ISO)")

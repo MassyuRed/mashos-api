@@ -89,7 +89,7 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         self.fx = fixture()
         self.row = self.fx['row']
 
-    async def test_generation_failure_logs_current_reason_without_saving(self):
+    async def test_insufficient_current_input_keeps_diagnostic_without_saving(self):
         for members in ([{'original': dict(self.fx['original'], memo=memo),
                           'thread': None, 'events': []}] for memo in (
                               '未対応の合成記録です。', '', '私は何を調べた。', '私は誰の資料を見た。',
@@ -104,11 +104,9 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                     patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
                     patch.object(service, '_rpc', AsyncMock(return_value=snapshot)) as rpc, \
                     self.assertLogs(realizer.logger, level='WARNING') as logs:
-                with self.assertRaises(HTTPException) as caught:
-                    await service.generate_saved(OWNER, start=START, end=END,
-                        report_mode='standard', report_type='latest')
-            self.assertEqual((caught.exception.status_code, caught.exception.detail),
-                             (422, 'analysis_observed_map_unavailable'))
+                pending = await service.generate_saved(OWNER, start=START, end=END,
+                    report_mode='standard', report_type='latest')
+            self.assertIs(pending, service._INSUFFICIENT_INPUT)
             self.assertEqual([call.args[0] for call in rpc.await_args_list],
                              ['analysis_observed_source_snapshot'])
             self.assertEqual([r.getMessage() for r in logs.records], [
@@ -1685,6 +1683,23 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
             answer = await service.ensure_saved(OWNER, period='28d', report_mode='standard', force=True)
         self.assertTrue(answer['has_visible_content'])
         self.assertFalse(answer['refreshed'])
+
+    async def test_insufficient_regeneration_does_not_fall_back_to_saved_report(self):
+        for monthly in (False, True):
+            with self.subTest(monthly=monthly), \
+                    patch.dict(os.environ, COCOLON_ANALYSIS_OBSERVED_MODE='development'), \
+                    patch.object(service, 'read_saved', AsyncMock(return_value=result([self.row]))), \
+                    patch.object(service, 'generate_saved',
+                                 AsyncMock(return_value=service._INSUFFICIENT_INPUT)):
+                answer = await service.ensure_saved(OWNER, period='28d', report_mode='standard',
+                                                    force=True, monthly=monthly)
+            self.assertEqual(answer['reason'], 'insufficient_input')
+            self.assertEqual(answer['skip_reason'], 'analysis_insufficient_input')
+            self.assertFalse(answer['has_visible_content'])
+            self.assertFalse(answer['refreshed'])
+            self.assertFalse(answer['history_saved'])
+            for key in ('content_text', 'meta', 'title', 'generated_at', 'latest_generated_at'):
+                self.assertIsNone(answer[key])
 
     async def test_status_selects_same_tier_default_mode(self):
         standard, deep = copy.deepcopy(self.row), copy.deepcopy(self.row)

@@ -729,6 +729,8 @@ Mashの「開始した」報告後、指定API `7626e1f6e6cc7b2d8a71b9ea1032b840
 
 ## 37. 2026-10-10 JST — 分析取得エラーの原因修正（未配置）
 
+**18:19 JST本人訂正により、本節の文法拡張と配置案内を撤回。** API `4bb37a0afdc020576b0c1e33fa454674fd5b36c7` を今回の配置候補に使わない。Mashの依頼は、情報不足でも生成することではなく、分析がまだ成立しない状態を正常な案内として表示することだった。追加文法を戻し、正しい対応を§38へ記録した。以下は誤解に基づいた作業の履歴であり、現行方針ではない。
+
 今回の依頼は、通常の感情入力後に分析内容が出ず `analysis_observed_map_unavailable` となる問題の修正。全体構造・全ファイル地図、Analysis current mapと詳細設計、最新weekly 20261010 §5.5、必読事故記録と作業規則を確認した。今の優先は実入力による分析生成・保存再表示への到達であり、一般文法の網羅や表示磨き込みを配置の追加条件にしない。
 
 ### 原因と変更範囲
@@ -759,3 +761,25 @@ Mashの「開始した」報告後、指定API `7626e1f6e6cc7b2d8a71b9ea1032b840
 4. 端末表示と保存後の再表示が成功した時点で、今回の取得エラーの実機復旧を確認する。現在成立しているのは修正・隔離検証までで、修正版の実機描画・稼働DBへの保存は未確認。部分mapの表示回復と内容品質の受入れを分ける。
 
 今回の稼働DB/環境変数変更、deploy、native build、mergeは0。次は指定commit配置であり、同じ入力の再提出・キー・追加の個人情報は不要。
+
+## 38. 2026-10-10 JST — 本人意図の訂正：情報不足の通常案内（未配置）
+
+Mashは18:19 JST、「少ない入力から分析を無理に表示させるのではなく、情報不足のためまだ表示できないと案内してほしい」と訂正した。華恋が依頼を生成範囲の拡大と取り違えたため、§37の追加文法・専用検査を撤回した。compiler/realizer/vertical検査の3ファイルは631c時点と一致する。表示できる材料を補わず、既存の分析生成条件を維持する。
+
+### 変更と確認
+
+- 既存 `analysis_observed_service.py` が、現在入力についての `UNAVAILABLE`・`analysis_observed_route_not_established`・artifactなしという厳密な組合せだけを正常な不足状態へ変換する。最新/月次ensureはHTTP200、reason=insufficient_input、skip_reason=analysis_insufficient_input。本文・図・生成時刻はnull、refreshed/has_visible_content/history_saved=falseで、保存commitはしない。内部専用signalを使い、不足文を保存結果に混ぜない。
+- 読取専用/ensure=false/空期間の保存不在は既存no_visible_contentのまま。無効source、前期不足/比較失敗、内部例外、DB/権限/通信障害は情報不足として隠さない。force再生成が不足の場合に古い分析をfallback表示しない。件数・文字数の新しい閾値は設けていない。
+- RNの既存 `SelfStructureReportGenerateScreen.js` は、整合した不足応答に **「入力情報が少ないため、まだ分析を表示できません。」** を通常表示する。分析renderer・出力・既読通知を呼ばず、後日成立した分析へ通常更新できる。矛盾したDTOやHTTP失敗は従来のエラーに残す。
+- 最終Analysis vertical/storage/saved period/APIは **386 PASS**（既存Pydantic非推奨warning1）。最新/月次、比較off/development、不足から後日の成立・保存への移行、読取だけの不在、force時の旧結果非表示、内部処理/DB失敗の維持を確認した。Auth/RPCは合成、engine/service/FastAPIは実実装。
+- RNの既存component suiteは **20/20 PASS**。不足表示→成立結果→不足表示、既読登録なし、不正応答/HTTP失敗を区別する。既存の固定React18.3.1/Babel道具を隔離runtimeへ導入し、製品依存の変更なし。
+- 既に読取済みの本人3件のsnapshotでも、実service/engineの最終sourceが不足の正常応答となり、分析生成・保存0、原snapshot不変を確認した。稼働DBへの書込みではない。本人本文・ID・画像はGitHubへ転記していない。親および別agentがAPI/RN差分を確認し、blocking指摘なし。
+
+今回の実装・文言修正は既存owner内で完結し、公開DTOキー・DB schema・SQL・環境変数・共有意味作者は変更しない。APIのreason/skip_reason値追加と既存画面分岐だけを接続した（STRUCTURE_MAP_DELTA_NONE）。設計の正本はCocolon current03と詳細設計04 §3.21。§37の389検査・部分生成成功は撤回前の旧候補の履歴としてのみ扱い、今回の完成条件へ流用しない。
+
+### 正しい配置と端末確認
+
+1. §37の `4bb37a0afdc020576b0c1e33fa454674fd5b36c7` の配置案内は取消し。今回のGitHub反映後に示すAPI修正SHAを[Render mashos-api](https://dashboard.render.com/web/srv-d4ppfpm3jp1c73952bj0)の **Manual Deploy → Deploy a specific commit** で指定する。本人開始の既存方針を継承し、commit指定非対応の連携で汎用main deployは行わない。
+2. 今回は画面文言を変えるため **新しいiOSビルドが必要**。先の「native再build不要」という案内は撤回する。[iOS TestFlight Build](https://github.com/MassyuRed/Cocolon/actions/workflows/ios-build.yml) → **Run workflow** → branch `agent/three-core-cmee-current-structure-20260815` → **Run workflow**。開始後、source SHA・archive/export/upload・実build番号を華恋が照合する。既存6301にAPIだけ配置しても新文言が届くとはしない。
+3. DB migrationと環境変数変更は不要。新buildがTestFlightで利用可能になった後に更新し、既存入力のまま **分析 → わたしマップ** を開く。対象がまだ分析未成立なら上記の通常案内が表示され、取得エラーや作成した分析は表示されないことを確認する。閉じて開き直しても同じ状態を確認する。確認用の新入力は不要。
+4. 現時点ではGitHub修正・隔離API/画面検証までで、修正版の配置・本人端末の案内表示は未確認。今回は稼働DB/環境変数変更、deploy、native build、mergeを行っていない。

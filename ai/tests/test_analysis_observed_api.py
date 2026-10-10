@@ -97,63 +97,6 @@ class AnalysisApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sum(n=='analysis_observed_commit' for n,_ in self.calls),count)
         self.assertNotIn('private_evidence',response.text)
 
-    async def test_subject_omitted_action_generates_partial_map_and_rereads_saved_result(self):
-        """A real engine result survives latest/save/read; Auth and RPC are synthetic."""
-        from cocolon_meaning_experience_engine import MeaningExperienceEngine
-        originals = []
-        for number, action in ((201, '書店でブラブラした。'), (202, None), (203, '')):
-            originals.append(dict(self.fx['original'], id=str(UUID(int=number)),
-                memo='まだ言葉を整理しているところです。', memo_action=action))
-
-        async def snapshot_rpc(name, payload):
-            if name in ('analysis_observed_source_snapshot', 'analysis_observed_comparison_snapshot'):
-                self.calls.append((name, payload))
-                start = datetime.fromisoformat(payload['p_start'])
-                end = datetime.fromisoformat(payload['p_end'])
-                members = [{'original': dict(original, created_at=(end-timedelta(hours=index+1))
-                    .replace(tzinfo=None).isoformat()), 'thread': None, 'events': []}
-                    for index, original in enumerate(originals)]
-                current = {'guard': GUARD, 'tier': self.tier, 'now': payload['p_end'], 'members': members}
-                if name == 'analysis_observed_source_snapshot':
-                    return current
-                return {'guard': 'analysis-db-compare-v1:'+'b'*64,
-                    'tier': self.tier, 'comparison_eligible': True, 'current': current,
-                    'previous': dict(current, members=[]),
-                    'previous_start': (start-(end-start)).isoformat(), 'previous_end': payload['p_start']}
-            return await self.rpc(name, payload)
-
-        before = copy.deepcopy(originals)
-        for comparison_mode in ('off', 'development'):
-            with self.subTest(comparison_mode=comparison_mode), \
-                    patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE=comparison_mode), \
-                    patch.object(service, '_rpc', side_effect=snapshot_rpc):
-                self.saved = []
-                self.calls = []
-                response = await self.get('/self-structure/latest?report_mode=standard')
-                self.assertEqual(response.status_code, 200, response.text)
-                body = response.json()
-                self.assertTrue(body['has_visible_content'])
-                self.assertTrue(body['refreshed'])
-                self.assertEqual(len(body['meta']['nodes']), 1)
-                self.assertIn('書店でブラブラした', body['content_text'])
-                self.assertIn('主体', body['meta']['nodes'][0]['visible_label'])
-                self.assertEqual(body['meta']['edges'], [])
-                self.assertTrue(any('まだ読み取れていない内容' in gap['visible_label']
-                                    for gap in body['meta']['unknown_gaps']))
-                self.assertEqual(body['meta']['period_comparison']['state'], 'NO_PREVIOUS')
-                self.assertEqual(sum(name == 'analysis_observed_commit' for name, _ in self.calls), 1)
-                with patch.object(MeaningExperienceEngine, 'generate',
-                                  side_effect=AssertionError('saved reads must not regenerate')):
-                    again = await self.get('/self-structure/latest?ensure=false&report_mode=standard')
-                    status = await self.get('/self-structure/latest/status')
-                self.assertEqual(again.status_code, 200, again.text)
-                self.assertEqual(again.json()['content_text'], body['content_text'])
-                self.assertEqual(again.json()['meta'], body['meta'])
-                self.assertEqual(status.json()['version_key'], body['meta']['projection_of'])
-                self.assertEqual(sum(name == 'analysis_observed_commit' for name, _ in self.calls), 1)
-                self.assertNotIn('private_evidence', response.text)
-                self.assertEqual(originals, before)
-
     async def test_missing_invalid_auth_never_touches_store(self):
         for headers in ({},{'Authorization':'Bearer invalid'}):
             response=await self.client.get('/self-structure/latest',headers=headers)
@@ -200,9 +143,66 @@ class AnalysisApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(generated.json()['has_visible_content'])
         self.assertEqual(sum(n == 'analysis_observed_commit' for n, _ in self.calls), 1)
 
-    async def test_nonempty_unsupported_current_http_remains_unavailable(self):
-        self.fx['original']['memo'] = '未対応の合成記録です。'
+    async def test_insufficient_current_input_is_pending_without_report_or_save(self):
+        original = dict(self.fx['original'], memo='まだ言葉を整理しているところです。',
+                        memo_action='書店でブラブラした。')
+
+        async def snapshot_rpc(name, payload):
+            if name in ('analysis_observed_source_snapshot', 'analysis_observed_comparison_snapshot'):
+                self.calls.append((name, payload))
+                start = datetime.fromisoformat(payload['p_start'])
+                end = datetime.fromisoformat(payload['p_end'])
+                current = {'guard': GUARD, 'tier': self.tier, 'now': payload['p_end'],
+                    'members': [{'original': dict(original, created_at=(end-timedelta(hours=1))
+                        .replace(tzinfo=None).isoformat()), 'thread': None, 'events': []}]}
+                if name == 'analysis_observed_source_snapshot':
+                    return current
+                return {'guard': 'analysis-db-compare-v1:'+'b'*64,
+                    'tier': self.tier, 'comparison_eligible': True, 'current': current,
+                    'previous': dict(current, members=[]),
+                    'previous_start': (start-(end-start)).isoformat(), 'previous_end': payload['p_start']}
+            return await self.rpc(name, payload)
+
+        before = copy.deepcopy(original)
+        for comparison_mode in ('off', 'development'):
+            with self.subTest(comparison_mode=comparison_mode), \
+                    patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE=comparison_mode), \
+                    patch.object(service, '_rpc', side_effect=snapshot_rpc):
+                responses = [await self.get('/self-structure/latest'),
+                    await self.client.post('/self-structure/monthly/ensure', json={},
+                                           headers={'Authorization': 'Bearer valid'})]
+                for response in responses:
+                    self.assertEqual(response.status_code, 200, response.text)
+                    body = response.json()
+                    self.assertEqual(body['status'], 'ok')
+                    self.assertEqual(body['reason'], 'insufficient_input')
+                    self.assertEqual(body['skip_reason'], 'analysis_insufficient_input')
+                    self.assertFalse(body['refreshed'])
+                    self.assertFalse(body['has_visible_content'])
+                    for key in ('meta', 'content_text', 'title', 'generated_at'):
+                        self.assertIsNone(body[key])
+                    self.assertLess(datetime.fromisoformat(body['period_start']),
+                                    datetime.fromisoformat(body['period_end']))
+                self.assertFalse(responses[1].json()['history_saved'])
+                self.assertEqual(original, before)
+        self.assertFalse(self.saved)
+        self.assertFalse(any(n == 'analysis_observed_commit' for n, _ in self.calls))
+        # Absence alone, without a generation attempt, does not establish insufficiency.
+        read = await self.get('/self-structure/latest?ensure=false')
+        self.assertEqual(read.json()['reason'], 'no_visible_content')
+        # No placeholder was persisted: a later interpretable input still generates.
         with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='development'):
+            generated = await self.get('/self-structure/latest')
+        self.assertEqual(generated.status_code, 200, generated.text)
+        self.assertTrue(generated.json()['has_visible_content'])
+        self.assertTrue(generated.json()['refreshed'])
+        self.assertEqual(sum(n == 'analysis_observed_commit' for n, _ in self.calls), 1)
+
+    async def test_internal_generation_failure_is_not_insufficient_input(self):
+        from cocolon_meaning_experience_engine.cores.analysis import observed_route_realizer
+        with patch.object(observed_route_realizer, 'compile_observed_graph',
+                          side_effect=ValueError('synthetic internal failure')), \
+                patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='development'):
             response = await self.get('/self-structure/latest')
         self.assertEqual(response.status_code, 422)
         self.assertEqual(response.json()['detail'], 'analysis_observed_map_unavailable')

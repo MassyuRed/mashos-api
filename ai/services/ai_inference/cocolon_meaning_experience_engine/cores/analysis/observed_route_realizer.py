@@ -15,7 +15,6 @@ from .intent_compiler import (ObservedGraph, NODE_KINDS, compile_observed_graph,
                               _CANONICAL_CONTENT, _RESULT_STEMS, _CHANGE_PAST,
                               _FEELING_PAST, _te_action_proposition, _burden_predicate,
                               _protective_wish_proposition, _proposition_meaning,
-                              _recorded_mimetic_proposition,
                               PeriodComparison, compare_period_meaning)
 from .source_adapter import (
     AnalysisObservedMapRequest, AnalysisSourceError, AnalysisSourceMember,
@@ -167,9 +166,6 @@ def _safe_label(node, graph):
         phrase = ''.join(noun + case for case, noun in content.arguments)
         phrase += _CANONICAL_CONTENT[(content.predicate_lemma, content.polarity, content.temporal_scope)]
         return phrase + 'かもしれないと' + parts.predicate_lemma + '（この記述時点の考え）'
-    if parts == _recorded_mimetic_proposition(node.visible_label):
-        phrase = ''.join(noun + case for case, noun in parts.arguments)
-        return phrase + parts.predicate_lemma[:-2] + 'した（主体の記載なし）'
     phrase = ''.join(noun + case for case, noun in parts.arguments) + parts.predicate_lemma
     phrase = _source_prefix(phrase, parts)
     if parts.modality == 'wish':

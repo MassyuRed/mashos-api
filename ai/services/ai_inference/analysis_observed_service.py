@@ -16,6 +16,10 @@ import httpx
 from fastapi import HTTPException
 from supabase_client import sb_post_rpc
 
+# A normal generation result with no report to persist, distinct from an
+# empty source period (None) and from an internal/source/storage failure.
+_INSUFFICIENT_INPUT = object()
+
 
 def _require(condition):
     if not condition:
@@ -232,6 +236,7 @@ async def generate_saved(user_id, *, start, end, report_mode, report_type):
     from astor_material_snapshots import _analysis_saved_member, AnalysisSavedSourceError
     from cocolon_meaning_experience_engine.cores.analysis.source_adapter import AnalysisObservedMapRequest, _time
     from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
+    from cocolon_meaning_experience_engine.contracts import EngineStatus
     owner = str(UUID(user_id))
     args = {'p_user_id': owner, 'p_start': start, 'p_end': end,
             'p_mode': report_mode, 'p_report_type': report_type}
@@ -271,6 +276,9 @@ async def generate_saved(user_id, *, start, end, report_mode, report_type):
         if not request.members:
             return None
         outcome = await asyncio.to_thread(MeaningExperienceEngine().generate, request)
+        if (outcome.artifact is None and outcome.status is EngineStatus.UNAVAILABLE
+                and outcome.reason_codes == ('analysis_observed_route_not_established',)):
+            return _INSUFFICIENT_INPUT
         if outcome.artifact is None or outcome.status.value != 'GENERATED':
             raise HTTPException(422, 'analysis_observed_map_unavailable')
         artifact = outcome.artifact
@@ -302,9 +310,11 @@ def _period_days(period):
     return int(period[:-1])
 
 
-def _ensure_response(row, *, report_mode, period, refreshed, monthly=False, start=None, end=None):
+def _ensure_response(row, *, report_mode, period, refreshed, monthly=False, start=None, end=None,
+                     insufficient_input=False):
     return {'status': 'ok', 'refreshed': refreshed,
-        'reason': 'saved' if refreshed else ('up_to_date' if row else 'no_visible_content'),
+        'reason': ('insufficient_input' if insufficient_input else
+                   ('saved' if refreshed else ('up_to_date' if row else 'no_visible_content'))),
         'report_mode': report_mode, 'period': period,
         'period_start': row['period_start'] if row else start,
         'period_end': row['period_end'] if row else end,
@@ -312,7 +322,9 @@ def _ensure_response(row, *, report_mode, period, refreshed, monthly=False, star
         'latest_generated_at': row['generated_at'] if row else None,
         'title': row['title'] if row else None, 'content_text': row['content_text'] if row else None,
         'meta': row['content_json']['watashiMap'] if row else None,
-        'has_visible_content': bool(row), 'skip_reason': None if row else 'analysis_saved_map_unavailable',
+        'has_visible_content': bool(row),
+        'skip_reason': ('analysis_insufficient_input' if insufficient_input else
+                        (None if row else 'analysis_saved_map_unavailable')),
         'history_saved': bool(row) if monthly else False}
 
 
@@ -336,11 +348,14 @@ async def ensure_saved(user_id, *, period, report_mode, ensure=True, force=False
         elif ensure and observed_mode() == 'development' and now - _time(row['period_end']) >= timedelta(days=1):
             row = None
     refreshed = False
+    insufficient_input = False
     if ensure and (force or row is None) and observed_mode() == 'development':
-        row = await generate_saved(user_id, start=start, end=end, report_mode=report_mode, report_type=report_type)
+        generated = await generate_saved(user_id, start=start, end=end, report_mode=report_mode, report_type=report_type)
+        insufficient_input = generated is _INSUFFICIENT_INPUT
+        row = None if insufficient_input else generated
         refreshed = row is not None
     return _ensure_response(row, report_mode=report_mode, period=period, refreshed=refreshed,
-                            monthly=monthly, start=start, end=end)
+                            monthly=monthly, start=start, end=end, insufficient_input=insufficient_input)
 
 
 async def saved_status(user_id, *, period='28d'):
