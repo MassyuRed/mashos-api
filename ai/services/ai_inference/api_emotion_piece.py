@@ -137,16 +137,20 @@ ResolveEmotionPieceAuthenticatedUserId = resolve_authenticated_user_id
 ExtractEmotionPieceClientMeta = extract_client_meta
 
 
-def register_emotion_piece_routes(app: FastAPI, *, include_preview: bool = True) -> None:
+def register_emotion_piece_routes(app: FastAPI, *, include_preview: bool = True,
+                                  include_quota: bool = True) -> None:
     """Register current Emotion->Piece write routes on the given FastAPI app."""
 
-    @app.get("/emotion/piece/quota", response_model=EmotionPieceQuotaResponse)
     async def emotion_piece_quota(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> EmotionPieceQuotaResponse:
         user_id = await ResolveEmotionPieceAuthenticatedUserId(authorization=authorization)
         quota = await BuildEmotionPieceQuotaStatus(user_id)
         return EmotionPieceQuotaResponse(**quota)
+
+    if include_quota:
+        app.add_api_route('/emotion/piece/quota', emotion_piece_quota,
+                          methods=['GET'], response_model=EmotionPieceQuotaResponse)
 
     async def emotion_piece_preview(
         request: Request,

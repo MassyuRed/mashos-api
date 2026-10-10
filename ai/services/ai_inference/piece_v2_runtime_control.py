@@ -122,7 +122,7 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     # after invalid supplied runtime values have been rejected without IO.
     from fastapi import FastAPI
     from api_app_bootstrap import register_app_bootstrap_routes
-    from api_piece_v2 import (create_preview, mutate_preview_visual, cancel_preview,
+    from api_piece_v2 import (read_quota, create_preview, mutate_preview_visual, cancel_preview,
                              owner_history, owner_detail, owner_delete)
     from piece_v2_source_ref_http import read_original_source_ref
 
@@ -143,6 +143,9 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     app.add_api_route('/emotion/piece/preview/{preview_id}',
                       cancel_preview, methods=['DELETE'])
     register_app_bootstrap_routes(app)
+    # Quota uses the existing preview flag and reports saved usage only;
+    # can_save is display data, never permission to invoke the save operation.
+    app.add_api_route('/emotion/piece/quota', read_quota, methods=['GET'])
     app.add_api_route('/emotion/piece/history', owner_history, methods=['GET'])
     # Keep static paths before the owner-ID path. Shared composition also
     # preserves its additional static legacy paths before this same route.

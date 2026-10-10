@@ -97,6 +97,7 @@ def test_default_composition_has_only_existing_preview_and_bootstrap_handlers(co
         ('/emotion/piece/preview/{preview_id}', ('PATCH',)),
         ('/emotion/piece/preview/{preview_id}', ('DELETE',)),
         ('/emotion/piece/source-ref/{saved_input_id}', ('GET',)),
+        ('/emotion/piece/quota', ('GET',)),
         ('/emotion/piece/history', ('GET',)),
         ('/emotion/piece/{piece_id}', ('GET',)),
         ('/emotion/piece/{piece_id}', ('DELETE',)),
@@ -108,6 +109,7 @@ def test_default_composition_has_only_existing_preview_and_bootstrap_handlers(co
     assert next(r.endpoint for r in app.routes if r.path == '/emotion/piece/history') is api.owner_history
     assert next(r.endpoint for r in app.routes if r.path == '/emotion/piece/{piece_id}') is api.owner_detail
     assert next(r.endpoint for r in app.routes if r.path == '/emotion/piece/{piece_id}' and 'DELETE' in r.methods) is api.owner_delete
+    assert next(r.endpoint for r in app.routes if r.path == '/emotion/piece/quota') is api.read_quota
     assert tuple(api.router.routes) == before
     assert runtime.piece_feature_flags_for_app(app) == dict.fromkeys(FLAGS, False)
     assert not hasattr(app.state, 'piece_preview_runtime')
@@ -244,7 +246,7 @@ def test_factory_does_not_import_or_modify_production_or_legacy_application(comp
         return original(name, *args, **kwargs)
     monkeypatch.setattr(builtins, '__import__', guarded)
     app = enabled()
-    assert len(app.routes) == 9
+    assert len(app.routes) == 10
     assert app is not composition_env['app']
 
 

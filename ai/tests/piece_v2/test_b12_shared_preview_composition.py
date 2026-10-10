@@ -118,10 +118,11 @@ def test_candidate_reuses_factory_without_changing_default_routes_or_registry(sh
     assert next(r.endpoint for m, p, r in routes(app) if (m, p) == ('PATCH', VISUAL_ROUTE)) is preview_api.mutate_preview_visual
     assert next(r.endpoint for m, p, r in routes(app) if (m, p) == ('DELETE', VISUAL_ROUTE)) is preview_api.cancel_preview
     assert next(r.endpoint for m, p, r in routes(app) if 'source-ref/' in p) is source_api.read_original_source_ref
-    # Every shared route except the incompatible old preview alias is retained.
+    # Shared routes retain one quota endpoint; old preview/quota aliases are absent.
     before = Counter((m, p) for m, p, _ in routes(shared.app))
     expected = before.copy()
     del expected[('POST', '/emotion/reflection/preview')]
+    del expected[('GET', '/emotion/reflection/quota')]
     expected[('GET', '/emotion/piece/source-ref/{saved_input_id}')] = 1
     expected[('PATCH', VISUAL_ROUTE)] = 1
     expected[('DELETE', VISUAL_ROUTE)] = 1
@@ -434,10 +435,10 @@ def test_shared_owner_detail_does_not_shadow_existing_static_quota(shared_env):
     app = owner_candidate('shared')
     default = send(shared.app, 'GET', '/emotion/piece/quota', headers={})
     candidate_response = send(app, 'GET', '/emotion/piece/quota', headers={})
-    assert candidate_response.status_code == default.status_code
-    assert candidate_response.json() == default.json()
-    assert candidate_response.headers['x-cocolon-contract-id'] == default.headers['x-cocolon-contract-id']
-    assert candidate_response.headers['x-cocolon-contract-id'] != 'emotion.piece.detail.v2'
+    assert candidate_response.status_code == 401
+    assert candidate_response.json() == {'code': 'PIECE_AUTH_REQUIRED'}
+    assert default.headers['x-cocolon-contract-id'] == 'emotion.piece.quota.v1'
+    assert candidate_response.headers['x-cocolon-contract-id'] == 'emotion.piece.quota.v2'
     counts = Counter((method, path) for method, path, _ in routes(app))
     for path in ('/emotion/piece/history', '/emotion/piece/{piece_id}'):
         assert counts[('GET', path)] == 1
@@ -516,3 +517,87 @@ def test_owner_recovery_bootstrap_projects_deletion_and_dependency_stop(shared_e
         assert not any(word in response.text for word in ('requested', 'ready', 'renderer_version'))
     app.state.piece_v2_runtime['ready']['piece_v2_owner_read_enabled'] = False
     assert not any(send(app, 'GET', '/app/bootstrap').json()['feature_flags'][name] for name in FLAGS)
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
+def test_composed_quota_is_preview_gated_and_auth_precedes_body(shared_env, kind):
+    settings = dict(owner_read_requested=True, owner_read_ready=True)
+    app = (shared.create_application(piece_preview_configuration=settings) if kind == 'shared'
+           else runtime.create_piece_preview_application(**settings))
+    path = '/emotion/piece/quota'
+    unauth = send(app, 'GET', path, headers={}, content=b'SYNTHETIC PRIVATE BODY')
+    assert unauth.status_code == 401 and unauth.json() == {'code': 'PIECE_AUTH_REQUIRED'}
+    assert unauth.headers['www-authenticate'] == 'Bearer'
+    off = send(app, 'GET', path, content=b'SYNTHETIC PRIVATE BODY')
+    assert off.status_code == 503 and off.json() == DISABLED
+    assert off.headers['cache-control'] == 'no-store'
+    assert shared_env['quota_calls'] == shared_env['source'] == shared_env['service'] == shared_env['rpc'] == 0
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
+def test_composed_quota_uses_saved_usage_and_keeps_save_off(shared_env, kind):
+    app = candidate() if kind == 'shared' else runtime.create_piece_preview_application(
+        preview_requested=True, preview_ready=True, preview_runtime=dict(_RUNTIME))
+    path = '/emotion/piece/quota'
+    response = send(app, 'GET', path)
+    assert response.status_code == 200 and response.json() == shared_env['preview']['quota']
+    assert response.headers['cache-control'] == 'no-store'
+    assert shared_env['quota_calls'] == 1
+    assert runtime.piece_feature_flags_for_app(app)['piece_v2_save_enabled'] is False
+    assert next(r.endpoint for m, p, r in routes(app) if (m, p) == ('GET', path)) is preview_api.read_quota
+    if kind == 'shared':
+        assert response.headers['x-cocolon-contract-id'] == 'emotion.piece.quota.v2'
+    for changes in ({'params': {'owner_user_id': INPUT}}, {'content': b'SYNTHETIC PRIVATE BODY'}):
+        invalid = send(app, 'GET', path, **changes)
+        assert invalid.status_code == 400 and invalid.json() == {'code': 'PIECE_REQUEST_INVALID'}
+    assert shared_env['quota_calls'] == 1
+    assert shared_env['source'] == shared_env['service'] == shared_env['rpc'] == 0
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
+def test_composed_quota_stop_after_read_suppresses_snapshot(shared_env, monkeypatch, kind):
+    import supabase_client
+    app = candidate() if kind == 'shared' else runtime.create_piece_preview_application(
+        preview_requested=True, preview_ready=True, preview_runtime=dict(_RUNTIME))
+    previous = supabase_client.sb_post_rpc
+    async def stop(name, args, **options):
+        result = await previous(name, args, **options)
+        app.state.piece_v2_runtime = {}
+        return result
+    monkeypatch.setattr(supabase_client, 'sb_post_rpc', stop)
+    for _ in range(2):
+        response = send(app, 'GET', '/emotion/piece/quota')
+        assert response.status_code == 503 and response.json() == DISABLED
+        assert response.headers['cache-control'] == 'no-store'
+    assert shared_env['quota_calls'] == 1
+
+
+def test_default_quota_and_legacy_alias_keep_old_dto_only(shared_env, monkeypatch):
+    import api_emotion_piece as old
+    calls = []
+    async def verify(**kwargs):
+        assert kwargs['authorization'] == AUTH
+        return OWNER
+    async def quota(owner):
+        assert owner == OWNER
+        calls.append(owner)
+        return dict(status='ok', subscription_tier='free', month_key='2026-10',
+                    publish_limit=5, published_count=3, remaining_count=2, can_publish=True)
+    monkeypatch.setattr(old, 'ResolveEmotionPieceAuthenticatedUserId', verify)
+    monkeypatch.setattr(old, 'BuildEmotionPieceQuotaStatus', quota)
+    for default in (shared.app, shared.create_application()):
+        for path, contract in [('/emotion/piece/quota', 'emotion.piece.quota.v1'),
+                               ('/emotion/reflection/quota', 'emotion.reflection.quota.v1')]:
+            response = send(default, 'GET', path)
+            assert response.status_code == 200 and response.json()['published_count'] == 3
+            assert 'saved_count' not in response.json()
+            assert response.headers['x-cocolon-contract-id'] == contract
+    assert len(calls) == 4 and shared_env['quota_calls'] == 0
+    app = candidate()
+    absent = send(app, 'GET', '/emotion/reflection/quota')
+    assert absent.status_code == 404 and 'x-cocolon-contract-id' not in absent.headers
+    assert get_contract_entry(method='GET', path='/emotion/reflection/quota', piece_preview=True) is None
+    assert len(calls) == 4 and shared_env['quota_calls'] == 0
+    selected = [entry for entry in iter_public_api_contracts(piece_preview=True)
+                if entry.method == 'GET' and entry.path == '/emotion/piece/quota']
+    assert len(selected) == 1 and selected[0].contract_id == 'emotion.piece.quota.v2'

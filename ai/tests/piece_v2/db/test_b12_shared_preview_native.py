@@ -530,3 +530,74 @@ def test_composed_owner_delete_purges_and_recovers_same_receipt_without_quota_re
     assert conn.execute('SELECT count(*) FROM public.piece_delete_receipts').fetchone() == (1,)
     assert conn.execute('SELECT to_jsonb(q) FROM public.piece_quota_consumptions q').fetchall() == quota
     assert b4['_used'](conn) == 1 and b2['_legacy_identity'](conn) == legacy
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
+@pytest.mark.parametrize('tier,count,limit', [('free', 5, 5), ('plus', 2, 30), ('premium', 7, None)])
+def test_composed_quota_reads_real_usage_and_matches_preview_without_writing(
+        database, monkeypatch, kind, tier, count, limit):
+    conn, _, _ = database
+    _, _, request, _, state = _H['_preview_http_harness'](database, monkeypatch, tier=tier)
+    b4 = _B5['_B4']
+    b4['_seed_usage'](conn, count)
+    legacy = b4['_B2']['_legacy_identity'](conn)
+    app = _visual_application(kind)
+    def get():
+        async def call():
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                        base_url='http://piece-test.invalid') as client:
+                return await client.get('/emotion/piece/quota',
+                                        headers={'Authorization': _B5['AUTH']})
+        return asyncio.run(call())
+    def snapshot():
+        return tuple(conn.execute('SELECT to_jsonb(r) FROM public.' + table + ' r ORDER BY 1').fetchall()
+                     for table in ('piece_records', 'piece_quota_consumptions', 'profiles'))
+    before = snapshot()
+    response = get()
+    assert response.status_code == 200 and response.headers['cache-control'] == 'no-store'
+    if kind == 'shared':
+        assert response.headers['x-cocolon-contract-id'] == 'emotion.piece.quota.v2'
+    quota = response.json()
+    assert quota == dict(contract_version='piece.quota_consumption.v1', subscription_tier=tier,
+        month_key=conn.execute("SELECT to_char(statement_timestamp() AT TIME ZONE 'Asia/Tokyo','YYYY-MM')").fetchone()[0],
+        save_limit=limit, saved_count=count, remaining_count=None if limit is None else max(0, limit-count),
+        can_save=limit is None or count < limit)
+    assert snapshot() == before
+    assert state['quota_rpc'] == 1 and state['authors'] == state['http_rpc'] == 0
+    assert not state['reads'] and not state['posts']
+    from piece_v2_runtime_control import piece_feature_flags_for_app
+    assert piece_feature_flags_for_app(app)['piece_v2_save_enabled'] is False
+
+    # Preview and the dedicated GET expose the same saved-use display. An
+    # exhausted quota does not prevent preview, and neither operation saves.
+    preview = _H['_preview_http_post'](app, request)
+    assert preview.status_code == 200 and preview.json()['quota'] == quota
+    assert b4['_used'](conn) == count
+    after_preview = snapshot()
+    assert get().json() == quota and snapshot() == after_preview
+    b4['_seed_usage'](conn, 1)
+    before_fresh = snapshot()
+    assert get().json()['saved_count'] == count + 1
+    assert snapshot() == before_fresh
+    assert state['quota_rpc'] == 4 and state['authors'] == state['http_rpc'] == 1
+    assert b4['_B2']['_legacy_identity'](conn) == legacy
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
+def test_composed_quota_missing_rpc_is_unavailable_without_legacy_fallback(
+        database, monkeypatch, kind):
+    conn, _, _ = database
+    _, _, _, _, state = _H['_preview_http_harness'](database, monkeypatch)
+    conn.execute('DROP FUNCTION public.piece_read_quota_v2(uuid)')
+    app = _visual_application(kind)
+    async def call():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                    base_url='http://piece-test.invalid') as client:
+            return await client.get('/emotion/piece/quota', headers={'Authorization': _B5['AUTH']})
+    response = asyncio.run(call())
+    assert response.status_code == 503 and response.json() == {'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}
+    assert response.headers['cache-control'] == 'no-store'
+    assert state['quota_rpc'] == 1 and state['authors'] == state['http_rpc'] == 0
+    assert not state['reads'] and not state['posts']
+    assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
+    assert _B5['_B4']['_used'](conn) == 0

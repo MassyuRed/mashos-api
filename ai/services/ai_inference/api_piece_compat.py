@@ -38,8 +38,8 @@ from api_nexus import (
 from route_compat_delegate import call_registered_route_json
 
 
-def register_piece_compat_routes(app: FastAPI, *, include_preview: bool = True) -> None:
-    @app.get('/emotion/reflection/quota', response_model=EmotionReflectionQuotaResponse)
+def register_piece_compat_routes(app: FastAPI, *, include_preview: bool = True,
+                                 include_quota: bool = True) -> None:
     async def compat_emotion_reflection_quota(
         authorization: Optional[str] = Header(default=None, alias='Authorization'),
     ) -> EmotionReflectionQuotaResponse:
@@ -50,6 +50,11 @@ def register_piece_compat_routes(app: FastAPI, *, include_preview: bool = True) 
             authorization=authorization,
         )
         return EmotionReflectionQuotaResponse(**payload)
+
+    # A save-quota response cannot be projected through the old publish DTO.
+    if include_quota:
+        app.add_api_route('/emotion/reflection/quota', compat_emotion_reflection_quota,
+                          methods=['GET'], response_model=EmotionReflectionQuotaResponse)
 
     async def compat_emotion_reflection_preview(
         request: Request,

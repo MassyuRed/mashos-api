@@ -251,7 +251,7 @@ def create_application(*, piece_preview_configuration: Optional[Dict[str, Any]] 
     switch or M5 admission. TTL/renderer and requested/ready retain their
     existing validation; no readiness is inferred from the live DB.
     Other shared routes, middleware and shutdown behavior use this same owner.
-    The incompatible old reflection-preview alias is absent in the candidate;
+    The incompatible old reflection preview/quota aliases are absent in the candidate;
     other legacy Piece/Q&A surfaces remain until the separately admitted M5.
     """
     preview_candidate = piece_preview_configuration is not None
@@ -283,7 +283,8 @@ def create_application(*, piece_preview_configuration: Optional[Dict[str, Any]] 
 
     register_emotion_submit_routes(app)
     register_emlis_thread_routes(app)
-    register_emotion_piece_routes(app, include_preview=not preview_candidate)
+    register_emotion_piece_routes(app, include_preview=not preview_candidate,
+                                 include_quota=not preview_candidate)
     register_emotion_secret_routes(app)
     register_emotion_history_search_routes(app)
     register_emotion_history_manage_routes(app)
@@ -323,7 +324,8 @@ def create_application(*, piece_preview_configuration: Optional[Dict[str, Any]] 
     register_today_question_routes(app)
     register_report_distribution_settings_routes(app)
     register_analysis_compat_routes(app)
-    register_piece_compat_routes(app, include_preview=not preview_candidate)
+    register_piece_compat_routes(app, include_preview=not preview_candidate,
+                                include_quota=not preview_candidate)
     register_relationship_compat_routes(app)
     register_retired_legacy_compat_routes(app)
 
@@ -362,7 +364,7 @@ def create_application(*, piece_preview_configuration: Optional[Dict[str, Any]] 
     app.on_event("shutdown")(_close_shared_supabase_client)
     if preview_candidate:
         # The factory's generic ID read must follow shared static routes such
-        # as the existing /emotion/piece/quota. Preserve the original route
+        # as /emotion/piece/quota. Preserve the original route
         # object/handler and both UUID and piece:<UUID> owner identifiers.
         detail_route = next(route for route in app.router.routes
                             if getattr(route, 'path', None) == '/emotion/piece/{piece_id}'
