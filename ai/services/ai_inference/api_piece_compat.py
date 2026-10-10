@@ -38,7 +38,7 @@ from api_nexus import (
 from route_compat_delegate import call_registered_route_json
 
 
-def register_piece_compat_routes(app: FastAPI) -> None:
+def register_piece_compat_routes(app: FastAPI, *, include_preview: bool = True) -> None:
     @app.get('/emotion/reflection/quota', response_model=EmotionReflectionQuotaResponse)
     async def compat_emotion_reflection_quota(
         authorization: Optional[str] = Header(default=None, alias='Authorization'),
@@ -51,7 +51,6 @@ def register_piece_compat_routes(app: FastAPI) -> None:
         )
         return EmotionReflectionQuotaResponse(**payload)
 
-    @app.post('/emotion/reflection/preview', response_model=EmotionReflectionPreviewResponse)
     async def compat_emotion_reflection_preview(
         request: Request,
         payload: EmotionReflectionPreviewRequest,
@@ -67,6 +66,12 @@ def register_piece_compat_routes(app: FastAPI) -> None:
             authorization=authorization,
         )
         return EmotionReflectionPreviewResponse(**result)
+
+    # The old DTO/delegate cannot call the saved-source v2 preview handler.
+    # Default registration preserves the alias; the isolated candidate omits it.
+    if include_preview:
+        app.add_api_route('/emotion/reflection/preview', compat_emotion_reflection_preview,
+                          methods=['POST'], response_model=EmotionReflectionPreviewResponse)
 
     @app.post('/emotion/reflection/publish', response_model=EmotionReflectionPublishResponse)
     async def compat_emotion_reflection_publish(

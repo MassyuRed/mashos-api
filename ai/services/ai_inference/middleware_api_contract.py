@@ -13,7 +13,9 @@ DEPRECATED_HEADER = "X-Cocolon-Deprecated"
 REPLACEMENT_HEADER = "X-Cocolon-Replacement"
 
 
-def install_api_contract_middleware(app: FastAPI) -> None:
+def install_api_contract_middleware(app: FastAPI, *, piece_preview: bool = False) -> None:
+    # Capture the composition's contract locally; requests and another app
+    # cannot change the deployed/default registry through runtime flags.
     @app.middleware("http")
     async def _api_contract_headers(request: Request, call_next):
         request_id = str(uuid4())
@@ -23,7 +25,7 @@ def install_api_contract_middleware(app: FastAPI) -> None:
         response.headers.setdefault(REQUEST_ID_HEADER, request_id)
         response.headers.setdefault(POLICY_VERSION_HEADER, API_CONTRACT_POLICY_VERSION)
 
-        contract = find_contract_entry_for_request(request)
+        contract = find_contract_entry_for_request(request, piece_preview=piece_preview)
         if contract is not None:
             response.headers.setdefault(CONTRACT_ID_HEADER, contract.contract_id)
             response.headers.setdefault(DEPRECATED_HEADER, "true" if contract.deprecated else "false")

@@ -196,12 +196,32 @@ _CONTRACTS_BY_ROUTE: Dict[Tuple[str, str], ApiContractEntry] = {
 }
 
 
-def iter_public_api_contracts() -> Tuple[ApiContractEntry, ...]:
-    return PUBLIC_API_CONTRACTS
+# Selected only by the explicit, non-deployed shared-app preview candidate.
+# The default public registry and policy version remain the legacy contract.
+_PREVIEW_CANDIDATE_CONTRACTS = (
+    ApiContractEntry('POST', '/emotion/piece/preview', 'emotion.piece.preview.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Isolated candidate: piece.api.v2 saved-source request and Idempotency-Key; no raw-input compatibility'),
+    ApiContractEntry('GET', '/emotion/piece/source-ref/{saved_input_id}', 'emotion.piece.source_ref.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Isolated candidate: exact seven original-source references; authenticated explicit read; no generation'),
+)
+_PREVIEW_CANDIDATE_REPLACED_KEYS = {
+    ('POST', '/emotion/piece/preview'), ('POST', '/emotion/reflection/preview'),
+}
+_PREVIEW_CANDIDATE_REGISTRY = tuple(
+    entry for entry in PUBLIC_API_CONTRACTS
+    if (entry.method, entry.path) not in _PREVIEW_CANDIDATE_REPLACED_KEYS
+) + _PREVIEW_CANDIDATE_CONTRACTS
+_PREVIEW_CANDIDATE_BY_ROUTE = {
+    (entry.method, entry.path): entry for entry in _PREVIEW_CANDIDATE_REGISTRY
+}
 
 
-def get_contract_entry(*, method: str, path: str) -> Optional[ApiContractEntry]:
-    return _CONTRACTS_BY_ROUTE.get((str(method or "").upper(), str(path or "")))
+def iter_public_api_contracts(*, piece_preview: bool = False) -> Tuple[ApiContractEntry, ...]:
+    return _PREVIEW_CANDIDATE_REGISTRY if piece_preview is True else PUBLIC_API_CONTRACTS
+
+
+def get_contract_entry(*, method: str, path: str,
+                       piece_preview: bool = False) -> Optional[ApiContractEntry]:
+    registry = _PREVIEW_CANDIDATE_BY_ROUTE if piece_preview is True else _CONTRACTS_BY_ROUTE
+    return registry.get((str(method or "").upper(), str(path or "")))
 
 
 def _request_route_path(request: Request) -> Optional[str]:
@@ -215,8 +235,10 @@ def _request_route_path(request: Request) -> Optional[str]:
     return None
 
 
-def find_contract_entry_for_request(request: Request) -> Optional[ApiContractEntry]:
-    return get_contract_entry(method=request.method, path=_request_route_path(request) or "")
+def find_contract_entry_for_request(request: Request, *,
+                                    piece_preview: bool = False) -> Optional[ApiContractEntry]:
+    return get_contract_entry(method=request.method, path=_request_route_path(request) or "",
+                              piece_preview=piece_preview)
 
 
 def contract_route_keys() -> Tuple[Tuple[str, str], ...]:

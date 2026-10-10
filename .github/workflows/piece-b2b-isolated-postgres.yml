@@ -31,6 +31,13 @@ name: Piece B2-B/B3/B4/B5 isolated PostgreSQL
       - ai/tests/piece_v2/test_b14a_piece_preview_composition.py
       - ai/tests/piece_v2/test_b05_source_ref_http_candidate.py
       - ai/tests/piece_v2/db/test_b10_preview_application_native.py
+      - ai/services/ai_inference/app.py
+      - ai/services/ai_inference/api_emotion_piece.py
+      - ai/services/ai_inference/api_piece_compat.py
+      - ai/services/ai_inference/api_contract_registry.py
+      - ai/services/ai_inference/middleware_api_contract.py
+      - ai/tests/piece_v2/test_b12_shared_preview_composition.py
+      - ai/tests/piece_v2/db/test_b12_shared_preview_native.py
       - ai/tests/piece_v2/db/test_b05_preview_cancel_http.py
       - ai/tests/piece_v2/db/test_b06_save_tier_fence.py
       - ai/services/ai_inference/piece_v2_save_service.py
@@ -282,3 +289,32 @@ jobs:
           python -m pytest -q --tb=short -ra -p no:cacheprovider \
             -c /dev/null --noconftest \
             ai/tests/piece_v2/db/test_b10_preview_application_native.py
+      - name: Install existing shared-application requirements
+        run: python -m pip install --quiet --disable-pip-version-check -r ai/services/ai_inference/requirements.txt
+      - name: Verify prepared shared API and unchanged default contracts
+        shell: bash
+        env:
+          PYTHONPATH: ai:ai/services:ai/services/ai_inference
+          SUPABASE_URL: https://synthetic.invalid
+          SUPABASE_SERVICE_ROLE_KEY: synthetic-isolated-test-only
+          MYMODEL_APP_NAME: Cocolon Isolated Test
+        run: |
+          set -euo pipefail
+          sha256sum ai/services/ai_inference/app.py ai/services/ai_inference/api_contract_registry.py ai/services/ai_inference/middleware_api_contract.py ai/tests/piece_v2/test_b12_shared_preview_composition.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/test_b12_shared_preview_composition.py \
+            ai/tests/contract/test_api_contract_registry.py
+      - name: Verify prepared shared API through native disposable persistence
+        shell: bash
+        env:
+          PYTHONPATH: ai:ai/services:ai/services/ai_inference
+          SUPABASE_URL: https://synthetic.invalid
+          SUPABASE_SERVICE_ROLE_KEY: synthetic-isolated-test-only
+          MYMODEL_APP_NAME: Cocolon Isolated Test
+        run: |
+          set -euo pipefail
+          sha256sum ai/tests/piece_v2/db/test_b12_shared_preview_native.py
+          python -m pytest -q --tb=short -ra -p no:cacheprovider \
+            -c /dev/null --noconftest \
+            ai/tests/piece_v2/db/test_b12_shared_preview_native.py

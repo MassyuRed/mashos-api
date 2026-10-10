@@ -169,3 +169,39 @@ Deprecated rows remain listed until their compatibility window is closed.
 | GET | `/ranking/piece_views` | `ranking.piece_views.v1` | `false` |  |  |
 | GET | `/subscription/me` | `subscription.me.v1` | `false` |  |  |
 | POST | `/subscription/update` | `subscription.update.v1` | `false` |  | Client purchase sync / tier refresh |
+
+## Prepared shared Piece preview composition (isolated use only)
+
+`app.create_application(piece_preview_configuration=...)` can explicitly compose
+the existing preview factory into the shared API. The dictionary is passed to
+`create_piece_preview_application`; it is application-owned configuration, never
+a request parameter. An empty dictionary selects the candidate with all Piece
+flags OFF. Enabled preview still requires the existing requested/ready checks
+and valid TTL/renderer configuration. Test values are not deployment settings.
+
+The module-level `app` and `create_application()` retain the legacy composition
+and the default registry above. No environment switch or deployment entrypoint
+is added. Input submission, bootstrap and other shared routes/middleware remain
+on the same application. In the explicit candidate, only one owner is registered
+for each preview/source-ref route, and the contract middleware uses a registry
+captured for that application:
+
+| Method | Candidate path | Contract ID | Difference from the default |
+| --- | --- | --- | --- |
+| POST | `/emotion/piece/preview` | `emotion.piece.preview.v2` | Existing `piece.api.v2` saved-source request, Idempotency-Key and response; no raw-input fallback |
+| GET | `/emotion/piece/source-ref/{saved_input_id}` | `emotion.piece.source_ref.v2` | Existing authenticated seven-field saved-source reference |
+| POST | `/emotion/reflection/preview` | none | Not registered (404); its legacy DTO must not delegate to the v2 owner |
+
+The v2 contract ID identifies the candidate even while its feature flag is OFF;
+changing runtime flags cannot relabel the owner as v1. The public policy version
+and default registry remain unchanged. Other legacy Piece/Q&A routes remain in
+this preparation, so this is **not PCE-6/PCE-7 M5 retirement or a production
+cutover**. Admitting the deployment/runtime values, completing the legacy-route
+transition, and real Auth/RN/device/image-save/share acceptance remain separate.
+
+`test_b12_shared_preview_composition.py` verifies the shared submit → source-ref
+→ explicit preview seam, per-application contracts, default preservation and
+closed OFF/error behavior with synthetic IO. `test_b12_shared_preview_native.py`
+reuses the guarded disposable PostgreSQL fixture for real CMEE/review/persistence
+and replay. Neither test uses live credentials or user data; neither verifies
+real Auth, server lifespan or a running environment.
