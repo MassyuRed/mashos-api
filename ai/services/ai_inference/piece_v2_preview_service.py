@@ -6,8 +6,9 @@ when a supplied server reviewer accepts that exact source and artifact.
 No reviewer, renderer or TTL default, HTTP registration or production effect
 is introduced. The B5 SQL overload binds current source/tier through the write.
 Read-only restart lookup is available without the in-memory prepared object.
-Concrete safety, replay orchestration and HTTP/UI remain unfinished; this is
-not a complete public preview issuer.
+Persisted visual mutation reuses the author-free reviewer and recipe builder,
+preserving the issued body and lifetime behind revision/source fences. Runtime
+registration, UI mutation and production acceptance remain separate.
 """
 from __future__ import annotations
 
@@ -94,6 +95,41 @@ _REPLAY_COLUMNS = (
     'content_payload', 'content_payload_hash', 'piece_text', 'piece_text_hash',
     'safety_state', 'visual_recipe', 'visual_recipe_hash', 'renderer_version',
 )
+
+
+def _visual_mutation_snapshot(request: object) -> dict:
+    """Closed visual-only PATCH; a format/body/recipe is never accepted."""
+    from piece_v2_store import _positive
+    try:
+        if type(request) is not dict or set(request) != {'expected_preview_revision', 'visual_selection'}:
+            raise _error('PIECE_REQUEST_INVALID')
+        value = json.loads(canonical_json_bytes(request))
+        _positive(value['expected_preview_revision'])
+        selection = value['visual_selection']
+        if type(selection) is not dict or set(selection) != _VISUAL_FIELDS:
+            raise _error('PIECE_REQUEST_INVALID')
+        if any(v is not None and (type(v) is not str or not v) for v in selection.values()):
+            raise _error('PIECE_VISUAL_SELECTION_NOT_ALLOWED')
+        return value
+    except PieceContractError:
+        raise
+    except (TypeError, ValueError, UnicodeError, RecursionError):
+        raise _error('PIECE_REQUEST_INVALID') from None
+
+
+def _current_stored_format(row: dict, tier: str) -> None:
+    """Check current format entitlement without authoring a replacement."""
+    from piece_v2_content_policy import choose_format
+    formats = tuple(row['preview_eligible_formats'])
+    recommended = next((f for f in ('declaration', 'quote', 'short_essay') if f in formats), None)
+    try:
+        chosen = choose_format(tier=tier,
+            requested=row['format_type'] if tier == 'premium' else None,
+            eligible=formats, recommended=recommended)
+        if chosen != row['format_type']:
+            raise _error('PIECE_FORMAT_NOT_ELIGIBLE')
+    except PieceContractError:
+        raise _error('PIECE_FORMAT_NOT_ELIGIBLE') from None
 
 
 async def _load_owned_preview_for_replay(owner: str, preview_id: str) -> dict | None:
@@ -205,10 +241,11 @@ class PiecePreviewService:
         self, authorization: str | None, previous: PreparedPiecePreview,
         visual_selection: dict,
     ) -> PreparedPiecePreview:
-        """Replace only B9 settings on a server-held, pre-issuance assembly.
+        """Replace only B9 settings on an immutable server-held assembly.
 
         This is not PATCH or persistence: the caller must hold the immutable
-        result of prepare_original, never deserialize a client-supplied body.
+        result of prepare_original or a validated owned preview snapshot,
+        never deserialize a client-supplied body.
         All three selectors are required; None uses B9's existing tier default.
         No author, format change, preview ID, expiry or save effect is involved.
         """
@@ -263,6 +300,101 @@ class PiecePreviewService:
             return PreparedPiecePreview(handoff, artifact_bytes)
         except PieceContractError as exc:
             raise _error(exc.code if exc.code in _SERVICE_ERRORS else 'PIECE_TEMPORARILY_UNAVAILABLE') from None
+        except Exception:
+            raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None
+
+
+    async def mutate_original_visual(
+        self, authorization: str | None, *, authenticated_user_id: str,
+        preview_id: str, request: dict, expected_subscription_tier: str,
+        rpc: Callable[[str, dict], Awaitable[dict]],
+        load_record: Callable[[str, str], Awaitable[dict | None]] = _load_owned_preview_for_replay,
+    ) -> dict:
+        """Revise only the visual recipe of an owned, persisted draft.
+
+        The DB row, not the client, supplies the complete source/artifact. The
+        existing author-free reviewer checks the same body; a verdict change
+        fails closed instead of replacing text or its stored safety state.
+        SQL owns the revision CAS, post-wait lifetime and current-source fence.
+        A lost ACK is recovered by explicit original POST replay, never by an
+        automatic PATCH retry or a second author call.
+        """
+        from datetime import datetime, timezone
+        from uuid import UUID
+        from piece_v2_store import _uuid, _positive, _preview_content, _request, mutate_piece_preview_visual
+        from piece_v2_safety_review import review_prepared_original
+        errors = _SERVICE_ERRORS | {'PIECE_NOT_FOUND', 'PIECE_PREVIEW_STALE', 'PIECE_PREVIEW_EXPIRED'}
+        try:
+            value = _visual_mutation_snapshot(request)
+            owner, pid = _uuid(authenticated_user_id, owner=True), _uuid(preview_id)
+            if UUID(owner).int == 0:
+                raise _error('PIECE_AUTH_REQUIRED')
+            if UUID(pid).int == 0:
+                raise _error('PIECE_REQUEST_INVALID')
+            if (type(expected_subscription_tier) is not str
+                    or expected_subscription_tier not in ('free', 'plus', 'premium')
+                    or not callable(rpc) or not callable(load_record)):
+                raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+            raw = await load_record(owner, pid)
+            if raw is None:
+                raise _error('PIECE_NOT_FOUND')
+            row = json.loads(canonical_json_bytes(_request(raw, set(_REPLAY_COLUMNS))))
+            if (row['id'] != pid or row['owner_user_id'] != owner
+                    or row['piece_contract_version'] != 'piece.record.v2'):
+                raise _error('PIECE_NOT_FOUND')
+            _positive(row['preview_revision']); _positive(row['row_version'])
+            if row['preview_revision'] != value['expected_preview_revision']:
+                raise _error('PIECE_PREVIEW_STALE')
+            if row['lifecycle_status'] != 'preview_draft' or row['visibility_scope'] != 'private':
+                raise _error('PIECE_CONFLICT')
+            expiry = datetime.fromisoformat(row['expires_at'].replace('Z', '+00:00'))
+            if expiry.utcoffset() is None:
+                raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+            if expiry <= datetime.now(timezone.utc):
+                raise _error('PIECE_PREVIEW_EXPIRED')
+            if row['safety_state'] not in ('ready', 'adjusted'):
+                raise _error('PIECE_SAFETY_UNAVAILABLE')
+            try:
+                _preview_content(dict(row, eligible_formats=row['preview_eligible_formats']))
+            except PieceContractError:
+                raise _error('PIECE_HASH_MISMATCH') from None
+            handoff = await self._source_adapter.resolve_original_handoff(
+                authorization, row['source_lineage']['source_input']['source_input_id'])
+            if (type(handoff) is not PieceSavedHandoff
+                    or handoff.original.authenticated_owner_id != owner):
+                raise _error('PIECE_SOURCE_NOT_FOUND')
+            if (canonical_json_bytes(handoff.lineage_payload()) != canonical_json_bytes(row['source_lineage'])
+                    or handoff.original.subscription_tier != expected_subscription_tier):
+                raise _error('PIECE_CONFLICT')
+            _current_stored_format(row, expected_subscription_tier)
+            artifact = {k: row[k] for k in (
+                'format_type', 'content_payload', 'content_payload_hash', 'piece_text',
+                'piece_text_hash', 'visual_recipe', 'visual_recipe_hash', 'visibility_scope')}
+            artifact.update(api_contract_version=PIECE_V2_CONTRACT_VERSIONS['api_contract_version'],
+                piece_contract_version=PIECE_V2_CONTRACT_VERSIONS['piece_contract_version'],
+                eligible_formats=row['preview_eligible_formats'])
+            prepared = PreparedPiecePreview(handoff, canonical_json_bytes(artifact))
+            changed = await self.prepare_visual_change(authorization, prepared, value['visual_selection'])
+            decision = await review_prepared_original(changed)
+            expected_decision = 'transformed' if row['safety_state'] == 'adjusted' else 'ready'
+            if decision != expected_decision:
+                raise _error('PIECE_SAFETY_UNAVAILABLE')
+            current = await self._source_adapter.revalidate_original_handoff(authorization, handoff)
+            if current != handoff:
+                raise _error('PIECE_CONFLICT')
+            if expiry <= datetime.now(timezone.utc):
+                raise _error('PIECE_PREVIEW_EXPIRED')
+            new_artifact = changed.artifact_payload()
+            return await mutate_piece_preview_visual(authenticated_user_id=owner,
+                preview_id=pid, expected_preview_revision=value['expected_preview_revision'],
+                expected_record=row, visual_recipe=new_artifact['visual_recipe'],
+                visual_recipe_hash=new_artifact['visual_recipe_hash'],
+                expected_subscription_tier=expected_subscription_tier,
+                expected_source_state={'original': handoff.original.original_payload(),
+                    'thread_id': handoff.thread_id, 'thread_revision': handoff.thread_revision,
+                    'lineage': handoff.lineage_payload()}, rpc=rpc)
+        except PieceContractError as exc:
+            raise _error(exc.code if exc.code in errors else 'PIECE_TEMPORARILY_UNAVAILABLE') from None
         except Exception:
             raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None
 
@@ -473,13 +605,23 @@ class PiecePreviewService:
                 raise _error('PIECE_HASH_MISMATCH') from None
             tier, fmt = handoff.original.subscription_tier, row['format_type']
             try:
-                chosen = choose_format(tier=tier, requested=value['requested_format'],
-                    eligible=tuple(content['eligible_formats']), recommended=fmt)
-                if chosen != fmt:
-                    raise _error('PIECE_FORMAT_NOT_ELIGIBLE')
+                if row['preview_revision'] == 1:
+                    chosen = choose_format(tier=tier, requested=value['requested_format'],
+                        eligible=tuple(content['eligible_formats']), recommended=fmt)
+                    if chosen != fmt:
+                        raise _error('PIECE_FORMAT_NOT_ELIGIBLE')
+                else:
+                    _current_stored_format(row, tier)
             except PieceContractError:
                 raise _error('PIECE_FORMAT_NOT_ELIGIBLE') from None
-            selection = value['visual_selection']
+            # The original POST fingerprint still binds this key. After a
+            # revision-bound PATCH it retrieves the CURRENT stored candidate,
+            # not the original image settings, and never undoes the mutation.
+            selection = value['visual_selection'] if row['preview_revision'] == 1 else {
+                'theme_id': row['visual_recipe']['theme']['theme_id'],
+                'aspect_ratio': row['visual_recipe']['aspect_ratio'],
+                'branding_mode': row['visual_recipe']['branding']['branding_mode'],
+            }
             try:
                 recipe = build_visual_recipe(fmt, tier=tier,
                     language=row['content_payload']['language'], theme=selection['theme_id'],

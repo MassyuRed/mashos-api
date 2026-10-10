@@ -369,8 +369,8 @@ _PREVIEW_STATUS = {
 
 
 async def _preview_rpc(name: str, args: dict) -> dict:
-    """One call to the existing fenced B5 terminal, with closed SQL errors."""
-    if name != 'piece_issue_preview_v2':
+    """One call to an allowed fenced preview terminal, with closed SQL errors."""
+    if name not in ('piece_issue_preview_v2', 'piece_mutate_preview_visual_v2'):
         raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE')
     try:
         from supabase_client import sb_post_rpc
@@ -479,4 +479,47 @@ async def create_preview(request: Request) -> JSONResponse:
         return _response(public)
     except Exception as exc:
         # Cancellation (BaseException) deliberately propagates unchanged.
+        return features.failure(exc, _PREVIEW_STATUS)
+
+
+@router.patch('/preview/{preview_id}')
+async def mutate_preview_visual(preview_id: str, request: Request) -> JSONResponse:
+    """Visual-only revision CAS; not registered in the running composition.
+
+    Expected revision is the mutation token. No Idempotency-Key, format, body,
+    owner, caller tier, TTL or renderer replacement is accepted. An uncertain
+    PATCH is not repeated automatically; original POST replay reads the current
+    revision without reverting its image settings or regenerating text.
+    """
+    from piece_v2_quota import read_piece_quota, project_piece_plan_capabilities
+    from piece_v2_store import _uuid
+    from piece_v2_preview_service import (
+        PiecePreviewService, _visual_mutation_snapshot, _load_owned_preview_for_replay,
+    )
+    from supabase_client import sb_post_rpc
+    features = _OperationFeatures(request, 'piece_v2_preview_enabled')
+    try:
+        owner = await _authenticated_owner(request)
+        features.require()
+        if (request.query_params or request.headers.getlist('idempotency-key')
+                or _uuid(preview_id) != preview_id or UUID(preview_id).int == 0):
+            raise PieceContractError('PIECE_REQUEST_INVALID')
+        try:
+            value = _visual_mutation_snapshot(await request.json())
+        except (ValueError, UnicodeError):
+            raise PieceContractError('PIECE_REQUEST_INVALID') from None
+        quota = await read_piece_quota(authenticated_user_id=owner,
+            post_rpc=features.wrap(sb_post_rpc))
+        result = await PiecePreviewService().mutate_original_visual(
+            request.headers['authorization'], authenticated_user_id=owner,
+            preview_id=preview_id, request=value,
+            expected_subscription_tier=quota['subscription_tier'],
+            load_record=features.wrap(_load_owned_preview_for_replay),
+            rpc=features.wrap(_preview_rpc))
+        features.require()
+        public = _preview_public_response(result)
+        public.update(quota=quota, plan_capabilities=project_piece_plan_capabilities(
+            server_tier=quota['subscription_tier']))
+        return _response(public)
+    except Exception as exc:
         return features.failure(exc, _PREVIEW_STATUS)

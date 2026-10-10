@@ -332,3 +332,76 @@ async def cancel_piece_preview(*, authenticated_user_id: str, preview_id: str,
     except (PieceContractError, KeyError, TypeError, ValueError, OverflowError):
         raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE') from None
     return result
+
+
+async def mutate_piece_preview_visual(*, authenticated_user_id: str, preview_id: str,
+                                     expected_preview_revision: int, expected_record: dict,
+                                     visual_recipe: dict, visual_recipe_hash: str,
+                                     expected_subscription_tier: str,
+                                     expected_source_state: dict, rpc: RpcCall) -> dict:
+    """One server-only visual mutation; no client body or optimistic replay.
+
+    The complete old record and source expectations bind the prior service
+    reads. A success must contain the identical body, format, safety, renderer
+    and deadline with only recipe and both versions changed. No new key, TTL,
+    row or quota consumption is introduced.
+    """
+    import json
+    from piece_v2_contract import canonical_json_bytes
+    from piece_v2_preview_service import _REPLAY_COLUMNS
+    owner, pid = _uuid(authenticated_user_id, owner=True), _uuid(preview_id)
+    revision = _positive(expected_preview_revision)
+    try:
+        row = json.loads(canonical_json_bytes(_request(expected_record, set(_REPLAY_COLUMNS))))
+        source = json.loads(canonical_json_bytes(_request(expected_source_state,
+            {'original', 'thread_id', 'thread_revision', 'lineage'})))
+        recipe = json.loads(canonical_json_bytes(visual_recipe))
+        if (UUID(owner).int == 0 or UUID(pid).int == 0
+                or row['id'] != pid or row['owner_user_id'] != owner
+                or row['piece_contract_version'] != 'piece.record.v2'
+                or row['lifecycle_status'] != 'preview_draft' or row['visibility_scope'] != 'private'
+                or _positive(row['preview_revision']) != revision
+                or expected_subscription_tier not in ('free', 'plus', 'premium')
+                or source['lineage'] != row['source_lineage']
+                or source['lineage']['source_input']['source_owner_user_id'] != owner
+                or source['original']['id'] != source['lineage']['source_input']['source_input_id']):
+            raise ValueError
+        _positive(row['row_version']); _hash(row['preview_request_hash'])
+        _uuid(source['thread_id']); _positive(source['thread_revision'])
+        old = {k: row[k] for k in _PREVIEW_CONTENT_FIELDS - {'eligible_formats'}}
+        old['eligible_formats'] = row['preview_eligible_formats']
+        _preview_content(old)
+        target = dict(old, visual_recipe=recipe, visual_recipe_hash=_hash(visual_recipe_hash))
+        _preview_content(target)
+        if type(row['expires_at']) is not str:
+            raise ValueError
+        expiry = datetime.fromisoformat(row['expires_at'].replace('Z', '+00:00'))
+        if expiry.utcoffset() is None:
+            raise ValueError
+    except (PieceContractError, KeyError, TypeError, ValueError, OverflowError, RecursionError):
+        raise PieceContractError('PIECE_REQUEST_INVALID') from None
+    args = {'p_owner_user_id': owner, 'p_preview_id': pid,
+        'p_expected_preview_revision': revision, 'p_expected_record': row,
+        'p_visual_recipe': recipe, 'p_visual_recipe_hash': visual_recipe_hash,
+        'p_expected_subscription_tier': expected_subscription_tier,
+        'p_expected_source_state': source}
+    try:
+        response = await rpc('piece_mutate_preview_visual_v2', args)
+    except Exception as exc:
+        code = getattr(exc, 'code', None)
+        raise PieceContractError(code if isinstance(code, str) and code in _ERRORS
+                                 else 'PIECE_TEMPORARILY_UNAVAILABLE') from None
+    try:
+        result = json.loads(canonical_json_bytes(_request(response, _PREVIEW_RESPONSE_FIELDS)))
+        _preview_content(result)
+        if (result['preview_id'] != pid or result['visibility_scope'] != 'private'
+                or _positive(result['preview_revision']) != revision + 1
+                or _positive(result['row_version']) != row['row_version'] + 1
+                or result['idempotency_replayed'] is not False
+                or type(result['expires_at']) is not str
+                or datetime.fromisoformat(result['expires_at'].replace('Z', '+00:00')) != expiry
+                or any(result[k] != target[k] for k in _PREVIEW_CONTENT_FIELDS)):
+            raise ValueError
+    except (PieceContractError, KeyError, TypeError, ValueError, OverflowError, RecursionError):
+        raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE') from None
+    return result
