@@ -708,3 +708,13 @@ MashからAPI側の空欄処理修正と「応答生成→保存→再表示」�
 4. 10/07に観測が作られなかった記録は、履歴GETだけでは生成されない。過去行の書換え・自動backfill・架空の本人記録は追加しない。10/06の履歴未作成説明修正は別の未配布RN差分として保持する。
 
 今回の稼働DB/環境変数変更、deploy、native build、mergeは0。修正・隔離検証・GitHub反映と、未実施の実機復旧を区別する。追加の個人情報・キー・ログ提出は現時点で不要。
+
+## 35. 2026-10-10 JST — NULL修正版の配置完了、本人実機確認へ
+
+Mashの「開始した」報告後、指定API `7626e1f6e6cc7b2d8a71b9ea1032b840bbc9799b` のmanual deploy `dep-db4vkrid0e5s73dlrl40` を読取照合した。開始は17:42:22 JST、**17:43:46 JSTにlive**。17:43:42にはApplication startup completeとUvicorn待受を確認した。linked main・autoDeploy OFFは維持され、今回の修正版commitが稼働している。
+
+17:44:09 JSTの実HTTP確認は、`GET /healthz` が200/status=ok、`GET /app/bootstrap` が200かつ `emlis_threads_enabled=true`、未認証thread GETが401。個人入力IDやBearerは使用していない。17:42:22〜17:44:15のappログ取得はhasMore=falseで、起動を阻害する例外・ERRORなし。既存の利用規約/プライバシーURL未設定warningは残るが、今回のEmlis修正による起動停止ではない。華恋からdeploy再起動・環境変数・DB変更は行っていない。
+
+次は本人の6301で、通常の新しい入力を1件送信し、直後のEmlis本文表示→閉じる→履歴から同じ入力を開いた際の同一本文表示を確認する。本文が出なければ発生時刻と画面上の状態を受け、当該処理のログ/保存状態を照合する。10/07の未作成観測をGETだけで回復させる変更はなく、過去入力を確認対象の代わりにしない。
+
+今回成立したのは指定版live・公開HTTP・未認証拒否・起動の確認まで。本人入力の生成/保存、実Bearer、端末描画の成功はまだ未確認。native build、SQL/設定変更、商品品質受入れ、mergeは今回実施していない。既存文書への結果反映だけで、`STRUCTURE_MAP_DELTA_NONE`。
