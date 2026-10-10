@@ -5,14 +5,20 @@ Bearer, saved-source IO, active-user Auth and PostgREST transport are synthetic.
 Generation, review, response projection and native SQL remain real. No live
 service, real Auth, lifespan, RN/device or product acceptance is claimed here.
 """
+import asyncio
+from copy import deepcopy
 from pathlib import Path
 import runpy
 import socket
 
 import pytest
+import httpx
 
 import app as shared
 import middleware_active_user_touch as active_touch
+import piece_v2_preview_service as service
+import supabase_client
+from piece_v2_runtime_control import create_piece_preview_application
 
 _H = runpy.run_path(str(Path(__file__).with_name('test_b05_reviewed_preview_issuance.py')))
 _B5 = _H['_B5']
@@ -80,4 +86,168 @@ def test_shared_candidate_empty_configuration_never_generates_or_persists(databa
     assert result.headers['x-cocolon-contract-id'] == 'emotion.piece.preview.v2'
     assert state['authors'] == state['actual_reviews'] == state['http_rpc'] == 0
     assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
+    assert _B5['_B4']['_used'](conn) == 0
+
+
+def _visual_application(kind):
+    if kind == 'shared':
+        return _application()
+    assert kind == 'preview'
+    return create_piece_preview_application(preview_requested=True,
+        preview_ready=True, preview_runtime=dict(_RUNTIME))
+
+
+def _visual_harness(database, monkeypatch, *, tier='premium'):
+    """Use real orchestration/SQL; replace only Auth/source and HTTP transport."""
+    from psycopg.types.json import Jsonb
+    _, owner, request, prepared, state = _H['_preview_http_harness'](
+        database, monkeypatch, tier=tier)
+    conn, pg, _ = database
+    conn.execute((_B5['_B4']['_ROOT'] /
+        'supabase/migrations/20261010050940_piece_v2_preview_visual_change.sql').read_text())
+    previous_transport = supabase_client.sb_post_rpc
+    state.update(visual_rpc=0, visual_reads=0, visual_after_commit=None,
+                 visual_lose_ack=False)
+
+    async def load(owner_id, preview_id):
+        state['visual_reads'] += 1
+        row = conn.execute('SELECT to_jsonb(r) FROM (SELECT ' +
+            ','.join(service._REPLAY_COLUMNS) +
+            ' FROM public.piece_records WHERE id=%s AND owner_user_id=%s) r',
+            (preview_id, owner_id)).fetchone()
+        return deepcopy(row[0]) if row else None
+
+    async def transport(name, args, *, timeout):
+        if name != 'piece_mutate_preview_visual_v2':
+            return await previous_transport(name, args, timeout=timeout)
+        assert timeout == 8.0
+        state['visual_rpc'] += 1
+        values = {k: Jsonb(v) if k in (
+            'p_expected_record', 'p_visual_recipe', 'p_expected_source_state') else v
+            for k, v in args.items()}
+        try:
+            result = _B5['_B4']['_rpc'](conn, name, values)
+        except pg.errors.RaiseException as exc:
+            # The same closed PostgREST error envelope read by production.
+            return httpx.Response(400, json={'code': 'P0001', 'message': exc.diag.message_primary})
+        if state['visual_after_commit']:
+            state['visual_after_commit']()
+        if state['visual_lose_ack']:
+            raise TimeoutError(_B5['PRIVATE'])
+        return httpx.Response(200, json=result)
+
+    monkeypatch.setattr(service, '_load_owned_preview_for_replay', load)
+    monkeypatch.setattr(supabase_client, 'sb_post_rpc', transport)
+    return owner, request, prepared, state
+
+
+def _visual_patch(app, preview, tier='premium'):
+    selection = {'theme_id': 'quiet_night' if tier != 'free' else 'soft_paper',
+                 'aspect_ratio': '9:16' if tier == 'premium' else '4:5',
+                 'branding_mode': ('off' if tier == 'premium' else
+                                   'required_small' if tier == 'free' else 'required_subtle')}
+
+    async def call():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                    base_url='http://piece-test.invalid') as client:
+            return await client.patch('/emotion/piece/preview/' + preview['preview_id'],
+                headers={'Authorization': _B5['AUTH']}, json={
+                    'expected_preview_revision': preview['preview_revision'],
+                    'visual_selection': selection})
+    return asyncio.run(call())
+
+
+def _stored(conn):
+    return conn.execute('SELECT to_jsonb(r) FROM public.piece_records r').fetchone()[0]
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+def test_composed_visual_change_replays_current_native_revision_without_new_author(
+        database, monkeypatch, kind, tier):
+    conn, _, _ = database
+    _, request, _, state = _visual_harness(database, monkeypatch, tier=tier)
+    app = _visual_application(kind)
+    created = _H['_preview_http_post'](app, request)
+    assert created.status_code == 200
+    first, before = created.json(), _stored(conn)
+    _H['_no_author'](monkeypatch)
+    updated = _visual_patch(app, first, tier)
+    assert updated.status_code == 200, updated.text
+    assert updated.headers['cache-control'] == 'no-store'
+    if kind == 'shared':
+        assert updated.headers['x-cocolon-contract-id'] == 'emotion.piece.preview.visual.v2'
+    latest, after = updated.json(), _stored(conn)
+    assert latest['preview_revision'] == latest['row_version'] == 2
+    changed = {'visual_recipe', 'visual_recipe_hash', 'preview_revision', 'row_version', 'updated_at'}
+    assert {k: v for k, v in after.items() if k not in changed} == {
+        k: v for k, v in before.items() if k not in changed}
+    assert {k: v for k, v in latest.items() if k not in changed} == {
+        k: v for k, v in first.items() if k not in changed}
+    assert after['visual_recipe'] == latest['visual_recipe']
+    assert latest['visual_recipe']['theme']['theme_id'] == ('soft_paper' if tier == 'free' else 'quiet_night')
+    assert latest['visual_recipe']['aspect_ratio'] == ('9:16' if tier == 'premium' else '4:5')
+    assert latest['visual_recipe']['branding']['branding_mode'] == (
+        'off' if tier == 'premium' else 'required_small' if tier == 'free' else 'required_subtle')
+    assert state['authors'] == state['http_rpc'] == state['visual_rpc'] == 1
+    assert state['actual_reviews'] == 2
+
+    stale = _visual_patch(app, first, tier)
+    assert stale.status_code == 409 and stale.json() == {'code': 'PIECE_PREVIEW_STALE'}
+    replay = _H['_preview_http_post'](_visual_application(kind), request)
+    assert replay.status_code == 200 and replay.json() == latest
+    assert _stored(conn) == after
+    assert state['authors'] == state['http_rpc'] == state['visual_rpc'] == 1
+    assert state['actual_reviews'] == 2
+    assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (1,)
+    assert _B5['_B4']['_used'](conn) == 0
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
+@pytest.mark.parametrize('failure', ['stop_before_rpc', 'stop_after_commit', 'lost_ack'])
+def test_composed_visual_unknown_outcome_recovers_same_native_record(
+        database, monkeypatch, kind, failure):
+    conn, _, _ = database
+    _, request, _, state = _visual_harness(database, monkeypatch)
+    app = _visual_application(kind)
+    created = _H['_preview_http_post'](app, request)
+    assert created.status_code == 200
+    first, before = created.json(), _stored(conn)
+    _H['_no_author'](monkeypatch)
+    if failure == 'stop_before_rpc':
+        original_review = _H['review'].review_prepared_original
+        async def stop_after_review(candidate):
+            result = await original_review(candidate)
+            app.state.piece_v2_runtime = {}
+            return result
+        monkeypatch.setattr(_H['review'], 'review_prepared_original', stop_after_review)
+    elif failure == 'stop_after_commit':
+        state['visual_after_commit'] = lambda: setattr(app.state, 'piece_v2_runtime', {})
+    else:
+        state['visual_lose_ack'] = True
+    failed = _visual_patch(app, first)
+    assert failed.status_code == 503
+    assert failed.json() == {'code': 'PIECE_TEMPORARILY_UNAVAILABLE'
+        if failure == 'lost_ack' else 'PIECE_FEATURE_DISABLED'}
+    assert failed.headers['cache-control'] == 'no-store'
+    assert _B5['PRIVATE'] not in failed.text and first['piece_text'] not in failed.text
+    committed = int(failure != 'stop_before_rpc')
+    stored = _stored(conn)
+    assert stored['preview_revision'] == stored['row_version'] == 1 + committed
+    assert stored['piece_text'] == before['piece_text']
+    assert stored['expires_at'] == before['expires_at']
+    if not committed:
+        assert stored == before
+    replay = _H['_preview_http_post'](_visual_application(kind), request)
+    assert replay.status_code == 200
+    value = replay.json()
+    assert value['preview_id'] == first['preview_id']
+    assert value['preview_revision'] == 1 + committed
+    assert value['visual_recipe'] == stored['visual_recipe']
+    assert value['visual_recipe_hash'] == stored['visual_recipe_hash']
+    assert value['piece_text'] == first['piece_text']
+    assert _stored(conn) == stored
+    assert state['visual_rpc'] == committed
+    assert state['authors'] == state['http_rpc'] == 1
+    assert state['actual_reviews'] == 2
     assert _B5['_B4']['_used'](conn) == 0

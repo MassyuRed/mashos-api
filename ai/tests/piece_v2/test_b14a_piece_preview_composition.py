@@ -17,6 +17,7 @@ from starlette.requests import Request
 import api_piece_v2 as api
 import piece_v2_runtime_control as runtime
 import piece_v2_source_ref_http as source_api
+from piece_v2_preview_service import _visual_mutation_snapshot, _load_owned_preview_for_replay
 from piece_v2_contract import PieceContractError
 from test_b14a_piece_v2_runtime_control import (
     AUTH, DISABLED, FLAGS, INPUT, PREVIEW, PREVIEW_PATH, SOURCE_PATH,
@@ -24,12 +25,18 @@ from test_b14a_piece_v2_runtime_control import (
 )
 
 RUNTIME = {'ttl_seconds': 600, 'renderer_version': 'synthetic-renderer.v1'}
+VISUAL_PATH = PREVIEW_PATH + '/' + INPUT
 
 
 @pytest.fixture
 def composition_env(monkeypatch, bootstrap, wire):
     # Reuse the actual bootstrap source already loaded by the unchanged fixture.
     monkeypatch.setitem(sys.modules, 'api_app_bootstrap', bootstrap)
+    # The existing wire replaces this module. Retain the real imports used by
+    # PATCH; auth/OFF must reject before either reader or service is called.
+    stub = sys.modules['piece_v2_preview_service']
+    monkeypatch.setattr(stub, '_visual_mutation_snapshot', _visual_mutation_snapshot, raising=False)
+    monkeypatch.setattr(stub, '_load_owned_preview_for_replay', _load_owned_preview_for_replay, raising=False)
     return wire
 
 
@@ -60,9 +67,11 @@ def test_default_composition_has_only_existing_preview_and_bootstrap_handlers(co
     assert {(r.path, tuple(sorted(r.methods))) for r in app.routes} == {
         ('/app/bootstrap', ('GET',)), ('/app/startup', ('GET',)),
         ('/emotion/piece/preview', ('POST',)),
+        ('/emotion/piece/preview/{preview_id}', ('PATCH',)),
         ('/emotion/piece/source-ref/{saved_input_id}', ('GET',)),
     }
     assert next(r.endpoint for r in app.routes if r.path == PREVIEW_PATH) is api.create_preview
+    assert next(r.endpoint for r in app.routes if 'preview_id' in r.path) is api.mutate_preview_visual
     assert next(r.endpoint for r in app.routes if 'source-ref/' in r.path) is source_api.read_original_source_ref
     assert tuple(api.router.routes) == before
     assert runtime.piece_feature_flags_for_app(app) == dict.fromkeys(FLAGS, False)
@@ -70,7 +79,7 @@ def test_default_composition_has_only_existing_preview_and_bootstrap_handlers(co
     assert all(composition_env[key] == 0 for key in ('auth', 'source', 'service', 'rpc'))
 
 
-@pytest.mark.parametrize('path,method', [(SOURCE_PATH, 'GET'), (PREVIEW_PATH, 'POST')])
+@pytest.mark.parametrize('path,method', [(SOURCE_PATH, 'GET'), (PREVIEW_PATH, 'POST'), (VISUAL_PATH, 'PATCH')])
 def test_composed_default_off_is_closed_without_parsing_private_body(composition_env, path, method):
     app = make()
     response = send(app, method, path, content=b'SYNTHETIC PRIVATE INVALID JSON')
@@ -80,7 +89,7 @@ def test_composed_default_off_is_closed_without_parsing_private_body(composition
     assert composition_env['source'] == composition_env['service'] == composition_env['rpc'] == 0
 
 
-@pytest.mark.parametrize('path,method', [(SOURCE_PATH, 'GET'), (PREVIEW_PATH, 'POST')])
+@pytest.mark.parametrize('path,method', [(SOURCE_PATH, 'GET'), (PREVIEW_PATH, 'POST'), (VISUAL_PATH, 'PATCH')])
 def test_composed_auth_precedes_flags(composition_env, path, method):
     response = send(make(), method, path, headers={})
     assert response.status_code == 401 and response.json() == {'code': 'PIECE_AUTH_REQUIRED'}
@@ -188,7 +197,8 @@ def test_composed_get_then_explicit_post_keeps_reference_request_key_and_setting
 ])
 def test_unfinished_or_legacy_routes_are_not_published_by_preview_composition(composition_env, method, path):
     response = send(enabled(), method, path, content=b'SYNTHETIC PRIVATE BODY')
-    assert response.status_code == 404
+    # The same preview path now exists for PATCH only; DELETE stays unmounted.
+    assert response.status_code == (405 if method == 'DELETE' and '/preview/' in path else 404)
     assert composition_env['auth'] == composition_env['source'] == composition_env['service'] == composition_env['rpc'] == 0
 
 
@@ -200,7 +210,7 @@ def test_factory_does_not_import_or_modify_production_or_legacy_application(comp
         return original(name, *args, **kwargs)
     monkeypatch.setattr(builtins, '__import__', guarded)
     app = enabled()
-    assert len(app.routes) == 4
+    assert len(app.routes) == 5
     assert app is not composition_env['app']
 
 

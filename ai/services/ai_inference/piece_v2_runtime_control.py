@@ -83,7 +83,7 @@ def validate_piece_preview_runtime(runtime: object) -> tuple[int, str]:
 def create_piece_preview_application(*, preview_requested: bool = False,
                                      preview_ready: bool = False,
                                      preview_runtime: object = None):
-    """Compose only existing preview/source and bootstrap handlers for testing.
+    """Compose existing preview creation/settings, source and bootstrap handlers.
 
     This is NOT production app.py, a deployed service, or a clean-cutover
     switch. It never imports/mutates the shared application or mounts the full
@@ -110,7 +110,7 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     # after invalid supplied runtime values have been rejected without IO.
     from fastapi import FastAPI
     from api_app_bootstrap import register_app_bootstrap_routes
-    from api_piece_v2 import create_preview
+    from api_piece_v2 import create_preview, mutate_preview_visual
     from piece_v2_source_ref_http import read_original_source_ref
 
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
@@ -118,10 +118,12 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     if values is not None:
         ttl, renderer = values
         app.state.piece_preview_runtime = {'ttl_seconds': ttl, 'renderer_version': renderer}
-    # Register the two admitted handlers directly, without a version-dependent
+    # Register the preview handlers directly, without a version-dependent
     # included-router wrapper. The full Piece router remains unmounted.
     app.add_api_route('/emotion/piece/source-ref/{saved_input_id}',
                       read_original_source_ref, methods=['GET'])
     app.add_api_route('/emotion/piece/preview', create_preview, methods=['POST'])
+    app.add_api_route('/emotion/piece/preview/{preview_id}',
+                      mutate_preview_visual, methods=['PATCH'])
     register_app_bootstrap_routes(app)
     return app
