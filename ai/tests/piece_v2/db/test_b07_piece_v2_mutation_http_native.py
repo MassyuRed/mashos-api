@@ -37,6 +37,10 @@ def harness(monkeypatch, database):
     client_context = ContextVar('piece_b7_test_http_client')
     app = FastAPI()
     app.include_router(api.router)
+    from piece_v2_runtime_control import PIECE_FEATURE_NAMES
+    app.state.piece_v2_runtime = {
+        'requested': dict.fromkeys(PIECE_FEATURE_NAMES, True),
+        'ready': dict.fromkeys(PIECE_FEATURE_NAMES, True)}
 
     async def verify(authorization):
         state['auth'].append(authorization)

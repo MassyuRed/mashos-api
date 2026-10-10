@@ -99,6 +99,11 @@ def harness(monkeypatch):
     monkeypatch.setattr(shared, 'SUPABASE_URL', 'https://piece.invalid')
     monkeypatch.setattr(shared, 'SUPABASE_SERVICE_ROLE_KEY', 'synthetic-service-only')
     app = FastAPI(); app.include_router(api.router)
+    from piece_v2_runtime_control import PIECE_FEATURE_NAMES
+    app.state.piece_v2_runtime = {
+        'requested': dict.fromkeys(PIECE_FEATURE_NAMES, True),
+        'ready': dict.fromkeys(PIECE_FEATURE_NAMES, True)}
+    state['app'] = app
     def upstream(request):
         assert request.method == 'GET', 'history/detail must not issue writes'
         assert request.url.path == '/rest/v1/piece_records'
@@ -384,3 +389,44 @@ def test_native_other_owner_and_unsaved_record_cannot_be_read(database, harness)
 
 def test_owner_routes_remain_unregistered_in_production():
     assert 'api_piece_v2' not in (_ROOT/'ai/services/ai_inference/app.py').read_text()
+
+
+@pytest.mark.parametrize('kind', ['history', 'detail'])
+def test_owner_read_default_off_and_auth_before_flags(harness, kind):
+    call, s = harness
+    s['app'].state.piece_v2_runtime = None
+    path = 'history' if kind == 'history' else s['rows'][0]['id']
+    _error(call(path, query={'private': PRIVATE}), 503, 'PIECE_FEATURE_DISABLED')
+    assert s['reads'] == []
+    _error(call(path, headers={}), 401, 'PIECE_AUTH_REQUIRED')
+
+
+@pytest.mark.parametrize('kind', ['history', 'detail'])
+def test_owner_recovery_reads_survive_all_other_flags_off(harness, kind):
+    call, s = harness
+    requested = s['app'].state.piece_v2_runtime['requested']
+    requested.update(dict.fromkeys(requested, False))
+    requested['piece_v2_owner_read_enabled'] = True
+    path = 'history' if kind == 'history' else s['rows'][0]['id']
+    assert call(path).status_code == 200
+    assert len(s['reads']) == 1
+
+
+@pytest.mark.parametrize('kind', ['history', 'detail'])
+@pytest.mark.parametrize('upstream_error', [False, True])
+def test_owner_read_stop_during_io_does_not_return_body(harness, monkeypatch, kind, upstream_error):
+    call, s = harness
+    # Preserve and explicitly pin the shared client's bounded GET retry.
+    monkeypatch.setenv('SUPABASE_HTTP_RETRY_COUNT', '1')
+    def stop(params):
+        s['app'].state.piece_v2_runtime['ready']['piece_v2_owner_read_enabled'] = False
+        if upstream_error:
+            raise httpx.ReadTimeout(PRIVATE)
+        return httpx.Response(200, json=s['rows'])
+    s['handler'] = stop
+    path = 'history' if kind == 'history' else s['rows'][0]['id']
+    _error(call(path), 503, 'PIECE_FEATURE_DISABLED')
+    reads = 2 if upstream_error else 1
+    assert len(s['reads']) == reads
+    assert s['rows'][0]['piece_text'] not in call(path).text
+    assert len(s['reads']) == reads

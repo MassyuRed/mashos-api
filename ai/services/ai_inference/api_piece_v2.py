@@ -99,6 +99,47 @@ def _response(value: dict, status: int = 200) -> JSONResponse:
     return JSONResponse(value, status_code=status, headers=headers)
 
 
+class _OperationFeatures:
+    """Request-local stop latch over the existing authoritative resolver.
+
+    IO wrappers recheck before dispatch and after completion, including errors.
+    A dispatched write may already have committed; no retry/undo is attempted.
+    Task cancellation still propagates unchanged.
+    """
+    def __init__(self, request: Request, feature: str):
+        self.app, self.names, self.disabled = request.app, [feature], False
+
+    def require(self, *additional: str) -> None:
+        self.names.extend(name for name in additional if name not in self.names)
+        if self.disabled:
+            raise PieceContractError('PIECE_FEATURE_DISABLED')
+        try:
+            for name in self.names:
+                require_piece_feature_enabled(self.app, name)
+        except PieceContractError:
+            self.disabled = True
+            raise
+
+    def wrap(self, operation):
+        async def guarded(*args, **kwargs):
+            self.require()
+            try:
+                result = await operation(*args, **kwargs)
+            except Exception:
+                self.require()
+                raise
+            self.require()
+            return result
+        return guarded
+
+    def failure(self, exc: Exception, statuses: dict) -> JSONResponse:
+        if self.disabled:
+            return _response({'code': 'PIECE_FEATURE_DISABLED'}, 503)
+        code = exc.code if isinstance(exc, PieceContractError) else None
+        code = code if code in statuses else 'PIECE_TEMPORARILY_UNAVAILABLE'
+        return _response({'code': code}, statuses[code])
+
+
 @router.delete('/preview/{preview_id}')
 async def cancel_preview(preview_id: str, request: Request) -> JSONResponse:
     """Cancel only the authenticated owner's current preview revision.
@@ -131,9 +172,12 @@ async def cancel_preview(preview_id: str, request: Request) -> JSONResponse:
 @router.post('/save')
 async def save_preview(request: Request) -> JSONResponse:
     """Save only a persisted admitted preview; never accept replacement text."""
-    from piece_v2_save_service import PieceSaveService, SAVE_STATUS
+    from piece_v2_save_service import PieceSaveService, SAVE_STATUS, load_owned_preview, save_rpc
+    from piece_v2_store import save_request_arguments
+    features = _OperationFeatures(request, 'piece_v2_save_enabled')
     try:
         owner = await _authenticated_owner(request)
+        features.require()
         keys = request.headers.getlist('idempotency-key')
         if len(keys) != 1 or not keys[0].strip() or request.query_params:
             raise PieceContractError('PIECE_REQUEST_INVALID')
@@ -141,53 +185,59 @@ async def save_preview(request: Request) -> JSONResponse:
             value = await request.json()
         except (ValueError, UnicodeError):
             raise PieceContractError('PIECE_REQUEST_INVALID') from None
-        result = await PieceSaveService().save(request.headers['authorization'],
+        args = save_request_arguments(owner, value, keys[0])
+        if args['p_visibility_scope'] == 'public':
+            features.require('piece_v2_public_write_enabled')
+        features.require()
+        result = await PieceSaveService(load_record=features.wrap(load_owned_preview),
+            rpc=features.wrap(save_rpc)).save(request.headers['authorization'],
             authenticated_user_id=owner, request=value, idempotency_key=keys[0])
+        features.require()
         return _response(result)
-    except PieceContractError as exc:
-        code = exc.code if exc.code in SAVE_STATUS else 'PIECE_TEMPORARILY_UNAVAILABLE'
-        return _response({'code': code}, SAVE_STATUS[code])
-    except Exception:
-        return _response({'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}, 503)
+    except Exception as exc:
+        return features.failure(exc, SAVE_STATUS)
 
 
 # Static owner paths must precede /{piece_id}; production remains unregistered.
 @router.get('/history')
 async def owner_history(request: Request) -> JSONResponse:
     """Read only the authenticated owner's saved private/public artifacts."""
-    from piece_v2_owner_service import PieceOwnerService, OWNER_READ_STATUS
+    from piece_v2_owner_service import PieceOwnerService, OWNER_READ_STATUS, load_saved_records
+    features = _OperationFeatures(request, 'piece_v2_owner_read_enabled')
     try:
         owner = await _authenticated_owner(request)
+        features.require()
         pairs = list(request.query_params.multi_items())
         query = dict(pairs)
         if (len(query) != len(pairs) or set(query) - {'limit', 'cursor'}
                 or await request.body()):
             raise PieceContractError('PIECE_REQUEST_INVALID')
-        result = await PieceOwnerService().history(authenticated_user_id=owner,
+        features.require()
+        result = await PieceOwnerService(load_records=features.wrap(load_saved_records)).history(authenticated_user_id=owner,
             limit=query.get('limit', '20'), cursor=query.get('cursor'))
+        features.require()
         return _response(result)
-    except PieceContractError as exc:
-        code = exc.code if exc.code in OWNER_READ_STATUS else 'PIECE_TEMPORARILY_UNAVAILABLE'
-        return _response({'code': code}, OWNER_READ_STATUS[code])
-    except Exception:
-        return _response({'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}, 503)
+    except Exception as exc:
+        return features.failure(exc, OWNER_READ_STATUS)
 
 
 @router.get('/{piece_id}')
 async def owner_detail(piece_id: str, request: Request) -> JSONResponse:
     """Return the exact saved body and recipe for subsequent owner display."""
-    from piece_v2_owner_service import PieceOwnerService, OWNER_READ_STATUS
+    from piece_v2_owner_service import PieceOwnerService, OWNER_READ_STATUS, load_saved_records
+    features = _OperationFeatures(request, 'piece_v2_owner_read_enabled')
     try:
         owner = await _authenticated_owner(request)
+        features.require()
         if request.query_params or await request.body():
             raise PieceContractError('PIECE_REQUEST_INVALID')
-        result = await PieceOwnerService().detail(authenticated_user_id=owner, piece_id=piece_id)
+        features.require()
+        result = await PieceOwnerService(load_records=features.wrap(load_saved_records)).detail(
+            authenticated_user_id=owner, piece_id=piece_id)
+        features.require()
         return _response(result)
-    except PieceContractError as exc:
-        code = exc.code if exc.code in OWNER_READ_STATUS else 'PIECE_TEMPORARILY_UNAVAILABLE'
-        return _response({'code': code}, OWNER_READ_STATUS[code])
-    except Exception:
-        return _response({'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}, 503)
+    except Exception as exc:
+        return features.failure(exc, OWNER_READ_STATUS)
 
 
 _OWNER_MUTATION_STATUS = {
@@ -233,8 +283,11 @@ async def _owner_mutation_rpc(name: str, args: dict) -> dict:
 async def _mutate_saved_piece(piece_id: str, request: Request,
                               *, operation: str) -> JSONResponse:
     from piece_v2_store import delete_piece, set_piece_visibility
+    features = _OperationFeatures(request, 'piece_v2_visibility_toggle_enabled'
+        if operation == 'visibility' else 'piece_v2_delete_enabled')
     try:
         owner = await _authenticated_owner(request)
+        features.require()
         if request.query_params:
             raise PieceContractError('PIECE_REQUEST_INVALID')
         try:
@@ -247,8 +300,10 @@ async def _mutate_saved_piece(piece_id: str, request: Request,
             # Closed errors, not FastAPI's body-echoing validation response.
             raise PieceContractError('PIECE_REQUEST_INVALID') from None
         if operation == 'visibility':
+            if normalize_visibility_scope(value.get('visibility_scope')) == 'public':
+                features.require('piece_v2_public_write_enabled')
             result = await set_piece_visibility(authenticated_user_id=owner,
-                piece_id=str(pid), request=value, rpc=_owner_mutation_rpc)
+                piece_id=str(pid), request=value, rpc=features.wrap(_owner_mutation_rpc))
             # Compare with the same canonical scope that the unchanged store sent.
             # Otherwise an accepted padded value reports failure after a write.
             if result['visibility_scope'] != normalize_visibility_scope(value['visibility_scope']):
@@ -259,15 +314,13 @@ async def _mutate_saved_piece(piece_id: str, request: Request,
                 raise PieceContractError('PIECE_REQUEST_INVALID')
             result = await delete_piece(authenticated_user_id=owner,
                 piece_id=str(pid), request=value, idempotency_key=keys[0],
-                rpc=_owner_mutation_rpc)
+                rpc=features.wrap(_owner_mutation_rpc))
         else:
             raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE')
+        features.require()
         return _response(result)
-    except PieceContractError as exc:
-        code = exc.code if exc.code in _OWNER_MUTATION_STATUS else 'PIECE_TEMPORARILY_UNAVAILABLE'
-        return _response({'code': code}, _OWNER_MUTATION_STATUS[code])
-    except Exception:
-        return _response({'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}, 503)
+    except Exception as exc:
+        return features.failure(exc, _OWNER_MUTATION_STATUS)
 
 
 @router.patch('/{piece_id}/visibility')

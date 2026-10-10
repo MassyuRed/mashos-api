@@ -66,6 +66,11 @@ def harness(monkeypatch):
     monkeypatch.setitem(sys.modules, 'supabase_client', SimpleNamespace(sb_post_rpc=rpc))
     app = FastAPI()
     app.include_router(api.router)
+    from piece_v2_runtime_control import PIECE_FEATURE_NAMES
+    app.state.piece_v2_runtime = {
+        'requested': dict.fromkeys(PIECE_FEATURE_NAMES, True),
+        'ready': dict.fromkeys(PIECE_FEATURE_NAMES, True)}
+    state.app = app
 
     async def send(op, *, body=None, headers=None, path_id=PID, query='', raw=None):
         method = 'PATCH' if op == 'visibility' else 'DELETE'
@@ -330,3 +335,81 @@ def test_visibility_normalization_does_not_admit_wrong_scope_ack(harness, scope,
         'expected_row_version': 7, 'visibility_scope': padding + scope + padding})
     assert_error(response, 503, 'PIECE_TEMPORARILY_UNAVAILABLE')
     assert len(harness.calls) == 1
+
+
+@pytest.mark.parametrize('op', OPS)
+def test_mutation_missing_flags_precedes_schema_and_rpc(harness, op):
+    harness.app.state.piece_v2_runtime = None
+    assert_error(request(harness, op, raw='{'+SECRET), 503, 'PIECE_FEATURE_DISABLED')
+    assert harness.calls == []
+    assert_error(request(harness, op, headers=[]), 401, 'PIECE_AUTH_REQUIRED')
+
+
+@pytest.mark.parametrize('scope', ['public', ' public '])
+def test_public_mutation_off_still_allows_private_target(harness, scope):
+    harness.app.state.piece_v2_runtime['requested']['piece_v2_public_write_enabled'] = False
+    assert_error(request(harness, 'visibility', body={'expected_row_version': 7,
+        'visibility_scope': scope}), 503, 'PIECE_FEATURE_DISABLED')
+    assert harness.calls == []
+    assert request(harness, 'visibility', body={'expected_row_version': 7,
+        'visibility_scope': 'private'}).status_code == 200
+    assert len(harness.calls) == 1
+
+
+@pytest.mark.parametrize('flag', ['piece_v2_owner_read_enabled', 'piece_v2_public_read_enabled',
+                                'piece_v2_visibility_toggle_enabled'])
+def test_visibility_dependency_cannot_be_bypassed(harness, flag):
+    harness.app.state.piece_v2_runtime['ready'][flag] = False
+    assert_error(request(harness, 'visibility', body={'expected_row_version': 7,
+        'visibility_scope': 'private'}), 503, 'PIECE_FEATURE_DISABLED')
+    assert harness.calls == []
+
+
+def test_owner_recovery_delete_does_not_need_generation_or_public_flags(harness):
+    requested = harness.app.state.piece_v2_runtime['requested']
+    requested.update(dict.fromkeys(requested, False))
+    requested.update(piece_v2_owner_read_enabled=True, piece_v2_delete_enabled=True)
+    assert request(harness, 'delete').status_code == 200
+    assert len(harness.calls) == 1
+
+
+@pytest.mark.parametrize('flag', ['piece_v2_owner_read_enabled', 'piece_v2_delete_enabled'])
+def test_delete_stop_and_dependency(harness, flag):
+    harness.app.state.piece_v2_runtime['ready'][flag] = False
+    assert_error(request(harness, 'delete'), 503, 'PIECE_FEATURE_DISABLED')
+    assert harness.calls == []
+
+
+@pytest.mark.parametrize('op', OPS)
+def test_mutation_stop_after_dispatch_never_retries(harness, monkeypatch, op):
+    original = api._owner_mutation_rpc
+    async def stop(name, args):
+        result = await original(name, args)
+        harness.app.state.piece_v2_runtime = None
+        return result
+    monkeypatch.setattr(api, '_owner_mutation_rpc', stop)
+    assert_error(request(harness, op), 503, 'PIECE_FEATURE_DISABLED')
+    assert len(harness.calls) == 1
+
+
+def test_observed_stop_stays_latched_if_service_reenables(harness, monkeypatch):
+    import piece_v2_store
+    async def service(**kwargs):
+        harness.app.state.piece_v2_runtime['requested']['piece_v2_delete_enabled'] = False
+        try:
+            await kwargs['rpc']('piece_delete_v2', {})
+        except api.PieceContractError:
+            pass
+        harness.app.state.piece_v2_runtime['requested']['piece_v2_delete_enabled'] = True
+        return {'unexpected': 'must not be returned'}
+    monkeypatch.setattr(piece_v2_store, 'delete_piece', service)
+    assert_error(request(harness, 'delete'), 503, 'PIECE_FEATURE_DISABLED')
+    assert harness.calls == []
+
+
+def test_preview_cancel_remains_available_with_all_flags_off(harness):
+    harness.app.state.piece_v2_runtime = None
+    response = request(harness, 'delete', path_id='preview/'+PID,
+        body={'expected_preview_revision': 7})
+    assert response.status_code == 200
+    assert harness.calls[0][0] == 'piece_cancel_preview_v2'

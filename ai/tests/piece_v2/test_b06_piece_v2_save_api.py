@@ -112,6 +112,11 @@ def harness(monkeypatch):
         state['posts'].append(args)
         return state['handler'](args) if state['handler'] else httpx.Response(200, json=_result(state['row']))
     app = FastAPI(); app.include_router(api.router)
+    from piece_v2_runtime_control import PIECE_FEATURE_NAMES
+    app.state.piece_v2_runtime = {
+        'requested': dict.fromkeys(PIECE_FEATURE_NAMES, True),
+        'ready': dict.fromkeys(PIECE_FEATURE_NAMES, True)}
+    state['app'] = app
     def call(body=None, headers=None, content=None, query=''):
         async def run():
             async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as backend:
@@ -368,3 +373,83 @@ def test_native_replay_only_never_performs_first_save(database):
 
 def test_production_app_keeps_piece_v2_router_unregistered():
     assert 'api_piece_v2' not in (_ROOT/'ai/services/ai_inference/app.py').read_text()
+
+
+# PCE-7 operation stops, using the real admission/store and synthetic transport.
+@pytest.mark.parametrize('configuration', [None, {}, {'requested': {}, 'ready': {}}])
+def test_save_default_off_precedes_body_and_io(harness, configuration):
+    call, s = harness
+    s['app'].state.piece_v2_runtime = configuration
+    _error(call(content=b'{private'), 503, 'PIECE_FEATURE_DISABLED')
+    assert len(s['auth']) == 1
+    assert s['reads'] == s['source'] == s['posts'] == []
+    _error(call(headers={}, content=b'{private'), 401, 'PIECE_AUTH_REQUIRED')
+
+
+@pytest.mark.parametrize('flag', ['piece_v2_save_enabled', 'piece_v2_preview_enabled'])
+def test_save_checks_dependency_and_replay_stop(harness, flag):
+    call, s = harness
+    s['row']['lifecycle_status'] = 'saved'
+    s['app'].state.piece_v2_runtime['ready'][flag] = False
+    _error(call(), 503, 'PIECE_FEATURE_DISABLED')
+    assert s['reads'] == s['posts'] == []
+
+
+@pytest.mark.parametrize('scope', ['public', ' public '])
+@pytest.mark.parametrize('flag', ['piece_v2_public_write_enabled', 'piece_v2_public_read_enabled'])
+def test_public_save_stop_cannot_be_bypassed_with_padding(harness, scope, flag):
+    call, s = harness
+    s['app'].state.piece_v2_runtime['requested'][flag] = False
+    _error(call(body=dict(_request(s['row']), visibility_scope=scope)), 503, 'PIECE_FEATURE_DISABLED')
+    assert s['reads'] == s['source'] == s['posts'] == []
+    assert call().status_code == 200  # private save has no public/owner-read prerequisite
+
+
+def test_private_save_does_not_require_owner_read(harness):
+    call, s = harness
+    s['app'].state.piece_v2_runtime['requested']['piece_v2_owner_read_enabled'] = False
+    assert call().status_code == 200
+    assert len(s['posts']) == 1
+
+
+@pytest.mark.parametrize('stage', ['read', 'source'])
+def test_stop_during_admission_prevents_save_dispatch(harness, stage):
+    call, s = harness
+    def stop():
+        s['app'].state.piece_v2_runtime['requested']['piece_v2_save_enabled'] = False
+    if stage == 'source':
+        s['source_hook'] = stop
+    else:
+        def read(request):
+            stop()
+            return httpx.Response(200, json=[s['row']])
+        s['read_handler'] = read
+    _error(call(), 503, 'PIECE_FEATURE_DISABLED')
+    assert s['posts'] == []
+    if stage == 'read':
+        assert s['source'] == []
+
+
+@pytest.mark.parametrize('lost_ack', [False, True])
+def test_stop_after_save_dispatch_never_retries(harness, lost_ack):
+    call, s = harness
+    def write(args):
+        s['app'].state.piece_v2_runtime['requested']['piece_v2_save_enabled'] = False
+        if lost_ack:
+            raise httpx.ReadTimeout(PRIVATE)
+        return httpx.Response(200, json=_result(s['row']))
+    s['handler'] = write
+    _error(call(), 503, 'PIECE_FEATURE_DISABLED')
+    assert len(s['posts']) == 1
+
+
+def test_native_stop_before_save_keeps_preview_and_quota_untouched(database, harness):
+    call, s = _native(harness, database)
+    conn, _, _ = database
+    def stop():
+        s['app'].state.piece_v2_runtime['requested']['piece_v2_save_enabled'] = False
+    s['source_hook'] = stop
+    _error(call(), 503, 'PIECE_FEATURE_DISABLED')
+    assert s['posts'] == [] and _B4['_used'](conn) == 0
+    assert conn.execute('SELECT lifecycle_status FROM public.piece_records WHERE id=%s',
+                        (s['row']['id'],)).fetchone()[0] == 'preview_draft'
