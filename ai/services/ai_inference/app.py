@@ -359,7 +359,7 @@ def create_application(*, piece_preview_configuration: Optional[Dict[str, Any]] 
     app.post("/internal/rollover")(internal_rollover)
     app.get("/mymodel/templates")(mymodel_templates)
     app.post("/mymodel/infer", response_model=InferResponse)(infer)
-    app.add_event_handler("shutdown", _close_shared_supabase_client)
+    app.on_event("shutdown")(_close_shared_supabase_client)
     return app
 
 
