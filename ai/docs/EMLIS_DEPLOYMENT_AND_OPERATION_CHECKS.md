@@ -637,3 +637,43 @@ Mashの開始報告後、指定API `1a42b9ebc25ba9765bdb17658cf47dd631d9f40d` / 
 次はTestFlightに **1.0（6401）** が表示されたら更新し、既存本人sessionで **分析 → わたしマップ** を開く。直近28日に記録がない状態では「現在表示できるわたしマップはありません。」の正常表示を確認する。Apple側の処理完了/配布可能性・本人端末導入・認証済みの実空応答はまだ未確認。送信成功から推定しない。生成・保存再表示・期間比較は、本人が通常の入力を行った後に別途確認する。
 
 華恋による追加deploy/build起動・DB/env変更はなく、今回は既承認操作の事後確認と既存4文書/PR説明の記録。source/test/SQL/依存変更・検査再実行0。STRUCTURE_MAP_DELTA_NONE。u127のAPI191/RN17 PASSは前回の候補検証として継承。商品0/3・NOT_CLEAR・48%とDraft/open/unmergedを維持する。詳細は06/API handoff末尾u128。
+
+## 33. 2026-10-10 JST — Emlis未表示の原因調査（修正・配置前）
+
+今回の依頼は、処理されるように見えて応答が表示されない原因の調査。前提資料・作業ルール、全体構造01/01A/01B/01Cと両repositoryの全tree、Emlis current map、最新weekly 20261010 §5.5、前回txtを参照した。System Context prepareの成功や全repository全文監査を主張せず、保存済み案内から対象原典を直接確認した。一般的な内容磨き込みには戻らず、本人の新規入力へ実機で応答を返す経路を対象とする。
+
+### 確認した配置・処理
+
+- Renderの稼働APIは `468663c8effc51c1bc33f165313eeb9417d16dc9`（10/06配置）。linked branch main、autoDeploy OFF。PR3調査時headは `d7e1cabf6f3f622f7e0f042d137eb1c29237dd42`。設定画面の画像だけを保存・稼働反映の証拠にせず、実ログのbudgetと稼働deployを照合した。
+- 先行失敗はreply budget 3秒のTimeoutError。直近対象は **budget 10秒の内側、約5.94秒でSourceAdmissionError**、reply_timeout=false、表示用本文なし。両者を同じ「待ち時間不足」としない。
+- 直近対象は原入力保存201、thread read/context RPC200の後、初回thread commitより前に停止。submit HTTP200は原入力保存の成功で、観測の生成・保存成功ではない。対象原入力は保存済み、thread未作成。読取時点でthread/event保存件数は0。RPCは存在しservice_roleの実行権限もある。
+- 直近投稿は起動完了後。対象時間帯にOOM・異常再起動の根拠はなく、資源不足やcold startを今回の例外原因としない。
+
+### 原因と限定再現
+
+任意欄の `memo_action` がSQL NULLで保存される一方、CMEEのsource admissionは `memo` と `memo_action` の両方をstr必須としている。DBからthreadへ渡す境界で空値の扱いが一致していない。
+
+1. `supabase/migrations/20260911020509_emlis_input_threads_q2.sql` の `emlis_parent_source` は、親のmemo/memo_actionをNULLのままJSONへ渡す。
+2. `emlis_ai_current_input_bundle.py` はthought_text/action_textを正規化するが、`raw_current_input` は元の値を保持する。
+3. `emlis_thread_service._request` はそのraw原本を `freeze_text_source` へ渡す。`source_kernel._source_leaf_values` の文字列検査で `noncanonical_current_input_source_shape` となり、初回thread保存・本文生成に達しない。
+4. `emotion_submit_service.py` はreply例外を捕捉し、保存した原入力を成功のまま返しつつ、観測本文を空にする。
+
+配置版の無改変sourceと必要依存だけをロードした、ネットワーク/DB呼出しなしのsource admission検証で再現した。必要最小の非公開原入力1件と合成9条件を確認し、原本の変更は0。片方の任意テキスト欄がNULLなら同じ例外、メモリ上のコピーでNULLだけを空文字へ変える候補ではsource admissionを通過する。両欄空、数値/list等の不正型、secret、非canonical categoryに対する拒否は保持された。
+
+これは **source admission段階の因果確認** であり、修正版serviceの実装、本文生成、SQL保存、API往復、実機復旧の検証ではない。原入力・ユーザー/記録ID・本文/digestはこの公開記録へ載せない。source_kernel、thread_service、current_input_bundle、reply_service、thread_sourceは配置版とPR3調査時headでblob一致を確認したため、単に当時の最新headを配置しても、この不整合は解消しない。
+
+### RNで無表示になる理由と配布差分
+
+- 入力送信timeoutは30秒、thread通信は35秒。配布候補6401のsourceとPR30調査時headで同じ。以前の3秒はbackend内部budgetであり、アプリ側3秒timeoutではない。
+- 入力保存後にthread GETを行うが、NOT_CREATEDなら `useEmlisThread.open` が画面を閉じる。旧fallbackはPASSEDかつ本文ありの場合だけ表示するため、今回のように両方ない場合は「記録しました」だけになる。
+- GETは読取だけで、未作成の過去観測を生成しない。待機や履歴再表示だけで今回の未保存観測が回復するとは案内しない。
+- 最新成功iOS候補は [run64](https://github.com/MassyuRed/Cocolon/actions/runs/37201625245)、source `166343c0b160e787b857a7b9d407b6f0afce756d`、1.0(6401)。archive/export/upload成功を確認。端末の現在導入版は未確認。
+- 10/06の「履歴から明示的に開いたとき、未作成の説明を残す」修正はPR30にあり、6401には未収載。直近対象のrequest User-Agentは6301を示すが、現在も同じ端末版とは断定しない。履歴表示修正だけで本文生成が直るわけではない。
+
+### 次の最小修正と残る確認
+
+既存thread application adapterで、コピーした原入力の任意テキスト欄がNULLの場合だけ空文字へ正規化する方針を検討する。source kernelの一般拒否を弱めず、DB原本/source_snapshot/CAS、原文文字列、既存source identity、Q3の本人履歴と保存済み再読の整合を維持する。DB書換え・新schemaはこの原因解消の前提ではない。今回の候補は未実装であり、serviceから生成/保存/再読までの検証が次の作業である。
+
+生成失敗時に理由を受け取れない画面側の残差も区別する。現在の端末build番号と、より新しい未表示の発生日時・入力直後か履歴操作かだけをMashへ確認すればよく、キー・原入力の再提出やログ採取を求めない。
+
+今回の変更は既存資料への調査記録のみ。製品source、test、SQL、稼働DB、環境変数、deploy、native build、mergeの変更・実行は0。STRUCTURE_MAP_DELTA_NONE（既存経路の接続不整合を診断しただけで、構造は変更していない）。調査を実機復旧・正式商品合格へ換算しない。
