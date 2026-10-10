@@ -103,6 +103,10 @@ def _visual_harness(database, monkeypatch, *, tier='premium'):
     _, owner, request, prepared, state = _H['_preview_http_harness'](
         database, monkeypatch, tier=tier)
     conn, pg, _ = database
+    # The older issuer fixture installs Q2 only. Visual mutation also requires
+    # the existing Q3 context/feedback schema, even for original-only previews.
+    conn.execute((_B5['_B4']['_ROOT'] /
+        'supabase/migrations/20260911041749_emlis_q3_plan_rounds.sql').read_text())
     conn.execute((_B5['_B4']['_ROOT'] /
         'supabase/migrations/20261010050940_piece_v2_preview_visual_change.sql').read_text())
     previous_transport = supabase_client.sb_post_rpc
