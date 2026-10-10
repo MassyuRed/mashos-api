@@ -77,6 +77,45 @@ _NOMINAL = (_ATTRIBUTIVE + r'?(?:' + _KANA_NOMINAL
             + r'[一-鿿々ァ-ヴー]*|[一-鿿々ァ-ヴー]+)')
 _ARGUMENT = re.compile(r'(?P<noun>' + _NOMINAL + r'(?:の' + _NOMINAL
                        + r')*)(?P<case>を|に|で|と)')
+# A reduplicated kana manner followed by a closed past する host is a
+# grammatical activity description, not a topic-to-response lexicon. Keep
+# the omitted actor unspecified, and admit it only from the action field.
+_RECORDED_MIMETIC = re.compile(
+    r'(?P<noun>' + _NOMINAL + r'(?:の' + _NOMINAL + r')*)(?P<case>で)'
+    r'(?P<manner>(?P<unit>[ァ-ヴー]{2,3}|[ぁ-ゔー]{2,3})(?P=unit))'
+    r'(?P<finite>した|しました)')
+
+
+def _recorded_mimetic_proposition(value):
+    match = _RECORDED_MIMETIC.fullmatch(value)
+    if match is None:
+        return None
+    # Match the existing finite-action nominal boundary: an unsupported
+    # adjacent day must not become part of the case-marked noun.
+    if re.match(r'^(?:今日|昨日)(?!の|$)', match['noun']):
+        return None
+    arguments = (('で', match['noun']),)
+    parts = [('CASE_で', 0, match.end('case'))]
+    parts.extend((('MIMETIC_MANNER', match.start('manner'), match.end('manner')),
+                  ('FINITE_PREDICATE', match.start('finite'), len(value))))
+    return ObservedProposition('UNSPECIFIED', arguments, match['manner'] + 'する',
+        'positive', 'fact', 'past', tuple(parts))
+
+
+def _recorded_mimetic_witness(source, nucleus):
+    frame = nucleus.semantic_frame
+    return (source.envelope.source_role == 'ORIGINAL_INPUT'
+        and nucleus.source_fields == ('memo_action',)
+        and len(nucleus.source_span_ids) == 1
+        and nucleus.grounding_kind == 'explicit'
+        and nucleus.allowed_claim_scope == 'explicit_current_input'
+        and nucleus.retention in {'required', 'should'}
+        and nucleus.kind == frame.predicate_kind == 'action'
+        and frame.actor == 'current_user' and frame.modality == 'fact'
+        and frame.polarity in {'neutral', 'positive'} and frame.time_scope == 'past'
+        and 'operator:performed_action' in frame.attribute_codes
+        and not any(code.startswith(('source_fragment_', 'surface_scalar_',
+                    'thread_time:', 'semantic_dependency:')) for code in frame.attribute_codes))
 
 
 def _finite_predicates(*, include_nonpast=False):
@@ -487,6 +526,9 @@ def _parsed_proposition(value: str) -> ObservedProposition | None:
     result = _unfinished_result_proposition(value) or _bounded_change_proposition(value)
     if result is not None:
         return result
+    recorded_activity = _recorded_mimetic_proposition(value)
+    if recorded_activity is not None:
+        return recorded_activity
     cognition = _cognitive_proposition(value)
     if cognition is not None:
         return cognition
@@ -998,6 +1040,15 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     if not value:
         return None
     proposition = _parsed_proposition(value)
+    recorded_activity = _recorded_mimetic_proposition(value)
+    if recorded_activity is not None:
+        if (a != 0 or b != len(span.raw_text)
+                # The new admission is one complete action field. A ledger
+                # split cannot discard an unread preceding/trailing host.
+                or context.strip(' \t\u3000。．.!！\r\n;；') != value
+                or not _recorded_mimetic_witness(source, nucleus)
+                or re.search(r'[「」『』“”"?？]|(?:夢(?:の|で|だった|でした))', record_context)):
+            return None
     if _has_unparsed_nominal_scope(proposition):
         # Use the existing unresolved-source path; never fall back to a
         # raw node that would also make unrelated readable nodes unsafe.
@@ -1058,9 +1109,10 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
             or (after and after[0] not in boundaries)):
         return None
     # current_user is the shared frame's default, not proof of its subject.
-    # Actions/thoughts require an explicit first-person finite host. Only a
-    # witnessed, fully parsed non-agent result state is the bounded exception.
-    if result is None and change is None and not re.match(r'^(?:(?:今日|昨日|その後|それから)[、，\s]*)?(?:私は|僕は|ぼくは|俺は|おれは|わたしは|自分は)', value):
+    # Actions/thoughts normally require an explicit first-person finite host.
+    # Parsed non-agent results and witnessed action-field activities are the
+    # bounded exceptions; an omitted actor remains unspecified.
+    if result is None and change is None and recorded_activity is None and not re.match(r'^(?:(?:今日|昨日|その後|それから)[、，\s]*)?(?:私は|僕は|ぼくは|俺は|おれは|わたしは|自分は)', value):
         return None
     # The source helper already proved a length-preserving normalization.
     field = source.envelope.raw_utf8[ref.field_utf8_start:ref.field_utf8_end].decode('utf-8')

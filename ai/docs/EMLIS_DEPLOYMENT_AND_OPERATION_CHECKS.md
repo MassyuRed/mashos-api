@@ -726,3 +726,36 @@ Mashの「開始した」報告後、指定API `7626e1f6e6cc7b2d8a71b9ea1032b840
 表示到達を商品完成・内容品質合格・任意入力での安定稼働へ換算しない。履歴から同じ本文を再表示できたとの明示報告は今回なく、保存内容の独立DB照合・再起動後の再表示もこの報告だけで完了にしない。§35の「端末描画未確認」はこの表示1件について更新されたが、未確認の保存往復までは閉じない。
 
 今回は本人報告と添付画面の確認、および既存資料への記録だけ。個人の入力/出力本文・画像・IDは公開資料へ転記せず、追加DB/ログ取得、製品修正、検査再実行、deploy/env変更、native build、mergeは行っていない。`STRUCTURE_MAP_DELTA_NONE`。
+
+## 37. 2026-10-10 JST — 分析取得エラーの原因修正（未配置）
+
+今回の依頼は、通常の感情入力後に分析内容が出ず `analysis_observed_map_unavailable` となる問題の修正。全体構造・全ファイル地図、Analysis current mapと詳細設計、最新weekly 20261010 §5.5、必読事故記録と作業規則を確認した。今の優先は実入力による分析生成・保存再表示への到達であり、一般文法の網羅や表示磨き込みを配置の追加条件にしない。
+
+### 原因と変更範囲
+
+17:52:52 JSTのRender固定診断は `stage=current reason=analysis_observed_route_not_established`。保存入力の取得RPCは200、current graphの要素0件で停止しており、前期間比較の失敗ではない。今回の28日内の本人記録3件を非公開で読取照合したところ、既存compilerの限定文法と明示主語条件で採用できる要素がなかった。稼働APIは§35の `7626e1f6e6cc7b2d8a71b9ea1032b840bbc9799b`。直前のEmlis NULL修正とは別の原因である。
+
+既存 `cores/analysis/intent_compiler.py` と `observed_route_realizer.py` を修正。原入力の行動欄全体が、既存の限定名詞＋「で」＋2〜3仮名の反復表現＋「した／しました」の一節として閉じ、共有の明示action/past/performed witnessを持つ場合に採用する。省略主体はUNSPECIFIEDとし「主体の記載なし」を表示する。原文の全文範囲と出典を保持し、本人・原因・順序を補わない。未解釈のmemoや不足段階はunknownのまま残す。
+
+独立レビューで見つけた後続の否定・仮定・伝聞の切落しと、今日/昨日を名詞に吸収する誤読も修正した。行動欄全体との一致を要求するため、前後に別節や未解析hostがある入力はこの追加分岐で採用しない。原文そのままの無検査表示、空graphの成功扱い、旧mapへのfallbackは追加していない。
+
+新file・API・DTO・共有意味owner・DB schema・SQL・RN・依存定義の変更なし。`STRUCTURE_MAP_DELTA_NONE`。対応設計はCocolon `current_structure/03_analysis_current_structure.md` と `designs/cmee/v1/04_analysis_v1d_v1e_detailed_design.md` §3.20。
+
+### 検証結果
+
+- 新規API回帰を修正前 `631c5843396adaadbcac2a1212e38b18a538e148` へ置いた隔離worktreeで、実FastAPI→service→CMEEが同じ422となることを確認。修正後は200で部分mapを生成し、保存後のGETで作者を呼ばず本文・projection・versionが一致した。AuthとRPCだけが合成で、実環境のBearer/通信ではない。
+- 最終sourceのAnalysis vertical・storage・saved period・APIの4集合は **389 PASS**。既存Pydantic root_validator非推奨warningが1件。追加は文法/根拠/未知部分/否定等の保留/SELF改変拒否/丁寧形比較の4検査と、生成→保存→再取得のAPI1検査。比較off/development両方、NULL/空欄を含む合成3件を確認した。
+- 既存の実SQL harnessへ公開合成の新文法fixtureを渡し、隔離PGliteで **58 checks PASS**。実migration/RPCの保存・再読、本人権限・tier・入力変更失効・比較を確認した。稼働Supabaseへの書込ではない。
+- 本人の今回の3件を含む読取snapshotでも、最終sourceの実service/CMEEで **Free/lightの1要素の部分map** が生成され、合成RPCへの保存後、再生成なしで同一本文を取得できた。原snapshotは不変。全文を読み、実RN表示modelが同じtext/projectionを受け取ることも確認した。入力/出力本文・ID・private evidenceはGitHubへ掲載しない。
+- 親の差分確認と別agentの独立レビューを実施し、指摘2点を修正後、今回の表示回復を阻む問題は残っていない。全日本語対応・全内容の分析・商品品質合格を意味しない。
+
+検査runtimeはCPython 3.12.14/pytest 8.4.1/httpx 0.28.1/FastAPI 0.143.0/Pydantic 2.14.0、PGlite 0.5.8をこの作業でimport確認して使用した。新規依存導入なし。旧Gateの再開や、無関係なEmlis既知FAILの修正は今回の範囲に追加していない。
+
+### 次の指定commit配置と実機確認
+
+1. 今回の修正commitをGitHubへ反映・照合した後、案内するexact SHAを[既存Render mashos-api](https://dashboard.render.com/web/srv-d4ppfpm3jp1c73952bj0)の **Manual Deploy → Deploy a specific commit** に指定する。本人の開始操作希望とRender接続のcommit指定deploy非対応を継承し、linked mainを配置する汎用deployは使用しない。
+2. 今回のためのDB migration・環境変数変更・native再buildは不要。GitHubへの反映だけでは稼働版は切り替わらない。
+3. 開始報告後、華恋が配置SHA/live・health・固定ログを確認する。その後、既存アプリを開き直し **分析 → わたしマップ** を表示し、閉じて再表示する。Analysisのlatest ensure経路が既存入力から生成するため、今回の確認のために新しい感情入力を追加する必要はない。
+4. 端末表示と保存後の再表示が成功した時点で、今回の取得エラーの実機復旧を確認する。現在成立しているのは修正・隔離検証までで、修正版の実機描画・稼働DBへの保存は未確認。部分mapの表示回復と内容品質の受入れを分ける。
+
+今回の稼働DB/環境変数変更、deploy、native build、mergeは0。次は指定commit配置であり、同じ入力の再提出・キー・追加の個人情報は不要。

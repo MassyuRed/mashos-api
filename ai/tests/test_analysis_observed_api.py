@@ -97,6 +97,63 @@ class AnalysisApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sum(n=='analysis_observed_commit' for n,_ in self.calls),count)
         self.assertNotIn('private_evidence',response.text)
 
+    async def test_subject_omitted_action_generates_partial_map_and_rereads_saved_result(self):
+        """A real engine result survives latest/save/read; Auth and RPC are synthetic."""
+        from cocolon_meaning_experience_engine import MeaningExperienceEngine
+        originals = []
+        for number, action in ((201, '書店でブラブラした。'), (202, None), (203, '')):
+            originals.append(dict(self.fx['original'], id=str(UUID(int=number)),
+                memo='まだ言葉を整理しているところです。', memo_action=action))
+
+        async def snapshot_rpc(name, payload):
+            if name in ('analysis_observed_source_snapshot', 'analysis_observed_comparison_snapshot'):
+                self.calls.append((name, payload))
+                start = datetime.fromisoformat(payload['p_start'])
+                end = datetime.fromisoformat(payload['p_end'])
+                members = [{'original': dict(original, created_at=(end-timedelta(hours=index+1))
+                    .replace(tzinfo=None).isoformat()), 'thread': None, 'events': []}
+                    for index, original in enumerate(originals)]
+                current = {'guard': GUARD, 'tier': self.tier, 'now': payload['p_end'], 'members': members}
+                if name == 'analysis_observed_source_snapshot':
+                    return current
+                return {'guard': 'analysis-db-compare-v1:'+'b'*64,
+                    'tier': self.tier, 'comparison_eligible': True, 'current': current,
+                    'previous': dict(current, members=[]),
+                    'previous_start': (start-(end-start)).isoformat(), 'previous_end': payload['p_start']}
+            return await self.rpc(name, payload)
+
+        before = copy.deepcopy(originals)
+        for comparison_mode in ('off', 'development'):
+            with self.subTest(comparison_mode=comparison_mode), \
+                    patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE=comparison_mode), \
+                    patch.object(service, '_rpc', side_effect=snapshot_rpc):
+                self.saved = []
+                self.calls = []
+                response = await self.get('/self-structure/latest?report_mode=standard')
+                self.assertEqual(response.status_code, 200, response.text)
+                body = response.json()
+                self.assertTrue(body['has_visible_content'])
+                self.assertTrue(body['refreshed'])
+                self.assertEqual(len(body['meta']['nodes']), 1)
+                self.assertIn('書店でブラブラした', body['content_text'])
+                self.assertIn('主体', body['meta']['nodes'][0]['visible_label'])
+                self.assertEqual(body['meta']['edges'], [])
+                self.assertTrue(any('まだ読み取れていない内容' in gap['visible_label']
+                                    for gap in body['meta']['unknown_gaps']))
+                self.assertEqual(body['meta']['period_comparison']['state'], 'NO_PREVIOUS')
+                self.assertEqual(sum(name == 'analysis_observed_commit' for name, _ in self.calls), 1)
+                with patch.object(MeaningExperienceEngine, 'generate',
+                                  side_effect=AssertionError('saved reads must not regenerate')):
+                    again = await self.get('/self-structure/latest?ensure=false&report_mode=standard')
+                    status = await self.get('/self-structure/latest/status')
+                self.assertEqual(again.status_code, 200, again.text)
+                self.assertEqual(again.json()['content_text'], body['content_text'])
+                self.assertEqual(again.json()['meta'], body['meta'])
+                self.assertEqual(status.json()['version_key'], body['meta']['projection_of'])
+                self.assertEqual(sum(name == 'analysis_observed_commit' for name, _ in self.calls), 1)
+                self.assertNotIn('private_evidence', response.text)
+                self.assertEqual(originals, before)
+
     async def test_missing_invalid_auth_never_touches_store(self):
         for headers in ({},{'Authorization':'Bearer invalid'}):
             response=await self.client.get('/self-structure/latest',headers=headers)
