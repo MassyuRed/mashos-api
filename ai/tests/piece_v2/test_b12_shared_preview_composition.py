@@ -28,6 +28,8 @@ import middleware_active_user_touch as active_touch
 import piece_v2_preview_service as real_preview_service
 import piece_v2_runtime_control as runtime
 import piece_v2_source_ref_http as source_api
+# Save imports its typed handoff before wire installs its source-only stub.
+import piece_v2_save_service
 from api_contract_registry import get_contract_entry, iter_public_api_contracts
 from piece_v2_contract import PieceContractError
 from test_b14a_piece_v2_runtime_control import (
@@ -41,6 +43,35 @@ _REAL_PREVIEW_LOAD = real_preview_service._load_owned_preview_for_replay
 _RUNTIME = {'ttl_seconds': 600, 'renderer_version': 'synthetic-renderer.v1'}
 VISUAL_ROUTE = '/emotion/piece/preview/{preview_id}'
 VISUAL_PATH = PREVIEW_PATH + '/' + INPUT
+SAVE_PATH = '/emotion/piece/save'
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
+def test_save_candidate_requires_independent_strict_pair_and_effective_preview(shared_env, kind):
+    settings = dict(preview_requested=True, preview_ready=True, preview_runtime=_RUNTIME,
+                    save_requested=True, save_ready=True)
+    def build(options):
+        return (shared.create_application(piece_preview_configuration=options)
+                if kind == 'shared' else runtime.create_piece_preview_application(**options))
+    app = build(settings)
+    assert runtime.piece_feature_flags_for_app(app) == {
+        name: name in (PREVIEW, 'piece_v2_save_enabled') for name in FLAGS}
+    assert next(r.endpoint for m, p, r in routes(app)
+                if (m, p) == ('POST', SAVE_PATH)) is preview_api.save_preview
+    published = send(app, 'GET', '/app/bootstrap')
+    assert published.status_code == 200
+    assert {k: published.json()['feature_flags'][k] for k in FLAGS} == runtime.piece_feature_flags_for_app(app)
+    for name in ('save_requested', 'save_ready', 'preview_requested', 'preview_ready'):
+        for value in (None, False, 1, 'true', [], {}):
+            denied = send(build(dict(settings, **{name: value})), 'POST', SAVE_PATH,
+                          content=b'SYNTHETIC PRIVATE INVALID JSON')
+            assert denied.status_code == 503 and denied.json() == DISABLED
+            assert denied.headers['cache-control'] == 'no-store'
+            if kind == 'shared':
+                assert denied.headers['x-cocolon-contract-id'] == 'emotion.piece.save.v2'
+    # The candidate contract does not alter the default application's registry.
+    assert get_contract_entry(method='POST', path=SAVE_PATH) is None
+    assert shared_env['source'] == shared_env['service'] == shared_env['rpc'] == 0
 
 
 def candidate(**changes):
@@ -126,6 +157,7 @@ def test_candidate_reuses_factory_without_changing_default_routes_or_registry(sh
     expected[('GET', '/emotion/piece/source-ref/{saved_input_id}')] = 1
     expected[('PATCH', VISUAL_ROUTE)] = 1
     expected[('DELETE', VISUAL_ROUTE)] = 1
+    expected[('POST', '/emotion/piece/save')] = 1
     expected[('GET', '/emotion/piece/history')] = 1
     expected[('GET', '/emotion/piece/{piece_id}')] = 1
     expected[('DELETE', '/emotion/piece/{piece_id}')] = 1
@@ -378,9 +410,10 @@ def test_composed_owner_history_detail_preserve_artifact_with_generation_off(own
     assert private['piece_text'] not in denied.text
     assert owner_env['rows'] == before
     # Reading never opens save, deletion, public visibility or export.
-    for method, path in [('POST', '/emotion/piece/save'),
-            ('PATCH', '/emotion/piece/' + private['id'] + '/visibility')]:
-        assert send(app, method, path).status_code in (404, 405)
+    denied_save = send(app, 'POST', '/emotion/piece/save',
+                       headers={'Authorization': 'Bearer synthetic-owner'})
+    assert denied_save.status_code == 503 and denied_save.json() == DISABLED
+    assert send(app, 'PATCH', '/emotion/piece/' + private['id'] + '/visibility').status_code == 404
     denied_delete = send(app, 'DELETE', '/emotion/piece/' + private['id'],
                          headers={'Authorization': 'Bearer synthetic-owner'})
     assert denied_delete.status_code == 503 and denied_delete.json() == DISABLED

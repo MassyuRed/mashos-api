@@ -17,6 +17,8 @@ from starlette.requests import Request
 import api_piece_v2 as api
 import piece_v2_runtime_control as runtime
 import piece_v2_source_ref_http as source_api
+# Load the real save module before wire replaces the preview/source modules.
+import piece_v2_save_service
 from piece_v2_preview_service import _visual_mutation_snapshot, _load_owned_preview_for_replay
 from piece_v2_contract import PieceContractError
 from test_b14a_piece_v2_runtime_control import (
@@ -98,6 +100,7 @@ def test_default_composition_has_only_existing_preview_and_bootstrap_handlers(co
         ('/emotion/piece/preview/{preview_id}', ('DELETE',)),
         ('/emotion/piece/source-ref/{saved_input_id}', ('GET',)),
         ('/emotion/piece/quota', ('GET',)),
+        ('/emotion/piece/save', ('POST',)),
         ('/emotion/piece/history', ('GET',)),
         ('/emotion/piece/{piece_id}', ('GET',)),
         ('/emotion/piece/{piece_id}', ('DELETE',)),
@@ -110,13 +113,14 @@ def test_default_composition_has_only_existing_preview_and_bootstrap_handlers(co
     assert next(r.endpoint for r in app.routes if r.path == '/emotion/piece/{piece_id}') is api.owner_detail
     assert next(r.endpoint for r in app.routes if r.path == '/emotion/piece/{piece_id}' and 'DELETE' in r.methods) is api.owner_delete
     assert next(r.endpoint for r in app.routes if r.path == '/emotion/piece/quota') is api.read_quota
+    assert next(r.endpoint for r in app.routes if r.path == '/emotion/piece/save') is api.save_preview
     assert tuple(api.router.routes) == before
     assert runtime.piece_feature_flags_for_app(app) == dict.fromkeys(FLAGS, False)
     assert not hasattr(app.state, 'piece_preview_runtime')
     assert all(composition_env[key] == 0 for key in ('auth', 'source', 'service', 'rpc'))
 
 
-@pytest.mark.parametrize('path,method', [(SOURCE_PATH, 'GET'), (PREVIEW_PATH, 'POST'), (VISUAL_PATH, 'PATCH')])
+@pytest.mark.parametrize('path,method', [(SOURCE_PATH, 'GET'), (PREVIEW_PATH, 'POST'), (VISUAL_PATH, 'PATCH'), ('/emotion/piece/save', 'POST')])
 def test_composed_default_off_is_closed_without_parsing_private_body(composition_env, path, method):
     app = make()
     response = send(app, method, path, content=b'SYNTHETIC PRIVATE INVALID JSON')
@@ -126,7 +130,7 @@ def test_composed_default_off_is_closed_without_parsing_private_body(composition
     assert composition_env['source'] == composition_env['service'] == composition_env['rpc'] == 0
 
 
-@pytest.mark.parametrize('path,method', [(SOURCE_PATH, 'GET'), (PREVIEW_PATH, 'POST'), (VISUAL_PATH, 'PATCH')])
+@pytest.mark.parametrize('path,method', [(SOURCE_PATH, 'GET'), (PREVIEW_PATH, 'POST'), (VISUAL_PATH, 'PATCH'), ('/emotion/piece/save', 'POST')])
 def test_composed_auth_precedes_flags(composition_env, path, method):
     response = send(make(), method, path, headers={})
     assert response.status_code == 401 and response.json() == {'code': 'PIECE_AUTH_REQUIRED'}
@@ -225,7 +229,6 @@ def test_composed_get_then_explicit_post_keeps_reference_request_key_and_setting
 
 
 @pytest.mark.parametrize('method,path', [
-    ('POST', '/emotion/piece/save'),
     ('PATCH', '/emotion/piece/' + INPUT + '/visibility'),
     ('POST', '/emotion/piece/publish'),
     ('POST', '/emotion/reflection/preview'), ('GET', '/nexus'),
@@ -246,7 +249,7 @@ def test_factory_does_not_import_or_modify_production_or_legacy_application(comp
         return original(name, *args, **kwargs)
     monkeypatch.setattr(builtins, '__import__', guarded)
     app = enabled()
-    assert len(app.routes) == 10
+    assert len(app.routes) == 11
     assert app is not composition_env['app']
 
 

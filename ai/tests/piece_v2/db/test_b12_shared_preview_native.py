@@ -26,6 +26,205 @@ database = _H['database']
 _RUNTIME = {'ttl_seconds': 600, 'renderer_version': 'synthetic-renderer.v1'}
 
 
+def _save_application(kind):
+    settings = dict(preview_requested=True, preview_ready=True,
+                    preview_runtime=dict(_RUNTIME), save_requested=True, save_ready=True,
+                    owner_read_requested=True, owner_read_ready=True)
+    return (shared.create_application(piece_preview_configuration=settings)
+            if kind == 'shared' else create_piece_preview_application(**settings))
+
+
+def _save_harness(database, monkeypatch, *, tier='free'):
+    """Real generated preview, save admission and SQL; synthetic Auth/source/HTTP."""
+    from psycopg import sql
+    from psycopg.types.json import Jsonb
+    import api_piece_v2 as api
+    import piece_v2_save_service as save_service
+    _, owner, request, prepared, state = _H['_preview_http_harness'](
+        database, monkeypatch, tier=tier)
+    conn, pg, _ = database
+    conn.execute((_B5['_B4']['_ROOT'] /
+        'supabase/migrations/20260911041749_emlis_q3_plan_rounds.sql').read_text())
+    previous_transport = supabase_client.sb_post_rpc
+    previous_verify = api._verify_bearer
+    state.update(save_reads=0, save_rpc=0, save_sources=0, save_after_read=None,
+                 save_after_commit=None, save_lose_ack=False, save_forbid_source=False)
+
+    class Adapter:
+        async def resolve_original_handoff(self, authorization, input_id):
+            assert not state['save_forbid_source'], 'committed replay must not inspect source'
+            state['save_sources'] += 1
+            return await owner._source_adapter.resolve_original_handoff(authorization, input_id)
+
+    async def verify(authorization):
+        if authorization == 'Bearer synthetic-viewer':
+            return str(_B5['_B4']['_VIEWER'])
+        return await previous_verify(authorization)
+
+    async def load(path, *, params, timeout):
+        assert path == '/rest/v1/piece_records' and timeout == 8.0
+        assert set(params) <= {'select', 'id', 'owner_user_id', 'limit', 'lifecycle_status'}
+        where, values = ['id=%s', 'owner_user_id=%s'], [params['id'][3:], params['owner_user_id'][3:]]
+        if 'lifecycle_status' in params:
+            assert params['lifecycle_status'] == 'eq.saved'
+            where.append('lifecycle_status=%s'); values.append('saved')
+        values.append(int(params['limit']))
+        query = sql.SQL('SELECT to_jsonb(r) FROM (SELECT {} FROM public.piece_records WHERE {} LIMIT %s) r').format(
+            sql.SQL(',').join(sql.Identifier(k) for k in params['select'].split(',')),
+            sql.SQL(' AND '.join(where)))
+        with conn.transaction():
+            conn.execute('SET LOCAL ROLE service_role')
+            rows = [r[0] for r in conn.execute(query, values).fetchall()]
+        state['save_reads'] += 1
+        if state['save_after_read']:
+            state['save_after_read']()
+        return httpx.Response(200, json=rows)
+
+    async def transport(name, args, *, timeout):
+        if name != 'piece_save_v2':
+            return await previous_transport(name, args, timeout=timeout)
+        assert timeout == 8.0
+        state['save_rpc'] += 1
+        values = {k: Jsonb(v) if k == 'p_expected_source_state' else v for k, v in args.items()}
+        try:
+            result = _B5['_B4']['_rpc'](conn, name, values)
+        except pg.errors.RaiseException as exc:
+            return httpx.Response(400, json={'code': 'P0001', 'message': exc.diag.message_primary})
+        if state['save_after_commit']:
+            state['save_after_commit']()
+        if state['save_lose_ack']:
+            raise TimeoutError(_B5['PRIVATE'])
+        return httpx.Response(200, json=result)
+
+    monkeypatch.setattr(api, '_verify_bearer', verify)
+    monkeypatch.setattr(save_service, 'PieceSavedSourceAdapter', Adapter)
+    monkeypatch.setattr(supabase_client, 'sb_get', load)
+    monkeypatch.setattr(supabase_client, 'sb_post_rpc', transport)
+    return request, prepared, state
+
+
+def _save_request(preview):
+    return dict(preview_id=preview['preview_id'], expected_preview_revision=preview['preview_revision'],
+                **{k: preview[k] for k in ('piece_text_hash', 'content_payload_hash', 'visual_recipe_hash')})
+
+
+def _save_call(app, preview, *, changes=None, key='synthetic-composed-save', viewer=False, method='POST'):
+    async def call():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                    base_url='http://piece-test.invalid') as client:
+            return await client.request(method,
+                '/emotion/piece/save' if method == 'POST' else '/emotion/piece/' + preview['preview_id'],
+                headers={'Authorization': 'Bearer synthetic-viewer' if viewer else _B5['AUTH'],
+                         'Idempotency-Key': key},
+                **({'json': dict(_save_request(preview), **(changes or {}))} if method == 'POST' else {}))
+    return asyncio.run(call())
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+def test_composed_generated_preview_private_save_replay_and_owner_detail(database, monkeypatch, kind, tier):
+    conn, _, _ = database
+    request, prepared, state = _save_harness(database, monkeypatch, tier=tier)
+    app = _save_application(kind)
+    created = _H['_preview_http_post'](app, request)
+    assert created.status_code == 200
+    preview = created.json()
+    before = _stored(conn)
+    _H['_no_author'](monkeypatch)
+    saved = _save_call(app, preview)
+    assert saved.status_code == 200 and saved.headers['cache-control'] == 'no-store'
+    if kind == 'shared':
+        assert saved.headers['x-cocolon-contract-id'] == 'emotion.piece.save.v2'
+    receipt = saved.json()
+    assert receipt['piece_id'] == preview['preview_id'] and receipt['visibility_scope'] == 'private'
+    assert receipt['lifecycle_status'] == 'saved' and receipt['idempotency_replayed'] is False
+    stored = _stored(conn)
+    fields = ('piece_text', 'piece_text_hash', 'content_payload', 'content_payload_hash',
+              'visual_recipe', 'visual_recipe_hash', 'renderer_version', 'source_lineage', 'preview_revision')
+    assert all(stored[k] == before[k] for k in fields)
+    assert stored['piece_text'] == prepared.artifact_payload()['piece_text'] == preview['piece_text']
+    assert stored['row_version'] == 2 and stored['lifecycle_status'] == 'saved'
+    assert _B5['_B4']['_used'](conn) == 1
+
+    state['save_forbid_source'] = True
+    # Saved data and receipt survive loss of source/tier access; no author rerun.
+    replay = _save_call(app, preview)
+    assert replay.status_code == 200 and replay.json() == dict(receipt, idempotency_replayed=True)
+    detail = _save_call(app, preview, method='GET')
+    assert detail.status_code == 200 and detail.headers['cache-control'] == 'no-store'
+    detail_fields = ('piece_text', 'piece_text_hash', 'content_payload', 'content_payload_hash',
+                     'visual_recipe', 'visual_recipe_hash', 'renderer_version')
+    assert all(detail.json()[k] == stored[k] for k in detail_fields)
+    assert detail.json()['piece_text'] == preview['piece_text']
+    assert 'source_lineage' not in detail.json() and 'owner_user_id' not in detail.json()
+    denied = _save_call(app, preview, method='GET', viewer=True)
+    assert denied.status_code == 404 and denied.json() == {'code': 'PIECE_NOT_FOUND'}
+    assert _stored(conn) == stored and _B5['_B4']['_used'](conn) == 1
+    assert state['save_sources'] == state['authors'] == state['actual_reviews'] == 1
+    assert state['save_rpc'] == 2
+    for table in ('mymodel_reflections', 'piece_record_reads', 'piece_record_resonances', 'piece_export_receipts'):
+        assert conn.execute('SELECT count(*) FROM public.' + table).fetchone() == (0,)
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
+def test_composed_save_denials_and_stop_after_load_never_commit(database, monkeypatch, kind):
+    conn, _, _ = database
+    request, _, state = _save_harness(database, monkeypatch)
+    app = _save_application(kind)
+    created = _H['_preview_http_post'](app, request)
+    assert created.status_code == 200
+    preview, before = created.json(), _stored(conn)
+    for options, status, code in [
+        ({'changes': {'visibility_scope': 'public'}}, 503, 'PIECE_FEATURE_DISABLED'),
+        ({'viewer': True}, 404, 'PIECE_NOT_FOUND'),
+        ({'changes': {'expected_preview_revision': 2}}, 409, 'PIECE_PREVIEW_STALE'),
+        ({'changes': {'piece_text_hash': 'a' * 64}}, 409, 'PIECE_HASH_MISMATCH'),
+    ]:
+        denied = _save_call(app, preview, **options)
+        assert denied.status_code == status and denied.json() == {'code': code}
+        assert denied.headers['cache-control'] == 'no-store'
+    state['save_after_read'] = lambda: app.state.piece_v2_runtime['ready'].update(piece_v2_save_enabled=False)
+    stopped = _save_call(app, preview)
+    assert stopped.status_code == 503 and stopped.json() == {'code': 'PIECE_FEATURE_DISABLED'}
+    assert state['save_sources'] == state['save_rpc'] == 0
+    assert _stored(conn) == before and _B5['_B4']['_used'](conn) == 0
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
+@pytest.mark.parametrize('failure', ['lost_ack', 'stop_after_commit'])
+def test_composed_save_recovers_committed_receipt_without_second_consumption(database, monkeypatch, kind, failure):
+    conn, _, _ = database
+    request, _, state = _save_harness(database, monkeypatch)
+    app = _save_application(kind)
+    created = _H['_preview_http_post'](app, request)
+    assert created.status_code == 200
+    preview = created.json()
+    _H['_no_author'](monkeypatch)
+    if failure == 'lost_ack':
+        state['save_lose_ack'] = True
+    else:
+        state['save_after_commit'] = lambda: app.state.piece_v2_runtime['ready'].update(piece_v2_save_enabled=False)
+    first = _save_call(app, preview)
+    assert first.status_code == 503 and first.json() == {'code': (
+        'PIECE_TEMPORARILY_UNAVAILABLE' if failure == 'lost_ack' else 'PIECE_FEATURE_DISABLED')}
+    assert state['save_rpc'] == 1
+    stored = _stored(conn)
+    assert stored['lifecycle_status'] == 'saved' and _B5['_B4']['_used'](conn) == 1
+    consumption = conn.execute('SELECT consumption_id::text FROM public.piece_quota_consumptions').fetchone()[0]
+    app.state.piece_v2_runtime['ready']['piece_v2_save_enabled'] = False
+    stopped = _save_call(app, preview)
+    assert stopped.status_code == 503 and state['save_rpc'] == 1
+    state.update(save_forbid_source=True, save_lose_ack=False, save_after_commit=None)
+    app.state.piece_v2_runtime['ready']['piece_v2_save_enabled'] = True
+    replay = _save_call(app, preview)
+    assert replay.status_code == 200 and replay.json()['idempotency_replayed'] is True
+    assert replay.json()['piece_id'] == preview['preview_id'] and replay.json()['consumption_id'] == consumption
+    different_key = _save_call(app, preview, key='another-key')
+    assert different_key.status_code == 409 and different_key.json() == {'code': 'PIECE_CONFLICT'}
+    assert _stored(conn) == stored and _B5['_B4']['_used'](conn) == 1
+    assert state['save_sources'] == state['authors'] == state['actual_reviews'] == 1
+
+
 def _application(*, enabled=True):
     settings = ({'preview_requested': True, 'preview_ready': True,
                  'preview_runtime': dict(_RUNTIME)} if enabled else {})

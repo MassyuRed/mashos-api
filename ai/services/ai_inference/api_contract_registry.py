@@ -199,6 +199,7 @@ _CONTRACTS_BY_ROUTE: Dict[Tuple[str, str], ApiContractEntry] = {
 # Selected only by the explicit, non-deployed shared-app preview candidate.
 # The default public registry and policy version remain the legacy contract.
 _PREVIEW_CANDIDATE_CONTRACTS = (
+    ApiContractEntry('POST', '/emotion/piece/save', 'emotion.piece.save.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Isolated candidate: existing private atomic save and same-key replay; independent save readiness with preview dependency; no public write or native fit admission'),
     ApiContractEntry('GET', '/emotion/piece/quota', 'emotion.piece.quota.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Isolated candidate: authenticated current-month saved usage; preview-gated read-only display, not save admission or legacy publish count'),
     ApiContractEntry('DELETE', '/emotion/piece/{piece_id}', 'emotion.piece.delete.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Isolated candidate: owner/version/key-bound atomic purge; independent delete readiness with owner-read dependency; same-key receipt replay and no quota refund'),
     ApiContractEntry('GET', '/emotion/piece/history', 'emotion.piece.history.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Isolated candidate: authenticated owner saved history; independent of preview generation; no source reread or writes'),

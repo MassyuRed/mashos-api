@@ -83,6 +83,8 @@ def validate_piece_preview_runtime(runtime: object) -> tuple[int, str]:
 def create_piece_preview_application(*, preview_requested: bool = False,
                                      preview_ready: bool = False,
                                      preview_runtime: object = None,
+                                     save_requested: bool = False,
+                                     save_ready: bool = False,
                                      owner_read_requested: bool = False,
                                      owner_read_ready: bool = False,
                                      owner_delete_requested: bool = False,
@@ -100,14 +102,20 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     Owner history/detail have their own requested/ready pair and do not need
     generation, a preview TTL or a current renderer. Owner deletion requires
     its own requested/ready pair AND effective owner read, retaining PCE-7's
-    recovery-only state. No save, visibility mutation, public read or export
-    operation can be enabled by this composition.
+    recovery-only state. Private save requires its own strict requested/ready
+    pair AND effective preview. Its readiness covers the existing PCE-7 atomic
+    RPC/quota/monitoring prerequisites; runtime values and quota.can_save do
+    not establish it. Registration does not admit a native renderer or fit.
+    No public write, visibility mutation, public read or export operation can
+    be enabled by this composition.
     Actual Auth/DB/device admission and production cutover remain separate.
     """
     requested = dict.fromkeys(PIECE_FEATURE_NAMES, False)
     ready = dict.fromkeys(PIECE_FEATURE_NAMES, False)
     requested['piece_v2_preview_enabled'] = preview_requested is True
     ready['piece_v2_preview_enabled'] = preview_ready is True
+    requested['piece_v2_save_enabled'] = save_requested is True
+    ready['piece_v2_save_enabled'] = save_ready is True
     requested['piece_v2_owner_read_enabled'] = owner_read_requested is True
     ready['piece_v2_owner_read_enabled'] = owner_read_ready is True
     requested['piece_v2_delete_enabled'] = owner_delete_requested is True
@@ -122,7 +130,7 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     # after invalid supplied runtime values have been rejected without IO.
     from fastapi import FastAPI
     from api_app_bootstrap import register_app_bootstrap_routes
-    from api_piece_v2 import (read_quota, create_preview, mutate_preview_visual, cancel_preview,
+    from api_piece_v2 import (read_quota, create_preview, mutate_preview_visual, cancel_preview, save_preview,
                              owner_history, owner_detail, owner_delete)
     from piece_v2_source_ref_http import read_original_source_ref
 
@@ -146,6 +154,7 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     # Quota uses the existing preview flag and reports saved usage only;
     # can_save is display data, never permission to invoke the save operation.
     app.add_api_route('/emotion/piece/quota', read_quota, methods=['GET'])
+    app.add_api_route('/emotion/piece/save', save_preview, methods=['POST'])
     app.add_api_route('/emotion/piece/history', owner_history, methods=['GET'])
     # Keep static paths before the owner-ID path. Shared composition also
     # preserves its additional static legacy paths before this same route.
