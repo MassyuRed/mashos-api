@@ -783,3 +783,15 @@ Mashは18:19 JST、「少ない入力から分析を無理に表示させるの�
 2. 今回は画面文言を変えるため **新しいiOSビルドが必要**。先の「native再build不要」という案内は撤回する。[iOS TestFlight Build](https://github.com/MassyuRed/Cocolon/actions/workflows/ios-build.yml) → **Run workflow** → branch `agent/three-core-cmee-current-structure-20260815` → **Run workflow**。開始後、source SHA・archive/export/upload・実build番号を華恋が照合する。既存6301にAPIだけ配置しても新文言が届くとはしない。
 3. DB migrationと環境変数変更は不要。新buildがTestFlightで利用可能になった後に更新し、既存入力のまま **分析 → わたしマップ** を開く。対象がまだ分析未成立なら上記の通常案内が表示され、取得エラーや作成した分析は表示されないことを確認する。閉じて開き直しても同じ状態を確認する。確認用の新入力は不要。
 4. 現時点ではGitHub修正・隔離API/画面検証までで、修正版の配置・本人端末の案内表示は未確認。今回は稼働DB/環境変数変更、deploy、native build、mergeを行っていない。
+
+## 39. 2026-10-10 JST — 入力不足案内API live・iOSビルド確認
+
+Mashの18:31 JSTの開始報告後、API `5c8bd8e5d7f876335eb840ceee26883a030a34a5` のmanual deploy `dep-db50bcd9fdbs73b5dgn0` を照合した。18:30:25に開始し、**18:32:12 JSTにlive**。18:32:05にはApplication startup completeとUvicorn待受を確認。18:32:24以降の公開HTTP確認でhealthz200/status=ok、bootstrap200、未認証self-structure/latestとlatest/statusは401。開始〜18:32:26のapp/errorは0件、hasMore=false。本人Bearerによる不足応答や端末描画を、この起動確認から推定しない。
+
+iOSは[run65 / 38041653252](https://github.com/MassyuRed/Cocolon/actions/runs/38041653252)、attempt1、source `55142229b6860b9c8195989cdddf0f218f07700a` のworkflow_dispatchを確認。18:30:52 JST開始で、今回の不足案内の画面修正を含む正しい対象。archiveは18:45:44、IPA書出しは18:45:53、**TestFlight送信は18:47:24 JSTにsuccess**。job114182936030は18:47:35にcompleted/success、workflow全体も18:47:38更新でcompleted/successと確認した。
+
+採番はworkflowのrun_number×100＋run_attemptと、成功した採番/ビルド工程から **6501**、MARKETING_VERSIONは対象sourceで **1.0** と照合した。jobログ取得は連携のTransport closedで2回失敗しており、ログ本文やarchive内Info.plistの実値を独立に取得したとはしない。Apple側の処理完了・TestFlightでの利用可能性・端末導入は未確認。
+
+次は **1.0（6501）** がTestFlightで利用可能になった後に更新し、既存入力のまま **分析 → わたしマップ** を表示する。対象が未成立なら「入力情報が少ないため、まだ分析を表示できません。」が通常表示されることを確認し、閉じて再表示する。6301のままAPIだけで新文言を確認しようとしない。確認用の新入力は不要。
+
+今回の華恋の操作は配置/buildの読取照合・公開HTTP確認・記録更新。追加deploy/build再実行・DB/環境変数変更・mergeは0。製品source/test/依存変更なし、検査再実行なし、STRUCTURE_MAP_DELTA_NONE。§38の386/RN20検査は候補検証として継承し、本人端末の案内表示は未確認のまま。
