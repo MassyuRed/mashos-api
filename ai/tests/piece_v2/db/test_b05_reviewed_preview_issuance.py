@@ -458,8 +458,10 @@ def _preview_http_harness(database, monkeypatch, *, tier='free', named=False):
 
     owner, request, prepared, state, native, load = _orchestration(
         database, monkeypatch, tier=tier, named=named)
+    conn, _, _ = database
+    conn.execute((_B5['_B4']['_ROOT'] / 'supabase/migrations/20261010_005_piece_v2_quota_read.sql').read_text())
     actual_issue = owner.issue_original
-    state.update(http_auth=0, http_rpc=0)
+    state.update(http_auth=0, http_rpc=0, quota_rpc=0)
 
     async def verify(authorization):
         state['http_auth'] += 1
@@ -468,12 +470,19 @@ def _preview_http_harness(database, monkeypatch, *, tier='free', named=False):
         return _B5['OWNER']
 
     async def issue(authorization, value, **kwargs):
-        assert set(kwargs) == {'idempotency_key', 'ttl_seconds', 'renderer_version', 'rpc'}
+        assert set(kwargs) == {'idempotency_key', 'ttl_seconds', 'renderer_version', 'rpc', 'expected_subscription_tier'}
         result = await actual_issue(authorization, value, load_record=load, **kwargs)
         state['last_internal_result'] = deepcopy(result)
         return result
 
     async def transport(name, args, *, timeout):
+        if name == 'piece_read_quota_v2':
+            assert args == {'p_owner_user_id': _B5['OWNER']} and timeout == 8.0
+            state['quota_rpc'] += 1
+            if state.get('quota_failure'):
+                return httpx.Response(404, json={'private': _B5['PRIVATE']})
+            result = _B5['_B4']['_rpc'](conn, name, args)
+            return httpx.Response(200, json=result)
         assert name == 'piece_issue_preview_v2' and timeout == 8.0
         state['http_rpc'] += 1
         if 'provider_response' in state:
@@ -531,9 +540,13 @@ def test_http_first_issue_and_replay_deliver_exact_persisted_artifact(database, 
         'preview_revision', 'row_version', 'expires_at', 'visibility_scope',
         'format_type', 'eligible_formats', 'piece_text', 'piece_text_hash',
         'content_payload', 'content_payload_hash', 'visual_recipe',
-        'visual_recipe_hash', 'renderer_version', 'content_status'}
+        'visual_recipe_hash', 'renderer_version', 'content_status', 'quota', 'plan_capabilities'}
     assert value['api_contract_version'] == PIECE_V2_CONTRACT_VERSIONS['api_contract_version']
     assert value['piece_contract_version'] == PIECE_V2_CONTRACT_VERSIONS['piece_contract_version']
+    assert value['quota']['subscription_tier'] == tier
+    assert value['quota']['saved_count'] == 0
+    assert value['plan_capabilities']['format_selection'] == {
+        'free': 'fixed', 'plus': 'automatic', 'premium': 'eligible_choice'}[tier]
     assert value['content_status'] == ('adjusted' if named else 'ready')
     assert value['visibility_scope'] == 'private'
     for field in ('piece_text', 'piece_text_hash', 'content_payload',
@@ -732,3 +745,73 @@ def test_http_unexpected_failure_is_closed_and_task_cancellation_propagates(data
         assert response.status_code == 503
         assert response.json() == {'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}
     assert state['http_rpc'] == 0
+
+
+# PCE-6 display metadata is fresh; persisted artifact identity is immutable.
+@pytest.mark.parametrize('count', [0, 5, 7])
+def test_http_quota_display_does_not_admit_or_block_preview(database, monkeypatch, count):
+    conn, _, _ = database
+    app, _, request, _, state = _preview_http_harness(database, monkeypatch)
+    _B5['_B4']['_seed_usage'](conn, count)
+    first = _preview_http_post(app, request)
+    assert first.status_code == 200
+    value = first.json()
+    assert value['quota']['saved_count'] == count
+    assert value['quota']['remaining_count'] == max(0, 5 - count)
+    assert value['quota']['can_save'] is (count < 5)
+    assert value['plan_capabilities'] == {'format_selection': 'fixed',
+        'theme_ids': ['soft_paper'], 'aspect_ratios': ['4:5'], 'branding_modes': ['required_small']}
+    stored = conn.execute('SELECT to_jsonb(r) FROM public.piece_records r').fetchone()[0]
+    _B5['_B4']['_seed_usage'](conn, 1)
+    _no_author(monkeypatch)
+    again = _preview_http_post(app, request)
+    assert again.status_code == 200
+    latest = again.json()
+    assert latest.pop('quota')['saved_count'] == count + 1
+    value.pop('quota')
+    assert latest == value
+    assert conn.execute('SELECT to_jsonb(r) FROM public.piece_records r').fetchone()[0] == stored
+    assert state['quota_rpc'] == 2 and state['authors'] == state['http_rpc'] == 1
+
+
+def test_http_missing_quota_read_stops_before_generation_or_persistence(database, monkeypatch):
+    conn, _, _ = database
+    app, _, request, _, state = _preview_http_harness(database, monkeypatch)
+    conn.execute('DROP FUNCTION public.piece_read_quota_v2(uuid)')
+    result = _preview_http_post(app, request)
+    assert result.status_code == 503 and result.json() == {'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}
+    assert state['quota_rpc'] == 1 and state['authors'] == state['http_rpc'] == 0
+    assert not state['reads'] and not state['posts']
+    assert conn.execute('SELECT count(*) FROM public.piece_records').fetchone() == (0,)
+
+
+@pytest.mark.parametrize('replay', [False, True])
+def test_http_quota_source_tier_mismatch_is_conflict(database, monkeypatch, replay):
+    conn, _, _ = database
+    app, _, request, _, state = _preview_http_harness(database, monkeypatch)
+    if replay:
+        assert _preview_http_post(app, request).status_code == 200
+    before = conn.execute('SELECT to_jsonb(r) FROM public.piece_records r').fetchall()
+    conn.execute("UPDATE public.profiles SET subscription_tier='plus' WHERE id=%s", (_B5['OWNER'],))
+    _no_author(monkeypatch)
+    result = _preview_http_post(app, request)
+    assert result.status_code == 409 and result.json() == {'code': 'PIECE_CONFLICT'}
+    assert state['authors'] == state['http_rpc'] == int(replay)
+    assert conn.execute('SELECT to_jsonb(r) FROM public.piece_records r').fetchall() == before
+
+
+def test_http_replay_checks_quota_tier_again_after_initial_probe(database, monkeypatch):
+    app, owner, request, _, state = _preview_http_harness(database, monkeypatch)
+    assert _preview_http_post(app, request).status_code == 200
+    _no_author(monkeypatch)
+    calls = 0
+    async def change_at_replay(*args):
+        nonlocal calls
+        calls += 1
+        handoff = state['handoff']
+        return handoff if calls == 1 else replace(handoff,
+            original=replace(handoff.original, subscription_tier='plus'))
+    monkeypatch.setattr(owner._source_adapter, 'resolve_original_handoff', change_at_replay)
+    result = _preview_http_post(app, request)
+    assert result.status_code == 409 and result.json() == {'code': 'PIECE_CONFLICT'}
+    assert calls == 2 and state['authors'] == state['http_rpc'] == 1

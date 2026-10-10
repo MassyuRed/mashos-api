@@ -389,6 +389,7 @@ class PiecePreviewService:
 
     async def read_original_preview(
         self, authorization: str | None, request: dict, *, idempotency_key: str,
+        expected_subscription_tier: str | None = None,
         load_record: Callable[[str, str], Awaitable[dict | None]] = _load_owned_preview_for_replay,
     ) -> dict:
         """Read an issued preview after losing the in-memory prepared object.
@@ -422,6 +423,14 @@ class PiecePreviewService:
                 authorization, value['source_ref']['source_input_id'])
             if type(handoff) is not PieceSavedHandoff:
                 raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+            # HTTP supplies its current quota tier; internal callers may omit
+            # it. Never infer current plan from the stored recipe or body.
+            if expected_subscription_tier is not None:
+                if (type(expected_subscription_tier) is not str
+                        or expected_subscription_tier not in ('free', 'plus', 'premium')):
+                    raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+                if handoff.original.subscription_tier != expected_subscription_tier:
+                    raise _error('PIECE_CONFLICT')
             owner = _uuid(handoff.original.authenticated_owner_id, owner=True)
             if UUID(owner).int == 0:
                 raise _error('PIECE_AUTH_REQUIRED')
@@ -508,6 +517,7 @@ class PiecePreviewService:
         self, authorization: str | None, request: dict, *, idempotency_key: str,
         ttl_seconds: int, renderer_version: str,
         rpc: Callable[[str, dict], Awaitable[dict]],
+        expected_subscription_tier: str | None = None,
         load_record: Callable[[str, str], Awaitable[dict | None]] = _load_owned_preview_for_replay,
     ) -> dict:
         """Internal original-only creation/replay with the actual bounded reviewer.
@@ -543,6 +553,14 @@ class PiecePreviewService:
                 authorization, value['source_ref']['source_input_id'])
             if type(handoff) is not PieceSavedHandoff:
                 raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+            # HTTP supplies its current quota tier; internal callers may omit
+            # it. Never infer current plan from the stored recipe or body.
+            if expected_subscription_tier is not None:
+                if (type(expected_subscription_tier) is not str
+                        or expected_subscription_tier not in ('free', 'plus', 'premium')):
+                    raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+                if handoff.original.subscription_tier != expected_subscription_tier:
+                    raise _error('PIECE_CONFLICT')
             owner = _uuid(handoff.original.authenticated_owner_id, owner=True)
             if UUID(owner).int == 0:
                 raise _error('PIECE_AUTH_REQUIRED')
@@ -558,7 +576,8 @@ class PiecePreviewService:
                 f'piece.preview.v2:{owner}:{key}'.encode('utf-8')).hexdigest()[:32]))
             if await load_record(owner, preview_id) is not None:
                 return await self.read_original_preview(authorization, value,
-                    idempotency_key=idempotency_key, load_record=load_record)
+                    idempotency_key=idempotency_key, load_record=load_record,
+                    expected_subscription_tier=expected_subscription_tier)
             prepared = await self.prepare_original(authorization, value)
             if prepared.handoff != handoff:
                 raise _error('PIECE_CONFLICT')

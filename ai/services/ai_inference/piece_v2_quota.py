@@ -69,3 +69,21 @@ async def read_piece_quota(*, authenticated_user_id: str, post_rpc) -> dict:
         # The request guard retains OFF through this closed error mapping.
         # BaseException (including task cancellation) deliberately propagates.
         raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE') from None
+
+
+def project_piece_plan_capabilities(*, server_tier: str) -> dict:
+    """PCE-6 plan display only; eligible formats remain the artifact's list.
+
+    Neither this table nor quota.can_save authorizes a feature or a mutation.
+    Return fresh lists so the response cannot mutate the plan definition.
+    """
+    if type(server_tier) is not str or server_tier not in SAVE_LIMITS:
+        raise PieceContractError('PIECE_TEMPORARILY_UNAVAILABLE')
+    return {
+        'format_selection': {'free': 'fixed', 'plus': 'automatic',
+                             'premium': 'eligible_choice'}[server_tier],
+        'theme_ids': ['soft_paper'] if server_tier == 'free' else ['soft_paper', 'quiet_night'],
+        'aspect_ratios': ['4:5', '9:16'] if server_tier == 'premium' else ['4:5'],
+        'branding_modes': (['required_small'] if server_tier == 'free' else
+                           ['required_subtle', 'off'] if server_tier == 'premium' else ['required_subtle']),
+    }

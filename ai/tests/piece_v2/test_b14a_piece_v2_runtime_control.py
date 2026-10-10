@@ -118,6 +118,20 @@ def wire(monkeypatch):
              'source_error': None, 'service_error': None,
              'before_source_return': None, 'before_rpc': None, 'after_rpc': None,
              'verified': OWNER, 'preview': {'piece_text': 'Synthetic gate-only preview.'}}
+    import supabase_client
+    from datetime import datetime, timezone
+    from piece_v2_quota import project_piece_quota, project_piece_plan_capabilities
+    state['quota_calls'] = 0
+    state['preview'].update(quota=project_piece_quota(server_tier='free', saved_count=0,
+        server_now=datetime(2026, 10, 10, tzinfo=timezone.utc)),
+        plan_capabilities=project_piece_plan_capabilities(server_tier='free'))
+    async def quota_rpc(name, args, *, timeout):
+        assert name == 'piece_read_quota_v2' and args == {'p_owner_user_id': OWNER}
+        assert timeout == 8.0
+        state['quota_calls'] += 1
+        return httpx.Response(200, json={'subscription_tier': 'free', 'saved_count': 0,
+            'server_now': '2026-10-10T00:00:00+00:00'})
+    monkeypatch.setattr(supabase_client, 'sb_post_rpc', quota_rpc)
     app = FastAPI()
     app.state.piece_preview_runtime = {'ttl_seconds': 600, 'renderer_version': 'synthetic-renderer.v1'}
 
@@ -149,6 +163,7 @@ def wire(monkeypatch):
             assert authorization == AUTH and value == preview_request()
             assert options['idempotency_key'] == 'same-synthetic-key'
             assert options['ttl_seconds'] == 600 and options['renderer_version'] == 'synthetic-renderer.v1'
+            assert options['expected_subscription_tier'] == 'free'
             state['service'] += 1
             if state['service_error']:
                 raise state['service_error']
@@ -353,3 +368,20 @@ def test_stop_while_request_body_is_received_prevents_service_entry(wire, monkey
     response = wire['send'](method, path, **kwargs)
     assert response.status_code == 503 and response.json() == DISABLED
     assert wire['source'] == wire['service'] == wire['rpc'] == 0
+
+
+@pytest.mark.parametrize('failure', [False, True])
+def test_preview_stop_during_quota_read_is_latched_before_service(wire, monkeypatch, failure):
+    import supabase_client
+    app = wire['app']; app.state.piece_v2_runtime = config(PREVIEW)
+    async def stopped(*args, **kwargs):
+        wire['quota_calls'] += 1
+        app.state.piece_v2_runtime = {}
+        if failure:
+            raise TimeoutError('synthetic private quota error')
+        return httpx.Response(200, json={'subscription_tier': 'free', 'saved_count': 0,
+            'server_now': '2026-10-10T00:00:00+00:00'})
+    monkeypatch.setattr(supabase_client, 'sb_post_rpc', stopped)
+    response = wire['send']('POST', PREVIEW_PATH, json=preview_request())
+    assert response.status_code == 503 and response.json() == DISABLED
+    assert wire['quota_calls'] == 1 and wire['service'] == wire['rpc'] == 0

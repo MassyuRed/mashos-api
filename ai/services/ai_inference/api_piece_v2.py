@@ -398,7 +398,7 @@ def _preview_runtime(request: Request) -> tuple[int, str]:
 
     Dedicated test applications supply app.state.piece_preview_runtime with
     ttl_seconds and renderer_version. Production admission of those values,
-    router registration, capabilities/quota and RN delivery remain separate.
+    router registration and live readiness remain separate.
     Missing or malformed server configuration must never issue a preview.
     """
     return validate_piece_preview_runtime(
@@ -444,27 +444,14 @@ async def create_preview(request: Request) -> JSONResponse:
     immediately before RPC dispatch, and before returning a candidate. A stop
     observed here survives B5's closed error mapping. An already dispatched
     RPC cannot be undone by a later stop; no rollback or retry is attempted.
-    Production registration/readiness and capability delivery remain separate.
+    Production registration/readiness remain separate.
     """
-    disabled = False
-
-    def require_preview() -> None:
-        nonlocal disabled
-        if disabled:
-            raise PieceContractError('PIECE_FEATURE_DISABLED')
-        try:
-            require_piece_feature_enabled(request.app, 'piece_v2_preview_enabled')
-        except PieceContractError:
-            disabled = True
-            raise
-
-    async def gated_rpc(name: str, args: dict) -> dict:
-        require_preview()
-        return await _preview_rpc(name, args)
-
+    from piece_v2_quota import read_piece_quota, project_piece_plan_capabilities
+    from supabase_client import sb_post_rpc
+    features = _OperationFeatures(request, 'piece_v2_preview_enabled')
     try:
-        await _authenticated_owner(request)
-        require_preview()
+        owner = await _authenticated_owner(request)
+        features.require()
         from piece_v2_preview_service import PiecePreviewService, _request_snapshot
         keys = request.headers.getlist('idempotency-key')
         if len(keys) != 1 or not keys[0].strip() or request.query_params:
@@ -475,17 +462,21 @@ async def create_preview(request: Request) -> JSONResponse:
             raise PieceContractError('PIECE_REQUEST_INVALID') from None
         value = _request_snapshot(raw)
         ttl, renderer = _preview_runtime(request)
-        require_preview()
+        # Read before generation/issuance: missing quota infrastructure must
+        # not create a hidden preview. This snapshot does not admit a save.
+        quota = await read_piece_quota(authenticated_user_id=owner,
+            post_rpc=features.wrap(sb_post_rpc))
+        features.require()
         result = await PiecePreviewService().issue_original(
             request.headers['authorization'], value, idempotency_key=keys[0],
-            ttl_seconds=ttl, renderer_version=renderer, rpc=gated_rpc)
-        require_preview()
-        return _response(_preview_public_response(result))
-    except PieceContractError as exc:
-        code = ('PIECE_FEATURE_DISABLED' if disabled else
-                exc.code if exc.code in _PREVIEW_STATUS else 'PIECE_TEMPORARILY_UNAVAILABLE')
-        return _response({'code': code}, _PREVIEW_STATUS[code])
-    except Exception:
-        # Cancellation (BaseException) is deliberately not converted to HTTP.
-        code = 'PIECE_FEATURE_DISABLED' if disabled else 'PIECE_TEMPORARILY_UNAVAILABLE'
-        return _response({'code': code}, 503)
+            ttl_seconds=ttl, renderer_version=renderer,
+            expected_subscription_tier=quota['subscription_tier'],
+            rpc=features.wrap(_preview_rpc))
+        features.require()
+        public = _preview_public_response(result)
+        public.update(quota=quota, plan_capabilities=project_piece_plan_capabilities(
+            server_tier=quota['subscription_tier']))
+        return _response(public)
+    except Exception as exc:
+        # Cancellation (BaseException) deliberately propagates unchanged.
+        return features.failure(exc, _PREVIEW_STATUS)
