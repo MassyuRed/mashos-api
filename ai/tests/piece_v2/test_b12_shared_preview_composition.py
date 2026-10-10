@@ -112,10 +112,11 @@ def test_candidate_reuses_factory_without_changing_default_routes_or_registry(sh
     counts = Counter((m, p) for m, p, _ in routes(app))
     for key in [('POST', '/emotion/submit'), ('GET', '/app/bootstrap'),
                 ('GET', '/app/startup'), ('GET', '/emotion/piece/source-ref/{saved_input_id}'),
-                ('POST', PREVIEW_PATH), ('PATCH', VISUAL_ROUTE)]:
+                ('POST', PREVIEW_PATH), ('PATCH', VISUAL_ROUTE), ('DELETE', VISUAL_ROUTE)]:
         assert counts[key] == 1
     assert next(r.endpoint for m, p, r in routes(app) if (m, p) == ('POST', PREVIEW_PATH)) is preview_api.create_preview
     assert next(r.endpoint for m, p, r in routes(app) if (m, p) == ('PATCH', VISUAL_ROUTE)) is preview_api.mutate_preview_visual
+    assert next(r.endpoint for m, p, r in routes(app) if (m, p) == ('DELETE', VISUAL_ROUTE)) is preview_api.cancel_preview
     assert next(r.endpoint for m, p, r in routes(app) if 'source-ref/' in p) is source_api.read_original_source_ref
     # Every shared route except the incompatible old preview alias is retained.
     before = Counter((m, p) for m, p, _ in routes(shared.app))
@@ -123,6 +124,7 @@ def test_candidate_reuses_factory_without_changing_default_routes_or_registry(sh
     del expected[('POST', '/emotion/reflection/preview')]
     expected[('GET', '/emotion/piece/source-ref/{saved_input_id}')] = 1
     expected[('PATCH', VISUAL_ROUTE)] = 1
+    expected[('DELETE', VISUAL_ROUTE)] = 1
     assert counts == expected
     assert [(m, p, r.endpoint) for m, p, r in routes(shared.app)] == default_routes
     assert iter_public_api_contracts() is registry
@@ -264,3 +266,28 @@ def test_visual_contract_is_selected_only_by_explicit_candidate(shared_env):
         assert result.headers['x-cocolon-contract-id'] == entry.contract_id
         assert result.headers['cache-control'] == 'no-store'
     assert shared_env['quota_calls'] == shared_env['source'] == shared_env['service'] == shared_env['rpc'] == 0
+
+
+def test_cancel_contract_is_candidate_only_and_keeps_cleanup_after_preview_stop(shared_env, monkeypatch):
+    for app in (shared.app, shared.create_application()):
+        result = send(app, 'DELETE', VISUAL_PATH, headers={})
+        assert result.status_code == 404
+        assert 'x-cocolon-contract-id' not in result.headers
+    assert get_contract_entry(method='DELETE', path=VISUAL_ROUTE) is None
+    entry = get_contract_entry(method='DELETE', path=VISUAL_ROUTE, piece_preview=True)
+    assert entry.contract_id == 'emotion.piece.preview.cancel.v2'
+    calls = []
+    async def rpc(name, args):
+        calls.append(args)
+        return dict(preview_id=INPUT, preview_revision=1, row_version=2,
+                    lifecycle_status='cancelled', idempotency_replayed=False)
+    monkeypatch.setattr(preview_api, '_cancel_rpc', rpc)
+    app = candidate(preview_ready=False)
+    unauth = send(app, 'DELETE', VISUAL_PATH, headers={}, content=b'SYNTHETIC PRIVATE BODY')
+    assert unauth.status_code == 401 and calls == []
+    result = send(app, 'DELETE', VISUAL_PATH, headers={'Authorization': AUTH},
+                  json={'expected_preview_revision': 1})
+    assert result.status_code == 200 and result.json()['lifecycle_status'] == 'cancelled'
+    assert result.headers['x-cocolon-contract-id'] == entry.contract_id
+    assert result.headers['cache-control'] == 'no-store' and len(calls) == 1
+    assert shared_env['source'] == shared_env['service'] == shared_env['rpc'] == 0

@@ -83,7 +83,7 @@ def validate_piece_preview_runtime(runtime: object) -> tuple[int, str]:
 def create_piece_preview_application(*, preview_requested: bool = False,
                                      preview_ready: bool = False,
                                      preview_runtime: object = None):
-    """Compose existing preview creation/settings, source and bootstrap handlers.
+    """Compose existing preview creation/settings/cancel, source and bootstrap handlers.
 
     This is NOT production app.py, a deployed service, or a clean-cutover
     switch. It never imports/mutates the shared application or mounts the full
@@ -110,7 +110,7 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     # after invalid supplied runtime values have been rejected without IO.
     from fastapi import FastAPI
     from api_app_bootstrap import register_app_bootstrap_routes
-    from api_piece_v2 import create_preview, mutate_preview_visual
+    from api_piece_v2 import create_preview, mutate_preview_visual, cancel_preview
     from piece_v2_source_ref_http import read_original_source_ref
 
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
@@ -125,5 +125,9 @@ def create_piece_preview_application(*, preview_requested: bool = False,
     app.add_api_route('/emotion/piece/preview', create_preview, methods=['POST'])
     app.add_api_route('/emotion/piece/preview/{preview_id}',
                       mutate_preview_visual, methods=['PATCH'])
+    # Existing owner/revision-bound cleanup remains available after preview
+    # generation is stopped; cancellation neither saves nor consumes quota.
+    app.add_api_route('/emotion/piece/preview/{preview_id}',
+                      cancel_preview, methods=['DELETE'])
     register_app_bootstrap_routes(app)
     return app

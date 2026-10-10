@@ -28,6 +28,33 @@ RUNTIME = {'ttl_seconds': 600, 'renderer_version': 'synthetic-renderer.v1'}
 VISUAL_PATH = PREVIEW_PATH + '/' + INPUT
 
 
+@pytest.mark.parametrize('enabled_preview', [False, True])
+def test_composed_cancel_reuses_existing_owner_cleanup_even_when_generation_is_off(
+        composition_env, monkeypatch, enabled_preview):
+    calls = []
+    async def rpc(name, args):
+        calls.append((name, args))
+        return dict(preview_id=INPUT, preview_revision=2, row_version=4,
+                    lifecycle_status='cancelled', idempotency_replayed=True)
+    monkeypatch.setattr(api, '_cancel_rpc', rpc)
+    app = enabled() if enabled_preview else make()
+    response = send(app, 'DELETE', VISUAL_PATH, headers={'Authorization': AUTH},
+                    json={'expected_preview_revision': 2})
+    assert response.status_code == 200 and response.json()['idempotency_replayed'] is True
+    assert response.headers['cache-control'] == 'no-store'
+    assert len(calls) == 1 and calls[0][0] == 'piece_cancel_preview_v2'
+    assert set(calls[0][1]) == {'p_owner_user_id', 'p_preview_id', 'p_expected_preview_revision'}
+    assert calls[0][1]['p_preview_id'] == INPUT and calls[0][1]['p_expected_preview_revision'] == 2
+    assert composition_env['auth'] == 1
+    assert composition_env['source'] == composition_env['service'] == composition_env['rpc'] == 0
+
+
+def test_composed_cancel_auth_precedes_private_body_parse(composition_env):
+    result = send(make(), 'DELETE', VISUAL_PATH, headers={}, content=b'SYNTHETIC PRIVATE BODY')
+    assert result.status_code == 401 and result.json() == {'code': 'PIECE_AUTH_REQUIRED'}
+    assert composition_env['auth'] == composition_env['rpc'] == 0
+
+
 @pytest.fixture
 def composition_env(monkeypatch, bootstrap, wire):
     # Reuse the actual bootstrap source already loaded by the unchanged fixture.
@@ -68,10 +95,12 @@ def test_default_composition_has_only_existing_preview_and_bootstrap_handlers(co
         ('/app/bootstrap', ('GET',)), ('/app/startup', ('GET',)),
         ('/emotion/piece/preview', ('POST',)),
         ('/emotion/piece/preview/{preview_id}', ('PATCH',)),
+        ('/emotion/piece/preview/{preview_id}', ('DELETE',)),
         ('/emotion/piece/source-ref/{saved_input_id}', ('GET',)),
     }
     assert next(r.endpoint for r in app.routes if r.path == PREVIEW_PATH) is api.create_preview
-    assert next(r.endpoint for r in app.routes if 'preview_id' in r.path) is api.mutate_preview_visual
+    assert next(r.endpoint for r in app.routes if 'PATCH' in r.methods) is api.mutate_preview_visual
+    assert next(r.endpoint for r in app.routes if 'DELETE' in r.methods) is api.cancel_preview
     assert next(r.endpoint for r in app.routes if 'source-ref/' in r.path) is source_api.read_original_source_ref
     assert tuple(api.router.routes) == before
     assert runtime.piece_feature_flags_for_app(app) == dict.fromkeys(FLAGS, False)
@@ -191,14 +220,12 @@ def test_composed_get_then_explicit_post_keeps_reference_request_key_and_setting
     ('POST', '/emotion/piece/save'), ('GET', '/emotion/piece/history'),
     ('GET', '/emotion/piece/' + INPUT), ('DELETE', '/emotion/piece/' + INPUT),
     ('PATCH', '/emotion/piece/' + INPUT + '/visibility'),
-    ('DELETE', '/emotion/piece/preview/' + INPUT),
     ('POST', '/emotion/piece/publish'), ('GET', '/emotion/piece/quota'),
     ('POST', '/emotion/reflection/preview'), ('GET', '/nexus'),
 ])
 def test_unfinished_or_legacy_routes_are_not_published_by_preview_composition(composition_env, method, path):
     response = send(enabled(), method, path, content=b'SYNTHETIC PRIVATE BODY')
-    # The same preview path now exists for PATCH only; DELETE stays unmounted.
-    assert response.status_code == (405 if method == 'DELETE' and '/preview/' in path else 404)
+    assert response.status_code == 404
     assert composition_env['auth'] == composition_env['source'] == composition_env['service'] == composition_env['rpc'] == 0
 
 
@@ -210,7 +237,7 @@ def test_factory_does_not_import_or_modify_production_or_legacy_application(comp
         return original(name, *args, **kwargs)
     monkeypatch.setattr(builtins, '__import__', guarded)
     app = enabled()
-    assert len(app.routes) == 5
+    assert len(app.routes) == 6
     assert app is not composition_env['app']
 
 

@@ -166,6 +166,76 @@ def _stored(conn):
 
 
 @pytest.mark.parametrize('kind', ['preview', 'shared'])
+@pytest.mark.parametrize('lost_ack', [False, True])
+def test_composed_cancel_after_visual_change_replays_terminal_native_row_even_when_stopped(
+        database, monkeypatch, kind, lost_ack):
+    conn, pg, _ = database
+    _, request, _, state = _visual_harness(database, monkeypatch)
+    app = _visual_application(kind)
+    created = _H['_preview_http_post'](app, request)
+    assert created.status_code == 200
+    first = created.json()
+    updated = _visual_patch(app, first)
+    assert updated.status_code == 200
+    latest = updated.json()
+    _H['_no_author'](monkeypatch)
+    previous_transport = supabase_client.sb_post_rpc
+    attempts = []
+
+    async def transport(name, args, *, timeout):
+        if name != 'piece_cancel_preview_v2':
+            return await previous_transport(name, args, timeout=timeout)
+        attempts.append(deepcopy(args))
+        try:
+            result = _B5['_B4']['_rpc'](conn, name, args)
+        except pg.errors.RaiseException as exc:
+            return httpx.Response(400, json={'code': 'P0001', 'message': exc.diag.message_primary})
+        if lost_ack and len(attempts) == 2:
+            raise TimeoutError(_B5['PRIVATE'])
+        return httpx.Response(200, json=result)
+    monkeypatch.setattr(supabase_client, 'sb_post_rpc', transport)
+
+    def cancel(preview):
+        async def call():
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                        base_url='http://piece-test.invalid') as client:
+                return await client.request('DELETE', '/emotion/piece/preview/' + preview['preview_id'],
+                    headers={'Authorization': _B5['AUTH']},
+                    json={'expected_preview_revision': preview['preview_revision']})
+        return asyncio.run(call())
+
+    # Stopping generation does not remove the existing owner cleanup path.
+    app.state.piece_v2_runtime = {}
+    stale = cancel(first)
+    assert stale.status_code == 409 and stale.json() == {'code': 'PIECE_PREVIEW_STALE'}
+    assert _stored(conn)['lifecycle_status'] == 'preview_draft'
+    result = cancel(latest)
+    assert result.status_code == (503 if lost_ack else 200)
+    if lost_ack:
+        assert result.json() == {'code': 'PIECE_TEMPORARILY_UNAVAILABLE'}
+    else:
+        assert result.json()['idempotency_replayed'] is False
+    stored = _stored(conn)
+    assert stored['lifecycle_status'] == 'cancelled' and stored['row_version'] == 3
+    assert stored['preview_revision'] == latest['preview_revision'] == 2
+    assert stored['piece_text_hash'] == latest['piece_text_hash']
+    assert stored['visual_recipe_hash'] == latest['visual_recipe_hash']
+    # Terminal replay must precede expiry; do not invent a new preview/key.
+    conn.execute("UPDATE public.piece_records SET expires_at=clock_timestamp()-interval '1 second'")
+    repeated = cancel(latest)
+    assert repeated.status_code == 200
+    assert repeated.json() == dict(preview_id=latest['preview_id'], preview_revision=2,
+        row_version=3, lifecycle_status='cancelled', idempotency_replayed=True)
+    assert repeated.headers['cache-control'] == 'no-store'
+    if kind == 'shared':
+        assert repeated.headers['x-cocolon-contract-id'] == 'emotion.piece.preview.cancel.v2'
+    assert attempts[1] == attempts[2] and len(attempts) == 3
+    assert _stored(conn)['row_version'] == 3
+    assert state['authors'] == state['http_rpc'] == state['visual_rpc'] == 1
+    assert _B5['_B4']['_used'](conn) == 0
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
 @pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
 def test_composed_visual_change_replays_current_native_revision_without_new_author(
         database, monkeypatch, kind, tier):
