@@ -68,6 +68,11 @@ def _find(snapshot, event_id):
 
 def _request(snapshot, *, checkpoint_ref=None, include_context=True):
     t, original = snapshot["thread"], dict(snapshot["original"])
+    # DB optional text is nullable; the source kernel requires text leaves.
+    # Adapt only this generation copy. Preserve the raw snapshot for storage CAS.
+    for field in ("memo", "memo_action"):
+        if field in original and original[field] is None:
+            original[field] = ""
     original["created_at"] = parse_iso_utc(original["created_at"]).isoformat()
     req = GenerationRequest("emlis-" + t["id"], build_emlis_current_input_bundle(original), original["id"],
                             execution_mode=APPLICATION_EXECUTION_MODE)

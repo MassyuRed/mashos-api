@@ -677,3 +677,34 @@ Mashの開始報告後、指定API `1a42b9ebc25ba9765bdb17658cf47dd631d9f40d` / 
 生成失敗時に理由を受け取れない画面側の残差も区別する。現在の端末build番号と、より新しい未表示の発生日時・入力直後か履歴操作かだけをMashへ確認すればよく、キー・原入力の再提出やログ採取を求めない。
 
 今回の変更は既存資料への調査記録のみ。製品source、test、SQL、稼働DB、環境変数、deploy、native build、mergeの変更・実行は0。STRUCTURE_MAP_DELTA_NONE（既存経路の接続不整合を診断しただけで、構造は変更していない）。調査を実機復旧・正式商品合格へ換算しない。
+
+## 34. 2026-10-10 JST — NULL任意欄のAPI修正と生成・保存・HTTP再取得
+
+MashからAPI側の空欄処理修正と「応答生成→保存→再表示」の検証を明示承認された。端末版は本人確認で **6301**、最新の症状は **10/07、入力直後と履歴から開いた時の両方**。§33の端末版未確認・修正未実施は調査時点の履歴とし、本節を今回の修正状態とする。
+
+### 変更
+
+既存 `ai/services/ai_inference/emlis_thread_service.py::_request` の生成用コピーで、存在する `memo` / `memo_action` が `None` の場合だけ空文字へ変える5行を追加した。文字列のstrip・書換え、欠落key・数値・bool・配列の救済はしない。DB原本、保存 `source_snapshot`、SQLのCAS、本人履歴guardは元のNULLを保持する。共有source kernel、意味/本文作者、公開wire、SQL、依存定義、待機時間は変更していない。Q3の履歴admissionにも同じadapterが適用される。
+
+既存 `ai/tests/test_emlis_q4_application.py` にNULL回帰17件を追加した。新file/owner/routeなし、`STRUCTURE_MAP_DELTA_NONE`。親が最終差分を確認し、独立read-only reviewでもblockingな製品問題なし。
+
+### 確認結果と範囲
+
+- 修正前の同一製品sourceで、片方NULLの現在入力・本人履歴・回答開始の11ケースすべてが `noncanonical_current_input_source_shape` で失敗した。
+- 修正後の追加17ケースは全成功。Free/Plus/Premiumの両方のNULL配置で、実reply入口→実作者→実Q2/Q3 migration・RPCの保存→新serviceによるHTTP GETを通した。GETの作者呼出しを禁止しても保存済み本文が同一で、原入力と保存snapshotのNULL、thread/eventsの不変を確認した。
+- 回答後の本文保存と再取得、source参照の安定、保存後のNULL→空文字変更に対する409、Plus/Premiumの未thread本人履歴と元guard保持、欠落/不正型/両欄空の拒否も確認した。
+- Q2/Q3/Q4全対象は **180 PASS / 17 FAIL（計197）**。追加17件にFAILなし。修正前commit `a5706c0337f135fddbf272130c30d9450a059d80` の無変更worktreeでQ4を同じruntimeで再確認し **109 PASS / 同じ17 FAIL**。失敗nodeとassertion内容は完全一致で、既存の文面・名詞化等の期待と現作者の不一致だった。既存期待の変更、skip、xfailはせず、全検査PASSとは報告しない。Q2/Q3の54件は全成功。
+- 途中の修正後初回は追加11 PASS / 6 FAIL。6件は追加テストが読取RPCの毎回変わる `now` まで同一比較した検査側の誤りだった。保存対象比較から読取時刻だけを外し、製品修正は同じ5行のまま上記結果を得た。
+- CPython 3.12.14、pytest 8.4.1、PGlite 0.5.8、httpx 0.28.1、FastAPI 0.143.0、Pydantic 2.14.0の隔離runtimeをこの作業で準備・import確認した。旧sessionのruntime信用は継承せず、Cycle001の過去Gateを再開しない。製品依存の更新は0。
+- 既に非公開で確認済みの本人原入力1件についても、識別子を隔離用へ置換し、元本文/ラベル/NULL/日時を保持して隔離DBへ入れ、Freeの現在入力経路で実作者の生成・OBSERVATION保存・同一本文の再取得を確認した。公開合成2例も同じ経路で確認し、親が3件の本文全文を読んだ。本人原本・本文・ID・digestは公開しない。
+
+これは隔離PGlite上の実SQLと、実reply/service/API GET経路の確認である。認証主体だけをテスト用に差し替えたHTTP GETで、稼働Supabase/PostgREST、実Bearer、実submitのネットワーク待機、RN端末描画を検証したとはしない。本文の存在・保存一致は確認できたが、実出力には原文再掲・定型的な受け取りが残り、商品品質合格には換算しない。
+
+### 次の配置・実機確認
+
+1. 今回の3ファイルを含むAPI修正commitを指定し、既存[Render mashos-api](https://dashboard.render.com/web/srv-d4ppfpm3jp1c73952bj0)の **Manual Deploy → Deploy a specific commit** で配置する。正確な候補SHAは今回のGitHub反映後の案内を使う。本人の開始操作希望と、Render接続のcommit指定deploy非対応を継承し、汎用deployでmainを配置しない。
+2. DB migrationと環境変数の再保存は不要。確認済み10秒budgetを維持する。今回のGitHub反映だけでは、live `468663c8effc51c1bc33f165313eeb9417d16dc9` は切り替わらない。
+3. 配置後に華恋がlive commit・health・ログを確認し、その後、6301の本人通常入力1件で入力直後の応答→閉じる→履歴から同じ本文を確認する。今回のAPI修正の確認にnative再buildを追加条件としない。実環境の待機時間・本人権限・描画はこの工程で確定する。
+4. 10/07に観測が作られなかった記録は、履歴GETだけでは生成されない。過去行の書換え・自動backfill・架空の本人記録は追加しない。10/06の履歴未作成説明修正は別の未配布RN差分として保持する。
+
+今回の稼働DB/環境変数変更、deploy、native build、mergeは0。修正・隔離検証・GitHub反映と、未実施の実機復旧を区別する。追加の個人情報・キー・ログ提出は現時点で不要。

@@ -518,3 +518,120 @@ def test_compact_answer_observation_still_reads_legacy_sentence(compact_answer_o
         f'その出来事に対する{when}の受け止めとして、「{source}」が見えます。')
     body = result.artifact.text.replace(result.artifact.observation, legacy, 1)
     assert read_body(context, body).passed
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('memo,action', [
+    ('褒められたのに、嬉しくなかった。', None),
+    (None, '褒められたのに、嬉しくなかった。'),
+])
+def test_nullable_input_generates_persists_and_http_get_does_not_generate(
+        qcase, qdb, monkeypatch, tier, memo, action):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    import api_emlis_thread
+    from emlis_ai_reply_service import render_emlis_ai_reply
+
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
+    qdb.query('update public.emotions set memo=$2,memo_action=$3 where id=$1', [parent, memo, action])
+    original = run(service.store.read(user, input_id=parent))['original']
+    reply = run(render_emlis_ai_reply(user_id=user, subscription_tier=tier, current_input={'id': parent}))
+    assert reply.comment_text and reply.meta['observation_status'] == 'passed'
+    dto = run(service.get(user, parent))
+    assert dto['current_observation']['text'] == reply.comment_text
+    assert any(e['kind'] == 'OBSERVATION' and e['is_current'] for e in dto['timeline'])
+    saved = run(service.store.read(user, input_id=parent))
+    assert saved['original'] == saved['thread']['source_snapshot'] == original
+    assert dto['original']['memo'] == memo and dto['original']['memo_action'] == action
+
+    class NoAuthor:
+        def __getattr__(self, name):
+            raise AssertionError('GET attempted generation')
+
+    restarted = EmlisThreadService(engine=NoAuthor(), runtime_profile=Q3_PROFILE,
+                                   enforce_application_policy=True)
+    async def authenticated_owner(_authorization):
+        return user
+    monkeypatch.setattr(api_emlis_thread, '_require_user_id', authenticated_owner)
+    app = FastAPI()
+    api_emlis_thread.register_emlis_thread_routes(app, service=restarted)
+    with TestClient(app) as client:
+        response = client.get(f'/emlis/threads/by-input/{parent}')
+    assert response.status_code == 200
+    assert response.headers['Cache-Control'] == 'private, no-store'
+    assert response.json() == dto
+    reread = run(service.store.read(user, input_id=parent))
+    # The read RPC also returns statement time; compare all persisted state.
+    assert {k: v for k, v in reread.items() if k != 'now'} == {k: v for k, v in saved.items() if k != 'now'}
+
+
+def test_nullable_input_answer_keeps_source_identity_and_raw_change_is_rejected(qcase, qdb, monkeypatch):
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    qdb.query('update public.emotions set memo=$2,memo_action=null where id=$1',
+              [parent, '褒められたのに、嬉しくなかった。'])
+    initial = run(service.start(user, parent))
+    before = run(service.store.read(user, input_id=parent))
+    completed = run(answer(service, user, initial, 'その時は重かった。'))
+    assert completed['body_state'] == 'REFINED' and completed['answer_saved']
+    assert completed['current_observation']['text']
+    assert run(EmlisThreadService(runtime_profile=Q3_PROFILE).get(user, parent)) == completed
+    after = run(service.store.read(user, input_id=parent))
+    assert after['original'] == after['thread']['source_snapshot'] == before['original']
+    assert after['thread']['data']['original_source_ref'] == before['thread']['data']['original_source_ref']
+    # NULL and empty text are equivalent only at generation admission. The raw
+    # DB source identity must still reject an edit between reading and saving.
+    qdb.query("update public.emotions set memo_action='' where id=$1", [parent])
+    with pytest.raises(ThreadStoreError) as conflict:
+        run(service.store.commit(user, after, after['thread'], []))
+    assert conflict.value.status == 409
+    with pytest.raises(ThreadStoreError, match='thread_source_or_contract_changed'):
+        run(service.get(user, parent))
+
+
+@pytest.mark.parametrize('tier', ['plus', 'premium'])
+@pytest.mark.parametrize('empty_field', ['memo', 'memo_action'])
+def test_nullable_owned_history_keeps_raw_context_guard(qcase, qdb, monkeypatch, tier, empty_field):
+    import json
+    from uuid import uuid4
+    user, parent, _ = qcase
+    service = active(monkeypatch)
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
+    past = str(uuid4())
+    text = '褒められたのに、嬉しくなかった。'
+    memo, action = (None, text) if empty_field == 'memo' else (text, None)
+    qdb.query("insert into public.emotions values ($1,$2,(now()-interval '1 day') at time zone 'UTC',"
+              "$3,$4,array['仕事'],array['不安'],$5)",
+              [past, user, memo, action, json.dumps([dict(type='不安', strength='medium')])])
+    context = run(service.store.context(user, parent))
+    assert len(context['history']) == 1 and context['history'][0]['thread'] is None
+    dto = run(service.start(user, parent))
+    assert dto['current_observation']['text']
+    saved = run(service.store.read(user, input_id=parent))
+    assert saved['thread']['data']['context_guards'] == [context['history'][0]['guard']]
+    assert run(service.store.context(user, parent)) == context
+    assert run(EmlisThreadService(runtime_profile=Q3_PROFILE).get(user, parent)) == dto
+
+
+@pytest.mark.parametrize('shape', ['missing', 'number', 'boolean', 'list', 'both_null', 'both_empty'])
+def test_nullable_adapter_preserves_source_rejections(shape):
+    from test_cmee_emlis_q1_thread import initial
+    from cocolon_meaning_experience_engine.source_kernel import SourceAdmissionError
+    import copy
+    raw = dict(initial().current_input_bundle.raw_current_input)
+    if shape == 'missing':
+        del raw['memo_action']
+    elif shape in {'both_null', 'both_empty'}:
+        raw['memo'] = raw['memo_action'] = None if shape == 'both_null' else ''
+    else:
+        raw['memo_action'] = {'number': 0, 'boolean': False, 'list': []}[shape]
+    raw.update(id='nullable-synthetic', created_at='2026-10-10T00:00:00+00:00')
+    snapshot = dict(original=raw, thread=dict(id='nullable-thread', issued_count=0,
+        data={'runtime_profile': 'q2.free.one_round.v1'}), events=[], tier='free')
+    before = copy.deepcopy(snapshot)
+    reason = 'text_grounded_material_required' if shape.startswith('both_') else 'noncanonical_current_input_source_shape'
+    with pytest.raises(SourceAdmissionError, match=reason):
+        _request(snapshot)
+    assert snapshot == before
