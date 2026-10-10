@@ -62,6 +62,8 @@ def test_composed_application_generates_persists_and_replays_exact_body(
         ('/emotion/piece/preview', ('POST',)),
         ('/emotion/piece/preview/{preview_id}', ('PATCH',)),
         ('/emotion/piece/preview/{preview_id}', ('DELETE',)),
+        ('/emotion/piece/history', ('GET',)),
+        ('/emotion/piece/{piece_id}', ('GET',)),
     }
     bootstrap = _bootstrap(app)
     assert bootstrap.status_code == 200

@@ -125,6 +125,8 @@ def test_candidate_reuses_factory_without_changing_default_routes_or_registry(sh
     expected[('GET', '/emotion/piece/source-ref/{saved_input_id}')] = 1
     expected[('PATCH', VISUAL_ROUTE)] = 1
     expected[('DELETE', VISUAL_ROUTE)] = 1
+    expected[('GET', '/emotion/piece/history')] = 1
+    expected[('GET', '/emotion/piece/{piece_id}')] = 1
     assert counts == expected
     assert [(m, p, r.endpoint) for m, p, r in routes(shared.app)] == default_routes
     assert iter_public_api_contracts() is registry
@@ -291,3 +293,153 @@ def test_cancel_contract_is_candidate_only_and_keeps_cleanup_after_preview_stop(
     assert result.headers['x-cocolon-contract-id'] == entry.contract_id
     assert result.headers['cache-control'] == 'no-store' and len(calls) == 1
     assert shared_env['source'] == shared_env['service'] == shared_env['rpc'] == 0
+
+
+# Reuse the existing saved-artifact fixture and closed owner projection. These
+# calls replace only Auth and the PostgREST response, never the owner handler.
+@pytest.fixture
+def owner_env(monkeypatch):
+    import runpy
+    import supabase_client
+    from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
+    from piece_v2_source_adapter import PieceSavedSourceAdapter
+    helper = runpy.run_path(str(Path(__file__).with_name('test_b07_piece_v2_owner_api.py')))
+    state = {'rows': [helper['_row']()], 'reads': [], 'after_read': None,
+             'helper': helper}
+    async def verified(authorization):
+        assert authorization in ('Bearer synthetic-owner', 'Bearer synthetic-viewer')
+        return helper['VIEWER'] if authorization.endswith('viewer') else helper['OWNER']
+    async def no_active_user(_token):
+        return None
+    async def load(path, *, params, timeout):
+        assert path == '/rest/v1/piece_records' and timeout == 8.0
+        assert params['owner_user_id'].startswith('eq.')
+        assert params['lifecycle_status'] == 'eq.saved'
+        assert not (helper['_FORBIDDEN_SELECT'] & set(params['select'].split(',')))
+        state['reads'].append(copy.deepcopy(params))
+        rows = helper['_memory_rows'](state['rows'], params)
+        if state['after_read']:
+            state['after_read']()
+        return httpx.Response(200, json=rows)
+    def forbidden(*args, **kwargs):
+        pytest.fail('owner read must not generate, read source/tier or write')
+    monkeypatch.setattr(preview_api, '_verify_bearer', verified)
+    monkeypatch.setattr(active_touch, 'resolve_user_id_verified_cached', no_active_user)
+    monkeypatch.setattr(supabase_client, 'sb_get', load)
+    monkeypatch.setattr(supabase_client, 'sb_post_rpc', forbidden)
+    monkeypatch.setattr(MeaningExperienceEngine, 'generate', forbidden)
+    monkeypatch.setattr(PieceSavedSourceAdapter, 'resolve_original_handoff', forbidden)
+    return state
+
+
+def owner_candidate(kind, **changes):
+    settings = dict(owner_read_requested=True, owner_read_ready=True)
+    settings.update(changes)
+    if kind == 'shared':
+        return shared.create_application(piece_preview_configuration=settings)
+    return runtime.create_piece_preview_application(**settings)
+
+
+def owner_get(app, path='history', **options):
+    options.setdefault('headers', {'Authorization': 'Bearer synthetic-owner'})
+    return send(app, 'GET', '/emotion/piece/' + path, **options)
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
+def test_composed_owner_history_detail_preserve_artifact_with_generation_off(owner_env, kind):
+    app = owner_candidate(kind)
+    h = owner_env['helper']
+    private = owner_env['rows'][0]
+    public = h['_row'](stamp='2026-10-05T00:00:00+00:00')
+    public['visibility_scope'] = 'public'
+    owner_env['rows'] += [public, h['_row'](owner=h['VIEWER']), h['_row'](state='preview_draft')]
+    before = copy.deepcopy(owner_env['rows'])
+    assert runtime.piece_feature_flags_for_app(app) == {
+        name: name == 'piece_v2_owner_read_enabled' for name in FLAGS}
+    assert not hasattr(app.state, 'piece_preview_runtime')
+    page = owner_get(app)
+    assert page.status_code == 200 and len(page.json()['items']) == 2
+    for item, row in zip(page.json()['items'], [private, public]):
+        h['_detail'](item, row)
+        # Both existing ID representations must reach the same saved artifact.
+        for identity in (row['id'], row['public_id']):
+            result = owner_get(app, identity)
+            assert result.status_code == 200
+            h['_detail'](result.json(), row)
+            assert result.headers['cache-control'] == 'no-store'
+            if kind == 'shared':
+                assert result.headers['x-cocolon-contract-id'] == 'emotion.piece.detail.v2'
+    if kind == 'shared':
+        assert page.headers['x-cocolon-contract-id'] == 'emotion.piece.history.v2'
+    denied = owner_get(app, private['id'], headers={'Authorization': 'Bearer synthetic-viewer'})
+    assert denied.status_code == 404 and denied.json() == {'code': 'PIECE_NOT_FOUND'}
+    assert private['piece_text'] not in denied.text
+    assert owner_env['rows'] == before
+    # Reading never opens save, deletion, public visibility or export.
+    for method, path in [('POST', '/emotion/piece/save'),
+            ('DELETE', '/emotion/piece/' + private['id']),
+            ('PATCH', '/emotion/piece/' + private['id'] + '/visibility')]:
+        assert send(app, method, path).status_code in (404, 405)
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
+@pytest.mark.parametrize('side', ['owner_read_requested', 'owner_read_ready'])
+@pytest.mark.parametrize('value', [False, None, 1, 'true', [], {}])
+def test_owner_candidate_requires_both_explicit_booleans_before_any_read(owner_env, kind, side, value):
+    app = owner_candidate(kind, **{side: value})
+    assert not any(runtime.piece_feature_flags_for_app(app).values())
+    for path in ('history', owner_env['rows'][0]['id']):
+        # Auth precedes OFF, which precedes untrusted query/body parsing.
+        result = owner_get(app, path, headers={}, content=b'SYNTHETIC INVALID BODY')
+        assert result.status_code == 401 and result.json() == {'code': 'PIECE_AUTH_REQUIRED'}
+        result = owner_get(app, path, params={'owner': 'SYNTHETIC PRIVATE'})
+        assert result.status_code == 503 and result.json() == DISABLED
+        assert result.headers['cache-control'] == 'no-store'
+    assert owner_env['reads'] == []
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
+@pytest.mark.parametrize('path_kind', ['history', 'detail'])
+@pytest.mark.parametrize('cause', ['stop_during_read', 'hash_corruption'])
+def test_owner_candidate_never_returns_stopped_or_corrupt_saved_body(owner_env, kind, path_kind, cause):
+    app = owner_candidate(kind)
+    row = owner_env['rows'][0]
+    if cause == 'hash_corruption':
+        row['piece_text_hash'] = '0' * 64
+    else:
+        owner_env['after_read'] = lambda: app.state.piece_v2_runtime['ready'].update(
+            piece_v2_owner_read_enabled=False)
+    result = owner_get(app, 'history' if path_kind == 'history' else row['id'])
+    assert result.status_code == 503
+    assert result.json() == {'code': 'PIECE_FEATURE_DISABLED' if cause == 'stop_during_read'
+                             else 'PIECE_TEMPORARILY_UNAVAILABLE'}
+    assert row['piece_text'] not in result.text and len(owner_env['reads']) == 1
+
+
+def test_owner_flags_are_independent_and_project_only_effective_state(shared_env):
+    app = owner_candidate('shared')
+    flags = send(app, 'GET', '/app/bootstrap').json()['feature_flags']
+    assert {name: flags[name] for name in FLAGS} == {
+        name: name == 'piece_v2_owner_read_enabled' for name in FLAGS}
+    app.state.piece_v2_runtime['ready']['piece_v2_owner_read_enabled'] = False
+    assert not any(send(app, 'GET', '/app/bootstrap').json()['feature_flags'][name] for name in FLAGS)
+    assert not any(runtime.piece_feature_flags_for_app(shared.app).values())
+    assert not any(runtime.piece_feature_flags_for_app(runtime.create_piece_preview_application()).values())
+
+
+def test_shared_owner_detail_does_not_shadow_existing_static_quota(shared_env):
+    app = owner_candidate('shared')
+    default = send(shared.app, 'GET', '/emotion/piece/quota', headers={})
+    candidate_response = send(app, 'GET', '/emotion/piece/quota', headers={})
+    assert candidate_response.status_code == default.status_code
+    assert candidate_response.json() == default.json()
+    assert candidate_response.headers['x-cocolon-contract-id'] == default.headers['x-cocolon-contract-id']
+    assert candidate_response.headers['x-cocolon-contract-id'] != 'emotion.piece.detail.v2'
+    counts = Counter((method, path) for method, path, _ in routes(app))
+    for path in ('/emotion/piece/history', '/emotion/piece/{piece_id}'):
+        assert counts[('GET', path)] == 1
+        assert get_contract_entry(method='GET', path=path) is None
+    for path in ('history', INPUT):
+        result = send(shared.app, 'GET', '/emotion/piece/' + path, headers={})
+        assert result.status_code == 404
+        assert 'x-cocolon-contract-id' not in result.headers

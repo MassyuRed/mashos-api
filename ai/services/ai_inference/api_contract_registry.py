@@ -199,6 +199,8 @@ _CONTRACTS_BY_ROUTE: Dict[Tuple[str, str], ApiContractEntry] = {
 # Selected only by the explicit, non-deployed shared-app preview candidate.
 # The default public registry and policy version remain the legacy contract.
 _PREVIEW_CANDIDATE_CONTRACTS = (
+    ApiContractEntry('GET', '/emotion/piece/history', 'emotion.piece.history.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Isolated candidate: authenticated owner saved history; independent of preview generation; no source reread or writes'),
+    ApiContractEntry('GET', '/emotion/piece/{piece_id}', 'emotion.piece.detail.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Isolated candidate: exact owner saved artifact and renderer; no regeneration, current-tier gate or writes'),
     ApiContractEntry('DELETE', '/emotion/piece/preview/{preview_id}', 'emotion.piece.preview.cancel.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Isolated candidate: owner/revision-bound terminal cancellation; explicit same-ID/revision replay, no quota or generation'),
     ApiContractEntry('POST', '/emotion/piece/preview', 'emotion.piece.preview.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Isolated candidate: piece.api.v2 saved-source request and Idempotency-Key; no raw-input compatibility'),
     ApiContractEntry('PATCH', '/emotion/piece/preview/{preview_id}', 'emotion.piece.preview.visual.v2', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Isolated candidate: existing visual-only revision update; no Idempotency-Key or body regeneration; original POST/key recovers current revision'),

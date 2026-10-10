@@ -97,11 +97,15 @@ def test_default_composition_has_only_existing_preview_and_bootstrap_handlers(co
         ('/emotion/piece/preview/{preview_id}', ('PATCH',)),
         ('/emotion/piece/preview/{preview_id}', ('DELETE',)),
         ('/emotion/piece/source-ref/{saved_input_id}', ('GET',)),
+        ('/emotion/piece/history', ('GET',)),
+        ('/emotion/piece/{piece_id}', ('GET',)),
     }
     assert next(r.endpoint for r in app.routes if r.path == PREVIEW_PATH) is api.create_preview
     assert next(r.endpoint for r in app.routes if 'PATCH' in r.methods) is api.mutate_preview_visual
     assert next(r.endpoint for r in app.routes if 'DELETE' in r.methods) is api.cancel_preview
     assert next(r.endpoint for r in app.routes if 'source-ref/' in r.path) is source_api.read_original_source_ref
+    assert next(r.endpoint for r in app.routes if r.path == '/emotion/piece/history') is api.owner_history
+    assert next(r.endpoint for r in app.routes if r.path == '/emotion/piece/{piece_id}') is api.owner_detail
     assert tuple(api.router.routes) == before
     assert runtime.piece_feature_flags_for_app(app) == dict.fromkeys(FLAGS, False)
     assert not hasattr(app.state, 'piece_preview_runtime')
@@ -217,15 +221,16 @@ def test_composed_get_then_explicit_post_keeps_reference_request_key_and_setting
 
 
 @pytest.mark.parametrize('method,path', [
-    ('POST', '/emotion/piece/save'), ('GET', '/emotion/piece/history'),
-    ('GET', '/emotion/piece/' + INPUT), ('DELETE', '/emotion/piece/' + INPUT),
+    ('POST', '/emotion/piece/save'), ('DELETE', '/emotion/piece/' + INPUT),
     ('PATCH', '/emotion/piece/' + INPUT + '/visibility'),
-    ('POST', '/emotion/piece/publish'), ('GET', '/emotion/piece/quota'),
+    ('POST', '/emotion/piece/publish'),
     ('POST', '/emotion/reflection/preview'), ('GET', '/nexus'),
 ])
 def test_unfinished_or_legacy_routes_are_not_published_by_preview_composition(composition_env, method, path):
     response = send(enabled(), method, path, content=b'SYNTHETIC PRIVATE BODY')
-    assert response.status_code == 404
+    # A matching GET-only path may produce 405 for an unregistered method.
+    assert response.status_code == (405 if path.startswith('/emotion/piece/') and
+                                   path.count('/') == 3 else 404)
     assert composition_env['auth'] == composition_env['source'] == composition_env['service'] == composition_env['rpc'] == 0
 
 
@@ -237,7 +242,7 @@ def test_factory_does_not_import_or_modify_production_or_legacy_application(comp
         return original(name, *args, **kwargs)
     monkeypatch.setattr(builtins, '__import__', guarded)
     app = enabled()
-    assert len(app.routes) == 6
+    assert len(app.routes) == 8
     assert app is not composition_env['app']
 
 

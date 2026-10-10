@@ -325,3 +325,90 @@ def test_composed_visual_unknown_outcome_recovers_same_native_record(
     assert state['authors'] == state['http_rpc'] == 1
     assert state['actual_reviews'] == 2
     assert _B5['_B4']['_used'](conn) == 0
+
+
+@pytest.mark.parametrize('kind', ['preview', 'shared'])
+def test_composed_owner_reads_persisted_private_public_pages_without_generation(
+        database, monkeypatch, kind):
+    """Real saved records/SQL and projection, with synthetic Auth/HTTP only."""
+    import api_piece_v2 as api
+    from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
+    from piece_v2_source_adapter import PieceSavedSourceAdapter
+    from piece_v2_runtime_control import PIECE_FEATURE_NAMES, piece_feature_flags_for_app
+    h = runpy.run_path(str(Path(__file__).parents[1] / 'test_b07_piece_v2_owner_api.py'))
+    conn, _, _ = database
+    private = h['_native_save'](conn, visibility='private')
+    public = h['_native_save'](conn, visibility='public')
+    unsaved = h['_B5']['_issue'](conn, key='unsaved-owner-read')
+    # The saved artifact remains readable without any source tables and even
+    # when current entitlement cannot be resolved. No preview renderer/TTL.
+    conn.execute("UPDATE public.profiles SET subscription_tier='unknown'")
+    state = {'handler': None}
+    h['_native_connect'](state, database)
+    reads = []
+    async def load(path, *, params, timeout):
+        assert path == '/rest/v1/piece_records' and timeout == 8.0
+        assert not (h['_FORBIDDEN_SELECT'] & set(params['select'].split(',')))
+        reads.append(deepcopy(params))
+        return state['handler'](params)
+    async def verify(authorization):
+        assert authorization in ('Bearer synthetic-owner', 'Bearer synthetic-viewer')
+        return h['VIEWER'] if authorization.endswith('viewer') else h['OWNER']
+    def forbidden(*args, **kwargs):
+        pytest.fail('saved read may not author, inspect source/tier or write')
+    monkeypatch.setattr(api, '_verify_bearer', verify)
+    monkeypatch.setattr(supabase_client, 'sb_get', load)
+    monkeypatch.setattr(supabase_client, 'sb_post_rpc', forbidden)
+    monkeypatch.setattr(MeaningExperienceEngine, 'generate', forbidden)
+    monkeypatch.setattr(PieceSavedSourceAdapter, 'resolve_original_handoff', forbidden)
+    settings = dict(owner_read_requested=True, owner_read_ready=True)
+    app = shared.create_application(piece_preview_configuration=settings) if kind == 'shared' else (
+        create_piece_preview_application(**settings))
+    assert piece_feature_flags_for_app(app) == {
+        name: name == 'piece_v2_owner_read_enabled' for name in PIECE_FEATURE_NAMES}
+    assert not hasattr(app.state, 'piece_preview_runtime')
+    def get(path='history', *, params=None, viewer=False):
+        async def call():
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                        base_url='http://piece-test.invalid') as client:
+                return await client.get('/emotion/piece/' + path, params=params,
+                    headers={'Authorization': 'Bearer synthetic-viewer' if viewer else 'Bearer synthetic-owner'})
+        return asyncio.run(call())
+    before = h['_native_state'](conn)
+    expected = sorted([private, public], key=lambda row: (row['saved_at'], row['id']), reverse=True)
+    first = get(params={'limit': '1'})
+    assert first.status_code == 200 and first.json()['next_cursor']
+    second = get(params={'limit': '1', 'cursor': first.json()['next_cursor']})
+    assert second.status_code == 200 and second.json()['next_cursor'] is None
+    for page, row in zip([first, second], expected):
+        assert len(page.json()['items']) == 1
+        h['_detail'](page.json()['items'][0], row)
+        for identity in (row['id'], row['public_id']):
+            detail = get(identity)
+            assert detail.status_code == 200
+            h['_detail'](detail.json(), row)
+            assert detail.headers['cache-control'] == 'no-store'
+            if kind == 'shared':
+                assert detail.headers['x-cocolon-contract-id'] == 'emotion.piece.detail.v2'
+    if kind == 'shared':
+        assert first.headers['x-cocolon-contract-id'] == 'emotion.piece.history.v2'
+    assert get(viewer=True).json()['items'] == []
+    for row in (private, public):
+        hidden = get(row['id'], viewer=True)
+        assert hidden.status_code == 404 and hidden.json() == {'code': 'PIECE_NOT_FOUND'}
+    assert get(unsaved['preview_id']).status_code == 404
+    assert h['_native_state'](conn) == before
+    # Stop after SQL returned the saved body. The HTTP boundary must suppress
+    # that body, and subsequent reads must stop before database IO.
+    original_handler = state['handler']
+    def stop_after_read(params):
+        result = original_handler(params)
+        app.state.piece_v2_runtime['ready']['piece_v2_owner_read_enabled'] = False
+        return result
+    state['handler'] = stop_after_read
+    stopped = get(private['id'])
+    assert stopped.status_code == 503 and stopped.json() == {'code': 'PIECE_FEATURE_DISABLED'}
+    assert private['piece_text'] not in stopped.text
+    count = len(reads)
+    assert get().status_code == 503 and len(reads) == count
+    assert h['_native_state'](conn) == before

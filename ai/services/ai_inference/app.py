@@ -360,6 +360,15 @@ def create_application(*, piece_preview_configuration: Optional[Dict[str, Any]] 
     app.get("/mymodel/templates")(mymodel_templates)
     app.post("/mymodel/infer", response_model=InferResponse)(infer)
     app.on_event("shutdown")(_close_shared_supabase_client)
+    if preview_candidate:
+        # The factory's generic ID read must follow shared static routes such
+        # as the existing /emotion/piece/quota. Preserve the original route
+        # object/handler and both UUID and piece:<UUID> owner identifiers.
+        detail_route = next(route for route in app.router.routes
+                            if getattr(route, 'path', None) == '/emotion/piece/{piece_id}'
+                            and getattr(route, 'methods', None) == {'GET'})
+        app.router.routes.remove(detail_route)
+        app.router.routes.append(detail_route)
     return app
 
 
