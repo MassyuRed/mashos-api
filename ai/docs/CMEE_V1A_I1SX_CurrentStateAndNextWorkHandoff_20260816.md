@@ -16135,3 +16135,27 @@ Mashの分析内容修正の継続依頼で、fresh API PR3 `a31b29cafce9f8c87aa
 Codex Work root華恋が編集/実行/反映、subagentはread-only。既存設計内LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX。前段と同じ隔離runtime（Python3.12.14/pytest8.4.1/pytest-subtests0.14.2/FastAPI0.142.2/Pydantic2.13.5/httpx0.28.1）を使用し、追加依存/製品lock変更0。API compiler/realizer/test2/handoffとCocolon current03/詳細04/06の既存8file、新規repository file0。STRUCTURE_MAP_DELTA_NONE：既存解釈・表示owner内の補修で、source→graph→文章/図→保存再読の責任や公開契約は不変。共有owner/API/DTO/DB/SQL/RN製品変更0、Supabase操作/deploy/native build/merge0。primary outcome=TECHNICAL_CREDIT、正式商品受入れではない。既存PR branchへnon-force反映し、検証済み全treeと変更path/bytesの一致を確認する。
 
 元28日/14記録全体の再取得・全体改善判定は今回行っていない。今回の対応は既存過去決定/準備の有限形と限定modifierだけで、他の主語省略行動/自由な副詞語順/一般意味理解、否定決定後の感情根拠、全体ルートUI/段階的詳細、IF/Saved、本人生成→同じ文章/図→保存後再表示は残る。未配置・本人実機未確認・正式商品受入れ未完了。本修正を実機確認の追加前提にしない。次回は最新weekly/current03/本節と実出力へ戻り、内容修正枠なら未対応記述の直接原因、実機枠なら既存生成/保存表示経路を扱う。
+
+
+## 2026-10-11 u197 continuation — 実行環境起動不成立、内容修正未実行
+
+Mashの「分析構造の内容修正関係を進めて」で再開。開始時のAPI PR3は `f2533207d20fedb678f0c41c68716ac9098caaa0`、Cocolon PR30は `17a60006abf097d0f168eba0a0d13bce73ffb33f`。u197の検証・反映実績を保持し、今回再実行した成功とはしない。
+
+今回のWork実行環境には `exec-server connection attempt failed: timed out waiting for exec-server initialize handshake after 10s` の起動失敗通知があり、利用可能なツールにshell/Python/local file readはない。環境の再起動ツールも見つからない。添付「前回作業内容(20261011-075216).txt」はscratchから読めず、読了扱いにしていない。添付をLibrary経由で読むなという指示を守り、GitHubの現行引継ぎu197から確認した。System Context prepare・pytest・実engine生成・RN model実行は未実行。既存APIのActions workflowはPiece用で、今回のAnalysis検査を実行する経路ではない。実行不能を隠すための代替出力・新しいrunner/CIは作らない。
+
+前提資料、作業姿勢入口/CURRENT_RULES/Rule18、恒久incident全文、Karen-Diary必須3file、全体設計01と全file地図01A/B/C・国家flow02の関係箇所、current Analysis/詳細04、latest weekly20261010 §5.4/§5.5、u194〜u197と実compiler/共有Plan/既存検査を直接確認した。全repositoryの全文監査・生成Context freshnessは主張しない。今回の明示依頼による内容修正配分を維持し、本人生成→文章/図→保存後再表示は未完了。入力不足案内の実機確認を生成成功へ変換しない。
+
+### 次に実出力で確認する一件
+
+u194で実測され、u197にも残っている「否定の決定後の感情根拠」を優先候補とする。再現候補は「私は分担を決めなかった。その後、私は安心した」。今回この入力を実engineへ渡していないため、現行headでも同じ欠落が発生したとは断定しない。自由な副詞語順の拡張と同時に扱わない。
+
+- `ai/services/ai_inference/cocolon_meaning_experience_engine/cores/analysis/intent_compiler.py::_standalone_past_feeling_witness` は、安心するについて既に `value/value/fact` と `current_input` を許す。一方でpositive polarity、`operator:positive_change`、`semantic_role:current_change`、全文/本人/出典等も要求する。「value/current_inputだから拒否」とだけ断定し、判定を緩めない。
+- 同compilerの単独感情採用側はこのwitnessと、接続語がある場合の先行話者・後続host確認も使う。共有Plan `build_final_stage1_grounded_observation_plan` の実nucleus/属性・原sourceと合わせ、欠落原因を実測してから修正する。
+- `ai/tests/test_analysis_observed_storage.py::test_past_decision_route_survives_save_and_read` の後続は現在「記録を残した」。否定決定直後の感情をこの保存検査で検証済みとはしない。
+- `ai/tests/test_cmee_analysis_v1d_vertical.py::test_past_decision_preserves_explicit_route_and_late_negative` は否定決定と感情の間に「資料を調べた」がある。直接隣接の残件を閉じる検査へ読み替えない。
+
+再開時はfresh headの実engineで上記候補と肯定決定対照を生成し、片方の意味を失う直接原因を確認する。修正が成立したら、肯否定・明示本人・書かれた順序・原文を保持し、因果を加えず、未読文/別source/訂正/撤回をまたがないことを既存検査・実本文・RN model・再生成禁止の保存再読で確認する。共有Planを変更する場合は既存Emlis側の出力とidentityへの影響も確認する。
+
+### 今回の効果
+
+製品source/test変更0、生成/検査0、DB/SQL書込0、deploy/native build/merge0。Supabaseはproject状態とmigration履歴のみ読取し、分析保存・期間比較の既存適用を確認した。本人行/本文は未読。GitHub変更は本既存handoffへの追記だけ。STRUCTURE_MAP_DELTA_NONE（製品変更なし）。primary outcome=ADMINISTRATIVE_ONLY、追加のtechnical/product credit0。停止は環境によるもので、修正承認待ちではない。最後の検証済み内容修正はu197のまま。
