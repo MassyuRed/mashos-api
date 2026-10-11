@@ -33,6 +33,47 @@ def _action_change_relations(plan):
         'typed_projection:perfective_action_before_bounded_change',))
 
 
+@pytest.mark.parametrize('prefix', ['昨日、私は', '今日私は', '私は昨日、', '今日、'])
+@pytest.mark.parametrize('feeling', ['落ち着きました', '嬉しかったです', 'うれしかったです'])
+@pytest.mark.parametrize('finite', ['調べませんでした', '調べなかったです'])
+def test_dated_negative_action_feeling_has_separate_source_witness(prefix, feeling, finite):
+    memo = prefix + '同僚からの資料を' + finite + '。それから、私は' + feeling + '。'
+    source = freeze_text_source(initial(memo))
+    span = [s for s in source.evidence_spans if s.source_field == 'memo'][-1]
+    assert plan_owner._source_polite_past_feeling_is_bound(span, source.normalized_current_input)
+    plan = _polite_change_plan(memo)
+    node = [n for n in plan.nuclei if n.source_span_ids == (span.span_id,)][-1]
+    assert node.semantic_frame.polarity == 'positive'
+    assert {'operator:positive_change', 'semantic_role:current_change'} <= set(node.semantic_frame.attribute_codes)
+    assert not _action_change_relations(plan)
+
+
+@pytest.mark.parametrize('clause', [
+    '昨日、私は今日、同僚からの資料を調べませんでした',
+    'その後、私は昨日、同僚からの資料を調べませんでした',
+    '昨日、今日、同僚からの資料を調べませんでした',
+    '昨日、今日同僚からの資料を調べませんでした',
+    '昨日、朝の資料を調べませんでした',
+    '私は昨日、夜の資料を調べませんでした',
+    '昨日、以前の資料を調べませんでした',
+    '昨日、分の資料を調べませんでした',
+    '昨日、明日資料の内容を調べませんでした',
+    '昨日、今朝資料の内容を調べませんでした',
+    '昨日、私は先週資料の内容を調べませんでした',
+    '昨日、同僚からの明日資料を調べませんでした',
+    '昨日、何の資料を調べませんでした',
+    '昨日、詳しい誰の資料を調べませんでした',
+    '昨日、振り返り明日資料の内容を調べませんでした',
+    '明日、私は同僚からの資料を調べませんでした',
+    '昨日、友人は同僚からの資料を調べませんでした',
+    '昨日、私は、\n同僚からの資料を調べませんでした',
+    '昨日、\n同僚からの資料を調べませんでした',
+    '昨日、私は同僚からの資料を調べませんでしたという話でした',
+    '昨日、私は同僚からの資料を調べなかったと思ったのです'])
+def test_dated_negative_action_does_not_close_unparsed_or_reported_scope(clause):
+    assert plan_owner._source_prefix_opens_report(clause + '。')
+
+
 @pytest.mark.parametrize('feeling', ['落ち着きました', '嬉しかったです', 'うれしかったです'])
 @pytest.mark.parametrize('finite', [
     '書きませんでした', '書かなかったです', '調べませんでした', '調べなかったです',

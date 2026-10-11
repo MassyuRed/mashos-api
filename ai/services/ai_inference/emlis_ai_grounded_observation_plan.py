@@ -15994,13 +15994,41 @@ def _source_prefix_opens_report(prefix: str) -> bool:
                     + r"(?:(?:からの|への|との|での|の)"
                     + _WISH_OBJECT_NOMINAL_SOURCE + r")*")
                 argument = nominal + r"(?:を|に|で|と)"
+                self_topic = r"(?:私|わたし|僕|ぼく|自分|俺|おれ)は[、, 　]*"
+                # Close an already separated 今日/昨日 action as well. A day
+                # may precede SELF directly, but not an ambiguous genitive
+                # argument. Do not stack a day with another day or sequence
+                # marker, or carry it across a line break into a new clause.
+                dated_prefix = (
+                    r"(?:(?:今日|昨日)[、， 　]*" + self_topic + r"|"
+                    r"(?:(?:今日|昨日)[、， 　]+|"
+                    + self_topic + r"(?:今日|昨日)[、， 　]+)"
+                    r"(?!分(?![一-鿿々ァ-ヴー])|以前|以後|以降|以来|当時|"
+                    r"時点|現在|中|付|頃|ごろ|まで|から|より|だけ|朝|昼|夜|晩|夕|"
+                    r"午前|午後|早朝|深夜|未明|正午))(?!今日|昨日)")
                 closed = re.fullmatch(
-                    r"(?:(?:その後|それから)[、, 　]*)?"
-                    r"(?:(?:私|わたし|僕|ぼく|自分|俺|おれ)は[、, 　]*)?"
+                    r"(?:(?P<dated>" + dated_prefix + r")|"
+                    r"(?:(?:その後|それから)[、, 　]*)?(?:" + self_topic + r")?)"
                     r"(?P<arguments>(?:" + argument + r"){1,4})"
                     r"(?:(?:書か|調べ|試さ|見|作ら|残さ|記録し|メモし|続け)なかったです|"
                     r"(?:書き|調べ|試し|見|作り|残し|記録し|メモし|続け)ませんでした)", clause)
             if closed is not None:
+                if closed.groupdict().get("dated"):
+                    # New dated closures require resolved nominal heads too;
+                    # an unparsed time or question cannot become an object by
+                    # swallowing it into a kanji compound. Preserve bare
+                    # nominal dates such as 明日の資料 and complete 今月号.
+                    for item in re.finditer(argument, closed["arguments"]):
+                        for part in re.split(r"(?:からの|への|との|での|の)", item.group()[:-1]):
+                            head = re.sub(
+                                r"^(?:新しい|古い|大きい|小さい|長い|短い|詳しい|難しい|易しい|良い|悪い)",
+                                "", part)
+                            suffix = re.sub(r"^(?:考え|思い|気持ち|学び|振り返り|取り組み)", "", head)
+                            if (re.match(
+                                r"^(?:(?:明後日|明日|一昨日|今朝|昨夜|先週|来週|今週|"
+                                r"(?:今月|先月|来月)(?!号$)|(?:今年|昨年|来年)(?!度$))(?=.)|何|誰|今日|昨日)",
+                                suffix) or (suffix != part and suffix.startswith("幾"))):
+                                return True
                 cases = tuple(m.group()[-1] for m in re.finditer(
                     argument, closed["arguments"]))
                 if "を" in cases and len(cases) == len(set(cases)):
