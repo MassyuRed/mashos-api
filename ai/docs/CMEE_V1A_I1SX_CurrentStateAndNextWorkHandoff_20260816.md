@@ -16592,3 +16592,41 @@ Mashの内容修正依頼から、API PR3 `de3b5b7b0cf694d8ba4cf4ff9226d98e3ffd6
 STRUCTURE_MAP_DELTA_NONE：source→命題→graph→本文/図→保存の責務は不変。Analysis compiler/realizer/API/DTO/DB/SQL/RN製品変更0。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Supabaseはprojectとmigration一覧のread-only確認だけで、analysis_observed_artifacts/analysis_period_comparisonの適用を確認。本人行取得・DB書込み・配置/有効化/native build/main mergeは0。未配置・稼働DBでの生成保存/本人実機未確認・正式商品受入れ未成立。
 
 裸の「の／からの」、対象省略、未対応時刻/副詞/他動詞、一般意味理解、全体ルートUI/IF/Saved、元28日/14記録全体の改善、本人生成→保存再表示は残る。次回は最新weekly/current03/本節と実出力から再開し、この補修を本人実機確認の新たな前提にしない。
+
+## 2026-10-11 u210 — 明示本人が自身の考え等を書いた後の感情を保持（未配置）
+
+Mashの分析内容修正の続行依頼により、API PR3 `37985fd983f6e92fa407481ba657322e7e9e5642`／Cocolon PR30 `eb1bb4ba51f58e8a0799c136a976ef5be02070ed`を照合して再開。前提/rule・恒久incident全文・全体設計/全file地図・最新weekly20261010とcurrent03/詳細04/06を確認し、両repoのfresh recursive treeとlocal全treeが一致した。System Context prepareは `PUBLICATION_RECOVERY_AMBIGUOUS: residual without marker` でexit2となり、原典を直接使用した。生成contextをfresh扱いせず、管理機構の修正へ逸れない。12/18公開目標と本人実機確認の優先を維持し、今回の明示依頼に従って限定的な内容修正を行う。
+
+### 欠落と最小修正
+
+実engineで「私は自分の考えを書いた。それから、私は落ち着きました。」は書字1nodeだけとなり、明示本人感情が欠けた。既存の「私の意見」は通る一方、仮名を含む「私の考え／気持ち」は共有Planの報告前置き判定により落ちていた。否定書字36例は欠落を再現せず、変更対象にしない。
+
+`_source_prefix_opens_report` の既存writing fallbackだけで、明示SELFの書き手がいるとき、目的語と、任意で付く前後どちらか1個の場所・媒体の先頭に `私／僕／自分／俺＋の` を認める。名詞本体は既存の有限文法と「への／との／での」を使い、所有prefixを除いた本体も未解析時点/疑問語検査へ通す。原文の所有表現は保持し、行為者や後続感情の根拠へ転用しない。新範囲での主語省略、仮名の所有代名詞、他者所有、一般の「の／からの」、任意の入れ子所有は拡張しない。旧単純書字分岐と、書字以外にも使う末尾completed fallbackは不変。
+
+### 検証と本文読解
+
+- 新規vertical2検査は修正前に48 subFAILと通常1 FAIL。最終の書字対象は **239 tests／387 subtests PASS（59.45秒、931 deselected）**。4prefix×4格項配置×3書字形/感情でactor/day/肯否・格項・独立感情・原文UTF-8/hash・線の端点を確認し、未知文/別field/前後報告/他者/否認/訂正/撤回も検査した。共有初回受領に肯定8例と拒否23例を追加。既存の拒否期待は変更しない。
+- 初回対象検査の新規拒否2例は、旧completed fallbackでも受理されていたため失敗した。`自分の説明を書いた` を `自分の説明をノートに書いた`、`自分の明日資料を書いた` を `自分の明日メモを書いた` へ補正。既存の実装を変更して期待へ合わせていない。最終対象検査は上記の成功。current owner identity fixtureだけを実sourceから更新し、**1 PASS／193 deselected（76.97秒）**。歴史凍結identityは不変。
+- 合成Analysis13入力の前後26全文をrootが読解。通常4例は1node/0edge→2node/1edge、場面付きは2/1→3/2。未知文/別fieldは2node/0edgeで接続を補わず、現在未完了の独立した否定・current_inputも保持する。報告例は両版1nodeで本文不変、後続本人感情の新規採用なし。他者所有、主語省略、既存「私の意見」も本文不変。未解析時点例 `自分の明日資料` は旧fallbackにより両版とも感情だけが残る既存挙動であり、今回の解消範囲ではない。
+- 実RN `watashiMapV2Contract.js` で前後26全文と各生成のprojection identity、node順・edge/gap/annotation/conflict数が一致。実service＋合成RPCの3ルートで、保存後の再生成を禁止した再読の本文/図/identityを確認。native描画や稼働DBの確認ではない。
+- Emlis Q1の前後6全文をrootが読解。自身の考えを書いた例のReceptionに「その気持ちを受け止めています。」が追加され、他2例の全文とObservation3例は不変。原因/改善/他者意図を新たに断定していない。汎用Reception・復唱等の品質課題は残り、Emlisの商品受入れに換算しない。
+- 同環境read-only補助reviewは差分、上記全文、許容helper96例・境界23例・書字以外の発話21例を独立確認。許容96例の意図した追加以外に境界/他発話の判定変化はなく、具体的blocking findingなし。root華恋が実装/実行/統合/反映を担当し、別model Pro reviewとは称さない。
+
+代表合成入力の実生成全文：
+
+```text
+行動・非行動：自分の考えを書く（実行済み）（1件の記録）
+結果・余韻：それから：落ち着いた（記録された気持ち）（1件の記録）
+記録内の順序：自分の考えを書く（実行済み） → それから：落ち着いた（記録された気持ち）。原因を示す線ではありません。
+未確定（自分の考えを書く（実行済み））：確定していない項目：場面、役割、考え・注意。
+```
+
+### 反映・最終CI・残件
+
+固定source `8f90c0a0dee42d409722fdd36d99047a70660f89`、tree `d3e4aa401e66117c3fe17cd806696011c33a4802`。共有Plan1・既存test3・current owner identity fixture1を既存PR3へexpected_sha付きnon-force反映し、remote親head/5path/全bytesをlocalと照合済み。後続はAPI既存handoffとCocolon current03/詳細04 §3.40/06の資料同期のみ。新規repository file0、追加依存0。ローカルは既存Python3.12.14／pytest8.4.1／pytest-subtests0.14.2／FastAPI0.142.2／Pydantic2.13.5／httpx0.28.1を使用した。
+
+固定sourceの[CI38145323039](https://github.com/MassyuRed/mashos-api/actions/runs/38145323039)はsuccess。Python3.12.15でAnalysis4＋共有限定change/feelingの5suite **1261 tests／5165 subtests PASS（357.09秒）**、共有owner identity **1 PASS／193 deselected（26.11秒）**。fail/skip/xfail 0。包含されるローカル対象239 tests／387 subtestsやidentityと件数を合算しない。既存合成7例のCI生成全文をrootが読解し、否定決定・準備相・本人感情・明示順序と未知区間の保持を確認した。
+
+STRUCTURE_MAP_DELTA_NONE：source→命題→graph→本文/図→保存の責務は不変。Analysis compiler/realizer/API/DTO/DB/SQL/RN製品変更0。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Supabase操作・本人行取得・DB書込み・配置/有効化/native build/main mergeは0。未配置・稼働DBでの生成保存/本人実機未確認・正式商品受入れ未成立。
+
+一般の「の／からの」、今回の所有形での省略主体・仮名所有代名詞・任意入れ子、対象省略、未対応時刻/副詞/他動詞、旧completed fallbackの残差、一般意味理解、全体ルートUI/IF/Saved、元28日/14記録全体の改善、本人生成→保存再表示は残る。次回は最新weekly/current03/本節と実出力から再開し、この補修を実機確認の新たな前提にしない。
