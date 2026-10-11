@@ -2274,6 +2274,71 @@ def _time_scope_for_text(text: str) -> str:
     return "current_input"
 
 
+def _positive_writing_nominal_ranges(text: str) -> tuple[tuple[int, int], ...]:
+    """Locate nominals in one closed writing clause, without proving its owner.
+
+    This is only a lexical scope check. Report/quotation attribution and the
+    action's source admission still belong to their existing callers.
+    """
+    subject = r"(?:私|わたし|僕|ぼく|自分|俺|おれ)(?:は|が|も)[、,]?[ 　]*"
+    nominal = (r"(?:(?:私|わたし|僕|ぼく|自分|俺|おれ)の)?"
+        + _WISH_OBJECT_NOMINAL_SOURCE
+        + r"(?:(?:への|との|での)" + _WISH_OBJECT_NOMINAL_SOURCE + r")*")
+    prefix = (r"(?:(?:(?:その後|それから)[、， 　]*)?(?:" + subject + r")?|"
+        r"(?:今日|昨日)(?:[、， 　]+(?:" + subject + r")?|" + subject + r")|"
+        + subject + r"(?:今日|昨日)[、， 　]+)")
+    writing = re.fullmatch(prefix
+        + r"(?:(?P<place_before>" + nominal + r")(?:に|で))?"
+        + r"(?P<object>" + nominal + r")を"
+        + r"(?:(?P<place_after>" + nominal + r")(?:に|で))?"
+        + r"(?:書いた|書きました)[。．.]*", text)
+    if writing is None or (writing['place_before'] and writing['place_after']):
+        return ()
+    return tuple(writing.span(name) for name in ('place_before', 'object', 'place_after')
+                 if writing[name] is not None)
+
+
+def _has_predicative_feeling_operator(text: str) -> bool:
+    """Do not turn the object of writing into a feeling predicate."""
+    matches = tuple(_FEELING_RE.finditer(text))
+    if not matches:
+        return False
+    nominals = _positive_writing_nominal_ranges(text)
+    return any(not any(start <= match.start() and match.end() <= end
+                       for start, end in nominals) for match in matches)
+
+
+def _source_writing_nominals_are_bound(span, normalized_input) -> bool:
+    """Keep nominal reclassification inside an independent source statement."""
+    if normalized_input is None or span.source_field not in {'memo', 'memo_action'}:
+        return False
+    source = str(normalized_input.get(span.source_field) or '')
+    raw, start, end = str(span.raw_text), span.start_index, span.end_index
+    context = '\n'.join(str(normalized_input.get(field) or '') for field in ('memo', 'memo_action'))
+    after = source[end:].lstrip(' \t\u3000。．.!！\r\n;；')
+    other = str(normalized_input.get('memo_action' if span.source_field == 'memo' else 'memo') or '')
+    # A punctuation/ledger break after an unfinished topic cannot turn its
+    # continuation into an independently omitted actor, even across fields.
+    open_topic = (r'(?:^|[。．.!！\r\n;；])\s*'
+        r'(?:(?:その後|それから|今日|昨日)[、，\s]*)?'
+        r'(?:私|僕|ぼく|俺|おれ|わたし|自分|' + _WISH_OBJECT_ARGUMENT_RE.pattern + r')'
+        r'(?:は|が|も)[、，, \u3000]*[。．.!！\r\n;；\s]*$')
+    return bool(0 <= start < end <= len(source) and source[start:end] == raw
+        and _top_level_text(context) == context
+        and (not source[:start].strip() or source[:start].rstrip().endswith(('。', '．', '.')))
+        and (not source[end:].strip() or re.match(r'[ \t\u3000]*[。．.\r\n]', source[end:]))
+        and not any(re.search(open_topic, value) for value in (source[:start], other))
+        and not _source_prefix_opens_report(context)
+        and not re.search(r'[!?！？…‥]|によると|いわく|曰く|夢を見|'
+                          r'の(?:話|感想|気持ち|説明|報告|発言)(?:です|だ|[。．.])|'
+                          r'(?:聞いた|聞きました|読んだ|読みました)(?:話|内容)|'
+                          r'(?:言って|話して|語って|述べて|書いて|伝えて|答えて|説明して)'
+                          r'(?:いた|いました|いる|います)(?:[。．.\s]|$)|'
+                          r'(?:と|って)(?:[^\s、，。．.!！?？]+?(?:は|が|も))?'
+                          r'(?:思|考|感|言|聞|書|読|伝|認|信|報)', context)
+        and not re.match(r'(?:と|って|のは|のも|なんて|などと|わけ|訳|のでは|のか|かも|かどうか|はず)', after))
+
+
 def _has_predicative_action_operator(text: str) -> bool:
     """Responsibility for a nominal task does not prove that task was performed."""
     for match in _ACTION_RE.finditer(text):
@@ -2382,6 +2447,14 @@ def _operator_codes_for_span(
     text = span_text[scalar_start:scalar_end]
     source_field = _clean(getattr(span, "source_field", ""))
     operators = _operator_codes_for_text(text, source_field=source_field)
+    # A lexical noun correction can change downstream Emlis reception as
+    # well as Analysis. Require the complete original source/host boundary;
+    # a text-only or sliced call must retain its prior operator result.
+    if ("operator:feeling" in operators and scalar_start == 0
+        and scalar_end == len(span_text)
+        and not _has_predicative_feeling_operator(text)
+        and _source_writing_nominals_are_bound(span, normalized_input)):
+        operators = tuple(code for code in operators if code != "operator:feeling")
     if (
         "operator:change" not in operators
         or normalized_input is None
@@ -3200,11 +3273,12 @@ def _kind_for_span(
         return "reaction"
     if _WISH_RE.search(_SIMILE_NOT_WISH_RE.sub("", text)):
         return "wish"
-    if "operator:change" in _operator_codes_for_span(span, normalized_input=normalized_input):
+    operators = _operator_codes_for_span(span, normalized_input=normalized_input)
+    if "operator:change" in operators:
         return "change"
     if _has_predicative_constraint_operator(text):
         return "constraint"
-    if _FEELING_RE.search(text):
+    if "operator:feeling" in operators:
         return "reaction"
     if _has_predicative_value_operator(text):
         return "value"

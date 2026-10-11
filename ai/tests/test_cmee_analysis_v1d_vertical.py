@@ -33,6 +33,57 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_feeling_noun_writing_keeps_action_and_separate_feeling(self):
+        for owner in ('', '私の', '自分の', '僕の', 'わたしの', 'ぼくの', 'おれの'):
+            for prefix, arguments, finite in (
+                    ('', owner + '気持ちを', '書いた'),
+                    ('その後、', 'ノートに' + owner + '気持ちを', '書きました'),
+                    ('昨日、', owner + '気持ちを手紙に', '書きました')):
+                with self.subTest(owner=owner, prefix=prefix, arguments=arguments):
+                    clause = prefix + arguments + finite
+                    feeling = 'それから、私は安心しなかった'
+                    req = request(record(memo=clause + '。' + feeling + '。'))
+                    artifact = self.generate(req).artifact
+                    self.assertIsNotNone(artifact)
+                    action, result = artifact.graph.nodes
+                    self.assertEqual((action.proposition.actor, action.proposition.predicate_lemma,
+                        action.proposition.modality, action.polarity), ('UNSPECIFIED', '書く', 'fact', 'positive'))
+                    self.assertEqual(action.proposition.relative_day, 'YESTERDAY' if prefix == '昨日、' else '')
+                    self.assertIn(('を', owner + '気持ち'), action.proposition.arguments)
+                    self.assertEqual((result.proposition.actor, result.proposition.result_state,
+                        result.polarity), ('SELF', 'PAST_FEELING', 'negative'))
+                    self.assertEqual([(e.endpoint_refs, e.edge_kind) for e in artifact.graph.edges],
+                        [((action.node_ref, result.node_ref), 'OBSERVED_ORDER')])
+                    source, = freeze_analysis_sources(req).sources
+                    for node, literal in ((action, clause), (result, feeling)):
+                        evidence, = node.evidence_refs
+                        raw = source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                        self.assertEqual(raw.decode(), literal)
+                        self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+                    text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                    self.assertIn('誰の行動かは未確定', text)
+                    self.assertNotIn('誰の気持ちかは未確定', text)
+
+    def test_feeling_noun_writing_keeps_gaps_fields_and_report_scope(self):
+        clause, feeling = 'ぼくの気持ちを書きました。', 'それから、私は落ち着きました。'
+        for memo, action in ((clause + '不明な出来事があった。' + feeling, ''), (feeling, clause)):
+            with self.subTest(memo=memo, action=action):
+                artifact = self.generate(request(record(memo=memo, action=action))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)), (2, 0))
+                writer, = [n for n in artifact.graph.nodes if n.proposition.predicate_lemma == '書く']
+                self.assertEqual(writer.proposition.actor, 'UNSPECIFIED')
+        for memo, action in (('友人の話でした。' + clause + feeling, ''),
+                (clause + feeling, '友人が話した。'),
+                (clause + 'と友人が言った。' + feeling, ''),
+                (clause + 'のは嘘だった。' + feeling, ''),
+                ('友人は' + clause + feeling, ''),
+                ('私は、\n' + clause + feeling, '')):
+            with self.subTest(memo=memo, action=action):
+                artifact = self.generate(request(record(memo=memo, action=action))).artifact
+                self.assertFalse(artifact and any(n.proposition.predicate_lemma == '書く'
+                    for n in artifact.graph.nodes))
+
     def test_omitted_owned_writing_keeps_unknown_actor_and_independent_feeling(self):
         for prefix, day in (('', ''), ('その後、', ''), ('昨日、', 'YESTERDAY')):
             for arguments in ('私の考えを', '自分の家族への手紙を',

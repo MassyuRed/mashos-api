@@ -34,6 +34,73 @@ def _action_change_relations(plan):
 
 
 @pytest.mark.parametrize('clause', [
+    '気持ちを書いた', 'ぼくの気持ちを書きました',
+    '自分のノートに気持ちを書いた', '気持ちをわたしの手紙に書きました',
+    'その後、私の気持ちを書いた', '昨日、僕の気持ちを書きました',
+    '私は今日、気持ちを書いた', '今日私は気持ちを書きました',
+    '不安を書いた', '家族への気持ちを書いた'])
+def test_feeling_noun_writing_is_a_factual_action(clause):
+    for field in ('memo', 'memo_action'):
+        source = freeze_text_source(initial(clause if field == 'memo' else '',
+            memo_action=clause if field == 'memo_action' else ''))
+        plan = plan_owner.build_final_stage1_grounded_observation_plan(
+            source.normalized_current_input, evidence_spans=source.evidence_spans)
+        node, = [n for n in plan.nuclei if n.source_fields == (field,)]
+        assert node.kind == node.semantic_frame.predicate_kind == 'action'
+        assert node.semantic_frame.modality == 'fact'
+        assert node.semantic_frame.polarity in {'neutral', 'positive'}
+        assert 'operator:feeling' not in node.semantic_frame.attribute_codes
+        assert not _action_change_relations(plan)
+
+
+@pytest.mark.parametrize('clause', [
+    '気持ちが重い', '私は不安だった', '私は落ち着きました',
+    '気持ちを書きたい', '気持ちを書かなかった', '気持ちを書いて',
+    '気持ちを書いたら', '気持ちを書いたと思う', '「気持ちを書いた」',
+    '不安だという気持ちを書いた', 'ノートに気持ちを職場で書いた',
+    '気持ちを書いた。私は不安だった'])
+def test_feeling_noun_writing_does_not_suppress_other_feeling_scopes(clause):
+    assert 'operator:feeling' in plan_owner._operator_codes_for_text(clause)
+    source = freeze_text_source(initial(clause))
+    assert any('operator:feeling' in plan_owner._operator_codes_for_span(
+        span, normalized_input=source.normalized_current_input)
+        for span in source.evidence_spans if span.source_field == 'memo')
+
+
+@pytest.mark.parametrize('prefix,action,suffix', [
+    ('友人の話でした。', '', ''), ('友人が言いました。', '', ''),
+    ('', '友人が話した。', ''), ('', '', 'と友人が言った。'),
+    ('', '', 'のは嘘だった。'), ('私は、\n', '', ''),
+    ('私は、。', '', ''), ('', '私は、。', ''),
+    ('「', '', '」'), ('', '', '？')])
+def test_feeling_noun_writing_keeps_shared_report_classification(prefix, action, suffix):
+    clause = 'ぼくの気持ちを書きました'
+    source = freeze_text_source(initial(prefix + clause + '。' + suffix, memo_action=action))
+    spans = [s for s in source.evidence_spans if s.source_field == 'memo' and clause in s.raw_text]
+    assert spans
+    for span in spans:
+        assert 'operator:feeling' in plan_owner._operator_codes_for_span(
+            span, normalized_input=source.normalized_current_input)
+
+
+def test_feeling_noun_writing_does_not_correct_missing_or_mismatched_source():
+    source = freeze_text_source(initial('ぼくの気持ちを書きました。'))
+    span, = [s for s in source.evidence_spans if s.source_field == 'memo']
+    for normalized in (None, {**source.normalized_current_input, 'memo': '私は不安だった。'}):
+        assert 'operator:feeling' in plan_owner._operator_codes_for_span(span, normalized_input=normalized)
+    assert 'operator:feeling' in plan_owner._operator_codes_for_span(
+        span, normalized_input=source.normalized_current_input, scalar_start=3)
+
+
+def test_feeling_noun_writing_preserves_reported_emlis_reception():
+    out = MeaningExperienceEngine().generate(initial(
+        '友人の話でした。ぼくの気持ちを書きました。それから、私は落ち着きました。'))
+    assert out.artifact is not None
+    assert out.artifact.reception == '友人の話でしたという言葉を小さくせずに受け止めています。'
+    assert 'という行動' not in out.artifact.observation
+
+
+@pytest.mark.parametrize('clause', [
     '私の考えを書いた', '自分の気持ちを書きました',
     '僕のノートに考えを書いた', 'メモを俺の手紙に書いた',
     'その後、自分の家族への手紙を書いた', '昨日、自分の考えを書いた',
