@@ -135,7 +135,7 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                 ('決めておきませんでした', '決めておく', '行わなかった')):
             with self.subTest(finite=finite):
                 fx = fixture('私は資料を調べた。その後、私は同僚と分担を' + finite
-                             + '。それから、私は記録を残した。')
+                             + '。それから、私は安心した。')
                 fx['original']['emotion_details'] = [{'type': '平穏', 'strength': 'medium'}]
                 row, writes = fx['row'], []
                 async def rpc(name, payload):
@@ -166,6 +166,8 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                 label = projection['nodes'][1]['visible_label']
                 self.assertEqual(label, 'その後：同僚と分担を' + lemma + '（' + ending + '）')
                 self.assertIn(label, saved['content_text'])
+                self.assertEqual(projection['nodes'][2]['visible_label'],
+                                 'それから：安心した（記録された気持ち）')
 
     async def test_unattributed_decision_route_survives_save_and_read(self):
         for clause, label in (

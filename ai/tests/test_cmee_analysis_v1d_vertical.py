@@ -34,7 +34,6 @@ def request(*members):
 
 class AnalysisVerticalTests(unittest.TestCase):
     def test_decision_followed_by_feeling_keeps_both_polarities(self):
-        from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
         for finite in ('決めた', '決めなかった', '決めませんでした',
                        '決めておいた', '決めておかなかった', '決めておきませんでした'):
             for emotions in (False, True):
@@ -48,29 +47,70 @@ class AnalysisVerticalTests(unittest.TestCase):
                             emotion_details=[{'type': '平穏', 'strength': 'medium'}])
                         member = replace(member, original_json=canonical_bytes(original).decode(),
                                          saved_record_version=commitment(original))
-                    with patch.object(compiler, '_fragment', wraps=compiler._fragment) as fragments:
-                        artifact = self.generate(request(member)).artifact
-                    diagnostics = []
-                    for call in fragments.call_args_list:
-                        source, nucleus = call.args[:2]
-                        spans = [s.raw_text for s in source.spans if s.span_id in nucleus.source_span_ids]
-                        frame = nucleus.semantic_frame
-                        diagnostics.append((spans, nucleus.kind, nucleus.retention,
-                            nucleus.grounding_kind, nucleus.allowed_claim_scope,
-                            frame.actor, frame.predicate_kind, frame.polarity,
-                            frame.modality, frame.time_scope, frame.attribute_codes))
-                    self.assertIsNotNone(artifact, diagnostics)
+                    req = request(member)
+                    artifact = self.generate(req).artifact
+                    self.assertIsNotNone(artifact)
                     self.assertEqual([n.proposition.predicate_lemma for n in artifact.graph.nodes],
-                        ['調べる', '決めておく' if '決めて' in finite else '決める', '安心する'],
-                        diagnostics)
+                        ['調べる', '決めておく' if '決めて' in finite else '決める', '安心する'])
                     self.assertEqual([n.polarity for n in artifact.graph.nodes],
                         ['positive', 'negative' if ('なかった' in finite or 'ません' in finite)
                          else 'positive', 'positive'])
                     self.assertEqual(len(artifact.graph.edges), 2)
                     self.assertTrue(all(e.edge_kind == 'OBSERVED_ORDER' for e in artifact.graph.edges))
+                    source, = freeze_analysis_sources(req).sources
+                    for node in artifact.graph.nodes:
+                        evidence, = node.evidence_refs
+                        literal = source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                        self.assertEqual(literal.decode(), node.visible_label)
+                        self.assertEqual(hashlib.sha256(literal).hexdigest(), evidence.literal_sha256)
                     projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
                     text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
                     self.assertTrue(all(n['visible_label'] in text for n in projection['nodes']))
+
+    def test_closed_decision_prefix_preserves_feelings_and_later_decisions(self):
+        for decision in ('私は同僚との分担を決めませんでした',
+                         'その後、私は同僚と分担を決めておきませんでした'):
+            for feeling in ('安心した', '落ち着いた', '嬉しかった', '安心しなかった'):
+                with self.subTest(decision=decision, feeling=feeling):
+                    artifact = self.generate(request(record(memo=decision
+                        + '。それから、私は' + feeling + '。'))).artifact
+                    self.assertIsNotNone(artifact)
+                    self.assertEqual(len(artifact.graph.nodes), 2)
+                    self.assertEqual(len(artifact.graph.edges), 1)
+                    self.assertEqual(artifact.graph.nodes[0].polarity, 'negative')
+                    self.assertEqual(artifact.graph.nodes[1].proposition.result_state, 'PAST_FEELING')
+        artifact = self.generate(request(record(memo='その後、私は分担を決めませんでした。'
+            'それから、私は予定を決めた。'))).artifact
+        self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)), (2, 1))
+
+    def test_closed_decision_does_not_close_real_reporting_or_retracted_feelings(self):
+        route = '私は資料を調べた。その後、私は同僚と分担を決めませんでした。'
+        feeling = 'それから、私は安心した'
+        for member in (
+                record(memo='友人の話でした。' + route + feeling + '。'),
+                record(memo=route + feeling + '。', action='友人は言いました。'),
+                record(memo='友人は言っていました。' + route + feeling + '。')):
+            with self.subTest(member=member.original_json):
+                artifact = self.generate(request(member)).artifact
+                self.assertFalse(artifact and any(
+                    n.proposition.predicate_lemma == '安心する' for n in artifact.graph.nodes))
+        for suffix in ('それから、友人は安心した。', feeling + '。のは嘘だった。'):
+            with self.subTest(suffix=suffix):
+                artifact = self.generate(request(record(memo=route + suffix))).artifact
+                self.assertEqual([n.proposition.predicate_lemma for n in artifact.graph.nodes],
+                                 ['調べる', '決める'])
+                self.assertEqual(len(artifact.graph.edges), 1)
+        original = record(memo=route + feeling + '。')
+        for answer in ('「' + feeling + '」は取り消します。',
+                       '「' + feeling + '」ではなく「私は嬉しくなかった」です。'):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(original, answer))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertFalse(any(n.proposition.predicate_lemma == '安心する'
+                                     for n in artifact.graph.nodes))
+                self.assertEqual(len(artifact.graph.edges), 1)
+                self.assertEqual(len(artifact.graph.nodes), 2 if '取り消' in answer else 3)
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
 
     def test_unattributed_decision_preserves_subject_uncertainty_modifiers_and_source(self):
         for finite, polarity, lemma in (

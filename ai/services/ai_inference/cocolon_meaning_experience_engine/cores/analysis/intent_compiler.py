@@ -1076,6 +1076,23 @@ def _action_change_pair(source, plan, span_id):
     return action.nucleus_id, change.nucleus_id, ranges, left, right
 
 
+def _analysis_prefix_opens_report(prefix):
+    # A fully parsed decision is a closed action/nonaction, not a report
+    # introducing the following sentence. The shared conservative heuristic
+    # can pair の in その後 / a nominal with でした in ませんでした.
+    # Inspect every other clause so a genuine earlier speaker remains open.
+    for clause in re.split(r'[。．.]', prefix):
+        proposition = _proposition(clause.strip())
+        if (proposition is not None and proposition.actor == 'SELF'
+                and proposition.predicate_lemma in _PAST_DECISION_LEMMAS
+                and (proposition.modality, proposition.temporal_scope) == ('fact', 'past')
+                and proposition.polarity in {'positive', 'negative'}):
+            continue
+        if _source_prefix_opens_report(clause):
+            return True
+    return False
+
+
 def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     # Multi-span nuclei can contain unbounded relations. Keep them unknown in
     # this first consumer rather than stitching a new proposition together.
@@ -1199,7 +1216,7 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
                     and not re.search(r'何|誰|次|以下|上記|下記|話|発言|引用|説明|報告|内容',
                                       ''.join(noun for _, noun in written.arguments))):
                 continue
-            if _source_prefix_opens_report(preceding):
+            if _analysis_prefix_opens_report(preceding):
                 return None
         if re.search(r'(?:言って|話して|語って|述べて|書いて|伝えて|答えて|説明して)'
                 r'(?:いた|いました|いる|います)(?:[。．.\s]|$)', prefix + '\n' + other):
@@ -1219,7 +1236,7 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
             # it does not reinterpret the existing positive family.
             prefix = context[:span.start_index]
             other = str(source.normalized.get('memo_action', ''))
-            if (any(_source_prefix_opens_report(text) for text in (prefix, other))
+            if (any(_analysis_prefix_opens_report(text) for text in (prefix, other))
                     or re.search(r'(?:言って|話して|語って|述べて|書いて|伝えて|答えて|説明して)'
                         r'(?:いた|いました|いる|います)(?:[。．.\s]|$)', prefix + '\n' + other)
                     or re.search(r'[!?！？…‥]|と言|と話|と語|と聞', record_context)):

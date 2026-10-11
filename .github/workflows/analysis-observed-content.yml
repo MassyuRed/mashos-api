@@ -51,8 +51,27 @@ jobs:
       - name: Verify Analysis generation and saved read
         run: >-
           python -m pytest -q --tb=short -ra
-          -p pytest_subtests -p no:cacheprovider -c /dev/null --noconftest
+          -p pytest_subtests.plugin -p no:cacheprovider -c /dev/null --noconftest
           ai/tests/test_cmee_analysis_v1d_vertical.py
           ai/tests/test_cmee_analysis_nominal_relations.py
           ai/tests/test_analysis_observed_storage.py
           ai/tests/test_analysis_saved_period.py
+      - name: Read synthetic Analysis content
+        run: |
+          python - <<'PY'
+          from test_cmee_analysis_v1d_vertical import OWNER, record, request
+          from cocolon_meaning_experience_engine.engine import MeaningExperienceEngine
+          cases = (
+              '私は資料を調べた。その後、私は同僚と分担を決めませんでした。それから、私は安心した。',
+              '私は資料を調べた。その後、私は同僚と分担を決めておきませんでした。それから、私は安心した。',
+              '私は同僚との分担を決めませんでした。それから、私は嬉しかった。',
+              '私は資料を調べた。その後、私は分担を決めませんでした。不明な出来事があった。それから、私は安心した。',
+          )
+          for memo in cases:
+              result = MeaningExperienceEngine().generate(request(record(memo=memo)))
+              assert result.artifact is not None
+              print('INPUT:', memo)
+              print(result.artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+              projection = result.artifact.safe_projection(authenticated_owner_scope=OWNER)
+              print('GRAPH:', len(projection['nodes']), 'nodes', len(projection['edges']), 'edges')
+          PY
