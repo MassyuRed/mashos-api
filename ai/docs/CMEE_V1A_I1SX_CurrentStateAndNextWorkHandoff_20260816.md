@@ -16287,3 +16287,36 @@ u200の丁寧感情3形の欠落は上記有限文法内で解消。日付/対�
 ### u201 最終CI
 
 固定source `4ba54e336774da81adcfa53ab0b5e9960175063f` の[CI38130758941](https://github.com/MassyuRed/mashos-api/actions/runs/38130758941)はsuccess。Python3.12.15でAnalysis4＋共有限定change/feelingの5suite **1071 tests／4558 subtests PASS（350.11秒）**、共有owner identity **1 PASS／193 deselected（25.22秒）**。fail/skip/xfail 0。既存合成7例の全文もrootがログで確認し、否定決定・丁寧感情・明示順序と未知区間の境界を保持している。ローカルの4suite／限定実行とは合算しない。後続は資料とPR説明のみを同期し、製品sourceは固定する。
+
+## 2026-10-11 u202 — 日付付き否定行動後に欠けた本人感情を保持（未配置）
+
+Mashの分析内容修正の続行依頼により、API PR3 `a1f8965826ba32734f4aeb6a69cfef947a510367`／Cocolon PR30 `cc8c51d4e0463292b10c037970e52ddb3b4527ef`から再開。全体設計01/01A/B/C・全file地図02・current03/詳細04/06・作業ruleと恒久incident全文・最新weekly20261010 §5.5/12月18日目標を確認した。context prepareは `PUBLICATION_RECOVERY_AMBIGUOUS: residual without marker` でexit2。生成contextをfreshとは扱わず、生成残留物を変更せず正本と実sourceを直接確認した。
+
+### 欠落と限定修正
+
+「昨日、私は同僚からの資料を調べませんでした。その後、私は落ち着きました」で、行動は日付・否定を保って読めるのに、共有の名詞述語報告判定が「の…でした」を拾い、本人の丁寧感情だけ欠けていた。今日/昨日、日→区切り→SELF、日→SELF、SELF→日→区切り、日→区切り→省略主体の4形式、ませんでした/なかったです、落ち着きました/嬉しかったです/うれしかったですで再現した。
+
+既存共有Plan `_source_prefix_opens_report` の完全な否定過去行動の分岐へ、上記日prefixだけを追加。既存9動詞、完全な名詞格項1〜4個、を必須・格重複なしを維持する。日付そのものは既存Analysis compilerが解釈し、共有側は報告開始と完結行動を区別するだけ。省略主体をSELFへ補わず、後続感情へ日付・因果・改善を継承しない。日付なしの既存通常行動/否定決定分岐は保持する。
+
+日と対象の間にSELFがない場合、区切りのない連体形は追加対象外。日付重複/順序語との混用、改行、他者、真の報告、時刻/範囲接尾辞を保留する。「分担」のような完全名詞は保持し、SELFが日と対象を隔てる「昨日、私は朝の資料」は読める。新日分岐の名詞各segmentでは未解析時点・何/誰とその修飾/かな複合を閉じた対象へ昇格させず、「明日の資料」「今月号」「今年度」の完全名詞は保持する。read-only監査で見つけた時刻接尾辞・未解析名詞の過剰許容は、最終sourceで解消を再確認した。既存通常分岐全体の文法整理ではない。
+
+### 検証と実本文
+
+- 固定source `f20e6adfd38c1edfd2ea4d4b84f98ee3b3029c73`。共有Plan SHA256 `ae801a33e676593ab99eb88b4da6102ca0910ab4c26b43c66cc7a12f8946759d`。Analysis compilerは `b2e1a37a8a44c8bb6536cc28d24851c8462fe6572a2fad3572eb833355a06431` のまま。
+- 最終ローカルAnalysis4suite **455 tests／4628 subtests PASS（60.57秒）**。共有新規対象を含む限定実行 **49 tests／70 subtests PASS（23.32秒）**、共有owner identity **1 PASS／193 deselected（40.21秒）**。重複範囲は合算しない。Python3.12.14の既存隔離runtimeを使用し、製品依存は不変。current owner fixtureは実sourceから再生成し、歴史IM03は不変。
+- 合成Analysis8入力の前後16生成全文とEmlis Q1の前後6全文をrootが読解。日語4配置は1node/0edge→2node/1edge、未知文を挟む例は1node/0edge→2node/0edge。真の報告を前/後/別fieldに置く3例は全文不変。否定・主体・原文・本人感情と書かれた順序を保持し、未読区間に線を足さない。新しい日付は感情へ補われない。
+- 実RN `watashiMapV2Contract.js` に前後16生成を渡し、本文・identity・node順・edge/unknown/annotation/conflictを照合成功。実service＋合成RPCで日prefix3配置×感情3形の9ルートを保存し、engine再生成禁止readで本文/図/identityを保持。原文UTF-8/hash、2日×4配置×2否定形×3感情、訂正/撤回、真の報告・別field・後続否認を検査。実DB/React描画/端末の確認ではない。
+- 共有Emlisは3例ともGENERATED、Observationは不変。落ち着き例のみReceptionが否定行動の言葉の受け取りから本人感情の受け取りへ変化し、他2例は全文不変。既存再掲・汎用Receptionは残り、商品品質の解消とは扱わない。
+- 前後比較は開始commitのhelperだけを別processの実ownerへAST読込み。最終guard追加後に8＋3を再生成し、本文/構造は新規UUID以外同一、実RNも再照合した。同環境read-only監査の指摘範囲にblockerなし。別model Pro reviewとは称さない。
+
+### 反映と残件
+
+製品共有Plan1・既存test3・current identity fixture1、API既存handoffとCocolon current03/詳細04/06を同期する。新規repository file0。STRUCTURE_MAP_DELTA_NONE：共有意味owner内の有限節判定だけで、source→命題→graph→文章/図→保存責任は不変。Analysis compiler/realizer/API/DTO/DB/RNの製品コード変更0。Codex Work root華恋が編集/実行/反映、同環境subagentがread-only監査と実出力照合。LEVEL_2相当、OBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。
+
+日付付き否定行動後の本人丁寧感情は上記文法内で解消。日付付き決定・主語省略の決定後の一部丁寧感情、未対応時刻/範囲/副詞/対象省略/他動詞、肯定「書いた」後の報告判定、一般意味理解は残る。全体ルートUI/段階的詳細、IF/Saved、元28日/14記録の全体改善判定、本人生成→保存再表示・正式商品受入れも未完了。Supabase操作・本人行取得・実DB書込・配置/有効化・native build・main mergeは0。未配置・本人実機未確認。この追加修正を実機確認の前提にはしない。次回は最新weekly/current03/本節と実出力から具体的な欠落または本人生成・保存表示を扱う。
+
+### u202 最終CI・固定sourceの照合
+
+固定source `f20e6adfd38c1edfd2ea4d4b84f98ee3b3029c73` の[CI38132193819](https://github.com/MassyuRed/mashos-api/actions/runs/38132193819)はsuccess。Python3.12.15でAnalysis4＋共有限定change/feelingの5suite **1120 tests／4628 subtests PASS（193.29秒）**、共有owner identity **1 PASS／193 deselected（15.87秒）**。fail/skip/xfail 0。既存合成7例の全文もrootがログで読み、否定決定・丁寧感情・明示順序と未知区間の境界を保持している。ローカルの4suite／限定実行とは合算しない。
+
+GitHubの固定sourceをfetchし、親head・変更5path・全file bytesと検証済みlocal tree `5a27b4f47a3cdd46ebdf2a84380a654a7c61f15c` の一致を確認。後続は既存資料4fileとPR説明の同期のみで製品sourceは変更しない。既存Draft PR3/30内の反映であり、未配置・実DB/本人実機未確認・正式商品受入れ未成立のまま。
