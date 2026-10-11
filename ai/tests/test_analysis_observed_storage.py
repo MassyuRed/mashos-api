@@ -89,6 +89,68 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         self.fx = fixture()
         self.row = self.fx['row']
 
+    async def test_opposed_feeling_spellings_in_supplements_never_commit(self):
+        from test_analysis_saved_period import with_answer, NOW
+        for old, new in (('嬉しかった', 'うれしくなかった'),
+                ('うれしかった', '嬉しくなかった'),
+                ('嬉しくなかった', 'うれしかった'),
+                ('うれしくなかった', '嬉しかった')):
+            with self.subTest(old=old, new=new):
+                original = dict(self.fx['original'], memo='私は' + old + '。',
+                    emotion_details=[{'type': '平穏', 'strength': 'medium'}])
+                member = with_answer({'original': original}, '私は' + new + '。')
+                snapshot = {'guard': GUARD, 'tier': 'plus', 'now': NOW, 'members': [member]}
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', AsyncMock(return_value=snapshot)) as rpc, \
+                        self.assertLogs(realizer.logger, level='WARNING') as logs:
+                    with self.assertRaises(HTTPException) as caught:
+                        await service.generate_saved(OWNER, start=START, end=END,
+                            report_mode='standard', report_type='latest')
+                self.assertEqual(caught.exception.status_code, 422)
+                self.assertEqual(caught.exception.detail, 'analysis_observed_map_unavailable')
+                self.assertEqual([call.args[0] for call in rpc.await_args_list],
+                                 ['analysis_observed_source_snapshot'])
+                self.assertEqual([r.getMessage() for r in logs.records], [
+                    'analysis_observed_generation_unavailable stage=current '
+                    'reason=analysis_supplement_interpretation_pending'])
+
+    async def test_explicit_feeling_spelling_correction_survives_save_and_read(self):
+        from test_analysis_saved_period import with_answer, NOW
+        for old, new in (('嬉しかった', 'うれしくなかった'),
+                ('うれしかった', '嬉しくなかった'),
+                ('嬉しくなかった', 'うれしかった'),
+                ('うれしくなかった', '嬉しかった')):
+            with self.subTest(old=old, new=new):
+                fx = fixture('私は' + old + '。その後、私は記録を残した。')
+                fx['original']['emotion_details'] = [{'type': '平穏', 'strength': 'medium'}]
+                member = with_answer({'original': fx['original']},
+                    '「私は' + old + '」ではなく「私は' + new + '」です。')
+                row, writes = fx['row'], []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': NOW, 'members': [member]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                        row['content_text'] = payload['p_text']
+                        row['content_json']['watashiMap'] = payload['p_projection']
+                        return row['id']
+                    self.assertEqual(name, 'analysis_observed_read')
+                    return result([row], matched=True)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(len(writes), 1)
+                self.assertEqual(saved, reread['items'][0])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                self.assertEqual(saved['content_json']['watashiMap'], writes[0]['p_projection'])
+                self.assertIn(new + '（記録された気持ち）', saved['content_text'])
+                self.assertNotIn(old + '（記録された気持ち）', saved['content_text'])
+                self.assertEqual(len(writes[0]['p_private_evidence']['graph']['source_updates']), 1)
+
     async def test_saved_past_feeling_keeps_legacy_actor_label_without_reinterpretation(self):
         for finite in ('安心した', '安心しなかった'):
             with self.subTest(finite=finite):

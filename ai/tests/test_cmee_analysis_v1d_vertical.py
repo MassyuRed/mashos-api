@@ -33,6 +33,74 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_feeling_spelling_keeps_compatible_supplements_and_distinct_meanings(self):
+        for before, after, node_count in (
+                ('私は嬉しかった。', '私はうれしかったです。', 1),
+                ('私はうれしくなかった。', '私は嬉しくありませんでした。', 1),
+                ('私は嬉しかった。', '私は安心しなかった。', 2),
+                ('私はうれしくなかった。', '私は落ち着いた。', 2)):
+            with self.subTest(before=before, after=after):
+                req = request(self.with_answer(record(memo=before), after))
+                artifact = self.generate(req).artifact
+                self.assertIsNotNone(artifact)
+                self.assertEqual(len(artifact.graph.nodes), node_count)
+                sources = {s.envelope.envelope_id: s.envelope for s in freeze_analysis_sources(req).sources}
+                literals = {sources[e.source_envelope_id].raw_utf8[e.utf8_start:e.utf8_end].decode()
+                    for n in artifact.graph.nodes for e in n.evidence_refs}
+                self.assertEqual(literals, {before.rstrip('。'), after.rstrip('。')})
+                projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                self.assertFalse(projection['edges'])
+                self.assertFalse(projection['conflict_badges'])
+        for before, after in (('私は資料を調べた。', '私は調べなかった。'),
+                ('私は仕事を続けたい。', '私は続けたくない。')):
+            with self.subTest(before=before, after=after):
+                result = self.generate(request(self.with_answer(record(memo=before), after)))
+                self.assertEqual(result.reason_codes, ('analysis_supplement_interpretation_pending',))
+                self.assertIsNone(result.artifact)
+
+    def test_feeling_spelling_explicit_correction_preserves_written_claim_and_evidence(self):
+        for old, new in (('私は嬉しかった', '私はうれしくなかった'),
+                ('私はうれしかった', '私は嬉しくありませんでした'),
+                ('私は嬉しくなかった', '私はうれしかったです'),
+                ('私はうれしくなかった', '私は嬉しかった')):
+            with self.subTest(old=old, new=new):
+                original = record(memo=old + '。その後、私は記録を残した。')
+                req = request(self.with_answer(original, '「' + old + '」ではなく「' + new + '」です。'))
+                artifact = self.generate(req).artifact
+                self.assertIsNotNone(artifact)
+                feeling, = [n for n in artifact.graph.nodes if n.proposition.result_state == 'PAST_FEELING']
+                self.assertEqual(feeling.visible_label, new)
+                self.assertEqual(feeling.proposition.predicate_lemma, 'うれしい' if 'うれし' in new else '嬉しい')
+                e, = feeling.evidence_refs
+                source = next(s.envelope for s in freeze_analysis_sources(req).sources
+                              if s.envelope.envelope_id == e.source_envelope_id)
+                self.assertEqual(source.source_role, 'SUPPLEMENTAL_ANSWER')
+                self.assertEqual(source.raw_utf8[e.utf8_start:e.utf8_end].decode(), new)
+                self.assertFalse(artifact.graph.edges)
+                projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                for node in projection['nodes']:
+                    self.assertIn(node['visible_label'], text)
+                withdrawn = self.generate(request(self.with_answer(original, '「' + old + '」は取り消します。'))).artifact
+                self.assertFalse(any(n.proposition.result_state == 'PAST_FEELING' for n in withdrawn.graph.nodes))
+                self.assertEqual(len(withdrawn.graph.nodes), 1)
+
+    def test_feeling_spelling_does_not_hide_opposed_ordinary_supplements(self):
+        for positive, negative in (
+                ('嬉しかった', 'うれしくなかった'),
+                ('うれしかった', '嬉しくなかった'),
+                ('嬉しかったです', 'うれしくありませんでした'),
+                ('うれしかったです', '嬉しくなかったです')):
+            for before, after in ((positive, negative), (negative, positive)):
+                for in_answer in (False, True):
+                    with self.subTest(before=before, after=after, in_answer=in_answer):
+                        original = '私は資料を調べた。' if in_answer else '私は' + before + '。'
+                        answer = ('私は' + before + '。' if in_answer else '') + '私は' + after + '。'
+                        outcome = self.generate(request(self.with_answer(record(memo=original), answer)))
+                        self.assertEqual(outcome.status, EngineStatus.UNAVAILABLE)
+                        self.assertEqual(outcome.reason_codes, ('analysis_supplement_interpretation_pending',))
+                        self.assertIsNone(outcome.artifact)
+
     def test_past_feeling_actor_scope_survives_correction_aggregation_and_comparison(self):
         for finite, polite in (('安心した', '安心しました'), ('安心しなかった', '安心しませんでした')):
             with self.subTest(finite=finite):

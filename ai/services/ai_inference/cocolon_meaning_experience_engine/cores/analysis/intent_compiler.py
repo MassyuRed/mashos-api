@@ -641,15 +641,19 @@ def _cognitive_proposition(value):
         'neutral', 'fact', 'current_input', parts, possible_content=content)
 
 
-def _proposition_meaning(proposition):
-    content = proposition.possible_content
+def _predicate_meaning(proposition):
     # One lexeme, two source spellings. Preserve the original proposition and
     # evidence for rendering; only its meaning key is spelling-independent.
     lemma = proposition.predicate_lemma
     if proposition.result_state == 'PAST_FEELING' and lemma == 'うれしい':
         lemma = '嬉しい'
+    return lemma
+
+
+def _proposition_meaning(proposition):
+    content = proposition.possible_content
     return (proposition.actor, tuple(sorted(proposition.arguments)),
-            lemma, proposition.result_state, proposition.scene_state, proposition.role_state,
+            _predicate_meaning(proposition), proposition.result_state, proposition.scene_state, proposition.role_state,
             (_proposition_meaning(content), content.polarity, content.modality,
              content.temporal_scope) if content else None)
 
@@ -1304,7 +1308,7 @@ def _admit_ordinary_supplement(answer, original):
     for current, _ in claims:
         for previous, source_id in earlier:
             # Without an explicit correction target, do not choose between
-            # opposing descriptions of the same possible action/wish. Missing
+            # opposing descriptions of the same possible action/wish/feeling. Missing
             # arguments do not prove a different occasion or a different object.
             a, b = dict(current.arguments), dict(previous.arguments)
             compatible_arguments = all(a[case] == b[case] for case in a.keys() & b.keys())
@@ -1314,7 +1318,7 @@ def _admit_ordinary_supplement(answer, original):
                 and current.relative_day and previous.relative_day
                 and current.relative_day != previous.relative_day)
             if (current.actor == previous.actor
-                    and current.predicate_lemma == previous.predicate_lemma
+                    and _predicate_meaning(current) == _predicate_meaning(previous)
                     and current.modality == previous.modality
                     and current.temporal_scope == previous.temporal_scope
                     and current.polarity != previous.polarity
