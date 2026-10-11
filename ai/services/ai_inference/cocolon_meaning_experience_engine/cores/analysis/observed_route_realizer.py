@@ -127,7 +127,8 @@ def _te_order_context(node, graph):
 
 def _source_prefix(phrase, parts):
     if parts.written_modifiers:
-        phrase = ''.join({'THIS_OCCASION': '今回は、', 'IN_ADVANCE': '事前に'}[modifier]
+        phrase = ''.join({'THIS_OCCASION': '今回は、', 'IN_ADVANCE': '事前に',
+                         'DEGREE_SLIGHT': '少し'}[modifier]
                          for modifier in parts.written_modifiers) + phrase
     if parts.sequence_marker:
         phrase = {'AFTER_PREVIOUS': 'その後：',

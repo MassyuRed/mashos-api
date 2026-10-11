@@ -405,19 +405,27 @@ def _past_feeling_proposition(value):
     if prefix and subject is None:
         return None
     start = subject.end() if subject else 0
-    finite = value[start:]
+    slight = value.startswith('少し', start)
+    finite_start = start + len('少し') if slight else start
+    finite = value[finite_start:]
     negative = finite in _NEGATIVE_FEELING_FORMS
     lemma = (_NEGATIVE_FEELING_FORMS if negative else _FEELING_FORMS).get(finite)
     if lemma is None:
+        return None
+    # Preserve the written degree only for an explicit SELF's asserted anxiety.
+    # Degree over a negated feeling has no proved scope in the shared witness.
+    if slight and (subject is None or negative or lemma != '不安だ'):
         return None
     marker = {'その後': 'AFTER_PREVIOUS', 'それから': 'THEN_OR_ADDITION'}.get(
         prefix.group(1) if prefix else '', '')
     parts = ((marker, 0, offset),) if prefix else ()
     parts += (('SELF_TOPIC', offset, start),) if subject else ()
+    parts += (('WRITTEN_MODIFIER_DEGREE_SLIGHT', start, finite_start),) if slight else ()
     return ObservedProposition('SELF' if subject else 'UNSPECIFIED', (),
         lemma, 'negative' if negative else 'positive', 'feeling', 'past',
-        parts + (('FINITE_FEELING', start, len(value)),),
-        result_state='PAST_FEELING', sequence_marker=marker)
+        parts + (('FINITE_FEELING', finite_start, len(value)),),
+        result_state='PAST_FEELING', sequence_marker=marker,
+        written_modifiers=('DEGREE_SLIGHT',) if slight else ())
 
 
 def _standalone_past_feeling_witness(nucleus, proposition):
