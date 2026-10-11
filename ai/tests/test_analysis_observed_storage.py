@@ -167,6 +167,18 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(label, 'その後：同僚と分担を' + lemma + '（' + ending + '）')
                 self.assertIn(label, saved['content_text'])
 
+    async def test_separated_day_nominal_route_survives_save_and_read(self):
+        for clause, label in (
+                ('私は昨日、分担を決めておいた', '分担を決めておく（実行済み）'),
+                ('私は昨日、分担を決めておかなかった', '分担を決めておく（行わなかった）'),
+                ('私は昨日、分室にいた', '分室にいた（記録された場面）'),
+                ('私は昨日、分担を担当しませんでした', '分担を担当しなかった（記録された担当）')):
+            with self.subTest(clause=clause):
+                await self._assert_action_change_saved(clause
+                    + '。その後、私は資料を調べた。それから、私は記録を残した。',
+                    expected_label='それから：記録を残す（実行済み）',
+                    expected_preceding_label='この記述時点の昨日：' + label)
+
     async def test_negative_feeling_before_transition_survives_save_and_read(self):
         for finite in ('嬉しくなかった', 'うれしくありませんでした'):
             for transition in ('ところで、', 'とりあえず、'):

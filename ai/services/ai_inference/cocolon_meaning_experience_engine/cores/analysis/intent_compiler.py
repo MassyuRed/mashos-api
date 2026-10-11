@@ -160,6 +160,20 @@ _POST_TOPIC_DAY = re.compile(r'(今日|昨日)(?!の|を|に|で|と|は|が|も
 _DAY_EXTENSION = re.compile(
     r'(?:分|以前|以後|以降|以来|当時|時点|現在|中|付|頃|ごろ|まで|から|より|だけ|'
     r'朝|昼|夜|晩|夕|午前|午後|早朝|深夜|未明|正午)')
+
+
+def _unparsed_day_extension(value, *, separated):
+    extension = _DAY_EXTENSION.match(value)
+    if extension is None:
+        return False
+    # A calendar suffix 分 binds to the day. After a written separator,
+    # 分担 / 分室 / 分類... are complete nominal arguments, not that suffix.
+    # The caller must still parse the whole clause. Bare 分, 分の..., finer
+    # times and ranges remain unresolved, as do all unseparated readings.
+    return not (separated and extension.group() == '分'
+                and re.match(r'分[一-鿿々ァ-ヴー]+', value))
+
+
 # Observed unsupported time prefixes must not be swallowed by the open
 # kanji nominal slot. This is not a new time interpretation or day enum.
 # Keep complete issue/year nominals (今月号 / 今年度) and their の modifiers.
@@ -267,7 +281,7 @@ def _past_event_topic_parts(match):
         return (('SELF_TOPIC', 0, match.start('noun')),)
     # Match the action grammar's bounded day scope: neither a finer time
     # nor an unseparated genitive phrase establishes the event's day.
-    if (_DAY_EXTENSION.match(match['noun'])
+    if (_unparsed_day_extension(match['noun'], separated=bool(match['day_separator']))
             or (not match['day_separator'] and 'の' in match['noun'])):
         return None
     day = {'今日': 'TODAY', '昨日': 'YESTERDAY'}[match['day']]
@@ -559,7 +573,7 @@ def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relat
     if day is not None:
         # 昨日分の資料 / 昨日以前の資料 are not evidence that the action
         # happened yesterday. Finer day/range scopes need their own parse.
-        if _DAY_EXTENSION.match(value, day.end()):
+        if _unparsed_day_extension(value[day.end():], separated=day.end() > day.end(1)):
             return None
         first_argument = _PAST_ARGUMENT.match(value, day.end())
         if (day.end() == day.end(1) and first_argument is not None
@@ -1086,6 +1100,15 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     qualified_past = bool(proposition and any(
         _NOMINAL_CASE_LINK.search(noun) for _, noun in proposition.arguments))
     past_decision = bool(proposition and proposition.predicate_lemma in _PAST_DECISION_LEMMAS)
+    dated_compound_nominal = bool(proposition and proposition.relative_day and proposition.arguments
+        and _unparsed_day_extension(proposition.arguments[0][1], separated=False)
+        and not _unparsed_day_extension(proposition.arguments[0][1], separated=True))
+    if dated_compound_nominal and (a != 0 or b != len(span.raw_text)):
+        return None
+    # Resolving a calendar-suffix collision does not resolve the speaker.
+    # Apply the existing full-source attribution boundary to these dated
+    # nominals in scenes, roles and wishes as well as performed actions.
+    source_host_required = qualified_past or past_decision or dated_compound_nominal
     if past_decision:
         frame = nucleus.semantic_frame
         # The negative shared frame may lack a past tag and does not assert
@@ -1106,11 +1129,12 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
                     and {'operator:action', 'operator:negation'} <= set(codes)
                     and 'operator:performed_action' not in codes))):
             return None
-    if qualified_past or past_decision:
+    if source_host_required:
         # A newly readable object must not turn a reported speaker's
         # first-person clause into the owner's completed action.
         prefix = context[:span.start_index]
-        other_field = 'memo' if past_decision and span.source_field == 'memo_action' else 'memo_action'
+        other_field = ('memo' if (past_decision or dated_compound_nominal)
+                       and span.source_field == 'memo_action' else 'memo_action')
         other = str(source.normalized.get(other_field, ''))
         for preceding in re.split(r'[。．.]', prefix + '\n' + other):
             preceding = preceding.strip()
@@ -1162,13 +1186,14 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
             transition = re.match(r'(?:ところで|とりあえず)[、，,]', following)
             if not transition and re.match(r'(?:と|って|のは|のも|なんて|などと)', following):
                 return None
-    if qualified_past or past_decision or (change is not None and (pair is None or nucleus.nucleus_id != pair[1])):
+    if source_host_required or (change is not None and (pair is None or nucleus.nucleus_id != pair[1])):
         # Ledger punctuation is not proof that the finite host is
         # closed: a following dependent suffix can negate or embed either
         # polarity, including a host with its own explicit speaker. Match
         # that host, not every sentence starting with と (e.g. とても).
         continuation = context[span.end_index:].lstrip(' \t\u3000。．.!！\r\n;；')
-        if (past_decision and not re.match(r'(?:ところで|とりあえず)[、，,]', continuation)
+        if ((past_decision or dated_compound_nominal)
+                and not re.match(r'(?:ところで|とりあえず)[、，,]', continuation)
                 and re.match(r'(?:と|って|のは|のも|なんて|などと)', continuation)):
             return None
         speaker = (r'(?:(?:私|僕|ぼく|俺|おれ|わたし|自分|' + _NOMINAL

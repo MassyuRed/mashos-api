@@ -16087,3 +16087,27 @@ Codex Work root華恋が編集・実行・GitHub反映を担当し、同環境su
 API既存compiler1・既存test2・既存handoff1、Cocolon既存current03/詳細04/06、計7file。新規repository file0。共有意味owner/realizer/identity fixture/API/DTO/DB/SQL/RN/設定/製品依存変更0。STRUCTURE_MAP_DELTA_NONE：既存Analysis ownerの有限形と意味保持だけを補修し、期間生成→保存→表示の責任・公開契約は不変。primary outcomeはTECHNICAL_CREDITで、正式商品受入れではない。既存PR branchへnon-force反映し、対象remote bytesと変更path集合を確認する。
 
 未配置・本人実機未確認・正式商品受入れ未完了。元の28日例にある「今回は事前に同僚と分担を決めておいた」の主語省略/副詞は引き続き未対応で、今回もその文が保留されることを実測した。元の28日/14記録全体は今回再取得・再検証しておらず、その全体改善とは主張しない。「昨日、分担」の名詞境界、否定決定後の感情根拠、全体ルートUI/段階的詳細表示、一般的な意味理解とIF/Savedも残る。今回の限定修正を実機確認の追加前提にしない。次回は最新weekly/current03/本節と実出力へ戻り、内容修正の明示配分なら未対応記述の直接原因、実機枠なら本人生成→同じ文章/図→保存後再表示を扱う。
+
+## 2026-10-11 u196 — 日付の後の「分担・分室・分類」を暦接尾辞と誤認しない（未配置）
+
+Mashの分析内容修正の継続依頼で、fresh API PR3 `19f1ca1f4d64fa8354a8b8b5cc345b3b24a8a7b8`／Cocolon PR30 `31a13777dbecded4eb2d7e821177ea70af8763d7`から再開。u195で確認した全体設計01/01A/B/Cと全file地図02、current規則/Rule18を継承し、入口・恒久incident全文・current03・詳細04/06・実sourceと最新weekly20261010 §5.4/§5.5を再照合した。今回も明示依頼による内容修正枠であり、本人生成→保存再表示の未完了・全体ルートUI・12/18目標を維持する。前回不成立の生成System Contextをfresh根拠へ昇格しない。
+
+### 直接原因と修正
+
+「私は昨日、分担を決めておいた」がUNAVAILABLEになる原因は、主語後の日付判定が読点を消費した後、「分担」の先頭「分」を「昨日分」の接尾辞と誤認していたこと。同じ判定が場面/担当の「分室」「分担」、今日の希望「分類を続けたい」にも作用していた。既存Analysis compiler内の2箇所を同じ日境界判定へ揃え、日付との区切りがあり、接尾辞一致が「分」だけで、後続が漢字/カタカナを持つ完全名詞の場合だけ区別する。既存の全文有限形照合・SELF・時点・原文座標は維持する。
+
+無区切りの「昨日分の…／昨日分担…」、分単独/分の、朝/午前/以前等の未対応時点は保留。修正後の検査で「友人は言った。私は昨日、分室にいた」等2例の誤帰属を実測したため、日付付きの同名詞へ既存の先行/後続host・別field帰属判定を共用した。前置き日付の同名詞にも同じ帰属保護が及ぶ。新しい共有意味owner、主体推定、因果推論、日付enum、公開fieldを追加していない。
+
+### 実出力と検証
+
+- 同じ合成12入力を開始版と最終版の実engineへ渡し、全結果をrootが本文として比較。最終版は生成9/保留3。「昨日、分担を決めておいた。その後、記録を残した」は1node/0edgeから2node/1edgeへ、「昨日、分室にいた→担当→記録」は2node/1edgeから3node/2edgeへ変わった。順序線は原因を示さない。未読文を挟む例は2node/0edgeのまま、訂正で今日の否定へ置換し、撤回で旧記述と線を除く。
+- 日付・肯否定・準備相・場面/担当・希望をそのまま可視化。「今日、分類を続けたい」は希望として保持し、実行済みへ変換しない。生成9例は実RN `buildWatashiMapV2ViewModel`で全文・identity・表示順が一致。合成入力に対するCocolonの実生成結果であり、華恋が代筆した分析でも、Mash本人の実機結果でもない。
+- Analysis vertical/nominal-relations/storage/saved-period **426 tests／4263 subtests PASS、skip/xfail0、exit0、44.87秒**。追加4testは製品修正前に25 failures（subtestsを含むpytest表示）を再現。日付関連15test/217subtestsで修正後の境界を確認し、最後に4suiteを実行した。
+- 保存testを1つ追加。実service＋合成RPCで肯定準備・否定準備・場面・否定担当の4ルートを保存し、engine再生成禁止で読み戻して本文・projection・identity・順序線の一致を確認。稼働DBの保存成功ではない。
+- 同環境read-only subagent reviewに具体的blockerなし。追加46例で帰属違い30/未対応文11を保留、正常5を保持。rootが差分と最終実出力を再確認した。別model Pro reviewとは称さず、46例を426件へ合算しない。
+
+### 反映範囲・残件
+
+Codex Work root華恋が編集/実行/反映、subagentはread-only。既存設計内LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX。前回と同じ隔離test runtimeを使用し、追加依存・製品lock変更0。API compiler1/test2/handoff1とCocolon current03/詳細04/06の既存7file、新規repository file0。STRUCTURE_MAP_DELTA_NONE：既存Analysisの文解釈と帰属境界の補修で、source→graph→文章/図→保存再読の責任・契約は不変。共有owner/realizer/API/DTO/DB/SQL/RN製品変更0、今回Supabase操作0、deploy/native build/merge0。primary outcome=TECHNICAL_CREDIT、正式商品受入れではない。既存PR branchへnon-force反映し、remote tree/全変更path/bytes一致を確認する。
+
+「今回は事前に同僚と分担を決めておいた」は今回も未対応。共有current_user既定値は省略された本人の証明にならない。今後省略行動を扱う場合は主体未確定の表示と、別記録の不明な行為者を同一人へ集約しない扱いが必要で、今回は拡大していない。元28日/14記録の再取得・全体改善判定は行っていない。否定決定後の感情根拠、全体ルートUI/段階的詳細、一般的意味理解、IF/Saved、本人生成→同じ文章/図→保存後再表示は残る。今回の修正を実機確認の追加前提にしない。次回は最新weekly/current03/本節へ戻り、内容修正の明示配分なら未対応記述の直接原因、実機枠なら既存生成/保存表示経路を扱う。
