@@ -16159,3 +16159,29 @@ u194で実測され、u197にも残っている「否定の決定後の感情根
 ### 今回の効果
 
 製品source/test変更0、生成/検査0、DB/SQL書込0、deploy/native build/merge0。Supabaseはproject状態とmigration履歴のみ読取し、分析保存・期間比較の既存適用を確認した。本人行/本文は未読。GitHub変更は本既存handoffへの追記だけ。STRUCTURE_MAP_DELTA_NONE（製品変更なし）。primary outcome=ADMINISTRATIVE_ONLY、追加のtechnical/product credit0。停止は環境によるもので、修正承認待ちではない。最後の検証済み内容修正はu197のまま。
+
+## 2026-10-11 u198 — 否定決定後の感情を引用の前置きと誤認して落とさない（未配置）
+
+Mashの「分析構造の内容修正関係を進めて」の再依頼で、API PR3 `69202773222ae86aa72385a6a3e02b8e5e0063fa`／Cocolon PR30 `17a60006abf097d0f168eba0a0d13bce73ffb33f`から再開。先行で確認した全体設計01/01A/B/C・全file地図02・current03/詳細04/06・最新weekly20261010を継承し、fresh headと実source・恒久incident全文を再照合した。明示依頼の内容修正枠を扱い、本人生成→同じ文章/図→保存後再表示と12/18目標を維持する。
+
+### 原因と修正範囲
+
+u194から残っていた「私は資料を調べた。その後、私は同僚と分担を決めませんでした。それから、私は安心した。」を実engineで再現した。感情の共有frameはvalue/value/fact・positive・current_inputで、positive_change/current_changeも揃っており、既存感情witnessの型不一致ではなかった。共有の保守的な報告prefix判定が「その後」の「の」から「ませんでした」の「でした」までを名詞述語と誤認していた。u194の原因説明を本実測で訂正する。
+
+Analysis compiler内で各先行節を既存の完全命題parserへ通し、明示SELF・既存の過去決定/準備lemma・fact/past・肯否定確定の節だけを、報告を導入する節から除外する。他の節と別fieldは従来判定を維持し、真の先行話者を閉じない。感情と後続決定の2箇所が同じ判定を使う。未解釈名詞・省略主体・新しい有限形の採用範囲は広げず、共有ownerそのものは変更しない。
+
+### 実行・実本文・保存
+
+ローカルexec-serverは再接続不能のまま。前段の環境停止記録を消さず、再依頼後の今回は対象修正の実行手段としてAPI既存Draft branchに `.github/workflows/analysis-observed-content.yml` を追加した。commit固定checkout・read権限・認証情報非保持、公開可能な合成入力だけを用い、既存Analysis4suiteを実行する。新規の製品依存/lockやDB接続はない。
+
+- 修正前 `67b02d1acb407b493119942609d942ea2540c2bb`、[CI38123538421](https://github.com/MassyuRed/mashos-api/actions/runs/38123538421)：新規1test失敗・既存433成功。初回のplugin指定ではunittest subtestごとの集計は無効で、最初の失敗で当該methodを終了した。この結果を全12ケースの再現とは数えない。
+- 修正後 `2039647f2d1aa2afe0f4ce60889ea37d060346b5`、[CI38123765929](https://github.com/MassyuRed/mashos-api/actions/runs/38123765929)：**436 tests／4398 subtests PASS、fail/skip/xfail 0、28.86秒**。pytest_subtests.pluginを明示し、全subtestを有効化した。Python3.12.15、pytest8.4.1、pytest-subtests0.14.2、FastAPI0.142.2、Pydantic2.13.5、httpx0.28.1。bytecode/cacheprovider/旧conftestを無効。
+- 実engineの合成4入力の生成全文をrootが読解。通常否定決定と否定準備の後の安心を3node/2順序線で保持し、「同僚との分担」の否定後の嬉しさも2node/1線で保持。不明な出来事を挟む例は3node/1線で、感情は残しつながりを未確定とする。再現例は修正前2nodeから3nodeへ改善。原因・改善・相手の合意は付け加えない。
+- 既存保存testの後続を「安心した」へ戻し、通常/丁寧/否定・準備の6ルートで実service＋合成RPCの保存1回とengine再生成禁止readを確認。本文・safe projection・保存identityが一致。稼働Supabaseの保存ではない。
+- 原文UTF-8/hash、感情metadata有無、真の報告前置き/別field、他者感情、後続否認、引用訂正/撤回、後続決定を検査。同環境read-only subagentの差分reviewに具体的blocking指摘なし。別model Pro reviewとは称さない。
+
+### 地図・残件・再開点
+
+API製品compiler1・既存test2・新規workflow1・既存handoff1、Cocolon既存current03/詳細04/06を同期する。製品runtime構造は不変で、新規CIのfile/責務をcurrent03 §4.26へ追加。共有意味owner/realizer/API/DTO/DB/SQL/RN製品変更0。今回のSupabase操作、配置、有効化、native build、main mergeは0。GitHub反映後に変更path集合・全文bytes・親headを照合する。検査と生成本文の対象sourceは上記2039647、後続資料commitでコードを変更しない。
+
+共有側の丁寧感情host判定も通る「落ち着きました／嬉しかったです／うれしかったです」は、同じ否定決定prefixに対して未修正。省略主体の先行決定、他の動詞、一般意味理解、全体ルートUI/段階的詳細、IF/Saved、本人生成→保存再表示・正式商品受入れも残る。今回RN実表示modelの再実行・実機描画・元28日/14記録全体の再検証は行っていない。backendの同一本文/図と合成保存確認をこれらへ換算しない。次の内容修正では本節の残差を起点にし、今回の追加修正を本人実機確認の前提にしない。
