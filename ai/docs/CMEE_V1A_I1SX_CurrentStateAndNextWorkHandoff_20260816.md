@@ -16220,3 +16220,37 @@ u198の丁寧感情3形の残件は今回の限定文法で解消。上記対象
 共有変更の影響としてEmlis Q1の合成3例を旧/新helperで実生成し、6本文をrootが読解。すべてGENERATED／FINAL／SUFFICIENTで、否定決定の原文は維持。通常否定＋落ち着きましただけReception末尾に「その気持ちを受け止めています。」が戻り、準備否定＋嬉しかったですと「同僚との分担」否定＋うれしかったですは本文不変。肯定決定や因果の新規付加はない。「その気持ち」という汎用表現、既存の再掲、no_bound_personal_meaning_targetは残り、Emlis商品品質の解消とは扱わない。
 
 GitHubの製品6fileと資料4fileについて、変更path・親head・全treeを検証済みlocalと照合した。今回の実装は既存Draft PR内に留め、配置・実機確認・正式商品受入れへ換算しない。
+
+## 2026-10-11 u200 — 主語省略の過去行動を主体未確定で保持（未配置）
+
+Mashの「分析構造の内容修正関係を進めて」で、API PR3 `124f66298d4390f21c20fbc99f3bc35b5abdf6c1`／Cocolon PR30 `e7d88344740e4e1d02e8c800b9728337a7467f1e`と添付の前回作業記録から再開。作業ルール・恒久incident全文、全体設計01/01A/B/C・全file地図02・current03/詳細04/06、最新weekly20261010（§5.5・12/18公開目標）を確認した。context prepareは浅い履歴の祖先照合でexit2となり、生成contextをfreshとは扱わず正本と実sourceを直接読んだ。Codex Work root華恋が編集・検証・反映を担当し、同環境subagentはread-only監査／合成出力とRN照合を担当。別model Pro reviewとは称さない。
+
+### 欠落と実装境界
+
+「同僚からの資料を調べた」「家族への手紙を書きました」のような、主語を省略した過去行動が丸ごと分析から欠けていた。既存Analysis compilerの主語未確定の決定処理を既存9動詞へ接続し、完全な「を」対象・過去肯否定の有限節をactor=UNSPECIFIEDで保持する。書く／調べる／試す／見る／作る／残す／記録する／メモする／続けるが対象。SELFは補わず、「誰の行動かは未確定」と既存の文章・図へ表示する。原文の名詞内関係、肯否定、明示日付、出典を保持する。
+
+新対象は既存の閉じた名詞文法・全文境界・共有explicit factual sourceと極性の確認を通す。共有のcurrent_user既定値を本人の証拠にしない。未読副詞、今回/事前付きの一般行動、希望／非過去／認知補文／te複合文、対象なし、他者、引用／伝聞／夢、別fieldの話者、後続否認は拡張しない。未完の「私は、」を改行/句点で分断した節は、日/順序語付きも含め主題を捨てて省略行動へ変換しない。
+
+主体未確定は各evidenceのoccurrenceを分け、別記録や繰返しを同一人物の行動・矛盾へ集約しない。完全な省略否定行動を「の…でした」の報告前置きと誤認するAnalysis内判定も補修するが、真の報告を閉じない。書かれた同一fieldの隣接順序だけを接続し、未知文・別記録・訂正/撤回を越える線は作らない。共有Plan、realizer、API/DTO/DB/RN製品コードは変更0。
+
+### 検証と実際の出力
+
+- GitHub固定source `3b38ebccb133b9c7ab8dcd9702cd58eae6d83357`（検証済みcompiler SHA256 `b2e1a37a8a44c8bb6536cc28d24851c8462fe6572a2fad3572eb833355a06431`）。関連4suite **447 tests／4529 subtests PASS、fail/skip/xfail 0、54.69秒**。Python3.12.14／pytest8.4.1／pytest-subtests0.14.2／FastAPI0.142.2／Pydantic2.13.5／httpx0.28.1。製品依存の変更なし。
+- 修正前の実engineで省略行動の欠落を再現。追加検査は既存nominal-relations/storage/verticalへ統合した。旧「主語省略なら全不採用」の7期待は今回の仕様に沿う主体未確定の肯定検査へ移し、他者・未完主題等の拒否期待は保持した。初回4suiteの10 subFAILはこの旧期待7と未完主題3で、後者をsourceで修正。read-only監査が指摘した過去変化の誤捕捉と日/順序prefix付き未完主題も修正し、既存過去変化の3例は2node/1edgeを保持した。
+- 合成8入力を開始HEADと候補の実engineで比較し、新8全文＋旧4全文をrootが実読。場面→省略行動→SELF感情は2node/0edgeから3node/2edge。否定行動の例は1node/0edgeから3node/2edge。未知文挿入は1node/0edgeから2node/0edgeとなり、内容は増えるが線は補わない。別記録同文は別々の2node、真の報告を含む例は前後本文不変。
+- 同じ12生成について実RN `watashiMapV2Contract.js`の本文・identity・node順・edge/unknown/annotation/conflict表示modelが一致。実service＋合成RPCでは常体/丁寧/肯定/否定の4ルートを保存し、engine再生成禁止readで同じ本文・図・identityを確認。原文UTF-8/hash、肯否定45形、帰属、訂正/撤回、期間比較も検査した。実DB・native実機の検査ではない。
+- 最終の主題分断guard修正後も8例を再生成し、本文・図内容・命題・evidence不変、実RN本文/identity8例一致を確認した。生成UUIDは既存uuid4による新規値であり、再生成同士のUUID一致とは称さない。最後に指摘された接頭辞付き主題分断2例は同環境read-only監査でUNAVAILABLE/artifactなしを再確認した。
+
+### 反映・残件
+
+API製品compiler1・既存test3・既存handoff1、Cocolon既存current03/詳細04/06を同期する。新規repository file0。STRUCTURE_MAP_DELTA_NONE：既存source→命題→graph→文章/図→保存責任内の内容修正で、新owner/API/DB/RN経路を追加しない。primary outcome=TECHNICAL_CREDIT、正式商品受入れは未成立。
+
+Supabaseはproject状態とmigration履歴の読取りのみ。分析保存・期間比較の既存適用を確認し、本人行/本文の取得、実DB書込、migration適用、配置・有効化・native build・main mergeは0。未配置・本人実機未確認。
+
+一般の副詞付き主語省略、対象省略、他動詞、主語省略の肯定「書いた」後の報告host判定、共有判定を通る丁寧感情3形、省略決定後の一部丁寧否定→感情は残る。元28日/14記録全体の改善判定、全体ルートUI/段階的詳細、IF/Saved、本人生成→保存再表示・正式商品受入れも未完了。この内容修正を実機確認の新しい前提にはしない。次回も最新weekly/current03/本節と実sourceへ戻り、具体的な内容欠落または本人生成・保存表示を扱う。
+
+### u200 最終CI・GitHub照合
+
+固定source `3b38ebccb133b9c7ab8dcd9702cd58eae6d83357` の[CI38129630898](https://github.com/MassyuRed/mashos-api/actions/runs/38129630898)はsuccess。Python3.12.15でAnalysis4＋共有限定change/feelingの5suite **995 tests／4529 subtests PASS（257.35秒）**、共有owner identity **1 PASS／193 deselected（21.43秒）**。fail/skip/xfail 0。既存の合成7本文もrootがログ全文を読み、否定決定・丁寧感情・明示順序・未知区間の境界を保持することを確認した。上記ローカル4suiteとは範囲を区別し、数値を合算しない。
+
+GitHubから固定sourceをfetchし、親head・変更4path・検証済みlocalとのtree一致 `43f772f5541ac8dd6889f16c85df6fa0cf6222f9` を確認。後続は既存資料4fileとPR説明の同期のみで、製品sourceは変更しない。既存Draft PR3/30内での反映であり、配置・実DB・本人実機の確認へ換算しない。
