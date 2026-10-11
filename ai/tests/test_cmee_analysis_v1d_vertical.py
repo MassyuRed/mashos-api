@@ -33,6 +33,68 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_negative_feeling_survives_delimited_independent_transition(self):
+        for plain, polite in (('安心しなかった', '安心しませんでした'),
+                ('落ち着かなかった', '落ち着きませんでした'),
+                ('嬉しくなかった', '嬉しくありませんでした'),
+                ('うれしくなかった', 'うれしくありませんでした')):
+            for finite in (plain, plain + 'です', polite):
+                for separator in ('。', '\n', '；'):
+                    for transition in ('ところで', 'とりあえず'):
+                        for comma in ('、', '，', ','):
+                            with self.subTest(finite=finite, separator=separator,
+                                              transition=transition, comma=comma):
+                                literal = '私は' + finite
+                                req = request(record(memo=literal + separator + transition + comma
+                                    + '別のこともあった。その後、私は記録を残した。'))
+                                artifact = self.generate(req).artifact
+                                self.assertIsNotNone(artifact)
+                                feeling, action = artifact.graph.nodes
+                                self.assertEqual((feeling.proposition.result_state, feeling.proposition.actor,
+                                    feeling.polarity, feeling.temporal_scope), ('PAST_FEELING', 'SELF', 'negative', 'past'))
+                                self.assertEqual(action.proposition.predicate_lemma, '残す')
+                                e, = feeling.evidence_refs
+                                source, = freeze_analysis_sources(req).sources
+                                self.assertEqual(source.envelope.raw_utf8[e.utf8_start:e.utf8_end].decode(), literal)
+                                self.assertFalse(artifact.graph.edges)
+                                self.assertTrue(artifact.graph.unknown_gaps)
+                                text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                                self.assertIn(plain + '（記録された気持ち）', text)
+                                artifact.safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_negative_feeling_transition_does_not_admit_unbounded_hosts_or_answers(self):
+        for suffix in ('ところでの話だった。', 'とりあえずの話だった。',
+                       'とてもさんが言った。', 'と知らない人は言った。',
+                       'ところで', 'とりあえず', 'と友人が言った。', 'のは嘘だった。'):
+            with self.subTest(suffix=suffix):
+                outcome = self.generate(request(record(memo='私は嬉しくなかった。' + suffix)))
+                self.assertIsNone(outcome.artifact)
+        for transition in ('ところで、', 'とりあえず、'):
+            with self.subTest(transition=transition):
+                answer = '私は嬉しくなかった。' + transition + '私は記録を残した。'
+                outcome = self.generate(request(self.with_answer(record(memo='私は資料を調べた。'), answer)))
+                self.assertIsNone(outcome.artifact)
+                self.assertEqual(outcome.reason_codes, ('analysis_supplement_interpretation_pending',))
+
+    def test_negative_feeling_transition_keeps_updates_and_period_meaning(self):
+        old = '私は嬉しくなかった'
+        suffix = '。ところで、別のこともあった。その後、私は記録を残した。'
+        original = record(memo=old + suffix)
+        for answer in ('「' + old + '」ではなく「私は安心した」です。',
+                       '「' + old + '」は取り消します。'):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(original, answer))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertFalse(artifact.graph.edges)
+                self.assertFalse(any(n.polarity == 'negative' for n in artifact.graph.nodes))
+                self.assertEqual(len(artifact.graph.nodes), 1 if '取り消' in answer else 2)
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        self.assertFalse(self.compared(old + suffix, old.replace('嬉しくなかった', 'うれしくありませんでした')
+                                      + suffix).artifact.period_comparison.change_claims)
+        comparison = self.compared(old + suffix, old.replace('嬉しくなかった', '嬉しかった') + suffix).artifact
+        self.assertIn('ROUTE_EVIDENCE_CHANGED', comparison.safe_projection(
+            authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+
     def test_past_feeling_split_attribution_keeps_unread_host_and_independent_action(self):
         for finite in ('安心した', '安心しました', '落ち着いた', '落ち着きました',
                        '嬉しかった', '嬉しかったです', 'うれしかった', 'うれしかったです',

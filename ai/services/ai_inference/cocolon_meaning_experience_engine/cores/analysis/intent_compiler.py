@@ -1057,7 +1057,12 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
             following = context[span.end_index:].lstrip(' \t\u3000。．.!！\r\n;；')
             # No subject inference inside an unread quotative continuation:
             # both "と私は思う" and "と友人が言った" still own this clause.
-            if re.match(r'(?:と|って|のは|のも|なんて|などと)', following):
+            # A comma-delimited transition starts a separate sentence. Its
+            # initial と is not a quote particle; keep the preceding feeling
+            # while leaving the unparsed following sentence unknown. Require
+            # the delimiter, so ところでの話 or an unknown speaker stays pending.
+            transition = re.match(r'(?:ところで|とりあえず)[、，,]', following)
+            if not transition and re.match(r'(?:と|って|のは|のも|なんて|などと)', following):
                 return None
         # Ledger punctuation is not proof that a feeling's finite host is
         # closed: a following dependent suffix can negate or embed either

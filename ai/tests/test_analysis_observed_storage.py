@@ -89,6 +89,44 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         self.fx = fixture()
         self.row = self.fx['row']
 
+    async def test_negative_feeling_before_transition_survives_save_and_read(self):
+        for finite in ('嬉しくなかった', 'うれしくありませんでした'):
+            for transition in ('ところで、', 'とりあえず、'):
+                with self.subTest(finite=finite, transition=transition):
+                    fx = fixture('私は' + finite + '。' + transition
+                        + '別のこともあった。その後、私は記録を残した。')
+                    fx['original']['emotion_details'] = [{'type': '平穏', 'strength': 'medium'}]
+                    row, writes = fx['row'], []
+                    async def rpc(name, payload):
+                        if name == 'analysis_observed_source_snapshot':
+                            return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                                {'original': fx['original'], 'thread': None, 'events': []}]}
+                        if name == 'analysis_observed_commit':
+                            writes.append(payload)
+                            row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                            row['content_text'] = payload['p_text']
+                            row['content_json']['watashiMap'] = payload['p_projection']
+                            return row['id']
+                        self.assertEqual(name, 'analysis_observed_read')
+                        return result([row], matched=True)
+                    with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                            patch.object(service, '_rpc', side_effect=rpc):
+                        saved = await service.generate_saved(OWNER, start=START, end=END,
+                            report_mode='standard', report_type='latest')
+                        with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                            reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                    self.assertEqual(len(writes), 1)
+                    self.assertEqual(saved, reread['items'][0])
+                    self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                    self.assertEqual(saved['content_json']['watashiMap'], writes[0]['p_projection'])
+                    feeling, action = writes[0]['p_projection']['nodes']
+                    label = ('うれしくなかった' if finite.startswith('うれしく') else finite) + '（記録された気持ち）'
+                    self.assertEqual(feeling['visible_label'], label)
+                    self.assertIn(label, saved['content_text'])
+                    self.assertEqual(action['node_kind'], 'ACTION_OR_NONACTION')
+                    self.assertFalse(writes[0]['p_projection']['edges'])
+                    self.assertTrue(writes[0]['p_projection']['unknown_gaps'])
+
     async def test_split_feeling_attribution_preserves_only_grounded_saved_content(self):
         for host in ('と友人が言った。', 'のは嘘だった。'):
             with self.subTest(host=host):
