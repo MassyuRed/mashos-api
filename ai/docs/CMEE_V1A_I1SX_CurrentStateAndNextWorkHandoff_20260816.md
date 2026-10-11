@@ -16185,3 +16185,30 @@ Analysis compiler内で各先行節を既存の完全命題parserへ通し、明
 API製品compiler1・既存test2・新規workflow1・既存handoff1、Cocolon既存current03/詳細04/06を同期する。製品runtime構造は不変で、新規CIのfile/責務をcurrent03 §4.26へ追加。共有意味owner/realizer/API/DTO/DB/SQL/RN製品変更0。今回のSupabase操作、配置、有効化、native build、main mergeは0。GitHub反映後に変更path集合・全文bytes・親headを照合する。検査と生成本文の対象sourceは上記2039647、後続資料commitでコードを変更しない。
 
 共有側の丁寧感情host判定も通る「落ち着きました／嬉しかったです／うれしかったです」は、同じ否定決定prefixに対して未修正。省略主体の先行決定、他の動詞、一般意味理解、全体ルートUI/段階的詳細、IF/Saved、本人生成→保存再表示・正式商品受入れも残る。今回RN実表示modelの再実行・実機描画・元28日/14記録全体の再検証は行っていない。backendの同一本文/図と合成保存確認をこれらへ換算しない。次の内容修正では本節の残差を起点にし、今回の追加修正を本人実機確認の前提にしない。
+
+## 2026-10-11 u199 — 否定決定後の丁寧感情3形を共有判定で保持（未配置）
+
+Mashの「分析構造の内容修正関係を進めて」で、API PR3 `f9c6a468791f9d0b5379c15284a0e638d5c7d156`／Cocolon PR30 `0957954c59710e47248d969d1b47d1941f9fe883`から再開。全体設計01/01A/B/C・全file地図02・current03/詳細04/06、作業規則・恒久incident全文・最新weekly20261010を確認。weekly §5.5の本人生成→同じ文章/図→保存後再表示、12/18目標を維持し、今回の明示依頼に沿って内容修正を実施した。
+
+### 原因・修正境界
+
+u198で残した3丁寧形は、Analysis内の補修後も共有 `_source_polite_past_feeling_is_bound` が報告prefixを再判定するため欠落していた。実engineで通常否定決定の後の3形が2nodeのままになることを再現。`の…でした/です` の名詞述語検出分岐の内部だけに、完全な本人の否定決定を区別する判定を加えた。これは感情語や否定語尾だけによる除外ではない。
+
+任意の「その後/それから」1個、明示SELFは、既存の閉じた名詞と「の」連結（各格項に「との」連体形1回まで）、1〜4個の格項（を/に/で/と、重複なし・を必須）、決めませんでした/決めなかったです/決めておきませんでした/決めておかなかったです、という全文一致だけを対象にする。他の先行節は引き続き報告判定し、真の話者、別field、後続否認、原文照合、訂正/撤回を迂回しない。`からの/への/での`、日付/自由な副詞、主語省略、他動詞へは拡大しない。
+
+### 検証・実本文
+
+- ローカル実行環境は復旧。Python3.12.14、pytest8.4.1、pytest-subtests0.14.2、FastAPI0.142.2、Pydantic2.13.5、httpx0.28.1の隔離runtimeで、bytecode/cacheprovider/plugin自動読込/旧conftestを無効化。製品依存/lock変更なし。
+- Analysis vertical/nominal-relations/storage/saved-period＋共有限定change/feelingの5suite **987 tests／4434 subtests PASS、fail/skip/xfail 0、455.85秒**。共有owner identityは別実行 **1 PASS／193 deselected**。current snapshotを実ownerから再生成し、歴史IM03は変更しない。最初のidentity収集失敗は検査用PYTHONPATHのai不足で、製品sourceを変えず実行設定を補正した。
+- 新規対象は修正前に欠落を再現。作成中のfixture5件のmemo_action引数ミスは製品不具合に数えず修正した。初回の共有補修で「同僚との分担」が未対応と分かり、既存Analysis文法にある「との」を上記範囲だけ追加した。最終対象実行は25 tests／36 subtests成功（5suiteに包含、合算しない）。
+- 合成8入力を、開始HEADの旧helperだけをメモリ内で差し替えた実engineと修正後で比較。通常否定＋落ち着きました、準備否定＋嬉しかったですは2node/1線→3node/2線。「同僚との分担」＋うれしかったですは2node/0線→3node/1線。「会議の予定」＋落ち着きましたも2node/1線→3node/2線。unknown挿入は2node/1線→3node/1線で未読区間を跨がない。真の報告を前/後に置く例と別field報告の3例は感情保留のまま。rootは修正後8全文を実読し、否定/感情と明示順序を保持し因果/改善を加えないことを確認した。
+- 同じ8例の前後16生成を実RN `watashiMapV2Contract.js`へ渡し、text・projectionOf・node順・edgeを照合成功。React/native画面・端末描画の検査ではない。実service＋合成RPCで通常否定/準備否定×3感情の6ルートを保存し、engine再生成禁止readで本文/図・identityを保持することを検査。稼働Supabase保存ではない。
+- 原文UTF-8/hash、4有限形×3感情、取り消し/否定への訂正、真の報告・別field・後続否認を検査。同環境read-only reviewが「との」未対応を指摘し、修正後に他者/格欠落/重複/予定/報告5境界と報告2種×前後2順序を再確認、blocking findingなし。別model Pro reviewとは称さず、追加probeをsuite数に加算しない。
+
+### 反映・次の作業
+
+検証sourceは `b326a3f085224ef3cd24b1ab3020689c14c3bef6`。[隔離CI 38126683169](https://github.com/MassyuRed/mashos-api/actions/runs/38126683169) は同sourceの5suiteと共有identity、合成7全文を検査する。上記の数値はローカル実行の結果であり、CI結果と合算しない。API既存共有Plan1・既存test3・current identity fixture1・既存workflow1、API既存handoffとCocolon current03/詳細04/06を同期する。新規repository file0。STRUCTURE_MAP_DELTA_NONE：既存source→graph→文章/図→保存責任は不変。共有意味ownerは1変更であり変更0とは表記しない。API/DTO/DB/SQL/RN製品変更、Supabase操作、deploy/有効化/native build/main mergeは0。
+
+Codex Work root華恋が編集/実行/反映、同環境subagentはread-only reviewと合成実出力/RN照合。既存設計内LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。context prepareは浅い取得の祖先判定により0957954がa77b79c5のdescendantではないとしてexit2となったため、生成済みcontextをfreshと扱わず正本を直接確認した。
+
+u198の丁寧感情3形の残件は今回の限定文法で解消。上記対象外文法、一般意味理解、全体ルートUI/段階的詳細、IF/Saved、元28日/14記録全体の改善判定、本人生成→保存再表示、正式商品受入れは残る。未配置・実DB/本人実機未確認。この追加補修を実機確認の前提にはしない。次回は最新weekly/current03/本節と実出力から、未対応記述の具体的な欠落か本人生成/保存表示を扱う。
