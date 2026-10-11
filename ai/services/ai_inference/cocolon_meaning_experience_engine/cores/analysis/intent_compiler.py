@@ -78,6 +78,14 @@ _NOMINAL = (_ATTRIBUTIVE + r'?(?:' + _KANA_NOMINAL
             + r'[一-鿿々ァ-ヴー]*|[一-鿿々ァ-ヴー]+)')
 _ARGUMENT = re.compile(r'(?P<noun>' + _NOMINAL + r'(?:の' + _NOMINAL
                        + r')*)(?P<case>を|に|で|と)')
+# Keep a written case relation inside its nominal argument: 同僚からの資料
+# is one object, not a second participant of the performed action. Only
+# ordinary past fact clauses use this extension; wishes, cognitive content
+# and dependent te episodes retain their existing grammatical boundary.
+_NOMINAL_CASE_LINK = re.compile(r'(?:から|へ|と|で)の')
+_PAST_ARGUMENT = re.compile(r'(?P<noun>' + _NOMINAL
+    + r'(?:(?:からの|への|との|での|の)' + _NOMINAL
+    + r')*)(?P<case>を|に|で|と)')
 
 
 def _finite_predicates(*, include_nonpast=False):
@@ -528,7 +536,7 @@ def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relat
         # happened yesterday. Finer day/range scopes need their own parse.
         if _DAY_EXTENSION.match(value, day.end()):
             return None
-        first_argument = _ARGUMENT.match(value, day.end())
+        first_argument = _PAST_ARGUMENT.match(value, day.end())
         if (day.end() == day.end(1) and first_argument is not None
                 and 'の' in first_argument['noun']):
             # 昨日提出の資料 can describe the material, not the action.
@@ -555,11 +563,22 @@ def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relat
         end = len(value) - len(finite)
         offset, arguments = body_start, []
         parts = list(prefix_parts)
+        argument_pattern = (_PAST_ARGUMENT
+            if not content_only and predicate_forms is None
+            and modality == 'fact' and time == 'past' else _ARGUMENT)
         while offset < end:
-            argument = _ARGUMENT.match(value, offset, end)
+            argument = argument_pattern.match(value, offset, end)
             if argument is None:
                 break
             noun = argument['noun']
+            if _NOMINAL_CASE_LINK.search(noun):
+                # Validate every nominal head, not only the first object.
+                # New date/range readings (今日からの, 昨日での, etc.)
+                # remain pending; this is not an extension of event time.
+                heads = re.split(r'(?:からの|への|との|での|の)', noun)
+                if any(_has_unparsed_nominal_segment(head)
+                       or re.match(r'^(?:今日|昨日)', head) for head in heads):
+                    break
             # A second/unparsed day cannot become a made-up compound noun.
             # 今日の資料 remains a nominal modifier, not an event date.
             if re.match(r'(?:今日|昨日)(?!の|$)', noun):
@@ -1034,6 +1053,33 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
         return None
     result = _unfinished_result_proposition(value)
     change = _bounded_change_proposition(value)
+    qualified_past = bool(proposition and any(
+        _NOMINAL_CASE_LINK.search(noun) for _, noun in proposition.arguments))
+    if qualified_past:
+        # A newly readable object must not turn a reported speaker's
+        # first-person clause into the owner's completed action.
+        prefix = context[:span.start_index]
+        other = str(source.normalized.get('memo_action', ''))
+        for preceding in re.split(r'[。．.]', prefix + '\n' + other):
+            preceding = preceding.strip()
+            written = _proposition(preceding)
+            # Reuse the full nominal interpretation for a completed writing
+            # act. A qualified object does not by itself open a quotation;
+            # report/deictic content and extra participants still can.
+            if (written and written.predicate_lemma == '書く'
+                    and (written.actor, written.modality, written.temporal_scope,
+                         written.polarity) == ('SELF', 'fact', 'past', 'positive')
+                    and len(written.arguments) in {1, 2}
+                    and 'を' in {case for case, _ in written.arguments}
+                    and all(case in {'を', 'に', 'で'} for case, _ in written.arguments)
+                    and not re.search(r'何|誰|次|以下|上記|下記|話|発言|引用|説明|報告|内容',
+                                      ''.join(noun for _, noun in written.arguments))):
+                continue
+            if _source_prefix_opens_report(preceding):
+                return None
+        if re.search(r'(?:言って|話して|語って|述べて|書いて|伝えて|答えて|説明して)'
+                r'(?:いた|いました|いる|います)(?:[。．.\s]|$)', prefix + '\n' + other):
+            return None
     if change is not None and (pair is None or nucleus.nucleus_id != pair[1]):
         if (pair is not None or a != 0 or b != len(span.raw_text)
                 or not _standalone_past_feeling_witness(nucleus, change)):
@@ -1064,7 +1110,8 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
             transition = re.match(r'(?:ところで|とりあえず)[、，,]', following)
             if not transition and re.match(r'(?:と|って|のは|のも|なんて|などと)', following):
                 return None
-        # Ledger punctuation is not proof that a feeling's finite host is
+    if qualified_past or (change is not None and (pair is None or nucleus.nucleus_id != pair[1])):
+        # Ledger punctuation is not proof that the finite host is
         # closed: a following dependent suffix can negate or embed either
         # polarity, including a host with its own explicit speaker. Match
         # that host, not every sentence starting with と (e.g. とても).
