@@ -33,6 +33,77 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_polite_feeling_after_omitted_negative_action_keeps_route_and_source(self):
+        for clause, actor in (
+                ('その後、資料を調べませんでした', 'UNSPECIFIED'),
+                ('その後、資料を調べなかったです', 'UNSPECIFIED'),
+                ('その後、家族への手紙を書きませんでした', 'UNSPECIFIED'),
+                ('同僚からの資料を調べなかったです', 'UNSPECIFIED'),
+                ('その後、私は職場での資料を記録しませんでした', 'SELF')):
+            for feeling, lemma in (('落ち着きました', '落ち着く'),
+                    ('嬉しかったです', '嬉しい'), ('うれしかったです', 'うれしい')):
+                with self.subTest(clause=clause, feeling=feeling):
+                    literal = 'それから、私は' + feeling
+                    req = request(record(memo='私は職場にいた。' + clause + '。' + literal + '。'))
+                    artifact = self.generate(req).artifact
+                    self.assertIsNotNone(artifact)
+                    scene, action, result = artifact.graph.nodes
+                    self.assertEqual((action.proposition.actor, action.polarity), (actor, 'negative'))
+                    self.assertEqual((result.proposition.predicate_lemma, result.proposition.actor,
+                        result.polarity, result.modality, result.temporal_scope),
+                        (lemma, 'SELF', 'positive', 'feeling', 'past'))
+                    self.assertEqual(len(artifact.graph.edges), 2 if clause.startswith('その後') else 1)
+                    self.assertTrue(all(e.edge_kind == 'OBSERVED_ORDER' for e in artifact.graph.edges))
+                    source, = freeze_analysis_sources(req).sources
+                    for node, expected in ((action, clause), (result, literal)):
+                        evidence, = node.evidence_refs
+                        raw = source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                        self.assertEqual(raw.decode(), expected)
+                        self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+                    projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                    text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                    self.assertTrue(all(n['visible_label'] in text for n in projection['nodes']))
+                    self.assertEqual('誰の行動かは未確定' in text, actor == 'UNSPECIFIED')
+
+    def test_omitted_negative_action_feeling_preserves_unknown_and_update_boundaries(self):
+        clause = 'その後、同僚からの資料を調べませんでした。'
+        literal = 'それから、私は落ち着きました'
+        original = record(memo='私は職場にいた。' + clause + literal + '。')
+        artifact = self.generate(request(record(memo='私は職場にいた。' + clause
+            + '不明な出来事がある。' + literal + '。'))).artifact
+        self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)), (3, 1))
+        for answer in ('「' + literal + '」は取り消します。',
+                       '「' + literal + '」ではなく「私は安心しなかった」です。'):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(original, answer))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)),
+                                 (2 if '取り消' in answer else 3, 1))
+                self.assertFalse(any(n.proposition.predicate_lemma == '落ち着く'
+                                     for n in artifact.graph.nodes))
+                if '取り消' not in answer:
+                    self.assertEqual(artifact.graph.nodes[-1].polarity, 'negative')
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_omitted_negative_action_does_not_supply_reported_or_other_person_feelings(self):
+        clause = 'その後、資料を調べませんでした。'
+        literal = 'それから、私は落ち着きました。'
+        for memo, action in (
+                ('友人の話でした。' + clause + literal, ''),
+                (clause + literal, '友人は言いました。'),
+                (literal, '友人の話でした。' + clause),
+                (clause + literal + 'のは嘘だった。', ''),
+                (clause + literal + 'と友人が言った。', ''),
+                (clause + 'それから、友人は落ち着きました。', '')):
+            with self.subTest(memo=memo, action=action):
+                artifact = self.generate(request(record(memo=memo, action=action))).artifact
+                self.assertFalse(artifact and any(n.proposition.result_state == 'PAST_FEELING'
+                                 for n in artifact.graph.nodes))
+        for member in (record(memo=literal, action=clause),):
+            artifact = self.generate(request(member)).artifact
+            self.assertEqual(len(artifact.graph.nodes), 2)
+            self.assertFalse(artifact.graph.edges)
+
     def test_complete_omitted_past_actions_preserve_previously_rejected_nouns(self):
         # These old rejection cases now have an explicit actor-unknown result;
         # unsupported subjects and broken topic boundaries remain rejected.

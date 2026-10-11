@@ -34,6 +34,47 @@ def _action_change_relations(plan):
 
 
 @pytest.mark.parametrize('feeling', ['落ち着きました', '嬉しかったです', 'うれしかったです'])
+@pytest.mark.parametrize('finite', [
+    '書きませんでした', '書かなかったです', '調べませんでした', '調べなかったです',
+    '試しませんでした', '試さなかったです', '見ませんでした', '見なかったです',
+    '作りませんでした', '作らなかったです', '残しませんでした', '残さなかったです',
+    '記録しませんでした', '記録しなかったです', 'メモしませんでした', 'メモしなかったです',
+    '続けませんでした', '続けなかったです'])
+def test_polite_feeling_after_omitted_negative_action_has_own_witness(feeling, finite):
+    memo = 'その後、同僚からの資料を' + finite + '。それから、私は' + feeling + '。'
+    source = freeze_text_source(initial(memo))
+    span = [s for s in source.evidence_spans if s.source_field == 'memo'][-1]
+    assert plan_owner._source_polite_past_feeling_is_bound(span, source.normalized_current_input)
+    plan = _polite_change_plan(memo)
+    node = [n for n in plan.nuclei if n.source_span_ids == (span.span_id,)][-1]
+    assert node.semantic_frame.polarity == 'positive'
+    assert {'operator:positive_change', 'semantic_role:current_change'} <= set(node.semantic_frame.attribute_codes)
+    assert not _action_change_relations(plan)
+
+
+@pytest.mark.parametrize('clause', [
+    'その後、友人は資料を調べませんでした', 'その後、資料は調べませんでした',
+    'その後、資料を記録を調べませんでした', 'その後、資料を調べたいです',
+    'その後、資料を調べる予定でした', 'その後、資料を調べなかったと思ったのです',
+    'その後、資料を調べませんでしたという話でした', 'その後、資料を調べたそうです',
+    'その後、資料を読みませんでした', 'その後、ゆっくり資料を調べませんでした',
+    'その後、私は、\n資料を調べませんでした', 'その後、資料を調べませんでした。友人の話でした'])
+def test_negative_action_report_exception_requires_complete_bounded_clause(clause):
+    assert plan_owner._source_prefix_opens_report(clause + '。')
+
+
+@pytest.mark.parametrize('prefix,action,suffix', [
+    ('友人の話でした。', '', ''), ('友人は言いました。', '', ''),
+    ('', '友人は言いました。', ''), ('', '', 'のは嘘だった。'),
+    ('', '', 'と友人が言った。'), ('', '', 'と私は思う。')])
+def test_negative_action_does_not_close_real_feeling_report(prefix, action, suffix):
+    memo = prefix + 'その後、資料を調べませんでした。それから、私は落ち着きました。' + suffix
+    source = freeze_text_source(initial(memo, memo_action=action))
+    span = next(s for s in source.evidence_spans if s.raw_text == 'それから、私は落ち着きました')
+    assert not plan_owner._source_polite_past_feeling_is_bound(span, source.normalized_current_input)
+
+
+@pytest.mark.parametrize('feeling', ['落ち着きました', '嬉しかったです', 'うれしかったです'])
 @pytest.mark.parametrize('decision', [
     'その後、私は同僚と分担を決めませんでした',
     'その後、私は同僚と分担を決めておきませんでした',

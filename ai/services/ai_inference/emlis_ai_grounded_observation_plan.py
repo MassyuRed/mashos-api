@@ -15974,20 +15974,35 @@ def _source_prefix_opens_report(prefix: str) -> bool:
         clause = clause.strip()
         if re.search(r"の[^。．.]+(?:だ|です|だった|でした)$", clause):
             # The の in a sequence marker or nominal argument can reach the
-            # polite negative ending. A closed self-owned decision is not a
-            # copular report host; retain the report check for every other
-            # clause and for incomplete, repeated-case or non-self arguments.
+            # polite negative ending. A complete negative past act is not a
+            # copular report host. This only closes the written clause; it
+            # never supplies a missing actor or the next feeling's subject.
             nominal = _WISH_OBJECT_ARGUMENT_RE.pattern
             argument = nominal + r"(?:との" + nominal + r")?(?:を|に|で|と)"
-            decision = re.fullmatch(
+            closed = re.fullmatch(
                 r"(?:(?:その後|それから)[、, 　]*)?"
                 r"(?:私|わたし|僕|ぼく|自分|俺|おれ)は[、, 　]*"
                 r"(?P<arguments>(?:" + argument + r"){1,4})"
                 r"(?:決めませんでした|決めなかったです|"
                 r"決めておきませんでした|決めておかなかったです)", clause)
-            if decision is not None:
+            if closed is None:
+                # The existing nine ordinary action verbs can omit their
+                # actor. Require a whole object-bearing finite clause,
+                # preserving nominal relations without opening adverb,
+                # reported-content, nonpast or embedded-clause grammar.
+                nominal = (_WISH_OBJECT_NOMINAL_SOURCE
+                    + r"(?:(?:からの|への|との|での|の)"
+                    + _WISH_OBJECT_NOMINAL_SOURCE + r")*")
+                argument = nominal + r"(?:を|に|で|と)"
+                closed = re.fullmatch(
+                    r"(?:(?:その後|それから)[、, 　]*)?"
+                    r"(?:(?:私|わたし|僕|ぼく|自分|俺|おれ)は[、, 　]*)?"
+                    r"(?P<arguments>(?:" + argument + r"){1,4})"
+                    r"(?:(?:書か|調べ|試さ|見|作ら|残さ|記録し|メモし|続け)なかったです|"
+                    r"(?:書き|調べ|試し|見|作り|残し|記録し|メモし|続け)ませんでした)", clause)
+            if closed is not None:
                 cases = tuple(m.group()[-1] for m in re.finditer(
-                    argument, decision["arguments"]))
+                    argument, closed["arguments"]))
                 if "を" in cases and len(cases) == len(set(cases)):
                     continue
             return True

@@ -85,6 +85,18 @@ async def storage_sql_fixture():
 
 
 class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
+    async def test_omitted_negative_action_polite_feeling_survives_saved_read(self):
+        for finite in ('調べませんでした', '調べなかったです'):
+            for feeling, label in (('落ち着きました', '落ち着いた'),
+                    ('嬉しかったです', '嬉しかった'), ('うれしかったです', 'うれしかった')):
+                with self.subTest(finite=finite, feeling=feeling):
+                    await self._assert_action_change_saved('私は職場にいた。'
+                        'その後、同僚からの資料を' + finite + '。それから、私は' + feeling + '。',
+                        expected_label='それから：' + label + '（記録された気持ち）',
+                        expected_preceding_label='職場にいた（記録された場面）')
+                    self.assertIn('誰の行動かは未確定', self.row['content_text'])
+                    self.assertIn('同僚からの資料を調べる（行わなかった）', self.row['content_text'])
+
     async def test_polite_feeling_after_negative_decision_survives_saved_read(self):
         for finite in ('決めませんでした', '決めておきませんでした'):
             for feeling, label in (('落ち着きました', '落ち着いた'),
