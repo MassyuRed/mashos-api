@@ -1,3 +1,5 @@
+> 最新の内容修正は末尾 **u212（2026-10-12 JST・未配置）**。省略主体の本人所有書字後に欠ける独立感情を補修。現在の検証・反映・残件は同節とAnalysis current03を参照。
+
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
 > 2026-10-04 u102現在地：Mashが6201の実機確認OKを報告し、内容改善へ移行。通常補足の完全な本人節を分析へ採用し、丁寧語/格順による同じ意味の二重計上を修正。33検査PASS、修正版は未配置。詳細は末尾u102／Analysis map §4.8。
@@ -16669,3 +16671,42 @@ Analysis既存 `_finite_proposition` の格項fallbackを、明示SELF・肯定�
 STRUCTURE_MAP_DELTA_NONE：source→命題→graph→本文/図→保存の責務とfile配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。renderer/API/DTO/DB/SQL/RN製品変更0。Supabase操作・本人行取得・DB書込み・配置/有効化/native build/main mergeは0。未配置・稼働DB/本人実機・正式商品受入れ未確認。
 
 仮名所有の主語省略・書く以外の動詞/否定書字・一般属格/任意入れ子、対象省略、未対応時刻/副詞、旧completed fallbackの残差、一般意味理解、全体ルートUI/IF/Saved、元28日/14記録全体、本人生成→保存再表示は残る。次回は最新weekly/current03/本節と実出力から再開し、今回の補修を本人実機確認の新たな前提にしない。
+
+## 2026-10-12 u212 — 省略主体の本人所有書字後に独立した感情を保持（未配置）
+
+Mashの分析内容修正依頼と前回u211ログから再開。開始headはAPI PR3 `72045d6764c1134d55d1d397154e8ceb1e2e7b5a`／Cocolon PR30 `5c9c3eccd78f6b9015df755a2581f2a2593f2e50`。前提/作業rule・恒久incident全文・全体設計・全file地図と現在tree・current03/詳細04/06・最新weekly20261010を確認した。System Context prepareはmaterial commitが指定commitの子孫でないためexit2。入口の許可どおり原典を直接読み、古い生成地図をfresh扱いせず管理機構の補修へ逸れない。weekly §5.4の明示依頼に基づく内容修正であり、12/18公開目標と§5.5の本人生成→保存再表示の未完了は維持する。
+
+### 問題と修正範囲
+
+実engineで「自分の考えを書いた。それから、私は落ち着きました。」を入力すると、書字は主体未確定で残る一方、独立した本人感情が欠けた。既存Analysisが漢字の本人所有を含む格項を解析できても、共有Planが省略主体の書字を報告の前置きとして扱うことが原因だった。
+
+製品変更は共有Plan `_source_prefix_opens_report` の既存writing fallbackだけ。省略主体では所有prefixを `私／僕／自分／俺＋の` に限定し、明示SELFの場合は既存の漢字＋仮名prefixを維持する。完全な肯定過去書字、目的語必須、前後どちらか1個の場所/媒体、既存有限名詞と「への／との／での」の範囲は不変。所有表現から行為者をSELFへ補わず、後続感情はその節自身のSELF根拠で保持する。行動日を感情へ移さず、否定・原文UTF-8/hash・書かれた順序を保存し、順序を因果へ変換しない。旧completed fallback、一般属格/からの・仮名所有の省略主体・他動詞/否定書字の範囲は変更しない。
+
+### 検証と生成内容
+
+- 新規vertical検査は修正前に36 subFAIL＋通常1 FAILで欠落を再現。修正後の書字対象は **55 tests／478 subtests PASS（17.05秒、1206 deselected）**。3prefix×4格項×3書字/感情の36例で主体・日付・肯否・原文hash・線の端点を確認。未知文/別field/報告/訂正/撤回、別記録の不明行為者を統合しないことも確認した。共有検査は許容7例と限定拒否19例を追加し、既存期待は変更していない。
+- 合成Analysis13入力の前後26結果を比較し、生成された22全文をrootが読解。通常5例は1node/0edge→2node/1edge、場面付きは2/1→3/2。未知文・別field・現在未完了は2node/0edgeとなり、未知区間の接続や日付/主体を補わない。報告と仮名所有の省略主体は両版UNAVAILABLE。既存の明示SELF・否定書字の対照2例は本文/graph不変。
+- 実RN `watashiMapV2Contract.js` に22生成結果を通し、本文・projection identity・node順・edge/gap/annotation/conflict数の一致を確認。実service＋合成RPCの保存再読3ルートで、再生成を禁止して同じ本文/図/identityが返ることを確認した。native描画や稼働DBの確認ではない。
+- Emlis Q1の前後6全文をrootが読解。代表例のReceptionへ既存の「その気持ちを受け止めています。」が追加され、他2例の全文とObservation3例は不変。汎用Reception/復唱は残っており、商品品質合格に換算しない。
+- 同環境read-only補助reviewが実diff・上記全文と独立probeを確認。原文hash/主体/日付/否定/順序、報告の両field方向、書字直後の引用/否認、限定拒否、別record不明主体の非統合に新規blocking findingなし。`memo=書字／memo_action=感情`で感情が欠ける逆配置はbaselineにも残る。感情直後の引用/否認はその感情を除外して先行書字を残す既存挙動であり、今回全報告範囲を解消したとは扱わない。root華恋が統合・反映し、別model Pro reviewとは称さない。
+
+代表入力の修正後実生成全文（開始版では行動と未確定情報だけだった）：
+
+```text
+行動・非行動：自分の考えを書く（実行済み）（誰の行動かは未確定）（1件の記録）
+結果・余韻：それから：落ち着いた（記録された気持ち）（1件の記録）
+記録内の順序：自分の考えを書く（実行済み）（誰の行動かは未確定） → それから：落ち着いた（記録された気持ち）。原因を示す線ではありません。
+未確定（自分の考えを書く（実行済み）（誰の行動かは未確定））：確定していない項目：場面、役割、考え・注意。
+```
+
+### 反映・最終検証・残件
+
+固定source `51217d847056f1fd19cd96b091378b00e85c0af0`、tree `06a2878a18bf528d0ee6ee675dfd9961328fdaef`、共有Plan SHA256 `7c0a6b7660c9a843d549963d4164bdba3d5d75c42df7b8865cc2d053e43d310e`。共有Plan1・既存test3・current owner identity fixture1を既存PR3へexpected_sha付きnon-force反映し、変更5pathとremote全bytesのlocal一致を確認。歴史凍結identityは不変。後続はAPI既存handoffとCocolon current03/詳細04 §3.42/06の資料同期。新規repo file0・追加製品依存0。
+
+ローカルPython3.12.14でAnalysis4＋共有限定change/feelingの5suite **1293 tests／5256 subtests PASS（279.99秒）**、共有owner identity **1 PASS／193 deselected（26.76秒）**。pytest8.4.1／pytest-subtests0.14.2／FastAPI0.142.2／Pydantic2.13.5／httpx0.28.1を隔離環境へ導入して実行した。fail/skip/xfail 0。対象検査・全suite・CIの包含件数は合算しない。
+
+固定sourceの[CI38179903054](https://github.com/MassyuRed/mashos-api/actions/runs/38179903054)／job114590062463はsuccess。Python3.12.15で同5suite **1293 tests／5256 subtests PASS（365.08秒）**、共有owner identity **1 PASS／193 deselected（25.99秒）**。fail/skip/xfail 0。CIの既存合成7例の生成全文をrootが読解し、否定決定・準備相・本人感情・記述順序と未知区間の保持を確認した。
+
+STRUCTURE_MAP_DELTA_NONE：source→命題→graph→本文/図→保存の責務とfile配置は不変。Analysis compiler/realizer/API/DTO/DB/SQL/RN製品変更0。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Supabaseはproject状態とmigration一覧をread-only確認し、analysis_observed_artifacts/analysis_period_comparison適用を確認した。本人行取得・DB書込み・配置/有効化/native build/main mergeは0。未配置。稼働DBでの生成・保存再読、本人実機、正式商品受入れは未確認。
+
+残件は仮名所有の省略主体、一般属格/任意入れ子、対象省略、未対応時刻/副詞/他動詞、旧completed fallbackと逆field配置の制限、一般意味理解、全体ルートUI/IF/Saved、元28日/14記録全体、本人生成→保存再表示。次回は最新weekly/current03/本節と実出力から再開し、この補修を本人実機確認の新たな前提にしない。
