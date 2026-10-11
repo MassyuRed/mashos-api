@@ -16254,3 +16254,36 @@ Supabaseはproject状態とmigration履歴の読取りのみ。分析保存・�
 固定source `3b38ebccb133b9c7ab8dcd9702cd58eae6d83357` の[CI38129630898](https://github.com/MassyuRed/mashos-api/actions/runs/38129630898)はsuccess。Python3.12.15でAnalysis4＋共有限定change/feelingの5suite **995 tests／4529 subtests PASS（257.35秒）**、共有owner identity **1 PASS／193 deselected（21.43秒）**。fail/skip/xfail 0。既存の合成7本文もrootがログ全文を読み、否定決定・丁寧感情・明示順序・未知区間の境界を保持することを確認した。上記ローカル4suiteとは範囲を区別し、数値を合算しない。
 
 GitHubから固定sourceをfetchし、親head・変更4path・検証済みlocalとのtree一致 `43f772f5541ac8dd6889f16c85df6fa0cf6222f9` を確認。後続は既存資料4fileとPR説明の同期のみで、製品sourceは変更しない。既存Draft PR3/30内での反映であり、配置・実DB・本人実機の確認へ換算しない。
+
+## 2026-10-11 u201 — 主語省略の否定行動後に欠けた丁寧感情を保持（未配置）
+
+Mashの分析内容修正の続行依頼により、API PR3 `c6e05ae4ed9461c385e8bdfc9811c1a3ef2fe3c0`／Cocolon PR30 `c40a6982cae8757f9b9c929efd330b253ece4c01`から再開。全体設計・全file地図・current03/詳細04/06・作業ruleと恒久incident全文・最新weekly20261010 §5.5/12月18日目標を参照した。context prepareは浅い履歴の祖先照合でexit2となり、生成contextをfreshと扱わず正本・実sourceを直接確認した。
+
+### 実際の欠落と修正
+
+u200で保持できた「その後、資料を調べませんでした」の後に「それから、私は落ち着きました／嬉しかったです／うれしかったです」を置くと、共有の報告前置き判定が「の…でした／です」を名詞述語と誤認し、本人感情だけを落としていた。前置きなしの単純な否定節や常体否定は通る対照も実engineで確認した。
+
+既存共有Planの `_source_prefix_opens_report` の名詞述語分岐内だけを補修。既存9動詞の「ませんでした／なかったです」、完全なを対象、独立格1〜4個（を/に/で/と・重複なし）、既存名詞と名詞内の/からの/への/との/での連結を持つ完全節だけを、報告の開始と区別する。先行主体は省略または明示SELF、任意のその後/それから1個。省略主体を本人に補完せず、後続感情にはそれ自身の本人主語・原文・前後/別fieldの帰属証拠が必要である。
+
+既存の明示SELF否定決定の判定を保持。日付、他動詞、主語省略の決定、肯定「書いた」の報告判定へは拡張しない。新しい自由副詞解析は追加せず、漢字名詞＋にの既存格解析は維持するため「慎重に」等の文法上の名詞扱いも変えない。真の報告・他者・未完主題・認知/伝聞/否認、訂正/撤回を解除しない。Analysis compiler/realizer/API/DTO/DB/RNの製品コードは変更0。
+
+### 検証・文章と図
+
+- 固定source `4ba54e336774da81adcfa53ab0b5e9960175063f`。共有Plan SHA256 `68852ea5c911677bddf1a9e9d3b8caeb9f54d8d22aa62ca40f07b85da7ebed5e`。ローカルAnalysis4suite **451 tests／4558 subtests PASS（49.66秒）**。共有新規対象を含む限定実行 **76 tests／29 subtests PASS（15.36秒）**、共有owner identity **1 PASS／193 deselected（30.93秒）**。重複範囲を合算しない。Python3.12.14、pytest8.4.1、pytest-subtests0.14.2、FastAPI0.142.2、Pydantic2.13.5、httpx0.28.1。製品依存変更0。
+- 最初の限定実行の2FAILは追加fixtureの判定範囲誤り。「と思いました」は旧helperから報告扱いではなく、「慎重に」は既存名詞＋格として読める。名詞述語の「と思ったのです」と未読副詞「ゆっくり」の検査へ修正し、製品sourceや既存期待を変更して通したものではない。
+- 合成Analysis8入力の前後16全文をrootが読み、実RN `watashiMapV2Contract.js`で本文・identity・node順・edge/unknown/annotation/conflictが一致。4例は2node/1edge→3node/2edge、未知文を挟む例は2node/1edge→3node/1edgeとなり、未読区間はつながない。真の報告を前/後/別fieldに置く3例は本文不変。否定は否定、主体未確定は未確定のまま、原因や改善を付け足していない。
+- 実service＋合成RPCで丁寧否定2形×丁寧感情3形の6ルートを保存し、engine再生成禁止readで文章・図・identityを保持。原文UTF-8/hash、明示SELF、名詞内関係、訂正/撤回、両方向の別fieldとfieldを越える順序線禁止も確認。実DB/端末描画の検査ではない。
+- 共有変更の影響としてEmlis Q1合成3例の前後6全文をrootが読解。すべてGENERATED、Observation3例不変。「落ち着きました」例のみReceptionが場面の受け取りから本人感情の受け取りへ変わり、他2例は全文不変。既存の再掲・汎用Receptionは残り、Emlis商品品質の解消とは扱わない。
+- 前後比較は変更前commitのhelperだけを別processの実ownerへメモリ読込みして生成した。初回のpackageコピーはEmlisのruntime根拠path検査で停止し、比較結果へ採用していない。最終方式はrepoを書き換えず、実行前後のsource一致を確認した。同環境read-only監査で帰属を壊すblocking findingなし。別model Pro reviewではない。
+
+### 反映・現在地
+
+GitHub固定sourceをfetchし、親head・変更5path・全文bytes・検証済みlocal tree `0bef727ee33f1e0dfd2675b35570acfe3ef20150` の一致を確認した。製品共有Plan1・既存test3・current共有identity fixture1、API既存handoff1とCocolon current03/詳細04/06を同期する。歴史IM03は不変、新規repository file0。STRUCTURE_MAP_DELTA_NONE：既存共有意味owner内の有限節判定だけで、source→命題→graph→文章/図→保存の経路は変わらない。
+
+Codex Work root華恋が編集・検証・反映、同環境subagentがread-only監査/実出力照合を担当。LEVEL_2相当、OBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Supabase操作・本人行取得・実DB書込・配置・有効化・native build・main mergeは0。未配置・本人実機未確認、正式商品受入れ未成立。
+
+u200の丁寧感情3形の欠落は上記有限文法内で解消。日付/対象省略/他動詞、主語省略の決定後の一部丁寧否定→感情、肯定「書いた」後の報告判定、一般意味理解は残る。全体ルートUI/段階的詳細、IF/Saved、元28日/14記録の全体改善判定、本人生成→保存再表示・正式商品受入れも未完了。この追加修正を実機確認の前提にはしない。次回は最新weekly/current03/本節と実出力へ戻り、具体的な内容欠落または本人生成・保存表示を扱う。
+
+### u201 最終CI
+
+固定source `4ba54e336774da81adcfa53ab0b5e9960175063f` の[CI38130758941](https://github.com/MassyuRed/mashos-api/actions/runs/38130758941)はsuccess。Python3.12.15でAnalysis4＋共有限定change/feelingの5suite **1071 tests／4558 subtests PASS（350.11秒）**、共有owner identity **1 PASS／193 deselected（25.22秒）**。fail/skip/xfail 0。既存合成7例の全文もrootがログで確認し、否定決定・丁寧感情・明示順序と未知区間の境界を保持している。ローカルの4suite／限定実行とは合算しない。後続は資料とPR説明のみを同期し、製品sourceは固定する。
