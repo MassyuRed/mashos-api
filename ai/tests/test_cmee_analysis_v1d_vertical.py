@@ -33,6 +33,81 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_kana_owned_writing_keeps_source_action_and_independent_feeling(self):
+        for owner in ('わたし', 'ぼく', 'おれ'):
+            for prefix, day, arguments in (
+                    ('私は', '', owner + 'の考えを'),
+                    ('その後、僕は', '', owner + 'のノートに考えを'),
+                    ('昨日、俺は', 'YESTERDAY', 'メモを' + owner + 'の手紙に'),
+                    ('わたしは今日、', 'TODAY', owner + 'の家族への手紙を')):
+                for finite, feeling in (('書いた', '落ち着きました'),
+                                         ('書きました', '安心しなかった')):
+                    with self.subTest(owner=owner, prefix=prefix, arguments=arguments, finite=finite):
+                        clause = prefix + arguments + finite
+                        literal = 'それから、私は' + feeling
+                        req = request(record(memo=clause + '。' + literal + '。'))
+                        artifact = self.generate(req).artifact
+                        self.assertIsNotNone(artifact)
+                        action, result = artifact.graph.nodes
+                        self.assertEqual((action.proposition.actor, action.proposition.relative_day,
+                            action.proposition.predicate_lemma, action.polarity), ('SELF', day, '書く', 'positive'))
+                        self.assertTrue(any(owner + 'の' in noun for _, noun in action.proposition.arguments))
+                        self.assertEqual((result.proposition.actor, result.proposition.relative_day,
+                            result.proposition.result_state, result.polarity),
+                            ('SELF', '', 'PAST_FEELING', 'negative' if 'なかった' in feeling else 'positive'))
+                        self.assertEqual([(e.endpoint_refs, e.edge_kind) for e in artifact.graph.edges],
+                            [((action.node_ref, result.node_ref), 'OBSERVED_ORDER')])
+                        source, = freeze_analysis_sources(req).sources
+                        for node, expected in ((action, clause), (result, literal)):
+                            evidence, = node.evidence_refs
+                            raw = source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                            self.assertEqual(raw.decode(), expected)
+                            self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+                        self.assertIn(owner + 'の', artifact.safe_text_projection(
+                            authenticated_owner_scope=OWNER)['text'])
+
+    def test_kana_owned_writing_keeps_scope_gaps_and_updates(self):
+        from cocolon_meaning_experience_engine.cores.analysis.intent_compiler import _proposition
+        for clause in ('わたしの考えを書いた', '友人はわたしの考えを書いた',
+                '私はわたしの考えを書かなかった', '私はわたしの考えを書きたい',
+                '私はわたしの資料を調べた', '私はわたしの職場にいた',
+                '私はわたしの考えを書いて', '私はわたしの考えを書いたかもしれないと思う',
+                '私は昨日わたしの考えを書いた', '私はわたしの明日メモを書いた',
+                '私はわたしの詳しい誰メモを書いた'):
+            with self.subTest(clause=clause):
+                self.assertIsNone(_proposition(clause))
+        clause, literal = '私はわたしの考えを書いた。', 'それから、私は落ち着きました'
+        for memo, action in ((clause + '不明な出来事があった。' + literal + '。', ''),
+                             (literal + '。', clause)):
+            artifact = self.generate(request(record(memo=memo, action=action))).artifact
+            self.assertIsNotNone(artifact)
+            self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)), (2, 0))
+        for memo, action in (('友人の話でした。' + clause + literal + '。', ''),
+                (clause + literal + '。', '友人が話した。'),
+                (clause + literal + '。と友人が言った。', ''),
+                (clause + literal + '。のは嘘だった。', ''),
+                (clause + 'それから、友人は落ち着きました。', '')):
+            with self.subTest(memo=memo, action=action):
+                artifact = self.generate(request(record(memo=memo, action=action))).artifact
+                self.assertFalse(artifact and any(n.proposition.result_state == 'PAST_FEELING'
+                    for n in artifact.graph.nodes))
+        for suffix in ('と友人が言った。', 'のは嘘だった。'):
+            artifact = self.generate(request(record(memo=clause + suffix))).artifact
+            self.assertFalse(artifact and any(n.proposition.predicate_lemma == '書く'
+                for n in artifact.graph.nodes))
+        for memo, action in (('友人の話でした。' + clause, ''),
+                (clause, '友人が話した。'), ('友人が話した。', clause)):
+            with self.subTest(memo=memo, action=action):
+                artifact = self.generate(request(record(memo=memo, action=action))).artifact
+                self.assertFalse(artifact and any(n.proposition.predicate_lemma == '書く'
+                    for n in artifact.graph.nodes))
+        original = record(memo=clause + literal + '。')
+        for answer in ('「' + literal + '」は取り消します。',
+                       '「' + literal + '」ではなく「私は安心しなかった」です。'):
+            artifact = self.generate(request(self.with_answer(original, answer))).artifact
+            self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)),
+                             (1 if '取り消' in answer else 2, 0))
+
     def test_self_owned_writing_keeps_independent_feeling_and_source(self):
         for prefix, day in (('私は', ''), ('その後、僕は', ''),
                             ('昨日、私は', 'YESTERDAY'), ('自分は今日、', 'TODAY')):

@@ -65,7 +65,12 @@ def test_omitted_writing_keeps_unparsed_and_report_boundaries(clause):
     '私は僕のノートに考えを書いた', '私はメモを俺の手紙に書いた',
     '昨日、私は自分の考えを書いた', 'その後、私は自分の気持ちを書きました',
     '私は自分の考えを僕のノートに書いた',
-    '私は自分の家族への手紙を書いた'])
+    '私は自分の家族への手紙を書いた',
+    # u211: written kana SELF possessives keep their original noun spelling.
+    '私はわたしの考えを書いた', '僕はぼくのノートに考えを書きました',
+    '昨日、俺はメモをおれの手紙に書いた', '私はおれの気持ちを書いた',
+    'わたしは今日、わたしの家族への手紙を書いた',
+    'その後、私はぼくの気持ちを書いた'])
 def test_relational_writing_keeps_independent_feeling_and_unfinished_witness(writing):
     import emlis_ai_grounded_observation_plan as owner
     from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
@@ -114,8 +119,12 @@ def test_relational_writing_keeps_independent_feeling_and_unfinished_witness(wri
     # A possessive does not supply an actor or open arbitrary report content.
     '自分の考えを書いた', '僕のノートに考えを書いた',
     '昨日、自分の考えを書いた', 'その後、自分の気持ちを書いた',
-    '友人は自分の考えを書いた', '私はわたしの考えを書いた',
-    '私はぼくのノートに考えを書いた', '私はおれの気持ちを書いた',
+    '友人は自分の考えを書いた',
+    'わたしの考えを書いた', 'その後、ぼくのノートに考えを書いた',
+    '友人はわたしの考えを書いた', '私はおれの気持ちをこう書いた',
+    '私はわたしの説明をノートに書いた', '私はぼくの話をノートに書いた',
+    '私はわたしの明日メモを書いた', '私はメモをぼくの明日ノートに書いた',
+    '私はおれの詳しい誰メモを書いた', '私はわたしの友人の考えを書いた',
     '私は自分の友人の考えを書いた', '私は友人への自分の考えを書いた',
     '私は自分の説明をノートに書いた', '私は自分の話をノートに書いた',
     '私は自分の引用に考えを書いた', '私は自分の報告にメモを書いた',

@@ -16098,7 +16098,7 @@ def _source_prefix_opens_report(prefix: str) -> bool:
             r"(?:(?P<place_after>" + _WISH_OBJECT_NOMINAL_SOURCE + r")(?:に|で))?"
             r"(?:書いた|書きました)", writing_clause)
         related_writing = writing is None
-        self_owned_prefix = r"(?:私|僕|自分|俺)の"
+        self_owned_prefix = r"(?:私|わたし|僕|ぼく|自分|俺|おれ)の"
         if writing is None:
             # A recipient, joint participant or setting inside either the
             # object or its one place/medium does not open reported speech.

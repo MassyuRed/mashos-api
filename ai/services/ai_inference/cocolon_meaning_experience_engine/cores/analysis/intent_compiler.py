@@ -87,6 +87,13 @@ _NOMINAL_CASE_LINK = re.compile(r'(?:から|へ|と|で)の')
 _PAST_ARGUMENT = re.compile(r'(?P<noun>' + _NOMINAL
     + r'(?:(?:からの|への|との|での|の)' + _NOMINAL
     + r')*)(?P<case>を|に|で|と)')
+# Kana SELF possessives are bounded to completed, explicitly SELF writing.
+# Do not add pronouns to the general nominal grammar: that would also admit
+# new scenes, wishes, omitted actors and embedded/dependent actions.
+_SELF_WRITING_ARGUMENT = re.compile(
+    r'(?P<noun>(?:(?:私|わたし|僕|ぼく|自分|俺|おれ)の)?' + _NOMINAL
+    + r'(?:(?:への|との|での)' + _NOMINAL + r')*)(?P<case>を|に|で)')
+_KANA_SELF_POSSESSIVE = re.compile(r'^(?:わたし|ぼく|おれ)の')
 
 
 def _finite_predicates(*, include_nonpast=False):
@@ -580,7 +587,8 @@ def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relat
         # happened yesterday. Finer day/range scopes need their own parse.
         if _unparsed_day_extension(value[day.end():], separated=day.end() > day.end(1)):
             return None
-        first_argument = _PAST_ARGUMENT.match(value, day.end())
+        first_argument = (_PAST_ARGUMENT.match(value, day.end())
+                          or _SELF_WRITING_ARGUMENT.match(value, day.end()))
         if (day.end() == day.end(1) and first_argument is not None
                 and 'の' in first_argument['noun']):
             # 昨日提出の資料 can describe the material, not the action.
@@ -610,8 +618,14 @@ def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relat
         argument_pattern = (_PAST_ARGUMENT
             if not content_only and predicate_forms is None
             and modality == 'fact' and time == 'past' else _ARGUMENT)
+        self_writing = (argument_pattern is _PAST_ARGUMENT
+            and (actor, lemma, polarity) == ('SELF', '書く', 'positive'))
+        kana_owned_writing = False
         while offset < end:
             argument = argument_pattern.match(value, offset, end)
+            if argument is None and self_writing:
+                argument = _SELF_WRITING_ARGUMENT.match(value, offset, end)
+                kana_owned_writing = kana_owned_writing or argument is not None
             if argument is None:
                 break
             noun = argument['noun']
@@ -633,6 +647,11 @@ def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relat
             parts.append(('CASE_' + argument['case'], offset, argument.end()))
             offset = argument.end()
         if offset != end or len({case for case, _ in arguments}) != len(arguments):
+            continue
+        if kana_owned_writing and (len(arguments) not in {1, 2}
+                or not any(case == 'を' for case, _ in arguments)
+                or any(_SELF_WRITING_ARGUMENT.fullmatch(noun + case) is None
+                       for case, noun in arguments)):
             continue
         if lemma in _PAST_DECISION_LEMMAS and not any(case == 'を' for case, _ in arguments):
             continue
@@ -1183,6 +1202,8 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     change = _bounded_change_proposition(value)
     qualified_past = bool(proposition and any(
         _NOMINAL_CASE_LINK.search(noun) for _, noun in proposition.arguments))
+    kana_owned_writing = bool(proposition and proposition.predicate_lemma == '書く'
+        and any(_KANA_SELF_POSSESSIVE.match(noun) for _, noun in proposition.arguments))
     past_decision = bool(proposition and proposition.predicate_lemma in _PAST_DECISION_LEMMAS)
     unattributed_action = bool(proposition and proposition.actor == 'UNSPECIFIED'
         and (proposition.modality, proposition.temporal_scope) == ('fact', 'past')
@@ -1196,7 +1217,7 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     # Resolving a calendar-suffix collision does not resolve the speaker.
     # Apply the existing full-source attribution boundary to these dated
     # nominals in scenes, roles and wishes as well as performed actions.
-    source_host_required = qualified_past or bounded_past_action or dated_compound_nominal
+    source_host_required = qualified_past or bounded_past_action or dated_compound_nominal or kana_owned_writing
     if unattributed_action:
         # Shared current_user is not an actor proof. The existing complete
         # finite grammar supplies tense/negation just as for SELF clauses;
@@ -1233,7 +1254,7 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
         # A newly readable object must not turn a reported speaker's
         # first-person clause into the owner's completed action.
         prefix = context[:span.start_index]
-        other_field = ('memo' if (bounded_past_action or dated_compound_nominal)
+        other_field = ('memo' if (bounded_past_action or dated_compound_nominal or kana_owned_writing)
                        and span.source_field == 'memo_action' else 'memo_action')
         other = str(source.normalized.get(other_field, ''))
         if unattributed_action:
@@ -1303,7 +1324,7 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
         # polarity, including a host with its own explicit speaker. Match
         # that host, not every sentence starting with と (e.g. とても).
         continuation = context[span.end_index:].lstrip(' \t\u3000。．.!！\r\n;；')
-        if ((bounded_past_action or dated_compound_nominal)
+        if ((bounded_past_action or dated_compound_nominal or kana_owned_writing)
                 and not re.match(r'(?:ところで|とりあえず)[、，,]', continuation)
                 and re.match(r'(?:と|って|のは|のも|なんて|などと)', continuation)):
             return None

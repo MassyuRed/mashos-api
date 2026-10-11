@@ -85,6 +85,14 @@ async def storage_sql_fixture():
 
 
 class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
+    async def test_kana_owned_writing_feeling_survives_saved_read(self):
+        for clause in ('私はわたしの考えを書いた', '僕はぼくのノートに考えを書きました',
+                       '昨日、俺はメモをおれの手紙に書いた'):
+            with self.subTest(clause=clause):
+                await self._assert_action_change_saved(clause + '。それから、私は落ち着きました。',
+                    expected_label='それから：落ち着いた（記録された気持ち）')
+                self.assertNotIn('誰の行動かは未確定', self.row['content_text'])
+
     async def test_self_owned_writing_feeling_survives_saved_read(self):
         for clause in ('私は自分の考えを書いた', '私は僕のノートに考えを書きました',
                        '昨日、私はメモを俺の手紙に書いた'):
