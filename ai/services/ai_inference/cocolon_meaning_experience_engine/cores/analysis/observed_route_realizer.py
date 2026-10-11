@@ -126,6 +126,9 @@ def _te_order_context(node, graph):
 
 
 def _source_prefix(phrase, parts):
+    if parts.written_modifiers:
+        phrase = ''.join({'THIS_OCCASION': '今回は、', 'IN_ADVANCE': '事前に'}[modifier]
+                         for modifier in parts.written_modifiers) + phrase
     if parts.sequence_marker:
         phrase = {'AFTER_PREVIOUS': 'その後：',
                   'THEN_OR_ADDITION': 'それから：'}[parts.sequence_marker] + phrase
@@ -175,8 +178,9 @@ def _safe_label(node, graph):
         label = phrase + ('ことへの希望' if parts.polarity == 'positive'
                           else 'ことを望まない')
         return label + ('（当時）' if parts.temporal_scope == 'past' else '')
-    return phrase + ('（実行済み）' if parts.polarity == 'positive'
+    label = phrase + ('（実行済み）' if parts.polarity == 'positive'
                      else '（行わなかった）')
+    return label + ('（誰の行動かは未確定）' if parts.actor == 'UNSPECIFIED' else '')
 
 
 @dataclass(frozen=True, slots=True, repr=False)

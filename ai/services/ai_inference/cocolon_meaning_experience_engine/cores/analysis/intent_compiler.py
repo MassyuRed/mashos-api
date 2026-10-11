@@ -47,6 +47,7 @@ class ObservedProposition:
     dependent_form: str = ''
     scene_state: str = ''
     role_state: str = ''
+    written_modifiers: tuple[str, ...] = ()
 
 
 # A bounded verb/inflection inventory, not an input/topic-to-answer table.
@@ -553,6 +554,9 @@ def _parsed_proposition(value: str) -> ObservedProposition | None:
     cognition = _cognitive_proposition(value)
     if cognition is not None:
         return cognition
+    decision = _contextual_decision_proposition(value)
+    if decision is not None:
+        return decision
     prefix = _CLAUSE_PREFIX.match(value)
     start = prefix.end() if prefix else 0
     token = prefix.group(1) if prefix else ''
@@ -638,6 +642,49 @@ def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relat
     return None
 
 
+def _contextual_decision_proposition(value):
+    """Keep a complete decision even when its actor is not written.
+
+    今回は and 事前に are preserved modifiers, not dates or a relation to
+    another event. The shared frame's default actor never supplies SELF.
+    """
+    prefix = _CLAUSE_PREFIX.match(value)
+    offset = prefix.end() if prefix else 0
+    token = prefix.group(1) if prefix else ''
+    marker = {'その後': 'AFTER_PREVIOUS', 'それから': 'THEN_OR_ADDITION'}.get(token, '')
+    day = {'今日': 'TODAY', '昨日': 'YESTERDAY'}.get(token, '')
+    parts = [(marker or 'RELATIVE_DAY_' + day, 0, offset)] if prefix else []
+    topic = re.compile(r'(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?')
+    subject = topic.match(value, offset)
+    if subject:
+        parts.append(('SELF_TOPIC', offset, subject.end()))
+        offset = subject.end()
+    modifiers = []
+    for written, role in (('今回は', 'THIS_OCCASION'), ('事前に', 'IN_ADVANCE')):
+        match = re.compile(written + r'[、， \u3000]*').match(value, offset)
+        if match:
+            modifiers.append(role)
+            parts.append(('WRITTEN_MODIFIER_' + role, offset, match.end()))
+            offset = match.end()
+        # Both 私は今回は... and 今回は私は... retain the written topic.
+        if role == 'THIS_OCCASION' and subject is None:
+            subject = topic.match(value, offset)
+            if subject:
+                parts.append(('SELF_TOPIC', offset, subject.end()))
+                offset = subject.end()
+    if subject and not modifiers:
+        return None  # The existing ordinary SELF grammar owns this case.
+    proposition = _finite_proposition(value, offset, 'SELF' if subject else 'UNSPECIFIED',
+                                      parts, marker, day)
+    if (proposition is None or proposition.predicate_lemma not in _PAST_DECISION_LEMMAS
+            or (proposition.modality, proposition.temporal_scope) != ('fact', 'past')):
+        return None
+    # An unconsumed/repeated modifier must not become a nominal argument.
+    if ('に', '事前') in proposition.arguments:
+        return None
+    return replace(proposition, written_modifiers=tuple(modifiers))
+
+
 def _te_action_proposition(value):
     """Parse a dependent action without asserting that it happened."""
     prefix = _CLAUSE_PREFIX.match(value)
@@ -712,10 +759,11 @@ def _predicate_meaning(proposition):
 
 def _proposition_meaning(proposition):
     content = proposition.possible_content
-    return (proposition.actor, tuple(sorted(proposition.arguments)),
+    meaning = (proposition.actor, tuple(sorted(proposition.arguments)),
             _predicate_meaning(proposition), proposition.result_state, proposition.scene_state, proposition.role_state,
             (_proposition_meaning(content), content.polarity, content.modality,
              content.temporal_scope) if content else None)
+    return meaning + (proposition.written_modifiers,) if proposition.written_modifiers else meaning
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -1237,9 +1285,11 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
             or (after and after[0] not in boundaries)):
         return None
     # current_user is the shared frame's default, not proof of its subject.
-    # Actions/thoughts require an explicit first-person finite host. Only a
-    # witnessed, fully parsed non-agent result state is the bounded exception.
-    if result is None and change is None and not re.match(r'^(?:(?:今日|昨日|その後|それから)[、，\s]*)?(?:私は|僕は|ぼくは|俺は|おれは|わたしは|自分は)', value):
+    # Actions/thoughts require an explicit first-person finite host, except
+    # witnessed decisions whose omitted actor stays UNSPECIFIED. Non-agent
+    # result states retain their existing bounded exception.
+    if (result is None and change is None and not past_decision
+            and not re.match(r'^(?:(?:今日|昨日|その後|それから)[、，\s]*)?(?:私は|僕は|ぼくは|俺は|おれは|わたしは|自分は)', value)):
         return None
     # The source helper already proved a length-preserving normalization.
     field = source.envelope.raw_utf8[ref.field_utf8_start:ref.field_utf8_end].decode('utf-8')
@@ -1591,14 +1641,21 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
             # A sequence is about occurrences: collapsing A -> B -> A by
             # proposition would create a false cycle or erase repeated A.
             # Ordinary, unqualified claims retain their existing aggregation.
+            # An omitted decision actor is not a shared person identity:
+            # retain each written occurrence even without an order marker.
             occurrence_scope = (evidence.evidence_id if evidence.evidence_id in ordered_evidence
-                or (proposition and proposition.sequence_marker) else None)
+                or (proposition and (proposition.sequence_marker
+                    or (proposition.actor == 'UNSPECIFIED'
+                        and proposition.predicate_lemma in _PAST_DECISION_LEMMAS))) else None)
             # A relative day is anchored to its own input/answer, not to the
             # viewing date or the parent's created_at. Only equivalent claims
             # in that same source and day retain ordinary aggregation.
             day_scope = ((source.envelope.envelope_id, proposition.relative_day)
                          if proposition and proposition.relative_day else None)
-            signature = (kind, meaning, polarity, modality, time, occurrence_scope, day_scope)
+            # Each source's 今回 names its own occasion, even with a written SELF.
+            occasion_scope = (source.envelope.envelope_id if proposition
+                and 'THIS_OCCASION' in proposition.written_modifiers else None)
+            signature = (kind, meaning, polarity, modality, time, occurrence_scope, day_scope, occasion_scope)
             index = by_signature.get(signature)
             if index is None:
                 index = len(nodes)

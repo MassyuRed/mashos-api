@@ -167,6 +167,20 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(label, 'その後：同僚と分担を' + lemma + '（' + ending + '）')
                 self.assertIn(label, saved['content_text'])
 
+    async def test_unattributed_decision_route_survives_save_and_read(self):
+        for clause, label in (
+                ('今回は事前に同僚と分担を決めておいた',
+                 '今回は、事前に同僚と分担を決めておく（実行済み）（誰の行動かは未確定）'),
+                ('今回は事前に同僚と分担を決めておかなかった',
+                 '今回は、事前に同僚と分担を決めておく（行わなかった）（誰の行動かは未確定）'),
+                ('昨日、分担を決めました',
+                 'この記述時点の昨日：分担を決める（実行済み）（誰の行動かは未確定）')):
+            with self.subTest(clause=clause):
+                await self._assert_action_change_saved(clause
+                    + '。その後、私は資料を調べた。それから、私は記録を残した。',
+                    expected_label='それから：記録を残す（実行済み）',
+                    expected_preceding_label=label)
+
     async def test_separated_day_nominal_route_survives_save_and_read(self):
         for clause, label in (
                 ('私は昨日、分担を決めておいた', '分担を決めておく（実行済み）'),
@@ -1775,7 +1789,8 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         for encoded in (json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False),
                         json.dumps(projection, ensure_ascii=False)):
             for private in ('result_state', 'BOUNDED_CHANGE', 'PAST_FEELING', 'source_parts', '私は',
-                            'action_supports_change', 'dependent_form', 'TE_BEFORE_PAST_CHANGE'):
+                            'action_supports_change', 'dependent_form', 'TE_BEFORE_PAST_CHANGE',
+                            'written_modifiers', 'THIS_OCCASION', 'IN_ADVANCE'):
                 self.assertNotIn(private, encoded)
 
     async def test_scene_and_role_polarity_and_action_order_survive_save_and_read(self):

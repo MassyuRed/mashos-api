@@ -16111,3 +16111,27 @@ Mashの分析内容修正の継続依頼で、fresh API PR3 `19f1ca1f4d64fa8354a
 Codex Work root華恋が編集/実行/反映、subagentはread-only。既存設計内LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX。前回と同じ隔離test runtimeを使用し、追加依存・製品lock変更0。API compiler1/test2/handoff1とCocolon current03/詳細04/06の既存7file、新規repository file0。STRUCTURE_MAP_DELTA_NONE：既存Analysisの文解釈と帰属境界の補修で、source→graph→文章/図→保存再読の責任・契約は不変。共有owner/realizer/API/DTO/DB/SQL/RN製品変更0、今回Supabase操作0、deploy/native build/merge0。primary outcome=TECHNICAL_CREDIT、正式商品受入れではない。既存PR branchへnon-force反映し、remote tree/全変更path/bytes一致を確認する。
 
 「今回は事前に同僚と分担を決めておいた」は今回も未対応。共有current_user既定値は省略された本人の証明にならない。今後省略行動を扱う場合は主体未確定の表示と、別記録の不明な行為者を同一人へ集約しない扱いが必要で、今回は拡大していない。元28日/14記録の再取得・全体改善判定は行っていない。否定決定後の感情根拠、全体ルートUI/段階的詳細、一般的意味理解、IF/Saved、本人生成→同じ文章/図→保存後再表示は残る。今回の修正を実機確認の追加前提にしない。次回は最新weekly/current03/本節へ戻り、内容修正の明示配分なら未対応記述の直接原因、実機枠なら既存生成/保存表示経路を扱う。
+
+## 2026-10-11 u197 — 主語省略の決定・準備を未確定の主体とともに保持（未配置）
+
+Mashの分析内容修正の継続依頼で、fresh API PR3 `a31b29cafce9f8c87aa9480fa272f35979239fbb`／Cocolon PR30 `40483355878fcb91632a4253a5361cd7ab8cc82b`から再開。前段で確認した全体設計01/01A/B/C・全file地図02・current規則/Rule18・詳細04/06を継承し、CURRENT_RULES入口・恒久incident全文・current03 u196・最新weekly20261010 §5.5と実sourceを再照合した。本人生成→保存再表示と12/18目標は残し、明示依頼の内容修正枠を進めた。前段で祖先証明が不成立だった生成System Contextをfresh確認済みへ昇格せず、原典直接確認を継承する。
+
+### 原因と修正
+
+元の例「今回は事前に同僚と分担を決めておいた」は、明示SELF必須と未対応修飾によって分析から落ちていた。本人と決めつける補完を加えず、既存Analysis compiler内で過去決定/準備と完全な格付き対象を解釈し、主語省略ならUNSPECIFIEDとして保持する。明示本人の同表現はSELFを維持する。private propositionに書かれた今回/事前のmodifierを残し、既存realizerで主体未確定を可視化する。準備を通常決定へ潰さず、肯否定・原文全体と座標/hash・共有行動witness・話者帰属を維持する。未対応形、別actor、報告/否認は保留する。
+
+不明な行為者の決定を別evidence間で集約しない。追加read-only reviewで、明示SELFの別記録の「今回」が集約される点と「事前に」の重複が名詞項へ転用される点を実測したため、今回をsource単位に分け、新分岐の未消費「事前に」を保留した。期間比較へIDを入れず、同文の意味比較で偽の変化を作らない。書かれた順序だけを保持し、日付/原因/気持ちや他記録との関係を補わない。
+
+### 実出力・検証
+
+- 同じ合成12入力を開始版と修正版の実engineへ渡し、rootが全結果の本文を比較。最終は生成10/保留2。元の一文はUNAVAILABLEから主体未確定の1nodeへ、同文→調べた→安心したは2node/1edgeから3node/2edgeへ変わった。否定、明示SELF、昨日、独立2記録、未読文、訂正/撤回を区別し、報告と希望は保留する。合成入力に対するCocolonの実生成結果であり、華恋の代筆や本人実機結果ではない。
+- 生成10例を実RN `buildWatashiMapV2ViewModel`へ渡し、全文・artifact参照・表示順が一致。review修正後も同じ12例の表示内容は不変。再生成ごとのartifact IDだけを除いて前後projectionを比較した。公開DTOへprivate modifierを追加しない。
+- 最終Analysis vertical/nominal-relations/storage/saved-period **433 tests／4371 subtests PASS、skip/xfail0、exit0、62.13秒**。新規最初の5testは修正前に41 failures（subtestsを含む表示）を再現。既存unsupported3文は新しい主体未確定の肯定検査へ移した。初回全suiteは433/4367成功、review2点の修正と4境界例追加後に4suiteを再実行した。
+- 実service＋合成RPCで主語省略の肯定準備・否定準備・昨日の通常決定3ルートを保存し、engine再生成禁止readで同じ本文/図・保存identity・順序線を確認。稼働DBの保存成功ではない。safe replayではactor補完・modifier削除/入替を拒否する。
+- 同環境read-only subagentが追加31例と差分を確認し、上記2指摘の修正後に両方の解消と期間比較不変を実engineで再確認した。rootが最終差分と出力を確認。別model Pro reviewとは称さず、probeを433件へ合算しない。
+
+### 反映範囲・残件
+
+Codex Work root華恋が編集/実行/反映、subagentはread-only。既存設計内LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX。前段と同じ隔離runtime（Python3.12.14/pytest8.4.1/pytest-subtests0.14.2/FastAPI0.142.2/Pydantic2.13.5/httpx0.28.1）を使用し、追加依存/製品lock変更0。API compiler/realizer/test2/handoffとCocolon current03/詳細04/06の既存8file、新規repository file0。STRUCTURE_MAP_DELTA_NONE：既存解釈・表示owner内の補修で、source→graph→文章/図→保存再読の責任や公開契約は不変。共有owner/API/DTO/DB/SQL/RN製品変更0、Supabase操作/deploy/native build/merge0。primary outcome=TECHNICAL_CREDIT、正式商品受入れではない。既存PR branchへnon-force反映し、検証済み全treeと変更path/bytesの一致を確認する。
+
+元28日/14記録全体の再取得・全体改善判定は今回行っていない。今回の対応は既存過去決定/準備の有限形と限定modifierだけで、他の主語省略行動/自由な副詞語順/一般意味理解、否定決定後の感情根拠、全体ルートUI/段階的詳細、IF/Saved、本人生成→同じ文章/図→保存後再表示は残る。未配置・本人実機未確認・正式商品受入れ未完了。本修正を実機確認の追加前提にしない。次回は最新weekly/current03/本節と実出力へ戻り、内容修正枠なら未対応記述の直接原因、実機枠なら既存生成/保存表示経路を扱う。
