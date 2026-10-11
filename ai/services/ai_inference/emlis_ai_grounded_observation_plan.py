@@ -3770,7 +3770,14 @@ def _source_operator_owner_scope_is_bound(fragment: str) -> bool:
     return True
 
 
-def _source_polite_past_feeling_is_bound(span, normalized_input, *, action=None, connector=None, plain_compound=False):
+_SOURCE_NEGATIVE_PAST_FEELING = (
+    r"(?:安心しなかった(?:です)?|安心しませんでした|"
+    r"落ち着かなかった(?:です)?|落ち着きませんでした|"
+    r"(?:嬉し|うれし)くなかった(?:です)?|(?:嬉し|うれし)くありませんでした)")
+
+
+def _source_polite_past_feeling_is_bound(span, normalized_input, *, action=None, connector=None,
+                                       plain_compound=False, negative_compound=False):
     """Prove the three polite finite feelings without widening keyword rules."""
     if span is None or normalized_input is None or span.source_field != "memo":
         return False
@@ -3781,6 +3788,10 @@ def _source_polite_past_feeling_is_bound(span, normalized_input, *, action=None,
         if action is None:
             return False
         feeling = r"(?:落ち着いた|嬉しかった|うれしかった)"
+    if negative_compound:
+        if action is None:
+            return False
+        feeling = _SOURCE_NEGATIVE_PAST_FEELING
     if action is None:
         if re.fullmatch(subject + feeling, raw) is None:
             return False
@@ -3804,6 +3815,14 @@ def _source_polite_past_feeling_is_bound(span, normalized_input, *, action=None,
     record = "\n".join(str(normalized_input.get(field) or "") for field in ("memo", "memo_action"))
     start, end = span.start_index, span.end_index
     after = source[end:].lstrip(" \t\u3000。．.!！\r\n;；")
+    if negative_compound and (
+        _source_prefix_opens_report(str(normalized_input.get("memo_action") or ""))
+        or re.search(r"(?:言って|話して|語って|述べて|書いて|伝えて|答えて|説明して)"
+                     r"(?:いた|いました|いる|います)(?:[。．.\s]|$)",
+                     str(normalized_input.get("memo_action") or ""))
+        or re.match(r"(?:と|って|のは|のも|なんて|などと)", after)
+    ):
+        return False
     if action is not None and (
         re.search(r"(?:言って|話して|語って|述べて|書いて|伝えて|答えて|説明して)"
                   r"(?:いた|いました|いる|います)(?:[。．.\s]|$)", source[:start])
@@ -4258,6 +4277,13 @@ def _typed_nucleus_projections_for_span(
         change_operators = set(
             _operator_codes_for_text(change_text, source_field=source_field)
         )
+        # Negative feeling stems must never fall through the positive
+        # keyword branch, including when a later host remains unparsed.
+        negative_feeling_change = bool(re.search(
+            r"安心し(?:な|ません)|落ち着(?:かな|きません)|(?:嬉し|うれし)く(?:な|ありません)", change_text))
+        proved_negative_feeling = negative_feeling_change and _source_polite_past_feeling_is_bound(
+            span, normalized_input, action=text[action_start:surface_action_end],
+            connector=text[surface_action_end:change_start], negative_compound=True)
         polite_nominal_change = change_text.endswith(("減りました", "増えました", "戻りました"))
         polite_feeling_change = change_text.endswith(("落ち着きました", "嬉しかったです", "うれしかったです"))
         proved_polite_feeling = polite_feeling_change and _source_polite_past_feeling_is_bound(
@@ -4277,12 +4303,13 @@ def _typed_nucleus_projections_for_span(
             source_proven_polite_nominal_change(text[action_start:surface_action_end],
                 text[surface_action_end:change_start], change_text, plain=True))
         observed_change = bool(
-            (proved_plain_change if prefixed_plain_change else proved_polite_feeling if polite_feeling_change
+            (proved_negative_feeling if negative_feeling_change
+             else proved_plain_change if prefixed_plain_change else proved_polite_feeling if polite_feeling_change
              else source_proven_polite_nominal_change(
                  text[action_start:surface_action_end], text[surface_action_end:change_start], change_text)
              if polite_nominal_change
              else _POSITIVE_CHANGE_RE.search(change_text) or _CHANGE_RE.search(change_text))
-            and (proved_polite_feeling or _OBSERVED_PAST_OUTCOME_RE.search(change_text))
+            and (proved_negative_feeling or proved_polite_feeling or _OBSERVED_PAST_OUTCOME_RE.search(change_text))
             and "operator:uncertainty" not in change_operators
             and "operator:wish" not in change_operators
             and "operator:refusal" not in change_operators
@@ -4291,9 +4318,11 @@ def _typed_nucleus_projections_for_span(
         # source-proven compound with an explicit SELF clause.
         # Operators and source coordinates still use the unchanged fragment.
         discourse_prefix = re.match(
-            r"^(?:その後|それから)[、， \u3000]*(?=(?:私|僕|わたし|自分)(?:は|が|も))",
+            r"^(?:その後|それから)[、， \u3000]*(?="
+            + (r"(?:私|僕|ぼく|俺|おれ|わたし|自分)" if proved_negative_feeling else r"(?:私|僕|わたし|自分)")
+            + r"(?:は|が|も))",
             action_text,
-        ) if observed_change and (polite_feeling_change or polite_nominal_change or proved_plain_change) else None
+        ) if observed_change and (proved_negative_feeling or polite_feeling_change or polite_nominal_change or proved_plain_change) else None
         performed_action = structurally_performed_action(
             action_text, argument_start=discourse_prefix.end() if discourse_prefix else 0,
         )
@@ -4306,7 +4335,9 @@ def _typed_nucleus_projections_for_span(
                 "semantic_role:compound_reception_coowned_nonprimary",
                 "semantic_dependency:action_before_change",
             ]
-            positive_change = proved_polite_feeling or (not polite_nominal_change and bool(_POSITIVE_CHANGE_RE.search(change_text)))
+            positive_change = not proved_negative_feeling and (proved_polite_feeling or (not polite_nominal_change and bool(_POSITIVE_CHANGE_RE.search(change_text))))
+            if proved_negative_feeling:
+                change_codes.extend(("operator:negation", "semantic_role:source_proven_negative_feeling_sequence"))
             if polite_nominal_change:
                 change_codes.append("semantic_role:neutral_polite_nominal_change")
             if proved_plain_change:
@@ -4336,7 +4367,7 @@ def _typed_nucleus_projections_for_span(
                     nucleus_suffix=":change",
                     kind="change",
                     predicate_kind="change",
-                    polarity="positive" if positive_change else "neutral",
+                    polarity="negative" if proved_negative_feeling else "positive" if positive_change else "neutral",
                     modality=(
                         "feeling"
                         if _FEELING_RE.search(change_text)
@@ -7505,6 +7536,18 @@ def source_owned_action_change(move, plan, resolver):
         or _top_level_text(raw) != raw or re.search(r'[「」『』“”‘’"?？!！;；…‥\r\n]', raw)):
         return None
     connector = raw[len(left):-len(right)]
+    if "semantic_role:source_proven_negative_feeling_sequence" in change.semantic_frame.attribute_codes:
+        if (change.semantic_frame.polarity != "negative"
+            or "operator:negation" not in change.semantic_frame.attribute_codes
+            or "operator:positive_change" in change.semantic_frame.attribute_codes
+            or change.semantic_frame.modality != ("feeling" if _FEELING_RE.search(right) else "fact")
+            or links[0].source_relation_ids != ("typed_projection:perfective_action_before_bounded_change",)
+            or re.fullmatch(r"(?:(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?)?"
+                            + _SOURCE_NEGATIVE_PAST_FEELING, right) is None
+            or not ((left.endswith(("た", "だ")) and re.fullmatch(r"(?:後|あと)(?:に)?[、,]\s*", connector))
+                    or (left.endswith(("て", "で")) and re.fullmatch(r"から[、,]\s*", connector)))):
+            return None
+        return left, connector, right
     if "semantic_role:source_proven_plain_sequence" in change.semantic_frame.attribute_codes:
         if (change.semantic_frame.polarity != "positive"
             or "operator:positive_change" not in change.semantic_frame.attribute_codes

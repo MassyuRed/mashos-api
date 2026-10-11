@@ -922,9 +922,14 @@ def _action_change_pair(source, plan, span_id):
     left = _te_action_proposition(raw[a:b]) if te_after else _proposition(raw[a:b])
     right = _bounded_change_proposition(raw[c:d])
     if (left is None or right is None or _has_unparsed_nominal_scope(right) or left.actor != 'SELF'
-            # Negative standalone feelings do not broaden the shared
-            # positive action/change pair (whose negation is not proved).
-            or right.polarity != 'positive'
+            # A negative feeling needs the new complete shared witness;
+            # the old positive keyword pair cannot license its negation.
+            or (right.polarity != 'positive' and not (
+                right.result_state == 'PAST_FEELING' and right.polarity == 'negative'
+                and change.semantic_frame.polarity == 'negative'
+                and {'operator:negation', 'semantic_role:source_proven_negative_feeling_sequence'}
+                    <= set(change.semantic_frame.attribute_codes)
+                and 'operator:positive_change' not in change.semantic_frame.attribute_codes))
             or left.result_state or left.scene_state or left.role_state or left.possible_content or left.relative_day
             or left.sequence_marker not in {'', 'AFTER_PREVIOUS', 'THEN_OR_ADDITION'}
             or any(re.search(r'(?:^|の)(?:何|誰|幾)', noun) for _, noun in left.arguments)

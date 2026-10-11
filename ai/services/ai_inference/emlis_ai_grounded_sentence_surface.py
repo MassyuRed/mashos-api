@@ -3506,7 +3506,11 @@ def _render_relation(
         role = relation_surface_role(relation, nucleus_index)
         left_form = _semantic_endpoint_surface_form(nucleus_index[relation.from_nucleus_id])
         right_form = _semantic_endpoint_surface_form(nucleus_index[relation.to_nucleus_id])
-        if (
+        negative_sequence = (_final_stage1_negative_feeling_sequence_sentence(
+            relation, nucleus_index, resolver) if typed_semantic_duties else None)
+        if negative_sequence:
+            sentences.append(negative_sequence)
+        elif (
             typed_semantic_duties
             and relation.type == "action_supports_change"
             and nucleus_index[relation.from_nucleus_id].kind == "action"
@@ -3653,6 +3657,35 @@ def _render_relation(
     if not joined:
         return _render_observation(binding, nucleus_index, resolver)
     return f"{_hedge_prefix(binding)}{joined}"
+
+
+def _final_stage1_negative_feeling_sequence_sentence(relation, nucleus_index, resolver):
+    """Quote the stated order without turning an absent feeling into change."""
+    action = nucleus_index[relation.from_nucleus_id]
+    feeling = nucleus_index[relation.to_nucleus_id]
+    codes = set(feeling.semantic_frame.attribute_codes)
+    if (relation.type != "action_supports_change"
+        or relation.source_relation_ids != ("typed_projection:perfective_action_before_bounded_change",)
+        or relation.grounding_kind != "user_stated_relation" or relation.retention != "required"
+        or not {"semantic_role:source_proven_negative_feeling_sequence", "operator:negation"} <= codes
+        or "operator:positive_change" in codes or feeling.semantic_frame.polarity != "negative"
+        or not _final_action_is_performed(action)
+        or action.source_span_ids != feeling.source_span_ids
+        or len(action.source_span_ids) != 1):
+        return None
+    left, right = (_quotes_for_nuclei((n.nucleus_id,), nucleus_index, resolver)
+                   for n in (action, feeling))
+    if len(left) != 1 or len(right) != 1:
+        return None
+    action_text, feeling_text = left[0][1:-1], right[0][1:-1]
+    raw = str(resolver.resolve(action.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
+    if not action_text or not feeling_text or not raw.startswith(action_text) or not raw.endswith(feeling_text):
+        return None
+    connector = raw[len(action_text):-len(feeling_text)]
+    if not ((action_text.endswith(("た", "だ")) and re.fullmatch(r"(?:後|あと)(?:に)?[、,]\s*", connector))
+            or (action_text.endswith(("て", "で")) and re.fullmatch(r"から[、,]\s*", connector))):
+        return None
+    return f"{left[0]}{connector}{right[0]}とあります。"
 
 
 def _final_stage1_typed_relation_endpoint(
@@ -4049,11 +4082,15 @@ def _render_final_stage1_limited_scope(
     for relation_index_value, relation_fragment in enumerate(
         () if focused else relation_fragments
     ):
+        negative_sequence = _final_stage1_negative_feeling_sequence_sentence(
+            relation_rows[relation_index_value], nucleus_index, resolver)
         past_feeling = (
             _final_stage1_past_feeling_contrast_sentence(relation_rows[0], nucleus_index, resolver)
             if len(relation_rows) == 1 and len(relation_fragments) == 1 else None
         )
-        if past_feeling:
+        if negative_sequence:
+            clauses.append(negative_sequence)
+        elif past_feeling:
             clauses.append(past_feeling)
         elif relation_index_value == 0:
             clauses.append(

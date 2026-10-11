@@ -1872,6 +1872,67 @@ def _body_inverse_original_record_feeling(nucleus, plan, resolver):
     return source
 
 
+def _body_inverse_negative_feeling_sequences(body, witness, line, planned_line, plan, resolver):
+    """Read exact negative episodes from body bytes, without an author oracle."""
+    binding = planned_line.binding
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    relations, nuclei = set(), set()
+    rows = tuple(_body_inverse_visible_text(body, row) for row in witness.sentences
+        if row.section == "observation" and row.section_line_ordinal == line.section_ordinal)
+    if "scope_hedge" in binding.functional_atom_ids and planned_line.surface_function != "render_limited_scope":
+        prefix = "今の入力だけを見ると、"
+        if not rows or not rows[0].startswith(prefix):
+            return frozenset(), frozenset()
+        rows = (rows[0][len(prefix):], *rows[1:])
+    for relation in plan.relations:
+        if relation.relation_id not in binding.relation_ids:
+            continue
+        action, feeling = (index[nid] for nid in (relation.from_nucleus_id, relation.to_nucleus_id))
+        codes = set(feeling.semantic_frame.attribute_codes)
+        if (relation.type != "action_supports_change"
+            or relation.source_relation_ids != ("typed_projection:perfective_action_before_bounded_change",)
+            or relation.grounding_kind != "user_stated_relation" or relation.retention != "required"
+            or relation.relation_id not in plan.coverage_requirements.required_relation_ids
+            or not {"semantic_role:source_proven_negative_feeling_sequence", "operator:negation"} <= codes
+            or "operator:positive_change" in codes or feeling.semantic_frame.polarity != "negative"
+            or feeling.kind != "change" or feeling.semantic_frame.predicate_kind != "change"
+            or feeling.semantic_frame.modality not in {"fact", "feeling"}
+            or not _body_inverse_action_is_performed(action)
+            or action.source_span_ids != feeling.source_span_ids
+            or any(n.retention != "required" or n.grounding_kind != "explicit"
+                or n.allowed_claim_scope != "explicit_current_input" or n.source_fields != ("memo",)
+                or len(n.source_span_ids) != 1 or n.semantic_frame.actor != "current_user"
+                or n.semantic_frame.time_scope != "past"
+                or any(c.startswith("thread_time:") for c in n.semantic_frame.attribute_codes)
+                for n in (action, feeling))):
+            continue
+        span = resolver.resolve(action.source_span_ids[0])
+        raw = str(span.raw_text or "").strip(" \u3000、,。．.")
+        left, right = (_body_inverse_typed_source_fragment(n, raw) for n in (action, feeling))
+        if (span.source_field != "memo" or not left or not right or left == right
+            or not raw.startswith(left) or not raw.endswith(right)
+            or re.search(r'[「」『』“”‘’"?？!！;；…‥\r\n]', raw)
+            or re.fullmatch(r"(?:(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?)?"
+                r"(?:安心し(?:なかった(?:です)?|ませんでした)|落ち着(?:かなかった(?:です)?|きませんでした)|"
+                r"(?:嬉し|うれし)く(?:なかった(?:です)?|ありませんでした))", right) is None):
+            continue
+        connector = raw[len(left):-len(right)]
+        if not ((left.endswith(("た", "だ")) and re.fullmatch(r"(?:後|あと)(?:に)?[、,]\s*", connector))
+                or (left.endswith(("て", "で")) and re.fullmatch(r"から[、,]\s*", connector))):
+            continue
+        matches = []
+        for visible in rows:
+            parsed = re.fullmatch(r"「([^「」]+)」((?:後|あと)(?:に)?[、,]\s*|から[、,]\s*)"
+                r"「([^「」]+)」とあります。", visible)
+            if parsed is not None and parsed.groups() == (left, connector, right):
+                matches.append(visible)
+        if len(matches) != 1:
+            continue
+        relations.add(relation.relation_id)
+        nuclei.update((action.nucleus_id, feeling.nucleus_id))
+    return frozenset(relations), frozenset(nuclei)
+
+
 def _body_inverse_limited_change_feeling(body, witness, line, planned_line, plan, resolver):
     """Recover a past episode from finite clauses, independently of its author.
 
@@ -2968,8 +3029,12 @@ def _read_action_change_discourse(raw, move, plan, resolver, selected_subjective
     if parts is None:
         return None
     sequence = re.fullmatch(r"(?:後|あと)(?:に)?[、,]\s*|から[、,]\s*", parts[1])
+    negative_feeling = bool(sequence and re.fullmatch(
+        r"(?:(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?)?"
+        r"(?:安心しなかった(?:です)?|安心しませんでした|落ち着かなかった(?:です)?|落ち着きませんでした|"
+        r"(?:嬉し|うれし)くなかった(?:です)?|(?:嬉し|うれし)くありませんでした)", parts[2]))
     finite_feeling = parts[2].endswith(("落ち着きました", "嬉しかったです", "うれしかったです")) or bool(
-        sequence and re.fullmatch(r"(?:(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?)?(?:落ち着いた|嬉しかった|うれしかった)", parts[2]))
+        sequence and re.fullmatch(r"(?:(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?)?(?:落ち着いた|嬉しかった|うれしかった)", parts[2])) or negative_feeling
     if selected_subjective_input is not None:
         decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
         proposition = decision.subjective_proposition if decision else None
@@ -2998,6 +3063,11 @@ def _read_action_change_discourse(raw, move, plan, resolver, selected_subjective
             "減りました": "減った", "増えました": "増えた", "戻りました": "戻った",
             "落ち着きました": "落ち着いた", "嬉しかったです": "嬉しかった", "うれしかったです": "うれしかった",
         }[m.group()], right)
+        if negative_feeling:
+            visible_right = re.sub(r"(なかった)です$", r"\1", visible_right)
+            visible_right = re.sub(r"(?:安心しませんでした|落ち着きませんでした|嬉しくありませんでした|うれしくありませんでした)$",
+                lambda m: {"安心しませんでした": "安心しなかった", "落ち着きませんでした": "落ち着かなかった",
+                           "嬉しくありませんでした": "嬉しくなかった", "うれしくありませんでした": "うれしくなかった"}[m.group()], visible_right)
         # A written first-person feeling belongs to the source writer;
         # do not make it Emlis's own first-person utterance.
         if finite_feeling:
@@ -5454,6 +5524,18 @@ def evaluate_grounded_surface_body_inverse(
         direct_sources, direct_relations, direct_nuclei = (
             _body_inverse_limited_change_feeling(body, witness, parsed_line, planned_line, plan, resolver)
             if final_stage1_plan else ((), frozenset(), frozenset()))
+        negative_relations = frozenset()
+        if final_stage1_plan:
+            negative_relations, negative_nuclei = _body_inverse_negative_feeling_sequences(
+                body, witness, parsed_line, planned_line, plan, resolver)
+            required_negative = {r.relation_id for r in plan.relations
+                if r.relation_id in planned_line.binding.relation_ids
+                and "semantic_role:source_proven_negative_feeling_sequence"
+                    in nucleus_index[r.to_nucleus_id].semantic_frame.attribute_codes}
+            if not required_negative <= negative_relations:
+                failures.append(f"body_inverse_negative_feeling_sequence_mismatch:{index}")
+            direct_relations |= negative_relations
+            direct_nuclei |= negative_nuclei
         binding = planned_line.binding
         if (final_stage1_plan
             and (planned_line.surface_function, binding.claim_scope) in {
@@ -5543,7 +5625,8 @@ def evaluate_grounded_surface_body_inverse(
             if not matches:
                 failures.append(f"body_inverse_unbound_observation_quote:{index}")
                 continue
-        if planned_line.binding.relation_ids and not parsed_line.relation_marker_codes:
+        if (set(planned_line.binding.relation_ids) - negative_relations
+            and not parsed_line.relation_marker_codes):
             failures.append(f"body_inverse_required_relation_marker_missing:{index}")
         relation_index = {item.relation_id: item for item in plan.relations}
         shared_change_relations = frozenset()

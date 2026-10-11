@@ -15846,3 +15846,30 @@ OBSERVED_BLOCKER_MINIMAL_FIX。既存Analysis設計内の欠落補修で、root�
 STRUCTURE_MAP_DELTA_NONE：既存Analysis compiler/realizerの責務内の受理・表示補修。既存共有の報告prefix判定を再利用するが、owner配置/route/公開契約/DTO/保存lifecycleは変更しない。API製品2/test2/handoff1、Cocolon current03/詳細04/06の計8既存file、新規repo file0。共有owner/DB/SQL/RN/Safety/製品依存、main/merge/deploy/env/native build変更0。限定TECHNICAL_CREDIT、商品NOT_CLEAR。既存branchへnon-force反映し、GitHubから今回変更path集合・対象8file内容・最終headを照合する。
 
 残件と戻り先：最新weekly §5.5の「本人の分析生成→保存後再表示」の確認は未完了。10/10の本人実機確認は「入力情報が少ないため、まだ分析を表示できません。」の案内表示までであり、分析生成/内容品質/再表示の確認とは扱わない。10/10の省略主語分岐撤回とinsufficient_inputの正常案内を維持し、生成を強制しない。current03/運用記録§39〜40にあるAPI `5c8bd8e5d7f876335eb840ceee26883a030a34a5` live・TestFlight6501送信・案内表示確認が今回参照した最新配置証拠で、旧u185末尾のu128/6401は当時の履歴。本u186の修正は未配置。次はlatest weekly/current03/本節から再開し、追加活用網羅を実機到達の前提にしない。否定compound・程度/他時点・一般認知と既存Emlis品質は別残件であり、今回の成功へ含めない。
+
+
+## 2026-10-11 JST u187 — 行動後の否定過去感情と順序を保持（未配置）
+
+Mashの「分析構造の内容修正関係を進めて」を受け、u186で保留した否定compoundを一単位補修。開始headはAPI `1802817f183e91ce651fe16f3218d0894717db38`／Cocolon `2c40860cdda1a93e9bd1521e6094ad3cbfb9f302`、既存PR3/30はDraft/open/unmerged。全体設計01・全file地図01A/B/C/02の追跡区分、Analysis current03/詳細04/06、API handoff、作業姿勢のcurrent入口と対象条件、最新weekly20261010 §3/§5.4/§5.5を確認。恒久incidentは今回も全文読了。前turnのKaren-Diary必須3file読了を継承。Context prepareのshallow祖先確認不成立は修理せず、許可された追跡原本の直接読取を継続し、生成Contextをfreshとは主張しない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。root華恋が単一編集・実行・GitHub反映owner、同環境read-only補助2名が原因/週次整合/商品意味と最終差分を確認。別model Pro reviewではない。weekly §5.4の明示再配分として既存内容修正を実施し、§5.5の本人生成→保存再表示の未完了を完了扱いしない。追加費用・外部AI・Mash操作要求0。
+
+開始実測：`私は資料を調べた後、安心しなかった。` はAnalysisがUNAVAILABLE。共有側は「安心」をpositive changeへ誤分類し、Emlisは行動がその結果を「支えている」と出していた。「落ち着かなかった」は共有pair自体が欠落。既存の完全SELF行動＋後/あと/てから＋u186の12否定有限形だけに、全文・帰属・source境界付きのnegative witnessを追加した。右端のnegative/negationと `semantic_role:source_proven_negative_feeling_sequence` を要求し、positive_changeを付けない。Analysisは同じ原文証拠を照合してPAST_FEELING/negative/feeling/pastへ保持し、右端の主語省略はUNSPECIFIEDのまま。本人主語を補わず、苦痛/失敗/改善/因果を推定しない。
+
+前後に書かれた「その後/それから」の順序とpair内の順序は既存条件だけで保持する。未知文、別field/source、通常補足の矛盾、訂正/撤回を越えた橋渡しはしない。否定行動、たら、程度/疑問/推測、引用/夢/両fieldの報告、後続の認知/撤回hostは新規受理の対象外。既存肯定経路と10/10に撤回した省略主語分岐を維持する。
+
+Emlis受取は実際の接続語と否定を保持し、support/価値づけへ変換しない。rootの全文読解で、受取修正後も観測段落が「安心しなかったという変化へつながる」としていたため、同じ修正単位で通常/limited作者を補正。新しい否定sequenceだけを `「私は資料を調べた」後、「安心しなかった」とあります。` のように原文端点と接続語で表す。独立readerは作者を再実行せず、元source、極性、required関係、完全な観測文を照合する。該当否定関係の証明不足は明示拒否し、成功した関係/端点だけに汎用の「変化/行動」marker要求を適用しない。別関係や肯定の検査は緩めない。通常rendererのscope_hedgeはbindingが要求する正確な接頭辞を確認する。
+
+検証記録：
+- 修正前の追加Analysis 96有限形caseは全失敗で欠落を再現。途中の6suiteは909 PASS/2 FAIL/3 SKIP、3386 subtests PASS（598.61秒）。1件は今般対応した否定を引き続き未対応とする旧期待、1件は通常補足へ矛盾する旧肯定を混ぜた検査fixtureだった。未対応境界を疑問形へ移し、通常補足のbaseを独立行動へ修正。未標識矛盾のUNAVAILABLEは別assertで維持。crossfield検査の「メモを書いた」が既存報告prefix判定へ入る例は、明確な「資料を調べた」へ検査文を変更し、製品guardは緩めていない。
+- 最終Analysis vertical/storage/saved-period/API 4suiteは **391 tests PASS／3386 subtests PASS（52.58秒）**、skip/xfail0。既存Pydantic root_validator非推奨warning1。原文scalar/UTF-8/hash、96有限形case、前後順序、補足/訂正/撤回、同義比較と肯否定差を確認。
+- 観測文修正後のEmlis限定再検査は **154 PASS／3 SKIP（167.95秒）**。新規否定24正常/64境界、既存肯定compound48、past episode18を含む。3skipは既存の実保存fixtureでQ2_PGLITE_MODULE未設定。新24例は全recovery候補の本文に誤った変化/supportがないこと、作者無効の独立readerによる全文と受取の改変拒否を確認。全recoveryの採用成功とは扱わない。optional_removed等は既存reception duty検査で拒否される場合があり、full候補の成功と区別する。
+- current shared identityのactive final owner exact1は1 PASS。9owner/18payloadとhistorical manifestを保持し、current fixtureだけ同期。language `978c59e3d9651696490d809def860e8e956cd895aa4e748f7f2ffe5ba9c6509c`／runtime `e77c4aabbabc26a241af10f5806986176bdddc45b1674c787419f575869bb6c1`。
+- 短文 `私は資料を調べた後、安心しなかった。` のEmlisは、required coverage/意味保持/独立inverseを通る候補があるが、既存品質gate `observation_surface_only_echo` で最終未生成。この品質保留を追加1testで確認。閾値や品質条件を下げず、語句の水増しで通さない。開始版から同じ停止だったとは主張しない。Emlis全対応の成功には数えない。
+- 実Analysis保存service＋合成RPCで否定4形×2markerの追加8caseを保存し、engine再生成禁止で同一本文/図/identityを再読。rootがAnalysis合成9全文（通常/丁寧/先頭marker/未知介在/補足/訂正/撤回/同義比較/肯否定差）を読み、実RN buildWatashiMapV2ViewModelの全文/identity/node順/edge/比較と9/9一致。Emlisも修正後の生成3全文と短文の保留候補全文を読み、否定・原文接続の保持と誤った変化/因果の除去を確認。実DB、React/native実画面、本人入力の検証ではない。
+
+runtimeは前turnのPython3.12.14/pytest8.4.1/pytest-subtests0.14.2/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5隔離環境を継続。絶対entrypoint、bytecode/cacheprovider/FB172移行plugin無効。製品依存/lock変更0。全repo/全Emlis PASSや商品品質完成を主張しない。
+
+STRUCTURE_MAP_DELTA_NONE：既存共有Plan/観測作者/受取作者/独立reader、Analysis compilerの内部補正で、owner配置・生成/保存/表示route・公開契約・DTOを維持。current03 §4.15に既存共有fileの今回責務を追記した。API製品5/test3/current identity1/handoff1、Cocolon current03/詳細04/06の計13既存file、新規repository file0。DB/SQL/RN/Safety/依存、main/merge/deploy/env/native build変更0。限定TECHNICAL_CREDIT、商品NOT_CLEAR。既存PR3/30のbranchへnon-force反映し、remote parent/tree/変更path集合/全file blob内容/最終headを照合する。
+
+残件と戻り先：今回の有限否定compoundのAnalysis欠落と連動したEmlis誤った変化/因果表現は補修。短文のecho品質保留、未認定の程度/他時点/一般認知、既存Emlis文体/品質は残る。最新weekly/current03/本節へ戻り、追加活用網羅を本人の生成→同じ文章と図→保存後再表示の前提にしない。10/10の本人確認は入力不足の正常案内までであり、生成/内容品質/再表示の証拠ではない。最新配置証拠はcurrent03のAPI `5c8bd8e5d7f876335eb840ceee26883a030a34a5` live、TestFlight6501送信、18:51 JST案内表示確認。本u187は未配置で、実DB/本人実機/正式商品受入れは未確認。

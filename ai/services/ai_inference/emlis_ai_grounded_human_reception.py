@@ -10834,8 +10834,12 @@ def _source_owned_action_change_sentence(move, realization, plan, resolver,
     parts = source_owned_action_change(move, plan, resolver)
     sequence = parts is not None and re.fullmatch(r"(?:後|あと)(?:に)?[、,]\s*|から[、,]\s*", parts[1])
     if parts is not None and (sequence or parts[2].endswith(("減りました", "増えました", "戻りました", "落ち着きました", "嬉しかったです", "うれしかったです"))):
+        negative_feeling = bool(sequence and re.fullmatch(
+            r"(?:(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?)?"
+            r"(?:安心しなかった(?:です)?|安心しませんでした|落ち着かなかった(?:です)?|落ち着きませんでした|"
+            r"(?:嬉し|うれし)くなかった(?:です)?|(?:嬉し|うれし)くありませんでした)", parts[2]))
         finite_feeling = parts[2].endswith(("落ち着きました", "嬉しかったです", "うれしかったです")) or bool(
-            sequence and re.fullmatch(r"(?:(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?)?(?:落ち着いた|嬉しかった|うれしかった)", parts[2]))
+            sequence and re.fullmatch(r"(?:(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?)?(?:落ち着いた|嬉しかった|うれしかった)", parts[2])) or negative_feeling
         # This nominal change or feeling proves sequence, not causal support.
         # Keep its complete episode in every recovery mode; a shortened
         # realization must not fall through to the causal effort template.
@@ -10850,6 +10854,11 @@ def _source_owned_action_change_sentence(move, realization, plan, resolver,
             "減りました": "減った", "増えました": "増えた", "戻りました": "戻った",
             "落ち着きました": "落ち着いた", "嬉しかったです": "嬉しかった", "うれしかったです": "うれしかった",
         }[m.group()], parts[2])
+        if negative_feeling:
+            right = re.sub(r"(なかった)です$", r"\1", right)
+            right = re.sub(r"(?:安心しませんでした|落ち着きませんでした|嬉しくありませんでした|うれしくありませんでした)$",
+                lambda m: {"安心しませんでした": "安心しなかった", "落ち着きませんでした": "落ち着かなかった",
+                           "嬉しくありませんでした": "嬉しくなかった", "うれしくありませんでした": "うれしくなかった"}[m.group()], right)
         # A written first-person feeling belongs to the source writer;
         # do not make it Emlis's own first-person utterance.
         if finite_feeling:

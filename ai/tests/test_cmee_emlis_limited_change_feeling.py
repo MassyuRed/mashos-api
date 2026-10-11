@@ -33,6 +33,96 @@ def _action_change_relations(plan):
         'typed_projection:perfective_action_before_bounded_change',))
 
 
+@pytest.mark.parametrize('form,plain', [(form, plain)
+    for plain, polite in [('安心しなかった', '安心しませんでした'),
+        ('落ち着かなかった', '落ち着きませんでした'),
+        ('嬉しくなかった', '嬉しくありませんでした'), ('うれしくなかった', 'うれしくありませんでした')]
+    for form in (plain, plain + 'です', polite)])
+@pytest.mark.parametrize('action,visible', [('私は資料を調べた後、', '資料を調べた後、'),
+    ('それから俺は資料を調べてから、', 'それから資料を調べてから、')])
+def test_negative_compound_feeling_keeps_negation_and_never_supports_it(form, plain, action, visible):
+    import cocolon_meaning_experience_engine.emlis_stage1_response as response
+    from test_cmee_emlis_received_discourse import inverse
+    from test_cmee_emlis_detached_observation import read_body
+    memo = action + '私は、' + form + '。その後、私は記録を残した。'
+    plan = _polite_change_plan(memo)
+    relation, = _action_change_relations(plan)
+    change = next(n for n in plan.nuclei if n.nucleus_id == relation.to_nucleus_id)
+    assert change.semantic_frame.polarity == 'negative'
+    assert 'operator:negation' in change.semantic_frame.attribute_codes
+    assert 'operator:positive_change' not in change.semantic_frame.attribute_codes
+    attempts = []
+    def capture(**kwargs):
+        verdict = evaluate_grounded_surface_body_inverse(**kwargs)
+        attempts.append((kwargs, verdict))
+        return verdict
+    with patch.object(response, 'evaluate_grounded_surface_body_inverse', capture):
+        result = MeaningExperienceEngine().generate(initial(memo))
+    assert result.artifact is not None, result.reason_codes
+    assert visible + plain + 'のですね。' in result.artifact.reception
+    actual = next(kwargs for kwargs, verdict in reversed(attempts)
+        if verdict.passed and kwargs['body'] == result.artifact.text.encode())
+    assert {k['sentence_plan'].recovery_stage for k, _ in attempts} >= {'full', 'optional_removed', 'integrated', 'hedged'}
+    for kwargs, _ in attempts:
+        assert '支えている' not in kwargs['body'].decode()
+        assert '大切に思っています' not in kwargs['body'].decode()
+        assert '変化' not in kwargs['body'].decode()
+        assert 'つながっています' not in kwargs['body'].decode()
+    context = (result, actual['plan'], actual['sentence_plan'], actual['resolver'], actual['selected_subjective_input'])
+    assert inverse(context, result.artifact.reception, without_author=True).passed
+    assert read_body(context, result.artifact.text).passed
+    episode = result.artifact.observation
+    for wrong in (episode.replace('とあります。', 'という変化へつながっています。'),
+            episode.replace('」後、', '」ので、').replace('」から、', '」ので、'),
+            episode.replace(form, '安心した'), episode.replace(form, ''),
+            episode.replace('私は、' + form, '友人は、' + form)):
+        assert wrong != episode
+        assert not read_body(context, result.artifact.text.replace(episode, wrong, 1)).passed
+    for wrong in (result.artifact.reception.replace('から、', 'ので、').replace('後、', 'ので、'),
+            '友人が' + result.artifact.reception, result.artifact.reception.replace(plain, '安心した'),
+            result.artifact.reception.replace(plain, ''),
+            result.artifact.reception.replace('のですね', 'ことを支えています')):
+        assert not inverse(context, wrong, without_author=True).passed
+
+
+@pytest.mark.parametrize('form', ['安心しなかった', '落ち着きませんでした', '嬉しくなかったです', 'うれしくありませんでした'])
+@pytest.mark.parametrize('before,action,subject,after', [
+    ('', '友人は資料を調べた後、', '', ''), ('', '資料を調べた後、', '', ''),
+    ('', '私は資料を調べなかった後、', '', ''), ('', '私は資料を調べたら、', '', ''),
+    ('', '私は資料を調べた後、', '友人は', ''), ('', '私は資料を調べた後、', '少し', ''),
+    ('', '私は資料を調べた後、', '', 'か。'), ('', '私は資料を調べた後、', '', '？'),
+    ('', '私は資料を調べた後、', '', 'かもしれない。'),
+    ('「', '私は資料を調べた後、', '', '」。'),
+    ('夢を見た。', '私は資料を調べた後、', '', ''),
+    ('友人が言っていた。', '私は資料を調べた後、', '', ''),
+    ('', '私は資料を調べた後、', '', '。と友人が言った。'),
+    ('', '私は資料を調べた後、', '', '。と私は思う。'),
+    ('', '私は資料を調べた後、', '', '。のは嘘だった。'),
+    ('', '私は資料を調べた後、', '', '\nわけではない。')])
+def test_negative_compound_feeling_keeps_unproved_host_pending(form, before, action, subject, after):
+    memo = before + action + subject + form + after
+    assert not _action_change_relations(_polite_change_plan(memo))
+
+
+def test_negative_compound_short_echo_keeps_quality_gate_closed():
+    import cocolon_meaning_experience_engine.emlis_stage1_response as response
+    reports = []
+    evaluate = response.evaluate_grounded_observation_gate
+    def capture(**kwargs):
+        report = evaluate(**kwargs)
+        reports.append((kwargs['surface_result'].text, report))
+        return report
+    with patch.object(response, 'evaluate_grounded_observation_gate', capture):
+        result = MeaningExperienceEngine().generate(initial('私は資料を調べた後、安心しなかった。'))
+    assert result.artifact is None
+    assert result.reason_codes == ('stage1_no_hard_valid_realization',)
+    assert any('observation_surface_only_echo' in report.rejection_reasons
+        and report.text_semantic_retention_gate == 'passed'
+        and report.required_coverage_gate == 'passed' for _, report in reports)
+    assert reports and all('変化' not in text and '支えている' not in text for text, _ in reports)
+    assert any('「私は資料を調べた」後、「安心しなかった」とあります。' in text for text, _ in reports)
+
+
 @pytest.mark.parametrize('feeling', ['落ち着きました', '嬉しかったです', 'うれしかったです'])
 @pytest.mark.parametrize('prefix', ['', '私は資料を調べた。', '私は会議を担当した。私は資料を調べた。私は記録を残した。'])
 def test_polite_standalone_feelings_have_bound_positive_shared_witness(feeling, prefix):

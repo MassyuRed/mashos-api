@@ -33,6 +33,78 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_negative_compound_feeling_preserves_both_endpoints_and_order(self):
+        for plain, polite in (('安心しなかった', '安心しませんでした'),
+                ('落ち着かなかった', '落ち着きませんでした'),
+                ('嬉しくなかった', '嬉しくありませんでした'),
+                ('うれしくなかった', 'うれしくありませんでした')):
+            for form in (plain, plain + 'です', polite):
+                for lead in ('私は資料を調べた後、', '俺は、資料を調べてから、',
+                        'その後、僕は資料を調べたあとに、', 'それからわたしは資料を調べてから、'):
+                    for subject in ('', '私は、'):
+                        with self.subTest(form=form, lead=lead, subject=subject):
+                            episode = lead + subject + form
+                            req = request(record(memo='私は会議を担当した。' + episode
+                                + '。その後、私は記録を残した。'))
+                            artifact = self.generate(req).artifact
+                            self.assertIsNotNone(artifact)
+                            scene, action, feeling, following = artifact.graph.nodes
+                            self.assertEqual((feeling.proposition.actor, feeling.polarity,
+                                feeling.modality, feeling.temporal_scope, feeling.proposition.result_state),
+                                ('SELF' if subject else 'UNSPECIFIED', 'negative', 'feeling', 'past', 'PAST_FEELING'))
+                            expected = [(action.node_ref, feeling.node_ref), (feeling.node_ref, following.node_ref)]
+                            if lead.startswith(('その後', 'それから')):
+                                expected.insert(0, (scene.node_ref, action.node_ref))
+                            self.assertEqual([e.endpoint_refs for e in artifact.graph.edges], expected)
+                            source, = freeze_analysis_sources(req).sources
+                            for node in (action, feeling):
+                                evidence, = node.evidence_refs
+                                raw = source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                                self.assertEqual(raw.decode(), node.visible_label)
+                                self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+                                self.assertEqual({i for _, a, b in node.proposition.source_parts for i in range(a, b)},
+                                    set(range(len(raw.decode()))))
+                            edge = next(e for e in artifact.graph.edges if e.endpoint_refs == (action.node_ref, feeling.node_ref))
+                            whole = edge.evidence_refs[-1]
+                            self.assertEqual(source.envelope.raw_utf8[whole.utf8_start:whole.utf8_end].decode(), episode)
+                            projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                            self.assertEqual(projection['nodes'][2]['visible_label'], plain + '（記録された気持ち）')
+                            self.assertFalse(projection['annotation_badges'])
+                            self.assertIn('原因を示す線ではありません', artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+
+    def test_negative_compound_feeling_keeps_updates_unknowns_and_comparison(self):
+        old = '私は資料を調べた後、私は安心した'
+        new = '僕は記録を残してから、僕は安心しませんでした'
+        original = record(memo=old + '。その後、私はメモを書いた。')
+        for answer in (new + '。', '「' + old + '」ではなく「' + new + '」です。'):
+            base = original if answer.startswith('「') else record(memo='私は資料を調べた。')
+            req = request(self.with_answer(base, answer))
+            artifact = self.generate(req).artifact
+            self.assertIsNotNone(artifact)
+            feeling, = [n for n in artifact.graph.nodes if n.polarity == 'negative']
+            source = next(s.envelope for s in freeze_analysis_sources(req).sources
+                if s.envelope.envelope_id == feeling.evidence_refs[0].source_envelope_id)
+            self.assertEqual(source.source_role, 'SUPPLEMENTAL_ANSWER')
+            self.assertTrue(any(e.endpoint_refs[1] == feeling.node_ref for e in artifact.graph.edges))
+            if answer.startswith('「'):
+                self.assertEqual(len(artifact.graph.edges), 1)
+            artifact.safe_projection(authenticated_owner_scope=OWNER)
+        self.assertIsNone(self.generate(request(self.with_answer(original, new + '。'))).artifact)
+        withdrawal = self.generate(request(self.with_answer(record(memo=new + '。その後、私はメモを書いた。'),
+            '「' + new + '」は取り消します。'))).artifact
+        self.assertEqual(len(withdrawal.graph.nodes), 1)
+        self.assertFalse(withdrawal.graph.edges)
+        plain = '私は記録を残してから、私は安心しなかった。'
+        self.assertFalse(self.compared(new + '。', plain).artifact.period_comparison.change_claims)
+        self.assertTrue(self.compared(new + '。', plain.replace('しなかった', 'した')).artifact.period_comparison.change_claims)
+        for req in (request(record(memo=new + '。まだわからない。その後、私は資料を調べた。')),
+                request(record(memo=new + '。', action='その後、私は資料を調べた。')),
+                request(record(memo=new + '。'), record(2, memo='その後、私は資料を調べた。'))):
+            artifact = self.generate(req).artifact
+            self.assertEqual(len(artifact.graph.nodes), 3)
+            self.assertEqual(len(artifact.graph.edges), 1)
+            self.assertTrue(artifact.graph.unknown_gaps)
+
     def generate(self, value):
         return MeaningExperienceEngine().generate(value)
 
@@ -74,7 +146,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                         self.assertIn('原因を示す線ではありません',
                             artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
 
-    def test_negative_past_feelings_do_not_admit_open_hosts_or_compounds(self):
+    def test_negative_past_feelings_do_not_admit_open_hosts_or_unproved_compounds(self):
         for form in ('安心しなかった', '落ち着きませんでした', '嬉しくなかったです', 'うれしくありませんでした'):
             for prefix, suffix in (('友人は', '。'), ('', '。'), ('私は少し', '。'),
                     ('私は', 'か。'), ('私は', '？'), ('私は', 'かもしれない。'),
@@ -85,7 +157,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                     ('私は', '。なんて嘘だった。'), ('私は', '\nわけではない。'),
                     ('友人は言った。私は', '。'), ('友人は言っていた。私は', '。'),
                     ('夢を見た。私は', '。'), ('友人によると。私は', '。'),
-                    ('私は資料を調べた後、私は', '。'), ('私は資料を調べてから、', '。')):
+                    ('私は資料を調べなかった後、私は', '。'), ('私は資料を調べたら、', '。')):
                 with self.subTest(form=form, prefix=prefix, suffix=suffix):
                     result = self.generate(request(record(memo=prefix + form + suffix)))
                     self.assertFalse(result.artifact and any(n.proposition.result_state == 'PAST_FEELING'
@@ -3447,9 +3519,9 @@ class AnalysisVerticalTests(unittest.TestCase):
                 + prefix + '私は資料を調べてから、落ち着いた。')))
             with self.subTest(prefix=prefix):
                 self.assertFalse(result.artifact and result.artifact.graph.edges)
-        # A marker cannot supply a witness for an unproven negative feeling.
+        # A marker cannot turn a negative question into an asserted feeling.
         result = self.generate(request(record(memo='私は会議を担当した。'
-            + episode.replace('落ち着いた', '落ち着きませんでした'))))
+            + episode.replace('落ち着いた', '落ち着きませんでしたか'))))
         self.assertFalse(result.artifact and result.artifact.graph.edges)
 
     def test_prefixed_polite_compounds_preserve_complete_order_and_evidence(self):
@@ -3673,8 +3745,8 @@ class AnalysisVerticalTests(unittest.TestCase):
             request(record(memo='嬉しかった。' + following)),
             request(record(memo='友人から聞いた話です。' + episode + following)),
             request(record(memo='夢を見た。' + episode + following))]
-        for feeling in ('私は嬉しくなかった', '私は嬉しかったかもしれない',
-                        '友人は嬉しかった', '私は落ち着きませんでした'):
+        for feeling in ('私は嬉しくなかったかもしれない', '私は嬉しかったかもしれない',
+                        '友人は嬉しかった', '私は落ち着きませんでしたか'):
             cases.append(request(record(memo='私は資料を調べてから、' + feeling + '。' + following)))
         for req in cases:
             with self.subTest(records=[r.original_json for r in req.members]):
@@ -4091,8 +4163,8 @@ class AnalysisVerticalTests(unittest.TestCase):
     def test_feeling_topic_comma_keeps_unsupported_scope_pending(self):
         for ending in ('私は、、安心した', '私は、\t安心した', '私は、\n安心した',
                        '私は、今日安心した', '私は、明日安心した', '友人は、安心した',
-                       '私は、友人が安心した', '私は、安心しなかった', '私は、安心したい',
-                       '私は、安心したかもしれない', '私は、落ち着きませんでした', '私は、嬉しくなかったです',
+                       '私は、友人が安心した', '私は、安心しなかったかもしれない', '私は、安心したい',
+                       '私は、安心したかもしれない', '私は、落ち着きませんでしたか', '私は、嬉しくなかったですと聞いた',
                        '私は、安心した？', '私は、安心したと聞いた', '私は、安心したという夢を見た'):
             with self.subTest(ending=ending):
                 self.assertIsNone(self.generate(request(record(memo='私は資料を調べた後、' + ending + '。'))).artifact)
@@ -4179,10 +4251,10 @@ class AnalysisVerticalTests(unittest.TestCase):
 
     def test_past_feeling_does_not_erase_unread_scope_or_inherit_other_subject(self):
         for ending in ('友人は安心した', '私も安心した', '少し安心した',
-                '安心しなかった', '安心したい', '安心する', '安心したと思う',
+                '安心しなかったかもしれない', '安心したい', '安心する', '安心したと思う',
                 '安心したという夢を見た', '安心したと聞いた', '安心したかもしれない',
-                '安心した？', '嬉しくなかった', '落ち着いたが不安だった',
-                '落ち着きませんでした', 'ほっとした'):
+                '安心した？', '嬉しくなかったと思う', '落ち着いたが不安だった',
+                '落ち着きませんでしたか', 'ほっとした'):
             with self.subTest(ending=ending):
                 result = self.generate(request(record(memo='私は資料を調べてから、' + ending + '。')))
                 self.assertFalse(result.artifact and any(n.proposition and
