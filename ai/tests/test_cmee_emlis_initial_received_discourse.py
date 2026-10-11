@@ -53,7 +53,13 @@ def test_omitted_writing_keeps_unparsed_and_report_boundaries(clause):
     # u208: these complete omitted-actor clauses no longer open a report.
     '家族への手紙を書いた', 'その後、メモを書いた', '昨日、メモを書いた',
     '考えをノートに書いた', '記録を書いた', '今日　家族への手紙をノートに書きました',
-    'それから職場で会議でのメモを書きました', '昨日、同僚との約束を書いた'])
+    'それから職場で会議でのメモを書きました', '昨日、同僚との約束を書いた',
+    # u209: the same relation may belong to the one place/medium slot.
+    '私は家族との会議でメモを書いた', '私はメモを家族への手紙に書いた',
+    '私は家族への手紙を職場での会議で書いた',
+    '家族との会議でメモを書いた', '昨日、家族との会議でメモを書いた',
+    'その後、私はメモを家族との会議で書きました',
+    '私は昨日、職場での会議でメモを書いた'])
 def test_relational_writing_keeps_independent_feeling_and_unfinished_witness(writing):
     import emlis_ai_grounded_observation_plan as owner
     from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
@@ -86,7 +92,19 @@ def test_relational_writing_keeps_independent_feeling_and_unfinished_witness(wri
     '私は家族への手紙の内容を書いた', '私は友人のノートに家族への手紙を書いた',
     '友人は家族への手紙を書いた',
     '私は職場で家族への手紙をノートに書いた', '私は家族への手紙を記録を書いた',
-    '私は家族への手紙をこう書いた', '私は、\n家族への手紙を書いた'])
+    '私は家族への手紙をこう書いた', '私は、\n家族への手紙を書いた',
+    '私は家族との話でメモを書いた', '私は家族への説明にメモを書いた',
+    '私はメモを会議での報告に書いた', '私はメモを友人のノートに書いた',
+    '私はメモを家族からの手紙に書いた', '友人は家族との会議でメモを書いた',
+    '私は家族との会議でメモをノートに書いた',
+    '家族との会議でメモを職場での会議で書いた',
+    '私は明日会議での記録にメモを書いた', '私は家族との明日会議でメモを書いた',
+    '私はメモを家族への明日手紙に書いた', '私は誰との会議でメモを書いた',
+    '私は詳しい誰との会議でメモを書いた', '私はメモを次への手紙に書いた',
+    '私は昨日、 朝会議での記録にメモを書いた',
+    'その後、昨日、家族との会議でメモを書いた',
+    '昨日、私が家族との会議でメモを書いた',
+    '私は家族との会議で\nメモを書いた'])
 def test_relational_writing_preserves_report_attribution_and_unparsed_scope(writing):
     from emlis_ai_grounded_observation_plan import _source_prefix_opens_report
     assert _source_prefix_opens_report(writing + '。')

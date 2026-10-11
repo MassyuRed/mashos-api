@@ -16099,16 +16099,17 @@ def _source_prefix_opens_report(prefix: str) -> bool:
             r"(?:書いた|書きました)", writing_clause)
         related_writing = writing is None
         if writing is None:
-            # A recipient, joint participant or setting inside the object
-            # does not turn a completed writing act into a report. Bare の
-            # and からの can carry another speaker's content; keep them open.
-            related_object = (_WISH_OBJECT_NOMINAL_SOURCE
-                + r"(?:(?:への|との|での)" + _WISH_OBJECT_NOMINAL_SOURCE + r")+")
+            # A recipient, joint participant or setting inside either the
+            # object or its one place/medium does not open reported speech.
+            # Use the same closed nominal grammar in all three slots. Bare
+            # の and からの can carry another speaker's content; keep them open.
+            related_nominal = (_WISH_OBJECT_NOMINAL_SOURCE
+                + r"(?:(?:への|との|での)" + _WISH_OBJECT_NOMINAL_SOURCE + r")*")
             writing = re.fullmatch(
                 r"(?:" + writing_subject + r")?"
-                r"(?:(?P<place_before>" + _WISH_OBJECT_NOMINAL_SOURCE + r")(?:に|で))?"
-                r"(?P<object>" + related_object + r")を"
-                r"(?:(?P<place_after>" + _WISH_OBJECT_NOMINAL_SOURCE + r")(?:に|で))?"
+                r"(?:(?P<place_before>" + related_nominal + r")(?:に|で))?"
+                r"(?P<object>" + related_nominal + r")を"
+                r"(?:(?P<place_after>" + related_nominal + r")(?:に|で))?"
                 r"(?:書いた|書きました)", writing_clause)
         if writing is not None and (related_writing or sequence or dated_writing or omitted_writing):
             # Newly admitted writing needs complete nominal
