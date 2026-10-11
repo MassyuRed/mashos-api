@@ -143,6 +143,7 @@ _PAST_DECISION_PREDICATES = tuple(
             ('決めておきませんでした', 'negative'))))
     for surface, polarity in forms)
 _PAST_DECISION_LEMMAS = frozenset(row[1] for row in _PAST_DECISION_PREDICATES)
+_PAST_ACTION_LEMMAS = frozenset(row[0] for row in _VERBS)
 # Only the existing nine verbs: their plain perfective forms supply the
 # corresponding te inflection. These forms carry no independent past tense.
 _TE_PREDICATES = tuple((surface[:-1] + 'て', lemma, 'positive', 'fact', 'dependent')
@@ -554,9 +555,9 @@ def _parsed_proposition(value: str) -> ObservedProposition | None:
     cognition = _cognitive_proposition(value)
     if cognition is not None:
         return cognition
-    decision = _contextual_decision_proposition(value)
-    if decision is not None:
-        return decision
+    action = _contextual_past_action_proposition(value)
+    if action is not None:
+        return action
     prefix = _CLAUSE_PREFIX.match(value)
     start = prefix.end() if prefix else 0
     token = prefix.group(1) if prefix else ''
@@ -642,8 +643,8 @@ def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relat
     return None
 
 
-def _contextual_decision_proposition(value):
-    """Keep a complete decision even when its actor is not written.
+def _contextual_past_action_proposition(value):
+    """Keep a complete past action even when its actor is not written.
 
     今回は and 事前に are preserved modifiers, not dates or a relation to
     another event. The shared frame's default actor never supplies SELF.
@@ -676,9 +677,20 @@ def _contextual_decision_proposition(value):
         return None  # The existing ordinary SELF grammar owns this case.
     proposition = _finite_proposition(value, offset, 'SELF' if subject else 'UNSPECIFIED',
                                       parts, marker, day)
-    if (proposition is None or proposition.predicate_lemma not in _PAST_DECISION_LEMMAS
+    if (proposition is None
             or (proposition.modality, proposition.temporal_scope) != ('fact', 'past')):
         return None
+    if proposition.predicate_lemma not in _PAST_DECISION_LEMMAS:
+        # Reuse only the existing nine ordinary past verbs, with a complete
+        # written object. Modifier-bearing decisions keep their prior scope;
+        # do not expand SELF/adverb, wish, cognition or dependent-te grammar.
+        if subject or modifiers or not any(case == 'を' for case, _ in proposition.arguments):
+            return None
+        if day and (_unparsed_day_extension(value[prefix.end():],
+                separated=prefix.end() > prefix.end(1))
+                or (prefix.end() == prefix.end(1)
+                    and 'の' in proposition.arguments[0][1])):
+            return None
     # An unconsumed/repeated modifier must not become a nominal argument.
     if ('に', '事前') in proposition.arguments:
         return None
@@ -1083,8 +1095,15 @@ def _analysis_prefix_opens_report(prefix):
     # Inspect every other clause so a genuine earlier speaker remains open.
     for clause in re.split(r'[。．.]', prefix):
         proposition = _proposition(clause.strip())
-        if (proposition is not None and proposition.actor == 'SELF'
-                and proposition.predicate_lemma in _PAST_DECISION_LEMMAS
+        closed_decision = bool(proposition and proposition.actor == 'SELF'
+            and proposition.predicate_lemma in _PAST_DECISION_LEMMAS)
+        # A whole negative past act cannot introduce a quotation merely
+        # because その後 / a nominal contains の and the ending is でした.
+        # Positive writing may still introduce reported content.
+        omitted_negative_action = bool(proposition and proposition.actor == 'UNSPECIFIED'
+            and proposition.predicate_lemma in _PAST_ACTION_LEMMAS
+            and proposition.polarity == 'negative')
+        if (proposition is not None and (closed_decision or omitted_negative_action)
                 and (proposition.modality, proposition.temporal_scope) == ('fact', 'past')
                 and proposition.polarity in {'positive', 'negative'}):
             continue
@@ -1165,6 +1184,10 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     qualified_past = bool(proposition and any(
         _NOMINAL_CASE_LINK.search(noun) for _, noun in proposition.arguments))
     past_decision = bool(proposition and proposition.predicate_lemma in _PAST_DECISION_LEMMAS)
+    unattributed_action = bool(proposition and proposition.actor == 'UNSPECIFIED'
+        and (proposition.modality, proposition.temporal_scope) == ('fact', 'past')
+        and proposition.predicate_lemma in _PAST_ACTION_LEMMAS)
+    bounded_past_action = past_decision or unattributed_action
     dated_compound_nominal = bool(proposition and proposition.relative_day and proposition.arguments
         and _unparsed_day_extension(proposition.arguments[0][1], separated=False)
         and not _unparsed_day_extension(proposition.arguments[0][1], separated=True))
@@ -1173,7 +1196,19 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     # Resolving a calendar-suffix collision does not resolve the speaker.
     # Apply the existing full-source attribution boundary to these dated
     # nominals in scenes, roles and wishes as well as performed actions.
-    source_host_required = qualified_past or past_decision or dated_compound_nominal
+    source_host_required = qualified_past or bounded_past_action or dated_compound_nominal
+    if unattributed_action:
+        # Shared current_user is not an actor proof. The existing complete
+        # finite grammar supplies tense/negation just as for SELF clauses;
+        # keep a whole explicit factual source, never a compound endpoint.
+        frame = nucleus.semantic_frame
+        if (pair is not None or a != 0 or b != len(span.raw_text)
+                or nucleus.grounding_kind != 'explicit'
+                or nucleus.allowed_claim_scope != 'explicit_current_input'
+                or frame.modality != 'fact'
+                or frame.polarity not in ({'negative'} if proposition.polarity == 'negative'
+                                          else {'positive', 'neutral'})):
+            return None
     if past_decision:
         frame = nucleus.semantic_frame
         # The negative shared frame may lack a past tag and does not assert
@@ -1198,9 +1233,20 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
         # A newly readable object must not turn a reported speaker's
         # first-person clause into the owner's completed action.
         prefix = context[:span.start_index]
-        other_field = ('memo' if (past_decision or dated_compound_nominal)
+        other_field = ('memo' if (bounded_past_action or dated_compound_nominal)
                        and span.source_field == 'memo_action' else 'memo_action')
         other = str(source.normalized.get(other_field, ''))
+        if unattributed_action:
+            # A ledger split after an unfinished topic is not a naturally
+            # omitted actor. Keep 私は、\n資料を調べた unresolved rather than
+            # discarding the written topic or inheriting it across a break.
+            open_topic = (r'(?:^|[。．.!！\r\n;；])\s*'
+                r'(?:(?:その後|それから|今日|昨日)[、，\s]*)?'
+                r'(?:私|僕|ぼく|俺|おれ|わたし|自分|'
+                + _NOMINAL + r'(?:の' + _NOMINAL + r')*)(?:は|が|も)'
+                r'[、，, \u3000]*[。．.!！\r\n;；\s]*$')
+            if any(re.search(open_topic, text) for text in (prefix, other)):
+                return None
         for preceding in re.split(r'[。．.]', prefix + '\n' + other):
             preceding = preceding.strip()
             written = _proposition(preceding)
@@ -1257,7 +1303,7 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
         # polarity, including a host with its own explicit speaker. Match
         # that host, not every sentence starting with と (e.g. とても).
         continuation = context[span.end_index:].lstrip(' \t\u3000。．.!！\r\n;；')
-        if ((past_decision or dated_compound_nominal)
+        if ((bounded_past_action or dated_compound_nominal)
                 and not re.match(r'(?:ところで|とりあえず)[、，,]', continuation)
                 and re.match(r'(?:と|って|のは|のも|なんて|などと)', continuation)):
             return None
@@ -1303,9 +1349,9 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
         return None
     # current_user is the shared frame's default, not proof of its subject.
     # Actions/thoughts require an explicit first-person finite host, except
-    # witnessed decisions whose omitted actor stays UNSPECIFIED. Non-agent
+    # complete past actions whose omitted actor stays UNSPECIFIED. Non-agent
     # result states retain their existing bounded exception.
-    if (result is None and change is None and not past_decision
+    if (result is None and change is None and not bounded_past_action
             and not re.match(r'^(?:(?:今日|昨日|その後|それから)[、，\s]*)?(?:私は|僕は|ぼくは|俺は|おれは|わたしは|自分は)', value)):
         return None
     # The source helper already proved a length-preserving normalization.
@@ -1658,12 +1704,12 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
             # A sequence is about occurrences: collapsing A -> B -> A by
             # proposition would create a false cycle or erase repeated A.
             # Ordinary, unqualified claims retain their existing aggregation.
-            # An omitted decision actor is not a shared person identity:
+            # An omitted action actor is not a shared person identity:
             # retain each written occurrence even without an order marker.
             occurrence_scope = (evidence.evidence_id if evidence.evidence_id in ordered_evidence
                 or (proposition and (proposition.sequence_marker
                     or (proposition.actor == 'UNSPECIFIED'
-                        and proposition.predicate_lemma in _PAST_DECISION_LEMMAS))) else None)
+                        and kind == 'ACTION_OR_NONACTION'))) else None)
             # A relative day is anchored to its own input/answer, not to the
             # viewing date or the parent's created_at. Only equivalent claims
             # in that same source and day retain ordinary aggregation.

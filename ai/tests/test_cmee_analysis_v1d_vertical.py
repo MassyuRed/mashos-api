@@ -33,6 +33,22 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_complete_omitted_past_actions_preserve_previously_rejected_nouns(self):
+        # These old rejection cases now have an explicit actor-unknown result;
+        # unsupported subjects and broken topic boundaries remain rejected.
+        for literal, noun in (('仕事メモを残した', '仕事メモ'),
+                ('新しいメモ帳を見た', '新しいメモ帳'),
+                ('振り返りメモを書いた', '振り返りメモ'),
+                ('資料を調べた', '資料'), ('資料を調べなかったです', '資料')):
+            with self.subTest(literal=literal):
+                artifact = self.generate(request(record(memo=literal + '。'))).artifact
+                self.assertIsNotNone(artifact)
+                node, = artifact.graph.nodes
+                self.assertEqual((node.proposition.actor, node.proposition.arguments),
+                                 ('UNSPECIFIED', (('を', noun),)))
+                self.assertIn('誰の行動かは未確定',
+                    artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+
     def test_polite_feeling_after_negative_decision_keeps_source_and_order(self):
         for finite in ('決めませんでした', '決めなかったです',
                        '決めておきませんでした', '決めておかなかったです'):
@@ -1520,7 +1536,7 @@ class AnalysisVerticalTests(unittest.TestCase):
     def test_explicit_self_spellings_does_not_infer_collective_other_or_unsupported_subjects(self):
         topics = tuple(subject + suffix for subject in ('ぼく', '俺', 'おれ')
                        for suffix in ('らは', 'たちは', '自身は', 'も', 'が'))
-        for topic in topics + ('友人は', 'あなたは', ''):
+        for topic in topics + ('友人は', 'あなたは'):
             with self.subTest(topic=topic):
                 self.assertIsNone(self.generate(request(record(memo=topic + '資料を調べた。'))).artifact)
         clauses = ('ぼくは資料を調べた？', 'ぼくは資料を調べたと聞いた。',
@@ -6319,7 +6335,7 @@ class AnalysisVerticalTests(unittest.TestCase):
 
     def test_mixed_script_nominals_do_not_erase_unread_grammar_or_actor(self):
         for literal in (
-            '仕事メモを残した', '友人は仕事メモを残した',
+            '友人は仕事メモを残した',
             '私は急いで仕事メモを残した', '私は読んで仕事メモを残した',
             '私は仕事メモを残したと聞いた', '私は仕事メモを残したなら',
             '私は仕事メモを残した？', '「私は仕事メモを残した」',
@@ -6514,7 +6530,7 @@ class AnalysisVerticalTests(unittest.TestCase):
             '私は新しくメモ帳を見た', '私は新しくて大きいメモ帳を見た',
             '私はとても新しいメモ帳を見た', '私は新しい大きいメモ帳を見た',
             '私は楽しいメモ帳を見た', '私は新しいを見た',
-            '新しいメモ帳を見た', '友人は新しいメモ帳を見た',
+            '友人は新しいメモ帳を見た',
             '「私は新しいメモ帳を見た」', '私は新しいメモ帳を見た？',
             '私は新しいメモ帳を見たと聞いた', '私は新しいメモ帳を見たなら',
         ):
@@ -6648,7 +6664,7 @@ class AnalysisVerticalTests(unittest.TestCase):
             '私は学び直しを記録した', '私は考えてメモを書いた',
             '私は思い出してメモを書いた', '私は取り組み続けた',
             '私は振り返り学びノートを見た', '私は急いで気持ちメモを書いた',
-            '振り返りメモを書いた', '友人は振り返りメモを書いた',
+            '友人は振り返りメモを書いた',
             '私は気持ち明日メモを残した', '私は新しい振り返り来週資料を見た',
             '私は学び今日ノートを見た', '私は考え昨日資料を見た',
             '私は気持ち何メモを残した', '私は思い誰メモを見た',
@@ -7503,7 +7519,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                 self.assertTrue(comparison.change_claims)
 
     def test_polite_past_nonaction_does_not_admit_unresolved_hosts(self):
-        for literal in ('資料を調べなかったです', '友人は資料を調べなかったです',
+        for literal in ('友人は資料を調べなかったです',
             '私は資料を調べなかったですか', '私は資料を調べなかったです？',
             '「私は資料を調べなかったです」と聞いた', '私は資料を調べなかったですが',
             '私は資料を調べなかったですです', '私は何を調べなかったです',
@@ -7674,7 +7690,7 @@ class AnalysisVerticalTests(unittest.TestCase):
 
     def test_self_topic_comma_does_not_skip_unparsed_scope_or_subject_boundaries(self):
         for literal in (
-            '資料を調べた', '友人は、資料を調べた', '私は、友人は資料を調べた',
+            '友人は、資料を調べた', '私は、友人は資料を調べた',
             '私は、\n資料を調べた', '私は、\r\n資料を調べた', '私は、。資料を調べた',
             '私は、、資料を調べた', '私は、，資料を調べた', '私は、\t資料を調べた',
             '私は、急いで資料を調べた', '私は、明日資料を調べた',

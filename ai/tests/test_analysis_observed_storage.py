@@ -95,6 +95,15 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                         expected_label='それから：' + label + '（記録された気持ち）',
                         expected_preceding_label='資料を調べる（実行済み）')
 
+    async def test_omitted_actor_action_and_order_survive_saved_read(self):
+        for finite in ('調べた', '調べました', '調べなかった', '調べませんでした'):
+            with self.subTest(finite=finite):
+                await self._assert_action_change_saved('私は職場にいた。その後、資料を'
+                    + finite + '。それから、私は安心した。',
+                    expected_label='それから：安心した（記録された気持ち）',
+                    expected_preceding_label='職場にいた（記録された場面）')
+                self.assertIn('誰の行動かは未確定', self.row['content_text'])
+
     def setUp(self):
         self.fx = fixture()
         self.row = self.fx['row']
