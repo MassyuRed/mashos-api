@@ -16421,3 +16421,48 @@ Codex Work root華恋が実装・実行・統合・GitHub反映を担当し、�
 固定source `01f385319b4fd9342a8d6cd81ce0161cd91dd796` の[CI38135813260](https://github.com/MassyuRed/mashos-api/actions/runs/38135813260)はsuccess。Python3.12.15でAnalysis4＋共有限定change/feelingの5suite **1246 tests／4896 subtests PASS（189.86秒）**、共有owner identity **1 PASS／193 deselected（15.56秒）**。fail/skip/xfail 0。ローカルの限定対象やidentityとは合算しない。既存合成7例のCI全文をrootが読み、否定決定・準備相・本人感情・明示順序と未知区間の境界の保持を確認した。
 
 remote固定sourceの親head/5path/全bytes/treeは検証済みlocalと一致。後続commitは上記既存資料4fileの同期のみで製品sourceを変更しない。合成の保存再読・RN表示model検証を、稼働DB・本人実機・正式商品受入れへ換算しない。
+
+## 2026-10-11 u206 — 順序語付きの本人書字後の感情を保持（未配置）
+
+Mashの分析内容修正の続行依頼から、API PR3 `bc910aff98bfb1c4b945fc6827cee490c54b2eed`／Cocolon PR30 `7cb52f88e8ad8b32c2b43004b1831e34a40ac481`を照合して再開。全体設計・全file地図・前提/rule・恒久incident全文・current03/詳細04/06・最新weekly20261010を確認した。System Context prepareは浅い履歴の祖先照合でexit2のため、生成物をfresh扱いせず原典と実sourceを直接使用。今回の明示された内容修正を進め、weeklyの本人実機確認の完了や優先順全体の変更へ換算しない。
+
+### 欠落と限定修正
+
+実engineの合成入力「私は職場にいた。その後、私は家族への手紙を書いた。それから、私は落ち着きました。」では、場面と書字だけが残り、後続感情が欠けていた。共有Plan `_source_prefix_opens_report` の書字例外が順序語を受理せず、書字を報告の前置きと誤認する原因である。単純なメモ/考えの書字でも再現した。
+
+書字の完全一致判定の内部だけで、先頭の「その後／それから」1個と任意の読点/全角読点/空白を区別する。明示SELF、単純名詞または目的語内の「への／との／での」、書いた/書きました、目的語の前または後の場所/媒体1項という既存境界を使用する。新たに受理する順序付き単純名詞にも既存の未解析日付/疑問名詞検査を適用する。prefixのない既存単純書字分岐と旧completed fallbackは変えない。
+
+source原文とUTF-8座標/hash、後続節、明示SELF、感情の独立した根拠を保持。順序を原因へ読み替えず、感情へ日付を補わない。順序語の重複、日付との混用、改行、主体省略/他者、裸の「の／からの」、報告/引用/説明、未解析名詞、二重場所は広げない。u205で拒否側に置いていた「その後、私は家族への手紙を書いた」の1fixtureは今回の意図した肯定側へ移し、上記16境界例を追加した。
+
+### 実出力・保存・検証
+
+- 修正前の新規vertical testは1 FAIL（3node期待に対して2node）。修正後の書字対象は **103 tests／131 subtests PASS（22.73秒）**。共有owner identityを実sourceから更新し **1 PASS／193 deselected（42.03秒）**。包含される対象件数と最終CIは合算しない。
+- 合成Analysis11入力の前後を比較し、生成された16全文をrootが読解。通常3例は2node/1edge→3node/2edge。不明文を挟む例は3node/1edgeで書字→感情の線なし、別fieldは2node/0edge。現在未完了の根拠も主体未確定・否定・current_inputを維持して残る。真の報告/別field報告/未解析日付の3例は両版UNAVAILABLE。主体省略と報告名詞の本文は不変。
+- 実RN `watashiMapV2Contract.js` の表示modelで前後16全文・projection identity・node順・edge件数の一致を確認。React描画や実端末確認ではない。実service＋合成RPCの新規2ルートで、場面→書字→感情の保存後、再生成を禁止した再読の本文/図/identity保持を確認した。既存の訂正/撤回と、不明文/別field/前後報告/他者/後続否認の境界も対象testで確認。
+- Emlis Q1合成3入力の前後6全文をrootが読解。関係付き書字の1例で明示感情を受ける「その気持ちを受け止めています。」が加わり、単純な媒体付き書字と報告名詞の2例は全文不変。Observation3例は不変。追加の原因/改善/他者意図断定はない。引用再掲・汎用Reception・述語反復等の既存品質課題は残り、Emlisの商品受入れには換算しない。
+- 同環境read-only補助reviewも差分と前後全文を確認し、blocking findingなし。Codex Work root華恋が実装/実行/統合/反映を担当し、別model Pro reviewとは称さない。Python3.12.14／pytest8.4.1／pytest-subtests0.14.2／FastAPI0.142.2／Pydantic2.13.5／httpx0.28.1を使用。追加依存0。
+
+代表例の修正後の実生成全文（合成入力）：
+
+```text
+場面：職場にいた（記録された場面）（1件の記録）
+行動・非行動：その後：家族への手紙を書く（実行済み）（1件の記録）
+結果・余韻：それから：落ち着いた（記録された気持ち）（1件の記録）
+記録内の順序：職場にいた（記録された場面） → その後：家族への手紙を書く（実行済み）。原因を示す線ではありません。
+記録内の順序：その後：家族への手紙を書く（実行済み） → それから：落ち着いた（記録された気持ち）。原因を示す線ではありません。
+未確定（職場にいた（記録された場面））：確定していない項目：役割、考え・注意。
+```
+
+### 反映と残件
+
+製品source `47e0cba393c97610c60718e104ca93caaaa7fde3`、tree `2f36dc479528f684d64ad06ee5c8a699b14b6642`、共有Plan SHA256 `3c0e2f695aa55994b0650032520b65c238648483959800d1b625309c29c05c8f`。共有Plan1・既存test3・current owner identity fixture1を既存PR3へnon-force反映し、remote fetchで親head/5path/全bytesを照合済み。後続はAPI既存handoff、Cocolon current03/詳細04 §3.36/06の資料同期だけで製品sourceを変えない。歴史identityは不変、新規repository file0。STRUCTURE_MAP_DELTA_NONE：既存共有owner内の有限節判定の補修で、source→命題→graph→文章/図→保存の責務は変わらない。
+
+LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Analysis compiler/realizer/API/DTO/DB/SQL/RN製品変更、Supabase操作、本人行取得、配置/有効化/native build/main mergeは0。未配置・実DB/本人実機未確認、正式商品受入れ未成立。
+
+日付付き肯定書字、裸の「の／からの」・関係を含む場所/媒体・主体/対象省略・未対応時刻/副詞/他動詞、一般意味理解、全体ルートUI/IF/Saved、元28日/14記録全体の改善、本人生成→保存再表示・商品受入れは残る。次回は最新weekly/current03/本節と実出力から再開し、この追加補修を実機確認の新たな前提にしない。
+
+### u206 最終CI・固定source
+
+固定source `47e0cba393c97610c60718e104ca93caaaa7fde3` の[CI38137237590](https://github.com/MassyuRed/mashos-api/actions/runs/38137237590)はsuccess。Python3.12.15でAnalysis4＋共有限定change/feelingの5suite **1249 tests／4909 subtests PASS（260.01秒）**、共有owner identity **1 PASS／193 deselected（21.75秒）**。fail/skip/xfail 0。包含されるローカル対象検査やidentityと件数を合算しない。既存合成7例のCI生成全文をrootが読解し、否定決定・準備相・本人感情・明示順序と未知区間の境界の保持を確認した。
+
+remote固定sourceの親head/5path/全bytesは検証済みlocalと一致。後続commitは既存資料4fileの同期のみで製品sourceを変更しない。合成の保存再読・RN表示model検証を、稼働DB・本人実機・正式商品受入れへ換算しない。
