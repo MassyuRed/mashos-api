@@ -33,6 +33,45 @@ def _action_change_relations(plan):
         'typed_projection:perfective_action_before_bounded_change',))
 
 
+@pytest.mark.parametrize('prefix', ['昨日、私は', '今日私は', '私は昨日、'])
+@pytest.mark.parametrize('feeling', ['落ち着きました', '嬉しかったです', 'うれしかったです'])
+@pytest.mark.parametrize('finite', ['決めませんでした', '決めなかったです',
+    '決めておきませんでした', '決めておかなかったです'])
+def test_dated_negative_decision_feeling_has_separate_source_witness(prefix, feeling, finite):
+    memo = prefix + '同僚との分担を' + finite + '。それから、私は' + feeling + '。'
+    source = freeze_text_source(initial(memo))
+    span = [s for s in source.evidence_spans if s.source_field == 'memo'][-1]
+    assert plan_owner._source_polite_past_feeling_is_bound(span, source.normalized_current_input)
+    plan = _polite_change_plan(memo)
+    node = [n for n in plan.nuclei if n.source_span_ids == (span.span_id,)][-1]
+    assert node.semantic_frame.polarity == 'positive'
+    assert {'operator:positive_change', 'semantic_role:current_change'} <= set(node.semantic_frame.attribute_codes)
+    assert not _action_change_relations(plan)
+
+
+@pytest.mark.parametrize('clause', [
+    'その後、私は昨日、同僚との分担を決めませんでした',
+    '昨日、私は今日、同僚との分担を決めませんでした',
+    '昨日、今日私は同僚との分担を決めませんでした',
+    '私は昨日、朝の分担を決めませんでした',
+    '私は昨日、以前の分担を決めませんでした',
+    '私は昨日、分の分担を決めませんでした',
+    '昨日、私は明日分担の内容を決めませんでした',
+    '昨日、私は詳しい誰の分担を決めませんでした',
+    '昨日、私は振り返り明日分担の内容を決めませんでした',
+    '昨日、同僚との分担を決めませんでした',
+    '昨日、友人は同僚との分担を決めませんでした',
+    '昨日、私は同僚との分担は決めませんでした',
+    '昨日、私は同僚との分担を役割を決めませんでした',
+    '昨日、私は同僚との分担を決める予定でした',
+    '昨日、私は、\n同僚との分担を決めませんでした',
+    '昨日、\n私は同僚との分担を決めませんでした',
+    '昨日、私は同僚との分担を決めませんでしたという話でした',
+    '昨日、私は同僚との分担を決めなかったと思ったのです'])
+def test_dated_negative_decision_does_not_close_unparsed_or_reported_scope(clause):
+    assert plan_owner._source_prefix_opens_report(clause + '。')
+
+
 @pytest.mark.parametrize('prefix', ['昨日、私は', '今日私は', '私は昨日、', '今日、'])
 @pytest.mark.parametrize('feeling', ['落ち着きました', '嬉しかったです', 'うれしかったです'])
 @pytest.mark.parametrize('finite', ['調べませんでした', '調べなかったです'])

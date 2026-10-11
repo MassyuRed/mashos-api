@@ -33,6 +33,78 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_dated_negative_decision_keeps_preparation_day_and_independent_feeling(self):
+        for day, relative_day in (('今日', 'TODAY'), ('昨日', 'YESTERDAY')):
+            for prefix in (day + '、私は', day + '私は', '私は' + day + '、'):
+                for finite in ('決めませんでした', '決めなかったです',
+                               '決めておきませんでした', '決めておかなかったです'):
+                    for feeling, lemma in (('落ち着きました', '落ち着く'),
+                            ('嬉しかったです', '嬉しい'), ('うれしかったです', 'うれしい')):
+                        with self.subTest(prefix=prefix, finite=finite, feeling=feeling):
+                            clause = prefix + '同僚との分担を' + finite
+                            literal = 'それから、私は' + feeling
+                            req = request(record(memo=clause + '。' + literal + '。'))
+                            artifact = self.generate(req).artifact
+                            action, result = artifact.graph.nodes
+                            self.assertEqual((action.proposition.actor, action.polarity,
+                                action.proposition.relative_day, action.proposition.predicate_lemma),
+                                ('SELF', 'negative', relative_day,
+                                 '決めておく' if '決めて' in finite else '決める'))
+                            self.assertEqual((result.proposition.actor, result.proposition.relative_day,
+                                result.proposition.predicate_lemma, result.modality, result.polarity),
+                                ('SELF', '', lemma, 'feeling', 'positive'))
+                            self.assertEqual([e.edge_kind for e in artifact.graph.edges], ['OBSERVED_ORDER'])
+                            source, = freeze_analysis_sources(req).sources
+                            for node, expected in ((action, clause), (result, literal)):
+                                evidence, = node.evidence_refs
+                                raw = source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                                self.assertEqual(raw.decode(), expected)
+                                self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+                            text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                            self.assertTrue(all(n['visible_label'] in text for n in
+                                artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes']))
+
+    def test_dated_negative_decision_feeling_keeps_unknown_report_and_update_boundaries(self):
+        clause = '私は昨日、同僚との分担を決めておきませんでした。'
+        literal = 'それから、私は落ち着きました'
+        original = record(memo=clause + literal + '。')
+        artifact = self.generate(request(record(memo=clause + '不明な出来事がある。'
+            + literal + '。'))).artifact
+        self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)), (2, 0))
+        self.assertTrue(artifact.safe_projection(authenticated_owner_scope=OWNER)['unknown_gaps'])
+        for prefix, action, suffix in (('友人の話でした。', '', ''),
+                ('', '友人は言いました。', ''), ('', '', 'のは嘘だった。'),
+                ('', '', 'と友人が言った。'), ('', '', 'と私は思う。')):
+            with self.subTest(prefix=prefix, action=action, suffix=suffix):
+                artifact = self.generate(request(record(memo=prefix + clause + literal + '。'
+                    + suffix, action=action))).artifact
+                self.assertFalse(artifact and any(n.proposition.result_state == 'PAST_FEELING'
+                                 for n in artifact.graph.nodes))
+        for answer in ('「' + literal + '」は取り消します。',
+                       '「' + literal + '」ではなく「私は安心しなかった」です。'):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(original, answer))).artifact
+                self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)),
+                                 (1 if '取り消' in answer else 2, 0))
+                self.assertFalse(any(n.proposition.predicate_lemma == '落ち着く'
+                                     for n in artifact.graph.nodes))
+                self.assertEqual(artifact.graph.nodes[0].proposition.relative_day, 'YESTERDAY')
+                if '取り消' not in answer:
+                    self.assertEqual(artifact.graph.nodes[-1].polarity, 'negative')
+
+    def test_dated_negative_decision_preserves_complete_nominal_arguments(self):
+        for clause in ('昨日私は朝の分担を決めませんでした',
+                '私は昨日、分担の範囲を決めませんでした',
+                '昨日、私は明日の分担を決めませんでした',
+                '昨日、私は今月号の担当を決めておかなかったです'):
+            with self.subTest(clause=clause):
+                artifact = self.generate(request(record(memo=clause
+                    + '。それから、私は落ち着きました。'))).artifact
+                action, feeling = artifact.graph.nodes
+                self.assertEqual(action.proposition.relative_day, 'YESTERDAY')
+                self.assertEqual(feeling.proposition.relative_day, '')
+                self.assertEqual(len(artifact.graph.edges), 1)
+
     def test_dated_negative_action_keeps_independent_polite_feeling_and_day_owner(self):
         for day, relative_day in (('今日', 'TODAY'), ('昨日', 'YESTERDAY')):
             for prefix, actor in ((day + '、私は', 'SELF'), (day + '私は', 'SELF'),

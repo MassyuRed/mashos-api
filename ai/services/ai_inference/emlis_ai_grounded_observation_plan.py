@@ -15977,11 +15977,23 @@ def _source_prefix_opens_report(prefix: str) -> bool:
             # polite negative ending. A complete negative past act is not a
             # copular report host. This only closes the written clause; it
             # never supplies a missing actor or the next feeling's subject.
+            self_topic = r"(?:私|わたし|僕|ぼく|自分|俺|おれ)は[、, 　]*"
+            day_boundary = (
+                r"(?!分(?![一-鿿々ァ-ヴー])|以前|以後|以降|以来|当時|"
+                r"時点|現在|中|付|頃|ごろ|まで|から|より|だけ|朝|昼|夜|晩|夕|"
+                r"午前|午後|早朝|深夜|未明|正午)")
+            dated_self_prefix = (
+                r"(?:(?:今日|昨日)[、， 　]*" + self_topic + r"|"
+                + self_topic + r"(?:今日|昨日)[、， 　]+" + day_boundary
+                + r")(?!今日|昨日)")
             nominal = _WISH_OBJECT_ARGUMENT_RE.pattern
             argument = nominal + r"(?:との" + nominal + r")?(?:を|に|で|と)"
+            # A dated decision keeps the same explicit SELF requirement as
+            # the undated production. Do not inherit the ordinary action
+            # branch's optional actor or supply a day to the next feeling.
             closed = re.fullmatch(
-                r"(?:(?:その後|それから)[、, 　]*)?"
-                r"(?:私|わたし|僕|ぼく|自分|俺|おれ)は[、, 　]*"
+                r"(?:(?P<dated>" + dated_self_prefix + r")|"
+                r"(?:(?:その後|それから)[、, 　]*)?" + self_topic + r")"
                 r"(?P<arguments>(?:" + argument + r"){1,4})"
                 r"(?:決めませんでした|決めなかったです|"
                 r"決めておきませんでした|決めておかなかったです)", clause)
@@ -15994,7 +16006,6 @@ def _source_prefix_opens_report(prefix: str) -> bool:
                     + r"(?:(?:からの|への|との|での|の)"
                     + _WISH_OBJECT_NOMINAL_SOURCE + r")*")
                 argument = nominal + r"(?:を|に|で|と)"
-                self_topic = r"(?:私|わたし|僕|ぼく|自分|俺|おれ)は[、, 　]*"
                 # Close an already separated 今日/昨日 action as well. A day
                 # may precede SELF directly, but not an ambiguous genitive
                 # argument. Do not stack a day with another day or sequence
@@ -16003,9 +16014,7 @@ def _source_prefix_opens_report(prefix: str) -> bool:
                     r"(?:(?:今日|昨日)[、， 　]*" + self_topic + r"|"
                     r"(?:(?:今日|昨日)[、， 　]+|"
                     + self_topic + r"(?:今日|昨日)[、， 　]+)"
-                    r"(?!分(?![一-鿿々ァ-ヴー])|以前|以後|以降|以来|当時|"
-                    r"時点|現在|中|付|頃|ごろ|まで|から|より|だけ|朝|昼|夜|晩|夕|"
-                    r"午前|午後|早朝|深夜|未明|正午))(?!今日|昨日)")
+                    + day_boundary + r")(?!今日|昨日)")
                 closed = re.fullmatch(
                     r"(?:(?P<dated>" + dated_prefix + r")|"
                     r"(?:(?:その後|それから)[、, 　]*)?(?:" + self_topic + r")?)"
