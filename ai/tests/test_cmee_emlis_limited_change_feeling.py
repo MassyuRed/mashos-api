@@ -33,6 +33,34 @@ def _action_change_relations(plan):
         'typed_projection:perfective_action_before_bounded_change',))
 
 
+@pytest.mark.parametrize('feeling', ['落ち着きました', '嬉しかったです', 'うれしかったです'])
+@pytest.mark.parametrize('marker', ['その後、', 'それから、', 'その後', 'それから'])
+def test_prefixed_polite_feeling_has_source_bound_witness_without_causality(feeling, marker):
+    memo = '私は資料を調べた。' + marker + '私は' + feeling + '。'
+    plan = _polite_change_plan(memo)
+    node = [n for n in plan.nuclei if n.source_fields == ('memo',)][-1]
+    assert node.semantic_frame.polarity == 'positive'
+    assert node.semantic_frame.actor == 'current_user'
+    assert not _action_change_relations(plan)
+    with pytest.raises(EvidenceLedgerResolutionError, match='source_slice_mismatch'):
+        _polite_change_plan(memo, source_override='友人は' + memo)
+
+
+@pytest.mark.parametrize('memo', [
+    'その後、落ち着きました。', 'その後、友人は落ち着きました。',
+    'その後の私は落ち着きました。', 'その後、昨日、私は落ち着きました。',
+    'その後、それから、私は落ち着きました。', '「その後、私は落ち着きました」。',
+    'その後、私は落ち着きました夢を見た。',
+    '友人は言っていた。その後、私は落ち着きました。',
+    'その後、私は落ち着きました。と友人が言った。',
+    'それから、私は落ち着きました。のは嘘だった。',
+    'それから、私は落ち着きました。わけではない。',
+])
+def test_prefixed_polite_feeling_does_not_promote_unproved_scope(memo):
+    plan = _polite_change_plan(memo)
+    assert not any('operator:positive_change' in n.semantic_frame.attribute_codes for n in plan.nuclei)
+
+
 @pytest.mark.parametrize('form,plain', [(form, plain)
     for plain, polite in [('安心しなかった', '安心しませんでした'),
         ('落ち着かなかった', '落ち着きませんでした'),

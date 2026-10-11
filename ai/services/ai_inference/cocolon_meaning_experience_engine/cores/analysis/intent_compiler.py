@@ -353,18 +353,27 @@ def _past_event_witness(nucleus, proposition):
 def _past_feeling_proposition(value):
     # Retain topic punctuation in the complete endpoint's source range.
     # Admission requires either the complete pair or a standalone SELF witness.
-    subject = re.match(r'^(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?', value)
+    prefix = re.match(r'^(その後|それから)[、， \u3000]*', value)
+    offset = prefix.end() if prefix else 0
+    subject = re.compile(r'(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?').match(value, offset)
+    # A sequence marker is not evidence of who experienced the feeling.
+    # Keep omitted subjects exclusive to already-proved compound episodes.
+    if prefix and subject is None:
+        return None
     start = subject.end() if subject else 0
     finite = value[start:]
     negative = finite in _NEGATIVE_FEELING_FORMS
     lemma = (_NEGATIVE_FEELING_FORMS if negative else _FEELING_FORMS).get(finite)
     if lemma is None:
         return None
-    parts = (('SELF_TOPIC', 0, start),) if subject else ()
+    marker = {'その後': 'AFTER_PREVIOUS', 'それから': 'THEN_OR_ADDITION'}.get(
+        prefix.group(1) if prefix else '', '')
+    parts = ((marker, 0, offset),) if prefix else ()
+    parts += (('SELF_TOPIC', offset, start),) if subject else ()
     return ObservedProposition('SELF' if subject else 'UNSPECIFIED', (),
         lemma, 'negative' if negative else 'positive', 'feeling', 'past',
         parts + (('FINITE_FEELING', start, len(value)),),
-        result_state='PAST_FEELING')
+        result_state='PAST_FEELING', sequence_marker=marker)
 
 
 def _standalone_past_feeling_witness(nucleus, proposition):
@@ -945,6 +954,7 @@ def _action_change_pair(source, plan, span_id):
     left = _te_action_proposition(raw[a:b]) if te_after else _proposition(raw[a:b])
     right = _bounded_change_proposition(raw[c:d])
     if (left is None or right is None or _has_unparsed_nominal_scope(right) or left.actor != 'SELF'
+            or right.sequence_marker
             # A negative feeling needs the new complete shared witness;
             # the old positive keyword pair cannot license its negation.
             or (right.polarity != 'positive' and not (
@@ -1089,7 +1099,7 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
         if (value.endswith(('落ち着きました', '嬉しかったです', 'うれしかったです'))
                 and not _source_polite_past_feeling_is_bound(span, source.normalized)):
             return None
-        if change.polarity == 'negative':
+        if change.polarity == 'negative' or change.sequence_marker:
             # Punctuation cannot close a reported speaker or detach a
             # cognitive/retracted host. This bounds only the new admission;
             # it does not reinterpret the existing positive family.
@@ -1341,7 +1351,8 @@ def _explicit_order_pairs(source, plan, withdrawn):
     for (left, a), (right, b) in zip(ordered, ordered[1:]):
         if (a.field_path != b.field_path or a.scalar_end >= b.scalar_start
                 or right.sequence_marker not in {'AFTER_PREVIOUS', 'THEN_OR_ADDITION'}
-                or right.modality != 'fact'
+                or not (right.modality == 'fact' or (right.modality == 'feeling'
+                        and b.evidence_id in feeling_predecessors))
                 or not (left.modality == 'fact' or (left.modality == 'feeling'
                         and a.evidence_id in feeling_predecessors))
                 or (left.temporal_scope, right.temporal_scope) != ('past', 'past')):

@@ -3793,7 +3793,8 @@ def _source_polite_past_feeling_is_bound(span, normalized_input, *, action=None,
             return False
         feeling = _SOURCE_NEGATIVE_PAST_FEELING
     if action is None:
-        if re.fullmatch(subject + feeling, raw) is None:
+        sequence_prefix = re.match(r"(?:その後|それから)[、， \u3000]*", raw)
+        if re.fullmatch(r"(?:(?:その後|それから)[、， \u3000]*)?" + subject + feeling, raw) is None:
             return False
     else:
         # A complete, explicit SELF action licenses a temporal episode, not
@@ -3815,6 +3816,17 @@ def _source_polite_past_feeling_is_bound(span, normalized_input, *, action=None,
     record = "\n".join(str(normalized_input.get(field) or "") for field in ("memo", "memo_action"))
     start, end = span.start_index, span.end_index
     after = source[end:].lstrip(" \t\u3000。．.!！\r\n;；")
+    if action is None and sequence_prefix:
+        # A new standalone sequence prefix must not detach a later speaker
+        # or retraction. Keep the original source/finite-host proof below.
+        prefix_context = source[:start] + "\n" + str(normalized_input.get("memo_action") or "")
+        speaker = r"(?:(?:私|僕|ぼく|俺|おれ|わたし|自分|[^\s、，。．.!！?？]+?)(?:は|が|も)[、， \u3000]*)?"
+        if (_source_prefix_opens_report(str(normalized_input.get("memo_action") or ""))
+            or re.search(r"(?:言って|話して|語って|述べて|書いて|伝えて|答えて|説明して)"
+                         r"(?:いた|いました|いる|います)(?:[。．.\s]|$)", prefix_context)
+            or re.match(r"(?:と(?:は|も)?" + speaker
+                        + r"(?:思|考|感|言|い|聞|書|読|伝|認|信|報)|のは|のも|なんて|などと)", after)):
+            return False
     if negative_compound and (
         _source_prefix_opens_report(str(normalized_input.get("memo_action") or ""))
         or re.search(r"(?:言って|話して|語って|述べて|書いて|伝えて|答えて|説明して)"

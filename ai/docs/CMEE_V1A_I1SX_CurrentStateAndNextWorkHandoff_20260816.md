@@ -16002,3 +16002,34 @@ runtime owner、API/DTO/DB、共有Emlis、RN製品コード、製品依存は�
 ### 残件と配置状態
 
 未配置・本人実機未確認・商品受入れ未完了。「分担を決めておいた」等の未対応、元の28日例で不足しているつながり、ユーザー画面全体のルート表示/段階的詳細表示は残件。分析は蓄積された期間から作る既存仕様のままで、単発感情への分析変更ではない。合成入力は検証用であり、出力本文はCocolonの実engine生成、Mash本人の分析でも華恋が作った分析例でもない。既存PRへ反映しても本番配置済み・完成済みとは扱わない。
+
+## 2026-10-11 u193 — 明示順序の後にある本人の過去感情を文章・図へ保持（未配置）
+
+Mashの「分析構造の内容修正関係を進めて」を継続。添付u192の記録と、GitHubのAPI PR3 `4ace5463bc69daf001ca1adb2eed24c51a253634`／Cocolon PR30 `3a18654df34cd4fca660aa1565a97bc88e4e83b1`から再開した。両PRはDraft/open/unmerged。前提資料・作業姿勢入口/CURRENT/Rule18、恒久incident全文、Karen-Diary必須3file、全体設計01と全file地図01A/B/C/02、current Analysis/04/06/API handoff、最新weekly20261010 §5.4/§5.5を確認。System Context prepareは部分materializationにtools moduleがなく実行不成立。生成Contextをfresh扱いせず、許可されたGitHub追跡原典の直接確認を使用した。
+
+今回の明示依頼をweekly §5.4の内容修正配分として扱い、§5.5の本人生成→保存再表示の未完了を維持する。OBSERVED_BLOCKER_MINIMAL_FIX。Codex Work root華恋が単一の編集・実行・GitHub反映担当。同環境subagentはread-onlyで対象選定、差分、生成本文を確認し、具体的blocking指摘なし。別model Pro reviewと称さない。追加依存・費用・外部AI・Mash操作要求0。
+
+### 直接修正と実際の出力
+
+開始版では「私は職場にいた。その後、私は会議を担当した。その後、私は資料を調べた。その後、私は安心した。」の最後の感情が落ち、3node/2edgeだけを出していた。既存Analysis compilerの過去感情解析が接頭語を読まず、順序判定が右端のfeelingを除外し、realizerも過去感情の接頭語を表示していなかった。
+
+- 二接続語「その後／それから」と完全な明示SELF過去感情を、既存の有限肯否定・丁寧形の範囲で解析。接頭語・主語・有限形の元座標、原文、肯否定を保持する。
+- 既存の証拠成立済み感情を順序の右端にも使用。隣接・同一field/source・過去時制・withdrawalの条件は維持。前の文が不明、希望、別記録、訂正/撤回なら線を補わない。compound右端への新しい接頭語追加も拒否する。
+- 既存realizerのsource prefix表示を過去感情にも使用。同じ入力は4node/3edgeとなり、場面→担当→行動→感情を文章と図のデータへ保持した。線は原因の断定ではない。
+- 3丁寧形の共有肯定根拠に同じ接頭語を限定追加。完全SELF・元source一致を要求し、先行話者・後続の明示話者/否認を保留。全体の語彙判定・品質閾値・Emlisの作者は変更しない。
+
+### 検証
+
+- 最終のAnalysis vertical/nominal-relations/storage/saved-periodと共有limited-change-feelingの5suiteは **937 tests／3990 subtests PASS、skip/xfail0、exit0**（371.04秒）。current shared owner identityの独立した既存検査1件もPASS（34.11秒）。全repo/全Emlis合格とは扱わない。
+
+- 修正前の新規Analysis6testで51失敗を再現（subtestsを含むpytest表示）。修正後の限定6test/73subtestsは成功。追加の保存検査は肯定・丁寧・否定の3例で、実service＋合成RPCによる一回保存とengine再生成禁止の再読を確認。本文・図・保存identityが一致する。live DBでの生成・保存ではない。
+- 合成Analysis10例の結果をrootが全文読解（生成8、帰属/否認の保留2）。修正/撤回、接続先不明、未読文、否定を保持。実RN `buildWatashiMapV2ViewModel`で生成8例の全文・identity・node順・edge件数が一致。React/native実画面や本人入力の確認ではない。
+- 同じ7合成入力でEmlisの修正前後全文を読解。6例は本文・status/reason不変。丁寧形1例は受取文「その気持ちを受け止めています。」だけ追加され、行動が支えた/原因だったとの新断定なし。既存の復唱・定型的受取品質は未解決であり、商品受入れとしない。
+- 元の28日/14記録例は本文・表示内容が不変（10node/4edge）。共有実装identityの更新によりprojection_ofは変化しており、artifact全体同一とはしない。この28日例の未対応行動を改善したと数えない。
+- Python3.12.14、既存隔離pytest8.4.1/pytest-subtests0.14.2/FastAPI0.142.2/Pydantic2.13.5。bytecode/cacheprovider/旧FB172移行pluginを無効。製品依存/lock変更0。Supabaseはproject状態・migration履歴だけを読取し、分析保存/期間比較の既存migrationを確認。本人本文read・SQL実行・DB書込なし。
+
+### 反映範囲と残件
+
+API既存source3（Analysis compiler/realizer・共有Plan）、既存test3、current shared identity1、既存handoff1。Cocolon既存current03/詳細04/06。計11既存file、新規repository file0。歴史的IM03証拠、API/DTO/DB/SQL/RN/Safety/依存/設定を変更しない。STRUCTURE_MAP_DELTA_NONE：既存owner内の意味保持・表示補修で、期間生成→保存→既存表示のrouteと公開契約を維持。既存PR branchへ反映し、fresh head・対象内容・変更path集合を確認する。
+
+未配置・本人実機未確認・正式商品受入れ未完了。本人生成→同じ文章と図→保存後再表示、元の28日例の「分担を決めておいた」等の未対応行動、全体ルートUI/段階的詳細表示、一般的な意味理解・IF/Savedの別未完了を残す。今回の修正を実機到達の追加前提や全体完成へ換算しない。次の「進めて」は最新weekly/current03/本節へ戻り、既存出力で不足している内容を引き続き直接修正する。
