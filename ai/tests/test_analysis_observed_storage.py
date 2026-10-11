@@ -89,6 +89,27 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         self.fx = fixture()
         self.row = self.fx['row']
 
+    async def test_saved_past_feeling_keeps_legacy_actor_label_without_reinterpretation(self):
+        for finite in ('安心した', '安心しなかった'):
+            with self.subTest(finite=finite):
+                row = fixture('私は資料を調べた後、' + finite + '。')['row']
+                # Fixed pre-u188 surface: reading must retain saved content,
+                # even though new generation now qualifies the unresolved actor.
+                row['content_json']['watashiMap']['nodes'][1]['visible_label'] = finite + '（記録された気持ち）'
+                row['content_text'] = (
+                    '行動・非行動：資料を調べる（実行済み）（1件の記録）\n'
+                    '結果・余韻：' + finite + '（記録された気持ち）（1件の記録）\n'
+                    '記録内の順序：資料を調べる（実行済み） → ' + finite
+                    + '（記録された気持ち）。原因を示す線ではありません。\n'
+                    '未確定（資料を調べる（実行済み））：確定していない項目：場面、役割、考え・注意。')
+                before = copy.deepcopy(row)
+                with patch.object(service, '_rpc', AsyncMock(return_value=result([row], matched=True))) as rpc, \
+                        patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                    reread = await service.read_saved(OWNER, report_id=row['id'])
+                self.assertEqual(reread['items'][0], before)
+                self.assertEqual(row, before)
+                self.assertEqual([call.args[0] for call in rpc.await_args_list], ['analysis_observed_read'])
+
     async def test_insufficient_current_input_keeps_diagnostic_without_saving(self):
         for members in ([{'original': dict(self.fx['original'], memo=memo),
                           'thread': None, 'events': []}] for memo in (
@@ -278,7 +299,7 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(private['period_comparison']['change_claims'])
                 self.assertNotEqual(private['projection_of'], private['previous_evidence']['projection_of'])
                 spelling = 'うれしかった' if 'うれしかった' in now else '嬉しかった'
-                self.assertIn(spelling + '（記録された気持ち）', row['content_text'])
+                self.assertIn(spelling + '（誰の気持ちかは未確定）', row['content_text'])
                 self.assertIn('今回比較した記述内容では差分を検出していません', row['content_text'])
                 with patch.object(service, '_rpc', AsyncMock(return_value=result([row], matched=True))), \
                         patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
@@ -1372,21 +1393,21 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                 await self._assert_action_change_saved(memo)
 
     async def test_prefixed_polite_compounds_survive_commit_and_read_without_regeneration(self):
-        for marker, ending, label in ((m, e, label) for m in ('その後、', 'それから') for e, label in (('落ち着きました', '落ち着いた（記録された気持ち）'),
+        for marker, ending, label in ((m, e, label) for m in ('その後、', 'それから') for e, label in (('落ち着きました', '落ち着いた（誰の気持ちかは未確定）'),
                 ('私は、嬉しかったです', '嬉しかった（記録された気持ち）'),
-                ('うれしかったです', 'うれしかった（記録された気持ち）'),
+                ('うれしかったです', 'うれしかった（誰の気持ちかは未確定）'),
                 ('疑問が減りました', '疑問が減った（記録された変化）'),
                 ('気持ちメモが増えました', '気持ちメモが増えた（記録された変化）'),
                 ('資料が戻りました', '資料が戻った（記録された変化）'),
-                ('落ち着いた', '落ち着いた（記録された気持ち）'),
+                ('落ち着いた', '落ち着いた（誰の気持ちかは未確定）'),
                 ('私は、嬉しかった', '嬉しかった（記録された気持ち）'),
-                ('うれしかった', 'うれしかった（記録された気持ち）'),
+                ('うれしかった', 'うれしかった（誰の気持ちかは未確定）'),
                 ('疑問が減った', '疑問が減った（記録された変化）'),
                 ('気持ちメモが増えた', '気持ちメモが増えた（記録された変化）'),
                 ('資料が戻った', '資料が戻った（記録された変化）'),
-                ('安心しませんでした', '安心しなかった（記録された気持ち）'),
+                ('安心しませんでした', '安心しなかった（誰の気持ちかは未確定）'),
                 ('私は、落ち着かなかったです', '落ち着かなかった（記録された気持ち）'),
-                ('嬉しくなかった', '嬉しくなかった（記録された気持ち）'),
+                ('嬉しくなかった', '嬉しくなかった（誰の気持ちかは未確定）'),
                 ('僕は、うれしくありませんでした', 'うれしくなかった（記録された気持ち）'))):
             with self.subTest(ending=ending):
                 await self._assert_action_change_saved('私は会議を担当した。'
@@ -1406,13 +1427,13 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                             plain + '（記録された変化）')
 
     async def test_past_feeling_survives_commit_and_read_without_regeneration(self):
-        for memo, label in (('私は資料を調べた後、安心した。', '安心した（記録された気持ち）'),
-                ('私は資料を調べてから、落ち着いた。', '落ち着いた（記録された気持ち）'),
-                ('私は、資料を調べてから、安心した。', '安心した（記録された気持ち）'),
+        for memo, label in (('私は資料を調べた後、安心した。', '安心した（誰の気持ちかは未確定）'),
+                ('私は資料を調べてから、落ち着いた。', '落ち着いた（誰の気持ちかは未確定）'),
+                ('私は、資料を調べてから、安心した。', '安心した（誰の気持ちかは未確定）'),
                 ('私は資料を調べた後、私は、安心しました。', '安心した（記録された気持ち）'),
                 ('私は、資料を調べてから、僕は， 落ち着いた。', '落ち着いた（記録された気持ち）'),
                 ('私は記録を残した後、わたしは、　嬉しかった。', '嬉しかった（記録された気持ち）'),
-                ('私は資料を調べた後、落ち着きました。', '落ち着いた（記録された気持ち）'),
+                ('私は資料を調べた後、落ち着きました。', '落ち着いた（誰の気持ちかは未確定）'),
                 ('俺は資料を調べてから、俺は、嬉しかったです。', '嬉しかった（記録された気持ち）'),
                 ('私は資料を調べた後、私はうれしかったです。', 'うれしかった（記録された気持ち）')):
             with self.subTest(memo=memo):
@@ -1466,15 +1487,15 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_past_feeling_outgoing_order_survives_save_and_read(self):
         for episode, label, following, following_label in (
-                ('私は資料を調べた後、安心した。', '安心した（記録された気持ち）',
+                ('私は資料を調べた後、安心した。', '安心した（誰の気持ちかは未確定）',
                  'その後、私は記録を残した。', 'その後：記録を残す（実行済み）'),
                 ('私は資料を調べてから、私は、安心しました。', '安心した（記録された気持ち）',
                  'その後、私は記録を残した。', 'その後：記録を残す（実行済み）'),
-                ('私は資料を調べてから、落ち着いた。', '落ち着いた（記録された気持ち）',
+                ('私は資料を調べてから、落ち着いた。', '落ち着いた（誰の気持ちかは未確定）',
                  'それから、私は記録を残さなかった。', 'それから：記録を残す（行わなかった）'),
                 ('私は資料を調べた後、私は嬉しかった。', '嬉しかった（記録された気持ち）',
                  'その後、私は記録を残した。', 'その後：記録を残す（実行済み）'),
-                ('私は資料を調べてから、うれしかった。', 'うれしかった（記録された気持ち）',
+                ('私は資料を調べてから、うれしかった。', 'うれしかった（誰の気持ちかは未確定）',
                  'その後、私は記録を残した。', 'その後：記録を残す（実行済み）')):
             with self.subTest(episode=episode):
                 await self._assert_action_change_saved(episode + following, label,

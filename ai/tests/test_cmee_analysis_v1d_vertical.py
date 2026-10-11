@@ -33,6 +33,36 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_past_feeling_actor_scope_survives_correction_aggregation_and_comparison(self):
+        for finite, polite in (('安心した', '安心しました'), ('安心しなかった', '安心しませんでした')):
+            with self.subTest(finite=finite):
+                implicit = '私は資料を調べた後、' + finite
+                explicit = '私は資料を調べた後、私は' + finite
+                combined = self.generate(request(record(memo=implicit + '。'),
+                    record(2, memo=explicit + '。'))).artifact
+                graph_before = combined.graph
+                projection = combined.safe_projection(authenticated_owner_scope=OWNER)
+                feelings = [n for n in projection['nodes'] if n['node_kind'] == 'IMMEDIATE_RESULT_OR_AFTERMATH']
+                self.assertEqual([n['visible_label'] for n in feelings], [
+                    finite + '（誰の気持ちかは未確定）', finite + '（記録された気持ち）'])
+                self.assertEqual(len(combined.graph.edges), 2)
+                text = combined.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                for node in feelings:
+                    self.assertIn(node['visible_label'], text)
+                self.assertEqual(combined.graph, graph_before)
+                for old, new, suffix in ((implicit, explicit, '（記録された気持ち）'),
+                        (explicit, implicit, '（誰の気持ちかは未確定）')):
+                    corrected = self.generate(request(self.with_answer(record(memo=old + '。'),
+                        '「' + old + '」ではなく「' + new + '」です。'))).artifact
+                    corrected_map = corrected.safe_projection(authenticated_owner_scope=OWNER)
+                    self.assertEqual(corrected_map['nodes'][1]['visible_label'], finite + suffix)
+                    self.assertEqual(len(corrected_map['edges']), 1)
+                same = self.compared(implicit.replace(finite, polite) + '。', implicit + '。').artifact
+                self.assertFalse(same.period_comparison.change_claims)
+                changed = self.compared(explicit + '。', implicit + '。').artifact
+                self.assertEqual(changed.safe_projection(authenticated_owner_scope=OWNER)
+                    ['period_comparison']['safe_change_kinds'], ['ROUTE_EVIDENCE_CHANGED'])
+
     def test_negative_compound_feeling_preserves_both_endpoints_and_order(self):
         for plain, polite in (('安心しなかった', '安心しませんでした'),
                 ('落ち着かなかった', '落ち着きませんでした'),
@@ -68,7 +98,8 @@ class AnalysisVerticalTests(unittest.TestCase):
                             whole = edge.evidence_refs[-1]
                             self.assertEqual(source.envelope.raw_utf8[whole.utf8_start:whole.utf8_end].decode(), episode)
                             projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
-                            self.assertEqual(projection['nodes'][2]['visible_label'], plain + '（記録された気持ち）')
+                            self.assertEqual(projection['nodes'][2]['visible_label'], plain
+                                + ('（記録された気持ち）' if subject else '（誰の気持ちかは未確定）'))
                             self.assertFalse(projection['annotation_badges'])
                             self.assertIn('原因を示す線ではありません', artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
 
@@ -3722,7 +3753,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                                 self.assertEqual(field[e.scalar_start:e.scalar_end], raw.decode())
                                 self.assertEqual(hashlib.sha256(raw).hexdigest(), e.literal_sha256)
                         text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
-                        self.assertIn('（記録された気持ち）', text)
+                        self.assertIn('（記録された気持ち）' if subject else '（誰の気持ちかは未確定）', text)
                         self.assertEqual(text.count('記録内の順序：'), 2)
                         self.assertNotIn('どの内容に続くのか', text)
                         self.assertIn('原因を示す線ではありません', text)
@@ -3928,7 +3959,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                          ('PAST_FEELING', 'UNSPECIFIED', 'feeling', 'past'))
         self.assertFalse(artifact.graph.annotations)
         text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
-        self.assertIn('安心した（記録された気持ち）', text)
+        self.assertIn('安心した（誰の気持ちかは未確定）', text)
         self.assertIn('原因を示す線ではありません', text)
 
     def test_action_change_topic_comma_keeps_updates_and_semantic_comparison(self):
@@ -4084,7 +4115,8 @@ class AnalysisVerticalTests(unittest.TestCase):
                             self.assertEqual(covered, set(range(len(raw.decode()))))
                         projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
                         text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
-                        self.assertTrue(projection['nodes'][1]['visible_label'].endswith('（記録された気持ち）'))
+                        self.assertTrue(projection['nodes'][1]['visible_label'].endswith(
+                            '（記録された気持ち）' if subject else '（誰の気持ちかは未確定）'))
                         self.assertNotIn('実行済み', projection['nodes'][1]['visible_label'])
                         self.assertIn(projection['nodes'][1]['visible_label'], text)
                         self.assertIn('原因を示す線ではありません', text)
@@ -4191,7 +4223,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                     text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
                     self.assertIn('今回比較した記述内容では差分を検出していません', text)
                     spelling = 'うれしかった' if 'うれしかった' in now else '嬉しかった'
-                    self.assertIn(spelling + '（記録された気持ち）', text)
+                    self.assertIn(spelling + ('（記録された気持ち）' if topic else '（誰の気持ちかは未確定）'), text)
 
     def test_past_feeling_spelling_keeps_meaning_differences_and_episode_evidence(self):
         kanji = '私は資料を調べた後、嬉しかった。'

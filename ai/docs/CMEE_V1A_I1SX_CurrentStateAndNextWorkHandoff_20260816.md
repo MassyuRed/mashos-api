@@ -15873,3 +15873,24 @@ runtimeは前turnのPython3.12.14/pytest8.4.1/pytest-subtests0.14.2/FastAPI0.142
 STRUCTURE_MAP_DELTA_NONE：既存共有Plan/観測作者/受取作者/独立reader、Analysis compilerの内部補正で、owner配置・生成/保存/表示route・公開契約・DTOを維持。current03 §4.15に既存共有fileの今回責務を追記した。API製品5/test3/current identity1/handoff1、Cocolon current03/詳細04/06の計13既存file、新規repository file0。DB/SQL/RN/Safety/依存、main/merge/deploy/env/native build変更0。限定TECHNICAL_CREDIT、商品NOT_CLEAR。既存PR3/30のbranchへnon-force反映し、remote parent/tree/変更path集合/全file blob内容/最終headを照合する。
 
 残件と戻り先：今回の有限否定compoundのAnalysis欠落と連動したEmlis誤った変化/因果表現は補修。短文のecho品質保留、未認定の程度/他時点/一般認知、既存Emlis文体/品質は残る。最新weekly/current03/本節へ戻り、追加活用網羅を本人の生成→同じ文章と図→保存後再表示の前提にしない。10/10の本人確認は入力不足の正常案内までであり、生成/内容品質/再表示の証拠ではない。最新配置証拠はcurrent03のAPI `5c8bd8e5d7f876335eb840ceee26883a030a34a5` live、TestFlight6501送信、18:51 JST案内表示確認。本u187は未配置で、実DB/本人実機/正式商品受入れは未確認。
+
+
+## 2026-10-11 JST u188 — 過去感情の主体未確定を文章と図へ保持（未配置）
+
+Mashの「分析構造の内容修正関係を進めて」により、weekly20261010 §5.4の明示再配分として既存表示の不足一件を補修。開始headはAPI `bca6dd1123bfa481b15f803566a738ec04b61830`／Cocolon `913a38048a68a17a7afc7c1bbc1209360bc9e687`、PR3/30はDraft/open/unmerged。全体設計01と全file地図01A/B/C/02、Analysis current03/詳細04/06、API handoff、適用作業規則、最新weekly20261010 §5.4/§5.5を確認。恒久incident全文を今回も読了し、前turnのKaren-Diary必須3fileと関連規則読了を継承。Context prepareのshallow祖先確認不成立は修理せず、許可された追跡原本の直接読取を継続した。生成Contextがfreshとの主張はしない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。root華恋が唯一の編集・実行・反映owner。同環境のread-only補助2名が原因/差分と文面/生成8全文を確認、blockerなし。別model Pro reviewではない。新規費用・外部AI・Mash操作要求0。weekly §5.5の本人生成→保存後再表示は未完了であり、この修正を商品受入れへ換算しない。
+
+開始実測：`私は資料を調べた後、安心した。` と `私は資料を調べた後、私は安心した。` は、右端のactorがUNSPECIFIED/SELFなのに同じ「安心した（記録された気持ち）」になった。否定「安心しなかった」も同じ問題。既存 `observed_route_realizer.py::_safe_label` のPAST_FEELING固定suffixが区別を落としていた。型の原文再照合後、UNSPECIFIEDだけ「（誰の気持ちかは未確定）」へ変更。SELF表示、有限形と否定、private graph/原文証拠/順序/比較は不変。感情の記述自体の不確かさや原文の記述不足を断定せず、主体についての分析上の未確定を示す。
+
+検証：
+- Analysis vertical/storage/saved-period/APIの4suiteで393 test本体と3388 subtestがPASS。保存比較testの2 subtestは旧suffixの期待値でFAIL（61.87秒、既存Pydantic非推奨warning1）。入力は省略主体なので当該期待値1行だけを修正し、当該testを再実行、1 test／2 subtests PASS（3.17秒）。製品コードの追加変更なし。4suite全体の再実行ではなく、この限定再検証で残った失敗を解消した。
+- 既存の肯否定・常体/丁寧・前後順序・補足/訂正/撤回/比較の検査は維持。追加verticalで主体別nodeを混同せず、訂正の両方向で表示が切り替わり、同一主体の丁寧差は比較差なし、主体差はROUTE_EVIDENCE_CHANGEDのままであることを確認。
+- 実保存service＋合成RPCで新しいlabelの保存とengine再生成禁止の再読を確認。固定した旧形式の肯定/否定2本文と旧graph labelも、読取RPCだけ・再生成禁止で同一本文/図/identityを返す。既存保存を読み直しても新表示へ書き換えない。
+- rootが生成8全文（肯否定×主体2、先頭/後続順序、訂正両方向、主体差の期間比較）を読解。実RN `buildWatashiMapV2ViewModel` と全文/identity/node順/端点label/比較が8/8一致。実rendererは同labelをnodeと順序線へ表示し、省略行数/固定高さ制限なし。React/native実画面や本人入力の検証ではない。
+
+runtimeは既存隔離Python3.12.14/pytest8.4.1/pytest-subtests0.14.2/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5を継続。絶対entrypoint、bytecode/cacheprovider/FB172移行plugin無効。共有/Emlis変更0のためその全検査を再実行したとは扱わない。
+
+STRUCTURE_MAP_DELTA_NONE：既存Analysis realizer一箇所の表示修正。current03 §4.15に責務を追記し、詳細04 §3.10と本handoffを同期。API製品1/test2/handoff1、Cocolon current03/詳細04/06の計7既存file、新規repository file0。新文法/owner/API/DTO/DB/SQL/RN/Safety/依存・main/merge/deploy/env/native build変更0。限定TECHNICAL_CREDIT、商品NOT_CLEAR。既存PR3/30へnon-force反映し、remote parent/tree/変更path集合/全file内容/最終headを照合する。
+
+戻り先は最新weekly/current03/本節。本人の分析生成→同じ文章と図→保存後再表示が未確認。10/10の本人確認は入力不足の正常案内までであり、生成条件を緩めた省略主語分岐の撤回を維持する。最新配置証拠はAPI `5c8bd8e5d7f876335eb840ceee26883a030a34a5` live・TestFlight6501送信・18:51 JST案内表示確認。本u188は未配置。u187の短いEmlis一文のecho品質保留、未認定の程度/他時点/一般認知、実DB/本人実機/正式商品受入れは残る。追加文法の網羅を本人の生成/再表示の前提にしない。
