@@ -216,16 +216,19 @@ _FEELING_FORMS = {'安心した': '安心する', '安心しました': '安心�
     '嬉しかった': '嬉しい', '嬉しかったです': '嬉しい',
     'うれしかった': 'うれしい', 'うれしかったです': 'うれしい',
     '不安だった': '不安だ', '不安でした': '不安だ'}
-# An absent positive feeling is not evidence of distress or a failed action.
+# An absent feeling does not establish its opposite or an action's effect.
 # Only complete standalone SELF clauses can use these negative inflections.
 _FEELING_PAST_NEGATIVE = {'安心する': '安心しなかった', '落ち着く': '落ち着かなかった',
-                          '嬉しい': '嬉しくなかった', 'うれしい': 'うれしくなかった'}
+                          '嬉しい': '嬉しくなかった', 'うれしい': 'うれしくなかった',
+                          '不安だ': '不安ではなかった'}
 _NEGATIVE_FEELING_FORMS = {surface: lemma
     for lemma, plain, polite in (
         ('安心する', '安心しなかった', '安心しませんでした'),
         ('落ち着く', '落ち着かなかった', '落ち着きませんでした'),
         ('嬉しい', '嬉しくなかった', '嬉しくありませんでした'),
-        ('うれしい', 'うれしくなかった', 'うれしくありませんでした'))
+        ('うれしい', 'うれしくなかった', 'うれしくありませんでした'),
+        ('不安だ', '不安ではなかった', '不安ではありませんでした'),
+        ('不安だ', '不安じゃなかった', '不安じゃありませんでした'))
     for surface in (plain, plain + 'です', polite)}
 _PAST_EVENT_TOPIC = (
     r'(?P<subject>私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?'
@@ -429,12 +432,12 @@ def _standalone_past_feeling_witness(nucleus, proposition):
     expected = (('value', 'value', 'fact') if proposition.predicate_lemma == '安心する'
                 else ('reaction', 'feeling', 'feeling'))
     # Shared negative affect is not grammatical negation. The complete
-    # affirmative anxiety clause asserts an experience; it does not assert
-    # its absence, an improvement, or the effect of a preceding action.
+    # anxiety clause's own grammatical polarity determines whether the
+    # experience was asserted or absent; neither establishes an improvement.
     negative_affect = proposition.predicate_lemma == '不安だ'
-    if negative_affect and (proposition.polarity != 'positive'
-            or {'operator:negation', 'operator:positive_change', 'semantic_role:current_change'}
-                & set(frame.attribute_codes)):
+    if negative_affect and (
+            {'operator:positive_change', 'semantic_role:current_change'} & set(frame.attribute_codes)
+            or (('operator:negation' in frame.attribute_codes) != (proposition.polarity == 'negative'))):
         return False
     expected_polarity = 'negative' if negative_affect else proposition.polarity
     operators = ({'operator:feeling'} if negative_affect else

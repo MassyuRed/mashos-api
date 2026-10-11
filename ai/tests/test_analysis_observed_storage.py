@@ -1899,6 +1899,17 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
             '私は資料を調べた。その後、私は不安でした。',
             'その後：不安だった（記録された気持ち）')
 
+    async def test_absent_anxiety_keeps_saved_negation_and_order(self):
+        await self._assert_action_change_saved(
+            '私は不安ではなかった。それから、私は記録を残した。',
+            'それから：記録を残す（実行済み）')
+        self.assertEqual(self.row['content_json']['watashiMap']['nodes'][0]['visible_label'],
+                         '不安ではなかった（記録された気持ち）')
+        self.assertIn('不安ではなかった（記録された気持ち）', self.row['content_text'])
+        await self._assert_action_change_saved(
+            '私は資料を調べた。その後、私は不安じゃありませんでした。',
+            'その後：不安ではなかった（記録された気持ち）')
+
     async def test_past_feeling_outgoing_order_survives_save_and_read(self):
         for episode, label, following, following_label in (
                 ('私は資料を調べた後、安心した。', '安心した（誰の気持ちかは未確定）',
