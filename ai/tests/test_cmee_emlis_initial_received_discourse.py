@@ -59,7 +59,13 @@ def test_omitted_writing_keeps_unparsed_and_report_boundaries(clause):
     '私は家族への手紙を職場での会議で書いた',
     '家族との会議でメモを書いた', '昨日、家族との会議でメモを書いた',
     'その後、私はメモを家族との会議で書きました',
-    '私は昨日、職場での会議でメモを書いた'])
+    '私は昨日、職場での会議でメモを書いた',
+    # u210: an explicit SELF writer may name a self-owned nominal argument.
+    '私は自分の考えを書いた', '僕は私の気持ちを書きました',
+    '私は僕のノートに考えを書いた', '私はメモを俺の手紙に書いた',
+    '昨日、私は自分の考えを書いた', 'その後、私は自分の気持ちを書きました',
+    '私は自分の考えを僕のノートに書いた',
+    '私は自分の家族への手紙を書いた'])
 def test_relational_writing_keeps_independent_feeling_and_unfinished_witness(writing):
     import emlis_ai_grounded_observation_plan as owner
     from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
@@ -104,7 +110,20 @@ def test_relational_writing_keeps_independent_feeling_and_unfinished_witness(wri
     '私は昨日、 朝会議での記録にメモを書いた',
     'その後、昨日、家族との会議でメモを書いた',
     '昨日、私が家族との会議でメモを書いた',
-    '私は家族との会議で\nメモを書いた'])
+    '私は家族との会議で\nメモを書いた',
+    # A possessive does not supply an actor or open arbitrary report content.
+    '自分の考えを書いた', '僕のノートに考えを書いた',
+    '昨日、自分の考えを書いた', 'その後、自分の気持ちを書いた',
+    '友人は自分の考えを書いた', '私はわたしの考えを書いた',
+    '私はぼくのノートに考えを書いた', '私はおれの気持ちを書いた',
+    '私は自分の友人の考えを書いた', '私は友人への自分の考えを書いた',
+    '私は自分の説明をノートに書いた', '私は自分の話をノートに書いた',
+    '私は自分の引用に考えを書いた', '私は自分の報告にメモを書いた',
+    '私は自分の明日メモを書いた', '私は自分の詳しい誰メモを書いた',
+    '私はメモを僕の明日ノートに書いた', '私は俺の振り返り明日資料を書いた',
+    '私は職場で自分の考えを僕のノートに書いた',
+    '昨日、私が自分の考えを書いた', 'その後、昨日、私は自分の考えを書いた',
+    '私は自分の考えをこう書いた', '私は、自分の考えを\n書いた'])
 def test_relational_writing_preserves_report_attribution_and_unparsed_scope(writing):
     from emlis_ai_grounded_observation_plan import _source_prefix_opens_report
     assert _source_prefix_opens_report(writing + '。')

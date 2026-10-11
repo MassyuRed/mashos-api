@@ -33,6 +33,61 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_self_owned_writing_keeps_independent_feeling_and_source(self):
+        for prefix, day in (('私は', ''), ('その後、僕は', ''),
+                            ('昨日、私は', 'YESTERDAY'), ('自分は今日、', 'TODAY')):
+            for arguments, noun, place in (
+                    ('私の考えを', '私の考え', None),
+                    ('自分の気持ちを', '自分の気持ち', None),
+                    ('僕のノートに考えを', '考え', ('に', '僕のノート')),
+                    ('メモを俺の手紙に', 'メモ', ('に', '俺の手紙'))):
+                for finite, feeling in (('書いた', '落ち着きました'),
+                        ('書きました', '嬉しかったです'), ('書いた', '安心しなかった')):
+                    with self.subTest(prefix=prefix, arguments=arguments, feeling=feeling):
+                        clause = prefix + arguments + finite
+                        literal = 'それから、私は' + feeling
+                        req = request(record(memo=clause + '。' + literal + '。'))
+                        artifact = self.generate(req).artifact
+                        action, result = artifact.graph.nodes
+                        self.assertEqual((action.proposition.actor, action.proposition.relative_day,
+                            action.proposition.predicate_lemma, action.polarity), ('SELF', day, '書く', 'positive'))
+                        self.assertIn(('を', noun), action.proposition.arguments)
+                        if place:
+                            self.assertIn(place, action.proposition.arguments)
+                        self.assertEqual((result.proposition.actor, result.proposition.relative_day,
+                            result.proposition.result_state, result.polarity),
+                            ('SELF', '', 'PAST_FEELING', 'negative' if 'なかった' in feeling else 'positive'))
+                        self.assertEqual([(e.endpoint_refs, e.edge_kind) for e in artifact.graph.edges],
+                            [((action.node_ref, result.node_ref), 'OBSERVED_ORDER')])
+                        source, = freeze_analysis_sources(req).sources
+                        for node, expected in ((action, clause), (result, literal)):
+                            evidence, = node.evidence_refs
+                            raw = source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                            self.assertEqual(raw.decode(), expected)
+                            self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+
+    def test_self_owned_writing_preserves_reports_gaps_and_updates(self):
+        clause, literal = '私は自分の考えを書いた。', 'それから、私は落ち着きました'
+        for memo, action in ((clause + '不明な出来事があった。' + literal + '。', ''),
+                             (literal + '。', clause)):
+            artifact = self.generate(request(record(memo=memo, action=action))).artifact
+            self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)), (2, 0))
+        for memo, action in (('友人の話でした。' + clause + literal + '。', ''),
+                (clause + literal + '。', '友人が話した。'),
+                (clause + literal + '。と友人が言った。', ''),
+                (clause + literal + '。のは嘘だった。', ''),
+                (clause + 'それから、友人は落ち着きました。', '')):
+            with self.subTest(memo=memo, action=action):
+                artifact = self.generate(request(record(memo=memo, action=action))).artifact
+                self.assertFalse(artifact and any(n.proposition.result_state == 'PAST_FEELING'
+                    for n in artifact.graph.nodes))
+        original = record(memo=clause + literal + '。')
+        for answer in ('「' + literal + '」は取り消します。',
+                       '「' + literal + '」ではなく「私は安心しなかった」です。'):
+            artifact = self.generate(request(self.with_answer(original, answer))).artifact
+            self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)),
+                             (1 if '取り消' in answer else 2, 0))
+
     def test_relational_writing_place_keeps_independent_feeling_and_source(self):
         for prefix, actor, day in (('私は', 'SELF', ''), ('', 'UNSPECIFIED', ''),
                 ('その後、私は', 'SELF', ''), ('昨日、', 'UNSPECIFIED', 'YESTERDAY')):

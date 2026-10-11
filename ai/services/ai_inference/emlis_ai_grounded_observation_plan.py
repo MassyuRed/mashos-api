@@ -16098,12 +16098,15 @@ def _source_prefix_opens_report(prefix: str) -> bool:
             r"(?:(?P<place_after>" + _WISH_OBJECT_NOMINAL_SOURCE + r")(?:に|で))?"
             r"(?:書いた|書きました)", writing_clause)
         related_writing = writing is None
+        self_owned_prefix = r"(?:私|僕|自分|俺)の"
         if writing is None:
             # A recipient, joint participant or setting inside either the
             # object or its one place/medium does not open reported speech.
-            # Use the same closed nominal grammar in all three slots. Bare
-            # の and からの can carry another speaker's content; keep them open.
-            related_nominal = (_WISH_OBJECT_NOMINAL_SOURCE
+            # With an explicit SELF writer, a SELF possessive also stays in
+            # that nominal. It cannot supply an omitted actor. Other-owner
+            # の and からの can carry reported content; keep them open.
+            related_nominal = ((r"(?:" + self_owned_prefix + r")?" if not omitted_writing else "")
+                + _WISH_OBJECT_NOMINAL_SOURCE
                 + r"(?:(?:への|との|での)" + _WISH_OBJECT_NOMINAL_SOURCE + r")*")
             writing = re.fullmatch(
                 r"(?:" + writing_subject + r")?"
@@ -16118,6 +16121,7 @@ def _source_prefix_opens_report(prefix: str) -> bool:
             parts = [part for value in writing.groups() if value
                      for part in re.split(r"(?:への|との|での)", value)]
             for part in parts:
+                part = re.sub(r"^" + self_owned_prefix, "", part)
                 head = re.sub(
                     r"^(?:新しい|古い|大きい|小さい|長い|短い|詳しい|難しい|易しい|良い|悪い)",
                     "", part)
