@@ -16555,3 +16555,40 @@ Analysis compiler/realizer/API/DTO/DB/SQL/RN製品変更、Supabase操作、本�
 固定source `c62f5fe38d3a3ff60cccaa7d594c127f09b2d56c` の[CI38140215667](https://github.com/MassyuRed/mashos-api/actions/runs/38140215667)はsuccess。Python3.12.15でAnalysis4＋共有限定change/feelingの5suite **1255 tests／5053 subtests PASS（333.71秒）**、共有owner identity **1 PASS／193 deselected（27.25秒）**。fail/skip/xfail 0。包含されるローカル対象177 tests／275 subtestsやidentityと件数を合算しない。既存合成7例のCI生成全文をrootが読解し、否定決定・準備相・本人感情・明示順序と未知区間の保持を確認した。同環境補助reviewでも、記録した修正範囲と検証/未確認範囲に過大主張の指摘なし。
 
 後続commitは既存資料4fileの同期のみで製品sourceを変更しない。合成の保存再読・RN表示model検証を、稼働DB・本人実機・正式商品受入れへ換算しない。
+
+## 2026-10-11 u209 — 関係を含む場所・媒体での書字後の本人感情を保持（未配置）
+
+Mashの内容修正依頼から、API PR3 `de3b5b7b0cf694d8ba4cf4ff9226d98e3ffd61fc`／Cocolon PR30 `3c259251c93da5f6c7f2c7763b77c68a5efa2932`を照合して再開。前提/rule・恒久incident全文・全体設計/全file地図・両repoのrecursive tree・current03/詳細04/06・最新weekly20261010 §3.4/4.7/5.4/5.5を確認した。公開目標2026-12-18と本人実機確認の優先を保持し、明示された内容修正を進めた。System Context prepareは浅い履歴の祖先照合でexit2となったため、生成物をfresh扱いせず原典を直接使用した。
+
+### 修正と意味の保持
+
+実engineで「私は家族との会議でメモを書いた。それから、私は落ち着きました。」の後続感情が欠けた。共有Plan `_source_prefix_opens_report` の完全書字判定が「への／との／での」を目的語内だけに許し、場所・媒体内に含む書字を報告の前置きと誤認していた。
+
+既存fallback内の名詞パターンを共通化し、目的語と、その前後いずれか1個の場所・媒体に既存の有限関係を認める。whole-clause完全一致、二重場所の禁止、全名詞の報告/未解析時点/疑問語検査、actor・日付・順序語の既存制限は保持する。旧単純書字分岐は変更しない。省略actorはUNSPECIFIED、後続感情は独立した明示SELFであり、日付/actor/原因を補わない。未知文/別fieldを越す接続、真の報告/他者感情/否認/訂正/撤回の境界も保持する。
+
+### 検証と実生成本文
+
+- 修正前の新規vertical検査は48 subFAILと通常1 FAIL（感情欠落）。修正後の書字対象は **205 tests／331 subtests PASS（27.47秒、931 deselected）**、共有owner identityは **1 PASS（41.16秒、193 deselected）**。48組の原文UTF-8/hash・actor/day・格項・順序端点に加え、境界と保存再読を検査。共有初回受領には肯定7例・拒否18例を追加し、旧拒否期待を弱めていない。包含される検査件数は合算しない。
+- 合成Analysis12入力の前後20生成全文をrootが読解。通常例は1node/0edge→2node/1edge、場面付き順序例は2/1→3/2。未知文/別fieldは感情を保持しても2node/0edge。現在未完了は否定・current_inputを維持。真の報告と未解析日付の2例は両版UNAVAILABLE、報告名詞と既存目的語内関係の本文は不変。
+- 実RN `watashiMapV2Contract.js` で前後20全文、各生成内のprojection identity、node順・edge/gap/annotation/conflict数が一致。実service＋合成RPCの3ルートで保存後の再生成を禁止した再読と本文/図/identityを確認した。React/native描画や稼働DB確認ではない。
+- Emlis Q1合成3入力の前後6全文をrootが読解。場所の関係付き書字1例のReceptionに「その気持ちを受け止めています。」が加わり、他2例の全文とObservation3例は不変。追加の原因/改善/他者意図断定はない。汎用Reception・引用再掲等の既存品質課題は残る。
+- 同環境read-only補助reviewは既存資料/差分/実出力とhelperの旧新比較140例と境界確認52例・実engine6例を確認し、具体的blocking findingなし。root華恋が実装/実行/統合/反映を担当し、別model Pro reviewとは称さない。Python3.12.14／pytest8.4.1／pytest-subtests0.14.2／FastAPI0.142.2／Pydantic2.13.5／httpx0.28.1、追加依存0。
+
+代表合成入力の実生成全文：
+
+```text
+行動・非行動：家族との会議でメモを書く（実行済み）（1件の記録）
+結果・余韻：それから：落ち着いた（記録された気持ち）（1件の記録）
+記録内の順序：家族との会議でメモを書く（実行済み） → それから：落ち着いた（記録された気持ち）。原因を示す線ではありません。
+未確定（家族との会議でメモを書く（実行済み））：確定していない項目：場面、役割、考え・注意。
+```
+
+### 反映・最終検証・残件
+
+固定source `e36204a4e91cf9cef4e1fd3e82e9d7d8f04e2163`、tree `34b1d2860c67b621a001501c355d0199146172dc`、共有Plan SHA256 `d76ed69207223c027a7f0053ff2fac9c278d7c251f126a22286dda71a9a63261`。共有Plan1・既存test3・current owner identity fixture1を既存PR3へexpected_sha付きnon-forceで反映し、remote親head/5path/全bytesをlocalと照合済み。歴史凍結identityは不変。後続はAPI既存handoffとCocolon current03/詳細04 §3.39/06の資料同期のみ。新規repository file0。
+
+固定sourceの[CI38141788911](https://github.com/MassyuRed/mashos-api/actions/runs/38141788911)はsuccess。Python3.12.15でAnalysis4＋共有限定change/feelingの5suite **1258 tests／5109 subtests PASS（361.94秒）**、共有owner identity **1 PASS／193 deselected（27.00秒）**。同じ5suiteのローカルも **1258 tests／5109 subtests PASS（559.89秒）**。fail/skip/xfail 0。対象検査・CI・ローカルの包含件数を合算しない。既存合成7例のCI生成全文をrootが読解し、否定決定・準備相・本人感情・明示順序と未知区間の保持を確認した。
+
+STRUCTURE_MAP_DELTA_NONE：source→命題→graph→本文/図→保存の責務は不変。Analysis compiler/realizer/API/DTO/DB/SQL/RN製品変更0。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Supabaseはprojectとmigration一覧のread-only確認だけで、analysis_observed_artifacts/analysis_period_comparisonの適用を確認。本人行取得・DB書込み・配置/有効化/native build/main mergeは0。未配置・稼働DBでの生成保存/本人実機未確認・正式商品受入れ未成立。
+
+裸の「の／からの」、対象省略、未対応時刻/副詞/他動詞、一般意味理解、全体ルートUI/IF/Saved、元28日/14記録全体の改善、本人生成→保存再表示は残る。次回は最新weekly/current03/本節と実出力から再開し、この補修を本人実機確認の新たな前提にしない。
