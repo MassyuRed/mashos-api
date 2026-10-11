@@ -41,6 +41,93 @@ class AnalysisVerticalTests(unittest.TestCase):
             period_start='2026-09-29T00:00:00Z', period_end='2026-10-01T00:00:00Z')
         return self.generate(replace(request(record(memo=current)), comparison_previous_request=old))
 
+    def test_negative_past_feelings_preserve_negation_source_and_order(self):
+        for plain, polite in (('安心しなかった', '安心しませんでした'),
+                ('落ち着かなかった', '落ち着きませんでした'),
+                ('嬉しくなかった', '嬉しくありませんでした'),
+                ('うれしくなかった', 'うれしくありませんでした')):
+            for form in (plain, plain + 'です', polite):
+                for subject in ('私は', '僕は、', 'ぼくは， ', '俺は', 'おれは', 'わたしは、　', '自分は'):
+                    with self.subTest(form=form, subject=subject):
+                        literal = subject + form
+                        req = request(record(memo=literal + '。その後、私は記録を残した。'))
+                        artifact = self.generate(req).artifact
+                        self.assertIsNotNone(artifact)
+                        self.assertEqual(len(artifact.graph.nodes), 2)
+                        feeling, action = artifact.graph.nodes
+                        self.assertEqual((feeling.proposition.result_state, feeling.proposition.actor,
+                            feeling.polarity, feeling.modality, feeling.temporal_scope),
+                            ('PAST_FEELING', 'SELF', 'negative', 'feeling', 'past'))
+                        edge, = artifact.graph.edges
+                        self.assertEqual((edge.edge_kind, edge.endpoint_refs),
+                            ('OBSERVED_ORDER', (feeling.node_ref, action.node_ref)))
+                        source, = freeze_analysis_sources(req).sources
+                        evidence, = feeling.evidence_refs
+                        raw = source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                        self.assertEqual(raw.decode(), literal)
+                        self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+                        self.assertEqual({i for _, a, b in feeling.proposition.source_parts for i in range(a, b)},
+                                         set(range(len(literal))))
+                        projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                        self.assertEqual(projection['nodes'][0]['visible_label'], plain + '（記録された気持ち）')
+                        self.assertFalse(projection['annotation_badges'])
+                        self.assertIn('原因を示す線ではありません',
+                            artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+
+    def test_negative_past_feelings_do_not_admit_open_hosts_or_compounds(self):
+        for form in ('安心しなかった', '落ち着きませんでした', '嬉しくなかったです', 'うれしくありませんでした'):
+            for prefix, suffix in (('友人は', '。'), ('', '。'), ('私は少し', '。'),
+                    ('私は', 'か。'), ('私は', '？'), ('私は', 'かもしれない。'),
+                    ('私は', 'と聞いた。'), ('「私は', '」。'),
+                    ('私は', '。とは思わない。'), ('私は', '。と私は思う。'),
+                    ('私は', '。と友人が言った。'), ('私は', '。と彼は思っている。'),
+                    ('私は', '。のは嘘だった。'),
+                    ('私は', '。なんて嘘だった。'), ('私は', '\nわけではない。'),
+                    ('友人は言った。私は', '。'), ('友人は言っていた。私は', '。'),
+                    ('夢を見た。私は', '。'), ('友人によると。私は', '。'),
+                    ('私は資料を調べた後、私は', '。'), ('私は資料を調べてから、', '。')):
+                with self.subTest(form=form, prefix=prefix, suffix=suffix):
+                    result = self.generate(request(record(memo=prefix + form + suffix)))
+                    self.assertFalse(result.artifact and any(n.proposition.result_state == 'PAST_FEELING'
+                        for n in result.artifact.graph.nodes))
+            result = self.generate(request(record(memo='私は' + form + '。', action='友人は言った。')))
+            self.assertFalse(result.artifact and any(n.proposition.result_state == 'PAST_FEELING'
+                for n in result.artifact.graph.nodes))
+            self.assertIsNone(self.generate(request(record(memo='', action='私は' + form + '。'))).artifact)
+
+    def test_negative_past_feelings_keep_updates_comparison_and_unknown_gaps(self):
+        old, new = '私は安心した', '僕は安心しませんでした'
+        original = record(memo=old + '。その後、私は記録を残した。')
+        for answer in (new + '。', '「' + old + '」ではなく「' + new + '」です。'):
+            base = original if answer.startswith('「') else record(memo='私は資料を調べた。')
+            req = request(self.with_answer(base, answer))
+            artifact = self.generate(req).artifact
+            self.assertIsNotNone(artifact)
+            negative, = [n for n in artifact.graph.nodes if n.polarity == 'negative']
+            source = next(s.envelope for s in freeze_analysis_sources(req).sources
+                          if s.envelope.envelope_id == negative.evidence_refs[0].source_envelope_id)
+            self.assertEqual(source.source_role, 'SUPPLEMENTAL_ANSWER')
+            e, = negative.evidence_refs
+            self.assertEqual(source.raw_utf8[e.utf8_start:e.utf8_end].decode(), new)
+            if answer.startswith('「'):
+                self.assertFalse(artifact.graph.edges)
+            artifact.safe_projection(authenticated_owner_scope=OWNER)
+        # A plain contradictory supplement is not an implicit correction.
+        self.assertIsNone(self.generate(request(self.with_answer(original, new + '。'))).artifact)
+        withdrawn = self.generate(request(self.with_answer(record(memo=new + '。その後、私は記録を残した。'),
+            '「' + new + '」は取り消します。'))).artifact
+        self.assertEqual(len(withdrawn.graph.nodes), 1)
+        self.assertFalse(withdrawn.graph.edges)
+        self.assertEqual(self.compared(new + '。', '私は安心しなかった。').artifact.period_comparison.change_claims, ())
+        self.assertTrue(self.compared(new + '。', old + '。').artifact.period_comparison.change_claims)
+        for req in (request(record(memo=new + '。まだわからない。その後、私は記録を残した。')),
+                request(record(memo=new + '。', action='その後、私は記録を残した。')),
+                request(record(memo=new + '。'), record(2, memo='その後、私は記録を残した。'))):
+            artifact = self.generate(req).artifact
+            self.assertEqual(len(artifact.graph.nodes), 2)
+            self.assertFalse(artifact.graph.edges)
+            self.assertTrue(artifact.graph.unknown_gaps)
+
     def test_standalone_self_past_feeling_preserves_source_and_explicit_order(self):
         for feeling in ('安心した', '安心しました', '落ち着いた', '嬉しかった', 'うれしかった'):
             for subject in ('私は', '僕は、', 'ぼくは， ', '俺は', 'おれは', 'わたしは、　', '自分は'):
@@ -222,8 +309,8 @@ class AnalysisVerticalTests(unittest.TestCase):
 
     def test_standalone_self_past_feeling_keeps_unknown_and_source_boundaries(self):
         for memo in ('安心した。', '落ち着いた。', '友人は安心した。', '私も安心した。',
-                '私は少し安心した。', '私は安心しなかった。', '私は安心したい。',
-                '私は安心する。', '私は落ち着きませんでした。', '私はほっとした。',
+                '私は少し安心した。', '私は安心しなかったかもしれない。', '私は安心したい。',
+                '私は安心する。', '私は落ち着きませんでしたか。', '私はほっとした。',
                 '私は安心したかもしれない。', '私は安心した？',
                 '私は安心したと聞いた。', '夢を見た。私は安心した。',
                 '友人によると。私は安心した。', '「私は安心した」。',

@@ -13,7 +13,8 @@ from uuid import uuid4
 from ...contracts import EngineStatus
 from .intent_compiler import (ObservedGraph, NODE_KINDS, compile_observed_graph, _proposition,
                               _CANONICAL_CONTENT, _RESULT_STEMS, _CHANGE_PAST,
-                              _FEELING_PAST, _te_action_proposition, _burden_predicate,
+                              _FEELING_PAST, _FEELING_PAST_NEGATIVE,
+                              _te_action_proposition, _burden_predicate,
                               _protective_wish_proposition, _proposition_meaning,
                               PeriodComparison, compare_period_meaning)
 from .source_adapter import (
@@ -154,7 +155,8 @@ def _safe_label(node, graph):
         phrase = ''.join(noun + case for case, noun in parts.arguments)
         return phrase + _CHANGE_PAST[parts.predicate_lemma] + '（記録された変化）'
     if parts.result_state == 'PAST_FEELING':
-        return _FEELING_PAST[parts.predicate_lemma] + '（記録された気持ち）'
+        forms = _FEELING_PAST_NEGATIVE if parts.polarity == 'negative' else _FEELING_PAST
+        return forms[parts.predicate_lemma] + '（記録された気持ち）'
     if parts.scene_state == 'PAST_PRESENCE':
         phrase = ''.join(noun + case for case, noun in parts.arguments)
         return _source_prefix(phrase + ('いた' if parts.polarity == 'positive' else 'いなかった'), parts) + '（記録された場面）'

@@ -15,6 +15,7 @@ from emlis_ai_grounded_observation_plan import (
     _source_current_cognition, _source_current_cognition_parts,
     _source_unfinished_result_clause_is_bound,
     _source_polite_past_feeling_is_bound,
+    _source_prefix_opens_report,
 )
 from ...contracts import EvidenceRef
 from ...emlis_answer_update import _WITHDRAWAL, _REPLACEMENT
@@ -166,6 +167,17 @@ _FEELING_FORMS = {'安心した': '安心する', '安心しました': '安心�
     '落ち着いた': '落ち着く', '落ち着きました': '落ち着く',
     '嬉しかった': '嬉しい', '嬉しかったです': '嬉しい',
     'うれしかった': 'うれしい', 'うれしかったです': 'うれしい'}
+# An absent positive feeling is not evidence of distress or a failed action.
+# Only complete standalone SELF clauses can use these negative inflections.
+_FEELING_PAST_NEGATIVE = {'安心する': '安心しなかった', '落ち着く': '落ち着かなかった',
+                          '嬉しい': '嬉しくなかった', 'うれしい': 'うれしくなかった'}
+_NEGATIVE_FEELING_FORMS = {surface: lemma
+    for lemma, plain, polite in (
+        ('安心する', '安心しなかった', '安心しませんでした'),
+        ('落ち着く', '落ち着かなかった', '落ち着きませんでした'),
+        ('嬉しい', '嬉しくなかった', '嬉しくありませんでした'),
+        ('うれしい', 'うれしくなかった', 'うれしくありませんでした'))
+    for surface in (plain, plain + 'です', polite)}
 _PAST_EVENT_TOPIC = (
     r'(?P<subject>私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?'
     r'(?:(?P<day>今日|昨日)(?!の|を|に|で|と|は|が|も)(?P<day_separator>[、，\s]*))?')
@@ -335,12 +347,14 @@ def _past_feeling_proposition(value):
     # Admission requires either the complete pair or a standalone SELF witness.
     subject = re.match(r'^(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?', value)
     start = subject.end() if subject else 0
-    lemma = _FEELING_FORMS.get(value[start:])
+    finite = value[start:]
+    negative = finite in _NEGATIVE_FEELING_FORMS
+    lemma = (_NEGATIVE_FEELING_FORMS if negative else _FEELING_FORMS).get(finite)
     if lemma is None:
         return None
     parts = (('SELF_TOPIC', 0, start),) if subject else ()
     return ObservedProposition('SELF' if subject else 'UNSPECIFIED', (),
-        lemma, 'positive', 'feeling', 'past',
+        lemma, 'negative' if negative else 'positive', 'feeling', 'past',
         parts + (('FINITE_FEELING', start, len(value)),),
         result_state='PAST_FEELING')
 
@@ -350,20 +364,22 @@ def _standalone_past_feeling_witness(nucleus, proposition):
     # The complete finite SELF clause proves tense; current_input is the shared
     # standalone frame's scope, not evidence of a present feeling or an action.
     if (proposition.result_state != 'PAST_FEELING' or proposition.actor != 'SELF'
-            or (proposition.polarity, proposition.modality, proposition.temporal_scope)
-                != ('positive', 'feeling', 'past')):
+            or proposition.polarity not in {'positive', 'negative'}
+            or (proposition.modality, proposition.temporal_scope) != ('feeling', 'past')):
         return False
     frame = nucleus.semantic_frame
     expected = (('value', 'value', 'fact') if proposition.predicate_lemma == '安心する'
                 else ('reaction', 'feeling', 'feeling'))
+    operators = ({'operator:negation'} if proposition.polarity == 'negative'
+                 else {'operator:positive_change', 'semantic_role:current_change'})
     return (nucleus.grounding_kind == 'explicit'
         and nucleus.allowed_claim_scope == 'explicit_current_input'
         and nucleus.retention in {'required', 'should'}
         and nucleus.source_fields == ('memo',) and len(nucleus.source_span_ids) == 1
         and (nucleus.kind, frame.predicate_kind, frame.modality) == expected
-        and frame.actor == 'current_user' and frame.polarity == 'positive'
+        and frame.actor == 'current_user' and frame.polarity == proposition.polarity
         and frame.time_scope in {'current_input', 'past'}
-        and {'operator:positive_change', 'semantic_role:current_change'} <= set(frame.attribute_codes)
+        and operators <= set(frame.attribute_codes)
         and (expected[1] != 'feeling' or 'operator:feeling' in frame.attribute_codes)
         and not any(code.startswith(('source_fragment_', 'surface_scalar_',
                     'thread_time:', 'semantic_dependency:')) for code in frame.attribute_codes))
@@ -906,6 +922,9 @@ def _action_change_pair(source, plan, span_id):
     left = _te_action_proposition(raw[a:b]) if te_after else _proposition(raw[a:b])
     right = _bounded_change_proposition(raw[c:d])
     if (left is None or right is None or _has_unparsed_nominal_scope(right) or left.actor != 'SELF'
+            # Negative standalone feelings do not broaden the shared
+            # positive action/change pair (whose negation is not proved).
+            or right.polarity != 'positive'
             or left.result_state or left.scene_state or left.role_state or left.possible_content or left.relative_day
             or left.sequence_marker not in {'', 'AFTER_PREVIOUS', 'THEN_OR_ADDITION'}
             or any(re.search(r'(?:^|の)(?:何|誰|幾)', noun) for _, noun in left.arguments)
@@ -1015,6 +1034,22 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
         if (value.endswith(('落ち着きました', '嬉しかったです', 'うれしかったです'))
                 and not _source_polite_past_feeling_is_bound(span, source.normalized)):
             return None
+        if change.polarity == 'negative':
+            # Punctuation cannot close a reported speaker or detach a
+            # cognitive/retracted host. This bounds only the new admission;
+            # it does not reinterpret the existing positive family.
+            prefix = context[:span.start_index]
+            other = str(source.normalized.get('memo_action', ''))
+            if (any(_source_prefix_opens_report(text) for text in (prefix, other))
+                    or re.search(r'(?:言って|話して|語って|述べて|書いて|伝えて|答えて|説明して)'
+                        r'(?:いた|いました|いる|います)(?:[。．.\s]|$)', prefix + '\n' + other)
+                    or re.search(r'[!?！？…‥]|と言|と話|と語|と聞', record_context)):
+                return None
+            following = context[span.end_index:].lstrip(' \t\u3000。．.!！\r\n;；')
+            # No subject inference inside an unread quotative continuation:
+            # both "と私は思う" and "と友人が言った" still own this clause.
+            if re.match(r'(?:と|って|のは|のも|なんて|などと)', following):
+                return None
         # Ledger punctuation is not proof that a feeling's finite host is
         # closed: a following dependent suffix can negate or embed it. Keep
         # this new admission pending instead of dropping that unread suffix.

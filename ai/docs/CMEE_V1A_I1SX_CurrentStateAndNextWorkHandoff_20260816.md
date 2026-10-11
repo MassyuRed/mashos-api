@@ -15824,3 +15824,25 @@ rootは通常/訂正/撤回/未読介在/反復2記録/別対象/異なる不足
 STRUCTURE_MAP_DELTA_NONE：既存Analysis realizerの表示責務内だけの補修で、owner path・依存・保存/表示route・原文解釈は不変。API製品1/test2/handoff1、Cocolon current03/詳細04/06の既存7file、新規repo file0。compiler/共有owner/API契約/DTO/DB/SQL/RN/Safety/製品依存、main/merge/deploy/env/native build変更0。限定TECHNICAL_CREDIT、商品NOT_CLEAR。既存PR3/30へnon-force反映し、remote parent/tree/変更path集合/全7file blob SHA/最終headを照合する。
 
 次の優先：本有限表示反復は解消。残る別理由のunknownを単純削除したり、実測のない訂正欠落を作業理由にしない。本人指定の修正版で保存入力→生成→同じ文章と図→保存後再表示へ到達することがweekly上の未完了条件。最終配置証拠はu128 APIとTestFlight1.0(6401)送信で、u129以降は未配置のまま。実DB・React/native実画面・本人実機・正式商品受入れを今回の合成検査へ換算しない。配置の具体的承認対象を照合して扱い、本記録だけでdeployや次Gateを自動実施しない。
+
+
+## 2026-10-11 JST u186 — 単独の否定過去感情が分析から落ちる欠落を補修（未配置）
+
+Mashの本日の「分析構造の内容修正関係を進めて」を受け、最新weekly20261010 §5.4の明示再配分として内容修正を一単位実施。開始headはAPI `6b901a1df0037c047513e794624917a09b0f3ac4`／Cocolon `8187140bcb4881961c30dbc5ee60530b2469b75a`、既存PR3/30はDraft/open/unmerged。全体設計01、全file地図01A/B/Cの区分とAnalysis追跡先、current00/03・詳細04/06・API handoff、作業姿勢入口/CURRENT/Rule18/開始・非破壊・最終check、GitHub current契約、Karen-Diary必須3file、恒久incident全文を確認。System Context prepareはshallow cloneで指定祖先との関係を確認できず失敗し、許可された追跡原本の直接読取へ戻した。生成Contextがfreshとは扱わない。
+
+OBSERVED_BLOCKER_MINIMAL_FIX。既存Analysis設計内の欠落補修で、root華恋が単一編集・実行・GitHub反映owner。同環境のread-only補助2名が原因/製品範囲/週次整合と最終差分を確認。別modelのPro reviewではない。APIの既存compiler/realizer/test2/handoff、Cocolonの既存current03/詳細04/06を対象とし、完成条件は本人が明記した否定と原文根拠を文章・図・保存再読へ保持すること。main/配置/DB/nativeや一般日本語対応へ広げない。
+
+開始時、`私は安心しなかった。その後、私は記録を残した。` から後半の行動1nodeだけが残り、否定感情とその後の順序が欠落することを実測。共有核にはすでに明示本人のnegativeとnegationがあるのに、Analysisの単独感情受理が肯定形に限られていた。否定を肯定・負荷・行動失敗に読み替えず、既存PAST_FEELING/SELF/negative/feeling/pastへ保持する。
+
+追加は「安心しなかった／落ち着かなかった／嬉しくなかった／うれしくなかった」の常体、各「です」形、対応する「ませんでした／ありませんでした」の計12有限形。既存の明示本人主語7形と完全節・memo単独span・explicit claim・source_parts・原文scalar/UTF-8/hashを要求し、共有核の種類/主体/否定/negationを照合する。既存の明示「その後／それから」の隣接順序だけへ接続し、因果・改善・悪化を加えない。期間比較は丁寧さ/同義表記差だけでは差分にせず、肯否定の違いを保持する。
+
+他者・主語省略・程度/疑問/推測・引用/報告/夢・後続認知/撤回を新規受理に含めない。read-only reviewで句点後の「と友人が言った／と彼は思っている／のは嘘だった」が切り離される3例を追加修正し、後続hostを保留する。共有の行動後compoundは否定の証明が不足するため、新しい有限形をその経路へ通さない。共有owner/Emlisを改変せず、旧肯定経路は維持する。通常補足の矛盾を暗黙訂正にしない。訂正・撤回・未知文・別field/sourceをまたぐ順序補完もしない。
+
+- 最終固定sourceのAnalysis vertical/storage/saved-period/API 4suite：**389 tests PASS／3282 subtests PASS（47.13秒）**、skip/xfail0。既存Pydantic root_validator非推奨warning1。全repo/全Emlis検査ではない。修正前は新84有限形caseが失敗し、欠落を再現済み。途中の通常補足検査で矛盾する旧肯定入力を誤って使用した1fixtureは、独立行動への補足に修正し、元の未標識矛盾がUNAVAILABLEになる検査も保持した。
+- 実Analysis保存service＋合成RPCで否定5例を追加し、保存後のengine再生成を禁止して同一本文/図/identityの再読を確認。実DB検査ではない。
+- rootが通常/丁寧/未知介在/訂正/撤回/同義期間/肯否定差の生成7全文を読解。実RN `buildWatashiMapV2ViewModel` との全文/identity/node順が7/7一致。訂正後に外側の順序を保留する表示と、別理由のunknownは残す。React/native実画面や本人実機の証拠にはしない。
+- runtimeはPython3.12.14、隔離venvへpytest8.4.1/pytest-subtests0.14.2/FastAPI0.142.2/httpx0.28.1/Pydantic2.13.5を導入。絶対entrypoint、bytecode/cacheprovider/既存FB172移行plugin無効。製品依存・lock変更0。追加の有料サービス操作/Mash操作0。
+
+STRUCTURE_MAP_DELTA_NONE：既存Analysis compiler/realizerの責務内の受理・表示補修。既存共有の報告prefix判定を再利用するが、owner配置/route/公開契約/DTO/保存lifecycleは変更しない。API製品2/test2/handoff1、Cocolon current03/詳細04/06の計8既存file、新規repo file0。共有owner/DB/SQL/RN/Safety/製品依存、main/merge/deploy/env/native build変更0。限定TECHNICAL_CREDIT、商品NOT_CLEAR。既存branchへnon-force反映し、GitHubから今回変更path集合・対象8file内容・最終headを照合する。
+
+残件と戻り先：最新weekly §5.5の「本人の分析生成→保存後再表示」の確認は未完了。10/10の本人実機確認は「入力情報が少ないため、まだ分析を表示できません。」の案内表示までであり、分析生成/内容品質/再表示の確認とは扱わない。10/10の省略主語分岐撤回とinsufficient_inputの正常案内を維持し、生成を強制しない。current03/運用記録§39〜40にあるAPI `5c8bd8e5d7f876335eb840ceee26883a030a34a5` live・TestFlight6501送信・案内表示確認が今回参照した最新配置証拠で、旧u185末尾のu128/6401は当時の履歴。本u186の修正は未配置。次はlatest weekly/current03/本節から再開し、追加活用網羅を実機到達の前提にしない。否定compound・程度/他時点・一般認知と既存Emlis品質は別残件であり、今回の成功へ含めない。
