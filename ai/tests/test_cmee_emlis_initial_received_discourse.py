@@ -19,6 +19,50 @@ SINGLE = '褒められたのに、嬉しくなかった。'
 MULTI = SINGLE + '誘われたのに、悲しかった。頼まれたのに、寂しかった。'
 
 
+@pytest.mark.parametrize('writing', [
+    '私は家族への手紙を書いた', '私は同僚との約束を書きました',
+    '私は会議でのメモを書いた', '僕は、職場で家族への手紙を書きました',
+    '私は家族への手紙をノートに書いた', '自分は新しい会議でのメモを書いた',
+    '私は会議での同僚との約束を書いた'])
+def test_relational_writing_keeps_independent_feeling_and_unfinished_witness(writing):
+    import emlis_ai_grounded_observation_plan as owner
+    from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
+    from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    assert not owner._source_prefix_opens_report(writing + '。')
+    assert owner._source_prefix_opens_report('友人が話した。' + writing + '。')
+    assert owner._source_prefix_opens_report(writing + '。友人が話した。')
+    memo = writing + '。その後、私は落ち着きました。'
+    source = freeze_text_source(initial(memo))
+    span = next(s for s in source.evidence_spans if s.raw_text == 'その後、私は落ち着きました')
+    assert owner._source_polite_past_feeling_is_bound(span, source.normalized_current_input)
+    unfinished = 'まだ昨日の方針が決まっていない'
+    prepared = prepare_emlis_meaning(begin(writing + '。' + unfinished + '。'))
+    plan = build_updated_grounded_plan(prepared)
+    node, = (n for n in plan.nuclei if 'semantic_role:present_unfinished' in n.semantic_frame.attribute_codes)
+    assert (node.semantic_frame.polarity, node.semantic_frame.modality, node.semantic_frame.time_scope) == (
+        'negative', 'fact', 'current_input')
+    assert prepared.thread.resolver().resolve(node.source_span_ids[0]).raw_text == unfinished
+
+
+@pytest.mark.parametrize('writing', [
+    '私は家族への説明を書いた', '私は友人との話を書いた', '私は会議での発言を書きました',
+    '私は家族への手紙を引用に書いた', '私は報告に家族への手紙を書いた',
+    '私は誰への手紙を書いた', '私は次への手紙を書いた',
+    '私は明日家族への手紙を書いた', '私は家族への明日手紙を書いた',
+    '私は振り返り明日会議でのメモを書いた',
+    '私は家族への手紙を明日ノートに書いた',
+    '私は昨日職場で家族への手紙を書いた',
+    '私は家族からの手紙を書いた', '私は友人の考えを書いた',
+    '私は家族への手紙の内容を書いた', '私は友人のノートに家族への手紙を書いた',
+    '友人は家族への手紙を書いた', '家族への手紙を書いた',
+    '昨日、私は家族への手紙を書いた', 'その後、私は家族への手紙を書いた',
+    '私は職場で家族への手紙をノートに書いた', '私は家族への手紙を記録を書いた',
+    '私は家族への手紙をこう書いた', '私は、\n家族への手紙を書いた'])
+def test_relational_writing_preserves_report_attribution_and_unparsed_scope(writing):
+    from emlis_ai_grounded_observation_plan import _source_prefix_opens_report
+    assert _source_prefix_opens_report(writing + '。')
+
+
 @pytest.mark.parametrize('subject', ['私', 'わたし', '僕', 'ぼく', '自分', '俺', 'おれ'])
 def test_completed_self_writing_is_not_a_report_introduction(subject):
     from emlis_ai_grounded_observation_plan import _source_prefix_opens_report

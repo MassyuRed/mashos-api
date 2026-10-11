@@ -33,6 +33,76 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_relational_writing_keeps_independent_feeling_and_source(self):
+        for noun in ('家族への手紙', '同僚との約束', '会議でのメモ'):
+            for arguments in (noun + 'を', '職場で' + noun + 'を', noun + 'をノートに'):
+                for finite in ('書いた', '書きました'):
+                    for feeling, lemma in (('落ち着きました', '落ち着く'),
+                            ('嬉しかったです', '嬉しい'), ('うれしかったです', 'うれしい'),
+                            ('安心した', '安心する')):
+                        with self.subTest(arguments=arguments, finite=finite, feeling=feeling):
+                            clause = '私は' + arguments + finite
+                            literal = 'その後、私は' + feeling
+                            req = request(record(memo=clause + '。' + literal + '。'))
+                            artifact = self.generate(req).artifact
+                            action, result = artifact.graph.nodes
+                            self.assertEqual((action.proposition.actor, action.polarity,
+                                action.proposition.predicate_lemma), ('SELF', 'positive', '書く'))
+                            self.assertIn(('を', noun), action.proposition.arguments)
+                            self.assertEqual((result.proposition.actor, result.proposition.predicate_lemma,
+                                result.proposition.relative_day, result.modality), ('SELF', lemma, '', 'feeling'))
+                            self.assertEqual([e.edge_kind for e in artifact.graph.edges], ['OBSERVED_ORDER'])
+                            source, = freeze_analysis_sources(req).sources
+                            for node, expected in ((action, clause), (result, literal)):
+                                evidence, = node.evidence_refs
+                                raw = source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                                self.assertEqual(raw.decode(), expected)
+                                self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+                            text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                            self.assertTrue(all(n['visible_label'] in text for n in
+                                artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes']))
+
+    def test_relational_writing_keeps_report_gap_and_update_boundaries(self):
+        clause = '私は家族への手紙を書いた。'
+        literal = 'その後、私は落ち着きました'
+        original = record(memo=clause + literal + '。')
+        for memo, action in ((clause + '不明な出来事がある。' + literal + '。', ''),
+                             (literal + '。', clause)):
+            artifact = self.generate(request(record(memo=memo, action=action))).artifact
+            self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)), (2, 0))
+        for memo, action in (('友人の話でした。' + clause + literal + '。', ''),
+                (clause + literal + '。', '友人は言いました。'),
+                (clause + literal + '。と友人が言った。', ''),
+                (clause + literal + '。のは嘘だった。', ''),
+                (clause + 'その後、友人は落ち着きました。', ''),
+                ('私は家族への説明を書いた。' + literal + '。', ''),
+                ('私は友人の感想を書いた。' + literal + '。', '')):
+            with self.subTest(memo=memo, action=action):
+                artifact = self.generate(request(record(memo=memo, action=action))).artifact
+                self.assertFalse(artifact and any(n.proposition.result_state == 'PAST_FEELING'
+                                 for n in artifact.graph.nodes))
+        for answer in ('「' + literal + '」は取り消します。',
+                       '「' + literal + '」ではなく「私は安心しなかった」です。'):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(original, answer))).artifact
+                self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)),
+                                 (1 if '取り消' in answer else 2, 0))
+                self.assertEqual(artifact.graph.nodes[0].proposition.arguments, (('を', '家族への手紙'),))
+                self.assertFalse(any(n.proposition.predicate_lemma == '落ち着く'
+                                     for n in artifact.graph.nodes))
+
+    def test_relational_writing_keeps_independent_unfinished_state(self):
+        writing, unfinished = '私は会議でのメモを書いた。', 'まだ昨日の方針が決まっていない'
+        for memo, action in ((writing + unfinished + '。', ''),
+                             (unfinished + '。' + writing, ''), (unfinished + '。', writing)):
+            with self.subTest(memo=memo, action=action):
+                artifact = self.generate(request(record(memo=memo, action=action))).artifact
+                node, = [n for n in artifact.graph.nodes if n.proposition.result_state == 'NOT_YET']
+                self.assertEqual((node.proposition.actor, node.polarity, node.temporal_scope),
+                                 ('UNSPECIFIED', 'negative', 'current_input'))
+                self.assertFalse(artifact.graph.edges)
+                self.assertIn(unfinished, artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+
     def test_omitted_negative_decision_keeps_actor_unknown_and_independent_feeling(self):
         for prefix, day in (('', ''), ('その後、', ''), ('それから、', ''),
                             ('今日、', 'TODAY'), ('昨日、', 'YESTERDAY')):

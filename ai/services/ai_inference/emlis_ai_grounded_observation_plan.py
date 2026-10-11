@@ -16059,7 +16059,7 @@ def _source_prefix_opens_report(prefix: str) -> bool:
             continue
         # A fully closed, explicitly self-owned writing act is not an
         # introduction to quoted content. One bounded nominal object may
-        # carry one medium/place, before or after it. Genitive/report/deictic
+        # carry one medium/place, before or after it. Possessive/report/deictic
         # content and additional arguments retain the existing check.
         writing = re.fullmatch(
             r"(?:私|わたし|僕|ぼく|自分|俺|おれ)(?:は|が|も)[、,]?[ 　]*"
@@ -16067,6 +16067,32 @@ def _source_prefix_opens_report(prefix: str) -> bool:
             r"(?P<object>" + _WISH_OBJECT_NOMINAL_SOURCE + r")を"
             r"(?:(?P<place_after>" + _WISH_OBJECT_NOMINAL_SOURCE + r")(?:に|で))?"
             r"(?:書いた|書きました)", clause)
+        if writing is None:
+            # A recipient, joint participant or setting inside the object
+            # does not turn a completed writing act into a report. Bare の
+            # and からの can carry another speaker's content; keep them open.
+            related_object = (_WISH_OBJECT_NOMINAL_SOURCE
+                + r"(?:(?:への|との|での)" + _WISH_OBJECT_NOMINAL_SOURCE + r")+")
+            writing = re.fullmatch(
+                r"(?:私|わたし|僕|ぼく|自分|俺|おれ)(?:は|が|も)[、,]?[ 　]*"
+                r"(?:(?P<place_before>" + _WISH_OBJECT_NOMINAL_SOURCE + r")(?:に|で))?"
+                r"(?P<object>" + related_object + r")を"
+                r"(?:(?P<place_after>" + _WISH_OBJECT_NOMINAL_SOURCE + r")(?:に|で))?"
+                r"(?:書いた|書きました)", clause)
+            if writing is not None:
+                parts = [part for value in writing.groups() if value
+                         for part in re.split(r"(?:への|との|での)", value)]
+                for part in parts:
+                    head = re.sub(
+                        r"^(?:新しい|古い|大きい|小さい|長い|短い|詳しい|難しい|易しい|良い|悪い)",
+                        "", part)
+                    suffix = re.sub(r"^(?:考え|思い|気持ち|学び|振り返り|取り組み)", "", head)
+                    if (re.match(
+                        r"^(?:(?:明後日|明日|一昨日|今朝|昨夜|先週|来週|今週|"
+                        r"(?:今月|先月|来月)(?!号$)|(?:今年|昨年|来年)(?!度$))(?=.)|何|誰|今日|昨日)",
+                        suffix) or (suffix != part and suffix.startswith("幾"))):
+                        writing = None
+                        break
         if (writing is not None and not (writing["place_before"] and writing["place_after"])
             and not re.search(
             r"何|誰|次|以下|上記|下記|話|発言|引用|説明|報告|内容",
