@@ -33,6 +33,34 @@ def _action_change_relations(plan):
         'typed_projection:perfective_action_before_bounded_change',))
 
 
+@pytest.mark.parametrize('clause', [
+    '私の考えを書いた', '自分の気持ちを書きました',
+    '僕のノートに考えを書いた', 'メモを俺の手紙に書いた',
+    'その後、自分の家族への手紙を書いた', '昨日、自分の考えを書いた',
+    '今日、僕のノートに考えを書きました'])
+def test_omitted_owned_writing_closes_only_the_written_clause(clause):
+    assert not plan_owner._source_prefix_opens_report(clause + '。')
+    memo = clause + '。それから、私は落ち着きました。'
+    source = freeze_text_source(initial(memo))
+    span = [s for s in source.evidence_spans if s.source_field == 'memo'][-1]
+    assert plan_owner._source_polite_past_feeling_is_bound(span, source.normalized_current_input)
+    assert not _action_change_relations(_polite_change_plan(memo))
+
+
+@pytest.mark.parametrize('clause', [
+    'わたしの考えを書いた', 'ぼくのノートに考えを書いた', 'メモをおれの手紙に書いた',
+    '友人の考えを書いた', '友人は自分の考えを書いた',
+    '自分の考えのメモをノートに書いた', '自分からの手紙を書いた',
+    '自分のノートに考えを職場で書いた', '昨日自分の考えを書いた',
+    '昨日、今日、自分の考えを書いた', '昨日、その後、自分の考えを書いた',
+    'その後、昨日、自分の考えを書いた', '昨日、朝の考えを書いた',
+    '昨日、\n自分の考えを書いた', '自分の明日メモを書いた',
+    '自分の詳しい誰メモを書いた', '自分の説明をノートに書いた',
+    '自分の考えを話した', '自分の考えを書いた。友人の話でした'])
+def test_omitted_owned_writing_keeps_unparsed_and_reported_scope(clause):
+    assert plan_owner._source_prefix_opens_report(clause + '。')
+
+
 @pytest.mark.parametrize('prefix', ['', 'その後、', '昨日、'])
 @pytest.mark.parametrize('feeling', ['落ち着きました', '嬉しかったです', 'うれしかったです'])
 @pytest.mark.parametrize('finite', ['決めませんでした', '決めなかったです',

@@ -16102,10 +16102,13 @@ def _source_prefix_opens_report(prefix: str) -> bool:
         if writing is None:
             # A recipient, joint participant or setting inside either the
             # object or its one place/medium does not open reported speech.
-            # With an explicit SELF writer, a SELF possessive also stays in
-            # that nominal. It cannot supply an omitted actor. Other-owner
-            # の and からの can carry reported content; keep them open.
-            related_nominal = ((r"(?:" + self_owned_prefix + r")?" if not omitted_writing else "")
+            # A written possessive stays in that nominal even when the
+            # writer is omitted; it never supplies the missing actor. Keep
+            # omitted writers to the four kanji forms already understood
+            # by Analysis. Kana possessives still need an explicit writer.
+            # Other-owner の and からの can carry reported content.
+            owned_prefix = (r"(?:私|僕|自分|俺)の" if omitted_writing else self_owned_prefix)
+            related_nominal = (r"(?:" + owned_prefix + r")?"
                 + _WISH_OBJECT_NOMINAL_SOURCE
                 + r"(?:(?:への|との|での)" + _WISH_OBJECT_NOMINAL_SOURCE + r")*")
             writing = re.fullmatch(
