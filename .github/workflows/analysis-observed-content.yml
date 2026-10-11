@@ -14,6 +14,9 @@ name: Analysis observed content
       - ai/tests/test_cmee_analysis_nominal_relations.py
       - ai/tests/test_analysis_observed_storage.py
       - ai/tests/test_analysis_saved_period.py
+      - ai/tests/test_cmee_emlis_limited_change_feeling.py
+      - ai/tests/test_cmee_v1a_i1sx_contracts.py
+      - ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json
 
 permissions:
   contents: read
@@ -56,6 +59,15 @@ jobs:
           ai/tests/test_cmee_analysis_nominal_relations.py
           ai/tests/test_analysis_observed_storage.py
           ai/tests/test_analysis_saved_period.py
+          ai/tests/test_cmee_emlis_limited_change_feeling.py
+      - name: Verify shared owner identity
+        env:
+          PYTHONPATH: ai/services/ai_inference:ai/tests:ai
+        run: >-
+          python -m pytest -q --tb=short -ra
+          -p pytest_subtests.plugin -p no:cacheprovider -c /dev/null --noconftest
+          ai/tests/test_cmee_v1a_i1sx_contracts.py
+          -k test_active_final_language_owner_chain_has_zero_legacy_compose_calls
       - name: Read synthetic Analysis content
         run: |
           python - <<'PY'
@@ -66,6 +78,9 @@ jobs:
               '私は資料を調べた。その後、私は同僚と分担を決めておきませんでした。それから、私は安心した。',
               '私は同僚との分担を決めませんでした。それから、私は嬉しかった。',
               '私は資料を調べた。その後、私は分担を決めませんでした。不明な出来事があった。それから、私は安心した。',
+              '私は資料を調べた。その後、私は同僚と分担を決めませんでした。それから、私は落ち着きました。',
+              '私は資料を調べた。その後、私は同僚と分担を決めておきませんでした。それから、私は嬉しかったです。',
+              '私は同僚との分担を決めなかったです。それから、私はうれしかったです。',
           )
           for memo in cases:
               result = MeaningExperienceEngine().generate(request(record(memo=memo)))

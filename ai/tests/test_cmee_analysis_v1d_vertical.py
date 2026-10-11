@@ -33,6 +33,61 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_polite_feeling_after_negative_decision_keeps_source_and_order(self):
+        for finite in ('決めませんでした', '決めなかったです',
+                       '決めておきませんでした', '決めておかなかったです'):
+            for feeling, lemma in (('落ち着きました', '落ち着く'),
+                    ('嬉しかったです', '嬉しい'), ('うれしかったです', 'うれしい')):
+                with self.subTest(finite=finite, feeling=feeling):
+                    literal = 'それから、私は' + feeling
+                    req = request(record(memo='私は資料を調べた。その後、私は同僚と分担を'
+                        + finite + '。' + literal + '。'))
+                    artifact = self.generate(req).artifact
+                    self.assertIsNotNone(artifact)
+                    self.assertEqual(len(artifact.graph.nodes), 3)
+                    node = artifact.graph.nodes[-1]
+                    self.assertEqual((node.proposition.predicate_lemma, node.proposition.actor,
+                        node.polarity, node.modality, node.temporal_scope),
+                        (lemma, 'SELF', 'positive', 'feeling', 'past'))
+                    self.assertEqual(artifact.graph.nodes[1].polarity, 'negative')
+                    self.assertEqual(len(artifact.graph.edges), 2)
+                    self.assertTrue(all(e.edge_kind == 'OBSERVED_ORDER' for e in artifact.graph.edges))
+                    source, = freeze_analysis_sources(req).sources
+                    evidence, = node.evidence_refs
+                    raw = source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                    self.assertEqual(raw.decode(), literal)
+                    self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+                    projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                    self.assertIn(projection['nodes'][-1]['visible_label'],
+                        artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+
+    def test_polite_feeling_after_decision_preserves_reporting_and_updates(self):
+        decision = 'その後、私は同僚との分担を決めませんでした。'
+        for feeling in ('落ち着きました', '嬉しかったです', 'うれしかったです'):
+            literal = 'それから、私は' + feeling
+            original = record(memo='私は資料を調べた。' + decision + literal + '。')
+            for prefix, action, suffix in (('友人の話でした。', '', ''),
+                    ('', '友人は言いました。', ''), ('', '', 'のは嘘だった。'),
+                    ('', '', 'と私は思う。')):
+                with self.subTest(feeling=feeling, prefix=prefix, action=action, suffix=suffix):
+                    artifact = self.generate(request(record(memo=prefix + decision
+                        + literal + '。' + suffix, action=action))).artifact
+                    self.assertFalse(artifact and any(n.proposition.result_state == 'PAST_FEELING'
+                                     for n in artifact.graph.nodes))
+            for answer in ('「' + literal + '」は取り消します。',
+                    '「' + literal + '」ではなく「私は安心しなかった」です。'):
+                with self.subTest(feeling=feeling, answer=answer):
+                    artifact = self.generate(request(self.with_answer(original, answer))).artifact
+                    self.assertIsNotNone(artifact)
+                    self.assertEqual(len(artifact.graph.nodes), 2 if '取り消' in answer else 3)
+                    self.assertEqual(len(artifact.graph.edges), 1)
+                    self.assertFalse(any(n.proposition.predicate_lemma in
+                        {'落ち着く', '嬉しい', 'うれしい'} for n in artifact.graph.nodes))
+                    if '取り消' not in answer:
+                        self.assertEqual((artifact.graph.nodes[-1].proposition.predicate_lemma,
+                                          artifact.graph.nodes[-1].polarity), ('安心する', 'negative'))
+                    artifact.safe_projection(authenticated_owner_scope=OWNER)
+
     def test_decision_followed_by_feeling_keeps_both_polarities(self):
         for finite in ('決めた', '決めなかった', '決めませんでした',
                        '決めておいた', '決めておかなかった', '決めておきませんでした'):

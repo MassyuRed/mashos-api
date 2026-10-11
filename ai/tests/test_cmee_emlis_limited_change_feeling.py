@@ -34,6 +34,45 @@ def _action_change_relations(plan):
 
 
 @pytest.mark.parametrize('feeling', ['落ち着きました', '嬉しかったです', 'うれしかったです'])
+@pytest.mark.parametrize('decision', [
+    'その後、私は同僚と分担を決めませんでした',
+    'その後、私は同僚と分担を決めておきませんでした',
+    '私は同僚との分担を決めなかったです',
+    '私は同僚との分担を決めておかなかったです'])
+def test_polite_feeling_after_closed_negative_decision_has_own_witness(feeling, decision):
+    memo = decision + '。それから、私は' + feeling + '。'
+    source = freeze_text_source(initial(memo))
+    span = [s for s in source.evidence_spans if s.source_field == 'memo'][-1]
+    assert plan_owner._source_polite_past_feeling_is_bound(span, source.normalized_current_input)
+    plan = _polite_change_plan(memo)
+    node = [n for n in plan.nuclei if n.source_span_ids == (span.span_id,)][-1]
+    assert node.semantic_frame.polarity == 'positive'
+    assert {'operator:positive_change', 'semantic_role:current_change'} <= set(node.semantic_frame.attribute_codes)
+    assert not _action_change_relations(plan)
+
+
+@pytest.mark.parametrize('prefix,action,suffix', [
+    ('友人の話でした。', '', ''), ('友人は言いました。', '', ''),
+    ('', '友人は言いました。', ''), ('', '', 'のは嘘だった。'),
+    ('', '', 'と友人が言った。')])
+def test_closed_negative_decision_does_not_close_polite_feeling_report(prefix, action, suffix):
+    memo = prefix + 'その後、私は分担を決めませんでした。それから、私は落ち着きました。' + suffix
+    source = freeze_text_source(initial(memo, memo_action=action))
+    span = next(s for s in source.evidence_spans if s.raw_text == 'それから、私は落ち着きました')
+    assert not plan_owner._source_polite_past_feeling_is_bound(span, source.normalized_current_input)
+
+
+@pytest.mark.parametrize('clause', [
+    'その後、友人は分担を決めませんでした',
+    'その後、私は分担は決めませんでした',
+    'その後、私は分担を役割を決めませんでした',
+    'その後、私は分担を決める予定でした',
+    'その後、私は分担を決めませんでしたという話でした'])
+def test_negative_decision_report_exception_requires_closed_self_arguments(clause):
+    assert plan_owner._source_prefix_opens_report(clause + '。')
+
+
+@pytest.mark.parametrize('feeling', ['落ち着きました', '嬉しかったです', 'うれしかったです'])
 @pytest.mark.parametrize('marker', ['その後、', 'それから、', 'その後', 'それから'])
 def test_prefixed_polite_feeling_has_source_bound_witness_without_causality(feeling, marker):
     memo = '私は資料を調べた。' + marker + '私は' + feeling + '。'

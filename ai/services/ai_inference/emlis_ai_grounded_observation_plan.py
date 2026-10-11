@@ -15973,6 +15973,23 @@ def _source_prefix_opens_report(prefix: str) -> bool:
     for clause in re.split(r"[。．.]", prefix):
         clause = clause.strip()
         if re.search(r"の[^。．.]+(?:だ|です|だった|でした)$", clause):
+            # The の in a sequence marker or nominal argument can reach the
+            # polite negative ending. A closed self-owned decision is not a
+            # copular report host; retain the report check for every other
+            # clause and for incomplete, repeated-case or non-self arguments.
+            nominal = _WISH_OBJECT_ARGUMENT_RE.pattern
+            argument = nominal + r"(?:との" + nominal + r")?(?:を|に|で|と)"
+            decision = re.fullmatch(
+                r"(?:(?:その後|それから)[、, 　]*)?"
+                r"(?:私|わたし|僕|ぼく|自分|俺|おれ)は[、, 　]*"
+                r"(?P<arguments>(?:" + argument + r"){1,4})"
+                r"(?:決めませんでした|決めなかったです|"
+                r"決めておきませんでした|決めておかなかったです)", clause)
+            if decision is not None:
+                cases = tuple(m.group()[-1] for m in re.finditer(
+                    argument, decision["arguments"]))
+                if "を" in cases and len(cases) == len(set(cases)):
+                    continue
             return True
         if not re.search(speech + r"$", clause):
             continue
