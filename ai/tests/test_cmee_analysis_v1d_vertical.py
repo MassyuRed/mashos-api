@@ -33,6 +33,60 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_dated_writing_keeps_own_day_and_independent_feeling(self):
+        for day, scope in (('今日', 'TODAY'), ('昨日', 'YESTERDAY')):
+            for prefix in (day + '私は', day + '、私は', '私は、' + day + ' '):
+                for arguments, noun, feeling in (
+                        ('メモを', 'メモ', '落ち着きました'),
+                        ('家族への手紙を', '家族への手紙', '嬉しかったです'),
+                        ('職場で会議でのメモを', '会議でのメモ', 'うれしかったです'),
+                        ('同僚との約束をノートに', '同僚との約束', '安心した')):
+                    for finite in ('書いた', '書きました'):
+                        with self.subTest(day=day, prefix=prefix, arguments=arguments, finite=finite):
+                            clause = prefix + arguments + finite
+                            literal = 'それから、私は' + feeling
+                            req = request(record(memo=clause + '。' + literal + '。'))
+                            artifact = self.generate(req).artifact
+                            action, result = artifact.graph.nodes
+                            self.assertEqual((action.proposition.actor, action.proposition.relative_day,
+                                action.proposition.predicate_lemma, action.polarity),
+                                ('SELF', scope, '書く', 'positive'))
+                            self.assertIn(('を', noun), action.proposition.arguments)
+                            self.assertEqual((result.proposition.actor, result.proposition.relative_day,
+                                result.proposition.result_state), ('SELF', '', 'PAST_FEELING'))
+                            self.assertEqual([(e.endpoint_refs, e.edge_kind) for e in artifact.graph.edges],
+                                [((action.node_ref, result.node_ref), 'OBSERVED_ORDER')])
+                            source, = freeze_analysis_sources(req).sources
+                            for node, expected in ((action, clause), (result, literal)):
+                                evidence, = node.evidence_refs
+                                raw = source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                                self.assertEqual(raw.decode(), expected)
+                                self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+
+    def test_dated_writing_keeps_gaps_reports_and_feeling_updates(self):
+        clause = '昨日、私は家族への手紙を書いた。'
+        literal = 'それから、私は落ち着きました'
+        original = record(memo=clause + literal + '。')
+        for memo, action in ((clause + '不明な出来事があった。' + literal + '。', ''),
+                             (literal + '。', clause)):
+            artifact = self.generate(request(record(memo=memo, action=action))).artifact
+            self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)), (2, 0))
+        for memo, action in (('友人の話でした。' + clause + literal + '。', ''),
+                (clause + literal + '。', '友人が話した。'),
+                (clause + literal + '。と友人が言った。', ''),
+                (clause + literal + '。のは嘘だった。', ''),
+                (clause + 'それから、友人は落ち着きました。', '')):
+            with self.subTest(memo=memo, action=action):
+                artifact = self.generate(request(record(memo=memo, action=action))).artifact
+                self.assertFalse(artifact and any(n.proposition.result_state == 'PAST_FEELING'
+                                 for n in artifact.graph.nodes))
+        for answer in ('「' + literal + '」は取り消します。',
+                       '「' + literal + '」ではなく「私は安心しなかった」です。'):
+            artifact = self.generate(request(self.with_answer(original, answer))).artifact
+            self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)),
+                             (1 if '取り消' in answer else 2, 0))
+            self.assertFalse(any(n.proposition.predicate_lemma == '落ち着く' for n in artifact.graph.nodes))
+
     def test_sequenced_writing_keeps_following_feeling_and_exact_order(self):
         cases = (
             ('その後、私は家族への手紙を書いた', '落ち着きました'),

@@ -16066,6 +16066,25 @@ def _source_prefix_opens_report(prefix: str) -> bool:
         # source coordinates, later clauses and the fallback stay unchanged.
         sequence = re.match(r"^(?:その後|それから)[、， 　]*", clause)
         writing_clause = clause[sequence.end():] if sequence else clause
+        # A written 今日/昨日 may precede explicit SELF or follow its topic.
+        # Require separation after a post-topic day so a nominal modifier is
+        # not reassigned to this act. Never combine a day with a sequence.
+        dated_writing = None
+        if sequence is None:
+            writing_topic = r"(?:私|わたし|僕|ぼく|自分|俺|おれ)は[、,]?[ 　]*"
+            writing_day_boundary = (
+                r"(?!分(?![一-鿿々ァ-ヴー])|以前|以後|以降|以来|当時|"
+                r"時点|現在|中|付|頃|ごろ|まで|から|より|だけ|朝|昼|夜|晩|夕|"
+                r"午前|午後|早朝|深夜|未明|正午)")
+            # Do not backtrack a separator into the body to bypass the
+            # day boundary; the writing subject accepts trailing spaces.
+            dated_writing = re.match(
+                r"(?:(?:今日|昨日)[、， 　]*(?P<before>" + writing_topic + r")|"
+                r"(?P<after>" + writing_topic + r")(?:今日|昨日)[、， 　]+(?![、， 　])"
+                + writing_day_boundary + r")(?!今日|昨日)", clause)
+            if dated_writing is not None:
+                writing_clause = ((dated_writing["before"] or dated_writing["after"])
+                    + clause[dated_writing.end():])
         writing = re.fullmatch(
             r"(?:私|わたし|僕|ぼく|自分|俺|おれ)(?:は|が|も)[、,]?[ 　]*"
             r"(?:(?P<place_before>" + _WISH_OBJECT_NOMINAL_SOURCE + r")(?:に|で))?"
@@ -16085,8 +16104,8 @@ def _source_prefix_opens_report(prefix: str) -> bool:
                 r"(?P<object>" + related_object + r")を"
                 r"(?:(?P<place_after>" + _WISH_OBJECT_NOMINAL_SOURCE + r")(?:に|で))?"
                 r"(?:書いた|書きました)", writing_clause)
-        if writing is not None and (related_writing or sequence):
-            # Newly admitted sequenced writing also needs complete nominal
+        if writing is not None and (related_writing or sequence or dated_writing):
+            # Newly admitted sequenced or dated writing needs complete nominal
             # heads, including a simple object or place/medium. Do not absorb
             # an unparsed day or question into a nominal compound.
             parts = [part for value in writing.groups() if value
