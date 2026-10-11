@@ -130,11 +130,18 @@ _FINITE_PREDICATES = _finite_predicates()
 # Keep this lexical addition out of wishes, cognitive complements and te
 # episodes: those scopes need their own complete source witness.
 _PAST_DECISION_PREDICATES = tuple(
-    (surface, '決める', polarity, 'fact', 'past')
-    for surface, polarity in (
-        ('決めた', 'positive'), ('決めました', 'positive'),
-        ('決めなかった', 'negative'), ('決めなかったです', 'negative'),
-        ('決めませんでした', 'negative')))
+    (surface, lemma, polarity, 'fact', 'past')
+    for lemma, forms in (
+        ('決める', (('決めた', 'positive'), ('決めました', 'positive'),
+            ('決めなかった', 'negative'), ('決めなかったです', 'negative'),
+            ('決めませんでした', 'negative'))),
+        # Preserve the written preparatory aspect in the visible predicate
+        # and meaning key. Not preparing is not the same as not deciding.
+        ('決めておく', (('決めておいた', 'positive'), ('決めておきました', 'positive'),
+            ('決めておかなかった', 'negative'), ('決めておかなかったです', 'negative'),
+            ('決めておきませんでした', 'negative'))))
+    for surface, polarity in forms)
+_PAST_DECISION_LEMMAS = frozenset(row[1] for row in _PAST_DECISION_PREDICATES)
 # Only the existing nine verbs: their plain perfective forms supply the
 # corresponding te inflection. These forms carry no independent past tense.
 _TE_PREDICATES = tuple((surface[:-1] + 'て', lemma, 'positive', 'fact', 'dependent')
@@ -608,7 +615,7 @@ def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relat
             offset = argument.end()
         if offset != end or len({case for case, _ in arguments}) != len(arguments):
             continue
-        if lemma == '決める' and not any(case == 'を' for case, _ in arguments):
+        if lemma in _PAST_DECISION_LEMMAS and not any(case == 'を' for case, _ in arguments):
             continue
         parts.append(('FINITE_PREDICATE', end, len(value)))
         return ObservedProposition(actor, tuple(arguments), lemma,
@@ -967,7 +974,7 @@ def _action_change_pair(source, plan, span_id):
     if (left is None or right is None or _has_unparsed_nominal_scope(right) or left.actor != 'SELF'
             or right.sequence_marker
             # Decisions are admitted as whole standalone past clauses only.
-            or left.predicate_lemma == '決める'
+            or left.predicate_lemma in _PAST_DECISION_LEMMAS
             # A negative feeling needs the new complete shared witness;
             # the old positive keyword pair cannot license its negation.
             or (right.polarity != 'positive' and not (
@@ -1078,7 +1085,7 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     change = _bounded_change_proposition(value)
     qualified_past = bool(proposition and any(
         _NOMINAL_CASE_LINK.search(noun) for _, noun in proposition.arguments))
-    past_decision = bool(proposition and proposition.predicate_lemma == '決める')
+    past_decision = bool(proposition and proposition.predicate_lemma in _PAST_DECISION_LEMMAS)
     if past_decision:
         frame = nucleus.semantic_frame
         # The negative shared frame may lack a past tag and does not assert

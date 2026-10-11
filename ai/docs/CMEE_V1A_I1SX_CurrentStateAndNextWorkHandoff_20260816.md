@@ -16060,3 +16060,30 @@ Mashの「分析構造の内容修正関係を進めて」によりu193から継
 APIは既存製品compiler1・既存test2・既存handoff1、Cocolonはcurrent03/詳細04/06の既存3file、計7file。新規file0、共有意味owner/realizer/identity fixture/API/DTO/DB/SQL/RN/設定/依存変更0。STRUCTURE_MAP_DELTA_NONE：既存Analysis owner内の原文意味保持だけを修正し、期間生成→保存→表示の責任と公開契約は不変。既存PR branchへnon-force反映し、親head・変更path集合・全対象のremote bytesを確認する。
 
 未配置・本人実機未確認・正式商品受入れ未完了。本人入力での生成→同じ文章/図→保存再表示へ戻る位置を維持する。元の28日例の省略主体/準備相など未対応行動、主語後「昨日、分担」の名詞境界、否定決定後の感情witness、全体ルートUI/段階的詳細表示、一般的な意味理解とIF/Savedは残件。追加の内容拡張を実機確認の前提にしない。次回も最新weekly/current03/本節と実出力を照合する。
+
+## 2026-10-11 u195 — 本人が「決めておいた」準備を文章・図へ保持（未配置）
+
+Mashの「分析構造の内容修正関係を進めて」を継続。添付u194の記録と、API PR3 `ff0abc2a5e5de9aec6a2b63b02c84864764af9a9`／Cocolon PR30 `048fdb7f60369e647df5bc9b94f93c2c39fba6d1`の実ファイルから再開した。前提資料・作業姿勢current/Rule18・恒久incident全文、Karen-Diary必須3file、全体設計01と全file地図01A/B/C/02の経路・該当責任、current03/詳細04/06/API handoff、最新weekly20261010 §5.4/§5.5を確認した。System Context prepareはshallow checkoutで祖先関係を確認できず不成立。生成Contextをfresh扱いせず、既存の直接原典確認へ戻った。今回の明示依頼を§5.4の内容修正配分として扱い、本人生成→保存再表示の未完了と12/18公開目標を維持する。
+
+### 作業境界と直接修正
+
+Codex Work root華恋が編集・実行・GitHub反映を担当し、同環境subagentはread-onlyの対象選定・差分・追加入力確認を担当した。別model Pro reviewとは称さない。既存設計内のLEVEL_2相当、OBSERVED_BLOCKER_MINIMAL_FIX。完了条件は、明示本人の過去準備を、準備相・肯否定・原文・明示順序を失わず文章/図/保存再読へ渡すこと。新method、契約、依存、課金、実DB/配置が必要なら今回の範囲を広げない。追加費用・Mash操作要求0。
+
+共有planには「決めておいた／決めておきました」の過去行動根拠と否定3形の否定根拠が既にある一方、Analysisの過去有限形inventoryに準備相がなく、記録から落ちていた。既存compilerの過去決定に準備形5つを追加し、predicateを「決めておく」として既存realizerへ渡す。通常の「決める」と異なる意味identityで保持し、「決めておかなかった」を「決めなかった」へ変換しない。
+
+完全な明示SELF・明記された「を」対象・全文証拠・共有action/否定の一致と、既存の先行話者/別field帰属・後続引用/否認の条件を共用する。希望・認知内容・te/compoundのinventoryを広げず、決定compound除外も両lemmaへ適用した。原文にない準備目的・相手の合意・成功・改善・因果は加えない。
+
+### 実際の出力と検証
+
+- 同じ合成10入力を開始版と修正版の実engineへ渡し、rootが全結果を本文として比較した。修正版は生成8・保留2。明示された「調べた→決めておいた→安心した」は2node/0edgeから3node/2edge、場面/担当/肯定準備/否定準備/行動/感情の6節は4node/2edgeから6node/5edgeへ変わった。未読文を挟む例は読めた2nodeだけを保持し、順序を補わない。単純決定と準備は別node、訂正/撤回後に古い肯定や線を残さない。
+- 実RN `buildWatashiMapV2ViewModel`で生成8例の全文・identity・node順が一致。実機描画、Mash本人の分析、華恋が書いた分析サンプルではなく、合成入力に対するCocolonの実生成結果である。
+- 最終Analysis vertical/nominal-relations/storage/saved-periodの4suiteは **421 tests／4149 subtests PASS、skip/xfail0、exit0、48.47秒**。追加4testと既存保存testの3準備形を含む。修正前の追加4testでは30 failures（subtestsを含むpytest表示）を再現し、修正後の決定関連9test/153subtestsが成功。全repo/全Emlisの合格へ換算しない。
+- 実service＋合成RPCで肯定/丁寧/否定の準備3例を各1回保存し、engine再生成を禁止した再読でも本文・projection・保存identityが一致。先行の通常決定3例も維持。稼働DB保存の成功ではない。
+- 同環境read-only reviewに具体的blocking指摘なし。root suiteと別の追加24文で、不可/能力否定/必要/願望/意図/推量/引用/否認/疑問/他者/使役等23文を準備済みへ採用しないことと、後から取り消した別文は過去行動と未読内容として区別することを確認した。独立probe数は421へ合算しない。
+- Python3.12.14、隔離pytest8.4.1/pytest-subtests0.14.2/FastAPI0.142.2/Pydantic2.13.5/httpx0.28.1。bytecode/cacheprovider/旧FB172移行plugin無効。session内test依存を用意し、製品依存/lock変更0。Supabaseはproject健康状態と既存分析保存/比較migration履歴の読取だけ。本文read/SQL実行/DB書込0。
+
+### 反映範囲と次の残件
+
+API既存compiler1・既存test2・既存handoff1、Cocolon既存current03/詳細04/06、計7file。新規repository file0。共有意味owner/realizer/identity fixture/API/DTO/DB/SQL/RN/設定/製品依存変更0。STRUCTURE_MAP_DELTA_NONE：既存Analysis ownerの有限形と意味保持だけを補修し、期間生成→保存→表示の責任・公開契約は不変。primary outcomeはTECHNICAL_CREDITで、正式商品受入れではない。既存PR branchへnon-force反映し、対象remote bytesと変更path集合を確認する。
+
+未配置・本人実機未確認・正式商品受入れ未完了。元の28日例にある「今回は事前に同僚と分担を決めておいた」の主語省略/副詞は引き続き未対応で、今回もその文が保留されることを実測した。元の28日/14記録全体は今回再取得・再検証しておらず、その全体改善とは主張しない。「昨日、分担」の名詞境界、否定決定後の感情根拠、全体ルートUI/段階的詳細表示、一般的な意味理解とIF/Savedも残る。今回の限定修正を実機確認の追加前提にしない。次回は最新weekly/current03/本節と実出力へ戻り、内容修正の明示配分なら未対応記述の直接原因、実機枠なら本人生成→同じ文章/図→保存後再表示を扱う。

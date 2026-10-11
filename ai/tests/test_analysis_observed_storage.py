@@ -127,8 +127,12 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn(label, saved['content_text'])
 
     async def test_past_decision_route_survives_save_and_read(self):
-        for finite, ending in (('決めた', '実行済み'), ('決めました', '実行済み'),
-                               ('決めませんでした', '行わなかった')):
+        for finite, lemma, ending in (
+                ('決めた', '決める', '実行済み'), ('決めました', '決める', '実行済み'),
+                ('決めませんでした', '決める', '行わなかった'),
+                ('決めておいた', '決めておく', '実行済み'),
+                ('決めておきました', '決めておく', '実行済み'),
+                ('決めておきませんでした', '決めておく', '行わなかった')):
             with self.subTest(finite=finite):
                 fx = fixture('私は資料を調べた。その後、私は同僚と分担を' + finite
                              + '。それから、私は記録を残した。')
@@ -160,7 +164,7 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((len(projection['nodes']), len(projection['edges'])), (3, 2))
                 self.assertTrue(all(e['edge_kind'] == 'OBSERVED_ORDER' for e in projection['edges']))
                 label = projection['nodes'][1]['visible_label']
-                self.assertEqual(label, 'その後：同僚と分担を決める（' + ending + '）')
+                self.assertEqual(label, 'その後：同僚と分担を' + lemma + '（' + ending + '）')
                 self.assertIn(label, saved['content_text'])
 
     async def test_negative_feeling_before_transition_survives_save_and_read(self):
