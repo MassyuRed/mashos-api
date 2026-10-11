@@ -16630,3 +16630,42 @@ Mashの分析内容修正の続行依頼により、API PR3 `37985fd983f6e92fa40
 STRUCTURE_MAP_DELTA_NONE：source→命題→graph→本文/図→保存の責務は不変。Analysis compiler/realizer/API/DTO/DB/SQL/RN製品変更0。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Supabase操作・本人行取得・DB書込み・配置/有効化/native build/main mergeは0。未配置・稼働DBでの生成保存/本人実機未確認・正式商品受入れ未成立。
 
 一般の「の／からの」、今回の所有形での省略主体・仮名所有代名詞・任意入れ子、対象省略、未対応時刻/副詞/他動詞、旧completed fallbackの残差、一般意味理解、全体ルートUI/IF/Saved、元28日/14記録全体の改善、本人生成→保存再表示は残る。次回は最新weekly/current03/本節と実出力から再開し、この補修を実機確認の新たな前提にしない。
+
+## 2026-10-12 u211 — 仮名の本人所有表現による分析生成不能を修正（未配置）
+
+Mashの分析内容修正の明示続行依頼により、API PR3 `edea16707e0f2ab2962a3275e21dc778aec3e6de`／Cocolon PR30 `127f0a7ed70495c1b59a8bf20838acec59f0dee3`から再開。恒久incident全文、作業rule、全体設計と全file地図/current03/詳細04/06、最新weekly20261010を照合。最新recursive treeと両repoのmaterialized全tree一致を確認した。System Context prepareはmaterial commitの祖先不一致でexit2となり、入口で認められた原典直接読解へ戻った。生成contextのfreshnessや別model Pro reviewを装わず、管理機構修正は行わない。weekly §5.4の明示配分変更として今回の限定内容修正を進め、12/18公開目標と未完了の本人実機確認を維持する。
+
+### 実測した問題と修正境界
+
+「私はわたしの考えを書いた。それから、私は落ち着きました。」は開始版でUNAVAILABLE。漢字の「自分の考え」対照例は生成できた。原因はAnalysisの一般名詞文法が仮名所有代名詞を受けないことと、共有Planの本人書字判定が漢字所有prefix4形だけを扱うことだった。省略主語の「自分の考えを書いた」も後続感情の欠落を確認したが、再帰所有と不明な行為者を混同しないため今回の修正へ混ぜない。
+
+Analysis既存 `_finite_proposition` の格項fallbackを、明示SELF・肯定過去の書く、目的語＋任意の場所/媒体1項だけに限定して追加。新規の仮名所有は `わたし／ぼく／おれ＋の`。名詞本体は既存の有限文法と「への／との／での」を使い、原綴り、source位置、格、行動日、独立した感情の肯否定を保持する。一般名詞・書く以外の動詞・否定書字・希望/認知/従属te・主語省略へ拡張せず、未解析の時点/疑問と曖昧な無区切り日付も保持する。
+
+新たに読める仮名所有書字を既存source-host検査へ通し、memo/memo_action両方向の先行報告と、後続の引用/否認を本人の行為へ転用しない。共有Planの明示本人用所有prefixも3形増やすが、省略主体や報告語の条件は保持し、末尾completed fallbackは変更しない。「私はわたしの説明をノートに書いた」では書字行動のみ読める場合があり、その入力全体を拒否する変更ではない。後続感情は報告の可能性により保留する。
+
+### 検証・実際の本文
+
+- 修正前の新規vertical2検査は24 subFAIL＋通常1 FAIL、1 PASS／11 subtests PASS。修正後の書字対象3fileは **255 tests／430 subtests PASS（18.01秒、931 deselected）**。3仮名所有×4prefix/格項配置×2書字形/感情で原文UTF-8/hash、actor/day/肯否、明示順序を検査し、未知文/別field/報告/訂正/撤回も確認。最後に報告の3方向について行動自体の非採用を加え、該当1検査／19 subtests PASS（2.33秒）。共有owner current identityのみ実sourceから更新し、**1 PASS／193 deselected（25.07秒）**。歴史凍結fixtureは不変。
+- 合成Analysis12入力の前後24結果を比較し、生成された10全文をrootが読解。通常3例はUNAVAILABLE→2node/1edge、場面付きは1node/0edge→3node/2edge。未知文/別field/現在未完了は2node/0edgeで未確定情報を残す。報告/他者/省略主体/未解析名詞の4例は両版UNAVAILABLE、漢字所有対照は本文/graph不変。順序を原因や改善へ読み替えない。
+- 実RN `watashiMapV2Contract.js` で生成10結果の本文、projection identity、node順、edge/gap/annotation/conflict数が一致。実service＋合成RPCの保存再読3ルートは、再生成を禁止した状態で同じ本文/図/identityを返す。native描画や稼働DBの確認ではない。
+- Emlis Q1の前後6全文をrootが読解。代表例のReceptionに既存の「その気持ちを受け止めています。」が追加され、他2例とObservation3例は不変。汎用Receptionと復唱は未解消で、今回をEmlisの商品品質合格にしない。
+- 同環境read-only補助reviewは製品差分と独立12実engine例を確認。両field方向の報告、後続引用/否認、曖昧な日付、3格項書字を拒否し、生成例の命題再解析と原文byte hashが一致。具体的blocking findingなし。最終実装/判断/反映はrootが担当。
+
+代表合成入力の修正後の実生成全文（開始版は上記UNAVAILABLE）：
+
+```text
+行動・非行動：わたしの考えを書く（実行済み）（1件の記録）
+結果・余韻：それから：落ち着いた（記録された気持ち）（1件の記録）
+記録内の順序：わたしの考えを書く（実行済み） → それから：落ち着いた（記録された気持ち）。原因を示す線ではありません。
+未確定（わたしの考えを書く（実行済み））：確定していない項目：場面、役割、考え・注意。
+```
+
+### GitHub反映・最終CI・残件
+
+固定製品source `49fe5d6874a7b0c0d352698109cf89e7070b78ba`、tree `8f1a47ac1ae41e6f2c718dc1b999b104490f13c0`。Analysis compiler/共有Plan2、既存test3、current owner identity fixture1をPR3へexpected_sha付きnon-force反映し、親head/変更6path/remote全bytesとlocalの一致をfresh確認。後続の記録同期は既存API handoffとCocolon current03/詳細04 §3.41/06。新規repo file0、追加依存0。ローカルPython3.12.14／pytest8.4.1／pytest-subtests0.14.2／FastAPI0.142.2／Pydantic2.13.5／httpx0.28.1で実行した。
+
+固定sourceの[CI38178491066](https://github.com/MassyuRed/mashos-api/actions/runs/38178491066)／job114585838501はsuccess。Python3.12.15でAnalysis4＋共有限定change/feelingの5suite **1264 tests／5211 subtests PASS（314.43秒）**、共有owner identity **1 PASS／193 deselected（23.97秒）**。fail/skip/xfail 0。重複するローカル検査と件数を合算しない。既存合成7例のCI生成全文をrootが読解し、否定決定・準備相・本人感情・明示順序と未知区間の保持を確認した。
+
+STRUCTURE_MAP_DELTA_NONE：source→命題→graph→本文/図→保存の責務とfile配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。renderer/API/DTO/DB/SQL/RN製品変更0。Supabase操作・本人行取得・DB書込み・配置/有効化/native build/main mergeは0。未配置・稼働DB/本人実機・正式商品受入れ未確認。
+
+仮名所有の主語省略・書く以外の動詞/否定書字・一般属格/任意入れ子、対象省略、未対応時刻/副詞、旧completed fallbackの残差、一般意味理解、全体ルートUI/IF/Saved、元28日/14記録全体、本人生成→保存再表示は残る。次回は最新weekly/current03/本節と実出力から再開し、今回の補修を本人実機確認の新たな前提にしない。
