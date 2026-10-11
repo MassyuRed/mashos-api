@@ -16387,3 +16387,37 @@ u203に残した省略主体の否定決定後の感情欠落は上記有限範�
 ローカルのAnalysis4＋共有限定change/feelingの5suiteは **1242 tests／4808 subtests PASS（479.95秒）**。固定source `9c0ed5448a441b88a59226a4cf3f7fd87687548a` の[CI38134236381](https://github.com/MassyuRed/mashos-api/actions/runs/38134236381)もsuccess。CIのPython3.12.15で同5suite **1242 tests／4808 subtests PASS（260.26秒）**、共有owner identity **1 PASS／193 deselected（21.18秒）**。fail/skip/xfail 0。包含される対象検査やローカル/CIの件数を合算しない。既存合成7例のCI全文もrootが読み、否定決定・準備相・後続感情・明示順序と未知区間の境界を確認した。
 
 後続commitは既存資料4fileの同期のみで製品sourceを変更しない。合成検証を稼働DB・本人実機・正式商品受入れへ換算しない。
+
+## 2026-10-11 u205 — 関係を含む本人の書字後の感情を保持（未配置）
+
+Mashの分析内容修正の続行依頼から、API PR3 `a722daef96e645bfda1d78569a07a41a00de90e6`／Cocolon PR30 `03c9d22f072e1bb5cc0734c13568a92031e8518a`を照合して再開した。前提・作業rule・恒久incident全文、全体設計01/01A/B/C・全file地図02、current03/詳細04/06、最新weekly20261010 §5.4/5.5と12/18公開目標を確認。System Context prepareは浅い履歴の祖先照合でexit2となり、生成物をfreshとは扱わず原典・実sourceを直接使用した。今回の明示された内容修正を進め、実機稼働確認の完了や優先順全体の変更へ換算しない。
+
+### 欠落と限定修正
+
+「私は家族への手紙を書いた。その後、私は落ち着きました」で、書字は残る一方、後続の明示本人感情が欠けることを実engineで再現した。共有Plan `_source_prefix_opens_report` が完全な本人書字も報告開始と扱い、既存例外が単純名詞に限られていたためである。
+
+既存の単純名詞書字分岐を保持し、明示SELF＋目的語内の「への／との／での」＋書いた／書きましたを完全一致で区別する分岐を追加した。目的語の前または後の単純な場所/媒体1項（に／で）は保持する。裸の「の／からの」、場所/媒体内の関係、日付/順序prefix、主体省略、他者、二重場所/二重目的語、報告/引用/説明/指示語、未解析時点/疑問名詞は広げない。新分岐の全名詞segmentと単純な場所/媒体へ既存の未解析名詞検査を適用する。
+
+Analysisは既存の共有fallbackを使用するためcompiler/realizerを変更しない。名詞内の関係・明示SELF・原文・後続感情の独立した根拠を保持し、順序だけを表示する。前件から感情へ主体/日付/原因/改善を補わず、未知文・別fieldを越す線は作らない。同じ共有原因で落ちていた「まだ昨日の方針が決まっていない」の現在未完了根拠も、主体未確定・否定・current_inputのまま保持する。
+
+### 検証・本文・保存
+
+- 修正前の新規対象testは1 FAIL（2node期待に対して1node）。修正後の新旧書字対象を含む限定実行は **76 tests／100 subtests PASS（21.86秒）**。共有owner identityは実sourceから更新し **1 PASS／193 deselected（33.74秒）**。既存の属格/報告拒否例を変更して通したものではない。最終5suite/CI結果は下段へ記録し、包含される対象検査と合算しない。
+- 合成Analysis13入力の前後を比較し、生成された22全文をrootが読解。通常4例は1node/0edge→2node/1edge、未知文/別field通常は1node→2node・edge0。報告名詞2例、属格媒体、書字の主体省略、u204対照は全文不変。他者と別fieldの報告は両版UNAVAILABLE。実RN `watashiMapV2Contract.js` の表示modelで22全文・identity・node順・edge/unknown/annotation/conflictの一致を確認した。React描画や実端末検証ではない。
+- 実service＋合成RPCの4ルートで保存・再読を確認。読取時のengine再生成を禁止し、本文/図/identityを保持。3関係×3場所配置×2肯定形×4感情の原文UTF-8/hash、明示SELFと順序、訂正/撤回、前後/別field報告と後続否認、現在未完了の根拠を対象testで検査した。稼働Supabase保存の検証ではない。
+- Emlis Q1合成3入力の前後6全文をrootが読解。Observation3例は不変。家族への手紙・場所付き書字の2例で「その気持ちを受け止めています。」が追加され、同僚との約束の全文は不変。代表入力（家族への手紙）の実処理を追跡し、追加文の生成経路は後続の明示本人感情を根拠とする必須Move（recognize_lived_change／felt_response／ANAPHORIC）と確認した。行動の第一文とは別対象であり、削除すると新しく保持された感情への応答を落とすため既存Receptionは変更しない。新たな原因/支え/改善断定はない。述語反復・引用再掲・汎用Reception・no_bound_personal_meaning_targetは残り、Emlis商品品質の解消とは扱わない。
+- 同環境read-only補助reviewにblocking findingなし。開始commitの旧helperとの364入力（既存書字324＋否定分岐40）の限定probeは前後同値。probeをsuite件数へ加算しない。別model Pro reviewとは称さない。Python3.12.14／pytest8.4.1／pytest-subtests0.14.2／FastAPI0.142.2／Pydantic2.13.5／httpx0.28.1を使用、製品依存変更0。ローカル全5suiteの重複実行は行わず、対象検査＋identityと固定sourceの既存CIを使用する。
+
+### 反映と残件
+
+製品sourceは `01f385319b4fd9342a8d6cd81ce0161cd91dd796`、tree `9c946a98d286e5ffd7d52f7a1567bc268c8cb745`。共有Plan SHA256 `d1992984f512bbe2b3cd8c5504fc2ab0187b9a5c0344f22987b94a56a47c8de4`。共有Plan1・既存test3・current owner identity fixture1を既存PR3へnon-force反映。remote fetchで親head/5path/全bytesと検証済みlocal treeの一致を確認した。API既存handoffとCocolon current03/詳細04 §3.35/06へ同期する。歴史identityは不変、新規repository file0。STRUCTURE_MAP_DELTA_NONE：既存共有owner内の有限節判定で、source→命題→graph→文章/図→保存の責務は変わらない。
+
+Codex Work root華恋が実装・実行・統合・GitHub反映を担当し、同環境subagentはread-only原因調査/差分review/実出力照合を補助。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Analysis compiler/realizer/API/DTO/DB/SQL/RN製品変更、Supabase操作、本人行取得、配置/有効化/native build/main mergeは0。未配置・実DB/本人実機未確認、正式商品受入れ未成立。
+
+肯定書字後の欠落は上記の有限範囲で解消。裸の「の／からの」・関係を含む場所/媒体・日付/順序付き肯定書字・主体/対象省略・未対応時刻/副詞/他動詞、一般意味理解、全体ルートUI/IF/Saved、元28日/14記録全体の改善、本人生成→保存再表示・商品受入れは残る。次回は最新weekly/current03/本節と実出力から再開し、この補修を実機確認の新しい前提にしない。
+
+### u205 最終CI・固定source
+
+固定source `01f385319b4fd9342a8d6cd81ce0161cd91dd796` の[CI38135813260](https://github.com/MassyuRed/mashos-api/actions/runs/38135813260)はsuccess。Python3.12.15でAnalysis4＋共有限定change/feelingの5suite **1246 tests／4896 subtests PASS（189.86秒）**、共有owner identity **1 PASS／193 deselected（15.56秒）**。fail/skip/xfail 0。ローカルの限定対象やidentityとは合算しない。既存合成7例のCI全文をrootが読み、否定決定・準備相・本人感情・明示順序と未知区間の境界の保持を確認した。
+
+remote固定sourceの親head/5path/全bytes/treeは検証済みlocalと一致。後続commitは上記既存資料4fileの同期のみで製品sourceを変更しない。合成の保存再読・RN表示model検証を、稼働DB・本人実機・正式商品受入れへ換算しない。
