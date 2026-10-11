@@ -33,6 +33,70 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_omitted_writing_keeps_unknown_actor_and_independent_feeling(self):
+        for prefix, day in (('', ''), ('その後、', ''), ('それから、', ''),
+                            ('今日、', 'TODAY'), ('昨日、', 'YESTERDAY')):
+            for arguments in ('メモを', '家族への手紙を', '職場で会議でのメモを',
+                              '同僚との約束をノートに'):
+                for finite, feeling in (('書いた', '落ち着きました'),
+                        ('書きました', '嬉しかったです'), ('書いた', 'うれしかったです'),
+                        ('書きました', '安心した')):
+                    with self.subTest(prefix=prefix, arguments=arguments, finite=finite, feeling=feeling):
+                        clause = prefix + arguments + finite
+                        literal = 'それから、私は' + feeling
+                        req = request(record(memo=clause + '。' + literal + '。'))
+                        artifact = self.generate(req).artifact
+                        action, result = artifact.graph.nodes
+                        self.assertEqual((action.proposition.actor, action.proposition.relative_day,
+                            action.proposition.predicate_lemma, action.polarity),
+                            ('UNSPECIFIED', day, '書く', 'positive'))
+                        self.assertEqual((result.proposition.actor, result.proposition.relative_day,
+                            result.proposition.result_state), ('SELF', '', 'PAST_FEELING'))
+                        self.assertEqual([(e.endpoint_refs, e.edge_kind) for e in artifact.graph.edges],
+                            [((action.node_ref, result.node_ref), 'OBSERVED_ORDER')])
+                        source, = freeze_analysis_sources(req).sources
+                        for node, expected in ((action, clause), (result, literal)):
+                            evidence, = node.evidence_refs
+                            raw = source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                            self.assertEqual(raw.decode(), expected)
+                            self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+                        text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                        self.assertIn('誰の行動かは未確定', text)
+                        self.assertNotIn('誰の気持ちかは未確定', text)
+
+    def test_omitted_writing_keeps_reports_gaps_updates_and_separate_actors(self):
+        clause = '家族への手紙を書いた。'
+        literal = 'それから、私は落ち着きました'
+        for memo, action in ((clause + '不明な出来事があった。' + literal + '。', ''),
+                             (literal + '。', clause)):
+            artifact = self.generate(request(record(memo=memo, action=action))).artifact
+            self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)), (2, 0))
+        for memo, action in (('友人の話でした。' + clause + literal + '。', ''),
+                (clause + literal + '。', '友人が話した。'),
+                (clause + literal + '。と友人が言った。', ''),
+                (clause + literal + '。のは嘘だった。', ''),
+                (clause + 'それから、友人は落ち着きました。', '')):
+            with self.subTest(memo=memo, action=action):
+                artifact = self.generate(request(record(memo=memo, action=action))).artifact
+                self.assertFalse(artifact and any(n.proposition.result_state == 'PAST_FEELING'
+                                 for n in artifact.graph.nodes))
+        original = record(memo=clause + literal + '。')
+        for answer in ('「' + literal + '」は取り消します。',
+                       '「' + literal + '」ではなく「私は安心しなかった」です。'):
+            artifact = self.generate(request(self.with_answer(original, answer))).artifact
+            self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)),
+                             (1 if '取り消' in answer else 2, 0))
+            self.assertEqual(artifact.graph.nodes[0].proposition.actor, 'UNSPECIFIED')
+            self.assertFalse(any(n.proposition.predicate_lemma == '落ち着く' for n in artifact.graph.nodes))
+        artifact = self.generate(request(original, record(2, memo=clause + literal + '。'))).artifact
+        actions = [n for n in artifact.graph.nodes if n.proposition.predicate_lemma == '書く']
+        self.assertEqual(len(actions), 2)
+        self.assertTrue(all(n.proposition.actor == 'UNSPECIFIED' for n in actions))
+        for topic in ('私は、\n', '私は、。', '昨日、私は、\n'):
+            artifact = self.generate(request(record(memo=topic + clause + literal + '。'))).artifact
+            self.assertFalse(artifact and any(n.proposition.predicate_lemma == '書く'
+                             for n in artifact.graph.nodes))
+
     def test_dated_writing_keeps_own_day_and_independent_feeling(self):
         for day, scope in (('今日', 'TODAY'), ('昨日', 'YESTERDAY')):
             for prefix in (day + '私は', day + '、私は', '私は、' + day + ' '):

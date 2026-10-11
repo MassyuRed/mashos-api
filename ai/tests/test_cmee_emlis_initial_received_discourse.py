@@ -19,6 +19,25 @@ SINGLE = '褒められたのに、嬉しくなかった。'
 MULTI = SINGLE + '誘われたのに、悲しかった。頼まれたのに、寂しかった。'
 
 
+@pytest.mark.parametrize('clause', [
+    '友人はメモを書いた', '家族の手紙を書いた', '同僚からの内容を書いた',
+    '話を書いた', '引用を書いた', '報告を書いた', '次のメモを書いた',
+    '家族への手紙は書いた', '書いた', 'メモを手紙を書いた',
+    '職場でメモをノートに書いた', '家族への手紙を友人のノートに書いた',
+    '明日資料を書いた', '詳しい誰のメモを書いた', '振り返り明日資料を書いた',
+    '昨日メモを書いた', '昨日、朝メモを書いた', '昨日、 朝メモを書いた',
+    '昨日、以前メモを書いた', '昨日、　午前メモを書いた', '昨日、今日メモを書いた',
+    'その後、昨日、メモを書いた', '昨日、その後、メモを書いた',
+    'その後、それから、メモを書いた', '昨日、\nメモを書いた',
+    '私は、\nメモを書いた', 'ゆっくりメモを書いた',
+    '昨日、私がメモを書いた', '今日、私も家族への手紙を書いた',
+    '今日、ぼくが考えをノートに書いた',
+    'メモを書いたとの話でした', 'メモを書いた。友人の話でした'])
+def test_omitted_writing_keeps_unparsed_and_report_boundaries(clause):
+    from emlis_ai_grounded_observation_plan import _source_prefix_opens_report
+    assert _source_prefix_opens_report(clause + '。')
+
+
 @pytest.mark.parametrize('writing', [
     '私は家族への手紙を書いた', '私は同僚との約束を書きました',
     '私は会議でのメモを書いた', '僕は、職場で家族への手紙を書きました',
@@ -30,7 +49,11 @@ MULTI = SINGLE + '誘われたのに、悲しかった。頼まれたのに、�
     '昨日私は家族への手紙を書いた', '今日、僕はメモを書きました',
     'わたしは昨日、考えをノートに書いた', '私は、今日 職場で会議でのメモを書いた',
     '昨日私は今月号を書いた', '私は昨日、分担を書いた',
-    '今日、俺は今年度を書きました', '私は昨日、　分担を書いた'])
+    '今日、俺は今年度を書きました', '私は昨日、　分担を書いた',
+    # u208: these complete omitted-actor clauses no longer open a report.
+    '家族への手紙を書いた', 'その後、メモを書いた', '昨日、メモを書いた',
+    '考えをノートに書いた', '記録を書いた', '今日　家族への手紙をノートに書きました',
+    'それから職場で会議でのメモを書きました', '昨日、同僚との約束を書いた'])
 def test_relational_writing_keeps_independent_feeling_and_unfinished_witness(writing):
     import emlis_ai_grounded_observation_plan as owner
     from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
@@ -61,7 +84,7 @@ def test_relational_writing_keeps_independent_feeling_and_unfinished_witness(wri
     '私は昨日職場で家族への手紙を書いた',
     '私は家族からの手紙を書いた', '私は友人の考えを書いた',
     '私は家族への手紙の内容を書いた', '私は友人のノートに家族への手紙を書いた',
-    '友人は家族への手紙を書いた', '家族への手紙を書いた',
+    '友人は家族への手紙を書いた',
     '私は職場で家族への手紙をノートに書いた', '私は家族への手紙を記録を書いた',
     '私は家族への手紙をこう書いた', '私は、\n家族への手紙を書いた'])
 def test_relational_writing_preserves_report_attribution_and_unparsed_scope(writing):
@@ -72,7 +95,7 @@ def test_relational_writing_preserves_report_attribution_and_unparsed_scope(writ
 @pytest.mark.parametrize('writing', [
     'その後、それから、私はメモを書いた', 'その後、昨日、私はメモを書いた',
     'その後、私は昨日、メモを書いた', 'その後、\n私はメモを書いた',
-    'その後、友人はメモを書いた', 'その後、メモを書いた',
+    'その後、友人はメモを書いた',
     'その後、私は明日資料を書いた', 'その後、私は詳しい誰の資料を書いた',
     'その後、私は家族への明日手紙を書いた',
     'その後、私はメモを明日ノートに書いた',
@@ -89,7 +112,7 @@ def test_sequenced_writing_keeps_unparsed_and_reported_scope(writing):
     '昨日、今日私はメモを書いた', '私は昨日、今日メモを書いた',
     '昨日、その後、私はメモを書いた', 'その後、昨日私はメモを書いた',
     '昨日、\n私はメモを書いた', '私は昨日、\nメモを書いた',
-    '昨日、友人はメモを書いた', '昨日、メモを書いた',
+    '昨日、友人はメモを書いた',
     '私は昨日家族への手紙を書いた', '私は昨日、以前資料を書いた',
     '私は昨日、朝メモを書いた', '私は昨日、分を書いた',
     '私は昨日、 朝メモを書いた', '私は昨日、 以前資料を書いた',
@@ -135,7 +158,7 @@ def test_completed_two_argument_writing_keeps_independent_unfinished_scope(writi
         assert prepared.thread.resolver().resolve(node.source_span_ids[0]).raw_text == unfinished
 
 
-@pytest.mark.parametrize('writing', ['友人は考えをノートに書いた', '考えをノートに書いた',
+@pytest.mark.parametrize('writing', ['友人は考えをノートに書いた',
     '私は話をノートに書いた', '私はノートに内容を書いた', '私は引用に考えを書いた',
     '私は次をノートに書いた', '私は何をノートに書いた', '私はノートに以下を書いた',
     '私は友人の考えをノートに書いた', '私は考えを友人のノートに書いた',
@@ -152,7 +175,7 @@ def test_completed_two_argument_writing_keeps_report_and_unproved_arguments(writ
         assert not any('semantic_role:present_unfinished' in n.semantic_frame.attribute_codes for n in plan.nuclei)
 
 
-@pytest.mark.parametrize('writing', ['友人は記録を書いた', '記録を書いた',
+@pytest.mark.parametrize('writing', ['友人は記録を書いた',
     '私はこう書いた', '私は次の記録を書いた', '私は以下を書いた',
     '私は話を書いた', '私は報告を書いた', '私は内容を書いた',
     '私は友人の感想を書いた', '私は友人の記録を書いた',

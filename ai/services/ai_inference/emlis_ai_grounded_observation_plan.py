@@ -16057,7 +16057,7 @@ def _source_prefix_opens_report(prefix: str) -> bool:
             return True
         if not re.search(speech + r"$", clause):
             continue
-        # A fully closed, explicitly self-owned writing act is not an
+        # A fully closed writing act with SELF or an omitted actor is not an
         # introduction to quoted content. One bounded nominal object may
         # carry one medium/place, before or after it. Possessive/report/deictic
         # content and additional arguments retain the existing check.
@@ -16066,7 +16066,10 @@ def _source_prefix_opens_report(prefix: str) -> bool:
         # source coordinates, later clauses and the fallback stay unchanged.
         sequence = re.match(r"^(?:その後|それから)[、， 　]*", clause)
         writing_clause = clause[sequence.end():] if sequence else clause
-        # A written 今日/昨日 may precede explicit SELF or follow its topic.
+        writing_subject = r"(?:私|わたし|僕|ぼく|自分|俺|おれ)(?:は|が|も)[、,]?[ 　]*"
+        # A written 今日/昨日 may precede SELF, follow its topic, or precede
+        # an omitted actor with a separator. This closes the act only; it
+        # never supplies an actor or transfers a day to the next sentence.
         # Require separation after a post-topic day so a nominal modifier is
         # not reassigned to this act. Never combine a day with a sequence.
         dated_writing = None
@@ -16081,12 +16084,15 @@ def _source_prefix_opens_report(prefix: str) -> bool:
             dated_writing = re.match(
                 r"(?:(?:今日|昨日)[、， 　]*(?P<before>" + writing_topic + r")|"
                 r"(?P<after>" + writing_topic + r")(?:今日|昨日)[、， 　]+(?![、， 　])"
+                + writing_day_boundary + r"|(?P<omitted>(?:今日|昨日)[、， 　]+)"
+                r"(?![、， 　])(?!" + writing_subject + r")"
                 + writing_day_boundary + r")(?!今日|昨日)", clause)
             if dated_writing is not None:
-                writing_clause = ((dated_writing["before"] or dated_writing["after"])
+                writing_clause = ((dated_writing["before"] or dated_writing["after"] or "")
                     + clause[dated_writing.end():])
+        omitted_writing = re.match(writing_subject, writing_clause) is None
         writing = re.fullmatch(
-            r"(?:私|わたし|僕|ぼく|自分|俺|おれ)(?:は|が|も)[、,]?[ 　]*"
+            r"(?:" + writing_subject + r")?"
             r"(?:(?P<place_before>" + _WISH_OBJECT_NOMINAL_SOURCE + r")(?:に|で))?"
             r"(?P<object>" + _WISH_OBJECT_NOMINAL_SOURCE + r")を"
             r"(?:(?P<place_after>" + _WISH_OBJECT_NOMINAL_SOURCE + r")(?:に|で))?"
@@ -16099,13 +16105,13 @@ def _source_prefix_opens_report(prefix: str) -> bool:
             related_object = (_WISH_OBJECT_NOMINAL_SOURCE
                 + r"(?:(?:への|との|での)" + _WISH_OBJECT_NOMINAL_SOURCE + r")+")
             writing = re.fullmatch(
-                r"(?:私|わたし|僕|ぼく|自分|俺|おれ)(?:は|が|も)[、,]?[ 　]*"
+                r"(?:" + writing_subject + r")?"
                 r"(?:(?P<place_before>" + _WISH_OBJECT_NOMINAL_SOURCE + r")(?:に|で))?"
                 r"(?P<object>" + related_object + r")を"
                 r"(?:(?P<place_after>" + _WISH_OBJECT_NOMINAL_SOURCE + r")(?:に|で))?"
                 r"(?:書いた|書きました)", writing_clause)
-        if writing is not None and (related_writing or sequence or dated_writing):
-            # Newly admitted sequenced or dated writing needs complete nominal
+        if writing is not None and (related_writing or sequence or dated_writing or omitted_writing):
+            # Newly admitted writing needs complete nominal
             # heads, including a simple object or place/medium. Do not absorb
             # an unparsed day or question into a nominal compound.
             parts = [part for value in writing.groups() if value
