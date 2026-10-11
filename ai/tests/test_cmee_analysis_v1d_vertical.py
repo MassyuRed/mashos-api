@@ -33,6 +33,124 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_past_decision_keeps_object_negation_time_and_exact_source(self):
+        for finite, polarity in (('決めた', 'positive'), ('決めました', 'positive'),
+                ('決めなかった', 'negative'), ('決めなかったです', 'negative'),
+                ('決めませんでした', 'negative')):
+            for prefix, day in (('', ''), ('今日、', 'TODAY'), ('昨日、', 'YESTERDAY'),
+                                ('その後、', ''), ('それから、', '')):
+                with self.subTest(finite=finite, prefix=prefix):
+                    literal = prefix + '私は同僚と分担を' + finite
+                    req = request(record(memo=literal + '。'))
+                    artifact = self.generate(req).artifact
+                    self.assertIsNotNone(artifact)
+                    node, = artifact.graph.nodes
+                    self.assertEqual((node.node_kind, node.polarity, node.modality, node.temporal_scope),
+                        ('ACTION_OR_NONACTION', polarity, 'fact', 'past'))
+                    p = node.proposition
+                    self.assertEqual((p.actor, p.predicate_lemma, p.arguments, p.relative_day),
+                        ('SELF', '決める', (('と', '同僚'), ('を', '分担')), day))
+                    ref, = node.evidence_refs
+                    source, = freeze_analysis_sources(req).sources
+                    raw = source.envelope.raw_utf8[ref.utf8_start:ref.utf8_end]
+                    self.assertEqual(raw.decode(), literal)
+                    self.assertEqual(hashlib.sha256(raw).hexdigest(), ref.literal_sha256)
+                    for role, start, end in p.source_parts:
+                        self.assertTrue(0 <= start < end <= len(literal), role)
+                    label = artifact.safe_projection(authenticated_owner_scope=OWNER)['nodes'][0]['visible_label']
+                    self.assertIn('同僚と分担を決める', label)
+                    self.assertIn('実行済み' if polarity == 'positive' else '行わなかった', label)
+                    self.assertIn(label, artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+                    self.assertFalse(artifact.graph.edges)
+
+    def test_past_decision_preserves_explicit_route_and_late_negative(self):
+        memo = ('私は職場にいた。その後、私は会議を担当した。'
+                'それから、私は同僚と分担を決めた。その後、私は予定を決めなかった。'
+                'その後、私は資料を調べた。その後、私は安心した。')
+        artifact = self.generate(request(record(memo=memo))).artifact
+        self.assertIsNotNone(artifact)
+        self.assertEqual([n.proposition.predicate_lemma for n in artifact.graph.nodes],
+                         ['いる', '担当する', '決める', '決める', '調べる', '安心する'])
+        self.assertEqual(artifact.graph.nodes[3].polarity, 'negative')
+        self.assertEqual(len(artifact.graph.edges), 5)
+        self.assertTrue(all(e.edge_kind == 'OBSERVED_ORDER' for e in artifact.graph.edges))
+        for text in ('私は予定を決めた。私は資料を調べた。',
+                     '私は予定を決めた。不明なことがあった。その後、私は資料を調べた。'):
+            with self.subTest(text=text):
+                separate = self.generate(request(record(memo=text))).artifact
+                self.assertEqual(len(separate.graph.nodes), 2)
+                self.assertFalse(any(e.edge_kind == 'OBSERVED_ORDER' for e in separate.graph.edges))
+        repeated = self.generate(request(record(memo='私は予定を決めた。その後、私は資料を調べた。'
+            'それから、私は予定を決めた。'))).artifact
+        self.assertEqual((len(repeated.graph.nodes), len(repeated.graph.edges)), (3, 2))
+
+    def test_past_decision_keeps_subject_forms_fields_and_nominal_relations(self):
+        for subject in ('私', '僕', 'ぼく', '俺', 'おれ', 'わたし', '自分'):
+            with self.subTest(subject=subject):
+                artifact = self.generate(request(record(memo=subject + 'は、昨日、予定を決めました。'))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertEqual(artifact.graph.nodes[0].proposition.relative_day, 'YESTERDAY')
+        req = request(record(memo='私は資料を調べた。', action='それから、私は職場での分担を決めた。'))
+        artifact = self.generate(req).artifact
+        self.assertEqual(len(artifact.graph.nodes), 2)
+        self.assertFalse(artifact.graph.edges)
+        node = next(n for n in artifact.graph.nodes if n.proposition.predicate_lemma == '決める')
+        self.assertEqual(node.proposition.arguments, (('を', '職場での分担'),))
+        self.assertEqual(node.evidence_refs[0].field_path, 'memo_action')
+
+    def test_past_decision_leaves_unproved_actors_hosts_and_aspects_unresolved(self):
+        unsupported = (
+            '同僚と分担を決めた。', '友人は分担を決めた。', '私は決めた。',
+            '私は同僚に決めた。', '私は分担を決める。', '私は分担を決めたい。',
+            '私は分担を決めたかった。', '私は分担を決めておいた。',
+            '私は分担を決められた。', '私は分担を決めたかもしれない。',
+            '私は分担を決めたかもしれないと思う。', '私は仕事を続けると決めた。',
+            '私は分担を決めたわけではない。', '私は分担を決めた、わけではない。',
+            '私は分担を決めた後、私は安心した。', '私は分担を決めてから、私は安心した。',
+            '明日、私は分担を決めた。', '私は昨日朝の分担を決めた。',
+            '友人によると。私は分担を決めた。', '夢を見た。私は分担を決めた。',
+            '友人は言った。私は分担を決めた。', '友人は言っていた。私は分担を決めた。')
+        for memo in unsupported:
+            with self.subTest(memo=memo):
+                self.assertIsNone(self.generate(request(record(memo=memo))).artifact)
+        for finite in ('決めた', '決めなかった'):
+            for suffix in ('と友人が言った。', 'と知らない人は言った。', 'のは嘘だった。',
+                           'と私は思う。', 'わけではない。'):
+                with self.subTest(finite=finite, suffix=suffix):
+                    artifact = self.generate(request(record(memo='私は分担を' + finite + '。' + suffix
+                        + 'その後、私は記録を残した。'))).artifact
+                    self.assertIsNotNone(artifact)
+                    self.assertEqual([n.proposition.predicate_lemma for n in artifact.graph.nodes], ['残す'])
+                    self.assertFalse(artifact.graph.edges)
+                    self.assertTrue(artifact.graph.unknown_gaps)
+        self.assertIsNone(self.generate(request(record(memo='私は分担を決めた。',
+                                                      action='友人は言った。'))).artifact)
+        self.assertIsNone(self.generate(request(record(memo='友人は言った。',
+                                                      action='私は分担を決めた。'))).artifact)
+
+    def test_past_decision_keeps_corrections_withdrawals_supplements_and_comparison(self):
+        old = '私は同僚と分担を決めた'
+        original = record(memo=old + '。その後、私は資料を調べた。')
+        for answer, count in (('「' + old + '」ではなく「私は同僚と分担を決めなかった」です。', 2),
+                              ('「' + old + '」は取り消します。', 1)):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(original, answer))).artifact
+                self.assertIsNotNone(artifact)
+                self.assertEqual(len(artifact.graph.nodes), count)
+                self.assertFalse(artifact.graph.edges)
+                self.assertFalse(any(n.proposition.predicate_lemma == '決める' and n.polarity == 'positive'
+                                     for n in artifact.graph.nodes))
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        supplemented = self.generate(request(self.with_answer(record(memo='私は資料を調べた。'),
+            '私は同僚と分担を決めました。'))).artifact
+        self.assertEqual(len(supplemented.graph.nodes), 2)
+        self.assertFalse(supplemented.graph.edges)
+        self.assertFalse(self.compared(old + '。', '私は分担を同僚と決めました。').artifact
+                         .period_comparison.change_claims)
+        changed = self.compared(old + '。', '私は同僚と分担を決めなかった。').artifact
+        self.assertIn('ROUTE_EVIDENCE_CHANGED', changed.safe_projection(
+            authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+
     def test_standalone_feeling_after_explicit_sequence_keeps_route_and_source(self):
         from cocolon_meaning_experience_engine.cores.analysis.intent_compiler import (
             _FEELING_FORMS, _NEGATIVE_FEELING_FORMS,

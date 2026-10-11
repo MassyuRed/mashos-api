@@ -126,6 +126,15 @@ def _finite_predicates(*, include_nonpast=False):
 
 
 _FINITE_PREDICATES = _finite_predicates()
+# A written decision about an explicit object is an ordinary past action.
+# Keep this lexical addition out of wishes, cognitive complements and te
+# episodes: those scopes need their own complete source witness.
+_PAST_DECISION_PREDICATES = tuple(
+    (surface, '決める', polarity, 'fact', 'past')
+    for surface, polarity in (
+        ('決めた', 'positive'), ('決めました', 'positive'),
+        ('決めなかった', 'negative'), ('決めなかったです', 'negative'),
+        ('決めませんでした', 'negative')))
 # Only the existing nine verbs: their plain perfective forms supply the
 # corresponding te inflection. These forms carry no independent past tense.
 _TE_PREDICATES = tuple((surface[:-1] + 'て', lemma, 'positive', 'fact', 'dependent')
@@ -561,7 +570,7 @@ def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relat
             ('RELATIVE_DAY_' + relative_day, body_start, day.end())]
         body_start = day.end()
     inventory = predicate_forms if predicate_forms is not None else (
-        _CONTENT_PREDICATES if content_only else _FINITE_PREDICATES)
+        _CONTENT_PREDICATES if content_only else _FINITE_PREDICATES + _PAST_DECISION_PREDICATES)
     for finite, lemma, polarity, modality, time in inventory:
         if not value.endswith(finite):
             continue
@@ -598,6 +607,8 @@ def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relat
             parts.append(('CASE_' + argument['case'], offset, argument.end()))
             offset = argument.end()
         if offset != end or len({case for case, _ in arguments}) != len(arguments):
+            continue
+        if lemma == '決める' and not any(case == 'を' for case, _ in arguments):
             continue
         parts.append(('FINITE_PREDICATE', end, len(value)))
         return ObservedProposition(actor, tuple(arguments), lemma,
@@ -955,6 +966,8 @@ def _action_change_pair(source, plan, span_id):
     right = _bounded_change_proposition(raw[c:d])
     if (left is None or right is None or _has_unparsed_nominal_scope(right) or left.actor != 'SELF'
             or right.sequence_marker
+            # Decisions are admitted as whole standalone past clauses only.
+            or left.predicate_lemma == '決める'
             # A negative feeling needs the new complete shared witness;
             # the old positive keyword pair cannot license its negation.
             or (right.polarity != 'positive' and not (
@@ -1065,11 +1078,33 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     change = _bounded_change_proposition(value)
     qualified_past = bool(proposition and any(
         _NOMINAL_CASE_LINK.search(noun) for _, noun in proposition.arguments))
-    if qualified_past:
+    past_decision = bool(proposition and proposition.predicate_lemma == '決める')
+    if past_decision:
+        frame = nucleus.semantic_frame
+        # The negative shared frame may lack a past tag and does not assert
+        # performance. Its negation plus this finite clause proves nonperformance;
+        # never require or manufacture a positive performed-action witness.
+        if (pair is not None or a != 0 or b != len(span.raw_text)
+                or nucleus.kind != 'action' or nucleus.grounding_kind != 'explicit'
+                or nucleus.retention not in {'required', 'should'}
+                or nucleus.allowed_claim_scope != 'explicit_current_input'
+                or frame.actor != 'current_user' or frame.modality != 'fact'
+                or (proposition.polarity == 'positive' and not (
+                    source_proven_performed_action_status(nucleus)
+                    and frame.time_scope == 'past' and frame.polarity in {'positive', 'neutral'}))
+                or (proposition.polarity == 'negative' and not (
+                    frame.polarity == 'negative'
+                    and (frame.time_scope in {'past', 'current_input'}
+                         or frame.time_scope == 'present' and proposition.relative_day == 'TODAY')
+                    and {'operator:action', 'operator:negation'} <= set(codes)
+                    and 'operator:performed_action' not in codes))):
+            return None
+    if qualified_past or past_decision:
         # A newly readable object must not turn a reported speaker's
         # first-person clause into the owner's completed action.
         prefix = context[:span.start_index]
-        other = str(source.normalized.get('memo_action', ''))
+        other_field = 'memo' if past_decision and span.source_field == 'memo_action' else 'memo_action'
+        other = str(source.normalized.get(other_field, ''))
         for preceding in re.split(r'[。．.]', prefix + '\n' + other):
             preceding = preceding.strip()
             written = _proposition(preceding)
@@ -1120,12 +1155,15 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
             transition = re.match(r'(?:ところで|とりあえず)[、，,]', following)
             if not transition and re.match(r'(?:と|って|のは|のも|なんて|などと)', following):
                 return None
-    if qualified_past or (change is not None and (pair is None or nucleus.nucleus_id != pair[1])):
+    if qualified_past or past_decision or (change is not None and (pair is None or nucleus.nucleus_id != pair[1])):
         # Ledger punctuation is not proof that the finite host is
         # closed: a following dependent suffix can negate or embed either
         # polarity, including a host with its own explicit speaker. Match
         # that host, not every sentence starting with と (e.g. とても).
         continuation = context[span.end_index:].lstrip(' \t\u3000。．.!！\r\n;；')
+        if (past_decision and not re.match(r'(?:ところで|とりあえず)[、，,]', continuation)
+                and re.match(r'(?:と|って|のは|のも|なんて|などと)', continuation)):
+            return None
         speaker = (r'(?:(?:私|僕|ぼく|俺|おれ|わたし|自分|' + _NOMINAL
                    + r'(?:の' + _NOMINAL + r')*)(?:は|が|も)(?:[、，][ \u3000]*)?)?')
         if re.match(r'(?:と(?:は|も)?' + speaker + r'(?:思|考|感|言|い|聞|書|読|伝|認|信|報)|'

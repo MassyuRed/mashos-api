@@ -126,6 +126,43 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(label.startswith('それから：'))
                 self.assertIn(label, saved['content_text'])
 
+    async def test_past_decision_route_survives_save_and_read(self):
+        for finite, ending in (('決めた', '実行済み'), ('決めました', '実行済み'),
+                               ('決めませんでした', '行わなかった')):
+            with self.subTest(finite=finite):
+                fx = fixture('私は資料を調べた。その後、私は同僚と分担を' + finite
+                             + '。それから、私は記録を残した。')
+                fx['original']['emotion_details'] = [{'type': '平穏', 'strength': 'medium'}]
+                row, writes = fx['row'], []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': fx['original'], 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                        row['content_text'] = payload['p_text']
+                        row['content_json']['watashiMap'] = payload['p_projection']
+                        return row['id']
+                    self.assertEqual(name, 'analysis_observed_read')
+                    return result([row], matched=True)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(len(writes), 1)
+                self.assertEqual(saved, reread['items'][0])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual((len(projection['nodes']), len(projection['edges'])), (3, 2))
+                self.assertTrue(all(e['edge_kind'] == 'OBSERVED_ORDER' for e in projection['edges']))
+                label = projection['nodes'][1]['visible_label']
+                self.assertEqual(label, 'その後：同僚と分担を決める（' + ending + '）')
+                self.assertIn(label, saved['content_text'])
+
     async def test_negative_feeling_before_transition_survives_save_and_read(self):
         for finite in ('嬉しくなかった', 'うれしくありませんでした'):
             for transition in ('ところで、', 'とりあえず、'):

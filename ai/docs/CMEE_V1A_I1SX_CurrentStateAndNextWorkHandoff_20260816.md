@@ -16033,3 +16033,30 @@ Mashの「分析構造の内容修正関係を進めて」を継続。添付u192
 API既存source3（Analysis compiler/realizer・共有Plan）、既存test3、current shared identity1、既存handoff1。Cocolon既存current03/詳細04/06。計11既存file、新規repository file0。歴史的IM03証拠、API/DTO/DB/SQL/RN/Safety/依存/設定を変更しない。STRUCTURE_MAP_DELTA_NONE：既存owner内の意味保持・表示補修で、期間生成→保存→既存表示のrouteと公開契約を維持。既存PR branchへ反映し、fresh head・対象内容・変更path集合を確認する。
 
 未配置・本人実機未確認・正式商品受入れ未完了。本人生成→同じ文章と図→保存後再表示、元の28日例の「分担を決めておいた」等の未対応行動、全体ルートUI/段階的詳細表示、一般的な意味理解・IF/Savedの別未完了を残す。今回の修正を実機到達の追加前提や全体完成へ換算しない。次の「進めて」は最新weekly/current03/本節へ戻り、既存出力で不足している内容を引き続き直接修正する。
+
+## 2026-10-11 u194 — 対象を明記した本人の過去決定を文章・図へ保持（未配置）
+
+Mashの「分析構造の内容修正関係を進めて」によりu193から継続。API PR3 `b9babccbff95b0c0491fe2ef1d78d6f37ee2de38`／Cocolon PR30 `b667e3788ebbc4b585dc72cdd6df7888bbbf813f`の実ファイルから開始した。両PRはDraft/open/unmerged。前提資料、作業姿勢current/Rule18、必読incident全文、Karen-Diary必須3file、全体設計と全file地図01/01A/B/C/02、current03/詳細04/06/API handoff、最新weekly20261010 §5.4/§5.5を確認した。今回の明示依頼を内容修正配分として扱い、本人生成→保存再表示の未完了と12/18公開目標を維持する。
+
+### 作業境界と直接修正
+
+既存設計内LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX。Codex Work root華恋を単一の編集・実行・GitHub反映担当とし、同環境subagentはread-onlyで対象選定・差分・実本文を確認した。別model Pro reviewと称さない。商品上の未完了は、原文に明記された本人行動が期間分析から欠落すること。成功条件は、意味・原文・肯否定・順序を同じ文章/図/保存再読へ保持し、対象検査と全文読解を通すこと。新method、契約、依存、課金、実DB/配置が必要なら今回の範囲を拡大しない。Mashへの追加操作要求はない。
+
+開始版では「私は資料を調べた。その後、私は同僚と分担を決めた。それから、私は安心した。」が2node/0edgeとなり、共有側にperformed-actionがある「分担を決めた」だけをAnalysisが解析できなかった。既存Analysis compilerのordinary past inventoryへ決めるの過去5形だけを追加し、完全SELF・明記された「を」対象・共有action根拠・肯否定一致を要求した。否定の共有timeがcurrent_input等でも、完全な過去有限形から非実行を保持する。required/shouldを扱い、4節目以降も優先度だけで落とさない。
+
+先行報告と後続の否認/引用を保留し、memo/memo_actionの別fieldの先行話者も両方向に確認する。希望/認知内容/teの9動詞inventoryは維持し、決定のcompound/準備相/主体省略へ自動拡大しない。修正後の同じ3節は3node/2edge、場面・担当・肯定決定・否定決定・行動・感情の6節は4node/2edgeから6node/5edgeになった。原文の順序であり、原因・達成・改善・相手の合意は加えない。未知文や別source/fieldを越える線、訂正/撤回後の古い線も加えない。
+
+### 実行・読解結果
+
+- 最終Analysis vertical/nominal-relations/storage/saved-periodの4suite：**417 tests／4061 subtests PASS、skip/xfail0、exit0、39.39秒**。Python3.12.14と既存隔離pytestを使用し、bytecode/cacheprovider/旧FB172移行pluginを無効。全repo・全Emlis検査とは扱わない。
+- 修正前後の同じ合成11入力を実engineへ渡して全結果を読解。最終は生成8・保留3。実RN buildWatashiMapV2ViewModelで生成8例の全文、identity、node順、edge件数が一致した。合成例であり、Mash本人の分析や端末描画ではない。
+- 実service＋合成RPCで肯定/丁寧/否定の3例を1回ずつ保存し、engine再生成を禁止した再読でも本文・projection・保存identity一致を確認。稼働Supabaseでの保存成功とは扱わない。
+- 訂正/撤回、通常補足、丁寧形と格順の意味同一性、肯否定差の期間比較、4節目の否定、両fieldの帰属を確認。同環境read-only reviewの別field誤帰属1件を修正して最終suiteへ含めた。最終差分と生成全文に新たな具体的blocking指摘なし。
+- 初回の主語表記検査7subfailは「主語後の昨日＋分担」が既存DAY_EXTENSIONの「分」に当たるためだった。今回時点文法を広げず、主体表記検査の対象を「予定」へ変更した。保存検査の初回1subfailは、否定決定の後の「安心した」が共有側でvalue/current_inputとなり、既存感情witnessが成立しないため。決定自体は保持されており、保存検査の後続を「記録を残した」に限定して保存経路を検証した。両未対応を修正済みとはしない。
+- 元の28日/14記録例は10node/4edgeのままで、生成identity以外の表示内容と本文は修正前後で同一。この例の「今回は事前に同僚と分担を決めておいた」の改善には算入しない。
+
+### 反映と残件
+
+APIは既存製品compiler1・既存test2・既存handoff1、Cocolonはcurrent03/詳細04/06の既存3file、計7file。新規file0、共有意味owner/realizer/identity fixture/API/DTO/DB/SQL/RN/設定/依存変更0。STRUCTURE_MAP_DELTA_NONE：既存Analysis owner内の原文意味保持だけを修正し、期間生成→保存→表示の責任と公開契約は不変。既存PR branchへnon-force反映し、親head・変更path集合・全対象のremote bytesを確認する。
+
+未配置・本人実機未確認・正式商品受入れ未完了。本人入力での生成→同じ文章/図→保存再表示へ戻る位置を維持する。元の28日例の省略主体/準備相など未対応行動、主語後「昨日、分担」の名詞境界、否定決定後の感情witness、全体ルートUI/段階的詳細表示、一般的な意味理解とIF/Savedは残件。追加の内容拡張を実機確認の前提にしない。次回も最新weekly/current03/本節と実出力を照合する。
