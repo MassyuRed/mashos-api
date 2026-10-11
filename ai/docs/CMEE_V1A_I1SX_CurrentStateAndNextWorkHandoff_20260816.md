@@ -1,4 +1,4 @@
-> 最新の内容修正は末尾 **u213（2026-10-12 JST・未配置）**。仮名所有・省略主体の書字を保持。現在の検証・反映・気持ち名詞等の残件は同節とAnalysis current03を参照。
+> 最新の内容修正は末尾 **u214（2026-10-12 JST・未配置）**。完全書字の名詞内感情語を区別し、省略主体の書く行動を保持。最終検証・反映・過去感情の残件は同節とAnalysis current03を参照。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -16753,3 +16753,31 @@ Mashの分析内容修正の続行指示により、API PR3 `63713b758632209d2d5
 STRUCTURE_MAP_DELTA_NONE：source→命題→graph→本文/図→保存の責務とfile配置は不変。realizer/API/DTO/DB/SQL/RN製品変更0。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。今回Supabase操作・本人行取得・DB書込み・配置/有効化/native build/main mergeは0。未配置。稼働DBでの生成・保存再読、本人実機、正式商品受入れは未確認。
 
 次の内容修正候補は、省略主体の「気持ちを書いた」で共有frameがreaction/feelingとなる上流の語彙・述語scope判定。因果ownerは共有Plan `_FEELING_RE` → `_operator_codes_for_text`/kind選択 → `_clause_signals` → `_semantic_frame_for_span`。reaction既定のnegativeであり、後続否定感情の継承ではない。Analysis `_fragment` のunattributed_action検査を緩めて回避しない。否定書字/他動詞の仮名所有、一般属格/任意入れ子、未対応時刻/副詞、旧completed fallback、逆field配置、一般意味理解・全体ルートUI/IF/Saved、元28日/14記録全体も残る。最新weeklyと本節・実出力から再開し、今回の補修を本人実機確認の新たな前提にしない。
+
+## u214 — 書字の名詞内感情語と感情述語を分ける内容修正（2026-10-12 JST・未配置）
+
+Mashの「分析構造の内容修正関係を進めて」により、u213で実出力から特定した「ぼくの気持ちを書きました。それから、私は安心しなかった。」の行動欠落を補修する。全体01/01B、全file地図、current03、詳細04/06、API handoff、作業姿勢の現行ルール、Emlis商品軽視/CMEE商品読解不履行の記録全文、最新weekly_reviews（20261010、現行順序§5.5・12/18公開目標）を照合した。System Context prepareはPUBLICATION_RECOVERY_AMBIGUOUS: residual without markerでexit2。規定fallbackとして元tracked fileを使用し、3714件のsnapshotを最新生成済みと扱わず、現treeのCocolon1692/API2361 tracked fileと照合した。管理機構の補修へ脱線しない。実機先行確認の未完了を維持し、この明示された限定内容作業を実機成功や新しい端末確認条件に変換しない。
+
+開始headはAPI `3564d0c092d354f42f6b865b371acfe9c9150ee0`、Cocolon `d9f262cfa7cc705a6c755c38d506f6026138ee36`。原型の共有Planは気持ちという目的語をreaction/feelingへ分類し、その既定negativeがAnalysisのunattributed_action検査と矛盾していた。後続「安心しなかった」の否定継承ではない。
+
+製品変更は共有Planの既存operator/kind経路のみ。既存有限名詞・本人所有prefix・「への／との／での」を使い、目的語と前後どちらか1個の場所/媒体を持つ完全な肯定過去書字（書いた／書きました）の名詞区間を得る。感情語がその区間内にあり、原field・全span座標一致・独立節境界・両fieldの報告/伝聞/引用/否認等の検査が成立したときだけ、span operatorからfeelingを除外する。kindも同じoperator集合を使う。text-only・slice・source不一致は旧判定のまま。語彙辞書から気持ちを削除せず、Analysisのframe/source-hostガードも緩めない。memo_actionの既存完了形判定は書きましたに既に合致するため、追加変更は不要だった。
+
+最初のtext-only試作ではEmlisの「友人の話でした」に続く書字へのReceptionまで実際の行動へ変わる副作用を実engine全文で発見し、採用しなかった。source確認つきのspan入口へ移し、報告例のObservation/Receptionが修正前と完全一致する検査を追加した。分担reviewで追加検出した句点付き未完話題「私は、。」後も、既存Analysisと同じ境界で除外し、同fieldのEmlis全文が元に戻ることを確認した。同環境のread-only分担reviewであり、別モデル/Pro認定とは称していない。
+
+合成16入力の前後32結果、うち生成26全文をrootが読解。通常6例は感情だけ1node/0edgeから書字＋感情2node/1edgeへ、場面付きは2/0から3/2へ改善。未知文付きは1/0から2/0、現在未完了付きも1/0から2/0。別fieldは2/0のままで未知接続を作らない。報告・他者主体・埋込述語は両版UNAVAILABLE、明示SELF書字・考えの対照・既存感情例は変化なし。主体省略はUNSPECIFIEDを保持し、所有を行為者の根拠にせず、日付・否定感情・source範囲/UTF8/hash・明示順序を保つ。順序を因果へ変更しない。
+
+実RN表示modelへ前後26投影を入力し、本文全文、projection identity、accessibility順序、node/edge/annotation/unknown/conflict要素が一致。native/device画面確認ではない。実engine/service＋合成RPCによる保存再読3ルートで、read時の再生成を禁止して保存本文・投影・ID・順序の保持を確認した。実DB保存とは区別する。
+
+Emlisは5入力の前後10結果（生成8組のObservation/Reception全文）をrootが読解。通常書字/明示SELFの2例で、Observationが書字を行動として表示しReceptionの選択が変わる。報告と考えの対照は全文一致、既存「私は不安だった。それから、私は安心しなかった。」のUNAVAILABLEは維持。復唱・汎用Receptionの品質解消や商品合格とは認定しない。
+
+初期redは通常10fail＋25subfail。最終の対象検査は37 tests／32 subtests PASS（16.41秒）、1271 deselected。全検証の包含件数を合算しない。
+
+最終sourceの共有owner identityは1 PASS／193 deselected（28.56秒）。Python3.12.14、既存の隔離環境（pytest8.4.1／pytest-subtests0.14.2／FastAPI0.142.2／Pydantic2.13.5／httpx0.28.1）を再使用した。途中版の全suite実行は最終sourceの合格根拠へ流用せず、最終5suite全面回帰は下記固定sourceのCI結果を根拠にする。
+
+固定source commit `385a18afff3ad14a760ff3f2da9f4ff245e13ea4`、tree `a91fd4118dcc412b31026d60debf1755ccd97d50`。共有Plan SHA256=`321a8553d2a8e8478fe23973326eb2aa3056f39177114eb08b06dbfda9d89e48`。GitHubから取得したsource5fileはlocal bytesと一致し、非force・expected-head付きで既存draft API PR3へ反映。
+
+最終固定sourceの[CI38182769774](https://github.com/MassyuRed/mashos-api/actions/runs/38182769774)／job114598651732はsuccess。Python3.12.15でAnalysis4＋共有限定change/feelingの5suite **1340 tests／5331 subtests PASS（302.33秒）**、共有owner identity **1 PASS／193 deselected（22.40秒）**。fail/skip/xfail 0。既存合成7例のCI生成全文をrootが読解し、否定決定・準備相・本人感情・記述順序と未知区間の保持を確認した。
+
+STRUCTURE_MAP_DELTA_NONE：source→命題→graph→本文/図→保存の責務とfile配置は不変。新規repo file0。Analysis compiler/realizer/API/DTO/DB/SQL/RN製品変更0。共有Plan、回帰test3file、現行共有owner identity fixtureの5fileをsource commitへ含める。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Supabase操作・本人行取得・DB書込み・配置/有効化/native build/main mergeは0。稼働DBでの生成・保存再読、本人実機、正式商品受入れは未確認。
+
+残件は、対照入力で確認した「私は不安だった」がAnalysisで採用されず、後続「私は安心しなかった」だけが残る既存欠落。今回は感情語を広く消さず、この状態を悪化させていない。独立したread-only確認では共有Planに当該spanのrequired/explicitなreaction/feelingが残る一方、Analysis `_proposition` / `_past_feeling_proposition` はNone。次の因果ownerはintent_compilerの有限過去感情文法と `_standalone_past_feeling_witness`。前者の既存_FEELING_FORMSは安心/落ち着く/嬉しい系のみで、後者はnegativeにoperator:negationを要求する。不安の負情動と文法上の否定を同一扱いせず、辞書追加だけで通さない。EmlisのUNAVAILABLEをこのAnalysis専用parserと同じ原因とはしない。否定書字/他動詞の仮名所有、一般属格/任意入れ子、未対応時刻/副詞、旧completed fallback、逆field配置、一般意味理解・全体ルートUI/IF/Saved、元28日/14記録全体も残る。最新weeklyと実出力から再開し、本人実機の確認を今回補修の完了待ちにしない。
