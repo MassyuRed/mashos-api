@@ -15914,3 +15914,34 @@ OBSERVED_BLOCKER_MINIMAL_FIX。Codex Work root華恋が唯一の編集・検証�
 STRUCTURE_MAP_DELTA_NONE：既存Analysis compiler内で既存の意味照合を共用するだけで、owner配置・source/保存/表示route・API/DTO/DB/RN/Safetyは不変。API製品1/test2/handoff1、Cocolon current03/詳細04/06の計7既存file。新規repository file、共有Emlis/Piece source、main merge、deploy、設定有効化、native buildの変更0。限定TECHNICAL_CREDIT、商品NOT_CLEAR。既存PR3/30へ反映し、対象内容と変更path集合をremote再取得で確認する。
 
 戻り先：最新weekly/current03/本節。本人の分析生成→同じ文章と図→保存後再表示は未確認。本u189は未配置。最新の配置/本人確認はcurrent03のAPI `5c8bd8e5d7f876335eb840ceee26883a030a34a5` live・TestFlight6501・入力不足案内の確認という記録を維持し、今回再確認したとは扱わない。u187の短文Emlisのecho品質保留・一般表現の未対応・正式商品受入れは残る。追加の表記網羅を実機到達の前提にしない。
+
+## 2026-10-11 u190 — 単独過去感情の後続帰属・撤回を落とさない
+
+### 今回の内容修正と根拠
+
+Mashの「分析構造の内容修正関係を進めて」を、weekly_reviews最新20261010 §5.4の明示配分として継続。§5.5の本人生成→保存再表示が未確認であることは維持する。開始headはAPI `17e2e859aaf6ff097e75b2f7643bbda0f9645e57`、Cocolon `8a3761a8caf42b0250d7fe9171e4134cc5202f25`、両PRはDraft/open/unmerged。全体設計01・01A/B/C・current Analysis map・全ファイル地図・最新weekly・作業ルール・恒久incidentを既読原典と最新GitHubの照合で継承した。System Context prepare成功や全ソース読了を主張せず、必要原典へ直接戻った。
+
+`私は嬉しかった。と友人が言った。`、`私は嬉しかった。のは嘘だった。`で、句点後の帰属/撤回を落とし、本人の感情として文章・図へ出していた。既存Analysis compilerの単独過去感情にある後続判定へ、`と`＋明示主語（既存SELF/名詞句＋は/が/も）＋認知/伝達host、および`のは/のも/なんて/などと`を追加した。肯否定の共通判定だが、否定側の既存の広い先行/後続判定は変更しない。`とても/ところで/とりあえず`を一律拒否する変更は採らず、独立文の前にある有効な感情を保持する。
+
+後続hostを独自に解釈して他者感情や虚偽を確定する実装ではない。未読scopeへ保留し、別の完全な本人行動と原文出典を残す。未確定の感情から後続行動への順序線は作らず、「その後」の接続先不明を表示する。通常補足は既存の全文解釈要件で保留。単独で確定内容が残らない入力は既存の入力不足扱いとし、本文・図・保存を作らない。
+
+### 検証と実本文
+
+- 修正前の新規2 testは147 subfailを再現（test本体2 passed/66 subtests passedというpytest-subtests表示と、実際のexit1を区別）。修正後は既存Analysis vertical/storage/saved-periodの3suiteを通し、**390 tests／3640 subtests PASS、skip/xfail 0、exit0**。
+- 肯定8有限形と否定代表2形、句点/改行/全角semicolon、後続host7形を確認。独立行動のUTF-8原文証拠、接続線非補完、正常な明示順序、別文の感情保持、通常補足、表記差の期間同義/帰属差の期間変更を検証。
+- 実service＋合成RPCで、帰属/撤回を含む原入力の新規保存→engine再実行禁止のreadを2例確認。本文・safe projection・保存identityが一致し、根拠のない感情nodeなし。感情だけの帰属/撤回2例は入力不足でcommitなし。実DBは使用していない。
+- 合成9例を実engineで生成し、保留2例＋生成7例の本文全体をrootが読解。実RN `buildWatashiMapV2ViewModel`で生成7例すべての全文・identity・node順・比較状態が一致。図のnode/edgeも読み合わせた。端末描画・本人入力・正式商品受入れの証拠ではない。
+
+| 合成入力の要点 | 修正後の表示内容 |
+|---|---|
+| 嬉しかった。と友人が言った。その後、記録を残した（行動は明示本人） | 行動だけを保持。感情は確定せず、未読内容と「その後」の接続先不明を表示。 |
+| 嬉しかった。のは嘘だった。その後、記録を残した（明示本人） | 同様に行動と未確定範囲を保持し、感情からの線を作らない。 |
+| 私は嬉しかった。その後、私は記録を残した。 | 感情・行動・書かれた順序を維持。原因の線にはしない。 |
+| 私は嬉しかった。とても長い一日だった。その後、私は記録を残した。 | 本人感情と行動を保持。未読文を越える順序線は作らない。 |
+| 完全な肯定補足／直接の否定感情／前期間との比較 | それぞれの内容・否定・比較を保持し、改善や悪化を推定しない。 |
+
+### 変更範囲・残る境界
+
+`intent_compiler.py`内の既存後続判定、既存vertical/storage検査、既存current map/04/06/API handoffだけを更新。新規file/owner/DTO/API/DB/RN/依存追加なし、`STRUCTURE_MAP_DELTA_NONE`。rootが唯一の編集・反映担当、同環境subagentのread-onlyレビューはblocking 0であり、別モデルPro reviewではない。GitHubは既存2branchへexpected_sha付きで反映し、反映後にheadと全変更blobを照合する。
+
+未配置・実機未確認。u189までの実績やu101の本人報告を今回の端末成功へ換算しない。次の内容候補は、否定感情の既存broad「と」判定による独立文前の過剰保留、および肯定の先行帰属scopeである。今回それらの改善や任意の日本語hostの対応完了は主張しない。週次§5.5の本人生成→保存再表示、正式商品受入れ、IF/Saved等の別未完了を維持する。

@@ -33,6 +33,53 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_past_feeling_split_attribution_keeps_unread_host_and_independent_action(self):
+        for finite in ('安心した', '安心しました', '落ち着いた', '落ち着きました',
+                       '嬉しかった', '嬉しかったです', 'うれしかった', 'うれしかったです',
+                       '嬉しくなかった', 'うれしくありませんでした'):
+            for boundary in ('。', '\n', '；'):
+                for host in ('と私は思う。', 'と友人が言った。', 'と彼は思っている。',
+                             'のは嘘だった。', 'のも嘘だった。', 'なんて嘘だった。', 'などと友人は言った。'):
+                    with self.subTest(finite=finite, boundary=boundary, host=host):
+                        req = request(record(memo='私は' + finite + boundary + host
+                            + 'その後、私は記録を残した。'))
+                        artifact = self.generate(req).artifact
+                        self.assertIsNotNone(artifact)
+                        node, = artifact.graph.nodes
+                        self.assertEqual(node.proposition.predicate_lemma, '残す')
+                        self.assertFalse(artifact.graph.edges)
+                        self.assertTrue(artifact.graph.unknown_gaps)
+                        evidence, = node.evidence_refs
+                        envelope = freeze_analysis_sources(req).sources[0].envelope
+                        self.assertEqual(envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end].decode(),
+                                         'その後、私は記録を残した')
+                        text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                        self.assertNotIn('（記録された気持ち）', text)
+                        artifact.safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_past_feeling_split_attribution_preserves_complete_claims_and_period_meaning(self):
+        clear = '私は嬉しかった。その後、私は記録を残した。'
+        artifact = self.generate(request(record(memo=clear))).artifact
+        self.assertEqual(len(artifact.graph.nodes), 2)
+        self.assertEqual(len(artifact.graph.edges), 1)
+        for independent in ('とても長い一日だった。', 'ところで、私は記録を残した。',
+                            'とりあえず、私は記録を残した。'):
+            with self.subTest(independent=independent):
+                retained = self.generate(request(record(memo='私は嬉しかった。' + independent))).artifact
+                self.assertIsNotNone(retained)
+                self.assertTrue(any(n.proposition.result_state == 'PAST_FEELING'
+                                    for n in retained.graph.nodes))
+        for host in ('と友人が言った。', 'のは嘘だった。', 'なんて嘘だった。'):
+            with self.subTest(host=host):
+                scoped = '私は嬉しかった。' + host + 'その後、私は記録を残した。'
+                self.assertIn('ROUTE_EVIDENCE_CHANGED', self.compared(scoped, clear).artifact
+                    .safe_projection(authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+                self.assertEqual(self.compared(scoped, scoped.replace('嬉しかった', 'うれしかった')).artifact
+                                 .period_comparison.change_claims, ())
+                result = self.generate(request(self.with_answer(record(memo='私は資料を調べた。'), scoped)))
+                self.assertIsNone(result.artifact)
+                self.assertEqual(result.reason_codes, ('analysis_supplement_interpretation_pending',))
+
     def test_feeling_spelling_keeps_compatible_supplements_and_distinct_meanings(self):
         for before, after, node_count in (
                 ('私は嬉しかった。', '私はうれしかったです。', 1),

@@ -1060,11 +1060,14 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
             if re.match(r'(?:と|って|のは|のも|なんて|などと)', following):
                 return None
         # Ledger punctuation is not proof that a feeling's finite host is
-        # closed: a following dependent suffix can negate or embed it. Keep
-        # this new admission pending instead of dropping that unread suffix.
+        # closed: a following dependent suffix can negate or embed either
+        # polarity, including a host with its own explicit speaker. Match
+        # that host, not every sentence starting with と (e.g. とても).
         continuation = context[span.end_index:].lstrip(' \t\u3000。．.!！\r\n;；')
-        if re.match(r'(?:と(?:は|も)?(?:思|考|感|言|い|聞|書|読|伝|認|信|報)|'
-                    r'って|わけ|訳|のでは|のか|かも|かどうか|はず)', continuation):
+        speaker = (r'(?:(?:私|僕|ぼく|俺|おれ|わたし|自分|' + _NOMINAL
+                   + r'(?:の' + _NOMINAL + r')*)(?:は|が|も)(?:[、，][ \u3000]*)?)?')
+        if re.match(r'(?:と(?:は|も)?' + speaker + r'(?:思|考|感|言|い|聞|書|読|伝|認|信|報)|'
+                    r'って|わけ|訳|のでは|のか|のは|のも|なんて|などと|かも|かどうか|はず)', continuation):
             return None
     if result is not None and not _unfinished_result_witness(nucleus):
         return None
