@@ -87,9 +87,10 @@ _NOMINAL_CASE_LINK = re.compile(r'(?:から|へ|と|で)の')
 _PAST_ARGUMENT = re.compile(r'(?P<noun>' + _NOMINAL
     + r'(?:(?:からの|への|との|での|の)' + _NOMINAL
     + r')*)(?P<case>を|に|で|と)')
-# Kana SELF possessives are bounded to completed, explicitly SELF writing.
+# Kana SELF possessives are bounded to completed writing, including an
+# omitted actor. Ownership never supplies the missing writer.
 # Do not add pronouns to the general nominal grammar: that would also admit
-# new scenes, wishes, omitted actors and embedded/dependent actions.
+# new scenes, wishes and embedded/dependent actions.
 _SELF_WRITING_ARGUMENT = re.compile(
     r'(?P<noun>(?:(?:私|わたし|僕|ぼく|自分|俺|おれ)の)?' + _NOMINAL
     + r'(?:(?:への|との|での)' + _NOMINAL + r')*)(?P<case>を|に|で)')
@@ -618,12 +619,13 @@ def _finite_proposition(value, body_start, actor, prefix_parts, marker='', relat
         argument_pattern = (_PAST_ARGUMENT
             if not content_only and predicate_forms is None
             and modality == 'fact' and time == 'past' else _ARGUMENT)
-        self_writing = (argument_pattern is _PAST_ARGUMENT
-            and (actor, lemma, polarity) == ('SELF', '書く', 'positive'))
+        owned_writing = (argument_pattern is _PAST_ARGUMENT
+            and actor in {'SELF', 'UNSPECIFIED'}
+            and (lemma, polarity) == ('書く', 'positive'))
         kana_owned_writing = False
         while offset < end:
             argument = argument_pattern.match(value, offset, end)
-            if argument is None and self_writing:
+            if argument is None and owned_writing:
                 argument = _SELF_WRITING_ARGUMENT.match(value, offset, end)
                 kana_owned_writing = kana_owned_writing or argument is not None
             if argument is None:

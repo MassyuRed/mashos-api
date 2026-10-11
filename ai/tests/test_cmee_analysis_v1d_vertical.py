@@ -92,6 +92,78 @@ class AnalysisVerticalTests(unittest.TestCase):
         self.assertEqual(len(actions), 2)
         self.assertTrue(all(n.proposition.actor == 'UNSPECIFIED' for n in actions))
 
+    def test_kana_omitted_writing_keeps_unknown_actor_and_independent_feeling(self):
+        for owner in ('わたし', 'ぼく', 'おれ'):
+            for prefix, day, arguments in (
+                    ('', '', owner + 'の考えを'),
+                    ('その後、', '', owner + 'のノートに考えを'),
+                    ('昨日、', 'YESTERDAY', 'メモを' + owner + 'の手紙に'),
+                    ('今日、', 'TODAY', owner + 'の家族への手紙を')):
+                for finite, feeling in (('書いた', '落ち着きました'),
+                                         ('書きました', '安心しなかった')):
+                    with self.subTest(owner=owner, prefix=prefix, arguments=arguments, finite=finite):
+                        clause = prefix + arguments + finite
+                        literal = 'それから、私は' + feeling
+                        req = request(record(memo=clause + '。' + literal + '。'))
+                        artifact = self.generate(req).artifact
+                        self.assertIsNotNone(artifact)
+                        action, result = artifact.graph.nodes
+                        self.assertEqual((action.proposition.actor, action.proposition.relative_day,
+                            action.proposition.predicate_lemma, action.polarity), ('UNSPECIFIED', day, '書く', 'positive'))
+                        self.assertTrue(any(owner + 'の' in noun for _, noun in action.proposition.arguments))
+                        self.assertEqual((result.proposition.actor, result.proposition.relative_day,
+                            result.proposition.result_state, result.polarity),
+                            ('SELF', '', 'PAST_FEELING', 'negative' if 'なかった' in feeling else 'positive'))
+                        self.assertEqual([(e.endpoint_refs, e.edge_kind) for e in artifact.graph.edges],
+                            [((action.node_ref, result.node_ref), 'OBSERVED_ORDER')])
+                        source, = freeze_analysis_sources(req).sources
+                        for node, expected in ((action, clause), (result, literal)):
+                            evidence, = node.evidence_refs
+                            raw = source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                            self.assertEqual(raw.decode(), expected)
+                            self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+                        self.assertIn(owner + 'の', artifact.safe_text_projection(
+                            authenticated_owner_scope=OWNER)['text'])
+
+    def test_kana_omitted_writing_keeps_attribution_scope_and_updates(self):
+        from cocolon_meaning_experience_engine.cores.analysis.intent_compiler import _proposition
+        for clause in ('わたしの考えを書かなかった', 'ぼくの考えを書きたい',
+                'おれの資料を調べた', 'わたしの考えを書いて',
+                '友人はわたしの考えを書いた', '昨日わたしの考えを書いた',
+                'わたしの明日メモを書いた', 'ぼくの詳しい誰メモを書いた',
+                'おれの考えのメモを書いた', 'わたしのノートに考えを職場で書いた'):
+            with self.subTest(clause=clause):
+                self.assertIsNone(_proposition(clause))
+        clause, literal = 'わたしの考えを書いた。', 'それから、私は落ち着きました'
+        for memo, action in ((clause + '不明な出来事があった。' + literal + '。', ''),
+                             (literal + '。', clause)):
+            artifact = self.generate(request(record(memo=memo, action=action))).artifact
+            self.assertIsNotNone(artifact)
+            self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)), (2, 0))
+            self.assertIn('誰の行動かは未確定', artifact.safe_text_projection(
+                authenticated_owner_scope=OWNER)['text'])
+        for memo, action in (('友人の話でした。' + clause + literal + '。', ''),
+                (clause + literal + '。', '友人が話した。'),
+                ('友人が話した。', clause + literal + '。'),
+                (clause + 'と友人が言った。' + literal + '。', ''),
+                (clause + 'のは嘘だった。' + literal + '。', ''),
+                ('私は、\n' + clause + literal + '。', '')):
+            with self.subTest(memo=memo, action=action):
+                artifact = self.generate(request(record(memo=memo, action=action))).artifact
+                self.assertFalse(artifact and any(n.proposition.predicate_lemma == '書く'
+                    for n in artifact.graph.nodes))
+        original = record(memo=clause + literal + '。')
+        for answer in ('「' + literal + '」は取り消します。',
+                       '「' + literal + '」ではなく「私は安心しなかった」です。'):
+            artifact = self.generate(request(self.with_answer(original, answer))).artifact
+            self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)),
+                             (1 if '取り消' in answer else 2, 0))
+            self.assertEqual(artifact.graph.nodes[0].proposition.actor, 'UNSPECIFIED')
+        artifact = self.generate(request(original, record(2, memo=clause + literal + '。'))).artifact
+        actions = [n for n in artifact.graph.nodes if n.proposition.predicate_lemma == '書く']
+        self.assertEqual(len(actions), 2)
+        self.assertTrue(all(n.proposition.actor == 'UNSPECIFIED' for n in actions))
+
     def test_kana_owned_writing_keeps_source_action_and_independent_feeling(self):
         for owner in ('わたし', 'ぼく', 'おれ'):
             for prefix, day, arguments in (
@@ -127,7 +199,7 @@ class AnalysisVerticalTests(unittest.TestCase):
 
     def test_kana_owned_writing_keeps_scope_gaps_and_updates(self):
         from cocolon_meaning_experience_engine.cores.analysis.intent_compiler import _proposition
-        for clause in ('わたしの考えを書いた', '友人はわたしの考えを書いた',
+        for clause in ('わたしの考えを書かなかった', '友人はわたしの考えを書いた',
                 '私はわたしの考えを書かなかった', '私はわたしの考えを書きたい',
                 '私はわたしの資料を調べた', '私はわたしの職場にいた',
                 '私はわたしの考えを書いて', '私はわたしの考えを書いたかもしれないと思う',
