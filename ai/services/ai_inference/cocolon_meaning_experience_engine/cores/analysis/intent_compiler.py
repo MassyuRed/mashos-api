@@ -210,11 +210,12 @@ _BOUNDED_CHANGE = re.compile(
 # Finite feelings still require a shared pair or a complete standalone witness.
 # These inflections never assess whether a preceding action helped.
 _FEELING_PAST = {'安心する': '安心した', '落ち着く': '落ち着いた',
-                 '嬉しい': '嬉しかった', 'うれしい': 'うれしかった'}
+                 '嬉しい': '嬉しかった', 'うれしい': 'うれしかった', '不安だ': '不安だった'}
 _FEELING_FORMS = {'安心した': '安心する', '安心しました': '安心する',
     '落ち着いた': '落ち着く', '落ち着きました': '落ち着く',
     '嬉しかった': '嬉しい', '嬉しかったです': '嬉しい',
-    'うれしかった': 'うれしい', 'うれしかったです': 'うれしい'}
+    'うれしかった': 'うれしい', 'うれしかったです': 'うれしい',
+    '不安だった': '不安だ', '不安でした': '不安だ'}
 # An absent positive feeling is not evidence of distress or a failed action.
 # Only complete standalone SELF clauses can use these negative inflections.
 _FEELING_PAST_NEGATIVE = {'安心する': '安心しなかった', '落ち着く': '落ち着かなかった',
@@ -427,14 +428,24 @@ def _standalone_past_feeling_witness(nucleus, proposition):
     frame = nucleus.semantic_frame
     expected = (('value', 'value', 'fact') if proposition.predicate_lemma == '安心する'
                 else ('reaction', 'feeling', 'feeling'))
-    operators = ({'operator:negation'} if proposition.polarity == 'negative'
+    # Shared negative affect is not grammatical negation. The complete
+    # affirmative anxiety clause asserts an experience; it does not assert
+    # its absence, an improvement, or the effect of a preceding action.
+    negative_affect = proposition.predicate_lemma == '不安だ'
+    if negative_affect and (proposition.polarity != 'positive'
+            or {'operator:negation', 'operator:positive_change', 'semantic_role:current_change'}
+                & set(frame.attribute_codes)):
+        return False
+    expected_polarity = 'negative' if negative_affect else proposition.polarity
+    operators = ({'operator:feeling'} if negative_affect else
+                 {'operator:negation'} if proposition.polarity == 'negative'
                  else {'operator:positive_change', 'semantic_role:current_change'})
     return (nucleus.grounding_kind == 'explicit'
         and nucleus.allowed_claim_scope == 'explicit_current_input'
         and nucleus.retention in {'required', 'should'}
         and nucleus.source_fields == ('memo',) and len(nucleus.source_span_ids) == 1
         and (nucleus.kind, frame.predicate_kind, frame.modality) == expected
-        and frame.actor == 'current_user' and frame.polarity == proposition.polarity
+        and frame.actor == 'current_user' and frame.polarity == expected_polarity
         and frame.time_scope in {'current_input', 'past'}
         and operators <= set(frame.attribute_codes)
         and (expected[1] != 'feeling' or 'operator:feeling' in frame.attribute_codes)
@@ -1068,6 +1079,8 @@ def _action_change_pair(source, plan, span_id):
     right = _bounded_change_proposition(raw[c:d])
     if (left is None or right is None or _has_unparsed_nominal_scope(right) or left.actor != 'SELF'
             or right.sequence_marker
+            # Anxiety has a standalone witness only, not a shared pair proof.
+            or right.predicate_lemma == '不安だ'
             # Decisions are admitted as whole standalone past clauses only.
             or left.predicate_lemma in _PAST_DECISION_LEMMAS
             # A negative feeling needs the new complete shared witness;
@@ -1299,7 +1312,8 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
         if (value.endswith(('落ち着きました', '嬉しかったです', 'うれしかったです'))
                 and not _source_polite_past_feeling_is_bound(span, source.normalized)):
             return None
-        if change.polarity == 'negative' or change.sequence_marker:
+        if (change.polarity == 'negative' or change.sequence_marker
+                or change.predicate_lemma == '不安だ'):
             # Punctuation cannot close a reported speaker or detach a
             # cognitive/retracted host. This bounds only the new admission;
             # it does not reinterpret the existing positive family.

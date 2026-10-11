@@ -1846,6 +1846,7 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_standalone_self_feeling_survives_save_and_read_without_regeneration(self):
         for clause, label in (('私は安心した', '安心した'), ('私は、安心しました', '安心した'),
+                ('私は不安だった', '不安だった'), ('僕は、不安でした', '不安だった'),
                 ('僕は落ち着いた', '落ち着いた'), ('私は嬉しかった', '嬉しかった'),
                 ('わたしは、　うれしかった', 'うれしかった'), ('私は落ち着きました', '落ち着いた'),
                 ('僕は、嬉しかったです', '嬉しかった'), ('わたしは，　うれしかったです', 'うれしかった'),
@@ -1889,6 +1890,14 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                                 json.dumps(projection, ensure_ascii=False)):
                     for private in ('PAST_FEELING', 'source_parts', clause):
                         self.assertNotIn(private, encoded)
+
+    async def test_past_anxiety_and_absent_relief_keep_saved_order(self):
+        await self._assert_action_change_saved(
+            '私は不安だった。それから、私は安心しなかった。',
+            'それから：安心しなかった（記録された気持ち）')
+        await self._assert_action_change_saved(
+            '私は資料を調べた。その後、私は不安でした。',
+            'その後：不安だった（記録された気持ち）')
 
     async def test_past_feeling_outgoing_order_survives_save_and_read(self):
         for episode, label, following, following_label in (
