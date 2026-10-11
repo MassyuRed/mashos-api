@@ -15997,6 +15997,18 @@ def _source_prefix_opens_report(prefix: str) -> bool:
                 r"(?P<arguments>(?:" + argument + r"){1,4})"
                 r"(?:決めませんでした|決めなかったです|"
                 r"決めておきませんでした|決めておかなかったです)", clause)
+            omitted_decision = False
+            if closed is None:
+                # The complete negative decision can omit its actor without
+                # becoming a report of the next sentence. Keep the actor
+                # unresolved; only close this finite, object-bearing clause.
+                closed = re.fullmatch(
+                    r"(?:(?P<dated>(?:今日|昨日)[、， 　]+" + day_boundary
+                    + r"(?!今日|昨日))|(?:(?:その後|それから)[、, 　]*)?)"
+                    r"(?P<arguments>(?:" + argument + r"){1,4})"
+                    r"(?:決めませんでした|決めなかったです|"
+                    r"決めておきませんでした|決めておかなかったです)", clause)
+                omitted_decision = closed is not None
             if closed is None:
                 # The existing nine ordinary action verbs can omit their
                 # actor. Require a whole object-bearing finite clause,
@@ -16022,8 +16034,8 @@ def _source_prefix_opens_report(prefix: str) -> bool:
                     r"(?:(?:書か|調べ|試さ|見|作ら|残さ|記録し|メモし|続け)なかったです|"
                     r"(?:書き|調べ|試し|見|作り|残し|記録し|メモし|続け)ませんでした)", clause)
             if closed is not None:
-                if closed.groupdict().get("dated"):
-                    # New dated closures require resolved nominal heads too;
+                if closed.groupdict().get("dated") or omitted_decision:
+                    # Dated and omitted-decision closures need resolved heads;
                     # an unparsed time or question cannot become an object by
                     # swallowing it into a kanji compound. Preserve bare
                     # nominal dates such as 明日の資料 and complete 今月号.

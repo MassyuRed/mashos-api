@@ -85,6 +85,19 @@ async def storage_sql_fixture():
 
 
 class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
+    async def test_omitted_negative_decision_polite_feeling_survives_saved_read(self):
+        for prefix in ('その後、', '昨日、'):
+            for finite in ('決めませんでした', '決めておかなかったです'):
+                with self.subTest(prefix=prefix, finite=finite):
+                    await self._assert_action_change_saved(prefix
+                        + '同僚との分担を' + finite + '。それから、私は落ち着きました。',
+                        expected_label='それから：落ち着いた（記録された気持ち）')
+                    self.assertIn('誰の行動かは未確定', self.row['content_text'])
+                    self.assertNotIn('誰の気持ちかは未確定', self.row['content_text'])
+                    self.assertIn('決めておく' if '決めて' in finite else '決める', self.row['content_text'])
+                    self.assertIn('行わなかった', self.row['content_text'])
+                    self.assertEqual('この記述時点の昨日：' in self.row['content_text'], prefix == '昨日、')
+
     async def test_dated_negative_decision_polite_feeling_survives_saved_read(self):
         for prefix, day in (('昨日、私は', '昨日'), ('今日私は', '今日'), ('私は昨日、', '昨日')):
             for finite in ('決めませんでした', '決めておかなかったです'):
