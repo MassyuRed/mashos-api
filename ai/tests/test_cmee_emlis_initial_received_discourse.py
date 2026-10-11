@@ -23,7 +23,10 @@ MULTI = SINGLE + '誘われたのに、悲しかった。頼まれたのに、�
     '私は家族への手紙を書いた', '私は同僚との約束を書きました',
     '私は会議でのメモを書いた', '僕は、職場で家族への手紙を書きました',
     '私は家族への手紙をノートに書いた', '自分は新しい会議でのメモを書いた',
-    '私は会議での同僚との約束を書いた'])
+    '私は会議での同僚との約束を書いた',
+    'その後、私は家族への手紙を書いた', 'それから私はメモを書きました',
+    'その後　僕は考えをノートに書いた',
+    'それから、私は職場で会議でのメモを書きました'])
 def test_relational_writing_keeps_independent_feeling_and_unfinished_witness(writing):
     import emlis_ai_grounded_observation_plan as owner
     from cocolon_meaning_experience_engine.source_kernel import freeze_text_source
@@ -55,10 +58,26 @@ def test_relational_writing_keeps_independent_feeling_and_unfinished_witness(wri
     '私は家族からの手紙を書いた', '私は友人の考えを書いた',
     '私は家族への手紙の内容を書いた', '私は友人のノートに家族への手紙を書いた',
     '友人は家族への手紙を書いた', '家族への手紙を書いた',
-    '昨日、私は家族への手紙を書いた', 'その後、私は家族への手紙を書いた',
+    '昨日、私は家族への手紙を書いた',
     '私は職場で家族への手紙をノートに書いた', '私は家族への手紙を記録を書いた',
     '私は家族への手紙をこう書いた', '私は、\n家族への手紙を書いた'])
 def test_relational_writing_preserves_report_attribution_and_unparsed_scope(writing):
+    from emlis_ai_grounded_observation_plan import _source_prefix_opens_report
+    assert _source_prefix_opens_report(writing + '。')
+
+
+@pytest.mark.parametrize('writing', [
+    'その後、それから、私はメモを書いた', 'その後、昨日、私はメモを書いた',
+    'その後、私は昨日、メモを書いた', 'その後、\n私はメモを書いた',
+    'その後、友人はメモを書いた', 'その後、メモを書いた',
+    'その後、私は明日資料を書いた', 'その後、私は詳しい誰の資料を書いた',
+    'その後、私は家族への明日手紙を書いた',
+    'その後、私はメモを明日ノートに書いた',
+    'その後、私は友人の感想を書いた', 'その後、私は家族からの手紙を書いた',
+    'その後、私は家族への説明を書いた', 'その後、私は話をノートに書いた',
+    'その後、私は職場でメモをノートに書いた',
+    'その後、私は家族への手紙を書いた。友人の話でした'])
+def test_sequenced_writing_keeps_unparsed_and_reported_scope(writing):
     from emlis_ai_grounded_observation_plan import _source_prefix_opens_report
     assert _source_prefix_opens_report(writing + '。')
 

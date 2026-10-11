@@ -16061,12 +16061,18 @@ def _source_prefix_opens_report(prefix: str) -> bool:
         # introduction to quoted content. One bounded nominal object may
         # carry one medium/place, before or after it. Possessive/report/deictic
         # content and additional arguments retain the existing check.
+        # A single written sequence marker does not change who wrote or
+        # introduce reported speech. Strip it only for this writing check;
+        # source coordinates, later clauses and the fallback stay unchanged.
+        sequence = re.match(r"^(?:その後|それから)[、， 　]*", clause)
+        writing_clause = clause[sequence.end():] if sequence else clause
         writing = re.fullmatch(
             r"(?:私|わたし|僕|ぼく|自分|俺|おれ)(?:は|が|も)[、,]?[ 　]*"
             r"(?:(?P<place_before>" + _WISH_OBJECT_NOMINAL_SOURCE + r")(?:に|で))?"
             r"(?P<object>" + _WISH_OBJECT_NOMINAL_SOURCE + r")を"
             r"(?:(?P<place_after>" + _WISH_OBJECT_NOMINAL_SOURCE + r")(?:に|で))?"
-            r"(?:書いた|書きました)", clause)
+            r"(?:書いた|書きました)", writing_clause)
+        related_writing = writing is None
         if writing is None:
             # A recipient, joint participant or setting inside the object
             # does not turn a completed writing act into a report. Bare の
@@ -16078,21 +16084,24 @@ def _source_prefix_opens_report(prefix: str) -> bool:
                 r"(?:(?P<place_before>" + _WISH_OBJECT_NOMINAL_SOURCE + r")(?:に|で))?"
                 r"(?P<object>" + related_object + r")を"
                 r"(?:(?P<place_after>" + _WISH_OBJECT_NOMINAL_SOURCE + r")(?:に|で))?"
-                r"(?:書いた|書きました)", clause)
-            if writing is not None:
-                parts = [part for value in writing.groups() if value
-                         for part in re.split(r"(?:への|との|での)", value)]
-                for part in parts:
-                    head = re.sub(
-                        r"^(?:新しい|古い|大きい|小さい|長い|短い|詳しい|難しい|易しい|良い|悪い)",
-                        "", part)
-                    suffix = re.sub(r"^(?:考え|思い|気持ち|学び|振り返り|取り組み)", "", head)
-                    if (re.match(
-                        r"^(?:(?:明後日|明日|一昨日|今朝|昨夜|先週|来週|今週|"
-                        r"(?:今月|先月|来月)(?!号$)|(?:今年|昨年|来年)(?!度$))(?=.)|何|誰|今日|昨日)",
-                        suffix) or (suffix != part and suffix.startswith("幾"))):
-                        writing = None
-                        break
+                r"(?:書いた|書きました)", writing_clause)
+        if writing is not None and (related_writing or sequence):
+            # Newly admitted sequenced writing also needs complete nominal
+            # heads, including a simple object or place/medium. Do not absorb
+            # an unparsed day or question into a nominal compound.
+            parts = [part for value in writing.groups() if value
+                     for part in re.split(r"(?:への|との|での)", value)]
+            for part in parts:
+                head = re.sub(
+                    r"^(?:新しい|古い|大きい|小さい|長い|短い|詳しい|難しい|易しい|良い|悪い)",
+                    "", part)
+                suffix = re.sub(r"^(?:考え|思い|気持ち|学び|振り返り|取り組み)", "", head)
+                if (re.match(
+                    r"^(?:(?:明後日|明日|一昨日|今朝|昨夜|先週|来週|今週|"
+                    r"(?:今月|先月|来月)(?!号$)|(?:今年|昨年|来年)(?!度$))(?=.)|何|誰|今日|昨日)",
+                    suffix) or (suffix != part and suffix.startswith("幾"))):
+                    writing = None
+                    break
         if (writing is not None and not (writing["place_before"] and writing["place_after"])
             and not re.search(
             r"何|誰|次|以下|上記|下記|話|発言|引用|説明|報告|内容",

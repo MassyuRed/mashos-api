@@ -33,6 +33,59 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_sequenced_writing_keeps_following_feeling_and_exact_order(self):
+        cases = (
+            ('その後、私は家族への手紙を書いた', '落ち着きました'),
+            ('それから私はメモを書きました', '嬉しかったです'),
+            ('その後　僕は考えをノートに書いた', '安心した'),
+            ('それから、私は職場で会議でのメモを書きました', 'うれしかったです'),
+            ('その後、わたしは同僚との約束を書いた', '落ち着きました'),
+            ('それから、俺は家族への手紙をノートに書いた', '安心した'),
+        )
+        for clause, feeling in cases:
+            with self.subTest(clause=clause, feeling=feeling):
+                literal = 'それから、私は' + feeling
+                req = request(record(memo='私は職場にいた。' + clause + '。' + literal + '。'))
+                artifact = self.generate(req).artifact
+                scene, action, result = artifact.graph.nodes
+                self.assertEqual((action.proposition.actor, action.proposition.predicate_lemma,
+                    action.polarity, action.proposition.relative_day), ('SELF', '書く', 'positive', ''))
+                self.assertEqual((result.proposition.actor, result.proposition.result_state,
+                    result.proposition.relative_day), ('SELF', 'PAST_FEELING', ''))
+                self.assertEqual([(e.endpoint_refs, e.edge_kind) for e in artifact.graph.edges],
+                    [((scene.node_ref, action.node_ref), 'OBSERVED_ORDER'),
+                     ((action.node_ref, result.node_ref), 'OBSERVED_ORDER')])
+                source, = freeze_analysis_sources(req).sources
+                for node, expected in ((action, clause), (result, literal)):
+                    evidence, = node.evidence_refs
+                    raw = source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                    self.assertEqual(raw.decode(), expected)
+                    self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+
+    def test_sequenced_writing_preserves_gaps_reports_and_feeling_updates(self):
+        clause = 'その後、私は家族への手紙を書いた。'
+        literal = 'それから、私は落ち着きました'
+        original = record(memo=clause + literal + '。')
+        for memo, action in ((clause + '不明な出来事があった。' + literal + '。', ''),
+                             (literal + '。', clause)):
+            artifact = self.generate(request(record(memo=memo, action=action))).artifact
+            self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)), (2, 0))
+        for memo, action in (('友人の話でした。' + clause + literal + '。', ''),
+                (clause + literal + '。', '友人が話した。'),
+                (clause + literal + '。と友人が言った。', ''),
+                (clause + literal + '。のは嘘だった。', ''),
+                (clause + 'それから、友人は落ち着きました。', '')):
+            with self.subTest(memo=memo, action=action):
+                artifact = self.generate(request(record(memo=memo, action=action))).artifact
+                self.assertFalse(artifact and any(n.proposition.result_state == 'PAST_FEELING'
+                                 for n in artifact.graph.nodes))
+        for answer in ('「' + literal + '」は取り消します。',
+                       '「' + literal + '」ではなく「私は安心しなかった」です。'):
+            artifact = self.generate(request(self.with_answer(original, answer))).artifact
+            self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)),
+                             (1 if '取り消' in answer else 2, 0))
+            self.assertFalse(any(n.proposition.predicate_lemma == '落ち着く' for n in artifact.graph.nodes))
+
     def test_relational_writing_keeps_independent_feeling_and_source(self):
         for noun in ('家族への手紙', '同僚との約束', '会議でのメモ'):
             for arguments in (noun + 'を', '職場で' + noun + 'を', noun + 'をノートに'):
