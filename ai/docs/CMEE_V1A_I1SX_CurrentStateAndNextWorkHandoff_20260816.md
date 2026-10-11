@@ -16320,3 +16320,35 @@ Mashの分析内容修正の続行依頼により、API PR3 `a1f8965826ba32734f4
 固定source `f20e6adfd38c1edfd2ea4d4b84f98ee3b3029c73` の[CI38132193819](https://github.com/MassyuRed/mashos-api/actions/runs/38132193819)はsuccess。Python3.12.15でAnalysis4＋共有限定change/feelingの5suite **1120 tests／4628 subtests PASS（193.29秒）**、共有owner identity **1 PASS／193 deselected（15.87秒）**。fail/skip/xfail 0。既存合成7例の全文もrootがログで読み、否定決定・丁寧感情・明示順序と未知区間の境界を保持している。ローカルの4suite／限定実行とは合算しない。
 
 GitHubの固定sourceをfetchし、親head・変更5path・全file bytesと検証済みlocal tree `5a27b4f47a3cdd46ebdf2a84380a654a7c61f15c` の一致を確認。後続は既存資料4fileとPR説明の同期のみで製品sourceは変更しない。既存Draft PR3/30内の反映であり、未配置・実DB/本人実機未確認・正式商品受入れ未成立のまま。
+
+## 2026-10-11 u203 — 日付付き否定決定・準備後の本人感情を保持（未配置）
+
+Mashの分析内容修正の続行依頼と添付前回記録から、API PR3 `be69846c839f543c3cfdbb87a4d1a110208df641`／Cocolon PR30 `5bd070448fd1b091aa4b632d0984e99e07e8bbc8`を確認して再開。前提資料入口・作業rule・恒久incident全文、全体設計01/01A/B/C・全file地図02とcurrent03/詳細04/06、最新weekly20261010 §5.5/12月18日目標を確認した。context prepareは浅い履歴の祖先照合でexit2となり、生成contextをfreshとは扱わず正本・実sourceを直接確認した。
+
+### 欠落と限定修正
+
+「昨日、私は同僚との分担を決めませんでした。それから、私は落ち着きました」で、前件の「の…でした」が報告前置きと誤認され、後続の本人感情だけが欠けることを実engineで再現した。共有Planの既存 `_source_prefix_opens_report` の決定分岐へ、今日/昨日→SELF、今日/昨日→区切り→SELF、SELF→今日/昨日→区切りの3配置を追加。既存の決めませんでした／決めなかったです／決めておきませんでした／決めておかなかったです、完全格項1〜4個・を必須・格重複なしを維持する。
+
+u202の時刻/範囲・重複日付・未解析時点/疑問名詞の判定を共用し、日付付きでも明示SELFを必須とする。省略主体の決定、他者、改行、真の報告、日語と順序語の混用は広げない。日付なしの決定と通常9行動の既存文法を保持する。Analysis側は既に日付/否定/準備相を扱っており、compiler/realizerを変更しない。後続感情へ前件の日付・主体・原因・改善を補わない。
+
+### 検証と実本文
+
+- 製品source `2a504061d63f88b2925715a15d92752821757ccd`。共有Plan1・既存test3・current owner identity fixture1の5file。対象testは修正前1 FAILを確認し、修正後の限定実行は **58 tests／89 subtests PASS**。共有owner identity **1 PASS／193 deselected（34.98秒）**。最終回帰結果は下段へ記録し、包含される限定検査と合算しない。
+- 合成Analysis8入力の前後を比較し、生成された12全文をrootが読解した。通常3例は1node/0edge→2node/1edge。不明文を挟む例と別fieldの通常記述は1node→2node・edge0を維持。真の報告前/別fieldは両版UNAVAILABLE、報告後は本人感情を保留したまま。実RN `watashiMapV2Contract.js` の表示modelで、12生成の全文・identity・node/edge/unknown/annotation/conflict一致を確認。実端末/React描画ではない。
+- 実service＋合成RPCで3日付配置×通常否定/準備否定の6ルートを保存し、engine再生成禁止のreadで本文/図/identityを保持した。日付・否定・準備lemma・原文UTF-8/hash・本人感情・明示順序、訂正/撤回、真の報告/別field/後続否認を検査。稼働Supabase保存の検証ではない。
+- 共有Emlis Q1の合成3入力を前後比較し、6全文をrootが読解。Observation3例は不変。落ち着き例のReceptionだけが否定決定の受け取りから本人感情の受け取りへ変化。他2全文は不変。新しい原因/支え/改善断定なし。引用再掲・汎用Reception・no_bound_personal_meaning_targetは残り、Emlis商品品質の解消とは扱わない。
+- 同環境read-only補助reviewにblocking findingなし。旧helperを開始commitからAST抽出した限定probeで、通常行動/日付なし決定560入力は前後同値（suite件数へ加算しない）。別model Pro reviewとは称さない。実行runtimeはPython3.12.14、pytest8.4.1、pytest-subtests0.14.2、FastAPI0.142.2、Pydantic2.13.5、httpx0.28.1。製品依存変更0。
+
+### 反映と次の作業
+
+sourceは既存PR3へGitHub connectorでnon-force反映。shell pushは認証不足で未反映だったため、同じ検証済みbytesをconnectorで反映した。remoteをgit fetchし、変更5path・親head・全bytesが検証済みlocalと一致することを確認した。API既存handoff、Cocolon current03/詳細04 §3.33/06へ同期する。新規repository file0。STRUCTURE_MAP_DELTA_NONE：共有owner内の有限節判定だけで、source→命題→graph→文章/図→保存の責任は不変。
+
+Codex Work root華恋が編集/実行/反映を担当し、同環境subagentはread-only原因調査・差分review・実出力照合を担当。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Analysis compiler/realizer/API/DTO/DB/SQL/RN製品変更、Supabase操作、本人行取得、配置/有効化/native build/main mergeは0。未配置・実DB/本人実機未確認、正式商品受入れ未成立。
+
+u202の日付付き決定の欠落は、上記明示SELFの有限範囲で解消。省略主体の決定後の一部丁寧感情、未対応時刻/範囲/副詞/対象省略/他動詞、肯定「書いた」後の報告判定、一般意味理解は残る。全体ルートUI/段階的詳細、IF/Saved、元28日/14記録全体の改善判定、本人生成→保存再表示・正式商品受入れも未完了。次回は最新weekly/current03/本節と実出力へ戻り、具体的な内容欠落または本人生成・保存表示を扱う。この補修を実機確認の新しい前提にしない。
+
+### u203 最終回帰・固定sourceのCI
+
+ローカルのAnalysis4＋共有限定change/feelingの5suiteは **1178 tests／4717 subtests PASS（507.14秒）**。固定source `2a504061d63f88b2925715a15d92752821757ccd` の[CI38133291155](https://github.com/MassyuRed/mashos-api/actions/runs/38133291155)もsuccess。CIのPython3.12.15で同5suite **1178 tests／4717 subtests PASS（260.19秒）**、共有owner identity **1 PASS／193 deselected（18.41秒）**。fail/skip/xfail 0。ローカル・CI・包含される限定検査の件数は合算しない。既存合成7例のCI全文もrootが読み、否定決定／準備相、後続本人感情、明示順序と未知区間の境界が保持されていることを確認した。
+
+後続commitは上記既存資料4fileの同期のみで製品sourceを変更しない。保存再表示とRN表示modelの検証は合成入力によるもので、稼働DB・本人実機・正式商品受入れは未確認のまま。
