@@ -33,6 +33,45 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_decision_followed_by_feeling_keeps_both_polarities(self):
+        from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
+        for finite in ('決めた', '決めなかった', '決めませんでした',
+                       '決めておいた', '決めておかなかった', '決めておきませんでした'):
+            for emotions in (False, True):
+                with self.subTest(finite=finite, emotions=emotions):
+                    memo = ('私は資料を調べた。その後、私は同僚と分担を'
+                            + finite + '。それから、私は安心した。')
+                    member = record(memo=memo)
+                    if emotions:
+                        original = json.loads(member.original_json)
+                        original.update(category=['仕事'], emotions=['平穏'],
+                            emotion_details=[{'type': '平穏', 'strength': 'medium'}])
+                        member = replace(member, original_json=canonical_bytes(original).decode(),
+                                         saved_record_version=commitment(original))
+                    with patch.object(compiler, '_fragment', wraps=compiler._fragment) as fragments:
+                        artifact = self.generate(request(member)).artifact
+                    diagnostics = []
+                    for call in fragments.call_args_list:
+                        source, nucleus = call.args[:2]
+                        spans = [s.raw_text for s in source.spans if s.span_id in nucleus.source_span_ids]
+                        frame = nucleus.semantic_frame
+                        diagnostics.append((spans, nucleus.kind, nucleus.retention,
+                            nucleus.grounding_kind, nucleus.allowed_claim_scope,
+                            frame.actor, frame.predicate_kind, frame.polarity,
+                            frame.modality, frame.time_scope, frame.attribute_codes))
+                    self.assertIsNotNone(artifact, diagnostics)
+                    self.assertEqual([n.proposition.predicate_lemma for n in artifact.graph.nodes],
+                        ['調べる', '決めておく' if '決めて' in finite else '決める', '安心する'],
+                        diagnostics)
+                    self.assertEqual([n.polarity for n in artifact.graph.nodes],
+                        ['positive', 'negative' if ('なかった' in finite or 'ません' in finite)
+                         else 'positive', 'positive'])
+                    self.assertEqual(len(artifact.graph.edges), 2)
+                    self.assertTrue(all(e.edge_kind == 'OBSERVED_ORDER' for e in artifact.graph.edges))
+                    projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                    text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                    self.assertTrue(all(n['visible_label'] in text for n in projection['nodes']))
+
     def test_unattributed_decision_preserves_subject_uncertainty_modifiers_and_source(self):
         for finite, polarity, lemma in (
                 ('決めた', 'positive', '決める'), ('決めました', 'positive', '決める'),
