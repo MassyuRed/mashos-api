@@ -1361,7 +1361,16 @@ def _self_wish_or_past_event(proposition):
 
 def _known_postposed_host(continuation):
     # Reuse the established speaker/host grammar for rejection and closure.
-    # Unknown speaker nouns require their own attribution proof.
+    # A single written i-adjective can qualify a kanji/katakana speaker noun
+    # before a past speech host. This identifies quotation scope only; it
+    # neither resolves the speaker nor expands the proposition noun grammar.
+    # Requiring the kanji stem avoids consuming independent とても / とある /
+    # と同時に sentences. Stacked modifiers and other speech forms stay unread.
+    qualified_speaker = (r'[一-鿿々]+(?:しい|い)[一-鿿々ァ-ヴー]+'
+                         r'(?:の' + _NOMINAL + r')*')
+    if re.match(r'と(?:は|も)?' + qualified_speaker + r'(?:は|が|も)'
+                r'(?:[、，][ \u3000]*)?(?:言った|言いました)', continuation):
+        return True
     speaker = (r'(?:(?:私|僕|ぼく|俺|おれ|わたし|自分|' + _NOMINAL
                + r'(?:の' + _NOMINAL + r')*)(?:は|が|も)(?:[、，][ \u3000]*)?)?')
     return re.match(r'(?:と(?:は|も)?' + speaker + r'(?:思|考|感|言|い|聞|書|読|伝|認|信|報)|'
