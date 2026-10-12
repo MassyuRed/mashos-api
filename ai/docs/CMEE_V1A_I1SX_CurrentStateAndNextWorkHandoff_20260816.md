@@ -1,4 +1,4 @@
-> 最新の内容修正は末尾 **u236（2026-10-12 JST・未配置）**。独立した行動推量が同じ欄にあると明示内容まで消える不具合を修正。検証・残件は同節とAnalysis current03を参照。
+> 最新の内容修正は末尾 **u237（2026-10-12 JST・未配置）**。帰属未確定の通常過去行動を本人へ誤帰属する不具合を修正。独立内容の保持・検証・残件は同節とAnalysis current03を参照。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -17631,3 +17631,51 @@ Mashの「分析構造の内容修正関係を進めて」により、u235後の
 STRUCTURE_MAP_DELTA_NONE。source→共有命題→Analysis graph→文章/図→保存の既存責務とfile配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、TECHNICAL_CREDIT。新規repo file、共有Plan/Emlis、realizer/API/DTO/DB/SQL/RN製品、依存/workflowの変更0。今回はSupabase操作・本人行取得・DB書込・配置・有効化・native build・main mergeは0。
 
 残件は一般の推量/引用/条件の作用域、未知述語・省略主体/複合節、全体ルートUI/IF/Saved、最新修正版の本人実機・稼働DB保存再読・正式商品受入れ。補助調査で「私は資料を調べた。私は頼もしい友人の資料を調べた。」の「頼もしい」内部へ条件語regex `(?<!か)もし` が一致し、前半までUNAVAILABLEになる別欠落も再現した。「親しい／頼れる」では前半と後半の未確定が残る。これは未修正の次候補であり、条件判定を一律に弱めず作用域を調べる。今回の成立範囲には含めない。未配置。
+
+## u237 — 帰属未確定の過去行動を本人へ誤帰属しない（2026-10-12 JST・未配置）
+
+Mashの「分析構造の内容修正関係を進めて」により、u236の残件候補と既存出力を確認した。開始headはAPI PR3 `6088479d5509576fd8498a0998187991ea60a277`、Cocolon PR30 `4f68876991d730984a17c2a275d9992d55dca9e1`。同sessionで読了済みのKaren-Diary入口/原理、前提00/01/01B・全file地図02/07、CURRENT_RULES/Rule18を継承し、恒久incident全文を再読した。fresh head/tree、current03、詳細04 §3.66、06/API handoff u236、最新weekly20261010 §5.4/§5.5を照合。今回の明示内容修正配分、本人入力→生成→保存再表示へ戻る位置、12/18公開目標を維持し、表現対応を本人実機確認の追加前提にはしない。
+
+System Context prepareは同sessionでshallow cloneの祖先関係を証明できず失敗しており、規定の原本直接読取fallbackを継承。prepare成功とはしない。Codex Workのモデル詳細名称は未確認。同環境の補助agentは候補調査/差分reviewだけを行い、編集・検査・判断・反映はroot華恋。別model Pro/Ultraの独立審査を認定しない。
+
+### 実出力から選んだ修正
+
+当初の候補「頼もしい」内部へ条件語regexが一致する欠落を調べたところ、「友人が話した。私は資料を調べた。」が本人の実行済み行動として表示される既存の誤帰属を先に確認した。条件判定だけを弱めるとこの誤帰属を露出させるため、u237は通常の明示SELF過去行動の帰属検査へ範囲を変更した。「頼もしい」の条件regexは未変更・未解消である。
+
+既存Analysis compilerの9動詞・fact/past・whole spanの本人行動へ、明示報告に限定した前方/別fieldの帰属検査と、既存の後置host検査を適用する。主語「私は」だけで別話者の報告を閉じず、肯定/否定/丁寧形を同じ範囲で扱う。compound endpointの既存証明、共有Plan、文章realizer、保存serviceの契約は変更しない。
+
+後置hostが直前の完全節に付く場合は、既に後置hostで保留できる感情・過去行動/決定・既存の名詞/日付資格を満たす節との組だけを認め、後続の独立した行動を保持する。fieldを跨いで組を作らず、さらに前の未解決報告を解除しない。hostの余分語尾や未解釈先行節は保留し、希望・無日場面・役割一般へ広げない。「とても」「ところで、」「とりあえず、」を一律に引用として消さず、既存の肯否・原文・時点・順序・未知区間を保持する。
+
+### 実出力・保存
+
+合成26入力の前後52結果を比較し、12入力で誤帰属を解消した（10入力は確かな内容がなくUNAVAILABLE、2入力は報告前に独立した本人行動だけを保持）。14対照は状態・本文・全safe projectionが不変（ランダムartifact参照を除く）。修正後の13生成全文をrootが読み、前後36生成投影（23＋13）を実RN `buildWatashiMapV2ViewModel`へ渡し、本文・identity・読み順・edge/unknown/annotation/conflict件数が一致した。
+
+合成入力「私は記録を残した。友人が話した。私は資料を調べた。その後、私はノートを見た。」の修正後全文：
+
+```text
+行動・非行動：記録を残す（実行済み）（1件の記録）
+未確定（記録を残す（実行済み））：確定していない項目：場面、役割、考え・注意、結果・余韻。
+未確定（記録を残す（実行済み））：まだ読み取れていない内容は、この記録からは確定していません。
+```
+
+未解決報告の「調べた」「見た」を本人の行動/順序として追加せず、先に成立した「記録を残した」と原文出典だけを残す。独立した別recordも保持し、未解決recordの出典を同一nodeへ加算しない。補足/訂正は既存の全文coverageを維持し、不完全な更新は採用せず、成立済み内容の訂正/撤回とUNKNOWN_SCOPE_CHANGEDだけの期間差を確認した。
+
+実engine/service＋合成RPCで、報告帰属が未確定な6入力は既存 `_INSUFFICIENT_INPUT` を返し、snapshot取得だけでcommitしない。既存保存検査へ4入力を追加し、別recordまたは報告前の独立内容を保存し、再生成を禁止したreadで本文/図/IDの一致を確認した。新たな原文保存は追加していない。これはnative描画・稼働DBの結果ではない。
+
+### 検査・反映
+
+修正前の新testは1 FAIL（442 deselected、2.51秒）で誤帰属を再現。作業途中、既存の「感情＋後置host＋独立行動」を消す副作用を検出して修正した。新しい保存testの最初のHTTP422期待は既存service契約の読み違いであり、実契約の `_INSUFFICIENT_INPUT` と非commitへ訂正した。未完host「言ったけれど」の誤った範囲解除も検査で検出して拒否した。read-only reviewで一般SELFを閉じた組と扱う過大範囲を指摘され、既存後置host検査が成立する種類へ限定し、希望/無日場面/役割の3対照を追加した。これらを隠して初回成功とは扱わない。
+
+最初の対象群は **16 tests／573 subtests PASS（6.05秒、536 deselected）**。Python3.12.14、既存隔離pin（pytest8.4.1／pytest-subtests0.14.2／FastAPI0.142.2／Pydantic2.13.5／httpx0.28.1）を使用。既存期待の削除/緩和0。当時のread-only差分reviewで具体的blockerなし。
+
+最初の固定source `0267d0f69733f606f4452bdb33c0d36da4ac7cd3` の[CI run38222024935](https://github.com/MassyuRed/mashos-api/actions/runs/38222024935)／job `114720315732` は **54 FAIL・1605 tests PASS・9664 subtests PASS（294.10秒）** だった。共有owner検査と合成7出力stepはskip。共有の保守的な「の…でした／…書いた」判定を新対象へ丸ごと適用し、既存の丁寧感情/場面/役割・複合節・未解釈書字の後続行動まで消したためである。既存strict対象（名詞関係/決定/省略主体/日付/かな所有書字）を新規対象から除外し、新しい通常SELF過去行動では明示speech・報告名詞・書字報告を根拠にするよう修正した。未解釈書字や丁寧語尾を報告の証拠へ昇格しない。
+
+後置hostは既存保留が成立する過去9動詞/決定の省略主体にも限定して対応し、未知話者は句読点等を含まないopaqueな範囲として構文の閉鎖だけに使用する。入れ子の引用/条件/別host・余分語尾は拒否し、話者の意味や行為者を推定しない。既存の期待を一切変更せず、CI失敗15methodsと今回対象を合わせた最終検査は **31 tests／1177 subtests PASS（12.33秒、537 deselected）**。最終sourceで26probeを再生成し、修正前との12修正/14不変を維持、最終13生成投影も実RN model一致。再修正のread-only差分reviewで具体的blockerなし。
+
+最終sourceの[GitHub Actions run38223273601](https://github.com/MassyuRed/mashos-api/actions/runs/38223273601)／job `114724470999` は全step success。Python3.12.15で既存5suite（Analysis vertical/nominal、observed storage、saved period、共有Emlis limited-change）は **1610 tests／9774 subtests PASS（282.52秒）**、共有owner identityは **1 PASS（193 deselected、21.26秒）**。最終runのfail/skip/xfail 0。rootがCIの既存合成7生成全文も読み、肯否・先行準備・感情・明示順序・未知区間の表示を確認した。最終全suiteのローカル重複実行はしていない。
+
+製品source `53503158b58d122bcf2c272b69de700ebaa05fc1`、tree `07c3f46d78233f105270c2a9da38ff8374dfd271`。compiler1＋既存test2の3pathを既存API PR3へexpected_sha付きnon-forceで反映し、remote再取得でbytes・変更path・headを照合。current03・詳細04 §3.67・06/API handoffへ同期。対象/CIの件数を合算せず、商品受入れに読み替えない。
+
+STRUCTURE_MAP_DELTA_NONE。source→共有命題→Analysis graph→文章/図→保存の責務・file配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、TECHNICAL_CREDIT。新規repo file、共有Plan/Emlis、realizer/API/DTO/DB/SQL/RN製品、依存/workflowの変更0。Supabase操作・本人行取得・DB書込・配置・有効化・native build・main mergeは0。
+
+残件は「頼もしい」の条件regex誤一致、希望/無日場面/役割一般の後置引用への帰属不足、一般の引用/推量/条件作用域、未知述語・省略主体/複合節、全体ルートUI/IF/Saved、最新修正版の本人実機・稼働DB保存再読・正式商品受入れ。今回保護した後続行動を、先行する希望/場面/役割自体の帰属解消まで成立したと扱わない。次の内容作業でも実出力を先に確認して対象を選ぶ。未配置。
