@@ -17679,3 +17679,46 @@ System Context prepareは同sessionでshallow cloneの祖先関係を証明で�
 STRUCTURE_MAP_DELTA_NONE。source→共有命題→Analysis graph→文章/図→保存の責務・file配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、TECHNICAL_CREDIT。新規repo file、共有Plan/Emlis、realizer/API/DTO/DB/SQL/RN製品、依存/workflowの変更0。Supabase操作・本人行取得・DB書込・配置・有効化・native build・main mergeは0。
 
 残件は「頼もしい」の条件regex誤一致、希望/無日場面/役割一般の後置引用への帰属不足、一般の引用/推量/条件作用域、未知述語・省略主体/複合節、全体ルートUI/IF/Saved、最新修正版の本人実機・稼働DB保存再読・正式商品受入れ。今回保護した後続行動を、先行する希望/場面/役割自体の帰属解消まで成立したと扱わない。次の内容作業でも実出力を先に確認して対象を選ぶ。未配置。
+
+
+## u238 — 希望・場面・担当の後置引用を本人の事実にしない（2026-10-12 JST・未配置）
+
+Mashの「分析構造の内容修正関係を進めて」により継続。開始headはCocolon PR30 `12208ebae4d834db06428b276ab63a9909ecbb1d`、API PR3 `ec0005c0c8ef6b818f842721fc54f98a8d30883e`。添付前回記録、Karen-Diary入口/原理、前提01/02の全体flow・file配置、current共通入口/03、詳細04 §3.67、06/API handoff u237、最新weekly20261010 §5.4/§5.5、CURRENT_RULES/Rule18/恒久incident全文と対象実装を確認した。fresh GitHub treeと同head checkoutを使用。System Context prepareはshallow履歴の祖先関係を証明できず失敗し、正本にある原本直接読取へ切り替えた。prepare成功・古いgenerated contextの鮮度成立とはしない。
+
+今回の明示指示をweekly §5.4の内容修正配分として扱い、本人入力→生成→保存再表示の未完了と戻る位置を保持する。12/18公開目標は変更しない。Codex Workでroot華恋が実装・検証・反映を担当、補助agentはread-onlyの原因調査と差分review。詳細model名や別model Pro/Ultraの独立審査成立は主張しない。LEVEL_2相当、OBSERVED_BLOCKER_MINIMAL_FIX。既存Analysis内の後置host欠落を最小修正し、誤ったnode/注記の除去と独立内容の保持を実出力で確認して終了する単位。新規契約/新依存/環境切替が必要なら拡大せず停止する。追加サービス費用・Mash操作0。
+
+### 原因・今回の修正範囲
+
+「頼もしい」内部の条件語誤一致を再現したが、単純に解除すると未対応の希望/場面/担当や未知speakerの後置引用を本人へ誤帰属させる。そのため条件語regexは変更せず、現行でも再現する「私は仕事を続けたい。と友人が言った。」「私は職場にいた。と友人が言った。」「私は記録を担当した。と私は思う。」等の後置host欠落を今回の直接対象とした。
+
+既存Analysis compilerの後置host判定を、完全な明示SELFの希望/過去所在/過去担当へ接続する。whole span・compoundなし・既存の有限節/共有根拠を維持し、後置の引用/思考/否認を落として本人の事実や意向にしない。既存speaker/host式は変更せずhelperへ移すだけ。前方報告判定全体や未知speaker文法は広げない。
+
+既知の後置hostにより保留された節の後にある独立過去行動は保持する。この範囲解除にも同じ既知host条件を要求し、未知speaker/未完host/先行する別報告/別fieldを新たに閉じない。引用の前や別recordにある独立内容、原文証拠、肯否、時点を保持し、未知を跨ぐ順序線や証拠件数を増やさない。通常補足/訂正は既存の全文coverageを維持する。
+
+### 実生成・保存・画面用データ
+
+合成30入力の前後60結果を比較。14入力で誤帰属を解消（8入力は確かな内容がなくUNAVAILABLE、3入力は先行する本人行動だけを保持、3入力は誤った希望/場面/担当を外し欠けていた後続本人行動を保持）。16対照の状態・本文・全safe projectionはランダムartifact参照以外不変。対照には未修正の未知speaker誤帰属も1件含み、16件すべてが商品上正しいという意味ではない。rootが修正後19生成全文と変更対象の修正前本文を読んだ。前後46投影を実RN `buildWatashiMapV2ViewModel`へ通し、全文・identity・読み順・edge/unknown/annotation/conflict件数の一致を確認した。
+
+合成入力「私は職場にいた。と友人が言った。私は記録を残した。」の修正後全文：
+
+```text
+行動・非行動：記録を残す（実行済み）（1件の記録）
+未確定（記録を残す（実行済み））：確定していない項目：場面、役割、考え・注意、結果・余韻。
+未確定（記録を残す（実行済み））：まだ読み取れていない内容は、この記録からは確定していません。
+```
+
+原文UTF-8証拠、別recordの証拠加算防止、訂正/撤回、不完全補足拒否、UNKNOWN_SCOPE_CHANGEDだけの期間差を確認。実engine/service＋合成RPCでは、新規6入力が入力不足として非commit、3入力の独立行動が保存後の再生成なし再読で同じ本文/図/IDへ戻ることを確認した。native描画・稼働DB・本人入力の結果とはしない。
+
+### 検査・反映・未完了
+
+初期候補検査は52失敗を確認（当初の未知speaker拡張を含む）。広い未知speaker照合は「とても親しい友人が言った」「とある友人がいた」を巻き込むため採用せず、既存host文法に限定した。u237で一般希望/場面/担当の後続行動を保留していた3対照は、今回の意味修正に合わせて独立行動のみを保持するpositive検査へ移し、先行open報告/未知speaker/未完hostのnegativeを追加した。旧欠陥を通すための期待緩和ではない。
+
+最終対象は **6 tests／123 subtests PASS（4.54秒、549 deselected）**。既存workflowと同pinの隔離環境（pytest8.4.1、pytest-subtests0.14.2、FastAPI0.142.2、Pydantic2.13.5、httpx0.28.1）を新規構築。read-only差分reviewで今回範囲の具体的blockerなし。`git diff --check`成功。
+
+最終sourceの[GitHub Actions run38225811937](https://github.com/MassyuRed/mashos-api/actions/runs/38225811937)／job `114732919575` は全step success。Python3.12.15で既存5suite（Analysis vertical/nominal、observed storage、saved period、共有Emlis limited-change）は **1613 tests／9861 subtests PASS（223.04秒）**、共有owner identityは **1 PASS（193 deselected、18.86秒）**。最終runのfail/skip/xfail 0。rootがCIの既存合成7生成全文も読み、肯否・先行準備・感情・明示順序・未知区間の表示を確認した。ローカル対象検査はPython3.12.14を使用。全suiteのローカル重複実行はしていない。
+
+製品source `65aeb3f650d51eb17a3efc60303f9c0752a70c06`、tree `27f2912ae2a0f1c97ff3a99f1f4ba115709fba6e`。既存compiler1＋既存test2の3pathをGitHub connectorでPR3へnon-force反映し、remote全文・blob・変更pathを照合した。CLI pushは資格情報不足で未反映だったため、同じ内容をconnectorで反映。local commitをremote sourceと混同しない。current03・詳細04 §3.68・06/API handoff u238へ同期する。
+
+STRUCTURE_MAP_DELTA_NONE。既存のsource→共有命題→Analysis graph→文章/図→保存という責務・file配置は不変。TECHNICAL_CREDIT、商品受入れ未認定。共有Plan/Emlis・realizer/API/DTO/DB/SQL/RN製品・依存/workflow・新規repo fileの変更0。Supabase操作・本人行取得・DB書込・配置・有効化・native build・main mergeは0。
+
+残件：「頼もしい」の条件regex誤一致、未知speaker（例：親しい友人）を伴う後置引用、一般の前方報告/推量/条件作用域、未知述語・省略主体/複合節、全体ルートUI/IF/Saved、最新修正版の本人実機・稼働DB保存再読・正式商品受入れ。今回のknown host修正を一般の引用理解完成とはしない。次の内容作業は未対応hostを実出力で確認し、独立した「とても／とある／ところで」文を消さない範囲を選ぶ。本人実機確認の追加前提にはしない。未配置。
