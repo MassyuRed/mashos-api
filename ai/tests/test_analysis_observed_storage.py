@@ -1898,6 +1898,12 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_current_anxiety_keeps_saved_writing_time_without_regeneration(self):
         for memo, labels in (
+                *(('私は' + degree + finite + '。', (degree + '不安だ（この記述時点の気持ち）',))
+                  for degree in ('少し', 'とても', 'かなり', 'やや', 'ちょっと') for finite in ('不安だ', '不安です')),
+                ('私はかなり不安です。それから、私は記録を残した。',
+                 ('かなり不安だ（この記述時点の気持ち）', 'それから：記録を残す（実行済み）')),
+                ('私は資料を調べた。その後、私はやや不安です。',
+                 ('資料を調べる（実行済み）', 'その後：やや不安だ（この記述時点の気持ち）')),
                 *((('私は' + form + '。'), ('不安ではない（この記述時点の気持ち）',)) for form in (
                     '不安ではない', '不安ではないです', '不安ではありません',
                     '不安じゃない', '不安じゃないです', '不安じゃありません')),

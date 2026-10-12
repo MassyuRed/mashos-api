@@ -400,7 +400,7 @@ def _past_event_witness(nucleus, proposition):
                     'thread_time:', 'semantic_dependency:')) for code in frame.attribute_codes))
 
 
-_PAST_ANXIETY_DEGREES = {
+_WRITTEN_ANXIETY_DEGREES = {
     '少し': 'DEGREE_SLIGHT', 'とても': 'DEGREE_TOTEMO', 'かなり': 'DEGREE_KANARI',
     'やや': 'DEGREE_YAYA', 'ちょっと': 'DEGREE_CHOTTO',
 }
@@ -417,8 +417,8 @@ def _finite_feeling_proposition(value):
     if prefix and subject is None:
         return None
     start = subject.end() if subject else 0
-    degree = next((word for word in _PAST_ANXIETY_DEGREES if value.startswith(word, start)), '')
-    modifier = _PAST_ANXIETY_DEGREES.get(degree, '')
+    degree = next((word for word in _WRITTEN_ANXIETY_DEGREES if value.startswith(word, start)), '')
+    modifier = _WRITTEN_ANXIETY_DEGREES.get(degree, '')
     finite_start = start + len(degree)
     finite = value[finite_start:]
     negative = finite in _NEGATIVE_FEELING_FORMS or finite in _CURRENT_NEGATIVE_FEELING_FORMS
@@ -428,9 +428,9 @@ def _finite_feeling_proposition(value):
              _NEGATIVE_FEELING_FORMS if negative else _FEELING_FORMS).get(finite)
     if lemma is None:
         return None
-    # Current anxiety needs its own explicit experiencer. Do not extend the
-    # past degree or compound witness to a different temporal scope.
-    if current and (subject is None or degree):
+    # Current anxiety needs its own explicit experiencer and current witness;
+    # its written degree never inherits a past or compound temporal scope.
+    if current and subject is None:
         return None
     # Preserve the written degree only for an explicit SELF's asserted anxiety.
     # Degree over a negated feeling has no proved scope in the shared witness.
@@ -458,8 +458,13 @@ def _standalone_finite_feeling_witness(nucleus, proposition):
             or proposition.polarity not in {'positive', 'negative'}
             or (proposition.modality, proposition.temporal_scope) !=
                ('feeling', 'current_input' if current else 'past')
-            or (current and (proposition.predicate_lemma != '不安だ'
-                             or proposition.written_modifiers))):
+            or (current and proposition.predicate_lemma != '不安だ')):
+        return False
+    # A single written degree qualifies asserted anxiety, not its negation.
+    # Preserve its spelling without assigning a numeric strength or rank.
+    if current and proposition.written_modifiers and (
+            proposition.polarity != 'positive' or len(proposition.written_modifiers) != 1
+            or proposition.written_modifiers[0] not in _WRITTEN_ANXIETY_DEGREES.values()):
         return False
     frame = nucleus.semantic_frame
     expected = (('value', 'value', 'fact') if proposition.predicate_lemma == '安心する'
