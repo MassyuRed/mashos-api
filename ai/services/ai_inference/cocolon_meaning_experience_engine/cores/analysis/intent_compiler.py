@@ -219,6 +219,9 @@ _FEELING_FORMS = {'安心した': '安心する', '安心しました': '安心�
 # These nonpast forms describe the source's writing time, not the reader's
 # present or an ongoing condition. Other current feelings remain unresolved.
 _CURRENT_FEELING_FORMS = {'不安だ': '不安だ', '不安です': '不安だ'}
+_CURRENT_NEGATIVE_FEELING_FORMS = {surface: '不安だ' for surface in (
+    '不安ではない', '不安ではないです', '不安ではありません',
+    '不安じゃない', '不安じゃないです', '不安じゃありません')}
 # An absent feeling does not establish its opposite or an action's effect.
 # Only complete standalone SELF clauses can use these negative inflections.
 _FEELING_PAST_NEGATIVE = {'安心する': '安心しなかった', '落ち着く': '落ち着かなかった',
@@ -418,9 +421,10 @@ def _finite_feeling_proposition(value):
     modifier = _PAST_ANXIETY_DEGREES.get(degree, '')
     finite_start = start + len(degree)
     finite = value[finite_start:]
-    negative = finite in _NEGATIVE_FEELING_FORMS
-    current = finite in _CURRENT_FEELING_FORMS
-    lemma = (_CURRENT_FEELING_FORMS if current else
+    negative = finite in _NEGATIVE_FEELING_FORMS or finite in _CURRENT_NEGATIVE_FEELING_FORMS
+    current = finite in _CURRENT_FEELING_FORMS or finite in _CURRENT_NEGATIVE_FEELING_FORMS
+    lemma = (_CURRENT_NEGATIVE_FEELING_FORMS if current and negative else
+             _CURRENT_FEELING_FORMS if current else
              _NEGATIVE_FEELING_FORMS if negative else _FEELING_FORMS).get(finite)
     if lemma is None:
         return None
@@ -455,7 +459,7 @@ def _standalone_finite_feeling_witness(nucleus, proposition):
             or (proposition.modality, proposition.temporal_scope) !=
                ('feeling', 'current_input' if current else 'past')
             or (current and (proposition.predicate_lemma != '不安だ'
-                             or proposition.polarity != 'positive' or proposition.written_modifiers))):
+                             or proposition.written_modifiers))):
         return False
     frame = nucleus.semantic_frame
     expected = (('value', 'value', 'fact') if proposition.predicate_lemma == '安心する'
