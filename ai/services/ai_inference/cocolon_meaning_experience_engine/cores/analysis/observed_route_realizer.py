@@ -127,7 +127,7 @@ def _te_order_context(node, graph):
 
 def _source_prefix(phrase, parts):
     if parts.written_modifiers:
-        phrase = ''.join({'THIS_OCCASION': '今回は、', 'IN_ADVANCE': '事前に',
+        modifier_text = ''.join({'THIS_OCCASION': '今回は、', 'IN_ADVANCE': '事前に',
                          'DEGREE_SLIGHT': '少し', 'DEGREE_TOTEMO': 'とても',
                          'DEGREE_KANARI': 'かなり', 'DEGREE_YAYA': 'やや',
                          'DEGREE_CHOTTO': 'ちょっと',
@@ -136,7 +136,16 @@ def _source_prefix(phrase, parts):
                          'PARTIAL_NEGATION_AMARI': 'あまり',
                          'PARTIAL_NEGATION_ANMARI': 'あんまり',
                          'NEGATION_SUKOSHIMO': '少しも', 'NEGATION_CHITTOMO': 'ちっとも'}[modifier]
-                         for modifier in parts.written_modifiers) + phrase
+                         for modifier in parts.written_modifiers)
+        # Safe replay has already checked every source coordinate. Preserve a
+        # degree written after 不安は/が while keeping its meaning key unchanged.
+        post_degree = (parts.predicate_lemma == 'ある'
+            and parts.arguments in {(('は', '不安'),), (('が', '不安'),)}
+            and any(kind.startswith('WRITTEN_MODIFIER_') and start == case_end
+                    for kind, start, _ in parts.source_parts
+                    for case_kind, _, case_end in parts.source_parts
+                    if case_kind == 'CASE_' + parts.arguments[0][0]))
+        phrase = phrase[:3] + modifier_text + phrase[3:] if post_degree else modifier_text + phrase
     if parts.sequence_marker:
         phrase = {'AFTER_PREVIOUS': 'その後：',
                   'THEN_OR_ADDITION': 'それから：'}[parts.sequence_marker] + phrase

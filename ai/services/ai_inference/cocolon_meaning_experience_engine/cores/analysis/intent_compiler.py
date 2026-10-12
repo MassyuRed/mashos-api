@@ -457,19 +457,37 @@ def _finite_feeling_proposition(value):
     finite_start = start + len(degree)
     finite = value[finite_start:]
     existential = _EXISTENTIAL_ANXIETY_FORMS.get(finite)
+    noun_start = finite_start
+    modifier_start = start
+    verb_start = noun_start + 3
+    # One degree may instead occur immediately after the complete noun/case.
+    # Reuse the same finite table without discarding any remaining suffix.
+    post_degree = max((word for word in _WRITTEN_ANXIETY_DEGREES
+                       if value.startswith(word, verb_start)), key=len, default=''
+                      ) if not degree and finite.startswith(('不安は', '不安が')) else ''
+    if post_degree:
+        degree = post_degree
+        modifier = _WRITTEN_ANXIETY_DEGREES[degree]
+        modifier_start = verb_start
+        verb_start += len(degree)
+        existential = _EXISTENTIAL_ANXIETY_FORMS.get(value[noun_start:modifier_start] + value[verb_start:])
+        if existential is None:
+            return None
     if existential is not None:
         case, current, polarity = existential
-        # A single written degree before the noun can qualify affirmative
-        # existence. Negative composition and other positions remain unparsed.
+        # Only one degree qualifies affirmative existence; negative composition,
+        # added particles and stacking remain unparsed.
         if (subject is None or (current and day not in {'', 'TODAY'})
                 or (degree and (polarity != 'positive' or degree not in _WRITTEN_ANXIETY_DEGREES))):
             return None
-        parts += (('WRITTEN_MODIFIER_' + modifier, start, finite_start),) if degree else ()
+        degree_parts = (('WRITTEN_MODIFIER_' + modifier, modifier_start,
+                         modifier_start + len(degree)),) if degree else ()
+        noun_parts = (('FEELING_NOUN', noun_start, noun_start + 2),
+                      ('CASE_' + case, noun_start + 2, noun_start + 3))
         return ObservedProposition('SELF', ((case, '不安'),), 'ある',
             polarity, 'feeling', 'current_input' if current else 'past',
-            parts + (('FEELING_NOUN', finite_start, finite_start + 2),
-                     ('CASE_' + case, finite_start + 2, finite_start + 3),
-                     ('FINITE_FEELING', finite_start + 3, len(value))),
+            parts + (noun_parts + degree_parts if post_degree else degree_parts + noun_parts)
+                  + (('FINITE_FEELING', verb_start, len(value)),),
             result_state='CURRENT_FEELING' if current else 'PAST_FEELING',
             sequence_marker=marker, relative_day=day,
             written_modifiers=(modifier,) if degree else ())
