@@ -17921,3 +17921,42 @@ GitHub Actions [run 38237457832](https://github.com/MassyuRed/mashos-api/actions
 製品source `4f2db73edb4c22a1a0f8d19a6e87ffce072b955a`、tree `308cddf9d612c51fcc8cf281c80dc2b8ba175da1`。既存compiler1＋test2をPR3へnon-force反映し、remote commitの3blob SHA・変更pathをlocal bytesと照合済み。current03・詳細04 §3.73・06/API handoff u243へ同期。STRUCTURE_MAP_DELTA_NONE：source→共有命題→Analysis graph→文章/図→保存の責務・file配置は不変。TECHNICAL_CREDIT、正式商品受入れ未認定。共有Plan/Emlis・realizer/API/DTO/DB/SQL/RN製品・依存/workflow・新規repo file変更0。今回のDB操作・本人行取得・配置・有効化・native build・main mergeは0。未配置。
 
 残件は一般連体節/未知speaker、修飾の副詞・主体/重ね修飾、しい系列外の活用、現在否定発言/否定思考、一般の前方報告/引用/推量/条件作用域、未知hostや別fieldの境界、未知述語/省略主体/複合節、全体ルートUI/IF/Saved、最新修正版の本人実機・稼働DB保存再読・正式商品受入れ。次の内容作業は未対応speaker/hostと独立した本人内容の両側を実出力で確認して選ぶ。今回の既知hostの読点対応を一般引用理解の完成とは扱わず、本人実機確認の戻る位置を維持する。
+
+
+## u244 — 過去発言の表現差による引用の誤帰属と独立行動欠落を修正（2026-10-12 JST・未配置）
+
+Mashの明示指示「分析構造の内容修正関係を進めて」によりu243から継続。開始headはCocolon PR30 `d01e87a80d77c8d737591a0dc94bf252849d1b6b`、API PR3 `f79a7ce1e7b301be002d19f37f3fa14c820544b6`。作業ルール・全体設計01・全file地図01A/B/C・current00/03・詳細04・u243 handoff・最新weekly20261010 §5.4/§5.5・恒久incident全文と対象source/testを確認。独立したcloneで作業し、System Context prepareは祖先関係を証明できず終了2のため原本を直接読んだ。生成contextの鮮度成立は主張しない。
+
+今回の明示配分をweekly §5.4として扱い、12/18公開目標と§5.5への戻る位置を保持。Codex Workのroot華恋が実装・検証・反映、同環境のread-only agentが原因・境界・出力・最終差分をreviewした。別model Pro/Ultraによる審査成立は主張しない。LEVEL_2相当・OBSERVED_BLOCKER_MINIMAL_FIX、追加サービス費用・Mash操作0。
+
+### 原因と修正
+
+実engineで「私は職場にいた。と友人が話した。私は記録を残した。」を生成すると、引用内の所在を本人の事実として表示し、後続の本人行動が落ちた。前方報告は7動詞の肯定過去14形を認識する一方、後置引用の完全閉鎖は「言った／言いました」に限られ、既知修飾話者の拒否判定も言う系に偏っていた。
+
+既存14形を `_PAST_SPEECH` にまとめ、「話した／話しました、語った／語りました、述べた／述べました、伝えた／伝えました、答えた／答えました、説明した／説明しました」の12形を後置host認識と閉鎖へ接続した。新12形は読点の有無にかかわらず、既知speakerと過去発言の全文一致を必須にする。未知の連体節や入れ子を話者名に吸収して引用を閉じない。既存の言う系・過去否定・語中って区別・残余入れ子拒否は保持。一般名詞文法・共有命題・原source・UTF-8/scalar証拠座標は変更しない。
+
+### 実生成・保存・画面用処理
+
+合成34入力の前後68結果をrootとread-only agentが読んだ。28入力で変化し、19入力は引用の誤帰属を外して独立行動を回復、9入力は確定できない出力を保留へ戻した。6入力は不変。この6には「とよく知らない人が話した」と「と親しい友人が言わない」の誤帰属が残る2例を含み、全対照の商品適合は意味しない。前後59投影を実RN `buildWatashiMapV2ViewModel` に通し本文・identity一致を確認した。
+
+上記「と友人が話した」の修正後全文：
+
+```text
+行動・非行動：記録を残す（実行済み）（1件の記録）
+未確定（記録を残す（実行済み））：確定していない項目：場面、役割、考え・注意、結果・余韻。
+未確定（記録を残す（実行済み））：まだ読み取れていない内容は、この記録からは確定していません。
+```
+
+12形×引用内容5種×既知speaker3形、引用だけの入力と前後の独立行動を検査。未完/入れ子・未知/重ねた修飾・連体節・連続読点・先行open報告・別fieldの保留、通常の「とても／とある／と同時に」を維持。未知範囲を跨ぐ順序辺/不一致を作らずSOURCE_SCOPEを残し、別recordの証拠を混ぜない。通常補足・訂正/撤回・UNKNOWN_SCOPE_CHANGEDだけの期間差も検査した。実engine/service＋合成RPCで新規4入力の非commit、独立行動4入力の保存→再生成禁止の再読を確認。native描画・稼働DB・本人入力の実績とはしない。
+
+### 検査・反映・残件
+
+修正前の新規対象検査で186 subtests失敗を再現。修正後の対象検査は **16 tests／865 subtests PASS（549 deselected、15.01秒）**。Python 3.12.14、既存pinの隔離環境を再利用し依存追加なし。read-only最終reviewにblockingなし、`git diff --check`成功。
+
+固定source `503983da88677111f45f6cbbce3db0388ae15b4f` の GitHub Actions [run 38239339936](https://github.com/MassyuRed/mashos-api/actions/runs/38239339936)／job `114777787928` は全step成功。Python 3.12.15、既存pinで5suite **1623 tests／10603 subtests PASS（419.66秒）**、共有owner identity **1 PASS／193 deselected（26.27秒）**。fail／skip／xfailの報告なし。rootが既存7合成入力の生成全文とgraphをCIログで読み、行動否定・先行準備・感情・明示順序・未知区間を確認。local件数とは合算しない。workflow/依存変更なし。
+
+製品source `503983da88677111f45f6cbbce3db0388ae15b4f`、tree `320615099025f75270e18600fcabbeb6d9c4869a`。既存compiler1＋test2をPR3へnon-force反映し、remote commitの変更pathと3blob SHAをlocal bytesと照合済み。current03・詳細04 §3.74・06/API handoff u244へ同期。STRUCTURE_MAP_DELTA_NONE：source→共有命題→Analysis graph→文章/図→保存の責務・file配置は不変。TECHNICAL_CREDIT、正式商品受入れ未認定。共有Plan/Emlis・realizer/API/DTO/DB/SQL/RN製品・依存/workflow・新規repo file変更0。DB操作・本人行取得・配置・有効化・native build・main mergeは0。未配置。
+
+残件は一般連体節/未知speaker・重ね修飾、現在否定発言/否定思考、一般引用/前方報告/推量/条件作用域、別field、未知述語/省略主体/複合節、全体ルートUI/IF/Savedと本人実機・稼働DB保存再読・正式商品受入れ。既存「言った／言いました」の読点なし閉鎖では不透明な話者名を広く認める残件もあり、新12形には引き継がない。
+
+次の一般的な「進めて」ではweekly §5.5へ戻り、本人の保存入力から分析結果を実機で受け取るための最初の未完了作業を扱う。入力不足の正常案内の実機確認を分析生成成功へ換算しない。内容修正が改めて明示された場合は、その配分と戻る位置を保持し、未対応speaker/hostと独立内容の実出力から次を選ぶ。一般引用対応の完了を本人実機確認の追加前提にしない。
