@@ -1,4 +1,4 @@
-> 最新の内容修正は末尾 **u216（2026-10-12 JST・未配置）**。明示本人の「不安ではなかった」等の過去否定6形を採用し、否定・別の感情・記述順序を保持。安心や改善へ置換しない。最終検証・反映・現在形/程度語等の残件は同節とAnalysis current03を参照。
+> 最新の内容修正は末尾 **u217（2026-10-12 JST・未配置）**。明示本人の「少し不安だった／不安でした」の程度を原文・命題・文章/図へ保持し、裸の不安と区別。程度付き否定は作用域未証明で保留。最終検証・反映・他程度/現在形等の残件は同節とAnalysis current03を参照。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -16857,3 +16857,44 @@ u215の不安witnessを、肯定文ならnegationなし、否定文ならnegatio
 STRUCTURE_MAP_DELTA_NONE：source→命題→graph→本文/図→保存の責務とfile配置は不変。新規repo file0、共有Plan/Emlis/realizer/API/DTO/DB/SQL/RN製品変更0。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Supabase操作・本人データ取得・DB書込み・配置/有効化/native build/main mergeは0。未配置、本人実機・稼働DB保存再読・正式商品受入れは未確認。
 
 次の内容残件は、実検査で保留を維持した程度語付き「私は少し不安だった／不安ではなかった」、現在形、日付/主体省略・他者・複合節など。一般意味理解・既存の書字/属格/時点/field制限、全体ルートUI/IF/Saved、本人生成→保存再表示も未完了。最新weeklyとcurrent03・実出力から再開し、この有限修正を全表現・商品・実機の完成へ広げない。
+
+## u217 — 書かれた「少し」を過去の不安に保持（2026-10-12 JST・未配置）
+
+Mashの分析内容修正続行指示に基づき、u216の残件「私は少し不安だった」を扱った。開始headはAPI PR3 `48fee1dbbf8d7574b01da87477d1c658ab6769e9`／Cocolon PR30 `60fde72c982635f5ce4fcd2457c85aeb05a4eb83`。前提・現行作業ルール、恒久incident全文、全体設計01/01B・全file地図、current03/詳細04/06/API handoff、最新weekly20261010 §5.5と12/18公開目標を照合した。開始時local indexの全treeがremote最新treeと一致。System Contextはu215で確認した系統不一致に対する原典直接読解を継続し、今回fresh生成成功とはしていない。今回の限定補修を未完了の本人生成→保存再表示の追加前提にしない。
+
+### 原因と変更範囲
+
+共有Planは「少し不安だった／不安でした」を本人のrequired/explicitなreaction/feeling・negative affect・operator:feelingとして既に保持するが、Analysis parserが程度語を読めず命題を落としていた。共有のdegree=source_boundedは裸の不安にもあり、強度や否定との作用域を証明しない。
+
+既存compilerで、7種の明示SELF（既存の読点・空白を含む）の直後にある「少し」1個＋肯定過去2形だけを扱う。degree範囲と有限述語範囲を分離し、既存private written_modifiersへDEGREE_SLIGHTを保持。既存realizerの修飾接頭辞で「少し」を戻す。原文全範囲・UTF8/hash・主体・肯否・時点を保持し、数値強度・改善・安心・因果を補わない。既存meaning keyに修飾が含まれるため、丁寧形と普通形は同義に集約し、裸の不安/否定不安と区別する。safe再解析は程度の除去・IN_ADVANCEへのすり替えを拒否する。
+
+文法上の肯定と負情動を分ける既存witness、報告/引用/否認/疑問/別fieldのsource-hostガード、複合節の不安lemma拒否は維持する。「少し不安ではなかった」は否定との作用域が未証明なので採用しない。少しも/少しは/少しだけ・二重程度・やや/ちょっと/とても/かなり・別配置・他感情・省略/他者主体・日付/現在形も拡張対象外。
+
+訂正は旧命題と依存順序を除き、撤回は独立行動を保持する。通常補足を暗黙訂正にせず、未知文/別field/別recordの間を結ばない。既存の不安ではなかった6形は従来どおり扱う。共有Plan/Emlisの製品sourceは変更していない。
+
+### 実出力と検証
+
+合成16入力の前後32結果のうち24生成全文をrootが読解した。8入力で少し不安の欠落を解消。単独2形はUNAVAILABLE→1node、感情同士/行動前後は1/0→2/1、場面付きは2/0→3/2。未知文/別fieldは1/0→2/0で接続を補わない。報告/別field報告/複合節の3対照はUNAVAILABLEを維持。程度付き否定/少しだけ/とても/否認host/既存裸不安→否定不安の5対照は本文・node/edge・gap/注記/競合が不変だった。別生成のartifact identityを本文不変判定へ混ぜていない。
+
+入力「私は少し不安だった。それから、私は安心しなかった。」の修正後本文全文：
+
+```text
+結果・余韻：少し不安だった（記録された気持ち）（1件の記録）
+結果・余韻：それから：安心しなかった（記録された気持ち）（1件の記録）
+記録内の順序：少し不安だった（記録された気持ち） → それから：安心しなかった（記録された気持ち）。原因を示す線ではありません。
+未確定（少し不安だった（記録された気持ち））：確定していない項目：場面、役割、考え・注意、行動・非行動。
+```
+
+実RN表示modelへ前後24投影を渡し、本文全文・projection identity・accessibility順序・edge/未確定/注記/競合要素数の一致を確認。native/device画面の確認ではない。実engine/service＋合成RPCで程度付き過去2形→行動と行動→程度付き感情の3入力を保存再読し、再生成を禁止して保存本文・投影・ID・程度・順序の保持を確認した。稼働DB保存とは区別する。
+
+新規vertical3検査の修正前は16 FAIL（通常2＋sub14）／通常1 PASS／35 subtests PASSで欠落を再現。修正後対象は **13 tests／246 subtests PASS（4.45秒、461 deselected）**。明示SELF表記・原文範囲・witness改変・不受理境界・訂正/撤回・期間比較/集約・safe再解析を確認。同環境read-only分担reviewに具体的blockerなし。別モデル/Proによる認定ではない。
+
+最終ローカルのAnalysis4＋共有限定change/feelingの5suiteは **1352 tests／5580 subtests PASS（283.36秒）**、fail/skip/xfail 0。Python3.12.14・pytest8.4.1・pytest-subtests0.14.2・FastAPI0.142.2・Pydantic2.13.5・httpx0.28.1の既存隔離環境を使用。対象・全suite・CIの包含件数は合算しない。
+
+固定source commit `c360709d5e2912951250fdb240137f772394a7bb`、tree `4e1ec1c28686b6a12f5d74f08cb0cfba08e60473`。既存compiler/realizer2・test2の4pathをexpected_sha付きnon-forceでPR3へ反映し、親commit・変更pathとGitHub取得のblob SHAが検査済みlocalに一致した。
+
+固定sourceの[CI38186228733](https://github.com/MassyuRed/mashos-api/actions/runs/38186228733)／job114609017575はsuccess。Python3.12.15で同5suite **1352 tests／5580 subtests PASS（363.08秒）**、共有owner identity **1 PASS／193 deselected（25.68秒）**。fail/skip/xfail 0。既存合成7例の生成全文をrootが読解し、否定決定・準備相・本人感情・明示順序と未知区間の保持を確認した。
+
+STRUCTURE_MAP_DELTA_NONE：source→命題→graph→文章/図→保存の責務・file配置は不変。新規repo file0、共有Plan/Emlis/API/DTO/DB/SQL/RN製品変更0。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Supabase操作・本人データ取得・DB書込み・配置/有効化/native build/main mergeは0。未配置、本人実機・稼働DB保存再読・正式商品受入れは未確認。
+
+次の確認済み内容残件は「私はとても不安だった」等の他の程度表現。程度付き否定は作用域を証明してから別扱いとし、今回の肯定へ読み替えない。現在形・日付/主体省略・複合節、一般意味理解・既存の書字/属格/時点/field制限、全体ルートUI/IF/Saved、本人生成→保存再表示も残る。最新weekly・current03・本節と実出力から再開し、この有限修正を全表現・アプリ全体・実機の完成へ広げない。
