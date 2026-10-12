@@ -1364,6 +1364,10 @@ def _self_wish_or_past_event(proposition):
 # to the owner; closure only releases the following independent statement.
 _PAST_SPEECH = (r'(?:言った|言いました|話した|話しました|語った|語りました|'
                 r'述べた|述べました|伝えた|伝えました|答えた|答えました|説明した|説明しました)')
+# Negation of these same speech verbs still owns the preceding quotation.
+# This is a rejection prefix, never evidence that a report has closed.
+_NEGATED_SPEECH = (r'(?:(?:言わ|話さ|語ら|述べ|伝え|答え|説明し)(?:ない|なかった(?:です)?)|'
+                   r'(?:言い|話し|語り|述べ|伝え|答え|説明し)ません(?:でした)?)')
 
 
 def _known_postposed_host(continuation, *, closed_speech=False):
@@ -1386,7 +1390,7 @@ def _known_postposed_host(continuation, *, closed_speech=False):
                          r'(?:の' + _NOMINAL + r')*')
     match = re.fullmatch if closed_speech else re.match
     speech = (_PAST_SPEECH if closed_speech else
-              r'(?:' + _PAST_SPEECH + r'|言わない|言わなかった(?:です)?|言いません(?:でした)?)')
+              r'(?:' + _PAST_SPEECH + r'|' + _NEGATED_SPEECH + r')')
     if match(r'と(?:は|も)?' + qualified_speaker + r'(?:は|が|も)'
              r'(?:[、，][ \u3000]*)?' + speech, continuation):
         return True
@@ -1396,7 +1400,7 @@ def _known_postposed_host(continuation, *, closed_speech=False):
         # Closure requires a whole known speaker/speech form. The broad
         # rejection prefixes below (e.g. と信 / などと) prove no such scope.
         return re.fullmatch(r'と(?:は|も)?' + speaker + speech, continuation)
-    return re.match(r'(?:と(?:は|も)?' + speaker + r'(?:' + _PAST_SPEECH
+    return re.match(r'(?:と(?:は|も)?' + speaker + r'(?:' + speech
                     + r'|思|考|感|言|い|聞|書|読|伝|認|信|報)|'
                     r'って|わけ|訳|のでは|のか|のは|のも|なんて|などと|かも|かどうか|はず)', continuation)
 
@@ -1604,8 +1608,11 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
                             # source text; retain every remaining host marker.
                             speaker_scope = re.sub(r'^(?:は|も)?知って(?:いる|いた)',
                                                    '', speaker_scope)
+                        # A negative speech clause inside an opaque speaker
+                        # is not proof that the outer report has closed.
                         if (host.end() != len(preceding) or re.search(
-                                r'と|って|なら|もし|かも|言った|話した|思う', speaker_scope)):
+                                r'と|って|なら|もし|かも|言った|話した|思う|'
+                                + _NEGATED_SPEECH, speaker_scope)):
                             return None
                         continue
                 written = _proposition(preceding)

@@ -43,6 +43,64 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_negative_speech_verbs_keep_quoted_content_out_of_self_map(self):
+        for speech in ('話さない', '話さないです', '話しません',
+                       '話さなかった', '話さなかったです', '話しませんでした',
+                       '語らない', '語らないです', '語りません',
+                       '語らなかった', '語らなかったです', '語りませんでした',
+                       '述べない', '述べないです', '述べません',
+                       '述べなかった', '述べなかったです', '述べませんでした',
+                       '伝えない', '伝えないです', '伝えません',
+                       '伝えなかった', '伝えなかったです', '伝えませんでした',
+                       '答えない', '答えないです', '答えません',
+                       '答えなかった', '答えなかったです', '答えませんでした',
+                       '説明しない', '説明しないです', '説明しません',
+                       '説明しなかった', '説明しなかったです', '説明しませんでした'):
+            for claimed in ('私は仕事を続けたい', '私は職場にいた', '私は記録を担当した',
+                            '私は資料を見た', '私は嬉しかった'):
+                for speaker in ('友人が', '知っている友人の母も，'):
+                    reported = claimed + '。と' + speaker + speech + '。'
+                    with self.subTest(speech=speech, claimed=claimed, speaker=speaker):
+                        self.assertEqual(self.generate(request(record(memo=reported))).status,
+                                         EngineStatus.UNAVAILABLE)
+                        req = request(record(memo='私は資料を調べた。' + reported
+                            + 'それから、私は記録を残した。'))
+                        artifact = self.generate(req).artifact
+                        self.assertEqual([n.visible_label for n in artifact.graph.nodes],
+                            ['私は資料を調べた', 'それから、私は記録を残した'])
+                        self.assertFalse(artifact.graph.edges)
+                        self.assertFalse(artifact.graph.conflicts)
+                        self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+                        source, = freeze_analysis_sources(req).sources
+                        for node in artifact.graph.nodes:
+                            evidence, = node.evidence_refs
+                            self.assertEqual(source.envelope.raw_utf8[
+                                evidence.utf8_start:evidence.utf8_end].decode(), node.visible_label)
+
+    def test_negative_speech_verbs_do_not_prove_an_opaque_host_is_closed(self):
+        for speech in ('話さない', '語らなかった', '述べません',
+                       '伝えなかったです', '答えないです', '説明しませんでした'):
+            for claimed in ('私は職場にいた', '私は資料を調べた'):
+                for host in ('と親しい友人が' + speech + 'と弟が言った。',
+                             'と' + speech + '人が言った。'):
+                    with self.subTest(speech=speech, claimed=claimed, host=host):
+                        result = self.generate(request(record(memo=claimed + '。' + host
+                            + '私は記録を残した。')))
+                        self.assertEqual(result.status, EngineStatus.UNAVAILABLE)
+                for tail in ('けれど。', 'かもしれない。'):
+                    with self.subTest(speech=speech, claimed=claimed, tail=tail):
+                        self.assertEqual(self.generate(request(record(memo=claimed
+                            + '。と親しい友人が' + speech + tail))).status, EngineStatus.UNAVAILABLE)
+            with self.subTest(speech=speech, prior_report=True):
+                self.assertEqual(self.generate(request(record(memo='友人が話した。私は職場にいた。'
+                    + 'と親しい友人が' + speech + '。私は記録を残した。'))).status,
+                    EngineStatus.UNAVAILABLE)
+            for independent in ('とても親しい友人が', 'とある友人が', 'と同時に同僚が'):
+                with self.subTest(speech=speech, independent=independent):
+                    artifact = self.generate(request(record(memo='私は職場にいた。'
+                        + independent + speech + '。'))).artifact
+                    self.assertIn('私は職場にいた', [n.visible_label for n in artifact.graph.nodes])
+
     def test_postposed_speech_verbs_keep_reported_content_out_of_self_map(self):
         for speech in ('話した', '話しました', '語った', '語りました',
                        '述べた', '述べました', '伝えた', '伝えました',
@@ -197,6 +255,12 @@ class AnalysisVerticalTests(unittest.TestCase):
                          'と知らない人が、言わない。',
                          'とは知っている友人の母も，言いません。',
                          'とも知っていた友人が言わない。',
+                         'と友人が話さなかった。',
+                         'と親しい友人が語らない。',
+                         'とは知っている友人の母も，述べませんでした。',
+                         'と知らない人が、伝えないです。',
+                         'と優しくない同僚は答えなかったです。',
+                         'と親しかった友人が説明しません。',
                          'と知らない友人が言った。', 'と知らなかった友人は言いました。',
                          'と知っている同僚も言った。', 'と知っていた友人の母が言いました。',
                          'と知らない人が言わなかった。', 'と知らなかった友人は言いませんでした。',
