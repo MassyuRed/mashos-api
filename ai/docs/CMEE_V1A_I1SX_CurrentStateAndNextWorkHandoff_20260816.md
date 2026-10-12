@@ -1,4 +1,4 @@
-> 最新の内容修正は末尾 **u235（2026-10-12 JST・未配置）**。丁寧な感情推量が同じ欄にあると明示内容まで消える不具合を修正。検証・残件は同節とAnalysis current03を参照。
+> 最新の内容修正は末尾 **u236（2026-10-12 JST・未配置）**。独立した行動推量が同じ欄にあると明示内容まで消える不具合を修正。検証・残件は同節とAnalysis current03を参照。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -17591,3 +17591,43 @@ System Context prepareは最初のsparse取得でtask_profiles.json不足、必�
 STRUCTURE_MAP_DELTA_NONE。source→共有命題→Analysis graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、TECHNICAL_CREDIT。Supabaseはproject識別とmigration履歴を読取り、既存Analysis保存/期間比較の登録を確認した。本人行/本文取得・DB書込0。共有Plan/Emlis・realizer/API/DTO/SQL/RN製品、設定・配置・有効化・native build・main mergeの変更0。
 
 一般の推量/引用作用域、未対応述語・省略主体/複合節、全体ルートUI/IF/Saved、最新修正版の本人実機・稼働DB保存再読・正式商品受入れは残件。丁寧語尾の一般拡張や推量内容の表示を今回の成立へ含めない。次の内容作業は別の実出力欠落を確認して選び、本修正や追加表現対応を本人実機確認の追加前提にしない。未配置。
+
+## u236 — 独立した行動推量の横で明示内容を保持（2026-10-12 JST・未配置）
+
+Mashの「分析構造の内容修正関係を進めて」により、u235後の実出力欠落を確認した。開始headはAPI PR3 `ef697da4a53da370c207674c2dbfe54055edcf0c`、Cocolon PR30 `cc620e4e1b474a84b7319dbf83748c9bbdee6f47`。同sessionで読了済みのKaren-Diary入口/原理、前提00/01/01B・全file地図02/07、CURRENT_RULES/Rule18を継承し、恒久incident全文を再読。fresh head/tree、current03、詳細04 §3.65、06/API handoff u235、最新weekly20261010 §5.4/§5.5を照合した。今回の明示内容修正配分と、最新修正版の本人入力→生成→保存再表示へ戻る位置を分け、12/18公開目標を維持する。追加表現対応を本人実機確認の前提にしない。
+
+同sessionのSystem Context prepareはshallow cloneの祖先関係を証明できず失敗しており、規定の原本直接読取fallbackを継承した。prepare成功とはしない。環境はCodex Work、モデル詳細名称は未確認。同環境の補助agentはread-onlyで候補調査と差分review、編集・検査・判断・GitHub反映はroot華恋。別model Pro/Ultraの独立審査を認定しない。
+
+### 原因と変更範囲
+
+「私は不安だ。私は資料を調べたかもしれない。」がUNAVAILABLEとなり、独立した明示感情も消えていた。原fieldの推量による全fragment停止を、従来helperが感情だけに限定して解除していたためである。`_closed_possibility_scope`へ名称を合わせ、既存9動詞の明示SELF・常体過去肯否・完全なを格を含む既存名詞/時点解析に限定して、行動推量の閉じた作用域も識別する。
+
+推量4形（かもしれない／かも知れない／かもしれません／かも知れません）と実句点（。/.）の条件を維持し、推量内容はSOURCE_SCOPEのままでnode化しない。別節の共有witnessや帰属検査は代替しない。同じ行動の否定推量から不一致badgeを作らず、未知節を越す順序線も追加しない。推量前に成立済みの明示順序、明示内容の原文・肯否・時点・出典は保持する。
+
+他者/省略主体、非過去/願望/決定、未解釈述語・名詞・日付、推量内の順序marker、未完節、読点/改行/全角period/固定長切断、報告/引用/夢/条件/後続hostは保留を維持。文末丁寧形を推量へ直結する「ましたかもしれない／なかったですかもしれない」も対象外。一般の文法や推量内容の表示は拡張しない。通常補足/訂正の全文coverageを維持し、未解釈推量を含む回答を部分採用しない。
+
+### 実出力と保存
+
+合成24入力の修正前後48結果を比較し、8入力で明示内容の欠落を解消、16対照は状態・理由・本文・図内容が不変（ランダムartifact identityを除く）。生成13入力の全文をrootが読み、前後18生成投影を実RN `buildWatashiMapV2ViewModel`へ渡し、本文・identity・読み順・edge/unknown/annotation/conflict件数が一致した。
+
+合成入力「私は不安だ。私は資料を調べたかもしれない。」の実生成全文：
+
+```text
+結果・余韻：不安だ（この記述時点の気持ち）（1件の記録）
+未確定（不安だ（この記述時点の気持ち））：確定していない項目：場面、役割、考え・注意、行動・非行動。
+未確定（不安だ（この記述時点の気持ち））：まだ読み取れていない内容は、この記録からは確定していません。
+```
+
+実engine/service＋合成RPCの既存保存検査へ行動推量5入力を追加し、感情推量10入力とともに本文/図/IDを同じまま再生成なしで再読した。補足/訂正の行動推量2入力を追加した計6入力はHTTP422・snapshot取得のみでcommitなし。原文のUTF-8/scalar/hash、訂正/撤回、UNKNOWN_SCOPE_CHANGEDのみの比較も検査した。private保存へ原文を追加せず、稼働DBとnative実機の検証ではない。
+
+### 検証・反映
+
+修正前の新testは56 subtests FAIL（主test1 PASS、439 deselected、28.65秒）で欠落を再現。source修正後の対象群は **14 tests／324 subtests PASS（4.52秒、533 deselected）**。Python3.12.14、同sessionの既存隔離pin（pytest8.4.1／pytest-subtests0.14.2／FastAPI0.142.2／Pydantic2.13.5／httpx0.28.1）を使用した。RN probeの初回はnodeの非実在property `ref` を使う検査側の誤りで失敗し、実契約 `node_ref` に訂正して18投影の一致を確認した。製品変更の追加や既存期待の削除/緩和はない。
+
+固定sourceの[GitHub Actions run38218886764](https://github.com/MassyuRed/mashos-api/actions/runs/38218886764)／job `114710056335` は全step success。Python3.12.15で既存5suite（Analysis vertical/nominal、observed storage、saved period、共有Emlis limited-change）は **1605 tests／9571 subtests PASS（384.23秒）**、共有owner identityは **1 PASS（193 deselected、26.64秒）**。fail/skip/xfail 0。rootがCIの既存合成7生成全文も読み、肯否・先行準備・感情・明示順序・未知区間の表示を確認した。同じ全suiteのローカル重複実行はしていない。
+
+製品source `4a941ea6a36a2db51be4ef28014cf4c408229d92`、tree `cf8d9ec2c0c18dd40556c5c657d669c03e40f2bd`。compiler1＋既存test2の3pathを既存API PR3へexpected_sha付きnon-forceで反映し、remote再取得でbytes・変更path・headを照合。current03・詳細04 §3.66・06/API handoffへ同期。同環境read-only reviewで具体的blockerなし。対象/CIの件数を合算せず、商品受入れに読み替えない。
+
+STRUCTURE_MAP_DELTA_NONE。source→共有命題→Analysis graph→文章/図→保存の既存責務とfile配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、TECHNICAL_CREDIT。新規repo file、共有Plan/Emlis、realizer/API/DTO/DB/SQL/RN製品、依存/workflowの変更0。今回はSupabase操作・本人行取得・DB書込・配置・有効化・native build・main mergeは0。
+
+残件は一般の推量/引用/条件の作用域、未知述語・省略主体/複合節、全体ルートUI/IF/Saved、最新修正版の本人実機・稼働DB保存再読・正式商品受入れ。補助調査で「私は資料を調べた。私は頼もしい友人の資料を調べた。」の「頼もしい」内部へ条件語regex `(?<!か)もし` が一致し、前半までUNAVAILABLEになる別欠落も再現した。「親しい／頼れる」では前半と後半の未確定が残る。これは未修正の次候補であり、条件判定を一律に弱めず作用域を調べる。今回の成立範囲には含めない。未配置。
