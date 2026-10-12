@@ -17290,3 +17290,38 @@ realizerは原綴りを保持し、原文証拠・修飾語の全座標・否定
 STRUCTURE_MAP_DELTA_NONE：既存source→共有命題→Analysis graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。root華恋が判断・編集・実行・反映を担当し、補助agentはread-only。新規repo file0、共有Plan/Emlis/API/DTO/DB/SQL/RN製品変更0。Supabase操作・本人行取得・DB書込・配置/有効化/native build/main mergeは0。未配置、本人実機・稼働DB保存再読・正式商品受入れは未確認。
 
 次の確認候補は実測で未生成だった「私は不安はない」等の別構文。既存の「不安ではない」と同一視せず、原文の焦点・否定・時制をどこまで保持できるかを先に確認する。少し＋否定や助詞一般の作用域、主体省略/複合節、時制をまたぐ順序、一般意味理解、全体ルートUI/IF/Saved、本人生成→保存再表示も残件。今回の10入力の欠落解消を分析全体の完成とはしない。
+
+## u228 — 本人が書いた「不安はない／不安がない」の欠落修正（2026-10-12 JST・未配置）
+
+Mashの分析内容修正の続行指示と添付u227記録を受け、前回に未生成を確認した存在否定を補修した。開始headはAPI PR3 `381ef481ee519e01dc5dfd6ff4e081d35caabd30`、Cocolon PR30 `98c0e8a1ad2bae8e568922ba8b6314cea3518e33`。GitHubの前提資料・CURRENT_RULES/開始checklist/恒久incident・全体設計01/01B・全file地図02・分析current03/詳細04/06・最新weekly20261010の§3/§5.4/§5.5と実ファイルを照合した。System Context prepare成功とは主張せず、固定headの原典を直接確認した。今回の明示内容修正を§5.4の配分指定として扱い、12/18公開目標、本人の分析生成→保存再表示の未完了、実機確認順序を保持する。
+
+### 原因と修正範囲
+
+原文「私は不安はない／不安がない」は共有Planに感情・否定・時点の根拠があるが、Analysisの有限形辞書が存在否定を扱えず欠落していた。既存compiler/realizer内で、明示SELFと完全な「不安＋は/が＋ない/ないです/ありません/なかった/なかったです/ありませんでした」の12形を扱う。predicate `ある` と名詞・助詞のargumentを保持し、「不安ではない」系とは同義化しない。は/が相互も同一化しないが、同じ助詞の常体/敬体は同じ意味として集約する。
+
+原文全文の出典・名詞/助詞/述語の座標、文法的否定、現在/過去、既存の日語と独立節の明示順序を保つ。現在は記述時点だけを指し、過去感情の継続・安心・行動の効果・改善、はが示唆し得る別の感情を補わない。共有の感情/否定operatorと時点を要求し、共有current_user既定値から省略主体を補わない。表示前に完全命題を原文から再解析し、助詞や述語を改変した命題は拒否する。
+
+修飾語との複合、も/には/しか/無助詞、肯定の「不安はある」、他者/省略主体/属格/報告/質問/推量/二重否定/複合節/昨日の現在形は今回の範囲外。共有Planは変更せず、旧action→feeling複合経路には新しい存在否定を入れない。「不安だ」と存在否定をまたぐ矛盾判定は未対応で、一般意味理解や矛盾検出の完成とはしない。
+
+### 実出力・表示・保存
+
+合成22入力を実engineに通した前後44結果で10入力の欠落解消、12対照の状態・本文・図内容不変を確認した。生成された18全文をrootが読み、実RN `buildWatashiMapV2ViewModel` に18投影を通して全文・表示identity・読み順・node/edge/unknown/注記/競合件数が一致した。本人入力による実機描画ではない。合成入力「私は不安はない。」の実生成全文：
+
+```text
+結果・余韻：不安はない（この記述時点の気持ち）（1件の記録）
+未確定（不安はない（この記述時点の気持ち））：確定していない項目：場面、役割、考え・注意、行動・非行動。
+```
+
+「私は不安はなかった。それから、私は記録を残した。」は1node/0edgeから2node/1edgeとなり、書かれた順序だけを表示する。現在→過去、未知区間、別field/recordをまたぐ線は補わない。訂正/撤回/補足・集約/期間比較、証拠欠落と助詞/述語/肯否改変拒否を既存testへ追加した。実engine/service＋合成RPCで、2助詞×無日の現在/今日の現在/昨日の過去の6入力を保存し、再生成を禁止して同じ本文・図・IDを再読した。稼働Supabaseや本人記録の確認ではない。
+
+### 検証・反映
+
+追加対象は4 tests／101 subtests、保存再読1 test／6 subtestsが初回から成功。既存5suite（Analysis vertical/nominal、observed storage、saved period、共有Emlis limited-change）の最終ローカル回帰は **1575 tests／7634 subtests PASS（292.93秒）**、共有owner identityは **1 PASS／193 deselected（28.44秒）**。最終fail/skip/xfail 0。対象検査はこの回帰集合に含まれ、件数を合算しない。Python3.12.14と既存CIのpin（pytest8.4.1、pytest-subtests0.14.2、FastAPI0.142.2、Pydantic2.13.5、httpx0.28.1）の隔離test環境を使用し、plugin autoload/cache/conftestを無効化。製品依存を変更していない。同環境のread-only補助reviewとroot確認でblocking指摘なし。別model Pro認定や正式商品受入れではない。
+
+固定sourceの自動CI：[Analysis observed content / run 38204779735](https://github.com/MassyuRed/mashos-api/actions/runs/38204779735)。CI結果とローカル結果は別の実行事実であり、検査件数を合算しない。
+
+製品sourceは `bf47380e91b47b91ac6bb3eac67e30564959627f`、tree `b5a13df7186a45e19974c39e93f523e1d8544d57`。compiler/realizer各1と既存test2の4pathをGitHub connectorから既存PR3へnon-forceで反映し、fresh fetchしたremoteの全変更pathと検証済みlocal bytesの一致を確認した。git直接pushは認証情報を取得できず失敗し、利用可能な既存connectorで反映した。共有ownerの変更がないためidentity snapshotは更新していない。
+
+STRUCTURE_MAP_DELTA_NONE。source→共有命題→Analysis graph→文章/図→保存の配置・責務は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Codex Workのroot華恋が判断・編集・実行・反映を担当し、補助agentはread-only。新規repo file0、共有Plan/Emlis/API/DTO/DB/SQL/RN製品変更0。Supabase操作、本人行取得、DB書込、配置/有効化/native build/main mergeは0。未配置、本人実機・稼働DB保存再読・正式商品受入れは未確認。
+
+次の内容確認は、未生成を確認した肯定の存在構文「私は不安はある」等と、存在否定/形容的感情をまたぐ関係を原文・共有根拠から確認する。採用や同義化を先に決めない。修飾・省略主体/複合節・時制をまたぐ順序、全体ルートUI/IF/Saved、本人生成→保存再表示も残件。本修正を本人実機確認の追加前提にはせず、分析全体の完成とはしない。
