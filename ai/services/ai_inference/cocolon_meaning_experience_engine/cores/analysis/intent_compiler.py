@@ -446,9 +446,10 @@ def _finite_feeling_proposition(value):
     # its written degree never inherits a past or compound temporal scope.
     if current and subject is None:
         return None
-    # Relative days qualify only a complete standalone past feeling. They
-    # are source-relative words, not dates inferred from the record timestamp.
-    if day and (current or subject is None):
+    # A complete current feeling may name 今日. 昨日 with a nonpast
+    # predicate does not prove whether the feeling is past or current.
+    # Keep the written day local, never infer it from the record timestamp.
+    if day and (subject is None or (current and day != 'TODAY')):
         return None
     # Preserve the written degree only for an explicit SELF's asserted anxiety.
     # Degree over a negated feeling has no proved scope in the shared witness.
@@ -466,14 +467,15 @@ def _finite_feeling_proposition(value):
 def _standalone_finite_feeling_witness(nucleus, proposition):
     # A shared current_user default cannot establish an omitted experiencer.
     # The complete finite SELF clause proves tense; current_input is the shared
-    # standalone frame's scope. Current forms need a current_input witness
-    # and never inherit a past/change witness from another clause.
+    # standalone frame's scope. Current forms require current_input unless
+    # their own 今日 has a present witness; they never inherit a past scope.
     current = proposition.result_state == 'CURRENT_FEELING'
     if (proposition.result_state not in {'PAST_FEELING', 'CURRENT_FEELING'} or proposition.actor != 'SELF'
             or proposition.polarity not in {'positive', 'negative'}
             or (proposition.modality, proposition.temporal_scope) !=
                ('feeling', 'current_input' if current else 'past')
-            or (current and proposition.predicate_lemma != '不安だ')):
+            or (current and (proposition.predicate_lemma != '不安だ'
+                             or proposition.relative_day not in {'', 'TODAY'}))):
         return False
     # A single written degree qualifies asserted anxiety, not its negation.
     # Preserve its spelling without assigning a numeric strength or rank.
@@ -497,7 +499,7 @@ def _standalone_finite_feeling_witness(nucleus, proposition):
                  {'operator:negation'} if proposition.polarity == 'negative'
                  else {'operator:positive_change', 'semantic_role:current_change'})
     # Shared present/past marks the written day; the fully parsed finite host
-    # separately proves past tense. Do not borrow a date from another clause.
+    # separately proves tense. Do not borrow a date from another clause.
     times = ({'present'} if proposition.relative_day == 'TODAY' else
              {'past'} if proposition.relative_day == 'YESTERDAY' else
              {'current_input'} if current else {'current_input', 'past'})
