@@ -1369,12 +1369,13 @@ _PAST_SPEECH = (r'(?:言った|言いました|話した|話しました|語っ�
 def _known_postposed_host(continuation, *, closed_speech=False):
     # Reuse the established speaker/host grammar for rejection and closure.
     # A single written i-adjective can qualify a kanji/katakana speaker noun
-    # before a past speech host. This identifies quotation scope only; it
+    # before a speech host. This identifies quotation scope only; it
     # neither resolves the speaker nor expands the proposition noun grammar.
     # Requiring the kanji stem avoids consuming independent とても / とある /
     # と同時に sentences. The shii family also keeps its past/negative forms;
     # arbitrary -katta stems could instead be verbs (分かった / 預かった).
-    # A negated speech host does not assert its embedded content either.
+    # A negated speech host, present or past, does not assert its embedded
+    # content either. Recognizing that host does not prove it is closed.
     # Keep prefix matching for open/nested suffixes; this rejection does not
     # prove that the host is closed. Four explicit forms of 知る can also
     # qualify this speaker; they never establish whose knowledge it is.
@@ -1385,7 +1386,7 @@ def _known_postposed_host(continuation, *, closed_speech=False):
                          r'(?:の' + _NOMINAL + r')*')
     match = re.fullmatch if closed_speech else re.match
     speech = (_PAST_SPEECH if closed_speech else
-              r'(?:' + _PAST_SPEECH + r'|言わなかった(?:です)?|言いませんでした)')
+              r'(?:' + _PAST_SPEECH + r'|言わない|言わなかった(?:です)?|言いません(?:でした)?)')
     if match(r'と(?:は|も)?' + qualified_speaker + r'(?:は|が|も)'
              r'(?:[、，][ \u3000]*)?' + speech, continuation):
         return True
