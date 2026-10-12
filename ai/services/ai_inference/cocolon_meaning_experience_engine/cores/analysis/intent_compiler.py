@@ -1359,7 +1359,7 @@ def _self_wish_or_past_event(proposition):
              or proposition.role_state == 'PAST_RESPONSIBILITY'))
 
 
-def _known_postposed_host(continuation):
+def _known_postposed_host(continuation, *, closed_speech=False):
     # Reuse the established speaker/host grammar for rejection and closure.
     # A single written i-adjective can qualify a kanji/katakana speaker noun
     # before a past speech host. This identifies quotation scope only; it
@@ -1376,12 +1376,18 @@ def _known_postposed_host(continuation):
                          r'|知らない|知らなかった|知っている|知っていた)'
                          r'[一-鿿々ァ-ヴー]+'
                          r'(?:の' + _NOMINAL + r')*')
-    if re.match(r'と(?:は|も)?' + qualified_speaker + r'(?:は|が|も)'
-                r'(?:[、，][ \u3000]*)?(?:言った|言いました|言わなかった(?:です)?|言いませんでした)',
-                continuation):
+    match = re.fullmatch if closed_speech else re.match
+    speech = (r'(?:言った|言いました)' if closed_speech else
+              r'(?:言った|言いました|言わなかった(?:です)?|言いませんでした)')
+    if match(r'と(?:は|も)?' + qualified_speaker + r'(?:は|が|も)'
+             r'(?:[、，][ \u3000]*)?' + speech, continuation):
         return True
     speaker = (r'(?:(?:私|僕|ぼく|俺|おれ|わたし|自分|' + _NOMINAL
                + r'(?:の' + _NOMINAL + r')*)(?:は|が|も)(?:[、，][ \u3000]*)?)?')
+    if closed_speech:
+        # Closure requires a whole known speaker/speech form. The broad
+        # rejection prefixes below (e.g. と信 / などと) prove no such scope.
+        return re.fullmatch(r'と(?:は|も)?' + speaker + speech, continuation)
     return re.match(r'(?:と(?:は|も)?' + speaker + r'(?:思|考|感|言|い|聞|書|読|伝|認|信|報)|'
                     r'って|わけ|訳|のでは|のか|のは|のも|なんて|などと|かも|かどうか|はず)', continuation)
 
@@ -1571,9 +1577,12 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
                     # The speaker is opaque: closing this suffix never proves
                     # who acted. Do not swallow nested hosts into its name.
                     host = re.match(r'(?:(?:と|などと)(?P<speaker>[^。．.\r\n;；、，,「」『』!?！？]+?)'
-                            r'(?:は|が|も)'
+                            r'(?:は|が|も)(?P<speech_pause>[、，][ \u3000]*)?'
                             r'(?:言った|言いました)|の(?:は|も)嘘だった)', preceding)
                     if host is not None:
+                        if (host['speech_pause'] is not None
+                                and not _known_postposed_host(preceding, closed_speech=True)):
+                            return None
                         speaker_scope = host['speaker'] or ''
                         if _known_postposed_host(preceding):
                             # In a proved single modifier, って is part of

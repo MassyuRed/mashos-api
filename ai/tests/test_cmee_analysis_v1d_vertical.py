@@ -72,7 +72,7 @@ class AnalysisVerticalTests(unittest.TestCase):
             ('私は職場にいた。と親しくない友人が言ったと弟は言った。私は記録を残した。', ''),
             ('友人が話した。私は職場にいた。と忙しくなかった同僚が言った。私は記録を残した。', ''),
             ('私は職場にいた。', 'と親しくなかった友人が言った。私は記録を残した。'),
-            ('私は職場にいた。と親しくなかった友人が、言った。私は記録を残した。', ''),
+            ('私は職場にいた。と親しくなかった友人が、、言った。私は記録を残した。', ''),
             ('私は職場にいた。と親しかった新しい友人が言った。私は記録を残した。', ''),
             ('私は職場にいた。と親しくはない友人が言った。私は記録を残した。', ''),
             ('私は職場にいた。と親しくなくなった友人が言った。私は記録を残した。', ''),
@@ -112,6 +112,8 @@ class AnalysisVerticalTests(unittest.TestCase):
                          'と知っている同僚も言った。', 'と知っていた友人の母が言いました。',
                          'と知らない人が言わなかった。', 'と知らなかった友人は言いませんでした。',
                          'と知っている同僚も言わなかったです。', 'と知っていた友人の母が言わなかった。',
+                         'と友人が、言った。', 'と親しくなかった友人は，言いました。',
+                         'と知らない人も、 言った。', 'とは知っている友人の母が、　言いました。',
                          'と優しくない同僚は言いました。', 'と忙しくなかった友人の母も言った。')
         ):
             reported = claimed + '。' + host
@@ -158,7 +160,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                 ('私は職場にいた。' + host + '言ったと弟が言った。私は記録を残した。', ''),
                 ('友人が話した。私は職場にいた。' + host + '言った。私は記録を残した。', ''),
                 ('私は職場にいた。', host + '言った。私は記録を残した。'),
-                ('私は職場にいた。' + host + '、言った。私は記録を残した。', ''),
+                ('私は職場にいた。' + host + '、、言った。私は記録を残した。', ''),
                 ('私は職場にいた。と' + modifier + '友人って弟が言った。私は記録を残した。', ''),
                 ('私は職場にいた。と' + modifier + '新しい友人が言った。私は記録を残した。', ''),
             ):
@@ -185,6 +187,47 @@ class AnalysisVerticalTests(unittest.TestCase):
                     nested = self.generate(request(record(memo=
                         '私は職場にいた。' + host + 'と弟が言った。私は記録を残した。'))).artifact
                     self.assertIsNone(nested)
+
+    def test_comma_speech_host_keeps_independent_action_without_bridging_unknown(self):
+        for claimed in ('私は仕事を続けたい', '私は職場にいた', '私は記録を担当した',
+                        '私は資料を見た', '私は嬉しかった'):
+            for host in ('と友人が、言った。', 'と親しい友人は，言いました。',
+                         'と知らない人も、 言った。', 'とは知っている友人の母が、　言いました。'):
+                with self.subTest(claimed=claimed, host=host):
+                    req = request(record(memo='私は資料を調べた。' + claimed + '。' + host
+                        + 'それから、私は記録を残した。'))
+                    artifact = self.generate(req).artifact
+                    self.assertEqual([n.visible_label for n in artifact.graph.nodes],
+                                     ['私は資料を調べた', 'それから、私は記録を残した'])
+                    self.assertFalse(artifact.graph.edges)
+                    self.assertFalse(artifact.graph.conflicts)
+                    self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+
+    def test_comma_speech_closure_requires_whole_known_speaker_and_host(self):
+        for claimed in ('私は職場にいた', '私は資料を調べた', '私は嬉しかった'):
+            for host in ('と親しい友人が、言ったけれど。',
+                         'と親しい友人が、言ったと弟が言った。',
+                         'と知っている友人が、言いましたと弟が言った。',
+                         'とよく知らない友人が、言った。',
+                         'と知らない新しい友人が、言った。',
+                         'と信じられない友人が、言った。',
+                         'などとよく知らない友人が、言った。',
+                         'と親しい友人が、、言った。', 'と親しい友人が,言った。',
+                         'と親しい友人が、\n言った。'):
+                with self.subTest(claimed=claimed, host=host):
+                    artifact = self.generate(request(record(memo=claimed + '。' + host
+                        + '私は記録を残した。'))).artifact
+                    self.assertFalse(artifact and any(n.proposition.predicate_lemma == '残す'
+                        for n in artifact.graph.nodes))
+        for memo, action in (
+            ('友人が話した。私は職場にいた。と親しい友人が、言った。私は記録を残した。', ''),
+            ('未知の出来事。と親しい友人が、言った。私は記録を残した。', ''),
+            ('私は職場にいた。', 'と親しい友人が、言った。私は記録を残した。'),
+        ):
+            with self.subTest(memo=memo, action=action):
+                artifact = self.generate(request(record(memo=memo, action=action))).artifact
+                self.assertFalse(artifact and any(n.proposition.predicate_lemma == '残す'
+                    for n in artifact.graph.nodes))
 
     def test_whole_wishes_scenes_roles_keep_postposed_attribution_unresolved(self):
         for clause in ('私は仕事を続けたい', '私は家族を守りたい',
