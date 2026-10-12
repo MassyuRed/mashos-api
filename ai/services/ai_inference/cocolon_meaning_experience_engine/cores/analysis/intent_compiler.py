@@ -459,17 +459,20 @@ def _finite_feeling_proposition(value):
     existential = _EXISTENTIAL_ANXIETY_FORMS.get(finite)
     if existential is not None:
         case, current, polarity = existential
-        # No omitted experiencer, inherited compound scope or unproved
-        # degree/negation composition. Keep a single written day local.
-        if subject is None or degree or (current and day not in {'', 'TODAY'}):
+        # A single written degree before the noun can qualify affirmative
+        # existence. Negative composition and other positions remain unparsed.
+        if (subject is None or (current and day not in {'', 'TODAY'})
+                or (degree and (polarity != 'positive' or degree not in _WRITTEN_ANXIETY_DEGREES))):
             return None
+        parts += (('WRITTEN_MODIFIER_' + modifier, start, finite_start),) if degree else ()
         return ObservedProposition('SELF', ((case, '不安'),), 'ある',
             polarity, 'feeling', 'current_input' if current else 'past',
-            parts + (('FEELING_NOUN', start, start + 2),
-                     ('CASE_' + case, start + 2, start + 3),
-                     ('FINITE_FEELING', start + 3, len(value))),
+            parts + (('FEELING_NOUN', finite_start, finite_start + 2),
+                     ('CASE_' + case, finite_start + 2, finite_start + 3),
+                     ('FINITE_FEELING', finite_start + 3, len(value))),
             result_state='CURRENT_FEELING' if current else 'PAST_FEELING',
-            sequence_marker=marker, relative_day=day)
+            sequence_marker=marker, relative_day=day,
+            written_modifiers=(modifier,) if degree else ())
     negative = finite in _NEGATIVE_FEELING_FORMS or finite in _CURRENT_NEGATIVE_FEELING_FORMS
     current = finite in _CURRENT_FEELING_FORMS or finite in _CURRENT_NEGATIVE_FEELING_FORMS
     lemma = (_CURRENT_NEGATIVE_FEELING_FORMS if current and negative else
@@ -510,8 +513,7 @@ def _standalone_finite_feeling_witness(nucleus, proposition):
     # their own 今日 has a present witness; they never inherit a past scope.
     current = proposition.result_state == 'CURRENT_FEELING'
     existential_anxiety = (proposition.predicate_lemma == 'ある'
-        and proposition.arguments in {(('は', '不安'),), (('が', '不安'),)}
-        and not proposition.written_modifiers)
+        and proposition.arguments in {(('は', '不安'),), (('が', '不安'),)})
     if (proposition.result_state not in {'PAST_FEELING', 'CURRENT_FEELING'} or proposition.actor != 'SELF'
             or proposition.polarity not in {'positive', 'negative'}
             or (proposition.modality, proposition.temporal_scope) !=
@@ -524,7 +526,9 @@ def _standalone_finite_feeling_witness(nucleus, proposition):
     allowed_degrees = (_WRITTEN_NEGATED_ANXIETY_DEGREES if proposition.polarity == 'negative'
                        else _WRITTEN_ANXIETY_DEGREES)
     if proposition.written_modifiers and (
-            proposition.predicate_lemma != '不安だ' or len(proposition.written_modifiers) != 1
+            not (proposition.predicate_lemma == '不安だ'
+                 or (existential_anxiety and proposition.polarity == 'positive'))
+            or len(proposition.written_modifiers) != 1
             or proposition.written_modifiers[0] not in allowed_degrees.values()):
         return False
     frame = nucleus.semantic_frame
