@@ -1,4 +1,4 @@
-> 最新の内容修正は末尾 **u218（2026-10-12 JST・未配置）**。「とても／かなり／やや／ちょっと」付きの明示本人の肯定過去不安を原綴りのまま保持。少し・無修飾・他の程度語と区別し、強度増減や改善を推定しない。最終検証・反映・現在形等の残件は同節とAnalysis current03を参照。
+> 最新の内容修正は末尾 **u219（2026-10-12 JST・未配置）**。「私は不安だ／不安です」を記述時点の感情として保持。過去形・閲覧時までの継続・行動の効果へ変換しない。最終検証・反映・現在否定/程度付き現在形等の残件は同節とAnalysis current03を参照。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -16937,3 +16937,34 @@ Mashの分析内容修正続行指示（09:07 JST）で、u217の他程度表現
 STRUCTURE_MAP_DELTA_NONE：source→命題→graph→文章/図→保存の責務・file配置は不変。新規repo file0、共有Plan/Emlis/API/DTO/DB/SQL/RN製品変更0。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。追加費用・Mashの新しい操作負担0。Supabase操作・本人データ取得・DB書込・配置/有効化/native build/main mergeは0。未配置、本人実機・稼働DB保存再読・正式商品受入れは未確認。
 
 次の確認済み残件は「私は不安です」など現在の不安の欠落。程度付き否定の作用域、日付/主体省略/複合節・他程度、一般意味理解と既存の書字/属格/時点/field制限も残る。全体ルートUI/IF/Savedと本人生成→保存再表示も未完了。最新weekly・current03・実出力から再開し、この有限文法の修正を全表現・アプリ全体・実機の完成に広げない。
+
+## u219 — 現在の不安を記述時点の感情として保持（2026-10-12 JST・未配置）
+
+Mashの分析内容修正続行指示により、u218の次残件「私は不安だ／不安です」の欠落を修正した。開始headはAPI `f2649bbd97bde2b9537b2c0058603922ecde170a`／Cocolon `e9ac2a3c4b901dad4468b36154549488b6c65f85`。前提・作業ルール・恒久incident全文・全体設計01/01B・全file地図・current03/詳細04と最新weekly20261010を照合。System Contextの保存済み案内は今回のheadと一致せず、原典直接読解を使用した。最新weekly §5.5の実機確認順序と12/18公開目標を維持し、この補修を本人生成→保存再表示の新たな前提にしない。
+
+### 変更と実出力
+
+共有Planは現在形2形でも既に明示本人・reaction/feeling・負情動・operator:feeling・current_inputを保持していた。欠落原因はAnalysisの過去専用文法だった。既存compiler内の有限感情解析を拡張し、明示SELF＋程度なしの肯定「不安だ／不安です」をCURRENT_FEELING/current_inputへ保持する。realizerは「不安だ（この記述時点の気持ち）」を返し、過去の不安・閲覧時点まで続く状態・行動の効果へ変換しない。7種のSELF、既存主語読点、明記されたその後/それからを保持する。
+
+current専用の共有witnessはcurrent_inputだけを認める。負情動と文法否定を分離し、negation/positive_change/current_changeが付く不整合を拒否。原文UTF8/hash・帰属・報告/引用/否認・後続host・別fieldの検査を維持する。過去/過去の順序証明を現在へ拡張せず、markerは表示に残し、時制をまたぐ関係は未確定にする。「だ／です」は同義集約し、過去形とは集約/期間比較で区別。訂正・撤回・通常補足とsafe再解析も確認した。
+
+合成14入力の前後28結果（19生成全文）をrootが読解し、8入力で欠落を解消、6対照の状態/本文/node/edge/未確定/注記/競合が不変。実RN表示model19投影で本文全文・identity・node順・edge/未確定/注記/競合数が一致。実engine/service＋合成RPCによる3入力の保存後再読で、再生成せず同じ本文・図・IDを返すことを確認した。本人データ・稼働DB・native実画面の検査ではない。
+
+入力「私は不安です。」の修正前はUNAVAILABLE。修正後の実生成全文：
+
+```text
+結果・余韻：不安だ（この記述時点の気持ち）（1件の記録）
+未確定（不安だ（この記述時点の気持ち））：確定していない項目：場面、役割、考え・注意、行動・非行動。
+```
+
+### 検証・反映・残件
+
+新規現在形検査は修正前19 FAIL（通常2＋sub17、1 PASS・3 subPASS）で欠落を再現。修正後anxiety対象14 tests／544 subtests成功、保存対象1 test／3 subtests成功。同環境read-only分担reviewに具体的blockerなし。別モデルProによる認定とはしない。
+
+最終ローカルの既存5suiteは **1358 tests／5911 subtests PASS（321.82秒）**、fail/skip/xfail 0。Python3.12.14と既存workflowの固定依存（pytest8.4.1・pytest-subtests0.14.2・FastAPI0.142.2・Pydantic2.13.5・httpx0.28.1）を隔離環境へ用意して実行した。固定sourceの[CI38188869472](https://github.com/MassyuRed/mashos-api/actions/runs/38188869472)／job114617063995もsuccess。Python3.12.15で同5suite **1358 tests／5911 subtests PASS（377.29秒）**、共有owner identity **1 PASS／193 deselected（26.45秒）**。包含される対象・全suite・CI件数は合算しない。別途、同じ現在形の常体/敬体と現在/過去の期間比較2全文を読み、記述差と改善/悪化を区別する表示を確認した。
+
+製品source commit `2f87e6d42f4ed26501b906d3e16014f26287097a`、tree `1d265a27a8660a2305c752b9f02f60dee4c48267`。compiler/realizer2・既存test2の4pathをGitHub connectorでexpected_sha付きnon-force反映。GitHub取得の親head・変更path・blob SHAと全treeが検証済みlocalに一致。通常git pushは認証未設定で未反映だったため、利用可能なGitHub connectorを使用した。新しい認証・secretは取得していない。
+
+STRUCTURE_MAP_DELTA_NONE：既存source→命題→graph→文章/図→保存の責務・file配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。製品sourceとtest以外は既存資料4fileのみ。共有Plan/Emlis/API/DTO/DB/SQL/RN製品変更0。Supabaseはproject一覧のread-only確認のみ。本人行取得・DB書込・配置/有効化・native build・main mergeは0。未配置、本人実機・稼働DB保存再読・正式商品受入れは未確認。
+
+次の確認済み残件は「私は不安ではない」等の現在否定と「私は少し不安です」等の程度付き現在形。程度付き否定、日付/省略主体/複合節、時制をまたぐ順序、一般意味理解、全体ルートUI/IF/Saved、本人生成→保存再表示も未完了。今回の限定補修を分析全体の完成と扱わない。
