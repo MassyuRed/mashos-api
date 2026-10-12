@@ -17475,3 +17475,45 @@ Analysis compilerが存在構文の否定修飾を一律に拒否し、共有根
 STRUCTURE_MAP_DELTA_NONE。source→共有命題→Analysis graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。root華恋が判断・編集・実行・反映、補助agentはread-only。新規repo file0、realizer・共有Plan/Emlis・API/DTO/DB/SQL/RN製品・依存/workflowの変更0。Supabaseは接続先projectとmigration履歴だけをread-only確認し、本人行の取得・DB書込0。配置/有効化/native build/main mergeは行っていない。
 
 次の内容確認では、原入力内の感情矛盾と否定の作用域が文章/図へ一貫して伝わるかを原文・共有根拠・実出力で確認する。別構文間の矛盾、省略主体/複合節・一般意味理解、全体ルートUI/IF/Savedも残件。未配置、最新修正版の本人実機・稼働DB保存再読・正式商品受入れは未確認。本修正や今後の内容修正を実機確認の新たな前提にはしない。
+
+## u233 — 原入力内の感情の肯否併記を、根拠付きの不一致表示へ接続（2026-10-12 JST・未配置）
+
+Mashの分析内容修正続行指示を受け、u232残件の「原入力内の感情矛盾と否定作用域」を実出力から確認した。開始headはAPI PR3 `63a5c931843fc10f05a392fda6568fcf6baa686a`、Cocolon PR30 `0efe80ad01361560717654e9f35dd4c0c40d979c`。同sessionで読了した前提資料・CURRENT_RULES/環境rule、全体01/01B・全file地図02/07を継承し、作業入口・恒久incident全文、最新current03/詳細04 §3.13/§3.62/06/API handoff、weekly20261010 §3/§5.4/§5.5と実ファイルを照合した。明示内容修正を§5.4の配分として記録し、§5.5の本人実機確認への戻る位置と12/18公開目標を維持する。fresh refのSystem Context prepareは必要な祖先関係を証明できず失敗し、規定の原本直接読取fallbackを使用。prepare成功は主張しない。
+
+### 原因・製品変更
+
+「私は不安だ。私は不安ではない。」等は両nodeを生成するが、既存compilerの不一致表示の対象選定が過去factの場面/担当/行動だけに限定され、感情の肯否併記を表示しなかった。既存parser/共有witnessで成立した独立SELFの過去感情および現在不安・存在不安を、既存ObservedConflictへ接続した。無修飾では既存の安心/落ち着く/嬉しい・うれしい/不安の肯否対を扱う。
+
+照合は同じ原入力source/field、actor・構文/述語・argument・modality・時制・相対日を要求する。不安の完全否定（無修飾または全く/まったく/全然/少しも/ちっとも）と感情肯定（無修飾または少し/とても/かなり/やや/ちょっと）だけは、専用の関係判定内でmodifier以外の同一性を照合する。元命題・原文・原綴り・source座標、表示、集約キー、期間比較の意味は変えない。部分否定のあまり/あんまりは強い肯定との組合せも含めbadge対象外。一般的な程度差を矛盾へ変換しない。
+
+既存の順序参加evidence/接続語/従属形除外、訂正/撤回の先行適用を維持。別record/field/day、現在と過去、は/が、「不安だ」系と存在構文をまたがない。両node・両証拠を保持し、同じ機会・真偽・心理的葛藤・改善・原因を決めない。通常補足の対立保留とu232の部分否定の限定両立はそのまま。既存の期間比較CONFLICT_STATE_CHANGED、文章/図・保存/読取へ接続し、新しいDTO/DB/表示文は作らない。
+
+### 実出力・画面用処理・保存
+
+合成30入力の前後60結果で、12入力に欠けていた不一致表示が追加され、18対照の状態/理由/本文/図内容は不変（ランダムartifact identityを除く）。全30入力のstatus/理由と、成立したnode label・順序線・注記・未知範囲は不変。rootが生成54全文を読み、実RN `buildWatashiMapV2ViewModel` の54投影で本文・identity・読み順、badgeの両対象/label、edge/unknown/注記件数が一致した。native実機表示や本人入力の結果ではない。
+
+合成入力「私は不安が少しある。私は不安が全くない。」の実生成全文：
+
+```text
+結果・余韻：不安が少しある（この記述時点の気持ち）（1件の記録）
+結果・余韻：不安が全くない（この記述時点の気持ち）（1件の記録）
+未確定（不安が少しある（この記述時点の気持ち））：確定していない項目：場面、役割、考え・注意、行動・非行動。
+未確定（不安が少しある（この記述時点の気持ち） ／ 不安が全くない（この記述時点の気持ち））：段階同士のつながりは、この記録からは確定していません。
+一致していない記録（不安が少しある（この記述時点の気持ち） ／ 不安が全くない（この記述時点の気持ち））：同じ記録に肯定と否定の記述があります。同じ機会のことかは確定していません。
+```
+
+部分否定や別時制/日語/助詞/構文、別人物、順序付き記述にはbadgeを付けない。片側の訂正/撤回で対象を除外し、別記録の成立したpairは残す。同じpairの複数出典を集約し、同義表記・前後置だけで期間差を作らず、異なるdegreeの期間差は保持する。
+
+実engine/service＋合成RPCの既存保存testへ感情6入力を追加（既存action1と計7入力）。保存後のengine再生成を禁止し、同じ本文/図/ID、2対象badgeとprivate evidenceを再読した。private保存には原文/感情語/propositionを追加せず、safe側にprivate locatorを漏らさない。旧保存相当の空badgeは再生成や新badgeの後付けをせず、そのまま読めることも確認。稼働DBの検証ではない。
+
+### 検証・反映
+
+ローカル対象検査は **24 tests／540 subtests PASS（6.20秒、509 deselected）**。Python3.12.14と既存隔離pin（pytest8.4.1、pytest-subtests0.14.2、FastAPI0.142.2、Pydantic2.13.5、httpx0.28.1）を継承した。初回の新test2subtestsはEvidenceRefに存在しないrecord_refを参照して失敗したため、実契約のsource_envelope_idとsource→record対応で照合する検査へ訂正し、上記対象群を再実行した。製品変更の追加はない。既存期待の変更は感情pairを含む3箇所で、全てのbadgeなし期待を、成立pairだけの対象ref検査へ限定修正した。部分否定・時制/出典境界の期待は維持する。
+
+固定sourceの[GitHub Actions run38210720651](https://github.com/MassyuRed/mashos-api/actions/runs/38210720651)／job `114684028368` は全step success。Python3.12.15で既存5suite（Analysis vertical/nominal、observed storage、saved period、共有Emlis limited-change）は **1591 tests／9249 subtests PASS（240.87秒）**、共有owner identityは **1 PASS（193 deselected、18.22秒）**。fail/skip/xfail 0。rootが既存の合成7生成全文も読み、肯否・先行準備・感情・明示順序・未知区間の表示を確認した。最終全suiteはこの固定sourceのCIで確認し、同じ全suiteのローカル再実行は重ねていない。対象検査・subtests・全suite・CIの件数を合算せず、実機/稼働DB/商品受入れを代替しない。
+
+製品source `81c662bf758444f175a3104d05a0e8b10b415530`、tree `e64ae28af0b3dae35e1dcff39601662933b4e2b7`。compiler1＋既存test2の3pathをAPI PR3へexpected_sha付きnon-forceで反映し、remoteの変更pathと検証済みlocal bytesを照合した。current03・詳細04 §3.63・06/API handoffへ範囲/実出力/検証/残件を同期する。同じCodex Work環境のread-only補助reviewとroot確認で具体的blockerなし。独立した別model Pro認定や正式商品受入れではない。
+
+STRUCTURE_MAP_DELTA_NONE。source→共有命題→Analysis graph/conflict→文章/図→保存という既存責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。root華恋が編集・判断・実行・反映し、補助agentはread-only。新規repo file0、共有Plan/Emlis・realizer・API/DTO/DB/SQL/RN製品・依存/workflowの変更0。Supabase操作/本人行取得/DB書込/配置/有効化/native build/main mergeは0。
+
+残件は一般的な矛盾判断・別構文間の意味照合、省略主体/複合節、全体ルートUI/IF/Saved、最新修正版の本人実機・稼働DB保存再読・正式商品受入れ。次の実出力確認候補は「私は不安だ。私は不安ではないかもしれない。」等、後続の未解釈節により先行の明示感情も生成されない範囲であり、話者・推量の作用域から原因を確認する。本修正や次の内容修正を実機確認の追加前提にはしない。未配置。
