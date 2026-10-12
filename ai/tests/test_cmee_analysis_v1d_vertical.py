@@ -43,6 +43,78 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_postposed_speech_verbs_keep_reported_content_out_of_self_map(self):
+        for speech in ('話した', '話しました', '語った', '語りました',
+                       '述べた', '述べました', '伝えた', '伝えました',
+                       '答えた', '答えました', '説明した', '説明しました'):
+            for claimed in ('私は仕事を続けたい', '私は職場にいた', '私は記録を担当した',
+                            '私は資料を見た', '私は嬉しかった'):
+                for speaker in ('友人が', '親しい友人は、', '知っている友人の母も， '):
+                    reported = claimed + '。と' + speaker + speech + '。'
+                    with self.subTest(speech=speech, claimed=claimed, speaker=speaker):
+                        self.assertIsNone(self.generate(request(record(memo=reported))).artifact)
+                        req = request(record(memo='私は資料を調べた。' + reported
+                            + 'それから、私は記録を残した。'))
+                        artifact = self.generate(req).artifact
+                        self.assertEqual([n.visible_label for n in artifact.graph.nodes],
+                            ['私は資料を調べた', 'それから、私は記録を残した'])
+                        self.assertFalse(artifact.graph.edges)
+                        self.assertFalse(artifact.graph.conflicts)
+                        self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+                        source, = freeze_analysis_sources(req).sources
+                        for node in artifact.graph.nodes:
+                            evidence, = node.evidence_refs
+                            self.assertEqual(source.envelope.raw_utf8[
+                                evidence.utf8_start:evidence.utf8_end].decode(), node.visible_label)
+
+    def test_postposed_speech_verbs_require_closed_known_scope(self):
+        for speech in ('話した', '語りました', '述べた', '伝えました', '答えた', '説明しました'):
+            for host in ('と親しい友人が' + speech + 'けれど。',
+                         'と親しい友人が、' + speech + 'と弟が言った。',
+                         'とよく知らない友人が' + speech + '。',
+                         'と語った友人が' + speech + '。',
+                         'と説明した友人が' + speech + '。',
+                         'と親しい新しい友人が' + speech + '。',
+                         'と親しい友人が、、' + speech + '。'):
+                with self.subTest(host=host):
+                    artifact = self.generate(request(record(memo=
+                        '私は職場にいた。' + host + '私は記録を残した。'))).artifact
+                    self.assertFalse(artifact and any(n.proposition.predicate_lemma == '残す'
+                        for n in artifact.graph.nodes))
+            for memo, action in (
+                ('友人が話した。私は職場にいた。と友人が' + speech + '。私は記録を残した。', ''),
+                ('私は職場にいた。', 'と友人が' + speech + '。私は記録を残した。'),
+            ):
+                with self.subTest(memo=memo, action=action):
+                    artifact = self.generate(request(record(memo=memo, action=action))).artifact
+                    self.assertFalse(artifact and any(n.proposition.predicate_lemma == '残す'
+                        for n in artifact.graph.nodes))
+            for independent in ('とても親しい友人が', 'とある友人が', 'と同時に友人が'):
+                with self.subTest(independent=independent, speech=speech):
+                    artifact = self.generate(request(record(memo=
+                        '私は職場にいた。' + independent + speech + '。'))).artifact
+                    self.assertIn('私は職場にいた', [n.visible_label for n in artifact.graph.nodes])
+
+    def test_postposed_speech_verbs_keep_update_and_period_evidence_boundaries(self):
+        for host in ('と親しい友人が話した。', 'と知らない人が、説明しました。'):
+            reported = '私は職場にいた。' + host
+            with self.subTest(host=host):
+                separated = self.generate(request(record(memo=reported),
+                    record(2, memo='私は職場にいた。'))).artifact
+                node, = separated.graph.nodes
+                self.assertEqual(node.visible_label, '私は職場にいた')
+                self.assertEqual(len(node.evidence_refs), 1)
+                original = record(memo='私は資料を調べた。' + reported)
+                self.assertIsNone(self.generate(request(self.with_answer(original, reported))).artifact)
+                withdrawn = self.with_answer(original, '「私は資料を調べた」は取り消します。')
+                self.assertIsNone(self.generate(request(withdrawn)).artifact)
+                revised = self.with_answer(original, '「私は資料を調べた」ではなく「私は記録を残した」です。')
+                self.assertEqual([n.visible_label for n in self.generate(request(revised)).artifact.graph.nodes],
+                                 ['私は記録を残した'])
+                compared = self.compared('私は資料を調べた。' + reported, '私は資料を調べた。').artifact
+                self.assertEqual(compared.safe_projection(authenticated_owner_scope=OWNER)
+                    ['period_comparison']['safe_change_kinds'], ['UNKNOWN_SCOPE_CHANGED'])
+
     def test_qualified_postposed_speakers_do_not_become_self_facts(self):
         for clause in ('私は仕事を続けたい', '私は家族を守りたい',
                        '私は職場にいた', '私は職場にいなかった',

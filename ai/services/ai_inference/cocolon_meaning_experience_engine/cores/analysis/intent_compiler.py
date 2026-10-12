@@ -1359,6 +1359,13 @@ def _self_wish_or_past_event(proposition):
              or proposition.role_state == 'PAST_RESPONSIBILITY'))
 
 
+# The same finite past speech forms open a forward report and can close a
+# proved postposed quotation. Recognizing speech never attributes its content
+# to the owner; closure only releases the following independent statement.
+_PAST_SPEECH = (r'(?:言った|言いました|話した|話しました|語った|語りました|'
+                r'述べた|述べました|伝えた|伝えました|答えた|答えました|説明した|説明しました)')
+
+
 def _known_postposed_host(continuation, *, closed_speech=False):
     # Reuse the established speaker/host grammar for rejection and closure.
     # A single written i-adjective can qualify a kanji/katakana speaker noun
@@ -1377,8 +1384,8 @@ def _known_postposed_host(continuation, *, closed_speech=False):
                          r'[一-鿿々ァ-ヴー]+'
                          r'(?:の' + _NOMINAL + r')*')
     match = re.fullmatch if closed_speech else re.match
-    speech = (r'(?:言った|言いました)' if closed_speech else
-              r'(?:言った|言いました|言わなかった(?:です)?|言いませんでした)')
+    speech = (_PAST_SPEECH if closed_speech else
+              r'(?:' + _PAST_SPEECH + r'|言わなかった(?:です)?|言いませんでした)')
     if match(r'と(?:は|も)?' + qualified_speaker + r'(?:は|が|も)'
              r'(?:[、，][ \u3000]*)?' + speech, continuation):
         return True
@@ -1388,7 +1395,8 @@ def _known_postposed_host(continuation, *, closed_speech=False):
         # Closure requires a whole known speaker/speech form. The broad
         # rejection prefixes below (e.g. と信 / などと) prove no such scope.
         return re.fullmatch(r'と(?:は|も)?' + speaker + speech, continuation)
-    return re.match(r'(?:と(?:は|も)?' + speaker + r'(?:思|考|感|言|い|聞|書|読|伝|認|信|報)|'
+    return re.match(r'(?:と(?:は|も)?' + speaker + r'(?:' + _PAST_SPEECH
+                    + r'|思|考|感|言|い|聞|書|読|伝|認|信|報)|'
                     r'って|わけ|訳|のでは|のか|のは|のも|なんて|などと|かも|かどうか|はず)', continuation)
 
 
@@ -1578,9 +1586,13 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
                     # who acted. Do not swallow nested hosts into its name.
                     host = re.match(r'(?:(?:と|などと)(?P<speaker>[^。．.\r\n;；、，,「」『』!?！？]+?)'
                             r'(?:は|が|も)(?P<speech_pause>[、，][ \u3000]*)?'
-                            r'(?:言った|言いました)|の(?:は|も)嘘だった)', preceding)
+                            r'(?P<speech>' + _PAST_SPEECH + r')|の(?:は|も)嘘だった)', preceding)
                     if host is not None:
-                        if (host['speech_pause'] is not None
+                        # New speech forms require the known whole host even
+                        # without a comma. An opaque name must not swallow a
+                        # relative clause such as 語った友人 or a nested report.
+                        if ((host['speech_pause'] is not None
+                                or host['speech'] not in {None, '言った', '言いました'})
                                 and not _known_postposed_host(preceding, closed_speech=True)):
                             return None
                         speaker_scope = host['speaker'] or ''
@@ -1609,9 +1621,7 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
                                           ''.join(noun for _, noun in written.arguments))):
                     continue
                 if self_past_action:
-                    speech = re.search(r'(?:言った|言いました|話した|話しました|語った|語りました|'
-                        r'述べた|述べました|伝えた|伝えました|答えた|答えました|説明した|説明しました)$',
-                        preceding)
+                    speech = re.search(_PAST_SPEECH + r'$', preceding)
                     report_noun = re.search(r'の(?:話|発言|引用|説明|報告|内容)(?:だ|です|だった|でした)$',
                         preceding)
                     written_report = (re.search(r'(?:書いた|書きました)$', preceding)
