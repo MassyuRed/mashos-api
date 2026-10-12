@@ -43,6 +43,76 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_forward_present_speech_keeps_attribution_across_fields(self):
+        for speech in ('言う', '言います', '話す', '話します', '語る', '語ります',
+                       '述べる', '述べます', '伝える', '伝えます', '答える', '答えます',
+                       '説明する', '説明します'):
+            for claimed in ('私は仕事を続けたい', '私は職場にいた', '私は記録を担当した',
+                            '私は資料を調べた', '私は嬉しかった'):
+                with self.subTest(speech=speech, claimed=claimed):
+                    self.assertEqual(self.generate(request(record(
+                        memo='友人が' + speech + '。' + claimed + '。'))).status,
+                        EngineStatus.UNAVAILABLE)
+        for host, claimed in (
+            ('友人が言う。', '私は仕事を続けたい。'),
+            ('親しい友人は、話します。', '私は職場にいた。'),
+            ('知らない友人が語る。', '私は記録を担当した。'),
+            ('知っている友人の母も，述べます。', '私は資料を調べた。'),
+            ('友人が伝える。', '私は嬉しかった。'),
+            ('優しくない同僚は答えます。', '私は職場にいた。'),
+            ('親しかった友人が説明する。', '私は仕事を続けたい。'),
+        ):
+            for memo, action in ((host, claimed), (claimed, host)):
+                with self.subTest(host=host, claimed=claimed, memo=memo, action=action):
+                    self.assertEqual(self.generate(request(record(memo=memo, action=action))).status,
+                                     EngineStatus.UNAVAILABLE)
+
+    def test_forward_present_speech_preserves_prior_evidence_and_updates(self):
+        for host in ('友人が言う。', '親しい友人は、話します。', '知らない友人が語る。',
+                     '知っている友人の母も，述べます。', '友人が伝える。',
+                     '優しくない同僚は答えます。', '親しかった友人が説明する。'):
+            reported = host + '私は職場にいた。私は資料を調べた。'
+            memo = '私は記録を残した。' + reported
+            req = request(record(memo=memo))
+            with self.subTest(host=host):
+                artifact = self.generate(req).artifact
+                node, = artifact.graph.nodes
+                self.assertEqual(node.visible_label, '私は記録を残した')
+                source, = freeze_analysis_sources(req).sources
+                evidence, = node.evidence_refs
+                raw = source.envelope.raw_utf8
+                self.assertEqual(raw[evidence.utf8_start:evidence.utf8_end].decode(), node.visible_label)
+                self.assertEqual(raw[evidence.field_utf8_start:evidence.field_utf8_end].decode()
+                    [evidence.scalar_start:evidence.scalar_end], node.visible_label)
+                self.assertEqual(evidence.literal_sha256, hashlib.sha256(node.visible_label.encode()).hexdigest())
+                self.assertFalse(artifact.graph.edges)
+                self.assertFalse(artifact.graph.conflicts)
+                self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+                separated = self.generate(request(record(memo=reported),
+                    record(2, memo='私は資料を調べた。'))).artifact
+                retained, = separated.graph.nodes
+                self.assertEqual(retained.visible_label, '私は資料を調べた')
+                self.assertEqual(len(retained.evidence_refs), 1)
+                self.assertEqual(separated.safe_projection(authenticated_owner_scope=OWNER)
+                    ['nodes'][0]['evidence_badge_count'], 1)
+                self.assertIsNone(self.generate(request(self.with_answer(
+                    record(memo='私は記録を残した。'), reported))).artifact)
+                for answer in ('「私は記録を残した」は取り消します。',
+                               '「私は記録を残した」ではなく「私は資料を見た」です。'):
+                    changed = self.generate(request(self.with_answer(record(memo=memo), answer))).artifact
+                    if '取り消' in answer:
+                        self.assertIsNone(changed)
+                    else:
+                        self.assertEqual([n.visible_label for n in changed.graph.nodes], ['私は資料を見た'])
+                compared = self.compared(memo, '私は記録を残した。').artifact
+                self.assertEqual(compared.safe_projection(authenticated_owner_scope=OWNER)
+                    ['period_comparison']['safe_change_kinds'], ['UNKNOWN_SCOPE_CHANGED'])
+                prior = self.generate(request(record(memo='私は職場にいた。' + host))).artifact
+                self.assertEqual([n.visible_label for n in prior.graph.nodes], ['私は職場にいた'])
+        independent = self.generate(request(record(
+            memo='私は自分の考えを話す。私は職場にいた。'))).artifact
+        self.assertEqual([n.visible_label for n in independent.graph.nodes], ['私は職場にいた'])
+
     def test_present_speech_keeps_quoted_content_out_of_self_map(self):
         for speech in ('言う', '言います', '話す', '話します', '語る', '語ります',
                        '述べる', '述べます', '伝える', '伝えます', '答える', '答えます',

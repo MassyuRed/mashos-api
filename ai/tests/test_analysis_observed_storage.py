@@ -87,6 +87,13 @@ async def storage_sql_fixture():
 class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
     async def test_unproved_postposed_or_past_action_attribution_never_commits(self):
         for memo, action in (
+            ('友人が言う。私は仕事を続けたい。', ''),
+            ('親しい友人は、話します。私は職場にいた。', ''),
+            ('知らない友人が語る。私は記録を担当した。', ''),
+            ('知っている友人の母も，述べます。私は資料を調べた。', ''),
+            ('友人が伝える。私は嬉しかった。', ''),
+            ('私は職場にいた。', '優しくない同僚は答えます。'),
+            ('親しかった友人が説明する。', '私は仕事を続けたい。'),
             ('友人が話した。私は資料を調べた。', ''),
             ('友人が話していました。私は資料を調べなかった。', ''),
             ('私は資料を調べた。と友人が言った。', ''),
@@ -1814,7 +1821,14 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         for context, same_record in (('夢を見た。', False), ('友人から聞いた話です。', False),
                 ('本で読んだ内容です。', False), ('友人が話した。', False),
                 ('友人が話していました。', False), ('友人が話した。', True),
-                ('友人が話していました。', True)):
+                ('友人が話していました。', True),
+                ('友人が言う。', False), ('友人が言う。', True),
+                ('親しい友人は、話します。', False), ('親しい友人は、話します。', True),
+                ('知らない友人が語る。', False), ('知らない友人が語る。', True),
+                ('知っている友人の母も，述べます。', False), ('知っている友人の母も，述べます。', True),
+                ('友人が伝える。', False), ('友人が伝える。', True),
+                ('優しくない同僚は答えます。', False), ('優しくない同僚は答えます。', True),
+                ('親しかった友人が説明する。', False), ('親しかった友人が説明する。', True)):
             with self.subTest(context=context, same_record=same_record):
                 original = dict(self.fx['original'], memo='私は記録を残した。')
                 reported = dict(original, id=str(UUID(int=102)),
