@@ -409,7 +409,7 @@ _WRITTEN_ANXIETY_DEGREES = {
 def _finite_feeling_proposition(value):
     # Retain topic punctuation in the complete endpoint's source range.
     # Admission requires either the complete pair or a standalone SELF witness.
-    prefix = re.match(r'^(その後|それから)[、， \u3000]*', value)
+    prefix = re.match(r'^(その後|それから|今日|昨日)[、， \u3000]*', value)
     offset = prefix.end() if prefix else 0
     subject = re.compile(r'(?:私|僕|ぼく|俺|おれ|わたし|自分)は(?:[、，][ \u3000]*)?').match(value, offset)
     # A sequence marker is not evidence of who experienced the feeling.
@@ -417,6 +417,20 @@ def _finite_feeling_proposition(value):
     if prefix and subject is None:
         return None
     start = subject.end() if subject else 0
+    token = prefix.group(1) if prefix else ''
+    marker = {'その後': 'AFTER_PREVIOUS', 'それから': 'THEN_OR_ADDITION'}.get(token, '')
+    day = {'今日': 'TODAY', '昨日': 'YESTERDAY'}.get(token, '')
+    parts = ((marker or 'RELATIVE_DAY_' + day, 0, offset),) if prefix else ()
+    parts += (('SELF_TOPIC', offset, start),) if subject else ()
+    post_day = re.match(r'(今日|昨日)[、， \u3000]*', value[start:]) if subject else None
+    if post_day:
+        # One local day only; neither a second day nor a connective licenses
+        # a combined time scope. The finite suffix must still match in full.
+        if prefix:
+            return None
+        day = {'今日': 'TODAY', '昨日': 'YESTERDAY'}[post_day.group(1)]
+        parts += (('RELATIVE_DAY_' + day, start, start + post_day.end()),)
+        start += post_day.end()
     degree = next((word for word in _WRITTEN_ANXIETY_DEGREES if value.startswith(word, start)), '')
     modifier = _WRITTEN_ANXIETY_DEGREES.get(degree, '')
     finite_start = start + len(degree)
@@ -432,19 +446,20 @@ def _finite_feeling_proposition(value):
     # its written degree never inherits a past or compound temporal scope.
     if current and subject is None:
         return None
+    # Relative days qualify only a complete standalone past feeling. They
+    # are source-relative words, not dates inferred from the record timestamp.
+    if day and (current or subject is None):
+        return None
     # Preserve the written degree only for an explicit SELF's asserted anxiety.
     # Degree over a negated feeling has no proved scope in the shared witness.
     if degree and (subject is None or negative or lemma != '不安だ'):
         return None
-    marker = {'その後': 'AFTER_PREVIOUS', 'それから': 'THEN_OR_ADDITION'}.get(
-        prefix.group(1) if prefix else '', '')
-    parts = ((marker, 0, offset),) if prefix else ()
-    parts += (('SELF_TOPIC', offset, start),) if subject else ()
     parts += (('WRITTEN_MODIFIER_' + modifier, start, finite_start),) if degree else ()
     return ObservedProposition('SELF' if subject else 'UNSPECIFIED', (),
         lemma, 'negative' if negative else 'positive', 'feeling', 'current_input' if current else 'past',
         parts + (('FINITE_FEELING', finite_start, len(value)),),
         result_state='CURRENT_FEELING' if current else 'PAST_FEELING', sequence_marker=marker,
+        relative_day=day,
         written_modifiers=(modifier,) if degree else ())
 
 
@@ -481,13 +496,18 @@ def _standalone_finite_feeling_witness(nucleus, proposition):
     operators = ({'operator:feeling'} if negative_affect else
                  {'operator:negation'} if proposition.polarity == 'negative'
                  else {'operator:positive_change', 'semantic_role:current_change'})
+    # Shared present/past marks the written day; the fully parsed finite host
+    # separately proves past tense. Do not borrow a date from another clause.
+    times = ({'present'} if proposition.relative_day == 'TODAY' else
+             {'past'} if proposition.relative_day == 'YESTERDAY' else
+             {'current_input'} if current else {'current_input', 'past'})
     return (nucleus.grounding_kind == 'explicit'
         and nucleus.allowed_claim_scope == 'explicit_current_input'
         and nucleus.retention in {'required', 'should'}
         and nucleus.source_fields == ('memo',) and len(nucleus.source_span_ids) == 1
         and (nucleus.kind, frame.predicate_kind, frame.modality) == expected
         and frame.actor == 'current_user' and frame.polarity == expected_polarity
-        and frame.time_scope in ({'current_input'} if current else {'current_input', 'past'})
+        and frame.time_scope in times
         and operators <= set(frame.attribute_codes)
         and (expected[1] != 'feeling' or 'operator:feeling' in frame.attribute_codes)
         and not any(code.startswith(('source_fragment_', 'surface_scalar_',
@@ -1119,7 +1139,7 @@ def _action_change_pair(source, plan, span_id):
     left = _te_action_proposition(raw[a:b]) if te_after else _proposition(raw[a:b])
     right = _bounded_change_proposition(raw[c:d])
     if (left is None or right is None or _has_unparsed_nominal_scope(right) or left.actor != 'SELF'
-            or right.sequence_marker
+            or right.sequence_marker or right.relative_day
             # Anxiety has a standalone witness only, not a shared pair proof.
             or right.predicate_lemma == '不安だ'
             # Decisions are admitted as whole standalone past clauses only.
@@ -1353,7 +1373,7 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
         if (value.endswith(('落ち着きました', '嬉しかったです', 'うれしかったです'))
                 and not _source_polite_past_feeling_is_bound(span, source.normalized)):
             return None
-        if (change.polarity == 'negative' or change.sequence_marker
+        if (change.polarity == 'negative' or change.sequence_marker or change.relative_day
                 or change.predicate_lemma == '不安だ'):
             # Punctuation cannot close a reported speaker or detach a
             # cognitive/retracted host. This bounds only the new admission;

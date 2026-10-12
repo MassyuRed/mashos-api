@@ -38,6 +38,114 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_dated_past_feelings_keep_complete_source_and_written_day(self):
+        forms = (
+            ('不安だった', '不安だ', 'positive', '不安だった'),
+            ('不安でした', '不安だ', 'positive', '不安だった'),
+            ('少し不安でした', '不安だ', 'positive', '少し不安だった'),
+            ('不安じゃありませんでした', '不安だ', 'negative', '不安ではなかった'),
+            ('安心した', '安心する', 'positive', '安心した'),
+            ('落ち着いた', '落ち着く', 'positive', '落ち着いた'),
+            ('嬉しくありませんでした', '嬉しい', 'negative', '嬉しくなかった'),
+            *((degree + '不安だった', '不安だ', 'positive', degree + '不安だった')
+              for degree, _ in WRITTEN_ANXIETY_DEGREES[1:]),
+            *((finite, '不安だ', 'negative', '不安ではなかった') for finite in (
+                '不安ではなかった', '不安ではなかったです', '不安ではありませんでした',
+                '不安じゃなかった', '不安じゃなかったです')))
+        for day, scope in (('今日', 'TODAY'), ('昨日', 'YESTERDAY')):
+            for finite, lemma, polarity, label in forms:
+                for template in ('{}、私は', 'わたしは、{}、', '僕は{}'):
+                    literal = template.format(day) + finite
+                    with self.subTest(literal=literal):
+                        req = request(record(memo=literal + '。'))
+                        artifact = self.generate(req).artifact
+                        self.assertIsNotNone(artifact)
+                        node, = artifact.graph.nodes
+                        p = node.proposition
+                        self.assertEqual((p.actor, p.predicate_lemma, p.polarity,
+                            p.modality, p.temporal_scope, p.relative_day),
+                            ('SELF', lemma, polarity, 'feeling', 'past', scope))
+                        self.assertEqual({i for _, a, b in p.source_parts for i in range(a, b)}, set(range(len(literal))))
+                        self.assertEqual([literal[a:b].rstrip('、， \u3000') for kind, a, b in p.source_parts
+                            if kind == 'RELATIVE_DAY_' + scope], [day])
+                        source, = freeze_analysis_sources(req).sources
+                        evidence, = node.evidence_refs
+                        raw = source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                        self.assertEqual(raw.decode(), literal)
+                        self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+                        projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                        self.assertEqual(projection['nodes'][0]['visible_label'],
+                            'この記述時点の' + day + '：' + label + '（記録された気持ち）')
+                        self.assertFalse(projection['edges'])
+
+    def test_dated_past_feelings_keep_unknown_scope_and_reported_hosts_pending(self):
+        for clause in (
+                '昨日、不安だった', '昨日、友人は不安だった', '明日、私は不安だった',
+                '昨日の夜、私は不安だった', '私は昨日から不安だった', '私は昨日まで不安だった',
+                '昨日、私は今日不安だった', 'その後、私は昨日不安だった',
+                '昨日、それから私は不安だった', '昨日、私は少し不安ではなかった',
+                '昨日、私は少しとても不安だった', '今日、私は不安です', '私は昨日不安じゃない',
+                '昨日、私は不安だったかもしれない', '「昨日、私は不安だった」',
+                '友人は言った。昨日、私は安心した', '昨日、私は不安だった。のは嘘だった',
+                '私は資料を調べた後、昨日、私は安心した',
+                '私は資料を調べてから、今日私は落ち着いた'):
+            with self.subTest(clause=clause):
+                artifact = self.generate(request(record(memo=clause + '。私は記録を残した。'))).artifact
+                self.assertFalse(artifact and any(n.proposition.result_state == 'PAST_FEELING'
+                    for n in artifact.graph.nodes))
+        for memo, action in (('昨日、私は不安だった。', '友人の話でした。'),
+                             ('', '今日、私は不安だった。')):
+            self.assertIsNone(self.generate(request(record(memo=memo, action=action))).artifact)
+        # These polite positive forms still need a separate dated source-host
+        # witness in the shared planner; do not weaken it for this correction.
+        for finite in ('落ち着きました', '嬉しかったです', 'うれしかったです'):
+            self.assertIsNone(self.generate(request(record(memo='今日、私は' + finite + '。'))).artifact)
+
+    def test_dated_past_feelings_keep_day_local_and_require_matching_witness(self):
+        from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
+        before = compiler.build_final_stage1_grounded_observation_plan
+        for clause, time in (('今日、私は不安だった。', 'past'), ('昨日、私は不安だった。', 'present')):
+            def wrong_time(*args, **kwargs):
+                plan = before(*args, **kwargs)
+                return replace(plan, nuclei=tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+                    time_scope=time)) for n in plan.nuclei))
+            with self.subTest(clause=clause), patch.object(compiler,
+                    'build_final_stage1_grounded_observation_plan', side_effect=wrong_time):
+                self.assertIsNone(self.generate(request(record(memo=clause))).artifact)
+        clause = '昨日、私は不安だった'
+        artifact = self.generate(request(record(memo=clause + '。それから、私は記録を残した。'))).artifact
+        self.assertEqual([n.proposition.relative_day for n in artifact.graph.nodes], ['YESTERDAY', ''])
+        self.assertEqual(len(artifact.graph.edges), 1)
+        for req in (request(record(memo=clause + '。まだわからない。それから、私は記録を残した。')),
+                    request(record(memo=clause + '。', action='それから、私は記録を残した。')),
+                    request(record(memo=clause + '。'), record(2, memo='それから、私は記録を残した。'))):
+            g = self.generate(req).artifact.graph
+            self.assertEqual(len(g.nodes), 2)
+            self.assertFalse(g.edges)
+        node = artifact.graph.nodes[0]
+        for p in (replace(node.proposition, relative_day=''), replace(node.proposition, relative_day='TODAY')):
+            invalid = replace(artifact, graph=replace(artifact.graph,
+                nodes=(replace(node, proposition=p), artifact.graph.nodes[1])))
+            with self.assertRaises(AnalysisSourceError):
+                invalid.safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_dated_past_feelings_keep_day_identity_and_explicit_updates(self):
+        old, new = '昨日、私は不安だった', '今日、私は不安だった'
+        base = record(memo=old + '。それから、私は記録を残した。')
+        corrected = self.generate(request(self.with_answer(base,
+            '「' + old + '」ではなく「' + new + '」です。'))).artifact
+        self.assertEqual([n.proposition.relative_day for n in corrected.graph.nodes
+            if n.proposition.result_state == 'PAST_FEELING'], ['TODAY'])
+        self.assertFalse(corrected.graph.edges)
+        withdrawn = self.generate(request(self.with_answer(base, '「' + old + '」は取り消します。'))).artifact
+        self.assertEqual([n.proposition.predicate_lemma for n in withdrawn.graph.nodes], ['残す'])
+        same_record = self.generate(request(record(memo=old + '。僕は昨日不安でした。' + new + '。'))).artifact
+        self.assertEqual([(n.proposition.relative_day, len(n.evidence_refs)) for n in same_record.graph.nodes],
+                         [('YESTERDAY', 2), ('TODAY', 1)])
+        separate = self.generate(request(record(memo=old + '。'), record(2, memo=old + '。'))).artifact
+        self.assertEqual(len(separate.graph.nodes), 2)
+        self.assertFalse(separate.graph.edges)
+
     def test_current_anxiety_degrees_keep_written_source_and_time(self):
         for degree, modifier in WRITTEN_ANXIETY_DEGREES:
             for finite in ('不安だ', '不安です'):
@@ -360,7 +468,7 @@ class AnalysisVerticalTests(unittest.TestCase):
             '私は少し少し不安だった', '私は少し、とても不安だった',
             '私はすごく不安だった', '私は幾分不安だった', '私は多少不安だった',
             '私は少し安心した', '私は少し落ち着いた',
-            '私は少し、不安だった', '私は昨日少し不安だった', '昨日、私は少し不安だった',
+            '私は少し、不安だった',
             '私は少し不安だったか', '私は少し不安だった？', '私は少し不安だったかもしれない',
             '「私は少し不安だった」', '私は少し不安だったと聞いた',
             '私は少し不安だった。と私は思う', '私は少し不安だった。のは嘘だった',
@@ -422,7 +530,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                     ('私は', 'かもしれない。'), ('「私は', '」。'), ('私は', 'と聞いた。'),
                     ('私は', '。のは嘘だった。'), ('私は', '。と私は思う。'),
                     ('友人は言っていた。私は', '。'), ('夢を見た。私は', '。'),
-                    ('昨日、私は', '。'), ('私は資料を調べた後、私は', '。'),
+                    ('私は資料を調べた後、私は', '。'),
                     ('私は資料を調べてから、私は', '。')):
                 with self.subTest(degree=degree, prefix=prefix, suffix=suffix):
                     artifact = self.generate(request(record(memo=prefix + degree + '不安だった'
@@ -604,6 +712,10 @@ class AnalysisVerticalTests(unittest.TestCase):
                     ('友人は言った。私は', '。'), ('友人は言っていた。私は', '。'),
                     ('夢を見た。私は', '。'), ('友人によると。私は', '。'),
                     ('私は資料を調べた後、私は', '。'), ('私は資料を調べてから、私は', '。')):
+                # The dated past forms now have their own source/day checks.
+                if prefix in ('私は昨日、', '昨日、私は') and form in (
+                        '不安だった', '不安でした', '不安ではなかった', '不安じゃありませんでした'):
+                    continue
                 with self.subTest(form=form, prefix=prefix, suffix=suffix):
                     artifact = self.generate(request(record(memo=prefix + form + suffix))).artifact
                     self.assertFalse(artifact and any(n.proposition.predicate_lemma == '不安だ'

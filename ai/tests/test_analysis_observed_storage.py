@@ -1898,6 +1898,12 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_current_anxiety_keeps_saved_writing_time_without_regeneration(self):
         for memo, labels in (
+                ('昨日、私は不安だった。', ('この記述時点の昨日：不安だった（記録された気持ち）',)),
+                ('私は今日、かなり不安でした。', ('この記述時点の今日：かなり不安だった（記録された気持ち）',)),
+                ('昨日、私は不安じゃありませんでした。', ('この記述時点の昨日：不安ではなかった（記録された気持ち）',)),
+                ('今日、私は安心した。', ('この記述時点の今日：安心した（記録された気持ち）',)),
+                ('昨日、私は不安だった。今日、私は落ち着いた。',
+                 ('この記述時点の昨日：不安だった（記録された気持ち）', 'この記述時点の今日：落ち着いた（記録された気持ち）')),
                 *(('私は' + degree + finite + '。', (degree + '不安だ（この記述時点の気持ち）',))
                   for degree in ('少し', 'とても', 'かなり', 'やや', 'ちょっと') for finite in ('不安だ', '不安です')),
                 ('私はかなり不安です。それから、私は記録を残した。',
@@ -1954,6 +1960,9 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                         self.assertNotIn(private, encoded)
 
     async def test_written_anxiety_degrees_keep_saved_degree_and_order(self):
+        await self._assert_action_change_saved(
+            '昨日、私は不安だった。それから、私は記録を残した。',
+            'それから：記録を残す（実行済み）')
         for degree in ('少し', 'とても', 'かなり', 'やや', 'ちょっと'):
             with self.subTest(degree=degree):
                 await self._assert_action_change_saved(
