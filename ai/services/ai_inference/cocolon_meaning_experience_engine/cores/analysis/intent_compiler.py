@@ -1433,6 +1433,13 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
         and (proposition.modality, proposition.temporal_scope) == ('fact', 'past')
         and proposition.predicate_lemma in _PAST_ACTION_LEMMAS)
     bounded_past_action = past_decision or unattributed_action
+    # An explicit first-person topic does not close another speaker's report.
+    # Apply the existing host checks to ordinary whole past actions as well;
+    # compound endpoints keep their own shared source/host proof.
+    self_past_action = bool(proposition and proposition.actor == 'SELF'
+        and proposition.predicate_lemma in _PAST_ACTION_LEMMAS
+        and (proposition.modality, proposition.temporal_scope) == ('fact', 'past')
+        and pair is None and a == 0 and b == len(span.raw_text))
     dated_compound_nominal = bool(proposition and proposition.relative_day and proposition.arguments
         and _unparsed_day_extension(proposition.arguments[0][1], separated=False)
         and not _unparsed_day_extension(proposition.arguments[0][1], separated=True))
@@ -1441,7 +1448,8 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     # Resolving a calendar-suffix collision does not resolve the speaker.
     # Apply the existing full-source attribution boundary to these dated
     # nominals in scenes, roles and wishes as well as performed actions.
-    source_host_required = qualified_past or bounded_past_action or dated_compound_nominal or kana_owned_writing
+    source_host_required = (qualified_past or bounded_past_action or self_past_action
+                            or dated_compound_nominal or kana_owned_writing)
     if unattributed_action:
         # Shared current_user is not an actor proof. The existing complete
         # finite grammar supplies tense/negation just as for SELF clauses;
@@ -1478,7 +1486,8 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
         # A newly readable object must not turn a reported speaker's
         # first-person clause into the owner's completed action.
         prefix = context[:span.start_index]
-        other_field = ('memo' if (bounded_past_action or dated_compound_nominal or kana_owned_writing)
+        other_field = ('memo' if (bounded_past_action or self_past_action
+                                 or dated_compound_nominal or kana_owned_writing)
                        and span.source_field == 'memo_action' else 'memo_action')
         other = str(source.normalized.get(other_field, ''))
         if unattributed_action:
@@ -1492,23 +1501,50 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
                 r'[、，, \u3000]*[。．.!！\r\n;；\s]*$')
             if any(re.search(open_topic, text) for text in (prefix, other)):
                 return None
-        for preceding in re.split(r'[。．.]', prefix + '\n' + other):
-            preceding = preceding.strip()
-            written = _proposition(preceding)
-            # Reuse the full nominal interpretation for a completed writing
-            # act. A qualified object does not by itself open a quotation;
-            # report/deictic content and extra participants still can.
-            if (written and written.predicate_lemma == '書く'
-                    and (written.actor, written.modality, written.temporal_scope,
-                         written.polarity) == ('SELF', 'fact', 'past', 'positive')
-                    and len(written.arguments) in {1, 2}
-                    and 'を' in {case for case, _ in written.arguments}
-                    and all(case in {'を', 'に', 'で'} for case, _ in written.arguments)
-                    and not re.search(r'何|誰|次|以下|上記|下記|話|発言|引用|説明|報告|内容',
-                                      ''.join(noun for _, noun in written.arguments))):
-                continue
-            if _analysis_prefix_opens_report(preceding):
-                return None
+        for earlier_field in (prefix, other):
+            clauses = [clause.strip() for clause in re.split(
+                r'[。．.\r\n;；]' if self_past_action else r'[。．.]', earlier_field) if clause.strip()]
+            for index, preceding in enumerate(clauses):
+                preceding = preceding.strip()
+                previous = _proposition(clauses[index - 1].strip()) if self_past_action and index else None
+                # Only pair a trailing host with a clause whose following-host
+                # guard is established below. Parsed SELF alone is insufficient
+                # for ordinary wishes, scenes and roles. Keep the guarded pair
+                # unobserved; never join fields or clear an earlier open report.
+                if (previous is not None and previous.actor == 'SELF'
+                        and not previous.dependent_form and previous.possible_content is None
+                        and (previous.result_state in {'PAST_FEELING', 'CURRENT_FEELING'}
+                            or previous.predicate_lemma in _PAST_DECISION_LEMMAS
+                            or (previous.predicate_lemma in _PAST_ACTION_LEMMAS
+                                and (previous.modality, previous.temporal_scope) == ('fact', 'past'))
+                            or any(_NOMINAL_CASE_LINK.search(noun) for _, noun in previous.arguments)
+                            or (previous.predicate_lemma == '書く' and any(
+                                _KANA_SELF_POSSESSIVE.match(noun) for _, noun in previous.arguments))
+                            or (previous.relative_day and previous.arguments
+                                and _unparsed_day_extension(previous.arguments[0][1], separated=False)
+                                and not _unparsed_day_extension(previous.arguments[0][1], separated=True)))):
+                    host = re.match(r'(?:(?:と|などと)(?:私|僕|ぼく|俺|おれ|わたし|自分|'
+                            + _NOMINAL + r'(?:の' + _NOMINAL + r')*)(?:は|が|も)'
+                            r'(?:言った|言いました)|の(?:は|も)嘘だった)', preceding)
+                    if host is not None:
+                        if host.end() != len(preceding):
+                            return None
+                        continue
+                written = _proposition(preceding)
+                # Reuse the full nominal interpretation for a completed writing
+                # act. A qualified object does not by itself open a quotation;
+                # report/deictic content and extra participants still can.
+                if (written and written.predicate_lemma == '書く'
+                        and (written.actor, written.modality, written.temporal_scope,
+                             written.polarity) == ('SELF', 'fact', 'past', 'positive')
+                        and len(written.arguments) in {1, 2}
+                        and 'を' in {case for case, _ in written.arguments}
+                        and all(case in {'を', 'に', 'で'} for case, _ in written.arguments)
+                        and not re.search(r'何|誰|次|以下|上記|下記|話|発言|引用|説明|報告|内容',
+                                          ''.join(noun for _, noun in written.arguments))):
+                    continue
+                if _analysis_prefix_opens_report(preceding):
+                    return None
         if re.search(r'(?:言って|話して|語って|述べて|書いて|伝えて|答えて|説明して)'
                 r'(?:いた|いました|いる|います)(?:[。．.\s]|$)', prefix + '\n' + other):
             return None

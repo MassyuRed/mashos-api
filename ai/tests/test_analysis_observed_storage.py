@@ -85,6 +85,29 @@ async def storage_sql_fixture():
 
 
 class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unproved_self_past_action_attribution_never_commits(self):
+        for memo, action in (
+            ('友人が話した。私は資料を調べた。', ''),
+            ('友人が話していました。私は資料を調べなかった。', ''),
+            ('私は資料を調べた。と友人が言った。', ''),
+            ('私は資料を調べた。のは嘘だった。', ''),
+            ('私は資料を調べた。', '友人が話した。'),
+            ('友人が話した。', '私は資料を調べた。'),
+        ):
+            with self.subTest(memo=memo, action=action):
+                original = dict(self.fx['original'], memo=memo, memo_action=action,
+                    emotion_details=[{'type': '平穏', 'strength': 'medium'}])
+                snapshot = {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                    {'original': original, 'thread': None, 'events': []}]}
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', AsyncMock(return_value=snapshot)) as rpc, \
+                        self.assertLogs(realizer.logger, level='WARNING'):
+                    pending = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                self.assertIs(pending, service._INSUFFICIENT_INPUT)
+                self.assertEqual([call.args[0] for call in rpc.await_args_list],
+                                 ['analysis_observed_source_snapshot'])
+
     async def test_closed_possibility_survives_save_read_as_unknown_scope(self):
         for memo, labels, edge_count in (
             ('私は不安だ。私は資料を調べたかもしれない。', ['不安だ（この記述時点の気持ち）'], 0),
@@ -1696,18 +1719,23 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                     self.assertNotIn(hidden, json.dumps(saved, ensure_ascii=False))
                 self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
 
-    async def test_open_attribution_keeps_only_independent_record_after_save_and_read(self):
-        for context in ('夢を見た。', '友人から聞いた話です。', '本で読んだ内容です。'):
-            with self.subTest(context=context):
+    async def test_open_attribution_keeps_independent_content_after_save_and_read(self):
+        for context, same_record in (('夢を見た。', False), ('友人から聞いた話です。', False),
+                ('本で読んだ内容です。', False), ('友人が話した。', False),
+                ('友人が話していました。', False), ('友人が話した。', True),
+                ('友人が話していました。', True)):
+            with self.subTest(context=context, same_record=same_record):
                 original = dict(self.fx['original'], memo='私は記録を残した。')
                 reported = dict(original, id=str(UUID(int=102)),
                     memo=context + '私は資料を調べた。その後私は作品を作った。')
+                members = ((dict(original, memo=original['memo'] + reported['memo']),)
+                           if same_record else (reported, original))
                 writes = []
                 async def rpc(name, payload):
                     if name == 'analysis_observed_source_snapshot':
                         return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
                             {'original': member, 'thread': None, 'events': []}
-                            for member in (reported, original)]}
+                            for member in members]}
                     if name == 'analysis_observed_commit':
                         writes.append(payload)
                         self.row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])

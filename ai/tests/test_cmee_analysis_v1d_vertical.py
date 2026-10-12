@@ -43,6 +43,108 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_self_past_actions_do_not_become_reported_speakers_actions(self):
+        clauses = ('私は資料を調べた', '私は資料を調べなかった',
+                   '僕は資料を調べました', '私は資料を調べませんでした',
+                   '私は考えをノートに書いた', '私は記録を残した',
+                   '私は仕事を続けた', '私は資料をメモした')
+        for clause in clauses:
+            for prefix in ('友人が話した。', '友人は言った。', '友人が話していました。'):
+                for memo, action in ((prefix + clause + '。', ''),
+                                     (clause + '。', prefix), (prefix, clause + '。')):
+                    with self.subTest(clause=clause, memo=memo, action=action):
+                        self.assertIsNone(self.generate(request(record(memo=memo, action=action))).artifact)
+            for host in ('と友人が言った。', 'と私は思う。', 'って聞いた。', 'のは嘘だった。', 'わけではない。'):
+                with self.subTest(clause=clause, host=host):
+                    self.assertIsNone(self.generate(request(record(memo=clause + '。' + host))).artifact)
+
+    def test_self_past_action_report_scope_keeps_prior_and_independent_evidence(self):
+        memo = '私は記録を残した。友人が話した。私は資料を調べた。その後、私はノートを見た。'
+        req = request(record(memo=memo))
+        artifact = self.generate(req).artifact
+        node, = artifact.graph.nodes
+        self.assertEqual(node.visible_label, '私は記録を残した')
+        source, = freeze_analysis_sources(req).sources
+        evidence, = node.evidence_refs
+        raw = source.envelope.raw_utf8
+        self.assertEqual(raw[evidence.utf8_start:evidence.utf8_end].decode(), node.visible_label)
+        self.assertEqual(raw[evidence.field_utf8_start:evidence.field_utf8_end].decode()
+            [evidence.scalar_start:evidence.scalar_end], node.visible_label)
+        self.assertEqual(evidence.literal_sha256, hashlib.sha256(node.visible_label.encode()).hexdigest())
+        self.assertFalse(artifact.graph.edges)
+        self.assertFalse(artifact.graph.conflicts)
+        self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+        text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+        self.assertNotIn('資料', text)
+        self.assertNotIn('ノート', text)
+        self.assertIn('まだ読み取れていない内容', text)
+        separate = self.generate(request(record(memo='友人が話した。私は資料を調べた。'),
+            record(2, memo='私は資料を調べた。'))).artifact
+        retained, = separate.graph.nodes
+        self.assertEqual(len(retained.evidence_refs), 1)
+        self.assertEqual(separate.safe_projection(authenticated_owner_scope=OWNER)
+            ['nodes'][0]['evidence_badge_count'], 1)
+        for answer in ('友人が話した。私は資料を調べた。',
+                       '「私は記録を残した」ではなく「私は資料を調べた。と友人が言った」です。'):
+            with self.subTest(answer=answer):
+                self.assertIsNone(self.generate(request(self.with_answer(
+                    record(memo='私は記録を残した。'), answer))).artifact)
+        for answer in ('「私は記録を残した」は取り消します。',
+                       '「私は記録を残した」ではなく「私は資料を見た」です。'):
+            with self.subTest(answer=answer):
+                result = self.generate(request(self.with_answer(record(memo=memo), answer)))
+                if '取り消' in answer:
+                    self.assertIsNone(result.artifact)
+                else:
+                    node, = result.artifact.graph.nodes
+                    self.assertEqual(node.visible_label, '私は資料を見た')
+                    self.assertTrue(result.artifact.graph.source_updates)
+        compared = self.compared(memo, '私は記録を残した。').artifact
+        self.assertEqual(compared.safe_projection(authenticated_owner_scope=OWNER)
+            ['period_comparison']['safe_change_kinds'], ['UNKNOWN_SCOPE_CHANGED'])
+
+    def test_self_past_action_host_check_preserves_closed_actions_and_unknown_sentences(self):
+        for memo, nodes, edges in (
+            ('私は資料を調べた。', 1, 0), ('私は資料を調べなかった。', 1, 0),
+            ('私は考えをノートに書いた。その後、私は資料を調べた。', 2, 1),
+            ('私は資料を調べた。その後、私は記録を残した。', 2, 1),
+            ('私は資料を調べなかった。その後、私は記録を残した。', 2, 1),
+            ('私は資料を調べた。不明な出来事があった。その後、私は記録を残した。', 2, 0),
+            ('私は資料を調べた。とても不安だった。', 1, 0),
+            ('私は資料を調べた。ところで、話題を変える。', 1, 0),
+            ('私は資料を調べた。とりあえず、休む。', 1, 0),
+            ('私は資料を調べてから、私は安心した。', 2, 1),
+        ):
+            with self.subTest(memo=memo):
+                artifact = self.generate(request(record(memo=memo))).artifact
+                self.assertEqual(len(artifact.graph.nodes), nodes)
+                self.assertEqual(len(artifact.graph.edges), edges)
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_self_past_action_postposed_host_cannot_close_an_unrelated_report(self):
+        for prefix in ('私は嬉しかった。', '私は資料を調べた。', '私は不安だ。',
+                       '私は嬉しかった。\r\n', '私は嬉しかった\r\n'):
+            for host in ('と友人が言った。', 'のは嘘だった。'):
+                with self.subTest(prefix=prefix, host=host):
+                    artifact = self.generate(request(record(memo=prefix + host + '私は記録を残した。'))).artifact
+                    node, = artifact.graph.nodes
+                    self.assertEqual(node.visible_label, '私は記録を残した')
+                    self.assertFalse(artifact.graph.edges)
+        for memo, action in (
+            ('友人が話した。私は嬉しかった。と友人が言った。私は記録を残した。', ''),
+            ('私は嬉しかった。と友人が言った。友人が話した。私は記録を残した。', ''),
+            ('未知の出来事。と友人が言った。私は記録を残した。', ''),
+            ('私は嬉しかった。と友人が言ったけれど。私は記録を残した。', ''),
+            ('私は嬉しかった。', 'と友人が言った。私は記録を残した。'),
+            ('私は仕事を続けたい。と友人が言った。私は記録を残した。', ''),
+            ('私は職場にいた。と友人が言った。私は記録を残した。', ''),
+            ('私は記録を担当した。と友人が言った。私は記録を残した。', ''),
+        ):
+            with self.subTest(memo=memo, action=action):
+                artifact = self.generate(request(record(memo=memo, action=action))).artifact
+                self.assertFalse(artifact and any(n.proposition.predicate_lemma == '残す'
+                    for n in artifact.graph.nodes))
+
     def test_closed_action_possibility_retains_only_independent_claims(self):
         for ending in ('かもしれない', 'かも知れない', 'かもしれません', 'かも知れません'):
             for certain, possible in (
