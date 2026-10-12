@@ -409,6 +409,7 @@ _WRITTEN_NEGATED_ANXIETY_DEGREES = {
     '全く': 'NEGATION_MATTAKU_KANJI', 'まったく': 'NEGATION_MATTAKU_KANA',
     '全然': 'NEGATION_ZENZEN',
     'あまり': 'PARTIAL_NEGATION_AMARI', 'あんまり': 'PARTIAL_NEGATION_ANMARI',
+    '少しも': 'NEGATION_SUKOSHIMO', 'ちっとも': 'NEGATION_CHITTOMO',
 }
 
 
@@ -438,7 +439,9 @@ def _finite_feeling_proposition(value):
         parts += (('RELATIVE_DAY_' + day, start, start + post_day.end()),)
         start += post_day.end()
     degrees = {**_WRITTEN_ANXIETY_DEGREES, **_WRITTEN_NEGATED_ANXIETY_DEGREES}
-    degree = next((word for word in degrees if value.startswith(word, start)), '')
+    # Keep a known negative expression such as 少しも whole, rather than
+    # letting its affirmative prefix 少し consume only part of the scope.
+    degree = max((word for word in degrees if value.startswith(word, start)), key=len, default='')
     modifier = degrees.get(degree, '')
     finite_start = start + len(degree)
     finite = value[finite_start:]
@@ -462,7 +465,7 @@ def _finite_feeling_proposition(value):
     # finite clause. Keep emphatic and partial negation as distinct written
     # modifiers; あまり/あんまり never becomes total absence or slight anxiety.
     # Affirmative degrees (e.g. 少し) never acquire a negative scope by default.
-    # Particles, stacking and ellipsis stay pending.
+    # Unparsed particles, stacking and ellipsis stay pending.
     allowed_degrees = _WRITTEN_NEGATED_ANXIETY_DEGREES if negative else _WRITTEN_ANXIETY_DEGREES
     if degree and (subject is None or lemma != '不安だ' or degree not in allowed_degrees):
         return None
