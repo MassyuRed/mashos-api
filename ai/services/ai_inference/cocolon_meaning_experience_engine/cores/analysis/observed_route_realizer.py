@@ -168,9 +168,13 @@ def _safe_label(node, graph):
     if parts.result_state == 'PAST_FEELING':
         forms = _FEELING_PAST_NEGATIVE if parts.polarity == 'negative' else _FEELING_PAST
         scope = '（誰の気持ちかは未確定）' if parts.actor == 'UNSPECIFIED' else '（記録された気持ち）'
-        return _source_prefix(forms[parts.predicate_lemma], parts) + scope
+        phrase = (''.join(noun + case for case, noun in parts.arguments) + 'なかった'
+                  if parts.predicate_lemma == 'ある' else forms[parts.predicate_lemma])
+        return _source_prefix(phrase, parts) + scope
     if parts.result_state == 'CURRENT_FEELING':
-        phrase = '不安ではない' if parts.polarity == 'negative' else parts.predicate_lemma
+        phrase = (''.join(noun + case for case, noun in parts.arguments) + 'ない'
+                  if parts.predicate_lemma == 'ある' else
+                  '不安ではない' if parts.polarity == 'negative' else parts.predicate_lemma)
         return _source_prefix(phrase, parts) + '（この記述時点の気持ち）'
     if parts.scene_state == 'PAST_PRESENCE':
         phrase = ''.join(noun + case for case, noun in parts.arguments)

@@ -38,6 +38,136 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_existential_negative_anxiety_preserves_particle_tense_and_source(self):
+        for case in ('は', 'が'):
+            for current, forms in ((True, ('ない', 'ないです', 'ありません')),
+                    (False, ('なかった', 'なかったです', 'ありませんでした'))):
+                for finite in forms:
+                    for prefix, day in (('私は', ''), ('今日、ぼくは、', 'TODAY'),
+                                        ('自分は昨日、', 'YESTERDAY')):
+                        literal = prefix + '不安' + case + finite
+                        with self.subTest(literal=literal):
+                            req = request(record(memo=literal + '。'))
+                            artifact = self.generate(req).artifact
+                            if current and day == 'YESTERDAY':
+                                self.assertIsNone(artifact)
+                                continue
+                            self.assertIsNotNone(artifact)
+                            node, = artifact.graph.nodes
+                            p = node.proposition
+                            self.assertEqual((p.actor, p.arguments, p.predicate_lemma, p.polarity,
+                                p.modality, p.temporal_scope, p.relative_day, p.written_modifiers),
+                                ('SELF', ((case, '不安'),), 'ある', 'negative', 'feeling',
+                                 'current_input' if current else 'past', day, ()))
+                            self.assertEqual({i for _, a, b in p.source_parts for i in range(a, b)},
+                                             set(range(len(literal))))
+                            self.assertEqual([literal[a:b] for kind, a, b in p.source_parts
+                                              if kind == 'CASE_' + case], [case])
+                            source, = freeze_analysis_sources(req).sources
+                            evidence, = node.evidence_refs
+                            raw = source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end]
+                            self.assertEqual(raw.decode(), literal)
+                            self.assertEqual(hashlib.sha256(raw).hexdigest(), evidence.literal_sha256)
+                            label = '不安' + case + ('ない（この記述時点の気持ち）' if current
+                                                   else 'なかった（記録された気持ち）')
+                            if day:
+                                label = 'この記述時点の' + ('今日' if day == 'TODAY' else '昨日') + '：' + label
+                            projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                            self.assertEqual(projection['nodes'][0]['visible_label'], label)
+                            self.assertIn(label, artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+                            self.assertFalse(projection['edges'])
+                            self.assertFalse(projection['annotation_badges'])
+
+    def test_existential_negative_anxiety_keeps_unproved_scope_pending(self):
+        for finite in ('不安はない', '不安がありませんでした'):
+            for prefix, suffix, action in (
+                    ('', '。', ''), ('友人は', '。', ''), ('私は', '？', ''),
+                    ('私は', 'かもしれない。', ''), ('「私は', '」。', ''),
+                    ('友人は言った。私は', '。', ''), ('夢を見た。私は', '。', ''),
+                    ('私は', '。と私は思う。', ''), ('私は', '。と友人が言った。', ''),
+                    ('私は', '。のは嘘だった。', ''), ('私は', '。', '友人の話でした。'),
+                    ('今日の朝、私は', '。', ''), ('今日、私は昨日', '。', ''),
+                    ('その後、私は今日', '。', ''), ('私は友人の', '。', ''),
+                    ('私は資料を調べた後、私は', '。', ''),
+                    ('私は資料を調べてから、私は', '。', '')):
+                with self.subTest(finite=finite, prefix=prefix, suffix=suffix, action=action):
+                    artifact = self.generate(request(record(memo=prefix + finite + suffix, action=action))).artifact
+                    self.assertFalse(artifact and any(n.proposition.predicate_lemma == 'ある'
+                                                     for n in artifact.graph.nodes))
+            for degree in ('少し', '全く', 'あまり', '少しも', 'ちっとも'):
+                self.assertIsNone(self.generate(request(record(memo='私は' + degree + finite + '。'))).artifact)
+            self.assertIsNone(self.generate(request(record(memo='', action='私は' + finite + '。'))).artifact)
+        for body in ('不安ない', '不安もない', '不安にはない', '不安しかない', '不安はある',
+                     '不安があった', '不安はないわけではない', '不安はなかったとは言えない',
+                     '不安はないなら記録を残す', '不安はないけれど怖い', '安心はない'):
+            with self.subTest(body=body):
+                self.assertIsNone(self.generate(request(record(memo='私は' + body + '。'))).artifact)
+
+    def test_existential_negative_anxiety_keeps_updates_grouping_and_order(self):
+        old, new = '私は不安はなかった', '私は不安がなかった'
+        base = record(memo=old + '。それから、私は記録を残した。')
+        graph = self.generate(request(base)).artifact.graph
+        self.assertEqual((len(graph.nodes), len(graph.edges)), (2, 1))
+        self.assertEqual(graph.edges[0].edge_kind, 'OBSERVED_ORDER')
+        corrected = self.generate(request(self.with_answer(base,
+            '「' + old + '」ではなく「' + new + '」です。'))).artifact
+        feeling, = (n for n in corrected.graph.nodes if n.proposition.predicate_lemma == 'ある')
+        self.assertEqual(feeling.proposition.arguments, (('が', '不安'),))
+        self.assertNotIn('不安は', corrected.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+        withdrawn = self.generate(request(self.with_answer(base, '「' + old + '」は取り消します。'))).artifact
+        self.assertEqual([n.proposition.predicate_lemma for n in withdrawn.graph.nodes], ['残す'])
+        self.assertFalse(withdrawn.graph.edges)
+        added = self.generate(request(self.with_answer(record(memo='私は記録を残した。'),
+                                                       '今日、私は不安はない。'))).artifact
+        self.assertEqual(added.graph.nodes[-1].proposition.arguments, (('は', '不安'),))
+        self.assertFalse(added.graph.edges)
+        for req in (request(record(memo=old + '。まだわからない。それから、私は記録を残した。')),
+                request(record(memo=old + '。', action='それから、私は記録を残した。')),
+                request(record(memo='私は不安はない。それから、私は記録を残した。')),
+                request(record(memo=old + '。'), record(2, memo='それから、私は記録を残した。'))):
+            with self.subTest(req=req):
+                graph = self.generate(req).artifact.graph
+                self.assertEqual(len(graph.nodes), 2)
+                self.assertFalse(graph.edges)
+        grouped = self.generate(request(record(memo=old + '。僕は不安はありませんでした。'
+            '私は不安がなかった。僕は不安がありませんでした。私は不安ではなかった。'))).artifact
+        self.assertEqual([(n.proposition.arguments, len(n.evidence_refs)) for n in grouped.graph.nodes],
+                         [((('は', '不安'),), 2), ((('が', '不安'),), 2), ((), 1)])
+        for case in ('は', 'が'):
+            self.assertFalse(self.compared('私は不安' + case + 'なかった。',
+                '僕は不安' + case + 'ありませんでした。').artifact.period_comparison.change_claims)
+        for other in (new, '私は不安ではなかった', '私は不安はない', '昨日、私は不安はなかった'):
+            with self.subTest(other=other):
+                compared = self.compared(old + '。', other + '。').artifact
+                self.assertIn('ROUTE_EVIDENCE_CHANGED', compared.safe_projection(
+                    authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+                self.assertIn('改善・悪化や原因を示すものではありません',
+                              compared.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+
+    def test_existential_negative_anxiety_requires_witness_and_safe_replay(self):
+        from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
+        builder = compiler.build_final_stage1_grounded_observation_plan
+        for clause in ('私は不安はなかった', '今日、私は不安がない'):
+            req = request(record(memo=clause + '。'))
+            for remove in ('operator:negation', 'operator:feeling'):
+                def changed(*args, **kwargs):
+                    plan = builder(*args, **kwargs)
+                    return replace(plan, nuclei=tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+                        attribute_codes=tuple(c for c in n.semantic_frame.attribute_codes if c != remove)))
+                        for n in plan.nuclei))
+                with self.subTest(clause=clause, remove=remove), patch.object(compiler,
+                        'build_final_stage1_grounded_observation_plan', side_effect=changed):
+                    self.assertIsNone(self.generate(req).artifact)
+            artifact = self.generate(req).artifact
+            node, = artifact.graph.nodes
+            for p in (replace(node.proposition, arguments=()),
+                      replace(node.proposition, arguments=(('も', '不安'),)),
+                      replace(node.proposition, predicate_lemma='不安だ'),
+                      replace(node.proposition, polarity='positive')):
+                with self.subTest(clause=clause, forged=p), self.assertRaises(AnalysisSourceError):
+                    replace(artifact, graph=replace(artifact.graph,
+                        nodes=(replace(node, proposition=p),))).safe_projection(authenticated_owner_scope=OWNER)
+
     def test_particle_negative_anxiety_keeps_finite_scope_source_and_time(self):
         past = ('不安ではなかった', '不安ではなかったです', '不安ではありませんでした',
                 '不安じゃなかった', '不安じゃなかったです', '不安じゃありませんでした')

@@ -85,6 +85,44 @@ async def storage_sql_fixture():
 
 
 class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
+    async def test_existential_negative_anxiety_survives_save_and_read(self):
+        for case in ('は', 'が'):
+            for clause, label in (
+                    ('私は不安' + case + 'ありません。', '不安' + case + 'ない（この記述時点の気持ち）'),
+                    ('今日、私は不安' + case + 'ない。',
+                     'この記述時点の今日：不安' + case + 'ない（この記述時点の気持ち）'),
+                    ('昨日、私は不安' + case + 'ありませんでした。',
+                     'この記述時点の昨日：不安' + case + 'なかった（記録された気持ち）')):
+                with self.subTest(clause=clause):
+                    fx = fixture(clause)
+                    row, writes = fx['row'], []
+                    async def rpc(name, payload):
+                        if name == 'analysis_observed_source_snapshot':
+                            return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                                {'original': fx['original'], 'thread': None, 'events': []}]}
+                        if name == 'analysis_observed_commit':
+                            writes.append(payload)
+                            row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                            row['content_json']['watashiMap'] = payload['p_projection']
+                            return row['id']
+                        self.assertEqual(name, 'analysis_observed_read')
+                        return result([row], matched=True)
+                    with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                            patch.object(service, '_rpc', side_effect=rpc):
+                        saved = await service.generate_saved(OWNER, start=START, end=END,
+                            report_mode='standard', report_type='latest')
+                        with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                            reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                    self.assertEqual(len(writes), 1)
+                    self.assertEqual(saved, reread['items'][0])
+                    self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                    projection = saved['content_json']['watashiMap']
+                    self.assertEqual(projection, writes[0]['p_projection'])
+                    self.assertEqual([n['visible_label'] for n in projection['nodes']], [label])
+                    self.assertIn(label, saved['content_text'])
+                    self.assertFalse(projection['edges'])
+                    self.assertFalse(projection['annotation_badges'])
+
     async def test_particle_negative_anxiety_survives_save_and_read(self):
         for degree in ('少しも', 'ちっとも'):
             for clause, label in (

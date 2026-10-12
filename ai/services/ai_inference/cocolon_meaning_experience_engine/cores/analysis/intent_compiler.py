@@ -222,6 +222,15 @@ _CURRENT_FEELING_FORMS = {'不安だ': '不安だ', '不安です': '不安だ'}
 _CURRENT_NEGATIVE_FEELING_FORMS = {surface: '不安だ' for surface in (
     '不安ではない', '不安ではないです', '不安ではありません',
     '不安じゃない', '不安じゃないです', '不安じゃありません')}
+# Existential negation retains the written topic/subject particle. It is not
+# a copular 不安ではない claim, and は does not assert another feeling exists.
+_ABSENT_ANXIETY_FORMS = {
+    '不安' + case + finite: (case, current)
+    for case in ('は', 'が')
+    for current, forms in (
+        (True, ('ない', 'ないです', 'ありません')),
+        (False, ('なかった', 'なかったです', 'ありませんでした')))
+    for finite in forms}
 # An absent feeling does not establish its opposite or an action's effect.
 # Only complete standalone SELF clauses can use these negative inflections.
 _FEELING_PAST_NEGATIVE = {'安心する': '安心しなかった', '落ち着く': '落ち着かなかった',
@@ -445,6 +454,20 @@ def _finite_feeling_proposition(value):
     modifier = degrees.get(degree, '')
     finite_start = start + len(degree)
     finite = value[finite_start:]
+    absence = _ABSENT_ANXIETY_FORMS.get(finite)
+    if absence is not None:
+        case, current = absence
+        # No omitted experiencer, inherited compound scope or unproved
+        # degree/negation composition. Keep a single written day local.
+        if subject is None or degree or (current and day not in {'', 'TODAY'}):
+            return None
+        return ObservedProposition('SELF', ((case, '不安'),), 'ある',
+            'negative', 'feeling', 'current_input' if current else 'past',
+            parts + (('FEELING_NOUN', start, start + 2),
+                     ('CASE_' + case, start + 2, start + 3),
+                     ('FINITE_FEELING', start + 3, len(value))),
+            result_state='CURRENT_FEELING' if current else 'PAST_FEELING',
+            sequence_marker=marker, relative_day=day)
     negative = finite in _NEGATIVE_FEELING_FORMS or finite in _CURRENT_NEGATIVE_FEELING_FORMS
     current = finite in _CURRENT_FEELING_FORMS or finite in _CURRENT_NEGATIVE_FEELING_FORMS
     lemma = (_CURRENT_NEGATIVE_FEELING_FORMS if current and negative else
@@ -484,11 +507,14 @@ def _standalone_finite_feeling_witness(nucleus, proposition):
     # standalone frame's scope. Current forms require current_input unless
     # their own 今日 has a present witness; they never inherit a past scope.
     current = proposition.result_state == 'CURRENT_FEELING'
+    absent_anxiety = (proposition.predicate_lemma == 'ある'
+        and proposition.arguments in {(('は', '不安'),), (('が', '不安'),)}
+        and proposition.polarity == 'negative' and not proposition.written_modifiers)
     if (proposition.result_state not in {'PAST_FEELING', 'CURRENT_FEELING'} or proposition.actor != 'SELF'
             or proposition.polarity not in {'positive', 'negative'}
             or (proposition.modality, proposition.temporal_scope) !=
                ('feeling', 'current_input' if current else 'past')
-            or (current and (proposition.predicate_lemma != '不安だ'
+            or (current and (not (proposition.predicate_lemma == '不安だ' or absent_anxiety)
                              or proposition.relative_day not in {'', 'TODAY'}))):
         return False
     # Keep positive degree and modifiers of explicit negation separate, without deriving
@@ -505,7 +531,7 @@ def _standalone_finite_feeling_witness(nucleus, proposition):
     # Shared negative affect is not grammatical negation. The complete
     # anxiety clause's grammatical polarity and written modifier jointly retain
     # its scope. Negative polarity alone proves neither absence nor improvement.
-    negative_affect = proposition.predicate_lemma == '不安だ'
+    negative_affect = proposition.predicate_lemma == '不安だ' or absent_anxiety
     if negative_affect and (
             {'operator:positive_change', 'semantic_role:current_change'} & set(frame.attribute_codes)
             or (('operator:negation' in frame.attribute_codes) != (proposition.polarity == 'negative'))):
@@ -1166,7 +1192,7 @@ def _action_change_pair(source, plan, span_id):
     if (left is None or right is None or _has_unparsed_nominal_scope(right) or left.actor != 'SELF'
             or right.sequence_marker or right.relative_day
             # Anxiety has a standalone witness only, not a shared pair proof.
-            or right.predicate_lemma == '不安だ'
+            or right.predicate_lemma in {'不安だ', 'ある'}
             # Decisions are admitted as whole standalone past clauses only.
             or left.predicate_lemma in _PAST_DECISION_LEMMAS
             # A negative feeling needs the new complete shared witness;
