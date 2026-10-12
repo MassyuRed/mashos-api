@@ -132,7 +132,9 @@ def _source_prefix(phrase, parts):
                          'DEGREE_KANARI': 'かなり', 'DEGREE_YAYA': 'やや',
                          'DEGREE_CHOTTO': 'ちょっと',
                          'NEGATION_MATTAKU_KANJI': '全く', 'NEGATION_MATTAKU_KANA': 'まったく',
-                         'NEGATION_ZENZEN': '全然'}[modifier]
+                         'NEGATION_ZENZEN': '全然',
+                         'PARTIAL_NEGATION_AMARI': 'あまり',
+                         'PARTIAL_NEGATION_ANMARI': 'あんまり'}[modifier]
                          for modifier in parts.written_modifiers) + phrase
     if parts.sequence_marker:
         phrase = {'AFTER_PREVIOUS': 'その後：',

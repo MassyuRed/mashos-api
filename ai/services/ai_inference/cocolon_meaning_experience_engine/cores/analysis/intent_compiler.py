@@ -408,6 +408,7 @@ _WRITTEN_ANXIETY_DEGREES = {
 _WRITTEN_NEGATED_ANXIETY_DEGREES = {
     '全く': 'NEGATION_MATTAKU_KANJI', 'まったく': 'NEGATION_MATTAKU_KANA',
     '全然': 'NEGATION_ZENZEN',
+    'あまり': 'PARTIAL_NEGATION_AMARI', 'あんまり': 'PARTIAL_NEGATION_ANMARI',
 }
 
 
@@ -458,9 +459,10 @@ def _finite_feeling_proposition(value):
     if day and (subject is None or (current and day != 'TODAY')):
         return None
     # Only admit a written modifier whose scope is fixed by the complete
-    # finite clause. 全く/まったく/全然 reinforce its explicit negation;
-    # affirmative degrees (e.g. 少し) never acquire that scope by default.
-    # Partial negation (あまり), particles, stacking and ellipsis stay pending.
+    # finite clause. Keep emphatic and partial negation as distinct written
+    # modifiers; あまり/あんまり never becomes total absence or slight anxiety.
+    # Affirmative degrees (e.g. 少し) never acquire a negative scope by default.
+    # Particles, stacking and ellipsis stay pending.
     allowed_degrees = _WRITTEN_NEGATED_ANXIETY_DEGREES if negative else _WRITTEN_ANXIETY_DEGREES
     if degree and (subject is None or lemma != '不安だ' or degree not in allowed_degrees):
         return None
@@ -486,7 +488,7 @@ def _standalone_finite_feeling_witness(nucleus, proposition):
             or (current and (proposition.predicate_lemma != '不安だ'
                              or proposition.relative_day not in {'', 'TODAY'}))):
         return False
-    # Keep positive degree and negative emphasis separate, without deriving
+    # Keep positive degree and modifiers of explicit negation separate, without deriving
     # numeric intensity, relief or improvement from either one.
     allowed_degrees = (_WRITTEN_NEGATED_ANXIETY_DEGREES if proposition.polarity == 'negative'
                        else _WRITTEN_ANXIETY_DEGREES)
@@ -498,8 +500,8 @@ def _standalone_finite_feeling_witness(nucleus, proposition):
     expected = (('value', 'value', 'fact') if proposition.predicate_lemma == '安心する'
                 else ('reaction', 'feeling', 'feeling'))
     # Shared negative affect is not grammatical negation. The complete
-    # anxiety clause's own grammatical polarity determines whether the
-    # experience was asserted or absent; neither establishes an improvement.
+    # anxiety clause's grammatical polarity and written modifier jointly retain
+    # its scope. Negative polarity alone proves neither absence nor improvement.
     negative_affect = proposition.predicate_lemma == '不安だ'
     if negative_affect and (
             {'operator:positive_change', 'semantic_role:current_change'} & set(frame.attribute_codes)
@@ -881,9 +883,12 @@ def _proposition_meaning(proposition):
             _predicate_meaning(proposition), proposition.result_state, proposition.scene_state, proposition.role_state,
             (_proposition_meaning(content), content.polarity, content.modality,
              content.temporal_scope) if content else None)
-    # 全く and まったく are spellings of the same modifier. Keep source
-    # spelling for display/replay, but do not report a period change for it.
-    modifiers = tuple('NEGATION_MATTAKU_KANJI' if code == 'NEGATION_MATTAKU_KANA' else code
+    # Keep lexical variants' original spelling for display/replay, but do not
+    # report a period change for that alone. Partial and total negation remain
+    # different meanings even though both have negative grammatical polarity.
+    variants = {'NEGATION_MATTAKU_KANA': 'NEGATION_MATTAKU_KANJI',
+                'PARTIAL_NEGATION_ANMARI': 'PARTIAL_NEGATION_AMARI'}
+    modifiers = tuple(variants.get(code, code)
                       for code in proposition.written_modifiers)
     return meaning + (modifiers,) if modifiers else meaning
 
