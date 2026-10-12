@@ -55,6 +55,10 @@ class AnalysisVerticalTests(unittest.TestCase):
                          'と親しい友人が言わなかった。',
                          'と優しくない同僚は言いませんでした。',
                          'と親しかった友人が言わなかったです。',
+                         'と知らない人が言った。', 'と知らなかった友人は言いました。',
+                         'と知っている同僚も言った。', 'と知っていた友人の母が言いました。',
+                         'と知らない人が言わなかった。', 'と知らなかった友人は言いませんでした。',
+                         'と知っている同僚も言わなかったです。', 'と知っていた友人の母が言わなかった。',
                          'と忙しい友人の母が言いました。'):
                 with self.subTest(clause=clause, host=host):
                     self.assertIsNone(self.generate(request(record(memo=clause + '。' + host))).artifact)
@@ -104,6 +108,10 @@ class AnalysisVerticalTests(unittest.TestCase):
                          'と親しい友人が言わなかった。',
                          'と優しくない同僚は言いませんでした。',
                          'と親しかった友人が言わなかったです。',
+                         'と知らない友人が言った。', 'と知らなかった友人は言いました。',
+                         'と知っている同僚も言った。', 'と知っていた友人の母が言いました。',
+                         'と知らない人が言わなかった。', 'と知らなかった友人は言いませんでした。',
+                         'と知っている同僚も言わなかったです。', 'と知っていた友人の母が言わなかった。',
                          'と優しくない同僚は言いました。', 'と忙しくなかった友人の母も言った。')
         ):
             reported = claimed + '。' + host
@@ -141,6 +149,42 @@ class AnalysisVerticalTests(unittest.TestCase):
                     self.assertIsNone(changed)
                 else:
                     self.assertEqual([n.visible_label for n in changed.graph.nodes], ['私は資料を見た'])
+
+    def test_familiarity_speaker_keeps_unclosed_and_nested_reports_unresolved(self):
+        for modifier in ('知らない', '知らなかった', '知っている', '知っていた'):
+            host = 'と' + modifier + '友人が'
+            for memo, action in (
+                ('私は職場にいた。' + host + '言ったけれど。私は記録を残した。', ''),
+                ('私は職場にいた。' + host + '言ったと弟が言った。私は記録を残した。', ''),
+                ('友人が話した。私は職場にいた。' + host + '言った。私は記録を残した。', ''),
+                ('私は職場にいた。', host + '言った。私は記録を残した。'),
+                ('私は職場にいた。' + host + '、言った。私は記録を残した。', ''),
+                ('私は職場にいた。と' + modifier + '友人って弟が言った。私は記録を残した。', ''),
+                ('私は職場にいた。と' + modifier + '新しい友人が言った。私は記録を残した。', ''),
+            ):
+                with self.subTest(modifier=modifier, memo=memo, action=action):
+                    artifact = self.generate(request(record(memo=memo, action=action))).artifact
+                    self.assertFalse(artifact and any(n.proposition.predicate_lemma == '残す'
+                        for n in artifact.graph.nodes))
+        memo = ('私は資料を調べた。私は職場にいた。と知っている人が言った。'
+                'それから、私は記録を残した。')
+        artifact = self.generate(request(record(memo=memo))).artifact
+        self.assertEqual([n.visible_label for n in artifact.graph.nodes],
+                         ['私は資料を調べた', 'それから、私は記録を残した'])
+        self.assertFalse(artifact.graph.edges)
+        self.assertFalse(artifact.graph.conflicts)
+
+    def test_familiarity_lexeme_closure_keeps_focus_and_nested_host_distinct(self):
+        for modifier in ('知っている', '知っていた'):
+            for focus in ('', 'は', 'も'):
+                host = 'と' + focus + modifier + '友人の母が言った'
+                with self.subTest(modifier=modifier, focus=focus):
+                    closed = self.generate(request(record(memo=
+                        '私は職場にいた。' + host + '。私は記録を残した。'))).artifact
+                    self.assertEqual([n.visible_label for n in closed.graph.nodes], ['私は記録を残した'])
+                    nested = self.generate(request(record(memo=
+                        '私は職場にいた。' + host + 'と弟が言った。私は記録を残した。'))).artifact
+                    self.assertIsNone(nested)
 
     def test_whole_wishes_scenes_roles_keep_postposed_attribution_unresolved(self):
         for clause in ('私は仕事を続けたい', '私は家族を守りたい',
@@ -200,6 +244,9 @@ class AnalysisVerticalTests(unittest.TestCase):
                                   'とても親しい友人が言わなかった。',
                                   'とある親しい友人が言いませんでした。',
                                   'と同時に親しかった友人が言わなかったです。',
+                                  'とても知っている人が言った。', 'とある知らない友人が言った。',
+                                  'と同時に知っていた人が言わなかった。',
+                                  'とある知らなかった友人が言いませんでした。',
                                   'ところで、話題を変える。', 'とりあえず、休む。'):
                 with self.subTest(clause=clause, next_sentence=next_sentence):
                     artifact = self.generate(request(record(memo=clause + '。' + next_sentence))).artifact
@@ -302,7 +349,9 @@ class AnalysisVerticalTests(unittest.TestCase):
             ('私は嬉しかった。と友人が言ったと弟は言った。私は記録を残した。', ''),
             ('私は嬉しかった。', 'と友人が言った。私は記録を残した。'),
             ('友人が話した。私は仕事を続けたい。と友人が言った。私は記録を残した。', ''),
-            ('私は職場にいた。と知らない友人が言った。私は記録を残した。', ''),
+            # Bare 知らない now has a source-host proof above; adverbial
+            # qualification remains unread and must not close this host.
+            ('私は職場にいた。とよく知らない友人が言った。私は記録を残した。', ''),
             ('私は職場にいた。と親しい新しい友人が言った。私は記録を残した。', ''),
             ('私は記録を担当した。と友人が言ったけれど。私は記録を残した。', ''),
         ):

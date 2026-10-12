@@ -1369,8 +1369,11 @@ def _known_postposed_host(continuation):
     # arbitrary -katta stems could instead be verbs (分かった / 預かった).
     # A negated speech host does not assert its embedded content either.
     # Keep prefix matching for open/nested suffixes; this rejection does not
-    # prove that the host is closed. Stacked modifiers stay unread.
-    qualified_speaker = (r'[一-鿿々]+(?:しい|しかった|しくない|しくなかった|い)'
+    # prove that the host is closed. Four explicit forms of 知る can also
+    # qualify this speaker; they never establish whose knowledge it is.
+    # Other relative clauses and stacked modifiers stay unread.
+    qualified_speaker = (r'(?:[一-鿿々]+(?:しい|しかった|しくない|しくなかった|い)'
+                         r'|知らない|知らなかった|知っている|知っていた)'
                          r'[一-鿿々ァ-ヴー]+'
                          r'(?:の' + _NOMINAL + r')*')
     if re.match(r'と(?:は|も)?' + qualified_speaker + r'(?:は|が|も)'
@@ -1571,8 +1574,16 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
                             r'(?:は|が|も)'
                             r'(?:言った|言いました)|の(?:は|も)嘘だった)', preceding)
                     if host is not None:
+                        speaker_scope = host['speaker'] or ''
+                        if _known_postposed_host(preceding):
+                            # In a proved single modifier, って is part of
+                            # 知っている/知っていた, not a nested quotation.
+                            # Only normalize this local scope check, never
+                            # source text; retain every remaining host marker.
+                            speaker_scope = re.sub(r'^(?:は|も)?知って(?:いる|いた)',
+                                                   '', speaker_scope)
                         if (host.end() != len(preceding) or re.search(
-                                r'と|って|なら|もし|かも|言った|話した|思う', host['speaker'] or '')):
+                                r'と|って|なら|もし|かも|言った|話した|思う', speaker_scope)):
                             return None
                         continue
                 written = _proposition(preceding)
