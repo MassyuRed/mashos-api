@@ -1848,6 +1848,10 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         for clause, label in (('私は安心した', '安心した'), ('私は、安心しました', '安心した'),
                 ('私は不安だった', '不安だった'), ('僕は、不安でした', '不安だった'),
                 ('私は少し不安だった', '少し不安だった'), ('僕は、少し不安でした', '少し不安だった'),
+                ('私はとても不安だった', 'とても不安だった'), ('僕は、とても不安でした', 'とても不安だった'),
+                ('私はかなり不安だった', 'かなり不安だった'), ('僕は、かなり不安でした', 'かなり不安だった'),
+                ('私はやや不安だった', 'やや不安だった'), ('僕は、やや不安でした', 'やや不安だった'),
+                ('私はちょっと不安だった', 'ちょっと不安だった'), ('僕は、ちょっと不安でした', 'ちょっと不安だった'),
                 ('僕は落ち着いた', '落ち着いた'), ('私は嬉しかった', '嬉しかった'),
                 ('わたしは、　うれしかった', 'うれしかった'), ('私は落ち着きました', '落ち着いた'),
                 ('僕は、嬉しかったです', '嬉しかった'), ('わたしは，　うれしかったです', 'うれしかった'),
@@ -1892,10 +1896,12 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                     for private in ('PAST_FEELING', 'source_parts', clause):
                         self.assertNotIn(private, encoded)
 
-    async def test_slight_anxiety_keeps_saved_degree_and_order(self):
-        await self._assert_action_change_saved(
-            '私は資料を調べた。その後、私は少し不安でした。',
-            'その後：少し不安だった（記録された気持ち）')
+    async def test_written_anxiety_degrees_keep_saved_degree_and_order(self):
+        for degree in ('少し', 'とても', 'かなり', 'やや', 'ちょっと'):
+            with self.subTest(degree=degree):
+                await self._assert_action_change_saved(
+                    '私は資料を調べた。その後、私は' + degree + '不安でした。',
+                    'その後：' + degree + '不安だった（記録された気持ち）')
 
     async def test_past_anxiety_and_absent_relief_keep_saved_order(self):
         await self._assert_action_change_saved(
@@ -1981,7 +1987,8 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                         json.dumps(projection, ensure_ascii=False)):
             for private in ('result_state', 'BOUNDED_CHANGE', 'PAST_FEELING', 'source_parts', '私は',
                             'action_supports_change', 'dependent_form', 'TE_BEFORE_PAST_CHANGE',
-                            'written_modifiers', 'THIS_OCCASION', 'IN_ADVANCE', 'DEGREE_SLIGHT'):
+                            'written_modifiers', 'THIS_OCCASION', 'IN_ADVANCE', 'DEGREE_SLIGHT',
+                            'DEGREE_TOTEMO', 'DEGREE_KANARI', 'DEGREE_YAYA', 'DEGREE_CHOTTO'):
                 self.assertNotIn(private, encoded)
 
     async def test_scene_and_role_polarity_and_action_order_survive_save_and_read(self):

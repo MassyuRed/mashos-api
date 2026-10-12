@@ -16,6 +16,9 @@ from cocolon_meaning_experience_engine.cores.analysis.source_adapter import (
 
 OWNER = 'synthetic-owner'
 TEXT = '私は考えをノートに書いた。私は仕事を続けたい。'
+WRITTEN_ANXIETY_DEGREES = (
+    ('少し', 'DEGREE_SLIGHT'), ('とても', 'DEGREE_TOTEMO'),
+    ('かなり', 'DEGREE_KANARI'), ('やや', 'DEGREE_YAYA'), ('ちょっと', 'DEGREE_CHOTTO'))
 
 
 def record(number=1, memo=TEXT, *, action='', created_at=None):
@@ -33,11 +36,12 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
-    def test_slight_anxiety_keeps_written_degree_source_and_order(self):
-        for form in ('不安だった', '不安でした'):
+    def test_written_anxiety_degrees_keep_source_and_order(self):
+        for degree, modifier, form in ((degree, modifier, form)
+                for degree, modifier in WRITTEN_ANXIETY_DEGREES for form in ('不安だった', '不安でした')):
             for subject in ('私は', '僕は、', 'ぼくは， ', '俺は', 'おれは', 'わたしは、　', '自分は'):
-                with self.subTest(form=form, subject=subject):
-                    literal = subject + '少し' + form
+                with self.subTest(degree=degree, form=form, subject=subject):
+                    literal = subject + degree + form
                     req = request(record(memo=literal + '。それから、私は安心しなかった。'))
                     artifact = self.generate(req).artifact
                     self.assertIsNotNone(artifact)
@@ -45,7 +49,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                     self.assertEqual((anxiety.proposition.actor, anxiety.proposition.predicate_lemma,
                         anxiety.polarity, anxiety.modality, anxiety.temporal_scope,
                         anxiety.proposition.written_modifiers),
-                        ('SELF', '不安だ', 'positive', 'feeling', 'past', ('DEGREE_SLIGHT',)))
+                        ('SELF', '不安だ', 'positive', 'feeling', 'past', (modifier,)))
                     edge, = artifact.graph.edges
                     self.assertEqual((edge.edge_kind, edge.endpoint_refs),
                         ('OBSERVED_ORDER', (anxiety.node_ref, absent_relief.node_ref)))
@@ -57,10 +61,10 @@ class AnalysisVerticalTests(unittest.TestCase):
                     parts = anxiety.proposition.source_parts
                     self.assertEqual({i for _, a, b in parts for i in range(a, b)}, set(range(len(literal))))
                     self.assertEqual([literal[a:b] for code, a, b in parts
-                        if code == 'WRITTEN_MODIFIER_DEGREE_SLIGHT'], ['少し'])
+                        if code == 'WRITTEN_MODIFIER_' + modifier], [degree])
                     projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
                     self.assertEqual(projection['nodes'][0]['visible_label'],
-                        '少し不安だった（記録された気持ち）')
+                        degree + '不安だった（記録された気持ち）')
                     self.assertFalse(projection['annotation_badges'])
         artifact = self.generate(request(record(memo='私は職場にいた。その後、私は少し不安でした。'
             'それから、私は記録を残した。'))).artifact
@@ -72,7 +76,7 @@ class AnalysisVerticalTests(unittest.TestCase):
         clauses = ('少し不安だった', '友人は少し不安だった', '少し私は不安だった',
             '私は少しも不安だった', '私は少しは不安だった', '私は少しだけ不安だった',
             '私は少し少し不安だった', '私は少し、とても不安だった',
-            '私はとても不安だった', '私はやや不安だった', '私はちょっと不安だった',
+            '私はすごく不安だった', '私は幾分不安だった', '私は多少不安だった',
             '私は少し安心した', '私は少し落ち着いた', '私は少し不安だ', '私は少し不安です',
             '私は少し、不安だった', '私は昨日少し不安だった', '昨日、私は少し不安だった',
             '私は少し不安だったか', '私は少し不安だった？', '私は少し不安だったかもしれない',
@@ -129,6 +133,75 @@ class AnalysisVerticalTests(unittest.TestCase):
                 proposition=replace(node.proposition, written_modifiers=modifiers)),)))
             with self.assertRaises(AnalysisSourceError):
                 invalid.safe_projection(authenticated_owner_scope=OWNER)
+
+    def test_written_anxiety_degrees_keep_unproved_hosts_pending(self):
+        for degree, _ in WRITTEN_ANXIETY_DEGREES[1:]:
+            for prefix, suffix in (('', '。'), ('友人は', '。'), ('私は', 'か。'),
+                    ('私は', 'かもしれない。'), ('「私は', '」。'), ('私は', 'と聞いた。'),
+                    ('私は', '。のは嘘だった。'), ('私は', '。と私は思う。'),
+                    ('友人は言っていた。私は', '。'), ('夢を見た。私は', '。'),
+                    ('昨日、私は', '。'), ('私は資料を調べた後、私は', '。'),
+                    ('私は資料を調べてから、私は', '。')):
+                with self.subTest(degree=degree, prefix=prefix, suffix=suffix):
+                    artifact = self.generate(request(record(memo=prefix + degree + '不安だった'
+                        + suffix + '私は記録を残した。'))).artifact
+                    self.assertFalse(artifact and any(n.proposition.predicate_lemma == '不安だ'
+                        for n in artifact.graph.nodes))
+            for ending in ('不安ではなかった', '不安ではなかったです', '不安ではありませんでした',
+                    '不安じゃなかった', '不安じゃなかったです', '不安じゃありませんでした',
+                    '不安だ', '不安です', '安心した', '落ち着いた', 'だけ不安だった',
+                    'も不安だった', 'は不安だった', '、不安だった', '少し不安だった', degree + '不安だった'):
+                with self.subTest(degree=degree, ending=ending):
+                    artifact = self.generate(request(record(memo='私は' + degree + ending
+                        + '。私は記録を残した。'))).artifact
+                    self.assertIsNotNone(artifact)
+                    self.assertEqual([n.proposition.predicate_lemma for n in artifact.graph.nodes], ['残す'])
+            clause = '私は' + degree + '不安だった。'
+            for memo, action in ((clause, '友人の話でした。'), ('', clause)):
+                self.assertIsNone(self.generate(request(record(memo=memo, action=action))).artifact)
+
+    def test_written_anxiety_degrees_keep_literal_meaning_in_updates_and_comparison(self):
+        for degree, modifier in WRITTEN_ANXIETY_DEGREES[1:]:
+            with self.subTest(degree=degree):
+                clause = '私は' + degree + '不安だった'
+                polite = '僕は、' + degree + '不安でした'
+                self.assertFalse(self.compared(clause + '。', polite + '。').artifact.period_comparison.change_claims)
+                combined = self.generate(request(record(memo=clause + '。'), record(2, memo=polite + '。'),
+                    record(3, memo='私は少し不安だった。', created_at='2026-10-02T02:00:00Z'))).artifact
+                self.assertEqual([(n.proposition.written_modifiers, len(n.evidence_refs)) for n in combined.graph.nodes],
+                    [((modifier,), 2), (('DEGREE_SLIGHT',), 1)])
+                for other in ('', *(d for d, _ in WRITTEN_ANXIETY_DEGREES if d != degree)):
+                    comparison = self.compared(clause + '。', '私は' + other + '不安だった。').artifact
+                    self.assertIn('ROUTE_EVIDENCE_CHANGED', comparison.safe_projection(
+                        authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+                base = record(memo=clause + '。それから、私は記録を残した。')
+                changed = '僕はやや不安でした' if degree != 'やや' else '僕はちょっと不安でした'
+                expected = 'DEGREE_YAYA' if degree != 'やや' else 'DEGREE_CHOTTO'
+                corrected = self.generate(request(self.with_answer(base,
+                    '「' + clause + '」ではなく「' + changed + '」です。'))).artifact
+                self.assertEqual([n.proposition.written_modifiers for n in corrected.graph.nodes
+                    if n.proposition.predicate_lemma == '不安だ'], [(expected,)])
+                self.assertEqual(len(corrected.graph.nodes), 2)
+                self.assertFalse(corrected.graph.edges)
+                withdrawn = self.generate(request(self.with_answer(base, '「' + clause + '」は取り消します。'))).artifact
+                self.assertEqual([n.proposition.predicate_lemma for n in withdrawn.graph.nodes], ['残す'])
+                self.assertFalse(withdrawn.graph.edges)
+                added = self.generate(request(self.with_answer(record(memo='私は記録を残した。'), clause + '。'))).artifact
+                self.assertEqual(len(added.graph.nodes), 2)
+                self.assertFalse(added.graph.edges)
+                for req in (request(record(memo=clause + '。まだわからない。それから、私は記録を残した。')),
+                        request(record(memo=clause + '。', action='それから、私は記録を残した。')),
+                        request(record(memo=clause + '。'), record(2, memo='それから、私は記録を残した。'))):
+                    artifact = self.generate(req).artifact
+                    self.assertEqual((len(artifact.graph.nodes), len(artifact.graph.edges)), (2, 0))
+                    self.assertTrue(artifact.graph.unknown_gaps)
+                artifact = self.generate(request(record(memo=clause + '。'))).artifact
+                node, = artifact.graph.nodes
+                for wrong in ((), ('DEGREE_SLIGHT',), (expected,)):
+                    invalid = replace(artifact, graph=replace(artifact.graph, nodes=(replace(node,
+                        proposition=replace(node.proposition, written_modifiers=wrong)),)))
+                    with self.assertRaises(AnalysisSourceError):
+                        invalid.safe_projection(authenticated_owner_scope=OWNER)
 
     def test_absent_anxiety_keeps_negation_source_and_explicit_order(self):
         forms = ('不安ではなかった', '不安ではなかったです', '不安ではありませんでした',
@@ -239,7 +312,7 @@ class AnalysisVerticalTests(unittest.TestCase):
 
     def test_past_anxiety_keeps_unsupported_and_reported_hosts_pending(self):
         for form in ('不安だった', '不安でした', '不安ではなかった', '不安じゃありませんでした'):
-            for prefix, suffix in (('', '。'), ('友人は', '。'), ('私はかなり', '。'),
+            for prefix, suffix in (('', '。'), ('友人は', '。'), ('私はすごく', '。'),
                     ('私は昨日、', '。'), ('昨日、私は', '。'),
                     ('私は', 'か。'), ('私は', '？'), ('私は', 'かもしれない。'),
                     ('「私は', '」。'), ('私は', 'と聞いた。'),
@@ -309,7 +382,8 @@ class AnalysisVerticalTests(unittest.TestCase):
                     'operator:negation', 'operator:positive_change', 'semantic_role:current_change',
                     'thread_time:unknown')),
         )
-        for form in ('不安だった', '少し不安だった', '不安ではなかった'):
+        for form in ('不安だった', *(degree + '不安だった' for degree, _ in WRITTEN_ANXIETY_DEGREES),
+                     '不安ではなかった'):
             checks = mutations if form != '不安ではなかった' else mutations[:9] + mutations[10:] + (
                 lambda n: replace(n, semantic_frame=replace(n.semantic_frame, attribute_codes=tuple(
                     c for c in n.semantic_frame.attribute_codes if c != 'operator:negation'))),)
