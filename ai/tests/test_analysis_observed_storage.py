@@ -85,9 +85,14 @@ async def storage_sql_fixture():
 
 
 class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
-    async def test_existential_negative_anxiety_survives_save_and_read(self):
+    async def test_existential_anxiety_survives_save_and_read(self):
         for case in ('は', 'が'):
             for clause, label in (
+                    ('私は不安' + case + 'あります。', '不安' + case + 'ある（この記述時点の気持ち）'),
+                    ('今日、私は不安' + case + 'ある。',
+                     'この記述時点の今日：不安' + case + 'ある（この記述時点の気持ち）'),
+                    ('昨日、私は不安' + case + 'ありました。',
+                     'この記述時点の昨日：不安' + case + 'あった（記録された気持ち）'),
                     ('私は不安' + case + 'ありません。', '不安' + case + 'ない（この記述時点の気持ち）'),
                     ('今日、私は不安' + case + 'ない。',
                      'この記述時点の今日：不安' + case + 'ない（この記述時点の気持ち）'),

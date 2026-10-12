@@ -222,14 +222,16 @@ _CURRENT_FEELING_FORMS = {'不安だ': '不安だ', '不安です': '不安だ'}
 _CURRENT_NEGATIVE_FEELING_FORMS = {surface: '不安だ' for surface in (
     '不安ではない', '不安ではないです', '不安ではありません',
     '不安じゃない', '不安じゃないです', '不安じゃありません')}
-# Existential negation retains the written topic/subject particle. It is not
-# a copular 不安ではない claim, and は does not assert another feeling exists.
-_ABSENT_ANXIETY_FORMS = {
-    '不安' + case + finite: (case, current)
+# Existential anxiety retains the written particle, polarity and tense.
+# It is not a copular claim, and は does not assert another feeling exists.
+_EXISTENTIAL_ANXIETY_FORMS = {
+    '不安' + case + finite: (case, current, polarity)
     for case in ('は', 'が')
-    for current, forms in (
-        (True, ('ない', 'ないです', 'ありません')),
-        (False, ('なかった', 'なかったです', 'ありませんでした')))
+    for current, polarity, forms in (
+        (True, 'positive', ('ある', 'あります')),
+        (False, 'positive', ('あった', 'ありました')),
+        (True, 'negative', ('ない', 'ないです', 'ありません')),
+        (False, 'negative', ('なかった', 'なかったです', 'ありませんでした')))
     for finite in forms}
 # An absent feeling does not establish its opposite or an action's effect.
 # Only complete standalone SELF clauses can use these negative inflections.
@@ -454,15 +456,15 @@ def _finite_feeling_proposition(value):
     modifier = degrees.get(degree, '')
     finite_start = start + len(degree)
     finite = value[finite_start:]
-    absence = _ABSENT_ANXIETY_FORMS.get(finite)
-    if absence is not None:
-        case, current = absence
+    existential = _EXISTENTIAL_ANXIETY_FORMS.get(finite)
+    if existential is not None:
+        case, current, polarity = existential
         # No omitted experiencer, inherited compound scope or unproved
         # degree/negation composition. Keep a single written day local.
         if subject is None or degree or (current and day not in {'', 'TODAY'}):
             return None
         return ObservedProposition('SELF', ((case, '不安'),), 'ある',
-            'negative', 'feeling', 'current_input' if current else 'past',
+            polarity, 'feeling', 'current_input' if current else 'past',
             parts + (('FEELING_NOUN', start, start + 2),
                      ('CASE_' + case, start + 2, start + 3),
                      ('FINITE_FEELING', start + 3, len(value))),
@@ -507,14 +509,14 @@ def _standalone_finite_feeling_witness(nucleus, proposition):
     # standalone frame's scope. Current forms require current_input unless
     # their own 今日 has a present witness; they never inherit a past scope.
     current = proposition.result_state == 'CURRENT_FEELING'
-    absent_anxiety = (proposition.predicate_lemma == 'ある'
+    existential_anxiety = (proposition.predicate_lemma == 'ある'
         and proposition.arguments in {(('は', '不安'),), (('が', '不安'),)}
-        and proposition.polarity == 'negative' and not proposition.written_modifiers)
+        and not proposition.written_modifiers)
     if (proposition.result_state not in {'PAST_FEELING', 'CURRENT_FEELING'} or proposition.actor != 'SELF'
             or proposition.polarity not in {'positive', 'negative'}
             or (proposition.modality, proposition.temporal_scope) !=
                ('feeling', 'current_input' if current else 'past')
-            or (current and (not (proposition.predicate_lemma == '不安だ' or absent_anxiety)
+            or (current and (not (proposition.predicate_lemma == '不安だ' or existential_anxiety)
                              or proposition.relative_day not in {'', 'TODAY'}))):
         return False
     # Keep positive degree and modifiers of explicit negation separate, without deriving
@@ -531,7 +533,7 @@ def _standalone_finite_feeling_witness(nucleus, proposition):
     # Shared negative affect is not grammatical negation. The complete
     # anxiety clause's grammatical polarity and written modifier jointly retain
     # its scope. Negative polarity alone proves neither absence nor improvement.
-    negative_affect = proposition.predicate_lemma == '不安だ' or absent_anxiety
+    negative_affect = proposition.predicate_lemma == '不安だ' or existential_anxiety
     if negative_affect and (
             {'operator:positive_change', 'semantic_role:current_change'} & set(frame.attribute_codes)
             or (('operator:negation' in frame.attribute_codes) != (proposition.polarity == 'negative'))):
@@ -1425,7 +1427,7 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
                 and not _source_polite_past_feeling_is_bound(span, source.normalized)):
             return None
         if (change.polarity == 'negative' or change.sequence_marker or change.relative_day
-                or change.predicate_lemma == '不安だ'):
+                or change.predicate_lemma in {'不安だ', 'ある'}):
             # Punctuation cannot close a reported speaker or detach a
             # cognitive/retracted host. This bounds only the new admission;
             # it does not reinterpret the existing positive family.
