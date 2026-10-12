@@ -212,6 +212,9 @@ _PREVIEW_CANDIDATE_CONTRACTS = (
 _PREVIEW_CANDIDATE_REPLACED_KEYS = {
     ('POST', '/emotion/piece/preview'), ('POST', '/emotion/reflection/preview'),
     ('GET', '/emotion/piece/quota'), ('GET', '/emotion/reflection/quota'),
+    # Legacy draft writes are absent, not aliases into the v2 lifecycle.
+    ('POST', '/emotion/piece/publish'), ('POST', '/emotion/piece/cancel'),
+    ('POST', '/emotion/reflection/publish'), ('POST', '/emotion/reflection/cancel'),
 }
 _PREVIEW_CANDIDATE_REGISTRY = tuple(
     entry for entry in PUBLIC_API_CONTRACTS

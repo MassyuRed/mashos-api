@@ -251,8 +251,9 @@ def create_application(*, piece_preview_configuration: Optional[Dict[str, Any]] 
     switch or M5 admission. TTL/renderer and requested/ready retain their
     existing validation; no readiness is inferred from the live DB.
     Other shared routes, middleware and shutdown behavior use this same owner.
-    The incompatible old reflection preview/quota aliases are absent in the candidate;
-    other legacy Piece/Q&A surfaces remain until the separately admitted M5.
+    The candidate omits old reflection preview/quota aliases and the four
+    legacy Piece/reflection publish/cancel writes, without redirecting them
+    into the v2 lifecycle. Other legacy Piece/Q&A surfaces remain for M5.
     """
     preview_candidate = piece_preview_configuration is not None
     if preview_candidate:
@@ -363,6 +364,18 @@ def create_application(*, piece_preview_configuration: Optional[Dict[str, Any]] 
     app.post("/mymodel/infer", response_model=InferResponse)(infer)
     app.on_event("shutdown")(_close_shared_supabase_client)
     if preview_candidate:
+        # Retire only these legacy draft writes in the explicit v2 candidate.
+        # The compatibility module also owns unrelated Nexus/Q&A routes;
+        # preserve those route objects and the default legacy composition.
+        retired_piece_write_paths = {
+            '/emotion/piece/publish', '/emotion/piece/cancel',
+            '/emotion/reflection/publish', '/emotion/reflection/cancel',
+        }
+        app.router.routes[:] = [
+            route for route in app.router.routes
+            if not (getattr(route, 'path', None) in retired_piece_write_paths
+                    and getattr(route, 'methods', None) == {'POST'})
+        ]
         # The factory's generic ID read must follow shared static routes such
         # as /emotion/piece/quota. Preserve the original route
         # object/handler and both UUID and piece:<UUID> owner identifiers.
