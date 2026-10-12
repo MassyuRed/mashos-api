@@ -1365,8 +1365,11 @@ def _known_postposed_host(continuation):
     # before a past speech host. This identifies quotation scope only; it
     # neither resolves the speaker nor expands the proposition noun grammar.
     # Requiring the kanji stem avoids consuming independent とても / とある /
-    # と同時に sentences. Stacked modifiers and other speech forms stay unread.
-    qualified_speaker = (r'[一-鿿々]+(?:しい|い)[一-鿿々ァ-ヴー]+'
+    # と同時に sentences. The shii family also keeps its past/negative forms;
+    # arbitrary -katta stems could instead be verbs (分かった / 預かった).
+    # Stacked modifiers and other speech forms stay unread.
+    qualified_speaker = (r'[一-鿿々]+(?:しい|しかった|しくない|しくなかった|い)'
+                         r'[一-鿿々ァ-ヴー]+'
                          r'(?:の' + _NOMINAL + r')*')
     if re.match(r'と(?:は|も)?' + qualified_speaker + r'(?:は|が|も)'
                 r'(?:[、，][ \u3000]*)?(?:言った|言いました)', continuation):

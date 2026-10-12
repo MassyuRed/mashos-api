@@ -50,6 +50,8 @@ class AnalysisVerticalTests(unittest.TestCase):
                        '私は資料を調べた', '私は嬉しかった'):
             for host in ('と親しい友人が言った。', 'と優しい同僚は言いました。',
                          'と厳しい先輩も言った。', 'と若い同僚が言った。',
+                         'と親しかった友人が言った。', 'と優しくない同僚は言いました。',
+                         'と忙しくなかった友人の母も言った。',
                          'と忙しい友人の母が言いました。'):
                 with self.subTest(clause=clause, host=host):
                     self.assertIsNone(self.generate(request(record(memo=clause + '。' + host))).artifact)
@@ -59,6 +61,15 @@ class AnalysisVerticalTests(unittest.TestCase):
             ('友人が話した。私は職場にいた。と親しい友人が言った。私は記録を残した。', ''),
             ('未知の出来事。と親しい友人が言った。私は記録を残した。', ''),
             ('私は職場にいた。', 'と親しい友人が言った。私は記録を残した。'),
+            ('私は職場にいた。と親しかった友人が言ったけれど。私は記録を残した。', ''),
+            ('私は職場にいた。と親しくない友人が言ったと弟は言った。私は記録を残した。', ''),
+            ('友人が話した。私は職場にいた。と忙しくなかった同僚が言った。私は記録を残した。', ''),
+            ('私は職場にいた。', 'と親しくなかった友人が言った。私は記録を残した。'),
+            ('私は職場にいた。と親しくなかった友人が、言った。私は記録を残した。', ''),
+            ('私は職場にいた。と親しかった新しい友人が言った。私は記録を残した。', ''),
+            ('私は職場にいた。と親しくはない友人が言った。私は記録を残した。', ''),
+            ('私は職場にいた。と親しくなくなった友人が言った。私は記録を残した。', ''),
+            ('私は職場にいた。と分かった友人が言った。私は記録を残した。', ''),
         ):
             with self.subTest(memo=memo, action=action):
                 artifact = self.generate(request(record(memo=memo, action=action))).artifact
@@ -66,8 +77,13 @@ class AnalysisVerticalTests(unittest.TestCase):
                     for n in artifact.graph.nodes))
 
     def test_qualified_postposed_report_preserves_independent_evidence(self):
-        for claimed in ('私は仕事を続けたい', '私は職場にいた', '私は記録を担当した'):
-            reported = claimed + '。と親しい友人が言った。'
+        for claimed, host in (
+            (claimed, host)
+            for claimed in ('私は仕事を続けたい', '私は職場にいた', '私は記録を担当した')
+            for host in ('と親しい友人が言った。', 'と親しかった友人が言った。',
+                         'と優しくない同僚は言いました。', 'と忙しくなかった友人の母も言った。')
+        ):
+            reported = claimed + '。' + host
             for memo in ('私は記録を残した。' + reported, reported + '私は記録を残した。'):
                 with self.subTest(memo=memo):
                     req = request(record(memo=memo))
@@ -155,6 +171,9 @@ class AnalysisVerticalTests(unittest.TestCase):
                                   'とても親しい友人が言った。', 'とある友人がいた。',
                                   'とある友人が言った。', 'と同時に親しい友人が言った。',
                                   'と同じ親しい友人が言った。',
+                                  'とても親しかった友人が言った。',
+                                  'とある親しくない友人が言った。',
+                                  'と同時に忙しくなかった同僚が言った。',
                                   'ところで、話題を変える。', 'とりあえず、休む。'):
                 with self.subTest(clause=clause, next_sentence=next_sentence):
                     artifact = self.generate(request(record(memo=clause + '。' + next_sentence))).artifact
