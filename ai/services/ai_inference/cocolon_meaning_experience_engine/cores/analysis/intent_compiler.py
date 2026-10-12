@@ -462,12 +462,12 @@ def _finite_feeling_proposition(value):
     verb_start = noun_start + 3
     # One degree may instead occur immediately after the complete noun/case.
     # Reuse the same finite table without discarding any remaining suffix.
-    post_degree = max((word for word in _WRITTEN_ANXIETY_DEGREES
+    post_degree = max((word for word in degrees
                        if value.startswith(word, verb_start)), key=len, default=''
                       ) if not degree and finite.startswith(('不安は', '不安が')) else ''
     if post_degree:
         degree = post_degree
-        modifier = _WRITTEN_ANXIETY_DEGREES[degree]
+        modifier = degrees[degree]
         modifier_start = verb_start
         verb_start += len(degree)
         existential = _EXISTENTIAL_ANXIETY_FORMS.get(value[noun_start:modifier_start] + value[verb_start:])
@@ -475,10 +475,12 @@ def _finite_feeling_proposition(value):
             return None
     if existential is not None:
         case, current, polarity = existential
-        # Only one degree qualifies affirmative existence; negative composition,
-        # added particles and stacking remain unparsed.
+        # The complete finite verb fixes the modifier's scope. Partial
+        # negation is retained as written, never converted to total absence.
+        allowed_degrees = (_WRITTEN_NEGATED_ANXIETY_DEGREES if polarity == 'negative'
+                           else _WRITTEN_ANXIETY_DEGREES)
         if (subject is None or (current and day not in {'', 'TODAY'})
-                or (degree and (polarity != 'positive' or degree not in _WRITTEN_ANXIETY_DEGREES))):
+                or (degree and degree not in allowed_degrees)):
             return None
         degree_parts = (('WRITTEN_MODIFIER_' + modifier, modifier_start,
                          modifier_start + len(degree)),) if degree else ()
@@ -544,8 +546,7 @@ def _standalone_finite_feeling_witness(nucleus, proposition):
     allowed_degrees = (_WRITTEN_NEGATED_ANXIETY_DEGREES if proposition.polarity == 'negative'
                        else _WRITTEN_ANXIETY_DEGREES)
     if proposition.written_modifiers and (
-            not (proposition.predicate_lemma == '不安だ'
-                 or (existential_anxiety and proposition.polarity == 'positive'))
+            not (proposition.predicate_lemma == '不安だ' or existential_anxiety)
             or len(proposition.written_modifiers) != 1
             or proposition.written_modifiers[0] not in allowed_degrees.values()):
         return False
@@ -1724,6 +1725,22 @@ def _explicit_order_pairs(source, plan, withdrawn):
                           pair[0].scalar_end, pair[1].scalar_start, pair[1].scalar_end)))
 
 
+def _partial_anxiety_pair_can_be_retained(left, right):
+    # This only exempts two already written anxiety claims from the ordinary
+    # supplement's polarity-only rejection. It neither infers a remainder nor
+    # merges the claims. Strong positive degrees remain unresolved.
+    negative, positive = (left, right) if left.polarity == 'negative' else (right, left)
+    return (negative.polarity == 'negative' and positive.polarity == 'positive'
+        and all(p.modality == 'feeling' and (p.predicate_lemma == '不安だ'
+            or (p.predicate_lemma == 'ある'
+                and p.arguments in {(('は', '不安'),), (('が', '不安'),)}))
+                for p in (negative, positive))
+        and negative.written_modifiers in {
+            ('PARTIAL_NEGATION_AMARI',), ('PARTIAL_NEGATION_ANMARI',)}
+        and positive.written_modifiers in {
+            (), ('DEGREE_SLIGHT',), ('DEGREE_YAYA',), ('DEGREE_CHOTTO',)})
+
+
 def _admit_ordinary_supplement(answer, original):
     claims = _self_propositions(answer, require_complete=True)
     earlier = [(p, original.envelope.envelope_id) for p, _ in _self_propositions(original)]
@@ -1744,6 +1761,7 @@ def _admit_ordinary_supplement(answer, original):
                     and current.modality == previous.modality
                     and current.temporal_scope == previous.temporal_scope
                     and current.polarity != previous.polarity
+                    and not _partial_anxiety_pair_can_be_retained(current, previous)
                     and compatible_arguments and not separate_days):
                 raise AnalysisSourceError('analysis_supplement_interpretation_pending')
         earlier.append((current, answer.envelope.envelope_id))

@@ -85,15 +85,56 @@ async def storage_sql_fixture():
 
 
 class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
+    async def test_partial_anxiety_supplements_survive_save_without_regeneration(self):
+        from test_analysis_saved_period import with_answer, NOW
+        for no, yes in (('不安はあまりない', '不安は少しある'),
+                        ('あまり不安ではない', '少し不安だ')):
+            for old, new in ((no, yes), (yes, no)):
+                with self.subTest(old=old, new=new):
+                    fx = fixture('私は' + old + '。')
+                    fx['original']['emotion_details'] = [{'type': '平穏', 'strength': 'medium'}]
+                    member = with_answer({'original': fx['original']}, '私は' + new + '。')
+                    row, writes = fx['row'], []
+                    async def rpc(name, payload):
+                        if name == 'analysis_observed_source_snapshot':
+                            return {'guard': GUARD, 'tier': 'plus', 'now': NOW, 'members': [member]}
+                        if name == 'analysis_observed_commit':
+                            writes.append(payload)
+                            row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                            row['content_json']['watashiMap'] = payload['p_projection']
+                            return row['id']
+                        self.assertEqual(name, 'analysis_observed_read')
+                        return result([row], matched=True)
+                    with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                            patch.object(service, '_rpc', side_effect=rpc):
+                        saved = await service.generate_saved(OWNER, start=START, end=END,
+                            report_mode='standard', report_type='latest')
+                        with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                            reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                    self.assertEqual(len(writes), 1)
+                    self.assertEqual(saved, reread['items'][0])
+                    self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                    projection = saved['content_json']['watashiMap']
+                    self.assertEqual(projection, writes[0]['p_projection'])
+                    self.assertEqual([n['visible_label'] for n in projection['nodes']],
+                        [v + '（この記述時点の気持ち）' for v in (old, new)])
+                    self.assertFalse(projection['edges'])
+                    self.assertFalse(projection['conflict_badges'])
+
     async def test_existential_degree_anxiety_survives_save_and_read(self):
-        for degree, case in (('少し', 'が'), ('とても', 'は'), ('かなり', 'が'), ('やや', 'は'), ('ちょっと', 'が')):
+        for degree, case in (('少し', 'が'), ('とても', 'は'), ('かなり', 'が'), ('やや', 'は'), ('ちょっと', 'が'),
+                             ('全く', 'が'), ('まったく', 'は'), ('全然', 'が'), ('あまり', 'は'),
+                             ('あんまり', 'が'), ('少しも', 'は'), ('ちっとも', 'が')):
+            negative = degree in {'全く', 'まったく', '全然', 'あまり', 'あんまり', '少しも', 'ちっとも'}
+            polite, plain, past, past_plain = (('ありません', 'ない', 'ありませんでした', 'なかった')
+                                             if negative else ('あります', 'ある', 'ありました', 'あった'))
             for stem in (degree + '不安' + case, '不安' + case + degree):
                 for clause, label in (
-                        ('私は' + stem + 'あります。', stem + 'ある（この記述時点の気持ち）'),
-                        ('今日、私は' + stem + 'ある。',
-                         'この記述時点の今日：' + stem + 'ある（この記述時点の気持ち）'),
-                        ('昨日、私は' + stem + 'ありました。',
-                         'この記述時点の昨日：' + stem + 'あった（記録された気持ち）')):
+                        ('私は' + stem + polite + '。', stem + plain + '（この記述時点の気持ち）'),
+                        ('今日、私は' + stem + plain + '。',
+                         'この記述時点の今日：' + stem + plain + '（この記述時点の気持ち）'),
+                        ('昨日、私は' + stem + past + '。',
+                         'この記述時点の昨日：' + stem + past_plain + '（記録された気持ち）')):
                     with self.subTest(clause=clause):
                         fx = fixture(clause)
                         row, writes = fx['row'], []
@@ -631,7 +672,11 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         for old, new in (('嬉しかった', 'うれしくなかった'),
                 ('うれしかった', '嬉しくなかった'),
                 ('嬉しくなかった', 'うれしかった'),
-                ('うれしくなかった', '嬉しかった')):
+                ('うれしくなかった', '嬉しかった'),
+                ('不安は全くない', '不安は少しある'),
+                ('不安は少しある', '不安は全くない'),
+                ('不安はあまりない', '不安はとてもある'),
+                ('不安はとてもある', '不安はあまりない')):
             with self.subTest(old=old, new=new):
                 original = dict(self.fx['original'], memo='私は' + old + '。',
                     emotion_details=[{'type': '平穏', 'strength': 'medium'}])
