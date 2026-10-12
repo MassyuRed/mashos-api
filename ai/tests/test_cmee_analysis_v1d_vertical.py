@@ -43,6 +43,61 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_whole_wishes_scenes_roles_keep_postposed_attribution_unresolved(self):
+        for clause in ('私は仕事を続けたい', '私は家族を守りたい',
+                       '私は職場にいた', '私は職場にいなかった',
+                       '私は記録を担当した', '私は記録を担当しなかった'):
+            for host in ('と友人が言った。', 'と私は思う。', 'って聞いた。',
+                         'のは嘘だった。', 'わけではない。',
+                         'と友人の母は言いました。', 'と友人も言った。'):
+                with self.subTest(clause=clause, host=host):
+                    self.assertIsNone(self.generate(request(record(memo=clause + '。' + host))).artifact)
+
+    def test_postposed_attribution_preserves_independent_claims_and_source(self):
+        for claimed in ('私は仕事を続けたい', '私は職場にいた', '私は記録を担当した'):
+            memo = '私は資料を調べた。' + claimed + '。と友人が言った。'
+            req = request(record(memo=memo))
+            artifact = self.generate(req).artifact
+            node, = artifact.graph.nodes
+            self.assertEqual(node.visible_label, '私は資料を調べた')
+            source, = freeze_analysis_sources(req).sources
+            evidence, = node.evidence_refs
+            self.assertEqual(source.envelope.raw_utf8[evidence.utf8_start:evidence.utf8_end].decode(),
+                             '私は資料を調べた')
+            self.assertFalse(artifact.graph.edges)
+            self.assertFalse(artifact.graph.conflicts)
+            self.assertIn('SOURCE_SCOPE', [gap.missing_scope for gap in artifact.graph.unknown_gaps])
+            separated = self.generate(request(record(memo=claimed + '。と友人が言った。'),
+                record(2, memo=claimed + '。'))).artifact
+            retained, = separated.graph.nodes
+            self.assertEqual(retained.visible_label, claimed)
+            self.assertEqual(len(retained.evidence_refs), 1)
+            self.assertEqual(separated.safe_projection(authenticated_owner_scope=OWNER)
+                ['nodes'][0]['evidence_badge_count'], 1)
+            incomplete = self.with_answer(record(memo='私は資料を調べた。'),
+                claimed + '。と友人が言った。')
+            self.assertIsNone(self.generate(request(incomplete)).artifact)
+            for answer in ('「私は資料を調べた」は取り消します。',
+                           '「私は資料を調べた」ではなく「私は資料を見た」です。'):
+                changed = self.generate(request(self.with_answer(record(memo=memo), answer))).artifact
+                if '取り消' in answer:
+                    self.assertIsNone(changed)
+                else:
+                    self.assertEqual([n.visible_label for n in changed.graph.nodes], ['私は資料を見た'])
+            compared = self.compared(memo, '私は資料を調べた。').artifact
+            self.assertEqual(compared.safe_projection(authenticated_owner_scope=OWNER)
+                ['period_comparison']['safe_change_kinds'], ['UNKNOWN_SCOPE_CHANGED'])
+
+    def test_postposed_attribution_does_not_consume_independent_to_sentences(self):
+        for clause in ('私は仕事を続けたい', '私は家族を守りたい',
+                       '私は職場にいた', '私は記録を担当した', '私は資料を調べた'):
+            for next_sentence in ('とても不安だった。', 'とても考えた。',
+                                  'とても親しい友人が言った。', 'とある友人がいた。',
+                                  'ところで、話題を変える。', 'とりあえず、休む。'):
+                with self.subTest(clause=clause, next_sentence=next_sentence):
+                    artifact = self.generate(request(record(memo=clause + '。' + next_sentence))).artifact
+                    self.assertIn(clause, [node.visible_label for node in artifact.graph.nodes])
+
     def test_self_past_actions_do_not_become_reported_speakers_actions(self):
         clauses = ('私は資料を調べた', '私は資料を調べなかった',
                    '僕は資料を調べました', '私は資料を調べませんでした',
@@ -124,6 +179,7 @@ class AnalysisVerticalTests(unittest.TestCase):
 
     def test_self_past_action_postposed_host_cannot_close_an_unrelated_report(self):
         for prefix in ('私は嬉しかった。', '私は資料を調べた。', '私は不安だ。',
+                       '私は仕事を続けたい。', '私は職場にいた。', '私は記録を担当した。',
                        '私は嬉しかった。\r\n', '私は嬉しかった\r\n'):
             for host in ('と友人が言った。', 'のは嘘だった。'):
                 with self.subTest(prefix=prefix, host=host):
@@ -138,9 +194,9 @@ class AnalysisVerticalTests(unittest.TestCase):
             ('私は嬉しかった。と友人が言ったけれど。私は記録を残した。', ''),
             ('私は嬉しかった。と友人が言ったと弟は言った。私は記録を残した。', ''),
             ('私は嬉しかった。', 'と友人が言った。私は記録を残した。'),
-            ('私は仕事を続けたい。と友人が言った。私は記録を残した。', ''),
-            ('私は職場にいた。と友人が言った。私は記録を残した。', ''),
-            ('私は記録を担当した。と友人が言った。私は記録を残した。', ''),
+            ('友人が話した。私は仕事を続けたい。と友人が言った。私は記録を残した。', ''),
+            ('私は職場にいた。と親しい友人が言った。私は記録を残した。', ''),
+            ('私は記録を担当した。と友人が言ったけれど。私は記録を残した。', ''),
         ):
             with self.subTest(memo=memo, action=action):
                 artifact = self.generate(request(record(memo=memo, action=action))).artifact

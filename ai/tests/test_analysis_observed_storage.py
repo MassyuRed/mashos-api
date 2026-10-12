@@ -85,7 +85,7 @@ async def storage_sql_fixture():
 
 
 class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
-    async def test_unproved_self_past_action_attribution_never_commits(self):
+    async def test_unproved_postposed_or_past_action_attribution_never_commits(self):
         for memo, action in (
             ('友人が話した。私は資料を調べた。', ''),
             ('友人が話していました。私は資料を調べなかった。', ''),
@@ -93,6 +93,12 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
             ('私は資料を調べた。のは嘘だった。', ''),
             ('私は資料を調べた。', '友人が話した。'),
             ('友人が話した。', '私は資料を調べた。'),
+            ('私は仕事を続けたい。と友人が言った。', ''),
+            ('私は家族を守りたい。と友人が言った。', ''),
+            ('私は職場にいた。と友人が言った。', ''),
+            ('私は職場にいなかった。のは嘘だった。', ''),
+            ('私は記録を担当した。と私は思う。', ''),
+            ('私は記録を担当しなかった。わけではない。', ''),
         ):
             with self.subTest(memo=memo, action=action):
                 original = dict(self.fx['original'], memo=memo, memo_action=action,
@@ -1679,6 +1685,9 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_partial_map_with_unparsed_original_is_saved_and_read_without_regeneration(self):
         for unparsed in ('私は資料を明日ノートに書いた', '私は何を調べた', '私は誰の資料を見た',
+                         '私は仕事を続けたい。と友人が言った',
+                         '私は職場にいた。と友人が言った',
+                         '私は記録を担当した。と友人が言った',
                          '私は今週資料を調べた', '私は今年仕事を続けたい',
                          '私は今月資料を調べないかもしれないと思う',
                          '私は今年資料を調べたかもしれないと思っている',

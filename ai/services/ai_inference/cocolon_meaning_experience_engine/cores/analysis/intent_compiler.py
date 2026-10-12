@@ -1351,6 +1351,23 @@ def _closed_possibility_scope(span, context):
                         following)
 
 
+def _self_wish_or_past_event(proposition):
+    return bool(proposition and proposition.actor == 'SELF'
+        and not proposition.dependent_form and proposition.possible_content is None
+        and (proposition.modality == 'wish'
+             or proposition.scene_state == 'PAST_PRESENCE'
+             or proposition.role_state == 'PAST_RESPONSIBILITY'))
+
+
+def _known_postposed_host(continuation):
+    # Reuse the established speaker/host grammar for rejection and closure.
+    # Unknown speaker nouns require their own attribution proof.
+    speaker = (r'(?:(?:私|僕|ぼく|俺|おれ|わたし|自分|' + _NOMINAL
+               + r'(?:の' + _NOMINAL + r')*)(?:は|が|も)(?:[、，][ \u3000]*)?)?')
+    return re.match(r'(?:と(?:は|も)?' + speaker + r'(?:思|考|感|言|い|聞|書|読|伝|認|信|報)|'
+                    r'って|わけ|訳|のでは|のか|のは|のも|なんて|などと|かも|かどうか|はず)', continuation)
+
+
 def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     # Multi-span nuclei can contain unbounded relations. Keep them unknown in
     # this first consumer rather than stitching a new proposition together.
@@ -1514,7 +1531,7 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
                 previous = _proposition(clauses[index - 1].strip()) if self_past_action and index else None
                 # Only pair a trailing host with a clause whose following-host
                 # guard is established below. Parsed SELF alone is insufficient
-                # for ordinary wishes, scenes and roles. Keep the guarded pair
+                # for wishes, scenes and roles with an unread host. Keep the guarded pair
                 # unobserved; never join fields or clear an earlier open report.
                 if (previous is not None and (previous.actor == 'SELF'
                         or (previous.actor == 'UNSPECIFIED'
@@ -1522,6 +1539,8 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
                             and (previous.modality, previous.temporal_scope) == ('fact', 'past')))
                         and not previous.dependent_form and previous.possible_content is None
                         and (previous.result_state in {'PAST_FEELING', 'CURRENT_FEELING'}
+                            or (_self_wish_or_past_event(previous)
+                                and _known_postposed_host(preceding))
                             or previous.predicate_lemma in _PAST_DECISION_LEMMAS
                             or (previous.predicate_lemma in _PAST_ACTION_LEMMAS
                                 and (previous.modality, previous.temporal_scope) == ('fact', 'past'))
@@ -1601,7 +1620,10 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
             transition = re.match(r'(?:ところで|とりあえず)[、，,]', following)
             if not transition and re.match(r'(?:と|って|のは|のも|なんて|などと)', following):
                 return None
-    if source_host_required or (change is not None and (pair is None or nucleus.nucleus_id != pair[1])):
+    whole_wish_or_event = (pair is None and a == 0 and b == len(span.raw_text)
+                          and _self_wish_or_past_event(proposition))
+    if (source_host_required or whole_wish_or_event
+            or (change is not None and (pair is None or nucleus.nucleus_id != pair[1]))):
         # Ledger punctuation is not proof that the finite host is
         # closed: a following dependent suffix can negate or embed either
         # polarity, including a host with its own explicit speaker. Match
@@ -1611,10 +1633,7 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
                 and not re.match(r'(?:ところで|とりあえず)[、，,]', continuation)
                 and re.match(r'(?:と|って|のは|のも|なんて|などと)', continuation)):
             return None
-        speaker = (r'(?:(?:私|僕|ぼく|俺|おれ|わたし|自分|' + _NOMINAL
-                   + r'(?:の' + _NOMINAL + r')*)(?:は|が|も)(?:[、，][ \u3000]*)?)?')
-        if re.match(r'(?:と(?:は|も)?' + speaker + r'(?:思|考|感|言|い|聞|書|読|伝|認|信|報)|'
-                    r'って|わけ|訳|のでは|のか|のは|のも|なんて|などと|かも|かどうか|はず)', continuation):
+        if _known_postposed_host(continuation):
             return None
     if result is not None and not _unfinished_result_witness(nucleus):
         return None
