@@ -43,6 +43,86 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_closed_action_possibility_retains_only_independent_claims(self):
+        for ending in ('かもしれない', 'かも知れない', 'かもしれません', 'かも知れません'):
+            for certain, possible in (
+                ('私は不安だ', '私は資料を調べた'),
+                ('私は不安だ', '私は資料を調べなかった'),
+                ('私は資料を調べた', '私は資料を調べなかった'),
+                ('昨日、私は不安だった', '今日、私は記録を残した'),
+                ('私は安心した', '僕は同僚からの資料を調べた'),
+                ('私は不安だ', '私は考えをノートに書いた'),
+                ('私は不安だ', '私は新しい仕事メモを作った'),
+            ):
+                for clauses in ((certain, possible + ending), (possible + ending, certain)):
+                    with self.subTest(clauses=clauses):
+                        req = request(record(memo='。'.join(clauses) + '。'))
+                        artifact = self.generate(req).artifact
+                        self.assertIsNotNone(artifact)
+                        node, = artifact.graph.nodes
+                        self.assertEqual(node.visible_label, certain)
+                        source, = freeze_analysis_sources(req).sources
+                        e, = node.evidence_refs
+                        raw = source.envelope.raw_utf8
+                        self.assertEqual(raw[e.utf8_start:e.utf8_end].decode(), certain)
+                        self.assertEqual(raw[e.field_utf8_start:e.field_utf8_end].decode()[e.scalar_start:e.scalar_end], certain)
+                        self.assertEqual(e.literal_sha256, hashlib.sha256(certain.encode()).hexdigest())
+                        projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                        self.assertFalse(projection['edges'])
+                        self.assertFalse(projection['conflict_badges'])
+                        self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+                        text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                        self.assertNotIn(ending, text)
+                        self.assertIn('まだ読み取れていない内容', text)
+
+    def test_closed_action_possibility_preserves_unresolved_scope_boundaries(self):
+        certain, possible = '私は不安だ', '私は資料を調べたかもしれない'
+        cases = [certain + '。' + content + 'かもしれない。' for content in (
+            '友人は資料を調べた', '資料を調べた', '私は資料を調べる',
+            '私は資料を調べたい', '私は資料を調べなかったです', '私は資料を調べました',
+            '私は今朝資料を調べた', '私は資料を読んだ', 'その後、私は資料を調べた',
+            '私は資料を調べて', '私は予定を決めた')]
+        cases += [a + boundary + b + '。' for a, b in ((certain, possible), (possible, certain))
+                  for boundary in ('、', ',', ';', '；', '\n', '．')]
+        cases += [certain + '。' + possible + tail for tail in (
+            'と思った。', '。と友人が言った。', '。のは嘘だった。',
+            '？', 'なら休む。', '。まだ違うかもしれない。')]
+        cases += [possible + '。', '夢を見た。' + certain + '。' + possible + '。',
+                  '友人が話した。' + certain + '。' + possible + '。',
+                  certain + '。「' + possible + '」と言われた。',
+                  certain + '。' + 'あ' * 72 + possible + '。']
+        for memo in cases:
+            with self.subTest(memo=memo):
+                self.assertIsNone(self.generate(request(record(memo=memo))).artifact)
+        self.assertIsNone(self.generate(request(record(
+            memo=certain + '。' + possible + '。', action='友人の話でした。'))).artifact)
+
+    def test_closed_action_possibility_preserves_order_updates_and_comparison(self):
+        possible = '私は資料を見たかもしれない'
+        for memo, count, edges in (
+            ('私は資料を調べた。その後、私は記録を残した。' + possible + '。', 2, 1),
+            ('私は不安だ。' + possible + '。それから、私は記録を残した。', 2, 0),
+            ('私は不安だ。私は不安ではないかもしれません。' + possible + '。', 1, 0),
+            ('私は不安だ.' + possible + '.', 1, 0),
+        ):
+            with self.subTest(memo=memo):
+                artifact = self.generate(request(record(memo=memo))).artifact
+                self.assertEqual(len(artifact.graph.nodes), count)
+                self.assertEqual(len(artifact.graph.edges), edges)
+                self.assertFalse(artifact.graph.conflicts)
+                artifact.safe_projection(authenticated_owner_scope=OWNER)
+        original = record(memo='私は記録を残した。私は不安だ。' + possible + '。')
+        for answer in ('「私は不安だ」は取り消します。', '「私は不安だ」ではなく「私は安心した」です。'):
+            artifact = self.generate(request(self.with_answer(original, answer))).artifact
+            self.assertIsNotNone(artifact)
+            self.assertNotIn('私は不安だ', [n.visible_label for n in artifact.graph.nodes])
+            self.assertTrue(artifact.graph.source_updates)
+            self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+            artifact.safe_projection(authenticated_owner_scope=OWNER)
+        compared = self.compared('私は不安だ。' + possible + '。', '私は不安だ。').artifact
+        self.assertEqual(compared.safe_projection(authenticated_owner_scope=OWNER)
+            ['period_comparison']['safe_change_kinds'], ['UNKNOWN_SCOPE_CHANGED'])
+
     def test_polite_feeling_possibility_preserves_independent_claim_and_evidence(self):
         for ending in ('かもしれません', 'かも知れません'):
             for certain, content in (

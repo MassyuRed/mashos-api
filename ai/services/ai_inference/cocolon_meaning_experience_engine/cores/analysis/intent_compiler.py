@@ -1309,9 +1309,9 @@ def _analysis_prefix_opens_report(prefix):
     return False
 
 
-def _closed_feeling_possibility(span, context):
-    # Recognize only the scope of a whole SELF feeling possibility. This is
-    # never a factual proposition or a substitute for a shared feeling witness.
+def _closed_possibility_scope(span, context):
+    # Recognize only the scope of a whole SELF feeling or past-action
+    # possibility. This never supplies a factual node or a shared witness.
     # The polite ません belongs to the possibility operator, not to the
     # feeling's polarity. Admit only complete endings, with no trailing host.
     match = re.fullmatch(r'(.+?)(?:かもしれない|かも知れない|かもしれません|かも知れません)', span.raw_text)
@@ -1321,9 +1321,23 @@ def _closed_feeling_possibility(span, context):
     # In 不安かもしれない the possibility operator occupies the copula slot.
     # The temporary だ is used only to recognize the existing feeling grammar;
     # no generated claim, evidence coordinate or source text includes it.
-    feeling = _finite_feeling_proposition(content + 'だ' if content.endswith('不安') else content)
-    if (feeling is None or feeling.actor != 'SELF' or feeling.sequence_marker
-            or feeling.dependent_form):
+    proposition = _finite_feeling_proposition(content + 'だ' if content.endswith('不安') else content)
+    if proposition is None:
+        proposition = _proposition(content)
+        # Reuse the existing nine action verbs and their plain past finite
+        # forms. Sentence-final politeness, wishes, decisions and incomplete
+        # nominal/time scopes do not become a newly understood possibility.
+        if (proposition is None or proposition.predicate_lemma not in _PAST_ACTION_LEMMAS
+                or (proposition.modality, proposition.temporal_scope) != ('fact', 'past')
+                or proposition.possible_content or proposition.written_modifiers
+                or not any(case == 'を' for case, _ in proposition.arguments)):
+            return False
+        finite = next((content[a:b] for role, a, b in proposition.source_parts
+                       if role == 'FINITE_PREDICATE'), '')
+        if finite != _CANONICAL_CONTENT.get((proposition.predicate_lemma, proposition.polarity, 'past')):
+            return False
+    if (proposition.actor != 'SELF' or proposition.sequence_marker
+            or proposition.dependent_form):
         return False
     before = context[:span.start_index].rstrip(' \t\u3000\r\n')
     after = context[span.end_index:].lstrip(' \t\u3000\r\n')
@@ -1373,13 +1387,13 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     if re.search(r'[「」『』“”"?？]|(?:と言われ|と聞い|そうだ|なら|(?<!か)もし)', context):
         return None
     # A complete cognitive witness can represent its uncertain complement.
-    # A separate, closed feeling possibility stays unknown without erasing
+    # A separate, closed possibility stays unknown without erasing
     # other proved clauses. Open or unparsed speculative scopes block the field.
     if re.search(r'かもしれ|かも知れ', context):
         proved = {n.source_span_ids[0] for n in plan.nuclei
                   if _source_current_cognition(n)} if plan is not None else set()
         if any(not ((s.span_id in proved and _cognitive_proposition(s.raw_text) is not None)
-                    or _closed_feeling_possibility(s, context))
+                    or _closed_possibility_scope(s, context))
                for s in source.spans if s.source_field == span.source_field
                and re.search(r'かもしれ|かも知れ', s.raw_text)):
             return None
