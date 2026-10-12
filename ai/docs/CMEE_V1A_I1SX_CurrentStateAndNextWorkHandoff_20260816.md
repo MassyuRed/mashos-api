@@ -1,4 +1,4 @@
-> 最新の内容修正は末尾 **u231（2026-10-12 JST・未配置）**。不安の存在肯定で後置された程度語を、原文順・程度・助詞・時制を保って文章/図/保存再読へ保持。検証と残件（否定修飾と部分否定の整合等）は同節とAnalysis current03を参照。
+> 最新の内容修正は末尾 **u235（2026-10-12 JST・未配置）**。丁寧な感情推量が同じ欄にあると明示内容まで消える不具合を修正。検証・残件は同節とAnalysis current03を参照。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -17555,3 +17555,39 @@ Mashの分析内容修正続行指示により、u233末尾の候補を実出力
 STRUCTURE_MAP_DELTA_NONE。source→共有命題→Analysis graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。root華恋が編集・判断・実行・反映し、補助agentはread-only。新規repo file0、共有Plan/Emlis・realizer・API/DTO/DB/SQL/RN製品・依存/workflowの変更0。Supabase操作/本人行取得/DB書込/配置/有効化/native build/main mergeは0。
 
 残件は一般的な推量/引用作用域、推量そのものの表示、未知の述語・省略主体/複合節、全体ルートUI/IF/Saved、最新修正版の本人実機・稼働DB保存再読・正式商品受入れ。今回も「まだ違うかもしれない」や未対応の思考hostは保留しており、次の内容作業では別の実出力欠落を確かめてから対応範囲を決める。本修正や次の内容作業を実機確認の追加前提にはしない。未配置。
+
+## u235 — 丁寧な感情推量の横で明示内容を保持（2026-10-12 JST・未配置）
+
+Mashの分析構造の内容修正指示により、u234の残差を実エンジンで確認した。開始headはAPI PR3 `3ac95a1d3ded9a6bc669e28b242e5f7230127988`、Cocolon PR30 `73a9f7bda6d7595a8f52fba163e713b13f54426f`。添付txt、Karen-Diaryの入口と原理、前提資料00/01/01B・全file地図02/07とfresh tree、work-attitude入口/CURRENT_RULES/Rule18、恒久incident全文、current03/詳細04 §3.64/06/API handoff u234、最新weekly20261010 §5.4/§5.5を参照した。今回の明示内容修正を§5.4の配分として記録し、§5.5の最新修正版の本人入力→生成→保存再表示への戻る位置と12/18公開目標を維持する。
+
+System Context prepareは最初のsparse取得でtask_profiles.json不足、必要profile取得後もshallow cloneで指定祖先からのdescendantを証明できず失敗した。既定の原本直接読取fallbackを使用し、prepare成功・generated contextのfreshnessは主張しない。環境はCodex Work、モデルの詳細名称は確認できず、別model Pro/Ultraの独立審査を認定していない。同環境の補助agentは読取のみ、編集・実行・反映のownerはroot華恋。
+
+### 原因と最小変更
+
+「私は不安だ。私は不安ではないかもしれません。」がUNAVAILABLEになり、明示した感情まで消えていた。既存 `_closed_feeling_possibility` が常体の完全2形だけを識別し、丁寧推量が同field全体を止めるためだった。同helperのfullmatchへ完全な「かもしれません／かも知れません」だけを追加した。推量の「ません」を感情の否定へ転換せず、推量自体はSOURCE_SCOPEの未確定表示に残す。
+
+既存SELF感情の文法・共有witness・実句点（。/.）の要求は不変。推量node、不一致badge、未知節を越す順序線は作らず、推量前に成立した明示順序は保持する。報告/引用/夢/条件、他者/省略主語、未解釈推量、後続host、読点/改行/全角period/固定長切断は保留を維持。「ませんでした／ませんが／ませんね／ませんか」等の別語尾へは拡張しない。通常補足・訂正置換の全文coverageも維持し、明示節の撤回/訂正だけを既存経路で反映する。
+
+### 実出力・保存・検証
+
+合成22入力の前後44結果を比較し、9入力で明示内容の欠落を解消、13対照は状態・理由・本文・図内容が不変（ランダムartifact identityを除く）。生成13全文をrootが読み、実RN `buildWatashiMapV2ViewModel` で本文・identity・読み順・edge/unknown/annotation/conflict件数の一致を確認した。推量を既知の感情として補っていない。
+
+合成入力「私は不安だ。私は不安ではないかもしれません。」の実生成全文：
+
+```text
+結果・余韻：不安だ（この記述時点の気持ち）（1件の記録）
+未確定（不安だ（この記述時点の気持ち））：確定していない項目：場面、役割、考え・注意、行動・非行動。
+未確定（不安だ（この記述時点の気持ち））：まだ読み取れていない内容は、この記録からは確定していません。
+```
+
+実engine/service＋合成RPCの既存保存検査へ丁寧5入力を追加し、常体5入力とともに同じ本文/図/IDの再生成なし再読を確認。補足/訂正の丁寧2入力を追加した計4入力はHTTP422・snapshot取得のみ、commitなし。原文UTF-8/scalar/hash、前後順序、既知/未知推量混在、訂正/撤回、UNKNOWN_SCOPE_CHANGEDのみの期間差を確認した。実機描画や稼働DB保存の結果ではない。
+
+修正前の新testは6 FAIL（主test1＋subtest5、436 deselected）で欠落を再現。最小source修正後の対象群は **11 tests／223 subtests PASS（4.38秒、533 deselected）**。Python3.12.14、既存pinのpytest8.4.1/pytest-subtests0.14.2/FastAPI0.142.2/Pydantic2.13.5/httpx0.28.1を隔離環境へ用意し、旧runtimeの実在を継承したとは扱わない。既存期待の削除/緩和0。compiler1＋既存test2を変更、新しい製品owner・test file・依存指定・workflow追加0。
+
+固定sourceの[GitHub Actions run38217002872](https://github.com/MassyuRed/mashos-api/actions/runs/38217002872)／job `114703968485`は全step success。Python3.12.15で既存5suite **1602 tests／9470 subtests PASS（216.69秒）**、共有owner identity **1 PASS（193 deselected、17.92秒）**。fail/skip/xfail 0。CIの既存合成7生成全文もrootが読解し、肯否・先行準備・感情・明示順序・未知区間を確認した。最終全suiteのローカル重複実行はしていない。
+
+製品source `97c0925ec0ed011a845dfa39b371d98ca2f12c28`、tree `3b51eb4c85371c18f2ddfb94aa1878f64e0a50b3` を既存API PR3へnon-forceで反映。remote再取得で3対象のbytes・変更path・親headを照合。current03・詳細04 §3.65・06/API handoffへ結果と残件を同期する。read-only補助reviewで具体的blockerなし。件数をローカル/CI間で合算しない。
+
+STRUCTURE_MAP_DELTA_NONE。source→共有命題→Analysis graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、TECHNICAL_CREDIT。Supabaseはproject識別とmigration履歴を読取り、既存Analysis保存/期間比較の登録を確認した。本人行/本文取得・DB書込0。共有Plan/Emlis・realizer/API/DTO/SQL/RN製品、設定・配置・有効化・native build・main mergeの変更0。
+
+一般の推量/引用作用域、未対応述語・省略主体/複合節、全体ルートUI/IF/Saved、最新修正版の本人実機・稼働DB保存再読・正式商品受入れは残件。丁寧語尾の一般拡張や推量内容の表示を今回の成立へ含めない。次の内容作業は別の実出力欠落を確認して選び、本修正や追加表現対応を本人実機確認の追加前提にしない。未配置。
