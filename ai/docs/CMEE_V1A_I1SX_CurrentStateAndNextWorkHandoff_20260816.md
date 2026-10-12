@@ -17249,3 +17249,44 @@ Mashの分析内容修正続行指示を受け、u225に残した部分否定の
 STRUCTURE_MAP_DELTA_NONE：既存source→共有命題→Analysis graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。root華恋が判断・編集・実行・反映を担当し、補助agentはread-only。新規repo file0、共有Plan/Emlis/API/DTO/DB/SQL/RN製品変更0。Supabase操作・本人行取得・DB書込・配置/有効化/native build/main mergeは0。未配置、本人実機・稼働DB保存再読・正式商品受入れは未確認。
 
 次は助詞が介在する否定や別の程度表現について、現在の実出力と原文/共有根拠を照合して欠落と作用域を確認する。「少し＋否定」や複合修飾の意味を機械的に確定しない。主体省略/複合節、時制をまたぐ順序、一般意味理解、全体ルートUI/IF/Saved、本人生成→保存再表示も未完了で、今回の欠落修正を分析全体の完成とはしない。
+
+## u227 — 「少しも／ちっとも」を否定のまとまりとして保持（2026-10-12 JST・未配置）
+
+Mashの分析内容修正続行指示で、u226の次に助詞を含む否定を実測した。開始headはAPI PR3 `f1ee942d8fa4cbb3b0d956c913c532370f4d8a97`／Cocolon PR30 `538bacbd7bb1cc63af0bc6c68b014443fdb80dde`。同session既読の前提・作業ルール・恒久incidentを継承し、CURRENT_RULES、全体設計01・全file地図02の対象配置、current03・詳細04/06、最新weekly20261010案内と既読§5.5、実ファイルを照合した。System Contextの前回prepare失敗に対する原典直接読解を継続し、fresh Context成功とはしない。12/18公開目標と実機確認順序を保持し、今回の修正を本人生成→保存再表示の追加前提にしない。
+
+### 原因・修正範囲
+
+「私は少しも不安ではない」等は共有Planに感情・否定・時点の根拠があるが、Analysis側の既知否定modifierに2語がなく欠落していた。「少しも」は肯定の「少し」が先に一致するため、辞書追加だけでも保持できない。
+
+既存compilerで「少しも／ちっとも」を否定専用modifierへ追加し、既知語の範囲で最長一致させる。未知の助詞は除去せず、後続の完全な有限形と肯否別allowlistの照合を維持する。明示SELF、不安の現在否定6形/過去否定6形、既存の日語範囲、共有の同一節の感情/否定operator・時点の一致が必要。原文から本人を証明し、shared current_user既定値で省略主語を補わない。
+
+realizerは原綴りを保持し、原文証拠・修飾語の全座標・否定・時制・今日/昨日を文章/図へ渡す。少しの肯定、あまりの部分否定、無修飾や全く/全然、2語相互を同一記述へまとめず、数値強度・安心・改善を推定しない。同じ語の常体/敬体は既存の意味比較で同義になる。意味keyの仕組みや共有Planは変更しない。
+
+少しも/ちっとも＋肯定、少しは/少しだけ/少しもは/少しも、等、修飾の重複・二重否定、他者/主語省略、報告/夢/質問/否認/推量/複合節、昨日の現在形は保留。別構文「私は不安はない」も実測で未生成を確認したが、今回の2語とは別の原文構造なので拡張していない。
+
+### 実出力・表示・保存
+
+合成22入力の前後44結果で生成された22全文をrootが読解した。無日/今日の現在形、昨日の過去形、独立後続行動、未知区間/別fieldの10入力で欠落を解消。作用域未確定/少しは/少しも肯定/報告/別field報告/否認/昨日の現在形/あまり否定/少し現在肯定/少し過去肯定/無修飾否定/二重否定の12対照は状態・本文・図の内容が不変。生成ごとのartifact IDは比較から除外した。
+
+実RN `buildWatashiMapV2ViewModel` で22投影の全文、projection identity、accessibility順、node/edge/未確定/注記/競合件数が一致した。実機描画の確認ではない。合成入力「私は少しも不安ではない。」の実生成全文：
+
+```text
+結果・余韻：少しも不安ではない（この記述時点の気持ち）（1件の記録）
+未確定（少しも不安ではない（この記述時点の気持ち））：確定していない項目：場面、役割、考え・注意、行動・非行動。
+```
+
+「私は少しも不安ではなかった。それから、私は記録を残した。」は1node/0edgeから2node/1edgeへ改善し、書かれた順序だけを示す。現在→過去、未知文、別field/recordの線は補わない。期間比較の2全文も読み、同じ語の常体/敬体は差なし、少しも否定/少し肯定は記述差であり改善・悪化・原因ではないことを確認した。
+
+実engine/service＋合成RPCで2語×無日の現在/今日の現在/昨日の過去の6入力を保存し、再生成禁止で同じ本文・図・IDを再読した。稼働DBや本人記録の確認ではない。訂正/撤回/補足、集約/比較、否定根拠の欠落、修飾語の削除/別語への改変拒否を既存testへ追加した。旧testの期待値変更はない。
+
+### 検証・反映
+
+ローカル対象（u225/u226/u227）は初回から **15 tests／567 subtests PASS（5.49秒、497 deselected）**。Python3.12.14・pytest8.4.1・pytest-subtests0.14.2・FastAPI0.142.2・Pydantic2.13.5・httpx0.28.1の既存隔離環境を使用し、製品依存は変更していない。同環境read-only分担reviewとroot確認でblockerなし。独立pure probeでも既存少し肯定を保持し、未解析助詞等を採用しないことを確認。別model Pro認定・正式商品受入れではない。
+
+固定sourceの[GitHub Actions run 38203427893](https://github.com/MassyuRed/mashos-api/actions/runs/38203427893)／job `114661582198` は全工程success。Python3.12.15で既存5suite（Analysis vertical/nominal、observed storage、saved period、共有Emlis limited-change）は **1570 tests／7527 subtests PASS（379.00秒）**、共有owner identityは **1 PASS／193 deselected（26.59秒）**。最終fail/skip/xfail 0。合成Analysis 7入力の生成stepも成功し、rootが7全文を読解して既存の否定・先行準備・感情・未知区間の表示を確認した。全suiteの最終確認は固定source CIで行い、同じ全suiteのローカル再実行は重ねていない。対象・全suite・subtests・CIを合算して成功件数を増やさない。
+
+固定source `e3245e56640584074d6c34ba183c7d1bd85b27db`／tree `e0957bc4e8a997f55a5e8729431f0ddb16b4c20a`。compiler/realizer各1・既存test2の4pathをGitHub connectorからAPI PR3へexpected_sha付きnon-forceで反映し、親head・変更path・全remote blobとlocal bytesの一致を確認した。共有ownerの変更がないためidentity snapshot更新なし。
+
+STRUCTURE_MAP_DELTA_NONE：既存source→共有命題→Analysis graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。root華恋が判断・編集・実行・反映を担当し、補助agentはread-only。新規repo file0、共有Plan/Emlis/API/DTO/DB/SQL/RN製品変更0。Supabase操作・本人行取得・DB書込・配置/有効化/native build/main mergeは0。未配置、本人実機・稼働DB保存再読・正式商品受入れは未確認。
+
+次の確認候補は実測で未生成だった「私は不安はない」等の別構文。既存の「不安ではない」と同一視せず、原文の焦点・否定・時制をどこまで保持できるかを先に確認する。少し＋否定や助詞一般の作用域、主体省略/複合節、時制をまたぐ順序、一般意味理解、全体ルートUI/IF/Saved、本人生成→保存再表示も残件。今回の10入力の欠落解消を分析全体の完成とはしない。
