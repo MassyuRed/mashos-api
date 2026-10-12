@@ -1,4 +1,4 @@
-> 最新の内容修正は末尾 **u219（2026-10-12 JST・未配置）**。「私は不安だ／不安です」を記述時点の感情として保持。過去形・閲覧時までの継続・行動の効果へ変換しない。最終検証・反映・現在否定/程度付き現在形等の残件は同節とAnalysis current03を参照。
+> 最新の内容修正は末尾 **u220（2026-10-12 JST・未配置）**。「私は不安ではない／不安じゃありません」等の現在否定6形を、否定と記述時点を保って文章・図・保存再読へ接続。安心・改善へ変換しない。最終検証・反映・程度付き現在形等の残件は同節とAnalysis current03を参照。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -16968,3 +16968,40 @@ current専用の共有witnessはcurrent_inputだけを認める。負情動と�
 STRUCTURE_MAP_DELTA_NONE：既存source→命題→graph→文章/図→保存の責務・file配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。製品sourceとtest以外は既存資料4fileのみ。共有Plan/Emlis/API/DTO/DB/SQL/RN製品変更0。Supabaseはproject一覧のread-only確認のみ。本人行取得・DB書込・配置/有効化・native build・main mergeは0。未配置、本人実機・稼働DB保存再読・正式商品受入れは未確認。
 
 次の確認済み残件は「私は不安ではない」等の現在否定と「私は少し不安です」等の程度付き現在形。程度付き否定、日付/省略主体/複合節、時制をまたぐ順序、一般意味理解、全体ルートUI/IF/Saved、本人生成→保存再表示も未完了。今回の限定補修を分析全体の完成と扱わない。
+
+## u220 — 現在の不安の否定を文章・図・保存再読へ保持（2026-10-12 JST・未配置）
+
+Mashの分析内容修正続行指示により、u219の残件「私は不安ではない」等の欠落を扱った。開始headはAPI PR3 `d6403fb1405ad4274c98a221660e5b5d0aa398ea`／Cocolon PR30 `58ab7b47dd24684a1343325d39e7b2bf48acb418`。前提・作業ルール・恒久incident全文、全体設計01/01B・全file地図、current03/詳細04/06/API handoffと最新weekly20261010を照合。開始local index全treeとremote最新treeが一致してから基準headを合わせた。System Contextは前回のhead不一致に対する原典直接読解を継続し、fresh生成成功とはしていない。weekly §5.5・12/18公開目標を維持し、この限定補修を本人生成→保存再表示の追加前提にしない。
+
+### 原因・変更・境界
+
+共有Planの実frameは6形すべてで明示本人・required/explicit reaction/feeling・負情動・operator:feeling＋operator:negation・current_inputを保持していた。Analysisの現在肯定専用表とwitnessが否定を落としていたため、既存compilerに現在否定6形（不安ではない／ではないです／ではありません／じゃない／じゃないです／じゃありません）の閉じた表を追加。明示SELF・程度なしの完全節をCURRENT_FEELING/current_input/negativeへ保持し、realizerで「不安ではない（この記述時点の気持ち）」とする。
+
+負情動と文法否定を区別し、否定証拠の欠落・positive_change/current_change混入・異なる時点を拒否する。原文UTF8/hash・7種のSELF・主語読点・書かれた順序語を保持。安心・改善・解消・閲覧時点までの継続は推定しない。現在否定6形は同義に集約し、現在肯定・過去否定・安心しなかったとは集約/期間比較で区別する。時制をまたぐ順序は引き続き未確定。
+
+明示訂正は肯定↔否定の双方で旧命題を置換し、撤回は独立した行動を残す。通常補足の肯否反転は既存のanalysis_supplement_interpretation_pendingで保留し、暗黙の訂正にしない。同じ原入力の肯否2文は両方を保持するが、現在感情の競合関係は既存の過去factの証明対象外であり、つながり未確定を表示する。報告・引用・否認・別fieldの報告・他者/省略主体・程度付き/二重否定・複合節等の境界は維持した。共有Plan/Emlis変更0。
+
+### 実出力・検証
+
+合成18入力の前後36結果（24生成全文）をrootが読解し、12入力で欠落を解消。単独6形はUNAVAILABLE→1node、行動前後・過去/現在・肯否併記・未知文・別fieldの6入力は1→2node。報告/別field報告/否認の3対照はUNAVAILABLE、程度付き否定・既存現在肯定・既存過去否定の3対照は状態/本文/node/edge/未確定/注記/競合が不変。実RN表示model24投影で全文・projection identity・accessibility順序と各要素数の一致を確認した。
+
+入力「私は不安じゃありません。」の修正前はUNAVAILABLE。修正後の実生成全文：
+
+```text
+結果・余韻：不安ではない（この記述時点の気持ち）（1件の記録）
+未確定（不安ではない（この記述時点の気持ち））：確定していない項目：場面、役割、考え・注意、行動・非行動。
+```
+
+実engine/service＋合成RPCの保存再読に現在否定9入力（単独6形、行動前後2、過去現在1）を追加し、既存現在肯定3入力と合わせ12入力でengine再生成を禁止。保存本文・図・ID・否定・記述時点がそのまま戻ることを確認。稼働DB・本人データ・native/device画面の確認ではない。別途、同義現在否定と現在肯否の期間比較2全文を読み、記述差と改善/悪化を区別する表示を確認した。
+
+修正前の欠落再現は64 FAIL（通常2＋sub62）、通常3 PASS・20 subtests PASS。修正後対象は **21 tests／823 subtests PASS（9.15秒、462 deselected）**。途中で新規検査が要求した現在感情の競合badgeは既存の証明範囲外と分かり、実仕様に合わせて両命題と関係未確定を検査した。通常補足の逆極性も既存保留を直接確認した。同環境read-only分担reviewで具体的blockerなし。別モデルProの認定とはしない。
+
+最終ローカルのAnalysis4＋共有限定change/feelingの5suiteは **1361 tests／6182 subtests PASS（310.65秒）**、fail/skip/xfail 0。Python3.12.14と既存workflowの固定依存（pytest8.4.1・pytest-subtests0.14.2・FastAPI0.142.2・Pydantic2.13.5・httpx0.28.1）の隔離環境を使用した。
+
+固定sourceの[CI38190517235](https://github.com/MassyuRed/mashos-api/actions/runs/38190517235)／job114622091865もsuccess。Python3.12.15で同5suite **1361 tests／6182 subtests PASS（372.02秒）**、共有owner identity **1 PASS／193 deselected（27.14秒）**。fail/skip/xfail 0。既存合成7例の生成全文をrootが読解し、否定決定・準備相・本人感情・明示順序と未知区間の保持を確認した。対象・全suite・CIの包含件数は合算しない。
+
+製品source commit `d422ef5d2114c9c65b2b3593e705ca101f3fcd09`、tree `814c3451af46fc8b714804f59172701e8ce493b8`。既存compiler/realizer2・test2の4pathをGitHub connectorでexpected_sha付きnon-force反映し、取得した親head・変更path・blob SHAと全treeが検査済みlocalに一致した。
+
+STRUCTURE_MAP_DELTA_NONE：既存source→命題→graph→文章/図→保存の責務・file配置は不変。新規repo file0、共有Plan/Emlis/API/DTO/DB/SQL/RN製品変更0。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Supabase操作・本人行取得・DB書込・配置/有効化/native build/main mergeは0。未配置、本人実機・稼働DB保存再読・正式商品受入れは未確認。
+
+次の確認済み残件は「私は少し不安です」等の程度付き現在形。程度付き否定の作用域、日付/省略主体/複合節、時制をまたぐ順序と現在感情の競合関係、一般意味理解、全体ルートUI/IF/Saved、本人生成→保存再表示も残る。最新weekly/current03/実出力から再開し、今回の修正を分析全体の完成と扱わない。
