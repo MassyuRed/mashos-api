@@ -1,4 +1,4 @@
-> 最新の内容修正は末尾 **u221（2026-10-12 JST・未配置）**。「少し／とても／かなり／やや／ちょっと」＋「不安だ／不安です」の欠落を修正。程度語と記述時点を文章・図・保存再読へ保持し、数値強度・増減・改善へ変換しない。検証・反映・日付付き感情等の残件は同節とAnalysis current03を参照。
+> 最新の内容修正は末尾 **u222（2026-10-12 JST・未配置）**。「昨日、私は不安だった」等の日語付き過去感情の欠落を修正。本人帰属・日語・肯否・程度・原文を文章/図/保存再読へ保持する。検証と残件（日語付き敬体肯定3形等）は同節とAnalysis current03を参照。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -17044,3 +17044,44 @@ Mashの分析内容修正続行指示により、u220で残した「私は少し
 STRUCTURE_MAP_DELTA_NONE：既存source→命題→graph→文章/図→保存の責務・file配置は不変。新規repo file0、共有Plan/Emlis/realizer/API/DTO/DB/SQL/RN製品変更0。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Supabase操作・本人行取得・DB書込・配置/有効化/native build/main mergeは0。未配置、本人実機・稼働DB保存再読・正式商品受入れは未確認。
 
 次の内容残件は「昨日、私は不安だった」等の日付付き本人感情。程度付き否定の作用域、主体省略/複合節、時制をまたぐ順序と現在感情の競合関係、一般意味理解、全体ルートUI/IF/Saved、本人生成→保存再表示も未完了。最新weekly/current03/実出力から再開し、この限定修正を分析全体の完成と扱わない。
+
+## u222 — 本人の過去感情に書かれた今日・昨日を保持（2026-10-12 JST・未配置）
+
+Mashの分析内容修正続行指示により、u221の次残件「昨日、私は不安だった」の欠落を再現し修正した。開始headはAPI PR3 `647f9b53877a99e27baacace79c309a2368c60f0`／Cocolon PR30 `5be900bcd860be2c76e99fccf1993433ad6bb6a8`。前提・作業ルール・恒久incident全文、全体設計01と01A/B/C、全file地図02と02A/B/C、current03・詳細04/06・最新weekly20261010 §5.5を照合した。System Context prepareは想定workspace内のmashos-api未配置で失敗したため、正本を直接読解し、fresh Context生成成功とはしていない。現行12/18公開目標とweeklyの順序を保持し、この修正を本人生成→保存再表示の新しい前提にしない。
+
+### 原因・修正範囲
+
+共有Planは今日/昨日付きの不安について本人・感情・負情動・肯否根拠を保持していたが、Analysisの有限感情parserが日語を読めず欠落させていた。今日の共有time_scopeはpresent、昨日はpastであり、過去の有限述語とは別に照合する必要があった。
+
+既存 `_finite_feeling_proposition` で明示SELFの前または直後の今日/昨日1個を読み、既存の過去感情語形に限り `relative_day` と日語/主語/程度/述語の原文座標を保持する。standalone witnessはTODAY→present、YESTERDAY→pastを要求する。日語付きの肯定感情にも既存の報告/後続否認検査を適用し、複合episodeの右端へ日語が流入しないよう `_action_change_pair` は `right.relative_day` を保留する。既存realizer/identity/期間比較の処理を再利用し、共有Plan・realizerの製品変更はない。
+
+過去の不安の常体/敬体、否定6形、既存5程度語の肯定、共有根拠が成立する安心・落ち着いた・嬉しい/うれしいの既存過去形を扱う。日語を実日付へ換算せず、記録の作成日時や周辺の行動から補わない。日語付き現在形、主体省略/他者、重複日・日語と順序語の併記、細かい時間範囲、程度付き否定、引用/報告/否認、複合節は拡張しない。
+
+日語付きの「落ち着きました／嬉しかったです／うれしかったです」は共有の `_source_polite_past_feeling_is_bound` が別途要求する証拠の範囲外であり、今回も保留される。同じ不具合群の残差として保持し、全感情・全敬体の対応完了とはしない。
+
+### 実出力と検証
+
+合成20入力の前後40結果（23生成全文）をrootが読解し、実RN `buildWatashiMapV2ViewModel` の23投影と本文・identity・accessibility順・node/edge/未確定/注記/競合の各要素数が一致した。12入力で欠落を解消し、8対照の状態と本文/図内容は不変。新規生成ごとのartifact IDは別であり、前後ID一致を主張しない。
+
+改善12入力は、昨日/今日の不安、主語後の日語2例（少し/かなり）、昨日/今日の否定不安、昨日の安心、今日の嬉しくなかった、今日/昨日併記、明示順序、未知文を挟む入力、別field配置。対照8入力は日語付き落ち着きました、前置き報告、別field報告、後続否認、日語付き現在形、程度付き否定、昨日の夜、既存の無日付順序。
+
+合成入力「昨日、私は不安だった。」はUNAVAILABLEから1nodeへ改善した。実生成全文：
+
+```text
+結果・余韻：この記述時点の昨日：不安だった（記録された気持ち）（1件の記録）
+未確定（この記述時点の昨日：不安だった（記録された気持ち））：確定していない項目：場面、役割、考え・注意、行動・非行動。
+```
+
+「昨日、私は不安だった。それから、私は記録を残した。」は1node/0edgeから2node/1edgeへ改善し、記述順序と原因の違いを表示する。行動へ昨日をコピーしない。未知文・別field・別recordを越えた線は作らない。同一source・同日だけを同義集約し、今日/昨日・別sourceの日語を区別する。訂正/撤回とsafe再解析の日語改変を検査した。期間比較の2全文も読み、同義の語形・配置差は差なし、今日/昨日差は記述差として表示し、改善・悪化や原因は断定しない。
+
+実engine/service＋合成RPCで日語付き5入力の保存本文・図・IDを再生成禁止で再読し、日語付き明示順序1入力も既存保存検査へ追加。稼働DBや本人データを使った確認ではない。
+
+修正前の初期回帰は44 FAIL（通常2＋sub42）、2 PASS／21 subtests PASS。修正後に既知の敬体肯定3形の別witness制限を分離し、旧日語保留期待のうち今回採用範囲だけを更新した。当初対象は29 tests／1398 subtests PASS。全5suiteで旧保留期待「今日、私は安心した」1 subtestだけが失敗した（1369 tests／6756 subtests PASS、306.99秒）。この過去形は新規日語検査で保持を検証済みのため、旧保留検査を未対応の「今日の朝」へ更新した。製品sourceの追加変更なし。最終対象は **30 tests／1420 subtests PASS（9.61秒、461 deselected）**。同環境read-only分担reviewで具体的blockerなし。別model Pro reviewまたは正式商品受入れを主張しない。
+
+最終固定sourceの[CI38197052441](https://github.com/MassyuRed/mashos-api/actions/runs/38197052441)／job114641942451は全工程success。Python3.12.15で既存5suite **1369 tests／6757 subtests PASS（382.11秒）**、共有owner identity **1 PASS／193 deselected（28.52秒）**。fail/skip/xfail 0。ローカルはPython3.12.14、pytest8.4.1・pytest-subtests0.14.2・FastAPI0.142.2・Pydantic2.13.5・httpx0.28.1。ローカルの先行全suiteで見つかった旧期待1件は上記のとおり対象再検証し、最終全suite成功はCIで確認した。初回CI38196815655も同じ旧期待1 subFAIL（1369 tests／6756 subtests PASS）で終了した履歴を保持する。対象・全suite・ローカル/CIの包含件数は合算しない。
+
+製品修正 `2c32cdd24e34b6255b8c9a77148a4ca90dc68836`、旧期待の限定整合後の固定source `9291dda6c2afddb3a88172a00f7fcd9b2f8c32ae`／tree `ab4b0066d3f3cc1e9d9ebf8a325ba54ceadbb211`。compiler1・既存test2の3pathを既存PRへexpected_sha付きnon-forceで反映。remoteの親head・変更path・各blobと検査済みlocal treeの一致を確認した。
+
+STRUCTURE_MAP_DELTA_NONE：既存source→命題→graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。実行はCodex Work、root華恋が最終判断・編集・反映を担当し、補助agentはread-only。新規repo file0、共有Plan/Emlis/realizer/API/DTO/DB/SQL/RN製品変更0。Supabase操作・本人行取得・DB書込・配置/有効化/native build/main mergeは0。未配置、本人実機・稼働DB保存再読・正式商品受入れは未確認。
+
+次の確認済み残件は、日語付きの「今日、私は落ち着きました」等の敬体肯定3形が共有のsource-host判定で保留される点。程度付き否定、日語付き現在形、主体省略/複合節、時制をまたぐ順序、一般意味理解、全体ルートUI/IF/Saved、本人生成→保存再表示も未完了。最新weekly/current03と実出力を照合して続行し、分析全体の完成とは扱わない。
