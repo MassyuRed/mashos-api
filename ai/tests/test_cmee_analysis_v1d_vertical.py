@@ -43,6 +43,53 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_present_speech_keeps_quoted_content_out_of_self_map(self):
+        for speech in ('言う', '言います', '話す', '話します', '語る', '語ります',
+                       '述べる', '述べます', '伝える', '伝えます', '答える', '答えます',
+                       '説明する', '説明します'):
+            for claimed in ('私は仕事を続けたい', '私は職場にいた', '私は記録を担当した',
+                            '私は資料を見た', '私は嬉しかった'):
+                for speaker in ('友人が', '親しい友人は、', '知っている友人の母も， '):
+                    reported = claimed + '。と' + speaker + speech + '。'
+                    with self.subTest(speech=speech, claimed=claimed, speaker=speaker):
+                        self.assertEqual(self.generate(request(record(memo=reported))).status,
+                                         EngineStatus.UNAVAILABLE)
+                        req = request(record(memo='私は資料を調べた。' + reported
+                            + 'それから、私は記録を残した。'))
+                        artifact = self.generate(req).artifact
+                        self.assertEqual([n.visible_label for n in artifact.graph.nodes],
+                            ['私は資料を調べた', 'それから、私は記録を残した'])
+                        self.assertFalse(artifact.graph.edges)
+                        self.assertFalse(artifact.graph.conflicts)
+                        self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+                        source, = freeze_analysis_sources(req).sources
+                        for node in artifact.graph.nodes:
+                            evidence, = node.evidence_refs
+                            self.assertEqual(source.envelope.raw_utf8[
+                                evidence.utf8_start:evidence.utf8_end].decode(), node.visible_label)
+
+    def test_present_speech_does_not_close_nested_or_opaque_reports(self):
+        for speech in ('言う', '話します', '語る', '述べます', '伝える', '答えます', '説明する'):
+            for claimed in ('私は職場にいた', '私は資料を調べた'):
+                for host in ('と親しい友人が' + speech + 'と弟が言った。',
+                             'と' + speech + '人が言った。'):
+                    with self.subTest(speech=speech, claimed=claimed, host=host):
+                        self.assertEqual(self.generate(request(record(memo=claimed + '。' + host
+                            + '私は記録を残した。'))).status, EngineStatus.UNAVAILABLE)
+                for tail in ('けれど。', 'かもしれない。'):
+                    with self.subTest(speech=speech, claimed=claimed, tail=tail):
+                        self.assertEqual(self.generate(request(record(memo=claimed
+                            + '。と親しい友人が' + speech + tail))).status, EngineStatus.UNAVAILABLE)
+            with self.subTest(speech=speech, prior_report=True):
+                self.assertEqual(self.generate(request(record(memo='友人が話した。私は職場にいた。'
+                    + 'と親しい友人が' + speech + '。私は記録を残した。'))).status,
+                    EngineStatus.UNAVAILABLE)
+            for independent in ('とても親しい友人が', 'とある友人が', 'と同時に同僚が'):
+                with self.subTest(speech=speech, independent=independent):
+                    artifact = self.generate(request(record(memo='私は職場にいた。'
+                        + independent + speech + '。'))).artifact
+                    self.assertIn('私は職場にいた', [n.visible_label for n in artifact.graph.nodes])
+
     def test_negative_speech_verbs_keep_quoted_content_out_of_self_map(self):
         for speech in ('話さない', '話さないです', '話しません',
                        '話さなかった', '話さなかったです', '話しませんでした',
@@ -261,6 +308,10 @@ class AnalysisVerticalTests(unittest.TestCase):
                          'と知らない人が、伝えないです。',
                          'と優しくない同僚は答えなかったです。',
                          'と親しかった友人が説明しません。',
+                         'と親しい友人が言う。', 'と親しい友人は、話します。',
+                         'と知らない友人が語る。', 'と知っている友人の母も，述べます。',
+                         'と友人が伝える。', 'と優しくない同僚は答えます。',
+                         'と親しかった友人が説明する。',
                          'と知らない友人が言った。', 'と知らなかった友人は言いました。',
                          'と知っている同僚も言った。', 'と知っていた友人の母が言いました。',
                          'と知らない人が言わなかった。', 'と知らなかった友人は言いませんでした。',
