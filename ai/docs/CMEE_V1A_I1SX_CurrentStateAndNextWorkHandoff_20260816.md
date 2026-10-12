@@ -17171,3 +17171,40 @@ CURRENT_FEELING/current_inputと原文のTODAYを別々に保持し、「今日�
 STRUCTURE_MAP_DELTA_NONE：既存source→共有命題→Analysis graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Codex Workのroot華恋が判断・編集・実行・反映、補助agentはread-only。新規repo file0、共有Plan/realizer・API/DTO/DB/SQL/RN製品変更0。Supabase操作・本人行取得・DB書込・配置/有効化/native build/main mergeは0。未配置、本人実機・稼働DB保存再読・正式商品受入れは未確認。
 
 次の内容残件は程度語と否定が重なる感情表現の作用域確認。採用拡大を先に決めず、原文と共有根拠・実出力から調べる。昨日の現在形は意味が未確定なため保留を維持する。省略主体/複合節、時制をまたぐ順序、一般意味理解、全体ルートUI/IF/Saved、本人生成→保存再表示も未完了。最新weekly/current03と実出力を照合して再開し、今回の「今日」の不安修正を分析全体の完成とはしない。
+
+## u225 — 強調語付き本人の不安の否定を原文どおり保持（2026-10-12 JST・未配置）
+
+Mashの分析内容修正続行指示と前回作業添付を受け、u224の残件「程度語と否定の作用域」を調べた。開始headはAPI PR3 `f5a8005d36ea011ec2f0cba73f6cba7de50c40be`／Cocolon PR30 `880fbf3dd1c26fd59efe26504cab9d6b04c817a0`。前提/作業ルール、恒久incident、全体設計01と01A/B/Cの役割、全file地図02と02A/B/Cの役割、対象の現行地図03・詳細04/06・実ファイル、最新weekly20261010 §4.7/§5.5を照合した。System Context prepareはmaterial commitの祖先確認に失敗してexit2となり、原典直接読解で補った。fresh Context成功とはしない。12/18公開目標と実機確認順序を保持し、この内容修正を本人生成→保存再表示の追加前提にしない。
+
+### 原因と修正
+
+共有Planには感情・否定frameがあり、原文「私は全く不安ではない」等には明示SELFがあったが、Analysis compilerの有限感情解析は修飾語を肯定の程度5語に限定しており、強調された否定が欠落していた。既存compiler/realizerで「全く／まったく／全然」を否定専用の3語として扱い、完全な不安の現在否定6形・過去否定6形、既存の日語範囲に限って保持した。原文と同一節の感情/否定operator、本人、時点の一致が必要で、証拠が欠ける場合は採用しない。
+
+原文・修飾語・否定・現在/過去・今日/昨日と証拠座標を文章/図へ保持する。「全く」と「まったく」は同じ語の表記差なのでmeaning keyのみ共通化し、表示とsource_partsは元の表記を保つ。表記差だけを期間変化として出さず、「全然」、無修飾、異なる日語/時制とは別に扱う。否定を安心・改善へ置換せず、強度や増減を推定しない。
+
+「少し不安ではない」の作用域は今回確定せず、「あまり／あんまり不安ではない」は部分否定を強い否定へ読み替えない。肯定の全然、修飾の重複、二重否定、他者/省略主語、報告/夢/質問/否認/複合節、昨日の現在形等は保留を維持する。共有Planや肯定の程度辞書を一律に広げていない。
+
+### 実出力と保存接続
+
+合成18入力の前後36結果のうち生成された16全文をrootが読解し、10入力の欠落解消と8対照の本文/図の内容不変を確認した。生成ごとのartifact IDは比較から除外する。実RN `buildWatashiMapV2ViewModel` へ16投影を通し、本文、projection identity、accessibility順、node/edge/未確定/注記/競合の件数が一致した。実機描画の確認ではない。合成入力「私は全く不安ではない。」の実生成全文：
+
+```text
+結果・余韻：全く不安ではない（この記述時点の気持ち）（1件の記録）
+未確定（全く不安ではない（この記述時点の気持ち））：確定していない項目：場面、役割、考え・注意、行動・非行動。
+```
+
+「私は全く不安ではなかった。それから、私は記録を残した。」は1node/0edgeから2node/1edgeへ改善し、書かれた順序だけを示す。現在→過去、未知文や別field/recordをまたぐ線は補わない。期間比較の生成全文も読み、語形差は差なし、修飾語の有無は記録上の差であって改善・原因とは断定しないことを確認した。同じ原source内の全く/まったくは両入力順で1node/2evidenceとなり、期間比較でも表記差だけでは差を作らないことを追加確認した。
+
+実engine/service＋合成RPCで3修飾語×無日の現在/今日の現在/昨日の過去の9入力を保存し、再生成禁止で同じ本文・図・IDを再読した。稼働DBや本人の記録による確認ではない。訂正/撤回/補足・集約/比較・順序境界・証拠欠落/命題改変拒否を既存testへ追加した。
+
+### 検証と反映
+
+最終ローカルの今回対象は **5 tests／195 subtests PASS（3.91秒、497 deselected）**。Python3.12.14・pytest8.4.1・pytest-subtests0.14.2・FastAPI0.142.2・Pydantic2.13.5・httpx0.28.1のCIと同じpinの隔離環境を使い、plugin autoload/cache/conftestを無効化した。製品依存は変更していない。同環境read-only分担reviewとroot確認で具体的blockerなし。別model Pro認定や正式商品受入れではない。
+
+固定sourceのGitHub Actions [run 38201156458](https://github.com/MassyuRed/mashos-api/actions/runs/38201156458)／job `114654657637` は全工程success。Python3.12.15で既存5suite（Analysis vertical/nominal、observed storage、saved period、共有Emlis limited-change）は **1560 tests／7155 subtests PASS（270.85秒）**、共有owner identityは **1 PASS／193 deselected（23.36秒）**。最終fail/skip/xfail 0。合成Analysis 7入力の生成stepも成功し、rootが7全文を読み、既存の否定・先行準備・感情・未知区間の表示を確認した。今回は全suiteの最終確認をCIで行い、同じ全suiteのローカル再実行は重ねていない。対象・全suite・subtests・CIを合算して成功件数を増やさない。
+
+固定source `b0c42d1dda383e1994472343ba757fdf8f500d70`／tree `f4b11e2dd109fcbe0b16b852f2fb36543290b4c0`。Analysis compiler/realizer各1・既存test2の計4pathをAPI PR3へexpected_sha付きnon-forceで反映し、親head・変更path・全remote blobと検査済みlocal bytesの一致を確認した。Git直接pushは認証情報不足で失敗したため、既存GitHub connectorで反映した。拒否された権限を迂回したものではない。共有ownerの変更がないためidentity snapshotは変更していない。
+
+STRUCTURE_MAP_DELTA_NONE：既存source→共有命題→Analysis graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Codex Workのroot華恋が判断・編集・実行・反映を担当し、補助agentはread-only。新規repo file0、共有Plan/Emlis/API/DTO/DB/SQL/RN製品変更0。Supabase操作・本人行取得・DB書込・配置/有効化/native build/main mergeは0。未配置、本人実機・稼働DB保存再読・正式商品受入れは未確認。
+
+次は「あまり不安ではない」等の部分否定を含む程度表現について、否定の強さ・作用域を原文どおり保持できるかを共有根拠と実出力から確認する。採用拡大は先に決めず、「少し＋否定」の意味を自動確定しない。主体省略/複合節、時制をまたぐ順序、一般意味理解、全体ルートUI/IF/Saved、本人生成→保存再表示も未完了。今回の10入力の欠落修正を分析全体の完成とはしない。
