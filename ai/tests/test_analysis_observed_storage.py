@@ -1824,41 +1824,64 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
 
     async def test_opposed_claims_survive_save_read_with_private_evidence_only(self):
-        self.fx = fixture('私は資料を調べた。私は資料を調べなかった。')
-        self.row = self.fx['row']
-        writes = []
-        async def rpc(name, payload):
-            if name == 'analysis_observed_source_snapshot':
-                return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
-                    {'original': self.fx['original'], 'thread': None, 'events': []}]}
-            if name == 'analysis_observed_commit':
-                writes.append(payload)
-                self.row['id'] = str(UUID(payload['p_artifact_id'][9:]))
-                self.row['content_text'] = payload['p_text']
-                self.row['content_json']['watashiMap'] = payload['p_projection']
-                return self.row['id']
-            return result([self.row], matched=True)
-        with patch.object(service, '_rpc', side_effect=rpc):
-            saved = await service.generate_saved(OWNER, start=START, end=END,
-                report_mode='standard', report_type='latest')
-            with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
-                reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
-        self.assertEqual(saved, reread['items'][0])
-        self.assertEqual(saved['content_text'], writes[0]['p_text'])
-        projection = saved['content_json']['watashiMap']
-        self.assertEqual(projection, writes[0]['p_projection'])
-        self.assertEqual(len(projection['conflict_badges']), 1)
-        private = writes[0]['p_private_evidence']
-        conflict = private['graph']['conflicts'][0]
-        self.assertEqual(conflict['target_refs'], tuple(projection['conflict_badges'][0]['target_refs']))
-        self.assertEqual(len(conflict['evidence_refs']), 2)
-        encoded_private = json.dumps(private, ensure_ascii=False)
-        encoded_safe = json.dumps(saved, ensure_ascii=False)
-        for key in ('visible_label', 'original_json', '私は', '資料', 'proposition'):
-            self.assertNotIn(key, encoded_private)
-        for key in ('evidence_refs', 'source_envelope_id', 'literal_sha256', 'OPPOSING_POLARITY'):
-            self.assertNotIn(key, encoded_safe)
-        self.assertIn('同じ機会のことかは確定していません', saved['content_text'])
+        for memo in (
+                '私は資料を調べた。私は資料を調べなかった。',
+                '私は不安だ。私は不安ではない。',
+                '今日、私は不安ではありません。今日、私は少し不安です。',
+                '昨日、私は安心した。昨日、私は安心しなかった。',
+                '私は嬉しかった。私はうれしくありませんでした。',
+                '私は不安が全くない。私は不安が少しある。',
+                '私は不安はちっともなかった。私は不安はとてもあった。'):
+            with self.subTest(memo=memo):
+                self.fx = fixture(memo)
+                self.row = self.fx['row']
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': self.fx['original'], 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row['id'] = str(UUID(payload['p_artifact_id'][9:]))
+                        self.row['content_text'] = payload['p_text']
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    return result([self.row], matched=True)
+                with patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(saved, reread['items'][0])
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual(len(projection['conflict_badges']), 1)
+                private = writes[0]['p_private_evidence']
+                conflict = private['graph']['conflicts'][0]
+                self.assertEqual(conflict['target_refs'], tuple(projection['conflict_badges'][0]['target_refs']))
+                self.assertEqual(len(conflict['evidence_refs']), 2)
+                encoded_private = json.dumps(private, ensure_ascii=False)
+                encoded_safe = json.dumps(saved, ensure_ascii=False)
+                for key in ('visible_label', 'original_json', '私は', '資料', '不安', '嬉しい', '安心', 'proposition'):
+                    self.assertNotIn(key, encoded_private)
+                for key in ('evidence_refs', 'source_envelope_id', 'literal_sha256', 'OPPOSING_POLARITY'):
+                    self.assertNotIn(key, encoded_safe)
+                self.assertIn('同じ機会のことかは確定していません', saved['content_text'])
+
+    async def test_old_feeling_snapshot_is_read_without_adding_conflicts(self):
+        row = fixture('私は不安だ。私は不安ではない。')['row']
+        self.assertEqual(len(row['content_json']['watashiMap']['conflict_badges']), 1)
+        # A saved pre-u233 projection had the same nodes but no feeling badge.
+        row['content_json']['watashiMap']['conflict_badges'] = []
+        row['content_text'] = row['content_text'].split('\n一致していない記録')[0]
+        with patch.object(service, '_rpc', AsyncMock(return_value=result([row]))) as rpc, \
+                patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+            reread = await service.read_saved(OWNER)
+        self.assertEqual(reread['items'][0], row)
+        self.assertFalse(reread['items'][0]['content_json']['watashiMap']['conflict_badges'])
+        self.assertEqual(rpc.call_count, 1)
+        self.assertEqual(rpc.call_args.args[0], 'analysis_observed_read')
 
     async def test_saved_conflict_rejects_invalid_targets_shape_and_text(self):
         base = fixture('私は資料を調べた。私は資料を調べなかった。')['row']

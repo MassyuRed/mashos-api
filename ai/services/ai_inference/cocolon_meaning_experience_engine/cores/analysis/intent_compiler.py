@@ -1127,6 +1127,31 @@ def compare_period_meaning(current, previous):
         'NOT_COMPARABLE' if reasons else 'COMPARABLE', tuple(reasons), tuple(changes))
 
 
+def _opposed_claim_meaning(left, right):
+    if left.modality != 'feeling':
+        return _proposition_meaning(left) == _proposition_meaning(right)
+    negative, positive = (left, right) if left.polarity == 'negative' else (right, left)
+    # Only complete absence opposes a written presence. Partial negation is
+    # not absence, even when paired with a strong positive degree.
+    if negative.written_modifiers not in {
+            (), ('NEGATION_MATTAKU_KANJI',), ('NEGATION_MATTAKU_KANA',),
+            ('NEGATION_ZENZEN',), ('NEGATION_SUKOSHIMO',), ('NEGATION_CHITTOMO',)}:
+        return False
+    if positive.written_modifiers not in {
+            (), ('DEGREE_SLIGHT',), ('DEGREE_TOTEMO',), ('DEGREE_KANARI',),
+            ('DEGREE_YAYA',), ('DEGREE_CHOTTO',)}:
+        return False
+    if (left.written_modifiers or right.written_modifiers) and not all(
+            p.predicate_lemma == '不安だ' or (p.predicate_lemma == 'ある'
+                and p.arguments in {(('は', '不安'),), (('が', '不安'),)})
+            for p in (left, right)):
+        return False
+    # This local relation comparison never changes either source proposition,
+    # its displayed degree, aggregation key or period-comparison meaning.
+    return (_proposition_meaning(replace(left, written_modifiers=()))
+            == _proposition_meaning(replace(right, written_modifiers=())))
+
+
 def _opposed_claim_pairs(claims):
     # Called for one original source only. Written day and field must agree;
     # never infer an occasion from created_at or compare different records.
@@ -1135,8 +1160,9 @@ def _opposed_claim_pairs(claims):
             if (left != right and a.field_path == b.field_path
                     and a.source_envelope_id == b.source_envelope_id
                     and p.relative_day == q.relative_day
+                    and (p.modality, p.temporal_scope) == (q.modality, q.temporal_scope)
                     and p.polarity != q.polarity
-                    and _proposition_meaning(p) == _proposition_meaning(q)):
+                    and _opposed_claim_meaning(p, q)):
                 yield (left, right), (a, b)
 
 
@@ -1926,9 +1952,13 @@ def compile_observed_graph(source_set: AnalysisSourceSet) -> ObservedGraph:
             node = nodes[index]
             if (source.envelope.source_role == 'ORIGINAL_INPUT'
                     and proposition and proposition.actor == 'SELF'
-                    and (modality, time) == ('fact', 'past')
                     and polarity in {'positive', 'negative'}
-                    and kind in {'SCENE', 'ROLE', 'ACTION_OR_NONACTION'}
+                    and (((modality, time) == ('fact', 'past')
+                          and kind in {'SCENE', 'ROLE', 'ACTION_OR_NONACTION'})
+                         or (modality == 'feeling'
+                             and (proposition.result_state, time) in {
+                                 ('PAST_FEELING', 'past'), ('CURRENT_FEELING', 'current_input')}
+                             and kind == 'IMMEDIATE_RESULT_OR_AFTERMATH'))
                     and not proposition.sequence_marker and not proposition.dependent_form
                     and evidence.evidence_id not in ordered_evidence):
                 comparable_claims.append((node.node_ref, evidence, proposition))

@@ -43,6 +43,138 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_opposed_feeling_originals_keep_both_claims_and_exact_evidence(self):
+        pairs = [('私は安心した', '僕は安心しませんでした'),
+                 ('私は落ち着きました', '私は落ち着かなかったです'),
+                 ('私は嬉しかった', '私はうれしくありませんでした'),
+                 ('私はうれしかったです', '私は嬉しくなかった'),
+                 ('昨日、私は不安だった', '昨日、私は不安じゃありませんでした'),
+                 ('私は不安です', '私は不安ではない'),
+                 ('今日、私は不安だ', '今日、私は不安じゃありません'),
+                 ('私は不安はある', '私は不安はありません'),
+                 ('昨日、私は不安がありました', '昨日、私は不安がなかった')]
+        for positive, negative in pairs:
+            for clauses in ((positive, negative), (negative, positive)):
+                with self.subTest(clauses=clauses):
+                    value = request(record(memo='。'.join(clauses) + '。'))
+                    artifact = self.generate(value).artifact
+                    self.assertEqual(len(artifact.graph.nodes), 2)
+                    conflict, = artifact.graph.conflicts
+                    self.assertEqual(conflict.target_refs, ('n1', 'n2'))
+                    self.assertEqual({n.polarity for n in artifact.graph.nodes}, {'positive', 'negative'})
+                    self.assertEqual(set(conflict.evidence_refs),
+                        {e for n in artifact.graph.nodes for e in n.evidence_refs})
+                    sources = freeze_analysis_sources(value)
+                    envelopes = {s.envelope.envelope_id: s.envelope for s in sources.sources}
+                    for evidence, clause in zip(conflict.evidence_refs, clauses):
+                        raw = envelopes[evidence.source_envelope_id].raw_utf8
+                        literal = raw[evidence.utf8_start:evidence.utf8_end]
+                        self.assertEqual(literal.decode(), clause)
+                        self.assertEqual(hashlib.sha256(literal).hexdigest(), evidence.literal_sha256)
+                    projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                    text = artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text']
+                    self.assertEqual(projection['conflict_badges'][0]['target_refs'], ['n1', 'n2'])
+                    self.assertIn('同じ機会のことかは確定していません', text)
+                    self.assertEqual(projection['conflict_badges'], artifact.private_visual_preview(
+                        authenticated_owner_scope=OWNER)['conflict_badges'])
+                    self.assertFalse(projection['edges'])
+                    self.assertFalse(projection['annotation_badges'])
+
+    def test_anxiety_absence_conflicts_preserve_each_written_modifier(self):
+        positives = ('',) + tuple(word for word, _ in WRITTEN_ANXIETY_DEGREES)
+        negatives = ('', '全く', 'まったく', '全然', '少しも', 'ちっとも')
+        for yes_degree in positives:
+            for no_degree in negatives:
+                for case in ('', 'は', 'が'):
+                    for past in (False, True):
+                        yes = (yes_degree + '不安' + ('だった' if past else 'だ') if not case
+                               else '不安' + case + yes_degree + ('あった' if past else 'ある'))
+                        no = (no_degree + '不安' + ('ではなかった' if past else 'ではない') if not case
+                              else no_degree + '不安' + case + ('なかった' if past else 'ない'))
+                        # Exercise both source orders and existential modifier positions.
+                        clauses = (yes, no) if past else (no, yes)
+                        with self.subTest(clauses=clauses):
+                            artifact = self.generate(request(record(
+                                memo='。'.join('私は' + c for c in clauses) + '。'))).artifact
+                            conflict, = artifact.graph.conflicts
+                            self.assertEqual(conflict.target_refs, ('n1', 'n2'))
+                            projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
+                            self.assertEqual(len(projection['nodes']), 2)
+                            self.assertEqual(tuple(n['visible_label'].split('（')[0]
+                                for n in projection['nodes']), clauses)
+                            self.assertFalse(projection['edges'])
+
+    def test_feeling_conflicts_do_not_infer_a_shared_scope_or_total_absence(self):
+        for partial in ('あまり', 'あんまり'):
+            for degree in ('', '少し', 'とても', 'かなり', 'やや', 'ちょっと'):
+                for no, yes in ((partial + '不安ではない', degree + '不安だ'),
+                                ('不安は' + partial + 'なかった', '不安は' + degree + 'あった'),
+                                (partial + '不安がない', '不安が' + degree + 'ある')):
+                    for a, b in ((no, yes), (yes, no)):
+                        with self.subTest(a=a, b=b):
+                            artifact = self.generate(request(record(memo='私は' + a + '。私は' + b + '。'))).artifact
+                            self.assertEqual(len(artifact.graph.nodes), 2)
+                            self.assertFalse(artifact.graph.conflicts)
+        values = [request(record(memo=memo)) for memo in (
+            '私は不安だった。私は不安ではない。',
+            '今日、私は不安だった。昨日、私は不安ではなかった。',
+            '私は不安だ。今日、私は不安ではない。',
+            '私は不安はある。私は不安がない。',
+            '私は不安だ。私は不安はない。',
+            '私は不安だった。私は安心しなかった。',
+            '私は不安だ。私は不安だ。',
+            '私は不安だった。その後、私は不安ではなかった。',
+            '私は不安だった。それから、私は記録を残した。私は不安ではなかった。',
+            '私は不安だ。その後、私は不安ではない。',
+            '私は不安だった。友人は不安ではなかった。',
+            '私は不安だった。不安ではなかった。')]
+        values += [request(record(memo='私は不安だ。'), record(2, memo='私は不安ではない。')),
+                   request(record(memo='私は不安だ。', action='私は不安ではない。'))]
+        for value in values:
+            with self.subTest(value=value):
+                artifact = self.generate(value).artifact
+                self.assertIsNotNone(artifact)
+                self.assertFalse(artifact.graph.conflicts)
+        for memo in ('私は不安だった。私は「不安ではなかった」と言われた。',
+                     '私は不安だ。私は不安ではないかもしれない。'):
+            with self.subTest(memo=memo):
+                self.assertIsNone(self.generate(request(record(memo=memo))).artifact)
+
+    def test_feeling_conflicts_preserve_updates_aggregation_and_period_meaning(self):
+        memo = '私は不安が少しある。私は不安が全くない。'
+        member = record(memo=memo)
+        duplicate = self.generate(request(member, member)).artifact
+        self.assertEqual(len(duplicate.graph.conflicts), 1)
+        self.assertEqual(len(duplicate.graph.conflicts[0].evidence_refs), 2)
+        grouped = self.generate(request(member, record(2, memo=memo))).artifact
+        self.assertEqual(len(grouped.graph.conflicts), 1)
+        self.assertEqual(len(grouped.graph.conflicts[0].evidence_refs), 4)
+        self.assertEqual([len(n.record_refs) for n in grouped.graph.nodes], [2, 2])
+        for answer in ('「私は不安が全くない」は取り消します。',
+                       '「私は不安が全くない」ではなく「私は記録を残した」です。'):
+            with self.subTest(answer=answer):
+                corrected = self.generate(request(self.with_answer(member, answer))).artifact
+                self.assertFalse(corrected.graph.conflicts)
+                self.assertFalse(any(n.polarity == 'negative' for n in corrected.graph.nodes))
+                # Another record's genuine pair survives this record's correction.
+                retained_value = request(self.with_answer(member, answer), record(2, memo=memo))
+                retained = self.generate(retained_value).artifact
+                conflict, = retained.graph.conflicts
+                self.assertEqual(len(conflict.evidence_refs), 2)
+                second_sources = {s.envelope.envelope_id for s in freeze_analysis_sources(retained_value).sources
+                                  if s.record_ref == 'synthetic-record-2'}
+                self.assertEqual({e.source_envelope_id for e in conflict.evidence_refs}, second_sources)
+        same = self.compared(memo, '私は少し不安があります。私はまったく不安がありません。').artifact
+        self.assertFalse(same.period_comparison.change_claims)
+        changed = self.compared(memo, '私は不安が少しある。').artifact
+        self.assertIn('CONFLICT_STATE_CHANGED', changed.safe_projection(
+            authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+        self.assertIn('改善・悪化や原因を示すものではありません',
+                      changed.safe_text_projection(authenticated_owner_scope=OWNER)['text'])
+        degree_changed = self.compared(memo, '私は不安がとてもある。私は不安が全くない。').artifact
+        self.assertIn('ROUTE_EVIDENCE_CHANGED', degree_changed.safe_projection(
+            authenticated_owner_scope=OWNER)['period_comparison']['safe_change_kinds'])
+
     def test_partial_anxiety_supplements_retain_both_written_claims(self):
         for degree in ('あまり', 'あんまり'):
             for copular in (False, True):
@@ -655,7 +787,9 @@ class AnalysisVerticalTests(unittest.TestCase):
             [(('NEGATION_SUKOSHIMO',), 2), (('NEGATION_CHITTOMO',), 2),
              (('NEGATION_MATTAKU_KANJI',), 1), ((), 1), (('PARTIAL_NEGATION_AMARI',), 1),
              (('DEGREE_SLIGHT',), 1)])
-        self.assertFalse(grouped.safe_projection(authenticated_owner_scope=OWNER)['conflict_badges'])
+        self.assertEqual([c['target_refs'] for c in grouped.safe_projection(
+            authenticated_owner_scope=OWNER)['conflict_badges']],
+            [['n1', 'n6'], ['n2', 'n6'], ['n3', 'n6'], ['n4', 'n6']])
         for degree in ('少しも', 'ちっとも'):
             with self.subTest(degree=degree):
                 self.assertFalse(self.compared('私は' + degree + '不安ではなかった。',
@@ -799,7 +933,9 @@ class AnalysisVerticalTests(unittest.TestCase):
                 self.assertEqual([(n.proposition.written_modifiers, len(n.evidence_refs)) for n in grouped.graph.nodes],
                     [((modifier,), 2), (('NEGATION_MATTAKU_KANJI',), 1), ((), 1),
                      (('NEGATION_ZENZEN',), 1), (('DEGREE_SLIGHT',), 1)])
-                self.assertFalse(grouped.safe_projection(authenticated_owner_scope=OWNER)['conflict_badges'])
+                self.assertEqual([c['target_refs'] for c in grouped.safe_projection(
+                    authenticated_owner_scope=OWNER)['conflict_badges']],
+                    [['n2', 'n5'], ['n3', 'n5'], ['n4', 'n5']])
                 self.assertFalse(self.compared(first + '。', second + '。').artifact.period_comparison.change_claims)
         for other in (new, '私は不安ではなかった', '私はあまり不安ではない',
                       '昨日、私はあまり不安ではなかった', '私は全然不安ではなかった', '私は少し不安だった'):
@@ -1402,9 +1538,8 @@ class AnalysisVerticalTests(unittest.TestCase):
                 self.assertFalse(projection['annotation_badges'])
         artifact = self.generate(request(record(memo='私は不安だ。私は不安ではない。'))).artifact
         self.assertEqual([n.polarity for n in artifact.graph.nodes], ['positive', 'negative'])
-        # Both source claims survive; a current feeling conflict relation is
-        # outside the existing past/fact conflict witness.
-        self.assertFalse(artifact.graph.conflicts)
+        # Both claims survive; their shared occasion and truth stay unresolved.
+        self.assertEqual(len(artifact.graph.conflicts), 1)
         self.assertTrue(any(g.missing_scope == 'ROUTE_CONNECTION' for g in artifact.graph.unknown_gaps))
         self.assertFalse(artifact.graph.edges)
 
