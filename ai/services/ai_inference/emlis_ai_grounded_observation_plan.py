@@ -3851,7 +3851,8 @@ _SOURCE_NEGATIVE_PAST_FEELING = (
 
 
 def _source_polite_past_feeling_is_bound(span, normalized_input, *, action=None, connector=None,
-                                       plain_compound=False, negative_compound=False):
+                                       plain_compound=False, negative_compound=False,
+                                       expected_time_scope=None):
     """Prove the three polite finite feelings without widening keyword rules."""
     if span is None or normalized_input is None or span.source_field != "memo":
         return False
@@ -3868,7 +3869,20 @@ def _source_polite_past_feeling_is_bound(span, normalized_input, *, action=None,
         feeling = _SOURCE_NEGATIVE_PAST_FEELING
     if action is None:
         sequence_prefix = re.match(r"(?:その後|それから)[、， \u3000]*", raw)
-        if re.fullmatch(r"(?:(?:その後|それから)[、， \u3000]*)?" + subject + feeling, raw) is None:
+        finite = re.fullmatch(
+            r"(?:(?P<day_before>今日|昨日)[、， \u3000]*)?" + subject
+            + r"(?:(?P<day_after>今日|昨日)[、， \u3000]*)?" + feeling,
+            raw[sequence_prefix.end():] if sequence_prefix else raw)
+        if finite is None:
+            return False
+        day_before, day_after = finite['day_before'], finite['day_after']
+        relative_day = day_before or day_after
+        if (day_before and day_after) or (sequence_prefix and relative_day):
+            return False
+        # Match the shared frame's written day without changing its time.
+        # The finite predicate remains past even when 今日 yields present.
+        source_time = {'今日': 'present', '昨日': 'past'}.get(relative_day, 'current_input')
+        if expected_time_scope is not None and expected_time_scope != source_time:
             return False
     else:
         # A complete, explicit SELF action licenses a temporal episode, not
@@ -3890,8 +3904,8 @@ def _source_polite_past_feeling_is_bound(span, normalized_input, *, action=None,
     record = "\n".join(str(normalized_input.get(field) or "") for field in ("memo", "memo_action"))
     start, end = span.start_index, span.end_index
     after = source[end:].lstrip(" \t\u3000。．.!！\r\n;；")
-    if action is None and sequence_prefix:
-        # A new standalone sequence prefix must not detach a later speaker
+    if action is None and (sequence_prefix or relative_day):
+        # A standalone sequence/day prefix must not detach a later speaker
         # or retraction. Keep the original source/finite-host proof below.
         prefix_context = source[:start] + "\n" + str(normalized_input.get("memo_action") or "")
         speaker = r"(?:(?:私|僕|ぼく|俺|おれ|わたし|自分|[^\s、，。．.!！?？]+?)(?:は|が|も)[、， \u3000]*)?"
@@ -13470,7 +13484,7 @@ def _final_stage1_typed_nuclei(
             frame = nucleus.semantic_frame
             if (nucleus.kind == "reaction" and frame.predicate_kind == "feeling"
                 and frame.modality == "feeling" and frame.polarity == "negative"
-                and frame.actor == "current_user" and frame.time_scope == "current_input"
+                and frame.actor == "current_user"
                 and nucleus.source_fields == ("memo",) and nucleus.grounding_kind == "explicit"
                 and nucleus.allowed_claim_scope == "explicit_current_input"
                 and nucleus.retention in {"required", "should"}
@@ -13478,7 +13492,8 @@ def _final_stage1_typed_nuclei(
                 and not any(code.startswith(("source_fragment_scalar_", "surface_scalar_",
                                              "semantic_dependency:", "thread_time:"))
                             for code in frame.attribute_codes)
-                and _source_polite_past_feeling_is_bound(span, normalized_input)):
+                and _source_polite_past_feeling_is_bound(span, normalized_input,
+                    expected_time_scope=frame.time_scope)):
                 # The reaction default was negative only because the global
                 # lexicon lacks this polite inflection. Keep its whole source.
                 nucleus = replace(nucleus, semantic_frame=replace(frame, polarity="positive",

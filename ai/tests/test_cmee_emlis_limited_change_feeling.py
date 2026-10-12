@@ -33,6 +33,54 @@ def _action_change_relations(plan):
         'typed_projection:perfective_action_before_bounded_change',))
 
 
+@pytest.mark.parametrize('day,time_scope', [('今日', 'present'), ('昨日', 'past')])
+@pytest.mark.parametrize('subject', ['私', 'わたし', '僕', 'ぼく', '俺', 'おれ', '自分'])
+@pytest.mark.parametrize('template', ['{day}、{subject}は', '{subject}は、{day}、', '{day}{subject}は'])
+@pytest.mark.parametrize('feeling', ['落ち着きました', '嬉しかったです', 'うれしかったです'])
+def test_dated_polite_feeling_keeps_source_day_and_positive_meaning(day, time_scope, subject, template, feeling):
+    raw = template.format(day=day, subject=subject) + feeling
+    source = freeze_text_source(initial(raw + '。'))
+    span, = [s for s in source.evidence_spans if s.source_field == 'memo']
+    assert plan_owner._source_polite_past_feeling_is_bound(span, source.normalized_current_input)
+    assert plan_owner._source_polite_past_feeling_is_bound(span, source.normalized_current_input,
+        expected_time_scope=time_scope)
+    for wrong_time in {'present', 'past', 'current_input'} - {time_scope}:
+        assert not plan_owner._source_polite_past_feeling_is_bound(span, source.normalized_current_input,
+            expected_time_scope=wrong_time)
+    plan = _polite_change_plan(raw + '。')
+    node, = [n for n in plan.nuclei if n.source_span_ids == (span.span_id,)]
+    frame = node.semantic_frame
+    assert (frame.actor, frame.predicate_kind, frame.modality, frame.polarity, frame.time_scope) == (
+        'current_user', 'feeling', 'feeling', 'positive', time_scope)
+    assert not _action_change_relations(plan)
+    assert not plan_owner._source_polite_past_feeling_is_bound(span,
+        {**source.normalized_current_input, 'memo': raw.replace(day, '昨日' if day == '今日' else '今日') + '。'})
+
+
+@pytest.mark.parametrize('feeling', ['落ち着きました', '嬉しかったです', 'うれしかったです'])
+@pytest.mark.parametrize('prefix,suffix,action', [
+    ('昨日、', '。', ''), ('昨日、友人は', '。', ''),
+    ('昨日の夜、私は', '。', ''), ('私は昨日から', '。', ''),
+    ('今日、私は昨日', '。', ''), ('昨日、それから私は', '。', ''),
+    ('その後、私は昨日', '。', ''), ('昨日、私は少し', '。', ''),
+    ('「昨日、私は', '」。', ''), ('昨日、私は', '？', ''),
+    ('昨日、私は', 'かもしれない。', ''),
+    ('友人は言った。昨日、私は', '。', ''),
+    ('友人は話していた。昨日、私は', '。', ''),
+    ('昨日、私は', '。', '友人は話していた。'),
+    ('昨日、私は', '。', '友人の話でした。'),
+    ('昨日、私は', '。のは嘘だった。', ''),
+    ('昨日、私は', '。と友人は言った。', ''),
+    ('私は資料を調べた後、昨日、私は', '。', ''),
+])
+def test_dated_polite_feeling_keeps_unproved_and_reported_hosts(prefix, suffix, action, feeling):
+    source = freeze_text_source(initial(prefix + feeling + suffix, memo_action=action))
+    spans = [s for s in source.evidence_spans if s.source_field == 'memo' and feeling in s.raw_text]
+    assert spans
+    assert all(not plan_owner._source_polite_past_feeling_is_bound(s, source.normalized_current_input)
+        for s in spans)
+
+
 @pytest.mark.parametrize('clause', [
     '気持ちを書いた', 'ぼくの気持ちを書きました',
     '自分のノートに気持ちを書いた', '気持ちをわたしの手紙に書きました',

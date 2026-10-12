@@ -1898,6 +1898,11 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_current_anxiety_keeps_saved_writing_time_without_regeneration(self):
         for memo, labels in (
+                *((day + '、私は' + finite + '。',
+                   ('この記述時点の' + day + '：' + label + '（記録された気持ち）',))
+                  for day in ('今日', '昨日') for finite, label in (
+                      ('落ち着きました', '落ち着いた'), ('嬉しかったです', '嬉しかった'),
+                      ('うれしかったです', 'うれしかった'))),
                 ('昨日、私は不安だった。', ('この記述時点の昨日：不安だった（記録された気持ち）',)),
                 ('私は今日、かなり不安でした。', ('この記述時点の今日：かなり不安だった（記録された気持ち）',)),
                 ('昨日、私は不安じゃありませんでした。', ('この記述時点の昨日：不安ではなかった（記録された気持ち）',)),
@@ -2003,6 +2008,13 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(episode=episode):
                 await self._assert_action_change_saved(episode + following, label,
                     expected_following_label=following_label)
+
+    async def test_dated_polite_feeling_order_survives_save_and_read(self):
+        await self._assert_action_change_saved(
+            '昨日、私は落ち着きました。それから、私は記録を残した。',
+            'それから：記録を残す（実行済み）')
+        self.assertEqual(self.row['content_json']['watashiMap']['nodes'][0]['visible_label'],
+            'この記述時点の昨日：落ち着いた（記録された気持ち）')
 
     async def _assert_action_change_saved(self, memo, expected_label='疑問が減った（記録された変化）',
                                          *, expected_following_label=None, expected_preceding_label=None):

@@ -46,6 +46,9 @@ class AnalysisVerticalTests(unittest.TestCase):
             ('不安じゃありませんでした', '不安だ', 'negative', '不安ではなかった'),
             ('安心した', '安心する', 'positive', '安心した'),
             ('落ち着いた', '落ち着く', 'positive', '落ち着いた'),
+            ('落ち着きました', '落ち着く', 'positive', '落ち着いた'),
+            ('嬉しかったです', '嬉しい', 'positive', '嬉しかった'),
+            ('うれしかったです', 'うれしい', 'positive', 'うれしかった'),
             ('嬉しくありませんでした', '嬉しい', 'negative', '嬉しくなかった'),
             *((degree + '不安だった', '不安だ', 'positive', degree + '不安だった')
               for degree, _ in WRITTEN_ANXIETY_DEGREES[1:]),
@@ -96,10 +99,32 @@ class AnalysisVerticalTests(unittest.TestCase):
         for memo, action in (('昨日、私は不安だった。', '友人の話でした。'),
                              ('', '今日、私は不安だった。')):
             self.assertIsNone(self.generate(request(record(memo=memo, action=action))).artifact)
-        # These polite positive forms still need a separate dated source-host
-        # witness in the shared planner; do not weaken it for this correction.
+
+    def test_dated_polite_feelings_keep_updates_and_complete_source_host(self):
         for finite in ('落ち着きました', '嬉しかったです', 'うれしかったです'):
-            self.assertIsNone(self.generate(request(record(memo='今日、私は' + finite + '。'))).artifact)
+            old, new = '昨日、私は' + finite, '今日、私は' + finite
+            base = record(memo=old + '。それから、私は記録を残した。')
+            corrected = self.generate(request(self.with_answer(base,
+                '「' + old + '」ではなく「' + new + '」です。'))).artifact
+            self.assertEqual([n.proposition.relative_day for n in corrected.graph.nodes
+                if n.proposition.result_state == 'PAST_FEELING'], ['TODAY'])
+            self.assertFalse(corrected.graph.edges)
+            withdrawn = self.generate(request(self.with_answer(base, '「' + old + '」は取り消します。'))).artifact
+            self.assertEqual([n.proposition.predicate_lemma for n in withdrawn.graph.nodes], ['残す'])
+            for prefix, suffix, action in (
+                    ('友人は言った。昨日、私は', '。', ''),
+                    ('昨日、私は', '。のは嘘だった。', ''),
+                    ('今日、私は', '。と友人は言った。', ''),
+                    ('今日、私は', '。', '友人は話していた。'),
+                    ('今日、私は', '。', '友人の話でした。'),
+                    ('私は資料を調べた後、昨日、私は', '。', ''),
+                    ('昨日、私は今日', '。', ''), ('その後、私は昨日', '。', ''),
+                    ('昨日、', '。', ''), ('昨日の夜、私は', '。', '')):
+                with self.subTest(finite=finite, prefix=prefix, suffix=suffix, action=action):
+                    artifact = self.generate(request(record(memo=prefix + finite + suffix,
+                        action=action))).artifact
+                    self.assertFalse(artifact and any(n.proposition.result_state == 'PAST_FEELING'
+                        for n in artifact.graph.nodes))
 
     def test_dated_past_feelings_keep_day_local_and_require_matching_witness(self):
         from cocolon_meaning_experience_engine.cores.analysis import intent_compiler as compiler
