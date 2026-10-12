@@ -17362,3 +17362,40 @@ Mashの明示した「分析構造の内容修正関係を進めて」を受け�
 STRUCTURE_MAP_DELTA_NONE。source→共有命題→Analysis graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Codex Workのroot華恋が判断・編集・実行・反映を担当し、補助agentはread-only。新規repo file0、共有Plan/Emlis/API/DTO/DB/SQL/RN製品変更0。Supabase操作・本人行取得・DB書込・配置/有効化/native build/main mergeは0。未配置、本人実機・稼働DB保存再読・正式商品受入れは未確認。
 
 次の内容確認候補は、今回の対照で欠落を確認した「私は少し不安はある」等の修飾を伴う存在構文。既存の「少し不安だ」との作用域・名詞/助詞・肯否を原文から確認してから修正範囲を決める。省略主体/複合節・一般意味理解・全体ルートUI/IF/Saved・本人生成→保存再表示も残件。本修正を実機確認の追加前提にはしない。
+
+## u230 — 程度語を伴う不安の存在肯定を保持（2026-10-12 JST・未配置）
+
+Mashの明示した分析内容修正の続行指示を受け、u229で欠落確認済みの「私は少し不安がある」等を補修した。開始headはAPI PR3 `91b4597399e73a0464faf65120a6a2c1150a1073`、Cocolon PR30 `66b9f8a1a856fc735a07f879a3e873ebf4987c2e`。前提資料・CURRENT_RULES/開始checklist/恒久incident、全体設計・全file地図・分析current03/詳細04/06、最新weekly20261010 §3/§5.4/§5.5と実ファイルを照合した。今回の明示内容修正を§5.4の配分指定として実行し、最新修正版の本人生成→保存再表示の未完了と実機確認への戻る位置、12/18公開目標を維持する。新規System Context prepare成功とは主張しない。
+
+### 原因・製品変更
+
+共有Planに本人の感情・時点の根拠があっても、Analysisの存在構文はdegreeを一律に拒否し、書かれた感情を落としていた。既存compiler1fileで、「少し／とても／かなり／やや／ちょっと」の既存5語のうち1語が不安の前にある完全な存在肯定8形へ接続した。本人の明示、は/が、ある/あります/あった/ありました、既存の日語条件と共有感情witnessを要求する。共有の負感情分類と文法否定を区別し、肯定に否定operatorが混ざる場合は採用しない。
+
+modifierを原文座標・typed propositionへ保持し、名詞/助詞/述語の座標を程度語の後へ移した。既存realizerのprefixと意味比較をそのまま使い、原綴り・現在/過去・今日/昨日を文章/図へ届ける。程度を無修飾へ落とさず、他程度・は/が・形容的な「不安だ」系と同一化しない。同じ程度/助詞/肯否/時制の常体/敬体は集約する。強度数値・増減・安心・改善・行動の効果は推定しない。
+
+否定との合成、後置「不安が少しある」、少しは/少しだけ/少しも・積み重ね・読点跨ぎ、他者/省略主体/報告/推量/質問/複合節・昨日の現在形は保留。とくに部分否定を持つ記述と存在肯定は両立し得るため、肯否だけで対立判定する既存補足処理へ否定modifierを同時に広げない。通常補足の肯定degreeと無修飾存在否定は両方向とも保留し、明示訂正/撤回を反映する。原入力内の感情矛盾表示・構文をまたぐ矛盾判定・修飾と部分否定の整合は未完成である。
+
+### 実出力・表示・保存
+
+合成26入力の前後52結果で12入力の欠落解消、14対照の状態・理由・本文・図内容不変を確認した（artifact identityを除く）。生成22全文をrootが読み、実RN `buildWatashiMapV2ViewModel` でも22投影の全文・identity・読み順・node/edge/未確定/注記/競合件数が一致した。本人入力や実機描画の確認ではない。
+
+合成入力「私は少し不安がある。」の実生成全文：
+
+```text
+結果・余韻：少し不安がある（この記述時点の気持ち）（1件の記録）
+未確定（少し不安がある（この記述時点の気持ち））：確定していない項目：場面、役割、考え・注意、行動・非行動。
+```
+
+「私はやや不安はあった。それから、私は記録を残した。」は1node/0edgeから2node/1edgeへ変わり、明示された順序だけを示す。未知区間・別field・現在→過去には線を補わない。程度語・助詞・名詞の原文座標、訂正後の補足出典、撤回、集約/比較、通常補足の対立、修飾語削除/別語化/否定化の拒否を検査した。実engine/service＋合成RPCで5語×無日の現在/今日の現在/昨日の過去の15入力を保存し、engine再生成を禁止して同じ本文・図・IDを再読した。稼働DBの確認ではない。
+
+### 検証・反映
+
+既存の存在構文も含むローカル対象検査は **11 tests／424 subtests PASS（5.99秒、512 deselected）**。Python3.12.14と既存隔離pin（pytest8.4.1、pytest-subtests0.14.2、FastAPI0.142.2、Pydantic2.13.5、httpx0.28.1）を使用。製品依存変更なし。旧検査の期待変更は新対応の少し＋存在肯定だけで、他の保留条件は維持。同環境のread-only補助reviewとroot確認でblockerなし。別model Pro認定・正式商品受入れではない。
+
+固定sourceの[GitHub Actions run 38207047702](https://github.com/MassyuRed/mashos-api/actions/runs/38207047702)／job `114672732667` は全工程success。Python3.12.15で既存5suite（Analysis vertical/nominal、observed storage、saved period、共有Emlis limited-change）は **1581 tests／7951 subtests PASS（220.01秒）**、共有owner identityは **1 PASS／193 deselected（19.69秒）**。最終fail/skip/xfail 0。既存の合成Analysis 7入力の生成stepも成功し、rootが7全文を読み、否定・先行準備・感情・未知区間の表示を確認した。全suiteは固定source CIで最終確認し、同じ全suiteのローカル再実行は重ねていない。対象・全suite・subtests・CIを合算しない。
+
+製品source `3b1b74a6bacbd544fdcbc42ce10257b8f7e74ac5`、tree `bc11ae7dabae802454d50801f6790d4276ef5561`。compiler1と既存test2の3pathをAPI PR3へexpected_sha付きnon-forceで反映し、remoteの変更path・blobと検証済みlocal bytesを照合した。current03・詳細04 §3.60・06/API handoffへ対応範囲・実出力・検証結果を同期する。
+
+STRUCTURE_MAP_DELTA_NONE。source→共有命題→Analysis graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Codex Workのroot華恋が編集・判断・実行・反映、補助agentはread-only。新規repo file0、realizer・共有Plan/Emlis・API/DTO/DB/SQL/RN製品変更0。Supabase操作、本人行取得、DB書込、配置/有効化/native build/main mergeは0。未配置、最新修正版の本人実機・稼働DB保存再読・正式商品受入れは未確認。
+
+次の内容確認候補は、今回の対照で欠落した後置「私は不安が少しある」。前置と同じ意味へまとめてよい範囲、原文位置・話者帰属・表示を先に確認する。否定修飾と部分否定の整合、省略主体/複合節・一般意味理解・全体ルートUI/IF/Saved・本人生成→保存再表示も残件。本修正を実機確認の追加前提にはしない。
