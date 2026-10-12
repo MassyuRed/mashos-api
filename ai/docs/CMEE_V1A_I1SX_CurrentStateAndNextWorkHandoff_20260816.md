@@ -1,4 +1,4 @@
-> 最新の内容修正は末尾 **u224（2026-10-12 JST・未配置）**。「今日」付きの明示本人の現在の不安を、肯否・既存程度・日語・現在形を保って文章/図/保存再読へ保持。検証と残件（程度語と否定の作用域等）は同節とAnalysis current03を参照。
+> 最新の内容修正は末尾 **u231（2026-10-12 JST・未配置）**。不安の存在肯定で後置された程度語を、原文順・程度・助詞・時制を保って文章/図/保存再読へ保持。検証と残件（否定修飾と部分否定の整合等）は同節とAnalysis current03を参照。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -17399,3 +17399,40 @@ modifierを原文座標・typed propositionへ保持し、名詞/助詞/述語�
 STRUCTURE_MAP_DELTA_NONE。source→共有命題→Analysis graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Codex Workのroot華恋が編集・判断・実行・反映、補助agentはread-only。新規repo file0、realizer・共有Plan/Emlis・API/DTO/DB/SQL/RN製品変更0。Supabase操作、本人行取得、DB書込、配置/有効化/native build/main mergeは0。未配置、最新修正版の本人実機・稼働DB保存再読・正式商品受入れは未確認。
 
 次の内容確認候補は、今回の対照で欠落した後置「私は不安が少しある」。前置と同じ意味へまとめてよい範囲、原文位置・話者帰属・表示を先に確認する。否定修飾と部分否定の整合、省略主体/複合節・一般意味理解・全体ルートUI/IF/Saved・本人生成→保存再表示も残件。本修正を実機確認の追加前提にはしない。
+
+## u231 — 不安の存在肯定で後置された程度語を保持（2026-10-12 JST・未配置）
+
+Mashの分析内容修正の続行指示を受け、u230で欠落確認済みの「私は不安が少しある」等を補修した。開始headはAPI PR3 `efe28f178dee77e517937b4438552b664d33904d`、Cocolon PR30 `9780b0a3dab8c90122bcbfd158a8f313cbf36186`。前提資料・CURRENT_RULES/作業ルール・恒久incident全文、全体設計・全file地図・分析current03/詳細04/06、最新weekly20261010と実ファイルを照合した。今回の明示内容修正をweekly §5.4の配分指定として実行し、§5.5の最新修正版の本人生成→保存再表示の残件と12/18公開目標を維持する。新規System Context prepare成功とは主張しない。
+
+### 原因・製品変更
+
+共有Planが本人の感情を拾っていても、Analysis compilerが「不安＋は/が」の後の程度語を解釈せず、内容を最終表示から落としていた。既存5語（少し／とても／かなり／やや／ちょっと）のうち1語が助詞直後にある完全な存在肯定8形を、既存の有限形tableと共有witnessへ接続した。名詞・助詞・程度語・述語のsource_partsを原文順の実座標で保持する。realizerは完全な安全再生一致後に限り、その座標から後置語順を再現する。前置の既存経路を保持し、共有Plan・witness・host判定・意味キーは変更しない。
+
+本人・程度・は/が・肯否・時制・日語等が同じ完全節は前後置だけで別の意味にせず集約し、最初の代表文の語順と両原文の出典を保持する。前後置を逆順にした集約/期間比較、明示訂正後の回答語順と補足出典、通常補足の同義集約を検査した。程度差、は/が、無修飾、copular「不安だ」、時制・日語は区別する。程度の数値化、改善・安心・原因の推定はしない。
+
+後置degree＋否定、前後置二重degree、少しも/少しは/少しだけ、積み重ね・読点跨ぎ、省略主体・別人物・報告/引用/質問/推量/複合節、昨日の現在形は保留する。存在肯定と無修飾存在否定の通常補足は両方向で保留を維持する。部分否定と存在肯定の両立や原入力内の感情矛盾表示は未完成のため、否定modifierの追加へ同時拡張しない。
+
+### 実出力・表示・保存
+
+合成27入力の前後54結果で12入力の欠落解消、15対照の状態・理由・本文・図内容不変を確認した（artifact identityを除く）。rootが生成26全文を読み、実RN `buildWatashiMapV2ViewModel` の26投影で全文・identity・読み順・node/edge/未確定/注記/競合件数が一致した。本人入力や実機描画の確認ではない。
+
+合成入力「私は不安が少しある。」の実生成全文：
+
+```text
+結果・余韻：不安が少しある（この記述時点の気持ち）（1件の記録）
+未確定（不安が少しある（この記述時点の気持ち））：確定していない項目：場面、役割、考え・注意、行動・非行動。
+```
+
+「私は不安はややあった。それから、私は記録を残した。」は1node/0edgeから2node/1edgeへ変わり、記録の順序を保持する。未知区間・別field・現在→過去には線を補わない。前後置×5語×は/が×現在/過去×常体/敬体×既存の日語条件で原文範囲と表示を検査し、偽造modifier/座標の安全再生を拒否する。実engine/service＋合成RPCで前後置×5語×無日の現在/今日の現在/昨日の過去の30入力を保存し、engine再生成を禁止して同じ本文・図・IDを再読した。稼働DBの確認ではない。
+
+### 検証・反映
+
+既存の存在構文を含むローカル対象検査は **12 tests／650 subtests PASS（7.71秒、512 deselected）**。Python3.12.14と既存隔離pin（pytest8.4.1、pytest-subtests0.14.2、FastAPI0.142.2、Pydantic2.13.5、httpx0.28.1）を使用。製品依存変更なし。旧保留期待の変更は今回証明した後置degree肯定だけ。read-only補助reviewとroot確認でblockerなし。別model Pro認定・正式商品受入れではない。
+
+GitHub Actions [run38208143378](https://github.com/MassyuRed/mashos-api/actions/runs/38208143378)（job114676122166）が固定sourceで全step成功。Python3.12.15、既存5suite **1582 tests／8177 subtests PASS（221.34秒）**、共有owner identity **1 PASS（193 deselected、17.07秒）**。CIの合成7出力もrootが全文を読み、肯否・順序・未知区間を保持していることを確認した。CIは合成環境の技術検証で、本人実機・稼働DB・商品受入れを代替しない。
+
+製品source `67197ba42368c140bd6315138d2dbd7a40bc232e`、tree `b11124cb28d7fc819b57feeb10c8ef320c7da04d`。compiler/realizerと既存test2の4pathをAPI PR3へexpected_sha付きnon-forceで反映。remoteの変更path・blobと検証済みlocal bytesを照合した。current03・詳細04 §3.61・06/API handoffへ対応範囲・実出力・検証結果を同期した。
+
+STRUCTURE_MAP_DELTA_NONE。source→共有命題→Analysis graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Codex Workのroot華恋が編集・判断・実行・反映、補助agentはread-only。新規repo file0、共有Plan/Emlis・API/DTO/DB/SQL/RN製品変更0。Supabase操作、本人行取得、DB書込、配置/有効化/native build/main mergeは0。未配置、最新修正版の本人実機・稼働DB保存再読・正式商品受入れは未確認。
+
+内容上の残件は、否定修飾と存在肯定・部分否定の整合、原入力内の感情矛盾表示、省略主体/複合節と一般意味理解。次の否定表現を扱う場合は「不安はあまりない」等の実際の欠落と通常補足の両立条件から確認し、単純な肯否対立へ流し込まない。全体ルートUI/IF/Saved・最新本人生成→保存再表示も残る。本修正や追加の内容修正を実機確認の新たな前提にはしない。
