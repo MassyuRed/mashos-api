@@ -17325,3 +17325,40 @@ Mashの分析内容修正の続行指示と添付u227記録を受け、前回に
 STRUCTURE_MAP_DELTA_NONE。source→共有命題→Analysis graph→文章/図→保存の配置・責務は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Codex Workのroot華恋が判断・編集・実行・反映を担当し、補助agentはread-only。新規repo file0、共有Plan/Emlis/API/DTO/DB/SQL/RN製品変更0。Supabase操作、本人行取得、DB書込、配置/有効化/native build/main mergeは0。未配置、本人実機・稼働DB保存再読・正式商品受入れは未確認。
 
 次の内容確認は、未生成を確認した肯定の存在構文「私は不安はある」等と、存在否定/形容的感情をまたぐ関係を原文・共有根拠から確認する。採用や同義化を先に決めない。修飾・省略主体/複合節・時制をまたぐ順序、全体ルートUI/IF/Saved、本人生成→保存再表示も残件。本修正を本人実機確認の追加前提にはせず、分析全体の完成とはしない。
+
+## u229 — 本人が書いた「不安はある／不安がある」の欠落修正（2026-10-12 JST・未配置）
+
+Mashの明示した「分析構造の内容修正関係を進めて」を受け、u228で実測した肯定存在の欠落を補修した。開始headはAPI PR3 `e022b57aa199298f0a5193d9c8cd519b4ea794cd`、Cocolon PR30 `614f72804f06274fecf9d4cf82bec50535b1f17a`。前提資料・CURRENT_RULES/開始checklist/恒久incident、全体01/01B・全file地図02/07・分析current03/詳細04/06と、最新weekly20261010 §3/§5.4/§5.5を照合。今回は§5.4の新しい明示配分として内容修正を実行し、Emlis/分析の本人実機稼働確認の未完了と戻る位置、12/18公開目標は維持する。System Contextの新規prepare成功や実機確認済みとは主張しない。
+
+### 原因・製品変更
+
+共有Planには感情・時点の根拠があるが、Analysisが「不安＋は/が＋ある/あります/あった/ありました」を扱えず、書かれた感情が欠落していた。既存compilerで存在構文の表を肯否共通にし、明示SELFの完全な肯定8形を接続した。名詞/助詞argumentとpredicate `ある`を保ち、文法的肯否・現在/過去・今日/昨日・原文の全座標を残す。共有frameのnegativeは負の感情分類であり、文法的否定とは別。肯定では共有の否定operatorの不在、否定では存在を要求し、感情operatorと同一節の時点根拠も必要とする。
+
+肯定の存在構文にも前置報告・別field報告・後続引用/否認等の話者帰属確認を適用した。realizerは「ある／あった」「ない／なかった」を肯否・時制から区別し、表示前の完全な原文再解析を維持する。既存の否定12形、主語省略/他者/修飾/二重否定/推量/質問/複合節/昨日の現在形の保留、action→feeling複合経路の除外は維持した。「は」と「が」、「不安だ」系を同一化せず、同じ助詞・肯否・時制の常体/敬体だけを集約する。
+
+同じ存在構文について、通常補足で肯否が対立した場合は両方向とも保留し、明示訂正・撤回を反映する。期間比較ではある/ないを記述差として残し、改善・悪化・原因としない。原入力内の感情矛盾表示や「不安だ」系をまたぐ矛盾判定は未完成であり、今回の限定的な補足処理を一般矛盾理解の完成とはしない。
+
+### 実出力・表示・保存
+
+合成24入力の前後48結果で10入力の欠落解消、14対照の状態・理由・本文・図内容不変を確認した（ランダムなartifact identityを除く）。生成18全文をrootが読み、実RN `buildWatashiMapV2ViewModel` でも18投影の全文・identity・読み順・node/edge/未確定/注記/競合件数が一致した。確認用一時scriptのRN property名を実装へ合わせて訂正した後の成功であり、RN製品コードの修正ではない。
+
+合成入力「私は不安があります。」の実生成全文：
+
+```text
+結果・余韻：不安がある（この記述時点の気持ち）（1件の記録）
+未確定（不安がある（この記述時点の気持ち））：確定していない項目：場面、役割、考え・注意、行動・非行動。
+```
+
+「私は不安はあった。それから、私は記録を残した。」は1node/0edgeから2node/1edgeになり、書かれた順序だけを表示する。現在→過去、未知区間、別fieldに線を補わない。既存保存testを肯否へ拡張し、実engine/service＋合成RPCで2助詞×現在/今日の現在/昨日の過去×肯否の12入力を保存、再生成を禁止して同じ本文・図・IDを再読した。新しい肯定は6入力。本人入力、稼働DB、実機描画の実績ではない。
+
+### 検証・反映
+
+既存隔離環境の対象検査は **6 tests／202 subtests PASS（4.16秒、512 deselected）**。Python3.12.14、pytest8.4.1、pytest-subtests0.14.2、FastAPI0.142.2、Pydantic2.13.5、httpx0.28.1。製品依存は変更していない。同環境のread-only補助reviewとrootの実出力確認でblockerなし。別model Pro認定や正式商品受入れではない。
+
+固定sourceの[GitHub Actions run 38205884253](https://github.com/MassyuRed/mashos-api/actions/runs/38205884253)／job `114669157066` は全工程success。Python3.12.15で既存5suite（Analysis vertical/nominal、observed storage、saved period、共有Emlis limited-change）は **1576 tests／7729 subtests PASS（379.69秒）**、共有owner identityは **1 PASS／193 deselected（26.47秒）**。最終fail/skip/xfail 0。既存の合成Analysis 7入力の生成stepも成功し、rootが7全文を読み、既存の否定・先行準備・感情・未知区間の表示を確認した。全suiteは固定source CIで最終確認し、同じ全suiteのローカル再実行は重ねていない。対象・全suite・subtests・CIを合算して成功件数を増やさない。
+
+製品source `e15641aad4617fb73a793d3a9b4f1e869e4badc4`、tree `d96f5488ca61f69f41a918ab042a08e4248fb8b3`。compiler/realizer各1と既存test2の4pathを既存API PR3へexpected_sha付きnon-forceで反映し、remoteの変更path・blobと検証済みlocal bytesを照合した。共有owner変更がないためidentity snapshot更新なし。対応する説明を既存current03・詳細04 §3.59・06へ同期する。
+
+STRUCTURE_MAP_DELTA_NONE。source→共有命題→Analysis graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Codex Workのroot華恋が判断・編集・実行・反映を担当し、補助agentはread-only。新規repo file0、共有Plan/Emlis/API/DTO/DB/SQL/RN製品変更0。Supabase操作・本人行取得・DB書込・配置/有効化/native build/main mergeは0。未配置、本人実機・稼働DB保存再読・正式商品受入れは未確認。
+
+次の内容確認候補は、今回の対照で欠落を確認した「私は少し不安はある」等の修飾を伴う存在構文。既存の「少し不安だ」との作用域・名詞/助詞・肯否を原文から確認してから修正範囲を決める。省略主体/複合節・一般意味理解・全体ルートUI/IF/Saved・本人生成→保存再表示も残件。本修正を実機確認の追加前提にはしない。
