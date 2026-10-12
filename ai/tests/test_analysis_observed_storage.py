@@ -87,6 +87,13 @@ async def storage_sql_fixture():
 class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
     async def test_closed_feeling_possibility_survives_save_read_as_unknown_scope(self):
         for memo, labels, edge_count in (
+            ('私は不安だ。私は不安ではないかもしれません。', ['不安だ（この記述時点の気持ち）'], 0),
+            ('私は不安ではないかも知れません。私は不安だ。', ['不安だ（この記述時点の気持ち）'], 0),
+            ('私は安心した。私は不安かもしれません。', ['安心した（記録された気持ち）'], 0),
+            ('私は資料を調べた。その後、私は記録を残した。私は不安だったかもしれません。',
+             ['資料を調べる（実行済み）', 'その後：記録を残す（実行済み）'], 1),
+            ('私は不安だ。私は不安ではないかもしれません。それから、私は記録を残した。',
+             ['不安だ（この記述時点の気持ち）', 'それから：記録を残す（実行済み）'], 0),
             ('私は不安だ。私は不安ではないかもしれない。', ['不安だ（この記述時点の気持ち）'], 0),
             ('私は不安ではないかもしれない。私は不安だ。', ['不安だ（この記述時点の気持ち）'], 0),
             ('私は安心した。私は不安かもしれない。', ['安心した（記録された気持ち）'], 0),
@@ -129,11 +136,16 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                     and g['reason_code'] == 'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'
                     for g in writes[0]['p_private_evidence']['graph']['unknown_gaps']))
                 self.assertNotIn('かもしれない', saved['content_text'])
+                self.assertNotIn('かもしれません', saved['content_text'])
+                self.assertNotIn('かも知れません', saved['content_text'])
                 self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
 
     async def test_closed_feeling_possibility_in_incomplete_updates_never_commits(self):
         from test_analysis_saved_period import with_answer, NOW
         for answer, reason in (
+            ('私は不安だ。私は不安ではないかもしれません。', 'analysis_supplement_interpretation_pending'),
+            ('「私は記録を残した」ではなく「私は不安だ。私は不安ではないかも知れません」です。',
+             'analysis_correction_replacement_unsupported'),
             ('私は不安だ。私は不安ではないかもしれない。', 'analysis_supplement_interpretation_pending'),
             ('「私は記録を残した」ではなく「私は不安だ。私は不安ではないかもしれない」です。',
              'analysis_correction_replacement_unsupported'),

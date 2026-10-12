@@ -1312,7 +1312,9 @@ def _analysis_prefix_opens_report(prefix):
 def _closed_feeling_possibility(span, context):
     # Recognize only the scope of a whole SELF feeling possibility. This is
     # never a factual proposition or a substitute for a shared feeling witness.
-    match = re.fullmatch(r'(.+?)(?:かもしれない|かも知れない)', span.raw_text)
+    # The polite ません belongs to the possibility operator, not to the
+    # feeling's polarity. Admit only complete endings, with no trailing host.
+    match = re.fullmatch(r'(.+?)(?:かもしれない|かも知れない|かもしれません|かも知れません)', span.raw_text)
     if match is None:
         return False
     content = match[1]
