@@ -43,6 +43,88 @@ def request(*members):
 
 
 class AnalysisVerticalTests(unittest.TestCase):
+    def test_stacked_speaker_modifiers_keep_quotes_and_independent_actions_distinct(self):
+        for speaker in ('親しい新しい友人', '親しかった新しい友人',
+                        '知っている親しい友人', '親しい知っている友人',
+                        '知らない若い同僚', '知っていた親しい若い友人の母'):
+            for claimed in ('私は仕事を続けたい', '私は職場にいた', '私は記録を担当した',
+                            '私は資料を見た', '私は嬉しかった'):
+                with self.subTest(speaker=speaker, claimed=claimed):
+                    reported = claimed + '。とは' + speaker + 'も、語りました。'
+                    self.assertIsNone(self.generate(request(record(memo=reported))).artifact)
+                    req = request(record(memo='私は資料を調べた。' + reported
+                        + 'それから、私は記録を残した。'))
+                    artifact = self.generate(req).artifact
+                    self.assertEqual([n.visible_label for n in artifact.graph.nodes],
+                        ['私は資料を調べた', 'それから、私は記録を残した'])
+                    self.assertFalse(artifact.graph.edges)
+                    self.assertFalse(artifact.graph.conflicts)
+                    self.assertIn('SOURCE_SCOPE', [g.missing_scope for g in artifact.graph.unknown_gaps])
+                    source, = freeze_analysis_sources(req).sources
+                    for node in artifact.graph.nodes:
+                        evidence, = node.evidence_refs
+                        raw = source.envelope.raw_utf8
+                        self.assertEqual(raw[evidence.utf8_start:evidence.utf8_end].decode(), node.visible_label)
+                        self.assertEqual(raw[evidence.field_utf8_start:evidence.field_utf8_end].decode()
+                            [evidence.scalar_start:evidence.scalar_end], node.visible_label)
+
+    def test_stacked_speakers_keep_forward_current_and_negative_attribution_unresolved(self):
+        for speaker in ('親しい新しい友人', '知っている親しい友人', '親しい知っている友人',
+                        '知らなかった新しくない同僚'):
+            for speech in ('語る', '語らない', '説明しませんでした'):
+                host = speaker + 'は、' + speech + '。'
+                for memo, action in ((host + '私は職場にいた。', ''),
+                                     (host, '私は職場にいた。'), ('私は職場にいた。', host)):
+                    with self.subTest(speaker=speaker, speech=speech, memo=memo, action=action):
+                        self.assertIsNone(self.generate(request(record(memo=memo, action=action))).artifact)
+                with self.subTest(speaker=speaker, speech=speech, prior=True):
+                    kept = self.generate(request(record(memo='私は記録を残した。'
+                        + host + '私は資料を調べた。'))).artifact
+                    self.assertEqual([n.visible_label for n in kept.graph.nodes], ['私は記録を残した'])
+
+    def test_stacked_speaker_closure_does_not_swallow_unread_or_nested_scope(self):
+        for speaker in ('親しい知っている友人', '知っていた新しい友人'):
+            host = 'と' + speaker + 'が'
+            for memo, action in (
+                ('私は職場にいた。' + host + '言ったけれど。私は記録を残した。', ''),
+                ('私は職場にいた。' + host + '言ったと弟が言った。私は記録を残した。', ''),
+                ('友人が話した。私は職場にいた。' + host + '語った。私は記録を残した。', ''),
+                ('私は職場にいた。', host + '言った。私は記録を残した。'),
+                ('私は職場にいた。' + host + '、、言った。私は記録を残した。', ''),
+                ('私は職場にいた。と' + speaker + 'って弟が言った。私は記録を残した。', ''),
+            ):
+                with self.subTest(memo=memo, action=action):
+                    artifact = self.generate(request(record(memo=memo, action=action))).artifact
+                    self.assertFalse(artifact and any(n.proposition.predicate_lemma == '残す'
+                        for n in artifact.graph.nodes))
+        for speaker in ('親しいよく知らない友人', 'よく知らない親しい友人',
+                        '親しい会った友人', '信じられない若い友人'):
+            with self.subTest(speaker=speaker):
+                artifact = self.generate(request(record(memo='私は職場にいた。と'
+                    + speaker + 'が、語った。私は記録を残した。'))).artifact
+                self.assertFalse(artifact and any(n.proposition.predicate_lemma == '残す'
+                    for n in artifact.graph.nodes))
+
+    def test_stacked_speaker_keeps_record_updates_and_period_evidence_separate(self):
+        reported = '私は職場にいた。と親しい知っている友人が言った。'
+        separated = self.generate(request(record(memo=reported),
+            record(2, memo='私は職場にいた。'))).artifact
+        node, = separated.graph.nodes
+        self.assertEqual(node.visible_label, '私は職場にいた')
+        self.assertEqual(len(node.evidence_refs), 1)
+        original = record(memo='私は記録を残した。' + reported)
+        self.assertIsNone(self.generate(request(self.with_answer(original, reported))).artifact)
+        for answer, labels in (
+            ('「私は記録を残した」は取り消します。', []),
+            ('「私は記録を残した」ではなく「私は資料を見た」です。', ['私は資料を見た']),
+        ):
+            with self.subTest(answer=answer):
+                artifact = self.generate(request(self.with_answer(original, answer))).artifact
+                self.assertEqual([n.visible_label for n in artifact.graph.nodes] if artifact else [], labels)
+        compared = self.compared('私は記録を残した。' + reported, '私は記録を残した。').artifact
+        self.assertEqual(compared.safe_projection(authenticated_owner_scope=OWNER)
+            ['period_comparison']['safe_change_kinds'], ['UNKNOWN_SCOPE_CHANGED'])
+
     def test_forward_present_speech_keeps_attribution_across_fields(self):
         for speech in ('言う', '言います', '話す', '話します', '語る', '語ります',
                        '述べる', '述べます', '伝える', '伝えます', '答える', '答えます',
@@ -290,7 +372,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                          'とよく知らない友人が' + speech + '。',
                          'と語った友人が' + speech + '。',
                          'と説明した友人が' + speech + '。',
-                         'と親しい新しい友人が' + speech + '。',
+                         'と親しいとても新しい友人が' + speech + '。',
                          'と親しい友人が、、' + speech + '。'):
                 with self.subTest(host=host):
                     artifact = self.generate(request(record(memo=
@@ -366,7 +448,7 @@ class AnalysisVerticalTests(unittest.TestCase):
             ('友人が話した。私は職場にいた。と忙しくなかった同僚が言った。私は記録を残した。', ''),
             ('私は職場にいた。', 'と親しくなかった友人が言った。私は記録を残した。'),
             ('私は職場にいた。と親しくなかった友人が、、言った。私は記録を残した。', ''),
-            ('私は職場にいた。と親しかった新しい友人が言った。私は記録を残した。', ''),
+            ('私は職場にいた。と親しかったとても新しい友人が言った。私は記録を残した。', ''),
             ('私は職場にいた。と親しくはない友人が言った。私は記録を残した。', ''),
             ('私は職場にいた。と親しくなくなった友人が言った。私は記録を残した。', ''),
             ('私は職場にいた。と分かった友人が言った。私は記録を残した。', ''),
@@ -477,7 +559,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                 ('私は職場にいた。', host + '言った。私は記録を残した。'),
                 ('私は職場にいた。' + host + '、、言った。私は記録を残した。', ''),
                 ('私は職場にいた。と' + modifier + '友人って弟が言った。私は記録を残した。', ''),
-                ('私は職場にいた。と' + modifier + '新しい友人が言った。私は記録を残した。', ''),
+                ('私は職場にいた。と' + modifier + 'とても新しい友人が言った。私は記録を残した。', ''),
             ):
                 with self.subTest(modifier=modifier, memo=memo, action=action):
                     artifact = self.generate(request(record(memo=memo, action=action))).artifact
@@ -524,7 +606,7 @@ class AnalysisVerticalTests(unittest.TestCase):
                          'と親しい友人が、言ったと弟が言った。',
                          'と知っている友人が、言いましたと弟が言った。',
                          'とよく知らない友人が、言った。',
-                         'と知らない新しい友人が、言った。',
+                         'と知らないとても新しい友人が、言った。',
                          'と信じられない友人が、言った。',
                          'などとよく知らない友人が、言った。',
                          'と親しい友人が、、言った。', 'と親しい友人が,言った。',
@@ -713,7 +795,7 @@ class AnalysisVerticalTests(unittest.TestCase):
             # Bare 知らない now has a source-host proof above; adverbial
             # qualification remains unread and must not close this host.
             ('私は職場にいた。とよく知らない友人が言った。私は記録を残した。', ''),
-            ('私は職場にいた。と親しい新しい友人が言った。私は記録を残した。', ''),
+            ('私は職場にいた。と親しいとても新しい友人が言った。私は記録を残した。', ''),
             ('私は記録を担当した。と友人が言ったけれど。私は記録を残した。', ''),
         ):
             with self.subTest(memo=memo, action=action):

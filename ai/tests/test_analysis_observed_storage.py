@@ -87,6 +87,12 @@ async def storage_sql_fixture():
 class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
     async def test_unproved_postposed_or_past_action_attribution_never_commits(self):
         for memo, action in (
+            ('私は職場にいた。と親しい新しい友人が言った。', ''),
+            ('私は仕事を続けたい。と親しい知っている友人が語らない。', ''),
+            ('知っている親しい友人が話さない。私は職場にいた。', ''),
+            ('親しかった新しい友人が語る。', '私は資料を調べた。'),
+            ('私は職場にいた。', '知らない若い友人の母も，述べませんでした。'),
+            ('私は職場にいた。と知っていた親しい友人が語ったと弟が言った。私は記録を残した。', ''),
             ('友人が言わないです。私は仕事を続けたい。', ''),
             ('親しい友人は、話さなかった。私は職場にいた。', ''),
             ('知らない友人が語りません。私は記録を担当した。', ''),
@@ -1743,6 +1749,10 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_partial_map_with_unparsed_original_is_saved_and_read_without_regeneration(self):
         for unparsed in ('私は資料を明日ノートに書いた', '私は何を調べた', '私は誰の資料を見た',
+                         '私は職場にいた。と親しい新しい友人が言った',
+                         '私は仕事を続けたい。と知っている親しい友人が語った',
+                         '私は記録を担当した。と親しい知っている友人が話しました',
+                         '私は資料を調べた。とは知っていた親しい若い友人の母も，述べました',
                          '私は仕事を続けたい。と友人が言った',
                          '私は職場にいた。と友人が言った',
                          '私は記録を担当した。と友人が言った',
@@ -1826,6 +1836,10 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_open_attribution_keeps_independent_content_after_save_and_read(self):
         for context, same_record in (('夢を見た。', False), ('友人から聞いた話です。', False),
+                ('親しい新しい友人が語る。', False), ('親しい新しい友人が語る。', True),
+                ('知っている親しい友人が話さない。', False), ('知っている親しい友人が話さない。', True),
+                ('親しい知っている友人が説明しませんでした。', False),
+                ('親しい知っている友人が説明しませんでした。', True),
                 ('本で読んだ内容です。', False), ('友人が話した。', False),
                 ('友人が話していました。', False), ('友人が話した。', True),
                 ('友人が話していました。', True),

@@ -1372,8 +1372,9 @@ _PRESENT_SPEECH = (r'(?:言う|言います|話す|話します|語る|語りま
 # These forms withhold attribution, never prove that a report has closed.
 _NEGATED_SPEECH = (r'(?:(?:言わ|話さ|語ら|述べ|伝え|答え|説明し)(?:ない|なかった)(?:です)?|'
                    r'(?:言い|話し|語り|述べ|伝え|答え|説明し)ません(?:でした)?)')
-_QUALIFIED_SPEECH_SPEAKER = (r'(?:[一-鿿々]+(?:しい|しかった|しくない|しくなかった|い)'
-                           r'|知らない|知らなかった|知っている|知っていた)'
+_SPEECH_SPEAKER_MODIFIER = (r'(?:[一-鿿々]+(?:しい|しかった|しくない|しくなかった|い)'
+                          r'|知らない|知らなかった|知っている|知っていた)')
+_QUALIFIED_SPEECH_SPEAKER = (_SPEECH_SPEAKER_MODIFIER + r'+'
                            r'[一-鿿々ァ-ヴー]+'
                            r'(?:の' + _NOMINAL + r')*')
 _SPEECH_SPEAKER = (r'(?:私|僕|ぼく|俺|おれ|わたし|自分|' + _NOMINAL
@@ -1393,8 +1394,8 @@ def _forward_speech_opens_report(text):
 
 def _known_postposed_host(continuation, *, closed_speech=False):
     # Reuse the established speaker/host grammar for rejection and closure.
-    # A single written i-adjective can qualify a kanji/katakana speaker noun
-    # before a speech host. This identifies quotation scope only; it
+    # Complete known modifiers can qualify a kanji/katakana speaker noun
+    # in sequence before a speech host. This identifies quotation scope only; it
     # neither resolves the speaker nor expands the proposition noun grammar.
     # Requiring the kanji stem avoids consuming independent とても / とある /
     # と同時に sentences. The shii family also keeps its past/negative forms;
@@ -1404,7 +1405,7 @@ def _known_postposed_host(continuation, *, closed_speech=False):
     # Keep prefix matching for open/nested suffixes; this rejection does not
     # prove that the host is closed. Four explicit forms of 知る can also
     # qualify this speaker; they never establish whose knowledge it is.
-    # Other relative clauses and stacked modifiers stay unread.
+    # Other relative clauses and unknown modifiers stay unread.
     match = re.fullmatch if closed_speech else re.match
     speech = (_PAST_SPEECH if closed_speech else
               r'(?:' + _PAST_SPEECH + r'|' + _PRESENT_SPEECH + r'|' + _NEGATED_SPEECH + r')')
@@ -1623,13 +1624,16 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
                                 and not _known_postposed_host(preceding, closed_speech=True)):
                             return None
                         speaker_scope = host['speaker'] or ''
-                        if _known_postposed_host(preceding):
-                            # In a proved single modifier, って is part of
-                            # 知っている/知っていた, not a nested quotation.
-                            # Only normalize this local scope check, never
-                            # source text; retain every remaining host marker.
-                            speaker_scope = re.sub(r'^(?:は|も)?知って(?:いる|いた)',
-                                                   '', speaker_scope)
+                        if _known_postposed_host(preceding, closed_speech=True):
+                            # In a proved modifier sequence, って inside 知っている/
+                            # 知っていた is not a nested quotation. Normalize only
+                            # those words in the parsed prefix for this local check;
+                            # keep source text and every remaining host marker intact.
+                            modifiers = re.match(r'^(?:は|も)?' + _SPEECH_SPEAKER_MODIFIER
+                                                 + r'+', speaker_scope)
+                            if modifiers is not None:
+                                speaker_scope = (re.sub(r'知って(?:いる|いた)', '', modifiers[0])
+                                                 + speaker_scope[modifiers.end():])
                         # A present/negative speech clause inside an opaque speaker
                         # is not proof that the outer report has closed.
                         if (host.end() != len(preceding) or re.search(
