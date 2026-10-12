@@ -52,6 +52,9 @@ class AnalysisVerticalTests(unittest.TestCase):
                          'と厳しい先輩も言った。', 'と若い同僚が言った。',
                          'と親しかった友人が言った。', 'と優しくない同僚は言いました。',
                          'と忙しくなかった友人の母も言った。',
+                         'と親しい友人が言わなかった。',
+                         'と優しくない同僚は言いませんでした。',
+                         'と親しかった友人が言わなかったです。',
                          'と忙しい友人の母が言いました。'):
                 with self.subTest(clause=clause, host=host):
                     self.assertIsNone(self.generate(request(record(memo=clause + '。' + host))).artifact)
@@ -76,11 +79,31 @@ class AnalysisVerticalTests(unittest.TestCase):
                 self.assertFalse(artifact and any(n.proposition.predicate_lemma == '残す'
                     for n in artifact.graph.nodes))
 
+    def test_qualified_negative_speech_does_not_assert_embedded_content(self):
+        # Rejection recognizes a host prefix; it must not require a closed
+        # assertion or turn a negative/nested report into the owner's fact.
+        for suffix in ('言わなかった', '言わなかったです', '言いませんでした',
+                       '言わなかったけれど', '言わなかったと弟が言った',
+                       '言いませんでしたと弟が言いました', '言わなかったかもしれない'):
+            memo = '私は職場にいた。と親しくなかった友人が' + suffix + '。'
+            with self.subTest(suffix=suffix):
+                self.assertIsNone(self.generate(request(record(memo=memo))).artifact)
+        memo = ('私は資料を調べた。私は職場にいた。と親しい友人が言わなかった。'
+                'それから、私は記録を残した。')
+        artifact = self.generate(request(record(memo=memo))).artifact
+        self.assertEqual([n.visible_label for n in artifact.graph.nodes],
+                         ['私は資料を調べた', 'それから、私は記録を残した'])
+        self.assertFalse(artifact.graph.edges)
+        self.assertFalse(artifact.graph.conflicts)
+
     def test_qualified_postposed_report_preserves_independent_evidence(self):
         for claimed, host in (
             (claimed, host)
             for claimed in ('私は仕事を続けたい', '私は職場にいた', '私は記録を担当した')
             for host in ('と親しい友人が言った。', 'と親しかった友人が言った。',
+                         'と親しい友人が言わなかった。',
+                         'と優しくない同僚は言いませんでした。',
+                         'と親しかった友人が言わなかったです。',
                          'と優しくない同僚は言いました。', 'と忙しくなかった友人の母も言った。')
         ):
             reported = claimed + '。' + host
@@ -174,6 +197,9 @@ class AnalysisVerticalTests(unittest.TestCase):
                                   'とても親しかった友人が言った。',
                                   'とある親しくない友人が言った。',
                                   'と同時に忙しくなかった同僚が言った。',
+                                  'とても親しい友人が言わなかった。',
+                                  'とある親しい友人が言いませんでした。',
+                                  'と同時に親しかった友人が言わなかったです。',
                                   'ところで、話題を変える。', 'とりあえず、休む。'):
                 with self.subTest(clause=clause, next_sentence=next_sentence):
                     artifact = self.generate(request(record(memo=clause + '。' + next_sentence))).artifact

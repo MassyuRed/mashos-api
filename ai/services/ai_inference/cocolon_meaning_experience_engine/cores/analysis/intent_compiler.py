@@ -1367,12 +1367,15 @@ def _known_postposed_host(continuation):
     # Requiring the kanji stem avoids consuming independent とても / とある /
     # と同時に sentences. The shii family also keeps its past/negative forms;
     # arbitrary -katta stems could instead be verbs (分かった / 預かった).
-    # Stacked modifiers and other speech forms stay unread.
+    # A negated speech host does not assert its embedded content either.
+    # Keep prefix matching for open/nested suffixes; this rejection does not
+    # prove that the host is closed. Stacked modifiers stay unread.
     qualified_speaker = (r'[一-鿿々]+(?:しい|しかった|しくない|しくなかった|い)'
                          r'[一-鿿々ァ-ヴー]+'
                          r'(?:の' + _NOMINAL + r')*')
     if re.match(r'と(?:は|も)?' + qualified_speaker + r'(?:は|が|も)'
-                r'(?:[、，][ \u3000]*)?(?:言った|言いました)', continuation):
+                r'(?:[、，][ \u3000]*)?(?:言った|言いました|言わなかった(?:です)?|言いませんでした)',
+                continuation):
         return True
     speaker = (r'(?:(?:私|僕|ぼく|俺|おれ|わたし|自分|' + _NOMINAL
                + r'(?:の' + _NOMINAL + r')*)(?:は|が|も)(?:[、，][ \u3000]*)?)?')
