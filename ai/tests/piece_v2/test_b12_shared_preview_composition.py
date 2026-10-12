@@ -44,6 +44,10 @@ _RUNTIME = {'ttl_seconds': 600, 'renderer_version': 'synthetic-renderer.v1'}
 VISUAL_ROUTE = '/emotion/piece/preview/{preview_id}'
 VISUAL_PATH = PREVIEW_PATH + '/' + INPUT
 SAVE_PATH = '/emotion/piece/save'
+LEGACY_DRAFT_WRITES = (
+    '/emotion/piece/publish', '/emotion/piece/cancel',
+    '/emotion/reflection/publish', '/emotion/reflection/cancel',
+)
 
 
 @pytest.mark.parametrize('kind', ['preview', 'shared'])
@@ -154,6 +158,8 @@ def test_candidate_reuses_factory_without_changing_default_routes_or_registry(sh
     expected = before.copy()
     del expected[('POST', '/emotion/reflection/preview')]
     del expected[('GET', '/emotion/reflection/quota')]
+    for path in LEGACY_DRAFT_WRITES:
+        del expected[('POST', path)]
     expected[('GET', '/emotion/piece/source-ref/{saved_input_id}')] = 1
     expected[('PATCH', VISUAL_ROUTE)] = 1
     expected[('DELETE', VISUAL_ROUTE)] = 1
@@ -167,6 +173,59 @@ def test_candidate_reuses_factory_without_changing_default_routes_or_registry(sh
     assert app.router.on_shutdown == shared.app.router.on_shutdown
     assert [m.cls for m in app.user_middleware] == [m.cls for m in shared.app.user_middleware]
     assert not any(runtime.piece_feature_flags_for_app(shared.app).values())
+
+
+@pytest.mark.parametrize('configuration', ['off', 'preview', 'owner_only'])
+def test_candidate_retires_legacy_draft_writes_without_delegation(shared_env, monkeypatch, configuration):
+    import api_emotion_piece as legacy
+    import api_piece_compat as compat
+    def forbidden(*args, **kwargs):
+        pytest.fail('retired draft writes must not reach legacy auth or compatibility delegation')
+    monkeypatch.setattr(legacy, 'ResolveEmotionPieceAuthenticatedUserId', forbidden)
+    monkeypatch.setattr(compat, 'call_registered_route_json', forbidden)
+    settings = (dict(owner_read_requested=True, owner_read_ready=True)
+                if configuration == 'owner_only' else {})
+    app = (candidate() if configuration == 'preview'
+           else shared.create_application(piece_preview_configuration=settings))
+    keys = {(method, path) for method, path, _ in routes(app)}
+    schema = app.openapi()['paths']
+    for path in LEGACY_DRAFT_WRITES:
+        assert ('POST', path) not in keys
+        assert 'post' not in schema.get(path, {})
+        assert get_contract_entry(method='POST', path=path, piece_preview=True) is None
+    # Feature shutdown cannot restore a legacy endpoint or parse its old body.
+    for stopped in (False, True):
+        if stopped:
+            app.state.piece_v2_runtime = {}
+        for path in LEGACY_DRAFT_WRITES:
+            for headers in ({}, {'Authorization': AUTH}):
+                result = send(app, 'POST', path, headers=headers,
+                              content=b'SYNTHETIC PRIVATE INVALID JSON')
+                # A generic owner-ID GET/DELETE may yield 405 rather than 404;
+                # neither response dispatches a legacy or v2 write handler.
+                assert result.status_code in (404, 405)
+                assert 'x-cocolon-contract-id' not in result.headers
+                assert 'SYNTHETIC PRIVATE' not in result.text
+    assert shared_env['auth'] == shared_env['source'] == shared_env['service'] == shared_env['rpc'] == 0
+    assert shared_env['quota_calls'] == shared_env['submit'] == 0
+
+
+def test_default_factory_keeps_legacy_draft_writes_and_contracts(shared_env):
+    before = [(m, p, r.endpoint) for m, p, r in routes(shared.app)]
+    registry = iter_public_api_contracts()
+    candidate()
+    for default in (shared.app, shared.create_application(),
+                    shared.create_application(piece_preview_configuration=None)):
+        keys = Counter((method, path) for method, path, _ in routes(default))
+        schema = default.openapi()['paths']
+        for path in LEGACY_DRAFT_WRITES:
+            assert keys[('POST', path)] == 1
+            assert 'post' in schema[path]
+            entry = get_contract_entry(method='POST', path=path)
+            assert entry is not None and entry.contract_id.endswith('.v1')
+        assert not any(runtime.piece_feature_flags_for_app(default).values())
+    assert [(m, p, r.endpoint) for m, p, r in routes(shared.app)] == before
+    assert iter_public_api_contracts() is registry
 
 
 def test_same_api_base_serves_submit_bootstrap_source_then_explicit_preview(shared_env):
