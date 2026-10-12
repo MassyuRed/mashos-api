@@ -17208,3 +17208,44 @@ Mashの分析内容修正続行指示と前回作業添付を受け、u224の残
 STRUCTURE_MAP_DELTA_NONE：既存source→共有命題→Analysis graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Codex Workのroot華恋が判断・編集・実行・反映を担当し、補助agentはread-only。新規repo file0、共有Plan/Emlis/API/DTO/DB/SQL/RN製品変更0。Supabase操作・本人行取得・DB書込・配置/有効化/native build/main mergeは0。未配置、本人実機・稼働DB保存再読・正式商品受入れは未確認。
 
 次は「あまり不安ではない」等の部分否定を含む程度表現について、否定の強さ・作用域を原文どおり保持できるかを共有根拠と実出力から確認する。採用拡大は先に決めず、「少し＋否定」の意味を自動確定しない。主体省略/複合節、時制をまたぐ順序、一般意味理解、全体ルートUI/IF/Saved、本人生成→保存再表示も未完了。今回の10入力の欠落修正を分析全体の完成とはしない。
+
+## u226 — 「あまり／あんまり」を伴う本人の不安の部分否定を保持（2026-10-12 JST・未配置）
+
+Mashの分析内容修正続行指示を受け、u225に残した部分否定の欠落を実測して修正した。開始headはAPI PR3 `60ba1b4a1d014a680ec42ab0f128105b8cb97685`／Cocolon PR30 `84ee4f72400292449b4b9bb845b65f98ec559703`。同sessionで既読の前提・作業ルール・恒久incident・全体設計/全file地図を引き継ぎ、CURRENT_RULES、全体設計01/地図02の対象配置、current03・詳細04/06、最新weekly20261010の案内/§5.5と実ファイルを再照合した。System Contextの前回prepare失敗は原典直接読解で補った状態を継続し、fresh Context成功とはしない。12/18公開目標と実機確認順序を保持し、この内容修正を本人生成→保存再表示の追加前提にはしない。
+
+### 原因と最小修正
+
+原文には明示SELFがあり、共有Planには感情・否定・日語と整合する時点の根拠があるが、Analysis compilerの否定修飾語には「あまり／あんまり」がなく、独立した不安の部分否定が欠落していた。既存compiler/realizerに2語の部分否定modifierを追加し、現在否定6形・過去否定6形と既存日語範囲の完全節だけを採用する。本人は原文から証明し、共有current_user既定値に依存しない。感情/否定operator・source field/span・時点の一致と原文の座標を維持する。
+
+「あまり／あんまり」はmeaning keyのみ同義化し、表示・命題・source_partsは原綴りを保持する。全く/全然/無修飾の否定、肯定の「少し不安だった」とは別の意味として集約・期間比較する。文法上のnegativeだけで、不安が皆無とも、必ず少し残るとも断定しない。安心・改善や数値強度へ置き換えない。既存の「否定＝不在」「否定の強調」と読める内部コメントも、修飾語と文法的否定の作用域を一緒に保持する説明へ整えた。
+
+「あまり不安だ」「あまりにも」「あまりは」等の助詞や複合修飾、修飾の重複、二重否定、少し/とても/かなり/やや/ちょっと＋否定、他者/省略主語、報告/夢/質問/否認/推量/複合節、昨日の現在形は今回の採用範囲へ広げない。共有Plan/API/DTO/DB/RN製品変更はない。
+
+### 実出力・表示・保存
+
+合成20入力の前後40結果のうち生成された18全文をrootが読解した。無日/今日の現在形、昨日の過去形、独立した後続行動、未知区間/別fieldの10入力で欠落を解消。作用域未確定/肯定/二重否定/報告/別field報告/否認/昨日の現在形/既存無修飾否定/既存の全く/あまりにも、計10対照は状態・本文・図の内容が不変。artifact IDは生成ごとに変わるため比較から除外した。
+
+実RN `buildWatashiMapV2ViewModel` に18投影を通し、全文、projection identity、accessibility順、node/edge/未確定/注記/競合件数が一致した。実機描画の確認ではない。合成入力「私はあまり不安ではない。」の実生成全文：
+
+```text
+結果・余韻：あまり不安ではない（この記述時点の気持ち）（1件の記録）
+未確定（あまり不安ではない（この記述時点の気持ち））：確定していない項目：場面、役割、考え・注意、行動・非行動。
+```
+
+「私はあまり不安ではなかった。それから、私は記録を残した。」は1node/0edgeから2node/1edgeになり、書かれた順序だけを表示する。現在→過去、未知文、別field/recordをまたぐ線は補わない。期間比較の2全文も読み、あまり/あんまり・常体/敬体差は差なし、部分否定/全くの差は記録上の違いとして表示し、改善・悪化・原因ではないことを確認した。同じsourceの同義集約は両入力順で原綴りと2件の証拠を保持する。
+
+実engine/service＋合成RPCで2修飾語×無日の現在/今日の現在/昨日の過去の6入力を保存し、再生成を禁止して同じ本文・図・IDを再読した。稼働DBや本人の記録による確認ではない。訂正/撤回/補足、強い否定や少しの肯定との区別、比較、証拠欠落・修飾語の削除/全面否定への改変拒否を既存testへ追加した。
+
+### 検証と反映
+
+追加した訂正検査の初回は **1 failed、9 passed、366 subtests passed（5.17秒）**。訂正後のnode先頭を感情と仮定したtest側の誤りだった。実際の出力は既存行動に続いて訂正済みの感情を保持していたため、述語から感情nodeを特定する検査へ修正。旧u225の同様の検査も、行動nodeの空modifierを見て通らないよう同じ特定方法に補強した。公開projectionの競合badge参照名も既存契約に一致させた。これらのための製品source追加変更はない。
+
+最終ローカル対象（u225/u226）は **10 tests／378 subtests PASS（4.07秒、497 deselected）**。Python3.12.14・pytest8.4.1・pytest-subtests0.14.2・FastAPI0.142.2・Pydantic2.13.5・httpx0.28.1の既存隔離環境を使用し、製品依存は変更していない。同環境read-only分担reviewとroot確認でblockerなし。別model Pro認定・正式商品受入れではない。
+
+固定sourceの[GitHub Actions run 38202175001](https://github.com/MassyuRed/mashos-api/actions/runs/38202175001)／job `114657745846` は全工程success。Python3.12.15で既存5suite（Analysis vertical/nominal、observed storage、saved period、共有Emlis limited-change）は **1565 tests／7338 subtests PASS（208.33秒）**、共有owner identityは **1 PASS／193 deselected（18.10秒）**。最終fail/skip/xfail 0。合成Analysis 7入力の生成stepも成功し、rootが7全文を読解して既存の否定・先行準備・感情・未知区間の表示を確認した。全suiteの最終確認はこの固定source CIで行い、同じ全suiteをローカルで重ねて実行していない。対象・全suite・subtests・CIを合算して成功件数を増やさない。
+
+固定source `26d55f276be1b87012613022b8e6ca21f502e463`／tree `ae5e04e8f1e78e66939a739efa565c542a03954e`。compiler/realizer各1・既存test2の計4pathをGitHub connectorからAPI PR3へexpected_sha付きnon-forceで反映し、親head・変更path・各remote blobとlocal bytesの一致を確認した。共有ownerを変更していないためidentity snapshot更新なし。
+
+STRUCTURE_MAP_DELTA_NONE：既存source→共有命題→Analysis graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。root華恋が判断・編集・実行・反映を担当し、補助agentはread-only。新規repo file0、共有Plan/Emlis/API/DTO/DB/SQL/RN製品変更0。Supabase操作・本人行取得・DB書込・配置/有効化/native build/main mergeは0。未配置、本人実機・稼働DB保存再読・正式商品受入れは未確認。
+
+次は助詞が介在する否定や別の程度表現について、現在の実出力と原文/共有根拠を照合して欠落と作用域を確認する。「少し＋否定」や複合修飾の意味を機械的に確定しない。主体省略/複合節、時制をまたぐ順序、一般意味理解、全体ルートUI/IF/Saved、本人生成→保存再表示も未完了で、今回の欠落修正を分析全体の完成とはしない。
