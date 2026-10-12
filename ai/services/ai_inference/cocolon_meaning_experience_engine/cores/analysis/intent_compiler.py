@@ -1369,8 +1369,8 @@ _PAST_SPEECH = (r'(?:言った|言いました|話した|話しました|語っ�
 _PRESENT_SPEECH = (r'(?:言う|言います|話す|話します|語る|語ります|'
                    r'述べる|述べます|伝える|伝えます|答える|答えます|説明する|説明します)')
 # Negation of these same speech verbs still owns the preceding quotation.
-# This is a rejection prefix, never evidence that a report has closed.
-_NEGATED_SPEECH = (r'(?:(?:言わ|話さ|語ら|述べ|伝え|答え|説明し)(?:ない|なかった(?:です)?)|'
+# These forms withhold attribution, never prove that a report has closed.
+_NEGATED_SPEECH = (r'(?:(?:言わ|話さ|語ら|述べ|伝え|答え|説明し)(?:ない|なかった)(?:です)?|'
                    r'(?:言い|話し|語り|述べ|伝え|答え|説明し)ません(?:でした)?)')
 _QUALIFIED_SPEECH_SPEAKER = (r'(?:[一-鿿々]+(?:しい|しかった|しくない|しくなかった|い)'
                            r'|知らない|知らなかった|知っている|知っていた)'
@@ -1379,14 +1379,15 @@ _QUALIFIED_SPEECH_SPEAKER = (r'(?:[一-鿿々]+(?:しい|しかった|しくな�
 _SPEECH_SPEAKER = (r'(?:私|僕|ぼく|俺|おれ|わたし|自分|' + _NOMINAL
                    + r'(?:の' + _NOMINAL + r')*)')
 _SPEECH_TOPIC = r'(?:は|が|も)(?:[、，][ \u3000]*)?'
-_FORWARD_PRESENT_SPEECH = re.compile(r'(?:' + _QUALIFIED_SPEECH_SPEAKER
-    + r'|' + _SPEECH_SPEAKER + r')' + _SPEECH_TOPIC + _PRESENT_SPEECH)
+_FORWARD_SPEECH = re.compile(r'(?:' + _QUALIFIED_SPEECH_SPEAKER
+    + r'|' + _SPEECH_SPEAKER + r')' + _SPEECH_TOPIC
+    + r'(?:' + _PRESENT_SPEECH + r'|' + _NEGATED_SPEECH + r')')
 
 
-def _present_speech_opens_report(text):
+def _forward_speech_opens_report(text):
     # Require a whole known explicit speaker and finite speech clause.
     # A postposed と... host or an object-bearing act is not a new report.
-    return any(_FORWARD_PRESENT_SPEECH.fullmatch(clause.strip())
+    return any(_FORWARD_SPEECH.fullmatch(clause.strip())
                for clause in re.split(r'[。．.\r\n;；]', text))
 
 
@@ -1471,11 +1472,11 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     # First-person grammar alone cannot close that attribution scope.
     record_context = '\n'.join(str(source.normalized.get(field, ''))
                                for field in ('memo', 'memo_action'))
-    # A first-person claim after an open present report has no owner proof.
+    # A first-person claim after present or negated speech has no owner proof.
     # Keep earlier same-field content and other records independent. The
     # other field has no established chronology, so cannot close the report.
     other_field = 'memo_action' if span.source_field == 'memo' else 'memo'
-    if any(_present_speech_opens_report(text) for text in (
+    if any(_forward_speech_opens_report(text) for text in (
             context[:span.start_index], str(source.normalized.get(other_field, '')))):
         return None
     if re.search(r'によると|いわく|曰く|の(?:話|感想|気持ち|説明|報告|発言)(?:です|だ|[。．.])',

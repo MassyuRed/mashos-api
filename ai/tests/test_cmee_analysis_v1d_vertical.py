@@ -67,10 +67,49 @@ class AnalysisVerticalTests(unittest.TestCase):
                     self.assertEqual(self.generate(request(record(memo=memo, action=action))).status,
                                      EngineStatus.UNAVAILABLE)
 
-    def test_forward_present_speech_preserves_prior_evidence_and_updates(self):
+    def test_forward_negative_speech_keeps_attribution_across_fields(self):
+        for speech in ('言わない', '言わないです', '言いません',
+                       '言わなかった', '言わなかったです', '言いませんでした',
+                       '話さない', '話さないです', '話しません',
+                       '話さなかった', '話さなかったです', '話しませんでした',
+                       '語らない', '語らないです', '語りません',
+                       '語らなかった', '語らなかったです', '語りませんでした',
+                       '述べない', '述べないです', '述べません',
+                       '述べなかった', '述べなかったです', '述べませんでした',
+                       '伝えない', '伝えないです', '伝えません',
+                       '伝えなかった', '伝えなかったです', '伝えませんでした',
+                       '答えない', '答えないです', '答えません',
+                       '答えなかった', '答えなかったです', '答えませんでした',
+                       '説明しない', '説明しないです', '説明しません',
+                       '説明しなかった', '説明しなかったです', '説明しませんでした'):
+            for claimed in ('私は仕事を続けたい', '私は職場にいた', '私は記録を担当した',
+                            '私は資料を調べた', '私は嬉しかった'):
+                with self.subTest(speech=speech, claimed=claimed):
+                    self.assertEqual(self.generate(request(record(
+                        memo='友人が' + speech + '。' + claimed + '。'))).status,
+                        EngineStatus.UNAVAILABLE)
+        for host, claimed in (
+            ('友人が言わないです。', '私は仕事を続けたい。'),
+            ('親しい友人は、話さなかった。', '私は職場にいた。'),
+            ('知らない友人が語りません。', '私は記録を担当した。'),
+            ('知っている友人の母も，述べませんでした。', '私は資料を調べた。'),
+            ('友人が伝えなかったです。', '私は嬉しかった。'),
+            ('優しくない同僚は答えない。', '私は職場にいた。'),
+            ('親しかった友人が説明しませんでした。', '私は仕事を続けたい。'),
+        ):
+            for memo, action in ((host, claimed), (claimed, host)):
+                with self.subTest(host=host, claimed=claimed, memo=memo, action=action):
+                    self.assertEqual(self.generate(request(record(memo=memo, action=action))).status,
+                                     EngineStatus.UNAVAILABLE)
+
+    def test_forward_speech_preserves_prior_evidence_and_updates(self):
         for host in ('友人が言う。', '親しい友人は、話します。', '知らない友人が語る。',
                      '知っている友人の母も，述べます。', '友人が伝える。',
-                     '優しくない同僚は答えます。', '親しかった友人が説明する。'):
+                     '優しくない同僚は答えます。', '親しかった友人が説明する。',
+                     '友人が言わないです。', '親しい友人は、話さなかった。',
+                     '知らない友人が語りません。', '知っている友人の母も，述べませんでした。',
+                     '友人が伝えなかったです。', '優しくない同僚は答えない。',
+                     '親しかった友人が説明しませんでした。'):
             reported = host + '私は職場にいた。私は資料を調べた。'
             memo = '私は記録を残した。' + reported
             req = request(record(memo=memo))
@@ -109,9 +148,11 @@ class AnalysisVerticalTests(unittest.TestCase):
                     ['period_comparison']['safe_change_kinds'], ['UNKNOWN_SCOPE_CHANGED'])
                 prior = self.generate(request(record(memo='私は職場にいた。' + host))).artifact
                 self.assertEqual([n.visible_label for n in prior.graph.nodes], ['私は職場にいた'])
-        independent = self.generate(request(record(
-            memo='私は自分の考えを話す。私は職場にいた。'))).artifact
-        self.assertEqual([n.visible_label for n in independent.graph.nodes], ['私は職場にいた'])
+        for speech in ('話す', '話さない'):
+            with self.subTest(independent_speech=speech):
+                independent = self.generate(request(record(
+                    memo='私は自分の考えを' + speech + '。私は職場にいた。'))).artifact
+                self.assertEqual([n.visible_label for n in independent.graph.nodes], ['私は職場にいた'])
 
     def test_present_speech_keeps_quoted_content_out_of_self_map(self):
         for speech in ('言う', '言います', '話す', '話します', '語る', '語ります',
