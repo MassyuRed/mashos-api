@@ -17882,3 +17882,42 @@ Mashの明示指示「分析構造の内容修正関係を進めて」によりu
 製品source `3414c840c1990cce44cbcdbf4670b0885f5e173b`、tree `5facab168e3064aedca68e589e385d2ec39f2cb5`。既存compiler1＋test2をPR3へnon-force反映し、remote commitの3blob SHA・変更pathをlocal bytesと照合済み。current03・詳細04 §3.72・06/API handoff u242へ同期。STRUCTURE_MAP_DELTA_NONE：source→共有命題→Analysis graph→文章/図→保存の責務・file配置は不変。TECHNICAL_CREDIT、正式商品受入れ未認定。共有Plan/Emlis・realizer/API/DTO/DB/SQL/RN製品・依存/workflow・新規repo file変更0。今回のDB操作・本人行取得・配置・有効化・native build・main mergeは0。未配置。
 
 残件は一般連体節/未知speaker、修飾の副詞・主体/重ね修飾、しい系列外の活用、現在否定発言/否定思考、一般の前方報告/引用/推量/条件作用域、読点host後の独立内容、未知述語/省略主体/複合節、全体ルートUI/IF/Saved、最新修正版の本人実機・稼働DB保存再読・正式商品受入れ。次の内容作業は実出力で未対応speaker/hostと独立した本人内容の両側を確認して選ぶ。4形の補修を一般引用理解の完成とは扱わず、本人実機確認の戻る位置を維持する。
+
+
+## u243 — 読点付き発言の後の独立した本人行動を保持（2026-10-12 JST・未配置）
+
+Mashの明示指示「分析構造の内容修正関係を進めて」によりu242から継続。開始headはCocolon PR30 `00df6a587e068c4ca6ddfaf00bcef322e0885fb0`、API PR3 `6a1f3ee8c2bb33fad651dab56a49aa7ab21ed91f`。同sessionで確認した前提/ルール、全体設計・全file地図、技術上のtransport/runtime/durable owner、最新weekly20261010 §5.4/§5.5を継承。最新headの開始checklist、u242 handoff・詳細04 §3.72、恒久incident全文を再読し、対象source/testと照合した。新しい同head worktreeで作業し、既存作業treeを保持。System Context prepareは祖先関係を証明できず終了2、原本直接読取へ戻り、生成contextの鮮度成立は主張しない。
+
+今回の明示配分をweekly §5.4として記録。最新修正版の本人入力→生成→保存再表示の未完了とweekly §5.5への戻る位置を保持し、この内容修正を実機確認の追加前提にしない。12/18公開目標は維持。Codex Workのroot華恋が実装・検証・GitHub反映、同環境のread-only agentが境界・最終差分reviewを担当。別model Pro/Ultraの独立審査成立は主張しない。LEVEL_2相当、OBSERVED_BLOCKER_MINIMAL_FIX。原因修正から実生成・保存再読・回帰までを一単位とし、新契約/依存/実環境操作へ拡大しない。追加サービス費用・Mash操作0。
+
+### 原因と修正
+
+「私は職場にいた。と親しい友人が、言った。私は記録を残した。」では、引用の本人への誤帰属を保留できても、読点付きhostが閉じたと判定できず、後続の本人行動までUNAVAILABLEになっていた。既存の後置発言閉鎖へ単一の「、／，」と通常/全角空白を追加し、既知speaker＋肯定過去発言「言った／言いました」の全文一致を必須にした。
+
+既存 `_known_postposed_host` は「と信」「などと」など広い拒否prefixも成立させるため、真偽値だけでは閉鎖の根拠にならない。専用の `closed_speech=True` では既知の単一修飾/名詞・属格・助詞と肯定過去発言を `fullmatch` し、広い拒否prefixへfall throughしない。通常の拒否用途と読点なしの既存閉鎖は維持。語中「って」の既知2形区別、残余入れ子marker拒否、完全な末尾一致を保持する。原source・UTF-8/scalar座標・証拠を変更しない。
+
+ASCII comma・連続読点・改行、未知の修飾/連体節、未完発言、入れ子、先行open報告、別fieldへ一般化しない。「言ったけれど」で文が続いている読点hostについて、従来host認識をすり抜けて後続行動を確定していた1例も、閉鎖不能として保留に戻した。
+
+### 実生成・保存・画面用処理
+
+合成36入力の前後72結果を比較。21入力で独立した本人行動を回復し、未完host1入力の誤確定を保留へ戻した。14入力は状態・本文・safe projectionがランダムartifact参照以外不変。この14には「よく知らない人」「親しい新しい友人」「分かった友人」と別fieldの未対応引用4例が含まれ、全対照の商品適合を意味しない。rootが修正前13生成全文と修正後32生成全文を読み、前後45投影を実RN `buildWatashiMapV2ViewModel` に通して本文・identity一致を確認した。
+
+合成入力「私は職場にいた。と親しい友人が、言った。私は記録を残した。」の修正後全文：
+
+```text
+行動・非行動：記録を残す（実行済み）（1件の記録）
+未確定（記録を残す（実行済み））：確定していない項目：場面、役割、考え・注意、結果・余韻。
+未確定（記録を残す（実行済み））：まだ読み取れていない内容は、この記録からは確定していません。
+```
+
+希望/所在/担当/行動/感情の引用5種×読点host4形と、その前後の独立行動を検査。引用の未知範囲を跨ぐ順序線や不一致を作らず、SOURCE_SCOPEを残す。原文UTF-8/scalar出典、別recordの引用を証拠加算しないこと、通常補足の全文coverage、訂正/撤回、UNKNOWN_SCOPE_CHANGEDだけの期間差を維持。実engine/service＋合成RPCで、新規3入力は非commit、独立行動を残す4入力は保存→再生成禁止の再読で本文/図/IDを保持。native描画・稼働DB・本人入力の実績とはしない。
+
+### 検査・反映・未完了
+
+修正前の対象検査で35失敗（subtestを含む）、3成功を確認。修正後は10 tests／554 subtests PASS（11.99秒、552 deselected）。Python 3.12.14、既存workflowと同pinの隔離環境を使用。既存のqualified読点保留1例とfamiliarity読点保留4例は単一読点を成立側へ移し、連続読点の保留例へ置換。未証明の境界を閉じない期待を維持した。read-only最終差分reviewにblockingなし、`git diff --check`成功。
+
+GitHub Actions [run 38237457832](https://github.com/MassyuRed/mashos-api/actions/runs/38237457832)、job `114771545635` は全step成功。検査source SHAは上記製品sourceと一致。Python 3.12.15、既存pin依存で5suite **1620 tests／10341 subtests PASS（226.46秒）**、共有owner identity **1 PASS／193 deselected（19.38秒）**。既存7合成入力の生成本文・graphをrootがログで再読し、否定行動・感情・未知範囲の回帰を確認。workflow/依存変更なし。今回の36入力・45投影と合成保存再読の具体結果は前項のlocal検証であり、本人実機の確認とはしない。
+
+製品source `4f2db73edb4c22a1a0f8d19a6e87ffce072b955a`、tree `308cddf9d612c51fcc8cf281c80dc2b8ba175da1`。既存compiler1＋test2をPR3へnon-force反映し、remote commitの3blob SHA・変更pathをlocal bytesと照合済み。current03・詳細04 §3.73・06/API handoff u243へ同期。STRUCTURE_MAP_DELTA_NONE：source→共有命題→Analysis graph→文章/図→保存の責務・file配置は不変。TECHNICAL_CREDIT、正式商品受入れ未認定。共有Plan/Emlis・realizer/API/DTO/DB/SQL/RN製品・依存/workflow・新規repo file変更0。今回のDB操作・本人行取得・配置・有効化・native build・main mergeは0。未配置。
+
+残件は一般連体節/未知speaker、修飾の副詞・主体/重ね修飾、しい系列外の活用、現在否定発言/否定思考、一般の前方報告/引用/推量/条件作用域、未知hostや別fieldの境界、未知述語/省略主体/複合節、全体ルートUI/IF/Saved、最新修正版の本人実機・稼働DB保存再読・正式商品受入れ。次の内容作業は未対応speaker/hostと独立した本人内容の両側を実出力で確認して選ぶ。今回の既知hostの読点対応を一般引用理解の完成とは扱わず、本人実機確認の戻る位置を維持する。
