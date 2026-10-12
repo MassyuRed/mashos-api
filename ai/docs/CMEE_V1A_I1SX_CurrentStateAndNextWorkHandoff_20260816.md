@@ -17722,3 +17722,44 @@ Mashの「分析構造の内容修正関係を進めて」により継続。開�
 STRUCTURE_MAP_DELTA_NONE。既存のsource→共有命題→Analysis graph→文章/図→保存という責務・file配置は不変。TECHNICAL_CREDIT、商品受入れ未認定。共有Plan/Emlis・realizer/API/DTO/DB/SQL/RN製品・依存/workflow・新規repo fileの変更0。Supabase操作・本人行取得・DB書込・配置・有効化・native build・main mergeは0。
 
 残件：「頼もしい」の条件regex誤一致、未知speaker（例：親しい友人）を伴う後置引用、一般の前方報告/推量/条件作用域、未知述語・省略主体/複合節、全体ルートUI/IF/Saved、最新修正版の本人実機・稼働DB保存再読・正式商品受入れ。今回のknown host修正を一般の引用理解完成とはしない。次の内容作業は未対応hostを実出力で確認し、独立した「とても／とある／ところで」文を消さない範囲を選ぶ。本人実機確認の追加前提にはしない。未配置。
+
+
+## u239 — 修飾語付き話者の発言を本人の事実にしない（2026-10-12 JST・未配置）
+
+Mashの「分析構造の内容修正関係を進めて」によりu238から継続。開始headはCocolon PR30 `20d324106d0da2cc65281085cde9bfe51a46d02b`、API PR3 `8f48402cd5e1985ea144b97ec5f83f1e6c389931`。同セッションで確認した前提01/02・全体file配置・current共通入口/03・詳細04・運用ruleを継承し、current03/引継ぎu238、最新weekly20261010 §5.4/§5.5、rule入口、恒久incident全文、対象実ファイルを再確認。fresh PR headと同commitの隔離checkoutを使用。System Context prepareは今回もshallow祖先関係を証明できず失敗し、原本直接読取へ戻った。generated contextの鮮度成立は主張しない。
+
+今回の明示指示をweekly §5.4の内容修正配分として扱い、本人入力→生成→保存再表示の未完了と戻る位置を維持する。Codex Workでroot華恋が実装・検証・GitHub反映、補助agentはread-only調査・差分reviewを担当。別model Pro/Ultraの独立審査成立は主張しない。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX。引用の欠落により誤った本人nodeを出す原因を既存compiler内で直し、実出力・保存再読・回帰確認までを今回単位とする。新しい契約/依存/実環境変更へは広げない。
+
+### 実出力で確認した原因と修正
+
+「私は職場にいた。と親しい友人が言った。」等で、話者名詞の前に付く「親しい」を既存host文法が読めず、引用内の希望/所在/担当/過去行動/肯定感情を本人の事実へ確定していた。希望/所在/担当では、このhost後の本人行動まで欠落した。
+
+既存 `_known_postposed_host` に、`と`＋単一の漢字語幹＋`しい／い`＋無修飾の漢字/カタカナ名詞＋任意の既存属格名詞＋`は／が／も`＋過去発言 `言った／言いました` の形だけを追加する。「親しい友人」「優しい同僚」「厳しい先輩」「若い同僚」「忙しい友人の母」等を後置引用の根拠にする。speakerの人物同定や属性の採用には使わず、一般の `_NOMINAL`・共有命題・既存host式は変更しない。
+
+引用の保留と既存の完全host閉鎖で同じhelperを使用する。引用の前/後や別recordの独立内容と原文証拠を保持し、未知区間を跨ぐ順序線・証拠件数を追加しない。`とても／とある／ところで／とりあえず／と同時に／と同じ` から始まる独立文、重ねた修飾、未完/入れ子host、先行open報告、別fieldを新しく引用の完結として扱わない。広いopaque speakerでは別文を巻き込むため、今回採用していない。
+
+### 前後比較・保存・表示
+
+合成28入力を実engineで前後生成し、16入力の誤帰属を解消。10入力は確かな本人内容がなくUNAVAILABLE（未完host/先行open報告2例を含む）、3入力は先行する本人行動のみを保持、3入力は誤った希望/所在/担当を外して欠けていた後続行動を保持する。残る12入力の状態・本文・safe projectionはランダムartifact参照以外不変。この12には未対応の過去修飾/知らない友人/重ねた修飾の誤帰属3例を含み、全例の商品適合を意味しない。
+
+rootが修正後18生成全文と変更対象の修正前本文を読んだ。前後46投影を実RN `buildWatashiMapV2ViewModel` に通し、全文・identity・読み順・edge/unknown/annotation/conflict件数の一致を確認した。合成入力「私は職場にいた。と親しい友人が言った。私は記録を残した。」の修正後全文：
+
+```text
+行動・非行動：記録を残す（実行済み）（1件の記録）
+未確定（記録を残す（実行済み））：確定していない項目：場面、役割、考え・注意、結果・余韻。
+未確定（記録を残す（実行済み））：まだ読み取れていない内容は、この記録からは確定していません。
+```
+
+UTF-8/scalar原文証拠、別record証拠加算防止、補足の全文coverage、訂正/撤回、UNKNOWN_SCOPE_CHANGEDだけの期間差を確認。実engine/service＋合成RPCで、新規5入力は入力不足として非commit、独立行動3入力は保存後の再生成なし読取で同じ本文/図/IDへ戻る。native描画・稼働DB・本人入力の実績にはしない。
+
+### 検査・反映・未完了
+
+最終対象 **8 tests／198 subtests PASS（5.39秒、549 deselected）**。Python3.12.14と既存workflowと同pinの隔離環境（pytest8.4.1、pytest-subtests0.14.2、FastAPI0.142.2、Pydantic2.13.5、httpx0.28.1）を再利用した。旧testの「親しい友人」保留1例は今回のpositiveへ移し、未対応の「知らない友人」と二修飾negativeを追加した。旧欠陥を通すための期待緩和はない。read-only最終reviewと独立境界10入力で具体的blockerなし。`git diff --check`成功。
+
+製品source固定の[GitHub Actions run38227794377](https://github.com/MassyuRed/mashos-api/actions/runs/38227794377)／job `114739483179` は全step success。Python3.12.15の既存5suite（Analysis vertical/nominal、observed storage、saved period、共有Emlis limited-change）は **1615 tests／9936 subtests PASS（393.21秒）**、共有owner identityは **1 PASS（193 deselected、25.45秒）**。fail/skip/xfail 0。rootがCIの既存合成7生成全文も読み、肯否・先行準備・感情・明示順序・未知区間の表示を確認した。全suiteのローカル重複実行はしていない。
+
+製品source `8cbf5d8635dd2ee09bd0b2cc9da4fac7871d627d`、tree `d267d783913d347c081fdad36a1d7555cfb9b7d7`。compiler1＋既存test2をPR3へexpected_sha付きnon-force反映し、GitHub treeの3blobをlocal bytesと照合した。current03・詳細04 §3.69・06/API handoff u239へ同期。STRUCTURE_MAP_DELTA_NONE：source→共有命題→Analysis graph→文章/図→保存の責務・file配置は不変。TECHNICAL_CREDIT、正式商品受入れ未認定。
+
+残件は「頼もしい」の条件語誤一致、かな開始のspeaker（幼なじみ等）、未知の連体節（知らない人等）・過去/重ねた修飾、未知speakerの思考一般、speaker直後の読点があるhost後の独立行動回復、一般の前方報告/推量/条件作用域、未知述語・省略主体/複合節、全体ルートUI/IF/Saved、最新修正版の本人実機・稼働DB保存再読・正式商品受入れ。次の内容作業も実出力から選び、今回の限定文法を一般引用理解完成へ換算しない。本人実機確認の追加前提にはしない。
+
+共有Plan/Emlis・realizer/API/DTO/DB/SQL/RN製品・依存/workflow・新規repo fileの変更0。Supabase操作・本人行取得・DB書込・配置・有効化・native build・main mergeは0。追加サービス費用・Mash操作0。未配置。
