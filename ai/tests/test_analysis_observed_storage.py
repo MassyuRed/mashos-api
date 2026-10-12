@@ -85,6 +85,77 @@ async def storage_sql_fixture():
 
 
 class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
+    async def test_closed_feeling_possibility_survives_save_read_as_unknown_scope(self):
+        for memo, labels, edge_count in (
+            ('私は不安だ。私は不安ではないかもしれない。', ['不安だ（この記述時点の気持ち）'], 0),
+            ('私は不安ではないかもしれない。私は不安だ。', ['不安だ（この記述時点の気持ち）'], 0),
+            ('私は安心した。私は不安かもしれない。', ['安心した（記録された気持ち）'], 0),
+            ('私は資料を調べた。その後、私は記録を残した。私は不安だったかもしれない。',
+             ['資料を調べる（実行済み）', 'その後：記録を残す（実行済み）'], 1),
+            ('私は不安だ。私は不安ではないかもしれない。それから、私は記録を残した。',
+             ['不安だ（この記述時点の気持ち）', 'それから：記録を残す（実行済み）'], 0),
+        ):
+            with self.subTest(memo=memo):
+                fx, writes = fixture(memo), []
+                row = fx['row']
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': fx['original'], 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                        row['content_json']['watashiMap'] = payload['p_projection']
+                        return row['id']
+                    self.assertEqual(name, 'analysis_observed_read')
+                    return result([row], matched=True)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('regenerated')):
+                        reread = await service.read_saved(OWNER, report_id=saved['id'], report_mode='standard')
+                self.assertEqual(len(writes), 1)
+                self.assertEqual(saved, reread['items'][0])
+                self.assertEqual(saved['id'], str(UUID(writes[0]['p_artifact_id'][9:])))
+                self.assertEqual(saved['content_text'], writes[0]['p_text'])
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual(projection, writes[0]['p_projection'])
+                self.assertEqual([n['visible_label'] for n in projection['nodes']], labels)
+                self.assertEqual(len(projection['edges']), edge_count)
+                self.assertFalse(projection['conflict_badges'])
+                self.assertIn('まだ読み取れていない内容', saved['content_text'])
+                self.assertTrue(any(g['missing_scope'] == 'SOURCE_SCOPE'
+                    and g['reason_code'] == 'UNSUPPORTED_OR_UNCERTAIN_SOURCE_SCOPE'
+                    for g in writes[0]['p_private_evidence']['graph']['unknown_gaps']))
+                self.assertNotIn('かもしれない', saved['content_text'])
+                self.assertNotIn('私は', json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False))
+
+    async def test_closed_feeling_possibility_in_incomplete_updates_never_commits(self):
+        from test_analysis_saved_period import with_answer, NOW
+        for answer, reason in (
+            ('私は不安だ。私は不安ではないかもしれない。', 'analysis_supplement_interpretation_pending'),
+            ('「私は記録を残した」ではなく「私は不安だ。私は不安ではないかもしれない」です。',
+             'analysis_correction_replacement_unsupported'),
+        ):
+            with self.subTest(answer=answer):
+                original = dict(self.fx['original'], memo='私は記録を残した。',
+                    emotion_details=[{'type': '平穏', 'strength': 'medium'}])
+                member = with_answer({'original': original}, answer)
+                snapshot = {'guard': GUARD, 'tier': 'plus', 'now': NOW, 'members': [member]}
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', AsyncMock(return_value=snapshot)) as rpc, \
+                        self.assertLogs(realizer.logger, level='WARNING') as logs:
+                    with self.assertRaises(HTTPException) as caught:
+                        await service.generate_saved(OWNER, start=START, end=END,
+                            report_mode='standard', report_type='latest')
+                self.assertEqual(caught.exception.status_code, 422)
+                self.assertEqual(caught.exception.detail, 'analysis_observed_map_unavailable')
+                self.assertEqual([call.args[0] for call in rpc.await_args_list],
+                                 ['analysis_observed_source_snapshot'])
+                self.assertEqual([r.getMessage() for r in logs.records], [
+                    'analysis_observed_generation_unavailable stage=current reason=' + reason])
+
     async def test_partial_anxiety_supplements_survive_save_without_regeneration(self):
         from test_analysis_saved_period import with_answer, NOW
         for no, yes in (('不安はあまりない', '不安は少しある'),

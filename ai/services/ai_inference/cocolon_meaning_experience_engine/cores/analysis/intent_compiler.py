@@ -1309,6 +1309,32 @@ def _analysis_prefix_opens_report(prefix):
     return False
 
 
+def _closed_feeling_possibility(span, context):
+    # Recognize only the scope of a whole SELF feeling possibility. This is
+    # never a factual proposition or a substitute for a shared feeling witness.
+    match = re.fullmatch(r'(.+?)(?:かもしれない|かも知れない)', span.raw_text)
+    if match is None:
+        return False
+    content = match[1]
+    # In 不安かもしれない the possibility operator occupies the copula slot.
+    # The temporary だ is used only to recognize the existing feeling grammar;
+    # no generated claim, evidence coordinate or source text includes it.
+    feeling = _finite_feeling_proposition(content + 'だ' if content.endswith('不安') else content)
+    if (feeling is None or feeling.actor != 'SELF' or feeling.sequence_marker
+            or feeling.dependent_form):
+        return False
+    before = context[:span.start_index].rstrip(' \t\u3000\r\n')
+    after = context[span.end_index:].lstrip(' \t\u3000\r\n')
+    # Ledger commas, semicolons, line breaks and fixed-length fragments alone
+    # do not close this uncertainty's scope. Require sentence punctuation.
+    if ((before and before[-1] not in '。.')
+            or (after and after[0] not in '。.')):
+        return False
+    following = after.lstrip(' \t\u3000。.\r\n')
+    return not re.match(r'(?:と|って|わけ|訳|のでは|のか|のは|のも|なんて|などと|かも|かどうか|はず)',
+                        following)
+
+
 def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     # Multi-span nuclei can contain unbounded relations. Keep them unknown in
     # this first consumer rather than stitching a new proposition together.
@@ -1344,14 +1370,18 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     context = source.normalized.get(span.source_field, '')
     if re.search(r'[「」『』“”"?？]|(?:と言われ|と聞い|そうだ|なら|(?<!か)もし)', context):
         return None
-    # An uncertain complement is allowed only inside a complete, shared-owner
-    # cognitive witness. Unread speculative scopes still block the field.
+    # A complete cognitive witness can represent its uncertain complement.
+    # A separate, closed feeling possibility stays unknown without erasing
+    # other proved clauses. Open or unparsed speculative scopes block the field.
     if re.search(r'かもしれ|かも知れ', context):
         proved = {n.source_span_ids[0] for n in plan.nuclei
                   if _source_current_cognition(n)} if plan is not None else set()
-        if any(s.span_id not in proved or _cognitive_proposition(s.raw_text) is None
+        if any(not ((s.span_id in proved and _cognitive_proposition(s.raw_text) is not None)
+                    or _closed_feeling_possibility(s, context))
                for s in source.spans if s.source_field == span.source_field
                and re.search(r'かもしれ|かも知れ', s.raw_text)):
+            return None
+        if re.search(r'かもしれ|かも知れ', span.raw_text) and span.span_id not in proved:
             return None
     # An open reported speaker can carry across sentences and source fields.
     # First-person grammar alone cannot close that attribution scope.
