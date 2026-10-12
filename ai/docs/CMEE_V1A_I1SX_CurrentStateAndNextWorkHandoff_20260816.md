@@ -17436,3 +17436,42 @@ GitHub Actions [run38208143378](https://github.com/MassyuRed/mashos-api/actions/
 STRUCTURE_MAP_DELTA_NONE。source→共有命題→Analysis graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Codex Workのroot華恋が編集・判断・実行・反映、補助agentはread-only。新規repo file0、共有Plan/Emlis・API/DTO/DB/SQL/RN製品変更0。Supabase操作、本人行取得、DB書込、配置/有効化/native build/main mergeは0。未配置、最新修正版の本人実機・稼働DB保存再読・正式商品受入れは未確認。
 
 内容上の残件は、否定修飾と存在肯定・部分否定の整合、原入力内の感情矛盾表示、省略主体/複合節と一般意味理解。次の否定表現を扱う場合は「不安はあまりない」等の実際の欠落と通常補足の両立条件から確認し、単純な肯否対立へ流し込まない。全体ルートUI/IF/Saved・最新本人生成→保存再表示も残る。本修正や追加の内容修正を実機確認の新たな前提にはしない。
+
+## u232 — 存在否定の修飾と、部分否定を含む補足の内容を保持（2026-10-12 JST・未配置）
+
+Mashの分析内容修正の明示指示を受け、u231の残件「不安はあまりない」等の欠落と、部分否定を通常補足で肯否対立として落とす問題を修正した。開始headはAPI PR3 `b11a0199058dd26fdf2022f00878b75b9d71a2a1`、Cocolon PR30 `ed77596a5b1763e31f514c145211d68e139bc4a8`。前回添付・前提資料入口/CURRENT_RULES/作業ルール・恒久incident全文、全体設計01/01B・全file地図02/07・現行03/詳細04/06と実ファイル、最新weekly20261010 §3/§5.4/§5.5/§4.7を確認した。今回の指示を§5.4の明示配分として実行し、§5.5の本人実機稼働確認への戻る位置と12/18公開目標は維持する。System Context prepareは浅いcheckoutで必要な祖先関係を証明できず失敗し、入口規定に従って原本を直接読むfallbackを使用した。prepare成功とは扱わない。
+
+### 原因・製品変更
+
+Analysis compilerが存在構文の否定修飾を一律に拒否し、共有根拠のある本人感情まで欠落させていた。既存7語（全く／まったく／全然／あまり／あんまり／少しも／ちっとも）1語の前後置を、完全な存在否定12形に接続した。最長一致、明示SELF、は/が、有限形完全一致、既存の日語条件、同じ節の共有感情/否定/時点witnessを要求する。肯定5語と否定7語の許可を肯否別にし、原綴り・source_partsの原文順/全座標・時制/日語を保持する。既存realizerの完全再解析と語順再現をそのまま使う。
+
+通常補足では、同一actor/predicate/modality/時制・互換argument等の既存条件内に、あまり/あんまりの部分否定と無修飾/少し/やや/ちょっとの肯定を保持する限定例外を加えた。「不安だ」系と存在「ある」系それぞれの同じ構文内で両方向を扱い、両記述・両出典を残す。部分否定だけから少量の存在を推定しない。全否定と肯定、部分否定ととても/かなりは保留し、一方の補足だけを表示して保存しない。原入力内や構文間の一般矛盾理解を完成扱いしない。
+
+前後置と既存同義綴りの集約/期間比較では代表文の語順と全出典を保持する。修飾差・無修飾・は/が・copular/存在・時制/日語は区別する。明示訂正/撤回、同じ補足内の連続記述、感情/否定witness削除、modifier/肯否/座標改変の安全再生拒否を確認。積み重ね/追加助詞/二重否定、他者・引用/報告/推量・省略主体/複合節等は保留。数値強度・安心・改善・因果を作らない。
+
+### 実出力・表示・保存
+
+合成26入力の前後52結果で11入力の欠落/生成停止解消、1入力の対立補足の片側だけを表示する問題の修正、14対照の状態・理由・本文・図内容不変を確認した（artifact identityを除く）。rootが生成20全文を読み、実RN `buildWatashiMapV2ViewModel` の20投影で全文・identity・読み順とnode/edge/未確定等の件数を照合した。本人入力・native描画の実績ではない。
+
+合成入力「私は不安はあまりない。」の実生成全文：
+
+```text
+結果・余韻：不安はあまりない（この記述時点の気持ち）（1件の記録）
+未確定（不安はあまりない（この記述時点の気持ち））：確定していない項目：場面、役割、考え・注意、行動・非行動。
+```
+
+これに通常補足「私は不安は少しある。」がある場合、両方の結果・出典を別々に残し、未知のつながりを示す。順序/原因の線を補わない。「私は不安は全然なかった。それから、私は記録を残した。」は1node/0edgeから2node/1OBSERVED_ORDERへ変わり、明示された順序だけを表示する。
+
+既存保存testを前後置×肯定5語/否定7語×無日の現在/今日の現在/昨日の過去へ拡張し、実engine/service＋合成RPCの72入力（既存肯定30＋新規否定42）で保存後のengine再生成を禁止し、同じ本文・図・IDを再読した。部分否定を含む補足はcopular/存在×両方向の4組も同様に再読した。全否定/強い肯定との対立はcommit前に保留されることを確認。稼働DBの検証ではない。
+
+### 検証・反映
+
+ローカル対象検査は **15 tests／1383 subtests PASS（8.60秒、512 deselected）**。その後に補足保存testを加え、補足保存/対立補足の対象検査 **2 tests／12 subtests PASS（1.81秒、102 deselected）**。Python3.12.14、既存CIと同じ隔離pin（pytest8.4.1、pytest-subtests0.14.2、FastAPI0.142.2、Pydantic2.13.5、httpx0.28.1）を使用し、製品依存は変更していない。旧保留期待の変更は新対応の否定修飾8例だけで、肯定修飾＋否定/否定修飾＋肯定の拒否は維持した。同じCodex Work環境のread-only補助reviewとrootの実出力/差分確認で具体的blockerなし。別model Pro認定・正式商品受入れではない。
+
+固定sourceの[GitHub Actions run38209499697](https://github.com/MassyuRed/mashos-api/actions/runs/38209499697)／job `114680273525` は全step success。Python3.12.15で既存5suite（Analysis vertical/nominal、observed storage、saved period、共有Emlis limited-change）は **1586 tests／8918 subtests PASS（204.23秒）**、共有owner identityは **1 PASS（193 deselected、17.35秒）**。fail/skip/xfail 0。rootがCIの既存合成7生成全文を読み、否定・先行準備・感情・明示順序・未知区間の表示を確認した。最終全suiteは固定sourceのCIで確認し、同じ全suiteのローカル再実行は重ねていない。対象検査・全suite・subtests・CIを合算せず、本人実機/稼働DB/商品受入れの代替としない。
+
+製品source `17695c0f7f0f14c6cc5e88520523e5c31b355283`、tree `66a73c892ddd3af13ed8544576b10c2419533574`。compiler1と既存test2の3pathをAPI PR3へexpected_sha付きnon-forceで反映し、remoteの変更pathと検証済みlocal bytesを照合した。current03・詳細04 §3.62・06/API handoffへ対応範囲・実出力・検証結果を同期する。
+
+STRUCTURE_MAP_DELTA_NONE。source→共有命題→Analysis graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。root華恋が判断・編集・実行・反映、補助agentはread-only。新規repo file0、realizer・共有Plan/Emlis・API/DTO/DB/SQL/RN製品・依存/workflowの変更0。Supabaseは接続先projectとmigration履歴だけをread-only確認し、本人行の取得・DB書込0。配置/有効化/native build/main mergeは行っていない。
+
+次の内容確認では、原入力内の感情矛盾と否定の作用域が文章/図へ一貫して伝わるかを原文・共有根拠・実出力で確認する。別構文間の矛盾、省略主体/複合節・一般意味理解、全体ルートUI/IF/Savedも残件。未配置、最新修正版の本人実機・稼働DB保存再読・正式商品受入れは未確認。本修正や今後の内容修正を実機確認の新たな前提にはしない。
