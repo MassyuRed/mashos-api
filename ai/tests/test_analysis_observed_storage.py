@@ -1896,6 +1896,48 @@ class SavedAnalysisTests(unittest.IsolatedAsyncioTestCase):
                     for private in ('PAST_FEELING', 'source_parts', clause):
                         self.assertNotIn(private, encoded)
 
+    async def test_current_anxiety_keeps_saved_writing_time_without_regeneration(self):
+        for memo, labels in (
+                ('私は不安だ。', ('不安だ（この記述時点の気持ち）',)),
+                ('私は不安です。それから、私は記録を残した。',
+                 ('不安だ（この記述時点の気持ち）', 'それから：記録を残す（実行済み）')),
+                ('私は資料を調べた。その後、私は不安です。',
+                 ('資料を調べる（実行済み）', 'その後：不安だ（この記述時点の気持ち）'))):
+            with self.subTest(memo=memo):
+                self.fx = fixture(memo)
+                self.row = self.fx['row']
+                writes = []
+                async def rpc(name, payload):
+                    if name == 'analysis_observed_source_snapshot':
+                        return {'guard': GUARD, 'tier': 'plus', 'now': END, 'members': [
+                            {'original': self.fx['original'], 'thread': None, 'events': []}]}
+                    if name == 'analysis_observed_commit':
+                        writes.append(payload)
+                        self.row.update(id=str(UUID(payload['p_artifact_id'][9:])), content_text=payload['p_text'])
+                        self.row['content_json']['watashiMap'] = payload['p_projection']
+                        return self.row['id']
+                    if name == 'analysis_observed_read':
+                        return result([self.row], matched=True)
+                    raise AssertionError(name)
+                with patch.dict(os.environ, COCOLON_ANALYSIS_PERIOD_COMPARISON_MODE='off'), \
+                        patch.object(service, '_rpc', side_effect=rpc):
+                    saved = await service.generate_saved(OWNER, start=START, end=END,
+                        report_mode='standard', report_type='latest')
+                    with patch.object(MeaningExperienceEngine, 'generate', side_effect=AssertionError('read regenerated')):
+                        reread = await service.read_saved(OWNER)
+                self.assertEqual(reread['items'][0], saved)
+                self.assertEqual(len(writes), 1)
+                projection = saved['content_json']['watashiMap']
+                self.assertEqual((projection, saved['content_text']), (writes[0]['p_projection'], writes[0]['p_text']))
+                self.assertEqual(tuple(n['visible_label'] for n in projection['nodes']), labels)
+                self.assertFalse(projection['edges'])
+                for label in labels:
+                    self.assertIn(label, saved['content_text'])
+                for encoded in (json.dumps(writes[0]['p_private_evidence'], ensure_ascii=False),
+                                json.dumps(projection, ensure_ascii=False)):
+                    for private in ('CURRENT_FEELING', 'source_parts', '私は'):
+                        self.assertNotIn(private, encoded)
+
     async def test_written_anxiety_degrees_keep_saved_degree_and_order(self):
         for degree in ('少し', 'とても', 'かなり', 'やや', 'ちょっと'):
             with self.subTest(degree=degree):

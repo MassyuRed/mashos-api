@@ -216,6 +216,9 @@ _FEELING_FORMS = {'安心した': '安心する', '安心しました': '安心�
     '嬉しかった': '嬉しい', '嬉しかったです': '嬉しい',
     'うれしかった': 'うれしい', 'うれしかったです': 'うれしい',
     '不安だった': '不安だ', '不安でした': '不安だ'}
+# These nonpast forms describe the source's writing time, not the reader's
+# present or an ongoing condition. Other current feelings remain unresolved.
+_CURRENT_FEELING_FORMS = {'不安だ': '不安だ', '不安です': '不安だ'}
 # An absent feeling does not establish its opposite or an action's effect.
 # Only complete standalone SELF clauses can use these negative inflections.
 _FEELING_PAST_NEGATIVE = {'安心する': '安心しなかった', '落ち着く': '落ち着かなかった',
@@ -400,7 +403,7 @@ _PAST_ANXIETY_DEGREES = {
 }
 
 
-def _past_feeling_proposition(value):
+def _finite_feeling_proposition(value):
     # Retain topic punctuation in the complete endpoint's source range.
     # Admission requires either the complete pair or a standalone SELF witness.
     prefix = re.match(r'^(その後|それから)[、， \u3000]*', value)
@@ -416,8 +419,14 @@ def _past_feeling_proposition(value):
     finite_start = start + len(degree)
     finite = value[finite_start:]
     negative = finite in _NEGATIVE_FEELING_FORMS
-    lemma = (_NEGATIVE_FEELING_FORMS if negative else _FEELING_FORMS).get(finite)
+    current = finite in _CURRENT_FEELING_FORMS
+    lemma = (_CURRENT_FEELING_FORMS if current else
+             _NEGATIVE_FEELING_FORMS if negative else _FEELING_FORMS).get(finite)
     if lemma is None:
+        return None
+    # Current anxiety needs its own explicit experiencer. Do not extend the
+    # past degree or compound witness to a different temporal scope.
+    if current and (subject is None or degree):
         return None
     # Preserve the written degree only for an explicit SELF's asserted anxiety.
     # Degree over a negated feeling has no proved scope in the shared witness.
@@ -429,19 +438,24 @@ def _past_feeling_proposition(value):
     parts += (('SELF_TOPIC', offset, start),) if subject else ()
     parts += (('WRITTEN_MODIFIER_' + modifier, start, finite_start),) if degree else ()
     return ObservedProposition('SELF' if subject else 'UNSPECIFIED', (),
-        lemma, 'negative' if negative else 'positive', 'feeling', 'past',
+        lemma, 'negative' if negative else 'positive', 'feeling', 'current_input' if current else 'past',
         parts + (('FINITE_FEELING', finite_start, len(value)),),
-        result_state='PAST_FEELING', sequence_marker=marker,
+        result_state='CURRENT_FEELING' if current else 'PAST_FEELING', sequence_marker=marker,
         written_modifiers=(modifier,) if degree else ())
 
 
-def _standalone_past_feeling_witness(nucleus, proposition):
+def _standalone_finite_feeling_witness(nucleus, proposition):
     # A shared current_user default cannot establish an omitted experiencer.
     # The complete finite SELF clause proves tense; current_input is the shared
-    # standalone frame's scope, not evidence of a present feeling or an action.
-    if (proposition.result_state != 'PAST_FEELING' or proposition.actor != 'SELF'
+    # standalone frame's scope. Current forms need a current_input witness
+    # and never inherit a past/change witness from another clause.
+    current = proposition.result_state == 'CURRENT_FEELING'
+    if (proposition.result_state not in {'PAST_FEELING', 'CURRENT_FEELING'} or proposition.actor != 'SELF'
             or proposition.polarity not in {'positive', 'negative'}
-            or (proposition.modality, proposition.temporal_scope) != ('feeling', 'past')):
+            or (proposition.modality, proposition.temporal_scope) !=
+               ('feeling', 'current_input' if current else 'past')
+            or (current and (proposition.predicate_lemma != '不安だ'
+                             or proposition.polarity != 'positive' or proposition.written_modifiers))):
         return False
     frame = nucleus.semantic_frame
     expected = (('value', 'value', 'fact') if proposition.predicate_lemma == '安心する'
@@ -464,7 +478,7 @@ def _standalone_past_feeling_witness(nucleus, proposition):
         and nucleus.source_fields == ('memo',) and len(nucleus.source_span_ids) == 1
         and (nucleus.kind, frame.predicate_kind, frame.modality) == expected
         and frame.actor == 'current_user' and frame.polarity == expected_polarity
-        and frame.time_scope in {'current_input', 'past'}
+        and frame.time_scope in ({'current_input'} if current else {'current_input', 'past'})
         and operators <= set(frame.attribute_codes)
         and (expected[1] != 'feeling' or 'operator:feeling' in frame.attribute_codes)
         and not any(code.startswith(('source_fragment_', 'surface_scalar_',
@@ -472,7 +486,7 @@ def _standalone_past_feeling_witness(nucleus, proposition):
 
 
 def _bounded_change_proposition(value):
-    feeling = _past_feeling_proposition(value)
+    feeling = _finite_feeling_proposition(value)
     if feeling is not None:
         return feeling
     match = _BOUNDED_CHANGE.fullmatch(value)
@@ -1323,7 +1337,7 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
             return None
     if change is not None and (pair is None or nucleus.nucleus_id != pair[1]):
         if (pair is not None or a != 0 or b != len(span.raw_text)
-                or not _standalone_past_feeling_witness(nucleus, change)):
+                or not _standalone_finite_feeling_witness(nucleus, change)):
             return None
         # All three newly admitted polite forms need the same source-host
         # proof, including those already positive in the shared keyword plan.
