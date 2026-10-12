@@ -2412,7 +2412,7 @@ class AnalysisVerticalTests(unittest.TestCase):
 
     def test_prefixed_feeling_keeps_actor_finite_and_reporting_boundaries(self):
         for memo in ('その後、安心した。', 'その後、友人は安心した。',
-                     'その後、私は安心する。', '今日、私は安心した。',
+                     'その後、私は安心する。', '今日の朝、私は安心した。',
                      'その後、昨日、私は安心した。', 'その後の私は安心した。',
                      '私は資料を調べた後、その後、私は安心した。',
                      'その後、私は安心したと思う。', 'その後、私は安心した？',
