@@ -17517,3 +17517,41 @@ Mashの分析内容修正続行指示を受け、u232残件の「原入力内の
 STRUCTURE_MAP_DELTA_NONE。source→共有命題→Analysis graph/conflict→文章/図→保存という既存責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。root華恋が編集・判断・実行・反映し、補助agentはread-only。新規repo file0、共有Plan/Emlis・realizer・API/DTO/DB/SQL/RN製品・依存/workflowの変更0。Supabase操作/本人行取得/DB書込/配置/有効化/native build/main mergeは0。
 
 残件は一般的な矛盾判断・別構文間の意味照合、省略主体/複合節、全体ルートUI/IF/Saved、最新修正版の本人実機・稼働DB保存再読・正式商品受入れ。次の実出力確認候補は「私は不安だ。私は不安ではないかもしれない。」等、後続の未解釈節により先行の明示感情も生成されない範囲であり、話者・推量の作用域から原因を確認する。本修正や次の内容修正を実機確認の追加前提にはしない。未配置。
+
+## u234 — 独立した感情推量文による明示内容の欠落を修正（2026-10-12 JST・未配置）
+
+Mashの分析内容修正続行指示により、u233末尾の候補を実出力から確認した。開始headはAPI PR3 `fd4a7c17ed58718d03ed6fcda0258a63b8eb2840`、Cocolon PR30 `609d9dc51c159786067c9962562d65e354a8def8`。同sessionで読了した前提・CURRENT_RULES/環境rule、全体01/01B・全file地図02/07を継承し、恒久incident全文を再読、current03/詳細04/06/API handoff u233と最新weekly20261010 §3/§4.7/§5.4/§5.5を照合した。明示内容修正は§5.4の配分とし、§5.5の本人実機へ戻る位置・12/18公開目標を維持。今回のSystem Context prepareは `COCOLON_CONTEXT_PREPARE_ERROR: PUBLICATION_RECOVERY_AMBIGUOUS: residual without marker` で失敗し、規定の原本直接読取fallbackを使用。prepare成功や新しい生成物の正常公開は主張しない。
+
+### 原因・変更範囲
+
+「私は不安だ。私は不安ではないかもしれない。」がUNAVAILABLEとなり、先行する明示感情も消えていた。原因はfield内の推量表現が、完全な共有cognitive命題でない限り、同fieldの全fragmentを止める処理だった。既存SELF感情構文＋完全な「かもしれない/かも知れない」が、原source上で独立した文として閉じる場合だけ作用域を識別し、別の明示節を従来の共有witnessとhost検査で採用するよう変更した。「不安かもしれない」の仮の「だ」は作用域検査内のみで、生成命題・原文・evidence・表示には足さない。
+
+実句点（。/.）を要求し、読点・改行・semicolon・固定長切断だけで独立文にはしない。推量文自体はnode化せずSOURCE_SCOPEを保持。引用/報告/夢/条件、後置「のは」「と」等のhost、未解釈・主語省略・他者・順序付きの推量は保留を維持する。推量の肯否からconflict_badgeを作らず、推量節を越して順序線を作らない。既に成立した明示節同士の順序は残す。
+
+通常補足/訂正の全文coverageは不変で、既知文＋未解釈推量の回答を部分採用しない。原入力の既知感情に対する明示訂正/撤回は適用し、未知範囲は保持する。期間比較はUNKNOWN_SCOPE_CHANGEDを返し、推量からROUTE_EVIDENCE_CHANGED/CONFLICT_STATE_CHANGEDを作らない。新語彙・DTO・DB契約・表示文は追加しない。
+
+### 実出力・画面用処理・保存
+
+合成28入力の修正前後56結果を比較し、8入力で明示内容の欠落が解消、20対照は状態・理由・本文・図内容が不変（ランダムartifact identityを除く）。rootが生成12全文を読み、実RN `buildWatashiMapV2ViewModel` の12投影で本文・identity・読み順、edge/unknown/注記/不一致件数と対象labelが一致した。native実機や本人入力の結果ではない。
+
+合成入力「私は不安だ。私は不安ではないかもしれない。」の実生成全文：
+
+```text
+結果・余韻：不安だ（この記述時点の気持ち）（1件の記録）
+未確定（不安だ（この記述時点の気持ち））：確定していない項目：場面、役割、考え・注意、行動・非行動。
+未確定（不安だ（この記述時点の気持ち））：まだ読み取れていない内容は、この記録からは確定していません。
+```
+
+実engine/service＋合成RPCの保存5入力で、前後順の明示感情、nominal推量、成立済み順序、推量を挟む接続保留を検査。保存後のengine再生成を禁止し、同じ本文/図/IDとprivateのSOURCE_SCOPEを再読した。補足と訂正の不完全更新2入力はHTTP422・snapshot取得のみでcommitなしを確認。private保存に原文を追加していない。稼働DBの検証ではない。
+
+### 検証・反映
+
+ローカル対象検査は **11 tests／176 subtests PASS（3.58秒、530 deselected）**。Python3.12.14と既存隔離pin（pytest8.4.1、pytest-subtests0.14.2、FastAPI0.142.2、Pydantic2.13.5、httpx0.28.1）を継承。初回新testではfullwidth period「．」を既存ledgerが分割しないため16subtestsが失敗し、今回は句点対応を拡大せず非対応境界として検査する形へ訂正した。helperも実対応の「。/.」だけへ限定。次の保存検査2subtestsはactionの既存表示（辞書形＋実行済み・接続語付き）を過去形と取り違えた期待だったため、既存表示契約へ訂正した。最終上記対象群は全成功。u233旧期待の変更は、今回回復対象の推量例1件を一律artifactなし期待から新しい独立検査へ移しただけで、引用例の保留期待は維持。
+
+固定sourceの[GitHub Actions run38212167830](https://github.com/MassyuRed/mashos-api/actions/runs/38212167830)／job `114688557295` は全step success。Python3.12.15で既存5suite（Analysis vertical/nominal、observed storage、saved period、共有Emlis limited-change）は **1599 tests／9327 subtests PASS（392.86秒）**、共有owner identityは **1 PASS（193 deselected、26.09秒）**。fail/skip/xfail 0。rootが既存の合成7生成全文も読み、肯否・先行準備・感情・明示順序・未知区間の表示を確認した。最終全suiteはこの固定sourceのCIで確認し、同じ全suiteのローカル再実行は重ねていない。対象検査・subtests・全suite・CIの件数を合算せず、実機/稼働DB/商品受入れを代替しない。
+
+製品source `5f4a6b73eb86edfe87cbf219b3975cad860a1d10`、tree `93b4339ef5b53a6f0b63d1ca3ec9e6dca1b5f6b5`。compiler1＋既存test2の3pathをAPI PR3へexpected_sha付きnon-forceで反映。current03・詳細04 §3.64・06/API handoffへ範囲/実出力/検証/残件を同期する。同じCodex Work環境のread-only補助reviewとroot確認で具体的blockerなし。別model Pro/Ultraの独立審査や正式商品受入れではない。
+
+STRUCTURE_MAP_DELTA_NONE。source→共有命題→Analysis graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。root華恋が編集・判断・実行・反映し、補助agentはread-only。新規repo file0、共有Plan/Emlis・realizer・API/DTO/DB/SQL/RN製品・依存/workflowの変更0。Supabase操作/本人行取得/DB書込/配置/有効化/native build/main mergeは0。
+
+残件は一般的な推量/引用作用域、推量そのものの表示、未知の述語・省略主体/複合節、全体ルートUI/IF/Saved、最新修正版の本人実機・稼働DB保存再読・正式商品受入れ。今回も「まだ違うかもしれない」や未対応の思考hostは保留しており、次の内容作業では別の実出力欠落を確かめてから対応範囲を決める。本修正や次の内容作業を実機確認の追加前提にはしない。未配置。
