@@ -49,7 +49,8 @@ class AnalysisVerticalTests(unittest.TestCase):
                    '私は考えをノートに書いた', '私は記録を残した',
                    '私は仕事を続けた', '私は資料をメモした')
         for clause in clauses:
-            for prefix in ('友人が話した。', '友人は言った。', '友人が話していました。'):
+            for prefix in ('友人が話した。', '友人は言った。', '友人が話していました。',
+                           '友人が書いた。', '友人の説明でした。'):
                 for memo, action in ((prefix + clause + '。', ''),
                                      (clause + '。', prefix), (prefix, clause + '。')):
                     with self.subTest(clause=clause, memo=memo, action=action):
@@ -135,6 +136,7 @@ class AnalysisVerticalTests(unittest.TestCase):
             ('私は嬉しかった。と友人が言った。友人が話した。私は記録を残した。', ''),
             ('未知の出来事。と友人が言った。私は記録を残した。', ''),
             ('私は嬉しかった。と友人が言ったけれど。私は記録を残した。', ''),
+            ('私は嬉しかった。と友人が言ったと弟は言った。私は記録を残した。', ''),
             ('私は嬉しかった。', 'と友人が言った。私は記録を残した。'),
             ('私は仕事を続けたい。と友人が言った。私は記録を残した。', ''),
             ('私は職場にいた。と友人が言った。私は記録を残した。', ''),

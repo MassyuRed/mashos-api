@@ -1443,6 +1443,11 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
     dated_compound_nominal = bool(proposition and proposition.relative_day and proposition.arguments
         and _unparsed_day_extension(proposition.arguments[0][1], separated=False)
         and not _unparsed_day_extension(proposition.arguments[0][1], separated=True))
+    # Preserve the pre-existing stricter guards for their established scope.
+    # The new ordinary-action check requires an actual report marker rather
+    # than promoting every unread writing act or polite ending to a report.
+    self_past_action = self_past_action and not (qualified_past or bounded_past_action
+        or dated_compound_nominal or kana_owned_writing)
     if dated_compound_nominal and (a != 0 or b != len(span.raw_text)):
         return None
     # Resolving a calendar-suffix collision does not resolve the speaker.
@@ -1511,7 +1516,10 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
                 # guard is established below. Parsed SELF alone is insufficient
                 # for ordinary wishes, scenes and roles. Keep the guarded pair
                 # unobserved; never join fields or clear an earlier open report.
-                if (previous is not None and previous.actor == 'SELF'
+                if (previous is not None and (previous.actor == 'SELF'
+                        or (previous.actor == 'UNSPECIFIED'
+                            and previous.predicate_lemma in _PAST_ACTION_LEMMAS | _PAST_DECISION_LEMMAS
+                            and (previous.modality, previous.temporal_scope) == ('fact', 'past')))
                         and not previous.dependent_form and previous.possible_content is None
                         and (previous.result_state in {'PAST_FEELING', 'CURRENT_FEELING'}
                             or previous.predicate_lemma in _PAST_DECISION_LEMMAS
@@ -1523,11 +1531,14 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
                             or (previous.relative_day and previous.arguments
                                 and _unparsed_day_extension(previous.arguments[0][1], separated=False)
                                 and not _unparsed_day_extension(previous.arguments[0][1], separated=True)))):
-                    host = re.match(r'(?:(?:と|などと)(?:私|僕|ぼく|俺|おれ|わたし|自分|'
-                            + _NOMINAL + r'(?:の' + _NOMINAL + r')*)(?:は|が|も)'
+                    # The speaker is opaque: closing this suffix never proves
+                    # who acted. Do not swallow nested hosts into its name.
+                    host = re.match(r'(?:(?:と|などと)(?P<speaker>[^。．.\r\n;；、，,「」『』!?！？]+?)'
+                            r'(?:は|が|も)'
                             r'(?:言った|言いました)|の(?:は|も)嘘だった)', preceding)
                     if host is not None:
-                        if host.end() != len(preceding):
+                        if (host.end() != len(preceding) or re.search(
+                                r'と|って|なら|もし|かも|言った|話した|思う', host['speaker'] or '')):
                             return None
                         continue
                 written = _proposition(preceding)
@@ -1543,6 +1554,17 @@ def _fragment(source, nucleus, plan=None, *, _protective_contrast=False):
                         and not re.search(r'何|誰|次|以下|上記|下記|話|発言|引用|説明|報告|内容',
                                           ''.join(noun for _, noun in written.arguments))):
                     continue
+                if self_past_action:
+                    speech = re.search(r'(?:言った|言いました|話した|話しました|語った|語りました|'
+                        r'述べた|述べました|伝えた|伝えました|答えた|答えました|説明した|説明しました)$',
+                        preceding)
+                    report_noun = re.search(r'の(?:話|発言|引用|説明|報告|内容)(?:だ|です|だった|でした)$',
+                        preceding)
+                    written_report = (re.search(r'(?:書いた|書きました)$', preceding)
+                        and ('を' not in preceding or re.search(
+                            r'(?:と|って)書|話|発言|引用|説明|報告|内容|次|以下|上記|下記', preceding)))
+                    if not (speech or report_noun or written_report):
+                        continue
                 if _analysis_prefix_opens_report(preceding):
                     return None
         if re.search(r'(?:言って|話して|語って|述べて|書いて|伝えて|答えて|説明して)'
