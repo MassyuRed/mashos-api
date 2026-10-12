@@ -405,6 +405,11 @@ _WRITTEN_ANXIETY_DEGREES = {
     'やや': 'DEGREE_YAYA', 'ちょっと': 'DEGREE_CHOTTO',
 }
 
+_WRITTEN_NEGATED_ANXIETY_DEGREES = {
+    '全く': 'NEGATION_MATTAKU_KANJI', 'まったく': 'NEGATION_MATTAKU_KANA',
+    '全然': 'NEGATION_ZENZEN',
+}
+
 
 def _finite_feeling_proposition(value):
     # Retain topic punctuation in the complete endpoint's source range.
@@ -431,8 +436,9 @@ def _finite_feeling_proposition(value):
         day = {'今日': 'TODAY', '昨日': 'YESTERDAY'}[post_day.group(1)]
         parts += (('RELATIVE_DAY_' + day, start, start + post_day.end()),)
         start += post_day.end()
-    degree = next((word for word in _WRITTEN_ANXIETY_DEGREES if value.startswith(word, start)), '')
-    modifier = _WRITTEN_ANXIETY_DEGREES.get(degree, '')
+    degrees = {**_WRITTEN_ANXIETY_DEGREES, **_WRITTEN_NEGATED_ANXIETY_DEGREES}
+    degree = next((word for word in degrees if value.startswith(word, start)), '')
+    modifier = degrees.get(degree, '')
     finite_start = start + len(degree)
     finite = value[finite_start:]
     negative = finite in _NEGATIVE_FEELING_FORMS or finite in _CURRENT_NEGATIVE_FEELING_FORMS
@@ -451,9 +457,12 @@ def _finite_feeling_proposition(value):
     # Keep the written day local, never infer it from the record timestamp.
     if day and (subject is None or (current and day != 'TODAY')):
         return None
-    # Preserve the written degree only for an explicit SELF's asserted anxiety.
-    # Degree over a negated feeling has no proved scope in the shared witness.
-    if degree and (subject is None or negative or lemma != '不安だ'):
+    # Only admit a written modifier whose scope is fixed by the complete
+    # finite clause. 全く/まったく/全然 reinforce its explicit negation;
+    # affirmative degrees (e.g. 少し) never acquire that scope by default.
+    # Partial negation (あまり), particles, stacking and ellipsis stay pending.
+    allowed_degrees = _WRITTEN_NEGATED_ANXIETY_DEGREES if negative else _WRITTEN_ANXIETY_DEGREES
+    if degree and (subject is None or lemma != '不安だ' or degree not in allowed_degrees):
         return None
     parts += (('WRITTEN_MODIFIER_' + modifier, start, finite_start),) if degree else ()
     return ObservedProposition('SELF' if subject else 'UNSPECIFIED', (),
@@ -477,11 +486,13 @@ def _standalone_finite_feeling_witness(nucleus, proposition):
             or (current and (proposition.predicate_lemma != '不安だ'
                              or proposition.relative_day not in {'', 'TODAY'}))):
         return False
-    # A single written degree qualifies asserted anxiety, not its negation.
-    # Preserve its spelling without assigning a numeric strength or rank.
-    if current and proposition.written_modifiers and (
-            proposition.polarity != 'positive' or len(proposition.written_modifiers) != 1
-            or proposition.written_modifiers[0] not in _WRITTEN_ANXIETY_DEGREES.values()):
+    # Keep positive degree and negative emphasis separate, without deriving
+    # numeric intensity, relief or improvement from either one.
+    allowed_degrees = (_WRITTEN_NEGATED_ANXIETY_DEGREES if proposition.polarity == 'negative'
+                       else _WRITTEN_ANXIETY_DEGREES)
+    if proposition.written_modifiers and (
+            proposition.predicate_lemma != '不安だ' or len(proposition.written_modifiers) != 1
+            or proposition.written_modifiers[0] not in allowed_degrees.values()):
         return False
     frame = nucleus.semantic_frame
     expected = (('value', 'value', 'fact') if proposition.predicate_lemma == '安心する'
@@ -870,7 +881,11 @@ def _proposition_meaning(proposition):
             _predicate_meaning(proposition), proposition.result_state, proposition.scene_state, proposition.role_state,
             (_proposition_meaning(content), content.polarity, content.modality,
              content.temporal_scope) if content else None)
-    return meaning + (proposition.written_modifiers,) if proposition.written_modifiers else meaning
+    # 全く and まったく are spellings of the same modifier. Keep source
+    # spelling for display/replay, but do not report a period change for it.
+    modifiers = tuple('NEGATION_MATTAKU_KANJI' if code == 'NEGATION_MATTAKU_KANA' else code
+                      for code in proposition.written_modifiers)
+    return meaning + (modifiers,) if modifiers else meaning
 
 
 @dataclass(frozen=True, slots=True, repr=False)
