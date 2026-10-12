@@ -1,4 +1,4 @@
-> 最新の内容修正は末尾 **u237（2026-10-12 JST・未配置）**。帰属未確定の通常過去行動を本人へ誤帰属する不具合を修正。独立内容の保持・検証・残件は同節とAnalysis current03を参照。
+> 最新の内容修正は末尾 **u250（2026-10-13 JST・未配置）**。既知修飾が重なる話者の引用と本人の独立内容を区別する不整合を修正。生成全文・検証・残件は同節とAnalysis current03を参照。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -18165,5 +18165,48 @@ Analysis compilerの前方guardを、既知の明示話者＋既存助詞/読点
 製品source `a70ab180519fa4cfe3250f8d4766beebdc97ad3e`、tree `ec237f63782c09f0b951562ca2c8be6155b6ea2b`。compiler1＋既存test2を接続済みGitHub connectorでPR3へnon-force反映し、remote preimageと差分、作成tree SHAとlocal tree一致を確認。current03・詳細04 §3.79・06/API handoff u249へ同期。STRUCTURE_MAP_DELTA_NONE：source→共有命題→Analysis graph→文章/図→保存の責務とfile配置は不変。TECHNICAL_CREDIT、正式商品受入れ未認定。共有Plan/Emlis・realizer/API/DTO/DB/SQL/RN製品・依存/workflow・新規repo file変更0。DB操作・本人行取得・配置・有効化・native build・main mergeは0。未配置。
 
 今回も「よく知らない友人が話さない。私は職場にいた。」「親しい新しい友人が語らない。私は職場にいた。」「友人が話さないけれど。私は職場にいた。」は誤所在が残る。未知/重ね修飾話者・未完発言・否定思考、一般引用/推量/条件作用域、未知述語/省略主体/複合節、旧言う系のその他の不透明speaker閉鎖、全体ルートUI/IF/Savedと本人実機・稼働DB保存再読・正式商品受入れは引き続き残件。一般引用理解の完成と扱わない。
+
+次の一般的な「進めて」ではweekly §5.5へ戻り、本人の保存入力から分析結果を実機で受け取るための最初の未完了作業を扱う。入力不足の正常案内の実機確認を生成成功へ換算しない。内容修正が再度明示された場合は、その配分と戻る位置を保持し、未対応表現と独立内容の実出力から次を選ぶ。一般引用対応の完了を本人実機確認の追加前提にしない。
+
+
+## u250 — 既知修飾が重なった話者でも引用と本人内容を区別する（2026-10-13 JST・未配置）
+
+Mashの明示指示「分析構造の内容修正関係を進めて」と前回作業内容の添付によりu249から継続。開始headはCocolon PR30 `f5146190c79c215cddfc391943b4b1a70b546001`、API PR3 `a8eda366c2869a48de127b5ac99a1cf8b169a32b`。前提資料・CURRENT_RULES・作業開始/領域/環境/transport/runtime規則・恒久incident全文、全体設計01のflow/全file coverageと01A/B/Cの該当・隣接owner、current00/03/04・詳細04/06・最新weekly20261010・u249 handoffを照合した。地図全章の全文読了という意味ではない。部分materializationからのSystem Context prepareは `No module named tools` で起動できず、規定の原本直接読取へ戻った。生成contextの鮮度成立は主張しない。
+
+内容修正の明示配分をweekly §5.4として扱い、§5.5の本人入力→生成→保存再表示への戻る位置と2026-12-18公開目標を保持。Codex Workのroot華恋が実装・検証・GitHub反映、同環境のread-only agentが設計境界・最終差分・32入力の修正前後全文をreview。独立したPro/Ultraモデル審査とは認定しない。LEVEL_2相当、OBSERVED_BLOCKER_MINIMAL_FIX。追加サービス費用・Mash操作0。
+
+### 原因と修正
+
+実engineで「私は職場にいた。と親しい新しい友人が言った。」が本人の所在になり、「私は資料を調べた。私は職場にいた。と知っている親しい友人が語った。私は記録を残した。」では誤所在が残る一方、末尾の独立行動が消えた。前方の「親しい知っている友人が話さない。私は職場にいた。」も誤所在になった。既存話者式が単一の既知修飾に限定されていたため。
+
+Analysis compiler内で、既存の漢字語幹＋しい系列/いと知らない・知らなかった・知っている・知っていたを、完全な既知単位の連続として共用する。後置引用の拒否と既存前方の現在/否定発言に適用し、閉鎖は既知話者＋既存肯定過去hostの全文一致だけとする。語中の「って」は証明済みの修飾prefix内の知っている/知っていただけをlocal検査から除き、原文・残余marker・入れ子拒否を保持する。
+
+未知副詞や未知連体節まで既知話者にせず、前方の未完発言や一般引用作用域は解決していない。一般の_NOMINAL、共有Plan/Emlis、realizer/API/DTO/DB/SQL/RN製品、依存/workflow、新規repo fileは変更0。Home入力保存、課金/閲覧権限、artifact lifecycleへの責務変更なし。
+
+### 実生成・保存・画面用処理
+
+合成32入力の修正前後64結果の本文をrootとread-only agentが全件確認。26入力で変化し、15入力は本人内容の誤確定を解消して保留、6入力は誤所在を外し引用前後の独立行動を保持/回復、5入力は誤った後続行動を外し先行行動を保持した。6対照はartifact参照を除き不変で、うち未知修飾/未完発言の2入力には既存誤所在が残る。生成できた前32＋後17の49投影を固定Cocolon headの実RN `buildWatashiMapV2ViewModel` へ通し、本文・identity一致を確認。native描画・本人実機の実績ではない。
+
+合成入力「私は資料を調べた。私は職場にいた。と親しい新しい友人が語った。私は記録を残した。」の修正後全文：
+
+```text
+行動・非行動：資料を調べる（実行済み）（1件の記録）
+行動・非行動：記録を残す（実行済み）（1件の記録）
+未確定（資料を調べる（実行済み））：確定していない項目：場面、役割、考え・注意、結果・余韻。
+未確定（資料を調べる（実行済み））：まだ読み取れていない内容は、この記録からは確定していません。
+未確定（資料を調べる（実行済み） ／ 記録を残す（実行済み））：段階同士のつながりは、この記録からは確定していません。
+```
+
+修飾順序・活用・3修飾/の連鎖・5内容種・前方現在/否定・両field方向・前後/別recordの独立記述・UTF-8/scalar証拠・SOURCE_SCOPE・補足全文coverage・訂正/撤回・UNKNOWN_SCOPE_CHANGEDだけの期間差を検査。既存の重ね修飾5負例は今回の成立側へ移し、未知副詞を含む負例で未知範囲を引き続き検査した。実engine/service＋合成RPCに新規6非commit、後置引用後の4保存再読、前方3host×同record/別recordの6保存再読を追加。保存本文と図の一致、再生成禁止の再読を確認し、本人入力や稼働DB実績へ換算しない。
+
+### 検査・反映・残件
+
+修正後の対象検査はvertical **12 tests／868 subtests PASS（456 deselected、10.35秒）**、storage **3 tests／173 subtests PASS（105 deselected、3.08秒）**。Python 3.12.14、既存pin隔離環境を再利用。read-only最終reviewに具体的blockingなし、3差分のwhitespace check出力なし。
+
+固定source `e9bd8469170fe827c074b155915986cbc1ecb1b5` の GitHub Actions [run 38314528850](https://github.com/MassyuRed/mashos-api/actions/runs/38314528850)／job `115027884218` はrun・全step成功。Python 3.12.15、既存pinで5suite **1634 tests／12020 subtests PASS（417.31秒）**、共有owner identity **1 PASS／193 deselected（26.48秒）**。fail／skip／xfailの報告なし。rootがCIの既存7合成入力の生成全文とgraphを読み、行動否定・先行準備・感情・明示順序・未知区間を確認した。local件数とは合算しない。workflow/依存変更なし。
+
+製品source `e9bd8469170fe827c074b155915986cbc1ecb1b5`、tree `3c5ed4587b094328cbff4dbd6d09e3a1d34b00e4`。compiler1＋既存test2を接続済みGitHub connectorでPR3へnon-force反映。固定preimage、localの3 blob SHAと作成blob、remote比較の3path/SHA、headを照合。部分snapshotでありlocal全repo tree一致は主張しない。current03・詳細04 §3.80・06/API handoff u250へ同期。STRUCTURE_MAP_DELTA_NONE：source→共有命題→Analysis graph→文章/図→保存の責務とfile配置は不変。TECHNICAL_CREDIT、正式商品受入れ未認定。DB操作・本人行取得・配置・有効化・native build・main mergeは0。未配置。
+
+「よく知らない友人が話さない。私は職場にいた。」「友人が話さないけれど。私は職場にいた。」は既存の誤所在が残る。未知修飾/連体節・未完発言・否定思考、一般引用/推量/条件作用域、未知述語/省略主体/複合節、旧言う系のその他の不透明speaker閉鎖、全体ルートUI/IF/Savedと本人実機・稼働DB保存再読・正式商品受入れは残件。一般引用理解の完成とは扱わない。
 
 次の一般的な「進めて」ではweekly §5.5へ戻り、本人の保存入力から分析結果を実機で受け取るための最初の未完了作業を扱う。入力不足の正常案内の実機確認を生成成功へ換算しない。内容修正が再度明示された場合は、その配分と戻る位置を保持し、未対応表現と独立内容の実出力から次を選ぶ。一般引用対応の完了を本人実機確認の追加前提にしない。
