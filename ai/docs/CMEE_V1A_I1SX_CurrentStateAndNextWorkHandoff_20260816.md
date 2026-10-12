@@ -1,4 +1,4 @@
-> 最新の内容修正は末尾 **u223（2026-10-12 JST・未配置）**。今日/昨日付きの本人過去感情「落ち着きました／嬉しかったです／うれしかったです」の欠落を修正。原文・本人・日語・過去の肯定を文章/図/保存再読へ保持。検証と残件（日語付き現在感情等）は同節とAnalysis current03を参照。
+> 最新の内容修正は末尾 **u224（2026-10-12 JST・未配置）**。「今日」付きの明示本人の現在の不安を、肯否・既存程度・日語・現在形を保って文章/図/保存再読へ保持。検証と残件（程度語と否定の作用域等）は同節とAnalysis current03を参照。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -17130,3 +17130,44 @@ Mashの分析内容修正続行指示で、u222に残した「今日/昨日、�
 STRUCTURE_MAP_DELTA_NONE：既存source→共有命題→Analysis graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Codex Workのroot華恋が判断・編集・実行・反映、補助agentはread-only。新規repo file0、Analysis compiler/realizer・Emlis realizer/API/DTO/DB/SQL/RN製品変更0。Supabase操作・本人行取得・DB書込・配置/有効化/native build/main mergeは0。未配置、本人実機・稼働DB保存再読・正式商品受入れは未確認。
 
 次の内容残件は「今日、私は不安です」等の日語付き現在感情。程度付き否定の作用域、省略主体/複合節、時制をまたぐ順序、一般意味理解、全体ルートUI/IF/Saved、本人生成→保存再表示も未完了。最新weekly/current03と実出力を照合して再開し、今回の3形修正を分析全体の完成とはしない。
+
+## u224 — 「今日」付きの明示本人の現在の不安を保持（2026-10-12 JST・未配置）
+
+Mashの分析内容修正続行指示で、u223に残した「今日、私は不安です」等の欠落を修正した。開始headはAPI PR3 `f3f454258f7e2016e39349232ea857212fc379d0`／Cocolon PR30 `1cca318804dc5ff7bf1c670ebfa51575811fe228`。開始時に00_read_firstと恒久incident全文を再読し、同session既読の前提・作業ルール、全体設計01/01A/B/C、全file地図02/02A/B/C、current03・詳細04/06・最新weekly20261010 §5.5を照合した。System Context workspace未配置は原典直接読解で補い、fresh Context成功とはしない。12/18公開目標と実機確認順序を保持し、本内容修正を本人生成→保存再表示の追加前提にしない。
+
+### 原因・最小修正
+
+共有Planには原文「今日」とpresentの根拠があったが、Analysis compilerの `_finite_feeling_proposition` が日語付きCURRENT_FEELINGを一律に拒否していた。完全な独立節の明示SELF・既存の不安の現在形に限ってTODAYを採用する。`_standalone_finite_feeling_witness` でも現在形の日語を無日/TODAYだけに限定し、原文「今日」には同じ節の共有present witnessを要求する。日語なしのcurrent_input witnessや、昨日/past・futureを今日の根拠に流用しない。
+
+CURRENT_FEELING/current_inputと原文のTODAYを別々に保持し、「今日、私は不安だった」のPAST_FEELING/pastと集約・期間比較で混同しない。「不安だ／不安です」、既存の否定6形、肯定に付く既存の程度5語（少し／とても／かなり／やや／ちょっと）が対象。否定を安心・改善に変換せず、程度を数値化・順位付けしない。原文・本人・日語・時制・肯否・程度と全文座標/UTF-8証拠を保持する。
+
+「昨日、私は不安です」は過去/現在の解釈を原文から確定できず保留する。程度付き否定、複数の程度、細かい時間/継続、二重日、日語＋順序語、省略主語/他者、報告/引用/否認/推量/質問/複合節は今回の採用範囲へ広げない。日語を実日付化せず、後続行動・別fieldへ移さず、現在→過去の順序や原因・改善を補わない。共有Plan、Analysis/Emlis realizer、DTO/RNの製品変更はない。
+
+### 実出力・保存・表示接続
+
+合成20入力の前後40結果のうち、生成された29全文をrootが読解した。今日の現在形の肯定2・否定2・程度5、過去/現在の併記、現在→過去行動、別field配置の12入力で欠落を解消。報告/別field報告/否認/昨日の現在形/程度付き否定/二重日/細かい時間/既存の日語付き過去形の8対照は状態・本文/図の内容が不変。生成ごとのartifact IDは比較から除外し、前後ID一致は主張しない。
+
+実RN `buildWatashiMapV2ViewModel` へ29投影を通し、本文、projection identity、accessibility順、node/edge/未確定/注記/競合の件数が一致した。実機の画面描画確認ではない。合成入力「今日、私は不安です。」の実生成全文：
+
+```text
+結果・余韻：この記述時点の今日：不安だ（この記述時点の気持ち）（1件の記録）
+未確定（この記述時点の今日：不安だ（この記述時点の気持ち））：確定していない項目：場面、役割、考え・注意、行動・非行動。
+```
+
+「今日、私は不安だった。今日、私は不安です。」は過去/現在を別nodeで保持し、時制をまたぐ線は作らない。「今日、私は不安です。それから、私は記録を残した。」も2node/0edgeとし、行動へ今日を移さない。未知文・別field・別記録をまたぐ線も補わない。期間比較の2全文を読み、同じ日の常体/敬体差は差なし、今日の現在/過去差は記録上の差であり改善・悪化や原因ではないことを確認した。
+
+実engine/service＋合成RPCの既存保存検査へ10入力を追加。今日の肯定/否定/少し/かなり×2配置と、現在→過去行動、過去/現在の併記を保存し、再生成禁止で同じ本文・図・IDを再読した。稼働DBや本人の記録による確認ではない。訂正/撤回、同日同義の集約と無日/過去の分離、期間比較、共有時点不一致・投影改変拒否も確認した。
+
+### 検証・GitHub
+
+修正前の新規4検査は **56 failed（通常2＋sub54）、2 passed、395 deselected、63 subtests passed（25.54秒）** で欠落を再現。製品修正後の対象は **19 tests／738 subtests PASS（7.28秒、478 deselected）**。既存dated-past検査の「今日、私は不安です」はPAST_FEELINGがないことを検査しており、CURRENT_FEELINGの採用と矛盾しないため期待値を変更していない。同環境read-only分担reviewで具体的blockerなし。別model Proの独立認定ではない。
+
+最終ローカル既存5suiteは **1555 tests／6960 subtests PASS（311.64秒）**。Python 3.12.14・pytest 8.4.1・pytest-subtests 0.14.2の分離環境、plugin autoload/cache/conftestを無効化し、Analysis vertical/nominal、observed storage、saved period、共有Emlis limited-changeを実行。対象検査の包含・subtests・CIを合算して成功数を増やさない。
+
+固定sourceのGitHub Actions [run 38199593752](https://github.com/MassyuRed/mashos-api/actions/runs/38199593752)／job `114649813887` はsuccess。Python 3.12.15で同じ5suite **1555 tests／6960 subtests PASS（349.97秒）**、共有owner identity **1 PASS／193 deselected（28.65秒）**。合成Analysis 7入力の生成stepもsuccessで、rootが7全文を読解し、否定・先行準備・過去感情・未知区間の既存表示を確認した。CIは固定sourceをcheckoutしており、現在snapshotを変えず一致した。ログは実行中の初回取得で一時404だったが、完了後に取得して結果を確認済み。
+
+固定source `53f804ed576b4ffa116cf34cd11ec1833fda45d6`／tree `93a9cd38076b3c8ff2ceefe701b83d9e404f460f`。Analysis compiler1・既存test2の3pathをexpected_sha付きnon-forceでAPI PR3へ反映し、親head・変更path・各remote blobとlocal bytesを照合した。共有ownerを変更しておらずcurrent identity snapshotの更新はない。
+
+STRUCTURE_MAP_DELTA_NONE：既存source→共有命題→Analysis graph→文章/図→保存の責務・配置は不変。LEVEL_2相当のOBSERVED_BLOCKER_MINIMAL_FIX、primary outcome=TECHNICAL_CREDIT。Codex Workのroot華恋が判断・編集・実行・反映、補助agentはread-only。新規repo file0、共有Plan/realizer・API/DTO/DB/SQL/RN製品変更0。Supabase操作・本人行取得・DB書込・配置/有効化/native build/main mergeは0。未配置、本人実機・稼働DB保存再読・正式商品受入れは未確認。
+
+次の内容残件は程度語と否定が重なる感情表現の作用域確認。採用拡大を先に決めず、原文と共有根拠・実出力から調べる。昨日の現在形は意味が未確定なため保留を維持する。省略主体/複合節、時制をまたぐ順序、一般意味理解、全体ルートUI/IF/Saved、本人生成→保存再表示も未完了。最新weekly/current03と実出力を照合して再開し、今回の「今日」の不安修正を分析全体の完成とはしない。
