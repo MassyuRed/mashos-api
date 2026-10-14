@@ -565,7 +565,7 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
     except ValueError as exc:
         if (str(exc) == 'emlis_checkpoint_source_prefix_mismatch'
             and thread.control.prepared_meaning_checkpoint_ref is not None and thread.answers):
-            for legacy_mode in ('legacy_appraisal_answer_time', 'legacy_appraisal_correction'):
+            for legacy_mode in ('legacy_appraisal_original_time', 'legacy_appraisal_answer_time', 'legacy_appraisal_correction'):
                 try:
                     prepared = _prepare_emlis_meaning_from_plan(request, thread, original,
                         **{legacy_mode: True})
@@ -596,7 +596,7 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         return replace(prepared, legacy_result_appraisal=True)
 
 
-def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_appraisal_correction=False, legacy_appraisal_answer_time=False):
+def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_appraisal_correction=False, legacy_appraisal_answer_time=False, legacy_appraisal_original_time=False):
     if thread.control.capability_snapshot == "Q3_PREMIUM" and thread.control.admitted_history and not thread.answers:
         from .emlis_thread_history import frame_supported_focus
         focus = frame_supported_focus(thread, original)
@@ -625,7 +625,8 @@ def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_apprai
                 question_control_context=prefix_control, prepared_meaning_checkpoint_ref=None))
             prefix = admit_emlis_thread(prefix_request)
             prepared = _prepare_answer(prefix, plan, legacy_appraisal_correction=legacy_appraisal_correction,
-                legacy_appraisal_answer_time=legacy_appraisal_answer_time)
+                legacy_appraisal_answer_time=legacy_appraisal_answer_time,
+                legacy_appraisal_original_time=legacy_appraisal_original_time)
             cp = prepared.checkpoint
             accepted = tuple(dict.fromkeys((*accepted, *cp.accepted_update_refs)))
             inactive = tuple(dict.fromkeys((*inactive, *cp.inactive_claim_refs)))
@@ -639,10 +640,11 @@ def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_apprai
             raise ValueError("emlis_checkpoint_source_prefix_mismatch")
         return prepared
     return _prepare_answer(thread, original, legacy_appraisal_correction=legacy_appraisal_correction,
-        legacy_appraisal_answer_time=legacy_appraisal_answer_time)
+        legacy_appraisal_answer_time=legacy_appraisal_answer_time,
+        legacy_appraisal_original_time=legacy_appraisal_original_time)
 
 
-def _prepare_answer(thread, original, *, legacy_appraisal_correction=False, legacy_appraisal_answer_time=False):
+def _prepare_answer(thread, original, *, legacy_appraisal_correction=False, legacy_appraisal_answer_time=False, legacy_appraisal_original_time=False):
     base = _base_ref(thread, original)
     if not thread.answers:
         checkpoint = EmlisMeaningCheckpointV1(
@@ -749,6 +751,11 @@ def _prepare_answer(thread, original, *, legacy_appraisal_correction=False, lega
                 and gp._result_appraisal_predicate(replacement['new'])):
                 now = _NOW.match(replacement['new'])
                 about, temporal_anchor, prior_answer_time = 'ANSWER_TIME', answer.envelope.envelope_id, False
+            elif (replacement and appraisal_replacement and not legacy_appraisal_answer_time
+                and not legacy_appraisal_original_time and prior_answer_time and replacement['new'].startswith('その時は')
+                and gp._result_appraisal_predicate(replacement['new'])):
+                then = _THEN.match(replacement['new'])
+                about, temporal_anchor, prior_answer_time = 'ORIGINAL_OCCASION', thread.original.envelope.envelope_id, False
             nucleus = None if withdrawal else _answer_nucleus(span, raw=answer.source.answer_text_private,
                 about_time="PRIOR_ANSWER_TIME" if prior_answer_time else about, source_start=replacement.start("new"), source_end=replacement.end("new"), outcome_standard=outcome_standard,
                 prior_answer_source=quoted if target_nucleus.source_fields == (ANSWER_FIELD,) else None,

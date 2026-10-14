@@ -359,8 +359,10 @@ def _legacy_fixture_request(row, *, checkpoint=True):
         control['pending_question'] = question(control['pending_question'])
         control['issued_questions'] = tuple(question(q) for q in control['issued_questions'])
         control['asked_target_refs'] = tuple(control['asked_target_refs'])
-        thread = replace(thread, current_round=1,
-            answers=(SupplementalAnswerSource(**row['supplemental_answer']),),
+        answers = tuple(SupplementalAnswerSource(**a) for a in (
+            row['supplemental_answers'] if 'supplemental_answers' in row else [row['supplemental_answer']]))
+        thread = replace(thread, current_round=len(answers),
+            answers=answers,
             question_control_context=EmlisQuestionControlV1(**control))
     return replace(req, emlis_thread=replace(thread,
         prepared_meaning_checkpoint_ref=row['checkpoint']['checkpoint_id'] if checkpoint else None))
@@ -972,3 +974,60 @@ def test_now_appraisal_and_separate_target_withdrawal_keep_answer_time(withdraw_
     assert '資料を分類' not in out.artifact.text
     assert '回答した時点の評価として、「今は満足していない」' in out.artifact.observation
     assert '回答した時点では満足していない' in out.artifact.reception
+
+
+@pytest.mark.parametrize('withdraw', [False, True])
+def test_appraisal_recorrection_explicit_original_time_overrides_prior_answer(withdraw):
+    from test_cmee_emlis_q3_thread import begin, advance
+    req = advance(begin('褒められたのに、嬉しくなかった。誘われたのに、悲しかった。',
+        '資料を分類できて満足した。'),
+        '「満足した」ではなく「今は満足していない」です。')
+    response = '「今は満足していない」ではなく「その時は納得した」です。'
+    if withdraw:
+        response += '「資料を分類できて」は誤りです。'
+    req = advance(req, response)
+    prepared = prepare_emlis_meaning(req)
+    assert prepared.checkpoint.assessment_status == 'RESOLVED'
+    update = next(u for u in prepared.checkpoint.answer_update.updates if u.operation == 'REVISE')
+    assert update.temporal_binding.about_time == 'ORIGINAL_OCCASION'
+    assert update.temporal_binding.anchor_source_ref == prepared.thread.original.envelope.envelope_id
+    assert update.temporal_binding.time_expression_evidence_refs == update.evidence_refs
+    nucleus, = prepared.accepted_nuclei
+    assert {c for c in nucleus.semantic_frame.attribute_codes if c.startswith('thread_time:')} == {'thread_time:original_occasion'}
+    assert not any(c.startswith('thread_time_anchor:') for c in nucleus.semantic_frame.attribute_codes)
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact is not None, out.reason_codes
+    assert '当時の評価' in out.artifact.observation
+    assert '当時は納得した' in out.artifact.reception
+    assert '先の回答時点' not in out.artifact.text and '回答した時点' not in out.artifact.text
+    assert ('資料を分類' in out.artifact.text) == (not withdraw)
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    changed = out.artifact.text.replace('当時', '先の回答時点')
+    assert changed != out.artifact.text
+    assert not evaluate_grounded_surface_body_inverse(body=changed.encode(), plan=plan,
+        sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+
+
+LEGACY_ORIGINAL_TIMES = json.loads((Path(__file__).parent / 'fixtures' /
+    'cmee_emlis_pre_appraisal_original_time_checkpoint_v1.json').read_text())['rows']
+
+
+@pytest.mark.parametrize('row', LEGACY_ORIGINAL_TIMES, ids=lambda r: r['case_id'])
+def test_saved_u257_partial_original_time_checkpoint_keeps_its_complete_meaning(row):
+    from emlis_thread_service import _json
+    req = _legacy_fixture_request(row)
+    prepared = prepare_emlis_meaning(req)
+    assert _json(prepared.checkpoint) == row['checkpoint']
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact is not None, out.reason_codes
+    assert out.artifact.text == row['baseline_body']
+    assert out.body_state == row['baseline_body_state'] == 'PARTIALLY_REFINED'
+    fresh = prepare_emlis_meaning(_legacy_fixture_request(row, checkpoint=False))
+    assert fresh.checkpoint.assessment_status == 'RESOLVED'
+    assert fresh.checkpoint.checkpoint_id != row['checkpoint']['checkpoint_id']
+    foreign = replace(req, emlis_thread=replace(req.emlis_thread, prepared_meaning_checkpoint_ref='foreign'))
+    with pytest.raises(ValueError, match='emlis_checkpoint_source_prefix_mismatch|emlis_q3_unresolved_predecessor'):
+        prepare_emlis_meaning(foreign)

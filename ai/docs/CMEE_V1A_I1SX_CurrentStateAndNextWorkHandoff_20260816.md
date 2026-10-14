@@ -18515,3 +18515,30 @@ Python3.12.14、pytest8.4.1、Pydantic2.13.5、既存PGlite0.5.8/React18.3.1の�
 次の主課題は、同じ限定承認内で8/28設計§9.2/9.4の「経験として何を受け取るか」をselected reading・対象・本人評価から具体化し、実本文で確かめること。今回の時点修正の完了を初回単位全体の完了へ置き換えず、追加の組合せ検査だけを延々と次の主課題にしない。満足から達成/成長/行為全体のよさを、未納得から解決待ち/時間差を無根拠に作らない。
 
 2 received＋2 appraisalの初回LIMITED capability gap、既存共有17失敗、任意数/全多round/圧縮extra_contextの未確認は別の残件として保持する。same100全件の再実行/全文再読、本人実機の保存往復、正式Product Readは今回未実施。0/3・NOT_CLEAR・candidate_ready=false・automatic_progression=falseを維持。10/17の本文差と残差、10/31必須残差管理、12/18公開目標とPiece/Analysis主枠を維持。終了日・工数・公開可能性の上積みはしない。配置・稼働DB・本人データ・native build・main merge・PR ready化は0。
+
+
+## u258 — 明示「その時は」の再訂正と先行u257保存互換（2026-10-14 JST）
+
+全体設計01・全file地図01A/B/C・current00/01/04・最新weekly・作業規則・恒久incidentを確認して同じ限定承認内で継続した。反映直前に同branchへu257 `11720b60765471b7fc15ec2ba29280a71e8fc204`／資料 `39a471434d3824e87064543329058c2ddf2b426e`が入ったため、上書きせず両更新を土台に差分を統合した。先にローカルで検証した別u257候補の211PASSは、GitHub反映版の結果へ流用しない。rootがこの追加差分の唯一の編集・反映owner。同環境補助のread-onlyレビューは正式Pro/Ultra Product Readではない。
+
+### 原因と限定修正
+
+先行u257では「満足した」→「今は満足していない」→「その時は納得した」と再訂正すると、旧回答時点を継承したまま過去述語が検出され、`PARTIAL / WITHDRAW`となった。対象維持／同回答内で対象撤回の2件を先行11720b6で実再現した。
+
+`cocolon_meaning_experience_engine/emlis_answer_update.py`だけをproduction変更する。既存の有限評価構文・一意の訂正対象・先行回答時点が証明された場合、新quoted rangeの「その時は」を元入力envelopeへ結び直す。時点なし訂正は先行回答、新しい「今は」は今回回答というu257の挙動、source検証強化、作者の共通時点helper、独立readerはそのまま保持する。新しい時点schemaや全過去表現の対応は追加しない。
+
+先行u257で保存済みの同訂正も壊さないよう、privateな`legacy_appraisal_original_time`で旧挙動を丸ごと再導出し、完全checkpoint一致時だけ旧PARTIALを再開する。first roundで受理済みの「今は」を巻き戻すu256互換とは区別する。新fixture `ai/tests/fixtures/cmee_emlis_pre_appraisal_original_time_checkpoint_v1.json`は未変更11720b6から実生成した2roundの質問・回答・完全checkpoint・本文2件。旧fixture・共有identity snapshot・歴史的proofは変更しない。
+
+### 検証・実本文・残件
+
+評価suiteは**156 PASS**（先行u257の152＋新4）、既存Q2/Q3 applicationは**54 PASS**。新規4件は対象維持/撤回の新解釈2件と、先行u257 PARTIALの完全再現2件。元入力anchor・旧anchorを残さないこと・独立readerによる時点改変拒否・foreign checkpoint拒否を確認。最初の合同runで旧fixture2件が失敗したのは、foreignを拒否するerror名を単一roundのものに限定した新testの誤りだった。多roundの旧解析候補では`emlis_q3_unresolved_predecessor`でも拒否されるため、新しい負例だけを既知の2拒否codeに合わせた。真正な旧checkpoint・本文の完全一致は初回から通過し、製品の受理判定は緩めていない。
+
+現行shared owner identityは**1 PASS / 194 deselected、26.21秒**。共有ownerは先行u257と同一で、language `a700af7dc80b018599cefb2fbe8f29ddc065a764e638813a808de1d7e51e51c0`／runtime `39dc2b1da2531ee603f90388c7c3716a027bdcb78c18e288a91915e156e3a718`を維持する。
+
+実service＋隔離PGliteでは、本人continueを経た2roundの新しい再訂正2ケースを保存し、event本文＝DTO、NoAuthor GET/start一致を確認。現在のRN hook/modalで本文1回表示、履歴展開、閉じて再open、GET2回/生成投稿0を確認した。旧u257相当の2round PARTIALを保存して本文保存だけを503にした試験でも、retryは同じ意味event・operationを保ち新attemptで旧PARTIAL本文を保存した。React renderer・合成データでありnative実機ではない。
+
+rootは保存2本文を読んだ。対象維持では「資料を分類できたことについて、当時は納得したのですね。」、対象撤回後は`当時の評価として、「その時は納得した」と書かれています。`という観測と「当時は納得したのですね。」が残る。時点は改善したが、評価命題の再表現を越える経験の内容形成は未達。新production file・公開API/DTO/DB/SQL/RN・依存は変更なし。STRUCTURE_MAP_DELTA_PRESENTとして全体01/01A・current01/04・設計06・weeklyへ責務とfixture配置を同期する。
+
+**BOUNDED_IMPLEMENTATION_WIP / PRODUCT_NOT_CLEAR、最初の一体修正は未完了。** 次の主課題は先行u257・weekly§5.6.7のとおり、設計§9.2/9.4の経験としての受け取り内容をselected reading・対象・本人評価から具体化し、実本文で確かめること。組合せ検査の追加だけを主課題にし続けない。満足→達成/成長、未納得→時間差/解決待ちの無根拠な展開はしない。
+
+2 received＋2 appraisalの初回停止、既存共有17失敗、任意数/全多roundは別の残件。既存17失敗は今回未修正・未再実行で、全回帰合格とはしない。same100・本人実機・正式Product Readは未実施。0/3・candidate_ready=false・automatic_progression=false、10/17・10/31・12/18、Piece/Analysis主枠を維持。配置・稼働DB・本人データ・native build・main merge・PR ready化は0。
