@@ -19010,3 +19010,165 @@ STRUCTURE_MAP_DELTA_PRESENT。既存7production owner（observation_plan、threa
 - 現行shared identity: **1 PASS、20.63秒**。language `bcf7b159b9689966e933cfa53ebe3eb42668188672d3c6978af6c8ce2ff1210e`、runtime `1b0f907934477e669f2f6755607bca230a6acfce800b114097d22c86617a9d40`。既存manifest/proof関数から現行fixtureを再生成し、歴史proofは不変。
 - 実原文TENSION候補へ通常final owner `_candidate_from_direct(...include_relation_endpoint_source_contract=True)` で両endpoint supportを生成して `_validate_stage1_relation_binding` を実行しPASS。thread本経路がこのPhase-B validatorを通らないため、運搬同値検査とこの直接実測で不足を補った。新checkerは追加していない。
 - 保存本文4例とRN hook/modal4例は本文/event完全一致。git diff --check成功。これらは商品品質の合格や本人実機検査を代替しない。
+
+
+## u263 — 明示された満足理由を受け取りへ使えない原因と限定追加案（2026-10-15 JST）
+
+**BLOCKER_NARROWED / PRODUCT_NOT_CLEAR。今回の製品コード変更・本文改善は0。** u262の次の一般継続指示に基づき、説明的な語義展開を同じ修辞で置き換えず、意味内容を増やすために何が不足するかを現行実作者で調べた。初回単位未完了・正式商品受入れ0/3・candidate_ready=false・automatic_progression=false・未配置を維持する。u253/u262承認と満足/納得の意味確認は継続する。
+
+開始時GitHub PR3/API `da6ee56beba26bbf0d89c734230f363ba794a9b8`、PR30/Cocolon `d79bf25134b5fdb856c55245ed3af1d472ad2a55` と一致する分離worktreeを使用。全体設計01、全file地図01A/B/C、current01/04、weekly20261010 §3.5/5.6/6.5〜5.6.12、8/28設計§9.2/9.4/u261/u262、思想資料§12.2/12.9/12.10、work rules・恒久incident全文、Karen-Diaryの入口/行動原理/関係性を確認した。System Context prepareはmaterial commitが設定refのdescendantでないため失敗。生成contextを更新済みとせず、entryが許可する原典直接読取りで進めた。ルール・設定・履歴を変更して迂回していない。
+
+### 今回の直接実測
+
+既存Python3.12.14 runtimeで、未変更の `MeaningExperienceEngine.generate` と `prepare_emlis_meaning → build_updated_grounded_plan → project_thread_meaning` を呼び、合成7入力の本文を全て確認。保存/SQL/RN/実機検査は今回再実行していない。前回187/54/1 PASSを今回のtest件数へ加算しない。
+
+| case | 選択 | 候補数 | 実本文で確認した不足 |
+|---|---|---:|---|
+| bounded_baseline | NORMAL | 1 | u262の未成立/対象/満足は保持。『満足を…充足として』という説明的な表現は残る。 |
+| explicit_reason | LIMITED | 0 | 二文目の明示理由は変化として並ぶが、Receptionは対象への満足の再表現だけ。 |
+| reason_before_evaluation | LIMITED | 0 | 同一文の理由・対象・評価を一つの変化へ束ね、別欄の行動への受け止めも混入。 |
+| reason_target | LIMITED | 0 | 対象が状態変化の場合に評価と分離できず、『満足したことに表れた変化』へ縮退。 |
+| explicit_purpose | LIMITED | 0 | 希望を出来事として表示。満足への本人の目的達成を推定してはいけない対照。 |
+| unattained_purpose | LIMITED | 0 | 希望と未成立と満足があるが、Receptionは独立行動だけ。今回修正とはしない。 |
+| reason_before_evaluation_no_action | NORMAL | 1 | 同じ理由文から独立行動を除くとNORMALだが、『その変化を感じています。』だけになる。NORMALを品質成立へ換算しない。 |
+
+以下は全件とも合成入力であり、private実入力や華恋の代作ではない。`no_bound_personal_meaning_target` は既存出力のreason codeで、今回の候補0の直接原因をそのcodeだけから断定しない。
+
+#### bounded_baseline
+
+入力: 結論は出ていないが、考えを言葉にできて満足した。
+
+行動欄: 植木に水をやった。
+
+```text
+見えたこと：
+「結論は出ていない」の一方で「満足した」とあります。 「考えを言葉にできて」という出来事に対する評価は、「満足した」とあります。
+今の入力には、「植木に水をやった」という行動があります。
+
+Emlisから：
+結論は出ていないという点と切り分けて、当時の満足を、考えを言葉にできたことに向けられた充足として受け取りました。
+```
+
+#### explicit_reason
+
+入力: 資料を分類できて満足した。必要な資料を探しやすくなったからだ。
+
+行動欄: 植木に水をやった。
+
+```text
+見えたこと：
+「資料を分類できて」という出来事に対する評価は、「満足した」とあります。
+今の入力には、「必要な資料を探しやすくなったからだ」という変化があります。
+今の入力には、「植木に水をやった」という行動があります。
+
+Emlisから：
+資料を分類できたことについて、当時は満足したのですね。
+```
+
+#### reason_before_evaluation
+
+入力: 必要な資料を探しやすくなったので、資料を分類したことに満足した。
+
+行動欄: 植木に水をやった。
+
+```text
+見えたこと：
+今の入力には、「必要な資料を探しやすくなったので、資料を分類したことに満足した」という変化があります。
+今の入力には、「植木に水をやった」という行動があります。
+
+Emlisから：
+必要な資料を探しやすくなったので、資料を分類したことに満足したという変化を見過ごさず、受け止めています。植木に水をやったことを大切に思っています。
+```
+
+#### reason_target
+
+入力: 資料を分類した。必要な資料を探しやすくなったことに満足した。
+
+行動欄: 植木に水をやった。
+
+```text
+見えたこと：
+今回の中心には、「資料を分類した」があります。
+今の入力には、「必要な資料を探しやすくなったことに満足した」という変化があります。
+今の入力には、「植木に水をやった」という行動があります。
+
+Emlisから：
+資料を分類したことを背景に、必要な資料を探しやすくなったことに満足したことに表れた変化に目が留まり、それを受け止めています。植木に水をやったことを大切に思っています。
+```
+
+#### explicit_purpose
+
+入力: 資料を探しやすくしたかった。資料を分類できて満足した。
+
+行動欄: 植木に水をやった。
+
+```text
+見えたこと：
+「資料を探しやすくしたかった」という出来事もありました。
+「資料を分類できて」という出来事に対する評価は、「満足した」とあります。
+今の入力には、「植木に水をやった」という行動があります。
+
+Emlisから：
+資料を分類できたことについて、当時は満足したのですね。
+```
+
+#### unattained_purpose
+
+入力: 資料を探しやすくしたかったが、まだ探しにくい。資料を分類できて満足した。
+
+行動欄: 植木に水をやった。
+
+```text
+見えたこと：
+「資料を探しやすくしたかったが、まだ探しにくい」と「資料を分類できて満足した」が、同じ入力に置かれた出来事として並んでいます。
+今の入力には、「植木に水をやった」という行動があります。
+
+Emlisから：
+植木に水をやったことを見過ごさず、大切に受け止めています。
+```
+
+#### reason_before_evaluation_no_action
+
+入力: 必要な資料を探しやすくなったので、資料を分類したことに満足した。
+
+行動欄: なし
+
+```text
+見えたこと：
+今の入力には、「必要な資料を探しやすくなったので、資料を分類したことに満足した」という変化があります。
+
+Emlisから：
+その変化を感じています。
+```
+
+### 原因の分離と採らなかった案
+
+1. 現在の `_explicit_result_appraisal_projections` は実行event＋評価、又は承認済み未成立fact＋そのpairを扱う。同一文で評価理由を前置すると、理由・対象・満足の役割を分けられず、今回例はgenericなchangeになる。入力に理由がないのではなく、明示されている理由を現在の実装が使えていない。
+2. source認識だけの修正でも足りない。`emlis_thread_projection.py` の `source_relation_rows` はABOUT_TARGET又は `project_foreground_scope_relation_kind` の投影だけを採用する。後者はcause/resultを意図的にscope証明へ昇格しない。実呼出し `project_foreground_scope_relation_kind('user_stated_cause', relation_operators=(SOURCE_EXPLICIT_CAUSE,))` は `None`。
+3. `emlis_input_specific_meaning.py` のsource relation検証・configuration導出・component/seed接続と、contractsの `RelationDirectionRow` も同じ許可型を要求する。既存 `SOURCE_STATED_CAUSE / SOURCE_EXPLICIT_CAUSE / CAUSE・EFFECT` の候補・文法はあるが、これだけでselected configurationへ理由を保持できるとは言えない。
+4. u262の語尾を『経験を一括否定しない』へ置換する案は不採用。既存の対象限定と同内容に近く、経験全体の良悪という別の評価軸を足す危険がある。§9.2のaffirmative contributionをcounterpositionだけで代替しない。本人の満足だけから成功・進歩・十分さ・気づき・外から自己を見る経験を作らない。
+
+同環境のread-only subagentも、現u262の言い直しでは本質的内容差にならないことと、明示理由のscope所有に契約上の不足があることを独立確認した。これは別modelのPro/Ultra審査、actual human Product Read、商品合格ではない。
+
+### 推奨する次の限定変更（未承認・未実装）
+
+**本人が同一文に明示した満足の理由exact1を、評価対象・肯定無程度の満足と結び、一つの全体の読みに保持する。** 初回対象は例 `必要な資料を探しやすくなったので、資料を分類したことに満足した。` のように、完結した本人の理由節→明示理由接続→既存の実行済み対象/評価pairがある範囲とする。二文目『からだ』の照応、目的だけの入力、理由二つ、他者/引用/推量、否定/程度付き満足、納得、u262未成立factとの四点併合は今回追加へ含めない。
+
+- 既存 `ForegroundScopeRelationKind` exact4とABOUT_TARGETの意味を変えない。原因をcontrast/coexistence/ABOUT_TARGETへ偽装しない。
+- 既存のsource-explicit cause候補/文法を使い、**評価理由だけを許可するversioned private scope分岐**を加える案とする。対象→評価と理由→評価の二項configurationを同じ全体の読みに結ぶ。private schema/validatorの対応は必要であり、『schema変更なしでできる』とは約束しない。公開API/DB/RNのschemaは変更しない。
+- 理由節と評価節の原文範囲、SELF、肯否、時点、修飾、接続方向、理由の終点を選択前に証明する。原文の本人説明を客観因果へ昇格しない。『分類したから探しやすくなった』『唯一/最重要の理由』『目的を達成した』『経験全体が良い』を補わない。
+- Receptionで受け取る内容は、今回の満足が、本人の述べた『探しやすくなった』という変化を拠り所にしている点。理由を丸ごと引用して固定句を付けるだけを完成にしない。これは意味上の目標であり、実装による改善済み出力ではない。
+- 既存selected meaning→内容導出→唯一のHuman Reception作者→独立readerへ同じ意味を通す。旧意味/checkpointのversion再導出、保存済み本文の非再生成を保持する。old bytesを新意味へ密かに再解釈しない。
+- 予定ownerは既存 `emlis_ai_grounded_observation_plan.py`、`cocolon_meaning_experience_engine/{contracts,emlis_thread_projection,emlis_input_specific_meaning,emlis_stage1_composition,emlis_answer_update,emlis_stage1_response}.py`、`emlis_ai_grounded_human_reception.py`、`emlis_ai_grounded_sentence_surface.py`、`emlis_ai_grounded_observation_gate.py`。必要な既存評価test/current identity fixtureと資料を同単位で同期し、新engine/checker/serviceを作らない。actual変更pathは実装時に確認し、protected/frozen fixtureや公開契約へ広がる場合は停止する。
+
+成功条件: 同じ実作者で理由の読落としを解消し、理由削除/理由差替えが受け取る内容へ作用する。目的への置換、他者/引用/推量、他の評価にかかる理由を誤接続しない。対象/肯否/時点の保持、旧u262本文/旧checkpointと保存再読/RNの必要な互換を確認する。初回実生成が理由の引用＋定型句に留まる場合は§9.2/9.4の完成扱いをせず、同じ修辞の反復へ戻らない。新registry等が追加で必要なら黙って拡張しない。
+
+Rule18 §11.3の既存範囲/契約への追加に当たるため、この理由接続の追加だけをMash判断へ提示する。u253/u262承認は取り直さない。実装工数・完成日は未確定、追加有料service/外部AI/依存/本人端末操作は0を予定。了承がない間も既存実装と承認は有効で、今回の未承認案だけが未実行。
+
+### 現在地・継続位置
+
+STRUCTURE_MAP_DELTA_NONE。今回は原因診断と既存資料への提案記録だけで、production/test/fixture/API/DB/RN変更0。全体設計と全file地図を照合したが、actual構造が変わっていないため架空の実装済み責務は追記しない。実装を進める場合はその差分と同じ単位で地図を更新する。既存共有17失敗、2 received＋2評価の初回gap、same100、本人実機、正式Product Readは残る。10/17の確認点には今回の本文改善0を含めて示す。10/31・12/18とPiece/Analysis主枠は維持。配置・DB操作・main merge・PR ready化なし。
+
+前回u262のCI run38641247452は、同head `da6ee56beba26bbf0d89c734230f363ba794a9b8` でcompleted/successをfresh確認した。これは前回実装のCI結果であり、今回の本文改善・新規test成功ではない。
+
+初回理由scopeの補足: 理由自体も本人が現実の状態/変化として明示した肯定fact（過去又は現在）exact1へ限定する。条件・予定・願望・理由関係の否定は除外する。既存の対象/評価pairとは意味型を再利用する意味であり、理由を含む文全体を現在のparserが認識済みという主張ではない。理由込みのsource認識修正をこの提案へ含める。
