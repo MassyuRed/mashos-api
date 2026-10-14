@@ -1,4 +1,4 @@
-> 最新のEmlisAI残件は末尾 **u253（2026-10-14 JST・限定変更承認済み・実装WIP・未配置）**。意味保持と合成保存/RN再表示を確認。受け取り内容は商品NOT_CLEAR、初回単位未完了。同じ承認から再開し再承認待ちへ戻さない。
+> 最新のEmlisAI残件は末尾 **u257（2026-10-14 JST・限定変更承認済み・実装WIP・未配置）**。明示「今は」の訂正時点・旧途中保存の互換・保存/RN再表示を確認。次の主課題は経験としての受け取り内容形成。商品NOT_CLEAR、初回単位未完了。同じ承認から再開し再承認待ちへ戻さない。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -18483,3 +18483,35 @@ rootは上記4保存本文と新規代表本文を読み、初回では「資料
 3. 2 received＋2 appraisalでは初回`LIMITED_RECEPTION_CAPABILITY_GAP_STOP`を実測。1 received＋2 appraisal、または同回答内訂正/撤回の成功と混同しない。任意数の組合せ、圧縮extra_context、全多round互換の完了ではない。
 
 same100・本人実機の保存往復・正式Product Readは未実施。0/3・NOT_CLEAR・candidate_ready=false・automatic_progression=falseを維持。10/17確認・10/31必須残件・12/18公開目標、Piece/Analysis主枠は維持。稼働DB・本人データ・native build・deploy・main merge・PR ready化は0。
+
+## u257 — 明示「今は」の評価訂正・回答時点の保持と旧PARTIAL再開（2026-10-14 JST）
+
+MashのGitHub指定によるEmlisAI残件継続。同じ限定承認 `EMLIS_APPRAISAL_COMPONENT_MEANING_20261014` 内。開始headはAPI `458a1fcccfcb5ed9f43c115e639ee30e74bb3cdb`／Cocolon `11f8a38343bd945e8876132fdffd7abcd0ccc140`。全体設計01、全file地図01A/B/Cの章入口・該当/隣接責務、current00/01/04、8/28設計§9.2/9.4、最新weekly20261010 §5.6.6/6.5、作業規則と恒久incident全文を確認した。全sourceの全文再監査ではない。System Context prepareは浅いcloneのHEADと規定ancestorの検証で停止したため、規定の原本直接読取を継続し、refresh成功とは扱わない。rootが唯一の編集・反映owner、同環境の補助はread-onlyのCI確認・時点/互換review。独立Pro/Ultra審査ではない。
+
+**BOUNDED_IMPLEMENTATION_WIP / PRODUCT_NOT_CLEAR。最初の一体修正は未完了。** 今回はu256に明記した訂正時点と保存互換を同じ既存契約内で揃えた。本文へ正しい時点を保つ技術修正であり、復唱を越える経験の受け取り内容形成を達成したとは扱わない。
+
+### 修正した既存責務
+
+- `cocolon_meaning_experience_engine/emlis_answer_update.py`：明示引用訂正の新しい評価範囲にある「今は」だけを今回回答のsource envelopeへ結ぶ。古い引用は対象特定だけに使う。時点指定なしの再訂正は先の回答anchorを保ち、新しい「今は」がある時だけ今回回答へ移す。肯否・程度・継続は置換sourceから再導出し、回答時点＋過去形の不整合、他者/推量/条件の非採用を維持する。同回答内・別回答での対象撤回後も評価と時点を残す。
+- `emlis_ai_grounded_observation_plan.py`：評価のoriginal/answer/prior-answer時点を既存codeとsourceで照合する。述語の過去現在と、その評価が入力/回答のどの時点に属するかを分けて扱う。
+- `emlis_ai_grounded_sentence_surface.py`／`emlis_ai_grounded_human_reception.py`：対象付き・対象撤回後・複数評価それぞれで「当時」「入力した時点」「回答した時点」「先の回答時点」を保持する。元入力の評価は従来の時点を保つ。既存LIMITED経路をNORMALへ強制昇格しない。
+- `emlis_ai_grounded_observation_gate.py`：作者helperを再実行せず、sourceと意味codeから時点を独立に読み戻す。回答時点を元入力時点/過去/先の回答へ入れ替えた本文は拒否する。
+- 保存checkpointが現行意味と一致しない場合、既知のu256解析を専用private modeで再導出する。「今は」の拒否と、同回答内で旧版も受理した他の訂正を両方再現し、全checkpoint一致時だけ旧PARTIALを再開する。既存u254/pre-appraisal互換も保持。保存payloadやIDの付替え、一致条件の緩和はない。
+
+既存production5file、既存評価test・現行shared owner identity snapshot、新規fixture `ai/tests/fixtures/cmee_emlis_pre_appraisal_answer_time_checkpoint_v1.json` を更新。fixtureは未変更458a1fccの実engineから取得した旧質問/回答/PARTIAL checkpoint/本文2件であり、現行checkpointを旧IDへ改名したものではない。新production file/service、公開API/DTO/DB/SQL/RN、意味schema、依存は変更なし。既存時点処理と旧意味再開の責務差分によりSTRUCTURE_MAP_DELTA_PRESENT。
+
+### 検証と保存した実本文
+
+- 最終評価suite：**152 PASS、36.60秒、skipなし**（既存131＋新21）。新たな4評価×対象維持/同回答内撤回の前後、先の回答からの再訂正2件、旧checkpointの厳密再現2件、保存read/replay2件、旧意味retry1件、別回答での撤回前後2件を含む。
+- Q2/Q3 application：**54 PASS**。最初の合同runは204PASS/2FAILで、2失敗は新fixture対照のfresh生成に必須checkpoint参照を渡していなかった検査側の不備。既存生成契約どおり参照を結び、上記最終152件で解消した。撤回経路の製品不具合ではなく、製品判定も緩めていない。
+- 現行shared owner identity：**1 PASS / 194 deselected、21.63秒**。language `a700af7dc80b018599cefb2fbe8f29ddc065a764e638813a808de1d7e51e51c0`、runtime `39dc2b1da2531ee603f90388c7c3716a027bdcb78c18e288a91915e156e3a718`。歴史的proofは不変。
+- 実service＋隔離PGliteに保存した4ケースで、保存eventとDTOの本文一致を照合。実RN hook/modalへ各保存DTOを渡し、現在本文1表示、履歴展開、閉じて再open、GET2回・生成/投稿0を確認した。新旧checkpointのretryは保存意味event・operationを保って新attemptだけを作り、本文を保存する。保存read/replayのNoAuthor検査も通過。これらの検査件数は上の152件と重複する部分があり合算しない。React rendererでありnative実機ではない。
+- u255で開始headにも再現したQ1旧3失敗・Q3旧撤回14失敗は未修正・今回未再実行。共有回帰全合格とはしない。開始head458a1fccのAPI Actions [run38563812728](https://github.com/MassyuRed/mashos-api/actions/runs/38563812728)はsuccess（Analysis 1634件/12020 subtests＋identity1件）、Cocolon11f8a383の5workflowもsuccess。本変更後CIとは区別する。
+
+Python3.12.14、pytest8.4.1、Pydantic2.13.5、既存PGlite0.5.8/React18.3.1の隔離runtimeを再利用。rootは4保存ケースのObservation/Reception全文と代表生成本文を読み、元入力現在評価と回答時点評価の混在、二つの対象撤回、同回答内の過去評価訂正でも各時点が残ることを確認した。例えば訂正後の実Receptionは「資料を分類できたことについて、回答した時点では満足していないのですね。」となる。これは時点保持の改善であり、評価命題の再表現を越えた内容形成の証明ではない。
+
+### 未解消と再開位置
+
+次の主課題は、同じ限定承認内で8/28設計§9.2/9.4の「経験として何を受け取るか」をselected reading・対象・本人評価から具体化し、実本文で確かめること。今回の時点修正の完了を初回単位全体の完了へ置き換えず、追加の組合せ検査だけを延々と次の主課題にしない。満足から達成/成長/行為全体のよさを、未納得から解決待ち/時間差を無根拠に作らない。
+
+2 received＋2 appraisalの初回LIMITED capability gap、既存共有17失敗、任意数/全多round/圧縮extra_contextの未確認は別の残件として保持する。same100全件の再実行/全文再読、本人実機の保存往復、正式Product Readは今回未実施。0/3・NOT_CLEAR・candidate_ready=false・automatic_progression=falseを維持。10/17の本文差と残差、10/31必須残差管理、12/18公開目標とPiece/Analysis主枠を維持。終了日・工数・公開可能性の上積みはしない。配置・稼働DB・本人データ・native build・main merge・PR ready化は0。

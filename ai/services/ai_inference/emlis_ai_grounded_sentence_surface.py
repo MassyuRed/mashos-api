@@ -32,6 +32,7 @@ from emlis_ai_grounded_observation_plan import (
     classify_grounded_human_follow_role,
     validate_grounded_human_reception_plan,
     source_owned_result_appraisal,
+    _result_appraisal_time_label,
 )
 from emlis_ai_grounded_human_reception import (
     SelectedSubjectiveReceptionInputV1,
@@ -1676,7 +1677,7 @@ def _detached_observation_time(nucleus):
     """Keep each admitted independent feeling's own observation time."""
     from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction, _thread_withdrawn_result_appraisal
     if _thread_withdrawn_result_appraisal(nucleus, ()):
-        return "当時" if nucleus.semantic_frame.time_scope == "past" else "入力した時点"
+        return _result_appraisal_time_label(nucleus)
     frame = nucleus.semantic_frame
     codes = set(frame.attribute_codes)
     if (("thread_subject:withdrawn_source_event" not in codes
@@ -3015,7 +3016,7 @@ def _render_observation(
     if (getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
         and not binding.relation_ids and len(quotes) == 1
         and _thread_withdrawn_result_appraisal(nucleus, ())):
-        when = "当時" if nucleus.semantic_frame.time_scope == "past" else "入力した時点"
+        when = _result_appraisal_time_label(nucleus)
         return f"{prefix}{when}の評価として、{joined}と書かれています。"
     if (getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
         and not binding.relation_ids and len(quotes) == 1
@@ -3466,7 +3467,7 @@ def _render_relation(
             if len(left) != 1 or len(right) != 1:
                 raise GroundedSentenceSurfaceError("appraisal_pair_source_ambiguous")
             evaluation = nucleus_index[relation.to_nucleus_id]
-            when = "当時" if evaluation.semantic_frame.time_scope == "past" else "入力した時点"
+            when = _result_appraisal_time_label(evaluation)
             operands.append(f"{left[0]}という出来事に対する{when}の評価は{right[0]}")
         return "、また".join(operands) + "と書かれています。"
     groups, consumed = _thread_contrast_answer_groups(
@@ -3678,7 +3679,7 @@ def _render_relation(
             # Original appraisal and supplemental answer have different source
             # owners. Never give original text a fabricated answer timestamp.
             evaluation = nucleus_index[relation.to_nucleus_id]
-            at = ("当時の" if evaluation.semantic_frame.time_scope == "past" else "入力した時点の") if (
+            at = (_result_appraisal_time_label(evaluation) + "の") if (
                 evaluation.source_fields == ("answer_text_private",)) else ""
             sentences.append(f"{left}という出来事に対する{at}評価は、{right}とあります。")
         elif (relation.type == "evaluation_about_event"

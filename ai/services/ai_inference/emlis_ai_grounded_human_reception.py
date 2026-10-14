@@ -11232,12 +11232,13 @@ def _detached_feeling_source_parts(move, plan, resolver, *, allow_revised=False)
     index = {n.nucleus_id: n for n in plan.nuclei}
     source = final_reception_source_anchor_text(nucleus.nucleus_id, index, resolver)
     from emlis_ai_grounded_observation_plan import (
-        _thread_withdrawn_result_appraisal, _source_result_appraisal_predicate,
+        _thread_withdrawn_result_appraisal, _source_result_appraisal_predicate, _result_appraisal_time_label,
     )
     if _thread_withdrawn_result_appraisal(nucleus, plan.relations):
         if not _source_result_appraisal_predicate(nucleus, source):
             return None
-        return ('当時は' if frame.time_scope == 'past' else '入力した時点では',
+        when = _result_appraisal_time_label(nucleus)
+        return (when + ('は' if when == '当時' else 'では'),
                 _result_appraisal_finite_surface(source))
     finite = _detached_feeling_finite_surface(source, allow_explanatory=True, allow_copular=True, allow_medial=True)
     copular = _detached_feeling_copula_parts(source)
@@ -11447,7 +11448,7 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
         proposition = selected_decision.subjective_proposition
         appraisal = proposition.appraisal_content
         if selected_decision.branch == 'LIMITED' and _selected_material_appraisal(selected_decision):
-            from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate
+            from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate, _result_appraisal_time_label
             endings = {c.split(':', 1)[1] for c in left.semantic_frame.attribute_codes
                        if c.startswith('source_appraisal_event_ending:')}
             if len(endings) != 1 or not _source_result_appraisal_predicate(right, second):
@@ -11457,7 +11458,8 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
                 return None
             event = first[:-1] + {'te': 'た', 'de': 'だ', 'ta': 'た'}[ending]
             event = re.sub(r'(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)', 'あなた', event, count=1)
-            time = '当時は' if right.semantic_frame.time_scope == 'past' else '入力した時点では'
+            when = _result_appraisal_time_label(right)
+            time = when + ('は' if when == '当時' else 'では')
             return event + 'ことについて、' + time + _feeling_acknowledgement(_result_appraisal_finite_surface(second))
         if (selected_decision.branch != "NORMAL" or appraisal is None
             or appraisal.focal_relation_ref is None

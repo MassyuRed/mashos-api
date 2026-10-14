@@ -13337,6 +13337,14 @@ def _source_result_appraisal_predicate(nucleus, source):
     polarity, time, expected = attributes
     frame = nucleus.semantic_frame
     codes = set(frame.attribute_codes)
+    times = {c for c in codes if c.startswith('thread_time:')}
+    if nucleus.source_fields == ('answer_text_private',):
+        if times not in ({'thread_time:original_occasion'}, {'thread_time:answer_time'}, {'thread_time:prior_answer_time'}):
+            return False
+        if times != {'thread_time:original_occasion'} and time != 'present':
+            return False
+        if source.startswith('今は') and times == {'thread_time:original_occasion'}:
+            return False
     return bool((nucleus.kind, frame.actor, frame.predicate_kind, frame.modality,
                  frame.polarity, frame.time_scope)
                 == ('reaction', 'current_user', 'feeling', 'feeling', polarity, time)
@@ -13344,6 +13352,17 @@ def _source_result_appraisal_predicate(nucleus, source):
         and {c for c in codes if c.startswith('source_appraisal_')}
             == {c for c in expected if c.startswith('source_appraisal_')}
         and ('operator:negation' in codes) == (polarity == 'negative'))
+
+
+def _result_appraisal_time_label(nucleus):
+    """Realize the evaluation's source occasion separately from predicate tense."""
+    times = {c for c in nucleus.semantic_frame.attribute_codes if c.startswith('thread_time:')}
+    if nucleus.source_fields == ('answer_text_private',):
+        if times == {'thread_time:answer_time'}:
+            return '回答した時点'
+        if times == {'thread_time:prior_answer_time'}:
+            return '先の回答時点'
+    return '当時' if nucleus.semantic_frame.time_scope == 'past' else '入力した時点'
 
 
 def _thread_withdrawn_result_appraisal(nucleus, relations):
@@ -13364,7 +13383,8 @@ def _thread_withdrawn_result_appraisal(nucleus, relations):
              or (nucleus.source_fields == ('answer_text_private',)
                  and nucleus.allowed_claim_scope == 'explicit_supplemental_answer'
                  and 'thread_subject:revised_result_appraisal' in codes
-                 and {c for c in codes if c.startswith('thread_time:')} == {'thread_time:original_occasion'}))
+                 and {c for c in codes if c.startswith('thread_time:')} in (
+                     {'thread_time:original_occasion'}, {'thread_time:answer_time'}, {'thread_time:prior_answer_time'})))
         and not any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations))
 
 
