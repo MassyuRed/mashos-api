@@ -8319,7 +8319,8 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
     pairs = _received_contrast_group_targets(
         tuple(n for n in originals if n.nucleus_id in pair_ids), original_relations, minimum=1)
     answers = tuple(n for n in nuclei if n.source_fields == ("answer_text_private",))
-    detached_originals = tuple(n for n in original_text if _thread_withdrawn_original_reaction(n, relations))
+    detached_originals = tuple(n for n in original_text if _thread_withdrawn_original_reaction(n, relations)
+                              or _thread_withdrawn_result_appraisal(n, relations))
     detached_ids = {n.nucleus_id for n in detached_originals}
     if withdrawal and not pairs and not pair_ids:
         pairs = ((), ())
@@ -8538,7 +8539,8 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
     if not targets and not withdrawal:
         return unsupported()
     groups = [("current_burden", tuple(targets), tuple(supports))] if targets else []
-    groups.extend(("current_burden", (n.nucleus_id,), ()) for n in detached_originals)
+    groups.extend(("lived_change" if n.semantic_frame.polarity == "positive" else "current_burden",
+                   (n.nucleus_id,), ()) for n in detached_originals)
     groups.extend(("current_burden", (n.nucleus_id,), ()) for n in detached_answers if n in negative)
     groups.extend(("current_burden", (n.nucleus_id,), ()) for n in independent_answers if n in negative)
     groups.extend(("lived_change", (n.nucleus_id,), ()) for n in positive)
@@ -13265,6 +13267,69 @@ def source_grounded_attention_subject_parts(text: str) -> tuple[str, str] | None
     return subject, host
 
 
+def _result_appraisal_predicate(text):
+    """Read only a complete evaluation predicate, never its quoted locator."""
+    return re.fullmatch(
+        r"(?P<appraisal>(?:今は|その時は)?(?:少し|とても|本当に|まだ|全然|あまり)?"
+        r"(?P<lexeme>満足|納得)(?P<tail>した|しました|している|しています|しなかった|しませんでした|していない|していません))",
+        text)
+
+
+def _result_appraisal_predicate_attributes(match):
+    negative = match['tail'] in {'しなかった', 'しませんでした', 'していない', 'していません'}
+    present = match['tail'] in {'している', 'しています', 'していない', 'していません'}
+    if match['appraisal'].startswith('その時は') and present:
+        return None
+    degree = next((code for text, code in (('少し', 'slight'), ('とても', 'very'), ('本当に', 'truly'),
+        ('全然', 'not_at_all'), ('あまり', 'not_much')) if text in match['appraisal']), 'unmarked')
+    return ('negative' if negative else 'positive', 'present' if present else 'past', (
+        'semantic_dependency:explicit_result_appraisal', 'semantic_role:explicit_evaluation',
+        'operator:feeling', 'source_appraisal_kind:' + {'満足': 'satisfaction', '納得': 'acceptance'}[match['lexeme']],
+        'source_appraisal_degree:' + degree,
+        *(('operator:negation',) if negative else ()),
+        *(('source_appraisal_continuing:still',) if 'まだ' in match['appraisal'] else ())))
+
+
+def _source_result_appraisal_predicate(nucleus, source):
+    """Check the evaluation's actual fragment against its admitted attributes."""
+    match = _result_appraisal_predicate(source)
+    attributes = _result_appraisal_predicate_attributes(match) if match else None
+    if attributes is None:
+        return False
+    polarity, time, expected = attributes
+    frame = nucleus.semantic_frame
+    codes = set(frame.attribute_codes)
+    return bool((nucleus.kind, frame.actor, frame.predicate_kind, frame.modality,
+                 frame.polarity, frame.time_scope)
+                == ('reaction', 'current_user', 'feeling', 'feeling', polarity, time)
+        and set(expected) <= codes
+        and {c for c in codes if c.startswith('source_appraisal_')}
+            == {c for c in expected if c.startswith('source_appraisal_')}
+        and ('operator:negation' in codes) == (polarity == 'negative'))
+
+
+def _thread_withdrawn_result_appraisal(nucleus, relations):
+    """An event withdrawal leaves this evaluation, with no replacement object."""
+    frame = nucleus.semantic_frame
+    codes = set(frame.attribute_codes)
+    return bool(nucleus.retention == 'required' and nucleus.grounding_kind == 'explicit'
+        and (nucleus.kind, frame.actor, frame.predicate_kind, frame.modality)
+            == ('reaction', 'current_user', 'feeling', 'feeling')
+        and frame.polarity in {'positive', 'negative'} and frame.time_scope in {'past', 'present'}
+        and len(nucleus.source_span_ids) == 1 and nucleus.surface_anchor_ids == nucleus.source_span_ids
+        and {'thread_subject:withdrawn_source_event', 'semantic_dependency:explicit_result_appraisal',
+             'semantic_role:explicit_evaluation', 'source_fragment_scalar_source:normalized_raw_text'} <= codes
+        and len([c for c in codes if c.startswith('source_fragment_scalar_range:')]) == 1
+        and ((nucleus.source_fields in {('memo',), ('memo_action',)}
+              and nucleus.allowed_claim_scope == 'explicit_current_input'
+              and not any(c.startswith('thread_time:') for c in codes))
+             or (nucleus.source_fields == ('answer_text_private',)
+                 and nucleus.allowed_claim_scope == 'explicit_supplemental_answer'
+                 and 'thread_subject:revised_result_appraisal' in codes
+                 and {c for c in codes if c.startswith('thread_time:')} == {'thread_time:original_occasion'}))
+        and not any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations))
+
+
 def _explicit_result_appraisal_projections(span, normalized_input):
     """Bind an asserted appraisal to its own asserted object, not adjacency.
 
@@ -13353,19 +13418,29 @@ def _explicit_result_appraisal_projections(span, normalized_input):
 
 
 def source_owned_result_appraisal(relation, nuclei):
-    """Read the original, same-source appraisal witness before interpretation."""
+    """Read an original appraisal or its admitted explicit replacement."""
     index = {n.nucleus_id: n for n in nuclei}
     left, right = (index.get(nid) for nid in (relation.from_nucleus_id, relation.to_nucleus_id))
-    return bool(relation.type == 'evaluation_about_event'
+    if not (relation.type == 'evaluation_about_event'
         and relation.grounding_kind == 'user_stated_relation' and relation.retention == 'required'
         and left is not None and right is not None and left.kind == 'event' and right.kind == 'reaction'
-        and left.source_fields == right.source_fields and left.source_fields in {('memo',), ('memo_action',)}
-        and left.source_span_ids == right.source_span_ids and len(left.source_span_ids) == 1
-        and relation.source_span_ids == left.source_span_ids
-        and all(n.grounding_kind == 'explicit' and n.allowed_claim_scope == 'explicit_current_input'
+        and left.source_fields in {('memo',), ('memo_action',)}
+        and left.allowed_claim_scope == 'explicit_current_input' and len(left.source_span_ids) == 1
+        and all(n.grounding_kind == 'explicit'
                 and n.semantic_frame.actor == 'current_user'
                 and 'semantic_dependency:explicit_result_appraisal' in n.semantic_frame.attribute_codes
-                for n in (left, right)))
+                for n in (left, right))):
+        return False
+    if right.source_fields == left.source_fields:
+        return bool(right.allowed_claim_scope == 'explicit_current_input'
+            and right.source_span_ids == left.source_span_ids
+            and relation.source_span_ids == left.source_span_ids)
+    return bool(right.source_fields == ('answer_text_private',)
+        and right.allowed_claim_scope == 'explicit_supplemental_answer'
+        and len(right.source_span_ids) == 1
+        and 'thread_subject:revised_result_appraisal' in right.semantic_frame.attribute_codes
+        and relation.source_span_ids == tuple(dict.fromkeys((*left.source_span_ids, *right.source_span_ids)))
+        and len(relation.source_relation_ids) == 1)
 
 
 def _received_event_reaction_projections(span, base_frame):

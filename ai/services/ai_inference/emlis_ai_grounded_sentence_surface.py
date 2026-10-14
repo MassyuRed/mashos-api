@@ -2972,7 +2972,14 @@ def _render_observation(
             return f"{prefix}{joined}が、同じ入力に置かれた出来事として並んでいます。"
         return f"{prefix}{joined}が、同じ入力の中で一つの流れになっています。"
     nucleus = nucleus_index[binding.nucleus_ids[0]]
-    from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
+    from emlis_ai_grounded_observation_plan import (
+        _thread_revised_original_reaction, _thread_withdrawn_result_appraisal,
+    )
+    if (getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+        and not binding.relation_ids and len(quotes) == 1
+        and _thread_withdrawn_result_appraisal(nucleus, ())):
+        when = "当時" if nucleus.semantic_frame.time_scope == "past" else "入力した時点"
+        return f"{prefix}{when}の評価として、{joined}と書かれています。"
     if (getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
         and not binding.relation_ids and len(quotes) == 1
         and _thread_revised_original_reaction(nucleus, (), polarity=nucleus.semantic_frame.polarity)):
@@ -3618,7 +3625,10 @@ def _render_relation(
               and source_owned_result_appraisal(relation, tuple(nucleus_index.values()))):
             # Original appraisal and supplemental answer have different source
             # owners. Never give original text a fabricated answer timestamp.
-            sentences.append(f"{left}という出来事に対する評価は、{right}とあります。")
+            evaluation = nucleus_index[relation.to_nucleus_id]
+            at = ("当時の" if evaluation.semantic_frame.time_scope == "past" else "入力した時点の") if (
+                evaluation.source_fields == ("answer_text_private",)) else ""
+            sentences.append(f"{left}という出来事に対する{at}評価は、{right}とあります。")
         elif (relation.type == "evaluation_about_event"
               and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"):
             target = nucleus_index[relation.to_nucleus_id]

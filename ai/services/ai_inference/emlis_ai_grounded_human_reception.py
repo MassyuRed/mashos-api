@@ -10976,6 +10976,11 @@ def _source_owned_detached_feeling_parts(move, realization, plan, resolver,
     fragments = tuple(_detached_feeling_finite_surface(fragment, allow_explanatory=True,
                                                      allow_copular=True, allow_medial=True)
                       for fragment in realization.semantic_fragments)
+    from emlis_ai_grounded_observation_plan import _thread_withdrawn_result_appraisal
+    if len(move.target_nucleus_ids) == 1 and any(n.nucleus_id == move.target_nucleus_ids[0]
+        and _thread_withdrawn_result_appraisal(n, plan.relations) for n in plan.nuclei):
+        fragments = tuple(_result_appraisal_finite_surface(fragment)
+                          for fragment in realization.semantic_fragments)
     return parts if parts is not None and fragments == (parts[1],) else None
 
 
@@ -11137,6 +11142,19 @@ def _detached_feeling_finite_surface(source, *, allow_explanatory=False, allow_c
     return finite
 
 
+def _result_appraisal_finite_surface(source):
+    """Inflect only the bounded appraisal predicate; keep degree and negation."""
+    from emlis_ai_grounded_observation_plan import _result_appraisal_predicate
+    if _result_appraisal_predicate(source) is None:
+        return None
+    finite = source.removeprefix('今は').removeprefix('その時は')
+    for polite, plain in (('しませんでした', 'しなかった'), ('していません', 'していない'),
+                          ('しました', 'した'), ('しています', 'している')):
+        if finite.endswith(polite):
+            return finite[:-len(polite)] + plain
+    return finite
+
+
 def _revised_feeling_discourse_prefix(source, *, answer_source=False):
     """Anchor the past feeling to its explicit revision, not a nearby event."""
     owner = (re.match(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も|が(?=[^、,。]+れ(?:た|なかった)ようで[、,])(?!.*(?:わたし|ぼく|おれ|私|僕|俺|自分|あなた)))", source)
@@ -11205,6 +11223,14 @@ def _detached_feeling_source_parts(move, plan, resolver, *, allow_revised=False)
         return None
     index = {n.nucleus_id: n for n in plan.nuclei}
     source = final_reception_source_anchor_text(nucleus.nucleus_id, index, resolver)
+    from emlis_ai_grounded_observation_plan import (
+        _thread_withdrawn_result_appraisal, _source_result_appraisal_predicate,
+    )
+    if _thread_withdrawn_result_appraisal(nucleus, plan.relations):
+        if not _source_result_appraisal_predicate(nucleus, source):
+            return None
+        return ('当時は' if frame.time_scope == 'past' else '入力した時点では',
+                _result_appraisal_finite_surface(source))
     finite = _detached_feeling_finite_surface(source, allow_explanatory=True, allow_copular=True, allow_medial=True)
     copular = _detached_feeling_copula_parts(source)
     predicate = finite.removesuffix("のだ") if finite is not None else ""
@@ -11412,6 +11438,20 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
     if kind == "original_result_appraisal":
         proposition = selected_decision.subjective_proposition
         appraisal = proposition.appraisal_content
+        if (selected_decision.branch == 'LIMITED' and _selected_material_appraisal(selected_decision)
+            and 'thread_subject:revised_result_appraisal' in right.semantic_frame.attribute_codes):
+            from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate
+            endings = {c.split(':', 1)[1] for c in left.semantic_frame.attribute_codes
+                       if c.startswith('source_appraisal_event_ending:')}
+            if len(endings) != 1 or not _source_result_appraisal_predicate(right, second):
+                return None
+            ending = next(iter(endings))
+            if ending not in {'te', 'de', 'ta'} or not first.endswith({'te': 'て', 'de': 'で', 'ta': 'た'}[ending]):
+                return None
+            event = first[:-1] + {'te': 'た', 'de': 'だ', 'ta': 'た'}[ending]
+            event = re.sub(r'(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)', 'あなた', event, count=1)
+            time = '当時は' if right.semantic_frame.time_scope == 'past' else '入力した時点では'
+            return event + 'ことについて、' + time + _feeling_acknowledgement(_result_appraisal_finite_surface(second))
         if (selected_decision.branch != "NORMAL" or appraisal is None
             or appraisal.focal_relation_ref is None
             or proposition.focal_relation_ref != appraisal.focal_relation_ref):

@@ -72,6 +72,7 @@ class PreparedEmlisMeaning:
     accepted_nuclei: tuple[gp.GroundedSemanticNucleus, ...]
     checkpoint: EmlisMeaningCheckpointV1
     legacy_result_appraisal: bool = False
+    legacy_appraisal_correction: bool = False
 
 
 def _text(row, index, resolver) -> str:
@@ -99,7 +100,7 @@ def _dependent_refs(plan, targets: tuple[str, ...]) -> tuple[str, ...]:
                  if row.from_nucleus_id in targets or row.to_nucleus_id in targets)
 
 
-def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, source_end: int | None = None, outcome_standard: bool = False, prior_answer_source: str | None = None):
+def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, source_end: int | None = None, outcome_standard: bool = False, prior_answer_source: str | None = None, result_appraisal_replacement: bool = False):
     """Use the shared source grammar with a real answer field and no labels."""
     text = span.raw_text
     offset = source_start
@@ -125,6 +126,29 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
                             safety_span_order={}, normalized_input=local)
     frame = gp._semantic_frame_for_span(local_span, kind=kind, roles=(), claim_ids=(),
                                         normalized_input=local)
+    if result_appraisal_replacement:
+        predicate = gp._result_appraisal_predicate(bounded)
+        if predicate and bounded.startswith('今は'):
+            # This correction path revises the original evaluation. An
+            # explicit answer-time evaluation needs its own temporal binding.
+            return None
+        attributes = gp._result_appraisal_predicate_attributes(predicate) if predicate else None
+        if attributes is not None:
+            polarity, time, codes = attributes
+            # Re-derive every evaluation operator from the replacement range.
+            # The old quoted predicate is a locator, never a donor of meaning.
+            frame = replace(frame, actor="current_user", predicate_kind="feeling", modality="feeling",
+                polarity=polarity, time_scope=time, attribute_codes=(*codes,
+                    f"time_scope:{time}", "thread_time:original_occasion",
+                    "thread_subject:revised_result_appraisal",
+                    "lexical:preserve_source_predicate", "lexical:no_new_sensation_family",
+                    "semantic_role:generic_relation_fragment", "semantic_role:final_stage1_compound_meaning",
+                    f"source_fragment_scalar_range:{offset}:{end}",
+                    "source_fragment_scalar_source:normalized_raw_text"))
+            return gp.GroundedSemanticNucleus(
+                f"answer:{span.span_id}", "reaction", (span.span_id,), (ANSWER_FIELD,), (span.span_id,),
+                frame, "explicit", 1.0, 1.0, "required", "explicit_supplemental_answer",
+                ("no_unstated_cause", "no_third_party_intention", "no_stable_personality"))
     nominal_explanation = gp._THREAD_NOMINAL_FEELING_EXPLANATION_RE.fullmatch(bounded)
     negative_nominal = (gp._THREAD_NEGATIVE_FEELING_COPULA_RE.fullmatch(bounded)
         or nominal_explanation and nominal_explanation['inner'].startswith('では'))
@@ -528,6 +552,18 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
     try:
         return _prepare_emlis_meaning_from_plan(request, thread, original)
     except ValueError as exc:
+        if (str(exc) == 'emlis_checkpoint_source_prefix_mismatch'
+            and thread.control.prepared_meaning_checkpoint_ref is not None and thread.answers):
+            try:
+                prepared = _prepare_emlis_meaning_from_plan(request, thread, original,
+                    legacy_appraisal_correction=True)
+            except ValueError as legacy_exc:
+                if str(legacy_exc) not in {'emlis_checkpoint_source_prefix_mismatch', 'emlis_question_noncanonical'}:
+                    raise
+            else:
+                # Re-derive the complete old PARTIAL checkpoint. Never attach
+                # its identity to today's newly accepted replacement meaning.
+                return replace(prepared, legacy_appraisal_correction=True)
         # A saved checkpoint is an identity of the complete source-derived
         # meaning, not permission to attach an old ID to the current plan.
         # Only the known pre-appraisal projection may be re-derived. A saved
@@ -548,7 +584,7 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         return replace(prepared, legacy_result_appraisal=True)
 
 
-def _prepare_emlis_meaning_from_plan(request, thread, original):
+def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_appraisal_correction=False):
     if thread.control.capability_snapshot == "Q3_PREMIUM" and thread.control.admitted_history and not thread.answers:
         from .emlis_thread_history import frame_supported_focus
         focus = frame_supported_focus(thread, original)
@@ -576,7 +612,7 @@ def _prepare_emlis_meaning_from_plan(request, thread, original):
                 answers=thread.control.answers[:count], current_round=count,
                 question_control_context=prefix_control, prepared_meaning_checkpoint_ref=None))
             prefix = admit_emlis_thread(prefix_request)
-            prepared = _prepare_answer(prefix, plan)
+            prepared = _prepare_answer(prefix, plan, legacy_appraisal_correction=legacy_appraisal_correction)
             cp = prepared.checkpoint
             accepted = tuple(dict.fromkeys((*accepted, *cp.accepted_update_refs)))
             inactive = tuple(dict.fromkeys((*inactive, *cp.inactive_claim_refs)))
@@ -589,10 +625,10 @@ def _prepare_emlis_meaning_from_plan(request, thread, original):
         if thread.control.prepared_meaning_checkpoint_ref not in {None, cp.checkpoint_id}:
             raise ValueError("emlis_checkpoint_source_prefix_mismatch")
         return prepared
-    return _prepare_answer(thread, original)
+    return _prepare_answer(thread, original, legacy_appraisal_correction=legacy_appraisal_correction)
 
 
-def _prepare_answer(thread, original):
+def _prepare_answer(thread, original, *, legacy_appraisal_correction=False):
     base = _base_ref(thread, original)
     if not thread.answers:
         checkpoint = EmlisMeaningCheckpointV1(
@@ -690,7 +726,11 @@ def _prepare_answer(thread, original):
                     resolver.qualified_ref(target_nucleus.source_span_ids[0]).source_envelope_id)
             nucleus = None if withdrawal else _answer_nucleus(span, raw=answer.source.answer_text_private,
                 about_time="PRIOR_ANSWER_TIME" if prior_answer_time else about, source_start=replacement.start("new"), source_end=replacement.end("new"), outcome_standard=outcome_standard,
-                prior_answer_source=quoted if target_nucleus.source_fields == (ANSWER_FIELD,) else None)
+                prior_answer_source=quoted if target_nucleus.source_fields == (ANSWER_FIELD,) else None,
+                result_appraisal_replacement=not legacy_appraisal_correction and (
+                    gp._thread_withdrawn_result_appraisal(target_nucleus, original.relations)
+                    or any(r.to_nucleus_id == target_nucleus.nucleus_id
+                        and gp.source_owned_result_appraisal(r, original.nuclei) for r in original.relations)))
             if nucleus and prior_answer_time:
                 nucleus = replace(nucleus,semantic_frame=replace(nucleus.semantic_frame,
                     attribute_codes=(*nucleus.semantic_frame.attribute_codes,"thread_time_anchor:"+temporal_anchor)))

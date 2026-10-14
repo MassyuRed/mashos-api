@@ -2677,10 +2677,20 @@ def _body_inverse_detached_observation(raw, nuclei, plan, resolver, *, correctio
     """
     from emlis_ai_grounded_observation_plan import (
         _thread_withdrawn_original_reaction, _received_event_reaction_projections,
-        _thread_revised_original_reaction,
+        _thread_revised_original_reaction, _thread_withdrawn_result_appraisal,
+        _source_result_appraisal_predicate,
     )
     if not nuclei:
         return False
+    if len(nuclei) == 1 and _thread_withdrawn_result_appraisal(nuclei[0], plan.relations):
+        nucleus = nuclei[0]
+        span = resolver.resolve(nucleus.source_span_ids[0])
+        source = _body_inverse_typed_source_fragment(nucleus, span.raw_text)
+        parsed = re.fullmatch(r'(?:今の入力だけを見ると、)?(?P<time>当時|入力した時点)の評価として、'
+                              r'「(?P<source>[^「」『』\n]+)」と書かれています。', raw)
+        return bool(parsed and source and resolver.source_fields_for(nucleus.source_span_ids) == nucleus.source_fields
+            and _source_result_appraisal_predicate(nucleus, source) and parsed['source'] == source
+            and parsed['time'] == ('当時' if nucleus.semantic_frame.time_scope == 'past' else '入力した時点'))
     operand = r"(?:その時|回答した時点|先の回答時点)の「[^「」『』\n]+」"
     revised = tuple(_thread_revised_original_reaction(n, plan.relations, polarity=n.semantic_frame.polarity)
                     for n in nuclei)
@@ -2883,6 +2893,30 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
         or any(mark in first + second for mark in ("。", "？", "?", "「", "」", "\n"))):
         return None
     if kind == "original_result_appraisal":
+        if (selected_subjective_input is not None and decision is not None
+            and decision.branch == 'LIMITED' and appraisal is not None
+            and appraisal.dimension == 'MATERIAL_WEIGHT' and appraisal.operation == 'RECEIVE_AS_MATERIAL'
+            and 'thread_subject:revised_result_appraisal' in right.semantic_frame.attribute_codes):
+            parsed = re.fullmatch(r'(?P<event>.+)ことについて、(?P<time>当時は|入力した時点では)'
+                                  r'(?P<evaluation>.+)のですね。', raw)
+            from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate
+            endings = {c.split(':', 1)[1] for c in left.semantic_frame.attribute_codes
+                       if c.startswith('source_appraisal_event_ending:')}
+            if (parsed is None or len(endings) != 1 or not _source_result_appraisal_predicate(right, second)
+                or parsed['time'] != ('当時は' if right.semantic_frame.time_scope == 'past' else '入力した時点では')):
+                return None
+            ending = next(iter(endings))
+            actual = parsed['event']
+            owner = re.search(r'(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)', first)
+            if owner:
+                actual = actual.replace('あなた', owner.group(), 1)
+            if (ending not in {'te', 'de', 'ta'}
+                or not actual.endswith({'te': 'た', 'de': 'だ', 'ta': 'た'}[ending])
+                or actual[:-1] + {'te': 'て', 'de': 'で', 'ta': 'た'}[ending] != first
+                or not _read_result_appraisal_finite(parsed['evaluation'], second)):
+                return None
+            return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
+                         for key, value in (('event', first), ('evaluation', second)))
         if (selected_subjective_input is None or decision is None or decision.branch != 'NORMAL'
             or appraisal is None or appraisal.focal_relation_ref is None
             or proposition.focal_relation_ref != appraisal.focal_relation_ref):
@@ -3247,6 +3281,16 @@ def _thread_past_explanation_predicate(source):
     return None
 
 
+def _read_result_appraisal_finite(visible, source):
+    """Restore a finite appraisal's polite ending independently of its author."""
+    source = source.removeprefix('今は').removeprefix('その時は')
+    for plain, polite in (('しなかった', 'しませんでした'), ('していない', 'していません'),
+                          ('した', 'しました'), ('している', 'しています')):
+        if visible.endswith(plain) and source == visible[:-len(plain)] + polite:
+            return True
+    return visible == source
+
+
 def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subjective_input,
                                     *, sentence_ending=True):
     """Read the still-active source feeling and its time from complete bytes.
@@ -3292,6 +3336,18 @@ def _read_detached_feeling_discourse(raw, move, plan, resolver, selected_subject
     # acknowledgement. The returned proof restores the original source bytes.
     if not source:
         return None
+    from emlis_ai_grounded_observation_plan import (
+        _thread_withdrawn_result_appraisal, _source_result_appraisal_predicate,
+    )
+    if _thread_withdrawn_result_appraisal(nucleus, plan.relations):
+        parsed = re.fullmatch(r'(?P<time>当時は|入力した時点では)(?P<feeling>.+)のですね。', raw)
+        if (not sentence_ending or parsed is None or _body_inverse_reception_context_ids(move, plan)
+            or not _source_result_appraisal_predicate(nucleus, source)
+            or parsed['time'] != ('当時は' if frame.time_scope == 'past' else '入力した時点では')
+            or not _read_result_appraisal_finite(parsed['feeling'], source)):
+            return None
+        return ((len(raw[:parsed.start('feeling')].encode()),
+                 len(raw[:parsed.end('feeling')].encode()), source.encode()),)
     # A detached answer can retain multiple source SELF expressions as one
     # explicitly user-owned noun. Read its entire sentence independently;
     # this does not admit it as a finite operand of a feeling pair.
@@ -5969,7 +6025,10 @@ def evaluate_grounded_surface_body_inverse(
                         if row.section != "observation" or row.section_line_ordinal != parsed_line.section_ordinal:
                             continue
                         visible = _body_inverse_visible_text(body, row)
-                        parsed = re.fullmatch(r"「([^「」]+)」という出来事に対する評価は、「([^「」]+)」とあります。", visible)
+                        evaluation = nucleus_index[relation.to_nucleus_id]
+                        at = ("当時の" if evaluation.semantic_frame.time_scope == "past" else "入力した時点の") if (
+                            evaluation.source_fields == ("answer_text_private",)) else ""
+                        parsed = re.fullmatch(r"「([^「」]+)」という出来事に対する" + at + r"評価は、「([^「」]+)」とあります。", visible)
                         if parsed and (tuple(map(_body_inverse_normalized_anchor, parsed.groups()))
                                        == (left_sources[0], right_sources[0])):
                             matches.append(parsed)
@@ -6118,6 +6177,7 @@ def evaluate_grounded_surface_body_inverse(
         if getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1":
             from emlis_ai_grounded_observation_plan import (
                 _thread_withdrawn_original_reaction, _thread_revised_original_reaction,
+                _thread_withdrawn_result_appraisal, source_owned_result_appraisal,
             )
             visible_line = _body_inverse_visible_text(body, parsed_line)
             original_feelings = tuple(source for n in required_nuclei
@@ -6136,7 +6196,8 @@ def evaluate_grounded_surface_body_inverse(
                     (n.kind, n.semantic_frame.predicate_kind, n.semantic_frame.modality)
                         == ("reaction", "feeling", "feeling")
                     and (n.source_fields == ("answer_text_private",)
-                         or _thread_withdrawn_original_reaction(n, plan.relations))
+                         or _thread_withdrawn_original_reaction(n, plan.relations)
+                         or _thread_withdrawn_result_appraisal(n, plan.relations))
                     for n in detached_nuclei))
                 and all("thread_subject:withdrawn_source_event" in n.semantic_frame.attribute_codes
                         or _thread_revised_original_reaction(n, plan.relations, polarity=n.semantic_frame.polarity)
@@ -6156,6 +6217,10 @@ def evaluate_grounded_surface_body_inverse(
                 if times == {"original_occasion"} and _thread_revised_original_reaction(
                     nucleus, plan.relations, polarity=nucleus.semantic_frame.polarity):
                     expected = "当時"
+                if (_thread_withdrawn_result_appraisal(nucleus, plan.relations)
+                    or any(r.to_nucleus_id == nucleus.nucleus_id
+                           and source_owned_result_appraisal(r, plan.nuclei) for r in plan.relations)):
+                    expected = "当時の評価" if nucleus.semantic_frame.time_scope == "past" else "入力した時点の評価"
                 if expected is None or expected not in visible_line:
                     failures.append(f"body_inverse_answer_target_time_missing:{index}")
             from emlis_ai_grounded_observation_plan import is_grounded_current_answer_uncertainty

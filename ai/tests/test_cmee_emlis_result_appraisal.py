@@ -488,3 +488,227 @@ def test_q2_legacy_no_change_answer_keeps_the_legacy_original_meaning():
     assert '資料を分類できて満足した' in out.artifact.observation
     assert not any(source_owned_result_appraisal(r, prepared.original_plan.nuclei)
                    for r in prepared.original_plan.relations)
+
+
+@pytest.mark.parametrize('old,new,polarity,time,degree,continuing', [
+    ('満足した', '満足しなかった', 'negative', 'past', 'unmarked', False),
+    ('満足しなかった', '満足した', 'positive', 'past', 'unmarked', False),
+    ('まだ納得していない', '納得している', 'positive', 'present', 'unmarked', False),
+    ('納得している', 'まだ納得していない', 'negative', 'present', 'unmarked', True),
+    ('とても満足した', '少し満足しています', 'positive', 'present', 'slight', False),
+    ('満足した', '全然満足しませんでした', 'negative', 'past', 'not_at_all', False),
+    ('満足していない', 'その時は本当に納得しました', 'positive', 'past', 'truly', False),
+])
+def test_appraisal_revision_reads_only_new_source_operators_and_body_time(old, new, polarity, time, degree, continuing):
+    from test_cmee_emlis_q3_thread import begin, advance
+    req = advance(begin('褒められたのに、嬉しくなかった。',
+        f'資料を分類できて{old}。植木に水をやった。'), f'「{old}」ではなく「{new}」です。')
+    prepared = prepare_emlis_meaning(req)
+    assert prepared.checkpoint.assessment_status == 'RESOLVED'
+    update, = prepared.checkpoint.answer_update.updates
+    assert update.operation == 'REVISE' and len(update.changed_claim_refs) == 1
+    plan = build_updated_grounded_plan(prepared)
+    relation, = [r for r in plan.relations if source_owned_result_appraisal(r, plan.nuclei)]
+    nucleus = next(n for n in plan.nuclei if n.nucleus_id == relation.to_nucleus_id)
+    assert nucleus.source_fields == ('answer_text_private',)
+    frame = nucleus.semantic_frame
+    assert (frame.polarity, frame.time_scope) == (polarity, time)
+    assert {c for c in frame.attribute_codes if c.startswith('source_appraisal_degree:')} == {'source_appraisal_degree:' + degree}
+    assert ('source_appraisal_continuing:still' in frame.attribute_codes) == continuing
+    assert ('operator:negation' in frame.attribute_codes) == (polarity == 'negative')
+    outcome = MeaningExperienceEngine().generate(req)
+    assert outcome.artifact is not None, outcome.reason_codes
+    body = outcome.artifact.text
+    assert f'「{new}」' in outcome.artifact.observation
+    assert '資料を分類できたことについて' in outcome.artifact.reception
+    assert '植木に水をやった' in outcome.artifact.observation
+    expected_time = '当時' if time == 'past' else '入力した時点'
+    assert expected_time + 'の評価' in outcome.artifact.observation
+    assert expected_time + ('は' if time == 'past' else 'では') in outcome.artifact.reception
+    resolver = prepared.thread.resolver()
+    projection = project_thread_meaning(prepared, plan)
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    def valid(value):
+        return evaluate_grounded_surface_body_inverse(body=value.encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver, selected_subjective_input=projection.selected_reception).passed
+    assert valid(body)
+    for changed in (body.replace(expected_time, '回答した時点'),
+                    body.replace(new, old), body.replace('資料を分類できたことについて', '植木に水をやったことについて')):
+        assert changed != body and not valid(changed)
+
+
+@pytest.mark.parametrize('evaluation,time', [
+    ('満足した', 'past'), ('満足しなかった', 'past'),
+    ('少し満足しています', 'present'), ('まだ納得していない', 'present'),
+])
+def test_event_only_withdrawal_keeps_evaluation_without_inventing_its_object(evaluation, time):
+    from test_cmee_emlis_q3_thread import begin, advance
+    req = advance(begin('褒められたのに、嬉しくなかった。',
+        f'資料を分類できて{evaluation}。植木に水をやった。'), '「資料を分類できて」は誤りです。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    assert prepared.checkpoint.assessment_status == 'RESOLVED'
+    from emlis_ai_grounded_observation_plan import _thread_withdrawn_result_appraisal
+    surviving, = [n for n in plan.nuclei if _thread_withdrawn_result_appraisal(n, plan.relations)]
+    assert surviving.semantic_frame.time_scope == time
+    assert not any(surviving.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    outcome = MeaningExperienceEngine().generate(req)
+    assert outcome.artifact is not None, outcome.reason_codes
+    body = outcome.artifact.text
+    assert '資料を分類' not in body and f'「{evaluation}」' in body
+    assert '褒められた' in body and '植木に水をやった' in body
+    when = '当時' if time == 'past' else '入力した時点'
+    assert when + 'の評価として' in body
+    projection = project_thread_meaning(prepared, plan)
+    sentence = build_grounded_sentence_plan(plan, prepared.thread.resolver(), recovery_stage='full')
+    def valid(value):
+        return evaluate_grounded_surface_body_inverse(body=value.encode(), plan=plan,
+            sentence_plan=sentence, resolver=prepared.thread.resolver(),
+            selected_subjective_input=projection.selected_reception).passed
+    assert valid(body)
+    for changed in (body.replace(when, '回答した時点'), body.replace(evaluation, '満足しなかった' if evaluation != '満足しなかった' else '満足した'),
+                    body.replace(when + 'の評価として', '資料を分類できたことへの評価として')):
+        assert changed != body and not valid(changed)
+
+
+@pytest.mark.parametrize('new', ['今は満足していない', '同僚が満足した', '満足したかもしれない', '満足したら'])
+def test_revision_does_not_turn_foreign_uncertain_or_explicit_answer_time_into_original_appraisal(new):
+    from test_cmee_emlis_q3_thread import begin, advance
+    req = advance(begin('褒められたのに、嬉しくなかった。', '資料を分類できて満足した。'),
+                  f'「満足した」ではなく「{new}」です。')
+    prepared = prepare_emlis_meaning(req)
+    assert prepared.checkpoint.assessment_status == 'PARTIAL'
+    assert not prepared.accepted_nuclei
+    assert prepared.checkpoint.unresolved_parts[0].reason_code == 'correction_replacement_unsupported'
+
+
+@pytest.mark.parametrize('evaluation', ['嬉しかった', '重かった'])
+def test_existing_nonappraisal_correction_keeps_its_accepted_meaning(evaluation):
+    from test_cmee_emlis_q3_thread import begin, advance
+    req = advance(begin('褒められたのに、嬉しくなかった。', '資料を分類できて満足した。'),
+                  f'「満足した」ではなく「{evaluation}」です。')
+    prepared = prepare_emlis_meaning(req)
+    assert prepared.checkpoint.assessment_status == 'RESOLVED'
+    assert prepared.accepted_nuclei
+    assert all('thread_subject:revised_result_appraisal' not in n.semantic_frame.attribute_codes for n in prepared.accepted_nuclei)
+
+
+@pytest.mark.parametrize('withdraw_first', [False, True])
+def test_revision_and_event_withdrawal_compose_without_reattaching_the_evaluation(withdraw_first):
+    from test_cmee_emlis_q3_thread import begin, advance
+    req = begin('褒められたのに、嬉しくなかった。誘われたのに、悲しかった。',
+                '資料を分類できて満足した。')
+    changes = ['「満足した」ではなく「まだ納得していない」です。', '「資料を分類できて」は誤りです。']
+    if withdraw_first:
+        changes.reverse()
+    for change in changes:
+        req = advance(req, change)
+    prepared = prepare_emlis_meaning(req)
+    assert prepared.checkpoint.assessment_status == 'RESOLVED'
+    outcome = MeaningExperienceEngine().generate(req)
+    assert outcome.artifact is not None, outcome.reason_codes
+    assert '資料を分類' not in outcome.artifact.text
+    assert '満足した' not in outcome.artifact.text
+    assert '入力した時点の評価として、「まだ納得していない」' in outcome.artifact.observation
+
+
+LEGACY_CORRECTIONS = json.loads((Path(__file__).parent / 'fixtures' /
+    'cmee_emlis_pre_appraisal_correction_checkpoint_v1.json').read_text())['rows']
+
+
+@pytest.mark.parametrize('row', LEGACY_CORRECTIONS, ids=lambda r: r['case_id'])
+def test_saved_u254_partial_correction_keeps_full_checkpoint_but_new_answer_uses_new_meaning(row):
+    from emlis_thread_service import _json
+    req = _legacy_fixture_request(row)
+    prepared = prepare_emlis_meaning(req)
+    assert prepared.legacy_appraisal_correction and not prepared.legacy_result_appraisal
+    assert _json(prepared.checkpoint) == row['checkpoint']
+    outcome = MeaningExperienceEngine().generate(req)
+    assert outcome.artifact is not None, outcome.reason_codes
+    assert outcome.body_state == row['baseline_body_state'] == 'PARTIALLY_REFINED'
+    assert outcome.artifact.text == row['baseline_body']
+    fresh = prepare_emlis_meaning(_legacy_fixture_request(row, checkpoint=False))
+    assert not fresh.legacy_appraisal_correction and fresh.checkpoint.assessment_status == 'RESOLVED'
+    assert fresh.checkpoint.checkpoint_id != prepared.checkpoint.checkpoint_id
+    foreign = replace(req, emlis_thread=replace(req.emlis_thread, prepared_meaning_checkpoint_ref='foreign'))
+    with pytest.raises(ValueError, match='emlis_checkpoint_source_prefix_mismatch'):
+        prepare_emlis_meaning(foreign)
+    control = req.emlis_thread.question_control_context
+    wrong = replace(control.pending_question, prompt_private='別の質問')
+    with pytest.raises(ValueError, match='emlis_question_noncanonical'):
+        prepare_emlis_meaning(replace(req, emlis_thread=replace(req.emlis_thread,
+            question_control_context=replace(control, pending_question=wrong, issued_questions=(wrong,)))))
+
+
+@pytest.mark.parametrize('response,expected,absent', [
+    ('「満足した」ではなく「満足しなかった」です。', '当時は満足しなかった', None),
+    ('「満足した」ではなく「少し満足しています」です。', '入力した時点では少し満足している', None),
+    ('「資料を分類できて」は誤りです。', '当時は満足した', '資料を分類'),
+])
+def test_saved_revision_or_event_withdrawal_reopens_without_generation(qcase, qdb, response, expected, absent):
+    from test_emlis_q2_application import run, answer
+    from emlis_thread_service import EmlisThreadService, Q3_PROFILE, _request, _json
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$2,memo_action=$3 where id=$1', [parent,
+        '褒められたのに、嬉しくなかった。', '資料を分類できて満足した。植木に水をやった。'])
+    initial_dto = run(service.start(user, parent))
+    dto = run(answer(service, user, initial_dto, response))
+    assert dto['body_state'] == 'REFINED' and dto['answer_saved'] and dto['meaning_updated'], dto
+    current = dto['current_observation']
+    assert expected in current['text'] and '植木に水をやった' in current['text']
+    if absent:
+        assert absent not in current['text']
+    bundle = run(service.store.read(user, input_id=parent))
+    meaning = next(e['payload'] for e in bundle['events'] if e['id'] == bundle['thread']['current_meaning_event_id'])
+    assert _json(prepare_emlis_meaning(_request(bundle, checkpoint_ref=meaning['checkpoint_id'])).checkpoint) == meaning
+    class NoAuthor:
+        def __getattr__(self, name):
+            raise AssertionError('saved update read attempted generation: ' + name)
+    restarted = EmlisThreadService(engine=NoAuthor(), runtime_profile=Q3_PROFILE)
+    assert run(restarted.get(user, parent)) == dto
+    assert run(restarted.start(user, parent)) == dto
+    replay = run(answer(restarted, user, initial_dto, response))
+    assert replay['current_observation'] == current and replay['timeline'] == dto['timeline']
+    assert replay['operation_id'] == dto['operation_id'] and replay['attempt_id'] == dto['attempt_id']
+    assert replay['requested_attempt_id'] == dto['attempt_id']
+
+
+def test_saved_u254_partial_checkpoint_retry_preserves_meaning_event_and_operation(qcase, qdb, monkeypatch):
+    import httpx
+    import emlis_thread_store
+    from test_emlis_q2_application import run, answer
+    from emlis_thread_service import _json
+    from cocolon_meaning_experience_engine.emlis_thread_source import admit_emlis_thread
+    from cocolon_meaning_experience_engine.emlis_question import original_meaning_plan
+    from cocolon_meaning_experience_engine.emlis_answer_update import _prepare_emlis_meaning_from_plan
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$2,memo_action=$3 where id=$1', [parent,
+        '褒められたのに、嬉しくなかった。', '資料を分類できて満足した。植木に水をやった。'])
+    initial_dto = run(service.start(user, parent))
+    def old_prepare(req):
+        thread = admit_emlis_thread(req)
+        return _prepare_emlis_meaning_from_plan(req, thread, original_meaning_plan(thread),
+            legacy_appraisal_correction=True).checkpoint
+    monkeypatch.setattr(service.engine, 'prepare_emlis_update', old_prepare)
+    failed = False
+    async def fail_body_once(name, payload, **kwargs):
+        nonlocal failed
+        if not failed and any(e['kind'] == 'OBSERVATION' for e in payload.get('p_events', [])):
+            failed = True
+            return httpx.Response(503, json={'code': '57P03'})
+        return await qdb.rpc(name, payload, **kwargs)
+    monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', fail_body_once)
+    pending = run(answer(service, user, initial_dto, '「満足した」ではなく「満足しなかった」です。'))
+    assert pending['can_retry'] and pending['answer_saved'] and pending['meaning_updated'], pending
+    before = run(service.store.read(user, input_id=parent))
+    meanings = [e for e in before['events'] if e['kind'] == 'MEANING_UPDATE']
+    assert meanings[-1]['payload']['assessment_status'] == 'PARTIAL'
+    monkeypatch.setattr(service.engine, 'prepare_emlis_update', lambda *_: pytest.fail('saved meaning must be reused'))
+    done = run(service.action(user, pending['thread_id'], action='retry_response',
+        expected_revision=pending['revision'], idempotency_key='retry-u254-correction', operation_id=pending['operation_id']))
+    assert done['body_state'] == 'PARTIALLY_REFINED' and done['current_observation'], done
+    assert done['operation_id'] == pending['operation_id'] and done['attempt_id'] != pending['attempt_id']
+    after = run(service.store.read(user, input_id=parent))
+    assert [e for e in after['events'] if e['kind'] == 'MEANING_UPDATE'] == meanings
+    observation = next(e for e in after['events'] if e['id'] == after['thread']['last_observation_event_id'])
+    assert observation['payload']['meaning_checkpoint_ref'] == meanings[-1]['payload']['checkpoint_id']

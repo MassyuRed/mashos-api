@@ -18399,3 +18399,50 @@ Python3.12.14、既存pinのpytest8.4.1/Pydantic2.13.5等、PGlite0.5.8、前回
 次は同じ承認内で、満足/納得の肯否訂正（現在`correction_replacement_unsupported`）と、対象eventだけを撤回して評価を残す経路（現在`human_reception_withdrawal_capability_gap`）のsource・正負・時点を揃える。旧評価のcodesを新回答へコピーせず、回答の実source rangeから形成する。受け取り本文の内容形成は引き続き同じ初回単位の未完了条件。same100全件・本人実機の保存往復・正式Product Readは未実施、0/3・NOT_CLEAR・candidate_ready=false・automatic_progression=falseを維持。10/17/10/31/12/18の管理点とPiece/Analysis主枠も維持する。配置・本人データ・稼働DB・native build・main merge・PR ready化は0。
 
 補足実測：最終sourceのQ2実service＋隔離SQLでも4ケースを確認。received-event＋appraisalの初回→通常回答はREFINED、同初回→「わからない」はUNCHANGEDで本文/event ID不変（generate禁止）、appraisal＋独立行動はFINAL/質問0、received-eventのみ対照も成功。実engineの発行questionと保存QUESTION、現行Plan選択、fullcheckpoint、保存effective ref、NoAuthor GET/startが一致した。
+
+## u255 — 評価の肯否訂正・単独対象撤回・旧PARTIAL再開（2026-10-14 JST）
+
+MashのGitHub指定による残件継続。添付の前回作業記録とu254を起点とし、`EMLIS_APPRAISAL_COMPONENT_MEANING_20261014`の限定承認を継続。開始headはAPI `8d6355796ab6a8a0db38bf5fbf7d7c34bf64d250`／Cocolon `63b250a1f7b067e2feca796dd2f6a04751bc3904`。全体設計01、file coverageと01A/B/Cの該当・隣接owner、current00/01/04、最新weekly20261010の§5.6.4/6.5、作業規則、恒久incidentを照合した。全sourceの全文監査という意味ではない。System Context prepareは`repository unavailable`（既定workspace内にAPI repoなし）で停止したため、正本を直接読んだ。rootが唯一の編集・GitHub反映owner。同環境補助のread-onlyレビューは別モデルの独立商品審査とは扱わない。
+
+**BOUNDED_IMPLEMENTATION_WIP / PRODUCT_NOT_CLEAR、最初の一体修正は未完了。** 今回はu254末尾の肯否訂正と単独対象撤回を進め、評価のsource・対象・時点を実本文へ保持した。受け取り内容を復唱から進める要件は閉じていない。
+
+### 製品コードの変更
+
+- `emlis_answer_update.py`：唯一の既存評価を引用した訂正について、置換後の実source rangeから満足／納得、肯否、過去／現在、程度、「まだ」を再導出する。旧引用の評価codesをコピーしない。評価構文に当たらない既存の「嬉しかった」「重かった」等は従来の有限述語解析へ渡す。置換文中の明示「今は」は回答時点を原記録時点へ付け替えないため、この限定訂正経路では未対応として残す。
+- `emlis_ai_grounded_observation_plan.py`：元対象と訂正評価のABOUTをsource-owned関係として保持する。対象だけの撤回後は、原文／既受理の訂正に残る評価を関係のない独立材料として扱い、肯否と元時点を保持する。過去のreceived-event用helper全体は拡張せず、評価の完全なsource predicateを別に照合する。
+- `emlis_ai_grounded_human_reception.py`：既存作者内で、訂正評価と対象をLIMITEDのmaterial受容として文章化する。現在評価の「その時」化を直す。対象撤回後は新しい対象を補わない。NORMAL強制解除や新しい経験命題の採用はない。
+- `emlis_ai_grounded_sentence_surface.py`／`emlis_ai_grounded_observation_gate.py`：実本文の評価と時点を独立に読む。対象の乗換え、肯否の復活、回答時点への付替えを拒否する。原文の有限評価と丁寧形の対応も全文で照合し、作者の再実行を正解として使わない。
+- 保存済みu254の`WITHDRAW＋correction_replacement_unsupported／PARTIAL`は、新コードの`REVISE／RESOLVED`とは異なる意味である。保存checkpoint不一致時だけ、現在の原入力Planを保った旧評価訂正parserを再導出し、既存の全source・質問・checkpoint一致を必須にした。IDの貼替え、保存payloadの更新、比較の緩和はない。checkpoint未保存の新規回答は新解析を使う。既存pre-appraisal互換も維持する。
+
+既存production5file、既存評価test、現行owner identity snapshot、新規の旧checkpoint fixtureのみ。新production file・service・外部AI・公開API/DTO/DB/SQL/RN・依存変更はない。private意味更新と本文責務の差分のためSTRUCTURE_MAP_DELTA_PRESENT。歴史的IM03 proof、意味選択contract、manifest v2/logical70は変更していない。
+
+### 実生成本文と保存・表示
+
+rootは訂正7組と対象撤回の正負／過去現在の代表本文を読み、以下の実生成を確認した。これは手書きの正解例ではない。
+
+- 「満足した」→「満足しなかった」：`資料を分類できたことについて、当時は満足しなかったのですね。`
+- 「まだ納得していない」→「納得している」：`資料を分類できたことについて、入力した時点では納得しているのですね。`
+- 対象「資料を分類できて」だけ撤回：Observationは`当時の評価として、「満足した」と書かれています。`。Receptionには`当時は満足したのですね。`が残り、撤回対象は復活しない。他のreceived-eventと「植木に水をやった」は独立した材料として残る。
+
+肯否訂正／現在丁寧形への訂正／対象撤回の3ケースを実service＋隔離PGliteへ保存し、OBSERVATION payloadとDTOの本文一致、NoAuthor GET/start、同じ回答keyのreplayで本文・timeline・operation/attempt不変を確認。実RN hook/modalへこの3保存DTOを渡し、現在本文1表示、履歴展開、閉じて再open、GET2回・生成/投稿0を確認した。React rendererでありnative実機実績ではない。
+
+旧fixture `cmee_emlis_pre_appraisal_correction_checkpoint_v1.json` は未変更8d635579の実engineから取得した真正な質問・回答・旧PARTIAL checkpoint・本文2件。現行IDを旧IDへ書き替えたfixtureではない。新コードでcheckpoint全payloadと旧本文が完全一致し、同じsourceを新規処理した場合だけRESOLVEDとなる。旧parser意味を使った隔離SQLの本文commit503→retryでも、保存意味eventとoperationを保ってattemptだけ更新し、PARTIALLY_REFINED本文を保存できた。
+
+### 検証結果と限界
+
+- 最終 `test_cmee_emlis_result_appraisal.py`：**107 PASS、23.82秒、skipなし**。訂正7組、単独対象撤回4組、訂正と撤回の順序2組、他者／推量／条件／明示回答時点の非採用、旧受理述語の維持、本文tamper、旧新checkpoint、保存read/replay/retryを含む。
+- 既存Q2/Q3 application：**54 PASS**（評価testとの合同run内、既存警告2）。同runの新test4失敗はreplay専用metadataの期待と非retryableな試験故障の作り方であり、実契約に合わせた上記最終107件で解消した。製品の判定は緩めていない。
+- Q1 thread：**72 PASS / 3 FAIL、24.30秒**。3件は開始headでも同じ2function/3nodeで再現済み（旧文面期待2、実際には文字列が変わらないtamper1）。変更して通過扱いにしていない。
+- Q3既存撤回関連5function/14node：**14 FAIL / 936 deselected、14.08秒**。未変更8d635579でも同じ14nodeの失敗を再現（13.89秒）。旧名詞句／旧Observation文への期待、既に本文を変えていない置換等が残る。共有回帰全合格とはしない。
+- 現行shared owner identity：**1 PASS / 194 deselected、21.80秒**。歴史的identity testの1 SKIPを代用せず、active final owner chainの実検査を実行した。language `13068a0f3481bbfad7afee92ce610f30d2bc31c7a54c1f939a55614f79d42562`、runtime `44f1baa2acdbba48901cd94c3a9f5380703331e07e806dda75f3964212564bfd`。
+- 開始headのGitHub Actions [run38554485494](https://github.com/MassyuRed/mashos-api/actions/runs/38554485494)はsuccess。Analysis 5suiteの1,634 PASS／12,020 subtests PASSと共有identityを確認した。これは本変更後のCI成功とは異なる。
+
+Python3.12.14、pytest8.4.1、既存Pydantic2.13.5/FastAPI0.142.2/HTTPX0.28.1、PGlite0.5.8、React18.3.1の既存隔離runtimeを再利用。製品依存は変更しない。
+
+### 未解消と次の着手点
+
+受け取りは「対象＋本人評価」の再表現であり、§9.2/9.4の経験の内容形成は未解消。「満足」を達成・成長・手応え・区切りへ、「未納得」を解決待ちや時間差へ読み替える根拠は現sourceにない。基盤辞書・専用辞書も比較・目標・行動履歴等を要するため、今回の単独評価に無条件適用しない。これはRoute A全体の不能という結論ではなく、いま実装できていない意味の境界である。
+
+複数の評価対象を一度に撤回した後の複数評価groupは未検証・未対応が残る。静的レビューでは既存複数feelingの併合と単独appraisal readerの境界を確認したが、実例「資料を分類できて満足した。案を選んで納得した。」＋received-eventでは初回本文が先に`emlis_q3_initial_body_unavailable`となり、真正な質問から当該撤回まで到達しなかった。静的推測を回答後の実測成功／失敗に置き換えない。次はこの初回停止と複数groupを切り分け、明示「今は」の訂正時点も独立に扱う。既存の受け取り内容形成を末尾の言い換えだけで閉じない。
+
+same100全件・本人実機の保存往復・正式Product Readは未実施。0/3・NOT_CLEAR・candidate_ready=false・automatic_progression=falseを維持。10/17確認・10/31必須残件・12/18公開目標とPiece/Analysis主枠を維持する。配置・本人データ・稼働DB・native build・main merge・PR ready化は0。
