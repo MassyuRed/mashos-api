@@ -14,6 +14,118 @@ from emlis_ai_grounded_observation_gate import evaluate_grounded_surface_body_in
 from emlis_ai_grounded_sentence_surface import build_grounded_sentence_plan
 
 
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
+@pytest.mark.parametrize('basis', ['探しやすくなった', '見た目がすっきりした', '資料を使いやすい'])
+def test_reason_and_received_keep_both_experiences_in_limited_body(reverse, evaluation, basis):
+    reason = basis + 'ので、資料を分類したことに' + evaluation + '。'
+    received = '褒められたのに、嬉しくなかった。'
+    req = request(*( (received, reason) if reverse else (reason, received) ))
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    projection = project_thread_meaning(prepared, plan)
+    assert projection.meaning_plan.projection_branch == 'LIMITED'
+    assert all(d.branch == 'LIMITED' and d.subjective_proposition.focal_relation_ref is None
+               for d in projection.selected_reception.decisions)
+    outcome = MeaningExperienceEngine().generate(req)
+    assert outcome.artifact is not None, outcome.reason_codes
+    body = outcome.artifact
+    assert basis + 'ことを理由に、資料を分類したことについて、' in body.reception
+    assert ('当時は満足した' if evaluation == '満足した'
+            else '入力した時点では満足している') in body.reception
+    assert '褒められたことは、嬉しさにはつながらなかった' in body.reception
+    assert '拠り所' not in body.reception
+    assert basis in body.observation and '褒められた' in body.observation
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
+def test_limited_reason_reader_preserves_roles_and_time_without_author(monkeypatch, reverse, evaluation):
+    import emlis_ai_grounded_human_reception as hr
+    from emlis_ai_grounded_observation_gate import read_source_owned_discourse
+    from emlis_ai_grounded_observation_plan import source_owned_relational_focus
+    source = '探しやすくなったので、資料を分類したことに' + evaluation + '。'
+    received = '褒められたのに、嬉しくなかった。'
+    req = request(*((received, source) if reverse else (source, received)))
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    resolver = prepared.thread.resolver()
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    artifact = MeaningExperienceEngine().generate(req).artifact
+    assert artifact is not None
+    clause = next(part + '。' for part in artifact.reception.split('。') if 'ことを理由に、' in part)
+    move, = (m for m in plan.response_plan.human_reception_plan.moves
+             if (focus := source_owned_relational_focus(m, plan)) and focus[0] == 'reasoned_result_appraisal')
+    wrongs = (
+        clause.replace('探しやすくなったことを理由に、', ''),
+        clause.replace('探しやすくなった', '探しにくくなった'),
+        clause.replace('探しやすくなった', '探しやすくしたかった'),
+        clause.replace('探しやすくなった', '褒められた'),
+        clause.replace('資料を分類したことについて', '褒められたことについて'),
+        clause.replace('資料を分類した', '資料を分類しなかった'),
+        clause.replace('満足', '納得'),
+        clause.replace(evaluation + 'のですね', '満足していないのですね'),
+        clause.replace('当時は' if evaluation == '満足した' else '入力した時点では', '回答した時点では'),
+        clause.replace('ことを理由に、', 'ことの原因として、'),
+        clause.replace('ことを理由に、', 'ことだけを理由に、'),
+    )
+    def valid(body):
+        return evaluate_grounded_surface_body_inverse(body=body.encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert valid(artifact.text)
+    for wrong in wrongs:
+        assert wrong != clause and not valid(artifact.text.replace(clause, wrong))
+    monkeypatch.setattr(hr, '_source_owned_relational_focus_sentence',
+        lambda *_a, **_k: pytest.fail('independent LIMITED reader called the author'))
+    assert read_source_owned_discourse(clause, move, plan, resolver, selected) is not None
+    for wrong in wrongs:
+        assert read_source_owned_discourse(wrong, move, plan, resolver, selected) is None
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+def test_limited_reason_selected_ownership_cannot_drop_or_borrow_contributions(reverse):
+    import emlis_ai_grounded_human_reception as hr
+    source = '探しやすくなったので、資料を分類したことに満足した。'
+    received = '褒められたのに、嬉しくなかった。'
+    req = request(*((received, source) if reverse else (source, received)))
+    p = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(p)
+    selected = project_thread_meaning(p, plan).selected_reception
+    reason, = (d for d in selected.decisions if len(d.support_nucleus_ids) == 2)
+    other, = (d for d in selected.decisions if d != reason)
+    variants = [replace(reason, selected_contribution_refs=reason.selected_contribution_refs[:1]),
+                replace(reason, selected_contribution_refs=other.selected_contribution_refs),
+                replace(reason, selected_contribution_refs=(*reason.selected_contribution_refs, *other.selected_contribution_refs)),
+                replace(reason, branch='NORMAL')]
+    for field, value in [('subjective_mode', 'PERSONAL_APPRAISAL'), ('subjective_operator', 'VALUE_AS')]:
+        variants.append(replace(reason, subjective_proposition=replace(reason.subjective_proposition, **{field: value})))
+    for row in variants:
+        row = hr.identify_selected_subjective_reception_decision(row)
+        changed = hr.identify_selected_subjective_reception_input(replace(selected,
+            decisions=tuple(row if d == reason else d for d in selected.decisions)))
+        with pytest.raises(hr.GroundedHumanReceptionSurfaceError, match='MEANING_REALIZATION_CAUSAL_TRACE_GAP'):
+            hr.validate_selected_subjective_reception_input(changed,
+                plan.response_plan.human_reception_plan, plan, p.thread.resolver())
+
+
+def test_limited_reason_removal_or_replacement_does_not_reassign_received_experience():
+    engine = MeaningExperienceEngine()
+    received = '褒められたのに、嬉しくなかった。'
+    sources = ['探しやすくなったので、資料を分類したことに満足した。',
+               '見た目がすっきりしたので、資料を分類したことに満足した。',
+               '資料を分類したことに満足した。']
+    bodies = [engine.generate(request(source, received)).artifact for source in sources]
+    assert all(bodies)
+    assert '探しやすくなったことを理由に' in bodies[0].reception
+    assert '見た目がすっきりしたことを理由に' in bodies[1].reception
+    assert '探しやすくなった' not in bodies[1].reception
+    assert '理由' not in bodies[2].reception and '探しやすくなった' not in bodies[2].reception
+    for body in bodies:
+        assert '褒められたことは、嬉しさにはつながらなかったのですね。' in body.reception
+        assert '資料を分類したことについて、当時は満足したのですね。' in body.reception
+
+
 def request(memo, action="植木に水をやった。"):
     req = initial(memo, action)
     return replace(req, emlis_thread=replace(req.emlis_thread, capability_snapshot="Q3_FREE"))

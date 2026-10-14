@@ -19298,3 +19298,44 @@ STRUCTURE_MAP_DELTA_PRESENT。既存production 4fileの責務変更のみ。新f
 最終評価suite **275 PASS（既存236＋新39）**、Q2/Q3 application **54 PASS**、計 **329 PASS・115.04秒・既存依存deprecation warning2**。現行shared-owner identity **1 PASS・22.82秒**、総計330 PASS。language `4dd2c8bd0bbe34b65f30f672934b6a334a6fa6adedc0644216ae55f8d9d4d09b`／runtime `d4d3f48b5f61802f49d18151023d841f59344c3a1f3d47c78e0e12c228764f7a`。新39件は同一欄の実本文8・境界拒否12・SELF giver拒否5・実質問からの回答/訂正/撤回5・本文の対象/肯否/時点/欠落改変拒否1・旧完全checkpoint6・既発行質問2。合成4本文（memo初回/action初回/現在評価へ訂正/全評価文撤回）を実service＋隔離PGliteへ保存し、event payload一致・NoAuthor restart GET/startを確認した。回答2件は同じidempotency keyの再試行で保存本文とevent数も一致。実RN hook/modalの履歴展開・close/reopenでcurrent本文/event一致を4件確認。native実機／正式Product Readではない。git diff --check成功。既存Python3.12.14/PGlite0.5.8/React18.3.1を使用し、外部AI呼出・新有料service・製品依存追加0。
 
 **BOUNDED_IMPLEMENTATION_WIP / PRODUCT_NOT_CLEAR、初回一体単位未完了。** 今回は評価脱落の回復であり、LIMITED本文の関係反復・固定的な受け取りを§9.2/9.4の完成に換算しない。独立行動もReceptionに残るため「独立行動非混入」とはしない。理由＋receivedを別欄に置いた初回は両配置ともMEANING_REALIZATION_CAUSAL_TRACE_GAPで本文停止、2 received＋2評価もLIMITED_RECEPTION_CAPABILITY_GAP_STOPを今回実測した。次の第一候補は前者をsource→選択内容→作者/独立readerの単位で直すこと。新しい意味契約が必要と判明すれば、その具体差分にだけRule18 §11.3を適用する。旧received文法全般のgiver誤帰属、複数先行文への評価継続も今回の修正範囲には含めない。既存共有17失敗・same100・本人実機・正式Product Readは未解消／未実施。正式受入0/3・candidate_ready=false・automatic_progression=false・未配置・Draft/open/unmerged、10/17確認点・10/31/12/18とPiece/Analysis主枠を維持する。
+
+
+### u266 — 理由付き満足とreceived経験が別欄にある初回本文の停止を修正（2026-10-15 JST）
+
+開始時API `30366a7247ce424017eefdef8235d7ee0018ce06`／Cocolon `49d97c70c2ce9e69ea586539b07195f77364efd1` のPR currentと一致する分離worktreeを使用した。全体設計01・全file地図01A/B/C・current01/04・8/28設計§9.2/9.4・最新weekly20261010 §3.5/5.6/6.5とu265、CURRENT_RULES・Rule18・8/16恒久incident全文を確認した。System Contextのprepareをfresh成功とは扱わず、原典の直接確認を使用。前回API同head CI38650196262とCocolon同head4 workflowのsuccessをfresh確認し、今回変更後のCIと区別した。
+
+memo「探しやすくなったので、資料を分類したことに満足した。」、memo_action「褒められたのに、嬉しくなかった。」と両欄交換で、旧版はMEANING_REALIZATION_CAUSAL_TRACE_GAP／公開emlis_q3_initial_body_unavailableとなった。sourceは理由→満足・対象→満足・received対比を既に保持していたが、複数経験の既存LIMITED選択へ、理由付き満足の検査/作者/readerだけがNORMAL専用条件を要求していた。
+
+既存LIMITEDの全体ATTENTION/ATTEND_TO・MATERIAL_WEIGHT/RECEIVE_AS_MATERIAL・focalなしを保持し、各Moveへ既に分配されたcontributionが理由/対象/評価の三端点をちょうど所有することを検証する。NORMALへ昇格させず、理由付き満足とreceivedをそれぞれ本人が記した範囲で本文へ返す。NORMALの「満足の拠り所」文章をそのままLIMITEDの選択内容へ載せない。u253/u264の承認済み範囲の欠陥修正であり、新しい意味契約・理由語形は追加しない。
+
+```text
+見えたこと：
+「探しやすくなった」を理由として、「満足した」へつながっています。 「資料を分類した」という出来事に対する評価は、「満足した」とあります。
+「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。
+
+Emlisから：
+探しやすくなったことを理由に、資料を分類したことについて、当時は満足したのですね。褒められたことは、嬉しさにはつながらなかったのですね。
+```
+
+| 既存API owner（ai/services/ai_inference/） | u266の責務差分 |
+|---|---|
+| emlis_ai_grounded_human_reception.py | validate_selected_subjective_reception_inputで既存LIMITEDのATTENTION/ATTEND_TO、全体binding、focalなしと、分割されたcontributionが理由・対象・満足の三端点を過不足なく所有することを確認。_source_owned_relational_focus_sentenceで本人の理由・対象・時点を限定的に受け取る。NORMALと未成立contextの条件は維持。 |
+| emlis_ai_grounded_observation_gate.py | _read_relational_focus_discourseでLIMITEDの選択所有と三役割・時点・肯否を作者から独立して再照合。NORMALのexact3/focal検査も維持。 |
+| ai/tests/test_cmee_emlis_result_appraisal.py（repo相対） | 両欄配置・過去/現在・理由差替え、独立reader、誤った役割/時点/理由、contribution借用/欠落/過剰を拒否する19検査を追加。 |
+| ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json（repo相対） | 実sourceから現行shared-owner identityを再計算。歴史fixture/IM03 proofは不変。 |
+
+STRUCTURE_MAP_DELTA_PRESENT。既存production 2file・3関数の責務修正。source認識・投影・意味契約・checkpoint生成・公開API/DTO/DB/SQL/RN・依存は変更0。新file/engine/author/checker/registry/serviceは追加しない。
+
+未変更30366a7と今回sourceで、両欄配置×初回/received回答/評価訂正/全文撤回/「ことに」付き対象撤回/有限対象撤回の12requestを比較し、完全checkpoint・output checkpoint・核属性・relationsが全件一致した。初回2件と「その時は重かった。」への回答2件が旧本文停止から回復し、評価訂正2件は既存本文まで一致する。旧版の初回は質問発行に至らないため、回答比較には今回実発行された質問を旧版の厳密再検証へ通した。旧checkpoint_idを明示した初回両配置でも完全checkpointを保って回復本文を生成する。これは保存済み本文の再生成許可ではない。
+
+最終評価suite **294 PASS（既存275＋新19）** とQ2/Q3 application **54 PASS**、計 **348 PASS・124.31秒・既存依存warning2**。独立reader検査は作者を呼べない状態で実施し、各評価時点/欄配置で11種類の本文改変を拒否した。現行shared-owner identity **1 PASS・22.73秒**、総計 **349 PASS**。git diff --check成功。language `ea665ddaa4e33ab02f2d9c10928b72727d95ff70337216fb14f4b4c3cf51cc53`／runtime `678ed7c155ea7a9fa4ecd5a30fa019ac07103b34b0197431fe361433d52c314e`。
+
+初回両配置・received回答後・現在評価への訂正後の合成4本文を実service＋隔離PGliteへ保存。event payload完全一致、作者を禁止したrestart GET/startのDTO完全一致、回答2件のidempotency再試行で保存本文/event数一致を確認した。実RN hook/modalで履歴展開・close/reopenのcurrent本文/event一致を4件確認。Python3.12.14/PGlite0.5.8/React18.3.1、外部AI呼出・追加有料service・依存追加0。native実機／正式Product Readではない。
+
+初回REDは4件の既知停止を再現し、同じ期待を維持したままPASS。identityの準備時にPYTHONPATHのai欠落を修正し、歴史skip対象を誤選択した1 SKIPは成功件数に含めず、CIが指定する現行owner-chain検査を実行した。既存期待や歴史proofの緩和はしていない。同環境のread-only subagentが意味/本文互換と最終差分を確認し具体blockerなし。別model Pro/Ultra審査・本人Product Readではない。
+
+**BOUNDED_IMPLEMENTATION_WIP / PRODUCT_NOT_CLEAR、初回一体単位未完了。** 正式受入0/3・candidate_ready=false・automatic_progression=false・未配置・Draft/open/unmergedを維持する。
+
+理由を含む全文「『探しやすくなったので、資料を分類したことに満足した』は誤りです。」と「『資料を分類したことに』は誤りです。」の撤回は、両版ともcorrection_target_unresolved／本文なし。実入力の引用符は「」を使用した。有限対象「『資料を分類した』は誤りです。」は両版で同一本文となるが、Receptionは「探しやすくなったことによって満足したという気持ちが生じることをどちらの側も残したまま、感じています。」という既存の不自然な表現が残る。これらを今回解消したとはしない。
+
+次は今回回復した初回一体単位の内容・関係反復と、理由付き評価の撤回対象を既存訂正契約で正確に扱えるかを確認する。2 received＋2評価の初回gap、旧received全般のgiver誤帰属、複数先行文の評価継続、既存共有17失敗・same100・本人実機・正式Product Readも残る。今回はこれらの全再検査を追加せず、成功件数へ混ぜない。10/17確認点へ停止回復と残件を反映し、10/31・12/18とPiece/Analysis主枠を維持する。

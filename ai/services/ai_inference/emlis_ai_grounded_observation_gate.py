@@ -2892,28 +2892,40 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
     index = {n.nucleus_id: n for n in plan.nuclei}
     if focus[0] == 'reasoned_result_appraisal':
         from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
-        if (selected_subjective_input is None or decision is None or decision.branch != 'NORMAL'
+        if (selected_subjective_input is None or decision is None or decision.branch not in {'NORMAL', 'LIMITED'}
             or type(appraisal) is not EmlisAppraisalContent or appraisal.dimension != 'MATERIAL_WEIGHT'
-            or appraisal.operation != 'RECEIVE_AS_MATERIAL' or len(appraisal.appraised_bindings) != 3
+            or appraisal.operation != 'RECEIVE_AS_MATERIAL'
             or appraisal.protected_bindings):
             return None
+        limited = decision.branch == 'LIMITED'
         reason_node, event_node, evaluation = focus[1:]
         basis = {row.binding_ref: row.semantic_ref for row in decision.basis_rows}
         semantic_map = dict(selected_subjective_input.semantic_nucleus_pairs)
         relation_map = dict(selected_subjective_input.relation_pairs)
         reason_edges = tuple(r for r in plan.relations if r.type == 'user_stated_cause'
             and (r.from_nucleus_id, r.to_nucleus_id) == (reason_node.nucleus_id, evaluation.nucleus_id))
-        if (any(ref not in basis for ref in appraisal.appraised_bindings)
-            or {semantic_map.get(basis[ref]) for ref in appraisal.appraised_bindings}
-                != {reason_node.nucleus_id, event_node.nucleus_id, evaluation.nucleus_id}
-            or len(reason_edges) != 1
-            or relation_map.get(appraisal.focal_relation_ref) != reason_edges[0].relation_id
-            or proposition.focal_relation_ref != appraisal.focal_relation_ref):
+        if (any(ref not in basis for ref in appraisal.appraised_bindings) or len(reason_edges) != 1):
+            return None
+        expected_ids = {reason_node.nucleus_id, event_node.nucleus_id, evaluation.nucleus_id}
+        if limited:
+            selected_ids = {semantic_map.get(row.semantic_ref) for row in decision.basis_rows
+                            if row.contribution_ref in decision.selected_contribution_refs}
+            if (proposition.subjective_mode != 'ATTENTION' or proposition.subjective_operator != 'ATTEND_TO'
+                or appraisal.appraised_bindings != proposition.basis_binding_refs
+                or appraisal.focal_relation_ref is not None or proposition.focal_relation_ref is not None
+                or selected_ids != expected_ids):
+                return None
+        elif (len(appraisal.appraised_bindings) != 3
+              or {semantic_map.get(basis[ref]) for ref in appraisal.appraised_bindings} != expected_ids
+              or relation_map.get(appraisal.focal_relation_ref) != reason_edges[0].relation_id
+              or proposition.focal_relation_ref != appraisal.focal_relation_ref):
             return None
         reason, event, feeling = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
                                   for n in focus[1:])
-        parsed = re.fullmatch(r'(?P<reason>.+)点に、(?P<event>.+)ことへの'
-            r'(?P<time>当時の|入力した時点での)(?P<evaluation>満足)の拠り所が見えます。', raw)
+        parsed = (re.fullmatch(r'(?P<reason>.+)ことを理由に、(?P<event>.+)ことについて、'
+            r'(?P<time>当時は|入力した時点では)(?P<evaluation>.+)のですね。', raw) if limited
+            else re.fullmatch(r'(?P<reason>.+)点に、(?P<event>.+)ことへの'
+                r'(?P<time>当時の|入力した時点での)(?P<evaluation>満足)の拠り所が見えます。', raw))
         endings = {c.split(':', 1)[1] for c in event_node.semantic_frame.attribute_codes
                    if c.startswith('source_appraisal_event_ending:')}
         if parsed is None or not all((reason, event, feeling)) or len(endings) != 1:
@@ -2928,11 +2940,13 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
                     actual_event = actual_event.replace('あなた', owner.group(), 1)
         ending = next(iter(endings))
         when = _body_inverse_appraisal_time(evaluation)
+        time_suffix = ('は' if when == '当時' else 'では') if limited else ('の' if when == '当時' else 'での')
         from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate
         if (actual_reason != reason or ending not in {'te', 'de', 'ta'}
             or not actual_event.endswith({'te': 'た', 'de': 'だ', 'ta': 'た'}[ending])
             or actual_event[:-1] + {'te': 'て', 'de': 'で', 'ta': 'た'}[ending] != event
-            or parsed['time'] != when + ('の' if when == '当時' else 'での')
+            or parsed['time'] != when + time_suffix
+            or limited and not _read_result_appraisal_finite(parsed['evaluation'], feeling)
             or not _source_result_appraisal_predicate(evaluation, feeling)):
             return None
         return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())

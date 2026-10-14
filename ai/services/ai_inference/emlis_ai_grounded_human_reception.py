@@ -464,6 +464,24 @@ def validate_selected_subjective_reception_input(
             reasoned = source_focus[0] == 'reasoned_result_appraisal'
             contrasts = tuple(r for r in plan.relations if r.type == ('user_stated_cause' if reasoned else 'contrast')
                 and (r.from_nucleus_id, r.to_nucleus_id) == (context.nucleus_id, evaluation.nucleus_id))
+            if reasoned and row.branch == 'LIMITED':
+                # LIMITED keeps the existing whole-source attention claim.
+                # Its partitioned Move must own this complete source reason,
+                # target and evaluation, without borrowing the other episode.
+                selected_ids = {semantic_map[b.semantic_ref] for b in row.basis_rows
+                                if b.contribution_ref in row.selected_contribution_refs}
+                if (type(appraisal) is not EmlisAppraisalContent
+                    or proposition.subjective_mode != 'ATTENTION'
+                    or proposition.subjective_operator != 'ATTEND_TO'
+                    or appraisal.dimension != 'MATERIAL_WEIGHT'
+                    or appraisal.operation != 'RECEIVE_AS_MATERIAL'
+                    or appraisal.protected_bindings or appraisal.focal_relation_ref is not None
+                    or proposition.focal_relation_ref is not None
+                    or appraisal.appraised_bindings != proposition.basis_binding_refs
+                    or selected_ids != {context.nucleus_id, event.nucleus_id, evaluation.nucleus_id}
+                    or len(contrasts) != 1):
+                    raise GroundedHumanReceptionSurfaceError(failure)
+                continue
             if (row.branch != 'NORMAL' or type(appraisal) is not EmlisAppraisalContent
                 or appraisal.dimension != ('MATERIAL_WEIGHT' if reasoned else 'RELATIONAL_NONCOLLAPSE')
                 or appraisal.operation != ('RECEIVE_AS_MATERIAL' if reasoned else 'PRESERVE_BOTH_ENDPOINTS')
@@ -11446,10 +11464,17 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
     index = {n.nucleus_id: n for n in plan.nuclei}
     if reasoned_appraisal:
         from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
-        content = selected_decision.subjective_proposition.appraisal_content
-        if (selected_decision.branch != 'NORMAL' or type(content) is not EmlisAppraisalContent
+        proposition = selected_decision.subjective_proposition
+        content = proposition.appraisal_content
+        limited = selected_decision.branch == 'LIMITED'
+        if (selected_decision.branch not in {'NORMAL', 'LIMITED'} or type(content) is not EmlisAppraisalContent
             or content.dimension != 'MATERIAL_WEIGHT' or content.operation != 'RECEIVE_AS_MATERIAL'
-            or len(content.appraised_bindings) != 3 or content.protected_bindings):
+            or content.protected_bindings
+            or (not limited and len(content.appraised_bindings) != 3)
+            or limited and (proposition.subjective_mode != 'ATTENTION'
+                or proposition.subjective_operator != 'ATTEND_TO'
+                or content.focal_relation_ref is not None or proposition.focal_relation_ref is not None
+                or content.appraised_bindings != proposition.basis_binding_refs)):
             return None
         reason_node, event_node, evaluation = focus[1:]
         reason, event, feeling = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
@@ -11468,6 +11493,10 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
                          for value in (reason, event))
         from emlis_ai_grounded_observation_plan import _result_appraisal_time_label
         when = _result_appraisal_time_label(evaluation)
+        if limited:
+            time = when + ('は' if when == '当時' else 'では')
+            return (reason + 'ことを理由に、' + event + 'ことについて、' + time
+                    + _feeling_acknowledgement(_result_appraisal_finite_surface(feeling)))
         at = when + ('の' if when == '当時' else 'での')
         return f'{reason}点に、{event}ことへの{at}満足の拠り所が見えます'
     if unfinished_appraisal:
