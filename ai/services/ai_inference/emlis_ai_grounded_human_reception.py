@@ -454,6 +454,24 @@ def validate_selected_subjective_reception_input(
                 or appraisal.continuing != ('source_appraisal_continuing:still' in source_codes)
                 or appraisal.explicit_ability != ('source_appraisal_attainment:explicit_ability' in event_codes)):
                 raise GroundedHumanReceptionSurfaceError(failure)
+        from emlis_ai_grounded_observation_plan import source_owned_relational_focus
+        source_move = next((move for move in plan.response_plan.human_reception_plan.moves
+                            if move.move_id == row.move_id), None)
+        source_focus = source_owned_relational_focus(source_move, plan) if source_move is not None else None
+        if source_focus is not None and source_focus[0] == 'unfinished_result_appraisal':
+            from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
+            context, event, evaluation = source_focus[1:]
+            contrasts = tuple(r for r in plan.relations if r.type == 'contrast'
+                and (r.from_nucleus_id, r.to_nucleus_id) == (context.nucleus_id, evaluation.nucleus_id))
+            if (row.branch != 'NORMAL' or type(appraisal) is not EmlisAppraisalContent
+                or appraisal.dimension != 'RELATIONAL_NONCOLLAPSE'
+                or appraisal.operation != 'PRESERVE_BOTH_ENDPOINTS'
+                or appraisal.protected_bindings or len(appraisal.appraised_bindings) != 3
+                or {semantic_map.get(basis_by_ref[ref].semantic_ref) for ref in appraisal.appraised_bindings}
+                    != {context.nucleus_id, event.nucleus_id, evaluation.nucleus_id}
+                or len(contrasts) != 1
+                or relation_map.get(appraisal.focal_relation_ref) != contrasts[0].relation_id):
+                raise GroundedHumanReceptionSurfaceError(failure)
     if len({row.move_id for row in value.decisions}) != len(value.decisions):
         raise GroundedHumanReceptionSurfaceError(failure)
     return MappingProxyType({row.move_id: row for row in value.decisions})
@@ -11408,11 +11426,13 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
     from emlis_ai_grounded_observation_plan import source_owned_relational_focus
     focus = source_owned_relational_focus(move, plan)
     received_chain = focus is not None and focus[0] == "received_feeling_contrast"
+    unfinished_appraisal = focus is not None and focus[0] == "unfinished_result_appraisal"
+    three_roles = received_chain or unfinished_appraisal
     if (focus is None or recovery_stage != "full"
         or realization.reference_mode == "ANAPHORIC"
         or realization.clause_form != "FINITE"
-        or len(realization.semantic_fragments) != (3 if received_chain else 2)
-        or len(realization.relations) != (2 if received_chain else 1)
+        or len(realization.semantic_fragments) != (3 if three_roles else 2)
+        or len(realization.relations) != (2 if three_roles else 1)
         or any(p.actor_kind != "SELF" or p.quoted_boundary
                for p in realization.semantic_profiles)
         or not (_selected_material_appraisal(selected_decision)
@@ -11422,6 +11442,29 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
                         == "STAY_WITH_SPECIFIC_OBJECT"))):
         return None
     index = {n.nucleus_id: n for n in plan.nuclei}
+    if unfinished_appraisal:
+        if (selected_decision.branch != 'NORMAL' or not _selected_noncollapse_appraisal(selected_decision)
+            or len(selected_decision.subjective_proposition.appraisal_content.appraised_bindings) != 3):
+            return None
+        context, event_node, evaluation = focus[1:]
+        unfinished, event, feeling = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
+                                      for n in focus[1:])
+        if not all((unfinished, event, feeling)) or set(realization.semantic_fragments) != {unfinished, event, feeling}:
+            return None
+        endings = {code.split(':', 1)[1] for code in event_node.semantic_frame.attribute_codes
+                   if code.startswith('source_appraisal_event_ending:')}
+        if len(endings) != 1:
+            return None
+        ending = next(iter(endings))
+        if ending not in {'te', 'de', 'ta'} or not event.endswith({'te': 'て', 'de': 'で', 'ta': 'た'}[ending]):
+            return None
+        event = event[:-1] + {'te': 'た', 'de': 'だ', 'ta': 'た'}[ending]
+        event = re.sub(r'(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)', 'あなた', event, count=1)
+        from emlis_ai_grounded_observation_plan import _result_appraisal_time_label
+        when = _result_appraisal_time_label(evaluation)
+        at = when + ('の' if when == '当時' else 'での')
+        return (f'{unfinished}という点と切り分けて、{at}満足を、'
+                f'{event}ことに向けられた充足として受け取りました')
     if received_chain:
         event, first, second = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
                                 for n in focus[1:])

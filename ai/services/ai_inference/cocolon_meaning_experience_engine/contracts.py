@@ -6915,6 +6915,19 @@ def project_stage1_relation_source_contract_qualifiers(
         raise CMEEStage1ContractError(
             "stage1_response_schema_version_invalid"
         )
+    if (candidate_kind is InterpretationKind.TENSION
+        and {"semantic_dependency:explicit_result_appraisal",
+             "source_appraisal_kind:satisfaction", "source_appraisal_degree:unmarked"}
+            <= set(target_attribute_codes)
+        and "source_appraisal_continuing:still" not in target_attribute_codes):
+        # The direct feeling row is covered by this relation. Transport only
+        # its existing finite appraisal qualifiers on the RIGHT role. Source
+        # admission belongs to the proved Plan, not to qualifier transport;
+        # this projection must also survive direct-qualifier reconstruction.
+        return tuple("right_" + value for value in project_stage1_source_contract_qualifiers(
+            source_attribute_codes=target_attribute_codes,
+            source_explicit_shift_relation_endpoint=False,
+            stage1_response_schema_version=stage1_response_schema_version))
     if candidate_kind is InterpretationKind.DIRECTION_UNDER_BURDEN:
         endpoint_pair = _stage1_direction_under_burden_endpoint_pair(
             source_attribute_codes,

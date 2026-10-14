@@ -32,6 +32,7 @@ from emlis_ai_grounded_observation_plan import (
     classify_grounded_human_follow_role,
     validate_grounded_human_reception_plan,
     source_owned_result_appraisal,
+    source_owned_result_appraisal_context,
     _result_appraisal_time_label,
 )
 from emlis_ai_grounded_human_reception import (
@@ -167,7 +168,7 @@ _BODY_UNCERTAINTY_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
 )
 _BODY_RECEPTION_MARKERS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     ("emlis_voice", re.compile(r"Emlis")),
-    ("receive", re.compile(r"受け止め|大切に思|大切にした|大切にしたい|尊重|のでしたね|のですね|のです|のだと受け取りました|どちらの言葉からも受け取りました|経験として受け取りました(?=。|$)|ことの両方を受け取りました(?=。|$)|一緒に見ていきたいです|として読めます|として受け取れます")),
+    ("receive", re.compile(r"受け止め|大切に思|大切にした|大切にしたい|尊重|のでしたね|のですね|のです|のだと受け取りました|どちらの言葉からも受け取りました|経験として受け取りました(?=。|$)|充足として受け取りました(?=。|$)|ことの両方を受け取りました(?=。|$)|一緒に見ていきたいです|として読めます|として受け取れます")),
     ("felt_response", re.compile(r"感じます|感じて|思います|見過ごしたく|流したく")),
     ("protect", re.compile(r"見失わ|終わらない|決まるとは思え|消さず|残しておきたい|残したい|なかったことにしたくない")),
     ("attention", re.compile(r"特に印象|印象に残|見過ご|目(?:が|に)留ま")),
@@ -3618,11 +3619,18 @@ def _render_relation(
         elif role == "coexisting_contrast":
             event = nucleus_index[relation.from_nucleus_id]
             reaction = nucleus_index[relation.to_nucleus_id]
+            unfinished_appraisal = any(
+                r.to_nucleus_id == reaction.nucleus_id
+                and source_owned_result_appraisal_context(
+                    r, tuple(nucleus_index.values()), tuple(relation_index.values())
+                ) == event
+                for r in relation_index.values() if r.type == "evaluation_about_event"
+            )
             if (typed_semantic_duties
                 and relation.grounding_kind == "user_stated_relation"
-                and all({"lexical:source_finite_contrast_feeling", "semantic_dependency:received_feeling_contrast_chain"}
+                and (unfinished_appraisal or all({"lexical:source_finite_contrast_feeling", "semantic_dependency:received_feeling_contrast_chain"}
                         & set(n.semantic_frame.attribute_codes)
-                        for n in (event, reaction))):
+                        for n in (event, reaction)))):
                 # The source states a contrast, not simultaneous current
                 # feelings. Each quoted endpoint keeps its own tense.
                 sentences.append(f"{left}の一方で{right}とあります。")

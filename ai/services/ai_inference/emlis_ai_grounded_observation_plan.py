@@ -2174,6 +2174,21 @@ def _bounded_structural_action_endpoint(fragment: str) -> bool:
     )
 
 
+def _source_finite_result_case_action(fragment: str) -> bool:
+    """Prove a closed object/result case frame, not a dative experiencer.
+
+    In ``考えを言葉にできた``, に marks the result of the already supplied
+    を-object. It does not introduce somebody who could do the action.
+    No additional subject, report, condition or nonfinite tail is admitted.
+    """
+    noun = r"[一-鿿々ァ-ヶー]+[ぁ-ん]{0,4}(?:の[一-鿿々ァ-ヶー]+[ぁ-ん]{0,4}){0,2}"
+    return bool(_top_level_text(fragment) == fragment and re.fullmatch(
+        r"(?:(?:今日|昨日|今朝|先週)(?:は|に)?[、,]?)?"
+        r"(?:(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が)[、,]?)?"
+        + noun + r"を" + noun + r"に(?:でき|し)た", fragment)
+        and _bounded_structural_action_endpoint(fragment))
+
+
 def _last_finite_operator_match(
     fragment: str,
     *patterns: re.Pattern[str],
@@ -3558,6 +3573,7 @@ def _source_operator_owner_scope_is_bound(fragment: str) -> bool:
             continue
         if (
             case_owner is not None
+            and not _source_finite_result_case_action(owner_scope)
             and not any(
                 match.start()
                 <= case_owner.start("marker")
@@ -7764,6 +7780,13 @@ def source_owned_relational_focus(move, plan=None, *, nuclei=None, relations=Non
     index = {n.nucleus_id: n for n in nuclei}
     all_relations = relations
     if len(move.support_nucleus_ids) == 2:
+        for relation in relations:
+            context = source_owned_result_appraisal_context(relation, nuclei, relations)
+            if (context is not None and relation.relation_id in required_ids
+                and move.target_nucleus_ids == (relation.to_nucleus_id,)
+                and move.support_nucleus_ids == (context.nucleus_id, relation.from_nucleus_id)):
+                return ('unfinished_result_appraisal', context,
+                        index[relation.from_nucleus_id], index[relation.to_nucleus_id])
         ids = (*move.target_nucleus_ids, *move.support_nucleus_ids)
         group = tuple(index[nid] for nid in ids if nid in index)
         if (len(group) != 3 or not all("semantic_dependency:received_feeling_contrast_chain"
@@ -8872,8 +8895,11 @@ def _source_explicit_contrast_reception_duties(nuclei, relations):
     for relation in relations:
         if source_owned_result_appraisal(relation, nuclei):
             evaluation = index[relation.to_nucleus_id]
+            context = source_owned_result_appraisal_context(relation, nuclei, relations)
             duties.append(("lived_change" if is_grounded_positive_feeling(evaluation) else "current_burden",
-                           (evaluation.nucleus_id,), (relation.from_nucleus_id,)))
+                           (evaluation.nucleus_id,),
+                           ((context.nucleus_id, relation.from_nucleus_id) if context is not None
+                            else (relation.from_nucleus_id,))))
     chain = tuple(n for n in nuclei if "semantic_dependency:received_feeling_contrast_chain"
                   in n.semantic_frame.attribute_codes)
     if len(chain) == 2 and len({n.source_span_ids for n in chain}) == 1:
@@ -9464,9 +9490,11 @@ def build_grounded_reception_opportunities(
         for family, targets, supports in _source_explicit_contrast_reception_duties(
             owned_nuclei, relations
         ):
-            if len(supports) == 2 and all(
-                    "semantic_dependency:received_feeling_contrast_chain" in nucleus_index[nid].semantic_frame.attribute_codes
-                    for nid in (*targets, *supports)):
+            if len(supports) == 2 and any(all(
+                    marker in nucleus_index[nid].semantic_frame.attribute_codes
+                    for nid in (*targets, *supports)) for marker in (
+                        "semantic_dependency:received_feeling_contrast_chain",
+                        "semantic_dependency:unfinished_result_appraisal")):
                 # Replace partial representatives of this closed source duty;
                 # an appended row with the same target loses its full support.
                 rows = [row for row in rows if not set(row.target_nucleus_ids) & set((*targets, *supports))]
@@ -9494,9 +9522,12 @@ def build_grounded_reception_opportunities(
         and len(appraisals) == 1 and follow_ids == {appraisals[0].to_nucleus_id}
         and all(row.family == "concrete_effort" or row.target_nucleus_ids == (appraisals[0].to_nucleus_id,)
                 for row in rows)):
+        context = source_owned_result_appraisal_context(appraisals[0], nuclei, relations)
+        supports = ((context.nucleus_id, appraisals[0].from_nucleus_id) if context is not None
+                    else (appraisals[0].from_nucleus_id,))
         focused = tuple(row for row in rows
             if row.target_nucleus_ids == (appraisals[0].to_nucleus_id,)
-            and row.support_nucleus_ids == (appraisals[0].from_nucleus_id,))
+            and row.support_nucleus_ids == supports)
         if len(focused) == 1:
             return (replace(focused[0], opportunity_id="ro1"),)
 
@@ -13406,6 +13437,14 @@ def _explicit_result_appraisal_projections(span, normalized_input):
         or (source[end:].strip() and not source[end:].lstrip().startswith(("。", "．", ".")))
         or _source_prefix_opens_report(source[:start])):
         return ()
+    text = _clean(raw)
+    context = re.fullmatch(
+        r"(?P<unfinished>(?:まだ)?(?:結論|結果|答え|方針)(?:は|が)(?:まだ)?"
+        r"(?:出て|決まって|定まって)(?:いない|いません))"
+        r"(?P<contrast>けれども|けれど|けど|が)[、,]?"
+        r"(?P<evaluated>.+)", text)
+    offset = context.start('evaluated') if context is not None else 0
+    evaluated = context['evaluated'] if context is not None else text
     # Closed nominal arguments and case particles leave the asserted
     # predicate open to ordinary verbs, without accepting a second subject,
     # a quotation, a hypothetical result, or a reporting host.
@@ -13417,18 +13456,20 @@ def _explicit_result_appraisal_projections(span, normalized_input):
         r"(?P<link>ことに|ことには|ことが)?[、,]?"
         r"(?P<appraisal>(?:今は|その時は)?(?:少し|とても|本当に|まだ|全然|あまり)?"
         r"(?P<lexeme>満足|納得)(?P<tail>した|しました|している|しています|しなかった|しませんでした|していない|していません))",
-        _clean(raw))
+        evaluated)
     if match is None or (match['ending'] == 'た') != bool(match['link']):
         return ()
     verb = match['verb']
-    if re.search(r"[はがにを]|なら|たら|もし|よう|そう|らしい|ない|なく|なかっ|ません|ず|による|いわく", verb):
+    event_finite = match['event'][:-1] + {'て': 'た', 'で': 'だ', 'た': 'た'}[match['ending']]
+    result_case = _source_finite_result_case_action(event_finite)
+    if (re.search(r"[はがを]|なら|たら|もし|よう|そう|らしい|ない|なく|なかっ|ません|ず|による|いわく", verb)
+        or 'に' in verb and not result_case):
         return ()
     if re.search(r"(?:たい|たく|たかった|ほしい|ほしかった|つもり|予定|かもしれ|はず|れば|場合)", verb):
         return ()
     # Keep the existing finite-action boundary. Past occurrence does not
     # prove completion, and receiving/being made to do something does not
     # prove this owner's independent execution of the embedded action.
-    event_finite = match['event'][:-1] + {'て': 'た', 'で': 'だ', 'た': 'た'}[match['ending']]
     if (not _bounded_structural_action_endpoint(event_finite)
         or not _source_operator_owner_scope_is_bound(event_finite)
         or re.search(r"(?:て|で)(?:もら|くれ|いただ)|(?:させ|せ)られ", verb)
@@ -13448,15 +13489,33 @@ def _explicit_result_appraisal_projections(span, normalized_input):
                    'manual_action' if verb in {'拭い', 'ふい', '洗っ', '磨い'} else 'unspecified_action')
     degree = next((code for text, code in (('少し', 'slight'), ('とても', 'very'), ('本当に', 'truly'),
                    ('全然', 'not_at_all'), ('あまり', 'not_much')) if text in match['appraisal']), 'unmarked')
+    if context is not None and (negative or match['lexeme'] != '満足'
+        or degree != 'unmarked' or match['appraisal'] != '満足' + match['tail']):
+        return ()
     rows = []
+    if context is not None:
+        left, right = context.span('unfinished')
+        rows.append(_TypedNucleusProjection(':unfinished', 'state', 'state',
+            'negative', 'fact', 'present', left, right, (
+                'semantic_role:generic_relation_fragment', 'semantic_role:final_stage1_compound_meaning',
+                f'source_fragment_scalar_range:{left}:{right}',
+                'source_fragment_scalar_source:normalized_raw_text',
+                'semantic_dependency:unfinished_result_appraisal',
+                'semantic_role:appraisal_unfinished_context',
+                'semantic_role:present_unfinished', 'operator:unfinished', 'operator:negation',
+                'time_scope:present', 'lexical:preserve_source_predicate',
+                'lexical:no_new_sensation_family',
+            )))
     for name in ('event', 'appraisal'):
         left, right = match.span(name)
+        left, right = left + offset, right + offset
         is_appraisal = name == 'appraisal'
         time = ('present' if match['tail'] in {'している', 'しています', 'していない', 'していません'} else 'past') if is_appraisal else 'past'
         codes = (
             'semantic_role:generic_relation_fragment', 'semantic_role:final_stage1_compound_meaning',
             f'source_fragment_scalar_range:{left}:{right}', 'source_fragment_scalar_source:normalized_raw_text',
             'semantic_dependency:explicit_result_appraisal', f'time_scope:{time}',
+            *(('semantic_dependency:unfinished_result_appraisal',) if context is not None else ()),
             'lexical:preserve_source_predicate', 'lexical:no_new_sensation_family',
             *(('semantic_role:explicit_evaluation', 'operator:feeling',
                'source_appraisal_kind:' + {'満足': 'satisfaction', '納得': 'acceptance'}[match['lexeme']],
@@ -13499,6 +13558,73 @@ def source_owned_result_appraisal(relation, nuclei):
         and 'thread_subject:revised_result_appraisal' in right.semantic_frame.attribute_codes
         and relation.source_span_ids == tuple(dict.fromkeys((*left.source_span_ids, *right.source_span_ids)))
         and len(relation.source_relation_ids) == 1)
+
+
+def source_owned_result_appraisal_context(relation, nuclei, relations):
+    """Read the source-proved complete unfinished fact of one appraisal.
+
+    This bounded initial-source arm does not admit arbitrary neighbouring
+    states. The exact three scalar owners and both required edges were
+    established together by the whole-sentence parser before selection.
+    """
+    if not source_owned_result_appraisal(relation, nuclei):
+        return None
+    index = {n.nucleus_id: n for n in nuclei}
+    event, evaluation = (index[nid] for nid in
+                         (relation.from_nucleus_id, relation.to_nucleus_id))
+    marker = 'semantic_dependency:unfinished_result_appraisal'
+    group = tuple(n for n in nuclei if n.source_span_ids == event.source_span_ids
+        and n.source_fields == event.source_fields
+        and marker in n.semantic_frame.attribute_codes)
+    contexts = tuple(n for n in group
+        if 'semantic_role:appraisal_unfinished_context' in n.semantic_frame.attribute_codes)
+    if len(group) != 3 or len(contexts) != 1:
+        return None
+    context = contexts[0]
+    if ({n.nucleus_id for n in group} != {context.nucleus_id, event.nucleus_id, evaluation.nucleus_id}
+        or len({context.nucleus_id, event.nucleus_id, evaluation.nucleus_id}) != 3
+        or any(n.retention != 'required' or n.grounding_kind != 'explicit'
+            or n.allowed_claim_scope != 'explicit_current_input'
+            or n.semantic_frame.actor != 'current_user'
+            or n.surface_anchor_ids != event.source_span_ids for n in group)
+        or (context.kind, context.semantic_frame.predicate_kind, context.semantic_frame.modality,
+            context.semantic_frame.polarity, context.semantic_frame.time_scope)
+            != ('state', 'state', 'fact', 'negative', 'present')
+        or not {'semantic_role:present_unfinished', 'operator:unfinished', 'operator:negation'}
+            <= set(context.semantic_frame.attribute_codes)
+        or {'operator:uncertainty', 'semantic_role:limiting_unknown'}
+            & set(context.semantic_frame.attribute_codes)
+        or (event.semantic_frame.modality, event.semantic_frame.polarity, event.semantic_frame.time_scope)
+            != ('fact', 'neutral', 'past')
+        or (evaluation.semantic_frame.predicate_kind, evaluation.semantic_frame.modality,
+            evaluation.semantic_frame.polarity) != ('feeling', 'feeling', 'positive')
+        or evaluation.semantic_frame.time_scope not in {'past', 'present'}
+        or {c for c in evaluation.semantic_frame.attribute_codes if c.startswith('source_appraisal_')}
+            != {'source_appraisal_kind:satisfaction', 'source_appraisal_degree:unmarked'}
+        or any(c.startswith('thread_time:') for n in group for c in n.semantic_frame.attribute_codes)):
+        return None
+    ranges = []
+    for n in (context, event, evaluation):
+        codes = tuple(c for c in n.semantic_frame.attribute_codes if c.startswith('source_fragment_scalar_range:'))
+        if len(codes) != 1 or re.fullmatch(r'source_fragment_scalar_range:\d+:\d+', codes[0]) is None:
+            return None
+        left, right = map(int, codes[0].split(':')[-2:])
+        if left >= right or 'source_fragment_scalar_source:normalized_raw_text' not in n.semantic_frame.attribute_codes:
+            return None
+        ranges.append((left, right))
+    if not (ranges[0][0] == 0 and ranges[0][1] < ranges[1][0]
+            and ranges[1][1] <= ranges[2][0]):
+        return None
+    contrasts = tuple(r for r in relations if r.type == 'contrast'
+        and r.retention == 'required' and r.grounding_kind == 'user_stated_relation'
+        and (r.from_nucleus_id, r.to_nucleus_id) == (context.nucleus_id, evaluation.nucleus_id)
+        and r.source_span_ids == event.source_span_ids)
+    if len(contrasts) != 1:
+        return None
+    ids = {n.nucleus_id for n in group}
+    incident = tuple(r for r in relations if r.retention == 'required'
+        and ids & {r.from_nucleus_id, r.to_nucleus_id})
+    return context if len(incident) == 2 and set(incident) == {relation, contrasts[0]} else None
 
 
 def _received_event_reaction_projections(span, base_frame):
@@ -14466,7 +14592,15 @@ def _final_stage1_typed_nuclei(
             projection_codes = tuple(
                 set(projection.attribute_codes) for projection in projections
             )
-            if (projections[0].kind == "event"
+            if (projections[0].kind == projections[0].predicate_kind == 'state'
+                and projections[0].modality == 'fact' and projections[0].polarity == 'negative'
+                and projections[1].kind == 'event' and projections[2].kind == 'reaction'
+                and all('semantic_dependency:unfinished_result_appraisal' in codes for codes in projection_codes)):
+                compound_dependencies.extend((
+                    ('contrast', projected_ids[0], projected_ids[2]),
+                    ('evaluation_about_event', projected_ids[1], projected_ids[2]),
+                ))
+            elif (projections[0].kind == "event"
                 and all(p.kind == "reaction" and p.predicate_kind == "feeling" for p in projections[1:])
                 and all("semantic_dependency:received_feeling_contrast_chain" in codes for codes in projection_codes)):
                 compound_dependencies.extend((

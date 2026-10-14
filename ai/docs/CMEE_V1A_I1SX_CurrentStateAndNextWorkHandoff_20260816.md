@@ -1,4 +1,4 @@
-> 最新のEmlisAI残件は末尾 **u261（2026-10-14 JST・接続された未成立事実を含む限定変更案・未実装）**。source認識と既存選択条件の不足を分離。新しい範囲追加は未承認、既存u253承認は継続。製品コード/本文改善0、商品NOT_CLEAR・初回単位未完了。
+> 最新のEmlisAI残件は末尾 **u262（2026-10-15 JST・承認済みの接続された未成立事実exact1を限定実装）**。三点を選択から本文へ保持。商品NOT_CLEAR・初回単位未完了。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -18951,3 +18951,62 @@ scratchだけで、元EvidenceSpanの `0:8=結論は出ていない`、`10:19=�
 ### CI・現在地
 
 前回u260 APIの `Analysis observed content` [run38575084729](https://github.com/MassyuRed/mashos-api/actions/runs/38575084729) は同head `44269290...` でcompleted/successをfresh確認した。今回の製品検査成功へ加算しない。今回production/test/fixture/API/DB/RN/依存変更0、STRUCTURE_MAP_DELTA_NONE。初回単位未完了・0/3・candidate_ready=false・automatic_progression=false・未配置・Draft/open/unmerged。2 received＋2評価の初回gap、既存共有17失敗、same100、本人実機、正式Product Readは未解消。10/17・10/31・12/18とPiece/Analysis主枠は維持する。
+
+## u262 — 承認された未成立の事実exact1と満足対象を本文へ保持（2026-10-15 JST）
+
+**BOUNDED_IMPLEMENTATION_WIP / PRODUCT_NOT_CLEAR、初回単位未完了・0/3。** 06:17 JST開始。Mashの「うん、進めて」を受け、u261で提案した `EMLIS_APPRAISAL_CONNECTED_UNFINISHED_CONTEXT_20261014` を `APPROVED_FOR_BOUNDED_IMPLEMENTATION` として実装する。u261の未承認表示は提案時点の履歴であり、既存u253承認・満足/納得の確定定義も継続する。追加の再承認は要求しない。
+
+開始時fresh GitHubとlocalはAPI `dc90d70c25a47538edf305c4848fedc714fd2140`、Cocolon `6334178dcb9943a30bfff2adbdbbe981c54097fa`、両Draft/open/unmerged。全体設計01・全file map01A/B/Cのcoverage・current01/04、latest weekly20261010 §5.6.11、8/28設計§9.2/9.4/u261、Rule18と恒久incidentの原典を確認した。System Context prepareは `PUBLICATION_RECOVERY_AMBIGUOUS: residual without marker` で失敗し、許可された原典直接fallbackを使用。refresh成功とはしない。Karen-Diaryは変更しない。
+
+### 限定されたsourceと選択
+
+合成入力 `結論は出ていないが、考えを言葉にできて満足した。` を、原文range `0:8 / 10:19 / 19:23` のexact3として保持する。未成立はstate/fact/negative/present、行動対象はevent/fact/neutral/past、評価はfeeling/positive/past（又は原文のpresent）。CONTRASTは未成立→満足、ABOUT_TARGETは言語化した経験→満足であり、未成立を評価対象にしない。未成立factをepistemic unknownへ変えず、一般の根拠不足do_not_claim境界は従来どおり残す。
+
+`_source_finite_result_case_action` は「考えを言葉にできた」のobject/result格だけを有限に立証し、既存owner/他者/属格guardを迂回しない。`source_owned_result_appraisal_context` は同一source span・SELF・原文range・exact3・required2関係・種別/肯否/時点を検証する。quoted/reported/foreign/条件/推量/構文未完/満足否定/納得/程度付き/別文/未成立2項を新経路へ採用しない。別requiredは従来どおり本人の明示実行行動に限定し、source証明済みの未成立exact1だけをindependent_requiredから除く。
+
+relationが評価端点を覆っても、既存finite appraisal qualifierをRIGHT roleへ運搬する。運搬と意味admissionを分け、direct qualifier再構成で消える未成立/negation markerへ運搬条件を依存させない。意味側の肯定・無程度制限はsource/選択/本文契約で保持する。raw→direct再構成の同値を確認し、新registry/schemaを増やさない。
+
+選択された三点は通常の `EmlisAppraisalContent`、`RELATIONAL_NONCOLLAPSE / PRESERVE_BOTH_ENDPOINTS`、exact3 basis・焦点CONTRAST・protected0へ投影する。新armへ入る前に両評価端点の既存 `explicit_result_appraisal` qualifierを必須とし、既存received/reason等のABOUT_TARGETを先取りしない。`EmlisEvaluatedExperienceAppraisalContent v1` のexact2/protected0は不変。選択外の第三命題を作者だけが追加する経路も設けない。
+
+### 実本文と読む結果
+
+既存単一作者が、未成立の点を残したまま、満足の及ぶ対象を言語化した経験へ限定する。既存独立readerは原文に照合して三点・対象・肯否・時点を本文bytesから検証する。Observationも「同時にあります」を使わず、各引用の時点を保つ。未成立の削除/成立への反転/過去化、対象を結論へ変更、対象否定、評価時点の入替、関係反復/同時化を拒否する。直接readerの検査中は作者関数を禁止している。全体inverseの再構成照合は従来の役割で維持する。
+
+次はSQL保存から読み戻した過去形の実本文（独立行動あり）。
+
+```text
+見えたこと：
+「結論は出ていない」の一方で「満足した」とあります。 「考えを言葉にできて」という出来事に対する評価は、「満足した」とあります。
+今の入力には、「植木に水をやった」という行動があります。
+
+Emlisから：
+結論は出ていないという点と切り分けて、当時の満足を、考えを言葉にできたことに向けられた充足として受け取りました。
+```
+
+行動欄なしでも同じReceptionを生成する。現在形「満足している」は「入力した時点での満足」、対象を「資料を分類できて」へ変えると「資料を分類できたことに向けられた充足」となる。独立行動はObservationにのみ残る。成功・進歩・将来の解決・結論を出す目的・新しい同時性・本人が未成立を受容した心理は加えない。
+
+u260の語義展開だけの本文に対し、今回は第三命題によって充足の範囲を結論の成立へ広げない内容上の差がある。ただし「満足を…充足として」という説明的な語義展開も残り、限定生成成立を§9.2/9.4全体や商品完成へ加算しない。PRODUCT_NOT_CLEARを維持し、同じ修辞修正だけを反復しない。
+
+### 互換検証と途中で修正した回帰
+
+u261の実checkpoint2件を未変更dc90d70から先に捕獲し、完全一致で再導出した。旧checkpoint指定では旧意味・旧初回停止を正確に維持し、新三点本文へ密かに移行しない。fresh prepareでのみ新base/新checkpointから新三点本文を作る。foreign checkpointは拒否する。既存4組10rowのhistorical fixtureは変更しない。
+
+PGliteで四例（行動あり/なし、評価現在形、対象差替）を保存し、event payloadの本文一致と、作者を禁止したrestart GET/startのDTO完全一致を確認。保存DTOを既存RN hook/modalへ渡し、履歴展開・close/reopen後にも本文とevent idが一つのまま一致した。実機Product Readではない。API/DB/RN製品コードは変更0。
+
+初回のQ2/Q3 application検査は20 FAIL/34 PASSだった。同一runtimeの未変更u261 baselineは54 PASSであり、既存失敗やruntime差へ転嫁しない。原因となる新composition armのentryを既存明示評価に限定し、代表4ケースを再検査して4 PASS（17.38秒）。その他、最初の正例テストが全unknown境界0を求めた条件は過剰で、epistemic unknown不付与へ修正した。未成立factの検証は維持。qualifier運搬も生成/検証の投影不一致を修正した。
+
+最終評価suite・application suite・identity結果は下記最終検証欄へ記録する。今回runtimeは従来scratch消失に伴いCI/test-tools用Python3.12.14・PGlite0.5.8・React18.3.1等を新scratchへ復元した。製品依存file変更0、外部AI呼出0、追加有料service0。
+
+### 変更地図・現在地
+
+STRUCTURE_MAP_DELTA_PRESENT。既存7production owner（observation_plan、thread_projection、contracts、stage1_composition、human_reception、sentence_surface、observation_gate）を更新し、既存評価testと現行shared-owner identity fixtureを更新する。新engine/checker/schema/registry/public interfaceは追加しない。全体設計・全file地図/current01/04・8/28設計・06・weekly§5.6.12・07へ同期する。IM03歴史identityは不変。
+
+未配置・Draft/open/unmerged、candidate_ready=false・automatic_progression=false。2 received＋2評価の初回gap、既存共有17失敗、same100、本人実機、正式Product Readは残る。10/17・10/31・12/18とPiece/Analysis主枠は維持。今回の限定範囲外に新たなadmissionを広げない。
+
+### u262 最終検証
+
+- 評価file `test_cmee_emlis_result_appraisal.py`: **187 PASS、39.71秒**（既存166＋新21、SQL/PGlite有効）。新source/content/body18、captured旧checkpoint2、qualifier運搬同値1を含む。
+- Q2/Q3 application: 修正後 **54 PASS、70.33秒、既存依存deprecation warning2**。比較baselineは54 PASS、72.28秒。初回20失敗を残したまま成功扱いにはしていない。
+- 現行shared identity: **1 PASS、20.63秒**。language `bcf7b159b9689966e933cfa53ebe3eb42668188672d3c6978af6c8ce2ff1210e`、runtime `1b0f907934477e669f2f6755607bca230a6acfce800b114097d22c86617a9d40`。既存manifest/proof関数から現行fixtureを再生成し、歴史proofは不変。
+- 実原文TENSION候補へ通常final owner `_candidate_from_direct(...include_relation_endpoint_source_contract=True)` で両endpoint supportを生成して `_validate_stage1_relation_binding` を実行しPASS。thread本経路がこのPhase-B validatorを通らないため、運搬同値検査とこの直接実測で不足を補った。新checkerは追加していない。
+- 保存本文4例とRN hook/modal4例は本文/event完全一致。git diff --check成功。これらは商品品質の合格や本人実機検査を代替しない。

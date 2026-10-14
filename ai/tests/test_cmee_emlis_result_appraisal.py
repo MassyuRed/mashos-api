@@ -1110,3 +1110,263 @@ def test_saved_u257_partial_original_time_checkpoint_keeps_its_complete_meaning(
     foreign = replace(req, emlis_thread=replace(req.emlis_thread, prepared_meaning_checkpoint_ref='foreign'))
     with pytest.raises(ValueError, match='emlis_checkpoint_source_prefix_mismatch|emlis_q3_unresolved_predecessor'):
         prepare_emlis_meaning(foreign)
+
+
+def _unfinished_appraisal_source(plan):
+    from emlis_ai_grounded_observation_plan import source_owned_result_appraisal_context
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    rows = [(context, index[relation.from_nucleus_id], index[relation.to_nucleus_id], relation)
+            for relation in plan.relations
+            if (context := source_owned_result_appraisal_context(
+                relation, plan.nuclei, plan.relations)) is not None]
+    return rows
+
+
+@pytest.mark.parametrize('event,action,evaluation', [
+    ('考えを言葉にできて', '', '満足した'),
+    ('考えを言葉にできて', '植木に水をやった。', '満足した'),
+    ('資料を分類できて', '机を拭いた。', '満足した'),
+    ('考えを言葉にできて', '植木に水をやった。', '満足している'),
+])
+def test_unfinished_appraisal_owns_three_sources_and_scoped_selected_content(event, action, evaluation):
+    import emlis_ai_grounded_human_reception as hr
+    from cocolon_meaning_experience_engine import contracts as c
+    req = request('結論は出ていないが、' + event + evaluation + '。', action)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    (context, target, feeling, about), = _unfinished_appraisal_source(plan)
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    resolver = prepared.thread.resolver()
+    assert tuple(hr.final_reception_source_anchor_text(n.nucleus_id, index, resolver)
+                 for n in (context, target, feeling)) == ('結論は出ていない', event, evaluation)
+    assert (context.kind, context.semantic_frame.modality, context.semantic_frame.polarity,
+            context.semantic_frame.time_scope) == ('state', 'fact', 'negative', 'present')
+    assert 'semantic_role:appraisal_unfinished_context' in context.semantic_frame.attribute_codes
+    assert target.semantic_frame.modality == 'fact'
+    assert (feeling.semantic_frame.modality, feeling.semantic_frame.polarity,
+            feeling.semantic_frame.time_scope) == (
+                'feeling', 'positive', 'present' if evaluation.endswith('している') else 'past')
+    source_ids = {n.nucleus_id for n in (context, target, feeling)}
+    assert source_ids <= set(plan.coverage_requirements.required_nucleus_ids)
+    assert len({n.source_span_ids for n in (context, target, feeling)}) == 1
+    contrast, = (r for r in plan.relations if r.type == 'contrast'
+                 and r.from_nucleus_id == context.nucleus_id and r.to_nucleus_id == feeling.nucleus_id)
+    assert {about.relation_id, contrast.relation_id} <= set(plan.coverage_requirements.required_relation_ids)
+    # Missing causes or personal standards can remain do-not-claim boundaries.
+    # The stated unfinished fact itself must not become an epistemic unknown.
+    assert not any(boundary.dimension == 'source_explicit_epistemic_limit'
+                   and set(boundary.affected_nucleus_ids) & source_ids
+                   for boundary in plan.unknown_boundaries)
+
+    projection = project_thread_meaning(prepared, plan)
+    selected = projection.structure.meaning_decision_outcome
+    assert type(selected) is c.SelectedEmlisProvisionalReading
+    candidate = next(row for row in projection.structure.candidate_records
+                     if row.candidate_id == selected.selected_candidate_ref)
+    assert set(candidate.requirement_bundle_refs) == {
+        row.bundle_id for row in projection.structure.requirement_bundles}
+    reception = projection.selected_reception
+    decision, = (d for d in reception.decisions if d.target_nucleus_ids == (feeling.nucleus_id,))
+    assert decision.branch == 'NORMAL'
+    assert set(decision.support_nucleus_ids) == {context.nucleus_id, target.nucleus_id}
+    content = decision.subjective_proposition.appraisal_content
+    assert type(content) is c.EmlisAppraisalContent
+    assert (content.dimension, content.operation) == (
+        c.AppraisalDimension.RELATIONAL_NONCOLLAPSE, c.AppraisalOperation.PRESERVE_BOTH_ENDPOINTS)
+    assert len(content.appraised_bindings) == 3 and content.protected_bindings == ()
+    bases = {row.binding_ref: row for row in decision.basis_rows}
+    semantic_to_nucleus = dict(reception.semantic_nucleus_pairs)
+    assert {semantic_to_nucleus[bases[ref].semantic_ref] for ref in content.appraised_bindings} == source_ids
+    assert dict(reception.relation_pairs)[content.focal_relation_ref] == contrast.relation_id
+
+    outcome = MeaningExperienceEngine().generate(req)
+    assert outcome.artifact is not None, outcome.reason_codes
+    text = outcome.artifact.reception
+    assert '同時' not in outcome.artifact.text
+    assert '結論' in text and event[:-1] + 'た' in text
+    assert '満たされた感覚' in text or '充足' in text
+    assert '植木' not in text and '机を拭' not in text
+    assert not any(word in text for word in (
+        '目標', '基準', '成長', '成功', '進歩', 'いずれ', '追いつ', '理解が深ま', '伝わった'))
+
+
+@pytest.mark.parametrize('memo', [
+    '結論は出ていないが、考えを言葉にできて満足しなかった。',
+    '結論は出ていないが、考えを言葉にできて納得した。',
+    '結論は出ていないが、考えを言葉にできて少し満足した。',
+    '同僚は結論が出ていないが、考えを言葉にできて満足した。',
+    '「結論は出ていないが、考えを言葉にできて満足した」と聞いた。',
+    '結論は出ていないが、考えを言葉にできて満足したかもしれない。',
+    '結論が出ていないなら、考えを言葉にできて満足した。',
+    '結論は出ていないが、考えを言葉にできて満足したら。',
+    '結論は出ていないが、考えを言葉にできて満足し',
+    '結論は出ていない。考えを言葉にできて満足した。',
+])
+def test_unfinished_appraisal_does_not_extend_its_approved_source_scope(memo):
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(request(memo)))
+    assert not _unfinished_appraisal_source(plan)
+
+
+def test_removing_unfinished_source_removes_the_three_point_reading():
+    from cocolon_meaning_experience_engine import contracts as c
+    req = request('考えを言葉にできて満足した。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    assert not _unfinished_appraisal_source(plan)
+    relation, = (r for r in plan.relations if source_owned_result_appraisal(r, plan.nuclei))
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    decision, = (d for d in selected.decisions if d.target_nucleus_ids == (relation.to_nucleus_id,))
+    content = decision.subjective_proposition.appraisal_content
+    assert type(content) is c.EmlisEvaluatedExperienceAppraisalContent
+    assert len(content.appraised_bindings) == 2
+    outcome = MeaningExperienceEngine().generate(req)
+    assert outcome.artifact is not None, outcome.reason_codes
+    assert '考えを言葉にできた' in outcome.artifact.reception
+    assert '結論' not in outcome.artifact.text
+
+
+def test_independent_action_does_not_replace_unfinished_appraisal_reception():
+    memo = '結論は出ていないが、考えを言葉にできて満足した。'
+    artifacts = []
+    for action in ('', '植木に水をやった。', '机を拭いた。'):
+        result = MeaningExperienceEngine().generate(request(memo, action))
+        assert result.artifact is not None, result.reason_codes
+        artifacts.append(result.artifact)
+        if action:
+            assert action.rstrip('。') in result.artifact.observation
+    assert len({body.reception for body in artifacts}) == 1
+    assert len({body.observation for body in artifacts}) == 3
+
+
+@pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
+def test_unfinished_appraisal_reader_preserves_limit_target_and_time_without_author(monkeypatch, evaluation):
+    import emlis_ai_grounded_human_reception as hr
+    from emlis_ai_grounded_observation_gate import read_source_owned_discourse
+    req = request('結論は出ていないが、考えを言葉にできて' + evaluation + '。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    (_, _, feeling, _), = _unfinished_appraisal_source(plan)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    resolver = prepared.thread.resolver()
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    outcome = MeaningExperienceEngine().generate(req)
+    assert outcome.artifact is not None, outcome.reason_codes
+    artifact = outcome.artifact
+    reception = artifact.reception
+    expected_time = '当時の満足' if evaluation == '満足した' else '入力した時点での満足'
+    wrong_time = '入力した時点での満足' if evaluation == '満足した' else '当時の満足'
+    assert expected_time in reception
+    mutations = (
+        reception.replace('結論は出ていないという点と切り分けて、', ''),
+        reception.replace('結論は出ていない', '結論は出ている'),
+        reception.replace('結論は出ていない', '結論は出ていなかった'),
+        reception.replace('考えを言葉にできたこと', '結論が出たこと'),
+        reception.replace('考えを言葉にできたこと', '考えを言葉にできなかったこと'),
+        reception.replace(expected_time, wrong_time),
+        reception.replace('という点と切り分けて', 'のですが'),
+        reception.replace('という点と切り分けて', 'という点と同時に'),
+    )
+    def whole_valid(text):
+        return evaluate_grounded_surface_body_inverse(body=text.encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert whole_valid(artifact.text)
+    for wrong in mutations:
+        assert wrong != reception
+        assert not whole_valid(artifact.text.replace(reception, wrong))
+    move, = (m for m in plan.response_plan.human_reception_plan.moves
+             if m.target_nucleus_ids == (feeling.nucleus_id,))
+    monkeypatch.setattr(hr, '_source_owned_relational_focus_sentence',
+        lambda *_a, **_k: pytest.fail('source reader must not invoke the author'))
+    assert read_source_owned_discourse(reception, move, plan, resolver, selected) is not None
+    for wrong in mutations:
+        assert read_source_owned_discourse(wrong, move, plan, resolver, selected) is None
+
+
+# Complete initial checkpoints captured from unmodified dc90d70 before the
+# connected-source grammar was added. No current IDs stand in for old meaning.
+_PRE_CONNECTED_CHECKPOINTS = (
+    ('', {
+        'checkpoint_id': 'emlis-checkpoint-e39d1005b18507b54062bd0418becc7be8ad12caa8d8527f602b2fd544e34506',
+        'source_prefix_ref': 'emlis-q3-source-prefix-3f919cfd78553ee5f573387870220ab88c75cf24e9e17599c869bfc0e5769c5b',
+        'base_meaning_ref': 'emlis-base-meaning-fdb9763f513d2eec5c5fd8945c8cda36c7d6d89f2c7287c8ab5e447dec283bdd',
+        'answer_update': None,
+        'assessment_status': 'RESOLVED',
+        'accepted_update_refs': [],
+        'inactive_claim_refs': [],
+        'unresolved_parts': [],
+        'semantic_schema_version': 'cocolon.cmee.emlis_answer_meaning.v1',
+    }),
+    ('植木に水をやった。', {
+        'checkpoint_id': 'emlis-checkpoint-c006386b2e13e85733cb382ac29407abb74d5f17d355531ca2e96ce3a0fbe0f6',
+        'source_prefix_ref': 'emlis-q3-source-prefix-0ba6b972362a507bc1ea776d0464a50469d015263967407c0c59fe62e7513da5',
+        'base_meaning_ref': 'emlis-base-meaning-fbdfb141956d425c4bb7c21acfc89bdaaa9b7a0d95d8fdabe43db6480076f296',
+        'answer_update': None,
+        'assessment_status': 'RESOLVED',
+        'accepted_update_refs': [],
+        'inactive_claim_refs': [],
+        'unresolved_parts': [],
+        'semantic_schema_version': 'cocolon.cmee.emlis_answer_meaning.v1',
+    }),
+)
+
+
+@pytest.mark.parametrize('action,expected', _PRE_CONNECTED_CHECKPOINTS, ids=['without_action', 'with_action'])
+def test_saved_u261_checkpoint_stays_exact_while_fresh_meaning_owns_connected_appraisal(action, expected):
+    from emlis_thread_service import _json
+    req = request('結論は出ていないが、考えを言葉にできて満足した。', action)
+    saved_req = replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=expected['checkpoint_id']))
+    restored = prepare_emlis_meaning(saved_req)
+    assert _json(restored.checkpoint) == expected
+    assert restored.legacy_result_appraisal
+    assert not _unfinished_appraisal_source(build_updated_grounded_plan(restored))
+    old_outcome = MeaningExperienceEngine().generate(saved_req)
+    assert old_outcome.artifact is None
+    assert old_outcome.reason_codes == ('emlis_q3_initial_body_unavailable',)
+
+    fresh = prepare_emlis_meaning(req)
+    assert not fresh.legacy_result_appraisal
+    assert fresh.checkpoint.source_prefix_ref == expected['source_prefix_ref']
+    assert fresh.checkpoint.base_meaning_ref != expected['base_meaning_ref']
+    assert fresh.checkpoint.checkpoint_id != expected['checkpoint_id']
+    assert len(_unfinished_appraisal_source(build_updated_grounded_plan(fresh))) == 1
+    current_req = replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=fresh.checkpoint.checkpoint_id))
+    current = MeaningExperienceEngine().generate(current_req)
+    assert current.artifact is not None, current.reason_codes
+    assert current.meaning_checkpoint == fresh.checkpoint
+    assert '結論は出ていない' in current.artifact.reception
+    assert '考えを言葉にできたこと' in current.artifact.reception
+    assert '同時' not in current.artifact.text
+    foreign = replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref='foreign'))
+    with pytest.raises(ValueError, match='emlis_checkpoint_source_prefix_mismatch'):
+        prepare_emlis_meaning(foreign)
+
+
+def test_appraisal_relation_qualifiers_match_after_direct_source_projection():
+    from cocolon_meaning_experience_engine import contracts as c
+    version = c.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+    left = ('semantic_role:present_unfinished', 'operator:unfinished', 'operator:negation')
+    base = ('semantic_dependency:explicit_result_appraisal',
+            'source_appraisal_kind:satisfaction', 'source_appraisal_degree:unmarked')
+    def reconstructed(attrs):
+        return tuple(value.removeprefix('qualifier:') for value in
+            c.project_stage1_source_contract_qualifiers(source_attribute_codes=attrs,
+                source_explicit_shift_relation_endpoint=False, stage1_response_schema_version=version))
+    def relation(source, target):
+        return c.project_stage1_relation_source_contract_qualifiers(
+            candidate_kind=c.InterpretationKind.TENSION,
+            source_attribute_codes=source, target_attribute_codes=target,
+            stage1_response_schema_version=version)
+    carried = {'right_qualifier:' + code for code in base}
+    for right, expected in (
+        (base, carried),
+        (base + ('operator:negation',), carried),
+        (base + ('source_appraisal_continuing:still',), set()),
+        (tuple(code.replace('satisfaction', 'acceptance') for code in base), set()),
+        (tuple(code.replace('unmarked', 'slight') for code in base), set()),
+    ):
+        raw = relation(left, right)
+        assert raw == relation(reconstructed(left), reconstructed(right)), right
+        assert set(raw) == expected

@@ -2890,6 +2890,43 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
                 or position is not None and position.stance_operator == "STAY_WITH_SPECIFIC_OBJECT"):
             return None
     index = {n.nucleus_id: n for n in plan.nuclei}
+    if focus[0] == 'unfinished_result_appraisal':
+        from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
+        if (selected_subjective_input is None or decision is None or decision.branch != 'NORMAL'
+            or type(appraisal) is not EmlisAppraisalContent
+            or appraisal.operation != 'PRESERVE_BOTH_ENDPOINTS'
+            or appraisal.dimension != 'RELATIONAL_NONCOLLAPSE'
+            or len(appraisal.appraised_bindings) != 3):
+            return None
+        context, event_node, evaluation = focus[1:]
+        unfinished, event, feeling = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
+                                      for n in focus[1:])
+        parsed = re.fullmatch(r'(?P<context>.+)という点と切り分けて、'
+            r'(?P<time>当時の|入力した時点での)満足を、'
+            r'(?P<event>.+)ことに向けられた(?P<evaluation>充足)として受け取りました。', raw)
+        endings = {code.split(':', 1)[1] for code in event_node.semantic_frame.attribute_codes
+                   if code.startswith('source_appraisal_event_ending:')}
+        if parsed is None or not all((unfinished, event, feeling)) or len(endings) != 1:
+            return None
+        ending = next(iter(endings))
+        if ending not in {'te', 'de', 'ta'}:
+            return None
+        actual = parsed['event']
+        owner = re.search(r'(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)', event)
+        if owner:
+            actual = actual.replace('あなた', owner.group(), 1)
+        when = _body_inverse_appraisal_time(evaluation)
+        from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate
+        if (parsed['context'] != unfinished
+            or parsed['time'] != when + ('の' if when == '当時' else 'での')
+            or not actual.endswith({'te': 'た', 'de': 'だ', 'ta': 'た'}[ending])
+            or actual[:-1] + {'te': 'て', 'de': 'で', 'ta': 'た'}[ending] != event
+            or not _source_result_appraisal_predicate(evaluation, feeling)):
+            return None
+        # The explicit scope phrase binds fulfilment to the event, while
+        # the independently read negative fact remains a separate endpoint.
+        return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
+                     for key, value in (('context', unfinished), ('event', event), ('evaluation', feeling)))
     if focus[0] == "received_feeling_contrast":
         event, first, second = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
                                 for n in focus[1:])
@@ -5953,6 +5990,27 @@ def evaluate_grounded_surface_body_inverse(
             # including when the complete words occur in another source group.
             chain_from = nucleus_index[relation.from_nucleus_id]
             chain_to = nucleus_index[relation.to_nucleus_id]
+            from emlis_ai_grounded_observation_plan import source_owned_result_appraisal_context
+            unfinished_appraisal = relation.type == "contrast" and any(
+                r.to_nucleus_id == chain_to.nucleus_id
+                and source_owned_result_appraisal_context(r, plan.nuclei, plan.relations) == chain_from
+                for r in plan.relations if r.type == "evaluation_about_event"
+            )
+            if unfinished_appraisal:
+                # Present unfinished fact and past appraisal retain separate
+                # time scopes. Read the complete contrast grammar from bytes.
+                pairs = []
+                for row in witness.sentences:
+                    if row.section != "observation" or row.section_line_ordinal != parsed_line.section_ordinal:
+                        continue
+                    visible = _body_inverse_visible_text(body, row)
+                    pair = re.fullmatch(r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」とあります。", visible)
+                    if pair:
+                        pairs.append(pair.groups())
+                if not any(_body_inverse_normalized_anchor(left) in from_values
+                           and _body_inverse_normalized_anchor(right) in to_values
+                           for left, right in pairs):
+                    failures.append(f"body_inverse_unfinished_appraisal_contrast_missing:{index}")
             exact_chain = (len(chain_from.source_span_ids) == 1
                 and chain_from.source_span_ids == chain_to.source_span_ids
                 and all("semantic_dependency:received_feeling_contrast_chain" in n.semantic_frame.attribute_codes
@@ -6679,7 +6737,7 @@ def evaluate_grounded_surface_body_inverse(
                                      or nucleus_index[nid].source_fields == ("answer_text_private",)
                                      and nucleus_index[nid].allowed_claim_scope == "explicit_supplemental_answer")
                                 for nid in (*move.target_nucleus_ids, *move.support_nucleus_ids))
-                            and re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました|経験として受け取りました|ことの両方を受け取りました)。$",
+                            and re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました|経験として受け取りました|充足として受け取りました|ことの両方を受け取りました)。$",
                                 body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8"))):
                             failures.append("body_inverse_reception_finite_duty_unverified:" + move_id)
                             continue

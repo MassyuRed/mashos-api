@@ -6211,6 +6211,55 @@ def _normal_reception_appraisal(
     # proposition; positive feeling is not promoted to bounded change.
     own_basis = {row.semantic_ref: row for row in basis_rows}
     own_qualifiers = {row.basis_binding_ref: row for row in source_qualifiers}
+    candidates = {row.candidate_id: row for row in interpretation_candidates}
+    def endpoint(ref):
+        return own_qualifiers.get(own_basis[ref].binding_ref)
+    def endpoint_codes(qualifier):
+        if qualifier is None:
+            return set()
+        candidate = candidates.get(qualifier.source_candidate_ref)
+        if candidate is None:
+            return set()
+        role = qualifier.source_argument_role
+        prefix = (role.value.lower() + '_qualifier:') if role is not None else 'qualifier:'
+        return {value.removeprefix(prefix) for value in candidate.required_qualifiers
+                if value.startswith(prefix)}
+    connected_appraisals = {direction.relation_ref: direction
+        for configuration in relation_configurations for direction in configuration.direction_rows
+        if direction.relation_kind is EmlisThreadScopeRelationKind.ABOUT_TARGET
+        and {direction.source_endpoint_ref, direction.target_endpoint_ref} < set(own_basis)
+        and all('semantic_dependency:explicit_result_appraisal' in endpoint_codes(endpoint(ref))
+                for ref in (direction.source_endpoint_ref, direction.target_endpoint_ref))}
+    if len(own_basis) == 3 and connected_appraisals:
+        # The negative fact bounds the reading of the positive appraisal;
+        # it is neither an epistemic unknown nor the object of fulfilment.
+        # Keep all three bindings in the existing noncollapse content arm.
+        if len(connected_appraisals) != 1 or len(own_qualifiers) != 3:
+            raise Stage1CompositionError("MEANING_REALIZATION_CAPABILITY_GAP")
+        about = next(iter(connected_appraisals.values()))
+        context_ref, = set(own_basis) - {about.source_endpoint_ref, about.target_endpoint_ref}
+        contrasts = {direction.relation_ref: direction
+            for configuration in relation_configurations for direction in configuration.direction_rows
+            if direction.relation_kind.value == 'contrast'
+            and (direction.source_endpoint_ref, direction.target_endpoint_ref)
+                == (context_ref, about.target_endpoint_ref)}
+        context, event, evaluation = (endpoint(ref) for ref in
+            (context_ref, about.source_endpoint_ref, about.target_endpoint_ref))
+        if (len(contrasts) != 1 or context.modality != 'fact' or context.polarity != 'negative'
+            or context.time_scope not in {'present', 'current_input'}
+            or event.modality != 'fact' or event.polarity != 'neutral' or event.time_scope != 'past'
+            or evaluation.modality != 'feeling' or evaluation.polarity != 'positive'
+            or evaluation.time_scope not in {'past', 'present'}
+            or not {'semantic_dependency:explicit_result_appraisal',
+                    'source_appraisal_kind:satisfaction', 'source_appraisal_degree:unmarked'}
+                <= endpoint_codes(evaluation)
+            or 'semantic_dependency:explicit_result_appraisal' not in endpoint_codes(event)
+            or set(own_basis) != {ref for row in semantic_rows for ref in row.semantic_refs}):
+            raise Stage1CompositionError("MEANING_REALIZATION_CAPABILITY_GAP")
+        return EmlisAppraisalContent(AppraisalDimension.RELATIONAL_NONCOLLAPSE,
+            AppraisalOperation.PRESERVE_BOTH_ENDPOINTS,
+            tuple(row.binding_ref for row in basis_rows), next(iter(contrasts)), (),
+            tuple(row.contribution_id for row in contributions))
     appraisal_relations = tuple(direction
         for configuration in relation_configurations
         for direction in configuration.direction_rows
