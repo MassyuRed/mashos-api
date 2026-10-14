@@ -50,7 +50,14 @@ def test_appraisal_keeps_its_object_outer_polarity_and_time_in_actual_body(memo,
     assert "植木" not in outcome.artifact.reception
     assert "状態に表れた変化" not in outcome.artifact.reception
     assert "努力" not in outcome.artifact.reception
-    assert "満足" in outcome.artifact.reception or "納得" in outcome.artifact.reception
+    if '満足' in memo:
+        assert 'ご自身の中に' in outcome.artifact.reception
+        assert '満たされた感覚が' in outcome.artifact.reception
+    else:
+        assert 'ご自身の理解の中で' in outcome.artifact.reception
+        assert '筋が通って' in outcome.artifact.reception
+    assert ('経験として受け取りました' if polarity == 'positive'
+            else 'ことの両方を受け取りました') in outcome.artifact.reception
 
 
 @pytest.mark.parametrize("memo", [
@@ -103,7 +110,7 @@ def test_body_reader_rejects_swapped_object_polarity_and_invented_answer_time():
     for changed in (body.replace("満足した", "満足しなかった"),
                     body.replace("資料を分類でき", "植木に水をやっ"),
                     body.replace("出来事に対する評価は", "回答した時点の評価は"),
-                    body.replace("資料を分類できたという", "資料を分類できなかったという")):
+                    body.replace("資料を分類できたこと", "資料を分類できなかったこと")):
         assert changed != body
         assert not valid(changed)
 
@@ -131,13 +138,85 @@ def test_experience_is_selected_before_authoring_and_survives_in_body(memo,kind,
     outcome = MeaningExperienceEngine().generate(req)
     assert outcome.artifact is not None,outcome.reason_codes
     reception = outcome.artifact.reception
-    if kind == 'thinking': assert 'という内側の営み' in reception
-    if kind == 'manual_action': assert '実際の作業' in reception
-    if still: assert 'まだご自身が納得していない' in reception and '今も' not in reception
-    if degree == 'slight': assert '少し満足を感じている' in reception
-    if degree == 'not_much': assert 'あまり満足を感じなかった' in reception
+    if kind == 'thinking': assert '案を考えたこと' in reception
+    if kind == 'manual_action': assert '机を拭いたこと' in reception
+    if still: assert 'ご自身の理解の中でまだ筋が通っていない' in reception and '今も' not in reception
+    if degree == 'slight': assert '少し満たされた感覚がある' in reception
+    if degree == 'not_much': assert 'あまり満たされた感覚がなかった' in reception
     assert 'ご自身にも' not in reception and '状態に表れた変化' not in reception
     assert '感じられなかった' not in reception
+
+
+def test_confirmed_meanings_distinguish_fulfilment_from_personal_intelligibility():
+    rows = []
+    for evaluation in ('満足した', '満足しなかった', '納得した', '納得しなかった'):
+        req = request('案を選んで' + evaluation + '。')
+        prepared = prepare_emlis_meaning(req)
+        plan = build_updated_grounded_plan(prepared)
+        selected = project_thread_meaning(prepared, plan).selected_reception
+        content = selected.decisions[0].subjective_proposition.appraisal_content
+        body = MeaningExperienceEngine().generate(req).artifact.reception
+        rows.append((content.reception_configuration, body))
+    assert len({kind for kind, _ in rows}) == len({body for _, body in rows}) == 4
+    for index, (_, body) in enumerate(rows):
+        assert '案を選んだこと' in body
+        assert ('満たされた感覚' in body) == (index < 2)
+        assert ('ご自身の理解の中で筋が通って' in body) == (index >= 2)
+        assert ('ことの両方を受け取りました' in body) == (index % 2 == 1)
+        assert not any(word in body for word in ('目標', '基準', '成功', '成長', '正しい', 'いずれ', '追いつ'))
+
+
+@pytest.mark.parametrize('evaluation', [
+    '満足した', 'あまり満足しなかった', '少し満足している',
+    '納得した', '納得しなかった', 'まだ納得していない',
+    '少し納得した', 'とても納得している', 'あまり納得しなかった',
+])
+def test_source_owned_appraisal_reader_rejects_semantic_mutations_without_author(monkeypatch, evaluation):
+    import emlis_ai_grounded_human_reception as hr
+    from emlis_ai_grounded_observation_gate import read_source_owned_discourse
+    req = request('資料を分類したことに' + evaluation + '。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    resolver = prepared.thread.resolver()
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    artifact = MeaningExperienceEngine().generate(req).artifact
+    assert artifact is not None
+    def whole_valid(text):
+        return evaluate_grounded_surface_body_inverse(body=text.encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert whole_valid(artifact.text)
+    reception = artifact.reception
+    changes = [
+        reception.replace('資料を分類したこと', '資料を分類しなかったこと'),
+        reception.replace('ご自身の中に', '客観的に').replace('ご自身の理解の中で', '客観的に'),
+        reception.replace('当時', '回答した時点').replace('入力した時点', '回答した時点'),
+        reception.replace('満たされた感覚', '筋の通った感覚') if '満足' in evaluation else
+            reception.replace('筋が通って', '満たされて').replace('納得', '満足'),
+    ]
+    if 'まだ' in evaluation:
+        changes.append(reception.replace('まだ', ''))
+    if any(degree in evaluation for degree in ('少し', 'とても', 'あまり')):
+        changes.append(reception.replace('少し', 'とても').replace('とても', '本当に').replace('あまり', 'まったく'))
+    if 'それについて' in reception:
+        changes.append(reception.replace('それについて', ''))
+    if '納得' in reception:
+        changes.append(reception.replace('納得した', '筋が通っていた')
+            .replace('納得している', '筋が通っている').replace('納得しなかった', '筋が通っていなかった'))
+    for wrong in changes:
+        assert wrong != reception
+        assert not whole_valid(artifact.text.replace(reception, wrong))
+    # The complete inverse also keeps the required plan-only replay check.
+    # Only this source reader is independent of the author.
+    move, = plan.response_plan.human_reception_plan.moves
+    monkeypatch.setattr(hr, '_source_owned_relational_focus_sentence',
+        lambda *_a, **_k: pytest.fail('source reader must not invoke the author'))
+    def valid(text):
+        return read_source_owned_discourse(text, move, plan, resolver, selected) is not None
+    assert valid(reception)
+    for wrong in changes:
+        assert wrong != reception
+        assert not valid(wrong)
 
 
 @pytest.mark.parametrize('changes', [dict(target_kind='thinking'),dict(evaluation_kind='acceptance'),
@@ -223,9 +302,9 @@ def test_independent_action_order_and_field_do_not_mask_appraisal_difference(mem
     outcome=MeaningExperienceEngine().generate(request(memo,action))
     assert outcome.artifact is not None,outcome.reason_codes
     assert '植木に水をやった' in outcome.artifact.observation
-    assert '資料を分類できたというご自身での実現' in outcome.artifact.reception
-    assert '満足を感じた' in outcome.artifact.reception
-    appraisal_sentence=next(sentence for sentence in outcome.artifact.reception.split('。') if '満足' in sentence)
+    assert '資料を分類できたこと' in outcome.artifact.reception
+    assert '満たされた感覚があった経験' in outcome.artifact.reception
+    appraisal_sentence=next(sentence for sentence in outcome.artifact.reception.split('。') if '満たされた' in sentence)
     assert '植木' not in appraisal_sentence
 
 

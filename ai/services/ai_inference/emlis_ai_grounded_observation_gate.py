@@ -2962,35 +2962,52 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
         from cocolon_meaning_experience_engine.contracts import EmlisEvaluatedExperienceAppraisalContent
         if type(appraisal) is not EmlisEvaluatedExperienceAppraisalContent:
             return None
-        parsed = re.fullmatch(r"(?P<event>.+)という(?P<target>.+?)(?P<particle>について|に)、(?P<evaluation>.+)のだと受け取りました。", raw)
-        if parsed is None:
+        # Read the actual experience topology and inner predicate. Do not
+        # invoke the author or its content-to-surface derivation here.
+        positive = re.fullmatch(r'(?P<event>.+)ことを、(?P<time>当時、|入力した時点で、|回答した時点で、|先の回答時点で、)'
+            r'(?P<evaluation>.+)経験として受け取りました。', raw)
+        negative = re.fullmatch(r'(?P<event>.+)ことと、それについて(?P<time>当時は|入力した時点では|回答した時点では|先の回答時点では)'
+            r'(?P<evaluation>.+)ことの両方を受け取りました。', raw)
+        parsed = positive or negative
+        if parsed is None or ('positive' if positive else 'negative') != appraisal.polarity:
             return None
-        target = ('ご自身での実現' if appraisal.explicit_ability else
-                  {'thinking': '内側の営み', 'manual_action': '実際の作業',
-                   'unspecified_action': '出来事'}.get(appraisal.target_kind))
-        if target is None or parsed['target'] != target:
+        when = _body_inverse_appraisal_time(right)
+        expected_time = when + (('、' if when == '当時' else 'で、') if positive
+                                else ('は' if when == '当時' else 'では'))
+        if parsed['time'] != expected_time:
             return None
-        at = ('その時もまだ' if appraisal.continuing else 'その時') if appraisal.evaluation_time == 'past' else (
-            'まだ' if appraisal.continuing else '')
-        degree = {'unmarked': '', 'slight': '少し', 'very': 'とても', 'truly': '本当に',
-                  'not_at_all': 'まったく', 'not_much': 'あまり'}.get(appraisal.degree)
-        if degree is None:
+        inner = re.fullmatch(r'(?P<owner>ご自身の中に|ご自身の理解の中で)(?P<still>まだ)?'
+            r'(?P<degree>少し|とても|本当に|まったく|あまり)?'
+            r'(?P<state>満たされた感覚があった|満たされた感覚がある|'
+            r'満たされた感覚がなかった|満たされた感覚がない|'
+            r'筋が通っていた|筋が通っている|筋が通っていなかった|筋が通っていない|'
+            r'納得した|納得している|納得しなかった|納得していない)',
+            parsed['evaluation'])
+        if inner is None:
             return None
-        if appraisal.evaluation_kind == 'satisfaction':
-            state = (('感じた' if appraisal.evaluation_time == 'past' else '感じている')
-                     if appraisal.polarity == 'positive' else
-                     ('感じなかった' if appraisal.evaluation_time == 'past' else '感じていない'))
-            expected = f"{at}ご自身が{degree}満足を{state}"
-            particle = 'に'
-        elif appraisal.evaluation_kind == 'acceptance':
-            state = (('納得した' if appraisal.evaluation_time == 'past' else '納得している')
-                     if appraisal.polarity == 'positive' else
-                     ('納得しなかった' if appraisal.evaluation_time == 'past' else '納得していない'))
-            expected = f"{at}ご自身が{degree}{state}"
-            particle = 'について'
-        else:
+        states = {
+            '満たされた感覚があった': ('satisfaction', 'positive', 'past', 'ご自身の中に'),
+            '満たされた感覚がある': ('satisfaction', 'positive', 'present', 'ご自身の中に'),
+            '満たされた感覚がなかった': ('satisfaction', 'negative', 'past', 'ご自身の中に'),
+            '満たされた感覚がない': ('satisfaction', 'negative', 'present', 'ご自身の中に'),
+            '筋が通っていた': ('acceptance', 'positive', 'past', 'ご自身の理解の中で'),
+            '筋が通っている': ('acceptance', 'positive', 'present', 'ご自身の理解の中で'),
+            '筋が通っていなかった': ('acceptance', 'negative', 'past', 'ご自身の理解の中で'),
+            '筋が通っていない': ('acceptance', 'negative', 'present', 'ご自身の理解の中で'),
+            '納得した': ('acceptance', 'positive', 'past', 'ご自身の理解の中で'),
+            '納得している': ('acceptance', 'positive', 'present', 'ご自身の理解の中で'),
+            '納得しなかった': ('acceptance', 'negative', 'past', 'ご自身の理解の中で'),
+            '納得していない': ('acceptance', 'negative', 'present', 'ご自身の理解の中で'),
+        }
+        degrees = {None: 'unmarked', '少し': 'slight', 'とても': 'very',
+                   '本当に': 'truly', 'まったく': 'not_at_all', 'あまり': 'not_much'}
+        if (states[inner['state']] != (appraisal.evaluation_kind, appraisal.polarity,
+                                       appraisal.evaluation_time, inner['owner'])
+            or bool(inner['still']) != appraisal.continuing
+            or degrees[inner['degree']] != appraisal.degree):
             return None
-        if parsed['evaluation'] != expected or parsed['particle'] != particle:
+        if (appraisal.evaluation_kind == 'acceptance'
+            and inner['state'].startswith('納得') != (appraisal.degree != 'unmarked')):
             return None
         actual = parsed['event']
         owner = re.search(r"(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)", first)
@@ -6662,7 +6679,7 @@ def evaluate_grounded_surface_body_inverse(
                                      or nucleus_index[nid].source_fields == ("answer_text_private",)
                                      and nucleus_index[nid].allowed_claim_scope == "explicit_supplemental_answer")
                                 for nid in (*move.target_nucleus_ids, *move.support_nucleus_ids))
-                            and re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました)。$",
+                            and re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました|経験として受け取りました|ことの両方を受け取りました)。$",
                                 body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8"))):
                             failures.append("body_inverse_reception_finite_duty_unverified:" + move_id)
                             continue

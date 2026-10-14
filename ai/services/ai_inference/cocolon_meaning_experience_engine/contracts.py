@@ -1811,6 +1811,27 @@ class EmlisEvaluatedExperienceAppraisalContent(EmlisAppraisalContent):
     explicit_ability: bool
     degree: str
 
+    @property
+    def reception_configuration(self) -> str:
+        """Receive the event together with its explicitly evaluated inner aspect.
+
+        Mash confirmed these meanings on 2026-10-14: satisfaction concerns
+        felt fulfilment; acceptance concerns intelligibility within the
+        person's understanding. Neither entails success, correctness, an
+        unstated standard, or eventual resolution. This is a derivation from
+        the existing sealed content, not another persisted schema or reading.
+        """
+        configurations = {
+            ("satisfaction", "positive"): "FULFILMENT_ACCOMPANIES_EXPERIENCE",
+            ("satisfaction", "negative"): "EVENT_WITHOUT_FULFILMENT",
+            ("acceptance", "positive"): "EXPERIENCE_INTELLIGIBLE_TO_SELF",
+            ("acceptance", "negative"): "EVENT_WITHOUT_SELF_INTELLIGIBILITY",
+        }
+        try:
+            return configurations[self.evaluation_kind, self.polarity]
+        except KeyError as exc:
+            raise CMEEStage1ContractError("stage1_evaluated_experience_invalid") from exc
+
 
 @dataclass(frozen=True, slots=True)
 class ValueApplication:

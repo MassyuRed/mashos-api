@@ -11477,26 +11477,39 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
         from cocolon_meaning_experience_engine.contracts import EmlisEvaluatedExperienceAppraisalContent
         if type(appraisal) is not EmlisEvaluatedExperienceAppraisalContent:
             return None
-        target = ('ご自身での実現' if appraisal.explicit_ability else
-                  {'thinking': '内側の営み', 'manual_action': '実際の作業',
-                   'unspecified_action': '出来事'}[appraisal.target_kind])
-        at = ('その時もまだ' if appraisal.continuing else 'その時') if appraisal.evaluation_time == 'past' else (
-            'まだ' if appraisal.continuing else '')
+        # The selected content owns the experience configuration before this
+        # author chooses words. Keep the event and the person's inner aspect
+        # together; a negative appraisal does not negate the event itself.
+        configuration = appraisal.reception_configuration
+        from emlis_ai_grounded_observation_plan import _result_appraisal_time_label
+        when = _result_appraisal_time_label(right)
+        at = when + ('は' if when == '当時' else 'では')
+        occasion = when + ('、' if when == '当時' else 'で、')
+        still = 'まだ' if appraisal.continuing else ''
         degree = {'unmarked': '', 'slight': '少し', 'very': 'とても', 'truly': '本当に',
                   'not_at_all': 'まったく', 'not_much': 'あまり'}[appraisal.degree]
-        if appraisal.evaluation_kind == 'satisfaction':
-            state = (('感じた' if appraisal.evaluation_time == 'past' else '感じている')
-                     if appraisal.polarity == 'positive' else
-                     ('感じなかった' if appraisal.evaluation_time == 'past' else '感じていない'))
-            evaluation = f"{at}ご自身が{degree}満足を{state}"
-            particle = 'に'
+        past = appraisal.evaluation_time == 'past'
+        if configuration == 'FULFILMENT_ACCOMPANIES_EXPERIENCE':
+            state = 'あった' if past else 'ある'
+            return (f"{event}ことを、{occasion}ご自身の中に{still}{degree}満たされた感覚が"
+                    f"{state}経験として受け取りました")
+        if configuration == 'EXPERIENCE_INTELLIGIBLE_TO_SELF':
+            # Degree belongs to the person's acceptance, not to a claim
+            # that the reasons are partly or very logically coherent.
+            state = (('納得した' if past else '納得している') if degree else
+                     ('筋が通っていた' if past else '筋が通っている'))
+            return (f"{event}ことを、{occasion}ご自身の理解の中で{still}{degree}"
+                    f"{state}経験として受け取りました")
+        if configuration == 'EVENT_WITHOUT_FULFILMENT':
+            state = 'なかった' if past else 'ない'
+            inner = f"ご自身の中に{still}{degree}満たされた感覚が{state}"
+        elif configuration == 'EVENT_WITHOUT_SELF_INTELLIGIBILITY':
+            state = (('納得しなかった' if past else '納得していない') if degree else
+                     ('筋が通っていなかった' if past else '筋が通っていない'))
+            inner = f"ご自身の理解の中で{still}{degree}{state}"
         else:
-            state = (('納得した' if appraisal.evaluation_time == 'past' else '納得している')
-                     if appraisal.polarity == 'positive' else
-                     ('納得しなかった' if appraisal.evaluation_time == 'past' else '納得していない'))
-            evaluation = f"{at}ご自身が{degree}{state}"
-            particle = 'について'
-        return f"{event}という{target}{particle}、{evaluation}のだと受け取りました"
+            return None
+        return f"{event}ことと、それについて{at}{inner}ことの両方を受け取りました"
     if kind == "feeling_contrast":
         source = str(resolver.resolve(left.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
         if "source_received_chain_slot:first" in left.semantic_frame.attribute_codes:
