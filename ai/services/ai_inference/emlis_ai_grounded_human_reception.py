@@ -1679,6 +1679,13 @@ def _detached_feeling_pair(reception_plan, recovery_stage, *, plan=None, resolve
     for start in (0, 1):
         left, right = moves[start:start + 2]
         first, second = operands[start:start + 2]
+        from emlis_ai_grounded_observation_plan import _thread_withdrawn_result_appraisal
+        appraisals = tuple(_thread_withdrawn_result_appraisal(n, plan.relations) for n in plan.nuclei
+                           if n.nucleus_id in (*left.target_nucleus_ids, *right.target_nucleus_ids))
+        if any(appraisals) and not (len(appraisals) == 2 and all(appraisals) and first == second):
+            # Appraisals carry evaluation time, not the old feeling-pair
+            # discourse. Keep their complete finite sentences within budget.
+            continue
         if (first is not None and second is not None
             and (first[1] != second[1]
                  and operands.count(first) == operands.count(second) == 1
@@ -10958,7 +10965,10 @@ def _source_owned_detached_feeling_parts(move, realization, plan, resolver,
         or not _selected_material_appraisal(selected_decision)):
         return None
     parts = _detached_feeling_source_parts(move, plan, resolver, allow_revised=True)
-    if parts is not None and any(
+    from emlis_ai_grounded_observation_plan import _thread_withdrawn_result_appraisal
+    appraisal = len(move.target_nucleus_ids) == 1 and any(n.nucleus_id == move.target_nucleus_ids[0]
+        and _thread_withdrawn_result_appraisal(n, plan.relations) for n in plan.nuclei)
+    if parts is not None and not appraisal and any(
         other.move_id != move.move_id
         and _detached_feeling_source_parts(other, plan, resolver) == parts
         for other in reception_active_moves(plan.response_plan.human_reception_plan, recovery_stage)
@@ -10976,9 +10986,7 @@ def _source_owned_detached_feeling_parts(move, realization, plan, resolver,
     fragments = tuple(_detached_feeling_finite_surface(fragment, allow_explanatory=True,
                                                      allow_copular=True, allow_medial=True)
                       for fragment in realization.semantic_fragments)
-    from emlis_ai_grounded_observation_plan import _thread_withdrawn_result_appraisal
-    if len(move.target_nucleus_ids) == 1 and any(n.nucleus_id == move.target_nucleus_ids[0]
-        and _thread_withdrawn_result_appraisal(n, plan.relations) for n in plan.nuclei):
+    if appraisal:
         fragments = tuple(_result_appraisal_finite_surface(fragment)
                           for fragment in realization.semantic_fragments)
     return parts if parts is not None and fragments == (parts[1],) else None
@@ -11438,8 +11446,7 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
     if kind == "original_result_appraisal":
         proposition = selected_decision.subjective_proposition
         appraisal = proposition.appraisal_content
-        if (selected_decision.branch == 'LIMITED' and _selected_material_appraisal(selected_decision)
-            and 'thread_subject:revised_result_appraisal' in right.semantic_frame.attribute_codes):
+        if selected_decision.branch == 'LIMITED' and _selected_material_appraisal(selected_decision):
             from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate
             endings = {c.split(':', 1)[1] for c in left.semantic_frame.attribute_codes
                        if c.startswith('source_appraisal_event_ending:')}
@@ -12296,8 +12303,15 @@ def _author_source_grounded_reception_clauses(
             and (detached_terms[0] == detached_terms[1]
                  or detached_terms[0][1] != detached_terms[1][1])):
             if detached_terms[0] == detached_terms[1]:
-                shared_feelings = ("".join(detached_terms[0])
-                    + "という気持ちを、どちらの言葉からも受け取りました")
+                from emlis_ai_grounded_observation_plan import _thread_withdrawn_result_appraisal
+                pair = tuple(move_index[mid] for mid in clause_plan.move_ids)
+                if all(_thread_withdrawn_result_appraisal(nucleus_index[m.target_nucleus_ids[0]], plan.relations)
+                       for m in pair):
+                    shared_feelings = ("二つの評価とも、" + detached_terms[0][0]
+                                       + _feeling_acknowledgement(detached_terms[0][1]))
+                else:
+                    shared_feelings = ("".join(detached_terms[0])
+                        + "という気持ちを、どちらの言葉からも受け取りました")
             else:
                 terminal = detached_terms[1][0] + _feeling_acknowledgement(detached_terms[1][1])
                 shared_feelings = "".join(detached_terms[0]) + "し、" + terminal

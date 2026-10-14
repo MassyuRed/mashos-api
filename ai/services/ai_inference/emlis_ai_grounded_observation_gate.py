@@ -2682,6 +2682,26 @@ def _body_inverse_detached_observation(raw, nuclei, plan, resolver, *, correctio
     )
     if not nuclei:
         return False
+    appraisals = tuple(_thread_withdrawn_result_appraisal(n, plan.relations) for n in nuclei)
+    if len(nuclei) > 1 and any(appraisals):
+        if all(appraisals):
+            operand = r'(当時|入力した時点)の評価「([^「」『』\n]+)」'
+            parsed = re.fullmatch(r'(?:今の入力だけを見ると、)?' + operand
+                + r'(?:と、' + operand + r')+が書かれています。', raw)
+            pieces = re.findall(operand, raw) if parsed else []
+            if len(pieces) != len(nuclei):
+                return False
+            for nucleus, (when, quoted) in zip(nuclei, pieces, strict=True):
+                source = _body_inverse_typed_source_fragment(nucleus, resolver.resolve(nucleus.source_span_ids[0]).raw_text)
+                if (not source or resolver.source_fields_for(nucleus.source_span_ids) != nucleus.source_fields
+                    or not _source_result_appraisal_predicate(nucleus, source) or quoted != source
+                    or when != ('当時' if nucleus.semantic_frame.time_scope == 'past' else '入力した時点')):
+                    return False
+            return True
+        sentences = re.findall(r'[^。]+。', raw)
+        return bool(''.join(sentences) == raw and len(sentences) == len(nuclei)
+                    and all(_body_inverse_detached_observation(sentence, (nucleus,), plan, resolver)
+                            for sentence, nucleus in zip(sentences, nuclei, strict=True)))
     if len(nuclei) == 1 and _thread_withdrawn_result_appraisal(nuclei[0], plan.relations):
         nucleus = nuclei[0]
         span = resolver.resolve(nucleus.source_span_ids[0])
@@ -2895,8 +2915,7 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
     if kind == "original_result_appraisal":
         if (selected_subjective_input is not None and decision is not None
             and decision.branch == 'LIMITED' and appraisal is not None
-            and appraisal.dimension == 'MATERIAL_WEIGHT' and appraisal.operation == 'RECEIVE_AS_MATERIAL'
-            and 'thread_subject:revised_result_appraisal' in right.semantic_frame.attribute_codes):
+            and appraisal.dimension == 'MATERIAL_WEIGHT' and appraisal.operation == 'RECEIVE_AS_MATERIAL'):
             parsed = re.fullmatch(r'(?P<event>.+)ことについて、(?P<time>当時は|入力した時点では)'
                                   r'(?P<evaluation>.+)のですね。', raw)
             from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate
@@ -3534,6 +3553,20 @@ def read_detached_feeling_pair(raw, moves, plan, resolver, selected_subjective_i
         or moves[0].target_nucleus_ids == moves[1].target_nucleus_ids
         or set(moves[0].source_evidence_span_ids) & set(moves[1].source_evidence_span_ids)):
         return None
+    if raw.startswith("二つの評価とも、"):
+        from emlis_ai_grounded_observation_plan import _thread_withdrawn_result_appraisal
+        index = {n.nucleus_id: n for n in plan.nuclei}
+        if (len(reception_active_moves(reception_plan, "full")) != 3
+            or not all(_thread_withdrawn_result_appraisal(index[m.target_nucleus_ids[0]], plan.relations)
+                       for m in moves)):
+            return None
+        prefix = "二つの評価とも、"
+        proofs = tuple(_read_detached_feeling_discourse(raw[len(prefix):], m, plan, resolver,
+                                                       selected_subjective_input) for m in moves)
+        if any(proof is None for proof in proofs):
+            return None
+        offset = len(prefix.encode())
+        return tuple(tuple((a + offset, b + offset, source) for a, b, source in proof) for proof in proofs)
     shared = re.fullmatch(r"(?P<feeling>.+)という気持ちを、どちらの言葉からも受け取りました。", raw)
     if shared is not None:
         # Both refers to two independent input mentions, not two events or
@@ -6021,10 +6054,26 @@ def evaluate_grounded_surface_body_inverse(
                     # Read the whole original-input relation. It has no answer
                     # time and cannot borrow the supplemental-answer grammar.
                     matches = []
+                    appraisal_line_relations = tuple(relation_index[rid] for rid in planned_line.binding.relation_ids)
+                    owned = tuple(sorted((r for r in appraisal_line_relations if source_owned_result_appraisal(r, plan.nuclei)),
+                        key=lambda r: int(nucleus_index[r.from_nucleus_id].source_span_ids[0][1:])))
                     for row in witness.sentences:
                         if row.section != "observation" or row.section_line_ordinal != parsed_line.section_ordinal:
                             continue
                         visible = _body_inverse_visible_text(body, row)
+                        if len(owned) > 1 and len(owned) == len(appraisal_line_relations):
+                            operand = r'「([^「」『』\n]+)」という出来事に対する(当時|入力した時点)の評価は「([^「」『』\n]+)」'
+                            if re.fullmatch(operand + r'(?:、また' + operand + r')+と書かれています。', visible):
+                                pieces = re.findall(operand, visible)
+                                expected = tuple((
+                                    _body_inverse_nucleus_source_values(r.from_nucleus_id, plan, resolver)[0],
+                                    '当時' if nucleus_index[r.to_nucleus_id].semantic_frame.time_scope == 'past' else '入力した時点',
+                                    _body_inverse_nucleus_source_values(r.to_nucleus_id, plan, resolver)[0]) for r in owned)
+                                actual = tuple((_body_inverse_normalized_anchor(a), t, _body_inverse_normalized_anchor(b))
+                                               for a, t, b in pieces)
+                                if actual == expected:
+                                    matches.append(row)
+                            continue
                         evaluation = nucleus_index[relation.to_nucleus_id]
                         at = ("当時の" if evaluation.semantic_frame.time_scope == "past" else "入力した時点の") if (
                             evaluation.source_fields == ("answer_text_private",)) else ""

@@ -8249,6 +8249,31 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
     originals = tuple(n for n in nuclei if n.source_fields != ("answer_text_private",))
     original_relations = tuple(r for r in relations if r.type != "evaluation_about_event")
     original_text = tuple(n for n in originals if any(f in _TEXT_SOURCE_FIELDS for f in n.source_fields))
+    appraisal_links = tuple(r for r in relations if source_owned_result_appraisal(r, nuclei))
+    detached_appraisals = tuple(n for n in nuclei if _thread_withdrawn_result_appraisal(n, relations))
+    if appraisal_links and len(appraisal_links) + len(detached_appraisals) >= 2:
+        index = {n.nucleus_id: n for n in nuclei}
+        endpoints = tuple({r.from_nucleus_id, r.to_nucleus_id} for r in appraisal_links)
+        owned = set().union(*endpoints)
+        if (len(owned) == 2 * len(endpoints) and all(not any(
+            r.retention == "required" and pair & {r.from_nucleus_id, r.to_nucleus_id}
+            and not {r.from_nucleus_id, r.to_nucleus_id} <= pair for r in relations) for pair in endpoints)):
+            rest = tuple(n for n in nuclei if n.nucleus_id not in owned)
+            rest_ids = {n.nucleus_id for n in rest}
+            rest_relations = tuple(r for r in relations if {r.from_nucleus_id, r.to_nucleus_id} <= rest_ids)
+            rest_text = tuple(n for n in rest if n.retention == "required"
+                              and set(n.source_fields) & _TEXT_SOURCE_FIELDS)
+            received = _received_contrast_group_targets(rest_text, rest_relations)
+            retained = (("current_burden", *received),) if received else (
+                _thread_retained_reaction_groups(rest, rest_relations,
+                                                separate_later_scopes=separate_later_scopes) if rest_text else ())
+            if retained or not rest_text:
+                groups = tuple(("lived_change" if is_grounded_positive_feeling(index[r.to_nucleus_id])
+                                else "current_burden", (r.to_nucleus_id,), (r.from_nucleus_id,))
+                               for r in appraisal_links) + retained
+                if len(groups) > 3:
+                    raise GroundedObservationPlanError("human_reception_appraisal_capacity_gap")
+                return groups
     # An initial input can own both a received-event reaction and a separate
     # positive feeling whose meaning remains uncertain. Prove each complete
     # contribution before family ranking, so neither contrast becomes the
@@ -8935,6 +8960,18 @@ def _source_explicit_contrast_reception_duties(nuclei, relations):
             continue
         duties.append(("lived_change", (left.nucleus_id,), (right.nucleus_id,)))
     unique = tuple(dict.fromkeys(duties))
+    appraisal_pairs = tuple(r for r in relations if source_owned_result_appraisal(r, nuclei))
+    if len(unique) > 1 and len(unique) == len(appraisal_pairs):
+        endpoints = tuple({r.from_nucleus_id, r.to_nucleus_id} for r in appraisal_pairs)
+        if (len(set().union(*endpoints)) == 2 * len(endpoints)
+            and all(not any(r.retention == "required" and pair & {
+                r.from_nucleus_id, r.to_nucleus_id} and not {
+                r.from_nucleus_id, r.to_nucleus_id} <= pair for r in relations)
+                for pair in endpoints)):
+            # Each original evaluation already owns a complete independent
+            # pair. The existing retained-group closure and move budget decide
+            # whether the whole input can retain these duties together.
+            return unique
     # Several independent contrasts need a separate composition decision;
     # do not choose one arbitrarily or duplicate an existing response role.
     return unique if len(unique) == 1 else ()
@@ -10897,7 +10934,8 @@ def _build_response_and_policies(
     if (final_source_fidelity
         and safety_decision.safety_triage_kind == TRIAGE_SAFE_OBSERVATION
         and material_quality == "grounded"):
-        for _, targets, supports in _source_explicit_contrast_reception_duties(nuclei, relations):
+        focus_duties = _source_explicit_contrast_reception_duties(nuclei, relations)
+        for _, targets, supports in focus_duties if len(focus_duties) == 1 else ():
             group = (*targets, *supports)
             if (set(group) & primary_set
                 and candidate_index[targets[0]].source_fields == ("memo",)

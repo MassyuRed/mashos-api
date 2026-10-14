@@ -1656,9 +1656,27 @@ def _merge_parallel_contrast_groups(groups, relation_ids, nucleus_index, relatio
     return tuple(merged)
 
 
+def _merge_result_appraisal_groups(groups, relation_ids, nucleus_index, relation_index):
+    """Coordinate adjacent complete evaluations without sharing their objects."""
+    def eligible(group):
+        rows = tuple(relation_index[r] for r in _internal_relation_ids(group, relation_ids, relation_index))
+        return bool(rows and set(group) == {nid for r in rows for nid in (
+            r.from_nucleus_id, r.to_nucleus_id)} and all(
+                source_owned_result_appraisal(r, tuple(nucleus_index.values())) for r in rows))
+    merged = []
+    for group in groups:
+        if merged and eligible(merged[-1]) and eligible(group):
+            merged[-1] = (*merged[-1], *group)
+        else:
+            merged.append(tuple(group))
+    return tuple(merged)
+
+
 def _detached_observation_time(nucleus):
     """Keep each admitted independent feeling's own observation time."""
-    from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction
+    from emlis_ai_grounded_observation_plan import _thread_revised_original_reaction, _thread_withdrawn_result_appraisal
+    if _thread_withdrawn_result_appraisal(nucleus, ()):
+        return "当時" if nucleus.semantic_frame.time_scope == "past" else "入力した時点"
     frame = nucleus.semantic_frame
     codes = set(frame.attribute_codes)
     if (("thread_subject:withdrawn_source_event" not in codes
@@ -2252,7 +2270,9 @@ def _build_regular_lines(
                 nucleus_index, relation_index, max_groups=len(selected_ids))
             source_groups = _merge_parallel_contrast_groups(source_groups, relation_candidates,
                 nucleus_index, relation_index)
-            parallel_groups = _merge_parallel_contrast_groups(source_groups, relation_candidates,
+            appraisal_groups = _merge_result_appraisal_groups(source_groups, relation_candidates,
+                nucleus_index, relation_index)
+            parallel_groups = _merge_parallel_contrast_groups(appraisal_groups, relation_candidates,
                 nucleus_index, relation_index, bridge_detached_feelings=True)
             detached_groups = _merge_detached_feeling_groups(parallel_groups, nucleus_index, relation_index)
             separate_event_and_feeling = (
@@ -2892,6 +2912,23 @@ def _render_observation(
         return ""
     prefix = _hedge_prefix(binding)
     if len(binding.nucleus_ids) > 1:
+        from emlis_ai_grounded_observation_plan import _thread_withdrawn_result_appraisal
+        appraisals = tuple(_thread_withdrawn_result_appraisal(nucleus_index[nid], ())
+                           for nid in binding.nucleus_ids)
+        if typed_semantic_duties and not binding.relation_ids and any(appraisals):
+            if all(appraisals):
+                operands = []
+                for nid in binding.nucleus_ids:
+                    source = _quotes_for_nuclei((nid,), nucleus_index, resolver)
+                    if len(source) != 1:
+                        raise GroundedSentenceSurfaceError("detached_appraisal_source_ambiguous")
+                    operands.append(f"{_detached_observation_time(nucleus_index[nid])}の評価{source[0]}")
+                return prefix + "と、".join(operands) + "が書かれています。"
+            # Different source roles retain their own complete clauses. An
+            # evaluation must not be recast as the other survivor's feeling.
+            return "".join(_render_observation(replace(binding, nucleus_ids=(nid,),
+                evidence_span_ids=nucleus_index[nid].source_span_ids), nucleus_index, resolver,
+                typed_semantic_duties=True) for nid in binding.nucleus_ids)
         if (typed_semantic_duties and not binding.relation_ids
             and all("semantic_dependency:received_feeling_contrast_chain"
                     in nucleus_index[nid].semantic_frame.attribute_codes for nid in binding.nucleus_ids)):
@@ -3417,6 +3454,21 @@ def _render_relation(
             resolver,
             typed_semantic_duties=typed_semantic_duties,
         )
+    appraisal_rows = tuple(relation_index[r] for r in binding.relation_ids)
+    if (typed_semantic_duties and len(appraisal_rows) > 1 and not _hedge_prefix(binding)
+        and all(source_owned_result_appraisal(r, tuple(nucleus_index.values())) for r in appraisal_rows)
+        and set(binding.nucleus_ids) == {nid for r in appraisal_rows for nid in (
+            r.from_nucleus_id, r.to_nucleus_id)}):
+        operands = []
+        for relation in sorted(appraisal_rows, key=lambda r: _nucleus_source_order(nucleus_index[r.from_nucleus_id])):
+            left, right = (_quotes_for_nuclei((nid,), nucleus_index, resolver)
+                           for nid in (relation.from_nucleus_id, relation.to_nucleus_id))
+            if len(left) != 1 or len(right) != 1:
+                raise GroundedSentenceSurfaceError("appraisal_pair_source_ambiguous")
+            evaluation = nucleus_index[relation.to_nucleus_id]
+            when = "当時" if evaluation.semantic_frame.time_scope == "past" else "入力した時点"
+            operands.append(f"{left[0]}という出来事に対する{when}の評価は{right[0]}")
+        return "、また".join(operands) + "と書かれています。"
     groups, consumed = _thread_contrast_answer_groups(
         binding, nucleus_index, relation_index, resolver)
     grouped_by_relation = dict(groups)

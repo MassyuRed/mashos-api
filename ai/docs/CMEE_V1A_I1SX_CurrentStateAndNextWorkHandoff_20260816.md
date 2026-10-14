@@ -18446,3 +18446,40 @@ Python3.12.14、pytest8.4.1、既存Pydantic2.13.5/FastAPI0.142.2/HTTPX0.28.1、
 複数の評価対象を一度に撤回した後の複数評価groupは未検証・未対応が残る。静的レビューでは既存複数feelingの併合と単独appraisal readerの境界を確認したが、実例「資料を分類できて満足した。案を選んで納得した。」＋received-eventでは初回本文が先に`emlis_q3_initial_body_unavailable`となり、真正な質問から当該撤回まで到達しなかった。静的推測を回答後の実測成功／失敗に置き換えない。次はこの初回停止と複数groupを切り分け、明示「今は」の訂正時点も独立に扱う。既存の受け取り内容形成を末尾の言い換えだけで閉じない。
 
 same100全件・本人実機の保存往復・正式Product Readは未実施。0/3・NOT_CLEAR・candidate_ready=false・automatic_progression=falseを維持。10/17確認・10/31必須残件・12/18公開目標とPiece/Analysis主枠を維持する。配置・本人データ・稼働DB・native build・main merge・PR ready化は0。
+
+
+## u256 — 複数評価の初回本文・対象撤回・同回答内訂正（2026-10-14 JST）
+
+MashのGitHub指定によるEmlisAI残件継続。`EMLIS_APPRAISAL_COMPONENT_MEANING_20261014`の同じ限定承認内。開始headはAPI `442c00630f23a0200679e15043788bdd1fc43550`／Cocolon `e679b10b255a6a82b7629b297b1ed2916f423a45`。全体01・01A/B/Cのfile地図と隣接責務、current00/01/04、最新weekly§5.6.5/6.5、作業規則と恒久incident全文を確認し、u255の停止を実生成で再現した。全source全文監査ではない。rootが唯一の編集・反映owner、同環境補助はread-onlyレビュー。
+
+**BOUNDED_IMPLEMENTATION_WIP / PRODUCT_NOT_CLEAR。最初の一体修正は未完了。** primary outcomeはTECHNICAL_CREDIT。利用者向け本文が欠落する経路と、評価の対象・時点を失う原因を修正したが、復唱を越える受け取り内容形成の完成、正式Product Read、受入を自己認定しない。
+
+### 実測原因と同一単位の修正
+
+初回「褒められたのに、嬉しくなかった。」＋「資料を分類できて満足した。案を選んで納得した。」は、u255で`emlis_q3_initial_body_unavailable`。独立inverseは通過していたが、同じ評価構文の別行反復による`relation_surface_stem_repetition_without_new_role`／`required_arc_fragmented_without_reason`で停止。さらに評価2件のdutyをexact1条件で破棄し、旧family代表1件だけをgenericな不自然な文へ戻していた。
+
+- `emlis_ai_grounded_observation_plan.py`：source-ownedな独立評価pairをそれぞれ保持。外部required edge・endpoint重複を許さず、訂正／片方対象撤回時も残余を既存received/retained閉包へ戻す。3 Move上限は維持。従来exact1のfocus優先は複数時に最後の評価で上書きしない。
+- `emlis_ai_grounded_sentence_surface.py`：隣接する評価pairを並列の一文にまとめ、各対象・評価・元時点を個別に記す。訂正後も対象の原文順。対象撤回後は、残る評価ごとの過去／入力時点を保持し、旧feeling文へ混ぜない。
+- `emlis_ai_grounded_human_reception.py`：既存LIMITED material内で初回評価にも有限述語を使い、選択済みの各評価を保持。異なる評価は各自の文、同じ有限内容と時点の2評価は「二つの評価とも」として受け取る。対象を補わず、NORMALへ強制昇格しない。
+- `emlis_ai_grounded_observation_gate.py`：並列文の全文、数、順序、各source・対象・時点を独立に読み、削除・対象交換・肯否/程度/継続の変更・回答時点化・因果追加を拒否。同値共有文も両sourceへ別々に照合する。作者再実行やGate緩和を正解にしない。
+- `cocolon_meaning_experience_engine/emlis_answer_update.py`：同じ回答内で対象を撤回し評価を訂正した場合、元required関係から証明済みの対象喪失を、新評価へ継承する。明示訂正・単一target・受理済みappraisal replacementだけ。肯否・時点のcodesは置換source由来で、旧評価からコピーしない。回答内の記述順は不問。
+
+既存production5file、既存評価test、現行shared identity snapshotを変更。新production file、意味schema/contract、公開API/DTO/SQL/DB/RN、依存、外部serviceは変更なし。STRUCTURE_MAP_DELTA_PRESENT。旧pre-appraisal／u254 PARTIAL fixtureを変更せず、完全checkpoint再導出検査を維持した。
+
+### 検証と実本文
+
+最終評価suiteは **131 PASS、30.36秒、skipなし**（既存107＋新24）。新規にはmemo/action入替、過去現在・肯否・程度・継続、同値評価、片方/両対象撤回、同回答内の訂正＋両対象撤回を両順序、独立本文tamper、保存4ケースのNoAuthor read/replayを含む。最初の新test runの失敗は、未対応だった同回答内継承、実際には変更しないtamper、存在しないDTO key等を切り分けた。製品の判定基準や旧期待値を緩めていない。
+
+Q2/Q3 applicationは **54 PASS、74.95秒、既存警告2**。実service＋隔離PGliteに保存した片方撤回・両方撤回・評価訂正・同値評価撤回の4 DTOについて、保存event本文一致、NoAuthor GET/start、同じ回答key replayの本文/timeline/operation/attempt不変を確認。現在のRN hook/modalでは4件とも本文が1回だけ表示され、履歴展開・閉じて再open・GET2回/生成投稿0を確認した。React rendererでありnative実機ではない。
+
+rootは上記4保存本文と新規代表本文を読み、初回では「資料を分類できたことについて、当時は満足したのですね。」「案を選んだことについて、当時は納得したのですね。」の両方が残ることを確認。両対象撤回後には「当時の評価『満足した』」と「入力した時点の評価『まだ納得していない』」を別々に保持。同値撤回では実出力「二つの評価とも、当時は満足したのですね。」となる。これらは意味保持の改善候補であり、§9.2/9.4の内容形成の達成を表さない。
+
+現行shared owner identity検査は **1 PASS / 194 deselected、21.89秒**。language `89397893efe47d1be8db881c5d4ebb14512d01965928f692ec3ab35124f8fc64`、runtime `3fc4190afbd5d064ce81aa1648b725e5cd6438bb25dc536f0b7a1dcae8c7f345`。歴史的IM03 proofは変更しない。u255で開始headにも再現したQ1旧3失敗・Q3旧撤回14失敗は未修正、今回再実行していないため全回帰合格とはしない。前回headのGitHub Actions [run38560272380](https://github.com/MassyuRed/mashos-api/actions/runs/38560272380) successを確認した。本変更後CIとは区別する。
+
+### 残件・次の一作業
+
+1. 復唱・分類・固定受容を越える経験の内容形成は未成立。満足を達成/成長/行為全体の肯定へ、未納得を解決待ち/時間差へ勝手に展開しない。
+2. 明示「今は」を含む評価訂正は未対応。既存AnswerTemporalBindingにはANSWER_TIME／PRIOR_ANSWER_TIMEとsourceがあるため新schema必須とは確認できないが、置換部分の時点解析、作者、独立reader、対象撤回後の時点、u255 PARTIAL保存互換を同一単位で揃える必要がある。次はこの元入力時点と回答時点の区別を既存契約内で実装する。
+3. 2 received＋2 appraisalでは初回`LIMITED_RECEPTION_CAPABILITY_GAP_STOP`を実測。1 received＋2 appraisal、または同回答内訂正/撤回の成功と混同しない。任意数の組合せ、圧縮extra_context、全多round互換の完了ではない。
+
+same100・本人実機の保存往復・正式Product Readは未実施。0/3・NOT_CLEAR・candidate_ready=false・automatic_progression=falseを維持。10/17確認・10/31必須残件・12/18公開目標、Piece/Analysis主枠は維持。稼働DB・本人データ・native build・deploy・main merge・PR ready化は0。

@@ -229,6 +229,16 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
                     if item.operation == "REVISE" and item.target_meaning_refs
                     and set(item.target_meaning_refs) <= prior_detached
                     for changed in item.changed_claim_refs)
+    # One answer can withdraw an appraisal's event and revise its evaluation.
+    # Both operations refer to the same prior plan, regardless of source order.
+    # The new evaluation inherits the witnessed loss of its original object.
+    detached_appraisal_replacements = {n.nucleus_id for n in added
+        if "thread_subject:revised_result_appraisal" in n.semantic_frame.attribute_codes}
+    detached.update(changed for item in updates
+                    if item.operation == "REVISE" and item.binding_kind == "EXPLICIT_CORRECTION"
+                    and len(item.target_meaning_refs) == 1
+                    and set(item.target_meaning_refs) <= detached
+                    for changed in item.changed_claim_refs if changed in detached_appraisal_replacements)
     nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
         attribute_codes=tuple(dict.fromkeys((*n.semantic_frame.attribute_codes,
             "thread_subject:withdrawn_source_event"))))) if n.nucleus_id in detached else n

@@ -712,3 +712,142 @@ def test_saved_u254_partial_checkpoint_retry_preserves_meaning_event_and_operati
     assert [e for e in after['events'] if e['kind'] == 'MEANING_UPDATE'] == meanings
     observation = next(e for e in after['events'] if e['id'] == after['thread']['last_observation_event_id'])
     assert observation['payload']['meaning_checkpoint_ref'] == meanings[-1]['payload']['checkpoint_id']
+
+
+MULTIPLE_APPRAISALS = (
+    ('満足した', '納得した'),
+    ('満足した', 'まだ納得していない'),
+    ('あまり満足しなかった', '少し納得しています'),
+    ('満足した', '満足した'),
+)
+
+
+@pytest.mark.parametrize('evaluations', MULTIPLE_APPRAISALS)
+@pytest.mark.parametrize('in_memo', [False, True])
+def test_multiple_original_appraisals_keep_each_object_and_time(evaluations, in_memo):
+    from test_cmee_emlis_q3_thread import begin
+    first, second = evaluations
+    pair = f'資料を分類できて{first}。案を選んで{second}。'
+    received = '褒められたのに、嬉しくなかった。'
+    req = begin(pair, received) if in_memo else begin(received, pair)
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(req))
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact is not None, out.reason_codes
+    links = [r for r in plan.relations if source_owned_result_appraisal(r, plan.nuclei)]
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(links) == 2 and len(moves) == 3
+    assert all(any(m.target_nucleus_ids == (r.to_nucleus_id,)
+                   and m.support_nucleus_ids == (r.from_nucleus_id,) for m in moves) for r in links)
+    for target, evaluation in zip(('資料を分類できて', '案を選んで'), evaluations, strict=True):
+        when = '入力した時点' if evaluation.endswith(('いない', 'います')) else '当時'
+        assert f'「{target}」という出来事に対する{when}の評価は「{evaluation}」' in out.artifact.observation
+    assert out.artifact.observation.index('資料を分類') < out.artifact.observation.index('案を選んで')
+    assert '資料を分類できたことについて' in out.artifact.reception
+    assert '案を選んだことについて' in out.artifact.reception
+    assert '褒められた' in out.artifact.reception and '嬉しさにはつながらなかった' in out.artifact.reception
+
+
+@pytest.mark.parametrize('evaluations', MULTIPLE_APPRAISALS)
+@pytest.mark.parametrize('both', [False, True])
+def test_multiple_appraisal_withdrawal_keeps_each_surviving_evaluation(evaluations, both):
+    from test_cmee_emlis_q3_thread import begin, advance
+    first, second = evaluations
+    req = advance(begin('褒められたのに、嬉しくなかった。',
+        f'資料を分類できて{first}。案を選んで{second}。'),
+        '「資料を分類できて」は誤りです。' + ('「案を選んで」は誤りです。' if both else ''))
+    prepared = prepare_emlis_meaning(req)
+    assert prepared.checkpoint.assessment_status == 'RESOLVED'
+    plan = build_updated_grounded_plan(prepared)
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact is not None, out.reason_codes
+    assert '資料を分類' not in out.artifact.text
+    assert ('案を選ん' not in out.artifact.text) == both
+    assert len([r for r in plan.relations if source_owned_result_appraisal(r, plan.nuclei)]) == (0 if both else 1)
+    for evaluation in evaluations:
+        assert f'「{evaluation}」' in out.artifact.observation
+    assert '入力した時点では' in out.artifact.reception if second.endswith(('いない', 'います')) else '当時は' in out.artifact.reception
+    if both and first == second:
+        assert '二つの評価とも、当時は満足したのですね。' in out.artifact.reception
+        assert out.artifact.reception.count('満足した') == 1
+
+
+@pytest.mark.parametrize('withdraw_first', [False, True])
+def test_multiple_appraisal_revision_and_withdrawal_in_one_answer_preserve_remaining_duties(withdraw_first):
+    from test_cmee_emlis_q3_thread import begin, advance
+    req = begin('褒められたのに、嬉しくなかった。',
+                '資料を分類できて満足した。案を選んで納得した。')
+    changes = ['「満足した」ではなく「まだ納得していない」です。',
+               '「資料を分類できて」は誤りです。「案を選んで」は誤りです。']
+    if withdraw_first:
+        changes.reverse()
+    req = advance(req, ''.join(changes))
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact is not None, out.reason_codes
+    assert prepare_emlis_meaning(req).checkpoint.assessment_status == 'RESOLVED'
+    assert '満足した' not in out.artifact.text and '資料を分類' not in out.artifact.text and '案を選ん' not in out.artifact.text
+    assert '入力した時点の評価「まだ納得していない」' in out.artifact.observation
+    assert '当時の評価「納得した」' in out.artifact.observation
+    assert '褒められた' in out.artifact.reception
+
+
+@pytest.mark.parametrize('withdraw', [False, True])
+def test_multiple_appraisal_body_reader_rejects_source_time_and_scope_edits(withdraw):
+    from test_cmee_emlis_q3_thread import begin, advance
+    req = begin('褒められたのに、嬉しくなかった。',
+                '資料を分類できて満足した。案を選んでまだ納得していない。')
+    if withdraw:
+        req = advance(req, '「資料を分類できて」は誤りです。「案を選んで」は誤りです。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    projection = project_thread_meaning(prepared, plan)
+    resolver = prepared.thread.resolver()
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    body = MeaningExperienceEngine().generate(req).artifact.text
+    def valid(text):
+        return evaluate_grounded_surface_body_inverse(body=text.encode(), plan=plan, sentence_plan=sentence,
+            resolver=resolver, selected_subjective_input=projection.selected_reception).passed
+    assert valid(body)
+    changes = [body.replace('満足した', '満足しなかった'), body.replace('入力した時点', '回答した時点'),
+               body.replace('まだ納得していない', '納得している'),
+               body.replace('当時', '入力した時点'), body.replace('書かれています。', '書かれているので成長しました。')]
+    if withdraw:
+        changes += [body.replace('と、入力した時点の評価「まだ納得していない」', ''),
+                    body.replace('当時は満足したのですね。', '資料を分類できたことについて、当時は満足したのですね。')]
+    else:
+        changes += [body.replace('資料を分類できて', 'SWAP').replace('案を選んで', '資料を分類できて').replace('SWAP', '案を選んで'),
+                    body.replace('、また「案を選んで」という出来事に対する入力した時点の評価は「まだ納得していない」', '')]
+    for changed in changes:
+        assert changed != body
+        assert not valid(changed)
+
+
+@pytest.mark.parametrize('second,response', [
+    ('まだ納得していない', '「資料を分類できて」は誤りです。'),
+    ('まだ納得していない', '「資料を分類できて」は誤りです。「案を選んで」は誤りです。'),
+    ('納得した', '「満足した」ではなく「納得している」です。'),
+    ('満足した', '「資料を分類できて」は誤りです。「案を選んで」は誤りです。'),
+])
+def test_saved_multiple_appraisals_reopen_and_replay_without_author(qcase, qdb, second, response):
+    from test_emlis_q2_application import run, answer
+    from emlis_thread_service import EmlisThreadService, Q3_PROFILE, _request, _json
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$2,memo_action=$3 where id=$1', [parent,
+        '褒められたのに、嬉しくなかった。', f'資料を分類できて満足した。案を選んで{second}。'])
+    initial_dto = run(service.start(user, parent))
+    assert initial_dto['current_observation'] and initial_dto['pending_question'], initial_dto
+    dto = run(answer(service, user, initial_dto, response))
+    assert dto['body_state'] == 'REFINED' and dto['answer_saved'] and dto['meaning_updated'], dto
+    bundle = run(service.store.read(user, input_id=parent))
+    meaning = next(e['payload'] for e in bundle['events'] if e['id'] == bundle['thread']['current_meaning_event_id'])
+    assert _json(prepare_emlis_meaning(_request(bundle, checkpoint_ref=meaning['checkpoint_id'])).checkpoint) == meaning
+    current = dto['current_observation']
+    event = next(e for e in bundle['events'] if e['id'] == current['event_id'])
+    assert event['payload']['text'] == current['text']
+    class NoAuthor:
+        def __getattr__(self, name):
+            raise AssertionError('saved multiple-appraisal read attempted generation: ' + name)
+    restarted = EmlisThreadService(engine=NoAuthor(), runtime_profile=Q3_PROFILE)
+    assert run(restarted.get(user, parent)) == run(restarted.start(user, parent)) == dto
+    replay = run(answer(restarted, user, initial_dto, response))
+    assert replay['current_observation'] == current and replay['timeline'] == dto['timeline']
+    assert replay['operation_id'] == dto['operation_id'] and replay['attempt_id'] == dto['attempt_id']
