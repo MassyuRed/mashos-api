@@ -1,4 +1,4 @@
-> 最新のEmlisAI残件は末尾 **u260（2026-10-14 JST・満足／納得の意味確認を反映・未配置）**。Mashが区別を確認したため同じ承認内でNORMAL評価の本人内の状態を本文化した。166評価検査・54 application検査、合成7保存本文とRN再openを確認。評価語の定義展開を越える受け取り内容形成は未達、商品NOT_CLEAR・初回単位未完了。
+> 最新のEmlisAI残件は末尾 **u261（2026-10-14 JST・接続された未成立事実を含む限定変更案・未実装）**。source認識と既存選択条件の不足を分離。新しい範囲追加は未承認、既存u253承認は継続。製品コード/本文改善0、商品NOT_CLEAR・初回単位未完了。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -18905,3 +18905,49 @@ Emlisから：
 ### u260 最終identity検査
 
 現行shared owner fixtureを既存manifest/proof関数から再生成し、既存 `test_active_final_language_owner_chain_has_zero_legacy_compose_calls` が **1 PASS、22.08秒**。language `455c2fdee4e95f2d6069f3f19ab592f2070bb2d97cf5fb82f1f2ca6b559e0625`／runtime `11642ff71d5f6f5c930900493a9e1322998cb2c48c8f2a8f64c99b44d5f6f186`。IM03歴史proofは不変。最初の起動はpytest pluginの重複登録で収集前に失敗し、autoloadを止めた明示plugin指定で実行した。製品失敗を隠す変更はしていない。read-only差分reviewで具体的回帰blockerなし、追加実行／独立別モデル審査ではない。
+
+## u261 — 未成立の事実と評価対象を一緒に読むための限定変更案（2026-10-14 JST）
+
+**BLOCKER_NARROWED / PRODUCT_NOT_CLEAR。製品コード変更・本文改善0。** u253の既存承認は継続する。今回具体化した第三命題を含む範囲追加は `PROPOSED_NOT_APPROVED` であり、同じ承認を取り直すものではない。満足・納得の定義はMash確認済みで再質問しない。§9.2/9.4の内容形成が主課題であることも変えない。
+
+開始/照合headはAPI `44269290ff919c21364fd145429de09dea2e9fd6`、Cocolon `20d53679246e44ba730c83b9966bde7ecf08293b`。両Draft PRのfresh headとfetch結果が一致した。全体設計01・01A/B/Cのfile coverage案内、対象current01/04、latest weekly20261010 §5.6.10、8/28設計§9.2/9.4とu253限定承認、思想§12.10、実ownerを参照した。System Context prepareはmaterial commit非descendantで失敗し、許可された原典直接確認を用いた。refresh成功とはしていない。
+
+### 実コードで分離した原因
+
+対象は合成入力 `結論は出ていないが、考えを言葉にできて満足した。`、独立行動欄 `植木に水をやった。`。u260実生成では初回停止だった。本作業ではsource/Planと既存選択処理を診断し、新しい製品本文を生成・改善したとはしない。
+
+1. `_explicit_result_appraisal_projections` はspan全体の評価対fullmatchを要求し、前置の未成立節で不成立になる。さらに動詞内の「に」を拒否するため、後半だけでも「考えを言葉にできて」が対象として認識されない。`_bounded_structural_action_endpoint('考えを言葉にできた')` はTrue、`_source_operator_owner_scope_is_bound` はFalseだった。「考えを言葉にした」は両True。単純に禁止文字を外さず、既存の格・主体scopeとして有限な構文を立証する必要がある。
+2. 実Planは `結論は出ていない` を uncertainty/unfinished/uncertain とし、後半全体をperformed actionにする。満足が独立評価から欠落する。完全に断定された未成立の事実を、文の未完や知識の不明と混同している。
+3. `emlis_thread_projection.py` のcomponent許可は、評価対以外のrequiredを本人の明示実行行動に限定している。未成立factはこの条件を満たさない。source接続があるだけではu253のcomponent許可を取得できない。
+4. contrastが評価端点を覆うと直接candidateが除かれ、relation側の `contracts.project_stage1_relation_required_qualifiers` が種別ごとのexpectedへmarkerを絞る。現TENSIONのexpectedは空のため、評価種別・程度・explicit_result_appraisal dependencyが落ちる。元端点を保持するgrounded viewにはその情報が必要で、不足が残る。
+
+### 既存契約を変えない仮構造の実測
+
+scratchだけで、元EvidenceSpanの `0:8=結論は出ていない`、`10:19=考えを言葉にできて`、`19:23=満足した` を完全照合した。既存の正常評価pairを形状見本として三つへ分け、第一命題をstate/fact/negative/presentとし、同じspanのcontrast（未成立→評価）とevaluation_about_event（対象→評価）を与えた。誤って作られたepistemic unknownを除き、既存response/coverage ownerと `_prepare_emlis_meaning_from_plan` でcheckpointを再計算した。`build_updated_grounded_plan` 一致guard、hard validity、component条件はmock/変更していない。仮の構造を渡した診断であり、source compilerの修正成立や採用実装の証明ではない。
+
+| 仮構造の入力 | component refs | scope結果 | whole結果 |
+|---|---|---|---|
+| 三命題のみ | 空 | FOREGROUND_SCOPE_STRUCTURE_INSUFFICIENT。評価側の種別・程度・dependency等が不足 | LimitedMeaningOutcome、candidate0 |
+| 三命題＋独立した植木行動 | 空 | COMPETING_MATERIAL_SCOPES | LimitedMeaningOutcome、candidate0 |
+
+両方で未成立stateがindependent_requiredに残った。既存一般connected経路だけで今回の三命題＋独立行動をNORMALへ渡すことは立証できなかった。全connected経路やRoute A全体の不可能性には一般化しない。初回diagnostic stdoutのoutcome_stateは、存在しない属性へのfallbackでNORMALと表示されたが、実際のoutcome型は両方LimitedMeaningOutcome。表示属性だけ修正し再実行はしていない。この表示誤りをNORMAL成立の証拠にしない。
+
+### 推奨する具体的な範囲追加
+
+限定案 `EMLIS_APPRAISAL_CONNECTED_UNFINISHED_CONTEXT_20261014` は **PROPOSED_NOT_APPROVED**。詳細はCocolonの8/28設計末尾u261提案へ同期する。目的は「何についての充足か、その充足をどこまで広げてよいか」を選択済み意味から受け取り内容へ導くこと。まず、原入力の肯定・無程度の満足とその明示対象に、同一文で明示的な対比により結び付く完全な未成立事実一つだけを加える。独立する他のrequiredは従来どおり本人の明示実行行動に限定する。任意のstate・非接続感情・目的推定へ広げない。
+
+内側ABOUT_TARGETは対象/評価exact2を保持し、外側CONTRASTで第三命題をつなぐ。一般の `EmlisAppraisalContent` のRELATIONAL_NONCOLLAPSE/PRESERVE_BOTH_ENDPOINTSと根拠binding/qualifierを使い、現 `EmlisEvaluatedExperienceAppraisalContent v1` のexact2/protected0は変更しない。既存通常型はbinding数をexact2に限定していない。三点の役割・二関係・各時点が既存型でlosslessに表せない場合は、新schemaやregistryを黙って追加せず停止する。読みの成立を見込む設計案であり、実装成功・自然な本文を保証するものではない。
+
+意味の目標は、結論の未成立を保ち、言葉にできた対象へ限った充足として受け取ること。考えの整理、理解の深まり、他者への伝達、進歩、成功、将来の結論、未完了を受容できた心理は導かない。現在の未成立と過去の満足から、新しい同時性・前後関係を作らない。二命題だけで「言葉という形を持った」と述べても言語化の意味展開に留まるため、修辞の置換を§9.2/9.4完成へ換算しない。
+
+変更ownerは既存 `emlis_ai_grounded_observation_plan.py`（source範囲・外側/内側関係・有限格構文）、`emlis_thread_projection.py`（source証明済みの接続組の許可）、`contracts.py`（relation-roleの評価情報保持と検証）、`emlis_stage1_composition.py`（選択済み三点からの受け取り内容）、`emlis_ai_grounded_human_reception.py` と `emlis_ai_grounded_observation_gate.py`（唯一の作者・独立節reader）。既存共有意味owner `emlis_input_specific_meaning.py` の照合が必要な場合も同じ接続組に限定する。source変更による旧checkpoint互換は既存 `emlis_answer_update.py`/`emlis_question.py` の再導出と真正照合で確認し、ID不一致を無視しない。Sentence Surfaceは既存受容表現の連結だけを担当し意味を補わない。既存評価test/必要なthread testとshared identity fixtureを用い、新production file・engine・checker・依存・公開schemaは追加しない。
+
+完了確認は、(a) 対象例と未成立削除/対象差替え/評価肯否・種別変更で選択意味と実本文が対応して変わる、(b) 未成立の脱落・満足対象を結論へ移す・時点混合を独立readerが拒否する、(c) 引用/他者/推量/条件/構文未完を誤採用しない、(d) 独立行動欄の有無/差替えで評価対象を乗り換えない、(e) 旧PARTIALと保存済み本文read非再生成、実service＋隔離SQL＋RN再表示の必要互換を守る、(f) rootが生成全文を読み、定義展開/関係反復を越えたかを別判定する。肯定満足用の読みを否定や未納得へ使い回さず、保てない場合は既存停止へ閉じる。技術検査成功は商品合格ではない。
+
+範囲追加を行わない場合、この三命題を使う候補は現停止点に残る。既存承認内の他の作業まで禁止する判断ではない。追加費用・外部service・本人操作は0を予定し、作業は上記source→選択→内容→本文と互換検証の一単位。工数/完成日の確定値はなく、次の10/17確認点で実本文差と残件を示す。新しい意味型、一般state admission、公開/API/DB/RN契約変更が必要になった時、又は三点を欠落なく選択しても定義展開しか作れない時は、本案を拡張せず停止して実結果を示す。
+
+現行Rule18 §11.3 LEVEL_3は承認済みcontract/範囲の追加前にMashの判断を要求し、u253は別requiredを本人実行行動へ明示限定している。そのため、今回は定義や既存実装の再承認ではなく、この第三命題の範囲追加だけを判断対象にする。独立した別モデル審査の実施は主張しない。
+
+### CI・現在地
+
+前回u260 APIの `Analysis observed content` [run38575084729](https://github.com/MassyuRed/mashos-api/actions/runs/38575084729) は同head `44269290...` でcompleted/successをfresh確認した。今回の製品検査成功へ加算しない。今回production/test/fixture/API/DB/RN/依存変更0、STRUCTURE_MAP_DELTA_NONE。初回単位未完了・0/3・candidate_ready=false・automatic_progression=false・未配置・Draft/open/unmerged。2 received＋2評価の初回gap、既存共有17失敗、same100、本人実機、正式Product Readは未解消。10/17・10/31・12/18とPiece/Analysis主枠は維持する。
