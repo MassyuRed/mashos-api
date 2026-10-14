@@ -31,10 +31,11 @@ _NONFACT = re.compile(r"(?:と言った|と言って|そうなら|たら|なら|
 _FACTUAL_RECEIVED = re.compile(r"(?:褒められ|ほめられ|言われ|伝えられ|評価され|断られ|誘われ|頼まれ|声をかけられ|声を掛けられ)(?:た|ました)$|(?:連絡|返事|返信)が来(?:た|ました)$")
 
 
-def original_meaning_plan(thread: AdmittedEmlisThread):
+def original_meaning_plan(thread: AdmittedEmlisThread, *, _legacy_result_appraisal=False):
     source = thread.original
     return build_final_stage1_grounded_observation_plan(
         source.normalized_current_input, evidence_spans=source.evidence_spans,
+        _legacy_result_appraisal=_legacy_result_appraisal,
     )
 
 

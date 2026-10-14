@@ -2979,7 +2979,8 @@ def _render_observation(
         return f"{prefix}{joined}と、当時の気持ちを言い直されています。"
     if (getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
         and not binding.relation_ids and _independent_original_event(nucleus, {})
-        and "semantic_role:contrast_before" in nucleus.semantic_frame.attribute_codes):
+        and {"semantic_role:contrast_before", "semantic_dependency:explicit_result_appraisal"}
+            & set(nucleus.semantic_frame.attribute_codes)):
         return f"{prefix}{joined}という出来事がありました。"
     if ("thread_subject:withdrawn_source_event" in nucleus.semantic_frame.attribute_codes
         and nucleus.source_fields in {("memo",), ("memo_action",)}

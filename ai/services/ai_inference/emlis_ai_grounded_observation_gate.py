@@ -2541,7 +2541,8 @@ def _body_inverse_intervening_events(body, witness, line, planned_line, plan, re
         nucleus = index[planned_line.binding.nucleus_ids[0]]
         frame = nucleus.semantic_frame
         if (nucleus.nucleus_id not in linked and nucleus.kind == "event"
-            and "semantic_role:contrast_before" in frame.attribute_codes
+            and {"semantic_role:contrast_before", "semantic_dependency:explicit_result_appraisal"}
+                & set(frame.attribute_codes)
             and nucleus.source_fields in {("memo",), ("memo_action",)}):
             # A separately retained original event is a complete past fact,
             # never the replacement feeling's cause, focus or shared flow.

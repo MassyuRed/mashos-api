@@ -18355,3 +18355,47 @@ baseline c458で同じ合成評価3種（満足／非満足／まだ未納得）
 3. same100全件の再実行・全文再読、本人実機の新規入力→保存→履歴再表示、正式Product Readは未実施。既存の0/3・NOT_CLEAR・candidate_ready=false・automatic_progression=falseを維持し、別の小修正完了を今回の一体修正の完成に置き換えない。
 
 10/17は本文改善と具体的残差の確認点、10/31は公開必須残差の管理点、12/18は公開目標。Piece／Analysis主枠を維持し、今回の技術検査成功を品質・公開日・工数見通しの上積みにしない。配置・稼働DB・本人データ取得・native build・main merge・PR ready化は0。
+
+
+## u254 — 評価の撤回後の出来事保持と、旧意味checkpointの再開互換（2026-10-14 JST）
+
+MashのGitHub指定「EmlisAIの残件作業を進めて」によりu253から継続。`EMLIS_APPRAISAL_COMPONENT_MEANING_20261014`の限定承認は継続しており、再承認待ちへ戻していない。開始headはAPI `64458e540a78ff0e66caa0954014f0c6927e3c89`、Cocolon `c743a7fde65e9d5d013abebd207cad5390ef48ba`。既読の全体設計01・全file地図01A/B/Cの該当/隣接owner、current01/04、8/28設計§9.2/9.4、思想資料§12/15、恒久incident全文、最新weekly20261010 §5.6/6.5とu253を照合。地図の全章・全sourceを今回再度全文監査したという記録ではない。System Context prepareは部分checkoutの`No module named tools`で起動せず、規定の原本直接読取を継続。rootが唯一の製品編集owner、同環境のread-only補助が意味・商品・互換を調査した。独立Pro/Ultra審査とは扱わない。
+
+**BOUNDED_IMPLEMENTATION_WIP / PRODUCT_NOT_CLEAR。最初の一体修正は未完了。** 今回は実在した撤回の誤表示、旧版の途中保存からの再開停止、Q2初回の意味Planと本文経路の不一致を修正した。経験の受け取り命題の品質完成へは換算しない。
+
+### 修正した実行責務
+
+1. `emlis_answer_update.py`：原文全文を明示撤回した場合、唯一のsource-owned appraisal関係と同一spanの全endpointが一致する時だけ対象と評価の両方を撤回する。引用の一部・他の文・同文重複を入力順で解決しない。評価だけの撤回では対象eventを残す。
+2. `emlis_ai_grounded_sentence_surface.py`と独立`emlis_ai_grounded_observation_gate.py`：残ったappraisal対象をfact/pastの出来事として表現・検証する。変更前の「今は、『資料を分類できて』という感覚が前に出ています。」への誤変換を止めた。原文のte断片はそのまま引用するため「『資料を分類できて』という出来事がありました。」という硬さは残り、自然さの完成とはしていない。
+3. `emlis_ai_grounded_observation_plan.py`→`emlis_question.py`→`emlis_answer_update.py`：既知のpre-appraisal投影をprivate keywordで再導出できるようにした。通常は現行Plan。保存checkpoint不一致、又は旧質問のcanonical不一致のexact codeだけを扱い、旧Planに差があり、元source・question・checkpointの既存検証が完全に通る場合だけ旧Planを選ぶ。IDを付け替えず、比較や保存payloadを緩めない。
+4. 旧Q2の発行済み質問へ新版で初めて回答する時は、まだ回答checkpointがない。admitted answerとpending questionがあるcanonical不一致の場合に限り、旧質問を旧Planから完全再検証したうえで新回答の意味checkpointを作る。偽質問文・偽affected refsは拒否する。旧checkpoint指定時のexact一致は引き続き必須。
+5. `emlis_thread_engine.py`：Q3、厳密に選択した旧Plan、又は現行のsource-owned appraisalを持つQ2初回は既存thread realizerへ同じPrepared Planを渡す。Q2のNO_MATERIAL_UPDATEも同じPlanを保持する。新しい作者は作らない。調査中にfresh Q2のreceived-event＋appraisalで`bound_human_reception_target_act_semantic_mismatch`を実測し、この経路不一致も修正した。
+6. `emlis_thread_service.py`：保存するeffective_plan_refの再導出にも、生成時と同じcheckpoint_refを渡す。旧Planで本文を作って現行Planの参照を保存する混在を防ぐ。public DTO/API/DB/SQL/RN/依存は不変。
+
+既存production7file、既存評価test、現行owner identity snapshot、baselineで実生成した新規checkpoint fixtureを変更。新production file/実行service/外部AIは追加なし。privateな意味再開と本文経路の責務差分があるためSTRUCTURE_MAP_DELTA_PRESENT。現行のappraisal型v1、manifest v2/logical70、whole readingの意味選択契約は今回変更しない。
+
+### 実本文・保存・旧版対照
+
+rootは満足過去／まだ未納得現在×評価だけ撤回／全文撤回の4実生成全文を読んだ。評価だけ撤回すると出来事が残り、全文撤回すると両endpointが消える。独立した「植木に水をやった」と別のreceived-eventはObservationに残る。評価撤回後のReceptionが独立行動への旧generic文になる浅さは残っており、Emlisが経験を受け取る内容の完成とはしない。
+
+未変更baseline `c458d3c703dc651d88414ffa808ef583d0459907`の実service＋隔離PGliteでMEANING_UPDATE保存後の本文commitだけを503にし、同じDBを修正版serviceから再試行した。Q2/Q3の初回・回答後4件は成功し、旧checkpoint全payload・original Plan全fields・意味event IDを保持。同operation、新attempt、生成1回、本文のcheckpoint/effective ref一致を確認した。旧完成済み本文2件はNoAuthor GET/startでDTO完全一致・events不変。非appraisalの旧pending2件も成功し、legacy経路は不使用。さらに旧Q2の真正な発行済み質問へ新版で初めて回答する実service経路でも、新prefix/newcheckpointの保存とREFINED本文、旧checkpoint不変、再read一致を確認した。
+
+旧版の全履歴・Premiumの複数round/履歴全組合せの互換保証ではない。既知のpre-appraisal投影へ厳密一致する保存意味だけを扱う。完成済み本文の読み出しに再生成は追加していない。
+
+### 検証
+
+- 最終評価test＋同一対象競合＋現行owner identity：**84 PASS / 193 deselected、34.73秒**。baseline actual生成のcheckpoint/question/answer/control4件をfixture化し、旧nuclei/relationsのcanonical SHA256も照合。旧IDを書き込んだ現行fixtureによる擬似旧版ではない。foreign checkpoint、改変質問、重複/断片の撤回、現在化/感覚化/評価復活の本文tamper拒否を含む。
+- Q1 thread＋Q2 application＋Q3 application＋当時の評価testの4file：**196 PASS / 3 FAIL、100.23秒、既存警告2**。3失敗はbaselineでも同じ2function/3nodeで再現（3FAIL/1PASS/71deselected、9.34秒）。旧設計応答2件と、変換対象文字列が既にないinverse test1件。全回帰合格とは記録しない。後続の旧質問refなし対応とQ2初回経路は上記最終84件・実service対照で検証した。
+- 最終sourceの現在appraisal→本文保存503→retryは同checkpoint/meaning event、同operation・新attempt、OBSERVATION1件で成功。prepare再実行を禁止して確認。
+- 撤回後の4合成保存DTOを実RN hook/modalへ渡し、現在本文/event ID、履歴展開、閉じて再openが一致。本文は一度だけ表示、GET2回、生成/投稿0。React rendererでありnative実機実績ではない。RN製品sourceは変更0。
+- 前回API head64458e5のGitHub Actions [run38539717361](https://github.com/MassyuRed/mashos-api/actions/runs/38539717361) はcompleted/successを今回確認。これは本変更の新CI結果と混同しない。
+
+Python3.12.14、既存pinのpytest8.4.1/Pydantic2.13.5等、PGlite0.5.8、前回と同じ隔離React18.3.1環境を再利用。製品依存変更なし。現行language identity `eaed8e9c9c98ba832a1aecf7cc6ae762302c382e90badce5885267546662c0dc`、runtime identity `911ba97e37b60ededc1d5a7413ab2015f6c81c2e70aeeecc84969d80c3dd822e`。歴史的proofは不変。
+
+### 未解消と再開位置
+
+経験のよさを満足から無条件に肯定する候補は不採用。現行grammarは「他人を殴って満足した」等も対象＋評価として保持するため、本人の満足をEmlisによる行為全体の肯定へ移せない。「時間のずれ」も、まだ未納得から遅れや成立すべき時点を作るため不採用。分類・復唱・固定受容を越える内容形成は未成立であり、今回の互換/撤回修正で§9.2/9.4達成とは書かない。
+
+次は同じ承認内で、満足/納得の肯否訂正（現在`correction_replacement_unsupported`）と、対象eventだけを撤回して評価を残す経路（現在`human_reception_withdrawal_capability_gap`）のsource・正負・時点を揃える。旧評価のcodesを新回答へコピーせず、回答の実source rangeから形成する。受け取り本文の内容形成は引き続き同じ初回単位の未完了条件。same100全件・本人実機の保存往復・正式Product Readは未実施、0/3・NOT_CLEAR・candidate_ready=false・automatic_progression=falseを維持。10/17/10/31/12/18の管理点とPiece/Analysis主枠も維持する。配置・本人データ・稼働DB・native build・main merge・PR ready化は0。
+
+補足実測：最終sourceのQ2実service＋隔離SQLでも4ケースを確認。received-event＋appraisalの初回→通常回答はREFINED、同初回→「わからない」はUNCHANGEDで本文/event ID不変（generate禁止）、appraisal＋独立行動はFINAL/質問0、received-eventのみ対照も成功。実engineの発行questionと保存QUESTION、現行Plan選択、fullcheckpoint、保存effective ref、NoAuthor GET/startが一致した。

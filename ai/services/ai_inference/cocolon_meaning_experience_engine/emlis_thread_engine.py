@@ -12,6 +12,14 @@ from .emlis_thread_surface import realize_emlis_thread_body
 from .source_kernel import SourceAdmissionError
 
 
+def _original_body_uses_prepared_plan(prepared):
+    from emlis_ai_grounded_observation_plan import source_owned_result_appraisal
+    return (prepared.thread.control.capability_snapshot.startswith("Q3_")
+        or prepared.legacy_result_appraisal
+        or any(source_owned_result_appraisal(r, prepared.original_plan.nuclei)
+               for r in prepared.original_plan.relations))
+
+
 def generate_emlis_thread(engine, request) -> EmlisThreadOutcomeV1:
     end = EmlisQuestionDecisionV1("END", decision_reason="free_round_complete")
     try:
@@ -30,7 +38,7 @@ def generate_emlis_thread(engine, request) -> EmlisThreadOutcomeV1:
             reason_codes=("emlis_meaning_preparation_unavailable",))
     checkpoint = prepared.checkpoint
     if not prepared.thread.answers:
-        if request.emlis_thread.capability_snapshot.startswith("Q3_"):
+        if _original_body_uses_prepared_plan(prepared):
             try:
                 body = realize_emlis_thread_body(prepared)
             except Exception:
@@ -65,7 +73,8 @@ def generate_emlis_thread(engine, request) -> EmlisThreadOutcomeV1:
             return EmlisThreadOutcomeV1(EngineStatus.GENERATED, None, end,
                 meaning_checkpoint=checkpoint, body_state="UNCHANGED",
                 reason_codes=("reuse_saved_observation_required",))
-        body = engine._generate_original_body(request)
+        body = (realize_emlis_thread_body(prepared) if _original_body_uses_prepared_plan(prepared)
+                else engine._generate_original_body(request))
         return EmlisThreadOutcomeV1(body.status, body if body.artifact else None, end,
             meaning_checkpoint=checkpoint,
             body_sufficiency="LIMITED" if body.status is EngineStatus.LIMITED else "SUFFICIENT" if body.artifact else None,

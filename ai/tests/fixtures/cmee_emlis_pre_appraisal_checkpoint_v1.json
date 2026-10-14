@@ -1,0 +1,373 @@
+{
+  "fixture_schema": "synthetic_legacy_checkpoint_fixtures.v1",
+  "baseline_commit": "c458d3c703dc651d88414ffa808ef583d0459907",
+  "python": "3.12.14",
+  "source_helpers": [
+    "ai/tests/test_cmee_emlis_q1_thread.py::initial",
+    "ai/tests/test_cmee_emlis_q1_thread.py::answered",
+    "ai/tests/test_cmee_emlis_q3_thread.py::begin",
+    "ai/tests/test_cmee_emlis_q3_thread.py::advance"
+  ],
+  "checkpoint_serialization": "emlis_thread_service._json(checkpoint)",
+  "plan_hash_recipe": "sha256(json.dumps([asdict(row) for row in original_plan.nuclei_or_relations], sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).hexdigest()",
+  "scope": "Synthetic engine-only fixtures; no database; Q3 premium has no admitted history; one real issued question per answered row.",
+  "rows": [
+    {
+      "case_id": "q2_initial_appraisal",
+      "memo": "資料を分類できて満足した。",
+      "action": "植木に水をやった。",
+      "capability": "FREE_Q1",
+      "helper_recipe": "initial(memo, memo_action=action)",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-b6abd0ae91011d37dfeb4c711ce5f157ae219cfb2d355626e50eb71df55c4c62",
+        "source_prefix_ref": "emlis-source-prefix-99ac24451760efa54e10b801550a0ea903713f811c1a59bc22d4f964898140af",
+        "base_meaning_ref": "emlis-base-meaning-86cdf65431d05fc60a6a29f2e1395da5131028bf4d36a9f4bbf9e605a30942a3",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "original_nuclei_sha256": "5890fb575a96ac242b8bf2d711e8c4dcd3448b41c9443a75fed1e70bd178329e",
+      "original_relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "baseline_body_status": "GENERATED",
+      "baseline_body_state": "FINAL"
+    },
+    {
+      "case_id": "q2_answered_appraisal_action",
+      "memo": "褒められたのに、嬉しくなかった。",
+      "action": "資料を分類できて満足した。",
+      "capability": "FREE_Q1",
+      "helper_recipe": "answered(answer, initial(memo, memo_action=action)); initial engine.generate verified same genuine question",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-eb7b548c203a0876eeeece31b8ff0cd1fe46047cbae1c7e7b4ca610b2f9b7074",
+        "source_prefix_ref": "emlis-source-prefix-f7e668183fcbd8fc4c6edad0c7f839dffbd69349393e42a509c786a80c571bff",
+        "base_meaning_ref": "emlis-base-meaning-2e6f87ae17d323a3136708bb40a7d44275d9130813e069c7cb6202578cc817cd",
+        "answer_update": {
+          "answer_source_ref": "src-3c76c1d0d1c189ad1fd57322",
+          "question_ref": "emlis-question-78fc4e317096e827edead64a5adb49bedf69abbff8c01d309513536db8e04b99",
+          "prior_meaning_ref": "emlis-base-meaning-2e6f87ae17d323a3136708bb40a7d44275d9130813e069c7cb6202578cc817cd",
+          "updates": [
+            {
+              "update_ref": "emlis-update-e0303686127baad33f3ed80fb53c5dc592fd3f79104738e2e05e226ac3d08474",
+              "binding_kind": "QUESTION_FOCUS",
+              "target_meaning_refs": [
+                "nucleus:s1:event"
+              ],
+              "evidence_refs": [
+                "ev-e39249dad6fbd0135589001f"
+              ],
+              "temporal_binding": {
+                "about_time": "ORIGINAL_OCCASION",
+                "anchor_source_ref": "src-fa58099f4de5bf51a27bca4a",
+                "time_expression_evidence_refs": [
+                  "ev-e39249dad6fbd0135589001f"
+                ],
+                "relative_relation": null,
+                "resolved_interval": null,
+                "timezone_basis": null
+              },
+              "operation": "ADD",
+              "changed_claim_refs": [
+                "answer:s6"
+              ],
+              "superseded_claim_refs": [],
+              "affected_dependency_refs": []
+            }
+          ],
+          "unresolved_parts": [],
+          "disposition": "MATERIAL_UPDATE",
+          "new_meaning_ref": "emlis-meaning-ca10de8bc95164de8d185e168645aff068aec80338556efa2323b07212731f23"
+        },
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [
+          "emlis-update-e0303686127baad33f3ed80fb53c5dc592fd3f79104738e2e05e226ac3d08474"
+        ],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "original_nuclei_sha256": "f33b62018bed982354f6a3258b7d19719cf8b9c9ebf52c3331cc1cff61bce730",
+      "original_relations_sha256": "bfe05e3975b3c4626a50d6a1092f53432ca8c8cd8a8e63ede34e2f746e131ede",
+      "baseline_body_status": "GENERATED",
+      "baseline_body_state": "REFINED",
+      "answer": "その時は重かった。",
+      "issued_question_id": "emlis-question-78fc4e317096e827edead64a5adb49bedf69abbff8c01d309513536db8e04b99",
+      "issued_question": {
+        "question_id": "emlis-question-78fc4e317096e827edead64a5adb49bedf69abbff8c01d309513536db8e04b99",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-fa58099f4de5bf51a27bca4a",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-7e3ba98c1d2f029087ff04f2705f9421d01c38d272c8d96e65728d8a54796b22",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-952643e1ee91b012ce1f9bf2"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s1:event",
+            "nucleus:s1:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s2"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "supplemental_answer": {
+        "answer_id": "q1-answer",
+        "thread_id": "q1-thread",
+        "question_id": "emlis-question-78fc4e317096e827edead64a5adb49bedf69abbff8c01d309513536db8e04b99",
+        "round_index": 1,
+        "original_source_ref": "src-fa58099f4de5bf51a27bca4a",
+        "answer_text_private": "その時は重かった。",
+        "recorded_at": "2026-09-11T00:00:00Z",
+        "authored_at": null,
+        "source_version": "cocolon.cmee.supplemental_answer.v1",
+        "source_role": "SUPPLEMENTAL_ANSWER"
+      },
+      "question_control": {
+        "pending_question": {
+          "question_id": "emlis-question-78fc4e317096e827edead64a5adb49bedf69abbff8c01d309513536db8e04b99",
+          "parent_request_id": "q1-synthetic",
+          "thread_id": "q1-thread",
+          "original_source_ref": "src-fa58099f4de5bf51a27bca4a",
+          "decision": {
+            "disposition": "ASK",
+            "target_ref": "emlis-target-7e3ba98c1d2f029087ff04f2705f9421d01c38d272c8d96e65728d8a54796b22",
+            "target_kind": "PERSONAL_RECEIVED_MEANING",
+            "supporting_evidence_refs": [
+              "ev-952643e1ee91b012ce1f9bf2"
+            ],
+            "missing_dimension": "personal_received_meaning",
+            "affected_meaning_refs": [
+              "nucleus:s1:event",
+              "nucleus:s1:reaction"
+            ],
+            "affected_reception_refs": [
+              "nucleus:s2"
+            ],
+            "asked_target_refs": [],
+            "decision_reason": "source_bound_event_personal_meaning_missing"
+          },
+          "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+          "skip_allowed": true,
+          "answer_limit": 1,
+          "answer_source_role": "SUPPLEMENTAL_ANSWER",
+          "schema_version": "cocolon.cmee.emlis_clarification.v1"
+        },
+        "asked_target_refs": [
+          "emlis-target-7e3ba98c1d2f029087ff04f2705f9421d01c38d272c8d96e65728d8a54796b22"
+        ],
+        "issued_count": 1,
+        "stop": false,
+        "issued_questions": [],
+        "question_limit": 1
+      }
+    },
+    {
+      "case_id": "q3_free_initial_appraisal",
+      "memo": "資料を分類できて満足した。",
+      "action": "植木に水をやった。",
+      "capability": "Q3_FREE",
+      "helper_recipe": "request = initial(memo, memo_action=action); replace(request, emlis_thread=replace(request.emlis_thread, capability_snapshot='Q3_FREE'))",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-c4d4f1cac012764d3ce83b1e2eb7533916606d71e52b0fea59c658431df93ff3",
+        "source_prefix_ref": "emlis-q3-source-prefix-d448d476884f86783ef157250df7903b53fe290ca365954c3ec6abb7c3a1e93f",
+        "base_meaning_ref": "emlis-base-meaning-86cdf65431d05fc60a6a29f2e1395da5131028bf4d36a9f4bbf9e605a30942a3",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "original_nuclei_sha256": "5890fb575a96ac242b8bf2d711e8c4dcd3448b41c9443a75fed1e70bd178329e",
+      "original_relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "baseline_body_status": "GENERATED",
+      "baseline_body_state": "FINAL"
+    },
+    {
+      "case_id": "q3_premium_answered_appraisal_action",
+      "memo": "褒められたのに、嬉しくなかった。",
+      "action": "資料を分類できて満足した。",
+      "capability": "Q3_PREMIUM",
+      "helper_recipe": "advance(begin(memo, memo_action=action), answer); advance obtains question from actual engine.generate",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-7c95ee6e2e07c58cf21841f5cfbd1b4f55de2bfb7e6c4552f96c7c7c5687af8d",
+        "source_prefix_ref": "emlis-q3-source-prefix-a75cd7d1db0b27ffaa1e9f606fb23546e7e8af47becbd37ea9369303da5971fa",
+        "base_meaning_ref": "emlis-base-meaning-2e6f87ae17d323a3136708bb40a7d44275d9130813e069c7cb6202578cc817cd",
+        "answer_update": {
+          "answer_source_ref": "src-687dc65c57f6ebdb89098d30",
+          "question_ref": "emlis-question-78fc4e317096e827edead64a5adb49bedf69abbff8c01d309513536db8e04b99",
+          "prior_meaning_ref": "emlis-base-meaning-2e6f87ae17d323a3136708bb40a7d44275d9130813e069c7cb6202578cc817cd",
+          "updates": [
+            {
+              "update_ref": "emlis-update-05ee69d238d56671b35dc4675c12ab28778411c1718083c4f743a3cdf013cdff",
+              "binding_kind": "QUESTION_FOCUS",
+              "target_meaning_refs": [
+                "nucleus:s1:event"
+              ],
+              "evidence_refs": [
+                "ev-45728bbbbf25993f17fd8490"
+              ],
+              "temporal_binding": {
+                "about_time": "ORIGINAL_OCCASION",
+                "anchor_source_ref": "src-fa58099f4de5bf51a27bca4a",
+                "time_expression_evidence_refs": [
+                  "ev-45728bbbbf25993f17fd8490"
+                ],
+                "relative_relation": null,
+                "resolved_interval": null,
+                "timezone_basis": null
+              },
+              "operation": "ADD",
+              "changed_claim_refs": [
+                "answer:s6"
+              ],
+              "superseded_claim_refs": [],
+              "affected_dependency_refs": []
+            }
+          ],
+          "unresolved_parts": [],
+          "disposition": "MATERIAL_UPDATE",
+          "new_meaning_ref": "emlis-meaning-ace3a23f6920571658f2ac728dba42ee552ff6bcbd87b37b09cb06524e6018ef"
+        },
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [
+          "emlis-update-05ee69d238d56671b35dc4675c12ab28778411c1718083c4f743a3cdf013cdff"
+        ],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "original_nuclei_sha256": "f33b62018bed982354f6a3258b7d19719cf8b9c9ebf52c3331cc1cff61bce730",
+      "original_relations_sha256": "bfe05e3975b3c4626a50d6a1092f53432ca8c8cd8a8e63ede34e2f746e131ede",
+      "baseline_body_status": "GENERATED",
+      "baseline_body_state": "REFINED",
+      "answer": "その時は重かった。",
+      "issued_question_id": "emlis-question-78fc4e317096e827edead64a5adb49bedf69abbff8c01d309513536db8e04b99",
+      "issued_question": {
+        "question_id": "emlis-question-78fc4e317096e827edead64a5adb49bedf69abbff8c01d309513536db8e04b99",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-fa58099f4de5bf51a27bca4a",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-7e3ba98c1d2f029087ff04f2705f9421d01c38d272c8d96e65728d8a54796b22",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-952643e1ee91b012ce1f9bf2"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s1:event",
+            "nucleus:s1:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s1:event",
+            "nucleus:s1:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "supplemental_answer": {
+        "answer_id": "answer-1",
+        "thread_id": "q1-thread",
+        "question_id": "emlis-question-78fc4e317096e827edead64a5adb49bedf69abbff8c01d309513536db8e04b99",
+        "round_index": 1,
+        "original_source_ref": "src-fa58099f4de5bf51a27bca4a",
+        "answer_text_private": "その時は重かった。",
+        "recorded_at": "2026-09-11T01:00:00Z",
+        "authored_at": null,
+        "source_version": "cocolon.cmee.supplemental_answer.v1",
+        "source_role": "SUPPLEMENTAL_ANSWER"
+      },
+      "question_control": {
+        "pending_question": {
+          "question_id": "emlis-question-78fc4e317096e827edead64a5adb49bedf69abbff8c01d309513536db8e04b99",
+          "parent_request_id": "q1-synthetic",
+          "thread_id": "q1-thread",
+          "original_source_ref": "src-fa58099f4de5bf51a27bca4a",
+          "decision": {
+            "disposition": "ASK",
+            "target_ref": "emlis-target-7e3ba98c1d2f029087ff04f2705f9421d01c38d272c8d96e65728d8a54796b22",
+            "target_kind": "PERSONAL_RECEIVED_MEANING",
+            "supporting_evidence_refs": [
+              "ev-952643e1ee91b012ce1f9bf2"
+            ],
+            "missing_dimension": "personal_received_meaning",
+            "affected_meaning_refs": [
+              "nucleus:s1:event",
+              "nucleus:s1:reaction"
+            ],
+            "affected_reception_refs": [
+              "nucleus:s1:event",
+              "nucleus:s1:reaction"
+            ],
+            "asked_target_refs": [],
+            "decision_reason": "source_bound_event_personal_meaning_missing"
+          },
+          "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+          "skip_allowed": true,
+          "answer_limit": 1,
+          "answer_source_role": "SUPPLEMENTAL_ANSWER",
+          "schema_version": "cocolon.cmee.emlis_clarification.v1"
+        },
+        "asked_target_refs": [
+          "emlis-target-7e3ba98c1d2f029087ff04f2705f9421d01c38d272c8d96e65728d8a54796b22"
+        ],
+        "issued_count": 1,
+        "stop": false,
+        "issued_questions": [
+          {
+            "question_id": "emlis-question-78fc4e317096e827edead64a5adb49bedf69abbff8c01d309513536db8e04b99",
+            "parent_request_id": "q1-synthetic",
+            "thread_id": "q1-thread",
+            "original_source_ref": "src-fa58099f4de5bf51a27bca4a",
+            "decision": {
+              "disposition": "ASK",
+              "target_ref": "emlis-target-7e3ba98c1d2f029087ff04f2705f9421d01c38d272c8d96e65728d8a54796b22",
+              "target_kind": "PERSONAL_RECEIVED_MEANING",
+              "supporting_evidence_refs": [
+                "ev-952643e1ee91b012ce1f9bf2"
+              ],
+              "missing_dimension": "personal_received_meaning",
+              "affected_meaning_refs": [
+                "nucleus:s1:event",
+                "nucleus:s1:reaction"
+              ],
+              "affected_reception_refs": [
+                "nucleus:s1:event",
+                "nucleus:s1:reaction"
+              ],
+              "asked_target_refs": [],
+              "decision_reason": "source_bound_event_personal_meaning_missing"
+            },
+            "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+            "skip_allowed": true,
+            "answer_limit": 1,
+            "answer_source_role": "SUPPLEMENTAL_ANSWER",
+            "schema_version": "cocolon.cmee.emlis_clarification.v1"
+          }
+        ],
+        "question_limit": 3
+      }
+    }
+  ]
+}

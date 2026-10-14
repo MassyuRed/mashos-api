@@ -488,7 +488,7 @@ class EmlisThreadService:
                     failure="separate_safety_owner_required" if safety else "body_not_validated")
             artifact = outcome.artifact
             from cocolon_meaning_experience_engine.emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan, _base_ref
-            prepared = prepare_emlis_meaning(_request(snapshot))
+            prepared = prepare_emlis_meaning(_request(snapshot, checkpoint_ref=cp["checkpoint_id"]))
             effective_ref = _base_ref(prepared.thread, build_updated_grounded_plan(prepared))
             observation = _event("OBSERVATION", {"text": artifact.text,
                 "effective_plan_ref":effective_ref, "context_guards":t["data"].get("context_guards", []), "context_ref":_context_ref(snapshot),

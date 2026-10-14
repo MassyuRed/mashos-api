@@ -1,5 +1,7 @@
 """Original appraisals own their objects; semantic checks are not Product Read."""
 from dataclasses import replace
+import json
+from pathlib import Path
 
 import pytest
 
@@ -238,3 +240,251 @@ def test_versioned_appraisal_is_in_current_manifest_without_changing_legacy_fiel
     assert tuple(field.name for field in fields(EmlisAppraisalContent)) == (
         'dimension', 'operation', 'appraised_bindings',
         'focal_relation_ref', 'protected_bindings', 'basis_contribution_refs')
+
+
+@pytest.mark.parametrize('source,evaluation', [
+    ('資料を分類できて満足した', '満足した'),
+    ('資料を分類したことにまだ納得していない', 'まだ納得していない'),
+])
+@pytest.mark.parametrize('whole', [False, True])
+def test_appraisal_withdrawal_preserves_only_the_remaining_source_meaning(source, evaluation, whole):
+    from test_cmee_emlis_q3_thread import begin, advance
+    req = begin('褒められたのに、嬉しくなかった。', source + '。植木に水をやった。')
+    original = prepare_emlis_meaning(req).original_plan
+    relation, = (r for r in original.relations if source_owned_result_appraisal(r, original.nuclei))
+    target = source if whole else evaluation
+    req = advance(req, f'「{target}」は誤りです。')
+    prepared = prepare_emlis_meaning(req)
+    assert prepared.checkpoint.assessment_status == 'RESOLVED'
+    update, = prepared.checkpoint.answer_update.updates
+    removed = {relation.to_nucleus_id, relation.from_nucleus_id} if whole else {relation.to_nucleus_id}
+    assert update.operation == 'WITHDRAW'
+    assert set(update.superseded_claim_refs) == removed
+    plan = build_updated_grounded_plan(prepared)
+    assert not removed & {n.nucleus_id for n in plan.nuclei}
+    assert relation.relation_id not in {r.relation_id for r in plan.relations}
+    outcome = MeaningExperienceEngine().generate(req)
+    assert outcome.artifact is not None, outcome.reason_codes
+    body = outcome.artifact.text
+    assert '植木に水をやった' in body and '褒められた' in body
+    assert evaluation not in body
+    if whole:
+        assert '資料を分類' not in body
+    else:
+        event = next(n for n in plan.nuclei if n.nucleus_id == relation.from_nucleus_id)
+        assert (event.kind, event.semantic_frame.predicate_kind, event.semantic_frame.modality,
+                event.semantic_frame.time_scope) == ('event', 'event', 'fact', 'past')
+        line = next(line for line in outcome.artifact.observation.splitlines() if '資料を分類' in line)
+        assert 'という出来事がありました。' in line
+        assert '今は' not in line and '感覚' not in line
+        projection = project_thread_meaning(prepared, plan)
+        sentence = build_grounded_sentence_plan(plan, prepared.thread.resolver(), recovery_stage='full')
+        def valid(value):
+            return evaluate_grounded_surface_body_inverse(body=value.encode(), plan=plan,
+                sentence_plan=sentence, resolver=prepared.thread.resolver(),
+                selected_subjective_input=projection.selected_reception).passed
+        assert valid(body)
+        for ending in ('という感覚が前に出ています。', 'という出来事があります。',
+                       'という出来事に満足しました。'):
+            changed = body.replace('という出来事がありました。', ending)
+            assert changed != body and not valid(changed)
+
+
+@pytest.mark.parametrize('quoted', ['資料を分類', '資料を分類できて満足', '他人を分類できて満足した'])
+def test_partial_or_foreign_appraisal_quote_cannot_withdraw_the_whole_source(quoted):
+    from test_cmee_emlis_q3_thread import begin, advance
+    req = advance(begin('褒められたのに、嬉しくなかった。', '資料を分類できて満足した。'),
+                  f'「{quoted}」は誤りです。')
+    prepared = prepare_emlis_meaning(req)
+    assert prepared.checkpoint.assessment_status == 'UNRESOLVED'
+    assert not prepared.checkpoint.inactive_claim_refs
+
+
+def test_repeated_whole_appraisal_cannot_be_resolved_by_source_order():
+    from test_cmee_emlis_q1_thread import answered
+    req = answered('「資料を分類できて満足した」は誤りです。',
+        initial('褒められたのに、嬉しくなかった。',
+                '資料を分類できて満足した。資料を分類できて満足した。'))
+    prepared = prepare_emlis_meaning(req)
+    assert sum(source_owned_result_appraisal(r, prepared.original_plan.nuclei)
+               for r in prepared.original_plan.relations) == 2
+    assert prepared.checkpoint.assessment_status == 'UNRESOLVED'
+    assert not prepared.checkpoint.inactive_claim_refs
+    assert not prepared.checkpoint.answer_update.updates
+    assert tuple(row.reason_code for row in prepared.checkpoint.unresolved_parts) == ('correction_target_unresolved',)
+
+
+@pytest.mark.parametrize('whole', [False, True])
+def test_saved_appraisal_withdrawal_uses_updated_body_and_no_author_on_reopen(qcase, qdb, whole):
+    from test_emlis_q2_application import run, answer
+    from emlis_thread_service import EmlisThreadService, Q3_PROFILE
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$2,memo_action=$3 where id=$1', [parent,
+        '褒められたのに、嬉しくなかった。', '資料を分類できて満足した。植木に水をやった。'])
+    initial_dto = run(service.start(user, parent))
+    target = '資料を分類できて満足した' if whole else '満足した'
+    dto = run(answer(service, user, initial_dto, f'「{target}」は誤りです。'))
+    assert dto['body_state'] == 'REFINED', dto
+    current = dto['current_observation']
+    assert current['event_id'] != initial_dto['current_observation']['event_id']
+    assert '満足した' not in current['text'] and '植木に水をやった' in current['text']
+    assert ('資料を分類' not in current['text']) if whole else ('という出来事がありました。' in current['text'])
+    class NoAuthor:
+        def __getattr__(self, name):
+            raise AssertionError('saved withdrawal read attempted generation: ' + name)
+    restarted = EmlisThreadService(engine=NoAuthor(), runtime_profile=Q3_PROFILE)
+    assert run(restarted.get(user, parent)) == dto
+    assert run(restarted.start(user, parent)) == dto
+
+
+# Captured by the unmodified c458 baseline, including its genuine question.
+# These are not current checkpoints with IDs substituted to simulate history.
+LEGACY_CHECKPOINTS = json.loads((Path(__file__).parent / 'fixtures' /
+    'cmee_emlis_pre_appraisal_checkpoint_v1.json').read_text())['rows']
+
+
+def _legacy_fixture_request(row, *, checkpoint=True):
+    from cocolon_meaning_experience_engine.emlis_thread_contracts import (
+        EmlisClarificationV1, EmlisQuestionDecisionV1, EmlisQuestionControlV1, SupplementalAnswerSource)
+    req = initial(row['memo'], row['action'])
+    thread = replace(req.emlis_thread, capability_snapshot=row['capability'])
+    if 'answer' in row:
+        def question(value):
+            q = dict(value)
+            d = dict(q.pop('decision'))
+            for key in ('supporting_evidence_refs', 'affected_meaning_refs', 'affected_reception_refs', 'asked_target_refs'):
+                d[key] = tuple(d[key])
+            return EmlisClarificationV1(decision=EmlisQuestionDecisionV1(**d), **q)
+        control = dict(row['question_control'])
+        control['pending_question'] = question(control['pending_question'])
+        control['issued_questions'] = tuple(question(q) for q in control['issued_questions'])
+        control['asked_target_refs'] = tuple(control['asked_target_refs'])
+        thread = replace(thread, current_round=1,
+            answers=(SupplementalAnswerSource(**row['supplemental_answer']),),
+            question_control_context=EmlisQuestionControlV1(**control))
+    return replace(req, emlis_thread=replace(thread,
+        prepared_meaning_checkpoint_ref=row['checkpoint']['checkpoint_id'] if checkpoint else None))
+
+
+@pytest.mark.parametrize('row', LEGACY_CHECKPOINTS, ids=lambda r: r['case_id'])
+def test_saved_pre_appraisal_checkpoint_is_rederived_exactly_before_body(row):
+    from dataclasses import asdict
+    from hashlib import sha256
+    from emlis_thread_service import _json
+    req = _legacy_fixture_request(row)
+    prepared = prepare_emlis_meaning(req)
+    assert prepared.legacy_result_appraisal
+    assert _json(prepared.checkpoint) == row['checkpoint']
+    for attr in ('nuclei', 'relations'):
+        value = json.dumps([asdict(n) for n in getattr(prepared.original_plan, attr)],
+            sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
+        assert sha256(value).hexdigest() == row['original_' + attr + '_sha256']
+    outcome = MeaningExperienceEngine().generate(req)
+    assert outcome.artifact is not None, outcome.reason_codes
+    assert _json(outcome.meaning_checkpoint) == row['checkpoint']
+    assert outcome.body_state == row['baseline_body_state']
+    foreign = replace(req, emlis_thread=replace(req.emlis_thread, prepared_meaning_checkpoint_ref='foreign'))
+    with pytest.raises(ValueError, match='emlis_checkpoint_source_prefix_mismatch'):
+        prepare_emlis_meaning(foreign)
+
+
+def test_new_answer_to_a_genuine_legacy_question_revalidates_the_question_before_preparing():
+    from emlis_thread_service import _json
+    row = next(r for r in LEGACY_CHECKPOINTS if r['case_id'] == 'q2_answered_appraisal_action')
+    req = _legacy_fixture_request(row, checkpoint=False)
+    prepared = prepare_emlis_meaning(req)
+    assert prepared.legacy_result_appraisal
+    assert _json(prepared.checkpoint) == row['checkpoint']
+    control = req.emlis_thread.question_control_context
+    wrong = replace(control.pending_question, prompt_private='別の質問')
+    req = replace(req, emlis_thread=replace(req.emlis_thread,
+        question_control_context=replace(control, pending_question=wrong)))
+    with pytest.raises(ValueError, match='emlis_question_noncanonical'):
+        prepare_emlis_meaning(req)
+
+
+def test_current_appraisal_does_not_select_the_legacy_projection():
+    req = request('資料を分類できて満足した。')
+    prepared = prepare_emlis_meaning(req)
+    assert not prepared.legacy_result_appraisal
+    bound = replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=prepared.checkpoint.checkpoint_id))
+    assert prepare_emlis_meaning(bound).checkpoint == prepared.checkpoint
+    assert not prepare_emlis_meaning(bound).legacy_result_appraisal
+
+
+def test_current_appraisal_body_save_retry_reuses_the_same_meaning(qcase, qdb, monkeypatch):
+    import httpx
+    import emlis_thread_store
+    from test_emlis_q2_application import run
+    user, parent, service = qcase
+    qdb.query('update public.emotions set memo=$2,memo_action=$3 where id=$1',
+        [parent, '資料を分類できて満足した。', '植木に水をやった。'])
+    failed = False
+    async def fail_body_once(name, payload, **kwargs):
+        nonlocal failed
+        if not failed and any(e['kind'] == 'OBSERVATION' for e in payload.get('p_events', [])):
+            failed = True
+            return httpx.Response(503, json={'code': '57P03'})
+        return await qdb.rpc(name, payload, **kwargs)
+    monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', fail_body_once)
+    pending = run(service.start(user, parent))
+    assert pending['can_retry'] and pending['current_observation'] is None
+    before = run(service.store.read(user, input_id=parent))
+    meaning = next(e for e in before['events'] if e['kind'] == 'MEANING_UPDATE')
+    monkeypatch.setattr(service.engine, 'prepare_emlis_update', lambda *_: pytest.fail('checkpoint must be reused'))
+    done = run(service.action(user, pending['thread_id'], action='retry_response',
+        expected_revision=pending['revision'], idempotency_key='retry-appraisal', operation_id=pending['operation_id']))
+    assert done['body_state'] == 'FINAL' and done['current_observation']
+    assert done['operation_id'] == pending['operation_id'] and done['attempt_id'] != pending['attempt_id']
+    after = run(service.store.read(user, input_id=parent))
+    assert [e for e in after['events'] if e['kind'] == 'MEANING_UPDATE'] == [meaning]
+    observation, = (e for e in after['events'] if e['kind'] == 'OBSERVATION')
+    assert observation['payload']['meaning_checkpoint_ref'] == meaning['payload']['checkpoint_id']
+    assert observation['payload']['effective_plan_ref'] == meaning['payload']['base_meaning_ref']
+
+
+@pytest.mark.parametrize('memo,action', [
+    ('資料を分類できて満足した。', '植木に水をやった。'),
+    ('資料を分類したことにまだ納得していない。', ''),
+    ('褒められたのに、嬉しくなかった。', '資料を分類できて満足した。'),
+])
+def test_q2_appraisal_initial_body_uses_the_same_prepared_meaning(memo, action):
+    req = initial(memo, action)
+    prepared = prepare_emlis_meaning(req)
+    assert not prepared.legacy_result_appraisal
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact is not None, out.reason_codes
+    assert out.meaning_checkpoint == prepared.checkpoint
+    assert '資料を分類' in out.artifact.text
+    if '褒められた' in memo:
+        from test_cmee_emlis_q1_thread import answered, prepared_request
+        assert out.question is not None
+        for text in ('その時は重かった。', '分からない。'):
+            revised = answered(text, req)
+            assert revised.emlis_thread.question_control_context.pending_question == out.question
+            revised, cp = prepared_request(revised)
+            after = MeaningExperienceEngine().generate(revised)
+            assert after.artifact is not None, after.reason_codes
+            assert after.meaning_checkpoint == cp
+            assert after.body_state == ('REFINED' if '重' in text else 'UNCHANGED')
+            assert '資料を分類' in after.artifact.text and '満足' in after.artifact.text
+
+
+def test_q2_legacy_no_change_answer_keeps_the_legacy_original_meaning():
+    row = next(r for r in LEGACY_CHECKPOINTS if r['case_id'] == 'q2_answered_appraisal_action')
+    req = _legacy_fixture_request(row, checkpoint=False)
+    req = replace(req, emlis_thread=replace(req.emlis_thread,
+        answers=(replace(req.emlis_thread.answers[0], answer_text_private='分からない。'),)))
+    prepared = prepare_emlis_meaning(req)
+    assert prepared.legacy_result_appraisal
+    assert prepared.checkpoint.answer_update.disposition == 'NO_MATERIAL_UPDATE'
+    bound = replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=prepared.checkpoint.checkpoint_id))
+    out = MeaningExperienceEngine().generate(bound)
+    assert out.artifact is not None, out.reason_codes
+    assert out.body_state == 'UNCHANGED'
+    assert out.meaning_checkpoint == prepared.checkpoint
+    assert '資料を分類できて満足した' in out.artifact.observation
+    assert not any(source_owned_result_appraisal(r, prepared.original_plan.nuclei)
+                   for r in prepared.original_plan.relations)

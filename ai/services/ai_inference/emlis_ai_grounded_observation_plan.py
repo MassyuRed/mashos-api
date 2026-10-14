@@ -13566,6 +13566,7 @@ def _final_stage1_typed_nuclei(
     evidence_spans: Sequence[EvidenceSpan],
     *,
     normalized_input: Mapping[str, Any] | None = None,
+    _legacy_result_appraisal: bool = False,
 ) -> tuple[tuple[GroundedSemanticNucleus, ...], tuple[tuple[str, str, str], ...]]:
     span_index = {
         _clean(getattr(span, "span_id", "")): span
@@ -13581,7 +13582,8 @@ def _final_stage1_typed_nuclei(
             if len(nucleus.source_span_ids) == 1
             else None
         )
-        received_projections = (_explicit_result_appraisal_projections(span, normalized_input)
+        received_projections = ((() if _legacy_result_appraisal else
+            _explicit_result_appraisal_projections(span, normalized_input))
             or _received_event_reaction_projections(span, nucleus.semantic_frame)) if span is not None else ()
         canonical_projections = received_projections or (
             _typed_nucleus_projections_for_span(
@@ -15923,6 +15925,7 @@ def project_final_stage1_grounded_observation_plan(
     safety_decision: EmlisSafetyTriageDecision,
     resolver: EvidenceSpanResolver | None = None,
     normalized_input: Mapping[str, Any] | None = None,
+    _legacy_result_appraisal: bool = False,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -15935,6 +15938,7 @@ def project_final_stage1_grounded_observation_plan(
         plan,
         evidence_spans,
         normalized_input=normalized_input,
+        _legacy_result_appraisal=_legacy_result_appraisal,
     )
     projected_nuclei = _final_stage1_align_action_status(
         projected_nuclei,
@@ -17004,6 +17008,7 @@ def build_final_stage1_grounded_observation_plan(
     whole_input_meaning_arc: WholeInputMeaningArc | None = None,
     retention_plan: MajorMeaningRetentionPlan | None = None,
     safety_decision: EmlisSafetyTriageDecision | None = None,
+    _legacy_result_appraisal: bool = False,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan."""
 
@@ -17055,6 +17060,7 @@ def build_final_stage1_grounded_observation_plan(
         safety_decision=triage,
         resolver=resolver,
         normalized_input=normalized,
+        _legacy_result_appraisal=_legacy_result_appraisal,
     )
 
 

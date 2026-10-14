@@ -71,6 +71,7 @@ class PreparedEmlisMeaning:
     original_plan: gp.GroundedObservationPlan
     accepted_nuclei: tuple[gp.GroundedSemanticNucleus, ...]
     checkpoint: EmlisMeaningCheckpointV1
+    legacy_result_appraisal: bool = False
 
 
 def _text(row, index, resolver) -> str:
@@ -524,6 +525,30 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
 def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
     thread = admit_emlis_thread(request)
     original = original_meaning_plan(thread)
+    try:
+        return _prepare_emlis_meaning_from_plan(request, thread, original)
+    except ValueError as exc:
+        # A saved checkpoint is an identity of the complete source-derived
+        # meaning, not permission to attach an old ID to the current plan.
+        # Only the known pre-appraisal projection may be re-derived. A saved
+        # checkpoint must pass the unchanged identity checks. A new answer
+        # to an already issued legacy question has no answer checkpoint yet:
+        # its question must instead pass complete canonical re-validation
+        # against that same legacy plan before a new checkpoint is formed.
+        legacy_question = (str(exc) == "emlis_question_noncanonical"
+            and bool(thread.answers)
+            and thread.control.question_control_context.pending_question is not None)
+        if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
+            or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
+            raise
+        legacy = original_meaning_plan(thread, _legacy_result_appraisal=True)
+        if legacy.nuclei == original.nuclei and legacy.relations == original.relations:
+            raise
+        prepared = _prepare_emlis_meaning_from_plan(request, thread, legacy)
+        return replace(prepared, legacy_result_appraisal=True)
+
+
+def _prepare_emlis_meaning_from_plan(request, thread, original):
     if thread.control.capability_snapshot == "Q3_PREMIUM" and thread.control.admitted_history and not thread.answers:
         from .emlis_thread_history import frame_supported_focus
         focus = frame_supported_focus(thread, original)
@@ -637,7 +662,22 @@ def _prepare_answer(thread, original):
             targets = tuple(row.nucleus_id for row in original.nuclei
                             if set(row.source_fields) & {"memo", "memo_action", ANSWER_FIELD}
                             and _text(row, index, resolver).rstrip("。．.") == quoted)
-            if len(targets) != 1:
+            # The original source owns both endpoints after appraisal
+            # projection. Withdrawing that entire, uniquely located source
+            # withdraws the pair; a fragment or repeated source is ambiguous.
+            whole_appraisal = False
+            if withdrawal and not targets:
+                groups = tuple((r.from_nucleus_id, r.to_nucleus_id)
+                    for r in original.relations
+                    if gp.source_owned_result_appraisal(r, original.nuclei)
+                    and resolver.resolve(index[r.from_nucleus_id].source_span_ids[0]).raw_text.rstrip("。．.") == quoted
+                    and {n.nucleus_id for n in original.nuclei
+                         if n.source_fields == index[r.from_nucleus_id].source_fields
+                         and n.source_span_ids == index[r.from_nucleus_id].source_span_ids}
+                        == {r.from_nucleus_id, r.to_nucleus_id})
+                if len(groups) == 1:
+                    targets, whole_appraisal = groups[0], True
+            if len(targets) != 1 and not whole_appraisal:
                 unresolved.append(EmlisUnresolvedPartV1(ev, "correction_target_unresolved"))
                 continue
             operation, binding, about = "WITHDRAW" if withdrawal else "REVISE", "EXPLICIT_CORRECTION", "ORIGINAL_OCCASION"
