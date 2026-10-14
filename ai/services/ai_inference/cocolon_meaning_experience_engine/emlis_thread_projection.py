@@ -19,6 +19,7 @@ from .emlis_input_specific_meaning import (
 from .emlis_thread_contracts import THREAD_SCHEMA
 from .emlis_thread_source import identity
 import emlis_ai_grounded_human_reception as hr
+from emlis_ai_grounded_observation_plan import source_owned_result_appraisal, _source_operator_owner_scope_is_bound
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -161,8 +162,9 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
                 stage1_response_schema_version=c.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2))))
     relation_rows = tuple(c.GroundedSourceRelationRow(r._edge_ref(e.edge_id), kind)
         for e in graph.edges if (kind := (c.EmlisThreadScopeRelationKind.ABOUT_TARGET
-            if e.relation == "evaluation_about_event" and any(
+            if e.relation == "evaluation_about_event" and (any(
                 ref in checkpoint.accepted_update_refs for ref in binding.edge_meta[e.edge_id].source_relation_ids)
+                or source_owned_result_appraisal(binding.edge_meta[e.edge_id], plan.nuclei))
             else c.project_foreground_scope_relation_kind(e.relation))) is not None)
     pre = c.PreMeaningGroundedInputs("1.0", c.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
         graph, r._graph_ref(graph), parent.observation_duty_id, candidates, field, contributions,
@@ -181,8 +183,26 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
             or affected[0].source_fields not in {("memo",), ("memo_action",)}
             or "semantic_role:limiting_unknown" not in affected[0].semantic_frame.attribute_codes):
             raise ValueError("emlis_thread_epistemic_unknown_source_unbound")
-    view = derive_grounded_situation_view(pre)
-    validate_grounded_situation_view(view, pre, graph)
+    # The v1.1 component policy is admitted from the validated source Plan,
+    # not a downstream request to turn LIMITED into NORMAL. Its first scope
+    # is an original explicit appraisal plus source-owned performed actions.
+    appraisals = tuple(e for e in plan.relations if source_owned_result_appraisal(e, plan.nuclei))
+    appraisal_endpoints = {nid for e in appraisals for nid in (e.from_nucleus_id, e.to_nucleus_id)}
+    independent_required = tuple(n for n in plan.nuclei
+        if n.nucleus_id in plan.coverage_requirements.required_nucleus_ids
+        and n.nucleus_id not in appraisal_endpoints)
+    component_refs = tuple(sorted(r._edge_ref(edge_ids[e.relation_id]) for e in appraisals)) if (
+        appraisals and all(n.kind == n.semantic_frame.predicate_kind and n.kind in {'action', 'event'}
+            and n.grounding_kind == 'explicit' and n.semantic_frame.actor == 'current_user'
+            and n.semantic_frame.modality == 'fact'
+            and 'operator:performed_action' in n.semantic_frame.attribute_codes
+            and n.source_fields in {('memo',), ('memo_action',)}
+            and n.allowed_claim_scope == 'explicit_current_input' and len(n.source_span_ids) == 1
+            and (anchor := hr.final_reception_source_anchor_text(n.nucleus_id, index, resolver))
+            and _source_operator_owner_scope_is_bound(anchor)
+            for n in independent_required)) else ()
+    view = derive_grounded_situation_view(pre, appraisal_component_relation_refs=component_refs)
+    validate_grounded_situation_view(view, pre, graph, appraisal_component_relation_refs=component_refs)
     scope = derive_foreground_scope_closed(view)
     structure = derive_input_specific_meaning_structure(view, scope)
     c.validate_input_specific_meaning_structure(structure, grounded_view=view, foreground_scope_derivation=scope)

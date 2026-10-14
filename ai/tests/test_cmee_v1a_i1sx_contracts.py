@@ -22281,6 +22281,25 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
             )
         )
 
+    def test_appraisal_components_preserve_conflicting_qualifiers_on_one_object(self):
+        from cocolon_meaning_experience_engine.contracts import EmlisThreadScopeRelationKind
+        view = self._im01_closed_derivation_views()['available']
+        single = next(row for row in view.basis_rows if len(row.scope_object_refs) == 1)
+        qualifiers = ('qualifier:im01-left', 'qualifier:im01-right')
+        conflicts = tuple(replace(single,
+            basis_kind=ForegroundScopeBasisKind.MATERIAL_UNKNOWN_OR_REQUIRED_QUALIFIER,
+            layer1_required_object_refs=(), required_qualifier_refs=(q,)) for q in qualifiers)
+        view = replace(view, schema_version='1.1',
+            basis_rows=(*tuple(replace(row, required_qualifier_refs=qualifiers) for row in view.basis_rows), *conflicts),
+            compatibility_rows=tuple(replace(row, required_qualifier_refs=qualifiers) for row in view.compatibility_rows),
+            source_connected_relations=tuple(replace(row, relation_kind=EmlisThreadScopeRelationKind.ABOUT_TARGET)
+                for row in view.source_connected_relations),
+            appraisal_component_relation_refs=tuple(row.relation_ref for row in view.source_connected_relations))
+        for supplied in (view, replace(view, basis_rows=tuple(reversed(view.basis_rows)))):
+            result = input_specific_meaning_module.derive_foreground_scope_closed(supplied)
+            self.assertEqual(result.state, ForegroundScopeDerivationState.COMPETING_MATERIAL_SCOPES)
+            self.assertEqual(result.unresolved_scope_refs, single.scope_object_refs)
+
     def test_im01_closed_derivation_exact4_union_exact10_and_zero_only_stop(
         self,
     ) -> None:
@@ -23087,7 +23106,7 @@ class CMEESubjectiveMeaningPlannerIM00ContractsTest(unittest.TestCase):
                     input_specific_meaning_module.derive_grounded_situation_view
                 ).parameters
             ),
-            ("premeaning_inputs",),
+            ("premeaning_inputs", "appraisal_component_relation_refs"),
         )
         self.assertEqual(
             tuple(

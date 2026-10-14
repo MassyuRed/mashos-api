@@ -1797,6 +1797,22 @@ class EmlisAppraisalContent:
 
 
 @dataclass(frozen=True, slots=True)
+class EmlisEvaluatedExperienceAppraisalContent(EmlisAppraisalContent):
+    """Private versioned content arm; legacy appraisal bytes stay unchanged."""
+
+    schema_version: str
+    event_binding_ref: str
+    evaluation_binding_ref: str
+    target_kind: str
+    evaluation_kind: str
+    polarity: str
+    evaluation_time: str
+    continuing: bool
+    explicit_ability: bool
+    degree: str
+
+
+@dataclass(frozen=True, slots=True)
 class ValueApplication:
     principle_ref: str
     material_risk: MaterialRisk
@@ -2633,6 +2649,9 @@ _STAGE1_TUPLE_FIELDS = {
     SubjectiveFacetSuppressionRow: (),
     PolicyApplicationRow: ("policy_basis_binding_refs",),
     EmlisAffectContent: ("elicitor_bindings",),
+    EmlisEvaluatedExperienceAppraisalContent: (
+        "appraised_bindings", "protected_bindings", "basis_contribution_refs",
+    ),
     EmlisAppraisalContent: (
         "appraised_bindings",
         "protected_bindings",
@@ -3215,7 +3234,7 @@ def _stage1_subjective_v2_content_bindings(
     if proposition.content_kind is SubjectiveContentKind.APPRAISAL:
         content = proposition.appraisal_content
         if (
-            type(content) is not EmlisAppraisalContent
+            type(content) not in (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent)
             or type(content.dimension) is not AppraisalDimension
             or type(content.operation) is not AppraisalOperation
             or (content.dimension, content.operation)
@@ -3231,6 +3250,21 @@ def _stage1_subjective_v2_content_bindings(
             raise CMEEStage1ContractError(
                 "stage1_subjective_v2_focal_relation_invalid"
             )
+        if type(content) is EmlisEvaluatedExperienceAppraisalContent:
+            if (content.schema_version != "cocolon.cmee.emlis.evaluated_experience_appraisal.v1"
+                or (content.dimension, content.operation) != (
+                    AppraisalDimension.MATERIAL_WEIGHT, AppraisalOperation.RECEIVE_AS_MATERIAL)
+                or content.focal_relation_ref is None
+                or content.protected_bindings
+                or len(content.appraised_bindings) != 2
+                or {content.event_binding_ref, content.evaluation_binding_ref} != set(content.appraised_bindings)
+                or content.target_kind not in {"thinking", "manual_action", "unspecified_action"}
+                or content.evaluation_kind not in {"satisfaction", "acceptance"}
+                or content.polarity not in {"positive", "negative"}
+                or content.evaluation_time not in {"past", "present"}
+                or type(content.continuing) is not bool or type(content.explicit_ability) is not bool
+                or content.degree not in {"unmarked", "slight", "very", "truly", "not_at_all", "not_much"}):
+                raise CMEEStage1ContractError("stage1_evaluated_experience_invalid")
         primary = _stage1_subjective_content_binding_tuple(
             content.appraised_bindings,
             allow_empty=False,
@@ -3400,7 +3434,7 @@ def validate_subjective_proposition_v2(
     )
     content_types = (
         EmlisAffectContent,
-        EmlisAppraisalContent,
+        (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent),
         MaterialValueContent,
         EmlisRelationalPosition,
     )
@@ -3410,7 +3444,9 @@ def validate_subjective_proposition_v2(
     if (
         expected_content_index < 0
         or sum(value is not None for value in contents) != 1
-        or type(contents[expected_content_index]) is not content_types[expected_content_index]
+        or type(contents[expected_content_index]) not in (
+            content_types[expected_content_index] if expected_content_index == 1
+            else (content_types[expected_content_index],))
     ):
         raise CMEEStage1ContractError(
             "stage1_subjective_v2_content_discriminant_invalid"
@@ -6729,6 +6765,17 @@ def _stage1_direction_under_burden_endpoint_pair(
     return source_marker, target_marker
 
 
+_STAGE1_APPRAISAL_SOURCE_CODES = frozenset((
+    "semantic_dependency:explicit_result_appraisal",
+    "source_appraisal_kind:satisfaction", "source_appraisal_kind:acceptance",
+    "source_appraisal_target:thinking", "source_appraisal_target:manual_action",
+    "source_appraisal_target:unspecified_action", "source_appraisal_continuing:still",
+    "source_appraisal_attainment:explicit_ability",
+    *("source_appraisal_degree:" + value for value in
+      ("unmarked", "slight", "very", "truly", "not_at_all", "not_much")),
+))
+
+
 def project_stage1_source_contract_qualifiers(
     *,
     source_attribute_codes: Sequence[str],
@@ -6761,6 +6808,8 @@ def project_stage1_source_contract_qualifiers(
         if _foreground_enum_text(value)
     }
     return (
+        *(f"qualifier:{code}" for code in sorted(source_codes & _STAGE1_APPRAISAL_SOURCE_CODES)
+          if "semantic_dependency:explicit_result_appraisal" in source_codes),
         *(
             ("qualifier:operator:shift",)
             if source_explicit_shift_relation_endpoint
@@ -11570,6 +11619,47 @@ def input_specific_meaning_configuration_source_component_rows(
     return owned_rows
 
 
+
+def input_specific_meaning_difference_witness(
+    candidate: InputSpecificMeaningCandidate,
+    *, grounded_view: object, required_ref: str,
+    configuration: DifferenceConfiguration,
+    bundles: Sequence[RequirementBundle],
+    configurations: Sequence[DifferenceConfiguration],
+):
+    """Rebuild a v1.2 difference witness inside its one source-connected group.
+
+    The whole candidate is still sealed once and retains every group. Local
+    witnesses prevent an unrelated object's equal qualifier from masking a
+    deletion. They are never selected candidates or additional readings.
+    """
+    local = candidate
+    if getattr(grounded_view, 'appraisal_component_relation_refs', ()) and len(candidate.requirement_bundle_refs) > 1:
+        owners = tuple(bundle for bundle in bundles
+            if bundle.bundle_id in candidate.requirement_bundle_refs
+            and required_ref in bundle.required_difference_refs)
+        if len(owners) != 1:
+            raise CMEEStage1ContractError('input_specific_meaning_difference_owner_invalid')
+        bundle = owners[0]
+        refs = (bundle.anchor_configuration_ref, *bundle.adjacent_configuration_refs)
+        owned = tuple(row for row in configurations if row.configuration_id in refs)
+        if (configuration.configuration_id not in refs or len(owned) != len(refs)
+            or not set(refs) <= set(candidate.basis_configuration_refs)):
+            raise CMEEStage1ContractError('input_specific_meaning_difference_owner_invalid')
+        members = {ref for row in owned for ref in
+            (row.endpoint_component_refs if type(row) is RelationalConfiguration else (row.predicate_ref,))}
+        paths = {ref for row in owned if type(row) is RelationalConfiguration for ref in row.relation_path_refs}
+        local = replace(candidate,
+            primary_component_refs=tuple(ref for ref in candidate.primary_component_refs if ref in members),
+            relation_path_refs=tuple(ref for ref in candidate.relation_path_refs if ref in paths))
+        rows = input_specific_meaning_candidate_source_component_rows(local, grounded_view=grounded_view)
+        local = replace(local, material_unknown_refs=tuple(dict.fromkeys(
+            ref for row in rows for ref in row.material_unknown_refs)))
+    rows = input_specific_meaning_candidate_source_component_rows(local, grounded_view=grounded_view)
+    signature = recompute_input_specific_meaning_candidate_signature(local, grounded_view=grounded_view)
+    return local, signature, rows
+
+
 def recompute_input_specific_meaning_candidate_signature(
     candidate: InputSpecificMeaningCandidate,
     *,
@@ -12783,8 +12873,6 @@ def _validate_input_specific_meaning_im03(
             if (
                 row is None
                 or row.required_difference_ref != required_ref
-                or row.baseline_semantic_signature
-                != candidate.semantic_signature
                 or required_ref not in required_by_ref
             ):
                 raise CMEEStage1ContractError(
@@ -12796,9 +12884,13 @@ def _validate_input_specific_meaning_im03(
             observed = observed_by_ref[
                 required_by_ref[required_ref].observed_distinction_ref
             ]
+            local, witness_signature, witness_rows = input_specific_meaning_difference_witness(
+                candidate, grounded_view=grounded_view, required_ref=required_ref,
+                configuration=config_by_ref[observed.configuration_ref],
+                bundles=structure.requirement_bundles, configurations=structure.configurations)
             mutation_scope_rows = (
                 input_specific_meaning_configuration_source_component_rows(
-                    candidate,
+                    local,
                     config_by_ref[observed.configuration_ref],
                     grounded_view=grounded_view,
                     mutation=mutation,
@@ -12806,12 +12898,13 @@ def _validate_input_specific_meaning_im03(
             )
             if (
                 mutation is None
+                or row.baseline_semantic_signature != witness_signature
                 or row.mutated_semantic_signature
                 != apply_meaning_signature_mutation(
-                    candidate.semantic_signature,
+                    witness_signature,
                     mutation,
-                    source_component_refs=candidate_source_refs,
-                    source_component_rows=candidate_source_rows,
+                    source_component_refs=tuple(item.source_object_ref for item in witness_rows),
+                    source_component_rows=witness_rows,
                     mutation_scope_component_rows=mutation_scope_rows,
                 )
             ):
@@ -12916,8 +13009,9 @@ def _validate_input_specific_meaning_im03(
             if row.trace_kind is MeaningDecisionTraceKind.LIMITED_BASIS
         )
         if (
-            outcome.schema_version
-            != _INPUT_SPECIFIC_MEANING_STRUCTURE_SCHEMA_VERSION
+            outcome.schema_version != (
+                "1.2" if len(selected.requirement_bundle_refs) > 1
+                else _INPUT_SPECIFIC_MEANING_STRUCTURE_SCHEMA_VERSION)
             or len(selected_rows) != 1
             or limited_rows
             or len(nonselected_rows) != len(candidates) - 1
@@ -12925,9 +13019,10 @@ def _validate_input_specific_meaning_im03(
             or {row.subject_ref for row in nonselected_rows}
             != set(candidate_by_ref) - {selected.candidate_id}
             or outcome.primary_reading_focus_ref
-            != selected.primary_component_refs[0]
+            != (selected.candidate_id if outcome.schema_version == "1.2"
+                else selected.primary_component_refs[0])
             or outcome.supporting_facet_refs
-            != selected.primary_component_refs[1:]
+            != (() if outcome.schema_version == "1.2" else selected.primary_component_refs[1:])
             or outcome.reading_component_refs
             != selected.primary_component_refs
             or outcome.reading_relation_refs != selected.relation_path_refs
@@ -13170,7 +13265,14 @@ def validate_input_specific_meaning_structure(
             "input_specific_meaning_structure_type_invalid"
         )
     _validate_stage1_immutable_shape(structure)
-    if structure.schema_version != _INPUT_SPECIFIC_MEANING_STRUCTURE_SCHEMA_VERSION:
+    expected_schema = structure.meaning_decision_outcome.schema_version
+    if (structure.schema_version != expected_schema
+        or expected_schema not in {_INPUT_SPECIFIC_MEANING_STRUCTURE_SCHEMA_VERSION, "1.2"}
+        or expected_schema == "1.2" and (
+            not getattr(grounded_view, 'appraisal_component_relation_refs', ())
+            or type(structure.meaning_decision_outcome) is not SelectedEmlisProvisionalReading
+            or any(candidate.requirement_bundle_refs != tuple(bundle.bundle_id for bundle in structure.requirement_bundles)
+                   for candidate in structure.candidate_records))):
         raise CMEEStage1ContractError(
             "input_specific_meaning_structure_schema_version_invalid"
         )
@@ -16560,7 +16662,7 @@ def validate_stage1_post_selection_reception_records(
         response_domain = tuple(
             dict.fromkeys(
                 (
-                    outcome.primary_reading_focus_ref,
+                    *((outcome.primary_reading_focus_ref,) if outcome.schema_version == "1.1" else ()),
                     *outcome.supporting_facet_refs,
                     *outcome.reading_component_refs,
                     *outcome.reading_relation_refs,
@@ -18554,7 +18656,7 @@ def _stage1_v2_basis_role(
 def _stage1_v2_content_binding_refs(content: object) -> tuple[str, ...]:
     if type(content) is EmlisAffectContent:
         return content.elicitor_bindings
-    if type(content) is EmlisAppraisalContent:
+    if type(content) in (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent):
         return _stage1_first_occurrence_union(
             content.appraised_bindings,
             content.protected_bindings,
@@ -19038,7 +19140,7 @@ def _validate_stage1_projection_v2_subjective_spine(
 
     content_type_by_kind = {
         SubjectiveContentKind.AFFECT: EmlisAffectContent,
-        SubjectiveContentKind.APPRAISAL: EmlisAppraisalContent,
+        SubjectiveContentKind.APPRAISAL: (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent),
         SubjectiveContentKind.MATERIAL_VALUE: MaterialValueContent,
         SubjectiveContentKind.RELATIONAL_POSITION: EmlisRelationalPosition,
     }
@@ -19048,7 +19150,9 @@ def _validate_stage1_projection_v2_subjective_spine(
         if (
             type(row.content_kind) is not SubjectiveContentKind
             or type(row.specificity_key) is not SubjectiveSpecificity
-            or type(row.content) is not content_type_by_kind.get(row.content_kind)
+            or type(row.content) not in (
+                content_type_by_kind.get(row.content_kind) if row.content_kind is SubjectiveContentKind.APPRAISAL
+                else (content_type_by_kind.get(row.content_kind),))
         ):
             raise CMEEStage1ContractError(
                 "stage1_projection_v2_opportunity_invalid"
@@ -19987,6 +20091,7 @@ def validate_stage1_projection(
                 or any(
                     value
                     not in {
+                        *(f"qualifier:{code}" for code in _STAGE1_APPRAISAL_SOURCE_CODES),
                         "qualifier:operator:shift",
                         "qualifier:"
                         + _STAGE1_DIRECTION_UNDER_BURDEN_DIRECTION_ATTRIBUTE_CODE,
@@ -21643,6 +21748,7 @@ __all__ = [
     "EmlisInterpretationCandidate",
     "EmlisAffectContent",
     "EmlisAppraisalContent",
+    "EmlisEvaluatedExperienceAppraisalContent",
     "EmlisMeaningField",
     "EmlisRelationalPosition",
     "EmlisStage1PositiveTraceExtension",

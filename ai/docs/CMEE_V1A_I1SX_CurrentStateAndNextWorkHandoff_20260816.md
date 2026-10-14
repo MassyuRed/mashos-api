@@ -1,4 +1,4 @@
-> 最新のEmlisAI残件確認は末尾 **u252（2026-10-14・契約変更案は未承認）**。単独評価の受け取り処理の欠落と、独立記述を競合にする意味選択契約を分離。製品修正・品質改善は未完了。直近のAnalysis内容修正はu250／current03を参照。
+> 最新のEmlisAI残件は末尾 **u253（2026-10-14 JST・限定変更承認済み・実装WIP・未配置）**。意味保持と合成保存/RN再表示を確認。受け取り内容は商品NOT_CLEAR、初回単位未完了。同じ承認から再開し再承認待ちへ戻さない。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -18304,3 +18304,54 @@ Mashの「アプリ全体の設計図と全ファイルの地図」「最新week
 作業ルール18 §11.3は既存契約内のbug修正をLEVEL_2で許す一方、意味選択contractの変更をLEVEL_3のMash明示判断対象とする。今回の残件作業指示だけをその変更への包括承認へ拡張せず、上記限定変更の判断を求める。追加理論の説明や低品質候補の採否をMashへ戻すための質問ではない。
 
 今回の書込みは既存API handoff本節と最新weeklyの原因・変更案・未完了の同期だけ。製品source／tests／採用設計の契約変更0。隔離不採用branchは変更せず、PR3へ試作コードを採用していない。配置・DB・native build・本人データ操作0。`STRUCTURE_MAP_DELTA_NONE`：実行経路・配置・責務変更はまだない。記録と承認待ちを商品品質の進捗に数えない。
+
+## u253 — 承認済みの明示評価＋独立行動の限定実装WIP（2026-10-14 JST・未配置）
+
+### 承認・確認した前提・現在地
+
+Mashの「記録した限定変更で実装を進めてよろしいですか」に対する「進めていいよ」を受け、u252／weekly §5.6.2の `EMLIS_APPRAISAL_COMPONENT_MEANING_20261014` を APPROVED_FOR_BOUNDED_IMPLEMENTATION として進めた。承認前のNOT_APPROVEDは履歴であり、同じ実装を再承認待ちへ戻さない。途中の「処理落ちしているから、続きから再開して」もこの承認済み単位の継続として扱う。
+
+開始headはAPI PR3 `c458d3c703dc651d88414ffa808ef583d0459907`、Cocolon PR30 `1b20c0204f4efeee20b80f4144d890ff8d3eefe0`。全体設計01・全file coverageと01A/B/C、current00/01/04、最新weekly20261010 §3.5・5.6〜5.6.2・6.5、8/28意味設計§5.2.1・8・9、詳細02と9/8承認、既存作業規則・恒久incident・u251/252を確認して開始した。地図の役割照合を全sourceの全文監査とは呼ばない。System Context prepareは既知の部分checkout問題のため原典直接確認を使用し、生成contextの鮮度成立とは扱わない。root華恋が編集・GitHub反映owner、同環境の補助担当は読み取りreview／baseline再現を担当。Pro／Ultra別モデルの独立審査とは記録しない。
+
+**BOUNDED_IMPLEMENTATION_WIP / PRODUCT_NOT_CLEAR。初回の一体修正単位は未完了。** 明示評価の対象乗換えと内部投影の欠落、独立記述を全体競合へ送る問題を限定範囲で改善した。意味の保持・本文生成・合成保存read・RN表示は確認できたが、§9.2の受け取り内容はまだ評価命題の言い換えに留まる。今回の実装を商品候補の採用、最初の単位の完成、同じ100件のCLEAR、公開可能へ昇格しない。不採用試作 `64e3d107fbac79854278b7ab566d695cc830bdf3` は変更していない。
+
+### 実装した範囲
+
+- 既存ObservationPlanで原入力の満足／納得と対象を同一sourceの関係として保持し、既存owner／行為status解析で他者・引用・予定・推量・受益／使役受身等を新経路から除外する。独立行動は全requiredとして残す。
+- 許可された対象付き評価＋本人実行行動に限定してsource-connectedな組ごとの意味を一つのwhole candidateへ集約する。同一対象の真の競合は保留し、組間の因果・対比・同時性・無関係の断定、欄名や入力順によるprimary選択を追加しない。複数組selection/structure1.2、opt-in view1.1。selected reading／sealed consequenceは全体で各exact1。
+- IM03の差分証明はexact1の所有bundleとconfigurationに限定したwitnessを使い、別組のfactが元対象のfact削除を隠さない。whole readingは分割せず、hard validity／noop検査を保持する。
+- private `EmlisEvaluatedExperienceAppraisalContent` v1へ対象と評価のexact2 binding、対象種別、評価種別、肯否・時点・継続・明示できた形・程度を通す。旧appraisalの6fieldは不変。manifest v2/logical70、protected bindings exact0、再ID付与tamperもsource不一致なら拒否する。歴史的proofを上書きせず現行identity snapshotだけ更新した。
+- compositionから選択済み内容を唯一のHuman Reception作者へ渡し、Sentence Surfaceと独立inverseで元評価と回答時点を混ぜず照合する。語尾を通すために検証を弱めていない。
+
+変更は既存production9file、既存契約test1、現行identity fixture1、新規評価test1、既存handoff。新production file／新エンジン／外部AI／新service／製品依存／公開API／DTO／DB／RN変更は0。既存owner内のcontract責務変更があるため `STRUCTURE_MAP_DELTA_PRESENT`。設計8/28、詳細02、06、current Emlis/CMEE、全体地図01/01A、weeklyへ同期する。
+
+### 実測した改善と残る本文の不足
+
+baseline c458で同じ合成評価3種（満足／非満足／まだ未納得）×独立行動有無の6件は、すべてGENERATEDだった。独立行動なしでは汎用受け取り、ありでは「植木に水をやったことを見過ごさず、大切に受け止めています。」へ対象が乗り換わった。生成件数増加だけの問題ではない。
+
+現在の合成例「資料を分類できて満足した。」のReceptionは「資料を分類できたというご自身での実現に、その時ご自身が満足を感じたのだと受け取りました。」で、行動の追加・削除・差替えでも同じ評価対象を保つ。「資料を分類したことにまだ納得していない。」では「資料を分類したという出来事について、まだご自身が納得していないのだと受け取りました。」となる。rootは肯否・過去現在・程度・認知/物理・別欄行動・同欄順序の17実生成全文を読み、補助も8本文を確認した。元の非公開入力・ID・本文は転記していない。
+
+前試作の評価対象落ち、少しの作用先、否定の不能化、「今も」の追加、二重の受け取り表現は解消した。一方、分類名＋評価命題＋定型末尾という内容の浅さ、「ご自身での実現」の硬さ、同欄複数記述では独立行動への旧generic Receptionも加わる差は残る。欄をまたいで意味保持できることを全本文の欄不変・自然さの合格へ換算しない。
+
+### 検証と限界
+
+| 確認 | 結果・範囲 |
+|---|---|
+| 新規限定評価test＋同一対象競合＋現行owner identity | **63 PASS / 193 deselected、31.12秒**。新規評価61件、既存契約内の競合1件とidentity1件。途中のtest import/field名と旧manifest期待の誤りを修正して最終再実行。旧歴史proofの期待は変更しない。 |
+| 共有Q1／回答視点／Q2／Q3／Analysis4領域／limited feelingの9file | **1846 PASS / 33 FAIL / 12020 subtests PASS、413.42秒、既存Pydantic警告2**。33件はc458で同じ11function集合を再実行して同じnode ID・assertion位置を再現（33 FAIL / 49 PASS、54.44秒）。旧失敗を今回の成功へ含めない。最終の新型protected_bindings exact0 guardはこの共有run開始後に追加し、上記63件で最終sourceを検証した。 |
+| IM01/IM02広域契約 | 全合格ではない。IM01の`foreground_scope_meaning_projection_noncanonical`と、IM02 fixture6 relationが利用不可でsetup23件が停止する既存問題を確認。baseline代表2nodeで同じ1FAIL/1ERRORを再現。23件全件のbaseline再実行とは呼ばない。 |
+| 旧契約suite最初の停止 | `test_step5_compiler_facade_owns_projection_s8_and_s9_exactly_once`の`stage1_final_grounded_observation_plan_required`もbaselineで再現。全旧契約suite PASSとは記録しない。 |
+| 実service→隔離Postgres→保存event→DTO→再read | 新規2入力で本文とevent IDを照合。authorを呼ぶと失敗するserviceへ差し替え、GET/startが保存済みDTOをそのまま返すことを確認。合成データのみ。 |
+| 実RN sourceによる表示 | 上記合成保存DTOを既存hook/modalのReact18.3.1 rendererへ渡し、現在本文・履歴展開・閉じて再openで同一本文が一度だけ表示され、GET2回・生成/投稿0を確認。関連既存RN7件PASS。RN全31件は26PASS/5FAIL（別のInputScreen静的期待1件、未導入react-native/metro関係4件）で、RN全面合格ではない。 |
+
+環境はPython3.12.14、pytest8.4.1、pytest-subtests0.14.2、Pydantic2.13.5、FastAPI0.142.2、HTTPX0.28.1、PGlite0.5.8。Node側のReact/Babel等は既存検査と同じ隔離runtimeで使用し、製品lockfile・依存を変更していない。pytestは`PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=ai/services/ai_inference:ai/tests:ai python -m pytest -q --tb=short -p pytest_subtests.plugin -p no:cacheprovider -c /dev/null --noconftest`を共通条件とし、63件は評価test＋契約testへ`-k 'appraisal or active_final_language_owner_chain'`。新規保存2件は63件に内包し合算しない。
+
+現行language identity `0cfb87099d9ba14de55e322b24ea459e7c743cd114e3f701df7ffb5fbfc85a19`、runtime identity `87dc1c17446d1dc027d1812e669e1f2b76c4e793b8bb90817741c95686b70c9c`。18language/18runtime payload、9source ownerを保持。
+
+### 続きから再開する位置
+
+1. 同じ承認内で、selected readingの対象＋本人評価から、§9.2を満たす経験の受け取り命題を定義して実本文へ通す。肯定／否定／継続を単にenumへ写すだけでは完成しない。検討可能な限定候補は「実行はあるが満足は成立していない経験」「過去に起きた対象への未納得が評価時点まで残る経験」。実行と評価が揃うべきだという基準・期待違反・解決待ち・努力・成長を追加しない。肯定の「満足を含む経験」は特に元命題との差が薄く、成立未確認。現時点ではこれらの追加命題は未実装。
+2. 同じ初回単位のまま新評価を含む訂正・撤回と全対照を揃え、既存失敗を隠さず共有回帰・保存・RNへ戻す。既存9file回帰には訂正撤回を含むが、新評価の全訂正撤回経路が完了したとは扱わない。旧版の未完MEANING_UPDATE checkpoint→新版retryは未保証。保存済みOBSERVATIONのread互換と分ける。
+3. same100全件の再実行・全文再読、本人実機の新規入力→保存→履歴再表示、正式Product Readは未実施。既存の0/3・NOT_CLEAR・candidate_ready=false・automatic_progression=falseを維持し、別の小修正完了を今回の一体修正の完成に置き換えない。
+
+10/17は本文改善と具体的残差の確認点、10/31は公開必須残差の管理点、12/18は公開目標。Piece／Analysis主枠を維持し、今回の技術検査成功を品質・公開日・工数見通しの上積みにしない。配置・稼働DB・本人データ取得・native build・main merge・PR ready化は0。

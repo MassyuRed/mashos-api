@@ -2881,6 +2881,62 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
     if (not first or not second or first == second
         or any(mark in first + second for mark in ("。", "？", "?", "「", "」", "\n"))):
         return None
+    if kind == "original_result_appraisal":
+        if (selected_subjective_input is None or decision is None or decision.branch != 'NORMAL'
+            or appraisal is None or appraisal.focal_relation_ref is None
+            or proposition.focal_relation_ref != appraisal.focal_relation_ref):
+            return None
+        endings = {c.split(":", 1)[1] for c in left.semantic_frame.attribute_codes
+                   if c.startswith("source_appraisal_event_ending:")}
+        if len(endings) != 1:
+            return None
+        ending = next(iter(endings))
+        if ending not in {"te", "de", "ta"}:
+            return None
+        from cocolon_meaning_experience_engine.contracts import EmlisEvaluatedExperienceAppraisalContent
+        if type(appraisal) is not EmlisEvaluatedExperienceAppraisalContent:
+            return None
+        parsed = re.fullmatch(r"(?P<event>.+)という(?P<target>.+?)(?P<particle>について|に)、(?P<evaluation>.+)のだと受け取りました。", raw)
+        if parsed is None:
+            return None
+        target = ('ご自身での実現' if appraisal.explicit_ability else
+                  {'thinking': '内側の営み', 'manual_action': '実際の作業',
+                   'unspecified_action': '出来事'}.get(appraisal.target_kind))
+        if target is None or parsed['target'] != target:
+            return None
+        at = ('その時もまだ' if appraisal.continuing else 'その時') if appraisal.evaluation_time == 'past' else (
+            'まだ' if appraisal.continuing else '')
+        degree = {'unmarked': '', 'slight': '少し', 'very': 'とても', 'truly': '本当に',
+                  'not_at_all': 'まったく', 'not_much': 'あまり'}.get(appraisal.degree)
+        if degree is None:
+            return None
+        if appraisal.evaluation_kind == 'satisfaction':
+            state = (('感じた' if appraisal.evaluation_time == 'past' else '感じている')
+                     if appraisal.polarity == 'positive' else
+                     ('感じなかった' if appraisal.evaluation_time == 'past' else '感じていない'))
+            expected = f"{at}ご自身が{degree}満足を{state}"
+            particle = 'に'
+        elif appraisal.evaluation_kind == 'acceptance':
+            state = (('納得した' if appraisal.evaluation_time == 'past' else '納得している')
+                     if appraisal.polarity == 'positive' else
+                     ('納得しなかった' if appraisal.evaluation_time == 'past' else '納得していない'))
+            expected = f"{at}ご自身が{degree}{state}"
+            particle = 'について'
+        else:
+            return None
+        if parsed['evaluation'] != expected or parsed['particle'] != particle:
+            return None
+        actual = parsed['event']
+        owner = re.search(r"(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)", first)
+        if owner:
+            actual = actual.replace('あなた', owner.group(), 1)
+        if not actual.endswith({'te': 'た', 'de': 'だ', 'ta': 'た'}[ending]):
+            return None
+        restored = actual[:-1] + {'te': 'て', 'de': 'で', 'ta': 'た'}[ending]
+        if restored != first:
+            return None
+        return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
+                     for key, value in (('event', first), ('evaluation', second)))
     if kind == "feeling_contrast":
         source = str(resolver.resolve(left.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
         if "source_received_chain_slot:first" in left.semantic_frame.attribute_codes:
@@ -5903,6 +5959,22 @@ def evaluate_grounded_surface_body_inverse(
                     and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"):
                 left_sources = _body_inverse_nucleus_source_values(relation.from_nucleus_id, plan, resolver)
                 right_sources = _body_inverse_nucleus_source_values(relation.to_nucleus_id, plan, resolver)
+                from emlis_ai_grounded_observation_plan import source_owned_result_appraisal
+                if source_owned_result_appraisal(relation, plan.nuclei):
+                    # Read the whole original-input relation. It has no answer
+                    # time and cannot borrow the supplemental-answer grammar.
+                    matches = []
+                    for row in witness.sentences:
+                        if row.section != "observation" or row.section_line_ordinal != parsed_line.section_ordinal:
+                            continue
+                        visible = _body_inverse_visible_text(body, row)
+                        parsed = re.fullmatch(r"「([^「」]+)」という出来事に対する評価は、「([^「」]+)」とあります。", visible)
+                        if parsed and (tuple(map(_body_inverse_normalized_anchor, parsed.groups()))
+                                       == (left_sources[0], right_sources[0])):
+                            matches.append(parsed)
+                    if len(matches) != 1:
+                        failures.append(f"body_inverse_original_appraisal_relation_missing:{index}")
+                    continue
                 target_codes = set(nucleus_index[relation.to_nucleus_id].semantic_frame.attribute_codes)
                 when = "先の回答時点" if "thread_time:prior_answer_time" in target_codes else "回答した時点" if "thread_time:answer_time" in target_codes else "その時"
                 # Read the whole sentence before extracting its local

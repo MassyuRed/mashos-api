@@ -433,6 +433,27 @@ def validate_selected_subjective_reception_input(
             or appraisal.focal_relation_ref != proposition.focal_relation_ref
         ):
             raise GroundedHumanReceptionSurfaceError(failure)
+        from cocolon_meaning_experience_engine.contracts import EmlisEvaluatedExperienceAppraisalContent
+        if type(appraisal) is EmlisEvaluatedExperienceAppraisalContent:
+            from emlis_ai_grounded_observation_plan import source_owned_result_appraisal
+            nucleus_by_id = {n.nucleus_id: n for n in plan.nuclei}
+            relation = next((r for r in plan.relations if r.relation_id == relation_map.get(appraisal.focal_relation_ref)), None)
+            event_id = semantic_map.get(basis_by_ref[appraisal.event_binding_ref].semantic_ref)
+            evaluation_id = semantic_map.get(basis_by_ref[appraisal.evaluation_binding_ref].semantic_ref)
+            if (row.branch != 'NORMAL' or relation is None or not source_owned_result_appraisal(relation, plan.nuclei)
+                or (event_id, evaluation_id) != (relation.from_nucleus_id, relation.to_nucleus_id)):
+                raise GroundedHumanReceptionSurfaceError(failure)
+            event, evaluation = nucleus_by_id[event_id], nucleus_by_id[evaluation_id]
+            source_codes = evaluation.semantic_frame.attribute_codes
+            event_codes = event.semantic_frame.attribute_codes
+            if (f'source_appraisal_target:{appraisal.target_kind}' not in event_codes
+                or f'source_appraisal_kind:{appraisal.evaluation_kind}' not in source_codes
+                or f'source_appraisal_degree:{appraisal.degree}' not in source_codes
+                or appraisal.polarity != evaluation.semantic_frame.polarity
+                or appraisal.evaluation_time != evaluation.semantic_frame.time_scope
+                or appraisal.continuing != ('source_appraisal_continuing:still' in source_codes)
+                or appraisal.explicit_ability != ('source_appraisal_attainment:explicit_ability' in event_codes)):
+                raise GroundedHumanReceptionSurfaceError(failure)
     if len({row.move_id for row in value.decisions}) != len(value.decisions):
         raise GroundedHumanReceptionSurfaceError(failure)
     return MappingProxyType({row.move_id: row for row in value.decisions})
@@ -11388,6 +11409,45 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
         or set(realization.semantic_fragments) != {first, second}
         or any(mark in first + second for mark in ("。", "？", "?", "「", "」", "\n"))):
         return None
+    if kind == "original_result_appraisal":
+        proposition = selected_decision.subjective_proposition
+        appraisal = proposition.appraisal_content
+        if (selected_decision.branch != "NORMAL" or appraisal is None
+            or appraisal.focal_relation_ref is None
+            or proposition.focal_relation_ref != appraisal.focal_relation_ref):
+            return None
+        endings = {c.split(":", 1)[1] for c in left.semantic_frame.attribute_codes
+                   if c.startswith("source_appraisal_event_ending:")}
+        if len(endings) != 1:
+            return None
+        ending = next(iter(endings))
+        if ending not in {"te", "de", "ta"} or not first.endswith({"te": "て", "de": "で", "ta": "た"}[ending]):
+            return None
+        event = first[:-1] + {"te": "た", "de": "だ", "ta": "た"}[ending]
+        event = re.sub(r"(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)", "あなた", event, count=1)
+        from cocolon_meaning_experience_engine.contracts import EmlisEvaluatedExperienceAppraisalContent
+        if type(appraisal) is not EmlisEvaluatedExperienceAppraisalContent:
+            return None
+        target = ('ご自身での実現' if appraisal.explicit_ability else
+                  {'thinking': '内側の営み', 'manual_action': '実際の作業',
+                   'unspecified_action': '出来事'}[appraisal.target_kind])
+        at = ('その時もまだ' if appraisal.continuing else 'その時') if appraisal.evaluation_time == 'past' else (
+            'まだ' if appraisal.continuing else '')
+        degree = {'unmarked': '', 'slight': '少し', 'very': 'とても', 'truly': '本当に',
+                  'not_at_all': 'まったく', 'not_much': 'あまり'}[appraisal.degree]
+        if appraisal.evaluation_kind == 'satisfaction':
+            state = (('感じた' if appraisal.evaluation_time == 'past' else '感じている')
+                     if appraisal.polarity == 'positive' else
+                     ('感じなかった' if appraisal.evaluation_time == 'past' else '感じていない'))
+            evaluation = f"{at}ご自身が{degree}満足を{state}"
+            particle = 'に'
+        else:
+            state = (('納得した' if appraisal.evaluation_time == 'past' else '納得している')
+                     if appraisal.polarity == 'positive' else
+                     ('納得しなかった' if appraisal.evaluation_time == 'past' else '納得していない'))
+            evaluation = f"{at}ご自身が{degree}{state}"
+            particle = 'について'
+        return f"{event}という{target}{particle}、{evaluation}のだと受け取りました"
     if kind == "feeling_contrast":
         source = str(resolver.resolve(left.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
         if "source_received_chain_slot:first" in left.semantic_frame.attribute_codes:

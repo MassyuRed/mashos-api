@@ -4372,7 +4372,7 @@ def build_stage1_post_selection_reception_records(
         response_object_refs = tuple(
             dict.fromkeys(
                 (
-                    outcome.primary_reading_focus_ref,
+                    *((outcome.primary_reading_focus_ref,) if outcome.schema_version == "1.1" else ()),
                     *outcome.supporting_facet_refs,
                     *outcome.reading_component_refs,
                     *outcome.reading_relation_refs,
@@ -5336,6 +5336,10 @@ def _validate_meaning_plan_vertical_binding(
                     contributions=contributions,
                     basis_rows=own_basis,
                     source_qualifiers=own_qualifiers,
+                    interpretation_candidates=phase_A.interpretation_candidate_rows,
+                    relation_configurations=tuple(row for row in phase_A.input_specific_meaning_structure.configurations
+                        if type(row) is composition.RelationalConfiguration
+                        and row.configuration_id in selected_candidate.basis_configuration_refs),
                     semantic_contributions=tuple(
                         contribution_by_ref[ref]
                         for ref in selected_candidate.basis_contribution_refs

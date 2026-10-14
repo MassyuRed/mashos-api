@@ -22,6 +22,7 @@ from itertools import combinations, product
 from typing import Iterable, Mapping, Sequence, Tuple
 
 from .contracts import (
+    input_specific_meaning_difference_witness,
     source_explicit_epistemic_unknown_object_ref,
     stage1_visible_user_source_owner,
     BasisEpistemicTier,
@@ -215,6 +216,7 @@ class GroundedSituationView:
     semantic_interpretation_projections: Tuple[
         GroundedInterpretationProjection, ...
     ] = ()
+    appraisal_component_relation_refs: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -620,6 +622,8 @@ def _project_grounded_interpretations(
 
 def derive_grounded_situation_view(
     premeaning_inputs: PreMeaningGroundedInputs,
+    *,
+    appraisal_component_relation_refs: Tuple[str, ...] = (),
 ) -> GroundedSituationView:
     """Build exact5-allowlisted bases and per-object exact10 profiles.
 
@@ -1007,8 +1011,15 @@ def derive_grounded_situation_view(
             ),
         )
     )
+    if (type(appraisal_component_relation_refs) is not tuple
+        or appraisal_component_relation_refs != _canonical(appraisal_component_relation_refs)
+        or any(ref not in {row.relation_ref for row in ordered_relations
+                           if row.relation_kind is EmlisThreadScopeRelationKind.ABOUT_TARGET}
+               for ref in appraisal_component_relation_refs)):
+        raise CMEEStage1ContractError("appraisal_component_relation_unbound")
     return GroundedSituationView(
-        schema_version=_SCHEMA_VERSION,
+        schema_version="1.1" if appraisal_component_relation_refs else _SCHEMA_VERSION,
+        appraisal_component_relation_refs=appraisal_component_relation_refs,
         basis_rows=ordered_basis_rows,
         compatibility_rows=compatibility_rows,
         source_connected_relations=ordered_relations,
@@ -1028,12 +1039,15 @@ def validate_grounded_situation_view(
     view: GroundedSituationView,
     premeaning_inputs: PreMeaningGroundedInputs,
     grounded_graph: GroundedMeaningGraph,
+    *,
+    appraisal_component_relation_refs: Tuple[str, ...] = (),
 ) -> None:
     """Validate the carried view and its safe source projection in place."""
 
     if (
         type(view) is not GroundedSituationView
-        or view.schema_version != _SCHEMA_VERSION
+        or view.schema_version != ("1.1" if appraisal_component_relation_refs else _SCHEMA_VERSION)
+        or view.appraisal_component_relation_refs != appraisal_component_relation_refs
         or type(premeaning_inputs) is not PreMeaningGroundedInputs
         or type(grounded_graph) is not GroundedMeaningGraph
         or premeaning_inputs.grounded_graph != grounded_graph
@@ -1316,7 +1330,9 @@ def derive_foreground_scope_closed(
         raise CMEEStage1ContractError(
             "foreground_scope_grounded_view_invalid"
         )
-    if grounded_view.schema_version != _SCHEMA_VERSION:
+    component_scopes = bool(grounded_view.appraisal_component_relation_refs)
+    if (grounded_view.schema_version != ("1.1" if component_scopes else _SCHEMA_VERSION)
+        or not _is_canonical(grounded_view.appraisal_component_relation_refs)):
         raise CMEEStage1ContractError(
             "foreground_scope_grounded_view_schema_version_invalid"
         )
@@ -1463,6 +1479,10 @@ def derive_foreground_scope_closed(
             "foreground_scope_relation_basis_proof_missing"
         )
     relations = tuple(relation_by_ref.values())
+    if any(ref not in relation_by_ref
+           or relation_by_ref[ref].relation_kind is not EmlisThreadScopeRelationKind.ABOUT_TARGET
+           for ref in grounded_view.appraisal_component_relation_refs):
+        raise CMEEStage1ContractError("appraisal_component_relation_unbound")
 
     if not retained:
         return ForegroundScopeDerivation(
@@ -1581,9 +1601,13 @@ def derive_foreground_scope_closed(
     # Compare the admitted basis rows themselves.  Object-level profiles are
     # provenance, but collapsing rows to one profile must not erase a typed
     # qualifier or unknown difference on the same scope object.
+    # In v1.1 aggregate rows were checked against their profile union above;
+    # comparing that union to one member falsely makes set size a conflict.
     for left_row, right_row in combinations(basis_rows, 2):
         left_objects = set(left_row.scope_object_refs)
         right_objects = set(right_row.scope_object_refs)
+        if component_scopes and not (len(left_objects) == 1 and left_objects == right_objects):
+            continue
         distinct_pairs = tuple(
             (left_ref, right_ref)
             for left_ref, right_ref in product(
@@ -1641,6 +1665,10 @@ def derive_foreground_scope_closed(
         right_profiles = tuple(profiles_by_object.get(right_ref, ()))
         same_object = left_ref == right_ref
         connected = _relation_connects(relations, left_ref, right_ref)
+        if component_scopes and not same_object and not connected:
+            # Each object retains its own required qualifiers and unknowns.
+            # Absence of a path asserts no relation between components.
+            continue
         if not same_object and not connected:
             missing.add(
                 _missing_ref(
@@ -1974,7 +2002,7 @@ def derive_difference_configuration_set(
             "difference_configuration_foreground_derivation_invalid"
         )
     if (
-        grounded_view.schema_version != _SCHEMA_VERSION
+        grounded_view.schema_version != ("1.1" if grounded_view.appraisal_component_relation_refs else _SCHEMA_VERSION)
         or foreground_scope_derivation.schema_version != _SCHEMA_VERSION
         or type(foreground_scope_derivation.state)
         is not ForegroundScopeDerivationState
@@ -4136,7 +4164,7 @@ def _derive_candidate_semantic_loss_codes(
     candidate: InputSpecificMeaningCandidate,
     grounded_view: GroundedSituationView,
     foreground_scope: ForegroundScope,
-    bundle: RequirementBundle,
+    bundles: tuple[RequirementBundle, ...],
     configurations: Sequence[DifferenceConfiguration],
     observed_by_ref: Mapping[str, ObservedDistinctionRow],
     required_by_ref: Mapping[str, RequiredDifferenceRow],
@@ -4144,6 +4172,9 @@ def _derive_candidate_semantic_loss_codes(
 ) -> Tuple[DifferenceInvariantCode, ...]:
     """Re-derive actual loss from the source cover before candidate sealing."""
 
+    required_difference_refs = _stable_unique(
+        ref for bundle in bundles for ref in bundle.required_difference_refs
+    )
     values = tuple(configurations)
     losses: set[DifferenceInvariantCode] = set()
     expected_primary_refs = _primary_refs_in_source_declaration_order(
@@ -4166,7 +4197,7 @@ def _derive_candidate_semantic_loss_codes(
         for ref in _candidate_configuration_qualifier_refs(configuration)
     )
     expected_protected_refs = _forbidden_semantic_collapse_refs(
-        bundle.required_difference_refs,
+        required_difference_refs,
         required_by_ref=required_by_ref,
         mutation_by_ref=mutation_by_ref,
     )
@@ -4227,13 +4258,13 @@ def _derive_candidate_semantic_loss_codes(
     if candidate.forbidden_semantic_collapse_refs != expected_protected_refs:
         losses.update(
             invariant
-            for required_ref in bundle.required_difference_refs
+            for required_ref in required_difference_refs
             for invariant in required_by_ref[required_ref].invariant_codes
         )
-    if candidate.preserved_difference_refs != bundle.required_difference_refs:
+    if candidate.preserved_difference_refs != required_difference_refs:
         losses.update(
             invariant
-            for required_ref in bundle.required_difference_refs
+            for required_ref in required_difference_refs
             for invariant in required_by_ref[required_ref].invariant_codes
         )
     expected_forbidden_promotions = _stable_unique(
@@ -4257,7 +4288,7 @@ def _derive_candidate_semantic_loss_codes(
         candidate,
         grounded_view=grounded_view,
     )
-    for required_ref in bundle.required_difference_refs:
+    for required_ref in required_difference_refs:
         required = required_by_ref[required_ref]
         mutation = mutation_by_ref[required.counterfactual_mutation_ref]
         observed = observed_by_ref[required.observed_distinction_ref]
@@ -4266,9 +4297,12 @@ def _derive_candidate_semantic_loss_codes(
             for value in values
             if value.configuration_id == observed.configuration_ref
         )
+        local, witness_signature, witness_rows = input_specific_meaning_difference_witness(
+            candidate, grounded_view=grounded_view, required_ref=required_ref,
+            configuration=configuration, bundles=bundles, configurations=values)
         mutation_scope_rows = (
             input_specific_meaning_configuration_source_component_rows(
-                candidate,
+                local,
                 configuration,
                 grounded_view=grounded_view,
                 mutation=mutation,
@@ -4276,10 +4310,10 @@ def _derive_candidate_semantic_loss_codes(
         )
         try:
             apply_meaning_signature_mutation(
-                source_signature,
+                witness_signature,
                 mutation,
-                source_component_refs=source_refs,
-                source_component_rows=source_rows,
+                source_component_refs=tuple(row.source_object_ref for row in witness_rows),
+                source_component_rows=witness_rows,
                 mutation_scope_component_rows=mutation_scope_rows,
             )
         except CMEEStage1ContractError as exc:
@@ -4297,7 +4331,7 @@ def _evaluate_candidate_hard_validity(
     candidate: InputSpecificMeaningCandidate,
     grounded_view: GroundedSituationView,
     foreground_scope: ForegroundScope,
-    bundle: RequirementBundle,
+    bundles: tuple[RequirementBundle, ...],
     configurations: Sequence[DifferenceConfiguration],
     observed_by_ref: Mapping[str, ObservedDistinctionRow],
     required_by_ref: Mapping[str, RequiredDifferenceRow],
@@ -4305,6 +4339,9 @@ def _evaluate_candidate_hard_validity(
     expected_required_difference_refs: Sequence[str],
     consequence_rows: Sequence[WholeReadingConsequenceRow],
 ) -> bool:
+    required_difference_refs = _stable_unique(
+        ref for bundle in bundles for ref in bundle.required_difference_refs
+    )
     values = tuple(configurations)
     expected_primary_refs = _primary_refs_in_source_declaration_order(
         grounded_view,
@@ -4342,7 +4379,7 @@ def _evaluate_candidate_hard_validity(
             candidate=candidate,
             grounded_view=grounded_view,
             foreground_scope=foreground_scope,
-            bundle=bundle,
+            bundles=bundles,
             configurations=values,
             observed_by_ref=observed_by_ref,
             required_by_ref=required_by_ref,
@@ -4360,7 +4397,7 @@ def _evaluate_candidate_hard_validity(
         candidate.semantic_loss_codes != actual_loss_codes
         or actual_loss_codes
         or candidate.semantic_signature != recomputed_signature
-        or candidate.requirement_bundle_refs != (bundle.bundle_id,)
+        or candidate.requirement_bundle_refs != tuple(bundle.bundle_id for bundle in bundles)
         or candidate.basis_configuration_refs
         != tuple(value.configuration_id for value in values)
         or candidate.primary_component_refs != expected_primary_refs
@@ -4369,7 +4406,7 @@ def _evaluate_candidate_hard_validity(
         or any(ref not in relation_by_ref for ref in expected_relation_refs)
         or candidate.qualified_event_state_refs != expected_qualified_refs
         or candidate.preserved_difference_refs != required_refs
-        or required_refs != bundle.required_difference_refs
+        or required_refs != required_difference_refs
         or set(candidate.source_qualifier_refs)
         != {
             ref
@@ -4412,13 +4449,20 @@ def _evaluate_candidate_hard_validity(
             if required is not None
             else None
         )
+        if required is None or mutation is None:
+            return False
+        observed = observed_by_ref[required.observed_distinction_ref]
+        configuration = next(value for value in values if value.configuration_id == observed.configuration_ref)
+        _, witness_signature, _ = input_specific_meaning_difference_witness(
+            candidate, grounded_view=grounded_view, required_ref=required_ref,
+            configuration=configuration, bundles=bundles, configurations=values)
         if (
             required is None
             or mutation is None
             or row.required_difference_ref != required_ref
             or row.counterfactual_mutation_ref != mutation.mutation_id
-            or row.baseline_semantic_signature != candidate.semantic_signature
-            or row.mutated_semantic_signature == candidate.semantic_signature
+            or row.baseline_semantic_signature != witness_signature
+            or row.mutated_semantic_signature == witness_signature
             or row.consequence_code
             is not resolve_mutation_application_spec(
                 mutation
@@ -4436,7 +4480,7 @@ def _derive_candidate_for_bundle(
     *,
     grounded_view: GroundedSituationView,
     foreground_scope: ForegroundScope,
-    bundle: RequirementBundle,
+    bundles: tuple[RequirementBundle, ...],
     configurations: Sequence[DifferenceConfiguration],
     observed_by_ref: Mapping[str, ObservedDistinctionRow],
     required_by_ref: Mapping[str, RequiredDifferenceRow],
@@ -4449,9 +4493,12 @@ def _derive_candidate_for_bundle(
     InputSpecificityEvidence,
     Tuple[WholeReadingConsequenceRow, ...],
 ] | None:
-    owned_bundle_refs = (
-        bundle.anchor_configuration_ref,
-        *bundle.adjacent_configuration_refs,
+    required_difference_refs = _stable_unique(
+        ref for bundle in bundles for ref in bundle.required_difference_refs
+    )
+    owned_bundle_refs = _stable_unique(
+        ref for bundle in bundles for ref in
+        (bundle.anchor_configuration_ref, *bundle.adjacent_configuration_refs)
     )
     owned_configurations = tuple(seed_configurations)
     if not owned_configurations:
@@ -4557,7 +4604,7 @@ def _derive_candidate_for_bundle(
         )
     )
     protected_collapse_refs = _forbidden_semantic_collapse_refs(
-        bundle.required_difference_refs,
+        required_difference_refs,
         required_by_ref=required_by_ref,
         mutation_by_ref=mutation_by_ref,
     )
@@ -4574,7 +4621,7 @@ def _derive_candidate_for_bundle(
         basis_configuration_refs=tuple(
             value.configuration_id for value in owned_configurations
         ),
-        requirement_bundle_refs=(bundle.bundle_id,),
+        requirement_bundle_refs=tuple(bundle.bundle_id for bundle in bundles),
         primary_component_refs=primary_refs,
         relation_path_refs=relation_paths,
         qualified_event_state_refs=qualified_refs,
@@ -4586,7 +4633,7 @@ def _derive_candidate_for_bundle(
             for value in owned_configurations
             for ref in _candidate_configuration_qualifier_refs(value)
         ),
-        preserved_difference_refs=bundle.required_difference_refs,
+        preserved_difference_refs=required_difference_refs,
         material_unknown_refs=foreground_scope.material_unknown_refs,
         forbidden_promotion_codes=_stable_unique(
             ref
@@ -4605,7 +4652,7 @@ def _derive_candidate_for_bundle(
             candidate=candidate,
             grounded_view=grounded_view,
             foreground_scope=foreground_scope,
-            bundle=bundle,
+            bundles=bundles,
             configurations=owned_configurations,
             observed_by_ref=observed_by_ref,
             required_by_ref=required_by_ref,
@@ -4637,9 +4684,12 @@ def _derive_candidate_for_bundle(
             for value in owned_configurations
             if value.configuration_id == observed.configuration_ref
         )
+        local, witness_signature, witness_rows = input_specific_meaning_difference_witness(
+            candidate, grounded_view=grounded_view, required_ref=required_ref,
+            configuration=configuration, bundles=bundles, configurations=owned_configurations)
         mutation_scope_rows = (
             input_specific_meaning_configuration_source_component_rows(
-                candidate,
+                local,
                 configuration,
                 grounded_view=grounded_view,
                 mutation=mutation,
@@ -4650,9 +4700,9 @@ def _derive_candidate_for_bundle(
                 foreground_scope=foreground_scope,
                 required_difference=required,
                 counterfactual_mutation=mutation,
-                baseline_semantic_signature=signature,
-                source_component_refs=signature_source_component_refs,
-                source_component_rows=signature_source_component_rows,
+                baseline_semantic_signature=witness_signature,
+                source_component_refs=tuple(row.source_object_ref for row in witness_rows),
+                source_component_rows=witness_rows,
                 mutation_scope_component_rows=mutation_scope_rows,
             )
         except CMEEStage1ContractError as exc:
@@ -4693,12 +4743,12 @@ def _derive_candidate_for_bundle(
         candidate=candidate,
         grounded_view=grounded_view,
         foreground_scope=foreground_scope,
-        bundle=bundle,
+        bundles=bundles,
         configurations=owned_configurations,
         observed_by_ref=observed_by_ref,
         required_by_ref=required_by_ref,
         mutation_by_ref=mutation_by_ref,
-        expected_required_difference_refs=bundle.required_difference_refs,
+        expected_required_difference_refs=required_difference_refs,
         consequence_rows=rows,
     ):
         raise CMEEStage1ContractError(
@@ -4920,14 +4970,16 @@ def project_selected_reading(
         and row.subject_ref == selected_candidate.candidate_id
     )
     reading = SelectedEmlisProvisionalReading(
-        schema_version=_ROOT_SCHEMA_VERSION,
+        schema_version="1.2" if len(selected_candidate.requirement_bundle_refs) > 1 else _ROOT_SCHEMA_VERSION,
         reading_id="selected-emlis-provisional-reading:pending",
         selected_candidate_ref=selected_candidate.candidate_id,
         primary_reading_focus_ref=(
-            selected_candidate.primary_component_refs[0]
+            selected_candidate.candidate_id if len(selected_candidate.requirement_bundle_refs) > 1
+            else selected_candidate.primary_component_refs[0]
         ),
         supporting_facet_refs=(
-            selected_candidate.primary_component_refs[1:]
+            () if len(selected_candidate.requirement_bundle_refs) > 1
+            else selected_candidate.primary_component_refs[1:]
         ),
         reading_component_refs=selected_candidate.primary_component_refs,
         reading_relation_refs=selected_candidate.relation_path_refs,
@@ -5271,21 +5323,30 @@ def derive_input_specific_meaning_structure(
             )
             for bundle in bundles
         )
+        if grounded_view.appraisal_component_relation_refs:
+            # Each bundle keeps its complete, source-connected seed. Joining
+            # candidate ownership does not add an edge between components.
+            candidate_groups = ((tuple(bundles), tuple(
+                tuple(configuration for seed in group for configuration in seed)
+                for group in product(*(seeds for _bundle, seeds in bundle_seeds))
+            )),)
+        else:
+            candidate_groups = tuple(((bundle,), seeds) for bundle, seeds in bundle_seeds)
         candidate_max = sum(
             len(MeaningReadingOperation)
             * len(BasisEpistemicTier)
             * max(1, len(seeds))
-            for _bundle, seeds in bundle_seeds
+            for _bundles, seeds in candidate_groups
         )
         draft_records = tuple(
             record
-            for bundle, seeds in bundle_seeds
+            for owned_bundles, seeds in candidate_groups
             for operation, tier, seed in _enumerate_candidate_lanes(seeds)
             for record in (
                 _derive_candidate_for_bundle(
                     grounded_view=grounded_view,
                     foreground_scope=scope,
-                    bundle=bundle,
+                    bundles=owned_bundles,
                     configurations=configurations,
                     observed_by_ref=observed_by_ref,
                     required_by_ref=required_by_ref,
@@ -5403,7 +5464,7 @@ def derive_input_specific_meaning_structure(
             grounded_view=grounded_view,
         )
     return InputSpecificMeaningStructure(
-        schema_version=_ROOT_SCHEMA_VERSION,
+        schema_version=outcome.schema_version,
         difference_configuration_derivation=configuration_derivation,
         configurations=configurations,
         observed_distinction_rows=observed,

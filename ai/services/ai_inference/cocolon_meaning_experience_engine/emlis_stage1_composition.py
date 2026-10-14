@@ -45,6 +45,7 @@ from .contracts import (
     DifferenceInvariantCode,
     EmlisAffectContent,
     EmlisAppraisalContent,
+    EmlisEvaluatedExperienceAppraisalContent,
     EmlisInterpretationCandidate,
     EmlisMeaningField,
     EmlisRelationalPosition,
@@ -75,6 +76,7 @@ from .contracts import (
     ReadingConsequence,
     ReceptionVisibleCausalTraceRow,
     RelationalConfiguration,
+    EmlisThreadScopeRelationKind,
     ForegroundScopeDerivation,
     PolicyApplicationRow,
     PolicyBasisBinding,
@@ -6194,6 +6196,8 @@ def _normal_reception_appraisal(
         tuple[PlannedObservationContribution, ...]
     ] = None,
     source_qualifiers: tuple[SourceQualifierBinding, ...] = (),
+    relation_configurations: tuple[RelationalConfiguration, ...] = (),
+    interpretation_candidates: tuple[EmlisInterpretationCandidate, ...] = (),
 ) -> EmlisAppraisalContent:
     """Derive one act-local appraisal without whole-input focus priority."""
 
@@ -6202,6 +6206,52 @@ def _normal_reception_appraisal(
         if semantic_contributions is None
         else semantic_contributions
     )
+    # Receive the selected, source-owned evaluation of an event. The focal
+    # relation and both endpoint qualifiers survive into the subjective
+    # proposition; positive feeling is not promoted to bounded change.
+    own_basis = {row.semantic_ref: row for row in basis_rows}
+    own_qualifiers = {row.basis_binding_ref: row for row in source_qualifiers}
+    appraisal_relations = tuple(direction
+        for configuration in relation_configurations
+        for direction in configuration.direction_rows
+        if direction.relation_kind is EmlisThreadScopeRelationKind.ABOUT_TARGET
+        and {direction.source_endpoint_ref, direction.target_endpoint_ref} == set(own_basis))
+    if len(appraisal_relations) == 1 and len(own_basis) == len(own_qualifiers) == 2:
+        relation = appraisal_relations[0]
+        event = own_qualifiers.get(own_basis[relation.source_endpoint_ref].binding_ref)
+        evaluation = own_qualifiers.get(own_basis[relation.target_endpoint_ref].binding_ref)
+        if (event is not None and evaluation is not None
+            and event.modality == "fact" and event.polarity == "neutral"
+            and evaluation.modality == "feeling" and evaluation.polarity in {"positive", "negative"}
+            and event.time_scope in {"past", "present", "current_input"}
+            and evaluation.time_scope in {"past", "present", "current_input"}
+            and set(own_basis) == {ref for row in semantic_rows for ref in row.semantic_refs}):
+            base = (AppraisalDimension.MATERIAL_WEIGHT, AppraisalOperation.RECEIVE_AS_MATERIAL,
+                    tuple(row.binding_ref for row in basis_rows), relation.relation_ref, (),
+                    tuple(row.contribution_id for row in contributions))
+            candidates = {row.candidate_id: row for row in interpretation_candidates}
+            def codes(qualifier):
+                source = candidates.get(qualifier.source_candidate_ref)
+                return set(source.required_qualifiers) if source is not None else set()
+            event_codes, evaluation_codes = codes(event), codes(evaluation)
+            marker = 'qualifier:semantic_dependency:explicit_result_appraisal'
+            if marker in event_codes or marker in evaluation_codes:
+                def one(values, prefix):
+                    matches = {value.removeprefix(prefix) for value in values if value.startswith(prefix)}
+                    if len(matches) != 1:
+                        raise Stage1CompositionError("MEANING_REALIZATION_CAPABILITY_GAP")
+                    return next(iter(matches))
+                if marker not in event_codes or marker not in evaluation_codes:
+                    raise Stage1CompositionError("MEANING_REALIZATION_CAPABILITY_GAP")
+                return EmlisEvaluatedExperienceAppraisalContent(*base,
+                    "cocolon.cmee.emlis.evaluated_experience_appraisal.v1",
+                    event.basis_binding_ref, evaluation.basis_binding_ref,
+                    one(event_codes, 'qualifier:source_appraisal_target:'),
+                    one(evaluation_codes, 'qualifier:source_appraisal_kind:'),
+                    evaluation.polarity, evaluation.time_scope,
+                    'qualifier:source_appraisal_continuing:still' in evaluation_codes,
+                    'qualifier:source_appraisal_attainment:explicit_ability' in event_codes,
+                    one(evaluation_codes, 'qualifier:source_appraisal_degree:'))
     bounded_change = (
         proposition.reception_function == "recognize_lived_change"
         and any(
@@ -6433,6 +6483,7 @@ def _normal_subjective_coalescence_key(
             appraisal.focal_relation_ref,
             appraised_semantics,
             protected_semantics,
+
         )
     elif type(proposition.affect_content) is EmlisAffectContent:
         affect = proposition.affect_content
@@ -7368,6 +7419,10 @@ def _project_selected_reading_from_admitted_authority(
                 contributions=contributions,
                 basis_rows=own_basis,
                 source_qualifiers=own_qualifiers,
+                interpretation_candidates=authority.interpretation_candidate_rows,
+                relation_configurations=tuple(row for row in authority.input_specific_meaning_structure.configurations
+                    if type(row) is RelationalConfiguration
+                    and row.configuration_id in candidate.basis_configuration_refs),
                 semantic_contributions=tuple(
                     contribution_by_id[ref]
                     for ref in candidate.basis_contribution_refs
@@ -16379,7 +16434,7 @@ _COMPOSITION_PATH = "ai/services/ai_inference/cocolon_meaning_experience_engine/
 
 _NO_IMPLICIT_DEFAULT = "NO_IMPLICIT_DEFAULT"
 _CONTRACT_MANIFEST_SCHEMA_VERSION = (
-    "cocolon.cmee.v1a.stage1_language_core_contract_manifest.v1"
+    "cocolon.cmee.v1a.stage1_language_core_contract_manifest.v2"
 )
 
 
@@ -16459,7 +16514,7 @@ def _logical_contract_descriptor(
     )
 
 
-# This literal exact-69 inventory is deliberately independent of dataclass
+# This literal exact-70 inventory is deliberately independent of dataclass
 # introspection.  Logical Step-4 types which are not runtime-active in Step 2
 # are still frozen here with their complete approved field order/cardinality.
 _LOGICAL_CONTRACT_FIELD_SPECS = (
@@ -16469,6 +16524,7 @@ _LOGICAL_CONTRACT_FIELD_SPECS = (
     ("PolicyBasisBinding", "policy-basis-v1", "projection_preimage_ref=exact1 binding_ref=exact1 owner_kind=exact1 owner_ref=exact1 role=exact1", ("OWNER_KIND_DISCRIMINATED",), "POLICY_BASIS_PROJECTOR"),
     ("EmlisAffectContent", "proposition-v2", "category=exact1 intensity=exact1 elicitor_bindings=1..N", ("CONCRETE_ELICITOR_REQUIRED",), "AFFECT_OPPORTUNITY_PROJECTOR"),
     ("EmlisAppraisalContent", "proposition-v2", "dimension=exact1 operation=exact1 appraised_bindings=1..N focal_relation_ref=0..1 protected_bindings=0..N basis_contribution_refs=1..N", ("DIMENSION_OPERATION_CLOSED_PAIR",), "APPRAISAL_OPPORTUNITY_PROJECTOR"),
+    ("EmlisEvaluatedExperienceAppraisalContent", "evaluated-experience-v1", "dimension=exact1 operation=exact1 appraised_bindings=exact2 focal_relation_ref=exact1 protected_bindings=exact0 basis_contribution_refs=1..N schema_version=exact1 event_binding_ref=exact1 evaluation_binding_ref=exact1 target_kind=exact1 evaluation_kind=exact1 polarity=exact1 evaluation_time=exact1 continuing=exact1 explicit_ability=exact1 degree=exact1", ("SOURCE_APPRAISAL_ENDPOINTS_EXACT2", "FINITE_SOURCE_BOUND_EXPERIENCE", "NO_COMPLETION_OR_CAUSE_PROMOTION"), "APPRAISAL_OPPORTUNITY_PROJECTOR"),
     ("EmlisRelationalPosition", "proposition-v2", "relational_position_kind=exact1 stance_operator=exact1 target_bindings=1..N boundary_bindings=0..N commitment=exact1 closure=exact1", ("COMMITMENT_DERIVES_POSITION_KIND",), "RELATIONAL_OPPORTUNITY_PROJECTOR"),
     ("RowRefFreeValueApplication", "policy-pre-id-v1", "principle_ref=exact1 material_risk=exact1 policy_basis_binding_refs=1..N protected_subjective_binding_refs=1..N", ("NO_POLICY_ROW_OR_CLAIM_REF",), "ROW_REF_FREE_VALUE_PROJECTOR"),
     ("RowRefFreeMaterialValueContent", "policy-pre-id-v1", "value_applications=1..N target_bindings=1..N boundary_bindings=exact0", ("PRINCIPLE_ORDER_UNIQUE", "TARGET_EQUALS_PROTECTED_UNION"), "ROW_REF_FREE_VALUE_PROJECTOR"),
@@ -16574,11 +16630,11 @@ def _contract_manifest() -> tuple[Any, ...]:
         _logical_contract_descriptor(*row)
         for row in _LOGICAL_CONTRACT_FIELD_SPECS
     )
-    if len(descriptors) != 69 or len({row[0][1] for row in descriptors}) != 69:
+    if len(descriptors) != 70 or len({row[0][1] for row in descriptors}) != 70:
         raise Stage1CompositionError("LANGUAGE_CORE_CONTRACT_DESCRIPTOR_STOP")
     return (
         ("schema_version", _CONTRACT_MANIFEST_SCHEMA_VERSION),
-        ("logical_contract_count", 69),
+        ("logical_contract_count", 70),
         ("logical_contract_descriptors", descriptors),
         ("content_kind_derivation_rows", LANGUAGE_CORE_CONTENT_DERIVATION_ROWS),
         ("concrete_runtime_binding_descriptors", LANGUAGE_CORE_CONCRETE_BINDING_DESCRIPTORS),
