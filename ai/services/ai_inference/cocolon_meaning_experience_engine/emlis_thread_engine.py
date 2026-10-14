@@ -16,6 +16,7 @@ def _original_body_uses_prepared_plan(prepared):
     from emlis_ai_grounded_observation_plan import source_owned_result_appraisal
     return (prepared.thread.control.capability_snapshot.startswith("Q3_")
         or prepared.legacy_result_appraisal or prepared.legacy_appraisal_reason
+        or prepared.legacy_received_appraisal_context
         or any(source_owned_result_appraisal(r, prepared.original_plan.nuclei)
                for r in prepared.original_plan.relations))
 

@@ -1685,3 +1685,156 @@ def test_saved_q1_pre_reason_checkpoint_uses_its_prepared_plan():
     assert list(old.reason_codes) == row['reason_codes']
     fresh = MeaningExperienceEngine().generate(req)
     assert fresh.artifact and '満足の拠り所' in fresh.artifact.reception
+
+
+@pytest.mark.parametrize('received,appraisal,polarity,time', [
+    ('褒められたのに、嬉しくなかった。', '資料を分類できて満足した。', 'positive', 'past'),
+    ('先生に褒められたのに、嬉しくなかった。', '資料を分類できて満足しなかった。', 'negative', 'past'),
+    ('私は先生に褒められたのに、嬉しくなかった。', '資料を分類したことに少し満足しています。', 'positive', 'present'),
+    ('誘われたのに、悲しかった。', '資料を分類したことにまだ納得していない。', 'negative', 'present'),
+])
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+def test_received_context_keeps_same_field_appraisal_in_actual_body(received, appraisal, polarity, time, field):
+    req = request(received + appraisal if field == 'memo' else '',
+                  '植木に水をやった。' if field == 'memo' else received + appraisal)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    relation, = (r for r in plan.relations if source_owned_result_appraisal(r, plan.nuclei))
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    target, evaluation = (index[nid] for nid in (relation.from_nucleus_id, relation.to_nucleus_id))
+    assert target.source_fields == evaluation.source_fields == (field,)
+    assert target.source_span_ids == evaluation.source_span_ids
+    assert (evaluation.semantic_frame.polarity, evaluation.semantic_frame.time_scope) == (polarity, time)
+    assert prepared.thread.resolver().resolve(target.source_span_ids[0]).raw_text == appraisal.rstrip('。')
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact is not None, out.reason_codes
+    assert '資料を分類' in out.artifact.reception
+    assert ('納得' if '納得' in appraisal else '満足') in out.artifact.reception
+    assert received.split('のに')[0].replace('私は', 'あなたは') in out.artifact.reception
+    assert ('当時は' if time == 'past' else '入力した時点では') in out.artifact.reception
+    assert ('満足しなかった' in out.artifact.reception) == ('満足しなかった' in appraisal)
+    assert ('まだ納得していない' in out.artifact.reception) == ('まだ納得していない' in appraisal)
+    assert out.question is not None and out.question.decision.target_kind == 'PERSONAL_RECEIVED_MEANING'
+    if field == 'memo':
+        assert '植木に水をやった' in out.artifact.observation
+
+
+@pytest.mark.parametrize('prefix,suffix', [
+    ('同僚が褒められたのに、嬉しくなかった。', '資料を分類できて満足した。'),
+    ('同僚は私に褒められたのに、嬉しくなかった。', '資料を分類できて満足した。'),
+    ('同僚が私に褒められたのに、嬉しくなかった。', '資料を分類できて満足した。'),
+    ('同僚も先生に褒められたのに、嬉しくなかった。', '資料を分類できて満足した。'),
+    ('同僚は仕事を終えた。褒められたのに、嬉しくなかった。', '資料を分類できて満足した。'),
+    ('褒められたのに、嬉しくなかった。誘われたのに、悲しかった。', '資料を分類できて満足した。'),
+    ('褒められたのに、嬉しくなかったけど、悲しかった。', '資料を分類できて満足した。'),
+    ('「褒められたのに、嬉しくなかった。」', '資料を分類できて満足した。'),
+    ('褒められたら、嬉しくなかった。', '資料を分類できて満足した。'),
+    ('褒められなかったのに、嬉しくなかった。', '資料を分類できて満足した。'),
+    ('褒められたのに、嬉しくなかった。', '探しやすくなったので、資料を分類したことに満足した。'),
+    ('褒められたのに、嬉しくなかった。', '結論はまだ出ていないけど、資料を分類したことに満足した。'),
+])
+def test_received_context_does_not_erase_foreign_or_add_another_semantic_scope(prefix, suffix):
+    plan = prepare_emlis_meaning(request(prefix + suffix)).original_plan
+    assert not any(source_owned_result_appraisal(r, plan.nuclei) for r in plan.relations)
+
+
+@pytest.mark.parametrize('giver', ['私', '自分', '自分自身', '私たち', '先生と私'])
+def test_received_context_self_giver_does_not_prove_self_receiver(giver):
+    plan = prepare_emlis_meaning(request(giver + 'に褒められたのに、嬉しくなかった。資料を分類できて満足した。')).original_plan
+    assert not any(source_owned_result_appraisal(r, plan.nuclei) for r in plan.relations)
+
+
+@pytest.mark.parametrize('answer,operation,retained,absent', [
+    ('その時は重かった。', 'ADD', '満足した', '今は満足'),
+    ('「満足した」ではなく「満足しなかった」です。', 'REVISE', '満足しなかった', '「満足した」'),
+    ('「満足した」ではなく「今は満足していない」です。', 'REVISE', '回答した時点', '当時は満足した'),
+    ('「満足した」は誤りです。', 'WITHDRAW', '資料を分類', '満足'),
+    ('「資料を分類できて満足した」は誤りです。', 'WITHDRAW', '褒められた', '資料を分類'),
+])
+def test_received_context_current_question_answer_keeps_appraisal_correction_and_withdrawal(answer, operation, retained, absent):
+    from test_cmee_emlis_q3_thread import advance
+    req = advance(request('褒められたのに、嬉しくなかった。資料を分類できて満足した。'), answer)
+    p = prepare_emlis_meaning(req)
+    assert not p.legacy_received_appraisal_context
+    assert p.checkpoint.assessment_status == 'RESOLVED'
+    assert any(u.operation == operation for u in p.checkpoint.answer_update.updates)
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact is not None, out.reason_codes
+    assert retained in out.artifact.text and absent not in out.artifact.text
+    assert '植木に水をやった' in out.artifact.observation
+    assert '褒められた' in out.artifact.text
+
+
+def test_received_context_actual_body_inverse_rejects_swapped_target_or_appraisal():
+    req = request('褒められたのに、嬉しくなかった。資料を分類できて満足した。')
+    p = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(p)
+    projection = project_thread_meaning(p, plan)
+    sentence = build_grounded_sentence_plan(plan, p.thread.resolver(), recovery_stage='full')
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact is not None, out.reason_codes
+    body = out.artifact.text
+    def valid(text):
+        return evaluate_grounded_surface_body_inverse(body=text.encode(), plan=plan,
+            sentence_plan=sentence, resolver=p.thread.resolver(),
+            selected_subjective_input=projection.selected_reception).passed
+    assert valid(body)
+    reception = out.artifact.reception
+    for changed in (reception.replace('資料を分類できた', '植木に水をやった'),
+                    reception.replace('満足した', '満足しなかった'),
+                    reception.replace('当時は', '回答した時点では'),
+                    reception.split('。', 1)[1]):
+        assert changed != reception and not valid(body.replace(reception, changed))
+
+
+# Full initial/answered checkpoints captured from unmodified ba6a7ad.
+_PRE_RECEIVED_CONTEXT_CHECKPOINTS = [{'case_id': 'Q1_INTERNAL', 'memo': '褒められたのに、嬉しくなかった。資料を分類できて満足した。', 'action': '植木に水をやった。', 'capability': 'FREE_Q1', 'checkpoint': {'checkpoint_id': 'emlis-checkpoint-50298d28282168d1862a9660d3aa22be40c402c58f5dbd72592be34207f335eb', 'source_prefix_ref': 'emlis-source-prefix-3922745fbbb1982bdb2c39e78a7098756df54561d397281a5afa634a6cfd6529', 'base_meaning_ref': 'emlis-base-meaning-7c4d3523fb1277f37792806b61f8891bfd4e5d62573c5d28067e1e7e61544d6a', 'answer_update': None, 'assessment_status': 'RESOLVED', 'accepted_update_refs': [], 'inactive_claim_refs': [], 'unresolved_parts': [], 'semantic_schema_version': 'cocolon.cmee.emlis_answer_meaning.v1'}, 'body': '見えたこと：\n今の入力では、「褒められた」と「嬉しくなかった」の異なる向きが確認できます。 あわせて、「資料を分類できて満足した」と「植木に水をやった」という行動も今の状態として見えます。\n\nEmlisから：\n植木に水をやったことを見過ごさず、大切に受け止めています。', 'reason_codes': ['emlis_question_candidate_ready'], 'question': {'question_id': 'emlis-question-7c4d75bb689070364534ff37d4849c624d4044a5b026c95794afb05932129862', 'parent_request_id': 'q1-synthetic', 'thread_id': 'q1-thread', 'original_source_ref': 'src-ca09d181c2f7df9b29f2277d', 'decision': {'disposition': 'ASK', 'target_ref': 'emlis-target-5aa8fd0d07b51875f61dfc1e0dd46405d7c0a6beccb9f418dfa07d9f295c850e', 'target_kind': 'PERSONAL_RECEIVED_MEANING', 'supporting_evidence_refs': ['ev-06d0b9689a43c6e022f872c9'], 'missing_dimension': 'personal_received_meaning', 'affected_meaning_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'affected_reception_refs': ['nucleus:s3'], 'asked_target_refs': [], 'decision_reason': 'source_bound_event_personal_meaning_missing'}, 'prompt_private': '「褒められた」は、あなたにはどんな意味として届きましたか。', 'skip_allowed': True, 'answer_limit': 1, 'answer_source_role': 'SUPPLEMENTAL_ANSWER', 'schema_version': 'cocolon.cmee.emlis_clarification.v1'}, 'body_state': 'PRE_QUESTION'}, {'case_id': 'Q3_FREE', 'memo': '褒められたのに、嬉しくなかった。資料を分類できて満足した。', 'action': '植木に水をやった。', 'capability': 'Q3_FREE', 'checkpoint': {'checkpoint_id': 'emlis-checkpoint-b9744c701ebcbf9fe66592aaa9fbba84731556b304252c7c88254e1bb26f9a00', 'source_prefix_ref': 'emlis-q3-source-prefix-6d5370305e436d8f59d32084768e1c51cd4a62e07ef8394c02b3bc1011025331', 'base_meaning_ref': 'emlis-base-meaning-7c4d3523fb1277f37792806b61f8891bfd4e5d62573c5d28067e1e7e61544d6a', 'answer_update': None, 'assessment_status': 'RESOLVED', 'accepted_update_refs': [], 'inactive_claim_refs': [], 'unresolved_parts': [], 'semantic_schema_version': 'cocolon.cmee.emlis_answer_meaning.v1'}, 'body': '見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n今回の中心には、「資料を分類できて満足した」があります。\n今の入力には、「植木に水をやった」という行動があります。\n\nEmlisから：\n植木に水をやったことを見過ごさず、大切に受け止めています。', 'reason_codes': ['emlis_question_candidate_ready'], 'question': {'question_id': 'emlis-question-7c4d75bb689070364534ff37d4849c624d4044a5b026c95794afb05932129862', 'parent_request_id': 'q1-synthetic', 'thread_id': 'q1-thread', 'original_source_ref': 'src-ca09d181c2f7df9b29f2277d', 'decision': {'disposition': 'ASK', 'target_ref': 'emlis-target-5aa8fd0d07b51875f61dfc1e0dd46405d7c0a6beccb9f418dfa07d9f295c850e', 'target_kind': 'PERSONAL_RECEIVED_MEANING', 'supporting_evidence_refs': ['ev-06d0b9689a43c6e022f872c9'], 'missing_dimension': 'personal_received_meaning', 'affected_meaning_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'affected_reception_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'asked_target_refs': [], 'decision_reason': 'source_bound_event_personal_meaning_missing'}, 'prompt_private': '「褒められた」は、あなたにはどんな意味として届きましたか。', 'skip_allowed': True, 'answer_limit': 1, 'answer_source_role': 'SUPPLEMENTAL_ANSWER', 'schema_version': 'cocolon.cmee.emlis_clarification.v1'}, 'body_state': 'PRE_QUESTION'}, {'case_id': 'Q3_FREE_answer0', 'memo': '褒められたのに、嬉しくなかった。資料を分類できて満足した。', 'action': '植木に水をやった。', 'capability': 'Q3_FREE', 'checkpoint': {'checkpoint_id': 'emlis-checkpoint-94712ae2777b847a97f2e23e058a2ed5aa562313037c732568a06cbe40b71a0e', 'source_prefix_ref': 'emlis-q3-source-prefix-ecfa09274bc4d9759de0c6f1bf7364e673c3fc2cf70ab4f59edc1ce08d812ac3', 'base_meaning_ref': 'emlis-base-meaning-7c4d3523fb1277f37792806b61f8891bfd4e5d62573c5d28067e1e7e61544d6a', 'answer_update': {'answer_source_ref': 'src-032fc6927f68fd4f4455b8fd', 'question_ref': 'emlis-question-7c4d75bb689070364534ff37d4849c624d4044a5b026c95794afb05932129862', 'prior_meaning_ref': 'emlis-base-meaning-7c4d3523fb1277f37792806b61f8891bfd4e5d62573c5d28067e1e7e61544d6a', 'updates': [{'update_ref': 'emlis-update-7c7e0349f9149ab96a96406b80e745c1345047c4297bb517dea11e21a863d7f9', 'binding_kind': 'QUESTION_FOCUS', 'target_meaning_refs': ['nucleus:s1:event'], 'evidence_refs': ['ev-9f5ac1de3b536110aed18571'], 'temporal_binding': {'about_time': 'ORIGINAL_OCCASION', 'anchor_source_ref': 'src-ca09d181c2f7df9b29f2277d', 'time_expression_evidence_refs': ['ev-9f5ac1de3b536110aed18571'], 'relative_relation': None, 'resolved_interval': None, 'timezone_basis': None}, 'operation': 'ADD', 'changed_claim_refs': ['answer:s7'], 'superseded_claim_refs': [], 'affected_dependency_refs': []}], 'unresolved_parts': [], 'disposition': 'MATERIAL_UPDATE', 'new_meaning_ref': 'emlis-meaning-3ef37cb5eb2b0f20d48f7ffc7b2687bfe7c981e585207507b310a54b4e66bc27'}, 'assessment_status': 'RESOLVED', 'accepted_update_refs': ['emlis-update-7c7e0349f9149ab96a96406b80e745c1345047c4297bb517dea11e21a863d7f9'], 'inactive_claim_refs': [], 'unresolved_parts': [], 'semantic_schema_version': 'cocolon.cmee.emlis_answer_meaning.v1'}, 'body': '見えたこと：\n「褒められた」のに「嬉しくなかった」、その時は「重かった」とあります。\n今回の中心には、「資料を分類できて満足した」があります。\n今の入力には、「植木に水をやった」という行動があります。\n\nEmlisから：\n褒められたことについて、その時の重さを小さくせずに受け止めています。植木に水をやったことを見過ごさず、大切に受け止めています。', 'reason_codes': ['emlis_thread_body_generated'], 'question': None, 'body_state': 'REFINED', 'answer': 'その時は重かった。', 'question_control': {'pending_question': {'question_id': 'emlis-question-7c4d75bb689070364534ff37d4849c624d4044a5b026c95794afb05932129862', 'parent_request_id': 'q1-synthetic', 'thread_id': 'q1-thread', 'original_source_ref': 'src-ca09d181c2f7df9b29f2277d', 'decision': {'disposition': 'ASK', 'target_ref': 'emlis-target-5aa8fd0d07b51875f61dfc1e0dd46405d7c0a6beccb9f418dfa07d9f295c850e', 'target_kind': 'PERSONAL_RECEIVED_MEANING', 'supporting_evidence_refs': ['ev-06d0b9689a43c6e022f872c9'], 'missing_dimension': 'personal_received_meaning', 'affected_meaning_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'affected_reception_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'asked_target_refs': [], 'decision_reason': 'source_bound_event_personal_meaning_missing'}, 'prompt_private': '「褒められた」は、あなたにはどんな意味として届きましたか。', 'skip_allowed': True, 'answer_limit': 1, 'answer_source_role': 'SUPPLEMENTAL_ANSWER', 'schema_version': 'cocolon.cmee.emlis_clarification.v1'}, 'asked_target_refs': ['emlis-target-5aa8fd0d07b51875f61dfc1e0dd46405d7c0a6beccb9f418dfa07d9f295c850e'], 'issued_count': 1, 'stop': False, 'issued_questions': [{'question_id': 'emlis-question-7c4d75bb689070364534ff37d4849c624d4044a5b026c95794afb05932129862', 'parent_request_id': 'q1-synthetic', 'thread_id': 'q1-thread', 'original_source_ref': 'src-ca09d181c2f7df9b29f2277d', 'decision': {'disposition': 'ASK', 'target_ref': 'emlis-target-5aa8fd0d07b51875f61dfc1e0dd46405d7c0a6beccb9f418dfa07d9f295c850e', 'target_kind': 'PERSONAL_RECEIVED_MEANING', 'supporting_evidence_refs': ['ev-06d0b9689a43c6e022f872c9'], 'missing_dimension': 'personal_received_meaning', 'affected_meaning_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'affected_reception_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'asked_target_refs': [], 'decision_reason': 'source_bound_event_personal_meaning_missing'}, 'prompt_private': '「褒められた」は、あなたにはどんな意味として届きましたか。', 'skip_allowed': True, 'answer_limit': 1, 'answer_source_role': 'SUPPLEMENTAL_ANSWER', 'schema_version': 'cocolon.cmee.emlis_clarification.v1'}], 'question_limit': 1}, 'supplemental_answers': [{'answer_id': 'answer-1', 'thread_id': 'q1-thread', 'question_id': 'emlis-question-7c4d75bb689070364534ff37d4849c624d4044a5b026c95794afb05932129862', 'round_index': 1, 'original_source_ref': 'src-ca09d181c2f7df9b29f2277d', 'answer_text_private': 'その時は重かった。', 'recorded_at': '2026-09-11T01:00:00Z', 'authored_at': None, 'source_version': 'cocolon.cmee.supplemental_answer.v1', 'source_role': 'SUPPLEMENTAL_ANSWER'}]}, {'case_id': 'Q3_FREE_answer1', 'memo': '褒められたのに、嬉しくなかった。資料を分類できて満足した。', 'action': '植木に水をやった。', 'capability': 'Q3_FREE', 'checkpoint': {'checkpoint_id': 'emlis-checkpoint-08c95d2d5c1784701c250563bc7cf781dadd8a4eb67d97000f7f341935dead95', 'source_prefix_ref': 'emlis-q3-source-prefix-c86e825bd93e27eb8ff1729f1e14528521cde206afc880374b2aca9241ce2ed8', 'base_meaning_ref': 'emlis-base-meaning-7c4d3523fb1277f37792806b61f8891bfd4e5d62573c5d28067e1e7e61544d6a', 'answer_update': {'answer_source_ref': 'src-581c243fb5194eb6e31ca3b1', 'question_ref': 'emlis-question-7c4d75bb689070364534ff37d4849c624d4044a5b026c95794afb05932129862', 'prior_meaning_ref': 'emlis-base-meaning-7c4d3523fb1277f37792806b61f8891bfd4e5d62573c5d28067e1e7e61544d6a', 'updates': [{'update_ref': 'emlis-update-8e3f1c0486cec94cd3e52c9f8ed3736133c45360fd47edefa43b617e8c8e09d7', 'binding_kind': 'EXPLICIT_CORRECTION', 'target_meaning_refs': ['nucleus:s2'], 'evidence_refs': ['ev-fd57614809f3e6bff3a007b6'], 'temporal_binding': {'about_time': 'ORIGINAL_OCCASION', 'anchor_source_ref': 'src-ca09d181c2f7df9b29f2277d', 'time_expression_evidence_refs': [], 'relative_relation': None, 'resolved_interval': None, 'timezone_basis': None}, 'operation': 'WITHDRAW', 'changed_claim_refs': [], 'superseded_claim_refs': ['nucleus:s2'], 'affected_dependency_refs': ['relation:r1']}], 'unresolved_parts': [], 'disposition': 'MATERIAL_UPDATE', 'new_meaning_ref': 'emlis-meaning-bf26f278add3084b2ef75d1e921bb5cdf35ed00badba213a21d2b3f03dd0819b'}, 'assessment_status': 'RESOLVED', 'accepted_update_refs': ['emlis-update-8e3f1c0486cec94cd3e52c9f8ed3736133c45360fd47edefa43b617e8c8e09d7'], 'inactive_claim_refs': ['nucleus:s2', 'relation:r1'], 'unresolved_parts': [], 'semantic_schema_version': 'cocolon.cmee.emlis_answer_meaning.v1'}, 'body': '見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n今の入力には、「植木に水をやった」という行動があります。\n\nEmlisから：\n褒められたことは、嬉しさにはつながらなかったのですね。植木に水をやったことを見過ごさず、大切に受け止めています。', 'reason_codes': ['emlis_thread_body_generated'], 'question': None, 'body_state': 'REFINED', 'answer': '「資料を分類できて満足した」は誤りです。', 'question_control': {'pending_question': {'question_id': 'emlis-question-7c4d75bb689070364534ff37d4849c624d4044a5b026c95794afb05932129862', 'parent_request_id': 'q1-synthetic', 'thread_id': 'q1-thread', 'original_source_ref': 'src-ca09d181c2f7df9b29f2277d', 'decision': {'disposition': 'ASK', 'target_ref': 'emlis-target-5aa8fd0d07b51875f61dfc1e0dd46405d7c0a6beccb9f418dfa07d9f295c850e', 'target_kind': 'PERSONAL_RECEIVED_MEANING', 'supporting_evidence_refs': ['ev-06d0b9689a43c6e022f872c9'], 'missing_dimension': 'personal_received_meaning', 'affected_meaning_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'affected_reception_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'asked_target_refs': [], 'decision_reason': 'source_bound_event_personal_meaning_missing'}, 'prompt_private': '「褒められた」は、あなたにはどんな意味として届きましたか。', 'skip_allowed': True, 'answer_limit': 1, 'answer_source_role': 'SUPPLEMENTAL_ANSWER', 'schema_version': 'cocolon.cmee.emlis_clarification.v1'}, 'asked_target_refs': ['emlis-target-5aa8fd0d07b51875f61dfc1e0dd46405d7c0a6beccb9f418dfa07d9f295c850e'], 'issued_count': 1, 'stop': False, 'issued_questions': [{'question_id': 'emlis-question-7c4d75bb689070364534ff37d4849c624d4044a5b026c95794afb05932129862', 'parent_request_id': 'q1-synthetic', 'thread_id': 'q1-thread', 'original_source_ref': 'src-ca09d181c2f7df9b29f2277d', 'decision': {'disposition': 'ASK', 'target_ref': 'emlis-target-5aa8fd0d07b51875f61dfc1e0dd46405d7c0a6beccb9f418dfa07d9f295c850e', 'target_kind': 'PERSONAL_RECEIVED_MEANING', 'supporting_evidence_refs': ['ev-06d0b9689a43c6e022f872c9'], 'missing_dimension': 'personal_received_meaning', 'affected_meaning_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'affected_reception_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'asked_target_refs': [], 'decision_reason': 'source_bound_event_personal_meaning_missing'}, 'prompt_private': '「褒められた」は、あなたにはどんな意味として届きましたか。', 'skip_allowed': True, 'answer_limit': 1, 'answer_source_role': 'SUPPLEMENTAL_ANSWER', 'schema_version': 'cocolon.cmee.emlis_clarification.v1'}], 'question_limit': 1}, 'supplemental_answers': [{'answer_id': 'answer-1', 'thread_id': 'q1-thread', 'question_id': 'emlis-question-7c4d75bb689070364534ff37d4849c624d4044a5b026c95794afb05932129862', 'round_index': 1, 'original_source_ref': 'src-ca09d181c2f7df9b29f2277d', 'answer_text_private': '「資料を分類できて満足した」は誤りです。', 'recorded_at': '2026-09-11T01:00:00Z', 'authored_at': None, 'source_version': 'cocolon.cmee.supplemental_answer.v1', 'source_role': 'SUPPLEMENTAL_ANSWER'}]}, {'case_id': 'Q3_PREMIUM', 'memo': '褒められたのに、嬉しくなかった。資料を分類できて満足した。', 'action': '植木に水をやった。', 'capability': 'Q3_PREMIUM', 'checkpoint': {'checkpoint_id': 'emlis-checkpoint-c3ebc7741b46f12ad1c37153626063b821bc8a94b5648096cf90f4a59dd236f2', 'source_prefix_ref': 'emlis-q3-source-prefix-ad188b31a428f5796dd1eda7425b8a6241cdfda81c25bcf2d2fd88b1b61501d8', 'base_meaning_ref': 'emlis-base-meaning-7c4d3523fb1277f37792806b61f8891bfd4e5d62573c5d28067e1e7e61544d6a', 'answer_update': None, 'assessment_status': 'RESOLVED', 'accepted_update_refs': [], 'inactive_claim_refs': [], 'unresolved_parts': [], 'semantic_schema_version': 'cocolon.cmee.emlis_answer_meaning.v1'}, 'body': '見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n今回の中心には、「資料を分類できて満足した」があります。\n今の入力には、「植木に水をやった」という行動があります。\n\nEmlisから：\n植木に水をやったことを見過ごさず、大切に受け止めています。', 'reason_codes': ['emlis_question_candidate_ready'], 'question': {'question_id': 'emlis-question-7c4d75bb689070364534ff37d4849c624d4044a5b026c95794afb05932129862', 'parent_request_id': 'q1-synthetic', 'thread_id': 'q1-thread', 'original_source_ref': 'src-ca09d181c2f7df9b29f2277d', 'decision': {'disposition': 'ASK', 'target_ref': 'emlis-target-5aa8fd0d07b51875f61dfc1e0dd46405d7c0a6beccb9f418dfa07d9f295c850e', 'target_kind': 'PERSONAL_RECEIVED_MEANING', 'supporting_evidence_refs': ['ev-06d0b9689a43c6e022f872c9'], 'missing_dimension': 'personal_received_meaning', 'affected_meaning_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'affected_reception_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'asked_target_refs': [], 'decision_reason': 'source_bound_event_personal_meaning_missing'}, 'prompt_private': '「褒められた」は、あなたにはどんな意味として届きましたか。', 'skip_allowed': True, 'answer_limit': 1, 'answer_source_role': 'SUPPLEMENTAL_ANSWER', 'schema_version': 'cocolon.cmee.emlis_clarification.v1'}, 'body_state': 'PRE_QUESTION'}, {'case_id': 'same_action', 'memo': '', 'action': '褒められたのに、嬉しくなかった。資料を分類できて満足した。', 'capability': 'Q3_FREE', 'checkpoint': {'checkpoint_id': 'emlis-checkpoint-ed9d2d8650f1587e5762fa86ab796056f3ac307e1a1a68ebc2e93ba6328c374e', 'source_prefix_ref': 'emlis-q3-source-prefix-a71b4314e8b04d1a74601ed6adb71fd3b92f1c5ddd28e88efa0db4d0d0af48f3', 'base_meaning_ref': 'emlis-base-meaning-bf0658d4bd65b7cfc1a65406bc446ecd2d966b418e1eb3cc6e34010826f10889', 'answer_update': None, 'assessment_status': 'RESOLVED', 'accepted_update_refs': [], 'inactive_claim_refs': [], 'unresolved_parts': [], 'semantic_schema_version': 'cocolon.cmee.emlis_answer_meaning.v1'}, 'body': '見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n今の入力には、「資料を分類できて満足した」という行動があります。\n\nEmlisから：\n褒められたことは、嬉しさにはつながらなかったのですね。資料を分類できて満足したことを見過ごさず、大切に受け止めています。', 'reason_codes': ['emlis_question_candidate_ready'], 'question': {'question_id': 'emlis-question-0870f2eab94823fe803ecbcb84a61c01db199ac8a479ca05029de1d712177d47', 'parent_request_id': 'q1-synthetic', 'thread_id': 'q1-thread', 'original_source_ref': 'src-908efa402a4ba2a38fddd42c', 'decision': {'disposition': 'ASK', 'target_ref': 'emlis-target-6b81c5bd74e53b320e15a5fbe49bbd18d12f161f291c77340698d1f493eb4bcd', 'target_kind': 'PERSONAL_RECEIVED_MEANING', 'supporting_evidence_refs': ['ev-c2e96a60cfd0500c91719499'], 'missing_dimension': 'personal_received_meaning', 'affected_meaning_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'affected_reception_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'asked_target_refs': [], 'decision_reason': 'source_bound_event_personal_meaning_missing'}, 'prompt_private': '「褒められた」は、あなたにはどんな意味として届きましたか。', 'skip_allowed': True, 'answer_limit': 1, 'answer_source_role': 'SUPPLEMENTAL_ANSWER', 'schema_version': 'cocolon.cmee.emlis_clarification.v1'}, 'body_state': 'PRE_QUESTION'}]
+
+
+@pytest.mark.parametrize('row', _PRE_RECEIVED_CONTEXT_CHECKPOINTS, ids=lambda row: row['case_id'])
+def test_received_context_saved_checkpoint_body_and_question_are_rederived_exactly(row):
+    from emlis_thread_service import _json
+    req = _legacy_fixture_request(row)
+    p = prepare_emlis_meaning(req)
+    assert p.legacy_received_appraisal_context and not p.legacy_appraisal_reason
+    assert _json(p.checkpoint) == row['checkpoint']
+    out = MeaningExperienceEngine().generate(req)
+    if row['capability'] == 'FREE_Q1':
+        # Q1 previously used the generic observation surface. A restored
+        # checkpoint must now render its old prepared meaning, rather than
+        # rebuild current appraisal meaning under that old checkpoint ID.
+        assert out.artifact and out.artifact.reception == row['body'].split('Emlisから：\n')[1]
+        assert not any(source_owned_result_appraisal(r, p.original_plan.nuclei) for r in p.original_plan.relations)
+        assert all(text in out.artifact.observation for text in
+            ('褒められた', '嬉しくなかった', '資料を分類できて満足した', '植木に水をやった'))
+    else:
+        assert (out.artifact.text if out.artifact else None) == row['body']
+    assert _json(out.meaning_checkpoint) == row['checkpoint']
+    assert _json(out.question) == row['question']
+    assert list(out.reason_codes) == row['reason_codes'] and out.body_state == row['body_state']
+    foreign = replace(req, emlis_thread=replace(req.emlis_thread, prepared_meaning_checkpoint_ref='foreign'))
+    with pytest.raises(ValueError, match='emlis_checkpoint_source_prefix_mismatch'):
+        prepare_emlis_meaning(foreign)
+
+
+@pytest.mark.parametrize('row', [r for r in _PRE_RECEIVED_CONTEXT_CHECKPOINTS if 'answer' in r],
+                         ids=lambda row: row['case_id'])
+def test_received_context_old_issued_question_is_revalidated_before_new_answer(row):
+    from emlis_thread_service import _json
+    req = _legacy_fixture_request(row, checkpoint=False)
+    p = prepare_emlis_meaning(req)
+    # This question's full source-bound focus is unchanged and is canonical
+    # under the current plan too. A new, unsaved answer uses current meaning;
+    # only a complete old checkpoint selects legacy reconstruction.
+    assert not p.legacy_received_appraisal_context
+    assert _json(p.checkpoint) != row['checkpoint']
+    assert any(source_owned_result_appraisal(r, p.original_plan.nuclei) for r in p.original_plan.relations)
+    out = MeaningExperienceEngine().generate(replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=p.checkpoint.checkpoint_id)))
+    assert out.artifact is not None and _json(out.meaning_checkpoint) == _json(p.checkpoint)
+    control = req.emlis_thread.question_control_context
+    wrong = replace(control.pending_question, prompt_private='別の質問')
+    tampered = replace(req, emlis_thread=replace(req.emlis_thread, question_control_context=replace(
+        control, pending_question=wrong, issued_questions=(wrong,))))
+    with pytest.raises(ValueError, match='emlis_question_noncanonical'):
+        prepare_emlis_meaning(tampered)

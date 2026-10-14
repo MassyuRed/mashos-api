@@ -13428,7 +13428,8 @@ def _thread_withdrawn_result_appraisal(nucleus, relations):
         and not any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations))
 
 
-def _explicit_result_appraisal_projections(span, normalized_input, *, _legacy_appraisal_reason=False):
+def _explicit_result_appraisal_projections(span, normalized_input, *, _legacy_appraisal_reason=False,
+                                          _legacy_received_appraisal_context=False):
     """Bind an asserted appraisal to its own asserted object, not adjacency.
 
     The object and the outer appraisal retain independent source ranges and
@@ -13515,7 +13516,21 @@ def _explicit_result_appraisal_projections(span, normalized_input, *, _legacy_ap
     # A foreign topic in the preceding sentence continues to own an omitted
     # subject unless the current clause explicitly resets SELF.
     previous = re.split(r"[。．.]", source[:start].rstrip(" 。．."))[-1].strip()
+    prefix = source[:start].strip().rstrip("。．.").strip()
+    received = (_received_event_reaction_text_projections(prefix)
+        if not _legacy_received_appraisal_context and context is None and reason is None
+        and prefix == previous else ())
+    # Only one complete SELF received sentence may carry the diary owner
+    # into this plain appraisal. Do not erase an earlier foreign topic or
+    # admit a second feeling/reason. The old received grammar has a broad
+    # giver token; independently check its event owner before reusing it.
+    received_event = prefix[received[0].scalar_start:received[0].scalar_end] if len(received) == 2 else ""
+    giver = re.sub(r"^(?:私|自分|わたし)(?:は|が)", "", received_event).rpartition("に")[0]
+    # SELF as giver does not prove SELF as the receiver of praise, etc.
+    self_received = bool(received_event and _SELF_REFERENCE_RE.search(giver) is None and ("に" not in received_event
+        or _source_operator_owner_scope_is_bound(received_event)))
     if (previous and not _source_operator_owner_scope_is_bound(previous)
+        and not self_received
         and not re.search(r"^(?:(?:今日|昨日|今朝|先週)(?:は|に)?[、,]?)?(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が)",
                           reason['reason'] if reason is not None else match['event'])):
         return ()
@@ -13687,13 +13702,17 @@ def source_owned_result_appraisal_reason(relation, nuclei, relations):
 
 
 def _received_event_reaction_projections(span, base_frame):
+    return _received_event_reaction_text_projections(span.raw_text)
+
+
+def _received_event_reaction_text_projections(raw_text):
     """A finite passive event and a self reaction joined by concession.
 
-    The passive actor is left unspecified. Explicit foreign experiencers,
-    hypothetical/negated events and quoted reports cannot enter this rule.
+    This grammar projection does not independently prove owner context;
+    callers reusing it for that purpose must check the event's giver/owner.
     Every projected fragment retains a scalar range into the same source.
     """
-    text = _clean(span.raw_text)
+    text = _clean(raw_text)
     match = re.fullmatch(
         r"(?P<event>(?:(?:私|自分|わたし)(?:は|が))?"
         r"(?:[一-鿿々ァ-ヶぁ-んー]{1,16}に)?"
@@ -13886,6 +13905,7 @@ def _final_stage1_typed_nuclei(
     normalized_input: Mapping[str, Any] | None = None,
     _legacy_result_appraisal: bool = False,
     _legacy_appraisal_reason: bool = False,
+    _legacy_received_appraisal_context: bool = False,
 ) -> tuple[tuple[GroundedSemanticNucleus, ...], tuple[tuple[str, str, str], ...]]:
     span_index = {
         _clean(getattr(span, "span_id", "")): span
@@ -13903,7 +13923,8 @@ def _final_stage1_typed_nuclei(
         )
         received_projections = ((() if _legacy_result_appraisal else
             _explicit_result_appraisal_projections(span, normalized_input,
-                _legacy_appraisal_reason=_legacy_appraisal_reason))
+                _legacy_appraisal_reason=_legacy_appraisal_reason,
+                _legacy_received_appraisal_context=_legacy_received_appraisal_context))
             or _received_event_reaction_projections(span, nucleus.semantic_frame)) if span is not None else ()
         canonical_projections = received_projections or (
             _typed_nucleus_projections_for_span(
@@ -16264,6 +16285,7 @@ def project_final_stage1_grounded_observation_plan(
     normalized_input: Mapping[str, Any] | None = None,
     _legacy_result_appraisal: bool = False,
     _legacy_appraisal_reason: bool = False,
+    _legacy_received_appraisal_context: bool = False,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -16278,6 +16300,7 @@ def project_final_stage1_grounded_observation_plan(
         normalized_input=normalized_input,
         _legacy_result_appraisal=_legacy_result_appraisal,
         _legacy_appraisal_reason=_legacy_appraisal_reason,
+        _legacy_received_appraisal_context=_legacy_received_appraisal_context,
     )
     projected_nuclei = _final_stage1_align_action_status(
         projected_nuclei,
@@ -17349,6 +17372,7 @@ def build_final_stage1_grounded_observation_plan(
     safety_decision: EmlisSafetyTriageDecision | None = None,
     _legacy_result_appraisal: bool = False,
     _legacy_appraisal_reason: bool = False,
+    _legacy_received_appraisal_context: bool = False,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan."""
 
@@ -17402,6 +17426,7 @@ def build_final_stage1_grounded_observation_plan(
         normalized_input=normalized,
         _legacy_result_appraisal=_legacy_result_appraisal,
         _legacy_appraisal_reason=_legacy_appraisal_reason,
+        _legacy_received_appraisal_context=_legacy_received_appraisal_context,
     )
 
 
