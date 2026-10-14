@@ -2881,6 +2881,31 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
     if (not first or not second or first == second
         or any(mark in first + second for mark in ("。", "？", "?", "「", "」", "\n"))):
         return None
+    if kind == "original_result_appraisal":
+        endings = {c.split(":", 1)[1] for c in left.semantic_frame.attribute_codes
+                   if c.startswith("source_appraisal_event_ending:")}
+        if len(endings) != 1:
+            return None
+        ending = next(iter(endings))
+        if ending not in {"te", "de", "ta"}:
+            return None
+        pattern = (r"(?P<event>.+)ことと、(?P<evaluation>.+)という受け取りは、分けて見ておきたいです。"
+                   if right.semantic_frame.polarity == "negative" else
+                   r"(?P<event>.+)ことに(?P<evaluation>.+)、そこが今回、私の目に留まったところです。")
+        parsed = re.fullmatch(pattern, raw)
+        if parsed is None or parsed['evaluation'] != second:
+            return None
+        actual = parsed['event']
+        owner = re.search(r"(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)", first)
+        if owner:
+            actual = actual.replace('あなた', owner.group(), 1)
+        if not actual.endswith({'te': 'た', 'de': 'だ', 'ta': 'た'}[ending]):
+            return None
+        restored = actual[:-1] + {'te': 'て', 'de': 'で', 'ta': 'た'}[ending]
+        if restored != first:
+            return None
+        return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
+                     for key, value in (('event', first), ('evaluation', second)))
     if kind == "feeling_contrast":
         source = str(resolver.resolve(left.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
         if "source_received_chain_slot:first" in left.semantic_frame.attribute_codes:
@@ -5903,6 +5928,22 @@ def evaluate_grounded_surface_body_inverse(
                     and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"):
                 left_sources = _body_inverse_nucleus_source_values(relation.from_nucleus_id, plan, resolver)
                 right_sources = _body_inverse_nucleus_source_values(relation.to_nucleus_id, plan, resolver)
+                from emlis_ai_grounded_observation_plan import source_owned_result_appraisal
+                if source_owned_result_appraisal(relation, plan.nuclei):
+                    # Read the whole original-input relation. It has no answer
+                    # time and cannot borrow the supplemental-answer grammar.
+                    matches = []
+                    for row in witness.sentences:
+                        if row.section != "observation" or row.section_line_ordinal != parsed_line.section_ordinal:
+                            continue
+                        visible = _body_inverse_visible_text(body, row)
+                        parsed = re.fullmatch(r"「([^「」]+)」という出来事に対する評価は、「([^「」]+)」とあります。", visible)
+                        if parsed and (tuple(map(_body_inverse_normalized_anchor, parsed.groups()))
+                                       == (left_sources[0], right_sources[0])):
+                            matches.append(parsed)
+                    if len(matches) != 1:
+                        failures.append(f"body_inverse_original_appraisal_relation_missing:{index}")
+                    continue
                 target_codes = set(nucleus_index[relation.to_nucleus_id].semantic_frame.attribute_codes)
                 when = "先の回答時点" if "thread_time:prior_answer_time" in target_codes else "回答した時点" if "thread_time:answer_time" in target_codes else "その時"
                 # Read the whole sentence before extracting its local

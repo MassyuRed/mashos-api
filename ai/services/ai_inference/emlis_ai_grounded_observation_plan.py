@@ -7800,6 +7800,10 @@ def source_owned_relational_focus(move, plan=None, *, nuclei=None, relations=Non
                or n.grounding_kind not in {"explicit", "user_stated_relation"}
                or n.retention != "required" for n in (left, right))):
         return None
+    if (source_owned_result_appraisal(relation, nuclei)
+        and move.target_nucleus_ids == (right.nucleus_id,)
+        and move.support_nucleus_ids == (left.nucleus_id,)):
+        return "original_result_appraisal", left, right
     if (relation.type == "contrast"
         and relation.grounding_kind == "user_stated_relation"
         and len(left.source_span_ids) == 1
@@ -8838,6 +8842,11 @@ def _source_explicit_contrast_reception_duties(nuclei, relations):
     """
     index = {n.nucleus_id: n for n in nuclei}
     duties = []
+    for relation in relations:
+        if source_owned_result_appraisal(relation, nuclei):
+            evaluation = index[relation.to_nucleus_id]
+            duties.append(("lived_change" if is_grounded_positive_feeling(evaluation) else "current_burden",
+                           (evaluation.nucleus_id,), (relation.from_nucleus_id,)))
     chain = tuple(n for n in nuclei if "semantic_dependency:received_feeling_contrast_chain"
                   in n.semantic_frame.attribute_codes)
     if len(chain) == 2 and len({n.source_span_ids for n in chain}) == 1:
@@ -9438,6 +9447,19 @@ def build_grounded_reception_opportunities(
                     relation_connected_ids=relation_connected_ids, safety_required=False),
                 source_field_count=len({f for n in selected for f in n.source_fields}),
                 safety_required=False))
+
+    # A selected original appraisal owns its object. A separate action field
+    # already retained in Observation does not need a second generic closing.
+    appraisals = tuple(r for r in relations if source_owned_result_appraisal(r, nuclei))
+    if (final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION
+        and len(appraisals) == 1 and follow_ids == {appraisals[0].to_nucleus_id}
+        and all(row.family == "concrete_effort" or row.target_nucleus_ids == (appraisals[0].to_nucleus_id,)
+                for row in rows)):
+        focused = tuple(row for row in rows
+            if row.target_nucleus_ids == (appraisals[0].to_nucleus_id,)
+            and row.support_nucleus_ids == (appraisals[0].from_nucleus_id,))
+        if len(focused) == 1:
+            return (replace(focused[0], opportunity_id="ro1"),)
 
     rows.sort(
         key=lambda item: (
@@ -13243,6 +13265,86 @@ def source_grounded_attention_subject_parts(text: str) -> tuple[str, str] | None
     return subject, host
 
 
+def _explicit_result_appraisal_projections(span, normalized_input):
+    """Bind an asserted appraisal to its own completed object, not adjacency.
+
+    The object and the outer appraisal retain independent source ranges and
+    tense. A positive appraisal proves neither improvement nor effort. The
+    complete field boundary is checked before a diary's implicit SELF is used.
+    """
+    if normalized_input is None or span.source_field not in _TEXT_SOURCE_FIELDS:
+        return ()
+    source = str(normalized_input.get(span.source_field) or "")
+    raw = str(span.raw_text)
+    start, end = span.start_index, span.end_index
+    if (not 0 <= start < end <= len(source) or source[start:end] != raw
+        or _top_level_text(source) != source
+        or (source[:start].strip() and not source[:start].rstrip().endswith(("。", "．", ".")))
+        or (source[end:].strip() and not source[end:].lstrip().startswith(("。", "．", ".")))
+        or _source_prefix_opens_report(source[:start])):
+        return ()
+    # Closed nominal arguments and case particles leave the completed
+    # predicate open to ordinary verbs, without accepting a second subject,
+    # a quotation, a hypothetical result, or a reporting host.
+    noun = r"[一-鿿々ァ-ヶー]+[ぁ-ん]{0,4}(?:の[一-鿿々ァ-ヶー]+[ぁ-ん]{0,4}){0,2}"
+    match = re.fullmatch(
+        r"(?P<event>(?:(?:今日|昨日|今朝|先週)(?:は|に)?[、,]?)?"
+        r"(?:(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が)[、,]?)?"
+        + noun + r"を(?P<verb>[一-鿿々ぁ-んァ-ヶー]+?)(?P<ending>て|で|た))"
+        r"(?P<link>ことに|ことには|ことが)?[、,]?"
+        r"(?P<appraisal>(?:今は|その時は)?(?:少し|とても|本当に|まだ|全然|あまり)?"
+        r"(?P<lexeme>満足|納得)(?P<tail>した|しました|している|しています|しなかった|しませんでした|していない|していません))",
+        _clean(raw))
+    if match is None or (match['ending'] == 'た') != bool(match['link']):
+        return ()
+    verb = match['verb']
+    if re.search(r"[はがにを]|なら|たら|もし|よう|そう|らしい|ない|なく|なかっ|ません|ず|による|いわく", verb):
+        return ()
+    # A foreign topic in the preceding sentence continues to own an omitted
+    # subject unless the current clause explicitly resets SELF.
+    previous = re.split(r"[。．.]", source[:start].rstrip(" 。．."))[-1].strip()
+    topic = re.match(r"(?:今日|昨日|今朝|先週)?(?:は|に)?[、,]?(?P<owner>[一-鿿々ァ-ヶー]+)(?:は|が|も)", previous)
+    if (topic and topic['owner'] not in {'私', '自分', '僕', '俺'}
+        and not re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が)", match['event'])):
+        return ()
+    negative = match['tail'] in {'しなかった', 'しませんでした', 'していない', 'していません'}
+    rows = []
+    for name in ('event', 'appraisal'):
+        left, right = match.span(name)
+        is_appraisal = name == 'appraisal'
+        time = ('present' if match['tail'] in {'している', 'しています', 'していない', 'していません'} else 'past') if is_appraisal else 'past'
+        codes = (
+            'semantic_role:generic_relation_fragment', 'semantic_role:final_stage1_compound_meaning',
+            f'source_fragment_scalar_range:{left}:{right}', 'source_fragment_scalar_source:normalized_raw_text',
+            'semantic_dependency:explicit_result_appraisal', f'time_scope:{time}',
+            'lexical:preserve_source_predicate', 'lexical:no_new_sensation_family',
+            *(('semantic_role:explicit_evaluation', 'operator:feeling',
+               'operator:negation' if negative else 'operator:positive_change') if is_appraisal else
+              ('semantic_role:compound_reception_coowned_nonprimary', 'source_appraisal_event_ending:' + {'て': 'te', 'で': 'de', 'た': 'ta'}[match['ending']])),
+        )
+        rows.append(_TypedNucleusProjection(':' + name, 'reaction' if is_appraisal else 'event',
+            'feeling' if is_appraisal else 'event', ('negative' if negative else 'positive') if is_appraisal else 'neutral',
+            'feeling' if is_appraisal else 'fact', time, left, right, codes,
+            relation_kind='evaluation_about_event'))
+    return tuple(rows)
+
+
+def source_owned_result_appraisal(relation, nuclei):
+    """Read the original, same-source appraisal witness before interpretation."""
+    index = {n.nucleus_id: n for n in nuclei}
+    left, right = (index.get(nid) for nid in (relation.from_nucleus_id, relation.to_nucleus_id))
+    return bool(relation.type == 'evaluation_about_event'
+        and relation.grounding_kind == 'user_stated_relation' and relation.retention == 'required'
+        and left is not None and right is not None and left.kind == 'event' and right.kind == 'reaction'
+        and left.source_fields == right.source_fields and left.source_fields in {('memo',), ('memo_action',)}
+        and left.source_span_ids == right.source_span_ids and len(left.source_span_ids) == 1
+        and relation.source_span_ids == left.source_span_ids
+        and all(n.grounding_kind == 'explicit' and n.allowed_claim_scope == 'explicit_current_input'
+                and n.semantic_frame.actor == 'current_user'
+                and 'semantic_dependency:explicit_result_appraisal' in n.semantic_frame.attribute_codes
+                for n in (left, right)))
+
+
 def _received_event_reaction_projections(span, base_frame):
     """A finite passive event and a self reaction joined by concession.
 
@@ -13456,7 +13558,8 @@ def _final_stage1_typed_nuclei(
             if len(nucleus.source_span_ids) == 1
             else None
         )
-        received_projections = _received_event_reaction_projections(span, nucleus.semantic_frame) if span is not None else ()
+        received_projections = (_explicit_result_appraisal_projections(span, normalized_input)
+            or _received_event_reaction_projections(span, nucleus.semantic_frame)) if span is not None else ()
         canonical_projections = received_projections or (
             _typed_nucleus_projections_for_span(
                 span,
@@ -14417,6 +14520,7 @@ def _final_stage1_typed_relations(
         right = nucleus_index[right_id]
         relation_type: RelationKind = dependency  # type: ignore[assignment]
         if relation_type not in {
+            "evaluation_about_event",
             "action_supports_change",
             "coexistence",
             "contrast",

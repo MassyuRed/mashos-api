@@ -19,6 +19,7 @@ from .emlis_input_specific_meaning import (
 from .emlis_thread_contracts import THREAD_SCHEMA
 from .emlis_thread_source import identity
 import emlis_ai_grounded_human_reception as hr
+from emlis_ai_grounded_observation_plan import source_owned_result_appraisal
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -161,8 +162,9 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
                 stage1_response_schema_version=c.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2))))
     relation_rows = tuple(c.GroundedSourceRelationRow(r._edge_ref(e.edge_id), kind)
         for e in graph.edges if (kind := (c.EmlisThreadScopeRelationKind.ABOUT_TARGET
-            if e.relation == "evaluation_about_event" and any(
+            if e.relation == "evaluation_about_event" and (any(
                 ref in checkpoint.accepted_update_refs for ref in binding.edge_meta[e.edge_id].source_relation_ids)
+                or source_owned_result_appraisal(binding.edge_meta[e.edge_id], plan.nuclei))
             else c.project_foreground_scope_relation_kind(e.relation))) is not None)
     pre = c.PreMeaningGroundedInputs("1.0", c.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
         graph, r._graph_ref(graph), parent.observation_duty_id, candidates, field, contributions,

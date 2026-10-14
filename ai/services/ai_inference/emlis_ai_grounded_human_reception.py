@@ -11388,6 +11388,19 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
         or set(realization.semantic_fragments) != {first, second}
         or any(mark in first + second for mark in ("。", "？", "?", "「", "」", "\n"))):
         return None
+    if kind == "original_result_appraisal":
+        endings = {c.split(":", 1)[1] for c in left.semantic_frame.attribute_codes
+                   if c.startswith("source_appraisal_event_ending:")}
+        if len(endings) != 1:
+            return None
+        ending = next(iter(endings))
+        if ending not in {"te", "de", "ta"} or not first.endswith({"te": "て", "de": "で", "ta": "た"}[ending]):
+            return None
+        event = first[:-1] + {"te": "た", "de": "だ", "ta": "た"}[ending]
+        event = re.sub(r"(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)", "あなた", event, count=1)
+        if right.semantic_frame.polarity == "negative":
+            return f"{event}ことと、{second}という受け取りは、分けて見ておきたいです"
+        return f"{event}ことに{second}、そこが今回、私の目に留まったところです"
     if kind == "feeling_contrast":
         source = str(resolver.resolve(left.source_span_ids[0]).raw_text or "").strip(" \u3000、,。．.")
         if "source_received_chain_slot:first" in left.semantic_frame.attribute_codes:

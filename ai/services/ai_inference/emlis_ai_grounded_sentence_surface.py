@@ -31,6 +31,7 @@ from emlis_ai_grounded_observation_plan import (
     classify_grounded_human_follow_delivery,
     classify_grounded_human_follow_role,
     validate_grounded_human_reception_plan,
+    source_owned_result_appraisal,
 )
 from emlis_ai_grounded_human_reception import (
     SelectedSubjectiveReceptionInputV1,
@@ -3039,6 +3040,9 @@ def _render_observation(
         return f"{prefix}{joined}という変化を、自分でも感じています。"
     if nucleus.kind in {"reaction", "state", "constraint"}:
         return f"{prefix}今は、{joined}という感覚や状態が前に出ています。"
+    if any("semantic_dependency:explicit_result_appraisal" in row.semantic_frame.attribute_codes
+           for row in nucleus_index.values()):
+        return f"{prefix}{joined}という出来事もありました。"
     return f"{prefix}今回の中心には、{joined}があります。"
 
 
@@ -3609,6 +3613,11 @@ def _render_relation(
             sentences.append(f"{left}から、結果として{right}へつながっています。")
         elif relation.type == "continuation_or_refusal":
             sentences.append(f"{left}に対して、{right}という、続ける方向には同意していない言葉もあります。")
+        elif (relation.type == "evaluation_about_event"
+              and source_owned_result_appraisal(relation, tuple(nucleus_index.values()))):
+            # Original appraisal and supplemental answer have different source
+            # owners. Never give original text a fabricated answer timestamp.
+            sentences.append(f"{left}という出来事に対する評価は、{right}とあります。")
         elif (relation.type == "evaluation_about_event"
               and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"):
             target = nucleus_index[relation.to_nucleus_id]
