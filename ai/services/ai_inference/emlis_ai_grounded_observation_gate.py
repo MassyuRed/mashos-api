@@ -2890,6 +2890,53 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
                 or position is not None and position.stance_operator == "STAY_WITH_SPECIFIC_OBJECT"):
             return None
     index = {n.nucleus_id: n for n in plan.nuclei}
+    if focus[0] == 'reasoned_result_appraisal':
+        from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
+        if (selected_subjective_input is None or decision is None or decision.branch != 'NORMAL'
+            or type(appraisal) is not EmlisAppraisalContent or appraisal.dimension != 'MATERIAL_WEIGHT'
+            or appraisal.operation != 'RECEIVE_AS_MATERIAL' or len(appraisal.appraised_bindings) != 3
+            or appraisal.protected_bindings):
+            return None
+        reason_node, event_node, evaluation = focus[1:]
+        basis = {row.binding_ref: row.semantic_ref for row in decision.basis_rows}
+        semantic_map = dict(selected_subjective_input.semantic_nucleus_pairs)
+        relation_map = dict(selected_subjective_input.relation_pairs)
+        reason_edges = tuple(r for r in plan.relations if r.type == 'user_stated_cause'
+            and (r.from_nucleus_id, r.to_nucleus_id) == (reason_node.nucleus_id, evaluation.nucleus_id))
+        if (any(ref not in basis for ref in appraisal.appraised_bindings)
+            or {semantic_map.get(basis[ref]) for ref in appraisal.appraised_bindings}
+                != {reason_node.nucleus_id, event_node.nucleus_id, evaluation.nucleus_id}
+            or len(reason_edges) != 1
+            or relation_map.get(appraisal.focal_relation_ref) != reason_edges[0].relation_id
+            or proposition.focal_relation_ref != appraisal.focal_relation_ref):
+            return None
+        reason, event, feeling = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
+                                  for n in focus[1:])
+        parsed = re.fullmatch(r'(?P<reason>.+)点に、(?P<event>.+)ことへの'
+            r'(?P<time>当時の|入力した時点での)(?P<evaluation>満足)の拠り所が見えます。', raw)
+        endings = {c.split(':', 1)[1] for c in event_node.semantic_frame.attribute_codes
+                   if c.startswith('source_appraisal_event_ending:')}
+        if parsed is None or not all((reason, event, feeling)) or len(endings) != 1:
+            return None
+        actual_reason, actual_event = parsed['reason'], parsed['event']
+        for key, source in (('reason', reason), ('event', event)):
+            owner = re.search(r'(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)', source)
+            if owner:
+                if key == 'reason':
+                    actual_reason = actual_reason.replace('あなた', owner.group(), 1)
+                else:
+                    actual_event = actual_event.replace('あなた', owner.group(), 1)
+        ending = next(iter(endings))
+        when = _body_inverse_appraisal_time(evaluation)
+        from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate
+        if (actual_reason != reason or ending not in {'te', 'de', 'ta'}
+            or not actual_event.endswith({'te': 'た', 'de': 'だ', 'ta': 'た'}[ending])
+            or actual_event[:-1] + {'te': 'て', 'de': 'で', 'ta': 'た'}[ending] != event
+            or parsed['time'] != when + ('の' if when == '当時' else 'での')
+            or not _source_result_appraisal_predicate(evaluation, feeling)):
+            return None
+        return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
+                     for key, value in (('reason', reason), ('event', event), ('evaluation', feeling)))
     if focus[0] == 'unfinished_result_appraisal':
         from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
         if (selected_subjective_input is None or decision is None or decision.branch != 'NORMAL'
@@ -6737,7 +6784,7 @@ def evaluate_grounded_surface_body_inverse(
                                      or nucleus_index[nid].source_fields == ("answer_text_private",)
                                      and nucleus_index[nid].allowed_claim_scope == "explicit_supplemental_answer")
                                 for nid in (*move.target_nucleus_ids, *move.support_nucleus_ids))
-                            and re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました|経験として受け取りました|充足として受け取りました|ことの両方を受け取りました)。$",
+                            and re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました|経験として受け取りました|充足として受け取りました|満足の拠り所が見えます|ことの両方を受け取りました)。$",
                                 body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8"))):
                             failures.append("body_inverse_reception_finite_duty_unverified:" + move_id)
                             continue

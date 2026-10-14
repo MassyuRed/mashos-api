@@ -1370,3 +1370,318 @@ def test_appraisal_relation_qualifiers_match_after_direct_source_projection():
         raw = relation(left, right)
         assert raw == relation(reconstructed(left), reconstructed(right)), right
         assert set(raw) == expected
+
+
+def _reasoned_appraisal_source(plan):
+    from emlis_ai_grounded_observation_plan import source_owned_result_appraisal_reason
+    return tuple((r, reason) for r in plan.relations
+                 if (reason := source_owned_result_appraisal_reason(r, plan.nuclei, plan.relations)) is not None)
+
+
+@pytest.mark.parametrize('reason,evaluation,action', [
+    ('探しやすくなった', '満足した', ''),
+    ('必要な資料を探しやすくなった', '満足した', ''),
+    ('必要な資料を探しやすくなった', '満足した', '植木に水をやった。'),
+    ('必要な資料を探しやすくなった', '満足している', '机を拭いた。'),
+    ('資料を探しやすい', '満足している', ''),
+    ('資料を探しやすかった', '満足した', ''),
+    ('資料を使いやすくなっている', '満足した', ''),
+    ('見た目がすっきりした', '満足した', ''),
+    ('見た目がはっきりしている', '満足している', ''),
+])
+def test_explicit_reason_owns_selected_scope_and_actual_reception(reason, evaluation, action):
+    from cocolon_meaning_experience_engine import contracts as c
+    req = request(reason + 'ので、資料を分類したことに' + evaluation + '。', action)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    (about, reason_node), = _reasoned_appraisal_source(plan)
+    projection = project_thread_meaning(prepared, plan)
+    assert type(projection.structure.meaning_decision_outcome) is c.SelectedEmlisProvisionalReading
+    configurations = projection.structure.configurations
+    directions = {d.relation_kind: d for config in configurations if isinstance(config, c.RelationalConfiguration)
+                  for d in config.direction_rows}
+    cause = directions[c.EmlisThreadScopeRelationKind.SATISFACTION_REASON]
+    target = directions[c.EmlisThreadScopeRelationKind.ABOUT_TARGET]
+    assert cause.schema_version == '1.1' and target.schema_version == '1.0'
+    assert cause.target_endpoint_ref == target.target_endpoint_ref
+    assert cause.source_endpoint_ref != target.source_endpoint_ref
+    assert {d for d in c.ForegroundScopeRelationKind} == {
+        c.ForegroundScopeRelationKind.CONTRAST, c.ForegroundScopeRelationKind.COEXISTENCE,
+        c.ForegroundScopeRelationKind.CONTINUATION, c.ForegroundScopeRelationKind.CORRECTION}
+    selected = projection.selected_reception
+    decision, = selected.decisions
+    content = decision.subjective_proposition.appraisal_content
+    assert type(content) is c.EmlisAppraisalContent
+    assert content.dimension == c.AppraisalDimension.MATERIAL_WEIGHT
+    assert content.operation == c.AppraisalOperation.RECEIVE_AS_MATERIAL
+    assert len(content.appraised_bindings) == 3 and not content.protected_bindings
+    assert content.focal_relation_ref == cause.relation_ref
+    basis = {b.binding_ref: b.semantic_ref for b in decision.basis_rows}
+    semantic_map = dict(selected.semantic_nucleus_pairs)
+    assert {semantic_map[basis[ref]] for ref in content.appraised_bindings} == {
+        reason_node.nucleus_id, about.from_nucleus_id, about.to_nucleus_id}
+    outcome = MeaningExperienceEngine().generate(req)
+    assert outcome.artifact is not None, outcome.reason_codes
+    body = outcome.artifact
+    assert reason + '点に' in body.reception
+    assert '資料を分類したことへの' in body.reception
+    assert ('当時の満足' if evaluation == '満足した' else '入力した時点での満足') in body.reception
+    assert '拠り所' in body.reception and '植木' not in body.reception and '机を拭' not in body.reception
+    assert not any(word in body.reception for word in ('成功', '成長', '目的', '目標', '唯一', '最も', 'おかげ'))
+    if action:
+        assert action.rstrip('。') in body.observation
+
+
+@pytest.mark.parametrize('memo', [
+    '必要な資料を探しやすくなったので、資料を分類したことに満足しなかった。',
+    '必要な資料を探しやすくなったので、資料を分類したことに少し満足した。',
+    '必要な資料を探しやすくなったので、資料を分類したことに納得した。',
+    '必要な資料を探しやすくしたかったので、資料を分類したことに満足した。',
+    '必要な資料を探しやすくなる予定なので、資料を分類したことに満足した。',
+    '必要な資料を探しやすくならなかったので、資料を分類したことに満足した。',
+    '必要な資料を探しやすくなったからではなく、資料を分類したことに満足した。',
+    '必要な資料を探しやすくなったなら、資料を分類したことに満足した。',
+    '必要な資料を探しやすくなったら、資料を分類したことに満足した。',
+    '同僚が必要な資料を探しやすくなったので、資料を分類したことに満足した。',
+    '必要な資料を探しやすくなったので、同僚が資料を分類したことに満足した。',
+    '同僚は仕事を終えた。必要な資料を探しやすくなったので、資料を分類したことに満足した。',
+    '「必要な資料を探しやすくなったので、資料を分類したことに満足した」と聞いた。',
+    '必要な資料を探しやすくなったらしいので、資料を分類したことに満足した。',
+    '必要な資料を探しやすくなったので、資料を分類したことに満足したかもしれない。',
+    '必要な資料を探しやすくなったので、資料を分類したことに満足した？',
+    '必要な資料を探しやすくなったので、資料を分類したことに満足し',
+    '資料を分類できて満足した。必要な資料を探しやすくなったからだ。',
+    '必要な資料を探しやすくなり、見た目がすっきりしたので、資料を分類したことに満足した。',
+    '結論は出ていないが、必要な資料を探しやすくなったので、資料を分類したことに満足した。',
+    '必要な資料を探しやすくなったので、嬉しかった。資料を分類したことに満足した。',
+])
+def test_reason_scope_does_not_admit_nonfact_foreign_unbound_or_multiple_reasons(memo):
+    from cocolon_meaning_experience_engine import contracts as c
+    p = prepare_emlis_meaning(request(memo))
+    plan = build_updated_grounded_plan(p)
+    assert not _reasoned_appraisal_source(plan)
+    # The unchanged pre-reason engine also stops for this uncertain appraisal.
+    # Exclusion does not imply every out-of-scope input has a body.
+    if memo.endswith('満足したかもしれない。'):
+        from cocolon_meaning_experience_engine.emlis_stage1_composition import Stage1CompositionError
+        with pytest.raises(Stage1CompositionError, match='LIMITED_RECEPTION_CAPABILITY_GAP_STOP'):
+            project_thread_meaning(p, plan)
+        return
+    projection = project_thread_meaning(p, plan)
+    assert all(row.relation_kind is not c.EmlisThreadScopeRelationKind.SATISFACTION_REASON
+               for row in projection.premeaning.source_relation_rows)
+
+
+def test_reason_removal_and_replacement_change_the_received_aspect_without_action_bias():
+    first = '必要な資料を探しやすくなったので、資料を分類したことに満足した。'
+    second = '見た目がすっきりしたので、資料を分類したことに満足した。'
+    artifacts = [MeaningExperienceEngine().generate(request(first, action)).artifact
+                 for action in ('', '植木に水をやった。', '机を拭いた。')]
+    assert all(artifacts) and len({a.reception for a in artifacts}) == 1
+    changed = MeaningExperienceEngine().generate(request(second, '')).artifact
+    removed = MeaningExperienceEngine().generate(request('資料を分類したことに満足した。', '')).artifact
+    assert changed and removed
+    assert '探しやす' not in changed.reception and '見た目がすっきりした' in changed.reception
+    assert '拠り所' not in removed.reception
+    assert len({artifacts[0].reception, changed.reception, removed.reception}) == 3
+
+
+@pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
+def test_reason_reader_rejects_role_polarity_time_and_invented_cause_without_author(monkeypatch, evaluation):
+    import emlis_ai_grounded_human_reception as hr
+    from emlis_ai_grounded_observation_gate import read_source_owned_discourse
+    req = request('必要な資料を探しやすくなったので、資料を分類したことに' + evaluation + '。')
+    p = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(p)
+    selected = project_thread_meaning(p, plan).selected_reception
+    resolver = p.thread.resolver()
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    artifact = MeaningExperienceEngine().generate(req).artifact
+    assert artifact is not None
+    reception = artifact.reception
+    time = '当時の' if evaluation == '満足した' else '入力した時点での'
+    mutations = (
+        reception.replace('必要な資料を探しやすくなった点に、', ''),
+        reception.replace('探しやすくなった', '探しにくくなった'),
+        reception.replace('探しやすくなった', '探しやすくしたかった'),
+        reception.replace('資料を分類したことへの', '資料を探しやすくなったことへの'),
+        reception.replace('資料を分類したことへの', '資料を分類しなかったことへの'),
+        reception.replace(time, '回答した時点での'),
+        reception.replace('満足', '納得'),
+        reception.replace('拠り所', '唯一の拠り所'),
+        reception.replace('拠り所が見えます', '理由は分類が探しやすさを生んだことです'),
+    )
+    def whole_valid(body):
+        return evaluate_grounded_surface_body_inverse(body=body.encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert whole_valid(artifact.text)
+    for wrong in mutations:
+        assert wrong != reception and not whole_valid(artifact.text.replace(reception, wrong))
+    move, = plan.response_plan.human_reception_plan.moves
+    monkeypatch.setattr(hr, '_source_owned_relational_focus_sentence',
+        lambda *_a, **_k: pytest.fail('independent reason reader invoked author'))
+    assert read_source_owned_discourse(reception, move, plan, resolver, selected) is not None
+    for wrong in mutations:
+        assert read_source_owned_discourse(wrong, move, plan, resolver, selected) is None
+
+
+def test_reason_private_scope_rejects_missing_markers_wrong_direction_and_old_row_version():
+    from cocolon_meaning_experience_engine import contracts as c
+    from cocolon_meaning_experience_engine.emlis_input_specific_meaning import (
+        derive_grounded_situation_view, validate_grounded_situation_view)
+    p = prepare_emlis_meaning(request('必要な資料を探しやすくなったので、資料を分類したことに満足した。'))
+    pre = project_thread_meaning(p, build_updated_grounded_plan(p)).premeaning
+    view = derive_grounded_situation_view(pre)
+    reason, = (r for r in view.source_connected_relations
+               if r.relation_kind is c.EmlisThreadScopeRelationKind.SATISFACTION_REASON)
+    for wrong in (replace(reason, schema_version='1.0'),
+                  replace(reason, source_object_ref=reason.target_object_ref, target_object_ref=reason.source_object_ref)):
+        with pytest.raises(c.CMEEStage1ContractError):
+            validate_grounded_situation_view(replace(view, source_connected_relations=tuple(
+                wrong if r == reason else r for r in view.source_connected_relations)), pre, pre.grounded_graph)
+    missing = replace(pre, source_qualifier_rows=tuple(replace(row, qualifier_refs=tuple(
+        code for code in row.qualifier_refs if code != 'qualifier:semantic_role:appraisal_explicit_reason'))
+        for row in pre.source_qualifier_rows))
+    with pytest.raises(c.CMEEStage1ContractError):
+        derive_grounded_situation_view(missing)
+
+
+# Full initial checkpoints and bodies captured from unmodified 70030c8.
+_PRE_REASON_CHECKPOINTS = [{'memo': '必要な資料を探しやすくなったので、資料を分類したことに満足した。', 'action': '', 'checkpoint': {'checkpoint_id': 'emlis-checkpoint-b597ecbecc340a9963e14b6b47c3b0b286a59d90a3a2f7f7544c5d5b7c90b537', 'source_prefix_ref': 'emlis-q3-source-prefix-930c34231cc163f6ba2efc307f61ea68a9d173d7b7659b0abb8e6aaf4cd64b10', 'base_meaning_ref': 'emlis-base-meaning-9a80755822363f8a16207487a9fb85409b0e7859813d4e2cd585c71195869020', 'answer_update': None, 'assessment_status': 'RESOLVED', 'accepted_update_refs': [], 'inactive_claim_refs': [], 'unresolved_parts': [], 'semantic_schema_version': 'cocolon.cmee.emlis_answer_meaning.v1'}, 'body': '見えたこと：\n今の入力には、「必要な資料を探しやすくなったので、資料を分類したことに満足した」という変化があります。\n\nEmlisから：\nその変化を感じています。', 'reason_codes': ['no_bound_personal_meaning_target']}, {'memo': '必要な資料を探しやすくなったので、資料を分類したことに満足した。', 'action': '植木に水をやった。', 'checkpoint': {'checkpoint_id': 'emlis-checkpoint-b45aa68e607fcb3b758407edf780e37005b9dbf723a87acc011fa0c4542a81c6', 'source_prefix_ref': 'emlis-q3-source-prefix-e2e7412d98c7e57cf0468d1be18b1287c0244ce66fc494fa457a15c3afe944b5', 'base_meaning_ref': 'emlis-base-meaning-b03ae1451d179bcb6574231c0fc6394e61e5b1aeaa18b4fe426bc22c8866f63a', 'answer_update': None, 'assessment_status': 'RESOLVED', 'accepted_update_refs': [], 'inactive_claim_refs': [], 'unresolved_parts': [], 'semantic_schema_version': 'cocolon.cmee.emlis_answer_meaning.v1'}, 'body': '見えたこと：\n今の入力には、「必要な資料を探しやすくなったので、資料を分類したことに満足した」という変化があります。\n今の入力には、「植木に水をやった」という行動があります。\n\nEmlisから：\n必要な資料を探しやすくなったので、資料を分類したことに満足したという変化を見過ごさず、受け止めています。植木に水をやったことを大切に思っています。', 'reason_codes': ['no_bound_personal_meaning_target']}, {'memo': '見た目がすっきりしたので、資料を分類したことに満足した。', 'action': '', 'checkpoint': {'checkpoint_id': 'emlis-checkpoint-dd767d841877d2c9842d5a6dafd9c78608fea5a5823d72a5623d57d96ef519c7', 'source_prefix_ref': 'emlis-q3-source-prefix-b3844a7b9c54869587232d52f59e54714fec97dd3222ce2df5b6ce6308b9baff', 'base_meaning_ref': 'emlis-base-meaning-c1b80f865e8e57dde46598acfff86a072cdbee258ac48fbb110b5d29fa76f567', 'answer_update': None, 'assessment_status': 'RESOLVED', 'accepted_update_refs': [], 'inactive_claim_refs': [], 'unresolved_parts': [], 'semantic_schema_version': 'cocolon.cmee.emlis_answer_meaning.v1'}, 'body': '見えたこと：\n今の入力には、「見た目がすっきりしたので、資料を分類したことに満足した」という行動があります。\n\nEmlisから：\n実際の行動に目が留まり、それを大切に思っています。', 'reason_codes': ['no_bound_personal_meaning_target']}, {'memo': '見た目がすっきりしたので、資料を分類したことに満足した。', 'action': '植木に水をやった。', 'checkpoint': {'checkpoint_id': 'emlis-checkpoint-54f78d378cc08a8cd9622ba177c88b7fd0d1e993f898a4329e54ad0783a00c36', 'source_prefix_ref': 'emlis-q3-source-prefix-91584b3aed2d492e14bc7887a80778eb75ad07f888a18146b229e415482891c9', 'base_meaning_ref': 'emlis-base-meaning-0caed104231c7eef3efd571a8d18ca0d0ca77c98d820a50899b972076d8300f6', 'answer_update': None, 'assessment_status': 'RESOLVED', 'accepted_update_refs': [], 'inactive_claim_refs': [], 'unresolved_parts': [], 'semantic_schema_version': 'cocolon.cmee.emlis_answer_meaning.v1'}, 'body': None, 'reason_codes': ['emlis_q3_initial_body_unavailable']}]
+
+
+@pytest.mark.parametrize('row', _PRE_REASON_CHECKPOINTS)
+def test_saved_pre_reason_checkpoint_retains_complete_meaning_and_body(row):
+    from emlis_thread_service import _json
+    req = request(row['memo'], row['action'])
+    saved = replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=row['checkpoint']['checkpoint_id']))
+    p = prepare_emlis_meaning(saved)
+    assert p.legacy_appraisal_reason and not p.legacy_result_appraisal
+    assert _json(p.checkpoint) == row['checkpoint']
+    assert not _reasoned_appraisal_source(build_updated_grounded_plan(p))
+    old = MeaningExperienceEngine().generate(saved)
+    assert (old.artifact.text if old.artifact else None) == row['body']
+    assert list(old.reason_codes) == row['reason_codes']
+    fresh = prepare_emlis_meaning(req)
+    assert not fresh.legacy_appraisal_reason
+    assert fresh.checkpoint.source_prefix_ref == row['checkpoint']['source_prefix_ref']
+    assert fresh.checkpoint.checkpoint_id != row['checkpoint']['checkpoint_id']
+    assert len(_reasoned_appraisal_source(build_updated_grounded_plan(fresh))) == 1
+    current = MeaningExperienceEngine().generate(req)
+    assert current.artifact and '満足の拠り所' in current.artifact.reception
+    foreign = replace(req, emlis_thread=replace(req.emlis_thread, prepared_meaning_checkpoint_ref='foreign'))
+    with pytest.raises(ValueError, match='emlis_checkpoint_source_prefix_mismatch'):
+        prepare_emlis_meaning(foreign)
+
+
+@pytest.mark.parametrize('memo', [
+    '必要な資料を探しやすくなったので、資料を分類したことに満足した。',
+    '必要な資料を探しやすくなったから、資料を分類したことに満足している。',
+    '見た目がすっきりしたので、資料を分類したことに満足した。',
+    '資料を探しやすいので、資料を分類したことに満足している。',
+])
+def test_reason_appraisal_saved_body_reopens_without_author(qcase, qdb, memo):
+    test_selected_appraisal_saved_body_is_read_without_regeneration(qcase, qdb, memo)
+
+
+def test_reason_relation_qualifiers_survive_direct_projection_without_widening_generic_cause():
+    from cocolon_meaning_experience_engine import contracts as c
+    version = c.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+    common = ('semantic_dependency:explicit_result_appraisal', 'semantic_dependency:reasoned_result_appraisal')
+    reason = (*common, 'semantic_role:appraisal_explicit_reason')
+    evaluation = (*common, 'source_appraisal_kind:satisfaction', 'source_appraisal_degree:unmarked')
+    def direct(codes):
+        return tuple(value.removeprefix('qualifier:') for value in
+            c.project_stage1_source_contract_qualifiers(source_attribute_codes=codes,
+                source_explicit_shift_relation_endpoint=False, stage1_response_schema_version=version))
+    def relation(left, right):
+        return c.project_stage1_relation_source_contract_qualifiers(candidate_kind=c.InterpretationKind.SOURCE_STATED_CAUSE,
+            source_attribute_codes=left, target_attribute_codes=right, stage1_response_schema_version=version)
+    assert relation(reason, evaluation) == relation(direct(reason), direct(evaluation))
+    assert 'cause_qualifier:semantic_role:appraisal_explicit_reason' in relation(reason, evaluation)
+    assert 'effect_qualifier:source_appraisal_kind:satisfaction' in relation(reason, evaluation)
+    assert relation((), evaluation) == ()
+    assert c.project_foreground_scope_relation_kind('user_stated_cause',
+        relation_operators=(c.RelationOperator.SOURCE_EXPLICIT_CAUSE,)) is None
+
+
+@pytest.mark.parametrize('memo,admitted', [
+    ('同僚は仕事を終えた。必要な資料を探しやすくなったので、私は資料を分類したことに満足した。', False),
+    ('同僚は仕事を終えた。私は必要な資料を探しやすくなったので、資料を分類したことに満足した。', True),
+])
+def test_reason_owner_reset_must_start_at_the_reason(memo, admitted):
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(request(memo)))
+    assert bool(_reasoned_appraisal_source(plan)) is admitted
+
+
+def test_reason_scope_rejects_conflicting_owner_and_different_evidence():
+    from cocolon_meaning_experience_engine import contracts as c
+    from cocolon_meaning_experience_engine.emlis_input_specific_meaning import derive_grounded_situation_view
+    p = prepare_emlis_meaning(request('必要な資料を探しやすくなったので、資料を分類したことに満足した。'))
+    pre = project_thread_meaning(p, build_updated_grounded_plan(p)).premeaning
+    reason_row, = (row for row in pre.source_qualifier_rows
+        if 'qualifier:semantic_role:appraisal_explicit_reason' in row.qualifier_refs)
+    conflicting = replace(pre, source_qualifier_rows=tuple(
+        replace(row, qualifier_refs=(*row.qualifier_refs, 'actor:other')) if row == reason_row else row
+        for row in pre.source_qualifier_rows))
+    graph = pre.grounded_graph
+    cause, = (edge for edge in graph.edges if edge.relation == 'user_stated_cause')
+    wrong_evidence = replace(pre, grounded_graph=replace(graph, edges=tuple(
+        replace(edge, evidence_ids=('foreign-evidence',)) if edge == cause else edge for edge in graph.edges)))
+    for wrong in (conflicting, wrong_evidence):
+        with pytest.raises(c.CMEEStage1ContractError):
+            derive_grounded_situation_view(wrong)
+
+
+def test_reason_reader_requires_selected_three_bindings_and_reason_focal_relation():
+    from emlis_ai_grounded_observation_gate import read_source_owned_discourse
+    req = request('必要な資料を探しやすくなったので、資料を分類したことに満足した。')
+    p = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(p)
+    selected = project_thread_meaning(p, plan).selected_reception
+    decision, = selected.decisions
+    proposition = decision.subjective_proposition
+    content = proposition.appraisal_content
+    body = MeaningExperienceEngine().generate(req).artifact.reception
+    move, = plan.response_plan.human_reception_plan.moves
+    for wrong in (replace(content, appraised_bindings=content.appraised_bindings[:2]),
+                  replace(content, focal_relation_ref='foreign-relation')):
+        mutated = replace(selected, decisions=(replace(decision,
+            subjective_proposition=replace(proposition, appraisal_content=wrong)),))
+        assert read_source_owned_discourse(body, move, plan, p.thread.resolver(), mutated) is None
+
+
+_PRE_REASON_MIXED_CHECKPOINT = {'memo': '必要な資料を探しやすくなったので、資料を分類したことに満足した。', 'action': '案を選んで満足した。', 'checkpoint': {'checkpoint_id': 'emlis-checkpoint-17c6594cf23755894ededf9f93314b31c9da8f3deaf67ba539c4944a924c7aed', 'source_prefix_ref': 'emlis-q3-source-prefix-350e912098136659fd71db4a23eed2ddd00c8d4fae0e746ab8225fe7ef686b6c', 'base_meaning_ref': 'emlis-base-meaning-575eb2a22adf8c93ab7ddb527146549366b7fa7a41bcf7d7a5ecae0075347772', 'answer_update': None, 'assessment_status': 'RESOLVED', 'accepted_update_refs': [], 'inactive_claim_refs': [], 'unresolved_parts': [], 'semantic_schema_version': 'cocolon.cmee.emlis_answer_meaning.v1'}}
+
+
+def test_saved_pre_reason_checkpoint_keeps_other_existing_appraisals():
+    from emlis_thread_service import _json
+    row = _PRE_REASON_MIXED_CHECKPOINT
+    req = request(row['memo'], row['action'])
+    saved = replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=row['checkpoint']['checkpoint_id']))
+    p = prepare_emlis_meaning(saved)
+    assert p.legacy_appraisal_reason and not p.legacy_result_appraisal
+    assert _json(p.checkpoint) == row['checkpoint']
+    plan = build_updated_grounded_plan(p)
+    assert not _reasoned_appraisal_source(plan)
+    assert len([r for r in plan.relations if source_owned_result_appraisal(r, plan.nuclei)]) == 1
+
+
+_PRE_REASON_Q1_CHECKPOINT = {'memo': '必要な資料を探しやすくなったので、資料を分類したことに満足した。', 'action': '', 'checkpoint': {'checkpoint_id': 'emlis-checkpoint-34cd00df38498f1a09299486c83af58bb766d68f5198e69e954035088cd34657', 'source_prefix_ref': 'emlis-source-prefix-ac530874d05fd82f25ed755333fd0b1d1641f1ecb58b105009a973c1e487ca01', 'base_meaning_ref': 'emlis-base-meaning-9a80755822363f8a16207487a9fb85409b0e7859813d4e2cd585c71195869020', 'answer_update': None, 'assessment_status': 'RESOLVED', 'accepted_update_refs': [], 'inactive_claim_refs': [], 'unresolved_parts': [], 'semantic_schema_version': 'cocolon.cmee.emlis_answer_meaning.v1'}, 'body': '見えたこと：\n今の入力には、「必要な資料を探しやすくなったので、資料を分類したことに満足した」という変化があります。\n\nEmlisから：\nその変化を感じています。', 'reason_codes': ['no_bound_personal_meaning_target']}
+
+
+def test_saved_q1_pre_reason_checkpoint_uses_its_prepared_plan():
+    from emlis_thread_service import _json
+    row = _PRE_REASON_Q1_CHECKPOINT
+    req = initial(row['memo'], row['action'])
+    saved = replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=row['checkpoint']['checkpoint_id']))
+    p = prepare_emlis_meaning(saved)
+    assert p.legacy_appraisal_reason and _json(p.checkpoint) == row['checkpoint']
+    old = MeaningExperienceEngine().generate(saved)
+    assert (old.artifact.text if old.artifact else None) == row['body']
+    assert list(old.reason_codes) == row['reason_codes']
+    fresh = MeaningExperienceEngine().generate(req)
+    assert fresh.artifact and '満足の拠り所' in fresh.artifact.reception

@@ -7781,6 +7781,12 @@ def source_owned_relational_focus(move, plan=None, *, nuclei=None, relations=Non
     all_relations = relations
     if len(move.support_nucleus_ids) == 2:
         for relation in relations:
+            reason = source_owned_result_appraisal_reason(relation, nuclei, relations)
+            if (reason is not None and relation.relation_id in required_ids
+                and move.target_nucleus_ids == (relation.to_nucleus_id,)
+                and move.support_nucleus_ids == (reason.nucleus_id, relation.from_nucleus_id)):
+                return ('reasoned_result_appraisal', reason,
+                        index[relation.from_nucleus_id], index[relation.to_nucleus_id])
             context = source_owned_result_appraisal_context(relation, nuclei, relations)
             if (context is not None and relation.relation_id in required_ids
                 and move.target_nucleus_ids == (relation.to_nucleus_id,)
@@ -8895,7 +8901,8 @@ def _source_explicit_contrast_reception_duties(nuclei, relations):
     for relation in relations:
         if source_owned_result_appraisal(relation, nuclei):
             evaluation = index[relation.to_nucleus_id]
-            context = source_owned_result_appraisal_context(relation, nuclei, relations)
+            context = (source_owned_result_appraisal_context(relation, nuclei, relations)
+                       or source_owned_result_appraisal_reason(relation, nuclei, relations))
             duties.append(("lived_change" if is_grounded_positive_feeling(evaluation) else "current_burden",
                            (evaluation.nucleus_id,),
                            ((context.nucleus_id, relation.from_nucleus_id) if context is not None
@@ -9494,7 +9501,8 @@ def build_grounded_reception_opportunities(
                     marker in nucleus_index[nid].semantic_frame.attribute_codes
                     for nid in (*targets, *supports)) for marker in (
                         "semantic_dependency:received_feeling_contrast_chain",
-                        "semantic_dependency:unfinished_result_appraisal")):
+                        "semantic_dependency:unfinished_result_appraisal",
+                        "semantic_dependency:reasoned_result_appraisal")):
                 # Replace partial representatives of this closed source duty;
                 # an appended row with the same target loses its full support.
                 rows = [row for row in rows if not set(row.target_nucleus_ids) & set((*targets, *supports))]
@@ -9522,7 +9530,8 @@ def build_grounded_reception_opportunities(
         and len(appraisals) == 1 and follow_ids == {appraisals[0].to_nucleus_id}
         and all(row.family == "concrete_effort" or row.target_nucleus_ids == (appraisals[0].to_nucleus_id,)
                 for row in rows)):
-        context = source_owned_result_appraisal_context(appraisals[0], nuclei, relations)
+        context = (source_owned_result_appraisal_context(appraisals[0], nuclei, relations)
+                   or source_owned_result_appraisal_reason(appraisals[0], nuclei, relations))
         supports = ((context.nucleus_id, appraisals[0].from_nucleus_id) if context is not None
                     else (appraisals[0].from_nucleus_id,))
         focused = tuple(row for row in rows
@@ -13419,7 +13428,7 @@ def _thread_withdrawn_result_appraisal(nucleus, relations):
         and not any(nucleus.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations))
 
 
-def _explicit_result_appraisal_projections(span, normalized_input):
+def _explicit_result_appraisal_projections(span, normalized_input, *, _legacy_appraisal_reason=False):
     """Bind an asserted appraisal to its own asserted object, not adjacency.
 
     The object and the outer appraisal retain independent source ranges and
@@ -13445,6 +13454,33 @@ def _explicit_result_appraisal_projections(span, normalized_input):
         r"(?P<evaluated>.+)", text)
     offset = context.start('evaluated') if context is not None else 0
     evaluated = context['evaluated'] if context is not None else text
+    reason = None
+    reason_time = None
+    if context is None and not _legacy_appraisal_reason:
+        reason = re.fullmatch(r'(?P<reason>.+?)(?P<link>ので|から)[、,]?(?P<evaluated>.+)', text)
+        if reason is not None:
+            # A closed affirmative state/change clause. The finite endings
+            # own the reason's tense independently of the appraisal. Do not
+            # infer a purpose, a future outcome, or another person's state.
+            clause = re.sub(r'^(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が)[、,]?', '', reason['reason'])
+            noun = r'(?:必要な)?[一-鿿々ァ-ヶー]+[ぁ-ん]{0,4}(?:の[一-鿿々ァ-ヶー]+[ぁ-ん]{0,4}){0,2}'
+            ease = re.fullmatch(r'(?P<object>' + noun + r'を)?(?P<verb>[一-鿿々][一-鿿々ぁ-んァ-ヶー]*?)'
+                r'(?P<ending>やすくなった|やすくなっている|やすかった|やすい)', clause)
+            state = re.fullmatch(r'(?:見た目|気持ち|頭の中|内容|配置|机の上)が'
+                r'(?:すっきり|はっきり)(?P<ending>した|している)', clause)
+            finite = ease or state
+            if (finite is None or ease is not None and (re.search(
+                    r'[はがもをにと]|なら|たら|れば|ない|なかっ|たい|たく|よう|そう|らしい|かもしれ', ease['verb'])
+                    or (ease['object'] is None and ease['verb'] not in {'探し', '使い', '読み', '見つけ', '取り出し'})
+                    or (ease['object'] is not None and not _source_operator_owner_scope_is_bound(
+                        clause[:ease.start('ending')] + 'やすくなった')))
+                or not _top_level_text(reason['reason']) == reason['reason']):
+                # An unproved reason cannot acquire this scope. Preserve
+                # the pre-existing event/appraisal parser for the full text.
+                reason = None
+            else:
+                reason_time = 'past' if finite['ending'].endswith(('た', 'かった')) else 'present'
+                offset, evaluated = reason.start('evaluated'), reason['evaluated']
     # Closed nominal arguments and case particles leave the asserted
     # predicate open to ordinary verbs, without accepting a second subject,
     # a quotation, a hypothetical result, or a reporting host.
@@ -13480,7 +13516,8 @@ def _explicit_result_appraisal_projections(span, normalized_input):
     # subject unless the current clause explicitly resets SELF.
     previous = re.split(r"[。．.]", source[:start].rstrip(" 。．."))[-1].strip()
     if (previous and not _source_operator_owner_scope_is_bound(previous)
-        and not re.search(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が)", match['event'])):
+        and not re.search(r"^(?:(?:今日|昨日|今朝|先週)(?:は|に)?[、,]?)?(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が)",
+                          reason['reason'] if reason is not None else match['event'])):
         return ()
     negative = match['tail'] in {'しなかった', 'しませんでした', 'していない', 'していません'}
     # Classify only explicit bounded predicates. Other verbs stay unspecified;
@@ -13489,10 +13526,22 @@ def _explicit_result_appraisal_projections(span, normalized_input):
                    'manual_action' if verb in {'拭い', 'ふい', '洗っ', '磨い'} else 'unspecified_action')
     degree = next((code for text, code in (('少し', 'slight'), ('とても', 'very'), ('本当に', 'truly'),
                    ('全然', 'not_at_all'), ('あまり', 'not_much')) if text in match['appraisal']), 'unmarked')
-    if context is not None and (negative or match['lexeme'] != '満足'
+    if (context is not None or reason is not None) and (negative or match['lexeme'] != '満足'
         or degree != 'unmarked' or match['appraisal'] != '満足' + match['tail']):
         return ()
     rows = []
+    if reason is not None:
+        left, right = reason.span('reason')
+        rows.append(_TypedNucleusProjection(':reason', 'state', 'state',
+            'positive', 'fact', reason_time, left, right, (
+                'semantic_role:generic_relation_fragment', 'semantic_role:final_stage1_compound_meaning',
+                f'source_fragment_scalar_range:{left}:{right}',
+                'source_fragment_scalar_source:normalized_raw_text',
+                'semantic_dependency:explicit_result_appraisal',
+                'semantic_dependency:reasoned_result_appraisal', 'semantic_role:appraisal_explicit_reason',
+                f'time_scope:{reason_time}', 'lexical:preserve_source_predicate',
+                'lexical:no_new_sensation_family',
+            )))
     if context is not None:
         left, right = context.span('unfinished')
         rows.append(_TypedNucleusProjection(':unfinished', 'state', 'state',
@@ -13516,6 +13565,7 @@ def _explicit_result_appraisal_projections(span, normalized_input):
             f'source_fragment_scalar_range:{left}:{right}', 'source_fragment_scalar_source:normalized_raw_text',
             'semantic_dependency:explicit_result_appraisal', f'time_scope:{time}',
             *(('semantic_dependency:unfinished_result_appraisal',) if context is not None else ()),
+            *(('semantic_dependency:reasoned_result_appraisal',) if reason is not None else ()),
             'lexical:preserve_source_predicate', 'lexical:no_new_sensation_family',
             *(('semantic_role:explicit_evaluation', 'operator:feeling',
                'source_appraisal_kind:' + {'満足': 'satisfaction', '納得': 'acceptance'}[match['lexeme']],
@@ -13560,8 +13610,8 @@ def source_owned_result_appraisal(relation, nuclei):
         and len(relation.source_relation_ids) == 1)
 
 
-def source_owned_result_appraisal_context(relation, nuclei, relations):
-    """Read the source-proved complete unfinished fact of one appraisal.
+def source_owned_result_appraisal_context(relation, nuclei, relations, *, reason=False):
+    """Read one source-proved unfinished fact or affirmative appraisal reason.
 
     This bounded initial-source arm does not admit arbitrary neighbouring
     states. The exact three scalar owners and both required edges were
@@ -13572,12 +13622,14 @@ def source_owned_result_appraisal_context(relation, nuclei, relations):
     index = {n.nucleus_id: n for n in nuclei}
     event, evaluation = (index[nid] for nid in
                          (relation.from_nucleus_id, relation.to_nucleus_id))
-    marker = 'semantic_dependency:unfinished_result_appraisal'
+    marker = ('semantic_dependency:reasoned_result_appraisal' if reason
+              else 'semantic_dependency:unfinished_result_appraisal')
     group = tuple(n for n in nuclei if n.source_span_ids == event.source_span_ids
         and n.source_fields == event.source_fields
         and marker in n.semantic_frame.attribute_codes)
     contexts = tuple(n for n in group
-        if 'semantic_role:appraisal_unfinished_context' in n.semantic_frame.attribute_codes)
+        if ('semantic_role:appraisal_explicit_reason' if reason else 'semantic_role:appraisal_unfinished_context')
+            in n.semantic_frame.attribute_codes)
     if len(group) != 3 or len(contexts) != 1:
         return None
     context = contexts[0]
@@ -13589,9 +13641,11 @@ def source_owned_result_appraisal_context(relation, nuclei, relations):
             or n.surface_anchor_ids != event.source_span_ids for n in group)
         or (context.kind, context.semantic_frame.predicate_kind, context.semantic_frame.modality,
             context.semantic_frame.polarity, context.semantic_frame.time_scope)
-            != ('state', 'state', 'fact', 'negative', 'present')
-        or not {'semantic_role:present_unfinished', 'operator:unfinished', 'operator:negation'}
-            <= set(context.semantic_frame.attribute_codes)
+            not in ({('state', 'state', 'fact', 'positive', 'past'), ('state', 'state', 'fact', 'positive', 'present')}
+                    if reason else {('state', 'state', 'fact', 'negative', 'present')})
+        or (not reason and not {'semantic_role:present_unfinished', 'operator:unfinished', 'operator:negation'}
+            <= set(context.semantic_frame.attribute_codes))
+        or (reason and {'operator:negation', 'operator:unfinished'} & set(context.semantic_frame.attribute_codes))
         or {'operator:uncertainty', 'semantic_role:limiting_unknown'}
             & set(context.semantic_frame.attribute_codes)
         or (event.semantic_frame.modality, event.semantic_frame.polarity, event.semantic_frame.time_scope)
@@ -13615,7 +13669,7 @@ def source_owned_result_appraisal_context(relation, nuclei, relations):
     if not (ranges[0][0] == 0 and ranges[0][1] < ranges[1][0]
             and ranges[1][1] <= ranges[2][0]):
         return None
-    contrasts = tuple(r for r in relations if r.type == 'contrast'
+    contrasts = tuple(r for r in relations if r.type == ('user_stated_cause' if reason else 'contrast')
         and r.retention == 'required' and r.grounding_kind == 'user_stated_relation'
         and (r.from_nucleus_id, r.to_nucleus_id) == (context.nucleus_id, evaluation.nucleus_id)
         and r.source_span_ids == event.source_span_ids)
@@ -13625,6 +13679,11 @@ def source_owned_result_appraisal_context(relation, nuclei, relations):
     incident = tuple(r for r in relations if r.retention == 'required'
         and ids & {r.from_nucleus_id, r.to_nucleus_id})
     return context if len(incident) == 2 and set(incident) == {relation, contrasts[0]} else None
+
+
+def source_owned_result_appraisal_reason(relation, nuclei, relations):
+    """One proved affirmative fact given by SELF as a satisfaction reason."""
+    return source_owned_result_appraisal_context(relation, nuclei, relations, reason=True)
 
 
 def _received_event_reaction_projections(span, base_frame):
@@ -13826,6 +13885,7 @@ def _final_stage1_typed_nuclei(
     *,
     normalized_input: Mapping[str, Any] | None = None,
     _legacy_result_appraisal: bool = False,
+    _legacy_appraisal_reason: bool = False,
 ) -> tuple[tuple[GroundedSemanticNucleus, ...], tuple[tuple[str, str, str], ...]]:
     span_index = {
         _clean(getattr(span, "span_id", "")): span
@@ -13842,7 +13902,8 @@ def _final_stage1_typed_nuclei(
             else None
         )
         received_projections = ((() if _legacy_result_appraisal else
-            _explicit_result_appraisal_projections(span, normalized_input))
+            _explicit_result_appraisal_projections(span, normalized_input,
+                _legacy_appraisal_reason=_legacy_appraisal_reason))
             or _received_event_reaction_projections(span, nucleus.semantic_frame)) if span is not None else ()
         canonical_projections = received_projections or (
             _typed_nucleus_projections_for_span(
@@ -14593,6 +14654,14 @@ def _final_stage1_typed_nuclei(
                 set(projection.attribute_codes) for projection in projections
             )
             if (projections[0].kind == projections[0].predicate_kind == 'state'
+                and projections[0].modality == 'fact' and projections[0].polarity == 'positive'
+                and projections[1].kind == 'event' and projections[2].kind == 'reaction'
+                and all('semantic_dependency:reasoned_result_appraisal' in codes for codes in projection_codes)):
+                compound_dependencies.extend((
+                    ('user_stated_cause', projected_ids[0], projected_ids[2]),
+                    ('evaluation_about_event', projected_ids[1], projected_ids[2]),
+                ))
+            elif (projections[0].kind == projections[0].predicate_kind == 'state'
                 and projections[0].modality == 'fact' and projections[0].polarity == 'negative'
                 and projections[1].kind == 'event' and projections[2].kind == 'reaction'
                 and all('semantic_dependency:unfinished_result_appraisal' in codes for codes in projection_codes)):
@@ -14813,6 +14882,7 @@ def _final_stage1_typed_relations(
         relation_type: RelationKind = dependency  # type: ignore[assignment]
         if relation_type not in {
             "evaluation_about_event",
+            "user_stated_cause",
             "action_supports_change",
             "coexistence",
             "contrast",
@@ -16193,6 +16263,7 @@ def project_final_stage1_grounded_observation_plan(
     resolver: EvidenceSpanResolver | None = None,
     normalized_input: Mapping[str, Any] | None = None,
     _legacy_result_appraisal: bool = False,
+    _legacy_appraisal_reason: bool = False,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -16206,6 +16277,7 @@ def project_final_stage1_grounded_observation_plan(
         evidence_spans,
         normalized_input=normalized_input,
         _legacy_result_appraisal=_legacy_result_appraisal,
+        _legacy_appraisal_reason=_legacy_appraisal_reason,
     )
     projected_nuclei = _final_stage1_align_action_status(
         projected_nuclei,
@@ -17276,6 +17348,7 @@ def build_final_stage1_grounded_observation_plan(
     retention_plan: MajorMeaningRetentionPlan | None = None,
     safety_decision: EmlisSafetyTriageDecision | None = None,
     _legacy_result_appraisal: bool = False,
+    _legacy_appraisal_reason: bool = False,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan."""
 
@@ -17328,6 +17401,7 @@ def build_final_stage1_grounded_observation_plan(
         resolver=resolver,
         normalized_input=normalized,
         _legacy_result_appraisal=_legacy_result_appraisal,
+        _legacy_appraisal_reason=_legacy_appraisal_reason,
     )
 
 

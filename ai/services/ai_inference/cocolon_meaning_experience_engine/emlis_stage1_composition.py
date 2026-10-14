@@ -6238,6 +6238,33 @@ def _normal_reception_appraisal(
             raise Stage1CompositionError("MEANING_REALIZATION_CAPABILITY_GAP")
         about = next(iter(connected_appraisals.values()))
         context_ref, = set(own_basis) - {about.source_endpoint_ref, about.target_endpoint_ref}
+        reasons = {direction.relation_ref: direction
+            for configuration in relation_configurations for direction in configuration.direction_rows
+            if direction.relation_kind is EmlisThreadScopeRelationKind.SATISFACTION_REASON
+            and (direction.source_endpoint_ref, direction.target_endpoint_ref)
+                == (context_ref, about.target_endpoint_ref)}
+        if reasons:
+            reason, event, evaluation = (endpoint(ref) for ref in
+                (context_ref, about.source_endpoint_ref, about.target_endpoint_ref))
+            if (len(reasons) != 1 or any(value is None for value in (reason, event, evaluation))
+                or (reason.modality, reason.polarity) != ('fact', 'positive')
+                or reason.time_scope not in {'past', 'present'}
+                or (event.modality, event.polarity, event.time_scope) != ('fact', 'neutral', 'past')
+                or (evaluation.modality, evaluation.polarity) != ('feeling', 'positive')
+                or evaluation.time_scope not in {'past', 'present'}
+                or not all('semantic_dependency:reasoned_result_appraisal' in endpoint_codes(value)
+                           for value in (reason, event, evaluation))
+                or 'semantic_role:appraisal_explicit_reason' not in endpoint_codes(reason)
+                or not {'source_appraisal_kind:satisfaction', 'source_appraisal_degree:unmarked'}
+                    <= endpoint_codes(evaluation)
+                or set(own_basis) != {ref for row in semantic_rows for ref in row.semantic_refs}):
+                raise Stage1CompositionError('MEANING_REALIZATION_CAPABILITY_GAP')
+            # The concrete reason is the basis of this satisfaction, not a
+            # claim that the event objectively caused a beneficial result.
+            return EmlisAppraisalContent(AppraisalDimension.MATERIAL_WEIGHT,
+                AppraisalOperation.RECEIVE_AS_MATERIAL,
+                tuple(row.binding_ref for row in basis_rows), next(iter(reasons)), (),
+                tuple(row.contribution_id for row in contributions))
         contrasts = {direction.relation_ref: direction
             for configuration in relation_configurations for direction in configuration.direction_rows
             if direction.relation_kind.value == 'contrast'

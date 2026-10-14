@@ -71,6 +71,7 @@ class PreparedEmlisMeaning:
     original_plan: gp.GroundedObservationPlan
     accepted_nuclei: tuple[gp.GroundedSemanticNucleus, ...]
     checkpoint: EmlisMeaningCheckpointV1
+    legacy_appraisal_reason: bool = False
     legacy_result_appraisal: bool = False
     legacy_appraisal_correction: bool = False
 
@@ -589,6 +590,15 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
             or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
             raise
+        prior_reason = original_meaning_plan(thread, _legacy_appraisal_reason=True)
+        if prior_reason.nuclei != original.nuclei or prior_reason.relations != original.relations:
+            try:
+                restored = _prepare_emlis_meaning_from_plan(request, thread, prior_reason)
+            except ValueError as prior_exc:
+                if str(prior_exc) not in {'emlis_checkpoint_source_prefix_mismatch', 'emlis_question_noncanonical'}:
+                    raise
+            else:
+                return replace(restored, legacy_appraisal_reason=True)
         legacy = original_meaning_plan(thread, _legacy_result_appraisal=True)
         if legacy.nuclei == original.nuclei and legacy.relations == original.relations:
             raise

@@ -458,14 +458,15 @@ def validate_selected_subjective_reception_input(
         source_move = next((move for move in plan.response_plan.human_reception_plan.moves
                             if move.move_id == row.move_id), None)
         source_focus = source_owned_relational_focus(source_move, plan) if source_move is not None else None
-        if source_focus is not None and source_focus[0] == 'unfinished_result_appraisal':
+        if source_focus is not None and source_focus[0] in {'unfinished_result_appraisal', 'reasoned_result_appraisal'}:
             from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
             context, event, evaluation = source_focus[1:]
-            contrasts = tuple(r for r in plan.relations if r.type == 'contrast'
+            reasoned = source_focus[0] == 'reasoned_result_appraisal'
+            contrasts = tuple(r for r in plan.relations if r.type == ('user_stated_cause' if reasoned else 'contrast')
                 and (r.from_nucleus_id, r.to_nucleus_id) == (context.nucleus_id, evaluation.nucleus_id))
             if (row.branch != 'NORMAL' or type(appraisal) is not EmlisAppraisalContent
-                or appraisal.dimension != 'RELATIONAL_NONCOLLAPSE'
-                or appraisal.operation != 'PRESERVE_BOTH_ENDPOINTS'
+                or appraisal.dimension != ('MATERIAL_WEIGHT' if reasoned else 'RELATIONAL_NONCOLLAPSE')
+                or appraisal.operation != ('RECEIVE_AS_MATERIAL' if reasoned else 'PRESERVE_BOTH_ENDPOINTS')
                 or appraisal.protected_bindings or len(appraisal.appraised_bindings) != 3
                 or {semantic_map.get(basis_by_ref[ref].semantic_ref) for ref in appraisal.appraised_bindings}
                     != {context.nucleus_id, event.nucleus_id, evaluation.nucleus_id}
@@ -11427,7 +11428,8 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
     focus = source_owned_relational_focus(move, plan)
     received_chain = focus is not None and focus[0] == "received_feeling_contrast"
     unfinished_appraisal = focus is not None and focus[0] == "unfinished_result_appraisal"
-    three_roles = received_chain or unfinished_appraisal
+    reasoned_appraisal = focus is not None and focus[0] == "reasoned_result_appraisal"
+    three_roles = received_chain or unfinished_appraisal or reasoned_appraisal
     if (focus is None or recovery_stage != "full"
         or realization.reference_mode == "ANAPHORIC"
         or realization.clause_form != "FINITE"
@@ -11442,6 +11444,32 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
                         == "STAY_WITH_SPECIFIC_OBJECT"))):
         return None
     index = {n.nucleus_id: n for n in plan.nuclei}
+    if reasoned_appraisal:
+        from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
+        content = selected_decision.subjective_proposition.appraisal_content
+        if (selected_decision.branch != 'NORMAL' or type(content) is not EmlisAppraisalContent
+            or content.dimension != 'MATERIAL_WEIGHT' or content.operation != 'RECEIVE_AS_MATERIAL'
+            or len(content.appraised_bindings) != 3 or content.protected_bindings):
+            return None
+        reason_node, event_node, evaluation = focus[1:]
+        reason, event, feeling = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
+                                  for n in focus[1:])
+        if not all((reason, event, feeling)) or set(realization.semantic_fragments) != {reason, event, feeling}:
+            return None
+        endings = {c.split(':', 1)[1] for c in event_node.semantic_frame.attribute_codes
+                   if c.startswith('source_appraisal_event_ending:')}
+        if len(endings) != 1:
+            return None
+        ending = next(iter(endings))
+        if ending not in {'te', 'de', 'ta'} or not event.endswith({'te': 'て', 'de': 'で', 'ta': 'た'}[ending]):
+            return None
+        event = event[:-1] + {'te': 'た', 'de': 'だ', 'ta': 'た'}[ending]
+        reason, event = (re.sub(r'(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)', 'あなた', value, count=1)
+                         for value in (reason, event))
+        from emlis_ai_grounded_observation_plan import _result_appraisal_time_label
+        when = _result_appraisal_time_label(evaluation)
+        at = when + ('の' if when == '当時' else 'での')
+        return f'{reason}点に、{event}ことへの{at}満足の拠り所が見えます'
     if unfinished_appraisal:
         if (selected_decision.branch != 'NORMAL' or not _selected_noncollapse_appraisal(selected_decision)
             or len(selected_decision.subjective_proposition.appraisal_content.appraised_bindings) != 3):

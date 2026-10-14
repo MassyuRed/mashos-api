@@ -20,7 +20,7 @@ from .emlis_thread_contracts import THREAD_SCHEMA
 from .emlis_thread_source import identity
 import emlis_ai_grounded_human_reception as hr
 from emlis_ai_grounded_observation_plan import (
-    source_owned_result_appraisal, source_owned_result_appraisal_context,
+    source_owned_result_appraisal, source_owned_result_appraisal_context, source_owned_result_appraisal_reason,
     _source_operator_owner_scope_is_bound,
 )
 
@@ -168,6 +168,11 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
             if e.relation == "evaluation_about_event" and (any(
                 ref in checkpoint.accepted_update_refs for ref in binding.edge_meta[e.edge_id].source_relation_ids)
                 or source_owned_result_appraisal(binding.edge_meta[e.edge_id], plan.nuclei))
+            else c.EmlisThreadScopeRelationKind.SATISFACTION_REASON
+            if e.relation == 'user_stated_cause' and any(
+                (reason := source_owned_result_appraisal_reason(about, plan.nuclei, plan.relations)) is not None
+                and (binding.edge_meta[e.edge_id].from_nucleus_id, binding.edge_meta[e.edge_id].to_nucleus_id)
+                    == (reason.nucleus_id, about.to_nucleus_id) for about in plan.relations)
             else c.project_foreground_scope_relation_kind(e.relation))) is not None)
     pre = c.PreMeaningGroundedInputs("1.0", c.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2,
         graph, r._graph_ref(graph), parent.observation_duty_id, candidates, field, contributions,
@@ -196,6 +201,8 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
     # SELF-action boundary; adjacency cannot activate the component policy.
     appraisal_endpoints.update(context.nucleus_id for e in appraisals
         if (context := source_owned_result_appraisal_context(e, plan.nuclei, plan.relations)) is not None)
+    appraisal_endpoints.update(reason.nucleus_id for e in appraisals
+        if (reason := source_owned_result_appraisal_reason(e, plan.nuclei, plan.relations)) is not None)
     independent_required = tuple(n for n in plan.nuclei
         if n.nucleus_id in plan.coverage_requirements.required_nucleus_ids
         and n.nucleus_id not in appraisal_endpoints)

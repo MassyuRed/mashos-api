@@ -404,8 +404,9 @@ class ForegroundScopeRelationKind(str, Enum):
 
 
 class EmlisThreadScopeRelationKind(str, Enum):
-    """An answer's subject, never a cause, contrast, or third-party intent."""
+    """Private thread links; a reason is SELF's explanation, not objective causation."""
     ABOUT_TARGET = "evaluation_about_event"
+    SATISFACTION_REASON = "satisfaction_reason"
 
 
 def admitted_scope_relation_kind(value: object) -> bool:
@@ -1218,10 +1219,10 @@ class GroundedSourceQualifierRow:
 
 @dataclass(frozen=True, slots=True)
 class GroundedSourceRelationRow:
-    """Cap-free exact4 relation projection available before meaning selection."""
+    """Source relations: the shared exact4 and admitted private thread links."""
 
     relation_ref: str
-    relation_kind: ForegroundScopeRelationKind
+    relation_kind: ForegroundScopeRelationKind | EmlisThreadScopeRelationKind
 
 
 @dataclass(frozen=True, slots=True)
@@ -1364,7 +1365,7 @@ class ForegroundScopeDerivation:
 class RelationDirectionRow:
     schema_version: str
     relation_ref: str
-    relation_kind: ForegroundScopeRelationKind
+    relation_kind: ForegroundScopeRelationKind | EmlisThreadScopeRelationKind
     source_endpoint_ref: str
     target_endpoint_ref: str
 
@@ -6788,6 +6789,7 @@ def _stage1_direction_under_burden_endpoint_pair(
 
 _STAGE1_APPRAISAL_SOURCE_CODES = frozenset((
     "semantic_dependency:explicit_result_appraisal",
+    "semantic_dependency:reasoned_result_appraisal", "semantic_role:appraisal_explicit_reason",
     "source_appraisal_kind:satisfaction", "source_appraisal_kind:acceptance",
     "source_appraisal_target:thinking", "source_appraisal_target:manual_action",
     "source_appraisal_target:unspecified_action", "source_appraisal_continuing:still",
@@ -6915,6 +6917,17 @@ def project_stage1_relation_source_contract_qualifiers(
         raise CMEEStage1ContractError(
             "stage1_response_schema_version_invalid"
         )
+    if (candidate_kind is InterpretationKind.SOURCE_STATED_CAUSE
+        and all('semantic_dependency:reasoned_result_appraisal' in codes
+                for codes in (source_attribute_codes, target_attribute_codes))
+        and 'semantic_role:appraisal_explicit_reason' in source_attribute_codes
+        and {'source_appraisal_kind:satisfaction', 'source_appraisal_degree:unmarked'}
+            <= set(target_attribute_codes)):
+        return tuple(prefix + value for prefix, codes in
+            (('cause_', source_attribute_codes), ('effect_', target_attribute_codes))
+            for value in project_stage1_source_contract_qualifiers(
+                source_attribute_codes=codes, source_explicit_shift_relation_endpoint=False,
+                stage1_response_schema_version=stage1_response_schema_version))
     if (candidate_kind is InterpretationKind.TENSION
         and {"semantic_dependency:explicit_result_appraisal",
              "source_appraisal_kind:satisfaction", "source_appraisal_degree:unmarked"}
@@ -8776,7 +8789,8 @@ def _validate_relation_direction_row(
         )
     _validate_stage1_immutable_shape(row)
     if (
-        row.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION
+        row.schema_version != ("1.1" if row.relation_kind is EmlisThreadScopeRelationKind.SATISFACTION_REASON
+                               else _FOREGROUND_SCOPE_SCHEMA_VERSION)
         or not admitted_scope_relation_kind(row.relation_kind)
     ):
         raise CMEEStage1ContractError(
@@ -11521,7 +11535,7 @@ def input_specific_meaning_configuration_source_component_rows(
             "mutation_configuration_scope_binding_invalid"
         )
     if type(configuration) is RelationalConfiguration:
-        about_target = any(type(row.relation_kind) is EmlisThreadScopeRelationKind
+        about_target = any(row.relation_kind is EmlisThreadScopeRelationKind.ABOUT_TARGET
                            for row in configuration.direction_rows)
         matching = tuple(
             projection
@@ -12528,7 +12542,7 @@ def _validate_input_specific_meaning_im03(
         qualified_object_refs.update(
             ref for configuration in owned_configurations
             if type(configuration) is RelationalConfiguration
-            and any(type(row.relation_kind) is EmlisThreadScopeRelationKind
+            and any(row.relation_kind is EmlisThreadScopeRelationKind.ABOUT_TARGET
                     for row in configuration.direction_rows)
             for ref in configuration.endpoint_component_refs)
         selected_projections = tuple(

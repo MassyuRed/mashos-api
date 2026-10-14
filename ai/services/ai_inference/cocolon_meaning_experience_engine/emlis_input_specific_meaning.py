@@ -198,7 +198,7 @@ class SourceConnectedScopeRelation:
 
     schema_version: str
     relation_ref: str
-    relation_kind: ForegroundScopeRelationKind
+    relation_kind: ForegroundScopeRelationKind | EmlisThreadScopeRelationKind
     source_object_ref: str
     target_object_ref: str
     source_evidence_refs: Tuple[str, ...]
@@ -620,6 +620,64 @@ def _project_grounded_interpretations(
     return tuple(result)
 
 
+def _thread_scope_relation_source_is_bound(row, premeaning_inputs):
+    """Validate carried thread source roles before admitting a private relation."""
+    graph = premeaning_inputs.grounded_graph
+    edges = {_edge_ref(edge): edge for edge in graph.edges}
+    edge = edges.get(row.relation_ref)
+    if graph.source_version not in {"cocolon.cmee.emlis_thread.v1", "cocolon.cmee.emlis_thread.q3.v1"} or edge is None:
+        return False
+    if row.relation_kind is EmlisThreadScopeRelationKind.ABOUT_TARGET:
+        return edge.relation == 'evaluation_about_event'
+    if (row.relation_kind is not EmlisThreadScopeRelationKind.SATISFACTION_REASON
+        or edge.relation != 'user_stated_cause' or not _relation_is_source_explicit(edge, graph)):
+        return False
+    about = tuple(edges.get(r.relation_ref) for r in premeaning_inputs.source_relation_rows
+                  if r.relation_kind is EmlisThreadScopeRelationKind.ABOUT_TARGET)
+    about = tuple(e for e in about if e is not None and e.relation == 'evaluation_about_event'
+                  and e.target_node_id == edge.target_node_id and _relation_is_source_explicit(e, graph))
+    if len(about) != 1:
+        return False
+    ids = (edge.source_node_id, about[0].source_node_id, edge.target_node_id)
+    if len(set(ids)) != 3:
+        return False
+    nodes = {n.node_id: n for n in graph.nodes}
+    qualifiers = _qualifiers_by_node_ref(premeaning_inputs)
+    if any(nid not in nodes for nid in ids):
+        return False
+    values = tuple(set(qualifiers.get(_node_ref(nodes[nid]), ())) for nid in ids)
+    common = {'actor:current_user', 'qualifier:semantic_dependency:explicit_result_appraisal',
+              'qualifier:semantic_dependency:reasoned_result_appraisal'}
+    reason, target, evaluation = values
+    if (not all(common <= value for value in values)
+        or not {'modality:fact', 'polarity:positive', 'qualifier:semantic_role:appraisal_explicit_reason'} <= reason
+        or not {'modality:fact', 'polarity:neutral', 'time_scope:past'} <= target
+        or not {'modality:feeling', 'polarity:positive', 'qualifier:source_appraisal_kind:satisfaction',
+                'qualifier:source_appraisal_degree:unmarked'} <= evaluation
+        or any(len(value & {'time_scope:past', 'time_scope:present'}) != 1 for value in (reason, evaluation))
+        or any('qualifier:source_appraisal_continuing:still' in value for value in values)):
+        return False
+    for value, modality, polarity in zip(values, ('fact', 'fact', 'feeling'), ('positive', 'neutral', 'positive')):
+        for axis, expected in (('actor', 'current_user'), ('modality', modality), ('polarity', polarity)):
+            if {code for code in value if code.startswith(axis + ':')} != {axis + ':' + expected}:
+                return False
+        if len({code for code in value if code.startswith('time_scope:')}) != 1:
+            return False
+    if (tuple(nodes[nid].node_kind for nid in ids) != ('state', 'event', 'reaction')
+        or {code for code in evaluation if code.startswith('qualifier:source_appraisal_')}
+            != {'qualifier:source_appraisal_kind:satisfaction', 'qualifier:source_appraisal_degree:unmarked'}):
+        return False
+    evidence = nodes[ids[0]].evidence_ids
+    if (len(evidence) != 1 or any(nodes[nid].evidence_ids != evidence for nid in ids)
+        or edge.evidence_ids != evidence or about[0].evidence_ids != evidence):
+        return False
+    group = {nid for nid, node in nodes.items() if node.evidence_ids == evidence
+             and 'qualifier:semantic_dependency:reasoned_result_appraisal'
+                 in qualifiers.get(_node_ref(node), ())}
+    incident = tuple(e for e in graph.edges if {e.source_node_id, e.target_node_id} & set(ids))
+    return group == set(ids) and len(incident) == 2 and set(incident) == {edge, about[0]}
+
+
 def derive_grounded_situation_view(
     premeaning_inputs: PreMeaningGroundedInputs,
     *,
@@ -688,9 +746,7 @@ def derive_grounded_situation_view(
                 "grounded_situation_view_source_relation_invalid"
             )
         if (type(row.relation_kind) is EmlisThreadScopeRelationKind
-                and (graph.source_version not in {"cocolon.cmee.emlis_thread.v1", "cocolon.cmee.emlis_thread.q3.v1"}
-                     or row.relation_ref not in edges_by_ref
-                     or edges_by_ref[row.relation_ref].relation != "evaluation_about_event")):
+                and not _thread_scope_relation_source_is_bound(row, premeaning_inputs)):
             raise CMEEStage1ContractError("thread_answer_target_relation_source_invalid")
         validate_version_qualified_ref(
             row.relation_ref,
@@ -888,7 +944,7 @@ def derive_grounded_situation_view(
             source_version=graph.source_version,
         )
         relation = SourceConnectedScopeRelation(
-            schema_version=_SCHEMA_VERSION,
+            schema_version=("1.1" if relation_kind is EmlisThreadScopeRelationKind.SATISFACTION_REASON else _SCHEMA_VERSION),
             relation_ref=relation_ref,
             relation_kind=relation_kind,
             source_object_ref=endpoint_refs[0],
@@ -1114,9 +1170,8 @@ def validate_grounded_situation_view(
     for row in premeaning_inputs.source_relation_rows:
         edge = edges.get(row.relation_ref)
         if (edge is None or not admitted_scope_relation_kind(row.relation_kind)
-                or type(row.relation_kind) is EmlisThreadScopeRelationKind and (
-                    grounded_graph.source_version not in {"cocolon.cmee.emlis_thread.v1", "cocolon.cmee.emlis_thread.q3.v1"}
-                    or edge.relation != "evaluation_about_event")):
+                or type(row.relation_kind) is EmlisThreadScopeRelationKind
+                    and not _thread_scope_relation_source_is_bound(row, premeaning_inputs)):
             raise CMEEStage1ContractError("grounded_situation_view_source_relation_mismatch")
         if not _relation_is_source_explicit(edge, grounded_graph):
             continue
@@ -1124,7 +1179,7 @@ def validate_grounded_situation_view(
         right = f"node:{edge.target_node_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}"
         if left not in nodes_by_ref or right not in nodes_by_ref or left == right:
             continue
-        expected_relations.append(SourceConnectedScopeRelation(_SCHEMA_VERSION, row.relation_ref,
+        expected_relations.append(SourceConnectedScopeRelation("1.1" if row.relation_kind is EmlisThreadScopeRelationKind.SATISFACTION_REASON else _SCHEMA_VERSION, row.relation_ref,
             row.relation_kind, left, right, _evidence_refs((edge, nodes_by_ref[left], nodes_by_ref[right]),
                                                         source_version=grounded_graph.source_version)))
     if set(view.source_connected_relations) != set(expected_relations):
@@ -1188,7 +1243,7 @@ def _validate_source_relation(row: SourceConnectedScopeRelation) -> None:
             "foreground_scope_source_relation_invalid"
         )
     if (
-        row.schema_version != _SCHEMA_VERSION
+        row.schema_version != ("1.1" if row.relation_kind is EmlisThreadScopeRelationKind.SATISFACTION_REASON else _SCHEMA_VERSION)
         or not admitted_scope_relation_kind(row.relation_kind)
         or row.relation_kind not in _ADMITTED_SCOPE_RELATIONS
         or type(row.relation_ref) is not str
@@ -2106,7 +2161,7 @@ def derive_difference_configuration_set(
             continue
         direction_rows = tuple(
             RelationDirectionRow(
-                schema_version=_SCHEMA_VERSION,
+                schema_version=relation.schema_version,
                 relation_ref=relation.relation_ref,
                 relation_kind=relation.relation_kind,
                 source_endpoint_ref=relation.source_object_ref,
@@ -3705,7 +3760,7 @@ def _material_interpretation_projections(
     qualified_object_refs.update(
         ref for configuration in configurations
         if type(configuration) is RelationalConfiguration
-        and any(type(row.relation_kind) is EmlisThreadScopeRelationKind
+        and any(row.relation_kind is EmlisThreadScopeRelationKind.ABOUT_TARGET
                 for row in configuration.direction_rows)
         for ref in configuration.endpoint_component_refs)
     primary_refs = {
