@@ -1,4 +1,4 @@
-> 最新の内容修正は末尾 **u250（2026-10-13 JST・未配置）**。既知修飾が重なる話者の引用と本人の独立内容を区別する不整合を修正。生成全文・検証・残件は同節とAnalysis current03を参照。
+> 最新のEmlisAI残件確認は末尾 **u252（2026-10-14・契約変更案は未承認）**。単独評価の受け取り処理の欠落と、独立記述を競合にする意味選択契約を分離。製品修正・品質改善は未完了。直近のAnalysis内容修正はu250／current03を参照。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -18249,3 +18249,58 @@ Python 3.12.14と既存CI pinで、新規の合成29 testsは **19 PASS / 10 FAI
 受入確認は、同じ行動で評価だけを否定へ変える、思考の達成を物理作業へ変える、片側を削除する、主体・時点を変える比較を含める。各変更で読みと受け取りが根拠に応じて変わり、因果・回復・成長・自己肯定・第三者視点を創作しないこと、および実本文が分類・復唱・固定締めを越えることを同じ単位で確認する。
 
 これは語形/語尾だけの小修正では完結せず、意味選択とReception内容形成を含む作業である。今回の失敗から完成工数・終了日を保証しない。10/17は実本文の差と未解消を示す確認点、10/31の公開必須残差と12/18目標は維持するが、この試作を収束見込みの上積みに使わない。追加費用・外部AI・本番/DB操作・配置・mergeは0。Piece/Analysisの主枠をEmlisの全面再設計へ流用しない。
+
+
+## u252 — 明示評価の未実装と、独立記述を競合にする設計制約を分離（2026-10-14）
+
+Mashの「アプリ全体の設計図と全ファイルの地図」「最新weekly_reviews」を確認してEmlisAI残件を進める指示により、u251の同じ最初の修正単位を継続した。開始版はAPI PR3 `35ab02b6f4671d0df12383dc000d807e40e4f06e`、Cocolon PR30 `e0d4b48b2583f7345d85e663d6e192900fab244b`。添付の前回報告、作業姿勢入口／CURRENT_RULES／環境・transport・runtime・記録規則、恒久incident全文、全体設計01の全体flow・全file coverageと01A/B/Cの該当・隣接owner、current00/01/04、最新weekly20261010 §3.5・§5.6・§5.6.1・§6.5、8/28意味決定設計と9/8限定承認を照合した。地図と実treeから責務を確認したのであり、全製品sourceの全文監査ではない。System Context prepareは部分checkoutで `No module named tools` となり、入口規定の原本直接読取へ戻った。生成contextの鮮度成立は主張しない。
+
+**結果はBLOCKER_NARROWED。製品コードの改善・最初の修正単位の完成・商品合格はいずれも0。** u251の不採用版 `64e3d107fbac79854278b7ab566d695cc830bdf3` を変更せず再現し、停止原因を以下の二層へ分離した。rootが実行と最終判断を担当し、同環境のread-only agentが主体scope、意味経路、商品要求を分担確認した。Pro／Ultra別モデルによる独立審査の成立とは扱わない。元の非公開入力・個別ID・本文・digestは転記しない。
+
+### 1. 今回実測した原因 — 実装不足をすべて設計変更へ置き換えない
+
+| 合成入力・差分 | 実経路で確認した結果 | 判定 |
+|---|---|---|
+| メモ「資料を分類できて満足した。」、独立行動なし | foregroundが成立し、意味候補1件からNORMALのselected readingへ進む。Reception投影の `_normal_reception_appraisal` で `MEANING_REALIZATION_CAPABILITY_GAP`。 | 意味選択後の内部実装不足。これ単独の修正に契約変更が必須とは確認していない。 |
+| 同じメモ、行動欄へ「植木に水をやった。」を追加 | `COMPETING_MATERIAL_SCOPES`、候補0、`LIMITED_COMPETING_MATERIAL_READINGS`。単独入力のNORMAL専用停止を迂回し、u251の復唱と注目宣言が出る。 | 独立記述を追加すると意味選択自体が変わる。本文が出たことを改善としない。 |
+| メモ「資料を分類したことにまだ納得していない。」 | 独立行動の有無でNORMAL／LIMITEDは変わるが、どちらも本文inverseの `body_inverse_reception_response_marker_missing:1` で拒否。 | 本文作者とreaderの表現整合の欠陥。markerだけ通しても受け取り内容は完成しない。 |
+
+単独肯定評価では、出来事と評価を結ぶ `ABOUT_TARGET` がある一方、compositionへ届く寄与は2本の `PRESENT_STATE / NO_RELATION_CLAIM` で、出来事はfact/past/neutral、評価はfeeling/past/positiveだった。既存 `positive_feeling_state` 分岐は寄与・basis・qualifierが各exact1の単一感情専用で、今回は既存5分岐のいずれにも入らず停止する。対象関係とendpointのqualifierを受け取り内容形成へ通す修正が必要であり、len条件の緩和や、変化を立証せず `BOUNDED_CHANGE` に割り当てる修正ではない。
+
+主体・予定の誤採用については、既存のowner scopeと行為endpoint解析を再利用できる箇所を特定した。ただし二つのhelperだけでは「分類する予定だったことに満足」のような非実行の過去を拒否しきれない。既存status解析も含めた一体修正が必要で、修正済みとは扱わない。今回、製品source／testは変更していない。
+
+不採用版の既存29 testsをPython 3.12.14／既存CIと同じpinで再実行し、**19 PASS／10 FAIL（8.61秒）**を再現した。内訳はu251と同じscope誤採用6、否定本文停止3、行動削除時停止1。成功件数の増加は0である。検査commandは `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=ai/services/ai_inference:ai/tests:ai python3 -m pytest -q --tb=short -p pytest_subtests.plugin -p no:cacheprovider -c /dev/null --noconftest ai/tests/test_cmee_emlis_result_appraisal.py`。本文・局所変数の追加観測は診断であり、全回帰・保存再読・RN・本人実機の新たな合格ではない。
+
+### 2. 既存契約との衝突を確認した箇所
+
+8/28設計§5.2.1は、全admitted basisをtyped exact10でpairwise比較し、異なるobjectすべてにsource-connected relationを要求する。別値を保持するrelationがなければmaterial conflict、relation等の必要構造が欠ければstructure insufficientへ送る。§8.2は各bundleのrequired componentを発明なしで一つのconfigurationへ結び、§8.3／§8.4は同じforeground／center／source-connected pathのprimary exact1＋supportingだけを認める。9/8の限定承認は、この入力全体の接続条件を解除していない。
+
+実装 `emlis_input_specific_meaning.py::derive_foreground_scope_closed` の全material pair比較と、bundle側のsource-connected判定はこの契約に沿う。したがって、対象付き評価と、それとの関係が記述されていない別の行動を、無理に結ばず保持して意味選択するには、この部分の契約を変更する必要がある。単なるbug修正と称してrelationを作る、required記述を捨てる、fieldや感情の固定優先で中心を選ぶ、LIMITEDを強制的にNORMALへ書き換える案は採らない。
+
+一方、§9.2が要求する「今回をどのような経験として受け取ったか」の内容導出は既存の要求である。現在はselected reading／consequenceの参照を保持しても、Reception propositionから実本文へ入力固有の受け取りを作る処理が不足し、Human Receptionの明示評価分岐が原文断片と定型末尾を返す。**既存のtyped内容からの実装可能性と、新しい型を選ぶ場合の契約更新を分ける。** 5種類のenumしかないことだけで既存方式の実現不能、Route A全体の不可能性とは断定しない。
+
+### 3. 判断を求める限定変更案 — EMLIS_APPRAISAL_COMPONENT_MEANING_20261014 / NOT_APPROVED
+
+これは `METHOD_OR_PRODUCT_DECISION_CANDIDATE` であり、採用設計・実行authority・完成認定ではない。推奨する変更は、**意味を選ぶ単位を「入力全体が一つにつながること」から「根拠でつながる内容ごとの読みと、その全体での保持」へ変えること**。初回対象はu251の明示評価とその対象、および同時入力された独立行動であり、全理論・全自然言語・別エンジンの新設へ広げない。
+
+1. **内容ごとの意味形成。** 既に許可されたsource-groundedな関係でつながる対象を一組として扱い、各組に既存の主体・時点・肯否定・行為status・評価対象と評価者を保持する。別の組との関係が書かれていないことは関係不明として扱い、同時・対比・原因・「無関係と確定」のいずれも推定しない。
+2. **独立と競合の分離。** 別の対象の異なるqualifierを、入力全体で一致しないという理由だけで同じ対象の競合へ変換しない。同じ対象・scopeに複数の異なる読みが残れば、従来どおり未確定を保持する。独立した組を捨てたり、曖昧な組をNORMALへ昇格させたりしない。全組の読みと保持条件が成立し、本文検証も成立した場合だけNORMALを許す。
+3. **中心を捏造しない全体の読み。** sourceに明示された焦点があればその根拠を使う。なければ感情／行動／欄名／入力順の固定優先を作らず、必要な組を保つ一つの全体の読みとして扱う。単独primaryを必須とする現行内部契約には、この複数組を保つ形を明示的に追加する。selected reading／sealed ReadingConsequenceは引き続き全体で各exact1とし、その内側に複数組の読みと保持を表す。これは提案範囲の限定であり、実装成立の確認ではない。組ごとの文章数は固定せず、全required内容を本文全体で保持する。
+4. **同じ単位でReception内容と本文まで直す。** 明示評価の対象、行為の実行状態、本人の評価とその否定・継続を意味側から受け取りへ渡す。行為を終えたことと納得したことを同一視せず、評価の肯否定・対象・主体・時点の差が、受け取りの内容に現れるようにする。既存知識から立証できない努力・回復・成長・自己肯定・将来の価値を補わず、原文の言い換え＋注目宣言で終えない。内容を定義できない場合は能力不足として止め、語尾追加で代用しない。
+5. **既存経路と保存互換。** CMEE、ObservationPlan、唯一のHuman Reception作者、根拠検証、Route Aを維持する。新しい内部semantic field／operationが必要なら、既存schemaを黙って書き換えず、既存のversion方針で追加し旧保存結果の読取りを保つ。公開API／DTO／DB／RN契約、課金・privacy・source許可は変えない。外部AI・新service・新dependency・helper群・DB migration・本番配置・main mergeは含めない。
+
+変更対象は既存のObservationPlan、thread projection、input-specific meaning、Stage1のcontracts／response／composition、Sentence Surface／Human Reception／本文inverseと、その既存検査責務に限定する。別の意味エンジンや並行作者は作らない。採用する場合、同じ作業で8/28設計の該当契約、詳細02・実装順06、current Emlis／CMEE、既存地図の必要差分、API handoff／本weeklyへ同期する。今回その正本を承認済みの状態へ変更してはいない。
+
+同環境の補助reviewでは具体的blockingを認めず、bundle内の接続条件と全体exact1の維持を明記する指摘を反映した。これは提案範囲を明確にしたものであり、実装成立やPro／Ultra独立審査の認定ではない。
+
+### 4. 成功条件、停止点、影響
+
+- 成功は同じ入力から、認識→意味選択→受け取り内容→実本文まで成立すること。独立行動の追加・削除・差替えで評価対象が失われず、独立行動も消えないこと。評価の肯否定、認知的／物理的対象の根拠ある違い、主体・時点、予定／実行を変えたとき、対応する意味と本文だけが根拠に従って変わること。
+- rootが全対照の実生成本文を先に読み、復唱・固定締め・意味の創作を確認する。意味更新・訂正撤回、関連する共有Plan／Analysis回帰、保存後の再生成なしの再読と実RN表示用処理まで同じ修正で確認する。合成検査と本人実機、技術成立とMashの最終Product Readを区別する。
+- 明示評価の単独投影だけを修正しても、独立記述を含む当該初回単位の完成にはしない。この部分のbug修正は既存契約内で可能性があるが、今回の一体修正を置き換える成果として切り出さない。
+- 所要時間・終了日を保証できる根拠はまだない。追加対象は入力全体の意味集約と、その内容を受け取りへ渡す内部契約・回帰確認であり、語尾の小修正より作業が増える。外部費用の追加は提案しない。10/17は本文の改善有無と残差を示す確認点、10/31の公開必須残差と12/18目標、Piece／Analysis主枠を維持する。この提案を日程見通しの改善へ換算しない。
+- 新しい外部方式、公開boundary変更、全領域再設計、追加の品質免除、sourceから意味を導けない箇所の恣意的補完が必要になれば、その差を示してSTOPする。同じ低品質本文を再命名して採用しない。承認しない場合、既存契約のまま今回の独立記述を含む意味選択は未解消として残る。`automatic_progression: false`。
+
+作業ルール18 §11.3は既存契約内のbug修正をLEVEL_2で許す一方、意味選択contractの変更をLEVEL_3のMash明示判断対象とする。今回の残件作業指示だけをその変更への包括承認へ拡張せず、上記限定変更の判断を求める。追加理論の説明や低品質候補の採否をMashへ戻すための質問ではない。
+
+今回の書込みは既存API handoff本節と最新weeklyの原因・変更案・未完了の同期だけ。製品source／tests／採用設計の契約変更0。隔離不採用branchは変更せず、PR3へ試作コードを採用していない。配置・DB・native build・本人データ操作0。`STRUCTURE_MAP_DELTA_NONE`：実行経路・配置・責務変更はまだない。記録と承認待ちを商品品質の進捗に数えない。
