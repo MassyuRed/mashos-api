@@ -1,4 +1,4 @@
-> 最新のEmlisAI残件は末尾 **u272（2026-10-15 JST・対象Q3の訂正後本文を回復）**。実装5c7f24f／資料48f7652をDraftへ反映し、515検査と保存DTOのRN表示8件を確認。次は§9.2/9.4の受け取り内容。商品NOT_CLEAR・初回単位未完了・未配置。
+> 最新のEmlisAI残件は末尾 **u273（2026-10-15 JST・理由付き評価のObservation反復を限定解消）**。一文で三役割を保持し、保存DTO12件の表示・履歴を確認。Reception内容と単独理由文＋別経験訂正の既存停止は残件。商品NOT_CLEAR・初回単位未完了・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -19632,3 +19632,55 @@ read-only補助agentは設計境界を確認し、未変更HEADの対象関数�
 残件はQ1の2 received＋2評価における既存Observation上限、近似文／別欄二組、関係の説明反復と固定的な受け取り、有限対象撤回後の不自然さ、旧receivedのgiver帰属、既存共有17失敗・same100・本人実機・正式Product Read。今回はQ3_FREEの対象訂正系列を閉じた範囲であり、PREMIUM複数round全般や§9.2/9.4の商品品質の完成へ換算しない。RN全suiteは今回再実行せず、以前の26 PASS/5 FAILを解消したとはしない。
 
 次は回復した実本文を使い、§9.2/9.4の内容形成として関係説明の反復と評価の言い換えだけに寄ったReceptionを改善する。今回解消したQ3停止を再び第一候補へ戻さず、上限引上げを自動的な次工程にしない。10/17確認点・10/31残件線・12/18公開目標とPiece/Analysis主枠を維持する。
+
+
+### u273 — 理由・対象・評価を一文で保持し、同じ評価の説明反復を減らす（2026-10-15 JST）
+
+作業基準はAPI 167c830e981fa41ce5881d2bd806cbc486a39482／資料 f0ffb21da33cab7ce0dde7d3da0f9205d398d005。全体設計01、全file地図01A/B/Cの関連責務、current01/04、最新weekly20261010、8/28設計§9.2/9.4、CURRENT_RULES・Rule18 §11.3・8/16恒久incidentを参照。System Context prepareはこのcheckoutにtools.cocolon_contextがなく実行不能だったため、原典直接読取りを使用した。prepare成功とは記録しない。rootが実装し、補助agentはread-only監査のみ。
+
+本人が明示した一つの理由と評価対象が同じ肯定・程度なしの満足へつながる場合、二関係を別文にして評価を二度出すObservationを一文へまとめた。sourceで証明済みの完全一致二出現も、六核・四関係・出現別根拠を保持して一文を共有する。原文同一性の証明がない近似文・別欄の別経験を統合しない。
+
+既存Sentence Surfaceの_render_relationで、source_owned_result_appraisal_reasonが証明する閉じた理由・対象・評価だけを実現する。既存Observation Gateの_body_inverse_reason_appraisalは作者を呼ばず、可視一文全体から三役割を読み、bound全核・全required関係と一致した場合にだけ二本（重複は四本）の関係を証明する。その関係に限って、共有評価では成立しない隣接引用条件を全体構文の照合へ置き換える。無関係な関係・coverage・反復・最終品質検査は維持する。
+
+意味選択・source認識・checkpoint・旧再導出・Reception・各上限は変更しない。旧二出現planに同一性証明がない場合、または旧撤回後に同じ原文二出現の片方だけ残る場合は従来の表現を保持する。歴史checkpoint fixture／IM03 proofは変更しない。API/DTO/DB/SQL/RN・製品依存・Piece/Analysisへの変更なし。
+
+実保存本文（合成入力、root全文確認。商品品質合格ではない）：
+
+```text
+見えたこと：
+「探しやすくなった」を理由に、「資料を分類した」という出来事への評価は「満足した」とあります。
+「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。
+
+Emlisから：
+探しやすくなったことを理由に、資料を分類したことについて、当時は満足したのですね。褒められたことは、嬉しさにはつながらなかったのですね。
+```
+
+変更前は同じ評価を「理由からつながる」「対象への評価」の二文で二度述べていた。現在は一つの評価へ二つの関係がまとまる。「〜て／〜で」の対象は原文引用を保って「という出来事」へ接続する。初期試作の「〜て／〜で」＋「ことに」という不自然な接続は採用しなかった。Receptionの内容は変わっておらず、定型的な言い換えが残る。
+
+STRUCTURE_MAP_DELTA_PRESENT。新規production file／subsystemは追加せず、既存ownerの可視unit実現と独立読解責務を更新する。
+
+| 既存owner（mashos-api相対） | u273の責務差分 |
+|---|---|
+| ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py | 閉じた理由・対象・評価を一文で実現。出現別bindingと旧plan表現を保持。 |
+| ai/services/ai_inference/emlis_ai_grounded_observation_gate.py | 可視一文全体とsourceの三役割・全関係を作者非依存で照合。証明した関係だけに共有評価の構文を認める。 |
+| ai/tests/test_cmee_emlis_result_appraisal.py | 既存反復期待の更新、te/deを含む三役割・意味改変拒否、保存再読と既存訂正停止の履歴境界。 |
+| ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json | 現行正規identityだけを再計算。歴史proofは不変。 |
+| ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md | 実本文、検証分母、残件と次ownerを保存。 |
+
+最終productionに対する既存＋追加検査は、評価472・Q2/Q3 application54・現行identity1の異なる527条件を確認。全体実行は521 PASS／追加6件FAIL（単独理由文の訂正後がREFINEDになるとの未確認期待）。未変更u272でも同じ停止を確認し、当該新規6件を「訂正の保存・旧本文の履歴限定・再生成なしの再読」の検査へ修正して6 PASS。既存期待の削除、skip/xfail、productionやgateの緩和は行っていない。527を単一runの合格数や商品合格数とは表さない。追加12件は独立三役割読解6条件（各10改変拒否）と保存6条件。通常・完全一致重複、両欄、肯否・時点・対象・理由の帰属、旧checkpoint、u272訂正経路を含む既存回帰は通過した。
+
+実service＋隔離PGliteの既存migration/RPCで6入力の初回と回答後を保存し、実保存DTO12件を既存RN hook/modalへ渡した。初回本文完全一致、履歴展開、close/reopen、訂正後に旧初回本文を現在本文へ戻さない表示を確認。NoAuthor restart GET/start、回答再送のevent無増加も確認した。native部品はstub、本人端末・正式Product Readではない。RN全suiteは未再実行で、既知26 PASS/5 FAILを解消したとはしない。
+
+初回の途中実行は483 PASS／31 FAILで、新文形に未更新の反復期待と改変検査だった。本文削除や意味改変を通す期待には変更していない。独立read-only監査でも通常／重複各1例×11改変を全拒否し、te/deの実本文と意味保持を確認した。
+
+現行language identity `e5f77a5ccd6abab1f83a73189727a84d554b272e1df4528b4b5a316fc6216a85`、runtime `485e134c9bde097108d1a99f39c4bf82461c2daeaf5a078e79b429bf191abd11`。Python3.12.14／pytest8.4.1／PGlite0.5.8／React18.3.1。sessionで不足していた検証依存を隔離導入し、製品依存は変更しない。git diff --check成功。外部AI・新有料service・live DB・配置・merge操作0。
+
+保存確認で、単独理由付き満足＋別欄receivedの反応訂正はRESOLVEDの意味を保存してもMEANING_UPDATED_BODY_UNAVAILABLEになる既存残件を再現した。未変更u272の二つの作者／検証fileと現行を、3対象形×両欄の6条件で比較し、同じ停止を確認した。別source成分の二行がsemantic_arc:bounded_relationを共有するため、最終検査がrequired_arc_fragmented_without_reasonで拒否する。投影・生成・独立逆読解と必要5核／3関係の保持は通過する。u272のsource成分identity適用条件が重複理由または評価自体の訂正に限られているためで、上限や今回の一文作者が原因ではない。
+
+補助のread-only診断では、捕捉済みplanのarc identityだけをメモリ内でsource連結成分へ置き換えると、同じ本文・意味で最終検査passedとなった。productionへは適用せず、旧保存結果との互換を含む次の修正単位として残した。
+
+**BOUNDED_IMPLEMENTATION_WIP / PRODUCT_NOT_CLEAR、初回一体単位未完了。** 正式受入0/3・candidate_ready=false・automatic_progression=false・未配置・Draft/open/unmergedを維持する。
+
+受け取りの反復と言い換え中心の内容、引用と説明的な文章、Q1の2 received＋2評価の既存上限、近似文／別欄二組、有限対象撤回後の不自然さ、旧receivedのgiver帰属、既存共有17失敗・same100・本人実機・正式Product Readは未解消。今回の短文化を§9.2/9.4の商品品質完成へ換算しない。
+
+次は、既存_observation_surface_atomsで単独理由付き評価と別経験訂正のsource成分を識別し、旧checkpointの完全再導出・同じ経験の不当分割拒否を保って保存後本文へ通す。その後も初回一体単位の受け取り内容を既存§9.2/9.4へ戻して改善する。10/17確認点・10/31残件線・12/18目標、Piece/Analysis主枠を維持する。

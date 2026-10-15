@@ -2192,8 +2192,9 @@ def test_exact_repeated_reason_initial_body_keeps_both_source_occurrences(capabi
     assert outcome.artifact is not None and outcome.body_state == 'PRE_QUESTION'
     assert outcome.question is not None and not outcome.automatic_progression
     body = outcome.artifact
-    assert body.observation.count('「' + basis + '」を理由として') == 1
-    assert body.observation.count('「資料を分類した」という出来事に対する評価') == 1
+    assert body.observation.count('「' + basis + '」を理由に、') == 1
+    assert body.observation.count('「資料を分類した」という出来事への評価') == 1
+    assert body.observation.count('「' + evaluation + '」') == 1
     assert '褒められた' in body.observation and '嬉しくなかった' in body.observation
     assert basis + 'ことを理由に、資料を分類したことについて、' in body.reception
     assert ('当時は満足した' if evaluation == '満足した' else '入力した時点では満足している') in body.reception
@@ -2251,14 +2252,14 @@ def test_shared_reason_observation_reader_checks_every_role_without_author(monke
         return evaluate_grounded_surface_body_inverse(body=text.encode(), plan=plan,
             sentence_plan=sentence, resolver=p.thread.resolver(), selected_subjective_input=selected)
     assert read(body).passed
-    reason = '「探しやすくなった」を理由として、「満足した」へつながっています。 '
-    about = '「資料を分類した」という出来事に対する評価は、「満足した」とあります。'
+    reason = '「探しやすくなった」を理由に、'
+    about = '「資料を分類した」という出来事への評価は「満足した」とあります。'
     variants = [body.replace(reason, ''), body.replace(about, ''),
-        body.replace('「探しやすくなった」を理由として', '「褒められた」を理由として'),
+        body.replace('「探しやすくなった」を理由に', '「褒められた」を理由に'),
         body.replace('「資料を分類した」という出来事', '「褒められた」という出来事'),
         body.replace('当時は満足した', '回答した時点では満足した'),
         body.replace('ことを理由に、', 'ことだけを理由に、'),
-        body.replace(reason, reason.replace('満足した', '二度満足した'))]
+        body.replace(about, about.replace('満足した', '二度満足した'))]
     for wrong in variants:
         assert wrong != body and not read(wrong).passed
     # Full inverse also performs the established author replay. Separately
@@ -2516,8 +2517,9 @@ def test_duplicate_reason_initial_body_shares_words_but_keeps_both_occurrences(r
     outcome = MeaningExperienceEngine().generate(req)
     assert outcome.artifact is not None, outcome.reason_codes
     assert outcome.body_state == 'PRE_QUESTION'
-    assert outcome.artifact.observation.count('を理由として、') == 1
-    assert outcome.artifact.observation.count('という出来事に対する評価は、') == 1
+    assert outcome.artifact.observation.count('を理由に、') == 1
+    assert outcome.artifact.observation.count('という出来事への評価は') == 1
+    assert outcome.artifact.observation.count('「' + evaluation + '」') == 1
     assert outcome.artifact.reception.count(basis + 'ことを理由に、資料を分類したことについて、') == 1
     assert ('当時は' if evaluation == '満足した' else '入力した時点では') + evaluation in outcome.artifact.reception
     assert '褒められたことは、嬉しさにはつながらなかった' in outcome.artifact.reception
@@ -2569,8 +2571,8 @@ def test_duplicate_reason_shared_body_inverse_checks_roles_and_each_selected_own
         return evaluate_grounded_surface_body_inverse(body=value.encode(), plan=plan,
             sentence_plan=sentence, resolver=resolver, selected_subjective_input=selection).passed
     assert valid(body)
-    wrongs = [body.replace('を理由として、', 'の結果として、'),
-              body.replace('「満足した」へ', '「資料を分類した」へ'),
+    wrongs = [body.replace('を理由に、', 'の結果として、'),
+              body.replace('評価は「満足した」', '評価は「資料を分類した」'),
               body.replace('探しやすくなったことを理由に、', ''),
               body.replace('資料を分類したことについて', '褒められたことについて'),
               body.replace('当時は', '回答した時点では'),
@@ -2713,4 +2715,90 @@ def test_saved_plain_appraisal_retention_reopens_without_author(qcase, qdb, reve
     saved = run(service.store.read(user, input_id=parent))
     replay = run(answer(restarted, user, before, response, key='appraisal-retention'))
     assert replay['current_observation'] == after['current_observation'] and replay['timeline'] == after['timeline']
+    assert run(restarted.store.read(user, input_id=parent))['events'] == saved['events']
+
+
+@pytest.mark.parametrize('target', ['資料を分類したことに', '資料を分類できて', '案を選んで'])
+@pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
+def test_reason_configuration_reads_all_three_roles_without_repeating_evaluation(monkeypatch, target, evaluation):
+    import emlis_ai_grounded_sentence_surface as surface
+    basis = '探しやすくなった'
+    req = request(basis + 'ので、' + target + evaluation + '。', '褒められたのに、嬉しくなかった。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None, result.reason_codes
+    artifact = result.artifact
+    event = target.removesuffix('ことに')
+    expected = f'「{basis}」を理由に、「{event}」という出来事への評価は「{evaluation}」とあります。'
+    assert expected in artifact.observation
+    assert artifact.observation.count('「' + evaluation + '」') == 1
+    assert '褒められた' in artifact.observation and '嬉しくなかった' in artifact.observation
+    def forbidden(*_a, **_k):
+        pytest.fail('independent Observation reader called the author')
+    monkeypatch.setattr(surface, '_render_relation', forbidden)
+    def valid(observation):
+        return evaluate_grounded_surface_body_inverse(body=artifact.text.replace(artifact.observation, observation).encode(),
+            plan=plan, sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert valid(artifact.observation)
+    wrongs = [
+        expected.replace(f'「{basis}」を理由に、', ''),
+        expected.replace(f'「{basis}」', '「褒められた」'),
+        expected.replace(f'「{event}」', '「褒められた」'),
+        f'「{event}」を理由に、「{basis}」という出来事への評価は「{evaluation}」とあります。',
+        expected.replace('を理由に、', 'の結果として、'),
+        expected.replace('を理由に、', 'だけを理由に、'),
+        expected.replace(evaluation, '満足しなかった'),
+        expected.replace(evaluation, '満足している' if evaluation == '満足した' else '満足した'),
+        expected + 'これからも満足できそうです。',
+        expected + f'「{event}」という出来事に対する評価は、「{evaluation}」とあります。',
+    ]
+    for wrong in wrongs:
+        assert wrong != expected
+        assert not valid(artifact.observation.replace(expected, wrong))
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('target', ['資料を分類したことに', '資料を分類できて', '案を選んで'])
+def test_saved_single_reason_sentence_reopens_and_unavailable_correction_stays_historical(qcase, qdb, reverse, target):
+    from test_emlis_q2_application import run, answer
+    from emlis_thread_service import EmlisThreadService, Q3_PROFILE
+    user, parent, service = qcase
+    source = '探しやすくなったので、' + target + '満足した。'
+    received = '褒められたのに、嬉しくなかった。'
+    memo, action = (received, source) if reverse else (source, received)
+    qdb.query("update public.profiles set subscription_tier='free' where id=$1", [user])
+    qdb.query('update public.emotions set memo=$2,memo_action=$3 where id=$1', [parent, memo, action])
+    before = run(service.start(user, parent))
+    assert before['body_state'] == 'PRE_QUESTION', before
+    event = target.removesuffix('ことに')
+    expected = f'「探しやすくなった」を理由に、「{event}」という出来事への評価は「満足した」とあります。'
+    assert expected in before['current_observation']['text']
+    assert run(service.get(user, parent)) == before
+    response = '「嬉しくなかった」ではなく「重かった」です。'
+    dto = run(answer(service, user, before, response, key='single-reason-body'))
+    # This single-reason correction is already unavailable on unmodified u272.
+    # Preserve saved correction and historical body; this test is not recovery credit.
+    assert dto['body_state'] == 'MEANING_UPDATED_BODY_UNAVAILABLE', dto
+    assert dto['answer_saved'] and dto['meaning_updated'] and dto['answer_assessment'] == 'RESOLVED'
+    assert dto['current_observation'] is None and not dto['can_retry']
+    assert not any(e.get('is_current') for e in dto['timeline'])
+    saved = run(service.store.read(user, input_id=parent))
+    observations = [e for e in saved['events'] if e['kind'] == 'OBSERVATION']
+    assert [e['payload']['text'] for e in observations] == [before['current_observation']['text']]
+    assert [e['text'] for e in dto['timeline'] if e['kind'] == 'OBSERVATION'] == [e['payload']['text'] for e in observations]
+    assert len([e for e in saved['events'] if e['kind'] == 'ANSWER']) == 1
+    assert len([e for e in saved['events'] if e['kind'] == 'MEANING_UPDATE']) == 2
+    class NoAuthor:
+        def __getattr__(self, name):
+            raise AssertionError('saved single-reason read attempted generation: ' + name)
+    restarted = EmlisThreadService(engine=NoAuthor(), runtime_profile=Q3_PROFILE)
+    assert run(restarted.get(user, parent)) == dto
+    assert run(restarted.start(user, parent)) == dto
+    replay = run(answer(restarted, user, before, response, key='single-reason-body'))
+    for key in ('revision', 'current_observation', 'timeline', 'body_state', 'answer_assessment', 'operation_id', 'attempt_id'):
+        assert replay[key] == dto[key]
     assert run(restarted.store.read(user, input_id=parent))['events'] == saved['events']

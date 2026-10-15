@@ -3529,6 +3529,37 @@ def _render_relation(
             resolver,
             typed_semantic_duties=typed_semantic_duties,
         )
+    if (typed_semantic_duties and not _hedge_prefix(binding)
+        and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"):
+        # A person's reason and appraisal target meet at one evaluation.
+        # Realize that complete configuration once, rather than rendering
+        # each edge as a separate claim that repeats the evaluation.
+        groups = []
+        for rid in binding.relation_ids:
+            relation = relation_index[rid]
+            reason = source_owned_result_appraisal_reason(relation,
+                tuple(nucleus_index.values()), tuple(relation_index.values()))
+            if reason is not None:
+                groups.append((reason, nucleus_index[relation.from_nucleus_id],
+                               nucleus_index[relation.to_nucleus_id]))
+        duplicate = source_owned_duplicate_reason_appraisals(
+            tuple(nucleus_index.values()), tuple(relation_index.values()), resolver)
+        if (len(groups) in {1, 2}
+            and set(binding.nucleus_ids) == {n.nucleus_id for g in groups for n in g}
+            and len(binding.relation_ids) == 2 * len(groups)
+            and (len(groups) == 1 or tuple(groups) == duplicate or tuple(reversed(groups)) == duplicate)):
+            span = resolver.resolve(groups[0][0].source_span_ids[0])
+            occurrences = tuple(s for s in resolver.resolve_many(resolver.span_ids)
+                if s.source_field == span.source_field and s.raw_text == span.raw_text)
+            # Old checkpoint plans may retain only one of two equal source
+            # occurrences, or predate the proof of duplicate ownership.
+            # Keep their established surface; do not infer new equivalence.
+            if len(occurrences) == 1 or len(groups) == 2 and duplicate:
+                values = tuple(_quotes_for_nuclei((n.nucleus_id,), nucleus_index, resolver)
+                               for n in groups[0])
+                if all(len(v) == 1 and re.fullmatch(r"「[^「」『』\n]+」", v[0]) for v in values):
+                    reason, event, evaluation = (v[0] for v in values)
+                    return f"{reason}を理由に、{event}という出来事への評価は{evaluation}とあります。"
     repeated = (_repeated_reason_appraisal_relations(binding.nucleus_ids, binding.relation_ids,
         nucleus_index, relation_index, resolver) if typed_semantic_duties and not _hedge_prefix(binding) else ())
     if repeated:

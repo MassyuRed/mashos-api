@@ -5728,6 +5728,57 @@ def _body_inverse_answer_limit(body, parsed_line, planned_line, plan, resolver):
     return tuple(values) == (resolver.source_text_for_contiguous_spans(boundaries[0].evidence_span_ids),)
 
 
+def _body_inverse_reason_appraisal(body, line, planned_line, plan, resolver):
+    """Read one entire reason/target/evaluation configuration, without the author.
+
+    A shared evaluation has two incoming edges, so quote adjacency cannot
+    prove both. Only the complete grammar and all source-owned roles grant
+    these exact edges; unrelated directional checks remain unchanged.
+    """
+    from emlis_ai_grounded_observation_plan import (
+        source_owned_result_appraisal_reason, source_owned_duplicate_reason_appraisals)
+    if getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1":
+        return frozenset()
+    visible = _body_inverse_visible_text(body, line)
+    parsed = re.fullmatch(r'「([^「」『』\n]+)」を理由に、'
+        r'「([^「」『』\n]+)」という出来事への評価は「([^「」『』\n]+)」とあります。', visible)
+    if parsed is None:
+        return frozenset()
+    binding = planned_line.binding
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    groups, edges = [], set()
+    for relation in plan.relations:
+        if relation.relation_id not in binding.relation_ids:
+            continue
+        reason = source_owned_result_appraisal_reason(relation, plan.nuclei, plan.relations)
+        if reason is None:
+            continue
+        group = (reason, index[relation.from_nucleus_id], index[relation.to_nucleus_id])
+        expected = tuple(_body_inverse_nucleus_source_values(n.nucleus_id, plan, resolver) for n in group)
+        if (any(len(values) != 1 for values in expected)
+            or tuple(map(_body_inverse_normalized_anchor, parsed.groups())) != tuple(v[0] for v in expected)):
+            return frozenset()
+        groups.append(group)
+        ids = {n.nucleus_id for n in group}
+        edges.update(r.relation_id for r in plan.relations
+                     if r.retention == 'required' and ids & {r.from_nucleus_id, r.to_nucleus_id})
+    if (len(groups) not in {1, 2} or len(edges) != 2 * len(groups)
+        or edges != set(binding.relation_ids)
+        or set(binding.nucleus_ids) != {n.nucleus_id for group in groups for n in group}):
+        return frozenset()
+    if len(groups) == 2:
+        duplicate = source_owned_duplicate_reason_appraisals(plan.nuclei, plan.relations, resolver)
+        if not duplicate or {tuple(n.nucleus_id for n in g) for g in groups} != {
+            tuple(n.nucleus_id for n in g) for g in duplicate}:
+            return frozenset()
+    else:
+        span = resolver.resolve(groups[0][0].source_span_ids[0])
+        if sum(s.source_field == span.source_field and s.raw_text == span.raw_text
+               for s in resolver.resolve_many(resolver.span_ids)) != 1:
+            return frozenset()
+    return frozenset(edges)
+
+
 def evaluate_grounded_surface_body_inverse(
     *,
     body: bytes,
@@ -5813,6 +5864,9 @@ def evaluate_grounded_surface_body_inverse(
             _body_inverse_limited_change_feeling(body, witness, parsed_line, planned_line, plan, resolver)
             if final_stage1_plan else ((), frozenset(), frozenset()))
         negative_relations = frozenset()
+        reason_appraisal_relations = (_body_inverse_reason_appraisal(
+            body, parsed_line, planned_line, plan, resolver) if final_stage1_plan else frozenset())
+        direct_relations |= reason_appraisal_relations
         if final_stage1_plan:
             negative_relations, negative_nuclei = _body_inverse_negative_feeling_sequences(
                 body, witness, parsed_line, planned_line, plan, resolver)
@@ -5913,7 +5967,7 @@ def evaluate_grounded_surface_body_inverse(
             if not matches:
                 failures.append(f"body_inverse_unbound_observation_quote:{index}")
                 continue
-        if (set(planned_line.binding.relation_ids) - negative_relations
+        if (set(planned_line.binding.relation_ids) - negative_relations - reason_appraisal_relations
             and not parsed_line.relation_marker_codes):
             failures.append(f"body_inverse_required_relation_marker_missing:{index}")
         relation_index = {item.relation_id: item for item in plan.relations}
@@ -6038,7 +6092,8 @@ def evaluate_grounded_surface_body_inverse(
                     failures.append(f"body_inverse_contrast_report_scope_mismatch:{index}")
         from emlis_ai_grounded_observation_plan import source_owned_duplicate_reason_appraisals
         repeated = source_owned_duplicate_reason_appraisals(plan.nuclei, plan.relations, resolver)
-        if repeated and set(planned_line.binding.nucleus_ids) == {n.nucleus_id for g in repeated for n in g}:
+        if (repeated and not reason_appraisal_relations
+            and set(planned_line.binding.nucleus_ids) == {n.nucleus_id for g in repeated for n in g}):
             rows = tuple(_body_inverse_visible_text(body, row) for row in witness.sentences
                          if row.section == 'observation' and row.section_line_ordinal == parsed_line.section_ordinal)
             reason = re.fullmatch(r'「([^「」『』\n]+)」を理由として、「([^「」『』\n]+)」へつながっています。', rows[0]) if len(rows) == 2 else None
@@ -6170,6 +6225,7 @@ def evaluate_grounded_surface_body_inverse(
                 )
             if (
                 relation.type in DIRECTIONAL_GROUNDED_RELATION_TYPES
+                and relation_id not in reason_appraisal_relations
                 and relation_id not in grouped_relations
                 and relation_id not in shared_change_relations
                 and from_positions
@@ -6233,6 +6289,8 @@ def evaluate_grounded_surface_body_inverse(
                 right_sources = _body_inverse_nucleus_source_values(relation.to_nucleus_id, plan, resolver)
                 from emlis_ai_grounded_observation_plan import source_owned_result_appraisal
                 if source_owned_result_appraisal(relation, plan.nuclei):
+                    if relation_id in reason_appraisal_relations:
+                        continue
                     # Read the whole original-input relation. It has no answer
                     # time and cannot borrow the supplemental-answer grammar.
                     matches = []
