@@ -2632,6 +2632,8 @@ def _body_inverse_intervening_events(body, witness, line, planned_line, plan, re
                 for i, row in enumerate(rows):
                     parsed = re.fullmatch(r"「([^「」『』\n]+)」と「([^「」『』\n]+)」が、"
                         r"異なる向きのまま同時にあります。", _body_inverse_visible_text(body, row))
+                    if parsed is None:
+                        parsed = re.fullmatch(r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」とあります。", _body_inverse_visible_text(body, row))
                     if parsed and tuple(map(_body_inverse_normalized_anchor, parsed.groups())) == (
                             event_sources[0], reaction_sources[0]):
                         event_rows.append(i)
@@ -2667,6 +2669,8 @@ def _body_inverse_intervening_events(body, witness, line, planned_line, plan, re
                 # before its full stop must not hide inside the same sentence.
                 contrast = re.fullmatch(r"「([^「」『』\n]+)」と「([^「」『』\n]+)」が、"
                     r"異なる向きのまま同時にあります。", _body_inverse_visible_text(body, rows[event_rows[0]]))
+                if contrast is None:
+                    contrast = re.fullmatch(r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」とあります。", _body_inverse_visible_text(body, rows[event_rows[0]]))
                 reaction_sources = _body_inverse_nucleus_source_values(relation.to_nucleus_id, plan, resolver)
                 if (contrast is None or len(event_sources) != 1 or len(reaction_sources) != 1
                     or tuple(map(_body_inverse_normalized_anchor, contrast.groups()))
@@ -6332,6 +6336,8 @@ def evaluate_grounded_surface_body_inverse(
                             r"「([^「」『』\n]+)」とあります。", visible)
                         pair = re.fullmatch(r"「([^「」『』\n]+)」と「([^「」『』\n]+)」が、"
                             r"異なる向きのまま同時にあります。", visible)
+                        if pair is None:
+                            pair = re.fullmatch(r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」とあります。", visible)
                         answer_report = re.fullmatch(r"(?:(?P<position>先|間|後)に書かれた)?"
                             r"「(?P<event>[^「」『』\n]+)」ことについて、"
                             r"(?P<when>先の回答時点|回答した時点|その時)の受け止めは"
@@ -6505,6 +6511,8 @@ def evaluate_grounded_surface_body_inverse(
                     visible = _body_inverse_visible_text(body, row)
                     singleton = re.fullmatch(r"「([^「」『』\n]+)」と「([^「」『』\n]+)」が、"
                         r"異なる向きのまま同時にあります。", visible)
+                    if singleton is None:
+                        singleton = re.fullmatch(r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」とあります。", visible)
                     operand = r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」"
                     if singleton:
                         legacy_pairs.append(singleton.groups())

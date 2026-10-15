@@ -3933,3 +3933,81 @@ def test_shared_target_continuing_appraisal_stays_on_unchanged_source_path(rever
     assert result.artifact is not None, result.reason_codes
     assert 'まだ満足している' in result.artifact.observation
     assert '入力した時点ではまだ満足しているのですね' in result.artifact.reception
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('reason', ['', '探しやすくなったので、'])
+@pytest.mark.parametrize('reaction', ['嬉しくなかった', '悲しかった'])
+@pytest.mark.parametrize('operation', ['revise', 'withdraw'])
+def test_expired_shared_target_keeps_received_contrast_without_added_time(reverse, reason, reaction, operation):
+    from test_cmee_emlis_q3_thread import advance
+    from cocolon_meaning_experience_engine.emlis_thread_surface import _retained_shared_target_received_relations
+    source = reason + '資料を分類したことには満足した。でも、その分類を褒められたのに、' + reaction + '。'
+    req = request('', source) if reverse else request(source, '')
+    first = prepare_emlis_meaning(req)
+    assert not _retained_shared_target_received_relations(first, build_updated_grounded_plan(first), first.thread.resolver())
+    answer = ('「満足した」ではなく「満足しなかった」です。' if operation == 'revise'
+              else '「満足した」は誤りです。')
+    req = advance(req, answer)
+    prepared = prepare_emlis_meaning(req); plan = build_updated_grounded_plan(prepared)
+    assert len(_retained_shared_target_received_relations(prepared, plan, prepared.thread.resolver())) == 1
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None, result.reason_codes
+    assert result.meaning_checkpoint == prepared.checkpoint
+    assert '「その分類を褒められた」の一方で「' + reaction + '」とあります。' in result.artifact.observation
+    assert '同時に' not in result.artifact.observation
+    assert '同じ行為について' not in result.artifact.observation
+    assert not _u284_grouped_configurations(project_thread_meaning(prepared, plan))
+
+
+@pytest.mark.parametrize('operation', ['revise', 'withdraw'])
+def test_retained_received_contrast_reader_consumes_whole_sentence_without_author(monkeypatch, operation):
+    from test_cmee_emlis_q3_thread import advance
+    import emlis_ai_grounded_sentence_surface as surface
+    req = request('資料を分類したことには満足した。でも、その分類を褒められたのに、嬉しくなかった。', '')
+    req = advance(req, '「満足した」ではなく「満足しなかった」です。' if operation == 'revise'
+                  else '「満足した」は誤りです。')
+    p = prepare_emlis_meaning(req); plan = build_updated_grounded_plan(p); resolver = p.thread.resolver()
+    selected = project_thread_meaning(p, plan).selected_reception
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    artifact = MeaningExperienceEngine().generate(req).artifact
+    clause = '「その分類を褒められた」の一方で「嬉しくなかった」とあります。'
+    assert artifact is not None and clause in artifact.observation
+    def forbidden(*args, **kwargs):
+        raise AssertionError('inverse reader invoked an author')
+    monkeypatch.setattr(surface, '_render_relation', forbidden)
+    monkeypatch.setattr(surface, '_realize_line', forbidden)
+    def valid(text):
+        return evaluate_grounded_surface_body_inverse(body=text.encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert valid(artifact.text)
+    for wrong in (
+        clause.replace('その分類', 'その発表'),
+        clause.replace('嬉しくなかった', '嬉しかった'),
+        clause.replace('嬉しくなかった', '嬉しくない'),
+        clause.replace('の一方で', 'のが原因で'),
+        clause.replace('の一方で', 'の一方で同時に'),
+        clause.replace('の一方で', 'のあとに'),
+        clause.replace('とあります。', 'ので、承認を求めています。'),
+        '「嬉しくなかった」の一方で「その分類を褒められた」とあります。',
+    ):
+        assert not valid(artifact.text.replace(clause, wrong)), wrong
+    # Exact old saved grammar stays readable; it is no longer emitted here.
+    legacy = '「その分類を褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。'
+    assert valid(artifact.text.replace(clause, legacy))
+
+
+def test_received_time_neutral_rendering_requires_unchanged_original_nodes_and_relation():
+    from test_cmee_emlis_q3_thread import advance
+    from cocolon_meaning_experience_engine.emlis_thread_surface import _retained_shared_target_received_relations
+    req = request('資料を分類したことには満足した。でも、その分類を褒められたのに、嬉しくなかった。', '')
+    req = advance(req, '「満足した」は誤りです。')
+    p = prepare_emlis_meaning(req); plan = build_updated_grounded_plan(p); resolver = p.thread.resolver()
+    relation_id, = _retained_shared_target_received_relations(p, plan, resolver)
+    relation = next(r for r in plan.relations if r.relation_id == relation_id)
+    wrong = replace(plan, relations=tuple(replace(r, grounding_kind='inferred_relation')
+                    if r == relation else r for r in plan.relations))
+    assert not _retained_shared_target_received_relations(p, wrong, resolver)
+    wrong = replace(plan, nuclei=tuple(replace(n, semantic_frame=replace(n.semantic_frame, time_scope='present'))
+                    if n.nucleus_id == relation.to_nucleus_id else n for n in plan.nuclei))
+    assert not _retained_shared_target_received_relations(p, wrong, resolver)

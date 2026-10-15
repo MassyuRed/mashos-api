@@ -1,4 +1,4 @@
-> 最新のEmlisAI残件は末尾 **u283（2026-10-16・二経験の内容不足／対象付きreceivedの欠落診断、追加案は未承認・未実装）**。製品sourceはu282のまま。次は8/28設計u283の限定案へのMash判断。PRODUCT_NOT_CLEAR・初回単位未完了・未配置。
+> 最新EmlisAI残件：末尾 **u285（2026-10-16・u284訂正後の残存対比から無根拠な同時性を除去）**。前段u284実装済み。初回と訂正後Receptionの品質は残件、PRODUCT_NOT_CLEAR・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -20141,3 +20141,33 @@ TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式受�
 次は、訂正後にも残る有効な経験の受け取りと、初回の説明・受容述語の反復を、原文の意味と選択内容の不足に分けて扱う。対象関係のない元の二欄入力に共通の価値基準を作らない。今回の初回限定scopeを訂正一般へ無断で拡張しない。既存共有17失敗、same100、Q1上限、giver帰属、本人実機・正式Product Readは未解消。Mashへ未合格本文のProduct Readは求めない。10/17確認点・10/31残件線・12/18公開目標、Piece／Analysis主枠、管理評価53.25％を変更しない。
 
 同一Work環境の分担によるsource／meaning／surfaceの差分案と読取reviewを使用し、rootが統合・実行・本文読解した。別model Pro／Ultra相互審査成立とは報告しない。全変更fileの責務は01A u284、versionは正本05、検証は正本06、最新順序はweekly §5.6.34。
+
+
+## u285 — 訂正後に残るreceived対比へ同時性を加えない（2026-10-16 JST）
+
+基準API81f52ef02cc74cd889904ff80d0185bd0a7d3fee／資料291096ad0a03a68517b3cebcbf7ad28e18b72a5c。添付前回作業、前提／作業ルール、恒久incident全文、全体設計01、全file地図01A/B/Cの責務と現行増分、current01/04、8/28設計§9.2/9.4、weekly§3.5/5.5/5.6.34を照合した。Rule18の既承認設計内の原因修正として、u284更新後の対比文だけを修復。rootが実装・最終判断・GitHub反映、同一Work環境の補助2枠がread-only診断／差分確認を担当。別model Pro/Ultra相互審査と報告しない。
+
+u284の同一行為・二段対比の初回から満足を否定訂正／撤回した後、残るreceived対比が「異なる向きのまま同時にあります」となっていた。原文は同時性を述べていないため、未改変の原文二端点を「の一方で…とあります」という既存の時間中立な対比文法へ接続した。
+
+原文の共同読みをresolver付きで再検証でき、更新後はその共同読みが失効し、received関係が完全一致で残り、両端nodeが既存失効属性の除去以外に変わっていない場合だけ適用する。原文の対比・肯否・各端点の時制を引用から保持する。新しい共同読みを更新後へ存続させず、意味選択・checkpoint・Reception・source認識・schema・上限・公開API/DTO/DB/RN・製品依存を変えない。
+
+既存thread surface adapterから既存Sentence Surfaceへ該当関係IDを内部引数として渡す。作者非依存readerは新しい完全対比文を既存端点検証で読む。新しい永続型・生成器・外部AI・補助systemは追加しない。pre-u284旧checkpointの原文planには共同読みがないため旧本文の再導出を保持する。
+
+関連単一runは773 PASS（評価719＋Q2/Q3 application54、243.65秒、skip/xfailなし、既存警告2件）。現行共有owner identityは別runで1 PASS／194 deselected（21.44秒）。重複なし774検査であり、単一run774件とはしない。追加19件で理由0/1×反応2×両欄×訂正/撤回の16条件、作者呼出し禁止reader2条件、元node/関係改変の不採用を確認した。readerは完全な一文から端点・肯否・時点・対比を読み、原因化・時点変更・同時性追記・左右交換・根拠なしの付加を拒否する。旧保存文法の完全一致は互換用に保持し、旧「同時に」を全面拒否したとは報告しない。歴史fixtureは変更せず、現行共有owner identityだけ再計算した。
+
+実service＋隔離PGliteで初回8／更新8の16 DTOを保存し、NoAuthor GET/startの完全一致、同一回答再送の本文・timeline一致とevent無増加を確認。現行RN hook/modalで16件の全文・全Observation履歴・close/reopen一致を確認した。u284実保存16本文との比較で初回8全文と全16 Receptionは一致し、更新8は対象の対比文だけが変更。rootが全16本文（重複をまとめて12種類）を読解した。native部品はstubであり、本人実機・正式Product Readではない。
+
+再現：Python3.12.14、pytest8.4.1、PGlite0.5.8、React18.3.1。PYTHONPATH=ai:ai/services/ai_inference:ai/tests、Q2_PGLITE_MODULEを隔離PGliteへ指定し、test_cmee_emlis_result_appraisal.py／test_emlis_q2_application.py／test_emlis_q3_application.py。現行identityはtest_cmee_v1a_i1sx_contracts.py -k active_final_language_owner_chain_has_zero_legacy_compose_calls。
+
+実保存された合成本文の変更箇所（実ユーザー本文ではない）：
+
+```text
+変更前：「その分類を褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。
+変更後：「その分類を褒められた」の一方で「嬉しくなかった」とあります。
+```
+
+TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式受入0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置を維持する。
+
+初回の説明・受容述語反復、理由なし否定訂正後のReceptionからreceivedが落ちる問題、更新後の一般的な受け取りは残る。一般receivedの旧「同時に」は対象外であり今回全面解消していない。訂正後の共同読みを一般化せず、次は残る二経験をそれぞれ選ぶ既存経路と、既承認意味の範囲を照合してReception欠落を扱う。新しい意味契約が必要なら不足と最小案を具体化する。既存共有17失敗・same100・Q1上限・giver帰属・本人実機・正式Product Readも未解消。Mashへ未合格本文の確認を求めない。10/17確認点・10/31残件線・12/18公開目標とPiece/Analysis主枠、管理評価53.25％を維持する。
+
+次の診断位置：emlis_ai_grounded_observation_plan.py::_thread_retained_reaction_groups のu279分岐は、孤立理由exact1を必要とする。理由なしの満足否定訂正ではここを通らず、二経験を同じcurrent_burden代表へ集約する経路が残る。これは読取診断であり、理由なしへ資格を広げる実装・承認を本作業では行っていない。共同読みの継続と、失効後の独立した二経験の保持を分け、現行契約内の修復か追加の意味契約かを原典から判断する。

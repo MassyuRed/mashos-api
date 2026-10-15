@@ -76,6 +76,28 @@ def _bind_expression(plan, resolver, projection, move, clause_form):
     return expression
 
 
+def _retained_shared_target_received_relations(prepared, plan, resolver):
+    """An expired joint reading may leave its original contrast unchanged."""
+    from emlis_ai_grounded_observation_plan import source_owned_shared_target_appraisal_contrast
+    if not prepared.thread.answers:
+        return frozenset()
+    original = prepared.original_plan
+    group = source_owned_shared_target_appraisal_contrast(original.nuclei, original.relations, resolver)
+    if (not group or source_owned_shared_target_appraisal_contrast(plan.nuclei, plan.relations, resolver)
+        or group['received_relation'] not in plan.relations):
+        return frozenset()
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    for key in ('received_event', 'reaction'):
+        node = group[key]
+        retained = replace(node, semantic_frame=replace(node.semantic_frame,
+            attribute_codes=tuple(code for code in node.semantic_frame.attribute_codes
+                if code != 'semantic_dependency:shared_target_appraisal_contrast_v1'
+                and not code.startswith('source_shared_target_'))))
+        if index.get(node.nucleus_id) != retained:
+            return frozenset()
+    return frozenset((group['received_relation'].relation_id,))
+
+
 def realize_emlis_thread_body(prepared) -> EmlisThreadBodyOutcomeV1:
     plan = build_updated_grounded_plan(prepared)
     projection = project_thread_meaning(prepared, plan)
@@ -95,7 +117,8 @@ def realize_emlis_thread_body(prepared) -> EmlisThreadBodyOutcomeV1:
         clause_plans=clauses, selected_subjective_input=selected)
     surface, _placements = surface_owner.realize_grounded_sentence_plan_with_human_reception(
         sentence_plan, plan, resolver, human_reception_surface=human_surface,
-        selected_subjective_input=selected)
+        selected_subjective_input=selected,
+        neutral_received_contrast_ids=_retained_shared_target_received_relations(prepared, plan, resolver))
     issues = surface_owner.validate_grounded_surface_result(surface, sentence_plan, plan, resolver,
                                                              selected_subjective_input=selected)
     inverse = evaluate_grounded_surface_body_inverse(body=surface.text.encode(), plan=plan,

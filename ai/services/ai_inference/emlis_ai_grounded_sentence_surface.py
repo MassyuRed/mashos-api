@@ -3368,6 +3368,7 @@ def _render_observation_with_relations(
     *,
     typed_semantic_duties: bool = False,
     record_prefixes: Mapping[str, str] | None = None,
+    neutral_received_contrast_ids: frozenset[str] = frozenset(),
 ) -> str:
     quotes = _quotes_for_nuclei(binding.nucleus_ids, nucleus_index, resolver)
     joined = _join_quotes(quotes)
@@ -3385,6 +3386,7 @@ def _render_observation_with_relations(
         nucleus_index,
         relation_index,
         resolver,
+        neutral_received_contrast_ids=neutral_received_contrast_ids,
         typed_semantic_duties=typed_semantic_duties,
         record_prefixes=record_prefixes,
     )
@@ -3562,6 +3564,7 @@ def _render_relation(
     *,
     typed_semantic_duties: bool = False,
     record_prefixes: Mapping[str, str] | None = None,
+    neutral_received_contrast_ids: frozenset[str] = frozenset(),
 ) -> str:
     if not binding.relation_ids:
         return _render_observation(
@@ -3790,6 +3793,13 @@ def _render_relation(
                         for n in (event, reaction)))):
                 # The source states a contrast, not simultaneous current
                 # feelings. Each quoted endpoint keeps its own tense.
+                sentences.append(f"{left}の一方で{right}とあります。")
+                continue
+            if (typed_semantic_duties and relation_id in neutral_received_contrast_ids
+                and relation.grounding_kind == "user_stated_relation"
+                and not _hedge_prefix(binding)):
+                # The unchanged received pair outlives the joint appraisal.
+                # Its explicit contrast does not assert simultaneous feelings.
                 sentences.append(f"{left}の一方で{right}とあります。")
                 continue
             compact_contrast = (
@@ -4596,6 +4606,7 @@ def _realize_line(
     relation_index: Mapping[str, GroundedSemanticRelation],
     resolver: EvidenceSpanResolver,
     selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
+    neutral_received_contrast_ids: frozenset[str] = frozenset(),
 ) -> str:
     if _is_final_stage1_grounded_projection(plan):
         shared = _render_shared_target_appraisal_observation(line, plan, nucleus_index, resolver)
@@ -4621,6 +4632,7 @@ def _realize_line(
             nucleus_index,
             relation_index,
             resolver,
+            neutral_received_contrast_ids=neutral_received_contrast_ids,
             record_prefixes=record_prefixes,
             typed_semantic_duties=(
                 _is_final_stage1_grounded_projection(plan)
@@ -4632,6 +4644,7 @@ def _realize_line(
             nucleus_index,
             relation_index,
             resolver,
+            neutral_received_contrast_ids=neutral_received_contrast_ids,
             record_prefixes=record_prefixes,
             typed_semantic_duties=(
                 _is_final_stage1_grounded_projection(plan)
@@ -4705,6 +4718,7 @@ def _realize_grounded_sentence_plan(
     *,
     human_reception_surface: GroundedHumanReceptionSurface | None = None,
     selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
+    neutral_received_contrast_ids: frozenset[str] = frozenset(),
 ) -> GroundedSurfaceResult:
     """Realize a SentencePlan with generic functional atoms and source text."""
 
@@ -4743,6 +4757,7 @@ def _realize_grounded_sentence_plan(
                     nucleus_index=nucleus_index,
                     relation_index=relation_index,
                     resolver=resolver,
+                    neutral_received_contrast_ids=neutral_received_contrast_ids,
                     selected_subjective_input=selected_subjective_input,
                 )
             )
@@ -4840,6 +4855,7 @@ def realize_grounded_sentence_plan_with_human_reception(
     *,
     human_reception_surface: GroundedHumanReceptionSurface | None = None,
     selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
+    neutral_received_contrast_ids: frozenset[str] = frozenset(),
 ) -> tuple[GroundedSurfaceResult, tuple[SentenceSurfacePlacement, ...]]:
     """Place one preauthored final Human Reception surface without rewriting."""
 
@@ -4876,6 +4892,7 @@ def realize_grounded_sentence_plan_with_human_reception(
         sentence_plan,
         plan,
         resolver,
+        neutral_received_contrast_ids=neutral_received_contrast_ids,
         human_reception_surface=human_reception_surface,
         selected_subjective_input=selected_subjective_input,
     )
