@@ -19339,3 +19339,51 @@ STRUCTURE_MAP_DELTA_PRESENT。既存production 2file・3関数の責務修正。
 理由を含む全文「『探しやすくなったので、資料を分類したことに満足した』は誤りです。」と「『資料を分類したことに』は誤りです。」の撤回は、両版ともcorrection_target_unresolved／本文なし。実入力の引用符は「」を使用した。有限対象「『資料を分類した』は誤りです。」は両版で同一本文となるが、Receptionは「探しやすくなったことによって満足したという気持ちが生じることをどちらの側も残したまま、感じています。」という既存の不自然な表現が残る。これらを今回解消したとはしない。
 
 次は今回回復した初回一体単位の内容・関係反復と、理由付き評価の撤回対象を既存訂正契約で正確に扱えるかを確認する。2 received＋2評価の初回gap、旧received全般のgiver誤帰属、複数先行文の評価継続、既存共有17失敗・same100・本人実機・正式Product Readも残る。今回はこれらの全再検査を追加せず、成功件数へ混ぜない。10/17確認点へ停止回復と残件を反映し、10/31・12/18とPiece/Analysis主枠を維持する。
+
+
+### u267 — 理由付き満足の原文全文撤回を既存訂正契約へ接続（2026-10-15 JST）
+
+開始時API 26d8ccc7a277664f1cec8e67a749d32fd90bb74a／Cocolon ede0255742d23017c24e9c7e8ce4ea8ae7b4ed34をfresh確認。全体01、全file地図01A/B/C、current01/04、最新weekly20261010 §5.6.16、訂正設計u254と理由所有、8/28設計§9.2/9.4、CURRENT_RULES・Rule18と恒久incidentを参照した。System Context prepareはmaterial commitのdescendant判定で失敗し、fresh成功とは扱わず原典を直接確認した。過去worktreeの共通git metadataとruntimeが消失したため同headの独立cloneとPython3.12.14/PGlite0.5.8/React18.3.1を再構成（REMATERIALIZED_NEW_INSTANCE）。製品依存追加・外部AI・有料service・live DB操作なし。
+
+理由付き満足の原文全文を本人が明示撤回した場合、既存sourceが証明した理由・対象・評価の三ownerとそれらに依存する関係を取り消し、別のreceived経験・行動・同じ回答内の訂正を残す。全文exact一致、同一field/spanの全nucleus集合が三ownerと一致、候補一意を必須にする。既存の対象＋評価二owner撤回も維持。u254の唯一の全文撤回とu264の承認済み理由所有を接続する欠陥修正であり、新しい意味契約・理由認識・本文作者の追加はない。
+
+新規回答は新しい完全checkpointを生成する。旧checkpoint明示時だけ現行source＋旧撤回判定を再導出し、旧UNRESOLVED/PARTIALを回答内の受理済み訂正ごと完全一致で復元する。Q3各prefixも同じ旧判定を使い、旧IDへ新しい撤回意味を付けない。保存済み本文のread/reopenは作者を呼ばず保存本文を返す。
+
+入力はmemo「探しやすくなったので、資料を分類したことに満足した。」、memo_action「褒められたのに、嬉しくなかった。」と両欄交換。回答「『探しやすくなったので、資料を分類したことに満足した』は誤りです。」で旧版はcorrection_target_unresolved／ANSWER_UNREFLECTED、別の反応訂正を同答へ加えるとPARTIAL／MEANING_UPDATED_BODY_UNAVAILABLEだった（実際の引用符は「」）。旧fallbackが所有集合exact2だけを想定していたため、既存のreason exact3を受理できなかった。
+
+全文撤回後の実保存本文（両配置共通）:
+
+```text
+見えたこと：
+「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。
+
+Emlisから：
+褒められたことは、嬉しさにはつながらなかったのですね。
+```
+
+同じ回答に「『嬉しくなかった』ではなく『重かった』です。」を追加した実保存本文（実入力の引用符は「」）:
+
+```text
+見えたこと：
+「褒められた」ことについて、その時の受け止めは「重かった」と書かれています。
+
+Emlisから：
+褒められたことについて、その時の重さを小さくせずに受け止めています。
+```
+
+| 既存owner（API repo相対） | u267の責務差分 |
+|---|---|
+| ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_answer_update.py | _prepare_answerで既存source_owned_result_appraisal_reasonの証明を使い、原文全文の3owner撤回を許可。全span所有集合と候補一意を維持。prepare_emlis_meaningで旧checkpoint完全再導出modeを追加し、_prepare_emlis_meaning_from_planで各Q3 prefixへ引き渡す。 |
+| ai/tests/test_cmee_emlis_result_appraisal.py | 両欄・理由差替え・評価時点、部分/他文引用、単独owner撤回、旧全checkpointと質問改変、実保存/NoAuthor再読を確認。重複理由文の既存認識残件も固定し、一括撤回へ拡張しない。 |
+
+STRUCTURE_MAP_DELTA_PRESENT。既存production 1file・3関数の責務変更。新file/helper/engine/author/checker/registry/serviceは追加0。source認識・意味schema・公開API/DTO/DB/SQL/RN・製品依存は変更0。検査は既存test_cmee_emlis_result_appraisal.pyへ24件と未変更26d8ccc7で実取得した旧完全checkpoint4件を追加し、歴史fixture/IM03 proof・現行shared-owner identity fixtureは不変。
+
+最終評価suite **318 PASS（既存294＋新24）**、Q2/Q3 application **54 PASS**、計 **372 PASS**。現行shared-owner identity **1 PASS**、総計 **373 PASS**。既存依存deprecation warning2。未変更26d8ccc7の旧完全checkpoint4件（両配置×単独撤回/同答内別訂正）を本文state・reason_codesごと復元し、偽checkpoint・改変質問は拒否。実service＋隔離PGliteで新しい撤回後本文4件のevent payloadとDTO完全一致、NoAuthor restart GET/start、同じidempotency key再試行の本文/timeline一致を確認。実RN hook/modalの履歴展開・close/reopenでも4件のcurrent本文/event完全一致を確認した。native実機・正式Product Readではない。git diff --check成功。
+
+REDでは原文全文撤回1件が期待RESOLVEDに対して旧UNRESOLVEDとなることを確認。追加24検査の初回は19 PASS/5 FAILで、4件はprepare済みIDをgenerateへ渡していない新テストの手順不備、1件は重複理由文をsourceが2groupへ展開するという誤った前提だった。IDを実手順どおり受け渡し、重複は未変更版で実測した旧単独owner挙動を保持する検査へ訂正した。途中の全体検査にも旧重複期待の1 FAILが残ったため、訂正後に全体を再実行した。既存期待を緩和していない。read-only subagentのproduction差分レビューで具体blockerなし。別model審査・本人Product Readではない。
+
+**BOUNDED_IMPLEMENTATION_WIP / PRODUCT_NOT_CLEAR、初回一体単位未完了。** 正式受入0/3・candidate_ready=false・automatic_progression=false・未配置・Draft/open/unmergedを維持する。
+
+「資料を分類したことに」の部分引用は従来どおり未解決。有限対象だけの撤回後に理由/評価が残る意味と不自然なReceptionも継続する。同じ理由文を重ねると先頭だけが3ownerとなり、二つ目はgeneric ownerのため、その単独ownerへの全文一致撤回がRESOLVEDとなる既存問題を確認した。未変更26d8ccc7でも同じcheckpoint（emlis-checkpoint-b8653afdfb74088180b49a20f23ff0e1b5f0e5e363c423e124c4d0306f1b0fd4）であり、今回これを重複全文の安全な解決へ昇格しない。
+
+次はsourceの重複理由文に対する所有と訂正対象の曖昧さを、既存意味契約内で整合できるか確認する。初回一体単位の関係反復・固定的受け取り、2 received＋2評価の初回gap、旧received全般のgiver誤帰属、複数先行文の評価継続、既存共有17失敗・same100・本人実機・正式Product Readも残る。今回未再検査の残件を成功件数へ混ぜない。10/17確認点、10/31・12/18とPiece/Analysis主枠を維持する。

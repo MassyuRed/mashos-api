@@ -1950,3 +1950,153 @@ def test_received_context_old_issued_question_is_revalidated_before_new_answer(r
         control, pending_question=wrong, issued_questions=(wrong,))))
     with pytest.raises(ValueError, match='emlis_question_noncanonical'):
         prepare_emlis_meaning(tampered)
+
+
+# Captured on unmodified 26d8ccc7, with genuine issued questions and the entire
+# unresolved/partially accepted checkpoint; never substitute a historical ID.
+_PRE_REASON_WITHDRAWAL_CHECKPOINTS = [{'case_id': 'u266-reason-False-False', 'memo': '探しやすくなったので、資料を分類したことに満足した。', 'action': '褒められたのに、嬉しくなかった。', 'capability': 'Q3_FREE', 'answer': '「探しやすくなったので、資料を分類したことに満足した」は誤りです。', 'question_control': {'pending_question': {'question_id': 'emlis-question-bb17c8b3bd21dfb31976aa91c20224864d3ebb77e57298875b91aff25dfb3d22', 'parent_request_id': 'q1-synthetic', 'thread_id': 'q1-thread', 'original_source_ref': 'src-86bd0775dfe56d124598f10b', 'decision': {'disposition': 'ASK', 'target_ref': 'emlis-target-9620cf9a29241334fe20ce15067be7392840155bbef5be533041d192fb65ed32', 'target_kind': 'PERSONAL_RECEIVED_MEANING', 'supporting_evidence_refs': ['ev-43ee2060c472935c54b42d58'], 'missing_dimension': 'personal_received_meaning', 'affected_meaning_refs': ['nucleus:s2:event', 'nucleus:s2:reaction'], 'affected_reception_refs': ['nucleus:s2:event', 'nucleus:s2:reaction'], 'asked_target_refs': [], 'decision_reason': 'source_bound_event_personal_meaning_missing'}, 'prompt_private': '「褒められた」は、あなたにはどんな意味として届きましたか。', 'skip_allowed': True, 'answer_limit': 1, 'answer_source_role': 'SUPPLEMENTAL_ANSWER', 'schema_version': 'cocolon.cmee.emlis_clarification.v1'}, 'asked_target_refs': ['emlis-target-9620cf9a29241334fe20ce15067be7392840155bbef5be533041d192fb65ed32'], 'issued_count': 1, 'stop': False, 'issued_questions': [{'question_id': 'emlis-question-bb17c8b3bd21dfb31976aa91c20224864d3ebb77e57298875b91aff25dfb3d22', 'parent_request_id': 'q1-synthetic', 'thread_id': 'q1-thread', 'original_source_ref': 'src-86bd0775dfe56d124598f10b', 'decision': {'disposition': 'ASK', 'target_ref': 'emlis-target-9620cf9a29241334fe20ce15067be7392840155bbef5be533041d192fb65ed32', 'target_kind': 'PERSONAL_RECEIVED_MEANING', 'supporting_evidence_refs': ['ev-43ee2060c472935c54b42d58'], 'missing_dimension': 'personal_received_meaning', 'affected_meaning_refs': ['nucleus:s2:event', 'nucleus:s2:reaction'], 'affected_reception_refs': ['nucleus:s2:event', 'nucleus:s2:reaction'], 'asked_target_refs': [], 'decision_reason': 'source_bound_event_personal_meaning_missing'}, 'prompt_private': '「褒められた」は、あなたにはどんな意味として届きましたか。', 'skip_allowed': True, 'answer_limit': 1, 'answer_source_role': 'SUPPLEMENTAL_ANSWER', 'schema_version': 'cocolon.cmee.emlis_clarification.v1'}], 'question_limit': 1}, 'supplemental_answers': [{'answer_id': 'answer-1', 'thread_id': 'q1-thread', 'question_id': 'emlis-question-bb17c8b3bd21dfb31976aa91c20224864d3ebb77e57298875b91aff25dfb3d22', 'round_index': 1, 'original_source_ref': 'src-86bd0775dfe56d124598f10b', 'answer_text_private': '「探しやすくなったので、資料を分類したことに満足した」は誤りです。', 'recorded_at': '2026-09-11T01:00:00Z', 'authored_at': None, 'source_version': 'cocolon.cmee.supplemental_answer.v1', 'source_role': 'SUPPLEMENTAL_ANSWER'}], 'checkpoint': {'checkpoint_id': 'emlis-checkpoint-4536c98d652156a44859e4cfc8369e5371397c17cac5fdb90e8be6124d3ed208', 'source_prefix_ref': 'emlis-q3-source-prefix-de1d11aee9e1016a8b106a323f0473467a5feacf309822518fa4a16241adce0a', 'base_meaning_ref': 'emlis-base-meaning-134bb4523c89421ce1bec0b36930797d7ee8d50accec6c42fbed431cf1ee9195', 'answer_update': {'answer_source_ref': 'src-27616755bf66f298cfc725b5', 'question_ref': 'emlis-question-bb17c8b3bd21dfb31976aa91c20224864d3ebb77e57298875b91aff25dfb3d22', 'prior_meaning_ref': 'emlis-base-meaning-134bb4523c89421ce1bec0b36930797d7ee8d50accec6c42fbed431cf1ee9195', 'updates': [], 'unresolved_parts': [{'evidence_refs': ['ev-8260e14dd182f0a3eb0d3815'], 'reason_code': 'correction_target_unresolved'}], 'disposition': 'UNRESOLVED', 'new_meaning_ref': 'emlis-base-meaning-134bb4523c89421ce1bec0b36930797d7ee8d50accec6c42fbed431cf1ee9195'}, 'assessment_status': 'UNRESOLVED', 'accepted_update_refs': [], 'inactive_claim_refs': [], 'unresolved_parts': [{'evidence_refs': ['ev-8260e14dd182f0a3eb0d3815'], 'reason_code': 'correction_target_unresolved'}], 'semantic_schema_version': 'cocolon.cmee.emlis_answer_meaning.v1'}, 'baseline_body_state': 'ANSWER_UNREFLECTED', 'baseline_body': None, 'baseline_reason_codes': ['correction_target_unresolved']}, {'case_id': 'u266-reason-False-True', 'memo': '探しやすくなったので、資料を分類したことに満足した。', 'action': '褒められたのに、嬉しくなかった。', 'capability': 'Q3_FREE', 'answer': '「探しやすくなったので、資料を分類したことに満足した」は誤りです。「嬉しくなかった」ではなく「重かった」です。', 'question_control': {'pending_question': {'question_id': 'emlis-question-bb17c8b3bd21dfb31976aa91c20224864d3ebb77e57298875b91aff25dfb3d22', 'parent_request_id': 'q1-synthetic', 'thread_id': 'q1-thread', 'original_source_ref': 'src-86bd0775dfe56d124598f10b', 'decision': {'disposition': 'ASK', 'target_ref': 'emlis-target-9620cf9a29241334fe20ce15067be7392840155bbef5be533041d192fb65ed32', 'target_kind': 'PERSONAL_RECEIVED_MEANING', 'supporting_evidence_refs': ['ev-43ee2060c472935c54b42d58'], 'missing_dimension': 'personal_received_meaning', 'affected_meaning_refs': ['nucleus:s2:event', 'nucleus:s2:reaction'], 'affected_reception_refs': ['nucleus:s2:event', 'nucleus:s2:reaction'], 'asked_target_refs': [], 'decision_reason': 'source_bound_event_personal_meaning_missing'}, 'prompt_private': '「褒められた」は、あなたにはどんな意味として届きましたか。', 'skip_allowed': True, 'answer_limit': 1, 'answer_source_role': 'SUPPLEMENTAL_ANSWER', 'schema_version': 'cocolon.cmee.emlis_clarification.v1'}, 'asked_target_refs': ['emlis-target-9620cf9a29241334fe20ce15067be7392840155bbef5be533041d192fb65ed32'], 'issued_count': 1, 'stop': False, 'issued_questions': [{'question_id': 'emlis-question-bb17c8b3bd21dfb31976aa91c20224864d3ebb77e57298875b91aff25dfb3d22', 'parent_request_id': 'q1-synthetic', 'thread_id': 'q1-thread', 'original_source_ref': 'src-86bd0775dfe56d124598f10b', 'decision': {'disposition': 'ASK', 'target_ref': 'emlis-target-9620cf9a29241334fe20ce15067be7392840155bbef5be533041d192fb65ed32', 'target_kind': 'PERSONAL_RECEIVED_MEANING', 'supporting_evidence_refs': ['ev-43ee2060c472935c54b42d58'], 'missing_dimension': 'personal_received_meaning', 'affected_meaning_refs': ['nucleus:s2:event', 'nucleus:s2:reaction'], 'affected_reception_refs': ['nucleus:s2:event', 'nucleus:s2:reaction'], 'asked_target_refs': [], 'decision_reason': 'source_bound_event_personal_meaning_missing'}, 'prompt_private': '「褒められた」は、あなたにはどんな意味として届きましたか。', 'skip_allowed': True, 'answer_limit': 1, 'answer_source_role': 'SUPPLEMENTAL_ANSWER', 'schema_version': 'cocolon.cmee.emlis_clarification.v1'}], 'question_limit': 1}, 'supplemental_answers': [{'answer_id': 'answer-1', 'thread_id': 'q1-thread', 'question_id': 'emlis-question-bb17c8b3bd21dfb31976aa91c20224864d3ebb77e57298875b91aff25dfb3d22', 'round_index': 1, 'original_source_ref': 'src-86bd0775dfe56d124598f10b', 'answer_text_private': '「探しやすくなったので、資料を分類したことに満足した」は誤りです。「嬉しくなかった」ではなく「重かった」です。', 'recorded_at': '2026-09-11T01:00:00Z', 'authored_at': None, 'source_version': 'cocolon.cmee.supplemental_answer.v1', 'source_role': 'SUPPLEMENTAL_ANSWER'}], 'checkpoint': {'checkpoint_id': 'emlis-checkpoint-7b5fe8958df3a8812299a969bb0df8f8818794b1f4c1e28c3041a1ce6e4d869d', 'source_prefix_ref': 'emlis-q3-source-prefix-fafc7d905190e2c906fb7dbffe36d3d8abe1be97b5bf28b6be3656b2c943cafc', 'base_meaning_ref': 'emlis-base-meaning-134bb4523c89421ce1bec0b36930797d7ee8d50accec6c42fbed431cf1ee9195', 'answer_update': {'answer_source_ref': 'src-1300ecea976ee2a2c146080a', 'question_ref': 'emlis-question-bb17c8b3bd21dfb31976aa91c20224864d3ebb77e57298875b91aff25dfb3d22', 'prior_meaning_ref': 'emlis-base-meaning-134bb4523c89421ce1bec0b36930797d7ee8d50accec6c42fbed431cf1ee9195', 'updates': [{'update_ref': 'emlis-update-b4294de54053f6db66b0d30c89eaeb29e0c29ccaeed01a48292fd43f91664dd4', 'binding_kind': 'EXPLICIT_CORRECTION', 'target_meaning_refs': ['nucleus:s2:reaction'], 'evidence_refs': ['ev-f5dbb0a39bb671f94b6abe4b'], 'temporal_binding': {'about_time': 'ORIGINAL_OCCASION', 'anchor_source_ref': 'src-86bd0775dfe56d124598f10b', 'time_expression_evidence_refs': [], 'relative_relation': None, 'resolved_interval': None, 'timezone_basis': None}, 'operation': 'REVISE', 'changed_claim_refs': ['answer:s7'], 'superseded_claim_refs': ['nucleus:s2:reaction'], 'affected_dependency_refs': ['relation:r3']}], 'unresolved_parts': [{'evidence_refs': ['ev-d6615882011a15ef952a445f'], 'reason_code': 'correction_target_unresolved'}], 'disposition': 'MATERIAL_UPDATE', 'new_meaning_ref': 'emlis-meaning-a5bd6339b016db11cdb35136bb04d689efb2226753eae460e79ffd62c21692f1'}, 'assessment_status': 'PARTIAL', 'accepted_update_refs': ['emlis-update-b4294de54053f6db66b0d30c89eaeb29e0c29ccaeed01a48292fd43f91664dd4'], 'inactive_claim_refs': ['nucleus:s2:reaction', 'relation:r3'], 'unresolved_parts': [{'evidence_refs': ['ev-d6615882011a15ef952a445f'], 'reason_code': 'correction_target_unresolved'}], 'semantic_schema_version': 'cocolon.cmee.emlis_answer_meaning.v1'}, 'baseline_body_state': 'MEANING_UPDATED_BODY_UNAVAILABLE', 'baseline_body': None, 'baseline_reason_codes': ['emlis_refined_body_unavailable']}, {'case_id': 'u266-reason-True-False', 'memo': '褒められたのに、嬉しくなかった。', 'action': '探しやすくなったので、資料を分類したことに満足した。', 'capability': 'Q3_FREE', 'answer': '「探しやすくなったので、資料を分類したことに満足した」は誤りです。', 'question_control': {'pending_question': {'question_id': 'emlis-question-1e505b83a539b80dd82c997d052bbbb19d0fd047fb0bb21d1668568e9aba7e04', 'parent_request_id': 'q1-synthetic', 'thread_id': 'q1-thread', 'original_source_ref': 'src-d46c89684fb1148689dc3b2d', 'decision': {'disposition': 'ASK', 'target_ref': 'emlis-target-a4d7a70520df16803fce4ba0b274f49831ecd966e81daa56036baea632179dc7', 'target_kind': 'PERSONAL_RECEIVED_MEANING', 'supporting_evidence_refs': ['ev-52027c5fbafbb058988f546f'], 'missing_dimension': 'personal_received_meaning', 'affected_meaning_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'affected_reception_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'asked_target_refs': [], 'decision_reason': 'source_bound_event_personal_meaning_missing'}, 'prompt_private': '「褒められた」は、あなたにはどんな意味として届きましたか。', 'skip_allowed': True, 'answer_limit': 1, 'answer_source_role': 'SUPPLEMENTAL_ANSWER', 'schema_version': 'cocolon.cmee.emlis_clarification.v1'}, 'asked_target_refs': ['emlis-target-a4d7a70520df16803fce4ba0b274f49831ecd966e81daa56036baea632179dc7'], 'issued_count': 1, 'stop': False, 'issued_questions': [{'question_id': 'emlis-question-1e505b83a539b80dd82c997d052bbbb19d0fd047fb0bb21d1668568e9aba7e04', 'parent_request_id': 'q1-synthetic', 'thread_id': 'q1-thread', 'original_source_ref': 'src-d46c89684fb1148689dc3b2d', 'decision': {'disposition': 'ASK', 'target_ref': 'emlis-target-a4d7a70520df16803fce4ba0b274f49831ecd966e81daa56036baea632179dc7', 'target_kind': 'PERSONAL_RECEIVED_MEANING', 'supporting_evidence_refs': ['ev-52027c5fbafbb058988f546f'], 'missing_dimension': 'personal_received_meaning', 'affected_meaning_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'affected_reception_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'asked_target_refs': [], 'decision_reason': 'source_bound_event_personal_meaning_missing'}, 'prompt_private': '「褒められた」は、あなたにはどんな意味として届きましたか。', 'skip_allowed': True, 'answer_limit': 1, 'answer_source_role': 'SUPPLEMENTAL_ANSWER', 'schema_version': 'cocolon.cmee.emlis_clarification.v1'}], 'question_limit': 1}, 'supplemental_answers': [{'answer_id': 'answer-1', 'thread_id': 'q1-thread', 'question_id': 'emlis-question-1e505b83a539b80dd82c997d052bbbb19d0fd047fb0bb21d1668568e9aba7e04', 'round_index': 1, 'original_source_ref': 'src-d46c89684fb1148689dc3b2d', 'answer_text_private': '「探しやすくなったので、資料を分類したことに満足した」は誤りです。', 'recorded_at': '2026-09-11T01:00:00Z', 'authored_at': None, 'source_version': 'cocolon.cmee.supplemental_answer.v1', 'source_role': 'SUPPLEMENTAL_ANSWER'}], 'checkpoint': {'checkpoint_id': 'emlis-checkpoint-52af18cefb6900e570f011c40c6caecfb95fa72f867408c547ef8a6bde164d40', 'source_prefix_ref': 'emlis-q3-source-prefix-683d56568d31cf3615ccdea2a3493acd20f34ecc8758c6e994a7a96e7bb284a5', 'base_meaning_ref': 'emlis-base-meaning-ae03eb02b2f577ce6cf6bfa956d0c41642e37eabc46ca065995cfc430af19d18', 'answer_update': {'answer_source_ref': 'src-23cd787329f7f2a42ea3bc4d', 'question_ref': 'emlis-question-1e505b83a539b80dd82c997d052bbbb19d0fd047fb0bb21d1668568e9aba7e04', 'prior_meaning_ref': 'emlis-base-meaning-ae03eb02b2f577ce6cf6bfa956d0c41642e37eabc46ca065995cfc430af19d18', 'updates': [], 'unresolved_parts': [{'evidence_refs': ['ev-3169e286bdae2996b7240261'], 'reason_code': 'correction_target_unresolved'}], 'disposition': 'UNRESOLVED', 'new_meaning_ref': 'emlis-base-meaning-ae03eb02b2f577ce6cf6bfa956d0c41642e37eabc46ca065995cfc430af19d18'}, 'assessment_status': 'UNRESOLVED', 'accepted_update_refs': [], 'inactive_claim_refs': [], 'unresolved_parts': [{'evidence_refs': ['ev-3169e286bdae2996b7240261'], 'reason_code': 'correction_target_unresolved'}], 'semantic_schema_version': 'cocolon.cmee.emlis_answer_meaning.v1'}, 'baseline_body_state': 'ANSWER_UNREFLECTED', 'baseline_body': None, 'baseline_reason_codes': ['correction_target_unresolved']}, {'case_id': 'u266-reason-True-True', 'memo': '褒められたのに、嬉しくなかった。', 'action': '探しやすくなったので、資料を分類したことに満足した。', 'capability': 'Q3_FREE', 'answer': '「探しやすくなったので、資料を分類したことに満足した」は誤りです。「嬉しくなかった」ではなく「重かった」です。', 'question_control': {'pending_question': {'question_id': 'emlis-question-1e505b83a539b80dd82c997d052bbbb19d0fd047fb0bb21d1668568e9aba7e04', 'parent_request_id': 'q1-synthetic', 'thread_id': 'q1-thread', 'original_source_ref': 'src-d46c89684fb1148689dc3b2d', 'decision': {'disposition': 'ASK', 'target_ref': 'emlis-target-a4d7a70520df16803fce4ba0b274f49831ecd966e81daa56036baea632179dc7', 'target_kind': 'PERSONAL_RECEIVED_MEANING', 'supporting_evidence_refs': ['ev-52027c5fbafbb058988f546f'], 'missing_dimension': 'personal_received_meaning', 'affected_meaning_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'affected_reception_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'asked_target_refs': [], 'decision_reason': 'source_bound_event_personal_meaning_missing'}, 'prompt_private': '「褒められた」は、あなたにはどんな意味として届きましたか。', 'skip_allowed': True, 'answer_limit': 1, 'answer_source_role': 'SUPPLEMENTAL_ANSWER', 'schema_version': 'cocolon.cmee.emlis_clarification.v1'}, 'asked_target_refs': ['emlis-target-a4d7a70520df16803fce4ba0b274f49831ecd966e81daa56036baea632179dc7'], 'issued_count': 1, 'stop': False, 'issued_questions': [{'question_id': 'emlis-question-1e505b83a539b80dd82c997d052bbbb19d0fd047fb0bb21d1668568e9aba7e04', 'parent_request_id': 'q1-synthetic', 'thread_id': 'q1-thread', 'original_source_ref': 'src-d46c89684fb1148689dc3b2d', 'decision': {'disposition': 'ASK', 'target_ref': 'emlis-target-a4d7a70520df16803fce4ba0b274f49831ecd966e81daa56036baea632179dc7', 'target_kind': 'PERSONAL_RECEIVED_MEANING', 'supporting_evidence_refs': ['ev-52027c5fbafbb058988f546f'], 'missing_dimension': 'personal_received_meaning', 'affected_meaning_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'affected_reception_refs': ['nucleus:s1:event', 'nucleus:s1:reaction'], 'asked_target_refs': [], 'decision_reason': 'source_bound_event_personal_meaning_missing'}, 'prompt_private': '「褒められた」は、あなたにはどんな意味として届きましたか。', 'skip_allowed': True, 'answer_limit': 1, 'answer_source_role': 'SUPPLEMENTAL_ANSWER', 'schema_version': 'cocolon.cmee.emlis_clarification.v1'}], 'question_limit': 1}, 'supplemental_answers': [{'answer_id': 'answer-1', 'thread_id': 'q1-thread', 'question_id': 'emlis-question-1e505b83a539b80dd82c997d052bbbb19d0fd047fb0bb21d1668568e9aba7e04', 'round_index': 1, 'original_source_ref': 'src-d46c89684fb1148689dc3b2d', 'answer_text_private': '「探しやすくなったので、資料を分類したことに満足した」は誤りです。「嬉しくなかった」ではなく「重かった」です。', 'recorded_at': '2026-09-11T01:00:00Z', 'authored_at': None, 'source_version': 'cocolon.cmee.supplemental_answer.v1', 'source_role': 'SUPPLEMENTAL_ANSWER'}], 'checkpoint': {'checkpoint_id': 'emlis-checkpoint-071010a3fee003ff6bd069cd10474133809b5fbd525b1013c7de17d811ff59b2', 'source_prefix_ref': 'emlis-q3-source-prefix-3064dd6b5e9da7e3b0fee52a60c98ebe35a54a26f64d0e101fb1a574444ecb57', 'base_meaning_ref': 'emlis-base-meaning-ae03eb02b2f577ce6cf6bfa956d0c41642e37eabc46ca065995cfc430af19d18', 'answer_update': {'answer_source_ref': 'src-12ccb18183d8df6e2a078b9e', 'question_ref': 'emlis-question-1e505b83a539b80dd82c997d052bbbb19d0fd047fb0bb21d1668568e9aba7e04', 'prior_meaning_ref': 'emlis-base-meaning-ae03eb02b2f577ce6cf6bfa956d0c41642e37eabc46ca065995cfc430af19d18', 'updates': [{'update_ref': 'emlis-update-db9941f2c5cab1a8191d646b6654d1558ba4f043ef46a8ae7ff47c9026f09110', 'binding_kind': 'EXPLICIT_CORRECTION', 'target_meaning_refs': ['nucleus:s1:reaction'], 'evidence_refs': ['ev-3625ec857b521a0741f71feb'], 'temporal_binding': {'about_time': 'ORIGINAL_OCCASION', 'anchor_source_ref': 'src-d46c89684fb1148689dc3b2d', 'time_expression_evidence_refs': [], 'relative_relation': None, 'resolved_interval': None, 'timezone_basis': None}, 'operation': 'REVISE', 'changed_claim_refs': ['answer:s7'], 'superseded_claim_refs': ['nucleus:s1:reaction'], 'affected_dependency_refs': ['relation:r1']}], 'unresolved_parts': [{'evidence_refs': ['ev-38dff1e4cc25cbbefcfee76f'], 'reason_code': 'correction_target_unresolved'}], 'disposition': 'MATERIAL_UPDATE', 'new_meaning_ref': 'emlis-meaning-bbad88ac26010459da5ea0b29d138bc3299451cc8c6c3e7fb4030528a594e7b7'}, 'assessment_status': 'PARTIAL', 'accepted_update_refs': ['emlis-update-db9941f2c5cab1a8191d646b6654d1558ba4f043ef46a8ae7ff47c9026f09110'], 'inactive_claim_refs': ['nucleus:s1:reaction', 'relation:r1'], 'unresolved_parts': [{'evidence_refs': ['ev-38dff1e4cc25cbbefcfee76f'], 'reason_code': 'correction_target_unresolved'}], 'semantic_schema_version': 'cocolon.cmee.emlis_answer_meaning.v1'}, 'baseline_body_state': 'MEANING_UPDATED_BODY_UNAVAILABLE', 'baseline_body': None, 'baseline_reason_codes': ['emlis_refined_body_unavailable']}]
+
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
+@pytest.mark.parametrize('basis', ['探しやすくなった', '見た目がすっきりした'])
+def test_whole_reason_withdrawal_removes_exactly_its_three_owners(reverse, evaluation, basis):
+    from test_cmee_emlis_q3_thread import advance
+    from emlis_ai_grounded_observation_plan import source_owned_result_appraisal_reason
+    source = basis + 'ので、資料を分類したことに' + evaluation
+    received = '褒められたのに、嬉しくなかった。植木に水をやった。'
+    req = request(*((received, source + '。') if reverse else (source + '。', received)))
+    original = prepare_emlis_meaning(req).original_plan
+    relation, = (r for r in original.relations if source_owned_result_appraisal(r, original.nuclei))
+    reason = source_owned_result_appraisal_reason(relation, original.nuclei, original.relations)
+    assert reason is not None
+    removed = {relation.from_nucleus_id, relation.to_nucleus_id, reason.nucleus_id}
+    remaining = {n.nucleus_id for n in original.nuclei} - removed
+    req = advance(req, f'「{source}」は誤りです。')
+    prepared = prepare_emlis_meaning(req)
+    assert prepared.checkpoint.assessment_status == 'RESOLVED'
+    update, = prepared.checkpoint.answer_update.updates
+    assert update.operation == 'WITHDRAW'
+    assert set(update.superseded_claim_refs) == removed
+    plan = build_updated_grounded_plan(prepared)
+    assert {n.nucleus_id for n in plan.nuclei} == remaining
+    assert {r.relation_id for r in plan.relations} == {
+        r.relation_id for r in original.relations
+        if r.from_nucleus_id not in removed and r.to_nucleus_id not in removed}
+    outcome = MeaningExperienceEngine().generate(req)
+    assert outcome.artifact is not None, outcome.reason_codes
+    assert '褒められた' in outcome.artifact.text and '植木に水をやった' in outcome.artifact.text
+    for absent in (basis, '資料を分類', '満足'):
+        assert absent not in outcome.artifact.text
+
+
+@pytest.mark.parametrize('quoted', ['資料を分類したことに', '探しやすく',
+    '探しやすくなったので、資料を分類したことに満足',
+    '見つけやすくなったので、資料を分類したことに満足した'])
+def test_reason_withdrawal_does_not_expand_partial_or_foreign_quotes(quoted):
+    from test_cmee_emlis_q3_thread import advance
+    req = advance(request('探しやすくなったので、資料を分類したことに満足した。',
+        '褒められたのに、嬉しくなかった。'), f'「{quoted}」は誤りです。')
+    prepared = prepare_emlis_meaning(req)
+    assert prepared.checkpoint.assessment_status == 'UNRESOLVED'
+    assert not prepared.checkpoint.inactive_claim_refs
+    assert not prepared.checkpoint.answer_update.updates
+
+
+@pytest.mark.parametrize('target', ['資料を分類した', '満足した', '探しやすくなった'])
+def test_single_reason_owner_withdrawal_keeps_other_owner_nuclei(target):
+    from test_cmee_emlis_q3_thread import advance
+    req = advance(request('探しやすくなったので、資料を分類したことに満足した。',
+        '褒められたのに、嬉しくなかった。'), f'「{target}」は誤りです。')
+    prepared = prepare_emlis_meaning(req)
+    assert prepared.checkpoint.assessment_status == 'RESOLVED'
+    update, = prepared.checkpoint.answer_update.updates
+    assert len(update.superseded_claim_refs) == 1
+    plan = build_updated_grounded_plan(prepared)
+    assert {n.nucleus_id for n in plan.nuclei} == (
+        {n.nucleus_id for n in prepared.original_plan.nuclei} - set(update.superseded_claim_refs))
+
+
+def test_repeated_reason_source_does_not_expand_existing_single_owner_match():
+    from test_cmee_emlis_q1_thread import answered
+    source = '探しやすくなったので、資料を分類したことに満足した'
+    req = answered(f'「{source}」は誤りです。', initial(source + '。' + source + '。', '褒められたのに、嬉しくなかった。'))
+    prepared = prepare_emlis_meaning(req)
+    # Existing source recognition projects only the first reason sentence;
+    # the second remains one generic owner. This repair must not turn its
+    # pre-existing scalar match into withdrawal of the first three owners.
+    assert sum(source_owned_result_appraisal(r, prepared.original_plan.nuclei)
+               for r in prepared.original_plan.relations) == 1
+    assert prepared.checkpoint.assessment_status == 'RESOLVED'
+    update, = prepared.checkpoint.answer_update.updates
+    assert update.superseded_claim_refs == ('nucleus:s2',)
+    assert all(n.nucleus_id in {v.nucleus_id for v in build_updated_grounded_plan(prepared).nuclei}
+               for n in prepared.original_plan.nuclei if n.source_span_ids == ('s1',))
+
+
+@pytest.mark.parametrize('row', _PRE_REASON_WITHDRAWAL_CHECKPOINTS, ids=lambda r: r['case_id'])
+def test_saved_reason_withdrawal_rederives_complete_old_checkpoint(row):
+    from emlis_thread_service import _json
+    req = _legacy_fixture_request(row)
+    restored = prepare_emlis_meaning(req)
+    assert _json(restored.checkpoint) == row['checkpoint']
+    assert not restored.legacy_appraisal_reason and not restored.legacy_result_appraisal
+    result = MeaningExperienceEngine().generate(req)
+    assert result.body_state == row['baseline_body_state']
+    assert result.artifact is None
+    assert list(result.reason_codes) == row['baseline_reason_codes']
+    assert _json(result.meaning_checkpoint) == row['checkpoint']
+    fresh = _legacy_fixture_request(row, checkpoint=False)
+    changed = prepare_emlis_meaning(fresh)
+    assert changed.checkpoint.assessment_status == 'RESOLVED'
+    assert changed.checkpoint.checkpoint_id != restored.checkpoint.checkpoint_id
+    fresh = replace(fresh, emlis_thread=replace(fresh.emlis_thread,
+        prepared_meaning_checkpoint_ref=changed.checkpoint.checkpoint_id))
+    result = MeaningExperienceEngine().generate(fresh)
+    assert result.artifact is not None, result.reason_codes
+    assert '資料を分類' not in result.artifact.text and '探しやすく' not in result.artifact.text
+    assert '褒められた' in result.artifact.text
+    if len(changed.checkpoint.answer_update.updates) == 2:
+        assert '重かった' in result.artifact.text and '嬉しくなかった' not in result.artifact.text
+    foreign = replace(req, emlis_thread=replace(req.emlis_thread, prepared_meaning_checkpoint_ref='foreign'))
+    with pytest.raises(ValueError, match='emlis_checkpoint_source_prefix_mismatch'):
+        prepare_emlis_meaning(foreign)
+    control = req.emlis_thread.question_control_context
+    wrong = replace(control.pending_question, prompt_private='別の質問')
+    tampered = replace(req, emlis_thread=replace(req.emlis_thread,
+        question_control_context=replace(control, pending_question=wrong,
+            issued_questions=(*control.issued_questions[:-1], wrong))))
+    with pytest.raises(ValueError, match='emlis_question_noncanonical'):
+        prepare_emlis_meaning(tampered)
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('also_correct', [False, True])
+def test_saved_whole_reason_withdrawal_preserves_exact_body_without_author(qcase, qdb, reverse, also_correct):
+    from test_emlis_q2_application import run, answer
+    from emlis_thread_service import EmlisThreadService, Q3_PROFILE
+    user, parent, service = qcase
+    source = '探しやすくなったので、資料を分類したことに満足した'
+    received = '褒められたのに、嬉しくなかった。'
+    memo, action = (received, source + '。') if reverse else (source + '。', received)
+    qdb.query('update public.emotions set memo=$2,memo_action=$3 where id=$1', [parent, memo, action])
+    before = run(service.start(user, parent))
+    response = f'「{source}」は誤りです。' + ('「嬉しくなかった」ではなく「重かった」です。' if also_correct else '')
+    dto = run(answer(service, user, before, response, key='reason-withdrawal'))
+    assert dto['body_state'] == 'REFINED', dto
+    current = dto['current_observation']
+    assert current['event_id'] != before['current_observation']['event_id']
+    assert '資料を分類' not in current['text'] and '探しやすく' not in current['text']
+    assert '褒められた' in current['text']
+    if also_correct:
+        assert '重かった' in current['text'] and '嬉しくなかった' not in current['text']
+    snapshot = run(service.store.read(user, input_id=parent))
+    event, = (e for e in snapshot['events'] if e['id'] == current['event_id'])
+    assert event['payload']['text'] == current['text']
+    class NoAuthor:
+        def __getattr__(self, name):
+            raise AssertionError('saved reason withdrawal attempted generation: ' + name)
+    restarted = EmlisThreadService(engine=NoAuthor(), runtime_profile=Q3_PROFILE)
+    assert run(restarted.get(user, parent)) == dto
+    assert run(restarted.start(user, parent)) == dto
+    replay = run(answer(restarted, user, before, response, key='reason-withdrawal'))
+    assert replay['current_observation'] == current and replay['timeline'] == dto['timeline']

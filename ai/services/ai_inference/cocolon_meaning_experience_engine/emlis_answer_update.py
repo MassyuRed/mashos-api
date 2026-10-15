@@ -567,7 +567,7 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
     except ValueError as exc:
         if (str(exc) == 'emlis_checkpoint_source_prefix_mismatch'
             and thread.control.prepared_meaning_checkpoint_ref is not None and thread.answers):
-            for legacy_mode in ('legacy_appraisal_original_time', 'legacy_appraisal_answer_time', 'legacy_appraisal_correction'):
+            for legacy_mode in ('legacy_reason_withdrawal', 'legacy_appraisal_original_time', 'legacy_appraisal_answer_time', 'legacy_appraisal_correction'):
                 try:
                     prepared = _prepare_emlis_meaning_from_plan(request, thread, original,
                         **{legacy_mode: True})
@@ -617,7 +617,7 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         return replace(prepared, legacy_result_appraisal=True)
 
 
-def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_appraisal_correction=False, legacy_appraisal_answer_time=False, legacy_appraisal_original_time=False):
+def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_appraisal_correction=False, legacy_appraisal_answer_time=False, legacy_appraisal_original_time=False, legacy_reason_withdrawal=False):
     if thread.control.capability_snapshot == "Q3_PREMIUM" and thread.control.admitted_history and not thread.answers:
         from .emlis_thread_history import frame_supported_focus
         focus = frame_supported_focus(thread, original)
@@ -647,7 +647,8 @@ def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_apprai
             prefix = admit_emlis_thread(prefix_request)
             prepared = _prepare_answer(prefix, plan, legacy_appraisal_correction=legacy_appraisal_correction,
                 legacy_appraisal_answer_time=legacy_appraisal_answer_time,
-                legacy_appraisal_original_time=legacy_appraisal_original_time)
+                legacy_appraisal_original_time=legacy_appraisal_original_time,
+                legacy_reason_withdrawal=legacy_reason_withdrawal)
             cp = prepared.checkpoint
             accepted = tuple(dict.fromkeys((*accepted, *cp.accepted_update_refs)))
             inactive = tuple(dict.fromkeys((*inactive, *cp.inactive_claim_refs)))
@@ -662,10 +663,11 @@ def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_apprai
         return prepared
     return _prepare_answer(thread, original, legacy_appraisal_correction=legacy_appraisal_correction,
         legacy_appraisal_answer_time=legacy_appraisal_answer_time,
-        legacy_appraisal_original_time=legacy_appraisal_original_time)
+        legacy_appraisal_original_time=legacy_appraisal_original_time,
+        legacy_reason_withdrawal=legacy_reason_withdrawal)
 
 
-def _prepare_answer(thread, original, *, legacy_appraisal_correction=False, legacy_appraisal_answer_time=False, legacy_appraisal_original_time=False):
+def _prepare_answer(thread, original, *, legacy_appraisal_correction=False, legacy_appraisal_answer_time=False, legacy_appraisal_original_time=False, legacy_reason_withdrawal=False):
     base = _base_ref(thread, original)
     if not thread.answers:
         checkpoint = EmlisMeaningCheckpointV1(
@@ -735,19 +737,27 @@ def _prepare_answer(thread, original, *, legacy_appraisal_correction=False, lega
             targets = tuple(row.nucleus_id for row in original.nuclei
                             if set(row.source_fields) & {"memo", "memo_action", ANSWER_FIELD}
                             and _text(row, index, resolver).rstrip("。．.") == quoted)
-            # The original source owns both endpoints after appraisal
-            # projection. Withdrawing that entire, uniquely located source
-            # withdraws the pair; a fragment or repeated source is ambiguous.
+            # Only a uniquely located, complete appraisal source can withdraw
+            # its owned pair (or proven reason + pair). Keep the full span
+            # closure: unrelated/extra nuclei must not join the withdrawal.
             whole_appraisal = False
             if withdrawal and not targets:
-                groups = tuple((r.from_nucleus_id, r.to_nucleus_id)
-                    for r in original.relations
-                    if gp.source_owned_result_appraisal(r, original.nuclei)
-                    and resolver.resolve(index[r.from_nucleus_id].source_span_ids[0]).raw_text.rstrip("。．.") == quoted
-                    and {n.nucleus_id for n in original.nuclei
-                         if n.source_fields == index[r.from_nucleus_id].source_fields
-                         and n.source_span_ids == index[r.from_nucleus_id].source_span_ids}
-                        == {r.from_nucleus_id, r.to_nucleus_id})
+                groups = []
+                for relation in original.relations:
+                    if not gp.source_owned_result_appraisal(relation, original.nuclei):
+                        continue
+                    event = index[relation.from_nucleus_id]
+                    if resolver.resolve(event.source_span_ids[0]).raw_text.rstrip("。．.") != quoted:
+                        continue
+                    group = (relation.from_nucleus_id, relation.to_nucleus_id)
+                    reason = None if legacy_reason_withdrawal else gp.source_owned_result_appraisal_reason(
+                        relation, original.nuclei, original.relations)
+                    if reason is not None:
+                        group = (*group, reason.nucleus_id)
+                    if {n.nucleus_id for n in original.nuclei
+                        if n.source_fields == event.source_fields
+                        and n.source_span_ids == event.source_span_ids} == set(group):
+                        groups.append(group)
                 if len(groups) == 1:
                     targets, whole_appraisal = groups[0], True
             if len(targets) != 1 and not whole_appraisal:
