@@ -20027,3 +20027,46 @@ u280提案を含む前回作業内容を添えた今回の「EmlisAIの残件作
 TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式受入0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置。
 
 初回は「理由への注意」から理由関係focalを持つ「満足の拠り所」へ、否定訂正後は評価の復唱から「出来事と満たされた感覚がないことの両方」の受け取りへ変わった。一方、receivedは「嬉しさにはつながらなかったのですね」という言換えのままで、初回の理由側も関係説明に寄っている。NORMAL分類・carrier追加・検査成功を§9.2/9.4の商品完成に換算しない。次は、選択済みRELATIONAL_NONCOLLAPSE／PRESERVE_BOTH_ENDPOINTSとreceived本文の接続を、作者・作者非依存reader・実保存本文の同一単位で改善する。新しい価値観・原因・目標・相手意図を補完せず、意味契約の追加が必要なら不足を具体化する。Mashへ未合格本文のProduct Readを求めない。既存共有17失敗、same100、Q1上限、giver帰属、本人実機・正式受入は今回解消していない。10/17確認点・10/31残件線・12/18公開目標とPiece/Analysis主枠を維持する。
+
+## u282 — received対比を本人経験の受け取りへ接続（2026-10-15）
+
+基準API 09f30e438b0155beeddbd7b56dc65dfdcf2e3e60／Cocolon資料c17730e0953478878bb02ca334a06cbcd1598f20。今回の継続指示に基づきu281末尾の限定残件を実装した。
+
+u281で選択済みの、本人の明示評価exact1組＋本人received対比exact1組のうち、NORMAL / ATTENTION / ATTEND_TO / RELATIONAL_NONCOLLAPSE / PRESERVE_BOTH_ENDPOINTSを持つreceived成分だけを扱う。selected contribution exact1、basis exact2（RELATION_LEFT／RELATION_RIGHT）、source-owned単一contrast、追加回答なし、裸の過去形感情形容詞、full finite文を条件にする。理由0/1と当時の満足を否定へ訂正する既存範囲を維持する。
+
+Human Receptionの既存received作者へ選択済みdecisionを渡す。出来事だけでは本人の経験を言い表せないという対比を含め、嬉しさの不在／悲しさの存在を、その本人の経験を受け取る対象として実現する。入力の対比を単なる随伴へ弱めないため「出来事だけでは言い表せない」を文の限定へ置く。原因・相手意図・期待・価値観は補完しない。作者非依存readerは実本文のevent・感情・肯否・過去時点・本人、focal contrast、左右のnode所有、basis、非空のselected contribution一致を照合する。
+
+旧whole NORMALの複数contribution、LIMITED、複数received、ABOUT回答、detached/replacement、SELF主題付きevent、修飾付き感情は既存文法を維持する。旧本文の独立読取りも保持。意味選択・checkpoint・source認識・private/public型・API/DTO/DB/RN・質問上限を変更しない。新production file、型、inventory、checkerは追加していない。
+
+| mashos-api相対path | u282の責務差分 |
+|---|---|
+| ai/services/ai_inference/emlis_ai_grounded_human_reception.py | 既存received作者へselected decisionを渡し、組別noncollapseを本人経験の受け取りとして表す。 |
+| ai/services/ai_inference/emlis_ai_grounded_observation_gate.py | 新文から対比・両端・肯否・時点と選択内容の所有を作者非依存で読む。旧文法を保持。 |
+| ai/tests/test_cmee_emlis_result_appraisal.py | 対照入力、本文／選択改ざん、独立再読、対象外境界を追加。既存NORMAL本文期待を更新。 |
+| ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json | 現行共有owner identityのみ更新。 |
+| ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md | 実本文・検証・途中失敗・残件を記録。 |
+
+最終の評価627＋Q2/Q3 application54は681 PASS（243.06s (0:04:03)、skip/xfailなし）。現行共有owner identityは別runで1 PASS／194 deselected（25.48s）。合計682の異なる検査だが単一runではない。初回／否定訂正後、両欄、褒められた／誘われた、嬉しさ不在／悲しさ、片方削除・対比削除、SELF／修飾境界、作者を禁止した独立reader、端点・肯否・時点・focal／basis・contribution同時空化の拒否と旧checkpointを確認した。歴史fixtureは変更せず、現行共有owner identityだけ再計算した。
+
+実service＋隔離PGliteで、反応2×評価時点2×両欄2×訂正／撤回2の16組を初回／更新後まで保存し、32 DTOを取得。加えて旧作者分岐で保存した2 DTOの本文がu281保存サンプルと一致することを確認し、現行NoAuthor GET/startで読み戻した。新32件もNoAuthor GET/start、同一回答再送で本文／timeline一致・event無増加。現行RN hook/modalへ計34件を渡し、本文・全Observation履歴・close/reopen一致を確認した。root華恋が34本文を読み、全文一致で22種類として確認。最終適用条件修正後も全34本文が読取済み集合と一致した。native部品はstubで、本人実機・正式Product Readではない。
+
+実保存された合成例（実ユーザー本文ではない）：
+
+```text
+初回 Reception：
+探しやすくなった点に、資料を分類したことへの当時の満足の拠り所が見えます。褒められたことだけでは言い表せない、嬉しさが伴わなかったあなたの経験として受け取りました。
+
+反応を「悲しかった」へ変えたreceived文：
+褒められたことだけでは言い表せない、悲しさが伴ったあなたの経験として受け取りました。
+
+否定訂正後 Reception：
+資料を分類したことと、それについて当時はご自身の中に満たされた感覚がなかったことの両方を受け取りました。褒められたことだけでは言い表せない、嬉しさが伴わなかったあなたの経験として受け取りました。
+```
+
+初回関連runは44 failed／637 passed。作者の新分岐が旧whole NORMALの複数contributionにも入り、独立readerの組別所有条件に合わず本文生成が止まった。作者／readerを両方とも既存組別exact1 contribution／exact2 basisへ限定し、同一関連suiteを再実行して解消した。レビューで見つかった明示SELF主題による受け取り主体の曖昧化と、contribution集合の同時空化も修正した。途中の失敗は最終成功へ混ぜない。
+
+再現はtest_cmee_emlis_result_appraisal.py、test_emlis_q2_application.py、test_emlis_q3_application.py、test_cmee_v1a_i1sx_contracts.pyのactive_final_language_owner_chain。既存Python3.12.14／pytest8.4.1、PGlite0.5.8／React18.3.1を使用。PYTHONPATH=ai:ai/services/ai_inference:ai/tests、Q2_PGLITE_MODULEを既存PGliteへ設定。保存確認は既存Q3Database／Q3_PROFILE、NoAuthor engine、現行useEmlisThread／EmlisThreadModal。隔離DBと一時ログを稼働DBや永続evidenceと扱わない。新依存・外部AI・実環境操作なし。
+
+TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式受入0/3、candidate_ready=false、automatic_progression=false。既存Draft/open/unmerged・未配置を維持する。
+
+選択内容が共通の「のですね」へ落ちる問題は当該成分で修正した。一方、二経験を並べた本文は「経験として受け取りました」「両方を受け取りました」が反復し、初回理由側も関係説明に寄っている。今回の正の受け取り対象と対比の明示を、§9.2／9.4・自然さ・入力固有の内容形成の完成に換算しない。次は、初回の理由側とreceived側を合わせた受け取りに、その入力固有の一つの意味が形成されているかを扱う。既存selected contentと実本文の不足を分離し、根拠のない原因等や同義語追加で埋めない。評価撤回後のLIMITED一般態度、既存共有17失敗、same100、Q1上限、giver帰属、本人実機・正式受入は未解消。Mashへ未合格本文のProduct Readは求めない。10/17確認点・10/31残件線・12/18公開目標、Piece/Analysis主枠を維持する。

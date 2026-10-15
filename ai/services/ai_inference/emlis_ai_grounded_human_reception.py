@@ -10302,7 +10302,7 @@ def _received_event_record_prefixes(plan, resolver):
     return prefixes
 
 
-def _source_grounded_received_discourse(realization, *, acknowledge=True,
+def _source_grounded_received_discourse(realization, *, selected_decision=None, acknowledge=True,
                                        record_prefixes=(), record_quote_limit=0) -> str | None:
     """Realize selected event/reaction/answer relations as finite discourse.
 
@@ -10335,6 +10335,36 @@ def _source_grounded_received_discourse(realization, *, acknowledge=True,
         codes = tuple(f"thread-received-slot:{slot}:{count + slot}:{link}:none"
                       for slot, link in enumerate(links))
     fragments = realization.semantic_fragments
+
+    # A selected NORMAL contrast receives the user's experience through both
+    # endpoints. The event alone must not stand in for the user's reaction.
+    # Keep this distinct from the LIMITED material acknowledgement below;
+    # neither a completed answer nor a new interpretation is required here.
+    if (selected_decision is not None and selected_decision.branch == "NORMAL"
+        and _selected_noncollapse_appraisal(selected_decision)
+        and selected_decision.subjective_proposition.subjective_mode == "ATTENTION"
+        and selected_decision.subjective_proposition.subjective_operator == "ATTEND_TO"
+        # The component owns just this contrast. Older whole-reading NORMAL
+        # decisions also carry other material duties and keep their grammar.
+        and len(selected_decision.selected_contribution_refs) == 1
+        and len(selected_decision.basis_rows) == 2
+        and {b.role for b in selected_decision.basis_rows} == {"RELATION_LEFT", "RELATION_RIGHT"}
+        and acknowledge and not any(record_prefixes)
+        and realization.clause_form == "FINITE"
+        and len(codes) == 1 and len(fragments) == 2
+        and len(realization.relations) == 1
+        and realization.relations[0].relation_kind == "contrast"):
+        _, event_slot, feeling_slot, link, *answer = codes[0].split(":")
+        if (answer == ["none"] and link in _RECEIVED_EVENT_LINK_TEXT
+            and feeling_slot != "none"
+            and realization.relations[0].endpoint_slots == (int(event_slot), int(feeling_slot))):
+            event, feeling = fragments[int(event_slot)], fragments[int(feeling_slot)]
+            nominal = _received_discourse_negative_feeling(feeling)
+            event = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event, count=1)
+            if nominal is not None and not event.startswith("あなたは"):
+                accompaniment = "伴わなかった" if feeling.endswith("くなかった") else "伴った"
+                return (event + "ことだけでは言い表せない、" + nominal[0] + "が"
+                        + accompaniment + "あなたの経験として受け取りました")
 
     def answer_time_prefix(source, when):
         prefix = {"original_occasion": "その時は", "answer_time": "回答した時点では",
@@ -10775,6 +10805,7 @@ def _source_grounded_reception_fragment(
         and selected_subjective_decision.subjective_proposition.appraisal_content.operation
             in {"RECEIVE_AS_MATERIAL", "PRESERVE_BOTH_ENDPOINTS"}):
         discourse = _source_grounded_received_discourse(realization, acknowledge=acknowledge_received,
+                                                       selected_decision=selected_subjective_decision,
                                                        record_prefixes=received_record_prefixes,
                                                        record_quote_limit=received_record_quote_limit)
         if discourse is not None:
