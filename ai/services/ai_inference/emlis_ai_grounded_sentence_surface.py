@@ -33,6 +33,7 @@ from emlis_ai_grounded_observation_plan import (
     validate_grounded_human_reception_plan,
     source_owned_result_appraisal,
     source_owned_result_appraisal_context,
+    source_owned_result_appraisal_reason,
     _result_appraisal_time_label,
 )
 from emlis_ai_grounded_human_reception import (
@@ -1658,7 +1659,48 @@ def _merge_parallel_contrast_groups(groups, relation_ids, nucleus_index, relatio
     return tuple(merged)
 
 
-def _merge_result_appraisal_groups(groups, relation_ids, nucleus_index, relation_index):
+def _repeated_reason_appraisal_relations(nucleus_ids, relation_ids, nucleus_index, relation_index, resolver):
+    """One visible relation pair may witness two equal, separately owned claims.
+
+    Prove both complete three-owner groups and their exact adjacent source
+    occurrences before sharing grammar. This is not prose deduplication, and
+    neither the original binding nor its independent reader loses an owner.
+    """
+    if len(nucleus_ids) != 6 or len(relation_ids) != 4:
+        return ()
+    nuclei = tuple(nucleus_index.values())
+    relations = tuple(relation_index.values())
+    appraisals = tuple(relation_index[r] for r in relation_ids
+        if source_owned_result_appraisal(relation_index[r], nuclei))
+    if len(appraisals) != 2:
+        return ()
+    groups = []
+    for relation in appraisals:
+        reason = source_owned_result_appraisal_reason(relation, nuclei, relations)
+        if reason is None:
+            return ()
+        group = (reason, nucleus_index[relation.from_nucleus_id], nucleus_index[relation.to_nucleus_id])
+        span = resolver.resolve(reason.source_span_ids[0])
+        if any(n.source_fields != reason.source_fields or n.source_span_ids != reason.source_span_ids
+               or n.semantic_frame.target_anchor_ids != n.source_span_ids for n in group):
+            return ()
+        groups.append((span, group))
+    groups.sort(key=lambda row: row[0].start_index)
+    (first, left), (second, right) = groups
+    if (first.source_field != second.source_field or first.start_index != 0
+        or second.start_index != first.end_index + 1 or first.raw_text != second.raw_text
+        or set(nucleus_ids) != {n.nucleus_id for n in (*left, *right)}
+        or len({n.nucleus_id for n in (*left, *right)}) != 6
+        or any((a.kind, a.retention, a.grounding_kind, a.allowed_claim_scope, replace(a.semantic_frame, target_anchor_ids=()))
+               != (b.kind, b.retention, b.grounding_kind, b.allowed_claim_scope, replace(b.semantic_frame, target_anchor_ids=()))
+               for a, b in zip(left, right))):
+        return ()
+    owned = {n.nucleus_id for n in left}
+    return tuple(r for r in relation_ids if {relation_index[r].from_nucleus_id,
+        relation_index[r].to_nucleus_id} <= owned)
+
+
+def _merge_result_appraisal_groups(groups, relation_ids, nucleus_index, relation_index, resolver):
     """Coordinate adjacent complete evaluations without sharing their objects."""
     def eligible(group):
         rows = tuple(relation_index[r] for r in _internal_relation_ids(group, relation_ids, relation_index))
@@ -1667,8 +1709,11 @@ def _merge_result_appraisal_groups(groups, relation_ids, nucleus_index, relation
                 source_owned_result_appraisal(r, tuple(nucleus_index.values())) for r in rows))
     merged = []
     for group in groups:
-        if merged and eligible(merged[-1]) and eligible(group):
-            merged[-1] = (*merged[-1], *group)
+        pair = (*merged[-1], *group) if merged else ()
+        repeated = _repeated_reason_appraisal_relations(pair,
+            _internal_relation_ids(pair, relation_ids, relation_index), nucleus_index, relation_index, resolver)
+        if merged and (repeated or eligible(merged[-1]) and eligible(group)):
+            merged[-1] = pair
         else:
             merged.append(tuple(group))
     return tuple(merged)
@@ -2273,7 +2318,7 @@ def _build_regular_lines(
             source_groups = _merge_parallel_contrast_groups(source_groups, relation_candidates,
                 nucleus_index, relation_index)
             appraisal_groups = _merge_result_appraisal_groups(source_groups, relation_candidates,
-                nucleus_index, relation_index)
+                nucleus_index, relation_index, resolver)
             parallel_groups = _merge_parallel_contrast_groups(appraisal_groups, relation_candidates,
                 nucleus_index, relation_index, bridge_detached_feelings=True)
             detached_groups = _merge_detached_feeling_groups(parallel_groups, nucleus_index, relation_index)
@@ -3456,6 +3501,18 @@ def _render_relation(
             resolver,
             typed_semantic_duties=typed_semantic_duties,
         )
+    repeated = (_repeated_reason_appraisal_relations(binding.nucleus_ids, binding.relation_ids,
+        nucleus_index, relation_index, resolver) if typed_semantic_duties and not _hedge_prefix(binding) else ())
+    if repeated:
+        # Keep all six nuclei/four relations on the outward sentence binding.
+        # Only the authoring call shares the established two-relation grammar;
+        # the body reader still independently checks every original relation.
+        owned = {nid for rid in repeated for nid in (
+            relation_index[rid].from_nucleus_id, relation_index[rid].to_nucleus_id)}
+        return _render_relation(replace(binding, relation_ids=repeated,
+            nucleus_ids=tuple(nid for nid in binding.nucleus_ids if nid in owned)),
+            nucleus_index, relation_index, resolver, typed_semantic_duties=typed_semantic_duties,
+            record_prefixes=record_prefixes)
     appraisal_rows = tuple(relation_index[r] for r in binding.relation_ids)
     if (typed_semantic_duties and len(appraisal_rows) > 1 and not _hedge_prefix(binding)
         and all(source_owned_result_appraisal(r, tuple(nucleus_index.values())) for r in appraisal_rows)

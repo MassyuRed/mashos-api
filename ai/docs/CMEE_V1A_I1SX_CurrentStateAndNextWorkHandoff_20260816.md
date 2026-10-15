@@ -19421,3 +19421,53 @@ REDは新期待UNRESOLVEDに対し未変更版がRESOLVEDになる1件。新し�
 **BOUNDED_IMPLEMENTATION_WIP / PRODUCT_NOT_CLEAR、初回一体単位未完了。** 正式受入0/3・candidate_ready=false・automatic_progression=false・未配置・Draft/open/unmergedを維持する。
 
 重複理由文のsource所有が非対称なことと、同入力の初回本文がemlis_q3_initial_body_unavailableで止まる問題は残る。新しい撤回回答も本文なし／ANSWER_UNREFLECTEDであり、独立訂正を受理できることを本文生成成功に換算しない。次はこの初回source→選択内容→本文の欠落と§9.2/9.4の受け取り内容を一体で確認する。訂正周辺の小修正だけで初回単位の完成を置き換えない。2 received＋2評価の初回gap、有限対象撤回後の不自然なReception、旧receivedのgiver帰属、既存共有17失敗・same100・本人実機・正式Product Readは今回解消していない。10/17確認点、10/31残件線・12/18リリース目標とPiece/Analysis主枠を維持する。
+
+
+### u269 — 隣接する同一理由文の初回本文を回復（2026-10-15 JST）
+
+開始headはAPI 05d3040709e9648b666bab037096fe821092e422／Cocolon 7ada389bd5e3f5b1d4c0d4f1db61f56420f5ac32。アプリ全体01、全file地図01A/B/C、current01/04、最新weekly20261010 §5.6.18と進行配分、8/28設計§9.2/9.4、CURRENT_RULES・Rule18 §11.3、8/16商品軽視incidentを確認。System Context prepareはmaterial commitのdescendant判定で失敗し、許容される原典直接確認で補完。fresh context成功とは扱わない。u264の一評価ごとの理由所有と既存many-to-one可視構成の欠陥修正として既存承認範囲内で実施。Work内read-only別agentが契約とdiffを確認しblockerなし。別model Pro審査・本人Product Readではない。
+
+前回scratchのruntimeが失われていたため、既存検証契約と同じPython3.12.14／pytest8.4.1／pytest-subtests0.14.2／pydantic2.13.5／FastAPI0.142.2／httpx0.28.1、PGlite0.5.8、React18.3.1と既存Babel版を新しい隔離runtimeに用意した。以前のruntimeを再利用したとはしない。製品依存追加・外部AI・有料service・live DB操作・deploy・mergeは0。
+
+未変更u268では同一理由文の二つ目がgeneric change/current_inputとなり、余分な変化記述と意味反復で初回UNAVAILABLE。sourceだけの修正では、二組が別々のObservationになって関係反復／分断で止まり、Receptionも理由を持たないgeneric結合文だった。source・選択済みsupport・既存Observation構成を同じ単位で修正し、上記三つを回復。独立body inverse、surface validation、最終gateは変更せず通過した。
+
+同じ欄の先頭に理由付き満足の完全文が直ちに同文で重なる場合、先行文の既存SELF証明をそのscalar位置で再実行し、二つ目も独立した理由・対象・評価の三ownerとして保持する。二出現の6nucleus・4relation・各source位置を残し、完全文・役割・時点・肯否が一致すると証明できた場合だけ、Observationの既存理由文＋対象評価文を一度にまとめる。重複から二度の経験・強さ・重要性は推測しない。
+
+既存follow_idsが一意に選んだ評価は、他の評価がある場合も同じspanの証明済み理由／対象をsupportへ戻す。この支持修復の適用範囲はexact duplicateだけではなく、他rowがconcrete_effortまたは同一targetに限られる既存選択条件内。意味選択・rank・Move数・selected contributionを増やさず、今回はLIMITEDの選ばれた一組だけをReceptionにする。全三組のReception受入れ完了とはしない。
+
+新規の重複全文撤回は引き続きUNRESOLVEDで、両方の三ownerを残す。別反応の独立REVISE併記はPARTIALで意味保存する。旧source形は既存のcheckpoint不一致／旧canonical質問の入口だけで再導出し、完全identity照合を維持する。旧IDへ新しい意味を貼らない。
+
+合成入力は「探しやすくなったので、資料を分類したことに満足した。」を同一欄に2回、別欄に「褒められたのに、嬉しくなかった。」。両欄配置・Q1/Q3_FREE・別理由・評価時点を確認。初回の実本文は次のとおり。これは商品品質合格の例ではなく、停止回復と出典保持の検証資料である。
+
+```text
+見えたこと：
+「探しやすくなった」を理由として、「満足した」へつながっています。 「資料を分類した」という出来事に対する評価は、「満足した」とあります。
+「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。
+
+Emlisから：
+探しやすくなったことを理由に、資料を分類したことについて、当時は満足したのですね。
+```
+
+STRUCTURE_MAP_DELTA_PRESENT。既存production 5fileと既存test／現行identity fixtureを変更。新file・engine・author・checker・service・registryは追加0。既存sentence surface内に私有の意味等価証明helperを1つ追加。意味schema・公開API/DTO/DB/SQL/RN・製品依存・独立reader・品質gateは変更0。歴史fixture/IM03 proofは不変。
+
+| 既存owner（API repo相対） | u269の責務差分 |
+|---|---|
+| ai/services/ai_inference/emlis_ai_grounded_observation_plan.py | 先頭の同一理由文2出現のSELFを個別scalarで証明。選択済み評価の同一span理由／対象supportを修復。旧source再導出flagを既存final projection鎖へ渡す。 |
+| ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py | _repeated_reason_appraisal_relationsが二組の完全な意味／出典同値を証明し、既存merge/renderで6owner/4relationのbindingを保持したまま既存文法を一度描画。 |
+| ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_question.py | original_meaning_planで旧重複source形の内部再導出指定を受け渡す。質問の公開契約は不変。 |
+| ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_answer_update.py | 旧source形と旧訂正modeを組み合わせて完全checkpointを再導出。古いcanonical質問にも同じ旧形を適用。新規回答の候補一意性は保持。 |
+| ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_thread_engine.py | 復元した旧source形の初回本文はprepared planを使う。 |
+| ai/tests/test_cmee_emlis_result_appraisal.py | 初回の両欄／Q1/Q3／理由／評価時点、6owner/4relation、非同一・他者scope、独立reader、旧checkpoint12件、実保存／NoAuthor再開を追加。旧重複source期待を6ownerへ更新。 |
+| ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json | 現行共有source ownerの正規計算値だけを再採録。歴史receiptを変更しない。 |
+
+評価suite **373 PASS**（u268の329＋新44）、Q2/Q3 application **54 PASS**、現行shared-owner identity **1 PASS**、計 **428 PASS**。skipなし、既存依存deprecation warning2。完全旧checkpointは未変更u268から実取得したQ1/Q3_FREEの初回4件＋回答8件を追加し、既存u267の8件を含む歴史検査も保持。本文・state・reason_codes・偽checkpoint拒否を照合した。
+
+実service＋隔離PGliteの実migration/RPCで重複入力の初回生成→本文event/DTO保存、回答の曖昧性／独立REVISE保存、NoAuthor restart GET/start、同じkeyの再送とevent無増加を確認した。実保存DTOの初回／回答後計8ケースを既存RN hook/modalへ渡し、本文の完全一致、履歴展開・close/reopenを確認。回答後の古い初回本文は「以前の観測」であり、現在本文へ戻さない。native部品はtest stub、端末実機・正式Product Readではない。RN全suiteは今回未再実行、u268の既知26 PASS/5 FAILを解消したとはしない。
+
+初回の既存suiteはPGlite設定前305 PASS/24 SKIPで、最終結果に代用しない。依存設定後の新検査込みは最初366 PASS/7 FAIL。1件は既存full inverseのauthor replayまで禁止した検査手順、4件は旧Q1 canonical質問の復元／偽checkpoint拒否理由に対する誤った新テスト前提、2件は回答後本文まで回復するという未確認の期待だった。旧head実測で期待を訂正し、Observation author禁止と、独立Reception reader内でのauthor禁止を別々に確認し、回答後停止を残件として固定した。既存検査の緩和、reader/gateの例外追加、skip/xfailは0。
+
+**BOUNDED_IMPLEMENTATION_WIP / PRODUCT_NOT_CLEAR、初回一体単位未完了。** 正式受入0/3・candidate_ready=false・automatic_progression=false・未配置・Draft/open/unmergedを維持する。
+
+残件：同じ回答に独立訂正を併記した後は、意味はPARTIALで保存できるが、必要Observation contribution選択がstage1_required_observation_unrealizableとなりMEANING_UPDATED_BODY_UNAVAILABLEを維持する。単独曖昧撤回もANSWER_UNREFLECTEDで新本文なし。初回の完全一致二文は回復したが、「私は」を付けた近似文・別欄に分かれた二組の初回は反復／関係分断の既存gateで停止する。全三組Receptionのpair-only閉包、関係の説明反復と固定的な受け取り、2 received＋2評価、有限対象撤回後の不自然さ、旧receivedのgiver帰属、既存共有17失敗・same100・本人実機・正式Product Readも残る。
+
+次は初回一体単位の選択内容と受け取りを、出典ごとの意味を保った構成として改善する。今回の限定回復を商品完成へ換算しない。10/17確認点、10/31残件線・12/18リリース目標とPiece/Analysis主枠を維持する。

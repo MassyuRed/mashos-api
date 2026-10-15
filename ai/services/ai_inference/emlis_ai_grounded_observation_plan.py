@@ -9525,18 +9525,23 @@ def build_grounded_reception_opportunities(
 
     # A selected original appraisal owns its object. A separate action field
     # already retained in Observation does not need a second generic closing.
-    appraisals = tuple(r for r in relations if source_owned_result_appraisal(r, nuclei))
+    appraisals = tuple(r for r in relations if source_owned_result_appraisal(r, nuclei)
+                      and follow_ids == {r.to_nucleus_id})
     if (final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION
-        and len(appraisals) == 1 and follow_ids == {appraisals[0].to_nucleus_id}
+        and len(appraisals) == 1
         and all(row.family == "concrete_effort" or row.target_nucleus_ids == (appraisals[0].to_nucleus_id,)
                 for row in rows)):
         context = (source_owned_result_appraisal_context(appraisals[0], nuclei, relations)
                    or source_owned_result_appraisal_reason(appraisals[0], nuclei, relations))
         supports = ((context.nucleus_id, appraisals[0].from_nucleus_id) if context is not None
                     else (appraisals[0].from_nucleus_id,))
-        focused = tuple(row for row in rows
+        # The selected appraisal already owns this complete reason/object
+        # scope. Restore its support even when another independent appraisal
+        # prevents the multi-duty inventory from representing every group.
+        # Neither ranking nor selected proposition membership is expanded.
+        focused = tuple(replace(row, support_nucleus_ids=supports) for row in rows
             if row.target_nucleus_ids == (appraisals[0].to_nucleus_id,)
-            and row.support_nucleus_ids == supports)
+            and row.support_nucleus_ids in (supports, (appraisals[0].from_nucleus_id,)))
         if len(focused) == 1:
             return (replace(focused[0], opportunity_id="ro1"),)
 
@@ -13429,7 +13434,8 @@ def _thread_withdrawn_result_appraisal(nucleus, relations):
 
 
 def _explicit_result_appraisal_projections(span, normalized_input, *, _legacy_appraisal_reason=False,
-                                          _legacy_received_appraisal_context=False):
+                                          _legacy_received_appraisal_context=False,
+                                          _legacy_repeated_appraisal_context=False):
     """Bind an asserted appraisal to its own asserted object, not adjacency.
 
     The object and the outer appraisal retain independent source ranges and
@@ -13529,8 +13535,20 @@ def _explicit_result_appraisal_projections(span, normalized_input, *, _legacy_ap
     # SELF as giver does not prove SELF as the receiver of praise, etc.
     self_received = bool(received_event and _SELF_REFERENCE_RE.search(giver) is None and ("に" not in received_event
         or _source_operator_owner_scope_is_bound(received_event)))
+    # Exactly one identical complete sentence at the start of this field
+    # can carry its already-proved SELF owner forward. Re-run the existing
+    # proof at that earlier scalar range; no foreign prefix, changed reason,
+    # or third occurrence inherits ownership through this narrow boundary.
+    repeated = (() if _legacy_repeated_appraisal_context or reason is None
+        or prefix != previous or previous != raw or raw != text
+        or source[:start] not in {raw + mark for mark in ("。", "．", ".")}
+        else _explicit_result_appraisal_projections(
+            replace(span, start_index=0, end_index=len(raw)), normalized_input,
+            _legacy_appraisal_reason=_legacy_appraisal_reason,
+            _legacy_received_appraisal_context=_legacy_received_appraisal_context,
+            _legacy_repeated_appraisal_context=True))
     if (previous and not _source_operator_owner_scope_is_bound(previous)
-        and not self_received
+        and not self_received and len(repeated) != 3
         and not re.search(r"^(?:(?:今日|昨日|今朝|先週)(?:は|に)?[、,]?)?(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が)",
                           reason['reason'] if reason is not None else match['event'])):
         return ()
@@ -13906,6 +13924,7 @@ def _final_stage1_typed_nuclei(
     _legacy_result_appraisal: bool = False,
     _legacy_appraisal_reason: bool = False,
     _legacy_received_appraisal_context: bool = False,
+    _legacy_repeated_appraisal_context: bool = False,
 ) -> tuple[tuple[GroundedSemanticNucleus, ...], tuple[tuple[str, str, str], ...]]:
     span_index = {
         _clean(getattr(span, "span_id", "")): span
@@ -13924,7 +13943,8 @@ def _final_stage1_typed_nuclei(
         received_projections = ((() if _legacy_result_appraisal else
             _explicit_result_appraisal_projections(span, normalized_input,
                 _legacy_appraisal_reason=_legacy_appraisal_reason,
-                _legacy_received_appraisal_context=_legacy_received_appraisal_context))
+                _legacy_received_appraisal_context=_legacy_received_appraisal_context,
+                _legacy_repeated_appraisal_context=_legacy_repeated_appraisal_context))
             or _received_event_reaction_projections(span, nucleus.semantic_frame)) if span is not None else ()
         canonical_projections = received_projections or (
             _typed_nucleus_projections_for_span(
@@ -16286,6 +16306,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_result_appraisal: bool = False,
     _legacy_appraisal_reason: bool = False,
     _legacy_received_appraisal_context: bool = False,
+    _legacy_repeated_appraisal_context: bool = False,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -16301,6 +16322,7 @@ def project_final_stage1_grounded_observation_plan(
         _legacy_result_appraisal=_legacy_result_appraisal,
         _legacy_appraisal_reason=_legacy_appraisal_reason,
         _legacy_received_appraisal_context=_legacy_received_appraisal_context,
+        _legacy_repeated_appraisal_context=_legacy_repeated_appraisal_context,
     )
     projected_nuclei = _final_stage1_align_action_status(
         projected_nuclei,
@@ -17373,6 +17395,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_result_appraisal: bool = False,
     _legacy_appraisal_reason: bool = False,
     _legacy_received_appraisal_context: bool = False,
+    _legacy_repeated_appraisal_context: bool = False,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan."""
 
@@ -17427,6 +17450,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_result_appraisal=_legacy_result_appraisal,
         _legacy_appraisal_reason=_legacy_appraisal_reason,
         _legacy_received_appraisal_context=_legacy_received_appraisal_context,
+        _legacy_repeated_appraisal_context=_legacy_repeated_appraisal_context,
     )
 
 

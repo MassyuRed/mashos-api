@@ -71,6 +71,7 @@ class PreparedEmlisMeaning:
     original_plan: gp.GroundedObservationPlan
     accepted_nuclei: tuple[gp.GroundedSemanticNucleus, ...]
     checkpoint: EmlisMeaningCheckpointV1
+    legacy_repeated_appraisal_context: bool = False
     legacy_received_appraisal_context: bool = False
     legacy_appraisal_reason: bool = False
     legacy_result_appraisal: bool = False
@@ -591,7 +592,24 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
             or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
             raise
-        prior_context = original_meaning_plan(thread, _legacy_received_appraisal_context=True)
+        prior_repeated = original_meaning_plan(thread, _legacy_repeated_appraisal_context=True)
+        if prior_repeated.nuclei != original.nuclei or prior_repeated.relations != original.relations:
+            modes = ({},)
+            if thread.control.prepared_meaning_checkpoint_ref is not None and thread.answers:
+                modes += tuple({'legacy_withdrawal_precedence': True, name: True} for name in (
+                    'legacy_withdrawal_precedence', 'legacy_reason_withdrawal', 'legacy_appraisal_original_time',
+                    'legacy_appraisal_answer_time', 'legacy_appraisal_correction'))
+            for options in modes:
+                try:
+                    restored = _prepare_emlis_meaning_from_plan(request, thread, prior_repeated, **options)
+                except ValueError as prior_exc:
+                    if str(prior_exc) not in {'emlis_checkpoint_source_prefix_mismatch', 'emlis_question_noncanonical'}:
+                        raise
+                else:
+                    return replace(restored, legacy_repeated_appraisal_context=True,
+                        legacy_appraisal_correction=bool(options.get('legacy_appraisal_correction')))
+        prior_context = original_meaning_plan(thread, _legacy_received_appraisal_context=True,
+            _legacy_repeated_appraisal_context=True)
         if prior_context.nuclei != original.nuclei or prior_context.relations != original.relations:
             try:
                 restored = _prepare_emlis_meaning_from_plan(request, thread, prior_context)
@@ -601,7 +619,7 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
             else:
                 return replace(restored, legacy_received_appraisal_context=True)
         prior_reason = original_meaning_plan(thread, _legacy_appraisal_reason=True,
-            _legacy_received_appraisal_context=True)
+            _legacy_received_appraisal_context=True, _legacy_repeated_appraisal_context=True)
         if prior_reason.nuclei != original.nuclei or prior_reason.relations != original.relations:
             try:
                 restored = _prepare_emlis_meaning_from_plan(request, thread, prior_reason)
