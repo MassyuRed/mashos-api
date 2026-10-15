@@ -1,5 +1,5 @@
 {
-  "language_identity": "0332041c36b6a1f7807643bd1f00138b56533880061efe671c991e2e0abb936c",
+  "language_identity": "df132891d1f7d9c437a04cc0ce818acf4233ed61bff96204640552c41c82cb0b",
   "language_payloads": [
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
@@ -23,13 +23,13 @@
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
-      "19b59aa5698570664ff15d6e51ab9dff92ad0875784f84b81d3d2ea07587fda3",
-      2306298
+      "4d4ff5577dce5ee210ef9bed1765ed2fc8460056e4cb300b3464a7c98707e1cf",
+      2309620
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
-      "143207865bd7d54a23d09a50ffcac1e0f281b12177fc1d81ae39bcb7f65d33e8",
-      746957
+      "8c327dcf303ff0ba9285b1f729562f10a0d60fc98467f0d825799fd6f741146c",
+      752968
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
@@ -92,7 +92,7 @@
       8985
     ]
   ],
-  "runtime_identity": "34016923ad02f758551a33dd32ab26f5b141181b02247f6d34a22f8b1ea35477",
+  "runtime_identity": "0fcbed9a2bc395742196370d581260c0878acca1a95903dd7263686ec80b47bb",
   "runtime_payloads": [
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
@@ -116,13 +116,13 @@
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
-      "efeaab2ecafa3c267a7acf022a897b7e3064eb953ecda063e9c2d078e415bf2f",
-      875678
+      "3632cf6cd794fe361ba596b0432c7abcc8738c1d670e5a8798c3f7b8370977c8",
+      876882
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
-      "26a1a55655539c43650412bd843f4ac6d02c5db55abb0074d8cfabf04006a217",
-      254560
+      "0e6ef8ef967bceaaa6651855041a31ea46b207998ef2ec73e47bbef4d0047b76",
+      256408
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
@@ -204,11 +204,11 @@
       188,
       69,
       38,
-      46,
+      47,
       39,
       50,
       104
     ],
-    "0e1a1ccdc3fcb331e780b59dc660c32c08a9b8e1fb995d5e2b05bf834091f1f6"
+    "78f98e16e87a0b6b30e8c248a04d52501fd8f14f6baecd8fe0b7a9aa67478c03"
   ]
 }

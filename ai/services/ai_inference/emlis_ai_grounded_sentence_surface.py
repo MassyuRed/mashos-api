@@ -34,6 +34,7 @@ from emlis_ai_grounded_observation_plan import (
     source_owned_result_appraisal,
     source_owned_result_appraisal_context,
     source_owned_result_appraisal_reason,
+    source_owned_duplicate_reason_appraisals,
     _result_appraisal_time_label,
 )
 from emlis_ai_grounded_human_reception import (
@@ -1169,9 +1170,36 @@ def _observation_surface_atoms(
         nucleus_index,
         relation_index,
     )
+    arcs = (f"semantic_arc:{role}",)
+    if (any(n.source_fields == ("answer_text_private",)
+            and n.allowed_claim_scope == "explicit_supplemental_answer"
+            for n in nucleus_index.values())
+        and any(source_owned_result_appraisal(r, tuple(nucleus_index.values()))
+                for r in relation_index.values())
+        and (source_owned_duplicate_reason_appraisals(tuple(nucleus_index.values()),
+                tuple(relation_index.values()))
+             or any("thread_subject:revised_result_appraisal" in n.semantic_frame.attribute_codes
+                    for n in nucleus_index.values()))
+        and all(r.type in {"evaluation_about_event", "user_stated_cause", "contrast"}
+                for r in relation_index.values() if r.retention == "required")):
+        # A grammar role is not an experience identity. After a correction,
+        # an appraisal and an independent answered event may both use the
+        # bounded-relation grammar. Keep each complete source component's arc;
+        # splitting that same component still repeats its arc and is rejected.
+        required_relations = tuple(rid for rid, r in relation_index.items()
+                                   if r.retention == "required")
+        related_ids = tuple(nid for nid in nucleus_index if any(
+            nid in (relation_index[rid].from_nucleus_id, relation_index[rid].to_nucleus_id)
+            for rid in required_relations))
+        components = _relation_aware_groups(related_ids, required_relations,
+            nucleus_index, relation_index, max_groups=len(related_ids))
+        component_arcs = tuple("semantic_arc:source_component:" + ":".join(sorted(group))
+            for group in components if set(nucleus_ids).intersection(group))
+        if component_arcs:
+            arcs = component_arcs
     return (
         f"observation_surface_role:{role}",
-        f"semantic_arc:{role}",
+        *arcs,
     )
 
 

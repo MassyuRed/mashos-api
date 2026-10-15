@@ -9141,7 +9141,13 @@ def build_grounded_reception_opportunities(
         and safety_kind == TRIAGE_SAFE_OBSERVATION
         and material_quality in {"grounded", "limited_grounding"}
     ) else ()
-    retained_reaction_groups = _thread_retained_reaction_groups(owned_nuclei, relations) if (
+    # A revised appraisal may move the primary focus ahead of an earlier
+    # received pair. Derive its retained groups in the same source order as
+    # the plan selector, rather than in primary/support ranking order.
+    retained_nuclei = tuple(n for n in nuclei if n in owned_nuclei) if any(
+        "thread_subject:revised_result_appraisal" in n.semantic_frame.attribute_codes
+        for n in owned_nuclei) else owned_nuclei
+    retained_reaction_groups = _thread_retained_reaction_groups(retained_nuclei, relations) if (
         final_source_fidelity
         and safety_kind == TRIAGE_SAFE_OBSERVATION
         and material_quality in {"grounded", "limited_grounding"}
@@ -9851,6 +9857,12 @@ def _build_reception_depth_policy_and_moves(
     source_owned_answer_adjacent = False
     contrast_selected = tuple(item for item in selected
         if (item.family, item.target_nucleus_ids, item.support_nucleus_ids) in explicit_contrast_duties)
+    paired_source_appraisals = bool(
+        final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION
+        and len(selected) == 3 and len(contrast_selected) == len(explicit_contrast_duties) == 2
+        and all(item.family == "lived_change" and len(item.target_nucleus_ids) == 1
+                and len(item.support_nucleus_ids) == 2 for item in contrast_selected)
+        and selected[0].family == "current_burden")
     if contrast_selected and len(selected) == 3:
         # The original relation gets its own response. A same-family answer
         # retains attention, while the action remains a separate response.
@@ -9859,6 +9871,11 @@ def _build_reception_depth_policy_and_moves(
                 roles[item.opportunity_id] = "felt_response"
             elif item.family == "lived_change":
                 roles[item.opportunity_id] = "felt_response" if item in contrast_selected else "attention"
+    if paired_source_appraisals:
+        # An independently corrected burden must not turn two retained
+        # source appraisal duties into the same predicate responsibility.
+        roles[contrast_selected[0].opportunity_id] = "attention"
+        roles[contrast_selected[1].opportunity_id] = "felt_response"
     if independent_positive_duties:
         feelings = tuple(item for item in selected if item.family == "lived_change")
         roles[feelings[0].opportunity_id] = "attention"
@@ -10024,7 +10041,7 @@ def _build_reception_depth_policy_and_moves(
                           for item in selected)
                       and all(roles[item.opportunity_id] not in {"attention", "significance"}
                               for item in selected if item.family != "concrete_effort"))
-                     or (retained_reaction_groups and len(selected) == 3
+                     or ((retained_reaction_groups or paired_source_appraisals) and len(selected) == 3
                          and sum(item.family == "lived_change" for item in selected) == 2))
             ) else ()),
             f"depth:{level}",

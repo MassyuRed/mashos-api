@@ -2326,7 +2326,7 @@ def test_saved_duplicate_reason_withdrawal_keeps_ambiguity_and_body(qcase, qdb, 
     dto = run(answer(service, user, before, response, key='duplicate-reason'))
     assert dto['answer_saved'] and dto['meaning_updated'] == also_correct, dto
     assert dto['answer_assessment'] == ('PARTIAL' if also_correct else 'UNRESOLVED')
-    assert dto['body_state'] == ('MEANING_UPDATED_BODY_UNAVAILABLE' if also_correct else 'ANSWER_UNREFLECTED'), dto
+    assert dto['body_state'] == ('PARTIALLY_REFINED' if also_correct else 'ANSWER_UNREFLECTED'), dto
     assert not dto['can_retry'] and dto['pending_question'] is None and dto['issued_count'] == 1
     saved = run(service.store.read(user, input_id=parent))
     meaning = next(e['payload'] for e in saved['events'] if e['id'] == saved['thread']['current_meaning_event_id'])
@@ -2343,13 +2343,17 @@ def test_saved_duplicate_reason_withdrawal_keeps_ambiguity_and_body(qcase, qdb, 
     plan = build_updated_grounded_plan(prepared)
     assert sum(source_owned_result_appraisal(r, plan.nuclei) for r in plan.relations) == 2
     current = dto['current_observation']
-    # The answer meaning is saved, but required observation contribution
-    # selection still rejects this larger updated graph. Keep that residual
-    # visible and never restore the initial body as current after an answer.
-    assert current is None and not any(e.get('is_current') for e in dto['timeline'])
+    if also_correct:
+        assert current and current['text'] != initial_body['text']
+        assert 'その時の受け止めは「重かった」' in current['text']
+        assert '嬉しくなかった' not in current['text']
+        assert '今回の観測に反映できていない部分があります' in current['text']
+        assert current['text'].count('ことを理由に、資料を分類したことについて') == 1
+    else:
+        assert current is None and not any(e.get('is_current') for e in dto['timeline'])
     assert len([e for e in saved['events'] if e['kind'] == 'ANSWER']) == 1
     assert len([e for e in saved['events'] if e['kind'] == 'MEANING_UPDATE']) == 2
-    assert len([e for e in saved['events'] if e['kind'] == 'OBSERVATION']) == 1
+    assert len([e for e in saved['events'] if e['kind'] == 'OBSERVATION']) == (2 if also_correct else 1)
     assert all(k not in json.dumps(dto) for k in ('source_prefix_ref', 'checkpoint_id', 'meaning_graph', 'artifact', 'raw_utf8'))
     class NoAuthor:
         def __getattr__(self, name):
@@ -2362,6 +2366,112 @@ def test_saved_duplicate_reason_withdrawal_keeps_ambiguity_and_body(qcase, qdb, 
         assert replay[key] == dto[key]
     assert replay['requested_attempt_id'] == dto['attempt_id']
     assert run(restarted.store.read(user, input_id=parent))['events'] == saved['events']
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
+@pytest.mark.parametrize('basis', ['探しやすくなった', '見た目がすっきりした'])
+@pytest.mark.parametrize('correction', ['重かった', '怖かった'])
+def test_duplicate_reason_independent_correction_keeps_body_and_ambiguous_withdrawal(
+        reverse, evaluation, basis, correction):
+    from test_cmee_emlis_q3_thread import advance
+    source = basis + 'ので、資料を分類したことに' + evaluation + '。'
+    received = '褒められたのに、嬉しくなかった。'
+    req = request(*((received, source * 2) if reverse else (source * 2, received)))
+    reply = '「' + source[:-1] + '」は誤りです。「嬉しくなかった」ではなく「' + correction + '」です。'
+    updated = advance(req, reply)
+    prepared = prepare_emlis_meaning(updated)
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    outcome = MeaningExperienceEngine().generate(updated)
+    assert outcome.artifact is not None, outcome.reason_codes
+    assert outcome.body_state == 'PARTIALLY_REFINED' and not outcome.automatic_progression
+    body = outcome.artifact
+    assert 'その時の受け止めは「' + correction + '」' in body.observation
+    assert '嬉しくなかった' not in body.text
+    assert '今回の観測に反映できていない部分があります' in body.observation
+    assert body.reception.count(basis + 'ことを理由に、資料を分類したことについて、') == 1
+    assert ('当時は' if evaluation == '満足した' else '入力した時点では') + evaluation in body.reception
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    def valid(value):
+        return evaluate_grounded_surface_body_inverse(body=value.encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert valid(body.text)
+    for wrong in (body.text.replace(basis + 'ことを理由に、', ''),
+                  body.text.replace('資料を分類したことについて', '褒められたことについて'),
+                  body.text.replace('当時は' if evaluation == '満足した' else '入力した時点では', '回答した時点では'),
+                  body.text.replace('その時の受け止めは「' + correction + '」', 'その時の受け止めは「嬉しくなかった」')):
+        assert wrong != body.text and not valid(wrong)
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('correction', ['満足した', '満足している'])
+def test_plain_appraisal_correction_preserves_both_received_pairs_in_source_order(reverse, correction):
+    from test_cmee_emlis_q3_thread import advance
+    first = '褒められたのに、嬉しくなかった。資料を分類したことに満足した。'
+    second = '誘われたのに、悲しかった。文章を直したことに納得した。'
+    req = request(*((second, first) if reverse else (first, second)))
+    updated = advance(req, '「納得した」ではなく「' + correction + '」です。')
+    prepared = prepare_emlis_meaning(updated)
+    plan = build_updated_grounded_plan(prepared)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    outcome = MeaningExperienceEngine().generate(updated)
+    assert outcome.artifact is not None, outcome.reason_codes
+    assert outcome.body_state == 'REFINED' and not outcome.automatic_progression
+    body = outcome.artifact
+    assert all(token in body.observation and token in body.reception for token in
+               ('資料を分類した', '文章を直した', '褒められた', '誘われた'))
+    assert '嬉しさにはつながら' in body.reception and '悲しさを感じ' in body.reception
+    assert '納得した' not in body.text
+    time = '当時は' if correction == '満足した' else '入力した時点では'
+    assert '文章を直したことについて、' + time + correction in body.reception
+    sentence = build_grounded_sentence_plan(plan, prepared.thread.resolver(), recovery_stage='full')
+    def valid(value):
+        return evaluate_grounded_surface_body_inverse(body=value.encode(), plan=plan,
+            sentence_plan=sentence, resolver=prepared.thread.resolver(), selected_subjective_input=selected).passed
+    assert valid(body.text)
+    for wrong in (body.text.replace('資料を分類したことについて、当時は満足したのですね。', ''),
+                  body.text.replace('文章を直したことについて', '褒められたことについて'),
+                  body.text.replace('誘われたのに、悲しさを感じ', '誘われたので、嬉しさを感じ')):
+        assert wrong != body.text and not valid(wrong)
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+def test_corrected_source_components_still_reject_a_split_of_the_same_arc(monkeypatch, reverse):
+    from test_cmee_emlis_q3_thread import advance
+    from cocolon_meaning_experience_engine import emlis_thread_surface as thread_surface
+    import emlis_ai_grounded_sentence_surface as surface
+    from emlis_ai_grounded_observation_gate import _semantic_subcheck_reasons
+    source = '探しやすくなったので、資料を分類したことに満足した。' * 2
+    received = '褒められたのに、嬉しくなかった。'
+    updated = advance(request(*((received, source) if reverse else (source, received))),
+        '「嬉しくなかった」ではなく「重かった」です。')
+    captured = {}
+    gate = thread_surface.evaluate_grounded_observation_gate
+    def record(**kwargs):
+        captured.update(kwargs)
+        return gate(**kwargs)
+    monkeypatch.setattr(thread_surface, 'evaluate_grounded_observation_gate', record)
+    outcome = MeaningExperienceEngine().generate(updated)
+    assert outcome.artifact is not None, outcome.reason_codes
+    assert gate(**captured).public_observation_status == 'passed'
+    plan, sentence = captured['plan'], captured['sentence_plan']
+    owner = next(line for line in sentence.lines if len(line.binding.nucleus_ids) == 6)
+    split = surface._make_line(sentence_number=len(sentence.lines) + 1,
+        line_role=owner.binding.line_role, surface_function='observe_nuclei',
+        nucleus_ids=owner.binding.nucleus_ids[:1], relation_ids=(),
+        nucleus_index={n.nucleus_id: n for n in plan.nuclei},
+        relation_index={r.relation_id: r for r in plan.relations},
+        claim_scope=owner.binding.claim_scope, recovery_stage='full')
+    arcs = lambda line: {a for a in line.binding.functional_atom_ids if a.startswith('semantic_arc:')}
+    assert arcs(owner) & arcs(split)
+    assert 'semantic_arc_fragment:justified' not in split.binding.functional_atom_ids
+    fragmented = replace(sentence, lines=(*sentence.lines, split))
+    reasons = _semantic_subcheck_reasons(plan=plan, sentence_plan=fragmented,
+        surface_result=captured['surface_result'], resolver=captured['resolver'])
+    assert 'required_arc_fragmented_without_reason' in reasons[2]
+    assert gate(**{**captured, 'sentence_plan': fragmented}).public_observation_status != 'passed'
 
 
 _U269_DUPLICATE_SOURCE_CHECKPOINTS = json.loads((Path(__file__).parent / 'fixtures' /
@@ -2592,13 +2702,12 @@ def test_saved_plain_appraisal_retention_reopens_without_author(qcase, qdb, reve
     assert run(restarted.start(user, parent)) == before
     response = '「納得した」ではなく「満足している」です。'
     after = run(answer(service, user, before, response, key='appraisal-retention'))
-    # The correction is accepted, but its larger Observation inventory is
-    # still outside the existing budget. Never reuse the initial body as
-    # current after this accepted change.
-    assert after['body_state'] == 'MEANING_UPDATED_BODY_UNAVAILABLE', after
+    assert after['body_state'] == 'REFINED', after
     assert after['answer_assessment'] == 'RESOLVED' and after['meaning_updated']
-    assert after['current_observation'] is None
-    assert not any(event.get('is_current') for event in after['timeline'])
+    assert after['current_observation'] and after['current_observation'] != before['current_observation']
+    text = after['current_observation']['text']
+    assert '納得した' not in text and '入力した時点では満足している' in text
+    assert all(token in text for token in ('資料を分類した', '文章を直した', '褒められた', '誘われた'))
     assert run(restarted.get(user, parent)) == after
     assert run(restarted.start(user, parent)) == after
     saved = run(service.store.read(user, input_id=parent))
