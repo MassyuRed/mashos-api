@@ -218,6 +218,61 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
     )
 
 
+def _retained_reasonless_shared_target_duties(original, thread, nuclei, relations, updates):
+    """Keep surviving duties after one correction, without renewing the group.
+
+    This is a response-selection proof only. It changes neither saved meaning
+    nor the initial-only joint reading or the component NORMAL admission.
+    """
+    if len(thread.answers) != 1 or len(updates) != 1:
+        return ()
+    group = gp.source_owned_shared_target_appraisal_contrast(
+        original.nuclei, original.relations, thread.resolver())
+    if not group or 'reason' in group:
+        return ()
+    update = updates[0]
+    old = group['appraisal']
+    if (update.operation != 'REVISE' or update.binding_kind != 'EXPLICIT_CORRECTION'
+        or update.target_meaning_refs != (old.nucleus_id,)
+        or update.superseded_claim_refs != (old.nucleus_id,)
+        or update.temporal_binding.about_time != 'ORIGINAL_OCCASION'):
+        return ()
+    answers = tuple(n for n in nuclei if n.source_fields == (ANSWER_FIELD,))
+    if len(answers) != 1:
+        return ()
+    evaluation = answers[0]
+    frame = evaluation.semantic_frame
+    if (update.changed_claim_refs != (evaluation.nucleus_id,)
+        or (evaluation.kind, frame.predicate_kind, frame.modality, frame.polarity,
+            frame.time_scope, frame.actor) != ('reaction', 'feeling', 'feeling', 'negative', 'past', 'current_user')
+        or evaluation.retention != 'required' or evaluation.grounding_kind != 'explicit'
+        or evaluation.allowed_claim_scope != 'explicit_supplemental_answer'
+        or {c for c in frame.attribute_codes if c.startswith('thread_time:')}
+            != {'thread_time:original_occasion'}
+        or {c for c in frame.attribute_codes if c.startswith('source_appraisal_')}
+            != {'source_appraisal_kind:satisfaction', 'source_appraisal_degree:unmarked'}):
+        return ()
+    index = {n.nucleus_id: n for n in nuclei}
+    event, received, reaction = (group[k] for k in ('appraisal_event', 'received_event', 'reaction'))
+    for node in (event, received, reaction):
+        retained = replace(node, semantic_frame=replace(node.semantic_frame,
+            attribute_codes=tuple(c for c in node.semantic_frame.attribute_codes
+                if c != 'semantic_dependency:shared_target_appraisal_contrast_v1'
+                and not c.startswith('source_shared_target_'))))
+        if index.get(node.nucleus_id) != retained:
+            return ()
+    expected = {event.nucleus_id, received.nucleus_id, reaction.nucleus_id, evaluation.nucleus_id}
+    if {n.nucleus_id for n in nuclei if n.retention == 'required'} != expected:
+        return ()
+    links = tuple(r for r in relations if gp.source_owned_result_appraisal(r, nuclei))
+    if (len(links) != 1 or len(relations) != 2 or group['received_relation'] not in relations
+        or (links[0].from_nucleus_id, links[0].to_nucleus_id) != (event.nucleus_id, evaluation.nucleus_id)
+        or links[0].source_relation_ids != (update.update_ref,)):
+        return ()
+    return (('current_burden', (evaluation.nucleus_id,), (event.nucleus_id,)),
+            ('current_burden', (received.nucleus_id,), (reaction.nucleus_id,)))
+
+
 def _active_plan(original, thread, added, inactive, updates, unresolved=()):
     nuclei = tuple(row for row in original.nuclei if row.nucleus_id not in inactive) + tuple(added)
     # Withdrawing an event removes its relations, not the independently
@@ -567,6 +622,8 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
         material_quality=quality, include_reception_relation_support=True,
         final_source_fidelity=True,
         primary_focus_nucleus_ids=focus_ids,
+        retained_reaction_groups=(_retained_reasonless_shared_target_duties(
+            original, thread, nuclei, relations, updates) if not unresolved else ()),
     )
     return replace(original, nuclei=nuclei, relations=relations, unknown_boundaries=unknowns,
         input_profile=replace(original.input_profile, nucleus_count=len(nuclei),

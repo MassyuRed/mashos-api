@@ -4011,3 +4011,137 @@ def test_received_time_neutral_rendering_requires_unchanged_original_nodes_and_r
     wrong = replace(plan, nuclei=tuple(replace(n, semantic_frame=replace(n.semantic_frame, time_scope='present'))
                     if n.nucleus_id == relation.to_nucleus_id else n for n in plan.nuclei))
     assert not _retained_shared_target_received_relations(p, wrong, resolver)
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('reaction', ['嬉しくなかった', '悲しかった'])
+def test_reasonless_shared_target_correction_retains_both_limited_duties(monkeypatch, reverse, reaction):
+    from test_cmee_emlis_q3_thread import advance
+    from cocolon_meaning_experience_engine import emlis_answer_update as updates
+    source = '資料を分類したことには満足した。でも、その分類を褒められたのに、' + reaction + '。'
+    req = request('', source) if reverse else request(source, '')
+    initial = MeaningExperienceEngine().generate(req)
+    req = advance(req, '「満足した」ではなく「満足しなかった」です。')
+    prepared = prepare_emlis_meaning(req); plan = build_updated_grounded_plan(prepared)
+    projection = project_thread_meaning(prepared, plan)
+    body = MeaningExperienceEngine().generate(req).artifact
+    assert body is not None
+    assert '資料を分類したことについて、当時は満足しなかった' in body.reception
+    assert 'その分類を褒められたことと' + reaction + 'こと' in body.reception
+    assert len(plan.response_plan.human_reception_plan.moves) == len(projection.selected_reception.decisions) == 2
+    assert projection.meaning_plan.projection_branch == 'LIMITED'
+    assert not _u284_grouped_configurations(projection)
+    assert all(d.branch == 'LIMITED' for d in projection.selected_reception.decisions)
+    assert '同時に' not in body.text and '切り分けて受け取りました' not in body.reception
+    # The response-only selection repair cannot change saved meaning or the
+    # initial-only group. Disabling it recreates the missing-duty baseline.
+    monkeypatch.setattr(updates, '_retained_reasonless_shared_target_duties', lambda *_a: ())
+    old_prepared = prepare_emlis_meaning(req); old_plan = build_updated_grounded_plan(old_prepared)
+    old_body = MeaningExperienceEngine().generate(req).artifact
+    assert old_prepared.checkpoint == prepared.checkpoint
+    assert old_plan.nuclei == plan.nuclei and old_plan.relations == plan.relations
+    assert old_body.observation == body.observation
+    assert len(old_plan.response_plan.human_reception_plan.moves) == 1
+    assert 'その分類を褒められた' not in old_body.reception
+    assert MeaningExperienceEngine().generate(request('', source) if reverse else request(source, '')).artifact == initial.artifact
+
+
+@pytest.mark.parametrize('reaction', ['嬉しくなかった', '悲しかった'])
+def test_retained_reasonless_duties_inverse_rejects_missing_or_changed_experience(monkeypatch, reaction):
+    from test_cmee_emlis_q3_thread import advance
+    import emlis_ai_grounded_sentence_surface as surface
+    source = '資料を分類したことには満足した。でも、その分類を褒められたのに、' + reaction + '。'
+    req = advance(request(source, ''), '「満足した」ではなく「満足しなかった」です。')
+    p = prepare_emlis_meaning(req); plan = build_updated_grounded_plan(p); resolver = p.thread.resolver()
+    selected = project_thread_meaning(p, plan).selected_reception
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    body = MeaningExperienceEngine().generate(req).artifact
+    assert body is not None
+    def forbidden(*_a, **_k):
+        pytest.fail('Observation inverse called its author')
+    # The existing LIMITED Reception inverse uses replay. Do not present this
+    # whole-body check as an author-independent Reception reader proof.
+    monkeypatch.setattr(surface, '_realize_line', forbidden)
+    def valid(reception):
+        return evaluate_grounded_surface_body_inverse(body=body.text.replace(body.reception, reception).encode(),
+            plan=plan, sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert valid(body.reception)
+    first, second = (s + '。' for s in body.reception.split('。') if s)
+    for wrong in (first, second,
+        body.reception.replace('その分類を褒められた', '資料を分類した'),
+        body.reception.replace('満足しなかった', '満足した'),
+        body.reception.replace(reaction, '嬉しかった'),
+        body.reception.replace(reaction, '嬉しくない'),
+        body.reception + '二つの経験は同時に起きています。',
+        body.reception + '褒められたことが不満の原因です。'):
+        assert wrong != body.reception and not valid(wrong)
+
+
+def test_retained_reasonless_duties_require_original_source_and_exact_correction():
+    from test_cmee_emlis_q3_thread import advance
+    from cocolon_meaning_experience_engine.emlis_answer_update import _retained_reasonless_shared_target_duties as duties
+    source = '資料を分類したことには満足した。でも、その分類を褒められたのに、嬉しくなかった。'
+    req = advance(request(source, ''), '「満足した」ではなく「満足しなかった」です。')
+    p = prepare_emlis_meaning(req); plan = build_updated_grounded_plan(p)
+    update, = p.checkpoint.answer_update.updates
+    args = (p.original_plan, p.thread, plan.nuclei, plan.relations, (update,))
+    expected = duties(*args)
+    assert len(expected) == 2
+    for wrong in (
+        replace(update, operation='WITHDRAW'), replace(update, binding_kind='QUESTION_FOCUS'),
+        replace(update, target_meaning_refs=('foreign',)), replace(update, superseded_claim_refs=()),
+        replace(update, changed_claim_refs=('foreign',)),
+        replace(update, temporal_binding=replace(update.temporal_binding, about_time='ANSWER_TIME'))):
+        assert not duties(*args[:-1], (wrong,))
+    assert not duties(*args[:-1], (update, update))
+    assert not duties(p.original_plan, replace(p.thread, answers=(*p.thread.answers, *p.thread.answers)), *args[2:])
+    assert not duties(replace(p.original_plan, relations=()), *args[1:])
+    ids = {nid for _, targets, supports in expected for nid in (*targets, *supports)}
+    for node in (n for n in plan.nuclei if n.nucleus_id in ids):
+        for wrong in (
+            replace(node, source_fields=('memo_action',)), replace(node, source_span_ids=('foreign',)),
+            replace(node, retention='optional'),
+            replace(node, semantic_frame=replace(node.semantic_frame, actor='other')),
+            replace(node, semantic_frame=replace(node.semantic_frame, time_scope='present')),
+            replace(node, semantic_frame=replace(node.semantic_frame, polarity='positive'))):
+            nuclei = tuple(wrong if n == node else n for n in plan.nuclei)
+            assert not duties(p.original_plan, p.thread, nuclei, plan.relations, (update,))
+    extra = replace(plan.nuclei[0], nucleus_id='extra:unowned')
+    assert not duties(p.original_plan, p.thread, (*plan.nuclei, extra), plan.relations, (update,))
+    for relation in plan.relations:
+        changed = replace(relation, grounding_kind='inferred_relation')
+        relations = tuple(changed if r == relation else r for r in plan.relations)
+        assert not duties(p.original_plan, p.thread, plan.nuclei, relations, (update,))
+
+
+@pytest.mark.parametrize('response', [
+    '「満足した」は誤りです。',
+    '「資料を分類した」は誤りです。',
+    '「満足した」ではなく「今は満足していない」です。',
+    '「満足した」ではなく「納得しなかった」です。',
+    '「満足した」ではなく「少し満足しなかった」です。',
+    '「嬉しくなかった」ではなく「悲しかった」です。',
+])
+def test_other_shared_target_updates_do_not_receive_reasonless_duties(response):
+    from test_cmee_emlis_q3_thread import advance
+    from cocolon_meaning_experience_engine.emlis_answer_update import _retained_reasonless_shared_target_duties as duties
+    source = '資料を分類したことには満足した。でも、その分類を褒められたのに、嬉しくなかった。'
+    p = prepare_emlis_meaning(advance(request(source, ''), response))
+    plan = build_updated_grounded_plan(p)
+    assert not duties(p.original_plan, p.thread, plan.nuclei, plan.relations, p.checkpoint.answer_update.updates)
+
+
+def test_partial_shared_target_correction_does_not_enable_retention_opt_in(monkeypatch):
+    from test_cmee_emlis_q3_thread import advance
+    from cocolon_meaning_experience_engine import emlis_answer_update as updates
+    source = '資料を分類したことには満足した。でも、その分類を褒められたのに、嬉しくなかった。'
+    req = advance(request(source, ''),
+        '「満足した」ではなく「満足しなかった」です。「存在しない」は誤りです。')
+    p = prepare_emlis_meaning(req)
+    assert p.checkpoint.assessment_status == 'PARTIAL' and p.checkpoint.unresolved_parts
+    assert len(p.accepted_nuclei) == 1
+    def forbidden(*_a):
+        pytest.fail('partial correction attempted complete-duties opt-in')
+    monkeypatch.setattr(updates, '_retained_reasonless_shared_target_duties', forbidden)
+    plan = build_updated_grounded_plan(p)
+    assert len(plan.response_plan.human_reception_plan.moves) == 1

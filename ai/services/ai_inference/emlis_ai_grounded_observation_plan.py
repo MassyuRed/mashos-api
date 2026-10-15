@@ -9209,6 +9209,7 @@ def build_grounded_reception_opportunities(
     material_quality: str,
     include_relation_support: bool = False,
     final_source_fidelity: bool = False,
+    retained_reaction_groups: tuple = (),
 ) -> tuple[GroundedReceptionOpportunity, ...]:
     """Build a deterministic body-free RR2 opportunity inventory.
 
@@ -9312,7 +9313,7 @@ def build_grounded_reception_opportunities(
     retained_nuclei = tuple(n for n in nuclei if n in owned_nuclei) if any(
         "thread_subject:revised_result_appraisal" in n.semantic_frame.attribute_codes
         for n in owned_nuclei) else owned_nuclei
-    retained_reaction_groups = _thread_retained_reaction_groups(retained_nuclei, relations) if (
+    retained_reaction_groups = (retained_reaction_groups or _thread_retained_reaction_groups(retained_nuclei, relations)) if (
         final_source_fidelity
         and safety_kind == TRIAGE_SAFE_OBSERVATION
         and material_quality in {"grounded", "limited_grounding"}
@@ -10314,6 +10315,7 @@ def build_grounded_human_reception_plan(
     semantic_complexity: str,
     include_relation_support: bool = False,
     final_source_fidelity: bool = False,
+    retained_reaction_groups: tuple = (),
 ) -> GroundedHumanReceptionPlan | None:
     """Build the request-local body-free RR2/RR3 reception plan."""
 
@@ -10420,6 +10422,7 @@ def build_grounded_human_reception_plan(
         material_quality=material_quality,
         include_relation_support=include_relation_support,
         final_source_fidelity=final_source_fidelity,
+        retained_reaction_groups=retained_reaction_groups,
     )
     action_change_contrast = _source_action_change_contrast(available_nuclei, relations) if (
         final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION
@@ -10447,7 +10450,7 @@ def build_grounded_human_reception_plan(
         safety_kind=safety_kind,
         semantic_complexity=semantic_complexity,
         final_source_fidelity=final_source_fidelity,
-        retained_reaction_groups=(_thread_retained_reaction_groups(available_nuclei, relations) if (
+        retained_reaction_groups=((retained_reaction_groups or _thread_retained_reaction_groups(available_nuclei, relations)) if (
             final_source_fidelity
             and safety_kind == TRIAGE_SAFE_OBSERVATION
             and material_quality in {"grounded", "limited_grounding"}
@@ -10987,6 +10990,7 @@ def _build_response_and_policies(
     include_reception_relation_support: bool = False,
     final_source_fidelity: bool = False,
     primary_focus_nucleus_ids: Sequence[str] = (),
+    retained_reaction_groups: tuple = (),
 ) -> tuple[GroundedResponsePlan, GroundedCoverageRequirements, GroundedSurfacePolicy, GroundedSafetyPolicy]:
     ordered = sorted(
         nuclei,
@@ -11429,6 +11433,7 @@ def _build_response_and_policies(
         semantic_complexity=complexity,
         include_relation_support=include_reception_relation_support,
         final_source_fidelity=final_source_fidelity,
+        retained_reaction_groups=retained_reaction_groups,
     )
     response = GroundedResponsePlan(
         response_kind=response_kind,

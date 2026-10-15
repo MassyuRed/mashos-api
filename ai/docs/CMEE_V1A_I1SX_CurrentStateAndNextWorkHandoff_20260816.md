@@ -1,4 +1,4 @@
-> 最新EmlisAI残件：末尾 **u285（2026-10-16・u284訂正後の残存対比から無根拠な同時性を除去）**。前段u284実装済み。初回と訂正後Receptionの品質は残件、PRODUCT_NOT_CLEAR・未配置。
+> 最新EmlisAI残件：末尾 **u286（2026-10-16・理由なし否定訂正で残存経験の受け取り欠落を修復）**。初回と訂正後Receptionの自然さは残件、PRODUCT_NOT_CLEAR・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -20171,3 +20171,42 @@ TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式受�
 初回の説明・受容述語反復、理由なし否定訂正後のReceptionからreceivedが落ちる問題、更新後の一般的な受け取りは残る。一般receivedの旧「同時に」は対象外であり今回全面解消していない。訂正後の共同読みを一般化せず、次は残る二経験をそれぞれ選ぶ既存経路と、既承認意味の範囲を照合してReception欠落を扱う。新しい意味契約が必要なら不足と最小案を具体化する。既存共有17失敗・same100・Q1上限・giver帰属・本人実機・正式Product Readも未解消。Mashへ未合格本文の確認を求めない。10/17確認点・10/31残件線・12/18公開目標とPiece/Analysis主枠、管理評価53.25％を維持する。
 
 次の診断位置：emlis_ai_grounded_observation_plan.py::_thread_retained_reaction_groups のu279分岐は、孤立理由exact1を必要とする。理由なしの満足否定訂正ではここを通らず、二経験を同じcurrent_burden代表へ集約する経路が残る。これは読取診断であり、理由なしへ資格を広げる実装・承認を本作業では行っていない。共同読みの継続と、失効後の独立した二経験の保持を分け、現行契約内の修復か追加の意味契約かを原典から判断する。
+
+
+## u286 — 理由なし否定訂正でも残った経験を受け取りへ保持（2026-10-16 JST）
+
+基準API6857f90326417561f2fbbb4e5e2775373cf29ad6／資料df02044c38c22feb50960cb7bb09c3c19ef66e1c。作業開始時にGitHub headとDraft/openを確認。前提／作業ルール、恒久incident全文、全体設計01・全file地図01A/B/C、current01/04、8/28設計§9.2/9.4とu279/u281/u284、最新weekly20261010末尾u285を照合した。前回API CI38821622005はcompleted/successを確認。
+
+u284の理由なし共有対象入力から満足だけを否定訂正した後、未撤回のreceived経験がReceptionから落ちる欠陥を修正した。同じcurrent_burden分類の代表選択で一方を捨てず、訂正評価とreceived対比を既存2 Moveへ別々に保持する。
+
+原初u284 groupをresolver付きで再証明し、理由なし・回答exact1・原時点の無程度満足を過去否定へREVISEするexact1操作に限定。対象とreceived両端は共同読みの失効属性除去以外に完全一致、received関係も完全一致、required4核／全2関係で閉じることを要求する。部分回答、時点変更、納得／程度付き評価、撤回、反応訂正、追加経験・追加回答へ適用しない。
+
+emlis_answer_update._active_planで成立する一時的な選択証明を、既存response→human_reception_plan→opportunitiesとdepthへ引数で渡す。source認識・核／関係・checkpoint・schema・NORMAL資格・Projection・作者／reader文法・公開API/DTO/DB/RN・依存・各上限は不変。原初共同groupと外側対比は失効したまま、更新後はLIMITEDを保持する。一般の理由なし訂正を一括で拡張しない。
+
+u279の理由なし除外は当時の実装範囲として保持。今回の続行指示とu284の「残る有効な経験を既存経路へ保持」の範囲で、LEVEL_2相当の欠落修復を実施した。u281 component NORMALのold_reason必須条件は緩めていない。同一Work環境のread-only補助2枠で範囲と原因／差分を確認し、rootが実装・統合・本文読解・GitHub反映を担当。別model Pro/Ultra相互審査とはしない。
+
+最終関連単一run：`787 passed, 2 warnings in 250.02s (0:04:10)`。内訳は評価733＋Q2/Q3 application54、skip/xfailなし。現行共有owner identityは別run：`1 passed, 194 deselected, 1 warning in 22.36s`。追加14件は両欄×反応2の保持、本文削除／対象・肯否・時点・原因・同時性改変の拒否、原文／更新所有の改変拒否、対象外訂正6種、PARTIAL非適用。歴史fixtureは変更せず、現行identityだけ再計算した。
+
+変更前後の合成32応答（共有対象／別欄×理由0/1×反応2×欄配置2×初回/訂正）を比較。対象4更新だけのReceptionが変わり、初回16と対象外12の全文は一致。全32のcheckpoint・核・関係・projection branch・reason codes、全Observationは一致した。
+
+実EmlisThreadService＋隔離PGliteで初回8／更新8の16 DTO（PRE_QUESTION8／REFINED8）を保存し、NoAuthor GET/start完全一致・同回答再送一致・event無増加を確認。理由なしは両欄とも否定訂正、理由ありはmemo否定訂正／memo_action評価撤回。現行RN hook/modalで16件の全文・全Observation履歴・close/reopen一致を確認。rootが16本文（同一全文をまとめた10種類）を全文読解。native部品はstubで本人実機ではない。
+
+実保存した合成例（実ユーザー本文ではない）：
+
+```text
+見えたこと：
+「資料を分類した」という出来事に対する当時の評価は、「満足しなかった」とあります。 「その分類を褒められた」の一方で「嬉しくなかった」とあります。
+
+Emlisから：
+資料を分類したことについて、当時は満足しなかったのですね。その分類を褒められたことと嬉しくなかったこととの違いを小さくせずに受け止めています。
+```
+
+LIMITED Receptionの既存本文inverseは作者replayを含む。今回その経路を変更せず、Reception全体の作者非依存検証が新しく成立したとは報告しない。初回の説明・受容述語の反復、訂正後の一般的な受け取り、理由の有無による受け取り方の差は未解消。
+
+途中の新testでは既存LIMITED inverseの作者replayを禁止したため2失敗し、test追加位置の誤りで6失敗した。配置を直し、既存の検証能力を超えた「作者非依存」という主張を撤回。製品readerを緩めず、最終runで解消を確認した。
+
+再現：Python3.12.14／pytest8.4.1、PGlite0.5.8／React18.3.1。PYTHONPATH=ai:ai/services/ai_inference:ai/tests、Q2_PGLITE_MODULEを隔離PGliteへ指定し、pytestでtest_cmee_emlis_result_appraisal.py／test_emlis_q2_application.py／test_emlis_q3_application.py。identityはtest_cmee_v1a_i1sx_contracts.py -k active_final_language_owner_chain_has_zero_legacy_compose_calls。稼働DB／実機／配置を変更していない。
+
+TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式受入0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置を維持する。
+
+次は初回の説明と受容述語の反復、訂正後の一般的な受け取りを、選択された意味と可視本文の差として扱う。今回保持できた経験を再び落とさず、単なる短文化を§9.2/9.4の完成にしない。理由なしをNORMALへ入れることや初回共同読みの訂正一般への拡張は今回の承認としない。新意味契約が必要なら具体差分を先に示す。既存共有17失敗・same100・Q1上限・giver帰属・本人実機・正式Product Readは残件。Mashへ未合格本文の確認を求めない。10/17確認点・10/31残件線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％は不変。
