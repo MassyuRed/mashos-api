@@ -3062,3 +3062,87 @@ def test_single_reason_and_corrected_received_keep_distinct_complete_source_arcs
                   body.text.replace('「' + correction + '」', '「嬉しくなかった」'),
                   body.text.replace('評価は「' + evaluation + '」', '評価は「満足しなかった」')):
         assert wrong != body.text and not valid(wrong)
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
+@pytest.mark.parametrize('reason', ['探しやすくなった', '見た目がすっきりした', '資料を使いやすい'])
+@pytest.mark.parametrize('operation', ['revise', 'withdraw'])
+def test_detached_appraisal_reason_remains_an_original_fact(reverse, evaluation, reason, operation):
+    from test_cmee_emlis_q3_thread import advance
+    source = reason + 'ので、資料を分類したことに' + evaluation + '。'
+    received = '褒められたのに、嬉しくなかった。'
+    correction = '満足しなかった' if evaluation == '満足した' else '満足していない'
+    answer = ('「' + evaluation + '」ではなく「' + correction + '」です。'
+              if operation == 'revise' else '「' + evaluation + '」は誤りです。')
+    req = advance(request(*((received, source) if reverse else (source, received))), answer)
+    p = prepare_emlis_meaning(req); plan = build_updated_grounded_plan(p)
+    reason_node, = (n for n in plan.nuclei
+        if 'semantic_role:appraisal_explicit_reason' in n.semantic_frame.attribute_codes)
+    assert reason_node.kind == reason_node.semantic_frame.predicate_kind == 'state'
+    assert reason_node.semantic_frame.modality == 'fact'
+    assert not any(reason_node.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None, result.reason_codes
+    assert result.meaning_checkpoint == p.checkpoint
+    when = '入力した時点' if reason == '資料を使いやすい' else '当時'
+    assert f'{when}の状態として、「{reason}」と書かれています。' in result.artifact.observation
+    assert f'今は、「{reason}」という感覚' not in result.artifact.text
+    if operation == 'revise':
+        assert correction in result.artifact.observation
+        assert correction in result.artifact.reception
+    else:
+        assert evaluation not in result.artifact.text
+        assert '「資料を分類した」という出来事がありました。' in result.artifact.observation
+    assert '褒められた' in result.artifact.observation and '嬉しくなかった' in result.artifact.observation
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('reason', ['私は探しやすくなった', '私は資料を使いやすい'])
+@pytest.mark.parametrize('operation', ['revise', 'withdraw'])
+def test_detached_reason_reader_rejects_changed_fact_time_and_link_without_author(monkeypatch, reverse, reason, operation):
+    from test_cmee_emlis_q3_thread import advance
+    import emlis_ai_grounded_sentence_surface as surface
+    import emlis_ai_grounded_observation_gate as gate
+    source = reason + 'ので、資料を分類したことに満足した。'
+    received = '褒められたのに、嬉しくなかった。'
+    answer = ('「満足した」ではなく「満足しなかった」です。'
+              if operation == 'revise' else '「満足した」は誤りです。')
+    req = advance(request(*((received, source) if reverse else (source, received))), answer)
+    p = prepare_emlis_meaning(req); plan = build_updated_grounded_plan(p)
+    selected = project_thread_meaning(p, plan).selected_reception
+    resolver = p.thread.resolver()
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None, result.reason_codes
+    body = result.artifact.text
+    reason_node = next(n for n in plan.nuclei if 'semantic_role:appraisal_explicit_reason' in n.semantic_frame.attribute_codes)
+    planned = tuple(l for l in sentence.lines if l.binding.line_role != 'human_follow')
+    index = next(i for i,l in enumerate(planned) if l.binding.nucleus_ids == (reason_node.nucleus_id,))
+    when = '当時' if reason_node.semantic_frame.time_scope == 'past' else '入力した時点'
+    original = f'{when}の状態として、「{reason}」と書かれています。'
+    assert original in body
+    wrongs = [f'今は、「{reason}」という感覚が前に出ています。',
+        original.replace('状態', '気持ち'), original.replace('状態', '出来事'),
+        original.replace(when, '回答した時点'),
+        original.replace(when, '入力した時点' if when == '当時' else '当時'),
+        original.replace(reason, '褒められた'), original.replace('私は', '上司は'),
+        original.replace('と書かれています', 'ことが満足しなかった理由です'),
+        original.replace('探しやすくなった', '探しにくくなった') if '探しやすくなった' in reason
+        else original.replace('使いやすい', '使いにくい')]
+    def valid(text):
+        return evaluate_grounded_surface_body_inverse(body=text.encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert valid(body)
+    for wrong in wrongs:
+        assert wrong != original and not valid(body.replace(original, wrong))
+    def forbidden(*_a, **_k):
+        pytest.fail('independent original fact reader called author')
+    monkeypatch.setattr(surface, '_render_observation', forbidden)
+    def independent(text):
+        raw = text.encode(); witness = gate.parse_grounded_surface_body_bytes(raw)
+        line = tuple(l for l in witness.lines if l.section == 'observation')[index]
+        return gate._body_inverse_intervening_events(raw, witness, line, planned[index], plan, resolver)
+    assert independent(body)
+    for wrong in wrongs:
+        assert not independent(body.replace(original, wrong))

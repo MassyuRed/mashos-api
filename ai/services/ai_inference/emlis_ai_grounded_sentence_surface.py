@@ -3120,6 +3120,23 @@ def _render_observation(
         and not binding.relation_ids and len(quotes) == 1
         and _thread_revised_original_reaction(nucleus, (), polarity=nucleus.semantic_frame.polarity)):
         return f"{prefix}{joined}と、当時の気持ちを言い直されています。"
+    frame = nucleus.semantic_frame
+    if (typed_semantic_duties
+        and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+        and not binding.relation_ids and len(quotes) == 1
+        and nucleus.source_fields in {("memo",), ("memo_action",)}
+        and nucleus.kind == frame.predicate_kind == "state"
+        and frame.actor == "current_user" and frame.modality == "fact"
+        and frame.polarity == "positive" and frame.time_scope in {"past", "present"}
+        and nucleus.retention == "required" and nucleus.grounding_kind == "explicit"
+        and nucleus.allowed_claim_scope == "explicit_current_input"
+        and {"semantic_role:appraisal_explicit_reason", "semantic_dependency:reasoned_result_appraisal"}
+            <= set(frame.attribute_codes)):
+        # Removing or revising the appraisal can detach its reason. The
+        # remaining state is still the original fact, not a current feeling
+        # or a newly inferred reason for the replacement appraisal.
+        when = "当時" if frame.time_scope == "past" else "入力した時点"
+        return f"{prefix}{when}の状態として、{joined}と書かれています。"
     if (getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
         and not binding.relation_ids and _independent_original_event(nucleus, {})
         and {"semantic_role:contrast_before", "semantic_dependency:explicit_result_appraisal"}

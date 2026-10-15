@@ -1,4 +1,4 @@
-> 最新のEmlisAI残件は末尾 **u277（2026-10-15 JST・満足対象の撤回後も別received経験をReceptionへ保持）**。599 PASSの関連検査、初回・完全checkpoint不変、保存DTO24件の本文・履歴・再表示一致。受け取り全体の品質と実機は残件。商品NOT_CLEAR・初回単位未完了・未配置。
+> 最新のEmlisAI残件は末尾 **u278（2026-10-15 JST・評価の訂正／撤回後の理由状態と元の時点を保持）**。631検査、24組の意味・選択・Reception不変、保存DTO32件の本文・履歴・再表示一致。固定的な受け取り内容、否定訂正後の別received選択、実機は残件。商品NOT_CLEAR・初回単位未完了・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -19888,3 +19888,57 @@ RN→API→service/store→保存read→RN、01B/C隣接責務、公開API/DTO/D
 **TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR、初回一体単位未完了。** 正式受入0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置を維持する。今回の欠落回復を§9.2/9.4の経験理解・受け取り全体の完成へ換算しない。固定的な説明／言い換え、対象撤回後の複数receivedや追加actionを含む範囲、Q1の4経験上限、近似文／別欄二組、旧receivedのgiver帰属、既存共有17失敗・same100・本人実機・正式Product Readは残る。
 
 次は§9.2/9.4に戻り、初回と訂正後の実本文で、既に保持している意味がEmlisの受け取り内容へ届くかを確認する。特に理由への注意とreceivedの言い換えが固定的説明に留まる点を、意味の欠落・所有・接続と実本文の差として診断する。別の注意表現へ替えただけで内容形成が進んだとはしない。複数経験や追加actionの既存停止を一括解除せず、必要な意味/schema/上限拡張があれば不足を具体化して別判断へ戻す。10/17確認点・10/31残件線・12/18公開目標、Piece/Analysis主枠を維持する。
+
+
+## u278 — 評価の訂正・撤回後も残存理由の状態と元の時点を保つ（2026-10-15 JST）
+
+基準はAPIb7106f8dbaf5a41c84b5a94d37dc80bb81289e2d／資料ed1c44392406a92b36e4ec1e3c006ffb097b7e28（u277）。本sessionで確認済みの前提・作業ルール・8/16恒久incident・全体設計01／全file地図01A/B/Cを引き継ぎ、最新weekly§3.5.3/5.6/6.5/5.6.27、current01/04、8/28設計§9.1/9.2/9.4と関連u253/u254/u260/u264/u266を再確認した。System Context prepareがmaterial commitのa77b79c5 ancestryで失敗する既知状態は、許された原典直接読取りで対応したままであり、Context生成成功とはしない。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / LEVEL_2既存承認内の本文意味保存修正。継続指示とRule18 §11.3に従い、root華恋一人が実装・検査・現行identity・引継ぎ／地図を編集・実行・GitHub反映する。同環境agentは前提／必要性と原因／最終差分をread-only確認した。別model Pro審査・本人Product Readとはしない。外部AI・新製品依存・live DB/env・build/deploy/mergeは追加しない。
+
+
+満足の評価を否定へ訂正、または評価だけを撤回した後、独立して残る理由の状態を「今は…感覚が前に出ています」と誤って実現する不具合を修正した。意味側は本人が述べた肯定のfact/stateと過去／現在を既に保持しており、本文作者が孤立理由を汎用の現在感覚へ流していた。元が過去なら「当時の状態として」、現在なら「入力した時点の状態として」と実現し、理由を訂正後の否定評価へ結び直さない。
+
+既存sentence surfaceのthread用単独Observationで、original memo/memo_action・required/explicit・本人・肯定fact/state・過去現在・appraisal_explicit_reason／reasoned_result_appraisal・relationなしを限定して実現する。既存gateの_body_inverse_intervening_eventsは、source spanと欄、全体で未接続の理由、型・時点・本人・極性を照合し、本文の状態文と引用内容を作者非依存に読む。source認識、checkpoint、plan、selected reception、Reception作者、schema、NORMAL資格、各上限は変更しない。
+
+§9.2/9.4の受け取り内容を再診断した。対象LIMITEDはATTENTION/ATTEND_TOとMATERIAL_WEIGHT/RECEIVE_AS_MATERIALを選び、focal_relation_refはない。既に豊かな解釈が選択されていて文面だけに届かない状態ではない。NORMALの別経路にある満たされた感覚をLIMITEDへ移植すると、選択された意味を越える。したがって今回の状態／時点修復を、固定的な注意・説明文から入力固有の受け取り内容が形成できたという合格へ換算しない。
+
+合成入力：memo「探しやすくなったので、資料を分類したことに満足した。」／memo_action「褒められたのに、嬉しくなかった。」、回答「『満足した』ではなく『満足しなかった』です。」（実際の引用符は「」）。旧Observationの「今は、『探しやすくなった』という感覚が前に出ています。」（引用符同様）を修復した。
+
+修正後の実保存全文：
+
+```text
+見えたこと：
+当時の状態として、「探しやすくなった」と書かれています。
+「資料を分類した」という出来事に対する当時の評価は、「満足しなかった」とあります。 「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。
+
+Emlisから：
+資料を分類したことについて、当時は満足しなかったのですね。
+```
+
+現在理由「資料を使いやすい」は「入力した時点の状態として」となる。評価だけの撤回では理由状態と対象出来事と別receivedがObservationに残る。理由を感情へ変更せず、否定評価に付け直さない。上記の訂正後Receptionには別receivedがない問題が残り、次作業へ引き継ぐ。
+
+
+STRUCTURE_MAP_DELTA_PRESENT。新規production file／subsystemなし。既存ownerの責務差分：
+
+| mashos-api相対path | 変更 |
+|---|---|
+| ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py | 訂正・撤回で未接続になったoriginal理由のfact/stateと過去／現在を単独Observationへ実現。 |
+| ai/services/ai_inference/emlis_ai_grounded_observation_gate.py | 既存独立readerで未接続・source・型・時点を本文から照合。現在感覚化や否定評価への新因果を拒否。 |
+| ai/tests/test_cmee_emlis_result_appraisal.py | 実生成24条件と作者禁止の独立本文reader8条件を追加。 |
+| ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json | 現行共有owner identityを再計算。歴史checkpoint fixtureは不変。 |
+
+RN→API→service/store→保存read→RN、01B/C隣接責務、公開API/DTO/DB/SQL/RNと製品依存は不変。source/plan/選択/Reception ownerは今回編集していない。
+
+
+初回のtargeted runは24 passed／8 failedで、8失敗は検査側がGroundedSentencePlanLineにないsection属性を参照したため。既存inverseと同じbinding.line_roleでObservation行を選ぶよう検査を修正し、製品条件を緩めず631件の最終単一runを採用した。同環境read-only reviewでも24組の完全比較と、過去／現在の代表2本文に対する作者禁止readerの正本文受理・16改変拒否を独立確認した。
+
+最終回帰631 passed（result appraisal576＋Q2/Q3 application54＋active shared owner identity1、210.46秒）。三理由×評価時点2×欄2×訂正／撤回の24組をu277と比較し、初回全体・更新後完全checkpoint・plan・選択・Reception・status/reason_codesは一致。更新後Observationの孤立理由行だけが変わった。作者呼出しを禁止した独立readerで、本人明示の理由時点2×欄2×操作2の8条件ごとに、現在感覚化・feeling化・event化・回答時点化・過去現在入替・別経験借用・他者化・否定評価への新因果・否定fact化の9改変を拒否した。
+
+実service＋隔離PGliteで、理由時点2×評価時点2×欄2×訂正／撤回の16組を初回／更新後まで実行し、保存DTO32件の本文と生成実本文を一致確認した。NoAuthor GET/start、同一回答再送のcurrent_observation／timeline一致とevent無増加を確認。実保存DTO32件を現行RN hook/modalへ渡し、本文・全Observation履歴・close/reopen一致を確認した。root華恋が32保存本文を全文確認した。native部品はstubで、本人実機・正式Product Readではない。
+
+現行language identityは79bd0321bd61b1c4414d3438c96acaa13f2ace30a3e62845aeb3d0e604c563d9、runtimeは6f598e442216dc636672154983a70c542a320de3fb2fa5a4d7221e41caa2c37b。Python3.12.14／pytest8.4.1／PGlite0.5.8／React18.3.1の既存runtimeを使用。追加依存・外部AI・追加課金なし。
+
+**TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR、初回一体単位未完了。** 正式受入0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置を維持する。固定的な注意／説明文の内容形成、§9.2/9.4、対象撤回後の複数receivedや追加action、Q1の4経験上限、近似文／別欄二組、旧receivedのgiver帰属、既存共有17失敗・same100・本人実機・正式Product Readは残る。631件PASSを既存共有17失敗の解消とはしない。
+
+次は、今回の実保存本文で確認した「評価を否定へ訂正すると別received経験がObservationには残るのにReceptionから落ちる」選択差を診断する。u277の対象撤回とは別の更新経路であり、今回の状態／時点修復には混ぜていない。既承認の二経験・所有条件内で直せるかをcheckpoint→plan→選択→実本文で照合する。同時に§9.2/9.4の受け取り内容の不足を保持し、注意表現の言い換えやNORMALの意味の借用で埋めない。新しい意味契約・source範囲・schema・上限が必要なら不足を具体化して別判断へ戻す。10/17確認点・10/31残件線・12/18公開目標、Piece/Analysis主枠は維持する。

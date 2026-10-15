@@ -2540,6 +2540,23 @@ def _body_inverse_intervening_events(body, witness, line, planned_line, plan, re
     if len(planned_line.binding.nucleus_ids) == 1 and not planned_line.binding.relation_ids:
         nucleus = index[planned_line.binding.nucleus_ids[0]]
         frame = nucleus.semantic_frame
+        if "semantic_role:appraisal_explicit_reason" in frame.attribute_codes:
+            sources = _body_inverse_nucleus_source_values(nucleus.nucleus_id, plan, resolver)
+            parsed = re.fullmatch(r"(?:今の入力だけを見ると、)?(当時|入力した時点)の状態として、"
+                                 r"「([^「」『』\n]+)」と書かれています。",
+                                 _body_inverse_visible_text(body, line))
+            return bool(nucleus.nucleus_id not in linked
+                and nucleus.kind == frame.predicate_kind == "state"
+                and frame.actor == "current_user" and frame.modality == "fact"
+                and frame.polarity == "positive" and frame.time_scope in {"past", "present"}
+                and nucleus.source_fields in {("memo",), ("memo_action",)}
+                and nucleus.grounding_kind == "explicit" and nucleus.retention == "required"
+                and nucleus.allowed_claim_scope == "explicit_current_input"
+                and "semantic_dependency:reasoned_result_appraisal" in frame.attribute_codes
+                and len(nucleus.source_span_ids) == len(sources) == 1
+                and resolver.source_fields_for(nucleus.source_span_ids) == nucleus.source_fields
+                and parsed and parsed[1] == ("当時" if frame.time_scope == "past" else "入力した時点")
+                and _body_inverse_normalized_anchor(parsed[2]) == sources[0])
         if (nucleus.nucleus_id not in linked and nucleus.kind == "event"
             and {"semantic_role:contrast_before", "semantic_dependency:explicit_result_appraisal"}
                 & set(frame.attribute_codes)
