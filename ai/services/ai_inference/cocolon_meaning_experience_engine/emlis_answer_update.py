@@ -567,10 +567,10 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
     except ValueError as exc:
         if (str(exc) == 'emlis_checkpoint_source_prefix_mismatch'
             and thread.control.prepared_meaning_checkpoint_ref is not None and thread.answers):
-            for legacy_mode in ('legacy_reason_withdrawal', 'legacy_appraisal_original_time', 'legacy_appraisal_answer_time', 'legacy_appraisal_correction'):
+            for legacy_mode in ('legacy_withdrawal_precedence', 'legacy_reason_withdrawal', 'legacy_appraisal_original_time', 'legacy_appraisal_answer_time', 'legacy_appraisal_correction'):
                 try:
                     prepared = _prepare_emlis_meaning_from_plan(request, thread, original,
-                        **{legacy_mode: True})
+                        **{'legacy_withdrawal_precedence': True, legacy_mode: True})
                 except ValueError as legacy_exc:
                     if str(legacy_exc) not in {'emlis_checkpoint_source_prefix_mismatch', 'emlis_question_noncanonical'}:
                         raise
@@ -617,7 +617,7 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         return replace(prepared, legacy_result_appraisal=True)
 
 
-def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_appraisal_correction=False, legacy_appraisal_answer_time=False, legacy_appraisal_original_time=False, legacy_reason_withdrawal=False):
+def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_appraisal_correction=False, legacy_appraisal_answer_time=False, legacy_appraisal_original_time=False, legacy_reason_withdrawal=False, legacy_withdrawal_precedence=False):
     if thread.control.capability_snapshot == "Q3_PREMIUM" and thread.control.admitted_history and not thread.answers:
         from .emlis_thread_history import frame_supported_focus
         focus = frame_supported_focus(thread, original)
@@ -648,7 +648,8 @@ def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_apprai
             prepared = _prepare_answer(prefix, plan, legacy_appraisal_correction=legacy_appraisal_correction,
                 legacy_appraisal_answer_time=legacy_appraisal_answer_time,
                 legacy_appraisal_original_time=legacy_appraisal_original_time,
-                legacy_reason_withdrawal=legacy_reason_withdrawal)
+                legacy_reason_withdrawal=legacy_reason_withdrawal,
+                legacy_withdrawal_precedence=legacy_withdrawal_precedence)
             cp = prepared.checkpoint
             accepted = tuple(dict.fromkeys((*accepted, *cp.accepted_update_refs)))
             inactive = tuple(dict.fromkeys((*inactive, *cp.inactive_claim_refs)))
@@ -664,10 +665,11 @@ def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_apprai
     return _prepare_answer(thread, original, legacy_appraisal_correction=legacy_appraisal_correction,
         legacy_appraisal_answer_time=legacy_appraisal_answer_time,
         legacy_appraisal_original_time=legacy_appraisal_original_time,
-        legacy_reason_withdrawal=legacy_reason_withdrawal)
+        legacy_reason_withdrawal=legacy_reason_withdrawal,
+        legacy_withdrawal_precedence=legacy_withdrawal_precedence)
 
 
-def _prepare_answer(thread, original, *, legacy_appraisal_correction=False, legacy_appraisal_answer_time=False, legacy_appraisal_original_time=False, legacy_reason_withdrawal=False):
+def _prepare_answer(thread, original, *, legacy_appraisal_correction=False, legacy_appraisal_answer_time=False, legacy_appraisal_original_time=False, legacy_reason_withdrawal=False, legacy_withdrawal_precedence=False):
     base = _base_ref(thread, original)
     if not thread.answers:
         checkpoint = EmlisMeaningCheckpointV1(
@@ -741,7 +743,7 @@ def _prepare_answer(thread, original, *, legacy_appraisal_correction=False, lega
             # its owned pair (or proven reason + pair). Keep the full span
             # closure: unrelated/extra nuclei must not join the withdrawal.
             whole_appraisal = False
-            if withdrawal and not targets:
+            if withdrawal and (not targets or not legacy_withdrawal_precedence):
                 groups = []
                 for relation in original.relations:
                     if not gp.source_owned_result_appraisal(relation, original.nuclei):
@@ -758,7 +760,12 @@ def _prepare_answer(thread, original, *, legacy_appraisal_correction=False, lega
                         if n.source_fields == event.source_fields
                         and n.source_span_ids == event.source_span_ids} == set(group):
                         groups.append(group)
-                if len(groups) == 1:
+                # Count both representations of source occurrences. A direct
+                # generic match must not hide another proven whole sentence.
+                # Historical checkpoint replay alone keeps the old precedence.
+                if len(targets) + len(groups) > 1:
+                    targets = ()
+                elif len(groups) == 1:
                     targets, whole_appraisal = groups[0], True
             if len(targets) != 1 and not whole_appraisal:
                 unresolved.append(EmlisUnresolvedPartV1(ev, "correction_target_unresolved"))
