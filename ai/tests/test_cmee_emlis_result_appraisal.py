@@ -600,7 +600,7 @@ def test_versioned_appraisal_is_in_current_manifest_without_changing_legacy_fiel
     from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
     from cocolon_meaning_experience_engine.emlis_stage1_composition import _contract_manifest
     manifest = dict(_contract_manifest())
-    assert manifest['logical_contract_count'] == 71
+    assert manifest['logical_contract_count'] == 73
     assert any(dict(row)['type_name'] == 'EmlisEvaluatedExperienceAppraisalContent'
                for row in manifest['logical_contract_descriptors'])
     assert tuple(field.name for field in fields(EmlisAppraisalContent)) == (
@@ -3420,3 +3420,516 @@ def test_negative_reason_correction_retention_requires_closed_source_ownership(r
     invented_cause = replace(link, relation_id='invented-cause', type='user_stated_cause',
                             from_nucleus_id=reason.nucleus_id)
     assert _thread_retained_reaction_groups(plan.nuclei, (*plan.relations, invented_cause)) != expected
+
+
+# Initial-only explicit same-target nested contrast.
+# These are synthetic diagnostics, not human Product Read cases.
+def _u284_request(event, reference, reaction, field='memo', reason=''):
+    prefix = reason + 'ので、' if reason else ''
+    source = prefix + event + 'ことには満足した。でも、' + reference + 'を褒められたのに、' + reaction + '。'
+    return request(source if field == 'memo' else '', source if field == 'memo_action' else '')
+
+
+def _u284_grouped_configurations(projection):
+    from cocolon_meaning_experience_engine.contracts import GroupedAppraisalReceivedConfigurationV1
+    return tuple(row for row in projection.structure.configurations
+                 if type(row) is GroupedAppraisalReceivedConfigurationV1)
+
+
+@pytest.mark.parametrize('event,reference', [('資料を分類した', 'その分類'), ('意見を整理した', 'その整理')])
+@pytest.mark.parametrize('reaction', ['嬉しくなかった', '悲しかった'])
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+def test_explicit_same_target_nested_contrast_preserves_initial_experience(event, reference, reaction, field):
+    req = _u284_request(event, reference, reaction, field)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    projection = project_thread_meaning(prepared, plan)
+    grouped, = _u284_grouped_configurations(projection)
+    assert grouped.schema_version
+    assert projection.meaning_plan.projection_branch == 'NORMAL'
+    # The outer contrast must have a grouped endpoint; two flat contrast
+    # claims are not evidence for the newly approved reading.
+    assert len(plan.response_plan.human_reception_plan.moves) == 2
+    assert len(projection.selected_reception.decisions) == 2
+    assert all(row.branch == 'NORMAL' for row in projection.selected_reception.decisions)
+    about, = (r for r in plan.relations if source_owned_result_appraisal(r, plan.nuclei))
+    nodes = {n.nucleus_id: n for n in plan.nuclei}
+    assert nodes[about.from_nucleus_id].source_fields == (field,)
+    assert nodes[about.to_nucleus_id].semantic_frame.polarity == 'positive'
+    feelings = [n for n in plan.nuclei if n.source_fields == (field,)
+                and n.semantic_frame.predicate_kind == 'feeling']
+    assert len(feelings) == 2
+    assert all(n.semantic_frame.time_scope == 'past' for n in feelings)
+    result = MeaningExperienceEngine().generate(req)
+    assert result.status.value in {'GENERATED', 'QUESTION_PENDING'}, result.reason_codes
+    assert result.artifact is not None, result.reason_codes
+    assert result.meaning_checkpoint == prepared.checkpoint
+    body = result.artifact
+    assert event in body.observation and '満足した' in body.observation
+    assert '褒められた' in body.observation and reaction in body.observation
+    assert event in body.reception and '褒められた' in body.reception
+    assert ('嬉し' if reaction == '嬉しくなかった' else '悲し') in body.reception
+    assert all(word not in body.text for word in ('今は、', 'という行動に移しています', '回答した時点'))
+    assert all(word not in body.reception for word in ('承認欲求', '自己肯定', '他人の評価より', '価値観', '相手の意図'))
+    sentence = build_grounded_sentence_plan(plan, prepared.thread.resolver(), recovery_stage='full')
+    assert evaluate_grounded_surface_body_inverse(body=body.text.encode(), plan=plan,
+        sentence_plan=sentence, resolver=prepared.thread.resolver(),
+        selected_subjective_input=projection.selected_reception).passed
+
+
+@pytest.mark.parametrize('reason', ['探しやすくなった', '見た目がすっきりした'])
+def test_explicit_same_target_reason_remains_owned_by_appraisal(reason):
+    req = _u284_request('資料を分類した', 'その分類', '嬉しくなかった', reason=reason)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    projection = project_thread_meaning(prepared, plan)
+    assert len(_u284_grouped_configurations(projection)) == 1
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact is not None, out.reason_codes
+    assert reason in out.artifact.observation
+    assert '満足' in out.artifact.reception and '褒められた' in out.artifact.reception
+    assert '嬉し' in out.artifact.reception
+    assert reason + 'せいで' not in out.artifact.text
+    assert reason + 'から嬉しくなかった' not in out.artifact.text
+    assert reason + 'から悲しかった' not in out.artifact.text
+
+
+@pytest.mark.parametrize('memo,action', [
+    ('資料を分類したことには満足した。でも、褒められたのに、嬉しくなかった。', ''),
+    ('資料を分類したことには満足した。その分類を褒められたのに、嬉しくなかった。', ''),
+    ('資料を分類したことには満足した。でも、その整理を褒められたのに、嬉しくなかった。', ''),
+    ('資料を分類したことには満足した。でも、その分類の後で褒められたのに、嬉しくなかった。', ''),
+    ('資料を分類したことには満足した。', 'でも、その分類を褒められたのに、嬉しくなかった。'),
+    ('資料を分類したことには満足した。', '褒められたのに、嬉しくなかった。'),
+    ('資料を分類したことには満足しなかった。でも、その分類を褒められたのに、嬉しくなかった。', ''),
+    ('資料を分類したことには満足した。でも、その分類を褒められたので、嬉しくなかった。', ''),
+    ('資料を分類したことには満足した。でも、その分類を褒められたのに、嬉しかった。', ''),
+    ('資料を分類したことには満足した。でも、その分類を褒められたのに、悲しくなかった。', ''),
+    ('資料を分類した。意見を分類したことには満足した。でも、その分類を褒められたのに、嬉しくなかった。', ''),
+    ('同僚は資料を分類したことには満足した。でも、その分類を褒められたのに、嬉しくなかった。', ''),
+    ('「資料を分類したことには満足した。でも、その分類を褒められたのに、嬉しくなかった」と同僚が言った。', ''),
+    ('資料を分類したことには満足したかもしれない。でも、その分類を褒められたのに、嬉しくなかった。', ''),
+])
+def test_same_target_reading_requires_explicit_owned_nested_contrast(memo, action):
+    prepared = prepare_emlis_meaning(request(memo, action))
+    plan = build_updated_grounded_plan(prepared)
+    from emlis_ai_grounded_observation_plan import source_owned_shared_target_appraisal_contrast
+    assert not source_owned_shared_target_appraisal_contrast(plan.nuclei, plan.relations, prepared.thread.resolver())
+    assert not any('semantic_dependency:shared_target_appraisal_contrast_v1' in n.semantic_frame.attribute_codes
+                   for n in plan.nuclei)
+    if 'かもしれない' in memo:
+        # This pre-existing hypothetical input has no supported reception
+        # projection. Its unchanged source plan must not acquire a joint reading.
+        from cocolon_meaning_experience_engine.emlis_question import original_meaning_plan
+        legacy = original_meaning_plan(prepared.thread, _legacy_shared_target_contrast=True)
+        assert (plan.nuclei, plan.relations) == (legacy.nuclei, legacy.relations)
+        return
+    projection = project_thread_meaning(prepared, plan)
+    assert not _u284_grouped_configurations(projection)
+
+
+@pytest.mark.parametrize('response', [
+    '「満足した」ではなく「満足しなかった」です。',
+    '「満足した」は誤りです。',
+    '「嬉しくなかった」ではなく「嬉しかった」です。',
+    '「嬉しくなかった」は誤りです。',
+])
+def test_same_target_joint_reading_expires_after_role_correction(response):
+    from test_cmee_emlis_q3_thread import advance
+    req = _u284_request('資料を分類した', 'その分類', '嬉しくなかった')
+    first = prepare_emlis_meaning(req)
+    assert len(_u284_grouped_configurations(project_thread_meaning(first, build_updated_grounded_plan(first)))) == 1
+    updated = advance(req, response)
+    prepared = prepare_emlis_meaning(updated)
+    plan = build_updated_grounded_plan(prepared)
+    projection = project_thread_meaning(prepared, plan)
+    assert not _u284_grouped_configurations(projection)
+    # No assertion here promotes existing unsupported correction routes to
+    # successful generation. If a body is available, its other experience
+    # must not disappear when the joint reading expires.
+    outcome = MeaningExperienceEngine().generate(updated)
+    if outcome.artifact is not None:
+        if '満足した' in response:
+            assert '褒められた' in outcome.artifact.observation
+            assert '嬉しくなかった' in outcome.artifact.observation
+        else:
+            assert '資料を分類した' in outcome.artifact.observation
+            assert '満足した' in outcome.artifact.observation
+
+
+# Captured from de95074 before the shared-target source owner existed.
+# Never regenerate historical rows with the new owner or repair their identities.
+U284_PRE_SHARED_TARGET = json.loads((Path(__file__).parent / 'fixtures' /
+    'cmee_emlis_pre_shared_target_checkpoint_v1.json').read_text())['rows']
+
+
+@pytest.mark.parametrize('row', U284_PRE_SHARED_TARGET, ids=lambda r: r['case_id'])
+def test_saved_pre_shared_target_checkpoint_rederives_original_meaning_and_body(row):
+    from dataclasses import asdict
+    from hashlib import sha256
+    from emlis_thread_service import _json
+    req = _legacy_fixture_request(row)
+    prepared = prepare_emlis_meaning(req)
+    assert _json(prepared.checkpoint) == row['checkpoint']
+    for attr in ('nuclei', 'relations'):
+        raw = json.dumps([asdict(n) for n in getattr(prepared.original_plan, attr)],
+            sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
+        assert sha256(raw).hexdigest() == row['original_' + attr + '_sha256']
+    result = MeaningExperienceEngine().generate(req)
+    assert _json(result.meaning_checkpoint) == row['checkpoint']
+    assert result.status.value == row['baseline_status']
+    assert result.body_state == row['baseline_body_state']
+    assert result.artifact is not None
+    assert result.artifact.text == row['baseline_text']
+    assert _json(result.question) == row['question']
+
+
+@pytest.fixture
+def _u284_source_proof():
+    import emlis_ai_grounded_observation_plan as source
+    current = {'memo': '探しやすくなったので、資料を分類したことには満足した。'
+               'でも、その分類を褒められたのに、嬉しくなかった。'}
+    normalized = source.normalize_emlis_current_input(current)
+    spans = source.build_evidence_ledger(normalized)
+    resolver = source.build_evidence_span_resolver(spans, current_input=normalized)
+    plan = source.build_final_stage1_grounded_observation_plan(current, _legacy_appraisal_retention=False)
+    group = source.source_owned_shared_target_appraisal_contrast(plan.nuclei, plan.relations, resolver)
+    assert group
+    return source, plan, resolver, group, spans
+
+
+@pytest.mark.parametrize('boundary', [
+    'reversed_source_order', 'additional_action_field', 'explicit_action_reason',
+    'object_word_reference', 'present_reaction', 'present_praise', 'different_outer_marker',
+])
+def test_same_target_source_scope_does_not_expand_from_lexical_similarity(boundary):
+    import emlis_ai_grounded_observation_plan as source
+    appraisal = '資料を分類したことには満足した。'
+    received = 'その分類を褒められたのに、嬉しくなかった。'
+    current = {'memo': appraisal + 'でも、' + received}
+    if boundary == 'reversed_source_order':
+        current['memo'] = received + 'でも、' + appraisal
+    elif boundary == 'additional_action_field':
+        current['memo_action'] = '別の資料を分類した。'
+    elif boundary == 'explicit_action_reason':
+        current['memo'] = '資料を確認したので、' + current['memo']
+    elif boundary == 'object_word_reference':
+        current['memo'] = current['memo'].replace('その分類を', 'その資料を')
+    elif boundary == 'present_reaction':
+        current['memo'] = current['memo'].replace('嬉しくなかった', '嬉しくない')
+    elif boundary == 'present_praise':
+        current['memo'] = current['memo'].replace('褒められた', '褒められる')
+    else:
+        current['memo'] = current['memo'].replace('でも、', '一方、')
+    plan = source.build_final_stage1_grounded_observation_plan(current, _legacy_appraisal_retention=False)
+    assert not source.source_owned_shared_target_appraisal_contrast(plan.nuclei, plan.relations)
+
+
+@pytest.mark.parametrize('mutation', [
+    'foreign_node_owner', 'missing_node_owner', 'foreign_reference_target',
+    'duplicate_reference_range', 'duplicate_source_role', 'foreign_actor',
+    'missing_scalar_source',
+])
+def test_same_target_source_metadata_requires_one_owned_reference(_u284_source_proof, mutation):
+    source, plan, resolver, group, _ = _u284_source_proof
+    node = group['received_event']
+    codes = node.semantic_frame.attribute_codes
+    if mutation == 'foreign_node_owner':
+        codes = tuple('source_shared_target_node_owner:' + group['appraisal_event'].nucleus_id
+                      if c.startswith('source_shared_target_node_owner:') else c for c in codes)
+    elif mutation == 'missing_node_owner':
+        codes = tuple(c for c in codes if not c.startswith('source_shared_target_node_owner:'))
+    elif mutation == 'foreign_reference_target':
+        codes = tuple('source_shared_target_reference_event:' + group['reaction'].nucleus_id
+                      if c.startswith('source_shared_target_reference_event:') else c for c in codes)
+    elif mutation == 'duplicate_reference_range':
+        codes = (*codes, next(c for c in codes if c.startswith('source_shared_target_reference_range:')))
+    elif mutation == 'duplicate_source_role':
+        codes = tuple('source_shared_target_slot:appraisal_event'
+                      if c.startswith('source_shared_target_slot:') else c for c in codes)
+    elif mutation == 'missing_scalar_source':
+        codes = tuple(c for c in codes if c != 'source_fragment_scalar_source:normalized_raw_text')
+    frame = replace(node.semantic_frame, attribute_codes=codes,
+                    actor='other' if mutation == 'foreign_actor' else node.semantic_frame.actor)
+    changed = tuple(replace(n, semantic_frame=frame) if n == node else n for n in plan.nuclei)
+    assert not source.source_owned_shared_target_appraisal_contrast(changed, plan.relations, resolver)
+
+
+@pytest.mark.parametrize('role', ['appraisal_event', 'appraisal', 'reason', 'received_event', 'reaction'])
+def test_same_target_source_resolver_reproves_every_role_range(_u284_source_proof, role):
+    source, plan, resolver, group, _ = _u284_source_proof
+    node = group[role]
+    original = next(c for c in node.semantic_frame.attribute_codes
+                    if c.startswith('source_fragment_scalar_range:'))
+    start, end = map(int, original.split(':')[-2:])
+    # Still a valid, nonempty scalar range: only its source ownership is wrong.
+    changed_codes = tuple(f'source_fragment_scalar_range:{start + 1}:{end}' if c == original else c
+                          for c in node.semantic_frame.attribute_codes)
+    changed = tuple(replace(n, semantic_frame=replace(n.semantic_frame, attribute_codes=changed_codes))
+                    if n == node else n for n in plan.nuclei)
+    assert not source.source_owned_shared_target_appraisal_contrast(changed, plan.relations, resolver)
+
+
+@pytest.mark.parametrize('mutation', [
+    'outer_to_reaction', 'outer_reversed', 'missing_inner', 'duplicated_inner', 'invented_cause',
+])
+def test_same_target_source_requires_nested_not_flattened_contrast(_u284_source_proof, mutation):
+    source, plan, resolver, group, _ = _u284_source_proof
+    outer, inner = group['outer_relation'], group['received_relation']
+    if mutation == 'outer_to_reaction':
+        changed = tuple(replace(r, to_nucleus_id=group['reaction'].nucleus_id) if r == outer else r
+                        for r in plan.relations)
+    elif mutation == 'outer_reversed':
+        changed = tuple(replace(r, from_nucleus_id=outer.to_nucleus_id,
+                                to_nucleus_id=outer.from_nucleus_id) if r == outer else r
+                        for r in plan.relations)
+    elif mutation == 'missing_inner':
+        changed = tuple(r for r in plan.relations if r != inner)
+    elif mutation == 'duplicated_inner':
+        changed = (*plan.relations, replace(inner, relation_id='duplicate-inner'))
+    else:
+        changed = (*plan.relations, replace(outer, relation_id='invented-cause',
+            type='user_stated_cause', to_nucleus_id=group['reaction'].nucleus_id))
+    assert not source.source_owned_shared_target_appraisal_contrast(plan.nuclei, changed, resolver)
+
+
+@pytest.mark.parametrize('mutation', ['marker_bytes', 'marker_order', 'reference_bytes', 'field_drift'])
+def test_same_target_source_resolver_does_not_trust_stale_evidence(_u284_source_proof, mutation):
+    from emlis_ai_evidence_ledger_service import EvidenceSpanResolver
+    source, plan, _, group, spans = _u284_source_proof
+    outer_spans = group['outer_relation'].source_span_ids
+    first_id = group['appraisal_event'].source_span_ids[0]
+    received_id = group['received_event'].source_span_ids[0]
+    marker_id, = (sid for sid in outer_spans if sid not in {first_id, received_id})
+    changed = []
+    for span in spans:
+        if mutation == 'marker_bytes' and span.span_id == marker_id:
+            span = replace(span, raw_text='ので')
+        elif mutation == 'marker_order' and span.span_id == marker_id:
+            last = next(s for s in spans if s.span_id == received_id)
+            span = replace(span, start_index=last.end_index + 1, end_index=last.end_index + 3)
+        elif mutation == 'reference_bytes' and span.span_id == received_id:
+            span = replace(span, raw_text=span.raw_text.replace('その分類', 'その整理'))
+        elif mutation == 'field_drift' and span.span_id == received_id:
+            span = replace(span, source_field='memo_action')
+        changed.append(span)
+    resolver = EvidenceSpanResolver(changed)
+    assert not source.source_owned_shared_target_appraisal_contrast(plan.nuclei, plan.relations, resolver)
+
+
+@pytest.mark.parametrize('reason', ['', '探しやすくなったので、'])
+def test_shared_target_group_ownership_survives_rehashed_role_and_target_tampering(reason):
+    from cocolon_meaning_experience_engine import contracts as c
+    from cocolon_meaning_experience_engine.emlis_input_specific_meaning import (
+        derive_grounded_situation_view, derive_foreground_scope_closed,
+    )
+    req = request(reason + '資料を分類したことには満足した。でも、その分類を褒められたのに、嬉しくなかった。', '')
+    prepared = prepare_emlis_meaning(req)
+    projection = project_thread_meaning(prepared, build_updated_grounded_plan(prepared))
+    group, = (row for row in projection.structure.configurations
+              if type(row) is c.GroupedAppraisalReceivedConfigurationV1)
+    assert len(group.endpoint_component_refs) == (5 if reason else 4)
+    assert group.reason_ref is not None if reason else group.reason_ref is None
+    assert len(group.relation_path_refs) == (4 if reason else 3)
+    c.validate_difference_configuration(group)
+    view = derive_grounded_situation_view(projection.premeaning)
+    scope = derive_foreground_scope_closed(view)
+    swap = {group.appraisal_ref: group.reaction_ref, group.reaction_ref: group.appraisal_ref}
+    swapped = replace(group, appraisal_ref=group.reaction_ref, reaction_ref=group.appraisal_ref,
+        direction_rows=tuple(sorted((replace(row,
+            source_endpoint_ref=swap.get(row.source_endpoint_ref, row.source_endpoint_ref),
+            target_endpoint_ref=swap.get(row.target_endpoint_ref, row.target_endpoint_ref))
+            for row in group.direction_rows), key=lambda row: (
+                row.relation_kind.value, row.source_endpoint_ref, row.target_endpoint_ref, row.relation_ref))))
+    actual_target, = (value for value in group.target_reference_qualifier_refs
+                      if value.startswith('qualifier:source_shared_target_reference_event:'))
+    received_profile, = (row for row in view.compatibility_rows if row.scope_object_ref == group.received_event_ref)
+    source_owner, = (value.removeprefix('qualifier:source_shared_target_node_owner:')
+                    for value in received_profile.required_qualifier_refs
+                    if value.startswith('qualifier:source_shared_target_node_owner:'))
+    wrong_target = 'qualifier:source_shared_target_reference_event:' + source_owner
+    redirected = replace(group,
+        target_reference_qualifier_refs=tuple(sorted(wrong_target if value == actual_target else value
+                                                    for value in group.target_reference_qualifier_refs)),
+        source_qualifier_refs=tuple(sorted(wrong_target if value == actual_target else value
+                                          for value in group.source_qualifier_refs)))
+    for changed in (swapped, redirected):
+        changed = replace(changed, configuration_id=c.difference_configuration_id(changed))
+        # The forged record is locally well-shaped and has a recomputed ID.
+        # Source ownership, rather than hash identity, must reject the exchange.
+        c.validate_difference_configuration(changed)
+        derivation = projection.structure.difference_configuration_derivation
+        bad = replace(projection.structure,
+            configurations=tuple(changed if row == group else row for row in projection.structure.configurations),
+            difference_configuration_derivation=replace(derivation,
+                configuration_set=replace(derivation.configuration_set,
+                    configuration_refs=tuple(changed.configuration_id if ref == group.configuration_id else ref
+                                             for ref in derivation.configuration_set.configuration_refs))))
+        with pytest.raises(c.CMEEStage1ContractError, match='grouped_appraisal_received_source_unbound'):
+            c.validate_input_specific_meaning_structure(bad, grounded_view=view, foreground_scope_derivation=scope)
+    for changed in (replace(group, reaction_ref=group.appraisal_ref),
+                    replace(group, target_reference_qualifier_refs=())):
+        changed = replace(changed, configuration_id=c.difference_configuration_id(changed))
+        with pytest.raises(c.CMEEStage1ContractError, match='grouped_appraisal_received_'):
+            c.validate_difference_configuration(changed)
+
+
+@pytest.mark.parametrize('evaluation,reason,reaction', [
+    ('満足した', '', '嬉しくなかった'),
+    ('満足している', '探しやすくなったので、', '悲しかった'),
+    ('満足した', '', '少し嬉しくなかったです'),
+])
+def test_shared_target_reception_independent_reader_keeps_nested_roles_and_scopes(
+        monkeypatch, evaluation, reason, reaction):
+    import emlis_ai_grounded_human_reception as hr
+    from emlis_ai_grounded_observation_gate import read_source_owned_discourse
+    from emlis_ai_grounded_observation_plan import source_owned_shared_target_appraisal_contrast
+    source = (reason + '資料を分類したことには' + evaluation
+              + '。でも、その分類を褒められたのに、' + reaction + '。')
+    req = request(source, '')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    group = source_owned_shared_target_appraisal_contrast(plan.nuclei, plan.relations, resolver)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None, result.reason_codes
+    clauses = tuple(c + '。' for c in result.artifact.reception.split('。') if c)
+    assert len(clauses) == 2
+    clause = clauses[1]
+    move, = (m for m in plan.response_plan.human_reception_plan.moves
+             if m.target_nucleus_ids == (group['received_event'].nucleus_id,))
+    assert 'その分類を褒められたのに' in clause
+    assert '資料を分類したことへの' in clause
+    assert ('当時の満足' if evaluation == '満足した' else '入力した時点での満足') in clause
+    if reaction.startswith('少し'):
+        assert '少し嬉しくなかった' in clause
+    elif reaction == '嬉しくなかった':
+        assert '嬉しさが伴わなかった' in clause and '悲しさ' not in clause
+    else:
+        assert '悲しさが伴った' in clause and '嬉しさ' not in clause
+    wrongs = (
+        clause.replace('その分類を褒められたのに', ''),
+        clause.replace('その分類を褒められた', 'その整理を褒められた'),
+        clause.replace('その分類を褒められた', 'その分類を褒められなかった'),
+        clause.replace('のに', 'ので', 1),
+        clause.replace('資料を分類した', '資料を整理した'),
+        clause.replace('資料を分類した', '資料を分類しなかった'),
+        clause.replace('満足', '納得'),
+        clause.replace('とは切り分けて', 'が原因だと'),
+        clause.replace('当時の' if evaluation == '満足した' else '入力した時点での',
+                       '入力した時点での' if evaluation == '満足した' else '当時の'),
+        clause.replace('少し嬉しくなかった', '少し悲しかった') if reaction.startswith('少し')
+            else clause.replace('嬉しさが伴わなかった', '悲しさが伴った') if reaction == '嬉しくなかった'
+            else clause.replace('悲しさが伴った', '嬉しさが伴わなかった'),
+    )
+    monkeypatch.setattr(hr, '_source_grounded_reception_fragment',
+        lambda *_a, **_k: pytest.fail('independent reader called its author'))
+    assert read_source_owned_discourse(clause, move, plan, resolver, selected) is not None
+    for wrong in wrongs:
+        assert wrong != clause
+        assert read_source_owned_discourse(wrong, move, plan, resolver, selected) is None
+
+    # Reseal selected carriers so these rejections test semantic role binding,
+    # not merely a stale digest or an absent private content arm.
+    decision, = (d for d in selected.decisions if d.move_id == move.move_id)
+    content = decision.subjective_proposition.appraisal_content
+    mutations = (
+        replace(content, appraisal_event_binding_ref=content.received_event_binding_ref,
+                received_event_binding_ref=content.appraisal_event_binding_ref),
+        replace(content, appraisal_binding_ref=content.reaction_binding_ref,
+                reaction_binding_ref=content.appraisal_binding_ref),
+        replace(content, target_reference_qualifier_refs=()),
+        replace(content, received_relation_ref=content.appraisal_relation_ref,
+                appraisal_relation_ref=content.received_relation_ref),
+        replace(content, outer_contrast_relation_ref=content.received_relation_ref,
+                focal_relation_ref=content.received_relation_ref),
+    )
+    for changed_content in mutations:
+        proposition = replace(decision.subjective_proposition, appraisal_content=changed_content,
+                              focal_relation_ref=changed_content.focal_relation_ref)
+        changed = hr.identify_selected_subjective_reception_decision(
+            replace(decision, subjective_proposition=proposition))
+        forged = hr.identify_selected_subjective_reception_input(replace(selected,
+            decisions=tuple(changed if d.move_id == move.move_id else d for d in selected.decisions)))
+        assert read_source_owned_discourse(clause, move, plan, resolver, forged) is None
+
+    # Outer scope must end at the received event as the owner of its intact
+    # inner pair; it must not be flattened into satisfaction versus feeling.
+    outer = group['outer_relation']
+    flattened = replace(plan, relations=tuple(
+        replace(r, to_nucleus_id=group['reaction'].nucleus_id) if r == outer else r for r in plan.relations))
+    assert read_source_owned_discourse(clause, move, flattened, resolver, selected) is None
+    event = group['received_event']
+    unbound_event = replace(event, semantic_frame=replace(event.semantic_frame,
+        attribute_codes=tuple(c for c in event.semantic_frame.attribute_codes
+                              if not c.startswith('source_shared_target_reference_range:'))))
+    unbound = replace(plan, nuclei=tuple(unbound_event if n == event else n for n in plan.nuclei))
+    assert read_source_owned_discourse(clause, move, unbound, resolver, selected) is None
+
+
+@pytest.mark.parametrize('reason,evaluation', [('', '満足した'), ('探しやすくなったので、', '満足している')])
+def test_shared_target_observation_reads_whole_nested_group_without_author(monkeypatch, reason, evaluation):
+    import emlis_ai_grounded_sentence_surface as surface
+    source = reason + '資料を分類したことには' + evaluation + '。でも、その分類を褒められたのに、嬉しくなかった。'
+    req = request(source, '')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    sentence_plan = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None, result.reason_codes
+    artifact = result.artifact
+    observation = artifact.observation
+    assert '同時' not in observation
+    assert observation.count('。') == 1
+    assert 'その評価と対比して、同じ行為について' in observation
+    assert '「その分類を褒められた」のに「嬉しくなかった」' in observation
+    assert ('「探しやすくなった」を理由に、' in observation) == bool(reason)
+    wrongs = (
+        observation.replace('「資料を分類した」', '「資料を整理した」'),
+        observation.replace('「' + evaluation + '」', '「満足しなかった」'),
+        observation.replace('「' + evaluation + '」', '「満足している」' if evaluation == '満足した' else '「満足した」'),
+        observation.replace('「その分類を褒められた」のに', ''),
+        observation.replace('「その分類を褒められた」', '「別の分類を褒められた」'),
+        observation.replace('「嬉しくなかった」', '「悲しかった」'),
+        observation.replace('」のに「', '」ので「'),
+        observation.replace('その評価と対比して', 'その評価が原因で'),
+        observation.replace('同じ行為について', '同時に起きたこととして'),
+        observation.replace('同じ行為について', '別の行為について'),
+    )
+    if reason:
+        wrongs += (observation.replace('「探しやすくなった」を理由に、', ''),
+                   observation.replace('「探しやすくなった」', '「褒められた」'))
+    monkeypatch.setattr(surface, '_render_shared_target_appraisal_observation',
+        lambda *_a, **_k: pytest.fail('observation inverse called its author'))
+    def valid(text):
+        return evaluate_grounded_surface_body_inverse(body=text.encode(), plan=plan,
+            sentence_plan=sentence_plan, resolver=resolver, selected_subjective_input=selected).passed
+    assert valid(artifact.text)
+    for wrong in wrongs:
+        assert wrong != observation
+        assert not valid(artifact.text.replace(observation, wrong))
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+def test_shared_target_continuing_appraisal_stays_on_unchanged_source_path(reverse):
+    from cocolon_meaning_experience_engine.emlis_question import original_meaning_plan
+    from emlis_ai_grounded_observation_plan import source_owned_shared_target_appraisal_contrast
+    source = '資料を分類したことにはまだ満足している。でも、その分類を褒められたのに、嬉しくなかった。'
+    req = request(*(("", source) if reverse else (source, "")))
+    prepared = prepare_emlis_meaning(req)
+    legacy = original_meaning_plan(prepared.thread, _legacy_shared_target_contrast=True)
+    assert prepared.original_plan == legacy
+    assert not source_owned_shared_target_appraisal_contrast(
+        prepared.original_plan.nuclei, prepared.original_plan.relations, prepared.thread.resolver())
+    assert not any('semantic_dependency:shared_target_appraisal_contrast_v1' in n.semantic_frame.attribute_codes
+                   for n in prepared.original_plan.nuclei)
+    appraisal, = (n for n in prepared.original_plan.nuclei
+                  if 'source_appraisal_continuing:still' in n.semantic_frame.attribute_codes)
+    assert appraisal.semantic_frame.time_scope == 'present'
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None, result.reason_codes
+    assert 'まだ満足している' in result.artifact.observation
+    assert '入力した時点ではまだ満足しているのですね' in result.artifact.reception

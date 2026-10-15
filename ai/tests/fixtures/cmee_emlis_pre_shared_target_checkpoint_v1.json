@@ -1,0 +1,316 @@
+{
+  "source_head": "de95074bec356e41dc04affcc502ec9356cf5f6d",
+  "synthetic_only": true,
+  "rows": [
+    {
+      "case_id": "shared-target-before-01",
+      "memo": "資料を分類したことには満足した。でも、その分類を褒められたのに、嬉しくなかった。",
+      "action": "",
+      "event": "資料を分類した",
+      "reference": "その分類",
+      "reaction": "嬉しくなかった",
+      "field": "memo",
+      "capability": "Q3_FREE",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-0b93fda2ae31943f246a47f3f894652da10fe247f2979211dc0935cdeeeabb7d",
+        "source_prefix_ref": "emlis-q3-source-prefix-b31559907512ec51ddbef6f6dce6b600ae9f9344598bb57ca295956c05e641b6",
+        "base_meaning_ref": "emlis-base-meaning-0823fc0dcc52008ce90f3e10661b995385353a10ecd27a396de047ac7a1ef1ef",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "baseline_status": "GENERATED",
+      "baseline_body_state": "FINAL",
+      "baseline_reason_codes": [
+        "no_bound_personal_meaning_target"
+      ],
+      "baseline_text": "見えたこと：\n「資料を分類した」という出来事に対する評価は、「満足した」とあります。\n今は、「その分類を褒められたのに、嬉しくなかった」という感覚や状態が前に出ています。\n\nEmlisから：\n資料を分類したことについて、当時は満足したのですね。",
+      "baseline_observation": "「資料を分類した」という出来事に対する評価は、「満足した」とあります。\n今は、「その分類を褒められたのに、嬉しくなかった」という感覚や状態が前に出ています。",
+      "baseline_reception": "資料を分類したことについて、当時は満足したのですね。",
+      "question": null,
+      "original_nuclei_sha256": "78d9ff399dc1b4bd18b8f6b845931c442b6ec5d29a83ce8a8839b4851c1e43cb",
+      "original_relations_sha256": "b63bb322606ab5a6f73e612cf9a485e91a7186cc9759265a5a7c0e839585363f"
+    },
+    {
+      "case_id": "shared-target-before-02",
+      "memo": "",
+      "action": "資料を分類したことには満足した。でも、その分類を褒められたのに、嬉しくなかった。",
+      "event": "資料を分類した",
+      "reference": "その分類",
+      "reaction": "嬉しくなかった",
+      "field": "memo_action",
+      "capability": "Q3_FREE",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-e511ba64361689f4ef198aee8d07d605ce4b73ca9b9852be550faa222c1d6bad",
+        "source_prefix_ref": "emlis-q3-source-prefix-90db050891f62a103b5c77de62ef0725314aadae3afdc53b705de70cb13cd1e7",
+        "base_meaning_ref": "emlis-base-meaning-ad805548a81f1161c8bc6502c237f7b962037c723451faad15ceff86fca236cf",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "baseline_status": "GENERATED",
+      "baseline_body_state": "FINAL",
+      "baseline_reason_codes": [
+        "no_bound_personal_meaning_target"
+      ],
+      "baseline_text": "見えたこと：\n「資料を分類した」という出来事に対する評価は、「満足した」とあります。\n「その分類を褒められたのに、嬉しくなかった」という行動に移しています。\n\nEmlisから：\n資料を分類したことについて、当時は満足したのですね。",
+      "baseline_observation": "「資料を分類した」という出来事に対する評価は、「満足した」とあります。\n「その分類を褒められたのに、嬉しくなかった」という行動に移しています。",
+      "baseline_reception": "資料を分類したことについて、当時は満足したのですね。",
+      "question": null,
+      "original_nuclei_sha256": "49d5f942cadf7871f8944bec3812fa1c94555a0f1f71cee9a01db929fc363052",
+      "original_relations_sha256": "b63bb322606ab5a6f73e612cf9a485e91a7186cc9759265a5a7c0e839585363f"
+    },
+    {
+      "case_id": "shared-target-before-03",
+      "memo": "資料を分類したことには満足した。でも、その分類を褒められたのに、悲しかった。",
+      "action": "",
+      "event": "資料を分類した",
+      "reference": "その分類",
+      "reaction": "悲しかった",
+      "field": "memo",
+      "capability": "Q3_FREE",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-77019a25a9a730a7db974e46bf2574c394b5ed7849fff5c789cb8314659e45ff",
+        "source_prefix_ref": "emlis-q3-source-prefix-b5c74e2689e29a5e2fc40a2c47cea250bcda5e4b4b707daa17fcf5a01f49cbe5",
+        "base_meaning_ref": "emlis-base-meaning-4635925ab4f43d19ca62ca7ede837e4ff5c62c79bea07ee8ab687b4ab1d61b7f",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "baseline_status": "QUESTION_PENDING",
+      "baseline_body_state": "PRE_QUESTION",
+      "baseline_reason_codes": [
+        "emlis_question_candidate_ready"
+      ],
+      "baseline_text": "見えたこと：\n「資料を分類した」という出来事に対する評価は、「満足した」とあります。\n今は、「その分類を褒められたのに、悲しかった」という感覚や状態が前に出ています。\n\nEmlisから：\n資料を分類したことについて、当時は満足したのですね。",
+      "baseline_observation": "「資料を分類した」という出来事に対する評価は、「満足した」とあります。\n今は、「その分類を褒められたのに、悲しかった」という感覚や状態が前に出ています。",
+      "baseline_reception": "資料を分類したことについて、当時は満足したのですね。",
+      "question": {
+        "question_id": "emlis-question-683d7525827ecfc46821bb2360e2f08c546f1cba7ac206850ac06d2515b61719",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-0355eb92bad83f8567646622",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-babb8a8dfdfbe0d54e43e34fd1a169dd718b0b4d0c103a0641237f84675a8281",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-dc21bcb8e6e00ea523227e24"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s3"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s3"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「その分類を褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "original_nuclei_sha256": "529bf9d7f7aff27ee48d3e214e4cae264ff6a21f77e19f75736c7ed75790e1e5",
+      "original_relations_sha256": "b63bb322606ab5a6f73e612cf9a485e91a7186cc9759265a5a7c0e839585363f"
+    },
+    {
+      "case_id": "shared-target-before-04",
+      "memo": "",
+      "action": "資料を分類したことには満足した。でも、その分類を褒められたのに、悲しかった。",
+      "event": "資料を分類した",
+      "reference": "その分類",
+      "reaction": "悲しかった",
+      "field": "memo_action",
+      "capability": "Q3_FREE",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-684674f2d0291ba44905ee03d46c6bdf05be66bcca0e384ee822c4d1010f10a6",
+        "source_prefix_ref": "emlis-q3-source-prefix-199d8b387e32ee13947f108dd423145f259e67488298d49770c2a3ac66dc2b1a",
+        "base_meaning_ref": "emlis-base-meaning-6fb1e71caf989f1455a41a90e3bb031c8015be5355341e2cb329f84dba233eef",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "baseline_status": "GENERATED",
+      "baseline_body_state": "FINAL",
+      "baseline_reason_codes": [
+        "no_bound_personal_meaning_target"
+      ],
+      "baseline_text": "見えたこと：\n「資料を分類した」という出来事に対する評価は、「満足した」とあります。\n「その分類を褒められたのに、悲しかった」という行動に移しています。\n\nEmlisから：\n資料を分類したことについて、当時は満足したのですね。",
+      "baseline_observation": "「資料を分類した」という出来事に対する評価は、「満足した」とあります。\n「その分類を褒められたのに、悲しかった」という行動に移しています。",
+      "baseline_reception": "資料を分類したことについて、当時は満足したのですね。",
+      "question": null,
+      "original_nuclei_sha256": "ae3653d9f8649e3846ada8353934e1b3ee7735b3b8a38f8e0f06e62f73bea5b1",
+      "original_relations_sha256": "b63bb322606ab5a6f73e612cf9a485e91a7186cc9759265a5a7c0e839585363f"
+    },
+    {
+      "case_id": "shared-target-before-05",
+      "memo": "意見を整理したことには満足した。でも、その整理を褒められたのに、嬉しくなかった。",
+      "action": "",
+      "event": "意見を整理した",
+      "reference": "その整理",
+      "reaction": "嬉しくなかった",
+      "field": "memo",
+      "capability": "Q3_FREE",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-d2e8522b6bfdb38f171ef18baa516a7d62cff29e3d2081ec0f854cb1ceed3ea9",
+        "source_prefix_ref": "emlis-q3-source-prefix-c3f6bca7fe0952e31a6a1296ddeafd29bd74d70f8d38a7a0b0d03d49dea993f0",
+        "base_meaning_ref": "emlis-base-meaning-0c506e05994fdaa1400f20d4505ee601f17a882d05c2164e81c36257cc29ea44",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "baseline_status": "GENERATED",
+      "baseline_body_state": "FINAL",
+      "baseline_reason_codes": [
+        "no_bound_personal_meaning_target"
+      ],
+      "baseline_text": "見えたこと：\n「意見を整理した」という出来事に対する評価は、「満足した」とあります。\n今は、「その整理を褒められたのに、嬉しくなかった」という感覚や状態が前に出ています。\n\nEmlisから：\n意見を整理したことについて、当時は満足したのですね。",
+      "baseline_observation": "「意見を整理した」という出来事に対する評価は、「満足した」とあります。\n今は、「その整理を褒められたのに、嬉しくなかった」という感覚や状態が前に出ています。",
+      "baseline_reception": "意見を整理したことについて、当時は満足したのですね。",
+      "question": null,
+      "original_nuclei_sha256": "78d9ff399dc1b4bd18b8f6b845931c442b6ec5d29a83ce8a8839b4851c1e43cb",
+      "original_relations_sha256": "b63bb322606ab5a6f73e612cf9a485e91a7186cc9759265a5a7c0e839585363f"
+    },
+    {
+      "case_id": "shared-target-before-06",
+      "memo": "",
+      "action": "意見を整理したことには満足した。でも、その整理を褒められたのに、嬉しくなかった。",
+      "event": "意見を整理した",
+      "reference": "その整理",
+      "reaction": "嬉しくなかった",
+      "field": "memo_action",
+      "capability": "Q3_FREE",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-a55eb36ac5e6f464b03388e8deb104bddaa69e331c88c12f2982edc96768b48e",
+        "source_prefix_ref": "emlis-q3-source-prefix-8975b500abd4446ed3ebb4a89e946011596c527df24ffc40edf56ff059d41580",
+        "base_meaning_ref": "emlis-base-meaning-0631d29b4c5f0b992bfddf0e4f1c0f57aeb375b2b43fe04aabf9ba0f83e96560",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "baseline_status": "GENERATED",
+      "baseline_body_state": "FINAL",
+      "baseline_reason_codes": [
+        "no_bound_personal_meaning_target"
+      ],
+      "baseline_text": "見えたこと：\n「意見を整理した」という出来事に対する評価は、「満足した」とあります。\n「その整理を褒められたのに、嬉しくなかった」という行動に移しています。\n\nEmlisから：\n意見を整理したことについて、当時は満足したのですね。",
+      "baseline_observation": "「意見を整理した」という出来事に対する評価は、「満足した」とあります。\n「その整理を褒められたのに、嬉しくなかった」という行動に移しています。",
+      "baseline_reception": "意見を整理したことについて、当時は満足したのですね。",
+      "question": null,
+      "original_nuclei_sha256": "49d5f942cadf7871f8944bec3812fa1c94555a0f1f71cee9a01db929fc363052",
+      "original_relations_sha256": "b63bb322606ab5a6f73e612cf9a485e91a7186cc9759265a5a7c0e839585363f"
+    },
+    {
+      "case_id": "shared-target-before-07",
+      "memo": "意見を整理したことには満足した。でも、その整理を褒められたのに、悲しかった。",
+      "action": "",
+      "event": "意見を整理した",
+      "reference": "その整理",
+      "reaction": "悲しかった",
+      "field": "memo",
+      "capability": "Q3_FREE",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-4d5b2f7735cea638d2b24032d720b87835debc01509f3a0dbbffb233adf09b0e",
+        "source_prefix_ref": "emlis-q3-source-prefix-dfef0f65217bb9f6783e2a06afd6a4a5114cd780c08df297e036f4782dbdc52e",
+        "base_meaning_ref": "emlis-base-meaning-0dfe2e4ebc282202a572839fffcc5a10b8273efdc2b4cc6f4aab4285860f91fd",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "baseline_status": "QUESTION_PENDING",
+      "baseline_body_state": "PRE_QUESTION",
+      "baseline_reason_codes": [
+        "emlis_question_candidate_ready"
+      ],
+      "baseline_text": "見えたこと：\n「意見を整理した」という出来事に対する評価は、「満足した」とあります。\n今は、「その整理を褒められたのに、悲しかった」という感覚や状態が前に出ています。\n\nEmlisから：\n意見を整理したことについて、当時は満足したのですね。",
+      "baseline_observation": "「意見を整理した」という出来事に対する評価は、「満足した」とあります。\n今は、「その整理を褒められたのに、悲しかった」という感覚や状態が前に出ています。",
+      "baseline_reception": "意見を整理したことについて、当時は満足したのですね。",
+      "question": {
+        "question_id": "emlis-question-4b23e92e7944a077eb81b0be837a66831e5dcb2c58906dd671ed534e93b03fc2",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-fc8074665fe585868bf3c3e9",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-cdc5531646c5e7e4966dafd68fbd6fcb29036fc72d52b972d3edbbaacec330fa",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-7a7d4905155039ef0b9c2c2d"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s3"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s3"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「その整理を褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "original_nuclei_sha256": "529bf9d7f7aff27ee48d3e214e4cae264ff6a21f77e19f75736c7ed75790e1e5",
+      "original_relations_sha256": "b63bb322606ab5a6f73e612cf9a485e91a7186cc9759265a5a7c0e839585363f"
+    },
+    {
+      "case_id": "shared-target-before-08",
+      "memo": "",
+      "action": "意見を整理したことには満足した。でも、その整理を褒められたのに、悲しかった。",
+      "event": "意見を整理した",
+      "reference": "その整理",
+      "reaction": "悲しかった",
+      "field": "memo_action",
+      "capability": "Q3_FREE",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-6f2105cccc1c573fb54da2fdd24af02c7c22d476fd649725c2febcc79e392800",
+        "source_prefix_ref": "emlis-q3-source-prefix-09bc18ef659248ac4d1483771f96ccc1d47e6f6c278d93fb1a521e600edd47c6",
+        "base_meaning_ref": "emlis-base-meaning-0d5beae7604aae8ebed08537f8861d953f32767f26a3b1d6820760539f204ce2",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "baseline_status": "GENERATED",
+      "baseline_body_state": "FINAL",
+      "baseline_reason_codes": [
+        "no_bound_personal_meaning_target"
+      ],
+      "baseline_text": "見えたこと：\n「意見を整理した」という出来事に対する評価は、「満足した」とあります。\n「その整理を褒められたのに、悲しかった」という行動に移しています。\n\nEmlisから：\n意見を整理したことについて、当時は満足したのですね。",
+      "baseline_observation": "「意見を整理した」という出来事に対する評価は、「満足した」とあります。\n「その整理を褒められたのに、悲しかった」という行動に移しています。",
+      "baseline_reception": "意見を整理したことについて、当時は満足したのですね。",
+      "question": null,
+      "original_nuclei_sha256": "ae3653d9f8649e3846ada8353934e1b3ee7735b3b8a38f8e0f06e62f73bea5b1",
+      "original_relations_sha256": "b63bb322606ab5a6f73e612cf9a485e91a7186cc9759265a5a7c0e839585363f"
+    }
+  ]
+}

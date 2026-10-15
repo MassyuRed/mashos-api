@@ -4472,9 +4472,134 @@ def _read_detached_burden_discourse(raw, move, plan, resolver, selected_subjecti
     return tuple(replacements) if not nominal_group or owned_nominals else None
 
 
+def _shared_target_selected_reception(move, plan, resolver, selected_subjective_input):
+    """Bind the new content arm to complete source-owned nested roles.
+
+    This contains no body author or expected sentence. Both the author entry
+    gate and the independent body reader need this same content/source proof.
+    """
+    from cocolon_meaning_experience_engine.contracts import EmlisSharedTargetExperienceAppraisalContent
+    from emlis_ai_grounded_observation_plan import source_owned_shared_target_appraisal_contrast
+    group = source_owned_shared_target_appraisal_contrast(plan.nuclei, plan.relations, resolver)
+    if (not group or selected_subjective_input is None or not move.required
+        or move not in plan.response_plan.human_reception_plan.moves
+        or move.reception_act != 'stay_with_current_burden'
+        or move.target_nucleus_ids != (group['received_event'].nucleus_id,)
+        or move.support_nucleus_ids != tuple(group[k].nucleus_id for k in ('reaction', 'appraisal', 'appraisal_event'))):
+        return None
+    decisions = tuple(d for d in selected_subjective_input.decisions if d.move_id == move.move_id)
+    if len(decisions) != 1:
+        return None
+    decision = decisions[0]
+    proposition = decision.subjective_proposition
+    content = proposition.appraisal_content
+    if (type(content) is not EmlisSharedTargetExperienceAppraisalContent
+        or content.schema_version != 'cocolon.cmee.emlis.shared_target_experience_appraisal.v1'
+        or decision.branch != 'NORMAL'
+        or decision.reception_act != move.reception_act
+        or decision.target_nucleus_ids != move.target_nucleus_ids
+        or decision.support_nucleus_ids != move.support_nucleus_ids
+        or proposition.subjective_mode != 'ATTENTION' or proposition.subjective_operator != 'ATTEND_TO'
+        or content.dimension != 'RELATIONAL_NONCOLLAPSE' or content.operation != 'PRESERVE_BOTH_ENDPOINTS'
+        or content.protected_bindings or proposition.boundary_target_refs
+        or content.focal_relation_ref != proposition.focal_relation_ref
+        or content.focal_relation_ref != content.outer_contrast_relation_ref):
+        return None
+    basis = {row.binding_ref: row for row in decision.basis_rows}
+    nodes = dict(selected_subjective_input.semantic_nucleus_pairs)
+    edges = dict(selected_subjective_input.relation_pairs)
+    roles = ('appraisal_event', 'appraisal', 'received_event', 'reaction')
+    bindings = tuple(getattr(content, key + '_binding_ref') for key in roles)
+    relation_roles = (('appraisal_relation_ref', 'appraisal_relation'),
+                      ('received_relation_ref', 'received_relation'),
+                      ('outer_contrast_relation_ref', 'outer_relation'))
+    expected_qualifiers = {'qualifier:' + code for code in group['received_event'].semantic_frame.attribute_codes
+        if code.startswith(('source_shared_target_reference_range:', 'source_shared_target_reference_event:'))}
+    if (len(basis) != len(decision.basis_rows) or len(set(bindings)) != 4
+        or len(content.appraised_bindings) != 4 or set(content.appraised_bindings) != set(bindings)
+        or any(ref not in basis or nodes.get(basis[ref].semantic_ref) != group[key].nucleus_id
+               for key, ref in zip(roles, bindings))
+        or any(edges.get(getattr(content, field)) != group[key].relation_id for field, key in relation_roles)
+        or len(expected_qualifiers) != 2 or len(content.target_reference_qualifier_refs) != 2
+        or set(content.target_reference_qualifier_refs) != expected_qualifiers
+        or {nodes.get(ref) for ref in proposition.response_object_refs} != {group[key].nucleus_id for key in roles}
+        or not set(bindings) <= set(proposition.basis_binding_refs)
+        or not set(content.basis_contribution_refs) <= set(decision.selected_contribution_refs)
+        or not {basis[ref].contribution_ref for ref in bindings} <= set(content.basis_contribution_refs)
+        or not set(decision.selected_contribution_refs) <= set(proposition.target_contribution_refs)):
+        return None
+    return group
+
+
+def _read_shared_target_reception_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Parse all four visible roles and both contrast scopes without an author.
+
+    The received-event/reaction connective is inside the right experience;
+    the outer comparison never turns satisfaction and joy into opposites.
+    """
+    group = _shared_target_selected_reception(move, plan, resolver, selected_subjective_input)
+    if group is None:
+        return None
+    parsed = re.fullmatch(r'(?P<received>.+?)(?P<inner>のに|けれども|けれど|けど)'
+        r'(?P<reaction>.+)ことは、(?P<event>.+)ことへの'
+        r'(?P<time>当時の|入力した時点での|当時まだあった|入力した時点でまだある)'
+        r'(?P<appraisal>満足)とは切り分けて受け取りました。', raw)
+    if parsed is None:
+        return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    source = {key: final_reception_source_anchor_text(group[key].nucleus_id, index, resolver)
+              for key in ('appraisal_event', 'appraisal', 'received_event', 'reaction')}
+    endings = tuple(c.split(':', 1)[1] for c in group['appraisal_event'].semantic_frame.attribute_codes
+                    if c.startswith('source_appraisal_event_ending:'))
+    links = tuple(c.split(':', 1)[1] for c in group['received_event'].semantic_frame.attribute_codes
+                  if c.startswith('source_received_event_link:'))
+    if (len(endings) != 1 or endings[0] not in {'te', 'de', 'ta'} or len(links) != 1
+        or links[0] not in {'noni', 'kedo', 'keredo', 'keredomo'}):
+        return None
+    event = parsed['event']
+    owner = re.search(r'(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)', source['appraisal_event'])
+    if owner:
+        event = event.replace('あなた', owner.group(), 1)
+    ending = endings[0]
+    if not event.endswith({'te': 'た', 'de': 'だ', 'ta': 'た'}[ending]):
+        return None
+    event = event[:-1] + {'te': 'て', 'de': 'で', 'ta': 'た'}[ending]
+    appraisal = group['appraisal']
+    still = 'source_appraisal_continuing:still' in appraisal.semantic_frame.attribute_codes
+    when = _body_inverse_appraisal_time(appraisal)
+    expected_time = ((when + ('まだあった' if when == '当時' else 'でまだある')) if still
+                     else when + ('の' if when == '当時' else 'での'))
+    from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate
+    if (event != source['appraisal_event'] or parsed['received'] != source['received_event']
+        or parsed['inner'] != {'noni': 'のに', 'kedo': 'けど', 'keredo': 'けれど', 'keredomo': 'けれども'}[links[0]]
+        or parsed['time'] != expected_time
+        or not _source_result_appraisal_predicate(appraisal, source['appraisal'])):
+        return None
+    nominal = re.fullmatch(r'(?P<stem>[^、,]+)さが(?P<presence>伴わなかった|伴った)', parsed['reaction'])
+    if nominal is not None:
+        restored = nominal['stem'] + ('くなかった' if nominal['presence'] == '伴わなかった' else 'かった')
+        if source['reaction'].endswith('です'):
+            restored += 'です'
+        if (restored != source['reaction']
+            or not (_FEELING_RE.fullmatch(nominal['stem']) or _FEELING_RE.fullmatch(nominal['stem'] + 'い')
+                    or nominal['stem'].endswith('し') and _FEELING_RE.fullmatch(nominal['stem'][:-1]))):
+            return None
+    elif _restore_thread_finite_answer(parsed['reaction'], source['reaction'], copular_clause=True) != source['reaction']:
+        return None
+    duties = (('received', 'received_event'), ('reaction', 'reaction'),
+              ('event', 'appraisal_event'), ('appraisal', 'appraisal'))
+    return tuple((len(raw[:parsed.start(field)].encode()), len(raw[:parsed.end(field)].encode()), source[key].encode())
+                 for field, key in duties)
+
+
 def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None,
                                 *, preceding_context=None):
     """Read supported finite source duties without a literal-author oracle."""
+    if any(n.nucleus_id in move.target_nucleus_ids
+           and 'source_shared_target_slot:received_event' in n.semantic_frame.attribute_codes
+           for n in plan.nuclei):
+        # An invalid grouped arm cannot fall through to the old pair reader.
+        return _read_shared_target_reception_discourse(raw, move, plan, resolver, selected_subjective_input)
     detached_group = _read_detached_burden_discourse(raw, move, plan, resolver, selected_subjective_input)
     if detached_group is not None:
         return detached_group
@@ -5914,6 +6039,50 @@ def _body_inverse_reason_appraisal(body, line, planned_line, plan, resolver):
     return frozenset(edges)
 
 
+def _body_inverse_shared_target_appraisal_observation(body, parsed_line, planned_line, plan, resolver):
+    """Read one complete nested observation; never replay its author.
+
+    This replaces generic binary contrast checking only for the entire
+    closed, source-proven group, including its optional appraisal-only reason.
+    """
+    from emlis_ai_grounded_observation_plan import source_owned_shared_target_appraisal_contrast
+    group = source_owned_shared_target_appraisal_contrast(plan.nuclei, plan.relations, resolver)
+    if not group:
+        return False
+    keys = ('appraisal_event', 'appraisal', 'received_event', 'reaction') + (('reason',) if 'reason' in group else ())
+    edge_keys = ('appraisal_relation', 'received_relation', 'outer_relation') + (('reason_relation',) if 'reason_relation' in group else ())
+    node_ids = {group[k].nucleus_id for k in keys}
+    edge_ids = {group[k].relation_id for k in edge_keys}
+    evidence_ids = {sid for key in (*keys, *edge_keys) for sid in group[key].source_span_ids}
+    binding = planned_line.binding
+    if (planned_line.surface_function != 'observe_nuclei_with_relations'
+        or binding.line_role != 'primary_observation' or not binding.required
+        or binding.claim_scope != 'single_input_bounded_observation'
+        or set(binding.nucleus_ids) != node_ids or len(binding.nucleus_ids) != len(node_ids)
+        or set(binding.relation_ids) != edge_ids or len(binding.relation_ids) != len(edge_ids)
+        or set(binding.evidence_span_ids) != evidence_ids
+        or set(plan.coverage_requirements.required_nucleus_ids) != node_ids
+        or set(plan.coverage_requirements.required_relation_ids) != edge_ids):
+        return False
+    visible = _body_inverse_visible_text(body, parsed_line)
+    parsed = re.fullmatch(r'(?:「(?P<reason>[^「」『』\n]+)」を理由に、)?'
+        r'「(?P<event>[^「」『』\n]+)」という行為への評価は「(?P<appraisal>[^「」『』\n]+)」'
+        r'とあり、その評価と対比して、同じ行為について「(?P<received>[^「」『』\n]+)」'
+        r'(?P<inner>のに|けれども|けれど|けど)「(?P<reaction>[^「」『』\n]+)」と書かれています。', visible)
+    if parsed is None or bool(parsed['reason']) != ('reason' in group):
+        return False
+    roles = (('event', 'appraisal_event'), ('appraisal', 'appraisal'),
+             ('received', 'received_event'), ('reaction', 'reaction')) + ((('reason', 'reason'),) if 'reason' in group else ())
+    for field, key in roles:
+        expected = _body_inverse_nucleus_source_values(group[key].nucleus_id, plan, resolver)
+        if len(expected) != 1 or _body_inverse_normalized_anchor(parsed[field]) != expected[0]:
+            return False
+    links = tuple(c.split(':', 1)[1] for c in group['received_event'].semantic_frame.attribute_codes
+                  if c.startswith('source_received_event_link:'))
+    return (len(links) == 1 and parsed['inner'] ==
+            {'noni': 'のに', 'kedo': 'けど', 'keredo': 'けれど', 'keredomo': 'けれども'}.get(links[0]))
+
+
 def evaluate_grounded_surface_body_inverse(
     *,
     body: bytes,
@@ -5986,6 +6155,15 @@ def evaluate_grounded_surface_body_inverse(
         if planned_line.binding.claim_scope == "unresolved_answer_interpretation":
             if not _body_inverse_answer_limit(body, parsed_line, planned_line, plan, resolver):
                 failures.append(f"body_inverse_answer_limit_mismatch:{index}")
+            continue
+        if (final_stage1_plan and any(n.nucleus_id in planned_line.binding.nucleus_ids
+            and 'semantic_dependency:shared_target_appraisal_contrast_v1' in n.semantic_frame.attribute_codes
+            for n in plan.nuclei)):
+            # The specialized reader consumes the complete group. A flattened
+            # or partially valid binary report cannot fall back to old prose.
+            if not _body_inverse_shared_target_appraisal_observation(
+                    body, parsed_line, planned_line, plan, resolver):
+                failures.append(f'body_inverse_shared_target_appraisal_scope_mismatch:{index}')
             continue
         quote_rows = quotes_for_line("observation", parsed_line.section_ordinal)
         expected_sources = _body_inverse_source_values(planned_line, plan, resolver)

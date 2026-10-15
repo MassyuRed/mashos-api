@@ -1382,6 +1382,27 @@ class RelationalConfiguration:
 
 
 @dataclass(frozen=True, slots=True)
+class GroupedAppraisalReceivedConfigurationV1(RelationalConfiguration):
+    """One explicit contrast between an appraisal and a received-experience pair.
+
+    The outer edge's right endpoint is the received event's anchor.  This arm
+    binds that anchor to its inner event/reaction group; it never equates the
+    appraisal and the feeling or drops the event from the outer contrast.
+    """
+
+    appraisal_event_ref: str
+    appraisal_ref: str
+    received_event_ref: str
+    reaction_ref: str
+    appraisal_relation_ref: str
+    received_relation_ref: str
+    outer_contrast_relation_ref: str
+    target_reference_qualifier_refs: Tuple[str, ...]
+    reason_ref: Optional[str]
+    reason_relation_ref: Optional[str]
+
+
+@dataclass(frozen=True, slots=True)
 class QualifiedEventStateConfiguration:
     schema_version: str
     configuration_id: str
@@ -1396,7 +1417,7 @@ class QualifiedEventStateConfiguration:
 
 
 DifferenceConfiguration = (
-    RelationalConfiguration | QualifiedEventStateConfiguration
+    RelationalConfiguration | GroupedAppraisalReceivedConfigurationV1 | QualifiedEventStateConfiguration
 )
 
 
@@ -1795,6 +1816,21 @@ class EmlisAppraisalContent:
     focal_relation_ref: Optional[str]
     protected_bindings: Tuple[str, ...]
     basis_contribution_refs: Tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class EmlisSharedTargetExperienceAppraisalContent(EmlisAppraisalContent):
+    """Keep an act's appraisal distinct from its received-event/feeling pair."""
+
+    schema_version: str
+    appraisal_event_binding_ref: str
+    appraisal_binding_ref: str
+    received_event_binding_ref: str
+    reaction_binding_ref: str
+    appraisal_relation_ref: str
+    received_relation_ref: str
+    outer_contrast_relation_ref: str
+    target_reference_qualifier_refs: Tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -2523,6 +2559,10 @@ _STAGE1_TUPLE_FIELDS = {
         "source_qualifier_refs",
         "source_evidence_refs",
     ),
+    GroupedAppraisalReceivedConfigurationV1: (
+        "endpoint_component_refs", "relation_path_refs", "direction_rows",
+        "source_qualifier_refs", "source_evidence_refs", "target_reference_qualifier_refs",
+    ),
     QualifiedEventStateConfiguration: (
         "modality_refs",
         "time_refs",
@@ -2671,6 +2711,10 @@ _STAGE1_TUPLE_FIELDS = {
     SubjectiveFacetSuppressionRow: (),
     PolicyApplicationRow: ("policy_basis_binding_refs",),
     EmlisAffectContent: ("elicitor_bindings",),
+    EmlisSharedTargetExperienceAppraisalContent: (
+        "appraised_bindings", "protected_bindings", "basis_contribution_refs",
+        "target_reference_qualifier_refs",
+    ),
     EmlisEvaluatedExperienceAppraisalContent: (
         "appraised_bindings", "protected_bindings", "basis_contribution_refs",
     ),
@@ -3256,7 +3300,7 @@ def _stage1_subjective_v2_content_bindings(
     if proposition.content_kind is SubjectiveContentKind.APPRAISAL:
         content = proposition.appraisal_content
         if (
-            type(content) not in (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent)
+            type(content) not in (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent, EmlisSharedTargetExperienceAppraisalContent)
             or type(content.dimension) is not AppraisalDimension
             or type(content.operation) is not AppraisalOperation
             or (content.dimension, content.operation)
@@ -3287,6 +3331,23 @@ def _stage1_subjective_v2_content_bindings(
                 or type(content.continuing) is not bool or type(content.explicit_ability) is not bool
                 or content.degree not in {"unmarked", "slight", "very", "truly", "not_at_all", "not_much"}):
                 raise CMEEStage1ContractError("stage1_evaluated_experience_invalid")
+        if type(content) is EmlisSharedTargetExperienceAppraisalContent:
+            roles = (content.appraisal_event_binding_ref, content.appraisal_binding_ref,
+                     content.received_event_binding_ref, content.reaction_binding_ref)
+            relations = (content.appraisal_relation_ref, content.received_relation_ref,
+                         content.outer_contrast_relation_ref)
+            if (content.schema_version != "cocolon.cmee.emlis.shared_target_experience_appraisal.v1"
+                or (content.dimension, content.operation) != (
+                    AppraisalDimension.RELATIONAL_NONCOLLAPSE, AppraisalOperation.PRESERVE_BOTH_ENDPOINTS)
+                or content.focal_relation_ref != content.outer_contrast_relation_ref
+                or len(set(roles)) != 4 or set(content.appraised_bindings) != set(roles)
+                or content.protected_bindings
+                or len(set(relations)) != 3
+                or type(content.target_reference_qualifier_refs) is not tuple
+                or len(content.target_reference_qualifier_refs) != 2):
+                raise CMEEStage1ContractError("stage1_shared_target_experience_invalid")
+            for relation_ref in relations:
+                validate_version_qualified_ref(relation_ref, expected_types=("edge",))
         primary = _stage1_subjective_content_binding_tuple(
             content.appraised_bindings,
             allow_empty=False,
@@ -3456,7 +3517,7 @@ def validate_subjective_proposition_v2(
     )
     content_types = (
         EmlisAffectContent,
-        (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent),
+        (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent, EmlisSharedTargetExperienceAppraisalContent),
         MaterialValueContent,
         EmlisRelationalPosition,
     )
@@ -6799,6 +6860,37 @@ _STAGE1_APPRAISAL_SOURCE_CODES = frozenset((
 ))
 
 
+def _stage1_shared_target_source_qualifiers(source_codes):
+    """Project only the versioned, source-owned same-target group attributes."""
+    dependency = "semantic_dependency:shared_target_appraisal_contrast_v1"
+    members = {code for code in source_codes if code.startswith("source_shared_target_")}
+    if dependency not in source_codes:
+        if members:
+            raise CMEEStage1ContractError("shared_target_source_qualifiers_unbound")
+        return ()
+    slots = tuple(code.removeprefix("source_shared_target_slot:") for code in members
+                  if code.startswith("source_shared_target_slot:"))
+    owners = tuple(code.removeprefix("source_shared_target_node_owner:") for code in members
+                   if code.startswith("source_shared_target_node_owner:"))
+    if (len(slots) != 1 or slots[0] not in {"appraisal_event", "appraisal", "received_event", "reaction", "reason"}
+        or len(owners) != 1 or not re.fullmatch(r"[A-Za-z0-9_:-]+", owners[0])):
+        raise CMEEStage1ContractError("shared_target_source_qualifiers_invalid")
+    expected = {"source_shared_target_slot:" + slots[0], "source_shared_target_node_owner:" + owners[0]}
+    if slots[0] == "received_event":
+        for prefix, pattern in (
+            ("source_shared_target_reference_event:", r"[A-Za-z0-9_:-]+"),
+            ("source_shared_target_outer_marker:", r"[A-Za-z0-9_:-]+"),
+            ("source_shared_target_reference_range:", r"[0-9]+:[0-9]+"),
+        ):
+            values = tuple(code for code in members if code.startswith(prefix))
+            if len(values) != 1 or not re.fullmatch(pattern, values[0].removeprefix(prefix)):
+                raise CMEEStage1ContractError("shared_target_source_qualifiers_invalid")
+            expected.add(values[0])
+    if members != expected:
+        raise CMEEStage1ContractError("shared_target_source_qualifiers_invalid")
+    return tuple("qualifier:" + code for code in sorted({dependency, *members}))
+
+
 def project_stage1_source_contract_qualifiers(
     *,
     source_attribute_codes: Sequence[str],
@@ -6831,6 +6923,7 @@ def project_stage1_source_contract_qualifiers(
         if _foreground_enum_text(value)
     }
     return (
+        *_stage1_shared_target_source_qualifiers(source_codes),
         *(f"qualifier:{code}" for code in sorted(source_codes & _STAGE1_APPRAISAL_SOURCE_CODES)
           if "semantic_dependency:explicit_result_appraisal" in source_codes),
         *(
@@ -6917,6 +7010,20 @@ def project_stage1_relation_source_contract_qualifiers(
         raise CMEEStage1ContractError(
             "stage1_response_schema_version_invalid"
         )
+    if (candidate_kind is InterpretationKind.TENSION
+        and all("semantic_dependency:shared_target_appraisal_contrast_v1" in codes
+                for codes in (source_attribute_codes, target_attribute_codes))):
+        slots = tuple(tuple(code.removeprefix("source_shared_target_slot:")
+                            for code in codes if code.startswith("source_shared_target_slot:"))
+                      for codes in (source_attribute_codes, target_attribute_codes))
+        if slots not in ((("appraisal",), ("received_event",)),
+                         (("received_event",), ("reaction",))):
+            raise CMEEStage1ContractError("shared_target_relation_source_contract_invalid")
+        return tuple(prefix + value for prefix, codes in
+            (("left_", source_attribute_codes), ("right_", target_attribute_codes))
+            for value in project_stage1_source_contract_qualifiers(
+                source_attribute_codes=codes, source_explicit_shift_relation_endpoint=False,
+                stage1_response_schema_version=stage1_response_schema_version))
     if (candidate_kind is InterpretationKind.SOURCE_STATED_CAUSE
         and all('semantic_dependency:reasoned_result_appraisal' in codes
                 for codes in (source_attribute_codes, target_attribute_codes))
@@ -8628,6 +8735,7 @@ def difference_configuration_id(
 ) -> str:
     if type(configuration) not in {
         RelationalConfiguration,
+        GroupedAppraisalReceivedConfigurationV1,
         QualifiedEventStateConfiguration,
     }:
         raise CMEEStage1ContractError(
@@ -8745,7 +8853,7 @@ def _require_im02_positional_refs(
 def _difference_configuration_contract_sort_key(
     configuration: DifferenceConfiguration,
 ) -> tuple[object, ...]:
-    if type(configuration) is RelationalConfiguration:
+    if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1):
         return (
             "relational",
             configuration.endpoint_component_refs,
@@ -8815,13 +8923,17 @@ def validate_difference_configuration(
 ) -> None:
     if type(configuration) not in {
         RelationalConfiguration,
+        GroupedAppraisalReceivedConfigurationV1,
         QualifiedEventStateConfiguration,
     }:
         raise CMEEStage1ContractError(
             "difference_configuration_type_invalid"
         )
     _validate_stage1_immutable_shape(configuration)
-    if configuration.schema_version != _FOREGROUND_SCOPE_SCHEMA_VERSION:
+    if configuration.schema_version != (
+        "1.1" if type(configuration) is GroupedAppraisalReceivedConfigurationV1
+        else _FOREGROUND_SCOPE_SCHEMA_VERSION
+    ):
         raise CMEEStage1ContractError(
             "difference_configuration_schema_version_invalid"
         )
@@ -8842,7 +8954,7 @@ def validate_difference_configuration(
     )
     for ref in evidence:
         validate_version_qualified_ref(ref, expected_types=("evidence",))
-    if type(configuration) is RelationalConfiguration:
+    if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1):
         endpoints = _require_canonical_string_set(
             configuration.endpoint_component_refs,
             code="relational_configuration_endpoints_noncanonical",
@@ -8932,6 +9044,116 @@ def validate_difference_configuration(
             ),
             code="difference_configuration_qualifier_invalid",
         )
+    if type(configuration) is GroupedAppraisalReceivedConfigurationV1:
+        _validate_grouped_appraisal_received_configuration(configuration)
+
+
+def _validate_grouped_appraisal_received_configuration(configuration):
+    """Closed grouped topology; every role is distinct and source-owned."""
+    roles = (configuration.appraisal_event_ref, configuration.appraisal_ref,
+             configuration.received_event_ref, configuration.reaction_ref)
+    has_reason = configuration.reason_ref is not None
+    endpoints = (*roles, *((configuration.reason_ref,) if has_reason else ()))
+    paths = (configuration.appraisal_relation_ref, configuration.received_relation_ref,
+             configuration.outer_contrast_relation_ref,
+             *((configuration.reason_relation_ref,) if has_reason else ()))
+    if (has_reason != (configuration.reason_relation_ref is not None)
+        or len(set(endpoints)) != len(endpoints)
+        or len(set(paths)) != len(paths)
+        or set(endpoints) != set(configuration.endpoint_component_refs)
+        or set(paths) != set(configuration.relation_path_refs)):
+        raise CMEEStage1ContractError("grouped_appraisal_received_roles_invalid")
+    expected = {
+        (configuration.appraisal_relation_ref, EmlisThreadScopeRelationKind.ABOUT_TARGET,
+         configuration.appraisal_event_ref, configuration.appraisal_ref),
+        (configuration.received_relation_ref, ForegroundScopeRelationKind.CONTRAST,
+         configuration.received_event_ref, configuration.reaction_ref),
+        (configuration.outer_contrast_relation_ref, ForegroundScopeRelationKind.CONTRAST,
+         configuration.appraisal_ref, configuration.received_event_ref),
+    }
+    if has_reason:
+        expected.add((configuration.reason_relation_ref, EmlisThreadScopeRelationKind.SATISFACTION_REASON,
+                      configuration.reason_ref, configuration.appraisal_ref))
+    if {(row.relation_ref, row.relation_kind, row.source_endpoint_ref, row.target_endpoint_ref)
+        for row in configuration.direction_rows} != expected:
+        raise CMEEStage1ContractError("grouped_appraisal_received_topology_invalid")
+    refs = _require_canonical_string_set(configuration.target_reference_qualifier_refs,
+        code="grouped_appraisal_received_reference_invalid", allow_empty=False)
+    targets = tuple(ref.removeprefix("qualifier:source_shared_target_reference_event:")
+                    for ref in refs if ref.startswith("qualifier:source_shared_target_reference_event:"))
+    ranges = tuple(ref.removeprefix("qualifier:source_shared_target_reference_range:")
+                   for ref in refs if ref.startswith("qualifier:source_shared_target_reference_range:"))
+    if (len(refs) != 2 or len(targets) != 1
+        or "qualifier:source_shared_target_node_owner:" + targets[0] not in configuration.source_qualifier_refs
+        or len(ranges) != 1
+        or len(ranges[0].split(":")) != 2
+        or any(not part.isdigit() for part in ranges[0].split(":"))
+        or not 0 <= int(ranges[0].split(":")[0]) < int(ranges[0].split(":")[1])
+        or not set(refs) <= set(configuration.source_qualifier_refs)):
+        raise CMEEStage1ContractError("grouped_appraisal_received_reference_invalid")
+
+
+def shared_target_appraisal_group_bindings(qualifiers_by_ref, direction_rows):
+    """Rebind the versioned grouping from exact source roles, never adjacency."""
+    dependency = "qualifier:semantic_dependency:shared_target_appraisal_contrast_v1"
+    prefix = "qualifier:source_shared_target_slot:"
+    tagged = {ref: set(values) for ref, values in qualifiers_by_ref.items()
+              if dependency in values}
+    if not tagged:
+        return None
+    slots = {}
+    for ref, values in tagged.items():
+        roles = tuple(value.removeprefix(prefix) for value in values if value.startswith(prefix))
+        if (len(roles) != 1 or roles[0] in slots
+            or roles[0] not in {"appraisal_event", "appraisal", "received_event", "reaction", "reason"}
+            or "actor:current_user" not in values):
+            raise CMEEStage1ContractError("grouped_appraisal_received_source_roles_invalid")
+        slots[roles[0]] = ref
+    if set(slots) not in ({"appraisal_event", "appraisal", "received_event", "reaction"},
+                          {"appraisal_event", "appraisal", "received_event", "reaction", "reason"}):
+        raise CMEEStage1ContractError("grouped_appraisal_received_source_roles_invalid")
+    source_ids = {}
+    for role, ref in slots.items():
+        own = tuple(value.removeprefix("qualifier:source_shared_target_node_owner:")
+                    for value in tagged[ref] if value.startswith("qualifier:source_shared_target_node_owner:"))
+        if len(own) != 1:
+            raise CMEEStage1ContractError("grouped_appraisal_received_source_identity_invalid")
+        source_ids[role] = own[0]
+    if len(set(source_ids.values())) != len(slots):
+        raise CMEEStage1ContractError("grouped_appraisal_received_source_identity_invalid")
+    target = "qualifier:source_shared_target_reference_event:" + source_ids["appraisal_event"]
+    targets = {value for value in tagged[slots["received_event"]]
+               if value.startswith("qualifier:source_shared_target_reference_event:")}
+    if targets != {target}:
+        raise CMEEStage1ContractError("grouped_appraisal_received_source_target_invalid")
+    appraisal = tagged[slots["appraisal"]]
+    if not {"polarity:positive", "modality:feeling", "qualifier:source_appraisal_kind:satisfaction",
+            "qualifier:source_appraisal_degree:unmarked"} <= appraisal:
+        raise CMEEStage1ContractError("grouped_appraisal_received_source_appraisal_invalid")
+    role_edges = (
+        ("appraisal_relation_ref", EmlisThreadScopeRelationKind.ABOUT_TARGET, "appraisal_event", "appraisal"),
+        ("received_relation_ref", ForegroundScopeRelationKind.CONTRAST, "received_event", "reaction"),
+        ("outer_contrast_relation_ref", ForegroundScopeRelationKind.CONTRAST, "appraisal", "received_event"),
+        *(((("reason_relation_ref", EmlisThreadScopeRelationKind.SATISFACTION_REASON, "reason", "appraisal"),))
+          if "reason" in slots else ()),
+    )
+    related = tuple(row for row in direction_rows
+                    if {row.source_endpoint_ref, row.target_endpoint_ref} & set(slots.values()))
+    result = {key + "_ref": value for key, value in slots.items()}
+    result.setdefault("reason_ref", None)
+    result["reason_relation_ref"] = None
+    if len(related) != len(role_edges):
+        raise CMEEStage1ContractError("grouped_appraisal_received_source_relations_invalid")
+    for key, kind, left, right in role_edges:
+        matches = tuple(row for row in related if row.relation_kind is kind
+                        and row.source_endpoint_ref == slots[left] and row.target_endpoint_ref == slots[right])
+        if len(matches) != 1:
+            raise CMEEStage1ContractError("grouped_appraisal_received_source_relations_invalid")
+        result[key] = matches[0].relation_ref
+    result["target_reference_qualifier_refs"] = tuple(sorted(value for value in tagged[slots["received_event"]]
+        if value.startswith(("qualifier:source_shared_target_reference_range:",
+                             "qualifier:source_shared_target_reference_event:"))))
+    return result
 
 
 def validate_difference_configuration_derivation(
@@ -9020,7 +9242,7 @@ def validate_difference_configuration_derivation(
                 )
                 and (
                     (
-                        type(configuration) is RelationalConfiguration
+                        type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
                         and set(
                             configuration.endpoint_component_refs
                         ).issubset(scope_objects)
@@ -9139,7 +9361,7 @@ def validate_observed_distinction_row(
         raise CMEEStage1ContractError("observed_distinction_evidence_unbound")
     config_qualifiers = (
         configuration.source_qualifier_refs
-        if type(configuration) is RelationalConfiguration
+        if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
         else (
             *configuration.modality_refs,
             *configuration.time_refs,
@@ -9155,7 +9377,7 @@ def validate_observed_distinction_row(
     kind = row.derivation_kind
     if kind is ObservedDistinctionDerivationKind.BINARY_ENDPOINT_AND_DIRECTION:
         kind_valid = (
-            type(configuration) is RelationalConfiguration
+            type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
             and len(contrasted) == 2
             and set(contrasted).issubset(
                 configuration.endpoint_component_refs
@@ -9726,7 +9948,7 @@ def validate_counterfactual_mutation_row(
         raise CMEEStage1ContractError(
             "counterfactual_mutation_evidence_unbound"
         )
-    if type(configuration) is RelationalConfiguration:
+    if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1):
         configuration_qualifiers = set(configuration.source_qualifier_refs)
     else:
         configuration_qualifiers = {
@@ -9739,12 +9961,12 @@ def validate_counterfactual_mutation_row(
     kind = row.mutation_kind
     if kind is CounterfactualMutationKind.DELETE_ENDPOINT:
         target_valid = (
-            type(configuration) is RelationalConfiguration
+            type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
             and targets[0] in configuration.endpoint_component_refs
         )
     elif kind is CounterfactualMutationKind.SWAP_ENDPOINTS:
         target_valid = (
-            type(configuration) is RelationalConfiguration
+            type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
             and set(targets).issubset(configuration.endpoint_component_refs)
             and any(
                 direction.source_endpoint_ref == targets[0]
@@ -9790,7 +10012,7 @@ def validate_counterfactual_mutation_row(
         )
     elif kind is CounterfactualMutationKind.REPLACE_ROLE:
         target_valid = (
-            type(configuration) is RelationalConfiguration
+            type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
             and {targets[0], replacements[0]}
             == {"role:left", "role:right"}
         )
@@ -9913,7 +10135,7 @@ def validate_required_difference_row(
 def _configuration_connection_keys(
     configuration: DifferenceConfiguration,
 ) -> tuple[set[str], set[str]]:
-    if type(configuration) is RelationalConfiguration:
+    if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1):
         return (
             set(configuration.endpoint_component_refs),
             set(configuration.relation_path_refs),
@@ -11521,6 +11743,7 @@ def input_specific_meaning_configuration_source_component_rows(
     *,
     grounded_view: object,
     mutation: CounterfactualMutationRow | None = None,
+    observed_distinction: ObservedDistinctionRow | None = None,
 ) -> Tuple[GroundedSemanticComponentProjection, ...]:
     """Resolve the exact source projection owned by one configuration."""
 
@@ -11529,12 +11752,13 @@ def input_specific_meaning_configuration_source_component_rows(
     )
     if type(projections) is not tuple or type(configuration) not in {
         RelationalConfiguration,
+        GroupedAppraisalReceivedConfigurationV1,
         QualifiedEventStateConfiguration,
     }:
         raise CMEEStage1ContractError(
             "mutation_configuration_scope_binding_invalid"
         )
-    if type(configuration) is RelationalConfiguration:
+    if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1):
         about_target = any(row.relation_kind is EmlisThreadScopeRelationKind.ABOUT_TARGET
                            for row in configuration.direction_rows)
         matching = tuple(
@@ -11621,6 +11845,21 @@ def input_specific_meaning_configuration_source_component_rows(
         )
     if mutation is not None:
         validate_counterfactual_mutation_local_shape(mutation)
+        if type(configuration) is GroupedAppraisalReceivedConfigurationV1:
+            if (type(observed_distinction) is not ObservedDistinctionRow
+                or observed_distinction.distinction_id != mutation.observed_distinction_ref
+                or observed_distinction.configuration_ref != configuration.configuration_id):
+                raise CMEEStage1ContractError("grouped_appraisal_received_mutation_scope_unbound")
+            validate_observed_distinction_row(observed_distinction, configuration=configuration)
+            if observed_distinction.derivation_kind is ObservedDistinctionDerivationKind.TYPED_AXIS_CONTRAST:
+                # A value shared by another role is not the source of this
+                # particular typed distinction. Keep the full group candidate,
+                # but mutate only the two observed source objects and all of
+                # their repeated semantic facets.
+                owners = set(observed_distinction.contrasted_component_refs)
+                owned_rows = tuple(row for row in owned_rows if row.source_object_ref in owners)
+                if {row.source_object_ref for row in owned_rows} != owners:
+                    raise CMEEStage1ContractError("grouped_appraisal_received_mutation_scope_unbound")
         if mutation.mutation_kind in {
             CounterfactualMutationKind.DELETE_OWNER,
             CounterfactualMutationKind.REPLACE_WORLD,
@@ -11695,8 +11934,8 @@ def input_specific_meaning_difference_witness(
             or not set(refs) <= set(candidate.basis_configuration_refs)):
             raise CMEEStage1ContractError('input_specific_meaning_difference_owner_invalid')
         members = {ref for row in owned for ref in
-            (row.endpoint_component_refs if type(row) is RelationalConfiguration else (row.predicate_ref,))}
-        paths = {ref for row in owned if type(row) is RelationalConfiguration for ref in row.relation_path_refs}
+            (row.endpoint_component_refs if type(row) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1) else (row.predicate_ref,))}
+        paths = {ref for row in owned if type(row) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1) for ref in row.relation_path_refs}
         local = replace(candidate,
             primary_component_refs=tuple(ref for ref in candidate.primary_component_refs if ref in members),
             relation_path_refs=tuple(ref for ref in candidate.relation_path_refs if ref in paths))
@@ -11909,7 +12148,7 @@ def input_specific_meaning_material_provenance_keys_by_candidate(
         )
         or any(
             type(value)
-            not in {RelationalConfiguration, QualifiedEventStateConfiguration}
+            not in {RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1, QualifiedEventStateConfiguration}
             for value in configuration_values
         )
         or any(
@@ -11968,7 +12207,7 @@ def input_specific_meaning_material_provenance_keys_by_candidate(
                 raise CMEEStage1ContractError(
                     "input_specific_meaning_material_provenance_context_foreign"
                 )
-            if type(configuration) is RelationalConfiguration:
+            if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1):
                 keys = tuple(
                     (BasisProvenanceKind.RELATION_BRIDGE, ref)
                     for ref in configuration.relation_path_refs
@@ -12502,7 +12741,7 @@ def _validate_input_specific_meaning_im03(
                 for configuration in owned_configurations
                 for ref in (
                     configuration.endpoint_component_refs
-                    if type(configuration) is RelationalConfiguration
+                    if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
                     else (configuration.predicate_ref,)
                 )
             )
@@ -12511,7 +12750,7 @@ def _validate_input_specific_meaning_im03(
             dict.fromkeys(
                 ref
                 for configuration in owned_configurations
-                if type(configuration) is RelationalConfiguration
+                if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
                 for ref in configuration.relation_path_refs
             )
         )
@@ -12531,7 +12770,7 @@ def _validate_input_specific_meaning_im03(
         material_relation_refs = {
             ref
             for configuration in owned_configurations
-            if type(configuration) is RelationalConfiguration
+            if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
             for ref in configuration.relation_path_refs
         }
         qualified_object_refs = {
@@ -12541,7 +12780,7 @@ def _validate_input_specific_meaning_im03(
         }
         qualified_object_refs.update(
             ref for configuration in owned_configurations
-            if type(configuration) is RelationalConfiguration
+            if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
             and any(row.relation_kind is EmlisThreadScopeRelationKind.ABOUT_TARGET
                     for row in configuration.direction_rows)
             for ref in configuration.endpoint_component_refs)
@@ -12660,7 +12899,7 @@ def _validate_input_specific_meaning_im03(
                 for configuration in owned_configurations
                 for ref in (
                     configuration.source_qualifier_refs
-                    if type(configuration) is RelationalConfiguration
+                    if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
                     else tuple(
                         dict.fromkeys(
                             (
@@ -12941,7 +13180,7 @@ def _validate_input_specific_meaning_im03(
                     local,
                     config_by_ref[observed.configuration_ref],
                     grounded_view=grounded_view,
-                    mutation=mutation,
+                    mutation=mutation, observed_distinction=observed,
                 )
             )
             if (
@@ -13329,6 +13568,22 @@ def validate_input_specific_meaning_structure(
         configurations=structure.configurations,
         foreground_scope_derivation=foreground_scope_derivation,
     )
+    profiles = getattr(grounded_view, "compatibility_rows", ())
+    source_relations = getattr(grounded_view, "source_connected_relations", ())
+    group_bindings = shared_target_appraisal_group_bindings(
+        {row.scope_object_ref: row.required_qualifier_refs for row in profiles},
+        tuple(RelationDirectionRow(row.schema_version, row.relation_ref, row.relation_kind,
+                                   row.source_object_ref, row.target_object_ref)
+              for row in source_relations),
+    )
+    grouped = tuple(row for row in structure.configurations
+                    if type(row) is GroupedAppraisalReceivedConfigurationV1)
+    if group_bindings is None:
+        if grouped:
+            raise CMEEStage1ContractError("grouped_appraisal_received_source_unbound")
+    elif (len(grouped) != 1
+          or any(getattr(grouped[0], key) != value for key, value in group_bindings.items())):
+        raise CMEEStage1ContractError("grouped_appraisal_received_source_unbound")
     config_by_ref = {
         row.configuration_id: row for row in structure.configurations
     }
@@ -18811,7 +19066,7 @@ def _stage1_v2_basis_role(
 def _stage1_v2_content_binding_refs(content: object) -> tuple[str, ...]:
     if type(content) is EmlisAffectContent:
         return content.elicitor_bindings
-    if type(content) in (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent):
+    if type(content) in (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent, EmlisSharedTargetExperienceAppraisalContent):
         return _stage1_first_occurrence_union(
             content.appraised_bindings,
             content.protected_bindings,
@@ -19295,7 +19550,7 @@ def _validate_stage1_projection_v2_subjective_spine(
 
     content_type_by_kind = {
         SubjectiveContentKind.AFFECT: EmlisAffectContent,
-        SubjectiveContentKind.APPRAISAL: (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent),
+        SubjectiveContentKind.APPRAISAL: (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent, EmlisSharedTargetExperienceAppraisalContent),
         SubjectiveContentKind.MATERIAL_VALUE: MaterialValueContent,
         SubjectiveContentKind.RELATIONAL_POSITION: EmlisRelationalPosition,
     }
@@ -21904,6 +22159,7 @@ __all__ = [
     "EmlisAffectContent",
     "EmlisAppraisalContent",
     "EmlisEvaluatedExperienceAppraisalContent",
+    "EmlisSharedTargetExperienceAppraisalContent",
     "EmlisMeaningField",
     "EmlisRelationalPosition",
     "EmlisStage1PositiveTraceExtension",
@@ -22004,6 +22260,8 @@ __all__ = [
     "RelationalCommitment",
     "RelationalPositionKind",
     "RelationalConfiguration",
+    "GroupedAppraisalReceivedConfigurationV1",
+    "shared_target_appraisal_group_bindings",
     "QualifiedEventStateConfiguration",
     "RequiredDifferenceRow",
     "RequirementBundle",

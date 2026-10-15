@@ -78,6 +78,7 @@ class PreparedEmlisMeaning:
     legacy_result_appraisal: bool = False
     legacy_appraisal_correction: bool = False
     legacy_duplicate_appraisal_source: bool = False
+    legacy_shared_target_contrast: bool = False
 
 
 def _text(row, index, resolver) -> str:
@@ -540,6 +541,20 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
         *((proof,) if n.nucleus_id in answer_subjects and subject_texts.count(answer_subjects[n.nucleus_id]) == 1 else ()),
         *((distinct_occurrences[n.nucleus_id],) if n.nucleus_id in distinct_occurrences else ()),
     ))) if n.source_fields == (ANSWER_FIELD,) else n for n in nuclei)
+    # The original joint reading expires when any of its source roles or
+    # relations is revised/withdrawn. Preserve surviving experiences, while
+    # removing the grouped outer edge and its proof from every remaining role.
+    shared_tag = "semantic_dependency:shared_target_appraisal_contrast_v1"
+    if (any(shared_tag in n.semantic_frame.attribute_codes for n in nuclei)
+        and not gp.source_owned_shared_target_appraisal_contrast(nuclei, relations, thread.resolver())):
+        nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+            attribute_codes=tuple(code for code in n.semantic_frame.attribute_codes
+                if code != shared_tag and not code.startswith("source_shared_target_"))))
+            for n in nuclei)
+        relations = tuple(row for row in relations if row.source_relation_ids
+                          != ("typed_projection:shared_target_appraisal_outer_contrast_v1",))
+        complexity = gp._semantic_complexity(nuclei=nuclei, relations=relations,
+                                             meaning_artifacts=gp._MeaningArtifacts())
     # A withdrawal supplies no replacement claim. Keep the latest remaining
     # accepted answer in focus instead of reverting to the original memo.
     focus_ids = tuple(row.nucleus_id for row in added) or tuple(
@@ -594,6 +609,19 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
             or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
             raise
+        prior_shared_target = original_meaning_plan(thread, _legacy_shared_target_contrast=True)
+        if (prior_shared_target.nuclei != original.nuclei
+            or prior_shared_target.relations != original.relations):
+            # A previously saved interpretation predates the grouped reading.
+            # Re-derive its complete source plan and canonical question, never
+            # attach the old checkpoint identity to newly recognized meaning.
+            try:
+                restored = _prepare_emlis_meaning_from_plan(request, thread, prior_shared_target)
+            except ValueError as prior_exc:
+                if str(prior_exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}:
+                    raise
+            else:
+                return replace(restored, legacy_shared_target_contrast=True)
         prior_duplicate = original_meaning_plan(thread, _legacy_duplicate_appraisal_source=True)
         if prior_duplicate.nuclei != original.nuclei or prior_duplicate.relations != original.relations:
             # Re-derive the complete historical source and correction state;

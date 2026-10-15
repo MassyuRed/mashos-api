@@ -4558,6 +4558,36 @@ def _line_has_authored_question(text, binding):
     return bool(depth)
 
 
+def _render_shared_target_appraisal_observation(line, plan, nucleus_index, resolver):
+    """Surface the closed outer contrast around its intact received pair."""
+    from emlis_ai_grounded_observation_plan import source_owned_shared_target_appraisal_contrast
+    group = source_owned_shared_target_appraisal_contrast(plan.nuclei, plan.relations, resolver)
+    if not group:
+        return None
+    keys = ('appraisal_event', 'appraisal', 'received_event', 'reaction') + (('reason',) if 'reason' in group else ())
+    edge_keys = ('appraisal_relation', 'received_relation', 'outer_relation') + (('reason_relation',) if 'reason_relation' in group else ())
+    if (line.surface_function != 'observe_nuclei_with_relations'
+        or line.binding.line_role != 'primary_observation'
+        or not line.binding.required
+        or line.binding.claim_scope != 'single_input_bounded_observation'
+        or set(line.binding.nucleus_ids) != {group[k].nucleus_id for k in keys}
+        or set(line.binding.relation_ids) != {group[k].relation_id for k in edge_keys}):
+        return None
+    quotes = {key: _quotes_for_nuclei((group[key].nucleus_id,), nucleus_index, resolver) for key in keys}
+    if any(len(values) != 1 for values in quotes.values()):
+        raise GroundedSentenceSurfaceError('shared_target_appraisal_observation_source_unbound')
+    quotes = {key: values[0] for key, values in quotes.items()}
+    links = tuple(c.split(':', 1)[1] for c in group['received_event'].semantic_frame.attribute_codes
+                  if c.startswith('source_received_event_link:'))
+    source_connectives = {'noni': 'のに', 'kedo': 'けど', 'keredo': 'けれど', 'keredomo': 'けれども'}
+    if len(links) != 1 or links[0] not in source_connectives:
+        raise GroundedSentenceSurfaceError('shared_target_appraisal_observation_source_unbound')
+    reason = quotes['reason'] + 'を理由に、' if 'reason' in quotes else ''
+    return (reason + quotes['appraisal_event'] + 'という行為への評価は' + quotes['appraisal']
+            + 'とあり、その評価と対比して、同じ行為について' + quotes['received_event']
+            + source_connectives[links[0]] + quotes['reaction'] + 'と書かれています。')
+
+
 def _realize_line(
     line: GroundedSentencePlanLine,
     *,
@@ -4567,6 +4597,10 @@ def _realize_line(
     resolver: EvidenceSpanResolver,
     selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
 ) -> str:
+    if _is_final_stage1_grounded_projection(plan):
+        shared = _render_shared_target_appraisal_observation(line, plan, nucleus_index, resolver)
+        if shared is not None:
+            return shared
     record_prefixes = None
     if (line.surface_function in {"observe_nuclei_with_relations", "observe_relation"}
         and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"):

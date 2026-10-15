@@ -20096,3 +20096,48 @@ TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式受�
 8/28設計末尾u283へ、同じ出来事を一意に指す対象と対比が明示された場合に限り、行為への本人評価と、その行為を褒められた場面の本人感情を読み分ける限定案を固定した。新しいsource範囲・組間意味の追加で、Rule18 §11.3の追加Mash承認前に実装しない。二つの経験の原因・同時性・価値順位を作らず、根拠がない元の二欄を統合しない。文数制限も今回の案では変更しない。全検証と旧保存再導出は実装候補の完成条件として設計に記録した。
 
 今回のeffectは読取り・合成生成・この診断と提案の記録のみ。製品source／test／fixture／live DB／設定／deploy／build／merge変更0。同環境read-only補助reviewを使用し、別modelのPro審査と偽らない。BLOCKER_NARROWED／PROPOSED_NOT_APPROVED／PRODUCT_NOT_CLEAR、初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置。STRUCTURE_MAP_DELTA_NONE。次は限定案へのMash判断。10/17・10/31・12/18とPiece／Analysis主枠は不変。
+
+## u284 — 同じ行為への満足と、褒められた場面の感情を区別して接続（2026-10-16・未配置）
+
+基準API de95074／Cocolon dd486fa。全体設計01、全file地図01A/B/C、current01/04、最新weekly10/10、8/28設計u283と現行ルールを確認して実施。STRUCTURE_MAP_DELTA_PRESENT。
+
+前回u283限定案を提示した後のMashの「EmlisAIの残件作業を進めて」を、その限定案の実装指示として引き継いだ。u283の未承認・未実装は当時の履歴として保持する。公開契約一般、deploy、main mergeへの包括承認とはしない。
+
+同じ原入力欄に、本人の行為exact1と無程度・肯定の満足、外側の「でも」、その行為を一意に指す「その〈行為名〉を褒められたのに」、嬉しさ不在／悲しさexact1がある場合に限定する。理由は元の満足組に0/1。同じ語や隣接だけでは同じ対象にしない。有限のサ変行為名との明示一致を必要とし、別欄・対象違い・複数候補・他者・引用・仮定・単なる時間順・対比欠落は採用しない。継続付き満足など新ownerの資格外は旧source planを保持する。
+
+外側は〈行為への満足〉と〈その行為を褒められたのに嬉しくなかった／悲しかった経験〉、内側は〈褒められた〉と〈感情〉の対比として所有する。満足と感情を同じ尺度の反対値へ直結せず、原因・同時発生・価値順位・恒常的性格・他者意図を足さない。理由は満足の所有から移さない。既存2 Move・各上限を保ち、新production file／新engine／外部AIを追加しない。
+
+source ownerが原文range、役割、raw nucleus所有、対象参照先と参照range、外側markerを保持する。resolverで全評価役割・任意理由を既存parserから再照合し、received側も対象・感情・時制を原文から再照合する。意味ownerはexact4/5 node・3/4 edgeの新private `GroupedAppraisalReceivedConfigurationV1`（schema 1.1）へ結び、旧configuration/schemaをそのまま残す。typed-axis反事実は、その観測された端点ペアにだけ作用する。
+
+第二Moveの新private `EmlisSharedTargetExperienceAppraisalContent`（cocolon.cmee.emlis.shared_target_experience_appraisal.v1）が4役割・3関係・参照qualifier2件を持つ。第一Moveは元の評価／理由、第二Moveは同じ行為の受動場面と満足の区別を受け取る。理由ありの第一Moveへ評価の直接facetを二重に付けず、whole meaningには保持する。content所有順を命題と独立投影の双方で照合する。manifestは73型、旧型のfield／versionは不変。
+
+既存Observation作者が二段対比を一つの観測文で表し、Human Reception作者が選択内容を既存2文へ接続する。作者非依存readerは全役割・原文・関係・対象・否定・各時点・任意理由・選択されたbindingを確認し、平坦化した外側対比を旧文法へfallbackしない。訂正・撤回で適格性を失った共同読みは全役割の証明と外側関係を解除し、残る経験を既存更新経路へ渡す。
+
+新source認識前の完全checkpointは、旧source plan・質問を厳密に再導出する分岐で保持する。旧checkpointのIDだけを新解釈へ貼り直さない。公開API／DTO／DB／RN、製品依存、質問・Move・contribution上限、既存の歴史fixtureは不変。
+
+最終関連runは評価700＋Q2/Q3 application54の754 PASS、skip/xfailなし。実ログ末尾：`754 passed, 2 warnings in 236.43s (0:03:56)`。現行共有owner identityは別runで1 PASS／194 deselected：`1 passed, 194 deselected, 1 warning in 22.19s`。重複なし755検査だが単一runの755件とはしない。source所有、2行為名、両欄、理由0/1、過去／現在評価、嬉しさ不在／悲しさ、修飾・丁寧形、対象外境界、訂正／撤回、ID再計算後の役割・対象交換、作者禁止の独立readerによる因果・時制・否定・関係改変拒否を確認した。
+
+変更前API `de95074bec356e41dc04affcc502ec9356cf5f6d` から取得した合成8件の完全checkpoint、source plan hash、本文、状態、質問を新fixtureに固定し、旧意味・旧本文の再導出を確認した。このfixtureを新実装から作り直していない。現行共有owner identityだけを現行sourceから更新した。
+
+最終sourceで実service＋隔離PGliteを実行。理由0/1×嬉しさ不在／悲しさ×両欄の8組を初回・更新後まで保存し、16 DTO（PRE_QUESTION 8／REFINED 8、未成立0）を取得した。memo側は当時の満足の否定訂正、memo_action側は満足の撤回。NoAuthor GET/startは完全DTO一致、同key回答再送は本文・timeline等一致かつevent無増加。現行useEmlisThread／EmlisThreadModalへ16件を渡し、本文全文・全Observation履歴・close/reopen一致を確認した。root華恋が16本文（全文一致で12種類）を全文読解した。native部品はstub、本人実機・正式Product Readではない。
+
+途中の統合不成立は、relation qualifierの欠落、group全体へ作用したtyped-axis mutation、contentと命題の参照順、理由あり第一Moveの同じ評価facetの二重化、訂正後に残った部分group証明、継続付き評価の認識／検証不一致であった。最初の生成でObservationが外側を二項関係へ平坦化して「同時に」と書いた問題も修正した。途中runの4失敗・3失敗は最終成功件数に混ぜず、最終関連suiteで解消を確認した。
+
+再現：PYTHONPATH=ai:ai/services/ai_inference:ai/tests、Q2_PGLITE_MODULEをPGliteへ設定し、pytestでtest_cmee_emlis_result_appraisal.py／test_emlis_q2_application.py／test_emlis_q3_application.pyを実行。現行identityはtest_cmee_v1a_i1sx_contracts.pyのactive_final_language_owner_chain_has_zero_legacy_compose_calls。Python3.12.14、pytest8.4.1、PGlite0.5.8、React18.3.1を隔離検証に使用。稼働DB・本人環境・製品依存を変更していない。一時DTOやnative stubを永続証跡・実機成功と扱わない。
+実保存した合成例（実ユーザー本文ではない）：
+
+```text
+見えたこと：
+「探しやすくなった」を理由に、「資料を分類した」という行為への評価は「満足した」とあり、その評価と対比して、同じ行為について「その分類を褒められた」のに「嬉しくなかった」と書かれています。
+
+Emlisから：
+探しやすくなった点に、資料を分類したことへの当時の満足の拠り所が見えます。その分類を褒められたのに嬉しさが伴わなかったことは、資料を分類したことへの当時の満足とは切り分けて受け取りました。
+```
+
+TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式受入0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置を維持する。
+
+今回、明示された同一行為について評価対象の違いが本文へ届いた。ただし初回の理由なしでは「受け取りました」が反復し、理由ありでも第一文は理由説明に寄る。更新後は共同読みを失効させて既存経路へ戻すため、理由なし否定訂正でreceivedがObservationだけに残ること、旧received観測文の「同時に」、評価撤回後の一般態度が実保存本文に残る。保存成功・NORMAL・REFINEDを自然さや§9.2/9.4の商品完成へ換算しない。
+
+次は、訂正後にも残る有効な経験の受け取りと、初回の説明・受容述語の反復を、原文の意味と選択内容の不足に分けて扱う。対象関係のない元の二欄入力に共通の価値基準を作らない。今回の初回限定scopeを訂正一般へ無断で拡張しない。既存共有17失敗、same100、Q1上限、giver帰属、本人実機・正式Product Readは未解消。Mashへ未合格本文のProduct Readは求めない。10/17確認点・10/31残件線・12/18公開目標、Piece／Analysis主枠、管理評価53.25％を変更しない。
+
+同一Work環境の分担によるsource／meaning／surfaceの差分案と読取reviewを使用し、rootが統合・実行・本文読解した。別model Pro／Ultra相互審査成立とは報告しない。全変更fileの責務は01A u284、versionは正本05、検証は正本06、最新順序はweekly §5.6.34。

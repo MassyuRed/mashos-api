@@ -23,6 +23,7 @@ from emlis_ai_grounded_observation_plan import (
     source_owned_result_appraisal, source_owned_result_appraisal_context, source_owned_result_appraisal_reason,
     _source_operator_owner_scope_is_bound, _received_contrast_group_targets,
     _thread_retained_reaction_groups,
+    source_owned_shared_target_appraisal_contrast,
 )
 
 
@@ -201,6 +202,13 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
     covered = {n for edge in plan.relations if edge.relation_id in plan.coverage_requirements.required_relation_ids
                and edge.type != "evaluation_about_event"
                for n in (edge.from_nucleus_id, edge.to_nucleus_id)}
+    shared_target = source_owned_shared_target_appraisal_contrast(plan.nuclei, plan.relations, resolver)
+    if shared_target:
+        # The grouped outer edge is not the appraisal itself. Retain its two
+        # direct owners so the first Move can receive the person's evaluation
+        # without borrowing the received-experience contrast's contribution.
+        covered.difference_update(shared_target[key].nucleus_id
+                                  for key in ('appraisal_event', 'appraisal'))
     # Both initial and updated thread projection keep the direct unfinished
     # witness required by the existing strict unknown-source binding. A
     # relational contribution cannot discharge this separate epistemic duty.

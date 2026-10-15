@@ -7833,6 +7833,20 @@ def source_owned_relational_focus(move, plan=None, *, nuclei=None, relations=Non
                     if plan is not None else {r.relation_id for r in relations if r.retention == "required"})
     index = {n.nucleus_id: n for n in nuclei}
     all_relations = relations
+    shared_target = source_owned_shared_target_appraisal_contrast(nuclei, relations)
+    if shared_target and move.reception_act == "recognize_lived_change":
+        event, appraisal = (shared_target[key] for key in ("appraisal_event", "appraisal"))
+        reason = shared_target.get("reason")
+        supports = ((reason.nucleus_id,) if reason is not None else ()) + (event.nucleus_id,)
+        own_relations = (shared_target["appraisal_relation"],) + (
+            (shared_target["reason_relation"],) if reason is not None else ())
+        if (move.target_nucleus_ids == (appraisal.nucleus_id,)
+            and move.support_nucleus_ids == supports
+            and all(r.relation_id in required_ids for r in own_relations)):
+            # The complete outer group proves the scope; this first Move
+            # still realizes only the appraisal and its own object/reason.
+            return (("reasoned_result_appraisal", reason, event, appraisal) if reason is not None
+                    else ("original_result_appraisal", event, appraisal))
     if len(move.support_nucleus_ids) == 2:
         for relation in relations:
             reason = source_owned_result_appraisal_reason(relation, nuclei, relations)
@@ -9061,6 +9075,9 @@ def _source_explicit_contrast_reception_duties(nuclei, relations):
     independent, source-stated relation. Only already typed original objects
     and required relations participate; no question or generated text does.
     """
+    shared_target = _source_shared_target_reception_duties(nuclei, relations)
+    if shared_target:
+        return shared_target
     index = {n.nucleus_id: n for n in nuclei}
     repeated = source_owned_duplicate_reason_appraisals(nuclei, relations)
     if repeated:
@@ -9602,6 +9619,27 @@ def build_grounded_reception_opportunities(
                 source_evidence_span_ids=tuple(_ordered_span_ids(s for n in selected for s in n.source_span_ids)),
                 source_field_count=1, retention="required"))
         return tuple(replace(row, opportunity_id=f"ro{i}") for i, row in enumerate(grouped, 1))
+
+    shared_target_duties = _source_shared_target_reception_duties(owned_nuclei, relations) if (
+        final_source_fidelity and include_relation_support
+        and safety_kind == TRIAGE_SAFE_OBSERVATION
+        and material_quality in {'grounded', 'limited_grounding'}) else ()
+    if shared_target_duties:
+        by_family = {row.family: row for row in rows}
+        grouped = []
+        for family, targets, supports in shared_target_duties:
+            selected = tuple(nucleus_index[nid] for nid in (*targets, *supports))
+            grouped.append(GroundedReceptionOpportunity(
+                opportunity_id='', family=family,
+                reception_act=_RECEPTION_ACT_BY_OPPORTUNITY_FAMILY[family],
+                target_nucleus_ids=targets, support_nucleus_ids=supports,
+                retention='required', source_field_count=1, safety_required=False,
+                priority=_opportunity_priority(selected[0], family=family,
+                    human_follow_target_ids=follow_ids, relation_connected_ids=relation_connected_ids,
+                    safety_required=False),
+                source_evidence_span_ids=tuple(_ordered_span_ids(
+                    sid for n in selected for sid in n.source_span_ids))))
+        return tuple(replace(row, opportunity_id=f'ro{i}') for i, row in enumerate(grouped, 1))
 
     if nonaction_pair:
         burden = next(item for item in rows if item.family == "current_burden")
@@ -13905,7 +13943,13 @@ def source_owned_result_appraisal_context(relation, nuclei, relations, *, reason
     ids = {n.nucleus_id for n in group}
     incident = tuple(r for r in relations if r.retention == 'required'
         and ids & {r.from_nucleus_id, r.to_nucleus_id})
-    return context if len(incident) == 2 and set(incident) == {relation, contrasts[0]} else None
+    if len(incident) == 2 and set(incident) == {relation, contrasts[0]}:
+        return context
+    if reason and len(incident) == 3 and any(
+            r.source_relation_ids == (_SHARED_TARGET_OUTER_RELATION,) for r in incident):
+        group = source_owned_shared_target_appraisal_contrast(nuclei, relations)
+        return context if group and group.get('reason') == context else None
+    return None
 
 
 def source_owned_result_appraisal_reason(relation, nuclei, relations):
@@ -13956,6 +14000,295 @@ def source_owned_duplicate_reason_appraisals(nuclei, relations, resolver=None):
                 if span.source_field == first.source_field} != {first.span_id, second.span_id}):
             return ()
     return groups
+
+
+_SHARED_TARGET_APPRAISAL_MARKER = "semantic_dependency:shared_target_appraisal_contrast_v1"
+_SHARED_TARGET_OUTER_RELATION = "typed_projection:shared_target_appraisal_outer_contrast_v1"
+
+
+def _source_shared_target_received_parts(raw):
+    """A deictic act object, passive praise and one explicitly past reaction."""
+    return re.fullmatch(
+        r"(?P<event>(?P<reference>その(?P<act>[一-鿿々ァ-ヶー]+))を"
+        r"(?:褒められ|ほめられ)(?:た|ました))のに[、,]?"
+        r"(?P<reaction>(?:少し|とても|まだ|全然|あまり)?"
+        r"(?:(?:嬉し|うれし)くなかった|悲しかった)(?:です)?)", raw)
+
+
+def _source_shared_target_act_noun(raw):
+    # A source-performed finite Sahen act has an exact nominal antecedent.
+    # Neither a matching object word nor proximity alone proves reference.
+    match = re.fullmatch(
+        r"(?:(?:今日|昨日|今朝|先週)(?:は|に)?[、,]?)?"
+        r"(?:(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が)[、,]?)?"
+        r"[一-鿿々ァ-ヶー]+[ぁ-ん]{0,4}(?:の[一-鿿々ァ-ヶー]+[ぁ-ん]{0,4}){0,2}を"
+        r"(?P<act>[一-鿿々ァ-ヶー]+)した", raw)
+    return match['act'] if match else None
+
+
+def _source_shared_target_scalar_range(nucleus):
+    values = tuple(c for c in nucleus.semantic_frame.attribute_codes
+                   if c.startswith('source_fragment_scalar_range:'))
+    if len(values) != 1 or re.fullmatch(r'source_fragment_scalar_range:\d+:\d+', values[0]) is None:
+        return None
+    start, end = map(int, values[0].split(':')[-2:])
+    return (start, end) if 0 <= start < end else None
+
+
+def _final_stage1_shared_target_appraisal_contrast_nuclei(nuclei, dependencies, evidence_spans, normalized_input):
+    """Bind only a complete original two-sentence, uniquely referenced group.
+
+    The outer connective contrasts satisfaction with the entire received
+    experience. Its physical edge is a group anchor, never a direct edge to
+    the reaction. The inner concession remains separately owned.
+    """
+    if normalized_input is None:
+        return tuple(nuclei), tuple(dependencies)
+    candidates = []
+    index = {n.nucleus_id: n for n in nuclei}
+    for field in ('memo', 'memo_action'):
+        source = str(normalized_input.get(field) or '')
+        spans = tuple(sorted((s for s in evidence_spans if s.source_field == field),
+                             key=lambda s: s.start_index))
+        if (any(str(normalized_input.get(other) or '').strip() for other in ('memo', 'memo_action') if other != field)
+            or len(spans) != 3 or _top_level_text(source) != source
+            or any(source[s.start_index:s.end_index] != s.raw_text for s in spans)):
+            continue
+        first, marker, last = spans
+        if (source[:first.start_index].strip() or source[last.end_index:].strip(' 。．.')
+            or re.fullmatch(r'[。．.]\s*', source[first.end_index:marker.start_index]) is None
+            or marker.raw_text != 'でも'
+            or re.fullmatch(r'[、,]\s*', source[marker.end_index:last.start_index]) is None):
+            continue
+        appraisal_rows = tuple(n for n in nuclei if n.source_fields == (field,)
+                               and n.source_span_ids == (first.span_id,))
+        events = tuple(n for n in appraisal_rows if n.kind == 'event'
+            and 'semantic_dependency:explicit_result_appraisal' in n.semantic_frame.attribute_codes)
+        evaluations = tuple(n for n in appraisal_rows if n.kind == 'reaction'
+            # Match the source owner's exact admitted appraisal qualifiers
+            # before adding group tags. Continuing/degree variants remain on
+            # their existing path with their original temporal qualifiers.
+            and {'source_appraisal_kind:satisfaction', 'source_appraisal_degree:unmarked'}
+                == {code for code in n.semantic_frame.attribute_codes if code.startswith('source_appraisal_')}
+            and (n.semantic_frame.predicate_kind, n.semantic_frame.modality,
+                 n.semantic_frame.polarity) == ('feeling', 'feeling', 'positive'))
+        reasons = tuple(n for n in appraisal_rows
+                        if 'semantic_role:appraisal_explicit_reason' in n.semantic_frame.attribute_codes)
+        if (len(events) != 1 or len(evaluations) != 1 or len(reasons) > 1
+            or set(n.nucleus_id for n in appraisal_rows)
+                != {n.nucleus_id for n in (*events, *evaluations, *reasons)}
+            or any(n.retention != 'required' or n.grounding_kind != 'explicit'
+                   or n.allowed_claim_scope != 'explicit_current_input'
+                   or n.semantic_frame.actor != 'current_user' for n in appraisal_rows)):
+            continue
+        event, appraisal = events[0], evaluations[0]
+        event_range = _source_shared_target_scalar_range(event)
+        if event_range is None:
+            continue
+        event_raw = first.raw_text[slice(*event_range)]
+        ending = next((c.rsplit(':', 1)[-1] for c in event.semantic_frame.attribute_codes
+                       if c.startswith('source_appraisal_event_ending:')), '')
+        if ending in {'te', 'de'}:
+            event_raw = event_raw[:-1] + {'te': 'た', 'de': 'だ'}[ending]
+        act = _source_shared_target_act_noun(event_raw)
+        received = _source_shared_target_received_parts(last.raw_text)
+        originals = tuple(n for n in nuclei if n.source_fields == (field,)
+                          and n.source_span_ids == (last.span_id,))
+        if (act is None or received is None or received['act'] != act or len(originals) != 1
+            or originals[0].grounding_kind != 'explicit'
+            or originals[0].allowed_claim_scope != 'explicit_current_input'
+            or originals[0].semantic_frame.actor != 'current_user'
+            or originals[0].retention != 'required'):
+            continue
+        expected = {('evaluation_about_event', event.nucleus_id, appraisal.nucleus_id)}
+        if reasons:
+            expected.add(('user_stated_cause', reasons[0].nucleus_id, appraisal.nucleus_id))
+        ids = {n.nucleus_id for n in appraisal_rows}
+        if {row for row in dependencies if ids & set(row[1:])} != expected:
+            continue
+        candidates.append((appraisal_rows, event, appraisal, reasons, originals[0], received, marker))
+    # Deictic reference is not chosen between two source groups.
+    if len(candidates) != 1:
+        return tuple(nuclei), tuple(dependencies)
+    appraisal_rows, event, appraisal, reasons, original, received, marker = candidates[0]
+    roles = {event.nucleus_id: 'appraisal_event', appraisal.nucleus_id: 'appraisal'}
+    if reasons:
+        roles[reasons[0].nucleus_id] = 'reason'
+    projected = []
+    for name, kind, predicate, polarity, modality in (
+        ('event', 'event', 'event', 'neutral', 'fact'),
+        ('reaction', 'reaction', 'feeling', 'negative', 'feeling')):
+        start, end = received.span(name)
+        role = 'received_event' if name == 'event' else 'reaction'
+        codes = ('semantic_role:generic_relation_fragment', 'semantic_role:final_stage1_compound_meaning',
+            f'source_fragment_scalar_range:{start}:{end}',
+            'source_fragment_scalar_source:normalized_raw_text',
+            _SHARED_TARGET_APPRAISAL_MARKER, 'source_shared_target_slot:' + role,
+            'source_shared_target_node_owner:' + original.nucleus_id + ':' + name,
+            'source_received_event_link:noni', 'time_scope:past',
+            'lexical:preserve_source_predicate', 'lexical:no_new_sensation_family',
+            *(('semantic_role:contrast_before',
+               f'source_shared_target_reference_range:{received.start("reference")}:{received.end("reference")}',
+               'source_shared_target_reference_event:' + event.nucleus_id,
+               'source_shared_target_outer_marker:' + marker.span_id) if name == 'event' else
+              ('semantic_role:contrast_after', 'operator:feeling')))
+        projected.append(replace(original, nucleus_id=original.nucleus_id + ':' + name, kind=kind,
+            semantic_frame=replace(original.semantic_frame, predicate_kind=predicate, polarity=polarity,
+                modality=modality, time_scope='past', attribute_codes=codes)))
+    result = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+            attribute_codes=(*n.semantic_frame.attribute_codes, _SHARED_TARGET_APPRAISAL_MARKER,
+                             'source_shared_target_slot:' + roles[n.nucleus_id],
+                             'source_shared_target_node_owner:' + n.nucleus_id)))
+        if n.nucleus_id in roles else n for n in nuclei if n.nucleus_id != original.nucleus_id)
+    return (*result, *projected), (*dependencies,
+        ('contrast', projected[0].nucleus_id, projected[1].nucleus_id),
+        ('shared_target_appraisal_outer_contrast_v1', appraisal.nucleus_id, projected[0].nucleus_id))
+
+
+def source_owned_shared_target_appraisal_contrast(nuclei, relations, resolver=None):
+    """Read a closed original grouped contrast, optionally rechecking bytes.
+
+    The received event is an outer group anchor only when its inner reaction
+    and all four source roles survive. Answer changes or any extra incident
+    relation invalidate this arm instead of silently flattening its scope.
+    """
+    tagged = tuple(n for n in nuclei if _SHARED_TARGET_APPRAISAL_MARKER in n.semantic_frame.attribute_codes)
+    if len(tagged) not in {4, 5}:
+        return {}
+    slots = {}
+    for n in tagged:
+        codes = tuple(c for c in n.semantic_frame.attribute_codes if c.startswith('source_shared_target_slot:'))
+        if (len(codes) != 1 or codes[0].split(':', 1)[1] in slots
+            or tuple(c for c in n.semantic_frame.attribute_codes
+                     if c.startswith('source_shared_target_node_owner:'))
+                != ('source_shared_target_node_owner:' + n.nucleus_id,)
+            or n.retention != 'required' or n.grounding_kind != 'explicit'
+            or n.allowed_claim_scope != 'explicit_current_input'
+            or n.semantic_frame.actor != 'current_user'
+            or n.source_fields not in {('memo',), ('memo_action',)}
+            or len(n.source_span_ids) != 1 or n.surface_anchor_ids != n.source_span_ids
+            or _source_shared_target_scalar_range(n) is None
+            or 'source_fragment_scalar_source:normalized_raw_text' not in n.semantic_frame.attribute_codes
+            or any(c.startswith('thread_time:') for c in n.semantic_frame.attribute_codes)):
+            return {}
+        slots[codes[0].split(':', 1)[1]] = n
+    if (set(slots) not in ({'appraisal_event', 'appraisal', 'received_event', 'reaction'},
+                          {'appraisal_event', 'appraisal', 'received_event', 'reaction', 'reason'})
+        or len({n.nucleus_id for n in tagged}) != len(tagged)
+        or len({n.source_fields for n in tagged}) != 1):
+        return {}
+    event, appraisal, received, reaction = (slots[k] for k in
+        ('appraisal_event', 'appraisal', 'received_event', 'reaction'))
+    if (event.source_span_ids != appraisal.source_span_ids
+        or received.source_span_ids != reaction.source_span_ids
+        or event.source_span_ids == received.source_span_ids
+        or (event.kind, event.semantic_frame.predicate_kind, event.semantic_frame.modality,
+            event.semantic_frame.polarity, event.semantic_frame.time_scope) != ('event', 'event', 'fact', 'neutral', 'past')
+        or (appraisal.kind, appraisal.semantic_frame.predicate_kind, appraisal.semantic_frame.modality,
+            appraisal.semantic_frame.polarity) != ('reaction', 'feeling', 'feeling', 'positive')
+        or appraisal.semantic_frame.time_scope not in {'past', 'present'}
+        or {'source_appraisal_kind:satisfaction', 'source_appraisal_degree:unmarked'}
+            != {c for c in appraisal.semantic_frame.attribute_codes if c.startswith('source_appraisal_')}
+        or (received.kind, received.semantic_frame.predicate_kind, received.semantic_frame.modality,
+            received.semantic_frame.polarity, received.semantic_frame.time_scope) != ('event', 'event', 'fact', 'neutral', 'past')
+        or (reaction.kind, reaction.semantic_frame.predicate_kind, reaction.semantic_frame.modality,
+            reaction.semantic_frame.polarity, reaction.semantic_frame.time_scope) != ('reaction', 'feeling', 'feeling', 'negative', 'past')):
+        return {}
+    event_range, appraisal_range, received_range, reaction_range = (
+        _source_shared_target_scalar_range(n) for n in (event, appraisal, received, reaction))
+    if (event_range[1] > appraisal_range[0] or received_range[0] != 0
+        or received_range[1] >= reaction_range[0]):
+        return {}
+    reference_codes = tuple(c for c in received.semantic_frame.attribute_codes
+                            if c.startswith('source_shared_target_reference_range:'))
+    marker_codes = tuple(c for c in received.semantic_frame.attribute_codes
+                         if c.startswith('source_shared_target_outer_marker:'))
+    target_codes = tuple(c for c in received.semantic_frame.attribute_codes
+                         if c.startswith('source_shared_target_reference_event:'))
+    if (len(reference_codes) != 1 or re.fullmatch(r'source_shared_target_reference_range:\d+:\d+', reference_codes[0]) is None
+        or len(marker_codes) != 1 or target_codes != ('source_shared_target_reference_event:' + event.nucleus_id,)):
+        return {}
+    reference_range = tuple(map(int, reference_codes[0].split(':')[-2:]))
+    if not reference_range[0] == 0 < reference_range[1] <= received_range[1]:
+        return {}
+    marker_id = marker_codes[0].split(':', 1)[1]
+    expected = {
+        'appraisal_relation': ('evaluation_about_event', event.nucleus_id, appraisal.nucleus_id),
+        'received_relation': ('contrast', received.nucleus_id, reaction.nucleus_id),
+        'outer_relation': ('contrast', appraisal.nucleus_id, received.nucleus_id),
+    }
+    if 'reason' in slots:
+        expected['reason_relation'] = ('user_stated_cause', slots['reason'].nucleus_id, appraisal.nucleus_id)
+    ids = {n.nucleus_id for n in tagged}
+    incident = tuple(r for r in relations if r.retention == 'required' and ids & {r.from_nucleus_id, r.to_nucleus_id})
+    if len(incident) != len(expected):
+        return {}
+    bound = {}
+    for name, signature in expected.items():
+        matches = tuple(r for r in incident if (r.type, r.from_nucleus_id, r.to_nucleus_id) == signature
+                        and r.grounding_kind == 'user_stated_relation')
+        if len(matches) != 1:
+            return {}
+        bound[name] = matches[0]
+    if (bound['outer_relation'].source_relation_ids != (_SHARED_TARGET_OUTER_RELATION,)
+        or set(bound['outer_relation'].source_span_ids) != {*event.source_span_ids, *received.source_span_ids, marker_id}
+        or bound['appraisal_relation'].source_span_ids != event.source_span_ids
+        or bound['received_relation'].source_span_ids != received.source_span_ids
+        or not source_owned_result_appraisal(bound['appraisal_relation'], nuclei)):
+        return {}
+    if 'reason' in slots:
+        internal = tuple(r for r in incident if r != bound['outer_relation'])
+        if source_owned_result_appraisal_reason(bound['appraisal_relation'], nuclei, internal) != slots['reason']:
+            return {}
+    if resolver is not None:
+        first, last, marker = (resolver.resolve(sid) for sid in
+                              (event.source_span_ids[0], received.source_span_ids[0], marker_id))
+        # The resolver must prove every original appraisal role again, not
+        # just the action noun. A well-formed range pointing into another
+        # clause cannot become positive appraisal/reason evidence.
+        original_rows = _explicit_result_appraisal_projections(
+            replace(first, start_index=0, end_index=len(first.raw_text)),
+            {first.source_field: first.raw_text})
+        role_names = {':event': 'appraisal_event', ':appraisal': 'appraisal', ':reason': 'reason'}
+        expected_roles = {'appraisal_event', 'appraisal'} | ({'reason'} if 'reason' in slots else set())
+        if (len(original_rows) != len(expected_roles)
+            or {role_names.get(row.nucleus_suffix) for row in original_rows} != expected_roles):
+            return {}
+        for row in original_rows:
+            node = slots[role_names[row.nucleus_suffix]]
+            frame = node.semantic_frame
+            if ((row.scalar_start, row.scalar_end) != _source_shared_target_scalar_range(node)
+                or (row.kind, row.predicate_kind, row.polarity, row.modality, row.time_scope)
+                    != (node.kind, frame.predicate_kind, frame.polarity, frame.modality, frame.time_scope)
+                or {c for c in row.attribute_codes if c.startswith('source_appraisal_')}
+                    != {c for c in frame.attribute_codes if c.startswith('source_appraisal_')}):
+                return {}
+        parsed = _source_shared_target_received_parts(last.raw_text)
+        raw = first.raw_text[slice(*event_range)]
+        ending = next((c.rsplit(':', 1)[-1] for c in event.semantic_frame.attribute_codes
+                       if c.startswith('source_appraisal_event_ending:')), '')
+        if ending in {'te', 'de'}:
+            raw = raw[:-1] + {'te': 'た', 'de': 'だ'}[ending]
+        if (parsed is None or _source_shared_target_act_noun(raw) != parsed['act']
+            or parsed.span('reference') != reference_range
+            or parsed.span('event') != _source_shared_target_scalar_range(received)
+            or parsed.span('reaction') != _source_shared_target_scalar_range(reaction)
+            or marker.raw_text != 'でも'
+            or not first.end_index < marker.start_index < marker.end_index < last.start_index
+            or len({s.source_field for s in (first, last, marker)}) != 1):
+            return {}
+    return dict(slots, **bound, reference_range=reference_range)
+
+
+def _source_shared_target_reception_duties(nuclei, relations):
+    group = source_owned_shared_target_appraisal_contrast(nuclei, relations)
+    if not group:
+        return ()
+    event, appraisal, received, reaction = (group[k].nucleus_id for k in
+        ('appraisal_event', 'appraisal', 'received_event', 'reaction'))
+    reason = (group['reason'].nucleus_id,) if 'reason' in group else ()
+    return (('lived_change', (appraisal,), (*reason, event)),
+            ('current_burden', (received,), (reaction, appraisal, event)))
 
 
 def _received_event_reaction_projections(span, base_frame):
@@ -14165,6 +14498,7 @@ def _final_stage1_typed_nuclei(
     _legacy_received_appraisal_context: bool = False,
     _legacy_repeated_appraisal_context: bool = False,
     _legacy_duplicate_appraisal_source: bool = False,
+    _legacy_shared_target_contrast: bool = False,
 ) -> tuple[tuple[GroundedSemanticNucleus, ...], tuple[tuple[str, str, str], ...]]:
     span_index = {
         _clean(getattr(span, "span_id", "")): span
@@ -15034,6 +15368,9 @@ def _final_stage1_typed_nuclei(
                   if n.source_fields and set(n.source_fields) <= _LABEL_SOURCE_FIELDS
                   and n.allowed_claim_scope == "selected_label_only" and n.grounding_kind == "explicit"
                   else n for n in result]
+    if not _legacy_shared_target_contrast:
+        return _final_stage1_shared_target_appraisal_contrast_nuclei(
+            result, compound_dependencies, evidence_spans, normalized_input)
     return tuple(result), tuple(compound_dependencies)
 
 
@@ -15161,7 +15498,8 @@ def _final_stage1_typed_relations(
             continue
         left = nucleus_index[left_id]
         right = nucleus_index[right_id]
-        relation_type: RelationKind = dependency  # type: ignore[assignment]
+        shared_target_outer = dependency == 'shared_target_appraisal_outer_contrast_v1'
+        relation_type: RelationKind = 'contrast' if shared_target_outer else dependency  # type: ignore[assignment]
         if relation_type not in {
             "evaluation_about_event",
             "user_stated_cause",
@@ -15187,13 +15525,20 @@ def _final_stage1_typed_relations(
             "action_supports_change": "compound_span:action_before_change",
             "temporal_before_after": "compound_span:event_before_present_residue",
         }.get(relation_type, "compound_span:top_level_relation")
+        source_span_ids = left.source_span_ids
+        if shared_target_outer:
+            markers = tuple(c.split(':', 1)[1] for c in right.semantic_frame.attribute_codes
+                            if c.startswith('source_shared_target_outer_marker:'))
+            source_span_ids = tuple(_ordered_span_ids((*left.source_span_ids, *markers, *right.source_span_ids)))
+            source_relation_id = _SHARED_TARGET_OUTER_RELATION
+            source_arc_key = 'source_group:shared_target_appraisal_received_contrast_v1'
         rows.append(
             GroundedSemanticRelation(
                 relation_id="",
                 type=relation_type,
                 from_nucleus_id=left_id,
                 to_nucleus_id=right_id,
-                source_span_ids=left.source_span_ids,
+                source_span_ids=source_span_ids,
                 grounding_kind="user_stated_relation",
                 certainty=min(left.certainty, right.certainty),
                 retention=_relation_retention(
@@ -16550,6 +16895,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_repeated_appraisal_context: bool = False,
     _legacy_appraisal_retention: bool = True,
     _legacy_duplicate_appraisal_source: bool = False,
+    _legacy_shared_target_contrast: bool = False,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -16567,6 +16913,7 @@ def project_final_stage1_grounded_observation_plan(
         _legacy_received_appraisal_context=_legacy_received_appraisal_context,
         _legacy_repeated_appraisal_context=_legacy_repeated_appraisal_context,
         _legacy_duplicate_appraisal_source=_legacy_duplicate_appraisal_source,
+        _legacy_shared_target_contrast=_legacy_shared_target_contrast,
     )
     projected_nuclei = _final_stage1_align_action_status(
         projected_nuclei,
@@ -17676,6 +18023,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_repeated_appraisal_context: bool = False,
     _legacy_appraisal_retention: bool = True,
     _legacy_duplicate_appraisal_source: bool = False,
+    _legacy_shared_target_contrast: bool = False,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan."""
 
@@ -17733,6 +18081,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_repeated_appraisal_context=_legacy_repeated_appraisal_context,
         _legacy_appraisal_retention=_legacy_appraisal_retention,
         _legacy_duplicate_appraisal_source=_legacy_duplicate_appraisal_source,
+        _legacy_shared_target_contrast=_legacy_shared_target_contrast,
     )
 
 

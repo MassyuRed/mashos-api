@@ -48,6 +48,8 @@ from .contracts import (
     EmlisAffectContent,
     EmlisAppraisalContent,
     EmlisEvaluatedExperienceAppraisalContent,
+    EmlisSharedTargetExperienceAppraisalContent,
+    GroupedAppraisalReceivedConfigurationV1,
     EmlisInterpretationCandidate,
     EmlisMeaningField,
     EmlisRelationalPosition,
@@ -6226,6 +6228,27 @@ def _normal_reception_appraisal(
         prefix = (role.value.lower() + '_qualifier:') if role is not None else 'qualifier:'
         return {value.removeprefix(prefix) for value in candidate.required_qualifiers
                 if value.startswith(prefix)}
+    grouped = tuple(row for row in relation_configurations
+                    if type(row) is GroupedAppraisalReceivedConfigurationV1)
+    if grouped and proposition.reception_function == 'stay_with_current_burden':
+        if len(grouped) != 1:
+            raise Stage1CompositionError('MEANING_REALIZATION_CAPABILITY_GAP')
+        group = grouped[0]
+        roles = (group.appraisal_event_ref, group.appraisal_ref,
+                 group.received_event_ref, group.reaction_ref)
+        if (set(own_basis) != set(roles)
+            or any(endpoint(ref) is None for ref in roles)
+            or set(roles) != {ref for row in semantic_rows for ref in row.semantic_refs}
+            or proposition.subjective_mode is not SubjectiveMode.ATTENTION):
+            raise Stage1CompositionError('MEANING_REALIZATION_CAPABILITY_GAP')
+        bindings = tuple(own_basis[ref].binding_ref for ref in roles)
+        return EmlisSharedTargetExperienceAppraisalContent(
+            AppraisalDimension.RELATIONAL_NONCOLLAPSE, AppraisalOperation.PRESERVE_BOTH_ENDPOINTS,
+            bindings, group.outer_contrast_relation_ref, (),
+            tuple(row.contribution_id for row in contributions),
+            'cocolon.cmee.emlis.shared_target_experience_appraisal.v1', *bindings,
+            group.appraisal_relation_ref, group.received_relation_ref,
+            group.outer_contrast_relation_ref, group.target_reference_qualifier_refs)
     connected_appraisals = {direction.relation_ref: direction
         for configuration in relation_configurations for direction in configuration.direction_rows
         if direction.relation_kind is EmlisThreadScopeRelationKind.ABOUT_TARGET
@@ -7560,7 +7583,7 @@ def _project_selected_reading_from_admitted_authority(
                 source_qualifiers=own_qualifiers,
                 interpretation_candidates=authority.interpretation_candidate_rows,
                 relation_configurations=tuple(row for row in authority.input_specific_meaning_structure.configurations
-                    if type(row) is RelationalConfiguration
+                    if type(row) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
                     and row.configuration_id in candidate.basis_configuration_refs),
                 semantic_contributions=tuple(
                     contribution_by_id[ref]
@@ -7669,6 +7692,10 @@ def _project_selected_reading_from_admitted_authority(
                 "MEANING_REALIZATION_CAPABILITY_GAP"
             )
 
+        if type(appraisal_content) is EmlisSharedTargetExperienceAppraisalContent:
+            basis_by_ref = {row.binding_ref: row for row in own_basis}
+            own_semantic_refs = tuple(basis_by_ref[ref].semantic_ref
+                                     for ref in appraisal_content.appraised_bindings)
         proposition = SubjectivePropositionV2(
             CMEE_STAGE1_MEANING_BOUND_SUBJECTIVE_PROJECTION_SCHEMA_VERSION,
             content_kind,
@@ -16653,7 +16680,7 @@ def _logical_contract_descriptor(
     )
 
 
-# This literal exact-70 inventory is deliberately independent of dataclass
+# This literal versioned inventory is deliberately independent of dataclass
 # introspection.  Logical Step-4 types which are not runtime-active in Step 2
 # are still frozen here with their complete approved field order/cardinality.
 _LOGICAL_CONTRACT_FIELD_SPECS = (
@@ -16664,6 +16691,8 @@ _LOGICAL_CONTRACT_FIELD_SPECS = (
     ("PolicyBasisBinding", "policy-basis-v1", "projection_preimage_ref=exact1 binding_ref=exact1 owner_kind=exact1 owner_ref=exact1 role=exact1", ("OWNER_KIND_DISCRIMINATED",), "POLICY_BASIS_PROJECTOR"),
     ("EmlisAffectContent", "proposition-v2", "category=exact1 intensity=exact1 elicitor_bindings=1..N", ("CONCRETE_ELICITOR_REQUIRED",), "AFFECT_OPPORTUNITY_PROJECTOR"),
     ("EmlisAppraisalContent", "proposition-v2", "dimension=exact1 operation=exact1 appraised_bindings=1..N focal_relation_ref=0..1 protected_bindings=0..N basis_contribution_refs=1..N", ("DIMENSION_OPERATION_CLOSED_PAIR",), "APPRAISAL_OPPORTUNITY_PROJECTOR"),
+    ("GroupedAppraisalReceivedConfigurationV1", "grouped-appraisal-received-v1", "schema_version=exact1 configuration_id=exact1 endpoint_component_refs=4..5 relation_path_refs=3..4 direction_rows=3..4 source_qualifier_refs=1..N source_evidence_refs=1..N appraisal_event_ref=exact1 appraisal_ref=exact1 received_event_ref=exact1 reaction_ref=exact1 appraisal_relation_ref=exact1 received_relation_ref=exact1 outer_contrast_relation_ref=exact1 target_reference_qualifier_refs=exact2 reason_ref=0..1 reason_relation_ref=0..1", ("SOURCE_SHARED_TARGET_EXACT4_ROLES", "OUTER_CONTRAST_BINDS_RECEIVED_PAIR", "REASON_IFF_SOURCE_STATED", "LEGACY_BINARY_CONFIGURATION_UNCHANGED"), "INPUT_SPECIFIC_MEANING_OWNER"),
+    ("EmlisSharedTargetExperienceAppraisalContent", "shared-target-experience-appraisal-v1", "dimension=exact1 operation=exact1 appraised_bindings=exact4 focal_relation_ref=exact1 protected_bindings=exact0 basis_contribution_refs=1..N schema_version=exact1 appraisal_event_binding_ref=exact1 appraisal_binding_ref=exact1 received_event_binding_ref=exact1 reaction_binding_ref=exact1 appraisal_relation_ref=exact1 received_relation_ref=exact1 outer_contrast_relation_ref=exact1 target_reference_qualifier_refs=exact2", ("SELECTED_SOURCE_SHARED_TARGET_EXACT4_ROLES", "NESTED_CONTRAST_EXACT3_EDGES", "NO_CAUSE_OR_SIMULTANEITY_PROMOTION"), "APPRAISAL_OPPORTUNITY_PROJECTOR"),
     ("EmlisEvaluatedExperienceAppraisalContent", "evaluated-experience-v1", "dimension=exact1 operation=exact1 appraised_bindings=exact2 focal_relation_ref=exact1 protected_bindings=exact0 basis_contribution_refs=1..N schema_version=exact1 event_binding_ref=exact1 evaluation_binding_ref=exact1 target_kind=exact1 evaluation_kind=exact1 polarity=exact1 evaluation_time=exact1 continuing=exact1 explicit_ability=exact1 degree=exact1", ("SOURCE_APPRAISAL_ENDPOINTS_EXACT2", "FINITE_SOURCE_BOUND_EXPERIENCE", "NO_COMPLETION_OR_CAUSE_PROMOTION"), "APPRAISAL_OPPORTUNITY_PROJECTOR"),
     ("EmlisRelationalPosition", "proposition-v2", "relational_position_kind=exact1 stance_operator=exact1 target_bindings=1..N boundary_bindings=0..N commitment=exact1 closure=exact1", ("COMMITMENT_DERIVES_POSITION_KIND",), "RELATIONAL_OPPORTUNITY_PROJECTOR"),
     ("RowRefFreeValueApplication", "policy-pre-id-v1", "principle_ref=exact1 material_risk=exact1 policy_basis_binding_refs=1..N protected_subjective_binding_refs=1..N", ("NO_POLICY_ROW_OR_CLAIM_REF",), "ROW_REF_FREE_VALUE_PROJECTOR"),
@@ -16771,11 +16800,11 @@ def _contract_manifest() -> tuple[Any, ...]:
         _logical_contract_descriptor(*row)
         for row in _LOGICAL_CONTRACT_FIELD_SPECS
     )
-    if len(descriptors) != 71 or len({row[0][1] for row in descriptors}) != 71:
+    if len(descriptors) != 73 or len({row[0][1] for row in descriptors}) != 73:
         raise Stage1CompositionError("LANGUAGE_CORE_CONTRACT_DESCRIPTOR_STOP")
     return (
         ("schema_version", _CONTRACT_MANIFEST_SCHEMA_VERSION),
-        ("logical_contract_count", 71),
+        ("logical_contract_count", 73),
         ("logical_contract_descriptors", descriptors),
         ("content_kind_derivation_rows", LANGUAGE_CORE_CONTENT_DERIVATION_ROWS),
         ("concrete_runtime_binding_descriptors", LANGUAGE_CORE_CONCRETE_BINDING_DESCRIPTORS),

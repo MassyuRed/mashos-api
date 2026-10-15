@@ -3247,6 +3247,9 @@ def _bind_reception_moves(
     binding: _PlanBinding,
     contributions: tuple[PlannedObservationContribution, ...],
 ) -> tuple[_BoundReceptionMove, ...]:
+    from emlis_ai_grounded_observation_plan import source_owned_shared_target_appraisal_contrast
+    grouped = source_owned_shared_target_appraisal_contrast(
+        tuple(binding.node_meta.values()), tuple(binding.edge_meta.values()))
     bound: list[_BoundReceptionMove] = []
     for move in reception_plan.moves:
         try:
@@ -3268,12 +3271,34 @@ def _bind_reception_moves(
             row
             for row in contributions
             if set(row.semantic_refs).intersection(target_refs)
+            and (not grouped or set(row.semantic_refs) <= set((*target_refs, *support_refs)))
         )
         support_contributions = tuple(
             row
             for row in contributions
             if set(row.semantic_refs).intersection(support_refs)
+            and (not grouped or set(row.semantic_refs) <= set((*target_refs, *support_refs)))
         )
+        if grouped and 'reason' in grouped:
+            reason_roles = { _node_ref(binding.nucleus_to_node[grouped[key].nucleus_id])
+                             for key in ('reason', 'appraisal_event', 'appraisal') }
+            if set((*target_refs, *support_refs)) == reason_roles:
+                # The first Move receives the reasoned appraisal through its
+                # source-owned cause/effect contribution.  Its direct appraisal
+                # facet remains in the whole meaning; attaching it again here
+                # would duplicate the same endpoint under a second binding.
+                appraisal_ref = _node_ref(binding.nucleus_to_node[grouped['appraisal'].nucleus_id])
+                reason_ref = _node_ref(binding.nucleus_to_node[grouped['reason'].nucleus_id])
+                edge_ref = _edge_ref(binding.relation_to_edge[grouped['reason_relation'].relation_id])
+                reason_rows = tuple(row for row in contributions
+                    if row.relation_basis_refs == (edge_ref,)
+                    and set(row.semantic_refs) == {reason_ref, appraisal_ref})
+                if len(reason_rows) != 1:
+                    raise CMEEStage1ContractError('stage1_shared_target_reason_move_unbound')
+                target_contributions = tuple(row for row in target_contributions
+                    if row.relation_basis_refs or set(row.semantic_refs) != {appraisal_ref})
+                support_contributions = tuple(row for row in support_contributions
+                    if row.relation_basis_refs or set(row.semantic_refs) != {appraisal_ref})
         covered_target_refs = {
             ref for row in target_contributions for ref in row.semantic_refs
         }
@@ -5343,7 +5368,7 @@ def _validate_meaning_plan_vertical_binding(
                     source_qualifiers=own_qualifiers,
                     interpretation_candidates=phase_A.interpretation_candidate_rows,
                     relation_configurations=tuple(row for row in phase_A.input_specific_meaning_structure.configurations
-                        if type(row) is composition.RelationalConfiguration
+                        if type(row) in (composition.RelationalConfiguration, composition.GroupedAppraisalReceivedConfigurationV1)
                         and row.configuration_id in selected_candidate.basis_configuration_refs),
                     semantic_contributions=tuple(
                         contribution_by_ref[ref]
@@ -5423,6 +5448,10 @@ def _validate_meaning_plan_vertical_binding(
                 raise CMEEStage1ContractError(
                     "stage1_final_meaning_plan_noncanonical"
                 )
+            if type(content) is composition.EmlisSharedTargetExperienceAppraisalContent:
+                basis_by_ref = {row.binding_ref: row for row in own_basis}
+                own_semantic_refs = tuple(basis_by_ref[ref].semantic_ref
+                                         for ref in content.appraised_bindings)
             expected_proposition = SubjectivePropositionV2(
                 composition.CMEE_STAGE1_MEANING_BOUND_SUBJECTIVE_PROJECTION_SCHEMA_VERSION,
                 content_kind,

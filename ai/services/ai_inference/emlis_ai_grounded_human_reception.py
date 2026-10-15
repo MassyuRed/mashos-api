@@ -454,6 +454,14 @@ def validate_selected_subjective_reception_input(
                 or appraisal.continuing != ('source_appraisal_continuing:still' in source_codes)
                 or appraisal.explicit_ability != ('source_appraisal_attainment:explicit_ability' in event_codes)):
                 raise GroundedHumanReceptionSurfaceError(failure)
+        from cocolon_meaning_experience_engine.contracts import EmlisSharedTargetExperienceAppraisalContent
+        if type(appraisal) is EmlisSharedTargetExperienceAppraisalContent:
+            # Content, source and grouped roles must agree before any author
+            # can use this private semantic arm. The reader independently
+            # enforces the same source duties on delivered bytes.
+            from emlis_ai_grounded_observation_gate import _shared_target_selected_reception
+            if not _shared_target_selected_reception(move, plan, resolver, value):
+                raise GroundedHumanReceptionSurfaceError(failure)
         from emlis_ai_grounded_observation_plan import source_owned_relational_focus
         source_move = next((move for move in plan.response_plan.human_reception_plan.moves
                             if move.move_id == row.move_id), None)
@@ -3160,12 +3168,42 @@ def _source_feeling_reason_nominal(clauses):
     return nominal + "と、" + unknown + "こと"
 
 
+def _source_grounded_shared_target_group(move, plan, resolver):
+    from emlis_ai_grounded_observation_plan import source_owned_shared_target_appraisal_contrast
+    if plan is None:
+        return None
+    group = source_owned_shared_target_appraisal_contrast(plan.nuclei, plan.relations, resolver)
+    if (not group or not move.required or move not in plan.response_plan.human_reception_plan.moves
+        or move.reception_act != 'stay_with_current_burden'
+        or move.target_nucleus_ids != (group['received_event'].nucleus_id,)
+        or move.support_nucleus_ids != tuple(group[k].nucleus_id for k in ('reaction', 'appraisal', 'appraisal_event'))):
+        return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    fragments = tuple(final_reception_source_anchor_text(group[k].nucleus_id, index, resolver)
+                      for k in ('received_event', 'reaction', 'appraisal', 'appraisal_event'))
+    links = tuple(c.split(':', 1)[1] for c in group['received_event'].semantic_frame.attribute_codes
+                  if c.startswith('source_received_event_link:'))
+    endings = tuple(c.split(':', 1)[1] for c in group['appraisal_event'].semantic_frame.attribute_codes
+                    if c.startswith('source_appraisal_event_ending:'))
+    if (not all(fragments) or len(links) != 1 or links[0] not in _RECEIVED_EVENT_LINK_TEXT
+        or len(endings) != 1 or endings[0] not in {'te', 'de', 'ta'}):
+        return None
+    appraisal_codes = group['appraisal'].semantic_frame.attribute_codes
+    return (fragments, links[0], endings[0], group['appraisal'].semantic_frame.time_scope,
+            'still' if 'source_appraisal_continuing:still' in appraisal_codes else 'plain')
+
+
 def source_grounded_current_expression_nominal(
     move: GroundedReceptionMovePlan,
     plan: GroundedObservationPlan | None,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
 ) -> str:
+    shared = _source_grounded_shared_target_group(move, plan, resolver)
+    if shared:
+        event, reaction, appraisal, target = shared[0]
+        target = target[:-1] + {'te': 'た', 'de': 'だ', 'ta': 'た'}[shared[2]]
+        return event + _RECEIVED_EVENT_LINK_TEXT[shared[1]] + reaction + "ことと、" + target + "ことについて" + appraisal + "こと"
     detached = source_grounded_detached_burden_group(move, plan, nucleus_index, resolver)
     if detached:
         return "と、".join(_detached_burden_nominal(source, when) for _, source, when in detached)
@@ -3394,6 +3432,19 @@ def source_grounded_reception_move_relations(move, plan):
     The positive Move owns its ABOUT edge; it is not a hidden burden context.
     No edge is dropped from the plan or from the complete set of duties.
     """
+    from emlis_ai_grounded_observation_plan import source_owned_shared_target_appraisal_contrast
+    shared = source_owned_shared_target_appraisal_contrast(plan.nuclei, plan.relations)
+    if shared and move.required and move in plan.response_plan.human_reception_plan.moves:
+        if (move.reception_act == "recognize_lived_change"
+            and move.target_nucleus_ids == (shared['appraisal'].nucleus_id,)
+            and set(move.support_nucleus_ids) == {shared['appraisal_event'].nucleus_id,
+                *((shared['reason'].nucleus_id,) if 'reason' in shared else ())}):
+            return (shared['appraisal_relation'], *((shared['reason_relation'],) if 'reason_relation' in shared else ()))
+        if (move.reception_act == "stay_with_current_burden"
+            and move.target_nucleus_ids == (shared['received_event'].nucleus_id,)
+            and move.support_nucleus_ids == tuple(shared[key].nucleus_id
+                for key in ('reaction', 'appraisal', 'appraisal_event'))):
+            return tuple(shared[key] for key in ('appraisal_relation', 'received_relation', 'outer_relation'))
     targets = set(move.target_nucleus_ids)
     relations = tuple(r for r in plan.relations
         if r.relation_id in plan.coverage_requirements.required_relation_ids
@@ -6105,6 +6156,12 @@ def derive_source_grounded_nominalization_plan(
     )
     if reference_mode == "ANAPHORIC" or move is None or plan is None or resolver is None:
         return nominalization
+    shared = _source_grounded_shared_target_group(move, plan, resolver)
+    if shared:
+        if (fragments != shared[0]
+            or tuple(n.nucleus_id for n in nuclei) != (*move.target_nucleus_ids, *move.support_nucleus_ids)):
+            raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+        return (*nominalization, f'shared-target-appraisal-group:{shared[1]}:{shared[2]}:{shared[3]}:{shared[4]}')
     detached = source_grounded_detached_burden_group(move, plan, {n.nucleus_id: n for n in nuclei}, resolver)
     if detached:
         if tuple(n.nucleus_id for n in nuclei) != move.target_nucleus_ids or fragments != tuple(r[1] for r in detached):
@@ -6243,6 +6300,10 @@ def source_grounded_negative_context_nominal(
 def _source_grounded_nominalization_shape_valid(
     plan: tuple[str, ...], semantic_count: int,
 ) -> bool:
+    if (semantic_count == 4 and len(plan) == 2
+        and plan[:1] == _SOURCE_GROUNDED_NOMINALIZATION_BASE
+        and re.fullmatch(r'shared-target-appraisal-group:(?:noni|kedo|keredo|keredomo):(?:te|de|ta):(?:past|present):(?:plain|still)', plan[1])):
+        return True
     if (2 <= semantic_count <= 3 and len(plan) == semantic_count + 1
         and plan[:1] == _SOURCE_GROUNDED_NOMINALIZATION_BASE
         and all(re.fullmatch(rf"detached-burden-slot:{slot}:(?:original_occasion|answer_time|prior_answer_time)", code)
@@ -7844,6 +7905,11 @@ def _validate_source_grounded_move_ir(
         if not _thread_received_group_ir_text(move):
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
         expected_nominalization = (*expected_nominalization, *retained_grammar)
+    shared_grammar = tuple(p for p in move.nominalization_plan if p.startswith('shared-target-appraisal-group:'))
+    if shared_grammar:
+        if not _shared_target_appraisal_group_ir_text(move):
+            raise GroundedHumanReceptionSurfaceError('REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP')
+        expected_nominalization = (*expected_nominalization, *shared_grammar)
     received_grammar = tuple(p for p in move.nominalization_plan if p.startswith("received-contrast-group:"))
     if received_grammar:
         if not _received_contrast_group_ir_text(move):
@@ -8607,7 +8673,7 @@ def _source_grounded_target_owner_slot(
     if (referent_kind == "positive_feeling" and realization.polarity == "positive"
         and _thread_answer_group_ir_text(realization)):
         return 0
-    if referent_kind == "current_expression" and (_detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)):
+    if referent_kind == "current_expression" and (_shared_target_appraisal_group_ir_text(realization) or _detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)):
         # Slot zero anchors the collective grammar, whose core must cover
         # every target and its subject. It is not the sole selected answer.
         return 0
@@ -8788,6 +8854,30 @@ def _thread_received_group_ir_text(realization):
         or len(realization.relations) != len(expected_relations)):
         raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_ARGUMENT_GAP")
     return "と、".join(parts)
+
+
+def _shared_target_appraisal_group_ir_text(realization):
+    markers = tuple(c for c in realization.nominalization_plan if c.startswith('shared-target-appraisal-group:'))
+    if not markers:
+        return ''
+    if (len(markers) != 1 or realization.reference_mode == 'ANAPHORIC'
+        or realization.target_slot_count != 1 or realization.context_slots != (1, 2, 3)
+        or len(realization.semantic_fragments) != 4
+        or {(r.relation_kind, r.endpoint_slots) for r in realization.relations}
+            != {('evaluation_about_event', (3, 2)), ('contrast', (0, 1)), ('contrast', (2, 0))}
+        or len(realization.relations) != 3
+        or any(p.actor_kind != 'SELF' or p.quoted_boundary or p.future_action
+               for p in realization.semantic_profiles)):
+        raise GroundedHumanReceptionSurfaceError('REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP')
+    parts = markers[0].split(':')
+    if (len(parts) != 5 or parts[1] not in _RECEIVED_EVENT_LINK_TEXT or parts[2] not in {'te', 'de', 'ta'}
+        or parts[3] not in {'past', 'present'} or parts[4] not in {'plain', 'still'}):
+        raise GroundedHumanReceptionSurfaceError('REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP')
+    event, reaction, appraisal, target = realization.semantic_fragments
+    if not target.endswith({'te': 'て', 'de': 'で', 'ta': 'た'}[parts[2]]):
+        raise GroundedHumanReceptionSurfaceError('REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP')
+    target = target[:-1] + {'te': 'た', 'de': 'だ', 'ta': 'た'}[parts[2]]
+    return event + _RECEIVED_EVENT_LINK_TEXT[parts[1]] + reaction + 'ことと、' + target + 'ことについて' + appraisal + 'こと'
 
 
 def _received_contrast_group_ir_text(realization):
@@ -9131,7 +9221,7 @@ def _source_grounded_temporal_aspect_realization(
     if realization.reference_mode == "ANAPHORIC":
         return "ANTECEDENT", "ANTECEDENT", "", ""
 
-    group_text = _detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
+    group_text = _shared_target_appraisal_group_ir_text(realization) or _detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
     if group_text:
         if target_referent != group_text or realization.aspect not in {"unknown", "not_applicable"}:
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
@@ -9389,7 +9479,7 @@ def _source_grounded_target_np(
         realization.semantic_fragments[target_owner_slot],
         target_referent=referent_text,
     )
-    group_text = _detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
+    group_text = _shared_target_appraisal_group_ir_text(realization) or _detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
     if group_text:
         positive_group = bool(referent_kind == "positive_feeling"
             and move.reception_act == "recognize_lived_change" and realization.polarity == "positive"
@@ -10723,6 +10813,34 @@ def _source_grounded_reception_fragment(
             "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
         )
     core = f"{context_prefix}{target_core.text}"
+    if _shared_target_appraisal_group_ir_text(realization):
+        from cocolon_meaning_experience_engine.contracts import EmlisSharedTargetExperienceAppraisalContent
+        content = selected_subjective_decision.subjective_proposition.appraisal_content
+        if (type(content) is not EmlisSharedTargetExperienceAppraisalContent
+            or selected_subjective_decision.branch != 'NORMAL' or context_prefix
+            or recovery_stage != 'full' or realization.clause_form != 'FINITE'):
+            raise GroundedHumanReceptionSurfaceError('MEANING_REALIZATION_CAUSAL_TRACE_GAP')
+        marker = next(c for c in realization.nominalization_plan if c.startswith('shared-target-appraisal-group:'))
+        _, link, ending, appraisal_time, appraisal_continuing = marker.split(':')
+        event, reaction, appraisal, target = realization.semantic_fragments
+        target = target[:-1] + {'te': 'た', 'de': 'だ', 'ta': 'た'}[ending]
+        target = re.sub(r'(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)', 'あなた', target, count=1)
+        bare = reaction.removesuffix('です')
+        nominal = (None if re.match(r'(?:少し|とても|まだ|全然|あまり)', bare)
+                   else _received_discourse_negative_feeling(bare))
+        if nominal is not None:
+            reaction_text = nominal[0] + ('が伴わなかった' if bare.endswith('くなかった') else 'が伴った')
+        else:
+            reaction_text = _detached_feeling_finite_surface(reaction, allow_medial=True)
+        if not reaction_text:
+            raise GroundedHumanReceptionSurfaceError('REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP')
+        when = '当時' if appraisal_time == 'past' else '入力した時点'
+        time_phrase = ((when + ('まだあった' if appraisal_time == 'past' else 'でまだある'))
+                       if appraisal_continuing == 'still' else when + ('の' if appraisal_time == 'past' else 'での'))
+        # Outer distinction compares the appraisal with the whole received
+        # experience. The inner connective still belongs to event/reaction.
+        return (event + _RECEIVED_EVENT_LINK_TEXT[link] + reaction_text + 'ことは、'
+                + target + 'ことへの' + time_phrase + '満足とは切り分けて受け取りました')
     if (move.required and move.reception_act == "stay_with_current_burden"
         and move.move_role == "felt_response" and not context_prefix
         and recovery_stage == "full" and realization.clause_form == "FINITE"

@@ -81,6 +81,8 @@ from .contracts import (
     RelationOperator,
     RelationDirectionRow,
     RelationalConfiguration,
+    GroupedAppraisalReceivedConfigurationV1,
+    shared_target_appraisal_group_bindings,
     RequiredDifferenceRow,
     RequirementBundle,
     RequirementBundleDerivation,
@@ -675,7 +677,28 @@ def _thread_scope_relation_source_is_bound(row, premeaning_inputs):
              and 'qualifier:semantic_dependency:reasoned_result_appraisal'
                  in qualifiers.get(_node_ref(node), ())}
     incident = tuple(e for e in graph.edges if {e.source_node_id, e.target_node_id} & set(ids))
-    return group == set(ids) and len(incident) == 2 and set(incident) == {edge, about[0]}
+    if group == set(ids) and len(incident) == 2 and set(incident) == {edge, about[0]}:
+        return True
+    # The new versioned group may add exactly its outer contrast.  Rebind all
+    # roles and links first; old reasoned inputs still use the exact closure above.
+    try:
+        bindings = shared_target_appraisal_group_bindings(
+            qualifiers,
+            tuple(RelationDirectionRow(
+                "1.1" if relation.relation_kind is EmlisThreadScopeRelationKind.SATISFACTION_REASON else "1.0",
+                relation.relation_ref, relation.relation_kind,
+                _node_ref(nodes[edges[relation.relation_ref].source_node_id]),
+                _node_ref(nodes[edges[relation.relation_ref].target_node_id]))
+                for relation in premeaning_inputs.source_relation_rows
+                if relation.relation_ref in edges),
+        )
+    except CMEEStage1ContractError:
+        return False
+    return bool(group == set(ids) and bindings is not None
+                and bindings["reason_ref"] == _node_ref(nodes[ids[0]])
+                and bindings["appraisal_event_ref"] == _node_ref(nodes[ids[1]])
+                and bindings["appraisal_ref"] == _node_ref(nodes[ids[2]])
+                and bindings["reason_relation_ref"] == row.relation_ref)
 
 
 def derive_grounded_situation_view(
@@ -1818,7 +1841,7 @@ _WHOLE_READING_CODES_EXACT7 = frozenset(WholeReadingConsequenceCode)
 def _configuration_object_refs(
     configuration: DifferenceConfiguration,
 ) -> Tuple[str, ...]:
-    if type(configuration) is RelationalConfiguration:
+    if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1):
         return configuration.endpoint_component_refs
     if type(configuration) is QualifiedEventStateConfiguration:
         return (configuration.predicate_ref,)
@@ -1830,7 +1853,7 @@ def _configuration_object_refs(
 def _candidate_configuration_qualifier_refs(
     configuration: DifferenceConfiguration,
 ) -> Tuple[str, ...]:
-    if type(configuration) is RelationalConfiguration:
+    if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1):
         return configuration.source_qualifier_refs
     if type(configuration) is QualifiedEventStateConfiguration:
         return _stable_unique(
@@ -1852,6 +1875,7 @@ def _configuration_evidence_refs(
 ) -> Tuple[str, ...]:
     if type(configuration) not in {
         RelationalConfiguration,
+        GroupedAppraisalReceivedConfigurationV1,
         QualifiedEventStateConfiguration,
     }:
         raise CMEEStage1ContractError(
@@ -1865,7 +1889,7 @@ def _configuration_sort_key(
 ) -> tuple[object, ...]:
     """Canonical serialization key; never a selection or priority key."""
 
-    if type(configuration) is RelationalConfiguration:
+    if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1):
         return (
             "relational",
             configuration.endpoint_component_refs,
@@ -2140,12 +2164,26 @@ def derive_difference_configuration_set(
     )
     configurations: list[DifferenceConfiguration] = []
     relationally_covered: set[str] = set()
-    # Each typed source relation owns one binary configuration.  Connected
-    # multi-facet inputs are integrated later by the requirement-bundle and
-    # material-seed graph; folding an entire path into one configuration
-    # would violate the binary endpoint contract and duplicate the shared
-    # endpoint during counterfactual mutation.
-    for relation_component in tuple((relation,) for relation in admitted_relations):
+    # Legacy relations retain one binary configuration per edge.  The new
+    # explicit same-target arm alone owns the complete outer/inner group;
+    # its four/five role refs preserve the received pair as the outer right side.
+    group_bindings = shared_target_appraisal_group_bindings(
+        {ref: _profile_source_qualifiers(profile) for ref, profile in profiles_by_object.items()},
+        tuple(RelationDirectionRow(row.schema_version, row.relation_ref, row.relation_kind,
+                                   row.source_object_ref, row.target_object_ref)
+              for row in admitted_relations),
+    )
+    grouped_refs = set() if group_bindings is None else {
+        group_bindings[key] for key in ("appraisal_relation_ref", "received_relation_ref",
+                                       "outer_contrast_relation_ref", "reason_relation_ref")
+        if group_bindings[key] is not None
+    }
+    relation_components = (
+        *((tuple(row for row in admitted_relations if row.relation_ref in grouped_refs),)
+          if grouped_refs else ()),
+        *((row,) for row in admitted_relations if row.relation_ref not in grouped_refs),
+    )
+    for relation_component in relation_components:
         endpoints = _canonical(
             ref
             for relation in relation_component
@@ -2204,6 +2242,13 @@ def derive_difference_configuration_set(
             source_qualifier_refs=qualifiers,
             source_evidence_refs=relation_evidence,
         )
+        if group_bindings is not None and {row.relation_ref for row in relation_component} == grouped_refs:
+            configuration = GroupedAppraisalReceivedConfigurationV1(
+                **{field: getattr(configuration, field) for field in (
+                    "configuration_id", "endpoint_component_refs", "relation_path_refs", "direction_rows",
+                    "source_qualifier_refs", "source_evidence_refs")},
+                schema_version="1.1", **group_bindings,
+            )
         configuration = replace(
             configuration,
             configuration_id=difference_configuration_id(configuration),
@@ -2429,7 +2474,7 @@ def _derive_observed_distinctions(
         qualifiers = _configuration_qualifier_refs(configuration)
         evidence = _configuration_evidence_refs(configuration)
         qualified_material_modifiers: Tuple[str, ...] = ()
-        if type(configuration) is RelationalConfiguration:
+        if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1):
             for direction in configuration.direction_rows:
                 rows.append(
                     _new_observed_distinction(
@@ -2515,7 +2560,7 @@ def _derive_observed_distinctions(
             )
 
         qualifier_owner_count: dict[str, int] = {}
-        if type(configuration) is RelationalConfiguration:
+        if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1):
             for object_ref in objects:
                 profile = profiles_by_object.get(object_ref)
                 if profile is None:
@@ -2535,7 +2580,7 @@ def _derive_observed_distinctions(
                     and value in qualified_material_modifiers
                 )
                 or (
-                    type(configuration) is RelationalConfiguration
+                    type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
                     and qualifier_owner_count.get(value) == 1
                 )
             )
@@ -2906,12 +2951,12 @@ def _configurations_are_source_connected(
         return True
     left_paths = (
         set(left.relation_path_refs)
-        if type(left) is RelationalConfiguration
+        if type(left) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
         else set()
     )
     right_paths = (
         set(right.relation_path_refs)
-        if type(right) is RelationalConfiguration
+        if type(right) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
         else set()
     )
     # Connectivity must be verifiable from the bundle-owned configurations.
@@ -3642,7 +3687,7 @@ def issue_whole_reading_consequence_row(
 def _configuration_primary_refs(
     configuration: DifferenceConfiguration,
 ) -> Tuple[str, ...]:
-    if type(configuration) is RelationalConfiguration:
+    if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1):
         return configuration.endpoint_component_refs
     return (configuration.predicate_ref,)
 
@@ -3650,7 +3695,7 @@ def _configuration_primary_refs(
 def _configuration_qualifier_refs(
     configuration: DifferenceConfiguration,
 ) -> Tuple[str, ...]:
-    if type(configuration) is RelationalConfiguration:
+    if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1):
         return configuration.source_qualifier_refs
     return _stable_unique(
         (
@@ -3701,7 +3746,7 @@ def _candidate_operation(
     relational = tuple(
         value
         for value in configurations
-        if type(value) is RelationalConfiguration
+        if type(value) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
     )
     qualified = tuple(
         value
@@ -3747,7 +3792,7 @@ def _material_interpretation_projections(
     relation_refs = {
         ref
         for configuration in configurations
-        if type(configuration) is RelationalConfiguration
+        if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
         for ref in configuration.relation_path_refs
     }
     qualified_object_refs = {
@@ -3759,7 +3804,7 @@ def _material_interpretation_projections(
     # have no new exact16 sentence candidate and cannot promote a causal fact.
     qualified_object_refs.update(
         ref for configuration in configurations
-        if type(configuration) is RelationalConfiguration
+        if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
         and any(row.relation_kind is EmlisThreadScopeRelationKind.ABOUT_TARGET
                 for row in configuration.direction_rows)
         for ref in configuration.endpoint_component_refs)
@@ -3802,7 +3847,7 @@ def _material_binding_seed_partition(
         tuple[BasisProvenanceKind, str, DifferenceConfiguration]
     ] = []
     for configuration in values:
-        if type(configuration) is RelationalConfiguration:
+        if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1):
             vertex_rows.extend(
                 (
                     BasisProvenanceKind.RELATION_BRIDGE,
@@ -4243,7 +4288,7 @@ def _derive_candidate_semantic_loss_codes(
     expected_relation_refs = _stable_unique(
         ref
         for configuration in values
-        if type(configuration) is RelationalConfiguration
+        if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
         for ref in configuration.relation_path_refs
     )
     expected_qualifier_refs = _stable_unique(
@@ -4281,7 +4326,7 @@ def _derive_candidate_semantic_loss_codes(
     if candidate.primary_component_refs != expected_primary_refs:
         losses.add(DifferenceInvariantCode.ENDPOINT_COLLAPSE)
     if candidate.relation_path_refs != expected_relation_refs or any(
-        type(configuration) is RelationalConfiguration
+        type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
         and (
             not configuration.direction_rows
             or {
@@ -4360,7 +4405,7 @@ def _derive_candidate_semantic_loss_codes(
                 local,
                 configuration,
                 grounded_view=grounded_view,
-                mutation=mutation,
+                mutation=mutation, observed_distinction=observed,
             )
         )
         try:
@@ -4409,7 +4454,7 @@ def _evaluate_candidate_hard_validity(
     expected_relation_refs = _stable_unique(
         ref
         for configuration in values
-        if type(configuration) is RelationalConfiguration
+        if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
         for ref in configuration.relation_path_refs
     )
     expected_qualified_refs = tuple(
@@ -4475,9 +4520,11 @@ def _evaluate_candidate_hard_validity(
     ):
         return False
     for configuration in values:
-        if type(configuration) is RelationalConfiguration:
+        if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1):
             if (
-                len(configuration.endpoint_component_refs) != 2
+                (len(configuration.endpoint_component_refs) not in (4, 5)
+                 if type(configuration) is GroupedAppraisalReceivedConfigurationV1
+                 else len(configuration.endpoint_component_refs) != 2)
                 or not configuration.direction_rows
                 or not configuration.relation_path_refs
             ):
@@ -4612,7 +4659,7 @@ def _derive_candidate_for_bundle(
     relation_paths = _stable_unique(
         ref
         for configuration in owned_configurations
-        if type(configuration) is RelationalConfiguration
+        if type(configuration) in (RelationalConfiguration, GroupedAppraisalReceivedConfigurationV1)
         for ref in configuration.relation_path_refs
     )
     qualified_refs = tuple(
@@ -4747,7 +4794,7 @@ def _derive_candidate_for_bundle(
                 local,
                 configuration,
                 grounded_view=grounded_view,
-                mutation=mutation,
+                mutation=mutation, observed_distinction=observed,
             )
         )
         try:
