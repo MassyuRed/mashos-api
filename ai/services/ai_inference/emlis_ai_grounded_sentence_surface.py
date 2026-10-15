@@ -1163,6 +1163,8 @@ def _observation_surface_atoms(
     relation_ids: Sequence[str],
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     relation_index: Mapping[str, GroundedSemanticRelation],
+    *, plan: GroundedObservationPlan | None = None,
+    resolver: EvidenceSpanResolver | None = None,
 ) -> tuple[str, ...]:
     role = _observation_surface_role(
         nucleus_ids,
@@ -1171,6 +1173,19 @@ def _observation_surface_atoms(
         relation_index,
     )
     arcs = (f"semantic_arc:{role}",)
+    unique_reason = False
+    if (plan is not None
+        and not any(row.dimension == "answer_interpretation_unresolved" for row in plan.unknown_boundaries)
+        and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"):
+        reasons = tuple(reason for relation in relation_index.values()
+            if (reason := source_owned_result_appraisal_reason(relation,
+                tuple(nucleus_index.values()), tuple(relation_index.values()))) is not None)
+        if len(reasons) == 1:
+            span = resolver.resolve(reasons[0].source_span_ids[0])
+            # An old withdrawal can leave one of two equal source occurrences.
+            # A single surviving graph is not proof of a unique original event.
+            unique_reason = sum(s.source_field == span.source_field and s.raw_text == span.raw_text
+                for s in resolver.resolve_many(resolver.span_ids)) == 1
     if (any(n.source_fields == ("answer_text_private",)
             and n.allowed_claim_scope == "explicit_supplemental_answer"
             for n in nucleus_index.values())
@@ -1178,6 +1193,7 @@ def _observation_surface_atoms(
                 for r in relation_index.values())
         and (source_owned_duplicate_reason_appraisals(tuple(nucleus_index.values()),
                 tuple(relation_index.values()))
+             or unique_reason
              or any("thread_subject:revised_result_appraisal" in n.semantic_frame.attribute_codes
                     for n in nucleus_index.values()))
         and all(r.type in {"evaluation_about_event", "user_stated_cause", "contrast"}
@@ -1413,6 +1429,8 @@ def _make_line(
     required: bool = True,
     extra_atoms: Sequence[str] = (),
     reception_clause_plans: Sequence[GroundedReceptionClausePlan] = (),
+    plan: GroundedObservationPlan | None = None,
+    resolver: EvidenceSpanResolver | None = None,
 ) -> GroundedSentencePlanLine:
     atom_ids = _dedupe(
         [
@@ -1436,6 +1454,8 @@ def _make_line(
                     relation_ids,
                     nucleus_index,
                     relation_index,
+                    plan=plan,
+                    resolver=resolver,
                 )
                 if surface_function
                 in {
@@ -2407,6 +2427,8 @@ def _build_regular_lines(
                     claim_scope=claim_scope,
                     recovery_stage=recovery_stage,
                     required=any(item in required_ids for item in group),
+                    plan=plan,
+                    resolver=resolver,
                     extra_atoms=(
                         "soft_observation_ending",
                         *_clause_structure_atoms(group, nucleus_index),
@@ -2436,6 +2458,8 @@ def _build_regular_lines(
                     claim_scope=claim_scope,
                     recovery_stage=recovery_stage,
                     required=relation_id in required_relation_ids,
+                    plan=plan,
+                    resolver=resolver,
                     extra_atoms=("soft_relation_ending", *hedge_atoms),
                 )
             )

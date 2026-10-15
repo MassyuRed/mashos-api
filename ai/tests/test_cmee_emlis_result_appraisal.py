@@ -2763,7 +2763,7 @@ def test_reason_configuration_reads_all_three_roles_without_repeating_evaluation
 
 @pytest.mark.parametrize('reverse', [False, True])
 @pytest.mark.parametrize('target', ['資料を分類したことに', '資料を分類できて', '案を選んで'])
-def test_saved_single_reason_sentence_reopens_and_unavailable_correction_stays_historical(qcase, qdb, reverse, target):
+def test_saved_single_reason_sentence_survives_correction_and_reopen(qcase, qdb, reverse, target):
     from test_emlis_q2_application import run, answer
     from emlis_thread_service import EmlisThreadService, Q3_PROFILE
     user, parent, service = qcase
@@ -2780,16 +2780,16 @@ def test_saved_single_reason_sentence_reopens_and_unavailable_correction_stays_h
     assert run(service.get(user, parent)) == before
     response = '「嬉しくなかった」ではなく「重かった」です。'
     dto = run(answer(service, user, before, response, key='single-reason-body'))
-    # This single-reason correction is already unavailable on unmodified u272.
-    # Preserve saved correction and historical body; this test is not recovery credit.
-    assert dto['body_state'] == 'MEANING_UPDATED_BODY_UNAVAILABLE', dto
+    assert dto['body_state'] == 'REFINED', dto
     assert dto['answer_saved'] and dto['meaning_updated'] and dto['answer_assessment'] == 'RESOLVED'
-    assert dto['current_observation'] is None and not dto['can_retry']
-    assert not any(e.get('is_current') for e in dto['timeline'])
+    assert expected in dto['current_observation']['text']
+    assert 'その時の受け止めは「重かった」' in dto['current_observation']['text']
+    assert '嬉しくなかった' not in dto['current_observation']['text']
     saved = run(service.store.read(user, input_id=parent))
     observations = [e for e in saved['events'] if e['kind'] == 'OBSERVATION']
-    assert [e['payload']['text'] for e in observations] == [before['current_observation']['text']]
+    assert [e['payload']['text'] for e in observations] == [before['current_observation']['text'], dto['current_observation']['text']]
     assert [e['text'] for e in dto['timeline'] if e['kind'] == 'OBSERVATION'] == [e['payload']['text'] for e in observations]
+    assert [e['is_current'] for e in dto['timeline'] if e['kind'] == 'OBSERVATION'] == [False, True]
     assert len([e for e in saved['events'] if e['kind'] == 'ANSWER']) == 1
     assert len([e for e in saved['events'] if e['kind'] == 'MEANING_UPDATE']) == 2
     class NoAuthor:
@@ -2802,3 +2802,69 @@ def test_saved_single_reason_sentence_reopens_and_unavailable_correction_stays_h
     for key in ('revision', 'current_observation', 'timeline', 'body_state', 'answer_assessment', 'operation_id', 'attempt_id'):
         assert replay[key] == dto[key]
     assert run(restarted.store.read(user, input_id=parent))['events'] == saved['events']
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
+@pytest.mark.parametrize('correction', ['重かった', '怖かった'])
+def test_single_reason_and_corrected_received_keep_distinct_complete_source_arcs(monkeypatch, reverse, evaluation, correction):
+    from test_cmee_emlis_q3_thread import advance
+    from cocolon_meaning_experience_engine import emlis_thread_surface as thread_surface
+    import emlis_ai_grounded_sentence_surface as surface
+    from emlis_ai_grounded_observation_gate import _semantic_subcheck_reasons
+    reason = '探しやすくなったので、資料を分類したことに' + evaluation + '。'
+    received = '褒められたのに、嬉しくなかった。'
+    req = request(*((received, reason) if reverse else (reason, received)))
+    updated = advance(req, '「嬉しくなかった」ではなく「' + correction + '」です。')
+    prepared = prepare_emlis_meaning(updated)
+    assert prepared.checkpoint.assessment_status == 'RESOLVED'
+    captured = {}
+    gate = thread_surface.evaluate_grounded_observation_gate
+    def record(**kwargs):
+        captured.update(kwargs)
+        return gate(**kwargs)
+    monkeypatch.setattr(thread_surface, 'evaluate_grounded_observation_gate', record)
+    outcome = MeaningExperienceEngine().generate(updated)
+    assert outcome.artifact is not None and outcome.body_state == 'REFINED', outcome.reason_codes
+    assert not outcome.automatic_progression
+    body = outcome.artifact
+    assert body.observation.count('「' + evaluation + '」') == 1
+    assert 'その時の受け止めは「' + correction + '」' in body.observation
+    assert '嬉しくなかった' not in body.text
+    plan, sentence, resolver = captured['plan'], captured['sentence_plan'], captured['resolver']
+    assert len(plan.coverage_requirements.required_nucleus_ids) == 5
+    assert len(plan.coverage_requirements.required_relation_ids) == 3
+    assert set(sentence.covered_required_nucleus_ids) == set(plan.coverage_requirements.required_nucleus_ids)
+    assert set(sentence.covered_required_relation_ids) == set(plan.coverage_requirements.required_relation_ids)
+    observations = tuple(line for line in sentence.lines if line.binding.line_role in {'primary_observation', 'supporting_observation'})
+    assert len(observations) == 2
+    arcs = lambda line: {a for a in line.binding.functional_atom_ids if a.startswith('semantic_arc:')}
+    assert all(len(arcs(line)) == 1 for line in observations)
+    assert not arcs(observations[0]) & arcs(observations[1])
+    owner, = (line for line in observations if len(line.binding.nucleus_ids) == 3)
+    split = surface._make_line(sentence_number=len(sentence.lines) + 1,
+        line_role=owner.binding.line_role, surface_function='observe_nuclei',
+        nucleus_ids=owner.binding.nucleus_ids[:1], relation_ids=(),
+        nucleus_index={n.nucleus_id: n for n in plan.nuclei},
+        relation_index={r.relation_id: r for r in plan.relations},
+        claim_scope=owner.binding.claim_scope, recovery_stage='full', plan=plan, resolver=resolver)
+    assert arcs(owner) & arcs(split)
+    assert 'semantic_arc_fragment:justified' not in split.binding.functional_atom_ids
+    fragmented = replace(sentence, lines=(*sentence.lines, split))
+    reasons = _semantic_subcheck_reasons(plan=plan, sentence_plan=fragmented,
+        surface_result=captured['surface_result'], resolver=resolver)
+    assert 'required_arc_fragmented_without_reason' in reasons[2]
+    assert gate(**{**captured, 'sentence_plan': fragmented}).public_observation_status != 'passed'
+    selected = project_thread_meaning(prepared, build_updated_grounded_plan(prepared)).selected_reception
+    def forbidden(*_a, **_k):
+        pytest.fail('independent reader called Observation author')
+    monkeypatch.setattr(surface, '_render_relation', forbidden)
+    def valid(text):
+        return evaluate_grounded_surface_body_inverse(body=text.encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert valid(body.text)
+    for wrong in (body.text.replace('「探しやすくなった」', '「褒められた」'),
+                  body.text.replace('「資料を分類した」', '「褒められた」'),
+                  body.text.replace('「' + correction + '」', '「嬉しくなかった」'),
+                  body.text.replace('評価は「' + evaluation + '」', '評価は「満足しなかった」')):
+        assert wrong != body.text and not valid(wrong)

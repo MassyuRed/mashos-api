@@ -19684,3 +19684,52 @@ STRUCTURE_MAP_DELTA_PRESENT。新規production file／subsystemは追加せず�
 受け取りの反復と言い換え中心の内容、引用と説明的な文章、Q1の2 received＋2評価の既存上限、近似文／別欄二組、有限対象撤回後の不自然さ、旧receivedのgiver帰属、既存共有17失敗・same100・本人実機・正式Product Readは未解消。今回の短文化を§9.2/9.4の商品品質完成へ換算しない。
 
 次は、既存_observation_surface_atomsで単独理由付き評価と別経験訂正のsource成分を識別し、旧checkpointの完全再導出・同じ経験の不当分割拒否を保って保存後本文へ通す。その後も初回一体単位の受け取り内容を既存§9.2/9.4へ戻して改善する。10/17確認点・10/31残件線・12/18目標、Piece/Analysis主枠を維持する。
+
+
+### u274 — 単独理由付き評価と別経験の訂正後本文を保存・再表示へ戻す（2026-10-15 JST）
+
+作業基準はAPI 6101bb88bfb9e20de4bf14f277f53b032d71acee／資料 00f20ed14b8e32a1061602f5194c6d6f72bce20f。前回通読した全体設計01・全file地図01A/B/C・current01/04・8/28設計§9.2/9.4を踏まえ、最新weekly20261010§5.6.23・関連現行原典・CURRENT_RULES／Rule18 §11.3を確認し、8/16恒久incidentを再通読した。System Contextはこのcheckoutにtools.cocolon_contextがないため原典直接読取りを継続し、prepare成功とはしない。rootのみが編集し、補助agentは旧checkpoint適格条件と最終差分・本文をread-only確認した。
+
+u273で残した「単独理由付きの満足＋別経験の反応訂正」の本文停止を修正した。理由・対象・評価の一文と、訂正されたreceivedの一文に、元のsourceの連結成分に対応する別々のarc identityを与える。必要5核／3関係を保持したまま、対象Q3_FREE系列の回答後はMEANING_UPDATED_BODY_UNAVAILABLEからREFINEDへ進み、訂正後本文を保存・再表示できる。
+
+既存_observation_surface_atomsへ既存plan/resolverを渡し、source_owned_result_appraisal_reasonが一組で、元の同欄・同文出現が一回、answer_interpretation_unresolved境界がない場合に、既存u272のsource成分identityを適用する。受理済み回答・thread source契約・既存関係型の条件も保つ。撤回後の一組だけを原文一出現と誤認せず、未解釈撤回の旧checkpointも新分岐から除外する。重複理由／訂正評価の既存u272分岐は変更しない。
+
+同じsource成分を二行へ不当に分割した場合は引き続きrequired_arc_fragmented_without_reasonで拒否する。正当化atomの追加、gate緩和、意味選択・source認識・checkpoint schema・旧fixture／IM03 proof・本文作者・独立reader・Reception・各上限の変更はない。API/DTO/DB/SQL/RN・製品依存・Piece/Analysisも変更しない。
+
+実保存本文（合成入力、rootとread-only補助agentが初回6＋訂正後6の全文を確認）：
+
+入力は「探しやすくなったので、資料を分類したことに満足した。」と「褒められたのに、嬉しくなかった。」。回答は `「嬉しくなかった」ではなく「重かった」です。`。
+
+```text
+見えたこと：
+「探しやすくなった」を理由に、「資料を分類した」という出来事への評価は「満足した」とあります。
+「褒められた」ことについて、その時の受け止めは「重かった」と書かれています。
+
+Emlisから：
+褒められたことについて、その時の重さを小さくせずに受け止めています。探しやすくなったことを理由に、資料を分類したことについて、当時は満足したのですね。
+```
+
+欄交換でも元の経験順と関係を保持し、対象「資料を分類できて」「案を選んで」でも訂正後本文が保存される。理由・対象・満足は保持し、received反応だけが更新され、旧「嬉しくなかった」は現在本文に残らない。Receptionの文言自体は今回変更しておらず、定型的な言い換えが残る。
+
+STRUCTURE_MAP_DELTA_PRESENT。新規production file／subsystemは追加せず、既存ownerのsource成分識別責務を更新する。
+
+| 既存owner（mashos-api相対） | u274の責務差分 |
+|---|---|
+| ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py | 既存plan/resolverをObservation行へ伝搬し、原文一出現・未解釈境界なしの単独理由評価へ既存source成分identityを適用。 |
+| ai/tests/test_cmee_emlis_result_appraisal.py | 訂正後保存6条件をREFINEDへ更新、別成分／不当分割拒否／独立逆読解を8条件追加。 |
+| ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json | 現行正規identityだけを再計算。歴史proofは不変。 |
+| ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md | 実本文、適格条件、保存・表示検証、残件と次ownerを保存。 |
+
+最終productionに対する単一runで535 PASS（評価480＋Q2/Q3 application54＋現行identity1、185.66秒）。u273で旧停止を確認していた保存6条件は、今回の修復に対応して訂正後本文と二つの履歴本文の保存を検査する。追加8条件は両欄×過去／現在の満足×重かった／怖かったで、5核／3関係、別source成分、同じ成分の不当分割拒否、作者を禁止した独立逆読解と4種の意味改変拒否を確認。歴史checkpoint fixtureは変更せず回帰通過。
+
+実service＋隔離PGliteの既存migration/RPCで3対象形×両欄の6入力を保存し、初回PRE_QUESTION6件＋訂正後REFINED6件の実保存DTOを確認。NoAuthor restart GET/start、回答再送のevent無増加、旧初回本文が履歴・訂正後本文がcurrentとなることを検証した。既存RN hook/modalで12件の本文完全一致・履歴展開・close/reopenを確認。native部品はstubで本人端末試験ではなく、正式Product Readでもない。RN全suiteと既知26 PASS/5 FAILは今回の解消対象に数えない。
+
+途中の限定実行は38 PASS。補助監査で、原文一出現だけでは旧u266の未解釈撤回を含むPARTIAL checkpointが適格になり得ると分かり、既存unknown境界を新分岐の除外条件へ追加した。旧fixtureを変更せず、最終535件を全実行した。u273の保存6条件の旧停止期待は今回直した挙動に限り更新し、skip/xfailや旧checkpoint期待の変更は行わない。最終read-onlyレビューでは追加blockerなし。別model Pro審査ではない。
+
+現行language identity `c834f75384856f7234b361de3ac7fed68ebde01b59e8f1485b64283134ef2ff2`、runtime `66c59ab5bf65e9bf40a1d40e6ee12da0d3dbd187ec11e67468860d783778b295`。同sessionで実体を確認済みのPython3.12.14／pytest8.4.1／PGlite0.5.8／React18.3.1を使用。製品依存追加・外部AI・新有料service・live DB・配置・merge操作0。
+
+**BOUNDED_IMPLEMENTATION_WIP / PRODUCT_NOT_CLEAR、初回一体単位未完了。** 正式受入0/3・candidate_ready=false・automatic_progression=false・未配置・Draft/open/unmergedを維持する。
+
+受け取りの反復と言い換え中心の内容、引用と説明的な文章、Q1の2 received＋2評価の既存上限、近似文／別欄二組、有限対象撤回後の不自然さ、旧receivedのgiver帰属、既存共有17失敗・same100・本人実機・正式Product Readは残る。今回の修復をPREMIUM複数round全般や§9.2/9.4の商品品質完成へ換算しない。
+
+次は、回復した初回／訂正後の実本文を使い、既存§9.2/9.4の内容形成として、評価の言い換えに寄ったReceptionを改善する。今回閉じた別成分identityの停止を第一候補へ戻さず、上限拡張を自動的な次工程にしない。10/17確認点・10/31残件線・12/18公開目標とPiece/Analysis主枠を維持する。
