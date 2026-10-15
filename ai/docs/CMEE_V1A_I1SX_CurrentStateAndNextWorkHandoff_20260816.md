@@ -19733,3 +19733,49 @@ STRUCTURE_MAP_DELTA_PRESENT。新規production file／subsystemは追加せず�
 受け取りの反復と言い換え中心の内容、引用と説明的な文章、Q1の2 received＋2評価の既存上限、近似文／別欄二組、有限対象撤回後の不自然さ、旧receivedのgiver帰属、既存共有17失敗・same100・本人実機・正式Product Readは残る。今回の修復をPREMIUM複数round全般や§9.2/9.4の商品品質完成へ換算しない。
 
 次は、回復した初回／訂正後の実本文を使い、既存§9.2/9.4の内容形成として、評価の言い換えに寄ったReceptionを改善する。今回閉じた別成分identityの停止を第一候補へ戻さず、上限拡張を自動的な次工程にしない。10/17確認点・10/31残件線・12/18公開目標とPiece/Analysis主枠を維持する。
+
+
+## u275 — 理由付き満足のLIMITED受け取りへ、選択済みの注意対象を明示（2026-10-15 JST）
+
+基準はAPI a38c851eb961f61086af8774bba65a4e0f765bcd／資料067873f995b1bc7cbab6dffd59982bbf2b9deaaf。添付前回記録、前提・作業ルール、全体01／全file地図01A/B/C、current01/04、8/28設計§9.2/9.4、最新weekly§5.6.24と8/16恒久incidentを確認。System Context prepareはmaterial commitがa77b79c5の子孫ではないとして失敗し、正本に明記された原典直接読取りを使用した。生成Context成功とはしない。
+
+今回の一単位はDIRECT_PRODUCT_OR_ACCEPTANCE_WORK / LEVEL_2既存承認内の実装整合。u264の本人明示理由とu266のLIMITED所有・現在の残件指示を根拠に、root華恋だけが既存作者・reader・surface、評価test、現行identityと既存引継ぎ／地図を編集する。同環境補助agentは必要性・旧互換・最終差分をread-only確認し、正式Pro別model審査やhuman Product Readとはしない。新意味・schema・上限・品質条件、外部AI／製品依存、live DB・env・deploy・build・main mergeは範囲外。完了は選択済み注意の可視化と意味・保存・履歴互換の確認であり、範囲拡大が必要ならその部分を止める。
+
+理由付き満足のLIMITED Receptionが「その理由で満足したのですね」という評価の再表現で終わっていたため、既に選択済みのATTENTION / ATTEND_TOを本文に接続した。本人の明示理由・実行済み対象・肯定無程度の満足と時点を保ち、理由に注意を向ける主観述語で返す。NORMALの読み、source認識、意味schema、checkpoint、各上限は変更しない。
+
+作者と独立readerは同欄・同文の原文出現を各自確認し、一出現または既存の完全二組証明がある場合に新表現を使う。旧u267で二出現の片方だけ残るcheckpointは旧本文を維持する。旧fixtureを変更しない。readerは三役割、時点、本人の理由をsourceと照合し、原文改変・理由の唯一化・成長の捏造・旧確認文への逆戻りを拒否する。
+
+合成入力の実保存本文（rootが初回6＋訂正後6を全文確認）：
+
+```text
+見えたこと：
+「探しやすくなった」を理由に、「資料を分類した」という出来事への評価は「満足した」とあります。
+「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。
+
+Emlisから：
+資料を分類したことへの当時の満足について、探しやすくなったという理由に目を向けています。褒められたことは、嬉しさにはつながらなかったのですね。
+```
+
+旧文は「探しやすくなったことを理由に、資料を分類したことについて、当時は満足したのですね。」。新文は既選択の注意を本文の述語へ反映する。新しい経験解釈を得たわけではなく、文の硬さと集合での固定性は残る。Layer1の説明的引用とreceived側の確認文も今回変更していない。
+
+STRUCTURE_MAP_DELTA_PRESENT。新規production file／subsystemなし。既存責務の変更は次のとおり。
+
+| mashos-api相対path | 今回の変更 |
+|---|---|
+| ai/services/ai_inference/emlis_ai_grounded_human_reception.py | 理由付き満足のLIMITEDに選択済みATTENTIONを実現。旧二出現の片方だけ残る本文は保持。 |
+| ai/services/ai_inference/emlis_ai_grounded_observation_gate.py | 新有限文を作者非依存で逆読解。旧互換の分岐も原文出現から判断し、失敗時のnominal救済を拒否。 |
+| ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py | 既存attention markerへ新しい注意述語の文末を接続。 |
+| ai/tests/test_cmee_emlis_result_appraisal.py | 語尾3形・過去現在・欄交換、改変拒否を拡張。既存の当該文面期待を更新。歴史checkpointは不変。 |
+| ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json | 現行共有ownerのidentityのみ再計算。 |
+
+RN→API→service/store→保存read→RN経路、01B/Cの隣接責務、公開API/DTO/DB/SQL/RN・製品依存・外部AI禁止は不変。
+
+最終sourceで評価512＋Q2/Q3 application54＋現行identity1＝**567 PASS**（単一run、195.39秒、skip/xfailなし）。対象3語尾×両欄×過去現在、理由の差替え／削除、作者を禁止した独立reader、15種の意味・主観改変拒否、重複と旧checkpointの回帰を確認。実service＋隔離PGliteの既存migration/RPCで初回6＋訂正後6を保存し、NoAuthor GET/start・回答再送event無増加を検証。実保存DTO12件を既存RN hook/modalへ渡し、本文・履歴・close/reopen完全一致。native部品はstubで、本人実機・正式Product Readではない。既存Pydantic／Starletteの非推奨警告2件を保持する。
+
+検証中の経過：最初の480条件は406 PASS／74 FAILで、新表現に対応していない期待と旧u267本文の互換差を検出した。現在文面の期待だけを更新し、旧fixtureは維持したまま原文出現による互換条件を実装。その後の限定89件はPASS。最終全体検査の初回起動はPYTHONPATH不足でtools importの収集エラーとなり、製品変更なしで既存ai pathを指定して実行した。skip/xfailや品質条件の緩和は行わない。
+
+現行language identityはef398157eb29809f2dd26a1e79096bbaef8b64634308532ecbf718660466fe1e、runtimeは9432ddac77bc807fac62e07a27e89661750e94bbed480cdd2f06a5892d064edc。Python3.12.14／pytest8.4.1／PGlite0.5.8と既存React18.3.1検証runtimeを実在確認して使用。製品依存追加なし。
+
+**TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR、初回一体単位未完了。** 正式受入0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置を維持する。これは選択済み注意の可視化であり、§9.2/9.4全体の経験としての受け取り完成ではない。説明的な硬さ・反復、Q1の4経験上限、近似文／別欄二組、有限対象撤回後の不自然さ、旧receivedのgiver帰属、共有17失敗・same100・本人実機・正式Product Readは残る。
+
+次は初回／訂正後を一体の本文として読み、既存の選択内容にある経験の違いがReceptionへ十分届いているかを改善する。単に文末へ注意表現を足したことで品質完成にせず、追加の解釈が必要なら不足する意味と既承認範囲との差を具体化する。新schema／意味範囲／上限の拡張や配置は自動実行しない。10/17確認点・10/31残件線・12/18公開目標、Piece/Analysis主枠を維持する。

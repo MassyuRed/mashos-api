@@ -2922,10 +2922,22 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
             return None
         reason, event, feeling = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
                                   for n in focus[1:])
-        parsed = (re.fullmatch(r'(?P<reason>.+)ことを理由に、(?P<event>.+)ことについて、'
-            r'(?P<time>当時は|入力した時点では)(?P<evaluation>.+)のですね。', raw) if limited
+        legacy_limited = False
+        if limited:
+            from emlis_ai_grounded_observation_plan import source_owned_duplicate_reason_appraisals
+            span = resolver.resolve(reason_node.source_span_ids[0])
+            occurrences = tuple(s for s in resolver.resolve_many(resolver.span_ids)
+                if s.source_field == span.source_field and s.raw_text == span.raw_text)
+            duplicate = source_owned_duplicate_reason_appraisals(plan.nuclei, plan.relations, resolver)
+            legacy_limited = len(occurrences) != 1 and focus[1:] not in duplicate
+        parsed = (re.fullmatch(r'(?P<event>.+)ことへの'
+            r'(?P<time>当時の|入力した時点での)(?P<evaluation>満足)について、'
+            r'(?P<reason>.+)という理由に目を向けています。', raw) if limited
             else re.fullmatch(r'(?P<reason>.+)点に、(?P<event>.+)ことへの'
                 r'(?P<time>当時の|入力した時点での)(?P<evaluation>満足)の拠り所が見えます。', raw))
+        if legacy_limited:
+            parsed = re.fullmatch(r'(?P<reason>.+)ことを理由に、(?P<event>.+)ことについて、'
+                r'(?P<time>当時は|入力した時点では)(?P<evaluation>.+)のですね。', raw)
         endings = {c.split(':', 1)[1] for c in event_node.semantic_frame.attribute_codes
                    if c.startswith('source_appraisal_event_ending:')}
         if parsed is None or not all((reason, event, feeling)) or len(endings) != 1:
@@ -2940,13 +2952,15 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
                     actual_event = actual_event.replace('あなた', owner.group(), 1)
         ending = next(iter(endings))
         when = _body_inverse_appraisal_time(evaluation)
-        time_suffix = ('は' if when == '当時' else 'では') if limited else ('の' if when == '当時' else 'での')
+        time_suffix = 'の' if when == '当時' else 'での'
+        if legacy_limited:
+            time_suffix = 'は' if when == '当時' else 'では'
         from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate
         if (actual_reason != reason or ending not in {'te', 'de', 'ta'}
             or not actual_event.endswith({'te': 'た', 'de': 'だ', 'ta': 'た'}[ending])
             or actual_event[:-1] + {'te': 'て', 'de': 'で', 'ta': 'た'}[ending] != event
             or parsed['time'] != when + time_suffix
-            or limited and not _read_result_appraisal_finite(parsed['evaluation'], feeling)
+            or legacy_limited and not _read_result_appraisal_finite(parsed['evaluation'], feeling)
             or not _source_result_appraisal_predicate(evaluation, feeling)):
             return None
         return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
@@ -6890,7 +6904,7 @@ def evaluate_grounded_surface_body_inverse(
                                      or nucleus_index[nid].source_fields == ("answer_text_private",)
                                      and nucleus_index[nid].allowed_claim_scope == "explicit_supplemental_answer")
                                 for nid in (*move.target_nucleus_ids, *move.support_nucleus_ids))
-                            and re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました|経験として受け取りました|充足として受け取りました|満足の拠り所が見えます|ことの両方を受け取りました)。$",
+                            and re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました|経験として受け取りました|充足として受け取りました|満足の拠り所が見えます|理由に目を向けています|ことの両方を受け取りました)。$",
                                 body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8"))):
                             failures.append("body_inverse_reception_finite_duty_unverified:" + move_id)
                             continue

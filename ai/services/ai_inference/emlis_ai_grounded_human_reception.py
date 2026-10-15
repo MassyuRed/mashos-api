@@ -11522,11 +11522,23 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
                          for value in (reason, event))
         from emlis_ai_grounded_observation_plan import _result_appraisal_time_label
         when = _result_appraisal_time_label(evaluation)
-        if limited:
-            time = when + ('は' if when == '当時' else 'では')
-            return (reason + 'ことを理由に、' + event + 'ことについて、' + time
-                    + _feeling_acknowledgement(_result_appraisal_finite_surface(feeling)))
         at = when + ('の' if when == '当時' else 'での')
+        if limited:
+            from emlis_ai_grounded_observation_plan import source_owned_duplicate_reason_appraisals
+            span = resolver.resolve(reason_node.source_span_ids[0])
+            occurrences = tuple(s for s in resolver.resolve_many(resolver.span_ids)
+                if s.source_field == span.source_field and s.raw_text == span.raw_text)
+            duplicate = source_owned_duplicate_reason_appraisals(plan.nuclei, plan.relations, resolver)
+            if len(occurrences) != 1 and focus[1:] not in duplicate:
+                # Preserve old checkpoint plans that retain only one of two
+                # equal source occurrences without current duplicate proof.
+                time = when + ('は' if when == '当時' else 'では')
+                return (reason + 'ことを理由に、' + event + 'ことについて、' + time
+                        + _feeling_acknowledgement(_result_appraisal_finite_surface(feeling)))
+            # Surface the selected ATTENTION toward the person's stated basis.
+            # This does not grant LIMITED a selected NORMAL interpretation.
+            return (f'{event}ことへの{at}満足について、'
+                    f'{reason}という理由に目を向けています')
         return f'{reason}点に、{event}ことへの{at}満足の拠り所が見えます'
     if unfinished_appraisal:
         if (selected_decision.branch != 'NORMAL' or not _selected_noncollapse_appraisal(selected_decision)

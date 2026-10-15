@@ -17,8 +17,10 @@ from emlis_ai_grounded_sentence_surface import build_grounded_sentence_plan
 @pytest.mark.parametrize('reverse', [False, True])
 @pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
 @pytest.mark.parametrize('basis', ['探しやすくなった', '見た目がすっきりした', '資料を使いやすい'])
-def test_reason_and_received_keep_both_experiences_in_limited_body(reverse, evaluation, basis):
-    reason = basis + 'ので、資料を分類したことに' + evaluation + '。'
+@pytest.mark.parametrize('target,event', [('資料を分類したことに', '資料を分類した'),
+    ('資料を分類できて', '資料を分類できた'), ('案を選んで', '案を選んだ')])
+def test_reason_and_received_keep_both_experiences_in_limited_body(reverse, evaluation, basis, target, event):
+    reason = basis + 'ので、' + target + evaluation + '。'
     received = '褒められたのに、嬉しくなかった。'
     req = request(*( (received, reason) if reverse else (reason, received) ))
     prepared = prepare_emlis_meaning(req)
@@ -30,9 +32,11 @@ def test_reason_and_received_keep_both_experiences_in_limited_body(reverse, eval
     outcome = MeaningExperienceEngine().generate(req)
     assert outcome.artifact is not None, outcome.reason_codes
     body = outcome.artifact
-    assert basis + 'ことを理由に、資料を分類したことについて、' in body.reception
-    assert ('当時は満足した' if evaluation == '満足した'
-            else '入力した時点では満足している') in body.reception
+    assert basis + 'という理由に目を向けています' in body.reception
+    assert ('当時の満足について' if evaluation == '満足した'
+            else '入力した時点での満足について') in body.reception
+    assert event + 'ことへの' in body.reception
+    assert evaluation + 'のですね' not in body.reception
     assert '褒められたことは、嬉しさにはつながらなかった' in body.reception
     assert '拠り所' not in body.reception
     assert basis in body.observation and '褒められた' in body.observation
@@ -40,11 +44,13 @@ def test_reason_and_received_keep_both_experiences_in_limited_body(reverse, eval
 
 @pytest.mark.parametrize('reverse', [False, True])
 @pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
-def test_limited_reason_reader_preserves_roles_and_time_without_author(monkeypatch, reverse, evaluation):
+@pytest.mark.parametrize('target,event', [('資料を分類したことに', '資料を分類した'),
+    ('資料を分類できて', '資料を分類できた'), ('案を選んで', '案を選んだ')])
+def test_limited_reason_reader_preserves_roles_and_time_without_author(monkeypatch, reverse, evaluation, target, event):
     import emlis_ai_grounded_human_reception as hr
     from emlis_ai_grounded_observation_gate import read_source_owned_discourse
     from emlis_ai_grounded_observation_plan import source_owned_relational_focus
-    source = '探しやすくなったので、資料を分類したことに' + evaluation + '。'
+    source = '探しやすくなったので、' + target + evaluation + '。'
     received = '褒められたのに、嬉しくなかった。'
     req = request(*((received, source) if reverse else (source, received)))
     prepared = prepare_emlis_meaning(req)
@@ -54,21 +60,27 @@ def test_limited_reason_reader_preserves_roles_and_time_without_author(monkeypat
     sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
     artifact = MeaningExperienceEngine().generate(req).artifact
     assert artifact is not None
-    clause = next(part + '。' for part in artifact.reception.split('。') if 'ことを理由に、' in part)
+    clause = next(part + '。' for part in artifact.reception.split('。') if 'という理由に' in part)
     move, = (m for m in plan.response_plan.human_reception_plan.moves
              if (focus := source_owned_relational_focus(m, plan)) and focus[0] == 'reasoned_result_appraisal')
     wrongs = (
-        clause.replace('探しやすくなったことを理由に、', ''),
+        clause.replace('探しやすくなったという理由に', ''),
         clause.replace('探しやすくなった', '探しにくくなった'),
         clause.replace('探しやすくなった', '探しやすくしたかった'),
         clause.replace('探しやすくなった', '褒められた'),
-        clause.replace('資料を分類したことについて', '褒められたことについて'),
-        clause.replace('資料を分類した', '資料を分類しなかった'),
+        clause.replace(event + 'ことへの', '褒められたことへの'),
+        clause.replace(event, '資料を分類しなかった'),
         clause.replace('満足', '納得'),
-        clause.replace(evaluation + 'のですね', '満足していないのですね'),
-        clause.replace('当時は' if evaluation == '満足した' else '入力した時点では', '回答した時点では'),
-        clause.replace('ことを理由に、', 'ことの原因として、'),
-        clause.replace('ことを理由に、', 'ことだけを理由に、'),
+        clause.replace('満足について', '不満について'),
+        clause.replace('当時の' if evaluation == '満足した' else '入力した時点での', '回答した時点では'),
+        clause.replace('という理由に', 'ことの原因に'),
+        clause.replace('という理由に', 'という唯一の理由に'),
+        clause.replace('という理由に', 'という最も大切な理由に'),
+        clause.replace('目を向けています', '成長を感じています'),
+        clause.replace('という理由に目を向けています', 'のですね'),
+        ('探しやすくなったことを理由に、' + event + 'ことについて、'
+         + ('当時は' if evaluation == '満足した' else '入力した時点では')
+         + evaluation + 'のですね。'),
     )
     def valid(body):
         return evaluate_grounded_surface_body_inverse(body=body.encode(), plan=plan,
@@ -117,13 +129,14 @@ def test_limited_reason_removal_or_replacement_does_not_reassign_received_experi
                '資料を分類したことに満足した。']
     bodies = [engine.generate(request(source, received)).artifact for source in sources]
     assert all(bodies)
-    assert '探しやすくなったことを理由に' in bodies[0].reception
-    assert '見た目がすっきりしたことを理由に' in bodies[1].reception
+    assert '探しやすくなったという理由に' in bodies[0].reception
+    assert '見た目がすっきりしたという理由に' in bodies[1].reception
     assert '探しやすくなった' not in bodies[1].reception
     assert '理由' not in bodies[2].reception and '探しやすくなった' not in bodies[2].reception
     for body in bodies:
         assert '褒められたことは、嬉しさにはつながらなかったのですね。' in body.reception
-        assert '資料を分類したことについて、当時は満足したのですね。' in body.reception
+    assert all('資料を分類したことへの当時の満足について' in b.reception for b in bodies[:2])
+    assert '資料を分類したことについて、当時は満足したのですね。' in bodies[2].reception
 
 
 def request(memo, action="植木に水をやった。"):
@@ -2196,8 +2209,8 @@ def test_exact_repeated_reason_initial_body_keeps_both_source_occurrences(capabi
     assert body.observation.count('「資料を分類した」という出来事への評価') == 1
     assert body.observation.count('「' + evaluation + '」') == 1
     assert '褒められた' in body.observation and '嬉しくなかった' in body.observation
-    assert basis + 'ことを理由に、資料を分類したことについて、' in body.reception
-    assert ('当時は満足した' if evaluation == '満足した' else '入力した時点では満足している') in body.reception
+    assert basis + 'という理由に目を向けています' in body.reception
+    assert ('当時の満足について' if evaluation == '満足した' else '入力した時点での満足について') in body.reception
     assert not any(word in body.text for word in ('という変化があります', '二度', '二回', '繰り返し', 'より強く'))
     assert evaluate_grounded_surface_body_inverse(body=body.text.encode(), plan=plan,
         sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
@@ -2257,8 +2270,8 @@ def test_shared_reason_observation_reader_checks_every_role_without_author(monke
     variants = [body.replace(reason, ''), body.replace(about, ''),
         body.replace('「探しやすくなった」を理由に', '「褒められた」を理由に'),
         body.replace('「資料を分類した」という出来事', '「褒められた」という出来事'),
-        body.replace('当時は満足した', '回答した時点では満足した'),
-        body.replace('ことを理由に、', 'ことだけを理由に、'),
+        body.replace('当時の満足について', '回答した時点での満足について'),
+        body.replace('という理由に', 'という唯一の理由に'),
         body.replace(about, about.replace('満足した', '二度満足した'))]
     for wrong in variants:
         assert wrong != body and not read(wrong).passed
@@ -2267,9 +2280,9 @@ def test_shared_reason_observation_reader_checks_every_role_without_author(monke
     from emlis_ai_grounded_observation_gate import read_source_owned_discourse
     monkeypatch.setattr(hr, '_source_owned_relational_focus_sentence', forbidden)
     move = next(m for m in plan.response_plan.human_reception_plan.moves if len(m.support_nucleus_ids) == 2)
-    clause = next(part + '。' for part in body.split('Emlisから：\n', 1)[1].split('。') if 'ことを理由に、' in part)
+    clause = next(part + '。' for part in body.split('Emlisから：\n', 1)[1].split('。') if 'という理由に' in part)
     assert read_source_owned_discourse(clause, move, plan, p.thread.resolver(), selected) is not None
-    assert read_source_owned_discourse(clause.replace('ことを理由に、', 'ことだけを理由に、'),
+    assert read_source_owned_discourse(clause.replace('という理由に', 'という唯一の理由に'),
         move, plan, p.thread.resolver(), selected) is None
 
 
@@ -2349,7 +2362,7 @@ def test_saved_duplicate_reason_withdrawal_keeps_ambiguity_and_body(qcase, qdb, 
         assert 'その時の受け止めは「重かった」' in current['text']
         assert '嬉しくなかった' not in current['text']
         assert '今回の観測に反映できていない部分があります' in current['text']
-        assert current['text'].count('ことを理由に、資料を分類したことについて') == 1
+        assert current['text'].count('資料を分類したことへの当時の満足について') == 1
     else:
         assert current is None and not any(e.get('is_current') for e in dto['timeline'])
     assert len([e for e in saved['events'] if e['kind'] == 'ANSWER']) == 1
@@ -2392,16 +2405,16 @@ def test_duplicate_reason_independent_correction_keeps_body_and_ambiguous_withdr
     assert 'その時の受け止めは「' + correction + '」' in body.observation
     assert '嬉しくなかった' not in body.text
     assert '今回の観測に反映できていない部分があります' in body.observation
-    assert body.reception.count(basis + 'ことを理由に、資料を分類したことについて、') == 1
-    assert ('当時は' if evaluation == '満足した' else '入力した時点では') + evaluation in body.reception
+    assert body.reception.count(basis + 'という理由に目を向けています') == 1
+    assert ('当時の' if evaluation == '満足した' else '入力した時点での') + '満足について' in body.reception
     sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
     def valid(value):
         return evaluate_grounded_surface_body_inverse(body=value.encode(), plan=plan,
             sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
     assert valid(body.text)
-    for wrong in (body.text.replace(basis + 'ことを理由に、', ''),
-                  body.text.replace('資料を分類したことについて', '褒められたことについて'),
-                  body.text.replace('当時は' if evaluation == '満足した' else '入力した時点では', '回答した時点では'),
+    for wrong in (body.text.replace(basis + 'という理由に', ''),
+                  body.text.replace('資料を分類したことへの', '褒められたことへの'),
+                  body.text.replace('当時の' if evaluation == '満足した' else '入力した時点での', '回答した時点では'),
                   body.text.replace('その時の受け止めは「' + correction + '」', 'その時の受け止めは「嬉しくなかった」')):
         assert wrong != body.text and not valid(wrong)
 
@@ -2520,8 +2533,8 @@ def test_duplicate_reason_initial_body_shares_words_but_keeps_both_occurrences(r
     assert outcome.artifact.observation.count('を理由に、') == 1
     assert outcome.artifact.observation.count('という出来事への評価は') == 1
     assert outcome.artifact.observation.count('「' + evaluation + '」') == 1
-    assert outcome.artifact.reception.count(basis + 'ことを理由に、資料を分類したことについて、') == 1
-    assert ('当時は' if evaluation == '満足した' else '入力した時点では') + evaluation in outcome.artifact.reception
+    assert outcome.artifact.reception.count(basis + 'という理由に目を向けています') == 1
+    assert ('当時の' if evaluation == '満足した' else '入力した時点での') + '満足について' in outcome.artifact.reception
     assert '褒められたことは、嬉しさにはつながらなかった' in outcome.artifact.reception
     sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
     shared, = (line for line in sentence.lines if len(line.binding.nucleus_ids) == 6)
@@ -2573,16 +2586,16 @@ def test_duplicate_reason_shared_body_inverse_checks_roles_and_each_selected_own
     assert valid(body)
     wrongs = [body.replace('を理由に、', 'の結果として、'),
               body.replace('評価は「満足した」', '評価は「資料を分類した」'),
-              body.replace('探しやすくなったことを理由に、', ''),
-              body.replace('資料を分類したことについて', '褒められたことについて'),
-              body.replace('当時は', '回答した時点では'),
-              body.replace('満足したのですね', '満足していないのですね')]
+              body.replace('探しやすくなったという理由に', ''),
+              body.replace('資料を分類したことへの', '褒められたことへの'),
+              body.replace('当時の', '回答した時点での'),
+              body.replace('満足について', '不満について')]
     assert all(value != body and not valid(value) for value in wrongs)
     clauses = hr.build_grounded_reception_clause_plans(plan.response_plan.human_reception_plan,
         'full', plan=plan, resolver=resolver)
     pair_clause, = (c for c in clauses if len(c.move_ids) == 2)
     moves = tuple(m for mid in pair_clause.move_ids for m in plan.response_plan.human_reception_plan.moves if m.move_id == mid)
-    raw, = (part + '。' for part in body.split('Emlisから：')[1].strip().split('。') if 'ことを理由に、' in part)
+    raw, = (part + '。' for part in body.split('Emlisから：')[1].strip().split('。') if 'という理由に' in part)
     monkeypatch.setattr(hr, '_source_owned_relational_focus_sentence', forbidden)
     assert read_detached_feeling_pair(raw, moves, plan, resolver, selected) is not None
     first, second = (next(d for d in selected.decisions if d.move_id == m.move_id) for m in moves)
