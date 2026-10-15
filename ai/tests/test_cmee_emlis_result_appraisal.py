@@ -3796,7 +3796,10 @@ def test_shared_target_reception_independent_reader_keeps_nested_roles_and_scope
     assert result.artifact is not None, result.reason_codes
     clauses = tuple(c + '。' for c in result.artifact.reception.split('。') if c)
     assert len(clauses) == 2
-    clause = clauses[1]
+    assert 'その満足とは切り分けて' in clauses[1]
+    # The previous explicit grammar remains readable without a preceding body.
+    at = '当時の' if evaluation == '満足した' else '入力した時点での'
+    clause = clauses[1].replace('その満足', '資料を分類したことへの' + at + '満足')
     move, = (m for m in plan.response_plan.human_reception_plan.moves
              if m.target_nucleus_ids == (group['received_event'].nucleus_id,))
     assert 'その分類を褒められたのに' in clause
@@ -4145,3 +4148,84 @@ def test_partial_shared_target_correction_does_not_enable_retention_opt_in(monke
     monkeypatch.setattr(updates, '_retained_reasonless_shared_target_duties', forbidden)
     plan = build_updated_grounded_plan(p)
     assert len(plan.response_plan.human_reception_plan.moves) == 1
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('reason,evaluation,reaction', [
+    ('', '満足した', '嬉しくなかった'),
+    ('', '満足している', '悲しかった'),
+    ('探しやすくなったので、', '満足した', '悲しかった'),
+    ('探しやすくなったので、', '満足している', '少し嬉しくなかったです'),
+])
+def test_shared_target_appraisal_reference_requires_complete_adjacent_reading(
+        monkeypatch, reverse, reason, evaluation, reaction):
+    import emlis_ai_grounded_human_reception as hr
+    from emlis_ai_grounded_observation_gate import read_source_owned_discourse
+    source = reason + '資料を分類したことには' + evaluation + '。でも、その分類を褒められたのに、' + reaction + '。'
+    req = request('', source) if reverse else request(source, '')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None, result.reason_codes
+    first, second = tuple(c + '。' for c in result.artifact.reception.split('。') if c)
+    previous, move = plan.response_plan.human_reception_plan.moves
+    assert '資料を分類した' in first and '資料を分類した' not in second
+    assert 'その満足とは切り分けて' in second
+    assert result.meaning_checkpoint == prepared.checkpoint
+    monkeypatch.setattr(hr, '_source_grounded_reception_fragment',
+        lambda *_a, **_k: pytest.fail('independent reader called its author'))
+    def read(text=second, context=(previous, first), current_plan=plan):
+        return read_source_owned_discourse(text, move, current_plan, resolver, selected,
+                                          preceding_context=context)
+    assert read() is not None
+    assert read(context=None) is None
+    assert read(context=(move, first)) is None
+    assert read(context=(replace(previous, move_id='unrelated-move'), first)) is None
+    assert read(current_plan=replace(plan, response_plan=replace(plan.response_plan,
+        human_reception_plan=replace(plan.response_plan.human_reception_plan,
+                                    moves=(move, previous))))) is None
+    bad_firsts = [
+        first.replace('資料を分類した', '資料を整理した'),
+        first.replace('資料を分類した', '資料を分類しなかった'),
+        first.replace('当時' if evaluation == '満足した' else '入力した時点',
+                      '入力した時点' if evaluation == '満足した' else '当時'),
+        first[:-1], '満足したのですね。',
+    ]
+    if reason:
+        bad_firsts += [first.replace('探しやすくなった', '褒められた'),
+                      first.replace('満足', '不満')]
+    else:
+        bad_firsts += [first.replace('満たされた', '満たされなかった')]
+    for wrong in bad_firsts:
+        assert wrong != first
+        assert read(context=(previous, wrong)) is None
+    for wrong in (second.replace('その満足', 'あの満足'),
+                  second.replace('その満足', 'その納得'),
+                  second.replace('その分類', 'その整理'),
+                  second.replace('のに', 'ので', 1),
+                  second.replace('とは切り分けて', 'が原因だと')):
+        assert wrong != second
+        assert read(wrong) is None
+    # Full body verification retains the existing author replay as well as
+    # the independent discourse proof tested above. Do not overclaim it.
+    monkeypatch.undo()
+    sentence_plan = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    def valid(body):
+        return evaluate_grounded_surface_body_inverse(body=body.encode(), plan=plan,
+            sentence_plan=sentence_plan, resolver=resolver, selected_subjective_input=selected).passed
+    assert valid(result.artifact.text)
+    for wrong in bad_firsts:
+        assert not valid(result.artifact.text.replace(first, wrong))
+    assert not valid(result.artifact.text.replace(first + second, second + first))
+
+
+def test_shared_target_author_keeps_explicit_appraisal_when_preceding_proof_is_unavailable(monkeypatch):
+    import emlis_ai_grounded_observation_gate as gate
+    req = request('資料を分類したことには満足した。でも、その分類を褒められたのに、嬉しくなかった。', '')
+    monkeypatch.setattr(gate, '_shared_target_preceding_appraisal', lambda *_a, **_k: False)
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None, result.reason_codes
+    assert 'ことは、資料を分類したことへの当時の満足とは切り分けて' in result.artifact.reception
+    assert 'その満足' not in result.artifact.reception

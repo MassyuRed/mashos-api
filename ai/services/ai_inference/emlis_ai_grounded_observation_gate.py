@@ -4535,8 +4535,36 @@ def _shared_target_selected_reception(move, plan, resolver, selected_subjective_
     return group
 
 
-def _read_shared_target_reception_discourse(raw, move, plan, resolver, selected_subjective_input):
-    """Parse all four visible roles and both contrast scopes without an author.
+def _shared_target_preceding_appraisal(move, plan, resolver, selected_subjective_input,
+                                       preceding_context):
+    """Resolve satisfaction only through the preceding complete appraisal.
+
+    A word match is not a referent: the selected group, adjacent Move, source
+    event, appraisal and optional reason must agree before reading its body.
+    """
+    group = _shared_target_selected_reception(move, plan, resolver, selected_subjective_input)
+    if group is None or preceding_context is None:
+        return False
+    previous_move, previous_text = preceding_context
+    moves = plan.response_plan.human_reception_plan.moves
+    if len(moves) != 2 or moves != (previous_move, move):
+        return False
+    from emlis_ai_grounded_observation_plan import source_owned_relational_focus
+    reason = group.get('reason')
+    expected = (('reasoned_result_appraisal', reason, group['appraisal_event'], group['appraisal'])
+                if reason is not None else
+                ('original_result_appraisal', group['appraisal_event'], group['appraisal']))
+    decisions = tuple(d for d in selected_subjective_input.decisions if d.move_id == previous_move.move_id)
+    if (source_owned_relational_focus(previous_move, plan) != expected
+        or len(decisions) != 1 or decisions[0].branch != 'NORMAL'):
+        return False
+    return read_source_owned_discourse(previous_text, previous_move, plan, resolver,
+                                      selected_subjective_input) is not None
+
+
+def _read_shared_target_reception_discourse(raw, move, plan, resolver, selected_subjective_input,
+                                            preceding_context=None):
+    """Read four roles explicitly or through a proven adjacent appraisal.
 
     The received-event/reaction connective is inside the right experience;
     the outer comparison never turns satisfaction and joy into opposites.
@@ -4545,8 +4573,8 @@ def _read_shared_target_reception_discourse(raw, move, plan, resolver, selected_
     if group is None:
         return None
     parsed = re.fullmatch(r'(?P<received>.+?)(?P<inner>のに|けれども|けれど|けど)'
-        r'(?P<reaction>.+)ことは、(?P<event>.+)ことへの'
-        r'(?P<time>当時の|入力した時点での|当時まだあった|入力した時点でまだある)'
+        r'(?P<reaction>.+)ことは、(?:(?P<anaphor>その)|(?P<event>.+)ことへの'
+        r'(?P<time>当時の|入力した時点での|当時まだあった|入力した時点でまだある))'
         r'(?P<appraisal>満足)とは切り分けて受け取りました。', raw)
     if parsed is None:
         return None
@@ -4560,23 +4588,28 @@ def _read_shared_target_reception_discourse(raw, move, plan, resolver, selected_
     if (len(endings) != 1 or endings[0] not in {'te', 'de', 'ta'} or len(links) != 1
         or links[0] not in {'noni', 'kedo', 'keredo', 'keredomo'}):
         return None
+    anaphoric = parsed['anaphor'] is not None
+    if anaphoric and not _shared_target_preceding_appraisal(
+            move, plan, resolver, selected_subjective_input, preceding_context):
+        return None
     event = parsed['event']
     owner = re.search(r'(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)', source['appraisal_event'])
-    if owner:
-        event = event.replace('あなた', owner.group(), 1)
-    ending = endings[0]
-    if not event.endswith({'te': 'た', 'de': 'だ', 'ta': 'た'}[ending]):
-        return None
-    event = event[:-1] + {'te': 'て', 'de': 'で', 'ta': 'た'}[ending]
+    if not anaphoric:
+        if owner:
+            event = event.replace('あなた', owner.group(), 1)
+        ending = endings[0]
+        if not event.endswith({'te': 'た', 'de': 'だ', 'ta': 'た'}[ending]):
+            return None
+        event = event[:-1] + {'te': 'て', 'de': 'で', 'ta': 'た'}[ending]
     appraisal = group['appraisal']
     still = 'source_appraisal_continuing:still' in appraisal.semantic_frame.attribute_codes
     when = _body_inverse_appraisal_time(appraisal)
     expected_time = ((when + ('まだあった' if when == '当時' else 'でまだある')) if still
                      else when + ('の' if when == '当時' else 'での'))
     from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate
-    if (event != source['appraisal_event'] or parsed['received'] != source['received_event']
+    if (not anaphoric and (event != source['appraisal_event'] or parsed['time'] != expected_time)
+        or parsed['received'] != source['received_event']
         or parsed['inner'] != {'noni': 'のに', 'kedo': 'けど', 'keredo': 'けれど', 'keredomo': 'けれども'}[links[0]]
-        or parsed['time'] != expected_time
         or not _source_result_appraisal_predicate(appraisal, source['appraisal'])):
         return None
     nominal = re.fullmatch(r'(?P<stem>[^、,]+)さが(?P<presence>伴わなかった|伴った)', parsed['reaction'])
@@ -4593,7 +4626,7 @@ def _read_shared_target_reception_discourse(raw, move, plan, resolver, selected_
     duties = (('received', 'received_event'), ('reaction', 'reaction'),
               ('event', 'appraisal_event'), ('appraisal', 'appraisal'))
     return tuple((len(raw[:parsed.start(field)].encode()), len(raw[:parsed.end(field)].encode()), source[key].encode())
-                 for field, key in duties)
+                 for field, key in duties if parsed[field] is not None)
 
 
 def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None,
@@ -4603,7 +4636,8 @@ def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_i
            and 'source_shared_target_slot:received_event' in n.semantic_frame.attribute_codes
            for n in plan.nuclei):
         # An invalid grouped arm cannot fall through to the old pair reader.
-        return _read_shared_target_reception_discourse(raw, move, plan, resolver, selected_subjective_input)
+        return _read_shared_target_reception_discourse(
+            raw, move, plan, resolver, selected_subjective_input, preceding_context)
     detached_group = _read_detached_burden_discourse(raw, move, plan, resolver, selected_subjective_input)
     if detached_group is not None:
         return detached_group

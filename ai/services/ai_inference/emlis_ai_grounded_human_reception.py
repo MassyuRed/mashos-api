@@ -10798,6 +10798,7 @@ def _source_grounded_reception_fragment(
     middle_received_scope: bool = False,
     received_record_prefixes: tuple[str, ...] = (),
     received_record_quote_limit: int = 0,
+    shared_target_appraisal_anaphora: bool = False,
 ) -> str:
     """Compose one content core with one role/focus reception predicate."""
 
@@ -10839,8 +10840,10 @@ def _source_grounded_reception_fragment(
                        if appraisal_continuing == 'still' else when + ('の' if appraisal_time == 'past' else 'での'))
         # Outer distinction compares the appraisal with the whole received
         # experience. The inner connective still belongs to event/reaction.
+        appraisal_object = ('その満足' if shared_target_appraisal_anaphora
+                            else target + 'ことへの' + time_phrase + '満足')
         return (event + _RECEIVED_EVENT_LINK_TEXT[link] + reaction_text + 'ことは、'
-                + target + 'ことへの' + time_phrase + '満足とは切り分けて受け取りました')
+                + appraisal_object + 'とは切り分けて受け取りました')
     if (move.required and move.reception_act == "stay_with_current_burden"
         and move.move_role == "felt_response" and not context_prefix
         and recovery_stage == "full" and realization.clause_form == "FINITE"
@@ -12465,6 +12468,7 @@ def _author_source_grounded_reception_clauses(
                 if (following and move.target_nucleus_ids == (following[0].nucleus_id,)
                     and following[2] in {"answer_time", "prior_answer_time"}):
                     acknowledge_received = False
+            from emlis_ai_grounded_observation_gate import _shared_target_preceding_appraisal
             move_sentence = _source_grounded_reception_fragment(
                 move,
                 meaning_realization,
@@ -12477,6 +12481,9 @@ def _author_source_grounded_reception_clauses(
                 distributive_object=distributive_relation_slot is not None,
                 unfinished_pair=unfinished_pair,
                 acknowledge_received=acknowledge_received,
+                shared_target_appraisal_anaphora=(recovery_stage == "full"
+                    and _shared_target_preceding_appraisal(
+                        move, plan, resolver, selected_subjective_input, preceding_context)),
                 middle_received_scope=(middle_received_scope and move == active_moves[1]
                     or qualified_original_scope and move == source_moves[0]
                     and all(code.endswith(":none") for code in meaning_realization.nominalization_plan
