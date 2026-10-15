@@ -3042,19 +3042,39 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
         if (selected_subjective_input is None or decision is None or decision.branch != 'LIMITED'
             or type(appraisal) is not EmlisAppraisalContent
             or proposition.subjective_mode != 'ATTENTION' or proposition.subjective_operator != 'ATTEND_TO'
-            or appraisal.dimension != 'RELATIONAL_NONCOLLAPSE' or appraisal.operation != 'PRESERVE_BOTH_ENDPOINTS'
-            or appraisal.protected_bindings or len(appraisal.appraised_bindings) != 2
-            or proposition.focal_relation_ref != appraisal.focal_relation_ref):
+            or appraisal.protected_bindings or proposition.focal_relation_ref != appraisal.focal_relation_ref):
             return None
         basis = {row.binding_ref: row.semantic_ref for row in decision.basis_rows}
         semantic_map = dict(selected_subjective_input.semantic_nucleus_pairs)
         relation_map = dict(selected_subjective_input.relation_pairs)
         edges = tuple(r for r in plan.relations if r.type == 'user_stated_cause'
             and (r.from_nucleus_id, r.to_nucleus_id) == (left.nucleus_id, right.nucleus_id))
-        if (any(ref not in basis for ref in appraisal.appraised_bindings)
-            or {semantic_map.get(basis[ref]) for ref in appraisal.appraised_bindings}
-                != {left.nucleus_id, right.nucleus_id}
-            or len(edges) != 1 or relation_map.get(appraisal.focal_relation_ref) != edges[0].relation_id):
+        if any(ref not in basis for ref in appraisal.appraised_bindings) or len(edges) != 1:
+            return None
+        selected_ids = {semantic_map.get(row.semantic_ref) for row in decision.basis_rows
+                        if row.contribution_ref in decision.selected_contribution_refs}
+        from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+        source_moves = plan.response_plan.human_reception_plan.moves
+        retained_pair = bool(len(source_moves) == 2
+            and tuple(m.reception_act for m in source_moves)
+                == ('recognize_lived_change', 'stay_with_current_burden')
+            and all(m.required for m in source_moves)
+            and tuple((family, m.target_nucleus_ids, m.support_nucleus_ids)
+                      for family, m in zip(('lived_change', 'current_burden'), source_moves))
+                == _thread_retained_reaction_groups(plan.nuclei, plan.relations))
+        material_attention = bool(appraisal.dimension == 'MATERIAL_WEIGHT'
+            and retained_pair
+            and appraisal.operation == 'RECEIVE_AS_MATERIAL'
+            and appraisal.appraised_bindings == proposition.basis_binding_refs
+            and appraisal.focal_relation_ref is None
+            and selected_ids == {left.nucleus_id, right.nucleus_id})
+        relational_attention = bool(appraisal.dimension == 'RELATIONAL_NONCOLLAPSE'
+            and appraisal.operation == 'PRESERVE_BOTH_ENDPOINTS'
+            and len(appraisal.appraised_bindings) == 2
+            and {semantic_map.get(basis[ref]) for ref in appraisal.appraised_bindings}
+                == {left.nucleus_id, right.nucleus_id}
+            and relation_map.get(appraisal.focal_relation_ref) == edges[0].relation_id)
+        if not (material_attention or relational_attention):
             return None
         parsed = re.fullmatch(r'(?P<reason>.+)という理由と、(?P<time>当時の|入力した時点での)'
             r'(?P<evaluation>満足)とのつながりに目を向けています。', raw)

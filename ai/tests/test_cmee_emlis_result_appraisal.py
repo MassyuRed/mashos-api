@@ -2039,11 +2039,14 @@ def test_single_reason_owner_withdrawal_keeps_other_owner_nuclei(target):
 @pytest.mark.parametrize('reverse', [False, True])
 @pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
 @pytest.mark.parametrize('reason', ['探しやすくなった', '見た目がすっきりした', '資料を使いやすい'])
-def test_withdrawn_target_keeps_reason_and_appraisal_in_finite_attention(reverse, evaluation, reason):
+@pytest.mark.parametrize('received_count', [1, 2])
+def test_withdrawn_target_keeps_reason_and_appraisal_in_finite_attention(reverse, evaluation, reason, received_count):
     from test_cmee_emlis_q3_thread import advance
     from emlis_ai_grounded_observation_plan import source_owned_relational_focus
     source = reason + 'ので、資料を分類したことに' + evaluation + '。'
     received = '褒められたのに、嬉しくなかった。'
+    if received_count == 2:
+        received += '誘われたのに、悲しかった。'
     req = advance(request(*((received, source) if reverse else (source, received))),
                   '「資料を分類した」は誤りです。')
     prepared = prepare_emlis_meaning(req)
@@ -2054,19 +2057,51 @@ def test_withdrawn_target_keeps_reason_and_appraisal_in_finite_attention(reverse
     assert out.meaning_checkpoint == prepared.checkpoint
     assert prepared.checkpoint.assessment_status == 'RESOLVED'
     at = '当時の' if evaluation == '満足した' else '入力した時点での'
-    assert out.artifact.reception == reason + 'という理由と、' + at + '満足とのつながりに目を向けています。'
+    expected = reason + 'という理由と、' + at + '満足とのつながりに目を向けています。'
+    if received_count == 1:
+        expected += '褒められたことは、嬉しさにはつながらなかったのですね。'
+    assert out.artifact.reception == expected
     assert '資料を分類' not in out.artifact.text
-    assert evaluation in out.artifact.observation and '褒められた' in out.artifact.observation
-    move, = plan.response_plan.human_reception_plan.moves
+    assert evaluation in out.artifact.observation
+    assert '褒められた' in out.artifact.observation
+    move, = (m for m in plan.response_plan.human_reception_plan.moves
+             if m.reception_act == "recognize_lived_change")
     kind, basis, feeling = source_owned_relational_focus(move, plan)
     assert kind == 'withdrawn_target_appraisal_reason'
     assert move.target_nucleus_ids == (feeling.nucleus_id,) and move.support_nucleus_ids == (basis.nucleus_id,)
-    decision, = selected.decisions
+    decision, = (d for d in selected.decisions if d.reception_act == "recognize_lived_change")
     assert decision.branch == 'LIMITED'
     assert decision.subjective_proposition.subjective_mode == 'ATTENTION'
-    assert decision.subjective_proposition.appraisal_content.operation == 'PRESERVE_BOTH_ENDPOINTS'
-    assert dict(selected.relation_pairs)[decision.subjective_proposition.focal_relation_ref] == next(
-        r.relation_id for r in plan.relations if r.type == 'user_stated_cause')
+    if received_count == 1:
+        assert len(selected.decisions) == 2
+        assert decision.subjective_proposition.appraisal_content.operation == 'RECEIVE_AS_MATERIAL'
+        assert decision.subjective_proposition.focal_relation_ref is None
+        assert len({d.projected_claim_ref for d in selected.decisions}) == 1
+        assert not set(selected.decisions[0].selected_contribution_refs) & set(selected.decisions[1].selected_contribution_refs)
+    else:
+        # Two received pairs remain outside this bounded retention repair.
+        assert len(selected.decisions) == 1
+        assert decision.subjective_proposition.appraisal_content.operation == 'PRESERVE_BOTH_ENDPOINTS'
+        assert dict(selected.relation_pairs)[decision.subjective_proposition.focal_relation_ref] == next(
+            r.relation_id for r in plan.relations if r.type == 'user_stated_cause')
+        assert '誘われた' in out.artifact.observation and '悲しかった' in out.artifact.observation
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+def test_withdrawn_target_retention_does_not_admit_an_extra_action(reverse):
+    from test_cmee_emlis_q3_thread import advance
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+    source = '探しやすくなったので、資料を分類したことに満足した。'
+    received = '褒められたのに、嬉しくなかった。植木に水をやった。'
+    req = advance(request(*((received, source) if reverse else (source, received))),
+                  '「資料を分類した」は誤りです。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    assert _thread_retained_reaction_groups(plan.nuclei, plan.relations) == ()
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact is None
+    assert out.reason_codes == ('emlis_refined_body_unavailable',)
+    assert out.meaning_checkpoint == prepared.checkpoint
 
 
 @pytest.mark.parametrize('reverse', [False, True])
@@ -2086,8 +2121,9 @@ def test_withdrawn_target_reason_reader_is_independent_and_rejects_changed_meani
     sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
     out = MeaningExperienceEngine().generate(req)
     assert out.artifact is not None, out.reason_codes
-    clause = out.artifact.reception
-    move, = plan.response_plan.human_reception_plan.moves
+    clause = out.artifact.reception.split("。", 1)[0] + "。"
+    move, = (m for m in plan.response_plan.human_reception_plan.moves
+             if m.reception_act == "recognize_lived_change")
     at = '当時の' if evaluation == '満足した' else '入力した時点での'
     wrongs = (
         clause.replace('あなたは探しやすくなったという理由と、', ''),
@@ -2126,7 +2162,8 @@ def test_withdrawn_target_reason_focus_requires_the_surviving_source_pair():
         '探しやすくなったので、資料を分類したことに満足した。',
         '褒められたのに、嬉しくなかった。'), '「資料を分類した」は誤りです。'))
     plan = build_updated_grounded_plan(prepared)
-    move, = plan.response_plan.human_reception_plan.moves
+    move, = (m for m in plan.response_plan.human_reception_plan.moves
+             if m.reception_act == "recognize_lived_change")
     _, reason, evaluation = source_owned_relational_focus(move, plan)
     edge, = (r for r in plan.relations if r.type == 'user_stated_cause')
     def without(node, code):
@@ -2159,16 +2196,22 @@ def test_withdrawn_target_reason_selected_focal_cannot_borrow_another_experience
         '褒められたのに、嬉しくなかった。'), '「資料を分類した」は誤りです。'))
     plan = build_updated_grounded_plan(prepared)
     selected = project_thread_meaning(prepared, plan).selected_reception
-    decision, = selected.decisions
+    decision, = (d for d in selected.decisions if d.reception_act == "recognize_lived_change")
     proposition = decision.subjective_proposition
     other = next(ref for ref, rid in selected.relation_pairs if rid == next(
         r.relation_id for r in plan.relations if r.type == 'contrast'))
-    variants = [replace(decision, branch='NORMAL'), replace(decision, subjective_proposition=replace(
+    other_decision, = (d for d in selected.decisions if d != decision)
+    variants = [replace(decision, selected_contribution_refs=()),
+        replace(decision, subjective_proposition=replace(proposition, subjective_mode='PERSONAL_APPRAISAL')),
+        replace(decision, subjective_proposition=replace(proposition, subjective_operator='VALUE_AS')),
+        replace(decision, selected_contribution_refs=other_decision.selected_contribution_refs),
+        replace(decision, selected_contribution_refs=(*decision.selected_contribution_refs, *other_decision.selected_contribution_refs)),
+        replace(decision, branch='NORMAL'), replace(decision, subjective_proposition=replace(
         proposition, focal_relation_ref=other, appraisal_content=replace(proposition.appraisal_content,
                                                                        focal_relation_ref=other)))]
     for row in variants:
         row = hr.identify_selected_subjective_reception_decision(row)
-        changed = hr.identify_selected_subjective_reception_input(replace(selected, decisions=(row,)))
+        changed = hr.identify_selected_subjective_reception_input(replace(selected, decisions=tuple(row if d == decision else d for d in selected.decisions)))
         with pytest.raises(hr.GroundedHumanReceptionSurfaceError, match='MEANING_REALIZATION_CAUSAL_TRACE_GAP'):
             hr.validate_selected_subjective_reception_input(changed,
                 plan.response_plan.human_reception_plan, plan, prepared.thread.resolver())

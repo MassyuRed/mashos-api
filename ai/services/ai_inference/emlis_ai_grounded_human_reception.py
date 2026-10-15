@@ -463,14 +463,34 @@ def validate_selected_subjective_reception_input(
             reason, evaluation = source_focus[1:]
             edge = next(r for r in plan.relations if r.type == 'user_stated_cause'
                 and (r.from_nucleus_id, r.to_nucleus_id) == (reason.nucleus_id, evaluation.nucleus_id))
+            selected_ids = {semantic_map[b.semantic_ref] for b in row.basis_rows
+                            if b.contribution_ref in row.selected_contribution_refs}
+            from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups
+            source_moves = plan.response_plan.human_reception_plan.moves
+            retained_pair = bool(len(source_moves) == 2
+                and tuple(m.reception_act for m in source_moves)
+                    == ('recognize_lived_change', 'stay_with_current_burden')
+                and all(m.required for m in source_moves)
+                and tuple((family, m.target_nucleus_ids, m.support_nucleus_ids)
+                          for family, m in zip(('lived_change', 'current_burden'), source_moves))
+                    == _thread_retained_reaction_groups(plan.nuclei, plan.relations))
+            material_attention = bool(type(appraisal) is EmlisAppraisalContent
+                and retained_pair
+                and appraisal.dimension == 'MATERIAL_WEIGHT'
+                and appraisal.operation == 'RECEIVE_AS_MATERIAL'
+                and appraisal.appraised_bindings == proposition.basis_binding_refs
+                and appraisal.focal_relation_ref is None and proposition.focal_relation_ref is None
+                and selected_ids == {reason.nucleus_id, evaluation.nucleus_id})
+            relational_attention = bool(type(appraisal) is EmlisAppraisalContent
+                and appraisal.dimension == 'RELATIONAL_NONCOLLAPSE'
+                and appraisal.operation == 'PRESERVE_BOTH_ENDPOINTS'
+                and len(appraisal.appraised_bindings) == 2
+                and {semantic_map.get(basis_by_ref[ref].semantic_ref) for ref in appraisal.appraised_bindings}
+                    == {reason.nucleus_id, evaluation.nucleus_id}
+                and relation_map.get(appraisal.focal_relation_ref) == edge.relation_id)
             if (row.branch != 'LIMITED' or type(appraisal) is not EmlisAppraisalContent
                 or proposition.subjective_mode != 'ATTENTION' or proposition.subjective_operator != 'ATTEND_TO'
-                or appraisal.dimension != 'RELATIONAL_NONCOLLAPSE'
-                or appraisal.operation != 'PRESERVE_BOTH_ENDPOINTS'
-                or appraisal.protected_bindings or len(appraisal.appraised_bindings) != 2
-                or {semantic_map.get(basis_by_ref[ref].semantic_ref) for ref in appraisal.appraised_bindings}
-                    != {reason.nucleus_id, evaluation.nucleus_id}
-                or relation_map.get(appraisal.focal_relation_ref) != edge.relation_id):
+                or appraisal.protected_bindings or not (material_attention or relational_attention)):
                 raise GroundedHumanReceptionSurfaceError(failure)
         if source_focus is not None and source_focus[0] in {'unfinished_result_appraisal', 'reasoned_result_appraisal'}:
             from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
@@ -11602,7 +11622,8 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
     if kind == "withdrawn_target_appraisal_reason":
         from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate, _result_appraisal_time_label
         proposition = selected_decision.subjective_proposition
-        if (selected_decision.branch != 'LIMITED' or not _selected_noncollapse_appraisal(selected_decision)
+        if (selected_decision.branch != 'LIMITED' or not (
+                _selected_noncollapse_appraisal(selected_decision) or _selected_material_appraisal(selected_decision))
             or proposition.subjective_mode != 'ATTENTION' or proposition.subjective_operator != 'ATTEND_TO'
             or not _source_result_appraisal_predicate(right, second)):
             return None

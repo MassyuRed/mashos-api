@@ -1,4 +1,4 @@
-> 最新のEmlisAI残件は末尾 **u276（2026-10-15 JST・満足対象の撤回後に残る理由と評価の受け取り修正）**。585検査、前後12組の意味・初回本文不変、保存DTO24件の本文・履歴・再表示一致。受け取り全体の品質と実機は残件。商品NOT_CLEAR・初回単位未完了・未配置。
+> 最新のEmlisAI残件は末尾 **u277（2026-10-15 JST・満足対象の撤回後も別received経験をReceptionへ保持）**。599 PASSの関連検査、初回・完全checkpoint不変、保存DTO24件の本文・履歴・再表示一致。受け取り全体の品質と実機は残件。商品NOT_CLEAR・初回単位未完了・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -19835,3 +19835,56 @@ RN→API→service/store→保存read→RNの経路と01B/Cの隣接責務、公
 **TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR、初回一体単位未完了。** 正式受入0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置を維持する。今回の有限文修正を経験理解・§9.2/9.4全体の完成へ換算しない。固定的で説明的な表現、撤回後に別received経験がReceptionへ選ばれない状態、Q1の4経験上限、近似文／別欄二組、旧receivedのgiver帰属、既存共有17失敗・same100・本人実機・正式Product Readは残る。
 
 次は、初回／訂正後の残存経験が選択内容とReceptionにどう届くかを確認し、特に今回Observationに残る別received経験が撤回後Receptionへ含まれない既存状態を、既承認の選択・上限内で扱えるか調べる。新しい意味がないのに注意表現を言い換えただけで内容形成が進んだとはしない。意味範囲・schema・上限を広げる必要がある場合だけ不足を具体化して別判断へ戻す。10/17確認点・10/31残件線・12/18公開目標、Piece/Analysis主枠を維持する。
+
+
+## u277 — 満足対象の撤回後も別received経験をReceptionへ残す（2026-10-15 JST）
+
+基準はAPI89207ef3c2d535e2d79ac423e1d083d9540e4482／資料fd4692add0447c78f3ab96c89817216d5ad4ba76。前提・作業ルール、8/16恒久incident全文、全体設計01／全file地図01A/B/C、current01/04、8/28設計§9.1/9.2/9.4、最新weekly§5.6.26と前回作業内容を確認した。System Context prepareはmaterial commitがa77b79c5の子孫でないとして失敗し、正本で許された原典直接読取りを使用した。Context生成成功とはしない。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / LEVEL_2既存承認内の修正。継続指示とweekly§5.6.26の次作業に従い、root華恋一人が既存owner・検査・現行identity・引継ぎ／地図を編集・実行・GitHub反映する。同環境agentは必要性・原因・境界・最終差分をread-only確認した。別model Pro審査・本人Product Readとはしない。外部AI・新製品依存・live DB/env・build/deploy/mergeは追加しない。
+
+
+満足の対象だけを撤回した後、理由→満足と別received経験が意味・Observationに残るのに、別経験だけがReceptionから落ちる不具合を修正した。理由関係が残るため既存の孤立撤回判定へ入らず、lived_changeの優先でcurrent_burdenが候補除外されていた。source所有が確認できる理由／満足と一つのoriginal received組を、既存2 Moveへ分けて保持する。撤回対象の復活、二経験間の因果や本人が述べていない価値判断は加えない。
+
+u276の同一source内の理由／満足exact2・withdrawn_source_event・単独user_stated_cause・本人・肯定無程度・過去現在という証明を既存plan owner内のhelperへ抽出した。これに加え、回答由来nucleusなし・残りが一つのreceived組という条件で_thread_retained_reaction_groupsから二つのdutyを返す。選択は既存LIMITED ATTENTION/ATTEND_TOの全source MATERIAL_WEIGHT/RECEIVE_AS_MATERIALを保ち、Moveごとのcontributionを理由／満足と別経験へ分離する。validatorと作者非依存readerはexact2 Move、required、reception_act順、sourceから再導出したduty tuple一致、理由側のselected contribution exact2、focalなしを確認する。従来のRELATIONAL_NONCOLLAPSE/PRESERVE_BOTH_ENDPOINTS分岐も維持する。schema・source認識文法・NORMAL資格・各上限を拡張せず、既承認の選択内の欠落を直した。
+
+合成入力：memo「探しやすくなったので、資料を分類したことに満足した。」／memo_action「褒められたのに、嬉しくなかった。」、回答「『資料を分類した』は誤りです。」（実際の引用符は「」）。u276ではReceptionが理由／満足一文だけだった。
+
+修正後の実保存全文：
+
+```text
+見えたこと：
+「探しやすくなった」を理由として、「満足した」へつながっています。
+「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。
+
+Emlisから：
+探しやすくなったという理由と、当時の満足とのつながりに目を向けています。褒められたことは、嬉しさにはつながらなかったのですね。
+```
+
+非0差は、意味・Observationに存在していた別received経験が撤回後Receptionにも戻ったこと。理由文の単なる言い換えではない。二経験間の新しい因果・価値・推測は加えていない。説明的な文体は残る。
+
+
+STRUCTURE_MAP_DELTA_PRESENT。新規production file／subsystemなし。既存ownerの責務差分：
+
+| mashos-api相対path | 変更 |
+|---|---|
+| ai/services/ai_inference/emlis_ai_grounded_observation_plan.py | 対象撤回後のsource証明を再利用し、理由／満足と一つの別received組を既存2 Moveへ保持。 |
+| ai/services/ai_inference/emlis_ai_grounded_human_reception.py | source dutyとMove別contributionの所有を照合し、既存material attentionで残存理由の有限文を実現。 |
+| ai/services/ai_inference/emlis_ai_grounded_observation_gate.py | 同じ限定scopeをsourceから再導出し、作者非依存に実本文の理由・満足・時点・所有を読む。 |
+| ai/tests/test_cmee_emlis_result_appraisal.py | 既存撤回検査を二経験へ更新し、旧二received分岐12条件と追加action境界2条件を追加。意味改変拒否を維持。 |
+| ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json | 現行共有owner identityを再計算。歴史checkpoint fixtureは不変。 |
+
+RN→API→service/store→保存read→RN、01B/C隣接責務、公開API/DTO/DB/SQL/RNと製品依存は不変。sentence surfaceの追加編集はない。
+
+
+最初の選択だけの候補は既存の全source material attentionを理由専用relational attention条件で拒否して本文が出ず、選択内容の所有に沿う作者／reader条件へ修正した。初期のmaterial対応は追加action条件の旧UNAVAILABLEも生成可能にしたため不採用とし、exact2 duty限定をvalidatorと独立reader双方に追加。最終同環境reviewでは1received／2received／追加action×両欄×時点2の12条件で、対象4件の回復・旧relational4件の成功・追加action4件の従来停止を確認した。意味境界14条件のplanまたは例外はu276と一致。既存15種類×時点／欄4条件の意味改変拒否を維持し、selected contribution借用・混入・mode変更も拒否する。
+
+実行途中のwrong cwd、tools import用PYTHONPATH欠落は検査収集前の失敗で、PASSへ含めない。最初に旧分岐のfixtureへ独立actionを代入した12件は質問を持たない入力となりadvance前提で失敗したため、質問が成立する二received入力へ修正した。製品条件を緩和せず、追加actionの既存停止は別の回帰検査で固定した。最終結果は下記単一runを採用する。
+
+最終単一run 599 PASS（評価544・Q2/Q3 application54・現行identity1、193.09秒）。三理由×評価時点2×欄2の12組で、初回全文・初回plan/選択・完全checkpoint・撤回後Observation・status/reason_codesは前後一致。撤回後だけplan/選択が二経験へ変わり、実Receptionに別received句が残る。実service＋隔離PGliteへ初回12＋撤回後12を保存し、NoAuthor GET/start・同一回答再送のevent無増加を確認。実保存DTO24件を既存RN hook/modalへ渡し、本文・履歴・close/reopen一致。root華恋が24本文を全文確認した。native部品はstubで、実機・正式Product Readではない。
+
+現行language identityは14056d41219d39d1568e1588ee7bb5303fe85fbfff3b130600212d4f81aa6ee0、runtimeはbd7885e2406290d229763496a38e7d2c929575e991139c576e0260c5d2b00dd7。Python3.12.14／pytest8.4.1／PGlite0.5.8／React18.3.1の既存runtimeを使用。追加依存・外部AI・追加課金なし。
+
+**TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR、初回一体単位未完了。** 正式受入0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置を維持する。今回の欠落回復を§9.2/9.4の経験理解・受け取り全体の完成へ換算しない。固定的な説明／言い換え、対象撤回後の複数receivedや追加actionを含む範囲、Q1の4経験上限、近似文／別欄二組、旧receivedのgiver帰属、既存共有17失敗・same100・本人実機・正式Product Readは残る。
+
+次は§9.2/9.4に戻り、初回と訂正後の実本文で、既に保持している意味がEmlisの受け取り内容へ届くかを確認する。特に理由への注意とreceivedの言い換えが固定的説明に留まる点を、意味の欠落・所有・接続と実本文の差として診断する。別の注意表現へ替えただけで内容形成が進んだとはしない。複数経験や追加actionの既存停止を一括解除せず、必要な意味/schema/上限拡張があれば不足を具体化して別判断へ戻す。10/17確認点・10/31残件線・12/18公開目標、Piece/Analysis主枠を維持する。
