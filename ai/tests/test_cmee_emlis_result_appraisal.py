@@ -606,13 +606,20 @@ def test_current_appraisal_does_not_select_the_legacy_projection():
     assert not prepare_emlis_meaning(bound).legacy_result_appraisal
 
 
-def test_current_appraisal_body_save_retry_reuses_the_same_meaning(qcase, qdb, monkeypatch):
+@pytest.mark.parametrize('memo,action,expected_state', [
+    ('資料を分類できて満足した。', '植木に水をやった。', 'FINAL'),
+    ('探しやすくなったので、資料を分類したことに満足した。' * 2,
+     '褒められたのに、嬉しくなかった。', 'PRE_QUESTION'),
+    ('褒められたのに、嬉しくなかった。',
+     '探しやすくなったので、資料を分類したことに満足した。' * 2, 'PRE_QUESTION'),
+])
+def test_current_appraisal_body_save_retry_reuses_the_same_meaning(qcase, qdb, monkeypatch, memo, action, expected_state):
     import httpx
     import emlis_thread_store
     from test_emlis_q2_application import run
     user, parent, service = qcase
     qdb.query('update public.emotions set memo=$2,memo_action=$3 where id=$1',
-        [parent, '資料を分類できて満足した。', '植木に水をやった。'])
+        [parent, memo, action])
     failed = False
     async def fail_body_once(name, payload, **kwargs):
         nonlocal failed
@@ -628,7 +635,7 @@ def test_current_appraisal_body_save_retry_reuses_the_same_meaning(qcase, qdb, m
     monkeypatch.setattr(service.engine, 'prepare_emlis_update', lambda *_: pytest.fail('checkpoint must be reused'))
     done = run(service.action(user, pending['thread_id'], action='retry_response',
         expected_revision=pending['revision'], idempotency_key='retry-appraisal', operation_id=pending['operation_id']))
-    assert done['body_state'] == 'FINAL' and done['current_observation']
+    assert done['body_state'] == expected_state and done['current_observation']
     assert done['operation_id'] == pending['operation_id'] and done['attempt_id'] != pending['attempt_id']
     after = run(service.store.read(user, input_id=parent))
     assert [e for e in after['events'] if e['kind'] == 'MEANING_UPDATE'] == [meaning]
@@ -2179,8 +2186,8 @@ def test_exact_repeated_reason_initial_body_keeps_both_source_occurrences(capabi
     assert set(merged.binding.nucleus_ids) == {n.nucleus_id for n in owned}
     assert len(merged.binding.relation_ids) == 4
     selected = project_thread_meaning(p, plan).selected_reception
-    assert len(selected.decisions) == 1 and selected.decisions[0].branch == 'LIMITED'
-    assert len(selected.decisions[0].support_nucleus_ids) == 2
+    assert len(selected.decisions) == 3 and all(d.branch == 'LIMITED' for d in selected.decisions)
+    assert sorted(len(d.support_nucleus_ids) for d in selected.decisions) == [1, 2, 2]
     outcome = MeaningExperienceEngine().generate(req)
     assert outcome.artifact is not None and outcome.body_state == 'PRE_QUESTION'
     assert outcome.question is not None and not outcome.automatic_progression
@@ -2258,8 +2265,8 @@ def test_shared_reason_observation_reader_checks_every_role_without_author(monke
     # prove its discourse reader accepts the HR clause without the author.
     from emlis_ai_grounded_observation_gate import read_source_owned_discourse
     monkeypatch.setattr(hr, '_source_owned_relational_focus_sentence', forbidden)
-    move, = plan.response_plan.human_reception_plan.moves
-    clause = body.split('Emlisから：\n', 1)[1]
+    move = next(m for m in plan.response_plan.human_reception_plan.moves if len(m.support_nucleus_ids) == 2)
+    clause = next(part + '。' for part in body.split('Emlisから：\n', 1)[1].split('。') if 'ことを理由に、' in part)
     assert read_source_owned_discourse(clause, move, plan, p.thread.resolver(), selected) is not None
     assert read_source_owned_discourse(clause.replace('ことを理由に、', 'ことだけを理由に、'),
         move, plan, p.thread.resolver(), selected) is None
@@ -2355,6 +2362,126 @@ def test_saved_duplicate_reason_withdrawal_keeps_ambiguity_and_body(qcase, qdb, 
         assert replay[key] == dto[key]
     assert replay['requested_attempt_id'] == dto['attempt_id']
     assert run(restarted.store.read(user, input_id=parent))['events'] == saved['events']
+
+
+_U269_DUPLICATE_SOURCE_CHECKPOINTS = json.loads((Path(__file__).parent / 'fixtures' /
+    'cmee_emlis_u269_duplicate_source_checkpoints.json').read_text())
+
+
+@pytest.mark.parametrize('row', _U269_DUPLICATE_SOURCE_CHECKPOINTS, ids=lambda r: r['case_id'])
+def test_u269_duplicate_source_checkpoint_rederives_complete_historical_state(row):
+    from emlis_thread_service import _json
+    req = _legacy_fixture_request(row)
+    prepared = prepare_emlis_meaning(req)
+    assert prepared.legacy_duplicate_appraisal_source
+    assert _json(prepared.checkpoint) == row['checkpoint']
+    outcome = MeaningExperienceEngine().generate(req)
+    assert _json(outcome.meaning_checkpoint) == row['checkpoint']
+    assert outcome.body_state == row['baseline_body_state']
+    assert (outcome.artifact.text if outcome.artifact else None) == row['baseline_body']
+    assert list(outcome.reason_codes) == row['baseline_reason_codes']
+    with pytest.raises(ValueError, match=row['foreign_error']):
+        prepare_emlis_meaning(replace(req, emlis_thread=replace(req.emlis_thread,
+            prepared_meaning_checkpoint_ref='foreign')))
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
+@pytest.mark.parametrize('basis', ['探しやすくなった', '見た目がすっきりした', '資料を使いやすい'])
+def test_duplicate_reason_initial_body_shares_words_but_keeps_both_occurrences(reverse, evaluation, basis):
+    import emlis_ai_grounded_human_reception as hr
+    from emlis_ai_grounded_observation_plan import source_owned_duplicate_reason_appraisals
+    source = basis + 'ので、資料を分類したことに' + evaluation + '。'
+    received = '褒められたのに、嬉しくなかった。'
+    req = request(*((received, source * 2) if reverse else (source * 2, received)))
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    groups = source_owned_duplicate_reason_appraisals(plan.nuclei, plan.relations, resolver)
+    assert len(groups) == 2 and len({n.nucleus_id for group in groups for n in group}) == 6
+    assert groups[0][0].source_span_ids != groups[1][0].source_span_ids
+    spans = [resolver.resolve(g[0].source_span_ids[0]) for g in groups]
+    assert spans[0].raw_text == spans[1].raw_text
+    assert spans[0].end_index <= spans[1].start_index
+    outcome = MeaningExperienceEngine().generate(req)
+    assert outcome.artifact is not None, outcome.reason_codes
+    assert outcome.body_state == 'PRE_QUESTION'
+    assert outcome.artifact.observation.count('を理由として、') == 1
+    assert outcome.artifact.observation.count('という出来事に対する評価は、') == 1
+    assert outcome.artifact.reception.count(basis + 'ことを理由に、資料を分類したことについて、') == 1
+    assert ('当時は' if evaluation == '満足した' else '入力した時点では') + evaluation in outcome.artifact.reception
+    assert '褒められたことは、嬉しさにはつながらなかった' in outcome.artifact.reception
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    shared, = (line for line in sentence.lines if len(line.binding.nucleus_ids) == 6)
+    assert len(shared.binding.relation_ids) == 4
+    clauses = hr.build_grounded_reception_clause_plans(plan.response_plan.human_reception_plan,
+        'full', plan=plan, resolver=resolver)
+    assert sorted(len(c.move_ids) for c in clauses) == [1, 2]
+    assert len(plan.response_plan.human_reception_plan.moves) == 3
+
+
+@pytest.mark.parametrize('source', [
+    '探しやすくなったので、資料を分類したことに満足した。' * 3,
+    '探しやすくなったので、資料を分類したことに満足した。見つけやすくなったので、資料を分類したことに満足した。',
+    '友人の話です。' + '探しやすくなったので、資料を分類したことに満足した。' * 2,
+    '「探しやすくなったので、資料を分類したことに満足した。」' * 2,
+    '探しやすくなったので、資料を分類したことに満足しなかった。' * 2,
+    '探しやすくなったので、資料を分類したことに少し満足した。' * 2,
+    '探しやすくなったので、資料を分類したことに納得した。' * 2,
+])
+def test_duplicate_reason_scope_does_not_expand_other_sources(source):
+    from emlis_ai_grounded_observation_plan import source_owned_duplicate_reason_appraisals
+    p = prepare_emlis_meaning(request(source, '褒められたのに、嬉しくなかった。'))
+    assert not source_owned_duplicate_reason_appraisals(p.original_plan.nuclei,
+        p.original_plan.relations, p.thread.resolver())
+    assert not any('semantic_dependency:duplicated_reason_appraisal_exact2' in n.semantic_frame.attribute_codes
+                   for n in p.original_plan.nuclei)
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+def test_duplicate_reason_shared_body_inverse_checks_roles_and_each_selected_owner(monkeypatch, reverse):
+    import emlis_ai_grounded_human_reception as hr
+    import emlis_ai_grounded_sentence_surface as ss
+    from emlis_ai_grounded_observation_gate import read_detached_feeling_pair
+    source = '探しやすくなったので、資料を分類したことに満足した。'
+    received = '褒められたのに、嬉しくなかった。'
+    req = request(*((received, source * 2) if reverse else (source * 2, received)))
+    p = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(p)
+    resolver = p.thread.resolver()
+    selected = project_thread_meaning(p, plan).selected_reception
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    body = MeaningExperienceEngine().generate(req).artifact.text
+    def forbidden(*_a, **_k):
+        pytest.fail('independent reader called an author')
+    monkeypatch.setattr(ss, '_render_relation', forbidden)
+    def valid(value, selection=selected):
+        return evaluate_grounded_surface_body_inverse(body=value.encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver, selected_subjective_input=selection).passed
+    assert valid(body)
+    wrongs = [body.replace('を理由として、', 'の結果として、'),
+              body.replace('「満足した」へ', '「資料を分類した」へ'),
+              body.replace('探しやすくなったことを理由に、', ''),
+              body.replace('資料を分類したことについて', '褒められたことについて'),
+              body.replace('当時は', '回答した時点では'),
+              body.replace('満足したのですね', '満足していないのですね')]
+    assert all(value != body and not valid(value) for value in wrongs)
+    clauses = hr.build_grounded_reception_clause_plans(plan.response_plan.human_reception_plan,
+        'full', plan=plan, resolver=resolver)
+    pair_clause, = (c for c in clauses if len(c.move_ids) == 2)
+    moves = tuple(m for mid in pair_clause.move_ids for m in plan.response_plan.human_reception_plan.moves if m.move_id == mid)
+    raw, = (part + '。' for part in body.split('Emlisから：')[1].strip().split('。') if 'ことを理由に、' in part)
+    monkeypatch.setattr(hr, '_source_owned_relational_focus_sentence', forbidden)
+    assert read_detached_feeling_pair(raw, moves, plan, resolver, selected) is not None
+    first, second = (next(d for d in selected.decisions if d.move_id == m.move_id) for m in moves)
+    for changed in (replace(first, selected_contribution_refs=first.selected_contribution_refs[:1]),
+                    replace(first, selected_contribution_refs=second.selected_contribution_refs)):
+        changed = hr.identify_selected_subjective_reception_decision(changed)
+        selection = hr.identify_selected_subjective_reception_input(replace(selected,
+            decisions=tuple(changed if d == first else d for d in selected.decisions)))
+        assert read_detached_feeling_pair(raw, moves, plan, resolver, selection) is None
+
+
 
 
 @pytest.mark.parametrize('capability', ['FREE_Q1', 'Q3_FREE'])

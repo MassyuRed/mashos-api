@@ -77,6 +77,7 @@ class PreparedEmlisMeaning:
     legacy_appraisal_reason: bool = False
     legacy_result_appraisal: bool = False
     legacy_appraisal_correction: bool = False
+    legacy_duplicate_appraisal_source: bool = False
 
 
 def _text(row, index, resolver) -> str:
@@ -593,7 +594,27 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
             or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
             raise
-        prior_retention = original_meaning_plan(thread, _legacy_appraisal_retention=True)
+        prior_duplicate = original_meaning_plan(thread, _legacy_duplicate_appraisal_source=True)
+        if prior_duplicate.nuclei != original.nuclei or prior_duplicate.relations != original.relations:
+            # Re-derive the complete historical source and correction state;
+            # never substitute the old ID into a newly interpreted checkpoint.
+            modes = (None,)
+            if thread.control.prepared_meaning_checkpoint_ref is not None and thread.answers:
+                modes += ('legacy_withdrawal_precedence', 'legacy_reason_withdrawal',
+                          'legacy_appraisal_original_time', 'legacy_appraisal_answer_time',
+                          'legacy_appraisal_correction')
+            for mode in modes:
+                flags = {'legacy_withdrawal_precedence': True, mode: True} if mode else {}
+                try:
+                    restored = _prepare_emlis_meaning_from_plan(request, thread, prior_duplicate, **flags)
+                except ValueError as prior_exc:
+                    if str(prior_exc) not in {'emlis_checkpoint_source_prefix_mismatch', 'emlis_question_noncanonical'}:
+                        raise
+                else:
+                    return replace(restored, legacy_duplicate_appraisal_source=True,
+                        legacy_appraisal_correction=mode == 'legacy_appraisal_correction')
+        prior_retention = original_meaning_plan(thread, _legacy_appraisal_retention=True,
+            _legacy_duplicate_appraisal_source=True)
         if prior_retention.nuclei != original.nuclei or prior_retention.relations != original.relations:
             modes = ({},)
             if thread.control.prepared_meaning_checkpoint_ref is not None and thread.answers:

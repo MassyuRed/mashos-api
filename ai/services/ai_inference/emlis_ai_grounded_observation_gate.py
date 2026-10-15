@@ -3628,6 +3628,21 @@ def read_detached_feeling_pair(raw, moves, plan, resolver, selected_subjective_i
     by its answer. They share an event, but not predicates or source times.
     """
     reception_plan = plan.response_plan.human_reception_plan
+    from emlis_ai_grounded_human_reception import _duplicate_reason_pair
+    repeated_at = _duplicate_reason_pair(reception_plan, 'full', plan=plan, resolver=resolver)
+    active = reception_active_moves(reception_plan, 'full')
+    if repeated_at is not None and tuple(moves) == active[repeated_at:repeated_at + 2]:
+        if selected_subjective_input is None:
+            return None
+        decisions = {d.move_id: d for d in selected_subjective_input.decisions}
+        if any(m.move_id not in decisions or decisions[m.move_id].branch != 'LIMITED' for m in moves):
+            return None
+        # Read both exact-three contributions from this one actual sentence.
+        # Equal byte intervals do not erase their distinct source ownership.
+        proofs = tuple(_read_relational_focus_discourse(raw, move, plan, resolver,
+            selected_subjective_input) for move in moves)
+        return proofs if all(p is not None for p in proofs) and proofs[0] == proofs[1] else None
+
     if (len(moves) == 2 and selected_subjective_input is not None
         and "selection:source_owned_answer_adjacent" in reception_plan.depth_policy.selection_reason_codes):
         from emlis_ai_grounded_observation_plan import source_owned_answer_feeling
@@ -6021,6 +6036,25 @@ def evaluate_grounded_surface_body_inverse(
                 expected = len(contrast_groups) + sum(r.type == "evaluation_about_event" for r in relations)
                 if len(line_rows) != expected:
                     failures.append(f"body_inverse_contrast_report_scope_mismatch:{index}")
+        from emlis_ai_grounded_observation_plan import source_owned_duplicate_reason_appraisals
+        repeated = source_owned_duplicate_reason_appraisals(plan.nuclei, plan.relations, resolver)
+        if repeated and set(planned_line.binding.nucleus_ids) == {n.nucleus_id for g in repeated for n in g}:
+            rows = tuple(_body_inverse_visible_text(body, row) for row in witness.sentences
+                         if row.section == 'observation' and row.section_line_ordinal == parsed_line.section_ordinal)
+            reason = re.fullmatch(r'「([^「」『』\n]+)」を理由として、「([^「」『』\n]+)」へつながっています。', rows[0]) if len(rows) == 2 else None
+            appraisal = re.fullmatch(r'「([^「」『』\n]+)」という出来事に対する評価は、「([^「」『』\n]+)」とあります。', rows[1]) if len(rows) == 2 else None
+            expected = tuple(tuple(_body_inverse_nucleus_source_values(n.nucleus_id, plan, resolver)
+                                   for n in group) for group in repeated)
+            ids = set(planned_line.binding.nucleus_ids)
+            required = {r.relation_id for r in plan.relations if r.retention == 'required'
+                        and ids & {r.from_nucleus_id, r.to_nucleus_id}}
+            actual = (tuple(map(_body_inverse_normalized_anchor,
+                (reason[1], appraisal[1], reason[2]))) if reason and appraisal else ())
+            if (len(required) != 4 or set(planned_line.binding.relation_ids) != required
+                or not actual or reason[2] != appraisal[2]
+                or any(len(values) != 1 for group in expected for values in group)
+                or any(tuple(values[0] for values in group) != actual for group in expected)):
+                failures.append(f'body_inverse_duplicate_appraisal_scope_mismatch:{index}')
         for relation_id in planned_line.binding.relation_ids:
             relation = relation_index.get(relation_id)
             if relation is None:

@@ -1,0 +1,1142 @@
+[
+  {
+    "case_id": "u269_initial_False",
+    "memo": "探しやすくなったので、資料を分類したことに満足した。探しやすくなったので、資料を分類したことに満足した。",
+    "action": "褒められたのに、嬉しくなかった。",
+    "capability": "FREE_Q1",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-b3757412ef8f1f914c2a8e65d7b560a4f16480de0563e217a215def1cbac229d",
+      "source_prefix_ref": "emlis-source-prefix-e8c3729aaa0997f32e99011e5c81aed42dd04757c638504de646530b45e6654c",
+      "base_meaning_ref": "emlis-base-meaning-778c55af6d7f2ea9f07cb1b537c169a263ad9dc9046ed36fafbbd6317829e7ea",
+      "answer_update": null,
+      "assessment_status": "RESOLVED",
+      "accepted_update_refs": [],
+      "inactive_claim_refs": [],
+      "unresolved_parts": [],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "PRE_QUESTION",
+    "baseline_body": "見えたこと：\n「探しやすくなった」を理由として、「満足した」へつながっています。 「資料を分類した」という出来事に対する評価は、「満足した」とあります。\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n探しやすくなったことを理由に、資料を分類したことについて、当時は満足したのですね。",
+    "baseline_reason_codes": [
+      "emlis_question_candidate_ready"
+    ],
+    "foreign_error": "emlis_checkpoint_source_prefix_mismatch"
+  },
+  {
+    "case_id": "u269_withdraw_False",
+    "memo": "探しやすくなったので、資料を分類したことに満足した。探しやすくなったので、資料を分類したことに満足した。",
+    "action": "褒められたのに、嬉しくなかった。",
+    "capability": "FREE_Q1",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-bfceb7f6d7bed27ebbbae21d6330803c118762fe5e183acd393a53fe79d5d272",
+      "source_prefix_ref": "emlis-source-prefix-e7ac5a54a24c9d877af79b07716bf2f25300ac79a83bd0beab1bdbbe761fdb7d",
+      "base_meaning_ref": "emlis-base-meaning-778c55af6d7f2ea9f07cb1b537c169a263ad9dc9046ed36fafbbd6317829e7ea",
+      "answer_update": {
+        "answer_source_ref": "src-a0b6347964bf91b08d4052c2",
+        "question_ref": "emlis-question-2bbc61e3caec966ee79dd9783bfd06bfb417a34390eee7fcea267589b0055cc8",
+        "prior_meaning_ref": "emlis-base-meaning-778c55af6d7f2ea9f07cb1b537c169a263ad9dc9046ed36fafbbd6317829e7ea",
+        "updates": [],
+        "unresolved_parts": [
+          {
+            "evidence_refs": [
+              "ev-31f15627a433f4c729b300dd"
+            ],
+            "reason_code": "correction_target_unresolved"
+          }
+        ],
+        "disposition": "UNRESOLVED",
+        "new_meaning_ref": "emlis-base-meaning-778c55af6d7f2ea9f07cb1b537c169a263ad9dc9046ed36fafbbd6317829e7ea"
+      },
+      "assessment_status": "UNRESOLVED",
+      "accepted_update_refs": [],
+      "inactive_claim_refs": [],
+      "unresolved_parts": [
+        {
+          "evidence_refs": [
+            "ev-31f15627a433f4c729b300dd"
+          ],
+          "reason_code": "correction_target_unresolved"
+        }
+      ],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "ANSWER_UNREFLECTED",
+    "baseline_body": null,
+    "baseline_reason_codes": [
+      "correction_target_unresolved"
+    ],
+    "answer": "「探しやすくなったので、資料を分類したことに満足した」は誤りです。",
+    "question_control": {
+      "pending_question": {
+        "question_id": "emlis-question-2bbc61e3caec966ee79dd9783bfd06bfb417a34390eee7fcea267589b0055cc8",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-9d1e2d05b7230377a5a41f47",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-8752ab78f3ea147c4af18304cf8c64e4d1df92a64dbd5f9158c5e836be9f16cf",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-f79541ec1045a5ace3254fd1"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s3:event",
+            "nucleus:s3:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s1:appraisal"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "asked_target_refs": [
+        "emlis-target-8752ab78f3ea147c4af18304cf8c64e4d1df92a64dbd5f9158c5e836be9f16cf"
+      ],
+      "issued_count": 1,
+      "stop": false,
+      "issued_questions": [],
+      "question_limit": 1
+    },
+    "supplemental_answers": [
+      {
+        "answer_id": "q1-answer",
+        "thread_id": "q1-thread",
+        "question_id": "emlis-question-2bbc61e3caec966ee79dd9783bfd06bfb417a34390eee7fcea267589b0055cc8",
+        "round_index": 1,
+        "original_source_ref": "src-9d1e2d05b7230377a5a41f47",
+        "answer_text_private": "「探しやすくなったので、資料を分類したことに満足した」は誤りです。",
+        "recorded_at": "2026-09-11T00:00:00Z",
+        "authored_at": null,
+        "source_version": "cocolon.cmee.supplemental_answer.v1",
+        "source_role": "SUPPLEMENTAL_ANSWER"
+      }
+    ],
+    "foreign_error": "emlis_question_noncanonical"
+  },
+  {
+    "case_id": "u269_partial_False",
+    "memo": "探しやすくなったので、資料を分類したことに満足した。探しやすくなったので、資料を分類したことに満足した。",
+    "action": "褒められたのに、嬉しくなかった。",
+    "capability": "FREE_Q1",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-3e55e0ad8378c5143938241bfdc6898cda3264a3cdca4f36727247b0845a527f",
+      "source_prefix_ref": "emlis-source-prefix-b7bdfc43c582881d3fd806587f5f3d2a63d1e93babd80d9602a2a32072cf510c",
+      "base_meaning_ref": "emlis-base-meaning-778c55af6d7f2ea9f07cb1b537c169a263ad9dc9046ed36fafbbd6317829e7ea",
+      "answer_update": {
+        "answer_source_ref": "src-393f3f3081f8db2c092a8bae",
+        "question_ref": "emlis-question-2bbc61e3caec966ee79dd9783bfd06bfb417a34390eee7fcea267589b0055cc8",
+        "prior_meaning_ref": "emlis-base-meaning-778c55af6d7f2ea9f07cb1b537c169a263ad9dc9046ed36fafbbd6317829e7ea",
+        "updates": [
+          {
+            "update_ref": "emlis-update-808465ea2e128f849a698653c5bb22d0e140907dc4887cf2511fecee0e69e36c",
+            "binding_kind": "EXPLICIT_CORRECTION",
+            "target_meaning_refs": [
+              "nucleus:s3:reaction"
+            ],
+            "evidence_refs": [
+              "ev-687caba37596997f8258a79c"
+            ],
+            "temporal_binding": {
+              "about_time": "ORIGINAL_OCCASION",
+              "anchor_source_ref": "src-9d1e2d05b7230377a5a41f47",
+              "time_expression_evidence_refs": [],
+              "relative_relation": null,
+              "resolved_interval": null,
+              "timezone_basis": null
+            },
+            "operation": "REVISE",
+            "changed_claim_refs": [
+              "answer:s8"
+            ],
+            "superseded_claim_refs": [
+              "nucleus:s3:reaction"
+            ],
+            "affected_dependency_refs": [
+              "relation:r5"
+            ]
+          }
+        ],
+        "unresolved_parts": [
+          {
+            "evidence_refs": [
+              "ev-7b644437cd64777ffbcc2b7d"
+            ],
+            "reason_code": "correction_target_unresolved"
+          }
+        ],
+        "disposition": "MATERIAL_UPDATE",
+        "new_meaning_ref": "emlis-meaning-f58fedb1075103fba6de687d1726014887a78979d4823b4e775f9ccff93763aa"
+      },
+      "assessment_status": "PARTIAL",
+      "accepted_update_refs": [
+        "emlis-update-808465ea2e128f849a698653c5bb22d0e140907dc4887cf2511fecee0e69e36c"
+      ],
+      "inactive_claim_refs": [
+        "nucleus:s3:reaction",
+        "relation:r5"
+      ],
+      "unresolved_parts": [
+        {
+          "evidence_refs": [
+            "ev-7b644437cd64777ffbcc2b7d"
+          ],
+          "reason_code": "correction_target_unresolved"
+        }
+      ],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "MEANING_UPDATED_BODY_UNAVAILABLE",
+    "baseline_body": null,
+    "baseline_reason_codes": [
+      "emlis_refined_body_unavailable"
+    ],
+    "answer": "「探しやすくなったので、資料を分類したことに満足した」は誤りです。「嬉しくなかった」ではなく「重かった」です。",
+    "question_control": {
+      "pending_question": {
+        "question_id": "emlis-question-2bbc61e3caec966ee79dd9783bfd06bfb417a34390eee7fcea267589b0055cc8",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-9d1e2d05b7230377a5a41f47",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-8752ab78f3ea147c4af18304cf8c64e4d1df92a64dbd5f9158c5e836be9f16cf",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-f79541ec1045a5ace3254fd1"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s3:event",
+            "nucleus:s3:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s1:appraisal"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "asked_target_refs": [
+        "emlis-target-8752ab78f3ea147c4af18304cf8c64e4d1df92a64dbd5f9158c5e836be9f16cf"
+      ],
+      "issued_count": 1,
+      "stop": false,
+      "issued_questions": [],
+      "question_limit": 1
+    },
+    "supplemental_answers": [
+      {
+        "answer_id": "q1-answer",
+        "thread_id": "q1-thread",
+        "question_id": "emlis-question-2bbc61e3caec966ee79dd9783bfd06bfb417a34390eee7fcea267589b0055cc8",
+        "round_index": 1,
+        "original_source_ref": "src-9d1e2d05b7230377a5a41f47",
+        "answer_text_private": "「探しやすくなったので、資料を分類したことに満足した」は誤りです。「嬉しくなかった」ではなく「重かった」です。",
+        "recorded_at": "2026-09-11T00:00:00Z",
+        "authored_at": null,
+        "source_version": "cocolon.cmee.supplemental_answer.v1",
+        "source_role": "SUPPLEMENTAL_ANSWER"
+      }
+    ],
+    "foreign_error": "emlis_question_noncanonical"
+  },
+  {
+    "case_id": "u269_initial_True",
+    "memo": "褒められたのに、嬉しくなかった。",
+    "action": "探しやすくなったので、資料を分類したことに満足した。探しやすくなったので、資料を分類したことに満足した。",
+    "capability": "FREE_Q1",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-7b6a6e3f01ba745cafd6cb0cdc345ce0e16cdbbef2e60f197ebfe87d72809c18",
+      "source_prefix_ref": "emlis-source-prefix-74202e382fa73db296921fa36e8c4a9186670837df6d5800bf50660c440c7ec4",
+      "base_meaning_ref": "emlis-base-meaning-f2ebe20bda6f1ce57b1ca68d9ee1997e232f6b52797b7bafc024e63a7424c853",
+      "answer_update": null,
+      "assessment_status": "RESOLVED",
+      "accepted_update_refs": [],
+      "inactive_claim_refs": [],
+      "unresolved_parts": [],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "PRE_QUESTION",
+    "baseline_body": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n「探しやすくなった」を理由として、「満足した」へつながっています。 「資料を分類した」という出来事に対する評価は、「満足した」とあります。\n\nEmlisから：\n探しやすくなったことを理由に、資料を分類したことについて、当時は満足したのですね。",
+    "baseline_reason_codes": [
+      "emlis_question_candidate_ready"
+    ],
+    "foreign_error": "emlis_checkpoint_source_prefix_mismatch"
+  },
+  {
+    "case_id": "u269_withdraw_True",
+    "memo": "褒められたのに、嬉しくなかった。",
+    "action": "探しやすくなったので、資料を分類したことに満足した。探しやすくなったので、資料を分類したことに満足した。",
+    "capability": "FREE_Q1",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-6cb240166b073122aaeb673c952753598696b2c511ec4e63ce0e05257d60e902",
+      "source_prefix_ref": "emlis-source-prefix-69e985fa590c8b2161d516b4bd616239725c06fb8684af98d132ac1e797fb99f",
+      "base_meaning_ref": "emlis-base-meaning-f2ebe20bda6f1ce57b1ca68d9ee1997e232f6b52797b7bafc024e63a7424c853",
+      "answer_update": {
+        "answer_source_ref": "src-3c579db386d39a15ccd16ebe",
+        "question_ref": "emlis-question-c7687e04370687aec2765102840ec3d88c07740a41b14af45e180c667ddd4fb9",
+        "prior_meaning_ref": "emlis-base-meaning-f2ebe20bda6f1ce57b1ca68d9ee1997e232f6b52797b7bafc024e63a7424c853",
+        "updates": [],
+        "unresolved_parts": [
+          {
+            "evidence_refs": [
+              "ev-a1a081f59b51505580834433"
+            ],
+            "reason_code": "correction_target_unresolved"
+          }
+        ],
+        "disposition": "UNRESOLVED",
+        "new_meaning_ref": "emlis-base-meaning-f2ebe20bda6f1ce57b1ca68d9ee1997e232f6b52797b7bafc024e63a7424c853"
+      },
+      "assessment_status": "UNRESOLVED",
+      "accepted_update_refs": [],
+      "inactive_claim_refs": [],
+      "unresolved_parts": [
+        {
+          "evidence_refs": [
+            "ev-a1a081f59b51505580834433"
+          ],
+          "reason_code": "correction_target_unresolved"
+        }
+      ],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "ANSWER_UNREFLECTED",
+    "baseline_body": null,
+    "baseline_reason_codes": [
+      "correction_target_unresolved"
+    ],
+    "answer": "「探しやすくなったので、資料を分類したことに満足した」は誤りです。",
+    "question_control": {
+      "pending_question": {
+        "question_id": "emlis-question-c7687e04370687aec2765102840ec3d88c07740a41b14af45e180c667ddd4fb9",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-0249f760c226a7f96a0e5b1e",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-43600dfdff9540fb13582f49a89e184ad63a482320cc294dd132e506bc54f231",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-d4fbf8200a2b483ca37a5557"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s1:event",
+            "nucleus:s1:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s2:appraisal"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "asked_target_refs": [
+        "emlis-target-43600dfdff9540fb13582f49a89e184ad63a482320cc294dd132e506bc54f231"
+      ],
+      "issued_count": 1,
+      "stop": false,
+      "issued_questions": [],
+      "question_limit": 1
+    },
+    "supplemental_answers": [
+      {
+        "answer_id": "q1-answer",
+        "thread_id": "q1-thread",
+        "question_id": "emlis-question-c7687e04370687aec2765102840ec3d88c07740a41b14af45e180c667ddd4fb9",
+        "round_index": 1,
+        "original_source_ref": "src-0249f760c226a7f96a0e5b1e",
+        "answer_text_private": "「探しやすくなったので、資料を分類したことに満足した」は誤りです。",
+        "recorded_at": "2026-09-11T00:00:00Z",
+        "authored_at": null,
+        "source_version": "cocolon.cmee.supplemental_answer.v1",
+        "source_role": "SUPPLEMENTAL_ANSWER"
+      }
+    ],
+    "foreign_error": "emlis_question_noncanonical"
+  },
+  {
+    "case_id": "u269_partial_True",
+    "memo": "褒められたのに、嬉しくなかった。",
+    "action": "探しやすくなったので、資料を分類したことに満足した。探しやすくなったので、資料を分類したことに満足した。",
+    "capability": "FREE_Q1",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-bad6baed51124abd50d9237d1ccf3c06f10f36409885be53e48a620b4078c95d",
+      "source_prefix_ref": "emlis-source-prefix-e0c01e43c4db9de5aa8f4c2200f4f886db0150b9c525de0f842c0d366264b8e5",
+      "base_meaning_ref": "emlis-base-meaning-f2ebe20bda6f1ce57b1ca68d9ee1997e232f6b52797b7bafc024e63a7424c853",
+      "answer_update": {
+        "answer_source_ref": "src-4c346ef3c5546c1ac510dd2a",
+        "question_ref": "emlis-question-c7687e04370687aec2765102840ec3d88c07740a41b14af45e180c667ddd4fb9",
+        "prior_meaning_ref": "emlis-base-meaning-f2ebe20bda6f1ce57b1ca68d9ee1997e232f6b52797b7bafc024e63a7424c853",
+        "updates": [
+          {
+            "update_ref": "emlis-update-da28055fae84c60b1e435e30287e23f476ab3fa35f2f355b80a72c2b0069d123",
+            "binding_kind": "EXPLICIT_CORRECTION",
+            "target_meaning_refs": [
+              "nucleus:s1:reaction"
+            ],
+            "evidence_refs": [
+              "ev-04d33938ac9888e25d75e5cf"
+            ],
+            "temporal_binding": {
+              "about_time": "ORIGINAL_OCCASION",
+              "anchor_source_ref": "src-0249f760c226a7f96a0e5b1e",
+              "time_expression_evidence_refs": [],
+              "relative_relation": null,
+              "resolved_interval": null,
+              "timezone_basis": null
+            },
+            "operation": "REVISE",
+            "changed_claim_refs": [
+              "answer:s8"
+            ],
+            "superseded_claim_refs": [
+              "nucleus:s1:reaction"
+            ],
+            "affected_dependency_refs": [
+              "relation:r1"
+            ]
+          }
+        ],
+        "unresolved_parts": [
+          {
+            "evidence_refs": [
+              "ev-0830ec2a86b73c3c0af4a879"
+            ],
+            "reason_code": "correction_target_unresolved"
+          }
+        ],
+        "disposition": "MATERIAL_UPDATE",
+        "new_meaning_ref": "emlis-meaning-3f621c0648c74b013cdbc2d9f004af03e771ad6229f7f157099d86be49775080"
+      },
+      "assessment_status": "PARTIAL",
+      "accepted_update_refs": [
+        "emlis-update-da28055fae84c60b1e435e30287e23f476ab3fa35f2f355b80a72c2b0069d123"
+      ],
+      "inactive_claim_refs": [
+        "nucleus:s1:reaction",
+        "relation:r1"
+      ],
+      "unresolved_parts": [
+        {
+          "evidence_refs": [
+            "ev-0830ec2a86b73c3c0af4a879"
+          ],
+          "reason_code": "correction_target_unresolved"
+        }
+      ],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "MEANING_UPDATED_BODY_UNAVAILABLE",
+    "baseline_body": null,
+    "baseline_reason_codes": [
+      "emlis_refined_body_unavailable"
+    ],
+    "answer": "「探しやすくなったので、資料を分類したことに満足した」は誤りです。「嬉しくなかった」ではなく「重かった」です。",
+    "question_control": {
+      "pending_question": {
+        "question_id": "emlis-question-c7687e04370687aec2765102840ec3d88c07740a41b14af45e180c667ddd4fb9",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-0249f760c226a7f96a0e5b1e",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-43600dfdff9540fb13582f49a89e184ad63a482320cc294dd132e506bc54f231",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-d4fbf8200a2b483ca37a5557"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s1:event",
+            "nucleus:s1:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s2:appraisal"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "asked_target_refs": [
+        "emlis-target-43600dfdff9540fb13582f49a89e184ad63a482320cc294dd132e506bc54f231"
+      ],
+      "issued_count": 1,
+      "stop": false,
+      "issued_questions": [],
+      "question_limit": 1
+    },
+    "supplemental_answers": [
+      {
+        "answer_id": "q1-answer",
+        "thread_id": "q1-thread",
+        "question_id": "emlis-question-c7687e04370687aec2765102840ec3d88c07740a41b14af45e180c667ddd4fb9",
+        "round_index": 1,
+        "original_source_ref": "src-0249f760c226a7f96a0e5b1e",
+        "answer_text_private": "「探しやすくなったので、資料を分類したことに満足した」は誤りです。「嬉しくなかった」ではなく「重かった」です。",
+        "recorded_at": "2026-09-11T00:00:00Z",
+        "authored_at": null,
+        "source_version": "cocolon.cmee.supplemental_answer.v1",
+        "source_role": "SUPPLEMENTAL_ANSWER"
+      }
+    ],
+    "foreign_error": "emlis_question_noncanonical"
+  },
+  {
+    "case_id": "u269_q3_initial_False",
+    "memo": "探しやすくなったので、資料を分類したことに満足した。探しやすくなったので、資料を分類したことに満足した。",
+    "action": "褒められたのに、嬉しくなかった。",
+    "capability": "Q3_FREE",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-f2752d40b11d634011cee9d8a2f3cad352775ea08071737ce8671c78f1e72451",
+      "source_prefix_ref": "emlis-q3-source-prefix-b4776cc3143b25c5df3a6a3cc2b39fc2c6a3d96019609a90af69f93e5f5dacff",
+      "base_meaning_ref": "emlis-base-meaning-778c55af6d7f2ea9f07cb1b537c169a263ad9dc9046ed36fafbbd6317829e7ea",
+      "answer_update": null,
+      "assessment_status": "RESOLVED",
+      "accepted_update_refs": [],
+      "inactive_claim_refs": [],
+      "unresolved_parts": [],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "PRE_QUESTION",
+    "baseline_body": "見えたこと：\n「探しやすくなった」を理由として、「満足した」へつながっています。 「資料を分類した」という出来事に対する評価は、「満足した」とあります。\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n\nEmlisから：\n探しやすくなったことを理由に、資料を分類したことについて、当時は満足したのですね。",
+    "baseline_reason_codes": [
+      "emlis_question_candidate_ready"
+    ],
+    "foreign_error": "emlis_checkpoint_source_prefix_mismatch"
+  },
+  {
+    "case_id": "u269_q3_withdraw_False",
+    "memo": "探しやすくなったので、資料を分類したことに満足した。探しやすくなったので、資料を分類したことに満足した。",
+    "action": "褒められたのに、嬉しくなかった。",
+    "capability": "Q3_FREE",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-714283626ef4a83dfe2b32ab5a4665535f7a5aeeadd1da40dd8a60f678c982b6",
+      "source_prefix_ref": "emlis-q3-source-prefix-1413ccd6d2823192f5f94a7a5f28848dd19a8424445176606da02d3561163acb",
+      "base_meaning_ref": "emlis-base-meaning-778c55af6d7f2ea9f07cb1b537c169a263ad9dc9046ed36fafbbd6317829e7ea",
+      "answer_update": {
+        "answer_source_ref": "src-32820ca2c827e5a2fd6c577d",
+        "question_ref": "emlis-question-2bbc61e3caec966ee79dd9783bfd06bfb417a34390eee7fcea267589b0055cc8",
+        "prior_meaning_ref": "emlis-base-meaning-778c55af6d7f2ea9f07cb1b537c169a263ad9dc9046ed36fafbbd6317829e7ea",
+        "updates": [],
+        "unresolved_parts": [
+          {
+            "evidence_refs": [
+              "ev-b3526656630fe54053db414c"
+            ],
+            "reason_code": "correction_target_unresolved"
+          }
+        ],
+        "disposition": "UNRESOLVED",
+        "new_meaning_ref": "emlis-base-meaning-778c55af6d7f2ea9f07cb1b537c169a263ad9dc9046ed36fafbbd6317829e7ea"
+      },
+      "assessment_status": "UNRESOLVED",
+      "accepted_update_refs": [],
+      "inactive_claim_refs": [],
+      "unresolved_parts": [
+        {
+          "evidence_refs": [
+            "ev-b3526656630fe54053db414c"
+          ],
+          "reason_code": "correction_target_unresolved"
+        }
+      ],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "ANSWER_UNREFLECTED",
+    "baseline_body": null,
+    "baseline_reason_codes": [
+      "correction_target_unresolved"
+    ],
+    "answer": "「探しやすくなったので、資料を分類したことに満足した」は誤りです。",
+    "question_control": {
+      "pending_question": {
+        "question_id": "emlis-question-2bbc61e3caec966ee79dd9783bfd06bfb417a34390eee7fcea267589b0055cc8",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-9d1e2d05b7230377a5a41f47",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-8752ab78f3ea147c4af18304cf8c64e4d1df92a64dbd5f9158c5e836be9f16cf",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-f79541ec1045a5ace3254fd1"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s3:event",
+            "nucleus:s3:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s3:event",
+            "nucleus:s3:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "asked_target_refs": [
+        "emlis-target-8752ab78f3ea147c4af18304cf8c64e4d1df92a64dbd5f9158c5e836be9f16cf"
+      ],
+      "issued_count": 1,
+      "stop": false,
+      "issued_questions": [
+        {
+          "question_id": "emlis-question-2bbc61e3caec966ee79dd9783bfd06bfb417a34390eee7fcea267589b0055cc8",
+          "parent_request_id": "q1-synthetic",
+          "thread_id": "q1-thread",
+          "original_source_ref": "src-9d1e2d05b7230377a5a41f47",
+          "decision": {
+            "disposition": "ASK",
+            "target_ref": "emlis-target-8752ab78f3ea147c4af18304cf8c64e4d1df92a64dbd5f9158c5e836be9f16cf",
+            "target_kind": "PERSONAL_RECEIVED_MEANING",
+            "supporting_evidence_refs": [
+              "ev-f79541ec1045a5ace3254fd1"
+            ],
+            "missing_dimension": "personal_received_meaning",
+            "affected_meaning_refs": [
+              "nucleus:s3:event",
+              "nucleus:s3:reaction"
+            ],
+            "affected_reception_refs": [
+              "nucleus:s3:event",
+              "nucleus:s3:reaction"
+            ],
+            "asked_target_refs": [],
+            "decision_reason": "source_bound_event_personal_meaning_missing"
+          },
+          "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+          "skip_allowed": true,
+          "answer_limit": 1,
+          "answer_source_role": "SUPPLEMENTAL_ANSWER",
+          "schema_version": "cocolon.cmee.emlis_clarification.v1"
+        }
+      ],
+      "question_limit": 1
+    },
+    "supplemental_answers": [
+      {
+        "answer_id": "answer-1",
+        "thread_id": "q1-thread",
+        "question_id": "emlis-question-2bbc61e3caec966ee79dd9783bfd06bfb417a34390eee7fcea267589b0055cc8",
+        "round_index": 1,
+        "original_source_ref": "src-9d1e2d05b7230377a5a41f47",
+        "answer_text_private": "「探しやすくなったので、資料を分類したことに満足した」は誤りです。",
+        "recorded_at": "2026-09-11T01:00:00Z",
+        "authored_at": null,
+        "source_version": "cocolon.cmee.supplemental_answer.v1",
+        "source_role": "SUPPLEMENTAL_ANSWER"
+      }
+    ],
+    "foreign_error": "emlis_checkpoint_source_prefix_mismatch"
+  },
+  {
+    "case_id": "u269_q3_partial_False",
+    "memo": "探しやすくなったので、資料を分類したことに満足した。探しやすくなったので、資料を分類したことに満足した。",
+    "action": "褒められたのに、嬉しくなかった。",
+    "capability": "Q3_FREE",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-da859acb7933f414fd53c7f91d09c84b09f55db511a4d0a0e4eb8932053b56ab",
+      "source_prefix_ref": "emlis-q3-source-prefix-6fac6d1d161c787135e63e5bf3aa69b3fc4b9d3b78acc11aa4d6e37ec1bbe18f",
+      "base_meaning_ref": "emlis-base-meaning-778c55af6d7f2ea9f07cb1b537c169a263ad9dc9046ed36fafbbd6317829e7ea",
+      "answer_update": {
+        "answer_source_ref": "src-92266ee1e4487f8b5bb7e4bd",
+        "question_ref": "emlis-question-2bbc61e3caec966ee79dd9783bfd06bfb417a34390eee7fcea267589b0055cc8",
+        "prior_meaning_ref": "emlis-base-meaning-778c55af6d7f2ea9f07cb1b537c169a263ad9dc9046ed36fafbbd6317829e7ea",
+        "updates": [
+          {
+            "update_ref": "emlis-update-7c46e364d33bab6ace784df697536151a316acdf3c1efb1f94c4ccb862635930",
+            "binding_kind": "EXPLICIT_CORRECTION",
+            "target_meaning_refs": [
+              "nucleus:s3:reaction"
+            ],
+            "evidence_refs": [
+              "ev-1618ca63118d33ebc783d51c"
+            ],
+            "temporal_binding": {
+              "about_time": "ORIGINAL_OCCASION",
+              "anchor_source_ref": "src-9d1e2d05b7230377a5a41f47",
+              "time_expression_evidence_refs": [],
+              "relative_relation": null,
+              "resolved_interval": null,
+              "timezone_basis": null
+            },
+            "operation": "REVISE",
+            "changed_claim_refs": [
+              "answer:s8"
+            ],
+            "superseded_claim_refs": [
+              "nucleus:s3:reaction"
+            ],
+            "affected_dependency_refs": [
+              "relation:r5"
+            ]
+          }
+        ],
+        "unresolved_parts": [
+          {
+            "evidence_refs": [
+              "ev-61d8d445e802c13b65cf3c94"
+            ],
+            "reason_code": "correction_target_unresolved"
+          }
+        ],
+        "disposition": "MATERIAL_UPDATE",
+        "new_meaning_ref": "emlis-meaning-2d4e6d824157a5495174c8dc32600424e21233fe20ac23d6bffab367d3281dd5"
+      },
+      "assessment_status": "PARTIAL",
+      "accepted_update_refs": [
+        "emlis-update-7c46e364d33bab6ace784df697536151a316acdf3c1efb1f94c4ccb862635930"
+      ],
+      "inactive_claim_refs": [
+        "nucleus:s3:reaction",
+        "relation:r5"
+      ],
+      "unresolved_parts": [
+        {
+          "evidence_refs": [
+            "ev-61d8d445e802c13b65cf3c94"
+          ],
+          "reason_code": "correction_target_unresolved"
+        }
+      ],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "MEANING_UPDATED_BODY_UNAVAILABLE",
+    "baseline_body": null,
+    "baseline_reason_codes": [
+      "emlis_refined_body_unavailable"
+    ],
+    "answer": "「探しやすくなったので、資料を分類したことに満足した」は誤りです。「嬉しくなかった」ではなく「重かった」です。",
+    "question_control": {
+      "pending_question": {
+        "question_id": "emlis-question-2bbc61e3caec966ee79dd9783bfd06bfb417a34390eee7fcea267589b0055cc8",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-9d1e2d05b7230377a5a41f47",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-8752ab78f3ea147c4af18304cf8c64e4d1df92a64dbd5f9158c5e836be9f16cf",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-f79541ec1045a5ace3254fd1"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s3:event",
+            "nucleus:s3:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s3:event",
+            "nucleus:s3:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "asked_target_refs": [
+        "emlis-target-8752ab78f3ea147c4af18304cf8c64e4d1df92a64dbd5f9158c5e836be9f16cf"
+      ],
+      "issued_count": 1,
+      "stop": false,
+      "issued_questions": [
+        {
+          "question_id": "emlis-question-2bbc61e3caec966ee79dd9783bfd06bfb417a34390eee7fcea267589b0055cc8",
+          "parent_request_id": "q1-synthetic",
+          "thread_id": "q1-thread",
+          "original_source_ref": "src-9d1e2d05b7230377a5a41f47",
+          "decision": {
+            "disposition": "ASK",
+            "target_ref": "emlis-target-8752ab78f3ea147c4af18304cf8c64e4d1df92a64dbd5f9158c5e836be9f16cf",
+            "target_kind": "PERSONAL_RECEIVED_MEANING",
+            "supporting_evidence_refs": [
+              "ev-f79541ec1045a5ace3254fd1"
+            ],
+            "missing_dimension": "personal_received_meaning",
+            "affected_meaning_refs": [
+              "nucleus:s3:event",
+              "nucleus:s3:reaction"
+            ],
+            "affected_reception_refs": [
+              "nucleus:s3:event",
+              "nucleus:s3:reaction"
+            ],
+            "asked_target_refs": [],
+            "decision_reason": "source_bound_event_personal_meaning_missing"
+          },
+          "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+          "skip_allowed": true,
+          "answer_limit": 1,
+          "answer_source_role": "SUPPLEMENTAL_ANSWER",
+          "schema_version": "cocolon.cmee.emlis_clarification.v1"
+        }
+      ],
+      "question_limit": 1
+    },
+    "supplemental_answers": [
+      {
+        "answer_id": "answer-1",
+        "thread_id": "q1-thread",
+        "question_id": "emlis-question-2bbc61e3caec966ee79dd9783bfd06bfb417a34390eee7fcea267589b0055cc8",
+        "round_index": 1,
+        "original_source_ref": "src-9d1e2d05b7230377a5a41f47",
+        "answer_text_private": "「探しやすくなったので、資料を分類したことに満足した」は誤りです。「嬉しくなかった」ではなく「重かった」です。",
+        "recorded_at": "2026-09-11T01:00:00Z",
+        "authored_at": null,
+        "source_version": "cocolon.cmee.supplemental_answer.v1",
+        "source_role": "SUPPLEMENTAL_ANSWER"
+      }
+    ],
+    "foreign_error": "emlis_checkpoint_source_prefix_mismatch"
+  },
+  {
+    "case_id": "u269_q3_initial_True",
+    "memo": "褒められたのに、嬉しくなかった。",
+    "action": "探しやすくなったので、資料を分類したことに満足した。探しやすくなったので、資料を分類したことに満足した。",
+    "capability": "Q3_FREE",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-31712ae74f4afff45000ccad8a95763d9826ff17d866574d3182f56cceb29b38",
+      "source_prefix_ref": "emlis-q3-source-prefix-9405b056ba8a3bac1c3f7c2f210bf9ebdb7ca7ef157750bdfdda8e8a18e81481",
+      "base_meaning_ref": "emlis-base-meaning-f2ebe20bda6f1ce57b1ca68d9ee1997e232f6b52797b7bafc024e63a7424c853",
+      "answer_update": null,
+      "assessment_status": "RESOLVED",
+      "accepted_update_refs": [],
+      "inactive_claim_refs": [],
+      "unresolved_parts": [],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "PRE_QUESTION",
+    "baseline_body": "見えたこと：\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n「探しやすくなった」を理由として、「満足した」へつながっています。 「資料を分類した」という出来事に対する評価は、「満足した」とあります。\n\nEmlisから：\n探しやすくなったことを理由に、資料を分類したことについて、当時は満足したのですね。",
+    "baseline_reason_codes": [
+      "emlis_question_candidate_ready"
+    ],
+    "foreign_error": "emlis_checkpoint_source_prefix_mismatch"
+  },
+  {
+    "case_id": "u269_q3_withdraw_True",
+    "memo": "褒められたのに、嬉しくなかった。",
+    "action": "探しやすくなったので、資料を分類したことに満足した。探しやすくなったので、資料を分類したことに満足した。",
+    "capability": "Q3_FREE",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-c682b6062b5bf32d048236f04e776cb267a9a33140b47d5f3235b71cb9cd40ee",
+      "source_prefix_ref": "emlis-q3-source-prefix-a17d7963b080ec90babccadf7d3bb3b594c1eca76665317bdf6bfdb055f44534",
+      "base_meaning_ref": "emlis-base-meaning-f2ebe20bda6f1ce57b1ca68d9ee1997e232f6b52797b7bafc024e63a7424c853",
+      "answer_update": {
+        "answer_source_ref": "src-6f6ec715bd56e3ceb23da254",
+        "question_ref": "emlis-question-c7687e04370687aec2765102840ec3d88c07740a41b14af45e180c667ddd4fb9",
+        "prior_meaning_ref": "emlis-base-meaning-f2ebe20bda6f1ce57b1ca68d9ee1997e232f6b52797b7bafc024e63a7424c853",
+        "updates": [],
+        "unresolved_parts": [
+          {
+            "evidence_refs": [
+              "ev-ba317361d179e80f3a77dac9"
+            ],
+            "reason_code": "correction_target_unresolved"
+          }
+        ],
+        "disposition": "UNRESOLVED",
+        "new_meaning_ref": "emlis-base-meaning-f2ebe20bda6f1ce57b1ca68d9ee1997e232f6b52797b7bafc024e63a7424c853"
+      },
+      "assessment_status": "UNRESOLVED",
+      "accepted_update_refs": [],
+      "inactive_claim_refs": [],
+      "unresolved_parts": [
+        {
+          "evidence_refs": [
+            "ev-ba317361d179e80f3a77dac9"
+          ],
+          "reason_code": "correction_target_unresolved"
+        }
+      ],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "ANSWER_UNREFLECTED",
+    "baseline_body": null,
+    "baseline_reason_codes": [
+      "correction_target_unresolved"
+    ],
+    "answer": "「探しやすくなったので、資料を分類したことに満足した」は誤りです。",
+    "question_control": {
+      "pending_question": {
+        "question_id": "emlis-question-c7687e04370687aec2765102840ec3d88c07740a41b14af45e180c667ddd4fb9",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-0249f760c226a7f96a0e5b1e",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-43600dfdff9540fb13582f49a89e184ad63a482320cc294dd132e506bc54f231",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-d4fbf8200a2b483ca37a5557"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s1:event",
+            "nucleus:s1:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s1:event",
+            "nucleus:s1:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "asked_target_refs": [
+        "emlis-target-43600dfdff9540fb13582f49a89e184ad63a482320cc294dd132e506bc54f231"
+      ],
+      "issued_count": 1,
+      "stop": false,
+      "issued_questions": [
+        {
+          "question_id": "emlis-question-c7687e04370687aec2765102840ec3d88c07740a41b14af45e180c667ddd4fb9",
+          "parent_request_id": "q1-synthetic",
+          "thread_id": "q1-thread",
+          "original_source_ref": "src-0249f760c226a7f96a0e5b1e",
+          "decision": {
+            "disposition": "ASK",
+            "target_ref": "emlis-target-43600dfdff9540fb13582f49a89e184ad63a482320cc294dd132e506bc54f231",
+            "target_kind": "PERSONAL_RECEIVED_MEANING",
+            "supporting_evidence_refs": [
+              "ev-d4fbf8200a2b483ca37a5557"
+            ],
+            "missing_dimension": "personal_received_meaning",
+            "affected_meaning_refs": [
+              "nucleus:s1:event",
+              "nucleus:s1:reaction"
+            ],
+            "affected_reception_refs": [
+              "nucleus:s1:event",
+              "nucleus:s1:reaction"
+            ],
+            "asked_target_refs": [],
+            "decision_reason": "source_bound_event_personal_meaning_missing"
+          },
+          "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+          "skip_allowed": true,
+          "answer_limit": 1,
+          "answer_source_role": "SUPPLEMENTAL_ANSWER",
+          "schema_version": "cocolon.cmee.emlis_clarification.v1"
+        }
+      ],
+      "question_limit": 1
+    },
+    "supplemental_answers": [
+      {
+        "answer_id": "answer-1",
+        "thread_id": "q1-thread",
+        "question_id": "emlis-question-c7687e04370687aec2765102840ec3d88c07740a41b14af45e180c667ddd4fb9",
+        "round_index": 1,
+        "original_source_ref": "src-0249f760c226a7f96a0e5b1e",
+        "answer_text_private": "「探しやすくなったので、資料を分類したことに満足した」は誤りです。",
+        "recorded_at": "2026-09-11T01:00:00Z",
+        "authored_at": null,
+        "source_version": "cocolon.cmee.supplemental_answer.v1",
+        "source_role": "SUPPLEMENTAL_ANSWER"
+      }
+    ],
+    "foreign_error": "emlis_checkpoint_source_prefix_mismatch"
+  },
+  {
+    "case_id": "u269_q3_partial_True",
+    "memo": "褒められたのに、嬉しくなかった。",
+    "action": "探しやすくなったので、資料を分類したことに満足した。探しやすくなったので、資料を分類したことに満足した。",
+    "capability": "Q3_FREE",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-ab43363eaaae7b427a023ee998472a898994bb242289e4491e97260ff9bc4d6f",
+      "source_prefix_ref": "emlis-q3-source-prefix-7895293030b6ea0399a0c6c5d1a689b1ac7e7a325fe2361e0e9c97ef1ef4ec43",
+      "base_meaning_ref": "emlis-base-meaning-f2ebe20bda6f1ce57b1ca68d9ee1997e232f6b52797b7bafc024e63a7424c853",
+      "answer_update": {
+        "answer_source_ref": "src-d3d78360541b7daff2da7e50",
+        "question_ref": "emlis-question-c7687e04370687aec2765102840ec3d88c07740a41b14af45e180c667ddd4fb9",
+        "prior_meaning_ref": "emlis-base-meaning-f2ebe20bda6f1ce57b1ca68d9ee1997e232f6b52797b7bafc024e63a7424c853",
+        "updates": [
+          {
+            "update_ref": "emlis-update-0b01876b79f482dbd87442a4fb892b719ae9227f6b60fc6c54af89d5ef19a5ed",
+            "binding_kind": "EXPLICIT_CORRECTION",
+            "target_meaning_refs": [
+              "nucleus:s1:reaction"
+            ],
+            "evidence_refs": [
+              "ev-cd641e929e35f6b68f41bcc9"
+            ],
+            "temporal_binding": {
+              "about_time": "ORIGINAL_OCCASION",
+              "anchor_source_ref": "src-0249f760c226a7f96a0e5b1e",
+              "time_expression_evidence_refs": [],
+              "relative_relation": null,
+              "resolved_interval": null,
+              "timezone_basis": null
+            },
+            "operation": "REVISE",
+            "changed_claim_refs": [
+              "answer:s8"
+            ],
+            "superseded_claim_refs": [
+              "nucleus:s1:reaction"
+            ],
+            "affected_dependency_refs": [
+              "relation:r1"
+            ]
+          }
+        ],
+        "unresolved_parts": [
+          {
+            "evidence_refs": [
+              "ev-fdd2ef972f9c2b8cf299f4dc"
+            ],
+            "reason_code": "correction_target_unresolved"
+          }
+        ],
+        "disposition": "MATERIAL_UPDATE",
+        "new_meaning_ref": "emlis-meaning-a6e5e65bd28d086f3ef618fe218a77dbfdb76a1b52e8f0b958f0444b55b6ffc7"
+      },
+      "assessment_status": "PARTIAL",
+      "accepted_update_refs": [
+        "emlis-update-0b01876b79f482dbd87442a4fb892b719ae9227f6b60fc6c54af89d5ef19a5ed"
+      ],
+      "inactive_claim_refs": [
+        "nucleus:s1:reaction",
+        "relation:r1"
+      ],
+      "unresolved_parts": [
+        {
+          "evidence_refs": [
+            "ev-fdd2ef972f9c2b8cf299f4dc"
+          ],
+          "reason_code": "correction_target_unresolved"
+        }
+      ],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "MEANING_UPDATED_BODY_UNAVAILABLE",
+    "baseline_body": null,
+    "baseline_reason_codes": [
+      "emlis_refined_body_unavailable"
+    ],
+    "answer": "「探しやすくなったので、資料を分類したことに満足した」は誤りです。「嬉しくなかった」ではなく「重かった」です。",
+    "question_control": {
+      "pending_question": {
+        "question_id": "emlis-question-c7687e04370687aec2765102840ec3d88c07740a41b14af45e180c667ddd4fb9",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-0249f760c226a7f96a0e5b1e",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-43600dfdff9540fb13582f49a89e184ad63a482320cc294dd132e506bc54f231",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-d4fbf8200a2b483ca37a5557"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s1:event",
+            "nucleus:s1:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s1:event",
+            "nucleus:s1:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "asked_target_refs": [
+        "emlis-target-43600dfdff9540fb13582f49a89e184ad63a482320cc294dd132e506bc54f231"
+      ],
+      "issued_count": 1,
+      "stop": false,
+      "issued_questions": [
+        {
+          "question_id": "emlis-question-c7687e04370687aec2765102840ec3d88c07740a41b14af45e180c667ddd4fb9",
+          "parent_request_id": "q1-synthetic",
+          "thread_id": "q1-thread",
+          "original_source_ref": "src-0249f760c226a7f96a0e5b1e",
+          "decision": {
+            "disposition": "ASK",
+            "target_ref": "emlis-target-43600dfdff9540fb13582f49a89e184ad63a482320cc294dd132e506bc54f231",
+            "target_kind": "PERSONAL_RECEIVED_MEANING",
+            "supporting_evidence_refs": [
+              "ev-d4fbf8200a2b483ca37a5557"
+            ],
+            "missing_dimension": "personal_received_meaning",
+            "affected_meaning_refs": [
+              "nucleus:s1:event",
+              "nucleus:s1:reaction"
+            ],
+            "affected_reception_refs": [
+              "nucleus:s1:event",
+              "nucleus:s1:reaction"
+            ],
+            "asked_target_refs": [],
+            "decision_reason": "source_bound_event_personal_meaning_missing"
+          },
+          "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+          "skip_allowed": true,
+          "answer_limit": 1,
+          "answer_source_role": "SUPPLEMENTAL_ANSWER",
+          "schema_version": "cocolon.cmee.emlis_clarification.v1"
+        }
+      ],
+      "question_limit": 1
+    },
+    "supplemental_answers": [
+      {
+        "answer_id": "answer-1",
+        "thread_id": "q1-thread",
+        "question_id": "emlis-question-c7687e04370687aec2765102840ec3d88c07740a41b14af45e180c667ddd4fb9",
+        "round_index": 1,
+        "original_source_ref": "src-0249f760c226a7f96a0e5b1e",
+        "answer_text_private": "「探しやすくなったので、資料を分類したことに満足した」は誤りです。「嬉しくなかった」ではなく「重かった」です。",
+        "recorded_at": "2026-09-11T01:00:00Z",
+        "authored_at": null,
+        "source_version": "cocolon.cmee.supplemental_answer.v1",
+        "source_role": "SUPPLEMENTAL_ANSWER"
+      }
+    ],
+    "foreign_error": "emlis_checkpoint_source_prefix_mismatch"
+  }
+]

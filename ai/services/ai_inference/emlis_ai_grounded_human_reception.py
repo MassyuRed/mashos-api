@@ -1733,6 +1733,30 @@ def _detached_feeling_pair(reception_plan, recovery_stage, *, plan=None, resolve
     return None
 
 
+def _duplicate_reason_pair(reception_plan, recovery_stage, *, plan=None, resolver=None):
+    """Locate two distinct exact-three duties eligible to share one sentence."""
+    if (recovery_stage != 'full' or plan is None or resolver is None
+        or plan.response_plan.human_reception_plan != reception_plan
+        or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
+        or reception_plan.depth_policy.safety_mode != 'standard'
+        or reception_plan.depth_policy.max_moves_per_sentence < 2
+        or reception_plan.depth_policy.min_sentences > 2):
+        return None
+    from emlis_ai_grounded_observation_plan import source_owned_duplicate_reason_appraisals
+    groups = source_owned_duplicate_reason_appraisals(plan.nuclei, plan.relations, resolver)
+    moves = reception_active_moves(reception_plan, recovery_stage)
+    if not groups or len(moves) != 3:
+        return None
+    for position in (0, 1):
+        if all(move.required and move.move_role in {'attention', 'felt_response'}
+               and move.reception_act == 'recognize_lived_change'
+               and move.target_nucleus_ids == (evaluation.nucleus_id,)
+               and move.support_nucleus_ids == (reason.nucleus_id, event.nucleus_id)
+               for move, (reason, event, evaluation) in zip(moves[position:position + 2], groups, strict=True)):
+            return position
+    return None
+
+
 def build_grounded_reception_clause_plans(
     reception_plan: GroundedHumanReceptionPlan,
     recovery_stage: ReceptionRecoveryStage,
@@ -1749,7 +1773,11 @@ def build_grounded_reception_clause_plans(
         (move,) for move in moves
     )
     detached_pair = _detached_feeling_pair(reception_plan, recovery_stage, plan=plan, resolver=resolver)
-    if detached_pair is not None:
+    repeated_pair = _duplicate_reason_pair(reception_plan, recovery_stage, plan=plan, resolver=resolver)
+    if repeated_pair is not None:
+        move_groups = ((moves[:2], moves[2:]) if repeated_pair == 0 else (moves[:1], moves[1:]))
+
+    elif detached_pair is not None:
         move_groups = ((moves[:2], moves[2:]) if detached_pair == 0
                        else (moves[:1], moves[1:]))
     elif _independent_recognition_pair(reception_plan, recovery_stage, plan=plan,):
@@ -4642,6 +4670,7 @@ def _validate_clause_plan_binding(
         if (len(moves) == 2 and recovery_stage != "integrated"
             and not ((_independent_recognition_pair(reception_plan, recovery_stage, plan=plan,)
                       or _detached_feeling_pair(reception_plan, recovery_stage, plan=plan, resolver=resolver) is not None
+                      or _duplicate_reason_pair(reception_plan, recovery_stage, plan=plan, resolver=resolver) is not None
                       or recovery_stage == "full" and plan is not None and resolver is not None
                       and "selection:source_owned_answer_adjacent" in reception_plan.depth_policy.selection_reason_codes
                       and len(canonical_clause.move_ids) == 2)
@@ -11825,6 +11854,9 @@ def _author_source_grounded_reception_clauses(
             if recovery_stage == "full" and clause_index
             and len(clause_plans[clause_index - 1].move_ids) == 1 else None
         )
+        repeated_at = _duplicate_reason_pair(reception_plan, recovery_stage, plan=plan, resolver=resolver)
+        repeated_pair = (repeated_at is not None and clause_plan.move_ids == tuple(
+            m.move_id for m in active_moves[repeated_at:repeated_at + 2]))
         move_sentences: list[str] = []
         coordination_terms = []
         detached_terms = []
@@ -12268,8 +12300,11 @@ def _author_source_grounded_reception_clauses(
             if positive_answers is not None:
                 move_sentence = positive_answers
             focus_sentence = _source_owned_relational_focus_sentence(
-                move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
+                move, replace(meaning_realization, clause_form='FINITE') if repeated_pair else meaning_realization,
+                plan, resolver, selected_decision, recovery_stage,
             )
+            if repeated_pair and focus_sentence is None:
+                raise GroundedHumanReceptionSurfaceError('MEANING_REALIZATION_CAPABILITY_GAP')
             if focus_sentence is not None:
                 move_sentence = focus_sentence
             appraisal_sentence = _source_owned_appraisal_material_sentence(
@@ -12394,6 +12429,15 @@ def _author_source_grounded_reception_clauses(
                                            selected_decision, move.move_role))
             move_sentences.append(move_sentence)
         shared_feelings = _source_grounded_shared_material_feelings(tuple(coordination_terms))
+        if repeated_pair:
+            from emlis_ai_grounded_observation_gate import read_detached_feeling_pair
+            if (len(move_sentences) != 2 or move_sentences[0] != move_sentences[1]
+                or read_detached_feeling_pair(move_sentences[0] + '。',
+                    tuple(move_index[mid] for mid in clause_plan.move_ids), plan, resolver,
+                    selected_subjective_input) is None):
+                raise GroundedHumanReceptionSurfaceError('MEANING_REALIZATION_CAPABILITY_GAP')
+            shared_feelings = move_sentences[0]
+
         if temporal_pair:
             # Explicit original time licenses these proven past predicates.
             # This coordination adds no contrast, cause or improvement.

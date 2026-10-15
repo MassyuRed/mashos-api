@@ -8238,6 +8238,23 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
     between them. Corrections and withdrawals have already removed inactive
     nuclei before this selector. No question wording or body is consulted.
     """
+    repeated = source_owned_duplicate_reason_appraisals(nuclei, relations)
+    if repeated:
+        owned = {n.nucleus_id for group in repeated for n in group}
+        rest = tuple(n for n in nuclei if n.nucleus_id not in owned)
+        rest_ids = {n.nucleus_id for n in rest}
+        rest_relations = tuple(r for r in relations if {r.from_nucleus_id, r.to_nucleus_id} <= rest_ids)
+        rest_text = tuple(n for n in rest if n.retention == 'required' and set(n.source_fields) & _TEXT_SOURCE_FIELDS)
+        received = _received_contrast_group_targets(rest_text, rest_relations)
+        retained = ((('current_burden', *received),) if received else
+            _thread_retained_reaction_groups(rest, rest_relations, separate_later_scopes=separate_later_scopes)
+            if rest_text else ())
+        if retained or not rest_text:
+            groups = tuple(('lived_change', (v.nucleus_id,), (r.nucleus_id, e.nucleus_id))
+                           for r, e, v in repeated) + retained
+            if len(groups) > 3:
+                raise GroundedObservationPlanError('human_reception_appraisal_capacity_gap')
+            return groups
     contrasts = _source_explicit_contrast_reception_duties(nuclei, relations)
     chain_ids = {n.nucleus_id for n in nuclei
         if "semantic_dependency:received_feeling_contrast_chain" in n.semantic_frame.attribute_codes}
@@ -8897,6 +8914,10 @@ def _source_explicit_contrast_reception_duties(nuclei, relations):
     and required relations participate; no question or generated text does.
     """
     index = {n.nucleus_id: n for n in nuclei}
+    repeated = source_owned_duplicate_reason_appraisals(nuclei, relations)
+    if repeated:
+        return tuple(('lived_change', (v.nucleus_id,), (r.nucleus_id, e.nucleus_id))
+                     for r, e, v in repeated)
     duties = []
     for relation in relations:
         if source_owned_result_appraisal(relation, nuclei):
@@ -13435,7 +13456,8 @@ def _thread_withdrawn_result_appraisal(nucleus, relations):
 
 def _explicit_result_appraisal_projections(span, normalized_input, *, _legacy_appraisal_reason=False,
                                           _legacy_received_appraisal_context=False,
-                                          _legacy_repeated_appraisal_context=False):
+                                          _legacy_repeated_appraisal_context=False,
+                                          _legacy_duplicate_appraisal_source=False):
     """Bind an asserted appraisal to its own asserted object, not adjacency.
 
     The object and the outer appraisal retain independent source ranges and
@@ -13614,7 +13636,14 @@ def _explicit_result_appraisal_projections(span, normalized_input, *, _legacy_ap
             'feeling' if is_appraisal else 'event', ('negative' if negative else 'positive') if is_appraisal else 'neutral',
             'feeling' if is_appraisal else 'fact', time, left, right, codes,
             relation_kind='evaluation_about_event'))
-    return tuple(rows)
+    # Selection has no raw-text resolver. Carry only this exact two-sentence
+    # equality proof, preserving each occurrence's own ranges and claims.
+    # u269 and earlier checkpoints re-derive their unmarked source shape.
+    duplicate = (reason is not None and not _legacy_repeated_appraisal_context
+        and not _legacy_duplicate_appraisal_source and raw == text
+        and re.fullmatch(re.escape(raw) + r'[。．.]' + re.escape(raw) + r'[。．.]?', source) is not None)
+    return tuple(replace(row, attribute_codes=(*row.attribute_codes,
+        'semantic_dependency:duplicated_reason_appraisal_exact2')) if duplicate else row for row in rows)
 
 
 def source_owned_result_appraisal(relation, nuclei):
@@ -13717,6 +13746,51 @@ def source_owned_result_appraisal_context(relation, nuclei, relations, *, reason
 def source_owned_result_appraisal_reason(relation, nuclei, relations):
     """One proved affirmative fact given by SELF as a satisfaction reason."""
     return source_owned_result_appraisal_context(relation, nuclei, relations, reason=True)
+
+
+def source_owned_duplicate_reason_appraisals(nuclei, relations, resolver=None):
+    """Two separate closed scopes with source-proved equal reason wording.
+
+    Selection reads the parser's exact-field proof. Surface consumers also
+    re-resolve the distinct occurrences; equality never merges their IDs.
+    """
+    marker = 'semantic_dependency:duplicated_reason_appraisal_exact2'
+    tagged = tuple(n for n in nuclei if marker in n.semantic_frame.attribute_codes)
+    if len(tagged) != 6:
+        return ()
+    index = {n.nucleus_id: n for n in nuclei}
+    groups = []
+    for relation in relations:
+        reason = source_owned_result_appraisal_reason(relation, nuclei, relations)
+        if reason is None:
+            continue
+        group = (reason, index[relation.from_nucleus_id], index[relation.to_nucleus_id])
+        if all(marker in n.semantic_frame.attribute_codes for n in group):
+            groups.append(group)
+    if (len(groups) != 2 or len({n.nucleus_id for g in groups for n in g}) != 6
+        or {n.nucleus_id for g in groups for n in g} != {n.nucleus_id for n in tagged}
+        or groups[0][0].source_fields != groups[1][0].source_fields
+        or groups[0][0].source_span_ids == groups[1][0].source_span_ids):
+        return ()
+    for group in groups:
+        if {n.nucleus_id for n in nuclei if n.source_fields == group[0].source_fields
+            and n.source_span_ids == group[0].source_span_ids} != {n.nucleus_id for n in group}:
+            return ()
+    if any((a.kind, replace(a.semantic_frame, target_anchor_ids=())) !=
+           (b.kind, replace(b.semantic_frame, target_anchor_ids=()))
+           for a, b in zip(*groups, strict=True)):
+        return ()
+    groups = tuple(sorted(groups, key=lambda g: _span_number(g[0].source_span_ids[0])))
+    if resolver is not None:
+        first, second = (resolver.resolve(g[0].source_span_ids[0]) for g in groups)
+        if (first.source_field != second.source_field or first.raw_text != second.raw_text
+            or not 0 <= first.start_index < first.end_index <= second.start_index < second.end_index
+            or first.end_index - first.start_index != len(first.raw_text)
+            or second.end_index - second.start_index != len(second.raw_text)
+            or {span.span_id for span in resolver.resolve_many(resolver.span_ids)
+                if span.source_field == first.source_field} != {first.span_id, second.span_id}):
+            return ()
+    return groups
 
 
 def _received_event_reaction_projections(span, base_frame):
@@ -13925,6 +13999,7 @@ def _final_stage1_typed_nuclei(
     _legacy_appraisal_reason: bool = False,
     _legacy_received_appraisal_context: bool = False,
     _legacy_repeated_appraisal_context: bool = False,
+    _legacy_duplicate_appraisal_source: bool = False,
 ) -> tuple[tuple[GroundedSemanticNucleus, ...], tuple[tuple[str, str, str], ...]]:
     span_index = {
         _clean(getattr(span, "span_id", "")): span
@@ -13944,7 +14019,8 @@ def _final_stage1_typed_nuclei(
             _explicit_result_appraisal_projections(span, normalized_input,
                 _legacy_appraisal_reason=_legacy_appraisal_reason,
                 _legacy_received_appraisal_context=_legacy_received_appraisal_context,
-                _legacy_repeated_appraisal_context=_legacy_repeated_appraisal_context))
+                _legacy_repeated_appraisal_context=_legacy_repeated_appraisal_context,
+                _legacy_duplicate_appraisal_source=_legacy_duplicate_appraisal_source))
             or _received_event_reaction_projections(span, nucleus.semantic_frame)) if span is not None else ()
         canonical_projections = received_projections or (
             _typed_nucleus_projections_for_span(
@@ -16308,6 +16384,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_received_appraisal_context: bool = False,
     _legacy_repeated_appraisal_context: bool = False,
     _legacy_appraisal_retention: bool = True,
+    _legacy_duplicate_appraisal_source: bool = False,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -16324,6 +16401,7 @@ def project_final_stage1_grounded_observation_plan(
         _legacy_appraisal_reason=_legacy_appraisal_reason,
         _legacy_received_appraisal_context=_legacy_received_appraisal_context,
         _legacy_repeated_appraisal_context=_legacy_repeated_appraisal_context,
+        _legacy_duplicate_appraisal_source=_legacy_duplicate_appraisal_source,
     )
     projected_nuclei = _final_stage1_align_action_status(
         projected_nuclei,
@@ -17432,6 +17510,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_received_appraisal_context: bool = False,
     _legacy_repeated_appraisal_context: bool = False,
     _legacy_appraisal_retention: bool = True,
+    _legacy_duplicate_appraisal_source: bool = False,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan."""
 
@@ -17488,6 +17567,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_received_appraisal_context=_legacy_received_appraisal_context,
         _legacy_repeated_appraisal_context=_legacy_repeated_appraisal_context,
         _legacy_appraisal_retention=_legacy_appraisal_retention,
+        _legacy_duplicate_appraisal_source=_legacy_duplicate_appraisal_source,
     )
 
 
