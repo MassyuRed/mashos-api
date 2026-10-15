@@ -3036,6 +3036,39 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
     if (not first or not second or first == second
         or any(mark in first + second for mark in ("。", "？", "?", "「", "」", "\n"))):
         return None
+    if kind == "withdrawn_target_appraisal_reason":
+        from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
+        from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate
+        if (selected_subjective_input is None or decision is None or decision.branch != 'LIMITED'
+            or type(appraisal) is not EmlisAppraisalContent
+            or proposition.subjective_mode != 'ATTENTION' or proposition.subjective_operator != 'ATTEND_TO'
+            or appraisal.dimension != 'RELATIONAL_NONCOLLAPSE' or appraisal.operation != 'PRESERVE_BOTH_ENDPOINTS'
+            or appraisal.protected_bindings or len(appraisal.appraised_bindings) != 2
+            or proposition.focal_relation_ref != appraisal.focal_relation_ref):
+            return None
+        basis = {row.binding_ref: row.semantic_ref for row in decision.basis_rows}
+        semantic_map = dict(selected_subjective_input.semantic_nucleus_pairs)
+        relation_map = dict(selected_subjective_input.relation_pairs)
+        edges = tuple(r for r in plan.relations if r.type == 'user_stated_cause'
+            and (r.from_nucleus_id, r.to_nucleus_id) == (left.nucleus_id, right.nucleus_id))
+        if (any(ref not in basis for ref in appraisal.appraised_bindings)
+            or {semantic_map.get(basis[ref]) for ref in appraisal.appraised_bindings}
+                != {left.nucleus_id, right.nucleus_id}
+            or len(edges) != 1 or relation_map.get(appraisal.focal_relation_ref) != edges[0].relation_id):
+            return None
+        parsed = re.fullmatch(r'(?P<reason>.+)という理由と、(?P<time>当時の|入力した時点での)'
+            r'(?P<evaluation>満足)とのつながりに目を向けています。', raw)
+        if parsed is None or not _source_result_appraisal_predicate(right, second):
+            return None
+        actual_reason = parsed['reason']
+        owner = re.search(r'(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)', first)
+        if owner:
+            actual_reason = actual_reason.replace('あなた', owner.group(), 1)
+        when = _body_inverse_appraisal_time(right)
+        if actual_reason != first or parsed['time'] != when + ('の' if when == '当時' else 'での'):
+            return None
+        return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
+                     for key, value in (('reason', first), ('evaluation', second)))
     if kind == "original_result_appraisal":
         if (selected_subjective_input is not None and decision is not None
             and decision.branch == 'LIMITED' and appraisal is not None
@@ -6904,7 +6937,7 @@ def evaluate_grounded_surface_body_inverse(
                                      or nucleus_index[nid].source_fields == ("answer_text_private",)
                                      and nucleus_index[nid].allowed_claim_scope == "explicit_supplemental_answer")
                                 for nid in (*move.target_nucleus_ids, *move.support_nucleus_ids))
-                            and re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました|経験として受け取りました|充足として受け取りました|満足の拠り所が見えます|理由に目を向けています|ことの両方を受け取りました)。$",
+                            and re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました|経験として受け取りました|充足として受け取りました|満足の拠り所が見えます|理由に目を向けています|つながりに目を向けています|ことの両方を受け取りました)。$",
                                 body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8"))):
                             failures.append("body_inverse_reception_finite_duty_unverified:" + move_id)
                             continue

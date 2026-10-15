@@ -7833,6 +7833,53 @@ def source_owned_relational_focus(move, plan=None, *, nuclei=None, relations=Non
         and move.target_nucleus_ids == (right.nucleus_id,)
         and move.support_nucleus_ids == (left.nucleus_id,)):
         return "original_result_appraisal", left, right
+    if (plan is not None
+        and FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in plan.source_contracts
+        and move in plan.response_plan.human_reception_plan.moves
+        and move.reception_act == "recognize_lived_change"
+        and move.target_nucleus_ids == (right.nucleus_id,)
+        and move.support_nucleus_ids == (left.nucleus_id,)
+        and relation.type == "user_stated_cause"
+        and relation.grounding_kind == "user_stated_relation"
+        and left.source_fields == right.source_fields
+        and left.source_fields in {("memo",), ("memo_action",)}
+        and len(left.source_span_ids) == 1
+        and left.source_span_ids == right.source_span_ids == relation.source_span_ids
+        and all(n.grounding_kind == "explicit"
+                and n.allowed_claim_scope == "explicit_current_input"
+                and n.surface_anchor_ids == left.source_span_ids
+                and "semantic_dependency:reasoned_result_appraisal" in n.semantic_frame.attribute_codes
+                and "source_fragment_scalar_source:normalized_raw_text" in n.semantic_frame.attribute_codes
+                and not any(c.startswith("thread_time:") for c in n.semantic_frame.attribute_codes)
+                for n in (left, right))
+        and (left.kind, left.semantic_frame.predicate_kind, left.semantic_frame.modality,
+             left.semantic_frame.polarity) == ("state", "state", "fact", "positive")
+        and left.semantic_frame.time_scope in {"past", "present"}
+        and "semantic_role:appraisal_explicit_reason" in left.semantic_frame.attribute_codes
+        and (right.kind, right.semantic_frame.predicate_kind, right.semantic_frame.modality,
+             right.semantic_frame.polarity) == ("reaction", "feeling", "feeling", "positive")
+        and right.semantic_frame.time_scope in {"past", "present"}
+        and {"thread_subject:withdrawn_source_event", "semantic_dependency:explicit_result_appraisal",
+             "semantic_role:explicit_evaluation"} <= set(right.semantic_frame.attribute_codes)
+        and {c for c in right.semantic_frame.attribute_codes if c.startswith("source_appraisal_")}
+            == {"source_appraisal_kind:satisfaction", "source_appraisal_degree:unmarked"}
+        and not any({"operator:negation", "operator:uncertainty", "operator:unfinished",
+                     "semantic_role:limiting_unknown"} & set(n.semantic_frame.attribute_codes)
+                    for n in (left, right))
+        and {n.nucleus_id for n in nuclei if n.source_fields == left.source_fields
+             and n.source_span_ids == left.source_span_ids} == {left.nucleus_id, right.nucleus_id}
+        and not any(r != relation and {r.from_nucleus_id, r.to_nucleus_id}
+                    & {left.nucleus_id, right.nucleus_id} for r in all_relations)):
+        # Surface-only recognition of the surviving, already admitted edge.
+        # Do not change selection/reference modes (the plan-less call above),
+        # invent a replacement object, or turn the user's reason into a cause.
+        ranges = tuple(tuple(c for c in n.semantic_frame.attribute_codes
+                             if c.startswith("source_fragment_scalar_range:")) for n in (left, right))
+        if all(len(row) == 1 and re.fullmatch(r"source_fragment_scalar_range:\d+:\d+", row[0])
+               for row in ranges):
+            (a, b), (c, d) = (tuple(map(int, row[0].split(":")[-2:])) for row in ranges)
+            if a == 0 and a < b < c < d:
+                return "withdrawn_target_appraisal_reason", left, right
     if (relation.type == "contrast"
         and relation.grounding_kind == "user_stated_relation"
         and len(left.source_span_ids) == 1

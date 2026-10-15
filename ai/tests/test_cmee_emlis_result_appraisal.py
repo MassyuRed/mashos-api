@@ -2037,6 +2037,144 @@ def test_single_reason_owner_withdrawal_keeps_other_owner_nuclei(target):
 
 
 @pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
+@pytest.mark.parametrize('reason', ['探しやすくなった', '見た目がすっきりした', '資料を使いやすい'])
+def test_withdrawn_target_keeps_reason_and_appraisal_in_finite_attention(reverse, evaluation, reason):
+    from test_cmee_emlis_q3_thread import advance
+    from emlis_ai_grounded_observation_plan import source_owned_relational_focus
+    source = reason + 'ので、資料を分類したことに' + evaluation + '。'
+    received = '褒められたのに、嬉しくなかった。'
+    req = advance(request(*((received, source) if reverse else (source, received))),
+                  '「資料を分類した」は誤りです。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact is not None, out.reason_codes
+    assert out.meaning_checkpoint == prepared.checkpoint
+    assert prepared.checkpoint.assessment_status == 'RESOLVED'
+    at = '当時の' if evaluation == '満足した' else '入力した時点での'
+    assert out.artifact.reception == reason + 'という理由と、' + at + '満足とのつながりに目を向けています。'
+    assert '資料を分類' not in out.artifact.text
+    assert evaluation in out.artifact.observation and '褒められた' in out.artifact.observation
+    move, = plan.response_plan.human_reception_plan.moves
+    kind, basis, feeling = source_owned_relational_focus(move, plan)
+    assert kind == 'withdrawn_target_appraisal_reason'
+    assert move.target_nucleus_ids == (feeling.nucleus_id,) and move.support_nucleus_ids == (basis.nucleus_id,)
+    decision, = selected.decisions
+    assert decision.branch == 'LIMITED'
+    assert decision.subjective_proposition.subjective_mode == 'ATTENTION'
+    assert decision.subjective_proposition.appraisal_content.operation == 'PRESERVE_BOTH_ENDPOINTS'
+    assert dict(selected.relation_pairs)[decision.subjective_proposition.focal_relation_ref] == next(
+        r.relation_id for r in plan.relations if r.type == 'user_stated_cause')
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
+def test_withdrawn_target_reason_reader_is_independent_and_rejects_changed_meaning(monkeypatch, reverse, evaluation):
+    from test_cmee_emlis_q3_thread import advance
+    import emlis_ai_grounded_human_reception as hr
+    from emlis_ai_grounded_observation_gate import read_source_owned_discourse
+    source = '私は探しやすくなったので、資料を分類したことに' + evaluation + '。'
+    received = '褒められたのに、嬉しくなかった。'
+    req = advance(request(*((received, source) if reverse else (source, received))),
+                  '「資料を分類した」は誤りです。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    resolver = prepared.thread.resolver()
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact is not None, out.reason_codes
+    clause = out.artifact.reception
+    move, = plan.response_plan.human_reception_plan.moves
+    at = '当時の' if evaluation == '満足した' else '入力した時点での'
+    wrongs = (
+        clause.replace('あなたは探しやすくなったという理由と、', ''),
+        clause.replace('探しやすくなった', '探しにくくなった'),
+        clause.replace('探しやすくなった', '探しやすくしたかった'),
+        clause.replace('あなたは探しやすくなった', '褒められた'),
+        clause.replace('あなたは', '上司は'),
+        clause.replace('満足', '納得'),
+        clause.replace('満足', '不満'),
+        clause.replace(at, '回答した時点での'),
+        clause.replace(at, '入力した時点での' if at == '当時の' else '当時の'),
+        clause.replace('という理由と、', 'という唯一の理由と、'),
+        clause.replace('という理由と、', 'という最も大切な理由と、'),
+        clause.replace('という理由と、', 'という原因で生じた、'),
+        clause.replace('満足とのつながり', '資料を分類したことへの満足とのつながり'),
+        clause.replace('目を向けています', '成長を感じています'),
+        '満足したという理由と、' + at + '探しやすさとのつながりに目を向けています。',
+    )
+    def valid(body):
+        return evaluate_grounded_surface_body_inverse(body=body.encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert valid(out.artifact.text)
+    for wrong in wrongs:
+        assert wrong != clause and not valid(out.artifact.text.replace(clause, wrong))
+    monkeypatch.setattr(hr, '_source_owned_relational_focus_sentence',
+        lambda *_a, **_k: pytest.fail('independent withdrawn-target reader called the author'))
+    assert read_source_owned_discourse(clause, move, plan, resolver, selected) is not None
+    for wrong in wrongs:
+        assert read_source_owned_discourse(wrong, move, plan, resolver, selected) is None
+
+
+def test_withdrawn_target_reason_focus_requires_the_surviving_source_pair():
+    from test_cmee_emlis_q3_thread import advance
+    from emlis_ai_grounded_observation_plan import source_owned_relational_focus
+    prepared = prepare_emlis_meaning(advance(request(
+        '探しやすくなったので、資料を分類したことに満足した。',
+        '褒められたのに、嬉しくなかった。'), '「資料を分類した」は誤りです。'))
+    plan = build_updated_grounded_plan(prepared)
+    move, = plan.response_plan.human_reception_plan.moves
+    _, reason, evaluation = source_owned_relational_focus(move, plan)
+    edge, = (r for r in plan.relations if r.type == 'user_stated_cause')
+    def without(node, code):
+        return replace(node, semantic_frame=replace(node.semantic_frame,
+            attribute_codes=tuple(c for c in node.semantic_frame.attribute_codes if c != code)))
+    variants = [without(evaluation, 'thread_subject:withdrawn_source_event'),
+        without(reason, 'semantic_role:appraisal_explicit_reason'),
+        replace(reason, source_fields=('memo_action',)),
+        replace(reason, semantic_frame=replace(reason.semantic_frame, modality='hypothetical')),
+        replace(evaluation, semantic_frame=replace(evaluation.semantic_frame, actor='other')),
+        replace(evaluation, semantic_frame=replace(evaluation.semantic_frame, polarity='negative'))]
+    for changed in variants:
+        mutated = replace(plan, nuclei=tuple(changed if n.nucleus_id == changed.nucleus_id else n for n in plan.nuclei))
+        assert source_owned_relational_focus(move, mutated) is None
+    restored = next(n for n in prepared.original_plan.nuclei if n.nucleus_id in
+                    prepared.checkpoint.answer_update.updates[0].superseded_claim_refs)
+    assert source_owned_relational_focus(move, replace(plan, nuclei=(*plan.nuclei, restored))) is None
+    reversed_edge = replace(edge, from_nucleus_id=edge.to_nucleus_id, to_nucleus_id=edge.from_nucleus_id)
+    assert source_owned_relational_focus(move, replace(plan,
+        relations=tuple(reversed_edge if r == edge else r for r in plan.relations))) is None
+    # Naming a finite surface focus must not rewrite pre-selection/reference-mode decisions.
+    assert source_owned_relational_focus(move, nuclei=plan.nuclei, relations=plan.relations) is None
+
+
+def test_withdrawn_target_reason_selected_focal_cannot_borrow_another_experience():
+    from test_cmee_emlis_q3_thread import advance
+    import emlis_ai_grounded_human_reception as hr
+    prepared = prepare_emlis_meaning(advance(request(
+        '探しやすくなったので、資料を分類したことに満足した。',
+        '褒められたのに、嬉しくなかった。'), '「資料を分類した」は誤りです。'))
+    plan = build_updated_grounded_plan(prepared)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    decision, = selected.decisions
+    proposition = decision.subjective_proposition
+    other = next(ref for ref, rid in selected.relation_pairs if rid == next(
+        r.relation_id for r in plan.relations if r.type == 'contrast'))
+    variants = [replace(decision, branch='NORMAL'), replace(decision, subjective_proposition=replace(
+        proposition, focal_relation_ref=other, appraisal_content=replace(proposition.appraisal_content,
+                                                                       focal_relation_ref=other)))]
+    for row in variants:
+        row = hr.identify_selected_subjective_reception_decision(row)
+        changed = hr.identify_selected_subjective_reception_input(replace(selected, decisions=(row,)))
+        with pytest.raises(hr.GroundedHumanReceptionSurfaceError, match='MEANING_REALIZATION_CAUSAL_TRACE_GAP'):
+            hr.validate_selected_subjective_reception_input(changed,
+                plan.response_plan.human_reception_plan, plan, prepared.thread.resolver())
+
+
+@pytest.mark.parametrize('reverse', [False, True])
 @pytest.mark.parametrize('also_correct', [False, True])
 def test_repeated_reason_withdrawal_does_not_choose_the_generic_occurrence(reverse, also_correct):
     from test_cmee_emlis_q1_thread import answered

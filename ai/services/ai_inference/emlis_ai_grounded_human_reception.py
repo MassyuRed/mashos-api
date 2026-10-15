@@ -458,6 +458,20 @@ def validate_selected_subjective_reception_input(
         source_move = next((move for move in plan.response_plan.human_reception_plan.moves
                             if move.move_id == row.move_id), None)
         source_focus = source_owned_relational_focus(source_move, plan) if source_move is not None else None
+        if source_focus is not None and source_focus[0] == 'withdrawn_target_appraisal_reason':
+            from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
+            reason, evaluation = source_focus[1:]
+            edge = next(r for r in plan.relations if r.type == 'user_stated_cause'
+                and (r.from_nucleus_id, r.to_nucleus_id) == (reason.nucleus_id, evaluation.nucleus_id))
+            if (row.branch != 'LIMITED' or type(appraisal) is not EmlisAppraisalContent
+                or proposition.subjective_mode != 'ATTENTION' or proposition.subjective_operator != 'ATTEND_TO'
+                or appraisal.dimension != 'RELATIONAL_NONCOLLAPSE'
+                or appraisal.operation != 'PRESERVE_BOTH_ENDPOINTS'
+                or appraisal.protected_bindings or len(appraisal.appraised_bindings) != 2
+                or {semantic_map.get(basis_by_ref[ref].semantic_ref) for ref in appraisal.appraised_bindings}
+                    != {reason.nucleus_id, evaluation.nucleus_id}
+                or relation_map.get(appraisal.focal_relation_ref) != edge.relation_id):
+                raise GroundedHumanReceptionSurfaceError(failure)
         if source_focus is not None and source_focus[0] in {'unfinished_result_appraisal', 'reasoned_result_appraisal'}:
             from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
             context, event, evaluation = source_focus[1:]
@@ -11585,6 +11599,17 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
         or set(realization.semantic_fragments) != {first, second}
         or any(mark in first + second for mark in ("。", "？", "?", "「", "」", "\n"))):
         return None
+    if kind == "withdrawn_target_appraisal_reason":
+        from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate, _result_appraisal_time_label
+        proposition = selected_decision.subjective_proposition
+        if (selected_decision.branch != 'LIMITED' or not _selected_noncollapse_appraisal(selected_decision)
+            or proposition.subjective_mode != 'ATTENTION' or proposition.subjective_operator != 'ATTEND_TO'
+            or not _source_result_appraisal_predicate(right, second)):
+            return None
+        reason = re.sub(r'(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)', 'あなた', first, count=1)
+        when = _result_appraisal_time_label(right)
+        at = when + ('の' if when == '当時' else 'での')
+        return f'{reason}という理由と、{at}満足とのつながりに目を向けています'
     if kind == "original_result_appraisal":
         proposition = selected_decision.subjective_proposition
         appraisal = proposition.appraisal_content
