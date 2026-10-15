@@ -1,0 +1,1146 @@
+[
+  {
+    "case_id": "u268-retention-FREE_Q1-False-0",
+    "memo": "褒められたのに、嬉しくなかった。資料を分類したことに満足した。",
+    "action": "誘われたのに、悲しかった。文章を直したことに納得した。",
+    "capability": "FREE_Q1",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-25c9191a99673d78df708f6fde59baea7d6b2e4ed65be1b9ed5ffd531778968f",
+      "source_prefix_ref": "emlis-source-prefix-8775d05f85240b9c62b46e0eedfbe59c39d6d254d716af5d15dbafaa5fbf3624",
+      "base_meaning_ref": "emlis-base-meaning-5ebc84b5ec89e681654682977766f8f08667947f463e3db0b7e5f838ee5ca374",
+      "answer_update": null,
+      "assessment_status": "RESOLVED",
+      "accepted_update_refs": [],
+      "inactive_claim_refs": [],
+      "unresolved_parts": [],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "UNAVAILABLE",
+    "baseline_body": null,
+    "baseline_reason_codes": [
+      "reception_target_not_in_observation_plan"
+    ],
+    "foreign_error": "emlis_checkpoint_source_prefix_mismatch"
+  },
+  {
+    "case_id": "u268-retention-FREE_Q1-False-1",
+    "memo": "褒められたのに、嬉しくなかった。資料を分類したことに満足した。",
+    "action": "誘われたのに、悲しかった。文章を直したことに納得した。",
+    "capability": "FREE_Q1",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-7ab69a617539c9d0cad314bf3df0e4684ea80fa0ad39f795e884e91811191f7f",
+      "source_prefix_ref": "emlis-source-prefix-40354a02247c548f15c042ed87039227c85d452c0c4cf7d89de4cd562b8775ca",
+      "base_meaning_ref": "emlis-base-meaning-5ebc84b5ec89e681654682977766f8f08667947f463e3db0b7e5f838ee5ca374",
+      "answer_update": {
+        "answer_source_ref": "src-755efe20b08870252f6abc55",
+        "question_ref": "emlis-question-bf66fa0ec3c3702598c099a240851e4d2d62a66fda1361287e0a7aa5993a59de",
+        "prior_meaning_ref": "emlis-base-meaning-5ebc84b5ec89e681654682977766f8f08667947f463e3db0b7e5f838ee5ca374",
+        "updates": [
+          {
+            "update_ref": "emlis-update-a67267c6fa0fe503575cea746663854ce00147fc432bb311b528428f7bf7fbbb",
+            "binding_kind": "QUESTION_FOCUS",
+            "target_meaning_refs": [
+              "nucleus:s1:event"
+            ],
+            "evidence_refs": [
+              "ev-029c00690cf8d98050e05d77"
+            ],
+            "temporal_binding": {
+              "about_time": "ORIGINAL_OCCASION",
+              "anchor_source_ref": "src-159633d246555f0a7bd1533d",
+              "time_expression_evidence_refs": [
+                "ev-029c00690cf8d98050e05d77"
+              ],
+              "relative_relation": null,
+              "resolved_interval": null,
+              "timezone_basis": null
+            },
+            "operation": "ADD",
+            "changed_claim_refs": [
+              "answer:s8"
+            ],
+            "superseded_claim_refs": [],
+            "affected_dependency_refs": []
+          }
+        ],
+        "unresolved_parts": [],
+        "disposition": "MATERIAL_UPDATE",
+        "new_meaning_ref": "emlis-meaning-43115e76722cdc9b0e03150773269cf3db247142a8471fa1892e66608d2373b9"
+      },
+      "assessment_status": "RESOLVED",
+      "accepted_update_refs": [
+        "emlis-update-a67267c6fa0fe503575cea746663854ce00147fc432bb311b528428f7bf7fbbb"
+      ],
+      "inactive_claim_refs": [],
+      "unresolved_parts": [],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "MEANING_UPDATED_BODY_UNAVAILABLE",
+    "baseline_body": null,
+    "baseline_reason_codes": [
+      "emlis_refined_body_unavailable"
+    ],
+    "answer": "その時は重かった。",
+    "question_control": {
+      "pending_question": {
+        "question_id": "emlis-question-bf66fa0ec3c3702598c099a240851e4d2d62a66fda1361287e0a7aa5993a59de",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-159633d246555f0a7bd1533d",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-dade1909088255ccf5f399eaa706f780730185743ff494716a0c2852b3f7b7fe",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-9b24e1a89a461bcebef519e7"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s1:event",
+            "nucleus:s1:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s2:appraisal"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "asked_target_refs": [
+        "emlis-target-dade1909088255ccf5f399eaa706f780730185743ff494716a0c2852b3f7b7fe"
+      ],
+      "issued_count": 1,
+      "stop": false,
+      "issued_questions": [],
+      "question_limit": 1
+    },
+    "supplemental_answers": [
+      {
+        "answer_id": "q1-answer",
+        "thread_id": "q1-thread",
+        "question_id": "emlis-question-bf66fa0ec3c3702598c099a240851e4d2d62a66fda1361287e0a7aa5993a59de",
+        "round_index": 1,
+        "original_source_ref": "src-159633d246555f0a7bd1533d",
+        "answer_text_private": "その時は重かった。",
+        "recorded_at": "2026-09-11T00:00:00Z",
+        "authored_at": null,
+        "source_version": "cocolon.cmee.supplemental_answer.v1",
+        "source_role": "SUPPLEMENTAL_ANSWER"
+      }
+    ],
+    "foreign_error": "emlis_question_noncanonical"
+  },
+  {
+    "case_id": "u268-retention-FREE_Q1-False-2",
+    "memo": "褒められたのに、嬉しくなかった。資料を分類したことに満足した。",
+    "action": "誘われたのに、悲しかった。文章を直したことに納得した。",
+    "capability": "FREE_Q1",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-ce3168eaed928537961971449ee11788131a65bb3f12fa3181968afbdf71bff7",
+      "source_prefix_ref": "emlis-source-prefix-c3a3a760ce40ec6b2c59b27d764bb8a08a6c2896154a5a7bed52e77056d89934",
+      "base_meaning_ref": "emlis-base-meaning-5ebc84b5ec89e681654682977766f8f08667947f463e3db0b7e5f838ee5ca374",
+      "answer_update": {
+        "answer_source_ref": "src-5c7a0359dd53bf4217c95f32",
+        "question_ref": "emlis-question-bf66fa0ec3c3702598c099a240851e4d2d62a66fda1361287e0a7aa5993a59de",
+        "prior_meaning_ref": "emlis-base-meaning-5ebc84b5ec89e681654682977766f8f08667947f463e3db0b7e5f838ee5ca374",
+        "updates": [
+          {
+            "update_ref": "emlis-update-55b71de50b40b72d939e7a9a1ebd30895b7ed4687f82186a1350de4cd9d82b7a",
+            "binding_kind": "EXPLICIT_CORRECTION",
+            "target_meaning_refs": [
+              "nucleus:s1:reaction"
+            ],
+            "evidence_refs": [
+              "ev-c30c5479b49ec4ca1185516c"
+            ],
+            "temporal_binding": {
+              "about_time": "ORIGINAL_OCCASION",
+              "anchor_source_ref": "src-159633d246555f0a7bd1533d",
+              "time_expression_evidence_refs": [],
+              "relative_relation": null,
+              "resolved_interval": null,
+              "timezone_basis": null
+            },
+            "operation": "REVISE",
+            "changed_claim_refs": [
+              "answer:s8"
+            ],
+            "superseded_claim_refs": [
+              "nucleus:s1:reaction"
+            ],
+            "affected_dependency_refs": [
+              "relation:r1"
+            ]
+          }
+        ],
+        "unresolved_parts": [],
+        "disposition": "MATERIAL_UPDATE",
+        "new_meaning_ref": "emlis-meaning-5bd31c531a11973d13de4375c88aa7d217756629312e2ada1fd5159e7e414722"
+      },
+      "assessment_status": "RESOLVED",
+      "accepted_update_refs": [
+        "emlis-update-55b71de50b40b72d939e7a9a1ebd30895b7ed4687f82186a1350de4cd9d82b7a"
+      ],
+      "inactive_claim_refs": [
+        "nucleus:s1:reaction",
+        "relation:r1"
+      ],
+      "unresolved_parts": [],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "MEANING_UPDATED_BODY_UNAVAILABLE",
+    "baseline_body": null,
+    "baseline_reason_codes": [
+      "emlis_refined_body_unavailable"
+    ],
+    "answer": "「嬉しくなかった」ではなく「怖かった」です。",
+    "question_control": {
+      "pending_question": {
+        "question_id": "emlis-question-bf66fa0ec3c3702598c099a240851e4d2d62a66fda1361287e0a7aa5993a59de",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-159633d246555f0a7bd1533d",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-dade1909088255ccf5f399eaa706f780730185743ff494716a0c2852b3f7b7fe",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-9b24e1a89a461bcebef519e7"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s1:event",
+            "nucleus:s1:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s2:appraisal"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "asked_target_refs": [
+        "emlis-target-dade1909088255ccf5f399eaa706f780730185743ff494716a0c2852b3f7b7fe"
+      ],
+      "issued_count": 1,
+      "stop": false,
+      "issued_questions": [],
+      "question_limit": 1
+    },
+    "supplemental_answers": [
+      {
+        "answer_id": "q1-answer",
+        "thread_id": "q1-thread",
+        "question_id": "emlis-question-bf66fa0ec3c3702598c099a240851e4d2d62a66fda1361287e0a7aa5993a59de",
+        "round_index": 1,
+        "original_source_ref": "src-159633d246555f0a7bd1533d",
+        "answer_text_private": "「嬉しくなかった」ではなく「怖かった」です。",
+        "recorded_at": "2026-09-11T00:00:00Z",
+        "authored_at": null,
+        "source_version": "cocolon.cmee.supplemental_answer.v1",
+        "source_role": "SUPPLEMENTAL_ANSWER"
+      }
+    ],
+    "foreign_error": "emlis_question_noncanonical"
+  },
+  {
+    "case_id": "u268-retention-FREE_Q1-True-3",
+    "memo": "誘われたのに、悲しかった。文章を直したことに納得した。",
+    "action": "褒められたのに、嬉しくなかった。資料を分類したことに満足した。",
+    "capability": "FREE_Q1",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-714d26ec75ed6d3752f282b5ca6dc70b9f2432a17afbe25f4bfd5050a3983f3b",
+      "source_prefix_ref": "emlis-source-prefix-7ceba4de5da9008e0fc6b8ecb34ac75fc5765dcf6de91172c675cdaa40b1c04c",
+      "base_meaning_ref": "emlis-base-meaning-8a351921825baceffa80cb872e33de4c2880026bc5fc39151c3c91c6d425f2df",
+      "answer_update": null,
+      "assessment_status": "RESOLVED",
+      "accepted_update_refs": [],
+      "inactive_claim_refs": [],
+      "unresolved_parts": [],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "UNAVAILABLE",
+    "baseline_body": null,
+    "baseline_reason_codes": [
+      "reception_target_not_in_observation_plan"
+    ],
+    "foreign_error": "emlis_checkpoint_source_prefix_mismatch"
+  },
+  {
+    "case_id": "u268-retention-FREE_Q1-True-4",
+    "memo": "誘われたのに、悲しかった。文章を直したことに納得した。",
+    "action": "褒められたのに、嬉しくなかった。資料を分類したことに満足した。",
+    "capability": "FREE_Q1",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-0a0efe5fd174f3261ca29df248bcb1b70d38d70354e82bac4814dbbd186da8fe",
+      "source_prefix_ref": "emlis-source-prefix-0e64cbb173975d6f790187b2bd12f4ed00b655196ec4909860ca20b62d4e142d",
+      "base_meaning_ref": "emlis-base-meaning-8a351921825baceffa80cb872e33de4c2880026bc5fc39151c3c91c6d425f2df",
+      "answer_update": {
+        "answer_source_ref": "src-f9eb1bc89f97d01c8eae612e",
+        "question_ref": "emlis-question-a26332b7c8dcd08ceacc316a375aa94992cf24ad0efe895fde5f3c9a0aa8b07f",
+        "prior_meaning_ref": "emlis-base-meaning-8a351921825baceffa80cb872e33de4c2880026bc5fc39151c3c91c6d425f2df",
+        "updates": [
+          {
+            "update_ref": "emlis-update-a04923ca3305029838f2de26ea9c7754efe571295e3d0af62fb7c7d3fac1355e",
+            "binding_kind": "QUESTION_FOCUS",
+            "target_meaning_refs": [
+              "nucleus:s1:event"
+            ],
+            "evidence_refs": [
+              "ev-c4598df9b2e44fe014bf947a"
+            ],
+            "temporal_binding": {
+              "about_time": "ORIGINAL_OCCASION",
+              "anchor_source_ref": "src-50059e216e4ceaf384f6d4f1",
+              "time_expression_evidence_refs": [
+                "ev-c4598df9b2e44fe014bf947a"
+              ],
+              "relative_relation": null,
+              "resolved_interval": null,
+              "timezone_basis": null
+            },
+            "operation": "ADD",
+            "changed_claim_refs": [
+              "answer:s8"
+            ],
+            "superseded_claim_refs": [],
+            "affected_dependency_refs": []
+          }
+        ],
+        "unresolved_parts": [],
+        "disposition": "MATERIAL_UPDATE",
+        "new_meaning_ref": "emlis-meaning-9fd8c2e05eea897ec3fafbcf20d0afad04732c91780fe9f1bf26ea3108a56450"
+      },
+      "assessment_status": "RESOLVED",
+      "accepted_update_refs": [
+        "emlis-update-a04923ca3305029838f2de26ea9c7754efe571295e3d0af62fb7c7d3fac1355e"
+      ],
+      "inactive_claim_refs": [],
+      "unresolved_parts": [],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "MEANING_UPDATED_BODY_UNAVAILABLE",
+    "baseline_body": null,
+    "baseline_reason_codes": [
+      "emlis_refined_body_unavailable"
+    ],
+    "answer": "その時は重かった。",
+    "question_control": {
+      "pending_question": {
+        "question_id": "emlis-question-a26332b7c8dcd08ceacc316a375aa94992cf24ad0efe895fde5f3c9a0aa8b07f",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-50059e216e4ceaf384f6d4f1",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-704d74990c28ba0c0e1a043f3068f4830d003e3b4c8410382e72b447d473b430",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-eddcb2d3bc4144bac89fe7d4"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s1:event",
+            "nucleus:s1:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s2:appraisal"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「誘われた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "asked_target_refs": [
+        "emlis-target-704d74990c28ba0c0e1a043f3068f4830d003e3b4c8410382e72b447d473b430"
+      ],
+      "issued_count": 1,
+      "stop": false,
+      "issued_questions": [],
+      "question_limit": 1
+    },
+    "supplemental_answers": [
+      {
+        "answer_id": "q1-answer",
+        "thread_id": "q1-thread",
+        "question_id": "emlis-question-a26332b7c8dcd08ceacc316a375aa94992cf24ad0efe895fde5f3c9a0aa8b07f",
+        "round_index": 1,
+        "original_source_ref": "src-50059e216e4ceaf384f6d4f1",
+        "answer_text_private": "その時は重かった。",
+        "recorded_at": "2026-09-11T00:00:00Z",
+        "authored_at": null,
+        "source_version": "cocolon.cmee.supplemental_answer.v1",
+        "source_role": "SUPPLEMENTAL_ANSWER"
+      }
+    ],
+    "foreign_error": "emlis_question_noncanonical"
+  },
+  {
+    "case_id": "u268-retention-FREE_Q1-True-5",
+    "memo": "誘われたのに、悲しかった。文章を直したことに納得した。",
+    "action": "褒められたのに、嬉しくなかった。資料を分類したことに満足した。",
+    "capability": "FREE_Q1",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-a1628c40b3ecdf3854888bc7237bb1629eb6b2cf6b877adedfcba18dbfeb77d1",
+      "source_prefix_ref": "emlis-source-prefix-ce1f81f683b25a924cb520e2b148f52973b642dbd1a1efb87475d37374f05bb0",
+      "base_meaning_ref": "emlis-base-meaning-8a351921825baceffa80cb872e33de4c2880026bc5fc39151c3c91c6d425f2df",
+      "answer_update": {
+        "answer_source_ref": "src-a9889dda95864a082323a201",
+        "question_ref": "emlis-question-a26332b7c8dcd08ceacc316a375aa94992cf24ad0efe895fde5f3c9a0aa8b07f",
+        "prior_meaning_ref": "emlis-base-meaning-8a351921825baceffa80cb872e33de4c2880026bc5fc39151c3c91c6d425f2df",
+        "updates": [
+          {
+            "update_ref": "emlis-update-36a765d95a300a956db51357ee54366a354fd6df33cd0a7ba9ee16da499cfefe",
+            "binding_kind": "EXPLICIT_CORRECTION",
+            "target_meaning_refs": [
+              "nucleus:s3:reaction"
+            ],
+            "evidence_refs": [
+              "ev-e4d2127bd65f1af6e9393c64"
+            ],
+            "temporal_binding": {
+              "about_time": "ORIGINAL_OCCASION",
+              "anchor_source_ref": "src-50059e216e4ceaf384f6d4f1",
+              "time_expression_evidence_refs": [],
+              "relative_relation": null,
+              "resolved_interval": null,
+              "timezone_basis": null
+            },
+            "operation": "REVISE",
+            "changed_claim_refs": [
+              "answer:s8"
+            ],
+            "superseded_claim_refs": [
+              "nucleus:s3:reaction"
+            ],
+            "affected_dependency_refs": [
+              "relation:r3"
+            ]
+          }
+        ],
+        "unresolved_parts": [],
+        "disposition": "MATERIAL_UPDATE",
+        "new_meaning_ref": "emlis-meaning-ff173a1adf66a962ca63e9e6d27cd8fd15ed587d9b6d043402d50024a839ad23"
+      },
+      "assessment_status": "RESOLVED",
+      "accepted_update_refs": [
+        "emlis-update-36a765d95a300a956db51357ee54366a354fd6df33cd0a7ba9ee16da499cfefe"
+      ],
+      "inactive_claim_refs": [
+        "nucleus:s3:reaction",
+        "relation:r3"
+      ],
+      "unresolved_parts": [],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "MEANING_UPDATED_BODY_UNAVAILABLE",
+    "baseline_body": null,
+    "baseline_reason_codes": [
+      "emlis_refined_body_unavailable"
+    ],
+    "answer": "「嬉しくなかった」ではなく「怖かった」です。",
+    "question_control": {
+      "pending_question": {
+        "question_id": "emlis-question-a26332b7c8dcd08ceacc316a375aa94992cf24ad0efe895fde5f3c9a0aa8b07f",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-50059e216e4ceaf384f6d4f1",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-704d74990c28ba0c0e1a043f3068f4830d003e3b4c8410382e72b447d473b430",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-eddcb2d3bc4144bac89fe7d4"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s1:event",
+            "nucleus:s1:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s2:appraisal"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「誘われた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "asked_target_refs": [
+        "emlis-target-704d74990c28ba0c0e1a043f3068f4830d003e3b4c8410382e72b447d473b430"
+      ],
+      "issued_count": 1,
+      "stop": false,
+      "issued_questions": [],
+      "question_limit": 1
+    },
+    "supplemental_answers": [
+      {
+        "answer_id": "q1-answer",
+        "thread_id": "q1-thread",
+        "question_id": "emlis-question-a26332b7c8dcd08ceacc316a375aa94992cf24ad0efe895fde5f3c9a0aa8b07f",
+        "round_index": 1,
+        "original_source_ref": "src-50059e216e4ceaf384f6d4f1",
+        "answer_text_private": "「嬉しくなかった」ではなく「怖かった」です。",
+        "recorded_at": "2026-09-11T00:00:00Z",
+        "authored_at": null,
+        "source_version": "cocolon.cmee.supplemental_answer.v1",
+        "source_role": "SUPPLEMENTAL_ANSWER"
+      }
+    ],
+    "foreign_error": "emlis_question_noncanonical"
+  },
+  {
+    "case_id": "u268-retention-Q3_FREE-False-6",
+    "memo": "褒められたのに、嬉しくなかった。資料を分類したことに満足した。",
+    "action": "誘われたのに、悲しかった。文章を直したことに納得した。",
+    "capability": "Q3_FREE",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-ccee59d300aa6e962b1b1ddfa30eb1446425c2b36917b01fa7798d3b1f826efc",
+      "source_prefix_ref": "emlis-q3-source-prefix-4bd0cea043265b16cef4aa99e3a1a796de3be37ad02630affc8a9dea26e68208",
+      "base_meaning_ref": "emlis-base-meaning-5ebc84b5ec89e681654682977766f8f08667947f463e3db0b7e5f838ee5ca374",
+      "answer_update": null,
+      "assessment_status": "RESOLVED",
+      "accepted_update_refs": [],
+      "inactive_claim_refs": [],
+      "unresolved_parts": [],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "UNAVAILABLE",
+    "baseline_body": null,
+    "baseline_reason_codes": [
+      "emlis_q3_initial_body_unavailable"
+    ],
+    "foreign_error": "emlis_checkpoint_source_prefix_mismatch"
+  },
+  {
+    "case_id": "u268-retention-Q3_FREE-False-7",
+    "memo": "褒められたのに、嬉しくなかった。資料を分類したことに満足した。",
+    "action": "誘われたのに、悲しかった。文章を直したことに納得した。",
+    "capability": "Q3_FREE",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-07f0cd13d1428c98ae2d3879d42248a5c75062236634c6c9f69b6606f4bd978d",
+      "source_prefix_ref": "emlis-q3-source-prefix-ab303c486b71e2bebb6a6e70568a95d3ba9a494e4d8fc08b9c9c5c907d9e0c29",
+      "base_meaning_ref": "emlis-base-meaning-5ebc84b5ec89e681654682977766f8f08667947f463e3db0b7e5f838ee5ca374",
+      "answer_update": {
+        "answer_source_ref": "src-755efe20b08870252f6abc55",
+        "question_ref": "emlis-question-bf66fa0ec3c3702598c099a240851e4d2d62a66fda1361287e0a7aa5993a59de",
+        "prior_meaning_ref": "emlis-base-meaning-5ebc84b5ec89e681654682977766f8f08667947f463e3db0b7e5f838ee5ca374",
+        "updates": [
+          {
+            "update_ref": "emlis-update-a67267c6fa0fe503575cea746663854ce00147fc432bb311b528428f7bf7fbbb",
+            "binding_kind": "QUESTION_FOCUS",
+            "target_meaning_refs": [
+              "nucleus:s1:event"
+            ],
+            "evidence_refs": [
+              "ev-029c00690cf8d98050e05d77"
+            ],
+            "temporal_binding": {
+              "about_time": "ORIGINAL_OCCASION",
+              "anchor_source_ref": "src-159633d246555f0a7bd1533d",
+              "time_expression_evidence_refs": [
+                "ev-029c00690cf8d98050e05d77"
+              ],
+              "relative_relation": null,
+              "resolved_interval": null,
+              "timezone_basis": null
+            },
+            "operation": "ADD",
+            "changed_claim_refs": [
+              "answer:s8"
+            ],
+            "superseded_claim_refs": [],
+            "affected_dependency_refs": []
+          }
+        ],
+        "unresolved_parts": [],
+        "disposition": "MATERIAL_UPDATE",
+        "new_meaning_ref": "emlis-meaning-43115e76722cdc9b0e03150773269cf3db247142a8471fa1892e66608d2373b9"
+      },
+      "assessment_status": "RESOLVED",
+      "accepted_update_refs": [
+        "emlis-update-a67267c6fa0fe503575cea746663854ce00147fc432bb311b528428f7bf7fbbb"
+      ],
+      "inactive_claim_refs": [],
+      "unresolved_parts": [],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "MEANING_UPDATED_BODY_UNAVAILABLE",
+    "baseline_body": null,
+    "baseline_reason_codes": [
+      "emlis_refined_body_unavailable"
+    ],
+    "answer": "その時は重かった。",
+    "question_control": {
+      "pending_question": {
+        "question_id": "emlis-question-bf66fa0ec3c3702598c099a240851e4d2d62a66fda1361287e0a7aa5993a59de",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-159633d246555f0a7bd1533d",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-dade1909088255ccf5f399eaa706f780730185743ff494716a0c2852b3f7b7fe",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-9b24e1a89a461bcebef519e7"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s1:event",
+            "nucleus:s1:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s1:event",
+            "nucleus:s1:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "asked_target_refs": [
+        "emlis-target-dade1909088255ccf5f399eaa706f780730185743ff494716a0c2852b3f7b7fe"
+      ],
+      "issued_count": 1,
+      "stop": false,
+      "issued_questions": [
+        {
+          "question_id": "emlis-question-bf66fa0ec3c3702598c099a240851e4d2d62a66fda1361287e0a7aa5993a59de",
+          "parent_request_id": "q1-synthetic",
+          "thread_id": "q1-thread",
+          "original_source_ref": "src-159633d246555f0a7bd1533d",
+          "decision": {
+            "disposition": "ASK",
+            "target_ref": "emlis-target-dade1909088255ccf5f399eaa706f780730185743ff494716a0c2852b3f7b7fe",
+            "target_kind": "PERSONAL_RECEIVED_MEANING",
+            "supporting_evidence_refs": [
+              "ev-9b24e1a89a461bcebef519e7"
+            ],
+            "missing_dimension": "personal_received_meaning",
+            "affected_meaning_refs": [
+              "nucleus:s1:event",
+              "nucleus:s1:reaction"
+            ],
+            "affected_reception_refs": [
+              "nucleus:s1:event",
+              "nucleus:s1:reaction"
+            ],
+            "asked_target_refs": [],
+            "decision_reason": "source_bound_event_personal_meaning_missing"
+          },
+          "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+          "skip_allowed": true,
+          "answer_limit": 1,
+          "answer_source_role": "SUPPLEMENTAL_ANSWER",
+          "schema_version": "cocolon.cmee.emlis_clarification.v1"
+        }
+      ],
+      "question_limit": 1
+    },
+    "supplemental_answers": [
+      {
+        "answer_id": "q1-answer",
+        "thread_id": "q1-thread",
+        "question_id": "emlis-question-bf66fa0ec3c3702598c099a240851e4d2d62a66fda1361287e0a7aa5993a59de",
+        "round_index": 1,
+        "original_source_ref": "src-159633d246555f0a7bd1533d",
+        "answer_text_private": "その時は重かった。",
+        "recorded_at": "2026-09-11T00:00:00Z",
+        "authored_at": null,
+        "source_version": "cocolon.cmee.supplemental_answer.v1",
+        "source_role": "SUPPLEMENTAL_ANSWER"
+      }
+    ],
+    "foreign_error": "emlis_checkpoint_source_prefix_mismatch"
+  },
+  {
+    "case_id": "u268-retention-Q3_FREE-False-8",
+    "memo": "褒められたのに、嬉しくなかった。資料を分類したことに満足した。",
+    "action": "誘われたのに、悲しかった。文章を直したことに納得した。",
+    "capability": "Q3_FREE",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-860c3965779ba366a9f3bc074adfe4e7f3abd9371f26927b683c3966b148c26d",
+      "source_prefix_ref": "emlis-q3-source-prefix-23e71c1d0aa836316c37a11a699c15dfa6bcd596d10dda9ebbae3fe1c7cd307f",
+      "base_meaning_ref": "emlis-base-meaning-5ebc84b5ec89e681654682977766f8f08667947f463e3db0b7e5f838ee5ca374",
+      "answer_update": {
+        "answer_source_ref": "src-5c7a0359dd53bf4217c95f32",
+        "question_ref": "emlis-question-bf66fa0ec3c3702598c099a240851e4d2d62a66fda1361287e0a7aa5993a59de",
+        "prior_meaning_ref": "emlis-base-meaning-5ebc84b5ec89e681654682977766f8f08667947f463e3db0b7e5f838ee5ca374",
+        "updates": [
+          {
+            "update_ref": "emlis-update-55b71de50b40b72d939e7a9a1ebd30895b7ed4687f82186a1350de4cd9d82b7a",
+            "binding_kind": "EXPLICIT_CORRECTION",
+            "target_meaning_refs": [
+              "nucleus:s1:reaction"
+            ],
+            "evidence_refs": [
+              "ev-c30c5479b49ec4ca1185516c"
+            ],
+            "temporal_binding": {
+              "about_time": "ORIGINAL_OCCASION",
+              "anchor_source_ref": "src-159633d246555f0a7bd1533d",
+              "time_expression_evidence_refs": [],
+              "relative_relation": null,
+              "resolved_interval": null,
+              "timezone_basis": null
+            },
+            "operation": "REVISE",
+            "changed_claim_refs": [
+              "answer:s8"
+            ],
+            "superseded_claim_refs": [
+              "nucleus:s1:reaction"
+            ],
+            "affected_dependency_refs": [
+              "relation:r1"
+            ]
+          }
+        ],
+        "unresolved_parts": [],
+        "disposition": "MATERIAL_UPDATE",
+        "new_meaning_ref": "emlis-meaning-5bd31c531a11973d13de4375c88aa7d217756629312e2ada1fd5159e7e414722"
+      },
+      "assessment_status": "RESOLVED",
+      "accepted_update_refs": [
+        "emlis-update-55b71de50b40b72d939e7a9a1ebd30895b7ed4687f82186a1350de4cd9d82b7a"
+      ],
+      "inactive_claim_refs": [
+        "nucleus:s1:reaction",
+        "relation:r1"
+      ],
+      "unresolved_parts": [],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "MEANING_UPDATED_BODY_UNAVAILABLE",
+    "baseline_body": null,
+    "baseline_reason_codes": [
+      "emlis_refined_body_unavailable"
+    ],
+    "answer": "「嬉しくなかった」ではなく「怖かった」です。",
+    "question_control": {
+      "pending_question": {
+        "question_id": "emlis-question-bf66fa0ec3c3702598c099a240851e4d2d62a66fda1361287e0a7aa5993a59de",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-159633d246555f0a7bd1533d",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-dade1909088255ccf5f399eaa706f780730185743ff494716a0c2852b3f7b7fe",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-9b24e1a89a461bcebef519e7"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s1:event",
+            "nucleus:s1:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s1:event",
+            "nucleus:s1:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "asked_target_refs": [
+        "emlis-target-dade1909088255ccf5f399eaa706f780730185743ff494716a0c2852b3f7b7fe"
+      ],
+      "issued_count": 1,
+      "stop": false,
+      "issued_questions": [
+        {
+          "question_id": "emlis-question-bf66fa0ec3c3702598c099a240851e4d2d62a66fda1361287e0a7aa5993a59de",
+          "parent_request_id": "q1-synthetic",
+          "thread_id": "q1-thread",
+          "original_source_ref": "src-159633d246555f0a7bd1533d",
+          "decision": {
+            "disposition": "ASK",
+            "target_ref": "emlis-target-dade1909088255ccf5f399eaa706f780730185743ff494716a0c2852b3f7b7fe",
+            "target_kind": "PERSONAL_RECEIVED_MEANING",
+            "supporting_evidence_refs": [
+              "ev-9b24e1a89a461bcebef519e7"
+            ],
+            "missing_dimension": "personal_received_meaning",
+            "affected_meaning_refs": [
+              "nucleus:s1:event",
+              "nucleus:s1:reaction"
+            ],
+            "affected_reception_refs": [
+              "nucleus:s1:event",
+              "nucleus:s1:reaction"
+            ],
+            "asked_target_refs": [],
+            "decision_reason": "source_bound_event_personal_meaning_missing"
+          },
+          "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+          "skip_allowed": true,
+          "answer_limit": 1,
+          "answer_source_role": "SUPPLEMENTAL_ANSWER",
+          "schema_version": "cocolon.cmee.emlis_clarification.v1"
+        }
+      ],
+      "question_limit": 1
+    },
+    "supplemental_answers": [
+      {
+        "answer_id": "q1-answer",
+        "thread_id": "q1-thread",
+        "question_id": "emlis-question-bf66fa0ec3c3702598c099a240851e4d2d62a66fda1361287e0a7aa5993a59de",
+        "round_index": 1,
+        "original_source_ref": "src-159633d246555f0a7bd1533d",
+        "answer_text_private": "「嬉しくなかった」ではなく「怖かった」です。",
+        "recorded_at": "2026-09-11T00:00:00Z",
+        "authored_at": null,
+        "source_version": "cocolon.cmee.supplemental_answer.v1",
+        "source_role": "SUPPLEMENTAL_ANSWER"
+      }
+    ],
+    "foreign_error": "emlis_checkpoint_source_prefix_mismatch"
+  },
+  {
+    "case_id": "u268-retention-Q3_FREE-True-9",
+    "memo": "誘われたのに、悲しかった。文章を直したことに納得した。",
+    "action": "褒められたのに、嬉しくなかった。資料を分類したことに満足した。",
+    "capability": "Q3_FREE",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-8d76eda7c7183f3922bc722a3a893941cab7a11c377f79581c276d6e280bd463",
+      "source_prefix_ref": "emlis-q3-source-prefix-e6fc1f3e9d33611c204721822c4ea49df1c1f7d849cc7d808ff083f3ea94fca0",
+      "base_meaning_ref": "emlis-base-meaning-8a351921825baceffa80cb872e33de4c2880026bc5fc39151c3c91c6d425f2df",
+      "answer_update": null,
+      "assessment_status": "RESOLVED",
+      "accepted_update_refs": [],
+      "inactive_claim_refs": [],
+      "unresolved_parts": [],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "UNAVAILABLE",
+    "baseline_body": null,
+    "baseline_reason_codes": [
+      "emlis_q3_initial_body_unavailable"
+    ],
+    "foreign_error": "emlis_checkpoint_source_prefix_mismatch"
+  },
+  {
+    "case_id": "u268-retention-Q3_FREE-True-10",
+    "memo": "誘われたのに、悲しかった。文章を直したことに納得した。",
+    "action": "褒められたのに、嬉しくなかった。資料を分類したことに満足した。",
+    "capability": "Q3_FREE",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-e8fa4b22adf3a772753987a0c353dfe8664fb08d460280f314ca74234e5ae8d0",
+      "source_prefix_ref": "emlis-q3-source-prefix-ff1e62799441fbd4f369c6373f0aeb818f4e7fd1ee831c63d601b88918e922c1",
+      "base_meaning_ref": "emlis-base-meaning-8a351921825baceffa80cb872e33de4c2880026bc5fc39151c3c91c6d425f2df",
+      "answer_update": {
+        "answer_source_ref": "src-f9eb1bc89f97d01c8eae612e",
+        "question_ref": "emlis-question-a26332b7c8dcd08ceacc316a375aa94992cf24ad0efe895fde5f3c9a0aa8b07f",
+        "prior_meaning_ref": "emlis-base-meaning-8a351921825baceffa80cb872e33de4c2880026bc5fc39151c3c91c6d425f2df",
+        "updates": [
+          {
+            "update_ref": "emlis-update-a04923ca3305029838f2de26ea9c7754efe571295e3d0af62fb7c7d3fac1355e",
+            "binding_kind": "QUESTION_FOCUS",
+            "target_meaning_refs": [
+              "nucleus:s1:event"
+            ],
+            "evidence_refs": [
+              "ev-c4598df9b2e44fe014bf947a"
+            ],
+            "temporal_binding": {
+              "about_time": "ORIGINAL_OCCASION",
+              "anchor_source_ref": "src-50059e216e4ceaf384f6d4f1",
+              "time_expression_evidence_refs": [
+                "ev-c4598df9b2e44fe014bf947a"
+              ],
+              "relative_relation": null,
+              "resolved_interval": null,
+              "timezone_basis": null
+            },
+            "operation": "ADD",
+            "changed_claim_refs": [
+              "answer:s8"
+            ],
+            "superseded_claim_refs": [],
+            "affected_dependency_refs": []
+          }
+        ],
+        "unresolved_parts": [],
+        "disposition": "MATERIAL_UPDATE",
+        "new_meaning_ref": "emlis-meaning-9fd8c2e05eea897ec3fafbcf20d0afad04732c91780fe9f1bf26ea3108a56450"
+      },
+      "assessment_status": "RESOLVED",
+      "accepted_update_refs": [
+        "emlis-update-a04923ca3305029838f2de26ea9c7754efe571295e3d0af62fb7c7d3fac1355e"
+      ],
+      "inactive_claim_refs": [],
+      "unresolved_parts": [],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "MEANING_UPDATED_BODY_UNAVAILABLE",
+    "baseline_body": null,
+    "baseline_reason_codes": [
+      "emlis_refined_body_unavailable"
+    ],
+    "answer": "その時は重かった。",
+    "question_control": {
+      "pending_question": {
+        "question_id": "emlis-question-a26332b7c8dcd08ceacc316a375aa94992cf24ad0efe895fde5f3c9a0aa8b07f",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-50059e216e4ceaf384f6d4f1",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-704d74990c28ba0c0e1a043f3068f4830d003e3b4c8410382e72b447d473b430",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-eddcb2d3bc4144bac89fe7d4"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s1:event",
+            "nucleus:s1:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s1:event",
+            "nucleus:s1:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「誘われた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "asked_target_refs": [
+        "emlis-target-704d74990c28ba0c0e1a043f3068f4830d003e3b4c8410382e72b447d473b430"
+      ],
+      "issued_count": 1,
+      "stop": false,
+      "issued_questions": [
+        {
+          "question_id": "emlis-question-a26332b7c8dcd08ceacc316a375aa94992cf24ad0efe895fde5f3c9a0aa8b07f",
+          "parent_request_id": "q1-synthetic",
+          "thread_id": "q1-thread",
+          "original_source_ref": "src-50059e216e4ceaf384f6d4f1",
+          "decision": {
+            "disposition": "ASK",
+            "target_ref": "emlis-target-704d74990c28ba0c0e1a043f3068f4830d003e3b4c8410382e72b447d473b430",
+            "target_kind": "PERSONAL_RECEIVED_MEANING",
+            "supporting_evidence_refs": [
+              "ev-eddcb2d3bc4144bac89fe7d4"
+            ],
+            "missing_dimension": "personal_received_meaning",
+            "affected_meaning_refs": [
+              "nucleus:s1:event",
+              "nucleus:s1:reaction"
+            ],
+            "affected_reception_refs": [
+              "nucleus:s1:event",
+              "nucleus:s1:reaction"
+            ],
+            "asked_target_refs": [],
+            "decision_reason": "source_bound_event_personal_meaning_missing"
+          },
+          "prompt_private": "「誘われた」は、あなたにはどんな意味として届きましたか。",
+          "skip_allowed": true,
+          "answer_limit": 1,
+          "answer_source_role": "SUPPLEMENTAL_ANSWER",
+          "schema_version": "cocolon.cmee.emlis_clarification.v1"
+        }
+      ],
+      "question_limit": 1
+    },
+    "supplemental_answers": [
+      {
+        "answer_id": "q1-answer",
+        "thread_id": "q1-thread",
+        "question_id": "emlis-question-a26332b7c8dcd08ceacc316a375aa94992cf24ad0efe895fde5f3c9a0aa8b07f",
+        "round_index": 1,
+        "original_source_ref": "src-50059e216e4ceaf384f6d4f1",
+        "answer_text_private": "その時は重かった。",
+        "recorded_at": "2026-09-11T00:00:00Z",
+        "authored_at": null,
+        "source_version": "cocolon.cmee.supplemental_answer.v1",
+        "source_role": "SUPPLEMENTAL_ANSWER"
+      }
+    ],
+    "foreign_error": "emlis_checkpoint_source_prefix_mismatch"
+  },
+  {
+    "case_id": "u268-retention-Q3_FREE-True-11",
+    "memo": "誘われたのに、悲しかった。文章を直したことに納得した。",
+    "action": "褒められたのに、嬉しくなかった。資料を分類したことに満足した。",
+    "capability": "Q3_FREE",
+    "checkpoint": {
+      "checkpoint_id": "emlis-checkpoint-19f9bad72edfbb72204ff58786c992cb29c1165929c6cae27d990628f4546883",
+      "source_prefix_ref": "emlis-q3-source-prefix-cf4acb39c34b6324bdcf50ba41fe45129a2f1f8d2afc480de574f1bc29056c5c",
+      "base_meaning_ref": "emlis-base-meaning-8a351921825baceffa80cb872e33de4c2880026bc5fc39151c3c91c6d425f2df",
+      "answer_update": {
+        "answer_source_ref": "src-a9889dda95864a082323a201",
+        "question_ref": "emlis-question-a26332b7c8dcd08ceacc316a375aa94992cf24ad0efe895fde5f3c9a0aa8b07f",
+        "prior_meaning_ref": "emlis-base-meaning-8a351921825baceffa80cb872e33de4c2880026bc5fc39151c3c91c6d425f2df",
+        "updates": [
+          {
+            "update_ref": "emlis-update-36a765d95a300a956db51357ee54366a354fd6df33cd0a7ba9ee16da499cfefe",
+            "binding_kind": "EXPLICIT_CORRECTION",
+            "target_meaning_refs": [
+              "nucleus:s3:reaction"
+            ],
+            "evidence_refs": [
+              "ev-e4d2127bd65f1af6e9393c64"
+            ],
+            "temporal_binding": {
+              "about_time": "ORIGINAL_OCCASION",
+              "anchor_source_ref": "src-50059e216e4ceaf384f6d4f1",
+              "time_expression_evidence_refs": [],
+              "relative_relation": null,
+              "resolved_interval": null,
+              "timezone_basis": null
+            },
+            "operation": "REVISE",
+            "changed_claim_refs": [
+              "answer:s8"
+            ],
+            "superseded_claim_refs": [
+              "nucleus:s3:reaction"
+            ],
+            "affected_dependency_refs": [
+              "relation:r3"
+            ]
+          }
+        ],
+        "unresolved_parts": [],
+        "disposition": "MATERIAL_UPDATE",
+        "new_meaning_ref": "emlis-meaning-ff173a1adf66a962ca63e9e6d27cd8fd15ed587d9b6d043402d50024a839ad23"
+      },
+      "assessment_status": "RESOLVED",
+      "accepted_update_refs": [
+        "emlis-update-36a765d95a300a956db51357ee54366a354fd6df33cd0a7ba9ee16da499cfefe"
+      ],
+      "inactive_claim_refs": [
+        "nucleus:s3:reaction",
+        "relation:r3"
+      ],
+      "unresolved_parts": [],
+      "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+    },
+    "baseline_body_state": "MEANING_UPDATED_BODY_UNAVAILABLE",
+    "baseline_body": null,
+    "baseline_reason_codes": [
+      "emlis_refined_body_unavailable"
+    ],
+    "answer": "「嬉しくなかった」ではなく「怖かった」です。",
+    "question_control": {
+      "pending_question": {
+        "question_id": "emlis-question-a26332b7c8dcd08ceacc316a375aa94992cf24ad0efe895fde5f3c9a0aa8b07f",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-50059e216e4ceaf384f6d4f1",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-704d74990c28ba0c0e1a043f3068f4830d003e3b4c8410382e72b447d473b430",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-eddcb2d3bc4144bac89fe7d4"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s1:event",
+            "nucleus:s1:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s1:event",
+            "nucleus:s1:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「誘われた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "asked_target_refs": [
+        "emlis-target-704d74990c28ba0c0e1a043f3068f4830d003e3b4c8410382e72b447d473b430"
+      ],
+      "issued_count": 1,
+      "stop": false,
+      "issued_questions": [
+        {
+          "question_id": "emlis-question-a26332b7c8dcd08ceacc316a375aa94992cf24ad0efe895fde5f3c9a0aa8b07f",
+          "parent_request_id": "q1-synthetic",
+          "thread_id": "q1-thread",
+          "original_source_ref": "src-50059e216e4ceaf384f6d4f1",
+          "decision": {
+            "disposition": "ASK",
+            "target_ref": "emlis-target-704d74990c28ba0c0e1a043f3068f4830d003e3b4c8410382e72b447d473b430",
+            "target_kind": "PERSONAL_RECEIVED_MEANING",
+            "supporting_evidence_refs": [
+              "ev-eddcb2d3bc4144bac89fe7d4"
+            ],
+            "missing_dimension": "personal_received_meaning",
+            "affected_meaning_refs": [
+              "nucleus:s1:event",
+              "nucleus:s1:reaction"
+            ],
+            "affected_reception_refs": [
+              "nucleus:s1:event",
+              "nucleus:s1:reaction"
+            ],
+            "asked_target_refs": [],
+            "decision_reason": "source_bound_event_personal_meaning_missing"
+          },
+          "prompt_private": "「誘われた」は、あなたにはどんな意味として届きましたか。",
+          "skip_allowed": true,
+          "answer_limit": 1,
+          "answer_source_role": "SUPPLEMENTAL_ANSWER",
+          "schema_version": "cocolon.cmee.emlis_clarification.v1"
+        }
+      ],
+      "question_limit": 1
+    },
+    "supplemental_answers": [
+      {
+        "answer_id": "q1-answer",
+        "thread_id": "q1-thread",
+        "question_id": "emlis-question-a26332b7c8dcd08ceacc316a375aa94992cf24ad0efe895fde5f3c9a0aa8b07f",
+        "round_index": 1,
+        "original_source_ref": "src-50059e216e4ceaf384f6d4f1",
+        "answer_text_private": "「嬉しくなかった」ではなく「怖かった」です。",
+        "recorded_at": "2026-09-11T00:00:00Z",
+        "authored_at": null,
+        "source_version": "cocolon.cmee.supplemental_answer.v1",
+        "source_role": "SUPPLEMENTAL_ANSWER"
+      }
+    ],
+    "foreign_error": "emlis_checkpoint_source_prefix_mismatch"
+  }
+]

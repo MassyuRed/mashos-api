@@ -19471,3 +19471,48 @@ STRUCTURE_MAP_DELTA_PRESENT。既存production 5fileと既存test／現行identi
 残件：同じ回答に独立訂正を併記した後は、意味はPARTIALで保存できるが、必要Observation contribution選択がstage1_required_observation_unrealizableとなりMEANING_UPDATED_BODY_UNAVAILABLEを維持する。単独曖昧撤回もANSWER_UNREFLECTEDで新本文なし。初回の完全一致二文は回復したが、「私は」を付けた近似文・別欄に分かれた二組の初回は反復／関係分断の既存gateで停止する。全三組Receptionのpair-only閉包、関係の説明反復と固定的な受け取り、2 received＋2評価、有限対象撤回後の不自然さ、旧receivedのgiver帰属、既存共有17失敗・same100・本人実機・正式Product Readも残る。
 
 次は初回一体単位の選択内容と受け取りを、出典ごとの意味を保った構成として改善する。今回の限定回復を商品完成へ換算しない。10/17確認点、10/31残件線・12/18リリース目標とPiece/Analysis主枠を維持する。
+
+
+### u270 — 2 received＋2評価のsource保持漏れを修復（2026-10-15 JST）
+
+開始時の全体01・全file地図01A/B/C・current01/04・最新weekly・8/28設計§9.2/9.4・CURRENT_RULES・Rule18・恒久incident確認を継承。u268の残件調査中、同一u269候補が別作業領域で更新されていることを確認し、固定snapshotを独立に427件検証した。u269のAPI bd31cd4／Cocolon 3e0afcc反映を取得し、その上へ今回のretention差分だけを重ねた。u269の実装を今回の新規成果へ重複計上しない。Work内read-only補助agentが既承認範囲・既存閉包・余分な材料の非昇格を確認。別モデルPro審査ではない。
+
+4文以上の入力で既存span順位が後半の明示評価pairとreceived pairをshouldへ下げ、sourceとして認識済みの経験が選択から欠けていた。threadの既存final projection内で、理由・未成立contextのない明示評価pairがexact2あり、既存の最大3 dutyが全required/should本文ownerを保持できる場合だけ、各pairをrequiredへ戻す。2 received＋2評価の合成Q3_FREE入力は、両欄配置で8ownerを保持し、既存LIMITEDの3 Moveから初回本文を返す。対象・肯否・評価時点を変えた対照でも各経験の帰属を保持する。
+
+u253/u256の既存保持責務の欠陥修正であり、source文法・意味schema・NORMAL資格・Move上限・Observation contribution上限・作者・独立reader・品質gateは変更しない。新しい昇格はthread source ownerが明示的に有効化し、直接生成経路は従来の既定投影を維持する。追加の独立材料を黙って落として枠内に収めず、理由付き／未成立context付きの二組をこの修正へ含めない。
+
+旧checkpointはretention昇格だけを無効にした旧source planから完全再導出し、既存のID・canonical質問照合を通す。未変更u268（05d3040）の合成Q1/Q3_FREE初回・回答計12例はu269でも同一であり、完全checkpoint・本文有無・state・reason_codes・偽checkpoint拒否を照合した。旧質問が現行planでも完全canonicalなら、未保存の新回答は新しい完全checkpointを作れる。旧IDへ新しい意味を貼らない。
+
+合成入力はmemo「褒められたのに、嬉しくなかった。資料を分類したことに満足した。」、memo_action「誘われたのに、悲しかった。文章を直したことに納得した。」。旧版は初回UNAVAILABLE。修正後のQ3_FREE実本文は以下。停止回復の証拠であり、関係反復をLayer 2の増分や商品品質合格へ換算しない。
+
+```text
+見えたこと：
+「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。 「資料を分類した」という出来事に対する評価は、「満足した」とあります。 「誘われた」と「悲しかった」が、異なる向きのまま同時にあります。
+「文章を直した」という出来事に対する評価は、「納得した」とあります。
+
+Emlisから：
+資料を分類したことについて、当時は満足したのですね。文章を直したことについて、当時は納得したのですね。褒められたことは、嬉しさにはつながらず、誘われたのに、悲しさを感じたのですね。
+```
+
+STRUCTURE_MAP_DELTA_PRESENT。既存production3file・既存test・現行identity fixtureと新規の合成旧checkpoint fixture1fileを変更。新helper/engine/author/checker/service/registry、公開API/DTO/DB/SQL/RN、製品依存の追加・変更は0。
+
+| API repo相対path | u270の責務差分 |
+|---|---|
+| ai/services/ai_inference/emlis_ai_grounded_observation_plan.py | 既存final projection内でplain評価exact2とreceivedの全owner閉包を証明してretentionを修復。直接生成の既定は従来のまま。 |
+| ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_question.py | threadのoriginal_meaning_planから昇格を明示有効化し、旧投影指定を渡す。 |
+| ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_answer_update.py | 限定旧retention planを完全checkpointとして再導出。既存の旧世代fallbackも旧retentionを維持。 |
+| ai/tests/test_cmee_emlis_result_appraisal.py | 両欄・対象・肯否・時点、全8owner、逆読解、余分な材料、Q1上限残差、旧checkpoint、実保存／NoAuthor再開を検証。 |
+| ai/tests/fixtures/cmee_emlis_plain_appraisal_retention_u268.json | 新規。未変更u268から実取得した合成旧checkpoint12例と旧本文状態。個人実入力ではない。 |
+| ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json | 現行共有ownerの正規identityを再採録。歴史receiptは不変。 |
+
+評価suite403 PASS（u269の373＋新30）、Q2/Q3 application54 PASS、計457 PASS・skipなし。現行shared-owner identityは正規計算値と一致。実service＋隔離PGliteの実migration/RPCで初回本文保存、訂正意味保存、NoAuthorによるGET/start、同じkeyの再送とevent無増加を確認。実保存DTOの初回／回答後4ケースを既存RN hook/modalへ渡し、本文完全一致、履歴展開、close/reopenを確認した。native部品はtest stubで、端末実機・正式Product Readではない。RN全suiteの既知失敗を解消したとはしない。
+
+runtimeはこのsessionで実体とimportを検証した既存隔離Python3.12.14／pytest8.4.1・PGlite0.5.8・React18.3.1を再利用。製品依存追加・live DB・外部AI・有料service・deploy・mergeは0。System Contextのdescendant判定失敗は原典直接確認で補完し、成功へ言い換えない。
+
+新検査の初回は10 PASS/20 FAIL。Q1の既存上限、欄交換時の連用形、既存文法で型付けされない「案を選んだことに」の対象、現行でもcanonicalな旧質問、訂正後本文まで回復するという新テストの未確認期待を分離した。Q1と訂正後の停止は残件として検査し、対象対照は既存の型付け可能な「資料を分類した／机を拭いた」を用いた。production文法・上限・reader/gateや既存検査を緩めず、新30検査を通過した。identity確認の初回はPYTHONPATH不足でimport失敗、次は歴史receiptのskip対象を誤選択したため、現行ownerの正規計算値を直接照合した。歴史skipを成功数へ含めない。
+
+**BOUNDED_IMPLEMENTATION_WIP / PRODUCT_NOT_CLEAR、初回一体単位未完了。** 正式受入0/3・candidate_ready=false・automatic_progression=false・未配置・Draft/open/unmergedを維持する。
+
+残件：Q1の同じ4経験は既存Observation contribution上限で本文が出ない。Q3でも「納得した」から「満足している」への訂正はRESOLVEDで保存されるが、更新後のObservation選択が上限を超え、MEANING_UPDATED_BODY_UNAVAILABLEとなる。旧初回本文を現在本文へ戻さない。u269の重複理由文の全経験Reception、近似文／別欄二組、関係の説明反復と固定的な受け取り、§9.2/9.4の商品品質、有限対象撤回後の不自然さ・giver帰属・既存共有17失敗・same100・本人実機・正式Product Readは未解消。
+
+次は、上限を広げる前に、既存Observation候補で同じ対象・評価を重ねて要求していないかを調べ、訂正後も出典の各経験を残す構成と§9.2/9.4の受け取りを一体で改善する。10/17確認点、10/31残件線・12/18リリース目標とPiece/Analysis主枠を維持する。

@@ -2355,3 +2355,126 @@ def test_saved_duplicate_reason_withdrawal_keeps_ambiguity_and_body(qcase, qdb, 
         assert replay[key] == dto[key]
     assert replay['requested_attempt_id'] == dto['attempt_id']
     assert run(restarted.store.read(user, input_id=parent))['events'] == saved['events']
+
+
+@pytest.mark.parametrize('capability', ['FREE_Q1', 'Q3_FREE'])
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('target,evaluation', [
+    ('資料を分類した', '満足した'), ('机を拭いた', '満足している'),
+    ('資料を分類した', '満足しなかった')])
+def test_plain_appraisal_retention_keeps_two_received_and_two_evaluations(capability, reverse, target, evaluation):
+    first = '褒められたのに、嬉しくなかった。' + target + 'ことに' + evaluation + '。'
+    second = '誘われたのに、悲しかった。文章を直したことに納得した。'
+    req = initial(*((second, first) if reverse else (first, second)))
+    req = replace(req, emlis_thread=replace(req.emlis_thread, capability_snapshot=capability))
+    p = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(p)
+    text = tuple(n for n in plan.nuclei if n.source_fields in {('memo',), ('memo_action',)})
+    assert len(text) == 8 and all(n.retention == 'required' for n in text)
+    if capability == 'FREE_Q1':
+        # Q1's existing Observation contribution budget remains a separate
+        # limitation; restoring source ownership must not enlarge it.
+        with pytest.raises(ValueError, match='stage1_required_observation_unrealizable'):
+            project_thread_meaning(p, plan)
+        assert MeaningExperienceEngine().generate(req).artifact is None
+        return
+    selected = project_thread_meaning(p, plan).selected_reception
+    assert len(selected.decisions) == 3 and all(d.branch == 'LIMITED' for d in selected.decisions)
+    assert {nid for d in selected.decisions for nid in (*d.target_nucleus_ids, *d.support_nucleus_ids)} == {
+        n.nucleus_id for n in text}
+    outcome = MeaningExperienceEngine().generate(req)
+    assert outcome.body_state == 'PRE_QUESTION' and outcome.artifact and outcome.question
+    assert not outcome.automatic_progression
+    body = outcome.artifact
+    for token in (target, evaluation, '文章を直した', '納得した', '褒められた', '誘われた'):
+        assert token in body.observation and token in body.reception
+    assert '嬉しさにはつながら' in body.reception and '悲しさを感じ' in body.reception
+    assert '入力した時点では' in body.reception if evaluation == '満足している' else '当時は' in body.reception
+    sentence = build_grounded_sentence_plan(plan, p.thread.resolver(), recovery_stage='full')
+    def passes(text):
+        return evaluate_grounded_surface_body_inverse(body=text.encode(), plan=plan,
+            sentence_plan=sentence, resolver=p.thread.resolver(), selected_subjective_input=selected).passed
+    assert passes(body.text)
+    # Each appraisal still belongs to its own object; each received reaction
+    # must survive independently of the two positive/negative evaluations.
+    for wrong in (body.text.replace(target + 'ことについて', '文章を直したことについて'),
+                  body.text.replace('文章を直したことについて、当時は納得したのですね。', ''),
+                  body.text.replace('誘われたのに、悲しさを感じ', '誘われたので、嬉しさを感じ')):
+        assert wrong != body.text and not passes(wrong)
+
+
+@pytest.mark.parametrize('extra', ['植木に水をやった。', '私は不安だった。',
+    '私は探しやすくなったので、資料を分類したことに満足した。',
+    'まだ結果が出ていないけれど、文章を直したことに満足した。'])
+def test_appraisal_retention_does_not_drop_extra_owners_to_fit_capacity(extra):
+    from cocolon_meaning_experience_engine.emlis_question import original_meaning_plan
+    req = request('褒められたのに、嬉しくなかった。資料を分類したことに満足した。' + extra,
+        '誘われたのに、悲しかった。文章を直したことに納得した。')
+    p = prepare_emlis_meaning(req)
+    old = original_meaning_plan(p.thread, _legacy_appraisal_retention=True)
+    assert p.original_plan.nuclei == old.nuclei and p.original_plan.relations == old.relations
+
+
+# Captured from unmodified u268 05d3040; identical on the independently
+# validated u269 source snapshot. These are synthetic historical meanings.
+_PRE_APPRAISAL_RETENTION = json.loads((Path(__file__).parent / 'fixtures' /
+    'cmee_emlis_plain_appraisal_retention_u268.json').read_text())
+
+
+@pytest.mark.parametrize('row', _PRE_APPRAISAL_RETENTION, ids=lambda r: r['case_id'])
+def test_saved_plain_appraisal_retention_restores_complete_checkpoint_and_result(row):
+    from emlis_thread_service import _json
+    req = _legacy_fixture_request(row)
+    prepared = prepare_emlis_meaning(req)
+    assert prepared.legacy_appraisal_retention
+    assert _json(prepared.checkpoint) == row['checkpoint']
+    outcome = MeaningExperienceEngine().generate(req)
+    assert _json(outcome.meaning_checkpoint) == row['checkpoint']
+    assert outcome.body_state == row['baseline_body_state']
+    assert (outcome.artifact.text if outcome.artifact else None) == row['baseline_body']
+    assert list(outcome.reason_codes) == row['baseline_reason_codes']
+    foreign = replace(req, emlis_thread=replace(req.emlis_thread, prepared_meaning_checkpoint_ref='foreign'))
+    with pytest.raises(ValueError, match=row['foreign_error']):
+        prepare_emlis_meaning(foreign)
+    if 'answer' in row:
+        issued = prepare_emlis_meaning(_legacy_fixture_request(row, checkpoint=False))
+        # Some issued questions are still canonical under the repaired plan.
+        # Without a saved checkpoint they may create a new complete meaning;
+        # the old checkpoint above must still re-derive exactly.
+        assert issued.thread.control.question_control_context == prepared.thread.control.question_control_context
+        assert (issued.checkpoint == prepared.checkpoint) == issued.legacy_appraisal_retention
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+def test_saved_plain_appraisal_retention_reopens_without_author(qcase, qdb, reverse):
+    from test_emlis_q2_application import run, answer
+    from emlis_thread_service import EmlisThreadService, Q3_PROFILE
+    user, parent, service = qcase
+    first = '褒められたのに、嬉しくなかった。資料を分類したことに満足した。'
+    second = '誘われたのに、悲しかった。文章を直したことに納得した。'
+    memo, action = (second, first) if reverse else (first, second)
+    qdb.query("update public.profiles set subscription_tier='free' where id=$1", [user])
+    qdb.query('update public.emotions set memo=$2,memo_action=$3 where id=$1', [parent, memo, action])
+    before = run(service.start(user, parent))
+    assert before['body_state'] == 'PRE_QUESTION' and before['current_observation']
+    class NoAuthor:
+        def __getattr__(self, name):
+            raise AssertionError('saved appraisal retention attempted generation: ' + name)
+    restarted = EmlisThreadService(engine=NoAuthor(), runtime_profile=Q3_PROFILE)
+    assert run(restarted.get(user, parent)) == before
+    assert run(restarted.start(user, parent)) == before
+    response = '「納得した」ではなく「満足している」です。'
+    after = run(answer(service, user, before, response, key='appraisal-retention'))
+    # The correction is accepted, but its larger Observation inventory is
+    # still outside the existing budget. Never reuse the initial body as
+    # current after this accepted change.
+    assert after['body_state'] == 'MEANING_UPDATED_BODY_UNAVAILABLE', after
+    assert after['answer_assessment'] == 'RESOLVED' and after['meaning_updated']
+    assert after['current_observation'] is None
+    assert not any(event.get('is_current') for event in after['timeline'])
+    assert run(restarted.get(user, parent)) == after
+    assert run(restarted.start(user, parent)) == after
+    saved = run(service.store.read(user, input_id=parent))
+    replay = run(answer(restarted, user, before, response, key='appraisal-retention'))
+    assert replay['current_observation'] == after['current_observation'] and replay['timeline'] == after['timeline']
+    assert run(restarted.store.read(user, input_id=parent))['events'] == saved['events']

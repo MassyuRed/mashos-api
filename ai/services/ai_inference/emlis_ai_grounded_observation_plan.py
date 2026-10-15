@@ -16307,6 +16307,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_appraisal_reason: bool = False,
     _legacy_received_appraisal_context: bool = False,
     _legacy_repeated_appraisal_context: bool = False,
+    _legacy_appraisal_retention: bool = True,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -16369,6 +16370,40 @@ def project_final_stage1_grounded_observation_plan(
         nuclei,
         evidence_spans,
     )
+    if not _legacy_appraisal_retention:
+        # The thread source owner explicitly enables this retention repair.
+        # Direct original-body consumers retain their existing projection.
+        # Span-count ranking must not cut an already proved plain appraisal
+        # pair in half. Keep the existing three-duty inventory and require
+        # it to account for every retained text owner before any promotion.
+        # Reason/unfinished groups have a different, three-owner contract.
+        index = {n.nucleus_id: n for n in nuclei}
+        appraisals = tuple(r for r in relations if r.retention in {"required", "should"}
+            and source_owned_result_appraisal(replace(r, retention="required"), nuclei)
+            and all(index[nid].retention in {"required", "should"}
+                and not {"semantic_dependency:reasoned_result_appraisal",
+                         "semantic_dependency:unfinished_result_appraisal"}
+                    & set(index[nid].semantic_frame.attribute_codes)
+                for nid in (r.from_nucleus_id, r.to_nucleus_id)))
+        if len(appraisals) == 2:
+            appraisal_ids = {nid for r in appraisals for nid in (r.from_nucleus_id, r.to_nucleus_id)}
+            received_ids = {n.nucleus_id for n in nuclei if n.retention in {"required", "should"}
+                and n.grounding_kind == "explicit" and n.allowed_claim_scope == "explicit_current_input"
+                and any(c.startswith("source_received_event_link:") for c in n.semantic_frame.attribute_codes)}
+            candidate_ids = appraisal_ids | received_ids
+            candidate_nuclei = tuple(replace(n, retention="required")
+                if n.nucleus_id in candidate_ids else n for n in nuclei)
+            candidate_relations = tuple(replace(r, retention="required")
+                if r in appraisals or (r.retention == "should" and r.type == "contrast"
+                    and r.grounding_kind == "user_stated_relation"
+                    and r.source_relation_ids == ("typed_projection:top_level_connective",)
+                    and {r.from_nucleus_id, r.to_nucleus_id} <= received_ids) else r for r in relations)
+            groups = _thread_retained_reaction_groups(candidate_nuclei, candidate_relations)
+            retained_ids = {nid for _, targets, supports in groups for nid in (*targets, *supports)}
+            text_ids = {n.nucleus_id for n in candidate_nuclei if n.retention in {"required", "should"}
+                and set(n.source_fields) & _TEXT_SOURCE_FIELDS}
+            if groups and retained_ids == text_ids:
+                nuclei, relations = candidate_nuclei, candidate_relations
     promotable_feelings = {n.nucleus_id for n in nuclei if n.retention == "should"
         and (_source_explicit_original_feeling(replace(n, retention="required"))
              or _source_current_cognition(replace(n, retention="required"))
@@ -17396,6 +17431,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_appraisal_reason: bool = False,
     _legacy_received_appraisal_context: bool = False,
     _legacy_repeated_appraisal_context: bool = False,
+    _legacy_appraisal_retention: bool = True,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan."""
 
@@ -17451,6 +17487,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_appraisal_reason=_legacy_appraisal_reason,
         _legacy_received_appraisal_context=_legacy_received_appraisal_context,
         _legacy_repeated_appraisal_context=_legacy_repeated_appraisal_context,
+        _legacy_appraisal_retention=_legacy_appraisal_retention,
     )
 
 
