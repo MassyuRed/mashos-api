@@ -3146,3 +3146,102 @@ def test_detached_reason_reader_rejects_changed_fact_time_and_link_without_autho
     assert independent(body)
     for wrong in wrongs:
         assert not independent(body.replace(original, wrong))
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('evaluation,correction', [('満足した', '満足しなかった'), ('満足している', '満足していない')])
+@pytest.mark.parametrize('reason', ['探しやすくなった', '見た目がすっきりした', '資料を使いやすい'])
+def test_negative_reason_appraisal_correction_keeps_separate_received_reception(reverse, evaluation, correction, reason):
+    from test_cmee_emlis_q3_thread import advance
+    source = reason + 'ので、資料を分類したことに' + evaluation + '。'
+    received = '褒められたのに、嬉しくなかった。'
+    req = advance(request(*((received, source) if reverse else (source, received))),
+                  '「' + evaluation + '」ではなく「' + correction + '」です。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None, result.reason_codes
+    assert correction + 'のですね。' in result.artifact.reception
+    assert '褒められたことは、嬉しさにはつながらなかったのですね。' in result.artifact.reception
+    assert reason not in result.artifact.reception
+    assert reason in result.artifact.observation
+    assert len(plan.response_plan.human_reception_plan.moves) == len(selected.decisions) == 2
+    first, second = selected.decisions
+    assert not set(first.selected_contribution_refs) & set(second.selected_contribution_refs)
+    assert all(d.branch == 'LIMITED' and d.subjective_proposition.subjective_mode == 'ATTENTION'
+               and d.subjective_proposition.focal_relation_ref is None for d in selected.decisions)
+    sentence = build_grounded_sentence_plan(plan, prepared.thread.resolver(), recovery_stage='full')
+    def valid(text):
+        return evaluate_grounded_surface_body_inverse(body=text.encode(), plan=plan, sentence_plan=sentence,
+            resolver=prepared.thread.resolver(), selected_subjective_input=selected).passed
+    assert valid(result.artifact.text)
+    reception = result.artifact.reception
+    for wrong in (reception.replace('褒められたことは、嬉しさにはつながらなかったのですね。', ''),
+                  reception.replace(correction, evaluation),
+                  reception.replace('褒められたことは', '資料を分類したことは'),
+                  reception.replace('つながらなかった', 'つながった'),
+                  reception.replace('資料を分類したことについて', reason + 'ことを理由に、資料を分類したことについて')):
+        assert wrong != reception and not valid(result.artifact.text.replace(reception, wrong))
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+def test_negative_reason_correction_reception_reader_is_author_independent(monkeypatch, reverse):
+    from test_cmee_emlis_q3_thread import advance
+    from emlis_ai_grounded_observation_gate import read_source_owned_discourse
+    import emlis_ai_grounded_human_reception as hr
+    source = '探しやすくなったので、資料を分類したことに満足した。'
+    received = '褒められたのに、嬉しくなかった。'
+    req = advance(request(*((received, source) if reverse else (source, received))),
+                  '「満足した」ではなく「満足しなかった」です。')
+    prepared = prepare_emlis_meaning(req); plan = build_updated_grounded_plan(prepared)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    artifact = MeaningExperienceEngine().generate(req).artifact
+    assert artifact is not None
+    clauses = tuple(c + '。' for c in artifact.reception.split('。') if c)
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(clauses) == len(moves) == 2
+    monkeypatch.setattr(hr, '_source_owned_relational_focus_sentence',
+        lambda *_a, **_k: pytest.fail('independent reader called Reception author'))
+    for clause, move in zip(clauses, moves, strict=True):
+        assert read_source_owned_discourse(clause, move, plan, prepared.thread.resolver(), selected) is not None
+        other = clauses[1] if clause == clauses[0] else clauses[0]
+        assert read_source_owned_discourse(other, move, plan, prepared.thread.resolver(), selected) is None
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+def test_negative_reason_correction_retention_requires_closed_source_ownership(reverse):
+    from test_cmee_emlis_q3_thread import advance
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups, GroundedObservationPlanError
+    source = '探しやすくなったので、資料を分類したことに満足した。'
+    received = '褒められたのに、嬉しくなかった。'
+    req = advance(request(*((received, source) if reverse else (source, received))),
+                  '「満足した」ではなく「満足しなかった」です。')
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(req))
+    reason = next(n for n in plan.nuclei if 'semantic_role:appraisal_explicit_reason' in n.semantic_frame.attribute_codes)
+    evaluation = next(n for n in plan.nuclei if n.source_fields == ('answer_text_private',))
+    link = next(r for r in plan.relations if source_owned_result_appraisal(r, plan.nuclei))
+    expected = _thread_retained_reaction_groups(plan.nuclei, plan.relations)
+    assert len(expected) == 2 and all(group[0] == 'current_burden' for group in expected)
+    def changed(node, **fields):
+        return tuple(replace(n, **fields) if n == node else n for n in plan.nuclei)
+    candidates = [changed(reason, source_fields=('answer_text_private',)),
+        changed(reason, source_span_ids=('foreign',)), changed(reason, surface_anchor_ids=('foreign',)),
+        changed(reason, retention='optional'),
+        changed(reason, semantic_frame=replace(reason.semantic_frame, actor='other')),
+        changed(reason, semantic_frame=replace(reason.semantic_frame, polarity='negative')),
+        changed(reason, semantic_frame=replace(reason.semantic_frame, modality='uncertain')),
+        changed(reason, semantic_frame=replace(reason.semantic_frame, attribute_codes=tuple(
+            c for c in reason.semantic_frame.attribute_codes if not c.startswith('source_fragment_scalar_range:')))),
+        changed(evaluation, semantic_frame=replace(evaluation.semantic_frame, attribute_codes=tuple(
+            'thread_time:answer_time' if c == 'thread_time:original_occasion' else c
+            for c in evaluation.semantic_frame.attribute_codes))),
+        (*plan.nuclei, replace(reason, nucleus_id='extra:unowned'))]
+    for nuclei in candidates:
+        try:
+            assert _thread_retained_reaction_groups(nuclei, plan.relations) != expected
+        except GroundedObservationPlanError:
+            pass
+    invented_cause = replace(link, relation_id='invented-cause', type='user_stated_cause',
+                            from_nucleus_id=reason.nucleus_id)
+    assert _thread_retained_reaction_groups(plan.nuclei, (*plan.relations, invented_cause)) != expected

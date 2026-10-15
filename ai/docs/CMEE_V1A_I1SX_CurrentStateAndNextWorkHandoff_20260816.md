@@ -1,4 +1,4 @@
-> 最新のEmlisAI残件は末尾 **u278（2026-10-15 JST・評価の訂正／撤回後の理由状態と元の時点を保持）**。631検査、24組の意味・選択・Reception不変、保存DTO32件の本文・履歴・再表示一致。固定的な受け取り内容、否定訂正後の別received選択、実機は残件。商品NOT_CLEAR・初回単位未完了・未配置。
+> 最新のEmlisAI残件は末尾 **u279（2026-10-15 JST・否定訂正後の別経験の受け取り欠落を修復）**。647検査成功、保存DTO32件の本文・履歴一致。意味・Observationは保持。受け取り内容全体・実機は残件。商品NOT_CLEAR・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -19942,3 +19942,47 @@ RN→API→service/store→保存read→RN、01B/C隣接責務、公開API/DTO/D
 **TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR、初回一体単位未完了。** 正式受入0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置を維持する。固定的な注意／説明文の内容形成、§9.2/9.4、対象撤回後の複数receivedや追加action、Q1の4経験上限、近似文／別欄二組、旧receivedのgiver帰属、既存共有17失敗・same100・本人実機・正式Product Readは残る。631件PASSを既存共有17失敗の解消とはしない。
 
 次は、今回の実保存本文で確認した「評価を否定へ訂正すると別received経験がObservationには残るのにReceptionから落ちる」選択差を診断する。u277の対象撤回とは別の更新経路であり、今回の状態／時点修復には混ぜていない。既承認の二経験・所有条件内で直せるかをcheckpoint→plan→選択→実本文で照合する。同時に§9.2/9.4の受け取り内容の不足を保持し、注意表現の言い換えやNORMALの意味の借用で埋めない。新しい意味契約・source範囲・schema・上限が必要なら不足を具体化して別判断へ戻す。10/17確認点・10/31残件線・12/18公開目標、Piece/Analysis主枠は維持する。
+
+
+## u279 — 否定訂正後も別received経験を受け取りに残す（2026-10-15 JST）
+
+基準API d983445daf1901d129ce347739ff5821a15cfb30／資料811243d5277493f53a2d48f2f5cddf0035bbb687。添付前回txt、Karen-Diary入口・行動原理、前提／作業ルール、8/16恒久incident全文、全体設計01・分冊全file地図01A/B/Cの対象／隣接責務、current01/04、8/28設計§9.1/9.2/9.4、最新weekly§3.5.3/5.6/6.5/5.6.28を確認。System Context prepareは既知のa77b79c5 ancestry不一致で停止し、正本が認める原典直接読取りを使用した。生成Context成功とはしない。
+
+DIRECT_PRODUCT_OR_ACCEPTANCE_WORK / LEVEL_2既存承認内の欠落修復。current継続指示・u278次作業とRule18 §11.3を根拠に、root華恋を唯一の実行・編集・commit／GitHub反映ownerとした。同環境の別担当が商品経路・原因・最終差分をread-only確認。別model Pro審査や本人Product Readは主張しない。成功条件は二経験の本文回復と意味／保存／表示保持。停止条件は既存意味契約や上限・外部境界の拡張が必要になること。新規外部AI・依存・課金・live DB/env・build/deploy/mergeなし。
+
+理由付き満足を否定へ訂正した後、別のreceived経験がObservationには残るのにReceptionから落ちる欠陥を修復した。訂正評価と別経験が同じcurrent_burden候補になり、既存の代表選択で一方が落ちていた。既存plan ownerの_thread_retained_reaction_groupsで、証明済みの二経験を別々の既存2 Moveへ保持し、既存作者・独立readerから本文へ戻す。
+
+適用は、source-ownedな評価関係exact1、回答核exact1（本人・否定・無程度の満足・original_occasion・過去／現在）、同一原文の理由／対象exact2、孤立した肯定fact/stateの理由、残余required textがoriginal received exact1の場合。理由と対象の原文range・field/span・所有、関係閉包を確認する。理由はObservationだけへ残し、否定評価へ因果を付け直さない。追加action・複数received・理由なし評価・明示的な回答時点への訂正・別回答併記をこの修正へ含めない。source認識、意味checkpoint、schema、NORMAL資格、各上限、作者／独立reader、公開API/DTO/DB/RNと製品依存は不変。
+
+合成代表例（初回：探しやすくなったので資料分類に満足、別欄：褒められたのに嬉しくなかった、回答：満足を否定へ訂正）の保存本文：
+
+```text
+見えたこと：
+当時の状態として、「探しやすくなった」と書かれています。
+「資料を分類した」という出来事に対する当時の評価は、「満足しなかった」とあります。 「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。
+
+Emlisから：
+資料を分類したことについて、当時は満足しなかったのですね。褒められたことは、嬉しさにはつながらなかったのですね。
+```
+
+旧版のReceptionは最初の評価文だけだった。二経験の保持が増分であり、自然さや経験解釈全体の合格ではない。
+
+STRUCTURE_MAP_DELTA_PRESENT。既存選択owner内の責務補修、新規production file／subsystemなし。
+
+| mashos-api相対path | 今回の変更 |
+|---|---|
+| ai/services/ai_inference/emlis_ai_grounded_observation_plan.py | 否定訂正後の評価と別receivedを、所有が閉じた既存2 Moveへ保持。 |
+| ai/tests/test_cmee_emlis_result_appraisal.py | 実本文・独立reader・source所有の回帰16検査を追加。 |
+| ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json | 現行共有owner identityのみ再計算。歴史fixture不変。 |
+
+RN→API→service/store→保存read→RNと01B/Cの隣接責務は不変。
+
+最終単一runは647 PASS（評価592＋Q2/Q3 application54＋現行identity1、194 deselected、既存警告2件、209.40秒）。追加16検査で実本文12条件、作者呼出し禁止の独立reader両欄、source所有の不正差替え両欄を確認。欠落、旧肯定復活、別経験借用、否定反転、新因果を拒否する。未変更u278との24組比較で初回全体・更新後完全checkpoint・Observation・status/reason_codesが一致。評価撤回12組はplan/選択/Receptionも完全一致、否定訂正12組だけが二経験へ回復した。同環境read-only reviewで初回12・訂正12・撤回12と、追加action／2 received／理由なし／明示今／別回答の両欄10条件を旧関数と独立比較し、対象外は不変。
+
+実service＋隔離PGliteで理由時点2×評価時点2×両欄×訂正／評価撤回の16組を初回／更新後まで保存。保存DTO32件の生成本文一致、NoAuthor GET/start、同一回答再送のtimeline/current本文一致・event無増加を確認。現行RN hook/modalで全32件の本文・履歴・close/reopen一致。rootが32全文を確認した。native部品stubであり、本人実機・正式Product Readではない。
+
+Python3.12.14／pytest8.4.1／PGlite0.5.8／React18.3.1の既存runtime。language identity c52db38f258a3bbad4b490387a9d84494d8210032ee99389fa223496a00a7c84、runtime 2a4cc6864f68043e0219cab6a4d51baca0f2773a2c0b7aa0415ee0221d3d13a0。途中の追加test書込はcwdに対するpath重複で失敗し、当該選択runは検査対象0。正しいpathで16件成功。identity準備のkey集合assert不一致はschema_versionを保持して修正し、最終検査へ未更新fixtureを採用しない。製品条件や歴史fixtureは緩和していない。
+
+TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR、初回一体単位未完了・正式受入0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置を維持。今回の欠落回復を§9.2/9.4の受け取り内容形成全体の完成へ換算しない。固定的な説明／反復、対象外の複数経験や回答時点変更、Q1上限、近似文／別欄二組、giver帰属、既存共有17失敗・same100・本人実機・正式Product Readは残る。
+
+次は§9.2/9.4の受け取り内容へ戻る。二経験が揃った現在の初回／訂正後本文で、選択済みの意味から何を受け取るべきかと実際の主観述語との差を確認する。別の注意表現への言換え、NORMALの読みの借用だけで解消扱いにしない。今回対象外の明示的な回答時点変更等を一括解除しない。新しい意味契約・source範囲・schema・上限が必要なら、不足と最小案を具体化してMash判断へ戻す。10/17確認点・10/31残件線・12/18公開目標、Piece/Analysis主枠を維持。

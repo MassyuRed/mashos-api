@@ -8378,6 +8378,73 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
     original_text = tuple(n for n in originals if any(f in _TEXT_SOURCE_FIELDS for f in n.source_fields))
     appraisal_links = tuple(r for r in relations if source_owned_result_appraisal(r, nuclei))
     detached_appraisals = tuple(n for n in nuclei if _thread_withdrawn_result_appraisal(n, relations))
+    # A negative correction removes the original satisfaction's reason edge,
+    # not the separate received experience. Retain the two already-owned
+    # appraisal/received duties before same-family representative ranking.
+    # The detached reason remains Observation-only; it is not a new cause of
+    # the corrected evaluation and cannot supply either Reception duty.
+    if len(appraisal_links) == 1:
+        link = appraisal_links[0]
+        index = {n.nucleus_id: n for n in nuclei}
+        event, evaluation = index[link.from_nucleus_id], index[link.to_nucleus_id]
+        reasons = tuple(n for n in nuclei
+            if n.source_fields == event.source_fields
+            and n.source_span_ids == event.source_span_ids
+            and n.surface_anchor_ids == event.source_span_ids
+            and n.retention == "required" and n.grounding_kind == "explicit"
+            and n.allowed_claim_scope == "explicit_current_input"
+            and n.kind == n.semantic_frame.predicate_kind == "state"
+            and n.semantic_frame.actor == "current_user"
+            and n.semantic_frame.modality == "fact"
+            and n.semantic_frame.polarity == "positive"
+            and n.semantic_frame.time_scope in {"past", "present"}
+            and {"semantic_dependency:reasoned_result_appraisal",
+                 "semantic_role:appraisal_explicit_reason"} <= set(n.semantic_frame.attribute_codes)
+            and not {"operator:negation", "operator:unfinished", "operator:uncertainty",
+                     "semantic_role:limiting_unknown"} & set(n.semantic_frame.attribute_codes)
+            and not any(c.startswith("thread_time:") for c in n.semantic_frame.attribute_codes)
+            and not any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations))
+        if (len(reasons) == 1 and not withdrawal
+            and event.retention == evaluation.retention == "required"
+            and "semantic_dependency:reasoned_result_appraisal" in event.semantic_frame.attribute_codes
+            and (event.semantic_frame.modality, event.semantic_frame.polarity,
+                 event.semantic_frame.time_scope) == ("fact", "neutral", "past")
+            and evaluation.source_fields == ("answer_text_private",)
+            and (evaluation.semantic_frame.predicate_kind, evaluation.semantic_frame.modality,
+                 evaluation.semantic_frame.polarity) == ("feeling", "feeling", "negative")
+            and evaluation.semantic_frame.time_scope in {"past", "present"}
+            and {c for c in evaluation.semantic_frame.attribute_codes if c.startswith("thread_time:")}
+                == {"thread_time:original_occasion"}
+            and {c for c in evaluation.semantic_frame.attribute_codes if c.startswith("source_appraisal_")}
+                == {"source_appraisal_kind:satisfaction", "source_appraisal_degree:unmarked"}
+            and tuple(n for n in nuclei if n.source_fields == ("answer_text_private",)) == (evaluation,)
+            and tuple(r for r in relations if {event.nucleus_id, evaluation.nucleus_id}
+                & {r.from_nucleus_id, r.to_nucleus_id}) == (link,)):
+            original_group = tuple(n for n in nuclei if n.source_fields == event.source_fields
+                and n.source_span_ids == event.source_span_ids
+                and "semantic_dependency:reasoned_result_appraisal" in n.semantic_frame.attribute_codes)
+            ranges = []
+            for n in (reasons[0], event):
+                codes = tuple(c for c in n.semantic_frame.attribute_codes
+                              if c.startswith("source_fragment_scalar_range:"))
+                if (len(codes) != 1 or re.fullmatch(r"source_fragment_scalar_range:\d+:\d+", codes[0]) is None
+                    or "source_fragment_scalar_source:normalized_raw_text" not in n.semantic_frame.attribute_codes):
+                    break
+                ranges.append(tuple(map(int, codes[0].split(":")[-2:])))
+            if (set(original_group) != {reasons[0], event} or len(ranges) != 2
+                or not (ranges[0][0] == 0 < ranges[0][1] < ranges[1][0] < ranges[1][1])):
+                return ()
+            owned = {event.nucleus_id, evaluation.nucleus_id, reasons[0].nucleus_id}
+            rest = tuple(n for n in nuclei if n.nucleus_id not in owned)
+            rest_ids = {n.nucleus_id for n in rest}
+            rest_relations = tuple(r for r in relations
+                if {r.from_nucleus_id, r.to_nucleus_id} <= rest_ids)
+            rest_text = tuple(n for n in rest if n.retention == "required"
+                              and set(n.source_fields) & _TEXT_SOURCE_FIELDS)
+            received = _received_contrast_group_targets(rest_text, rest_relations)
+            if received and len(received[0]) == 1:
+                return (("current_burden", (evaluation.nucleus_id,), (event.nucleus_id,)),
+                        ("current_burden", *received))
     if appraisal_links and len(appraisal_links) + len(detached_appraisals) >= 2:
         index = {n.nucleus_id: n for n in nuclei}
         endpoints = tuple({r.from_nucleus_id, r.to_nucleus_id} for r in appraisal_links)
