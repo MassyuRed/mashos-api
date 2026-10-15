@@ -1,4 +1,4 @@
-> 最新のEmlisAI残件は末尾 **u281（2026-10-15・二経験の組別意味／受け取り接続）**。関連655検査＋現行identity1成功、保存DTO32本文の再読・履歴・再表示一致。初回／receivedの言換え寄りの受け取りは残件。PRODUCT_NOT_CLEAR・初回単位未完了・未配置。
+> 最新のEmlisAI残件は末尾 **u283（2026-10-16・二経験の内容不足／対象付きreceivedの欠落診断、追加案は未承認・未実装）**。製品sourceはu282のまま。次は8/28設計u283の限定案へのMash判断。PRODUCT_NOT_CLEAR・初回単位未完了・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -20070,3 +20070,29 @@ Human Receptionの既存received作者へ選択済みdecisionを渡す。出来�
 TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式受入0/3、candidate_ready=false、automatic_progression=false。既存Draft/open/unmerged・未配置を維持する。
 
 選択内容が共通の「のですね」へ落ちる問題は当該成分で修正した。一方、二経験を並べた本文は「経験として受け取りました」「両方を受け取りました」が反復し、初回理由側も関係説明に寄っている。今回の正の受け取り対象と対比の明示を、§9.2／9.4・自然さ・入力固有の内容形成の完成に換算しない。次は、初回の理由側とreceived側を合わせた受け取りに、その入力固有の一つの意味が形成されているかを扱う。既存selected contentと実本文の不足を分離し、根拠のない原因等や同義語追加で埋めない。評価撤回後のLIMITED一般態度、既存共有17失敗、same100、Q1上限、giver帰属、本人実機・正式受入は未解消。Mashへ未合格本文のProduct Readは求めない。10/17確認点・10/31残件線・12/18公開目標、Piece/Analysis主枠を維持する。
+
+
+## u283 — 二経験の読みの不足と、対象付きreceivedの欠落を分離（2026-10-16・未実装）
+
+製品基準API `51f0913d4943f5e5f48c4104bc2c5e5260052103`、資料 `457dc7ff849bff5d1173580a08d560d2e5af328d`。全体設計01、全file地図01A/B/CとEmlis／CMEE current map、CURRENT_RULES／Rule18、恒久incident、weekly10/10 §3.5／5.6／6.5とu280〜282、8/28設計§9.2／9.4、関連作者・意味投影・独立readerを確認した。
+
+### 実測
+
+既存 `test_cmee_emlis_result_appraisal.request` と `MeaningExperienceEngine.generate`、`prepare_emlis_meaning` → `build_updated_grounded_plan` → `project_thread_meaning` を使用。新しい受入testは作っていない。Python3.12.14／pytest8.4.1／pydantic2.13.5、読み込み用FastAPI0.116.1／httpx0.28.1を隔離test環境へ用意。製品依存変更なし。保存DB、RN、既存回帰suite、CI、実機は今回未実行。
+
+- 理由付き満足＋嬉しさ不在：QUESTION_PENDING、u282の理由説明＋本人経験受け取りの二文。選択は理由のMATERIAL_WEIGHTとreceivedのRELATIONAL_NONCOLLAPSEを各一つ。
+- 反応を悲しさへ変更：後者が悲しさを含む経験へ変わる。理由変更では理由側だけが変化。理由削除では両文に「経験として受け取りました」が現れる。
+- 欄逆順はObservation順が変わり、Receptionは評価→receivedを保持。否定訂正回答「『満足した』ではなく『満足しなかった』です。」（実入力は二重鉤括弧でなく「」）はGENERATEDで二経験を保持。両方とも最低2文／最大2文／一文1 Move。
+- 時点を明示しない撤回回答「『満足した』を取り消します。」（実入力の引用符は「」）はUNAVAILABLE／answer_target_time_unresolved。今回対象の本文改善でも既存成功でもなく、今回使用した回答の実結果として分離する。
+- 合成入力「資料を分類したことには満足した。でも、その分類を褒められたのに、嬉しくなかった。」はGENERATED／no_bound_personal_meaning_target、planはevaluation_about_eventのみ。後半を今の一般状態として表示し、Receptionは「資料を分類したことについて、当時は満足したのですね。」だけになる。
+- 同入力から「その分類を」を除くとreceived contrastが現れ、二経験の個別本文を生成。「でも」を除いて対象句を残した対照と「その分類の後で誘われた」へ変えた対照はgenericへ残る。後者を同一対象receivedの正例にしてはいけない。
+
+全12生成呼出し（うち同じ初回requestの重複1）を実行したが、11種類をpytest成功件数、欠陥解消数、商品合格へ換算しない。全生成本文はrootが読解した。照合用JSONは合成データだけの一時出力で、再開の正本は上記入力・観測事実と固定source。新しいprivate本文・ユーザー識別子をGitHubへ保存していない。
+
+### 因果と提案
+
+`_appraisal_received_components`／`_component_reception_rows`／`_selected_reception`はu281のとおり別組を別命題へ結ぶ。作者が新しい共通意味を失っているわけではない。最低二文／一文一Moveのlayered制約もあり、述語の共有だけでは入力固有の内容を作れない。`_received_event_reaction_text_projections`が対象句「その分類を」を許さないことが、追加対照で見つかった直接の欠落原因。
+
+8/28設計末尾u283へ、同じ出来事を一意に指す対象と対比が明示された場合に限り、行為への本人評価と、その行為を褒められた場面の本人感情を読み分ける限定案を固定した。新しいsource範囲・組間意味の追加で、Rule18 §11.3の追加Mash承認前に実装しない。二つの経験の原因・同時性・価値順位を作らず、根拠がない元の二欄を統合しない。文数制限も今回の案では変更しない。全検証と旧保存再導出は実装候補の完成条件として設計に記録した。
+
+今回のeffectは読取り・合成生成・この診断と提案の記録のみ。製品source／test／fixture／live DB／設定／deploy／build／merge変更0。同環境read-only補助reviewを使用し、別modelのPro審査と偽らない。BLOCKER_NARROWED／PROPOSED_NOT_APPROVED／PRODUCT_NOT_CLEAR、初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置。STRUCTURE_MAP_DELTA_NONE。次は限定案へのMash判断。10/17・10/31・12/18とPiece／Analysis主枠は不変。
