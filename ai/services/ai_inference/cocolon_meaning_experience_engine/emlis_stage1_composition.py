@@ -41,6 +41,8 @@ from .contracts import (
     CMEE_STAGE1_VALUE_PRINCIPLE_REFS,
     CMEEStage1ContractError,
     ComplementRuleSpec,
+    ComponentReceptionOpportunityV1,
+    component_reception_row_for_proposition,
     DiscourseReferenceStateRow,
     DifferenceInvariantCode,
     EmlisAffectContent,
@@ -7172,11 +7174,67 @@ def _validate_tagged_projection_inputs(
     return _validate_tagged_projection_semantic_closure(inputs, authority)
 
 
+def _validate_component_reception_plan_ownership(authority):
+    """Check the private carrier against source Moves before any author runs."""
+    from emlis_ai_grounded_observation_plan import (
+        source_owned_result_appraisal, _received_contrast_group_targets,
+        _thread_retained_reaction_groups,
+    )
+    from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
+    from .contracts import component_reception_bundle_domains
+    plan, graph = authority.grounded_plan, authority.grounded_graph
+    resolver = authority.admitted_source.resolver()
+    rows = authority.retained_reception_act_rows
+    moves = plan.response_plan.human_reception_plan.moves
+    domains = component_reception_bundle_domains(authority.input_specific_meaning_structure)
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    node_refs = {}
+    for nucleus in plan.nuclei:
+        evidence = tuple(resolver.qualified_ref(s).evidence.evidence_id for s in nucleus.source_span_ids)
+        matches = tuple(n for n in graph.nodes if n.evidence_ids == evidence
+            and n.node_kind == nucleus.kind and n.grounding_kind == nucleus.grounding_kind
+            and n.value == final_reception_source_anchor_text(nucleus.nucleus_id, index, resolver))
+        if len(matches) != 1:
+            raise Stage1CompositionError('COMPONENT_RECEPTION_SOURCE_OWNER_STOP')
+        node_refs[nucleus.nucleus_id] = f'node:{matches[0].node_id}@{CMEE_GROUNDED_GRAPH_SCHEMA_VERSION}'
+    links = tuple(e for e in plan.relations if source_owned_result_appraisal(e, plan.nuclei))
+    if (len(rows) != len(moves) or len(rows) != 2 or len(links) != 1
+        or {row.move_ref for row in rows} != {move.move_id for move in moves}):
+        raise Stage1CompositionError('COMPONENT_RECEPTION_SOURCE_OWNER_STOP')
+    covered = set()
+    for move in moves:
+        owned = tuple(row for row in rows if row.move_ref == move.move_id
+                      and row.reception_act == move.reception_act)
+        ids = set((*move.target_nucleus_ids, *move.support_nucleus_ids))
+        refs = frozenset(node_refs[nid] for nid in ids)
+        if len(owned) != 1 or owned[0].component_ref not in domains or domains[owned[0].component_ref][0] != refs:
+            raise Stage1CompositionError('COMPONENT_RECEPTION_SOURCE_OWNER_STOP')
+        covered.update(ids)
+    appraisal = {links[0].from_nucleus_id, links[0].to_nucleus_id}
+    received_nodes = tuple(n for n in plan.nuclei if n.nucleus_id in covered - appraisal
+        and 'semantic_role:appraisal_explicit_reason' not in n.semantic_frame.attribute_codes)
+    received_ids = {n.nucleus_id for n in received_nodes}
+    received_relations = tuple(e for e in plan.relations
+                              if {e.from_nucleus_id, e.to_nucleus_id} <= received_ids)
+    if len(received_nodes) != 2 or len(received_relations) != 1 or not _received_contrast_group_targets(received_nodes, received_relations):
+        raise Stage1CompositionError('COMPONENT_RECEPTION_SOURCE_OWNER_STOP')
+    leftover = tuple(n for n in plan.nuclei if n.nucleus_id in plan.coverage_requirements.required_nucleus_ids
+                     and n.nucleus_id not in covered)
+    if leftover and (len(leftover) != 1 or len(domains) != 3
+        or 'semantic_role:appraisal_explicit_reason' not in leftover[0].semantic_frame.attribute_codes
+        or len(_thread_retained_reaction_groups(plan.nuclei, plan.relations) or ()) != 2):
+        raise Stage1CompositionError('COMPONENT_RECEPTION_SOURCE_OWNER_STOP')
+
+
 def _validate_tagged_projection_semantic_closure(inputs, authority):
     """Source-independent closure, shared by individually admitted versions."""
     if (type(inputs) not in {SelectedReadingProjectionInputs, LimitedProjectionInputs}
             or type(authority) is not _ProjectionCommonAuthority or inputs.common is not authority):
         raise Stage1CompositionError("STAGE1_TAGGED_PROJECTION_INPUT_TYPE_STOP")
+    component_opportunities = any(type(row) is ComponentReceptionOpportunityV1
+        for row in authority.retained_reception_act_rows)
+    if component_opportunities:
+        _validate_component_reception_plan_ownership(authority)
     if (
         authority.grounded_graph_ref
         != (
@@ -7187,12 +7245,12 @@ def _validate_tagged_projection_semantic_closure(inputs, authority):
         != getattr(authority.parent_plan, "observation_duty_id", None)
         or authority.parent_reception_duty_ref
         != getattr(authority.parent_plan, "reception_duty_id", None)
-        or tuple(
-            row.act_ref for row in authority.retained_reception_act_rows
-        )
+        or tuple(dict.fromkeys(row.reception_act for row in authority.retained_reception_act_rows))
         != tuple(
             getattr(authority.parent_plan, "allowed_reception_act_ids", ())
         )
+        or component_opportunities and tuple(authority.parent_plan.allowed_reception_act_ids)
+        != tuple(authority.allowed_reception_opportunity_envelope.allowed_reception_act_ids)
     ):
         raise Stage1CompositionError(
             "STAGE1_PROJECTION_PREIMAGE_CLOSURE_STOP"
@@ -7295,8 +7353,9 @@ def _validate_tagged_projection_semantic_closure(inputs, authority):
             ),
             material_unknown_refs=authority.material_unknown_refs,
             expected_act_refs=(
-                authority.allowed_reception_opportunity_envelope
-                .allowed_reception_act_ids
+                tuple(row.act_ref for row in authority.retained_reception_act_rows)
+                if component_opportunities else
+                tuple(authority.allowed_reception_opportunity_envelope.allowed_reception_act_ids)
             ),
         )
         expected_seal_ref = project_stage1_subjective_projection_seal_ref(
@@ -7426,7 +7485,9 @@ def _project_selected_reading_from_admitted_authority(
         row.reception_act: row
         for row in authority.retained_reception_act_rows
     }
-    if len(retained_by_act) != len(authority.retained_reception_act_rows):
+    component_opportunities = any(type(row) is ComponentReceptionOpportunityV1
+                                  for row in authority.retained_reception_act_rows)
+    if not component_opportunities and len(retained_by_act) != len(authority.retained_reception_act_rows):
         raise Stage1CompositionError(
             "STAGE1_RECEPTION_ACT_CLOSURE_STOP"
         )
@@ -7437,7 +7498,9 @@ def _project_selected_reading_from_admitted_authority(
     policy_applications: list[PolicyApplicationRow] = []
     reception_traces: list[ReceptionVisibleCausalTraceRow] = []
     for source_reception in inputs.reception_proposition_records:
-        retained = retained_by_act.get(source_reception.reception_function)
+        retained = (component_reception_row_for_proposition(authority.retained_reception_act_rows,
+                    source_reception, authority.observation_contribution_rows) if component_opportunities
+                    else retained_by_act.get(source_reception.reception_function))
         retained_contribution_refs = (
             ()
             if retained is None
@@ -16594,6 +16657,7 @@ def _logical_contract_descriptor(
 # introspection.  Logical Step-4 types which are not runtime-active in Step 2
 # are still frozen here with their complete approved field order/cardinality.
 _LOGICAL_CONTRACT_FIELD_SPECS = (
+    ("ComponentReceptionOpportunityV1", "component-reception-v1", "schema_version=exact1 opportunity_ref=exact1 move_ref=exact1 reception_act=exact1 component_ref=exact1 basis_contribution_refs=1..N bound_relation_refs=1..N", ("SELECTED_COMPONENT_SOURCE_MOVE_EXACT_OWNER", "LEGACY_EXACT3_UNCHANGED"), "TAGGED_PROJECTION_DISPATCH"),
     ("EmlisSubjectiveClaim", "response-v2", "schema_version=exact1 subjective_claim_id=exact1 parent_duty_ref=exact1 speaker_owner=exact1 claim_domain=exact1 subjective_mode=exact1 asserted_subjective_proposition=exact1 basis_observation_contribution_refs=1..N basis_semantic_refs=1..N source_reception_act_refs=1..N value_principle_refs=0..N user_fact_effect=exact0 forbidden_promotions=1..N subjective_responsibility_refs=1..N selected_subjective_opportunity_key=exact1", ("NESTED_V2_PROPOSITION", "LINEAGE_EXACT_COPY"), "FINAL_CLAIM_PROJECTOR"),
     ("SubjectiveBasisBinding", "basis-binding-v1", "projection_preimage_ref=exact1 binding_ref=exact1 contribution_ref=exact1 semantic_ref=exact1 role=exact1", ("UPSTREAM_ONLY_PREIMAGE",), "SUBJECTIVE_BASIS_PROJECTOR"),
     ("SourceQualifierBinding", "source-qualifier-v1", "projection_preimage_ref=exact1 source_qualifier_binding_ref=exact1 basis_binding_ref=exact1 source_candidate_ref=exact1 source_argument_role=0..1 canonical_qualifier_codes=exact3 polarity=exact1 modality=exact1 time_scope=exact1", ("ONE_ROW_PER_BASIS", "AXIS_EXACT3"), "SOURCE_QUALIFIER_PROJECTOR"),
@@ -16681,6 +16745,7 @@ LANGUAGE_CORE_CONCRETE_BINDING_DESCRIPTORS = (
     ("RelationEndpointCandidateRow", ("relation_candidate_ref", "source_argument_role", "source_semantic_ref", "endpoint_grounded_candidate_ref")),
     ("QualifierValueRow", ("candidate_ref", "qualifier_scope", "source_argument_role", "source_semantic_ref", "axis", "value")),
     ("RetainedReceptionActRow", ("act_ref", "reception_act", "basis_contribution_refs")),
+    ("ComponentReceptionOpportunityV1", ("schema_version", "opportunity_ref", "move_ref", "reception_act", "component_ref", "basis_contribution_refs", "bound_relation_refs")),
     ("ComposedSentenceUnit", ("unit_ref", "layer", "duty_refs", "sentence_job_refs", "basis_anchor_refs", "clause_plan_refs", "text", "surface_text_sha256", "clause_frames", "realized_semantic_bindings", "surface_derivations", "frame_refs", "atomic_head_refs", "lexical_family_refs", "source_group_refs", "reference_state_refs", "link_plan_refs", "morphology_plan_refs", "clause_ir_refs")),
     ("V2ClauseReferenceStateBundle", ("state_ref", "subject_state", "object_state", "response_object_expression")),
     ("V2ReferenceSurfaceSpec", ("surface_ref", "reference_rule_ref", "atomic_surface", "source_cardinality", "licensed_frame_refs")),
@@ -16706,11 +16771,11 @@ def _contract_manifest() -> tuple[Any, ...]:
         _logical_contract_descriptor(*row)
         for row in _LOGICAL_CONTRACT_FIELD_SPECS
     )
-    if len(descriptors) != 70 or len({row[0][1] for row in descriptors}) != 70:
+    if len(descriptors) != 71 or len({row[0][1] for row in descriptors}) != 71:
         raise Stage1CompositionError("LANGUAGE_CORE_CONTRACT_DESCRIPTOR_STOP")
     return (
         ("schema_version", _CONTRACT_MANIFEST_SCHEMA_VERSION),
-        ("logical_contract_count", 70),
+        ("logical_contract_count", 71),
         ("logical_contract_descriptors", descriptors),
         ("content_kind_derivation_rows", LANGUAGE_CORE_CONTENT_DERIVATION_ROWS),
         ("concrete_runtime_binding_descriptors", LANGUAGE_CORE_CONCRETE_BINDING_DESCRIPTORS),

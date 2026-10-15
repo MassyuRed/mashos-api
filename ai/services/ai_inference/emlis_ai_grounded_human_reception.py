@@ -525,6 +525,10 @@ def validate_selected_subjective_reception_input(
                 or len(contrasts) != 1
                 or relation_map.get(appraisal.focal_relation_ref) != contrasts[0].relation_id):
                 raise GroundedHumanReceptionSurfaceError(failure)
+            if reasoned and (proposition.subjective_mode != 'ATTENTION'
+                or proposition.subjective_operator != 'ATTEND_TO'
+                or set(row.selected_contribution_refs) != set(proposition.target_contribution_refs)):
+                raise GroundedHumanReceptionSurfaceError(failure)
     if len({row.move_id for row in value.decisions}) != len(value.decisions):
         raise GroundedHumanReceptionSurfaceError(failure)
     return MappingProxyType({row.move_id: row for row in value.decisions})

@@ -4311,6 +4311,11 @@ def build_stage1_post_selection_reception_records(
     material_unknowns = tuple(material_unknown_refs)
     expected_acts = tuple(expected_act_refs)
     allowed_acts = tuple(row.reception_act for row in retained_rows)
+    from .contracts import ComponentReceptionOpportunityV1, validate_component_reception_opportunities
+    component_opportunities = any(type(row) is ComponentReceptionOpportunityV1 for row in retained_rows)
+    if component_opportunities:
+        validate_component_reception_opportunities(retained_rows, structure, contributions)
+    retained_refs = tuple(row.act_ref for row in retained_rows)
     contribution_refs = tuple(row.contribution_id for row in contributions)
     interpretation_candidate_refs = tuple(
         row.candidate_id for row in interpretation_candidates
@@ -4340,9 +4345,9 @@ def build_stage1_post_selection_reception_records(
             type(value) is not str or not value
             for value in expected_acts
         )
-        or allowed_acts != expected_acts
+        or (retained_refs if component_opportunities else allowed_acts) != expected_acts
         or any(type(value) is not str or not value for value in material_unknowns)
-        or len(allowed_acts) != len(set(allowed_acts))
+        or (not component_opportunities and len(allowed_acts) != len(set(allowed_acts)))
         or len(contribution_refs) != len(set(contribution_refs))
         or len(interpretation_candidate_refs)
         != len(set(interpretation_candidate_refs))

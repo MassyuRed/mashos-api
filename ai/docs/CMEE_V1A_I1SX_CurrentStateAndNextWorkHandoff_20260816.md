@@ -1,4 +1,4 @@
-> 最新のEmlisAI残件は末尾 **u279（2026-10-15 JST・否定訂正後の別経験の受け取り欠落を修復）**。647検査成功、保存DTO32件の本文・履歴一致。意味・Observationは保持。受け取り内容全体・実機は残件。商品NOT_CLEAR・未配置。
+> 最新のEmlisAI残件は末尾 **u281（2026-10-15・二経験の組別意味／受け取り接続）**。関連655検査＋現行identity1成功、保存DTO32本文の再読・履歴・再表示一致。初回／receivedの言換え寄りの受け取りは残件。PRODUCT_NOT_CLEAR・初回単位未完了・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -19986,3 +19986,44 @@ Python3.12.14／pytest8.4.1／PGlite0.5.8／React18.3.1の既存runtime。langua
 TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR、初回一体単位未完了・正式受入0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置を維持。今回の欠落回復を§9.2/9.4の受け取り内容形成全体の完成へ換算しない。固定的な説明／反復、対象外の複数経験や回答時点変更、Q1上限、近似文／別欄二組、giver帰属、既存共有17失敗・same100・本人実機・正式Product Readは残る。
 
 次は§9.2/9.4の受け取り内容へ戻る。二経験が揃った現在の初回／訂正後本文で、選択済みの意味から何を受け取るべきかと実際の主観述語との差を確認する。別の注意表現への言換え、NORMALの読みの借用だけで解消扱いにしない。今回対象外の明示的な回答時点変更等を一括解除しない。新しい意味契約・source範囲・schema・上限が必要なら、不足と最小案を具体化してMash判断へ戻す。10/17確認点・10/31残件線・12/18公開目標、Piece/Analysis主枠を維持。
+
+## u281 — 二経験の意味とReceptionを組別所有で接続（2026-10-15）
+
+u280提案を含む前回作業内容を添えた今回の「EmlisAIの残件作業を進めて」という指示を、当該限定案を引き継ぐ実装指示として実行した。u280が前回時点では未承認・未実装だった履歴は保持する。新しい契約変更一般やdeploy／mergeへの包括承認とはしない。
+
+基準API 14a3c786b69e6c57c741244dc2edfdff46525c65／Cocolon資料3823427a86c79cce1d677c6fc3291cf8ea436904。
+
+本人の明示評価（満足／納得）exact1組と本人received対比exact1組を、既存source認識と全required所有の範囲で別成分として比較し、whole候補／ReadingConsequence各exact1へ結ぶ。理由は既存の0/1。u279の当時の満足を否定へ訂正する範囲では、孤立理由をObservationだけに残し、対象／否定評価とreceivedの既存2 Moveへ別々の主観内容を結ぶ。追加action・複数received・曖昧／重複owner・明示回答時点変更等へ広げない。
+
+新しいprivate `ComponentReceptionOpportunityV1` exact7（schema_version、opportunity_ref、move_ref、reception_act、component_ref、basis_contribution_refs、bound_relation_refs）を、選択済みwhole・component・既存Move・全所有根拠へbindする。同じact分類でも別opportunity／claim／traceを持つ。旧RetainedReceptionActRow exact3と旧validatorを保持し、新versionだけdispatchする。独立closureはsource Move、target/support、組、relation、basisとparent/envelopeの分類を照合する。訂正後の3成分のうちReception対象は2成分で、第三Moveは追加しない。既存意味型／内容型・Human Reception作者・独立gateを使い、公開API/DTO/DB/RN、source認識、各上限は変更しない。
+
+| mashos-api相対path | u281の責務差分 |
+|---|---|
+| ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py | versioned exact7 opportunity、selected bundle所有・identity・relation/basis検証、旧exact3分岐保持。 |
+| ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_thread_projection.py | 明示評価1＋received1のsource限定資格、組別opportunity、Moveからclaim/traceへの一意接続。 |
+| ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py | 組別post-selection、同act別opportunityの保持。 |
+| ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py | NORMAL投影の組別所有、作者前のsource Move照合、旧envelope検証、新private型のmanifest登録。 |
+| ai/services/ai_inference/emlis_ai_grounded_human_reception.py | NORMAL理由の主観mode/operatorと全selected contributionを検証。文面作者の新設なし。 |
+| ai/tests/test_cmee_emlis_result_appraisal.py | 新選択内容・本文の対応、改ざん拒否と対象外境界、旧保存回帰。 |
+| ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json | 現行共有owner identity再計算。歴史fixtureは不変。 |
+| ai/docs/CMEE_V1A_I1SX_CurrentStateAndNextWorkHandoff_20260816.md | 実結果、本文、再現範囲と残件。 |
+
+評価601＋Q2/Q3 application54の655 PASS（228.80秒、skip/xfailなし、既存警告2件）。理由差替え／削除、評価肯否、反応差替え／削除、両欄、同actの別claim、ID再計算後のMove交換／foreign owner／component／basis／relation差替え拒否、旧完全checkpointと保存再試行を確認。現行共有owner identityも別runで1 PASS（23.97秒、194 deselected）。重複なし合計656 PASSであり、単一runの656件とはしない。歴史fixtureは変更しない。実service＋隔離PGliteで理由時点2×評価時点2×両欄×訂正／評価撤回の16組、初回／更新後の保存DTO32件を取得。NoAuthor GET/start、同一回答再送の本文／timeline一致・event無増加を確認。現行RN hook/modalへ全32件を渡し、本文・全Observation履歴・close/reopen一致。root華恋が32本文（全文一致でまとめると20種類）を全文確認した。native部品はstubであり、本人実機・正式Product Readではない。
+
+実保存された合成例（実ユーザー本文ではない）：
+
+```text
+初回 Reception：
+探しやすくなった点に、資料を分類したことへの当時の満足の拠り所が見えます。褒められたことは、嬉しさにはつながらなかったのですね。
+
+否定訂正後 Reception：
+資料を分類したことと、それについて当時はご自身の中に満たされた感覚がなかったことの両方を受け取りました。褒められたことは、嬉しさにはつながらなかったのですね。
+```
+
+再現は既存test_cmee_emlis_result_appraisal.py、test_emlis_q2_application.py、test_emlis_q3_application.pyと現行identity対象。Python3.12.14／pytest8.4.1／PGlite0.5.8／React18.3.1、Q2_PGLITE_MODULEに既存PGliteを指定、PYTHONPATHにaiとai/services/ai_inferenceを含める。実service保存は既存Q3Database/Q3_PROFILE、NoAuthor engineでGET/startと同一idempotency key再送、保存DTOを既存useEmlisThread/EmlisThreadModalへ渡す。synthetic UUIDは毎回作り直す。isolated DB・ローカルログを稼働DBや永続保存済みevidenceと扱わない。
+
+同環境read-only reviewの2指摘（旧envelope照合保持、独立closureのsource Move所有）を修正し、再レビューに追加重大欠陥なし。NORMAL理由のselected refs欠落等も作者入口で拒否する。途中の旧LIMITED期待の不一致、identity検査のimport path不足は最終結果へ成功として混ぜない。
+
+TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式受入0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置。
+
+初回は「理由への注意」から理由関係focalを持つ「満足の拠り所」へ、否定訂正後は評価の復唱から「出来事と満たされた感覚がないことの両方」の受け取りへ変わった。一方、receivedは「嬉しさにはつながらなかったのですね」という言換えのままで、初回の理由側も関係説明に寄っている。NORMAL分類・carrier追加・検査成功を§9.2/9.4の商品完成に換算しない。次は、選択済みRELATIONAL_NONCOLLAPSE／PRESERVE_BOTH_ENDPOINTSとreceived本文の接続を、作者・作者非依存reader・実保存本文の同一単位で改善する。新しい価値観・原因・目標・相手意図を補完せず、意味契約の追加が必要なら不足を具体化する。Mashへ未合格本文のProduct Readを求めない。既存共有17失敗、same100、Q1上限、giver帰属、本人実機・正式受入は今回解消していない。10/17確認点・10/31残件線・12/18公開目標とPiece/Analysis主枠を維持する。

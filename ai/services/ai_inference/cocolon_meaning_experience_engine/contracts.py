@@ -15261,6 +15261,106 @@ def _im04_subjective_basis_role(
     return SubjectiveBasisRole.APPRAISED_OBJECT
 
 
+@dataclass(frozen=True, slots=True)
+class ComponentReceptionOpportunityV1:
+    """A selected component's source-owned Move, not an act-name alias."""
+
+    schema_version: str
+    opportunity_ref: str
+    move_ref: str
+    reception_act: str
+    component_ref: str
+    basis_contribution_refs: Tuple[str, ...]
+    bound_relation_refs: Tuple[str, ...]
+
+    @property
+    def act_ref(self) -> str:
+        return self.opportunity_ref
+
+
+def component_reception_opportunity_ref(row, selected_reading_ref):
+    if (type(row) is not ComponentReceptionOpportunityV1
+        or row.schema_version != "cocolon.cmee.component_reception_opportunity.v1"
+        or any(type(value) is not str or not value for value in
+               (selected_reading_ref, row.move_ref, row.reception_act, row.component_ref))
+        or any(type(refs) is not tuple or not refs or len(refs) != len(set(refs))
+               or any(type(ref) is not str or not ref for ref in refs)
+               for refs in (row.basis_contribution_refs, row.bound_relation_refs))):
+        raise CMEEStage1ContractError("component_reception_opportunity_invalid")
+    payload = (row.schema_version, selected_reading_ref, row.move_ref, row.reception_act,
+               row.component_ref, row.basis_contribution_refs, row.bound_relation_refs)
+    return "component-reception-" + hashlib.sha256(json.dumps(
+        payload, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+
+
+def component_reception_bundle_domains(structure):
+    """Resolve component ownership from the selected whole, never act labels."""
+    outcome = structure.meaning_decision_outcome
+    if type(outcome) is not SelectedEmlisProvisionalReading:
+        raise CMEEStage1ContractError("component_reception_requires_selected_whole")
+    candidates = tuple(row for row in structure.candidate_records
+                       if row.candidate_id == outcome.selected_candidate_ref)
+    if len(candidates) != 1:
+        raise CMEEStage1ContractError("component_reception_selected_whole_missing")
+    candidate = candidates[0]
+    configurations = {row.configuration_id: row for row in structure.configurations}
+    domains = {}
+    for bundle in structure.requirement_bundles:
+        if bundle.bundle_id not in candidate.requirement_bundle_refs:
+            continue
+        refs = (bundle.anchor_configuration_ref, *bundle.adjacent_configuration_refs)
+        if any(ref not in configurations for ref in refs):
+            raise CMEEStage1ContractError("component_reception_configuration_missing")
+        nodes, relations = set(), set()
+        for ref in refs:
+            configuration = configurations[ref]
+            if type(configuration) is RelationalConfiguration:
+                nodes.update(configuration.endpoint_component_refs)
+                relations.update(configuration.relation_path_refs)
+            elif type(configuration) is QualifiedEventStateConfiguration:
+                nodes.add(configuration.predicate_ref)
+            else:
+                raise CMEEStage1ContractError("component_reception_configuration_invalid")
+        domains[bundle.bundle_id] = (frozenset(nodes), tuple(sorted(relations)))
+    return domains
+
+
+def validate_component_reception_opportunities(rows, structure, contributions):
+    """Independent semantic closure for the new carrier; legacy exact3 stays frozen."""
+    if (type(rows) is not tuple or len(rows) != 2
+        or any(type(row) is not ComponentReceptionOpportunityV1 for row in rows)
+        or any(len({getattr(row, key) for row in rows}) != len(rows)
+               for key in ("opportunity_ref", "move_ref", "component_ref"))):
+        raise CMEEStage1ContractError("component_reception_ownership_invalid")
+    domains = component_reception_bundle_domains(structure)
+    seen = set()
+    for row in rows:
+        if (row.opportunity_ref != component_reception_opportunity_ref(
+                row, structure.meaning_decision_outcome.reading_id)
+            or row.component_ref not in domains):
+            raise CMEEStage1ContractError("component_reception_identity_unbound")
+        nodes, relations = domains[row.component_ref]
+        owned = tuple(c for c in contributions if c.semantic_refs
+                      and set(c.semantic_refs) <= nodes)
+        if (row.basis_contribution_refs != tuple(c.contribution_id for c in owned)
+            or set(ref for c in owned for ref in c.semantic_refs) != nodes
+            or row.bound_relation_refs != relations
+            or seen.intersection(row.basis_contribution_refs)):
+            raise CMEEStage1ContractError("component_reception_basis_unbound")
+        seen.update(row.basis_contribution_refs)
+
+
+def component_reception_row_for_proposition(rows, proposition, contributions):
+    by_ref = {row.contribution_id: row for row in contributions}
+    matches = tuple(row for row in rows if row.reception_act == proposition.reception_function
+        and set(proposition.response_object_refs) == {ref
+            for cid in row.basis_contribution_refs if cid in by_ref
+            for ref in (*by_ref[cid].semantic_refs, *by_ref[cid].relation_basis_refs)})
+    if len(matches) != 1:
+        raise CMEEStage1ContractError("component_reception_proposition_unbound")
+    return matches[0]
+
+
 def _im04_retained_reception_act_row_valid(row: object) -> bool:
     """Recognize the frozen exact3 cross-module retained-act carrier."""
 
@@ -15319,7 +15419,8 @@ def _im04_authority_closure(
         or not candidates
         or not qualifier_rows
         or any(
-            not _im04_retained_reception_act_row_valid(row)
+            not (type(row) is ComponentReceptionOpportunityV1
+                 or _im04_retained_reception_act_row_valid(row))
             for row in retained
         )
         or len({row.act_ref for row in retained}) != len(retained)
@@ -16601,6 +16702,10 @@ def validate_stage1_post_selection_reception_records(
         row.reception_act: row for row in retained_act_rows
     }
     outcome = input_specific_meaning_structure.meaning_decision_outcome
+    component_opportunities = any(type(row) is ComponentReceptionOpportunityV1 for row in retained_act_rows)
+    if component_opportunities:
+        validate_component_reception_opportunities(retained_act_rows, input_specific_meaning_structure,
+                                                  contribution_rows)
     whole_rows_by_ref = {
         row.consequence_id: row
         for row in input_specific_meaning_structure.whole_reading_consequence_rows
@@ -16739,7 +16844,9 @@ def validate_stage1_post_selection_reception_records(
         ] = set()
         for proposition in propositions:
             _validate_stage1_immutable_shape(proposition)
-            retained_act = retained_by_act.get(proposition.reception_function)
+            retained_act = (component_reception_row_for_proposition(retained_act_rows, proposition,
+                            contribution_rows) if component_opportunities else
+                            retained_by_act.get(proposition.reception_function))
             mapping = (
                 None
                 if retained_act is None

@@ -6,7 +6,7 @@ This module constructs no prose. Both projections below are the same
 post-admission functions used by the single-input Stage-1 compiler.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import SimpleNamespace
 
 from . import contracts as c
@@ -21,7 +21,8 @@ from .emlis_thread_source import identity
 import emlis_ai_grounded_human_reception as hr
 from emlis_ai_grounded_observation_plan import (
     source_owned_result_appraisal, source_owned_result_appraisal_context, source_owned_result_appraisal_reason,
-    _source_operator_owner_scope_is_bound,
+    _source_operator_owner_scope_is_bound, _received_contrast_group_targets,
+    _thread_retained_reaction_groups,
 )
 
 
@@ -34,6 +35,88 @@ class ThreadMeaningProjection:
     meaning_plan: object
     selected_reception: hr.SelectedSubjectiveReceptionInputV1
     binding: object
+
+
+def _appraisal_received_components(prepared, plan, resolver):
+    """Admit only one already-owned appraisal and one received contrast."""
+    links = tuple(e for e in plan.relations if source_owned_result_appraisal(e, plan.nuclei))
+    if len(links) != 1:
+        return False
+    link = links[0]
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    event, evaluation = (index[nid] for nid in (link.from_nucleus_id, link.to_nucleus_id))
+    if source_owned_result_appraisal_context(link, plan.nuclei, plan.relations) is not None:
+        return False
+    reason = source_owned_result_appraisal_reason(link, plan.nuclei, plan.relations)
+    owned = {event.nucleus_id, evaluation.nucleus_id}
+    answers = tuple(n for n in plan.nuclei if n.source_fields == ('answer_text_private',))
+    if answers:
+        # Preserve precisely u279's original-occasion negative correction.
+        original = prepared.original_plan
+        old_links = tuple(e for e in original.relations
+            if source_owned_result_appraisal(e, original.nuclei)
+            and e.from_nucleus_id == event.nucleus_id)
+        if len(old_links) != 1:
+            return False
+        old_reason = source_owned_result_appraisal_reason(old_links[0], original.nuclei, original.relations)
+        if (old_reason is None or index.get(old_reason.nucleus_id) != old_reason
+            or answers != (evaluation,) or reason is not None
+            or {v for v in evaluation.semantic_frame.attribute_codes if v.startswith('thread_time:')}
+                != {'thread_time:original_occasion'}
+            or {v for v in evaluation.semantic_frame.attribute_codes if v.startswith('source_appraisal_')}
+                != {'source_appraisal_kind:satisfaction', 'source_appraisal_degree:unmarked'}
+            or evaluation.semantic_frame.polarity != 'negative'
+            or any(old_reason.nucleus_id in (e.from_nucleus_id, e.to_nucleus_id) for e in plan.relations)):
+            return False
+        reason = old_reason
+    if reason is not None:
+        owned.add(reason.nucleus_id)
+    required = tuple(n for n in plan.nuclei if n.nucleus_id in plan.coverage_requirements.required_nucleus_ids
+                     and set(n.source_fields) & {'memo', 'memo_action', 'answer_text_private'})
+    rest = tuple(n for n in required if n.nucleus_id not in owned)
+    rest_ids = {n.nucleus_id for n in rest}
+    rest_relations = tuple(e for e in plan.relations
+        if {e.from_nucleus_id, e.to_nucleus_id} <= rest_ids)
+    received = _received_contrast_group_targets(rest, rest_relations)
+    if (len(rest) != 2 or len(rest_relations) != 1 or not received or len(received[0]) != 1
+        or any({e.from_nucleus_id, e.to_nucleus_id} & rest_ids
+               and not {e.from_nucleus_id, e.to_nucleus_id} <= rest_ids for e in plan.relations)
+        or len(plan.response_plan.human_reception_plan.moves) != 2):
+        return False
+    # Equal/nearby occurrences are not an ownership proof for this opt-in.
+    for n in (event, *rest):
+        if len(n.source_span_ids) != 1:
+            return False
+        span = resolver.resolve(n.source_span_ids[0])
+        if sum(s.source_field == span.source_field and s.raw_text == span.raw_text
+               for s in resolver.resolve_many(resolver.span_ids)) != 1:
+            return False
+    if answers and _thread_retained_reaction_groups(plan.nuclei, plan.relations) != (
+            ('current_burden', (evaluation.nucleus_id,), (event.nucleus_id,)),
+            ('current_burden', *received)):
+        return False
+    return True
+
+
+def _component_reception_rows(structure, bound_moves, contributions):
+    domains = c.component_reception_bundle_domains(structure)
+    rows = []
+    for bound in bound_moves:
+        refs = {row.contribution_id for row in bound.basis_contributions}
+        owned = tuple(row for row in contributions if row.contribution_id in refs)
+        nodes = {ref for row in owned for ref in row.semantic_refs}
+        matches = tuple((ref, relations) for ref, (domain, relations) in domains.items() if domain == nodes)
+        if len(matches) != 1:
+            raise ValueError('emlis_thread_component_move_unbound')
+        component, relations = matches[0]
+        row = c.ComponentReceptionOpportunityV1('cocolon.cmee.component_reception_opportunity.v1', '',
+            bound.move.move_id, bound.move.reception_act, component,
+            tuple(row.contribution_id for row in owned), relations)
+        rows.append(replace(row, opportunity_ref=c.component_reception_opportunity_ref(
+            row, structure.meaning_decision_outcome.reading_id)))
+    result = tuple(rows)
+    c.validate_component_reception_opportunities(result, structure, contributions)
+    return result
 
 
 def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
@@ -206,7 +289,8 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
     independent_required = tuple(n for n in plan.nuclei
         if n.nucleus_id in plan.coverage_requirements.required_nucleus_ids
         and n.nucleus_id not in appraisal_endpoints)
-    component_refs = tuple(sorted(r._edge_ref(edge_ids[e.relation_id]) for e in appraisals)) if (
+    component_reception = _appraisal_received_components(prepared, plan, resolver)
+    component_refs = tuple(sorted(r._edge_ref(edge_ids[e.relation_id]) for e in appraisals)) if (component_reception or (
         appraisals and all(n.kind == n.semantic_frame.predicate_kind and n.kind in {'action', 'event'}
             and n.grounding_kind == 'explicit' and n.semantic_frame.actor == 'current_user'
             and n.semantic_frame.modality == 'fact'
@@ -215,7 +299,7 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
             and n.allowed_claim_scope == 'explicit_current_input' and len(n.source_span_ids) == 1
             and (anchor := hr.final_reception_source_anchor_text(n.nucleus_id, index, resolver))
             and _source_operator_owner_scope_is_bound(anchor)
-            for n in independent_required)) else ()
+            for n in independent_required))) else ()
     view = derive_grounded_situation_view(pre, appraisal_component_relation_refs=component_refs)
     validate_grounded_situation_view(view, pre, graph, appraisal_component_relation_refs=component_refs)
     scope = derive_foreground_scope_closed(view)
@@ -225,6 +309,9 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
     retained = tuple(composition.RetainedReceptionActRow(act, act,
         tuple(dict.fromkeys(row.contribution_id for move in bound_moves
             if move.move.reception_act == act for row in move.basis_contributions))) for act in acts)
+    if component_reception and type(structure.meaning_decision_outcome) is c.SelectedEmlisProvisionalReading:
+        retained = _component_reception_rows(structure, bound_moves, contributions)
+    retained_refs = tuple(row.act_ref for row in retained)
     contribution_map = tuple((row.contribution_id, r.resolve_candidate_for_contribution(candidates, row).candidate_id)
                              for row in contributions)
     qualifier_values = []
@@ -242,14 +329,14 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
     preimage = c.project_stage1_projection_preimage_ref(grounded_graph_ref=r._graph_ref(graph),
         parent_observation_duty_ref=parent.observation_duty_id, parent_reception_duty_ref=parent.reception_duty_id,
         interpretation_candidate_ids=tuple(x.candidate_id for x in candidates), meaning_field_id=field.meaning_field_id,
-        observation_contribution_ids=tuple(x.contribution_id for x in contributions), retained_reception_act_ids=acts,
+        observation_contribution_ids=tuple(x.contribution_id for x in contributions), retained_reception_act_ids=retained_refs,
         observation_depth_class=depth, temperature_class=temperature, reception_style_policy_ref=style,
         emlis_value_policy_ref=c.CMEE_STAGE1_VALUE_POLICY_REF)
     records = r.build_stage1_post_selection_reception_records(input_specific_meaning_structure=structure,
         projection_preimage_ref=preimage, retained_reception_act_rows=retained,
         observation_contribution_rows=contributions, interpretation_candidate_rows=candidates,
         contribution_to_candidate_ref_map=contribution_map, qualifier_value_rows=tuple(qualifier_values),
-        material_unknown_refs=field.material_unknown_refs, expected_act_refs=acts)
+        material_unknown_refs=field.material_unknown_refs, expected_act_refs=retained_refs)
     consequence, sealed, propositions, sets, bounded, bounded_propositions, seal = records
     authority = composition._ProjectionCommonAuthority(view, scope, structure, thread, graph, plan,
         r._graph_ref(graph), parent, c.AllowedReceptionOpportunityEnvelope("1.0", thread.source_prefix_ref,
@@ -266,18 +353,36 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
         inputs = composition.LimitedProjectionInputs(authority, outcome, bounded, bounded_propositions)
         composition._validate_tagged_projection_semantic_closure(inputs, authority)
         meaning = composition._project_limited_subjective_from_admitted_authority(inputs, authority)
-    selected = _selected_reception(meaning, reception, plan, resolver, binding)
+    selected = _selected_reception(meaning, reception, plan, resolver, binding, retained)
     return ThreadMeaningProjection(graph, parent, pre, structure, meaning, selected, binding)
 
 
-def _selected_reception(meaning, reception, plan, resolver, binding):
+def _selected_reception(meaning, reception, plan, resolver, binding, retained=()):
     decisions = []
+    component_rows = tuple(row for row in retained if type(row) is c.ComponentReceptionOpportunityV1)
+    if component_rows and (len(component_rows) != len(reception.moves)
+        or {row.move_ref for row in component_rows} != {move.move_id for move in reception.moves}):
+        raise ValueError('emlis_thread_component_move_unbound')
     for move in reception.moves:
-        claims = tuple(row for row in meaning.subjective_claim_rows if move.reception_act in row.source_reception_act_refs)
+        owned = tuple(row for row in retained if type(row) is c.ComponentReceptionOpportunityV1
+                      and row.move_ref == move.move_id and row.reception_act == move.reception_act)
+        ref = owned[0].opportunity_ref if len(owned) == 1 else move.reception_act
+        claims = tuple(row for row in meaning.subjective_claim_rows if ref in row.source_reception_act_refs)
         if len(claims) != 1:
             raise ValueError("emlis_thread_selected_reception_ambiguous")
         claim = claims[0]
         proposition = claim.asserted_subjective_proposition
+        if component_rows:
+            if len(owned) != 1:
+                raise ValueError('emlis_thread_component_move_unbound')
+            actual_ids = set((*move.target_nucleus_ids, *move.support_nucleus_ids))
+            actual_nodes = {r._node_ref(binding.nucleus_to_node[nid]) for nid in actual_ids}
+            actual_relations = tuple(sorted(r._edge_ref(binding.relation_to_edge[edge.relation_id])
+                for edge in plan.relations if {edge.from_nucleus_id, edge.to_nucleus_id} <= actual_ids))
+            if (set(proposition.response_object_refs) != actual_nodes
+                or owned[0].bound_relation_refs != actual_relations
+                or proposition.target_contribution_refs != owned[0].basis_contribution_refs):
+                raise ValueError('emlis_thread_component_move_unbound')
         traces = tuple(row for row in meaning.reception_visible_causal_trace_rows
                        if row.projected_claim_ref == claim.subjective_claim_id)
         if len(traces) != 1:
