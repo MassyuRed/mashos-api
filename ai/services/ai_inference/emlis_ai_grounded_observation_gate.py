@@ -3014,10 +3014,18 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
             r'(?P<reason>.+)という理由に目を向けています。', raw) if limited
             else re.fullmatch(r'(?P<reason>.+)点に、(?P<event>.+)ことへの'
                 r'(?P<time>当時の|入力した時点での)(?P<evaluation>満足)の拠り所が見えます。', raw))
+        focused_experience = False
         if reasoned_experience:
-            parsed = re.fullmatch(r'(?P<event>.+)ことを、(?P<reason>.+)という点で、'
-                r'(?P<time>当時、|入力した時点で、)ご自身の中に'
-                r'(?P<evaluation>満たされた感覚が(?P<state>あった|ある))経験として受け取りました。', raw)
+            parsed = re.fullmatch(r'(?P<event>.+)ことについて受け取ったのは、(?P<reason>.+)という点で、'
+                r'(?P<time>当時|入力した時点で)ご自身の中に'
+                r'(?P<evaluation>満たされた感覚が(?P<state>あった|ある))経験です。', raw)
+            focused_experience = parsed is not None
+            if parsed is None:
+                # Retain the complete prior grammar, under the same selected
+                # content and source checks. No partial/keyword admission.
+                parsed = re.fullmatch(r'(?P<event>.+)ことを、(?P<reason>.+)という点で、'
+                    r'(?P<time>当時、|入力した時点で、)ご自身の中に'
+                    r'(?P<evaluation>満たされた感覚が(?P<state>あった|ある))経験として受け取りました。', raw)
         if legacy_limited:
             parsed = re.fullmatch(r'(?P<reason>.+)ことを理由に、(?P<event>.+)ことについて、'
                 r'(?P<time>当時は|入力した時点では)(?P<evaluation>.+)のですね。', raw)
@@ -3039,7 +3047,8 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
         if legacy_limited:
             time_suffix = 'は' if when == '当時' else 'では'
         if reasoned_experience:
-            time_suffix = '、' if when == '当時' else 'で、'
+            time_suffix = (('' if when == '当時' else 'で') if focused_experience
+                           else ('、' if when == '当時' else 'で、'))
             if parsed['state'] != ('あった' if appraisal.evaluation_time == 'past' else 'ある'):
                 return None
         from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate
@@ -7311,7 +7320,7 @@ def evaluate_grounded_surface_body_inverse(
                                      or nucleus_index[nid].source_fields == ("answer_text_private",)
                                      and nucleus_index[nid].allowed_claim_scope == "explicit_supplemental_answer")
                                 for nid in (*move.target_nucleus_ids, *move.support_nucleus_ids))
-                            and re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました|経験として受け取りました|充足として受け取りました|満足の拠り所が見えます|理由に目を向けています|つながりに目を向けています|ことの両方を受け取りました)。$",
+                            and re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました|経験として受け取りました|充足として受け取りました|満足の拠り所が見えます|理由に目を向けています|つながりに目を向けています|ことの両方を受け取りました|ことについて受け取ったのは、[^。]+経験です)。$",
                                 body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8"))):
                             failures.append("body_inverse_reception_finite_duty_unverified:" + move_id)
                             continue

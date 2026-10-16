@@ -11746,10 +11746,13 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
             # The content already connects this explicit reason to fulfilment
             # about the performed target. Keep reason tense in its source words;
             # the separate occasion and state belong only to the appraisal.
-            occasion = when + ('、' if when == '当時' else 'で、')
+            occasion = when + ('' if when == '当時' else 'で')
             state = 'あった' if content.evaluation_time == 'past' else 'ある'
-            return (f'{event}ことを、{reason}という点で、{occasion}'
-                    f'ご自身の中に満たされた感覚が{state}経験として受け取りました')
+            # Name the received object before its reason and inner experience.
+            # This preserves the selected content while avoiding another
+            # stacked receive-as closing beside the following distinct Move.
+            return (f'{event}ことについて受け取ったのは、{reason}という点で、{occasion}'
+                    f'ご自身の中に満たされた感覚が{state}経験です')
         return f'{reason}点に、{event}ことへの{at}満足の拠り所が見えます'
     if unfinished_appraisal:
         if (selected_decision.branch != 'NORMAL' or not _selected_noncollapse_appraisal(selected_decision)

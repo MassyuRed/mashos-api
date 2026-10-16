@@ -33,9 +33,9 @@ def test_reason_and_received_keep_separately_selected_experiences_in_body(revers
     assert outcome.artifact is not None, outcome.reason_codes
     body = outcome.artifact
     assert basis + 'という点で、' in body.reception
-    assert ('当時、ご自身の中に満たされた感覚があった' if evaluation == '満足した'
-            else '入力した時点で、ご自身の中に満たされた感覚がある') in body.reception
-    assert event + 'ことを、' in body.reception
+    assert ('当時ご自身の中に満たされた感覚があった' if evaluation == '満足した'
+            else '入力した時点でご自身の中に満たされた感覚がある') in body.reception
+    assert event + 'ことについて受け取ったのは、' in body.reception
     assert evaluation + 'のですね' not in body.reception
     assert '褒められたことだけでは言い表せない、嬉しさが伴わなかった' in body.reception
     assert '理由に目を向けています' not in body.reception
@@ -68,16 +68,16 @@ def test_component_reason_reader_preserves_roles_and_time_without_author(monkeyp
         clause.replace('探しやすくなった', '探しにくくなった'),
         clause.replace('探しやすくなった', '探しやすくしたかった'),
         clause.replace('探しやすくなった', '褒められた'),
-        clause.replace(event + 'ことを、', '褒められたことを、'),
+        clause.replace(event + 'ことについて受け取ったのは、', '褒められたことについて受け取ったのは、'),
         clause.replace(event, '資料を分類しなかった'),
         clause.replace('満たされた感覚', '筋が通った感覚'),
         clause.replace('満たされた感覚', '満たされない感覚'),
-        clause.replace('当時、' if evaluation == '満足した' else '入力した時点で、', '回答した時点で、'),
+        clause.replace('当時' if evaluation == '満足した' else '入力した時点で', '回答した時点で'),
         clause.replace('という点で、', 'ことの原因として、'),
         clause.replace('という点で、', 'という唯一の理由で、'),
         clause.replace('という点で、', 'という最も大切な理由で、'),
         clause.replace('満たされた感覚', '成長した実感'),
-        clause.replace('経験として受け取りました', '理由に目を向けています'),
+        clause.replace('経験です', '理由に目を向けています'),
         ('探しやすくなったことを理由に、' + event + 'ことについて、'
          + ('当時は' if evaluation == '満足した' else '入力した時点では')
          + evaluation + 'のですね。'),
@@ -135,7 +135,8 @@ def test_component_reason_removal_or_replacement_does_not_reassign_received_expe
     assert '理由' not in bodies[2].reception and '探しやすくなった' not in bodies[2].reception
     for body in bodies:
         assert '褒められたことだけでは言い表せない、嬉しさが伴わなかったあなたの経験として受け取りました。' in body.reception
-    assert all('資料を分類したことを、' in b.reception and '当時、ご自身の中に満たされた感覚があった' in b.reception for b in bodies[:2])
+    assert all('資料を分類したことについて受け取ったのは、' in b.reception
+               and '当時ご自身の中に満たされた感覚があった' in b.reception for b in bodies[:2])
     assert '資料を分類したことを、当時、ご自身の中に満たされた感覚があった経験として受け取りました。' in bodies[2].reception
 
 
@@ -1718,9 +1719,9 @@ def test_explicit_reason_owns_selected_scope_and_actual_reception(reason, evalua
     assert outcome.artifact is not None, outcome.reason_codes
     body = outcome.artifact
     assert reason + 'という点で、' in body.reception
-    assert '資料を分類したことを、' in body.reception
-    assert ('当時、ご自身の中に満たされた感覚があった' if evaluation == '満足した' else '入力した時点で、ご自身の中に満たされた感覚がある') in body.reception
-    assert '経験として受け取りました' in body.reception and '植木' not in body.reception and '机を拭' not in body.reception
+    assert '資料を分類したことについて受け取ったのは、' in body.reception
+    assert ('当時ご自身の中に満たされた感覚があった' if evaluation == '満足した' else '入力した時点でご自身の中に満たされた感覚がある') in body.reception
+    assert '経験です' in body.reception and '植木' not in body.reception and '机を拭' not in body.reception
     assert not any(word in body.reception for word in ('成功', '成長', '目的', '目標', '唯一', '最も', 'おかげ'))
     if action:
         assert action.rstrip('。') in body.observation
@@ -1793,17 +1794,17 @@ def test_reason_reader_rejects_role_polarity_time_and_invented_cause_without_aut
     artifact = MeaningExperienceEngine().generate(req).artifact
     assert artifact is not None
     reception = artifact.reception
-    time = '当時、' if evaluation == '満足した' else '入力した時点で、'
+    time = '当時' if evaluation == '満足した' else '入力した時点で'
     mutations = (
         reception.replace('必要な資料を探しやすくなったという点で、', ''),
         reception.replace('探しやすくなった', '探しにくくなった'),
         reception.replace('探しやすくなった', '探しやすくしたかった'),
-        reception.replace('資料を分類したことを、', '資料を探しやすくなったことを、'),
-        reception.replace('資料を分類したことを、', '資料を分類しなかったことを、'),
+        reception.replace('資料を分類したことについて受け取ったのは、', '資料を探しやすくなったことについて受け取ったのは、'),
+        reception.replace('資料を分類したことについて受け取ったのは、', '資料を分類しなかったことについて受け取ったのは、'),
         reception.replace(time, '回答した時点での'),
         reception.replace('満たされた感覚', '筋が通った感覚'),
         reception.replace('という点で、', 'という唯一の理由で、'),
-        reception.replace('経験として受け取りました', '経験で、分類が探しやすさを生んだことです'),
+        reception.replace('経験です', '経験で、分類が探しやすさを生んだことです'),
     )
     def whole_valid(body):
         return evaluate_grounded_surface_body_inverse(body=body.encode(), plan=plan,
@@ -4254,7 +4255,7 @@ def test_reasoned_experience_content_roles_edges_and_source_times_cannot_be_rebo
     body = MeaningExperienceEngine().generate(req).artifact
     assert body is not None
     clause, = (part + '。' for part in body.reception.split('。') if 'という点で、' in part)
-    assert '資料を探しやすいという点で、当時、ご自身の中に満たされた感覚があった' in clause
+    assert '資料を探しやすいという点で、当時ご自身の中に満たされた感覚があった' in clause
     move = next(m for m in plan.response_plan.human_reception_plan.moves if m.move_id == decision.move_id)
     resolver = prepared.thread.resolver()
     assert read_source_owned_discourse(clause, move, plan, resolver, selected) is not None
@@ -4281,6 +4282,92 @@ def test_reasoned_experience_content_roles_edges_and_source_times_cannot_be_rebo
             hr.validate_selected_subjective_reception_input(changed,
                 plan.response_plan.human_reception_plan, plan, resolver)
         assert read_source_owned_discourse(clause, move, plan, resolver, changed) is None
+
+
+@pytest.mark.parametrize('layout', ['standalone', 'separate', 'shared'])
+@pytest.mark.parametrize('evaluation,time,state', [
+    ('満足した', '当時', 'あった'),
+    ('満足している', '入力した時点で', 'ある'),
+])
+def test_reasoned_experience_focused_and_prior_complete_grammar_keep_same_meaning_without_author(
+        monkeypatch, layout, evaluation, time, state):
+    from cocolon_meaning_experience_engine import contracts as c
+    import emlis_ai_grounded_human_reception as hr
+    from emlis_ai_grounded_observation_gate import read_source_owned_discourse
+    reason = '資料を探しやすい'
+    event = '資料を分類した'
+    source = reason + 'ので、' + event + 'ことに' + evaluation + '。'
+    received = '褒められたのに、嬉しくなかった。'
+    req = request(source + ('でも、その分類を' + received if layout == 'shared' else ''),
+                  received if layout == 'separate' else '')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    decision, = (d for d in selected.decisions if type(d.subjective_proposition.appraisal_content)
+                 is c.EmlisReasonedExperienceAppraisalContent)
+    content = decision.subjective_proposition.appraisal_content
+    assert content.reason_time == 'present'
+    assert content.evaluation_time == ('past' if evaluation == '満足した' else 'present')
+    move = next(m for m in plan.response_plan.human_reception_plan.moves if m.move_id == decision.move_id)
+    resolver = prepared.thread.resolver()
+    outcome = MeaningExperienceEngine().generate(req)
+    assert outcome.artifact is not None, outcome.reason_codes
+    focused = (event + 'ことについて受け取ったのは、' + reason + 'という点で、'
+               + time + 'ご自身の中に満たされた感覚が' + state + '経験です。')
+    prior = (event + 'ことを、' + reason + 'という点で、' + time
+             + '、ご自身の中に満たされた感覚が' + state + '経験として受け取りました。')
+    assert focused in outcome.artifact.reception and prior not in outcome.artifact.reception
+    # The receiving predicate is focused before the experience, while the
+    # second Move remains present with its own unchanged responsibility.
+    assert outcome.artifact.reception.count('受け取りました。') == (0 if layout == 'standalone' else 1)
+    if layout == 'separate':
+        assert '褒められたことだけでは言い表せない、嬉しさが伴わなかったあなたの経験として受け取りました。' in outcome.artifact.reception
+    elif layout == 'shared':
+        assert 'その分類を褒められたのに嬉しさが伴わなかったことは、その満足とは切り分けて受け取りました。' in outcome.artifact.reception
+
+    mixed_forms = (
+        focused.replace('経験です。', '経験として受け取りました。'),
+        prior.replace('経験として受け取りました。', '経験です。'),
+        focused.replace(time + 'ご自身', time + '、ご自身'),
+        prior.replace(time + '、ご自身', time + 'ご自身'),
+    )
+    sentence_plan = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    def whole_valid(body):
+        return evaluate_grounded_surface_body_inverse(body=body.encode(), plan=plan,
+            sentence_plan=sentence_plan, resolver=resolver, selected_subjective_input=selected).passed
+    assert whole_valid(outcome.artifact.text)
+    for wrong in (*mixed_forms, focused.replace(event, '資料を整理した'),
+                  focused.replace(reason, '資料を探しにくい'),
+                  focused.replace('ご自身', '同僚')):
+        assert wrong != focused
+        assert not whole_valid(outcome.artifact.text.replace(focused, wrong))
+
+    def forbidden(*_a, **_k):
+        pytest.fail('independent focused/prior reason reader invoked author')
+    monkeypatch.setattr(hr, '_source_owned_relational_focus_sentence', forbidden)
+    monkeypatch.setattr(hr, '_source_grounded_reception_fragment', forbidden)
+
+    def read(text):
+        return read_source_owned_discourse(text, move, plan, resolver, selected)
+
+    focused_read, prior_read = read(focused), read(prior)
+    assert focused_read is not None and prior_read is not None
+    assert tuple(row[2] for row in focused_read) == tuple(row[2] for row in prior_read)
+    for text in (focused, prior):
+        other_time = '入力した時点で' if time == '当時' else '当時'
+        for wrong in (
+            text.replace(event, '資料を整理した'),
+            text.replace(reason, '資料を探しにくい'),
+            text.replace(reason, '資料を探しやすかった'),
+            text.replace('ご自身', '同僚'),
+            text.replace(time, other_time),
+            text.replace('満たされた感覚', '満たされない感覚'),
+            text.replace('満たされた感覚', '筋が通った感覚'),
+            text.replace('という点で、', 'ことの原因として、'),
+        ):
+            assert wrong != text and read(wrong) is None
+    for mixed in mixed_forms:
+        assert mixed not in (focused, prior) and read(mixed) is None
 
 
 def test_reasoned_experience_keeps_legacy_content_and_finite_reader_dispatch():
