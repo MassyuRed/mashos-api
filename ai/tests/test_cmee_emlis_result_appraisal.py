@@ -1497,7 +1497,7 @@ def _unfinished_appraisal_source(plan):
     return rows
 
 
-@pytest.mark.parametrize('layout', ['separate', 'reverse', 'joined'])
+@pytest.mark.parametrize('layout', ['separate', 'reverse', 'joined', 'joined_reverse', 'joined_reverse_action'])
 @pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
 @pytest.mark.parametrize('target,event', [('考えを言葉にできて', '考えを言葉にできた'),
     ('案を選んで', '案を選んだ'), ('資料を分類したことに', '資料を分類した')])
@@ -1506,7 +1506,8 @@ def test_unfinished_and_received_realize_existing_limited_attention(layout, eval
     source = '結論は出ていないが、' + target + evaluation + '。'
     received = '褒められたのに、嬉しくなかった。'
     args = {'separate': (source, received), 'reverse': (received, source),
-            'joined': (source + received, '')}[layout]
+            'joined': (source + received, ''), 'joined_reverse': (received + source, ''),
+            'joined_reverse_action': ('', received + source)}[layout]
     req = request(*args)
     prepared = prepare_emlis_meaning(req)
     plan = build_updated_grounded_plan(prepared)
@@ -2313,7 +2314,6 @@ def test_received_context_keeps_same_field_appraisal_in_actual_body(received, ap
     ('褒められたら、嬉しくなかった。', '資料を分類できて満足した。'),
     ('褒められなかったのに、嬉しくなかった。', '資料を分類できて満足した。'),
     ('褒められたのに、嬉しくなかった。', '探しやすくなったので、資料を分類したことに満足した。'),
-    ('褒められたのに、嬉しくなかった。', '結論はまだ出ていないけど、資料を分類したことに満足した。'),
 ])
 def test_received_context_does_not_erase_foreign_or_add_another_semantic_scope(prefix, suffix):
     plan = prepare_emlis_meaning(request(prefix + suffix)).original_plan
@@ -5307,3 +5307,130 @@ def test_retained_received_fallback_keeps_self_inside_each_object(
             mutations.append(clause.replace(before, after, 1))
     for wrong in mutations:
         assert wrong != clause and read(wrong) is None, wrong
+
+
+# Full old results captured from unmodified u298; never regenerate from the fix.
+_PRE_UNFINISHED_RECEIVED = json.loads((Path(__file__).parent / 'fixtures' /
+    'cmee_emlis_pre_unfinished_received_context_v1.json').read_text())['rows']
+
+
+@pytest.mark.parametrize('row', _PRE_UNFINISHED_RECEIVED, ids=lambda r: r['case_id'])
+def test_pre_unfinished_received_checkpoint_restores_complete_old_result(row):
+    from emlis_thread_service import _json
+    req = _legacy_fixture_request(row)
+    prepared = prepare_emlis_meaning(req)
+    assert prepared.legacy_received_unfinished_context
+    assert _json(prepared.checkpoint) == row['checkpoint']
+    assert not _unfinished_appraisal_source(prepared.original_plan)
+    result = MeaningExperienceEngine().generate(req)
+    assert _json(result.meaning_checkpoint) == row['checkpoint']
+    assert (result.artifact.text if result.artifact else None) == row['body']
+    assert result.body_state == row['body_state']
+    assert list(result.reason_codes) == row['reason_codes']
+    assert _json(result.question) == row['question']
+    foreign = replace(req, emlis_thread=replace(req.emlis_thread, prepared_meaning_checkpoint_ref='foreign'))
+    with pytest.raises(ValueError, match='emlis_checkpoint_source_prefix_mismatch'):
+        prepare_emlis_meaning(foreign)
+
+
+@pytest.mark.parametrize('prefix', [
+    '同僚が褒められたのに、嬉しくなかった。',
+    '私に褒められたのに、嬉しくなかった。',
+    '私は自分に褒められたのに、嬉しくなかった。',
+    '同僚は仕事を終えた。褒められたのに、嬉しくなかった。',
+    '褒められたのに、嬉しくなかった。誘われたのに、悲しかった。',
+    '「褒められたのに、嬉しくなかった」と聞いた。',
+    '褒められたのに、嬉しくなかったかもしれない。',
+    '褒められたのに、嬉しくなかったので、',
+])
+def test_unfinished_received_owner_boundary_does_not_inherit_unproved_self(prefix):
+    source = prefix + '結論は出ていないが、考えを言葉にできて満足した。'
+    plan = prepare_emlis_meaning(request(source, '')).original_plan
+    assert not _unfinished_appraisal_source(plan)
+
+
+@pytest.mark.parametrize('tail', [
+    '考えを言葉にできて満足しなかった。',
+    '考えを言葉にできて少し満足した。',
+    '考えを言葉にできて納得した。',
+    '同僚が考えを言葉にできて満足した。',
+    '考えを言葉にできて満足したかもしれない。',
+    '探しやすくなったので、資料を分類したことに満足した。',
+])
+def test_unfinished_received_keeps_approved_appraisal_scope(tail):
+    source = '褒められたのに、嬉しくなかった。結論は出ていないが、' + tail
+    assert not _unfinished_appraisal_source(prepare_emlis_meaning(request(source, '')).original_plan)
+
+
+@pytest.mark.parametrize('row', [r for r in _PRE_UNFINISHED_RECEIVED if r.get('answer')],
+                         ids=lambda r: r['case_id'])
+def test_pre_unfinished_received_question_is_revalidated_for_new_answer(row):
+    req = _legacy_fixture_request(row, checkpoint=False)
+    prepared = prepare_emlis_meaning(req)
+    assert not prepared.legacy_received_unfinished_context
+    assert _unfinished_appraisal_source(prepared.original_plan)
+    assert prepared.checkpoint.checkpoint_id != row['checkpoint']['checkpoint_id']
+    outcome = MeaningExperienceEngine().generate(replace(req, emlis_thread=replace(
+        req.emlis_thread, prepared_meaning_checkpoint_ref=prepared.checkpoint.checkpoint_id)))
+    assert outcome.meaning_checkpoint == prepared.checkpoint
+    assert outcome.body_state == ('UNCHANGED' if row['answer'] == 'わからない。' else 'REFINED')
+    assert (outcome.artifact is not None) == (row['answer'] != 'わからない。')
+    control = req.emlis_thread.question_control_context
+    wrong = replace(control.pending_question, prompt_private='別の質問')
+    control = replace(control, pending_question=wrong, issued_questions=(wrong,))
+    with pytest.raises(ValueError, match='emlis_question_noncanonical'):
+        prepare_emlis_meaning(replace(req, emlis_thread=replace(req.emlis_thread,
+            question_control_context=control)))
+
+
+@pytest.mark.parametrize('appraisal,target', [
+    ('結論は出ていないが、考えを言葉にできて満足した。', '考えを言葉にできて'),
+    ('結論はまだ出ていないけど、資料を分類したことに満足した。', '資料を分類した'),
+])
+def test_unfinished_received_thread_entry_selects_new_source_without_changing_direct_builder(appraisal, target):
+    from emlis_ai_grounded_observation_plan import build_final_stage1_grounded_observation_plan
+    prepared = prepare_emlis_meaning(request(
+        '褒められたのに、嬉しくなかった。' + appraisal, ''))
+    source = prepared.thread.original
+    direct = build_final_stage1_grounded_observation_plan(
+        source.normalized_current_input, evidence_spans=source.evidence_spans)
+    assert not _unfinished_appraisal_source(direct)
+    assert _unfinished_appraisal_source(prepared.original_plan)
+    q1 = initial(source.normalized_current_input['memo'], '')
+    assert _unfinished_appraisal_source(prepare_emlis_meaning(q1).original_plan)
+    outcome = MeaningExperienceEngine().generate(q1)
+    assert outcome.artifact is not None, outcome.reason_codes
+    assert 'の一方で、' in outcome.artifact.observation
+    assert '「' + target + '」という出来事への評価は「満足した」' in outcome.artifact.observation
+    assert '褒められたことは、嬉しさにはつながらなかった' in outcome.artifact.reception
+
+
+@pytest.mark.parametrize('target', ['考えを言葉にできて', '案を選んで', '資料を分類したことに'])
+@pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
+def test_unfinished_received_correction_keeps_single_selected_attention_and_full_inverse(target, evaluation):
+    from test_cmee_emlis_q3_thread import advance
+    req = request('褒められたのに、嬉しくなかった。結論は出ていないが、' + target + evaluation + '。', '')
+    req = advance(req, '「嬉しくなかった」ではなく「嬉しかった」です。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    projection = project_thread_meaning(prepared, plan)
+    decision, = projection.selected_reception.decisions
+    assert decision.branch == 'LIMITED'
+    assert decision.subjective_proposition.subjective_mode == 'ATTENTION'
+    outcome = MeaningExperienceEngine().generate(req)
+    assert outcome.body_state == 'REFINED' and outcome.artifact is not None
+    artifact = outcome.artifact
+    assert '「嬉しかった」' in artifact.observation and '嬉しくなかった' not in artifact.text
+    assert artifact.reception.endswith('満足との対比に目を向けています。')
+    resolver = prepared.thread.resolver()
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    valid = lambda text: evaluate_grounded_surface_body_inverse(body=text.encode(), plan=plan,
+        sentence_plan=sentence, resolver=resolver, selected_subjective_input=projection.selected_reception).passed
+    assert valid(artifact.text)
+    # The response marker alone must not discharge source-owned finite duties.
+    for before, after in [('結論は出ていないという点', '結論は出たという点'),
+                          ('満足との対比', '不満との対比'),
+                          ('当時の満足', '入力した時点での満足') if evaluation == '満足した'
+                          else ('入力した時点での満足', '当時の満足')]:
+        wrong = artifact.text.replace(before, after)
+        assert wrong != artifact.text and not valid(wrong)

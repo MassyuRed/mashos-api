@@ -21111,3 +21111,60 @@ Emlisから：
 System Contextはu297 prepareのmaterial祖先条件停止から、許可された原典直接参照fallbackを継続した。今回再prepareや新Context生成をしたとはしない。u292の周辺既存4失敗は今回再実行せず未解消、過去共有17失敗との集合一致も再主張しない。合成比較・保存・RNの一回限りの検査を新たな恒久runnerや正式証跡契約にしない。再開に必要なmatrixと因果・実本文・結果は本節、回帰再現は既存testsに保持する。
 
 TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置。same100、Q1上限、giver帰属、本人実機・正式Product Readも残る。10/17確認点・10/31管理線・12/18公開目標、Piece/Analysis主枠と管理評価53.25％は維持する。
+
+
+## u299 — received先行の同欄入力で未成立事項付き満足を読み落とす欠陥を修復（2026-10-16 JST）
+
+基準API `b84cf1cf7cfb7065873c2a4748997a568a99362d`／資料 `cdb1c6d4d4d9ae1302d4279d4963a1c5d572d8f8`。u298 API CI38907157714のcompleted/successを確認した。前回TXTに加え、全体設計01・全file地図01A/B/C・current_structure 00/01/04、最新weekly20261010 §3.5/5.6/6.5とu298、作業rule・Rule18 §11.3・恒久incident全文・意味設計§9.2/9.4を原典で確認した。
+
+### 原因と変更範囲
+
+「褒められたのに、嬉しくなかった。結論は出ていないが、考えを言葉にできて満足した。」では、先行文が単一の本人received経験だと証明する既存処理が、未成立contextありを一律に除外していた。後続の明示評価の本人継続が証明されず、未成立・対象・満足の三点を読み落とす。過去形ではその先のLIMITED投影が空のcontributionを拒否して本文停止、入力時点形では三点を区別しない一般本文になっていた。下流の拒否条件を緩めず、source側の欠落を修復した。
+
+既承認u262の未成立exact1＋対象＋肯定満足と、u265の単一SELF received先行証明を接続した。prefix全体が直前の一文であること、received exact2とgiver／本人帰属の検査を維持する。先行他者・複数文・引用・推量、理由付きcontext、否定／程度付き評価等をこの修復で受理しない。未成立は満足の理由にせず、既存LIMITED／ATTENTION・ATTEND_TOを保持し、NORMALの充足経験へ昇格させない。Rule18 §11.3の既承認設計の接続修復として実施した。
+
+sourceの読み取りが変わるため、fresh対象のcheckpoint・核・関係・selectedは変わる。u298の「意味・選択不変」は今回へ引き継がない。既存の意味schema／資格／内容型／公開API／DTO／DB／SQL／RN／依存は変更0。製品はgrounded_observation_plan、emlis_question、emlis_answer_update、grounded_sentence_surfaceの既存4file。新production file／service／engineはない。
+
+互換性は新しいprivate指定 `_legacy_received_unfinished_context` で旧u298 sourceを丸ごと再導出して証明する。既存の完全checkpointまたは実際に発行された旧質問に対する既存検証だけで旧経路へ進む。別欄のplain/reason等の現在能力をまとめて無効にしない。より古いsource世代も新認識へ勝手に変わらないよう指定を伝搬する。直接builderの既定は旧動作、threadのoriginal_meaning_planがfresh時だけ新認識を明示する。これにより旧FREE_Q1の本文経路とAnalysisの直接builder利用を維持する。旧IDを新planへ貼り付ける処理はない。
+
+STRUCTURE_MAP_DELTA_PRESENT。既存source／thread準備ownerの責務差分と新しい合成互換fixtureを01Aへ記録した。全体01、current01/04、07、weekly、正本06を同期する。01B/CとRN→API→service/store→保存read→RNの責務は不変。rootが編集・実行・反映、同Workのread-only補助が原因と差分を確認した。別Pro/Ultraによる正式二重検証ではない。
+
+旧質問への新しいreceived肯否訂正まで確認すると、source認識後に本文が止まる影響を発見した。意味投影と全三点の独立有限readerは成立していたが、単独になった「満足との対比に目を向けています」という既存ATTENTION文を、本文witnessの受容markerが認識していなかった。複数Move時は別の節がmarkerを供給していた。既存attentionの「理由／つながり」へ同じ有限終端の「対比」を追加した。本文作者・選択・全節のsource照合は変更しない。markerだけを加えた不正本文は、独立readerと既存finite-duty拒否で止まる。下流の検証を迂回していない。
+
+### 検証と実本文
+
+- 新fresh matrixはreceived先行同欄をmemo／memo_actionに置く2配置×動作3（考えを言葉にできて／案を選んで／資料を分類したことに）×過去／入力時点2＝12例。既存の本文検査で5点／3関係、2 Move、既存LIMITED、満足一回、未明示の同時性なしを検証した。旧u265のunfinished除外1例は、新しい正例と直接builderの旧動作維持の比較へ移した。fresh FREE_Q1の実本文も検査した。
+- 変更前u298から採取した合成fixture11件で、完全checkpoint・本文（停止を含む）・質問・状態・理由を完全一致で復元。Q1/Q3初回、別欄を伴う初回、実発行質問へのADD／保留／received肯否訂正後を含む。旧質問への新しい未保存回答3件、偽checkpoint、改変質問と所有境界も検査する。既発行の旧質問への新しい回答では、完全旧checkpointを引き継がず現在の意味を導出すること、ADDとreceived肯否訂正でREFINED本文が出ること、保留はUNCHANGEDで既存本文を使うことも確認。単独ATTENTIONとなる訂正後6件を追加し、未成立の肯否／満足／評価時点の改変拒否を検査した。新規件数は計47（既存の移動1は追加に数えない）。
+- 初回の対象検査は旧Q1本文2件で差が出たため、prepared thread本文へ強制する案を撤回して直接builderの旧動作を保持した。途中の主回帰では旧u265除外期待1件が失敗し、対象を認識する現在仕様と旧直接経路の両方を検査する形へ修正した。PGlite未指定の途中runにはskipがあり、最終結果へ混ぜない。
+- 最終sourceのappraisal全958件は現行173 test関数を重複なしの4群に分け、278＋253＋224＋203 PASS（全体133.56秒）、失敗0／skip0。Q2/Q3 application54件は別runで54 PASS／既存非推奨warning2／91.28秒。現owner identity1件は別runでPASS／31.56秒。主回帰計1,012件とidentity1件であり、一括runや対象22件との重複加算とはしない。
+- 同じ合成36例の基準head／最終source比較で、逆順同欄6例だけが変わり、残り30例（別欄両順・同欄unfinished先行・単独unfinished・理由付き満足＋received）は全record一致。本文ありは33/36→36/36。対象過去3件のLIMITED_RECEPTION_CAPABILITY_GAP_STOPが解消し、入力時点3件も未成立・対象・満足を区別して本文へ保持する。validator captureは元validatorを実行し拒否を迂回していない。
+- 実EmlisThreadService＋隔離PGliteで逆順同欄6初回DTOを保存し、NoAuthor GET/startで再生成なし、DTO全文・保存Observation・全履歴一致、event無増加を確認。現行RN hook/modalでも6件の本文／履歴／close/reopen／read-only表示が一致。最終sourceでは同じ6入力のreceived肯否訂正後も加えた計12 DTOを保存し、NoAuthor再取得と同回答再送、全Observation履歴・event無増加を確認。現行RNの12 DTOで本文・履歴・close/reopenも一致。rootが保存12本文を全文読解した。native部品はstubで本人実機ではない。
+- 現行identity fixtureは実sourceから再導出。language `5ba99ce3e338c4dbcc471ff05bef5211e82b7dcf98018de618e8766bf55c72e3`、runtime `bad37e0f0e66261663a144ccf06b4175d96e810b971dc0c5b5ba48e96b9fa125`。既存の歴史fixtureは不変。Python3.12.14／pytest8.4.1／Pydantic2.13.5／Node・PGlite0.5.8を再利用。
+
+上の原入力に対する保存本文全文：
+
+```text
+見えたこと：
+「褒められた」の一方で「嬉しくなかった」とあります。 「結論は出ていない」の一方で、「考えを言葉にできて」という出来事への評価は「満足した」とあります。
+
+Emlisから：
+結論は出ていないという点と、考えを言葉にできたことへの当時の満足との対比に目を向けています。褒められたことは、嬉しさにはつながらなかったのですね。
+```
+
+原入力を「満足している」とした記録で、「嬉しくなかった」を「嬉しかった」へ訂正した後の保存本文全文：
+
+```text
+見えたこと：
+「褒められた」ことについて、その時の受け止めは「嬉しかった」と書かれています。 「結論は出ていない」の一方で「満足している」とあります。 「考えを言葉にできて」という出来事に対する評価は、「満足している」とあります。
+
+Emlisから：
+結論は出ていないという点と、考えを言葉にできたことへの入力した時点での満足との対比に目を向けています。
+```
+
+### 残件と再開位置
+
+u298で残した逆順同欄の過去3停止は対象範囲で解消した。一方、Observationの引用説明とReceptionの「対比に目を向けています」は長く説明的で、二つの内容を本人へどう受け取って返すかの完成ではない。次はこの同じ全文を入口に、既存LIMITEDで選択している内容の不足と、本文への実現不足を分けて、初回一体単位の説明性・受容反復を扱う。訂正後本文では満足の二重説明と一つのATTENTIONだけの受け取りも残る。今回直したのは既存選択済み内容の検査接続であり、訂正後の内容形成完成ではない。共有対象／対象外更新へ今回の認識を自動拡張しない。新意味・資格・private内容契約が必要なら不足と最小差分を具体化する。
+
+System Contextはu297のmaterial祖先条件停止から許可された原典直接参照fallbackを継続し、今回再prepareや新Context生成済みとはしない。周辺既存4失敗は再実行せず未解消、過去共有17失敗との集合一致を再主張しない。合成probe／保存／RNの一回限りの検査を新runnerや正式証跡契約にはしない。再現matrix・原因・実本文・結果は本節、恒常的な回帰は既存testsと合成fixtureに保持する。
+
+TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置。same100、Q1上限、giver帰属、本人実機・正式Product Readも残る。10/17確認点・10/31管理線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％を維持する。

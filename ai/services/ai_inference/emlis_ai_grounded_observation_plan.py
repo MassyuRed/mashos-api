@@ -13664,6 +13664,7 @@ def _thread_withdrawn_result_appraisal(nucleus, relations):
 
 def _explicit_result_appraisal_projections(span, normalized_input, *, _legacy_appraisal_reason=False,
                                           _legacy_received_appraisal_context=False,
+                                          _legacy_received_unfinished_context=False,
                                           _legacy_repeated_appraisal_context=False,
                                           _legacy_duplicate_appraisal_source=False):
     """Bind an asserted appraisal to its own asserted object, not adjacency.
@@ -13754,10 +13755,12 @@ def _explicit_result_appraisal_projections(span, normalized_input, *, _legacy_ap
     previous = re.split(r"[。．.]", source[:start].rstrip(" 。．."))[-1].strip()
     prefix = source[:start].strip().rstrip("。．.").strip()
     received = (_received_event_reaction_text_projections(prefix)
-        if not _legacy_received_appraisal_context and context is None and reason is None
+        if not _legacy_received_appraisal_context and reason is None
+        and (context is None or not _legacy_received_unfinished_context)
         and prefix == previous else ())
     # Only one complete SELF received sentence may carry the diary owner
-    # into this plain appraisal. Do not erase an earlier foreign topic or
+    # into this appraisal, including its already-proved unfinished context.
+    # Do not erase an earlier foreign topic or
     # admit a second feeling/reason. The old received grammar has a broad
     # giver token; independently check its event owner before reusing it.
     received_event = prefix[received[0].scalar_start:received[0].scalar_end] if len(received) == 2 else ""
@@ -13776,6 +13779,7 @@ def _explicit_result_appraisal_projections(span, normalized_input, *, _legacy_ap
             replace(span, start_index=0, end_index=len(raw)), normalized_input,
             _legacy_appraisal_reason=_legacy_appraisal_reason,
             _legacy_received_appraisal_context=_legacy_received_appraisal_context,
+            _legacy_received_unfinished_context=_legacy_received_unfinished_context,
             _legacy_repeated_appraisal_context=True))
     if (previous and not _source_operator_owner_scope_is_bound(previous)
         and not self_received and len(repeated) != 3
@@ -14501,6 +14505,7 @@ def _final_stage1_typed_nuclei(
     _legacy_result_appraisal: bool = False,
     _legacy_appraisal_reason: bool = False,
     _legacy_received_appraisal_context: bool = False,
+    _legacy_received_unfinished_context: bool = False,
     _legacy_repeated_appraisal_context: bool = False,
     _legacy_duplicate_appraisal_source: bool = False,
     _legacy_shared_target_contrast: bool = False,
@@ -14523,6 +14528,7 @@ def _final_stage1_typed_nuclei(
             _explicit_result_appraisal_projections(span, normalized_input,
                 _legacy_appraisal_reason=_legacy_appraisal_reason,
                 _legacy_received_appraisal_context=_legacy_received_appraisal_context,
+                _legacy_received_unfinished_context=_legacy_received_unfinished_context,
                 _legacy_repeated_appraisal_context=_legacy_repeated_appraisal_context,
                 _legacy_duplicate_appraisal_source=_legacy_duplicate_appraisal_source))
             or _received_event_reaction_projections(span, nucleus.semantic_frame)) if span is not None else ()
@@ -16897,6 +16903,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_result_appraisal: bool = False,
     _legacy_appraisal_reason: bool = False,
     _legacy_received_appraisal_context: bool = False,
+    _legacy_received_unfinished_context: bool = False,
     _legacy_repeated_appraisal_context: bool = False,
     _legacy_appraisal_retention: bool = True,
     _legacy_duplicate_appraisal_source: bool = False,
@@ -16916,6 +16923,7 @@ def project_final_stage1_grounded_observation_plan(
         _legacy_result_appraisal=_legacy_result_appraisal,
         _legacy_appraisal_reason=_legacy_appraisal_reason,
         _legacy_received_appraisal_context=_legacy_received_appraisal_context,
+        _legacy_received_unfinished_context=_legacy_received_unfinished_context,
         _legacy_repeated_appraisal_context=_legacy_repeated_appraisal_context,
         _legacy_duplicate_appraisal_source=_legacy_duplicate_appraisal_source,
         _legacy_shared_target_contrast=_legacy_shared_target_contrast,
@@ -18025,12 +18033,17 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_result_appraisal: bool = False,
     _legacy_appraisal_reason: bool = False,
     _legacy_received_appraisal_context: bool = False,
+    _legacy_received_unfinished_context: bool = True,
     _legacy_repeated_appraisal_context: bool = False,
     _legacy_appraisal_retention: bool = True,
     _legacy_duplicate_appraisal_source: bool = False,
     _legacy_shared_target_contrast: bool = False,
 ) -> GroundedObservationPlan:
-    """Build the registered-disabled final Stage-1 typed grounding plan."""
+    """Build the registered-disabled final Stage-1 typed grounding plan.
+
+    Thread preparation explicitly selects the received/unfinished continuation.
+    Direct and legacy Q1 callers retain their existing source generation.
+    """
 
     normalized = normalize_emlis_current_input(current_input or {})
     span_list = tuple(
@@ -18083,6 +18096,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_result_appraisal=_legacy_result_appraisal,
         _legacy_appraisal_reason=_legacy_appraisal_reason,
         _legacy_received_appraisal_context=_legacy_received_appraisal_context,
+        _legacy_received_unfinished_context=_legacy_received_unfinished_context,
         _legacy_repeated_appraisal_context=_legacy_repeated_appraisal_context,
         _legacy_appraisal_retention=_legacy_appraisal_retention,
         _legacy_duplicate_appraisal_source=_legacy_duplicate_appraisal_source,

@@ -79,6 +79,7 @@ class PreparedEmlisMeaning:
     legacy_appraisal_correction: bool = False
     legacy_duplicate_appraisal_source: bool = False
     legacy_shared_target_contrast: bool = False
+    legacy_received_unfinished_context: bool = False
 
 
 def _text(row, index, resolver) -> str:
@@ -736,6 +737,19 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
             or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
             raise
+        # u298 source interpretation omitted an unfinished appraisal after a
+        # received sentence. Restore only that historical source seam; all
+        # newer plain/reason/shared-target capabilities in other fields stay on.
+        prior_unfinished = original_meaning_plan(thread, _legacy_received_unfinished_context=True)
+        if (prior_unfinished.nuclei != original.nuclei
+            or prior_unfinished.relations != original.relations):
+            try:
+                restored = _prepare_emlis_meaning_from_plan(request, thread, prior_unfinished)
+            except ValueError as prior_exc:
+                if str(prior_exc) not in {'emlis_checkpoint_source_prefix_mismatch', 'emlis_question_noncanonical'}:
+                    raise
+            else:
+                return replace(restored, legacy_received_unfinished_context=True)
         prior_shared_target = original_meaning_plan(thread, _legacy_shared_target_contrast=True)
         if (prior_shared_target.nuclei != original.nuclei
             or prior_shared_target.relations != original.relations):
