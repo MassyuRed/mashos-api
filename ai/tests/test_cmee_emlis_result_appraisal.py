@@ -140,6 +140,86 @@ def test_component_reason_removal_or_replacement_does_not_reassign_received_expe
     assert '資料を分類したことを、当時、ご自身の中に満たされた感覚があった経験として受け取りました。' in bodies[2].reception
 
 
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('reason', ['', '探しやすくなったので、'])
+@pytest.mark.parametrize('phase', ['initial', 'revise', 'withdraw'])
+def test_separate_received_contrast_does_not_add_simultaneity(reverse, reason, phase):
+    from test_cmee_emlis_q3_thread import advance
+    appraisal = reason + '資料を分類したことに満足した。'
+    received = '褒められたのに、嬉しくなかった。'
+    req = request(*((received, appraisal) if reverse else (appraisal, received)))
+    if phase != 'initial':
+        req = advance(req, '「満足した」ではなく「満足しなかった」です。' if phase == 'revise'
+                      else '「満足した」は誤りです。')
+    prepared = prepare_emlis_meaning(req)
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None, result.reason_codes
+    assert result.meaning_checkpoint == prepared.checkpoint
+    assert '「褒められた」の一方で「嬉しくなかった」とあります。' in result.artifact.observation
+    assert '同時に' not in result.artifact.observation
+
+
+@pytest.mark.parametrize('reaction', ['嬉しくなかった', '悲しかった'])
+def test_single_received_time_neutral_inverse_preserves_endpoints_without_author(monkeypatch, reaction):
+    import emlis_ai_grounded_sentence_surface as surface
+    req = request('褒められたのに、' + reaction + '。', '')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    artifact = MeaningExperienceEngine().generate(req).artifact
+    clause = '「褒められた」の一方で「' + reaction + '」とあります。'
+    assert artifact is not None and clause in artifact.observation
+    def forbidden(*_a, **_k):
+        pytest.fail('observation inverse invoked an author')
+    monkeypatch.setattr(surface, '_render_relation', forbidden)
+    monkeypatch.setattr(surface, '_realize_line', forbidden)
+    def valid(text):
+        return evaluate_grounded_surface_body_inverse(body=text.encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert valid(artifact.text)
+    wrong_time = {'嬉しくなかった': '嬉しくない', '悲しかった': '悲しい'}[reaction]
+    for wrong in (
+        clause.replace('褒められた', '誘われた'),
+        clause.replace(reaction, '嬉しかった'),
+        clause.replace(reaction, wrong_time),
+        clause.replace('の一方で', 'の一方で同時に'),
+        clause.replace('の一方で', 'のが原因で'),
+        clause.replace('の一方で', 'のあとに'),
+        '「' + reaction + '」の一方で「褒められた」とあります。',
+        clause.replace('とあります。', 'ので、承認を求めています。'),
+    ):
+        assert wrong != clause
+        assert not valid(artifact.text.replace(clause, wrong)), wrong
+    # Saved old complete grammar remains readable, without regenerating it.
+    legacy = '「褒められた」と「' + reaction + '」が、異なる向きのまま同時にあります。'
+    assert valid(artifact.text.replace(clause, legacy))
+
+
+def test_single_received_time_neutral_scope_preserves_source_version_and_nodes():
+    from cocolon_meaning_experience_engine.emlis_thread_surface import _current_single_received_contrast_relations as owned
+    p = prepare_emlis_meaning(request('資料を分類したことに満足した。', '褒められたのに、嬉しくなかった。'))
+    plan = build_updated_grounded_plan(p)
+    rid, = owned(p, plan)
+    relation = next(r for r in plan.relations if r.relation_id == rid)
+    assert not owned(replace(p, checkpoint=replace(p.checkpoint, assessment_status='PARTIAL')), plan)
+    assert not owned(p, replace(plan, relations=tuple(
+        replace(r, grounding_kind='inferred_relation') if r == relation else r for r in plan.relations)))
+    assert not owned(p, replace(plan, relations=tuple(r for r in plan.relations if r != relation)))
+    assert not owned(p, replace(plan, nuclei=tuple(
+        replace(n, semantic_frame=replace(n.semantic_frame, time_scope='present'))
+        if n.nucleus_id == relation.to_nucleus_id else n for n in plan.nuclei)))
+    for legacy in ('legacy_appraisal_retention', 'legacy_repeated_appraisal_context',
+            'legacy_received_appraisal_context', 'legacy_appraisal_reason', 'legacy_result_appraisal',
+            'legacy_appraisal_correction', 'legacy_duplicate_appraisal_source', 'legacy_shared_target_contrast'):
+        assert not owned(replace(p, **{legacy: True}), plan)
+    for source in ('褒められたのに、嬉しくない。',
+                   '褒められたのに、嬉しくなかった。誘われたのに、悲しかった。'):
+        other = prepare_emlis_meaning(request(source, ''))
+        assert not owned(other, build_updated_grounded_plan(other))
+
+
 def request(memo, action="植木に水をやった。"):
     req = initial(memo, action)
     return replace(req, emlis_thread=replace(req.emlis_thread, capability_snapshot="Q3_FREE"))

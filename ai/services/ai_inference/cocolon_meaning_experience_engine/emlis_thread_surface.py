@@ -98,6 +98,36 @@ def _retained_shared_target_received_relations(prepared, plan, resolver):
     return frozenset((group['received_relation'].relation_id,))
 
 
+def _current_single_received_contrast_relations(prepared, plan):
+    """Keep one unchanged original contrast time-neutral on the current route.
+
+    Explicitly marked legacy routes retain their original surface grammar.
+    This changes neither recognition nor the selected Reception content.
+    """
+    from emlis_ai_grounded_observation_plan import _received_contrast_group_targets
+    if (prepared.checkpoint.assessment_status == 'PARTIAL'
+        or prepared.legacy_appraisal_retention or prepared.legacy_repeated_appraisal_context
+        or prepared.legacy_received_appraisal_context or prepared.legacy_appraisal_reason
+        or prepared.legacy_result_appraisal or prepared.legacy_appraisal_correction
+        or prepared.legacy_duplicate_appraisal_source or prepared.legacy_shared_target_contrast):
+        return frozenset()
+    contrasts = tuple(r for r in prepared.original_plan.relations if r.type == 'contrast')
+    if len(contrasts) != 1:
+        return frozenset()
+    relation = contrasts[0]
+    if relation.grounding_kind != 'user_stated_relation' or relation not in plan.relations:
+        return frozenset()
+    original = {n.nucleus_id: n for n in prepared.original_plan.nuclei}
+    current = {n.nucleus_id: n for n in plan.nuclei}
+    nodes = tuple(original.get(nid) for nid in (relation.from_nucleus_id, relation.to_nucleus_id))
+    if (any(n is None or n.grounding_kind != 'explicit'
+            or n.source_fields not in {('memo',), ('memo_action',)}
+            or current.get(n.nucleus_id) != n for n in nodes)
+        or not _received_contrast_group_targets(nodes, contrasts)):
+        return frozenset()
+    return frozenset((relation.relation_id,))
+
+
 def realize_emlis_thread_body(prepared) -> EmlisThreadBodyOutcomeV1:
     plan = build_updated_grounded_plan(prepared)
     projection = project_thread_meaning(prepared, plan)
@@ -118,7 +148,8 @@ def realize_emlis_thread_body(prepared) -> EmlisThreadBodyOutcomeV1:
     surface, _placements = surface_owner.realize_grounded_sentence_plan_with_human_reception(
         sentence_plan, plan, resolver, human_reception_surface=human_surface,
         selected_subjective_input=selected,
-        neutral_received_contrast_ids=_retained_shared_target_received_relations(prepared, plan, resolver))
+        neutral_received_contrast_ids=(_retained_shared_target_received_relations(prepared, plan, resolver)
+            | _current_single_received_contrast_relations(prepared, plan)))
     issues = surface_owner.validate_grounded_surface_result(surface, sentence_plan, plan, resolver,
                                                              selected_subjective_input=selected)
     inverse = evaluate_grounded_surface_body_inverse(body=surface.text.encode(), plan=plan,

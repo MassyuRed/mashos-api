@@ -20729,3 +20729,50 @@ Emlisから：
 Emlisから：
 資料を分類したことについて、当時は満足しなかったのですね。褒められたことと悲しかったこととの違いを小さくせずに受け止めています。
 ```
+
+
+## u292 — 原文の単一received対比に、未明示の同時性を加えない（2026-10-16 JST）
+
+基準API `659f9a252d3c1ff93e1bce3457ecee0ef90564e1`／資料 `a26d0890e27a25603270a2cb2b8d666b472fd628`。添付前回txt、必須前提・作業姿勢ルール・恒久incident全文、全体設計01・全file地図01A/B/C・current00/01/04、8/28設計§9.2/9.4、最新weekly§5.6.41を照合した。System Context prepareは固定ancestor a77b79cとの不一致でexit2。生成物をcurrent証拠へ使わず、同じGitHub headの原典を直接参照した。前回CI38835186473は同headのcompleted/successを確認した。
+
+初回／否定訂正／評価撤回後の選択内容を確認。u291後の別欄receivedでは、初回NORMALの経験読みと更新後LIMITEDの両端保持は選択どおり本文へ届いている。LIMITEDをNORMALの経験読みへ置換することは保持欠陥の修復ではないため実行していない。一方、原文は対比を述べるだけなのにObservationが「異なる向きのまま同時にあります」と同時性を加える、再現可能な本文欠陥が残っていた。
+
+製品変更は既存 `emlis_thread_surface.py` のみ。原入力のcontrast exact1、既存received判定で本人・過去の出来事と過去の否定反応・同じ欄/span・明示接続が成立し、現planの関係と両端が原planから未変更の場合だけ、既存 `neutral_received_contrast_ids` にIDを渡す。既存作者の「『A』の一方で『B』とあります。」を使用する。明示されたlegacy8 flagsとPARTIALを除外し、共有対象u285の既存接続は保持した。新しい認識・意味選択・Reception資格・schema・API/DTO/DB/RN・依存・上限は追加しない。現在形反応、複数対比、変更された端点、推定関係、一般receivedへの一括変更は対象外。
+
+Rule18 §11.3の既承認意味保持・既存作者接続内の限定修復。execution ownerはroot、同じWorkのread-only補助2枠で商品整合・原因・最終diffを確認した。別model Pro/Ultraの独立審査とは扱わない。STRUCTURE_MAP_DELTA_NONE：同じthread本文owner内の対象判定から既存引数へ接続するだけで、owner責務・引数定義・意味契約・利用導線は不変。地図への重複追記は行わない。
+
+### 検証結果と限界
+
+- 新規15検査。修正前の対象検査は「同時に」が残って失敗することを確認した。対象は両欄・理由0/1・初回/訂正/撤回、Observation作者2関数を禁止した全文inverse（Reception側の既存replayは維持）、端点/肯否/時点/因果/順序/追記の改変拒否、旧完全文法読取、legacy/PARTIAL/複数対比の除外。
+- 関連評価788＋Q2/Q3 application54の単一runは **2 failed, 840 passed, 2 warnings in 298.18s**。2失敗は旧u256 PARTIALの保存本文互換。PARTIALを対象から除外し、新15＋該当旧2を再検査して **17 passed, 771 deselected in 13.37s**。対象842検査の各検査通過を確認したが、最終sourceで842件を一括再実行したという報告はしない。初期の共通renderer直接変更では旧duplicate保存4件が変化したため、その案を破棄し、共通rendererは最終差分0。
+- 周辺received/disconnected選択回帰は **4 failed, 124 passed, 3622 deselected in 139.69s**。4失敗は `test_same_name_received_chain_unproved_negative_window_cannot_drop_duties`。変更前659f9a2でも同4条件を実行し **4 failed, 1422 deselected in 11.10s**、同じDID NOT RAISEを確認した。既存失敗として保持し、合格数へ換算せず、保護検査を変更しない。今回、過去の共有17失敗との集合一致までは再監査していない。
+- 現行owner identity **1 passed, 194 deselected in 23.68s**。実sourceからidentityを再導出し、fixture全bytesと同一だった。歴史fixtureも不変。
+- 同じ合成54応答を変更前後で実生成。54件とも本文成立、別欄24件（理由0/1×両欄×反応2×初回/訂正/撤回）と単独received対照1件のObservationだけが変化。残り29本文、全54のcheckpoint・核・関係・Move plan・selected内容・branch・reason codes・Reception本文は一致。全54のassessmentはRESOLVEDであり、最後のPARTIAL除外によってこの比較対象の分岐は変わらない。現在形対照等の残存「同時に」は今回未修復。
+- 実EmlisThreadService＋隔離PGliteで初回8／更新8の **16 DTO** を保存。理由0/1・両欄・反応2、否定訂正／撤回を含む。NoAuthor GET/start一致、同回答再送一致・event無増加、保存本文・全Observation履歴一致。現行RN hook/modalの全文・履歴・close/reopenも16件一致。rootが16種類の保存本文を全文読解。native部品はstubで、本人実機・稼働DB・正式Product Readではない。
+- Python3.12.14／pytest8.4.1、PGlite0.5.8、React18.3.1の既存隔離runtimeを使用。新依存・外部AI・稼働DB操作・deploy・main mergeは0。
+
+TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。未明示の時点関係を加えない限定修復であり、初回の説明性・受容反復、第二Moveの内容形成、訂正／撤回後の一般性は未解消。初回一体単位未完了、正式受入0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置を維持する。
+
+次は初回／訂正／撤回の受け取りについて、既承認の本人充足・経験と実際のselected内容の対応を起点に、LIMITEDで不足する読みと最小差分を具体化する。語尾や名称の追加だけで内容形成を閉じず、既選択意味の欠落と新しい読み・資格・内部契約を分離する。後者が必要なら具体差分をMash判断へ戻す。現在形等の時間表現、共有既存失敗・same100・Q1上限・giver帰属・本人実機・正式Product Readも残件。10/17確認点・10/31管理線・12/18公開目標、Piece/Analysis主枠と管理評価53.25％は維持する。
+
+### 合成実生成の全文比較（理由なし・別欄・否定訂正後）
+
+変更前：
+
+```text
+見えたこと：
+「資料を分類した」という出来事に対する当時の評価は、「満足しなかった」とあります。 「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。
+
+Emlisから：
+資料を分類したことについて、当時は満足しなかったのですね。褒められたことと嬉しくなかったこととの違いを小さくせずに受け止めています。
+```
+
+変更後：
+
+```text
+見えたこと：
+「資料を分類した」という出来事に対する当時の評価は、「満足しなかった」とあります。 「褒められた」の一方で「嬉しくなかった」とあります。
+
+Emlisから：
+資料を分類したことについて、当時は満足しなかったのですね。褒められたことと嬉しくなかったこととの違いを小さくせずに受け止めています。
+```
