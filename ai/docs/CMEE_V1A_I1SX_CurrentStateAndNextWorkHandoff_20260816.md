@@ -1,4 +1,4 @@
-> 最新EmlisAI残件：末尾 **u295（2026-10-16・丁寧な過去形でも選択済みreceived経験を本文へ保持）**。限定修復・関連901検査成功。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
+> 最新EmlisAI残件：末尾 **u296（2026-10-16・更新後の受け取りで本人の一人称を各対象の中へ保持）**。限定修復・検証結果は末尾。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -20964,3 +20964,60 @@ Emlisから：
 TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式受入0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置を維持する。
 
 次は、初回の説明性・受容反復と、共有対象／対象外更新に残る一般的な受け取りを、現在の選択内容と実本文の差として扱う。同じ語尾置換や資格の一括拡張を主課題にせず、既承認内容の欠落は既存owner内で修復し、新しい意味・資格・内部契約が必要な箇所は不足と最小差分を具体化する。既存失敗、same100、Q1上限、giver帰属、本人実機・正式Product Readは残る。10/17確認点・10/31管理線・12/18公開目標、Piece/Analysis主枠と管理評価53.25％は維持する。
+
+
+## u296 — 更新後の受け取りで本人の一人称を各対象の中へ保持（2026-10-16 JST）
+
+基準API `76fe053af60b6673d673c1d5c2beecadacda85de`／資料 `6db7c820b396ac93feb4181ae76ac9d6a7788478`。前回u295 API CI `38845823901` と資料5 runは全てcompleted/successを確認した。最新weeklyは20261010で、§3.5/§5.6とu295、全体設計01・全file地図01A/B/C・current_structure 00/01/04、意味設計§9.2/9.4、作業rule・恒久incidentを参照した。
+
+### 原因と限定修復
+
+別欄の評価だけを否定訂正／撤回した後、未変更receivedの本人所有はselectedに残る一方、一般受容へ戻る名詞句が原文の「私は」「私も」をそのまま使っていた。非引用の「Emlisから」に「私は褒められたことと…を受け止めています」と表示され、利用者とEmlisの人称が混ざる欠陥である。初回は既存有限文法で「あなたは／あなたも」へ実現できており、新しい意味を認識する課題ではない。
+
+既存作者 `_source_grounded_reception_fragment` 内で、u294の検証済み `SelectedRetainedReceivedExperienceDecisionV1`、全体LIMITED、局所二端点・一対比、full/FINITE・非ANAPHORIC、本人所有に限り、一般受容の名詞対象へ正しい視点を実現する。「私は褒められたこと」は「あなたが褒められたこと」へ、本人の感情は既存有限形を使って「あなたも嬉しくなかったということ」等へ接続する。主題の「は」を「が」にするのは従属する名詞節内だけで、「も／には／にも」・程度・肯否・時点は保持する。「あなたは…受け止めています」と利用者を受容主体にする単純置換にはしない。
+
+既存の「との違い／の両方」と受容述語を保持する。SELF主題を裸形経験句へ広げず、新しい経験解釈・原因・期待・価値を加えない。source認識、選択内容、局所資格・private契約、全体LIMITED・aggregate・Move、Observationは不変。資格のない同欄・共有対象・received自体の更新・混合更新・後続回答・legacy／PARTIAL等へ適用しない。
+
+既存gate `_read_received_discourse_parts` は現在sourceから局所資格を再証明し、実本文の両端・本人・助詞・程度・肯否・時点と既存受容句を作者なしで照合する。実表示の名詞節を原source bytesへ戻す。一般名詞化helper、他branchの作者、共通意味経路は変更しない。Reception全体に残るreplayまで作者非依存とする主張はない。
+
+Rule18 §11.3の既承認設計内の修復として実施。実行・編集・GitHub反映責任者はroot一人で、同Workのread-only補助は商品上の因果と技術差分だけを確認した。別Pro/Ultraモデルの正式二重検証ではない。STRUCTURE_MAP_DELTA_NONE：既存作者／reader内の人称実現であり、owner責務・呼出経路・意味契約・利用導線に差分なし。製品2file、既存test1、現行identity fixture1を更新し、新production file・service・engine・checker・依存は追加していない。公開API/DTO/DB/SQL/RN、Piece/Analysis、本番・deploy・main mergeは変更0。
+
+### 検証と途中修復
+
+- 新40検査は、本人表記・助詞・程度・裸形／敬体・形容詞／名詞述語を含む10入力×否定訂正／評価撤回×欄順2。旧版は先頭対象が失敗（1 failed, 847 deselected, 11.44秒）。初期修正では関係名詞「違い／両方」の接続を落として本文生成が停止したため、その因果箇所を修復した（途中1 failed, 847 deselected, 9.72秒）。最終対象は `40 passed, 847 deselected, 1 warning in 50.26s`。
+- 新検査は旧一般受容の意味を保った本人視点、完全本文inverse、作者呼出を禁止した有限reader、selectionなし・別人・出来事・肯否・時点・助詞・程度・欠落・期待／同時性付加の拒否を確認する。旧SELF fallback2検査は、経験句へ広げない目的と原意味・観測文を維持しながら、人称修復後の期待へ更新した。
+- 最終sourceのappraisal全887＋Q2/Q3 application54はPGlite有効で一括実行。941 passed / 0 failed / 0 skipped、既存 deprecation warning 2件、394.43秒
+- 現行shared-owner identity契約は別runで `1 passed, 194 deselected, 1 warning in 23.93s`。fixtureは実sourceから再導出し、language identity `5d7e85f6d77b55705461df4de6fd5aa6a054c5d69f2120aa07531ab0651c088f`、runtime identity `a4cc18281776debdf17947373d27c6be9907db2359e780d9eb8716e097f0fce4`。歴史fixtureは不変。対象40・identity1を主回帰と同じrunへ加算しない。
+- u295と同じ合成60応答を最終sourceで比較。本人主題2入力の否定訂正／撤回後4 Receptionだけが変わり、対照56全文は一致。全60でcheckpoint・核・関係・Reception plan・selected全体（識別hashを含む）・branch・reason codes・Observationは一致した。初期修正時の58/60本文は最終結果とせず、修復後に全60本文を再確認した。
+- 本人主題の対象12入力（理由なし否定訂正4／理由0/1の評価撤回8）を実EmlisThreadService＋隔離PGliteで初回／更新後まで保存。24 DTO（PRE_QUESTION12／REFINED12）のNoAuthor GET/start、同回答再送、本文・全履歴一致とevent無増加を確認した。現行RN hook/modalも24 DTOの全文・履歴・close/reopen・read-only表示が一致。最初のone-shot RN検査にはu295の経験句期待が残っていたため、今回の一般受容対象へ期待を合わせて再実行した。RN製品source変更0、native部品はstubで本人実機ではない。
+- rootが保存24 DTOの全本文（重複を除く20種類）と合成before/after4組を読解。非引用の本人一人称漏れはこの範囲で修復したが、一般受容の長さ・定型性と初回第一文の説明性・反復は残る。限定した読解を正式Product Readや商品合格へ換算しない。
+
+既存Python3.12.14／pytest8.4.1／Pydantic2.13.5、Node/PGlite0.5.8を再利用した。System Context prepareの最新確認は `PUBLICATION_RECOVERY_AMBIGUOUS: residual without marker` で停止したため、規定の原典直接参照fallbackを使用。新Context生成済みとは扱わず、Context修復機構の追加へ逸れない。u292の周辺既存4失敗の集合は今回再実行せず未解消。過去共有17失敗との集合一致も新たに主張しない。
+
+### 合成実本文の差（理由なし・別欄・評価撤回後）
+
+原入力は「資料を分類したことに満足した。」と「私は褒められたのに、嬉しくなかったです。」、更新は「『満足した』は誤りです。」に相当する評価撤回。
+
+変更前：
+
+```text
+見えたこと：
+「資料を分類した」という出来事がありました。
+「私は褒められた」の一方で「嬉しくなかったです」とあります。
+
+Emlisから：
+私は褒められたことと嬉しくなかったですということの両方を、その違いも含めて小さくせずに受け止めています。
+```
+
+変更後：
+
+```text
+見えたこと：
+「資料を分類した」という出来事がありました。
+「私は褒められた」の一方で「嬉しくなかったです」とあります。
+
+Emlisから：
+あなたが褒められたことと嬉しくなかったということの両方を、その違いも含めて小さくせずに受け止めています。
+```
+
+TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式受入0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置。次は既選択の内容と実本文を照合し、初回の説明性・受容反復、共有対象／対象外更新の一般的な受け取りを扱う。人称修復を内容形成全体の完成へ置き換えず、新しい意味・資格・private契約が必要なら不足と最小差分を具体化する。既存失敗、same100、Q1上限、giver帰属、本人実機・正式Product Readは残る。10/17確認点・10/31管理線・12/18公開目標、Piece/Analysis主枠と管理評価53.25％は維持する。

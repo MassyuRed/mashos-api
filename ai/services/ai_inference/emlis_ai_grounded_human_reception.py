@@ -11003,6 +11003,38 @@ def _source_grounded_reception_fragment(
             "MEANING_REALIZATION_CAPABILITY_GAP"
         )
 
+    if (type(selected_subjective_decision) is SelectedRetainedReceivedExperienceDecisionV1
+        and selected_subjective_decision.branch == "LIMITED"
+        and not context_prefix and recovery_stage == "full"
+        and realization.clause_form == "FINITE" and realization.reference_mode != "ANAPHORIC"
+        and realization.target_slot_count == 1 and len(realization.semantic_fragments) == 2
+        and len(realization.relations) == 1
+        and realization.relations[0].relation_kind == "contrast"
+        and realization.relations[0].endpoint_slots == (0, 1)
+        and target_core.semantic_slots == (0, 1)
+        and (distributive_object and _selected_noncollapse_appraisal(selected_subjective_decision)
+             and target_core.pending_relation_slots == (0,)
+             or not distributive_object and _selected_material_appraisal(selected_subjective_decision)
+             and not target_core.pending_relation_slots)
+        and all(p.actor_kind == "SELF" and not p.quoted_boundary
+                for p in realization.semantic_profiles)):
+        # The retained pair still uses its existing generic predicate. Keep
+        # SELF inside each nominal object, rather than making the input's
+        # "I" the speaker of Emlis's reception. A topic becomes nominative
+        # only inside this subordinate object; additive/dative scope stays.
+        event, feeling = realization.semantic_fragments
+        event_owner = re.match(r"(?:私|自分|わたし)(?:は|が)", event)
+        feeling_owner = (re.match(r"(?:わたし|ぼく|おれ|私|僕|俺|自分)(?:には|にも|は|も)", feeling)
+                         or _medial_feeling_owner(feeling))
+        if event_owner is not None or feeling_owner is not None:
+            event_visible = "あなたが" + event[event_owner.end():] if event_owner else event
+            finite = _detached_feeling_finite_surface(feeling, allow_medial=True, allow_copular=True)
+            if (finite.endswith(("かった", "だった"))
+                and not re.search(r"(?:私|自分|わたし|僕|ぼく|俺|おれ)(?:には|にも|は|も|が)", finite)):
+                finite = finite.replace("あなたは", "あなたが", 1)
+                core = (event_visible + "ことと" + finite + "ということ"
+                        + ("の両方" if distributive_object else "との違い"))
+
     predicate_surface = _source_grounded_response_predicate_surface(
         move.reception_act,
         move.move_role,

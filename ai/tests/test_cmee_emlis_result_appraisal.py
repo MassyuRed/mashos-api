@@ -4952,7 +4952,7 @@ def test_retained_received_experience_excludes_every_legacy_mode_and_unresolved_
 @pytest.mark.parametrize('received', [
     '私は褒められたのに、嬉しくなかった。',
 ])
-def test_retained_received_experience_keeps_existing_surface_outside_bare_experience_grammar(
+def test_retained_received_experience_keeps_generic_reception_outside_bare_experience_grammar(
         monkeypatch, operation, received):
     from test_cmee_emlis_q3_thread import advance
     import emlis_ai_grounded_human_reception as hr
@@ -4975,7 +4975,10 @@ def test_retained_received_experience_keeps_existing_surface_outside_bare_experi
         r for r in prepared.original_plan.relations if r.type == 'contrast')
     monkeypatch.setattr(projection_module, 'derive_retained_received_experience_eligibility', lambda *_a: None)
     baseline = MeaningExperienceEngine().generate(req)
-    assert baseline.artifact == result.artifact
+    assert baseline.artifact is not None
+    assert baseline.artifact.observation == result.artifact.observation
+    assert '私は褒められたこと' in baseline.artifact.reception
+    assert 'あなたが褒められたこと' in result.artifact.reception
     assert baseline.reason_codes == result.reason_codes
     assert baseline.meaning_checkpoint == result.meaning_checkpoint
 
@@ -5041,4 +5044,68 @@ def test_selected_received_experience_keeps_polite_past_content(
         clause.replace('ことだけでは言い表せない、', 'ことへの期待が外れ、'),
         clause + '二つは同時に起きています。',
     ):
+        assert wrong != clause and read(wrong) is None, wrong
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('operation', ['revise', 'withdraw'])
+@pytest.mark.parametrize('received,object_text', [
+    ('私は褒められたのに、嬉しくなかったです。', 'あなたが褒められたことと嬉しくなかったということ'),
+    ('わたしは褒められたのに、嬉しくなかった。', 'あなたが褒められたことと嬉しくなかったということ'),
+    ('自分は褒められたのに、悲しかったです。', 'あなたが褒められたことと悲しかったということ'),
+    ('褒められたのに、私も嬉しくなかったです。', '褒められたこととあなたも嬉しくなかったということ'),
+    ('褒められたのに、僕は悲しかったです。', '褒められたこととあなたが悲しかったということ'),
+    ('褒められたのに、俺には少し怖かったです。', '褒められたこととあなたには少し怖かったということ'),
+    ('褒められたのに、ぼくにも不安でした。', '褒められたこととあなたにも不安だったということ'),
+    ('自分が褒められたのに、わたしも少し悲しかったです。', 'あなたが褒められたこととあなたも少し悲しかったということ'),
+    ('褒められたのに、少しおれも怖かった。', '褒められたこととあなたも少し怖かったということ'),
+    ('褒められたのに、私は嬉しくなかった。', '褒められたこととあなたが嬉しくなかったということ'),
+])
+def test_retained_received_fallback_keeps_self_inside_each_object(
+        monkeypatch, reverse, operation, received, object_text):
+    from test_cmee_emlis_q3_thread import advance
+    import emlis_ai_grounded_human_reception as hr
+    from emlis_ai_grounded_observation_gate import read_source_owned_discourse
+    appraisal = '資料を分類したことに満足した。'
+    req = request(*((received, appraisal) if reverse else (appraisal, received)))
+    req = advance(req, '「満足した」ではなく「満足しなかった」です。'
+                  if operation == 'revise' else '「満足した」は誤りです。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    decision, = (d for d in selected.decisions
+                 if type(d) is hr.SelectedRetainedReceivedExperienceDecisionV1)
+    assert decision.branch == 'LIMITED'
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None, result.reason_codes
+    assert result.meaning_checkpoint == prepared.checkpoint
+    ending = ('との違いを小さくせずに受け止めています。' if operation == 'revise'
+              else 'の両方を、その違いも含めて小さくせずに受け止めています。')
+    clause = object_text + ending
+    assert clause in result.artifact.reception
+    assert 'ことだけでは言い表せない、' not in result.artifact.reception
+    move, = (m for m in plan.response_plan.human_reception_plan.moves if m.move_id == decision.move_id)
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    assert evaluate_grounded_surface_body_inverse(body=result.artifact.text.encode(), plan=plan,
+        sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+
+    def forbidden(*_a, **_k):
+        pytest.fail('SELF object reader invoked an author')
+    monkeypatch.setattr(hr, '_source_grounded_reception_fragment', forbidden)
+    monkeypatch.setattr(hr, '_source_grounded_received_discourse', forbidden)
+    read = lambda body, selection=selected: read_source_owned_discourse(body, move, plan, resolver, selection)
+    assert read(clause) is not None
+    assert read(clause, None) is None
+    mutations = [clause.replace('あなた', person, 1) for person in ('私', '同僚')]
+    mutations += [clause.replace('褒められた', event) for event in ('誘われた', '褒められる', '褒められなかった')]
+    mutations += [clause.replace('ということ', 'という期待'), clause.replace('ということ', ''),
+                  clause + '二つは同時に起きています。']
+    for before, after in [('あなたが', 'あなたは'), ('あなたも', 'あなたが'),
+                          ('には', 'にも'), ('にも', 'には'), ('少し', 'とても'),
+                          ('嬉しくなかった', '嬉しかった'), ('悲しかった', '悲しくなかった'),
+                          ('怖かった', '怖くなかった'), ('不安だった', '不安だ')]:
+        if before in clause:
+            mutations.append(clause.replace(before, after, 1))
+    for wrong in mutations:
         assert wrong != clause and read(wrong) is None, wrong

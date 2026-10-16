@@ -5199,6 +5199,42 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                 return None
             consumed.add(feeling.nucleus_id)
             consumed_relations.add(relation.relation_id)
+        if local is not None and contrasts and not about:
+            # Independently read the two subordinate objects of the retained
+            # LIMITED predicate. The actor belongs to each source endpoint,
+            # not to the matrix "receive" predicate spoken by Emlis.
+            suffix = {
+                ("MATERIAL_WEIGHT", "RECEIVE_AS_MATERIAL"):
+                    "との違いを小さくせずに受け止めています",
+                ("RELATIONAL_NONCOLLAPSE", "PRESERVE_BOTH_ENDPOINTS"):
+                    "の両方を、その違いも含めて小さくせずに受け止めています",
+            }.get((appraisal.dimension, appraisal.operation))
+            objects = re.fullmatch(r"(?P<event>.+?)ことと(?P<feeling>.+?)ということ" + re.escape(suffix),
+                                   part) if suffix else None
+            if objects is not None:
+                event_owner = re.match(r"(?:私|自分|わたし)(?:は|が)", event_source)
+                feeling_owner = _thread_feeling_owner(feeling_source)
+                event_nominal = ("あなたが" + event_source[event_owner.end():]
+                                 if event_owner else event_source)
+                finite = objects["feeling"]
+                if (event_owner is None and feeling_owner is None
+                    or len(parts) != 1 or len(move.support_nucleus_ids) != 1
+                    or objects["event"] != event_nominal
+                    or not finite.endswith(("かった", "だった"))):
+                    return None
+                if feeling_owner is not None and feeling_owner['particle'] == "は":
+                    if finite.count("あなたが") != 1:
+                        return None
+                    finite = finite.replace("あなたが", "あなたは", 1)
+                if _restore_thread_finite_answer(finite, feeling_source, copular_clause=True) != feeling_source:
+                    return None
+                for name, original_source in (("event", event_source), ("feeling", feeling_source)):
+                    start = len((raw[:offset] + part[:objects.start(name)]).encode())
+                    end = len((raw[:offset] + part[:objects.end(name)]).encode())
+                    replacements.append((start, end, original_source.encode()))
+                consumed.add(event_id)
+                offset += len(part) + len("、また、")
+                continue
         # Reverse the visible event owner at its actual byte range. Source
         # contrast validation above still uses the untouched source event.
         # This is the same leading SELF rule as relational focus, not an
