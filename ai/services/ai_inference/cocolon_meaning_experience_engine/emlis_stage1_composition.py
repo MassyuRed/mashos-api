@@ -47,6 +47,7 @@ from .contracts import (
     DifferenceInvariantCode,
     EmlisAffectContent,
     EmlisAppraisalContent,
+    EmlisReasonedExperienceAppraisalContent,
     EmlisEvaluatedExperienceAppraisalContent,
     EmlisSharedTargetExperienceAppraisalContent,
     GroupedAppraisalReceivedConfigurationV1,
@@ -6202,6 +6203,7 @@ def _normal_reception_appraisal(
     source_qualifiers: tuple[SourceQualifierBinding, ...] = (),
     relation_configurations: tuple[RelationalConfiguration, ...] = (),
     interpretation_candidates: tuple[EmlisInterpretationCandidate, ...] = (),
+    admitted_source: Any = None,
 ) -> EmlisAppraisalContent:
     """Derive one act-local appraisal without whole-input focus priority."""
 
@@ -6286,10 +6288,23 @@ def _normal_reception_appraisal(
                 raise Stage1CompositionError('MEANING_REALIZATION_CAPABILITY_GAP')
             # The concrete reason is the basis of this satisfaction, not a
             # claim that the event objectively caused a beneficial result.
-            return EmlisAppraisalContent(AppraisalDimension.MATERIAL_WEIGHT,
-                AppraisalOperation.RECEIVE_AS_MATERIAL,
-                tuple(row.binding_ref for row in basis_rows), next(iter(reasons)), (),
-                tuple(row.contribution_id for row in contributions))
+            base = (AppraisalDimension.MATERIAL_WEIGHT, AppraisalOperation.RECEIVE_AS_MATERIAL,
+                    tuple(row.binding_ref for row in basis_rows), next(iter(reasons)), (),
+                    tuple(row.contribution_id for row in contributions))
+            from .emlis_thread_source import AdmittedEmlisThread
+            # Original source roles may survive a partial or unrelated answer.
+            # Only the admitted round, never absence of answer nuclei, proves
+            # this new content is initial. Older/answered paths retain v2 base.
+            if (type(admitted_source) is AdmittedEmlisThread
+                and admitted_source.answers == () and admitted_source.control.answers == ()
+                and admitted_source.control.current_round == 0
+                and 'source_appraisal_continuing:still' not in endpoint_codes(evaluation)):
+                return EmlisReasonedExperienceAppraisalContent(*base,
+                    'cocolon.cmee.emlis.reasoned_experience_appraisal.v1',
+                    reason.basis_binding_ref, event.basis_binding_ref, evaluation.basis_binding_ref,
+                    next(iter(reasons)), about.relation_ref, 'satisfaction', evaluation.polarity,
+                    reason.time_scope, evaluation.time_scope)
+            return EmlisAppraisalContent(*base)
         contrasts = {direction.relation_ref: direction
             for configuration in relation_configurations for direction in configuration.direction_rows
             if direction.relation_kind.value == 'contrast'
@@ -7578,6 +7593,7 @@ def _project_selected_reading_from_admitted_authority(
             content_kind = SubjectiveContentKind.APPRAISAL
             content = _normal_reception_appraisal(
                 proposition=source_reception,
+                admitted_source=authority.admitted_source,
                 contributions=contributions,
                 basis_rows=own_basis,
                 source_qualifiers=own_qualifiers,
@@ -16693,6 +16709,7 @@ _LOGICAL_CONTRACT_FIELD_SPECS = (
     ("EmlisAppraisalContent", "proposition-v2", "dimension=exact1 operation=exact1 appraised_bindings=1..N focal_relation_ref=0..1 protected_bindings=0..N basis_contribution_refs=1..N", ("DIMENSION_OPERATION_CLOSED_PAIR",), "APPRAISAL_OPPORTUNITY_PROJECTOR"),
     ("GroupedAppraisalReceivedConfigurationV1", "grouped-appraisal-received-v1", "schema_version=exact1 configuration_id=exact1 endpoint_component_refs=4..5 relation_path_refs=3..4 direction_rows=3..4 source_qualifier_refs=1..N source_evidence_refs=1..N appraisal_event_ref=exact1 appraisal_ref=exact1 received_event_ref=exact1 reaction_ref=exact1 appraisal_relation_ref=exact1 received_relation_ref=exact1 outer_contrast_relation_ref=exact1 target_reference_qualifier_refs=exact2 reason_ref=0..1 reason_relation_ref=0..1", ("SOURCE_SHARED_TARGET_EXACT4_ROLES", "OUTER_CONTRAST_BINDS_RECEIVED_PAIR", "REASON_IFF_SOURCE_STATED", "LEGACY_BINARY_CONFIGURATION_UNCHANGED"), "INPUT_SPECIFIC_MEANING_OWNER"),
     ("EmlisSharedTargetExperienceAppraisalContent", "shared-target-experience-appraisal-v1", "dimension=exact1 operation=exact1 appraised_bindings=exact4 focal_relation_ref=exact1 protected_bindings=exact0 basis_contribution_refs=1..N schema_version=exact1 appraisal_event_binding_ref=exact1 appraisal_binding_ref=exact1 received_event_binding_ref=exact1 reaction_binding_ref=exact1 appraisal_relation_ref=exact1 received_relation_ref=exact1 outer_contrast_relation_ref=exact1 target_reference_qualifier_refs=exact2", ("SELECTED_SOURCE_SHARED_TARGET_EXACT4_ROLES", "NESTED_CONTRAST_EXACT3_EDGES", "NO_CAUSE_OR_SIMULTANEITY_PROMOTION"), "APPRAISAL_OPPORTUNITY_PROJECTOR"),
+    ("EmlisReasonedExperienceAppraisalContent", "reasoned-experience-appraisal-v1", "dimension=exact1 operation=exact1 appraised_bindings=exact3 focal_relation_ref=exact1 protected_bindings=exact0 basis_contribution_refs=1..N schema_version=exact1 reason_binding_ref=exact1 event_binding_ref=exact1 evaluation_binding_ref=exact1 reason_relation_ref=exact1 appraisal_relation_ref=exact1 evaluation_kind=exact1 polarity=exact1 reason_time=exact1 evaluation_time=exact1", ("INITIAL_SOURCE_OWNED_EXACT3_ROLES", "REASON_AND_TARGET_TO_APPRAISAL_EXACT2_EDGES", "EXPLICIT_REASON_GROUNDS_EXPERIENCED_FULFILMENT", "LEGACY_APPRAISAL_CONTENT_UNCHANGED"), "APPRAISAL_OPPORTUNITY_PROJECTOR"),
     ("EmlisEvaluatedExperienceAppraisalContent", "evaluated-experience-v1", "dimension=exact1 operation=exact1 appraised_bindings=exact2 focal_relation_ref=exact1 protected_bindings=exact0 basis_contribution_refs=1..N schema_version=exact1 event_binding_ref=exact1 evaluation_binding_ref=exact1 target_kind=exact1 evaluation_kind=exact1 polarity=exact1 evaluation_time=exact1 continuing=exact1 explicit_ability=exact1 degree=exact1", ("SOURCE_APPRAISAL_ENDPOINTS_EXACT2", "FINITE_SOURCE_BOUND_EXPERIENCE", "NO_COMPLETION_OR_CAUSE_PROMOTION"), "APPRAISAL_OPPORTUNITY_PROJECTOR"),
     ("EmlisRelationalPosition", "proposition-v2", "relational_position_kind=exact1 stance_operator=exact1 target_bindings=1..N boundary_bindings=0..N commitment=exact1 closure=exact1", ("COMMITMENT_DERIVES_POSITION_KIND",), "RELATIONAL_OPPORTUNITY_PROJECTOR"),
     ("RowRefFreeValueApplication", "policy-pre-id-v1", "principle_ref=exact1 material_risk=exact1 policy_basis_binding_refs=1..N protected_subjective_binding_refs=1..N", ("NO_POLICY_ROW_OR_CLAIM_REF",), "ROW_REF_FREE_VALUE_PROJECTOR"),
@@ -16800,11 +16817,11 @@ def _contract_manifest() -> tuple[Any, ...]:
         _logical_contract_descriptor(*row)
         for row in _LOGICAL_CONTRACT_FIELD_SPECS
     )
-    if len(descriptors) != 73 or len({row[0][1] for row in descriptors}) != 73:
+    if len(descriptors) != 74 or len({row[0][1] for row in descriptors}) != 74:
         raise Stage1CompositionError("LANGUAGE_CORE_CONTRACT_DESCRIPTOR_STOP")
     return (
         ("schema_version", _CONTRACT_MANIFEST_SCHEMA_VERSION),
-        ("logical_contract_count", 73),
+        ("logical_contract_count", 74),
         ("logical_contract_descriptors", descriptors),
         ("content_kind_derivation_rows", LANGUAGE_CORE_CONTENT_DERIVATION_ROWS),
         ("concrete_runtime_binding_descriptors", LANGUAGE_CORE_CONCRETE_BINDING_DESCRIPTORS),

@@ -454,6 +454,11 @@ def validate_selected_subjective_reception_input(
                 or appraisal.continuing != ('source_appraisal_continuing:still' in source_codes)
                 or appraisal.explicit_ability != ('source_appraisal_attainment:explicit_ability' in event_codes)):
                 raise GroundedHumanReceptionSurfaceError(failure)
+        from cocolon_meaning_experience_engine.contracts import EmlisReasonedExperienceAppraisalContent
+        if type(appraisal) is EmlisReasonedExperienceAppraisalContent:
+            from emlis_ai_grounded_observation_gate import _reasoned_experience_selected_reception
+            if not _reasoned_experience_selected_reception(move, plan, value):
+                raise GroundedHumanReceptionSurfaceError(failure)
         from cocolon_meaning_experience_engine.contracts import EmlisSharedTargetExperienceAppraisalContent
         if type(appraisal) is EmlisSharedTargetExperienceAppraisalContent:
             # Content, source and grouped roles must agree before any author
@@ -524,7 +529,9 @@ def validate_selected_subjective_reception_input(
                     or len(contrasts) != 1):
                     raise GroundedHumanReceptionSurfaceError(failure)
                 continue
-            if (row.branch != 'NORMAL' or type(appraisal) is not EmlisAppraisalContent
+            if (row.branch != 'NORMAL'
+                or type(appraisal) not in ((EmlisAppraisalContent, EmlisReasonedExperienceAppraisalContent)
+                    if reasoned else (EmlisAppraisalContent,))
                 or appraisal.dimension != ('MATERIAL_WEIGHT' if reasoned else 'RELATIONAL_NONCOLLAPSE')
                 or appraisal.operation != ('RECEIVE_AS_MATERIAL' if reasoned else 'PRESERVE_BOTH_ENDPOINTS')
                 or appraisal.protected_bindings or len(appraisal.appraised_bindings) != 3
@@ -11682,11 +11689,17 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
         return None
     index = {n.nucleus_id: n for n in plan.nuclei}
     if reasoned_appraisal:
-        from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
+        from cocolon_meaning_experience_engine.contracts import (
+            EmlisAppraisalContent, EmlisReasonedExperienceAppraisalContent)
         proposition = selected_decision.subjective_proposition
         content = proposition.appraisal_content
         limited = selected_decision.branch == 'LIMITED'
-        if (selected_decision.branch not in {'NORMAL', 'LIMITED'} or type(content) is not EmlisAppraisalContent
+        reasoned_experience = type(content) is EmlisReasonedExperienceAppraisalContent
+        if (reasoned_experience and (limited or content.reception_configuration
+                != 'EXPLICIT_REASON_GROUNDS_EXPERIENCED_FULFILMENT')):
+            return None
+        if (selected_decision.branch not in {'NORMAL', 'LIMITED'}
+            or type(content) not in (EmlisAppraisalContent, EmlisReasonedExperienceAppraisalContent)
             or content.dimension != 'MATERIAL_WEIGHT' or content.operation != 'RECEIVE_AS_MATERIAL'
             or content.protected_bindings
             or (not limited and len(content.appraised_bindings) != 3)
@@ -11729,6 +11742,14 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
             # This does not grant LIMITED a selected NORMAL interpretation.
             return (f'{event}ことへの{at}満足について、'
                     f'{reason}という理由に目を向けています')
+        if reasoned_experience:
+            # The content already connects this explicit reason to fulfilment
+            # about the performed target. Keep reason tense in its source words;
+            # the separate occasion and state belong only to the appraisal.
+            occasion = when + ('、' if when == '当時' else 'で、')
+            state = 'あった' if content.evaluation_time == 'past' else 'ある'
+            return (f'{event}ことを、{reason}という点で、{occasion}'
+                    f'ご自身の中に満たされた感覚が{state}経験として受け取りました')
         return f'{reason}点に、{event}ことへの{at}満足の拠り所が見えます'
     if unfinished_appraisal:
         if (selected_decision.branch != 'NORMAL' or not _selected_noncollapse_appraisal(selected_decision)

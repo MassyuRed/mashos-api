@@ -2889,6 +2889,57 @@ def _read_appraisal_material_discourse(raw, move, plan, resolver, selected_subje
     return ((0, end, expected.encode("utf-8")),)
 
 
+def _reasoned_experience_selected_reception(move, plan, selected_subjective_input):
+    """Bind the new content's three roles and two directed edges to source."""
+    from cocolon_meaning_experience_engine.contracts import (
+        EmlisReasonedExperienceAppraisalContent, CMEEStage1ContractError,
+        _stage1_subjective_v2_content_bindings)
+    from emlis_ai_grounded_observation_plan import (
+        source_owned_relational_focus, source_owned_result_appraisal)
+    if selected_subjective_input is None:
+        return False
+    decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
+    content = decision.subjective_proposition.appraisal_content if decision else None
+    focus = source_owned_relational_focus(move, plan)
+    if (decision is None or decision.branch != 'NORMAL'
+        or type(content) is not EmlisReasonedExperienceAppraisalContent
+        or focus is None or focus[0] != 'reasoned_result_appraisal'):
+        return False
+    try:
+        _stage1_subjective_v2_content_bindings(decision.subjective_proposition)
+    except (CMEEStage1ContractError, TypeError, ValueError):
+        return False
+    reason, event, evaluation = focus[1:]
+    basis = {b.binding_ref: b.semantic_ref for b in decision.basis_rows}
+    semantic_map = dict(selected_subjective_input.semantic_nucleus_pairs)
+    relation_map = dict(selected_subjective_input.relation_pairs)
+    roles = (content.reason_binding_ref, content.event_binding_ref, content.evaluation_binding_ref)
+    edges = {r.relation_id: r for r in plan.relations}
+    reason_edge = edges.get(relation_map.get(content.reason_relation_ref))
+    about = edges.get(relation_map.get(content.appraisal_relation_ref))
+    if (tuple(semantic_map.get(basis.get(ref)) for ref in roles)
+            != tuple(n.nucleus_id for n in focus[1:])
+        or reason_edge is None or reason_edge.type != 'user_stated_cause'
+        or (reason_edge.from_nucleus_id, reason_edge.to_nucleus_id)
+            != (reason.nucleus_id, evaluation.nucleus_id)
+        or about is None or not source_owned_result_appraisal(about, plan.nuclei)
+        or (about.from_nucleus_id, about.to_nucleus_id) != (event.nucleus_id, evaluation.nucleus_id)
+        or content.reason_time != reason.semantic_frame.time_scope
+        or content.evaluation_time != evaluation.semantic_frame.time_scope
+        or content.polarity != evaluation.semantic_frame.polarity
+        or 'source_appraisal_kind:' + content.evaluation_kind not in evaluation.semantic_frame.attribute_codes
+        or 'source_appraisal_degree:unmarked' not in evaluation.semantic_frame.attribute_codes
+        or 'source_appraisal_continuing:still' in evaluation.semantic_frame.attribute_codes):
+        return False
+    qualifiers = {q.basis_binding_ref: q for q in decision.qualifier_rows}
+    for ref, node in zip(roles, focus[1:]):
+        q = qualifiers.get(ref)
+        if q is None or (q.modality, q.polarity, q.time_scope) != (
+            node.semantic_frame.modality, node.semantic_frame.polarity, node.semantic_frame.time_scope):
+            return False
+    return True
+
+
 def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subjective_input):
     """Independently read the asserted focus, then restore only its source spans.
 
@@ -2912,9 +2963,16 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
             return None
     index = {n.nucleus_id: n for n in plan.nuclei}
     if focus[0] == 'reasoned_result_appraisal':
-        from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
+        from cocolon_meaning_experience_engine.contracts import (
+            EmlisAppraisalContent, EmlisReasonedExperienceAppraisalContent)
+        reasoned_experience = (selected_subjective_input is not None
+                              and type(appraisal) is EmlisReasonedExperienceAppraisalContent)
+        if (reasoned_experience and not _reasoned_experience_selected_reception(
+                move, plan, selected_subjective_input)):
+            return None
         if (selected_subjective_input is None or decision is None or decision.branch not in {'NORMAL', 'LIMITED'}
-            or type(appraisal) is not EmlisAppraisalContent or appraisal.dimension != 'MATERIAL_WEIGHT'
+            or type(appraisal) not in (EmlisAppraisalContent, EmlisReasonedExperienceAppraisalContent)
+            or appraisal.dimension != 'MATERIAL_WEIGHT'
             or appraisal.operation != 'RECEIVE_AS_MATERIAL'
             or appraisal.protected_bindings):
             return None
@@ -2956,6 +3014,10 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
             r'(?P<reason>.+)という理由に目を向けています。', raw) if limited
             else re.fullmatch(r'(?P<reason>.+)点に、(?P<event>.+)ことへの'
                 r'(?P<time>当時の|入力した時点での)(?P<evaluation>満足)の拠り所が見えます。', raw))
+        if reasoned_experience:
+            parsed = re.fullmatch(r'(?P<event>.+)ことを、(?P<reason>.+)という点で、'
+                r'(?P<time>当時、|入力した時点で、)ご自身の中に'
+                r'(?P<evaluation>満たされた感覚が(?P<state>あった|ある))経験として受け取りました。', raw)
         if legacy_limited:
             parsed = re.fullmatch(r'(?P<reason>.+)ことを理由に、(?P<event>.+)ことについて、'
                 r'(?P<time>当時は|入力した時点では)(?P<evaluation>.+)のですね。', raw)
@@ -2976,6 +3038,10 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
         time_suffix = 'の' if when == '当時' else 'での'
         if legacy_limited:
             time_suffix = 'は' if when == '当時' else 'では'
+        if reasoned_experience:
+            time_suffix = '、' if when == '当時' else 'で、'
+            if parsed['state'] != ('あった' if appraisal.evaluation_time == 'past' else 'ある'):
+                return None
         from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate
         if (actual_reason != reason or ending not in {'te', 'de', 'ta'}
             or not actual_event.endswith({'te': 'た', 'de': 'だ', 'ta': 'た'}[ending])

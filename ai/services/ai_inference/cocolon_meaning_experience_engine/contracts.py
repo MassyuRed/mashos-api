@@ -1834,6 +1834,28 @@ class EmlisSharedTargetExperienceAppraisalContent(EmlisAppraisalContent):
 
 
 @dataclass(frozen=True, slots=True)
+class EmlisReasonedExperienceAppraisalContent(EmlisAppraisalContent):
+    """Initial source-owned reason, performed target and personal fulfilment."""
+
+    schema_version: str
+    reason_binding_ref: str
+    event_binding_ref: str
+    evaluation_binding_ref: str
+    reason_relation_ref: str
+    appraisal_relation_ref: str
+    evaluation_kind: str
+    polarity: str
+    reason_time: str
+    evaluation_time: str
+
+    @property
+    def reception_configuration(self) -> str:
+        if (self.evaluation_kind, self.polarity) != ('satisfaction', 'positive'):
+            raise CMEEStage1ContractError('stage1_reasoned_experience_invalid')
+        return 'EXPLICIT_REASON_GROUNDS_EXPERIENCED_FULFILMENT'
+
+
+@dataclass(frozen=True, slots=True)
 class EmlisEvaluatedExperienceAppraisalContent(EmlisAppraisalContent):
     """Private versioned content arm; legacy appraisal bytes stay unchanged."""
 
@@ -2715,6 +2737,9 @@ _STAGE1_TUPLE_FIELDS = {
         "appraised_bindings", "protected_bindings", "basis_contribution_refs",
         "target_reference_qualifier_refs",
     ),
+    EmlisReasonedExperienceAppraisalContent: (
+        "appraised_bindings", "protected_bindings", "basis_contribution_refs",
+    ),
     EmlisEvaluatedExperienceAppraisalContent: (
         "appraised_bindings", "protected_bindings", "basis_contribution_refs",
     ),
@@ -3300,7 +3325,7 @@ def _stage1_subjective_v2_content_bindings(
     if proposition.content_kind is SubjectiveContentKind.APPRAISAL:
         content = proposition.appraisal_content
         if (
-            type(content) not in (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent, EmlisSharedTargetExperienceAppraisalContent)
+            type(content) not in (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent, EmlisSharedTargetExperienceAppraisalContent, EmlisReasonedExperienceAppraisalContent)
             or type(content.dimension) is not AppraisalDimension
             or type(content.operation) is not AppraisalOperation
             or (content.dimension, content.operation)
@@ -3331,6 +3356,23 @@ def _stage1_subjective_v2_content_bindings(
                 or type(content.continuing) is not bool or type(content.explicit_ability) is not bool
                 or content.degree not in {"unmarked", "slight", "very", "truly", "not_at_all", "not_much"}):
                 raise CMEEStage1ContractError("stage1_evaluated_experience_invalid")
+        if type(content) is EmlisReasonedExperienceAppraisalContent:
+            roles = (content.reason_binding_ref, content.event_binding_ref,
+                     content.evaluation_binding_ref)
+            relations = (content.reason_relation_ref, content.appraisal_relation_ref)
+            if (content.schema_version != 'cocolon.cmee.emlis.reasoned_experience_appraisal.v1'
+                or (content.dimension, content.operation) != (
+                    AppraisalDimension.MATERIAL_WEIGHT, AppraisalOperation.RECEIVE_AS_MATERIAL)
+                or len(content.appraised_bindings) != 3 or len(set(roles)) != 3
+                or set(content.appraised_bindings) != set(roles)
+                or content.protected_bindings or len(set(relations)) != 2
+                or content.focal_relation_ref != content.reason_relation_ref
+                or content.evaluation_kind != 'satisfaction' or content.polarity != 'positive'
+                or content.reason_time not in {'past', 'present'}
+                or content.evaluation_time not in {'past', 'present'}):
+                raise CMEEStage1ContractError('stage1_reasoned_experience_invalid')
+            for relation_ref in relations:
+                validate_version_qualified_ref(relation_ref, expected_types=('edge',))
         if type(content) is EmlisSharedTargetExperienceAppraisalContent:
             roles = (content.appraisal_event_binding_ref, content.appraisal_binding_ref,
                      content.received_event_binding_ref, content.reaction_binding_ref)
@@ -3517,7 +3559,7 @@ def validate_subjective_proposition_v2(
     )
     content_types = (
         EmlisAffectContent,
-        (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent, EmlisSharedTargetExperienceAppraisalContent),
+        (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent, EmlisSharedTargetExperienceAppraisalContent, EmlisReasonedExperienceAppraisalContent),
         MaterialValueContent,
         EmlisRelationalPosition,
     )
@@ -19066,7 +19108,7 @@ def _stage1_v2_basis_role(
 def _stage1_v2_content_binding_refs(content: object) -> tuple[str, ...]:
     if type(content) is EmlisAffectContent:
         return content.elicitor_bindings
-    if type(content) in (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent, EmlisSharedTargetExperienceAppraisalContent):
+    if type(content) in (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent, EmlisSharedTargetExperienceAppraisalContent, EmlisReasonedExperienceAppraisalContent):
         return _stage1_first_occurrence_union(
             content.appraised_bindings,
             content.protected_bindings,
@@ -19550,7 +19592,7 @@ def _validate_stage1_projection_v2_subjective_spine(
 
     content_type_by_kind = {
         SubjectiveContentKind.AFFECT: EmlisAffectContent,
-        SubjectiveContentKind.APPRAISAL: (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent, EmlisSharedTargetExperienceAppraisalContent),
+        SubjectiveContentKind.APPRAISAL: (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent, EmlisSharedTargetExperienceAppraisalContent, EmlisReasonedExperienceAppraisalContent),
         SubjectiveContentKind.MATERIAL_VALUE: MaterialValueContent,
         SubjectiveContentKind.RELATIONAL_POSITION: EmlisRelationalPosition,
     }
@@ -22158,6 +22200,7 @@ __all__ = [
     "EmlisInterpretationCandidate",
     "EmlisAffectContent",
     "EmlisAppraisalContent",
+    "EmlisReasonedExperienceAppraisalContent",
     "EmlisEvaluatedExperienceAppraisalContent",
     "EmlisSharedTargetExperienceAppraisalContent",
     "EmlisMeaningField",

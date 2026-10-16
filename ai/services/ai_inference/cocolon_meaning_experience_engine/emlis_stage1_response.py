@@ -5363,6 +5363,7 @@ def _validate_meaning_plan_vertical_binding(
                 content_kind = SubjectiveContentKind.APPRAISAL
                 content = composition._normal_reception_appraisal(
                     proposition=source,
+                    admitted_source=phase_A.admitted_source,
                     contributions=contributions,
                     basis_rows=own_basis,
                     source_qualifiers=own_qualifiers,
