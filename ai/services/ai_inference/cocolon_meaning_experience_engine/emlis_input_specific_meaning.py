@@ -515,10 +515,41 @@ def _project_grounded_interpretations(
     nodes_by_ref: Mapping[str, MeaningNode],
     qualifiers_by_node: Mapping[str, Tuple[str, ...]],
     unknowns_by_node: Mapping[str, Tuple[str, ...]],
+    appraisal_component_relation_refs: Tuple[str, ...] = (),
 ) -> Tuple[GroundedInterpretationProjection, ...]:
     """Retain source leaves needed by IM03 without storing a signature."""
 
     graph = premeaning_inputs.grounded_graph
+    appraisal_scope = set()
+    # The admitted unfinished triple and received pair have separate source
+    # scopes. Their two RIGHT reaction facets otherwise share a generic key
+    # and collapse before selection. Preserve the proved semantic domain in
+    # the existing scope leaf, never an occurrence ID, order or raw wording.
+    about = tuple(e for e in graph.edges if _edge_ref(e) in appraisal_component_relation_refs
+                  and e.relation == 'evaluation_about_event')
+    contrasts = tuple(e for e in graph.edges if e.relation == 'contrast')
+    if len(about) == 1 and len(contrasts) == 2 and len(graph.edges) == 3:
+        link = about[0]
+        contextual = tuple(e for e in contrasts if e.target_node_id == link.target_node_id
+                           and e.source_node_id not in {link.source_node_id, link.target_node_id})
+        if len(contextual) == 1:
+            context = contextual[0]
+            owned = {link.source_node_id, link.target_node_id, context.source_node_id}
+            other, = (e for e in contrasts if e != context)
+            refs = {ref: node for ref, node in nodes_by_ref.items() if node.node_id in owned}
+            context_ref = next((ref for ref, node in refs.items() if node.node_id == context.source_node_id), None)
+            appraisal_ref = next((ref for ref, node in refs.items() if node.node_id == link.target_node_id), None)
+            if (len(owned) == len(refs) == 3 and not owned & {other.source_node_id, other.target_node_id}
+                and other.source_node_id != other.target_node_id
+                and all(_relation_is_source_explicit(e, graph) for e in graph.edges)
+                and link.evidence_ids == context.evidence_ids
+                and {'actor:current_user', 'modality:fact', 'polarity:negative', 'time_scope:present'}
+                    <= set(qualifiers_by_node.get(context_ref, ()))
+                and {'actor:current_user', 'modality:feeling', 'polarity:positive',
+                     'qualifier:semantic_dependency:explicit_result_appraisal',
+                     'qualifier:source_appraisal_kind:satisfaction', 'qualifier:source_appraisal_degree:unmarked'}
+                    <= set(qualifiers_by_node.get(appraisal_ref, ()))):
+                appraisal_scope = set(refs)
     node_rank = {
         _node_ref(node): index for index, node in enumerate(graph.nodes)
     }
@@ -573,7 +604,8 @@ def _project_grounded_interpretations(
                         f"semantic-kind:{node.node_kind.lower()}"
                     ),
                     owner_key=f"owner:{actor}",
-                    scope_key="scope:source_bounded",
+                    scope_key=('scope:source_bounded_result_appraisal'
+                               if binding.semantic_ref in appraisal_scope else 'scope:source_bounded'),
                     role_key=f"role:{binding.role.value.lower()}",
                     epistemic_state_key=(
                         f"epistemic:{node.epistemic_state.value.lower()}"
@@ -1109,6 +1141,7 @@ def derive_grounded_situation_view(
                 nodes_by_ref=nodes_by_ref,
                 qualifiers_by_node=qualifiers_by_node,
                 unknowns_by_node=unknowns_by_node,
+                appraisal_component_relation_refs=appraisal_component_relation_refs,
             )
         ),
     )
@@ -1149,6 +1182,7 @@ def validate_grounded_situation_view(
         nodes_by_ref=nodes_by_ref,
         qualifiers_by_node=qualifiers_by_node,
         unknowns_by_node=unknowns_by_node,
+        appraisal_component_relation_refs=appraisal_component_relation_refs,
     )
     if view.semantic_interpretation_projections != expected_projections:
         raise CMEEStage1ContractError(

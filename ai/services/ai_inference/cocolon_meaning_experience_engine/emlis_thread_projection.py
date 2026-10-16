@@ -46,10 +46,26 @@ def _appraisal_received_components(prepared, plan, resolver):
     link = links[0]
     index = {n.nucleus_id: n for n in plan.nuclei}
     event, evaluation = (index[nid] for nid in (link.from_nucleus_id, link.to_nucleus_id))
-    if source_owned_result_appraisal_context(link, plan.nuclei, plan.relations) is not None:
-        return False
+    context = source_owned_result_appraisal_context(link, plan.nuclei, plan.relations)
     reason = source_owned_result_appraisal_reason(link, plan.nuclei, plan.relations)
     owned = {event.nucleus_id, evaluation.nucleus_id}
+    if context is not None:
+        from dataclasses import fields
+        from .emlis_answer_update import PreparedEmlisMeaning
+        # u301 admits only the already-owned initial triple. An answer,
+        # historical source restoration or unresolved meaning stays on its
+        # existing route, even if a triple survives in the resulting Plan.
+        if (type(prepared) is not PreparedEmlisMeaning
+            or any(getattr(prepared, field.name) for field in fields(prepared)
+                   if field.name.startswith('legacy_'))
+            or prepared.thread.answers or prepared.thread.control.answers
+            or prepared.thread.control.current_round != 0 or prepared.accepted_nuclei
+            or prepared.checkpoint.assessment_status != 'RESOLVED'
+            or prepared.checkpoint.answer_update is not None
+            or prepared.checkpoint.accepted_update_refs or prepared.checkpoint.inactive_claim_refs
+            or prepared.checkpoint.unresolved_parts or reason is not None):
+            return False
+        owned.add(context.nucleus_id)
     answers = tuple(n for n in plan.nuclei if n.source_fields == ('answer_text_private',))
     if answers:
         # Preserve precisely u279's original-occasion negative correction.
@@ -84,6 +100,53 @@ def _appraisal_received_components(prepared, plan, resolver):
                and not {e.from_nucleus_id, e.to_nucleus_id} <= rest_ids for e in plan.relations)
         or len(plan.response_plan.human_reception_plan.moves) != 2):
         return False
+    if context is not None:
+        import re
+        import emlis_ai_grounded_observation_plan as gp
+        text_nodes = tuple(n for n in plan.nuclei
+            if set(n.source_fields) & {'memo', 'memo_action', 'answer_text_private'})
+        expected_ids = owned | rest_ids
+        moves = plan.response_plan.human_reception_plan.moves
+        expected_moves = {
+            ('recognize_lived_change', (evaluation.nucleus_id,),
+             (context.nucleus_id, event.nucleus_id), event.source_span_ids),
+            ('stay_with_current_burden', *received, index[received[0][0]].source_span_ids),
+        }
+        if (len(expected_ids) != 5 or len(text_nodes) != 5
+            or {n.nucleus_id for n in text_nodes} != expected_ids
+            or {n.nucleus_id for n in plan.nuclei if n.retention == 'required'} != expected_ids
+            or set(plan.coverage_requirements.required_nucleus_ids) != expected_ids
+            or len(plan.relations) != 3
+            or set(plan.coverage_requirements.required_relation_ids) != {r.relation_id for r in plan.relations}
+            or any(r.retention != 'required' or r.grounding_kind != 'user_stated_relation'
+                   for r in plan.relations)
+            or any(not m.required for m in moves)
+            or {(m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids,
+                 m.source_evidence_span_ids) for m in moves} != expected_moves
+            or any(u.surface_policy != 'do_not_claim' or u.evidence_span_ids
+                   or u.dimension == 'source_explicit_epistemic_limit' for u in plan.unknown_boundaries)):
+            return False
+        spans = tuple(resolver.resolve(sid) for sid in
+            dict.fromkeys(sid for n in text_nodes for sid in n.source_span_ids))
+        if (len(spans) != 2
+            or {s.span_id for s in resolver.resolve_many(resolver.span_ids)
+                if s.source_field in {'memo', 'memo_action'}} != {s.span_id for s in spans}
+            or any(n.source_fields not in {('memo',), ('memo_action',)}
+                or n.surface_anchor_ids != n.source_span_ids
+                or n.semantic_frame.target_anchor_ids != n.source_span_ids
+                or n.allowed_claim_scope != 'explicit_current_input' for n in text_nodes)
+            or any(r.source_span_ids != index[r.from_nucleus_id].source_span_ids
+                   or r.source_span_ids != index[r.to_nucleus_id].source_span_ids for r in plan.relations)):
+            return False
+        if spans[0].source_field == spans[1].source_field:
+            a, b = sorted(spans, key=lambda s: s.start_index)
+            if not 0 <= a.start_index < a.end_index <= b.start_index < b.end_index:
+                return False
+        received_text = hr.final_reception_source_anchor_text(received[0][0], index, resolver)
+        giver = re.sub(r'^(?:私|自分|わたし)(?:は|が)', '', received_text).rpartition('に')[0]
+        if (gp._SELF_REFERENCE_RE.search(giver) is not None
+            or 'に' in received_text and not _source_operator_owner_scope_is_bound(received_text)):
+            return False
     # Equal/nearby occurrences are not an ownership proof for this opt-in.
     for n in (event, *rest):
         if len(n.source_span_ids) != 1:

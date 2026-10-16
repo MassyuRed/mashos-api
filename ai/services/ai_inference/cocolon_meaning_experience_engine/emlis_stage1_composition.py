@@ -7215,7 +7215,8 @@ def _validate_tagged_projection_inputs(
 def _validate_component_reception_plan_ownership(authority):
     """Check the private carrier against source Moves before any author runs."""
     from emlis_ai_grounded_observation_plan import (
-        source_owned_result_appraisal, _received_contrast_group_targets,
+        source_owned_result_appraisal, source_owned_result_appraisal_context,
+        _received_contrast_group_targets,
         _thread_retained_reaction_groups,
     )
     from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
@@ -7249,6 +7250,28 @@ def _validate_component_reception_plan_ownership(authority):
             raise Stage1CompositionError('COMPONENT_RECEPTION_SOURCE_OWNER_STOP')
         covered.update(ids)
     appraisal = {links[0].from_nucleus_id, links[0].to_nucleus_id}
+    context = source_owned_result_appraisal_context(links[0], plan.nuclei, plan.relations)
+    if context is not None:
+        # Independently close the initial 3+2 source ownership before using
+        # the existing triple content; the admission boolean is not evidence.
+        thread = authority.admitted_source
+        appraisal.add(context.nucleus_id)
+        required = {n.nucleus_id for n in plan.nuclei if n.retention == 'required'}
+        if (thread.answers or thread.control.answers or thread.control.current_round != 0
+            or len(domains) != 2 or len(required) != 5 or covered != required
+            or set(plan.coverage_requirements.required_nucleus_ids) != required
+            or {n.nucleus_id for n in plan.nuclei
+                if set(n.source_fields) & {'memo', 'memo_action', 'answer_text_private'}} != required
+            or len(plan.relations) != 3
+            or set(plan.coverage_requirements.required_relation_ids) != {e.relation_id for e in plan.relations}
+            or any(not move.required for move in moves)
+            or any(u.surface_policy != 'do_not_claim' or u.evidence_span_ids
+                or u.dimension == 'source_explicit_epistemic_limit' for u in plan.unknown_boundaries)
+            or not any(move.target_nucleus_ids == (links[0].to_nucleus_id,)
+                and move.support_nucleus_ids == (context.nucleus_id, links[0].from_nucleus_id)
+                and move.reception_act == 'recognize_lived_change'
+                and move.source_evidence_span_ids == context.source_span_ids for move in moves)):
+            raise Stage1CompositionError('COMPONENT_RECEPTION_SOURCE_OWNER_STOP')
     received_nodes = tuple(n for n in plan.nuclei if n.nucleus_id in covered - appraisal
         and 'semantic_role:appraisal_explicit_reason' not in n.semantic_frame.attribute_codes)
     received_ids = {n.nucleus_id for n in received_nodes}
@@ -7256,6 +7279,39 @@ def _validate_component_reception_plan_ownership(authority):
                               if {e.from_nucleus_id, e.to_nucleus_id} <= received_ids)
     if len(received_nodes) != 2 or len(received_relations) != 1 or not _received_contrast_group_targets(received_nodes, received_relations):
         raise Stage1CompositionError('COMPONENT_RECEPTION_SOURCE_OWNER_STOP')
+    if context is not None:
+        import re
+        import emlis_ai_grounded_observation_plan as gp
+        received = _received_contrast_group_targets(received_nodes, received_relations)
+        received_event = index[received[0][0]]
+        all_nodes = tuple(index[nid] for nid in covered)
+        spans = tuple(resolver.resolve(sid) for sid in
+                      dict.fromkeys(sid for n in all_nodes for sid in n.source_span_ids))
+        if (len(spans) != 2
+            or {s.span_id for s in resolver.resolve_many(resolver.span_ids)
+                if s.source_field in {'memo', 'memo_action'}} != {s.span_id for s in spans}
+            or any(n.source_fields not in {('memo',), ('memo_action',)}
+                or len(n.source_span_ids) != 1 or n.surface_anchor_ids != n.source_span_ids
+                or n.semantic_frame.target_anchor_ids != n.source_span_ids
+                or n.allowed_claim_scope != 'explicit_current_input' for n in all_nodes)
+            or any(e.retention != 'required' or e.grounding_kind != 'user_stated_relation'
+                or e.source_span_ids != index[e.from_nucleus_id].source_span_ids
+                or e.source_span_ids != index[e.to_nucleus_id].source_span_ids for e in plan.relations)
+            or not any(m.target_nucleus_ids == received[0] and m.support_nucleus_ids == received[1]
+                and m.reception_act == 'stay_with_current_burden'
+                and m.source_evidence_span_ids == received_event.source_span_ids for m in moves)
+            or any(sum(other.source_field == span.source_field and other.raw_text == span.raw_text
+                       for other in resolver.resolve_many(resolver.span_ids)) != 1 for span in spans)):
+            raise Stage1CompositionError('COMPONENT_RECEPTION_SOURCE_OWNER_STOP')
+        if spans[0].source_field == spans[1].source_field:
+            left, right = sorted(spans, key=lambda span: span.start_index)
+            if not 0 <= left.start_index < left.end_index <= right.start_index < right.end_index:
+                raise Stage1CompositionError('COMPONENT_RECEPTION_SOURCE_OWNER_STOP')
+        received_text = final_reception_source_anchor_text(received_event.nucleus_id, index, resolver)
+        giver = re.sub(r'^(?:私|自分|わたし)(?:は|が)', '', received_text).rpartition('に')[0]
+        if (gp._SELF_REFERENCE_RE.search(giver) is not None
+            or 'に' in received_text and not gp._source_operator_owner_scope_is_bound(received_text)):
+            raise Stage1CompositionError('COMPONENT_RECEPTION_SOURCE_OWNER_STOP')
     leftover = tuple(n for n in plan.nuclei if n.nucleus_id in plan.coverage_requirements.required_nucleus_ids
                      and n.nucleus_id not in covered)
     if leftover and (len(leftover) != 1 or len(domains) != 3
