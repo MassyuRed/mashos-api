@@ -523,9 +523,9 @@ def validate_selected_subjective_reception_input(
             reasoned = source_focus[0] == 'reasoned_result_appraisal'
             contrasts = tuple(r for r in plan.relations if r.type == ('user_stated_cause' if reasoned else 'contrast')
                 and (r.from_nucleus_id, r.to_nucleus_id) == (context.nucleus_id, evaluation.nucleus_id))
-            if reasoned and row.branch == 'LIMITED':
+            if row.branch == 'LIMITED':
                 # LIMITED keeps the existing whole-source attention claim.
-                # Its partitioned Move must own this complete source reason,
+                # Its partitioned Move must own this complete source context,
                 # target and evaluation, without borrowing the other episode.
                 selected_ids = {semantic_map[b.semantic_ref] for b in row.basis_rows
                                 if b.contribution_ref in row.selected_contribution_refs}
@@ -11822,8 +11822,19 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
                     f'ご自身の中に満たされた感覚が{state}経験です')
         return f'{reason}点に、{event}ことへの{at}満足の拠り所が見えます'
     if unfinished_appraisal:
-        if (selected_decision.branch != 'NORMAL' or not _selected_noncollapse_appraisal(selected_decision)
-            or len(selected_decision.subjective_proposition.appraisal_content.appraised_bindings) != 3):
+        from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
+        proposition = selected_decision.subjective_proposition
+        content = proposition.appraisal_content
+        limited = selected_decision.branch == 'LIMITED'
+        if (type(content) is not EmlisAppraisalContent or content.protected_bindings
+            or selected_decision.branch not in {'NORMAL', 'LIMITED'}
+            or (not limited and (not _selected_noncollapse_appraisal(selected_decision)
+                or len(content.appraised_bindings) != 3))
+            or limited and (proposition.subjective_mode != 'ATTENTION'
+                or proposition.subjective_operator != 'ATTEND_TO'
+                or content.dimension != 'MATERIAL_WEIGHT' or content.operation != 'RECEIVE_AS_MATERIAL'
+                or content.focal_relation_ref is not None or proposition.focal_relation_ref is not None
+                or content.appraised_bindings != proposition.basis_binding_refs)):
             return None
         context, event_node, evaluation = focus[1:]
         unfinished, event, feeling = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
@@ -11842,6 +11853,10 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
         from emlis_ai_grounded_observation_plan import _result_appraisal_time_label
         when = _result_appraisal_time_label(evaluation)
         at = when + ('の' if when == '当時' else 'での')
+        if limited:
+            # Attend to the source-owned contrast without granting the
+            # whole-source LIMITED selection a NORMAL fulfilment reading.
+            return f'{unfinished}という点と、{event}ことへの{at}満足との対比に目を向けています'
         return (f'{unfinished}という点と切り分けて、{at}満足を、'
                 f'{event}ことに向けられた充足として受け取りました')
     if received_chain:

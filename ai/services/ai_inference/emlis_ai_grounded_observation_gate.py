@@ -3063,18 +3063,42 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
                      for key, value in (('reason', reason), ('event', event), ('evaluation', feeling)))
     if focus[0] == 'unfinished_result_appraisal':
         from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
-        if (selected_subjective_input is None or decision is None or decision.branch != 'NORMAL'
-            or type(appraisal) is not EmlisAppraisalContent
-            or appraisal.operation != 'PRESERVE_BOTH_ENDPOINTS'
-            or appraisal.dimension != 'RELATIONAL_NONCOLLAPSE'
-            or len(appraisal.appraised_bindings) != 3):
+        if (selected_subjective_input is None or decision is None
+            or decision.branch not in {'NORMAL', 'LIMITED'}
+            or type(appraisal) is not EmlisAppraisalContent or appraisal.protected_bindings):
             return None
         context, event_node, evaluation = focus[1:]
+        limited = decision.branch == 'LIMITED'
+        basis = {row.binding_ref: row.semantic_ref for row in decision.basis_rows}
+        semantic_map = dict(selected_subjective_input.semantic_nucleus_pairs)
+        relation_map = dict(selected_subjective_input.relation_pairs)
+        contrasts = tuple(r for r in plan.relations if r.type == 'contrast'
+            and (r.from_nucleus_id, r.to_nucleus_id) == (context.nucleus_id, evaluation.nucleus_id))
+        expected_ids = {context.nucleus_id, event_node.nucleus_id, evaluation.nucleus_id}
+        if any(ref not in basis for ref in appraisal.appraised_bindings) or len(contrasts) != 1:
+            return None
+        if limited:
+            selected_ids = {semantic_map.get(row.semantic_ref) for row in decision.basis_rows
+                            if row.contribution_ref in decision.selected_contribution_refs}
+            if (proposition.subjective_mode != 'ATTENTION' or proposition.subjective_operator != 'ATTEND_TO'
+                or appraisal.dimension != 'MATERIAL_WEIGHT' or appraisal.operation != 'RECEIVE_AS_MATERIAL'
+                or appraisal.appraised_bindings != proposition.basis_binding_refs
+                or appraisal.focal_relation_ref is not None or proposition.focal_relation_ref is not None
+                or selected_ids != expected_ids):
+                return None
+        elif (appraisal.dimension != 'RELATIONAL_NONCOLLAPSE' or appraisal.operation != 'PRESERVE_BOTH_ENDPOINTS'
+              or len(appraisal.appraised_bindings) != 3
+              or {semantic_map.get(basis[ref]) for ref in appraisal.appraised_bindings} != expected_ids
+              or relation_map.get(appraisal.focal_relation_ref) != contrasts[0].relation_id
+              or proposition.focal_relation_ref != appraisal.focal_relation_ref):
+            return None
         unfinished, event, feeling = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
                                       for n in focus[1:])
-        parsed = re.fullmatch(r'(?P<context>.+)という点と切り分けて、'
-            r'(?P<time>当時の|入力した時点での)満足を、'
-            r'(?P<event>.+)ことに向けられた(?P<evaluation>充足)として受け取りました。', raw)
+        parsed = (re.fullmatch(r'(?P<context>.+)という点と、(?P<event>.+)ことへの'
+            r'(?P<time>当時の|入力した時点での)(?P<evaluation>満足)との対比に目を向けています。', raw)
+            if limited else re.fullmatch(r'(?P<context>.+)という点と切り分けて、'
+                r'(?P<time>当時の|入力した時点での)満足を、'
+                r'(?P<event>.+)ことに向けられた(?P<evaluation>充足)として受け取りました。', raw))
         endings = {code.split(':', 1)[1] for code in event_node.semantic_frame.attribute_codes
                    if code.startswith('source_appraisal_event_ending:')}
         if parsed is None or not all((unfinished, event, feeling)) or len(endings) != 1:
@@ -3094,8 +3118,8 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
             or actual[:-1] + {'te': 'て', 'de': 'で', 'ta': 'た'}[ending] != event
             or not _source_result_appraisal_predicate(evaluation, feeling)):
             return None
-        # The explicit scope phrase binds fulfilment to the event, while
-        # the independently read negative fact remains a separate endpoint.
+        # Both grammars bind satisfaction to the event and preserve the
+        # negative fact. Only NORMAL may read that satisfaction as fulfilment.
         return tuple((len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), value.encode())
                      for key, value in (('context', unfinished), ('event', event), ('evaluation', feeling)))
     if focus[0] == "received_feeling_contrast":
@@ -7372,7 +7396,7 @@ def evaluate_grounded_surface_body_inverse(
                                      or nucleus_index[nid].source_fields == ("answer_text_private",)
                                      and nucleus_index[nid].allowed_claim_scope == "explicit_supplemental_answer")
                                 for nid in (*move.target_nucleus_ids, *move.support_nucleus_ids))
-                            and re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました|経験として受け取りました|充足として受け取りました|満足の拠り所が見えます|理由に目を向けています|つながりに目を向けています|ことの両方を受け取りました|ことについて受け取ったのは、[^。]+経験です)。$",
+                            and re.search(r"(?:のでしたね|のですね|のです|のだと受け取りました|経験として受け取りました|充足として受け取りました|満足の拠り所が見えます|理由に目を向けています|つながりに目を向けています|対比に目を向けています|ことの両方を受け取りました|ことについて受け取ったのは、[^。]+経験です)。$",
                                 body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8"))):
                             failures.append("body_inverse_reception_finite_duty_unverified:" + move_id)
                             continue

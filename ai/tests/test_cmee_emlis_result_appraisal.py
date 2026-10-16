@@ -1497,6 +1497,127 @@ def _unfinished_appraisal_source(plan):
     return rows
 
 
+@pytest.mark.parametrize('layout', ['separate', 'reverse', 'joined'])
+@pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
+@pytest.mark.parametrize('target,event', [('考えを言葉にできて', '考えを言葉にできた'),
+    ('案を選んで', '案を選んだ'), ('資料を分類したことに', '資料を分類した')])
+def test_unfinished_and_received_realize_existing_limited_attention(layout, evaluation, target, event):
+    from cocolon_meaning_experience_engine import contracts as c
+    source = '結論は出ていないが、' + target + evaluation + '。'
+    received = '褒められたのに、嬉しくなかった。'
+    args = {'separate': (source, received), 'reverse': (received, source),
+            'joined': (source + received, '')}[layout]
+    req = request(*args)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    (context, event_node, feeling, _), = _unfinished_appraisal_source(plan)
+    projection = project_thread_meaning(prepared, plan)
+    selected = projection.selected_reception
+    assert projection.meaning_plan.projection_branch == 'LIMITED'
+    assert len(selected.decisions) == 2
+    assert all(d.branch == 'LIMITED' for d in selected.decisions)
+    decision, = (d for d in selected.decisions if d.target_nucleus_ids == (feeling.nucleus_id,))
+    proposition = decision.subjective_proposition
+    content = proposition.appraisal_content
+    assert type(content) is c.EmlisAppraisalContent
+    assert (proposition.subjective_mode, proposition.subjective_operator) == ('ATTENTION', 'ATTEND_TO')
+    assert (content.dimension, content.operation) == ('MATERIAL_WEIGHT', 'RECEIVE_AS_MATERIAL')
+    assert content.appraised_bindings == proposition.basis_binding_refs
+    assert content.protected_bindings == ()
+    assert content.focal_relation_ref is proposition.focal_relation_ref is None
+    semantic_map = dict(selected.semantic_nucleus_pairs)
+    assert len({semantic_map[b.semantic_ref] for b in decision.basis_rows}) == 5
+    assert {semantic_map[b.semantic_ref] for b in decision.basis_rows
+            if b.contribution_ref in decision.selected_contribution_refs} == {
+                context.nucleus_id, event_node.nucleus_id, feeling.nucleus_id}
+    assert all(d.subjective_proposition == proposition for d in selected.decisions)
+    outcome = MeaningExperienceEngine().generate(req)
+    assert outcome.artifact is not None, outcome.reason_codes
+    at = '当時の' if evaluation == '満足した' else '入力した時点での'
+    clause = f'結論は出ていないという点と、{event}ことへの{at}満足との対比に目を向けています。'
+    assert outcome.artifact.reception.count(clause) == 1
+    assert '褒められたことは、嬉しさにはつながらなかったのですね。' in outcome.artifact.reception
+    assert not any(word in outcome.artifact.reception for word in ('充足', '満たされた感覚', '同時'))
+    saved_req = replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=prepared.checkpoint.checkpoint_id))
+    restored = MeaningExperienceEngine().generate(saved_req)
+    assert restored.meaning_checkpoint == prepared.checkpoint
+    assert restored.artifact == outcome.artifact
+
+
+@pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
+def test_unfinished_limited_reader_preserves_context_target_time_and_attention_without_author(monkeypatch, evaluation):
+    import emlis_ai_grounded_human_reception as hr
+    from emlis_ai_grounded_observation_gate import read_source_owned_discourse
+    req = request('結論は出ていないが、考えを言葉にできて' + evaluation + '。',
+                  '褒められたのに、嬉しくなかった。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    (_, _, feeling, _), = _unfinished_appraisal_source(plan)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    resolver = prepared.thread.resolver()
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    artifact = MeaningExperienceEngine().generate(req).artifact
+    assert artifact is not None
+    clause, = (part + '。' for part in artifact.reception.split('。') if '対比に目を向けています' in part)
+    at = '当時の' if evaluation == '満足した' else '入力した時点での'
+    wrongs = (
+        clause.replace('結論は出ていないという点と、', ''),
+        clause.replace('結論は出ていない', '結論は出ている'),
+        clause.replace('結論は出ていない', '結論は出ていなかった'),
+        clause.replace('考えを言葉にできた', '結論が出た'),
+        clause.replace('考えを言葉にできた', '結論は出ていない'),
+        clause.replace('考えを言葉にできた', '褒められた'),
+        clause.replace('考えを言葉にできた', '考えを言葉にできなかった'),
+        clause.replace(at, '入力した時点での' if evaluation == '満足した' else '当時の'),
+        clause.replace('満足', '不満足'),
+        clause.replace('対比', '因果関係'),
+        clause.replace('対比', '同時性'),
+        f'結論は出ていないという点と切り分けて、{at}満足を、考えを言葉にできたことに向けられた充足として受け取りました。',
+    )
+    def valid(body):
+        return evaluate_grounded_surface_body_inverse(body=body.encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert valid(artifact.text)
+    for wrong in wrongs:
+        assert wrong != clause
+        assert not valid(artifact.text.replace(clause, wrong))
+    move, = (m for m in plan.response_plan.human_reception_plan.moves
+             if m.target_nucleus_ids == (feeling.nucleus_id,))
+    monkeypatch.setattr(hr, '_source_owned_relational_focus_sentence',
+        lambda *_a, **_k: pytest.fail('independent limited reader called the author'))
+    assert read_source_owned_discourse(clause, move, plan, resolver, selected) is not None
+    for wrong in wrongs:
+        assert read_source_owned_discourse(wrong, move, plan, resolver, selected) is None
+
+
+def test_unfinished_limited_selection_cannot_borrow_contributions_or_upgrade_content():
+    import emlis_ai_grounded_human_reception as hr
+    prepared = prepare_emlis_meaning(request('結論は出ていないが、考えを言葉にできて満足した。',
+                                             '褒められたのに、嬉しくなかった。'))
+    plan = build_updated_grounded_plan(prepared)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    decision, = (d for d in selected.decisions if len(d.support_nucleus_ids) == 2)
+    other, = (d for d in selected.decisions if d != decision)
+    proposition = decision.subjective_proposition
+    variants = [replace(decision, selected_contribution_refs=decision.selected_contribution_refs[:1]),
+        replace(decision, selected_contribution_refs=other.selected_contribution_refs),
+        replace(decision, selected_contribution_refs=(*decision.selected_contribution_refs, *other.selected_contribution_refs)),
+        replace(decision, branch='NORMAL'),
+        replace(decision, subjective_proposition=replace(proposition, subjective_mode='PERSONAL_APPRAISAL')),
+        replace(decision, subjective_proposition=replace(proposition, subjective_operator='VALUE_AS')),
+        replace(decision, subjective_proposition=replace(proposition,
+            focal_relation_ref=selected.relation_pairs[0][0], appraisal_content=replace(
+                proposition.appraisal_content, focal_relation_ref=selected.relation_pairs[0][0])))]
+    for row in variants:
+        row = hr.identify_selected_subjective_reception_decision(row)
+        changed = hr.identify_selected_subjective_reception_input(replace(selected,
+            decisions=tuple(row if d == decision else d for d in selected.decisions)))
+        with pytest.raises(hr.GroundedHumanReceptionSurfaceError, match='MEANING_REALIZATION_CAUSAL_TRACE_GAP'):
+            hr.validate_selected_subjective_reception_input(changed,
+                plan.response_plan.human_reception_plan, plan, prepared.thread.resolver())
+
+
 @pytest.mark.parametrize('event,action,evaluation', [
     ('考えを言葉にできて', '', '満足した'),
     ('考えを言葉にできて', '植木に水をやった。', '満足した'),
