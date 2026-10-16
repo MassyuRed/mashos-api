@@ -3634,6 +3634,29 @@ def _render_relation(
     groups, consumed = _thread_contrast_answer_groups(
         binding, nucleus_index, relation_index, resolver)
     grouped_by_relation = dict(groups)
+    if (typed_semantic_duties and not _hedge_prefix(binding)
+        and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
+        and len(binding.nucleus_ids) == 5 and len(binding.relation_ids) == 3
+        and len(neutral_received_contrast_ids) == 1 and not groups and not consumed):
+        unfinished = tuple((relation_index[rid], context) for rid in binding.relation_ids
+            if (context := source_owned_result_appraisal_context(relation_index[rid],
+                tuple(nucleus_index.values()), tuple(relation_index.values()))) is not None)
+        if len(unfinished) == 1:
+            appraisal, context = unfinished[0]
+            owned = {context.nucleus_id, appraisal.from_nucleus_id, appraisal.to_nucleus_id}
+            edges = frozenset(rid for rid in binding.relation_ids
+                if owned & {relation_index[rid].from_nucleus_id, relation_index[rid].to_nucleus_id})
+            if len(edges) == 2 and set(binding.relation_ids) - edges == neutral_received_contrast_ids:
+                values = tuple(_quotes_for_nuclei((nid,), nucleus_index, resolver)
+                    for nid in (context.nucleus_id, appraisal.from_nucleus_id, appraisal.to_nucleus_id))
+                if all(len(v) == 1 and re.fullmatch(r"「[^「」『』\n]+」", v[0]) for v in values):
+                    context_quote, event_quote, evaluation_quote = (v[0] for v in values)
+                    # Both edges meet at the same evaluation. Keep the two
+                    # relations, but say that evaluation only once.
+                    first = min(edges, key=binding.relation_ids.index)
+                    grouped_by_relation[first] = (f"{context_quote}の一方で、{event_quote}という出来事への評価は"
+                                                  f"{evaluation_quote}とあります。")
+                    consumed = consumed | edges
     shared_change_relation = (
         _shared_observation_change_relation(binding, nucleus_index, relation_index, resolver)
         if typed_semantic_duties and not groups and not consumed else None

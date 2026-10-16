@@ -1537,6 +1537,12 @@ def test_unfinished_and_received_realize_existing_limited_attention(layout, eval
     clause = f'結論は出ていないという点と、{event}ことへの{at}満足との対比に目を向けています。'
     assert outcome.artifact.reception.count(clause) == 1
     assert '褒められたことは、嬉しさにはつながらなかったのですね。' in outcome.artifact.reception
+    observed_target = target.removesuffix('ことに')
+    joined = f'「結論は出ていない」の一方で、「{observed_target}」という出来事への評価は「{evaluation}」とあります。'
+    assert joined in outcome.artifact.observation
+    assert outcome.artifact.observation.count('「' + evaluation + '」') == 1
+    assert '「褒められた」の一方で「嬉しくなかった」とあります。' in outcome.artifact.observation
+    assert '同時' not in outcome.artifact.observation
     assert not any(word in outcome.artifact.reception for word in ('充足', '満たされた感覚', '同時'))
     saved_req = replace(req, emlis_thread=replace(req.emlis_thread,
         prepared_meaning_checkpoint_ref=prepared.checkpoint.checkpoint_id))
@@ -1616,6 +1622,77 @@ def test_unfinished_limited_selection_cannot_borrow_contributions_or_upgrade_con
         with pytest.raises(hr.GroundedHumanReceptionSurfaceError, match='MEANING_REALIZATION_CAUSAL_TRACE_GAP'):
             hr.validate_selected_subjective_reception_input(changed,
                 plan.response_plan.human_reception_plan, plan, prepared.thread.resolver())
+
+
+@pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
+def test_unfinished_received_observation_reads_each_source_role_without_author(monkeypatch, evaluation):
+    import emlis_ai_grounded_sentence_surface as surface
+    req = request('結論は出ていないが、考えを言葉にできて' + evaluation + '。',
+                  '褒められたのに、嬉しくなかった。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    resolver = prepared.thread.resolver()
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    artifact = MeaningExperienceEngine().generate(req).artifact
+    assert artifact is not None
+    clause = f'「結論は出ていない」の一方で、「考えを言葉にできて」という出来事への評価は「{evaluation}」とあります。'
+    received = '「褒められた」の一方で「嬉しくなかった」とあります。'
+    assert clause in artifact.observation and received in artifact.observation
+    def forbidden(*_a, **_k):
+        pytest.fail('observation inverse invoked an author')
+    monkeypatch.setattr(surface, '_render_relation', forbidden)
+    monkeypatch.setattr(surface, '_realize_line', forbidden)
+    def valid(text):
+        return evaluate_grounded_surface_body_inverse(body=text.encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert valid(artifact.text)
+    for wrong in (
+        clause.replace('「結論は出ていない」の一方で、', ''),
+        clause.replace('結論は出ていない', '結論は出ている'),
+        clause.replace('結論は出ていない', '結論は出ていなかった'),
+        clause.replace('考えを言葉にできて', '結論が出て'),
+        clause.replace('考えを言葉にできて', '褒められた'),
+        clause.replace('考えを言葉にできて', '考えを言葉にできなくて'),
+        clause.replace(evaluation, '満足しなかった'),
+        clause.replace(evaluation, '満足している' if evaluation == '満足した' else '満足した'),
+        clause.replace('の一方で、', 'のが理由で、'),
+        clause.replace('の一方で、', 'と同時に、'),
+        clause.replace('「結論は出ていない」の一方で、「考えを言葉にできて」',
+                       '「考えを言葉にできて」の一方で、「結論は出ていない」'),
+        clause + clause,
+    ):
+        assert wrong != clause
+        assert not valid(artifact.text.replace(clause, wrong))
+    for wrong in ('', received.replace('嬉しくなかった', '嬉しかった'),
+                  received.replace('褒められた', '考えを言葉にできて'),
+                  received.replace('の一方で', 'の一方で同時に')):
+        assert wrong != received
+        assert not valid(artifact.text.replace(received, wrong))
+
+
+def test_unfinished_received_initial_surface_scope_preserves_legacy_and_updated_routes():
+    from cocolon_meaning_experience_engine.emlis_thread_surface import _current_single_received_contrast_relations as owned
+    from test_cmee_emlis_q3_thread import advance
+    req = request('結論は出ていないが、考えを言葉にできて満足した。',
+                  '褒められたのに、嬉しくなかった。')
+    p = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(p)
+    rid, = owned(p, plan)
+    assert next(r for r in plan.relations if r.relation_id == rid).from_nucleus_id == 'nucleus:s2:event'
+    assert not owned(replace(p, checkpoint=replace(p.checkpoint, assessment_status='PARTIAL')), plan)
+    for legacy in ('legacy_appraisal_retention', 'legacy_repeated_appraisal_context',
+            'legacy_received_appraisal_context', 'legacy_appraisal_reason', 'legacy_result_appraisal',
+            'legacy_appraisal_correction', 'legacy_duplicate_appraisal_source', 'legacy_shared_target_contrast'):
+        assert not owned(replace(p, **{legacy: True}), plan)
+    for node in plan.nuclei:
+        assert not owned(p, replace(plan, nuclei=tuple(replace(n, grounding_kind='inferred')
+            if n == node else n for n in plan.nuclei)))
+    for relation in plan.relations:
+        assert not owned(p, replace(plan, relations=tuple(
+            replace(r, grounding_kind='inferred_relation') if r == relation else r for r in plan.relations)))
+    answered = prepare_emlis_meaning(advance(req, '分からない。'))
+    assert not owned(answered, build_updated_grounded_plan(answered))
 
 
 @pytest.mark.parametrize('event,action,evaluation', [

@@ -21062,3 +21062,52 @@ Emlisから：
 System Context prepareはmaterial commit `34660dfa74204eee41fc8c767c11470ab00c9eaf` が `a77b79c5c8b0ce498c2ca5674460b3be267164b5` のdescendantでないため停止。許可された原典直接参照fallbackで進め、新Context生成済みとはしない。u292の周辺既存4失敗は今回再実行せず未解消、過去共有17失敗との集合一致も再主張しない。作業中の合成probe／保存／RN検査はone-shot確認であり、新たな恒久runnerや正式証跡契約を設けていない。再開に必要な対象matrixと実本文・因果・結果は本節、回帰再現は既存testsに保持する。
 
 TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置。初回の説明性・受容反復、共有対象／対象外更新、same100、Q1上限、giver帰属、本人実機・正式Product Readも残る。10/17確認点・10/31管理線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％は維持する。
+
+
+## u298 — 初回の満足二重説明と未明示の同時性を修復（2026-10-16 JST）
+
+基準API `d1215f609a1ecef7624c92fd4ad0a1ab12d81b0f`／資料 `c5e4d3441e52a9de9dfc6511c7d65793f4d208fe`。u297 API CI38901592955はcompleted/success、資料5 runも成功を確認した。全体設計01、全file地図01A/B/C、current_structure 00/01/04と意味設計§9.2/9.4の既読原典に加え、最新weekly20261010 u297、CURRENT_RULESとRule18 §11.3、恒久incident全文を確認した。u297の同じ18例に残った、本文へ意味を移す箇所の欠陥を扱う。
+
+### 原因・実装範囲
+
+未成立事項と満足の対比、動作と満足の評価関係をそれぞれ文章化していたため、同じ満足が二重に現れていた。また原入力のcontrast総数exact1を要求するthread_surfaceは、この2対比構成では別received経験のneutral IDを渡さず、作者の旧fallbackが「同時にあります」を付けていた。
+
+既存thread_surface／sentence_surface／observation_gateの3fileで、初回・非legacy・非PARTIAL・原plan不変、本文5点／3関係、source所有の未成立組exact1と別received対比exact1の範囲を接続した。原planはlabel3点を含む全8点であり、本文5点と混同しない。未成立組の2辺は、一つの節に対象と満足を結んで実現する。別received辺は順序を保ち、既存の中立対比文法へ渡す。単独unfinished NORMAL、回答後、逆順同欄の既存経路を広げない。
+
+独立readerは実本文の一節を全文照合し、未成立事項・対象・満足を元sourceへ戻して正しい2辺だけを証明する。その他のreceived辺、全5点のsource引用、隣接性、関係markerの検査義務は残す。作者は呼ばない。既存legacyの旧文法受理まで全廃したとはしない。Reception全体の既存replayまで作者非依存とする主張もない。
+
+意味認識・選択・Move・LIMITED資格とprivate契約は変更0。Rule18 §11.3の既承認内容の実現修復。STRUCTURE_MAP_DELTA_NONE：既存owner責務と呼出経路内で、新production file・service・engine・依存はない。製品3file、既存test1、現行identity fixture1を更新。公開API/DTO/DB/SQL/RN、Piece/Analysis、本番・deploy・main mergeは変更0。rootが編集・実行・反映を担当し、同Workのread-only補助が因果と差分を確認した。別Pro/Ultraモデルによる正式二重検証ではない。
+
+### 検証と実本文
+
+- 対象はu297と同じ、別欄両順／同欄unfinished先行の3配置×動作3（考えを言葉にできて／案を選んで／資料を分類したことに）×満足の過去・入力時点2＝18例。既存18検査に一節化・満足一回・中立対比を追加し、作者禁止reader2と経路除外1の計3検査を追加。最終対象は `21 passed, 890 deselected, 1 warning in 15.00s`。21件すべてを新規と数えない。
+- 旧版は最初の新期待で失敗（1 failed, 893 deselected, 10.25秒）。途中修正では原plan全8点を本文5点と誤って比較して対象へ到達せず、本文source5点とbinding関係端点を照合するよう修復した。途中結果を最終PASSへ混ぜない。
+- readerは未成立の欠落／肯否／時点、満足対象の結論・receivedへの置換、満足の否定／時点変更、原因・同時性付加、役割交換、重複、別receivedの欠落／改変／借用を拒否。補助reviewでも正しい本文へ原因文や旧二重説明を追記したものが拒否された。PARTIAL、legacy8種、原核／関係変更、回答ありの除外も確認した。
+- 主回帰はappraisal911＋Q2/Q3 application54をPGlite有効で一括実行し、**965 passed, 2 warnings in 440.85s (0:07:20)**。skip0、既存非推奨warning2。現行owner identityは別runで `1 passed, 194 deselected, 1 warning in 28.43s`。対象21とidentity1を主回帰の同じrunへ加算しない。
+- 同じ合成36例の基準head／最終source比較で、全checkpoint・grounded plan・selected全体（識別hash含む）・projection error・reason codesは完全一致。対象18ではObservationとそのartifact IDだけが変わり、Reception、意味／受容trace、history plan等は一致。対照18（逆順同欄6／unfinished単独6／理由付き満足＋received6）は全record一致。本文ありは両版33/36、逆順同欄過去3の `LIMITED_RECEPTION_CAPABILITY_GAP_STOP` は残る。validator captureは元validatorも呼び、拒否を迂回していない。
+- 実EmlisThreadService＋隔離PGliteで初回18 DTOを保存。NoAuthor GET/startで再生成なし、DTO全文・保存Observation・全履歴一致、event無増加。現行RN hook/modalでも全18の本文／履歴／close/reopen／read-only表示一致。native部品はstubで本人実機ではない。今回は回答再送の新規検証なし。rootが保存18本文（重複を除く12種類）を全文読解した。
+- 現行fixtureを実sourceから再導出：language `2338a0b32076182f27738e59f40572a645a2c6ee1597154b4a65f60a4e897ba3`、runtime `6936abf064c13005f5cc2e9d42cbfaf0138fb2d6c03dc80348bfa1688900b21b`。歴史fixtureは不変。既存Python3.12.14／pytest8.4.1／Pydantic2.13.5／Node/PGlite0.5.8を再利用した。
+
+原入力「結論は出ていないが、考えを言葉にできて満足した。」＋「褒められたのに、嬉しくなかった。」の変更前Observation：
+
+```text
+「結論は出ていない」の一方で「満足した」とあります。 「考えを言葉にできて」という出来事に対する評価は、「満足した」とあります。 「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。
+```
+
+変更後の保存本文全文：
+
+```text
+見えたこと：
+「結論は出ていない」の一方で、「考えを言葉にできて」という出来事への評価は「満足した」とあります。 「褒められた」の一方で「嬉しくなかった」とあります。
+
+Emlisから：
+結論は出ていないという点と、考えを言葉にできたことへの当時の満足との対比に目を向けています。褒められたことは、嬉しさにはつながらなかったのですね。
+```
+
+### 残件・次の因果箇所
+
+今回の対象内で、満足の二重説明と未明示の同時性は解消した。ただし引用を説明するObservationと「対比に目を向けています」というReceptionは依然長く説明的で、全体の内容形成・自然さの完成ではない。選択済みLIMITEDの内容は変えておらず、これをNORMALの充足経験へ昇格させていない。次は同じ全文を入口に初回一体単位の説明性と受け取りの反復、および共有対象／対象外更新を扱う。意味・資格・private契約の不足なら最小差分を具体化し、作者側の緩和で代用しない。逆順同欄過去3のprojection前停止も別欠陥として残す。
+
+System Contextはu297 prepareのmaterial祖先条件停止から、許可された原典直接参照fallbackを継続した。今回再prepareや新Context生成をしたとはしない。u292の周辺既存4失敗は今回再実行せず未解消、過去共有17失敗との集合一致も再主張しない。合成比較・保存・RNの一回限りの検査を新たな恒久runnerや正式証跡契約にしない。再開に必要なmatrixと因果・実本文・結果は本節、回帰再現は既存testsに保持する。
+
+TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置。same100、Q1上限、giver帰属、本人実機・正式Product Readも残る。10/17確認点・10/31管理線・12/18公開目標、Piece/Analysis主枠と管理評価53.25％は維持する。

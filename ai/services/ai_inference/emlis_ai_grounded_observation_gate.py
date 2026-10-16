@@ -6228,6 +6228,45 @@ def _body_inverse_reason_appraisal(body, line, planned_line, plan, resolver):
     return frozenset(edges)
 
 
+def _body_inverse_unfinished_appraisal(body, witness, line, planned_line, plan, resolver):
+    """Read the joined three-role clause; leave the separate received duty live."""
+    from emlis_ai_grounded_observation_plan import (
+        source_owned_result_appraisal_context, _received_contrast_group_targets)
+    binding = planned_line.binding
+    if (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+        or len(binding.nucleus_ids) != 5 or len(binding.relation_ids) != 3
+        or set(binding.nucleus_ids) != {nid for r in plan.relations for nid in (r.from_nucleus_id, r.to_nucleus_id)}
+        or set(binding.relation_ids) != {r.relation_id for r in plan.relations}):
+        return frozenset()
+    groups = tuple((r, context) for r in plan.relations
+        if (context := source_owned_result_appraisal_context(r, plan.nuclei, plan.relations)) is not None)
+    if len(groups) != 1:
+        return frozenset()
+    appraisal, context = groups[0]
+    ids = (context.nucleus_id, appraisal.from_nucleus_id, appraisal.to_nucleus_id)
+    edges = frozenset(r.relation_id for r in plan.relations
+                     if set(ids) & {r.from_nucleus_id, r.to_nucleus_id})
+    remaining = tuple(r for r in plan.relations if r.relation_id not in edges)
+    if (len(edges) != 2 or len(remaining) != 1
+        or remaining[0].grounding_kind != 'user_stated_relation'
+        or not _received_contrast_group_targets(tuple(n for n in plan.nuclei if n.nucleus_id not in ids), remaining)):
+        return frozenset()
+    expected = tuple(_body_inverse_nucleus_source_values(nid, plan, resolver) for nid in ids)
+    matches = []
+    for row in witness.sentences:
+        if row.section != 'observation' or row.section_line_ordinal != line.section_ordinal:
+            continue
+        parsed = re.fullmatch(r'「([^「」『』\n]+)」の一方で、'
+            r'「([^「」『』\n]+)」という出来事への評価は「([^「」『』\n]+)」とあります。',
+            _body_inverse_visible_text(body, row))
+        if parsed:
+            matches.append(tuple(map(_body_inverse_normalized_anchor, parsed.groups())))
+    if (any(len(values) != 1 for values in expected)
+        or matches != [tuple(values[0] for values in expected)]):
+        return frozenset()
+    return edges
+
+
 def _body_inverse_shared_target_appraisal_observation(body, parsed_line, planned_line, plan, resolver):
     """Read one complete nested observation; never replay its author.
 
@@ -6368,7 +6407,9 @@ def evaluate_grounded_surface_body_inverse(
         negative_relations = frozenset()
         reason_appraisal_relations = (_body_inverse_reason_appraisal(
             body, parsed_line, planned_line, plan, resolver) if final_stage1_plan else frozenset())
-        direct_relations |= reason_appraisal_relations
+        unfinished_appraisal_relations = (_body_inverse_unfinished_appraisal(
+            body, witness, parsed_line, planned_line, plan, resolver) if final_stage1_plan else frozenset())
+        direct_relations |= reason_appraisal_relations | unfinished_appraisal_relations
         if final_stage1_plan:
             negative_relations, negative_nuclei = _body_inverse_negative_feeling_sequences(
                 body, witness, parsed_line, planned_line, plan, resolver)
@@ -6469,7 +6510,7 @@ def evaluate_grounded_surface_body_inverse(
             if not matches:
                 failures.append(f"body_inverse_unbound_observation_quote:{index}")
                 continue
-        if (set(planned_line.binding.relation_ids) - negative_relations - reason_appraisal_relations
+        if (set(planned_line.binding.relation_ids) - negative_relations - reason_appraisal_relations - unfinished_appraisal_relations
             and not parsed_line.relation_marker_codes):
             failures.append(f"body_inverse_required_relation_marker_missing:{index}")
         relation_index = {item.relation_id: item for item in plan.relations}
@@ -6618,6 +6659,10 @@ def evaluate_grounded_surface_body_inverse(
             relation = relation_index.get(relation_id)
             if relation is None:
                 failures.append(f"body_inverse_required_relation_missing:{index}")
+                continue
+            if relation_id in unfinished_appraisal_relations:
+                # The complete source-bound clause independently proved these
+                # two edges. Its shared evaluation need not be quoted twice.
                 continue
             allowed_markers = _BODY_INVERSE_RELATION_MARKERS_BY_TYPE.get(
                 relation.type,

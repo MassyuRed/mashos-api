@@ -104,7 +104,8 @@ def _current_single_received_contrast_relations(prepared, plan):
     Explicitly marked legacy routes retain their original surface grammar.
     This changes neither recognition nor the selected Reception content.
     """
-    from emlis_ai_grounded_observation_plan import _received_contrast_group_targets
+    from emlis_ai_grounded_observation_plan import (
+        _received_contrast_group_targets, source_owned_result_appraisal_context)
     if (prepared.checkpoint.assessment_status == 'PARTIAL'
         or prepared.legacy_appraisal_retention or prepared.legacy_repeated_appraisal_context
         or prepared.legacy_received_appraisal_context or prepared.legacy_appraisal_reason
@@ -113,7 +114,21 @@ def _current_single_received_contrast_relations(prepared, plan):
         return frozenset()
     contrasts = tuple(r for r in prepared.original_plan.relations if r.type == 'contrast')
     if len(contrasts) != 1:
-        return frozenset()
+        # The initial unfinished appraisal owns its own contrast. It must
+        # not force the separate, unchanged received pair into simultaneity.
+        original = prepared.original_plan
+        groups = tuple((r, context) for r in original.relations
+            if (context := source_owned_result_appraisal_context(r, original.nuclei, original.relations)) is not None)
+        if (prepared.thread.answers or len(contrasts) != 2 or len(groups) != 1
+            or len(tuple(n for n in original.nuclei if n.source_fields in {('memo',), ('memo_action',)})) != 5
+            or len(original.relations) != 3
+            or plan.nuclei != original.nuclei or plan.relations != original.relations):
+            return frozenset()
+        appraisal, context = groups[0]
+        contrasts = tuple(r for r in contrasts if (r.from_nucleus_id, r.to_nucleus_id)
+                         != (context.nucleus_id, appraisal.to_nucleus_id))
+        if len(contrasts) != 1:
+            return frozenset()
     relation = contrasts[0]
     if relation.grounding_kind != 'user_stated_relation' or relation not in plan.relations:
         return frozenset()
