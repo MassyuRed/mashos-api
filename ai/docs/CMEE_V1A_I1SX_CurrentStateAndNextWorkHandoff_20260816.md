@@ -20658,3 +20658,74 @@ Emlisから：
 Emlisから：
 資料を分類したことについて受け取ったのは、探しやすくなったという点で、当時ご自身の中に満たされた感覚があった経験です。褒められたことだけでは言い表せない、嬉しさが伴わなかったあなたの経験として受け取りました。
 ```
+
+
+## u291 — 別欄の理由なし否定訂正で、未撤回の経験を受け取りへ残す（2026-10-16 JST）
+
+基準API f2220bb603482572569f36df2614287e282d9279／資料beeba437bd3c9ba0ae9383802196dab6a07cc829。全体設計01・全file地図01A/B/C・current00/01/04、必須前提・作業姿勢ルール・恒久incident・8/28設計§9.2/9.4を前回から継続参照し、最新weekly§5.6.40とRule18 §11.3、u279/u281/u282/u284/u286の限定条件を再確認した。前回CI38832803051は同headのcompleted/successを確認した。System Contextは既記録の固定ancestor不一致が残り、現行正本を直接使用。
+
+u290の次課題に従い、初回第二Move・訂正後・撤回後を実生成と選択内容で照合した。初回共有対象の4役割・3関係は現本文に届いており、語順変更と「経験」の付加を内容形成の改善とは扱わない。評価撤回後のLIMITEDには両端保持が選ばれているが、u282のNORMAL経験読みを借用する資格はないため、その単純転用も行わない。別欄・理由なしの否定訂正では、4 required核・2関係が残るのにMoveが2から1へ減り、後者が消える具体的な保持欠陥を確認した。
+
+別欄にある理由なしの満足とreceived対比について、満足だけを否定訂正すると、未撤回のreceivedがObservationには残る一方でReceptionから落ちる欠陥を修復した。同じcurrent_burden分類の代表選択で一方を捨てず、既存LIMITEDの2 Moveへ両方を保持する。新しい経験解釈やNORMAL資格を加える変更ではない。
+
+対象は、原入力の異なる二欄にある理由なしの本人・無程度肯定満足（過去形）exact1組とreceived対比exact1組、および原時点の満足を無程度の否定満足へ変える完全な明示訂正exact1／回答exact1。各欄一閉文・一spanの原sourceを既存parserで再証明し、現在の全関係・required所有、未改変の対象／received両端を照合してから既存2義務をresponseへ渡す。新schema／source認識／意味checkpoint／NORMAL資格／公開API・DTO・DB・RN／依存／上限は変更しない。PARTIAL、追加回答・経験、同欄、理由付き、共有対象、納得・程度付き・明示回答時点への訂正、撤回、反応訂正を新しい修復へ含めない。理由付きu279・共有対象u286の既存経路は保持する。
+
+新意味契約・資格追加を伴わない、既承認保持責務内の限定修復。Rule18 §11.3のstanding delegationで実行する。u279/u286の当時の限定記録を書換えず、u281の二経験と既存LIMITEDの保持を補修する。新しい意味・因果・価値・同一対象推定・NORMAL資格を足す承認として扱わない。同じWorkの補助2枠による原因・内容・検査reviewを統合した。別model Pro/Ultraの相互審査と偽らない。
+
+STRUCTURE_MAP_DELTA_NONE。既存answer_update所有内のsource再証明条件追加のみで、owner・call chain・引数接続・contract・lifecycleに構造差分なし。current_structure/00 §6に従い01A/current01/04への重複追記は行わない。
+
+関連評価＋Q2/Q3 applicationの単一run：`827 passed, 2 warnings in 277.69s (0:04:37)`。現行owner identity：`1 passed, 194 deselected in 21.78s`。対象保持、proof無効化の因果対照、source／update所有改変、欠落／対象／肯否／時点／原因追加の本文拒否、対象外更新を検証した。現行共有owner identityを再導出して値・fixture bytes不変を確認し、歴史fixtureと既存の保護検査も変更していない。
+
+同じ合成32応答をu290と比較。別欄・理由なし・否定訂正後の4本文だけが変わり、対象外28本文は完全一致。全32でcheckpoint・全核・全関係・projection branch・reason codes・Observationは一致。対象4件だけMoveが1から2へ戻り、LIMITEDのまま両経験を保持する。
+
+実EmlisThreadService＋隔離PGliteで両欄×反応2の4入力を初回／訂正後まで保存し、8 DTOを確認。NoAuthor GET/startと同回答再送の一致・event無増加、保存本文と全Observation履歴一致、現行RN hook/modalの全文・履歴・close/reopen一致を確認した。rootが8本文を読解。nativeはstub、本人実機と正式Product Readは未実施。
+
+検証runtimeは前回と同じ隔離Python3.12.14／pytest8.4.1、PGlite0.5.8、React18.3.1。関連runはtest_cmee_emlis_result_appraisal.py＋test_emlis_q2_application.py＋test_emlis_q3_application.pyを、PYTEST_DISABLE_PLUGIN_AUTOLOAD=1、-p no:cacheprovider -c /dev/null --noconftestで実行。identityはtest_cmee_v1a_i1sx_contracts.py -k active_final_language_owner_chain_has_zero_legacy_compose_calls。新依存・稼働DB操作・外部AI利用はない。
+
+TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式受入0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置。未撤回経験の欠落はこの限定条件で修復したが、訂正後の一般的な受け取りと旧received観測文の「同時に」、第一文の説明性、初回第二Moveの内容形成は残る。保存成功や回帰成功を商品合格に換算しない。
+
+次は本来残るべき内容の保持を崩さず、初回／訂正後／撤回後で選択される受け取り内容の違いを扱う。語尾や型名の追加だけを内容形成改善とせず、sourceから導ける既承認意味と不足を区別する。新しい読み・資格・内部契約が必要な箇所は具体化してからMash判断へ戻し、未合格本文のProduct ReadをMashへ要求しない。共有17失敗・same100・Q1上限・giver帰属・本人実機・正式Product Readは未解消／未実施。10/17確認点・10/31管理線・12/18公開目標、Piece/Analysis主枠と管理評価53.25％は維持。
+
+### 合成実生成比較：嬉しくなかった
+
+変更前：
+
+```text
+見えたこと：
+「資料を分類した」という出来事に対する当時の評価は、「満足しなかった」とあります。 「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。
+
+Emlisから：
+資料を分類したことについて、当時は満足しなかったのですね。
+```
+
+変更後：
+
+```text
+見えたこと：
+「資料を分類した」という出来事に対する当時の評価は、「満足しなかった」とあります。 「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。
+
+Emlisから：
+資料を分類したことについて、当時は満足しなかったのですね。褒められたことと嬉しくなかったこととの違いを小さくせずに受け止めています。
+```
+
+### 合成実生成比較：悲しかった
+
+変更前：
+
+```text
+見えたこと：
+「資料を分類した」という出来事に対する当時の評価は、「満足しなかった」とあります。 「褒められた」と「悲しかった」が、異なる向きのまま同時にあります。
+
+Emlisから：
+資料を分類したことについて、当時は満足しなかったのですね。
+```
+
+変更後：
+
+```text
+見えたこと：
+「資料を分類した」という出来事に対する当時の評価は、「満足しなかった」とあります。 「褒められた」と「悲しかった」が、異なる向きのまま同時にあります。
+
+Emlisから：
+資料を分類したことについて、当時は満足しなかったのですね。褒められたことと悲しかったこととの違いを小さくせずに受け止めています。
+```

@@ -218,6 +218,74 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
     )
 
 
+def _separate_reasonless_appraisal_received_source(original, thread):
+    """Re-prove the two unchanged source scopes before retaining their duties."""
+    links = tuple(r for r in original.relations
+                  if gp.source_owned_result_appraisal(r, original.nuclei))
+    required = tuple(n for n in original.nuclei if n.retention == 'required')
+    if len(links) != 1 or len(original.relations) != 2 or len(required) != 4:
+        return {}
+    index = {n.nucleus_id: n for n in required}
+    link = links[0]
+    event, appraisal = (index.get(nid) for nid in (link.from_nucleus_id, link.to_nucleus_id))
+    if event is None or appraisal is None:
+        return {}
+    rest = tuple(n for n in required if n not in (event, appraisal))
+    received_relations = tuple(r for r in original.relations if r != link)
+    received = gp._received_contrast_group_targets(rest, received_relations)
+    if not received or len(received[0]) != 1:
+        return {}
+    received_event, reaction = (index[ids[0]] for ids in received)
+    received_relation = received_relations[0]
+    if (event.source_fields == received_event.source_fields
+        or received_relation.grounding_kind != 'user_stated_relation'
+        or received_relation.source_span_ids != received_event.source_span_ids
+        or (appraisal.semantic_frame.polarity, appraisal.semantic_frame.time_scope) != ('positive', 'past')
+        or {c for c in appraisal.semantic_frame.attribute_codes if c.startswith('source_appraisal_')}
+            != {'source_appraisal_kind:satisfaction', 'source_appraisal_degree:unmarked'}):
+        return {}
+    resolver = thread.resolver()
+    for node in required:
+        if (node.source_fields not in {('memo',), ('memo_action',)}
+            or len(node.source_span_ids) != 1 or node.source_span_ids[0] not in resolver.span_ids
+            or node.surface_anchor_ids != node.source_span_ids
+            or node.semantic_frame.target_anchor_ids != node.source_span_ids
+            or node.grounding_kind != 'explicit' or node.allowed_claim_scope != 'explicit_current_input'
+            or node.semantic_frame.actor != 'current_user'):
+            return {}
+    first, last = (resolver.resolve(n.source_span_ids[0]) for n in (event, received_event))
+    for span in (first, last):
+        source = str(thread.original.normalized_current_input.get(span.source_field) or '')
+        if (span.start_index != 0 or span.end_index != len(span.raw_text)
+            or re.fullmatch(re.escape(span.raw_text) + r'[。．.]?', source) is None
+            or tuple(s.span_id for s in resolver.resolve_many(resolver.span_ids)
+                     if s.source_field == span.source_field) != (span.span_id,)):
+            return {}
+    appraisal_rows = gp._explicit_result_appraisal_projections(
+        first, thread.original.normalized_current_input)
+    received_rows = gp._received_event_reaction_text_projections(last.raw_text)
+    if (tuple(row.nucleus_suffix for row in appraisal_rows) != (':event', ':appraisal')
+        or tuple(row.nucleus_suffix for row in received_rows) != (':event', ':reaction')):
+        return {}
+    # The shared received grammar admits a broad giver token. Reusing it
+    # must not turn SELF as giver into SELF as the receiver of the event.
+    received_text = last.raw_text[received_rows[0].scalar_start:received_rows[0].scalar_end]
+    giver = re.sub(r'^(?:私|自分|わたし)(?:は|が)', '', received_text).rpartition('に')[0]
+    if (gp._SELF_REFERENCE_RE.search(giver) is not None
+        or 'に' in received_text and not gp._source_operator_owner_scope_is_bound(received_text)):
+        return {}
+    for row, node, span in zip((*appraisal_rows, *received_rows),
+            (event, appraisal, received_event, reaction), (first, first, last, last), strict=True):
+        frame = node.semantic_frame
+        if (node.source_fields != (span.source_field,) or node.source_span_ids != (span.span_id,)
+            or (row.kind, row.predicate_kind, row.polarity, row.modality, row.time_scope, row.attribute_codes)
+                != (node.kind, frame.predicate_kind, frame.polarity, frame.modality,
+                    frame.time_scope, frame.attribute_codes)):
+            return {}
+    return dict(appraisal_event=event, appraisal=appraisal, received_event=received_event,
+                reaction=reaction, received_relation=received_relation)
+
+
 def _retained_reasonless_shared_target_duties(original, thread, nuclei, relations, updates):
     """Keep surviving duties after one correction, without renewing the group.
 
@@ -228,6 +296,8 @@ def _retained_reasonless_shared_target_duties(original, thread, nuclei, relation
         return ()
     group = gp.source_owned_shared_target_appraisal_contrast(
         original.nuclei, original.relations, thread.resolver())
+    if not group:
+        group = _separate_reasonless_appraisal_received_source(original, thread)
     if not group or 'reason' in group:
         return ()
     update = updates[0]
