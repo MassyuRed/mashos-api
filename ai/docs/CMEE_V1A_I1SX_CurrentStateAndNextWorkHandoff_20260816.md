@@ -20776,3 +20776,78 @@ Emlisから：
 Emlisから：
 資料を分類したことについて、当時は満足しなかったのですね。褒められたことと嬉しくなかったこととの違いを小さくせずに受け止めています。
 ```
+
+
+## u293 — 別欄の評価更新後、未変更receivedの経験読みを保持する限定案（2026-10-16 JST・未承認）
+
+状態：DESIGN_PROPOSAL_ONLY / MASH_APPROVAL_PENDING。今回の製品code・test・fixture変更は0。新しい意味、資格、型、本文はまだ実装・実生成していない。承認対象は下記の更新後LIMITEDにおける局所内容対応であり、u292の修正完了をその承認へ転用しない。
+
+基準API `0cdfdac4b61dc70e525c6c619648740b3f374281`／資料 `75f22dac491b12bece3b8456fccd093156b35c1f`。両PRのfresh headとローカルtracked treeを照合。u292のCI `38837204963` は同API headのcompleted/successを確認した。必須前提・作業姿勢ルール、恒久incident全文、全体設計01・全file地図01A/B/C、current00/01/04、8/28意味設計、weekly §5.6.42から継続。今回のrootが統合・記録owner、同じWorkのread-only補助2枠が商品境界と技術原因を分担した。別model Pro/Ultraの独立審査とは扱わない。
+
+### 1. 何を改善するか
+
+満足についてだけ訂正・撤回したとき、訂正していない別欄の「褒められたのに嬉しくなかった」経験まで、一般的な両端保持へ戻る。未変更の経験を、出来事だけでは表せない本人の感情を伴う経験として受け取る内容を残したい。
+
+この経験の意味自体はu282で既承認であり、原因、期待、他者の意図、隠れた価値を新しく推測する案ではない。ただし、u282の適用資格はNORMALに限られている。u286/u291は更新後LIMITEDで両端を残す修復までであり、今回の経験内容を許す契約までは承認されていない。理由付き本人充足u289も初回限定で、今回へ持ち越さない。
+
+### 2. 実装・実本文で確認した原因
+
+| 入力と更新 | 現在選択される内容 | 原因・扱い |
+|---|---|---|
+| 別欄2経験の初回 | NORMAL、receivedはbasis2／contribution1のRELATIONAL_NONCOLLAPSE | u281/u282の組別選択と経験読みが成立。維持する。 |
+| 別欄・理由付き満足を否定訂正 | NORMAL、received経験読みを保持 | `_appraisal_received_components` がu279のold_reason条件を受理。既に改善済みで今回変更しない。 |
+| 別欄・理由なし満足を否定訂正 | LIMITED、共通MATERIAL_WEIGHT／basis4 | 同関数のold_reason必須条件を満たさない。u291で2 Moveは残るが、receivedだけの経験内容は選択されない。 |
+| 別欄・評価だけ撤回（理由0/1） | LIMITED、RELATIONAL_NONCOLLAPSE／basis2 | 評価関係が消え、同関数のappraisal exact1条件が失効する。 |
+
+`emlis_thread_projection.py` は全体branchを各decisionへ渡す。`emlis_stage1_response.py` の `_partition_shared_reception_move_contributions` は共通命題を保存し、contributionだけを各Moveへ分配する。作者 `_source_grounded_received_discourse` と本文reader `_read_received_discourse_parts` は、NORMAL・basis2・contribution1等を満たす場合だけ経験文を扱う。したがって、作者直前で既選択の豊かな内容が落ちた、という診断ではない。
+
+既存 `ComponentReceptionOpportunityV1` も直接流用しない。`contracts.py` の `component_reception_bundle_domains` はSelected whole、`validate_component_reception_opportunities` はexact2 componentを要求する。一方 `resolve_limited_reception_aggregate` とcompositionのLIMITED投影は単一aggregateを扱う。branchだけNORMALへ変更する案、LIMITEDへ旧NORMAL資格を貸す案、basis4を本文段階でbasis2へ書き換える案は採用しない。
+
+u292の同じ合成54応答をcurrent sourceと照合して再分析した。今回案の対象は12件（理由なし否定訂正4、評価のみ撤回8）、対照は42件。対象12件すべてで、初回と更新後のreceived両端およびcontrast relationが完全一致し、現在はRESOLVED／LIMITEDだった。これは未変更箇所と改善対象を特定した診断であり、新案の生成成功・試験PASSではない。
+
+### 3. 承認を求める最小範囲
+
+対象は、原入力の一方の欄に本人の満足1組、もう一方の欄に本人のreceived対比1組があり、既存u281/u282で初回の組別意味が成立する場合だけとする。欄の入替は同じ条件で扱う。
+
+1. accepted回答は一回の完全な更新だけ。対象更新は、理由なし満足の当時の否定訂正、または理由0/1の評価のみ撤回。追加内容・別更新の混在・PARTIAL・後続roundへ広げない。
+2. 原sourceでreceived出来事1、過去の否定反応1、明示contrast1が唯一に同定され、本人、原欄、span、肯否、時点、modality、関係方向が更新後も未変更であることを既存source情報から確かめる。旧本文・旧decisionのIDを意味根拠として使い回さない。
+3. 全体はLIMITEDのまま。既存aggregate命題、全ての根拠・未知・表示義務、既存Move数と分配を保つ。その中のreceived exact1だけについて、versionedなprivate局所内容対応を現在の意味・選択・Move・根拠へ結ぶ。
+4. 局所対応はreceived両端exact2、対比exact1、当該contributionとqualifier、現在のsource／accepted update／projectionへの所属を持つ。既存whole命題を上書きせず、局所内容も選択・封印の対象に含め、作者が本文時に解釈を足す構造にしない。型名等の内部実装詳細は、この境界を保つ範囲で実装時に確定する。
+5. 唯一の既存Human Reception作者に、u282と同じ経験の意味を実現させる。本文readerは作者を呼ばず、現在の局所資格・両端・本人・肯否・時点・関係と実本文を照合する。既存Reception全体のreplayまで作者非依存になったとは報告しない。
+
+除外：同じ行為を評価とreceivedが共有する入力、同欄、複数received、重複・曖昧source、received自体の訂正／撤回／時点変更、他者、引用、仮定、ADD・混合更新・後続回答、legacy／PARTIAL。初回および理由付き否定訂正の既存NORMAL経路も変更しない。共有対象を別欄の一組へ偽装せず、その失効した満足との外側対比も復活させない。
+
+新しい原因・意図・期待・価値の推測、満足の対象／理由の復活、一般的なLIMITED→NORMAL昇格、Move上限変更、観測本文の書換えは含まない。公開API/DTO/DB/SQL/RN、Piece/Analysis、外部AI、依存、課金、稼働環境への変更は0。実装後も配置・main mergeは別境界である。
+
+### 4. 予定する既存ownerと変更責務
+
+以下は承認後の予定であり、今回変更済みのfile地図ではない。APIのprefixは `ai/services/ai_inference/`。
+
+| 既存path | 承認後の責務 |
+|---|---|
+| `cocolon_meaning_experience_engine/contracts.py` | 旧aggregateと非混同のversioned private局所内容、source/current refs・両端・一関係の閉包検証。旧型の受理範囲を一括で広げない。 |
+| `cocolon_meaning_experience_engine/emlis_thread_projection.py` | 原入力とaccepted更新の限定資格を再証明し、現在の意味・received Moveへ結ぶ。 |
+| `cocolon_meaning_experience_engine/emlis_stage1_response.py` | 既存post-selection経路で局所内容を選択し、全体aggregateと各Moveの既存義務を保持する。 |
+| `cocolon_meaning_experience_engine/emlis_stage1_composition.py` | 局所内容を含めた選択・封印・claim／trace対応。LIMITED branchと既存whole命題を保持する。 |
+| `emlis_ai_grounded_human_reception.py` | private対応を検証し、対象Moveだけを既存経験文法へ接続する。 |
+| `emlis_ai_grounded_observation_gate.py` | 局所資格と本文の独立照合。旧完全本文も従来どおり読めるようにする。 |
+| `cocolon_meaning_experience_engine/emlis_thread_surface.py` | 必要な場合のみ既存expressionの接続を調整。別作者や後処理の文字置換を作らない。 |
+
+検査は既存 `ai/tests/test_cmee_emlis_result_appraisal.py` と必要な既存contract検査へ追加し、変更ownerの現行identityは実sourceから再導出する。歴史fixture・保護検査の目的や期待を弱めない。新production file、補助route、checker、registry、serviceは作らない。予定owner外または対象条件外の契約変更が必要なら、その具体差分で止めて再判断する。
+
+### 5. 実装時の成功条件と停止条件
+
+- 同じ54入力の対象12件で局所経験内容が選択され、received本文が出来事だけの言い換えや汎用的な「両方を受け止める」で終わらない。対象の全体LIMITEDと既存aggregate・意味checkpoint・観測本文は保持し、対照42本文は全文一致を確認する。
+- 原source／accepted update／局所根拠の一つでも改変すれば、新資格は成立しない。scope、別Move、全体への内容流用を拒否する。
+- 作者を禁止した局所readerで、出来事・反応・本人・肯否・時点・対比の改変、片端欠落、根拠のない原因・同時性・価値の追加を拒否する。封印の再計算だけでは意味改変を通さない。
+- 現行の評価回帰、Q2/Q3 application、旧checkpoint／保存本文互換、owner identityを確認する。u292で確認した周辺既存4失敗を新PASSへ換算せず、今回の追加で新たに生じる失敗は解消する。
+- 対象更新12件を既存実service＋隔離PGliteで保存し、NoAuthor GET/start、同回答再送・event無増加、全履歴、現行RN hook/modalの全文・close/reopenまで確認する。native stubと本人実機を区別する。
+- rootが対象の初回／更新後本文を全件読み、初回品質や訂正後の全残件が解消したとは判定しない。必要な資格の証明や旧互換が成立しない場合、対象外まで拡張して通さず停止する。
+
+増える作業は、既存意味・作者・reader owner内での限定契約追加と上記回帰／保存確認である。新しい継続費用・外部service・本番操作は生じない。実装所要時間の確約はしていない。承認がなければここで製品変更を止め、現行u292を保持する。
+
+### 6. 判断と現在地
+
+Rule18 §11.3 LEVEL_3：未変更の経験に使う意味は既承認だが、更新後LIMITEDで局所経験を選択できる資格・private内容対応を追加するため個別承認が必要。Mashへ満足やreceivedの意味を再質問するのではなく、ここで具体化した適用範囲の追加を確認する。
+
+今回の結果は原因特定と限定案の具体化・GitHub記録のみ。STRUCTURE_MAP_DELTA_NONE（実装0）、PRODUCT_NOT_CLEAR、初回一体単位未完了、正式受入0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置。第一文の説明性、共有対象、初回の受容反復、限定対象外の更新、既存失敗、same100、Q1上限、giver帰属、本人実機・正式Product Readは残る。10/17確認点・10/31管理線・12/18公開目標、Piece/Analysis主枠と管理評価53.25％は維持する。
