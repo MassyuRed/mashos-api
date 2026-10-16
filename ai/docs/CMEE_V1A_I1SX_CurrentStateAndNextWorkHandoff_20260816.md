@@ -21168,3 +21168,56 @@ u298で残した逆順同欄の過去3停止は対象範囲で解消した。一
 System Contextはu297のmaterial祖先条件停止から許可された原典直接参照fallbackを継続し、今回再prepareや新Context生成済みとはしない。周辺既存4失敗は再実行せず未解消、過去共有17失敗との集合一致を再主張しない。合成probe／保存／RNの一回限りの検査を新runnerや正式証跡契約にはしない。再現matrix・原因・実本文・結果は本節、恒常的な回帰は既存testsと合成fixtureに保持する。
 
 TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置。same100、Q1上限、giver帰属、本人実機・正式Product Readも残る。10/17確認点・10/31管理線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％を維持する。
+
+
+## u300 — 未成立事項付き満足と別receivedを初回で組ごとに選ぶ最小追加案（2026-10-17 JST）
+
+**PROPOSED_NOT_APPROVED / PRODUCT_NOT_CLEAR。今回の製品変更・本文改善は0。** 基準API `5791a2ada8b820c0813cd0ea5de2799af105f68c`、資料 `02f5c2fe1a3727eaea37b213fb7876f6ea4e49d0`。両PRはDraft/open/unmerged。u299のAPI CI38912873573は同headでcompleted/successを確認した。前回の成功を今回の実装・商品合格には換算しない。
+
+全体設計01、全file地図01A/B/C、current_structure、最新weekly20261010の§3.5.1–3.5.3・§5.6とu299、作業rule、Rule18 §11.3、8/16商品軽視incident全文、8/28意味設計§9.2/9.4とu262/u281/u289/u294を確認した。System Contextはu297のmaterial祖先条件停止から、許可された原典直接参照fallbackを継続。新Context生成・再prepare済みとはしない。
+
+### 現行意味と実本文の診断
+
+rootが現行sourceを変更せず、Python3.12.14／Pydantic2.13.5で18合成入力を実生成した。対象は「結論は出ていないが、考えを言葉にできて満足した／満足している。」と「褒められたのに、嬉しくなかった。」の6配置（別欄両順、memo内両順、memo_action内両順）×評価時点2＝12。対照は未成立事項付き満足単独、同入力＋「植木に水をやった。」、理由付き満足＋receivedの各時点2＝6。18/18で本文あり、rootが全Observation／Receptionを読んだ。これは既存実装の診断であり、18 PASSの新規回帰や修正後比較ではない。pytest、SQL/RN、本人実機・正式Product Readは今回は実行していない。
+
+対象12は全てLIMITED。2 MoveそれぞれがATTENTION／ATTEND_TO、MATERIAL_WEIGHT／RECEIVE_AS_MATERIAL、全5点のappraised bindings、focalなしを持ち、選択contributionだけを2／1へ分配していた。対照6はNORMALで、未成立三点の対照4はRELATIONAL_NONCOLLAPSE／PRESERVE_BOTH_ENDPOINTS、三binding、未成立→評価の焦点対比を持つ。理由付きの対照2では理由三点とreceived二点へ異なる内容が選ばれている。NORMAL分類自体は商品品質の証明ではない。
+
+対象・過去形・別欄順配置の実本文全文：
+
+```text
+見えたこと：
+「結論は出ていない」の一方で、「考えを言葉にできて」という出来事への評価は「満足した」とあります。 「褒められた」の一方で「嬉しくなかった」とあります。
+
+Emlisから：
+結論は出ていないという点と、考えを言葉にできたことへの当時の満足との対比に目を向けています。褒められたことは、嬉しさにはつながらなかったのですね。
+```
+
+別欄逆順／同欄received先行ではObservationの二節順だけが逆になり、Receptionは同じ。入力時点形はObservationの満足が「満足している」、Receptionが「入力した時点での満足」となる。他の意味内容は同じだった。
+
+比較用の**別入力**「結論は出ていないが、考えを言葉にできて満足した。」単独の現在のReceptionは「結論は出ていないという点と切り分けて、当時の満足を、考えを言葉にできたことに向けられた充足として受け取りました。」。新しい対象本文の実生成結果や完成見本ではない。この既存文も説明性を残している。
+
+### 原因と採用を求める最小差分
+
+`emlis_thread_projection._appraisal_received_components`は未成立contextがあるだけでFalseを返す。u262は組外を本人実行行動へ限定し、u281の二経験資格は未成立を含めていなかった。さらに`emlis_stage1_composition._validate_component_reception_plan_ownership`は評価pairと理由を引いた残りをreceived exact2と検証するため、未成立contextを評価成分へ所有させてもいない。従って豊かな読みを選んだ後の文章だけの取り落としではない。作者だけで充足へ書き換える案は採らない。
+
+推奨は**初回の未成立三点＋別received二点を、既存の二成分比較へ参加させる資格追加**。別のLIMITED局所carrierを新設する必要は現時点では見つかっていない。既存`ComponentReceptionOpportunityV1`は二つの機会それぞれに複数basis／relationを保持でき、通常`EmlisAppraisalContent`はu262の三点を表せる。静的に既存作者・独立readerの三点対応も確認した。組ごとのlossless投影と実本文成立は未実装・未検証であり、断定しない。
+
+1. 追加対象は回答なし・round0・legacy復元でない初回。本人の完全な未成立fact（現在・否定）exact1、実行済み対象event（過去）、肯定・無程度満足（過去又は入力時点）の三点。既存source-ownedな対象→評価ABOUT_TARGET、未成立→評価CONTRASTの二辺を持つこと。
+2. 残りは既存資格で証明された本人received出来事と過去の反応exact2、明示contrast exact1。現行の肯否・程度・本人帰属等の資格は広げない。全requiredな本文source五点と三辺を二成分へ一意に分け、既存required Move exact2が各成分を完全所有すること。両組間の関係・他の必須材料・意味不明点・共有対象・理由・重複／曖昧な所有は除く。
+3. 別欄両順と同欄両順（memo／memo_action）を、配置名ではなくu299までの原文範囲・本人継続・一意な出現・非重複所有で扱う。新しい日本語認識文法は追加しない。
+4. 既存whole候補とReadingConsequenceは各一つ。各成分内の比較と全required所有を独立に証明した結果だけを選び、NORMALを強制しない。未成立三点の内容は三binding・protected0・焦点対比、receivedは別の二binding・別の焦点対比。原文の因果・同時性・達成目標・相手意図を補わない。
+5. 単一Human Reception作者と作者非依存の有限節readerを維持する。内容目標は、結論が出ていないことを保持したまま、言葉にできた対象へ向く本人の充足を受け取り、もう一方の嬉しさが伴わなかった経験も別に受け取ること。対比の反復や満足の語義説明だけならPRODUCT_NOT_CLEARを維持し、語尾variationを繰り返さない。
+
+### 変更owner・互換・完成条件
+
+必須の実装候補は既存`emlis_thread_projection.py`のsource資格と`emlis_stage1_composition.py`の独立所有closure。既存contracts／input_specific_meaning／Human Reception作者／gateは再利用が基本で、新schema・新内容型・上限緩和・registry追加は本案に含めない。実装前にこの因果範囲内の変更pathを固定し、既存評価testsと現行identity fixtureを更新する。既存型でlosslessに結べなければ、別型を黙って追加せず不足を示す。
+
+source認識が同じでもwhole候補・branch・主観内容・識別hash・本文は変わる。checkpoint一致だけで旧生成結果の同一を主張しない。旧保存本文はGET/start／同一回答再送で非再生成のまま保持する。checkpoint保存後・本文保存前の再試行、旧質問への回答、legacy復元、対象外更新は独立に比較し、旧sourceの完全再導出と既存retry境界を維持する。新しい保存versionやretry契約が必要なら本案の外として具体化する。
+
+補足：`emlis_answer_update._base_ref`と初回checkpointはsource envelope・核・関係・source prefixから作られ、whole選択は含まない。serviceの既存`_process`は未保存本文の再試行で保存MEANING_UPDATEを再利用し、現在のengine生成結果と完全checkpoint一致を要求する。この場合は現在の資格で本文が変わり得る既存契約を維持し、新しい旧renderer固定flagを足さない。完成済み本文の非再生成とは別に、意味event・checkpoint・operationを保持した再試行を検証する。既発行質問への新回答では初回資格を適用しない。
+
+承認後はsource→成分→whole選択→主観命題→本文→保存／再表示を同じ単位で実装・検証する。6配置×評価時点に対象動作差分を加え、未成立削除／肯否・時点変更、対象差替え、満足の肯否／程度、received反応差分、片組削除、追加材料、重複／foreign ownerとID再計算後の成分交換を照合する。作者禁止readerで三点・二辺と別receivedを照合し、初回観測の一節化・満足一回・未明示同時性なしも維持する。旧保存非再生成、実service＋隔離SQL、現行RNの本文／全履歴／再表示を確認し、rootが実保存本文を読む。実機と正式Product Readは別である。
+
+Rule18 §11.3のLEVEL_3：u262/u281の資格を広げるため、この追加についてMashの承認を求める。既承認u262/u281/u289/u294/u299を再承認待ちには戻さない。承認がなければ現行の注意内容で止まり、作者の言い換えでは解消しない。外部AI・service・依存・費用・公開API／DTO／DB／RN schema・配置／mergeの追加は0を予定。作業は資格／独立所有修正と既存回帰・保存表示検証で、正確な工数・完了日は未確定。新しい補助runner・checker・証跡契約を作らない。同Workのread-only補助による因果照合であり、別Pro/Ultraモデルの正式二重検証ではない。
+
+STRUCTURE_MAP_DELTA_NONE：今回は提案文書だけ。全体01・01A/B/C・current_structureの実装配置と責務は変わらない。意味設計・schema正本05へ提案状態、06・07・weekly§5.6.50へ結果と次を同期する。10/17確認点ではu299までの停止／認識修復と、今回特定した選択資格不足を区別する。初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置。訂正後の二重説明／ATTENTIONのみ、共有対象／対象外更新、既存周辺4失敗（過去共有17と集合一致未確認）、same100、Q1上限、giver帰属、本人実機・正式Product Readは未解消。10/31管理線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％は維持する。
