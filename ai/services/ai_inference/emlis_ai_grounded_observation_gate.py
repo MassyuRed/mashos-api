@@ -4997,6 +4997,19 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
         _thread_withdrawn_original_reaction, _received_event_reaction_projections,
         _thread_revised_original_reaction,
     )
+    from emlis_ai_grounded_human_reception import (
+        SelectedRetainedReceivedExperienceDecisionV1,
+        validate_selected_retained_received_experience,
+    )
+    decision = next((d for d in selected_subjective_input.decisions
+                     if d.move_id == move.move_id), None) if selected_subjective_input else None
+    local = None
+    if type(decision) is SelectedRetainedReceivedExperienceDecisionV1:
+        try:
+            local = validate_selected_retained_received_experience(
+                decision, selected_subjective_input, plan, resolver)
+        except (ValueError, TypeError, AttributeError, KeyError):
+            return None
     original_group = _received_contrast_group_targets(plan.nuclei, plan.relations)
     original = bool(original_group and original_group ==
                     (move.target_nucleus_ids, move.support_nucleus_ids))
@@ -5043,7 +5056,7 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                  and move == reception_moves[1]
                  or qualified_original_scope))
         or move.reception_act != "stay_with_current_burden"
-        or not (original or thread_group)
+        or not (original or thread_group or local is not None)
         or not raw.endswith("。") or raw.count("。") != 1
         or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
         return None
@@ -5206,15 +5219,16 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
             # Read the selected contrast, its two owned endpoints and the
             # actual polarity from delivered bytes. Do not call the author
             # or treat a generic 'experience' label as a semantic witness.
-            if (decision is None or decision.branch != "NORMAL" or about
+            experience_basis = local.basis_rows if local is not None else decision.basis_rows if decision else ()
+            if (decision is None or decision.branch != "NORMAL" and local is None or about
                 or len(parts) != 1 or len(contrasts) != 1
                 or decision.target_nucleus_ids != move.target_nucleus_ids
                 or decision.support_nucleus_ids != move.support_nucleus_ids
                 or len(move.support_nucleus_ids) != 1
                 or len(decision.selected_contribution_refs) != 1
-                or len(decision.basis_rows) != 2):
+                or len(experience_basis) != 2):
                 return None
-            proposition = decision.subjective_proposition
+            proposition = local.proposition if local is not None else decision.subjective_proposition
             appraisal = proposition.appraisal_content
             node_map = dict(selected_subjective_input.semantic_nucleus_pairs)
             relation_map = dict(selected_subjective_input.relation_pairs)
@@ -5226,13 +5240,13 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                 or appraisal.focal_relation_ref != proposition.focal_relation_ref
                 or relation_map.get(proposition.focal_relation_ref) != contrasts[0].relation_id
                 or tuple(node_map.get(ref) for ref in proposition.response_object_refs) != endpoints
-                or set(appraisal.appraised_bindings) != {b.binding_ref for b in decision.basis_rows}
-                or {(b.role, node_map.get(b.semantic_ref)) for b in decision.basis_rows}
+                or set(appraisal.appraised_bindings) != {b.binding_ref for b in experience_basis}
+                or {(b.role, node_map.get(b.semantic_ref)) for b in experience_basis}
                     != {("RELATION_LEFT", event_id), ("RELATION_RIGHT", feeling.nucleus_id)}
                 or not decision.selected_contribution_refs
                 or not (set(appraisal.basis_contribution_refs) == set(decision.selected_contribution_refs)
                         == set(proposition.target_contribution_refs)
-                        == {b.contribution_ref for b in decision.basis_rows})):
+                        == {b.contribution_ref for b in experience_basis})):
                 return None
             restored = experience["feeling"] + (
                 "くなかった" if experience["presence"] == "伴わなかった" else "かった")

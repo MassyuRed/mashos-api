@@ -4248,7 +4248,8 @@ def test_separate_reasonless_correction_retains_both_limited_duties(monkeypatch,
     assert result.artifact is not None, result.reason_codes
     body = result.artifact
     assert '資料を分類したことについて、当時は満足しなかった' in body.reception
-    assert '褒められたことと' + reaction + 'こと' in body.reception
+    presence = '嬉しさが伴わなかった' if reaction == '嬉しくなかった' else '悲しさが伴った'
+    assert '褒められたことだけでは言い表せない、' + presence + 'あなたの経験として受け取りました。' in body.reception
     assert len(plan.response_plan.human_reception_plan.moves) == len(projection.selected_reception.decisions) == 2
     assert projection.meaning_plan.projection_branch == 'LIMITED'
     assert all(d.branch == 'LIMITED' for d in projection.selected_reception.decisions)
@@ -4294,12 +4295,14 @@ def test_separate_reasonless_duties_inverse_rejects_missing_or_changed_experienc
             plan=plan, sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
     assert valid(body.reception)
     first, second = (s + '。' for s in body.reception.split('。') if s)
+    presence = '嬉しさが伴わなかった' if reaction == '嬉しくなかった' else '悲しさが伴った'
+    assert presence in second
     for wrong in (first, second,
         body.reception.replace('褒められた', 'その分類を褒められた'),
         body.reception.replace('資料を分類した', '資料を整理した'),
         body.reception.replace('満足しなかった', '満足した'),
-        body.reception.replace(reaction, '嬉しかった'),
-        body.reception.replace(reaction, '嬉しくない'),
+        body.reception.replace(presence, '嬉しさが伴った'),
+        body.reception.replace(presence, '嬉しさが伴わない' if reaction == '嬉しくなかった' else '悲しさが伴う'),
         body.reception + '二つの経験は同時に起きています。',
         body.reception + '褒められたことが不満の原因です。'):
         assert wrong != body.reception and not valid(wrong)
@@ -4651,3 +4654,328 @@ def test_reasoned_experience_is_not_promoted_after_any_admitted_answer(answer):
     selected = project_thread_meaning(p, plan).selected_reception
     assert all(type(d.subjective_proposition.appraisal_content) is not c.EmlisReasonedExperienceAppraisalContent
                for d in selected.decisions)
+
+
+def _retained_received_request(reason='', operation='revise', reaction='嬉しくなかった', reverse=False):
+    from test_cmee_emlis_q3_thread import advance
+    appraisal = reason + '資料を分類したことに満足した。'
+    received = '褒められたのに、' + reaction + '。'
+    original = request(*((received, appraisal) if reverse else (appraisal, received)))
+    answer = ('「満足した」ではなく「満足しなかった」です。' if operation == 'revise'
+              else '「満足した」は誤りです。')
+    return advance(original, answer)
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('reaction,experience', [
+    ('嬉しくなかった', '嬉しさが伴わなかった'), ('悲しかった', '悲しさが伴った'),
+])
+@pytest.mark.parametrize('reason,operation', [
+    ('', 'revise'), ('', 'withdraw'), ('探しやすくなったので、', 'withdraw'),
+])
+def test_retained_received_experience_keeps_limited_aggregate_and_every_other_duty(
+        monkeypatch, reverse, reaction, experience, reason, operation):
+    import emlis_ai_grounded_human_reception as hr
+    from cocolon_meaning_experience_engine import emlis_thread_projection as projection_module
+    req = _retained_received_request(reason, operation, reaction, reverse)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    projection = project_thread_meaning(prepared, plan)
+    selected = projection.selected_reception
+    decision, = (d for d in selected.decisions
+                  if type(d) is hr.SelectedRetainedReceivedExperienceDecisionV1)
+    local = decision.retained_received_experience
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None, result.reason_codes
+    clause = '褒められたことだけでは言い表せない、' + experience + 'あなたの経験として受け取りました。'
+    assert clause in result.artifact.reception
+    assert result.meaning_checkpoint == prepared.checkpoint
+    assert prepared.checkpoint.assessment_status == 'RESOLVED'
+    assert projection.meaning_plan.projection_branch == 'LIMITED'
+    assert all(d.branch == 'LIMITED' for d in selected.decisions)
+    assert len(selected.decisions) == len(plan.response_plan.human_reception_plan.moves) == (2 if operation == 'revise' else 1)
+    assert len(local.basis_rows) == len(local.qualifier_rows) == 2
+    assert tuple(row.role for row in local.basis_rows) == ('RELATION_LEFT', 'RELATION_RIGHT')
+    assert len(local.proposition.target_contribution_refs) == 1
+    assert len(local.proposition.response_object_refs) == 2
+    assert local.proposition.appraisal_content.operation == 'PRESERVE_BOTH_ENDPOINTS'
+    assert len(decision.basis_rows) == (4 if operation == 'revise' else 2)
+    if operation == 'revise':
+        assert local.proposition != decision.subjective_proposition
+    assert all(row.time_scope == 'past' for row in local.qualifier_rows)
+    semantic_map = dict(selected.semantic_nucleus_pairs)
+    relation_map = dict(selected.relation_pairs)
+    received_relation = next(row for row in plan.relations
+        if row.relation_id == relation_map[local.proposition.focal_relation_ref])
+    assert tuple(semantic_map[b.semantic_ref] for b in local.basis_rows) == (
+        received_relation.from_nucleus_id, received_relation.to_nucleus_id)
+    assert received_relation in prepared.original_plan.relations
+    for nid in (received_relation.from_nucleus_id, received_relation.to_nucleus_id):
+        assert next(n for n in plan.nuclei if n.nucleus_id == nid) == next(
+            n for n in prepared.original_plan.nuclei if n.nucleus_id == nid)
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    assert evaluate_grounded_surface_body_inverse(body=result.artifact.text.encode(), plan=plan,
+        sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+
+    # The new local content changes one Reception clause. Disabling its source
+    # qualification recreates the existing LIMITED aggregate and body duties.
+    monkeypatch.setattr(projection_module, 'derive_retained_received_experience_eligibility', lambda *_a: None)
+    baseline_projection = project_thread_meaning(prepared, plan)
+    baseline = MeaningExperienceEngine().generate(req)
+    assert baseline.artifact is not None, baseline.reason_codes
+    assert baseline_projection.meaning_plan == projection.meaning_plan
+    assert baseline.meaning_checkpoint == result.meaning_checkpoint
+    assert baseline.artifact.observation == result.artifact.observation
+    assert baseline.reason_codes == result.reason_codes
+    assert prepare_emlis_meaning(req) == prepared and build_updated_grounded_plan(prepared) == plan
+    for current, previous in zip(selected.decisions, baseline_projection.selected_reception.decisions, strict=True):
+        base = hr.SelectedSubjectiveReceptionDecisionV1(**{
+            name: getattr(current, name) for name in hr.SelectedSubjectiveReceptionDecisionV1.__dataclass_fields__})
+        assert replace(base, decision_ref='') == replace(previous, decision_ref='')
+    prior_clause = next(part + '。' for part in baseline.artifact.reception.split('。') if '褒められた' in part)
+    assert result.artifact.text == baseline.artifact.text.replace(prior_clause, clause)
+
+
+@pytest.mark.parametrize('reaction,experience', [
+    ('嬉しくなかった', '嬉しさが伴わなかった'), ('悲しかった', '悲しさが伴った'),
+])
+@pytest.mark.parametrize('reason,operation', [
+    ('', 'revise'), ('', 'withdraw'), ('探しやすくなったので、', 'withdraw'),
+])
+def test_retained_received_experience_reader_preserves_source_without_author(
+        monkeypatch, reaction, experience, reason, operation):
+    import emlis_ai_grounded_human_reception as hr
+    from emlis_ai_grounded_observation_gate import read_source_owned_discourse
+    req = _retained_received_request(reason, operation, reaction)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    decision, = (d for d in selected.decisions
+                  if type(d) is hr.SelectedRetainedReceivedExperienceDecisionV1)
+    move = next(m for m in plan.response_plan.human_reception_plan.moves if m.move_id == decision.move_id)
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None, result.reason_codes
+    clause = '褒められたことだけでは言い表せない、' + experience + 'あなたの経験として受け取りました。'
+    assert clause in result.artifact.reception
+
+    def forbidden(*_a, **_k):
+        pytest.fail('retained received independent reader invoked an author')
+    monkeypatch.setattr(hr, '_source_grounded_received_discourse', forbidden)
+    monkeypatch.setattr(hr, '_source_grounded_reception_fragment', forbidden)
+    read = lambda text, authority=selected: read_source_owned_discourse(text, move, plan, resolver, authority)
+    assert read(clause) is not None
+    assert read(clause, None) is None
+    for wrong in (
+        clause.replace('褒められた', '資料を分類した'),
+        clause.replace('褒められた', '褒められなかった'),
+        clause.replace('褒められた', '褒められる'),
+        clause.replace('褒められた', 'その分類を褒められた'),
+        clause.replace(experience, '嬉しさが伴った' if reaction == '嬉しくなかった' else '悲しさが伴わなかった'),
+        clause.replace(experience, '嬉しさが伴わない' if reaction == '嬉しくなかった' else '悲しさが伴う'),
+        clause.replace('あなた', '同僚'),
+        clause.replace('ことだけでは言い表せない、', 'ことが原因で、'),
+        clause.replace('ことだけでは言い表せない、', 'ことへの期待が外れ、'),
+        clause.replace('あなたの経験', '成長した経験'),
+        clause + '褒められたことが不満の原因です。',
+    ):
+        assert wrong != clause and read(wrong) is None, wrong
+
+
+@pytest.mark.parametrize('reason,operation', [('', 'revise'), ('探しやすくなったので、', 'withdraw')])
+def test_retained_received_experience_resealing_cannot_rebind_source_update_or_content(reason, operation):
+    from dataclasses import asdict
+    from cocolon_meaning_experience_engine import contracts as c
+    import emlis_ai_grounded_human_reception as hr
+    req = _retained_received_request(reason, operation)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    decision, = (d for d in selected.decisions
+                  if type(d) is hr.SelectedRetainedReceivedExperienceDecisionV1)
+    local = decision.retained_received_experience
+    eligibility = local.eligibility
+    update, = eligibility.update.updates
+    wrong_update = replace(eligibility.update, updates=(replace(update, binding_kind='QUESTION_FOCUS'),))
+    wrong_time = replace(eligibility.update, updates=(replace(update,
+        temporal_binding=replace(update.temporal_binding, about_time='ANSWER_TIME')),))
+    changed_eligibilities = (
+        replace(eligibility, schema_version='cocolon.cmee.retained_received_experience_eligibility.v0'),
+        replace(eligibility, source_prefix_ref='foreign'),
+        replace(eligibility, checkpoint_ref='foreign'),
+        replace(eligibility, original_source_ref=eligibility.answer_source_ref),
+        replace(eligibility, answer_source_ref=eligibility.original_source_ref),
+        replace(eligibility, original_nuclei=eligibility.original_nuclei[:-1]),
+        replace(eligibility, original_relations=()),
+        replace(eligibility, update=wrong_update),
+        replace(eligibility, update=wrong_time),
+        replace(eligibility, move_ref='foreign'),
+        replace(eligibility, thread_control=replace(eligibility.thread_control, current_round=2)),
+    )
+    first_basis, second_basis = local.basis_rows
+    first_qualifier, second_qualifier = local.qualifier_rows
+    changed_contents = [replace(local, eligibility=wrong) for wrong in changed_eligibilities]
+    changed_contents.extend((
+        replace(local, schema_version='cocolon.cmee.retained_received_experience_content.v0'),
+        replace(local, projection_preimage_ref='foreign'),
+        replace(local, aggregate_projection_seal_ref='foreign'),
+        replace(local, aggregate_claim_ref='foreign'),
+        replace(local, aggregate_proposition_ref='foreign'),
+        replace(local, meaning_outcome_ref='foreign'),
+        replace(local, reception_binding_ref='foreign'),
+        replace(local, grounding_ref='foreign'),
+        replace(local, proposition=replace(local.proposition, response_object_refs=local.proposition.response_object_refs[::-1])),
+        replace(local, proposition=replace(local.proposition, focal_relation_ref='foreign')),
+        replace(local, proposition=replace(local.proposition, appraisal_content=replace(
+            local.proposition.appraisal_content, operation='VALUE_AS'))),
+        replace(local, basis_rows=(replace(first_basis, role='RELATION_RIGHT'), second_basis)),
+        replace(local, basis_rows=(replace(first_basis, semantic_ref=second_basis.semantic_ref), second_basis)),
+        replace(local, qualifier_rows=(first_qualifier, replace(second_qualifier, time_scope='present'))),
+        replace(local, qualifier_rows=(first_qualifier, replace(second_qualifier, polarity='positive'))),
+    ))
+    if decision.subjective_proposition != local.proposition:
+        changed_contents.append(replace(local, proposition=decision.subjective_proposition))
+    wrong_decisions = []
+    for changed in changed_contents:
+        assert changed != local
+        sealed = replace(changed, seal_ref=c.retained_received_experience_seal(changed))
+        wrong_decisions.append(replace(decision, retained_received_experience=sealed))
+    # Equal-but-false aggregate and local qualifier rows cannot authorize
+    # each other. The actual received source still owns all three axes.
+    for changed_qualifier in (
+        replace(second_qualifier, polarity='positive', canonical_qualifier_codes=(
+            'right_polarity:positive', 'right_modality:feeling', 'right_time_scope:past')),
+        replace(second_qualifier, modality='belief', canonical_qualifier_codes=(
+            'right_polarity:negative', 'right_modality:belief', 'right_time_scope:past')),
+        replace(second_qualifier, time_scope='present', canonical_qualifier_codes=(
+            'right_polarity:negative', 'right_modality:feeling', 'right_time_scope:present')),
+        replace(second_qualifier, source_candidate_ref='foreign'),
+        replace(second_qualifier, source_argument_role='LEFT'),
+        replace(second_qualifier, canonical_qualifier_codes=first_qualifier.canonical_qualifier_codes),
+    ):
+        changed_proposition = decision.subjective_proposition
+        changed_local_proposition = local.proposition
+        changed_axes = ((changed_qualifier.polarity, changed_qualifier.modality, changed_qualifier.time_scope)
+                        != (second_qualifier.polarity, second_qualifier.modality, second_qualifier.time_scope))
+        changed_candidate = changed_qualifier.source_candidate_ref != second_qualifier.source_candidate_ref
+        if changed_axes or changed_candidate:
+            changed_qualifier = replace(changed_qualifier,
+                source_qualifier_binding_ref=c.project_stage1_source_qualifier_binding_ref(**{
+                    key: value for key, value in asdict(changed_qualifier).items()
+                    if key != 'source_qualifier_binding_ref'}))
+            changed_proposition = replace(changed_proposition, source_qualifier_binding_refs=tuple(
+                changed_qualifier.source_qualifier_binding_ref if ref == second_qualifier.source_qualifier_binding_ref else ref
+                for ref in changed_proposition.source_qualifier_binding_refs))
+            changed_local_proposition = replace(changed_local_proposition, source_qualifier_binding_refs=tuple(
+                changed_qualifier.source_qualifier_binding_ref if ref == second_qualifier.source_qualifier_binding_ref else ref
+                for ref in changed_local_proposition.source_qualifier_binding_refs))
+        changed_local = replace(local, qualifier_rows=(first_qualifier, changed_qualifier),
+            proposition=changed_local_proposition,
+            aggregate_proposition_ref=c.retained_received_experience_aggregate_ref(changed_proposition))
+        changed_local = replace(changed_local, seal_ref=c.retained_received_experience_seal(changed_local))
+        changed_decision = replace(decision, retained_received_experience=changed_local,
+            subjective_proposition=changed_proposition,
+            qualifier_rows=tuple(changed_qualifier if q == second_qualifier else q for q in decision.qualifier_rows))
+        if (changed_axes or changed_candidate) and changed_qualifier.time_scope == 'past':
+            # Fully coherent identities and local/aggregate content still
+            # cannot override the source's axes or selected candidate below.
+            c.validate_retained_received_experience_content(changed_local, changed_decision, selected)
+        wrong_decisions.append(changed_decision)
+    wrong_decisions.extend((replace(decision, branch='NORMAL'), replace(decision, move_id='foreign')))
+    for wrong in wrong_decisions:
+        identified = hr.identify_selected_subjective_reception_decision(wrong)
+        altered = hr.identify_selected_subjective_reception_input(replace(selected,
+            decisions=tuple(identified if d == decision else d for d in selected.decisions)))
+        with pytest.raises(hr.GroundedHumanReceptionSurfaceError, match='MEANING_REALIZATION_CAUSAL_TRACE_GAP'):
+            hr.validate_selected_subjective_reception_input(altered,
+                plan.response_plan.human_reception_plan, plan, resolver)
+
+
+@pytest.mark.parametrize('memo,action,answer', [
+    ('資料を分類したことに満足した。', '褒められたのに、嬉しくなかった。', None),
+    ('探しやすくなったので、資料を分類したことに満足した。', '褒められたのに、嬉しくなかった。',
+     '「満足した」ではなく「満足しなかった」です。'),
+    ('資料を分類したことに満足した。褒められたのに、嬉しくなかった。', '', '「満足した」は誤りです。'),
+    ('資料を分類したことには満足した。でも、その分類を褒められたのに、嬉しくなかった。', '',
+     '「満足した」は誤りです。'),
+    ('資料を分類したことに満足した。', '褒められたのに、嬉しくなかった。誘われたのに、悲しかった。',
+     '「満足した」は誤りです。'),
+    ('資料を分類したことに満足している。', '褒められたのに、嬉しくなかった。',
+     '「満足している」は誤りです。'),
+    ('資料を分類したことに満足した。', '褒められたのに、嬉しくない。', '「満足した」は誤りです。'),
+    ('資料を分類したことに満足した。', '褒められたのに、嬉しくなかった。',
+     '「嬉しくなかった」ではなく「悲しかった」です。'),
+    ('資料を分類したことに満足した。', '褒められたのに、嬉しくなかった。',
+     '「満足した」ではなく「今は満足していない」です。'),
+    ('資料を分類したことに満足した。', '褒められたのに、嬉しくなかった。',
+     '「満足した」ではなく「納得しなかった」です。'),
+    ('資料を分類したことに満足した。', '褒められたのに、嬉しくなかった。',
+     '「満足した」ではなく「満足しなかった」です。「存在しない」は誤りです。'),
+    ('資料を分類したことに満足した。', '褒められたのに、嬉しくなかった。', 'その時は悲しかった。'),
+])
+def test_retained_received_experience_excludes_other_scopes(memo, action, answer):
+    from test_cmee_emlis_q3_thread import advance
+    import emlis_ai_grounded_human_reception as hr
+    from cocolon_meaning_experience_engine.emlis_thread_projection import derive_retained_received_experience_eligibility
+    req = request(memo, action)
+    if answer is not None:
+        req = advance(req, answer)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    assert derive_retained_received_experience_eligibility(prepared, plan, prepared.thread.resolver()) is None
+    assert all(type(d) is not hr.SelectedRetainedReceivedExperienceDecisionV1
+               for d in project_thread_meaning(prepared, plan).selected_reception.decisions)
+
+
+def test_retained_received_experience_excludes_every_legacy_mode_and_unresolved_or_later_answers():
+    from cocolon_meaning_experience_engine.emlis_thread_projection import derive_retained_received_experience_eligibility
+    prepared = prepare_emlis_meaning(_retained_received_request())
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    assert derive_retained_received_experience_eligibility(prepared, plan, resolver) is not None
+    for name in prepared.__dataclass_fields__:
+        if name.startswith('legacy_'):
+            assert derive_retained_received_experience_eligibility(replace(prepared, **{name: True}), plan, resolver) is None
+    variants = (
+        replace(prepared, checkpoint=replace(prepared.checkpoint, assessment_status='PARTIAL')),
+        replace(prepared, accepted_nuclei=()),
+        replace(prepared, thread=replace(prepared.thread, control=replace(prepared.thread.control, current_round=2))),
+        replace(prepared, thread=replace(prepared.thread, answers=(*prepared.thread.answers, *prepared.thread.answers))),
+    )
+    for changed in variants:
+        assert derive_retained_received_experience_eligibility(changed, plan, resolver) is None
+
+
+@pytest.mark.parametrize('operation', ['revise', 'withdraw'])
+@pytest.mark.parametrize('received', [
+    '褒められたのに、嬉しくなかったです。',
+    '私は褒められたのに、嬉しくなかった。',
+])
+def test_retained_received_experience_keeps_existing_surface_outside_bare_experience_grammar(
+        monkeypatch, operation, received):
+    from test_cmee_emlis_q3_thread import advance
+    import emlis_ai_grounded_human_reception as hr
+    from cocolon_meaning_experience_engine import emlis_thread_projection as projection_module
+    req = request('資料を分類したことに満足した。', received)
+    req = advance(req, '「満足した」ではなく「満足しなかった」です。' if operation == 'revise'
+                  else '「満足した」は誤りです。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    projection = project_thread_meaning(prepared, plan)
+    assert sum(type(d) is hr.SelectedRetainedReceivedExperienceDecisionV1
+               for d in projection.selected_reception.decisions) == 1
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None, result.reason_codes
+    assert result.meaning_checkpoint == prepared.checkpoint
+    assert 'ことだけでは言い表せない、' not in result.artifact.reception
+    assert tuple(n for n in plan.nuclei if n.source_fields == ('memo_action',)) == tuple(
+        n for n in prepared.original_plan.nuclei if n.source_fields == ('memo_action',))
+    assert tuple(r for r in plan.relations if r.type == 'contrast') == tuple(
+        r for r in prepared.original_plan.relations if r.type == 'contrast')
+    monkeypatch.setattr(projection_module, 'derive_retained_received_experience_eligibility', lambda *_a: None)
+    baseline = MeaningExperienceEngine().generate(req)
+    assert baseline.artifact == result.artifact
+    assert baseline.reason_codes == result.reason_codes
+    assert baseline.meaning_checkpoint == result.meaning_checkpoint

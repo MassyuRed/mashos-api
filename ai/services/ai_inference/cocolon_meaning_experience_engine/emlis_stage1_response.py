@@ -14208,3 +14208,22 @@ __all__ = [
     "validate_allowed_reception_opportunity_envelope",
     "validate_reception_asset_mapping",
 ]
+
+
+def derive_retained_received_experience_content(decision, *, contribution_rows,
+        candidate_rows, contribution_candidate_map):
+    """Derive only the selected received relation's two existing bindings."""
+    from . import contracts as c
+    basis = tuple(b for b in decision.basis_rows
+                  if b.contribution_ref in decision.selected_contribution_refs)
+    appraisal = c._im04_limited_appraisal_content(
+        basis_binding_refs=tuple(b.binding_ref for b in basis),
+        contribution_rows=contribution_rows, candidate_rows=candidate_rows,
+        contribution_candidate_map=contribution_candidate_map,
+        contribution_refs=decision.selected_contribution_refs,
+        semantic_refs=tuple(b.semantic_ref for b in basis), aggregate_attention=False)
+    if (type(appraisal) is not c.EmlisAppraisalContent
+        or appraisal.dimension != 'RELATIONAL_NONCOLLAPSE'
+        or appraisal.operation != 'PRESERVE_BOTH_ENDPOINTS'):
+        raise c.CMEEStage1ContractError('retained_received_experience_content_invalid')
+    return c.retained_received_experience_local_proposition(decision, appraisal.focal_relation_ref)

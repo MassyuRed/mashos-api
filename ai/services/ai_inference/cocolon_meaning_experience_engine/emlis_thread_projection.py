@@ -99,6 +99,292 @@ def _appraisal_received_components(prepared, plan, resolver):
     return True
 
 
+def _retained_received_experience_source(prepared, plan, resolver):
+    """Select the unchanged pair in the one approved separate-field update."""
+    import json
+    import re
+    from dataclasses import asdict, fields
+    import emlis_ai_grounded_observation_plan as gp
+    from .emlis_answer_update import PreparedEmlisMeaning
+
+    if (type(prepared) is not PreparedEmlisMeaning
+        or any(getattr(prepared, f.name) for f in fields(prepared) if f.name.startswith('legacy_'))):
+        return None
+    thread, original, checkpoint = prepared.thread, prepared.original_plan, prepared.checkpoint
+    control = thread.control
+    update = checkpoint.answer_update
+    if (len(thread.answers) != 1 or len(control.answers) != 1 or control.current_round != 1
+        or control.admitted_history or control.rejected_frame_keys or control.frame_feedback_sources
+        or checkpoint.assessment_status != 'RESOLVED' or checkpoint.unresolved_parts
+        or update is None or update.disposition != 'MATERIAL_UPDATE'
+        or update.unresolved_parts or len(update.updates) != 1):
+        return None
+    links = tuple(edge for edge in original.relations
+                  if source_owned_result_appraisal(edge, original.nuclei))
+    if len(links) != 1 or not _appraisal_received_components(prepared, original, resolver):
+        return None
+    link = links[0]
+    index = {node.nucleus_id: node for node in original.nuclei}
+    event, appraisal = (index[nid] for nid in (link.from_nucleus_id, link.to_nucleus_id))
+    reason = source_owned_result_appraisal_reason(link, original.nuclei, original.relations)
+    required = tuple(node for node in original.nuclei if node.retention == 'required')
+    text = tuple(node for node in original.nuclei
+                 if set(node.source_fields) & {'memo', 'memo_action', 'answer_text_private'})
+    owned = {event.nucleus_id, appraisal.nucleus_id}
+    if reason is not None:
+        owned.add(reason.nucleus_id)
+    rest = tuple(node for node in required if node.nucleus_id not in owned)
+    rest_ids = {node.nucleus_id for node in rest}
+    relations = tuple(edge for edge in original.relations
+                      if {edge.from_nucleus_id, edge.to_nucleus_id} <= rest_ids)
+    received = _received_contrast_group_targets(rest, relations)
+    if (len(required) != 4 + int(reason is not None) or text != required
+        or set(original.coverage_requirements.required_nucleus_ids) != {n.nucleus_id for n in required}
+        or len(original.relations) != 2 + int(reason is not None)
+        or len(rest) != 2 or len(relations) != 1 or not received or len(received[0]) != 1
+        or (appraisal.semantic_frame.polarity, appraisal.semantic_frame.time_scope) != ('positive', 'past')
+        or event.semantic_frame.time_scope != 'past'
+        or {code for code in appraisal.semantic_frame.attribute_codes if code.startswith('source_appraisal_')}
+            != {'source_appraisal_kind:satisfaction', 'source_appraisal_degree:unmarked'}):
+        return None
+    received_event, reaction = (index[ids[0]] for ids in received)
+    received_relation = relations[0]
+    if (event.source_fields == received_event.source_fields
+        or received_relation.grounding_kind != 'user_stated_relation'
+        or received_relation.source_span_ids != received_event.source_span_ids):
+        return None
+    for node in required:
+        if (node.source_fields not in {('memo',), ('memo_action',)}
+            or len(node.source_span_ids) != 1 or node.source_span_ids[0] not in resolver.span_ids
+            or node.surface_anchor_ids != node.source_span_ids
+            or node.semantic_frame.target_anchor_ids != node.source_span_ids
+            or node.grounding_kind != 'explicit' or node.allowed_claim_scope != 'explicit_current_input'
+            or node.semantic_frame.actor != 'current_user'):
+            return None
+    for node in (event, received_event):
+        span = resolver.resolve(node.source_span_ids[0])
+        source = str(thread.original.normalized_current_input.get(span.source_field) or '')
+        if (span.start_index != 0 or span.end_index != len(span.raw_text)
+            or re.fullmatch(re.escape(span.raw_text) + r'[。．.]?', source) is None
+            or tuple(s.span_id for s in resolver.resolve_many(resolver.span_ids)
+                     if s.source_field == span.source_field) != (span.span_id,)):
+            return None
+    received_text = hr.final_reception_source_anchor_text(received_event.nucleus_id, index, resolver)
+    giver = re.sub(r'^(?:私|自分|わたし)(?:は|が)', '', received_text).rpartition('に')[0]
+    if (gp._SELF_REFERENCE_RE.search(giver) is not None
+        or 'に' in received_text and not _source_operator_owner_scope_is_bound(received_text)):
+        return None
+
+    item = update.updates[0]
+    dependencies = tuple(edge.relation_id for edge in original.relations
+                         if appraisal.nucleus_id in (edge.from_nucleus_id, edge.to_nucleus_id))
+    answer_refs = tuple(q.evidence.evidence_id for q in resolver.qualified_refs
+                        if q.source_envelope_id == thread.answers[0].envelope.envelope_id)
+    if (len(answer_refs) != 1 or item.evidence_refs != answer_refs
+        or item.operation not in {'REVISE', 'WITHDRAW'} or item.binding_kind != 'EXPLICIT_CORRECTION'
+        or item.target_meaning_refs != (appraisal.nucleus_id,)
+        or item.superseded_claim_refs != (appraisal.nucleus_id,)
+        or item.affected_dependency_refs != dependencies
+        or item.temporal_binding.about_time != 'ORIGINAL_OCCASION'
+        or item.temporal_binding.anchor_source_ref != thread.original.envelope.envelope_id
+        or checkpoint.accepted_update_refs != (item.update_ref,)
+        or checkpoint.inactive_claim_refs != (appraisal.nucleus_id, *dependencies)):
+        return None
+    current = {node.nucleus_id: node for node in plan.nuclei}
+    answers = tuple(node for node in plan.nuclei if node.source_fields == ('answer_text_private',))
+    if item.operation == 'REVISE':
+        if reason is not None or len(answers) != 1 or len(prepared.accepted_nuclei) != 1:
+            return None
+        evaluation = answers[0]
+        frame = evaluation.semantic_frame
+        if (item.changed_claim_refs != (evaluation.nucleus_id,)
+            or (evaluation.kind, frame.predicate_kind, frame.modality, frame.polarity,
+                frame.time_scope, frame.actor) != ('reaction', 'feeling', 'feeling', 'negative', 'past', 'current_user')
+            or evaluation.retention != 'required' or evaluation.grounding_kind != 'explicit'
+            or evaluation.allowed_claim_scope != 'explicit_supplemental_answer'
+            or {code for code in frame.attribute_codes if code.startswith('thread_time:')}
+                != {'thread_time:original_occasion'}
+            or {code for code in frame.attribute_codes if code.startswith('source_appraisal_')}
+                != {'source_appraisal_kind:satisfaction', 'source_appraisal_degree:unmarked'}):
+            return None
+    elif item.changed_claim_refs or answers or prepared.accepted_nuclei:
+        return None
+    if (any(current.get(node.nucleus_id) != node for node in original.nuclei if node != appraisal)
+        or appraisal.nucleus_id in current
+        or set(current) != ({node.nucleus_id for node in original.nuclei if node != appraisal}
+                            | set(item.changed_claim_refs))
+        or tuple(edge for edge in plan.relations if edge.relation_id == received_relation.relation_id)
+            != (received_relation,)):
+        return None
+    moves = tuple(move for move in plan.response_plan.human_reception_plan.moves
+                  if move.target_nucleus_ids == received[0] and move.support_nucleus_ids == received[1]
+                  and move.reception_act == 'stay_with_current_burden' and move.required
+                  and move.source_evidence_span_ids == received_event.source_span_ids)
+    if len(moves) != 1:
+        return None
+    return c.RetainedReceivedExperienceEligibilityV1(
+        schema_version='cocolon.cmee.retained_received_experience_eligibility.v1',
+        source_prefix_ref=thread.source_prefix_ref, checkpoint_ref=checkpoint.checkpoint_id,
+        original_source_ref=thread.original.envelope.envelope_id,
+        answer_source_ref=thread.answers[0].envelope.envelope_id,
+        original_nuclei=tuple(json.dumps(asdict(node), ensure_ascii=False, sort_keys=True,
+            separators=(',', ':'), allow_nan=False) for node in required),
+        original_relations=tuple(json.dumps(asdict(edge), ensure_ascii=False, sort_keys=True,
+            separators=(',', ':'), allow_nan=False) for edge in original.relations),
+        update=update, move_ref=moves[0].move_id, thread_control=control)
+
+
+def _rederive_retained_received_experience_source(control, resolver):
+    """Re-admit actual envelopes and replay the existing answer owner only."""
+    from dataclasses import fields, is_dataclass
+    from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
+    from .emlis_thread_contracts import EmlisThreadInputV1
+    from .emlis_thread_source import ThreadEvidenceSpanResolver, admit_emlis_thread
+    from .source_kernel import _parse_canonical_frame
+    from .emlis_question import original_meaning_plan
+    from .emlis_answer_update import _prepare_answer, build_updated_grounded_plan
+
+    def immutable(value):
+        if value is None or isinstance(value, (str, int, bool)):
+            return True
+        if type(value) is tuple:
+            return all(immutable(child) for child in value)
+        return (is_dataclass(value) and value.__dataclass_params__.frozen
+                and all(immutable(getattr(value, field.name)) for field in fields(value)))
+
+    failure = 'retained_received_experience_source_invalid'
+    if (type(control) is not EmlisThreadInputV1 or not immutable(control)
+        or len(control.answers) != 1 or control.current_round != 1
+        or control.admitted_history or control.rejected_frame_keys or control.frame_feedback_sources
+        or type(resolver) is not ThreadEvidenceSpanResolver or resolver.source_contract != THREAD_SCHEMA):
+        raise ValueError(failure)
+    envelopes = tuple(resolver._source_envelopes.values())
+    original = tuple(row for row in envelopes if row.source_role == 'CURRENT_INPUT')
+    if len(envelopes) != 2 or len(original) != 1:
+        raise ValueError(failure)
+    envelope = original[0]
+    snapshot, _ = _parse_canonical_frame(envelope.raw_utf8)
+    request = c.GenerationRequest('retained-received-source-replay',
+        build_emlis_current_input_bundle(snapshot), envelope.source_record_id, emlis_thread=control)
+    thread = admit_emlis_thread(request)
+    replay_resolver = thread.resolver()
+    if (replay_resolver._source_envelopes != resolver._source_envelopes
+        or replay_resolver.span_ids != resolver.span_ids
+        or replay_resolver.qualified_refs != resolver.qualified_refs
+        or replay_resolver.resolve_many(replay_resolver.span_ids) != resolver.resolve_many(resolver.span_ids)):
+        raise ValueError(failure)
+    prepared = _prepare_answer(thread, original_meaning_plan(thread))
+    return prepared, build_updated_grounded_plan(prepared)
+
+
+def derive_retained_received_experience_eligibility(prepared, plan, resolver):
+    """Return no local qualification for every input outside the approved slice."""
+    try:
+        eligibility = _retained_received_experience_source(prepared, plan, resolver)
+        if eligibility is None:
+            return None
+        replay, replay_plan = _rederive_retained_received_experience_source(eligibility.thread_control, resolver)
+        if replay != prepared or replay_plan != plan:
+            return None
+        if _retained_received_experience_source(replay, replay_plan, resolver) != eligibility:
+            return None
+        return eligibility
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return None
+
+
+def validate_retained_received_experience_eligibility(eligibility, plan, resolver):
+    """Reject re-sealed source claims unless the admitted sources rederive them."""
+    failure = 'retained_received_experience_source_invalid'
+    try:
+        if type(eligibility) is not c.RetainedReceivedExperienceEligibilityV1:
+            raise ValueError(failure)
+        prepared, replay_plan = _rederive_retained_received_experience_source(eligibility.thread_control, resolver)
+        expected = _retained_received_experience_source(prepared, replay_plan, resolver)
+        if expected is None or replay_plan != plan or expected != eligibility:
+            raise ValueError(failure)
+    except (AttributeError, KeyError, TypeError, ValueError):
+        raise ValueError(failure) from None
+
+
+def validate_retained_received_experience_candidate(local, plan, resolver):
+    """Rebuild the local relation candidate and contribution from current source.
+
+    This two-node source slice supplies the existing candidate projector only;
+    it never replaces the whole graph, meaning outcome or aggregate projection.
+    Source/update eligibility is independently validated by the caller.
+    """
+    failure = 'retained_received_experience_candidate_invalid'
+    try:
+        if type(local) is not c.RetainedReceivedExperienceContentV1:
+            raise ValueError(failure)
+        eligibility = local.eligibility
+        move, = (move for move in plan.response_plan.human_reception_plan.moves
+                 if move.move_id == eligibility.move_ref)
+        if len(move.target_nucleus_ids) != 1 or len(move.support_nucleus_ids) != 1:
+            raise ValueError(failure)
+        endpoints = (*move.target_nucleus_ids, *move.support_nucleus_ids)
+        relation, = (edge for edge in plan.relations if edge.type == 'contrast'
+                     and (edge.from_nucleus_id, edge.to_nucleus_id) == endpoints)
+        index = {node.nucleus_id: node for node in plan.nuclei}
+        nodes, node_ids = [], {}
+        for nid in endpoints:
+            nucleus = index[nid]
+            evidence = tuple(resolver.qualified_ref(s).evidence.evidence_id for s in nucleus.source_span_ids)
+            node_id = identity('mn', eligibility.checkpoint_ref, nid, evidence)
+            node_ids[nid] = node_id
+            nodes.append(c.MeaningNode(node_id, identity('owner', node_id), nucleus.kind,
+                nucleus.grounding_kind, hr.final_reception_source_anchor_text(nid, index, resolver),
+                c.EpistemicState.SOURCE_EXPLICIT, evidence))
+        evidence = tuple(resolver.qualified_ref(s).evidence.evidence_id for s in relation.source_span_ids)
+        edge_id = identity('me', eligibility.checkpoint_ref, relation.relation_id, evidence)
+        edge = c.MeaningEdge(edge_id, identity('owner', edge_id), relation.type,
+            node_ids[relation.from_nucleus_id], node_ids[relation.to_nucleus_id],
+            relation.grounding_kind, c.EpistemicState.SOURCE_EXPLICIT, evidence)
+        source_version = (c.EMLIS_Q3_SOURCE_VERSION
+            if eligibility.thread_control.capability_snapshot.startswith('Q3_') else THREAD_SCHEMA)
+        owners = tuple(row.owner_id for row in (*nodes, edge))
+        dispositions = tuple(c.OwnerDisposition(row.owner_id, c.OwnerClass.REQUIRED,
+            c.ResolverResolution.UNIQUE, c.AttachmentAdmission.PROVISIONAL_ONLY,
+            c.VisibleAuthority.SOURCE_EXPLICIT, c.SourceOwnerDisposition.SOURCE_EXPLICIT_VISIBLE,
+            (row.node_id if type(row) is c.MeaningNode else row.edge_id,), row.evidence_ids,
+            None, ('versioned_source_bound',)) for row in (*nodes, edge))
+        graph = c.GroundedMeaningGraph(
+            identity('retained-received-source-slice', eligibility.checkpoint_ref, endpoints, edge_id),
+            eligibility.source_prefix_ref, tuple(nodes), (edge,), dispositions, owners, (),
+            source_version, 'cocolon.cmee.emlis_thread_obligations.v1', identity('owner-universe', owners))
+        source_order = {node_ids[node.nucleus_id]: i for i, node in enumerate(plan.nuclei)
+                        if node.nucleus_id in node_ids}
+        source_order[edge_id] = len(plan.nuclei) + plan.relations.index(relation)
+        binding = r._PlanBinding({node_ids[nid]: index[nid] for nid in endpoints},
+            {edge_id: relation}, node_ids, {relation.relation_id: edge_id},
+            frozenset(), frozenset((edge_id,)), source_order)
+        schema = c.CMEE_STAGE1_RESPONSE_SCHEMA_VERSION_V2
+        shape = r._relation_shape(edge, {node.node_id: node for node in nodes}, binding,
+                                  stage1_response_schema_version=schema)
+        if shape is None:
+            raise ValueError(failure)
+        candidate = r._candidate_from_relation(graph, edge, binding, shape,
+                                               stage1_response_schema_version=schema)
+        row = r._CandidateRow(candidate, True, True, 'THOUGHT_MEANING',
+                              r._retention_rank(relation, required=True), source_order[edge_id])
+        # The layer-1 owner consumes only this already-existing duty reference
+        # and source version; no new whole parent plan is asserted here.
+        duty = SimpleNamespace(source_version=source_version,
+            observation_duty_id=identity('observation-duty', eligibility.checkpoint_ref))
+        contribution, = r._plan_layer1_observation_from_rows(duty, (row,),
+            stage1_response_schema_version=schema)
+        if (local.proposition.focal_relation_ref != r._edge_ref(edge_id)
+            or local.proposition.response_object_refs != candidate.semantic_refs
+            or local.proposition.target_contribution_refs != (contribution.contribution_id,)
+            or len(local.basis_rows) != 2 or len(local.qualifier_rows) != 2
+            or any(basis.contribution_ref != contribution.contribution_id for basis in local.basis_rows)
+            or any(qualifier.source_candidate_ref != candidate.candidate_id for qualifier in local.qualifier_rows)):
+            raise ValueError(failure)
+    except (AttributeError, KeyError, TypeError, ValueError):
+        raise ValueError(failure) from None
+
+
 def _component_reception_rows(structure, bound_moves, contributions):
     domains = c.component_reception_bundle_domains(structure)
     rows = []
@@ -362,6 +648,22 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
         composition._validate_tagged_projection_semantic_closure(inputs, authority)
         meaning = composition._project_limited_subjective_from_admitted_authority(inputs, authority)
     selected = _selected_reception(meaning, reception, plan, resolver, binding, retained)
+    eligibility = (derive_retained_received_experience_eligibility(prepared, plan, resolver)
+                   if meaning.projection_branch == 'LIMITED' else None)
+    if eligibility is not None:
+        decision, = (row for row in selected.decisions if row.move_id == eligibility.move_ref)
+        local = r.derive_retained_received_experience_content(decision,
+            contribution_rows=contributions, candidate_rows=candidates,
+            contribution_candidate_map=contribution_map)
+        content = composition.project_retained_received_experience_content(
+            eligibility, local, decision, selected, meaning)
+        carried = hr.SelectedRetainedReceivedExperienceDecisionV1(
+            **{name: getattr(decision, name) for name in decision.__dataclass_fields__},
+            retained_received_experience=content)
+        carried = hr.identify_selected_subjective_reception_decision(carried)
+        selected = hr.identify_selected_subjective_reception_input(replace(selected,
+            decisions=tuple(carried if row == decision else row for row in selected.decisions)))
+        hr.validate_selected_subjective_reception_input(selected, reception, plan, resolver)
     return ThreadMeaningProjection(graph, parent, pre, structure, meaning, selected, binding)
 
 

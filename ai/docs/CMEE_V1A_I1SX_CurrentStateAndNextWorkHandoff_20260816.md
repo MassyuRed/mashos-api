@@ -20851,3 +20851,59 @@ u292の同じ合成54応答をcurrent sourceと照合して再分析した。今
 Rule18 §11.3 LEVEL_3：未変更の経験に使う意味は既承認だが、更新後LIMITEDで局所経験を選択できる資格・private内容対応を追加するため個別承認が必要。Mashへ満足やreceivedの意味を再質問するのではなく、ここで具体化した適用範囲の追加を確認する。
 
 今回の結果は原因特定と限定案の具体化・GitHub記録のみ。STRUCTURE_MAP_DELTA_NONE（実装0）、PRODUCT_NOT_CLEAR、初回一体単位未完了、正式受入0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置。第一文の説明性、共有対象、初回の受容反復、限定対象外の更新、既存失敗、same100、Q1上限、giver帰属、本人実機・正式Product Readは残る。10/17確認点・10/31管理線・12/18公開目標、Piece/Analysis主枠と管理評価53.25％は維持する。
+
+
+## u294 — 承認済みの未変更received経験を更新後LIMITEDへ保持（2026-10-16 JST）
+
+2026-10-16 11:26 JST、Mashがu293の限定案の実装を明示承認した。u293の未承認記載は提案時の履歴として保持し、現在の承認状態は本節を優先する。承認対象は、別欄の理由なし満足を当時の否定へ訂正する場合、または理由0/1の評価だけを撤回する場合に、未変更receivedの経験内容を更新後LIMITEDへ結ぶ資格とprivate内容対応の追加である。満足やreceivedの意味を再承認へ戻していない。
+
+満足だけの訂正・撤回によって、訂正していない別欄receivedまで一般的な両端保持へ戻る非対称を、承認された範囲で修正した。原sourceから認定した出来事と本人の反応を、u282と同じ「出来事だけでは言い表せない本人の経験」として受け取る局所内容を選択する。作者が旧NORMAL資格を借りる修正ではない。
+
+### 実装と境界
+
+既存6 production ownerを変更した。contractsに `RetainedReceivedExperienceEligibilityV1`／`RetainedReceivedExperienceContentV1` を追加し、Human Reception側では識別hashを除く既存decision内容fieldを保った `SelectedRetainedReceivedExperienceDecisionV1` を使う。thread projectionが原sourceとaccepted更新を再証明し、responseがreceived局所の二端点・一対比に内容を導出、compositionが現在のaggregate／claim／trace／projectionへ結んで局所内容を封印する。旧aggregateを局所命題で上書きしない。
+
+資格にはthread control、canonicalな原核・原関係、source／checkpoint／回答／更新／Move所属を含める。現sourceを再admitし、既存 `_prepare_answer` から更新と現在planを再導出して照合する。局所のbasisとqualifierは現在の意味参照から再計算し、肯否・modality・時点の三軸、左右role、関係方向と本人所有を確かめる。source candidate IDとcontribution IDも現sourceから再導出して照合し、ref／seal／decision IDをすべて再計算した改変でも許可しない。
+
+唯一の既存Human Reception作者は、検証済み局所内容を明示的な内部引数で既存のexact2経験文法へ渡す。global plan、source属性、入口markerを加工して旧文法へ偽装しない。gateの有限readerは実本文の出来事・反応・本人・肯否・時点・対比を作者なしで照合する。Reception全体に残る既存replayまで作者非依存になったとは報告しない。既存の裸形経験文法の対象外となる敬体／SELF topicは、局所decisionを保持しながら従来fallbackへ戻し、IndexErrorを防ぐ。予定ownerの `emlis_thread_surface.py` は変更不要だった。
+
+全体のLIMITED、既存aggregate命題、意味checkpoint・核・関係・Observation、未知・表示義務・Move数を保持する。同欄・共有対象・複数／曖昧received、received自体の訂正／撤回／時点変更、ADD・混合更新・後続回答、legacy／PARTIALは除外。初回と理由付き否定訂正の既存NORMALを変更しない。新しい原因・意図・期待・価値、理由付き満足の充足、失効した共有対象の外側対比を付加せず、満足側Moveへ局所内容を流用しない。
+
+STRUCTURE_MAP_DELTA_PRESENT。新private資格／局所内容の選択・封印・作者／reader対応を既存ownerに追加したため、意味設計・05 schema・全体01／全file地図01A・current01/04を同期する。新production file・engine・checker・service・外部AI・依存・課金は追加しない。公開API/DTO/DB/SQL/RN・Piece/Analysis・稼働DB・deploy・main mergeへの変更は0。
+
+### 検証と可視差分
+
+- 既存 `test_cmee_emlis_result_appraisal.py` へ新規37検査を追加。先行33は対象12、作者禁止の有限reader6、改変拒否2条件、対象外scope12、legacy8／PARTIAL／後続回答の除外1で、単独runは `33 passed, 788 deselected in 31.98s`。その後、裸形経験文法の対象外となる敬体／SELF topicで従来fallbackを保つ4検査を追加した。
+- 主評価821件のrunは `781 passed, 38 skipped, 2 failed in 242.19s`。2失敗は既存inverse検査が旧反応句を置換しており、新しい経験句では変異前後が同一になった追随漏れだった。旧u292の本文期待4条件と、このinverse変異2条件を新句へ合わせた。既存2 test関数の保持／肯否・時点改変拒否の目的は維持し、skip38をPASSへ加算しない。
+- source candidate／contribution IDの再導出、qualifier三軸を含む全hash再計算後の改変拒否、fallbackの修正後、最終sourceで `44 passed, 976 deselected in 59.99s`。内訳は新37＋既存本文保持4＋既存inverse変異2＋現行owner identity1。主821件全体を最終sourceで再実行した結果ではなく、全821件PASSとはしない。
+- source ID再導出等の最終補強前に、u292と同じ合成54応答を比較。別欄・理由なし否定訂正4件と評価のみ撤回8件の計12本文だけが変わり、対照42本文は全文一致。全54でcheckpoint・核・関係・Reception plan・branch・reason codes・Observationと、識別hashを除く既存decision内容fieldが一致する。対象12では新局所内容を含む `decision_ref`／`input_ref` の識別hashが変わる。新局所内容は対象12だけにあり、全体LIMITEDのまま。否定訂正は2 Move／basis4のaggregate、撤回は1 Move／basis2のaggregateを維持する。
+- 対象12入力を実EmlisThreadService＋隔離PGliteで初回／更新後まで保存し、24 DTO（PRE_QUESTION12／REFINED12）を取得。NoAuthor GET/start、同回答再送、本文／全履歴一致とevent無増加を確認。現行RN hook/modalでも24 DTOの全文・履歴・close/reopen・read-only表示を確認した。source ID再導出等の最終補強後にもservice／RNの全24 DTOを再実行し、同じ保持を確認した。native部品はstubであり、本人実機・稼働DB・正式Product Readではない。
+- Q2/Q3 application54と現行shared-owner identity契約1を同じrunで実行し、`55 passed, 2 warnings in 91.12s (0:01:31)`。新33の単独runとは別であり、合計を単一runとして表記しない。
+- rootが保存24 DTOの初回／更新後本文を全件読解した。未変更のreceivedが一般的な両端保持へ戻らず、本人の具体的な経験として残ることを確認した。評価側の説明性や初回の語尾反復まで解消したとは扱わない。
+- 現shared-owner identity fixtureは実sourceから再導出した。最終sourceのlanguage identityは `1136afe2909674fb3f1a288b0a96444132ff740bbab081cf3cc5579558bcbaa1`、runtime identityは `b6a09a54fc950a4ddcc84225e43f1085a2ec73f44208fc1ed7fff510bba43f24`。u292で変更前にも確認した周辺4失敗は未解消で、今回はその周辺集合を再実行していない。過去の共有17失敗との集合一致も新たに主張しない。
+
+TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式受入0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置を維持する。限定箇所の保持確認を§9.2/9.4全体、本人実機または正式Product Readの合格へ換算しない。
+
+次は、初回の説明性・受容反復と、共有対象／対象外更新に残る一般的な受け取りを、現在の選択内容と実本文の差として扱う。今回の別欄限定資格を共有対象や後続回答へ自動的に広げず、必要な新しい意味・資格・内部契約は不足と最小差分を具体化する。既存失敗、same100、Q1上限、giver帰属、本人実機・正式Product Readは残る。10/17確認点・10/31管理線・12/18公開目標、Piece/Analysis主枠と管理評価53.25％は維持する。
+
+### 合成実生成の全文比較（理由なし・別欄・否定訂正後）
+
+変更前：
+
+```text
+見えたこと：
+「資料を分類した」という出来事に対する当時の評価は、「満足しなかった」とあります。 「褒められた」の一方で「嬉しくなかった」とあります。
+
+Emlisから：
+資料を分類したことについて、当時は満足しなかったのですね。褒められたことと嬉しくなかったこととの違いを小さくせずに受け止めています。
+```
+
+変更後：
+
+```text
+見えたこと：
+「資料を分類した」という出来事に対する当時の評価は、「満足しなかった」とあります。 「褒められた」の一方で「嬉しくなかった」とあります。
+
+Emlisから：
+資料を分類したことについて、当時は満足しなかったのですね。褒められたことだけでは言い表せない、嬉しさが伴わなかったあなたの経験として受け取りました。
+```

@@ -1981,6 +1981,48 @@ class BoundedLimitedReception:
     contribution_kind: Literal["AFFIRMATIVE_RECEPTION_CONTRIBUTION"]
 
 
+@dataclass(frozen=True, slots=True, repr=False)
+class RetainedReceivedExperienceEligibilityV1:
+    """One original received pair surviving one separate appraisal update."""
+
+    schema_version: str
+    source_prefix_ref: str
+    checkpoint_ref: str
+    original_source_ref: str
+    answer_source_ref: str
+    original_nuclei: Tuple[str, ...]
+    original_relations: Tuple[str, ...]
+    update: Any
+    move_ref: str
+    thread_control: Any
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class RetainedReceivedExperienceContentV1:
+    """Private local content beside, never in place of, a LIMITED aggregate."""
+
+    schema_version: str
+    eligibility: RetainedReceivedExperienceEligibilityV1
+    projection_preimage_ref: str
+    aggregate_projection_seal_ref: str
+    aggregate_claim_ref: str
+    aggregate_proposition_ref: str
+    meaning_outcome_ref: str
+    reception_binding_ref: str
+    grounding_ref: str
+    proposition: SubjectivePropositionV2
+    basis_rows: Tuple[SubjectiveBasisBinding, ...]
+    qualifier_rows: Tuple[SourceQualifierBinding, ...]
+    seal_ref: str
+
+
+def retained_received_experience_seal(value):
+    if type(value) is not RetainedReceivedExperienceContentV1:
+        raise CMEEStage1ContractError('retained_received_experience_type_invalid')
+    return 'retained-received-experience:' + hashlib.sha256(
+        stage1_canonical_json_bytes(replace(value, seal_ref=''))).hexdigest()
+
+
 @dataclass(frozen=True, slots=True)
 class SelectedMeaningVisibleCausalTraceRow:
     """Required-difference lineage retained for a NORMAL visible Layer 1."""
@@ -22455,3 +22497,63 @@ __all__ = [
     "validate_whole_reading_consequence_row",
     "whole_reading_consequence_id",
 ]
+
+
+def retained_received_experience_aggregate_ref(proposition):
+    return 'retained-received-aggregate:' + hashlib.sha256(
+        stage1_canonical_json_bytes(proposition)).hexdigest()
+
+
+def retained_received_experience_local_proposition(decision, focal_relation_ref):
+    """Project a separate exact-pair content without changing the aggregate."""
+    fail = 'retained_received_experience_content_invalid'
+    if decision.branch != 'LIMITED' or len(decision.selected_contribution_refs) != 1:
+        raise CMEEStage1ContractError(fail)
+    aggregate = decision.subjective_proposition
+    basis = tuple(b for b in decision.basis_rows
+                  if b.contribution_ref in decision.selected_contribution_refs)
+    if (type(aggregate) is not SubjectivePropositionV2
+        or aggregate.subjective_mode != 'ATTENTION'
+        or aggregate.subjective_operator != 'ATTEND_TO'
+        or len(basis) != 2 or {b.role for b in basis} != {'RELATION_LEFT', 'RELATION_RIGHT'}
+        or not focal_relation_ref):
+        raise CMEEStage1ContractError(fail)
+    basis = tuple(next(b for b in basis if b.role == role)
+                  for role in ('RELATION_LEFT', 'RELATION_RIGHT'))
+    bindings = tuple(b.binding_ref for b in basis)
+    qualifiers = tuple(q for b in basis for q in decision.qualifier_rows
+                       if q.basis_binding_ref == b.binding_ref)
+    if (len(qualifiers) != 2 or len({q.basis_binding_ref for q in qualifiers}) != 2
+        or any(q.time_scope != 'past' for q in qualifiers)):
+        raise CMEEStage1ContractError(fail)
+    targets = tuple(b.semantic_ref for b in basis)
+    appraisal = EmlisAppraisalContent(AppraisalDimension.RELATIONAL_NONCOLLAPSE,
+        AppraisalOperation.PRESERVE_BOTH_ENDPOINTS, bindings, focal_relation_ref, (),
+        decision.selected_contribution_refs)
+    local = replace(aggregate, target_contribution_refs=decision.selected_contribution_refs,
+        primary_target_refs=targets, boundary_target_refs=(), response_object_refs=targets,
+        basis_binding_refs=bindings,
+        source_qualifier_binding_refs=tuple(q.source_qualifier_binding_ref for q in qualifiers),
+        focal_relation_ref=focal_relation_ref, appraisal_content=appraisal)
+    return local, basis, qualifiers
+
+
+def validate_retained_received_experience_content(value, decision, selected):
+    """Bind the versioned local content to this exact unchanged aggregate."""
+    fail = 'retained_received_experience_content_invalid'
+    if (type(value) is not RetainedReceivedExperienceContentV1
+        or value.schema_version != 'cocolon.cmee.retained_received_experience_content.v1'
+        or type(value.eligibility) is not RetainedReceivedExperienceEligibilityV1
+        or value.eligibility.move_ref != decision.move_id
+        or value.projection_preimage_ref != selected.projection_preimage_ref
+        or value.aggregate_projection_seal_ref != selected.projection_seal_ref
+        or value.aggregate_claim_ref != decision.projected_claim_ref
+        or value.aggregate_proposition_ref != retained_received_experience_aggregate_ref(decision.subjective_proposition)
+        or value.meaning_outcome_ref != decision.meaning_outcome_ref
+        or value.reception_binding_ref != decision.reception_binding_ref
+        or value.grounding_ref != selected.grounding_ref
+        or value.seal_ref != retained_received_experience_seal(value)):
+        raise CMEEStage1ContractError(fail)
+    if (value.proposition, value.basis_rows, value.qualifier_rows) != (
+        retained_received_experience_local_proposition(decision, value.proposition.focal_relation_ref)):
+        raise CMEEStage1ContractError(fail)

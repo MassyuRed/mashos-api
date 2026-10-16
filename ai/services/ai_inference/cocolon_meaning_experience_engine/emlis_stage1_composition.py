@@ -18057,3 +18057,30 @@ __all__ = (
     "validate_language_core_registry_invariant",
     "validate_v2_grammar_inventory",
 )
+
+
+def project_retained_received_experience_content(eligibility, local, decision, selected, meaning):
+    """Seal local content beside the existing LIMITED projection and claim."""
+    from . import contracts as c
+    claims = tuple(row for row in meaning.subjective_claim_rows
+                   if row.subjective_claim_id == decision.projected_claim_ref)
+    traces = tuple(row for row in meaning.reception_visible_causal_trace_rows
+                   if row.projected_claim_ref == decision.projected_claim_ref)
+    if (meaning.projection_branch != 'LIMITED' or len(claims) != 1 or len(traces) != 1
+        or claims[0].asserted_subjective_proposition != decision.subjective_proposition
+        or traces[0].meaning_outcome_ref != decision.meaning_outcome_ref
+        or traces[0].reception_record_ref != decision.reception_binding_ref
+        or meaning.projection_seal_ref != selected.projection_seal_ref
+        or meaning.projection_preimage_ref != selected.projection_preimage_ref):
+        raise c.CMEEStage1ContractError('retained_received_experience_aggregate_invalid')
+    proposition, basis, qualifiers = local
+    value = c.RetainedReceivedExperienceContentV1(
+        'cocolon.cmee.retained_received_experience_content.v1', eligibility,
+        selected.projection_preimage_ref, selected.projection_seal_ref,
+        decision.projected_claim_ref,
+        c.retained_received_experience_aggregate_ref(decision.subjective_proposition),
+        decision.meaning_outcome_ref, decision.reception_binding_ref,
+        selected.grounding_ref, proposition, basis, qualifiers, '')
+    value = replace(value, seal_ref=c.retained_received_experience_seal(value))
+    c.validate_retained_received_experience_content(value, decision, selected)
+    return value

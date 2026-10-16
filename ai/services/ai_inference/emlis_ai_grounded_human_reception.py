@@ -298,6 +298,13 @@ class SelectedSubjectiveReceptionDecisionV1:
 
 
 @dataclass(frozen=True, repr=False)
+class SelectedRetainedReceivedExperienceDecisionV1(SelectedSubjectiveReceptionDecisionV1):
+    """The unchanged LIMITED aggregate plus one source-proved local content."""
+
+    retained_received_experience: Any = field(repr=False)
+
+
+@dataclass(frozen=True, repr=False)
 class SelectedSubjectiveReceptionInputV1:
     """Pre-realization authority shared by forward and independent replay.
 
@@ -378,7 +385,7 @@ def validate_selected_subjective_reception_input(
         or not set(relation_map.values()) <= {row.relation_id for row in plan.relations}):
         raise GroundedHumanReceptionSurfaceError(failure)
     for row, move in zip(value.decisions, reception_plan.moves, strict=True):
-        if (type(row) is not SelectedSubjectiveReceptionDecisionV1
+        if (type(row) not in {SelectedSubjectiveReceptionDecisionV1, SelectedRetainedReceivedExperienceDecisionV1}
             or identify_selected_subjective_reception_decision(row) != row
             or row.branch not in {"NORMAL", "LIMITED"}
             or not all((row.meaning_outcome_ref, row.reception_binding_ref, row.projected_claim_ref))
@@ -389,6 +396,11 @@ def validate_selected_subjective_reception_input(
             or any(type(basis) is not SubjectiveBasisBinding for basis in row.basis_rows)
             or any(type(qualifier) is not SourceQualifierBinding for qualifier in row.qualifier_rows)):
             raise GroundedHumanReceptionSurfaceError(failure)
+        if type(row) is SelectedRetainedReceivedExperienceDecisionV1:
+            try:
+                validate_selected_retained_received_experience(row, value, plan, resolver)
+            except (ValueError, TypeError, AttributeError, KeyError):
+                raise GroundedHumanReceptionSurfaceError(failure) from None
         proposition = row.subjective_proposition
         if (not row.selected_contribution_refs
             or not set(row.selected_contribution_refs) <= set(proposition.target_contribution_refs)
@@ -10413,7 +10425,14 @@ def _source_grounded_received_discourse(realization, *, selected_decision=None, 
                   if c.startswith("thread-received-slot:"))
     original_codes = tuple(c for c in realization.nominalization_plan
                            if c.startswith("received-contrast-group:"))
-    if (not (codes or original_codes)
+    local = (selected_decision.retained_received_experience
+        if type(selected_decision) is SelectedRetainedReceivedExperienceDecisionV1 else None)
+    local_pair = bool(local is not None and not codes and not original_codes
+        and realization.target_slot_count == 1 and len(realization.semantic_fragments) == 2
+        and len(realization.relations) == 1
+        and realization.relations[0].relation_kind == 'contrast'
+        and realization.relations[0].endpoint_slots == (0, 1))
+    if (not (codes or original_codes or local_pair)
         or realization.clause_form != "FINITE" and not (
             realization.clause_form == "CONTINUATIVE" and not acknowledge
             and len(codes) == 1 and codes[0].endswith(":none"))
@@ -10425,7 +10444,7 @@ def _source_grounded_received_discourse(realization, *, selected_decision=None, 
     # The existing IR validators retain exact endpoint and relation coverage.
     if codes:
         _thread_received_group_ir_text(realization)
-    else:
+    elif original_codes:
         _received_contrast_group_ir_text(realization)
         count = realization.target_slot_count
         links = original_codes[0].split(":")[2:]
@@ -10433,26 +10452,33 @@ def _source_grounded_received_discourse(realization, *, selected_decision=None, 
                       for slot, link in enumerate(links))
     fragments = realization.semantic_fragments
 
-    # A selected NORMAL contrast receives the user's experience through both
-    # endpoints. The event alone must not stand in for the user's reaction.
-    # Keep this distinct from the LIMITED material acknowledgement below;
-    # neither a completed answer nor a new interpretation is required here.
-    if (selected_decision is not None and selected_decision.branch == "NORMAL"
-        and _selected_noncollapse_appraisal(selected_decision)
-        and selected_decision.subjective_proposition.subjective_mode == "ATTENTION"
-        and selected_decision.subjective_proposition.subjective_operator == "ATTEND_TO"
+    # A selected NORMAL component or a source-reproved retained local pair
+    # receives both endpoints. The retained arm leaves its LIMITED aggregate
+    # and all other material duties unchanged; it grants no new interpretation.
+    experience_proposition = (local.proposition if local is not None else
+        selected_decision.subjective_proposition if selected_decision is not None else None)
+    experience_basis = (local.basis_rows if local is not None else
+        selected_decision.basis_rows if selected_decision is not None else ())
+    if (selected_decision is not None
+        and (selected_decision.branch == "NORMAL" and _selected_noncollapse_appraisal(selected_decision)
+             or selected_decision.branch == "LIMITED" and local is not None)
+        and experience_proposition.subjective_mode == "ATTENTION"
+        and experience_proposition.subjective_operator == "ATTEND_TO"
         # The component owns just this contrast. Older whole-reading NORMAL
         # decisions also carry other material duties and keep their grammar.
         and len(selected_decision.selected_contribution_refs) == 1
-        and len(selected_decision.basis_rows) == 2
-        and {b.role for b in selected_decision.basis_rows} == {"RELATION_LEFT", "RELATION_RIGHT"}
+        and len(experience_basis) == 2
+        and {b.role for b in experience_basis} == {"RELATION_LEFT", "RELATION_RIGHT"}
         and acknowledge and not any(record_prefixes)
         and realization.clause_form == "FINITE"
-        and len(codes) == 1 and len(fragments) == 2
+        and (len(codes) == 1 or local_pair) and len(fragments) == 2
         and len(realization.relations) == 1
         and realization.relations[0].relation_kind == "contrast"):
-        _, event_slot, feeling_slot, link, *answer = codes[0].split(":")
-        if (answer == ["none"] and link in _RECEIVED_EVENT_LINK_TEXT
+        if local_pair:
+            event_slot, feeling_slot, link, answer = '0', '1', None, ['none']
+        else:
+            _, event_slot, feeling_slot, link, *answer = codes[0].split(":")
+        if (answer == ["none"] and (link in _RECEIVED_EVENT_LINK_TEXT or local_pair)
             and feeling_slot != "none"
             and realization.relations[0].endpoint_slots == (int(event_slot), int(feeling_slot))):
             event, feeling = fragments[int(event_slot)], fragments[int(feeling_slot)]
@@ -10462,6 +10488,11 @@ def _source_grounded_received_discourse(realization, *, selected_decision=None, 
                 accompaniment = "伴わなかった" if feeling.endswith("くなかった") else "伴った"
                 return (event + "ことだけでは言い表せない、" + nominal[0] + "が"
                         + accompaniment + "あなたの経験として受け取りました")
+
+    if local_pair:
+        # The existing experience grammar has no reading for a qualified
+        # reaction or SELF-topic event. Preserve the older source-bound form.
+        return None
 
     def answer_time_prefix(source, when):
         prefix = {"original_occasion": "その時は", "answer_time": "回答した時点では",
@@ -13681,3 +13712,69 @@ __all__ = [
     "replay_source_grounded_human_reception_from_plan",
     "realize_source_grounded_human_reception",
 ]
+
+
+def validate_selected_retained_received_experience(decision, selected, plan, resolver):
+    """Reprove source/update eligibility and the local-to-aggregate exact join."""
+    from cocolon_meaning_experience_engine.contracts import (
+        validate_retained_received_experience_content,
+        project_stage1_subjective_basis_binding_ref, project_stage1_source_qualifier_binding_ref,
+    )
+    from cocolon_meaning_experience_engine.emlis_thread_source import identity
+    from cocolon_meaning_experience_engine.emlis_stage1_response import _node_ref, _edge_ref
+    from cocolon_meaning_experience_engine.emlis_thread_projection import (
+        validate_retained_received_experience_eligibility,
+        validate_retained_received_experience_candidate,
+    )
+    fail = 'retained_received_experience_selection_invalid'
+    if (type(decision) is not SelectedRetainedReceivedExperienceDecisionV1
+        or type(selected) is not SelectedSubjectiveReceptionInputV1
+        or identify_selected_subjective_reception_decision(decision) != decision
+        or identify_selected_subjective_reception_input(selected) != selected
+        or selected.decisions.count(decision) != 1
+        or selected.grounding_ref != selected_subjective_reception_grounding_ref(plan, resolver)):
+        raise ValueError(fail)
+    local = decision.retained_received_experience
+    validate_retained_received_experience_content(local, decision, selected)
+    validate_retained_received_experience_eligibility(local.eligibility, plan, resolver)
+    validate_retained_received_experience_candidate(local, plan, resolver)
+    move = next((m for m in plan.response_plan.human_reception_plan.moves
+                 if m.move_id == decision.move_id), None)
+    node_map = dict(selected.semantic_nucleus_pairs)
+    relation_map = dict(selected.relation_pairs)
+    if (move is None or len(move.target_nucleus_ids) != 1 or len(move.support_nucleus_ids) != 1
+        or decision.target_nucleus_ids != move.target_nucleus_ids
+        or decision.support_nucleus_ids != move.support_nucleus_ids
+        or tuple(node_map.get(ref) for ref in local.proposition.response_object_refs)
+            != (*move.target_nucleus_ids, *move.support_nucleus_ids)):
+        raise ValueError(fail)
+    nuclei = {n.nucleus_id: n for n in plan.nuclei}
+    for basis, qualifier in zip(local.basis_rows, local.qualifier_rows, strict=True):
+        nucleus = nuclei[node_map[basis.semantic_ref]]
+        frame = nucleus.semantic_frame
+        evidence = tuple(resolver.qualified_ref(ref).evidence.evidence_id for ref in nucleus.source_span_ids)
+        if (basis.semantic_ref != _node_ref(identity('mn', local.eligibility.checkpoint_ref,
+                nucleus.nucleus_id, evidence))
+            or basis.binding_ref != project_stage1_subjective_basis_binding_ref(**{
+                k: v for k, v in asdict(basis).items() if k != 'binding_ref'})
+            or qualifier.source_qualifier_binding_ref != project_stage1_source_qualifier_binding_ref(**{
+                k: v for k, v in asdict(qualifier).items() if k != 'source_qualifier_binding_ref'})):
+            raise ValueError(fail)
+        role = {'RELATION_LEFT': 'LEFT', 'RELATION_RIGHT': 'RIGHT'}[basis.role]
+        expected = (frame.polarity, frame.modality, frame.time_scope)
+        if (qualifier.basis_binding_ref != basis.binding_ref
+            or qualifier.source_argument_role != role
+            or (qualifier.polarity, qualifier.modality, qualifier.time_scope) != expected
+            or qualifier.canonical_qualifier_codes != tuple(
+                role.lower() + '_' + axis + ':' + value
+                for axis, value in zip(('polarity', 'modality', 'time_scope'), expected))):
+            raise ValueError(fail)
+    edges = tuple(e for e in plan.relations if e.type == 'contrast'
+        and (e.from_nucleus_id, e.to_nucleus_id) == (*move.target_nucleus_ids, *move.support_nucleus_ids))
+    if (len(edges) != 1
+        or relation_map.get(local.proposition.focal_relation_ref) != edges[0].relation_id
+        or local.proposition.focal_relation_ref != _edge_ref(identity('me', local.eligibility.checkpoint_ref,
+            edges[0].relation_id, tuple(resolver.qualified_ref(ref).evidence.evidence_id
+                                      for ref in edges[0].source_span_ids)))):
+        raise ValueError(fail)
+    return local
