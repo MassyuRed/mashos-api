@@ -4950,7 +4950,6 @@ def test_retained_received_experience_excludes_every_legacy_mode_and_unresolved_
 
 @pytest.mark.parametrize('operation', ['revise', 'withdraw'])
 @pytest.mark.parametrize('received', [
-    '褒められたのに、嬉しくなかったです。',
     '私は褒められたのに、嬉しくなかった。',
 ])
 def test_retained_received_experience_keeps_existing_surface_outside_bare_experience_grammar(
@@ -4979,3 +4978,67 @@ def test_retained_received_experience_keeps_existing_surface_outside_bare_experi
     assert baseline.artifact == result.artifact
     assert baseline.reason_codes == result.reason_codes
     assert baseline.meaning_checkpoint == result.meaning_checkpoint
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('reaction,presence', [
+    ('嬉しくなかった', '嬉しさが伴わなかった'),
+    ('悲しかった', '悲しさが伴った'),
+])
+@pytest.mark.parametrize('reason,operation', [
+    ('', 'initial'), ('探しやすくなったので、', 'initial'),
+    ('', 'revise'), ('探しやすくなったので、', 'revise'),
+    ('', 'withdraw'), ('探しやすくなったので、', 'withdraw'),
+])
+def test_selected_received_experience_keeps_polite_past_content(
+        monkeypatch, reverse, reaction, presence, reason, operation):
+    from test_cmee_emlis_q3_thread import advance
+    import emlis_ai_grounded_human_reception as hr
+    from emlis_ai_grounded_observation_gate import read_source_owned_discourse
+    appraisal = reason + '資料を分類したことに満足した。'
+    received = '褒められたのに、' + reaction + 'です。'
+    req = request(*((received, appraisal) if reverse else (appraisal, received)))
+    if operation != 'initial':
+        req = advance(req, '「満足した」ではなく「満足しなかった」です。'
+                      if operation == 'revise' else '「満足した」は誤りです。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    resolver = prepared.thread.resolver()
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    expected_branch = 'NORMAL' if operation == 'initial' or reason and operation == 'revise' else 'LIMITED'
+    assert {d.branch for d in selected.decisions} == {expected_branch}
+    local = tuple(d for d in selected.decisions if type(d) is hr.SelectedRetainedReceivedExperienceDecisionV1)
+    assert len(local) == int(expected_branch == 'LIMITED')
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None, result.reason_codes
+    assert result.meaning_checkpoint == prepared.checkpoint
+    clause = '褒められたことだけでは言い表せない、' + presence + 'あなたの経験として受け取りました。'
+    assert clause in result.artifact.reception
+    assert reaction + 'です' in result.artifact.observation
+    received_field = 'memo' if reverse else 'memo_action'
+    move, = (m for m in plan.response_plan.human_reception_plan.moves
+             if any(n.nucleus_id in m.target_nucleus_ids and n.source_fields == (received_field,)
+                    for n in plan.nuclei))
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    assert evaluate_grounded_surface_body_inverse(body=result.artifact.text.encode(), plan=plan,
+        sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+
+    def forbidden(*_a, **_k):
+        pytest.fail('polite past independent reader invoked an author')
+    monkeypatch.setattr(hr, '_source_grounded_received_discourse', forbidden)
+    monkeypatch.setattr(hr, '_source_grounded_reception_fragment', forbidden)
+    read = lambda body, selection=selected: read_source_owned_discourse(body, move, plan, resolver, selection)
+    assert read(clause) is not None
+    assert read(clause, None) is None
+    for wrong in (
+        clause.replace('褒められた', '誘われた'),
+        clause.replace('褒められた', '褒められなかった'),
+        clause.replace('褒められた', '褒められる'),
+        clause.replace(presence, '嬉しさが伴った' if reaction == '嬉しくなかった' else '悲しさが伴わなかった'),
+        clause.replace(presence, '嬉しさが伴わない' if reaction == '嬉しくなかった' else '悲しさが伴う'),
+        clause.replace('あなた', '同僚'),
+        clause.replace('ことだけでは言い表せない、', 'ことが原因で、'),
+        clause.replace('ことだけでは言い表せない、', 'ことへの期待が外れ、'),
+        clause + '二つは同時に起きています。',
+    ):
+        assert wrong != clause and read(wrong) is None, wrong

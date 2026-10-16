@@ -10482,10 +10482,14 @@ def _source_grounded_received_discourse(realization, *, selected_decision=None, 
             and feeling_slot != "none"
             and realization.relations[0].endpoint_slots == (int(event_slot), int(feeling_slot))):
             event, feeling = fragments[int(event_slot)], fragments[int(feeling_slot)]
-            nominal = _received_discourse_negative_feeling(feeling)
+            # Politeness does not change this already selected past experience.
+            # Remove only the terminal copula here; the existing bare-feeling
+            # proof still excludes topics, degree, quotes and other predicates.
+            experience_feeling = feeling.removesuffix("です")
+            nominal = _received_discourse_negative_feeling(experience_feeling)
             event = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event, count=1)
             if nominal is not None and not event.startswith("あなたは"):
-                accompaniment = "伴わなかった" if feeling.endswith("くなかった") else "伴った"
+                accompaniment = "伴わなかった" if experience_feeling.endswith("くなかった") else "伴った"
                 return (event + "ことだけでは言い表せない、" + nominal[0] + "が"
                         + accompaniment + "あなたの経験として受け取りました")
 

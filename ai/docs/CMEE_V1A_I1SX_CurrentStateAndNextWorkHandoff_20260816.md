@@ -1,4 +1,4 @@
-> 最新EmlisAI残件：末尾 **u289（2026-10-16・承認済みの理由／対象／本人の充足を内容型から本文へ接続）**。限定実装・検証済み、PRODUCT_NOT_CLEAR・未配置。
+> 最新EmlisAI残件：末尾 **u295（2026-10-16・丁寧な過去形でも選択済みreceived経験を本文へ保持）**。限定修復・関連901検査成功。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -20907,3 +20907,60 @@ Emlisから：
 Emlisから：
 資料を分類したことについて、当時は満足しなかったのですね。褒められたことだけでは言い表せない、嬉しさが伴わなかったあなたの経験として受け取りました。
 ```
+
+
+## u295 — 丁寧な過去形でも選択済みreceived経験を本文へ保持（2026-10-16 JST）
+
+基準はAPI `0dd8dbc6e15e769fa312105e25ee0bc644b5b670`／資料 `806dce4e3abbfd9c8a7d5959eeda874b212e936c`。前回引継ぎで未確定だったu294 API CI `38843592713` はcompleted/successを確認した。
+
+### 原因・修復・適用範囲
+
+u294の局所経験内容と初回の既存経験内容は、原文が「嬉しくなかったです」「悲しかったです」でも既に選択されていた。しかし作者の裸形検査が末尾の「です」を受け付けず、同じ本人・出来事・反応の経験が初回では原文反復、更新後LIMITEDでは一般的な両端保持へ落ちていた。選択不足ではなく、選択済み内容から本文への接続漏れである。
+
+唯一の既存作者 `_source_grounded_received_discourse` の経験句分岐内でだけ末尾の「です」を除いて、従来の裸形・過去形検査と肯否判定へ渡す。共通の感情helperやsource認識は拡張しない。独立有限reader `_read_received_discourse_parts` は同じ過去述語の裸形または末尾「です」と原sourceを照合し、復元時は敬体を含む元source bytesを保持する。これにより既選択の「出来事だけでは言い表せない本人の経験」を初回／否定訂正後／評価撤回後にも実現する。
+
+u282の裸形限定、u294の敬体fallback記録は当時の実装状態として保持する。今回の敬体過去形修復を現在の状態とする。u293/u294の承認済み資格・内容型・選択結果は変えていない。Rule18 §11.3に照らし既承認内容を同じowner内で本文へ保持する修復であり、新しい意味・資格・private契約の追加ではない。
+
+SELF topic、程度修飾、現在形、引用・他者主体・説明形等は既存の有限検査で除外する。更新後LIMITEDの別欄資格も従来どおりで、同欄・共有対象・複数／曖昧received、received更新、ADD／混合更新・後続回答・legacy／PARTIALへ広げない。全体branch／aggregate／Move、原因・期待・価値・帰属の境界を維持する。
+
+STRUCTURE_MAP_DELTA_NONE。全体設計01、全file地図01A/B/C、current_structure 00/01/04を確認し、owner責務・呼出経路・引数接続・意味契約・利用導線に差分がないと判断した。製品変更は既存作者とgateの2fileだけ。既存appraisal testと現行identity fixtureを更新し、新production file・service・engine・checker・依存を追加しない。公開API/DTO/DB/SQL/RN、Piece/Analysis、本番操作・deploy・main mergeは変更0。
+
+### 最終sourceの検証と限界
+
+- 新規24検査は理由0/1×初回／否定訂正／評価撤回×肯否の異なる反応2×欄順2。修正前には最初の対象で期待経験句がないことを確認（1 failed, 823 deselected、停止後の未実行をPASSへ換算しない）。u294の敬体fallback期待2件は新しい経験保持検査へ置き換え、SELF topicの旧fallback2件は残した。
+- 最終sourceの対象59検査は `59 passed, 788 deselected, 1 warning in 60.50s`。本文保持に加え、作者呼出を禁止した有限reader、selectionなし、出来事／肯否／時点／本人／原因／期待／同時性の改変拒否を確認した。Reception全体に残る既存replayまで作者非依存になったとはしない。
+- 最終sourceで `test_cmee_emlis_result_appraisal.py` 全847＋Q2/Q3 application54をPGlite有効で一括実行し、`901 passed, 2 warnings in 356.84s`。skip0。Pydantic／Starletteの既存非推奨警告2件は残る。現行shared-owner identity契約は別runで `1 passed, 194 deselected, 1 warning in 26.49s`。対象59やidentity1を901と同じrunには数えない。
+- 同じ合成60応答を変更前後で比較。裸形／敬体×理由0/1×反応2×欄順2×初回／訂正／撤回の48応答と、SELF topic2種・現在形・程度修飾の12対照で、敬体の対象24 Receptionだけが変わり、対照36全文は一致。全60で意味checkpoint・核・関係・Reception plan・識別hashを含むselected全体・branch・reason codes・Observationは一致した。
+- 敬体の対象12入力（理由なし否定訂正4／評価のみ撤回8）を実EmlisThreadService＋隔離PGliteで保存し、初回／更新後24 DTO（PRE_QUESTION12／REFINED12）を確認。NoAuthor GET/start、同回答再送、本文・全履歴一致、event無増加を確認した。現行RN hook/modalでも24 DTOの全文・履歴・close/reopen・read-only表示が一致した。native部品はstubであり、本人実機・稼働DB・正式Product Readではない。
+- rootが保存24 DTOの初回／更新後本文を全件読解した。敬体のため既選択経験が一般的な受け取りへ落ちる箇所は解消したが、第一文の説明性と初回の「受け取りました」の反復は残る。機械成功や24件の限定読解を商品合格へ換算しない。
+- 現行identity fixtureは実sourceから再導出した。language identityは `384b06689315a625bb309ee5a08ef2f801d902e67e36f533d5bfd8014f38f175`、runtime identityは `90bd4b368c52448214ff6b965406580bdd75f3ef7f79a0a7bb02a7243365b4c4`。歴史fixtureは不変。u292で確認した周辺既存4失敗の集合は今回再実行しておらず、未解消。過去の共有17失敗との集合一致も新たに主張しない。
+
+実行はrootを唯一の編集・反映責任者とし、同じWork環境のread-only補助で技術境界・商品残件・前回CIを確認した。別Pro/Ultraモデルによる正式二重検証ではない。既存Python3.12.14／pytest8.4.1／Pydantic2.13.5と既存Node/PGlite0.5.8を再利用し、依存追加なし。System Context prepareはmaterial commit `291096ad...` が `a77b79c5...` のdescendantでないため停止した。規定の原典直接参照fallbackで確認を進め、新しいContextを生成済みとは扱わない。
+
+### 合成実生成の全文比較（理由なし・別欄・否定訂正後）
+
+入力は「資料を分類したことに満足した。」と「褒められたのに、嬉しくなかったです。」、更新は「『満足した』ではなく『満足しなかった』です。」に相当する評価訂正。Observationには原敬体を保持する。
+
+変更前：
+
+```text
+見えたこと：
+「資料を分類した」という出来事に対する当時の評価は、「満足しなかった」とあります。 「褒められた」の一方で「嬉しくなかったです」とあります。
+
+Emlisから：
+資料を分類したことについて、当時は満足しなかったのですね。褒められたことと嬉しくなかったですということとの違いを小さくせずに受け止めています。
+```
+
+変更後：
+
+```text
+見えたこと：
+「資料を分類した」という出来事に対する当時の評価は、「満足しなかった」とあります。 「褒められた」の一方で「嬉しくなかったです」とあります。
+
+Emlisから：
+資料を分類したことについて、当時は満足しなかったのですね。褒められたことだけでは言い表せない、嬉しさが伴わなかったあなたの経験として受け取りました。
+```
+
+TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式受入0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置を維持する。
+
+次は、初回の説明性・受容反復と、共有対象／対象外更新に残る一般的な受け取りを、現在の選択内容と実本文の差として扱う。同じ語尾置換や資格の一括拡張を主課題にせず、既承認内容の欠落は既存owner内で修復し、新しい意味・資格・内部契約が必要な箇所は不足と最小差分を具体化する。既存失敗、same100、Q1上限、giver帰属、本人実機・正式Product Readは残る。10/17確認点・10/31管理線・12/18公開目標、Piece/Analysis主枠と管理評価53.25％は維持する。

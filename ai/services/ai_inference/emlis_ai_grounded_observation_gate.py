@@ -5251,7 +5251,9 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
             restored = experience["feeling"] + (
                 "くなかった" if experience["presence"] == "伴わなかった" else "かった")
             if (experience["event"] != event_visible or event_visible.startswith("あなたは")
-                or restored != feeling_source
+                # The source may use the polite ending for this same bare
+                # past predicate. Keep the complete source bytes below.
+                or feeling_source not in {restored, restored + "です"}
                 or not _FEELING_RE.fullmatch(experience["feeling"])
                     and not _FEELING_RE.fullmatch(experience["feeling"] + "い")
                     and not (experience["feeling"].endswith("し")
