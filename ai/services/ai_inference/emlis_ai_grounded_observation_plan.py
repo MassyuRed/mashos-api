@@ -8414,14 +8414,14 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
         answer_times = {c for c in answer.semantic_frame.attribute_codes if c.startswith("thread_time:")}
         current_answer = (answer.semantic_frame.time_scope == "present"
                           and answer_times == {"thread_time:answer_time"})
-        # An original-occasion positive ADD remains a separate source duty;
+        # An original-occasion ADD remains a separate source duty;
         # it neither replaces the original reaction nor asserts a later change.
-        original_positive_answer = (is_grounded_positive_feeling(answer)
+        original_occasion_answer = ((is_grounded_positive_feeling(answer) or negative_answer)
             and answer.semantic_frame.time_scope == "past"
             and answer_times == {"thread_time:original_occasion"})
         if ((reason is not None or context is not None or plain)
             and (is_grounded_positive_feeling(answer) or negative_answer)
-            and (current_answer or original_positive_answer)):
+            and (current_answer or original_occasion_answer)):
             # An unfinished fact is not a reason. Preserve its existing
             # contrast together with the object and satisfaction as one duty.
             companion = reason if reason is not None else context
@@ -8447,7 +8447,7 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
                         and len(retained[0][1]) == len(retained[0][2]) == 1
                         and retained[1] == ("lived_change", (answer.nucleus_id,), ()))
                     # The existing negative duty keeps the original reaction
-                    # and current answer as distinct supports of their event.
+                    # and accepted answer as distinct supports of their event.
                     negative_duty = (negative_answer and len(retained) == 1
                         and retained[0][0] == "current_burden"
                         and len(retained[0][1]) == 1 and len(retained[0][2]) == 2

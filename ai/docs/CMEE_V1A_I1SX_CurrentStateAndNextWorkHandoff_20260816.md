@@ -1,4 +1,4 @@
-> 最新EmlisAI残件：末尾 **u313（2026-10-17・当時positive ADDと評価併存の原反応／追加回答保持）**。57比較・保存/RN88 DTOを確認。当時negative ADDの原反応欠落と本文反復は残件。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
+> 最新EmlisAI残件：末尾 **u314（2026-10-17・当時negative ADDの原反応保持、追加回答後の理由付き満足の限定案）**。57比較・保存/RN88 DTOを確認。保持修復は実装済み、追加回答後の経験資格は未承認案。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -22035,3 +22035,73 @@ language identity `4716a3330cc1c585c289c05a5c675e61a6ef0c3b7df05f08eba04ef646918
 今回の当時positive ADD＋評価併存の原反応／追加回答欠落は修復。対照の「その時は悲しかった」は評価と追加回答が残る一方、元の「嬉しくなかった」がReceptionから消える。次はこの当時negative ADDの原反応保持を、plain／reasoned／unfinishedと既存negative保持義務から照合する。今回positive条件を無検証に広げない。
 
 長い説明・満足重複・語尾反復・初回内容形成、独立行動追加、安心した分類、共有対象／複数評価容量、その他対象外更新、既存周辺4／過去17とQ3既存16失敗の集合対応、same100・Q1上限・giver帰属、本人実機／正式Product Readは残件。TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false、Draft/open/unmerged・未配置。deploy／main mergeなし。10/31管理線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％を維持する。
+
+## u314 — 当時negative ADDと評価併存の原反応を保持（2026-10-17 JST）
+
+u313／weekly§5.6.63の次作業を実施。理由なし正負評価・理由付き満足・未成立文脈付き満足と別received経験に「その時は悲しかった」と追加回答すると、元の「嬉しくなかった」がReceptionから消える欠落を修復した。既存Plan一箇所の4行追加・4行削除で、当時negativeを既存の原反応／回答保持へ接続する。評価1＋received対象／原反応／追加回答1の既存2 Moveで保持する。
+
+基準API `665efc370db11fd56636c150de9ab749cd93b51d`／Cocolon `8c0346a8d9093ae5d8304e42cd338c6bf691028b`。Mashの残件継続依頼とRule18§11.3の既存契約内修復。DIRECT_PRODUCT_OR_ACCEPTANCE_WORK。Codex Work rootが単一実行／書込みowner、同Workの読取り補助2件は正式Pro／Ultra別モデル検証ではない。追加課金・Mash操作0。今回の修復と、後述する未承認の内容資格追加案を分離する。
+
+前提入口・作業ルール、恒久incident全文、全体設計01・全file地図01A/B/Cの構成と関連差分、current01/04、最新weekly20261010と末尾u313、06／API handoff、意味設計と既存実ownerを照合した。GitHub headは上記u313と一致し、前回から地図／Rule18の更新なし。System Context prepareは設定workspaceのAPI未配置でexit2。原典直接参照を使い、生成Contextのfreshness成立とはしない。STRUCTURE_MAP_DELTA_NONE：地図既載のPlan選択責務内、01B/C・Piece/Analysisとアプリ導線は不変。
+
+### 原因・修復境界
+
+`emlis_ai_grounded_observation_plan.py::_thread_retained_reaction_groups`の評価閉包入口は現在回答または当時positiveだけを認めていた。残るreceived再帰は当時negativeでも元反応と回答を同一eventの別supportとして保持できるため、既存negative判定を当時入口へ加えた。reaction／feeling／feeling／negative・非unknown、past＋thread_time属性集合exact original_occasionを要求し、現在条件・当時positive条件を同値維持する。
+
+評価閉包のplain2核1辺／reasoned・unfinished3核2辺、本人・explicit・required・原source所有、残余3核2辺、negative再帰exact1 target1／support2／末尾回答、全核被覆は不変。ADDをREVISEや現在変化へ変えず、原反応を失効させない。PARTIALの受理済み回答は保持し、未解釈部分を残す。共有対象・複数回答・独立行動・withdrawal・入れ子への資格拡張は行わない。
+
+production変更1file、既存appraisal testに39検査追加、現行shared owner identity fixtureだけ再導出。source認識、核辺・checkpoint、Observation、branch／body_state／status／reason_codes、内容型、u301／u307資格、作者／reader、schema、Move上限、公開API／DB／RN、依存、歴史fixtureは不変。旧新比較の変更fieldはaggregate／moves／reception／textのみ。
+
+### 実本文（合成入力）
+
+memo「探しやすくなったので、資料を分類したことに満足した。」、memo_action「褒められたのに、嬉しくなかった。」、回答「その時は悲しかった。」。
+
+変更前Reception：
+
+> 褒められたことについて、その時の悲しさを小さくせずに受け止めています。資料を分類したことへの当時の満足について、探しやすくなったという理由に目を向けています。
+
+変更後Reception：
+
+> 資料を分類したことへの当時の満足について、探しやすくなったという理由に目を向けています。褒められたのに、嬉しくなかったし、その時は悲しかったのですね。
+
+原反応の欠落は解消。理由付き満足の「理由への注意」、未成立文脈の対比への注意、満足の二重説明、語尾反復・復唱は残る。本文の意味保持改善を、自然さ・§9.2/9.4全体・商品合格へ換算しない。
+
+### 検証・保存・再表示
+
+| 対象 | 実測結果と限界 |
+| --- | --- |
+| appraisal＋Q2/Q3 application | 1,405 passed／1 warning（587.22秒）。最終sourceの全件一括実行：appraisal 1,351＋application 54 |
+| 追加39検査 | 39 passed／1312 deselected／1 warning（22.30秒）。主回帰と重複。4評価型×6配置、評価時点／種類4、回答述語／程度2、PARTIAL1、有限reader／本文改変拒否4、閉包／ABOUT付替え拒否4 |
+| 現行owner identity | 1 passed／194 deselected／1 warning（23.77秒） |
+| 周辺Q3 retained | 12 passed／16 failed／922 deselected／1 warning（24.44秒）。u313と失敗assertion／trace全文がprocess addressを除いて一致。既存16失敗は未解消 |
+| 同入力旧新57例 | 31対象で原反応保持を復旧、26対照は取得全record同一。checkpoint取得54例の意味核・関係・checkpoint／Observation／branch／状態／reason_codes／content_typesは不変 |
+| 実service＋隔離PGlite | fresh31＋不明1＋旧完成4＋旧pending回答4＋旧checkpoint中断retry4＝44case／88DTO。作者禁止GET/start、同回答再送の本文・events・attempt非増加 |
+| 現行RN hook／Modal | 同88DTOの現在全文・元入力・全履歴・close/reopen一致。native部品stubで本人実機・配布build検証ではない |
+
+旧版はu313 tracked ai snapshotの別process。対照は現在±各4評価型・当時positive各4型、初回、不明、原反応の当時反復、当時肯定REVISE、received／評価撤回、評価否定訂正、他主体、安心した、独立行動、共有対象、received単独、二評価等。独立行動／二評価は初回unavailable、共有対象は質問なしであり対応成功に数えない。不明／原反応反復のpure結果は保存本文再利用要求を保持する。
+
+完成済み旧本文は欠落も含め非再生成。旧pendingは初回保存本文を履歴へ残し現行本文を生成。中断retryは同checkpoint／operation・MEANING_UPDATE／ANSWER／既存OBSERVATIONを保持。44caseの元入力と既存timeline全fieldは現在表示flagを除き一致。rootは対象15種類の全文、保存31種類の全文と88対応を読解した。全文inverseの欠落・時点／対象／肯否・重複拒否と、作者禁止の有限received readerを分けて確認し、全文inverse全経路の作者非依存は主張しない。
+
+Python3.12.14／pytest8.4.1／Pydantic2.13.5／PGlite0.5.8／React18.3.1を再利用し、新installなし。警告は既存Pydantic V1 root_validator非推奨。元入力の一回限り追加照合で未確認のキーsource_inputを指定しKeyErrorとなったため、実DTOのoriginalを確認して同44caseを再照合し一致。先行誤照合を成功件数へ加えず、製品条件・検査条件の緩和なし。
+
+language identity `8f54fd7ace44b9f55e4132e28db67576692d8a9928692d2e937c76204ee01695`、runtime identity `3070f3f9724ee71983f213657b1eabb58b96081918f8695997a1c0479ad35752`。
+
+### 次の限定案 — 追加回答後も未変更の理由・対象・満足を経験として保持（未承認）
+
+**DESIGN_PROPOSAL_ONLY / MASH_APPROVAL_PENDING。この案の製品実装は0。** 今回の旧新比較と保存本文で、別receivedへの現在／当時×肯定／否定の4種のADDは全て、未変更の理由付き満足を「理由への注意」に戻すと確認した。初回の「資料を分類したことには、探しやすくなったという点で、当時ご自身の中に満たされた感覚があったのですね。」という選択済み経験を、追加回答後には出せない。
+
+u289は初回NORMAL専用、u294はreceived二点専用、u306承認／u307・schema05は当時positive REVISE exact1専用でADDを除外する。実owner `emlis_thread_projection.py::_retained_reasoned_experience_source` は、`emlis_answer_update.py::_retained_unfinished_received_duties`による明示訂正と旧negative失効を必要条件とする。ADDで資格が付かないのは現契約どおりであり、作者だけの変更では直せない。**Rule18§11.3の個別承認対象は、既存private資格を下記ADDにも適用する契約増分だけ**である。満足の意味・理由認識・初回内容・承認済みREVISEを再承認へ戻さない。
+
+1. 対象は、本人の明示理由1（肯定fact、past／present）・実行済みSELF対象（past）・肯定で程度無指定の満足（past／present）の未変更三点と、別received対比一組。原required5核3辺・一意の二source出現、欄／順序の6配置を含む。新語義・原因推測・価値基準・他者意図・二経験間の因果／同時性を追加しない。
+2. 更新はfrozen/control回答各1・round1・完全RESOLVED／MATERIAL_UPDATE・ADD exact1。本人の明示feelingで非unknown、既存positiveまたは既存negativeだけ。現在present＋exact answer_time、当時past＋exact original_occasionの4種を一つの条件群とする。既存程度付き回答も保持する。原claim／原対比の失効0、追加1核と同じreceived eventへのABOUT1辺、受理updateのoperation／subject／temporal binding／evidence／accepted・changed・affected refsを実sourceから再導出する。単なる核数・Move数一致では資格を与えない。
+3. 原理由三点と二関係を完全不変で保持し、既存2 Move（negative）または3 Move（positive）とreceived保持義務・全required被覆を証明する。全体LIMITED・aggregate・核辺／意味checkpoint・Observation・元反応／回答本文はそのまま、満足Moveだけへ理由・対象・本人内の充足という既承認の局所内容を付与する。ADDを満足の訂正や元反応の撤回へ変えない。
+4. 既存 `RetainedReasonedExperienceEligibilityV1`／`RetainedReasonedExperienceContentV1` と `SelectedRetainedReasonedExperienceDecisionV1` の再利用を第一案とし、現在sourceからの再導出・全selection照合・厳密validatorを弱めず成立させる。u307のREVISE資格／本文を同値維持する。既存作者・独立有限readerの理由付き経験文法を使い、作者への未選択内容の直書きは行わない。既存型のまま成立しない場合、新型を無断追加せず停止する。
+5. PARTIAL、不明、後続round、複数回答、履歴／frame、legacy、WITHDRAW・他REVISE、満足／理由／対象への更新、共有対象、追加材料、plain評価・unfinished文脈は今回の新資格から除外する。u307が認めるREVISEは既存経路として維持。原文認識、公開API／DTO／DB／RN、質問数・Move上限、Safety/privacy、Piece/Analysis、依存・外部AI・配置／mergeは変更しない。
+
+承認後の主な実装ownerは `ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_thread_projection.py` の既存資格導出／検証。`contracts.py`は既存型の限定資格説明との整合を取る範囲とし、既存field／validatorを弱めない。`emlis_answer_update.py`のREVISE証明は変更せず、ADD証明を同じ投影owner内で分離する。検査は既存 `ai/tests/test_cmee_emlis_result_appraisal.py`、現行owner identity fixture、既存Q2/Q3 applicationとRN手段を用いる。承認後に05／8/28設計／06／API handoffと地図の責務差分を同期する。新production file・補助family・service・依存は不要という見積りで、今回それらは未変更。
+
+完成条件は6配置×満足時点2×回答4種＝48対象で、満足Moveだけが理由・対象・充足を含む経験へ変わり、全体LIMITED／aggregate／核辺／checkpoint／Observation・元反応／回答本文が不変となること。理由語／対象語・理由時点／評価時点・回答程度の対照、u307 REVISE、初回、上記対象外条件を加え、非対象の結果を保持する。有限readerの作者禁止、理由／対象／時点／肯否の改変・欠落・理由のreceived原因化、全ID／sealを再計算した別Move／checkpoint／aggregateへの付替えを拒否する。
+
+完成済み保存本文は非再生成。未完成current checkpointは同じ意味・受理回答・operation・既存履歴を保ち、新本文へ再開する。作者禁止GET/start・同回答再送・実service保存・RN全文／履歴／再openまで確認し、rootが全対象全文を読む。実装→回帰→保存／再表示を一つの限定単位として行う見積りで、追加課金・Mashの端末操作は0、完成時刻は未確定。新しい意味、全体NORMAL昇格、新型／公開契約／DB／依存が必要ならこの案を拡大せず停止する。
+
+**次の一作業は、この具体案の適用範囲追加をMashへ確認すること。承認前に新資格を実装しない。** 本文の長い説明・反復・初回内容形成、独立行動・安心した分類・共有対象／容量・その他対象外更新、既存周辺4／過去17とQ3既存16失敗の集合対応、same100・Q1上限・giver帰属・本人実機／正式Product Readは残る。今回u314修復のprimaryはTECHNICAL_CREDIT、次案は未承認の診断／提案。PRODUCT_NOT_CLEAR・初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false、Draft/open/unmerged・未配置、10/31管理線・12/18公開目標、Piece/Analysis主枠・管理評価53.25％を維持する。
