@@ -4600,7 +4600,8 @@ def test_separate_reasonless_duties_do_not_opt_in_partial_correction(monkeypatch
 @pytest.mark.parametrize('memo,action', [
     ('資料を分類したことに満足した。植木に水をやった。', '褒められたのに、嬉しくなかった。'),
     ('資料を分類したことに満足した。', '褒められたのに、嬉しくなかった。誘われたのに、悲しかった。'),
-    ('資料を分類したことに満足した。褒められたのに、嬉しくなかった。', ''),
+    # u291's same-field exclusion is now covered by the two-window proof
+    # and test_same_field_reasonless_revision_retains_both_experiences.
     ('資料を分類したことに満足している。', '褒められたのに、嬉しくなかった。'),
 ])
 def test_separate_reasonless_duties_do_not_admit_other_source_scopes(memo, action):
@@ -7174,8 +7175,8 @@ def test_polite_received_prefix_updates_preserve_owned_meaning(field, source, an
     out = MeaningExperienceEngine().generate(req)
     assert out.artifact and out.body_state == 'REFINED', out.reason_codes
     # This source repair preserves accepted meaning and its observation.
-    # Same-field REVISE/WITHDRAW Reception still has the pre-existing
-    # retention gap; it is not covered by the separate-field qualification.
+    # The fuller same-field REVISE regression below owns Reception retention.
+    # Unfinished REVISE and WITHDRAW still have the pre-existing retention gap.
     assert '誘われた' in out.artifact.observation and '悲しかったです' in out.artifact.observation
     assert ('資料を分類' if '資料' in source else '考えを言葉') in out.artifact.observation
     if operation == 'WITHDRAW':
@@ -7243,3 +7244,132 @@ def test_polite_received_prefix_old_checkpoint_rederives_complete_source(row):
         assert current.checkpoint.source_prefix_ref == p.checkpoint.source_prefix_ref
         assert current.checkpoint.base_meaning_ref != p.checkpoint.base_meaning_ref
         assert current.checkpoint.checkpoint_id != p.checkpoint.checkpoint_id
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('received_first', [True, False])
+@pytest.mark.parametrize('appraisal,event,received,received_event,reaction', [
+    ('資料を分類したことに満足した。', '資料を分類した',
+     '誘われたのに、悲しかったです。', '誘われた', '悲しかったです'),
+    ('資料を分類したことに満足した。', '資料を分類した',
+     '褒められたのに、嬉しくなかった。', '褒められた', '嬉しくなかった'),
+    ('案を選んで満足した。', '案を選んだ',
+     '褒められたのに、嬉しくなかった。', '褒められた', '嬉しくなかった'),
+    ('文章を直したことに満足した。', '文章を直した',
+     '誘われたのに、少し悲しかったです。', '誘われた', '少し悲しかったです'),
+])
+def test_same_field_reasonless_revision_retains_both_experiences(
+        monkeypatch, field, received_first, appraisal, event, received, received_event, reaction):
+    from test_cmee_emlis_q3_thread import advance
+    from cocolon_meaning_experience_engine import emlis_answer_update as updates
+    text = received + appraisal if received_first else appraisal + received
+    original = request(text if field == 'memo' else '', text if field == 'memo_action' else '')
+    initial_result = MeaningExperienceEngine().generate(original)
+    req = advance(original, '「満足した」ではなく「満足しなかった」です。')
+    p = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(p)
+    projection = project_thread_meaning(p, plan)
+    result = MeaningExperienceEngine().generate(req)
+    assert p.checkpoint.assessment_status == 'RESOLVED'
+    assert result.artifact, result.reason_codes
+    assert event in result.artifact.reception and '当時は満足しなかった' in result.artifact.reception
+    assert received_event in result.artifact.reception and reaction in result.artifact.reception
+    assert '満足した' not in result.artifact.text
+    assert len(plan.response_plan.human_reception_plan.moves) == len(projection.selected_reception.decisions) == 2
+    assert projection.meaning_plan.projection_branch == 'LIMITED'
+    assert all(d.branch == 'LIMITED' for d in projection.selected_reception.decisions)
+    assert not _u284_grouped_configurations(projection)
+    # The separate-field private experience content is not widened by this
+    # source-retention repair. The current same-field LIMITED writer remains.
+    assert 'あなたにとって' not in result.artifact.reception
+    monkeypatch.setattr(updates, '_retained_reasonless_shared_target_duties', lambda *_a: ())
+    before = prepare_emlis_meaning(req)
+    previous_plan = build_updated_grounded_plan(before)
+    previous = MeaningExperienceEngine().generate(req)
+    assert previous.artifact
+    assert p.checkpoint == before.checkpoint
+    assert (plan.nuclei, plan.relations) == (previous_plan.nuclei, previous_plan.relations)
+    assert result.artifact.observation == previous.artifact.observation
+    assert received_event not in previous.artifact.reception
+    assert result.reason_codes == previous.reason_codes
+    assert MeaningExperienceEngine().generate(original) == initial_result
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+def test_same_field_reasonless_revision_body_rejects_lost_or_rebound_experience(monkeypatch, field):
+    from test_cmee_emlis_q3_thread import advance
+    import emlis_ai_grounded_sentence_surface as surface
+    text = '誘われたのに、悲しかったです。資料を分類したことに満足した。'
+    req = advance(request(text if field == 'memo' else '', text if field == 'memo_action' else ''),
+                  '「満足した」ではなく「満足しなかった」です。')
+    p = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(p)
+    selected = project_thread_meaning(p, plan).selected_reception
+    sentence = build_grounded_sentence_plan(plan, p.thread.resolver(), recovery_stage='full')
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact
+    body = result.artifact
+    def forbidden(*_a, **_k):
+        pytest.fail('Observation inverse called its author')
+    monkeypatch.setattr(surface, '_realize_line', forbidden)
+    # The existing LIMITED Reception verifier uses author replay. This test
+    # proves its full-body boundary, not an independent Reception reader.
+    def valid(reception):
+        return evaluate_grounded_surface_body_inverse(
+            body=body.text.replace(body.reception, reception).encode(), plan=plan,
+            sentence_plan=sentence, resolver=p.thread.resolver(), selected_subjective_input=selected).passed
+    assert valid(body.reception)
+    first, second = (s + '。' for s in body.reception.split('。') if s)
+    for wrong in (first, second,
+        body.reception.replace('満足しなかった', '満足した'),
+        body.reception.replace('悲しかったです', '嬉しかったです'),
+        body.reception.replace('当時は', '今は'),
+        body.reception.replace('誘われた', '同僚が誘われた'),
+        body.reception.replace('資料を分類した', '文章を直した'),
+        body.reception + '誘われたことが不満の原因です。',
+        body.reception + '二つの経験は同時に起きています。'):
+        assert wrong != body.reception and not valid(wrong)
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+def test_same_field_reasonless_revision_requires_complete_source_windows(field):
+    from cocolon_meaning_experience_engine.emlis_answer_update import _separate_reasonless_appraisal_received_source as prove
+    text = '誘われたのに、悲しかったです。資料を分類したことに満足した。'
+    p = prepare_emlis_meaning(request(text if field == 'memo' else '', text if field == 'memo_action' else ''))
+    thread = p.thread
+    assert prove(p.original_plan, thread)
+    a, b = sorted((s for s in thread.original.evidence_spans if s.source_field == field),
+                  key=lambda s: s.start_index)
+    def changed_span(old, new):
+        return replace(thread, original=replace(thread.original,
+            evidence_spans=tuple(new if s == old else s for s in thread.original.evidence_spans)))
+    def changed_source(value):
+        return replace(thread, original=replace(thread.original,
+            normalized_current_input={**thread.original.normalized_current_input, field: value}))
+    for changed in (
+        changed_span(b, replace(b, start_index=a.end_index - 1)),
+        changed_span(b, replace(b, start_index=b.start_index + 1)),
+        changed_span(b, replace(b, end_index=b.end_index - 1)),
+        changed_span(b, replace(b, raw_text=b.raw_text.replace('分類', '整理'))),
+        replace(thread, original=replace(thread.original, evidence_spans=tuple(
+            b if s == a else a if s == b else s for s in thread.original.evidence_spans))),
+        changed_source('別の話。' + text),
+        changed_source(text[:a.end_index] + '、' + text[b.start_index:]),
+        changed_source(text + 'ほかの出来事があった。'),
+    ):
+        assert not prove(p.original_plan, changed)
+
+
+@pytest.mark.parametrize('text', [
+    '誘われたのに、悲しかったです。資料を分類したことに満足している。',
+    '同僚が誘われたのに、悲しかったです。資料を分類したことに満足した。',
+    '「誘われたのに、悲しかったです。」資料を分類したことに満足した。',
+    '誘われたのに、悲しかったです。資料を分類したことに満足した。植木に水をやった。',
+    '誘われたのに、悲しかったです。資料を分類したことに満足した。誘われたのに、悲しかったです。',
+    '誘われたのに、悲しかったです。探しやすくなったので、資料を分類したことに満足した。',
+    '誘われたのに、悲しかったです。結論は出ていないが、考えを言葉にできて満足した。',
+])
+def test_same_field_reasonless_revision_keeps_unproved_scopes_out(text):
+    from cocolon_meaning_experience_engine.emlis_answer_update import _separate_reasonless_appraisal_received_source as prove
+    p = prepare_emlis_meaning(request(text, ''))
+    assert not prove(p.original_plan, p.thread)

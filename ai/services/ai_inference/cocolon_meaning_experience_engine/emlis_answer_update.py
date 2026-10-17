@@ -242,8 +242,7 @@ def _separate_reasonless_appraisal_received_source(original, thread):
         return {}
     received_event, reaction = (index[ids[0]] for ids in received)
     received_relation = received_relations[0]
-    if (event.source_fields == received_event.source_fields
-        or received_relation.grounding_kind != 'user_stated_relation'
+    if (received_relation.grounding_kind != 'user_stated_relation'
         or received_relation.source_span_ids != received_event.source_span_ids
         or (appraisal.semantic_frame.polarity, appraisal.semantic_frame.time_scope) != ('positive', 'past')
         or {c for c in appraisal.semantic_frame.attribute_codes if c.startswith('source_appraisal_')}
@@ -259,13 +258,29 @@ def _separate_reasonless_appraisal_received_source(original, thread):
             or node.semantic_frame.actor != 'current_user'):
             return {}
     first, last = (resolver.resolve(n.source_span_ids[0]) for n in (event, received_event))
-    for span in (first, last):
-        source = str(thread.original.normalized_current_input.get(span.source_field) or '')
-        if (span.start_index != 0 or span.end_index != len(span.raw_text)
-            or re.fullmatch(re.escape(span.raw_text) + r'[。．.]?', source) is None
+    if first.source_field == last.source_field:
+        # Field identity is not occasion identity. Two complete, disjoint
+        # sentences can own separate duties in the same field. Re-prove the
+        # full field and both actual windows; IDs or family tags alone do not
+        # authorize retaining an unrelated/overlapping source contribution.
+        a, b = sorted((first, last), key=lambda span: span.start_index)
+        source = str(thread.original.normalized_current_input.get(a.source_field) or '')
+        if (a.start_index != 0 or not a.end_index < b.start_index < b.end_index <= len(source)
+            or source[a.start_index:a.end_index] != a.raw_text
+            or source[b.start_index:b.end_index] != b.raw_text
+            or re.fullmatch(r'[。．.]\s*', source[a.end_index:b.start_index]) is None
+            or re.fullmatch(r'[。．.]?', source[b.end_index:]) is None
             or tuple(s.span_id for s in resolver.resolve_many(resolver.span_ids)
-                     if s.source_field == span.source_field) != (span.span_id,)):
+                     if s.source_field == a.source_field) != (a.span_id, b.span_id)):
             return {}
+    else:
+        for span in (first, last):
+            source = str(thread.original.normalized_current_input.get(span.source_field) or '')
+            if (span.start_index != 0 or span.end_index != len(span.raw_text)
+                or re.fullmatch(re.escape(span.raw_text) + r'[。．.]?', source) is None
+                or tuple(s.span_id for s in resolver.resolve_many(resolver.span_ids)
+                         if s.source_field == span.source_field) != (span.span_id,)):
+                return {}
     appraisal_rows = gp._explicit_result_appraisal_projections(
         first, thread.original.normalized_current_input)
     received_rows = gp._received_event_reaction_text_projections(last.raw_text)
