@@ -1,4 +1,4 @@
-> 最新EmlisAI残件：末尾 **u305（2026-10-17・同欄received先行で失われる理由付き満足を復元）**。限定修復・検証結果は末尾。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
+> 最新EmlisAI残件：末尾 **u306（2026-10-17・訂正後の未変更理由付き満足を保持する限定案、承認待ち）**。修正前32応答で原因を確認。今回は資料のみで製品コード・本文改善0。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -21528,3 +21528,107 @@ Python3.12.14／Pydantic2.13.5／pytest8.4.1／PGlite0.5.8／React・react-test-
 ### 次の一作業
 
 今回の順序差修復を再実装しない。次は肯定訂正後に、未変更の理由付き満足が「理由への注意」へ弱まる内容欠落を、既存LIMITED・選択済み意味・承認済み理由／対象／満足内容から照合する。語尾の差し替えだけを解決とせず、新たな内部内容資格が必要なら差分案を具体化する。初回の説明性・受容反復、現在回答の欠落・安心した分類・共有対象／対象外更新、既存周辺4失敗（過去共有17との集合一致未確認）・same100・Q1上限・giver帰属・本人実機／正式Product Readは残る。10/31管理線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％を維持する。
+
+
+## u306 — 訂正後の未変更理由付き満足へ経験内容を保持する限定案（2026-10-17 JST・未承認）
+
+**DESIGN_PROPOSAL_ONLY / MASH_APPROVAL_PENDING / BLOCKER_NARROWED / PRODUCT_NOT_CLEAR。製品source・test・fixture変更0、本文改善0。** u305の次作業を、未変更の理由付き満足が訂正後に「理由への注意」へ弱まる一点へ限定して調査した。新しい意味理解の質問ではなく、既承認の充足内容を更新後にも局所保持する資格／private契約の追加案である。今回の資料記録は承認や実装成立を意味しない。
+
+基準API `85bece8771fdc6315fe23bbfa92043ac4b74f983`／資料 `8389dc6635568a0b22714ba00c9e3dffa6157205`。添付前回txt、前提・作業ルール・Rule18 §11.3、恒久incident全文、全体設計01・全file地図01A/B/Cの関連範囲・current01/04、最新weekly20261010 §3.5/5.6/u305、8/28設計§9.2/9.4/u288/u289/u293/u294と実sourceを照合した。System Contextは許可済み原典直接参照を使用し、今回prepare実行／新Context成立とはしない。同Workのread-only補助二枠を使ったが、別Pro/Ultraモデルによる正式二重検証とはしない。最終判断・書込みownerはroot華恋のみ。
+
+### 現物で確定した原因と承認境界
+
+- `emlis_stage1_composition.py::_normal_reception_appraisal` は、admitted sourceのfrozen/control両回答が空・round0の初回だけ `EmlisReasonedExperienceAppraisalContent` を作る。回答後に元三点が残ってもbase `EmlisAppraisalContent` に戻す。これはu289の明示限定どおりであり、初回型を渡し忘れた故障ではない。
+- `emlis_ai_grounded_human_reception.py::_source_owned_relational_focus_sentence` は経験型＋LIMITEDを拒否し、LIMITEDでは選択済みATTENTIONを「理由に目を向けています」へ実現する。`emlis_ai_grounded_observation_gate.py::_reasoned_experience_selected_reception` と有限readerもNORMAL経験型／LIMITED注意文を区別する。作者の語尾だけを変えると、未選択の経験内容を出すことになる。
+- u289は回答後・LIMITEDを明示除外、u293/u294はreceived二点専用で満足側への流用を明示除外する。u303/u304の二Move保持とu305の原文認識修復も、この新資格の承認ではない。Rule18 §11.3 LEVEL_3に該当する増分だけをMash判断へ出す。既承認の満足の意味・理由認識・初回内容を再承認へ戻さない。
+
+### 今回の未変更コードによる再現
+
+合成32応答を実エンジンで生成した。理由文「探しやすくなったので、資料を分類したことに満足した／満足している。」とreceived文「褒められたのに、嬉しくなかった。」について、別欄両順・memo同欄両順・memo_action同欄両順の6配置×満足時点2×初回／肯定訂正2＝24応答。肯定訂正は「『嬉しくなかった』ではなく『嬉しかった』です。」に相当する既存の明示引用訂正を使った。追加8応答は下表。
+
+| 現行入力／更新 | 今回確認した結果 |
+| --- | --- |
+| 初回12 | NORMAL。満足Moveの経験内容型basis3と別received basis2、本文あり |
+| 当時の肯定訂正12 | RESOLVED／LIMITED／REFINED。二Moveともbase内容・aggregate basis4。満足文は理由への注意に戻る。本文あり |
+| 「少し嬉しかった」への当時訂正1 | 同じLIMITED二Move。程度を含む反応は保持、満足文は理由への注意。提案の対象に含める |
+| 「分からない。」1 | UNCHANGED／reuse_saved_observation_required、pure artifactなし。保存本文の消失とは扱わない |
+| 「今は嬉しい。」1 | LIMITED／REFINED、満足の注意文のみ。別時点の既存残件として対象外 |
+| received反応のみ撤回1 | LIMITED／REFINED、満足の注意文のみ。今回の肯定REVISE範囲外 |
+| 満足を否定訂正1 | NORMAL／REFINED。理由は状態として保持、否定の充足経験＋received経験。対象外 |
+| 満足のみ撤回1 | LIMITED／REFINED。u294の局所received内容を保持。対象外 |
+| 肯定訂正＋存在しない対象撤回1 | PARTIAL／MEANING_UPDATED_BODY_UNAVAILABLE。本文なしを既存残件として保持 |
+| 「安心した」への訂正1 | LIMITED／REFINED、満足の注意文のみ。既存value分類を今回変えない |
+
+全32のうち本文あり30、異なる全文14種類をrootがすべて読んだ。新資格の対象候補は訂正12＋程度1＝13、非対象19。これは修正前診断の件数であり、回帰PASSや改善件数ではない。Python3.12.14／pytest8.4.1／Pydantic2.13.5の既存依存を再発見して使用、新installなし。今回pytest回帰、service保存、RN／実機、CIによる製品検証は未実行。前回1,209 pass／28 DTOを今回の実績へ合算しない。
+
+### 提案する限定追加
+
+1. **意味の対象**：既に認識済みの本人の明示理由exact1（肯定fact、過去／現在）＋実行済みSELF対象（過去）＋肯定・無程度の満足（過去／入力時点）の三点と二関係を保持する。u289の既承認の意味「明示理由に根差した、対象について本人の中に満たされた感覚のある／あった経験」を使う。新語義、原因、期待、価値基準、他者意図、二経験の優劣・因果・同時性は追加しない。
+2. **更新資格**：独立したreceived経験一組の反応だけを、当時の肯定反応へ一回、完全に明示訂正した場合に限定する。frozen/control回答各1・round1・RESOLVED・MATERIAL_UPDATE・REVISE exact1・EXPLICIT_CORRECTION・ORIGINAL_OCCASIONを要求。旧negativeと旧対比の失効、accepted/inactive/affected/changed refsと原eventへの現在ABOUTを既存証明に一致させる。既存 `is_grounded_positive_feeling` の認識範囲を使い、「少し嬉しかった」の既存程度も保つ。満足側の無程度と混同しない。「安心した」等の分類は拡大しない。
+3. **source所有と範囲**：u304の `_retained_unfinished_received_duties` を変更せず再利用し、さらに理由三点へ限定する。原required5核／3辺、理由・対象・満足の未変更3核／2辺、本人・肯否・modality・二つの時点、原span／欄・一意出現、receivedと別の二成分を現在sourceから再証明する。別欄両順と同欄両順×2欄の6配置を同じ資格に含める。追加材料・重複・曖昧所有・共有対象は除外する。履歴／frame付き、legacy指定、PARTIAL、不明、ADD／WITHDRAW／混合、満足／理由／対象の更新、後続roundは対象外。
+4. **局所内容と全体の分離**：全体 `LimitedMeaningOutcome`、既存aggregate命題（ATTENTION／focalなし／whole basis）、核・辺・意味checkpoint、二Move、未知・全required義務とObservationを保持する。新しいversioned privateの理由三点用Eligibility／Contentを既存post-selection経路で導出し、当該満足Moveへだけ結ぶ。whole basisと局所三binding／二方向関係／contribution／source qualifier、原source・受理更新・現在checkpoint・projection／aggregate所属を明示して照合する。現行content／decisionの厳密validationを緩めず別型dispatchとし、現在の内容から識別とsealを再計算する。u294のexact2 received専用型や初回NORMAL型をそのまま流用しない。
+5. **本文まで同一単位**：唯一の既存Human Reception作者へ選択済み局所内容を渡し、既承認の理由・対象・充足の実現文法を共用する。独立有限readerはsource三点・二方向関係・時点・実本文と局所資格を照合し、本文作者を呼んで意味を決めない。receivedの訂正後文は維持し、削除・要約で反復を隠さない。新しい意味エンジン、後処理文字列置換、外部AI、原文認識の拡張は追加しない。
+
+### 予定ownerと変更しない境界
+
+| mashos-api相対path | 承認後に予定する責務 |
+| --- | --- |
+| ai/services/ai_inference/cocolon_meaning_experience_engine/contracts.py | 理由三点用のversioned private資格／内容と検証。旧aggregate・u289／u294型の範囲は保持 |
+| ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_thread_projection.py | 原source・更新・Moveの限定資格、source再導出、局所内容の現行decisionへの結合 |
+| ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_response.py | 局所三点のcandidate／contribution／qualifierを既存sourceから導出 |
+| ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py | 全体LIMITEDと局所内容の対応・封印・既存論理契約manifestへの登録 |
+| ai/services/ai_inference/emlis_ai_grounded_human_reception.py | 別decision型を検証し、満足Moveだけ既存経験文法へ渡す |
+| ai/services/ai_inference/emlis_ai_grounded_observation_gate.py | source所有・局所内容と実本文の有限逆検証 |
+
+新production file・service・engine・checker・依存は不要という見積り。検査は既存 `ai/tests/test_cmee_emlis_result_appraisal.py` と現行共有owner identity fixtureを必要範囲で更新し、既存Q2/Q3 application・RN再表示の手段を使う。承認後の実変更と同時に05／8/28設計／06／API handoff・01A/current01/04へ責務差分を同期する。現在は資料案だけで **STRUCTURE_MAP_DELTA_NONE**。公開API/DTO/DB/RN・質問上限・Move上限・保存形式・Safety/privacy・課金・Piece/Analysis・Route Aは変更しない。deploy／main mergeは含めない。
+
+### 完成条件・互換・停止条件
+
+- 同じ合成入力の変更前後で、対象13の満足Moveだけが「理由への注意」から理由・対象・本人内の充足を含む選択済み経験へ変わること。非対象19の全結果、全32の意味checkpoint・核辺・Observation、対象の全体LIMITED／aggregate・二Move・訂正received文が一致することを確認する。理由／対象を変える既存認識内の対照、理由時点と満足時点の独立性、程度付き訂正も加える。字面差や内部型追加だけでは完成にしない。
+- 作者禁止の有限readerで、理由／対象／時点／肯否／程度の改変、三点欠落、理由のreceived原因化、旧negative復活、未明示同時性・価値判断の追加を拒否する。source再導出により全ID／seal再計算後の他Move・他checkpoint・他aggregateへの付替えも拒否する。資格なし・legacy・共有対象・後続round等は既存結果を維持する。
+- **完成済み保存DTOは非再生成。** 一方、本文未完成のcurrent checkpointは意味のidentityであり文面世代ではない。意味・核辺・受理操作・時点・operationを保った再試行で新資格による本文を作り得る。旧文面の完全一致を約束せず、意味event／回答の再追加がないことを確認する。legacy再導出は新資格から除外する。実service保存・作者禁止GET/start・同回答再送・RNの本文／履歴／close-reopenまで検証する。native stubと本人実機を区別する。
+- 初回／訂正後の全実本文を華恋が先に読み、説明性・反復の残りも記録する。局所保持の改善だけを§9.2/9.4全体、正式Product Readや商品完成へ換算しない。
+- 一つの限定実装単位として実装→対象回帰→保存／再表示まで行う見積り。追加service・課金・Mashの端末操作は0。所要は実装後の検証結果次第であり、今回未実装のため完成時刻や日程短縮は保証しない。新source意味・全体NORMAL昇格・公開契約・稼働DB・依存・別engineが必要になった場合は追加しない。この案の範囲外の品質欠陥を混ぜず記録へ戻す。
+
+### 次の一作業
+
+Mashへ確認する増分は「別のreceived反応だけを当時の肯定へ訂正したとき、未変更の理由・対象・本人の満足を一つの経験として保持する、限定資格とprivate内容対応」である。承認後はこの同じ範囲を再確認に戻さず実装・実本文・保存表示まで進める。承認前は製品code/test/fixture変更0。初回説明性・受容反復、現在回答・安心した分類・共有対象／対象外更新、既存周辺4失敗・same100・Q1上限・giver帰属・本人実機／正式Product Readは残る。10/31管理線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％を維持する。
+
+初回一体単位未完了・正式受入0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置。今回のprimary outcomeはBLOCKER_NARROWED、実装改善は未成立。
+
+### u306 診断で生成した代表全文（合成入力・修正前）
+
+満足した-0-initial:
+
+```text
+見えたこと：
+「探しやすくなった」を理由に、「資料を分類した」という出来事への評価は「満足した」とあります。
+「褒められた」の一方で「嬉しくなかった」とあります。
+
+Emlisから：
+資料を分類したことについて受け取ったのは、探しやすくなったという点で、当時ご自身の中に満たされた感覚があった経験です。褒められたことだけでは言い表せない、嬉しさが伴わなかったあなたの経験として受け取りました。
+```
+
+満足した-0-corrected:
+
+```text
+見えたこと：
+「探しやすくなった」を理由に、「資料を分類した」という出来事への評価は「満足した」とあります。
+「褒められた」ことについて、その時の受け止めは「嬉しかった」と書かれています。
+
+Emlisから：
+資料を分類したことへの当時の満足について、探しやすくなったという理由に目を向けています。褒められたことについて、その時は嬉しかったのですね。
+```
+
+満足している-0-corrected:
+
+```text
+見えたこと：
+「探しやすくなった」を理由に、「資料を分類した」という出来事への評価は「満足している」とあります。
+「褒められた」ことについて、その時の受け止めは「嬉しかった」と書かれています。
+
+Emlisから：
+資料を分類したことへの入力した時点での満足について、探しやすくなったという理由に目を向けています。褒められたことについて、その時は嬉しかったのですね。
+```
+
+残る11種も実全文を読解し、初回／訂正後の関係説明・定型性と対照の欠落を上表へ記録した。新資格を使った改善例はまだ生成していない。再現は既存testの `request(memo, memo_action)`、Q3 `advance(request, answer)`、`prepare_emlis_meaning` → `build_updated_grounded_plan` → `project_thread_meaning` と `MeaningExperienceEngine().generate` を使う。PYTHONPATHは既存test依存、ai、ai/services/ai_inference、ai/tests。各ケースは独立requestで、実サービスの保存結果ではない。
