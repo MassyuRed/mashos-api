@@ -3145,7 +3145,7 @@ def _source_grounded_received_contrast_rows(targets, supports, nucleus_index, re
 
 def _source_grounded_current_material_clauses(move, plan, nucleus_index, resolver):
     """Two selected current source objects, without asserting a new relation."""
-    from emlis_ai_grounded_observation_plan import _source_current_material_group, _source_coexisting_feelings_and_tentative_target, _source_material_allows_reverse, _source_temporal_clause_parts, _source_independent_decision_clause_parts
+    from emlis_ai_grounded_observation_plan import _source_feeling_reason_unknown_parts, _source_current_material_group, _source_coexisting_feelings_and_tentative_target, _source_material_allows_reverse, _source_temporal_clause_parts, _source_independent_decision_clause_parts
     if (plan is None or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts
         or move not in plan.response_plan.human_reception_plan.moves
         or move.reception_act != "stay_with_current_burden" or not move.required):
@@ -3162,8 +3162,7 @@ def _source_grounded_current_material_clauses(move, plan, nucleus_index, resolve
     clauses = tuple(_source_grounded_clause_candidate(n, resolver) for n in group[:2])
     if (any(len(n.source_span_ids) != 1 or n != nucleus_index.get(n.nucleus_id) for n in group[:2])
         or any(re.search(r"[「」『』…‥?？!！。．.\r\n]", part) for part in clauses)
-        or not (re.fullmatch(r"(?:(?:なぜ|どうして|何故)そう感じるのか|その理由)(?:は|が)?"
-                            r"(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", clauses[1])
+        or not (_source_feeling_reason_unknown_parts(clauses[1])
                 if "lexical:source_feeling_reason_subject" in group[0].semantic_frame.attribute_codes
                 else (tuple((_source_temporal_clause_parts(c) or (None,))[0] for c in clauses)
                       == ("relief_residue", "causal_unknown")
@@ -3174,6 +3173,15 @@ def _source_grounded_current_material_clauses(move, plan, nucleus_index, resolve
                             else _source_coexisting_feelings_and_tentative_target(*clauses))))):
         return ()
     return tuple(reversed(clauses)) if reversed_focus else clauses
+
+
+def _feeling_reason_recipient_unknown(fragment):
+    from emlis_ai_grounded_observation_plan import _source_feeling_reason_unknown_parts
+    proof = _source_feeling_reason_unknown_parts(fragment)
+    if proof is None or proof['owner'] is None:
+        return fragment
+    start, end = proof.span('owner')
+    return fragment[:start] + ("ご自身" if proof['owner'] == "自分" else "あなた") + fragment[end:]
 
 
 def _source_feeling_reason_nominal(clauses):
@@ -3197,7 +3205,7 @@ def _source_feeling_reason_nominal(clauses):
     # The source's first person is the recipient, never Emlis. Keep its
     # complete finite feeling and make the already-proven SELF owner explicit.
     nominal = (self_topic['feeling'] + "というあなたの気持ち" if self_topic else first + "こと")
-    return nominal + "と、" + unknown + "こと"
+    return nominal + "と、" + _feeling_reason_recipient_unknown(unknown) + "こと"
 
 
 def _source_grounded_shared_target_group(move, plan, resolver):
@@ -8764,7 +8772,7 @@ def _source_current_material_group_ir_text(realization):
     if reversed_focus:
         profiles, fragments = tuple(reversed(profiles)), tuple(reversed(fragments))
     feeling, unknown = profiles
-    from emlis_ai_grounded_observation_plan import _source_coexisting_feelings_and_tentative_target, _source_temporal_clause_parts, _source_independent_decision_clause_parts
+    from emlis_ai_grounded_observation_plan import _source_feeling_reason_unknown_parts, _source_coexisting_feelings_and_tentative_target, _source_temporal_clause_parts, _source_independent_decision_clause_parts
     if ((feeling.nucleus_kind, feeling.predicate_kind, feeling.modality) !=
         (("uncertainty", "uncertainty", "uncertain") if decisions else ("change", "change", "fact") if temporal else ("reaction", "feeling", "feeling"))
         or unknown.nucleus_kind != unknown.predicate_kind
@@ -8772,8 +8780,7 @@ def _source_current_material_group_ir_text(realization):
         or unknown.modality != "uncertain"
         or any(p.actor_kind != "SELF" or p.quoted_boundary or p.performed_action or p.future_action for p in (feeling, unknown))
         or any(re.search(r"[「」『』…‥?？!！。．.\r\n]", part) for part in realization.semantic_fragments)
-        or not (re.fullmatch(r"(?:(?:なぜ|どうして|何故)そう感じるのか|その理由)(?:は|が)?"
-                            r"(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", realization.semantic_fragments[1])
+        or not (_source_feeling_reason_unknown_parts(realization.semantic_fragments[1])
                 if is_reason else (tuple((_source_temporal_clause_parts(c) or (None,))[0] for c in fragments)
                     == ("relief_residue", "causal_unknown") if temporal else
                     (tuple((_source_independent_decision_clause_parts(c) or (None,))[0] for c in fragments) == ("choice", "timing")
@@ -10948,6 +10955,7 @@ def _source_grounded_reception_fragment(
         # the complete present predicate without making the reason a cause.
         _source_current_material_group_ir_text(realization)
         feeling, unknown = realization.semantic_fragments
+        unknown = _feeling_reason_recipient_unknown(unknown)
         feeling = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺)は", "あなたは", feeling)
         if feeling.endswith("感じがする"):
             connected = feeling[:-2] + "して"

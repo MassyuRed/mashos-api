@@ -4776,3 +4776,27 @@ def test_independent_positive_polite_nominal_inverse_rejects_source_drift(monkey
             selected_subjective_input=projection.selected_reception).passed
     assert passes(follow)
     assert not passes(altered)
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('memo,expected', [
+    ('少し怖い。その理由は自分でもまだ分からない。',
+     '少し怖くて、その理由はご自身でもまだ分からないのですね。'),
+    ('少し怖い。なぜそう感じるのか、私にもよく分からない。',
+     '少し怖くて、なぜそう感じるのか、あなたにもよく分からないのですね。'),
+])
+def test_feeling_reason_self_saved_body_survives_restart(qdb, qcase, monkeypatch, tier, memo, expected):
+    from test_emlis_q2_application import run
+    from emlis_thread_service import EmlisThreadService, Q3_PROFILE
+    user, parent, service = qcase
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
+    qdb.query('update public.emotions set memo=$1,memo_action=$2 where id=$3', [memo, '', parent])
+    dto = run(service.start(user, parent))
+    assert expected in dto['current_observation']['text']
+    assert dto['pending_question'] is None and dto['body_state'] == 'FINAL'
+    class NoAuthor:
+        def __getattr__(self, name):
+            pytest.fail('saved reason body regenerated: ' + name)
+    restarted = EmlisThreadService(runtime_profile=Q3_PROFILE, engine=NoAuthor())
+    assert run(restarted.get(user, parent)) == dto
+    assert run(restarted.start(user, parent)) == dto

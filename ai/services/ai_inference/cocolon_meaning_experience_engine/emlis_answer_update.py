@@ -84,6 +84,7 @@ class PreparedEmlisMeaning:
     legacy_received_report_context: bool = False
     legacy_cognitive_feeling_scope: bool = False
     legacy_cognitive_temporal_topic: bool = False
+    legacy_feeling_reason_self_scope: bool = False
 
 
 def _text(row, index, resolver) -> str:
@@ -946,6 +947,18 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
             or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
             raise
+        # Re-derive the complete pre-u324 source interpretation. An old
+        # checkpoint cannot label the newly recognized feeling/reason pair.
+        prior_reason_scope = original_meaning_plan(thread, _legacy_feeling_reason_self_scope=True)
+        if (prior_reason_scope.nuclei != original.nuclei
+            or prior_reason_scope.relations != original.relations):
+            try:
+                restored = _prepare_emlis_meaning_from_plan(request, thread, prior_reason_scope)
+            except ValueError as prior_exc:
+                if str(prior_exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}:
+                    raise
+            else:
+                return replace(restored, legacy_feeling_reason_self_scope=True)
         # Restore pre-u320 meaning without also disabling u319's independent
         # past-experience/cognitive-feeling scope repair. The old checkpoint
         # must match in full; a saved ID cannot relabel newly recognized scope.

@@ -3016,15 +3016,19 @@ def _source_bound_current_cognition(
     ):
         span = resolver.resolve(nucleus.source_span_ids[0])
         clause = str(span.raw_text).strip(" \u3000。．.")
+        from emlis_ai_grounded_observation_plan import _source_feeling_reason_unknown_parts
+        reason = (_source_feeling_reason_unknown_parts(clause)
+                  if "lexical:source_feeling_reason_unknown" in attributes else None)
         if (span.source_field == nucleus.source_fields[0]
             and 0 <= span.start_index < span.end_index
             and (re.fullmatch(r"(?:(?:今|現在)(?:は|も))?(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", clause)
-                 or "lexical:source_feeling_reason_unknown" in attributes
-                 and re.fullmatch(r"(?:(?:なぜ|どうして|何故)そう感じるのか|その理由)(?:は|が)?"
-                                  r"(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", clause)
+                 or reason is not None
                  or "lexical:source_temporal_causal_unknown" in attributes
                  and re.fullmatch(r".*(?:今日|今|現在)の(?:理由|原因|きっかけ)が同じか(?:は|も)?"
                                   r"(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", clause))):
+            if reason is not None and reason['owner'] is not None:
+                start, end = reason.span('owner')
+                clause = clause[:start] + ("ご自身" if reason['owner'] == "自分" else "あなた") + clause[end:]
             return clause
     return ""
 

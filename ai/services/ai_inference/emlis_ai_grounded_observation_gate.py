@@ -382,6 +382,12 @@ def _semantic_subcheck_reasons(
                         sensation_body, sensation_witness, sentence, move, plan, resolver))
                     replacements.update(_body_inverse_thread_received_group(
                         sensation_body, sensation_witness, sentence, move, plan, resolver) or ())
+                    if _read_feeling_reason_discourse(
+                        sensation_body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode(),
+                        move, plan, resolver, None) is not None:
+                        # Recipient case and the finite connective are
+                        # independently restored to both complete sources.
+                        focused_source_nuclei.update((*move.target_nucleus_ids, *move.support_nucleus_ids))
                     from emlis_ai_grounded_observation_plan import source_owned_relational_focus
                     focus = source_owned_relational_focus(move, plan)
                     if (focus is not None and focus[0] == "received_experience_focus"
@@ -4393,6 +4399,21 @@ def _read_independent_decision_discourse(raw, move, plan, resolver, selected_sub
                   source.encode()) for key, source in zip(('left', 'right'), sources))
 
 
+def _feeling_reason_unknown_restores_source(visible, source):
+    """Independently restore the visible recipient into the proven source slot."""
+    from emlis_ai_grounded_observation_plan import _source_feeling_reason_unknown_parts
+    proof = _source_feeling_reason_unknown_parts(source)
+    if proof is None:
+        return False
+    if proof['owner'] is not None:
+        start, _ = proof.span('owner')
+        recipient = "ご自身" if proof['owner'] == "自分" else "あなた"
+        if visible[start:start + len(recipient)] != recipient:
+            return False
+        visible = visible[:start] + proof['owner'] + visible[start + len(recipient):]
+    return visible == source
+
+
 def _read_feeling_reason_discourse(raw, move, plan, resolver, selected_subjective_input):
     """Restore a present experience and its open reason from actual prose.
 
@@ -4421,9 +4442,12 @@ def _read_feeling_reason_discourse(raw, move, plan, resolver, selected_subjectiv
         return None
     parsed = re.fullmatch(r"(?P<experience>[^。！？!?]+)、(?P<unknown>"
         r"(?:(?:なぜ|どうして|何故)そう感じるのか|その理由)(?:は|が)?"
+        r"[、,]?(?:(?:あなた|ご自身)(?:には|にも|でも|は|も))?"
         r"(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない))"
         r"(?:のですね|のです|のだと受け取りました)。", raw)
-    if parsed is None or parsed['unknown'] != sources[1]:
+    if parsed is None:
+        return None
+    if not _feeling_reason_unknown_restores_source(parsed['unknown'], sources[1]):
         return None
     visible = parsed['experience']
     if visible.endswith("感じがして"):
@@ -6669,15 +6693,15 @@ def evaluate_grounded_surface_body_inverse(
                                 or code == "semantic_role:embedded_turn" for code in codes)):
                     source_span = resolver.resolve(cognition.source_span_ids[0])
                     source_clause = str(source_span.raw_text).strip(" \u3000。．.")
-                    from emlis_ai_grounded_observation_plan import _source_provisional_degree_parts, _source_independent_decision_clause_parts
+                    from emlis_ai_grounded_observation_plan import _source_provisional_degree_parts, _source_independent_decision_clause_parts, _source_feeling_reason_unknown_parts
+                    reason_unknown = ("lexical:source_feeling_reason_unknown" in codes
+                                      and _source_feeling_reason_unknown_parts(source_clause) is not None)
                     if (source_span.source_field == cognition.source_fields[0]
                         and 0 <= source_span.start_index < source_span.end_index
                         and (provisional and _source_provisional_degree_parts(source_clause) is not None
                              or decision and (_source_independent_decision_clause_parts(source_clause) or (None,))[0] == decision_roles[0]
                              or re.fullmatch(r"(?:(?:現在|今)(?:も|は))?(?:まだ)?(?:はっきり|よく)?(?:わからない|分からない)", source_clause)
-                             or "lexical:source_feeling_reason_unknown" in codes
-                             and re.fullmatch(r"(?:(?:何故|どうして|なぜ)そう感じるのか|その理由)(?:が|は)?"
-                                              r"(?:まだ)?(?:はっきり|よく)?(?:わからない|分からない)", source_clause)
+                             or reason_unknown
                              or "lexical:source_temporal_causal_unknown" in codes
                              and re.fullmatch(r".*(?:現在|今|今日)の(?:きっかけ|原因|理由)が同じか(?:も|は)?"
                                               r"(?:まだ)?(?:はっきり|よく)?(?:わからない|分からない)", source_clause))):
@@ -6698,7 +6722,9 @@ def evaluate_grounded_surface_body_inverse(
                             else:
                                 visible = visible[len("今の入力だけを見ると、"):]
                         matched = re.fullmatch(r"(?P<source>.+)のですね。", visible)
-                        if (quote_rows or not matched or matched.group("source") != source_clause):
+                        if (quote_rows or not matched or not (
+                            _feeling_reason_unknown_restores_source(matched.group("source"), source_clause)
+                            if reason_unknown else matched.group("source") == source_clause)):
                             failures.append(f"body_inverse_cognition_source_or_predicate_mismatch:{index}")
                         elif provisional:
                             direct_provisional = True

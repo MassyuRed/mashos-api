@@ -508,3 +508,138 @@ def test_pre_temporal_topic_checkpoint_keeps_complete_u319_meaning(case_index):
     assert list(result.reason_codes) == old['reason_codes']
     assert json.loads(json.dumps(asdict(result.meaning_checkpoint))) == row['checkpoint']
     assert json.loads(json.dumps(asdict(result.question_decision))) == old['question_decision']
+
+
+# u324: the existing present-feeling/unresolved-reason pair keeps its SELF
+# cognitive host. This is not a new reason or an inferred explanation.
+FEELING_REASON_SELF_CASES = [
+    ('なんだかしんどい。その理由はまだ分からない。',
+     'なんだかしんどくて、その理由はまだ分からないのですね。'),
+    ('少し怖い。その理由は自分でもまだ分からない。',
+     '少し怖くて、その理由はご自身でもまだ分からないのですね。'),
+    ('少し怖い。なぜそう感じるのか、私にもよく分からない。',
+     '少し怖くて、なぜそう感じるのか、あなたにもよく分からないのですね。'),
+    ('なんとなく寂しい。どうしてそう感じるのか、自分でもはっきりわからない。',
+     'なんとなく寂しくて、どうしてそう感じるのか、ご自身でもはっきりわからないのですね。'),
+    ('私はつらい。その理由が自分にはわからない。',
+     'あなたはつらくて、その理由がご自身にはわからないのですね。'),
+    ('僕は少し怖い。その理由は僕にもまだ分からない。',
+     'あなたは少し怖くて、その理由はあなたにもまだ分からないのですね。'),
+    ('何だか重い。その理由は俺にも分からない。',
+     '何だか重くて、その理由はあなたにも分からないのですね。'),
+]
+
+
+@pytest.mark.parametrize('memo,expected', FEELING_REASON_SELF_CASES)
+def test_feeling_reason_self_scope_delivers_both_present_hosts(memo, expected):
+    from test_cmee_emlis_received_discourse import actual
+    from test_cmee_emlis_detached_observation import read_body
+    from emlis_ai_grounded_observation_plan import _source_feeling_reason_group
+    context = actual(request=request(memo))
+    outcome, plan, _, _, _ = context
+    group = _source_feeling_reason_group(plan.nuclei, plan.relations)
+    assert len(group) == 2
+    assert group[1].kind == group[1].semantic_frame.predicate_kind == 'uncertainty'
+    assert not {'operator:contrast', 'semantic_role:embedded_turn'} & set(group[1].semantic_frame.attribute_codes)
+    assert outcome.artifact.reception == expected
+    unknown = expected.split('くて、', 1)[1]
+    assert unknown in outcome.artifact.observation
+    assert read_body(context, outcome.artifact.text).passed
+    result = MeaningExperienceEngine().generate(request(memo))
+    assert result.artifact.text == outcome.artifact.text
+    assert result.question is None and result.question_decision.disposition == 'END'
+
+
+@pytest.mark.parametrize('memo', [
+    '少し怖い。その理由は友人には分からない。',
+    '少し怖い。その理由は彼女にも分からない。',
+    '友人は少し怖い。その理由は自分でも分からない。',
+    '少し怖い。友人はその理由が分からない。',
+    '少し怖い。その理由は私が聞いても分からない。',
+    '少し怖い。その理由は自分でも分からないと言った。',
+    '少し怖い。その理由は自分でも分からないと思う。',
+    '少し怖い。その理由は自分でも分からなかった。',
+    '少し怖い。その理由は自分でもまだ分からない？',
+    '少し怖い。もしその理由は自分でも分からないなら休む。',
+    '「少し怖い。その理由は自分でも分からない」と友人が言った。',
+    '少し怖い。自分でも何が嫌なのか分からない。',
+    'なんだかしんどい。何が嫌なのか、自分でもよくわからない。',
+    '少し怖い。行動の理由は自分でも分からない。',
+    '少し怖い。昨日の理由は自分でも分からない。',
+    '少し怖い。なぜ友人がそう感じるのか、私にも分からない。',
+    '少し怖い。寂しい。その理由は自分でも分からない。',
+    '少し怖かった。その理由は自分でも分からない。',
+    '私も少し怖い。その理由は自分でも分からない。',
+])
+def test_feeling_reason_self_scope_requires_unique_unreported_current_owner(memo):
+    from emlis_ai_grounded_observation_plan import _source_feeling_reason_group
+    plan = prepare_emlis_meaning(request(memo)).original_plan
+    assert not _source_feeling_reason_group(plan.nuclei, plan.relations)
+
+
+@pytest.fixture(scope='module')
+def feeling_reason_self_context():
+    from test_cmee_emlis_received_discourse import actual
+    return actual(request=request('私は少し怖い。その理由は自分でもまだよく分からない。'))
+
+
+@pytest.mark.parametrize('section', ['observation', 'reception'])
+@pytest.mark.parametrize('old,new', [
+    ('ご自身でも', '私でも'), ('ご自身でも', '彼女でも'), ('ご自身でも', ''),
+    ('ご自身でも', 'ご自身には'), ('まだよく', 'まだ'), ('まだよく', ''),
+    ('分からない', '分かった'), ('分からない', '分からなかった'),
+    ('その理由', '行動の理由'), ('その理由はご自身でもまだよく分からないのですね。', ''),
+])
+def test_feeling_reason_self_inverse_rejects_changed_owner_scope_or_unknown(feeling_reason_self_context, section, old, new):
+    from test_cmee_emlis_detached_observation import read_body
+    context = feeling_reason_self_context
+    artifact = context[0].artifact
+    original = getattr(artifact, section)
+    changed = original.replace(old, new)
+    assert changed != original
+    body = artifact.text.replace(original, changed)
+    assert not read_body(context, body).passed
+
+
+@pytest.mark.parametrize('ending', ['のです。', 'のだと受け取りました。'])
+def test_feeling_reason_self_inverse_accepts_equivalent_acknowledgement(feeling_reason_self_context, ending):
+    from test_cmee_emlis_received_discourse import inverse
+    context = feeling_reason_self_context
+    follow = context[0].artifact.reception.replace('のですね。', ending)
+    assert inverse(context, follow, without_author=True).passed
+
+
+@pytest.mark.parametrize('case_index', range(4))
+def test_pre_self_reason_checkpoint_rederives_complete_u323_meaning(case_index):
+    import hashlib
+    import json
+    from dataclasses import asdict
+    from pathlib import Path
+    frozen = json.loads((Path(__file__).parent / 'fixtures' /
+        'cmee_emlis_u323_feeling_reason_checkpoint_v1.json').read_text())
+    assert frozen['source_commit'] == 'a1925d5d761b397aee9f939fc42a1d9305c4a19f'
+    row = frozen['cases'][case_index]
+    req = request(row['memo'])
+    fresh = prepare_emlis_meaning(req)
+    changed = case_index != 3
+    assert (fresh.checkpoint.checkpoint_id != row['checkpoint']['checkpoint_id']) == changed
+    saved = replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=row['checkpoint']['checkpoint_id']))
+    restored = prepare_emlis_meaning(saved)
+    assert restored.legacy_feeling_reason_self_scope == changed
+    assert not restored.legacy_cognitive_temporal_topic
+    assert json.loads(json.dumps(asdict(restored.checkpoint))) == row['checkpoint']
+    for name in ('nuclei', 'relations'):
+        data = json.dumps([asdict(n) for n in getattr(restored.original_plan, name)],
+            ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
+        assert hashlib.sha256(data).hexdigest() == row['original_' + name + '_sha256']
+    result = MeaningExperienceEngine().generate(saved)
+    old = row['public_result']
+    assert result.status.value == old['status']
+    assert (result.artifact.text if result.artifact else None) == old['body']
+    assert list(result.reason_codes) == old['reason_codes']
+    assert json.loads(json.dumps(asdict(result.meaning_checkpoint))) == row['checkpoint']
+    assert json.loads(json.dumps(asdict(result.question_decision))) == old['question_decision']
+    with pytest.raises(ValueError, match='emlis_checkpoint_source_prefix_mismatch'):
+        prepare_emlis_meaning(replace(req, emlis_thread=replace(req.emlis_thread,
+            prepared_meaning_checkpoint_ref='foreign-feeling-reason-checkpoint')))

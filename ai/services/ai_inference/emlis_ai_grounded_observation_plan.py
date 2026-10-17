@@ -17192,6 +17192,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_shared_target_contrast: bool = False,
     _legacy_cognitive_feeling_scope: bool = False,
     _legacy_cognitive_temporal_topic: bool = False,
+    _legacy_feeling_reason_self_scope: bool = False,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -17254,7 +17255,8 @@ def project_final_stage1_grounded_observation_plan(
     relations, nuclei = _final_stage1_typed_relations(
         plan,
         _final_source_current_material_nuclei(
-            _final_source_feeling_reason_nuclei(projected_nuclei, evidence_spans, normalized_input),
+            _final_source_feeling_reason_nuclei(projected_nuclei, evidence_spans, normalized_input,
+                _legacy_self_scope=_legacy_feeling_reason_self_scope),
             evidence_spans, normalized_input),
         compound_dependencies,
         evidence_spans,
@@ -17327,6 +17329,15 @@ def project_final_stage1_grounded_observation_plan(
     if plan.input_profile.semantic_complexity == "long_arc":
         complexity = "long_arc"
     material_quality = _final_stage1_material_quality(plan, nuclei)
+    if (not _legacy_feeling_reason_self_scope
+        and material_quality == "short_state_sufficient"
+        and _source_feeling_reason_group(nuclei, relations)
+        and not any("lexical:source_feeling_reason_subject" in n.semantic_frame.attribute_codes
+            for n in _final_source_feeling_reason_nuclei(
+                projected_nuclei, evidence_spans, normalized_input, _legacy_self_scope=True))):
+        # The proved two-host pair is not a lone short self-evaluation.
+        # Keep the explicit unknown while allowing both existing duties.
+        material_quality = "limited_grounding"
     unknown_boundaries = _final_stage1_unknown_boundaries(plan, nuclei)
     response_plan, coverage, surface_policy, safety_policy = (
         _build_response_and_policies(
@@ -17380,7 +17391,20 @@ def project_final_stage1_grounded_observation_plan(
     return projected
 
 
-def _final_source_feeling_reason_nuclei(nuclei, evidence_spans, normalized_input):
+def _source_feeling_reason_unknown_parts(fragment, *, _legacy_self_scope=False):
+    """Prove the complete present unknown-reason host and its SELF case slot.
+
+    This anaphor can bind only after the adjacent feeling/whole-field checks.
+    A foreign owner, different unknown object, report or tense cannot fit it.
+    """
+    owner = ("" if _legacy_self_scope else
+        r"[、,]?(?:(?P<owner>自分|わたし|ぼく|おれ|私|僕|俺)(?:には|にも|でも|は|も))?")
+    return re.fullmatch(
+        r"(?:(?:なぜ|どうして|何故)そう感じるのか|その理由)(?:は|が)?"
+        + owner + r"(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", fragment)
+
+
+def _final_source_feeling_reason_nuclei(nuclei, evidence_spans, normalized_input, *, _legacy_self_scope=False):
     """Bind a finite reason-unknown host to one adjacent current feeling.
 
     This source projection precedes meaning selection. It changes neither
@@ -17397,16 +17421,23 @@ def _final_source_feeling_reason_nuclei(nuclei, evidence_spans, normalized_input
     feeling, unknown = sorted(memo, key=lambda n: spans[n.source_span_ids[0]].start_index)
     left, right = (spans[n.source_span_ids[0]] for n in (feeling, unknown))
     source = str(normalized_input.get("memo") or "")
+    first, second = (str(s.raw_text).strip(" 　。．.") for s in (left, right))
+    unknown_proof = _source_feeling_reason_unknown_parts(second, _legacy_self_scope=_legacy_self_scope)
+    # "jibun demo" is a SELF cognitive case, not an embedded contrast. Only
+    # the fully proved finite host can correct that earlier lexical reading.
+    self_unknown = unknown_proof is not None and not _legacy_self_scope
     if (any(n.retention != "required" or n.grounding_kind != "explicit"
             or n.allowed_claim_scope != "explicit_current_input"
             or n.semantic_frame.actor != "current_user" or n.semantic_frame.polarity != "negative"
             or n.semantic_frame.time_scope not in {"present", "current_input"}
             or any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:"))
-                   or c == "semantic_role:embedded_turn" for c in n.semantic_frame.attribute_codes)
+                   or c == "semantic_role:embedded_turn" and not (n == unknown and self_unknown)
+                   for c in n.semantic_frame.attribute_codes)
             for n in (feeling, unknown))
         or feeling.kind != "reaction" or feeling.semantic_frame.predicate_kind != "feeling"
         or feeling.semantic_frame.modality != "feeling"
-        or unknown.kind not in {"reaction", "state", "uncertainty"}
+        or unknown.kind not in ({"reaction", "state", "uncertainty", "self_evaluation"}
+                                if self_unknown else {"reaction", "state", "uncertainty"})
         or unknown.semantic_frame.modality != "uncertain"
         or not {"operator:uncertainty", "semantic_role:limiting_unknown"} <= set(unknown.semantic_frame.attribute_codes)
         or _top_level_text(source) != source or re.search(r"[?？!！…‥\r\n]", source)
@@ -17416,7 +17447,6 @@ def _final_source_feeling_reason_nuclei(nuclei, evidence_spans, normalized_input
         or not re.fullmatch(r"\s*[。．.]\s*", source[left.end_index:right.start_index])
         or not re.fullmatch(r"\s*[。．.]?\s*", source[right.end_index:])):
         return nuclei
-    first, second = (str(s.raw_text).strip(" 　。．.") for s in (left, right))
     first_person = tuple(re.finditer(r"(?:わたし|ぼく|おれ|私|僕|俺)", first))
     if first_person and (len(first_person) != 1
         or not re.fullmatch(r"(?:わたし|ぼく|おれ|私|僕|俺)は[^、,]+", first)):
@@ -17434,7 +17464,8 @@ def _final_source_feeling_reason_nuclei(nuclei, evidence_spans, normalized_input
     perception_owner_bound = bool(self_perception
         and re.fullmatch(r"(?:[^はがも]|が(?=[らりるれろっ]))+(?:ている|でいる|ていない|でいない|ない)", self_perception['content'])
         and not re.search(r"(?:のに|けど|けれど|だが|ですが)", self_perception['content']))
-    bare_feeling_host = re.compile(r"(?:(?:今|現在)(?:は|も))?(?:(?:何となく|なんとなく|少し|とても|すごく))*"
+    modifier = r"何となく|なんとなく|少し|とても|すごく" + ("" if _legacy_self_scope else r"|なんだか|何だか")
+    bare_feeling_host = re.compile(r"(?:(?:今|現在)(?:は|も))?(?:(?:" + modifier + r"))*"
                                    r"(?:悲し|寂し|苦し|怖|つら|重|しんど|だる)い")
     self_topic = re.fullmatch(r"(?:わたし|ぼく|おれ|私|僕|俺)は(?P<predicate>.+)", host)
     owner_bound = bool(
@@ -17448,17 +17479,19 @@ def _final_source_feeling_reason_nuclei(nuclei, evidence_spans, normalized_input
         or not owner_bound
         or re.search(r"(?:と言|と思|という|らしい|そうだ|ようだ)", first)
         or not re.search(r"(?:感じ(?:がする|る)|(?:悲し|寂し|苦し|怖|つら|重|しんど|だる)い)$", first)
-        or not re.fullmatch(r"(?:(?:なぜ|どうして|何故)そう感じるのか|その理由)(?:は|が)?"
-                            r"(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", second)):
+        or unknown_proof is None):
         return nuclei
     replacements = {}
     for n, marker in ((feeling, "subject"), (unknown, "unknown")):
         frame = n.semantic_frame
+        attributes = tuple(c for c in frame.attribute_codes
+            if not (n == unknown and self_unknown
+                    and c in {"operator:contrast", "semantic_role:embedded_turn"}))
         replacements[n.nucleus_id] = replace(n,
             kind="uncertainty" if n == unknown else n.kind,
             semantic_frame=replace(frame,
                 predicate_kind="uncertainty" if n == unknown else frame.predicate_kind,
-                attribute_codes=tuple(_dedupe((*frame.attribute_codes,
+                attribute_codes=tuple(_dedupe((*attributes,
                     "lexical:source_feeling_reason_" + marker,
                     "lexical:preserve_source_predicate", "lexical:no_new_sensation_family")))))
     return tuple(replacements.get(n.nucleus_id, n) for n in nuclei)
@@ -18333,6 +18366,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_shared_target_contrast: bool = False,
     _legacy_cognitive_feeling_scope: bool = False,
     _legacy_cognitive_temporal_topic: bool = False,
+    _legacy_feeling_reason_self_scope: bool = False,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan.
 
@@ -18400,6 +18434,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_shared_target_contrast=_legacy_shared_target_contrast,
         _legacy_cognitive_feeling_scope=_legacy_cognitive_feeling_scope,
         _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic,
+        _legacy_feeling_reason_self_scope=_legacy_feeling_reason_self_scope,
     )
 
 
