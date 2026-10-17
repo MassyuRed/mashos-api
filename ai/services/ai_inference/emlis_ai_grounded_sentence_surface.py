@@ -3369,6 +3369,7 @@ def _render_observation_with_relations(
     typed_semantic_duties: bool = False,
     record_prefixes: Mapping[str, str] | None = None,
     neutral_received_contrast_ids: frozenset[str] = frozenset(),
+    joined_unfinished_appraisal_ids: frozenset[str] = frozenset(),
 ) -> str:
     quotes = _quotes_for_nuclei(binding.nucleus_ids, nucleus_index, resolver)
     joined = _join_quotes(quotes)
@@ -3387,6 +3388,7 @@ def _render_observation_with_relations(
         relation_index,
         resolver,
         neutral_received_contrast_ids=neutral_received_contrast_ids,
+        joined_unfinished_appraisal_ids=joined_unfinished_appraisal_ids,
         typed_semantic_duties=typed_semantic_duties,
         record_prefixes=record_prefixes,
     )
@@ -3565,6 +3567,7 @@ def _render_relation(
     typed_semantic_duties: bool = False,
     record_prefixes: Mapping[str, str] | None = None,
     neutral_received_contrast_ids: frozenset[str] = frozenset(),
+    joined_unfinished_appraisal_ids: frozenset[str] = frozenset(),
 ) -> str:
     if not binding.relation_ids:
         return _render_observation(
@@ -3637,7 +3640,8 @@ def _render_relation(
     if (typed_semantic_duties and not _hedge_prefix(binding)
         and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
         and len(binding.nucleus_ids) == 5 and len(binding.relation_ids) == 3
-        and len(neutral_received_contrast_ids) == 1 and not groups and not consumed):
+        and (len(neutral_received_contrast_ids) == 1 or len(joined_unfinished_appraisal_ids) == 1)
+        and not groups and not consumed):
         unfinished = tuple((relation_index[rid], context) for rid in binding.relation_ids
             if (context := source_owned_result_appraisal_context(relation_index[rid],
                 tuple(nucleus_index.values()), tuple(relation_index.values()))) is not None)
@@ -3646,7 +3650,9 @@ def _render_relation(
             owned = {context.nucleus_id, appraisal.from_nucleus_id, appraisal.to_nucleus_id}
             edges = frozenset(rid for rid in binding.relation_ids
                 if owned & {relation_index[rid].from_nucleus_id, relation_index[rid].to_nucleus_id})
-            if len(edges) == 2 and set(binding.relation_ids) - edges == neutral_received_contrast_ids:
+            if len(edges) == 2 and (
+                set(binding.relation_ids) - edges == neutral_received_contrast_ids
+                or joined_unfinished_appraisal_ids == {appraisal.relation_id}):
                 values = tuple(_quotes_for_nuclei((nid,), nucleus_index, resolver)
                     for nid in (context.nucleus_id, appraisal.from_nucleus_id, appraisal.to_nucleus_id))
                 if all(len(v) == 1 and re.fullmatch(r"「[^「」『』\n]+」", v[0]) for v in values):
@@ -4630,6 +4636,7 @@ def _realize_line(
     resolver: EvidenceSpanResolver,
     selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
     neutral_received_contrast_ids: frozenset[str] = frozenset(),
+    joined_unfinished_appraisal_ids: frozenset[str] = frozenset(),
 ) -> str:
     if _is_final_stage1_grounded_projection(plan):
         shared = _render_shared_target_appraisal_observation(line, plan, nucleus_index, resolver)
@@ -4656,6 +4663,7 @@ def _realize_line(
             relation_index,
             resolver,
             neutral_received_contrast_ids=neutral_received_contrast_ids,
+            joined_unfinished_appraisal_ids=joined_unfinished_appraisal_ids,
             record_prefixes=record_prefixes,
             typed_semantic_duties=(
                 _is_final_stage1_grounded_projection(plan)
@@ -4668,6 +4676,7 @@ def _realize_line(
             relation_index,
             resolver,
             neutral_received_contrast_ids=neutral_received_contrast_ids,
+            joined_unfinished_appraisal_ids=joined_unfinished_appraisal_ids,
             record_prefixes=record_prefixes,
             typed_semantic_duties=(
                 _is_final_stage1_grounded_projection(plan)
@@ -4742,6 +4751,7 @@ def _realize_grounded_sentence_plan(
     human_reception_surface: GroundedHumanReceptionSurface | None = None,
     selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
     neutral_received_contrast_ids: frozenset[str] = frozenset(),
+    joined_unfinished_appraisal_ids: frozenset[str] = frozenset(),
 ) -> GroundedSurfaceResult:
     """Realize a SentencePlan with generic functional atoms and source text."""
 
@@ -4781,6 +4791,7 @@ def _realize_grounded_sentence_plan(
                     relation_index=relation_index,
                     resolver=resolver,
                     neutral_received_contrast_ids=neutral_received_contrast_ids,
+                    joined_unfinished_appraisal_ids=joined_unfinished_appraisal_ids,
                     selected_subjective_input=selected_subjective_input,
                 )
             )
@@ -4879,6 +4890,7 @@ def realize_grounded_sentence_plan_with_human_reception(
     human_reception_surface: GroundedHumanReceptionSurface | None = None,
     selected_subjective_input: SelectedSubjectiveReceptionInputV1 | None = None,
     neutral_received_contrast_ids: frozenset[str] = frozenset(),
+    joined_unfinished_appraisal_ids: frozenset[str] = frozenset(),
 ) -> tuple[GroundedSurfaceResult, tuple[SentenceSurfacePlacement, ...]]:
     """Place one preauthored final Human Reception surface without rewriting."""
 
@@ -4916,6 +4928,7 @@ def realize_grounded_sentence_plan_with_human_reception(
         plan,
         resolver,
         neutral_received_contrast_ids=neutral_received_contrast_ids,
+        joined_unfinished_appraisal_ids=joined_unfinished_appraisal_ids,
         human_reception_surface=human_reception_surface,
         selected_subjective_input=selected_subjective_input,
     )

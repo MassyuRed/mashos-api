@@ -21292,3 +21292,58 @@ STRUCTURE_MAP_DELTA_PRESENT。全体01・01A・current01/04へ実装責務、意
 説明調・関係の説明は残り、充足の語義を述べただけで§9.2/9.4全体を満たしたとは判定しない。今回の旧質問への肯定訂正でも、Observationは更新される一方、Receptionは既存の対比への注意に留まった。次はこの初回の内容形成と訂正後の二重説明／ATTENTION、共有対象／対象外更新を既存承認範囲で進める。既存周辺4失敗（過去共有17との集合一致未確認）、same100、Q1上限、giver帰属、本人実機・正式Product Readは未解消。10/31管理線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％を維持する。
 
 TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式受入0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置。NORMALや回帰成功を商品合格へ換算しない。
+
+
+## u302 — received訂正後も未成立三点を一節に保つ（2026-10-17 JST）
+
+TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。u301で残った訂正後Observationの満足二重説明を修復した。回答後のReceptionは既存の単一ATTENTIONのままであり、初回の二成分資格を回答後へ拡張していない。初回一体単位未完了、正式受入0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置。
+
+基準API `7b7fdbd654738fd15a5cb7e84d94c0f7bab8d807`／資料 `6a4594144bc391f2be9000c704c63b3a58256bec`。添付の前回作業記録と両PR、全体設計01・全file地図01A/B/C・current_structure、最新weekly20261010 §5.6.49–51、作業規則・Rule18、8/16恒久incident全文、8/28意味設計§9.2/9.4を確認。System Context prepareは作業用workspaceのmashos-api binding不存在で停止したため、許可済みの原典直接参照へ切り替えた。新Context生成成功とはしない。
+
+### 原因・変更境界
+
+未成立context・実行対象・肯定満足の三点と二辺はreceived反応の訂正後も不変だが、u298の一節化は組外に元のreceived contrastが残る場合だけだった。明示訂正がそのcontrastを失効させると、残った三点を辺ごとに説明して満足が二度出ていた。§9.4が許すlosslessな多対一実現を、変更されていない三点へ継続する修復である。Rule18 §11.3の既存実現修復として扱い、新しい意味選択・資格・契約の採用は行わない。
+
+変更production ownerは既存3 file：
+
+- `ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_thread_surface.py`：回答exact1／round1・非legacy・RESOLVEDで、元の必須五点／三辺を再証明。更新exact1が別received反応へのEXPLICIT_CORRECTIONで、元の時点に結び、inactive／accepted refs・置換後の必須集合が一致するときだけ、未変更appraisalの一節化を渡す。三点と辺、他の元核がそのまま残ることを要求する。
+- `ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py`：既存の三点一節文法を再利用。初回の中立received対比経路を保持し、回答の残辺を消費しない。Observation以外の作者・selected内容は変えない。
+- `ai/services/ai_inference/emlis_ai_grounded_observation_gate.py`：作者のflagを信用せず、実本文・原文から三点と二辺を逆照合。組外にある本人received出来事と元の時点の明示回答関係を独立確認し、返す消費済み辺は三点内の二辺のみ。received回答の照合義務は既存full inverseへ残す。
+
+legacy各flag・PARTIAL・追加／撤回／未知・満足側の訂正・現在の別時点・余分な材料は追加経路へ入れない。公開API／DTO／DB／RN／schema／依存は不変。新production file・新しい恒久runner／checker／証跡契約はない。STRUCTURE_MAP_DELTA_NONE：既存のthread adapter・Observation作者・独立readerの責務内であり、全体01・01A/B/C・current_structureの配置・所有責務を追加／移動しない。
+
+### 実際の保存本文と商品読解
+
+入力は「結論は出ていないが、考えを言葉にできて満足した。」と「褒められたのに、嬉しくなかった。」、回答は「『嬉しくなかった』ではなく『嬉しかった』です。」相当の明示訂正。変更前Observationは「『結論は出ていない』の一方で『満足した』とあります。『考えを言葉にできて』という出来事に対する評価は、『満足した』とあります。」と同じ満足を二度述べていた。変更後の実保存全文：
+
+```text
+見えたこと：
+「結論は出ていない」の一方で、「考えを言葉にできて」という出来事への評価は「満足した」とあります。 「褒められた」ことについて、その時の受け止めは「嬉しかった」と書かれています。
+
+Emlisから：
+結論は出ていないという点と、考えを言葉にできたことへの当時の満足との対比に目を向けています。
+```
+
+別欄両順・memo／memo_actionの同欄両順の6配置×満足の過去／入力時点2で確認。逆順ではObservationの二節順が逆、入力時点形では「満足している」と「入力した時点での満足」になる。三点、訂正されたreceived反応、出現順、時点を保ち、因果・同時性・相手の意図を補わない。rootは実保存全28 DTOを、同一本文9種類と各DTOの対応も含め全文読解した。
+
+対象の満足二重説明は解消した。一方でObservationは引用説明調、Receptionは未成立対比への注意一文に留まり、訂正されたreceived経験を受け取れていない。初回にも「受け取りました」の反復と内容形成の浅さが残る。本文あり・NORMAL・機械検査成功を商品合格に換算しない。
+
+### 検証・互換
+
+| 対象 | 実行結果・限界 |
+| --- | --- |
+| appraisal1,013＋Q2/Q3 application54 | 1,067 passed, 1 warning in 409.97s (0:06:49)、失敗0／skip0 |
+| 現行owner identity | 1 passed, 194 deselected, 1 warning in 20.86s。現行fixtureのみsourceから再導出、歴史fixtureは不変。 |
+| 変更前／後36比較 | 6配置×2時点×初回／received訂正／未知回答。全36のplan・checkpoint・selected・状態／理由一致。訂正12だけObservationとartifact IDが変わり、他のartifact fields／Receptionは一致。対照24は全record一致。未知12はUNCHANGEDで新artifactなし。 |
+| 実service＋隔離SQL | 対象12、実u301旧保存1、実u301更新checkpoint retry1の14 case／28保存DTOで確認。NoAuthor GET/start・同一回答再送は保存thread/eventsを増やさず同一結果。 |
+| 現行RN | 実保存28 DTOで現在本文・全履歴・close/reopen一致。実hook／Modal、native部品stub。本人実機・配布buildの検証ではない。 |
+
+既存の訂正テスト6件を配置6×実行対象3×時点2の36へ拡張し、作者禁止readerの独立変異2件とadapter範囲1件を追加した（純増33）。独立変異は三点文の重複、三点文／received回答節の削除、役割・肯否・時点の差替え、未明示の因果／同時性を拒否する。局所39件の最初の実行は38 pass／1 failで、明示回答のgrounding改変がadapterを通過した。回答のexplicit／required／current_userとcontrol.answers exact1を追加し、該当1件を再検証してpass。その後の最終sourceの主回帰は上表の通りで、途中失敗を隠さず、局所再検査を合格総数へ重複加算しない。
+
+旧engineは基準u301 checkoutを別processで実行した。完成済みの旧訂正本文は二重説明を含む当時の文のまま非再生成で保持した。旧engineでMEANING_UPDATE保存後・本文保存前にworkerを中断したcaseは、現在のengineで既存意味event／checkpoint／operationを再利用して新しい一節本文を生成した。保存済み本文の不変と未完成retryの本文変化を分け、checkpoint一致からartifact同一を主張しない。
+
+実行環境：Python3.12.14／Pydantic2.13.5／pytest8.4.1、PGlite0.5.8、React／react-test-renderer18.3.1。既存一時環境を再利用し、製品依存・外部DB・費用変更なし。現行language identity `d625068cbeffc3d39c72c7f880a2f7ab8e194fc710f7cfd9afe1e92bd9c3276f`、runtime identity `ecaa27e9eb7108056e2707ca4e16bc04ccf3247189da0882598baf22042d5f29`。同Workのread-only補助が差分と訂正後12全文を確認してblocking指摘なし。補助はtestを実行しておらず、別Pro/Ultraモデルの正式二重検証ではない。
+
+次の原因確認：実比較recordでは初回のReception 2機会／2 Moveが訂正後1機会／1 Moveへ減る。既存`build_grounded_reception_opportunities`の同じ`lived_change`内で明示評価を優先する代表選択が満足を残す。`emlis_thread_projection._appraisal_received_components`は未成立三点について回答ありを拒否し、組外も元のnegative received contrastを要求する。`emlis_stage1_composition._validate_component_reception_plan_ownership`も初回の所有境界を持つ。既存の未変更received保持は満足側を訂正する逆方向の限定資格である。従って作者の文追加や入口guardの解除だけで解く問題ではない。次は原文三点と、別sourceの訂正回答＋元のreceived出来事をそれぞれ有効な受け取り義務へ結ぶ際の回答所有・原時点・失効済み否定contrast非復活を照合する。この段落は原因確認であり、新資格の提案採用・実装・生成結果ではない。
+
+次は同じ訂正後全文を入口に、Receptionが選んでいる内容と落ちているreceived経験を意味側から照合する。u300承認は初回限定であり、回答後へ黙って追加資格を拡張しない。既存承認範囲の修復で足りない場合は、必要な意味・資格差分を具体化する。初回の説明性／受容反復、共有対象／対象外更新、既存周辺4失敗（過去共有17との集合一致未確認）、same100、Q1上限、giver帰属、本人実機・正式Product Readは未解消。周辺4と前回の補助RN suite失敗は今回再実行しておらず、解消を主張しない。10/31管理線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％は維持する。

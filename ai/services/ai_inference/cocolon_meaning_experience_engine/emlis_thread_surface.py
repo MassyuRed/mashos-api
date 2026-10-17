@@ -143,6 +143,73 @@ def _current_single_received_contrast_relations(prepared, plan):
     return frozenset((relation.relation_id,))
 
 
+def _retained_unfinished_appraisal_relations(prepared, plan):
+    """Join an unchanged appraisal after the separate received reaction is revised.
+
+    This is a surface choice only. It never selects a new Reception reading
+    or treats the replaced received contrast as a current relation.
+    """
+    from dataclasses import fields
+    from emlis_ai_grounded_observation_plan import (
+        source_owned_result_appraisal_context, _received_contrast_group_targets)
+    thread, original, checkpoint = prepared.thread, prepared.original_plan, prepared.checkpoint
+    update = checkpoint.answer_update
+    if (any(getattr(prepared, f.name) for f in fields(prepared) if f.name.startswith('legacy_'))
+        or len(thread.answers) != 1 or len(thread.control.answers) != 1 or thread.control.current_round != 1
+        or checkpoint.assessment_status != 'RESOLVED' or checkpoint.unresolved_parts
+        or update is None or update.disposition != 'MATERIAL_UPDATE'
+        or update.unresolved_parts or len(update.updates) != 1):
+        return frozenset()
+    groups = tuple((r, context) for r in original.relations
+        if (context := source_owned_result_appraisal_context(r, original.nuclei, original.relations)) is not None)
+    required = tuple(n for n in original.nuclei if n.retention == 'required')
+    if len(groups) != 1 or len(required) != 5 or len(original.relations) != 3:
+        return frozenset()
+    appraisal, context = groups[0]
+    owned = {context.nucleus_id, appraisal.from_nucleus_id, appraisal.to_nucleus_id}
+    rest = tuple(n for n in required if n.nucleus_id not in owned)
+    edges = tuple(r for r in original.relations if owned & {r.from_nucleus_id, r.to_nucleus_id})
+    received = tuple(r for r in original.relations if r not in edges)
+    if (len(edges) != 2 or len(rest) != 2 or len(received) != 1
+        or not _received_contrast_group_targets(rest, received)):
+        return frozenset()
+    old = received[0]
+    item = update.updates[0]
+    if (item.operation != 'REVISE' or item.binding_kind != 'EXPLICIT_CORRECTION'
+        or item.target_meaning_refs != (old.to_nucleus_id,)
+        or item.superseded_claim_refs != (old.to_nucleus_id,)
+        or item.affected_dependency_refs != (old.relation_id,)
+        or item.temporal_binding.about_time != 'ORIGINAL_OCCASION'
+        or item.temporal_binding.anchor_source_ref != thread.original.envelope.envelope_id
+        or checkpoint.accepted_update_refs != (item.update_ref,)
+        or checkpoint.inactive_claim_refs != (old.to_nucleus_id, old.relation_id)
+        or len(item.changed_claim_refs) != 1):
+        return frozenset()
+    current = {n.nucleus_id: n for n in plan.nuclei}
+    answer_id, = item.changed_claim_refs
+    answer = current.get(answer_id)
+    remaining = tuple(r for r in plan.relations if r not in edges)
+    if (any(current.get(n.nucleus_id) != n for n in original.nuclei if n.nucleus_id != old.to_nucleus_id)
+        or set(current) != ({n.nucleus_id for n in original.nuclei} - {old.to_nucleus_id}) | {answer_id}
+        or not set(edges).issubset(plan.relations) or len(remaining) != 1
+        or answer is None or answer.source_fields != ('answer_text_private',)
+        or answer.grounding_kind != 'explicit' or answer.retention != 'required'
+        or answer.semantic_frame.actor != 'current_user'
+        or answer.semantic_frame.time_scope != 'past'
+        or {c for c in answer.semantic_frame.attribute_codes if c.startswith('thread_time:')}
+            != {'thread_time:original_occasion'}):
+        return frozenset()
+    relation = remaining[0]
+    if (relation.type != 'evaluation_about_event'
+        or (relation.from_nucleus_id, relation.to_nucleus_id) != (old.from_nucleus_id, answer_id)
+        or relation.grounding_kind != 'user_stated_relation'
+        or relation.source_relation_ids != (item.update_ref,)
+        or set(plan.coverage_requirements.required_nucleus_ids) != owned | {old.from_nucleus_id, answer_id}
+        or set(plan.coverage_requirements.required_relation_ids) != {r.relation_id for r in plan.relations}):
+        return frozenset()
+    return frozenset((appraisal.relation_id,))
+
+
 def realize_emlis_thread_body(prepared) -> EmlisThreadBodyOutcomeV1:
     plan = build_updated_grounded_plan(prepared)
     projection = project_thread_meaning(prepared, plan)
@@ -163,6 +230,7 @@ def realize_emlis_thread_body(prepared) -> EmlisThreadBodyOutcomeV1:
     surface, _placements = surface_owner.realize_grounded_sentence_plan_with_human_reception(
         sentence_plan, plan, resolver, human_reception_surface=human_surface,
         selected_subjective_input=selected,
+        joined_unfinished_appraisal_ids=_retained_unfinished_appraisal_relations(prepared, plan),
         neutral_received_contrast_ids=(_retained_shared_target_received_relations(prepared, plan, resolver)
             | _current_single_received_contrast_relations(prepared, plan)))
     issues = surface_owner.validate_grounded_surface_result(surface, sentence_plan, plan, resolver,

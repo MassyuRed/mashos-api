@@ -5410,11 +5410,17 @@ def test_unfinished_received_thread_entry_selects_new_source_without_changing_di
     assert '褒められたことだけでは言い表せない、嬉しさが伴わなかったあなたの経験' in outcome.artifact.reception
 
 
+@pytest.mark.parametrize('layout', ['separate', 'reverse', 'joined', 'joined_reverse', 'joined_reverse_action', 'joined_action'])
 @pytest.mark.parametrize('target', ['考えを言葉にできて', '案を選んで', '資料を分類したことに'])
 @pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
-def test_unfinished_received_correction_keeps_single_selected_attention_and_full_inverse(target, evaluation):
+def test_unfinished_received_correction_keeps_single_selected_attention_and_full_inverse(layout, target, evaluation):
     from test_cmee_emlis_q3_thread import advance
-    req = request('褒められたのに、嬉しくなかった。結論は出ていないが、' + target + evaluation + '。', '')
+    source = '結論は出ていないが、' + target + evaluation + '。'
+    received = '褒められたのに、嬉しくなかった。'
+    args = {'separate': (source, received), 'reverse': (received, source),
+            'joined': (source + received, ''), 'joined_reverse': (received + source, ''),
+            'joined_reverse_action': ('', received + source), 'joined_action': ('', source + received)}[layout]
+    req = request(*args)
     req = advance(req, '「嬉しくなかった」ではなく「嬉しかった」です。')
     prepared = prepare_emlis_meaning(req)
     plan = build_updated_grounded_plan(prepared)
@@ -5427,6 +5433,11 @@ def test_unfinished_received_correction_keeps_single_selected_attention_and_full
     artifact = outcome.artifact
     assert '「嬉しかった」' in artifact.observation and '嬉しくなかった' not in artifact.text
     assert artifact.reception.endswith('満足との対比に目を向けています。')
+    joined = (f'「結論は出ていない」の一方で、「{target.removesuffix("ことに")}」'
+              f'という出来事への評価は「{evaluation}」とあります。')
+    assert joined in artifact.observation
+    assert artifact.observation.count('「' + evaluation + '」') == 1
+    assert '同時' not in artifact.observation
     resolver = prepared.thread.resolver()
     sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
     valid = lambda text: evaluate_grounded_surface_body_inverse(body=text.encode(), plan=plan,
@@ -5439,6 +5450,75 @@ def test_unfinished_received_correction_keeps_single_selected_attention_and_full
                           else ('入力した時点での満足', '当時の満足')]:
         wrong = artifact.text.replace(before, after)
         assert wrong != artifact.text and not valid(wrong)
+
+
+@pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
+def test_corrected_received_joined_appraisal_inverse_keeps_both_relations_without_author(monkeypatch, evaluation):
+    import emlis_ai_grounded_sentence_surface as surface
+    from test_cmee_emlis_q3_thread import advance
+    req = advance(request('結論は出ていないが、考えを言葉にできて' + evaluation + '。',
+                          '褒められたのに、嬉しくなかった。'),
+                  '「嬉しくなかった」ではなく「嬉しかった」です。')
+    p = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(p)
+    resolver = p.thread.resolver()
+    selected = project_thread_meaning(p, plan).selected_reception
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    artifact = MeaningExperienceEngine().generate(req).artifact
+    assert artifact is not None
+    joined = f'「結論は出ていない」の一方で、「考えを言葉にできて」という出来事への評価は「{evaluation}」とあります。'
+    received = '「褒められた」ことについて、その時の受け止めは「嬉しかった」と書かれています。'
+    assert joined in artifact.observation and received in artifact.observation
+    def forbidden(*_a, **_k):
+        pytest.fail('independent observation reader called its author')
+    monkeypatch.setattr(surface, '_render_relation', forbidden)
+    monkeypatch.setattr(surface, '_realize_line', forbidden)
+    def valid(text):
+        return evaluate_grounded_surface_body_inverse(body=text.encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert valid(artifact.text)
+    for wrong in ('', joined + joined,
+                  joined.replace('結論は出ていない', '結論は出ている'),
+                  joined.replace('結論は出ていない', '結論は出ていなかった'),
+                  joined.replace('考えを言葉にできて', '褒められた'),
+                  joined.replace('考えを言葉にできて', '考えを言葉にできなくて'),
+                  joined.replace(evaluation, '満足しなかった'),
+                  joined.replace(evaluation, '満足した' if evaluation == '満足している' else '満足している'),
+                  joined.replace('の一方で、', 'のが理由で、'),
+                  joined.replace('の一方で、', 'と同時に、')):
+        assert not valid(artifact.text.replace(joined, wrong))
+    for wrong in ('', received.replace('褒められた', '考えを言葉にできて'),
+                  received.replace('嬉しかった', '嬉しくなかった'),
+                  received.replace('その時', '回答した時点')):
+        assert not valid(artifact.text.replace(received, wrong))
+
+
+def test_joined_appraisal_after_received_revision_keeps_current_and_legacy_scope():
+    from dataclasses import fields
+    from test_cmee_emlis_q3_thread import advance
+    from cocolon_meaning_experience_engine.emlis_thread_surface import _retained_unfinished_appraisal_relations as joined
+    req = request('結論は出ていないが、考えを言葉にできて満足した。',
+                  '褒められたのに、嬉しくなかった。')
+    initial = prepare_emlis_meaning(req)
+    assert not joined(initial, build_updated_grounded_plan(initial))
+    p = prepare_emlis_meaning(advance(req, '「嬉しくなかった」ではなく「嬉しかった」です。'))
+    plan = build_updated_grounded_plan(p)
+    appraisal, = joined(p, plan)
+    assert next(r for r in plan.relations if r.relation_id == appraisal).type == 'evaluation_about_event'
+    for f in fields(p):
+        if f.name.startswith('legacy_'):
+            assert not joined(replace(p, **{f.name: True}), plan)
+    assert not joined(replace(p, checkpoint=replace(p.checkpoint, assessment_status='PARTIAL')), plan)
+    for node in plan.nuclei:
+        assert not joined(p, replace(plan, nuclei=tuple(replace(n, grounding_kind='inferred')
+                          if n == node else n for n in plan.nuclei)))
+    for edge in plan.relations:
+        assert not joined(p, replace(plan, relations=tuple(replace(r, grounding_kind='inferred_relation')
+                          if r == edge else r for r in plan.relations)))
+    for text in ('分からない。', 'その時は嬉しかった。', '今は嬉しい。',
+                 '「嬉しくなかった」は誤りです。', '「満足した」ではなく「満足しなかった」です。'):
+        other = prepare_emlis_meaning(advance(req, text))
+        assert not joined(other, build_updated_grounded_plan(other))
 
 
 @pytest.mark.parametrize('extra', [

@@ -6248,8 +6248,25 @@ def _body_inverse_unfinished_appraisal(body, witness, line, planned_line, plan, 
                      if set(ids) & {r.from_nucleus_id, r.to_nucleus_id})
     remaining = tuple(r for r in plan.relations if r.relation_id not in edges)
     if (len(edges) != 2 or len(remaining) != 1
-        or remaining[0].grounding_kind != 'user_stated_relation'
-        or not _received_contrast_group_targets(tuple(n for n in plan.nuclei if n.nucleus_id not in ids), remaining)):
+        or remaining[0].grounding_kind != 'user_stated_relation'):
+        return frozenset()
+    other = remaining[0]
+    rest = tuple(n for n in plan.nuclei if n.nucleus_id not in ids)
+    current = {n.nucleus_id: n for n in rest}
+    event, answer = current.get(other.from_nucleus_id), current.get(other.to_nucleus_id)
+    corrected_received = (other.type == 'evaluation_about_event'
+        and event is not None and answer is not None
+        and event.kind == 'event' and event.source_fields in {('memo',), ('memo_action',)}
+        and event.semantic_frame.actor == 'current_user' and event.semantic_frame.time_scope == 'past'
+        and any(c.startswith('source_received_event_link:') for c in event.semantic_frame.attribute_codes)
+        and answer.kind == 'reaction' and answer.source_fields == ('answer_text_private',)
+        and answer.semantic_frame.actor == 'current_user' and answer.semantic_frame.time_scope == 'past'
+        and {c for c in answer.semantic_frame.attribute_codes if c.startswith('thread_time:')}
+            == {'thread_time:original_occasion'}
+        and event.grounding_kind == answer.grounding_kind == 'explicit'
+        and event.retention == answer.retention == 'required'
+        and set(other.source_span_ids) == set(event.source_span_ids + answer.source_span_ids))
+    if not (_received_contrast_group_targets(rest, remaining) or corrected_received):
         return frozenset()
     expected = tuple(_body_inverse_nucleus_source_values(nid, plan, resolver) for nid in ids)
     matches = []
