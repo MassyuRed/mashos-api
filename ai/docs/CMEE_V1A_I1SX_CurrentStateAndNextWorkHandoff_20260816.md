@@ -1,4 +1,4 @@
-> 最新EmlisAI残件：末尾 **u315（2026-10-17・追加回答後の未変更理由付き満足を局所経験として保持）**。u314の限定案はMash承認済み。実装・検証・保存再表示の現在地は同節を参照。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
+> 最新EmlisAI残件：末尾 **u316（2026-10-17・選択済みreceived経験の長い受容説明を修復）**。実装・分割再実行を含む検証・保存再表示と、丁寧形先行の同一欄で残る欠落／停止は同節を参照。u315の承認済みADD保持は維持。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -22158,3 +22158,51 @@ Q3 retainedは12 passed／既存16 failed／922 deselected／1 warning（22.34�
 今回承認された限定変更は実装・検証・保存再表示まで完了。次は初回と追加回答後の本文を一体で読み、説明性・満足や対象の重複・語尾反復の残る箇所を、既存意味を保つ修復と新しい意味資格が必要な案に分けて詰める。今回の4種ADD適用を再承認待ちへ戻さない。独立行動、安心した分類、共有対象／容量、対象外更新、既存周辺4／過去17とQ3既存16失敗の集合対応、same100・Q1上限・giver帰属・本人実機／正式Product Readは未解消。
 
 PRODUCT_NOT_CLEAR・初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false、Draft/open/unmerged・未配置。10/31管理線・12/18公開目標、Piece/Analysis主枠・管理評価53.25％を維持する。
+
+
+## u316 — 選択済みreceived経験を本人の経験として直接述べる（2026-10-17 JST）
+
+### 開始条件と変更範囲
+
+Mashの「EmlisAIの残件作業を進めて」により、u315の次作業である初回／更新後の本文説明性を修復した。基準はAPI `5cbe93ce17d8b5c382cd7cf269e73709e0dfad39`／Cocolon `0cdc9943cebac038833f93348e5a4bbf79089c63`。全体設計01・全file地図01A/B/C・current01/04・正本06／API handoff・最新weekly 20261010 §5.4／5.5／5.6.65、作業規則・永久保存ProductNeglect／CMEE ProductReadFailure監査全文を確認。System Context prepareは設定先mashos-api不在でexit2となり、正本原資料と実sourceを直接読んだ。fresh Context生成完了とは扱わない。
+
+`emlis_ai_grounded_human_reception.py::_source_grounded_received_discourse` の既存NORMAL component／承認済みretained LIMITED local pairだけを変更。選択済みの本人の過去経験を、作者の「受け取りました」という説明から経験を主節にした文へ変えた。SELF・出来事・否定的反応・対比の非同一化・pastを保つ。連体節の「伴わない／伴う」は過去の「経験だった」に属し、現在の気分や出来事の原因を新しく主張しない。
+
+`emlis_ai_grounded_observation_gate.py::_read_received_discourse_parts` は新旧それぞれの完全文法を有限逆読取し、同じ元source bytesへ復元する。新旧を混ぜた時制、他者化、肯否／対象／時点の改変、欠落・重複を拒否する。作者禁止下の有限readerと、既存の一部作者照合を含む全文inverseは検証範囲を分け、全文inverse全経路の作者非依存を主張しない。
+
+資格・認識・選択・private型／validator・Plan／Move／aggregate・意味核辺／checkpoint・Observation、u315のADD保持、公開API／DTO／DB／RN、質問数／上限・依存は変更しない。既存作者／readerの2ownerと既存test・現行identity fixtureを更新。whole NORMALの複数contribution、程度付き反応／SELF topic、ANAPHORIC、ADD received経路等へ適用を広げていない。歴史fixtureは不変。
+
+### 本文を読んだ結果
+
+原入力「資料を分類したことに満足した。」「褒められたのに、嬉しくなかった。」のreceived文は、変更前「褒められたことだけでは言い表せない、嬉しさが伴わなかったあなたの経験として受け取りました。」から、変更後「褒められたことは、あなたにとって嬉しさを伴わない経験だったのですね。」となる。悲しさの肯定形も「誘われたことは、あなたにとって悲しさを伴う経験だったのですね。」となる。対象の一文は10〜11字短くなり、受容を説明する「受け取りました」が一つ減る。
+
+同じ入力の変更後全文：
+
+> 見えたこと：
+> 「資料を分類した」という出来事に対する評価は、「満足した」とあります。
+> 「褒められた」の一方で「嬉しくなかった」とあります。
+>
+> Emlisから：
+> 資料を分類したことを、当時、ご自身の中に満たされた感覚があった経験として受け取りました。褒められたことは、あなたにとって嬉しさを伴わない経験だったのですね。
+
+長い作者説明は減ったが、満足側の説明の長さ・「経験」の反復は残る。理由付き満足や否定訂正後では「のですね」が連続し、Observationとの情報重複、当時肯定ADDの対象反復も残る。商品品質合格へ上げない。
+
+### 検証と保存互換
+
+主対象appraisal1,443＋Q2/Q3 application54の**計1,497固有test nodeの成功を最終製品source上で確認**した。一括全件passのrunではない。互いに重ならない3分割の初回は1,371 pass／35 fail／91 skip。旧文面のmutation期待値・shared文の非変更期待値・作者禁止の配置を検査側で直し、該当36件を34＋2で再実行して全pass。PGlite環境未設定によるskipとapplication1失敗は、設定済みでapplication54件・appraisal保存38件を再実行し全pass。collection／各runのnodeを照合して全1,497件を被覆し、重複成功を加算していない。製品条件や拒否条件を緩める修正はない。
+
+周辺Q3 retainedは12 pass／16 fail／922 deselected（21.63秒）。u315と失敗assertion／trace全文はprocess addressを除き一致し、既存16失敗は未解消。現行identity検査1 pass／194 deselected。警告は既存Pydantic V1 root_validator非推奨。新installなし。
+
+旧新68比較は初回30＋保持後16の計46でReception／textだけが変わり、残る22は取得全record一致。checkpoint取得66例の意味・核辺・Move・aggregate／選択・Observation・状態／reason_codesは不変。6配置×plain／reasoned／unfinished×bare否定／polite悲しさ、REVISE／WITHDRAW後保持、ADD等の対照を確認。unknownはUNCHANGEDで本文なし。polite received先頭・同一欄の6例は以前からの一般化／欠落／停止が残り、うちunfinished2件はLIMITED_RECEPTION_CAPABILITY_GAP_STOP。これらを本文成功に数えない。
+
+実EmlisThreadService＋ローカルPGliteで現行51（対象46＋対照5）、旧完成4、旧pending2、旧checkpoint中断retry2の計59ケース／86 DTOを確認。完成済み旧本文は作者禁止GET/start・同回答再送でも非再生成。旧pending／中断checkpointは元入力・受理意味／ANSWER／MEANING_UPDATE・operation・旧OBSERVATIONと既存timelineを保って再開する。現行RNの実hook／Modalで86 DTOの現在全文・元入力・全履歴・close/reopenを確認。rootが旧新28種と保存37種の全文、全保存対応を読解した。native部品stubによる合成RNであり本人実機検証ではない。
+
+language identity `f30f3b1b0e5d55ede4a7a3a6590edf96bf37b671212c7c0bbf8aaa1da7f06b29`、runtime identity `106415a984e6ebe117c5a276beff62991ae5718c543694149d1355f7d5a22717`。同Work読取専用補助のscope／本文監査は正式別model Pro／Ultra検証に換算しない。
+
+### 同期・次の一作業
+
+`STRUCTURE_MAP_DELTA_NONE`。既存の作者／有限reader内の文面修復であり、新owner／file／経路／資格／責務移管がないため全体図・全file地図・current_structureは変更不要。正本06とAPI handoffへ同一記録、07とweekly §5.6.66へ結果と再開順を同期する。
+
+次は、今回同一条件で再現した「誘われたのに、悲しかったです。」を先頭に置いた同一欄の6例について、後続plain／reasoned／unfinished評価のsource所有と既存選択を照合し、意味内容が落ちる原因を優先する。bare形・別欄・逆順を対照に、既存認識／保持契約の修復で解消できる範囲を確定する。新しい意味資格が必要なら無断拡張しない。文末だけの置換で本文品質を完了扱いにしない。
+
+説明性・満足／対象／語尾反復、独立行動・安心した分類・共有対象／容量・その他対象外更新、既存周辺4／過去17とQ3既存16失敗の集合対応、same100・Q1上限・giver帰属・本人実機／正式Product Readは残る。primaryはTECHNICAL_CREDIT。PRODUCT_NOT_CLEAR・初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false、Draft/open/unmerged・未配置。10/31管理線・12/18公開目標、Piece/Analysis主枠・管理評価53.25％を維持する。

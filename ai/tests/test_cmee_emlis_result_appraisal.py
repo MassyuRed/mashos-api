@@ -37,7 +37,7 @@ def test_reason_and_received_keep_separately_selected_experiences_in_body(revers
             else '入力した時点でご自身の中に満たされた感覚がある') in body.reception
     assert event + 'ことには、' in body.reception
     assert evaluation + 'のですね' not in body.reception
-    assert '褒められたことだけでは言い表せない、嬉しさが伴わなかった' in body.reception
+    assert '褒められたことは、あなたにとって嬉しさを伴わない' in body.reception
     assert '理由に目を向けています' not in body.reception
     assert basis in body.observation and '褒められた' in body.observation
 
@@ -134,7 +134,7 @@ def test_component_reason_removal_or_replacement_does_not_reassign_received_expe
     assert '探しやすくなった' not in bodies[1].reception
     assert '理由' not in bodies[2].reception and '探しやすくなった' not in bodies[2].reception
     for body in bodies:
-        assert '褒められたことだけでは言い表せない、嬉しさが伴わなかったあなたの経験として受け取りました。' in body.reception
+        assert '褒められたことは、あなたにとって嬉しさを伴わない経験だったのですね。' in body.reception
     assert all('資料を分類したことには、' in b.reception
                and '当時ご自身の中に満たされた感覚があった' in b.reception for b in bodies[:2])
     assert '資料を分類したことを、当時、ご自身の中に満たされた感覚があった経験として受け取りました。' in bodies[2].reception
@@ -228,8 +228,8 @@ def request(memo, action="植木に水をやった。"):
 @pytest.mark.parametrize('reverse', [False, True])
 @pytest.mark.parametrize('corrected', [False, True])
 @pytest.mark.parametrize('event', ['褒められた', '誘われた'])
-@pytest.mark.parametrize('reaction,presence', [('嬉しくなかった', '嬉しさが伴わなかった'),
-                                             ('悲しかった', '悲しさが伴った')])
+@pytest.mark.parametrize('reaction,presence', [('嬉しくなかった', '嬉しさを伴わない'),
+                                             ('悲しかった', '悲しさを伴う')])
 def test_normal_received_experience_is_selected_and_independently_read(
         monkeypatch, reverse, corrected, event, reaction, presence):
     import emlis_ai_grounded_human_reception as hr
@@ -247,7 +247,7 @@ def test_normal_received_experience_is_selected_and_independently_read(
     sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
     artifact = MeaningExperienceEngine().generate(req).artifact
     assert artifact is not None
-    clause = event + 'ことだけでは言い表せない、' + presence + 'あなたの経験として受け取りました。'
+    clause = event + 'ことは、あなたにとって' + presence + '経験だったのですね。'
     assert clause in artifact.reception
     decision, = (d for d in selected.decisions if d.subjective_proposition.appraisal_content.dimension == 'RELATIONAL_NONCOLLAPSE')
     move, = (m for m in plan.response_plan.human_reception_plan.moves if m.move_id == decision.move_id)
@@ -257,22 +257,31 @@ def test_normal_received_experience_is_selected_and_independently_read(
     assert valid(artifact.text)
     wrongs = (
         clause.replace(event, '資料を分類した'),
-        clause.replace('ことだけでは言い表せない、', 'ことを、'),
-        clause.replace(presence, '悲しさが伴った' if reaction == '嬉しくなかった' else '嬉しさが伴わなかった'),
-        clause.replace('伴わなかった', '伴った') if reaction == '嬉しくなかった' else clause.replace('伴った', '伴わなかった'),
-        clause.replace('伴わなかった', '伴わない') if reaction == '嬉しくなかった' else clause.replace('伴った', '伴う'),
-        clause.replace('あなたの', '相手の'),
-        clause.replace('あなたの経験', '相手が望んだ経験'),
-        clause.replace('経験として', '原因として'),
-        clause.replace('経験として', '成長として'),
+        clause.replace('ことは、あなたにとって', 'ことを、'),
+        clause.replace(presence, '悲しさを伴う' if reaction == '嬉しくなかった' else '嬉しさを伴わない'),
+        clause.replace('伴わない', '伴う') if reaction == '嬉しくなかった' else clause.replace('伴う', '伴わない'),
+        clause.replace('経験だった', '経験である'),
+        clause.replace('あなたにとって', '相手にとって'),
+        clause.replace('経験だった', '相手が望んだ経験だった'),
+        clause.replace('経験だった', '原因だった'),
+        clause.replace('経験だった', '成長だった'),
     )
     for wrong in wrongs:
         assert wrong != clause and not valid(artifact.text.replace(clause, wrong))
+    old_presence = '嬉しさが伴わなかった' if reaction == '嬉しくなかった' else '悲しさが伴った'
+    prior = event + 'ことだけでは言い表せない、' + old_presence + 'あなたの経験として受け取りました。'
+    assert valid(artifact.text.replace(clause, prior))
     monkeypatch.setattr(hr, '_source_grounded_received_discourse',
         lambda *_a, **_k: pytest.fail('independent received reader called author'))
     assert read_source_owned_discourse(clause, move, plan, resolver, selected) is not None
     for wrong in wrongs:
         assert read_source_owned_discourse(wrong, move, plan, resolver, selected) is None
+    assert tuple(x[2] for x in read_source_owned_discourse(prior, move, plan, resolver, selected)) == tuple(
+        x[2] for x in read_source_owned_discourse(clause, move, plan, resolver, selected))
+    for mixed in (clause.replace('経験だったのですね', 'あなたの経験として受け取りました'),
+                  prior.replace('あなたの経験として受け取りました', '経験だったのですね'),
+                  clause.replace('経験だった', '経験になる')):
+        assert read_source_owned_discourse(mixed, move, plan, resolver, selected) is None
     # Older persisted language stays readable; it is not regenerated on GET.
     legacy = (event + 'ことは、嬉しさにはつながらなかったのですね。' if reaction == '嬉しくなかった'
               else event + 'のに、悲しさを感じたのですね。')
@@ -299,7 +308,7 @@ def test_received_experience_requires_owned_contrast_and_bare_reaction(received,
     source = '資料を分類したことに満足した。'
     artifact = MeaningExperienceEngine().generate(request(*((received, source) if reverse else (source, received)))).artifact
     assert artifact is not None
-    assert 'ことだけでは言い表せない' not in artifact.reception
+    assert 'ことは、あなたにとって' not in artifact.reception
 
 
 @pytest.mark.parametrize('reverse', [False, True])
@@ -1542,7 +1551,7 @@ def test_unfinished_and_received_select_separate_owned_experiences(layout, evalu
     at = '当時の' if evaluation == '満足した' else '入力した時点での'
     clause = f'結論は出ていないという点と切り分けて、{at}満足を、{event}ことに向けられた充足として受け取りました。'
     assert outcome.artifact.reception.count(clause) == 1
-    assert '褒められたことだけでは言い表せない、嬉しさが伴わなかったあなたの経験として受け取りました。' in outcome.artifact.reception
+    assert '褒められたことは、あなたにとって嬉しさを伴わない経験だったのですね。' in outcome.artifact.reception
     observed_target = target.removesuffix('ことに')
     joined = f'「結論は出ていない」の一方で、「{observed_target}」という出来事への評価は「{evaluation}」とあります。'
     assert joined in outcome.artifact.observation
@@ -3621,7 +3630,7 @@ def test_negative_reason_appraisal_correction_keeps_separate_received_reception(
     assert result.artifact is not None, result.reason_codes
     absence = 'なかった' if evaluation == '満足した' else 'ない'
     assert '満たされた感覚が' + absence in result.artifact.reception
-    assert '褒められたことだけでは言い表せない、嬉しさが伴わなかったあなたの経験として受け取りました。' in result.artifact.reception
+    assert '褒められたことは、あなたにとって嬉しさを伴わない経験だったのですね。' in result.artifact.reception
     assert reason not in result.artifact.reception
     assert reason in result.artifact.observation
     assert len(plan.response_plan.human_reception_plan.moves) == len(selected.decisions) == 2
@@ -3637,10 +3646,10 @@ def test_negative_reason_appraisal_correction_keeps_separate_received_reception(
             resolver=prepared.thread.resolver(), selected_subjective_input=selected).passed
     assert valid(result.artifact.text)
     reception = result.artifact.reception
-    for wrong in (reception.replace('褒められたことだけでは言い表せない、嬉しさが伴わなかったあなたの経験として受け取りました。', ''),
+    for wrong in (reception.replace('褒められたことは、あなたにとって嬉しさを伴わない経験だったのですね。', ''),
                   reception.replace('満たされた感覚が' + absence, '満たされた感覚があった'),
-                  reception.replace('褒められたことだけでは', '資料を分類したことだけでは'),
-                  reception.replace('伴わなかった', '伴った'),
+                  reception.replace('褒められたことは、あなたにとって', '資料を分類したことは、あなたにとって'),
+                  reception.replace('嬉しさを伴わない', '嬉しさを伴う'),
                   reception.replace('資料を分類したことと、', reason + 'ことを理由に、資料を分類したことと、')):
         assert wrong != reception and not valid(result.artifact.text.replace(reception, wrong))
 
@@ -4452,8 +4461,8 @@ def test_separate_reasonless_correction_retains_both_limited_duties(monkeypatch,
     assert result.artifact is not None, result.reason_codes
     body = result.artifact
     assert '資料を分類したことについて、当時は満足しなかった' in body.reception
-    presence = '嬉しさが伴わなかった' if reaction == '嬉しくなかった' else '悲しさが伴った'
-    assert '褒められたことだけでは言い表せない、' + presence + 'あなたの経験として受け取りました。' in body.reception
+    presence = '嬉しさを伴わない' if reaction == '嬉しくなかった' else '悲しさを伴う'
+    assert '褒められたことは、あなたにとって' + presence + '経験だったのですね。' in body.reception
     assert len(plan.response_plan.human_reception_plan.moves) == len(projection.selected_reception.decisions) == 2
     assert projection.meaning_plan.projection_branch == 'LIMITED'
     assert all(d.branch == 'LIMITED' for d in projection.selected_reception.decisions)
@@ -4499,14 +4508,14 @@ def test_separate_reasonless_duties_inverse_rejects_missing_or_changed_experienc
             plan=plan, sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
     assert valid(body.reception)
     first, second = (s + '。' for s in body.reception.split('。') if s)
-    presence = '嬉しさが伴わなかった' if reaction == '嬉しくなかった' else '悲しさが伴った'
+    presence = '嬉しさを伴わない' if reaction == '嬉しくなかった' else '悲しさを伴う'
     assert presence in second
     for wrong in (first, second,
         body.reception.replace('褒められた', 'その分類を褒められた'),
         body.reception.replace('資料を分類した', '資料を整理した'),
         body.reception.replace('満足しなかった', '満足した'),
-        body.reception.replace(presence, '嬉しさが伴った'),
-        body.reception.replace(presence, '嬉しさが伴わない' if reaction == '嬉しくなかった' else '悲しさが伴う'),
+        body.reception.replace(presence, '嬉しさを伴う'),
+        body.reception.replace('経験だったのですね', '経験なのですね'),
         body.reception + '二つの経験は同時に起きています。',
         body.reception + '褒められたことが不満の原因です。'):
         assert wrong != body.reception and not valid(wrong)
@@ -4771,9 +4780,9 @@ def test_reasoned_experience_focused_and_prior_complete_grammar_keep_same_meanin
     assert focused in outcome.artifact.reception and prior not in outcome.artifact.reception
     # The person's bound inner feeling is now the main predicate. The
     # separate experience retains its own unchanged responsibility.
-    assert outcome.artifact.reception.count('受け取りました。') == (0 if layout == 'standalone' else 1)
+    assert outcome.artifact.reception.count('受け取りました。') == int(layout == 'shared')
     if layout == 'separate':
-        assert '褒められたことだけでは言い表せない、嬉しさが伴わなかったあなたの経験として受け取りました。' in outcome.artifact.reception
+        assert '褒められたことは、あなたにとって嬉しさを伴わない経験だったのですね。' in outcome.artifact.reception
     elif layout == 'shared':
         assert 'その分類を褒められたのに嬉しさが伴わなかったことは、その満足とは切り分けて受け取りました。' in outcome.artifact.reception
 
@@ -4873,7 +4882,7 @@ def _retained_received_request(reason='', operation='revise', reaction='嬉し�
 
 @pytest.mark.parametrize('reverse', [False, True])
 @pytest.mark.parametrize('reaction,experience', [
-    ('嬉しくなかった', '嬉しさが伴わなかった'), ('悲しかった', '悲しさが伴った'),
+    ('嬉しくなかった', '嬉しさを伴わない'), ('悲しかった', '悲しさを伴う'),
 ])
 @pytest.mark.parametrize('reason,operation', [
     ('', 'revise'), ('', 'withdraw'), ('探しやすくなったので、', 'withdraw'),
@@ -4893,7 +4902,7 @@ def test_retained_received_experience_keeps_limited_aggregate_and_every_other_du
     local = decision.retained_received_experience
     result = MeaningExperienceEngine().generate(req)
     assert result.artifact is not None, result.reason_codes
-    clause = '褒められたことだけでは言い表せない、' + experience + 'あなたの経験として受け取りました。'
+    clause = '褒められたことは、あなたにとって' + experience + '経験だったのですね。'
     assert clause in result.artifact.reception
     assert result.meaning_checkpoint == prepared.checkpoint
     assert prepared.checkpoint.assessment_status == 'RESOLVED'
@@ -4943,7 +4952,7 @@ def test_retained_received_experience_keeps_limited_aggregate_and_every_other_du
 
 
 @pytest.mark.parametrize('reaction,experience', [
-    ('嬉しくなかった', '嬉しさが伴わなかった'), ('悲しかった', '悲しさが伴った'),
+    ('嬉しくなかった', '嬉しさを伴わない'), ('悲しかった', '悲しさを伴う'),
 ])
 @pytest.mark.parametrize('reason,operation', [
     ('', 'revise'), ('', 'withdraw'), ('探しやすくなったので、', 'withdraw'),
@@ -4962,7 +4971,7 @@ def test_retained_received_experience_reader_preserves_source_without_author(
     move = next(m for m in plan.response_plan.human_reception_plan.moves if m.move_id == decision.move_id)
     result = MeaningExperienceEngine().generate(req)
     assert result.artifact is not None, result.reason_codes
-    clause = '褒められたことだけでは言い表せない、' + experience + 'あなたの経験として受け取りました。'
+    clause = '褒められたことは、あなたにとって' + experience + '経験だったのですね。'
     assert clause in result.artifact.reception
 
     def forbidden(*_a, **_k):
@@ -4972,17 +4981,24 @@ def test_retained_received_experience_reader_preserves_source_without_author(
     read = lambda text, authority=selected: read_source_owned_discourse(text, move, plan, resolver, authority)
     assert read(clause) is not None
     assert read(clause, None) is None
+    old_presence = '嬉しさが伴わなかった' if reaction == '嬉しくなかった' else '悲しさが伴った'
+    prior = '褒められたことだけでは言い表せない、' + old_presence + 'あなたの経験として受け取りました。'
+    assert tuple(x[2] for x in read(prior)) == tuple(x[2] for x in read(clause))
+    for mixed in (clause.replace('経験だったのですね', 'あなたの経験として受け取りました'),
+                  prior.replace('あなたの経験として受け取りました', '経験だったのですね'),
+                  clause.replace('経験だった', '経験になる')):
+        assert read(mixed) is None
     for wrong in (
         clause.replace('褒められた', '資料を分類した'),
         clause.replace('褒められた', '褒められなかった'),
         clause.replace('褒められた', '褒められる'),
         clause.replace('褒められた', 'その分類を褒められた'),
-        clause.replace(experience, '嬉しさが伴った' if reaction == '嬉しくなかった' else '悲しさが伴わなかった'),
-        clause.replace(experience, '嬉しさが伴わない' if reaction == '嬉しくなかった' else '悲しさが伴う'),
+        clause.replace(experience, '嬉しさを伴う' if reaction == '嬉しくなかった' else '悲しさを伴わない'),
+        clause.replace('経験だった', '経験である'),
         clause.replace('あなた', '同僚'),
-        clause.replace('ことだけでは言い表せない、', 'ことが原因で、'),
-        clause.replace('ことだけでは言い表せない、', 'ことへの期待が外れ、'),
-        clause.replace('あなたの経験', '成長した経験'),
+        clause.replace('ことは、あなたにとって', 'ことが原因で、'),
+        clause.replace('ことは、あなたにとって', 'ことへの期待が外れ、'),
+        clause.replace('経験', '成長した経験'),
         clause + '褒められたことが不満の原因です。',
     ):
         assert wrong != clause and read(wrong) is None, wrong
@@ -5173,7 +5189,7 @@ def test_retained_received_experience_keeps_generic_reception_outside_bare_exper
     result = MeaningExperienceEngine().generate(req)
     assert result.artifact is not None, result.reason_codes
     assert result.meaning_checkpoint == prepared.checkpoint
-    assert 'ことだけでは言い表せない、' not in result.artifact.reception
+    assert 'ことは、あなたにとって' not in result.artifact.reception
     assert tuple(n for n in plan.nuclei if n.source_fields == ('memo_action',)) == tuple(
         n for n in prepared.original_plan.nuclei if n.source_fields == ('memo_action',))
     assert tuple(r for r in plan.relations if r.type == 'contrast') == tuple(
@@ -5190,8 +5206,8 @@ def test_retained_received_experience_keeps_generic_reception_outside_bare_exper
 
 @pytest.mark.parametrize('reverse', [False, True])
 @pytest.mark.parametrize('reaction,presence', [
-    ('嬉しくなかった', '嬉しさが伴わなかった'),
-    ('悲しかった', '悲しさが伴った'),
+    ('嬉しくなかった', '嬉しさを伴わない'),
+    ('悲しかった', '悲しさを伴う'),
 ])
 @pytest.mark.parametrize('reason,operation', [
     ('', 'initial'), ('探しやすくなったので、', 'initial'),
@@ -5220,7 +5236,7 @@ def test_selected_received_experience_keeps_polite_past_content(
     result = MeaningExperienceEngine().generate(req)
     assert result.artifact is not None, result.reason_codes
     assert result.meaning_checkpoint == prepared.checkpoint
-    clause = '褒められたことだけでは言い表せない、' + presence + 'あなたの経験として受け取りました。'
+    clause = '褒められたことは、あなたにとって' + presence + '経験だったのですね。'
     assert clause in result.artifact.reception
     assert reaction + 'です' in result.artifact.observation
     received_field = 'memo' if reverse else 'memo_action'
@@ -5238,15 +5254,22 @@ def test_selected_received_experience_keeps_polite_past_content(
     read = lambda body, selection=selected: read_source_owned_discourse(body, move, plan, resolver, selection)
     assert read(clause) is not None
     assert read(clause, None) is None
+    old_presence = '嬉しさが伴わなかった' if reaction == '嬉しくなかった' else '悲しさが伴った'
+    prior = '褒められたことだけでは言い表せない、' + old_presence + 'あなたの経験として受け取りました。'
+    assert tuple(x[2] for x in read(prior)) == tuple(x[2] for x in read(clause))
+    for mixed in (clause.replace('経験だったのですね', 'あなたの経験として受け取りました'),
+                  prior.replace('あなたの経験として受け取りました', '経験だったのですね'),
+                  clause.replace('経験だった', '経験になる')):
+        assert read(mixed) is None
     for wrong in (
         clause.replace('褒められた', '誘われた'),
         clause.replace('褒められた', '褒められなかった'),
         clause.replace('褒められた', '褒められる'),
-        clause.replace(presence, '嬉しさが伴った' if reaction == '嬉しくなかった' else '悲しさが伴わなかった'),
-        clause.replace(presence, '嬉しさが伴わない' if reaction == '嬉しくなかった' else '悲しさが伴う'),
+        clause.replace(presence, '嬉しさを伴う' if reaction == '嬉しくなかった' else '悲しさを伴わない'),
+        clause.replace('経験だった', '経験である'),
         clause.replace('あなた', '同僚'),
-        clause.replace('ことだけでは言い表せない、', 'ことが原因で、'),
-        clause.replace('ことだけでは言い表せない、', 'ことへの期待が外れ、'),
+        clause.replace('ことは、あなたにとって', 'ことが原因で、'),
+        clause.replace('ことは、あなたにとって', 'ことへの期待が外れ、'),
         clause + '二つは同時に起きています。',
     ):
         assert wrong != clause and read(wrong) is None, wrong
@@ -5289,7 +5312,7 @@ def test_retained_received_fallback_keeps_self_inside_each_object(
               else 'の両方を、その違いも含めて小さくせずに受け止めています。')
     clause = object_text + ending
     assert clause in result.artifact.reception
-    assert 'ことだけでは言い表せない、' not in result.artifact.reception
+    assert 'ことは、あなたにとって' not in result.artifact.reception
     move, = (m for m in plan.response_plan.human_reception_plan.moves if m.move_id == decision.move_id)
     sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
     assert evaluate_grounded_surface_body_inverse(body=result.artifact.text.encode(), plan=plan,
@@ -5411,7 +5434,7 @@ def test_unfinished_received_thread_entry_selects_new_source_without_changing_di
     assert '「' + target + '」という出来事への評価は「満足した」' in outcome.artifact.observation
     assert 'という点と切り分けて、当時の満足を、' in outcome.artifact.reception
     assert 'ことに向けられた充足として受け取りました' in outcome.artifact.reception
-    assert '褒められたことだけでは言い表せない、嬉しさが伴わなかったあなたの経験' in outcome.artifact.reception
+    assert '褒められたことは、あなたにとって嬉しさを伴わない経験' in outcome.artifact.reception
 
 
 @pytest.mark.parametrize('layout', ['separate', 'reverse', 'joined', 'joined_reverse', 'joined_reverse_action', 'joined_action'])
@@ -5621,14 +5644,14 @@ def test_unfinished_component_source_removal_and_received_change_remain_separate
              '結論は出ていないが、案を選んで満足した。']
     bodies=[engine.generate(request(source, '褒められたのに、嬉しくなかった。')).artifact for source in sources]
     assert all(bodies)
-    received='褒められたことだけでは言い表せない、嬉しさが伴わなかったあなたの経験として受け取りました。'
+    received='褒められたことは、あなたにとって嬉しさを伴わない経験だったのですね。'
     assert all(received in body.reception for body in bodies)
     assert '結論は出ていない' in bodies[0].reception and '結論' not in bodies[1].reception
     assert '考えを言葉にできた' in bodies[0].reception and '案を選んだ' in bodies[2].reception
     changed=engine.generate(request(sources[0], '誘われたのに、悲しかった。')).artifact
     assert changed is not None
     assert changed.reception.split('。')[0] == bodies[0].reception.split('。')[0]
-    assert '誘われたことだけでは言い表せない、悲しさが伴ったあなたの経験' in changed.reception
+    assert '誘われたことは、あなたにとって悲しさを伴う経験' in changed.reception
 
 
 @pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
@@ -5886,7 +5909,7 @@ def test_received_first_reasoned_source_keeps_separate_experiences(field, evalua
     assert reason + 'という点で、' in out.artifact.reception
     assert ('当時ご自身の中に満たされた感覚があった' if evaluation == '満足した'
             else '入力した時点でご自身の中に満たされた感覚がある') in out.artifact.reception
-    assert '褒められたことだけでは言い表せない、嬉しさが伴わなかった' in out.artifact.reception
+    assert '褒められたことは、あなたにとって嬉しさを伴わない' in out.artifact.reception
     sentence = build_grounded_sentence_plan(plan, p.thread.resolver(), recovery_stage='full')
     assert evaluate_grounded_surface_body_inverse(body=out.artifact.text.encode(), plan=plan,
         sentence_plan=sentence, resolver=p.thread.resolver(), selected_subjective_input=selected).passed

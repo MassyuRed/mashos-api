@@ -5289,8 +5289,15 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
             end = start + len(event_visible.encode())
             replacements.append((start, end, event_source.encode()))
         experience = re.fullmatch(
-            r"(?P<event>.+?)ことだけでは言い表せない、(?P<feeling>[^、,]+)さが"
-            r"(?P<presence>伴わなかった|伴った)あなたの経験として受け取りました", part)
+            r"(?P<event>.+?)ことは、あなたにとって(?P<feeling>[^、,]+)さを"
+            r"(?P<presence>伴わない|伴う)経験だったのですね", part)
+        if experience is None:
+            # Keep the complete former grammar readable for saved bodies.
+            # Do not mix its past accompaniment with the new past-experience
+            # grammar; each must independently preserve SELF and past scope.
+            experience = re.fullmatch(
+                r"(?P<event>.+?)ことだけでは言い表せない、(?P<feeling>[^、,]+)さが"
+                r"(?P<presence>伴わなかった|伴った)あなたの経験として受け取りました", part)
         if experience is not None:
             # Read the selected contrast, its two owned endpoints and the
             # actual polarity from delivered bytes. Do not call the author
@@ -5325,7 +5332,7 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                         == {b.contribution_ref for b in experience_basis})):
                 return None
             restored = experience["feeling"] + (
-                "くなかった" if experience["presence"] == "伴わなかった" else "かった")
+                "くなかった" if experience["presence"] in {"伴わない", "伴わなかった"} else "かった")
             if (experience["event"] != event_visible or event_visible.startswith("あなたは")
                 # The source may use the polite ending for this same bare
                 # past predicate. Keep the complete source bytes below.

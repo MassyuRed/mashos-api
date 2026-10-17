@@ -10502,9 +10502,12 @@ def _source_grounded_received_discourse(realization, *, selected_decision=None, 
             nominal = _received_discourse_negative_feeling(experience_feeling)
             event = re.sub(r"^(?:私|自分|わたし)(?=は|が)", "あなた", event, count=1)
             if nominal is not None and not event.startswith("あなたは"):
-                accompaniment = "伴わなかった" if experience_feeling.endswith("くなかった") else "伴った"
-                return (event + "ことだけでは言い表せない、" + nominal[0] + "が"
-                        + accompaniment + "あなたの経験として受け取りました")
+                accompaniment = "伴わない" if experience_feeling.endswith("くなかった") else "伴う"
+                # The past experience is the main predicate. Its attributive
+                # accompaniment keeps the person's felt side of this event;
+                # it is not a claim about their present feeling or its cause.
+                return (event + "ことは、あなたにとって" + nominal[0] + "を"
+                        + accompaniment + "経験だったのですね")
 
     if local_pair:
         # The existing experience grammar has no reading for a qualified
