@@ -780,8 +780,137 @@ def _selected_reception(meaning, reception, plan, resolver, binding, retained=()
 
 
 
+def _retained_reasoned_add_duties(prepared, plan, resolver):
+    """Prove one separate ADD without changing any original source duty."""
+    import re
+    import emlis_ai_grounded_observation_plan as gp
+    original, thread, checkpoint = prepared.original_plan, prepared.thread, prepared.checkpoint
+    update = checkpoint.answer_update
+    if (len(thread.answers) != 1 or len(thread.control.answers) != 1
+        or thread.control.current_round != 1 or checkpoint.assessment_status != 'RESOLVED'
+        or checkpoint.unresolved_parts or checkpoint.inactive_claim_refs
+        or update is None or update.disposition != 'MATERIAL_UPDATE'
+        or update.unresolved_parts or len(update.updates) != 1):
+        return ()
+    item, = update.updates
+    if (item.operation != 'ADD' or item.superseded_claim_refs or item.affected_dependency_refs
+        or checkpoint.accepted_update_refs != (item.update_ref,)
+        or len(item.changed_claim_refs) != 1):
+        return ()
+    links = tuple(e for e in original.relations if source_owned_result_appraisal(e, original.nuclei))
+    if len(links) != 1:
+        return ()
+    link, = links
+    reason = source_owned_result_appraisal_reason(link, original.nuclei, original.relations)
+    index = {n.nucleus_id: n for n in original.nuclei}
+    event, evaluation = (index[nid] for nid in (link.from_nucleus_id, link.to_nucleus_id))
+    if reason is None:
+        return ()
+    required = tuple(n for n in original.nuclei if n.retention == 'required')
+    required_ids = {n.nucleus_id for n in required}
+    owned = {reason.nucleus_id, event.nucleus_id, evaluation.nucleus_id}
+    edges = tuple(e for e in original.relations if owned & {e.from_nucleus_id, e.to_nucleus_id})
+    rest = tuple(n for n in required if n.nucleus_id not in owned)
+    received_edges = tuple(e for e in original.relations if e not in edges)
+    received = _received_contrast_group_targets(rest, received_edges)
+    if (len(required) != 5 or len(original.relations) != 3 or len(edges) != 2
+        or any(not {e.from_nucleus_id, e.to_nucleus_id} <= owned for e in edges)
+        or len(rest) != 2 or len(received_edges) != 1 or not received or len(received[0]) != 1
+        or {n.nucleus_id for n in original.nuclei if set(n.source_fields)
+            & {'memo', 'memo_action', 'answer_text_private'}} != required_ids
+        or set(original.coverage_requirements.required_nucleus_ids) != required_ids
+        or set(original.coverage_requirements.required_relation_ids)
+            != {e.relation_id for e in original.relations}
+        or any(n.semantic_frame.actor != 'current_user' or n.grounding_kind != 'explicit'
+            or n.source_fields not in {('memo',), ('memo_action',)}
+            or len(n.source_span_ids) != 1 or n.source_span_ids[0] not in resolver.span_ids
+            or n.surface_anchor_ids != n.source_span_ids
+            or n.semantic_frame.target_anchor_ids != n.source_span_ids
+            or n.allowed_claim_scope != 'explicit_current_input' for n in required)
+        or any(e.retention != 'required' or e.grounding_kind != 'user_stated_relation'
+            or e.source_span_ids != index[e.from_nucleus_id].source_span_ids
+            or e.source_span_ids != index[e.to_nucleus_id].source_span_ids for e in original.relations)):
+        return ()
+    spans = tuple(resolver.resolve(sid) for sid in dict.fromkeys(s for n in required for s in n.source_span_ids))
+    if (len(spans) != 2 or {s.span_id for s in resolver.resolve_many(resolver.span_ids)
+            if s.source_field in {'memo', 'memo_action'}} != {s.span_id for s in spans}
+        or any(sum(s.source_field == span.source_field and s.raw_text == span.raw_text
+            for s in resolver.resolve_many(resolver.span_ids)) != 1 for span in spans)):
+        return ()
+    if spans[0].source_field == spans[1].source_field:
+        first, last = sorted(spans, key=lambda s: s.start_index)
+        if not 0 <= first.start_index < first.end_index <= last.start_index < last.end_index:
+            return ()
+    received_event = index[received[0][0]]
+    received_text = hr.final_reception_source_anchor_text(received_event.nucleus_id, index, resolver)
+    giver = re.sub(r'^(?:私|自分|わたし)(?:は|が)', '', received_text).rpartition('に')[0]
+    if (gp._SELF_REFERENCE_RE.search(giver) is not None
+        or 'に' in received_text and not _source_operator_owner_scope_is_bound(received_text)):
+        return ()
+    current = {n.nucleus_id: n for n in plan.nuclei}
+    answer_id, = item.changed_claim_refs
+    answer = current.get(answer_id)
+    added_edges = tuple(e for e in plan.relations if e not in original.relations)
+    if (len(current) != len(plan.nuclei) or set(current) != set(index) | {answer_id}
+        or any(current.get(n.nucleus_id) != n for n in original.nuclei)
+        or len(plan.relations) != 4 or len({e.relation_id for e in plan.relations}) != 4
+        or not set(original.relations).issubset(plan.relations) or len(added_edges) != 1
+        or item.target_meaning_refs != (received_event.nucleus_id,)
+        or answer is None or answer.source_fields != ('answer_text_private',)
+        or answer.grounding_kind != 'explicit' or answer.retention != 'required'
+        or answer.allowed_claim_scope != 'explicit_supplemental_answer'
+        or answer.semantic_frame.actor != 'current_user' or len(answer.source_span_ids) != 1
+        or answer.surface_anchor_ids != answer.source_span_ids
+        or answer.semantic_frame.target_anchor_ids != answer.source_span_ids
+        or 'thread_subject:unique_source_clause' not in answer.semantic_frame.attribute_codes
+        or {n.nucleus_id for n in plan.nuclei if n.retention == 'required'} != required_ids | {answer_id}
+        or set(plan.coverage_requirements.required_nucleus_ids) != required_ids | {answer_id}
+        or set(plan.coverage_requirements.required_relation_ids) != {e.relation_id for e in plan.relations}):
+        return ()
+    frame = answer.semantic_frame
+    positive = gp.is_grounded_positive_feeling(answer)
+    negative = ((answer.kind, frame.predicate_kind, frame.modality, frame.polarity)
+        == ('reaction', 'feeling', 'feeling', 'negative') and not gp.is_grounded_current_answer_uncertainty(answer))
+    times = {code for code in frame.attribute_codes if code.startswith('thread_time:')}
+    current_time = frame.time_scope == 'present' and times == {'thread_time:answer_time'}
+    original_time = frame.time_scope == 'past' and times == {'thread_time:original_occasion'}
+    temporal = item.temporal_binding
+    evidence = tuple(q.evidence.evidence_id for q in resolver.qualified_refs
+        if q.source_envelope_id == thread.answers[0].envelope.envelope_id)
+    if (not (positive or negative) or not (current_time or original_time)
+        or len(evidence) != 1 or item.evidence_refs != evidence
+        or temporal.time_expression_evidence_refs != evidence
+        or temporal.anchor_source_ref != thread.original.envelope.envelope_id
+        or temporal.resolved_interval is not None or temporal.timezone_basis is not None
+        or (item.binding_kind, temporal.about_time, temporal.relative_relation) != (
+            ('SAME_OCCASION_CURRENT_STATE', 'ANSWER_TIME', 'answer_deictic_now') if current_time
+            else ('QUESTION_FOCUS', 'ORIGINAL_OCCASION', None))):
+        return ()
+    about, = added_edges
+    if (about.type != 'evaluation_about_event' or about.retention != 'required'
+        or (about.from_nucleus_id, about.to_nucleus_id) != (received_event.nucleus_id, answer_id)
+        or about.grounding_kind != 'user_stated_relation' or about.source_relation_ids != (item.update_ref,)
+        or set(about.source_span_ids) != set(received_event.source_span_ids + answer.source_span_ids)):
+        return ()
+    duties = (('lived_change', (evaluation.nucleus_id,), (reason.nucleus_id, event.nucleus_id)),
+              ('current_burden', received[0], received[1] + (() if positive else (answer_id,))))
+    if positive:
+        duties += (('lived_change', (answer_id,), ()),)
+    acts = {'lived_change': 'recognize_lived_change', 'current_burden': 'stay_with_current_burden'}
+    expected_moves = tuple((acts[family], targets, supports,
+        tuple(dict.fromkeys(s for nid in (*targets, *supports) for s in current[nid].source_span_ids)))
+        for family, targets, supports in duties)
+    moves = plan.response_plan.human_reception_plan.moves
+    if (_thread_retained_reaction_groups(plan.nuclei, plan.relations) != duties
+        or any(not m.required for m in moves)
+        or tuple((m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids, m.source_evidence_span_ids)
+                 for m in moves) != expected_moves):
+        return ()
+    return duties
+
+
 def _retained_reasoned_experience_source(prepared, plan, resolver):
-    """Qualify only the unchanged triple after one separate positive revision."""
+    """Qualify the unchanged triple after one separate revision or bounded ADD."""
     import json
     from dataclasses import asdict, fields
     from .emlis_answer_update import PreparedEmlisMeaning, _retained_unfinished_received_duties
@@ -790,8 +919,11 @@ def _retained_reasoned_experience_source(prepared, plan, resolver):
         return None
     thread, original, checkpoint = prepared.thread, prepared.original_plan, prepared.checkpoint
     control = thread.control
-    if (control.admitted_history or control.rejected_frame_keys or control.frame_feedback_sources
-        or not _retained_unfinished_received_duties(prepared, plan.nuclei, plan.relations)):
+    if control.admitted_history or control.rejected_frame_keys or control.frame_feedback_sources:
+        return None
+    duties = (_retained_unfinished_received_duties(prepared, plan.nuclei, plan.relations)
+              or _retained_reasoned_add_duties(prepared, plan, resolver))
+    if not duties:
         return None
     links = tuple(edge for edge in original.relations if source_owned_result_appraisal(edge, original.nuclei))
     if len(links) != 1:
@@ -815,7 +947,7 @@ def _retained_reasoned_experience_source(prepared, plan, resolver):
     matches = tuple(m for m in moves if m.target_nucleus_ids == (evaluation.nucleus_id,)
                     and m.support_nucleus_ids == (reason.nucleus_id, event.nucleus_id)
                     and m.reception_act == 'recognize_lived_change' and m.required)
-    if len(moves) != 2 or len(matches) != 1:
+    if len(moves) != len(duties) or len(matches) != 1:
         return None
     return c.RetainedReasonedExperienceEligibilityV1(
         'cocolon.cmee.retained_reasoned_experience_eligibility.v1',

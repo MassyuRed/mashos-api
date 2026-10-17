@@ -22561,7 +22561,7 @@ def validate_retained_received_experience_content(value, decision, selected):
 
 @dataclass(frozen=True, slots=True, repr=False)
 class RetainedReasonedExperienceEligibilityV1:
-    """One unchanged reason/target/satisfaction surviving a received-reaction correction."""
+    """One unchanged reason/target/satisfaction surviving a bounded separate update."""
 
     schema_version: str
     source_prefix_ref: str

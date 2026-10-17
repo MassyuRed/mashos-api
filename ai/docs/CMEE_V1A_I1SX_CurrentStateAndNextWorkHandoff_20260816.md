@@ -1,4 +1,4 @@
-> 最新EmlisAI残件：末尾 **u314（2026-10-17・当時negative ADDの原反応保持、追加回答後の理由付き満足の限定案）**。57比較・保存/RN88 DTOを確認。保持修復は実装済み、追加回答後の経験資格は未承認案。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
+> 最新EmlisAI残件：末尾 **u315（2026-10-17・追加回答後の未変更理由付き満足を局所経験として保持）**。u314の限定案はMash承認済み。実装・検証・保存再表示の現在地は同節を参照。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -22105,3 +22105,56 @@ u289は初回NORMAL専用、u294はreceived二点専用、u306承認／u307・sc
 完成済み保存本文は非再生成。未完成current checkpointは同じ意味・受理回答・operation・既存履歴を保ち、新本文へ再開する。作者禁止GET/start・同回答再送・実service保存・RN全文／履歴／再openまで確認し、rootが全対象全文を読む。実装→回帰→保存／再表示を一つの限定単位として行う見積りで、追加課金・Mashの端末操作は0、完成時刻は未確定。新しい意味、全体NORMAL昇格、新型／公開契約／DB／依存が必要ならこの案を拡大せず停止する。
 
 **次の一作業は、この具体案の適用範囲追加をMashへ確認すること。承認前に新資格を実装しない。** 本文の長い説明・反復・初回内容形成、独立行動・安心した分類・共有対象／容量・その他対象外更新、既存周辺4／過去17とQ3既存16失敗の集合対応、same100・Q1上限・giver帰属・本人実機／正式Product Readは残る。今回u314修復のprimaryはTECHNICAL_CREDIT、次案は未承認の診断／提案。PRODUCT_NOT_CLEAR・初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false、Draft/open/unmerged・未配置、10/31管理線・12/18公開目標、Piece/Analysis主枠・管理評価53.25％を維持する。
+
+## u315 — 追加回答後も未変更の理由・対象・満足を一つの経験として保持（2026-10-17 JST）
+
+### 承認と今回の範囲
+
+2026-10-17 16:46:17 JST、Mashがu314末尾／両PRに記録した限定案へ「うん、進めていいよ。」と回答し、実装までの進行を承認した。作業規則18 §11.3の追加承認は受領済み。u307の訂正後限定を無断で拡張したものではない。u314の未承認・承認確認待ちの表記は提案時の履歴として保持し、現行の作業停止条件にしない。
+
+基準はAPI `463039f77837ee7397967fd190ae7c6838676ede`／Cocolon `70c3a5aaeada78195d0d95a29cb46cc1b263c1aa`。全体01・全file地図01A/B/C・current01/04・正本06／API handoff・05／8月28日意味設計・最新weekly 20261010 §5.6.64を確認し、永久保存のProductNeglect／CMEE ProductReadFailure監査全文を再読した。System Context prepareは設定先mashos-api不在でexit2のため、正本原資料／実sourceを直接確認した。fresh Context生成完了とは扱わない。
+
+対象は原本の「理由・実行対象・肯定無程度の満足」三点と、別のreceived出来事・否定反応の二点から成る独立二経験。現在／当時×肯定／否定の一度の追加回答ADDだけを新資格へ加えた。原required exact5核／exact3辺、原text全被覆、同source所有の三点、別received二点一対比、一意な原source出現exact2、round1、frozen/control回答各1、RESOLVED、MATERIAL_UPDATE／ADD exact1を要求する。原claim／対比の失効・superseded・affected各0、原核辺はactive Planでも全値不変、追加は回答核1／received event→回答のABOUT1辺だけ。
+
+### 実装と責務
+
+`emlis_thread_projection.py` 内の `_retained_reasoned_add_duties` が出典、本人所有、一意な回答subject、受理update／changed／accepted refs、evidence、時点binding、ABOUT、全required被覆、2/3 Moveのtarget／support／evidenceを検証する。現在はpresent／exact answer_timeとSAME_OCCASION_CURRENT_STATE、当時はpast／exact original_occasionとQUESTION_FOCUS。時点anchorはどちらも現行契約どおり原本envelope、時点証拠は回答evidenceに結ぶ。肯定は既存grounded feeling、否定はreaction／feeling／feeling／negativeかつ非unknownとし、回答の程度を保つ。
+
+既存REVISE証明 `_retained_unfinished_received_duties` は変更しない。既存資格導出は旧REVISE二義務またはこのADD証明を要求する。肯定ADDは満足／元received／回答の3 Move、否定ADDは満足／received＋原反応＋回答の2 Moveを維持する。原sourceからprepared／Planを再導出し、既存 `RetainedReasonedExperienceEligibilityV1`／`RetainedReasonedExperienceContentV1`／`SelectedRetainedReasonedExperienceDecisionV1` をそのまま使う。満足Moveだけに三basis／三qualifier／二contributionと理由→満足／対象→満足を持つ局所経験を結び、全selectedの再導出照合と再封印付替え拒否を維持する。
+
+全体LIMITED／aggregate proposition・graph／premeaning／structure／meaning・checkpoint・Observation・元反応／追加回答本文は変更しない。意味型をNORMALへ上げず、基底 `EmlisAppraisalContent` も変えない。`contracts.py` は資格説明docstringのみ更新、field・schema・manifest・validatorは不変。作者／有限reader、source認識、更新owner、公開API／DTO／DB／RN、質問数／Move上限・新依存・新production fileの変更はない。
+
+PARTIAL、unknown、複数／後続回答、history/frame／legacy、共有対象、重複／余分な材料、plain／unfinished、理由／対象／満足への変更、WITHDRAWや他REVISEは新資格から除外する。重複理由の肯定ADD2例は以前からのcapacity gapを維持し、本文成功へ置き換えない。
+
+### 本文の実読
+
+原入力「探しやすくなったので、資料を分類したことに満足した。」「褒められたのに、嬉しくなかった。」へ「今は嬉しい。」を一度追加した現行全文：
+
+> 見えたこと：
+> 「探しやすくなった」を理由に、「資料を分類した」という出来事への評価は「満足した」とあります。
+> 「褒められた」のに「嬉しくなかった」、回答した時点では「嬉しい」とあります。
+>
+> Emlisから：
+> 資料を分類したことには、探しやすくなったという点で、当時ご自身の中に満たされた感覚があったのですね。褒められたことは、嬉しさにはつながらなかったのですね。回答した時点では嬉しいのですね。
+
+理由へ注意を向けるだけの文へ戻らず、未変更の理由・対象・本人の充足を一つの経験として保持した。現在の満足は「入力した時点で…ある」、当時の満足は「当時…あった」を維持し、理由の独立した時点や追加回答の時点を混同しない。現在否定／当時肯定／当時否定も元の反応と受理回答の内容をどちらも残す。rootが変更対象28種の全文と各caseの対応を読んだ。語尾反復、説明の長さ、当時肯定ADDのreceived対象重複は残っており、商品品質合格とはしない。
+
+### 検証・保存互換
+
+主回帰 1,497 passed／1 warning（855.50秒）。最終sourceの全件一括実行：appraisal 1,443＋application 54。追加92検査を含み、個別検査の成功数は重複加算しない。
+
+101ケースの変更前後比較：必須6配置×満足時点2×回答4＝48、理由／対象・独立時点の変種8、程度付き回答4の計60だけが変更。差分は局所内容／selected carrier型とReception／textだけ。対照41は取得全record一致。checkpointを持つ95件の核辺・Move・aggregate／branch・checkpoint・Observation・body_state／status／reason_codes・基底content_typesは全一致。初回と旧u307 REVISEも取得全record一致。finite readerは作者禁止下で理由／対象／時点／程度／肯否／他者化／因果混入を拒否し、再封印したforeign source／checkpoint／Move／aggregateや受理更新・出典・subject・時点・辺／Move evidenceの改変も拒否した。
+
+Q3 retainedは12 passed／既存16 failed／922 deselected／1 warning（22.34秒）。u314の失敗assertion／trace全文とprocess address以外は一致する。既存16失敗を解消／無視／新規成功へ換算しない。現行identity検査1 passed／194 deselected／1 warning（22.18秒）。language identityは `8f54fd7ace44b9f55e4132e28db67576692d8a9928692d2e937c76204ee01695` のまま、runtime identityは `443537485fa8aaf97046f5bb5fc6e6275e4d10486e0d492567b9769a2d90d172`。歴史fixtureは不変、現行owner fixtureだけ再導出した。
+
+実EmlisThreadService＋ローカルPGliteで73ケース／146 DTOを保存。現行60対象＋unknown1、旧完成4／旧pending4／旧checkpoint中断再開4を確認。完成済み本文は作者禁止GET/start・同回答再送でも非再生成、thread／events／attemptは不変。旧pendingは既存質問と旧初回本文を残して現行回答へ進み、中断checkpoint再開は受理意味・ANSWER／MEANING_UPDATE・operation・旧OBSERVATIONを保持した。元入力と既存timeline全field（is_currentのみ表示切替を許容）も照合。現行RNの実hook／Modalをnative stubで動かし、全文・元入力・全履歴・close/reopenの146 DTOを確認した。rootは保存38種の全文と146対応を読解した。これはローカル保存／合成RN検査であり本人実機の新たな確認ではない。
+
+同Work内の補助は読取専用の静的確認であり、正式な別model Pro／Ultra検証に換算しない。本人実機確認・本番DB適用・deploy・main mergeは今回0。primaryはTECHNICAL_CREDIT。
+
+### 同期と残件
+
+`STRUCTURE_MAP_DELTA_PRESENT`。private資格のADD適用という責務差分を全体01／01A／current01／current04／05／8月28日設計へ同期し、06とAPI handoffに同一u315、07とweekly §5.6.65へ実測・再開順を記録する。01B/C、Piece/Analysis、公開経路／DB／RNの責務差分はない。
+
+今回承認された限定変更は実装・検証・保存再表示まで完了。次は初回と追加回答後の本文を一体で読み、説明性・満足や対象の重複・語尾反復の残る箇所を、既存意味を保つ修復と新しい意味資格が必要な案に分けて詰める。今回の4種ADD適用を再承認待ちへ戻さない。独立行動、安心した分類、共有対象／容量、対象外更新、既存周辺4／過去17とQ3既存16失敗の集合対応、same100・Q1上限・giver帰属・本人実機／正式Product Readは未解消。
+
+PRODUCT_NOT_CLEAR・初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false、Draft/open/unmerged・未配置。10/31管理線・12/18公開目標、Piece/Analysis主枠・管理評価53.25％を維持する。
