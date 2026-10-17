@@ -469,7 +469,7 @@ def _component_reception_rows(structure, bound_moves, contributions):
     return result
 
 
-def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
+def _project_thread_meaning_aggregate(prepared, plan) -> ThreadMeaningProjection:
     from .emlis_answer_update import build_updated_grounded_plan
     if plan != build_updated_grounded_plan(prepared):
         raise ValueError("emlis_thread_plan_checkpoint_mismatch")
@@ -777,3 +777,113 @@ def _selected_reception(meaning, reception, plan, resolver, binding, retained=()
         tuple((r._edge_ref(ref), rid) for rid, ref in binding.relation_to_edge.items()), tuple(decisions)))
     hr.validate_selected_subjective_reception_input(selected, reception, plan, resolver)
     return selected
+
+
+
+def _retained_reasoned_experience_source(prepared, plan, resolver):
+    """Qualify only the unchanged triple after one separate positive revision."""
+    import json
+    from dataclasses import asdict, fields
+    from .emlis_answer_update import PreparedEmlisMeaning, _retained_unfinished_received_duties
+    if (type(prepared) is not PreparedEmlisMeaning
+        or any(getattr(prepared, f.name) for f in fields(prepared) if f.name.startswith('legacy_'))):
+        return None
+    thread, original, checkpoint = prepared.thread, prepared.original_plan, prepared.checkpoint
+    control = thread.control
+    if (control.admitted_history or control.rejected_frame_keys or control.frame_feedback_sources
+        or not _retained_unfinished_received_duties(prepared, plan.nuclei, plan.relations)):
+        return None
+    links = tuple(edge for edge in original.relations if source_owned_result_appraisal(edge, original.nuclei))
+    if len(links) != 1:
+        return None
+    link, = links
+    reason = source_owned_result_appraisal_reason(link, original.nuclei, original.relations)
+    index = {n.nucleus_id: n for n in original.nuclei}
+    event, evaluation = (index[nid] for nid in (link.from_nucleus_id, link.to_nucleus_id))
+    required = tuple(n for n in original.nuclei if n.retention == 'required')
+    if (reason is None or len(required) != 5 or len(original.relations) != 3
+        or any(n.semantic_frame.actor != 'current_user' or n.grounding_kind != 'explicit' for n in required)):
+        return None
+    item, = checkpoint.answer_update.updates
+    answers = tuple(n for n in plan.nuclei if n.source_fields == ('answer_text_private',))
+    evidence = tuple(q.evidence.evidence_id for q in resolver.qualified_refs
+                     if q.source_envelope_id == thread.answers[0].envelope.envelope_id)
+    if (len(evidence) != 1 or item.evidence_refs != evidence or len(answers) != 1
+        or tuple(n.nucleus_id for n in prepared.accepted_nuclei) != item.changed_claim_refs):
+        return None
+    moves = plan.response_plan.human_reception_plan.moves
+    matches = tuple(m for m in moves if m.target_nucleus_ids == (evaluation.nucleus_id,)
+                    and m.support_nucleus_ids == (reason.nucleus_id, event.nucleus_id)
+                    and m.reception_act == 'recognize_lived_change' and m.required)
+    if len(moves) != 2 or len(matches) != 1:
+        return None
+    return c.RetainedReasonedExperienceEligibilityV1(
+        'cocolon.cmee.retained_reasoned_experience_eligibility.v1',
+        thread.source_prefix_ref, checkpoint.checkpoint_id, thread.original.envelope.envelope_id,
+        thread.answers[0].envelope.envelope_id,
+        tuple(json.dumps(asdict(n), ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False)
+              for n in required),
+        tuple(json.dumps(asdict(e), ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False)
+              for e in original.relations), checkpoint.answer_update, matches[0].move_id, control)
+
+
+def derive_retained_reasoned_experience_eligibility(prepared, plan, resolver):
+    try:
+        eligibility = _retained_reasoned_experience_source(prepared, plan, resolver)
+        if eligibility is None:
+            return None
+        replay, replay_plan = _rederive_retained_received_experience_source(eligibility.thread_control, resolver)
+        if (replay != prepared or replay_plan != plan
+            or _retained_reasoned_experience_source(replay, replay_plan, resolver) != eligibility):
+            return None
+        return eligibility
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return None
+
+
+def _carry_retained_reasoned_experience(projection, eligibility):
+    selected = projection.selected_reception
+    decision, = (d for d in selected.decisions if d.move_id == eligibility.move_ref)
+    local = r.derive_retained_reasoned_experience_content(decision, projection.premeaning)
+    content = composition.project_retained_reasoned_experience_content(
+        eligibility, local, decision, selected, projection.meaning_plan)
+    carried = hr.SelectedRetainedReasonedExperienceDecisionV1(
+        **{name: getattr(decision, name) for name in hr.SelectedSubjectiveReceptionDecisionV1.__dataclass_fields__},
+        retained_reasoned_experience=content)
+    carried = hr.identify_selected_subjective_reception_decision(carried)
+    return hr.identify_selected_subjective_reception_input(replace(selected,
+        decisions=tuple(carried if row == decision else row for row in selected.decisions)))
+
+
+def validate_retained_reasoned_experience_source(decision, selected, plan, resolver):
+    """Rebuild the original source, accepted update and unchanged whole projection.
+
+    The aggregate projector never attaches this new carrier. Comparing the
+    entire rebuilt selection also rejects re-sealed foreign Move/aggregate IDs.
+    """
+    fail = 'retained_reasoned_experience_source_invalid'
+    try:
+        local = decision.retained_reasoned_experience
+        c.validate_retained_reasoned_experience_content(local, decision, selected)
+        prepared, replay_plan = _rederive_retained_received_experience_source(local.eligibility.thread_control, resolver)
+        expected = _retained_reasoned_experience_source(prepared, replay_plan, resolver)
+        if expected is None or replay_plan != plan or expected != local.eligibility:
+            raise ValueError(fail)
+        projection = _project_thread_meaning_aggregate(prepared, replay_plan)
+        if _carry_retained_reasoned_experience(projection, expected) != selected:
+            raise ValueError(fail)
+    except (AttributeError, KeyError, TypeError, ValueError):
+        raise ValueError(fail) from None
+
+
+def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
+    projection = _project_thread_meaning_aggregate(prepared, plan)
+    if projection.meaning_plan.projection_branch != 'LIMITED':
+        return projection
+    resolver = prepared.thread.resolver()
+    eligibility = derive_retained_reasoned_experience_eligibility(prepared, plan, resolver)
+    if eligibility is None:
+        return projection
+    selected = _carry_retained_reasoned_experience(projection, eligibility)
+    hr.validate_selected_subjective_reception_input(selected, plan.response_plan.human_reception_plan, plan, resolver)
+    return replace(projection, selected_reception=selected)

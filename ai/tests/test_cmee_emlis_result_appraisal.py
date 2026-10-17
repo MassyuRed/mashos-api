@@ -684,7 +684,9 @@ def test_versioned_appraisal_is_in_current_manifest_without_changing_legacy_fiel
     from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
     from cocolon_meaning_experience_engine.emlis_stage1_composition import _contract_manifest
     manifest = dict(_contract_manifest())
-    assert manifest['logical_contract_count'] == 74
+    assert manifest['logical_contract_count'] == 76
+    assert {'RetainedReasonedExperienceEligibilityV1', 'RetainedReasonedExperienceContentV1'} <= {
+        dict(row)['type_name'] for row in manifest['logical_contract_descriptors']}
     assert any(dict(row)['type_name'] == 'EmlisEvaluatedExperienceAppraisalContent'
                for row in manifest['logical_contract_descriptors'])
     assert tuple(field.name for field in fields(EmlisAppraisalContent)) == (
@@ -5791,8 +5793,8 @@ def test_reasoned_corrected_received_retains_both_existing_limited_duties(layout
     assert len(selected.decisions) == 2
     assert all(d.branch == 'LIMITED' and d.subjective_proposition.subjective_mode == 'ATTENTION'
                for d in selected.decisions)
-    when = '当時の' if evaluation == '満足した' else '入力した時点での'
-    assert out.artifact.reception == (f'資料を分類したことへの{when}満足について、{reason}という理由に目を向けています。'
+    when, state = ('当時', 'あった') if evaluation == '満足した' else ('入力した時点で', 'ある')
+    assert out.artifact.reception == (f'資料を分類したことについて受け取ったのは、{reason}という点で、{when}ご自身の中に満たされた感覚が{state}経験です。'
                                      '褒められたことについて、その時は嬉しかったのですね。')
     assert '嬉しくなかった' not in out.artifact.text
     sentence = build_grounded_sentence_plan(plan, p.thread.resolver(), recovery_stage='full')
@@ -5818,7 +5820,8 @@ def test_reasoned_corrected_received_retention_changes_only_selection_and_recept
     assert old_body.observation == body.observation
     assert len(old_plan.response_plan.human_reception_plan.moves) == 1
     assert '褒められた' not in old_body.reception
-    assert body.reception.startswith(old_body.reception)
+    assert '理由に目を向けています' in old_body.reception
+    assert body.reception.startswith(initial.artifact.reception.split('。')[0] + '。')
     assert MeaningExperienceEngine().generate(original).artifact == initial.artifact
 
 
@@ -5851,9 +5854,9 @@ def test_reasoned_corrected_received_reader_keeps_reason_and_answer_without_auth
         body.reception.replace('その時は', '回答した時点では'),
         body.reception.replace(feeling, '嬉しくなかった'),
         body.reception.replace('褒められたことについて', '資料を分類したことについて'),
-        body.reception.replace('当時の満足', '入力した時点での満足'),
-        body.reception.replace('探しやすくなったという理由', '褒められたという理由'),
-        body.reception.replace('探しやすくなったという理由', '探しやすくしたかったという理由'),
+        body.reception.replace('当時ご自身', '入力した時点でご自身'),
+        body.reception.replace('探しやすくなったという点', '褒められたという点'),
+        body.reception.replace('探しやすくなったという点', '探しやすくしたかったという点'),
         body.reception + '褒められたことが満足の原因です。'):
         assert wrong != body.reception and not valid(wrong)
 
@@ -5999,3 +6002,173 @@ def test_pre_received_reason_checkpoint_restores_complete_old_result(row):
         assert restored.checkpoint.source_prefix_ref == row['checkpoint']['source_prefix_ref']
         assert restored.checkpoint.base_meaning_ref != row['checkpoint']['base_meaning_ref']
         assert restored.checkpoint.checkpoint_id != row['checkpoint']['checkpoint_id']
+
+
+
+def _retained_reasoned_request():
+    from test_cmee_emlis_q3_thread import advance
+    return advance(request('探しやすくなったので、資料を分類したことに満足した。',
+                           '褒められたのに、嬉しくなかった。'),
+                   '「嬉しくなかった」ではなく「嬉しかった」です。')
+
+
+def test_retained_reasoned_experience_preserves_aggregate_checkpoint_and_other_move(monkeypatch):
+    import emlis_ai_grounded_human_reception as hr
+    from cocolon_meaning_experience_engine import emlis_thread_projection as tp
+    req = _retained_reasoned_request()
+    p = prepare_emlis_meaning(req); plan = build_updated_grounded_plan(p)
+    current = project_thread_meaning(p, plan)
+    result = MeaningExperienceEngine().generate(req)
+    d, = (d for d in current.selected_reception.decisions
+          if type(d) is hr.SelectedRetainedReasonedExperienceDecisionV1)
+    local = d.retained_reasoned_experience
+    assert len(local.basis_rows) == len(local.qualifier_rows) == 3
+    assert len(local.eligibility.original_nuclei) == 5 and len(local.eligibility.original_relations) == 3
+    assert type(d.subjective_proposition.appraisal_content).__name__ == 'EmlisAppraisalContent'
+    monkeypatch.setattr(tp, 'derive_retained_reasoned_experience_eligibility', lambda *_a: None)
+    previous = project_thread_meaning(p, plan)
+    before = MeaningExperienceEngine().generate(req)
+    assert result.artifact and before.artifact
+    assert current.meaning_plan == previous.meaning_plan and current.structure == previous.structure
+    assert current.graph == previous.graph and current.premeaning == previous.premeaning
+    assert result.meaning_checkpoint == before.meaning_checkpoint == p.checkpoint
+    assert result.artifact.observation == before.artifact.observation
+    assert result.reason_codes == before.reason_codes and result.body_state == before.body_state
+    for new, old in zip(current.selected_reception.decisions, previous.selected_reception.decisions, strict=True):
+        base = hr.SelectedSubjectiveReceptionDecisionV1(**{
+            name: getattr(new, name) for name in hr.SelectedSubjectiveReceptionDecisionV1.__dataclass_fields__})
+        assert hr.identify_selected_subjective_reception_decision(base) == old
+    assert result.artifact.reception.split('。')[1:] == before.artifact.reception.split('。')[1:]
+    assert '理由に目を向けています' in before.artifact.reception
+    assert '満たされた感覚があった経験' in result.artifact.reception
+
+
+def test_retained_reasoned_experience_rejects_resealed_content_source_and_aggregate():
+    from cocolon_meaning_experience_engine import contracts as c
+    import emlis_ai_grounded_human_reception as hr
+    p = prepare_emlis_meaning(_retained_reasoned_request()); plan = build_updated_grounded_plan(p)
+    resolver = p.thread.resolver(); selected = project_thread_meaning(p, plan).selected_reception
+    d, = (d for d in selected.decisions if type(d) is hr.SelectedRetainedReasonedExperienceDecisionV1)
+    local = d.retained_reasoned_experience; e = local.eligibility
+    def reject(changed, base=d, selection=selected):
+        changed = replace(changed, seal_ref=c.retained_reasoned_experience_seal(changed))
+        altered = hr.identify_selected_subjective_reception_decision(replace(base, retained_reasoned_experience=changed))
+        selection = hr.identify_selected_subjective_reception_input(replace(selection,
+            decisions=tuple(altered if row == d else row for row in selection.decisions)))
+        with pytest.raises(hr.GroundedHumanReceptionSurfaceError, match='MEANING_REALIZATION_CAUSAL_TRACE_GAP'):
+            hr.validate_selected_subjective_reception_input(selection, plan.response_plan.human_reception_plan, plan, resolver)
+    for name in ('schema_version', 'source_prefix_ref', 'checkpoint_ref', 'original_source_ref', 'answer_source_ref', 'move_ref'):
+        reject(replace(local, eligibility=replace(e, **{name: 'foreign'})))
+    for name in ('projection_preimage_ref', 'aggregate_projection_seal_ref', 'aggregate_claim_ref',
+                 'aggregate_proposition_ref', 'meaning_outcome_ref', 'reception_binding_ref', 'grounding_ref',
+                 'reason_relation_ref', 'appraisal_relation_ref', 'reason_binding_ref', 'evaluation_kind',
+                 'polarity', 'reason_time', 'evaluation_time', 'reception_configuration'):
+        reject(replace(local, **{name: 'foreign'}))
+    for name in ('original_nuclei', 'original_relations'):
+        reject(replace(local, eligibility=replace(e, **{name: ()})))
+    reject(replace(local, event_binding_ref=local.reason_binding_ref))
+    reject(replace(local, basis_rows=local.basis_rows[:-1]))
+    reject(replace(local, qualifier_rows=local.qualifier_rows[::-1]))
+    item, = e.update.updates
+    for wrong in (replace(item, evidence_refs=()), replace(item, operation='WITHDRAW'),
+                  replace(item, affected_dependency_refs=()), replace(item, changed_claim_refs=()),
+                  replace(item, temporal_binding=replace(item.temporal_binding, about_time='ANSWER_TIME'))):
+        reject(replace(local, eligibility=replace(e, update=replace(e.update, updates=(wrong,)))))
+    # Re-seal coherent but foreign aggregate/projection IDs on both sides.
+    changed_proposition = replace(d.subjective_proposition, addressee_role='foreign')
+    reject(replace(local, aggregate_proposition_ref=c.retained_reasoned_experience_aggregate_ref(changed_proposition)),
+           replace(d, subjective_proposition=changed_proposition))
+    for name, other in (('aggregate_claim_ref', 'projected_claim_ref'),
+                        ('meaning_outcome_ref', 'meaning_outcome_ref'), ('reception_binding_ref', 'reception_binding_ref')):
+        reject(replace(local, **{name: 'foreign'}), replace(d, **{other: 'foreign'}))
+    reject(replace(local, projection_preimage_ref='foreign'), selection=replace(selected, projection_preimage_ref='foreign'))
+    other = next(row for row in selected.decisions if row != d)
+    reject(replace(local, eligibility=replace(e, move_ref=other.move_id)), replace(d, move_id=other.move_id))
+
+
+def test_retained_reasoned_experience_rederives_source_and_excludes_legacy_history_or_later_round():
+    from dataclasses import fields
+    from cocolon_meaning_experience_engine.emlis_thread_projection import derive_retained_reasoned_experience_eligibility as derive
+    p = prepare_emlis_meaning(_retained_reasoned_request()); plan = build_updated_grounded_plan(p); resolver = p.thread.resolver()
+    assert derive(p, plan, resolver) is not None
+    for f in fields(p):
+        if f.name.startswith('legacy_'):
+            assert derive(replace(p, **{f.name: True}), plan, resolver) is None
+    for field, value in (('current_round', 2), ('answers', ()), ('admitted_history', ('foreign',)),
+                         ('rejected_frame_keys', ('foreign',)), ('frame_feedback_sources', ('foreign',))):
+        assert derive(replace(p, thread=replace(p.thread, control=replace(p.thread.control, **{field: value}))), plan, resolver) is None
+    for wrong in (replace(p, accepted_nuclei=()),
+                  replace(p, checkpoint=replace(p.checkpoint, assessment_status='PARTIAL')),
+                  replace(p, checkpoint=replace(p.checkpoint, accepted_update_refs=())),
+                  replace(p, checkpoint=replace(p.checkpoint, inactive_claim_refs=()))):
+        assert derive(wrong, plan, resolver) is None
+    # Alter the original and current graphs together. Unchanged-equality alone
+    # must never authorize facts/roles/tense that the actual input did not say.
+    for node in (n for n in p.original_plan.nuclei if n.source_fields == ('memo',)):
+        for field, value in (('time_scope', 'present' if node.semantic_frame.time_scope == 'past' else 'past'),
+                             ('actor', 'other'), ('polarity', 'negative')):
+            wrong = replace(node, semantic_frame=replace(node.semantic_frame, **{field: value}))
+            original = replace(p.original_plan, nuclei=tuple(wrong if n == node else n for n in p.original_plan.nuclei))
+            active = replace(plan, nuclei=tuple(wrong if n == node else n for n in plan.nuclei))
+            assert derive(replace(p, original_plan=original), active, resolver) is None
+
+
+@pytest.mark.parametrize('answer', [None, '分からない。', 'その時は嬉しかった。', '今は嬉しい。',
+    '「嬉しくなかった」は誤りです。', '「満足した」ではなく「満足しなかった」です。',
+    '「探しやすくなった」は誤りです。', '「資料を分類した」は誤りです。',
+    '「嬉しくなかった」ではなく「安心した」です。',
+    '「嬉しくなかった」ではなく「嬉しかった」です。「存在しない」は誤りです。'])
+def test_retained_reasoned_experience_excludes_other_updates(answer):
+    from test_cmee_emlis_q3_thread import advance
+    from cocolon_meaning_experience_engine.emlis_thread_projection import derive_retained_reasoned_experience_eligibility as derive
+    req = request('探しやすくなったので、資料を分類したことに満足した。', '褒められたのに、嬉しくなかった。')
+    if answer is not None:
+        req = advance(req, answer)
+    p = prepare_emlis_meaning(req); plan = build_updated_grounded_plan(p)
+    assert derive(p, plan, p.thread.resolver()) is None
+
+
+@pytest.mark.parametrize('source,received', [
+    ('探しやすくなったので、資料を分類したことに少し満足した。', '褒められたのに、嬉しくなかった。'),
+    ('探しやすくなったので、資料を分類したことには満足した。', 'でも、その分類を褒められたのに、嬉しくなかった。'),
+    ('探しやすくなったので、資料を分類したことに満足した。' * 2, '褒められたのに、嬉しくなかった。'),
+    ('探しやすくなったので、資料を分類したことに満足した。植木に水をやった。', '褒められたのに、嬉しくなかった。'),
+    ('探しやすくなったので、資料を分類したことに満足した。', '私に褒められたのに、嬉しくなかった。'),
+    ('結論は出ていないが、考えを言葉にできて満足した。', '褒められたのに、嬉しくなかった。')])
+def test_retained_reasoned_experience_excludes_other_sources(source, received):
+    from test_cmee_emlis_q3_thread import advance
+    from cocolon_meaning_experience_engine.emlis_thread_projection import derive_retained_reasoned_experience_eligibility as derive
+    req = request(source + received, '') if received.startswith('でも、') else request(source, received)
+    p = prepare_emlis_meaning(advance(req, '「嬉しくなかった」ではなく「嬉しかった」です。'))
+    assert derive(p, build_updated_grounded_plan(p), p.thread.resolver()) is None
+
+
+@pytest.mark.parametrize('source,event,reason', [
+    ('見た目がすっきりしたので、机を片付けたことに満足している。', '机を片付けた', '見た目がすっきりした'),
+    ('資料を使いやすいので、案を選んで満足した。', '案を選んだ', '資料を使いやすい')])
+def test_retained_reasoned_experience_finite_reader_preserves_roles_and_independent_times(monkeypatch, source, event, reason):
+    import emlis_ai_grounded_human_reception as hr
+    from emlis_ai_grounded_observation_gate import read_source_owned_discourse
+    from test_cmee_emlis_q3_thread import advance
+    req = advance(request(source, '褒められたのに、嬉しくなかった。'), '「嬉しくなかった」ではなく「少し嬉しかった」です。')
+    p = prepare_emlis_meaning(req); plan = build_updated_grounded_plan(p); resolver = p.thread.resolver()
+    selected = project_thread_meaning(p, plan).selected_reception
+    d, = (d for d in selected.decisions if type(d) is hr.SelectedRetainedReasonedExperienceDecisionV1)
+    move = next(m for m in plan.response_plan.human_reception_plan.moves if m.move_id == d.move_id)
+    body = MeaningExperienceEngine().generate(req).artifact
+    assert body and '少し嬉しかった' in body.reception
+    clause = body.reception.split('。')[0] + '。'
+    def forbidden(*_a, **_k):
+        pytest.fail('finite reader called author')
+    monkeypatch.setattr(hr, '_source_owned_relational_focus_sentence', forbidden)
+    monkeypatch.setattr(hr, '_author_source_grounded_reception_clauses', forbidden)
+    read = lambda text, authority=selected: read_source_owned_discourse(text, move, plan, resolver, authority)
+    assert read(clause) is not None and read(clause, None) is None
+    for wrong in (clause.replace(reason, '褒められた'), clause.replace(reason, '使いにくい'),
+        clause.replace(event, '褒められた'), clause.replace(event, '机を片付ける'),
+        clause.replace('満たされた感覚', '少し満たされた感覚'), clause.replace('満たされた感覚', '満たされない感覚'),
+        clause.replace('ご自身', '同僚'), clause.replace('という点で、', 'ため同時に、'),
+        clause.replace('という点で、', 'という価値があり、'), clause.replace(reason+'という点で、', ''),
+        clause.replace('あった', 'ある') if 'あった' in clause else clause.replace('ある', 'あった'),
+        clause + '嬉しさが伴わなかった経験です。', clause + '褒められたことの原因です。'):
+        assert wrong != clause and read(wrong) is None, wrong

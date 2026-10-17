@@ -22557,3 +22557,96 @@ def validate_retained_received_experience_content(value, decision, selected):
     if (value.proposition, value.basis_rows, value.qualifier_rows) != (
         retained_received_experience_local_proposition(decision, value.proposition.focal_relation_ref)):
         raise CMEEStage1ContractError(fail)
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class RetainedReasonedExperienceEligibilityV1:
+    """One unchanged reason/target/satisfaction surviving a received-reaction correction."""
+
+    schema_version: str
+    source_prefix_ref: str
+    checkpoint_ref: str
+    original_source_ref: str
+    answer_source_ref: str
+    original_nuclei: Tuple[str, ...]
+    original_relations: Tuple[str, ...]
+    update: Any
+    move_ref: str
+    thread_control: Any
+
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class RetainedReasonedExperienceContentV1:
+    """Private experience content; the whole LIMITED proposition stays intact."""
+
+    schema_version: str
+    eligibility: RetainedReasonedExperienceEligibilityV1
+    projection_preimage_ref: str
+    aggregate_projection_seal_ref: str
+    aggregate_claim_ref: str
+    aggregate_proposition_ref: str
+    meaning_outcome_ref: str
+    reception_binding_ref: str
+    grounding_ref: str
+    basis_rows: Tuple[SubjectiveBasisBinding, ...]
+    qualifier_rows: Tuple[SourceQualifierBinding, ...]
+    reason_binding_ref: str
+    event_binding_ref: str
+    evaluation_binding_ref: str
+    reason_relation_ref: str
+    appraisal_relation_ref: str
+    evaluation_kind: str
+    polarity: str
+    reason_time: str
+    evaluation_time: str
+    reception_configuration: str
+    seal_ref: str
+
+
+def retained_reasoned_experience_aggregate_ref(proposition):
+    return 'retained-reasoned-aggregate:' + hashlib.sha256(
+        stage1_canonical_json_bytes(proposition)).hexdigest()
+
+
+def retained_reasoned_experience_seal(value):
+    if type(value) is not RetainedReasonedExperienceContentV1:
+        raise CMEEStage1ContractError('retained_reasoned_experience_type_invalid')
+    return 'retained-reasoned-experience:' + hashlib.sha256(
+        stage1_canonical_json_bytes(replace(value, seal_ref=''))).hexdigest()
+
+
+def validate_retained_reasoned_experience_content(value, decision, selected):
+    fail = 'retained_reasoned_experience_content_invalid'
+    if (type(value) is not RetainedReasonedExperienceContentV1
+        or value.schema_version != 'cocolon.cmee.retained_reasoned_experience_content.v1'
+        or type(value.eligibility) is not RetainedReasonedExperienceEligibilityV1
+        or value.eligibility.move_ref != decision.move_id
+        or value.projection_preimage_ref != selected.projection_preimage_ref
+        or value.aggregate_projection_seal_ref != selected.projection_seal_ref
+        or value.aggregate_claim_ref != decision.projected_claim_ref
+        or value.aggregate_proposition_ref != retained_reasoned_experience_aggregate_ref(decision.subjective_proposition)
+        or value.meaning_outcome_ref != decision.meaning_outcome_ref
+        or value.reception_binding_ref != decision.reception_binding_ref
+        or value.grounding_ref != selected.grounding_ref
+        or value.seal_ref != retained_reasoned_experience_seal(value)):
+        raise CMEEStage1ContractError(fail)
+    proposition = decision.subjective_proposition
+    appraisal = proposition.appraisal_content
+    basis = tuple(b for b in decision.basis_rows if b.contribution_ref in decision.selected_contribution_refs)
+    qualifiers = tuple(q for b in basis for q in decision.qualifier_rows if q.basis_binding_ref == b.binding_ref)
+    if (decision.branch != 'LIMITED' or proposition.subjective_mode != 'ATTENTION'
+        or proposition.subjective_operator != 'ATTEND_TO' or proposition.focal_relation_ref is not None
+        or type(appraisal) is not EmlisAppraisalContent or appraisal.focal_relation_ref is not None
+        or appraisal.dimension != 'MATERIAL_WEIGHT' or appraisal.operation != 'RECEIVE_AS_MATERIAL'
+        or appraisal.appraised_bindings != proposition.basis_binding_refs or appraisal.protected_bindings
+        or len(basis) != 3 or len(qualifiers) != 3
+        or value.basis_rows != basis or value.qualifier_rows != qualifiers
+        or {value.reason_binding_ref, value.event_binding_ref, value.evaluation_binding_ref}
+            != {b.binding_ref for b in basis}
+        or not value.reason_relation_ref or not value.appraisal_relation_ref
+        or value.reason_relation_ref == value.appraisal_relation_ref
+        or (value.evaluation_kind, value.polarity) != ('satisfaction', 'positive')
+        or value.reason_time not in {'past', 'present'} or value.evaluation_time not in {'past', 'present'}
+        or value.reception_configuration != 'EXPLICIT_REASON_GROUNDS_EXPERIENCED_FULFILMENT'):
+        raise CMEEStage1ContractError(fail)

@@ -16756,6 +16756,8 @@ def _logical_contract_descriptor(
 # introspection.  Logical Step-4 types which are not runtime-active in Step 2
 # are still frozen here with their complete approved field order/cardinality.
 _LOGICAL_CONTRACT_FIELD_SPECS = (
+    ("RetainedReasonedExperienceContentV1", "retained-reasoned-experience-v1", "schema_version=exact1 eligibility=exact1 projection_preimage_ref=exact1 aggregate_projection_seal_ref=exact1 aggregate_claim_ref=exact1 aggregate_proposition_ref=exact1 meaning_outcome_ref=exact1 reception_binding_ref=exact1 grounding_ref=exact1 basis_rows=exact3 qualifier_rows=exact3 reason_binding_ref=exact1 event_binding_ref=exact1 evaluation_binding_ref=exact1 reason_relation_ref=exact1 appraisal_relation_ref=exact1 evaluation_kind=exact1 polarity=exact1 reason_time=exact1 evaluation_time=exact1 reception_configuration=exact1 seal_ref=exact1", ("UNCHANGED_REASON_TARGET_SATISFACTION", "RECEIVED_REACTION_ORIGINAL_OCCASION_REVISE_ONCE", "LIMITED_AGGREGATE_UNCHANGED"), "POST_SELECTION_LOCAL_CONTENT"),
+    ("RetainedReasonedExperienceEligibilityV1", "retained-reasoned-experience-v1", "schema_version=exact1 source_prefix_ref=exact1 checkpoint_ref=exact1 original_source_ref=exact1 answer_source_ref=exact1 original_nuclei=exact5 original_relations=exact3 update=exact1 move_ref=exact1 thread_control=exact1", ("UNCHANGED_REASON_TARGET_SATISFACTION", "RECEIVED_REACTION_ORIGINAL_OCCASION_REVISE_ONCE", "LIMITED_AGGREGATE_UNCHANGED"), "POST_SELECTION_LOCAL_CONTENT"),
     ("ComponentReceptionOpportunityV1", "component-reception-v1", "schema_version=exact1 opportunity_ref=exact1 move_ref=exact1 reception_act=exact1 component_ref=exact1 basis_contribution_refs=1..N bound_relation_refs=1..N", ("SELECTED_COMPONENT_SOURCE_MOVE_EXACT_OWNER", "LEGACY_EXACT3_UNCHANGED"), "TAGGED_PROJECTION_DISPATCH"),
     ("EmlisSubjectiveClaim", "response-v2", "schema_version=exact1 subjective_claim_id=exact1 parent_duty_ref=exact1 speaker_owner=exact1 claim_domain=exact1 subjective_mode=exact1 asserted_subjective_proposition=exact1 basis_observation_contribution_refs=1..N basis_semantic_refs=1..N source_reception_act_refs=1..N value_principle_refs=0..N user_fact_effect=exact0 forbidden_promotions=1..N subjective_responsibility_refs=1..N selected_subjective_opportunity_key=exact1", ("NESTED_V2_PROPOSITION", "LINEAGE_EXACT_COPY"), "FINAL_CLAIM_PROJECTOR"),
     ("SubjectiveBasisBinding", "basis-binding-v1", "projection_preimage_ref=exact1 binding_ref=exact1 contribution_ref=exact1 semantic_ref=exact1 role=exact1", ("UPSTREAM_ONLY_PREIMAGE",), "SUBJECTIVE_BASIS_PROJECTOR"),
@@ -16873,11 +16875,11 @@ def _contract_manifest() -> tuple[Any, ...]:
         _logical_contract_descriptor(*row)
         for row in _LOGICAL_CONTRACT_FIELD_SPECS
     )
-    if len(descriptors) != 74 or len({row[0][1] for row in descriptors}) != 74:
+    if len(descriptors) != 76 or len({row[0][1] for row in descriptors}) != 76:
         raise Stage1CompositionError("LANGUAGE_CORE_CONTRACT_DESCRIPTOR_STOP")
     return (
         ("schema_version", _CONTRACT_MANIFEST_SCHEMA_VERSION),
-        ("logical_contract_count", 74),
+        ("logical_contract_count", 76),
         ("logical_contract_descriptors", descriptors),
         ("content_kind_derivation_rows", LANGUAGE_CORE_CONTENT_DERIVATION_ROWS),
         ("concrete_runtime_binding_descriptors", LANGUAGE_CORE_CONCRETE_BINDING_DESCRIPTORS),
@@ -18139,4 +18141,30 @@ def project_retained_received_experience_content(eligibility, local, decision, s
         selected.grounding_ref, proposition, basis, qualifiers, '')
     value = replace(value, seal_ref=c.retained_received_experience_seal(value))
     c.validate_retained_received_experience_content(value, decision, selected)
+    return value
+
+
+def project_retained_reasoned_experience_content(eligibility, local, decision, selected, meaning):
+    """Seal local content beside the existing LIMITED projection and claim."""
+    from . import contracts as c
+    claims = tuple(row for row in meaning.subjective_claim_rows
+                   if row.subjective_claim_id == decision.projected_claim_ref)
+    traces = tuple(row for row in meaning.reception_visible_causal_trace_rows
+                   if row.projected_claim_ref == decision.projected_claim_ref)
+    if (meaning.projection_branch != 'LIMITED' or len(claims) != 1 or len(traces) != 1
+        or claims[0].asserted_subjective_proposition != decision.subjective_proposition
+        or traces[0].meaning_outcome_ref != decision.meaning_outcome_ref
+        or traces[0].reception_record_ref != decision.reception_binding_ref
+        or meaning.projection_seal_ref != selected.projection_seal_ref
+        or meaning.projection_preimage_ref != selected.projection_preimage_ref):
+        raise c.CMEEStage1ContractError('retained_reasoned_experience_aggregate_invalid')
+    value = c.RetainedReasonedExperienceContentV1(
+        'cocolon.cmee.retained_reasoned_experience_content.v1', eligibility,
+        selected.projection_preimage_ref, selected.projection_seal_ref,
+        decision.projected_claim_ref,
+        c.retained_reasoned_experience_aggregate_ref(decision.subjective_proposition),
+        decision.meaning_outcome_ref, decision.reception_binding_ref,
+        selected.grounding_ref, **local, seal_ref='')
+    value = replace(value, seal_ref=c.retained_reasoned_experience_seal(value))
+    c.validate_retained_reasoned_experience_content(value, decision, selected)
     return value

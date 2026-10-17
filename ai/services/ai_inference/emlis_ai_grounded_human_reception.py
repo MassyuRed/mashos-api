@@ -305,6 +305,13 @@ class SelectedRetainedReceivedExperienceDecisionV1(SelectedSubjectiveReceptionDe
 
 
 @dataclass(frozen=True, repr=False)
+class SelectedRetainedReasonedExperienceDecisionV1(SelectedSubjectiveReceptionDecisionV1):
+    """An unchanged reasoned experience beside the existing LIMITED aggregate."""
+
+    retained_reasoned_experience: Any = field(repr=False)
+
+
+@dataclass(frozen=True, repr=False)
 class SelectedSubjectiveReceptionInputV1:
     """Pre-realization authority shared by forward and independent replay.
 
@@ -385,7 +392,8 @@ def validate_selected_subjective_reception_input(
         or not set(relation_map.values()) <= {row.relation_id for row in plan.relations}):
         raise GroundedHumanReceptionSurfaceError(failure)
     for row, move in zip(value.decisions, reception_plan.moves, strict=True):
-        if (type(row) not in {SelectedSubjectiveReceptionDecisionV1, SelectedRetainedReceivedExperienceDecisionV1}
+        if (type(row) not in {SelectedSubjectiveReceptionDecisionV1, SelectedRetainedReceivedExperienceDecisionV1,
+                             SelectedRetainedReasonedExperienceDecisionV1}
             or identify_selected_subjective_reception_decision(row) != row
             or row.branch not in {"NORMAL", "LIMITED"}
             or not all((row.meaning_outcome_ref, row.reception_binding_ref, row.projected_claim_ref))
@@ -399,6 +407,11 @@ def validate_selected_subjective_reception_input(
         if type(row) is SelectedRetainedReceivedExperienceDecisionV1:
             try:
                 validate_selected_retained_received_experience(row, value, plan, resolver)
+            except (ValueError, TypeError, AttributeError, KeyError):
+                raise GroundedHumanReceptionSurfaceError(failure) from None
+        if type(row) is SelectedRetainedReasonedExperienceDecisionV1:
+            try:
+                validate_selected_retained_reasoned_experience(row, value, plan, resolver)
             except (ValueError, TypeError, AttributeError, KeyError):
                 raise GroundedHumanReceptionSurfaceError(failure) from None
         proposition = row.subjective_proposition
@@ -11775,6 +11788,12 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
                 or content.focal_relation_ref is not None or proposition.focal_relation_ref is not None
                 or content.appraised_bindings != proposition.basis_binding_refs)):
             return None
+        local = (selected_decision.retained_reasoned_experience
+                 if type(selected_decision) is SelectedRetainedReasonedExperienceDecisionV1 else None)
+        # The full selected-input validator proved this carrier before authoring.
+        # Keep the aggregate checks above; share only the experience grammar.
+        if local is not None:
+            reasoned_experience = True
         reason_node, event_node, evaluation = focus[1:]
         reason, event, feeling = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
                                   for n in focus[1:])
@@ -11793,7 +11812,7 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
         from emlis_ai_grounded_observation_plan import _result_appraisal_time_label
         when = _result_appraisal_time_label(evaluation)
         at = when + ('の' if when == '当時' else 'での')
-        if limited:
+        if limited and local is None:
             from emlis_ai_grounded_observation_plan import source_owned_duplicate_reason_appraisals
             span = resolver.resolve(reason_node.source_span_ids[0])
             occurrences = tuple(s for s in resolver.resolve_many(resolver.span_ids)
@@ -11814,7 +11833,7 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
             # about the performed target. Keep reason tense in its source words;
             # the separate occasion and state belong only to the appraisal.
             occasion = when + ('' if when == '当時' else 'で')
-            state = 'あった' if content.evaluation_time == 'past' else 'ある'
+            state = 'あった' if (local or content).evaluation_time == 'past' else 'ある'
             # Name the received object before its reason and inner experience.
             # This preserves the selected content while avoiding another
             # stacked receive-as closing beside the following distinct Move.
@@ -13829,3 +13848,17 @@ def validate_selected_retained_received_experience(decision, selected, plan, res
                                       for ref in edges[0].source_span_ids)))):
         raise ValueError(fail)
     return local
+
+
+
+def validate_selected_retained_reasoned_experience(decision, selected, plan, resolver):
+    from cocolon_meaning_experience_engine.emlis_thread_projection import validate_retained_reasoned_experience_source
+    if (type(decision) is not SelectedRetainedReasonedExperienceDecisionV1
+        or type(selected) is not SelectedSubjectiveReceptionInputV1
+        or identify_selected_subjective_reception_decision(decision) != decision
+        or identify_selected_subjective_reception_input(selected) != selected
+        or selected.decisions.count(decision) != 1
+        or selected.grounding_ref != selected_subjective_reception_grounding_ref(plan, resolver)):
+        raise ValueError('retained_reasoned_experience_selection_invalid')
+    validate_retained_reasoned_experience_source(decision, selected, plan, resolver)
+    return decision.retained_reasoned_experience

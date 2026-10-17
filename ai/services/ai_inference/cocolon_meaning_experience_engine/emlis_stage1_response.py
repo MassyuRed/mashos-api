@@ -14227,3 +14227,56 @@ def derive_retained_received_experience_content(decision, *, contribution_rows,
         or appraisal.operation != 'PRESERVE_BOTH_ENDPOINTS'):
         raise c.CMEEStage1ContractError('retained_received_experience_content_invalid')
     return c.retained_received_experience_local_proposition(decision, appraisal.focal_relation_ref)
+
+
+
+def derive_retained_reasoned_experience_content(decision, premeaning):
+    """Keep the selected source candidates/qualifiers and two directed edges."""
+    from . import contracts as c
+    fail = 'retained_reasoned_experience_content_invalid'
+    basis = tuple(b for b in decision.basis_rows if b.contribution_ref in decision.selected_contribution_refs)
+    qualifiers = tuple(q for b in basis for q in decision.qualifier_rows if q.basis_binding_ref == b.binding_ref)
+    if len(basis) != 3 or len(qualifiers) != 3 or len(decision.selected_contribution_refs) != 2:
+        raise c.CMEEStage1ContractError(fail)
+    reason, = (q for q in qualifiers if q.source_argument_role == 'CAUSE')
+    evaluation, = (q for q in qualifiers if q.source_argument_role == 'EFFECT')
+    event, = (q for q in qualifiers if q.source_argument_role is None)
+    candidates = {row.candidate_id: row for row in premeaning.interpretation_candidate_rows}
+    contributions = {row.contribution_id: row for row in premeaning.observation_contribution_rows}
+    by_binding = {b.binding_ref: b for b in basis}
+    for q in qualifiers:
+        candidate = candidates[q.source_candidate_ref]
+        b = by_binding[q.basis_binding_ref]
+        row = contributions[b.contribution_ref]
+        prefix = q.source_argument_role.value.lower() + '_' if q.source_argument_role else ''
+        if (row.interpretation_candidate_refs != (candidate.candidate_id,)
+            or b.semantic_ref not in row.semantic_refs or row.semantic_refs != candidate.semantic_refs
+            or prefix + 'qualifier:semantic_dependency:reasoned_result_appraisal' not in candidate.required_qualifiers
+            or prefix + 'actor:current_user' not in candidate.required_qualifiers):
+            raise c.CMEEStage1ContractError(fail)
+    evaluation_codes = candidates[evaluation.source_candidate_ref].required_qualifiers
+    if (reason.source_candidate_ref != evaluation.source_candidate_ref
+        or (reason.modality, reason.polarity) != ('fact', 'positive')
+        or reason.time_scope not in {'past', 'present'}
+        or (event.modality, event.polarity, event.time_scope) != ('fact', 'neutral', 'past')
+        or (evaluation.modality, evaluation.polarity) != ('feeling', 'positive')
+        or evaluation.time_scope not in {'past', 'present'}
+        or {code for code in evaluation_codes if code.startswith('effect_qualifier:source_appraisal_')}
+            != {'effect_qualifier:source_appraisal_kind:satisfaction', 'effect_qualifier:source_appraisal_degree:unmarked'}):
+        raise c.CMEEStage1ContractError(fail)
+    refs = tuple(by_binding[q.basis_binding_ref].semantic_ref for q in (reason, event, evaluation))
+    edges = {(_node_ref(e.source_node_id), _node_ref(e.target_node_id)): _edge_ref(e.edge_id)
+             for e in premeaning.grounded_graph.edges}
+    reason_ref = edges[(refs[0], refs[2])]
+    about_ref = edges[(refs[1], refs[2])]
+    kinds = {row.relation_ref: row.relation_kind for row in premeaning.source_relation_rows}
+    if (kinds.get(reason_ref) is not c.EmlisThreadScopeRelationKind.SATISFACTION_REASON or kinds.get(about_ref) is not c.EmlisThreadScopeRelationKind.ABOUT_TARGET
+        or candidates[reason.source_candidate_ref].relation_basis_refs != (reason_ref,)):
+        raise c.CMEEStage1ContractError(fail)
+    return dict(basis_rows=basis, qualifier_rows=qualifiers,
+        reason_binding_ref=reason.basis_binding_ref, event_binding_ref=event.basis_binding_ref,
+        evaluation_binding_ref=evaluation.basis_binding_ref,
+        reason_relation_ref=reason_ref, appraisal_relation_ref=about_ref,
+        evaluation_kind='satisfaction', polarity=evaluation.polarity,
+        reason_time=reason.time_scope, evaluation_time=evaluation.time_scope,
+        reception_configuration='EXPLICIT_REASON_GROUNDS_EXPERIENCED_FULFILMENT')

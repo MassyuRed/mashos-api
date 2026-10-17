@@ -2976,6 +2976,16 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
             or appraisal.operation != 'RECEIVE_AS_MATERIAL'
             or appraisal.protected_bindings):
             return None
+        from emlis_ai_grounded_human_reception import (
+            SelectedRetainedReasonedExperienceDecisionV1, validate_selected_retained_reasoned_experience)
+        local = None
+        if type(decision) is SelectedRetainedReasonedExperienceDecisionV1:
+            try:
+                local = validate_selected_retained_reasoned_experience(
+                    decision, selected_subjective_input, plan, resolver)
+            except (ValueError, TypeError, AttributeError, KeyError):
+                return None
+            reasoned_experience = True
         limited = decision.branch == 'LIMITED'
         reason_node, event_node, evaluation = focus[1:]
         basis = {row.binding_ref: row.semantic_ref for row in decision.basis_rows}
@@ -3002,7 +3012,7 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
         reason, event, feeling = (final_reception_source_anchor_text(n.nucleus_id, index, resolver)
                                   for n in focus[1:])
         legacy_limited = False
-        if limited:
+        if limited and local is None:
             from emlis_ai_grounded_observation_plan import source_owned_duplicate_reason_appraisals
             span = resolver.resolve(reason_node.source_span_ids[0])
             occurrences = tuple(s for s in resolver.resolve_many(resolver.span_ids)
@@ -3049,7 +3059,7 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
         if reasoned_experience:
             time_suffix = (('' if when == '当時' else 'で') if focused_experience
                            else ('、' if when == '当時' else 'で、'))
-            if parsed['state'] != ('あった' if appraisal.evaluation_time == 'past' else 'ある'):
+            if parsed['state'] != ('あった' if (local or appraisal).evaluation_time == 'past' else 'ある'):
                 return None
         from emlis_ai_grounded_observation_plan import _source_result_appraisal_predicate
         if (actual_reason != reason or ending not in {'te', 'de', 'ta'}
