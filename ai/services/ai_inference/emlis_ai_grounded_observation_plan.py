@@ -8392,6 +8392,42 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
     original_text = tuple(n for n in originals if any(f in _TEXT_SOURCE_FIELDS for f in n.source_fields))
     appraisal_links = tuple(r for r in relations if source_owned_result_appraisal(r, nuclei))
     detached_appraisals = tuple(n for n in nuclei if _thread_withdrawn_result_appraisal(n, relations))
+    # A complete original reason/appraisal must not displace the accepted
+    # current answer merely because both use the lived_change family. Keep
+    # that closed duty, then let the existing received/ABOUT selector prove
+    # the remaining occasion and answer. No appraisal content is promoted.
+    answers = tuple(n for n in nuclei if n.source_fields == ("answer_text_private",))
+    if separate_later_scopes and len(appraisal_links) == len(answers) == 1 and not withdrawal:
+        link, answer = appraisal_links[0], answers[0]
+        reason = source_owned_result_appraisal_reason(link, nuclei, relations)
+        if (reason is not None and is_grounded_positive_feeling(answer)
+            and answer.semantic_frame.time_scope == "present"
+            and {c for c in answer.semantic_frame.attribute_codes if c.startswith("thread_time:")}
+                == {"thread_time:answer_time"}):
+            owned = {reason.nucleus_id, link.from_nucleus_id, link.to_nucleus_id}
+            group = tuple(n for n in nuclei if n.nucleus_id in owned)
+            incident = tuple(r for r in relations
+                if owned & {r.from_nucleus_id, r.to_nucleus_id})
+            if (len(group) == 3 and len(incident) == 2
+                and all(n.source_fields != ("answer_text_private",)
+                    and n.retention == "required" and n.grounding_kind == "explicit"
+                    and n.allowed_claim_scope == "explicit_current_input"
+                    and n.semantic_frame.actor == "current_user" for n in group)
+                and all({r.from_nucleus_id, r.to_nucleus_id} <= owned for r in incident)):
+                rest = tuple(n for n in nuclei if n.nucleus_id not in owned)
+                rest_relations = tuple(r for r in relations if r not in incident)
+                rest_text = tuple(n for n in rest if n.retention == "required"
+                    and set(n.source_fields) & _TEXT_SOURCE_FIELDS)
+                if len(rest_text) == 3 and len(rest_relations) == 2:
+                    retained = _thread_retained_reaction_groups(rest, rest_relations,
+                        separate_later_scopes=separate_later_scopes)
+                    if (len(retained) == 2 and retained[0][0] == "current_burden"
+                        and len(retained[0][1]) == len(retained[0][2]) == 1
+                        and retained[1] == ("lived_change", (answer.nucleus_id,), ())
+                        and {nid for _, targets, supports in retained for nid in (*targets, *supports)}
+                            == {n.nucleus_id for n in rest_text}):
+                        return (("lived_change", (link.to_nucleus_id,),
+                                 (reason.nucleus_id, link.from_nucleus_id)), *retained)
     # A negative correction removes the original satisfaction's reason edge,
     # not the separate received experience. Retain the two already-owned
     # appraisal/received duties before same-family representative ranking.

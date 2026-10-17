@@ -1,4 +1,4 @@
-> 最新EmlisAI残件：末尾 **u308（2026-10-17・既存本文構文修復）**。理由・対象・本人内の充足を直接主節へ保持。25本文差分・保存/RN40 DTOを確認、訂正後の語尾反復と現在回答欠落は残件。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
+> 最新EmlisAI残件：末尾 **u309（2026-10-17・現在回答のReception保持修復）**。理由付き満足・元received・受理済み現在positiveを既存3 Moveで保持。31比較・保存/RN46 DTOを確認。理由なし評価など対象外の現在回答欠落は残件。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -21748,3 +21748,58 @@ memo「探しやすくなったので、資料を分類したことに満足し�
 保存20 caseはfresh肯定13（6配置×2時点＋程度）と不明1、基準版完成保存2、基準版の未回答質問→現行回答2、基準版の回答checkpoint保存後／本文前中断→現行retry2。最後の6は過去評価・別欄順序0と現在評価・memo同欄received先行の2条件×3状態。旧engineは基準commitの別worktreeで実行。NoAuthorのGET/start・同回答再送で保存DTO一致とevent／attemptの非増加を確認。retryはMEANING_UPDATEとANSWERの全event、旧OBSERVATIONのid/payloadを照合した。40 DTOの13全文と全対応をrootが読解し、同じ40 DTOで現行useEmlisThread／EmlisThreadModalの全文・原入力・全履歴・close/reopenを確認。新しい本番DB・本人データ・実機・deploy操作なし。
 
 実行runtime：Python3.12.14、既存pytest8.4.1／Pydantic2.13.5、既存隔離PGlite0.5.8／React18.3.1。新installなし。主回帰は `test_cmee_emlis_result_appraisal.py`＋`test_emlis_q2_application.py`＋`test_emlis_q3_application.py`。先行target20はcomponent理由reader、旧新完全構文、更新後理由reader。identityは既存active final language owner検査1。静的補助reviewが長い回帰実行中に旧期待値1を発見し、実行を中断・再開始せず結果に残した。全run終了後その期待句だけを直して同項目を再検査するため、初回の1 failを全run greenへ書き換えない。作者非依存は有限Reception readerであり、既存全文inverseの作者replayを含む全経路まで独立とはしない。
+
+
+## u309 — 理由付き満足と併存する現在回答のReception欠落を修復（2026-10-17 JST）
+
+u308／weekly§5.6.58の次作業を実施。理由付き満足と別のreceived経験を含む入力へ「今は嬉しい」と回答すると、意味・ABOUT・Observationには現在回答が残るのに、Receptionから元received反応と現在回答が消える不整合を修復した。既存Planのretention選択36行だけを追加し、理由付き満足・元received反応・現在回答を既存3 Moveで保持する。現在回答を元反応の訂正へ変えず、「嬉しくなった」という未明示変化や二経験間の因果を追加しない。
+
+基準API `04699cf6938af83d1b8d88b9b4315745631a96d7`／Cocolon `dd8e8488da769628ef6318de07f3e332a9a7ec8b`。Mashの残件継続依頼、Rule18§11.3の既存契約内修復として実施。追加費用・Mash操作0。全体設計01、全file地図01A/B/C、current01/04、最新weekly、CURRENT_RULES／Rule18、恒久incident全文、8/28意味設計§9.2/9.4とu307/308を参照した。System Context prepareはworkspace内API未配置で終了し、新freshnessを認定せず許可済み原典直接参照を継続。実作業はCodex Work、補助は同環境の読み取り専用reviewであり、正式Pro／Ultra別モデル検証ではない。
+
+### 原因・閉じた変更範囲
+
+理由・対象・満足の三点が併存すると既存received＋現在回答のretention閉包に入らず、同じlived_change familyの満足代表へ集約されていた。`emlis_ai_grounded_observation_plan.py::_thread_retained_reaction_groups`で、既存source-owned理由証明に合格する三点を閉じた一義務として保ち、残るreceived＋ABOUT＋現在positive回答の二義務を既存selectorで証明する。理由成分のincident exact2／他成分と辺を共有しないこと、残余required text exact3／relation exact2、本人・出典・現在時点を検証する。入れ子再帰の`separate_later_scopes=False`では適用せず、外側義務との合計が4 Moveになる経路を作らない。
+
+これは履歴の「初回ADDだけ」という資格ではなく、同じ受理済みsource stateに対する既存義務保持である。一部解釈できない回答が混じるPARTIALでも、受理済みの現在回答を保持する。後続round全般の不変は主張しない。u307の当時肯定REVISE専用Eligibilityを現在ADDへ拡張しない。既存LIMITED／基本EmlisAppraisalContentを維持し、満足の注意文を新しい本人内経験資格へ昇格させない。核辺／checkpointは不変だが、選択Moveとaggregateは保持対象の復旧に伴い変化する。
+
+productionは上記既存1 fileのみ。既存`test_cmee_emlis_result_appraisal.py`へ16検査を追加し、現行共有owner identity fixtureのみ再導出した。作者・reader本体、認識文法、private意味型、質問／Move上限、公開API／DTO／DB／SQL／RN、依存、歴史fixtureは変更していない。STRUCTURE_MAP_DELTA_NONE。地図既載のPlan選択責務の修復であり、各地図に同じ進捗を複製しない。
+
+### 実本文（合成入力）
+
+memo「探しやすくなったので、資料を分類したことに満足した。」、memo_action「褒められたのに、嬉しくなかった。」、回答「今は嬉しい。」。
+
+変更前Reception：
+
+> 資料を分類したことへの当時の満足について、探しやすくなったという理由に目を向けています。
+
+変更後Reception：
+
+> 資料を分類したことへの当時の満足について、探しやすくなったという理由に目を向けています。褒められたことは、嬉しさにはつながらなかったのですね。回答した時点では嬉しいのですね。
+
+Observationは両版とも、理由→対象付き満足と「『褒められた』のに『嬉しくなかった』、回答した時点では『嬉しい』」を保持する。現在回答で元negativeを無効化しない。満足が「満足している」の場合は満足だけを入力時点へ、現在回答の「少し」や「楽しい」はその回答にだけ保持する。理由が現在形でも満足の過去時点を変えない。
+
+### 検証・保存互換
+
+| 対象 | 実測結果・限界 |
+| --- | --- |
+| appraisal＋Q2/Q3 application | 1,246 passed／1 warning（533.21秒）。最終版の全件一括実行：appraisal1,192＋application54 |
+| 既存retention周辺 | 25 passed／2299 deselected／1 warning（17.11秒）。時間隣接・当時／中間／撤回・3文上限・ABOUT／出典／時点の拒否を確認 |
+| 現行共有owner identity | 1 passed／194 deselected／1 warning（22.46秒）。歴史proofは不変 |
+| 同入力旧新31例 | 16例でMove／aggregate／Receptionを復旧（6配置×満足2時点、程度、別positive、現在形理由、PARTIAL）。対象外15例は取得全record一致。全31でcheckpoint／核辺／Observation／branch／body_state／status／reason_codes一致 |
+| 新規16検査 | 原反応・現在時点・程度・述語・LIMITEDとu307資格None、役割のsource閉包、現在→当時／別対象／肯否変更／未明示変化／義務欠落／重複を検査。主回帰との重複加算なし |
+| 実service＋隔離PGlite | fresh16＋不明1、旧完成2、旧pending新回答2、旧checkpoint中断retry2＝23 case／46 DTO。GET/startは作者禁止、同回答再送で本文／events／attempt不増加 |
+| 現行RN hook／Modal | 同46 DTOの現在全文・元入力・全履歴・close/reopen一致。native部品stubで本人実機・配布buildではない |
+
+比較の対象外15は初回、不明、現在negative、当時ADD、当時肯定REVISE、received撤回、満足撤回／否定訂正、他主体、安心した、理由なし、未成立context、独立行動追加、共有対象、received単独。共有対象例は質問なし、他主体は本文なしであり、対応済みへ数えない。比較は上表の取得fieldとcontent型名でありselected全fieldの独立一致証明とはしない。
+
+旧engineは基準u308の独立worktree/processで実行した。旧完成本文は非再生成で、その欠落を遡及修正しない。旧未回答質問からの回答は初回保存本文を履歴へ残して現行本文を生成する。本文前中断からのretryは同checkpoint／operationとMEANING_UPDATE／ANSWER全event・既存OBSERVATIONを保持して現行本文へ再開する。checkpointは意味identityであり文面世代ではない。rootは保存46 DTOの15種類全文と全対応を読解した。
+
+新reader検査の先行runは1 failed／15 passedを2回記録した。1回目は理由用readerを誤って呼び、2回目は現在回答用readerへ切り替えたが前文のevent共有文脈を渡していなかった試験配線の誤り。既存readerへ直前のreceived Moveと実文を渡す正規接続へ直し、文脈なし拒否も追加、16 passed（15.31秒）を確認した。製品readerは変更していない。修正前に開始した主回帰は中断し、最終版で全対象を再実行した。作者非依存の確認は有限現在回答readerの範囲であり、既存全文inverse全経路の独立性は主張しない。
+
+Python3.12.14／pytest8.4.1／Pydantic2.13.5／隔離PGlite0.5.8／React18.3.1を再利用、新installなし。警告は既存Pydantic V1 root_validator非推奨。language identity `878c9be7236c6217931d1337568dc1eb6e49b8fb376b036b93b62dc087cd5259`、runtime identity `89a4a941b064adb571f0dc327e8b8f983297d20ffc010a35cd751034953c579a`。
+
+### 現在地と次の作業
+
+今回の現在回答欠落は上記閉包で修復済み。現在回答後の満足は既存注意文のまま、元receivedと現在回答の語尾反復、初回の説明性、Observationとの重複は残る。欠落解消を§9.2/9.4の意味全体成立や商品合格へ換算しない。今回の対照でも、理由なしの「資料を分類したことに満足した」＋元received＋「今は嬉しい」は現在回答がReceptionに出ない。未成立context、独立行動追加、「今は安心した」、当時ADDにも欠落が残る。次はまず理由なし評価と現在回答の既存選択を照合し、出典・元反応・現在時点を保つ範囲を確認する。「安心した」の分類、共有対象／対象外更新、既存周辺4失敗（過去共有17との集合一致未確認）、same100、Q1上限、giver帰属、本人実機／正式Product Readも残件。
+
+TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置。deploy／main mergeなし。10/31管理線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％は維持する。
