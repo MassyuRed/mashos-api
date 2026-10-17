@@ -39,9 +39,13 @@ def test_possibility_source_retains_uncertainty_without_false_constraint():
     nucleus, = (n for n in prepared.original_plan.nuclei if n.source_fields == ('memo',))
     assert nucleus.kind != 'constraint'
     assert 'operator:constraint' not in nucleus.semantic_frame.attribute_codes
-    assert 'operator:uncertainty' in nucleus.semantic_frame.attribute_codes
-    # The remaining outer-feeling scope defect is not silently accepted here
-    # as a successful understanding of this compound source.
+    assert nucleus.semantic_frame.modality == 'feeling'
+    assert nucleus.semantic_frame.polarity == 'positive'
+    assert 'operator:uncertainty' not in nucleus.semantic_frame.attribute_codes
+    assert any(code.startswith('source_clause_scope:possibility:')
+        for code in nucleus.semantic_frame.attribute_codes)
+    assert not any(u.dimension == 'source_explicit_epistemic_limit'
+        for u in prepared.original_plan.unknown_boundaries)
 
 
 @pytest.mark.parametrize('unknown', [
@@ -99,10 +103,10 @@ def test_self_cognition_does_not_borrow_foreign_reported_or_nonpresent_owner(sou
 
 
 def test_limited_reception_uses_selected_basis_and_keeps_required_coverage(monkeypatch):
-    from cocolon_meaning_experience_engine.emlis_stage1_composition import Stage1CompositionError
     prepared = prepare_emlis_meaning(request(
         '友達からの誘いを断って、一人で休めたことにほっとした。'
-        'でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。'))
+        'でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。'
+        '何が不安なのか、私にもまだわからない。'))
     plan = build_updated_grounded_plan(prepared)
     captured = {}
     bind = response._bind_reception_moves
@@ -110,15 +114,16 @@ def test_limited_reception_uses_selected_basis_and_keeps_required_coverage(monke
         captured.update(kwargs)
         return bind(*args, **kwargs)
     monkeypatch.setattr(response, '_bind_reception_moves', capture)
-    # This original audit case still has a separate unknown-source defect.
-    # The selection/binding invariant must hold before that guard stops it.
-    with pytest.raises(Stage1CompositionError, match='LIMITED_RECEPTION_CAPABILITY_GAP_STOP'):
-        project_thread_meaning(prepared, plan)
+    project_thread_meaning(prepared, plan)
     outcome = captured['meaning_outcome']
     binding = captured['binding']
     assert isinstance(outcome, c.LimitedMeaningOutcome)
     contributions = captured['contributions']
-    assert any(row.contribution_id not in outcome.retained_layer1_refs for row in contributions)
+    # Add a competing center with the same real semantic refs. It must not
+    # re-enter the already selected LIMITED basis merely by overlapping.
+    contributions = (*contributions, replace(contributions[0],
+        contribution_id='unselected-overlapping-center', retention='OPTIONAL',
+        semantic_refs=contributions[0].semantic_refs[:1]))
     reception = plan.response_plan.human_reception_plan
     moves = bind(reception, binding=binding,
         contributions=contributions, meaning_outcome=outcome)
@@ -176,3 +181,241 @@ def test_recovered_marker_requires_unique_adjacent_source_and_detector_provenanc
     else:
         relation = replace(relation, source_relation_ids=('explicit.e1', *relation.source_relation_ids))
     assert _final_stage1_normalize_relation_authority((relation,), plan.nuclei, spans)[0].type == 'attempt_and_block'
+
+
+@pytest.mark.parametrize('experience', [
+    '友達からの誘いを断って、一人で休めた',
+    '予定を調整して、家で過ごせた',
+    '宿題を終えて、庭で遊べた',
+    '資料を片づけて、机で読めた',
+    '一人で休めた', '家で過ごせた', '資料を読めた',
+])
+def test_nominal_experience_belongs_to_outer_past_feeling(experience):
+    source = experience + 'ことにほっとした。'
+    prepared = prepare_emlis_meaning(request(source))
+    n, = (n for n in prepared.original_plan.nuclei if n.source_fields == ('memo',))
+    assert (n.kind, n.semantic_frame.predicate_kind, n.semantic_frame.modality,
+            n.semantic_frame.polarity, n.semantic_frame.time_scope) == (
+            'reaction', 'feeling', 'feeling', 'positive', 'past')
+    assert prepared.thread.resolver().resolve(n.source_span_ids[0]).raw_text == source[:-1]
+    assert not prepared.original_plan.relations
+    result = MeaningExperienceEngine().generate(request(source))
+    assert result.artifact is not None
+    assert source[:-1] in result.artifact.observation
+    assert result.question is None
+
+
+@pytest.mark.parametrize('source', [
+    'もう誘ってもらえなくなるかもしれないと思うと寂しい',
+    'また誘われるかもしれないと思うと嬉しい',
+    '失敗するかもしれないと考えると不安だ',
+    '参加できないかもしれないと思うと悲しい',
+    '間に合わないかも知れないと考えると怖い',
+    '参加できるかもしれないと思うと、とても嬉しい',
+])
+def test_cognitive_condition_preserves_inner_possibility_and_outer_feeling(source):
+    prepared = prepare_emlis_meaning(request(source + '。'))
+    n, = (n for n in prepared.original_plan.nuclei if n.source_fields == ('memo',))
+    assert n.kind == 'reaction' and n.semantic_frame.predicate_kind == 'feeling'
+    assert n.semantic_frame.modality == 'feeling'
+    assert n.semantic_frame.time_scope == 'current_input'
+    assert 'operator:uncertainty' not in n.semantic_frame.attribute_codes
+    scopes = {parts[1]: (int(parts[2]), int(parts[3]), parts[4])
+        for code in n.semantic_frame.attribute_codes if code.startswith('source_clause_scope:')
+        for parts in (code.split(':'),)}
+    assert 'かも' in source[slice(*scopes['possibility'][:2])]
+    assert scopes['possibility'][2] == 'under_present_cognition'
+    assert source[slice(*scopes['cognitive_condition'][:2])] in {'と', 'と、'}
+    assert scopes['feeling'][2] == 'present_feeling'
+    assert not any(u.dimension == 'source_explicit_epistemic_limit'
+        for u in prepared.original_plan.unknown_boundaries)
+    result = MeaningExperienceEngine().generate(request(source + '。'))
+    assert result.artifact is not None and source in result.artifact.observation
+    assert result.question is None
+
+
+@pytest.mark.parametrize('source', [
+    '友人が一人で休めたことにほっとした。',
+    '友人は疲れていた。一人で休めたことにほっとした。',
+    '友人は疲れていた。自分は一人で休めたことにほっとした。',
+    '手紙を読んだとして、家で休めたことにほっとした。',
+    '手紙を読んだって、家で休めたことにほっとした。',
+    '資料を捨てたって、家で休めたことにほっとした。',
+    '映画を見たって、家で休めたことにほっとした。',
+    '友人によれば誘われるかもしれないと思うと寂しい。',
+    '友人によれば、誘われるかもしれないと思うと寂しい。',
+    '友人も誘われるかもしれないと思うと寂しい。',
+    '友人だって誘われるかもしれないと思うと寂しい。',
+    '友人こそ誘われるかもしれないと思うと寂しい。',
+    '友人に言わせれば誘われるかもしれないと思うと寂しい。',
+    '友人に聞けば誘われるかもしれないと思うと寂しい。',
+    '友人の話だと誘われるかもしれないと思うと寂しい。',
+    '予定を変更しそうで、家で休めたことにほっとした。',
+    '手紙を読んだふりをして、家で休めたことにほっとした。',
+    '家で休める予定だったことにほっとした。',
+    '友人に休んでほしかったことにほっとした。',
+    'また誘われるかもしれないと思うと感じる。',
+    'また誘われるかもしれないと思うと落ち着く。',
+    '友人は誘いを断って、一人で休めたことにほっとした。',
+    '誘いを断ったなら、一人で休めたことにほっとした。',
+    '誘いを断って、ことにほっとした。',
+    '誘いを断って、一人で休めたことにほっとしなかった。',
+    '誘いを断って、一人で休めたことにほっとしたかもしれない。',
+    '「一人で休めたことにほっとした」と友人が言った。',
+    '一人で休めたことにほっとした？',
+    '友人の感想です。一人で休めたことにほっとした。',
+    'また誘われるかもしれないと思うと寂しくない。',
+    'また誘われるかもしれないと思うと嬉しかった。',
+    'また誘われるかもしれないと思うと嬉しいかもしれない。',
+    'また誘われるかもしれないと思うと、友人は嬉しい。',
+    'もし誘われるかもしれないと思うなら嬉しい。',
+    '「また誘われるかもしれないと思うと嬉しい」と友人が言った。',
+    'また誘われるかもしれないと思うと嬉しい？',
+    '友人の感想です。また誘われるかもしれないと思うと嬉しい。',
+    '友人は悩んでいた。自分は誘われるかもしれないと思うと嬉しい。',
+])
+def test_nested_feeling_does_not_borrow_report_topic_or_unasserted_host(source):
+    plan = prepare_emlis_meaning(request(source)).original_plan
+    assert not any(set(n.semantic_frame.attribute_codes) & {
+        'lexical:source_cognitive_feeling', 'lexical:source_nominal_past_feeling'}
+        for n in plan.nuclei)
+
+
+PAST_AND_PREDICTED_FEELING = (
+    '友達からの誘いを断って、一人で休めたことにほっとした。'
+    'でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。')
+
+
+@pytest.mark.parametrize('source', [PAST_AND_PREDICTED_FEELING,
+    '予定を調整して、家で過ごせたことに安心した。でも、失敗するかもしれないと考えると不安だ。',
+    '宿題を終えて、庭で遊べたことにうれしかった。でも、参加できないかもしれないと思うと悲しい。'])
+@pytest.mark.parametrize('unknown', ['', '何が不安なのか、私にもまだわからない。'])
+def test_past_and_current_feelings_keep_their_full_objects_and_distinct_times(source, unknown):
+    from test_cmee_emlis_received_discourse import actual, inverse
+    ctx = actual(request=request(source + unknown))
+    result, plan, _, _, _ = ctx
+    memo = [n for n in plan.nuclei if n.source_fields == ('memo',) and n.kind == 'reaction']
+    assert [(n.semantic_frame.polarity, n.semantic_frame.time_scope) for n in memo] == [
+        ('positive', 'past'), ('negative', 'current_input')]
+    assert len([r for r in plan.relations if r.type == 'contrast']) == 1
+    assert '同時' not in result.artifact.text
+    for clause in source.rstrip('。').split('。でも、'):
+        assert clause in result.artifact.observation and clause in result.artifact.reception
+    assert inverse(ctx, result.artifact.reception, without_author=True).passed
+    public = MeaningExperienceEngine().generate(request(source + unknown))
+    assert public.artifact is not None and public.artifact.text == result.artifact.text
+    assert public.body_sufficiency == ('LIMITED' if unknown else 'SUFFICIENT')
+    assert public.question is None
+    if unknown:
+        assert unknown.rstrip('。') in public.artifact.observation
+
+
+@pytest.mark.parametrize('unknown', ['', '何が不安なのか、私にもまだわからない。'])
+@pytest.mark.parametrize('section,change', [
+    ('observation', 'short_left'), ('observation', 'short_right'),
+    ('observation', 'possibility'), ('observation', 'condition'),
+    ('observation', 'negation'), ('observation', 'past'),
+    ('observation', 'reverse'), ('observation', 'simultaneous'),
+    ('observation', 'cause'), ('observation', 'extra_claim'),
+    ('reception', 'short_left'), ('reception', 'short_right'),
+    ('reception', 'possibility'), ('reception', 'condition'),
+    ('reception', 'negation'), ('reception', 'past'),
+    ('reception', 'reverse'), ('reception', 'cause'),
+    ('reception', 'collapse'), ('reception', 'actor'),
+    ('reception', 'negative_reception'), ('reception', 'extra_claim'),
+])
+def test_body_reader_rejects_scope_object_time_and_contrast_loss_without_author(unknown, section, change):
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    import emlis_ai_grounded_human_reception as reception
+    import emlis_ai_grounded_observation_gate as gate
+    from test_cmee_emlis_received_discourse import actual
+    ctx = actual(request=request(PAST_AND_PREDICTED_FEELING + unknown))
+    result, plan, sentence, resolver, selected = ctx
+    artifact = result.artifact
+    before = getattr(artifact, section)
+    left, right = PAST_AND_PREDICTED_FEELING.rstrip('。').split('。でも、')
+    if change == 'reverse':
+        after = before.replace(left, '__LEFT__').replace(right, left).replace('__LEFT__', right)
+    elif change == 'simultaneous':
+        after = before.replace('の一方で', 'と').replace('とあります。', 'が、異なる向きのまま同時にあります。')
+    elif change == 'actor':
+        after = '友人が' + before
+    elif change == 'extra_claim':
+        rows = before.split('\n')
+        rows[0] += '承認を求めているのですね。'
+        after = '\n'.join(rows)
+    else:
+        old, new = {
+            'short_left': (left, 'ほっとした'),
+            'short_right': (right, '寂しい'),
+            'possibility': ('かもしれないと思う', 'と思う'),
+            'condition': ('と思うと寂しい', 'と思って寂しい'),
+            'negation': ('誘ってもらえなくなる', '誘ってもらえる'),
+            'past': ('ほっとした', 'ほっとする'),
+            'cause': ('の一方で', 'ので') if section == 'observation' else ('こととの違いをどちらの側も残したまま、', 'ことへの原因を'),
+            'collapse': ('どちらの側も残したまま、', '結局は寂しさだけを、'),
+            'negative_reception': ('感じています。', '感じていません。'),
+        }[change]
+        after = before.replace(old, new)
+    assert before != after
+    def read(body):
+        return gate.evaluate_grounded_surface_body_inverse(body=body.encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected)
+    with patch.object(gate, 'replay_source_grounded_human_reception_from_plan',
+                      return_value=SimpleNamespace(text=artifact.reception)) as replay, patch.object(
+            reception, '_author_source_grounded_reception_clauses', side_effect=AssertionError('author is not an oracle')):
+        assert read(artifact.text).passed
+        replay.return_value = SimpleNamespace(text=after if section == 'reception' else artifact.reception)
+        rejected = read(artifact.text.replace(before, after))
+        assert not rejected.passed
+        assert any('replay_mismatch' not in code for code in rejected.failure_codes)
+
+
+def test_pre_scope_checkpoint_rederives_the_complete_old_meaning_without_relabelling():
+    import hashlib
+    import json
+    from dataclasses import asdict
+    # Frozen from API 9d62ab2 using this identical public request, before u319.
+    old = {
+        'checkpoint_id': 'emlis-checkpoint-85e3cdf91b58b0380a50ea4adc670ed97f0bdaa63f1046b31e3428a62a017910',
+        'source_prefix_ref': 'emlis-q3-source-prefix-21fc20af4ab6b6ace394b10c402b799738b5394e9232d2eb55d789b5ed2ba70e',
+        'base_meaning_ref': 'emlis-base-meaning-5a03567851fae6f8800b01b0908127b6f396947dc9b255a5533bd4b478093229',
+        'answer_update': None, 'assessment_status': 'RESOLVED',
+        'accepted_update_refs': [], 'inactive_claim_refs': [], 'unresolved_parts': [],
+        'semantic_schema_version': 'cocolon.cmee.emlis_answer_meaning.v1',
+    }
+    req = request(PAST_AND_PREDICTED_FEELING)
+    fresh = prepare_emlis_meaning(req)
+    assert not fresh.legacy_cognitive_feeling_scope and fresh.checkpoint.checkpoint_id != old['checkpoint_id']
+    frozen = replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=old['checkpoint_id']))
+    restored = prepare_emlis_meaning(frozen)
+    assert restored.legacy_cognitive_feeling_scope
+    assert json.loads(json.dumps(asdict(restored.checkpoint))) == old
+    def digest(rows):
+        return hashlib.sha256(json.dumps([asdict(row) for row in rows], sort_keys=True,
+            separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
+    assert digest(restored.original_plan.nuclei) == '48ea8d2206a0ba375d1ff28e5136ffd892b9866e2b7e2679a107426780afcfcb'
+    assert digest(restored.original_plan.relations) == 'c74eb08244cd0d9ade3fdbc349e7a7a4d493e29f6d08e8b1864c8b21586e0695'
+    result = MeaningExperienceEngine().generate(frozen)
+    assert result.artifact is None and json.loads(json.dumps(asdict(result.meaning_checkpoint))) == old
+    with pytest.raises(ValueError, match='emlis_checkpoint_source_prefix_mismatch'):
+        prepare_emlis_meaning(replace(req, emlis_thread=replace(req.emlis_thread,
+            prepared_meaning_checkpoint_ref='foreign-checkpoint')))
+
+
+@pytest.mark.parametrize('memo,retained', [
+    ('すぐに納得し合えたわけではなく、少し気まずい時間もあった。それでも話が終わった後、違うままでも会話を続けられたことにほっとした。',
+     '話が終わった後、違うままでも会話を続けられた'),
+    ('すれ違った後も、こちらの話を聞く時間を作ってくれたことがうれしかった。全部分かり合えたとは思わないけれど、関係を諦めずに話せたことで少し安心した。',
+     '関係を諦めずに話せたことで少し安心した'),
+])
+def test_existing_nominal_feelings_keep_their_source_owner_and_reception(memo, retained):
+    req = request(memo)
+    prepared = prepare_emlis_meaning(req)
+    assert any('lexical:source_nominal_past_feeling' in n.semantic_frame.attribute_codes
+        and n.semantic_frame.polarity == 'positive' and n.semantic_frame.time_scope == 'past'
+        for n in prepared.original_plan.nuclei)
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact is not None and retained in result.artifact.reception

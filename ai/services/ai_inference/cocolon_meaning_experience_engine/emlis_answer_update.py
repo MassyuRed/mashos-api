@@ -82,6 +82,7 @@ class PreparedEmlisMeaning:
     legacy_received_unfinished_context: bool = False
     legacy_received_reason_context: bool = False
     legacy_received_report_context: bool = False
+    legacy_cognitive_feeling_scope: bool = False
 
 
 def _text(row, index, resolver) -> str:
@@ -877,6 +878,18 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
             or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
             raise
+        # Restore the complete pre-u319 source interpretation, including its
+        # old scope limitations. The immutable checkpoint still has to match;
+        # it cannot be relabelled with newly recognized present feelings.
+        prior_scope = original_meaning_plan(thread, _legacy_cognitive_feeling_scope=True)
+        if prior_scope.nuclei != original.nuclei or prior_scope.relations != original.relations:
+            try:
+                restored = _prepare_emlis_meaning_from_plan(request, thread, prior_scope)
+            except ValueError as prior_exc:
+                if str(prior_exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}:
+                    raise
+            else:
+                return replace(restored, legacy_cognitive_feeling_scope=True)
         # Restore the complete source interpretation before the received
         # polite contrast/report-prefix correction. Keep all unrelated source
         # capabilities; an old ID must never label newly recognized meaning.

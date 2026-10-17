@@ -2315,6 +2315,119 @@ def _body_inverse_visible_text(body: bytes, row: Any) -> str:
     )
 
 
+def _body_inverse_past_cognitive_feeling_contrast_forms(
+    move: Any, plan: GroundedObservationPlan, resolver: EvidenceSpanResolver,
+    selected: SelectedSubjectiveReceptionInputV1 | None,
+) -> tuple[str, ...] | None:
+    """Read the existing both-endpoint appraisal without replaying its author."""
+    from emlis_ai_grounded_observation_plan import (
+        _source_cognitive_feeling_parts, _source_nominal_past_feeling_is_bound,
+        _is_pure_relation_marker, _CONTRAST_RE,
+    )
+    if (selected is None
+        or getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+        or move.reception_act != "recognize_lived_change"
+        or move.move_role != "felt_response" or not move.required
+        or len(move.target_nucleus_ids) != 1 or len(move.support_nucleus_ids) != 1):
+        return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    left, right = index[move.target_nucleus_ids[0]], index[move.support_nucleus_ids[0]]
+    nuclei = (left, right)
+    if any(n.source_fields != ("memo",) or n.retention != "required"
+           or n.grounding_kind != "explicit" or n.allowed_claim_scope != "explicit_current_input"
+           or len(n.source_span_ids) != 1 or n.surface_anchor_ids != n.source_span_ids
+           or n.kind != "reaction" or n.semantic_frame.predicate_kind != "feeling"
+           or n.semantic_frame.modality != "feeling" or n.semantic_frame.actor != "current_user"
+           or any(code.startswith(("source_fragment_", "surface_scalar_", "thread_time:"))
+                  for code in n.semantic_frame.attribute_codes) for n in nuclei):
+        return None
+    if ((left.semantic_frame.polarity, left.semantic_frame.time_scope) != ("positive", "past")
+        or right.semantic_frame.polarity != "negative"
+        or right.semantic_frame.time_scope not in {"current_input", "present"}
+        or "lexical:source_nominal_past_feeling" not in left.semantic_frame.attribute_codes
+        or "lexical:source_cognitive_feeling" not in right.semantic_frame.attribute_codes):
+        return None
+    spans = tuple(resolver.resolve(n.source_span_ids[0]) for n in nuclei)
+    if (any(s.source_field != "memo"
+            or resolver.source_text_for_contiguous_spans((s.span_id,)) != s.raw_text for s in spans)
+        or not spans[0].end_index <= spans[1].start_index):
+        return None
+    texts = tuple(s.raw_text for s in spans)
+    parts = _source_cognitive_feeling_parts(texts[1])
+    if not _source_nominal_past_feeling_is_bound(texts[0]) or parts is None or parts[1] != "negative":
+        return None
+    expected_scopes = {f"source_clause_scope:{role}:{a}:{b}:{scope}" for role, a, b, scope in parts[0]}
+    if {code for code in right.semantic_frame.attribute_codes
+        if code.startswith("source_clause_scope:")} != expected_scopes:
+        return None
+    # The marker must actually join these adjacent whole source objects.
+    ids = {n.nucleus_id for n in nuclei}
+    links = tuple(r for r in plan.relations if r.retention == "required"
+                  and {r.from_nucleus_id, r.to_nucleus_id} & ids)
+    if len(links) != 1:
+        return None
+    relation = links[0]
+    if (relation.type != "contrast" or relation.grounding_kind != "user_stated_relation"
+        or relation.from_nucleus_id != left.nucleus_id or relation.to_nucleus_id != right.nucleus_id
+        or relation.relation_id not in plan.coverage_requirements.required_relation_ids):
+        return None
+    marker_ids = tuple(ref.split(":", 1)[1] for ref in relation.source_relation_ids
+                       if ref.startswith("evidence_relation_marker:"))
+    if len(marker_ids) != 1 or not resolver.contains(marker_ids[0]):
+        return None
+    marker = resolver.resolve(marker_ids[0])
+    if (not _is_pure_relation_marker(marker) or not _CONTRAST_RE.search(marker.raw_text)
+        or marker.source_field != "memo"
+        or not spans[0].end_index <= marker.start_index < marker.end_index <= spans[1].start_index):
+        return None
+    between = tuple(s.span_id for s in resolver.resolve_many(resolver.span_ids)
+                    if s.source_field == "memo"
+                    and spans[0].end_index <= s.start_index and s.end_index <= spans[1].start_index)
+    if (between != marker_ids
+        or not {s.span_id for s in (*spans, marker)} <= set(relation.source_span_ids)
+        or set(move.source_evidence_span_ids) != {s.span_id for s in spans}):
+        return None
+    decisions = tuple(d for d in selected.decisions if d.move_id == move.move_id)
+    if len(decisions) != 1:
+        return None
+    decision = decisions[0]
+    proposition = decision.subjective_proposition
+    appraisal = proposition.appraisal_content
+    if (decision.branch not in {"NORMAL", "LIMITED"}
+        or decision.target_nucleus_ids != move.target_nucleus_ids
+        or decision.support_nucleus_ids != move.support_nucleus_ids or appraisal is None
+        or (appraisal.dimension, appraisal.operation) != ("RELATIONAL_NONCOLLAPSE", "PRESERVE_BOTH_ENDPOINTS")
+        or not proposition.focal_relation_ref
+        or appraisal.focal_relation_ref != proposition.focal_relation_ref
+        or dict(selected.relation_pairs).get(proposition.focal_relation_ref) != relation.relation_id):
+        return None
+    mappings = dict(selected.semantic_nucleus_pairs)
+    if ({mappings.get(ref) for ref in proposition.primary_target_refs} != ids
+        or {mappings.get(ref) for ref in proposition.response_object_refs} != ids):
+        return None
+    selected_rows = tuple(row for row in decision.basis_rows
+                          if row.contribution_ref in decision.selected_contribution_refs
+                          and row.binding_ref in appraisal.appraised_bindings)
+    pairs = []
+    for role, nucleus in zip(("RELATION_LEFT", "RELATION_RIGHT"), nuclei):
+        rows = tuple(row for row in selected_rows
+                     if row.role == role and mappings.get(row.semantic_ref) == nucleus.nucleus_id)
+        if len(rows) != 1:
+            return None
+        qualifiers = tuple(q for q in decision.qualifier_rows if q.basis_binding_ref == rows[0].binding_ref)
+        if (len(qualifiers) != 1
+            or (qualifiers[0].polarity, qualifiers[0].modality, qualifiers[0].time_scope)
+                != (nucleus.semantic_frame.polarity, "feeling", nucleus.semantic_frame.time_scope)):
+            return None
+        pairs.append(rows[0])
+    if pairs[0].contribution_ref != pairs[1].contribution_ref:
+        return None
+    # Complete finite grammar: neither object, possibility nor tense may shrink.
+    nominal = "ということ" if re.search(r"(?:だ|です)$", texts[1]) else "こと"
+    return (texts[0] + "という気持ちと" + texts[1] + nominal
+            + "との違いをどちらの側も残したまま、感じています。",)
+
+
 def _body_inverse_reception_context_ids(
     move: Any,
     plan: GroundedObservationPlan,
@@ -6757,9 +6870,16 @@ def evaluate_grounded_surface_body_inverse(
                 and any("source_received_chain_slot:" + left in chain_from.semantic_frame.attribute_codes
                         and "source_received_chain_slot:" + right in chain_to.semantic_frame.attribute_codes
                         for left, right in (("event", "first"), ("first", "second"))))
+            scoped_feeling_contrast = (
+                "lexical:source_nominal_past_feeling" in chain_from.semantic_frame.attribute_codes
+                and "lexical:source_cognitive_feeling" in chain_to.semantic_frame.attribute_codes
+                and chain_from.semantic_frame.time_scope == "past"
+                and chain_to.semantic_frame.time_scope in {"present", "current_input"}
+                and all(n.kind == "reaction" and n.semantic_frame.predicate_kind == "feeling"
+                        for n in (chain_from, chain_to)))
             exact_contrast = (relation.type == "contrast"
                 and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
-                and (nucleus_index[relation.from_nucleus_id].kind == "event" or exact_chain)
+                and (nucleus_index[relation.from_nucleus_id].kind == "event" or exact_chain or scoped_feeling_contrast)
                 and nucleus_index[relation.to_nucleus_id].kind == "reaction"
                 and nucleus_index[relation.to_nucleus_id].semantic_frame.predicate_kind == "feeling"
                 and all(nucleus_index[nid].source_fields in {("memo",), ("memo_action",)}
@@ -6781,13 +6901,23 @@ def evaluate_grounded_surface_body_inverse(
                     visible = _body_inverse_visible_text(body, row)
                     singleton = re.fullmatch(r"「([^「」『』\n]+)」と「([^「」『』\n]+)」が、"
                         r"異なる向きのまま同時にあります。", visible)
+                    # Different source times do not authorize simultaneity.
+                    if scoped_feeling_contrast:
+                        singleton = None
                     if singleton is None:
                         singleton = re.fullmatch(r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」とあります。", visible)
                     operand = r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」"
                     if singleton:
                         legacy_pairs.append(singleton.groups())
-                    elif re.fullmatch(rf"(?:{operand}、また)+{operand}という、それぞれ異なる向きが並んでいます。", visible):
+                    elif not scoped_feeling_contrast and re.fullmatch(rf"(?:{operand}、また)+{operand}という、それぞれ異なる向きが並んでいます。", visible):
                         legacy_pairs.extend(re.findall(operand, visible))
+                if (scoped_feeling_contrast and len(planned_line.binding.relation_ids) == 1
+                    and set(planned_line.binding.nucleus_ids) <= {
+                        relation.from_nucleus_id, relation.to_nucleus_id}
+                    and (len(legacy_pairs) != 1 or sum(row.section == "observation"
+                        and row.section_line_ordinal == parsed_line.section_ordinal
+                        for row in witness.sentences) != 1)):
+                    failures.append(f"body_inverse_contrast_report_unbound_sentence:{index}")
                 if not any(_body_inverse_normalized_anchor(left) in from_values
                            and _body_inverse_normalized_anchor(right) in to_values
                            for left, right in legacy_pairs):
@@ -8030,6 +8160,11 @@ def evaluate_grounded_surface_body_inverse(
                                     and not re.search(r"[「」『』“”‘’\"?？!！。;；…‥]", before + source)):
                                     complete_forms += (before + "けれど、" + source
                                         + "という気持ち" + (role or "") + "受け止めています。",)
+                            contrast_forms = _body_inverse_past_cognitive_feeling_contrast_forms(
+                                move, plan, resolver, selected_subjective_input)
+                            if contrast_forms is not None:
+                                context_valid = True
+                                complete_forms = contrast_forms
                             if (not source or role is None or not context_valid
                                 or effective_reference_mode == "anaphoric_first" or raw not in complete_forms):
                                 failures.append(f"body_inverse_nominal_cognition_feeling_object_missing:{move_id}")

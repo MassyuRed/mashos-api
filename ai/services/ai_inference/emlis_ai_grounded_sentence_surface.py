@@ -3848,7 +3848,14 @@ def _render_relation(
             )
             if (typed_semantic_duties
                 and relation.grounding_kind == "user_stated_relation"
-                and (unfinished_appraisal or all({"lexical:source_finite_contrast_feeling", "semantic_dependency:received_feeling_contrast_chain"}
+                and (unfinished_appraisal or (
+                    "lexical:source_nominal_past_feeling" in event.semantic_frame.attribute_codes
+                    and "lexical:source_cognitive_feeling" in reaction.semantic_frame.attribute_codes
+                    and event.semantic_frame.time_scope == "past"
+                    and reaction.semantic_frame.time_scope in {"present", "current_input"}
+                    and all(n.kind == "reaction" and n.semantic_frame.predicate_kind == "feeling"
+                            for n in (event, reaction)))
+                    or all({"lexical:source_finite_contrast_feeling", "semantic_dependency:received_feeling_contrast_chain"}
                         & set(n.semantic_frame.attribute_codes)
                         for n in (event, reaction)))):
                 # The source states a contrast, not simultaneous current

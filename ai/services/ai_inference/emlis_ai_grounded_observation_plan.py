@@ -7305,6 +7305,45 @@ def _source_current_cognition_parts(fragment):
     ) if match[role] is not None)
 
 
+def _source_cognitive_feeling_parts(fragment):
+    """Compose an already bounded cognitive antecedent with its feeling host.
+
+    The possibility stays inside the cognitive object. Its negation and
+    future tense do not govern the outer feeling. All scopes refer to the
+    unchanged source; this does not create an event or a causal relation.
+    """
+    if (_top_level_text(fragment) != fragment
+        or re.search(r"によ(?:ると|れば)|に言わせれば|に聞けば|の話だと|いわく|曰く", fragment)):
+        return None
+    for connector in re.finditer(r"と[、,]?", fragment):
+        parts = _source_current_cognition_parts(fragment[:connector.start()])
+        if parts is None:
+            continue
+        possible = next((fragment[start:end] for role, start, end, _ in parts
+                         if role == "possibility"), "")
+        topic = re.match(r"(?P<owner>[一-鿿々ァ-ヶーA-Za-z0-9]+|わたし|ぼく|おれ|あなた|あの人|その人)"
+                         r"(?:は|が|も|" + _OWNER_FOCUS_PARTICLE_SOURCE + "|"
+                         + _OWNER_TOPIC_PARTICLE_SOURCE + ")", possible)
+        if topic and topic['owner'] not in {"私", "わたし", "自分", "僕", "ぼく", "俺", "おれ"}:
+            continue
+        feeling = fragment[connector.end():]
+        host = re.sub(r"^(?:少し(?:だけ)?|ちょっと|とても|まだ|ずっと)", "", feeling)
+        match = _last_finite_operator_match(host, _FEELING_RE)
+        if (match is None or match.start() != 0
+            or not _source_operator_owner_scope_is_bound(host)
+            or not _semantic_content_is_bounded(host, require_finite=True)
+            or _NEGATION_RE.search(feeling)
+            or re.search(r"た|でした|もし|なら|[?？!！]", feeling)):
+            continue
+        if match.group(0) in {"感じ", "気持ち", "もやもや", "落ち着"}:
+            continue
+        polarity = "positive" if _POSITIVE_CHANGE_RE.search(host) else "negative"
+        return (tuple((*parts,
+            ("cognitive_condition", connector.start(), connector.end(), "under_feeling"),
+            ("feeling", connector.end(), len(fragment), "present_feeling"))), polarity)
+    return None
+
+
 def _source_current_cognition(nucleus):
     frame = nucleus.semantic_frame
     return bool(
@@ -7325,7 +7364,7 @@ def _source_current_cognition(nucleus):
     )
 
 
-def _final_source_current_cognition_nuclei(nuclei, evidence_spans, normalized_input):
+def _final_source_current_cognition_nuclei(nuclei, evidence_spans, normalized_input, *, _legacy_cognitive_feeling_scope=False):
     if normalized_input is None:
         return nuclei
     source = str(normalized_input.get("memo") or "")
@@ -7336,7 +7375,9 @@ def _final_source_current_cognition_nuclei(nuclei, evidence_spans, normalized_in
     for nucleus in nuclei:
         frame = nucleus.semantic_frame
         span = spans.get(nucleus.source_span_ids[0]) if len(nucleus.source_span_ids) == 1 else None
-        parts = _source_current_cognition_parts(str(span.raw_text)) if span is not None else None
+        raw = str(span.raw_text) if span is not None else ""
+        cognitive_feeling = None if _legacy_cognitive_feeling_scope else _source_cognitive_feeling_parts(raw)
+        parts = cognitive_feeling[0] if cognitive_feeling else _source_current_cognition_parts(raw)
         if (parts is None or nucleus.source_fields != ("memo",) or span.source_field != "memo"
             or nucleus.retention not in {"required", "should"}
             or (nucleus.grounding_kind, nucleus.allowed_claim_scope) not in {
@@ -7348,23 +7389,43 @@ def _final_source_current_cognition_nuclei(nuclei, evidence_spans, normalized_in
             result.append(nucleus)
             continue
         start, end, raw = span.start_index, span.end_index, str(span.raw_text)
-        preceding = re.split(r"[。．.]", source[:start].rstrip(" 。．."))[-1].strip()
+        owner_prefix = source[:start]
+        if cognitive_feeling:
+            markers = tuple(m for m in evidence_spans if m.source_field == "memo"
+                and _is_pure_relation_marker(m)
+                and _CONTRAST_RE.search(m.raw_text)
+                and 0 <= m.start_index < m.end_index <= start
+                and source[m.start_index:m.end_index] == m.raw_text
+                and not source[m.end_index:start].strip(" 、,")
+                and (not source[:m.start_index].strip()
+                     or source[:m.start_index].rstrip().endswith(("。", "．", "."))))
+            if len(markers) == 1:
+                owner_prefix = source[:markers[0].start_index]
+        preceding = re.split(r"[。．.]", owner_prefix.rstrip(" 。．."))[-1].strip()
         topic = re.match(r"(?P<owner>[一-鿿々ァ-ヶー]+|わたし|ぼく|おれ|あなた|あの人|その人)"
                          r"(?:は|が|も|" + _OWNER_FOCUS_PARTICLE_SOURCE + "|" + _OWNER_TOPIC_PARTICLE_SOURCE + ")", preceding)
         self_reset = re.match(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が|も)", raw)
         if (0 <= start < end <= len(source) and source[start:end] == raw
-            and (not source[:start].strip() or source[:start].rstrip().endswith(("。", "．", ".")))
+            and (not owner_prefix.strip() or owner_prefix.rstrip().endswith(("。", "．", ".")))
             and (not source[end:].strip() or source[end:].lstrip().startswith(("。", "．", ".")))
             and not _source_prefix_opens_report(source[:start])
             and not re.search(r"によると|いわく|曰く|の(?:感想|気持ち|説明|報告|発言)[。．.]", source[:start])
-            and (not topic or topic['owner'] in {"私", "わたし", "自分", "僕", "ぼく", "俺", "おれ"} or self_reset)):
+            and (not topic or topic['owner'] in {"私", "わたし", "自分", "僕", "ぼく", "俺", "おれ"} or self_reset)
+            and (not cognitive_feeling or not re.search(r"は|が|も", preceding)
+                 or _source_operator_owner_scope_is_bound(preceding)
+                 or re.match(r"(?:私|わたし|僕|ぼく|俺|おれ)(?:は|が|も)", raw))):
             provenance = tuple(c for c in frame.attribute_codes
                                if c.startswith(("semantic_analyzer:", "detected_type:", "source_claim:")))
-            nucleus = replace(nucleus, kind="state", grounding_kind="explicit",
+            nucleus = replace(nucleus, kind="reaction" if cognitive_feeling else "state", grounding_kind="explicit",
                 allowed_claim_scope="explicit_current_input", semantic_frame=replace(frame,
-                predicate_kind="state", polarity="neutral", modality="fact", time_scope="current_input",
+                predicate_kind="feeling" if cognitive_feeling else "state",
+                polarity=cognitive_feeling[1] if cognitive_feeling else "neutral",
+                modality="feeling" if cognitive_feeling else "fact", time_scope="current_input",
                 attribute_codes=tuple(_dedupe((*provenance, "time_scope:current_input",
-                    "lexical:source_current_cognition", "lexical:source_bounded_expression",
+                    *(("operator:feeling", "lexical:source_cognitive_feeling",
+                        *(("operator:positive_change",) if cognitive_feeling[1] == "positive" else ()))
+                       if cognitive_feeling else ("lexical:source_current_cognition",)),
+                    "lexical:source_bounded_expression",
                     "lexical:preserve_source_predicate", "lexical:no_new_sensation_family",
                     *(f"source_clause_scope:{role}:{a}:{b}:{scope}" for role, a, b, scope in parts))))))
         result.append(nucleus)
@@ -7396,7 +7457,7 @@ def _source_explicit_original_feeling(nucleus):
     )
 
 
-def _source_explicit_original_feeling_is_bound(fragment):
+def _source_explicit_original_feeling_is_bound(fragment, *, _legacy_cognitive_feeling_scope=False):
     """Prove the affirmative current feeling host, keeping its whole object.
 
     A cognitive antecedent and an explicitly unresolved prediction stay
@@ -7405,6 +7466,9 @@ def _source_explicit_original_feeling_is_bound(fragment):
     """
     if _top_level_text(fragment) != fragment or re.search(r"[「」『』!?！？…‥]", fragment):
         return False
+    cognitive = None if _legacy_cognitive_feeling_scope else _source_cognitive_feeling_parts(fragment)
+    if cognitive is not None and cognitive[1] == "negative":
+        return True
     prefix = (r"(?:(?:それでも|でも|けれど|けれども)[、,]?)?"
               r"(?:(?:(?:今|現在|今日|今朝)(?:は|も)?|"
               r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が|も))[、,]?){0,2}")
@@ -7436,7 +7500,7 @@ def _source_explicit_original_feeling_is_bound(fragment):
     )
 
 
-def _final_source_explicit_original_feeling_nuclei(nuclei, evidence_spans, normalized_input):
+def _final_source_explicit_original_feeling_nuclei(nuclei, evidence_spans, normalized_input, *, _legacy_cognitive_feeling_scope=False):
     if normalized_input is None:
         return nuclei
     source = str(normalized_input.get("memo") or "")
@@ -7476,7 +7540,8 @@ def _final_source_explicit_original_feeling_nuclei(nuclei, evidence_spans, norma
             and (not source[end:].strip() or source[end:].lstrip().startswith(("。", "．", ".")))
             and not _source_prefix_opens_report(source[:start])
             and (not topic or topic['owner'] in {"私", "わたし", "自分", "僕", "ぼく", "俺", "おれ"} or self_reset)
-            and _source_explicit_original_feeling_is_bound(raw)):
+            and _source_explicit_original_feeling_is_bound(raw,
+                _legacy_cognitive_feeling_scope=_legacy_cognitive_feeling_scope)):
             nucleus = replace(nucleus, semantic_frame=replace(nucleus.semantic_frame,
                 attribute_codes=tuple(_dedupe((*codes, "lexical:source_explicit_original_feeling")))))
         result.append(nucleus)
@@ -14477,7 +14542,7 @@ def _received_event_reaction_text_projections(raw_text):
     return tuple(rows)
 
 
-def _source_nominal_past_feeling_parts(fragment: str) -> tuple[str, str, str, str] | None:
+def _source_nominal_past_feeling_parts(fragment: str, *, _legacy_cognitive_feeling_scope=False) -> tuple[str, str, str, str] | None:
     """Bind a completed experience to its outer finite past feeling.
 
     Negation in an earlier cognitive concession belongs to that clause.
@@ -14522,7 +14587,33 @@ def _source_nominal_past_feeling_parts(fragment: str) -> tuple[str, str, str, st
         r"話せた|話し合えた|伝えられた|続けられた|取り組めた|参加できた|相談できた)",
         experience)
     if event is None:
-        return None
+        if _legacy_cognitive_feeling_scope:
+            return None
+        clauses = re.split(r"[、,]", experience)
+        if not 1 <= len(clauses) <= 2 or any(not clause for clause in clauses):
+            return None
+        final = clauses[-1]
+        # Keep a single inflected verb, including a transparent compound
+        # stem, rather than accepting every string that happens to end in ta.
+        stem = r"[一-鿿々]+(?:[いきぎしちにびみりえけせめねべれ][一-鿿々]+){0,2}[ぁ-ん]?"
+        case_predicate = _ACTION_ARGUMENT_STEM_RE.search(final)
+        if (case_predicate is None
+            or not re.fullmatch(stem + r"(?:った|いた|いだ|した|んだ|えた|けた|げた|せた|てた|ねた|べた|めた|れた|た|ました)", case_predicate['predicate'])
+            or re.search(r"だった|でした|たい|ほし|つもり|よう|そう|として|たり|てい|でい", case_predicate['predicate'])
+            or not _bounded_structural_action_endpoint(final)
+            or not _source_operator_owner_scope_is_bound(final)
+            or re.search(r"聞|言|述|語|説明|答|思|考|感じ|は|が|も|なら|たら|れば", final)):
+            return None
+        if len(clauses) == 2:
+            noun = r"[一-鿿々ァ-ヶー]+[ぁ-ん]{0,4}"
+            object_phrase = noun + r"(?:(?:からの|への|との|での|の)" + noun + r"){0,3}"
+            continuation = re.fullmatch(object_phrase + r"を(?P<verb>" + stem
+                + r"(?:って|いて|いで|して|んで|えて|けて|げて|せて|てて|ねて|べて|めて|れて))", clauses[0])
+            if (continuation is None
+                or re.search(r"聞|言|述|語|説明|答|思|考|感じ|は|が|も|なら|たら|れば|によると|いわく|曰く|そう|よう|として|たい|ほし|[ただ]って",
+                             clauses[0])):
+                return None
+        return match['experience'], match['particle'], match['degree'] or '', match['feeling']
     # Inspect the host separately from the finite benefactive: the 'も'
     # inside 'もらえた' is not a competing topic particle.
     if re.search(r"は|が|も|にとって|について|に関して|こそ|さえ|まで|だって|自身|"
@@ -14533,8 +14624,9 @@ def _source_nominal_past_feeling_parts(fragment: str) -> tuple[str, str, str, st
     return match['experience'], match['particle'], match['degree'] or '', match['feeling']
 
 
-def _source_nominal_past_feeling_is_bound(fragment: str) -> bool:
-    return _source_nominal_past_feeling_parts(fragment) is not None
+def _source_nominal_past_feeling_is_bound(fragment: str, *, _legacy_cognitive_feeling_scope=False) -> bool:
+    return _source_nominal_past_feeling_parts(fragment,
+        _legacy_cognitive_feeling_scope=_legacy_cognitive_feeling_scope) is not None
 
 
 def _source_received_past_feeling_is_bound(fragment: str) -> bool:
@@ -14597,6 +14689,7 @@ def _final_stage1_typed_nuclei(
     _legacy_repeated_appraisal_context: bool = False,
     _legacy_duplicate_appraisal_source: bool = False,
     _legacy_shared_target_contrast: bool = False,
+    _legacy_cognitive_feeling_scope: bool = False,
 ) -> tuple[tuple[GroundedSemanticNucleus, ...], tuple[tuple[str, str, str], ...]]:
     span_index = {
         _clean(getattr(span, "span_id", "")): span
@@ -14695,9 +14788,19 @@ def _final_stage1_typed_nuclei(
                     and _top_level_text(source) == source
                     # A contrast does not reset an unresolved preceding
                     # subject to the diary writer. An explicit self does.
-                    and (not _LEADING_CONTRAST_RE.match(raw)
-                         or not prior_topic or prior_topic['owner'] in self_owners or explicit_self)
-                    and _source_nominal_past_feeling_is_bound(raw)):
+                    and ((not _LEADING_CONTRAST_RE.match(raw)
+                          or not prior_topic or prior_topic['owner'] in self_owners or explicit_self)
+                         if (_legacy_cognitive_feeling_scope
+                             or _source_nominal_past_feeling_is_bound(raw, _legacy_cognitive_feeling_scope=True)) else (
+                         (not prior_topic or prior_topic['owner'] in self_owners
+                          or re.match(r"(?:私|わたし|僕|ぼく|俺|おれ)(?:は|が)",
+                              _LEADING_CONTRAST_RE.sub("", raw, count=1).lstrip("、, ")))
+                         and (not re.search(r"は|が|も", preceding)
+                              or _source_operator_owner_scope_is_bound(preceding)
+                              or re.match(r"(?:私|わたし|僕|ぼく|俺|おれ)(?:は|が)",
+                                  _LEADING_CONTRAST_RE.sub("", raw, count=1).lstrip("、, ")))))
+                    and _source_nominal_past_feeling_is_bound(raw,
+                        _legacy_cognitive_feeling_scope=_legacy_cognitive_feeling_scope)):
                     nucleus = replace(nucleus, kind="reaction", grounding_kind="explicit",
                         allowed_claim_scope="explicit_current_input", semantic_frame=replace(
                         frame, predicate_kind="feeling", polarity="positive", modality="feeling",
@@ -15738,7 +15841,14 @@ def _final_stage1_normalize_relation_authority(
         # That proximity does not prove an attempted action was blocked. At
         # the final seam, an actual adjacent contrast marker owns the relation
         # ahead of that detector label. Keep the endpoints and all lineage.
-        if (relation_type == "attempt_and_block" and not cross_field
+        scoped_feeling_pair = (
+            "lexical:source_nominal_past_feeling" in left.semantic_frame.attribute_codes
+            and "lexical:source_cognitive_feeling" in right.semantic_frame.attribute_codes
+            and all(n.kind == "reaction" and n.semantic_frame.predicate_kind == "feeling"
+                    and n.semantic_frame.modality == "feeling" and n.grounding_kind == "explicit"
+                    and n.semantic_frame.actor == "current_user" for n in (left, right)))
+        if ((relation_type == "attempt_and_block"
+             or relation_type == "wish_and_constraint" and scoped_feeling_pair) and not cross_field
             and len(left_fields) == len(right_fields) == 1
             and left_fields == right_fields and left_fields <= _TEXT_SOURCE_FIELDS
             and any(ref.startswith("conflict.") for ref in relation.source_relation_ids)
@@ -17045,6 +17155,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_appraisal_retention: bool = True,
     _legacy_duplicate_appraisal_source: bool = False,
     _legacy_shared_target_contrast: bool = False,
+    _legacy_cognitive_feeling_scope: bool = False,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -17066,6 +17177,7 @@ def project_final_stage1_grounded_observation_plan(
         _legacy_repeated_appraisal_context=_legacy_repeated_appraisal_context,
         _legacy_duplicate_appraisal_source=_legacy_duplicate_appraisal_source,
         _legacy_shared_target_contrast=_legacy_shared_target_contrast,
+        _legacy_cognitive_feeling_scope=_legacy_cognitive_feeling_scope,
     )
     projected_nuclei = _final_stage1_align_action_status(
         projected_nuclei,
@@ -17095,9 +17207,11 @@ def project_final_stage1_grounded_observation_plan(
     )
     projected_nuclei = _final_source_current_cognition_nuclei(
         projected_nuclei, evidence_spans, normalized_input,
+        _legacy_cognitive_feeling_scope=_legacy_cognitive_feeling_scope,
     )
     projected_nuclei = _final_source_explicit_original_feeling_nuclei(
         projected_nuclei, evidence_spans, normalized_input,
+        _legacy_cognitive_feeling_scope=_legacy_cognitive_feeling_scope,
     )
     relations, nuclei = _final_stage1_typed_relations(
         plan,
@@ -18179,6 +18293,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_appraisal_retention: bool = True,
     _legacy_duplicate_appraisal_source: bool = False,
     _legacy_shared_target_contrast: bool = False,
+    _legacy_cognitive_feeling_scope: bool = False,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan.
 
@@ -18244,6 +18359,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_appraisal_retention=_legacy_appraisal_retention,
         _legacy_duplicate_appraisal_source=_legacy_duplicate_appraisal_source,
         _legacy_shared_target_contrast=_legacy_shared_target_contrast,
+        _legacy_cognitive_feeling_scope=_legacy_cognitive_feeling_scope,
     )
 
 
