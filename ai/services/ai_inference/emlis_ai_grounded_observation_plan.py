@@ -8400,17 +8400,21 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
     if separate_later_scopes and len(appraisal_links) == len(answers) == 1 and not withdrawal:
         link, answer = appraisal_links[0], answers[0]
         reason = source_owned_result_appraisal_reason(link, nuclei, relations)
+        context = source_owned_result_appraisal_context(link, nuclei, relations)
         pair = tuple(n for n in nuclei if n.nucleus_id in
                      {link.from_nucleus_id, link.to_nucleus_id})
         plain = len(pair) == 2 and not any(
             {"semantic_dependency:reasoned_result_appraisal",
              "semantic_dependency:unfinished_result_appraisal"}
             & set(n.semantic_frame.attribute_codes) for n in pair)
-        if ((reason is not None or plain) and is_grounded_positive_feeling(answer)
+        if ((reason is not None or context is not None or plain) and is_grounded_positive_feeling(answer)
             and answer.semantic_frame.time_scope == "present"
             and {c for c in answer.semantic_frame.attribute_codes if c.startswith("thread_time:")}
                 == {"thread_time:answer_time"}):
-            support = ((reason.nucleus_id,) if reason is not None else ()) + (link.from_nucleus_id,)
+            # An unfinished fact is not a reason. Preserve its existing
+            # contrast together with the object and satisfaction as one duty.
+            companion = reason if reason is not None else context
+            support = ((companion.nucleus_id,) if companion is not None else ()) + (link.from_nucleus_id,)
             owned = {link.to_nucleus_id, *support}
             group = tuple(n for n in nuclei if n.nucleus_id in owned)
             incident = tuple(r for r in relations
