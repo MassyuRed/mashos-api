@@ -35,6 +35,7 @@ from emlis_ai_grounded_observation_plan import (
     source_owned_result_appraisal_context,
     source_owned_result_appraisal_reason,
     source_owned_duplicate_reason_appraisals,
+    source_owned_answer_feeling,
     _result_appraisal_time_label,
 )
 from emlis_ai_grounded_human_reception import (
@@ -1174,6 +1175,7 @@ def _observation_surface_atoms(
     )
     arcs = (f"semantic_arc:{role}",)
     unique_reason = False
+    independent_plain_appraisal = False
     if (plan is not None
         and not any(row.dimension == "answer_interpretation_unresolved" for row in plan.unknown_boundaries)
         and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"):
@@ -1186,6 +1188,34 @@ def _observation_surface_atoms(
             # A single surviving graph is not proof of a unique original event.
             unique_reason = sum(s.source_field == span.source_field and s.raw_text == span.raw_text
                 for s in resolver.resolve_many(resolver.span_ids)) == 1
+        moves = plan.response_plan.human_reception_plan.moves
+        appraisals = tuple(r for r in relation_index.values()
+            if source_owned_result_appraisal(r, tuple(nucleus_index.values())))
+        if len(moves) == 2 and len(appraisals) == 1 and len(relation_index) == 2:
+            appraisal = appraisals[0]
+            event, evaluation = (nucleus_index[nid] for nid in
+                                 (appraisal.from_nucleus_id, appraisal.to_nucleus_id))
+            answer = source_owned_answer_feeling(moves[1], plan)
+            # The original appraisal and the independently answered event
+            # remain separate complete relations despite sharing a grammar.
+            independent_plain_appraisal = bool(answer and answer[2] == 'original_occasion'
+                and evaluation.source_fields == event.source_fields
+                and moves[0].target_nucleus_ids == (evaluation.nucleus_id,)
+                and moves[0].support_nucleus_ids == (event.nucleus_id,)
+                and all(m.required and m.reception_act == 'recognize_lived_change' for m in moves)
+                and len({event.nucleus_id, evaluation.nucleus_id, answer[0].nucleus_id, answer[1].nucleus_id}) == 4
+                and event.source_span_ids != answer[0].source_span_ids
+                and {n.nucleus_id for n in nucleus_index.values() if n.retention == 'required'}
+                    == {event.nucleus_id, evaluation.nucleus_id, answer[0].nucleus_id, answer[1].nucleus_id})
+            if independent_plain_appraisal:
+                spans = tuple(resolver.resolve(n.source_span_ids[0]) for n in (event, answer[0]))
+                independent_plain_appraisal = all(sum(
+                    s.source_field == span.source_field and s.raw_text == span.raw_text
+                    for s in resolver.resolve_many(resolver.span_ids)) == 1 for span in spans)
+                if spans[0].source_field == spans[1].source_field:
+                    first, last = sorted(spans, key=lambda s: s.start_index)
+                    independent_plain_appraisal = bool(independent_plain_appraisal
+                        and 0 <= first.start_index < first.end_index <= last.start_index < last.end_index)
     if (any(n.source_fields == ("answer_text_private",)
             and n.allowed_claim_scope == "explicit_supplemental_answer"
             for n in nucleus_index.values())
@@ -1194,6 +1224,7 @@ def _observation_surface_atoms(
         and (source_owned_duplicate_reason_appraisals(tuple(nucleus_index.values()),
                 tuple(relation_index.values()))
              or unique_reason
+             or independent_plain_appraisal
              or any("thread_subject:revised_result_appraisal" in n.semantic_frame.attribute_codes
                     for n in nucleus_index.values()))
         and all(r.type in {"evaluation_about_event", "user_stated_cause", "contrast"}

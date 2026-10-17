@@ -362,27 +362,44 @@ def _retained_unfinished_received_duties(prepared, nuclei, relations):
         or checkpoint.unresolved_parts or update is None or update.disposition != 'MATERIAL_UPDATE'
         or update.unresolved_parts or len(update.updates) != 1):
         return ()
-    groups = tuple((r, context) for r in original.relations
-        if (context := gp.source_owned_result_appraisal_context(r, original.nuclei, original.relations)) is not None)
+    groups = tuple((r, gp.source_owned_result_appraisal_context(r, original.nuclei, original.relations)
+                      or gp.source_owned_result_appraisal_reason(r, original.nuclei, original.relations))
+        for r in original.relations if gp.source_owned_result_appraisal(r, original.nuclei))
+    if len(groups) != 1:
+        return ()
+    appraisal, context = groups[0]
+    index = {n.nucleus_id: n for n in original.nuclei}
+    event, evaluation = (index[nid] for nid in (appraisal.from_nucleus_id, appraisal.to_nucleus_id))
+    if context is None and (
+        (event.semantic_frame.modality, event.semantic_frame.polarity, event.semantic_frame.time_scope)
+            != ('fact', 'neutral', 'past')
+        or (evaluation.semantic_frame.predicate_kind, evaluation.semantic_frame.modality,
+            evaluation.semantic_frame.polarity) != ('feeling', 'feeling', 'positive')
+        or evaluation.semantic_frame.time_scope not in {'past', 'present'}
+        or {c for c in evaluation.semantic_frame.attribute_codes if c.startswith('source_appraisal_')}
+            != {'source_appraisal_kind:satisfaction', 'source_appraisal_degree:unmarked'}
+        or any(c.startswith('thread_time:') for n in (event, evaluation)
+               for c in n.semantic_frame.attribute_codes)):
+        return ()
+    relation_count = 3 if context is not None else 2
     required = tuple(n for n in original.nuclei if n.retention == 'required')
     required_ids = {n.nucleus_id for n in required}
-    if (len(groups) != 1 or len(required) != 5 or len(original.relations) != 3
+    if (len(required) != relation_count + 2 or len(original.relations) != relation_count
         or {n.nucleus_id for n in original.nuclei if set(n.source_fields)
             & {'memo', 'memo_action', ANSWER_FIELD}} != required_ids
         or set(original.coverage_requirements.required_nucleus_ids) != required_ids
         or set(original.coverage_requirements.required_relation_ids)
             != {r.relation_id for r in original.relations}):
         return ()
-    appraisal, context = groups[0]
-    owned = {context.nucleus_id, appraisal.from_nucleus_id, appraisal.to_nucleus_id}
+    supports = ((context.nucleus_id, event.nucleus_id) if context is not None else (event.nucleus_id,))
+    owned = {evaluation.nucleus_id, *supports}
     edges = tuple(r for r in original.relations if owned & {r.from_nucleus_id, r.to_nucleus_id})
     rest = tuple(n for n in required if n.nucleus_id not in owned)
     received = tuple(r for r in original.relations if r not in edges)
-    if (len(edges) != 2 or len(rest) != 2 or len(received) != 1
+    if (len(edges) != relation_count - 1 or len(rest) != 2 or len(received) != 1
         or not gp._received_contrast_group_targets(rest, received)):
         return ()
     old = received[0]
-    index = {n.nucleus_id: n for n in original.nuclei}
     resolver = thread.resolver()
     # Preserve the original, separately owned source window. The received
     # family marker alone does not prove giver, field or relation ownership.
@@ -407,6 +424,16 @@ def _retained_unfinished_received_duties(prepared, nuclei, relations):
         first, last = sorted(spans, key=lambda s: s.start_index)
         if not 0 <= first.start_index < first.end_index <= last.start_index < last.end_index:
             return ()
+    if context is None:
+        rows = gp._explicit_result_appraisal_projections(
+            resolver.resolve(event.source_span_ids[0]), thread.original.normalized_current_input)
+        if tuple(row.nucleus_suffix for row in rows) != (':event', ':appraisal'):
+            return ()
+        for row, node in zip(rows, (event, evaluation), strict=True):
+            frame = node.semantic_frame
+            if (row.kind, row.predicate_kind, row.polarity, row.modality, row.time_scope, row.attribute_codes) != (
+                node.kind, frame.predicate_kind, frame.polarity, frame.modality, frame.time_scope, frame.attribute_codes):
+                return ()
     received_text = _text(index[old.from_nucleus_id], index, resolver)
     giver = re.sub(r'^(?:私|自分|わたし)(?:は|が)', '', received_text).rpartition('に')[0]
     if (gp._SELF_REFERENCE_RE.search(giver) is not None
@@ -427,8 +454,8 @@ def _retained_unfinished_received_duties(prepared, nuclei, relations):
     answer_id, = item.changed_claim_refs
     answer = current.get(answer_id)
     remaining = tuple(r for r in relations if r not in edges)
-    if (len(current) != len(nuclei) or len(relations) != 3
-        or len({r.relation_id for r in relations}) != 3
+    if (len(current) != len(nuclei) or len(relations) != relation_count
+        or len({r.relation_id for r in relations}) != relation_count
         or any(current.get(n.nucleus_id) != n for n in original.nuclei if n.nucleus_id != old.to_nucleus_id)
         or set(current) != ({n.nucleus_id for n in original.nuclei} - {old.to_nucleus_id}) | {answer_id}
         or not set(edges).issubset(relations) or len(remaining) != 1
@@ -450,7 +477,7 @@ def _retained_unfinished_received_duties(prepared, nuclei, relations):
         or set(relation.source_span_ids) != set(event.source_span_ids + answer.source_span_ids)
         or {n.nucleus_id for n in nuclei if n.retention == 'required'} != owned | {event.nucleus_id, answer_id}):
         return ()
-    return (('lived_change', (appraisal.to_nucleus_id,), (context.nucleus_id, appraisal.from_nucleus_id)),
+    return (('lived_change', (appraisal.to_nucleus_id,), supports),
             ('lived_change', (answer_id,), ()))
 
 

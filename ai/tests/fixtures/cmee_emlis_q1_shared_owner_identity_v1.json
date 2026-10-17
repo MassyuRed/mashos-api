@@ -1,5 +1,5 @@
 {
-  "language_identity": "d625068cbeffc3d39c72c7f880a2f7ab8e194fc710f7cfd9afe1e92bd9c3276f",
+  "language_identity": "00a04d30355270facdb15e8221356acdde86df274e360c9937121f7e6f2e2018",
   "language_payloads": [
     [
       "language_core_source_owner_ast:ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
@@ -23,13 +23,13 @@
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
-      "fa3f933b477d5d43284d97412af00d65cf3f09877429bf53840567c82a764b46",
-      2427063
+      "1e92b7282560ad22071f2739d6a296d8462044452c37ea86ae5aa632bd5eca63",
+      2439545
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
-      "3aa28da4bd78694427b32d2219fcf2861f42f0aa8218d22e73522657e1e8ca1d",
-      788691
+      "ddae443ebd2fa4a2f4dd10bedd3c37348753fe1d4929f824d3bd329ecc64c908",
+      797768
     ],
     [
       "language_core_source_owner_ast:ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
@@ -92,7 +92,7 @@
       8985
     ]
   ],
-  "runtime_identity": "ecaa27e9eb7108056e2707ca4e16bc04ccf3247189da0882598baf22042d5f29",
+  "runtime_identity": "4fc68573b16b80989318f0e843ba95e40b15b5a83b7c982b156b18f5e4858c11",
   "runtime_payloads": [
     [
       "ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_stage1_composition.py",
@@ -121,8 +121,8 @@
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
-      "8eeb01986887782b72afebe6a95d009b375996665cb9a9f2f46792397dce59ab",
-      267639
+      "87687b1a49fe3b0c00113d2ad973cab8c6ebf34b35c5d3b0ca3668f90c78cb55",
+      269958
     ],
     [
       "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
@@ -192,7 +192,7 @@
       494,
       120,
       194,
-      376,
+      377,
       137,
       278,
       111,
@@ -204,11 +204,11 @@
       188,
       69,
       38,
-      47,
+      48,
       39,
       50,
       106
     ],
-    "b5c84c2966b6461471b0c644255d1fd862e8bcf2b67a0cbeb4a5fba611c9aae0"
+    "a20c64b23ef2bce7f9c7a21895b48543dffa27d1f9912b26b6a8322487df63ec"
   ]
 }

@@ -1,4 +1,4 @@
-> 最新EmlisAI残件：末尾 **u296（2026-10-16・更新後の受け取りで本人の一人称を各対象の中へ保持）**。限定修復・検証結果は末尾。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
+> 最新EmlisAI残件：末尾 **u304（2026-10-17・通常／理由付き満足の肯定訂正後本文停止・受け取り欠落を修復）**。限定修復・検証結果は末尾。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -21403,3 +21403,58 @@ Emlisから：
 Python3.12.14／Pydantic2.13.5／pytest8.4.1／PGlite0.5.8／React・react-test-renderer18.3.1の既存一時環境を再利用。外部DB・製品依存・費用変更なし。language identity `d625068cbeffc3d39c72c7f880a2f7ab8e194fc710f7cfd9afe1e92bd9c3276f`／runtime identity `ecaa27e9eb7108056e2707ca4e16bc04ccf3247189da0882598baf22042d5f29`不変。同Work read-only補助のレビューは正式な別Pro/Ultraモデル二重検証ではない。
 
 次は対象を広げる前に、周辺6対照で見えた「未成立なし満足＋肯定訂正」の本文停止と「理由付き満足＋肯定訂正」のreceived欠落を、それぞれ実全文と意味／選択の責務から照合する。現在回答の欠落や`安心した`のvalue分類も未解消。新意味資格が必要なら具体化してRule18承認境界を守る。初回の内容／説明性／反復、共有対象／対象外更新、既存周辺4失敗（過去共有17との集合一致未確認）、same100、Q1上限、giver帰属、本人実機・正式Product Readは残る。周辺4・過去のRN補助suite失敗を今回再実行しておらず、解消を主張しない。10/31管理線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％を維持する。
+
+
+## u304 — 通常／理由付き満足とreceived肯定訂正の本文停止・受け取り欠落を修復（2026-10-17 JST）
+
+TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。u303末尾の次作業に従い、通常満足の肯定訂正後本文停止と、通常／理由付き満足で訂正receivedをReceptionから落とす欠陥を修復した。既存LIMITEDの応答義務保持・既存source_component arcへの接続であり、新しい意味型・NORMAL資格・初回限定資格の回答後拡張ではない。初回一体単位未完了・正式受入0/3・candidate_ready=false・automatic_progression=false、Draft/open/unmerged・未配置。
+
+基準API `f27aa851aa9b446e147dcca616ef22908fab13c8`／資料 `d876b72029c88e6ff4b28726665173a6cd737f88`。添付前回txt、前提資料、作業ルールとRule18 §11.3、恒久incident全文、全体設計01／全file地図01A/B/C／current01/04、最新weekly20261010 §5.6.53、8/28意味設計§9.2/9.4を確認した。System Context prepareは `repository unavailable: mashos-api`（workspace binding不存在）で停止し、許可済み原典直接参照fallbackを使用。新Context成立とはしない。Rule18の既存承認範囲内修復として実施し、u300/u301の承認は取り直していない。同Work read-only補助を別Pro/Ultraモデルの正式二重検証とはしない。
+
+### 原因・変更範囲
+
+1. 通常満足と訂正receivedの二つのABOUTが同じbounded_relation文法を使うため、別の経験にも同じsemantic_arcを割り当て、最終gateが `required_arc_fragmented_without_reason` と判定していた。作者・本文inverseは通っており、意味更新は保存済みだった。`emlis_ai_grounded_sentence_surface.py::_observation_surface_atoms` で、既存二Move・四required核／二辺・元原文appraisalと別receivedの元時点肯定回答・別span・原文一意出現・同欄非重複を確認し、既存source_component arcを割り当てた。gate自体は変更せず、同じ成分を分断した場合は引き続き拒否する。
+2. 通常／理由付き満足と肯定回答が同lived_change familyとなり、代表選択で肯定回答が落ちていた。`emlis_answer_update.py::_retained_unfinished_received_duties` に、既存source-owned理由三点と通常二点を接続。通常は肯定・程度なし満足、実行済みSELF対象・過去／入力時点に限定し、既存原文parserの二点再導出と全属性一致を要求する。原文核4/5・辺2/3、source所有、元received反応だけのexact1 REVISE、original occasion、accepted/inactive/affected/changed refs、元eventへのABOUT、旧negative失効を確認する。未成立三点は従来どおり。
+
+核・関係・意味checkpointは不変。response_plan／selectedは二つのLIMITED dutyへ変わり、通常満足は本文が復旧、理由付きは第二文が復元される。第一文の既存意味を拡張せず、時点・肯否・対象を保持する。新file／schema／公開API／DTO／DB／RN／製品依存変更なし。STRUCTURE_MAP_DELTA_NONE：既存answer-updateの選択とSentence Surfaceの経験別arc割当責務の内側であり、全体01・01A/B/C・current_structureの配置・責任境界は変わらない。
+
+legacy／PARTIAL／後続round／現在回答／追加・撤回／満足側訂正／安心した／giver所有不明／追加材料は新保持の対象外。理由付きの同欄received先行は、既存source parserが理由三点として認識しておらず今回の対象外で、旧出力を維持する。通常満足は同欄両順も既存二点認識を再証明できる。
+
+### 実保存本文と読解
+
+通常入力「考えを言葉にできて満足した。」＋「褒められたのに、嬉しくなかった。」、回答「『嬉しくなかった』ではなく『嬉しかった』です。」に対応する実保存全文：
+
+```text
+見えたこと：
+「考えを言葉にできて」という出来事に対する評価は、「満足した」とあります。
+「褒められた」ことについて、その時の受け止めは「嬉しかった」と書かれています。
+
+Emlisから：
+考えを言葉にできたことについて、当時は満足したのですね。褒められたことについて、その時は嬉しかったのですね。
+```
+
+理由付き「探しやすくなったので、資料を分類したことに満足した。」では、既存第一文「資料を分類したことへの当時の満足について、探しやすくなったという理由に目を向けています。」を保ち、第二文「褒められたことについて、その時は嬉しかったのですね。」が復元された。初回・入力時点満足・逆順Observationも、保存46 DTOを17種類の全文と各DTO対応までrootが読解した。
+
+この欠落修復を商品完成にはしない。通常訂正後は「のですね」が反復し、理由付きの第一文は理由への注意という関係説明、初回は「受け取りました」の反復を残す。本人の充足・訂正後の経験としての内容形成と§9.2/9.4全体は未完成。入力の復唱中心の品質問題をMashのProduct Readへ戻さない。
+
+### 検証・互換
+
+| 対象 | 結果・限界 |
+| --- | --- |
+| 最終source主回帰 appraisal1,110＋Q2/Q3 application54 | **1,164 passed、1 warning、443.16 秒**。警告は既存 Pydantic `root_validator` の非推奨警告であり、今回の回帰失敗ではない |
+| 現行owner identity | 1 passed / 194 deselected / 23.03s。現行fixtureを再導出し、歴史fixture／receiptは変更なし。 |
+| 同じ72旧新比較 | 通常訂正12：本文なし→あり。理由付き訂正8：Reception第二文を復元。対象外52は全record一致。全72のcheckpointとresponse_plan以外のplanは一致、理由付き対象8のObservationは一致。 |
+| 実service＋隔離PGlite | 現行対象20＋実u303旧保存1＋実u303更新checkpoint中断retry2＝23 case／46 DTO。作者禁止GET/start、同回答再送、attempt・events・履歴不増加、旧完成本文非再生成を確認。retryはplain/reason双方で同じmeaning events／operationを再利用。 |
+| 現行RN hook／Modal | 実保存46 DTOの現在本文・元入力・全履歴・close/reopen一致。React Native部品はstub、本人実機・配布buildではない。 |
+
+比較matrixは通常／理由付き×満足の過去／入力時点×6配置（別欄両順、memo/memo_action各同欄両順）×初回／肯定訂正／不明回答の72。理由付き同欄received先行4訂正は対象外52に含む。サービス対象は差分のあった20訂正とその初回。旧engineは基準u303の独立git worktree／別processで実行した。
+
+新82回帰条件を既存testへ追加（総数への重複加算なし）。通常は対象表現3×満足時点2×6配置、理由は2種類×時点2×4適格配置。独立readerで順序・欠落・重複・対象・肯否・時点・理由の混同を拒否し、source/update所有・legacy・対象外更新、同一arcの不当分断拒否も確認。既存u303所有／除外試験を通常・理由付きにも拡張した。
+
+途中の局所試験は19 pass／8 fail：理由付きの同欄received先行も三点認識済みだと仮定したテスト前提誤り。source認識を拡大せず、対象16条件と不変対照4条件へ分けた。その後92 pass／1 failは、新しいsplit試験が_make_lineにplan/resolverを渡し忘れたことが原因で、試験のみ修正して当該1 pass。identity試験は最初にhistorical skip対象を選択し1 skip、current試験の実行中にsource guardを編集したため1 failとなった。source確定後に現行fixtureを更新し最終1 pass。これらを最終回帰成功へ隠して上書きしない。
+
+Python3.12.14／Pydantic2.13.5／pytest8.4.1／PGlite0.5.8／React・react-test-renderer18.3.1の再発見済み既存test依存を使用し、新installなし。稼働DB操作0。language identity `00a04d30355270facdb15e8221356acdde86df274e360c9937121f7e6f2e2018`、runtime identity `4fc68573b16b80989318f0e843ba95e40b15b5a83b7c982b156b18f5e4858c11`。最終実行コマンドはPYTHONPATHに既存test依存・ai・ai/services/ai_inference・ai/tests、Q2_PGLITE_MODULEに隔離PGliteを指定し、`python -m pytest -q ai/tests/test_cmee_emlis_result_appraisal.py ai/tests/test_emlis_q2_application.py ai/tests/test_emlis_q3_application.py`。identityは既存 `test_active_final_language_owner_chain_has_zero_legacy_compose_calls`。
+
+### 次の一作業
+
+今回の通常／理由付き肯定訂正の停止・欠落を再実装せず、残る理由付き同欄received先行の原文認識差を、既存本人継続証明と三点source所有の責務から照合する。新意味資格が必要なら不足を具体化し、作者だけの救済で補わない。並行して初回・訂正後の説明性／受容反復は本文品質残件として保持する。現在回答の欠落・安心した分類・共有対象／対象外更新、既存周辺4失敗（過去共有17との集合一致未確認）・same100・Q1上限・giver帰属・本人実機／正式Product Readは未解消。今回それらの解消は主張しない。10/31管理線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％を維持する。
