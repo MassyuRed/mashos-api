@@ -8392,7 +8392,7 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
     original_text = tuple(n for n in originals if any(f in _TEXT_SOURCE_FIELDS for f in n.source_fields))
     appraisal_links = tuple(r for r in relations if source_owned_result_appraisal(r, nuclei))
     detached_appraisals = tuple(n for n in nuclei if _thread_withdrawn_result_appraisal(n, relations))
-    # A complete original appraisal must not displace the accepted current
+    # A complete original appraisal must not displace the accepted
     # answer or original reaction through same-family ranking. Keep
     # that closed duty, then let the existing received/ABOUT selector prove
     # the remaining occasion and answer. No appraisal content is promoted.
@@ -8411,11 +8411,17 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
             (answer.kind, answer.semantic_frame.predicate_kind, answer.semantic_frame.modality,
              answer.semantic_frame.polarity) == ("reaction", "feeling", "feeling", "negative")
             and not is_grounded_current_answer_uncertainty(answer))
+        answer_times = {c for c in answer.semantic_frame.attribute_codes if c.startswith("thread_time:")}
+        current_answer = (answer.semantic_frame.time_scope == "present"
+                          and answer_times == {"thread_time:answer_time"})
+        # An original-occasion positive ADD remains a separate source duty;
+        # it neither replaces the original reaction nor asserts a later change.
+        original_positive_answer = (is_grounded_positive_feeling(answer)
+            and answer.semantic_frame.time_scope == "past"
+            and answer_times == {"thread_time:original_occasion"})
         if ((reason is not None or context is not None or plain)
             and (is_grounded_positive_feeling(answer) or negative_answer)
-            and answer.semantic_frame.time_scope == "present"
-            and {c for c in answer.semantic_frame.attribute_codes if c.startswith("thread_time:")}
-                == {"thread_time:answer_time"}):
+            and (current_answer or original_positive_answer)):
             # An unfinished fact is not a reason. Preserve its existing
             # contrast together with the object and satisfaction as one duty.
             companion = reason if reason is not None else context

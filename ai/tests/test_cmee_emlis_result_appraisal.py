@@ -6678,3 +6678,137 @@ def test_current_negative_appraisal_retention_requires_closed_sources_and_curren
     about, = (r for r in plan.relations if r.type == 'evaluation_about_event' and r.to_nucleus_id == answer.nucleus_id)
     wrong_about = replace(about, from_nucleus_id=appraisal.from_nucleus_id)
     assert groups(plan.nuclei, tuple(wrong_about if r == about else r for r in plan.relations)) != expected
+
+
+@pytest.mark.parametrize('layout', range(6))
+@pytest.mark.parametrize('source', _CURRENT_NEGATIVE_APPRAISAL_SOURCES)
+def test_original_positive_appraisal_retention_keeps_three_independent_duties(source, layout):
+    from test_cmee_emlis_q3_thread import advance
+    received = '褒められたのに、嬉しくなかった。'
+    args = ((source, received), (received, source), (source + received, ''),
+            (received + source, ''), ('', source + received), ('', received + source))[layout]
+    req = advance(request(*args), 'その時は嬉しかった。')
+    p = prepare_emlis_meaning(req); plan = build_updated_grounded_plan(p)
+    selected = project_thread_meaning(p, plan).selected_reception
+    update, = p.checkpoint.answer_update.updates
+    assert update.operation == 'ADD' and update.temporal_binding.about_time == 'ORIGINAL_OCCASION'
+    assert not p.checkpoint.inactive_claim_refs
+    assert len(plan.response_plan.human_reception_plan.moves) == len(selected.decisions) == 3
+    assert all(d.branch == 'LIMITED' and type(d.subjective_proposition.appraisal_content).__name__
+               == 'EmlisAppraisalContent' for d in selected.decisions)
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact is not None and out.body_state == 'REFINED', out.reason_codes
+    reception = out.artifact.reception
+    assert '褒められたことは、嬉しさにはつながらなかったのですね。' in reception
+    assert '褒められたことについて、その時は嬉しかったのですね。' in reception
+    assert ('満足しなかった' if '満足しなかった' in source else '満足') in reception
+    assert ('考えを言葉にできたこと' if '結論' in source else '資料を分類したこと') in reception
+    if '探しやすく' in source:
+        assert '探しやすくなったという理由' in reception
+    if '結論' in source:
+        assert '結論は出ていないという点' in reception and 'という理由' not in reception
+    assert '嬉しくなかった' in out.artifact.observation and 'その時は「嬉しかった」' in out.artifact.observation
+    assert '回答した時点' not in reception and '嬉しくなった' not in reception
+
+
+@pytest.mark.parametrize('source,expected', [
+    ('資料を分類したことに満足している。', '入力した時点では満足している'),
+    ('資料を分類したことに納得した。', '当時は納得した'),
+    ('探しやすくなったので、資料を分類したことに満足している。', '入力した時点での満足'),
+    ('結論は出ていないが、考えを言葉にできて満足している。', '入力した時点での満足'),
+])
+def test_original_positive_appraisal_retention_keeps_evaluation_time(source, expected):
+    from test_cmee_emlis_q3_thread import advance
+    out = MeaningExperienceEngine().generate(advance(request(source,
+        '褒められたのに、嬉しくなかった。'), 'その時は嬉しかった。'))
+    assert out.artifact is not None, out.reason_codes
+    assert expected in out.artifact.reception
+    assert '嬉しさにはつながらなかった' in out.artifact.reception
+    assert 'その時は嬉しかった' in out.artifact.reception
+
+
+@pytest.mark.parametrize('reply,expected', [('その時は楽しかった。', '楽しかった'),
+                                         ('その時は少し嬉しかった。', '少し嬉しかった')])
+def test_original_positive_appraisal_retention_keeps_answer_predicate_and_degree(reply, expected):
+    from test_cmee_emlis_q3_thread import advance
+    out = MeaningExperienceEngine().generate(advance(request(_CURRENT_NEGATIVE_APPRAISAL_SOURCES[-1],
+        '褒められたのに、嬉しくなかった。'), reply))
+    assert out.artifact is not None, out.reason_codes
+    assert 'その時は' + expected + 'のですね。' in out.artifact.reception
+    assert '結論は出ていないという点' in out.artifact.reception
+    assert '嬉しさにはつながらなかった' in out.artifact.reception
+
+
+def test_original_positive_appraisal_retention_keeps_partial_unresolved():
+    from test_cmee_emlis_q3_thread import advance
+    out = MeaningExperienceEngine().generate(advance(request(_CURRENT_NEGATIVE_APPRAISAL_SOURCES[-1],
+        '褒められたのに、嬉しくなかった。'), 'その時は嬉しかった。「存在しない」は誤りです。'))
+    assert out.artifact is not None and out.body_state == 'PARTIALLY_REFINED'
+    assert '存在しない' in out.artifact.observation and '反映できていない部分' in out.artifact.observation
+    assert '嬉しさにはつながらなかった' in out.artifact.reception
+    assert 'その時は嬉しかった' in out.artifact.reception
+
+
+@pytest.mark.parametrize('source', _CURRENT_NEGATIVE_APPRAISAL_SOURCES)
+def test_original_positive_appraisal_retention_reader_rejects_missing_or_retimed_duties(source, monkeypatch):
+    from test_cmee_emlis_q3_thread import advance
+    from emlis_ai_grounded_observation_gate import _read_answer_feeling_discourse
+    import emlis_ai_grounded_human_reception as hr
+    req = advance(request(source, '褒められたのに、嬉しくなかった。'), 'その時は嬉しかった。')
+    p = prepare_emlis_meaning(req); plan = build_updated_grounded_plan(p)
+    selected = project_thread_meaning(p, plan).selected_reception
+    resolver = p.thread.resolver(); sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    artifact = MeaningExperienceEngine().generate(req).artifact
+    assert artifact is not None
+    clauses = [part + '。' for part in artifact.reception.split('。') if part]
+    answer, = (c for c in clauses if 'その時は嬉しかった' in c)
+    def valid(text):
+        return evaluate_grounded_surface_body_inverse(body=text.encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert valid(artifact.text)
+    for clause in clauses:
+        assert not valid(artifact.text.replace(clause, ''))
+    mutations = [('その時は', '回答した時点では'), ('嬉しかった', '嬉しくなかった'),
+                 ('嬉しかった', '嬉しくなった'), ('褒められた', '資料を分類した')]
+    for old, new in mutations:
+        assert old in answer and not valid(artifact.text.replace(answer, answer.replace(old, new)))
+    assert not valid(artifact.text.replace('嬉しさにはつながらなかった', '嬉しさにつながった'))
+    assert not valid(artifact.text.replace(answer, answer + answer))
+    move, = (m for m in plan.response_plan.human_reception_plan.moves
+             if m.target_nucleus_ids[0].startswith('answer:'))
+    monkeypatch.setattr(hr, '_source_owned_answer_feeling_sentence',
+        lambda *_a, **_k: pytest.fail('finite answer reader called author'))
+    read = lambda text: _read_answer_feeling_discourse(text, move, plan, resolver, selected)
+    assert read(answer) is not None
+    for old, new in mutations:
+        assert read(answer.replace(old, new)) is None
+
+
+@pytest.mark.parametrize('source', _CURRENT_NEGATIVE_APPRAISAL_SOURCES)
+def test_original_positive_appraisal_retention_requires_closed_sources_and_original_about(source):
+    from test_cmee_emlis_q3_thread import advance
+    from emlis_ai_grounded_observation_plan import _thread_retained_reaction_groups as groups
+    req = advance(request(source, '褒められたのに、嬉しくなかった。'), 'その時は嬉しかった。')
+    plan = build_updated_grounded_plan(prepare_emlis_meaning(req))
+    expected = groups(plan.nuclei, plan.relations)
+    assert len(expected) == 3 and groups(plan.nuclei, plan.relations, separate_later_scopes=False) != expected
+    for n in plan.nuclei:
+        if n.retention == 'required' and set(n.source_fields) & {'memo', 'memo_action', 'answer_text_private'}:
+            for wrong in (replace(n, grounding_kind='inferred'),
+                          replace(n, semantic_frame=replace(n.semantic_frame, actor='other'))):
+                assert groups(tuple(wrong if item == n else item for item in plan.nuclei), plan.relations) != expected
+    for edge in plan.relations:
+        assert groups(plan.nuclei, tuple(r for r in plan.relations if r != edge)) != expected
+        assert groups(plan.nuclei, (*plan.relations, edge)) != expected
+    answer, = (n for n in plan.nuclei if n.source_fields == ('answer_text_private',))
+    assert groups((*plan.nuclei, answer), plan.relations) != expected
+    for wrong_frame in (replace(answer.semantic_frame, time_scope='present'),
+                        replace(answer.semantic_frame, attribute_codes=tuple(
+                            'thread_time:answer_time' if c == 'thread_time:original_occasion' else c
+                            for c in answer.semantic_frame.attribute_codes))):
+        wrong = replace(answer, semantic_frame=wrong_frame)
+        assert groups(tuple(wrong if n == answer else n for n in plan.nuclei), plan.relations) != expected
+    appraisal, = (r for r in plan.relations if source_owned_result_appraisal(r, plan.nuclei))
+    about, = (r for r in plan.relations if r.type == 'evaluation_about_event' and r.to_nucleus_id == answer.nucleus_id)
+    wrong_about = replace(about, from_nucleus_id=appraisal.from_nucleus_id)
+    assert groups(plan.nuclei, tuple(wrong_about if r == about else r for r in plan.relations)) != expected
