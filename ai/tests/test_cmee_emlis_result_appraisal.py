@@ -2316,16 +2316,17 @@ def test_received_context_keeps_same_field_appraisal_in_actual_body(received, ap
     ('「褒められたのに、嬉しくなかった。」', '資料を分類できて満足した。'),
     ('褒められたら、嬉しくなかった。', '資料を分類できて満足した。'),
     ('褒められなかったのに、嬉しくなかった。', '資料を分類できて満足した。'),
-    ('褒められたのに、嬉しくなかった。', '探しやすくなったので、資料を分類したことに満足した。'),
 ])
-def test_received_context_does_not_erase_foreign_or_add_another_semantic_scope(prefix, suffix):
-    plan = prepare_emlis_meaning(request(prefix + suffix)).original_plan
+@pytest.mark.parametrize('reason', ['', '探しやすくなったので、'])
+def test_received_context_does_not_erase_foreign_or_add_another_semantic_scope(prefix, suffix, reason):
+    plan = prepare_emlis_meaning(request(prefix + reason + suffix)).original_plan
     assert not any(source_owned_result_appraisal(r, plan.nuclei) for r in plan.relations)
 
 
 @pytest.mark.parametrize('giver', ['私', '自分', '自分自身', '私たち', '先生と私'])
-def test_received_context_self_giver_does_not_prove_self_receiver(giver):
-    plan = prepare_emlis_meaning(request(giver + 'に褒められたのに、嬉しくなかった。資料を分類できて満足した。')).original_plan
+@pytest.mark.parametrize('reason', ['', '探しやすくなったので、'])
+def test_received_context_self_giver_does_not_prove_self_receiver(giver, reason):
+    plan = prepare_emlis_meaning(request(giver + 'に褒められたのに、嬉しくなかった。' + reason + '資料を分類できて満足した。')).original_plan
     assert not any(source_owned_result_appraisal(r, plan.nuclei) for r in plan.relations)
 
 
@@ -5772,7 +5773,7 @@ def test_unfinished_received_retention_does_not_borrow_owner_or_ignore_extra_sou
     assert not duties(p, plan.nuclei, plan.relations)
 
 
-@pytest.mark.parametrize('layout', ['separate', 'reverse', 'joined', 'joined_action'])
+@pytest.mark.parametrize('layout', ['separate', 'reverse', 'joined', 'joined_action', 'joined_reverse', 'joined_reverse_action'])
 @pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
 @pytest.mark.parametrize('reason', ['探しやすくなった', '資料を使いやすい'])
 def test_reasoned_corrected_received_retains_both_existing_limited_duties(layout, evaluation, reason):
@@ -5859,17 +5860,32 @@ def test_reasoned_corrected_received_reader_keeps_reason_and_answer_without_auth
 
 @pytest.mark.parametrize('field', ['memo', 'memo_action'])
 @pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
-def test_received_first_reasoned_source_keeps_existing_unrecognized_group(monkeypatch, field, evaluation):
-    from test_cmee_emlis_q3_thread import advance
-    from cocolon_meaning_experience_engine import emlis_answer_update as updates
-    text = '褒められたのに、嬉しくなかった。探しやすくなったので、資料を分類したことに' + evaluation + '。'
-    original = request(text if field == 'memo' else '', text if field == 'memo_action' else '')
-    req = advance(original, '「嬉しくなかった」ではなく「嬉しかった」です。')
+@pytest.mark.parametrize('reason', ['探しやすくなった', '見た目がすっきりした', '資料を使いやすい'])
+def test_received_first_reasoned_source_keeps_separate_experiences(field, evaluation, reason):
+    text = '褒められたのに、嬉しくなかった。' + reason + 'ので、資料を分類したことに' + evaluation + '。'
+    req = request(text if field == 'memo' else '', text if field == 'memo_action' else '')
     p = prepare_emlis_meaning(req); plan = build_updated_grounded_plan(p)
-    assert not updates._retained_unfinished_received_duties(p, plan.nuclei, plan.relations)
-    before = MeaningExperienceEngine().generate(req)
-    monkeypatch.setattr(updates, '_retained_unfinished_received_duties', lambda *_a: ())
-    assert MeaningExperienceEngine().generate(req) == before
+    assert not p.legacy_received_reason_context
+    assert len([n for n in plan.nuclei if n.retention == 'required']) == 5
+    assert len(plan.relations) == 3
+    # Each relation stays inside its own original sentence. The received
+    # event never becomes the reason for the appraisal in the next sentence.
+    for relation in plan.relations:
+        nodes = [n for n in plan.nuclei if n.nucleus_id in
+                 (relation.from_nucleus_id, relation.to_nucleus_id)]
+        assert len(nodes) == 2 and nodes[0].source_span_ids == nodes[1].source_span_ids
+        assert nodes[0].source_fields == nodes[1].source_fields == (field,)
+    selected = project_thread_meaning(p, plan).selected_reception
+    assert len(selected.decisions) == 2 and all(d.branch == 'NORMAL' for d in selected.decisions)
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact and out.body_state == 'PRE_QUESTION', out.reason_codes
+    assert reason + 'という点で、' in out.artifact.reception
+    assert ('当時ご自身の中に満たされた感覚があった' if evaluation == '満足した'
+            else '入力した時点でご自身の中に満たされた感覚がある') in out.artifact.reception
+    assert '褒められたことだけでは言い表せない、嬉しさが伴わなかった' in out.artifact.reception
+    sentence = build_grounded_sentence_plan(plan, p.thread.resolver(), recovery_stage='full')
+    assert evaluate_grounded_surface_body_inverse(body=out.artifact.text.encode(), plan=plan,
+        sentence_plan=sentence, resolver=p.thread.resolver(), selected_subjective_input=selected).passed
 
 
 @pytest.mark.parametrize('layout', ['separate', 'reverse', 'joined', 'joined_reverse', 'joined_action', 'joined_reverse_action'])
@@ -5929,3 +5945,57 @@ def test_plain_corrected_component_split_is_still_rejected(monkeypatch):
     reasons = _semantic_subcheck_reasons(plan=plan, sentence_plan=replace(sentence, lines=(*sentence.lines, split)),
         surface_result=captured['surface_result'], resolver=captured['resolver'])
     assert 'required_arc_fragmented_without_reason' in reasons[2]
+
+
+# Captured by the unmodified u304 engine, including unavailable old outcomes.
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+def test_received_reason_direct_builder_retains_legacy_default(field):
+    from emlis_ai_grounded_observation_plan import build_final_stage1_grounded_observation_plan
+    text = '褒められたのに、嬉しくなかった。探しやすくなったので、資料を分類したことに満足した。'
+    prepared = prepare_emlis_meaning(request(text if field == 'memo' else '',
+                                            text if field == 'memo_action' else ''))
+    source = prepared.thread.original
+    direct = build_final_stage1_grounded_observation_plan(
+        source.normalized_current_input, evidence_spans=source.evidence_spans)
+    assert not _reasoned_appraisal_source(direct)
+    assert _reasoned_appraisal_source(prepared.original_plan)
+
+
+# Captured by the unmodified u304 engine, including unavailable old outcomes.
+_PRE_RECEIVED_REASON = json.loads((Path(__file__).parent / 'fixtures' /
+    'cmee_emlis_pre_reason_received_context_v1.json').read_text())['rows']
+
+
+@pytest.mark.parametrize('row', _PRE_RECEIVED_REASON, ids=lambda row: row['case_id'])
+def test_pre_received_reason_checkpoint_restores_complete_old_result(row):
+    from dataclasses import asdict
+    from hashlib import sha256
+    from emlis_thread_service import _json
+    req = _legacy_fixture_request(row)
+    p = prepare_emlis_meaning(req)
+    assert p.legacy_received_reason_context
+    assert not p.legacy_received_unfinished_context
+    assert _json(p.checkpoint) == row['checkpoint']
+    for attr in ('nuclei', 'relations'):
+        value = json.dumps([asdict(n) for n in getattr(p.original_plan, attr)],
+            sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
+        assert sha256(value).hexdigest() == row['original_' + attr + '_sha256']
+    out = MeaningExperienceEngine().generate(req)
+    assert _json(out.meaning_checkpoint) == row['checkpoint']
+    assert (out.artifact.text if out.artifact else None) == row['body']
+    assert out.body_state == row['body_state'] and list(out.reason_codes) == row['reason_codes']
+    assert _json(out.question) == row['question']
+    bad = replace(req, emlis_thread=replace(req.emlis_thread, prepared_meaning_checkpoint_ref='foreign'))
+    with pytest.raises(ValueError, match='emlis_checkpoint_source_prefix_mismatch'):
+        prepare_emlis_meaning(bad)
+    if 'answer' in row:
+        # The received question itself is unchanged by recognizing a separate
+        # appraisal. Without an answer checkpoint there is no historical
+        # source-version identity to restore: validate the canonical question
+        # against current meaning and create a new complete checkpoint.
+        unanswered_checkpoint = _legacy_fixture_request(row, checkpoint=False)
+        restored = prepare_emlis_meaning(unanswered_checkpoint)
+        assert not restored.legacy_received_reason_context
+        assert restored.checkpoint.source_prefix_ref == row['checkpoint']['source_prefix_ref']
+        assert restored.checkpoint.base_meaning_ref != row['checkpoint']['base_meaning_ref']
+        assert restored.checkpoint.checkpoint_id != row['checkpoint']['checkpoint_id']

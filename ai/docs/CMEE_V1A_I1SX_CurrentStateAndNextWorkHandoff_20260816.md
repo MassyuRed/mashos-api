@@ -1,4 +1,4 @@
-> 最新EmlisAI残件：末尾 **u304（2026-10-17・通常／理由付き満足の肯定訂正後本文停止・受け取り欠落を修復）**。限定修復・検証結果は末尾。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
+> 最新EmlisAI残件：末尾 **u305（2026-10-17・同欄received先行で失われる理由付き満足を復元）**。限定修復・検証結果は末尾。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -21458,3 +21458,73 @@ Python3.12.14／Pydantic2.13.5／pytest8.4.1／PGlite0.5.8／React・react-test-
 ### 次の一作業
 
 今回の通常／理由付き肯定訂正の停止・欠落を再実装せず、残る理由付き同欄received先行の原文認識差を、既存本人継続証明と三点source所有の責務から照合する。新意味資格が必要なら不足を具体化し、作者だけの救済で補わない。並行して初回・訂正後の説明性／受容反復は本文品質残件として保持する。現在回答の欠落・安心した分類・共有対象／対象外更新、既存周辺4失敗（過去共有17との集合一致未確認）・same100・Q1上限・giver帰属・本人実機／正式Product Readは未解消。今回それらの解消は主張しない。10/31管理線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％を維持する。
+
+
+## u305 — 同欄received先行で失われる理由付き満足を復元（2026-10-17 JST）
+
+TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。u304末尾・weekly§5.6.54の次作業を実施し、本人のreceived経験一文が先行しただけで、後続の理由・実行済み対象・満足の三点が一般的な変化／行動へ落ちるsource認識を修復した。初回と肯定訂正後の本文へ、既存の三点内容と別receivedを戻す。新しい理由語形・意味資格・NORMAL資格・作者文法を追加しない。初回一体単位未完了、正式受入0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置。
+
+基準API `5f710c21c065db373ede844106670f7fb41b365d`／資料 `2c54ba43f639652475d78e33b2e1599648060f54`。全体01・全file地図01A/B/C・current01/04、前提・作業ルール・Rule18、恒久incident全文と最新weeklyを継続確認。System Context prepareはworkspace binding不存在で `repository unavailable: mashos-api` のまま、許可済み原典直接参照を使用。u264の理由三点・u265の本人received継続・u299の同継続接続と同じ意味境界を保つ既存契約内修復としてRule18 §11.3 LEVEL2を適用した。同Work read-only補助を別Pro/Ultraの正式二重検証とはしない。
+
+### 原因と最小変更
+
+`emlis_ai_grounded_observation_plan.py::_explicit_result_appraisal_projections` は理由grammarを認識していても、前文receivedからのSELF継続を `reason is None` で遮断していた。前文全体が既存owner判定に通らないため後続三点がreturn()となり、同じ理由付き満足でも入力順だけで一般的な一核へ落ちる。理由なしや未成立事項付きに既に使うSELF証明を、既承認の理由三点にも接続した。
+
+保持する境界は、欄先頭の完全received一文・exact2投影、前方全文=直前文、SELF giver除外／giver所有、引用・報告の境界、理由exact1・肯定fact・独立時点、実行済みSELF対象・肯定無程度の満足である。複数前文・別主体・感情三成分・目的・推量・否定理由等へ広げない。前のreceivedと後の満足に因果・同時性を作らず、各関係は各原文一文の内側に留める。
+
+production変更は既存3fileのみ。source ownerのprivate `legacy_received_reason_context` をtyped projection／final builderへ伝搬し、直接builderの既定は旧認識。`emlis_question.original_meaning_plan` はfresh threadで新認識を明示し、以前のsource世代では旧認識を使う。`emlis_answer_update` は今回の接続だけを旧再導出する独立経路を持ち、別欄のplain・未成立・理由三点を一括で旧化しない。準備結果のprivate flagは追加するが、persisted意味schema／公開API／DTO／DB／RN／依存／各上限は不変。新production file・engine・helper・checker・registryは追加しない。
+
+STRUCTURE_MAP_DELTA_PRESENT：source認識・旧checkpoint再導出の責務を全体01／01A／current01/04へ同期。新規fileは合成旧互換fixture `ai/tests/fixtures/cmee_emlis_pre_reason_received_context_v1.json` のみ。既存testと現行owner identity fixtureを更新し、過去fixture／receiptは不変。fresh対象の核・辺・checkpoint・selectedは変わるため、u304の「意味checkpoint不変」を今回へ流用しない。
+
+### 実本文と品質判定
+
+対象入力は「褒められたのに、嬉しくなかった。探しやすくなったので、資料を分類したことに満足した。」。旧初回は理由文全体を「変化」として受け止め、訂正後Receptionは褒められた反応だけになっていた。修復後に実serviceで保存した初回全文：
+
+```text
+見えたこと：
+「褒められた」の一方で「嬉しくなかった」とあります。
+「探しやすくなった」を理由に、「資料を分類した」という出来事への評価は「満足した」とあります。
+
+Emlisから：
+資料を分類したことについて受け取ったのは、探しやすくなったという点で、当時ご自身の中に満たされた感覚があった経験です。褒められたことだけでは言い表せない、嬉しさが伴わなかったあなたの経験として受け取りました。
+```
+
+肯定訂正「『嬉しくなかった』ではなく『嬉しかった』です。」の実保存全文：
+
+```text
+見えたこと：
+「褒められた」ことについて、その時の受け止めは「嬉しかった」と書かれています。
+「探しやすくなった」を理由に、「資料を分類した」という出来事への評価は「満足した」とあります。
+
+Emlisから：
+資料を分類したことへの当時の満足について、探しやすくなったという理由に目を向けています。褒められたことについて、その時は嬉しかったのですね。
+```
+
+入力時点の満足も時点を保つ。rootは実保存28 DTOを、8種類の全文と全対応まで読んだ。初回の「受け取った／受け取りました」の反復、Observationの関係説明、訂正後の理由への注意に留まる文は未完成。今回の認識回復・NORMAL判定・検査成功を商品合格にはしない。Mashに明白な低品質の判定を戻さない。
+
+### 旧記録・途中再開の区別
+
+1. 完成済み本文はGET/start・同回答再送で再生成しない。
+2. 完全な回答checkpointを保存済みの場合は、今回接続だけを旧sourceへ戻し、核／辺・checkpoint全文・本文／状態／理由／questionを厳密照合して再開する。旧sourceを新解釈へ付け替えない。
+3. 回答checkpoint未保存で、旧質問と現行質問が全体一致する場合は旧版を識別する情報がない。既存のcanonical質問検証を通して現行source全体を再導出し、新しいcheckpointを作る。旧IDを新意味へ流用せず、保存済み初回本文はそのまま残る。「旧質問だから必ず旧sourceへ戻る」とはしない。新metadata／source-version契約は追加しない。
+
+変更前u304の独立processで有効結果13件を取得。FREE_Q1初回・Q3初回／肯定訂正／不明回答を両欄で取得し、他欄plain・未成立・理由三点も確認。旧結果には初回本文なし1、訂正本文なし1を含む。有効13行と、質問が未発行のため回答を作れなかった未成立別欄1試行をfixture内で分離し、14有効結果と称さない。
+
+### 検証
+
+| 対象 | 結果・限界 |
+| --- | --- |
+| 最終source appraisal＋Q2/Q3 application | **1,209 passed、1 warning、465.77 秒**（appraisal1,155＋application54）。警告は既存Pydantic非推奨警告 |
+| 現行owner identity | 1 passed / 194 deselected / 22.42s。既存Pydantic非推奨warning1。現行fixtureのみ再導出。 |
+| 旧checkpoint・原核辺hash・全文・question | 有効13件一致。foreign checkpoint拒否、回答checkpointなしは新しい完全checkpointになることも確認。 |
+| 72件同入力旧新比較 | 通常／理由付き×満足過去／入力時点×6配置×初回／訂正／不明。今回の同欄received先行reason12 recordのみ変化、対象外60は全record一致。本文差分は初回4＋訂正4、不明4はartifactなしを維持して意味checkpointが変わる。 |
+| 実service＋隔離PGlite | fresh8 case＋旧完成2＋旧pending新回答2＋旧回答checkpoint中断retry2＝14 case／28 DTO。GET/start作者禁止、同回答再送、events／attempt・履歴不増加、retryのmeaning events／operation再利用を確認。 |
+| 現行RN hook／Modal | 実保存28 DTOの現在本文・元入力・全履歴・close/reopen一致。native部品stubで、本人実機・配布buildではない。 |
+
+途中の局所試験は74 pass／8 fail。旧Q1本文2件は不要なthread_engine導線変更で観測文が変わったため、その変更を撤回して従来導線へ戻した。残り6件は「旧質問は常に旧sourceへ復元できる」というテスト前提誤り。質問全体一致・回答checkpoint未保存では識別不能であることを現物で確認し、上記3の既存動作を検証する試験へ修正。旧互換13件は再実行13 pass、最終一括回帰は表の結果。失敗履歴を最終成功へ隠して上書きしない。
+
+Python3.12.14／Pydantic2.13.5／pytest8.4.1／PGlite0.5.8／React・react-test-renderer18.3.1の既存test依存を使用、新install・稼働DB操作なし。主回帰コマンドは既存test PYTHONPATHと隔離Q2_PGLITE_MODULEを指定して `python -m pytest -q ai/tests/test_cmee_emlis_result_appraisal.py ai/tests/test_emlis_q2_application.py ai/tests/test_emlis_q3_application.py`。language identity `c64d32b055e315cb004f95bd989d83679ea4ce4bd714d0827c62a4082652eaa6`／runtime identity `07ded6b32bc9afcfeeb88f611e5064afba9ebda4995106524dd35a17374f1795`。
+
+### 次の一作業
+
+今回の順序差修復を再実装しない。次は肯定訂正後に、未変更の理由付き満足が「理由への注意」へ弱まる内容欠落を、既存LIMITED・選択済み意味・承認済み理由／対象／満足内容から照合する。語尾の差し替えだけを解決とせず、新たな内部内容資格が必要なら差分案を具体化する。初回の説明性・受容反復、現在回答の欠落・安心した分類・共有対象／対象外更新、既存周辺4失敗（過去共有17との集合一致未確認）・same100・Q1上限・giver帰属・本人実機／正式Product Readは残る。10/31管理線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％を維持する。
