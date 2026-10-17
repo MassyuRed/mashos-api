@@ -1,0 +1,173 @@
+{
+  "source_commit": "d780c315ddad621120ff6399e5d1e8c05e7a3310",
+  "cases": [
+    {
+      "case_id": "original03",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。",
+      "memo_action": "",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-e138f0fb45cb5d69644358396dc6982017775183a9690e1720f5b1903c8f1c74",
+        "source_prefix_ref": "emlis-q3-source-prefix-21fc20af4ab6b6ace394b10c402b799738b5394e9232d2eb55d789b5ed2ba70e",
+        "base_meaning_ref": "emlis-base-meaning-cfe00a895edaf904e5934fa4646fce37b62f7487e476d9674eb1d8fb67d0368a",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "original_nuclei_sha256": "068ff5e66ba545ed32fd34616dc9f0c93bd42fdaedf1247a2d188d3bd3395e4b",
+      "original_relations_sha256": "c74eb08244cd0d9ade3fdbc349e7a7a4d493e29f6d08e8b1864c8b21586e0695",
+      "public_result": {
+        "status": "GENERATED",
+        "body": "見えたこと：\n「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n\nEmlisから：\n友達からの誘いを断って、一人で休めたことにほっとしたという気持ちともう誘ってもらえなくなるかもしれないと思うと寂しいこととの違いをどちらの側も残したまま、感じています。",
+        "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。",
+        "reception": "友達からの誘いを断って、一人で休めたことにほっとしたという気持ちともう誘ってもらえなくなるかもしれないと思うと寂しいこととの違いをどちらの側も残したまま、感じています。",
+        "body_state": "FINAL",
+        "body_sufficiency": "SUFFICIENT",
+        "reason_codes": [
+          "no_bound_personal_meaning_target"
+        ],
+        "question": null,
+        "question_decision": {
+          "disposition": "END",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "no_bound_personal_meaning_target"
+        },
+        "automatic_progression": false
+      }
+    },
+    {
+      "case_id": "natural03",
+      "memo": "友人の誘いを断って、一人で休めたことにほっとした。でも、今後は誘ってもらえないかもしれないと考えると寂しい。",
+      "memo_action": "",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-9d4572c3d3319906b5f18557f0c94482f38dcb4507911b53be81f79ac207c30f",
+        "source_prefix_ref": "emlis-q3-source-prefix-50182004a8939fdb36488713624a3ec909ab649c33cd56d6e928df0544478132",
+        "base_meaning_ref": "emlis-base-meaning-bf5711a4ab4c809e53abd908a2e165fb3aad09c8bb5e7abd844c38d514b8e826",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "original_nuclei_sha256": "4aedab75e15dec403048a9052d8f39c3698191f2b6d8826da3f07b7f7e4911a4",
+      "original_relations_sha256": "c74eb08244cd0d9ade3fdbc349e7a7a4d493e29f6d08e8b1864c8b21586e0695",
+      "public_result": {
+        "status": "UNAVAILABLE",
+        "body": null,
+        "observation": null,
+        "reception": null,
+        "body_state": "UNAVAILABLE",
+        "body_sufficiency": null,
+        "reason_codes": [
+          "emlis_q3_initial_body_unavailable"
+        ],
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "automatic_progression": false
+      }
+    },
+    {
+      "case_id": "limited_natural03",
+      "memo": "友人の誘いを断って、一人で休めたことにほっとした。でも、今後は誘ってもらえないかもしれないと考えると寂しい。何が不安なのか、私にもまだわからない。",
+      "memo_action": "",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-ce23ca69a0e622f27385946f14f35e7aabe76a24a5690a4f9b7314078e34744e",
+        "source_prefix_ref": "emlis-q3-source-prefix-6aff517f2b88d5dd807dc20411c04f386240e56f6c0498250235448e411886fe",
+        "base_meaning_ref": "emlis-base-meaning-044eb0d70e5fb42f05ea06b82107b5d61d99722582d8399b231c47cc30dbd1d2",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "original_nuclei_sha256": "c28a915cdb3a1ad0c5c732a81ed668e92a81e07c5fd6af75b980680c60452bc6",
+      "original_relations_sha256": "0f7e9d2dfe61ddf150d0d1c8ab890a1b1014c863c3b8711ad1c22ac70bfb2a1c",
+      "public_result": {
+        "status": "UNAVAILABLE",
+        "body": null,
+        "observation": null,
+        "reception": null,
+        "body_state": "UNAVAILABLE",
+        "body_sufficiency": null,
+        "reason_codes": [
+          "emlis_q3_initial_body_unavailable"
+        ],
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "automatic_progression": false
+      }
+    },
+    {
+      "case_id": "korekarawa_natural03",
+      "memo": "友人の誘いを断って、一人で休めたことにほっとした。でも、これからは誘ってもらえないかもしれないと考えると寂しい。",
+      "memo_action": "",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-6d17f526fb0576f2df5e5791588a967c520d39ae17049168c52b14fde44d52b9",
+        "source_prefix_ref": "emlis-q3-source-prefix-a61eed1eadd56eeef9ef71384718ea4ffe9756d7961be71a31cb3afdc362f666",
+        "base_meaning_ref": "emlis-base-meaning-ff23e8e3771c997c9515197835a9d6a2bfc056ea3d6e76ae38af746963fb611a",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "original_nuclei_sha256": "4aedab75e15dec403048a9052d8f39c3698191f2b6d8826da3f07b7f7e4911a4",
+      "original_relations_sha256": "c74eb08244cd0d9ade3fdbc349e7a7a4d493e29f6d08e8b1864c8b21586e0695",
+      "public_result": {
+        "status": "UNAVAILABLE",
+        "body": null,
+        "observation": null,
+        "reception": null,
+        "body_state": "UNAVAILABLE",
+        "body_sufficiency": null,
+        "reason_codes": [
+          "emlis_q3_initial_body_unavailable"
+        ],
+        "question": null,
+        "question_decision": {
+          "disposition": "BLOCKED",
+          "target_ref": null,
+          "target_kind": null,
+          "supporting_evidence_refs": [],
+          "missing_dimension": null,
+          "affected_meaning_refs": [],
+          "affected_reception_refs": [],
+          "asked_target_refs": [],
+          "decision_reason": "prequestion_body_unavailable"
+        },
+        "automatic_progression": false
+      }
+    }
+  ]
+}

@@ -7242,7 +7242,13 @@ def _final_source_self_appraisal_nuclei(nuclei, evidence_spans, normalized_input
     return tuple(result)
 
 
-def _source_current_cognition_parts(fragment):
+_COGNITIVE_OBJECT_TEMPORAL_TOPIC = r"(?:今後|これから)(?:は|も)"
+_RECEIVED_PREDICATE_SOURCE = (
+    r"(?:褒められ|ほめられ|言われ|伝えられ|評価され|断られ|誘われ|頼まれ|声をかけられ|声を掛けられ)"
+)
+
+
+def _source_current_cognition_parts(fragment, *, _allow_object_temporal_topic=False):
     """Bind a present cognitive host without asserting its possible object.
 
     The optional concessive background and inner possibility are not the
@@ -7255,11 +7261,19 @@ def _source_current_cognition_parts(fragment):
         return None
     self_subject = r"(?:(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が|も)[、,]?)?"
     now = r"(?:(?:今|現在|今日)(?:は|も)?[、,]?)?"
+    if _allow_object_temporal_topic:
+        # Do not consume just 今 from the embedded 今後も time adjunct.
+        now = now.replace("今|", "今(?!後)|")
     noun = r"[一-鿿々ァ-ヶー]+"
     # A complete non-topic background cannot introduce an outside thinker.
     background = (r"(?P<background>" + noun + r"が"
                   r"[^はがもをにと、,。．.!！?？\s]+だけなのに[、,])?")
-    possible = r"(?P<possibility>[^はが、,。．.!！?？\s]+?かも(?:しれない|知れない)?)"
+    # A time topic belongs to the possible object, never to the present
+    # cognitive host. Keep its bytes inside that object's source range.
+    temporal_topic = (r"(?:" + _COGNITIVE_OBJECT_TEMPORAL_TOPIC + r")?"
+                      if _allow_object_temporal_topic else "")
+    possible = (r"(?P<possibility>" + temporal_topic
+                + r"[^はが、,。．.!！?？\s]+?かも(?:しれない|知れない)?)")
     host = r"(?P<cognition>考えちゃう|考えてしまう|思ってしまう|考えている|思っている|考える|思う)"
     match = re.fullmatch(self_subject + now + background + possible + r"(?:と|って)" + host, fragment)
     if match is None:
@@ -7305,7 +7319,7 @@ def _source_current_cognition_parts(fragment):
     ) if match[role] is not None)
 
 
-def _source_cognitive_feeling_parts(fragment):
+def _source_cognitive_feeling_parts(fragment, *, _legacy_cognitive_temporal_topic=False):
     """Compose an already bounded cognitive antecedent with its feeling host.
 
     The possibility stays inside the cognitive object. Its negation and
@@ -7316,15 +7330,30 @@ def _source_cognitive_feeling_parts(fragment):
         or re.search(r"によ(?:ると|れば)|に言わせれば|に聞けば|の話だと|いわく|曰く", fragment)):
         return None
     for connector in re.finditer(r"と[、,]?", fragment):
-        parts = _source_current_cognition_parts(fragment[:connector.start()])
+        parts = _source_current_cognition_parts(fragment[:connector.start()],
+            _allow_object_temporal_topic=not _legacy_cognitive_temporal_topic)
         if parts is None:
             continue
         possible = next((fragment[start:end] for role, start, end, _ in parts
                          if role == "possibility"), "")
+        # Inspect the remaining participant topic after the bounded time
+        # adjunct. This does not license arbitrary X-wa or another thinker.
+        owner_object = (possible if _legacy_cognitive_temporal_topic else
+                        re.sub(r"^" + _COGNITIVE_OBJECT_TEMPORAL_TOPIC, "", possible, count=1))
         topic = re.match(r"(?P<owner>[一-鿿々ァ-ヶーA-Za-z0-9]+|わたし|ぼく|おれ|あなた|あの人|その人)"
                          r"(?:は|が|も|" + _OWNER_FOCUS_PARTICLE_SOURCE + "|"
-                         + _OWNER_TOPIC_PARTICLE_SOURCE + ")", possible)
-        if topic and topic['owner'] not in {"私", "わたし", "自分", "僕", "ぼく", "俺", "おれ"}:
+                         + _OWNER_TOPIC_PARTICLE_SOURCE + ")", owner_object)
+        benefactive = re.fullmatch(
+            r"(?P<stem>[一-鿿々]+)って(?:もら(?:える|えない|う|わない)|くれ(?:る|ない))"
+            r"かも(?:しれない|知れない)?", owner_object)
+        benefactive_object = bool(owner_object != possible and benefactive
+            and any(re.fullmatch(_RECEIVED_PREDICATE_SOURCE, benefactive['stem'] + ending)
+                    for ending in ('われ', 'られ')))
+        # In a complete benefactive predicate, the verb's -tte is not an
+        # attributed person's topic. Bind the godan inflection to the existing
+        # received-verb vocabulary: an arbitrary noun + tte is insufficient.
+        if (topic and not benefactive_object
+            and topic['owner'] not in {"私", "わたし", "自分", "僕", "ぼく", "俺", "おれ"}):
             continue
         feeling = fragment[connector.end():]
         host = re.sub(r"^(?:少し(?:だけ)?|ちょっと|とても|まだ|ずっと)", "", feeling)
@@ -7364,7 +7393,8 @@ def _source_current_cognition(nucleus):
     )
 
 
-def _final_source_current_cognition_nuclei(nuclei, evidence_spans, normalized_input, *, _legacy_cognitive_feeling_scope=False):
+def _final_source_current_cognition_nuclei(nuclei, evidence_spans, normalized_input, *,
+        _legacy_cognitive_feeling_scope=False, _legacy_cognitive_temporal_topic=False):
     if normalized_input is None:
         return nuclei
     source = str(normalized_input.get("memo") or "")
@@ -7376,7 +7406,8 @@ def _final_source_current_cognition_nuclei(nuclei, evidence_spans, normalized_in
         frame = nucleus.semantic_frame
         span = spans.get(nucleus.source_span_ids[0]) if len(nucleus.source_span_ids) == 1 else None
         raw = str(span.raw_text) if span is not None else ""
-        cognitive_feeling = None if _legacy_cognitive_feeling_scope else _source_cognitive_feeling_parts(raw)
+        cognitive_feeling = None if _legacy_cognitive_feeling_scope else _source_cognitive_feeling_parts(
+            raw, _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic)
         parts = cognitive_feeling[0] if cognitive_feeling else _source_current_cognition_parts(raw)
         if (parts is None or nucleus.source_fields != ("memo",) or span.source_field != "memo"
             or nucleus.retention not in {"required", "should"}
@@ -7457,7 +7488,8 @@ def _source_explicit_original_feeling(nucleus):
     )
 
 
-def _source_explicit_original_feeling_is_bound(fragment, *, _legacy_cognitive_feeling_scope=False):
+def _source_explicit_original_feeling_is_bound(fragment, *, _legacy_cognitive_feeling_scope=False,
+        _legacy_cognitive_temporal_topic=False):
     """Prove the affirmative current feeling host, keeping its whole object.
 
     A cognitive antecedent and an explicitly unresolved prediction stay
@@ -7466,7 +7498,8 @@ def _source_explicit_original_feeling_is_bound(fragment, *, _legacy_cognitive_fe
     """
     if _top_level_text(fragment) != fragment or re.search(r"[「」『』!?！？…‥]", fragment):
         return False
-    cognitive = None if _legacy_cognitive_feeling_scope else _source_cognitive_feeling_parts(fragment)
+    cognitive = None if _legacy_cognitive_feeling_scope else _source_cognitive_feeling_parts(
+        fragment, _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic)
     if cognitive is not None and cognitive[1] == "negative":
         return True
     prefix = (r"(?:(?:それでも|でも|けれど|けれども)[、,]?)?"
@@ -7500,7 +7533,8 @@ def _source_explicit_original_feeling_is_bound(fragment, *, _legacy_cognitive_fe
     )
 
 
-def _final_source_explicit_original_feeling_nuclei(nuclei, evidence_spans, normalized_input, *, _legacy_cognitive_feeling_scope=False):
+def _final_source_explicit_original_feeling_nuclei(nuclei, evidence_spans, normalized_input, *,
+        _legacy_cognitive_feeling_scope=False, _legacy_cognitive_temporal_topic=False):
     if normalized_input is None:
         return nuclei
     source = str(normalized_input.get("memo") or "")
@@ -7541,7 +7575,8 @@ def _final_source_explicit_original_feeling_nuclei(nuclei, evidence_spans, norma
             and not _source_prefix_opens_report(source[:start])
             and (not topic or topic['owner'] in {"私", "わたし", "自分", "僕", "ぼく", "俺", "おれ"} or self_reset)
             and _source_explicit_original_feeling_is_bound(raw,
-                _legacy_cognitive_feeling_scope=_legacy_cognitive_feeling_scope)):
+                _legacy_cognitive_feeling_scope=_legacy_cognitive_feeling_scope,
+                _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic)):
             nucleus = replace(nucleus, semantic_frame=replace(nucleus.semantic_frame,
                 attribute_codes=tuple(_dedupe((*codes, "lexical:source_explicit_original_feeling")))))
         result.append(nucleus)
@@ -14466,7 +14501,7 @@ def _received_event_reaction_text_projections(raw_text):
     match = re.fullmatch(
         r"(?P<event>(?:(?:私|自分|わたし)(?:は|が))?"
         r"(?:[一-鿿々ァ-ヶぁ-んー]{1,16}に)?"
-        r"(?:褒められ|ほめられ|言われ|伝えられ|評価され|断られ|誘われ|頼まれ|声をかけられ|声を掛けられ)"
+        + _RECEIVED_PREDICATE_SOURCE +
         r"(?:た|ました))(?P<link>のに|けれども?|けど)[、,]?"
         r"(?P<reaction>(?:少し|とても|まだ|全然|あまり)?"
         r"(?:嬉し|うれし|寂し|さびし|悲し|苦し|つら|辛|怖|こわ|楽し)"
@@ -14480,7 +14515,7 @@ def _received_event_reaction_text_projections(raw_text):
         match = re.fullmatch(
             r"(?P<event>(?:(?:私|自分|わたし)(?:は|が))?"
             r"(?:[一-鿿々ァ-ヶぁ-んー]{1,16}に)?"
-            r"(?:褒められ|ほめられ|言われ|伝えられ|評価され|断られ|誘われ|頼まれ|声をかけられ|声を掛けられ)"
+            + _RECEIVED_PREDICATE_SOURCE +
             r"(?:た|ました))(?P<link>のに|けれども?|けど)[、,]?"
             rf"(?P<reaction>(?:(?:{owner})?(?:{degree})?|{degree}{owner})"
             r"(?:(?:嬉し|うれし|寂し|さびし|悲し|苦し|つら|辛|怖|こわ|楽し)"
@@ -14494,7 +14529,7 @@ def _received_event_reaction_text_projections(raw_text):
         chain = re.fullmatch(
             r"(?P<event>(?:(?:私|自分|わたし)(?:は|が))?"
             r"(?:[一-鿿々ァ-ヶぁ-んー]{1,16}に)?"
-            r"(?:褒められ|ほめられ|言われ|伝えられ|評価され|断られ|誘われ|頼まれ|声をかけられ|声を掛けられ)"
+            + _RECEIVED_PREDICATE_SOURCE +
             r"(?:た|ました))(?P<outer>のに|けれども?|けど)[、,]?"
             rf"(?P<first>{feeling})(?P<inner>けれども?|けど)[、,]?(?P<second>{feeling})", text)
         if chain is None:
@@ -17156,6 +17191,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_duplicate_appraisal_source: bool = False,
     _legacy_shared_target_contrast: bool = False,
     _legacy_cognitive_feeling_scope: bool = False,
+    _legacy_cognitive_temporal_topic: bool = False,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -17208,10 +17244,12 @@ def project_final_stage1_grounded_observation_plan(
     projected_nuclei = _final_source_current_cognition_nuclei(
         projected_nuclei, evidence_spans, normalized_input,
         _legacy_cognitive_feeling_scope=_legacy_cognitive_feeling_scope,
+        _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic,
     )
     projected_nuclei = _final_source_explicit_original_feeling_nuclei(
         projected_nuclei, evidence_spans, normalized_input,
         _legacy_cognitive_feeling_scope=_legacy_cognitive_feeling_scope,
+        _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic,
     )
     relations, nuclei = _final_stage1_typed_relations(
         plan,
@@ -18294,6 +18332,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_duplicate_appraisal_source: bool = False,
     _legacy_shared_target_contrast: bool = False,
     _legacy_cognitive_feeling_scope: bool = False,
+    _legacy_cognitive_temporal_topic: bool = False,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan.
 
@@ -18360,6 +18399,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_duplicate_appraisal_source=_legacy_duplicate_appraisal_source,
         _legacy_shared_target_contrast=_legacy_shared_target_contrast,
         _legacy_cognitive_feeling_scope=_legacy_cognitive_feeling_scope,
+        _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic,
     )
 
 

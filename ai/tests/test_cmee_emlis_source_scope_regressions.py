@@ -212,6 +212,12 @@ def test_nominal_experience_belongs_to_outer_past_feeling(experience):
     '参加できないかもしれないと思うと悲しい',
     '間に合わないかも知れないと考えると怖い',
     '参加できるかもしれないと思うと、とても嬉しい',
+    '今後は誘ってもらえないかもしれないと考えると寂しい',
+    'これからは参加できるかもしれないと思うと嬉しい',
+    '今後も間に合わないかも知れないと考えると怖い',
+    'これからも誘われるかもしれないと思うと嬉しい',
+    '今後は断ってもらえないかもしれないと考えると怖い',
+    '今後も言ってくれないかもしれないと思うと寂しい',
 ])
 def test_cognitive_condition_preserves_inner_possibility_and_outer_feeling(source):
     prepared = prepare_emlis_meaning(request(source + '。'))
@@ -273,6 +279,19 @@ def test_cognitive_condition_preserves_inner_possibility_and_outer_feeling(sourc
     'また誘われるかもしれないと思うと嬉しい？',
     '友人の感想です。また誘われるかもしれないと思うと嬉しい。',
     '友人は悩んでいた。自分は誘われるかもしれないと思うと嬉しい。',
+    '今後は友人も誘われるかもしれないと思うと寂しい。',
+    'これからは友人こそ誘われるかもしれないと思うと寂しい。',
+    '今後は友人って誘ってもらえないかもしれないと思うと寂しい。',
+    '今後は先生ってくれないかもしれないと思うと寂しい。',
+    'これからは母ってもらえないかもしれないと思うと寂しい。',
+    '今後は資料ってもらえるかもしれないと思うと嬉しい。',
+    '友人は今後も誘われるかもしれないと思うと寂しい。',
+    '今後は誘われるかもしれないと思うと寂しかった。',
+    '今後は誘われるかもしれないと思うと寂しくない。',
+    '今後は誘われるかもしれないと思うと寂しいかもしれない。',
+    'これからは誘われるかもしれないと思うと、友人は寂しい。',
+    '今後はこれからは誘われるかもしれないと思うと寂しい。',
+    '「今後は誘われるかもしれないと思うと寂しい」と友人が言った。',
 ])
 def test_nested_feeling_does_not_borrow_report_topic_or_unasserted_host(source):
     plan = prepare_emlis_meaning(request(source)).original_plan
@@ -288,6 +307,8 @@ PAST_AND_PREDICTED_FEELING = (
 
 @pytest.mark.parametrize('source', [PAST_AND_PREDICTED_FEELING,
     '予定を調整して、家で過ごせたことに安心した。でも、失敗するかもしれないと考えると不安だ。',
+    '友人の誘いを断って、一人で休めたことにほっとした。でも、今後は誘ってもらえないかもしれないと考えると寂しい。',
+    '友人の誘いを断って、一人で休めたことにほっとした。でも、これからは誘ってもらえないかもしれないと考えると寂しい。',
     '宿題を終えて、庭で遊べたことにうれしかった。でも、参加できないかもしれないと思うと悲しい。'])
 @pytest.mark.parametrize('unknown', ['', '何が不安なのか、私にもまだわからない。'])
 def test_past_and_current_feelings_keep_their_full_objects_and_distinct_times(source, unknown):
@@ -419,3 +440,71 @@ def test_existing_nominal_feelings_keep_their_source_owner_and_reception(memo, r
         for n in prepared.original_plan.nuclei)
     result = MeaningExperienceEngine().generate(req)
     assert result.artifact is not None and retained in result.artifact.reception
+
+
+@pytest.mark.parametrize('prefix', ['今後は', '今後も', 'これからは', 'これからも'])
+def test_temporal_topic_stays_inside_possible_object_and_does_not_expand_bare_cognition(prefix):
+    from emlis_ai_grounded_observation_plan import (
+        _source_cognitive_feeling_parts, _source_current_cognition_parts)
+    cognitive = prefix + '誘われるかもしれないと思う'
+    source = cognitive + 'と寂しい'
+    parts, polarity = _source_cognitive_feeling_parts(source)
+    possibility, = ((a, b, scope) for role, a, b, scope in parts if role == 'possibility')
+    assert source[possibility[0]:possibility[1]] == prefix + '誘われるかもしれない'
+    assert possibility[2] == 'under_present_cognition' and polarity == 'negative'
+    # Bare cognition keeps its pre-u320 admission and ranges. Kana これからも
+    # already worked; 今後も had 今 consumed by the outer now prefix.
+    bare = _source_current_cognition_parts(cognitive)
+    assert (bare is None) == prefix.endswith('は')
+    if bare is not None:
+        assert bare[0][1] == (1 if prefix == '今後も' else 0)
+    legacy = _source_cognitive_feeling_parts(source, _legacy_cognitive_temporal_topic=True)
+    assert (legacy is not None) == (prefix == 'これからも')
+
+
+@pytest.mark.parametrize('old,new', [
+    ('今後は', ''), ('今後は', '以前は'),
+    ('かもしれない', ''), ('と考えると', 'と考えたときは'),
+])
+def test_temporal_object_cannot_be_removed_retimed_or_asserted_by_body_reader(old, new):
+    from test_cmee_emlis_received_discourse import actual, inverse
+    source = ('友人の誘いを断って、一人で休めたことにほっとした。'
+              'でも、今後は誘ってもらえないかもしれないと考えると寂しい。')
+    context = actual(request=request(source))
+    reception = context[0].artifact.reception
+    changed = reception.replace(old, new)
+    assert changed != reception
+    assert not inverse(context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('case_index', range(4))
+def test_pre_temporal_topic_checkpoint_keeps_complete_u319_meaning(case_index):
+    import hashlib
+    import json
+    from dataclasses import asdict
+    from pathlib import Path
+    frozen = json.loads((Path(__file__).parent / 'fixtures' /
+        'cmee_emlis_u319_temporal_topic_checkpoint_v1.json').read_text())
+    assert frozen['source_commit'] == 'd780c315ddad621120ff6399e5d1e8c05e7a3310'
+    row = frozen['cases'][case_index]
+    req = request(row['memo'])
+    fresh = prepare_emlis_meaning(req)
+    changed = row['case_id'] != 'original03'
+    assert (fresh.checkpoint.checkpoint_id != row['checkpoint']['checkpoint_id']) == changed
+    saved = replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=row['checkpoint']['checkpoint_id']))
+    restored = prepare_emlis_meaning(saved)
+    assert restored.legacy_cognitive_temporal_topic == changed
+    assert not restored.legacy_cognitive_feeling_scope
+    assert json.loads(json.dumps(asdict(restored.checkpoint))) == row['checkpoint']
+    for name in ('nuclei', 'relations'):
+        data = json.dumps([asdict(n) for n in getattr(restored.original_plan, name)],
+            ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
+        assert hashlib.sha256(data).hexdigest() == row['original_' + name + '_sha256']
+    result = MeaningExperienceEngine().generate(saved)
+    old = row['public_result']
+    assert result.status.value == old['status']
+    assert (result.artifact.text if result.artifact else None) == old['body']
+    assert list(result.reason_codes) == old['reason_codes']
+    assert json.loads(json.dumps(asdict(result.meaning_checkpoint))) == row['checkpoint']
+    assert json.loads(json.dumps(asdict(result.question_decision))) == old['question_decision']
