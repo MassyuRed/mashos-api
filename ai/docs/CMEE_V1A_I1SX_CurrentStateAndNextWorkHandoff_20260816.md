@@ -1,4 +1,4 @@
-> 最新EmlisAI残件：末尾 **u309（2026-10-17・現在回答のReception保持修復）**。理由付き満足・元received・受理済み現在positiveを既存3 Moveで保持。31比較・保存/RN46 DTOを確認。理由なし評価など対象外の現在回答欠落は残件。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
+> 最新EmlisAI残件：末尾 **u310（2026-10-17・理由なし評価と現在回答の保持修復）**。満足／納得の肯否・時点・程度を保ち、元receivedと現在positiveを既存3 Moveで保持。39比較・保存/RN58 DTOを確認。未成立context等の回答欠落と本文反復は残件。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -21803,3 +21803,62 @@ Python3.12.14／pytest8.4.1／Pydantic2.13.5／隔離PGlite0.5.8／React18.3.1�
 今回の現在回答欠落は上記閉包で修復済み。現在回答後の満足は既存注意文のまま、元receivedと現在回答の語尾反復、初回の説明性、Observationとの重複は残る。欠落解消を§9.2/9.4の意味全体成立や商品合格へ換算しない。今回の対照でも、理由なしの「資料を分類したことに満足した」＋元received＋「今は嬉しい」は現在回答がReceptionに出ない。未成立context、独立行動追加、「今は安心した」、当時ADDにも欠落が残る。次はまず理由なし評価と現在回答の既存選択を照合し、出典・元反応・現在時点を保つ範囲を確認する。「安心した」の分類、共有対象／対象外更新、既存周辺4失敗（過去共有17との集合一致未確認）、same100、Q1上限、giver帰属、本人実機／正式Product Readも残件。
 
 TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了、正式0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置。deploy／main mergeなし。10/31管理線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％は維持する。
+
+
+## u310 — 理由なし評価と現在回答における原反応の欠落を修復（2026-10-17 JST）
+
+u309／weekly§5.6.59の次作業を実施。理由のない対象付き満足・納得と別received経験へ「今は嬉しい」と回答した際、肯定評価では元receivedと現在回答、否定評価では元receivedだけがReceptionから消えていた。同じretention閉包欠落を、既存Plan一箇所の15行追加・7行削除で修復した。評価・元の受け止め・現在回答を既存3 Moveに残し、肯否、評価種類、過去／現在、程度、「まだ」を変えない。
+
+基準API `4d5ce7a0a235d597b9732b856e950a065a2ffc31`／Cocolon `a7f69245f93b9588360463020e4c7c15e569f652`。Mashの残件継続依頼とRule18§11.3の既存契約内修復に接続するDIRECT_PRODUCT_OR_ACCEPTANCE_WORK。目的は受理した本人回答と非訂正の元反応を本文まで失わせないこと。完了条件は同入力の意味保持・実本文復旧・保存／再表示・必要回帰・GitHub読戻し。新意味資格、公開契約、DB、配置への拡大は対象外。追加費用・Mash操作0。実行はCodex Workのroot、補助は同環境の読み取り専用source reviewであり正式別モデル二重検証ではない。
+
+前提資料、作業姿勢とルール、全体01・全file地図01A/B/C・current01/04、最新weeklyと06／API handoff、恒久incident全文、8/28意味設計§9.2/9.4を照合した。System Context prepareは既存workspaceのAPI未配置で終了し、今回も新freshnessを認定せず許可済み原典直接参照を継続した。
+
+### 原因・変更境界
+
+`emlis_ai_grounded_observation_plan.py::_thread_retained_reaction_groups`のu309枝を、理由三点だけでなく閉じた原文評価pairにも接続した。plainは対象＋評価の2核、incident ABOUT 1辺、reasoned／unfinished marker不在を要求する。`reason is None`だけでplainとせず、壊れた三点や未成立contextを二点へ縮めない。理由三点は従来の3核2辺の証明を保持する。残りは既存received＋現在positive回答の3核2辺・全被覆で証明し、入れ子`separate_later_scopes=False`、共有対象・外部辺、追加独立行動、複数評価／回答、withdrawal、当時回答、現在negativeを今回窓へ入れない。
+
+評価のfamilyは既存判定に従い肯定をlived_change、否定をcurrent_burdenとする。否定を肯定へ昇格させない。受理済みsource stateに対する保持であり初回ADD限定の新資格ではない。PARTIALも受理済み現在回答を残し、未解釈部分とPARTIAL状態を維持する。選択Move／aggregateは変わるが、原意味の核辺・checkpoint・Observation・LIMITED・基本EmlisAppraisalContentは維持。u307の理由経験資格は拡張しない。
+
+productionは上記1 fileのみ。既存`test_cmee_emlis_result_appraisal.py`へ25検査を追加し、現行共有owner identity fixtureだけ再導出した。作者・reader、認識文法、private型／schema、Move上限、公開API／DB／RN、依存、歴史fixtureの変更はない。STRUCTURE_MAP_DELTA_NONE。既載の選択責務内の修復であり、全地図へ進捗を複製しない。
+
+### 実本文（全て合成入力）
+
+memo「資料を分類したことに満足した。」、memo_action「褒められたのに、嬉しくなかった。」、回答「今は嬉しい。」。
+
+変更前Reception：
+
+> 資料を分類したことについて、当時は満足したのですね。
+
+変更後Reception：
+
+> 資料を分類したことについて、当時は満足したのですね。褒められたことは、嬉しさにはつながらなかったのですね。回答した時点では嬉しいのですね。
+
+評価が「満足しなかった」の場合、変更前は現在回答と否定評価だけだった。変更後は次の三文となる。
+
+> 資料を分類したことについて、当時は満足しなかったのですね。褒められたことについて、回答した時点では嬉しいのですね。褒められたことは、嬉しさにはつながらなかったのですね。
+
+否定評価時の順序は既存選択後の並び替えによる。現在回答の対象を明示し、原反応を消さず、今の気持ちを当時への訂正や「嬉しくなった」という変化へ変えない。評価の「納得」「少し／とても／あまり」「まだ」、入力時点と回答時点はそれぞれ元の役割へ残る。これらの文はLIMITEDの既存有限表現であり、本人内の経験をより深く受け取れたという商品判定ではない。
+
+### 検証と互換
+
+| 対象 | 実測結果・限界 |
+| --- | --- |
+| appraisal＋Q2/Q3 application | 1,271 passed／1 warning（527.94秒）。最終版の全件一括実行：appraisal1,217＋application54 |
+| 既存retention周辺 | 25 passed／2299 deselected／1 warning（12.67秒）。時点隣接・対象所有・文数上限を確認 |
+| 現行共有owner identity | 1 passed／194 deselected／1 warning（21.38秒） |
+| 新規25検査 | 25 passed／1192 deselected／1 warning（17.50秒）。主回帰内と重複加算しない。6配置×肯否12、評価の時点／種類／程度／継続7、回答述語／程度2、PARTIAL1、有限reader／改変拒否2、閉包と壊れたcontext marker拒否1 |
+| 旧新同入力39例 | 対象22のMove／aggregate／Receptionを復旧。対象外17は取得全record一致。checkpointを取得した37例の核辺／checkpoint／Observation／branch／body_state／status／reason_codes一致。selected全fieldの一致証明とはしない |
+| 実service＋隔離PGlite | fresh22＋不明1＋旧完成2＋旧pending新回答2＋旧checkpoint中断retry2＝29 case／58 DTO。作者禁止GET/start、同回答再送の本文／events／attempt非増加を確認 |
+| 現行RN hook／Modal | 同58 DTOの現在全文・元入力・全履歴・close/reopen一致。native部品stubで実機・配布buildではない |
+
+対照17は初回、現在negative、不明、当時ADD、当時肯定REVISE、received／評価撤回、評価否定訂正、他主体、安心した、u309理由2種、未成立context、独立行動追加、共有対象、received単独、二評価。共有対象例は質問なし。他主体と不明はこの純粋生成比較で本文なし。二評価例は旧新ともPlan段の`human_reception_appraisal_capacity_gap`であり、対応成功には数えない。比較用一回限りscriptの最初の試行はこの旧新共通例外で停止したため、例外をrecordとして残す形に直して39例を取り直した。製品source・上限・エラー条件は変えていない。
+
+旧engineは基準u309の独立worktree/processで実行した。完成済み旧本文は非再生成で欠落もそのまま保持。旧質問からの回答と本文前中断retryは、旧初回本文・回答・意味events・operationを保って現行本文へ進む。retryのMEANING_UPDATE／ANSWER／既存OBSERVATION全eventを比較し、旧pendingの履歴ID・本文・metadataも現在表示flagを除いて一致確認した。checkpointは意味identityであり文面世代ではない。rootは保存58 DTOの27種類全文と全対応を読解した。
+
+全文inverseで対象・時点・肯否・程度／継続・義務欠落・未明示変化を拒否した。有限appraisal readerは作者を禁止し、正常文受理と対象差替え拒否を確認した。全文inverse全経路の独立性は主張しない。Python3.12.14／pytest8.4.1／Pydantic2.13.5／PGlite0.5.8／React18.3.1を再利用、新installなし。警告は既存Pydantic V1 root_validator非推奨。language identity `bd78fbe385108cb91f57f5e775005a62bcf545574f4c09a216c66fa2c62eaa4c`、runtime identity `fcc26646bafc5b2f862e23cf7b234a0401d4110ad27a5ece297dc2265a16af45`。
+
+### 残件と次の一作業
+
+今回のplain評価pairと現在positive回答の保持は修復済み。初回の長い経験説明、更新後の評価復唱・語尾反復、Observationとの重複は残る。次は対照でも欠落した「結論は出ていないが、考えを言葉にできて満足した」＋別received＋現在回答について、未成立context・対象・満足の三点を落とさず、既存選択を照合する。plain二点扱いへ逃がさない。独立行動追加、当時ADD、安心した分類、共有対象／複数評価の容量、その他対象外更新、既存周辺4失敗（過去17との対応未確認）、same100、Q1上限、giver帰属、本人実機／正式Product Readは別残件として維持する。
+
+TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false、Draft/open/unmerged・未配置。deploy／main mergeなし。10/31管理線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％を維持し、検査成功を商品合格へ換算しない。
