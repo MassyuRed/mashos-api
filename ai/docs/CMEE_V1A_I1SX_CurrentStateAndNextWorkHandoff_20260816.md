@@ -1,4 +1,4 @@
-> 最新EmlisAI残件：末尾 **u317（2026-10-17・丁寧形received先行の同一欄で後続評価を保持）**。否定的な過去反応のsource認識修復・旧保存互換・実本文と検証は同節を参照。訂正／撤回後の受容保持10例、現在形／名詞形／肯定反応と本文自然さは残件。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
+> 最新EmlisAI残件：末尾 **u318（2026-10-17・source作用域／短い対比／LIMITED参照修復）**。元10例8→9・固定100例70→71。原03・汎用受容・旧失敗checkpointは未解消。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -22259,3 +22259,17 @@ Q3 retainedは12 passed／既存16 failed／922 deselected／1 warning（23.01�
 次は同一欄の評価訂正／撤回後10例の受容欠落を、別欄・bare・既存保持証明と比較し、変更箇所と必要な資格を具体化する。既存資格の単なる修復で済むか、新資格追加が必要かを根拠から確定し、後者を無断で広げない。現在形／名詞形／肯定反応、満足側の説明性・語尾／対象反復、Observation重複、対象外更新、独立行動／安心した分類・共有対象／容量、既存周辺4／過去17とQ3既存16失敗の集合対応、same100・Q1上限・giver帰属・本人実機／正式Product Readは未解消。
 
 PRODUCT_NOT_CLEAR・初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false、Draft/open/unmerged・未配置。10/31管理線・12/18公開目標、Piece/Analysis主枠・管理評価53.25％を維持する。
+
+## u318 — 10/17監査に基づくsource作用域とLIMITED参照修復（2026-10-17）
+
+最新weekly20261017のE01〜E04を起点に、既存契約内のbug修復を実施した。LIMITEDのReception basisを選択済みLayer1集合内へ限定し、3final callerの再導出を一致させた。推量「かもしれない」の末尾を制約「ないと」と誤認しない。完全なwh-object＋明示SELFの現在否定認知を既存uncertaintyへ補正し、報告・前文の他者topic・時点／源範囲の拒否を維持した。短い節で落ちるcontrast markerは、既存両端間の一意な実接続語だけをsource照合で回復する。meaning/unknown契約・surface/inverse/gate・公開API/DB/RN・質問上限・依存は不変。
+
+元10例は初回本文8→9、固定100は70→71（0090だけ変更、99結果record同一）。別の短い対比4例も復旧。原03の「休めたことにほっとした／かもしれないと思うと寂しい」は内外述語の作用域・unknown witnessが未解決で未提供を継続する。受容の汎用性は改善完了ではない。
+
+最終sourceで対象回帰 **2,278 passed、skip/failed 0**（appraisal1,530＋Q2/Q3 application54＋既存contrast135＋今回41＋Analysis484＋Piece34）。固有nodeを760/759/759へ分割して全件成功、既存Pydantic非推奨warning2件。現行owner identity検査は別途1 passed／194 deselected。重複する最終対象230件と途中版の結果を合算していない。language identity `e2d1b249e25bdbfff7d90368c542d26dcfce84049ecfbdc2196dc02290622930`、runtime identity `513a79550ca33f39c904c8a0d4b49edc637411e08bc451d6cc2e1ea9a74bb92d`。
+
+同一最終sourceの実migration/RPC＋PGlite＋service20ケース／24 DTO、RN hook/modal24 DTOの本文・質問・原入力・全履歴・close/reopenを確認した。旧完成07の非再生成と旧pending07の回答は保持。旧04通常失敗はretry不可、旧04中断checkpointの再開も未提供であり、復旧成功には数えない。rootは元10／固定100／保存16種全文と24対応を読解。本人実機・本番DB・deploy・main merge・正式別model検証は今回0。
+
+`STRUCTURE_MAP_DELTA_NONE`（製品owner/file/経路・契約の追加なし、既存source/binding内部修復）。新回帰testだけ01Aへ追跡を追加。今回の正本詳細・全未加工本文・最終source SHA・再開課題は [u318実装監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u318_SourceScope_and_LimitedBinding_20261017.md) を参照。
+
+次は原03を、原文範囲と有限述語の証明を持つ共通source ownerで、安堵・将来の可能性・現在の寂しさへ読み分ける。既知動詞の列挙や任意文字列受理に縮めず、条件関係を因果へ読み替えない。必要なら最小契約差分を具体化してから扱う。E04汎用受容、E05質問、u317同欄REVISE4/WITHDRAW6、旧失敗checkpoint、本人実機を残件として維持する。PRODUCT_NOT_CLEAR・初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置。10/20方式判断、10/31管理線・12/18公開目標、Piece/Analysis主枠・管理評価53.25%は不変。

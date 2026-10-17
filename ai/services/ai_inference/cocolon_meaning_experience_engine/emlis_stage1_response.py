@@ -3246,7 +3246,14 @@ def _bind_reception_moves(
     *,
     binding: _PlanBinding,
     contributions: tuple[PlannedObservationContribution, ...],
+    meaning_outcome: SelectedEmlisProvisionalReading | LimitedMeaningOutcome | None = None,
 ) -> tuple[_BoundReceptionMove, ...]:
+    # Meaning selection owns the LIMITED inventory. Reception may bind only
+    # those retained observations; its required target/support coverage checks
+    # below still reject a move that the selected meaning cannot support.
+    if isinstance(meaning_outcome, LimitedMeaningOutcome):
+        contributions = tuple(row for row in contributions
+            if row.contribution_id in meaning_outcome.retained_layer1_refs)
     from emlis_ai_grounded_observation_plan import source_owned_shared_target_appraisal_contrast
     grouped = source_owned_shared_target_appraisal_contrast(
         tuple(binding.node_meta.values()), tuple(binding.edge_meta.values()))
@@ -4874,6 +4881,7 @@ def build_subjective_planning_inputs(
         reception_plan,
         binding=plan_binding,
         contributions=premeaning_inputs.observation_contribution_rows,
+        meaning_outcome=input_specific_meaning_structure.meaning_decision_outcome,
     )
     retained_rows: list[Any] = []
     for act_ref in retained_act_ids:

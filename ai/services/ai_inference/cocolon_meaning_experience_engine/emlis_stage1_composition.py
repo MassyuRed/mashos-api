@@ -5358,6 +5358,7 @@ def _validate_phase_A(phase_A: Stage1SubjectivePlanningInputs) -> None:
             reception_plan,
             binding=plan_binding,
             contributions=premeaning_inputs.observation_contribution_rows,
+            meaning_outcome=phase_A.input_specific_meaning_structure.meaning_decision_outcome,
         )
         expected_retained_reception_act_rows = tuple(
             RetainedReceptionActRow(

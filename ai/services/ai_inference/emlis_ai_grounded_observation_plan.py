@@ -2369,7 +2369,13 @@ def _has_predicative_action_operator(text: str) -> bool:
 
 def _has_predicative_constraint_operator(text: str) -> bool:
     """A difficult nominal setting/task is not an uncertain presence/role."""
+    uncertainty_ends = {match.end() for match in _NON_NEGATING_UNCERTAINTY_RE.finditer(text)}
     for match in _CONSTRAINT_RE.finditer(text):
+        # The final ない in かもしれない belongs to possibility, not to the
+        # conditional constraint ないと. Keep real constraints elsewhere in
+        # the same source, without deleting text and joining new neighbours.
+        if match.group(0) == "ないと" and match.end() - 1 in uncertainty_ends:
+            continue
         if match.group(0) == "難しい" and re.fullmatch(
             _WISH_OBJECT_ARGUMENT_RE.pattern
             + r"(?:に(?:いた|いました|いなかった(?:です)?|いませんでした)"
@@ -15213,7 +15219,8 @@ def _final_stage1_typed_nuclei(
             # connective can belong to the same top-level sentence.
             frame = nucleus.semantic_frame
             if (span is not None and normalized_input is not None
-                and nucleus.kind in {"state", "action", "change"}
+                and (nucleus.kind in {"state", "action", "change", "self_evaluation"}
+                     or nucleus.kind == "reaction" and frame.predicate_kind == "feeling")
                 and nucleus.source_fields in {("memo",), ("memo_action",)}
                 and len(nucleus.source_span_ids) == 1
                 and nucleus.grounding_kind == "explicit" and nucleus.retention == "required"
@@ -15234,10 +15241,38 @@ def _final_stage1_typed_nuclei(
                 marker_prefix = len(markers) == 1 and source[markers[0].start_index:markers[0].end_index] == markers[0].raw_text and not (
                     source[boundary + 1:markers[0].start_index].strip()
                     or source[markers[0].end_index:start].strip(" 、,\u3000"))
+                # A SELF cognition host can be mislabelled self-awareness by
+                # Ledger. Its wh-object is not an asserted self-evaluation.
+                # Require the whole present negative predicate and an explicit
+                # SELF host; neither a foreign topic nor a reporting fragment
+                # may borrow that ownership.
+                self_cognition = re.fullmatch(
+                    r"(?P<object>(?:何|なに|どこ|いつ|誰|だれ|どう|どれ|どちら|なぜ|何故)"
+                    r"[^、,。．.!?！？\r\n…‥⋯]*?(?:の)?か)(?:は|が|も)?[、,]?"
+                    r"(?P<actor>自分|私|わたし|僕|ぼく|俺|おれ)(?:自身)?(?:でも|にも|には|は|が|も)"
+                    r"(?:(?:今|現在)(?:は|も))?(?:まだ)?(?:よく|はっきり)?"
+                    r"(?:分からない|わからない)", span.raw_text)
+                self_cognition_bound = bool(self_cognition
+                    and "operator:self_evaluation" not in frame.attribute_codes
+                    and not _source_prefix_opens_report(source[:start])
+                    and not re.search(r"によると|いわく|曰く|の(?:話|感想|気持ち|説明|報告|発言)[。．.]",
+                                      source[:start])
+                    # Reflexive 自分 cannot reset an unresolved prior topic
+                    # to SELF. An explicit 私/僕/俺 host can establish that
+                    # reset, but the report boundaries above still apply.
+                    and (self_cognition['actor'] != '自分' or not any(
+                        re.search(r"(?:は|が|も)", clause)
+                        and not _source_operator_owner_scope_is_bound(clause.strip())
+                        for clause in re.split(r"[。．.]", source[:start]) if clause.strip()))
+                    and not re.search(
+                        r"によると|いわく|曰く|と言|と話|と語|って言|って話|って語|"
+                        r"と思|って思|と考|って考|もし|仮に|なら|分から|わから",
+                        self_cognition['object']))
                 if (0 <= start < end <= len(source) and source[start:end] == span.raw_text
                     and _top_level_text(source) == source
                     and (not prefix.strip() or marker_prefix)
-                    and re.fullmatch(r"[^、,。．.?!？！\r\n]+(?:か|のか)(?:は|が)?(?:まだ|今は)?(?:分からない|わからない)", span.raw_text)
+                    and (self_cognition_bound or nucleus.kind in {"state", "action", "change"}
+                         and re.fullmatch(r"[^、,。．.?!？！\r\n]+(?:か|のか)(?:は|が)?(?:まだ|今は)?(?:分からない|わからない)", span.raw_text))
                     and re.match(r"^(?:\s*[。．.]|\s*$)", source[end:])):
                     nucleus = replace(nucleus, kind="uncertainty", semantic_frame=replace(
                         frame, predicate_kind="uncertainty"))
@@ -15711,9 +15746,24 @@ def _final_stage1_normalize_relation_authority(
                     or ref == "whole_input_source_order" for ref in relation.source_relation_ids)):
             left_spans = [span_index[sid] for sid in left.source_span_ids if sid in span_index]
             right_spans = [span_index[sid] for sid in right.source_span_ids if sid in span_index]
-            for ref in relation.source_relation_ids:
-                if not ref.startswith("evidence_relation_marker:"):
-                    continue
+            marker_refs = tuple(ref for ref in relation.source_relation_ids
+                                if ref.startswith("evidence_relation_marker:"))
+            if (not marker_refs and left_spans and right_spans
+                and len(left_spans) == len(left.source_span_ids)
+                and len(right_spans) == len(right.source_span_ids)):
+                # The upstream substantive-length filter may miss a short
+                # endpoint. Recover only a unique actual connective between
+                # the already-bound endpoints, never a proximity inference.
+                left_end = max(span.end_index for span in left_spans)
+                right_start = min(span.start_index for span in right_spans)
+                markers = tuple(span for span in evidence_spans
+                    if span.source_field in left_fields
+                    and left_end <= span.start_index < span.end_index <= right_start
+                    and _is_pure_relation_marker(span)
+                    and _LEADING_CONTRAST_RE.search(_clean(span.raw_text)))
+                if len(markers) == 1:
+                    marker_refs = ("evidence_relation_marker:" + markers[0].span_id,)
+            for ref in marker_refs:
                 marker = span_index.get(ref.split(":", 1)[1])
                 if (marker is None or len(left_spans) != len(left.source_span_ids)
                     or len(right_spans) != len(right.source_span_ids)
@@ -15730,7 +15780,8 @@ def _final_stage1_normalize_relation_authority(
                                 and span.start_index >= left_end and span.end_index <= right_start
                                 and not _is_pure_relation_marker(span) for span in evidence_spans)):
                     relation = replace(relation, source_span_ids=tuple(
-                        _ordered_span_ids((*relation.source_span_ids, marker.span_id))))
+                        _ordered_span_ids((*relation.source_span_ids, marker.span_id))),
+                        source_relation_ids=tuple(_dedupe((*relation.source_relation_ids, ref))))
                     relation_type = "contrast"
                     grounding_kind = "user_stated_relation"
                     break

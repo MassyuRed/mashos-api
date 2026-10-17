@@ -662,7 +662,8 @@ def _project_thread_meaning_aggregate(prepared, plan) -> ThreadMeaningProjection
     scope = derive_foreground_scope_closed(view)
     structure = derive_input_specific_meaning_structure(view, scope)
     c.validate_input_specific_meaning_structure(structure, grounded_view=view, foreground_scope_derivation=scope)
-    bound_moves = r._bind_reception_moves(reception, binding=binding, contributions=contributions)
+    bound_moves = r._bind_reception_moves(reception, binding=binding, contributions=contributions,
+        meaning_outcome=structure.meaning_decision_outcome)
     retained = tuple(composition.RetainedReceptionActRow(act, act,
         tuple(dict.fromkeys(row.contribution_id for move in bound_moves
             if move.move.reception_act == act for row in move.basis_contributions))) for act in acts)
