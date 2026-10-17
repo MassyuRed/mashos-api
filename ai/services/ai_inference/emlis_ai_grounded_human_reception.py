@@ -11834,11 +11834,11 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
             # the separate occasion and state belong only to the appraisal.
             occasion = when + ('' if when == '当時' else 'で')
             state = 'あった' if (local or content).evaluation_time == 'past' else 'ある'
-            # Name the received object before its reason and inner experience.
-            # This preserves the selected content while avoiding another
-            # stacked receive-as closing beside the following distinct Move.
-            return (f'{event}ことについて受け取ったのは、{reason}という点で、{occasion}'
-                    f'ご自身の中に満たされた感覚が{state}経験です')
+            # Make the person's object-bound experience the main assertion,
+            # rather than defining what the author received. The selected
+            # reason, inner feeling and its own occasion stay explicit.
+            return (f'{event}ことには、{reason}という点で、{occasion}'
+                    f'ご自身の中に満たされた感覚が{state}のですね')
         return f'{reason}点に、{event}ことへの{at}満足の拠り所が見えます'
     if unfinished_appraisal:
         from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent

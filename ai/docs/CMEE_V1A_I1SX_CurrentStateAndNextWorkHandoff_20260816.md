@@ -1,4 +1,4 @@
-> 最新EmlisAI残件：末尾 **u307（2026-10-17・承認済み限定実装）**。別経験の反応訂正後も、未変更の理由・対象・満足を経験として保持。対象13件の本文改善、保存・RN再表示40 DTOを確認。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
+> 最新EmlisAI残件：末尾 **u308（2026-10-17・既存本文構文修復）**。理由・対象・本人内の充足を直接主節へ保持。25本文差分・保存/RN40 DTOを確認、訂正後の語尾反復と現在回答欠落は残件。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -21692,3 +21692,59 @@ STRUCTURE_MAP_DELTA_PRESENT。三点局所資格・全体投影との分離・�
 この限定変更は実装・保存再表示まで完了し、再承認へ戻さない。次は初回／訂正後の理由・対象・本人内の満足と別receivedを保ったまま、残る説明性と受容表現の反復を実本文から照合する。現在回答の欠落・安心した分類・共有対象／対象外更新、既存周辺4失敗（過去17との集合一致未確認）・same100・Q1上限・giver帰属・本人実機／正式Product Readは別残件。
 
 初回一体単位未完了、正式受入0/3、candidate_ready=false、automatic_progression=false、Draft/open/unmerged・未配置。deploy／main mergeなし。10/31管理線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％を維持する。
+
+
+## u308 — 理由付き満足の定義説明構文を直接的な受容へ修復（2026-10-17 JST）
+
+u307からの残件として、理由・対象・本人内の充足を保持する文が「受け取ったのは……経験です」という長い説明構文になる箇所を修復。既存作者と有限readerの2 ownerだけで、対象に結びついた本人内の感覚を主節へ直接置いた。初回の単独／別received／共有対象と、u307限定資格の肯定訂正後で共用する。意味資格・private契約・全体LIMITED／aggregate・二Move・核辺・checkpoint・Observationは不変。理由→満足を行動→客観的結果の因果へ変えない。旧完全2文法の独立読解も維持した。Rule18の既存契約内修復、STRUCTURE_MAP_DELTA_NONE。
+
+同じ32入力は対象25（初回12＋肯定訂正12＋程度付き1）の満足文だけ変化、対象外7は取得全record不変。全32の核辺／checkpoint／Move／aggregate／Observation／statusは一致。主回帰は **1 failed, 1229 passed, 1 warning in 558.44s (0:09:18)**。残った1失敗は旧表面句「満たされた感覚があった経験」の期待値で、対象・理由・時点・感覚を保つ新主節への期待へ直し、当該1項目は **1 passed, 1175 deselected, 1 warning in 11.77s**。製品sourceは全run開始後に変えていない。異なる1,230項目を確認（appraisal1,176＋application54）、全件一括の再実行はしていない。先行target20 passは主回帰との重複、identity1 passは別。既存Pydantic非推奨警告1を保持。
+
+実service／隔離SQL20 case・40 DTO、現行RNの本文／全履歴／close-reopen40件を確認。完成済み旧本文は非再生成。旧質問への回答では元の保存本文を残して現行本文を生成し、未完成checkpoint retryでは意味・ANSWER／MEANING_UPDATE・operation・旧OBSERVATIONを保って再開する。rootは保存13種類の全文と全40対応を読解した。native部品stubで本人実機・正式Product Readではなく、同Work補助を正式Pro／Ultra二重検証としない。
+
+説明構文は除いたが、本人内の充足の説明自体や、肯定訂正後の二文で「のですね」が続く反復は残る。文型の交換を§9.2/9.4全体の完成や商品合格へ換算しない。次は、既に実測済みの「今は嬉しい」という現在回答がObservationには残りReceptionから消える欠落を、現在時点と元received反応の独立性を保つ既存意味・選択から照合する。単なる語尾の再交換を次作業にしない。安心した分類・共有対象／対象外更新、周辺既存4失敗（過去共有17との集合一致未確認）・same100・Q1上限・giver帰属・本人実機／正式Product Readも残る。
+
+TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR、初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置。10/31・12/18、Piece/Analysis主枠、管理評価53.25％は維持。全体設計01・全file地図01A/B/C・current01/04・最新weekly・Rule18／CURRENT_RULES・恒久incident全文と8/28意味設計§9.2/9.4／u289／u307を照合。System Contextの新freshnessは認定せず、許可済み原典直接参照を継続。
+
+### 根拠・最小scope
+
+基準はAPI `21efcc65c3ed662fb20ce3516d10e9a3971998b2`／Cocolon `4757f3e9dd34c32dce624fb1ffa56f15401bc2ea`。u306の追加承認はu307で実装済みであり、再質問しない。今回の依頼と§5.6.57に接続するDIRECT_PRODUCT_OR_ACCEPTANCE_WORK。Emlisが何を受け取ったかを定義する長い主部を外し、対象と理由に限定された本人内の感覚を主節にする。追加費用・Mash操作0。資格拡張、意味の追加、対照の欠落や保存不一致が必要なら拡張せず止める。同じ意味の範囲で本文・保存まで確認する一単位で、独立した補助機構は作らない。
+
+| path（mashos-api相対） | 差分 |
+| --- | --- |
+| ai/services/ai_inference/emlis_ai_grounded_human_reception.py | 既存reasoned_experienceの作者文法だけ変更。初回型／更新後局所型の既存検証を維持 |
+| ai/services/ai_inference/emlis_ai_grounded_observation_gate.py | 新完全構文を同じsource三役割・時点・状態・資格で逆読解。旧完全2構文は継続 |
+| ai/tests/test_cmee_emlis_result_appraisal.py | 既存意味検査と改変検査を新表面へ合わせ、旧2構文と新構文の同一source復元を検査。失敗1の期待値修正も同file |
+| ai/tests/fixtures/cmee_emlis_q1_shared_owner_identity_v1.json | 現行作者／readerのidentityのみ再導出、歴史fixtureと契約manifest76は不変 |
+
+新production file・schema・意味型・認識文法・registry／質問／Move上限・公開wire／DB／RN・依存変更0。原文認識→意味選択→既存作者→service/store→保存read→RNの責務と、01B/C・Piece/Analysis境界は不変。全体図・file地図を確認したうえで、構造差分のない追記を各地図へ重複させず本節へ集約する。
+
+### 実生成の比較（全て合成入力）
+
+memo「探しやすくなったので、資料を分類したことに満足した。」、memo_action「褒められたのに、嬉しくなかった。」。作者が実際に返したReceptionは次のとおり。
+
+初回・変更前：
+
+> 資料を分類したことについて受け取ったのは、探しやすくなったという点で、当時ご自身の中に満たされた感覚があった経験です。褒められたことだけでは言い表せない、嬉しさが伴わなかったあなたの経験として受け取りました。
+
+初回・変更後：
+
+> 資料を分類したことには、探しやすくなったという点で、当時ご自身の中に満たされた感覚があったのですね。褒められたことだけでは言い表せない、嬉しさが伴わなかったあなたの経験として受け取りました。
+
+回答 `「嬉しくなかった」ではなく「嬉しかった」です。` 後・変更前：
+
+> 資料を分類したことについて受け取ったのは、探しやすくなったという点で、当時ご自身の中に満たされた感覚があった経験です。褒められたことについて、その時は嬉しかったのですね。
+
+同回答後・変更後：
+
+> 資料を分類したことには、探しやすくなったという点で、当時ご自身の中に満たされた感覚があったのですね。褒められたことについて、その時は嬉しかったのですね。
+
+評価が「満足している」なら、満足文の時点だけが「入力した時点でご自身の中に満たされた感覚がある」となる。理由「探しやすくなった」とreceived反応の過去時点を現在へ変えない。原文の理由が現在の「資料を探しやすい」でも、過去の評価は「あった」を保持する。有限readerはこの独立性を旧新3構文で照合する。「のですね」は単に「満足したのですね」を返すためではなく、選択済み理由・対象・本人内経験を全部述べる主節の終わりとして使う。二経験間の因果・同時性・価値観は追加しない。
+
+### 比較・保存・実行範囲
+
+32比較は両別欄順序、memo同欄両順、memo_action同欄両順の6配置×満足2時点×初回／訂正の24と、別欄過去評価への対照8（分からない／今は嬉しい／received撤回／満足否定訂正／満足撤回／混合訂正／少し嬉しかった訂正／安心した訂正）。本文30／異なる14全文をrootが読解。不明と混合の本文なしは修復・成功へ数えない。今回変わったのは最初の24＋少し嬉しかったの25で、それ以外7は全record一致。比較recordはcheckpoint、plan核辺、human reception plan、aggregate、Observation、assessment、branch、decision要約、核辺数、status／body_state／reason_codes、全文を含む。selected全fieldの独立比較とは呼ばない。
+
+保存20 caseはfresh肯定13（6配置×2時点＋程度）と不明1、基準版完成保存2、基準版の未回答質問→現行回答2、基準版の回答checkpoint保存後／本文前中断→現行retry2。最後の6は過去評価・別欄順序0と現在評価・memo同欄received先行の2条件×3状態。旧engineは基準commitの別worktreeで実行。NoAuthorのGET/start・同回答再送で保存DTO一致とevent／attemptの非増加を確認。retryはMEANING_UPDATEとANSWERの全event、旧OBSERVATIONのid/payloadを照合した。40 DTOの13全文と全対応をrootが読解し、同じ40 DTOで現行useEmlisThread／EmlisThreadModalの全文・原入力・全履歴・close/reopenを確認。新しい本番DB・本人データ・実機・deploy操作なし。
+
+実行runtime：Python3.12.14、既存pytest8.4.1／Pydantic2.13.5、既存隔離PGlite0.5.8／React18.3.1。新installなし。主回帰は `test_cmee_emlis_result_appraisal.py`＋`test_emlis_q2_application.py`＋`test_emlis_q3_application.py`。先行target20はcomponent理由reader、旧新完全構文、更新後理由reader。identityは既存active final language owner検査1。静的補助reviewが長い回帰実行中に旧期待値1を発見し、実行を中断・再開始せず結果に残した。全run終了後その期待句だけを直して同項目を再検査するため、初回の1 failを全run greenへ書き換えない。作者非依存は有限Reception readerであり、既存全文inverseの作者replayを含む全経路まで独立とはしない。

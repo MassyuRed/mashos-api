@@ -3026,9 +3026,15 @@ def _read_relational_focus_discourse(raw, move, plan, resolver, selected_subject
                 r'(?P<time>当時の|入力した時点での)(?P<evaluation>満足)の拠り所が見えます。', raw))
         focused_experience = False
         if reasoned_experience:
-            parsed = re.fullmatch(r'(?P<event>.+)ことについて受け取ったのは、(?P<reason>.+)という点で、'
+            parsed = re.fullmatch(r'(?P<event>.+)ことには、(?P<reason>.+)という点で、'
                 r'(?P<time>当時|入力した時点で)ご自身の中に'
-                r'(?P<evaluation>満たされた感覚が(?P<state>あった|ある))経験です。', raw)
+                r'(?P<evaluation>満たされた感覚が(?P<state>あった|ある))のですね。', raw)
+            if parsed is None:
+                # The previous complete focus grammar remains readable under
+                # the same content qualification, source roles and time checks.
+                parsed = re.fullmatch(r'(?P<event>.+)ことについて受け取ったのは、(?P<reason>.+)という点で、'
+                    r'(?P<time>当時|入力した時点で)ご自身の中に'
+                    r'(?P<evaluation>満たされた感覚が(?P<state>あった|ある))経験です。', raw)
             focused_experience = parsed is not None
             if parsed is None:
                 # Retain the complete prior grammar, under the same selected
