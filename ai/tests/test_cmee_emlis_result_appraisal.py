@@ -7176,7 +7176,7 @@ def test_polite_received_prefix_updates_preserve_owned_meaning(field, source, an
     assert out.artifact and out.body_state == 'REFINED', out.reason_codes
     # This source repair preserves accepted meaning and its observation.
     # The fuller same-field REVISE regression below owns Reception retention.
-    # Unfinished REVISE and WITHDRAW still have the pre-existing retention gap.
+    # These assertions cover Observation; retention has separate regressions.
     assert '誘われた' in out.artifact.observation and '悲しかったです' in out.artifact.observation
     assert ('資料を分類' if '資料' in source else '考えを言葉') in out.artifact.observation
     if operation == 'WITHDRAW':
@@ -7485,3 +7485,202 @@ def test_unfinished_appraisal_revision_requires_original_context_and_source_clos
         changed = replace(p.thread, original=replace(p.thread.original,
             normalized_current_input={**p.thread.original.normalized_current_input, 'memo': source}))
         assert not prove(p.original_plan, changed, include_unfinished=True)
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('received_first', [False, True])
+@pytest.mark.parametrize('appraisal,context,event', [
+    ('資料を分類したことに満足した。', '', '資料を分類した'),
+    ('案を選んで満足した。', '', '案を選んだ'),
+    ('探しやすくなったので、資料を分類したことに満足した。', '探しやすくなった', '資料を分類した'),
+    ('資料を使いやすいから、資料を分類できて満足した。', '資料を使いやすい', '資料を分類できた'),
+    ('結論は出ていないが、考えを言葉にできて満足した。', '結論は出ていない', '考えを言葉にできた'),
+    ('方針はまだ決まっていないけれど、案を選んで満足した。', '方針はまだ決まっていない', '案を選んだ'),
+])
+def test_same_field_appraisal_withdrawal_keeps_every_independent_survivor(
+        monkeypatch, field, received_first, appraisal, context, event):
+    from test_cmee_emlis_q3_thread import advance
+    from cocolon_meaning_experience_engine import emlis_answer_update as updates
+    received = '誘われたのに、悲しかったです。'
+    source = received + appraisal if received_first else appraisal + received
+    original = request(source if field == 'memo' else '', source if field == 'memo_action' else '')
+    initial_result = MeaningExperienceEngine().generate(original)
+    req = advance(original, '「満足した」は誤りです。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact, result.reason_codes
+    assert prepared.checkpoint.assessment_status == 'RESOLVED'
+    for text in (event + 'ことに目が留まり', '誘われた', '悲しかったです', context):
+        assert text in result.artifact.reception
+    assert '満足' not in result.artifact.text
+    assert 'できてという' not in result.artifact.reception and '選んでという' not in result.artifact.reception
+    selected = project_thread_meaning(prepared, plan).selected_reception
+    moves = plan.response_plan.human_reception_plan.moves
+    assert len(moves) == len(selected.decisions) == (3 if context else 2)
+    assert all(d.branch == 'LIMITED' for d in selected.decisions)
+    assert len(plan.relations) == 1 and plan.relations[0] in prepared.original_plan.relations
+    assert not moves[0].support_nucleus_ids
+    if context:
+        assert not moves[1].support_nucleus_ids
+        assert moves[1].target_nucleus_ids[0] not in {
+            plan.relations[0].from_nucleus_id, plan.relations[0].to_nucleus_id}
+    monkeypatch.setattr(updates, '_retained_withdrawn_appraisal_duties', lambda *_a: ())
+    before = prepare_emlis_meaning(req)
+    previous_plan = build_updated_grounded_plan(before)
+    previous = MeaningExperienceEngine().generate(req)
+    assert previous.artifact and event not in previous.artifact.reception
+    if context:
+        assert context not in previous.artifact.reception
+    assert (plan.nuclei, plan.relations, prepared.checkpoint) == (
+        previous_plan.nuclei, previous_plan.relations, before.checkpoint)
+    assert result.artifact.observation == previous.artifact.observation
+    assert MeaningExperienceEngine().generate(original) == initial_result
+
+
+@pytest.mark.parametrize('target,finite', [
+    ('資料を分類したことに', '資料を分類した'), ('考えを言葉にできて', '考えを言葉にできた'),
+    ('案を選んで', '案を選んだ'), ('昨日、私は案を選んで', '昨日、あなたは案を選んだ'),
+])
+def test_withdrawn_appraisal_event_reader_restores_source_without_author(monkeypatch, target, finite):
+    from test_cmee_emlis_q3_thread import advance
+    import emlis_ai_grounded_human_reception as hr
+    from emlis_ai_grounded_observation_gate import read_source_owned_discourse
+    req = advance(request(target + '満足した。誘われたのに、悲しかった。', ''), '「満足した」は誤りです。')
+    p = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(p)
+    selected = project_thread_meaning(p, plan).selected_reception
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact, result.reason_codes
+    clause = finite + 'ことに目が留まり、それを小さくせずに受け止めています。'
+    assert clause in result.artifact.reception
+    move = plan.response_plan.human_reception_plan.moves[0]
+    def forbidden(*_a, **_k):
+        pytest.fail('independent retained-event reader called an author')
+    monkeypatch.setattr(hr, '_source_owned_retained_appraisal_event_sentence', forbidden)
+    monkeypatch.setattr(hr, '_source_grounded_reception_fragment', forbidden)
+    read = lambda body, chosen=selected: read_source_owned_discourse(body, move, plan, p.thread.resolver(), chosen)
+    assert read(clause) is not None and read(clause, None) is None
+    for wrong in (
+        clause.replace(finite, finite + 'かった'), clause.replace(finite, '同僚が' + finite),
+        clause.replace(finite, '資料を分類しなかった'), clause.replace(finite, '別の案を選んだ'),
+        clause.replace(finite, finite + 'かもしれない'), clause.replace(finite, '今は' + finite),
+        clause.replace('ことに目が留まり', '努力に目が留まり'),
+        clause.replace('ことに目が留まり', 'ことで満足したことに目が留まり'),
+        clause + 'その結果、結論が出たのですね。',
+    ):
+        assert wrong != clause and read(wrong) is None
+    if 'あなた' in clause:
+        assert read(clause.replace('あなた', '私')) is None
+    decision = selected.decisions[0]
+    proposition = decision.subjective_proposition
+    content = proposition.appraisal_content
+    other_ref = next(b.contribution_ref for b in decision.basis_rows
+                     if b.contribution_ref not in decision.selected_contribution_refs)
+    bad_decisions = (
+        replace(decision, selected_contribution_refs=()),
+        replace(decision, selected_contribution_refs=(other_ref,)),
+        replace(decision, subjective_proposition=replace(proposition,
+            appraisal_content=replace(content, protected_bindings=content.appraised_bindings))),
+        replace(decision, subjective_proposition=replace(proposition,
+            appraisal_content=replace(content, appraised_bindings=()))),
+        replace(decision, qualifier_rows=tuple(replace(q, time_scope='present') for q in decision.qualifier_rows)),
+    )
+    for changed in bad_decisions:
+        assert read(clause, replace(selected, decisions=(changed, *selected.decisions[1:]))) is None
+
+
+@pytest.mark.parametrize('appraisal', [
+    '資料を分類したことに満足した。',
+    '探しやすくなったので、資料を分類したことに満足した。',
+    '結論は出ていないが、考えを言葉にできて満足した。',
+])
+def test_appraisal_withdrawal_inverse_rejects_missing_survivors_and_revived_relations(appraisal):
+    from test_cmee_emlis_q3_thread import advance
+    req = advance(request('誘われたのに、悲しかったです。' + appraisal, ''), '「満足した」は誤りです。')
+    p = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(p)
+    selected = project_thread_meaning(p, plan).selected_reception
+    sentence = build_grounded_sentence_plan(plan, p.thread.resolver(), recovery_stage='full')
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact
+    body = result.artifact
+    def valid(reception):
+        return evaluate_grounded_surface_body_inverse(body=body.text.replace(body.reception, reception).encode(),
+            plan=plan, sentence_plan=sentence, resolver=p.thread.resolver(), selected_subjective_input=selected).passed
+    assert valid(body.reception)
+    clauses = [part + '。' for part in body.reception.split('。') if part]
+    wrongs = [body.reception.replace(clause, '') for clause in clauses]
+    wrongs += [body.reception + text for text in (
+        'それでも満足したのですね。', 'その理由で資料を分類したのですね。', 'その結果、結論が出たのですね。')]
+    wrongs += [body.reception.replace('悲しかったです', '嬉しかったです')]
+    if '結論は出ていない' in body.reception:
+        wrongs.append(body.reception.replace('結論は出ていない', '結論は出ている'))
+    if '探しやすくなった' in body.reception:
+        wrongs.append(body.reception.replace('探しやすくなった', '探しやすくなる'))
+    for wrong in wrongs:
+        assert wrong != body.reception and not valid(wrong)
+    # Only the finite action above has an independent discourse reader;
+    # the other LIMITED duties retain their existing full-body author replay.
+
+
+@pytest.mark.parametrize('field', ['memo', 'memo_action'])
+@pytest.mark.parametrize('received_first', [False, True])
+@pytest.mark.parametrize('separator', ['  ', '\u3000\u3000'])
+def test_withdrawn_appraisal_finite_source_preserves_inter_sentence_spacing(field, received_first, separator):
+    from test_cmee_emlis_q3_thread import advance
+    from emlis_ai_grounded_human_reception import source_grounded_retained_appraisal_event
+    received = '誘われたのに、悲しかったです。'
+    appraisal = '結論は出ていないが、考えを言葉にできて満足した。'
+    source = separator.join((received, appraisal) if received_first else (appraisal, received))
+    req = advance(request(source if field == 'memo' else '', source if field == 'memo_action' else ''),
+                  '「満足した」は誤りです。')
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    assert source_grounded_retained_appraisal_event(
+        plan.response_plan.human_reception_plan.moves[0], plan, prepared.thread.resolver()) == ('考えを言葉にできて', 'te')
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact, result.reason_codes
+    assert '考えを言葉にできたことに目が留まり' in result.artifact.reception
+    assert 'できてという' not in result.artifact.reception
+    assert all(text in result.artifact.reception for text in ('結論は出ていない', '誘われた', '悲しかったです'))
+
+
+def test_appraisal_withdrawal_retention_requires_exact_single_update_and_source():
+    from test_cmee_emlis_q3_thread import advance
+    from cocolon_meaning_experience_engine import emlis_answer_update as updates
+    req = advance(request('誘われたのに、悲しかったです。探しやすくなったので、資料を分類したことに満足した。', ''),
+                  '「満足した」は誤りです。')
+    p = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(p)
+    update, = p.checkpoint.answer_update.updates
+    prove = lambda source=p.original_plan, thread=p.thread, ns=plan.nuclei, rs=plan.relations, us=(update,): (
+        updates._retained_withdrawn_appraisal_duties(source, thread, ns, rs, us))
+    assert len(prove()) == 3
+    for changed in (
+        replace(update, operation='REVISE'), replace(update, binding_kind='QUESTION_FOCUS'),
+        replace(update, changed_claim_refs=('invented',)), replace(update, target_meaning_refs=()),
+        replace(update, superseded_claim_refs=()),
+        replace(update, temporal_binding=replace(update.temporal_binding, about_time='ANSWER_TIME')),
+    ):
+        assert not prove(us=(changed,))
+    assert not prove(us=(update, update)) and not prove(rs=())
+    assert not prove(rs=plan.relations + (p.original_plan.relations[-1],))
+    assert not prove(ns=plan.nuclei[:-1])
+    for node in plan.nuclei:
+        if node.retention != 'required':
+            continue
+        changed = replace(node, semantic_frame=replace(node.semantic_frame, actor='other_person'))
+        assert not prove(ns=tuple(changed if n == node else n for n in plan.nuclei))
+    reason, = (n for n in p.original_plan.nuclei
+               if 'semantic_role:appraisal_explicit_reason' in n.semantic_frame.attribute_codes)
+    for frame in (replace(reason.semantic_frame, polarity='negative'),
+                  replace(reason.semantic_frame, time_scope='present')):
+        source = replace(p.original_plan, nuclei=tuple(
+            replace(n, semantic_frame=frame) if n == reason else n for n in p.original_plan.nuclei))
+        assert not prove(source=source)
+    old_source = p.thread.original.normalized_current_input['memo']
+    for text in ('別の話。' + old_source, old_source + '水を飲んだ。', old_source.replace('。探し', '、探し')):
+        thread = replace(p.thread, original=replace(p.thread.original,
+            normalized_current_input={**p.thread.original.normalized_current_input, 'memo': text}))
+        assert not prove(thread=thread)

@@ -12051,6 +12051,83 @@ def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
             f"{parsed['matter']}という点なのですね")
 
 
+def source_grounded_retained_appraisal_event(move, plan, resolver):
+    """Re-prove an isolated original action; its withdrawn appraisal is absent.
+
+    Return source grammar only. Selection owns the duty, while the author and
+    inverse reader separately inflect or restore the proven te/de/ta ending.
+    """
+    if (getattr(resolver, 'source_contract', None) != 'cocolon.cmee.emlis_thread.v1'
+        or 'cocolon.cmee.emlis_thread.v1' not in plan.source_contracts
+        or move not in plan.response_plan.human_reception_plan.moves or not move.required
+        or move.reception_act != 'stay_with_current_burden'
+        or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids
+        or move.reference_mode == 'anaphoric_first'):
+        return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    event = index.get(move.target_nucleus_ids[0])
+    if event is None:
+        return None
+    frame = event.semantic_frame
+    if (event.retention != 'required' or event.grounding_kind != 'explicit'
+        or event.allowed_claim_scope != 'explicit_current_input'
+        or event.source_fields not in {('memo',), ('memo_action',)}
+        or len(event.source_span_ids) != 1 or event.surface_anchor_ids != event.source_span_ids
+        or frame.target_anchor_ids != event.source_span_ids
+        or (event.kind, frame.predicate_kind, frame.actor, frame.modality, frame.polarity, frame.time_scope)
+            != ('event', 'event', 'current_user', 'fact', 'neutral', 'past')
+        or any(event.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)):
+        return None
+    spans = tuple(s for s in resolver.resolve_many(resolver.span_ids)
+                  if s.source_field == event.source_fields[0])
+    if len(spans) != 2 or spans[0].start_index != 0:
+        return None
+    span = resolver.resolve(event.source_span_ids[0])
+    # Display quoting collapses whitespace; grammar needs the admitted field's
+    # original spacing so its scalar offsets still locate the same source.
+    ref = resolver.qualified_ref(span.span_id).evidence
+    raw_field = resolver._source_envelopes[ref.source_envelope_id].raw_utf8[
+        ref.field_utf8_start:ref.field_utf8_end].decode('utf-8')
+    from emlis_ai_current_input_bundle import normalize_emlis_current_input
+    source = normalize_emlis_current_input({span.source_field: raw_field})[span.source_field]
+    from emlis_ai_grounded_observation_plan import _explicit_result_appraisal_projections
+    rows = _explicit_result_appraisal_projections(span, {span.source_field: source})
+    events = tuple(row for row in rows if row.nucleus_suffix == ':event')
+    if (len(events) != 1 or not rows or rows[-1].nucleus_suffix != ':appraisal'
+        or any(n.source_span_ids == event.source_span_ids and n.kind == 'reaction' for n in plan.nuclei)):
+        return None
+    row = events[0]
+    if ((row.kind, row.predicate_kind, row.polarity, row.modality, row.time_scope, row.attribute_codes)
+            != (event.kind, frame.predicate_kind, frame.polarity, frame.modality,
+                frame.time_scope, frame.attribute_codes)):
+        return None
+    fragment = final_reception_source_anchor_text(event.nucleus_id, index, resolver)
+    endings = tuple(c.split(':', 1)[1] for c in frame.attribute_codes
+                    if c.startswith('source_appraisal_event_ending:'))
+    if (len(endings) != 1 or endings[0] not in {'te', 'de', 'ta'}
+        or not fragment or not fragment.endswith({'te': 'て', 'de': 'で', 'ta': 'た'}[endings[0]])):
+        return None
+    return fragment, endings[0]
+
+
+def _source_owned_retained_appraisal_event_sentence(move, realization, plan, resolver,
+                                                   selected_decision, recovery_stage):
+    owned = source_grounded_retained_appraisal_event(move, plan, resolver)
+    if (owned is None or recovery_stage != 'full' or realization.reference_mode == 'ANAPHORIC'
+        or realization.clause_form != 'FINITE' or realization.context_slots or realization.relations
+        or realization.semantic_fragments != (owned[0],)
+        or selected_decision.branch != 'LIMITED' or not _selected_material_appraisal(selected_decision)):
+        return None
+    ending = {'attention': 'に目が留まり、それを小さくせずに受け止めています',
+              'significance': 'を見失わず、小さくせずに受け止めています',
+              'felt_response': 'を小さくせずに受け止めています'}.get(move.move_role)
+    if ending is None:
+        return None
+    finite = owned[0][:-1] + {'te': 'た', 'de': 'だ', 'ta': 'た'}[owned[1]]
+    finite = re.sub(r'(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)', 'あなた', finite, count=1)
+    return finite + 'こと' + ending
+
+
 def _source_owned_appraisal_material_sentence(move, realization, plan, resolver,
                                               selected_decision, recovery_stage):
     """Receive a whole self-appraisal without using independent material against it.
@@ -12658,6 +12735,11 @@ def _author_source_grounded_reception_clauses(
             )
             if appraisal_sentence is not None:
                 move_sentence = appraisal_sentence
+            retained_event_sentence = _source_owned_retained_appraisal_event_sentence(
+                move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
+            )
+            if retained_event_sentence is not None:
+                move_sentence = retained_event_sentence
             purpose_sentence = _source_owned_action_purpose_sentence(
                 move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
             )

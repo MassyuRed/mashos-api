@@ -223,7 +223,8 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
     )
 
 
-def _separate_reasonless_appraisal_received_source(original, thread, *, include_unfinished=False):
+def _separate_reasonless_appraisal_received_source(original, thread, *, include_unfinished=False,
+                                                  include_reason=False):
     """Re-prove the two unchanged source scopes before retaining their duties."""
     links = tuple(r for r in original.relations
                   if gp.source_owned_result_appraisal(r, original.nuclei))
@@ -237,6 +238,9 @@ def _separate_reasonless_appraisal_received_source(original, thread, *, include_
         return {}
     context = (gp.source_owned_result_appraisal_context(link, original.nuclei, original.relations)
                if include_unfinished else None)
+    reason = (gp.source_owned_result_appraisal_reason(link, original.nuclei, original.relations)
+              if include_reason else None)
+    context = context or reason
     if len(original.relations) != (3 if context else 2) or len(required) != (5 if context else 4):
         return {}
     appraisal_nodes = (context, event, appraisal) if context else (event, appraisal)
@@ -292,7 +296,8 @@ def _separate_reasonless_appraisal_received_source(original, thread, *, include_
         first, thread.original.normalized_current_input)
     received_rows = gp._received_event_reaction_text_projections(last.raw_text)
     if (tuple(row.nucleus_suffix for row in appraisal_rows)
-            != ((':unfinished', ':event', ':appraisal') if context else (':event', ':appraisal'))
+            != (((':reason' if reason else ':unfinished'), ':event', ':appraisal')
+                if context else (':event', ':appraisal'))
         or tuple(row.nucleus_suffix for row in received_rows) != (':event', ':reaction')):
         return {}
     # The shared received grammar admits a broad giver token. Reusing it
@@ -313,7 +318,7 @@ def _separate_reasonless_appraisal_received_source(original, thread, *, include_
             return {}
     return dict(appraisal_event=event, appraisal=appraisal, received_event=received_event,
                 reaction=reaction, received_relation=received_relation,
-                **({'unfinished_context': context} if context else {}))
+                **({('reason' if reason else 'unfinished_context'): context} if context else {}))
 
 
 def _retained_reasonless_shared_target_duties(original, thread, nuclei, relations, updates):
@@ -378,6 +383,35 @@ def _retained_reasonless_shared_target_duties(original, thread, nuclei, relation
             # a cause or contrast of the new negative evaluation.
             *((('current_burden', (context.nucleus_id,), ()),) if context else ()),
             ('current_burden', (received.nucleus_id,), (reaction.nucleus_id,)))
+
+
+def _retained_withdrawn_appraisal_duties(original, thread, nuclei, relations, updates):
+    """Keep independent same-field survivors after withdrawing only the appraisal.
+
+    The old cause/contrast ended at the removed evaluation. Neither edge is
+    transferred to the surviving action, and no private content is promoted.
+    """
+    if len(thread.answers) != 1 or len(updates) != 1:
+        return ()
+    group = _separate_reasonless_appraisal_received_source(
+        original, thread, include_unfinished=True, include_reason=True)
+    if (not group or group['appraisal_event'].source_fields != group['received_event'].source_fields):
+        return ()
+    update, old = updates[0], group['appraisal']
+    if (update.operation != 'WITHDRAW' or update.binding_kind != 'EXPLICIT_CORRECTION'
+        or update.target_meaning_refs != (old.nucleus_id,)
+        or update.superseded_claim_refs != (old.nucleus_id,) or update.changed_claim_refs
+        or update.temporal_binding.about_time != 'ORIGINAL_OCCASION'):
+        return ()
+    remaining = tuple(n for n in original.nuclei if n.nucleus_id != old.nucleus_id)
+    if (tuple(nuclei) != remaining or tuple(relations) != (group['received_relation'],)
+        or {n.nucleus_id for n in nuclei if n.retention == 'required'}
+            != {n.nucleus_id for n in original.nuclei if n.retention == 'required'} - {old.nucleus_id}):
+        return ()
+    context = group.get('reason') or group.get('unfinished_context')
+    return (('current_burden', (group['appraisal_event'].nucleus_id,), ()),
+            *((('current_burden', (context.nucleus_id,), ()),) if context else ()),
+            ('current_burden', (group['received_event'].nucleus_id,), (group['reaction'].nucleus_id,)))
 
 
 def _retained_unfinished_received_duties(prepared, nuclei, relations):
@@ -868,6 +902,7 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=(), *, p
         primary_focus_nucleus_ids=focus_ids,
         retained_reaction_groups=(_retained_reasonless_shared_target_duties(
             original, thread, nuclei, relations, updates)
+            or _retained_withdrawn_appraisal_duties(original, thread, nuclei, relations, updates)
             or _retained_unfinished_received_duties(prepared, nuclei, relations) if not unresolved else ()),
     )
     return replace(original, nuclei=nuclei, relations=relations, unknown_boundaries=unknowns,

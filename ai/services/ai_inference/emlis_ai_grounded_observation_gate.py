@@ -4857,9 +4857,70 @@ def _read_shared_target_reception_discourse(raw, move, plan, resolver, selected_
                  for field, key in duties if parsed[field] is not None)
 
 
+def _read_retained_appraisal_event_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Restore an independently parsed action to its original scalar text."""
+    from emlis_ai_grounded_human_reception import source_grounded_retained_appraisal_event
+    owned = source_grounded_retained_appraisal_event(move, plan, resolver)
+    if owned is None or selected_subjective_input is None:
+        return None
+    decisions = tuple(d for d in selected_subjective_input.decisions if d.move_id == move.move_id)
+    if len(decisions) != 1 or decisions[0].branch != 'LIMITED':
+        return None
+    decision = decisions[0]
+    proposition = decision.subjective_proposition
+    content = proposition.appraisal_content
+    if (content is None or (content.dimension, content.operation) != ('MATERIAL_WEIGHT', 'RECEIVE_AS_MATERIAL')
+        or proposition.subjective_mode != 'ATTENTION' or proposition.subjective_operator != 'ATTEND_TO'
+        or content.focal_relation_ref is not None or proposition.focal_relation_ref is not None
+        or content.protected_bindings or content.appraised_bindings != proposition.basis_binding_refs
+        or (decision.reception_act, decision.target_nucleus_ids, decision.support_nucleus_ids)
+            != (move.reception_act, move.target_nucleus_ids, move.support_nucleus_ids)
+        or len(decision.selected_contribution_refs) != 1):
+        return None
+    selected_basis = tuple(b for b in decision.basis_rows
+                           if b.contribution_ref in decision.selected_contribution_refs)
+    semantic_map = dict(selected_subjective_input.semantic_nucleus_pairs)
+    if (len(selected_basis) != 1
+        or semantic_map.get(selected_basis[0].semantic_ref) != move.target_nucleus_ids[0]
+        or selected_basis[0].binding_ref not in content.appraised_bindings
+        or decision.selected_contribution_refs[0] not in content.basis_contribution_refs):
+        return None
+    qualifiers = tuple(q for q in decision.qualifier_rows
+                       if q.basis_binding_ref == selected_basis[0].binding_ref)
+    if (len(qualifiers) != 1
+        or (qualifiers[0].polarity, qualifiers[0].modality, qualifiers[0].time_scope)
+            != ('neutral', 'fact', 'past')):
+        return None
+    endings = {'attention': r'に目が留まり、それを小さくせずに受け止めています',
+               'significance': r'を見失わず、小さくせずに受け止めています',
+               'felt_response': r'を小さくせずに受け止めています'}
+    if move.move_role not in endings or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw):
+        return None
+    parsed = re.fullmatch(r'(?P<event>[^。]+)こと' + endings[move.move_role] + r'。', raw)
+    if parsed is None:
+        return None
+    source, ending = owned
+    finite = parsed['event']
+    owner = re.search(r'(?:私|自分|わたし|僕|ぼく|俺|おれ)(?=は|が)', source)
+    if owner:
+        if finite[owner.start():owner.start() + len('あなた')] != 'あなた':
+            return None
+        finite = finite[:owner.start()] + owner.group() + finite[owner.start() + len('あなた'):]
+    if not finite.endswith({'te': 'た', 'de': 'だ', 'ta': 'た'}[ending]):
+        return None
+    restored = finite[:-1] + {'te': 'て', 'de': 'で', 'ta': 'た'}[ending]
+    if restored != source:
+        return None
+    return ((0, len(parsed['event'].encode()), source.encode()),)
+
+
 def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None,
                                 *, preceding_context=None):
     """Read supported finite source duties without a literal-author oracle."""
+    retained_event = _read_retained_appraisal_event_discourse(
+        raw, move, plan, resolver, selected_subjective_input)
+    if retained_event is not None:
+        return retained_event
     if any(n.nucleus_id in move.target_nucleus_ids
            and 'source_shared_target_slot:received_event' in n.semantic_frame.attribute_codes
            for n in plan.nuclei):

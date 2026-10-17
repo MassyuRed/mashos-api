@@ -1,4 +1,4 @@
-> 2026-10-17最新：u322で未成立事項付き評価訂正後の2欠落を修復。未成立事項と別の経験を保持し、残るE06はWITHDRAW6件。受容品質は未完、未配置・商品NOT_CLEAR。詳細は末尾u322。
+> 2026-10-17最新：u323で同欄WITHDRAW6件の保持欠落を修復。u320同欄10欠落は対象内を解消。E04の受容品質・E05の問い等は未完、未配置・商品NOT_CLEAR。詳細は末尾u323。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -22325,3 +22325,18 @@ latest weekly §3.7／u320の同欄欠落10件のうち、理由なしREVISE2件
 STRUCTURE_MAP_DELTA_NONE（既存owner内の保持選択修復、新製品file／経路／契約なし）。残るE06は理由なし／理由付き／未成立事項付き×2欄のWITHDRAW6件。次は撤回済み評価や旧因果／対比を復活させず、残存する行為・理由・文脈を受容へ残す証明と有限節接続を確認する。E04の汎用受容、「悲しかったですということ」などの不自然さ、Observationの「同時」「感覚」、E01の別誤認、E05の問い、E07〜E09は未解消。既存4／17／16／20失敗は今回は再実行も集合合算もしていない。
 
 PRODUCT_NOT_CLEAR・初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置を維持。本Work補助は正式別model評価ではない。本人実機／本番DB／deploy／mergeは0。10/20方式判断、10/31管理線、12/18公開目標、Piece／Analysis主枠・53.25%は不変。詳細・未加工本文は [u322監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u322_UnfinishedRevisionRetention_20261017.md) を参照。
+
+
+## u323 — 評価撤回後も同欄の行為・理由・未成立事項を保持する（2026-10-17）
+
+最新weekly20261017 §3.7／u322の同欄WITHDRAW6欠落（理由なし／理由付き／未成立事項付き×memo／memo_action）を修復した。元の評価だけを明示撤回したこと、元sourceと残存する全核・received関係の一致を確認し、既存LIMITEDの2／3責務へ残存行為・独立の理由／未成立事項・別の経験を渡す。撤回した満足や旧因果／対比は復活させない。別欄WITHDRAW・private内容資格は適用を拡張していない。意味型・公開API／DB／RN・質問上限は不変。
+
+既存source文法で証明した行為だけをte／de／taから有限形へ接続し、その行為の全文readerは作者を呼ばず原文へ復元・照合する。選択された内容・参照・属性とSELFの「あなた」への対応も検査する。他のLIMITED責務には既存作者replayが残り、本文全体の独立reader完成とはしない。文間の連続空白でoffsetがずれる途中不具合も、元envelopeの欄bytesから既存入力正規化を再利用して修復した。
+
+最終関連回帰は **606 passed, 1004 deselected, 1 warning in 308.96s (0:05:08)**、Q2/Q3 applicationは **54 passed, 1 warning in 78.07s (0:01:18)**。別file集合で計660 passed、failed／skip 0。新規40件は606件に含む。現行owner identity検査は別途 **1 passed, 194 deselected, 1 warning in 25.01s**。途中585 passed／13 skippedはPGlite設定不足の保存系13件であり、最終runで設定を補って全件実行した。途中結果を再加算しない。既存期待値の変更・削除は0、現行identity fixtureのみ実sourceから更新し、凍結歴史fixtureは不変。
+
+元6件と自然変種6件のbaseline比較では、初回public結果・撤回後完全checkpoint・元と現在の核辺が一致し、撤回後public差分はbody／Receptionだけ。旧checkpointから現行freshと同じ本文になる。実service＋隔離PGlite24ケース／54 DTO、現行RN hook／Modalのnative stub54 DTOで本文・元入力・全履歴・close/reopenを確認した。旧完成6件は欠落のある旧本文も作者禁止でそのまま保持し、旧pending6件と旧中断更新6件は保存意味から現本文を生成。中断再開はprepare禁止でcheckpoint・意味／回答event・旧履歴・operationを保持した。本人実機／本番DB／deploy／mergeは0。
+
+STRUCTURE_MAP_DELTA_NONE。u320の同欄10欠落はu321のREVISE2・u322のREVISE2・今回WITHDRAW6で対象内を修復したが、E06全体の完了ではない。次は入力固有の受け取りを、原文の列挙や汎用語尾だけで済ませず自然変種・更新・保存表示まで一体で改善する。別欄WITHDRAWは今回未変更、E04汎用受容、E01の別誤認、E05の問い、E07〜E09は未解消。固定100／元10・既存4／17／16／20失敗は今回再実行も集合合算もしていない。
+
+PRODUCT_NOT_CLEAR・初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置を維持。同Work補助は正式別model評価ではない。10/20方式判断、10/31管理線、12/18公開目標、Piece／Analysis主枠・53.25%は不変。詳細・最終source・未加工本文は [u323監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u323_SameFieldWithdrawalRetention_20261017.md) を参照。
