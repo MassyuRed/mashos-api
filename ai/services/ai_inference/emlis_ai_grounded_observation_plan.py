@@ -8407,7 +8407,12 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
             {"semantic_dependency:reasoned_result_appraisal",
              "semantic_dependency:unfinished_result_appraisal"}
             & set(n.semantic_frame.attribute_codes) for n in pair)
-        if ((reason is not None or context is not None or plain) and is_grounded_positive_feeling(answer)
+        negative_answer = (
+            (answer.kind, answer.semantic_frame.predicate_kind, answer.semantic_frame.modality,
+             answer.semantic_frame.polarity) == ("reaction", "feeling", "feeling", "negative")
+            and not is_grounded_current_answer_uncertainty(answer))
+        if ((reason is not None or context is not None or plain)
+            and (is_grounded_positive_feeling(answer) or negative_answer)
             and answer.semantic_frame.time_scope == "present"
             and {c for c in answer.semantic_frame.attribute_codes if c.startswith("thread_time:")}
                 == {"thread_time:answer_time"}):
@@ -8432,9 +8437,16 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
                 if len(rest_text) == 3 and len(rest_relations) == 2:
                     retained = _thread_retained_reaction_groups(rest, rest_relations,
                         separate_later_scopes=separate_later_scopes)
-                    if (len(retained) == 2 and retained[0][0] == "current_burden"
+                    positive_duties = (len(retained) == 2 and retained[0][0] == "current_burden"
                         and len(retained[0][1]) == len(retained[0][2]) == 1
-                        and retained[1] == ("lived_change", (answer.nucleus_id,), ())
+                        and retained[1] == ("lived_change", (answer.nucleus_id,), ()))
+                    # The existing negative duty keeps the original reaction
+                    # and current answer as distinct supports of their event.
+                    negative_duty = (negative_answer and len(retained) == 1
+                        and retained[0][0] == "current_burden"
+                        and len(retained[0][1]) == 1 and len(retained[0][2]) == 2
+                        and retained[0][2][-1] == answer.nucleus_id)
+                    if ((positive_duties or negative_duty)
                         and {nid for _, targets, supports in retained for nid in (*targets, *supports)}
                             == {n.nucleus_id for n in rest_text}):
                         evaluation = next(n for n in group if n.nucleus_id == link.to_nucleus_id)

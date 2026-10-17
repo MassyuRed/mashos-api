@@ -1,4 +1,4 @@
-> 最新EmlisAI残件：末尾 **u311（2026-10-17・未成立文脈と現在回答の保持修復）**。未成立・対象・満足の三点を保ち、元receivedと現在positiveを既存3 Moveへ復旧。32比較・保存/RN44 DTOを確認。現在negativeでの原反応欠落と本文反復は残件。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
+> 最新EmlisAI残件：末尾 **u312（2026-10-17・現在negative回答と評価併存の原反応保持）**。理由なし正負／理由付き／未成立付き評価と元received・現在negativeを既存2 Moveへ復旧。49比較・保存/RN88 DTOを確認。当時ADDの欠落と本文反復は残件。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -21919,3 +21919,62 @@ language identity `2650f18f2e541e196a8133fd987d694bf8a7ccd4ee6b4773c1c78be8ee41d
 今回のunfinished＋現在positiveの欠落は修復。対照の現在negative「今は嬉しくない」では、回答と評価が残る一方、元の「嬉しくなかった」がReceptionから消える。次はplain／reasoned／unfinished評価と現在negativeを、既存のevent target＋原反応／回答supportの保持義務から照合する。今回のpositive条件を無検証に緩めず、既存契約内で原因を確定する。
 
 長い未成立・満足説明、Observationの満足二重説明、「のですね」反復、初回の内容形成、独立行動追加、当時ADD、安心した分類、共有対象／複数評価容量、その他対象外更新、既存周辺4失敗（過去17との対応未確認）と今回Q3既存16失敗の対応、same100、Q1上限、giver帰属、本人実機／正式Product Readは残件。TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR、初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false、Draft/open/unmerged・未配置。deploy／main mergeなし。10/31管理線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％を維持する。
+
+
+## u312 — 現在negative回答と評価が併存しても元の反応を保持（2026-10-17 JST）
+
+u311／weekly§5.6.61の次作業を実施。理由なしの正負評価、理由付き満足、未成立文脈付き満足と別received経験に「今は嬉しくない」と答えると、Observationにある元の「嬉しくなかった」がReceptionから落ちる欠落を修復した。既存Plan一箇所（15行追加・3行削除）で、評価の完全な保持義務と、received対象・元反応・現在negativeの既存保持義務を接続する。
+
+基準API `4e6b39d2c62d250eb252733b2c37bb54407930a7`／Cocolon `b431a9f9294439a161949c29c5dc7b9312a4dcab`。Mashの残件継続依頼とRule18§11.3の既存契約内修復。DIRECT_PRODUCT_OR_ACCEPTANCE_WORK。scopeは本文選択の欠落修復・既存検証・記録・GitHub反映／読戻し。source認識、意味資格、内容型／schema、作者／reader、初回u301と訂正後u307の経験内容資格、Move上限、公開API／DB／RN・依存・配置は変更しない。追加費用・Mash操作0。Codex Work rootが実行し、同Work read-only補助を正式Pro／Ultra別モデル検証へ数えない。
+
+前提資料・作業姿勢とルール、恒久incident全文、全体01・全file地図01A/B/C・current01/04、最新weeklyと06／API handoffのu311、既存の意味・保持契約と実ownerを照合。System Context prepareは設定workspaceのAPI未配置で終了したため、新freshnessを認定せず、正本の許可する原典直接参照を継続した。
+
+### 原因と変更境界
+
+`emlis_ai_grounded_observation_plan.py::_thread_retained_reaction_groups`の評価併存窓は現在positive＋再帰結果2義務だけを受けていた。既存negative経路は`current_burden / target=(received event) / support=(元反応,回答)`の1義務を既に作れるが、この窓へ接続されていなかった。
+
+既存の評価閉包を共用し、negative入口をreaction／feeling／feeling／negative・非unknown、present・`thread_time:answer_time`に限定。残余3核2辺からの再帰結果はexact1義務・target1・support2・末尾回答・全3核被覆を要求する。positiveの既存exact2条件は維持する。結果は評価1＋元received／現在negative1の2 Moveであり、新しい本文作者や再分類を追加しない。ABOUTの本人・元対象所有、contrastと原反応のexplicit／required証明は既存再帰が担う。
+
+核・関係・checkpoint・Observation・branch・状態・reason_codes・基本内容型は保持し、Move／aggregate／Receptionだけが対象復旧に伴って変わる。未成立は理由にならず、現在の回答は元反応の訂正や「嬉しくなくなった」という未明示変化にならない。PARTIALは受理済み回答を本文に保ち、未解釈部分と状態を残す。当時ADD、unknown、複数回答、共有対象、独立行動、withdrawal、入れ子`separate_later_scopes=False`へ窓を拡張しない。
+
+製品変更1file、既存appraisal testへ39検査追加、現行共有owner identityだけ実sourceから再導出。歴史fixture・既存testの期待・skip指定は不変。STRUCTURE_MAP_DELTA_NONE：地図既載の選択責務内。RN→API→service/store→保存read→RN、01B/CとPiece/Analysisの責務は不変。
+
+### 実本文（合成入力）
+
+memo「結論は出ていないが、考えを言葉にできて満足した。」、memo_action「褒められたのに、嬉しくなかった。」、回答「今は嬉しくない。」。
+
+変更前Reception：
+
+> 褒められたことについて、回答した時点で嬉しくないことを小さくせずに受け止めています。結論は出ていないという点と、考えを言葉にできたことへの当時の満足との対比に目を向けています。
+
+変更後Reception：
+
+> 結論は出ていないという点と、考えを言葉にできたことへの当時の満足との対比に目を向けています。褒められたのに、嬉しくなかったし、回答した時点では嬉しくないのですね。
+
+元反応と回答は別の時点として両方残る。ただし未成立三点は既存LIMITEDの対比説明であり、初回の充足経験を扱う資格へ昇格していない。「のですね」反復やObservationとの復唱も残るため、保持修復を商品完成へ換算しない。
+
+### 検証・保存・表示
+
+| 対象 | 実測結果と限界 |
+| --- | --- |
+| appraisal＋Q2/Q3 application | 1,327 passed／1 warning（559.65秒）。最終sourceの全件一括実行：appraisal1,273＋application54 |
+| 追加39検査 | 39 passed／1234 deselected／1 warning（21.49秒）。主回帰と重複加算なし。4評価型×6配置、評価時点／種類4、回答述語／程度2、PARTIAL1、有限reader／改変拒否4、閉包／ABOUT付替え拒否4 |
+| 現行owner identity | 1 passed／194 deselected／1 warning（21.79秒）。現行active final language owner検査 |
+| 周辺Q3 retained | 12 passed／16 failed／922 deselected／1 warning（23.05秒）。u311の同集合と失敗16件のassertion／trace全文がprocess addressを除いて一致。既存失敗を修復済みと扱わない |
+| 旧新同入力49例 | 対象31の原反応を復旧、対照18は取得全record一致。checkpoint取得46例で意味・Observation・branch・状態・reason_codes・内容型不変。selected全fieldの一致証明とはしない |
+| 実service＋隔離PGlite | fresh31＋不明1＋旧完成4＋旧pending回答4＋旧checkpoint中断retry4＝44case／88DTO。作者禁止GET/start、同回答再送の本文・events・attempt非増加 |
+| 現行RN hook／Modal | 同88DTOの現在全文・元入力・全履歴・close/reopen一致。native部品stubで今回の本人実機検証ではない |
+
+旧engineは変更前u311のai snapshotを別processで実行。完成済み旧本文は非再生成で、欠落も保持する。旧pendingからの回答は旧初回本文を履歴に残して現行本文を生成。本文前中断retryは同checkpoint／operation、MEANING_UPDATE／ANSWER／既存OBSERVATION全eventを保って再開する。44caseすべてで元入力と既存timelineの本文／metadataが現在表示flagを除き一致。rootは保存31種類の全文と88対応を読解した。
+
+対照18は初回、現在positive4種、不明、当時negative／positive ADD、肯定REVISE、received／評価withdrawal、評価否定訂正、他主体、安心した、独立行動、共有対象、received単独、二評価。独立行動／二評価は初回本文unavailable、共有対象は質問なしで、対応成功に数えない。不明と元反応を繰り返す当時negativeの純粋生成は保存本文再利用要求であり、不明の実serviceは保存本文を保持した。
+
+全文inverseの義務欠落／時点／対象／肯否改変拒否と、作者呼出しを禁止した有限received readerの正常文受理／改変拒否を分けて確認した。全文inverse全経路の作者非依存は主張しない。Python3.12.14／pytest8.4.1／Pydantic2.13.5／PGlite0.5.8／React18.3.1を再利用、新installなし。警告は既存Pydantic V1 root_validator非推奨。identity検査の先行呼出しは存在しないtest pathで未収集（exit4）、次の選択は歴史用skip1件だった。実sourceから現行owner検査を特定して上表の1 passを確認し、未収集・歴史skipを成功へ加算していない。
+
+language identity `96c190277df051e03948fd1fb9dbf5e51947b60e2526ed483c493b3e75280631`、runtime identity `51521b53f19b652546c0f243e93bbb34a6d9d08af2b76d700a136e9e3ddcd522`。
+
+### 残件と次の一作業
+
+今回の現在negative＋評価併存での原反応欠落は修復。次は対照で欠落した当時ADD「その時は嬉しかった」を、当時の元反応／本人の追加回答／評価の既存義務から照合する。unfinished例ではObservationに元反応と回答があるのにReceptionは評価だけとなる。ADDをREVISEや現在変化へ置換せず、今回の現在限定窓を無検証に緩めない。
+
+長い説明・満足の二重説明・語尾反復・初回内容形成、独立行動追加、安心した分類、共有対象／複数評価容量、その他対象外更新、既存周辺4／過去17とQ3既存16失敗の集合対応、same100、Q1上限、giver帰属、本人実機／正式Product Readは残件。TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR、初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false、Draft/open/unmerged・未配置。deploy／main mergeなし。10/31管理線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％を維持する。
