@@ -1,4 +1,4 @@
-> 2026-10-17最新：u321で同欄の評価訂正後に未変更received経験が落ちる2件を修復。詳細は末尾u321。受容品質・未成立REVISE2／WITHDRAW6は未完、未配置・商品NOT_CLEAR。
+> 2026-10-17最新：u322で未成立事項付き評価訂正後の2欠落を修復。未成立事項と別の経験を保持し、残るE06はWITHDRAW6件。受容品質は未完、未配置・商品NOT_CLEAR。詳細は末尾u322。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -22312,3 +22312,16 @@ latest weekly §3.7／u320の同欄欠落10件のうち、理由なしREVISE2件
 元10＋07回答／固定100はelapsed以外の全record不変。3形×2欄の6件のbaseline比較でも初回public結果・訂正後完全checkpoint／意味が一致し、未変更経験がReceptionへ戻った。u291の同欄拒否1ケースは当時の実装範囲と確認し、同じ入力を両順序の保持検査へ移した。他の拒否条件・歴史記録は維持する。現行identityを再導出して変更なし。STRUCTURE_MAP_DELTA_NONE。
 
 未成立事項付きREVISE2／WITHDRAW6、E04の汎用受容、E01の別の誤認、E05の問い、E07〜E09は残る。旧保存本文の再生成や商品品質完成とはしない。本人実機／本番DB／deploy／mergeは0、PRODUCT_NOT_CLEAR・正式0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置。管理日付・配分・53.25%は不変。詳細・未加工実本文は [u321監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u321_SameFieldRevisionRetention_20261017.md) を参照。
+
+
+## u322 — 訂正後も未成立事項と別の経験を保持する（2026-10-17）
+
+最新weekly20261017 §3.7／u321で残った8欠落のうち、未成立事項付きREVISE2件を修復した。既存answer_updateで元の未成立context・評価対象・評価・別のreceived経験を原文から再証明し、更新後の未変更核と2関係を照合して、既存LIMITEDの3 dutyへ渡す。訂正された評価で失効した旧対比は復活させず、未成立事項は独立に受け止める。意味型・private内容資格・作者／reader・公開API／DB／RN・問い上限は変更しない。
+
+最終関連回帰328 passed／1,242 deselected（134.89秒）、Q2/Q3 application54 passed（74.28秒）。別file集合で計382 passed、failed/skip 0、既存Pydantic warningは各run1件。新規14件は328件に含む。既存期待値の変更・削除は0。途中14件を再加算しない。baseline 3形×2欄の6件で初回public結果・訂正後完全checkpoint・元と現在の核辺が一致し、訂正後public差分はbody／Receptionだけだった。旧checkpointからも現行freshと同じ本文になる。固定100／元10は今回再実行しておらず、u321の結果を今回の検証へ換算しない。
+
+実EmlisThreadService＋隔離PGlite8ケース／18 DTO、現行RN hook／Modalのnative stub18 DTOで本文・元入力・全履歴・close/reopenを確認。旧完成2件は作者禁止GET/start／同回答再送で欠落のある旧本文もそのまま保持する。旧pending2件・旧中断更新2件は保存意味から現本文を生成し、中断再開はprepare禁止でcheckpoint・意味／回答event・旧履歴・operationを保持した。
+
+STRUCTURE_MAP_DELTA_NONE（既存owner内の保持選択修復、新製品file／経路／契約なし）。残るE06は理由なし／理由付き／未成立事項付き×2欄のWITHDRAW6件。次は撤回済み評価や旧因果／対比を復活させず、残存する行為・理由・文脈を受容へ残す証明と有限節接続を確認する。E04の汎用受容、「悲しかったですということ」などの不自然さ、Observationの「同時」「感覚」、E01の別誤認、E05の問い、E07〜E09は未解消。既存4／17／16／20失敗は今回は再実行も集合合算もしていない。
+
+PRODUCT_NOT_CLEAR・初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置を維持。本Work補助は正式別model評価ではない。本人実機／本番DB／deploy／mergeは0。10/20方式判断、10/31管理線、12/18公開目標、Piece／Analysis主枠・53.25%は不変。詳細・未加工本文は [u322監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u322_UnfinishedRevisionRetention_20261017.md) を参照。

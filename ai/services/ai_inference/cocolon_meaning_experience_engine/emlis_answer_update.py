@@ -223,20 +223,27 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
     )
 
 
-def _separate_reasonless_appraisal_received_source(original, thread):
+def _separate_reasonless_appraisal_received_source(original, thread, *, include_unfinished=False):
     """Re-prove the two unchanged source scopes before retaining their duties."""
     links = tuple(r for r in original.relations
                   if gp.source_owned_result_appraisal(r, original.nuclei))
     required = tuple(n for n in original.nuclei if n.retention == 'required')
-    if len(links) != 1 or len(original.relations) != 2 or len(required) != 4:
+    if len(links) != 1:
         return {}
     index = {n.nucleus_id: n for n in required}
     link = links[0]
     event, appraisal = (index.get(nid) for nid in (link.from_nucleus_id, link.to_nucleus_id))
     if event is None or appraisal is None:
         return {}
-    rest = tuple(n for n in required if n not in (event, appraisal))
-    received_relations = tuple(r for r in original.relations if r != link)
+    context = (gp.source_owned_result_appraisal_context(link, original.nuclei, original.relations)
+               if include_unfinished else None)
+    if len(original.relations) != (3 if context else 2) or len(required) != (5 if context else 4):
+        return {}
+    appraisal_nodes = (context, event, appraisal) if context else (event, appraisal)
+    owned = {n.nucleus_id for n in appraisal_nodes}
+    rest = tuple(n for n in required if n not in appraisal_nodes)
+    received_relations = tuple(r for r in original.relations
+                              if not owned & {r.from_nucleus_id, r.to_nucleus_id})
     received = gp._received_contrast_group_targets(rest, received_relations)
     if not received or len(received[0]) != 1:
         return {}
@@ -284,7 +291,8 @@ def _separate_reasonless_appraisal_received_source(original, thread):
     appraisal_rows = gp._explicit_result_appraisal_projections(
         first, thread.original.normalized_current_input)
     received_rows = gp._received_event_reaction_text_projections(last.raw_text)
-    if (tuple(row.nucleus_suffix for row in appraisal_rows) != (':event', ':appraisal')
+    if (tuple(row.nucleus_suffix for row in appraisal_rows)
+            != ((':unfinished', ':event', ':appraisal') if context else (':event', ':appraisal'))
         or tuple(row.nucleus_suffix for row in received_rows) != (':event', ':reaction')):
         return {}
     # The shared received grammar admits a broad giver token. Reusing it
@@ -295,7 +303,8 @@ def _separate_reasonless_appraisal_received_source(original, thread):
         or 'に' in received_text and not gp._source_operator_owner_scope_is_bound(received_text)):
         return {}
     for row, node, span in zip((*appraisal_rows, *received_rows),
-            (event, appraisal, received_event, reaction), (first, first, last, last), strict=True):
+            (*appraisal_nodes, received_event, reaction),
+            (*((first,) * len(appraisal_nodes)), last, last), strict=True):
         frame = node.semantic_frame
         if (node.source_fields != (span.source_field,) or node.source_span_ids != (span.span_id,)
             or (row.kind, row.predicate_kind, row.polarity, row.modality, row.time_scope, row.attribute_codes)
@@ -303,7 +312,8 @@ def _separate_reasonless_appraisal_received_source(original, thread):
                     frame.time_scope, frame.attribute_codes)):
             return {}
     return dict(appraisal_event=event, appraisal=appraisal, received_event=received_event,
-                reaction=reaction, received_relation=received_relation)
+                reaction=reaction, received_relation=received_relation,
+                **({'unfinished_context': context} if context else {}))
 
 
 def _retained_reasonless_shared_target_duties(original, thread, nuclei, relations, updates):
@@ -317,7 +327,7 @@ def _retained_reasonless_shared_target_duties(original, thread, nuclei, relation
     group = gp.source_owned_shared_target_appraisal_contrast(
         original.nuclei, original.relations, thread.resolver())
     if not group:
-        group = _separate_reasonless_appraisal_received_source(original, thread)
+        group = _separate_reasonless_appraisal_received_source(original, thread, include_unfinished=True)
     if not group or 'reason' in group:
         return ()
     update = updates[0]
@@ -344,7 +354,8 @@ def _retained_reasonless_shared_target_duties(original, thread, nuclei, relation
         return ()
     index = {n.nucleus_id: n for n in nuclei}
     event, received, reaction = (group[k] for k in ('appraisal_event', 'received_event', 'reaction'))
-    for node in (event, received, reaction):
+    context = group.get('unfinished_context')
+    for node in (event, received, reaction, *((context,) if context else ())):
         retained = replace(node, semantic_frame=replace(node.semantic_frame,
             attribute_codes=tuple(c for c in node.semantic_frame.attribute_codes
                 if c != 'semantic_dependency:shared_target_appraisal_contrast_v1'
@@ -352,6 +363,8 @@ def _retained_reasonless_shared_target_duties(original, thread, nuclei, relation
         if index.get(node.nucleus_id) != retained:
             return ()
     expected = {event.nucleus_id, received.nucleus_id, reaction.nucleus_id, evaluation.nucleus_id}
+    if context:
+        expected.add(context.nucleus_id)
     if {n.nucleus_id for n in nuclei if n.retention == 'required'} != expected:
         return ()
     links = tuple(r for r in relations if gp.source_owned_result_appraisal(r, nuclei))
@@ -360,6 +373,10 @@ def _retained_reasonless_shared_target_duties(original, thread, nuclei, relation
         or links[0].source_relation_ids != (update.update_ref,)):
         return ()
     return (('current_burden', (evaluation.nucleus_id,), (event.nucleus_id,)),
+            # The old contrast ended with the superseded appraisal. Keep the
+            # unchanged unfinished fact independently, without claiming it is
+            # a cause or contrast of the new negative evaluation.
+            *((('current_burden', (context.nucleus_id,), ()),) if context else ()),
             ('current_burden', (received.nucleus_id,), (reaction.nucleus_id,)))
 
 
