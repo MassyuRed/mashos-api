@@ -17350,6 +17350,8 @@ def project_final_stage1_grounded_observation_plan(
             final_source_fidelity=True,
         )
     )
+    response_plan = _explicit_unknown_object_reception(
+        response_plan, nuclei, relations, evidence_spans, normalized_input)
     projected = replace(
         plan,
         input_profile=replace(
@@ -17389,6 +17391,88 @@ def project_final_stage1_grounded_observation_plan(
             "invalid_final_stage1_grounded_projection:" + ",".join(issues)
         )
     return projected
+
+
+def _source_self_unknown_object_parts(fragment):
+    """The complete SELF cognition, with an interrogative object, not a reason."""
+    match = re.fullmatch(
+        r"(?P<object>(?:何|なに|どこ|どれ|どちら)[^、,。．.!?！？\r\n…‥⋯]*?(?:の)?か)(?:は|が|も)?[、,]?"
+        r"(?P<owner>自分|私|わたし|僕|ぼく|俺|おれ)(?P<self_suffix>自身)?(?:でも|にも|には|は|が|も)"
+        r"(?:(?:今|現在)(?:は|も))?(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", fragment)
+    if match and not re.search(
+        r"理由|原因|なぜ|何故|によると|いわく|曰く|と言|と話|と語|って言|って話|って語|"
+        r"と思|って思|と考|って考|もし|仮に|なら|分から|わから", match['object']):
+        return match
+    return None
+
+
+def _source_feeling_unknown_object_group(nuclei, relations, evidence_spans, normalized_input=None):
+    """Re-prove two existing source objects without adding a semantic relation."""
+    if normalized_input is None:
+        return ()
+    memo = tuple(n for n in nuclei if n.source_fields == ("memo",))
+    spans = {s.span_id: s for s in evidence_spans if s.source_field == "memo"}
+    if (len(memo) != 2 or len(spans) != 2
+        or any(len(n.source_span_ids) != 1 or n.source_span_ids[0] not in spans for n in memo)):
+        return ()
+    feeling, unknown = sorted(memo, key=lambda n: spans[n.source_span_ids[0]].start_index)
+    left, right = (spans[n.source_span_ids[0]] for n in (feeling, unknown))
+    first, second = (str(s.raw_text).strip(" 　。．.") for s in (left, right))
+    if (any(n.retention != "required" or n.grounding_kind != "explicit"
+            or n.allowed_claim_scope != "explicit_current_input"
+            or n.semantic_frame.actor != "current_user" or n.semantic_frame.polarity != "negative"
+            or n.semantic_frame.time_scope not in {"current_input", "present"}
+            or any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:"))
+                   for c in n.semantic_frame.attribute_codes) for n in memo)
+        or (feeling.kind, feeling.semantic_frame.predicate_kind, feeling.semantic_frame.modality)
+            != ("reaction", "feeling", "feeling")
+        or (unknown.kind, unknown.semantic_frame.predicate_kind, unknown.semantic_frame.modality)
+            != ("uncertainty", "uncertainty", "uncertain")
+        or not {"operator:uncertainty", "semantic_role:limiting_unknown"} <= set(unknown.semantic_frame.attribute_codes)
+        or not _source_self_unknown_object_parts(second)
+        or not re.fullmatch(r"(?:(?:わたし|ぼく|おれ|私|僕|俺)は)?(?:(?:今|現在)(?:は|も))?"
+            r"(?:(?:何となく|なんとなく|なんだか|何だか|少し|とても|すごく))*"
+            r"(?:悲し|寂し|苦し|怖|つら|重|しんど|だる)い", first)
+        or any(r.retention == "required" and {r.from_nucleus_id, r.to_nucleus_id}
+               & {n.nucleus_id for n in memo} for r in relations)):
+        return ()
+    if normalized_input is not None:
+        source = str(normalized_input.get("memo") or "")
+        if (_top_level_text(source) != source or re.search(r"[?？!！…‥\r\n]", source)
+            or any(not 0 <= s.start_index < s.end_index <= len(source)
+                   or source[s.start_index:s.end_index] != s.raw_text for s in (left, right))
+            or source[:left.start_index].strip()
+            or not re.fullmatch(r"\s*[。．.]\s*", source[left.end_index:right.start_index])
+            or not re.fullmatch(r"\s*[。．.]?\s*", source[right.end_index:])):
+            return ()
+    return feeling, unknown
+
+
+def _source_unknown_object_group_from_resolver(nuclei, relations, resolver):
+    read_field = getattr(resolver, "source_text_for_span_field", None)
+    memo = tuple(s for s in resolver.resolve_many(resolver.span_ids) if s.source_field == "memo")
+    if read_field is None or not memo:
+        return ()
+    # The envelope preserves raw field bytes; ledger scalar offsets belong
+    # to the admitted normalized field. Use the same existing normalizer,
+    # including for leading/full-width whitespace, before comparing slices.
+    normalized = normalize_emlis_current_input({"memo": read_field(memo[0].span_id)})
+    return _source_feeling_unknown_object_group(nuclei, relations,
+        resolver.resolve_many(resolver.span_ids), normalized)
+
+
+def _explicit_unknown_object_reception(response, nuclei, relations, evidence_spans, normalized_input):
+    """Change reference realization only, after the existing Move is selected."""
+    group = _source_feeling_unknown_object_group(nuclei, relations, evidence_spans, normalized_input)
+    reception = response.human_reception_plan
+    if not group or reception is None:
+        return response
+    ids = {n.nucleus_id for n in group}
+    moves = tuple(replace(m, reference_mode="short_anchor_if_ambiguous")
+        if m.required and m.move_role == "felt_response" and m.reception_act == "stay_with_current_burden"
+        and len(m.target_nucleus_ids) == len(m.support_nucleus_ids) == 1
+        and set((*m.target_nucleus_ids, *m.support_nucleus_ids)) == ids else m for m in reception.moves)
+    return replace(response, human_reception_plan=replace(reception, moves=moves))
 
 
 def _source_feeling_reason_unknown_parts(fragment, *, _legacy_self_scope=False):

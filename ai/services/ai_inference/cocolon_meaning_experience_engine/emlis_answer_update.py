@@ -906,6 +906,8 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=(), *, p
             or _retained_withdrawn_appraisal_duties(original, thread, nuclei, relations, updates)
             or _retained_unfinished_received_duties(prepared, nuclei, relations) if not unresolved else ()),
     )
+    response = gp._explicit_unknown_object_reception(response, nuclei, relations,
+        resolver.resolve_many(resolver.span_ids), thread.original.normalized_current_input)
     return replace(original, nuclei=nuclei, relations=relations, unknown_boundaries=unknowns,
         input_profile=replace(original.input_profile, nucleus_count=len(nuclei),
             relation_count=len(relations), semantic_complexity=complexity, material_quality=quality),
@@ -1130,6 +1132,8 @@ def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_apprai
                 material_quality=original.input_profile.material_quality,
                 include_reception_relation_support=True, final_source_fidelity=True,
                 primary_focus_nucleus_ids=focus)
+            response = gp._explicit_unknown_object_reception(response, original.nuclei, original.relations,
+                thread.resolver().resolve_many(thread.resolver().span_ids), thread.original.normalized_current_input)
             original = replace(original, response_plan=response, coverage_requirements=coverage,
                                surface_policy=surface, safety_policy=policy)
     if thread.control.capability_snapshot.startswith("Q3_") and thread.answers:

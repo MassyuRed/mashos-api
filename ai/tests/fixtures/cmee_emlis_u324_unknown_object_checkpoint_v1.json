@@ -1,0 +1,325 @@
+{
+  "source_commit": "0f78a0e25dd74a40aaedb28327658799ee1aa43b",
+  "cases": [
+    {
+      "memo": "なんだかしんどい。何が嫌なのか、自分でもよくわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-d2cf2fa544fe12e310a3b1913eb44437aceae9f4dec0e23b76eed0a6f7dc4045",
+        "source_prefix_ref": "emlis-q3-source-prefix-ab6c7401168a6fd56c60f0634aa0a6451c88b93636101110fd39887988998ef6",
+        "base_meaning_ref": "emlis-base-meaning-09b5fa2511618f1bda956507b257e840325424995f4e5d665179ea3a42fef473",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "33f2b1b692ce681ef3886f05f91d276beb6f682c11cbc9d1c259343611248237",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "72fa243f64f1c5c9f9a091f4f102cef7da838615291c7425f3890cd93207a354",
+      "selected_content_sha256": "5f97f354d1997fafde57d1b50055e9ca81c8c85c2a0ed96021ed33bf67ad4855",
+      "selected_input_ref": "selected-reception-input:663d2ed3bfb8438a52c6c0e798453448267e337fe488a49579a75d48f62d0f5a",
+      "grounding_ref": "aa3be7b0eaf6aea64bfdfb7cc99e0086c808ca916c93e340a236dca7ef7ee149",
+      "body": "見えたこと：\n今は、「なんだかしんどい」という感覚や状態が前に出ています。\n今回の中心には、「何が嫌なのか、自分でもよくわからない」があります。\n\nEmlisから：\nその反応を背景に、今ここに置かれた言葉を小さくせずに受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "なんだかしんどい。何が嫌なのか、自分でもはっきり分からない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-f5b643f8375eee79de8e9684151ec1e54d8edebc4dd9ee4f2b04159ba76a8bbe",
+        "source_prefix_ref": "emlis-q3-source-prefix-715b32ee2603d5857e23fddbbf45d9e154cbea8e299937c91121494d613ed5c2",
+        "base_meaning_ref": "emlis-base-meaning-69483974c7b7a67d9bfb9c94faa1c53903535f56dfc759ad6f2b8beb504ee69c",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "33f2b1b692ce681ef3886f05f91d276beb6f682c11cbc9d1c259343611248237",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "fb29bc116370c8e17841eb0a6e01e8c557b0b3ac148c277786e75d7e655cd213",
+      "selected_content_sha256": "7543798ec0b63958bacc4121dfc1a0189eb9b0eb3adf568a60252bd1bc1bf6cd",
+      "selected_input_ref": "selected-reception-input:7b139dffd355d698a9f68e3ae04c9d7996a5eba099cd52c76aad5caf126a36e0",
+      "grounding_ref": "23a114b6b5b50a4fa5fedd55e8644f4e2f695d374b2f4c722f9ea49779187c5c",
+      "body": "見えたこと：\n今は、「なんだかしんどい」という感覚や状態が前に出ています。\n今回の中心には、「何が嫌なのか、自分でもはっきり分からない」があります。\n\nEmlisから：\nその反応を背景に、今ここに置かれた言葉を小さくせずに受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "なんだかしんどい。何が嫌なのか私にもまだわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-c80dd435c5b33b499dc49f5c026eb1c1f2363326e87803ad3bfbb15d535e9023",
+        "source_prefix_ref": "emlis-q3-source-prefix-0b90a3543c6221c5ea571d2057b038221e8d7cf971d1532f56db0afcee1f3c95",
+        "base_meaning_ref": "emlis-base-meaning-98c0711b29f61a67f33cdbcb27c7387f2b37f4d1a34ed1605a7bb8720dd79ab3",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "f0484d07005fd7462d4cd67e5eb06211c4072dd4741927cebce36d8f27b51221",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "48199439d94199ca42fc56315b30ab652f3f6347ad3c00eadfbda95bed24f1e2",
+      "selected_content_sha256": "734d8717850bce20b0f61f6b98bf7e4d09fbb82339055b2e37add9d3b6a3e7a8",
+      "selected_input_ref": "selected-reception-input:8738ec7c17c88575f0d89c8825225fdf4b01b71c281d589fdbceca5fcea25454",
+      "grounding_ref": "ea43813f5f6b4e3d4c70194c414f2d312328d986e74da5745f927887a27a9fea",
+      "body": "見えたこと：\n今は、「なんだかしんどい」という感覚や状態が前に出ています。\n今回の中心には、「何が嫌なのか私にもまだわからない」があります。\n\nEmlisから：\nまだ定まらないことを背景に、今ここに置かれた言葉を小さくせずに受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "なんだかしんどい。どこが嫌なのか、自分でもよくわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-6367bf3139b73ee62a626f22c7476e07c70e7e023596bb132f4be25493494e49",
+        "source_prefix_ref": "emlis-q3-source-prefix-f817c40d9ce10a7f09ca56ce421b2ca075609766c6696b30b12457ec7f46a69c",
+        "base_meaning_ref": "emlis-base-meaning-d4e428755fbf9a6e8147670db977447ed61d94b18594dbd0badae7fdcca98b47",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "33f2b1b692ce681ef3886f05f91d276beb6f682c11cbc9d1c259343611248237",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "0516227f57e328965d27e33c30897a6ed9f017a277b12e6c2afafb303838317e",
+      "selected_content_sha256": "221ea78d779d7c408fd2354636e89d484e7475a790ab1ca77ab0830155c5ccfb",
+      "selected_input_ref": "selected-reception-input:7d978a0b66bf0084fabbc6e2c06a61fa69612cb611b8d206351f0ccdf1b96028",
+      "grounding_ref": "7613aea7623a533ba22dbf74a5ca795556577ff5d92203af0be372fc5c92c496",
+      "body": "見えたこと：\n今は、「なんだかしんどい」という感覚や状態が前に出ています。\n今回の中心には、「どこが嫌なのか、自分でもよくわからない」があります。\n\nEmlisから：\nその反応を背景に、今ここに置かれた言葉を小さくせずに受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "なんだかしんどい。何が不安なのか、自分でもよくわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-c606711a1dc32cd0a8d50d8820ee80776ac5b6fb1a4d69f3f6aa542422660cb6",
+        "source_prefix_ref": "emlis-q3-source-prefix-90df8dad777d55a6a00a1443cdfd83da99b03f566a02ebf919a7cb743a25da61",
+        "base_meaning_ref": "emlis-base-meaning-438f9ca87bcab9fe57a79a8ad1666abb773a69314070b341cba50a29a2dff45f",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "3469555b02338c89131cc2dbd23ac78ba531d4fa7b69666537b61ae1a8ee291a",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "3c77509345ef44fa9afabcc4f6e167674e7a80e63ea1dacdd4f55ac472fbde26",
+      "selected_content_sha256": "95ef626e8c3b11587360072ab2db012a8c5f1e73dd46b87413ab442b9a94c6a1",
+      "selected_input_ref": "selected-reception-input:a6a3cf067dd060f3e91a5f4c9d7bbcb14b2a006e6ea1f1dc6ead7ac6b6456cfb",
+      "grounding_ref": "a8340ec560d18f4da4cef7e80c8845455e38156dc7b1832532ce524f79778e8f",
+      "body": "見えたこと：\n今は、「なんだかしんどい」という感覚や状態が前に出ています。\n今回の中心には、「何が不安なのか、自分でもよくわからない」があります。\n\nEmlisから：\nその反応を背景に、今ここに置かれた言葉を小さくせずに受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "なんだかしんどい。何がつらいのか、私にもまだわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-f600713939b945a7f40320e602a3ede90d1a9336bc9d05956b3c652c727b7da2",
+        "source_prefix_ref": "emlis-q3-source-prefix-b979c45c6c97755a07e75550eaaa53b9a03793c08bbeceb9872b7d03f1e1f746",
+        "base_meaning_ref": "emlis-base-meaning-18a7db8a6cc22d7d8d04071a46c400600550d5750d170480bcec6e451932174b",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "834b94f33afedc0b38ba7ce42de9761bf18de7a48f543851b4b4a79c1600c2aa",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "1b00ef86502e5e2fc32db293ad32f1fc5c46788054b37504b525369ae5445cd7",
+      "selected_content_sha256": "0b5c99b4e0c305edf85822ab54236cc7410bc2979e66bda1e7250e18f5325fa5",
+      "selected_input_ref": "selected-reception-input:8b0005f2d7d11a8c90b3a4f3b2c6b3936c8b5a8a568928a17f80c2a3436bfd4d",
+      "grounding_ref": "6707bd9b5dcbd0422bc59a98eb6a2a9fa6d42de508967374c29757bc20b2958d",
+      "body": "見えたこと：\n今は、「なんだかしんどい」という感覚や状態が前に出ています。\n今回の中心には、「何がつらいのか、私にもまだわからない」があります。\n\nEmlisから：\nまだ定まらないことを背景に、今ここに置かれた言葉を小さくせずに受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "少し怖い。何が怖いのか、私にもまだ分からない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-558a57585ffaff89d2e48bf78299b388241a6be994dd0c0cdbd1b764c8aacd2d",
+        "source_prefix_ref": "emlis-q3-source-prefix-22de2bee6a48b933ef4069eeef5975578b5c7b620689fca65fed5432ccd1e1fd",
+        "base_meaning_ref": "emlis-base-meaning-05ba78ffa1b48e4c25676040ccf98f3952df14200bfc6ad881ad0affea2e99ef",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "291ad23f8512afcae7d37608d2491160981a97a1a60ab4029fb512978e112f9a",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "4c114cc1d6c0ef091e8d665bcea8731d9c2fe59ef79085b945ff9093d498d604",
+      "selected_content_sha256": "1a4fc9d331f45bd7152301453eacde6dd25b904cf3544c57aead3988b1af822d",
+      "selected_input_ref": "selected-reception-input:803af974d60db21c644e47917848bba5bafcb68c19d7ab8fbf1a5c973ae95be8",
+      "grounding_ref": "5a4d17fbd1c0baa0d90bc52e426e5ed2d61923e325f385da25e780a9bbbbba20",
+      "body": "見えたこと：\n今は、「少し怖い」という感覚や状態が前に出ています。\n今回の中心には、「何が怖いのか、私にもまだ分からない」があります。\n\nEmlisから：\nまだ定まらないことを背景に、今ここに置かれた言葉を小さくせずに受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "私は少し怖い。何が嫌なのか、自分でもまだよく分からない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-dfa27ee0d8c5390b7af399d7dca3c625bf77bcfe80671dc0e458460be3efa1f1",
+        "source_prefix_ref": "emlis-q3-source-prefix-b1024a186206990156429088c8dfff757c05bd4798ee4584465b9ed62850ff8a",
+        "base_meaning_ref": "emlis-base-meaning-e3616e7a9a8adc029990c439fa3d641bbac61bd3f696c3989ab7966d7d8fd9c6",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "cfa2bb973c3cc43e2235b83d5df7612b4b887408783f8843806752f82ed441dd",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "35b743f626c20b50a53831f52f5035104cd868714c0a2ebd66beaf224f8e7e85",
+      "selected_content_sha256": "6b6e9cbc808cdb941b9582659c943dba013f8c4e692ba1a790cd840d01134b8d",
+      "selected_input_ref": "selected-reception-input:3fedc638d7e1c44f5d80158d6bec2de36caf2db11c54cdd22bd79fc65ea4d3ec",
+      "grounding_ref": "5dc12fc2573111284f035da0c472d5a8e4a8ec2479c238f0c8ad926e314d1797",
+      "body": "見えたこと：\n今は、「私は少し怖い」という感覚や状態が前に出ています。\n今回の中心には、「何が嫌なのか、自分でもまだよく分からない」があります。\n\nEmlisから：\nその不安を背景に、今ここに置かれた言葉を小さくせずに受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "少し怖い。何が嫌なのか、自分自身でもよくわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-86e0701739a46914dfa1a370e2e25cc0ae7059dd654b2daa44ba994e4a6341bc",
+        "source_prefix_ref": "emlis-q3-source-prefix-ae96d8c8d191cd25643a80e0dad7b892ef2ed91bddfb2a743259cf1b2ff6f4f7",
+        "base_meaning_ref": "emlis-base-meaning-edeae48f30ceb1d2bd04e83c77e767102db2eaef36029a4b60cb385d39841bb0",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "8cc4629cf6e6662b5e556d516a0209c0a27cebe78562f346a42ef83948dc8274",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "0390bf7e21eeb6bb34dc9a3ae1d7538c339609f7d8e4328c486b0dd112809d35",
+      "selected_content_sha256": "c77e17a051231294bd4a86b841daad86dba3b42a61d8c4c8d6a539e0a9876c04",
+      "selected_input_ref": "selected-reception-input:8e64581b80001a669dd2cecdc80f92967a0c375e79660e5d4bb03cc3fc6a49f8",
+      "grounding_ref": "fdf43106f53f80bceea5f5d4f970f47f251acc1faad1dc3ebe592b817bfe92b4",
+      "body": "見えたこと：\n今は、「少し怖い」という感覚や状態が前に出ています。\n今回の中心には、「何が嫌なのか、自分自身でもよくわからない」があります。\n\nEmlisから：\nその不安を背景に、今ここに置かれた言葉を小さくせずに受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "少し怖い。何が嫌なのか、私自身にもまだ分からない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-4a710d31b4349c85a94a85245b2e7edbffb60b4af5569508e43b1220a2f939cc",
+        "source_prefix_ref": "emlis-q3-source-prefix-e7a0dbae9455a2840f14f1553c72e0283937d82b382eb5ab7e77da95dc630e95",
+        "base_meaning_ref": "emlis-base-meaning-d369c1c3326d16a739fb1d7c6c853fc90ab172e6af3313792e9f1210a7702cfa",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "e665f30f0d7cea4942abd2c576d538c6033a1ae40cdf36ba718014d3474c645f",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "a196315995e4b00fa805b2d06ad5b1e6b4c064350ca243ea37c3ee8c8077276e",
+      "selected_content_sha256": "5987f97b7fc2c6fa22e678b8a01dab10c3ddccc99e159007f6d0d26499006225",
+      "selected_input_ref": "selected-reception-input:2be524af300f60867d96f5b01ef31433ff03fb1bb3a730e66c965605f4e4fad4",
+      "grounding_ref": "2642264c46475971e8bbc018e248f8579046bd349d575b625a250e547aafa801",
+      "body": "見えたこと：\n今は、「少し怖い」という感覚や状態が前に出ています。\n今回の中心には、「何が嫌なのか、私自身にもまだ分からない」があります。\n\nEmlisから：\nまだ定まらないことを背景に、今ここに置かれた言葉を小さくせずに受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    }
+  ]
+}

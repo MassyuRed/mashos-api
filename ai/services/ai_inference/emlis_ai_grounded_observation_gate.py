@@ -382,9 +382,11 @@ def _semantic_subcheck_reasons(
                         sensation_body, sensation_witness, sentence, move, plan, resolver))
                     replacements.update(_body_inverse_thread_received_group(
                         sensation_body, sensation_witness, sentence, move, plan, resolver) or ())
-                    if _read_feeling_reason_discourse(
+                    if (_read_unknown_object_discourse(
                         sensation_body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode(),
-                        move, plan, resolver, None) is not None:
+                        move, plan, resolver, None) is not None or _read_feeling_reason_discourse(
+                        sensation_body[sentence.utf8_byte_start:sentence.utf8_byte_end].decode(),
+                        move, plan, resolver, None) is not None):
                         # Recipient case and the finite connective are
                         # independently restored to both complete sources.
                         focused_source_nuclei.update((*move.target_nucleus_ids, *move.support_nucleus_ids))
@@ -4414,6 +4416,48 @@ def _feeling_reason_unknown_restores_source(visible, source):
     return visible == source
 
 
+def _read_unknown_object_discourse(raw, move, plan, resolver, selected_subjective_input):
+    """Read both finite sources independently, preserving the wh-object and SELF."""
+    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_self_unknown_object_parts
+    group = _source_unknown_object_group_from_resolver(plan.nuclei, plan.relations, resolver)
+    ids = (*move.target_nucleus_ids, *move.support_nucleus_ids)
+    if (not group or not move.required or move.move_role != "felt_response"
+        or move.reception_act != "stay_with_current_burden"
+        or len(move.target_nucleus_ids) != 1 or len(move.support_nucleus_ids) != 1
+        or set(ids) != {n.nucleus_id for n in group}
+        or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
+        return None
+    if selected_subjective_input is not None:
+        decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None)
+        appraisal = decision.subjective_proposition.appraisal_content if decision else None
+        if appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT" or appraisal.operation != "RECEIVE_AS_MATERIAL":
+            return None
+    sources = tuple(str(resolver.resolve(n.source_span_ids[0]).raw_text).strip(" 　。．.") for n in group)
+    parsed = re.fullmatch(r"(?P<experience>[^。！？!?]+くて)、(?P<unknown>[^。！？!?]+)"
+                          r"(?:のですね|のです|のだと受け取りました)。", raw)
+    if parsed is None:
+        return None
+    feeling = parsed['experience'][:-2] + "い"
+    topic = re.match(r"(?P<owner>わたし|ぼく|おれ|私|僕|俺)は", sources[0])
+    if topic:
+        if not feeling.startswith("あなたは"):
+            return None
+        feeling = topic['owner'] + "は" + feeling[len("あなたは"):]
+    proof = _source_self_unknown_object_parts(sources[1])
+    visible = parsed['unknown']
+    start, end = proof.span('owner')
+    recipient = "ご自身" if proof['owner'] == "自分" else "あなた"
+    if visible[start:start + len(recipient)] != recipient:
+        return None
+    restored_owner = proof['owner'] + (proof['self_suffix'] or "") if proof['owner'] == "自分" else proof['owner']
+    unknown = visible[:start] + restored_owner + visible[start + len(recipient):]
+    if (feeling, unknown) != sources:
+        return None
+    rows = {n.nucleus_id: (len(raw[:parsed.start(key)].encode()), len(raw[:parsed.end(key)].encode()), source.encode())
+            for n, key, source in zip(group, ('experience', 'unknown'), sources)}
+    return tuple(rows[nid] for nid in ids)
+
+
 def _read_feeling_reason_discourse(raw, move, plan, resolver, selected_subjective_input):
     """Restore a present experience and its open reason from actual prose.
 
@@ -4965,6 +5009,9 @@ def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_i
         raw, move, plan, resolver, selected_subjective_input)
     if coexisting is not None:
         return coexisting
+    unknown_object = _read_unknown_object_discourse(raw, move, plan, resolver, selected_subjective_input)
+    if unknown_object is not None:
+        return unknown_object
     feeling_reason = _read_feeling_reason_discourse(
         raw, move, plan, resolver, selected_subjective_input)
     if feeling_reason is not None:

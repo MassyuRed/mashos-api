@@ -3143,6 +3143,62 @@ def _source_grounded_received_contrast_rows(targets, supports, nucleus_index, re
     return tuple(rows)
 
 
+def _source_unknown_object_clauses(move, plan, resolver):
+    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver
+    if plan is None or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts:
+        return ()
+    group = _source_unknown_object_group_from_resolver(plan.nuclei, plan.relations, resolver)
+    ids = (*move.target_nucleus_ids, *move.support_nucleus_ids)
+    if (not group or not move.required or move.move_role != "felt_response"
+        or move.reception_act != "stay_with_current_burden"
+        or len(move.target_nucleus_ids) != 1 or len(move.support_nucleus_ids) != 1
+        or set(ids) != {n.nucleus_id for n in group}):
+        return ()
+    index = {n.nucleus_id: n for n in group}
+    return tuple(_source_grounded_clause_candidate(index[nid], resolver) for nid in ids)
+
+
+def _unknown_object_recipient(fragment):
+    from emlis_ai_grounded_observation_plan import _source_self_unknown_object_parts
+    proof = _source_self_unknown_object_parts(fragment)
+    if proof is None:
+        return re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺)は", "あなたは", fragment)
+    start, end = proof.span('owner')
+    if proof['owner'] == "自分" and proof['self_suffix']:
+        end = proof.end('self_suffix')
+    return fragment[:start] + ("ご自身" if proof['owner'] == "自分" else "あなた") + fragment[end:]
+
+
+def _unknown_object_nominal(clauses):
+    return "ことと、".join(_unknown_object_recipient(c) for c in clauses) + "こと"
+
+
+def _unknown_object_group_ir_text(realization):
+    markers = tuple(c for c in realization.nominalization_plan if c.startswith("source-unknown-object:"))
+    if not markers:
+        return ""
+    from emlis_ai_grounded_observation_plan import _source_self_unknown_object_parts
+    if (len(markers) != 1 or markers[0] not in {"source-unknown-object:0:1", "source-unknown-object:1:0"}
+        or realization.nominalization_plan != (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, *markers)
+        or realization.target_slot_count != 1 or realization.context_slots != (1,)
+        or len(realization.semantic_fragments) != 2 or len(realization.semantic_profiles) != 2
+        or realization.relations or realization.reference_mode != "COMPOSITE"
+        or realization.time_scope not in {"present", "current_input"}
+        or realization.polarity != "negative" or realization.aspect not in {"unknown", "not_applicable"}):
+        raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+    feeling_slot = int(markers[0].split(":")[1])
+    feeling, unknown = (realization.semantic_profiles[i] for i in (feeling_slot, 1-feeling_slot))
+    if ((feeling.nucleus_kind, feeling.predicate_kind, feeling.modality) != ("reaction", "feeling", "feeling")
+        or (unknown.nucleus_kind, unknown.predicate_kind, unknown.modality) != ("uncertainty", "uncertainty", "uncertain")
+        or realization.modality != ("feeling" if feeling_slot == 0 else "uncertain")
+        or any(p.actor_kind != "SELF" or p.quoted_boundary or p.performed_action or p.future_action
+               for p in (feeling, unknown))
+        or not _source_self_unknown_object_parts(realization.semantic_fragments[1-feeling_slot])
+        or not realization.semantic_fragments[feeling_slot].endswith("い")):
+        raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+    return _unknown_object_nominal(realization.semantic_fragments)
+
+
 def _source_grounded_current_material_clauses(move, plan, nucleus_index, resolver):
     """Two selected current source objects, without asserting a new relation."""
     from emlis_ai_grounded_observation_plan import _source_feeling_reason_unknown_parts, _source_current_material_group, _source_coexisting_feelings_and_tentative_target, _source_material_allows_reverse, _source_temporal_clause_parts, _source_independent_decision_clause_parts
@@ -3239,6 +3295,9 @@ def source_grounded_current_expression_nominal(
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
 ) -> str:
+    unknown_object = _source_unknown_object_clauses(move, plan, resolver)
+    if unknown_object:
+        return _unknown_object_nominal(unknown_object)
     shared = _source_grounded_shared_target_group(move, plan, resolver)
     if shared:
         event, reaction, appraisal, target = shared[0]
@@ -6196,6 +6255,12 @@ def derive_source_grounded_nominalization_plan(
     )
     if reference_mode == "ANAPHORIC" or move is None or plan is None or resolver is None:
         return nominalization
+    unknown_object = _source_unknown_object_clauses(move, plan, resolver)
+    if unknown_object:
+        if fragments != unknown_object:
+            raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
+        feeling_slot = next(i for i, n in enumerate(nuclei) if n.kind == "reaction")
+        return (*nominalization, f"source-unknown-object:{feeling_slot}:{1-feeling_slot}")
     shared = _source_grounded_shared_target_group(move, plan, resolver)
     if shared:
         if (fragments != shared[0]
@@ -6350,6 +6415,8 @@ def _source_grounded_nominalization_shape_valid(
                 for slot, code in enumerate(plan[1:]))):
         return True
     if semantic_count == 2 and plan in {
+        (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, "source-unknown-object:0:1"),
+        (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, "source-unknown-object:1:0"),
         (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, "source-feeling-reason-boundary:0:1"),
         (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, "source-current-material:0:1"),
         (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, "source-current-material:1:0"),
@@ -7927,6 +7994,10 @@ def _validate_source_grounded_move_ir(
     expected_nominalization = _source_grounded_nominalization_from_profiles(
         move.semantic_fragments, move.semantic_profiles, move.reference_mode,
     )
+    unknown_grammar = tuple(p for p in move.nominalization_plan if p.startswith("source-unknown-object:"))
+    if unknown_grammar:
+        _unknown_object_group_ir_text(move)
+        expected_nominalization = (*expected_nominalization, *unknown_grammar)
     detached_grammar = tuple(p for p in move.nominalization_plan if p.startswith("detached-burden-slot:"))
     if detached_grammar:
         if not _detached_burden_group_ir_text(move):
@@ -8713,7 +8784,7 @@ def _source_grounded_target_owner_slot(
     if (referent_kind == "positive_feeling" and realization.polarity == "positive"
         and _thread_answer_group_ir_text(realization)):
         return 0
-    if referent_kind == "current_expression" and (_shared_target_appraisal_group_ir_text(realization) or _detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)):
+    if referent_kind == "current_expression" and (_unknown_object_group_ir_text(realization) or _shared_target_appraisal_group_ir_text(realization) or _detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)):
         # Slot zero anchors the collective grammar, whose core must cover
         # every target and its subject. It is not the sole selected answer.
         return 0
@@ -9260,7 +9331,7 @@ def _source_grounded_temporal_aspect_realization(
     if realization.reference_mode == "ANAPHORIC":
         return "ANTECEDENT", "ANTECEDENT", "", ""
 
-    group_text = _shared_target_appraisal_group_ir_text(realization) or _detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
+    group_text = _unknown_object_group_ir_text(realization) or _shared_target_appraisal_group_ir_text(realization) or _detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
     if group_text:
         if target_referent != group_text or realization.aspect not in {"unknown", "not_applicable"}:
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
@@ -9518,7 +9589,7 @@ def _source_grounded_target_np(
         realization.semantic_fragments[target_owner_slot],
         target_referent=referent_text,
     )
-    group_text = _shared_target_appraisal_group_ir_text(realization) or _detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
+    group_text = _unknown_object_group_ir_text(realization) or _shared_target_appraisal_group_ir_text(realization) or _detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
     if group_text:
         positive_group = bool(referent_kind == "positive_feeling"
             and move.reception_act == "recognize_lived_change" and realization.polarity == "positive"
@@ -10945,6 +11016,16 @@ def _source_grounded_reception_fragment(
         else:
             connected = first[:-1] + "り"  # source-proven 同時に/どちらもある
         return connected + "、" + second + "のですね"
+    if (move.required and move.reception_act == "stay_with_current_burden"
+        and move.move_role == "felt_response" and not context_prefix
+        and recovery_stage == "full" and realization.clause_form == "FINITE"
+        and _selected_material_appraisal(selected_subjective_decision)
+        and any(c.startswith("source-unknown-object:") for c in realization.nominalization_plan)):
+        _unknown_object_group_ir_text(realization)
+        marker = next(c for c in realization.nominalization_plan if c.startswith("source-unknown-object:"))
+        slot = int(marker.split(":")[1])
+        feeling, unknown = (_unknown_object_recipient(realization.semantic_fragments[i]) for i in (slot, 1-slot))
+        return feeling[:-1] + "くて、" + unknown + "のですね"
     if (move.required and move.reception_act == "stay_with_current_burden"
         and move.move_role == "felt_response" and not context_prefix
         and recovery_stage == "full" and realization.clause_form == "FINITE"

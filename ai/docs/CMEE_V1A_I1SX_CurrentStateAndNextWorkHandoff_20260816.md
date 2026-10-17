@@ -1,4 +1,4 @@
-> 2026-10-18最新：u324で現在の感情と本人の理由不明の取りこぼしを修復。旧checkpoint・保存再表示を保持。E04受容品質・E05の問い等は未完、未配置・PRODUCT_NOT_CLEAR。詳細は末尾u324。
+> 2026-10-18最新：u325で原04の選択済み不明対象を受け取り本文へ復元。意味・checkpointは不変、旧保存と中断再開を確認。E04/E05等は未完、未配置・PRODUCT_NOT_CLEAR。詳細は末尾u325。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -22352,3 +22352,13 @@ PRODUCT_NOT_CLEAR・初回一体単位未完了・正式0/3・candidate_ready=fa
 本文7件を主担当が読み、対象と不明を残す修復を確認した。入力固有の深い受容・問いの完成ではない。E04／E05と範囲外のE06等は残る。PRODUCT_NOT_CLEAR・初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置を維持。同Work補助は正式別model評価ではない。10/20・10/31・12/18の既存線、Piece／Analysis主枠・53.25%は不変。次は原04の不明対象を保つ受け取りを自然変種・更新・保存表示まで改善する。
 
 全文・source・検証条件：[u324監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u324_FeelingReasonSelfScope_20261018.md)。
+
+## u325 — 選択済みの不明対象を受け取り本文へ戻す（2026-10-18 JST）
+
+原04「なんだかしんどい。何が嫌なのか、自分でもよくわからない。」は、意味選択に両方の核が残る一方、Receptionで「今ここに置かれた言葉」へ縮約されていた。既存選択のATTENTION／RECEIVE_AS_MATERIALを維持し、本人・対象・程度を有限文へ戻した。理由不明へ読み替えず、原因・助言・問いを追加しない。完全な原文fieldを既存normalizerでledger座標へ揃え、作者と独立readerが再照合し、既存5製品file内で修復。STRUCTURE_MAP_DELTA_NONE。
+
+本文10件、旧u324の完全checkpoint・核・辺・選択内容の同一性を確認。参照方式由来のgrounding_ref／selected input_refは更新し、選択意味の同一性と区別した。source_scopeは292 passed（追加60）、Q3理由不明対照は48 passed／既存3 failed、application別集合54 passed、現行identity別1 passed。既存の3期待を変更・削除・skipしていない。実service／PGlite6ケース、実DTOによるAPI client／hook／Modal native stub6件を確認。旧完成本文は作者禁止で不変、旧中断は同一保存意味から新本文へ再開。実機・本番DB・deploy・mergeは未実施。
+
+主担当が未加工10全文を読んだ。対象欠落は修復したが、引用中心のObservationと原文に近いReceptionは残り、E04の深い受容・E05の問いの完成ではない。原04はENDのため架空の質問を使って回答更新成功とは扱わない。単独不明の汎用化、別行動併記時の受け取り対象選択などが次の具体的残件。PRODUCT_NOT_CLEAR・初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置を維持。既存の期限・配分・53.25%は再評価しない。
+
+全文・source・検証条件：[u325監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u325_UnknownObjectReception_20261018.md)。

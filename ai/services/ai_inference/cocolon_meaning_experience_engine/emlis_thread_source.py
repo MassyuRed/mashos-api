@@ -126,6 +126,12 @@ class ThreadEvidenceSpanResolver(EvidenceSpanResolver):
         self.resolve(span_id)
         return self._qualified[span_id]
 
+    def source_text_for_span_field(self, span_id: str) -> str:
+        """Read the complete admitted field, including text outside its spans."""
+        ref = self.qualified_ref(span_id).evidence
+        envelope = self._source_envelopes[ref.source_envelope_id]
+        return envelope.raw_utf8[ref.field_utf8_start:ref.field_utf8_end].decode("utf-8")
+
     def source_text_for_contiguous_spans(self, span_ids: tuple[str, ...]) -> str:
         """Read an exact source range, including separators between its spans.
 
