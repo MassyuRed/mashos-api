@@ -344,7 +344,117 @@ def _retained_reasonless_shared_target_duties(original, thread, nuclei, relation
             ('current_burden', (received.nucleus_id,), (reaction.nucleus_id,)))
 
 
-def _active_plan(original, thread, added, inactive, updates, unresolved=()):
+def _retained_unfinished_received_duties(prepared, nuclei, relations):
+    """Retain two existing duties after only the received reaction is revised.
+
+    The unchanged appraisal and the accepted positive answer share LIMITED
+    attention. This does not admit a new component reading or revive the
+    superseded received contrast.
+    """
+    from dataclasses import fields
+    if prepared is None or any(getattr(prepared, f.name) for f in fields(prepared)
+                               if f.name.startswith('legacy_')):
+        return ()
+    original, thread, checkpoint = prepared.original_plan, prepared.thread, prepared.checkpoint
+    update = checkpoint.answer_update
+    if (len(thread.answers) != 1 or len(thread.control.answers) != 1
+        or thread.control.current_round != 1 or checkpoint.assessment_status != 'RESOLVED'
+        or checkpoint.unresolved_parts or update is None or update.disposition != 'MATERIAL_UPDATE'
+        or update.unresolved_parts or len(update.updates) != 1):
+        return ()
+    groups = tuple((r, context) for r in original.relations
+        if (context := gp.source_owned_result_appraisal_context(r, original.nuclei, original.relations)) is not None)
+    required = tuple(n for n in original.nuclei if n.retention == 'required')
+    required_ids = {n.nucleus_id for n in required}
+    if (len(groups) != 1 or len(required) != 5 or len(original.relations) != 3
+        or {n.nucleus_id for n in original.nuclei if set(n.source_fields)
+            & {'memo', 'memo_action', ANSWER_FIELD}} != required_ids
+        or set(original.coverage_requirements.required_nucleus_ids) != required_ids
+        or set(original.coverage_requirements.required_relation_ids)
+            != {r.relation_id for r in original.relations}):
+        return ()
+    appraisal, context = groups[0]
+    owned = {context.nucleus_id, appraisal.from_nucleus_id, appraisal.to_nucleus_id}
+    edges = tuple(r for r in original.relations if owned & {r.from_nucleus_id, r.to_nucleus_id})
+    rest = tuple(n for n in required if n.nucleus_id not in owned)
+    received = tuple(r for r in original.relations if r not in edges)
+    if (len(edges) != 2 or len(rest) != 2 or len(received) != 1
+        or not gp._received_contrast_group_targets(rest, received)):
+        return ()
+    old = received[0]
+    index = {n.nucleus_id: n for n in original.nuclei}
+    resolver = thread.resolver()
+    # Preserve the original, separately owned source window. The received
+    # family marker alone does not prove giver, field or relation ownership.
+    if (any(n.source_fields not in {('memo',), ('memo_action',)}
+            or len(n.source_span_ids) != 1 or n.source_span_ids[0] not in resolver.span_ids
+            or n.surface_anchor_ids != n.source_span_ids
+            or n.semantic_frame.target_anchor_ids != n.source_span_ids
+            or n.allowed_claim_scope != 'explicit_current_input' for n in required)
+        or any(r.retention != 'required' or r.grounding_kind != 'user_stated_relation'
+            or r.source_span_ids != index[r.from_nucleus_id].source_span_ids
+            or r.source_span_ids != index[r.to_nucleus_id].source_span_ids for r in original.relations)):
+        return ()
+    spans = tuple(resolver.resolve(sid) for sid in
+        dict.fromkeys(sid for n in required for sid in n.source_span_ids))
+    if (len(spans) != 2
+        or {s.span_id for s in resolver.resolve_many(resolver.span_ids)
+            if s.source_field in {'memo', 'memo_action'}} != {s.span_id for s in spans}
+        or any(sum(s.source_field == span.source_field and s.raw_text == span.raw_text
+            for s in resolver.resolve_many(resolver.span_ids)) != 1 for span in spans)):
+        return ()
+    if spans[0].source_field == spans[1].source_field:
+        first, last = sorted(spans, key=lambda s: s.start_index)
+        if not 0 <= first.start_index < first.end_index <= last.start_index < last.end_index:
+            return ()
+    received_text = _text(index[old.from_nucleus_id], index, resolver)
+    giver = re.sub(r'^(?:私|自分|わたし)(?:は|が)', '', received_text).rpartition('に')[0]
+    if (gp._SELF_REFERENCE_RE.search(giver) is not None
+        or 'に' in received_text and not gp._source_operator_owner_scope_is_bound(received_text)):
+        return ()
+    item = update.updates[0]
+    if (item.operation != 'REVISE' or item.binding_kind != 'EXPLICIT_CORRECTION'
+        or item.target_meaning_refs != (old.to_nucleus_id,)
+        or item.superseded_claim_refs != (old.to_nucleus_id,)
+        or item.affected_dependency_refs != (old.relation_id,)
+        or item.temporal_binding.about_time != 'ORIGINAL_OCCASION'
+        or item.temporal_binding.anchor_source_ref != thread.original.envelope.envelope_id
+        or checkpoint.accepted_update_refs != (item.update_ref,)
+        or checkpoint.inactive_claim_refs != (old.to_nucleus_id, old.relation_id)
+        or len(item.changed_claim_refs) != 1):
+        return ()
+    current = {n.nucleus_id: n for n in nuclei}
+    answer_id, = item.changed_claim_refs
+    answer = current.get(answer_id)
+    remaining = tuple(r for r in relations if r not in edges)
+    if (len(current) != len(nuclei) or len(relations) != 3
+        or len({r.relation_id for r in relations}) != 3
+        or any(current.get(n.nucleus_id) != n for n in original.nuclei if n.nucleus_id != old.to_nucleus_id)
+        or set(current) != ({n.nucleus_id for n in original.nuclei} - {old.to_nucleus_id}) | {answer_id}
+        or not set(edges).issubset(relations) or len(remaining) != 1
+        or answer is None or not gp.is_grounded_positive_feeling(answer)
+        or answer.source_fields != (ANSWER_FIELD,) or answer.grounding_kind != 'explicit'
+        or answer.retention != 'required' or answer.allowed_claim_scope != 'explicit_supplemental_answer'
+        or answer.semantic_frame.actor != 'current_user' or answer.semantic_frame.time_scope != 'past'
+        or len(answer.source_span_ids) != 1
+        or 'thread_subject:unique_source_clause' not in answer.semantic_frame.attribute_codes
+        or {c for c in answer.semantic_frame.attribute_codes if c.startswith('thread_time:')}
+            != {'thread_time:original_occasion'}):
+        return ()
+    relation = remaining[0]
+    event = current[old.from_nucleus_id]
+    if (relation.type != 'evaluation_about_event' or relation.retention != 'required'
+        or (relation.from_nucleus_id, relation.to_nucleus_id) != (event.nucleus_id, answer_id)
+        or relation.grounding_kind != 'user_stated_relation'
+        or relation.source_relation_ids != (item.update_ref,)
+        or set(relation.source_span_ids) != set(event.source_span_ids + answer.source_span_ids)
+        or {n.nucleus_id for n in nuclei if n.retention == 'required'} != owned | {event.nucleus_id, answer_id}):
+        return ()
+    return (('lived_change', (appraisal.to_nucleus_id,), (context.nucleus_id, appraisal.from_nucleus_id)),
+            ('lived_change', (answer_id,), ()))
+
+
+def _active_plan(original, thread, added, inactive, updates, unresolved=(), *, prepared=None):
     nuclei = tuple(row for row in original.nuclei if row.nucleus_id not in inactive) + tuple(added)
     # Withdrawing an event removes its relations, not the independently
     # stated reaction/answer. Certify that loss of subject from the admitted
@@ -694,7 +804,8 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=()):
         final_source_fidelity=True,
         primary_focus_nucleus_ids=focus_ids,
         retained_reaction_groups=(_retained_reasonless_shared_target_duties(
-            original, thread, nuclei, relations, updates) if not unresolved else ()),
+            original, thread, nuclei, relations, updates)
+            or _retained_unfinished_received_duties(prepared, nuclei, relations) if not unresolved else ()),
     )
     return replace(original, nuclei=nuclei, relations=relations, unknown_boundaries=unknowns,
         input_profile=replace(original.input_profile, nucleus_count=len(nuclei),
@@ -1106,4 +1217,4 @@ def build_updated_grounded_plan(prepared: PreparedEmlisMeaning):
     return _active_plan(prepared.original_plan, prepared.thread,
                         prepared.accepted_nuclei, set(prepared.checkpoint.inactive_claim_refs),
                         prepared.checkpoint.answer_update.updates if prepared.checkpoint.answer_update else (),
-                        prepared.checkpoint.unresolved_parts)
+                        prepared.checkpoint.unresolved_parts, prepared=prepared)

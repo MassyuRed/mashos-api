@@ -5413,7 +5413,7 @@ def test_unfinished_received_thread_entry_selects_new_source_without_changing_di
 @pytest.mark.parametrize('layout', ['separate', 'reverse', 'joined', 'joined_reverse', 'joined_reverse_action', 'joined_action'])
 @pytest.mark.parametrize('target', ['考えを言葉にできて', '案を選んで', '資料を分類したことに'])
 @pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
-def test_unfinished_received_correction_keeps_single_selected_attention_and_full_inverse(layout, target, evaluation):
+def test_unfinished_received_correction_retains_both_limited_duties_and_full_inverse(layout, target, evaluation):
     from test_cmee_emlis_q3_thread import advance
     source = '結論は出ていないが、' + target + evaluation + '。'
     received = '褒められたのに、嬉しくなかった。'
@@ -5425,14 +5425,16 @@ def test_unfinished_received_correction_keeps_single_selected_attention_and_full
     prepared = prepare_emlis_meaning(req)
     plan = build_updated_grounded_plan(prepared)
     projection = project_thread_meaning(prepared, plan)
-    decision, = projection.selected_reception.decisions
-    assert decision.branch == 'LIMITED'
-    assert decision.subjective_proposition.subjective_mode == 'ATTENTION'
+    assert len(projection.selected_reception.decisions) == 2
+    assert len(plan.response_plan.human_reception_plan.moves) == 2
+    assert all(d.branch == 'LIMITED' and d.subjective_proposition.subjective_mode == 'ATTENTION'
+               for d in projection.selected_reception.decisions)
     outcome = MeaningExperienceEngine().generate(req)
     assert outcome.body_state == 'REFINED' and outcome.artifact is not None
     artifact = outcome.artifact
     assert '「嬉しかった」' in artifact.observation and '嬉しくなかった' not in artifact.text
-    assert artifact.reception.endswith('満足との対比に目を向けています。')
+    assert '満足との対比に目を向けています。' in artifact.reception
+    assert artifact.reception.endswith('褒められたことについて、その時は嬉しかったのですね。')
     joined = (f'「結論は出ていない」の一方で、「{target.removesuffix("ことに")}」'
               f'という出来事への評価は「{evaluation}」とあります。')
     assert joined in artifact.observation
@@ -5623,3 +5625,142 @@ def test_unfinished_component_source_removal_and_received_change_remain_separate
     assert changed is not None
     assert changed.reception.split('。')[0] == bodies[0].reception.split('。')[0]
     assert '誘われたことだけでは言い表せない、悲しさが伴ったあなたの経験' in changed.reception
+
+
+@pytest.mark.parametrize('evaluation', ['満足した', '満足している'])
+def test_unfinished_corrected_received_retention_changes_only_response_selection(monkeypatch, evaluation):
+    from test_cmee_emlis_q3_thread import advance
+    from cocolon_meaning_experience_engine import emlis_answer_update as updates
+    original = request('結論は出ていないが、考えを言葉にできて' + evaluation + '。',
+                       '褒められたのに、嬉しくなかった。')
+    initial = MeaningExperienceEngine().generate(original)
+    req = advance(original, '「嬉しくなかった」ではなく「嬉しかった」です。')
+    p = prepare_emlis_meaning(req); plan = build_updated_grounded_plan(p)
+    selected = project_thread_meaning(p, plan).selected_reception
+    body = MeaningExperienceEngine().generate(req).artifact
+    assert body is not None and len(selected.decisions) == 2
+    assert all(d.branch == 'LIMITED' for d in selected.decisions)
+    monkeypatch.setattr(updates, '_retained_unfinished_received_duties', lambda *_a: ())
+    before = prepare_emlis_meaning(req); old_plan = build_updated_grounded_plan(before)
+    old_body = MeaningExperienceEngine().generate(req).artifact
+    assert before.checkpoint == p.checkpoint
+    assert old_plan.nuclei == plan.nuclei and old_plan.relations == plan.relations
+    assert old_body.observation == body.observation
+    assert len(old_plan.response_plan.human_reception_plan.moves) == 1
+    assert '褒められた' not in old_body.reception
+    assert body.reception.startswith(old_body.reception)
+    assert MeaningExperienceEngine().generate(original).artifact == initial.artifact
+
+
+@pytest.mark.parametrize('feeling', ['嬉しかった', '少し嬉しかった'])
+def test_unfinished_corrected_received_reader_requires_both_duties_without_author(monkeypatch, feeling):
+    from types import SimpleNamespace
+    from test_cmee_emlis_q3_thread import advance
+    import emlis_ai_grounded_human_reception as hr
+    import emlis_ai_grounded_observation_gate as gate
+    req = advance(request('結論は出ていないが、考えを言葉にできて満足した。',
+                          '褒められたのに、嬉しくなかった。'),
+                  '「嬉しくなかった」ではなく「' + feeling + '」です。')
+    p = prepare_emlis_meaning(req); plan = build_updated_grounded_plan(p)
+    selected = project_thread_meaning(p, plan).selected_reception
+    resolver = p.thread.resolver()
+    sentence = build_grounded_sentence_plan(plan, resolver, recovery_stage='full')
+    body = MeaningExperienceEngine().generate(req).artifact
+    assert body is not None
+    first, second = (s + '。' for s in body.reception.split('。') if s)
+    assert 'その時は' + feeling in second
+    def forbidden(*_a, **_k):
+        pytest.fail('independent Reception reader called its author')
+    monkeypatch.setattr(hr, '_author_source_grounded_reception_clauses', forbidden)
+    def valid(follow):
+        # Bypass only the outer replay equality check; source/body readers
+        # still have to discharge each duty from these actual body bytes.
+        monkeypatch.setattr(gate, 'replay_source_grounded_human_reception_from_plan',
+                            lambda *_a, **_k: SimpleNamespace(text=follow))
+        return gate.evaluate_grounded_surface_body_inverse(
+            body=body.text.replace(body.reception, follow).encode(), plan=plan,
+            sentence_plan=sentence, resolver=resolver, selected_subjective_input=selected).passed
+    assert valid(body.reception)
+    for wrong in (first, second, second + first,
+        body.reception.replace('その時は', '回答した時点では'),
+        body.reception.replace(feeling, '嬉しくなかった'),
+        body.reception.replace('褒められたことについて', '考えを言葉にできたことについて'),
+        body.reception.replace('当時の満足', '入力した時点での満足'),
+        body.reception.replace('結論は出ていないという点', '結論は出たという点'),
+        body.reception + '褒められたことが満足の原因です。',
+        body.reception + '嬉しさが伴わなかったあなたの経験として受け取りました。'):
+        assert wrong != body.reception and not valid(wrong)
+
+
+def test_unfinished_corrected_received_duties_require_complete_source_and_update():
+    from dataclasses import fields
+    from test_cmee_emlis_q3_thread import advance
+    from cocolon_meaning_experience_engine.emlis_answer_update import _retained_unfinished_received_duties as duties
+    req = advance(request('結論は出ていないが、考えを言葉にできて満足した。',
+                          '褒められたのに、嬉しくなかった。'),
+                  '「嬉しくなかった」ではなく「嬉しかった」です。')
+    p = prepare_emlis_meaning(req); plan = build_updated_grounded_plan(p)
+    def check(prepared=p, nuclei=plan.nuclei, relations=plan.relations):
+        return duties(prepared, nuclei, relations)
+    assert len(check()) == 2
+    for f in fields(p):
+        if f.name.startswith('legacy_'):
+            assert not check(replace(p, **{f.name: True}))
+    checkpoint = p.checkpoint
+    update = checkpoint.answer_update
+    item, = update.updates
+    for wrong in (replace(item, operation='WITHDRAW'), replace(item, binding_kind='QUESTION_FOCUS'),
+        replace(item, affected_dependency_refs=()), replace(item, changed_claim_refs=('foreign',)),
+        replace(item, temporal_binding=replace(item.temporal_binding, about_time='ANSWER_TIME')),
+        replace(item, temporal_binding=replace(item.temporal_binding, anchor_source_ref='foreign'))):
+        assert not check(replace(p, checkpoint=replace(checkpoint, answer_update=replace(update, updates=(wrong,)))))
+    for wrong in (replace(checkpoint, assessment_status='PARTIAL'),
+        replace(checkpoint, accepted_update_refs=()), replace(checkpoint, inactive_claim_refs=()),
+        replace(checkpoint, answer_update=replace(update, disposition='NO_MATERIAL_UPDATE'))):
+        assert not check(replace(p, checkpoint=wrong))
+    assert not check(replace(p, thread=replace(p.thread, control=replace(p.thread.control, answers=()))))
+    for node in plan.nuclei:
+        for wrong in (replace(node, grounding_kind='inferred'),
+            replace(node, semantic_frame=replace(node.semantic_frame, actor='other')),
+            replace(node, semantic_frame=replace(node.semantic_frame, time_scope='future'))):
+            assert not check(nuclei=tuple(wrong if n == node else n for n in plan.nuclei))
+    for edge in plan.relations:
+        assert not check(relations=tuple(replace(r, grounding_kind='inferred_relation') if r == edge else r
+                                         for r in plan.relations))
+    assert not check(nuclei=(*plan.nuclei, plan.nuclei[0]))
+    assert not check(relations=(*plan.relations, plan.relations[0]))
+    assert not check(relations=(*plan.relations[:-1],
+                               replace(plan.relations[-1], relation_id=plan.relations[0].relation_id)))
+    # Mutate both original and retained active nodes, so simple unchanged-node
+    # equality cannot conceal a source ownership failure.
+    node = next(n for n in p.original_plan.nuclei if n.kind == 'event' and n.source_fields == ('memo_action',))
+    for wrong in (replace(node, allowed_claim_scope='inferred'),
+        replace(node, surface_anchor_ids=()),
+        replace(node, semantic_frame=replace(node.semantic_frame, target_anchor_ids=()))):
+        original = replace(p.original_plan, nuclei=tuple(wrong if n == node else n for n in p.original_plan.nuclei))
+        assert not check(replace(p, original_plan=original),
+                         tuple(wrong if n == node else n for n in plan.nuclei))
+
+
+@pytest.mark.parametrize('answer', ['分からない。', 'その時は嬉しかった。', '今は嬉しい。',
+    '「嬉しくなかった」は誤りです。', '「満足した」ではなく「満足しなかった」です。',
+    '「嬉しくなかった」ではなく「安心した」です。',
+    '「嬉しくなかった」ではなく「嬉しかった」です。「存在しない」は誤りです。'])
+def test_unfinished_received_other_updates_keep_existing_selection(answer):
+    from test_cmee_emlis_q3_thread import advance
+    from cocolon_meaning_experience_engine.emlis_answer_update import _retained_unfinished_received_duties as duties
+    p = prepare_emlis_meaning(advance(request('結論は出ていないが、考えを言葉にできて満足した。',
+                                             '褒められたのに、嬉しくなかった。'), answer))
+    plan = build_updated_grounded_plan(p)
+    assert not duties(p, plan.nuclei, plan.relations)
+
+
+@pytest.mark.parametrize('received', ['私に褒められたのに、嬉しくなかった。',
+    '自分に褒められたのに、嬉しくなかった。', '褒められたのに、嬉しくなかった。植木に水をやった。'])
+def test_unfinished_received_retention_does_not_borrow_owner_or_ignore_extra_source(received):
+    from test_cmee_emlis_q3_thread import advance
+    from cocolon_meaning_experience_engine.emlis_answer_update import _retained_unfinished_received_duties as duties
+    p = prepare_emlis_meaning(advance(request('結論は出ていないが、考えを言葉にできて満足した。', received),
+                                     '「嬉しくなかった」ではなく「嬉しかった」です。'))
+    plan = build_updated_grounded_plan(p)
+    assert not duties(p, plan.nuclei, plan.relations)

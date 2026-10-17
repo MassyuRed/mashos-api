@@ -21347,3 +21347,59 @@ Emlisから：
 次の原因確認：実比較recordでは初回のReception 2機会／2 Moveが訂正後1機会／1 Moveへ減る。既存`build_grounded_reception_opportunities`の同じ`lived_change`内で明示評価を優先する代表選択が満足を残す。`emlis_thread_projection._appraisal_received_components`は未成立三点について回答ありを拒否し、組外も元のnegative received contrastを要求する。`emlis_stage1_composition._validate_component_reception_plan_ownership`も初回の所有境界を持つ。既存の未変更received保持は満足側を訂正する逆方向の限定資格である。従って作者の文追加や入口guardの解除だけで解く問題ではない。次は原文三点と、別sourceの訂正回答＋元のreceived出来事をそれぞれ有効な受け取り義務へ結ぶ際の回答所有・原時点・失効済み否定contrast非復活を照合する。この段落は原因確認であり、新資格の提案採用・実装・生成結果ではない。
 
 次は同じ訂正後全文を入口に、Receptionが選んでいる内容と落ちているreceived経験を意味側から照合する。u300承認は初回限定であり、回答後へ黙って追加資格を拡張しない。既存承認範囲の修復で足りない場合は、必要な意味・資格差分を具体化する。初回の説明性／受容反復、共有対象／対象外更新、既存周辺4失敗（過去共有17との集合一致未確認）、same100、Q1上限、giver帰属、本人実機・正式Product Readは未解消。周辺4と前回の補助RN suite失敗は今回再実行しておらず、解消を主張しない。10/31管理線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％は維持する。
+
+
+## u303 — 肯定訂正後に落ちていたreceived応答義務を保持（2026-10-17 JST）
+
+TECHNICAL_CREDIT / PRODUCT_NOT_CLEAR。u302の残件だった、未成立三点と別receivedが併存する入力の肯定訂正後に、received経験がReceptionから消える欠落を修復した。既存LIMITEDの応答義務保持であり、u300/u301の初回限定NORMAL資格を回答後へ広げていない。初回一体単位未完了・正式受入0/3・candidate_ready=false・automatic_progression=false、Draft/open/unmerged・未配置。
+
+基準API `a9a00c09196473215024e27e961abdab34cbbd26`／資料 `e5e1bef9351cf8fad3861c81e2b49ea192d79b2f`。全体設計01・全file地図01A/B/C・current_structure、最新weekly20261010 §5.6.52、作業規則・Rule18 §11.3、8/16恒久incident全文、8/28意味設計§9.2/9.4・u300/u301範囲とu291先例を確認。前回からのSystem Context workspace binding不足は未修復であり、許可済みの原典直接参照を継続した。新Context生成成功とはしない。
+
+### 原因と最小変更
+
+訂正後も未変更の未成立三点と、元received出来事に結ばれた肯定回答は意味planに残る。しかし両者が同じlived_change familyとなり、代表選択が満足側一つだけを残していた。u291と同じく既存応答義務の欠落であり、Rule18 §11.3 LEVEL2の契約を変えない修復として実施した。
+
+production変更は `ai/services/ai_inference/cocolon_meaning_experience_engine/emlis_answer_update.py` 一つ。回答exact1／round1・非legacy・RESOLVED・MATERIAL_UPDATEで、元のrequired五点・三辺と別々の二つの原文spanを証明する。未成立三点と両辺を不変に保ち、別received反応だけのEXPLICIT_CORRECTION／REVISE／ORIGINAL_OCCASION、accepted/inactive/affected/changed refs一致、元eventへのABOUTと更新ref一致を要求する。全text核・coverage、field／anchor／関係span、同欄非重複、一意出現、giver所有、現在核／関係IDの一意性も閉じる。
+
+既存response selection overrideへ、未成立三点のlived_changeと肯定回答のlived_changeをこの順で渡す。回答は第二felt_response、support空。gpの一般retention／family ranking、meaning projection、schema、作者、readerを変更せず、既存generic partitionと肯定回答のfinite文法を使う。Checkpoint・核・関係は変えないが、response_planとselectedは変わる。LIMITED/MATERIAL_WEIGHTの既存経路で三点側と明示回答側を分配し、元received eventはrequired ABOUTの文脈として回収する。初回の3binding＋2bindingの独立NORMAL内容を回答後へ復活させたものではない。失効した旧negative contrastは復活させない。
+
+PARTIAL・legacy・別時点・追加／撤回／満足側訂正・他人／SELF-giver・余分な材料はこの追加保持へ入れない。`安心した`の既存意味分類はvalue/factであり、本helperのpositive feeling資格には入らない。この入力の本文生成停止を解消したとはしない。
+
+新production file／恒久runner／証跡契約なし。公開API／DTO／DB／RN／schema／依存不変。STRUCTURE_MAP_DELTA_NONE：既存answer-updateのresponse selection責務内の修復で、全体01・01A/B/C・current_structureの配置／所有責務に追加・移動はない。
+
+### 実保存全文と商品読解
+
+入力は「結論は出ていないが、考えを言葉にできて満足した。」と「褒められたのに、嬉しくなかった。」、回答は「『嬉しくなかった』ではなく『嬉しかった』です。」相当の明示訂正。修復前はEmlisからの一文目だけで終わり、訂正後の嬉しさを返せていなかった。修復後の実保存全文：
+
+```text
+見えたこと：
+「結論は出ていない」の一方で、「考えを言葉にできて」という出来事への評価は「満足した」とあります。 「褒められた」ことについて、その時の受け止めは「嬉しかった」と書かれています。
+
+Emlisから：
+結論は出ていないという点と、考えを言葉にできたことへの当時の満足との対比に目を向けています。褒められたことについて、その時は嬉しかったのですね。
+```
+
+別欄両順・memo／memo_actionの同欄両順の6配置×満足の過去／入力時点2で、元出来事・当時の嬉しさを第二文へ保持した。Observationの順序は原文順、Receptionは未成立三点→明示回答の順。原文にない因果・同時性・相手の意図を追加しない。rootは実保存28 DTOを、全文9種類と各DTOの対応まで読解した。同Work read-only補助も対象12全文と36比較を確認した。
+
+この欠落は解消したが、第一文は「対比に目を向けています」という関係説明、第二文は明示回答の有限な受け止めに留まる。初回の「受け取りました」反復・充足の内容形成の浅さ、Observationの引用説明調も残る。本文あり・2 Move・LIMITED・検査passを商品合格へ換算しない。
+
+### 検証と保存互換
+
+| 対象 | 結果・限界 |
+| --- | --- |
+| appraisal1,028＋Q2/Q3 application54 | 1,082 passed, 1 warning in 411.08s (0:06:51)、失敗0／skip0 |
+| 現行owner identity | 1 passed, 194 deselected, 1 warning in 22.37s。identity fixture変更なし。 |
+| 旧新36比較 | 対象訂正12でplan変更はresponse_planのみ、artifact変更はID／Reception／traceのみ。checkpoint／核／関係／Observation／状態／理由は不変。selectedは1から2のLIMITEDへ変化。初回・未知回答24は全record一致。 |
+| 周辺6対照 | received単独、未成立なし満足、理由付き満足、安心した訂正、現在の嬉しさ、肯定初回は全record不変。うち未成立なし満足と安心した訂正の本文停止は既存残件。 |
+| 実service＋隔離SQL | 対象12、実u302旧保存1、実u302更新checkpoint retry1の14 case／28 DTO。NoAuthor GET/start／同一回答再送の本文・attempt不変、保存thread/events増加なし。 |
+| 現行RN | 実保存28 DTOで現在本文・全履歴・close/reopen一致。実hook／Modal、native部品stub。本人実機・配布buildではない。 |
+
+新15testを追加し、既存訂正36testを更新。新テストは欠落再現（保持overrideだけ無効化して旧単一Moveを再現し、意味／Observation不変を確認）、独立Reception readerの全文欠落・順序／対象／肯否／時点改変・未明示原因／旧negative復活拒否、範囲・所有の拒否を検証する。独立reader試験では外側replay等値だけを受検本文に置き換え、作者呼出を禁止したまま実本文のsource読解を通した。source tuple／関係IDの重複拒否と本文の重複検査は同一ではなく、今回新規の本文重複変異は追加していない。
+
+最初の局所52件は49 pass／3 fail。`安心した`をpositive feelingと想定したテスト1件と、初回から質問を出せない他人／推量入力へadvanceしようとしたテスト2件の前提が誤っていた。意味分類や質問資格を拡張せず、既存positive feelingの程度付き回答へテストを修正し、`安心した`を対象外更新の対照へ加え、初回質問不可の2例は既存初回所有テストの範囲として新規の回答後ケースから除いた。新15件の再実行pass後、最終sourceの主回帰を上表に示す。局所pass数を主回帰総数へ重複加算しない。
+
+旧engineはu302全ai sourceを隔離し、唯一変更されたanswer_updateを基準u302と同じbytesへ戻した別processで実行した。完成済み旧本文はreceived欠落を含む当時のまま非再生成で保持。旧engineでMEANING_UPDATE保存後・本文保存前に中断したcaseでは、現engineが同じ意味events／checkpoint／operationを再利用し、保持修復した本文を生成した。旧保存不変と未完成retryの本文変化を区別する。
+
+Python3.12.14／Pydantic2.13.5／pytest8.4.1／PGlite0.5.8／React・react-test-renderer18.3.1の既存一時環境を再利用。外部DB・製品依存・費用変更なし。language identity `d625068cbeffc3d39c72c7f880a2f7ab8e194fc710f7cfd9afe1e92bd9c3276f`／runtime identity `ecaa27e9eb7108056e2707ca4e16bc04ccf3247189da0882598baf22042d5f29`不変。同Work read-only補助のレビューは正式な別Pro/Ultraモデル二重検証ではない。
+
+次は対象を広げる前に、周辺6対照で見えた「未成立なし満足＋肯定訂正」の本文停止と「理由付き満足＋肯定訂正」のreceived欠落を、それぞれ実全文と意味／選択の責務から照合する。現在回答の欠落や`安心した`のvalue分類も未解消。新意味資格が必要なら具体化してRule18承認境界を守る。初回の内容／説明性／反復、共有対象／対象外更新、既存周辺4失敗（過去共有17との集合一致未確認）、same100、Q1上限、giver帰属、本人実機・正式Product Readは残る。周辺4・過去のRN補助suite失敗を今回再実行しておらず、解消を主張しない。10/31管理線・12/18公開目標、Piece/Analysis主枠、管理評価53.25％を維持する。
