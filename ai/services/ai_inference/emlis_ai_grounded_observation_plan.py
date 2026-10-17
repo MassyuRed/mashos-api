@@ -13732,6 +13732,7 @@ def _explicit_result_appraisal_projections(span, normalized_input, *, _legacy_ap
                                           _legacy_received_appraisal_context=False,
                                           _legacy_received_unfinished_context=False,
                                           _legacy_received_reason_context=False,
+                                          _legacy_received_report_context: bool = False,
                                           _legacy_repeated_appraisal_context=False,
                                           _legacy_duplicate_appraisal_source=False):
     """Bind an asserted appraisal to its own asserted object, not adjacency.
@@ -13748,8 +13749,7 @@ def _explicit_result_appraisal_projections(span, normalized_input, *, _legacy_ap
     if (not 0 <= start < end <= len(source) or source[start:end] != raw
         or _top_level_text(source) != source
         or (source[:start].strip() and not source[:start].rstrip().endswith(("。", "．", ".")))
-        or (source[end:].strip() and not source[end:].lstrip().startswith(("。", "．", ".")))
-        or _source_prefix_opens_report(source[:start])):
+        or (source[end:].strip() and not source[end:].lstrip().startswith(("。", "．", ".")))):
         return ()
     text = _clean(raw)
     context = re.fullmatch(
@@ -13837,6 +13837,15 @@ def _explicit_result_appraisal_projections(span, normalized_input, *, _legacy_ap
     # SELF as giver does not prove SELF as the receiver of praise, etc.
     self_received = bool(received_event and _SELF_REFERENCE_RE.search(giver) is None and ("に" not in received_event
         or _source_operator_owner_scope_is_bound(received_event)))
+    # A complete SELF received past feeling can end in "のに…かったです".
+    # The general report detector also matches that ending. Close it only
+    # with the existing negative-reaction owner proof and explicit past source;
+    # the received parser alone does not prove a present/nominal tense.
+    if (_source_prefix_opens_report(source[:start])
+        and (_legacy_received_report_context or not (self_received
+            and received[1].polarity == "negative"
+            and prefix[received[1].scalar_start:received[1].scalar_end].endswith("かったです")))):
+        return ()
     # Exactly one identical complete sentence at the start of this field
     # can carry its already-proved SELF owner forward. Re-run the existing
     # proof at that earlier scalar range; no foreign prefix, changed reason,
@@ -13850,6 +13859,7 @@ def _explicit_result_appraisal_projections(span, normalized_input, *, _legacy_ap
             _legacy_received_appraisal_context=_legacy_received_appraisal_context,
             _legacy_received_unfinished_context=_legacy_received_unfinished_context,
             _legacy_received_reason_context=_legacy_received_reason_context,
+            _legacy_received_report_context=_legacy_received_report_context,
             _legacy_repeated_appraisal_context=True))
     if (previous and not _source_operator_owner_scope_is_bound(previous)
         and not self_received and len(repeated) != 3
@@ -14577,6 +14587,7 @@ def _final_stage1_typed_nuclei(
     _legacy_received_appraisal_context: bool = False,
     _legacy_received_unfinished_context: bool = False,
     _legacy_received_reason_context: bool = False,
+    _legacy_received_report_context: bool = False,
     _legacy_repeated_appraisal_context: bool = False,
     _legacy_duplicate_appraisal_source: bool = False,
     _legacy_shared_target_contrast: bool = False,
@@ -14601,6 +14612,7 @@ def _final_stage1_typed_nuclei(
                 _legacy_received_appraisal_context=_legacy_received_appraisal_context,
                 _legacy_received_unfinished_context=_legacy_received_unfinished_context,
                 _legacy_received_reason_context=_legacy_received_reason_context,
+                _legacy_received_report_context=_legacy_received_report_context,
                 _legacy_repeated_appraisal_context=_legacy_repeated_appraisal_context,
                 _legacy_duplicate_appraisal_source=_legacy_duplicate_appraisal_source))
             or _received_event_reaction_projections(span, nucleus.semantic_frame)) if span is not None else ()
@@ -16977,6 +16989,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_received_appraisal_context: bool = False,
     _legacy_received_unfinished_context: bool = False,
     _legacy_received_reason_context: bool = False,
+    _legacy_received_report_context: bool = False,
     _legacy_repeated_appraisal_context: bool = False,
     _legacy_appraisal_retention: bool = True,
     _legacy_duplicate_appraisal_source: bool = False,
@@ -16998,6 +17011,7 @@ def project_final_stage1_grounded_observation_plan(
         _legacy_received_appraisal_context=_legacy_received_appraisal_context,
         _legacy_received_unfinished_context=_legacy_received_unfinished_context,
         _legacy_received_reason_context=_legacy_received_reason_context,
+        _legacy_received_report_context=_legacy_received_report_context,
         _legacy_repeated_appraisal_context=_legacy_repeated_appraisal_context,
         _legacy_duplicate_appraisal_source=_legacy_duplicate_appraisal_source,
         _legacy_shared_target_contrast=_legacy_shared_target_contrast,
@@ -18109,6 +18123,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_received_appraisal_context: bool = False,
     _legacy_received_unfinished_context: bool = True,
     _legacy_received_reason_context: bool = True,
+    _legacy_received_report_context: bool = True,
     _legacy_repeated_appraisal_context: bool = False,
     _legacy_appraisal_retention: bool = True,
     _legacy_duplicate_appraisal_source: bool = False,
@@ -18173,6 +18188,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_received_appraisal_context=_legacy_received_appraisal_context,
         _legacy_received_unfinished_context=_legacy_received_unfinished_context,
         _legacy_received_reason_context=_legacy_received_reason_context,
+        _legacy_received_report_context=_legacy_received_report_context,
         _legacy_repeated_appraisal_context=_legacy_repeated_appraisal_context,
         _legacy_appraisal_retention=_legacy_appraisal_retention,
         _legacy_duplicate_appraisal_source=_legacy_duplicate_appraisal_source,

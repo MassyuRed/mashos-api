@@ -81,6 +81,7 @@ class PreparedEmlisMeaning:
     legacy_shared_target_contrast: bool = False
     legacy_received_unfinished_context: bool = False
     legacy_received_reason_context: bool = False
+    legacy_received_report_context: bool = False
 
 
 def _text(row, index, resolver) -> str:
@@ -876,6 +877,19 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
             or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
             raise
+        # Restore the complete source interpretation before the received
+        # polite contrast/report-prefix correction. Keep all unrelated source
+        # capabilities; an old ID must never label newly recognized meaning.
+        prior_received_report = original_meaning_plan(thread, _legacy_received_report_context=True)
+        if (prior_received_report.nuclei != original.nuclei
+            or prior_received_report.relations != original.relations):
+            try:
+                restored = _prepare_emlis_meaning_from_plan(request, thread, prior_received_report)
+            except ValueError as prior_exc:
+                if str(prior_exc) not in {'emlis_checkpoint_source_prefix_mismatch', 'emlis_question_noncanonical'}:
+                    raise
+            else:
+                return replace(restored, legacy_received_report_context=True)
         # u304 omitted a reasoned appraisal after a received sentence. Keep
         # all other source capabilities when reproducing that complete saved
         # checkpoint or an already issued question; never replace its identity.

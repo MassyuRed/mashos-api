@@ -1,4 +1,4 @@
-> 最新EmlisAI残件：末尾 **u316（2026-10-17・選択済みreceived経験の長い受容説明を修復）**。実装・分割再実行を含む検証・保存再表示と、丁寧形先行の同一欄で残る欠落／停止は同節を参照。u315の承認済みADD保持は維持。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
+> 最新EmlisAI残件：末尾 **u317（2026-10-17・丁寧形received先行の同一欄で後続評価を保持）**。否定的な過去反応のsource認識修復・旧保存互換・実本文と検証は同節を参照。訂正／撤回後の受容保持10例、現在形／名詞形／肯定反応と本文自然さは残件。PRODUCT_NOT_CLEAR・初回一体単位未完了・未配置。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -22206,3 +22206,56 @@ language identity `f30f3b1b0e5d55ede4a7a3a6590edf96bf37b671212c7c0bbf8aaa1da7f06
 次は、今回同一条件で再現した「誘われたのに、悲しかったです。」を先頭に置いた同一欄の6例について、後続plain／reasoned／unfinished評価のsource所有と既存選択を照合し、意味内容が落ちる原因を優先する。bare形・別欄・逆順を対照に、既存認識／保持契約の修復で解消できる範囲を確定する。新しい意味資格が必要なら無断拡張しない。文末だけの置換で本文品質を完了扱いにしない。
 
 説明性・満足／対象／語尾反復、独立行動・安心した分類・共有対象／容量・その他対象外更新、既存周辺4／過去17とQ3既存16失敗の集合対応、same100・Q1上限・giver帰属・本人実機／正式Product Readは残る。primaryはTECHNICAL_CREDIT。PRODUCT_NOT_CLEAR・初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false、Draft/open/unmerged・未配置。10/31管理線・12/18公開目標、Piece/Analysis主枠・管理評価53.25％を維持する。
+
+## u317 — 丁寧形received先行の同一欄で後続評価を保持（2026-10-17 JST）
+
+### 開始条件・原因と実装
+
+Mashの「EmlisAIの残件作業を進めて」により、u316で残した丁寧形received先行の同一欄6例を優先した。基準はAPI `8511420e0d6a03505227f9195cbcd027aea10ecf`／Cocolon `243ee5763e1abedeab5d9c08efe884e8077d3bec`。全体設計01・全file地図01A/B/C・current01/04・正本06／API handoff・最新weekly 20261010 §5.6.66・作業規則とRule18§11.3を確認し、永久保存ProductNeglect／CMEE ProductReadFailure監査全文を再読した。System Context prepareは設定先mashos-api不在でexit2のため、正本原資料と実sourceを直接確認した。fresh Context生成完了とは扱わない。
+
+共通のreport-prefix判定が「のに……かったです」を「の……です」という伝聞導入へ誤分類し、後続のplain／reasoned／unfinished評価を既存本人所有証明より前で落としていた。`emlis_ai_grounded_observation_plan.py::_explicit_result_appraisal_projections` 内でreport拒否を既存SELF received証明の後へ移動し、単一の完全な先行文・本人受け手・negative反応・実source末尾「かったです」が全て成立する場合だけ、この誤拒否を閉じる。共有report helper自体は変更しない。後続評価の本人所有、原文range／exact slice、対象・理由／未成立・肯否・時点、finiteな既存source証明を維持する。giverがSELF、他者主語、引用／伝聞、複数先行文、仮定・否定出来事等を解除しない。
+
+現在形「悲しいです／嬉しくないです」、名詞形「不安でした」、肯定反応「嬉しかったです」は今回未修復として旧挙動を維持する。肯定過去まで含む途中案はreceived側の受容を落としたため採用せず、最終版ではnegativeへ限定した。否定的な感情という意味極性を指し、「悲しかったです」の肯定構文も対象である。
+
+新しいprivate `_legacy_received_report_context` を共有Planの導出経路と `emlis_question.py::original_meaning_plan` へ通し、direct builderおよび以前のsourceモードは旧挙動を維持する。`emlis_answer_update.py::prepare_emlis_meaning` は既存checkpoint／canonical question不一致時にu316の**完全な元source解釈**を再導出し、完全照合できた場合だけ復元する。旧IDへ新しく認識した意味を付け替えない。新しいsource認識を伴うcurrent核辺・checkpoint・Observation／Move・選択は変化するので、意味不変の修正とは記録しない。
+
+既存意味資格・private内容型／validator・作者／有限reader・公開API／DTO／DB／RN・質問数／Move上限・依存を変更しない。新production fileはなく、既存3 owner・既存appraisal test・現行owner identity fixtureのみを更新した。u315の承認済みADD資格はそのまま使う。
+
+### 実本文と残る欠落
+
+原入力「誘われたのに、悲しかったです。探しやすくなったので、資料を分類したことに満足した。」をmemoへ記入した旧受容は「探しやすくなったので、資料を分類したことに満足したという変化を受け止めています。」であり、received側が落ち、理由付き本人評価も変化へ一般化していた。現行全文：
+
+> 見えたこと：
+> 「誘われた」の一方で「悲しかったです」とあります。
+> 「探しやすくなった」を理由に、「資料を分類した」という出来事への評価は「満足した」とあります。
+>
+> Emlisから：
+> 資料を分類したことには、探しやすくなったという点で、当時ご自身の中に満たされた感覚があったのですね。誘われたことは、あなたにとって悲しさを伴う経験だったのですね。
+
+memo_actionも同じ二経験の受容となり、未成立例は本文停止から復帰する。u316の原対象6例を含む12基本例（3評価×否定反応2×同欄2）とgiver／本人主題／程度の6変種を確認した。ADD回答後も満足・元反応・現在の嬉しさを読み分ける。ただし「のですね」の反復、満足側の長さ、未成立ADDの「対比に目を向けています」、giver丁寧動詞の「先生に褒められましたことは」は残る。
+
+同じ欄の満足をnegativeへREVISEしたplain／unfinished4例ではreceived経験、満足をWITHDRAWした全3評価×2欄の6例では満足の対象出来事がReceptionから落ちる（計10例、Observationには残る）。理由付きREVISE2例は両経験を保持する。未変更u316で丁寧語を外した同じ12更新を比較し、10欠落と2保持が全て一致することを確認した。既存 `_separate_reasonless_appraisal_received_source` の保持証明が別source_fieldかつ各欄全体の一経験に限定されるためであり、今回その資格を広げていない。入力認識修復と受容保持完了を混同しない。
+
+rootは変更前後27種類の全文と36変更ケースの対応を読解した。主張・主体・時点・否定・理由と未成立の区別を照合し、短い本文や本文生成成功だけで商品品質合格としない。
+
+### 検証・旧保存互換
+
+主回帰 **1,584 passed**（appraisal 1,530＋Q2/Q3 application 54）。既存1,497＋追加87の全固有nodeを収集し、重複のない528件×3 shardで全て成功した。各shardは既存Pydantic警告1件、skip／失敗0。最終negative限定後の全範囲実行であり、個別・途中runの成功数は加算しない。
+
+104ケースの旧新比較は36変更／68取得全record一致、本文あり65→83。変更は上記初回18と更新18に限る。別欄／逆順と、現在形・名詞形・肯定反応、他者／引用／伝聞等の非対象を維持した。本文がない残り21例は成功へ数えない。14個の変更前checkpoint fixture（FREE_Q1／Q3初回・回答、異なる欄に既存bare reasoned／unfinishedを持つ混合入力）で、完全checkpoint、元nuclei／relationsのcanonical hash、本文／状態／reason_codes／questionを照合する。foreign checkpointは拒否し、捕捉した回答例では、旧checkpointなしの場合はcurrent意味へ進む。
+
+途中の新規88検査は78 pass／10 failとなった。10件は上記の既存bareでも残る受容保持欠落を、新設testが今回の入力認識修復で完了すると誤って要求したためである。新設testの保証を元意味・受理operation・Observationへ合わせ、欠落を本文残件として明記した。既存testの期待値は弱めていない。肯定反応2例を新機能側から外し非対象1検査へ移した最終追加数は87。途中版の広い主回帰は最終結果へ採用せず、negative限定後の全範囲を再実行した。途中runを成功数へ加算しない。
+
+Q3 retainedは12 passed／既存16 failed／922 deselected／1 warning（23.01秒）。u316と失敗16 nodeおよびassertion／trace全文がprocess addressを除いて一致した。既存16失敗は未解消。現行identity検査1 passed／194 deselected／1 warning（21.33秒）。language identity `26efe5b780a82c9cb526c24aa8588087fe6c105fb01e1c9e177fcf5d7846ad9a`、runtime identity `96e903fa77eecfc745eeb232fc0315fc74be54fa5291b5d967fd875da4a5e9c2` を現行fixtureへ再導出し、歴史fixtureは不変。主回帰開始後の差分は括弧内継続行の字下げだけで意味差分なし、最終字下げ版のidentityを再検査済み。
+
+実EmlisThreadService＋ローカルPGliteで52ケース／78 DTOを保存した。current36対象＋4対照、旧完成4／旧pending4／旧checkpoint中断再開4。完成済み本文は作者禁止GET/start・同回答再送でも非再生成、thread／events／attempt不変。旧pendingは既存質問・旧初回からcurrent意味の回答へ進む。旧checkpointが既に保存されていた中断再開は、旧意味と旧本文を再現し、ANSWER／MEANING_UPDATE・operation・既存OBSERVATIONを保持した。現行RNの実hook／Modalをnative stubで動かし、78 DTOの全文・元入力・全履歴・close/reopenを確認した。rootは保存29種の全文と78対応を読解した。ローカル保存と合成RNの確認であり、本人実機の新たな検証ではない。
+
+同Work内の読取専用補助は静的確認であり、正式な別model Pro／Ultra検証へ換算しない。本人実機の新規検証・本番DB適用・deploy・main mergeは今回0。primaryはTECHNICAL_CREDIT。
+
+### 同期・次の一作業
+
+`STRUCTURE_MAP_DELTA_PRESENT`。source生成と旧source復元の責務差分を全体01／01A／current01／current04へ反映し、06／API handoffへ同一u317、07とweekly §5.6.67へ結果と再開順を記録する。01B/C、Piece/Analysis、意味型の05／8月28日設計、公開経路／DB／RNに今回の契約差分はない。
+
+次は同一欄の評価訂正／撤回後10例の受容欠落を、別欄・bare・既存保持証明と比較し、変更箇所と必要な資格を具体化する。既存資格の単なる修復で済むか、新資格追加が必要かを根拠から確定し、後者を無断で広げない。現在形／名詞形／肯定反応、満足側の説明性・語尾／対象反復、Observation重複、対象外更新、独立行動／安心した分類・共有対象／容量、既存周辺4／過去17とQ3既存16失敗の集合対応、same100・Q1上限・giver帰属・本人実機／正式Product Readは未解消。
+
+PRODUCT_NOT_CLEAR・初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false、Draft/open/unmerged・未配置。10/31管理線・12/18公開目標、Piece/Analysis主枠・管理評価53.25％を維持する。

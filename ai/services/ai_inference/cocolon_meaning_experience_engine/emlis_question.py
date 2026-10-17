@@ -35,13 +35,18 @@ def original_meaning_plan(thread: AdmittedEmlisThread, *, _legacy_result_apprais
                           _legacy_received_appraisal_context=False, _legacy_repeated_appraisal_context=False,
                           _legacy_appraisal_retention=False, _legacy_duplicate_appraisal_source=False,
                           _legacy_shared_target_contrast=False, _legacy_received_unfinished_context=False,
-                          _legacy_received_reason_context=False):
+                          _legacy_received_reason_context=False, _legacy_received_report_context=False):
     source = thread.original
     return build_final_stage1_grounded_observation_plan(
         source.normalized_current_input, evidence_spans=source.evidence_spans,
         _legacy_result_appraisal=_legacy_result_appraisal,
         _legacy_appraisal_reason=_legacy_appraisal_reason,
         _legacy_received_appraisal_context=_legacy_received_appraisal_context,
+        _legacy_received_report_context=(_legacy_received_report_context or any((
+            _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
+            _legacy_repeated_appraisal_context, _legacy_appraisal_retention,
+            _legacy_duplicate_appraisal_source, _legacy_shared_target_contrast,
+            _legacy_received_unfinished_context, _legacy_received_reason_context))),
         _legacy_received_reason_context=(_legacy_received_reason_context or any((
             _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
             _legacy_repeated_appraisal_context, _legacy_appraisal_retention,
