@@ -7124,6 +7124,21 @@ def evaluate_grounded_surface_body_inverse(
 
     from emlis_ai_grounded_observation_plan import _source_initial_personal_meaning_from_resolver
     initial_personal = _source_initial_personal_meaning_from_resolver(plan.nuclei, plan.relations, resolver)
+    from emlis_ai_grounded_observation_plan import source_owned_relief_cognition_from_resolver, _received_contrast_group_targets
+    from emlis_ai_grounded_human_reception import _source_grounded_received_contrast_rows
+    relief_pairs = source_owned_relief_cognition_from_resolver(plan.nuclei, plan.relations, resolver)
+    mixed_received_reports = []
+    if len(relief_pairs) == 1:
+        for edge in plan.relations:
+            pair = (nucleus_index[edge.from_nucleus_id], nucleus_index[edge.to_nucleus_id])
+            if _received_contrast_group_targets(pair, (edge,)):
+                rows = _source_grounded_received_contrast_rows(
+                    (edge.from_nucleus_id,), (edge.to_nucleus_id,), nucleus_index, resolver)
+                if rows:
+                    mixed_received_reports.append((edge.relation_id, rows))
+    # The finite report names one original experience. Equal source wording in
+    # multiple occurrences cannot identify which relation was reported.
+    mixed_received_reports = dict(mixed_received_reports) if len(mixed_received_reports) == 1 else {}
     for index, (parsed_line, planned_line) in enumerate(
         zip(observation_lines, planned_observation_lines),
         start=1,
@@ -7495,6 +7510,7 @@ def evaluate_grounded_surface_body_inverse(
             separate_time_contrast = relation_id in separate_time_contrast_ids
             neutral_time_contrast = scoped_feeling_contrast or separate_time_contrast
             initial_received_contrast = bool(initial_personal and relation_id == initial_personal[-1].relation_id)
+            mixed_received_rows = mixed_received_reports.get(relation_id, ())
             exact_contrast = separate_time_contrast or (relation.type == "contrast"
                 and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
                 and (nucleus_index[relation.from_nucleus_id].kind == "event" or exact_chain or scoped_feeling_contrast)
@@ -7532,13 +7548,18 @@ def evaluate_grounded_surface_body_inverse(
                         singleton = re.fullmatch(r'「([^「」『』\n]+)」' + re.escape(link_text[links[0]])
                             + r'「([^「」『』\n]+)」という経験が書かれています。', visible)
                     elif singleton is None:
-                        singleton = re.fullmatch(r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」とあります。", visible)
+                        if mixed_received_rows:
+                            link_text = {'noni': 'のに', 'kedo': 'けど', 'keredo': 'けれど', 'keredomo': 'けれども'}
+                            singleton = re.fullmatch(r'「([^「」『』\n]+)」' + re.escape(link_text[mixed_received_rows[0][-1]])
+                                + r'「([^「」『』\n]+)」という経験が書かれています。', visible)
+                        if singleton is None:
+                            singleton = re.fullmatch(r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」とあります。", visible)
                     operand = r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」"
                     if singleton:
                         legacy_pairs.append(singleton.groups())
                     elif not (neutral_time_contrast or initial_received_contrast) and re.fullmatch(rf"(?:{operand}、また)+{operand}という、それぞれ異なる向きが並んでいます。", visible):
                         legacy_pairs.extend(re.findall(operand, visible))
-                if ((neutral_time_contrast or initial_received_contrast) and len(planned_line.binding.relation_ids) == 1
+                if ((neutral_time_contrast or initial_received_contrast or mixed_received_rows) and len(planned_line.binding.relation_ids) == 1
                     and set(planned_line.binding.nucleus_ids) <= {
                         relation.from_nucleus_id, relation.to_nucleus_id}
                     and (len(legacy_pairs) != 1 or sum(row.section == "observation"

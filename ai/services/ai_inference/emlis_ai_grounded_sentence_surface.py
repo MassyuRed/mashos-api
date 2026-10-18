@@ -3966,9 +3966,21 @@ def _render_relation(
             if (typed_semantic_duties and relation_id in neutral_received_contrast_ids
                 and relation.grounding_kind == "user_stated_relation"
                 and not _hedge_prefix(binding)):
-                # The unchanged received pair outlives the joint appraisal.
-                # Its explicit contrast does not assert simultaneous feelings.
-                sentences.append(f"{left}の一方で{right}とあります。")
+                # In the mixed source, preserve the received connector itself.
+                # Repeating the separate feeling pair's terminal would erase
+                # their different reporting duties and fail the existing gate.
+                from emlis_ai_grounded_observation_plan import source_owned_relief_cognition_from_resolver
+                from emlis_ai_grounded_human_reception import _source_grounded_received_contrast_rows
+                pairs = source_owned_relief_cognition_from_resolver(
+                    tuple(nucleus_index.values()), tuple(relation_index.values()), resolver)
+                rows = (_source_grounded_received_contrast_rows(
+                    (event.nucleus_id,), (reaction.nucleus_id,), nucleus_index, resolver)
+                    if len(pairs) == 1 else ())
+                if rows:
+                    link = {'noni': 'のに', 'kedo': 'けど', 'keredo': 'けれど', 'keredomo': 'けれども'}[rows[0][-1]]
+                    sentences.append(left + link + right + 'という経験が書かれています。')
+                else:
+                    sentences.append(f"{left}の一方で{right}とあります。")
                 continue
             compact_contrast = (
                 typed_semantic_duties

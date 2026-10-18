@@ -37,6 +37,8 @@ def assert_repaired(saved, first):
     assert saved['issued_count'] == 1
     observation, reception_body = saved['current_observation']['text'].split('\n\nEmlisから：\n', 1)
     assert observation.startswith('見えたこと：\n')
+    assert '「褒められた」のに「嬉しくなかった」という経験が書かれています。' in observation
+    assert '同時に' not in observation
     assert reception_body == RECEPTION
     assert len([e for e in saved['timeline'] if e['kind'] == 'ANSWER']) == 1
 

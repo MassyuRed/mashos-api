@@ -1,3 +1,5 @@
+> 2026-10-19最新差分：u355。安堵・寂しさと併記された元の経験に未明示の「同時」を足す表現を、原文の接続詞を保つ既存経験文へ修復。意味・選択・Reception不変。対象技術検証321件、保存DTO18件再表示。PRODUCT_NOT_CLEAR／正式Product Read0/3は維持。詳細は[u355監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u355_MixedReceivedTimeNeutral_20261019.md)。
+
 > 2026-10-19最新差分：u354。本人の不明を「今は／現在は嬉しくない」へ訂正した後の本文停止を、既存意味・全plan・selectedを変えずに修復。対象技術検証188件・保存DTO16件再表示。PRODUCT_NOT_CLEAR／正式Product Read0/3は維持。詳細は[u354監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u354_NegativeRevisionSurface_20261019.md)。
 
 > 2026-10-19最新差分：u353（10/18明示承認）。初回の元経験・本人説明・独立不明を、実回答／訂正・撤回／旧再開／保存再表示と一体で修復。新private3型・logical90。限定単位の技術検証まで完了、PRODUCT_NOT_CLEAR・正式Product Read0/3・candidate_ready=false・automatic_progression=falseは維持。詳細は[u353実装監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u353_InitialPersonalMeaning_20261018.md)。
@@ -22961,3 +22963,12 @@ STRUCTURE_MAP_DELTA_PRESENT。既存production10owner内の変更、新private l
 最終対象188 passed（意味・本文・u350互換125、独立u352旧全比較50、実SQL12、現行owner identity1）、fail/skip0。未変更u353から採った28 recordは全意味identityが一致し、うち現在否定4 recordだけ本文を復旧、残り24は本文／停止も一致。Q3の2 recordはUNAVAILABLE時の代替END理由から通常ENDの`no_bound_personal_meaning_target`へ変わる。問いなし・自動進行なしは不変。旧u350全28 recordと旧u352全50 recordは本文／停止まで一致。旧保存完成DTO・確定旧停止DTOは非再生成、意味保存後の中断では保存済みMEANING_UPDATEを追加・置換せず、原文の再導出・checkpoint照合を経て現行本文へ再開する。意味保存前の中断では、保存済み回答から意味の作成を再開する。同一の16保存DTOを現行apiClient→API→hook→Modalで各2回close/reopen確認。HTTP/Auth/nativeはstub、本人実機・本番・全suiteの成功ではない。
 
 STRUCTURE_MAP_DELTA_NONE。既存production3owner内、公開API／DTO／DB／RN／Safety／依存／新private型・意味版は変更0、logical90を維持。全変更pathと未加工本文は[u354監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u354_NegativeRevisionSurface_20261019.md)。主担当が編集・実行・GitHub反映、補助担当はR9.7に従う読取レビューのみ。正式別model二重審査やProduct Readへ換算しない。限定TECHNICAL_CREDITであり、PRODUCT_NOT_CLEAR／正式Product Read0/3／candidate_ready=false／automatic_progression=falseを維持。本文の長い反復、元receivedを同時性として示す表現、深い理解・一般入力・任意多段・本人実機は残件。次はE05/E06/E08の実本文品質と方式判断へ戻る。Piece/Analysis主枠53.25％、10/20方式判断・10/31管理線・12/18目標は今回再評価しない。Draft PR3／PR30継続、merge／deployなし。
+
+
+## 2026-10-19 u355 — 混在入力のreceivedに同時性を補わない
+
+u354実本文の残件をLEVEL_2で修復。安堵・寂しさのpair＋received一組（任意の不明）の完全原sourceを既存ownerで証明し、原relation・両核が現行にも同一で残る場合だけ対象にする。初回と別対象への訂正後に、Rを「異なる向きのまま同時にあります」から、元の「のに／けど」等を保つ既存の経験文へ変更。独立readerは完全な主体・程度・肯否・時点・接続詞と一文の範囲を照合する。意味・checkpoint・全plan・selected・Reception・問い／ENDは変えず、撤回したRは復活させない。anti-template検査は維持。
+
+対象321件の最終結果passed、未解消fail／skip0。未変更u354の60recordで全意味・選択・Reception・本文のその他fieldが一致し、Observation一文と本文由来IDだけ24recordで変わる。残り36は本文／停止も同一。旧u350未完成checkpointは旧時点解釈を保持して現行表面へ進むため、この一文だけ変わり得る。完成済み旧DTO・確定旧失敗は非再生成。実SQL14件で初回・実pendingへのADD／現在否定REVISE・旧保存・意味前後中断再開を通し、同じ18DTOを現行apiClient→API→hook→Modalで各2回close/reopenした。HTTP/Auth/nativeはstub、実端末・本番・全suiteの成功ではない。
+
+STRUCTURE_MAP_DELTA_NONE。既存production3file内、新production／型／意味版／依存／API／DTO／DB／RN／Safety変更0、logical90を維持。正式別model評価ではなく主担当実行と補助読取レビュー。限定TECHNICAL_CREDIT。PRODUCT_NOT_CLEAR／正式0/3／candidate_ready=false／automatic_progression=false。長い原文反復、深い受容、一般入力、PARTIAL、説明Mを含む別sourceの更新、任意多段・本人実機は残る。範囲外の元reaction訂正では「その時は今は嬉しい」等の時点衝突が比較本文に残り、次の具体的な診断対象とする。次はE05/E06/E08の実本文品質と既存方式判断へ戻る。10/20方式判断・10/31管理線・12/18公開目標、Piece/Analysis主枠53.25％は再評価しない。Draft PR3／30、merge・deployなし。詳細・全変更file・本文は[u355監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u355_MixedReceivedTimeNeutral_20261019.md)。

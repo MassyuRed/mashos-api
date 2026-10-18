@@ -13,7 +13,7 @@ from cocolon_meaning_experience_engine.emlis_thread_projection import project_th
 from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
 import emlis_ai_grounded_observation_gate as gate
 import emlis_ai_grounded_human_reception as reception
-from test_cmee_emlis_unknown_revision_time import request, checkpoint, first
+from test_cmee_emlis_unknown_revision_time import request, checkpoint, first, before_mixed_received_surface
 from test_cmee_emlis_contrast_degree import encoded, digest
 from test_cmee_emlis_received_discourse import actual
 from test_cmee_emlis_detached_observation import read_body
@@ -32,7 +32,7 @@ def test_u353_whole_meaning_identity_and_bounded_surface_change(case, profile):
     row = ROWS[case, profile]
     assert BASELINE['source_commit'] == 'ace2b4aaed8224f364b4f89c2df44362a5713a37'
     req = request(case, profile)
-    assert encoded(first(case, profile)[1].artifact) == row['initial_artifact']
+    assert encoded(before_mixed_received_surface(first(case, profile)[1].artifact)) == row['initial_artifact']
     assert encoded(first(case, profile)[1].question) == row['initial_question']
     p = update.prepare_emlis_meaning(req)
     assert encoded(p.checkpoint) == row['checkpoint']
@@ -73,7 +73,7 @@ def test_u353_whole_meaning_identity_and_bounded_surface_change(case, profile):
             assert prop.appraisal_content.dimension == 'MATERIAL_WEIGHT'
             assert len(prop.response_object_refs) == 3
     else:
-        assert digest(out.artifact) == row['artifact_sha']
+        assert digest(before_mixed_received_surface(out.artifact)) == row['artifact_sha']
         assert out.status.value == row['status'] and out.body_state == row['body_state']
         assert list(out.reason_codes) == row['reasons']
 

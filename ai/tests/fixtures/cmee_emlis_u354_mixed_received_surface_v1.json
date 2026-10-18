@@ -1,0 +1,2569 @@
+{
+  "source_commit": "7f9209ef1e8c0dfb56ddc72499440ac8ccb6180e",
+  "cases": [
+    {
+      "kind": "initial",
+      "case": "base",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "c26420d26aaf15cdb8dee0fc0dec5610e3942b6892cea9feda1079c4b4888161",
+      "original_sha": "c078f355e16e01a7885677fd746d523d8c3d270771fca04461d39e97d6612b39",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "c078f355e16e01a7885677fd746d523d8c3d270771fca04461d39e97d6612b39",
+      "selected_sha": "6b8303bb2d04886f43c3eb5931066a1b627c090cff119f31faca782697580efb",
+      "status": "QUESTION_PENDING",
+      "body_state": "PRE_QUESTION",
+      "question": {
+        "question_id": "emlis-question-692315846ad5ecfddc325c266637cd9c3e80ae5c1a5642da12c9b131f621c170",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-4251cdcc31616385afe58b38",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-3112cf0caa9431e910adb4a3201339043882dedcde46672ac0ddbde2390ff0c4",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-d2890296fcac2c012dea6856"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "question_decision": {
+        "disposition": "ASK",
+        "target_ref": "emlis-target-3112cf0caa9431e910adb4a3201339043882dedcde46672ac0ddbde2390ff0c4",
+        "target_kind": "PERSONAL_RECEIVED_MEANING",
+        "supporting_evidence_refs": [
+          "ev-d2890296fcac2c012dea6856"
+        ],
+        "missing_dimension": "personal_received_meaning",
+        "affected_meaning_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "affected_reception_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "asked_target_refs": [],
+        "decision_reason": "source_bound_event_personal_meaning_missing"
+      },
+      "reasons": [
+        "emlis_question_candidate_ready"
+      ],
+      "artifact_sha": "9619660550b9d86cb5e5e01158a27e2e809eb55189c80d2449299299c4d99816",
+      "artifact_id": "emlis-artifact-e5f96cab2082cd06cd294fef226c3c6f25bae57632e0f26de7691c539bdd7235",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。",
+      "reception": "褒められたことは、あなたにとって嬉しさを伴わない経験だったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。",
+      "artifact_other_sha": "2d5a05566ceda81b2350bbaa2434a1fa415bc96f84bcc47d62df8e9cf2a682b8"
+    },
+    {
+      "kind": "initial",
+      "case": "base_unknown",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "f64cb373d55eb82b602149a71d886d481381cfaa67ffb87647b766d7dc2e576b",
+      "original_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "selected_sha": "30d9ddcdd32f663ef18c1e1c24da28b778e5ecbaa5b66b551b753e9cd0b94293",
+      "status": "QUESTION_PENDING",
+      "body_state": "PRE_QUESTION",
+      "question": {
+        "question_id": "emlis-question-70a3f0f79e01b8a8d369c080cfc010553b05392975299c60e5aca498338187d8",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-fa7c300501ea6af211327a82",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-0b6f2d0b53d02d057e72a0d4d5caee4f0a5c818270e8be5d1d841231a4123ddc",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-a6d2145bf1a99afb1c5fbcee"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "question_decision": {
+        "disposition": "ASK",
+        "target_ref": "emlis-target-0b6f2d0b53d02d057e72a0d4d5caee4f0a5c818270e8be5d1d841231a4123ddc",
+        "target_kind": "PERSONAL_RECEIVED_MEANING",
+        "supporting_evidence_refs": [
+          "ev-a6d2145bf1a99afb1c5fbcee"
+        ],
+        "missing_dimension": "personal_received_meaning",
+        "affected_meaning_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "affected_reception_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "asked_target_refs": [],
+        "decision_reason": "source_bound_event_personal_meaning_missing"
+      },
+      "reasons": [
+        "emlis_question_candidate_ready"
+      ],
+      "artifact_sha": "073f282094fbccd7425f3c97d91f8ef5f0d06f6f35dbc6bd62dcef884b2f3ece",
+      "artifact_id": "emlis-artifact-0616525f62570d8e61b4981734de1b43955d6f176fc02148eda1f684e2742626",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+      "reception": "褒められたことは、あなたにとって嬉しさを伴わない経験だったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+      "artifact_other_sha": "4ec2d66e2c7400d8eaf3c1ed34cccde7d3154159b0fff3ea42497ee7b19c432e"
+    },
+    {
+      "kind": "initial",
+      "case": "degree",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことに少しほっとした。でも、もう誘ってもらえなくなるかもしれないと思うととても寂しい。褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "1cb105f091fc02b015ab53ea94897532707e2aa00b3447a82965694ed62539e9",
+      "original_sha": "e92e95d096da6529fa3b2cfbb048c3794284c038862c1e26ab581f7d9a00ce59",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "e92e95d096da6529fa3b2cfbb048c3794284c038862c1e26ab581f7d9a00ce59",
+      "selected_sha": "5f75b959a1f66135f8fad396814ab66ad63ee763599a37bf890d656c7805fdd0",
+      "status": "QUESTION_PENDING",
+      "body_state": "PRE_QUESTION",
+      "question": {
+        "question_id": "emlis-question-32fd986e7faa7310ad5ca4c180c422580a5b7ee91c4592f1581b49672bd99a12",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-01c51db57c21f9cd39a4d1af",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-9e407838cdcdfaa6cbe63daab1e474f54e51a787850b3dc7738c779c2acdd4b7",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-15e1afdf1d90d75324bed6ec"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "question_decision": {
+        "disposition": "ASK",
+        "target_ref": "emlis-target-9e407838cdcdfaa6cbe63daab1e474f54e51a787850b3dc7738c779c2acdd4b7",
+        "target_kind": "PERSONAL_RECEIVED_MEANING",
+        "supporting_evidence_refs": [
+          "ev-15e1afdf1d90d75324bed6ec"
+        ],
+        "missing_dimension": "personal_received_meaning",
+        "affected_meaning_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "affected_reception_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "asked_target_refs": [],
+        "decision_reason": "source_bound_event_personal_meaning_missing"
+      },
+      "reasons": [
+        "emlis_question_candidate_ready"
+      ],
+      "artifact_sha": "4a311d7182be5c0a9355c1863bf6c4848e0e6c3dd57d298ba841627781762fbe",
+      "artifact_id": "emlis-artifact-df1e21a427445f1d83bbd3c9667e7ec283d4d7328b7432f0fa3e9aaa60058f45",
+      "observation": "「友達からの誘いを断って、一人で休めたことに少しほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うととても寂しい」とあります。\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。",
+      "reception": "褒められたことは、あなたにとって嬉しさを伴わない経験だったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。",
+      "artifact_other_sha": "04709d6bc73fd80dee75a9cb4e08e3a97bea459103a16d7ef4b6438fe87ce62f"
+    },
+    {
+      "kind": "initial",
+      "case": "degree_unknown",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことに少しほっとした。でも、もう誘ってもらえなくなるかもしれないと思うととても寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "d036c10155a589048e78ec3cf6077a9bdee760183241b49ff9dfa41e6b1ac1b9",
+      "original_sha": "ad4de646ed54238cf40bdcf780c24914a985066854eea6a02ccf8187c1e51b27",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "ad4de646ed54238cf40bdcf780c24914a985066854eea6a02ccf8187c1e51b27",
+      "selected_sha": "c36cb2f5179ccf6c577ba39d1ccb3a084fc4531cec21a98f0f26cc5dcf6d5122",
+      "status": "QUESTION_PENDING",
+      "body_state": "PRE_QUESTION",
+      "question": {
+        "question_id": "emlis-question-c4f6a4a6343b52e988ca91e9fbcdcdce7b1342c64c7dafa695655031f5095ac2",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-0dc36e4fcf8d69caf56ca88e",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-e261069c0a92fa6c08229853935d7c5b63d73162dbeb94fa0fd08accc9870457",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-e75bda0d397e2416abfc639e"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "question_decision": {
+        "disposition": "ASK",
+        "target_ref": "emlis-target-e261069c0a92fa6c08229853935d7c5b63d73162dbeb94fa0fd08accc9870457",
+        "target_kind": "PERSONAL_RECEIVED_MEANING",
+        "supporting_evidence_refs": [
+          "ev-e75bda0d397e2416abfc639e"
+        ],
+        "missing_dimension": "personal_received_meaning",
+        "affected_meaning_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "affected_reception_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "asked_target_refs": [],
+        "decision_reason": "source_bound_event_personal_meaning_missing"
+      },
+      "reasons": [
+        "emlis_question_candidate_ready"
+      ],
+      "artifact_sha": "884f815a93afc8391ddba4e3475a261c0c24418859019ff0ab6aa03fdaca9bf8",
+      "artifact_id": "emlis-artifact-da3b1876e3242e56cabbff2b630ab7f82fa8bc53856aefa9e73efafa2cb0f943",
+      "observation": "「友達からの誘いを断って、一人で休めたことに少しほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うととても寂しい」とあります。\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+      "reception": "褒められたことは、あなたにとって嬉しさを伴わない経験だったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+      "artifact_other_sha": "cf448379c662391199accaa7b03d84d65e1ce0c4dc96dc97d2e9e8170e937eff"
+    },
+    {
+      "kind": "initial",
+      "case": "kana",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うとさびしい。褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "1c9d9e61b96963c7945908b561182baa8ac0eb7290dbedf09d5f358d056554f5",
+      "original_sha": "03f94bda83efec9c2153b2e81e8a7be193e27a61af8024b6a4d67badb8ff9519",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "03f94bda83efec9c2153b2e81e8a7be193e27a61af8024b6a4d67badb8ff9519",
+      "selected_sha": "025e5128cac86b9135b3996ffa1f574832e0eba6893a9d07a6997f116dce1748",
+      "status": "QUESTION_PENDING",
+      "body_state": "PRE_QUESTION",
+      "question": {
+        "question_id": "emlis-question-649030c582108c7bd846e4b8e59aa8745ba6b640d11702a04b41fc71b76fbe52",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-b341cff1828a7e3a40f9b436",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-ab097d848f5f4ed16c95561cc1762c56f332c6ff34788e0f6b47f62e8559bb2b",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-f86c3e87826e74e176b424ba"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "question_decision": {
+        "disposition": "ASK",
+        "target_ref": "emlis-target-ab097d848f5f4ed16c95561cc1762c56f332c6ff34788e0f6b47f62e8559bb2b",
+        "target_kind": "PERSONAL_RECEIVED_MEANING",
+        "supporting_evidence_refs": [
+          "ev-f86c3e87826e74e176b424ba"
+        ],
+        "missing_dimension": "personal_received_meaning",
+        "affected_meaning_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "affected_reception_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "asked_target_refs": [],
+        "decision_reason": "source_bound_event_personal_meaning_missing"
+      },
+      "reasons": [
+        "emlis_question_candidate_ready"
+      ],
+      "artifact_sha": "98fc68b7f7e1faa580de195b673edd43328f8cec17a759c9a4ec3409ef9bb554",
+      "artifact_id": "emlis-artifact-95bc2e85f328b1b6f62f3b021d48ca8c113717be94fd45e8094fa97b79561c1a",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うとさびしい」とあります。\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。",
+      "reception": "褒められたことは、あなたにとって嬉しさを伴わない経験だったのですね。ほっとしたと聞いて、私も少し安心しましたが、そのさびしさにも、今、耳を傾けていたいです。",
+      "artifact_other_sha": "d8210f9d280163f1f578c8a60f5de02db257fdd41f319d09b9165aa2ede1ef10"
+    },
+    {
+      "kind": "initial",
+      "case": "kana_unknown",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うとさびしい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "48003e70707726482edb24a672d1fc04f9f1f75f2865ffea5f9240d28c00a55a",
+      "original_sha": "9b8990ff54a73bf9d98b997b8d40ba5f3ea85949c5efdf6b5a86f6db766bf798",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "9b8990ff54a73bf9d98b997b8d40ba5f3ea85949c5efdf6b5a86f6db766bf798",
+      "selected_sha": "0714b812295e672d14afa1336377867082b53d5d8481c69e9594cb65ef53f771",
+      "status": "QUESTION_PENDING",
+      "body_state": "PRE_QUESTION",
+      "question": {
+        "question_id": "emlis-question-657c9f301e464c9a5d9523abd7041be09b400f2c304d2ad269f12531cc0b87db",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-b9779f664b85d9b979e53fef",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-881d5b97c2f7863c2222af482507a4792dea5c3d1a10c4f3405e328c92e09ccd",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-3ae3bc44432ab3e6d6232d99"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "question_decision": {
+        "disposition": "ASK",
+        "target_ref": "emlis-target-881d5b97c2f7863c2222af482507a4792dea5c3d1a10c4f3405e328c92e09ccd",
+        "target_kind": "PERSONAL_RECEIVED_MEANING",
+        "supporting_evidence_refs": [
+          "ev-3ae3bc44432ab3e6d6232d99"
+        ],
+        "missing_dimension": "personal_received_meaning",
+        "affected_meaning_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "affected_reception_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "asked_target_refs": [],
+        "decision_reason": "source_bound_event_personal_meaning_missing"
+      },
+      "reasons": [
+        "emlis_question_candidate_ready"
+      ],
+      "artifact_sha": "54b16b0c57f1a3aa05a3915d08fbfce7dc6bdd394c1ec055ff5aad48862411be",
+      "artifact_id": "emlis-artifact-ec4c9cf455ff6a936dbed306db458d783da4ce3bcc2835328165706b149e78d5",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うとさびしい」とあります。\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+      "reception": "褒められたことは、あなたにとって嬉しさを伴わない経験だったのですね。ほっとしたと聞いて、私も少し安心しましたが、そのさびしさにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+      "artifact_other_sha": "121701bfd37fce7fba43e89b865f960c883572d470fd8f84e5cd04c2df29905b"
+    },
+    {
+      "kind": "initial",
+      "case": "object_unknown",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が嫌なのか、自分でもよくわからない。",
+      "checkpoint_sha": "4ba63435279393abd612054002928be03d8a57a87f50b5a7e3205c30f5b1205b",
+      "original_sha": "6bf1b4e1c8018920d3f2cf539cac23d7da680f8b588def49ccdc37016586b4eb",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "6bf1b4e1c8018920d3f2cf539cac23d7da680f8b588def49ccdc37016586b4eb",
+      "selected_sha": "d05aafbc6cad25b8e3104d909850641c88cc60bed323da3217aaa1320df1ba5f",
+      "status": "QUESTION_PENDING",
+      "body_state": "PRE_QUESTION",
+      "question": {
+        "question_id": "emlis-question-c2503c7d32baa7d10a1b3ad8357fc22d5372d564c34c1902d0b4bc54be4bb0fd",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-acf2b5aa390cad80feb3002d",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-be01ec972d1a6c14993886e21a7655a5027c21f5a4fe1d4c83654d3219bcba41",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-7b459249eed5eaf23b67d2b1"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "question_decision": {
+        "disposition": "ASK",
+        "target_ref": "emlis-target-be01ec972d1a6c14993886e21a7655a5027c21f5a4fe1d4c83654d3219bcba41",
+        "target_kind": "PERSONAL_RECEIVED_MEANING",
+        "supporting_evidence_refs": [
+          "ev-7b459249eed5eaf23b67d2b1"
+        ],
+        "missing_dimension": "personal_received_meaning",
+        "affected_meaning_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "affected_reception_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "asked_target_refs": [],
+        "decision_reason": "source_bound_event_personal_meaning_missing"
+      },
+      "reasons": [
+        "emlis_question_candidate_ready"
+      ],
+      "artifact_sha": "04981a67d91fa22d980ba996835de0336596b91df2322b1b3a5c4d9aa1ea83c0",
+      "artifact_id": "emlis-artifact-9f353f97d56211e8bc0413351c7ba9d75e0ec822fdb2fce3b4770d77149416d0",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n今回の中心には、「何が嫌なのか、自分でもよくわからない」があります。",
+      "reception": "褒められたことは、あなたにとって嬉しさを伴わない経験だったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。何が嫌なのか、ご自身でもよくわからないのですね。",
+      "artifact_other_sha": "991e661ad226df8be16581cd4cc1c4655937212e0d817e7ff312cef0544ade5d"
+    },
+    {
+      "kind": "initial",
+      "case": "received_connective",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたけれど、嬉しくなかった。",
+      "checkpoint_sha": "2102610c528c585999eeca9ae0fa0b0abc6a3fed4d3d641af5e8fe265852b447",
+      "original_sha": "09aff19063e24e4c97308f5539e9d8edddb2a50ebb32ffcad98d1110ff113772",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "09aff19063e24e4c97308f5539e9d8edddb2a50ebb32ffcad98d1110ff113772",
+      "selected_sha": "b2f861ac0af1e59513d9c6f976112963c33b9be935c905093927eafc9a71bf31",
+      "status": "QUESTION_PENDING",
+      "body_state": "PRE_QUESTION",
+      "question": {
+        "question_id": "emlis-question-40d2480f826fb38b677ee4465efe4b7a29381f7832726f9984637a75d270697d",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-9717e43fe6088bb85a60fb05",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-08f306a6b50d74048c3b599c4149e79c7e0f91f7a5c984c3a2e0c9cec844b03b",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-ec989275182a4a816957473a"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "question_decision": {
+        "disposition": "ASK",
+        "target_ref": "emlis-target-08f306a6b50d74048c3b599c4149e79c7e0f91f7a5c984c3a2e0c9cec844b03b",
+        "target_kind": "PERSONAL_RECEIVED_MEANING",
+        "supporting_evidence_refs": [
+          "ev-ec989275182a4a816957473a"
+        ],
+        "missing_dimension": "personal_received_meaning",
+        "affected_meaning_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "affected_reception_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "asked_target_refs": [],
+        "decision_reason": "source_bound_event_personal_meaning_missing"
+      },
+      "reasons": [
+        "emlis_question_candidate_ready"
+      ],
+      "artifact_sha": "4d5274a2ad5b2bab02a668c4b240ab83384e6b6162d4f335db402e05445c6c9a",
+      "artifact_id": "emlis-artifact-c98c67b401f10392a1557e981f8e4143344e1fe8395893d62b32266ca9eed1fb",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。",
+      "reception": "褒められたことは、あなたにとって嬉しさを伴わない経験だったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。",
+      "artifact_other_sha": "36119d00d856e32526a7d5453e47b45d3648141107916c191b52debdf3036d92"
+    },
+    {
+      "kind": "initial",
+      "case": "received_connective_unknown",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたけれど、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "ea6e97b1ccd6bd3cdc62706faa7de56dbb544b9bf754bb1a583be0943ed6599f",
+      "original_sha": "acd82e003cfd1eef55167bedb27c8f8931ed76225c8b374a56566c2795988248",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "acd82e003cfd1eef55167bedb27c8f8931ed76225c8b374a56566c2795988248",
+      "selected_sha": "c06001abc439cb0a5d20d60d5b843c5e922ed1ddf7e8e0b2f5e0556e40beae65",
+      "status": "QUESTION_PENDING",
+      "body_state": "PRE_QUESTION",
+      "question": {
+        "question_id": "emlis-question-8c0203ebfe65430b1468512d6ac897ab0bab6394e2ce47200bb4dab3903b8ea4",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-b24c13c9d362948c3e02e35e",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-98b1a396fa45f8bd778ed535e2a5adeedb7b094e432f52ddad9f835a7192fd05",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-29444c85773418a3dfbe026c"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "question_decision": {
+        "disposition": "ASK",
+        "target_ref": "emlis-target-98b1a396fa45f8bd778ed535e2a5adeedb7b094e432f52ddad9f835a7192fd05",
+        "target_kind": "PERSONAL_RECEIVED_MEANING",
+        "supporting_evidence_refs": [
+          "ev-29444c85773418a3dfbe026c"
+        ],
+        "missing_dimension": "personal_received_meaning",
+        "affected_meaning_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "affected_reception_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "asked_target_refs": [],
+        "decision_reason": "source_bound_event_personal_meaning_missing"
+      },
+      "reasons": [
+        "emlis_question_candidate_ready"
+      ],
+      "artifact_sha": "1bb560893ef1be0c72e65c3ead0ad689a49bec753dd79e2ff54ee93d5b8ef1a3",
+      "artifact_id": "emlis-artifact-2edd36e72f3b4c4ff0308841de48b341aea647fafb4820d26b7fd93a73a67182",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+      "reception": "褒められたことは、あなたにとって嬉しさを伴わない経験だったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+      "artifact_other_sha": "f3ec0f8bcecd886abfc8b861639f360e792387f95c0c7e59bfc58cf0ce2b15a0"
+    },
+    {
+      "kind": "initial",
+      "case": "received_kana",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。ほめられたのに、嬉しくなかった。",
+      "checkpoint_sha": "223c015a4dd917898920fce383acb6ef38f7ca04fdb71c3699e909feb08763a9",
+      "original_sha": "c078f355e16e01a7885677fd746d523d8c3d270771fca04461d39e97d6612b39",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "c078f355e16e01a7885677fd746d523d8c3d270771fca04461d39e97d6612b39",
+      "selected_sha": "7ed768428992dc00d016478c046d67c61efb98449227b5afb0ed8e8591d475b2",
+      "status": "QUESTION_PENDING",
+      "body_state": "PRE_QUESTION",
+      "question": {
+        "question_id": "emlis-question-03f6b44e530dc3ee20cec7614c6214564fa8b177f3bc1d262ff0c939a4107e8b",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-2c35b34c2fb2243ef012286f",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-fb819c6b27fbf7595781c27dde132bf8725723aaacfb6742e24a6b2805a379de",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-a64d6c13e2d22e078dfe83ea"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「ほめられた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "question_decision": {
+        "disposition": "ASK",
+        "target_ref": "emlis-target-fb819c6b27fbf7595781c27dde132bf8725723aaacfb6742e24a6b2805a379de",
+        "target_kind": "PERSONAL_RECEIVED_MEANING",
+        "supporting_evidence_refs": [
+          "ev-a64d6c13e2d22e078dfe83ea"
+        ],
+        "missing_dimension": "personal_received_meaning",
+        "affected_meaning_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "affected_reception_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "asked_target_refs": [],
+        "decision_reason": "source_bound_event_personal_meaning_missing"
+      },
+      "reasons": [
+        "emlis_question_candidate_ready"
+      ],
+      "artifact_sha": "00796fff3a566a3b7131268d2074582276aa96e3828a7ac0499a7b097ae38c6b",
+      "artifact_id": "emlis-artifact-3ac9f6eca66f2651e71818c893a8f5c7ec98f0d14f4a4c6310083e68c1b78440",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「ほめられた」と「嬉しくなかった」が、異なる向きのまま同時にあります。",
+      "reception": "ほめられたことは、あなたにとって嬉しさを伴わない経験だったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。",
+      "artifact_other_sha": "3ae68c5814f601d4eea67b0a288c20e341ac7d179cec7c51c405a8f5c52f9a59"
+    },
+    {
+      "kind": "initial",
+      "case": "received_kana_unknown",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。ほめられたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "719f5a55295202d647a7c6e5e53fe328e4dc80591f2252939e0e9aaa6c21b0ec",
+      "original_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "selected_sha": "c49466e184a24ff2e07504ceb40b88097e33dcb31a304c825f98a9b1f2e31145",
+      "status": "QUESTION_PENDING",
+      "body_state": "PRE_QUESTION",
+      "question": {
+        "question_id": "emlis-question-dac17620cf01acf1c26bfb6754496f7b28d1da2fa14184676e7256a3db9ffb6b",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-5e35671d03a5eb4a4e97a340",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-9e930d916041901bccef9ff7cef2e5b57b9c879d86f4326b4003d3c03f2ad48a",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-95bd26ad9a1511c131f52d53"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「ほめられた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "question_decision": {
+        "disposition": "ASK",
+        "target_ref": "emlis-target-9e930d916041901bccef9ff7cef2e5b57b9c879d86f4326b4003d3c03f2ad48a",
+        "target_kind": "PERSONAL_RECEIVED_MEANING",
+        "supporting_evidence_refs": [
+          "ev-95bd26ad9a1511c131f52d53"
+        ],
+        "missing_dimension": "personal_received_meaning",
+        "affected_meaning_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "affected_reception_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "asked_target_refs": [],
+        "decision_reason": "source_bound_event_personal_meaning_missing"
+      },
+      "reasons": [
+        "emlis_question_candidate_ready"
+      ],
+      "artifact_sha": "0db4d39a5b7b253333d2f2000aab48f0c023769ae893af460ec5dc8e58b8ed1e",
+      "artifact_id": "emlis-artifact-378273bd87cc5ecec21a22674307857d56ac7f83226df669f18f5ce6a6c76ba8",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「ほめられた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+      "reception": "ほめられたことは、あなたにとって嬉しさを伴わない経験だったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+      "artifact_other_sha": "17ae52d31ca2ed7dae0a2a7289d6be93e022a963b177b49338565664dda19a52"
+    },
+    {
+      "kind": "initial",
+      "case": "received_owned",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、私は少し嬉しくなかった。",
+      "checkpoint_sha": "d750393207f8b61507f75131beffbfa0a5d337b1eefd54e6ef06730b45f1d0de",
+      "original_sha": "def6d5320d99e297b5c509e3adc63319a6c9e52be404fdbfe4848c31ff39dee1",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "def6d5320d99e297b5c509e3adc63319a6c9e52be404fdbfe4848c31ff39dee1",
+      "selected_sha": "3ae49aa9fd08d5eca65aedf0acc93136b3206b03fb0e61e7f18382ba58e05260",
+      "status": "QUESTION_PENDING",
+      "body_state": "PRE_QUESTION",
+      "question": {
+        "question_id": "emlis-question-8dad73f958c222d4ae2e49eec4f0917b957e9568978432b12fa121b209ef44ec",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-36966e9edda79a2206355984",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-b89bdaf8acf8dc3c726382b5e08f89aea56bee30d400f65cb1bbcba1d8e40f8e",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-aec3af5f9007c38c01675066"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "question_decision": {
+        "disposition": "ASK",
+        "target_ref": "emlis-target-b89bdaf8acf8dc3c726382b5e08f89aea56bee30d400f65cb1bbcba1d8e40f8e",
+        "target_kind": "PERSONAL_RECEIVED_MEANING",
+        "supporting_evidence_refs": [
+          "ev-aec3af5f9007c38c01675066"
+        ],
+        "missing_dimension": "personal_received_meaning",
+        "affected_meaning_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "affected_reception_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "asked_target_refs": [],
+        "decision_reason": "source_bound_event_personal_meaning_missing"
+      },
+      "reasons": [
+        "emlis_question_candidate_ready"
+      ],
+      "artifact_sha": "09a4fcbe6cd82950756065ecb16bf15ae164499fbf9cd5fe2cf11f6a819545d1",
+      "artifact_id": "emlis-artifact-1898a1eb9c2aee20500c806318a06c9eb1aaa448287a7bc48f22ead51ac649bf",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」と「私は少し嬉しくなかった」が、異なる向きのまま同時にあります。",
+      "reception": "褒められたのに、あなたは少し嬉しくなかったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。",
+      "artifact_other_sha": "8559dcbef3da60626ba427bf0c20811af52669438e32b657a36d22527bc45617"
+    },
+    {
+      "kind": "initial",
+      "case": "received_owned_unknown",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、私は少し嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "161cf59193dbded1010e13188b1204a0894c203983bdfb9bd083c307e0247cce",
+      "original_sha": "fb5f6fed837a3535b8c3776042e6dc8dd6985b80fcaf1b8db59527b818f287d9",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "fb5f6fed837a3535b8c3776042e6dc8dd6985b80fcaf1b8db59527b818f287d9",
+      "selected_sha": "702bb8ba5c4ac49095b5485cf9c3f6f25b0e09303899463d3d34725a65482384",
+      "status": "QUESTION_PENDING",
+      "body_state": "PRE_QUESTION",
+      "question": {
+        "question_id": "emlis-question-ce39b6432da1dbd08324578b3e9c956a3edc212734b6343c2947331b1385b7f1",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-89125e5d82eb5739220f961a",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-ee42521e213cafdadad2d1691ae10d58842e213a3689d687b36c0bb6e137bf1a",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-fb2a2548a00242bab088f929"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "question_decision": {
+        "disposition": "ASK",
+        "target_ref": "emlis-target-ee42521e213cafdadad2d1691ae10d58842e213a3689d687b36c0bb6e137bf1a",
+        "target_kind": "PERSONAL_RECEIVED_MEANING",
+        "supporting_evidence_refs": [
+          "ev-fb2a2548a00242bab088f929"
+        ],
+        "missing_dimension": "personal_received_meaning",
+        "affected_meaning_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "affected_reception_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "asked_target_refs": [],
+        "decision_reason": "source_bound_event_personal_meaning_missing"
+      },
+      "reasons": [
+        "emlis_question_candidate_ready"
+      ],
+      "artifact_sha": "fb616f2cdf64e784a1b5cfe57fcc707d095e8c3620dcb200f9d5fc8359cf17ff",
+      "artifact_id": "emlis-artifact-8eb920143010cc6c039e15fcd6802e17037a7c8716995cced4c489d68f8c7668",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」と「私は少し嬉しくなかった」が、異なる向きのまま同時にあります。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+      "reception": "褒められたのに、あなたは少し嬉しくなかったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+      "artifact_other_sha": "88c718df6a8a07d7e63142dc209fd60aed7ad400a56220f964704b9c4689475b"
+    },
+    {
+      "kind": "initial",
+      "case": "reflexive_unknown",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、自分でもまだわからない。",
+      "checkpoint_sha": "956209b30ace17f009f9b490c580c53b7aa1a73143c816c023f33789a9a33395",
+      "original_sha": "f63341cd1c2ed6632423b22bd6e80c8cc7de33663dab73c806e525c2e9894e5d",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "f63341cd1c2ed6632423b22bd6e80c8cc7de33663dab73c806e525c2e9894e5d",
+      "selected_sha": "32194c48091cf7d547c1f6d59e8fa1ed1bd19e2913d142782e8d09b3c09a786a",
+      "status": "QUESTION_PENDING",
+      "body_state": "PRE_QUESTION",
+      "question": {
+        "question_id": "emlis-question-468aa4fdd57f61e988494aedb3de035d323e317fe2ad827ad96c9604e0642601",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-42825dfddf8ea376cf5e1c04",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-a26643ced09e2cac39fdbbcf67625c3dfe12e7ff1f6b443770ee0e2d1c4c4a9d",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-6e1b4b4e85790787fc290105"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "question_decision": {
+        "disposition": "ASK",
+        "target_ref": "emlis-target-a26643ced09e2cac39fdbbcf67625c3dfe12e7ff1f6b443770ee0e2d1c4c4a9d",
+        "target_kind": "PERSONAL_RECEIVED_MEANING",
+        "supporting_evidence_refs": [
+          "ev-6e1b4b4e85790787fc290105"
+        ],
+        "missing_dimension": "personal_received_meaning",
+        "affected_meaning_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "affected_reception_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "asked_target_refs": [],
+        "decision_reason": "source_bound_event_personal_meaning_missing"
+      },
+      "reasons": [
+        "emlis_question_candidate_ready"
+      ],
+      "artifact_sha": "f110816f23f63d2480ffc0d0f0f9134d00cdba17933765b01250ea9cbe7b12f8",
+      "artifact_id": "emlis-artifact-88a0e9c6ceb10e4dcc7df4998a8132795339be8c9a30185377f6fe4089524bcc",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n今回の中心には、「何が不安なのか、自分でもまだわからない」があります。",
+      "reception": "褒められたことは、あなたにとって嬉しさを伴わない経験だったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。何が不安なのか、ご自身でもまだわからないのですね。",
+      "artifact_other_sha": "32726b8d410aed78ae1341bac5a4e2b14569d780f99adaf461821bd9a6268bb7"
+    },
+    {
+      "kind": "initial",
+      "case": "self",
+      "profile": "q3",
+      "memo": "私は友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "4b4d266b6d07ac3df42c58f319bba512026b7bab7408ad23123feaaa32b12d3d",
+      "original_sha": "c069ff6e39f73d759013bb91a9f2f583a0af6ee8cf9353eb974b99bc6ed33a26",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "c069ff6e39f73d759013bb91a9f2f583a0af6ee8cf9353eb974b99bc6ed33a26",
+      "selected_sha": "5b83205c3627c76211ce8ced1b2d11a583c0d41f561aea22eb247153b2a943f2",
+      "status": "QUESTION_PENDING",
+      "body_state": "PRE_QUESTION",
+      "question": {
+        "question_id": "emlis-question-fb1a4b8117a804a08888f75897170cafb873a50579968f5ca4780a7e5ef9e5ff",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-d603537477be043fa8c5d765",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-d3b23cbca5228228e9a2fc38ddd65af79790fe25909d250ea86cb7d40ec036cb",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-7d690563adaa673b22aef48a"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "question_decision": {
+        "disposition": "ASK",
+        "target_ref": "emlis-target-d3b23cbca5228228e9a2fc38ddd65af79790fe25909d250ea86cb7d40ec036cb",
+        "target_kind": "PERSONAL_RECEIVED_MEANING",
+        "supporting_evidence_refs": [
+          "ev-7d690563adaa673b22aef48a"
+        ],
+        "missing_dimension": "personal_received_meaning",
+        "affected_meaning_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "affected_reception_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "asked_target_refs": [],
+        "decision_reason": "source_bound_event_personal_meaning_missing"
+      },
+      "reasons": [
+        "emlis_question_candidate_ready"
+      ],
+      "artifact_sha": "83c0fddf2ec860d1f3172b1dddabad95cd4555d38c3dbfdae5eee47097323554",
+      "artifact_id": "emlis-artifact-5f7c49db3ddaf474588bc44a950b80fb3679ef50e80166399105e0ea9b53c694",
+      "observation": "「私は友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。",
+      "reception": "褒められたことは、あなたにとって嬉しさを伴わない経験だったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。",
+      "artifact_other_sha": "a23878d97fa0a2e7e9905cf4239d1a5cf59db07eddb7d1c26453f3b6fbf4fa5b"
+    },
+    {
+      "kind": "initial",
+      "case": "self_unknown",
+      "profile": "q3",
+      "memo": "私は友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "a899efdaee36b6e6f42be36971097db4afc14238c511f567f444b4bae772517e",
+      "original_sha": "f773a6786793fe8ee2e5846485f7b3aff5b6b477fa111ed883dc29542413d8f0",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "f773a6786793fe8ee2e5846485f7b3aff5b6b477fa111ed883dc29542413d8f0",
+      "selected_sha": "abb07c9ca759f3f179a2948f7c35cb0c5a37530c1237567bcba5ce4547fc56a4",
+      "status": "QUESTION_PENDING",
+      "body_state": "PRE_QUESTION",
+      "question": {
+        "question_id": "emlis-question-3bb6b423e3eac14f62e72792f71d042713c66aa41d65307a127bbaf9621a1fa8",
+        "parent_request_id": "q1-synthetic",
+        "thread_id": "q1-thread",
+        "original_source_ref": "src-30ca057d7cd88d80a1a3b589",
+        "decision": {
+          "disposition": "ASK",
+          "target_ref": "emlis-target-e68190357effe8cc63517f98756eda5438dfd90e2f67c9fe224a76a42a7da88f",
+          "target_kind": "PERSONAL_RECEIVED_MEANING",
+          "supporting_evidence_refs": [
+            "ev-99830f56655058474a4369e2"
+          ],
+          "missing_dimension": "personal_received_meaning",
+          "affected_meaning_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "affected_reception_refs": [
+            "nucleus:s4:event",
+            "nucleus:s4:reaction"
+          ],
+          "asked_target_refs": [],
+          "decision_reason": "source_bound_event_personal_meaning_missing"
+        },
+        "prompt_private": "「褒められた」は、あなたにはどんな意味として届きましたか。",
+        "skip_allowed": true,
+        "answer_limit": 1,
+        "answer_source_role": "SUPPLEMENTAL_ANSWER",
+        "schema_version": "cocolon.cmee.emlis_clarification.v1"
+      },
+      "question_decision": {
+        "disposition": "ASK",
+        "target_ref": "emlis-target-e68190357effe8cc63517f98756eda5438dfd90e2f67c9fe224a76a42a7da88f",
+        "target_kind": "PERSONAL_RECEIVED_MEANING",
+        "supporting_evidence_refs": [
+          "ev-99830f56655058474a4369e2"
+        ],
+        "missing_dimension": "personal_received_meaning",
+        "affected_meaning_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "affected_reception_refs": [
+          "nucleus:s4:event",
+          "nucleus:s4:reaction"
+        ],
+        "asked_target_refs": [],
+        "decision_reason": "source_bound_event_personal_meaning_missing"
+      },
+      "reasons": [
+        "emlis_question_candidate_ready"
+      ],
+      "artifact_sha": "b748769d825d4394402caadee5426710fc6abc2295465e0a08fed13736fca4a6",
+      "artifact_id": "emlis-artifact-12df21879c264e26ec1fa3ad05c84c17f48d43431571b8e6d291b686b732cc0a",
+      "observation": "「私は友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+      "reception": "褒められたことは、あなたにとって嬉しさを伴わない経験だったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+      "artifact_other_sha": "138dfc21c684b846ca79590aab6d631c569eee29e54759ac5a4fb00cc507e0f2"
+    },
+    {
+      "kind": "received_answer",
+      "case": "add",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "336cf724b7af1cc17edd61eb468387999878171fb80ceff59cd04e8698fa1007",
+      "original_sha": "c078f355e16e01a7885677fd746d523d8c3d270771fca04461d39e97d6612b39",
+      "accepted_sha": "8f6a3dfe07cd59662c3325bf6aa7a9b0b4b53bea66c111c656e6e5726d865c31",
+      "plan_sha": "dc5a55989c47ab71b67806348dfb25440454b179441c148b5fdb66752cbd3e3a",
+      "selected_sha": "20ba1a4547a63be21f8447f58b67bd2f8bcd4cb65b308f0f9c7d53db766cea2b",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "94566397a43b4c1ccd1b441c82e31ecc472651012b4874e2155e99331a061b92",
+      "artifact_id": "emlis-artifact-3a1e9d12380d9db822db41b6a1d47707da60b123034d9f8aabd6c92d2c333456",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」のに「嬉しくなかった」、回答した時点では「嬉しい」とあります。",
+      "reception": "褒められたのに、嬉しくなかったし、回答した時点では嬉しいのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。",
+      "artifact_other_sha": "000053a60c7be03c211a3526db12d2d757c757e7219cb08841f4ca747206344c"
+    },
+    {
+      "kind": "received_answer",
+      "case": "add_negative",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "a39e49597c87e2cd30914d59fa7d493f78fa0790105a85fe9307af6eab291fcb",
+      "original_sha": "c078f355e16e01a7885677fd746d523d8c3d270771fca04461d39e97d6612b39",
+      "accepted_sha": "89c868200eafd9bcc61eb19eef0181e75f144abe3f66550161e126d70e9919a7",
+      "plan_sha": "5af42318d32bc3e277f74f35ebedc3f83d9fa5008e0886df9161a86432e83853",
+      "selected_sha": "a946f8ed56d5945a12ec4d1645f8ed5b9a248ad237088dc8f369b4f159b04ac1",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "38e5bde9a59c79866b185579253cc7cb0c1396dafc563ec954bd203129dc1207",
+      "artifact_id": "emlis-artifact-2e407702cf2b81ca86631d037a584f3812202f09e0fa224e697b49af8d352542",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」のに「嬉しくなかった」、回答した時点では「嬉しくない」とあります。",
+      "reception": "褒められたのに、嬉しくなかったし、回答した時点では嬉しくないのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。",
+      "artifact_other_sha": "e7417b13915eba6f2f78ab841f450e9279a89410f8fe5dc792612d3511eeee19"
+    },
+    {
+      "kind": "received_answer",
+      "case": "add_negative_unknown",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "40ac6e4997dd7e18ff3bf5c9aed4dd5da4f8d4826a3d87963a2142a7a619dca6",
+      "original_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "accepted_sha": "01e29147e242c3e07c3da9ae7a6614d587ac02c39bbc5774cd24327afad345a2",
+      "plan_sha": "572617a2a2265fbb7f01678c5ff799d8c3c23bf39089b270205dfdaf31d1c0e9",
+      "selected_sha": "2e6f3874fee67e7817fef99448d8e62a2695f667b24b02d27b6b9b2d4f8499b8",
+      "status": "LIMITED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "d35771e51b5fcea658e1c7365cb0bd75174ee894df5873d216a1758781f10bb9",
+      "artifact_id": "emlis-artifact-23ac1747451cc62a717e0906459ee8c1a0054462b202276a904c9dafa871c6d6",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」のに「嬉しくなかった」、回答した時点では「嬉しくない」とあります。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+      "reception": "褒められたのに、嬉しくなかったし、回答した時点では嬉しくないのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+      "artifact_other_sha": "ccc071c5a433b3364666b9c1fec7901029b817bf803cd8b15f54428e7994be71"
+    },
+    {
+      "kind": "received_answer",
+      "case": "add_past",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "2c443aca2ed399e14b52652e98b762df33c2876e288955f1753a8c433aaccb15",
+      "original_sha": "c078f355e16e01a7885677fd746d523d8c3d270771fca04461d39e97d6612b39",
+      "accepted_sha": "20450efd20d266c3df3464db13da881d29abfccedfed580a7bd4e2383de0cc80",
+      "plan_sha": "ae90498a5277aa091f743fc4215999f2775a8a6057cfbbb7c617ec03272913b2",
+      "selected_sha": "005d9e1d0d6e37ffe8e823757eac47e2256caa357a686f45b16e79f363e5512a",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "b9a461c46206fcd801fc34c5c1f26cb4a0620b0bd9560e88984c4f07259a6dd5",
+      "artifact_id": "emlis-artifact-7cedbffc9c9537a455eaf9d052bf16893377934ca2401f21a65963087c8b50d1",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」のに「嬉しくなかった」、その時は「嬉しかった」とあります。",
+      "reception": "褒められたのに、嬉しくなかったし、その時は嬉しかったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。",
+      "artifact_other_sha": "4f64301d05f76b13f59b50caf5358ab8e31c08d37a17adf319ecc3649e3974c0"
+    },
+    {
+      "kind": "received_answer",
+      "case": "add_past_negative",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "651cd5bcbc7f344235c1a15e24b10f230fc83a0cb7a2651c0f7a5439c10f65cf",
+      "original_sha": "c078f355e16e01a7885677fd746d523d8c3d270771fca04461d39e97d6612b39",
+      "accepted_sha": "ec0f55d5441c2b9b7e38b53c16bec5bcdc2f088b94ce5f3ae2cc47b412b66dc6",
+      "plan_sha": "9a8049eb09cdf42c45b45792e62e3fe1edd2fe0fdc9b99504076ec926e85aa74",
+      "selected_sha": "02a2b08f1609597f473c2960486ea4174daf0e53171aed21a16b93c7853a7dd9",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "911b446d95d2fd3f27e94fb153186edb4c68202280d2bf085e0a82a693204c77",
+      "artifact_id": "emlis-artifact-7d99a91a5ec62632d8705579883cafe02b22ee3271fb473bb34ead0bf63e7820",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」のに「嬉しくなかった」、その時は「悲しくなかった」とあります。",
+      "reception": "褒められたのに、嬉しくなかったし、その時は悲しくなかったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。",
+      "artifact_other_sha": "3ca4c39e29ed2b45a03cb382f59270719b02bd09564875460a40f16f40b55fae"
+    },
+    {
+      "kind": "received_answer",
+      "case": "add_past_negative_unknown",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "e472ee2b8f0434ec18c784ff3f5e98167ea1cff1f05263e730a48ff4d90a1bf1",
+      "original_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "accepted_sha": "6669acf29eb9357f63214892b47b602aa6b2a7b6d8e85f3326470af1215c2179",
+      "plan_sha": "30140c949f9306d0ec33b56771d25e6c8e727bfe7761d2d03e03d213ffee2fee",
+      "selected_sha": "f3036ea4639013590c8918f5fdb66191adea78ecb23442f31c11c46613af4ad4",
+      "status": "LIMITED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "a4900e6a921d08a3aefad428a0d5810075290baad6c3179e5915110d5be53648",
+      "artifact_id": "emlis-artifact-05a03963437dd1d9f7e1148c82498945fb2f2f2c12ea85e0f740916325799822",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」のに「嬉しくなかった」、その時は「悲しくなかった」とあります。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+      "reception": "褒められたのに、嬉しくなかったし、その時は悲しくなかったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+      "artifact_other_sha": "2203468bae90cdb1e86634a09f8df709a49fb32a9960a92948dc8a3b4da20887"
+    },
+    {
+      "kind": "received_answer",
+      "case": "add_past_unknown",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "3dd8624dfa76f971ccf608980c022ad7cc48d69a1ccaf8a028d08a9377f45bb9",
+      "original_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "accepted_sha": "9db137080bc28b6defb177cc1e064de135c4e951436a18bf1333da7f7c51bc58",
+      "plan_sha": "088eaf2dcee5a9beff8024a421ca904b9ea6d2f8c5493c5bf12eaa1469f2d983",
+      "selected_sha": "7aaafa7f375da774705ba37735a14b09e98927ce1a38026481946d131b9629c5",
+      "status": "LIMITED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "c3ad4dbc4d9260c9e1676295f5128c63224509d2c81a37115512a0c101364f8b",
+      "artifact_id": "emlis-artifact-81363dda210aa5c184c1839e66120164caec54406d684e0413e911acd14359dd",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」のに「嬉しくなかった」、その時は「嬉しかった」とあります。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+      "reception": "褒められたのに、嬉しくなかったし、その時は嬉しかったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+      "artifact_other_sha": "3d510738f1b42f8ce950ec349c953cb616993bdf42569eae5aa0484df3607956"
+    },
+    {
+      "kind": "received_answer",
+      "case": "add_unknown",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "69ada699b2737f4e91c13a01a981ba8a13b15ad9e06382eee4b491575714f143",
+      "original_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "accepted_sha": "4064467a96f2ade090ae7c9ae0fb4c4fdc8be18eae2929cc6a75239ae7d2fc19",
+      "plan_sha": "f312cd0011165548db670a361ca8ab4f37cf3c774c5f5cb767f72f1e2076245a",
+      "selected_sha": "7634e30936d1808fcb03441c16d00ea1798174550a03d7ced15db256eee353e3",
+      "status": "LIMITED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "b516e868c1ff31b45290f6471c51f4f5a4ea2c77928ce5b75bcd48d67dfd174d",
+      "artifact_id": "emlis-artifact-77140c8f6ef572beaad577930b3f2136b4dbe00b77893636ade3cd26114c6f51",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」のに「嬉しくなかった」、回答した時点では「嬉しい」とあります。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+      "reception": "褒められたのに、嬉しくなかったし、回答した時点では嬉しいのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+      "artifact_other_sha": "f1c85b7fef1ad2253bbd45411937bbf6af4d7a57c8ec3b75487b7301dbd7d4a7"
+    },
+    {
+      "kind": "received_answer",
+      "case": "degree_add",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことに少しほっとした。でも、もう誘ってもらえなくなるかもしれないと思うととても寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "742f81de49233de83eb3c0d8d88154794c6895c1b5806b1cc6d7e4094afb1589",
+      "original_sha": "ad4de646ed54238cf40bdcf780c24914a985066854eea6a02ccf8187c1e51b27",
+      "accepted_sha": "4064467a96f2ade090ae7c9ae0fb4c4fdc8be18eae2929cc6a75239ae7d2fc19",
+      "plan_sha": "402d32167a85db410790ca6dcbbc3909aad8caf9f11e2208ba95f580c104d9fb",
+      "selected_sha": "cd48969ab3b0d6c17d1dc7c51590c418c9ffd2857b6980f4de3c4163d6853eaf",
+      "status": "LIMITED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "c7dae00b1200f4d681c86935c0a2ba0fab832a922f5a28bd223c2fafe84a3b3d",
+      "artifact_id": "emlis-artifact-dbc639ead245fdf21da45ee16ec7461d182bd84adfc4bce6640611dfcd29a74b",
+      "observation": "「友達からの誘いを断って、一人で休めたことに少しほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うととても寂しい」とあります。\n「褒められた」のに「嬉しくなかった」、回答した時点では「嬉しい」とあります。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+      "reception": "褒められたのに、嬉しくなかったし、回答した時点では嬉しいのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+      "artifact_other_sha": "562a7a2ba9e93e9f8565d64a8bc3512e22da1a11c45e7bdebdd2ed8b046a6789"
+    },
+    {
+      "kind": "received_answer",
+      "case": "reflexive_add",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、自分でもまだわからない。",
+      "checkpoint_sha": "8203ca446dc1660d2f3103406d91188f772c77ec50778757f94e44bd209629df",
+      "original_sha": "f63341cd1c2ed6632423b22bd6e80c8cc7de33663dab73c806e525c2e9894e5d",
+      "accepted_sha": "4064467a96f2ade090ae7c9ae0fb4c4fdc8be18eae2929cc6a75239ae7d2fc19",
+      "plan_sha": "08b19bb4a5b32d0034482c305c19632360f2548b0865e23ae3ab2e032d99de58",
+      "selected_sha": "18e2d207c6aa1f4d3ffe5c3ac37b0e50b721332df09f907e4cb6f5adbd3c2666",
+      "status": "LIMITED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "e024c4d93ddbbed2d3ca3f14cc294c96ff037fc90e750beed0602dc8884836be",
+      "artifact_id": "emlis-artifact-9541f23264a273476771171fcd50d17f9d378b8eb3d8723aa80023083f4bfcb1",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」のに「嬉しくなかった」、回答した時点では「嬉しい」とあります。\n今回の中心には、「何が不安なのか、自分でもまだわからない」があります。",
+      "reception": "褒められたのに、嬉しくなかったし、回答した時点では嬉しいのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。何が不安なのか、ご自身でもまだわからないのですね。",
+      "artifact_other_sha": "241c84b7037abc9d2bd7929fe81450848ab8e1fc87a2ba92bfb81fa598259b99"
+    },
+    {
+      "kind": "received_answer",
+      "case": "revise",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "ea23ebaae2df14faccdc313e9e88dceeef9534b1c495daad5ad6677673cba2f5",
+      "original_sha": "c078f355e16e01a7885677fd746d523d8c3d270771fca04461d39e97d6612b39",
+      "accepted_sha": "c7dc604d97b8e5da711d55a44973c8de58864c854d7d06017e8b344898a66c3a",
+      "plan_sha": "7e560e28b2e1cb76a4353c146d946d048e880caf79980069ece92d615188f7c8",
+      "selected_sha": "6dde23aeaaeb3ce353c193ea36d7ce3da6cb1dd45656821821a8315cd5be5fb1",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "c652e9cba800507c249339ca13d2b8d185c734738a3dc5681c26fa09b9abbead",
+      "artifact_id": "emlis-artifact-6a77215044410ea56c77a2e3cb9b7f6d8341055a8ee8d3d5ed02ea7b90feed12",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」ことについて、その時の受け止めは「悲しかった」と書かれています。",
+      "reception": "褒められた時は、悲しかったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。",
+      "artifact_other_sha": "148c03c6343ff9b95d64ff3317bd77530e5f08effefb5fd37e187b6be8792d20"
+    },
+    {
+      "kind": "received_answer",
+      "case": "revise_unknown",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "7220a50582c2c348a17d60bb10717cc4a86cbc92e7ee5dc934a06089ee8b9e18",
+      "original_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "accepted_sha": "9ea3e3f554bc95ccc85cb1d3dc2a9cab6907dd3b6ae6047443003ae59d380197",
+      "plan_sha": "1322f3a03cf6360d69f5baad3a1abf2e2f7074f1580458dfc76ae7033cd9a90c",
+      "selected_sha": "0a491244b729cf8841fa6cdf06a43ecceb3b81a93090c171982451832962a150",
+      "status": "LIMITED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "95a46093922dd10253fa3bdbe99a04fd4001ff3ded4b5cdacd52f20b5d6ea729",
+      "artifact_id": "emlis-artifact-a6286c47629dd5eb504f971dbca611ff8f589fa743361c4dc6120545c05bfbd8",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」ことについて、その時の受け止めは「悲しかった」と書かれています。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+      "reception": "褒められた時は、悲しかったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+      "artifact_other_sha": "639794c1b50ae0085bf1b9e19011d47ac9d2fece397d9f77d6960ac25d847896"
+    },
+    {
+      "kind": "received_answer",
+      "case": "withdraw_event",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "623499f95a4f2d59b9ad1b914e27b090690bad23b8799a7931d57531bd1888f5",
+      "original_sha": "c078f355e16e01a7885677fd746d523d8c3d270771fca04461d39e97d6612b39",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "2be090fd4f80079874ab63ade2da31c9612dba8aa0bbe535657589b8c152a0d6",
+      "selected_sha": "45e75e00c528ceae67f261861fa6d785db34e0aaf1c18981184e34d3353d6e5c",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "5a9f3bde512fb1be6f129e94068514bd0094ca286127a881ca899ff514f24e6e",
+      "artifact_id": "emlis-artifact-e0e988733cd6d58921acb5c8268d01e8480df486baa3b017e42d4cd90e661850",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n最初の記録からは、当時の「嬉しくなかった」という気持ちが読み取れます。",
+      "reception": "その時は嬉しくなかったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。",
+      "artifact_other_sha": "f01c7d13c220aaf8f6310ce5ea1bc8e28fb5085188fc6c745150da423e5e9a9c"
+    },
+    {
+      "kind": "received_answer",
+      "case": "withdraw_event_unknown",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "9023bdbc1d40a4bc06990cdbb696956f7baa63f819eb8734d000bfa99595c8dc",
+      "original_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "e0da8faa830c93e21448a01b228024f43bb8412427012fc254428050f24c8f8a",
+      "selected_sha": "46b95015bf9e8f8acebab6a43d7bcdd3badd2a79852bd4786510ee1fe930a73f",
+      "status": "LIMITED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "ceee24e117a5cde17e99c8cd291d8309361c504cf16258043f722374cdb797dd",
+      "artifact_id": "emlis-artifact-8d03cdcd9fe7c9cafe674b5dddb71be2f2cd989842e6f7b4b3dc9aa9fe0cae6c",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n最初の記録からは、当時の「嬉しくなかった」という気持ちが読み取れます。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+      "reception": "その時は嬉しくなかったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+      "artifact_other_sha": "0bd61e4ecded8d8feab345fd7061ed7d655ca12d8c27d62c160c0c65af89405a"
+    },
+    {
+      "kind": "received_answer",
+      "case": "withdraw_reaction",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "7200a560b6027cbc72beb57125f9374bb4d729db5055581a1ba7af18ba90870a",
+      "original_sha": "c078f355e16e01a7885677fd746d523d8c3d270771fca04461d39e97d6612b39",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "a528fcd2e1fed013c66993d3f16fdb7f19450797bebeb6ce3d68252170ca7f1a",
+      "selected_sha": "c7f0bd45878a4f581223a885d87ff7ba488fa178fe95bbedcadf593d9916e32b",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "998320e7eddf8391e5179d5a8b6c4fa2b53926166b64f50b5cb6d0cb451acb17",
+      "artifact_id": "emlis-artifact-0bb562ce3712463f18f7289232e112780adbe49c92f337e8b9de3b06d483cc26",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」という出来事がありました。",
+      "reception": "褒められたことはあったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。",
+      "artifact_other_sha": "8d96926a399cf7e892d69bc7d2149e4bd20dc62e4bff1ff1f5a9c86affd8ec9b"
+    },
+    {
+      "kind": "received_answer",
+      "case": "withdraw_reaction_unknown",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "8e1e89388771ef150a7abe333dceee09de896e29b39bdf70f201e74629017bc9",
+      "original_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "1355b9ff15d8fdb7821472b2ad18ea5703cc6be1782c333185c4e812b43e361f",
+      "selected_sha": "f63faec783fa21810f41dd4801d92d7bcb75ad0394775c468112dc2fad319b1c",
+      "status": "LIMITED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "7dbb3488b1f86927895aac766718c3304be0867f7f3b93eaef1dc01e40f2e344",
+      "artifact_id": "emlis-artifact-02a07c52b55048121156bc05391920b8dda46fd7b7a2cb67f5f8a382a5ccb647",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」という出来事がありました。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+      "reception": "褒められたことはあったのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+      "artifact_other_sha": "6a03097a35c49725079848010bc45c792de7e3c98e1d5305cea2ba2e82724f6d"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "mixed_unknown_now",
+      "profile": "q1",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "f0df849819dd605b829c6bd579eab300a7fcfcf7ea709b91e1cf18f0c7ffab7a",
+      "original_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "accepted_sha": "019f64dd270f06a06161ae7389a23f5ffa718b382a604fef7b20f357b19d5afb",
+      "plan_sha": "23862e7bd979543c58c2e1c14fc1af67ee89ce1ffd2bd75e2cb464bec08bb27e",
+      "selected_sha": "b9fc29445404bb911488d73826169992add98e5937f61a84194997416625ba27",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "free_round_complete"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "b3743e6f88d810f6f45ffb8a805ab39546aa9fe033ad8aaf9cad8dce4857daae",
+      "artifact_id": "emlis-artifact-a578b2b6da1da69b69476d3a4370e220ff7a7eb8d025b7d5690a281cbc6f798b",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。 「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n回答した時点の気持ちとして、「嬉しい」が見えます。",
+      "reception": "回答した時点で嬉しいという気持ちを受け止めています。",
+      "artifact_other_sha": "639fd540b1816a13ce2c65f0846bf2e1d14a8a0957fd4a66c70d851640f62708"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "mixed_unknown_now",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "1ee43eb758337f0ce67f82e57df60df65edc1d494a93420ca0fbace8ad67c701",
+      "original_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "accepted_sha": "019f64dd270f06a06161ae7389a23f5ffa718b382a604fef7b20f357b19d5afb",
+      "plan_sha": "23862e7bd979543c58c2e1c14fc1af67ee89ce1ffd2bd75e2cb464bec08bb27e",
+      "selected_sha": "fb8e7a7bf0a11d10fe584a6ef54285db8b0d56eac55724c938a0e3ddc04952aa",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "3dbc2dd18a473720ca5a183fc4c17ea0eb8e3cc9cabb694f0cc6715323972243",
+      "artifact_id": "emlis-artifact-3d565a039f27b24be9fcc5a191b04325f4f9530874a2bb67688f54e192a5c59a",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。 「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n回答した時点の気持ちとして、「嬉しい」が見えます。",
+      "reception": "回答した時点で嬉しいという気持ちを受け止めています。",
+      "artifact_other_sha": "2d2a8294e4fabfa2a2bc1abf64acc2cd03c894c08406bcf83465f9018a6f3369"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "mixed_unknown_current_negative",
+      "profile": "q1",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "6c12f0e27ba46abb07522e13435710077cf271ab38d455e1e11b3475ef468ee8",
+      "original_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "accepted_sha": "9558d6a7caa5637ae0df878bcc534decaacc585324103204c85ef512283ae40b",
+      "plan_sha": "4fda62c23b0c9d9524b73fe28c7176ebc40d80d785911ca7e6ead83cfaf52d35",
+      "selected_sha": "0c229ab3e71432bf87e1d355de37272f390db7ece1bb151a50b5914518795467",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "free_round_complete"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "9d8ab621cfaeb11ce3ef0453a1c349c959846a68c2e7f873c9b6daba6c27e80a",
+      "artifact_id": "emlis-artifact-b8f9b0762ab292a7de564816a52c3d47eaaf7448e8de69be55cc1a547dbb7492",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n回答した時点の気持ちとして、「嬉しくない」が見えます。",
+      "reception": "回答した時点で嬉しくないことを小さくせずに受け止めています。友達からの誘いを断って、一人で休めたことにほっとしたという気持ちともう誘ってもらえなくなるかもしれないと思うと寂しいこととの違いを受け止めています。",
+      "artifact_other_sha": "4cebeea60ddcbd57117b7ac0b9c9359125d931cda418e8d846a024a643aabda0"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "mixed_unknown_current_negative",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "ab7b66f6ad88edb1f5fe9d78fb56da5f2042a17b01736d1ef50d7fbb56b39b6a",
+      "original_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "accepted_sha": "9558d6a7caa5637ae0df878bcc534decaacc585324103204c85ef512283ae40b",
+      "plan_sha": "4fda62c23b0c9d9524b73fe28c7176ebc40d80d785911ca7e6ead83cfaf52d35",
+      "selected_sha": "42a861473f12954193c6fff3b082785a1cd4c778f7e62cb604fdbc5f0ca40bca",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "9a3eb85e8cd25564cf4d8b12accdbe415f1df5b3fa93cb152f84ce0a2abce9b7",
+      "artifact_id": "emlis-artifact-4fc9ff17922fb8b184208445ab027ccdfe8113bfdce7e619541abb826d8fdc79",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n回答した時点の気持ちとして、「嬉しくない」が見えます。",
+      "reception": "回答した時点で嬉しくないことを小さくせずに受け止めています。友達からの誘いを断って、一人で休めたことにほっとしたという気持ちともう誘ってもらえなくなるかもしれないと思うと寂しいこととの違いを受け止めています。",
+      "artifact_other_sha": "9ad140fc72816842e7bef01d233865edd340dacc6b55ce68aa2994d2209ccd8e"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "mixed_unknown_then",
+      "profile": "q1",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "d543243519613e41f493199ff91f3988db43dbea2dd1de75874c30b9318994f2",
+      "original_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "d1d0282e331e79b3d8ff5ffc9b5ff39c2f0d490b3f7339e9747c0cf5bf6eb403",
+      "selected_sha": "9afd594c8581b1d7d8d63f758944dfe6d325c3dfb2521b1282870299bf841c58",
+      "status": "GENERATED",
+      "body_state": "PARTIALLY_REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "free_round_complete"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "51d96decc4bc031f3291fb99ba91369032f6de91930dacde530f0a1fd8c0b245",
+      "artifact_id": "emlis-artifact-46f201771a372ca1c70655d5da8222d01e47751675b709210f5d42c28539a341",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。 「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n回答の「「何が不安なのか、私にもまだわからない」ではなく「その時は悲しかった」です」には、今回の観測に反映できていない部分があります。",
+      "reception": "友達からの誘いを断って、一人で休めたことにほっとしたと聞いて、私も少し安心しましたが、もう誘ってもらえなくなるかもしれないと思うと寂しいという気持ちにも、今、耳を傾けていたいです。",
+      "artifact_other_sha": "7388c1b5909c6c6f58a2a79ac410b69190736d4509ecf3cb6206e457925fab91"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "mixed_unknown_then",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "c431487f891e803c0b48da24967bbe7708383ff9d29bb12dbecb182bd1e7dd62",
+      "original_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "d1d0282e331e79b3d8ff5ffc9b5ff39c2f0d490b3f7339e9747c0cf5bf6eb403",
+      "selected_sha": "1b4d443500a80602cb4986931d77a5a4abebc07ebb4ed2e46c58877fc047e686",
+      "status": "GENERATED",
+      "body_state": "PARTIALLY_REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "free_round_complete"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "8a744d863dbe34082a91bcfcb73c468208cacfaae1f3490e82bd47741c9c1f11",
+      "artifact_id": "emlis-artifact-b478f176ddd56a10289b71dcb2489c7e57b76d6c149abf5c7872dc8fa00e6f77",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。 「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n回答の「「何が不安なのか、私にもまだわからない」ではなく「その時は悲しかった」です」には、今回の観測に反映できていない部分があります。",
+      "reception": "友達からの誘いを断って、一人で休めたことにほっとしたと聞いて、私も少し安心しましたが、もう誘ってもらえなくなるかもしれないと思うと寂しいという気持ちにも、今、耳を傾けていたいです。",
+      "artifact_other_sha": "26d9e6062d5fb4519d1da054ca97874331cb7a743d83d5d87df936f592d15cc5"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "mixed_unknown_bare",
+      "profile": "q1",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "e48ed40d9c62192a2a90596fa7c59a455784227b2b1be646ad949e1d185adc2b",
+      "original_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "accepted_sha": "12ee955fe257ec811559b88b62718b2754083fae32c87c7b939afd8886656471",
+      "plan_sha": "ea715d5821dc0db50adc9c093dd3234a6ef30377e8c8dbc0dfa360fbe299c449",
+      "selected_sha": "809e4109e1fa90e7a0d670cab8ca06a6f090b41940d76c0b9615b77ede1b8723",
+      "status": "UNAVAILABLE",
+      "body_state": "MEANING_UPDATED_BODY_UNAVAILABLE",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "free_round_complete"
+      },
+      "reasons": [
+        "emlis_refined_body_unavailable"
+      ],
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "mixed_unknown_bare",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "d49a1636902bd08a029906152a90784a3a437b313cf1387e428ede06c7ae74af",
+      "original_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "accepted_sha": "12ee955fe257ec811559b88b62718b2754083fae32c87c7b939afd8886656471",
+      "plan_sha": "ea715d5821dc0db50adc9c093dd3234a6ef30377e8c8dbc0dfa360fbe299c449",
+      "selected_sha": "12fce8bc520617aaea77a1971abb777a08212bfee18c6db1c48e7aa4314bb1ae",
+      "status": "UNAVAILABLE",
+      "body_state": "MEANING_UPDATED_BODY_UNAVAILABLE",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "free_round_complete"
+      },
+      "reasons": [
+        "emlis_refined_body_unavailable"
+      ],
+      "artifact_sha": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "mixed_reaction_now",
+      "profile": "q1",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "3f5ed024d2c8f62aa6ec3048e5ae7f418261955645e594965984f09dba02f773",
+      "original_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "accepted_sha": "1671eb8486c899d4ac49e73b4c8e20c02ffb9c3aaf88ddf50106a297de8cb52a",
+      "plan_sha": "f422e1ae2544e1c60b05933cecba28c364a635a61abb9783545c9aee185727c3",
+      "selected_sha": "db04c97697e793666c0a35de0a4ee5eb7fa6c73eade76b281e3d70b593424ea1",
+      "status": "LIMITED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "free_round_complete"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "3f329faf5e767e6822a1915419d35b5e6ca7d209a12a437d838d3b71d502f107",
+      "artifact_id": "emlis-artifact-25aaf27f838b1ea39dcd3a11c1a5cb0c4b208748c02df9c46cd5bcc177fdc94a",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」ことについて、その時の受け止めは「今は嬉しい」と書かれています。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+      "reception": "褒められた時は、今は嬉しいのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+      "artifact_other_sha": "d3c6e78c9d580bd186c43656583cf07ac6a734018b63bd6f6b97e2992f5651c6"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "mixed_reaction_now",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "2599692a481df93e24134cec93af9a95075a8dee66d3de691623b2eacac35d18",
+      "original_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "accepted_sha": "1671eb8486c899d4ac49e73b4c8e20c02ffb9c3aaf88ddf50106a297de8cb52a",
+      "plan_sha": "f422e1ae2544e1c60b05933cecba28c364a635a61abb9783545c9aee185727c3",
+      "selected_sha": "fef5274e762377f80767cde1eff96351ecb22a38d097e0d361ca23bd134d25e1",
+      "status": "LIMITED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "29cd374724318714581763d2ed512474ef40cffdc59b074e3876f51c3a7abe00",
+      "artifact_id": "emlis-artifact-dcd4057d7cda2947140bd2e0f061f1809825e247bfc647b2294877ae125860d5",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」ことについて、その時の受け止めは「今は嬉しい」と書かれています。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+      "reception": "褒められた時は、今は嬉しいのですね。ほっとしたと聞いて、私も少し安心しましたが、その寂しさにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+      "artifact_other_sha": "7b4a7c8b63abdc9cf7e11590c430ca71b5c752ae4752397b36476dac7796693b"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "simple_reaction_now",
+      "profile": "q1",
+      "memo": "褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "704b722c3f2c8f81816a09d039f9489c884155608af9a19fa2ce1641aeef976c",
+      "original_sha": "6407d4830c9a82532e54b1a450a81c306d38b9468ccfcb8be8e1a519066211fd",
+      "accepted_sha": "631d563b16998d4ca85fa818c08692ed765cc65d4689f9edd014dc791de0726a",
+      "plan_sha": "dbde6fd55e250fef89a90dacc026ad7e76643558b5633466b3cfefa11b188ca4",
+      "selected_sha": "949388b51e9f39d872c9fa45958bcbec53fb5a02b470e9694502a57e793d0968",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "free_round_complete"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "489ca8a1c98a77b27747ea215a6895ccd8d6bf372b4d8357b166f8896e1e6ee8",
+      "artifact_id": "emlis-artifact-0baa5c3074a802532de63e589efcd3bf9a4c3ef3ce4bc228d7e765bf9c556d04",
+      "observation": "「褒められた」ことについて、その時の受け止めは「今は嬉しい」と書かれています。",
+      "reception": "褒められたことについて、その時は今は嬉しいのですね。",
+      "artifact_other_sha": "61b624adf9e133e7a1bdb606ab4b65ae0d7a06477aaefe68fc1bdb6eb49b9691"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "simple_reaction_now",
+      "profile": "q3",
+      "memo": "褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "51182dffa3305b991783cfb11233b56fc1f28c289574c758d083130ad3770039",
+      "original_sha": "6407d4830c9a82532e54b1a450a81c306d38b9468ccfcb8be8e1a519066211fd",
+      "accepted_sha": "631d563b16998d4ca85fa818c08692ed765cc65d4689f9edd014dc791de0726a",
+      "plan_sha": "dbde6fd55e250fef89a90dacc026ad7e76643558b5633466b3cfefa11b188ca4",
+      "selected_sha": "4358e92808497b89b6cd13161c2112fc65cf771034b569d362befda5d5a72059",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "063a6e374e59f9d10906c8393226f14e9754db9eb9712267e6e29bfba431acd1",
+      "artifact_id": "emlis-artifact-1021e07bc0dabcbc424ffe31c55f2dfa270fb4232bfa52af3bfc7ada55adefd6",
+      "observation": "「褒められた」ことについて、その時の受け止めは「今は嬉しい」と書かれています。",
+      "reception": "褒められたことについて、その時は今は嬉しいのですね。",
+      "artifact_other_sha": "f5e25aae18fc5290970ba39fb1eadc6cd94daea16034a1d4a7874c0df17b6096"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "simple_reaction_current_negative",
+      "profile": "q1",
+      "memo": "褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "c75409463cc954fcbb15c3a5e23b77ee8313679d112dd4d07351ca4d8d068054",
+      "original_sha": "6407d4830c9a82532e54b1a450a81c306d38b9468ccfcb8be8e1a519066211fd",
+      "accepted_sha": "14a7af78aad6aa441789f71c4883ec55be71a88f07ad10a3deb394cbe681116e",
+      "plan_sha": "8f896fe1a613454e61407748791d0d2ee1b3b6da45f866a5d6373cb1c2106559",
+      "selected_sha": "4e532c5004cf75a0b698be3f7f681457e5307db57c481172d3fbf6a979288655",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "free_round_complete"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "84ba4387d858f3e09eb6260970aa74c11ba92a8c1df3125187c1bdcd7e8947dc",
+      "artifact_id": "emlis-artifact-ffe5009a1c6da06ef262e901046d2792d6be6934dc4867356fdd29b01079298a",
+      "observation": "「褒められた」ことについて、その時の受け止めは「現在は嬉しくない」と書かれています。",
+      "reception": "これまで、褒められたことについて、その時に現在は嬉しくないことを小さくせずに受け止めています。",
+      "artifact_other_sha": "8d9b89be968ce526c4f70b35ceee5d84093fa027b2406d71c666f86c5c619353"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "simple_reaction_current_negative",
+      "profile": "q3",
+      "memo": "褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "278cb47a7a5db421c068e4f146342cc59d52402bd463269b223677cf2269dae0",
+      "original_sha": "6407d4830c9a82532e54b1a450a81c306d38b9468ccfcb8be8e1a519066211fd",
+      "accepted_sha": "14a7af78aad6aa441789f71c4883ec55be71a88f07ad10a3deb394cbe681116e",
+      "plan_sha": "8f896fe1a613454e61407748791d0d2ee1b3b6da45f866a5d6373cb1c2106559",
+      "selected_sha": "7e634e20c0046cc75b48e0a7c01bec7b9f600dffdad1c9e70939cce2b45cba63",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "2f05caeb9962aba7c18b00f9f8de8ef0b573e18a910a7683a4da9a5c0c56d286",
+      "artifact_id": "emlis-artifact-c1199805fe84d7d9f9e6247e6584e00a8b4b0012d6fef16a99e383a18f01418a",
+      "observation": "「褒められた」ことについて、その時の受け止めは「現在は嬉しくない」と書かれています。",
+      "reception": "これまで、褒められたことについて、その時に現在は嬉しくないことを小さくせずに受け止めています。",
+      "artifact_other_sha": "e0c2a8a1e5297184d4f08ea10ae007a31dd1a2fbe5a679943b48848666ee6e0e"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "simple_reaction_then",
+      "profile": "q1",
+      "memo": "褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "a9e50594d793cf8e85f28ce8c2846cea570f6ec55daec4696542b73a49038b5b",
+      "original_sha": "6407d4830c9a82532e54b1a450a81c306d38b9468ccfcb8be8e1a519066211fd",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "50fe572e17a29e9097151d5b39ac6768d700f4ae796f5cd6b81236f870d43192",
+      "selected_sha": "2ca32855358c150782e65dccc2529bd0972937f690e1156d2a787b3e3b6d5d72",
+      "status": "GENERATED",
+      "body_state": "PARTIALLY_REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "free_round_complete"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "621e4ca39b02cf860923f4f63d1f7c114910fe8f81925b267bf84930fb237b59",
+      "artifact_id": "emlis-artifact-be0bfd865f02e96e73281a974807a188eec76f879e49fd37fe7da9da5f168e01",
+      "observation": "「褒められた」という出来事がありました。\n回答の「「嬉しくなかった」ではなく「その時は悲しかった」です」には、今回の観測に反映できていない部分があります。",
+      "reception": "今ここに置かれた言葉を小さくせずに受け止めています。",
+      "artifact_other_sha": "b9581895497383a5df9ae96651e8632fb0a87a8dcb79d650513f00a093afd5d7"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "simple_reaction_then",
+      "profile": "q3",
+      "memo": "褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "1d5981b0d4558d7f554d141340f26e383fa25a96af3de37d4bb8a66e0979efeb",
+      "original_sha": "6407d4830c9a82532e54b1a450a81c306d38b9468ccfcb8be8e1a519066211fd",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "50fe572e17a29e9097151d5b39ac6768d700f4ae796f5cd6b81236f870d43192",
+      "selected_sha": "98a25ada4d00f8054334bea3d535ec73acb79281b4e791d9ad2b773f9535160b",
+      "status": "GENERATED",
+      "body_state": "PARTIALLY_REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "free_round_complete"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "2faebc9bcce5ba625e24b4197eef0d9ff7b8afcbca800e4aacc3070f5e336222",
+      "artifact_id": "emlis-artifact-f30413ad1f592682053006c69095c09af0d2b1fda679a81487656ac8c49f0847",
+      "observation": "「褒められた」という出来事がありました。\n回答の「「嬉しくなかった」ではなく「その時は悲しかった」です」には、今回の観測に反映できていない部分があります。",
+      "reception": "今ここに置かれた言葉を小さくせずに受け止めています。",
+      "artifact_other_sha": "a05b975755e1e74b582ce8269d7447a2bc92738de076a8d2cb97f46e1e754ee2"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "simple_reaction_bare",
+      "profile": "q1",
+      "memo": "褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "2f1421b60fbc946d22386d22c63925814ed9a4cb30c09c63af14e4e16eb0c044",
+      "original_sha": "6407d4830c9a82532e54b1a450a81c306d38b9468ccfcb8be8e1a519066211fd",
+      "accepted_sha": "66ee373cdc40883ebf7ce53ea8c8f23aba672e9475796d5384bc17d1e1b6ee85",
+      "plan_sha": "4db5c9b6b10e8d090b4a847c966e88e518d452418bafae003218e53d872cb715",
+      "selected_sha": "ceacd33a1193e9b0189354247eb53b8133d1e7a683a541062e22282144a5b112",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "free_round_complete"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "00d50561a818dfa1607f9cc6e7f0699c3930c33cb9d2334c7d556f9b5160eed5",
+      "artifact_id": "emlis-artifact-5d2306d3e13cd323f9f51dc508281c98ac70b7e42dcd7b703edd278883705cf7",
+      "observation": "「褒められた」ことについて、その時の受け止めは「悲しかった」と書かれています。",
+      "reception": "褒められたことについて、その時の悲しさを小さくせずに受け止めています。",
+      "artifact_other_sha": "6a09c3e92c42a1905b130b8a4c1ec3df10cf08b9f3a194af202147c7eed4e52a"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "simple_reaction_bare",
+      "profile": "q3",
+      "memo": "褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "33bba92bfbc7d1ed133cb86593bf5496fd8246e8af1d4aa174ba310cbe2551a2",
+      "original_sha": "6407d4830c9a82532e54b1a450a81c306d38b9468ccfcb8be8e1a519066211fd",
+      "accepted_sha": "66ee373cdc40883ebf7ce53ea8c8f23aba672e9475796d5384bc17d1e1b6ee85",
+      "plan_sha": "4db5c9b6b10e8d090b4a847c966e88e518d452418bafae003218e53d872cb715",
+      "selected_sha": "7c3d13396c02e2e5e86538326feed95e1ac8b368d29cccbad20c8b28f997b15c",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "873b5274ce6c765604559a8ba947f1cae18a3ed5b758b90a2ebf1f09b1dc95e4",
+      "artifact_id": "emlis-artifact-1caa2bdb6d02e205f50e11177cb0c257852b26e9428cd14c0622850f750065c6",
+      "observation": "「褒められた」ことについて、その時の受け止めは「悲しかった」と書かれています。",
+      "reception": "褒められたことについて、その時の悲しさを小さくせずに受け止めています。",
+      "artifact_other_sha": "5af62edeb66423c6e6f05cfdb798c55c83c7947a13daf1658ac675b1bf70c32e"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "simple_reaction_other_time",
+      "profile": "q1",
+      "memo": "褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "8ba4754d8d19cf84dfd68e78e0cd96b5a0b19628c7b2aa5c302c4163a0a1d8d0",
+      "original_sha": "6407d4830c9a82532e54b1a450a81c306d38b9468ccfcb8be8e1a519066211fd",
+      "accepted_sha": "f349dcec632de49fe91c0813595e576460d558cd5aec0c7f79af16887e0044fb",
+      "plan_sha": "e1dfb2b7389cdd1b0a340bdf4e6a96286de32f4b11cb4dbeeed9d257822132bd",
+      "selected_sha": "7ca3d3104fad074f44f121fc30b514431e7c7ac94717cb25e490cbb913ed81a2",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "free_round_complete"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "5daadfed147bbc39e4a6b2aed7e259436cef5ae328af9a361976fb252b4bd3ce",
+      "artifact_id": "emlis-artifact-5b4ed8322b0fa324cb75f0e874b2cade9ce009b4d6390ed3312f2395d12f9865",
+      "observation": "「褒められた」ことについて、その時の受け止めは「昨日は嬉しかった」と書かれています。",
+      "reception": "褒められたことについて、その時は昨日は嬉しかったのですね。",
+      "artifact_other_sha": "23f6e43ee8796354fbef9349d7b5eff83c07ea17c844557eecd36a8feca1580a"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "simple_reaction_other_time",
+      "profile": "q3",
+      "memo": "褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "8468cb02f6361c84b4abec4bb0bad6fb714af5ddc3222a6e05d690d14d7df676",
+      "original_sha": "6407d4830c9a82532e54b1a450a81c306d38b9468ccfcb8be8e1a519066211fd",
+      "accepted_sha": "f349dcec632de49fe91c0813595e576460d558cd5aec0c7f79af16887e0044fb",
+      "plan_sha": "e1dfb2b7389cdd1b0a340bdf4e6a96286de32f4b11cb4dbeeed9d257822132bd",
+      "selected_sha": "2dd6efae218f764d8f8999256cecabca3f157a22d329fa2241afc51754aaee0a",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "b2c2471fb4ab6b871b8a256f07865ed2166dad5c0e0fd8e9143343a5ec240d7f",
+      "artifact_id": "emlis-artifact-2ea2667d7e58af15c58607745899dfdd7759a4537a39a1614c0619de90286e78",
+      "observation": "「褒められた」ことについて、その時の受け止めは「昨日は嬉しかった」と書かれています。",
+      "reception": "褒められたことについて、その時は昨日は嬉しかったのですね。",
+      "artifact_other_sha": "f8d7b6047a4878e4f20a5734e901f67adbd6cffb427a7606ce59d8d7ae9bf85c"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "simple_reaction_other_actor",
+      "profile": "q1",
+      "memo": "褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "7dfdf15b6286430352a2677a74114070ce3f86c16f05dedd110f168e624c94d4",
+      "original_sha": "6407d4830c9a82532e54b1a450a81c306d38b9468ccfcb8be8e1a519066211fd",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "a11d47227e9d56e7132aeacf7ad1d694735394b64dfd4e2186b420eb90bef2fb",
+      "selected_sha": "0a0d63c2edf7d4743c8329f167c8633cfb0a4fb8551cedf97ee9bb14ef0990ec",
+      "status": "GENERATED",
+      "body_state": "PARTIALLY_REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "free_round_complete"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "2682802113d9ba14599db3cd342218638e02b7dcae316419e1215300ecb1e07e",
+      "artifact_id": "emlis-artifact-13ce66087f2fbaeb4d2ecd7589a4febefed33aa6143ace3b9bdb559f716fd413",
+      "observation": "「褒められた」という出来事がありました。\n回答の「「嬉しくなかった」ではなく「彼は嬉しい」です」には、今回の観測に反映できていない部分があります。",
+      "reception": "今ここに置かれた言葉を小さくせずに受け止めています。",
+      "artifact_other_sha": "831dbf5ffd8b9b6b6c7cc4f8ce51012142bfd34e3631d948037cbb6667ffa618"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "simple_reaction_other_actor",
+      "profile": "q3",
+      "memo": "褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "e10276afe213e316b4502d6c376b6d99dc0cf8a5077ab3aef2dda71b721fd7a2",
+      "original_sha": "6407d4830c9a82532e54b1a450a81c306d38b9468ccfcb8be8e1a519066211fd",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "a11d47227e9d56e7132aeacf7ad1d694735394b64dfd4e2186b420eb90bef2fb",
+      "selected_sha": "1f8ef620d0d9eb5286c34aef406518d57825b5e4cb0d8e64b5eacce7deca8296",
+      "status": "GENERATED",
+      "body_state": "PARTIALLY_REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "free_round_complete"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "4fd648415ec80c3a2131dd03cd2aa003e69c5dfec7968ce9c65b92285bf2b053",
+      "artifact_id": "emlis-artifact-c7dd93a50a1222dcaa80f9b5fe6684a5326e03ca804d582bd1fabd4ef4a47f58",
+      "observation": "「褒められた」という出来事がありました。\n回答の「「嬉しくなかった」ではなく「彼は嬉しい」です」には、今回の観測に反映できていない部分があります。",
+      "reception": "今ここに置かれた言葉を小さくせずに受け止めています。",
+      "artifact_other_sha": "c10bd98ec8a62a958c771a6081b378b13da6598dac83f4d2b3978d7fffba9727"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "simple_reaction_unsupported",
+      "profile": "q1",
+      "memo": "褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "3513d9e01ab33931256873510854ee332849689e4f1d247a71865c336a2a423d",
+      "original_sha": "6407d4830c9a82532e54b1a450a81c306d38b9468ccfcb8be8e1a519066211fd",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "d3407caa81d06da5684b48743df3851c8425488c8c2b004bf597d4a8f9e8bea5",
+      "selected_sha": "6759b16e1f1d0861b35d268a9b556d7b003421d96275827274da303e2a3ef155",
+      "status": "GENERATED",
+      "body_state": "PARTIALLY_REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "free_round_complete"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "b27e0a92c05331e5d878d59395e6a37f24d2f493ef50cee849de74d1aa22d6b3",
+      "artifact_id": "emlis-artifact-75f5e2a39b6397ac22c83f83902df0d3093afcc40dc7f78c3b9df6d948005ef4",
+      "observation": "「褒められた」という出来事がありました。\n回答の「「嬉しくなかった」ではなく「秘密です」です」には、今回の観測に反映できていない部分があります。",
+      "reception": "今ここに置かれた言葉を小さくせずに受け止めています。",
+      "artifact_other_sha": "e361a1989dbe086214c56ce2e7c6815115dc8e4f007b305bacae91cff5154c18"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "simple_reaction_unsupported",
+      "profile": "q3",
+      "memo": "褒められたのに、嬉しくなかった。",
+      "checkpoint_sha": "91c6e19d4f63599f3e756e41884492685471be8ad824d925c0e8d8c27b0e5103",
+      "original_sha": "6407d4830c9a82532e54b1a450a81c306d38b9468ccfcb8be8e1a519066211fd",
+      "accepted_sha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "plan_sha": "d3407caa81d06da5684b48743df3851c8425488c8c2b004bf597d4a8f9e8bea5",
+      "selected_sha": "b1d7e48e108b78af67bc5802f928d514fd682d71c439314a579f2b0f7ab05541",
+      "status": "GENERATED",
+      "body_state": "PARTIALLY_REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "free_round_complete"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "7467531b9087d0dffb912e381e71d3ff832cf9ef65a86612b4d01755000c112b",
+      "artifact_id": "emlis-artifact-fdc92e5a917bff43f9fa8248a03b2b034267a39e9a99f3e3810c5253d129ba5b",
+      "observation": "「褒められた」という出来事がありました。\n回答の「「嬉しくなかった」ではなく「秘密です」です」には、今回の観測に反映できていない部分があります。",
+      "reception": "今ここに置かれた言葉を小さくせずに受け止めています。",
+      "artifact_other_sha": "8e3134aecb42867344bfa84bf8004ff5197ff00c1fe3cc09c85efe16eaefac1c"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "mixed_reflexive_now",
+      "profile": "q1",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、自分でもまだわからない。",
+      "checkpoint_sha": "c4a3f1a477dc73a2ddaac36d1e16e7e97a234f87953f7997df166c36d428cb85",
+      "original_sha": "f63341cd1c2ed6632423b22bd6e80c8cc7de33663dab73c806e525c2e9894e5d",
+      "accepted_sha": "c2b35b2c982ae2697fda7009e57c7303855e868b094558a6b4d444af46af42a2",
+      "plan_sha": "532d0d793f8639c9207a36fee85bc824a8cd466e7e43ef50694a2769f66e2a3d",
+      "selected_sha": "247bdd1557205c5cb5788cafd8316741750b2cecf074b794a51af2450588ad0e",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "free_round_complete"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "ae3acf0710a23c281f5c8600b53c48d4db95aa5536c1c0adb89d34f94712654f",
+      "artifact_id": "emlis-artifact-eaa691fe004e29e4908c5fe9996ca0f476421a40db9cf24f1dde7d1217c8b984",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。 「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n回答した時点の気持ちとして、「嬉しい」が見えます。",
+      "reception": "回答した時点で嬉しいという気持ちを受け止めています。",
+      "artifact_other_sha": "7973fa07ada1e5b4c24e73284e90bd9e0196171e52336f1d09dda2d83167164d"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "mixed_reflexive_now",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、自分でもまだわからない。",
+      "checkpoint_sha": "c20d3ca126c82c95f067a85cdae5ae2da8bff638a4f01d31e07b952ccf3edfa8",
+      "original_sha": "f63341cd1c2ed6632423b22bd6e80c8cc7de33663dab73c806e525c2e9894e5d",
+      "accepted_sha": "c2b35b2c982ae2697fda7009e57c7303855e868b094558a6b4d444af46af42a2",
+      "plan_sha": "532d0d793f8639c9207a36fee85bc824a8cd466e7e43ef50694a2769f66e2a3d",
+      "selected_sha": "d97cd7449d8bc840fb3796466f2137c787b701632da02bdb322cc62b154dfb9f",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "9210bcb8752332b53e054b199b17cae5c57cc35c46be1a9ae7ef4540dda6e98e",
+      "artifact_id": "emlis-artifact-5cfb4ec084958692b2d4bcaa2308674a87ea5a82028537130cdc1af9745176e9",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。 「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n回答した時点の気持ちとして、「嬉しい」が見えます。",
+      "reception": "回答した時点で嬉しいという気持ちを受け止めています。",
+      "artifact_other_sha": "eb09f75f847e2cbc1bc485a404efe58b5a04940db9ff6d6c2477fabaab1c7215"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "mixed_unknown_now_negative",
+      "profile": "q1",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "1650c69147b98f03ef12742b9e556adb30aeaa768440ffc712217fcf41d6c23d",
+      "original_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "accepted_sha": "e1e53847674e27e59edd60352246832b4cf505f47d96938ededd171b9fe75c6a",
+      "plan_sha": "4a750f09a19a84b9d7b5aba8ae3f1603e4ad6df184e853c43092d7328815c6d2",
+      "selected_sha": "f11bb26ed92f8f37995caed030edab4984adff197b8bbcb2d84e182d7384bc47",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "free_round_complete"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "1d580b5ac5d40c043daa2bdf98cf4366e24a5e8af5dc07b0fb7ed5c496074111",
+      "artifact_id": "emlis-artifact-37ccc1d35f38668fcca34f8aed7c0beb73f35cb0e5cfdb0486a263b950bdcc2e",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n回答した時点の気持ちとして、「嬉しくない」が見えます。",
+      "reception": "回答した時点で嬉しくないことを小さくせずに受け止めています。友達からの誘いを断って、一人で休めたことにほっとしたという気持ちともう誘ってもらえなくなるかもしれないと思うと寂しいこととの違いを受け止めています。",
+      "artifact_other_sha": "527f0b7b54aa48deef2453cdd5149b03594fa87c927a76d94df74fa14f1f3e04"
+    },
+    {
+      "kind": "unknown_answer",
+      "case": "mixed_unknown_now_negative",
+      "profile": "q3",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。褒められたのに、嬉しくなかった。何が不安なのか、私にもまだわからない。",
+      "checkpoint_sha": "ceaeccfb6fa8ff5a650d872591da690700ab3af8c42330c2406825280e53c390",
+      "original_sha": "842b5750c0a869f2a7d86c092cced8196f3e84af8c98dc5fab439d6eb2b489b7",
+      "accepted_sha": "e1e53847674e27e59edd60352246832b4cf505f47d96938ededd171b9fe75c6a",
+      "plan_sha": "4a750f09a19a84b9d7b5aba8ae3f1603e4ad6df184e853c43092d7328815c6d2",
+      "selected_sha": "9cc303f0031995c2621a9212806ee56fbe4f62a13ccd9074cb7515096619217b",
+      "status": "GENERATED",
+      "body_state": "REFINED",
+      "question": null,
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      },
+      "reasons": [
+        "emlis_thread_body_generated"
+      ],
+      "artifact_sha": "94b8398944c60f48c9dd93d6384ec9d903abee2f72b243b99e84975a3bde9752",
+      "artifact_id": "emlis-artifact-4c0bf4899d09a2e84eeb213507cdf76763a6daea1eda701859ef703235aa8b48",
+      "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。\n回答した時点の気持ちとして、「嬉しくない」が見えます。",
+      "reception": "回答した時点で嬉しくないことを小さくせずに受け止めています。友達からの誘いを断って、一人で休めたことにほっとしたという気持ちともう誘ってもらえなくなるかもしれないと思うと寂しいこととの違いを受け止めています。",
+      "artifact_other_sha": "a15512003beb2f5f9c841da8fd38376ffe8cf938c6e03861bd03937fe7524c58"
+    }
+  ]
+}

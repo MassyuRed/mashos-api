@@ -189,7 +189,15 @@ def test_initial_receives_both_experiences_only_with_complete_qualified_source(c
         assert ('よくわからないのですね。' if case == 'object_unknown'
                 else 'まだわからないのですね。') in follow
     assert 'かもしれない' not in follow
-    assert out.artifact.observation == old['artifact']['observation']
+    pattern = r'「([^「」]+)」と「([^「」]+)」が、異なる向きのまま同時にあります。'
+    matches = list(re.finditer(pattern, old['artifact']['observation']))
+    assert len(matches) == 1
+    left_text, right_text = matches[0].groups()
+    link = re.search(re.escape(left_text) + r'(のに|けれども|けれど|けど)[、,]?' + re.escape(right_text), ROWS[case]['memo'])
+    assert link is not None
+    expected_observation = old['artifact']['observation'].replace(matches[0][0],
+        f'「{left_text}」{link[1]}「{right_text}」という経験が書かれています。', 1)
+    assert out.artifact.observation == expected_observation
     assert encoded(out.question) == old['question']
     assert encoded(out.question_decision) == old['question_decision']
     if case in {'base', 'base_unknown'}:

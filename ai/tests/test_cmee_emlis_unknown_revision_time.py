@@ -37,7 +37,7 @@ def first(case, profile):
 def request(case, profile, historical=False):
     row = ROWS[case, profile]
     req, out = first(case, profile)
-    assert digest(out.artifact) == row['initial_artifact_sha']
+    assert digest(before_mixed_received_surface(out.artifact)) == row['initial_artifact_sha']
     assert encoded(out.question) == row['initial_question']
     assert encoded(out.question_decision) == row['initial_decision']
     q = decode_question(row['initial_question']) if historical else out.question
@@ -54,6 +54,22 @@ def request(case, profile, historical=False):
 def checkpoint(req, ref):
     return replace(req, emlis_thread=replace(req.emlis_thread,
         prepared_meaning_checkpoint_ref=ref))
+
+
+def before_mixed_received_surface(artifact):
+    """Restore only the u355 received sentence for frozen whole-artifact checks.
+
+    Old completed DTOs are never regenerated. An unfinished checkpoint keeps
+    its whole old interpretation while using the current surface realization.
+    """
+    from cocolon_meaning_experience_engine.emlis_thread_source import identity
+    old = '「褒められた」と「嬉しくなかった」が、異なる向きのまま同時にあります。'
+    new = '「褒められた」のに「嬉しくなかった」という経験が書かれています。'
+    if artifact is None or '一人で休めたことにほっとした' not in artifact.observation or new not in artifact.observation:
+        return artifact
+    assert artifact.observation.count(new) == 1
+    restored = replace(artifact, observation=artifact.observation.replace(new, old, 1))
+    return replace(restored, artifact_id=identity('emlis-artifact', restored.meaning_checkpoint_ref, restored.text))
 
 
 def full_snapshot(req, row):
@@ -75,7 +91,7 @@ def full_snapshot(req, row):
         else:
             assert digest(project_thread_meaning(prepared, plan).selected_reception) == row['selected_sha']
     out = MeaningExperienceEngine().generate(checkpoint(req, prepared.checkpoint.checkpoint_id))
-    assert digest(out.artifact) == row['artifact_sha']
+    assert digest(before_mixed_received_surface(out.artifact)) == row['artifact_sha']
     assert encoded(out.question) == row['question']
     assert encoded(out.question_decision) == row['question_decision']
     assert list(out.reason_codes) == row['reasons']

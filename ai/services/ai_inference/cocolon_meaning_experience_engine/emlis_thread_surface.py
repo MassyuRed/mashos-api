@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Source/version adapter to the existing sole Human Reception author."""
 
-from dataclasses import replace
+from dataclasses import fields, replace
 import emlis_ai_grounded_human_reception as hr
 import emlis_ai_grounded_sentence_surface as surface_owner
 from emlis_ai_grounded_observation_gate import evaluate_grounded_surface_body_inverse, evaluate_grounded_observation_gate
@@ -105,7 +105,8 @@ def _current_single_received_contrast_relations(prepared, plan):
     This changes neither recognition nor the selected Reception content.
     """
     from emlis_ai_grounded_observation_plan import (
-        _received_contrast_group_targets, source_owned_result_appraisal_context)
+        _received_contrast_group_targets, _source_relief_received_group,
+        source_owned_result_appraisal_context)
     if (prepared.checkpoint.assessment_status == 'PARTIAL'
         or prepared.legacy_appraisal_retention or prepared.legacy_repeated_appraisal_context
         or prepared.legacy_received_appraisal_context or prepared.legacy_appraisal_reason
@@ -113,6 +114,15 @@ def _current_single_received_contrast_relations(prepared, plan):
         or prepared.legacy_duplicate_appraisal_source or prepared.legacy_shared_target_contrast):
         return frozenset()
     contrasts = tuple(r for r in prepared.original_plan.relations if r.type == 'contrast')
+    if len(contrasts) == 2 and not any(
+            getattr(prepared, f.name) for f in fields(prepared) if f.name.startswith('legacy_')):
+        # Prove the complete original P/R/(U) source, excluding supplemental
+        # answer spans. A separate contrast must not imply simultaneous times.
+        original, source = prepared.original_plan, prepared.thread.original
+        group = _source_relief_received_group(original.nuclei, original.relations,
+            source.evidence_spans, source.normalized_current_input)
+        if group:
+            contrasts = (group[-1],)
     if len(contrasts) != 1:
         # The initial unfinished appraisal owns its own contrast. It must
         # not force the separate, unchanged received pair into simultaneity.
