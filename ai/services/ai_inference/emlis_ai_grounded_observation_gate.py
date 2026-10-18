@@ -375,9 +375,9 @@ def _semantic_subcheck_reasons(
                     # license the same sensation outside the disclosure.
                     replacements.add((parsed.utf8_byte_start, parsed.utf8_byte_end, b""))
     reception_plan = plan.response_plan.human_reception_plan
-    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_relief_cognition_unknown_from_resolver, _source_retained_mixed_unknown_from_resolver, _source_retained_relief_received_from_resolver
+    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_relief_cognition_unknown_from_resolver, _source_retained_mixed_unknown_from_resolver, _source_retained_relief_received_from_resolver, _source_initial_personal_meaning_from_resolver
     unknown_group = _source_unknown_object_group_from_resolver(plan.nuclei, plan.relations, resolver, include_single=True)
-    unknown_group = unknown_group or (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or _source_retained_mixed_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or tuple(n for n in _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)[:1] if n is not None))[:1]
+    unknown_group = unknown_group or (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or _source_retained_mixed_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or tuple(n for n in _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)[:1] if n is not None) or tuple(n for n in _source_initial_personal_meaning_from_resolver(plan.nuclei, plan.relations, resolver)[:1] if n is not None))[:1]
     for move in reception_plan.moves if reception_plan is not None else ():
         if len(move.target_nucleus_ids) > 1 or move.support_nucleus_ids or (
             len(unknown_group) == 1 and move.target_nucleus_ids == (unknown_group[0].nucleus_id,)
@@ -4428,9 +4428,9 @@ def _feeling_reason_unknown_restores_source(visible, source):
 
 def _read_unknown_object_discourse(raw, move, plan, resolver, selected_subjective_input):
     """Read both finite sources independently, preserving the wh-object and SELF."""
-    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_self_unknown_object_parts, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_relief_cognition_unknown_from_resolver, _source_retained_mixed_unknown_from_resolver, _source_retained_relief_received_from_resolver
+    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_self_unknown_object_parts, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_relief_cognition_unknown_from_resolver, _source_retained_mixed_unknown_from_resolver, _source_retained_relief_received_from_resolver, _source_initial_personal_meaning_from_resolver
     group = _source_unknown_object_group_from_resolver(plan.nuclei, plan.relations, resolver, include_single=True)
-    independent = (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or _source_retained_mixed_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or tuple(n for n in _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)[:1] if n is not None))
+    independent = (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or _source_retained_mixed_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or tuple(n for n in _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)[:1] if n is not None) or tuple(n for n in _source_initial_personal_meaning_from_resolver(plan.nuclei, plan.relations, resolver)[:1] if n is not None))
     group = group or independent[:1]
     ids = (*move.target_nucleus_ids, *move.support_nucleus_ids)
     if len(group) == 1:
@@ -5088,7 +5088,18 @@ def _relief_cognition_selected_reception(move, plan, resolver, selected):
     p = d.subjective_proposition
     basis_rows = d.basis_rows
     from emlis_ai_grounded_human_reception import SelectedRetainedReliefCognitionDecisionV1, SelectedRetainedReliefReceivedDecisionV1
-    if type(d) is SelectedRetainedReliefReceivedDecisionV1:
+    from emlis_ai_grounded_human_reception import SelectedInitialReceivedPersonalMeaningDecisionV1
+    if type(d) is SelectedInitialReceivedPersonalMeaningDecisionV1:
+        from cocolon_meaning_experience_engine.contracts import InitialReceivedPersonalMeaningPairContentV1
+        if type(d.initial_received_personal_meaning) is not InitialReceivedPersonalMeaningPairContentV1:
+            return None
+        from cocolon_meaning_experience_engine.emlis_thread_projection import validate_initial_personal_meaning_source
+        try:
+            local = validate_initial_personal_meaning_source(d, selected, plan, resolver)
+        except (ValueError, TypeError, AttributeError, KeyError):
+            return None
+        p, basis_rows = local.proposition, local.basis_rows
+    elif type(d) is SelectedRetainedReliefReceivedDecisionV1:
         from cocolon_meaning_experience_engine.contracts import RetainedReliefReceivedPairContentV1
         # The other local content belongs to the received-experience reader.
         # Reject it here before replay; this cannot grant a pair qualification.
@@ -5283,7 +5294,7 @@ def _read_retained_received_event_discourse(raw, move, plan, resolver, selected)
         or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids
         or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
         return None
-    from emlis_ai_grounded_observation_plan import _source_retained_relief_received_from_resolver
+    from emlis_ai_grounded_observation_plan import _source_retained_relief_received_from_resolver, _source_initial_personal_meaning_from_resolver
     original = _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)
     if not original or move.target_nucleus_ids != (original[3].nucleus_id,):
         return None
@@ -5318,6 +5329,12 @@ def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_i
     from cocolon_meaning_experience_engine.contracts import EmlisReliefCognitionAppraisalContent
     decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None) if selected_subjective_input else None
     from emlis_ai_grounded_human_reception import SelectedRetainedReliefCognitionDecisionV1, SelectedRetainedReliefReceivedDecisionV1
+    from emlis_ai_grounded_human_reception import SelectedInitialReceivedPersonalMeaningDecisionV1
+    if type(decision) is SelectedInitialReceivedPersonalMeaningDecisionV1:
+        from cocolon_meaning_experience_engine.contracts import InitialReceivedPersonalMeaningPairContentV1
+        if type(decision.initial_received_personal_meaning) is InitialReceivedPersonalMeaningPairContentV1:
+            return _read_relief_cognition_discourse(raw, move, plan, resolver, selected_subjective_input, preceding_observation)
+        return _read_initial_personal_meaning_discourse(raw, move, plan, resolver, selected_subjective_input)
     if decision and (type(decision.subjective_proposition.appraisal_content) is EmlisReliefCognitionAppraisalContent
                      or type(decision) is SelectedRetainedReliefCognitionDecisionV1
                      or type(decision) is SelectedRetainedReliefReceivedDecisionV1
@@ -7028,10 +7045,30 @@ def evaluate_grounded_surface_body_inverse(
             == line_ordinal
         )
 
+    from emlis_ai_grounded_observation_plan import _source_initial_personal_meaning_from_resolver
+    initial_personal = _source_initial_personal_meaning_from_resolver(plan.nuclei, plan.relations, resolver)
     for index, (parsed_line, planned_line) in enumerate(
         zip(observation_lines, planned_observation_lines),
         start=1,
     ):
+        if initial_personal:
+            meaning = initial_personal[5]
+            raw_line = _body_inverse_visible_text(body, parsed_line)
+            if (meaning.nucleus_id in planned_line.binding.nucleus_ids
+                and not planned_line.binding.relation_ids):
+                # Parse delivered bytes as independent source reports. The
+                # old flow/current-state wording cannot validate this scope.
+                match = re.fullmatch(r'(?P<first>「[^「」]+」)(?:と(?P<second>「[^「」]+」))?'
+                                     r'と(?P<separate>、それぞれ)?書かれています。', raw_line)
+                sources = tuple(resolver.resolve(nucleus_index[nid].source_span_ids[0]).raw_text
+                                for nid in planned_line.binding.nucleus_ids)
+                seen = tuple(match[name][1:-1] for name in ('first', 'second') if match and match[name])
+                if (match is None or seen != sources or bool(match['separate']) != (len(sources) > 1)):
+                    failures.append(f'body_inverse_initial_personal_meaning_observation_scope:{index}')
+            if initial_personal[-1].relation_id in planned_line.binding.relation_ids:
+                outside_quotes = re.sub(r'「[^「」]*」', '', raw_line)
+                if re.search(r'同時|だから|ために|原因', outside_quotes):
+                    failures.append(f'body_inverse_initial_personal_meaning_relation_scope:{index}')
         if planned_line.binding.claim_scope == "unresolved_answer_interpretation":
             if not _body_inverse_answer_limit(body, parsed_line, planned_line, plan, resolver):
                 failures.append(f"body_inverse_answer_limit_mismatch:{index}")
@@ -7380,6 +7417,7 @@ def evaluate_grounded_surface_body_inverse(
                         for n in (chain_from, chain_to)))
             separate_time_contrast = relation_id in separate_time_contrast_ids
             neutral_time_contrast = scoped_feeling_contrast or separate_time_contrast
+            initial_received_contrast = bool(initial_personal and relation_id == initial_personal[-1].relation_id)
             exact_contrast = separate_time_contrast or (relation.type == "contrast"
                 and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
                 and (nucleus_index[relation.from_nucleus_id].kind == "event" or exact_chain or scoped_feeling_contrast)
@@ -7407,14 +7445,23 @@ def evaluate_grounded_surface_body_inverse(
                     # Different source times do not authorize simultaneity.
                     if neutral_time_contrast:
                         singleton = None
-                    if singleton is None:
+                    if initial_received_contrast:
+                        # The newly qualified original experience has its own
+                        # finite report. Its source connective, endpoints and
+                        # full sentence are independently read from bytes.
+                        links = tuple(c.split(':')[1] for c in chain_from.semantic_frame.attribute_codes
+                                      if c.startswith('source_received_event_link:'))
+                        link_text = {'noni': 'のに', 'kedo': 'けど', 'keredo': 'けれど', 'keredomo': 'けれども'}
+                        singleton = re.fullmatch(r'「([^「」『』\n]+)」' + re.escape(link_text[links[0]])
+                            + r'「([^「」『』\n]+)」という経験が書かれています。', visible)
+                    elif singleton is None:
                         singleton = re.fullmatch(r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」とあります。", visible)
                     operand = r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」"
                     if singleton:
                         legacy_pairs.append(singleton.groups())
-                    elif not neutral_time_contrast and re.fullmatch(rf"(?:{operand}、また)+{operand}という、それぞれ異なる向きが並んでいます。", visible):
+                    elif not (neutral_time_contrast or initial_received_contrast) and re.fullmatch(rf"(?:{operand}、また)+{operand}という、それぞれ異なる向きが並んでいます。", visible):
                         legacy_pairs.extend(re.findall(operand, visible))
-                if (neutral_time_contrast and len(planned_line.binding.relation_ids) == 1
+                if ((neutral_time_contrast or initial_received_contrast) and len(planned_line.binding.relation_ids) == 1
                     and set(planned_line.binding.nucleus_ids) <= {
                         relation.from_nucleus_id, relation.to_nucleus_id}
                     and (len(legacy_pairs) != 1 or sum(row.section == "observation"
@@ -8136,6 +8183,10 @@ def evaluate_grounded_surface_body_inverse(
                         selected_decision = next((d for d in selected_subjective_input.decisions
                             if d.move_id == move_id), None) if selected_subjective_input else None
                         from emlis_ai_grounded_human_reception import SelectedRetainedReliefCognitionDecisionV1, SelectedRetainedReliefReceivedDecisionV1
+                        from emlis_ai_grounded_human_reception import SelectedInitialReceivedPersonalMeaningDecisionV1
+                        if type(selected_decision) is SelectedInitialReceivedPersonalMeaningDecisionV1:
+                            failures.append('body_inverse_initial_personal_meaning_duty_missing:' + move_id)
+                            continue
                         if type(selected_decision) is SelectedRetainedReliefReceivedDecisionV1:
                             failures.append('body_inverse_relief_received_duty_missing:' + move_id)
                             continue
@@ -9787,3 +9838,55 @@ def evaluate_emlis_history_line_inverse(text, line_plan, *, prepared):
     return (match.group(1) == line_plan.current_text and match.group(3) == line_plan.past_text
             and match.group(2) == datetime.fromisoformat(line_plan.recorded_at.replace('Z','+00:00')).date().isoformat()
             and bool(line_plan.current_evidence_refs and line_plan.past_evidence_refs))
+
+
+def _read_initial_personal_meaning_discourse(raw, move, plan, resolver, selected):
+    """Read the delivered three clauses against source; never invoke an author."""
+    from cocolon_meaning_experience_engine.emlis_thread_projection import validate_initial_personal_meaning_source
+    from cocolon_meaning_experience_engine.contracts import InitialReceivedPersonalMeaningContentV1
+    from emlis_ai_grounded_observation_plan import _source_initial_personal_meaning_from_resolver
+    try:
+        decision, = (d for d in selected.decisions if d.move_id == move.move_id)
+        local = validate_initial_personal_meaning_source(decision, selected, plan, resolver)
+        if type(local) is not InitialReceivedPersonalMeaningContentV1:
+            return None
+        group = _source_initial_personal_meaning_from_resolver(plan.nuclei, plan.relations, resolver)
+        if not group:
+            return None
+        event, reaction, meaning = group[3:6]
+        match = re.fullmatch(r'(?P<event>[^。]+?)(?P<link>のに|けれども|けれど|けど)、'
+                            r'(?P<reaction>[^。]+?)し、(?P<meaning>[^。]+)のですね。', raw)
+        if match is None:
+            return None
+        sources = []
+        for role, node in (('event', event), ('reaction', reaction), ('meaning', meaning)):
+            host = resolver.resolve(node.source_span_ids[0]).raw_text
+            ranges = tuple(code.removeprefix('source_fragment_scalar_range:').split(':')
+                           for code in node.semantic_frame.attribute_codes if code.startswith('source_fragment_scalar_range:'))
+            if role == 'meaning':
+                if ranges:
+                    return None
+                source = host
+            else:
+                if len(ranges) != 1:
+                    return None
+                a, b = map(int, ranges[0]); source = host[a:b]
+            visible = match[role]
+            owner = re.match(r'^(?:私|自分|わたし)(?=は|が|も)', source)
+            if owner:
+                if not visible.startswith('あなた'):
+                    return None
+                visible = owner.group() + visible[len('あなた'):]
+            if source.endswith('です') and role != 'event':
+                visible += 'です'
+            if visible != source:
+                return None
+            sources.append((len(raw[:match.start(role)].encode()), len(raw[:match.end(role)].encode()), source.encode()))
+        links = tuple(code.split(':')[1] for code in event.semantic_frame.attribute_codes
+                      if code.startswith('source_received_event_link:'))
+        link_names = {'のに': 'noni', 'けど': 'kedo', 'けれど': 'keredo', 'けれども': 'keredomo'}
+        if links != (link_names[match['link']],):
+            return None
+        return tuple(sources)
+    except (ValueError, TypeError, AttributeError, KeyError):
+        return None

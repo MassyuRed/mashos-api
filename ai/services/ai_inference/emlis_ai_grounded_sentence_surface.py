@@ -1177,8 +1177,11 @@ def _retained_relief_observation_pair(plan, resolver):
         return frozenset()
     from emlis_ai_grounded_observation_plan import (source_owned_relief_cognition_from_resolver,
         _source_mixed_relief_unknown_from_resolver, _source_retained_mixed_unknown_from_resolver,
-        _source_retained_relief_received_from_resolver)
+        _source_retained_relief_received_from_resolver, _source_initial_personal_meaning_from_resolver)
     received = _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)
+    initial = _source_initial_personal_meaning_from_resolver(plan.nuclei, plan.relations, resolver)
+    if initial and initial[1] is not None:
+        received = initial
     mixed = (_source_retained_mixed_unknown_from_resolver(plan.nuclei, plan.relations, resolver)
              if answers else _source_mixed_relief_unknown_from_resolver(plan.nuclei, plan.relations, resolver))
     if received:
@@ -3951,6 +3954,15 @@ def _render_relation(
                 # feelings. Each quoted endpoint keeps its own tense.
                 sentences.append(f"{left}の一方で{right}とあります。")
                 continue
+            from emlis_ai_grounded_observation_plan import _source_initial_personal_meaning_from_resolver
+            initial_personal = _source_initial_personal_meaning_from_resolver(
+                tuple(nucleus_index.values()), tuple(relation_index.values()), resolver)
+            if typed_semantic_duties and initial_personal and relation_id == initial_personal[-1].relation_id:
+                links = tuple(c.split(':')[1] for c in event.semantic_frame.attribute_codes
+                              if c.startswith('source_received_event_link:'))
+                link = {'noni': 'のに', 'kedo': 'けど', 'keredo': 'けれど', 'keredomo': 'けれども'}[links[0]]
+                sentences.append(left + link + right + 'という経験が書かれています。')
+                continue
             if (typed_semantic_duties and relation_id in neutral_received_contrast_ids
                 and relation.grounding_kind == "user_stated_relation"
                 and not _hedge_prefix(binding)):
@@ -4770,6 +4782,17 @@ def _realize_line(
     joined_unfinished_appraisal_ids: frozenset[str] = frozenset(),
 ) -> str:
     if _is_final_stage1_grounded_projection(plan):
+        if (line.surface_function == 'observe_nuclei' and not line.binding.relation_ids
+            and any('source_received_personal_meaning:v1' in nucleus_index[nid].semantic_frame.attribute_codes
+                    for nid in line.binding.nucleus_ids)):
+            from emlis_ai_grounded_observation_plan import _source_initial_personal_meaning_from_resolver
+            group = _source_initial_personal_meaning_from_resolver(plan.nuclei, plan.relations, resolver)
+            if group:
+                # Co-presence does not connect the past explanation to an
+                # unresolved present question. Re-prove the complete source.
+                quotes = _quotes_for_nuclei(line.binding.nucleus_ids, nucleus_index, resolver)
+                return (_hedge_prefix(line.binding) + _join_quotes(quotes)
+                    + ('と、それぞれ' if len(quotes) > 1 else 'と') + '書かれています。')
         past = tuple(n for n in plan.nuclei if n.nucleus_id in line.binding.nucleus_ids
             and any(c.startswith('source_past_self_unknown:') for c in n.semantic_frame.attribute_codes))
         if past:

@@ -15,6 +15,8 @@ from .source_kernel import SourceAdmissionError
 def _original_body_uses_prepared_plan(prepared):
     from emlis_ai_grounded_observation_plan import source_owned_result_appraisal, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_separate_contrast_objects_from_resolver
     return (prepared.thread.control.capability_snapshot.startswith("Q3_")
+        or any('source_received_personal_meaning:v1' in n.semantic_frame.attribute_codes
+               for n in prepared.original_plan.nuclei)
         or any('source_past_self_unknown:v1' in n.semantic_frame.attribute_codes
                for n in prepared.original_plan.nuclei)
         or prepared.legacy_relief_cognition_reception

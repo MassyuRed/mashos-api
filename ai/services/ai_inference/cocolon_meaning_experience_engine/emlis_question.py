@@ -9,6 +9,7 @@ from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
 from emlis_ai_grounded_observation_plan import (
     build_final_stage1_grounded_observation_plan,
     _source_self_appraisal, _source_self_appraisal_parts,
+    _source_initial_personal_meaning_from_resolver,
 )
 from emlis_ai_safety_triage import TRIAGE_SAFE_OBSERVATION
 
@@ -47,9 +48,15 @@ def _original_source_meaning_plan(source, *, _legacy_result_appraisal=False, _le
                           _legacy_relief_cognition_anaphora=False, _legacy_relief_self_recipient=False,
                           _legacy_past_self_unknown=False, _legacy_reverse_time_contrast=False,
                           _legacy_time_contrast_source=False, _legacy_cognitive_feeling_orthography=False,
-                          _legacy_mixed_relief_unknown=False, _legacy_relief_received_retention=False):
+                          _legacy_mixed_relief_unknown=False, _legacy_relief_received_retention=False,
+                          _legacy_initial_personal_meaning=False):
+    # Every earlier source version predates the initial three-role experience.
+    # A saved identity is re-derived from that complete version, never relabeled.
+    initial_personal_legacy = any(value for name, value in locals().items()
+                                 if name.startswith('_legacy_'))
     return build_final_stage1_grounded_observation_plan(
         source.normalized_current_input, evidence_spans=source.evidence_spans,
+        _legacy_initial_personal_meaning=initial_personal_legacy,
         _legacy_relief_received_retention=(_legacy_relief_received_retention or any((
             _legacy_mixed_relief_unknown,
             _legacy_cognitive_feeling_orthography, _legacy_time_contrast_source,
@@ -309,6 +316,9 @@ def question_candidate(thread: AdmittedEmlisThread, plan, *, parent_request_id: 
     texts = tuple(str(original.normalized_current_input.get(key, ""))
                   for key in ("memo", "memo_action"))
     resolver = thread.resolver()
+    if (not thread.answers
+        and _source_initial_personal_meaning_from_resolver(plan.nuclei, plan.relations, resolver)):
+        return EmlisQuestionDecisionV1("END", decision_reason="source_bound_personal_meaning_already_stated"), None
     index = {row.nucleus_id: row for row in plan.nuclei}
     reactions = tuple(row for row in plan.nuclei
                       if row.kind in {"reaction", "state", "constraint", "value", "self_evaluation"}

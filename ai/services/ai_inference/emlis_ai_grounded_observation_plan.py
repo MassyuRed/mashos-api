@@ -17827,6 +17827,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_cognitive_feeling_orthography: bool = True,
     _legacy_mixed_relief_unknown: bool = True,
     _legacy_relief_received_retention: bool = True,
+    _legacy_initial_personal_meaning: bool = True,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -18017,6 +18018,10 @@ def project_final_stage1_grounded_observation_plan(
             and {r.from_nucleus_id, r.to_nucleus_id} <= candidate_ids else r for r in relations)
         if (candidate_ids or promotable_feelings) and _thread_retained_reaction_groups(candidate_nuclei, candidate_relations):
             nuclei, relations = candidate_nuclei, candidate_relations
+    if (not _legacy_initial_personal_meaning
+        and safety_decision.safety_triage_kind == TRIAGE_SAFE_OBSERVATION):
+        nuclei, relations = _final_source_initial_personal_meaning(
+            nuclei, relations, evidence_spans, normalized_input)
     complexity = _semantic_complexity(
         nuclei=nuclei,
         relations=relations,
@@ -18060,6 +18065,8 @@ def project_final_stage1_grounded_observation_plan(
                 if n == received[1] else n for n in nuclei)
     retained_received = _source_relief_received_group(
         nuclei, relations, evidence_spans, normalized_input)
+    initial_personal = _source_initial_received_personal_meaning_group(
+        nuclei, relations, evidence_spans, normalized_input)
     unknown_boundaries = _final_stage1_unknown_boundaries(plan, nuclei)
     independent_unknown = (_source_relief_cognition_unknown_group(
         nuclei, relations, evidence_spans, normalized_input)
@@ -18074,14 +18081,29 @@ def project_final_stage1_grounded_observation_plan(
             material_quality=material_quality,
             include_reception_relation_support=True,
             final_source_fidelity=True,
-            retained_reaction_groups=(_thread_relief_received_groups(nuclei, relations) if retained_received else ((
+            retained_reaction_groups=(_initial_personal_meaning_duties(initial_personal) or (_thread_relief_received_groups(nuclei, relations) if retained_received else ((
                 ("lived_change", (independent_unknown[1].nucleus_id,), (independent_unknown[2].nucleus_id,)),
                 ("current_burden", (independent_unknown[0].nucleus_id,), ()),
-            ) if independent_unknown else ())),
+            ) if independent_unknown else ()))),
         )
     )
     response_plan = _explicit_unknown_object_reception(
         response_plan, nuclei, relations, evidence_spans, normalized_input)
+    if (initial_personal and safety_decision.safety_triage_kind == TRIAGE_SAFE_OBSERVATION
+        and response_plan.human_reception_plan is not None):
+        reception = response_plan.human_reception_plan
+        duties = _initial_personal_meaning_duties(initial_personal)
+        acts = {'current_burden': 'stay_with_current_burden', 'lived_change': 'recognize_lived_change'}
+        if tuple((m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in reception.moves) != tuple(
+                (acts[f], targets, support) for f, targets, support in duties):
+            raise GroundedObservationPlanError('initial_personal_meaning_duties_invalid')
+        moves = tuple(replace(m, move_role='attention', surface_strategy='emlis_attention_first',
+                    reference_mode='short_anchor_if_ambiguous') if i == 0 else
+                replace(m, move_role='felt_response', surface_strategy='quiet_referent_first',
+                    reference_mode='short_anchor_if_ambiguous') if initial_personal[0] is not None
+                    and m.target_nucleus_ids == (initial_personal[0].nucleus_id,) else m
+                for i, m in enumerate(reception.moves))
+        response_plan = replace(response_plan, human_reception_plan=replace(reception, moves=moves))
     projected = replace(
         plan,
         input_profile=replace(
@@ -18396,6 +18418,205 @@ def _source_relief_cognition_unknown_from_resolver(nuclei, relations, resolver):
     normalized = normalize_emlis_current_input(fields)
     return (_source_relief_cognition_unknown_group(nuclei, relations, spans, normalized)
         or _source_mixed_relief_unknown_group(nuclei, relations, spans, normalized)[:3])
+
+
+def _source_initial_received_personal_meaning_parts(raw):
+    """One SELF perception followed by its explicitly past feeling.
+
+    The perception's complement is never asserted as another person's fact.
+    The outer past feeling has a separate source range and remains asserted.
+    """
+    if (not raw or re.search(r'[「」『』?？!！。．.\r\n…‥]', raw)
+        or re.search(r'もし|仮に|なら|たら|によると|いわく|曰く|と言|と話|と語|って言|って話|って語', raw)
+        or re.match(r'(?:昨日|一昨日|先週|去年|昨年|別の日|翌日|今日|今|現在)', raw)
+        or re.search(r'(?:彼|彼女|母|父|妹|弟|兄|姉|友人|上司)(?:は|が|も)', raw)):
+        return None
+    match = re.fullmatch(
+        r'(?P<time>(?:あの時|その時|当時)(?:は|も)?(?:本当は|実際は)?[、,\s]*)?'
+        r'(?P<perception>.+?(?:ようで|ように感じて|気がして|と思って))[、,]'
+        r'(?P<feeling>(?:少し|とても|まだ)?(?:重|苦し|つら|辛|怖|悲し|寂し|嬉し|うれし|軽)'
+        r'(?:かった|くなかった)(?:です)?)', raw)
+    if (match is None or re.search(r'[、,]', match['perception'])
+        or re.match(r'^(?!(?:私は|私が|私も|自分は|自分が|自分も|次も))[^、,「」]{1,28}?(?:は|が|も)',
+                    match['perception'])):
+        return None
+    scopes = tuple((role, *match.span(role)) for role in ('perception', 'feeling'))
+    if match['time']:
+        scopes = (('time', *match.span('time')), *scopes)
+    return scopes
+
+
+def _initial_personal_meaning_polarity(raw, parts):
+    start, end = next((a, b) for role, a, b in parts if role == 'feeling')
+    feeling = raw[start:end]
+    return 'negative' if re.search(r'くなかった|重|苦|つら|辛|怖|悲|寂', feeling) else 'positive'
+
+
+def _source_initial_received_personal_meaning_group(nuclei, relations, evidence_spans, normalized_input):
+    """Complete R+M, optionally preceded by P and followed by independent U.
+
+    This is an initial-source qualification, not an answer or a synthetic ABOUT.
+    No extra text owner, source edge, field or reordered experience is admitted.
+    """
+    if normalized_input is None:
+        return ()
+    if not any('source_received_personal_meaning:v1' in n.semantic_frame.attribute_codes for n in nuclei):
+        return ()
+    source = str(normalized_input.get('memo') or '')
+    if (_top_level_text(source) != source or re.search(r'[「」『』?？!！…‥\r\n]', source)
+        or str(normalized_input.get('memo_action') or '').strip()):
+        return ()
+    spans = {s.span_id: s for s in evidence_spans}
+    pairs = source_owned_relief_cognition_pairs(nuclei, relations, evidence_spans, normalized_input)
+    if len(pairs) > 1:
+        return ()
+    left, right, pair_edge = pairs[0] if pairs else (None, None, None)
+    pair_ids = {left.nucleus_id, right.nucleus_id} if left else set()
+    text = tuple(n for n in nuclei if set(n.source_fields) & _TEXT_SOURCE_FIELDS
+        and not (pair_edge is not None and n.retention == 'optional'
+            and n.grounding_kind == 'user_stated_relation'
+            and 'detected_type:relation_marker' in n.semantic_frame.attribute_codes
+            and set(n.source_span_ids) <= set(pair_edge.source_span_ids)))
+    meanings = tuple(n for n in text if any(c.startswith('source_received_personal_meaning:')
+                                          for c in n.semantic_frame.attribute_codes))
+    unknowns = tuple(n for n in text if n.kind == 'uncertainty')
+    if len(meanings) != 1 or len(unknowns) > 1 or len(text) != 3 + 2 * bool(left) + len(unknowns):
+        return ()
+    meaning, = meanings
+    unknown = unknowns[0] if unknowns else None
+    received = tuple(n for n in text if n.nucleus_id not in pair_ids and n not in (meaning, unknown))
+    edges = tuple(e for e in relations if e != pair_edge)
+    if (len(received) != 2 or len(edges) != 1 or not _received_contrast_group_targets(received, edges)
+        or any(n.source_fields != ('memo',) or n.retention != 'required'
+            or n.grounding_kind != 'explicit' or n.allowed_claim_scope != 'explicit_current_input'
+            or n.semantic_frame.actor != 'current_user' or len(n.source_span_ids) != 1
+            or n.surface_anchor_ids != n.source_span_ids
+            or n.semantic_frame.target_anchor_ids != n.source_span_ids
+            or n.source_span_ids[0] not in spans for n in (*received, meaning))):
+        return ()
+    received_edge, = edges
+    by_id = {n.nucleus_id: n for n in received}
+    event, reaction = by_id.get(received_edge.from_nucleus_id), by_id.get(received_edge.to_nucleus_id)
+    if (event is None or reaction is None or event.kind != 'event' or reaction.kind != 'reaction'
+        or event.source_span_ids != reaction.source_span_ids
+        or set(received_edge.source_span_ids) != set(event.source_span_ids)):
+        return ()
+    host, explanation = spans[event.source_span_ids[0]], spans[meaning.source_span_ids[0]]
+    projections = _received_event_reaction_text_projections(host.raw_text)
+    if (len(projections) != 2 or re.match(
+        r'(?:(?:私|自分|わたし)(?:は|が))?(?:私|自分|わたし|僕|ぼく|俺|おれ)に', _clean(host.raw_text))):
+        return ()
+    for n, projected in zip((event, reaction), projections):
+        f = n.semantic_frame
+        if ((n.kind, f.predicate_kind, f.polarity, f.modality, f.time_scope)
+            != (projected.kind, projected.predicate_kind, projected.polarity, projected.modality, projected.time_scope)
+            or not set(projected.attribute_codes) <= set(f.attribute_codes)
+            or tuple(c for c in f.attribute_codes if c.startswith('source_fragment_scalar_range:'))
+                != (f'source_fragment_scalar_range:{projected.scalar_start}:{projected.scalar_end}',)
+            or tuple(c for c in f.attribute_codes if c.startswith('source_received_event_link:'))
+                != tuple(c for c in projected.attribute_codes if c.startswith('source_received_event_link:'))):
+            return ()
+    parts = _source_initial_received_personal_meaning_parts(explanation.raw_text)
+    frame = meaning.semantic_frame
+    if (parts is None or (meaning.kind, frame.predicate_kind, frame.modality, frame.time_scope)
+            != ('reaction', 'feeling', 'feeling', 'past')
+        or frame.polarity != _initial_personal_meaning_polarity(explanation.raw_text, parts)
+        or tuple(c for c in frame.attribute_codes if c.startswith('source_received_personal_meaning:'))
+            != ('source_received_personal_meaning:v1',)
+        or {c for c in frame.attribute_codes if c.startswith('source_initial_meaning_scope:')}
+            != {f'source_initial_meaning_scope:{role}:{a}:{b}' for role, a, b in parts}
+        or any(c.startswith(('source_fragment_', 'surface_scalar_', 'thread_time:')) for c in frame.attribute_codes)):
+        return ()
+    tail = None
+    if unknown is not None:
+        if (len(unknown.source_span_ids) != 1 or unknown.source_span_ids[0] not in spans
+            or unknown.surface_anchor_ids != unknown.source_span_ids
+            or unknown.semantic_frame.target_anchor_ids != unknown.source_span_ids):
+            return ()
+        tail = spans[unknown.source_span_ids[0]]
+        if not _source_single_unknown_object((unknown,), (),
+            (replace(tail, start_index=0, end_index=len(tail.raw_text)),), {'memo': tail.raw_text}):
+            return ()
+    ordered = (host, explanation, *((tail,) if tail else ()))
+    expected_spans = {s.span_id for s in ordered} | (set(pair_edge.source_span_ids) if pair_edge else set())
+    if ({s.span_id for s in evidence_spans if s.source_field in _TEXT_SOURCE_FIELDS} != expected_spans
+        or any(s.source_field != 'memo' or not 0 <= s.start_index < s.end_index <= len(source)
+            or source[s.start_index:s.end_index] != s.raw_text for s in ordered)
+        or any(not re.fullmatch(r'\s*[。．.]\s*', source[a.end_index:b.start_index])
+               or not a.end_index < b.start_index for a, b in zip(ordered, ordered[1:]))
+        or not re.fullmatch(r'\s*[。．.]?\s*', source[ordered[-1].end_index:])):
+        return ()
+    if left:
+        end = spans[right.source_span_ids[0]].end_index
+        if not end < host.start_index or not re.fullmatch(r'\s*[。．.]\s*', source[end:host.start_index]):
+            return ()
+    elif source[:host.start_index].strip():
+        return ()
+    return unknown, left, right, event, reaction, meaning, pair_edge, received_edge
+
+
+def _final_source_initial_personal_meaning(nuclei, relations, evidence_spans, normalized_input):
+    """Apply the whole qualified source atomically; do not normalize loose M."""
+    spans = {s.span_id: s for s in evidence_spans}
+    candidates = tuple((n, parts) for n in nuclei
+        if n.source_fields == ('memo',) and len(n.source_span_ids) == 1
+        and n.source_span_ids[0] in spans and n.grounding_kind == 'explicit'
+        and n.allowed_claim_scope == 'explicit_current_input'
+        and n.semantic_frame.actor == 'current_user'
+        and n.kind in {'reaction', 'change', 'event'}
+        and (parts := _source_initial_received_personal_meaning_parts(spans[n.source_span_ids[0]].raw_text)))
+    if len(candidates) != 1:
+        return nuclei, relations
+    meaning, parts = candidates[0]
+    frame = meaning.semantic_frame
+    codes = tuple(c for c in frame.attribute_codes if not c.startswith(('time_scope:', 'operator:change', 'operator:positive_change')))
+    codes = tuple(_dedupe((*codes, 'operator:feeling', 'time_scope:past', 'source_received_personal_meaning:v1',
+        'semantic_role:initial_personal_meaning', 'lexical:preserve_source_predicate',
+        'lexical:no_new_sensation_family',
+        *(f'source_initial_meaning_scope:{role}:{a}:{b}' for role, a, b in parts))))
+    candidate = tuple(replace(n, kind='reaction', retention='required', semantic_frame=replace(frame,
+        predicate_kind='feeling', modality='feeling', time_scope='past', polarity=_initial_personal_meaning_polarity(
+            spans[meaning.source_span_ids[0]].raw_text, parts), attribute_codes=codes)) if n == meaning else n for n in nuclei)
+    # Retain the existing reflexive SELF-unknown lexical repair, only inside
+    # this independently proved complete source, never by deleting M first.
+    candidate = tuple(replace(n, kind='uncertainty', semantic_frame=replace(n.semantic_frame,
+        predicate_kind='uncertainty')) if len(n.source_span_ids) == 1 and n.source_span_ids[0] in spans
+        and (n.kind, n.semantic_frame.predicate_kind) in {('self_evaluation', 'self_evaluation'), ('reaction', 'feeling')}
+        and 'operator:self_evaluation' not in n.semantic_frame.attribute_codes
+        and (part := _source_self_unknown_object_parts(spans[n.source_span_ids[0]].raw_text))
+        and part['owner'] == '自分' else n for n in candidate)
+    unknowns = tuple(n for n in candidate if n.kind == 'uncertainty' and n.source_fields == ('memo',))
+    if len(unknowns) > 1:
+        return nuclei, relations
+    unknown = unknowns[0] if unknowns else None
+    candidate_edges = tuple(e for e in relations if not (unknown is not None
+        and (e.from_nucleus_id, e.to_nucleus_id) == (meaning.nucleus_id, unknown.nucleus_id)
+        and e.type == 'uncertain_connection' and e.retention == 'should'
+        and e.grounding_kind == 'bounded_structural_inference'
+        and set(e.source_span_ids) == set((*meaning.source_span_ids, *unknown.source_span_ids))
+        and e.source_relation_ids == ('whole_input_source_order',)
+        and e.source_meaning_arc_keys == ('whole_input:source_order',)))
+    return (candidate, candidate_edges) if _source_initial_received_personal_meaning_group(
+        candidate, candidate_edges, evidence_spans, normalized_input) else (nuclei, relations)
+
+
+def _initial_personal_meaning_duties(group):
+    if not group:
+        return ()
+    unknown, left, right, event, reaction, meaning, _, _ = group
+    return ((('current_burden', (event.nucleus_id,), (reaction.nucleus_id, meaning.nucleus_id)),)
+        + ((('lived_change', (left.nucleus_id,), (right.nucleus_id,)),) if left else ())
+        + ((('current_burden', (unknown.nucleus_id,), ()),) if unknown else ()))
+
+
+def _source_initial_personal_meaning_from_resolver(nuclei, relations, resolver):
+    read = getattr(resolver, 'source_text_for_span_field', None)
+    if read is None:
+        return ()
+    spans = resolver.resolve_many(resolver.span_ids)
+    fields = {s.source_field: read(s.span_id) for s in spans if s.source_field in _TEXT_SOURCE_FIELDS}
+    return _source_initial_received_personal_meaning_group(nuclei, relations, spans,
+        normalize_emlis_current_input(fields))
 
 
 def _source_relief_received_group(nuclei, relations, evidence_spans, normalized_input,
@@ -19930,6 +20151,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_cognitive_feeling_orthography: bool = True,
     _legacy_mixed_relief_unknown: bool = True,
     _legacy_relief_received_retention: bool = True,
+    _legacy_initial_personal_meaning: bool = True,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan.
 
@@ -20011,6 +20233,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_cognitive_feeling_orthography=_legacy_cognitive_feeling_orthography,
         _legacy_mixed_relief_unknown=_legacy_mixed_relief_unknown,
         _legacy_relief_received_retention=_legacy_relief_received_retention,
+        _legacy_initial_personal_meaning=_legacy_initial_personal_meaning,
     )
 
 

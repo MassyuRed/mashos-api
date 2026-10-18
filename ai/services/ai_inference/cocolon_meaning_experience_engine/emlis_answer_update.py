@@ -644,7 +644,19 @@ def _unchanged_relief_cognition_update_source(prepared, *, _allow_received_react
         past = (answer.semantic_frame.time_scope == 'past' and times == {'thread_time:original_occasion'}
             and (item.binding_kind, temporal.about_time, temporal.relative_relation)
                 == ('QUESTION_FOCUS', 'ORIGINAL_OCCASION', None))
-        if not (current or past) or temporal.time_expression_evidence_refs != evidence:
+        resolver = thread.resolver()
+        span = resolver.resolve(answer.source_span_ids[0])
+        raw = span.raw_text
+        qualified = tuple(q.evidence.evidence_id for q in resolver.qualified_refs
+            if q.source_envelope_id == thread.answers[0].envelope.envelope_id
+            and q.evidence.evidence_id in evidence)
+        implicit_past = (past and temporal.time_expression_evidence_refs == ()
+            and qualified == evidence and _PERCEIVED_REACTION.fullmatch(raw) is not None
+            and not (_THEN.match(raw) or _NOW.match(raw) or _OTHER_TIME.match(raw))
+            and tuple(code for code in answer.semantic_frame.attribute_codes
+                if code.startswith('source_fragment_scalar_range:')) == (f'source_fragment_scalar_range:0:{len(raw)}',)
+            and _answer_nucleus(span, raw=raw, about_time='ORIGINAL_OCCASION', source_start=0) == answer)
+        if not ((current or past) and temporal.time_expression_evidence_refs == evidence or implicit_past):
             return None
     elif (answer.semantic_frame.time_scope != 'past' or times != {'thread_time:original_occasion'}
           or temporal.about_time != 'ORIGINAL_OCCASION' or temporal.relative_relation is not None):
@@ -1357,6 +1369,18 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
             or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
             raise
+        # u352 owns the original two-role/omitted-explanation interpretation.
+        # Rebuild the whole old source without suppressing older pair duties.
+        prior_personal = original_meaning_plan(thread, _legacy_initial_personal_meaning=True)
+        if prior_personal != original:
+            try:
+                restored = _prepare_emlis_meaning_from_plan(request, thread, prior_personal,
+                    legacy_relief_cognition_update_retention=False)
+            except ValueError as prior_exc:
+                if str(prior_exc) not in {'emlis_checkpoint_source_prefix_mismatch', 'emlis_question_noncanonical'}:
+                    raise
+            else:
+                return restored
         # u348 keeps its old full source and selection, including mixed-unknown
         # retention. A source-only version switch avoids suppressing those
         # duties through the generic Prepared legacy-flag guards.
@@ -1995,6 +2019,13 @@ def _prepare_answer(thread, original, *, legacy_unknown_replacement_time=False, 
         tuple(row.update_ref for row in updates), tuple(dict.fromkeys(inactive)), tuple(unresolved))
     prepared = PreparedEmlisMeaning(thread, original, tuple(added), checkpoint)
     retained_pair = _unchanged_relief_cognition_update_source(prepared)
+    # The u350 three-duty initial source has a different U selection from
+    # the older pair helper. Version only this newly retained implicit ADD;
+    # existing explicit-time and withdrawal checkpoints keep their identities.
+    if (retained_pair is None and len(updates) == 1 and updates[0].operation == 'ADD'
+        and not updates[0].temporal_binding.time_expression_evidence_refs):
+        retained_pair = _unchanged_relief_cognition_update_source(
+            prepared, _allow_received_reaction_withdrawal=True)
     if retained_pair is not None:
         if legacy_relief_cognition_update_retention:
             prepared = replace(prepared, legacy_relief_cognition_update_retention=True)

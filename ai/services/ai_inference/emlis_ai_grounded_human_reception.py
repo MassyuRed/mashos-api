@@ -326,6 +326,12 @@ class SelectedRetainedReliefReceivedDecisionV1(SelectedSubjectiveReceptionDecisi
 
 
 @dataclass(frozen=True, repr=False)
+class SelectedInitialReceivedPersonalMeaningDecisionV1(SelectedSubjectiveReceptionDecisionV1):
+    """One initial duty; its explanation retains original-source identity."""
+    initial_received_personal_meaning: Any = field(repr=False)
+
+
+@dataclass(frozen=True, repr=False)
 class SelectedSubjectiveReceptionInputV1:
     """Pre-realization authority shared by forward and independent replay.
 
@@ -405,11 +411,12 @@ def validate_selected_subjective_reception_input(
         or set(semantic_map.values()) != {row.nucleus_id for row in plan.nuclei}
         or not set(relation_map.values()) <= {row.relation_id for row in plan.relations}):
         raise GroundedHumanReceptionSurfaceError(failure)
+    initial_personal_source_validated = False
     relief_received_source_validated = False
     for row, move in zip(value.decisions, reception_plan.moves, strict=True):
         if (type(row) not in {SelectedSubjectiveReceptionDecisionV1, SelectedRetainedReceivedExperienceDecisionV1,
                              SelectedRetainedReasonedExperienceDecisionV1, SelectedRetainedReliefCognitionDecisionV1,
-                             SelectedRetainedReliefReceivedDecisionV1}
+                             SelectedRetainedReliefReceivedDecisionV1, SelectedInitialReceivedPersonalMeaningDecisionV1}
             or identify_selected_subjective_reception_decision(row) != row
             or row.branch not in {"NORMAL", "LIMITED"}
             or not all((row.meaning_outcome_ref, row.reception_binding_ref, row.projected_claim_ref))
@@ -434,6 +441,17 @@ def validate_selected_subjective_reception_input(
             try:
                 from cocolon_meaning_experience_engine.emlis_thread_projection import validate_retained_relief_cognition_source
                 validate_retained_relief_cognition_source(row, value, plan, resolver)
+            except (ValueError, TypeError, AttributeError, KeyError):
+                raise GroundedHumanReceptionSurfaceError(failure) from None
+        if type(row) is SelectedInitialReceivedPersonalMeaningDecisionV1:
+            try:
+                if not initial_personal_source_validated:
+                    from cocolon_meaning_experience_engine.emlis_thread_projection import validate_initial_personal_meaning_source
+                    validate_initial_personal_meaning_source(row, value, plan, resolver)
+                    initial_personal_source_validated = True
+                else:
+                    from cocolon_meaning_experience_engine.contracts import validate_initial_personal_meaning_content
+                    validate_initial_personal_meaning_content(row.initial_received_personal_meaning, row, value)
             except (ValueError, TypeError, AttributeError, KeyError):
                 raise GroundedHumanReceptionSurfaceError(failure) from None
         if type(row) is SelectedRetainedReliefReceivedDecisionV1:
@@ -496,6 +514,9 @@ def validate_selected_subjective_reception_input(
             raise GroundedHumanReceptionSurfaceError(failure)
         from cocolon_meaning_experience_engine.contracts import EmlisReliefCognitionAppraisalContent
         if (type(appraisal) is EmlisReliefCognitionAppraisalContent
+            or type(row) is SelectedInitialReceivedPersonalMeaningDecisionV1
+                and type(row.initial_received_personal_meaning.proposition.appraisal_content)
+                    is EmlisReliefCognitionAppraisalContent
             or type(row) is SelectedRetainedReliefCognitionDecisionV1
             or type(row) is SelectedRetainedReliefReceivedDecisionV1
                 and type(row.retained_relief_received.proposition.appraisal_content)
@@ -3212,11 +3233,11 @@ def _source_grounded_received_contrast_rows(targets, supports, nucleus_index, re
 
 
 def _source_unknown_object_clauses(move, plan, resolver):
-    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_relief_cognition_unknown_from_resolver, _source_retained_mixed_unknown_from_resolver, _source_retained_relief_received_from_resolver
+    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_relief_cognition_unknown_from_resolver, _source_retained_mixed_unknown_from_resolver, _source_retained_relief_received_from_resolver, _source_initial_personal_meaning_from_resolver
     if plan is None or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts:
         return ()
     group = _source_unknown_object_group_from_resolver(plan.nuclei, plan.relations, resolver, include_single=True)
-    group = group or (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or _source_retained_mixed_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or tuple(n for n in _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)[:1] if n is not None))[:1]
+    group = group or (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or _source_retained_mixed_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or tuple(n for n in _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)[:1] if n is not None) or tuple(n for n in _source_initial_personal_meaning_from_resolver(plan.nuclei, plan.relations, resolver)[:1] if n is not None))[:1]
     ids = (*move.target_nucleus_ids, *move.support_nucleus_ids)
     if (not group or not move.required or move.move_role != "felt_response"
         or move.reception_act != "stay_with_current_burden"
@@ -3384,6 +3405,10 @@ def source_grounded_current_expression_nominal(
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
 ) -> str:
+    initial = _source_grounded_initial_personal_meaning_group(move, plan, resolver)
+    if initial:
+        event, reaction, meaning = initial[0]
+        return event + _RECEIVED_EVENT_LINK_TEXT[initial[1]] + reaction + 'ことと、' + meaning + 'こと'
     unknown_object = _source_unknown_object_clauses(move, plan, resolver)
     if unknown_object:
         return _unknown_object_nominal(unknown_object)
@@ -3397,7 +3422,7 @@ def source_grounded_current_expression_nominal(
     # event range may become the nominal, never the obsolete whole span.
     if (plan is not None and move.required and move.reception_act == 'stay_with_current_burden'
         and len(move.target_nucleus_ids) == 1 and not move.support_nucleus_ids):
-        from emlis_ai_grounded_observation_plan import _source_retained_relief_received_from_resolver
+        from emlis_ai_grounded_observation_plan import _source_retained_relief_received_from_resolver, _source_initial_personal_meaning_from_resolver
         retained = _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)
         if (retained and move.target_nucleus_ids == (retained[3].nucleus_id,)
             and retained[4].nucleus_id not in {n.nucleus_id for n in plan.nuclei}
@@ -3779,7 +3804,7 @@ def source_grounded_thread_received_group(move, plan, nucleus_index, resolver):
         # This closed source is the only mixed relief experience allowed to
         # retain an accepted positive answer in its original received scope.
         # The answer's own source, time and ABOUT edge are still proved below.
-        from emlis_ai_grounded_observation_plan import _source_retained_relief_received_from_resolver
+        from emlis_ai_grounded_observation_plan import _source_retained_relief_received_from_resolver, _source_initial_personal_meaning_from_resolver
         retained_source = _source_retained_relief_received_from_resolver(
             plan.nuclei, plan.relations, resolver) if about else ()
         answer_polarity = (nucleus_index[about[0].to_nucleus_id].semantic_frame.polarity
@@ -6370,13 +6395,18 @@ def derive_source_grounded_nominalization_plan(
     )
     if reference_mode == "ANAPHORIC" or move is None or plan is None or resolver is None:
         return nominalization
+    initial = _source_grounded_initial_personal_meaning_group(move, plan, resolver)
+    if initial:
+        if fragments != initial[0] or tuple(n.nucleus_id for n in nuclei) != (*move.target_nucleus_ids, *move.support_nucleus_ids):
+            raise GroundedHumanReceptionSurfaceError('REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP')
+        return (*nominalization, 'source-initial-personal-meaning:' + initial[1])
     unknown_object = _source_unknown_object_clauses(move, plan, resolver)
     if unknown_object:
         if fragments != unknown_object:
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
         if len(unknown_object) == 1:
-            from emlis_ai_grounded_observation_plan import _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_relief_cognition_unknown_from_resolver, _source_retained_mixed_unknown_from_resolver, _source_retained_relief_received_from_resolver
-            independent = (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or _source_retained_mixed_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or tuple(n for n in _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)[:1] if n is not None))
+            from emlis_ai_grounded_observation_plan import _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_relief_cognition_unknown_from_resolver, _source_retained_mixed_unknown_from_resolver, _source_retained_relief_received_from_resolver, _source_initial_personal_meaning_from_resolver
+            independent = (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or _source_retained_mixed_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or tuple(n for n in _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)[:1] if n is not None) or tuple(n for n in _source_initial_personal_meaning_from_resolver(plan.nuclei, plan.relations, resolver)[:1] if n is not None))
             marker = "source-independent-unknown-object:0" if independent else "source-single-unknown-object:0"
             return (*nominalization, marker)
         feeling_slot = next(i for i, n in enumerate(nuclei) if n.kind == "reaction")
@@ -6525,6 +6555,9 @@ def source_grounded_negative_context_nominal(
 def _source_grounded_nominalization_shape_valid(
     plan: tuple[str, ...], semantic_count: int,
 ) -> bool:
+    if (semantic_count == 3 and len(plan) == 2 and plan[:1] == _SOURCE_GROUNDED_NOMINALIZATION_BASE
+        and re.fullmatch(r'source-initial-personal-meaning:(?:noni|kedo|keredo|keredomo)', plan[1])):
+        return True
     if semantic_count == 1 and plan in {(*_SOURCE_GROUNDED_NOMINALIZATION_BASE, "source-single-unknown-object:0"),
                                       (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, "source-independent-unknown-object:0")}:
         return True
@@ -8117,6 +8150,11 @@ def _validate_source_grounded_move_ir(
     expected_nominalization = _source_grounded_nominalization_from_profiles(
         move.semantic_fragments, move.semantic_profiles, move.reference_mode,
     )
+    initial_grammar = tuple(p for p in move.nominalization_plan if p.startswith('source-initial-personal-meaning:'))
+    if initial_grammar:
+        if not _initial_personal_meaning_group_ir_text(move):
+            raise GroundedHumanReceptionSurfaceError('REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP')
+        expected_nominalization = (*expected_nominalization, *initial_grammar)
     unknown_grammar = tuple(p for p in move.nominalization_plan if p.startswith(("source-unknown-object:", "source-single-unknown-object:", "source-independent-unknown-object:")))
     if unknown_grammar:
         _unknown_object_group_ir_text(move)
@@ -8907,7 +8945,7 @@ def _source_grounded_target_owner_slot(
     if (referent_kind == "positive_feeling" and realization.polarity == "positive"
         and _thread_answer_group_ir_text(realization)):
         return 0
-    if referent_kind == "current_expression" and (_unknown_object_group_ir_text(realization) or _shared_target_appraisal_group_ir_text(realization) or _detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)):
+    if referent_kind == "current_expression" and (_unknown_object_group_ir_text(realization) or _initial_personal_meaning_group_ir_text(realization) or _shared_target_appraisal_group_ir_text(realization) or _detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)):
         # Slot zero anchors the collective grammar, whose core must cover
         # every target and its subject. It is not the sole selected answer.
         return 0
@@ -9454,7 +9492,7 @@ def _source_grounded_temporal_aspect_realization(
     if realization.reference_mode == "ANAPHORIC":
         return "ANTECEDENT", "ANTECEDENT", "", ""
 
-    group_text = _unknown_object_group_ir_text(realization) or _shared_target_appraisal_group_ir_text(realization) or _detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
+    group_text = _unknown_object_group_ir_text(realization) or _initial_personal_meaning_group_ir_text(realization) or _shared_target_appraisal_group_ir_text(realization) or _detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
     if group_text:
         if target_referent != group_text or realization.aspect not in {"unknown", "not_applicable"}:
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
@@ -9712,7 +9750,7 @@ def _source_grounded_target_np(
         realization.semantic_fragments[target_owner_slot],
         target_referent=referent_text,
     )
-    group_text = _unknown_object_group_ir_text(realization) or _shared_target_appraisal_group_ir_text(realization) or _detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
+    group_text = _unknown_object_group_ir_text(realization) or _initial_personal_meaning_group_ir_text(realization) or _shared_target_appraisal_group_ir_text(realization) or _detached_burden_group_ir_text(realization) or _source_current_material_group_ir_text(realization) or _thread_received_group_ir_text(realization) or _received_contrast_group_ir_text(realization) or _thread_answer_group_ir_text(realization)
     if group_text:
         positive_group = bool(referent_kind == "positive_feeling"
             and move.reception_act == "recognize_lived_change" and realization.polarity == "positive"
@@ -11075,6 +11113,14 @@ def _source_grounded_reception_fragment(
             "MEANING_REALIZATION_CAUSAL_TRACE_GAP"
         )
     core = f"{context_prefix}{target_core.text}"
+    if any(code.startswith('source-initial-personal-meaning:') for code in realization.nominalization_plan):
+        if (not move.required or move.reception_act != 'stay_with_current_burden'
+            or move.move_role != 'attention' or context_prefix or recovery_stage != 'full'):
+            raise GroundedHumanReceptionSurfaceError('REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP')
+        discourse = _source_grounded_initial_personal_meaning_discourse(realization, selected_subjective_decision)
+        if discourse is None:
+            raise GroundedHumanReceptionSurfaceError('REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP')
+        return discourse
     if _shared_target_appraisal_group_ir_text(realization):
         from cocolon_meaning_experience_engine.contracts import EmlisSharedTargetExperienceAppraisalContent
         content = selected_subjective_decision.subjective_proposition.appraisal_content
@@ -12027,7 +12073,7 @@ def _source_owned_retained_received_event_sentence(move, realization, plan, reso
         or realization.target_slot_count != 1 or realization.context_slots or realization.relations
         or len(realization.semantic_fragments) != 1):
         return None
-    from emlis_ai_grounded_observation_plan import _source_retained_relief_received_from_resolver
+    from emlis_ai_grounded_observation_plan import _source_retained_relief_received_from_resolver, _source_initial_personal_meaning_from_resolver
     source = _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)
     if not source or move.target_nucleus_ids != (source[3].nucleus_id,):
         return None
@@ -14303,3 +14349,68 @@ def validate_selected_retained_reasoned_experience(decision, selected, plan, res
         raise ValueError('retained_reasoned_experience_selection_invalid')
     validate_retained_reasoned_experience_source(decision, selected, plan, resolver)
     return decision.retained_reasoned_experience
+
+
+def _source_grounded_initial_personal_meaning_group(move, plan, resolver):
+    from emlis_ai_grounded_observation_plan import _source_initial_personal_meaning_from_resolver
+    if plan is None:
+        return None
+    group = _source_initial_personal_meaning_from_resolver(plan.nuclei, plan.relations, resolver)
+    if not group:
+        return None
+    event, reaction, meaning = group[3:6]
+    if (not move.required or move not in plan.response_plan.human_reception_plan.moves
+        or move.reception_act != 'stay_with_current_burden'
+        or move.target_nucleus_ids != (event.nucleus_id,)
+        or move.support_nucleus_ids != (reaction.nucleus_id, meaning.nucleus_id)):
+        return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    fragments = tuple(final_reception_source_anchor_text(n.nucleus_id, index, resolver)
+                      for n in (event, reaction, meaning))
+    links = tuple(c.split(':', 1)[1] for c in event.semantic_frame.attribute_codes
+                  if c.startswith('source_received_event_link:'))
+    if not all(fragments) or len(links) != 1 or links[0] not in _RECEIVED_EVENT_LINK_TEXT:
+        return None
+    return fragments, links[0]
+
+
+def _initial_personal_meaning_group_ir_text(realization):
+    codes = tuple(c for c in realization.nominalization_plan if c.startswith('source-initial-personal-meaning:'))
+    if not codes:
+        return ''
+    from emlis_ai_grounded_observation_plan import _source_initial_received_personal_meaning_parts
+    if (len(codes) != 1 or not _source_grounded_nominalization_shape_valid(realization.nominalization_plan, 3)
+        or realization.target_slot_count != 1 or realization.context_slots != (1, 2)
+        or len(realization.semantic_fragments) != 3 or len(realization.semantic_profiles) != 3
+        or realization.reference_mode != 'COMPOSITE' or realization.predicate_kind != 'synthesize_relation'
+        or (realization.time_scope, realization.polarity, realization.modality) != ('past', 'neutral', 'fact')
+        or len(realization.relations) != 1
+        or (realization.relations[0].relation_kind, realization.relations[0].endpoint_slots,
+            realization.relations[0].endpoint_roles) != ('contrast', (0, 1), ('LEFT', 'RIGHT'))
+        or any(p.actor_kind != 'SELF' or p.quoted_boundary or p.performed_action or p.future_action
+               for p in realization.semantic_profiles)
+        or tuple((p.nucleus_kind, p.predicate_kind, p.modality) for p in realization.semantic_profiles)
+            != (('event', 'event', 'fact'), ('reaction', 'feeling', 'feeling'), ('reaction', 'feeling', 'feeling'))
+        or _source_initial_received_personal_meaning_parts(realization.semantic_fragments[2]) is None):
+        raise GroundedHumanReceptionSurfaceError('REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP')
+    event, reaction, meaning = realization.semantic_fragments
+    link = codes[0].split(':')[1]
+    return event + _RECEIVED_EVENT_LINK_TEXT[link] + reaction + 'ことと、' + meaning + 'こと'
+
+
+def _source_grounded_initial_personal_meaning_discourse(realization, selected_decision):
+    from cocolon_meaning_experience_engine.contracts import InitialReceivedPersonalMeaningContentV1
+    if (type(selected_decision) is not SelectedInitialReceivedPersonalMeaningDecisionV1
+        or type(selected_decision.initial_received_personal_meaning) is not InitialReceivedPersonalMeaningContentV1
+        or realization.clause_form != 'FINITE' or realization.recovery_form != 'full'
+        or not _initial_personal_meaning_group_ir_text(realization)):
+        return None
+    event, reaction, meaning = realization.semantic_fragments
+    # SELF in the original is the recipient, not the assistant. Preserve the
+    # full perception complement and its independently past outer feeling.
+    recipient = lambda text: re.sub(r'^(?:私|自分|わたし)(?=は|が|も)', 'あなた', text, count=1)
+    event, reaction, meaning = (recipient(text) for text in (event, reaction, meaning))
+    link, = (c.split(':')[1] for c in realization.nominalization_plan
+             if c.startswith('source-initial-personal-meaning:'))
+    return (event + _RECEIVED_EVENT_LINK_TEXT[link] + '、' + reaction.removesuffix('です')
+            + 'し、' + meaning.removesuffix('です') + 'のですね')

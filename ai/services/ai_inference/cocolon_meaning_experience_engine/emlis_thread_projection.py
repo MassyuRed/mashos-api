@@ -1055,6 +1055,11 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
     if projection.meaning_plan.projection_branch != 'LIMITED':
         return projection
     resolver = prepared.thread.resolver()
+    initial = _initial_personal_meaning_eligibility(prepared, plan, resolver)
+    if initial is not None:
+        selected = _carry_initial_personal_meaning(projection, initial)
+        hr.validate_selected_subjective_reception_input(selected, plan.response_plan.human_reception_plan, plan, resolver)
+        return replace(projection, selected_reception=selected)
     combined = _retained_relief_received_eligibility(prepared, plan, resolver)
     if combined is not None:
         selected = _carry_retained_relief_received(projection, combined)
@@ -1377,6 +1382,126 @@ def _validate_retained_updated_relief_cognition_source(decision, selected, plan,
             raise ValueError(fail)
         projection = _project_thread_meaning_aggregate(prepared, replay_plan)
         if _carry_retained_relief_cognition(projection, expected) != selected:
+            raise ValueError(fail)
+    except (AttributeError, KeyError, TypeError, ValueError):
+        raise ValueError(fail) from None
+    return local
+
+
+def _initial_personal_meaning_eligibility(prepared, plan, resolver):
+    from emlis_ai_grounded_observation_plan import (_source_initial_personal_meaning_from_resolver,
+        _initial_personal_meaning_duties)
+    thread, checkpoint = prepared.thread, prepared.checkpoint
+    if (thread.answers or thread.control.answers or thread.control.current_round != 0
+        or thread.control.admitted_history or thread.control.rejected_frame_keys or thread.control.frame_feedback_sources
+        or checkpoint.assessment_status != 'RESOLVED' or checkpoint.unresolved_parts
+        or checkpoint.answer_update is not None or checkpoint.accepted_update_refs
+        or checkpoint.inactive_claim_refs or prepared.accepted_nuclei or prepared.original_plan != plan):
+        return None
+    group = _source_initial_personal_meaning_from_resolver(plan.nuclei, plan.relations, resolver)
+    if not group:
+        return None
+    unknown, left, right, event, reaction, meaning, pair_edge, received_edge = group
+    moves = plan.response_plan.human_reception_plan.moves
+    duties = _initial_personal_meaning_duties(group)
+    acts = {'lived_change': 'recognize_lived_change', 'current_burden': 'stay_with_current_burden'}
+    if (len(moves) != len(duties) or any(not move.required for move in moves)
+        or tuple((m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in moves)
+            != tuple((acts[f], t, s) for f, t, s in duties)):
+        return None
+    return c.InitialReceivedPersonalMeaningEligibilityV1(
+        '1.0', thread.source_prefix_ref, checkpoint.checkpoint_id, thread.control.original_source_ref,
+        event.nucleus_id, reaction.nucleus_id, meaning.nucleus_id, received_edge.relation_id, moves[0].move_id,
+        left.nucleus_id if left else None, right.nucleus_id if right else None,
+        pair_edge.relation_id if pair_edge else None, moves[1].move_id if left else None,
+        unknown.nucleus_id if unknown else None, moves[-1].move_id if unknown else None,
+        replace(thread.control, prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id))
+
+
+def _initial_personal_meaning_local(projection, eligibility, decision):
+    e, binding = eligibility, projection.binding
+    node = lambda nid: r._node_ref(binding.nucleus_to_node[nid])
+    edge = r._edge_ref(binding.relation_to_edge[e.received_relation_ref])
+    original_nodes = {node(e.received_event_ref), node(e.received_reaction_ref)}
+    refs = tuple(ref for ref in decision.selected_contribution_refs
+        if {b.semantic_ref for b in decision.basis_rows if b.contribution_ref == ref} == original_nodes)
+    if len(refs) != 1:
+        raise ValueError('initial_personal_meaning_original_unbound')
+    original, _, _ = r.derive_retained_received_experience_content(
+        replace(decision, selected_contribution_refs=refs),
+        contribution_rows=projection.premeaning.observation_contribution_rows,
+        candidate_rows=projection.premeaning.interpretation_candidate_rows,
+        contribution_candidate_map=tuple((row.contribution_id, ref)
+            for row in projection.premeaning.observation_contribution_rows for ref in row.interpretation_candidate_refs))
+    if original.focal_relation_ref != edge:
+        raise ValueError('initial_personal_meaning_relation_unbound')
+    proposition, basis, qualifiers = c.retained_relief_received_material_proposition(decision)
+    return dict(proposition=proposition, basis_rows=basis, qualifier_rows=qualifiers,
+        event_ref=node(e.received_event_ref), reaction_ref=node(e.received_reaction_ref),
+        initial_meaning_ref=node(e.initial_meaning_ref), received_relation_ref=edge,
+        original_proposition=original)
+
+
+def _carry_initial_personal_meaning(projection, eligibility):
+    selected = projection.selected_reception
+    if (projection.meaning_plan.projection_branch != 'LIMITED'
+        or len(projection.meaning_plan.subjective_claim_rows) != 1
+        or len({row.projected_claim_ref for row in selected.decisions}) != 1):
+        raise ValueError('initial_personal_meaning_aggregate_invalid')
+    rows = []
+    for decision in selected.decisions:
+        if decision.move_id == eligibility.received_move_ref:
+            local = _initial_personal_meaning_local(projection, eligibility, decision)
+            content_type = c.InitialReceivedPersonalMeaningContentV1
+        elif decision.move_id == eligibility.relief_move_ref:
+            proposition, basis, qualifiers = r.derive_retained_relief_cognition_content(decision, projection.premeaning)
+            local = dict(proposition=proposition, basis_rows=basis, qualifier_rows=qualifiers)
+            content_type = c.InitialReceivedPersonalMeaningPairContentV1
+        else:
+            rows.append(decision)
+            continue
+        content = composition.project_initial_personal_meaning_content(
+            content_type, eligibility, local, decision, selected, projection.meaning_plan)
+        row = hr.SelectedInitialReceivedPersonalMeaningDecisionV1(
+            **{name: getattr(decision, name) for name in hr.SelectedSubjectiveReceptionDecisionV1.__dataclass_fields__},
+            initial_received_personal_meaning=content)
+        rows.append(hr.identify_selected_subjective_reception_decision(row))
+    return hr.identify_selected_subjective_reception_input(replace(selected, decisions=tuple(rows)))
+
+
+def validate_initial_personal_meaning_source(decision, selected, plan, resolver):
+    """Re-admit the full initial envelope, then replay the complete selection."""
+    from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
+    from .emlis_thread_source import ThreadEvidenceSpanResolver
+    from .emlis_thread_contracts import EmlisThreadInputV1
+    from .source_kernel import _parse_canonical_frame
+    from .emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    fail = 'initial_personal_meaning_source_invalid'
+    try:
+        local = decision.initial_received_personal_meaning
+        c.validate_initial_personal_meaning_content(local, decision, selected)
+        control = local.eligibility.thread_control
+        if (type(resolver) is not ThreadEvidenceSpanResolver or resolver.source_contract != THREAD_SCHEMA
+            or type(control) is not EmlisThreadInputV1 or control.answers or control.current_round != 0
+            or len(resolver._source_envelopes) != 1):
+            raise ValueError(fail)
+        envelope, = resolver._source_envelopes.values()
+        if envelope.source_role != 'CURRENT_INPUT':
+            raise ValueError(fail)
+        snapshot, _ = _parse_canonical_frame(envelope.raw_utf8)
+        request = c.GenerationRequest('initial-personal-meaning-replay',
+            build_emlis_current_input_bundle(snapshot), envelope.source_record_id, emlis_thread=control)
+        prepared = prepare_emlis_meaning(request)
+        replay_plan = build_updated_grounded_plan(prepared)
+        replay_resolver = prepared.thread.resolver()
+        expected = _initial_personal_meaning_eligibility(prepared, replay_plan, replay_resolver)
+        if (expected is None or expected != local.eligibility or replay_plan != plan
+            or replay_resolver._source_envelopes != resolver._source_envelopes
+            or replay_resolver.span_ids != resolver.span_ids or replay_resolver.qualified_refs != resolver.qualified_refs
+            or replay_resolver.resolve_many(replay_resolver.span_ids) != resolver.resolve_many(resolver.span_ids)):
+            raise ValueError(fail)
+        projection = _project_thread_meaning_aggregate(prepared, replay_plan)
+        if _carry_initial_personal_meaning(projection, expected) != selected:
             raise ValueError(fail)
     except (AttributeError, KeyError, TypeError, ValueError):
         raise ValueError(fail) from None

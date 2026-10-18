@@ -220,7 +220,7 @@ def test_current_manifest_versions_the_two_new_private_contracts():
     from cocolon_meaning_experience_engine.emlis_stage1_composition import _contract_manifest
     manifest = dict(_contract_manifest())
     descriptors = {dict(row)['type_name']: dict(row) for row in manifest['logical_contract_descriptors']}
-    assert manifest['logical_contract_count'] == 87
+    assert manifest['logical_contract_count'] == 90
     for cls in (c.RetainedUpdatedReliefCognitionEligibilityV2, c.RetainedUpdatedReliefCognitionContentV2):
         row = descriptors[cls.__name__]
         assert row['logical_version'] == 'retained-updated-relief-cognition-v2'
