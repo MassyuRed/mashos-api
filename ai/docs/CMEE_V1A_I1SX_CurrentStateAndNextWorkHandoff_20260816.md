@@ -1,3 +1,5 @@
+> 2026-10-18最新診断：u349。別received経験の初回Reception欠落を確認し、初回・既受理一更新・訂正／撤回・旧互換・保存再表示の一体案を具体化。u348実装は維持、意味契約変更は未承認・未実装。詳細は[u349判断案](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u349_ReceivedExperienceRetention_Decision_20261018.md)。
+
 > 2026-10-18最新：u348。Mash承認済みの「安堵・寂しさ＋別経験＋現在の不明」を初回・既受理1更新・旧互換・保存再表示まで実装。初回3対象／2責務、更新後4対象／3責務。private V2二型追加、STRUCTURE_MAP_DELTA_PRESENT。実測・残件は末尾と[u348監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u348_MixedUnknownRetention_20261018.md)を参照。
 
 > 2026-10-18最新：u347。混在初回の原文反復を既承認内で修復。独立不明へのReceptionは初回〜1更新・保存を一体とする限定案まで具体化し、意味保持契約の判断待ち・未実装。末尾と[u347監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u347_InitialReliefLayout_and_UnknownDecision_20261018.md)を参照。
@@ -22869,3 +22871,18 @@ STRUCTURE_MAP_DELTA_PRESENT。既存production10file、新production0、private 
 必要性=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、primary outcome=TECHNICAL_CREDIT。今回の限定欠落修復と、初回一体単位全体の完成を区別する。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式Product Read0/3／candidate_ready=false／automatic_progression=false。次に残るのは別received経験の初回Reception自体、定型性・深い理解、一般入力・任意多段、過去不明混在の既存時点誤読、E04〜E09・本人実機。10/20方式判断、10/31管理線、12/18目標、Piece/Analysis主枠53.25％を維持し、今回再評価したとは扱わない。Draft PR3／PR30継続、merge／配置なし。
 
 全変更file・実本文・失敗履歴・検証境界は[u348監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u348_MixedUnknownRetention_20261018.md)。
+
+
+## u349 — 別経験の初回・一更新の保持を一体案へ具体化（2026-10-18）
+
+最新の残件継続指示を受け、u348先端（API321dff8／資料fc00a81）、前提・作業規則・全体設計と全file地図・最新weeklyを確認した。既存received単独では「褒められたことは、嬉しさにはつながらなかったのですね。」と返るが、安堵・寂しさpairが混ざると別経験のReceptionは選ばれない。不明なしは2対象／1責務、不明ありはpair＋不明の3対象／2責務。Observationと既存の意味質問には残る。
+
+初回だけ選択を足すと、ADD後は元の「嬉しくなかった」が再びReceptionから落ちる。反応だけの撤回では、現行の混在不明もReceptionから落ちる。このため、不明0/1を同じ有限source二形として、初回4/5対象・2/3責務、既受理ADDの元経験＋回答、反応REVISE、出来事／反応WITHDRAWの残存、無変更・未解釈、旧checkpoint・完成DTO非再生成、保存・中断再開・再表示を一体にした案を作成した。
+
+肯定ADDは現行では別moveに分かれるため、同一経験の3端点として証明する限定source／IR／作者／reader接続も案に含める。反応撤回後の出来事単独も旧2端点文法では扱えず、感情・評価を作らず残存事実だけを受け取る限定内容と逆検査を同じ承認対象へ含める。一般move上限3を緩めず、最大6対象はこの新資格内の有限操作に限る。新しい問い・回答構文、任意多段、追加経験、過去／第三者不明へは拡張しない。
+
+u347承認案とu348は初回receivedを明示的に対象外としていた。Rule18 §11.3 LEVEL_3の新しい内容選択・更新保持の判断が必要であり、今回のsource変更は0。記録のGitHub反映までを行い、実装済みとは扱わない。旧型を緩めず、新しい限定private版とcheckpointを分ける案とし、u348以前の既存復元も維持する。
+
+STRUCTURE_MAP_DELTA_NONE（記録5fileのみ、実装owner・logical83・全体図／地図の現行構造は不変）。新test／fixture0、pytest／SQL／UIの追加実行0。実生成診断と既存u348実本文の照合であり、過去313成功を今回の成功数へ転用しない。必要性=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、primary outcome=BLOCKER_NARROWED。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式Product Read0/3／candidate_ready=false／automatic_progression=false。10/20方式判断・10/31管理線・12/18目標、Piece/Analysis主枠53.25％は未再評価。Draft PR3／PR30継続、merge／deployなし。
+
+実出力・対象数・owner差分・未実装の本文比較案・成功と停止条件は[u349判断案](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u349_ReceivedExperienceRetention_Decision_20261018.md)。Mash判断は、この限定同時保持を初回から既存一更新・旧互換・再表示までまとめて実装することへの承認一つ。追加費用・環境操作は0の計画、工数未計測、固定時間の完成保証なし。
