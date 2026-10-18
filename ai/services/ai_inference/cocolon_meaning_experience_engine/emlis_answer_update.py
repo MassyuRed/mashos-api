@@ -86,6 +86,7 @@ class PreparedEmlisMeaning:
     legacy_cognitive_temporal_topic: bool = False
     legacy_feeling_reason_self_scope: bool = False
     legacy_unknown_object_action_scope: bool = False
+    legacy_relief_cognition_reception: bool = False
 
 
 def _text(row, index, resolver) -> str:
@@ -113,7 +114,7 @@ def _dependent_refs(plan, targets: tuple[str, ...]) -> tuple[str, ...]:
                  if row.from_nucleus_id in targets or row.to_nucleus_id in targets)
 
 
-def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, source_end: int | None = None, outcome_standard: bool = False, prior_answer_source: str | None = None, result_appraisal_replacement: bool = False, legacy_appraisal_answer_time: bool = False):
+def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, source_end: int | None = None, outcome_standard: bool = False, prior_answer_source: str | None = None, result_appraisal_replacement: bool = False, legacy_appraisal_answer_time: bool = False, relief_cognition_slot: str | None = None):
     """Use the shared source grammar with a real answer field and no labels."""
     text = span.raw_text
     offset = source_start
@@ -139,6 +140,22 @@ def _answer_nucleus(span, *, raw: str, about_time: str, source_start: int = 0, s
                             safety_span_order={}, normalized_input=local)
     frame = gp._semantic_frame_for_span(local_span, kind=kind, roles=(), claim_ids=(),
                                         normalized_input=local)
+    revised_experience = gp.source_relief_cognition_replacement(bounded, relief_cognition_slot)
+    if revised_experience is not None:
+        polarity, time = revised_experience
+        frame = replace(frame, actor='current_user', predicate_kind='feeling', modality='feeling',
+            polarity=polarity, time_scope=time, attribute_codes=(
+                'operator:feeling', f'time_scope:{time}', f'thread_time:{about_time.lower()}',
+                'thread_subject:independent_source_replacement',
+                'thread_subject:relief_cognition_replacement:' + relief_cognition_slot,
+                'lexical:preserve_source_predicate', 'lexical:no_new_sensation_family',
+                'semantic_role:generic_relation_fragment',
+                f'source_fragment_scalar_range:{offset}:{end}',
+                'source_fragment_scalar_source:normalized_raw_text'))
+        return gp.GroundedSemanticNucleus(
+            f'answer:{span.span_id}', 'reaction', (span.span_id,), (ANSWER_FIELD,), (span.span_id,),
+            frame, 'explicit', 1.0, 1.0, 'required', 'explicit_supplemental_answer',
+            ('no_unstated_cause', 'no_third_party_intention', 'no_stable_personality'))
     if result_appraisal_replacement:
         predicate = gp._result_appraisal_predicate(bounded)
         if predicate and bounded.startswith('今は') and legacy_appraisal_answer_time:
@@ -416,6 +433,42 @@ def _retained_withdrawn_appraisal_duties(original, thread, nuclei, relations, up
             ('current_burden', (group['received_event'].nucleus_id,), (group['reaction'].nucleus_id,)))
 
 
+def _retained_relief_cognition_duties(prepared, nuclei, relations):
+    """Keep each surviving explicit feeling after this pair is corrected."""
+    original, thread = prepared.original_plan, prepared.thread
+    pairs = gp.source_owned_relief_cognition_from_resolver(
+        original.nuclei, original.relations, thread.resolver())
+    if len(pairs) != 1 or prepared.checkpoint.answer_update is None:
+        return ()
+    left, right, contrast = pairs[0]
+    inactive = set(prepared.checkpoint.inactive_claim_refs)
+    if contrast.relation_id not in inactive or not inactive & {left.nucleus_id, right.nucleus_id}:
+        return ()
+    rest = tuple(n for n in original.nuclei if n.retention == 'required'
+                 and n.nucleus_id not in {left.nucleus_id, right.nucleus_id})
+    rest_ids = {n.nucleus_id for n in rest}
+    edges = tuple(r for r in relations if r.retention == 'required'
+                  and {r.from_nucleus_id, r.to_nucleus_id} <= rest_ids)
+    if len(rest) != 2 or len(edges) != 1 or not gp._received_contrast_group_targets(rest, edges):
+        return ()
+    current = {n.nucleus_id: n for n in nuclei}
+    if any(current.get(n.nucleus_id) != n for n in rest):
+        return ()
+    changed = tuple(n for n in nuclei if n.source_fields == (ANSWER_FIELD,)
+        and any(c.startswith('thread_subject:relief_cognition_replacement:')
+                for c in n.semantic_frame.attribute_codes))
+    survivors = tuple(current[n.nucleus_id] for n in (left, right) if n.nucleus_id in current)
+    required = {n.nucleus_id for n in nuclei if n.retention == 'required'}
+    if (required != rest_ids | {n.nucleus_id for n in (*survivors, *changed)}
+        or not 1 <= len(survivors) + len(changed) <= 2
+        or any(r.retention == 'required' and r not in edges for r in relations)):
+        return ()
+    duties = tuple(('lived_change' if n.semantic_frame.polarity == 'positive' else 'current_burden',
+                    (n.nucleus_id,), ()) for n in (*changed, *survivors))
+    edge, = edges
+    return (*duties, ('current_burden', (edge.from_nucleus_id,), (edge.to_nucleus_id,)))
+
+
 def _retained_unfinished_received_duties(prepared, nuclei, relations):
     """Retain two existing duties after only the received reaction is revised.
 
@@ -688,6 +741,9 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=(), *, p
         and not any(r.retention == "required"
                     and n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
                     for r in original.relations)}
+    revised_reaction_targets.update(n.nucleus_id for n in original.nuclei
+        if n.nucleus_id in inactive and any(code.startswith('source_relief_cognition_slot:')
+            for code in n.semantic_frame.attribute_codes))
     independent_replacements = {changed for item in updates
         if item.operation == "REVISE" and item.binding_kind == "EXPLICIT_CORRECTION"
         and len(item.target_meaning_refs) == 1
@@ -876,6 +932,13 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=(), *, p
         *((proof,) if n.nucleus_id in answer_subjects and subject_texts.count(answer_subjects[n.nucleus_id]) == 1 else ()),
         *((distinct_occurrences[n.nucleus_id],) if n.nucleus_id in distinct_occurrences else ()),
     ))) if n.source_fields == (ANSWER_FIELD,) else n for n in nuclei)
+    valid_response_ids = {n.nucleus_id for pair in gp.source_owned_relief_cognition_from_resolver(
+        nuclei, relations, resolver) for n in pair[:2]}
+    nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+        attribute_codes=tuple(code for code in n.semantic_frame.attribute_codes
+            if not code.startswith('source_relief_cognition_slot:'))))
+        if n.nucleus_id not in valid_response_ids and any(code.startswith('source_relief_cognition_slot:')
+            for code in n.semantic_frame.attribute_codes) else n for n in nuclei)
     # The original joint reading expires when any of its source roles or
     # relations is revised/withdrawn. Preserve surviving experiences, while
     # removing the grouped outer edge and its proof from every remaining role.
@@ -902,7 +965,8 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=(), *, p
         material_quality=quality, include_reception_relation_support=True,
         final_source_fidelity=True,
         primary_focus_nucleus_ids=focus_ids,
-        retained_reaction_groups=(_retained_reasonless_shared_target_duties(
+        retained_reaction_groups=(_retained_relief_cognition_duties(prepared, nuclei, relations)
+            or _retained_reasonless_shared_target_duties(
             original, thread, nuclei, relations, updates)
             or _retained_withdrawn_appraisal_duties(original, thread, nuclei, relations, updates)
             or _retained_unfinished_received_duties(prepared, nuclei, relations) if not unresolved else ()),
@@ -950,6 +1014,16 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
             or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
             raise
+        # A newly selected response cannot inherit an old meaning identity.
+        prior_reception = original_meaning_plan(thread, _legacy_relief_cognition_reception=True)
+        if prior_reception.nuclei != original.nuclei:
+            try:
+                restored = _prepare_emlis_meaning_from_plan(request, thread, prior_reception)
+            except ValueError as prior_exc:
+                if str(prior_exc) not in {'emlis_checkpoint_source_prefix_mismatch', 'emlis_question_noncanonical'}:
+                    raise
+            else:
+                return replace(restored, legacy_relief_cognition_reception=True)
         # Restore the complete pre-u327 interpretation of independent wh
         # cognition/action. A saved checkpoint cannot be relabelled as the
         # newly source-proven two-duty interpretation.
@@ -1312,11 +1386,17 @@ def _prepare_answer(thread, original, *, legacy_appraisal_correction=False, lega
                 and gp._result_appraisal_predicate(replacement['new'])):
                 then = _THEN.match(replacement['new'])
                 about, temporal_anchor, prior_answer_time = 'ORIGINAL_OCCASION', thread.original.envelope.envelope_id, False
+            # Only the versioned original pair (or its admitted replacement)
+            # grants this correction grammar. Old checkpoint plans lack it.
+            response_slots = tuple(sorted({c.split(':')[-1] for c in target_times
+                if c.startswith(('source_relief_cognition_origin:', 'thread_subject:relief_cognition_replacement:'))}))
+            response_slot = response_slots[0] if len(response_slots) == 1 else None
             nucleus = None if withdrawal else _answer_nucleus(span, raw=answer.source.answer_text_private,
                 about_time="PRIOR_ANSWER_TIME" if prior_answer_time else about, source_start=replacement.start("new"), source_end=replacement.end("new"), outcome_standard=outcome_standard,
                 prior_answer_source=quoted if target_nucleus.source_fields == (ANSWER_FIELD,) else None,
                 result_appraisal_replacement=appraisal_replacement,
-                legacy_appraisal_answer_time=legacy_appraisal_answer_time)
+                legacy_appraisal_answer_time=legacy_appraisal_answer_time,
+                relief_cognition_slot=response_slot)
             if nucleus and prior_answer_time:
                 nucleus = replace(nucleus,semantic_frame=replace(nucleus.semantic_frame,
                     attribute_codes=(*nucleus.semantic_frame.attribute_codes,"thread_time_anchor:"+temporal_anchor)))

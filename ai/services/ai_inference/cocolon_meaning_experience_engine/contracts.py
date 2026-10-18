@@ -1819,6 +1819,17 @@ class EmlisAppraisalContent:
 
 
 @dataclass(frozen=True, slots=True)
+class EmlisReliefCognitionAppraisalContent(EmlisAppraisalContent):
+    """Source-bound relief and listening, retaining both contrast endpoints."""
+
+    schema_version: str
+    relief_binding_refs: Tuple[str, ...]
+    loneliness_binding_refs: Tuple[str, ...]
+    reaction: str
+    response: str
+
+
+@dataclass(frozen=True, slots=True)
 class EmlisSharedTargetExperienceAppraisalContent(EmlisAppraisalContent):
     """Keep an act's appraisal distinct from its received-event/feeling pair."""
 
@@ -2775,6 +2786,10 @@ _STAGE1_TUPLE_FIELDS = {
     SubjectiveFacetSuppressionRow: (),
     PolicyApplicationRow: ("policy_basis_binding_refs",),
     EmlisAffectContent: ("elicitor_bindings",),
+    EmlisReliefCognitionAppraisalContent: (
+        "appraised_bindings", "protected_bindings", "basis_contribution_refs",
+        "relief_binding_refs", "loneliness_binding_refs",
+    ),
     EmlisSharedTargetExperienceAppraisalContent: (
         "appraised_bindings", "protected_bindings", "basis_contribution_refs",
         "target_reference_qualifier_refs",
@@ -3367,7 +3382,7 @@ def _stage1_subjective_v2_content_bindings(
     if proposition.content_kind is SubjectiveContentKind.APPRAISAL:
         content = proposition.appraisal_content
         if (
-            type(content) not in (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent, EmlisSharedTargetExperienceAppraisalContent, EmlisReasonedExperienceAppraisalContent)
+            type(content) not in (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent, EmlisSharedTargetExperienceAppraisalContent, EmlisReasonedExperienceAppraisalContent, EmlisReliefCognitionAppraisalContent)
             or type(content.dimension) is not AppraisalDimension
             or type(content.operation) is not AppraisalOperation
             or (content.dimension, content.operation)
@@ -3398,6 +3413,17 @@ def _stage1_subjective_v2_content_bindings(
                 or type(content.continuing) is not bool or type(content.explicit_ability) is not bool
                 or content.degree not in {"unmarked", "slight", "very", "truly", "not_at_all", "not_much"}):
                 raise CMEEStage1ContractError("stage1_evaluated_experience_invalid")
+        if type(content) is EmlisReliefCognitionAppraisalContent:
+            relief = _stage1_subjective_content_binding_tuple(content.relief_binding_refs, allow_empty=False)
+            lonely = _stage1_subjective_content_binding_tuple(content.loneliness_binding_refs, allow_empty=False)
+            if (content.schema_version != 'cocolon.cmee.emlis.relief_cognition_appraisal.v1'
+                or (content.dimension, content.operation) != (
+                    AppraisalDimension.RELATIONAL_NONCOLLAPSE, AppraisalOperation.PRESERVE_BOTH_ENDPOINTS)
+                or content.protected_bindings or set(relief) & set(lonely)
+                or set((*relief, *lonely)) != set(content.appraised_bindings)
+                or content.reaction != 'BOUNDED_RELIEF_AT_REPORTED_RELIEF'
+                or content.response != 'LISTEN_TO_PRESENT_LONELINESS_UNDER_UNCERTAINTY'):
+                raise CMEEStage1ContractError('stage1_relief_cognition_invalid')
         if type(content) is EmlisReasonedExperienceAppraisalContent:
             roles = (content.reason_binding_ref, content.event_binding_ref,
                      content.evaluation_binding_ref)
@@ -3601,7 +3627,7 @@ def validate_subjective_proposition_v2(
     )
     content_types = (
         EmlisAffectContent,
-        (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent, EmlisSharedTargetExperienceAppraisalContent, EmlisReasonedExperienceAppraisalContent),
+        (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent, EmlisSharedTargetExperienceAppraisalContent, EmlisReasonedExperienceAppraisalContent, EmlisReliefCognitionAppraisalContent),
         MaterialValueContent,
         EmlisRelationalPosition,
     )
@@ -7008,6 +7034,8 @@ def project_stage1_source_contract_qualifiers(
     }
     return (
         *_stage1_shared_target_source_qualifiers(source_codes),
+        *(f"qualifier:{code}" for code in sorted(source_codes & {
+            "source_relief_cognition_slot:relief", "source_relief_cognition_slot:loneliness"})),
         *(f"qualifier:{code}" for code in sorted(source_codes & _STAGE1_APPRAISAL_SOURCE_CODES)
           if "semantic_dependency:explicit_result_appraisal" in source_codes),
         *(
@@ -7094,6 +7122,14 @@ def project_stage1_relation_source_contract_qualifiers(
         raise CMEEStage1ContractError(
             "stage1_response_schema_version_invalid"
         )
+    if (candidate_kind is InterpretationKind.TENSION
+        and 'source_relief_cognition_slot:relief' in source_attribute_codes
+        and 'source_relief_cognition_slot:loneliness' in target_attribute_codes):
+        return tuple(prefix + value for prefix, codes in
+            (('left_', source_attribute_codes), ('right_', target_attribute_codes))
+            for value in project_stage1_source_contract_qualifiers(
+                source_attribute_codes=codes, source_explicit_shift_relation_endpoint=False,
+                stage1_response_schema_version=stage1_response_schema_version))
     if (candidate_kind is InterpretationKind.TENSION
         and all("semantic_dependency:shared_target_appraisal_contrast_v1" in codes
                 for codes in (source_attribute_codes, target_attribute_codes))):
@@ -16756,6 +16792,23 @@ def _im04_limited_appraisal_content(
         semantic_refs=semantic_refs,
     )
     if focal_relation_ref is not None:
+        linked = tuple(candidate for candidate in candidate_rows
+            if candidate.relation_basis_refs == (focal_relation_ref,)
+            and candidate.semantic_refs == semantic_refs)
+        if (len(linked) == 1 and len(basis_binding_refs) == len(semantic_refs) == 2
+            and linked[0].candidate_kind is InterpretationKind.TENSION
+            and {'left_qualifier:source_relief_cognition_slot:relief',
+                 'right_qualifier:source_relief_cognition_slot:loneliness',
+                 'left_polarity:positive', 'left_modality:feeling', 'left_time_scope:past',
+                 'right_polarity:negative', 'right_modality:feeling', 'right_time_scope:current_input'}
+                <= set(linked[0].required_qualifiers)):
+            return EmlisReliefCognitionAppraisalContent(
+                AppraisalDimension.RELATIONAL_NONCOLLAPSE, AppraisalOperation.PRESERVE_BOTH_ENDPOINTS,
+                basis_binding_refs, focal_relation_ref, (), contribution_refs,
+                'cocolon.cmee.emlis.relief_cognition_appraisal.v1',
+                basis_binding_refs[:1], basis_binding_refs[1:],
+                'BOUNDED_RELIEF_AT_REPORTED_RELIEF',
+                'LISTEN_TO_PRESENT_LONELINESS_UNDER_UNCERTAINTY')
         return EmlisAppraisalContent(
             AppraisalDimension.RELATIONAL_NONCOLLAPSE,
             AppraisalOperation.PRESERVE_BOTH_ENDPOINTS,
@@ -19150,7 +19203,7 @@ def _stage1_v2_basis_role(
 def _stage1_v2_content_binding_refs(content: object) -> tuple[str, ...]:
     if type(content) is EmlisAffectContent:
         return content.elicitor_bindings
-    if type(content) in (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent, EmlisSharedTargetExperienceAppraisalContent, EmlisReasonedExperienceAppraisalContent):
+    if type(content) in (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent, EmlisSharedTargetExperienceAppraisalContent, EmlisReasonedExperienceAppraisalContent, EmlisReliefCognitionAppraisalContent):
         return _stage1_first_occurrence_union(
             content.appraised_bindings,
             content.protected_bindings,
@@ -19634,7 +19687,7 @@ def _validate_stage1_projection_v2_subjective_spine(
 
     content_type_by_kind = {
         SubjectiveContentKind.AFFECT: EmlisAffectContent,
-        SubjectiveContentKind.APPRAISAL: (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent, EmlisSharedTargetExperienceAppraisalContent, EmlisReasonedExperienceAppraisalContent),
+        SubjectiveContentKind.APPRAISAL: (EmlisAppraisalContent, EmlisEvaluatedExperienceAppraisalContent, EmlisSharedTargetExperienceAppraisalContent, EmlisReasonedExperienceAppraisalContent, EmlisReliefCognitionAppraisalContent),
         SubjectiveContentKind.MATERIAL_VALUE: MaterialValueContent,
         SubjectiveContentKind.RELATIONAL_POSITION: EmlisRelationalPosition,
     }
@@ -22243,6 +22296,7 @@ __all__ = [
     "EmlisAffectContent",
     "EmlisAppraisalContent",
     "EmlisReasonedExperienceAppraisalContent",
+    "EmlisReliefCognitionAppraisalContent",
     "EmlisEvaluatedExperienceAppraisalContent",
     "EmlisSharedTargetExperienceAppraisalContent",
     "EmlisMeaningField",

@@ -458,6 +458,11 @@ def validate_selected_subjective_reception_input(
             or appraisal.focal_relation_ref != proposition.focal_relation_ref
         ):
             raise GroundedHumanReceptionSurfaceError(failure)
+        from cocolon_meaning_experience_engine.contracts import EmlisReliefCognitionAppraisalContent
+        if type(appraisal) is EmlisReliefCognitionAppraisalContent:
+            from emlis_ai_grounded_observation_gate import _relief_cognition_selected_reception
+            if not _relief_cognition_selected_reception(move, plan, resolver, value):
+                raise GroundedHumanReceptionSurfaceError(failure)
         from cocolon_meaning_experience_engine.contracts import EmlisEvaluatedExperienceAppraisalContent
         if type(appraisal) is EmlisEvaluatedExperienceAppraisalContent:
             from emlis_ai_grounded_observation_plan import source_owned_result_appraisal
@@ -11902,6 +11907,24 @@ def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
     return topic + time + _feeling_acknowledgement(finite)
 
 
+def _source_owned_relief_cognition_sentence(move, plan, resolver, selected, recovery_stage):
+    from emlis_ai_grounded_observation_gate import _relief_cognition_selected_reception
+    from emlis_ai_grounded_observation_plan import _source_cognitive_feeling_parts
+    pair = _relief_cognition_selected_reception(move, plan, resolver, selected)
+    if pair is None or recovery_stage != 'full':
+        return None
+    left, right, _ = pair
+    relief, cognitive = (resolver.resolve(n.source_span_ids[0]).raw_text for n in (left, right))
+    parts, _ = _source_cognitive_feeling_parts(cognitive)
+    scopes = {role: (a, b) for role, a, b, _ in parts}
+    condition = cognitive[:scopes['cognitive_condition'][0]]
+    feeling = cognitive[slice(*scopes['feeling'])]
+    relief, condition = (re.sub(r'^(?:私|わたし|自分|僕|ぼく|俺|おれ)(?=は|が|も)', 'あなた', text)
+                         for text in (relief, condition))
+    return (relief + 'と聞いて、私も少し安心しましたが、' + condition + 'と'
+            + feeling + 'という気持ちにも、今、耳を傾けていたいです')
+
+
 def _source_owned_relational_focus_sentence(move, realization, plan, resolver,
                                            selected_decision, recovery_stage):
     """Realize the scope of uncertainty or a person's supplied evaluation basis.
@@ -12909,6 +12932,14 @@ def _author_source_grounded_reception_clauses(
             )
             if action_change_sentence is not None:
                 move_sentence = action_change_sentence
+            from emlis_ai_grounded_observation_gate import _relief_cognition_corrected_source
+            corrected = _relief_cognition_corrected_source(move, plan, resolver, selected_subjective_input)
+            if corrected is not None:
+                move_sentence = '言い直してくださった気持ちは、' + corrected + 'ということなのですね'
+            relief_sentence = _source_owned_relief_cognition_sentence(
+                move, plan, resolver, selected_subjective_input, recovery_stage)
+            if relief_sentence is not None:
+                move_sentence = relief_sentence
             # A source-owned reading is checked against its actual source roles,
             # not against the old nominalized referent or a fixed closing.
             from emlis_ai_grounded_observation_gate import read_source_owned_discourse

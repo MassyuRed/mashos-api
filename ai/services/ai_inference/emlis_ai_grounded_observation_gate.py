@@ -47,6 +47,8 @@ from emlis_ai_grounded_observation_plan import (
     FINAL_STAGE1_GROUNDED_PROJECTION_VERSION,
     GroundedObservationPlan,
     is_grounded_positive_feeling,
+    source_relief_cognition_replacement,
+    source_owned_relief_cognition_from_resolver,
     validate_grounded_human_reception_plan,
     validate_grounded_observation_plan,
 )
@@ -5017,9 +5019,118 @@ def _read_retained_appraisal_event_discourse(raw, move, plan, resolver, selected
     return ((0, len(parsed['event'].encode()), source.encode()),)
 
 
+def _relief_cognition_corrected_source(move, plan, resolver, selected):
+    if not move.required or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids or selected is None:
+        return None
+    n = next((n for n in plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0]), None)
+    if n is None or n.source_fields != ('answer_text_private',) or n.allowed_claim_scope != 'explicit_supplemental_answer':
+        return None
+    slots = tuple(c.split(':')[-1] for c in n.semantic_frame.attribute_codes
+                  if c.startswith('thread_subject:relief_cognition_replacement:'))
+    if len(slots) != 1 or n.semantic_frame.actor != 'current_user':
+        return None
+    from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
+    source = final_reception_source_anchor_text(n.nucleus_id, {n.nucleus_id: n}, resolver)
+    proof = source_relief_cognition_replacement(source, slots[0])
+    decision = next((d for d in selected.decisions if d.move_id == move.move_id), None)
+    if (not proof or proof != (n.semantic_frame.polarity, n.semantic_frame.time_scope)
+        or decision is None or decision.target_nucleus_ids != move.target_nucleus_ids
+        or decision.support_nucleus_ids or decision.subjective_proposition.appraisal_content is None
+        or decision.subjective_proposition.appraisal_content.dimension != 'MATERIAL_WEIGHT'
+        or n.nucleus_id not in {dict(selected.semantic_nucleus_pairs).get(b.semantic_ref)
+            for b in decision.basis_rows if b.contribution_ref in decision.selected_contribution_refs}):
+        return None
+    return source
+
+
+def _relief_cognition_selected_reception(move, plan, resolver, selected):
+    """Prove selected facets against live complete source roles, without text authoring."""
+    from cocolon_meaning_experience_engine.contracts import EmlisReliefCognitionAppraisalContent
+    if selected is None or not move.required:
+        return None
+    decisions = tuple(d for d in selected.decisions if d.move_id == move.move_id)
+    if len(decisions) != 1:
+        return None
+    d = decisions[0]
+    p = d.subjective_proposition
+    c = p.appraisal_content
+    if (type(c) is not EmlisReliefCognitionAppraisalContent or d.branch not in {'NORMAL', 'LIMITED'}
+        or c.schema_version != 'cocolon.cmee.emlis.relief_cognition_appraisal.v1'
+        or (p.subjective_mode, p.subjective_operator) != ('ATTENTION', 'ATTEND_TO')
+        or (c.dimension, c.operation) != ('RELATIONAL_NONCOLLAPSE', 'PRESERVE_BOTH_ENDPOINTS')
+        or c.reaction != 'BOUNDED_RELIEF_AT_REPORTED_RELIEF'
+        or c.response != 'LISTEN_TO_PRESENT_LONELINESS_UNDER_UNCERTAINTY'
+        or c.protected_bindings or p.boundary_target_refs
+        or c.focal_relation_ref != p.focal_relation_ref
+        or d.reception_act != move.reception_act
+        or d.target_nucleus_ids != move.target_nucleus_ids
+        or d.support_nucleus_ids != move.support_nucleus_ids):
+        return None
+    nodes, edges = dict(selected.semantic_nucleus_pairs), dict(selected.relation_pairs)
+    basis = {b.binding_ref: b for b in d.basis_rows}
+    roles = set((*move.target_nucleus_ids, *move.support_nucleus_ids))
+    pairs = tuple(pair for pair in source_owned_relief_cognition_from_resolver(plan.nuclei, plan.relations, resolver)
+                  if {pair[0].nucleus_id, pair[1].nucleus_id} == roles
+                  and edges.get(c.focal_relation_ref) == pair[2].relation_id)
+    if len(pairs) != 1:
+        return None
+    left, right, edge = pairs[0]
+    if (set(c.appraised_bindings) != set(basis)
+        or set((*c.relief_binding_refs, *c.loneliness_binding_refs)) != set(basis)
+        or set(c.relief_binding_refs) & set(c.loneliness_binding_refs)
+        or any(not refs or any(ref not in basis or nodes.get(basis[ref].semantic_ref) != node.nucleus_id
+                              for ref in refs)
+               for refs, node in ((c.relief_binding_refs, left), (c.loneliness_binding_refs, right)))
+        or {nodes.get(ref) for ref in p.response_object_refs} != roles
+        or set(c.basis_contribution_refs) != set(d.selected_contribution_refs)):
+        return None
+    return left, right, edge
+
+
+def _read_relief_cognition_discourse(raw, move, plan, resolver, selected):
+    pair = _relief_cognition_selected_reception(move, plan, resolver, selected)
+    if pair is None:
+        return None
+    from emlis_ai_grounded_observation_plan import _source_cognitive_feeling_parts
+    left, right, _ = pair
+    source_left, source_right = (resolver.resolve(n.source_span_ids[0]).raw_text for n in (left, right))
+    parts, _ = _source_cognitive_feeling_parts(source_right)
+    scopes = {role: (start, end) for role, start, end, _ in parts}
+    match = re.fullmatch(r'(?P<relief>[^。]+)と聞いて、私も少し(?:安心しました|ほっとしました)(?:が|し)、'
+        r'(?P<cognition>[^。]+?)と(?P<feeling>(?:少し(?:だけ)?|ちょっと|とても|まだ|ずっと)?(?:寂しい|さびしい))'
+        r'という気持ちにも、今、耳を傾け(?:てい)?たいです。', raw)
+    if match is None:
+        return None
+    # Recipient substitution is local to the original explicit SELF subject.
+    left_visible = re.sub(r'^(?:私|わたし|自分|僕|ぼく|俺|おれ)(?=は|が)', 'あなた', source_left)
+    prefix = source_right[:scopes['cognitive_condition'][0]]
+    prefix_visible = re.sub(r'^(?:私|わたし|自分|僕|ぼく|俺|おれ)(?=は|が|も)', 'あなた', prefix)
+    feeling = source_right[slice(*scopes['feeling'])]
+    if (match['relief'] != left_visible or match['cognition'] != prefix_visible
+        or match['feeling'] != feeling):
+        return None
+    replacements = []
+    for start, end, source in ((match.start('relief'), match.end('relief'), source_left),
+                              (match.start('cognition'), match.end('feeling'), source_right)):
+        replacements.append((len(raw[:start].encode()), len(raw[:end].encode()), source.encode()))
+    return tuple(replacements)
+
+
 def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None,
                                 *, preceding_context=None):
     """Read supported finite source duties without a literal-author oracle."""
+    from cocolon_meaning_experience_engine.contracts import EmlisReliefCognitionAppraisalContent
+    decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None) if selected_subjective_input else None
+    if decision and type(decision.subjective_proposition.appraisal_content) is EmlisReliefCognitionAppraisalContent:
+        # A missing new facet cannot fall back to the old contrast wording.
+        return _read_relief_cognition_discourse(raw, move, plan, resolver, selected_subjective_input)
+    corrected = _relief_cognition_corrected_source(move, plan, resolver, selected_subjective_input)
+    if corrected is not None:
+        match = re.fullmatch(r'言い直してくださった気持ちは、(?P<feeling>[^。]+)ということなのですね。', raw)
+        if match is None or match['feeling'] != corrected:
+            return None
+        return ((len(raw[:match.start('feeling')].encode()),
+                 len(raw[:match.end('feeling')].encode()), corrected.encode()),)
     retained_event = _read_retained_appraisal_event_discourse(
         raw, move, plan, resolver, selected_subjective_input)
     if retained_event is not None:
@@ -7764,6 +7875,13 @@ def evaluate_grounded_surface_body_inverse(
                             # Complete body-owned proposition/edge verification
                             # replaces nominal/closing-token requirements only.
                             # Source, plan, clause, trace and safety gates remain.
+                            continue
+                        from cocolon_meaning_experience_engine.contracts import EmlisReliefCognitionAppraisalContent
+                        selected_decision = next((d for d in selected_subjective_input.decisions
+                            if d.move_id == move_id), None) if selected_subjective_input else None
+                        if (selected_decision and type(selected_decision.subjective_proposition.appraisal_content)
+                                is EmlisReliefCognitionAppraisalContent):
+                            failures.append('body_inverse_relief_cognition_facet_missing:' + move_id)
                             continue
                         # A source-owned finite clause that fails its complete
                         # reader must not be rescued by generating a nominal

@@ -48,6 +48,7 @@ from .contracts import (
     EmlisAffectContent,
     EmlisAppraisalContent,
     EmlisReasonedExperienceAppraisalContent,
+    EmlisReliefCognitionAppraisalContent,
     EmlisEvaluatedExperienceAppraisalContent,
     EmlisSharedTargetExperienceAppraisalContent,
     GroupedAppraisalReceivedConfigurationV1,
@@ -6480,6 +6481,24 @@ def _normal_reception_appraisal(
     else:
         dimension = AppraisalDimension.MATERIAL_WEIGHT
         operation = AppraisalOperation.RECEIVE_AS_MATERIAL
+    if dimension is AppraisalDimension.RELATIONAL_NONCOLLAPSE:
+        relief = tuple(row.binding_ref for row in basis_rows if
+            'source_relief_cognition_slot:relief' in endpoint_codes(own_qualifiers.get(row.binding_ref)))
+        lonely = tuple(row.binding_ref for row in basis_rows if
+            'source_relief_cognition_slot:loneliness' in endpoint_codes(own_qualifiers.get(row.binding_ref)))
+        if (relief and lonely and not set(relief) & set(lonely)
+            and set((*relief, *lonely)) == {row.binding_ref for row in basis_rows}
+            and all((own_qualifiers[ref].polarity, own_qualifiers[ref].modality,
+                     own_qualifiers[ref].time_scope) == expected
+                    for refs, expected in ((relief, ('positive', 'feeling', 'past')),
+                                           (lonely, ('negative', 'feeling', 'current_input')))
+                    for ref in refs)):
+            return EmlisReliefCognitionAppraisalContent(
+                dimension, operation, tuple(row.binding_ref for row in basis_rows),
+                focal_relation_ref, (), tuple(row.contribution_id for row in contributions),
+                'cocolon.cmee.emlis.relief_cognition_appraisal.v1', relief, lonely,
+                'BOUNDED_RELIEF_AT_REPORTED_RELIEF',
+                'LISTEN_TO_PRESENT_LONELINESS_UNDER_UNCERTAINTY')
     return EmlisAppraisalContent(
         dimension,
         operation,
@@ -16757,6 +16776,7 @@ def _logical_contract_descriptor(
 # introspection.  Logical Step-4 types which are not runtime-active in Step 2
 # are still frozen here with their complete approved field order/cardinality.
 _LOGICAL_CONTRACT_FIELD_SPECS = (
+    ("EmlisReliefCognitionAppraisalContent", "relief-cognition-appraisal-v1", "dimension=exact1 operation=exact1 appraised_bindings=2..N focal_relation_ref=exact1 protected_bindings=exact0 basis_contribution_refs=1..N schema_version=exact1 relief_binding_refs=1..N loneliness_binding_refs=1..N reaction=exact1 response=exact1", ("SOURCE_OWNED_PAST_RELIEF_AND_PRESENT_LONELINESS", "UNCERTAIN_COGNITION_RETAINS_SOURCE_TIME", "DISJOINT_ENDPOINT_BINDINGS_CLOSE_APPRAISED_BASIS", "BOUNDED_RELIEF_AT_REPORTED_RELIEF", "LISTEN_TO_PRESENT_LONELINESS_UNDER_UNCERTAINTY", "JOINT_FACETS_EXPIRE_ON_EITHER_ENDPOINT_REVISION", "LEGACY_APPRAISAL_CONTENT_UNCHANGED"), "APPRAISAL_OPPORTUNITY_PROJECTOR"),
     ("RetainedReasonedExperienceContentV1", "retained-reasoned-experience-v1", "schema_version=exact1 eligibility=exact1 projection_preimage_ref=exact1 aggregate_projection_seal_ref=exact1 aggregate_claim_ref=exact1 aggregate_proposition_ref=exact1 meaning_outcome_ref=exact1 reception_binding_ref=exact1 grounding_ref=exact1 basis_rows=exact3 qualifier_rows=exact3 reason_binding_ref=exact1 event_binding_ref=exact1 evaluation_binding_ref=exact1 reason_relation_ref=exact1 appraisal_relation_ref=exact1 evaluation_kind=exact1 polarity=exact1 reason_time=exact1 evaluation_time=exact1 reception_configuration=exact1 seal_ref=exact1", ("UNCHANGED_REASON_TARGET_SATISFACTION", "RECEIVED_REACTION_ORIGINAL_OCCASION_REVISE_ONCE", "LIMITED_AGGREGATE_UNCHANGED"), "POST_SELECTION_LOCAL_CONTENT"),
     ("RetainedReasonedExperienceEligibilityV1", "retained-reasoned-experience-v1", "schema_version=exact1 source_prefix_ref=exact1 checkpoint_ref=exact1 original_source_ref=exact1 answer_source_ref=exact1 original_nuclei=exact5 original_relations=exact3 update=exact1 move_ref=exact1 thread_control=exact1", ("UNCHANGED_REASON_TARGET_SATISFACTION", "RECEIVED_REACTION_ORIGINAL_OCCASION_REVISE_ONCE", "LIMITED_AGGREGATE_UNCHANGED"), "POST_SELECTION_LOCAL_CONTENT"),
     ("ComponentReceptionOpportunityV1", "component-reception-v1", "schema_version=exact1 opportunity_ref=exact1 move_ref=exact1 reception_act=exact1 component_ref=exact1 basis_contribution_refs=1..N bound_relation_refs=1..N", ("SELECTED_COMPONENT_SOURCE_MOVE_EXACT_OWNER", "LEGACY_EXACT3_UNCHANGED"), "TAGGED_PROJECTION_DISPATCH"),
@@ -16876,11 +16896,11 @@ def _contract_manifest() -> tuple[Any, ...]:
         _logical_contract_descriptor(*row)
         for row in _LOGICAL_CONTRACT_FIELD_SPECS
     )
-    if len(descriptors) != 76 or len({row[0][1] for row in descriptors}) != 76:
+    if len(descriptors) != 77 or len({row[0][1] for row in descriptors}) != 77:
         raise Stage1CompositionError("LANGUAGE_CORE_CONTRACT_DESCRIPTOR_STOP")
     return (
         ("schema_version", _CONTRACT_MANIFEST_SCHEMA_VERSION),
-        ("logical_contract_count", 76),
+        ("logical_contract_count", 77),
         ("logical_contract_descriptors", descriptors),
         ("content_kind_derivation_rows", LANGUAGE_CORE_CONTENT_DERIVATION_ROWS),
         ("concrete_runtime_binding_descriptors", LANGUAGE_CORE_CONCRETE_BINDING_DESCRIPTORS),

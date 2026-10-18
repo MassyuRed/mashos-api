@@ -693,7 +693,7 @@ def test_versioned_appraisal_is_in_current_manifest_without_changing_legacy_fiel
     from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
     from cocolon_meaning_experience_engine.emlis_stage1_composition import _contract_manifest
     manifest = dict(_contract_manifest())
-    assert manifest['logical_contract_count'] == 76
+    assert manifest['logical_contract_count'] == 77
     assert {'RetainedReasonedExperienceEligibilityV1', 'RetainedReasonedExperienceContentV1'} <= {
         dict(row)['type_name'] for row in manifest['logical_contract_descriptors']}
     assert any(dict(row)['type_name'] == 'EmlisEvaluatedExperienceAppraisalContent'

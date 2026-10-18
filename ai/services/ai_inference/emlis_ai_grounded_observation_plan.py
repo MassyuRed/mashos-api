@@ -7921,6 +7921,116 @@ def _source_owned_withdrawn_appraisal_reason(relation, nuclei, relations):
     return None
 
 
+def source_relief_cognition_replacement(fragment, slot):
+    """Read an explicitly corrected complete clause, never its quoted locator."""
+    if (_top_level_text(fragment) != fragment or re.search(r'[「」『』?？!！。\n\r]', fragment)
+        or re.search(r'私|わたし|僕|ぼく|俺|おれ|自分', fragment)):
+        return None
+    if slot == 'relief':
+        negative = re.fullmatch(r'(?P<object>.+こと(?:に|で|が))'
+            r'(?P<degree>少し(?:だけ)?|ちょっと|とても|本当に)?'
+            r'(?P<feeling>ほっとしなかった|安心しなかった)', fragment)
+        if negative and _source_nominal_past_feeling_parts(
+                negative['object'] + (negative['degree'] or '') + 'ほっとした'):
+            return 'negative', 'past'
+    if slot == 'loneliness':
+        actual = re.fullmatch(r'(?P<event>[^、,。]+)(?:ので|から)[、,]?'
+            r'(?:少し(?:だけ)?|ちょっと|とても|まだ|ずっと)?'
+            r'(?P<feeling>寂しい|さびしい|寂しかった|さびしかった)', fragment)
+        if actual:
+            event = re.sub(r'^(?:もう|それから)', '', actual['event'])
+            received = re.fullmatch(r'(?P<stem>[一-鿿々]+)ってもらえなくなった', event)
+            actual_received = bool(received and any(re.fullmatch(_RECEIVED_PREDICATE_SOURCE,
+                received['stem'] + ending) for ending in ('われ', 'られ')))
+            finite = re.fullmatch(r'(?P<verb>.+?)(?:た|なかった)', event)
+            actual_received = actual_received or bool(finite and re.fullmatch(
+                _RECEIVED_PREDICATE_SOURCE, finite['verb']))
+            if actual_received:
+                return 'negative', 'past' if actual['feeling'].endswith('かった') else 'current_input'
+    return None
+
+
+def source_owned_relief_cognition_pairs(nuclei, relations, evidence_spans, normalized_input,
+                                       *, require_witness=True):
+    """Completed SELF relief and a present feeling under uncertain cognition.
+
+    The two hosts retain their own tense and polarity. The possible object
+    is not a future fact; its source bytes may describe a past possibility.
+    A pair licenses only the two response facets approved on 2026-10-18.
+    """
+    if normalized_input is None:
+        return ()
+    source = str(normalized_input.get("memo") or "")
+    if (_top_level_text(source) != source or re.search(r'[「」『』?？!！…‥\r\n]', source)
+        or any(re.search(r'の(?:話|感想|気持ち|説明|報告|発言)(?:です|だ|[。．.])',
+                         str(normalized_input.get(field) or ''))
+               for field in ('memo', 'memo_action'))):
+        return ()
+    index = {n.nucleus_id: n for n in nuclei}
+    spans = {s.span_id: s for s in evidence_spans}
+    result = []
+    for edge in relations:
+        if (edge.type != 'contrast' or edge.retention != 'required'
+            or edge.grounding_kind != 'user_stated_relation'
+            or not any(c.startswith('evidence_relation_marker:') for c in edge.source_relation_ids)):
+            continue
+        pair = tuple(index.get(nid) for nid in (edge.from_nucleus_id, edge.to_nucleus_id))
+        if any(n is None or n.kind != 'reaction' or n.retention != 'required'
+               or n.grounding_kind != 'explicit' or n.allowed_claim_scope != 'explicit_current_input'
+               or n.source_fields != ('memo',) or len(n.source_span_ids) != 1
+               or n.surface_anchor_ids != n.source_span_ids
+               or (n.semantic_frame.actor, n.semantic_frame.predicate_kind, n.semantic_frame.modality)
+                  != ('current_user', 'feeling', 'feeling') for n in pair):
+            continue
+        left, right = pair
+        if ((left.semantic_frame.polarity, left.semantic_frame.time_scope) != ('positive', 'past')
+            or (right.semantic_frame.polarity, right.semantic_frame.time_scope) != ('negative', 'current_input')
+            or 'lexical:source_nominal_past_feeling' not in left.semantic_frame.attribute_codes
+            or 'lexical:source_cognitive_feeling' not in right.semantic_frame.attribute_codes
+            or any(require_witness and 'source_relief_cognition_slot:' + role not in n.semantic_frame.attribute_codes
+                   for n, role in zip(pair, ('relief', 'loneliness')))):
+            continue
+        a, b = (spans.get(n.source_span_ids[0]) for n in pair)
+        if (a is None or b is None or a == b
+            or any(s.source_field != 'memo' or not 0 <= s.start_index < s.end_index <= len(source)
+                   or source[s.start_index:s.end_index] != s.raw_text for s in (a, b))
+            or source[:a.start_index].strip()
+            or not re.fullmatch(r'\s*[。．.]\s*(?:でも|しかし|ただ|それでも)[、,]?\s*',
+                                source[a.end_index:b.start_index])
+            or source[b.end_index:].strip() and not source[b.end_index:].lstrip().startswith(('。', '．', '.'))
+            or not {a.span_id, b.span_id} <= set(edge.source_span_ids)):
+            continue
+        # A noninitial first-person pronoun would become Emlis's possession
+        # in indirect speech. Only the proved leading SELF subject can shift.
+        if any(re.search(r'私|わたし|僕|ぼく|俺|おれ|自分',
+                re.sub(r'^(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が|も)[、,]?', '', text))
+                for text in (a.raw_text, b.raw_text)):
+            continue
+        relief = _source_nominal_past_feeling_parts(a.raw_text)
+        cognitive = _source_cognitive_feeling_parts(b.raw_text)
+        if not relief or relief[3] not in {'ほっとした', '安心した'} or not cognitive:
+            continue
+        scopes = {role: b.raw_text[start:end] for role, start, end, _ in cognitive[0]}
+        if (not re.fullmatch(r'(?:少し(?:だけ)?|ちょっと|とても|まだ|ずっと)?(?:寂しい|さびしい)', scopes['feeling'])
+            or not re.search(r'かも(?:しれない|知れない)?$', scopes['possibility'])
+            or 'background' in scopes):
+            continue
+        result.append((left, right, edge))
+    return tuple(result)
+
+
+def source_owned_relief_cognition_from_resolver(nuclei, relations, resolver):
+    spans = resolver.resolve_many(resolver.span_ids)
+    memo = next((s for s in spans if s.source_field == 'memo'), None)
+    read = getattr(resolver, 'source_text_for_span_field', None)
+    if memo is None or read is None:
+        return ()
+    fields = {field: read(span.span_id) for field in ('memo', 'memo_action')
+              if (span := next((s for s in spans if s.source_field == field), None)) is not None}
+    return source_owned_relief_cognition_pairs(nuclei, relations, spans,
+        normalize_emlis_current_input(fields))
+
+
 def source_owned_separate_contrast_objects(move, nuclei, relations, evidence_spans, normalized_input):
     """Keep the two already selected SELF objects of an explicit contrast.
 
@@ -17268,6 +17378,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_cognitive_temporal_topic: bool = False,
     _legacy_feeling_reason_self_scope: bool = False,
     _legacy_unknown_object_action_scope: bool = True,
+    _legacy_relief_cognition_reception: bool = True,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -17341,6 +17452,16 @@ def project_final_stage1_grounded_observation_plan(
         nuclei,
         evidence_spans,
     )
+    if not _legacy_relief_cognition_reception:
+        pairs = source_owned_relief_cognition_pairs(nuclei, relations, evidence_spans,
+            normalized_input, require_witness=False)
+        slots = {n.nucleus_id: role for left, right, _ in pairs
+                 for n, role in ((left, 'relief'), (right, 'loneliness'))}
+        nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+            attribute_codes=(*n.semantic_frame.attribute_codes,
+                'source_relief_cognition_slot:' + slots[n.nucleus_id],
+                'source_relief_cognition_origin:' + slots[n.nucleus_id])))
+            if n.nucleus_id in slots else n for n in nuclei)
     if not _legacy_unknown_object_action_scope:
         nuclei, relations = _final_source_same_field_unknown_action(
             nuclei, relations, evidence_spans, normalized_input)
@@ -18809,6 +18930,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_cognitive_temporal_topic: bool = False,
     _legacy_feeling_reason_self_scope: bool = False,
     _legacy_unknown_object_action_scope: bool = True,
+    _legacy_relief_cognition_reception: bool = True,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan.
 
@@ -18878,6 +19000,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic,
         _legacy_feeling_reason_self_scope=_legacy_feeling_reason_self_scope,
         _legacy_unknown_object_action_scope=_legacy_unknown_object_action_scope,
+        _legacy_relief_cognition_reception=_legacy_relief_cognition_reception,
     )
 
 
