@@ -49,6 +49,7 @@ from emlis_ai_grounded_observation_plan import (
     is_grounded_positive_feeling,
     source_relief_cognition_replacement,
     source_owned_relief_cognition_from_resolver,
+    source_owned_separate_time_contrast_ids,
     validate_grounded_human_reception_plan,
     validate_grounded_observation_plan,
 )
@@ -6906,6 +6907,8 @@ def evaluate_grounded_surface_body_inverse(
     witness = parse_grounded_surface_body_bytes(body)
     failures: list[str] = list(witness.structural_issues)
     final_stage1_plan = _body_inverse_is_final_stage1_plan(plan)
+    separate_time_contrast_ids = (source_owned_separate_time_contrast_ids(plan, resolver)
+                                 if final_stage1_plan else frozenset())
     observation_lines = tuple(
         row for row in witness.lines if row.section == "observation"
     )
@@ -7302,7 +7305,9 @@ def evaluate_grounded_surface_body_inverse(
                 and chain_to.semantic_frame.time_scope in {"present", "current_input"}
                 and all(n.kind == "reaction" and n.semantic_frame.predicate_kind == "feeling"
                         for n in (chain_from, chain_to)))
-            exact_contrast = (relation.type == "contrast"
+            separate_time_contrast = relation_id in separate_time_contrast_ids
+            neutral_time_contrast = scoped_feeling_contrast or separate_time_contrast
+            exact_contrast = separate_time_contrast or (relation.type == "contrast"
                 and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"
                 and (nucleus_index[relation.from_nucleus_id].kind == "event" or exact_chain or scoped_feeling_contrast)
                 and nucleus_index[relation.to_nucleus_id].kind == "reaction"
@@ -7327,16 +7332,16 @@ def evaluate_grounded_surface_body_inverse(
                     singleton = re.fullmatch(r"「([^「」『』\n]+)」と「([^「」『』\n]+)」が、"
                         r"異なる向きのまま同時にあります。", visible)
                     # Different source times do not authorize simultaneity.
-                    if scoped_feeling_contrast:
+                    if neutral_time_contrast:
                         singleton = None
                     if singleton is None:
                         singleton = re.fullmatch(r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」とあります。", visible)
                     operand = r"「([^「」『』\n]+)」の一方で「([^「」『』\n]+)」"
                     if singleton:
                         legacy_pairs.append(singleton.groups())
-                    elif not scoped_feeling_contrast and re.fullmatch(rf"(?:{operand}、また)+{operand}という、それぞれ異なる向きが並んでいます。", visible):
+                    elif not neutral_time_contrast and re.fullmatch(rf"(?:{operand}、また)+{operand}という、それぞれ異なる向きが並んでいます。", visible):
                         legacy_pairs.extend(re.findall(operand, visible))
-                if (scoped_feeling_contrast and len(planned_line.binding.relation_ids) == 1
+                if (neutral_time_contrast and len(planned_line.binding.relation_ids) == 1
                     and set(planned_line.binding.nucleus_ids) <= {
                         relation.from_nucleus_id, relation.to_nucleus_id}
                     and (len(legacy_pairs) != 1 or sum(row.section == "observation"

@@ -22685,3 +22685,20 @@ STRUCTURE_MAP_DELTA_NONE。既存production9file・新production file0、論理c
 必要性=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、primary outcome=TECHNICAL_CREDIT。今回の限定修復を終了。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式0/3／candidate_ready=false／automatic_progression=falseは維持。一般入力、丁寧過去・明示時間・先頭／暗黙SELF・他者、独立不明の一般保持、「どうしたいのか」、E04深さ／E05問い／E06〜E09・本人実機は残件。次の意味資格拡張へ承認を流用しない。10/20方式判断、10/31管理線、12/18目標、Piece/Analysis主枠53.25％は不変。
 
 実本文・境界・再開先：[Cocolon_EmlisAI_u339_PastSelfUnknown_Implementation_20261018.md](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u339_PastSelfUnknown_Implementation_20261018.md)。
+
+
+## u340 — 原文の昨日／今日に「同時」を足す表示を修復（2026-10-18）
+
+最新weeklyと正本06 §u331の未解消例を実出力で再確認し、既存の本人二対象・完全原文・明示contrastが証明され、past／presentと原文時間prefixが一致する場合だけ、Observationを既存「一方で」文法へ修復した。意味認識・checkpoint・plan・selected・Reception・問いは不変。new source／契約／enumの追加ではなく、認識済みの時点を表示で潰さない修正である。u339の過去不明拡張承認は流用していない。
+
+実本文は「昨日は友達と話せて嬉しかった」の一方で「今日は疲れている」とあります。開始原本d28e7bcの合成12例中5例で修復、7例は全artifact／問い／reasonを含め不変。12例のcheckpoint／plan／selectedまたは同じ停止は不変。対象5例のQ1／Q3一致と同じ旧checkpointからの修復本文を確認した。保存済み完成本文は再生成しない。
+
+最終の限定検査集合は404 passed／2 failed／skip0、current identity別1 pass。重複除外405 passed／2 failed（新72 pass＋関連332 pass＋identity1 pass）。2件は、u330の誤った同時表現との一致要求distinct_times（今回の修復による既存比較との不一致）と、u333修復以前の停止期待explicit_self（既知）。歴史fixture・旧assertionは変更、xfail、skipしていない。途中の広すぎる回帰集合は中断し、成功数へ加算しない。全suite GREENではない。
+
+実service＋隔離PGlite SQL/RPCの当該12ケース（肯定／否定×3tier×現在／合成旧完成）で保存後GET／startの全DTO一致を生成禁止engineで確認。同じ12DTOを現行API client／hook／Modalへ通しclose/reopen各2回、本文・original・timeline・質問／回答欄なしを確認した。旧完成は開始原本の実本文と完全一致する旧rendererを現行service内で局所再現した合成検査であり、本番旧DBや中断retryの証明ではない。HTTP／Auth／nativeはstubで本人実機ではない。
+
+STRUCTURE_MAP_DELTA_NONE。既存production3file内の表示資格・作者・本文readerのみ。new test1／開始原本fixture1、current owner identityを更新。原文資格は作者とreaderが共有し、readerは作者を呼ばず最終本文の両端・時点・対比・追加文を照合する。資格判定まで独立実装という主張はしない。Analysisが既存OP builder等を参照する依存はあるが、今回helperはEmlis Surface／Gateからのみ使用し、共通builderは変更していない。
+
+必要性=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、primary outcome=TECHNICAL_CREDIT。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式0/3／candidate_ready=false／automatic_progression=falseを維持。対象外の「とても」・逆順・他者・同日／時点不明・一部pairの旧表示や未提供、E04深さ／E05問い／E06〜E09は残る。次は同じ時点欠陥の資格外例について、意味認識・参照証明・表示のどこが不足するかを原文単位で確認する。別の資格／契約変更へ自動拡張しない。10/20方式判断、10/31管理線、12/18目標、Piece/Analysis主枠53.25％は不変。Draft/open/unmerged・未配置。
+
+詳細・実本文・残件：[u340監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u340_SeparateTimeContrast_20261018.md)。

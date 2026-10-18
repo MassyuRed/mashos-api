@@ -8138,6 +8138,34 @@ def _source_separate_contrast_objects_from_resolver(move, nuclei, relations, res
         normalize_emlis_current_input({"memo": read_field(memo.span_id)}))
 
 
+def source_owned_separate_time_contrast_ids(plan, resolver):
+    """Name existing original contrasts whose source times cannot be merged.
+
+    This is a realization duty only. It neither infers new time scopes nor
+    changes the selected objects, relation, reception or question decision.
+    """
+    reception = plan.response_plan.human_reception_plan
+    if (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
+        or reception is None):
+        return frozenset()
+    result = set()
+    time_prefix = {"past": r"^(?:昨日|その時)(?:は|も)?[、,]?",
+                   "present": r"^(?:今日|今)(?:は|も)?[、,]?"}
+    for move in reception.moves:
+        pair = _source_separate_contrast_objects_from_resolver(
+            move, plan.nuclei, plan.relations, resolver)
+        if (not pair or {n.semantic_frame.time_scope for n in pair} != {"past", "present"}
+            or any(not re.match(time_prefix[n.semantic_frame.time_scope],
+                resolver.resolve(n.source_span_ids[0]).raw_text) for n in pair)):
+            continue
+        result.update(r.relation_id for r in plan.relations
+                      if r.retention == "required" and r.type == "contrast"
+                      and r.grounding_kind == "user_stated_relation"
+                      and (r.from_nucleus_id, r.to_nucleus_id)
+                      == tuple(n.nucleus_id for n in pair))
+    return frozenset(result)
+
+
 def source_owned_relational_focus(move, plan=None, *, nuclei=None, relations=None):
     """Select an existing, complete relation for a finite reading, not a new claim.
 

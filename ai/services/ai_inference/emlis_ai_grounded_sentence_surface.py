@@ -36,6 +36,7 @@ from emlis_ai_grounded_observation_plan import (
     source_owned_result_appraisal_reason,
     source_owned_duplicate_reason_appraisals,
     source_owned_answer_feeling,
+    source_owned_separate_time_contrast_ids,
     _result_appraisal_time_label,
 )
 from emlis_ai_grounded_human_reception import (
@@ -4701,6 +4702,18 @@ def _realize_line(
         shared = _render_shared_target_appraisal_observation(line, plan, nucleus_index, resolver)
         if shared is not None:
             return shared
+        separate_times = source_owned_separate_time_contrast_ids(plan, resolver)
+        if (len(line.binding.relation_ids) == 1
+            and line.binding.relation_ids[0] in separate_times
+            and line.surface_function in {"observe_relation", "observe_nuclei_with_relations"}
+            and "scope_hedge" not in line.binding.functional_atom_ids):
+            edge = relation_index[line.binding.relation_ids[0]]
+            ids = (edge.from_nucleus_id, edge.to_nucleus_id)
+            if set(line.binding.nucleus_ids) == set(ids):
+                quotes = tuple(_quotes_for_nuclei((nid,), nucleus_index, resolver) for nid in ids)
+                if any(len(values) != 1 for values in quotes):
+                    raise GroundedSentenceSurfaceError('separate_time_contrast_source_unbound')
+                return quotes[0][0] + 'の一方で' + quotes[1][0] + 'とあります。'
     record_prefixes = None
     if (line.surface_function in {"observe_nuclei_with_relations", "observe_relation"}
         and getattr(resolver, "source_contract", None) == "cocolon.cmee.emlis_thread.v1"):
