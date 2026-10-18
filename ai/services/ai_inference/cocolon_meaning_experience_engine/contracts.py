@@ -22777,10 +22777,27 @@ class RetainedUpdatedReliefCognitionContentV1(RetainedReliefCognitionContentV1):
     eligibility: RetainedUpdatedReliefCognitionEligibilityV1
 
 
+@dataclass(frozen=True, slots=True, repr=False)
+class RetainedUpdatedReliefCognitionEligibilityV2(RetainedUpdatedReliefCognitionEligibilityV1):
+    """The same one-update pair beside its unchanged independent SELF unknown."""
+
+    unknown_nucleus_ref: str
+    unknown_move_ref: str
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class RetainedUpdatedReliefCognitionContentV2(RetainedReliefCognitionContentV1):
+    """Local pair content beside exactly four objects and three source duties."""
+
+    eligibility: RetainedUpdatedReliefCognitionEligibilityV2
+
+
 def retained_relief_cognition_seal(value):
-    if type(value) not in {RetainedReliefCognitionContentV1, RetainedUpdatedReliefCognitionContentV1}:
+    if type(value) not in {RetainedReliefCognitionContentV1, RetainedUpdatedReliefCognitionContentV1,
+                          RetainedUpdatedReliefCognitionContentV2}:
         raise CMEEStage1ContractError('retained_relief_cognition_type_invalid')
-    prefix = ('retained-updated-relief-cognition:' if type(value) is RetainedUpdatedReliefCognitionContentV1
+    prefix = ('retained-updated-relief-cognition-v2:' if type(value) is RetainedUpdatedReliefCognitionContentV2
+              else 'retained-updated-relief-cognition:' if type(value) is RetainedUpdatedReliefCognitionContentV1
               else 'retained-relief-cognition:')
     return prefix + hashlib.sha256(
         stage1_canonical_json_bytes(replace(value, seal_ref=''))).hexdigest()
@@ -22792,8 +22809,8 @@ def retained_relief_cognition_aggregate_ref(proposition):
 
 
 def validate_retained_relief_cognition_content(value, decision, selected):
-    """Keep the whole three-object claim and its two-role content separately sealed."""
-    if type(value) is RetainedUpdatedReliefCognitionContentV1:
+    """Keep each version's aggregate and the pair's local content separately sealed."""
+    if type(value) in {RetainedUpdatedReliefCognitionContentV1, RetainedUpdatedReliefCognitionContentV2}:
         return _validate_retained_updated_relief_cognition_content(value, decision, selected)
     fail = 'retained_relief_cognition_content_invalid'
     if (type(value) is not RetainedReliefCognitionContentV1
@@ -22844,10 +22861,13 @@ def _validate_retained_updated_relief_cognition_content(value, decision, selecte
     input boundary. This structural check never treats an answer as unknown.
     """
     fail = 'retained_updated_relief_cognition_content_invalid'
-    if (type(value) is not RetainedUpdatedReliefCognitionContentV1
-        or value.schema_version != 'cocolon.cmee.retained_updated_relief_cognition_content.v1'
-        or type(value.eligibility) is not RetainedUpdatedReliefCognitionEligibilityV1
-        or value.eligibility.schema_version != 'cocolon.cmee.retained_updated_relief_cognition_eligibility.v1'
+    independent_unknown = type(value) is RetainedUpdatedReliefCognitionContentV2
+    content_type = RetainedUpdatedReliefCognitionContentV2 if independent_unknown else RetainedUpdatedReliefCognitionContentV1
+    eligibility_type = RetainedUpdatedReliefCognitionEligibilityV2 if independent_unknown else RetainedUpdatedReliefCognitionEligibilityV1
+    if (type(value) is not content_type
+        or value.schema_version != ('2.0' if independent_unknown else 'cocolon.cmee.retained_updated_relief_cognition_content.v1')
+        or type(value.eligibility) is not eligibility_type
+        or value.eligibility.schema_version != ('2.0' if independent_unknown else 'cocolon.cmee.retained_updated_relief_cognition_eligibility.v1')
         or value.eligibility.move_ref != decision.move_id
         or value.projection_preimage_ref != selected.projection_preimage_ref
         or value.aggregate_projection_seal_ref != selected.projection_seal_ref
@@ -22869,7 +22889,7 @@ def _validate_retained_updated_relief_cognition_content(value, decision, selecte
         or type(appraisal) is not EmlisAppraisalContent
         or (appraisal.dimension, appraisal.operation) != ('MATERIAL_WEIGHT', 'RECEIVE_AS_MATERIAL')
         or appraisal.appraised_bindings != aggregate.basis_binding_refs or appraisal.protected_bindings
-        or len(aggregate.response_object_refs) != 3 or len(objects) != 2
+        or len(aggregate.response_object_refs) != (4 if independent_unknown else 3) or len(objects) != 2
         or len(basis) != 2 or len(qualifiers) != 2 or len(decision.selected_contribution_refs) != 1
         or value.basis_rows != basis or value.qualifier_rows != qualifiers
         or type(content) is not EmlisReliefCognitionAppraisalContent
@@ -22881,4 +22901,34 @@ def _validate_retained_updated_relief_cognition_content(value, decision, selecte
             source_qualifier_binding_refs=tuple(q.source_qualifier_binding_ref for q in qualifiers),
             focal_relation_ref=content.focal_relation_ref, appraisal_content=content)):
         raise CMEEStage1ContractError(fail)
+    if independent_unknown:
+        eligibility = value.eligibility
+        mapping = dict(selected.semantic_nucleus_pairs)
+        unknown_rows = tuple(row for row in selected.decisions if row.move_id == eligibility.unknown_move_ref)
+        if (len(selected.decisions) != 3 or len({row.move_id for row in selected.decisions}) != 3
+            or eligibility.unknown_move_ref == eligibility.move_ref
+            or not eligibility.unknown_nucleus_ref
+            or eligibility.unknown_nucleus_ref in {eligibility.relief_nucleus_ref,
+                eligibility.loneliness_nucleus_ref, eligibility.received_event_ref,
+                eligibility.received_reaction_ref}
+            or len(unknown_rows) != 1
+            or {mapping.get(ref) for ref in objects}
+                != {eligibility.relief_nucleus_ref, eligibility.loneliness_nucleus_ref}
+            or sum(mapping.get(ref) == eligibility.unknown_nucleus_ref
+                   for ref in aggregate.response_object_refs) != 1):
+            raise CMEEStage1ContractError(fail)
+        unknown, = unknown_rows
+        unknown_basis = tuple(row for row in unknown.basis_rows
+                              if row.contribution_ref in unknown.selected_contribution_refs)
+        if (unknown.branch != 'LIMITED' or unknown.reception_act != 'stay_with_current_burden'
+            or unknown.target_nucleus_ids != (eligibility.unknown_nucleus_ref,)
+            or unknown.support_nucleus_ids or unknown.subjective_proposition != aggregate
+            or unknown.projected_claim_ref != decision.projected_claim_ref
+            or unknown.meaning_outcome_ref != decision.meaning_outcome_ref
+            or unknown.reception_binding_ref != decision.reception_binding_ref
+            or len(unknown.selected_contribution_refs) != 1 or len(unknown_basis) != 1
+            or mapping.get(unknown_basis[0].semantic_ref) != eligibility.unknown_nucleus_ref
+            or set(unknown.selected_contribution_refs) & set(decision.selected_contribution_refs)
+            or unknown.basis_rows != decision.basis_rows or unknown.qualifier_rows != decision.qualifier_rows):
+            raise CMEEStage1ContractError(fail)
     _stage1_subjective_v2_content_bindings(local)

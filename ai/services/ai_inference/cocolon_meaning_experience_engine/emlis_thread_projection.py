@@ -304,8 +304,7 @@ def _rederive_retained_received_experience_source(control, resolver):
     from .emlis_thread_contracts import EmlisThreadInputV1
     from .emlis_thread_source import ThreadEvidenceSpanResolver, admit_emlis_thread
     from .source_kernel import _parse_canonical_frame
-    from .emlis_question import original_meaning_plan
-    from .emlis_answer_update import _prepare_answer, build_updated_grounded_plan
+    from .emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
 
     def immutable(value):
         if value is None or isinstance(value, (str, int, bool)):
@@ -336,7 +335,7 @@ def _rederive_retained_received_experience_source(control, resolver):
         or replay_resolver.qualified_refs != resolver.qualified_refs
         or replay_resolver.resolve_many(replay_resolver.span_ids) != resolver.resolve_many(resolver.span_ids)):
         raise ValueError(failure)
-    prepared = _prepare_answer(thread, original_meaning_plan(thread))
+    prepared = prepare_emlis_meaning(request)
     return prepared, build_updated_grounded_plan(prepared)
 
 
@@ -794,7 +793,8 @@ def _selected_reception(meaning, reception, plan, resolver, binding, retained=()
     independent = _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver)
     if relief_update_duties:
         acts = {'lived_change': 'recognize_lived_change', 'current_burden': 'stay_with_current_burden'}
-        if (len(decisions) != 2 or tuple((m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids)
+        if (len(decisions) != len(relief_update_duties) or len(decisions) not in (2, 3)
+            or tuple((m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids)
             for m in reception.moves) != tuple((acts[f], t, s) for f, t, s in relief_update_duties)):
             raise ValueError('retained_updated_relief_cognition_moves_invalid')
         if meaning.projection_branch == 'LIMITED':
@@ -1091,7 +1091,7 @@ def _retained_relief_cognition_eligibility(prepared, plan, resolver):
 def _carry_retained_relief_cognition(projection, eligibility):
     selected = projection.selected_reception
     if (len(projection.meaning_plan.subjective_claim_rows) != 1
-        or len(selected.decisions) != 2
+        or len(selected.decisions) != (3 if type(eligibility) is c.RetainedUpdatedReliefCognitionEligibilityV2 else 2)
         or len({d.projected_claim_ref for d in selected.decisions}) != 1):
         raise ValueError('retained_relief_cognition_aggregate_invalid')
     decision, = (d for d in selected.decisions if d.move_id == eligibility.move_ref)
@@ -1121,7 +1121,7 @@ def validate_retained_relief_cognition_source(decision, selected, plan, resolver
     try:
         local = decision.retained_relief_cognition
         c.validate_retained_relief_cognition_content(local, decision, selected)
-        if type(local) is c.RetainedUpdatedReliefCognitionContentV1:
+        if type(local) in {c.RetainedUpdatedReliefCognitionContentV1, c.RetainedUpdatedReliefCognitionContentV2}:
             return _validate_retained_updated_relief_cognition_source(decision, selected, plan, resolver)
         control = local.eligibility.thread_control
         if (type(resolver) is not ThreadEvidenceSpanResolver or resolver.source_contract != THREAD_SCHEMA
@@ -1165,17 +1165,26 @@ def _retained_updated_relief_cognition_eligibility(prepared, plan, resolver):
     moves = plan.response_plan.human_reception_plan.moves
     acts = {'lived_change': 'recognize_lived_change', 'current_burden': 'stay_with_current_burden'}
     expected = tuple((acts[family], targets, supports) for family, targets, supports in duties)
-    if (len(moves) != 2 or any(not m.required for m in moves)
+    from emlis_ai_grounded_observation_plan import _source_mixed_relief_unknown_group
+    mixed = _source_mixed_relief_unknown_group(
+        prepared.original_plan.nuclei, prepared.original_plan.relations, prepared.thread.original.evidence_spans,
+        prepared.thread.original.normalized_current_input)
+    if (len(moves) != (3 if mixed else 2) or any(not m.required for m in moves)
         or tuple((m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in moves) != expected):
         return None
     thread, checkpoint = prepared.thread, prepared.checkpoint
-    return c.RetainedUpdatedReliefCognitionEligibilityV1(
-        'cocolon.cmee.retained_updated_relief_cognition_eligibility.v1',
-        thread.source_prefix_ref, checkpoint.checkpoint_id, thread.control.original_source_ref,
+    values = (thread.source_prefix_ref, checkpoint.checkpoint_id, thread.control.original_source_ref,
         thread.answers[0].envelope.envelope_id, left.nucleus_id, right.nucleus_id,
         contrast.relation_id, event.nucleus_id, reaction.nucleus_id,
         checkpoint.answer_update, moves[0].move_id,
         replace(thread.control, prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id))
+    if mixed:
+        if duties[-1] != ('current_burden', (mixed[0].nucleus_id,), ()):
+            return None
+        return c.RetainedUpdatedReliefCognitionEligibilityV2(
+            '2.0', *values, mixed[0].nucleus_id, moves[-1].move_id)
+    return c.RetainedUpdatedReliefCognitionEligibilityV1(
+        'cocolon.cmee.retained_updated_relief_cognition_eligibility.v1', *values)
 
 
 def _validate_retained_updated_relief_cognition_source(decision, selected, plan, resolver):

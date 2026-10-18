@@ -480,13 +480,27 @@ def _retained_relief_cognition_duties(prepared, nuclei, relations):
 
 
 def _independent_unknown_beside_received_pair(prepared, left, right, contrast, rest):
-    """Prove a complete trailing unknown without selecting or consuming it.
+    """Prove the trailing unknown under its original source qualification.
 
-    Only the already selected pair is retained. The unknown stays unchanged in
-    Observation; this does not add a fourth object or a third Reception duty.
+    The u347 branch keeps it in Observation only. The new mixed witness also
+    proves its separately selected initial duty; neither branch consumes it.
     """
     if len(rest) != 3:
         return None
+    original = prepared.original_plan
+    mixed = gp._source_mixed_relief_unknown_group(
+        original.nuclei, original.relations, prepared.thread.original.evidence_spans,
+        prepared.thread.original.normalized_current_input)
+    if mixed:
+        unknown, source_left, source_right, _, _, source_contrast, _ = mixed
+        moves = original.response_plan.human_reception_plan.moves
+        if ((source_left, source_right, source_contrast) != (left, right, contrast)
+            or unknown not in rest or len(moves) != 2 or not all(m.required for m in moves)
+            or tuple((m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in moves)
+                != (('recognize_lived_change', (left.nucleus_id,), (right.nucleus_id,)),
+                    ('stay_with_current_burden', (unknown.nucleus_id,), ()))):
+            return None
+        return unknown
     candidates = tuple(n for n in rest if n.kind == 'uncertainty')
     if len(candidates) != 1:
         return None
@@ -652,19 +666,25 @@ def _retained_unchanged_relief_cognition_duties(prepared, nuclei, relations):
             - set(prepared.checkpoint.inactive_claim_refs)) | set(item.changed_claim_refs)):
         return ()
     pair = ('lived_change', (left.nucleus_id,), (right.nucleus_id,))
+    mixed = gp._source_mixed_relief_unknown_group(
+        prepared.original_plan.nuclei, prepared.original_plan.relations, prepared.thread.original.evidence_spans,
+        prepared.thread.original.normalized_current_input)
+    unknown_duty = (('current_burden', (mixed[0].nucleus_id,), ()),) if mixed else ()
+    if mixed and (separate != (mixed[0],) or index.get(mixed[0].nucleus_id) != mixed[0]):
+        return ()
     if item.operation == 'WITHDRAW':
         survivor = index.get(reaction.nucleus_id)
         if (survivor is None or 'thread_subject:withdrawn_source_event'
             not in survivor.semantic_frame.attribute_codes):
             return ()
-        return (pair, ('current_burden', (reaction.nucleus_id,), ()))
+        return (pair, ('current_burden', (reaction.nucleus_id,), ()), *unknown_duty)
     if answer is None or index.get(answer.nucleus_id) is None:
         return ()
     positive = gp.is_grounded_positive_feeling(answer)
     answer_duty = ('lived_change' if positive else 'current_burden', (answer.nucleus_id,), ())
     # The original received contrast stays complete in Observation. Keep
     # the existing answer duty and its own time, beside the unchanged pair.
-    return pair, answer_duty
+    return pair, answer_duty, *unknown_duty
 
 
 def _retained_unfinished_received_duties(prepared, nuclei, relations):
@@ -1181,6 +1201,16 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=(), *, p
     )
     response = gp._explicit_unknown_object_reception(response, nuclei, relations,
         resolver.resolve_many(resolver.span_ids), thread.original.normalized_current_input)
+    duties = _retained_unchanged_relief_cognition_duties(prepared, nuclei, relations)
+    if len(duties) == 3:
+        unknown_id, = duties[-1][1]
+        reception = response.human_reception_plan
+        response = replace(response, human_reception_plan=replace(reception, moves=tuple(
+            replace(move, reference_mode='short_anchor_if_ambiguous')
+            if (move.required and move.move_role == 'felt_response'
+                and move.reception_act == 'stay_with_current_burden'
+                and move.target_nucleus_ids == (unknown_id,) and not move.support_nucleus_ids)
+            else move for move in reception.moves)))
     return replace(original, nuclei=nuclei, relations=relations, unknown_boundaries=unknowns,
         input_profile=replace(original.input_profile, nucleus_count=len(nuclei),
             relation_count=len(relations), semantic_complexity=complexity, material_quality=quality),
@@ -1223,6 +1253,19 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
             or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
             raise
+        # u347 owns its complete former source, selection and delivery. The
+        # source witness changes meaning identity; no Prepared legacy flag is
+        # set, because u344/u346 pair retention and u347 layout remain active.
+        prior_mixed = original_meaning_plan(thread, _legacy_mixed_relief_unknown=True)
+        if prior_mixed.nuclei != original.nuclei or prior_mixed.relations != original.relations:
+            try:
+                restored = _prepare_emlis_meaning_from_plan(request, thread, prior_mixed,
+                    legacy_relief_cognition_update_retention=False)
+            except ValueError as prior_exc:
+                if str(prior_exc) not in {'emlis_checkpoint_source_prefix_mismatch', 'emlis_question_noncanonical'}:
+                    raise
+            else:
+                return restored
         # u343's accepted answer checkpoints own their complete old duties
         # and delivery, even when both unchanged source roles remain valid.
         try:
@@ -1797,7 +1840,11 @@ def _prepare_answer(thread, original, *, legacy_appraisal_correction=False, lega
         if legacy_relief_cognition_update_retention:
             prepared = replace(prepared, legacy_relief_cognition_update_retention=True)
         else:
-            version = 'source_relief_cognition_update_retention:v1'
+            mixed = gp._source_mixed_relief_unknown_group(
+                original.nuclei, original.relations, thread.original.evidence_spans,
+                thread.original.normalized_current_input)
+            version = ('source_mixed_relief_unknown_update_retention:v1' if mixed
+                       else 'source_relief_cognition_update_retention:v1')
             update = replace(update, new_meaning_ref=identity(
                 'emlis-meaning', base, tuple(asdict(x) for x in updates), version))
             checkpoint = replace(checkpoint, answer_update=update, checkpoint_id=identity(

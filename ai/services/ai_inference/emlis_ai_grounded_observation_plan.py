@@ -17707,6 +17707,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_reverse_time_contrast: bool = True,
     _legacy_time_contrast_source: bool = True,
     _legacy_cognitive_feeling_orthography: bool = True,
+    _legacy_mixed_relief_unknown: bool = True,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -17921,9 +17922,20 @@ def project_final_stage1_grounded_observation_plan(
             nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
                 attribute_codes=(*n.semantic_frame.attribute_codes, 'source_relief_unknown_retention:v1')))
                 if n == group[0] else n for n in nuclei)
+    if not _legacy_mixed_relief_unknown:
+        nuclei = _final_source_mixed_relief_unknown(nuclei, relations, evidence_spans, normalized_input)
+        mixed = _source_mixed_relief_unknown_group(
+            nuclei, relations, evidence_spans, normalized_input, require_witness=False)
+        if mixed:
+            nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+                attribute_codes=(*n.semantic_frame.attribute_codes,
+                    'source_mixed_relief_unknown_retention:v1')))
+                if n == mixed[0] else n for n in nuclei)
     unknown_boundaries = _final_stage1_unknown_boundaries(plan, nuclei)
-    independent_unknown = _source_relief_cognition_unknown_group(
+    independent_unknown = (_source_relief_cognition_unknown_group(
         nuclei, relations, evidence_spans, normalized_input)
+        or _source_mixed_relief_unknown_group(
+            nuclei, relations, evidence_spans, normalized_input)[:3])
     response_plan, coverage, surface_policy, safety_policy = (
         _build_response_and_policies(
             nuclei=nuclei,
@@ -18252,8 +18264,183 @@ def _source_relief_cognition_unknown_from_resolver(nuclei, relations, resolver):
     if read is None:
         return ()
     fields = {s.source_field: read(s.span_id) for s in spans if s.source_field in _TEXT_SOURCE_FIELDS}
-    return _source_relief_cognition_unknown_group(nuclei, relations, spans,
-        normalize_emlis_current_input(fields))
+    normalized = normalize_emlis_current_input(fields)
+    return (_source_relief_cognition_unknown_group(nuclei, relations, spans, normalized)
+        or _source_mixed_relief_unknown_group(nuclei, relations, spans, normalized)[:3])
+
+
+def _source_mixed_relief_unknown_group(nuclei, relations, evidence_spans, normalized_input,
+                                     *, require_witness=True):
+    """One complete pair, one received experience, then one present SELF unknown.
+
+    Five source nuclei are not five response targets. Initially only the pair
+    and the unknown own duties; the received event/reaction remains complete
+    in Observation and supplies its already existing question opportunity.
+    """
+    pairs = source_owned_relief_cognition_pairs(nuclei, relations, evidence_spans, normalized_input)
+    if len(pairs) != 1:
+        return ()
+    left, right, contrast = pairs[0]
+    pair_ids = {left.nucleus_id, right.nucleus_id}
+    text = tuple(n for n in nuclei if set(n.source_fields) & _TEXT_SOURCE_FIELDS
+        and not (n.retention == 'optional' and n.grounding_kind == 'user_stated_relation'
+            and 'detected_type:relation_marker' in n.semantic_frame.attribute_codes
+            and set(n.source_span_ids) <= set(contrast.source_span_ids)))
+    rest = tuple(n for n in text if n.nucleus_id not in pair_ids)
+    unknowns = tuple(n for n in rest if n.kind == 'uncertainty')
+    if len(text) != 5 or len(rest) != 3 or len(unknowns) != 1:
+        return ()
+    unknown, = unknowns
+    witness = tuple(code for code in unknown.semantic_frame.attribute_codes
+                    if code.startswith('source_mixed_relief_unknown_retention:'))
+    if ((require_witness and witness != ('source_mixed_relief_unknown_retention:v1',))
+        or not require_witness and witness not in {(), ('source_mixed_relief_unknown_retention:v1',)}):
+        return ()
+    received = tuple(n for n in rest if n != unknown)
+    edges = tuple(e for e in relations if e != contrast)
+    if (len(edges) != 1 or not _received_contrast_group_targets(received, edges)
+        or any(n.source_fields != ('memo',) or n.retention != 'required'
+            or n.grounding_kind != 'explicit' or n.allowed_claim_scope != 'explicit_current_input'
+            or n.semantic_frame.actor != 'current_user' for n in received)):
+        return ()
+    received_edge, = edges
+    by_id = {n.nucleus_id: n for n in received}
+    event = by_id.get(received_edge.from_nucleus_id)
+    reaction = by_id.get(received_edge.to_nucleus_id)
+    if event is None or reaction is None or event.kind != 'event' or reaction.kind != 'reaction':
+        return ()
+    spans = {span.span_id: span for span in evidence_spans}
+    if (len(event.source_span_ids) != 1 or event.source_span_ids != reaction.source_span_ids
+        or len(unknown.source_span_ids) != 1
+        or unknown.surface_anchor_ids != unknown.source_span_ids
+        or unknown.semantic_frame.target_anchor_ids != unknown.source_span_ids
+        or not set((*event.source_span_ids, *unknown.source_span_ids, *right.source_span_ids)) <= set(spans)):
+        return ()
+    host = spans[event.source_span_ids[0]]
+    tail = spans[unknown.source_span_ids[0]]
+    source = str(normalized_input.get('memo') or '')
+    end = spans[right.source_span_ids[0]].end_index
+    if (host.source_field != 'memo' or tail.source_field != 'memo'
+        or not end < host.start_index < host.end_index < tail.start_index < tail.end_index <= len(source)
+        or source[host.start_index:host.end_index] != host.raw_text
+        or source[tail.start_index:tail.end_index] != tail.raw_text
+        or not re.fullmatch(r'\s*[。．.]\s*', source[end:host.start_index])
+        or not re.fullmatch(r'\s*[。．.]\s*', source[host.end_index:tail.start_index])
+        or not re.fullmatch(r'\s*[。．.]?\s*', source[tail.end_index:])
+        or {s.span_id for s in evidence_spans if s.source_field in _TEXT_SOURCE_FIELDS}
+            != set(contrast.source_span_ids) | {host.span_id, tail.span_id}
+        or set(received_edge.source_span_ids) != {host.span_id}
+        or any(unknown.nucleus_id in (e.from_nucleus_id, e.to_nucleus_id) for e in relations)
+        or not _source_single_unknown_object((unknown,), (),
+            (replace(tail, start_index=0, end_index=len(tail.raw_text)),), {'memo': tail.raw_text})):
+        return ()
+    # Re-derive the complete finite received text, including the source scalar
+    # ranges. A forged typed label or a three-fragment reaction chain cannot
+    # confer this two-fragment qualification. A SELF giver is not a SELF host.
+    projections = _received_event_reaction_text_projections(host.raw_text)
+    if len(projections) != 2 or re.match(
+        r'(?:(?:私|自分|わたし)(?:は|が))?(?:私|自分|わたし|僕|ぼく|俺|おれ)に', _clean(host.raw_text)):
+        return ()
+    for n, projected in zip((event, reaction), projections):
+        f = n.semantic_frame
+        if ((n.kind, f.predicate_kind, f.polarity, f.modality, f.time_scope)
+            != (projected.kind, projected.predicate_kind, projected.polarity,
+                projected.modality, projected.time_scope)
+            or not set(projected.attribute_codes) <= set(f.attribute_codes)
+            or tuple(c for c in f.attribute_codes if c.startswith('source_fragment_scalar_range:'))
+                != (f'source_fragment_scalar_range:{projected.scalar_start}:{projected.scalar_end}',)
+            or tuple(c for c in f.attribute_codes if c.startswith('source_received_event_link:'))
+                != tuple(c for c in projected.attribute_codes if c.startswith('source_received_event_link:'))
+            or n.surface_anchor_ids != n.source_span_ids
+            or n.semantic_frame.target_anchor_ids != n.source_span_ids):
+            return ()
+    return unknown, left, right, event, reaction, contrast, received_edge
+
+
+def _final_source_mixed_relief_unknown(nuclei, relations, evidence_spans, normalized_input):
+    """Apply the existing reflexive lexical correction only after the full mixed proof."""
+    spans = {s.span_id: s for s in evidence_spans}
+    candidates = tuple(n for n in nuclei
+        if len(n.source_span_ids) == 1 and n.source_span_ids[0] in spans
+        and (n.kind, n.semantic_frame.predicate_kind) in {
+            ('self_evaluation', 'self_evaluation'), ('reaction', 'feeling')}
+        and 'operator:self_evaluation' not in n.semantic_frame.attribute_codes
+        and (part := _source_self_unknown_object_parts(spans[n.source_span_ids[0]].raw_text))
+        and part['owner'] == '自分')
+    if len(candidates) != 1:
+        return nuclei
+    unknown, = candidates
+    projected = tuple(replace(n, kind='uncertainty',
+        semantic_frame=replace(n.semantic_frame, predicate_kind='uncertainty'))
+        if n == unknown else n for n in nuclei)
+    return projected if _source_mixed_relief_unknown_group(
+        projected, relations, evidence_spans, normalized_input, require_witness=False) else nuclei
+
+
+def _source_mixed_relief_unknown_from_resolver(nuclei, relations, resolver, *, require_witness=True):
+    read = getattr(resolver, 'source_text_for_span_field', None)
+    if read is None:
+        return ()
+    spans = resolver.resolve_many(resolver.span_ids)
+    fields = {s.source_field: read(s.span_id) for s in spans if s.source_field in _TEXT_SOURCE_FIELDS}
+    return _source_mixed_relief_unknown_group(nuclei, relations, spans,
+        normalize_emlis_current_input(fields), require_witness=require_witness)
+
+
+def _source_retained_mixed_unknown_from_resolver(nuclei, relations, resolver):
+    """Re-admit the whole original before realizing an unchanged current unknown.
+
+    The separate selected-content validator owns the accepted update and all
+    decisions. This proof does not infer it from a marker or a surviving memo:
+    it binds the existing unknown grammar to the exact unchanged original
+    unknown and pair, and is usable only beside one admitted answer envelope.
+    """
+    candidates = tuple(n for n in nuclei
+        if 'source_mixed_relief_unknown_retention:v1' in n.semantic_frame.attribute_codes)
+    if len(candidates) != 1:
+        return ()
+    from cocolon_meaning_experience_engine.emlis_thread_source import ThreadEvidenceSpanResolver
+    from cocolon_meaning_experience_engine.emlis_question import _original_source_meaning_plan
+    from cocolon_meaning_experience_engine.source_kernel import _parse_canonical_frame, freeze_text_source
+    from cocolon_meaning_experience_engine.contracts import GenerationRequest
+    from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
+    if (type(resolver) is not ThreadEvidenceSpanResolver
+        or resolver.source_contract != 'cocolon.cmee.emlis_thread.v1'):
+        return ()
+    try:
+        envelopes = tuple(resolver._source_envelopes.values())
+        originals = tuple(e for e in envelopes if e.source_role == 'CURRENT_INPUT')
+        answers = tuple(e for e in envelopes if e.source_role == 'SUPPLEMENTAL_ANSWER')
+        if len(envelopes) != 2 or len(originals) != 1 or len(answers) != 1:
+            return ()
+        envelope, = originals
+        snapshot, _ = _parse_canonical_frame(envelope.raw_utf8)
+        original = freeze_text_source(GenerationRequest('mixed-unknown-original-source-replay',
+            build_emlis_current_input_bundle(snapshot), envelope.source_record_id))
+        if original.envelope != envelope:
+            return ()
+        original_resolver = ThreadEvidenceSpanResolver(original, ())
+        refs = tuple(q for q in resolver.qualified_refs
+                     if q.source_envelope_id == envelope.envelope_id)
+        if (refs != original_resolver.qualified_refs
+            or tuple(resolver.resolve(q.thread_span_id) for q in refs) != original.evidence_spans):
+            return ()
+        plan = _original_source_meaning_plan(original)
+        group = _source_mixed_relief_unknown_from_resolver(plan.nuclei, plan.relations, original_resolver)
+        if not group:
+            return ()
+        unknown, left, right, _, _, contrast, _ = group
+        index = {n.nucleus_id: n for n in nuclei}
+        if (len(index) != len(nuclei) or candidates != (unknown,)
+            or any(index.get(n.nucleus_id) != n for n in (unknown, left, right))
+            or tuple(e for e in relations if e.relation_id == contrast.relation_id) != (contrast,)
+            or any(unknown.nucleus_id in (e.from_nucleus_id, e.to_nucleus_id) for e in relations)
+            or (left, right, contrast) not in source_owned_relief_cognition_from_resolver(
+                nuclei, relations, resolver)):
+            return ()
+        return unknown, left, right
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return ()
 
 
 def _source_independent_unknown_object_group(nuclei, relations, evidence_spans, normalized_input, *, require_witness=True, allow_scalar=False):
@@ -18501,7 +18688,8 @@ def _explicit_unknown_object_reception(response, nuclei, relations, evidence_spa
             else m for m in reception.moves)))
     independent = (_source_independent_unknown_object_group(nuclei, relations, evidence_spans, normalized_input)
         or _source_same_field_unknown_object_group(nuclei, relations, evidence_spans, normalized_input)
-        or _source_relief_cognition_unknown_group(nuclei, relations, evidence_spans, normalized_input))
+        or _source_relief_cognition_unknown_group(nuclei, relations, evidence_spans, normalized_input)
+        or _source_mixed_relief_unknown_group(nuclei, relations, evidence_spans, normalized_input)[:3])
     group = (independent[:1] or _source_single_unknown_object(nuclei, relations, evidence_spans, normalized_input, allow_past=True)
         or _source_feeling_unknown_object_group(nuclei, relations, evidence_spans, normalized_input))
     reception = response.human_reception_plan
@@ -19507,6 +19695,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_reverse_time_contrast: bool = True,
     _legacy_time_contrast_source: bool = True,
     _legacy_cognitive_feeling_orthography: bool = True,
+    _legacy_mixed_relief_unknown: bool = True,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan.
 
@@ -19586,6 +19775,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_reverse_time_contrast=_legacy_reverse_time_contrast,
         _legacy_time_contrast_source=_legacy_time_contrast_source,
         _legacy_cognitive_feeling_orthography=_legacy_cognitive_feeling_orthography,
+        _legacy_mixed_relief_unknown=_legacy_mixed_relief_unknown,
     )
 
 

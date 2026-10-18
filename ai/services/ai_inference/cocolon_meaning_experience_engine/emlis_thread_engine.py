@@ -85,7 +85,13 @@ def generate_emlis_thread(engine, request) -> EmlisThreadOutcomeV1:
             meaning_checkpoint=checkpoint, body_state="ANSWER_UNREFLECTED",
             reason_codes=tuple(dict.fromkeys(row.reason_code for row in checkpoint.unresolved_parts)))
     if update.disposition == "NO_MATERIAL_UPDATE":
-        if request.emlis_thread.capability_snapshot.startswith("Q3_"):
+        # A non-updating answer keeps the already saved initial duties. Do not
+        # reinterpret that original V1 as a material one-answer V2 reception.
+        from emlis_ai_grounded_observation_plan import _source_mixed_relief_unknown_group
+        original = prepared.thread.original
+        mixed = _source_mixed_relief_unknown_group(prepared.original_plan.nuclei,
+            prepared.original_plan.relations, original.evidence_spans, original.normalized_current_input)
+        if request.emlis_thread.capability_snapshot.startswith("Q3_") or mixed:
             return EmlisThreadOutcomeV1(EngineStatus.GENERATED, None, end,
                 meaning_checkpoint=checkpoint, body_state="UNCHANGED",
                 reason_codes=("reuse_saved_observation_required",))

@@ -31,7 +31,11 @@ _NONFACT = re.compile(r"(?:と言った|と言って|そうなら|たら|なら|
 _FACTUAL_RECEIVED = re.compile(r"(?:褒められ|ほめられ|言われ|伝えられ|評価され|断られ|誘われ|頼まれ|声をかけられ|声を掛けられ)(?:た|ました)$|(?:連絡|返事|返信)が来(?:た|ました)$")
 
 
-def original_meaning_plan(thread: AdmittedEmlisThread, *, _legacy_result_appraisal=False, _legacy_appraisal_reason=False,
+def original_meaning_plan(thread: AdmittedEmlisThread, **legacy):
+    return _original_source_meaning_plan(thread.original, **legacy)
+
+
+def _original_source_meaning_plan(source, *, _legacy_result_appraisal=False, _legacy_appraisal_reason=False,
                           _legacy_received_appraisal_context=False, _legacy_repeated_appraisal_context=False,
                           _legacy_appraisal_retention=False, _legacy_duplicate_appraisal_source=False,
                           _legacy_shared_target_contrast=False, _legacy_received_unfinished_context=False,
@@ -42,10 +46,22 @@ def original_meaning_plan(thread: AdmittedEmlisThread, *, _legacy_result_apprais
                           _legacy_relief_unknown_retention=False, _legacy_relief_unknown_source=False,
                           _legacy_relief_cognition_anaphora=False, _legacy_relief_self_recipient=False,
                           _legacy_past_self_unknown=False, _legacy_reverse_time_contrast=False,
-                          _legacy_time_contrast_source=False, _legacy_cognitive_feeling_orthography=False):
-    source = thread.original
+                          _legacy_time_contrast_source=False, _legacy_cognitive_feeling_orthography=False,
+                          _legacy_mixed_relief_unknown=False):
     return build_final_stage1_grounded_observation_plan(
         source.normalized_current_input, evidence_spans=source.evidence_spans,
+        _legacy_mixed_relief_unknown=(_legacy_mixed_relief_unknown or any((
+            _legacy_cognitive_feeling_orthography, _legacy_time_contrast_source,
+            _legacy_reverse_time_contrast, _legacy_past_self_unknown,
+            _legacy_relief_self_recipient, _legacy_relief_cognition_anaphora,
+            _legacy_relief_unknown_source, _legacy_relief_unknown_retention,
+            _legacy_cognitive_self_continuation, _legacy_relief_cognition_reception,
+            _legacy_unknown_object_action_scope, _legacy_feeling_reason_self_scope,
+            _legacy_cognitive_temporal_topic, _legacy_cognitive_feeling_scope,
+            _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
+            _legacy_repeated_appraisal_context, _legacy_appraisal_retention, _legacy_duplicate_appraisal_source,
+            _legacy_shared_target_contrast, _legacy_received_unfinished_context,
+            _legacy_received_reason_context, _legacy_received_report_context))),
         _legacy_cognitive_feeling_orthography=(_legacy_cognitive_feeling_orthography or any((
             _legacy_time_contrast_source, _legacy_reverse_time_contrast, _legacy_past_self_unknown,
             _legacy_relief_self_recipient, _legacy_relief_cognition_anaphora,
