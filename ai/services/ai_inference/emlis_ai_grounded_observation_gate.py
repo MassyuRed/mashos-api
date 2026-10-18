@@ -4445,8 +4445,38 @@ def _read_unknown_object_discourse(raw, move, plan, resolver, selected_subjectiv
             if appraisal is None or (appraisal.dimension, appraisal.operation) != expected:
                 return None
         source = str(resolver.resolve(n.source_span_ids[0]).raw_text).strip(" 　。．.")
-        proof = _source_self_unknown_object_parts(source)
-        pattern = r"(?P<unknown>[^。！？!?]+)のですね。" if independent else r"結論を急がずに、(?P<unknown>[^。！？!?]+)のだと受け止めています。"
+        past = n.semantic_frame.time_scope == 'past'
+        proof = _source_self_unknown_object_parts(source, past=past)
+        if proof is None:
+            return None
+        if past:
+            if selected_subjective_input is None:
+                return None
+            decisions = tuple(d for d in selected_subjective_input.decisions if d.move_id == move.move_id)
+            if len(decisions) != 1:
+                return None
+            decision = decisions[0]
+            proposition = decision.subjective_proposition
+            mapping = dict(selected_subjective_input.semantic_nucleus_pairs)
+            all_basis = {b.binding_ref for b in decision.basis_rows}
+            selected_basis = tuple(b for b in decision.basis_rows
+                if b.contribution_ref in decision.selected_contribution_refs)
+            selected_refs = {b.binding_ref for b in selected_basis}
+            qualifiers = tuple(q for q in decision.qualifier_rows if q.basis_binding_ref in selected_refs)
+            if (decision.reception_act != move.reception_act
+                or decision.target_nucleus_ids != (n.nucleus_id,) or decision.support_nucleus_ids
+                or not selected_basis or {mapping.get(b.semantic_ref) for b in selected_basis} != {n.nucleus_id}
+                or not set(appraisal.appraised_bindings) <= all_basis
+                or not set(appraisal.basis_contribution_refs) <= {b.contribution_ref for b in decision.basis_rows}
+                or not selected_refs <= set(appraisal.appraised_bindings)
+                or not set(decision.selected_contribution_refs) <= set(appraisal.basis_contribution_refs)
+                or any(b.semantic_ref not in proposition.response_object_refs
+                       or b.semantic_ref not in proposition.primary_target_refs for b in selected_basis)
+                or {q.basis_binding_ref for q in qualifiers} != selected_refs
+                or any((q.polarity, q.modality, q.time_scope) != ('negative', 'uncertain', 'past')
+                       for q in qualifiers)):
+                return None
+        pattern = r"(?P<unknown>[^。！？!?]+)のですね。" if independent or past else r"結論を急がずに、(?P<unknown>[^。！？!?]+)のだと受け止めています。"
         parsed = re.fullmatch(pattern, raw)
         if parsed is None:
             return None
@@ -5269,7 +5299,9 @@ def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_i
     if coexisting is not None:
         return coexisting
     unknown_object = _read_unknown_object_discourse(raw, move, plan, resolver, selected_subjective_input)
-    if unknown_object is not None:
+    if unknown_object is not None or any(n.nucleus_id in move.target_nucleus_ids
+        and any(c.startswith('source_past_self_unknown:') for c in n.semantic_frame.attribute_codes)
+        for n in plan.nuclei):
         return unknown_object
     feeling_reason = _read_feeling_reason_discourse(
         raw, move, plan, resolver, selected_subjective_input)
@@ -7594,6 +7626,16 @@ def evaluate_grounded_surface_body_inverse(
             if not _body_inverse_intervening_events(body, witness, parsed_line, planned_line, plan, resolver):
                 failures.append(f"body_inverse_independent_event_scope_mismatch:{index}")
             detached_nuclei = tuple(nucleus_index[nid] for nid in planned_line.binding.nucleus_ids)
+            past = tuple(n for n in detached_nuclei if any(c.startswith('source_past_self_unknown:')
+                for c in n.semantic_frame.attribute_codes))
+            if past:
+                from emlis_ai_grounded_observation_plan import _source_past_self_unknown_from_resolver
+                group = _source_past_self_unknown_from_resolver(plan.nuclei, plan.relations, resolver)
+                if (not group or past != group[:1] or len(detached_nuclei) != 1
+                    or planned_line.binding.relation_ids
+                    or planned_line.binding.evidence_span_ids != past[0].source_span_ids
+                    or visible_line != 'その時の認識として、「' + resolver.resolve(past[0].source_span_ids[0]).raw_text + '」とあります。'):
+                    failures.append(f'body_inverse_past_unknown_observation_mismatch:{index}')
             if (detached_nuclei and not planned_line.binding.relation_ids
                 and (len(detached_nuclei) > 1 or all(
                     (n.kind, n.semantic_frame.predicate_kind, n.semantic_frame.modality)
@@ -7995,6 +8037,11 @@ def evaluate_grounded_surface_body_inverse(
                             # Complete body-owned proposition/edge verification
                             # replaces nominal/closing-token requirements only.
                             # Source, plan, clause, trace and safety gates remain.
+                            continue
+                        if any(n.nucleus_id in move.target_nucleus_ids
+                            and any(c.startswith('source_past_self_unknown:') for c in n.semantic_frame.attribute_codes)
+                            for n in plan.nuclei):
+                            failures.append('body_inverse_past_unknown_reception_mismatch:' + move_id)
                             continue
                         if (final_stage1_plan and sentence_plan.recovery_stage == 'full'
                             and len(move.target_nucleus_ids) == 1 and not move.support_nucleus_ids

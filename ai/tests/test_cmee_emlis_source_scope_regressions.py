@@ -937,6 +937,15 @@ def test_single_unknown_inverse_keeps_existing_receipt_marker_contract(single_un
 def test_single_unknown_source_proof_excludes_other_owners_and_additional_material(memo, action):
     from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver
     req = initial(memo, action)
+    if memo == '何が嫌なのか、自分でもよくわからなかった。' and not action:
+        # Preserve the pre-u339 admission boundary with its frozen source mode.
+        import json
+        from pathlib import Path
+        old = json.loads((Path(__file__).parent/'fixtures/cmee_emlis_u337_past_unknown_v1.json').read_text())
+        row = next(r for r in old['cases'] if r['case'] == 'jibun_past_single')
+        req = request(memo)
+        req = replace(req, emlis_thread=replace(req.emlis_thread,
+            prepared_meaning_checkpoint_ref=row['checkpoint']['checkpoint_id']))
     prepared = prepare_emlis_meaning(req)
     plan = build_updated_grounded_plan(prepared)
     assert not _source_unknown_object_group_from_resolver(plan.nuclei, plan.relations,

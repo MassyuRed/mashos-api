@@ -477,6 +477,21 @@ def _project_thread_meaning_aggregate(prepared, plan) -> ThreadMeaningProjection
     source_version = c.EMLIS_Q3_SOURCE_VERSION if thread.control.capability_snapshot.startswith("Q3_") else THREAD_SCHEMA
     resolver = thread.resolver()
     index = {n.nucleus_id: n for n in plan.nuclei}
+    past_sources = tuple(n for n in plan.nuclei if any(
+        code.startswith('source_past_self_unknown:') for code in n.semantic_frame.attribute_codes))
+    if past_sources:
+        from emlis_ai_grounded_observation_plan import _source_past_self_unknown_from_resolver
+        past_group = _source_past_self_unknown_from_resolver(plan.nuclei, plan.relations, resolver)
+        boundaries = tuple(b for b in plan.unknown_boundaries
+            if b.dimension == 'source_explicit_epistemic_limit')
+        if (not past_group or past_sources != past_group[:1]
+            or thread.answers or thread.control.answers or thread.control.current_round != 0
+            or checkpoint.answer_update is not None or checkpoint.accepted_update_refs
+            or checkpoint.inactive_claim_refs or checkpoint.unresolved_parts
+            or len(boundaries) != 1 or boundaries[0].affected_nucleus_ids != (past_sources[0].nucleus_id,)
+            or boundaries[0].evidence_span_ids != past_sources[0].source_span_ids
+            or boundaries[0].surface_policy != 'hedge_only'):
+            raise ValueError('emlis_thread_past_unknown_source_unbound')
     nodes, edges, dispositions = [], [], []
     node_ids, edge_ids = {}, {}
     for n in plan.nuclei:
@@ -621,6 +636,8 @@ def _project_thread_meaning_aggregate(prepared, plan) -> ThreadMeaningProjection
     for disposition in dispositions:
         carrier = c.source_explicit_epistemic_unknown_object_ref(pre, disposition)
         if carrier is None:
+            if past_sources and disposition.target_unknown_ref in epistemic_boundaries:
+                raise ValueError('emlis_thread_past_unknown_source_unbound')
             continue
         unknown = epistemic_boundaries[disposition.target_unknown_ref]
         affected = tuple(index[nid] for nid in unknown.affected_nucleus_ids if nid in index)

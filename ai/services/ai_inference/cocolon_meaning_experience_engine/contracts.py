@@ -7036,6 +7036,8 @@ def project_stage1_source_contract_qualifiers(
         *_stage1_shared_target_source_qualifiers(source_codes),
         *(f"qualifier:{code}" for code in sorted(source_codes & {
             "source_relief_cognition_slot:relief", "source_relief_cognition_slot:loneliness"})),
+        *(("qualifier:source_past_self_unknown:v1",)
+          if "source_past_self_unknown:v1" in source_codes else ()),
         *(f"qualifier:{code}" for code in sorted(source_codes & _STAGE1_APPRAISAL_SOURCE_CODES)
           if "semantic_dependency:explicit_result_appraisal" in source_codes),
         *(
@@ -8225,13 +8227,19 @@ def source_explicit_epistemic_unknown_object_ref(premeaning_inputs, disposition)
         expected_polarity = ("polarity:neutral" if decision is not None
                              and decision[0] == "choice" and "polarity:neutral" in codes
                              else "polarity:negative")
+        from emlis_ai_grounded_observation_plan import _source_self_unknown_object_parts
+        times = {v for v in codes if v.startswith("time_scope:")}
+        past_witness = {v for v in codes if v.startswith("qualifier:source_past_self_unknown:")}
+        past = (times == {"time_scope:past"}
+            and past_witness == {"qualifier:source_past_self_unknown:v1"}
+            and _source_self_unknown_object_parts(node.value, past=True) is not None)
         if (len(codes) != len(qualifiers[0].qualifier_refs)
             or any({v for v in codes if v.startswith(axis + ":")} != {expected}
                    for axis, expected in (("actor", "actor:current_user"),
                                           ("modality", "modality:uncertain"),
                                           ("polarity", expected_polarity)))
-            or {v for v in codes if v.startswith("time_scope:")} not in
-                ({"time_scope:present"}, {"time_scope:current_input"})):
+            or not (past or not past_witness and times in
+                    ({"time_scope:present"}, {"time_scope:current_input"}))):
             continue
         cs = tuple(c for c in premeaning_inputs.interpretation_candidate_rows if c.semantic_refs == (ref,))
         rows = tuple(c for c in premeaning_inputs.observation_contribution_rows if c.semantic_refs == (ref,))
@@ -20639,6 +20647,7 @@ def validate_stage1_projection(
                     value
                     not in {
                         *(f"qualifier:{code}" for code in _STAGE1_APPRAISAL_SOURCE_CODES),
+                        "qualifier:source_past_self_unknown:v1",
                         "qualifier:operator:shift",
                         "qualifier:"
                         + _STAGE1_DIRECTION_UNDER_BURDEN_DIRECTION_ATTRIBUTE_CODE,

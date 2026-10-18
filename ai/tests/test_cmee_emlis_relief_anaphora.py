@@ -20,11 +20,18 @@ from test_cmee_emlis_received_discourse import actual
 from test_cmee_emlis_detached_observation import read_body
 
 BASELINE = json.loads((Path(__file__).parent/'fixtures/cmee_emlis_u335_relief_anaphora_v1.json').read_text())
+PAST_SOURCE_BASELINE = json.loads((Path(__file__).parent/'fixtures/cmee_emlis_u336_self_recipient_v1.json').read_text())['initial_cases']
 
 
 @pytest.mark.parametrize('row', BASELINE['cases'], ids=lambda row: row['case'])
 def test_current_source_outcomes_keep_observation_and_shorten_only_selected_pair(row):
-    out = MeaningExperienceEngine().generate(request(row['memo']))
+    req = request(row['memo'])
+    if row['case'] in {'past', 'relief_past', 'jibun_past'}:
+        # Keep u336's shorter reception while restoring the pre-u339 source.
+        previous = next(r for r in PAST_SOURCE_BASELINE if r['memo'] == row['memo'])
+        req = replace(req, emlis_thread=replace(req.emlis_thread,
+            prepared_meaning_checkpoint_ref=previous['checkpoint']['checkpoint_id']))
+    out = MeaningExperienceEngine().generate(req)
     assert bool(out.artifact) == bool(row['body'])
     assert list(out.reason_codes) == row['reasons']
     assert (encoded(out.question) if out.question else None) == row['question']

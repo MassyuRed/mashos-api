@@ -92,6 +92,7 @@ class PreparedEmlisMeaning:
     legacy_relief_unknown_source: bool = False
     legacy_relief_cognition_anaphora: bool = False
     legacy_relief_self_recipient: bool = False
+    legacy_past_self_unknown: bool = False
 
 
 def _text(row, index, resolver) -> str:
@@ -1019,6 +1020,17 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
             or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
             raise
+        # u337 past-unknown records own their full former interpretation and
+        # delivery (including unavailable bodies), not just an old ID.
+        prior_past = original_meaning_plan(thread, _legacy_past_self_unknown=True)
+        if prior_past.nuclei != original.nuclei or prior_past.relations != original.relations:
+            try:
+                restored = _prepare_emlis_meaning_from_plan(request, thread, prior_past)
+            except ValueError as prior_exc:
+                if str(prior_exc) not in {'emlis_checkpoint_source_prefix_mismatch', 'emlis_question_noncanonical'}:
+                    raise
+            else:
+                return replace(restored, legacy_past_self_unknown=True)
         # u336 survivors keep their complete previous recipient surface.
         # Restore the old source-derived checkpoint before rendering it.
         prior_recipient = original_meaning_plan(thread, _legacy_relief_self_recipient=True)

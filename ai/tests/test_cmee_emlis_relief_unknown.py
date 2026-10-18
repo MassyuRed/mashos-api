@@ -141,7 +141,14 @@ def test_resealed_carrier_cannot_replace_any_source_projection_or_role(context,m
  (UNKNOWN+BASE,''), (BASE+'今はまだわからない。',''), (BASE+'何が不安なのか、私にももうわかった。',''),
 ])
 def test_whole_source_proof_rejects_other_material_attribution_time_and_causality(memo,action):
-    p=prepare_emlis_meaning(initial(memo,memo_action=action));plan=build_updated_grounded_plan(p)
+    req=initial(memo,memo_action=action)
+    if memo == BASE+UNKNOWN.replace('わからない','わからなかった') and not action:
+        # Match the frozen u333 source mode; u339 tests the approved past case.
+        row=next(r for r in BASELINE['cases'] if r['memo']==memo)
+        req=request(memo)
+        req=replace(req,emlis_thread=replace(req.emlis_thread,
+            prepared_meaning_checkpoint_ref=row['checkpoint']['checkpoint_id']))
+    p=prepare_emlis_meaning(req);plan=build_updated_grounded_plan(p)
     assert not gp._source_relief_cognition_unknown_from_resolver(plan.nuclei,plan.relations,p.thread.resolver())
 
 

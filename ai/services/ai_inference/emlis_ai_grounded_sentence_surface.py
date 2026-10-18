@@ -4685,6 +4685,19 @@ def _realize_line(
     joined_unfinished_appraisal_ids: frozenset[str] = frozenset(),
 ) -> str:
     if _is_final_stage1_grounded_projection(plan):
+        past = tuple(n for n in plan.nuclei if n.nucleus_id in line.binding.nucleus_ids
+            and any(c.startswith('source_past_self_unknown:') for c in n.semantic_frame.attribute_codes))
+        if past:
+            from emlis_ai_grounded_observation_plan import _source_past_self_unknown_from_resolver
+            group = _source_past_self_unknown_from_resolver(plan.nuclei, plan.relations, resolver)
+            if (not group or past != group[:1] or line.surface_function != 'observe_nuclei'
+                or line.binding.nucleus_ids != (past[0].nucleus_id,) or line.binding.relation_ids
+                or line.binding.evidence_span_ids != past[0].source_span_ids):
+                raise GroundedSentenceSurfaceError('past_unknown_observation_source_unbound')
+            quotes = _quotes_for_nuclei(line.binding.nucleus_ids, nucleus_index, resolver)
+            if len(quotes) != 1:
+                raise GroundedSentenceSurfaceError('past_unknown_observation_source_unbound')
+            return 'その時の認識として、' + quotes[0] + 'とあります。'
         shared = _render_shared_target_appraisal_observation(line, plan, nucleus_index, resolver)
         if shared is not None:
             return shared

@@ -17422,6 +17422,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_relief_unknown_source: bool = True,
     _legacy_relief_cognition_anaphora: bool = True,
     _legacy_relief_self_recipient: bool = True,
+    _legacy_past_self_unknown: bool = True,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -17513,6 +17514,9 @@ def project_final_stage1_grounded_observation_plan(
                 *(() if _legacy_relief_cognition_anaphora else ('source_relief_cognition_anaphora:v1',)),
                 *(('source_relief_self_recipient:v1',) if n.nucleus_id in recipient_ids else ()))))
             if n.nucleus_id in slots else n for n in nuclei)
+    if not _legacy_past_self_unknown:
+        nuclei, relations = _final_source_past_self_unknown(
+            nuclei, relations, evidence_spans, normalized_input)
     if not _legacy_relief_unknown_source:
         nuclei, relations = _final_source_relief_unknown(
             nuclei, relations, evidence_spans, normalized_input)
@@ -17676,12 +17680,13 @@ def project_final_stage1_grounded_observation_plan(
     return projected
 
 
-def _source_self_unknown_object_parts(fragment):
+def _source_self_unknown_object_parts(fragment, *, past=False):
     """The complete SELF cognition, with an interrogative object, not a reason."""
     match = re.fullmatch(
         r"(?P<object>(?:何|なに|どこ|どれ|どちら)[^、,。．.!?！？\r\n…‥⋯]*?(?:の)?か)(?:は|が|も)?[、,]?"
         r"(?P<owner>自分|私|わたし|僕|ぼく|俺|おれ)(?P<self_suffix>自身)?(?:でも|にも|には|は|が|も)"
-        r"(?:(?:今|現在)(?:は|も))?(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", fragment)
+        + (r"(?:まだ)?(?:よく|はっきり)?(?:分からなかった|わからなかった)" if past else
+           r"(?:(?:今|現在)(?:は|も))?(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)"), fragment)
     if match and not re.search(
         r"理由|原因|なぜ|何故|によると|いわく|曰く|と言|と話|と語|って言|って話|って語|"
         r"と思|って思|と考|って考|もし|仮に|なら|分から|わから", match['object']):
@@ -17731,7 +17736,7 @@ def _source_feeling_unknown_object_group(nuclei, relations, evidence_spans, norm
     return feeling, unknown
 
 
-def _source_single_unknown_object(nuclei, relations, evidence_spans, normalized_input, *, allow_scalar=False):
+def _source_single_unknown_object(nuclei, relations, evidence_spans, normalized_input, *, allow_scalar=False, allow_past=False):
     """Read the complete single-field SELF unknown already selected as material."""
     if normalized_input is None:
         return ()
@@ -17743,16 +17748,17 @@ def _source_single_unknown_object(nuclei, relations, evidence_spans, normalized_
     f = n.semantic_frame
     source = str(normalized_input.get("memo") or "")
     fragment = str(span.raw_text).strip(" 　。．.")
+    past = allow_past and _source_past_self_unknown_nucleus(n, span)
     if (n.source_fields != ("memo",) or span.source_field != "memo"
         or n.source_span_ids != (span.span_id,)
         or n.retention != "required" or n.grounding_kind != "explicit"
         or n.allowed_claim_scope != "explicit_current_input"
         or (n.kind, f.predicate_kind, f.modality) != ("uncertainty", "uncertainty", "uncertain")
         or f.actor != "current_user" or f.polarity != "negative"
-        or f.time_scope not in {"current_input", "present"}
+        or not (f.time_scope in {"current_input", "present"} or past)
         or not {"operator:uncertainty", "semantic_role:limiting_unknown"} <= set(f.attribute_codes)
         or any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:")) for c in f.attribute_codes)
-        or not (_source_self_unknown_object_parts(fragment) or allow_scalar
+        or not (past or _source_self_unknown_object_parts(fragment) or allow_scalar
             and "operator:negation" in f.attribute_codes
             and {"lexical:source_bounded_expression", "lexical:preserve_source_predicate",
                  "lexical:no_new_sensation_family"} <= set(f.attribute_codes)
@@ -17765,6 +17771,73 @@ def _source_single_unknown_object(nuclei, relations, evidence_spans, normalized_
         or not re.fullmatch(r"\s*[。．.]?\s*", source[span.end_index:])):
         return ()
     return (n,)
+
+
+def _source_past_self_unknown_nucleus(nucleus, span):
+    """The versioned, complete past SELF host; not a current-state inference."""
+    f = nucleus.semantic_frame
+    return bool(
+        nucleus.source_fields == ("memo",) and span.source_field == "memo"
+        and nucleus.source_span_ids == nucleus.surface_anchor_ids == f.target_anchor_ids == (span.span_id,)
+        and nucleus.retention == "required" and nucleus.grounding_kind == "explicit"
+        and nucleus.allowed_claim_scope == "explicit_current_input"
+        and (nucleus.kind, f.predicate_kind, f.actor, f.modality, f.polarity, f.time_scope)
+            == ("uncertainty", "uncertainty", "current_user", "uncertain", "negative", "past")
+        and tuple(c for c in f.attribute_codes if c.startswith("source_past_self_unknown:"))
+            == ("source_past_self_unknown:v1",)
+        and {"operator:uncertainty", "semantic_role:limiting_unknown"} <= set(f.attribute_codes)
+        and not any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:", "semantic_dependency:"))
+                    for c in f.attribute_codes)
+        and _source_self_unknown_object_parts(span.raw_text, past=True))
+
+
+def _source_past_self_unknown_group(nuclei, relations, evidence_spans, normalized_input):
+    """Re-prove the whole original field: singleton or the complete relief pair."""
+    group = (_source_single_unknown_object(nuclei, relations, evidence_spans, normalized_input, allow_past=True)
+        or _source_relief_cognition_unknown_group(nuclei, relations, evidence_spans, normalized_input,
+                                                 require_witness=False))
+    spans = {s.span_id: s for s in evidence_spans}
+    if not group or len(group[0].source_span_ids) != 1:
+        return ()
+    n = group[0]
+    span = spans.get(n.source_span_ids[0])
+    return group if span is not None and _source_past_self_unknown_nucleus(n, span) else ()
+
+
+def _source_past_self_unknown_from_resolver(nuclei, relations, resolver):
+    read = getattr(resolver, "source_text_for_span_field", None)
+    if read is None:
+        return ()
+    spans = resolver.resolve_many(resolver.span_ids)
+    fields = {s.source_field: read(s.span_id) for s in spans if s.source_field in _TEXT_SOURCE_FIELDS}
+    return _source_past_self_unknown_group(nuclei, relations, spans, normalize_emlis_current_input(fields))
+
+
+def _final_source_past_self_unknown(nuclei, relations, evidence_spans, normalized_input):
+    """Qualify a past finite host only after a complete original-source proof."""
+    spans = {s.span_id: s for s in evidence_spans}
+    candidates = tuple(n for n in nuclei if n.source_fields == ("memo",)
+        and len(n.source_span_ids) == 1 and n.source_span_ids[0] in spans
+        and _source_self_unknown_object_parts(spans[n.source_span_ids[0]].raw_text, past=True))
+    if len(candidates) != 1:
+        return nuclei, relations
+    n = candidates[0]
+    f = n.semantic_frame
+    if (f.actor != "current_user" or n.kind not in {"self_evaluation", "reaction", "state", "uncertainty"}
+        or "operator:self_evaluation" in f.attribute_codes):
+        return nuclei, relations
+    attrs = tuple(c for c in f.attribute_codes if not c.startswith("time_scope:"))
+    candidate = replace(n, kind="uncertainty", semantic_frame=replace(f,
+        predicate_kind="uncertainty", modality="uncertain", polarity="negative", time_scope="past",
+        attribute_codes=tuple(_dedupe((*attrs, "operator:uncertainty", "semantic_role:limiting_unknown",
+                                      "time_scope:past", "source_past_self_unknown:v1")))))
+    projected = tuple(candidate if row == n else row for row in nuclei)
+    # Reuse only the established exact conflict-detector provenance repair.
+    # An asserted/foreign edge cannot be removed to manufacture eligibility.
+    projected, corrected = _final_source_relief_unknown(projected, relations, evidence_spans, normalized_input)
+    if not _source_past_self_unknown_group(projected, corrected, evidence_spans, normalized_input):
+        return nuclei, relations
+    return projected, corrected
 
 
 def _source_relief_cognition_unknown_group(nuclei, relations, evidence_spans, normalized_input, *, require_witness=True):
@@ -17807,7 +17880,7 @@ def _source_relief_cognition_unknown_group(nuclei, relations, evidence_spans, no
                or not {r.from_nucleus_id, r.to_nucleus_id} <= owned | {unknown.nucleus_id}
                for r in relations if unknown.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id))
         or not _source_single_unknown_object((unknown,), (),
-            (replace(span, start_index=0, end_index=len(span.raw_text)),), {"memo": span.raw_text})):
+            (replace(span, start_index=0, end_index=len(span.raw_text)),), {"memo": span.raw_text}, allow_past=True)):
         return ()
     return unknown, left, right
 
@@ -18101,7 +18174,7 @@ def _source_unknown_object_group_from_resolver(nuclei, relations, resolver, *, i
     # including for leading/full-width whitespace, before comparing slices.
     normalized = normalize_emlis_current_input({"memo": read_field(memo[0].span_id)})
     return ((_source_single_unknown_object(nuclei, relations,
-        resolver.resolve_many(resolver.span_ids), normalized) if include_single else ()) or
+        resolver.resolve_many(resolver.span_ids), normalized, allow_past=True) if include_single else ()) or
         _source_feeling_unknown_object_group(nuclei, relations,
         resolver.resolve_many(resolver.span_ids), normalized))
 
@@ -18127,7 +18200,7 @@ def _explicit_unknown_object_reception(response, nuclei, relations, evidence_spa
     independent = (_source_independent_unknown_object_group(nuclei, relations, evidence_spans, normalized_input)
         or _source_same_field_unknown_object_group(nuclei, relations, evidence_spans, normalized_input)
         or _source_relief_cognition_unknown_group(nuclei, relations, evidence_spans, normalized_input))
-    group = (independent[:1] or _source_single_unknown_object(nuclei, relations, evidence_spans, normalized_input)
+    group = (independent[:1] or _source_single_unknown_object(nuclei, relations, evidence_spans, normalized_input, allow_past=True)
         or _source_feeling_unknown_object_group(nuclei, relations, evidence_spans, normalized_input))
     reception = response.human_reception_plan
     if not group or reception is None:
@@ -19128,6 +19201,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_relief_unknown_source: bool = True,
     _legacy_relief_cognition_anaphora: bool = True,
     _legacy_relief_self_recipient: bool = True,
+    _legacy_past_self_unknown: bool = True,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan.
 
@@ -19203,6 +19277,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_relief_unknown_source=_legacy_relief_unknown_source,
         _legacy_relief_cognition_anaphora=_legacy_relief_cognition_anaphora,
         _legacy_relief_self_recipient=_legacy_relief_self_recipient,
+        _legacy_past_self_unknown=_legacy_past_self_unknown,
     )
 
 

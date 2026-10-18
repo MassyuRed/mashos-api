@@ -3203,7 +3203,8 @@ def _source_unknown_object_clauses(move, plan, resolver):
 
 def _unknown_object_recipient(fragment):
     from emlis_ai_grounded_observation_plan import _source_self_unknown_object_parts
-    proof = _source_self_unknown_object_parts(fragment)
+    proof = (_source_self_unknown_object_parts(fragment)
+             or _source_self_unknown_object_parts(fragment, past=True))
     if proof is None:
         return re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺)は", "あなたは", fragment)
     start, end = proof.span('owner')
@@ -3225,14 +3226,15 @@ def _unknown_object_group_ir_text(realization):
             or realization.target_slot_count != 1 or realization.context_slots
             or len(realization.semantic_fragments) != 1 or len(realization.semantic_profiles) != 1
             or realization.relations or realization.reference_mode != "EXPLICIT"
-            or realization.time_scope not in {"present", "current_input"}
+            or realization.time_scope not in {"present", "current_input", "past"}
             or realization.polarity != "negative" or realization.modality != "uncertain"
             or realization.aspect not in {"unknown", "not_applicable"}):
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
         profile = realization.semantic_profiles[0]
         if ((profile.nucleus_kind, profile.predicate_kind, profile.modality) != ("uncertainty", "uncertainty", "uncertain")
             or profile.actor_kind != "SELF" or profile.quoted_boundary or profile.performed_action or profile.future_action
-            or not _source_self_unknown_object_parts(realization.semantic_fragments[0])):
+            or not _source_self_unknown_object_parts(realization.semantic_fragments[0],
+                                                    past=realization.time_scope == "past")):
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
         return _unknown_object_nominal(realization.semantic_fragments)
     markers = tuple(c for c in realization.nominalization_plan if c.startswith("source-unknown-object:"))
@@ -11105,6 +11107,8 @@ def _source_grounded_reception_fragment(
             or appraisal is None or appraisal.dimension != "UNFINISHED_OPENNESS"
             or appraisal.operation != "LEAVE_UNFINISHED"):
             raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+        if realization.time_scope == "past":
+            return _unknown_object_recipient(realization.semantic_fragments[0]) + "のですね"
         return "結論を急がずに、" + _unknown_object_recipient(realization.semantic_fragments[0]) + "のだと受け止めています"
     if (move.required and move.reception_act == "stay_with_current_burden"
         and move.move_role == "felt_response" and not context_prefix
