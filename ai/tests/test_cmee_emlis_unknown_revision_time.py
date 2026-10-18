@@ -129,10 +129,11 @@ def test_new_current_unknown_revision_is_bound_to_answer_source(case, profile):
     assert not out.automatic_progression
     assert out.question is None
     if 'negative' in case:
-        # Existing pair eligibility expires when uncertainty itself is revised.
-        # Time correctness is not a claim that its unavailable body is fixed.
-        assert out.artifact is None and out.status.value == 'UNAVAILABLE'
-        assert 'emlis_refined_body_unavailable' in out.reason_codes
+        # Dedicated pair eligibility still expires. u354 repairs the existing
+        # generic three-object appraisal surface without changing its meaning.
+        assert out.artifact is not None and out.status.value == 'GENERATED'
+        assert out.artifact.reception.startswith('回答した時点で嬉しくないことを小さくせずに受け止めています。')
+        assert 'もう誘ってもらえなくなるかもしれないと思うと寂しいこととの違い' in out.artifact.reception
     else:
         assert out.artifact is not None, out.reason_codes
         assert '回答した時点で嬉しいという気持ちを受け止めています。' == out.artifact.reception

@@ -13539,7 +13539,7 @@ def _derive_source_grounded_reception_expression_authority(
         effective_reference_mode = reception_effective_move_reference_mode(
             reception_plan,
             move,
-            recovery_stage,
+            recovery_stage, plan=selected_grounded_plan, resolver=resolver,
         )
         if effective_reference_mode == "anaphoric_first":
             reference_mode = "ANAPHORIC"
@@ -13685,7 +13685,7 @@ def _derive_source_grounded_reception_expression_authority(
         validated_rows = validate_source_grounded_reception_expressions(
             reception_plan,
             tuple(expressions),
-            recovery_stage,
+            recovery_stage, plan=selected_grounded_plan, resolver=resolver,
         )
     except GroundedHumanReceptionSurfaceError as exc:
         _raise_realizable_reception_failure(exc)

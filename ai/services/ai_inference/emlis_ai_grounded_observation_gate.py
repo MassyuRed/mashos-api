@@ -2333,11 +2333,85 @@ def _body_inverse_visible_text(body: bytes, row: Any) -> str:
     )
 
 
+def _body_inverse_current_negative_relief_material(move, plan, resolver, selected, decision):
+    """Keep the whole three-object appraisal while reading its local pair.
+
+    The current answer and the original contrast are separate contributions to
+    one already-selected MATERIAL_WEIGHT appraisal. Neither may be dropped or
+    promoted to the retired dedicated pair-retention content.
+    """
+    from cocolon_meaning_experience_engine.contracts import EmlisAppraisalContent
+    from emlis_ai_grounded_human_reception import source_grounded_current_negative_relief_reference
+    reception = plan.response_plan.human_reception_plan
+    if not source_grounded_current_negative_relief_reference(reception, move, plan, resolver):
+        return False
+    first = reception.moves[0]
+    if len(selected.decisions) != 2:
+        return False
+    answer_decisions = tuple(d for d in selected.decisions if d.move_id == first.move_id)
+    if len(answer_decisions) != 1:
+        return False
+    other = answer_decisions[0]
+    proposition = decision.subjective_proposition
+    appraisal = proposition.appraisal_content
+    if (decision.branch != 'LIMITED' or other.branch != 'LIMITED'
+        or decision.reception_act != move.reception_act or other.reception_act != first.reception_act
+        or other.target_nucleus_ids != first.target_nucleus_ids or other.support_nucleus_ids
+        or type(appraisal) is not EmlisAppraisalContent
+        or (proposition.content_kind, proposition.subjective_mode, proposition.subjective_operator)
+            != ('APPRAISAL', 'ATTENTION', 'ATTEND_TO')
+        or (appraisal.dimension, appraisal.operation) != ('MATERIAL_WEIGHT', 'RECEIVE_AS_MATERIAL')
+        or proposition.focal_relation_ref is not None or appraisal.focal_relation_ref is not None
+        or proposition.boundary_target_refs or appraisal.protected_bindings
+        or any(getattr(other, field) != getattr(decision, field) for field in
+               ('meaning_outcome_ref', 'reception_binding_ref', 'projected_claim_ref', 'selected_opportunity_ref'))
+        or other.subjective_proposition != proposition
+        or other.basis_rows != decision.basis_rows or other.qualifier_rows != decision.qualifier_rows
+        or len(decision.selected_contribution_refs) != 1 or len(other.selected_contribution_refs) != 1
+        or decision.selected_contribution_refs == other.selected_contribution_refs):
+        return False
+    mappings = dict(selected.semantic_nucleus_pairs)
+    ids = (*move.target_nucleus_ids, *move.support_nucleus_ids, *first.target_nucleus_ids)
+    if (len(set(ids)) != 3 or len(proposition.primary_target_refs) != 3
+        or proposition.primary_target_refs != proposition.response_object_refs
+        or tuple(mappings.get(ref) for ref in proposition.primary_target_refs) != ids
+        or len(decision.basis_rows) != 3 or len(decision.qualifier_rows) != 3
+        or tuple(row.binding_ref for row in decision.basis_rows) != proposition.basis_binding_refs
+        or appraisal.appraised_bindings != proposition.basis_binding_refs
+        or tuple(q.source_qualifier_binding_ref for q in decision.qualifier_rows)
+            != proposition.source_qualifier_binding_refs
+        or proposition.target_contribution_refs != (*decision.selected_contribution_refs,
+                                                     *other.selected_contribution_refs)
+        or appraisal.basis_contribution_refs != proposition.target_contribution_refs):
+        return False
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    for i, (row, qualifier, nid, role, argument) in enumerate(zip(
+            decision.basis_rows, decision.qualifier_rows, ids,
+            ('RELATION_LEFT', 'RELATION_RIGHT', 'APPRAISED_OBJECT'), ('LEFT', 'RIGHT', None))):
+        frame = index[nid].semantic_frame
+        prefix = (argument.lower() + '_') if argument else ''
+        codes = (f'{prefix}polarity:{frame.polarity}', f'{prefix}modality:{frame.modality}',
+                 f'{prefix}time_scope:{frame.time_scope}')
+        contribution = (decision if i < 2 else other).selected_contribution_refs[0]
+        if (row.role != role or mappings.get(row.semantic_ref) != nid
+            or row.contribution_ref != contribution or qualifier.basis_binding_ref != row.binding_ref
+            or row.projection_preimage_ref != selected.projection_preimage_ref
+            or qualifier.projection_preimage_ref != selected.projection_preimage_ref
+            or qualifier.source_argument_role != argument
+            or qualifier.canonical_qualifier_codes != codes
+            or (qualifier.polarity, qualifier.modality, qualifier.time_scope)
+                != (frame.polarity, frame.modality, frame.time_scope)):
+            return False
+    return bool(decision.qualifier_rows[0].source_candidate_ref
+                == decision.qualifier_rows[1].source_candidate_ref
+                != decision.qualifier_rows[2].source_candidate_ref)
+
+
 def _body_inverse_past_cognitive_feeling_contrast_forms(
     move: Any, plan: GroundedObservationPlan, resolver: EvidenceSpanResolver,
     selected: SelectedSubjectiveReceptionInputV1 | None,
 ) -> tuple[str, ...] | None:
-    """Read the existing both-endpoint appraisal without replaying its author."""
+    """Read a selected whole-source contrast without replaying its author."""
     from emlis_ai_grounded_observation_plan import (
         _source_cognitive_feeling_parts, _source_nominal_past_feeling_is_bound,
         _is_pure_relation_marker, _CONTRAST_RE,
@@ -2413,14 +2487,16 @@ def _body_inverse_past_cognitive_feeling_contrast_forms(
     appraisal = proposition.appraisal_content
     if (decision.branch not in {"NORMAL", "LIMITED"}
         or decision.target_nucleus_ids != move.target_nucleus_ids
-        or decision.support_nucleus_ids != move.support_nucleus_ids or appraisal is None
-        or (appraisal.dimension, appraisal.operation) != ("RELATIONAL_NONCOLLAPSE", "PRESERVE_BOTH_ENDPOINTS")
-        or not proposition.focal_relation_ref
-        or appraisal.focal_relation_ref != proposition.focal_relation_ref
-        or dict(selected.relation_pairs).get(proposition.focal_relation_ref) != relation.relation_id):
+        or decision.support_nucleus_ids != move.support_nucleus_ids or appraisal is None):
         return None
     mappings = dict(selected.semantic_nucleus_pairs)
-    if ({mappings.get(ref) for ref in proposition.primary_target_refs} != ids
+    material = _body_inverse_current_negative_relief_material(move, plan, resolver, selected, decision)
+    if not material and (
+        (appraisal.dimension, appraisal.operation) != ("RELATIONAL_NONCOLLAPSE", "PRESERVE_BOTH_ENDPOINTS")
+        or not proposition.focal_relation_ref
+        or appraisal.focal_relation_ref != proposition.focal_relation_ref
+        or dict(selected.relation_pairs).get(proposition.focal_relation_ref) != relation.relation_id
+        or {mappings.get(ref) for ref in proposition.primary_target_refs} != ids
         or {mappings.get(ref) for ref in proposition.response_object_refs} != ids):
         return None
     selected_rows = tuple(row for row in decision.basis_rows
@@ -2442,8 +2518,9 @@ def _body_inverse_past_cognitive_feeling_contrast_forms(
         return None
     # Complete finite grammar: neither object, possibility nor tense may shrink.
     nominal = "ということ" if re.search(r"(?:だ|です)$", texts[1]) else "こと"
-    return (texts[0] + "という気持ちと" + texts[1] + nominal
-            + "との違いをどちらの側も残したまま、感じています。",)
+    ending = ("との違いを受け止めています。" if material
+              else "との違いをどちらの側も残したまま、感じています。")
+    return (texts[0] + "という気持ちと" + texts[1] + nominal + ending,)
 
 
 def _body_inverse_reception_context_ids(
@@ -8292,7 +8369,7 @@ def evaluate_grounded_surface_body_inverse(
                             reception_effective_move_reference_mode(
                                 reception_plan,
                                 move,
-                                sentence_plan.recovery_stage,
+                                sentence_plan.recovery_stage, plan=plan, resolver=resolver,
                             )
                         )
                         try:

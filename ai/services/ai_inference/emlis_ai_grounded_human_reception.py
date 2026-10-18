@@ -1524,6 +1524,8 @@ def validate_source_grounded_reception_expressions(
     reception_plan: GroundedHumanReceptionPlan,
     expressions: Sequence[SourceGroundedRealizableReceptionExpressionV1],
     recovery_stage: ReceptionRecoveryStage,
+    *, plan: GroundedObservationPlan | None = None,
+    resolver: EvidenceSpanResolver | None = None,
 ) -> tuple[
     tuple[GroundedReceptionMovePlan, SourceGroundedRealizableReceptionExpressionV1],
     ...,
@@ -1588,7 +1590,7 @@ def validate_source_grounded_reception_expressions(
         effective_reference = reception_effective_move_reference_mode(
             reception_plan,
             move,
-            recovery_stage,
+            recovery_stage, plan=plan, resolver=resolver,
         )
         expected_reference: ReceptionExpressionReferenceMode
         if effective_reference == "anaphoric_first":
@@ -2083,14 +2085,57 @@ def reception_effective_move_reference_mode(
     reception_plan: GroundedHumanReceptionPlan,
     move: GroundedReceptionMovePlan,
     recovery_stage: ReceptionRecoveryStage,
+    *, plan: GroundedObservationPlan | None = None,
+    resolver: EvidenceSpanResolver | None = None,
 ) -> str:
-    """Return the one recovery-aware reference contract for a retained Move."""
+    """Return the recovery-aware surface reference without changing meaning."""
 
     if move.reception_act == "bounded_counter_self_denial":
         return "explicit_emlis_counterposition"
     if recovery_stage in {"integrated", "hedged", "minimal_grounded"}:
         return "anaphoric_first"
+    if source_grounded_current_negative_relief_reference(reception_plan, move, plan, resolver):
+        return "short_anchor_if_ambiguous"
     return move.reference_mode or "anaphoric_first"
+
+
+def source_grounded_current_negative_relief_reference(reception_plan, move, plan, resolver):
+    """A current negative answer cannot serve as the original pair's antecedent.
+
+    This is a final surface choice, not a new selected content or source
+    capability. The meaning plan stays intact; the inverse reader separately
+    verifies the selected aggregate and this Move's two-source contribution.
+    """
+    if (plan is None or resolver is None
+        or getattr(resolver, 'source_contract', None) != 'cocolon.cmee.emlis_thread.v1'
+        or move.reference_mode != 'anaphoric_first'
+        or len(reception_plan.moves) != 2 or move != reception_plan.moves[1]
+        or move.reception_act != 'recognize_lived_change' or move.move_role != 'felt_response'
+        or not move.required or len(move.target_nucleus_ids) != 1 or len(move.support_nucleus_ids) != 1):
+        return False
+    first = reception_plan.moves[0]
+    if (first.reception_act != 'stay_with_current_burden' or not first.required
+        or first.move_role != 'felt_response' or len(first.target_nucleus_ids) != 1
+        or first.support_nucleus_ids):
+        return False
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    answer = index.get(first.target_nucleus_ids[0])
+    if (answer is None or answer.source_fields != ('answer_text_private',)
+        or answer.allowed_claim_scope != 'explicit_supplemental_answer'
+        or answer.retention != 'required' or answer.grounding_kind != 'explicit'
+        or len(answer.source_span_ids) != 1
+        or (answer.kind, answer.semantic_frame.actor, answer.semantic_frame.predicate_kind,
+            answer.semantic_frame.polarity, answer.semantic_frame.modality, answer.semantic_frame.time_scope)
+            != ('reaction', 'current_user', 'feeling', 'negative', 'feeling', 'present')
+        or 'thread_time:answer_time' not in answer.semantic_frame.attribute_codes
+        or any(answer.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)):
+        return False
+    from emlis_ai_grounded_observation_plan import source_owned_relief_cognition_from_resolver
+    pairs = tuple(pair for pair in source_owned_relief_cognition_from_resolver(
+        plan.nuclei, plan.relations, resolver)
+        if (pair[0].nucleus_id,) == move.target_nucleus_ids
+        and (pair[1].nucleus_id,) == move.support_nucleus_ids)
+    return len(pairs) == 1
 
 
 def reception_action_is_future_intention(
@@ -4418,7 +4463,7 @@ def resolve_grounded_reception_move_referent(
     effective_reference = reception_effective_move_reference_mode(
         reception_plan,
         move,
-        recovery_stage,
+        recovery_stage, plan=plan, resolver=resolver,
     )
     referent = resolve_grounded_reception_referent(
         _scoped_reception_plan_for_move(
@@ -7015,7 +7060,7 @@ def _project_source_grounded_reception_move_realization(
     effective_reference = reception_effective_move_reference_mode(
         reception_plan,
         move,
-        recovery_stage,
+        recovery_stage, plan=plan, resolver=resolver,
     )
     reference_mode: ReceptionExpressionReferenceMode
     if effective_reference == "anaphoric_first":
@@ -13691,7 +13736,7 @@ def _realize_source_grounded_human_reception(
     pairs = validate_source_grounded_reception_expressions(
         reception_plan,
         expressions,
-        recovery_stage,
+        recovery_stage, plan=plan, resolver=resolver,
     )
     expression_by_move = {
         expression.move_id: expression for _move, expression in pairs
