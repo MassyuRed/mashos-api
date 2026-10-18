@@ -1176,14 +1176,18 @@ def _retained_relief_observation_pair(plan, resolver):
     if reception is None or len(answers) not in (0, 1):
         return frozenset()
     from emlis_ai_grounded_observation_plan import (source_owned_relief_cognition_from_resolver,
-        _source_mixed_relief_unknown_from_resolver, _source_retained_mixed_unknown_from_resolver)
+        _source_mixed_relief_unknown_from_resolver, _source_retained_mixed_unknown_from_resolver,
+        _source_retained_relief_received_from_resolver)
+    received = _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)
     mixed = (_source_retained_mixed_unknown_from_resolver(plan.nuclei, plan.relations, resolver)
              if answers else _source_mixed_relief_unknown_from_resolver(plan.nuclei, plan.relations, resolver))
+    if received:
+        mixed = received if received[0] is not None else ()
     unknown_moves = tuple(m for m in reception.moves if mixed and m.required
         and m.reception_act == 'stay_with_current_burden' and m.move_role == 'felt_response'
         and m.target_nucleus_ids == (mixed[0].nucleus_id,) and not m.support_nucleus_ids)
     if (mixed and len(unknown_moves) != 1
-        or len(reception.moves) != (1 if not answers else 2) + bool(mixed)):
+        or len(reception.moves) != (2 if received or answers else 1) + bool(mixed)):
         return frozenset()
     pairs = source_owned_relief_cognition_from_resolver(plan.nuclei, plan.relations, resolver)
     if len(pairs) != 1:
@@ -1201,7 +1205,7 @@ def _retained_relief_observation_pair(plan, resolver):
         and set((*m.target_nucleus_ids, *m.support_nucleus_ids)) == owned)
     if len(moves) != 1:
         return frozenset()
-    if answers:
+    if answers and not received:
         other, = (m for m in reception.moves if m != moves[0] and m not in unknown_moves)
         index = {n.nucleus_id: n for n in plan.nuclei}
         if (not other.required or len(other.target_nucleus_ids) != 1 or other.support_nucleus_ids):

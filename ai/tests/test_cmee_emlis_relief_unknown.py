@@ -185,7 +185,7 @@ def test_current_manifest_registers_the_two_new_private_contracts():
     from cocolon_meaning_experience_engine.emlis_stage1_composition import _contract_manifest
     manifest=dict(_contract_manifest())
     descriptors={dict(row)['type_name']:dict(row) for row in manifest['logical_contract_descriptors']}
-    assert manifest['logical_contract_count']==83
+    assert manifest['logical_contract_count']==87
     for cls in (c.RetainedReliefCognitionEligibilityV1,c.RetainedReliefCognitionContentV1):
         descriptor=descriptors[cls.__name__]
         assert descriptor['serialization_boundary']=='REQUEST_LOCAL_PRIVATE_CANONICAL_VIEW'

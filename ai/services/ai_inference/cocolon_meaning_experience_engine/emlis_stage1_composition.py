@@ -16776,6 +16776,10 @@ def _logical_contract_descriptor(
 # introspection.  Logical Step-4 types which are not runtime-active in Step 2
 # are still frozen here with their complete approved field order/cardinality.
 _LOGICAL_CONTRACT_FIELD_SPECS = (
+    ('RetainedReliefReceivedEligibilityV1', 'relief-received-retention-v1', 'schema_version=exact1 source_prefix_ref=exact1 checkpoint_ref=exact1 original_source_ref=exact1 relief_nucleus_ref=exact1 loneliness_nucleus_ref=exact1 received_event_ref=exact1 received_reaction_ref=exact1 unknown_nucleus_ref=0..1 contrast_relation_ref=exact1 received_relation_ref=exact1 answer_nucleus_ref=0..1 answer_relation_ref=0..1 operation=exact1 move_ref=exact1 received_move_ref=exact1 unknown_move_ref=0..1 thread_control=exact1 update=0..1 answer_source_ref=0..1', ('INITIAL_RELIEF_AND_RECEIVED_EXPERIENCE', 'OPTIONAL_INDEPENDENT_CURRENT_SELF_WH_UNKNOWN', 'FULL_SOURCE_REPLAY', 'EXACT_FOUR_OR_FIVE_OBJECTS'), 'POST_SELECTION_LOCAL_CONTENT'),
+    ('RetainedUpdatedReliefReceivedEligibilityV1', 'relief-received-retention-v1', 'schema_version=exact1 source_prefix_ref=exact1 checkpoint_ref=exact1 original_source_ref=exact1 relief_nucleus_ref=exact1 loneliness_nucleus_ref=exact1 received_event_ref=exact1 received_reaction_ref=exact1 unknown_nucleus_ref=0..1 contrast_relation_ref=exact1 received_relation_ref=exact1 answer_nucleus_ref=0..1 answer_relation_ref=0..1 operation=exact1 move_ref=exact1 received_move_ref=exact1 unknown_move_ref=0..1 thread_control=exact1 update=0..1 answer_source_ref=0..1', ('ONE_EXISTING_RECEIVED_UPDATE', 'EXACT_OPERATION_SURVIVORS_AND_RELATIONS', 'EXACT_THREE_TO_SIX_OBJECTS', 'FULL_SOURCE_AND_UPDATE_REPLAY'), 'POST_SELECTION_LOCAL_CONTENT'),
+    ('RetainedReliefReceivedPairContentV1', 'relief-received-retention-v1', 'schema_version=exact1 eligibility=exact1 projection_preimage_ref=exact1 aggregate_projection_seal_ref=exact1 aggregate_claim_ref=exact1 aggregate_proposition_ref=exact1 meaning_outcome_ref=exact1 reception_binding_ref=exact1 grounding_ref=exact1 proposition=exact1 basis_rows=exact2 qualifier_rows=exact2 seal_ref=exact1', ('EXISTING_RELIEF_TWO_ROLE_CONTENT', 'SHARED_LIMITED_CLAIM', 'DISJOINT_COMPLETE_CONTRIBUTIONS', 'FULL_AGGREGATE_REPLAY'), 'POST_SELECTION_LOCAL_CONTENT'),
+    ('RetainedReliefReceivedExperienceContentV1', 'relief-received-retention-v1', 'schema_version=exact1 eligibility=exact1 projection_preimage_ref=exact1 aggregate_projection_seal_ref=exact1 aggregate_claim_ref=exact1 aggregate_proposition_ref=exact1 meaning_outcome_ref=exact1 reception_binding_ref=exact1 grounding_ref=exact1 proposition=exact1 basis_rows=1..4 qualifier_rows=1..4 seal_ref=exact1 reception_configuration=exact1 event_ref=0..1 reaction_ref=0..1 answer_ref=0..1 relation_refs=0..2 original_proposition=0..1', ('ORIGINAL_EXPERIENCE_AND_ANSWER_KEEP_OWN_TIME', 'NO_THREE_ENDPOINT_AS_OLD_PAIR', 'WITHDRAWN_ROLE_NEVER_REVIVED', 'EVENT_SURVIVOR_HAS_NO_INVENTED_FEELING', 'FULL_AGGREGATE_REPLAY'), 'POST_SELECTION_LOCAL_CONTENT'),
     ("RetainedReliefCognitionEligibilityV1", "retained-relief-cognition-v1", "schema_version=exact1 source_prefix_ref=exact1 checkpoint_ref=exact1 original_source_ref=exact1 relief_nucleus_ref=exact1 loneliness_nucleus_ref=exact1 unknown_nucleus_ref=exact1 contrast_relation_ref=exact1 move_ref=exact1 unknown_move_ref=exact1 thread_control=exact1", ("INITIAL_SOURCE_OWNED_RELIEF_COGNITION_AND_INDEPENDENT_SELF_WH_UNKNOWN", "EXACT_SOURCE_REPLAY", "NO_ANSWER_OR_LEGACY_PROMOTION"), "POST_SELECTION_LOCAL_CONTENT"),
     ("RetainedReliefCognitionContentV1", "retained-relief-cognition-v1", "schema_version=exact1 eligibility=exact1 projection_preimage_ref=exact1 aggregate_projection_seal_ref=exact1 aggregate_claim_ref=exact1 aggregate_proposition_ref=exact1 meaning_outcome_ref=exact1 reception_binding_ref=exact1 grounding_ref=exact1 proposition=exact1 basis_rows=exact2 qualifier_rows=exact2 seal_ref=exact1", ("LIMITED_THREE_OBJECT_ONE_CLAIM_UNCHANGED", "EXISTING_RELIEF_COGNITION_TWO_ROLE_CONTENT", "INDEPENDENT_UNKNOWN_IS_NOT_CAUSE", "FULL_AGGREGATE_REPLAY"), "POST_SELECTION_LOCAL_CONTENT"),
     ("RetainedUpdatedReliefCognitionEligibilityV1", "retained-updated-relief-cognition-v1", "schema_version=exact1 source_prefix_ref=exact1 checkpoint_ref=exact1 original_source_ref=exact1 answer_source_ref=exact1 relief_nucleus_ref=exact1 loneliness_nucleus_ref=exact1 contrast_relation_ref=exact1 received_event_ref=exact1 received_reaction_ref=exact1 answer_update=exact1 move_ref=exact1 thread_control=exact1", ("UNCHANGED_SOURCE_OWNED_RELIEF_COGNITION_PAIR", "ONE_EXISTING_RECEIVED_ANSWER_UPDATE", "EXACT_SOURCE_AND_ACCEPTED_UPDATE_REPLAY", "NO_ENDPOINT_OR_LEGACY_PROMOTION"), "POST_SELECTION_LOCAL_CONTENT"),
@@ -16902,11 +16906,11 @@ def _contract_manifest() -> tuple[Any, ...]:
         _logical_contract_descriptor(*row)
         for row in _LOGICAL_CONTRACT_FIELD_SPECS
     )
-    if len(descriptors) != 83 or len({row[0][1] for row in descriptors}) != 83:
+    if len(descriptors) != 87 or len({row[0][1] for row in descriptors}) != 87:
         raise Stage1CompositionError("LANGUAGE_CORE_CONTRACT_DESCRIPTOR_STOP")
     return (
         ("schema_version", _CONTRACT_MANIFEST_SCHEMA_VERSION),
-        ("logical_contract_count", 83),
+        ("logical_contract_count", 87),
         ("logical_contract_descriptors", descriptors),
         ("content_kind_derivation_rows", LANGUAGE_CORE_CONTENT_DERIVATION_ROWS),
         ("concrete_runtime_binding_descriptors", LANGUAGE_CORE_CONCRETE_BINDING_DESCRIPTORS),
@@ -18231,4 +18235,31 @@ def project_retained_relief_cognition_content(eligibility, local, decision, sele
         selected.grounding_ref, proposition, basis, qualifiers, '')
     value = replace(value, seal_ref=c.retained_relief_cognition_seal(value))
     c.validate_retained_relief_cognition_content(value, decision, selected)
+    return value
+
+
+def project_retained_relief_received_content(content_type, eligibility, local, decision, selected, meaning):
+    """Bind each local role to the same complete and unchanged LIMITED aggregate."""
+    from . import contracts as c
+    claims = tuple(row for row in meaning.subjective_claim_rows
+                   if row.subjective_claim_id == decision.projected_claim_ref)
+    traces = tuple(row for row in meaning.reception_visible_causal_trace_rows
+                   if row.projected_claim_ref == decision.projected_claim_ref)
+    if (content_type not in {c.RetainedReliefReceivedPairContentV1, c.RetainedReliefReceivedExperienceContentV1}
+        or meaning.projection_branch != 'LIMITED' or len(claims) != 1 or len(traces) != 1
+        or claims[0].asserted_subjective_proposition != decision.subjective_proposition
+        or traces[0].meaning_outcome_ref != decision.meaning_outcome_ref
+        or traces[0].reception_record_ref != decision.reception_binding_ref
+        or meaning.projection_seal_ref != selected.projection_seal_ref
+        or meaning.projection_preimage_ref != selected.projection_preimage_ref):
+        raise c.CMEEStage1ContractError('retained_relief_received_aggregate_invalid')
+    value = content_type(schema_version='1.0', eligibility=eligibility,
+        projection_preimage_ref=selected.projection_preimage_ref,
+        aggregate_projection_seal_ref=selected.projection_seal_ref,
+        aggregate_claim_ref=decision.projected_claim_ref,
+        aggregate_proposition_ref=c.retained_relief_cognition_aggregate_ref(decision.subjective_proposition),
+        meaning_outcome_ref=decision.meaning_outcome_ref, reception_binding_ref=decision.reception_binding_ref,
+        grounding_ref=selected.grounding_ref, **local, seal_ref='')
+    value = replace(value, seal_ref=c.retained_relief_received_seal(value))
+    c.validate_retained_relief_received_content(value, decision, selected)
     return value

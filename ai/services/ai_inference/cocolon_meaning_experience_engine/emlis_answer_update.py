@@ -546,7 +546,7 @@ def _independent_unknown_beside_received_pair(prepared, left, right, contrast, r
     return unknown
 
 
-def _unchanged_relief_cognition_update_source(prepared):
+def _unchanged_relief_cognition_update_source(prepared, *, _allow_received_reaction_withdrawal=False):
     """Prove the u332 pair is untouched by one accepted, separate received update.
 
     This reads the existing answer owner's result; it admits no new answer
@@ -570,7 +570,12 @@ def _unchanged_relief_cognition_update_source(prepared):
     owned = {left.nucleus_id, right.nucleus_id}
     rest = tuple(n for n in original.nuclei if n.retention == 'required' and n.nucleus_id not in owned)
     edges = tuple(e for e in original.relations if e != contrast)
-    unknown = _independent_unknown_beside_received_pair(prepared, left, right, contrast, rest)
+    complete_received = gp._source_relief_received_group(original.nuclei, original.relations,
+        thread.original.evidence_spans, thread.original.normalized_current_input) if _allow_received_reaction_withdrawal else ()
+    if _allow_received_reaction_withdrawal and not complete_received:
+        return None
+    unknown = (complete_received[0] if complete_received else
+        _independent_unknown_beside_received_pair(prepared, left, right, contrast, rest))
     if unknown is not None:
         # Exclude only from the local received-role proof, never from meaning.
         rest = tuple(n for n in rest if n != unknown)
@@ -610,7 +615,8 @@ def _unchanged_relief_cognition_update_source(prepared):
         if item.operation == 'WITHDRAW':
             # Reaction-only withdrawal already keeps the pair directly. Its
             # old checkpoint and selected content need no migration.
-            if prepared.accepted_nuclei or targets != (event.nucleus_id,):
+            if prepared.accepted_nuclei or (targets != (event.nucleus_id,)
+                and not _allow_received_reaction_withdrawal):
                 return None
             return left, right, contrast, event, reaction, item, None
     else:
@@ -644,6 +650,88 @@ def _unchanged_relief_cognition_update_source(prepared):
           or temporal.about_time != 'ORIGINAL_OCCASION' or temporal.relative_relation is not None):
         return None
     return left, right, contrast, event, reaction, item, answer
+
+
+def _retained_relief_received_update_source(prepared):
+    """The approved complete two-experience source and exactly one accepted update."""
+    if prepared is None or any(getattr(prepared, name)
+            for name in prepared.__dataclass_fields__ if name.startswith('legacy_')):
+        return ()
+    original = prepared.original_plan
+    group = gp._source_relief_received_group(original.nuclei, original.relations,
+        prepared.thread.original.evidence_spans, prepared.thread.original.normalized_current_input)
+    if not group:
+        return ()
+    source = _unchanged_relief_cognition_update_source(
+        prepared, _allow_received_reaction_withdrawal=True)
+    if source is None:
+        return ()
+    unknown, left, right, event, reaction, contrast, edge = group
+    if source[:5] != (left, right, contrast, event, reaction):
+        return ()
+    return (*group, source[5], source[6])
+
+
+def _retained_relief_received_duties(prepared, nuclei, relations):
+    source = _retained_relief_received_update_source(prepared)
+    if not source:
+        return ()
+    unknown, left, right, event, reaction, contrast, edge, item, answer = source
+    index = {n.nucleus_id: n for n in nuclei}
+    inactive = set(prepared.checkpoint.inactive_claim_refs)
+    if (len(index) != len(nuclei)
+        or set(index) != ({n.nucleus_id for n in prepared.original_plan.nuclei} - inactive)
+            | set(item.changed_claim_refs)
+        or any(index.get(n.nucleus_id) != n for n in (left, right, *((unknown,) if unknown else ())))
+        or tuple(r for r in relations if r.relation_id == contrast.relation_id) != (contrast,)
+        or unknown and any(unknown.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations)):
+        return ()
+    expected = [('lived_change', (left.nucleus_id,), (right.nucleus_id,))]
+    if item.operation == 'WITHDRAW':
+        if item.target_meaning_refs == (event.nucleus_id,):
+            survivor = index.get(reaction.nucleus_id)
+            if survivor is None or not gp._thread_withdrawn_original_reaction(survivor, relations):
+                return ()
+            expected_survivor = replace(reaction, semantic_frame=replace(reaction.semantic_frame,
+                attribute_codes=tuple(dict.fromkeys((*reaction.semantic_frame.attribute_codes,
+                    'thread_subject:withdrawn_source_event',
+                    'thread_subject:unchanged_relief_pair_withdrawal:v1')))))
+            if survivor != expected_survivor:
+                return ()
+        elif item.target_meaning_refs == (reaction.nucleus_id,):
+            survivor = index.get(event.nucleus_id)
+            if survivor != event:
+                return ()
+        else:
+            return ()
+        if relations != (contrast,):
+            return ()
+        expected.append(('current_burden', (survivor.nucleus_id,), ()))
+    else:
+        if answer is None or index.get(event.nucleus_id) != event or answer.nucleus_id not in index:
+            return ()
+        about = tuple(r for r in relations if r.type == 'evaluation_about_event')
+        if (len(about) != 1
+            or (about[0].from_nucleus_id, about[0].to_nucleus_id,
+                about[0].grounding_kind, about[0].retention, about[0].source_relation_ids)
+                != (event.nucleus_id, answer.nucleus_id, 'user_stated_relation', 'required', (item.update_ref,))
+            or set(about[0].source_span_ids) != set((*event.source_span_ids, *answer.source_span_ids))):
+            return ()
+        if item.operation == 'ADD':
+            if index.get(reaction.nucleus_id) != reaction or set(relations) != {contrast, edge, about[0]}:
+                return ()
+            supports = (reaction.nucleus_id, answer.nucleus_id)
+        elif item.operation == 'REVISE':
+            if reaction.nucleus_id in index or set(relations) != {contrast, about[0]}:
+                return ()
+            supports = (answer.nucleus_id,)
+        else:
+            return ()
+        expected.append(('current_burden', (event.nucleus_id,), supports))
+    if unknown:
+        expected.append(('current_burden', (unknown.nucleus_id,), ()))
+    groups = gp._thread_relief_received_groups(nuclei, relations)
+    return groups if groups == tuple(expected) else ()
 
 
 def _retained_unchanged_relief_cognition_duties(prepared, nuclei, relations):
@@ -1178,9 +1266,23 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=(), *, p
         if row.source_fields == (ANSWER_FIELD,) and row.retention == "required"
         and row.allowed_claim_scope == "explicit_supplemental_answer"
     )[-1:]
+    # The new whole-source qualification expires on any update outside its
+    # one accepted separate-experience operation. The old source capabilities
+    # remain available; a surviving tag cannot reselect a changed pair/unknown.
+    received_source = _retained_relief_received_update_source(prepared)
+    if not received_source:
+        nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+            attribute_codes=tuple(c for c in n.semantic_frame.attribute_codes
+                if not c.startswith('source_relief_received_retention:'))))
+            if any(c.startswith('source_relief_received_retention:')
+                   for c in n.semantic_frame.attribute_codes) else n for n in nuclei)
     withdrawal_pair = (_unchanged_relief_cognition_update_source(prepared)
         if prepared is not None and not any(getattr(prepared, name)
             for name in prepared.__dataclass_fields__ if name.startswith('legacy_')) else None)
+    if (received_source and received_source[7].operation == 'WITHDRAW'
+        and received_source[7].target_meaning_refs == (received_source[3].nucleus_id,)):
+        unknown, left, right, event, reaction, contrast, edge, item, answer = received_source
+        withdrawal_pair = (left, right, contrast, event, reaction, item, answer)
     if withdrawal_pair is not None and withdrawal_pair[5].operation == 'WITHDRAW':
         survivor = withdrawal_pair[4].nucleus_id
         nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
@@ -1192,7 +1294,8 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=(), *, p
         material_quality=quality, include_reception_relation_support=True,
         final_source_fidelity=True,
         primary_focus_nucleus_ids=focus_ids,
-        retained_reaction_groups=(_retained_unchanged_relief_cognition_duties(prepared, nuclei, relations)
+        retained_reaction_groups=(_retained_relief_received_duties(prepared, nuclei, relations)
+            or _retained_unchanged_relief_cognition_duties(prepared, nuclei, relations)
             or _retained_relief_cognition_duties(prepared, nuclei, relations)
             or _retained_reasonless_shared_target_duties(
             original, thread, nuclei, relations, updates)
@@ -1201,7 +1304,8 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=(), *, p
     )
     response = gp._explicit_unknown_object_reception(response, nuclei, relations,
         resolver.resolve_many(resolver.span_ids), thread.original.normalized_current_input)
-    duties = _retained_unchanged_relief_cognition_duties(prepared, nuclei, relations)
+    duties = (_retained_relief_received_duties(prepared, nuclei, relations)
+        or _retained_unchanged_relief_cognition_duties(prepared, nuclei, relations))
     if len(duties) == 3:
         unknown_id, = duties[-1][1]
         reception = response.human_reception_plan
@@ -1253,6 +1357,19 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
             or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
             raise
+        # u348 keeps its old full source and selection, including mixed-unknown
+        # retention. A source-only version switch avoids suppressing those
+        # duties through the generic Prepared legacy-flag guards.
+        prior_received = original_meaning_plan(thread, _legacy_relief_received_retention=True)
+        if prior_received.nuclei != original.nuclei or prior_received.relations != original.relations:
+            try:
+                restored = _prepare_emlis_meaning_from_plan(request, thread, prior_received,
+                    legacy_relief_cognition_update_retention=False)
+            except ValueError as prior_exc:
+                if str(prior_exc) not in {'emlis_checkpoint_source_prefix_mismatch', 'emlis_question_noncanonical'}:
+                    raise
+            else:
+                return restored
         # u347 owns its complete former source, selection and delivery. The
         # source witness changes meaning identity; no Prepared legacy flag is
         # set, because u344/u346 pair retention and u347 layout remain active.

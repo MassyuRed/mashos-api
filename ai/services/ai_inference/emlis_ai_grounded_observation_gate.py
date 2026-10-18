@@ -375,9 +375,9 @@ def _semantic_subcheck_reasons(
                     # license the same sensation outside the disclosure.
                     replacements.add((parsed.utf8_byte_start, parsed.utf8_byte_end, b""))
     reception_plan = plan.response_plan.human_reception_plan
-    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_relief_cognition_unknown_from_resolver, _source_retained_mixed_unknown_from_resolver
+    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_relief_cognition_unknown_from_resolver, _source_retained_mixed_unknown_from_resolver, _source_retained_relief_received_from_resolver
     unknown_group = _source_unknown_object_group_from_resolver(plan.nuclei, plan.relations, resolver, include_single=True)
-    unknown_group = unknown_group or (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or _source_retained_mixed_unknown_from_resolver(plan.nuclei, plan.relations, resolver))[:1]
+    unknown_group = unknown_group or (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or _source_retained_mixed_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or tuple(n for n in _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)[:1] if n is not None))[:1]
     for move in reception_plan.moves if reception_plan is not None else ():
         if len(move.target_nucleus_ids) > 1 or move.support_nucleus_ids or (
             len(unknown_group) == 1 and move.target_nucleus_ids == (unknown_group[0].nucleus_id,)
@@ -4428,9 +4428,9 @@ def _feeling_reason_unknown_restores_source(visible, source):
 
 def _read_unknown_object_discourse(raw, move, plan, resolver, selected_subjective_input):
     """Read both finite sources independently, preserving the wh-object and SELF."""
-    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_self_unknown_object_parts, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_relief_cognition_unknown_from_resolver, _source_retained_mixed_unknown_from_resolver
+    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_self_unknown_object_parts, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_relief_cognition_unknown_from_resolver, _source_retained_mixed_unknown_from_resolver, _source_retained_relief_received_from_resolver
     group = _source_unknown_object_group_from_resolver(plan.nuclei, plan.relations, resolver, include_single=True)
-    independent = (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or _source_retained_mixed_unknown_from_resolver(plan.nuclei, plan.relations, resolver))
+    independent = (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or _source_retained_mixed_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or tuple(n for n in _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)[:1] if n is not None))
     group = group or independent[:1]
     ids = (*move.target_nucleus_ids, *move.support_nucleus_ids)
     if len(group) == 1:
@@ -5087,8 +5087,20 @@ def _relief_cognition_selected_reception(move, plan, resolver, selected):
     d = decisions[0]
     p = d.subjective_proposition
     basis_rows = d.basis_rows
-    from emlis_ai_grounded_human_reception import SelectedRetainedReliefCognitionDecisionV1
-    if type(d) is SelectedRetainedReliefCognitionDecisionV1:
+    from emlis_ai_grounded_human_reception import SelectedRetainedReliefCognitionDecisionV1, SelectedRetainedReliefReceivedDecisionV1
+    if type(d) is SelectedRetainedReliefReceivedDecisionV1:
+        from cocolon_meaning_experience_engine.contracts import RetainedReliefReceivedPairContentV1
+        # The other local content belongs to the received-experience reader.
+        # Reject it here before replay; this cannot grant a pair qualification.
+        if type(d.retained_relief_received) is not RetainedReliefReceivedPairContentV1:
+            return None
+        from cocolon_meaning_experience_engine.emlis_thread_projection import validate_retained_relief_received_source
+        try:
+            local = validate_retained_relief_received_source(d, selected, plan, resolver)
+        except (ValueError, TypeError, AttributeError, KeyError):
+            return None
+        p, basis_rows = local.proposition, local.basis_rows
+    elif type(d) is SelectedRetainedReliefCognitionDecisionV1:
         from cocolon_meaning_experience_engine.emlis_thread_projection import validate_retained_relief_cognition_source
         try:
             local = validate_retained_relief_cognition_source(d, selected, plan, resolver)
@@ -5255,16 +5267,67 @@ def _read_relief_survivor_discourse(raw, move, plan, resolver, selected):
     return ((0, len(match['source'].encode()), source.encode()),)
 
 
+def _read_retained_received_event_discourse(raw, move, plan, resolver, selected):
+    """Read the source-owned surviving event without borrowing an author's text."""
+    from emlis_ai_grounded_human_reception import SelectedRetainedReliefReceivedDecisionV1
+    from cocolon_meaning_experience_engine.emlis_thread_projection import validate_retained_relief_received_source
+    decision = next((d for d in selected.decisions if d.move_id == move.move_id), None) if selected else None
+    if type(decision) is not SelectedRetainedReliefReceivedDecisionV1:
+        return None
+    try:
+        local = validate_retained_relief_received_source(decision, selected, plan, resolver)
+    except (ValueError, TypeError, AttributeError, KeyError):
+        return None
+    if (local.eligibility.operation != 'WITHDRAW_REACTION' or not move.required
+        or move.move_role != 'attention' or move.reception_act != 'stay_with_current_burden'
+        or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids
+        or re.search(r'[「」『』“”‘’"?？!！\r\n]', raw)):
+        return None
+    from emlis_ai_grounded_observation_plan import _source_retained_relief_received_from_resolver
+    original = _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)
+    if not original or move.target_nucleus_ids != (original[3].nucleus_id,):
+        return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    event = index.get(original[3].nucleus_id)
+    if (event is None or original[4].nucleus_id in index
+        or any(event.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+        or (event.kind, event.semantic_frame.actor, event.semantic_frame.predicate_kind,
+            event.semantic_frame.modality, event.semantic_frame.time_scope)
+            != ('event', 'current_user', 'event', 'fact', 'past')):
+        return None
+    source = final_reception_source_anchor_text(event.nucleus_id, index, resolver)
+    owner = re.match(r'^(?:私|自分|わたし)(?=は|が)', source)
+    parsed = re.fullmatch(r'(?P<event>[^。]+)' + (
+        'のですね。' if owner and source[owner.end():].startswith('は')
+        else 'ことはあったのですね。'), raw)
+    if parsed is None:
+        return None
+    visible = parsed['event']
+    if owner:
+        if not visible.startswith('あなた'):
+            return None
+        visible = owner.group() + visible[len('あなた'):]
+    if visible != source:
+        return None
+    return ((0, len(parsed['event'].encode()), source.encode()),)
+
+
 def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None,
                                 *, preceding_context=None, preceding_observation=None):
     """Read supported finite source duties without a literal-author oracle."""
     from cocolon_meaning_experience_engine.contracts import EmlisReliefCognitionAppraisalContent
     decision = next((d for d in selected_subjective_input.decisions if d.move_id == move.move_id), None) if selected_subjective_input else None
-    from emlis_ai_grounded_human_reception import SelectedRetainedReliefCognitionDecisionV1
+    from emlis_ai_grounded_human_reception import SelectedRetainedReliefCognitionDecisionV1, SelectedRetainedReliefReceivedDecisionV1
     if decision and (type(decision.subjective_proposition.appraisal_content) is EmlisReliefCognitionAppraisalContent
-                     or type(decision) is SelectedRetainedReliefCognitionDecisionV1):
+                     or type(decision) is SelectedRetainedReliefCognitionDecisionV1
+                     or type(decision) is SelectedRetainedReliefReceivedDecisionV1
+                         and type(decision.retained_relief_received.proposition.appraisal_content)
+                             is EmlisReliefCognitionAppraisalContent):
         # A missing new facet cannot fall back to the old contrast wording.
         return _read_relief_cognition_discourse(raw, move, plan, resolver, selected_subjective_input, preceding_observation)
+    if (type(decision) is SelectedRetainedReliefReceivedDecisionV1
+        and decision.retained_relief_received.eligibility.operation == 'WITHDRAW_REACTION'):
+        return _read_retained_received_event_discourse(raw, move, plan, resolver, selected_subjective_input)
     survivor = _read_relief_survivor_discourse(raw, move, plan, resolver, selected_subjective_input)
     if survivor is not None:
         return survivor
@@ -5575,7 +5638,7 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
         _thread_revised_original_reaction,
     )
     from emlis_ai_grounded_human_reception import (
-        SelectedRetainedReceivedExperienceDecisionV1,
+        SelectedRetainedReceivedExperienceDecisionV1, SelectedRetainedReliefReceivedDecisionV1,
         validate_selected_retained_received_experience,
     )
     decision = next((d for d in selected_subjective_input.decisions
@@ -5584,6 +5647,14 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
     if type(decision) is SelectedRetainedReceivedExperienceDecisionV1:
         try:
             local = validate_selected_retained_received_experience(
+                decision, selected_subjective_input, plan, resolver)
+        except (ValueError, TypeError, AttributeError, KeyError):
+            return None
+    relief_received = type(decision) is SelectedRetainedReliefReceivedDecisionV1
+    if relief_received:
+        from cocolon_meaning_experience_engine.emlis_thread_projection import validate_retained_relief_received_source
+        try:
+            local = validate_retained_relief_received_source(
                 decision, selected_subjective_input, plan, resolver)
         except (ValueError, TypeError, AttributeError, KeyError):
             return None
@@ -5623,6 +5694,7 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
         or not move.required or not (move.move_role == "felt_response"
             or move.move_role == "attention" and thread_group
             and (separate_received_scopes and move == reception_moves[0]
+                or relief_received
                 or "selection:source_owned_answer_adjacent"
                 in plan.response_plan.human_reception_plan.depth_policy.selection_reason_codes)
             # The middle contribution has the same fully proved event/answer
@@ -5946,7 +6018,8 @@ def _read_received_discourse_parts(raw, move, plan, resolver, selected_subjectiv
                 or answer.source_fields != ("answer_text_private",)
                 or answer.allowed_claim_scope != "explicit_supplemental_answer"
                 or answer.semantic_frame.actor != "current_user"
-                or answer.semantic_frame.polarity != "negative"):
+                or answer.semantic_frame.polarity != "negative"
+                    and not (relief_received and answer.semantic_frame.polarity == "positive")):
                 return None
             answer_source = final_reception_source_anchor_text(answer.nucleus_id, nuclei, resolver)
             # Read a complete original feeling and a separately timed
@@ -8062,7 +8135,10 @@ def evaluate_grounded_surface_body_inverse(
                         from cocolon_meaning_experience_engine.contracts import EmlisReliefCognitionAppraisalContent
                         selected_decision = next((d for d in selected_subjective_input.decisions
                             if d.move_id == move_id), None) if selected_subjective_input else None
-                        from emlis_ai_grounded_human_reception import SelectedRetainedReliefCognitionDecisionV1
+                        from emlis_ai_grounded_human_reception import SelectedRetainedReliefCognitionDecisionV1, SelectedRetainedReliefReceivedDecisionV1
+                        if type(selected_decision) is SelectedRetainedReliefReceivedDecisionV1:
+                            failures.append('body_inverse_relief_received_duty_missing:' + move_id)
+                            continue
                         if (selected_decision and (type(selected_decision.subjective_proposition.appraisal_content)
                                 is EmlisReliefCognitionAppraisalContent
                                 or type(selected_decision) is SelectedRetainedReliefCognitionDecisionV1)):

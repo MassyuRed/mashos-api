@@ -319,6 +319,13 @@ class SelectedRetainedReliefCognitionDecisionV1(SelectedSubjectiveReceptionDecis
 
 
 @dataclass(frozen=True, repr=False)
+class SelectedRetainedReliefReceivedDecisionV1(SelectedSubjectiveReceptionDecisionV1):
+    """One local duty in the source-qualified relief/received composition."""
+
+    retained_relief_received: Any = field(repr=False)
+
+
+@dataclass(frozen=True, repr=False)
 class SelectedSubjectiveReceptionInputV1:
     """Pre-realization authority shared by forward and independent replay.
 
@@ -398,9 +405,11 @@ def validate_selected_subjective_reception_input(
         or set(semantic_map.values()) != {row.nucleus_id for row in plan.nuclei}
         or not set(relation_map.values()) <= {row.relation_id for row in plan.relations}):
         raise GroundedHumanReceptionSurfaceError(failure)
+    relief_received_source_validated = False
     for row, move in zip(value.decisions, reception_plan.moves, strict=True):
         if (type(row) not in {SelectedSubjectiveReceptionDecisionV1, SelectedRetainedReceivedExperienceDecisionV1,
-                             SelectedRetainedReasonedExperienceDecisionV1, SelectedRetainedReliefCognitionDecisionV1}
+                             SelectedRetainedReasonedExperienceDecisionV1, SelectedRetainedReliefCognitionDecisionV1,
+                             SelectedRetainedReliefReceivedDecisionV1}
             or identify_selected_subjective_reception_decision(row) != row
             or row.branch not in {"NORMAL", "LIMITED"}
             or not all((row.meaning_outcome_ref, row.reception_binding_ref, row.projected_claim_ref))
@@ -425,6 +434,20 @@ def validate_selected_subjective_reception_input(
             try:
                 from cocolon_meaning_experience_engine.emlis_thread_projection import validate_retained_relief_cognition_source
                 validate_retained_relief_cognition_source(row, value, plan, resolver)
+            except (ValueError, TypeError, AttributeError, KeyError):
+                raise GroundedHumanReceptionSurfaceError(failure) from None
+        if type(row) is SelectedRetainedReliefReceivedDecisionV1:
+            try:
+                if not relief_received_source_validated:
+                    from cocolon_meaning_experience_engine.emlis_thread_projection import validate_retained_relief_received_source
+                    # This replay compares the entire carried selection, not
+                    # just this row. Reuse that exact proof only inside this
+                    # validation call over the same immutable value.
+                    validate_retained_relief_received_source(row, value, plan, resolver)
+                    relief_received_source_validated = True
+                else:
+                    from cocolon_meaning_experience_engine.contracts import validate_retained_relief_received_content
+                    validate_retained_relief_received_content(row.retained_relief_received, row, value)
             except (ValueError, TypeError, AttributeError, KeyError):
                 raise GroundedHumanReceptionSurfaceError(failure) from None
         proposition = row.subjective_proposition
@@ -473,7 +496,10 @@ def validate_selected_subjective_reception_input(
             raise GroundedHumanReceptionSurfaceError(failure)
         from cocolon_meaning_experience_engine.contracts import EmlisReliefCognitionAppraisalContent
         if (type(appraisal) is EmlisReliefCognitionAppraisalContent
-            or type(row) is SelectedRetainedReliefCognitionDecisionV1):
+            or type(row) is SelectedRetainedReliefCognitionDecisionV1
+            or type(row) is SelectedRetainedReliefReceivedDecisionV1
+                and type(row.retained_relief_received.proposition.appraisal_content)
+                    is EmlisReliefCognitionAppraisalContent):
             from emlis_ai_grounded_observation_gate import _relief_cognition_selected_reception
             if not _relief_cognition_selected_reception(move, plan, resolver, value):
                 raise GroundedHumanReceptionSurfaceError(failure)
@@ -3186,11 +3212,11 @@ def _source_grounded_received_contrast_rows(targets, supports, nucleus_index, re
 
 
 def _source_unknown_object_clauses(move, plan, resolver):
-    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_relief_cognition_unknown_from_resolver, _source_retained_mixed_unknown_from_resolver
+    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_relief_cognition_unknown_from_resolver, _source_retained_mixed_unknown_from_resolver, _source_retained_relief_received_from_resolver
     if plan is None or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts:
         return ()
     group = _source_unknown_object_group_from_resolver(plan.nuclei, plan.relations, resolver, include_single=True)
-    group = group or (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or _source_retained_mixed_unknown_from_resolver(plan.nuclei, plan.relations, resolver))[:1]
+    group = group or (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or _source_retained_mixed_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or tuple(n for n in _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)[:1] if n is not None))[:1]
     ids = (*move.target_nucleus_ids, *move.support_nucleus_ids)
     if (not group or not move.required or move.move_role != "felt_response"
         or move.reception_act != "stay_with_current_burden"
@@ -3366,6 +3392,22 @@ def source_grounded_current_expression_nominal(
         event, reaction, appraisal, target = shared[0]
         target = target[:-1] + {'te': 'た', 'de': 'だ', 'ta': 'た'}[shared[2]]
         return event + _RECEIVED_EVENT_LINK_TEXT[shared[1]] + reaction + "ことと、" + target + "ことについて" + appraisal + "こと"
+    # A withdrawn reaction leaves just this source-owned received event.
+    # Its original span still contains the withdrawn clause; only the proved
+    # event range may become the nominal, never the obsolete whole span.
+    if (plan is not None and move.required and move.reception_act == 'stay_with_current_burden'
+        and len(move.target_nucleus_ids) == 1 and not move.support_nucleus_ids):
+        from emlis_ai_grounded_observation_plan import _source_retained_relief_received_from_resolver
+        retained = _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)
+        if (retained and move.target_nucleus_ids == (retained[3].nucleus_id,)
+            and retained[4].nucleus_id not in {n.nucleus_id for n in plan.nuclei}
+            and not any(retained[3].nucleus_id in (r.from_nucleus_id, r.to_nucleus_id)
+                        for r in plan.relations)):
+            event = nucleus_index.get(retained[3].nucleus_id)
+            fragment = _source_grounded_clause_candidate(event, resolver) if event is not None else ''
+            if fragment and _typed_reception_source_fragment(
+                    event, resolver.resolve(event.source_span_ids[0]).raw_text) == fragment:
+                return fragment + 'こと'
     detached = source_grounded_detached_burden_group(move, plan, nucleus_index, resolver)
     if detached:
         return "と、".join(_detached_burden_nominal(source, when) for _, source, when in detached)
@@ -3734,9 +3776,18 @@ def source_grounded_thread_received_group(move, plan, nucleus_index, resolver):
             return ()
         original = _source_grounded_received_contrast_rows(
             (event_id,), (contrasts[0].to_nucleus_id,), nucleus_index, resolver) if contrasts else ()
+        # This closed source is the only mixed relief experience allowed to
+        # retain an accepted positive answer in its original received scope.
+        # The answer's own source, time and ABOUT edge are still proved below.
+        from emlis_ai_grounded_observation_plan import _source_retained_relief_received_from_resolver
+        retained_source = _source_retained_relief_received_from_resolver(
+            plan.nuclei, plan.relations, resolver) if about else ()
+        answer_polarity = (nucleus_index[about[0].to_nucleus_id].semantic_frame.polarity
+            if len(about) == 1 and retained_source
+            and retained_source[3].nucleus_id == event_id else "negative")
         answers = _source_grounded_thread_answer_rows(
             tuple(r.to_nucleus_id for r in about), plan, nucleus_index, resolver,
-            received_target_count=len(move.target_nucleus_ids))
+            polarity=answer_polarity, received_target_count=len(move.target_nucleus_ids))
         if len(original) != len(contrasts) or len(answers) != len(about):
             return ()
         rows.append((original[0] if original else None, answers[0] if answers else None))
@@ -6324,8 +6375,8 @@ def derive_source_grounded_nominalization_plan(
         if fragments != unknown_object:
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
         if len(unknown_object) == 1:
-            from emlis_ai_grounded_observation_plan import _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_relief_cognition_unknown_from_resolver, _source_retained_mixed_unknown_from_resolver
-            independent = (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or _source_retained_mixed_unknown_from_resolver(plan.nuclei, plan.relations, resolver))
+            from emlis_ai_grounded_observation_plan import _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_relief_cognition_unknown_from_resolver, _source_retained_mixed_unknown_from_resolver, _source_retained_relief_received_from_resolver
+            independent = (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or _source_retained_mixed_unknown_from_resolver(plan.nuclei, plan.relations, resolver) or tuple(n for n in _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)[:1] if n is not None))
             marker = "source-independent-unknown-object:0" if independent else "source-single-unknown-object:0"
             return (*nominalization, marker)
         feeling_slot = next(i for i, n in enumerate(nuclei) if n.kind == "reaction")
@@ -10589,7 +10640,9 @@ def _source_grounded_received_discourse(realization, *, selected_decision=None, 
     original_codes = tuple(c for c in realization.nominalization_plan
                            if c.startswith("received-contrast-group:"))
     local = (selected_decision.retained_received_experience
-        if type(selected_decision) is SelectedRetainedReceivedExperienceDecisionV1 else None)
+        if type(selected_decision) is SelectedRetainedReceivedExperienceDecisionV1 else
+        selected_decision.retained_relief_received
+        if type(selected_decision) is SelectedRetainedReliefReceivedDecisionV1 else None)
     local_pair = bool(local is not None and not codes and not original_codes
         and realization.target_slot_count == 1 and len(realization.semantic_fragments) == 2
         and len(realization.relations) == 1
@@ -11161,7 +11214,8 @@ def _source_grounded_reception_fragment(
         and (move.move_role == "felt_response"
              or (move.move_role == "attention"
                  or move.move_role == "significance" and middle_received_scope)
-             and any(code.startswith("thread-received-slot:") for code in realization.nominalization_plan))
+             and (any(code.startswith("thread-received-slot:") for code in realization.nominalization_plan)
+                  or type(selected_subjective_decision) is SelectedRetainedReliefReceivedDecisionV1))
         and not context_prefix
         and selected_subjective_decision.subjective_proposition.appraisal_content is not None
         and selected_subjective_decision.subjective_proposition.appraisal_content.operation
@@ -11959,6 +12013,39 @@ def _source_owned_answer_feeling_sentence(move, realization, plan, resolver,
     topic = "" if shared_event else (_received_event_record_prefixes(plan, resolver).get(event.nucleus_id, "")
                                     + event_visible + "ことについて、")
     return topic + time + _feeling_acknowledgement(finite)
+
+
+def _source_owned_retained_received_event_sentence(move, realization, plan, resolver,
+                                                   selected_decision, recovery_stage):
+    """Receive only the surviving fact after this experience's reaction withdrawal."""
+    if (type(selected_decision) is not SelectedRetainedReliefReceivedDecisionV1
+        or selected_decision.retained_relief_received.eligibility.operation != 'WITHDRAW_REACTION'
+        or recovery_stage != 'full' or not move.required
+        or move.reception_act != 'stay_with_current_burden' or move.move_role != 'attention'
+        or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids
+        or realization.clause_form != 'FINITE' or realization.reference_mode == 'ANAPHORIC'
+        or realization.target_slot_count != 1 or realization.context_slots or realization.relations
+        or len(realization.semantic_fragments) != 1):
+        return None
+    from emlis_ai_grounded_observation_plan import _source_retained_relief_received_from_resolver
+    source = _source_retained_relief_received_from_resolver(plan.nuclei, plan.relations, resolver)
+    if not source or move.target_nucleus_ids != (source[3].nucleus_id,):
+        return None
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    event = index.get(source[3].nucleus_id)
+    if (event is None or source[4].nucleus_id in index
+        or any(event.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+        or (event.kind, event.semantic_frame.actor, event.semantic_frame.predicate_kind,
+            event.semantic_frame.modality, event.semantic_frame.time_scope)
+            != ('event', 'current_user', 'event', 'fact', 'past')):
+        return None
+    fragment = final_reception_source_anchor_text(event.nucleus_id, index, resolver)
+    if not fragment or realization.semantic_fragments != (fragment,):
+        return None
+    visible = re.sub(r'^(?:私|自分|わたし)(?=は|が)', 'あなた', fragment, count=1)
+    # A SELF topic keeps its finite clause; a topicless event becomes a fact
+    # nominal. Neither form supplies an emotion or answers its personal meaning.
+    return visible + ('のですね' if visible.startswith('あなたは') else 'ことはあったのですね')
 
 
 def _source_owned_relief_cognition_sentence(move, plan, resolver, selected, recovery_stage, preceding_observation=None):
@@ -13001,6 +13088,10 @@ def _author_source_grounded_reception_clauses(
             corrected = _relief_cognition_corrected_source(move, plan, resolver, selected_subjective_input)
             if corrected is not None:
                 move_sentence = '言い直してくださった気持ちは、' + corrected + 'ということなのですね'
+            received_event_sentence = _source_owned_retained_received_event_sentence(
+                move, meaning_realization, plan, resolver, selected_decision, recovery_stage)
+            if received_event_sentence is not None:
+                move_sentence = received_event_sentence
             relief_sentence = _source_owned_relief_cognition_sentence(
                 move, plan, resolver, selected_subjective_input, recovery_stage, preceding_observation)
             if relief_sentence is not None:

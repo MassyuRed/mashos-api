@@ -8874,6 +8874,109 @@ def _source_independent_performed_action(nucleus, relations):
     )
 
 
+def _thread_relief_received_groups(nuclei, relations):
+    """Read only the closed active shape of the whole-source two-experience duty.
+
+    The source owner creates the original witness and the selected-content
+    owner replays the complete accepted update. This structural seam does not
+    admit answers or infer an edge from the existence of a surviving event.
+    """
+    left = tuple(n for n in nuclei
+        if 'source_relief_received_retention:v1' in n.semantic_frame.attribute_codes)
+    right = tuple(n for n in nuclei
+        if 'source_relief_cognition_slot:loneliness' in n.semantic_frame.attribute_codes)
+    if len(left) != 1 or len(right) != 1:
+        return ()
+    left, right = left[0], right[0]
+    pair_ids = {left.nucleus_id, right.nucleus_id}
+    pair_edges = tuple(e for e in relations if {e.from_nucleus_id, e.to_nucleus_id} & pair_ids)
+    if (left == right or len(pair_edges) != 1
+        or (pair_edges[0].type, pair_edges[0].from_nucleus_id, pair_edges[0].to_nucleus_id,
+            pair_edges[0].retention, pair_edges[0].grounding_kind)
+            != ('contrast', left.nucleus_id, right.nucleus_id, 'required', 'user_stated_relation')
+        or 'source_relief_cognition_slot:relief' not in left.semantic_frame.attribute_codes):
+        return ()
+    unknowns = tuple(n for n in nuclei
+        if 'source_mixed_relief_unknown_retention:v1' in n.semantic_frame.attribute_codes)
+    if len(unknowns) > 1:
+        return ()
+    if unknowns:
+        n, = unknowns
+        f = n.semantic_frame
+        if ((n.kind, f.predicate_kind, f.modality, f.polarity, f.actor)
+                != ('uncertainty', 'uncertainty', 'uncertain', 'negative', 'current_user')
+            or f.time_scope not in {'current_input', 'present'}
+            or n.source_fields != ('memo',) or n.allowed_claim_scope != 'explicit_current_input'
+            or any(n.nucleus_id in (e.from_nucleus_id, e.to_nucleus_id) for e in relations)):
+            return ()
+    material = tuple(n for n in nuclei if set(n.source_fields) & _TEXT_SOURCE_FIELDS
+        and not (n.retention == 'optional'
+        and n.grounding_kind == 'user_stated_relation'
+        and 'detected_type:relation_marker' in n.semantic_frame.attribute_codes
+        and set(n.source_span_ids) <= set(pair_edges[0].source_span_ids)))
+    if any(n.retention != 'required' or n.grounding_kind != 'explicit'
+        or n.semantic_frame.actor != 'current_user' for n in material):
+        return ()
+    rest = tuple(n for n in material if n not in (left, right, *unknowns))
+    originals = tuple(n for n in rest if n.source_fields == ('memo',)
+        and n.allowed_claim_scope == 'explicit_current_input')
+    answers = tuple(n for n in rest if n.source_fields == ('answer_text_private',)
+        and n.allowed_claim_scope == 'explicit_supplemental_answer')
+    if len(answers) > 1 or len(rest) != len(originals) + len(answers):
+        return ()
+    events = tuple(n for n in originals if n.kind == 'event')
+    reactions = tuple(n for n in originals if n.kind == 'reaction')
+    if len(events) > 1 or len(reactions) > 1 or len(originals) != len(events) + len(reactions):
+        return ()
+    edges = tuple(e for e in relations if e not in pair_edges)
+    if any(e.retention != 'required' or e.grounding_kind != 'user_stated_relation' for e in edges):
+        return ()
+    if answers:
+        answer, = answers
+        f = answer.semantic_frame
+        times = tuple(c for c in f.attribute_codes if c.startswith('thread_time:'))
+        if ((answer.kind, f.predicate_kind, f.modality) != ('reaction', 'feeling', 'feeling')
+            or f.polarity not in {'positive', 'negative'} or len(answer.source_span_ids) != 1
+            or len(events) != 1 or len(times) != 1
+            or times[0] not in {'thread_time:original_occasion', 'thread_time:answer_time'}
+            or f.time_scope != ('past' if times[0] == 'thread_time:original_occasion' else 'present')):
+            return ()
+        event, = events
+        about = tuple(e for e in edges if e.type == 'evaluation_about_event'
+            and (e.from_nucleus_id, e.to_nucleus_id) == (event.nucleus_id, answer.nucleus_id))
+        if len(about) != 1:
+            return ()
+        contrast = tuple(e for e in edges if e not in about)
+        if reactions:
+            reaction, = reactions
+            if len(contrast) != 1 or not _received_contrast_group_targets((event, reaction), contrast):
+                return ()
+            supports = (reaction.nucleus_id, answer.nucleus_id)
+        elif contrast or times != ('thread_time:original_occasion',):
+            return ()
+        else:
+            supports = (answer.nucleus_id,)
+        duty = ('current_burden', (event.nucleus_id,), supports)
+    elif len(events) == len(reactions) == 1:
+        event, reaction = events[0], reactions[0]
+        if len(edges) != 1 or not _received_contrast_group_targets((event, reaction), edges):
+            return ()
+        duty = ('current_burden', (event.nucleus_id,), (reaction.nucleus_id,))
+    elif len(originals) == 1 and not edges:
+        survivor, = originals
+        if reactions:
+            if not _thread_withdrawn_original_reaction(survivor, relations):
+                return ()
+        elif (survivor.semantic_frame.predicate_kind, survivor.semantic_frame.modality,
+              survivor.semantic_frame.polarity, survivor.semantic_frame.time_scope) != ('event', 'fact', 'neutral', 'past'):
+            return ()
+        duty = ('current_burden', (survivor.nucleus_id,), ())
+    else:
+        return ()
+    return (('lived_change', (left.nucleus_id,), (right.nucleus_id,)), duty,
+            *((('current_burden', (unknowns[0].nucleus_id,), ()),) if unknowns else ()))
+
+
 def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes=True):
     """Keep unanswered original reactions alongside the accepted answer duties.
 
@@ -8882,6 +8985,9 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
     between them. Corrections and withdrawals have already removed inactive
     nuclei before this selector. No question wording or body is consulted.
     """
+    retained_received = _thread_relief_received_groups(nuclei, relations)
+    if retained_received:
+        return retained_received
     # The answer owner witnesses a separate event withdrawal while the
     # original u332 pair remains intact. Its selected local content replays
     # that complete source/update proof; a detached tag alone is insufficient.
@@ -11135,6 +11241,18 @@ def build_grounded_human_reception_plan(
             and material_quality in {"grounded", "limited_grounding"}
         ) else ()),
     )
+    retained_received = _thread_relief_received_groups(nuclei, relations) if (
+        final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION) else ()
+    if retained_received and len(moves) == len(retained_received) and all(
+        (move.target_nucleus_ids, move.support_nucleus_ids) == (duty[1], duty[2])
+        for move, duty in zip(moves, retained_received)):
+        # Unknown remains an independently voiced current SELF cognition.
+        # The received duty uses attention, including a one-sided survivor;
+        # neither borrows the other duty's family or predicate responsibility.
+        moves = (moves[0], replace(moves[1], move_role='attention',
+            surface_strategy='emlis_attention_first'), *(replace(move, move_role='felt_response',
+            surface_strategy='quiet_referent_first', reference_mode='short_anchor_if_ambiguous')
+            for move in moves[2:]))
     reason_group = _source_current_material_group(nuclei, relations) if final_source_fidelity else ()
     if final_source_fidelity and len(moves) > 1:
         # A surviving chain operand remains distinguishable from a revised
@@ -17708,6 +17826,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_time_contrast_source: bool = True,
     _legacy_cognitive_feeling_orthography: bool = True,
     _legacy_mixed_relief_unknown: bool = True,
+    _legacy_relief_received_retention: bool = True,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -17931,6 +18050,16 @@ def project_final_stage1_grounded_observation_plan(
                 attribute_codes=(*n.semantic_frame.attribute_codes,
                     'source_mixed_relief_unknown_retention:v1')))
                 if n == mixed[0] else n for n in nuclei)
+    if not _legacy_relief_received_retention:
+        received = _source_relief_received_group(nuclei, relations, evidence_spans,
+                                                 normalized_input, require_witness=False)
+        if received:
+            nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+                attribute_codes=(*n.semantic_frame.attribute_codes,
+                    'source_relief_received_retention:v1')))
+                if n == received[1] else n for n in nuclei)
+    retained_received = _source_relief_received_group(
+        nuclei, relations, evidence_spans, normalized_input)
     unknown_boundaries = _final_stage1_unknown_boundaries(plan, nuclei)
     independent_unknown = (_source_relief_cognition_unknown_group(
         nuclei, relations, evidence_spans, normalized_input)
@@ -17945,10 +18074,10 @@ def project_final_stage1_grounded_observation_plan(
             material_quality=material_quality,
             include_reception_relation_support=True,
             final_source_fidelity=True,
-            retained_reaction_groups=((
+            retained_reaction_groups=(_thread_relief_received_groups(nuclei, relations) if retained_received else ((
                 ("lived_change", (independent_unknown[1].nucleus_id,), (independent_unknown[2].nucleus_id,)),
                 ("current_burden", (independent_unknown[0].nucleus_id,), ()),
-            ) if independent_unknown else ()),
+            ) if independent_unknown else ())),
         )
     )
     response_plan = _explicit_unknown_object_reception(
@@ -18269,13 +18398,12 @@ def _source_relief_cognition_unknown_from_resolver(nuclei, relations, resolver):
         or _source_mixed_relief_unknown_group(nuclei, relations, spans, normalized)[:3])
 
 
-def _source_mixed_relief_unknown_group(nuclei, relations, evidence_spans, normalized_input,
+def _source_relief_received_group(nuclei, relations, evidence_spans, normalized_input,
                                      *, require_witness=True):
-    """One complete pair, one received experience, then one present SELF unknown.
+    """A complete original relief pair, one received pair and optional SELF unknown.
 
-    Five source nuclei are not five response targets. Initially only the pair
-    and the unknown own duties; the received event/reaction remains complete
-    in Observation and supplies its already existing question opportunity.
+    This finite whole-source qualification owns selection of both experiences.
+    It does not license extra events, fields, cross-relations or unknown grammar.
     """
     pairs = source_owned_relief_cognition_pairs(nuclei, relations, evidence_spans, normalized_input)
     if len(pairs) != 1:
@@ -18288,13 +18416,13 @@ def _source_mixed_relief_unknown_group(nuclei, relations, evidence_spans, normal
             and set(n.source_span_ids) <= set(contrast.source_span_ids)))
     rest = tuple(n for n in text if n.nucleus_id not in pair_ids)
     unknowns = tuple(n for n in rest if n.kind == 'uncertainty')
-    if len(text) != 5 or len(rest) != 3 or len(unknowns) != 1:
+    if len(unknowns) > 1 or len(text) != 4 + len(unknowns) or len(rest) != 2 + len(unknowns):
         return ()
-    unknown, = unknowns
-    witness = tuple(code for code in unknown.semantic_frame.attribute_codes
-                    if code.startswith('source_mixed_relief_unknown_retention:'))
-    if ((require_witness and witness != ('source_mixed_relief_unknown_retention:v1',))
-        or not require_witness and witness not in {(), ('source_mixed_relief_unknown_retention:v1',)}):
+    unknown = unknowns[0] if unknowns else None
+    witness = tuple(code for code in left.semantic_frame.attribute_codes
+                    if code.startswith('source_relief_received_retention:'))
+    if ((require_witness and witness != ('source_relief_received_retention:v1',))
+        or not require_witness and witness not in {(), ('source_relief_received_retention:v1',)}):
         return ()
     received = tuple(n for n in rest if n != unknown)
     edges = tuple(e for e in relations if e != contrast)
@@ -18311,25 +18439,32 @@ def _source_mixed_relief_unknown_group(nuclei, relations, evidence_spans, normal
         return ()
     spans = {span.span_id: span for span in evidence_spans}
     if (len(event.source_span_ids) != 1 or event.source_span_ids != reaction.source_span_ids
-        or len(unknown.source_span_ids) != 1
-        or unknown.surface_anchor_ids != unknown.source_span_ids
-        or unknown.semantic_frame.target_anchor_ids != unknown.source_span_ids
-        or not set((*event.source_span_ids, *unknown.source_span_ids, *right.source_span_ids)) <= set(spans)):
+        or not set((*event.source_span_ids, *right.source_span_ids)) <= set(spans)
+        or unknown is not None and (len(unknown.source_span_ids) != 1
+            or unknown.surface_anchor_ids != unknown.source_span_ids
+            or unknown.semantic_frame.target_anchor_ids != unknown.source_span_ids
+            or not set(unknown.source_span_ids) <= set(spans))):
         return ()
     host = spans[event.source_span_ids[0]]
-    tail = spans[unknown.source_span_ids[0]]
+    tail = spans[unknown.source_span_ids[0]] if unknown is not None else None
     source = str(normalized_input.get('memo') or '')
     end = spans[right.source_span_ids[0]].end_index
-    if (host.source_field != 'memo' or tail.source_field != 'memo'
-        or not end < host.start_index < host.end_index < tail.start_index < tail.end_index <= len(source)
+    if (host.source_field != 'memo'
+        or not end < host.start_index < host.end_index <= len(source)
         or source[host.start_index:host.end_index] != host.raw_text
-        or source[tail.start_index:tail.end_index] != tail.raw_text
         or not re.fullmatch(r'\s*[。．.]\s*', source[end:host.start_index])
+        or set(received_edge.source_span_ids) != {host.span_id}
+        or {s.span_id for s in evidence_spans if s.source_field in _TEXT_SOURCE_FIELDS}
+            != set(contrast.source_span_ids) | {host.span_id} | ({tail.span_id} if tail else set())):
+        return ()
+    if tail is None:
+        if not re.fullmatch(r'\s*[。．.]?\s*', source[host.end_index:]):
+            return ()
+    elif (tail.source_field != 'memo'
+        or not host.end_index < tail.start_index < tail.end_index <= len(source)
+        or source[tail.start_index:tail.end_index] != tail.raw_text
         or not re.fullmatch(r'\s*[。．.]\s*', source[host.end_index:tail.start_index])
         or not re.fullmatch(r'\s*[。．.]?\s*', source[tail.end_index:])
-        or {s.span_id for s in evidence_spans if s.source_field in _TEXT_SOURCE_FIELDS}
-            != set(contrast.source_span_ids) | {host.span_id, tail.span_id}
-        or set(received_edge.source_span_ids) != {host.span_id}
         or any(unknown.nucleus_id in (e.from_nucleus_id, e.to_nucleus_id) for e in relations)
         or not _source_single_unknown_object((unknown,), (),
             (replace(tail, start_index=0, end_index=len(tail.raw_text)),), {'memo': tail.raw_text})):
@@ -18355,6 +18490,32 @@ def _source_mixed_relief_unknown_group(nuclei, relations, evidence_spans, normal
             or n.semantic_frame.target_anchor_ids != n.source_span_ids):
             return ()
     return unknown, left, right, event, reaction, contrast, received_edge
+
+
+def _source_mixed_relief_unknown_group(nuclei, relations, evidence_spans, normalized_input,
+                                     *, require_witness=True):
+    """The unchanged u348 five-owner qualification and its old witness."""
+    group = _source_relief_received_group(nuclei, relations, evidence_spans,
+                                         normalized_input, require_witness=False)
+    if not group or group[0] is None:
+        return ()
+    unknown = group[0]
+    witness = tuple(code for code in unknown.semantic_frame.attribute_codes
+                    if code.startswith('source_mixed_relief_unknown_retention:'))
+    if ((require_witness and witness != ('source_mixed_relief_unknown_retention:v1',))
+        or not require_witness and witness not in {(), ('source_mixed_relief_unknown_retention:v1',)}):
+        return ()
+    return group
+
+
+def _source_relief_received_from_resolver(nuclei, relations, resolver, *, require_witness=True):
+    read = getattr(resolver, 'source_text_for_span_field', None)
+    if read is None:
+        return ()
+    spans = resolver.resolve_many(resolver.span_ids)
+    fields = {s.source_field: read(s.span_id) for s in spans if s.source_field in _TEXT_SOURCE_FIELDS}
+    return _source_relief_received_group(nuclei, relations, spans,
+        normalize_emlis_current_input(fields), require_witness=require_witness)
 
 
 def _final_source_mixed_relief_unknown(nuclei, relations, evidence_spans, normalized_input):
@@ -18385,6 +18546,76 @@ def _source_mixed_relief_unknown_from_resolver(nuclei, relations, resolver, *, r
     fields = {s.source_field: read(s.span_id) for s in spans if s.source_field in _TEXT_SOURCE_FIELDS}
     return _source_mixed_relief_unknown_group(nuclei, relations, spans,
         normalize_emlis_current_input(fields), require_witness=require_witness)
+
+
+def _source_retained_relief_received_from_resolver(nuclei, relations, resolver):
+    """Re-admit the complete original before reading a retained experience.
+
+    This source proof covers the finite active shape, including an accepted
+    answer's ABOUT endpoints. The selected-content owner separately replays
+    admission, the update item and every decision; no marker proves those.
+    """
+    if not any('source_relief_received_retention:v1' in n.semantic_frame.attribute_codes for n in nuclei):
+        return ()
+    from cocolon_meaning_experience_engine.emlis_thread_source import ThreadEvidenceSpanResolver
+    from cocolon_meaning_experience_engine.emlis_question import _original_source_meaning_plan
+    from cocolon_meaning_experience_engine.source_kernel import _parse_canonical_frame, freeze_text_source
+    from cocolon_meaning_experience_engine.contracts import GenerationRequest
+    from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
+    if type(resolver) is not ThreadEvidenceSpanResolver or resolver.source_contract != 'cocolon.cmee.emlis_thread.v1':
+        return ()
+    try:
+        envelopes = tuple(resolver._source_envelopes.values())
+        originals = tuple(e for e in envelopes if e.source_role == 'CURRENT_INPUT')
+        answers = tuple(e for e in envelopes if e.source_role == 'SUPPLEMENTAL_ANSWER')
+        if len(originals) != 1 or len(answers) > 1 or len(envelopes) != 1 + len(answers):
+            return ()
+        envelope, = originals
+        snapshot, _ = _parse_canonical_frame(envelope.raw_utf8)
+        original = freeze_text_source(GenerationRequest('relief-received-original-source-replay',
+            build_emlis_current_input_bundle(snapshot), envelope.source_record_id))
+        if original.envelope != envelope:
+            return ()
+        original_resolver = ThreadEvidenceSpanResolver(original, ())
+        refs = tuple(q for q in resolver.qualified_refs if q.source_envelope_id == envelope.envelope_id)
+        if (refs != original_resolver.qualified_refs
+            or tuple(resolver.resolve(q.thread_span_id) for q in refs) != original.evidence_spans):
+            return ()
+        plan = _original_source_meaning_plan(original)
+        group = _source_relief_received_from_resolver(plan.nuclei, plan.relations, original_resolver)
+        if not group:
+            return ()
+        unknown, left, right, event, reaction, contrast, edge = group
+        index = {n.nucleus_id: n for n in nuclei}
+        if (len(index) != len(nuclei)
+            or any(index.get(n.nucleus_id) != n for n in (left, right, *((unknown,) if unknown else ())))
+            or tuple(e for e in relations if e.relation_id == contrast.relation_id) != (contrast,)
+            or unknown and any(unknown.nucleus_id in (e.from_nucleus_id, e.to_nucleus_id) for e in relations)
+            or not _thread_relief_received_groups(nuclei, relations)):
+            return ()
+        if not answers:
+            return group if tuple(nuclei) == plan.nuclei and tuple(relations) == plan.relations else ()
+        if event.nucleus_id in index and index[event.nucleus_id] != event:
+            return ()
+        if reaction.nucleus_id in index:
+            expected = reaction
+            if event.nucleus_id not in index:
+                expected = replace(reaction, semantic_frame=replace(reaction.semantic_frame,
+                    attribute_codes=tuple(dict.fromkeys((*reaction.semantic_frame.attribute_codes,
+                        'thread_subject:withdrawn_source_event',
+                        'thread_subject:unchanged_relief_pair_withdrawal:v1')))))
+            if index[reaction.nucleus_id] != expected:
+                return ()
+        active_original_ids = set(index) & {n.nucleus_id for n in plan.nuclei}
+        removed = {n.nucleus_id for n in plan.nuclei} - active_original_ids
+        if removed not in (set(), {event.nucleus_id}, {reaction.nucleus_id}):
+            return ()
+        if any(n != index.get(n.nucleus_id) for n in plan.nuclei
+            if n.nucleus_id in active_original_ids and n not in (event, reaction)):
+            return ()
+        return group
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return ()
 
 
 def _source_retained_mixed_unknown_from_resolver(nuclei, relations, resolver):
@@ -18425,7 +18656,9 @@ def _source_retained_mixed_unknown_from_resolver(nuclei, relations, resolver):
         if (refs != original_resolver.qualified_refs
             or tuple(resolver.resolve(q.thread_span_id) for q in refs) != original.evidence_spans):
             return ()
-        plan = _original_source_meaning_plan(original)
+        plan = _original_source_meaning_plan(original,
+            _legacy_relief_received_retention=not any(
+                'source_relief_received_retention:v1' in n.semantic_frame.attribute_codes for n in nuclei))
         group = _source_mixed_relief_unknown_from_resolver(plan.nuclei, plan.relations, original_resolver)
         if not group:
             return ()
@@ -19696,6 +19929,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_time_contrast_source: bool = True,
     _legacy_cognitive_feeling_orthography: bool = True,
     _legacy_mixed_relief_unknown: bool = True,
+    _legacy_relief_received_retention: bool = True,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan.
 
@@ -19776,6 +20010,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_time_contrast_source=_legacy_time_contrast_source,
         _legacy_cognitive_feeling_orthography=_legacy_cognitive_feeling_orthography,
         _legacy_mixed_relief_unknown=_legacy_mixed_relief_unknown,
+        _legacy_relief_received_retention=_legacy_relief_received_retention,
     )
 
 

@@ -22932,3 +22932,211 @@ def _validate_retained_updated_relief_cognition_content(value, decision, selecte
             or unknown.basis_rows != decision.basis_rows or unknown.qualifier_rows != decision.qualifier_rows):
             raise CMEEStage1ContractError(fail)
     _stage1_subjective_v2_content_bindings(local)
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class RetainedReliefReceivedEligibilityV1:
+    """One proved original relief pair and received occasion, with optional unknown."""
+
+    schema_version: str
+    source_prefix_ref: str
+    checkpoint_ref: str
+    original_source_ref: str
+    relief_nucleus_ref: str
+    loneliness_nucleus_ref: str
+    received_event_ref: str
+    received_reaction_ref: str
+    unknown_nucleus_ref: Optional[str]
+    contrast_relation_ref: str
+    received_relation_ref: str
+    answer_nucleus_ref: Optional[str]
+    answer_relation_ref: Optional[str]
+    operation: str
+    move_ref: str
+    received_move_ref: str
+    unknown_move_ref: Optional[str]
+    thread_control: Any
+    update: Any
+    answer_source_ref: Optional[str]
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class RetainedUpdatedReliefReceivedEligibilityV1(RetainedReliefReceivedEligibilityV1):
+    """The same two original experiences after exactly one admitted update."""
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class RetainedReliefReceivedPairContentV1(RetainedReliefCognitionContentV1):
+    """The existing two-role relief content in the complete two-experience claim."""
+
+    eligibility: RetainedReliefReceivedEligibilityV1 | RetainedUpdatedReliefReceivedEligibilityV1
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class RetainedReliefReceivedExperienceContentV1(RetainedReceivedExperienceContentV1):
+    """All surviving roles of the received occasion, including an admitted answer."""
+
+    eligibility: RetainedReliefReceivedEligibilityV1 | RetainedUpdatedReliefReceivedEligibilityV1
+    reception_configuration: str
+    event_ref: Optional[str]
+    reaction_ref: Optional[str]
+    answer_ref: Optional[str]
+    relation_refs: Tuple[str, ...]
+    original_proposition: Optional[SubjectivePropositionV2]
+
+
+def retained_relief_received_seal(value):
+    if type(value) not in {RetainedReliefReceivedPairContentV1, RetainedReliefReceivedExperienceContentV1}:
+        raise CMEEStage1ContractError('retained_relief_received_type_invalid')
+    prefix = ('retained-relief-received-pair:' if type(value) is RetainedReliefReceivedPairContentV1
+              else 'retained-relief-received-experience:')
+    return prefix + hashlib.sha256(stage1_canonical_json_bytes(replace(value, seal_ref=''))).hexdigest()
+
+
+def _retained_relief_received_local_rows(decision):
+    basis = tuple(b for b in decision.basis_rows if b.contribution_ref in decision.selected_contribution_refs)
+    qualifiers = tuple(q for b in basis for q in decision.qualifier_rows if q.basis_binding_ref == b.binding_ref)
+    return basis, qualifiers, tuple(dict.fromkeys(b.semantic_ref for b in basis))
+
+
+def retained_relief_received_material_proposition(decision):
+    """Keep every selected role; three endpoints are never forged into an old pair."""
+    basis, qualifiers, objects = _retained_relief_received_local_rows(decision)
+    bindings = tuple(b.binding_ref for b in basis)
+    appraisal = EmlisAppraisalContent(AppraisalDimension.MATERIAL_WEIGHT,
+        AppraisalOperation.RECEIVE_AS_MATERIAL, bindings, None, (), decision.selected_contribution_refs)
+    local = replace(decision.subjective_proposition,
+        target_contribution_refs=decision.selected_contribution_refs,
+        primary_target_refs=objects, boundary_target_refs=(), response_object_refs=objects,
+        basis_binding_refs=bindings,
+        source_qualifier_binding_refs=tuple(q.source_qualifier_binding_ref for q in qualifiers),
+        focal_relation_ref=None, appraisal_content=appraisal)
+    return local, basis, qualifiers
+
+
+def validate_retained_relief_received_content(value, decision, selected):
+    """The new finite variants do not relax any previous content contract.
+
+    This check binds the entire aggregate and its disjoint duties. Original
+    envelopes and the accepted update are separately replayed by projection.
+    """
+    fail = 'retained_relief_received_content_invalid'
+    pair = type(value) is RetainedReliefReceivedPairContentV1
+    if type(value) not in {RetainedReliefReceivedPairContentV1, RetainedReliefReceivedExperienceContentV1}:
+        raise CMEEStage1ContractError(fail)
+    e = value.eligibility
+    initial = type(e) is RetainedReliefReceivedEligibilityV1
+    if (type(e) not in {RetainedReliefReceivedEligibilityV1, RetainedUpdatedReliefReceivedEligibilityV1}
+        or e.schema_version != '1.0' or value.schema_version != '1.0'
+        or e.operation not in ({'INITIAL'} if initial else {'ADD', 'REVISE', 'WITHDRAW_EVENT', 'WITHDRAW_REACTION'})
+        or (initial and any(x is not None for x in (e.answer_nucleus_ref, e.answer_relation_ref, e.update, e.answer_source_ref)))
+        or (not initial and (e.update is None or not e.answer_source_ref))
+        or bool(e.unknown_nucleus_ref) != bool(e.unknown_move_ref)
+        or (e.move_ref if pair else e.received_move_ref) != decision.move_id
+        or value.projection_preimage_ref != selected.projection_preimage_ref
+        or value.aggregate_projection_seal_ref != selected.projection_seal_ref
+        or value.aggregate_claim_ref != decision.projected_claim_ref
+        or value.aggregate_proposition_ref != retained_relief_cognition_aggregate_ref(decision.subjective_proposition)
+        or value.meaning_outcome_ref != decision.meaning_outcome_ref
+        or value.reception_binding_ref != decision.reception_binding_ref
+        or value.grounding_ref != selected.grounding_ref
+        or value.seal_ref != retained_relief_received_seal(value)):
+        raise CMEEStage1ContractError(fail)
+    aggregate = decision.subjective_proposition
+    appraisal = aggregate.appraisal_content
+    mapping = dict(selected.semantic_nucleus_pairs)
+    live = {e.relief_nucleus_ref, e.loneliness_nucleus_ref}
+    received = {e.received_event_ref, e.received_reaction_ref}
+    if e.operation == 'ADD':
+        if not e.answer_nucleus_ref or not e.answer_relation_ref:
+            raise CMEEStage1ContractError(fail)
+        received.add(e.answer_nucleus_ref)
+    elif e.operation == 'REVISE':
+        if not e.answer_nucleus_ref or not e.answer_relation_ref:
+            raise CMEEStage1ContractError(fail)
+        received = {e.received_event_ref, e.answer_nucleus_ref}
+    elif e.operation.startswith('WITHDRAW_'):
+        if e.answer_nucleus_ref is not None or e.answer_relation_ref is not None:
+            raise CMEEStage1ContractError(fail)
+        received = {e.received_reaction_ref if e.operation == 'WITHDRAW_EVENT' else e.received_event_ref}
+    live |= received
+    if e.unknown_nucleus_ref:
+        live.add(e.unknown_nucleus_ref)
+    expected_count = {'INITIAL': 4, 'ADD': 5, 'REVISE': 4, 'WITHDRAW_EVENT': 3, 'WITHDRAW_REACTION': 3}[e.operation]
+    if (len(live) != expected_count + bool(e.unknown_nucleus_ref)
+        or decision.branch != 'LIMITED' or aggregate.subjective_mode != 'ATTENTION'
+        or aggregate.subjective_operator != 'ATTEND_TO' or aggregate.focal_relation_ref is not None
+        or type(appraisal) is not EmlisAppraisalContent
+        or (appraisal.dimension, appraisal.operation) != ('MATERIAL_WEIGHT', 'RECEIVE_AS_MATERIAL')
+        or appraisal.appraised_bindings != aggregate.basis_binding_refs or appraisal.protected_bindings
+        or len(aggregate.response_object_refs) != len(live)
+        or {mapping.get(ref) for ref in aggregate.response_object_refs} != live
+        or len(selected.decisions) != 2 + bool(e.unknown_nucleus_ref)):
+        raise CMEEStage1ContractError(fail)
+    expected_moves = (e.move_ref, e.received_move_ref) + ((e.unknown_move_ref,) if e.unknown_move_ref else ())
+    expected_duties = ({e.relief_nucleus_ref, e.loneliness_nucleus_ref}, received)
+    if e.unknown_nucleus_ref:
+        expected_duties += ({e.unknown_nucleus_ref},)
+    contributions = []
+    if tuple(row.move_id for row in selected.decisions) != expected_moves or len(set(expected_moves)) != len(expected_moves):
+        raise CMEEStage1ContractError(fail)
+    for row, duty in zip(selected.decisions, expected_duties, strict=True):
+        basis, qualifiers, objects = _retained_relief_received_local_rows(row)
+        if (row.branch != 'LIMITED' or row.subjective_proposition != aggregate
+            or row.projected_claim_ref != decision.projected_claim_ref
+            or row.meaning_outcome_ref != decision.meaning_outcome_ref
+            or row.reception_binding_ref != decision.reception_binding_ref
+            or row.basis_rows != decision.basis_rows or row.qualifier_rows != decision.qualifier_rows
+            or not row.selected_contribution_refs or not basis or len(qualifiers) != len(basis)
+            or len({b.binding_ref for b in basis}) != len(basis)
+            or {mapping.get(ref) for ref in objects} != duty
+            or set((*row.target_nucleus_ids, *row.support_nucleus_ids)) != duty):
+            raise CMEEStage1ContractError(fail)
+        contributions.extend(row.selected_contribution_refs)
+    if len(set(contributions)) != len(contributions) or set(contributions) != set(aggregate.target_contribution_refs):
+        raise CMEEStage1ContractError(fail)
+    basis, qualifiers, objects = _retained_relief_received_local_rows(decision)
+    if value.basis_rows != basis or value.qualifier_rows != qualifiers:
+        raise CMEEStage1ContractError(fail)
+    if pair:
+        content = value.proposition.appraisal_content
+        if (len(basis) != 2 or len(qualifiers) != 2 or len(decision.selected_contribution_refs) != 1
+            or type(content) is not EmlisReliefCognitionAppraisalContent
+            or content.basis_contribution_refs != decision.selected_contribution_refs
+            or content.appraised_bindings != tuple(b.binding_ref for b in basis)
+            or value.proposition != replace(aggregate, target_contribution_refs=decision.selected_contribution_refs,
+                primary_target_refs=objects, boundary_target_refs=(), response_object_refs=objects,
+                basis_binding_refs=tuple(b.binding_ref for b in basis),
+                source_qualifier_binding_refs=tuple(q.source_qualifier_binding_ref for q in qualifiers),
+                focal_relation_ref=content.focal_relation_ref, appraisal_content=content)):
+            raise CMEEStage1ContractError(fail)
+    else:
+        ids = (value.event_ref, value.reaction_ref, value.answer_ref)
+        expected_ids = (e.received_event_ref if e.operation != 'WITHDRAW_EVENT' else None,
+            e.received_reaction_ref if e.operation not in {'REVISE', 'WITHDRAW_REACTION'} else None,
+            e.answer_nucleus_ref)
+        if (tuple(mapping.get(ref) if ref else None for ref in ids) != expected_ids
+            or value.reception_configuration != e.operation
+            or len(value.relation_refs) != {'INITIAL': 1, 'ADD': 2, 'REVISE': 1,
+                                            'WITHDRAW_EVENT': 0, 'WITHDRAW_REACTION': 0}[e.operation]
+            or len(set(value.relation_refs)) != len(value.relation_refs)):
+            raise CMEEStage1ContractError(fail)
+        if e.operation == 'INITIAL':
+            expected_local = retained_received_experience_local_proposition(decision, value.relation_refs[0])
+            if (value.proposition, value.basis_rows, value.qualifier_rows) != expected_local or value.original_proposition != value.proposition:
+                raise CMEEStage1ContractError(fail)
+        else:
+            if (value.proposition, value.basis_rows, value.qualifier_rows) != retained_relief_received_material_proposition(decision):
+                raise CMEEStage1ContractError(fail)
+            if (e.operation == 'ADD') != (value.original_proposition is not None):
+                raise CMEEStage1ContractError(fail)
+            if e.operation == 'ADD':
+                original_refs = tuple(ref for ref in decision.selected_contribution_refs
+                    if {mapping.get(b.semantic_ref) for b in basis if b.contribution_ref == ref}
+                        == {e.received_event_ref, e.received_reaction_ref})
+                if len(original_refs) != 1:
+                    raise CMEEStage1ContractError(fail)
+                original = replace(decision, selected_contribution_refs=original_refs)
+                if value.original_proposition != retained_received_experience_local_proposition(original, value.relation_refs[0])[0]:
+                    raise CMEEStage1ContractError(fail)
+    _stage1_subjective_v2_content_bindings(value.proposition)

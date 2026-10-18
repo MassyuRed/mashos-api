@@ -1,3 +1,5 @@
+> 2026-10-18最新：u350。Mash個別承認済みの「安堵・寂しさ＋別経験」を、不明0/1の両方で初回・既受理一回答・訂正／両側撤回・旧互換・保存再表示まで一体実装。撤回後は残る事実／反応だけを受け取る。private logical87、商品全体の状態はPRODUCT_NOT_CLEAR。実本文・検証境界・全file地図は[u350監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u350_ReliefReceivedRetention_20261018.md)。
+
 > 2026-10-18最新診断：u349。別received経験の初回Reception欠落を確認し、初回・既受理一更新・訂正／撤回・旧互換・保存再表示の一体案を具体化。u348実装は維持、意味契約変更は未承認・未実装。詳細は[u349判断案](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u349_ReceivedExperienceRetention_Decision_20261018.md)。
 
 > 2026-10-18最新：u348。Mash承認済みの「安堵・寂しさ＋別経験＋現在の不明」を初回・既受理1更新・旧互換・保存再表示まで実装。初回3対象／2責務、更新後4対象／3責務。private V2二型追加、STRUCTURE_MAP_DELTA_PRESENT。実測・残件は末尾と[u348監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u348_MixedUnknownRetention_20261018.md)を参照。
@@ -22886,3 +22888,22 @@ u347承認案とu348は初回receivedを明示的に対象外としていた。R
 STRUCTURE_MAP_DELTA_NONE（記録5fileのみ、実装owner・logical83・全体図／地図の現行構造は不変）。新test／fixture0、pytest／SQL／UIの追加実行0。実生成診断と既存u348実本文の照合であり、過去313成功を今回の成功数へ転用しない。必要性=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、primary outcome=BLOCKER_NARROWED。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式Product Read0/3／candidate_ready=false／automatic_progression=false。10/20方式判断・10/31管理線・12/18目標、Piece/Analysis主枠53.25％は未再評価。Draft PR3／PR30継続、merge／deployなし。
 
 実出力・対象数・owner差分・未実装の本文比較案・成功と停止条件は[u349判断案](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u349_ReceivedExperienceRetention_Decision_20261018.md)。Mash判断は、この限定同時保持を初回から既存一更新・旧互換・再表示までまとめて実装することへの承認一つ。追加費用・環境操作は0の計画、工数未計測、固定時間の完成保証なし。
+
+
+## u350 — 承認済みの別経験保持を初回・一更新・撤回・保存再表示へ接続（2026-10-18）
+
+Mashが本会話でu349の一体案に「進めていいよ」と承認した。既存本人の安堵・不確かな予想と現在の寂しさpair、その後の独立received一経験、任意末尾のcurrent SELF wh不明を完全原文で証明する場合だけ、別経験の初回Receptionと更新後の全有効素材を保持する。初回4/5対象、ADD5/6、反応REVISE4/5、event／reaction WITHDRAW3/4。全て2/3責務、最大3文を維持する。
+
+初回では別経験を「褒められたことは、あなたにとって嬉しさを伴わない経験だったのですね。」として受け取り、既存短いpairと任意不明も残る。ADDは元の「嬉しくなかった」と回答の固有時点を同じ一経験内に保つ。反応撤回後は「褒められたことはあったのですね。」と残る事実だけを受け取り、撤回した感情・評価を補わない。pair／unknown自体の変更で新資格は失効し、NO_MATERIAL_UPDATEは保存本文の再使用、未解釈は既存停止を守る。
+
+新資格／局所content4型を既存owner内に追加し、private logical83→87。全aggregateとpair／received／unknownの寄与を完全source・一受理更新・全plan・全selectedで再導出する。ADDの3端点を旧2端点内容に偽装せず、REVISEは既存更新ownerが作ったABOUTだけを使う。旧V1/V2の意味条件を緩めない。新source witnessとu348専用再構築modeで旧checkpointを新選択へ付け替えず、旧完成DTOは非再生成で返す。
+
+最終対象集合は **443 passed／0 failed／skip 0**（新core268＋source51＋実service/SQL36＋u347旧checkpoint84＋現行manifest／owner identity4、重複除外）。全suite成功ではない。初回30入力×Q1/Q3では16入力×2で両経験と任意不明を保持し、資格外14入力×2は旧全recordを維持。既存一回答28構成×Q1/Q3のうち対象16構成×2は有効素材と各時点を保持し、対照は新資格失効・非更新・既存停止を確認した。旧u349の116 recordとu347の84 record、計200旧結果を意味・選択・本文／停止まで完全比較した。現行unknown自身変更では本文等は旧一致、新checkpointに由来する4つのidentity/trace fieldだけを区別した。
+
+実service＋隔離PGliteの36ケースと同じ36保存DTOを現行API client→hook→Modalへ通し、各2回のclose/reopenで本文・問い・状態・元記録・履歴・閉じた後の消去を確認した。HTTP／Auth／nativeはstub、本人実機・public server・本番DB・配置の検証ではない。並行run中の保存競合3件とtest期待不備は監査の失敗履歴へ記録し、低負荷の最終再検査で対象成功を揃えた。
+
+STRUCTURE_MAP_DELTA_PRESENT。既存production10file・新production0。05の全field/版、8/28意味設計、全体01／地図01A、Emlis／CMEE current mapを同期した。01B/C・Piece/Analysisに責務差分はない。公開API／DTO／DB／RN／Safety／依存／外部AI／費用・配置は変更しない。旧比較原本は独立u349 treeから116 recordを採取し、旧fixtureを新期待値へ置換しない。現行manifest件数とcurrent owner identityのみ同期する。
+
+必要性=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、primary outcome=TECHNICAL_CREDIT。今回の限定保持と商品全体完成を区別し、PRODUCT_NOT_CLEAR／初回一体単位未完了／正式Product Read0/3／candidate_ready=false／automatic_progression=falseを維持する。次は最新weeklyのE04〜E09に戻り、実本文で残る定型性・深い理解・問いの不足を診断する。一般入力・任意多段・過去不明混在とunknown自身REVISEの既存時点誤読・pair否定訂正・本人実機は未完。新資格を失効するunknown自身の変更後は既存本文へ戻り、その既存の不自然さまで今回解決済みとは扱わない。10/20方式判断・10/31管理線・12/18目標、Piece/Analysis主枠53.25％は今回再評価していない。Draft PR3／PR30継続、merge／deployなし。
+
+全変更path、原文と未加工本文、失敗修復、検証・互換境界：[u350監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u350_ReliefReceivedRetention_20261018.md)。
