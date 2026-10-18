@@ -89,6 +89,7 @@ class PreparedEmlisMeaning:
     legacy_relief_cognition_reception: bool = False
     legacy_cognitive_self_continuation: bool = False
     legacy_relief_unknown_retention: bool = False
+    legacy_relief_unknown_source: bool = False
 
 
 def _text(row, index, resolver) -> str:
@@ -1016,6 +1017,18 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
             or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
             raise
+        # Restore u334's full source interpretation before correcting the
+        # lexical conflict/reflexive defaults. Its checkpoint is not a label
+        # that can be attached to the newly recognized three-object source.
+        prior_source = original_meaning_plan(thread, _legacy_relief_unknown_source=True)
+        if prior_source.nuclei != original.nuclei or prior_source.relations != original.relations:
+            try:
+                restored = _prepare_emlis_meaning_from_plan(request, thread, prior_source)
+            except ValueError as prior_exc:
+                if str(prior_exc) not in {'emlis_checkpoint_source_prefix_mismatch', 'emlis_question_noncanonical'}:
+                    raise
+            else:
+                return replace(restored, legacy_relief_unknown_source=True)
         # The new three-object retention qualification has its own meaning
         # identity. Restore the complete u333 selection for its old checkpoint.
         prior_unknown = original_meaning_plan(thread, _legacy_relief_unknown_retention=True)

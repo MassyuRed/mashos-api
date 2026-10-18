@@ -19,8 +19,14 @@ IMPROVED = {'base', 'self', 'boku', 'slight', 'past_possible'}
 
 
 @pytest.mark.parametrize('row', BASELINE['cases'], ids=lambda row: row['case'])
-def test_all_original_meaning_and_controls_survive_while_independent_unknown_is_received(row):
-    req = request(row['memo']); p = prepare_emlis_meaning(req)
+def test_u334_original_meaning_and_controls_survive_while_independent_unknown_is_received(row):
+    req = request(row['memo'])
+    if row['case'] in {'relief', 'unknown_jibun'}:
+        # Keep these historical u334 stop records exact. Current recognition
+        # and full u334 restoration are covered in relief_unknown_source.
+        req = replace(req, emlis_thread=replace(req.emlis_thread,
+            prepared_meaning_checkpoint_ref=row['checkpoint']['checkpoint_id']))
+    p = prepare_emlis_meaning(req)
     plan = build_updated_grounded_plan(p); out = MeaningExperienceEngine().generate(req)
     if row['case'] in IMPROVED:
         assert p.checkpoint.checkpoint_id != row['checkpoint']['checkpoint_id']

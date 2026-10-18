@@ -17419,6 +17419,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_relief_cognition_reception: bool = True,
     _legacy_cognitive_self_continuation: bool = True,
     _legacy_relief_unknown_retention: bool = True,
+    _legacy_relief_unknown_source: bool = True,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -17503,6 +17504,9 @@ def project_final_stage1_grounded_observation_plan(
                 'source_relief_cognition_slot:' + slots[n.nucleus_id],
                 'source_relief_cognition_origin:' + slots[n.nucleus_id])))
             if n.nucleus_id in slots else n for n in nuclei)
+    if not _legacy_relief_unknown_source:
+        nuclei, relations = _final_source_relief_unknown(
+            nuclei, relations, evidence_spans, normalized_input)
     if not _legacy_unknown_object_action_scope:
         nuclei, relations = _final_source_same_field_unknown_action(
             nuclei, relations, evidence_spans, normalized_input)
@@ -17797,6 +17801,65 @@ def _source_relief_cognition_unknown_group(nuclei, relations, evidence_spans, no
             (replace(span, start_index=0, end_index=len(span.raw_text)),), {"memo": span.raw_text})):
         return ()
     return unknown, left, right
+
+
+def _final_source_relief_unknown(nuclei, relations, evidence_spans, normalized_input):
+    """Re-prove existing three-object scope before correcting lexical defaults.
+
+    A reflexive cognition can inherit a false self-awareness label from the
+    preceding possibility; a relief value can create a spurious conflict with
+    that cognition. Neither detector label overrides the complete finite
+    source hosts. No asserted or foreign-provenance edge is discarded.
+    """
+    pairs = source_owned_relief_cognition_pairs(nuclei, relations, evidence_spans, normalized_input)
+    if len(pairs) != 1:
+        return nuclei, relations
+    left, right, contrast = pairs[0]
+    pair_ids = {left.nucleus_id, right.nucleus_id}
+    rest = tuple(n for n in nuclei if set(n.source_fields) & _TEXT_SOURCE_FIELDS
+        and n.nucleus_id not in pair_ids and not (
+            n.retention == "optional" and n.grounding_kind == "user_stated_relation"
+            and "detected_type:relation_marker" in n.semantic_frame.attribute_codes
+            and set(n.source_span_ids) <= set(contrast.source_span_ids)))
+    if len(rest) != 1:
+        return nuclei, relations
+    unknown = rest[0]
+    spans = {s.span_id: s for s in evidence_spans}
+    if len(unknown.source_span_ids) != 1 or unknown.source_span_ids[0] not in spans:
+        return nuclei, relations
+    frame = unknown.semantic_frame
+    part = _source_self_unknown_object_parts(str(spans[unknown.source_span_ids[0]].raw_text))
+    candidate = unknown
+    if ((unknown.kind, frame.predicate_kind) in {("self_evaluation", "self_evaluation"), ("reaction", "feeling")}
+        and part and part['owner'] == '自分'
+        and "operator:self_evaluation" not in frame.attribute_codes):
+        # All actor/time/modality/source requirements are checked by the
+        # complete group proof below. Keep the detector lineage intact.
+        candidate = replace(unknown, kind="uncertainty",
+            semantic_frame=replace(frame, predicate_kind="uncertainty"))
+    corrected = []
+    index = {n.nucleus_id: n for n in nuclei}
+    for edge in relations:
+        if (unknown.nucleus_id in (edge.from_nucleus_id, edge.to_nucleus_id)
+            and edge.type in {"wish_and_constraint", "attempt_and_block"}):
+            endpoints = {edge.from_nucleus_id, edge.to_nucleus_id}
+            if (len(endpoints) != 2 or not endpoints <= pair_ids | {unknown.nucleus_id}
+                or edge.grounding_kind != "user_stated_relation" or edge.retention != "required"
+                or len(edge.source_relation_ids) != 1
+                or not re.fullmatch(r"conflict\.e[1-9][0-9]*", edge.source_relation_ids[0])
+                or edge.source_meaning_arc_keys
+                or set(edge.source_span_ids) != {sid for nid in endpoints for sid in index[nid].source_span_ids}):
+                return nuclei, relations
+            edge = replace(edge, type="uncertain_connection", grounding_kind="bounded_structural_inference",
+                retention="should" if edge.retention == "required" else edge.retention)
+        corrected.append(edge)
+    projected = tuple(candidate if n == unknown else n for n in nuclei)
+    corrected = tuple(corrected)
+    if ((projected, corrected) == (nuclei, relations)
+        or not _source_relief_cognition_unknown_group(
+            projected, corrected, evidence_spans, normalized_input, require_witness=False)):
+        return nuclei, relations
+    return projected, corrected
 
 
 def _source_relief_cognition_unknown_from_resolver(nuclei, relations, resolver):
@@ -19043,6 +19106,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_relief_cognition_reception: bool = True,
     _legacy_cognitive_self_continuation: bool = True,
     _legacy_relief_unknown_retention: bool = True,
+    _legacy_relief_unknown_source: bool = True,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan.
 
@@ -19115,6 +19179,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_relief_cognition_reception=_legacy_relief_cognition_reception,
         _legacy_cognitive_self_continuation=_legacy_cognitive_self_continuation,
         _legacy_relief_unknown_retention=_legacy_relief_unknown_retention,
+        _legacy_relief_unknown_source=_legacy_relief_unknown_source,
     )
 
 

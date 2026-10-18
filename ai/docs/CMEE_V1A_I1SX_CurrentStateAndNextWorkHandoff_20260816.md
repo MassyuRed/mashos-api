@@ -1,3 +1,5 @@
+> 2026-10-18最新：u335。安堵＋独立不明のsource誤認識修復、旧checkpoint保持、短文化の未実装限定案。末尾u335を参照。
+
 > 2026-10-18最新：u334。承認済み二反応と独立不明の限定併存を実装。本文・旧checkpoint・保存再表示の結果と限界は末尾u334。
 
 > 2026-10-18最新：u333。「私は」付き安堵・寂しさの停止を修復。独立不明の保持は契約差分案まで確定。最新実績・限界は末尾u333。
@@ -22596,3 +22598,19 @@ STRUCTURE_MAP_DELTA_PRESENT。既存production9owner、新production file0。私
 primary outcome=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式0/3／candidate_ready=false／automatic_progression=false。Draft/open/unmerged・未配置。10/31管理線・12/18目標・Piece/Analysis主枠53.25％を維持。
 
 詳細・未加工本文・検証境界：[Cocolon_EmlisAI_u334_ReliefCognition_and_IndependentUnknown_Retention_20261018.md](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u334_ReliefCognition_and_IndependentUnknown_Retention_20261018.md)。
+
+## u335 — 安堵＋独立不明のsource誤認識修復（2026-10-18）
+
+Mashの継続指示により、u334で残した「安心した」と独立wh不明の組、および「何が嫌なのか、自分でもよくわからない」を修復。前者は安堵核そのものを既に認識していたが、conflict observerのrequired attempt_and_blockが独立不明へ誤接続。後者は先行する不確かな認知内の「も」でreflexive prior-owner guardが止まり、既存SELF cognitionをself_evaluationとして残していた。同じ原因の「どこが不安なのか、自分にもまだ分からない」はreaction/feelingとして残るため、併せて修復した。既存二反応の資格と完全三対象・全field/spanの証明を用い、当該source解釈だけ補正する。汎用owner guard、wh grammar、主観内容契約、作者・独立readerは変更しない。
+
+比較40例で9例が本文なしから二反応＋独立不明の本文へ改善し、残31例のcheckpoint／plan／selectedまたは停止／本文／問いは完全不変。旧u334全40checkpointを完全な旧意味・旧結果へ復元する。旧IDに新解釈を付けない。最終sourceの重複除外集合は1119 passed／既知8 failed／skip0（新124・旧u33486・関連908成功・identity1）。失敗理由と境界は監査の表を参照。新三対象の問いはENDであり、都合のよい問いを追加しない。
+
+実service＋隔離PGlite SQL/RPC26ケースと同じ26DTOの現行API client／hook／Modal再表示を確認。4入力×3tier、u334完成非再生成、4入力×checkpoint前／後の実中断、既存5訂正／撤回。checkpoint前は新解釈でFINAL、保存済みu334 checkpoint後は旧停止UNAVAILABLEを保つ。後者を本文復旧成功とは数えない。native／HTTP／Auth stub、本人実機・本番ではない。
+
+STRUCTURE_MAP_DELTA_NONE。既存production3ownerの認識・旧modeのみ、新production file0、論理contract数79。test1・凍結u334 fixture1を追加し、既存u334対照2例を旧checkpoint指定で同じ全assertionへ通した。歴史fixtureは変更せず、新しい現行成功は別testで確認。current owner identityを最終sourceから再導出。公開API／DB／RN／依存／外部AI／費用／配置は不変。
+
+原文反復・長い一文は残る。既承認ANAPHORICの項目を使えても、二反応だけはReception単体で両原文節を要求するため、Observationとの共同保持へ変えるには作業規則18 §11.3の保持条件判断が必要。既存u332 pair（任意にu334独立不明）へ限定した具体案を監査末尾に提示し、未実装とする。「どうしたいのか」、対比欠落・否定安堵・不明先行、過去不明の自己評価誤読なども残る。10/20方式判断を延期しない。
+
+primary outcome=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式0/3／candidate_ready=false／automatic_progression=false。Draft/open/unmerged・未配置。10/31管理線・12/18目標・Piece/Analysis主枠53.25％を維持。
+
+詳細・未加工本文・次の限定案：[Cocolon_EmlisAI_u335_ReliefUnknown_SourceRepair_and_Anaphoric_Proposal_20261018.md](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u335_ReliefUnknown_SourceRepair_and_Anaphoric_Proposal_20261018.md)。

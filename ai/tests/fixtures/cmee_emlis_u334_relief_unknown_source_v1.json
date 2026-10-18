@@ -1,0 +1,3277 @@
+{
+  "source_commit": "d5d47b81ed95cf081224cf5918627073ace18673",
+  "cases": [
+    {
+      "case": "base",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が不安なのか、私にもまだわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-3771b56ad1cbce5f87808a78a509f69f266d3efc40eb3b099319c19f563e60ad",
+        "source_prefix_ref": "emlis-q3-source-prefix-6627f17531bf5b717d9596aa0009ec174899ef130911023d5e373d9c79691872",
+        "base_meaning_ref": "emlis-base-meaning-29a68629bafeadb523b7ed2520e1f7789693bd3fc0c3c8906af416df3ad19ce0",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "10dfbc77ccf42f4431af7c4c54e2bd2a7705bd87b8efe59d8c0298517e9c583a",
+      "body": {
+        "artifact_id": "emlis-artifact-e103f48d31985f1a07dfab962f0af78e84e4444c80bbb1a7493cafe507a16775",
+        "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+        "reception": "友達からの誘いを断って、一人で休めたことにほっとしたと聞いて、私も少し安心しましたが、もう誘ってもらえなくなるかもしれないと思うと寂しいという気持ちにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+        "source_prefix_ref": "emlis-q3-source-prefix-6627f17531bf5b717d9596aa0009ec174899ef130911023d5e373d9c79691872",
+        "meaning_checkpoint_ref": "emlis-checkpoint-3771b56ad1cbce5f87808a78a509f69f266d3efc40eb3b099319c19f563e60ad",
+        "qualified_evidence_refs": [
+          {
+            "thread_span_id": "s1",
+            "local_source_span_id": "s1",
+            "evidence": {
+              "evidence_id": "ev-ad55b07ae1ad66819a7fd882",
+              "source_span_id": "s1",
+              "source_envelope_id": "src-9a8ac28d789b792eaf079ea7",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 496,
+              "field_utf8_end": 721,
+              "scalar_start": 0,
+              "scalar_end": 26,
+              "utf8_start": 496,
+              "utf8_end": 574,
+              "field_sha256": "775f9665fccc3535ac190e272d4d232e5a15d9fbe1dce848adb414fbd8eb6ab0",
+              "literal_sha256": "355900277a36653f0543a81248743ffb7f2576d9daf654dce0e353df5e6d3ce8"
+            }
+          },
+          {
+            "thread_span_id": "s2",
+            "local_source_span_id": "s2",
+            "evidence": {
+              "evidence_id": "ev-74246e44be9ebe88cee6c085",
+              "source_span_id": "s2",
+              "source_envelope_id": "src-9a8ac28d789b792eaf079ea7",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 496,
+              "field_utf8_end": 721,
+              "scalar_start": 27,
+              "scalar_end": 29,
+              "utf8_start": 577,
+              "utf8_end": 583,
+              "field_sha256": "775f9665fccc3535ac190e272d4d232e5a15d9fbe1dce848adb414fbd8eb6ab0",
+              "literal_sha256": "870b8730ba39c8f11f3dc0996177d2838c94ef91f77ff6b23096a4610b8742c3"
+            }
+          },
+          {
+            "thread_span_id": "s3",
+            "local_source_span_id": "s3",
+            "evidence": {
+              "evidence_id": "ev-836c2323f48428d8b16cfc47",
+              "source_span_id": "s3",
+              "source_envelope_id": "src-9a8ac28d789b792eaf079ea7",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 496,
+              "field_utf8_end": 721,
+              "scalar_start": 30,
+              "scalar_end": 55,
+              "utf8_start": 586,
+              "utf8_end": 661,
+              "field_sha256": "775f9665fccc3535ac190e272d4d232e5a15d9fbe1dce848adb414fbd8eb6ab0",
+              "literal_sha256": "b13ccbc8117aa18da152f46fcfe20d9d97b48287faa72e9e976a6e7f9a588b99"
+            }
+          },
+          {
+            "thread_span_id": "s4",
+            "local_source_span_id": "s4",
+            "evidence": {
+              "evidence_id": "ev-13fe2b276bee57504db9828f",
+              "source_span_id": "s4",
+              "source_envelope_id": "src-9a8ac28d789b792eaf079ea7",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 496,
+              "field_utf8_end": 721,
+              "scalar_start": 56,
+              "scalar_end": 74,
+              "utf8_start": 664,
+              "utf8_end": 718,
+              "field_sha256": "775f9665fccc3535ac190e272d4d232e5a15d9fbe1dce848adb414fbd8eb6ab0",
+              "literal_sha256": "b25d630ff339e750368ead8e7364aaa0e47b0e3302c7339e7992f781d93cb226"
+            }
+          },
+          {
+            "thread_span_id": "s5",
+            "local_source_span_id": "s5",
+            "evidence": {
+              "evidence_id": "ev-f5fa46e40bc6965b0d24064d",
+              "source_span_id": "s5",
+              "source_envelope_id": "src-9a8ac28d789b792eaf079ea7",
+              "field_path": "emotion_details.0.type",
+              "element_index": 0,
+              "field_utf8_start": 782,
+              "field_utf8_end": 788,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 782,
+              "utf8_end": 788,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s6",
+            "local_source_span_id": "s6",
+            "evidence": {
+              "evidence_id": "ev-47367cfeddd512b2fbf3925e",
+              "source_span_id": "s6",
+              "source_envelope_id": "src-9a8ac28d789b792eaf079ea7",
+              "field_path": "emotions.0",
+              "element_index": 0,
+              "field_utf8_start": 812,
+              "field_utf8_end": 818,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 812,
+              "utf8_end": 818,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s7",
+            "local_source_span_id": "s7",
+            "evidence": {
+              "evidence_id": "ev-e94836278de56e16ac1344ab",
+              "source_span_id": "s7",
+              "source_envelope_id": "src-9a8ac28d789b792eaf079ea7",
+              "field_path": "category.0",
+              "element_index": 0,
+              "field_utf8_start": 842,
+              "field_utf8_end": 848,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 842,
+              "utf8_end": 848,
+              "field_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3",
+              "literal_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3"
+            }
+          }
+        ],
+        "meaning_trace": [
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:05317f81154f76da5fd10c51fc944b9b5cbdda7dd37328aa369124a274c9f067@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-11614bc6f3d85aed5398499ad2fbf86aa274e53ca350fe64777a7a4ecaf70270@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-2d117716dd663ebcf56150622f9c279f025c3227f180bb25d9bf889f84d86ac8"
+            ]
+          },
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:05317f81154f76da5fd10c51fc944b9b5cbdda7dd37328aa369124a274c9f067@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-843d42dc246feeedaad420ff5d14d2f5766adcf41163ff04ae0914fca34270a0@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-2d117716dd663ebcf56150622f9c279f025c3227f180bb25d9bf889f84d86ac8"
+            ]
+          },
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:05317f81154f76da5fd10c51fc944b9b5cbdda7dd37328aa369124a274c9f067@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-f0148b8464d0fc204d577d33e0dcff868ca197539a2162771af8e78d1b2d8219@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-d5765e24865fe9cfe364adaf77e6556aa82ee773bbb313990f8e6d14e684461e"
+            ]
+          }
+        ],
+        "reception_trace": [
+          {
+            "branch": "LIMITED",
+            "meaning_outcome_ref": "limited-meaning-outcome:05317f81154f76da5fd10c51fc944b9b5cbdda7dd37328aa369124a274c9f067@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "reading_consequence_ref": null,
+            "reception_record_ref": "bounded-limited-reception:ec3956ecffc1498696f74e6f7d7797ead60cb7c1b32b4eebb404ad36d0d09a5a@cocolon.cmee.emlis.bounded_limited_reception.v1",
+            "projected_claim_ref": "subjective-claim-06ae83a57b568289b42ed56f841eeb9700c6b09dd55c2c49a707750219757577",
+            "layer1_contribution_refs": [
+              "contribution-2d117716dd663ebcf56150622f9c279f025c3227f180bb25d9bf889f84d86ac8",
+              "contribution-d5765e24865fe9cfe364adaf77e6556aa82ee773bbb313990f8e6d14e684461e"
+            ],
+            "response_object_refs": [
+              "node:mn-11614bc6f3d85aed5398499ad2fbf86aa274e53ca350fe64777a7a4ecaf70270@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-843d42dc246feeedaad420ff5d14d2f5766adcf41163ff04ae0914fca34270a0@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-f0148b8464d0fc204d577d33e0dcff868ca197539a2162771af8e78d1b2d8219@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "projected_response_object_refs": [
+              "node:mn-843d42dc246feeedaad420ff5d14d2f5766adcf41163ff04ae0914fca34270a0@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-11614bc6f3d85aed5398499ad2fbf86aa274e53ca350fe64777a7a4ecaf70270@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-f0148b8464d0fc204d577d33e0dcff868ca197539a2162771af8e78d1b2d8219@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "preserved_difference_refs": []
+          }
+        ],
+        "body_status": "LIMITED",
+        "schema_version": "cocolon.cmee.emlis_thread_artifact.v1",
+        "history_line": null,
+        "history_line_plan": null,
+        "interpretive_frames": []
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ],
+      "question": null,
+      "selected_sha": "d796f3eaf3367ab23b80e9349109de8224125db6ca9d1415a56244f9ea3f74eb"
+    },
+    {
+      "case": "self",
+      "memo": "私は友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が不安なのか、私にもまだわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-4daf0c6dc244a727f719e9e36d99141e4fce7a6aa292d986a2a3292353862426",
+        "source_prefix_ref": "emlis-q3-source-prefix-4141c99c8b984d3c0aeb7729b38d0caa52b59cf905e4fb8f3f61286454f404e0",
+        "base_meaning_ref": "emlis-base-meaning-0ba2323a201ab69b726ac971f597223db27c45e50d1f07086776028bd2f0d337",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "10dfbc77ccf42f4431af7c4c54e2bd2a7705bd87b8efe59d8c0298517e9c583a",
+      "body": {
+        "artifact_id": "emlis-artifact-33e4eaa070b8ebf688ade33b699412cad6ac14df71bd0fb10d0cb556b9a930b1",
+        "observation": "「私は友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+        "reception": "あなたは友達からの誘いを断って、一人で休めたことにほっとしたと聞いて、私も少し安心しましたが、もう誘ってもらえなくなるかもしれないと思うと寂しいという気持ちにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+        "source_prefix_ref": "emlis-q3-source-prefix-4141c99c8b984d3c0aeb7729b38d0caa52b59cf905e4fb8f3f61286454f404e0",
+        "meaning_checkpoint_ref": "emlis-checkpoint-4daf0c6dc244a727f719e9e36d99141e4fce7a6aa292d986a2a3292353862426",
+        "qualified_evidence_refs": [
+          {
+            "thread_span_id": "s1",
+            "local_source_span_id": "s1",
+            "evidence": {
+              "evidence_id": "ev-9efe238e729f8866c00e6a01",
+              "source_span_id": "s1",
+              "source_envelope_id": "src-ee21c24c061ae4cc612a78fa",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 502,
+              "field_utf8_end": 733,
+              "scalar_start": 0,
+              "scalar_end": 28,
+              "utf8_start": 502,
+              "utf8_end": 586,
+              "field_sha256": "e98525d319d119ca35634ef5c2560c7298f8a1aaaeb24e6c04468040fe4bf5b2",
+              "literal_sha256": "578db78e90133c93b872be49cf2d418181cb14f59d9b0b0ba3117074814a41b3"
+            }
+          },
+          {
+            "thread_span_id": "s2",
+            "local_source_span_id": "s2",
+            "evidence": {
+              "evidence_id": "ev-8c7b0e38a3136a0642afc14c",
+              "source_span_id": "s2",
+              "source_envelope_id": "src-ee21c24c061ae4cc612a78fa",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 502,
+              "field_utf8_end": 733,
+              "scalar_start": 29,
+              "scalar_end": 31,
+              "utf8_start": 589,
+              "utf8_end": 595,
+              "field_sha256": "e98525d319d119ca35634ef5c2560c7298f8a1aaaeb24e6c04468040fe4bf5b2",
+              "literal_sha256": "870b8730ba39c8f11f3dc0996177d2838c94ef91f77ff6b23096a4610b8742c3"
+            }
+          },
+          {
+            "thread_span_id": "s3",
+            "local_source_span_id": "s3",
+            "evidence": {
+              "evidence_id": "ev-4da9ababf8b53d46c909a153",
+              "source_span_id": "s3",
+              "source_envelope_id": "src-ee21c24c061ae4cc612a78fa",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 502,
+              "field_utf8_end": 733,
+              "scalar_start": 32,
+              "scalar_end": 57,
+              "utf8_start": 598,
+              "utf8_end": 673,
+              "field_sha256": "e98525d319d119ca35634ef5c2560c7298f8a1aaaeb24e6c04468040fe4bf5b2",
+              "literal_sha256": "b13ccbc8117aa18da152f46fcfe20d9d97b48287faa72e9e976a6e7f9a588b99"
+            }
+          },
+          {
+            "thread_span_id": "s4",
+            "local_source_span_id": "s4",
+            "evidence": {
+              "evidence_id": "ev-62b82a570a3f3ca69b6ad7a3",
+              "source_span_id": "s4",
+              "source_envelope_id": "src-ee21c24c061ae4cc612a78fa",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 502,
+              "field_utf8_end": 733,
+              "scalar_start": 58,
+              "scalar_end": 76,
+              "utf8_start": 676,
+              "utf8_end": 730,
+              "field_sha256": "e98525d319d119ca35634ef5c2560c7298f8a1aaaeb24e6c04468040fe4bf5b2",
+              "literal_sha256": "b25d630ff339e750368ead8e7364aaa0e47b0e3302c7339e7992f781d93cb226"
+            }
+          },
+          {
+            "thread_span_id": "s5",
+            "local_source_span_id": "s5",
+            "evidence": {
+              "evidence_id": "ev-b450416bd967619eabb45f38",
+              "source_span_id": "s5",
+              "source_envelope_id": "src-ee21c24c061ae4cc612a78fa",
+              "field_path": "emotion_details.0.type",
+              "element_index": 0,
+              "field_utf8_start": 794,
+              "field_utf8_end": 800,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 794,
+              "utf8_end": 800,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s6",
+            "local_source_span_id": "s6",
+            "evidence": {
+              "evidence_id": "ev-942405fdd126d5de88892fa6",
+              "source_span_id": "s6",
+              "source_envelope_id": "src-ee21c24c061ae4cc612a78fa",
+              "field_path": "emotions.0",
+              "element_index": 0,
+              "field_utf8_start": 824,
+              "field_utf8_end": 830,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 824,
+              "utf8_end": 830,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s7",
+            "local_source_span_id": "s7",
+            "evidence": {
+              "evidence_id": "ev-6f0958c8632999e5d7a1da0b",
+              "source_span_id": "s7",
+              "source_envelope_id": "src-ee21c24c061ae4cc612a78fa",
+              "field_path": "category.0",
+              "element_index": 0,
+              "field_utf8_start": 854,
+              "field_utf8_end": 860,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 854,
+              "utf8_end": 860,
+              "field_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3",
+              "literal_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3"
+            }
+          }
+        ],
+        "meaning_trace": [
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:ac237c9b173a6aee14e8e6e8718d433c9ed2af9534eb760b6119a74b85aca0dc@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-9d6fc5756788315b5df31de2564c63ca4612ec2cbd7aa91c1f32de9911e68bd1@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-c7cc4a14511b989498d117cae71dd5950762a6bda143b7cb552505232f3b9cb2"
+            ]
+          },
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:ac237c9b173a6aee14e8e6e8718d433c9ed2af9534eb760b6119a74b85aca0dc@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-be47adc4b59d6bdf1c776b5e61c2eca39937944004a0327a5ad9408580bb2b84@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-f1ce2e8c2a7f3ee624edefb25e109e194ffd966950b1a330d86e8ec4cefac3c4"
+            ]
+          },
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:ac237c9b173a6aee14e8e6e8718d433c9ed2af9534eb760b6119a74b85aca0dc@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-f2b5a4cd1a37e0407f06b4292a4ff30fdc6ffdb6f8e226b1b5a75234a5ccbaf9@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-f1ce2e8c2a7f3ee624edefb25e109e194ffd966950b1a330d86e8ec4cefac3c4"
+            ]
+          }
+        ],
+        "reception_trace": [
+          {
+            "branch": "LIMITED",
+            "meaning_outcome_ref": "limited-meaning-outcome:ac237c9b173a6aee14e8e6e8718d433c9ed2af9534eb760b6119a74b85aca0dc@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "reading_consequence_ref": null,
+            "reception_record_ref": "bounded-limited-reception:b9f4fa7911b23252394feee1d0a984178666695540e21df4660a42372c0f387e@cocolon.cmee.emlis.bounded_limited_reception.v1",
+            "projected_claim_ref": "subjective-claim-7b191246a9a56714cab7587225373a6340a562860f23aa4227cda5b77e7af76a",
+            "layer1_contribution_refs": [
+              "contribution-f1ce2e8c2a7f3ee624edefb25e109e194ffd966950b1a330d86e8ec4cefac3c4",
+              "contribution-c7cc4a14511b989498d117cae71dd5950762a6bda143b7cb552505232f3b9cb2"
+            ],
+            "response_object_refs": [
+              "node:mn-9d6fc5756788315b5df31de2564c63ca4612ec2cbd7aa91c1f32de9911e68bd1@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-be47adc4b59d6bdf1c776b5e61c2eca39937944004a0327a5ad9408580bb2b84@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-f2b5a4cd1a37e0407f06b4292a4ff30fdc6ffdb6f8e226b1b5a75234a5ccbaf9@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "projected_response_object_refs": [
+              "node:mn-f2b5a4cd1a37e0407f06b4292a4ff30fdc6ffdb6f8e226b1b5a75234a5ccbaf9@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-be47adc4b59d6bdf1c776b5e61c2eca39937944004a0327a5ad9408580bb2b84@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-9d6fc5756788315b5df31de2564c63ca4612ec2cbd7aa91c1f32de9911e68bd1@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "preserved_difference_refs": []
+          }
+        ],
+        "body_status": "LIMITED",
+        "schema_version": "cocolon.cmee.emlis_thread_artifact.v1",
+        "history_line": null,
+        "history_line_plan": null,
+        "interpretive_frames": []
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ],
+      "question": null,
+      "selected_sha": "42167906d06a9b2a41e6adca601760cb94ccebd5b4c35d57bb8993386c96f017"
+    },
+    {
+      "case": "boku",
+      "memo": "僕は友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が不安なのか、私にもまだわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-c1d730b5462f4afc388b0a3d0bfae375166df25a239c55fb6cfa21f2ddb5c24d",
+        "source_prefix_ref": "emlis-q3-source-prefix-79dfe3f1600f81e28407ed7e7042dbe5df2150934ccac90b28ce65907f40af27",
+        "base_meaning_ref": "emlis-base-meaning-86b938692a31e8e46177dee02a385c22b95213fa39ff28ebceaf6013fd83a9f9",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "10dfbc77ccf42f4431af7c4c54e2bd2a7705bd87b8efe59d8c0298517e9c583a",
+      "body": {
+        "artifact_id": "emlis-artifact-e64210e49b2280386ef5a0553945e74f16f2270de81e6339d343d9220ca4b52c",
+        "observation": "「僕は友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+        "reception": "あなたは友達からの誘いを断って、一人で休めたことにほっとしたと聞いて、私も少し安心しましたが、もう誘ってもらえなくなるかもしれないと思うと寂しいという気持ちにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+        "source_prefix_ref": "emlis-q3-source-prefix-79dfe3f1600f81e28407ed7e7042dbe5df2150934ccac90b28ce65907f40af27",
+        "meaning_checkpoint_ref": "emlis-checkpoint-c1d730b5462f4afc388b0a3d0bfae375166df25a239c55fb6cfa21f2ddb5c24d",
+        "qualified_evidence_refs": [
+          {
+            "thread_span_id": "s1",
+            "local_source_span_id": "s1",
+            "evidence": {
+              "evidence_id": "ev-2ff559a5d91d378febd3ec24",
+              "source_span_id": "s1",
+              "source_envelope_id": "src-fbbbeca65e2b7f7d3ebcf5da",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 502,
+              "field_utf8_end": 733,
+              "scalar_start": 0,
+              "scalar_end": 28,
+              "utf8_start": 502,
+              "utf8_end": 586,
+              "field_sha256": "12e6bd051a83644493d5bdc4c4b1bd9d2cf90bd294b593a0867b011b3c3bac8a",
+              "literal_sha256": "8040d59728d6f9d10d26b21ff76a2ebe7d9f0e2a36acb560cc9d62977b865319"
+            }
+          },
+          {
+            "thread_span_id": "s2",
+            "local_source_span_id": "s2",
+            "evidence": {
+              "evidence_id": "ev-cce70e0abd23f9874ee0d89e",
+              "source_span_id": "s2",
+              "source_envelope_id": "src-fbbbeca65e2b7f7d3ebcf5da",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 502,
+              "field_utf8_end": 733,
+              "scalar_start": 29,
+              "scalar_end": 31,
+              "utf8_start": 589,
+              "utf8_end": 595,
+              "field_sha256": "12e6bd051a83644493d5bdc4c4b1bd9d2cf90bd294b593a0867b011b3c3bac8a",
+              "literal_sha256": "870b8730ba39c8f11f3dc0996177d2838c94ef91f77ff6b23096a4610b8742c3"
+            }
+          },
+          {
+            "thread_span_id": "s3",
+            "local_source_span_id": "s3",
+            "evidence": {
+              "evidence_id": "ev-5f66ee9d2af6d730b85c43c2",
+              "source_span_id": "s3",
+              "source_envelope_id": "src-fbbbeca65e2b7f7d3ebcf5da",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 502,
+              "field_utf8_end": 733,
+              "scalar_start": 32,
+              "scalar_end": 57,
+              "utf8_start": 598,
+              "utf8_end": 673,
+              "field_sha256": "12e6bd051a83644493d5bdc4c4b1bd9d2cf90bd294b593a0867b011b3c3bac8a",
+              "literal_sha256": "b13ccbc8117aa18da152f46fcfe20d9d97b48287faa72e9e976a6e7f9a588b99"
+            }
+          },
+          {
+            "thread_span_id": "s4",
+            "local_source_span_id": "s4",
+            "evidence": {
+              "evidence_id": "ev-7281cf4efbfabca22f0ed5cf",
+              "source_span_id": "s4",
+              "source_envelope_id": "src-fbbbeca65e2b7f7d3ebcf5da",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 502,
+              "field_utf8_end": 733,
+              "scalar_start": 58,
+              "scalar_end": 76,
+              "utf8_start": 676,
+              "utf8_end": 730,
+              "field_sha256": "12e6bd051a83644493d5bdc4c4b1bd9d2cf90bd294b593a0867b011b3c3bac8a",
+              "literal_sha256": "b25d630ff339e750368ead8e7364aaa0e47b0e3302c7339e7992f781d93cb226"
+            }
+          },
+          {
+            "thread_span_id": "s5",
+            "local_source_span_id": "s5",
+            "evidence": {
+              "evidence_id": "ev-7d3c9cdd8fd603fcdfb6f23b",
+              "source_span_id": "s5",
+              "source_envelope_id": "src-fbbbeca65e2b7f7d3ebcf5da",
+              "field_path": "emotion_details.0.type",
+              "element_index": 0,
+              "field_utf8_start": 794,
+              "field_utf8_end": 800,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 794,
+              "utf8_end": 800,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s6",
+            "local_source_span_id": "s6",
+            "evidence": {
+              "evidence_id": "ev-eb752be54c23356e8d30fa3a",
+              "source_span_id": "s6",
+              "source_envelope_id": "src-fbbbeca65e2b7f7d3ebcf5da",
+              "field_path": "emotions.0",
+              "element_index": 0,
+              "field_utf8_start": 824,
+              "field_utf8_end": 830,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 824,
+              "utf8_end": 830,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s7",
+            "local_source_span_id": "s7",
+            "evidence": {
+              "evidence_id": "ev-4bf193e37d6a6a499f8da78f",
+              "source_span_id": "s7",
+              "source_envelope_id": "src-fbbbeca65e2b7f7d3ebcf5da",
+              "field_path": "category.0",
+              "element_index": 0,
+              "field_utf8_start": 854,
+              "field_utf8_end": 860,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 854,
+              "utf8_end": 860,
+              "field_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3",
+              "literal_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3"
+            }
+          }
+        ],
+        "meaning_trace": [
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:90d87557eae96e9a8cf73c71393490d5c9d4389bd9eeb76c96ac6405aa5ca1cd@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-bdaed6ab6d7a3a941b17cbdf5c7b71650f41b07583322b08e161c39fa39b05b5@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-7c77eedae18e8c32c239a0f55c298f5ee26f6c17774d85ec721581e50e33fce6"
+            ]
+          },
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:90d87557eae96e9a8cf73c71393490d5c9d4389bd9eeb76c96ac6405aa5ca1cd@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-e8f20e892a46c952f4a17d33809550edb18a1b6e25b003ca74c2bfd68ae53886@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-00d21a6713ea1543451a602e6af0a8502930b3c9912e96397056c00408899af3"
+            ]
+          },
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:90d87557eae96e9a8cf73c71393490d5c9d4389bd9eeb76c96ac6405aa5ca1cd@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-f9450a0d8dd858baffe7510096f416587e63bc9cb55d5a330474858812448661@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-00d21a6713ea1543451a602e6af0a8502930b3c9912e96397056c00408899af3"
+            ]
+          }
+        ],
+        "reception_trace": [
+          {
+            "branch": "LIMITED",
+            "meaning_outcome_ref": "limited-meaning-outcome:90d87557eae96e9a8cf73c71393490d5c9d4389bd9eeb76c96ac6405aa5ca1cd@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "reading_consequence_ref": null,
+            "reception_record_ref": "bounded-limited-reception:e4de20f3681bf0e6c7693e4c1d2a91f8c848248676223fcbc2ef35e93f81bfa9@cocolon.cmee.emlis.bounded_limited_reception.v1",
+            "projected_claim_ref": "subjective-claim-c8dd189848cd73e3d93778bab90452f98aeece16fbd754c21d8488cf578f8439",
+            "layer1_contribution_refs": [
+              "contribution-00d21a6713ea1543451a602e6af0a8502930b3c9912e96397056c00408899af3",
+              "contribution-7c77eedae18e8c32c239a0f55c298f5ee26f6c17774d85ec721581e50e33fce6"
+            ],
+            "response_object_refs": [
+              "node:mn-bdaed6ab6d7a3a941b17cbdf5c7b71650f41b07583322b08e161c39fa39b05b5@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-e8f20e892a46c952f4a17d33809550edb18a1b6e25b003ca74c2bfd68ae53886@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-f9450a0d8dd858baffe7510096f416587e63bc9cb55d5a330474858812448661@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "projected_response_object_refs": [
+              "node:mn-e8f20e892a46c952f4a17d33809550edb18a1b6e25b003ca74c2bfd68ae53886@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-f9450a0d8dd858baffe7510096f416587e63bc9cb55d5a330474858812448661@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-bdaed6ab6d7a3a941b17cbdf5c7b71650f41b07583322b08e161c39fa39b05b5@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "preserved_difference_refs": []
+          }
+        ],
+        "body_status": "LIMITED",
+        "schema_version": "cocolon.cmee.emlis_thread_artifact.v1",
+        "history_line": null,
+        "history_line_plan": null,
+        "interpretive_frames": []
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ],
+      "question": null,
+      "selected_sha": "f6640ce8e8938ecdacb7fa2779d364eefef08a0ba3705770695716d93651a0ba"
+    },
+    {
+      "case": "relief",
+      "memo": "友達からの誘いを断って、一人で休めたことに安心した。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が不安なのか、私にもまだわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-f28584c497eb6c85ef47aca6cc79a227981cfe8117517cde0806ff2ec00810dd",
+        "source_prefix_ref": "emlis-q3-source-prefix-ea8a65c57d6daf97ca605a052c6910e67f69251396a13eab210ce307a29fa0fb",
+        "base_meaning_ref": "emlis-base-meaning-c5107451226a8ee5f9071d9f38505185ec1a12c895aa83c069659edc96af6796",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "a6e2518aa3b2b936d5d062caa856ebfa47059b0bade438be873071b56676ede4",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "selected_sha": "6dcce8c42a9c80b975caf9f3a85217ccbad3ee8c93c220e5aed27a49c90c1456"
+    },
+    {
+      "case": "slight",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと少し寂しい。何が不安なのか、私にもまだわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-d46ab9abe05743bef1f48aea380d77c7bbf6f710c3a65a8c1ea2c908f11c72e8",
+        "source_prefix_ref": "emlis-q3-source-prefix-3721061e319b442b7ad555cdd1d30bd0a063e0772b1424d7180deb8e6e5002bb",
+        "base_meaning_ref": "emlis-base-meaning-c23703166f1f0555d82c873da1a5b4cefc5768c775f3d00489d7b866dbf0b180",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "86533cfdd5c6b785f3671b5fb8d8690b1c151902c51e4da52c2cc292771c9956",
+      "body": {
+        "artifact_id": "emlis-artifact-216f4004753c48d25acf52ee0f26b5afda1fe4b4a17677151673e079897eca35",
+        "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと少し寂しい」とあります。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+        "reception": "友達からの誘いを断って、一人で休めたことにほっとしたと聞いて、私も少し安心しましたが、もう誘ってもらえなくなるかもしれないと思うと少し寂しいという気持ちにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+        "source_prefix_ref": "emlis-q3-source-prefix-3721061e319b442b7ad555cdd1d30bd0a063e0772b1424d7180deb8e6e5002bb",
+        "meaning_checkpoint_ref": "emlis-checkpoint-d46ab9abe05743bef1f48aea380d77c7bbf6f710c3a65a8c1ea2c908f11c72e8",
+        "qualified_evidence_refs": [
+          {
+            "thread_span_id": "s1",
+            "local_source_span_id": "s1",
+            "evidence": {
+              "evidence_id": "ev-f9b6ec5b30979f2e8f7b3425",
+              "source_span_id": "s1",
+              "source_envelope_id": "src-ea11758e3901733980cb215d",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 502,
+              "field_utf8_end": 733,
+              "scalar_start": 0,
+              "scalar_end": 26,
+              "utf8_start": 502,
+              "utf8_end": 580,
+              "field_sha256": "3142c859010d4fae05f9338b4a80346583394fd48fd5a68dca5d4154d725bb71",
+              "literal_sha256": "355900277a36653f0543a81248743ffb7f2576d9daf654dce0e353df5e6d3ce8"
+            }
+          },
+          {
+            "thread_span_id": "s2",
+            "local_source_span_id": "s2",
+            "evidence": {
+              "evidence_id": "ev-1a4042e912d71583805642ad",
+              "source_span_id": "s2",
+              "source_envelope_id": "src-ea11758e3901733980cb215d",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 502,
+              "field_utf8_end": 733,
+              "scalar_start": 27,
+              "scalar_end": 29,
+              "utf8_start": 583,
+              "utf8_end": 589,
+              "field_sha256": "3142c859010d4fae05f9338b4a80346583394fd48fd5a68dca5d4154d725bb71",
+              "literal_sha256": "870b8730ba39c8f11f3dc0996177d2838c94ef91f77ff6b23096a4610b8742c3"
+            }
+          },
+          {
+            "thread_span_id": "s3",
+            "local_source_span_id": "s3",
+            "evidence": {
+              "evidence_id": "ev-3148829d16738591f17033ac",
+              "source_span_id": "s3",
+              "source_envelope_id": "src-ea11758e3901733980cb215d",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 502,
+              "field_utf8_end": 733,
+              "scalar_start": 30,
+              "scalar_end": 57,
+              "utf8_start": 592,
+              "utf8_end": 673,
+              "field_sha256": "3142c859010d4fae05f9338b4a80346583394fd48fd5a68dca5d4154d725bb71",
+              "literal_sha256": "d24585128799933ca4330a2354c716534045d8184aba713b266d65136eed17af"
+            }
+          },
+          {
+            "thread_span_id": "s4",
+            "local_source_span_id": "s4",
+            "evidence": {
+              "evidence_id": "ev-0ad6a430a9980d5b8dd85418",
+              "source_span_id": "s4",
+              "source_envelope_id": "src-ea11758e3901733980cb215d",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 502,
+              "field_utf8_end": 733,
+              "scalar_start": 58,
+              "scalar_end": 76,
+              "utf8_start": 676,
+              "utf8_end": 730,
+              "field_sha256": "3142c859010d4fae05f9338b4a80346583394fd48fd5a68dca5d4154d725bb71",
+              "literal_sha256": "b25d630ff339e750368ead8e7364aaa0e47b0e3302c7339e7992f781d93cb226"
+            }
+          },
+          {
+            "thread_span_id": "s5",
+            "local_source_span_id": "s5",
+            "evidence": {
+              "evidence_id": "ev-d654e78a558027c0481540c6",
+              "source_span_id": "s5",
+              "source_envelope_id": "src-ea11758e3901733980cb215d",
+              "field_path": "emotion_details.0.type",
+              "element_index": 0,
+              "field_utf8_start": 794,
+              "field_utf8_end": 800,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 794,
+              "utf8_end": 800,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s6",
+            "local_source_span_id": "s6",
+            "evidence": {
+              "evidence_id": "ev-03989e77bc22a716e3c94678",
+              "source_span_id": "s6",
+              "source_envelope_id": "src-ea11758e3901733980cb215d",
+              "field_path": "emotions.0",
+              "element_index": 0,
+              "field_utf8_start": 824,
+              "field_utf8_end": 830,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 824,
+              "utf8_end": 830,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s7",
+            "local_source_span_id": "s7",
+            "evidence": {
+              "evidence_id": "ev-c84361697a0d0e566c8afde3",
+              "source_span_id": "s7",
+              "source_envelope_id": "src-ea11758e3901733980cb215d",
+              "field_path": "category.0",
+              "element_index": 0,
+              "field_utf8_start": 854,
+              "field_utf8_end": 860,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 854,
+              "utf8_end": 860,
+              "field_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3",
+              "literal_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3"
+            }
+          }
+        ],
+        "meaning_trace": [
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:f1b587cfa4e13ae5b3db9cef2acca1bb9dff0a54fc79903240144994ffe6ef1a@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-30de4db836c89c1bf74ebbc8e199d8c60e982dab00517201a058daeb590ce8d4@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-f9f03f20f9f19ad58790068186caa1267e6d1571fe8b3365a2c216ce09ecbba4"
+            ]
+          },
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:f1b587cfa4e13ae5b3db9cef2acca1bb9dff0a54fc79903240144994ffe6ef1a@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-33d58855efb3b0de1dde93b6deec8014c5503cefd01500996539b882a741dc6a@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-f9f03f20f9f19ad58790068186caa1267e6d1571fe8b3365a2c216ce09ecbba4"
+            ]
+          },
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:f1b587cfa4e13ae5b3db9cef2acca1bb9dff0a54fc79903240144994ffe6ef1a@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-41ce35fda56e44b48478497839a55208f4f08007347d1426440021043e07a7f0@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-9d3cff4f31a6a3fe8a735811e4f48c57093e9dee3bfa653d3d3eef76b8cb73e3"
+            ]
+          }
+        ],
+        "reception_trace": [
+          {
+            "branch": "LIMITED",
+            "meaning_outcome_ref": "limited-meaning-outcome:f1b587cfa4e13ae5b3db9cef2acca1bb9dff0a54fc79903240144994ffe6ef1a@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "reading_consequence_ref": null,
+            "reception_record_ref": "bounded-limited-reception:4fa16b189e5a91fcf16be0139803592d4a3a5efe537de62281989668cca9e4b0@cocolon.cmee.emlis.bounded_limited_reception.v1",
+            "projected_claim_ref": "subjective-claim-520a0042eebe6ba05d2293bef00d23546ef0345d7084fe27dd6326191614a99f",
+            "layer1_contribution_refs": [
+              "contribution-f9f03f20f9f19ad58790068186caa1267e6d1571fe8b3365a2c216ce09ecbba4",
+              "contribution-9d3cff4f31a6a3fe8a735811e4f48c57093e9dee3bfa653d3d3eef76b8cb73e3"
+            ],
+            "response_object_refs": [
+              "node:mn-30de4db836c89c1bf74ebbc8e199d8c60e982dab00517201a058daeb590ce8d4@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-33d58855efb3b0de1dde93b6deec8014c5503cefd01500996539b882a741dc6a@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-41ce35fda56e44b48478497839a55208f4f08007347d1426440021043e07a7f0@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "projected_response_object_refs": [
+              "node:mn-30de4db836c89c1bf74ebbc8e199d8c60e982dab00517201a058daeb590ce8d4@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-33d58855efb3b0de1dde93b6deec8014c5503cefd01500996539b882a741dc6a@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-41ce35fda56e44b48478497839a55208f4f08007347d1426440021043e07a7f0@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "preserved_difference_refs": []
+          }
+        ],
+        "body_status": "LIMITED",
+        "schema_version": "cocolon.cmee.emlis_thread_artifact.v1",
+        "history_line": null,
+        "history_line_plan": null,
+        "interpretive_frames": []
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ],
+      "question": null,
+      "selected_sha": "e592c01f82c8dba8f9a032f0b04335e880935cb6c797e7886154cbf020f64163"
+    },
+    {
+      "case": "past_possible",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、友達を傷つけたかもしれないと思うと寂しい。何が不安なのか、私にもまだわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-552818f16a0a47f9712ee3c5f3a7fd89fca175ca4f9b05aaf421150514cd46fd",
+        "source_prefix_ref": "emlis-q3-source-prefix-8ac9c4d1cd233348b5ecd0624b88f858c77e8053b8a8dffe951ba5f366336732",
+        "base_meaning_ref": "emlis-base-meaning-01d1909f0e5da367482bac81e5092f4addb644b1fd85c1dc332746ef51ee0934",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "b698c7624ae4cba7e8694a67a406888eff2d0e115bace78d352da4b3f857167a",
+      "body": {
+        "artifact_id": "emlis-artifact-9fd9e37e4a4805314cf009b6b5d420c341e9f60905917e2553aef53669ea93dd",
+        "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「友達を傷つけたかもしれないと思うと寂しい」とあります。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+        "reception": "友達からの誘いを断って、一人で休めたことにほっとしたと聞いて、私も少し安心しましたが、友達を傷つけたかもしれないと思うと寂しいという気持ちにも、今、耳を傾けていたいです。何が不安なのか、あなたにもまだわからないのですね。",
+        "source_prefix_ref": "emlis-q3-source-prefix-8ac9c4d1cd233348b5ecd0624b88f858c77e8053b8a8dffe951ba5f366336732",
+        "meaning_checkpoint_ref": "emlis-checkpoint-552818f16a0a47f9712ee3c5f3a7fd89fca175ca4f9b05aaf421150514cd46fd",
+        "qualified_evidence_refs": [
+          {
+            "thread_span_id": "s1",
+            "local_source_span_id": "s1",
+            "evidence": {
+              "evidence_id": "ev-1ea5f3d2b6d1945cd43403d0",
+              "source_span_id": "s1",
+              "source_envelope_id": "src-729e536b021e90404cd889cd",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 481,
+              "field_utf8_end": 691,
+              "scalar_start": 0,
+              "scalar_end": 26,
+              "utf8_start": 481,
+              "utf8_end": 559,
+              "field_sha256": "22aa9bd32375a1ed02e41a5ee1b88776e85bf49ec24479c77e919cdccfb3002e",
+              "literal_sha256": "355900277a36653f0543a81248743ffb7f2576d9daf654dce0e353df5e6d3ce8"
+            }
+          },
+          {
+            "thread_span_id": "s2",
+            "local_source_span_id": "s2",
+            "evidence": {
+              "evidence_id": "ev-9b32a6e86d76fe050c4e4b81",
+              "source_span_id": "s2",
+              "source_envelope_id": "src-729e536b021e90404cd889cd",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 481,
+              "field_utf8_end": 691,
+              "scalar_start": 27,
+              "scalar_end": 29,
+              "utf8_start": 562,
+              "utf8_end": 568,
+              "field_sha256": "22aa9bd32375a1ed02e41a5ee1b88776e85bf49ec24479c77e919cdccfb3002e",
+              "literal_sha256": "870b8730ba39c8f11f3dc0996177d2838c94ef91f77ff6b23096a4610b8742c3"
+            }
+          },
+          {
+            "thread_span_id": "s3",
+            "local_source_span_id": "s3",
+            "evidence": {
+              "evidence_id": "ev-48a38834d9d840631a757ca4",
+              "source_span_id": "s3",
+              "source_envelope_id": "src-729e536b021e90404cd889cd",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 481,
+              "field_utf8_end": 691,
+              "scalar_start": 30,
+              "scalar_end": 50,
+              "utf8_start": 571,
+              "utf8_end": 631,
+              "field_sha256": "22aa9bd32375a1ed02e41a5ee1b88776e85bf49ec24479c77e919cdccfb3002e",
+              "literal_sha256": "552ba0c44931371e3408ff4f10764bfd0452456b6540f77c8accf3d092f8a976"
+            }
+          },
+          {
+            "thread_span_id": "s4",
+            "local_source_span_id": "s4",
+            "evidence": {
+              "evidence_id": "ev-b0574d5b71c79e777cd45c73",
+              "source_span_id": "s4",
+              "source_envelope_id": "src-729e536b021e90404cd889cd",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 481,
+              "field_utf8_end": 691,
+              "scalar_start": 51,
+              "scalar_end": 69,
+              "utf8_start": 634,
+              "utf8_end": 688,
+              "field_sha256": "22aa9bd32375a1ed02e41a5ee1b88776e85bf49ec24479c77e919cdccfb3002e",
+              "literal_sha256": "b25d630ff339e750368ead8e7364aaa0e47b0e3302c7339e7992f781d93cb226"
+            }
+          },
+          {
+            "thread_span_id": "s5",
+            "local_source_span_id": "s5",
+            "evidence": {
+              "evidence_id": "ev-3862f7e0262f9f1b25c5dad6",
+              "source_span_id": "s5",
+              "source_envelope_id": "src-729e536b021e90404cd889cd",
+              "field_path": "emotion_details.0.type",
+              "element_index": 0,
+              "field_utf8_start": 752,
+              "field_utf8_end": 758,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 752,
+              "utf8_end": 758,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s6",
+            "local_source_span_id": "s6",
+            "evidence": {
+              "evidence_id": "ev-cd4f26550a13f690e6d39acf",
+              "source_span_id": "s6",
+              "source_envelope_id": "src-729e536b021e90404cd889cd",
+              "field_path": "emotions.0",
+              "element_index": 0,
+              "field_utf8_start": 782,
+              "field_utf8_end": 788,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 782,
+              "utf8_end": 788,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s7",
+            "local_source_span_id": "s7",
+            "evidence": {
+              "evidence_id": "ev-9b3e21b206e1455484dc4de4",
+              "source_span_id": "s7",
+              "source_envelope_id": "src-729e536b021e90404cd889cd",
+              "field_path": "category.0",
+              "element_index": 0,
+              "field_utf8_start": 812,
+              "field_utf8_end": 818,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 812,
+              "utf8_end": 818,
+              "field_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3",
+              "literal_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3"
+            }
+          }
+        ],
+        "meaning_trace": [
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:9fb108506d789be9f597fe09af232e3a0277bde3d6760b437e4bb9d105601fc9@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-3e30f6a5004969425e5ccfa340bcdc376efdbbfe9dcbc266bdbe47994bce0209@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-4949682bf267350c9a4f6922a4ff5fc58249dc85d7f0b4fcd4a2d977e9c6d598"
+            ]
+          },
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:9fb108506d789be9f597fe09af232e3a0277bde3d6760b437e4bb9d105601fc9@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-5db19d5b8bab1175161a65eae817ee76e9fb9f78d3ebbb29a2c9710cc96604ad@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-4949682bf267350c9a4f6922a4ff5fc58249dc85d7f0b4fcd4a2d977e9c6d598"
+            ]
+          },
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:9fb108506d789be9f597fe09af232e3a0277bde3d6760b437e4bb9d105601fc9@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-865e1af4a18ebee2351c00422ff5c7e15ee2546a1bd34d904167978487656378@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-70355f0ea8bee7b6966d6714a4fa58a6d685d931871daf0f8d6d746925dea7ff"
+            ]
+          }
+        ],
+        "reception_trace": [
+          {
+            "branch": "LIMITED",
+            "meaning_outcome_ref": "limited-meaning-outcome:9fb108506d789be9f597fe09af232e3a0277bde3d6760b437e4bb9d105601fc9@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "reading_consequence_ref": null,
+            "reception_record_ref": "bounded-limited-reception:89c4180973e93f63b90c7e1f87917810d4a832e75fb148bc8fb039dbbbbb2110@cocolon.cmee.emlis.bounded_limited_reception.v1",
+            "projected_claim_ref": "subjective-claim-1314114f44d24f8db5ec6cf648e66547e656f17143417577dfa53c58cc6e8091",
+            "layer1_contribution_refs": [
+              "contribution-4949682bf267350c9a4f6922a4ff5fc58249dc85d7f0b4fcd4a2d977e9c6d598",
+              "contribution-70355f0ea8bee7b6966d6714a4fa58a6d685d931871daf0f8d6d746925dea7ff"
+            ],
+            "response_object_refs": [
+              "node:mn-3e30f6a5004969425e5ccfa340bcdc376efdbbfe9dcbc266bdbe47994bce0209@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-5db19d5b8bab1175161a65eae817ee76e9fb9f78d3ebbb29a2c9710cc96604ad@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-865e1af4a18ebee2351c00422ff5c7e15ee2546a1bd34d904167978487656378@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "projected_response_object_refs": [
+              "node:mn-5db19d5b8bab1175161a65eae817ee76e9fb9f78d3ebbb29a2c9710cc96604ad@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-3e30f6a5004969425e5ccfa340bcdc376efdbbfe9dcbc266bdbe47994bce0209@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-865e1af4a18ebee2351c00422ff5c7e15ee2546a1bd34d904167978487656378@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "preserved_difference_refs": []
+          }
+        ],
+        "body_status": "LIMITED",
+        "schema_version": "cocolon.cmee.emlis_thread_artifact.v1",
+        "history_line": null,
+        "history_line_plan": null,
+        "interpretive_frames": []
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ],
+      "question": null,
+      "selected_sha": "985456b54a9d8b9740ee749508d40067ca013875f40988fd3871ea69f23bfa4b"
+    },
+    {
+      "case": "unknown_jibun",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が嫌なのか、自分でもよくわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-72ac4fa13418dd0c1c4b8f376cae5c61e2ae96d748e78544115fde3bf8aa0447",
+        "source_prefix_ref": "emlis-q3-source-prefix-79640243e00ad1f0d27c9b2ce7e94798f88ae24c905d14adb6917feb5bae0189",
+        "base_meaning_ref": "emlis-base-meaning-d8774d179d0a2d81760d84bd60c88a0216dfe2c7631d7083641e6b42bfdf2071",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "d9e2f80ce772032167e254b419a70419bf1a1d0da1cfcbb423f36549e725c58d",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "error": "Stage1CompositionError:LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+    },
+    {
+      "case": "unknown_hiragana",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。どうしたいのか、私にもまだ分からない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-c176c1f57008f765d31a4f974008966e43a2146749253f5f0229004fcce5b893",
+        "source_prefix_ref": "emlis-q3-source-prefix-cedf5f296dfd2ae4089e6661ef095cfcba8a7a6c372fc122be9e42b521f16610",
+        "base_meaning_ref": "emlis-base-meaning-b93b0be9ec8f735998290f8ba9e54f41ed8bd7a8c3c7b0ac8307847ecd895644",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "afeaf09c2eb34c243651a6f13960fdebe7d0751f3db84de8c8a1d935c4bb20c3",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "error": "Stage1CompositionError:LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+    },
+    {
+      "case": "other",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が不安なのか、友達にもまだわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-81d21d1c07ec7bfb40412dede5d5f26309ab9899f20a2cb8660530c3c474c7c9",
+        "source_prefix_ref": "emlis-q3-source-prefix-79a6a989aa0c47f70ecbeebcacca7ca3efcf2439a0dd45421e3b77b61ec066e5",
+        "base_meaning_ref": "emlis-base-meaning-84d016811d9cecf1285db90628fa7c8db428a5a4988807523d1e53ff67915b38",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "041a5dcafd964f3b672f14e11cc0148c88b6da40c01e54f3905c5aa9afa928b4",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "error": "Stage1CompositionError:LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+    },
+    {
+      "case": "quote",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。「何が不安なのか、私にもまだわからない。」",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-ca4cf4ffda2f8410b5a74a284a8aec7a1fbb105d055cc9e4ecb5556048e5fba5",
+        "source_prefix_ref": "emlis-q3-source-prefix-961a81e36bbcc7ef478b00ef81b1c6167c6af585230502f005d4a16948c72f3e",
+        "base_meaning_ref": "emlis-base-meaning-bd94203e4a095add96dd981b468dc7071c3abae68aa85b6001e4c8a30ef475ab",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "f16ddb0671268a18e0d01d76f57b13874f9310ff8cadfeb94d980550f9020645",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "error": "Stage1CompositionError:LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+    },
+    {
+      "case": "past",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が不安なのか、私にもまだわからなかった。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-d837f00c79b7e8aa783a963007f0c114728c8f2bfe973743539a569176f7e548",
+        "source_prefix_ref": "emlis-q3-source-prefix-0511561074334e8dcd206cb90644090a54853b351baaca3f1d99d272364dd969",
+        "base_meaning_ref": "emlis-base-meaning-bc88d60bb4d4448a790362cfc57356eb7b80878a0fda188dd5dc8a337831f1bd",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "c628be902ecb35d3063a8e9a34e29017383de9beec47c601fd89a66535c7bb76",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "error": "Stage1CompositionError:LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+    },
+    {
+      "case": "extra",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が不安なのか、私にもまだわからない。メモを書いた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-0eb32916b5cd2e47845d8611e25d32f067f46e8803621e6f617289e282b71126",
+        "source_prefix_ref": "emlis-q3-source-prefix-926778b0c519e8b254b1d4213239de52b7b949a3b3b3faafc79f7ec4fd6ba7db",
+        "base_meaning_ref": "emlis-base-meaning-702e6f67dcde6f3c7dd2b8f24b667549c7c668c6a4cda68602091259542aa3d9",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "1ce9947ba9bc7516f681db2ddf7799ab2180cfb4635e87b6350ec72528041ff3",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "selected_sha": "81987a1b3c2ffb23ad690b2ca1fd79a3e610880f51b19c95c9933a77fb490e93"
+    },
+    {
+      "case": "causal",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。だから、何が不安なのか、私にもまだわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-9ad8664b189f9834f997461c5671f1cc0fa52d4a5cb6378d327e3379d8a31c85",
+        "source_prefix_ref": "emlis-q3-source-prefix-1a8b2cccfb6beed179e4d65475f79aca3be5de184f079ff6ab53732642d8d5a7",
+        "base_meaning_ref": "emlis-base-meaning-380538b264125e28f66e67e3a86515928b310d4fa61450e394f098fc020acc4f",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "3f061053860d853125c5904001c17b51b9cacabf6a2653f2cc14e2576649bbb2",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "error": "CMEEStage1ContractError:stage1_unsupported_cause"
+    },
+    {
+      "case": "no_contrast",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。もう誘ってもらえなくなるかもしれないと思うと寂しい。何が不安なのか、私にもまだわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-838a8e331e575433a0508e64259c4046a2c6246e9d818ea0a0377666ba8084a1",
+        "source_prefix_ref": "emlis-q3-source-prefix-95e5e96d67e209518b75e881acc444ffc9c3bf9f38c7bd5fd399ba4998c3a8d9",
+        "base_meaning_ref": "emlis-base-meaning-d1b2e7c34be261ba03337cc02879f135878d07f8cfce3026a69b55ea418eef88",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "010c04a9dc8b1a37b471edec4c555880830a0e6c7e46b897741ec9147fbf4ac4",
+      "body": {
+        "artifact_id": "emlis-artifact-262408160813fd1e15f6f2157f3704964cbaeaf4f3cafdd3b14da71bf178f6ab",
+        "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」と「もう誘ってもらえなくなるかもしれないと思うと寂しい」が重なり、今は一つの状態として前に出ています。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+        "reception": "友達からの誘いを断って、一人で休めたことにほっとしたという気持ちを受け止めています。",
+        "source_prefix_ref": "emlis-q3-source-prefix-95e5e96d67e209518b75e881acc444ffc9c3bf9f38c7bd5fd399ba4998c3a8d9",
+        "meaning_checkpoint_ref": "emlis-checkpoint-838a8e331e575433a0508e64259c4046a2c6246e9d818ea0a0377666ba8084a1",
+        "qualified_evidence_refs": [
+          {
+            "thread_span_id": "s1",
+            "local_source_span_id": "s1",
+            "evidence": {
+              "evidence_id": "ev-2567cd56e4e61c475e805cef",
+              "source_span_id": "s1",
+              "source_envelope_id": "src-e56e06d6b99a1f33e2756468",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 487,
+              "field_utf8_end": 703,
+              "scalar_start": 0,
+              "scalar_end": 26,
+              "utf8_start": 487,
+              "utf8_end": 565,
+              "field_sha256": "31a42aa74207122aa633c8e40a52f70d9b1358ab98633df7e4ce537e5f4944ee",
+              "literal_sha256": "355900277a36653f0543a81248743ffb7f2576d9daf654dce0e353df5e6d3ce8"
+            }
+          },
+          {
+            "thread_span_id": "s2",
+            "local_source_span_id": "s2",
+            "evidence": {
+              "evidence_id": "ev-b8e3f22178b815f5010b5fe3",
+              "source_span_id": "s2",
+              "source_envelope_id": "src-e56e06d6b99a1f33e2756468",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 487,
+              "field_utf8_end": 703,
+              "scalar_start": 27,
+              "scalar_end": 52,
+              "utf8_start": 568,
+              "utf8_end": 643,
+              "field_sha256": "31a42aa74207122aa633c8e40a52f70d9b1358ab98633df7e4ce537e5f4944ee",
+              "literal_sha256": "b13ccbc8117aa18da152f46fcfe20d9d97b48287faa72e9e976a6e7f9a588b99"
+            }
+          },
+          {
+            "thread_span_id": "s3",
+            "local_source_span_id": "s3",
+            "evidence": {
+              "evidence_id": "ev-11ee767c2663e66074c453f7",
+              "source_span_id": "s3",
+              "source_envelope_id": "src-e56e06d6b99a1f33e2756468",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 487,
+              "field_utf8_end": 703,
+              "scalar_start": 53,
+              "scalar_end": 71,
+              "utf8_start": 646,
+              "utf8_end": 700,
+              "field_sha256": "31a42aa74207122aa633c8e40a52f70d9b1358ab98633df7e4ce537e5f4944ee",
+              "literal_sha256": "b25d630ff339e750368ead8e7364aaa0e47b0e3302c7339e7992f781d93cb226"
+            }
+          },
+          {
+            "thread_span_id": "s4",
+            "local_source_span_id": "s4",
+            "evidence": {
+              "evidence_id": "ev-1be933cb47bcfd454c7fc654",
+              "source_span_id": "s4",
+              "source_envelope_id": "src-e56e06d6b99a1f33e2756468",
+              "field_path": "emotion_details.0.type",
+              "element_index": 0,
+              "field_utf8_start": 764,
+              "field_utf8_end": 770,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 764,
+              "utf8_end": 770,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s5",
+            "local_source_span_id": "s5",
+            "evidence": {
+              "evidence_id": "ev-cfc43f9addbc6ef90b627a63",
+              "source_span_id": "s5",
+              "source_envelope_id": "src-e56e06d6b99a1f33e2756468",
+              "field_path": "emotions.0",
+              "element_index": 0,
+              "field_utf8_start": 794,
+              "field_utf8_end": 800,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 794,
+              "utf8_end": 800,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s6",
+            "local_source_span_id": "s6",
+            "evidence": {
+              "evidence_id": "ev-e7e576dda038d303eb952e74",
+              "source_span_id": "s6",
+              "source_envelope_id": "src-e56e06d6b99a1f33e2756468",
+              "field_path": "category.0",
+              "element_index": 0,
+              "field_utf8_start": 824,
+              "field_utf8_end": 830,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 824,
+              "utf8_end": 830,
+              "field_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3",
+              "literal_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3"
+            }
+          }
+        ],
+        "meaning_trace": [
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:cb7844b964f958a6c1145b7d48261ad4b07e5023f2e29e02e9848ff9f5e0a4b8@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-183227306254f527418e1133110ed1b0ae2790544fb5780b4c62d78cd984b71e@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-fa3c0a15a565cf5c0653a105e88342e1822a48655442bc9f4a4d04af47fd3cfe"
+            ]
+          },
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:cb7844b964f958a6c1145b7d48261ad4b07e5023f2e29e02e9848ff9f5e0a4b8@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-320e03b561cded694451f7110b3415e351625b357fbccb691d8f6a35a6055fff@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-b60b0587a7369e9000e3428b7d25dbcb60bbe0f4bfecb64cb650490eb700f417"
+            ]
+          },
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:cb7844b964f958a6c1145b7d48261ad4b07e5023f2e29e02e9848ff9f5e0a4b8@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-902ca2e881a23e76103f5597128969c311f52d576bfb70506b2e5f4b66ba6c21@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-841fe333dab0708c55d469dac0e6e74921e608ceb560e98a9bcf1e0acfacebe0"
+            ]
+          }
+        ],
+        "reception_trace": [
+          {
+            "branch": "LIMITED",
+            "meaning_outcome_ref": "limited-meaning-outcome:cb7844b964f958a6c1145b7d48261ad4b07e5023f2e29e02e9848ff9f5e0a4b8@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "reading_consequence_ref": null,
+            "reception_record_ref": "bounded-limited-reception:5d67ecd927acefe8e01e7fb68cedad8df877eca352d15e067e1fea140eca7b4d@cocolon.cmee.emlis.bounded_limited_reception.v1",
+            "projected_claim_ref": "subjective-claim-fdf27a476bada7c670ef156e0c1c6d71745ee5f3ba6ffaf52b496d8b70224f93",
+            "layer1_contribution_refs": [
+              "contribution-b60b0587a7369e9000e3428b7d25dbcb60bbe0f4bfecb64cb650490eb700f417"
+            ],
+            "response_object_refs": [
+              "node:mn-183227306254f527418e1133110ed1b0ae2790544fb5780b4c62d78cd984b71e@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-320e03b561cded694451f7110b3415e351625b357fbccb691d8f6a35a6055fff@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-902ca2e881a23e76103f5597128969c311f52d576bfb70506b2e5f4b66ba6c21@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "projected_response_object_refs": [
+              "node:mn-320e03b561cded694451f7110b3415e351625b357fbccb691d8f6a35a6055fff@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "preserved_difference_refs": []
+          }
+        ],
+        "body_status": "LIMITED",
+        "schema_version": "cocolon.cmee.emlis_thread_artifact.v1",
+        "history_line": null,
+        "history_line_plan": null,
+        "interpretive_frames": []
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ],
+      "question": null,
+      "selected_sha": "53f76e3d7d14480931c53f96051dbb06de18672a9d97b319f21a1bfb2dea4a26"
+    },
+    {
+      "case": "negative_relief",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとしなかった。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が不安なのか、私にもまだわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-36fafc256903b95990cd961937ef8eaad6c8439db281b6085a9700188e0afcd8",
+        "source_prefix_ref": "emlis-q3-source-prefix-811e225de0aa9eb9b517ec18b8d6df1f1ccf83de7187f289b85da8b8ca714bee",
+        "base_meaning_ref": "emlis-base-meaning-f65064625e6d7a3b8d2e4c4e27f7d3683b65da5957cb89efb60acf7515a7f9cb",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "060dac5f37da09bb5174d63cc11cb9a0088a8ac68c37660df2c0c0dd012165be",
+      "body": {
+        "artifact_id": "emlis-artifact-c2b277902080d6e6faff8989b35c3fe54f60b7f50e3e75b26ea5e1b120361469",
+        "observation": "「友達からの誘いを断って、一人で休めたことにほっとしなかった」と「もう誘ってもらえなくなるかもしれないと思うと寂しい」が、異なる向きのまま同時にあります。\n今回の中心には、「何が不安なのか、私にもまだわからない」があります。",
+        "reception": "友達からの誘いを断って、一人で休めたことにほっとしなかったという今ここに置かれた言葉ともう誘ってもらえなくなるかもしれないと思うと寂しいことの両方を、その違いも含めて小さくせずに受け止めています。",
+        "source_prefix_ref": "emlis-q3-source-prefix-811e225de0aa9eb9b517ec18b8d6df1f1ccf83de7187f289b85da8b8ca714bee",
+        "meaning_checkpoint_ref": "emlis-checkpoint-36fafc256903b95990cd961937ef8eaad6c8439db281b6085a9700188e0afcd8",
+        "qualified_evidence_refs": [
+          {
+            "thread_span_id": "s1",
+            "local_source_span_id": "s1",
+            "evidence": {
+              "evidence_id": "ev-2e48d717257c5d6b35cf48cf",
+              "source_span_id": "s1",
+              "source_envelope_id": "src-5fe446f8b277bb4dd32a56e0",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 505,
+              "field_utf8_end": 739,
+              "scalar_start": 0,
+              "scalar_end": 29,
+              "utf8_start": 505,
+              "utf8_end": 592,
+              "field_sha256": "96994f607680108c9afd7e30a17d7f0332030165376564a17b91436ce97d7e92",
+              "literal_sha256": "36d60b8703467dca0c016fecada2bb2704de330da47bd5be459a7c3f24b7afd9"
+            }
+          },
+          {
+            "thread_span_id": "s2",
+            "local_source_span_id": "s2",
+            "evidence": {
+              "evidence_id": "ev-f1b8669da52ced48ebf50d50",
+              "source_span_id": "s2",
+              "source_envelope_id": "src-5fe446f8b277bb4dd32a56e0",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 505,
+              "field_utf8_end": 739,
+              "scalar_start": 30,
+              "scalar_end": 32,
+              "utf8_start": 595,
+              "utf8_end": 601,
+              "field_sha256": "96994f607680108c9afd7e30a17d7f0332030165376564a17b91436ce97d7e92",
+              "literal_sha256": "870b8730ba39c8f11f3dc0996177d2838c94ef91f77ff6b23096a4610b8742c3"
+            }
+          },
+          {
+            "thread_span_id": "s3",
+            "local_source_span_id": "s3",
+            "evidence": {
+              "evidence_id": "ev-4c16f480d248192d3e54697e",
+              "source_span_id": "s3",
+              "source_envelope_id": "src-5fe446f8b277bb4dd32a56e0",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 505,
+              "field_utf8_end": 739,
+              "scalar_start": 33,
+              "scalar_end": 58,
+              "utf8_start": 604,
+              "utf8_end": 679,
+              "field_sha256": "96994f607680108c9afd7e30a17d7f0332030165376564a17b91436ce97d7e92",
+              "literal_sha256": "b13ccbc8117aa18da152f46fcfe20d9d97b48287faa72e9e976a6e7f9a588b99"
+            }
+          },
+          {
+            "thread_span_id": "s4",
+            "local_source_span_id": "s4",
+            "evidence": {
+              "evidence_id": "ev-6cb5154e6fb92cbe8c1d2928",
+              "source_span_id": "s4",
+              "source_envelope_id": "src-5fe446f8b277bb4dd32a56e0",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 505,
+              "field_utf8_end": 739,
+              "scalar_start": 59,
+              "scalar_end": 77,
+              "utf8_start": 682,
+              "utf8_end": 736,
+              "field_sha256": "96994f607680108c9afd7e30a17d7f0332030165376564a17b91436ce97d7e92",
+              "literal_sha256": "b25d630ff339e750368ead8e7364aaa0e47b0e3302c7339e7992f781d93cb226"
+            }
+          },
+          {
+            "thread_span_id": "s5",
+            "local_source_span_id": "s5",
+            "evidence": {
+              "evidence_id": "ev-bb6b03a1f44510c7307b32ef",
+              "source_span_id": "s5",
+              "source_envelope_id": "src-5fe446f8b277bb4dd32a56e0",
+              "field_path": "emotion_details.0.type",
+              "element_index": 0,
+              "field_utf8_start": 800,
+              "field_utf8_end": 806,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 800,
+              "utf8_end": 806,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s6",
+            "local_source_span_id": "s6",
+            "evidence": {
+              "evidence_id": "ev-243f960317979644694a27df",
+              "source_span_id": "s6",
+              "source_envelope_id": "src-5fe446f8b277bb4dd32a56e0",
+              "field_path": "emotions.0",
+              "element_index": 0,
+              "field_utf8_start": 830,
+              "field_utf8_end": 836,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 830,
+              "utf8_end": 836,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s7",
+            "local_source_span_id": "s7",
+            "evidence": {
+              "evidence_id": "ev-9fac26ea5372b38116bb5b8e",
+              "source_span_id": "s7",
+              "source_envelope_id": "src-5fe446f8b277bb4dd32a56e0",
+              "field_path": "category.0",
+              "element_index": 0,
+              "field_utf8_start": 860,
+              "field_utf8_end": 866,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 860,
+              "utf8_end": 866,
+              "field_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3",
+              "literal_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3"
+            }
+          }
+        ],
+        "meaning_trace": [
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:6d47a79a0c52e23555b007c358af4b0359975348ddd979c47fa23f1d266d3d04@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-16c0758e691c793ca5ca67e1365e1180a189148a9a08fb7ba4cf7417fac865bf@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-f7e8f2a6fbec3eb28c29a5d6bee27b5a1675dfa5b88d4b691384190102c07544"
+            ]
+          },
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:6d47a79a0c52e23555b007c358af4b0359975348ddd979c47fa23f1d266d3d04@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-8134365bade32ccedce6d6eac99a4dca170dd230a1fc5079bf8c9d05207a062a@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-e9f84ab82e9f0ca24dc2d3de2d24e8a0890f02b49da0bcc682acb079ea6eaa48"
+            ]
+          },
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:6d47a79a0c52e23555b007c358af4b0359975348ddd979c47fa23f1d266d3d04@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-a7d3ef194988e083643d550df09e3724a4780d88a1cb334b1ef2088e05f8b4d8@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-e9f84ab82e9f0ca24dc2d3de2d24e8a0890f02b49da0bcc682acb079ea6eaa48"
+            ]
+          }
+        ],
+        "reception_trace": [
+          {
+            "branch": "LIMITED",
+            "meaning_outcome_ref": "limited-meaning-outcome:6d47a79a0c52e23555b007c358af4b0359975348ddd979c47fa23f1d266d3d04@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "reading_consequence_ref": null,
+            "reception_record_ref": "bounded-limited-reception:a10b10c79c4da629b6cccd3a5fac502727801367efd61a7ffb89e4f1c98118a3@cocolon.cmee.emlis.bounded_limited_reception.v1",
+            "projected_claim_ref": "subjective-claim-cf56e7c0081cc1c7ad839f06864d9df3cc10c06288d7e8d4f9d189c63c64a054",
+            "layer1_contribution_refs": [
+              "contribution-e9f84ab82e9f0ca24dc2d3de2d24e8a0890f02b49da0bcc682acb079ea6eaa48"
+            ],
+            "response_object_refs": [
+              "node:mn-16c0758e691c793ca5ca67e1365e1180a189148a9a08fb7ba4cf7417fac865bf@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-8134365bade32ccedce6d6eac99a4dca170dd230a1fc5079bf8c9d05207a062a@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-a7d3ef194988e083643d550df09e3724a4780d88a1cb334b1ef2088e05f8b4d8@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "projected_response_object_refs": [
+              "node:mn-8134365bade32ccedce6d6eac99a4dca170dd230a1fc5079bf8c9d05207a062a@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-a7d3ef194988e083643d550df09e3724a4780d88a1cb334b1ef2088e05f8b4d8@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "preserved_difference_refs": []
+          }
+        ],
+        "body_status": "LIMITED",
+        "schema_version": "cocolon.cmee.emlis_thread_artifact.v1",
+        "history_line": null,
+        "history_line_plan": null,
+        "interpretive_frames": []
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ],
+      "question": null,
+      "selected_sha": "c039a9743cbc1446626245b6f5c3ef784d97de0d379821fb9fb6f4b26786b5b0"
+    },
+    {
+      "case": "foreign_attribution",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が不安なのか、私にもまだわからない。これは友人の話でした。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-35d9a6d864881c27a8d5ca95ddd209efebd439d2ae73e46cc5ec7fbc3bd08beb",
+        "source_prefix_ref": "emlis-q3-source-prefix-81a1673037f41ab11d3d1c688f421e149db1b68f41310ca1545bc8e5c8926657",
+        "base_meaning_ref": "emlis-base-meaning-708a0419f7da06be491a095c302d0e1fe7caf5fc021a8836208ff360f55dff1c",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "57fdb391f97a29d7e20c43f14fc24a4ffd0dce33a8fe9e4e72b7c4924dce858f",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "selected_sha": "09ea775d6aa90f0a3a261f91254177d5928a4b96da3da8fd174f0e77f64d9715"
+    },
+    {
+      "case": "unknown_first",
+      "memo": "何が不安なのか、私にもまだわからない。友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-18f14d3d0722345a403bb937d40cf6ac0398d47b44bffb489b84c34f21736eb5",
+        "source_prefix_ref": "emlis-q3-source-prefix-940576651afc4453470ecb4d170b2bfc0a849b53abe0016723ff47868c6035bd",
+        "base_meaning_ref": "emlis-base-meaning-d2503e378299c3b0e9a5192248cdc8ba9aa901163f7cddc6a572ebbac17a4721",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "3807304b452326db246af5c4f3dfa50869b138a03424cec1c58d637b2a897425",
+      "body": {
+        "artifact_id": "emlis-artifact-7caa88abf17de488f926de8f757a1d6bd6c4270b6240be157623ee66435d4770",
+        "observation": "今回の中心には、「何が不安なのか、私にもまだわからない」があります。\n「友達からの誘いを断って、一人で休めたことにほっとした」と「もう誘ってもらえなくなるかもしれないと思うと寂しい」が、異なる向きのまま同時にあります。",
+        "reception": "友達からの誘いを断って、一人で休めたことにほっとしたという今ここに置かれた言葉ともう誘ってもらえなくなるかもしれないと思うと寂しいことの両方を、その違いも含めて小さくせずに受け止めています。",
+        "source_prefix_ref": "emlis-q3-source-prefix-940576651afc4453470ecb4d170b2bfc0a849b53abe0016723ff47868c6035bd",
+        "meaning_checkpoint_ref": "emlis-checkpoint-18f14d3d0722345a403bb937d40cf6ac0398d47b44bffb489b84c34f21736eb5",
+        "qualified_evidence_refs": [
+          {
+            "thread_span_id": "s1",
+            "local_source_span_id": "s1",
+            "evidence": {
+              "evidence_id": "ev-6419959d611d1459f3b868d4",
+              "source_span_id": "s1",
+              "source_envelope_id": "src-c4ce77006751c4a09f84ae88",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 496,
+              "field_utf8_end": 721,
+              "scalar_start": 0,
+              "scalar_end": 18,
+              "utf8_start": 496,
+              "utf8_end": 550,
+              "field_sha256": "d66624ee41e4d6c4da6ebb9848e257eae7e02ed954863c27be3e73be74660404",
+              "literal_sha256": "b25d630ff339e750368ead8e7364aaa0e47b0e3302c7339e7992f781d93cb226"
+            }
+          },
+          {
+            "thread_span_id": "s2",
+            "local_source_span_id": "s2",
+            "evidence": {
+              "evidence_id": "ev-76d2eae13c08bc8df6c14647",
+              "source_span_id": "s2",
+              "source_envelope_id": "src-c4ce77006751c4a09f84ae88",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 496,
+              "field_utf8_end": 721,
+              "scalar_start": 19,
+              "scalar_end": 45,
+              "utf8_start": 553,
+              "utf8_end": 631,
+              "field_sha256": "d66624ee41e4d6c4da6ebb9848e257eae7e02ed954863c27be3e73be74660404",
+              "literal_sha256": "355900277a36653f0543a81248743ffb7f2576d9daf654dce0e353df5e6d3ce8"
+            }
+          },
+          {
+            "thread_span_id": "s3",
+            "local_source_span_id": "s3",
+            "evidence": {
+              "evidence_id": "ev-948e18ccbb2eb3c2df6c822b",
+              "source_span_id": "s3",
+              "source_envelope_id": "src-c4ce77006751c4a09f84ae88",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 496,
+              "field_utf8_end": 721,
+              "scalar_start": 46,
+              "scalar_end": 48,
+              "utf8_start": 634,
+              "utf8_end": 640,
+              "field_sha256": "d66624ee41e4d6c4da6ebb9848e257eae7e02ed954863c27be3e73be74660404",
+              "literal_sha256": "870b8730ba39c8f11f3dc0996177d2838c94ef91f77ff6b23096a4610b8742c3"
+            }
+          },
+          {
+            "thread_span_id": "s4",
+            "local_source_span_id": "s4",
+            "evidence": {
+              "evidence_id": "ev-396f407a24848374814d4865",
+              "source_span_id": "s4",
+              "source_envelope_id": "src-c4ce77006751c4a09f84ae88",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 496,
+              "field_utf8_end": 721,
+              "scalar_start": 49,
+              "scalar_end": 74,
+              "utf8_start": 643,
+              "utf8_end": 718,
+              "field_sha256": "d66624ee41e4d6c4da6ebb9848e257eae7e02ed954863c27be3e73be74660404",
+              "literal_sha256": "b13ccbc8117aa18da152f46fcfe20d9d97b48287faa72e9e976a6e7f9a588b99"
+            }
+          },
+          {
+            "thread_span_id": "s5",
+            "local_source_span_id": "s5",
+            "evidence": {
+              "evidence_id": "ev-01b531aa888875d816e363d7",
+              "source_span_id": "s5",
+              "source_envelope_id": "src-c4ce77006751c4a09f84ae88",
+              "field_path": "emotion_details.0.type",
+              "element_index": 0,
+              "field_utf8_start": 782,
+              "field_utf8_end": 788,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 782,
+              "utf8_end": 788,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s6",
+            "local_source_span_id": "s6",
+            "evidence": {
+              "evidence_id": "ev-6e9cab1d0bcc2fc4ec282091",
+              "source_span_id": "s6",
+              "source_envelope_id": "src-c4ce77006751c4a09f84ae88",
+              "field_path": "emotions.0",
+              "element_index": 0,
+              "field_utf8_start": 812,
+              "field_utf8_end": 818,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 812,
+              "utf8_end": 818,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s7",
+            "local_source_span_id": "s7",
+            "evidence": {
+              "evidence_id": "ev-8c2e8ab36d0ce3a4284f2393",
+              "source_span_id": "s7",
+              "source_envelope_id": "src-c4ce77006751c4a09f84ae88",
+              "field_path": "category.0",
+              "element_index": 0,
+              "field_utf8_start": 842,
+              "field_utf8_end": 848,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 842,
+              "utf8_end": 848,
+              "field_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3",
+              "literal_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3"
+            }
+          }
+        ],
+        "meaning_trace": [
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:34c50506071dbb7874bfdf5e6a679bc6ee8bfcb2df7c51ff4451e87bb42e3727@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-5a8febe5fe8fa067a6162ac582520c8b8aadd320c62ea342d8883d655c4a042f@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-77927b770e6e0a54d514a903f3233599b6b4baf9971c66c6a4c9fcb604c76147"
+            ]
+          },
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:34c50506071dbb7874bfdf5e6a679bc6ee8bfcb2df7c51ff4451e87bb42e3727@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-c2e7d09a3cbff90c6ab07ec98efd897f50cbcbd2bfbb3c7d0b8c4cd20ebd050e@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-a8ca41920f6c700b234f7f9196b96f037aa357dfbc2157315a844be8c7b1c520"
+            ]
+          },
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:34c50506071dbb7874bfdf5e6a679bc6ee8bfcb2df7c51ff4451e87bb42e3727@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-c4549479f0d53d2d6c69deec983fb69046560c69d75af36063623f6afca25c77@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-a8ca41920f6c700b234f7f9196b96f037aa357dfbc2157315a844be8c7b1c520"
+            ]
+          }
+        ],
+        "reception_trace": [
+          {
+            "branch": "LIMITED",
+            "meaning_outcome_ref": "limited-meaning-outcome:34c50506071dbb7874bfdf5e6a679bc6ee8bfcb2df7c51ff4451e87bb42e3727@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "reading_consequence_ref": null,
+            "reception_record_ref": "bounded-limited-reception:03f7d2f30e749a7f8e5fc2861930f5aa33091bf76b569faabb66845d17a69b4e@cocolon.cmee.emlis.bounded_limited_reception.v1",
+            "projected_claim_ref": "subjective-claim-df5b4b09eea62d4744b40adc882c6a589330b9160a23eef6f154e8da63cf3518",
+            "layer1_contribution_refs": [
+              "contribution-a8ca41920f6c700b234f7f9196b96f037aa357dfbc2157315a844be8c7b1c520"
+            ],
+            "response_object_refs": [
+              "node:mn-5a8febe5fe8fa067a6162ac582520c8b8aadd320c62ea342d8883d655c4a042f@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-c2e7d09a3cbff90c6ab07ec98efd897f50cbcbd2bfbb3c7d0b8c4cd20ebd050e@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-c4549479f0d53d2d6c69deec983fb69046560c69d75af36063623f6afca25c77@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "projected_response_object_refs": [
+              "node:mn-c4549479f0d53d2d6c69deec983fb69046560c69d75af36063623f6afca25c77@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-c2e7d09a3cbff90c6ab07ec98efd897f50cbcbd2bfbb3c7d0b8c4cd20ebd050e@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "preserved_difference_refs": []
+          }
+        ],
+        "body_status": "LIMITED",
+        "schema_version": "cocolon.cmee.emlis_thread_artifact.v1",
+        "history_line": null,
+        "history_line_plan": null,
+        "interpretive_frames": []
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ],
+      "question": null,
+      "selected_sha": "3054c8a27a846ad9aaa1ec89fdc2b20fcad19f82adbc36e1772632d481f9a05a"
+    },
+    {
+      "case": "base_without_unknown",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-023eb11373602b82595fb724239d151182f36ac44d63b330b84db93f4dd12f96",
+        "source_prefix_ref": "emlis-q3-source-prefix-21fc20af4ab6b6ace394b10c402b799738b5394e9232d2eb55d789b5ed2ba70e",
+        "base_meaning_ref": "emlis-base-meaning-3f43e5ac90dc68877ce11b2c23d4c88e89598814b11efc5929497c276266ca6d",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "8b61154e47f626f851c416d7b7e98bf0fbd5698534bed8027e318280c4b4e172",
+      "body": {
+        "artifact_id": "emlis-artifact-46ea6cd2ee7ca5dda87805a618768334f53f3b7d48dd22351709784913306d08",
+        "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。",
+        "reception": "友達からの誘いを断って、一人で休めたことにほっとしたと聞いて、私も少し安心しましたが、もう誘ってもらえなくなるかもしれないと思うと寂しいという気持ちにも、今、耳を傾けていたいです。",
+        "source_prefix_ref": "emlis-q3-source-prefix-21fc20af4ab6b6ace394b10c402b799738b5394e9232d2eb55d789b5ed2ba70e",
+        "meaning_checkpoint_ref": "emlis-checkpoint-023eb11373602b82595fb724239d151182f36ac44d63b330b84db93f4dd12f96",
+        "qualified_evidence_refs": [
+          {
+            "thread_span_id": "s1",
+            "local_source_span_id": "s1",
+            "evidence": {
+              "evidence_id": "ev-5bcd8ff6476b5d439bbe94bc",
+              "source_span_id": "s1",
+              "source_envelope_id": "src-c9fd120c0c1c443ec3f39e01",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 439,
+              "field_utf8_end": 607,
+              "scalar_start": 0,
+              "scalar_end": 26,
+              "utf8_start": 439,
+              "utf8_end": 517,
+              "field_sha256": "6e7dded9f895570d812c82fea6da11ee323a9ea96d65d030bcb956cfef228987",
+              "literal_sha256": "355900277a36653f0543a81248743ffb7f2576d9daf654dce0e353df5e6d3ce8"
+            }
+          },
+          {
+            "thread_span_id": "s2",
+            "local_source_span_id": "s2",
+            "evidence": {
+              "evidence_id": "ev-799c813bac017711bd589a9e",
+              "source_span_id": "s2",
+              "source_envelope_id": "src-c9fd120c0c1c443ec3f39e01",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 439,
+              "field_utf8_end": 607,
+              "scalar_start": 27,
+              "scalar_end": 29,
+              "utf8_start": 520,
+              "utf8_end": 526,
+              "field_sha256": "6e7dded9f895570d812c82fea6da11ee323a9ea96d65d030bcb956cfef228987",
+              "literal_sha256": "870b8730ba39c8f11f3dc0996177d2838c94ef91f77ff6b23096a4610b8742c3"
+            }
+          },
+          {
+            "thread_span_id": "s3",
+            "local_source_span_id": "s3",
+            "evidence": {
+              "evidence_id": "ev-aef79d837bc8541103fc0a91",
+              "source_span_id": "s3",
+              "source_envelope_id": "src-c9fd120c0c1c443ec3f39e01",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 439,
+              "field_utf8_end": 607,
+              "scalar_start": 30,
+              "scalar_end": 55,
+              "utf8_start": 529,
+              "utf8_end": 604,
+              "field_sha256": "6e7dded9f895570d812c82fea6da11ee323a9ea96d65d030bcb956cfef228987",
+              "literal_sha256": "b13ccbc8117aa18da152f46fcfe20d9d97b48287faa72e9e976a6e7f9a588b99"
+            }
+          },
+          {
+            "thread_span_id": "s4",
+            "local_source_span_id": "s4",
+            "evidence": {
+              "evidence_id": "ev-0c28fbe9b319eff6fad80896",
+              "source_span_id": "s4",
+              "source_envelope_id": "src-c9fd120c0c1c443ec3f39e01",
+              "field_path": "emotion_details.0.type",
+              "element_index": 0,
+              "field_utf8_start": 668,
+              "field_utf8_end": 674,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 668,
+              "utf8_end": 674,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s5",
+            "local_source_span_id": "s5",
+            "evidence": {
+              "evidence_id": "ev-c2eb29731892d929b863b9fe",
+              "source_span_id": "s5",
+              "source_envelope_id": "src-c9fd120c0c1c443ec3f39e01",
+              "field_path": "emotions.0",
+              "element_index": 0,
+              "field_utf8_start": 698,
+              "field_utf8_end": 704,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 698,
+              "utf8_end": 704,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s6",
+            "local_source_span_id": "s6",
+            "evidence": {
+              "evidence_id": "ev-4fa88574a234c67f3c30b1a9",
+              "source_span_id": "s6",
+              "source_envelope_id": "src-c9fd120c0c1c443ec3f39e01",
+              "field_path": "category.0",
+              "element_index": 0,
+              "field_utf8_start": 728,
+              "field_utf8_end": 734,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 728,
+              "utf8_end": 734,
+              "field_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3",
+              "literal_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3"
+            }
+          }
+        ],
+        "meaning_trace": [
+          {
+            "required_difference_ref": "required-difference:521dc2b4a615527a19811922838d751857f9dbd7a399360cea22611da8f78eca@cocolon.cmee.emlis.required_difference.v1",
+            "selected_reading_ref": "selected-emlis-provisional-reading:685cf9f6a761e8e47e8b137a6510063a9a3a598cfd7b4e80c33725b9849ea442@cocolon.cmee.emlis.selected_emlis_provisional_reading.v1",
+            "configuration_ref": "difference-configuration:3b154789262365ec35307895dac8af6ee753d97f4373508459b341a200c93927@cocolon.cmee.emlis.difference_configuration.v1",
+            "configuration_component_refs": [
+              "node:mn-0c34cfd16e7b9ff09d884bda31da15f059b7500be8c675d8e41924f184352855@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-435a3a33fbcb470171baa17cf0407f2843cfc4e2e5c59f33958ebfb3ad46d45b@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "source_qualifier_refs": [
+              "polarity:negative",
+              "polarity:positive"
+            ],
+            "invariant_codes": [
+              "POLARITY_REVERSAL",
+              "REQUIRED_RETENTION_ERASURE"
+            ],
+            "layer1_contribution_refs": [
+              "contribution-63f1522243fec447e200d6546286e1c366845e832daaf5fcc2d15e15992d1924"
+            ]
+          },
+          {
+            "required_difference_ref": "required-difference:9fbe079f23b8a596995863ba9e169457618469d39d7898eaee60f4c70d088b8b@cocolon.cmee.emlis.required_difference.v1",
+            "selected_reading_ref": "selected-emlis-provisional-reading:685cf9f6a761e8e47e8b137a6510063a9a3a598cfd7b4e80c33725b9849ea442@cocolon.cmee.emlis.selected_emlis_provisional_reading.v1",
+            "configuration_ref": "difference-configuration:3b154789262365ec35307895dac8af6ee753d97f4373508459b341a200c93927@cocolon.cmee.emlis.difference_configuration.v1",
+            "configuration_component_refs": [
+              "node:mn-0c34cfd16e7b9ff09d884bda31da15f059b7500be8c675d8e41924f184352855@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-435a3a33fbcb470171baa17cf0407f2843cfc4e2e5c59f33958ebfb3ad46d45b@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "source_qualifier_refs": [
+              "polarity:negative",
+              "polarity:positive",
+              "qualifier:source_relief_cognition_slot:loneliness",
+              "qualifier:source_relief_cognition_slot:relief",
+              "time_scope:current_input",
+              "time_scope:past"
+            ],
+            "invariant_codes": [
+              "TEMPORAL_COLLAPSE",
+              "REQUIRED_RETENTION_ERASURE"
+            ],
+            "layer1_contribution_refs": [
+              "contribution-63f1522243fec447e200d6546286e1c366845e832daaf5fcc2d15e15992d1924"
+            ]
+          },
+          {
+            "required_difference_ref": "required-difference:d404d9756fe745d323c391829f42218b669cde814875e2ea86ad88f296a40f8a@cocolon.cmee.emlis.required_difference.v1",
+            "selected_reading_ref": "selected-emlis-provisional-reading:685cf9f6a761e8e47e8b137a6510063a9a3a598cfd7b4e80c33725b9849ea442@cocolon.cmee.emlis.selected_emlis_provisional_reading.v1",
+            "configuration_ref": "difference-configuration:3b154789262365ec35307895dac8af6ee753d97f4373508459b341a200c93927@cocolon.cmee.emlis.difference_configuration.v1",
+            "configuration_component_refs": [
+              "node:mn-0c34cfd16e7b9ff09d884bda31da15f059b7500be8c675d8e41924f184352855@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-435a3a33fbcb470171baa17cf0407f2843cfc4e2e5c59f33958ebfb3ad46d45b@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "source_qualifier_refs": [
+              "time_scope:current_input",
+              "time_scope:past"
+            ],
+            "invariant_codes": [
+              "TEMPORAL_COLLAPSE",
+              "REQUIRED_RETENTION_ERASURE"
+            ],
+            "layer1_contribution_refs": [
+              "contribution-63f1522243fec447e200d6546286e1c366845e832daaf5fcc2d15e15992d1924"
+            ]
+          },
+          {
+            "required_difference_ref": "required-difference:f294f7522d842799148a46e2ee8702b6ba01aed3a002aee31f4cbed15b0692b8@cocolon.cmee.emlis.required_difference.v1",
+            "selected_reading_ref": "selected-emlis-provisional-reading:685cf9f6a761e8e47e8b137a6510063a9a3a598cfd7b4e80c33725b9849ea442@cocolon.cmee.emlis.selected_emlis_provisional_reading.v1",
+            "configuration_ref": "difference-configuration:3b154789262365ec35307895dac8af6ee753d97f4373508459b341a200c93927@cocolon.cmee.emlis.difference_configuration.v1",
+            "configuration_component_refs": [
+              "node:mn-0c34cfd16e7b9ff09d884bda31da15f059b7500be8c675d8e41924f184352855@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-435a3a33fbcb470171baa17cf0407f2843cfc4e2e5c59f33958ebfb3ad46d45b@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "source_qualifier_refs": [
+              "actor:current_user",
+              "aspect:unknown",
+              "epistemic:provisional_interpretation",
+              "epistemic:source_explicit",
+              "modality:feeling",
+              "polarity:negative",
+              "polarity:positive",
+              "qualifier:source_relief_cognition_slot:loneliness",
+              "qualifier:source_relief_cognition_slot:relief",
+              "scope:source_bounded",
+              "time_scope:current_input",
+              "time_scope:past",
+              "world:unknown"
+            ],
+            "invariant_codes": [
+              "ENDPOINT_COLLAPSE",
+              "REQUIRED_RETENTION_ERASURE"
+            ],
+            "layer1_contribution_refs": [
+              "contribution-63f1522243fec447e200d6546286e1c366845e832daaf5fcc2d15e15992d1924"
+            ]
+          }
+        ],
+        "reception_trace": [
+          {
+            "branch": "NORMAL",
+            "meaning_outcome_ref": "selected-emlis-provisional-reading:685cf9f6a761e8e47e8b137a6510063a9a3a598cfd7b4e80c33725b9849ea442@cocolon.cmee.emlis.selected_emlis_provisional_reading.v1",
+            "reading_consequence_ref": "reading-consequence:3c84431762b0f1485636d2428e66ea41ddefb2702d9901e58be4cf4f74608d2c@cocolon.cmee.emlis.reading_consequence.v1",
+            "reception_record_ref": "meaning-bound-reception:79e2a65a6033404822541ad177e92c8acdd877f921aee6fb084c8309311a53b2@cocolon.cmee.emlis.meaning_bound_reception.v1",
+            "projected_claim_ref": "subjective-claim-cb33f6c14a86aae3f69298cf461d01a42b03a8cb29b6b759713b0f3257e201eb",
+            "layer1_contribution_refs": [
+              "contribution-63f1522243fec447e200d6546286e1c366845e832daaf5fcc2d15e15992d1924",
+              "contribution-6aad5f9da9373019ccca7a01a16e32260b1bce5dfa3fae28cf67670959ba62be"
+            ],
+            "response_object_refs": [
+              "node:mn-0c34cfd16e7b9ff09d884bda31da15f059b7500be8c675d8e41924f184352855@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-435a3a33fbcb470171baa17cf0407f2843cfc4e2e5c59f33958ebfb3ad46d45b@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "edge:me-d2ffa5597b703be2640762cbf9af95c10cc52524416b55c03721573325724685@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "projected_response_object_refs": [
+              "node:mn-0c34cfd16e7b9ff09d884bda31da15f059b7500be8c675d8e41924f184352855@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-435a3a33fbcb470171baa17cf0407f2843cfc4e2e5c59f33958ebfb3ad46d45b@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "preserved_difference_refs": [
+              "required-difference:521dc2b4a615527a19811922838d751857f9dbd7a399360cea22611da8f78eca@cocolon.cmee.emlis.required_difference.v1",
+              "required-difference:9fbe079f23b8a596995863ba9e169457618469d39d7898eaee60f4c70d088b8b@cocolon.cmee.emlis.required_difference.v1",
+              "required-difference:d404d9756fe745d323c391829f42218b669cde814875e2ea86ad88f296a40f8a@cocolon.cmee.emlis.required_difference.v1",
+              "required-difference:f294f7522d842799148a46e2ee8702b6ba01aed3a002aee31f4cbed15b0692b8@cocolon.cmee.emlis.required_difference.v1"
+            ]
+          }
+        ],
+        "body_status": "GENERATED",
+        "schema_version": "cocolon.cmee.emlis_thread_artifact.v1",
+        "history_line": null,
+        "history_line_plan": null,
+        "interpretive_frames": []
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ],
+      "question": null,
+      "selected_sha": "97291a04f63e20ad3b682e80e736135caa9c2c556a777469ac845e95bda3bfd8"
+    },
+    {
+      "case": "relief_self",
+      "memo": "私は友達からの誘いを断って、一人で休めたことに安心した。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が不安なのか、私にもまだわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-6fdf48e6c272563d34be26677a9706fc8f874b20213319c78b52d963f848f04e",
+        "source_prefix_ref": "emlis-q3-source-prefix-1e627f34b5b0d8441232b7991ab957fbd83e6b12a2be25714ecb6725316fa13d",
+        "base_meaning_ref": "emlis-base-meaning-182c0e4385833a88322453b54a139660c4102ee9355fc9ad72763b7873e915e0",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "a6e2518aa3b2b936d5d062caa856ebfa47059b0bade438be873071b56676ede4",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "selected_sha": "f4c9862f10239bdf42386b8fedbb01db961ed67451bfff5e0a8ea8bdcea1ad64"
+    },
+    {
+      "case": "relief_boku",
+      "memo": "僕は友達からの誘いを断って、一人で休めたことに安心した。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が不安なのか、私にもまだわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-096b8b26845d0acff66b1cb9ba7804a9b71b23953f6fc61eae5f389f19d6741c",
+        "source_prefix_ref": "emlis-q3-source-prefix-90e5db8dc745e8f199d1e45fa5557520a57e14281eb88a294132a986de9c819c",
+        "base_meaning_ref": "emlis-base-meaning-7abdb98aaa87e81c9192c320e8175aeacc19f99dfd0e343119f449c42773af77",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "a6e2518aa3b2b936d5d062caa856ebfa47059b0bade438be873071b56676ede4",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "selected_sha": "49020b44bdd2f466a2e5d288543e2358561a9fc27b262164bd7dd2243f6c005b"
+    },
+    {
+      "case": "relief_degree",
+      "memo": "友達からの誘いを断って、一人で休めたことに安心した。でも、もう誘ってもらえなくなるかもしれないと思うと少しだけ寂しい。何が不安なのか、私にもまだわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-e9d3162ec9647168dde50af104654a796e84412f8e896591087e67442e7288ef",
+        "source_prefix_ref": "emlis-q3-source-prefix-a8096c22006b80d411455848c4dbde74f7ae0e0e15f84ec1ffa5b50b2241ea03",
+        "base_meaning_ref": "emlis-base-meaning-1cc53c3612ec7086f1f4cafd262c71cfa63236821bebce4519c163db59b5e888",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "bce8321f5dc93fea63e5bb6be6e82c86830f88c36c843156fd5a12f2e3a6770a",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "selected_sha": "733ff9d6be399840857a547df80b96b91e0d8e2cf25c73b36c16d5003cb3f220"
+    },
+    {
+      "case": "relief_unknown_boku",
+      "memo": "友達からの誘いを断って、一人で休めたことに安心した。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が不安なのか、僕にもまだわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-da4b7d07ac3100a45a9f380a6240efa439e5e7324c2ebfac15648b240ee4ee42",
+        "source_prefix_ref": "emlis-q3-source-prefix-7dc8559fe6a45b8af73725d6552972c19de74d217ad94ee7b628452777f25da9",
+        "base_meaning_ref": "emlis-base-meaning-3a1898e9d8207079d96217abd51a5c9f823a23833e155635b506c5f2e7913e5b",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "a6e2518aa3b2b936d5d062caa856ebfa47059b0bade438be873071b56676ede4",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "selected_sha": "7668826345044cccd7a1b9a96c88abe5220e75cc62c1744e7784666a2d832796"
+    },
+    {
+      "case": "relief_jibun",
+      "memo": "友達からの誘いを断って、一人で休めたことに安心した。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が嫌なのか、自分でもよくわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-6c718b2917a8744aa7c7e086d15efb9c1846741004935ee090522bdd7b8118e8",
+        "source_prefix_ref": "emlis-q3-source-prefix-fb38e9614e992498df363755d2fa2787a491834d1312d2196f3d273c3a9078ed",
+        "base_meaning_ref": "emlis-base-meaning-c0f39f4ec9c3612ccfa0a7cd767901a973ced8adafdc2b893edbd002df7aee16",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "9b6bab2d8bdcfc421c5a0d939046159f1c56c00be13d08fc245dfda32b955aad",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "error": "Stage1CompositionError:LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+    },
+    {
+      "case": "jibun_self",
+      "memo": "私は友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が嫌なのか、自分でもよくわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-5b10e1fd19b31a216ca5da9457595ec0c39e4e674b5415b32b189f08aa6ecedc",
+        "source_prefix_ref": "emlis-q3-source-prefix-7cd4cb2d68b81293c27280df96bda49f8ed5e9de5fbbf23fe66d5e2e3f26a1f1",
+        "base_meaning_ref": "emlis-base-meaning-70d6e2f9b478b9ae201c7d19b1f2866cf6175b027379b258b387649a2964deab",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "d9e2f80ce772032167e254b419a70419bf1a1d0da1cfcbb423f36549e725c58d",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "error": "Stage1CompositionError:LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+    },
+    {
+      "case": "jibun_doko",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。どこが不安なのか、自分にもまだ分からない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-4fbd736e67678ef3fb70b98976c8fa6698a4b80e61759b66c0d2b854aae2511e",
+        "source_prefix_ref": "emlis-q3-source-prefix-11cc62fcb7826decf54a6ab56dda68df04807fb21ded6777aa0439a77654cfbd",
+        "base_meaning_ref": "emlis-base-meaning-aed12e7e2556f18bd8c7e33efc4a0a3a8eb7dd26311235074e2a248bbdb2ffa4",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "041a5dcafd964f3b672f14e11cc0148c88b6da40c01e54f3905c5aa9afa928b4",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "error": "Stage1CompositionError:LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+    },
+    {
+      "case": "relief_other",
+      "memo": "友達からの誘いを断って、一人で休めたことに安心した。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が不安なのか、友達にもまだわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-c889ef55b4d2e0e4892e580ebe6dc59b04cb6ea6a2693bfc4eb41b8b2bd9ce26",
+        "source_prefix_ref": "emlis-q3-source-prefix-ac278bf35e1cc2359efa84466400049c253c3445e934d8a746ac05a473bd4471",
+        "base_meaning_ref": "emlis-base-meaning-b5030f6b96aa6a7e5238173d152377544b7bf9e247ac8a22f9dfe04416cfa8cf",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "f8a72a4a9af7646b492dd9c92b29661d4c8eed9db590aebcfc259bd5f80937b5",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "error": "Stage1CompositionError:LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+    },
+    {
+      "case": "relief_quote",
+      "memo": "友達からの誘いを断って、一人で休めたことに安心した。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。「何が不安なのか、私にもまだわからない。」",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-311ac6dab91d4319a4b11e8898729bddc0d755b22397f4869916c3983f85adf4",
+        "source_prefix_ref": "emlis-q3-source-prefix-3e718526e1ba63ab946a6bf6a84da2f55823fce1b400d6ebfb404c62159fa838",
+        "base_meaning_ref": "emlis-base-meaning-aee6e854225303ee705a94d04fd24e51f0c80e7054de1f5a6ce690f1d70e60dd",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "dc00919547ad3764dd8b758da2451a5744c7d71c91858799907d8e639f48b28c",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "error": "Stage1CompositionError:LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+    },
+    {
+      "case": "relief_past",
+      "memo": "友達からの誘いを断って、一人で休めたことに安心した。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が不安なのか、私にもまだわからなかった。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-f09f53352fb9c93e56a5b1fbbc4a2ac6d1c87d4781fd7c3d6a5552ba766a9a17",
+        "source_prefix_ref": "emlis-q3-source-prefix-017bf9ace787132eaf7c5a1988fb8197c8f91a336e7245aee2d4740547aca82f",
+        "base_meaning_ref": "emlis-base-meaning-bbf67217c0ab4f02afa29bcaa8fb4634b5e256068ec98e98f7d3767ac07d9a3f",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "d88ff31451218522689001f07c44781593cfb87130bd35cbf52ff0610fedabcd",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "error": "Stage1CompositionError:LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+    },
+    {
+      "case": "relief_cause",
+      "memo": "友達からの誘いを断って、一人で休めたことに安心した。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。だから、何が不安なのか、私にもまだわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-7b82938514bd1ae1446484e6e2975fe0a2ebcfc259bdda083e9f8d6626a2b050",
+        "source_prefix_ref": "emlis-q3-source-prefix-49502fad2cd3581844ca8947e2f546166568b651876d1459cba9705629658e87",
+        "base_meaning_ref": "emlis-base-meaning-5e49b6535266a3c59bebd2e0c1ae1a112c607cd62c36ed9b41442609a7bc7ea7",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "31b99fb41d0db77d6467da3f6e7cacf88dbf68c89fe95761b593cffaa60bfd8d",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "error": "CMEEStage1ContractError:stage1_unsupported_cause"
+    },
+    {
+      "case": "relief_extra",
+      "memo": "友達からの誘いを断って、一人で休めたことに安心した。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が不安なのか、私にもまだわからない。メモを書いた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-52ae09525ca6de422607db4ef037d23918464424c018ec797a866882018e271a",
+        "source_prefix_ref": "emlis-q3-source-prefix-7b5940c0760c71b8b7174d68c9da63e1933ce0f2d5e0719b5abdd7792af8e856",
+        "base_meaning_ref": "emlis-base-meaning-a75ff7aa749b43bebc6496b7f3cb62cc7a4c0639eb422d452e3502a65294c05a",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "0e3d398fabb7b4afaa70b61c97454be97ef95d8e5beebe3b57bdedba5081b89f",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "selected_sha": "81ba51b0bae5b35d1361390d8274e77e8a62ef142afddaba4dbbfa7bc1acf076"
+    },
+    {
+      "case": "relief_attribution",
+      "memo": "友達からの誘いを断って、一人で休めたことに安心した。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が不安なのか、私にもまだわからない。これは友人の話でした。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-f47b0fefe84207434b42a89adabc57dde38c007c286d40623661ef711b9ae127",
+        "source_prefix_ref": "emlis-q3-source-prefix-d65408124fadc37dff03a371a16debfc8155f15cd5aa1182a8038e2a0ea73f7b",
+        "base_meaning_ref": "emlis-base-meaning-68d408953aa02243c90281082dc72181b72631e932730f8406bbea48c195d250",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "979f38e09a35086fef8c51af8f0875174b0ff80713d805485287c93b0abb872d",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "selected_sha": "50506200a64a421c51280b8d8a9390bf4cc4d6954d7d7f210d86f665ff53177e"
+    },
+    {
+      "case": "jibun_foreign_pair",
+      "memo": "友達は友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が嫌なのか、自分でもよくわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-0d9cc285f8c7690bb1973e780257827959e728264eb5e4bda0f18378b4c70049",
+        "source_prefix_ref": "emlis-q3-source-prefix-28af460e56a4424ba71183929ee41e4af9a7dad6e317d8045b04edbdc2e17af9",
+        "base_meaning_ref": "emlis-base-meaning-29912eb5c680edb0cbf6738811ff717093b437e29ba48659f88863fc9656fb68",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "7f0048c6a706624ccbe8c93016c2f65fefd74a897c2b9b6c18d7f5e30e204f04",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "error": "Stage1CompositionError:LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+    },
+    {
+      "case": "jibun_report",
+      "memo": "友達によると、友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が嫌なのか、自分でもよくわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-cd8d9fa73168c19082284948b76bca65d2293e1609930b1e98c32054663a2120",
+        "source_prefix_ref": "emlis-q3-source-prefix-84688ac168b22b21f68e2003f7a1bee70eba2e985e7a3f92e88a033d2c05077b",
+        "base_meaning_ref": "emlis-base-meaning-af2aa06438f36b6305bb6b2c9554facd3e5ae9e489966c4c85e3a9b96c2f9e9e",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "7f0048c6a706624ccbe8c93016c2f65fefd74a897c2b9b6c18d7f5e30e204f04",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "error": "Stage1CompositionError:LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+    },
+    {
+      "case": "jibun_prefix",
+      "memo": "友達は休んだ。友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が嫌なのか、自分でもよくわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-614d336ca96669a862615276565496d1494a28441bd03e73dc04cf3e12efbf35",
+        "source_prefix_ref": "emlis-q3-source-prefix-bc0ce7ab3076370cb75ba0845afd1f07073a4db6b51903123d6d31f2c372be99",
+        "base_meaning_ref": "emlis-base-meaning-9f1d1cd9d18564a4b4b5e2d4a8b898563b09340275243fcc105ed5448cb3193a",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "19daf767fa19b9ff53b8fa875940afd530430fb790d4ef1e53efb2be714fd84a",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "error": "Stage1CompositionError:LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+    },
+    {
+      "case": "jibun_past",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が嫌なのか、自分でもよくわからなかった。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-4e3ee030b8a17352c2ec6980782fa289614bce8b868d71b5548e4306c5e58d35",
+        "source_prefix_ref": "emlis-q3-source-prefix-096380351fcac713fe884a4cabe0e7c9f61c63ddf4e84095efee3060f0627670",
+        "base_meaning_ref": "emlis-base-meaning-77b3d0dab8504488ce10c1d3c2f735c340976a233020dce81ef7235fd9c18efd",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "1b75488854586f8cb35802818a830c9d97c5238d6a2e88f1518b590a8bd267f6",
+      "body": {
+        "artifact_id": "emlis-artifact-108fe452694ac40427f512eb088fe0e4a23bfead4f48c8018d25e40113499b31",
+        "observation": "「友達からの誘いを断って、一人で休めたことにほっとした」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。\n今は、「何が嫌なのか、自分でもよくわからなかった」と自分を見ている状態です。",
+        "reception": "友達からの誘いを断って、一人で休めたことにほっとしたと聞いて、私も少し安心しましたが、もう誘ってもらえなくなるかもしれないと思うと寂しいという気持ちにも、今、耳を傾けていたいです。",
+        "source_prefix_ref": "emlis-q3-source-prefix-096380351fcac713fe884a4cabe0e7c9f61c63ddf4e84095efee3060f0627670",
+        "meaning_checkpoint_ref": "emlis-checkpoint-4e3ee030b8a17352c2ec6980782fa289614bce8b868d71b5548e4306c5e58d35",
+        "qualified_evidence_refs": [
+          {
+            "thread_span_id": "s1",
+            "local_source_span_id": "s1",
+            "evidence": {
+              "evidence_id": "ev-e2732c05188cadd68bfc320e",
+              "source_span_id": "s1",
+              "source_envelope_id": "src-c5b80cc15a911a067592fee1",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 502,
+              "field_utf8_end": 733,
+              "scalar_start": 0,
+              "scalar_end": 26,
+              "utf8_start": 502,
+              "utf8_end": 580,
+              "field_sha256": "d266e6ec5cc48c1e621ca70cc4300873a1fb0289b13ed5d18f15408b1df3b605",
+              "literal_sha256": "355900277a36653f0543a81248743ffb7f2576d9daf654dce0e353df5e6d3ce8"
+            }
+          },
+          {
+            "thread_span_id": "s2",
+            "local_source_span_id": "s2",
+            "evidence": {
+              "evidence_id": "ev-c030132f71cc8ec7ce162e22",
+              "source_span_id": "s2",
+              "source_envelope_id": "src-c5b80cc15a911a067592fee1",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 502,
+              "field_utf8_end": 733,
+              "scalar_start": 27,
+              "scalar_end": 29,
+              "utf8_start": 583,
+              "utf8_end": 589,
+              "field_sha256": "d266e6ec5cc48c1e621ca70cc4300873a1fb0289b13ed5d18f15408b1df3b605",
+              "literal_sha256": "870b8730ba39c8f11f3dc0996177d2838c94ef91f77ff6b23096a4610b8742c3"
+            }
+          },
+          {
+            "thread_span_id": "s3",
+            "local_source_span_id": "s3",
+            "evidence": {
+              "evidence_id": "ev-d73f24338941eea2ca61fac7",
+              "source_span_id": "s3",
+              "source_envelope_id": "src-c5b80cc15a911a067592fee1",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 502,
+              "field_utf8_end": 733,
+              "scalar_start": 30,
+              "scalar_end": 55,
+              "utf8_start": 592,
+              "utf8_end": 667,
+              "field_sha256": "d266e6ec5cc48c1e621ca70cc4300873a1fb0289b13ed5d18f15408b1df3b605",
+              "literal_sha256": "b13ccbc8117aa18da152f46fcfe20d9d97b48287faa72e9e976a6e7f9a588b99"
+            }
+          },
+          {
+            "thread_span_id": "s4",
+            "local_source_span_id": "s4",
+            "evidence": {
+              "evidence_id": "ev-bfcb730e93c2f59f240c1e5c",
+              "source_span_id": "s4",
+              "source_envelope_id": "src-c5b80cc15a911a067592fee1",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 502,
+              "field_utf8_end": 733,
+              "scalar_start": 56,
+              "scalar_end": 76,
+              "utf8_start": 670,
+              "utf8_end": 730,
+              "field_sha256": "d266e6ec5cc48c1e621ca70cc4300873a1fb0289b13ed5d18f15408b1df3b605",
+              "literal_sha256": "97332969d345256d557133a003fc7ef9d55255d1e442634901ece95431e1db52"
+            }
+          },
+          {
+            "thread_span_id": "s5",
+            "local_source_span_id": "s5",
+            "evidence": {
+              "evidence_id": "ev-01ad093a14e1be70a4f93ffb",
+              "source_span_id": "s5",
+              "source_envelope_id": "src-c5b80cc15a911a067592fee1",
+              "field_path": "emotion_details.0.type",
+              "element_index": 0,
+              "field_utf8_start": 794,
+              "field_utf8_end": 800,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 794,
+              "utf8_end": 800,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s6",
+            "local_source_span_id": "s6",
+            "evidence": {
+              "evidence_id": "ev-36547ce0aa59714eb41dfa03",
+              "source_span_id": "s6",
+              "source_envelope_id": "src-c5b80cc15a911a067592fee1",
+              "field_path": "emotions.0",
+              "element_index": 0,
+              "field_utf8_start": 824,
+              "field_utf8_end": 830,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 824,
+              "utf8_end": 830,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s7",
+            "local_source_span_id": "s7",
+            "evidence": {
+              "evidence_id": "ev-d5a85c3c53d2d5343ced0134",
+              "source_span_id": "s7",
+              "source_envelope_id": "src-c5b80cc15a911a067592fee1",
+              "field_path": "category.0",
+              "element_index": 0,
+              "field_utf8_start": 854,
+              "field_utf8_end": 860,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 854,
+              "utf8_end": 860,
+              "field_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3",
+              "literal_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3"
+            }
+          }
+        ],
+        "meaning_trace": [
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:6a62e42d114dc80c073c970e1cd477fb9e7dee0058494d585cb35344f9a921f6@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-5b9aa385ac4774b0dff63e0ceef7330745cc0a79ae375f0fba88c37cbb739b60@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-86823141e766585f699fb3aceee6264d09c7874c3aec7f2668935665a68835f2"
+            ]
+          },
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:6a62e42d114dc80c073c970e1cd477fb9e7dee0058494d585cb35344f9a921f6@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-a942ebb44bec50c49f57de5c76cae34ca4d8a31fcc155c4754e6013b1164a6ce@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-e3e10c4f886e953b2d3acffced89bdf88b80ef9b3d9f109cce0d4b9790b837c2"
+            ]
+          },
+          {
+            "limited_outcome_ref": "limited-meaning-outcome:6a62e42d114dc80c073c970e1cd477fb9e7dee0058494d585cb35344f9a921f6@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "source_object_ref": "node:mn-dc7e3d7a955ba0dd4b1f8a2db3e9cd0eb10f9748b09988661ecef507d566d058@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+            "layer1_contribution_refs": [
+              "contribution-86823141e766585f699fb3aceee6264d09c7874c3aec7f2668935665a68835f2"
+            ]
+          }
+        ],
+        "reception_trace": [
+          {
+            "branch": "LIMITED",
+            "meaning_outcome_ref": "limited-meaning-outcome:6a62e42d114dc80c073c970e1cd477fb9e7dee0058494d585cb35344f9a921f6@cocolon.cmee.emlis.limited_meaning_outcome.v1",
+            "reading_consequence_ref": null,
+            "reception_record_ref": "bounded-limited-reception:3f4f959517d6bb01efdb74469ad011e783a6ecf88681b3a85eb2bba8f89343d7@cocolon.cmee.emlis.bounded_limited_reception.v1",
+            "projected_claim_ref": "subjective-claim-4fd0ea9d5c093d30861c1c3656fd953789a4d7c7ade6831ab42345e60ed19d14",
+            "layer1_contribution_refs": [
+              "contribution-86823141e766585f699fb3aceee6264d09c7874c3aec7f2668935665a68835f2"
+            ],
+            "response_object_refs": [
+              "node:mn-5b9aa385ac4774b0dff63e0ceef7330745cc0a79ae375f0fba88c37cbb739b60@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-a942ebb44bec50c49f57de5c76cae34ca4d8a31fcc155c4754e6013b1164a6ce@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-dc7e3d7a955ba0dd4b1f8a2db3e9cd0eb10f9748b09988661ecef507d566d058@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "projected_response_object_refs": [
+              "node:mn-dc7e3d7a955ba0dd4b1f8a2db3e9cd0eb10f9748b09988661ecef507d566d058@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-5b9aa385ac4774b0dff63e0ceef7330745cc0a79ae375f0fba88c37cbb739b60@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "preserved_difference_refs": []
+          }
+        ],
+        "body_status": "GENERATED",
+        "schema_version": "cocolon.cmee.emlis_thread_artifact.v1",
+        "history_line": null,
+        "history_line_plan": null,
+        "interpretive_frames": []
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ],
+      "question": null,
+      "selected_sha": "d422ff33c15f6e5a618c9f6ee54676ba128a2affdb5ac8078806eaa7c5f586dc"
+    },
+    {
+      "case": "jibun_quote",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。「何が嫌なのか、自分でもよくわからない。」",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-b2f8832228f7e13286f82f8334ccca0989f75dee1aaf92202eabb75d6c555918",
+        "source_prefix_ref": "emlis-q3-source-prefix-b12382717b65d94d91e3b5ebde3c4b9ef8ca81554e552f32b019636571dcb4ea",
+        "base_meaning_ref": "emlis-base-meaning-6525807477da8dff38666f1c464e7bfc3f650411b9e82e758ee0c9dd55b19f0a",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "7ca6034219135bfe16209f13d56a08302533d7cd95485788b5718f7506a158a8",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "error": "Stage1CompositionError:LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+    },
+    {
+      "case": "jibun_cause",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。だから、何が嫌なのか、自分でもよくわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-ae448b93cc6afbc1c3c7359b1ad23217cb8ea4309bb12229cf44e240586072d2",
+        "source_prefix_ref": "emlis-q3-source-prefix-330cd184c0af999dd3318f2ab4fd99d0b484e57d3134d0b992fc67afee03a717",
+        "base_meaning_ref": "emlis-base-meaning-e657f70fad50d4313f645ac00eee1d6cb9a6afec36aa04b0c750302879a9a571",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "388b04d3ede72b4e3aceaa1b9d581e239012eef9b43922632bce563e09178c0a",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "error": "CMEEStage1ContractError:stage1_unsupported_cause"
+    },
+    {
+      "case": "jibun_extra",
+      "memo": "友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。何が嫌なのか、自分でもよくわからない。メモを書いた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-0e77acd16b8b0b930e8b3d6f8f73fb1e1a7c84b7e1f08021ba63d96032c9d9ea",
+        "source_prefix_ref": "emlis-q3-source-prefix-65290a1f430da89a457173447ff5787c7d637055ee68dce0ecca712998bde90e",
+        "base_meaning_ref": "emlis-base-meaning-bf88fcc27fa313e4f805228b33d7bfb3a77dcaf4092a8f755105711c81ad79d5",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "d10973a28f535131f544338513e6033e9b9c0e9c798e66f7f87ca02d0e50e19e",
+      "body": null,
+      "reasons": [
+        "emlis_q3_initial_body_unavailable"
+      ],
+      "question": null,
+      "error": "Stage1CompositionError:LIMITED_RECEPTION_CAPABILITY_GAP_STOP"
+    },
+    {
+      "case": "jibun_single",
+      "memo": "何が嫌なのか、自分でもよくわからない。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-c2e06809028178047e78a05c6407db3abb9e9b471ef7ff0c4270d5e190ae81b2",
+        "source_prefix_ref": "emlis-q3-source-prefix-aea36e0ea68075326da3956fa1c2772ce7a40c6a71660d13cbf9515a58c5d709",
+        "base_meaning_ref": "emlis-base-meaning-02a9299359f2a30fe1bce678eceb7586763aae65de8997a915987a6412be2757",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "d8765faa8664ac183f035f9e13b53f7b88a9d24de50c0dfd71e5c8dd8e2b36b7",
+      "body": {
+        "artifact_id": "emlis-artifact-569b76eef3b0b8ddc88dc649fa92d506964d9711e6d9b0db85dbd713c3d96253",
+        "observation": "今は、「何が嫌なのか、自分でもよくわからない」という感覚が前に出ています。",
+        "reception": "結論を急がずに、何が嫌なのか、ご自身でもよくわからないのだと受け止めています。",
+        "source_prefix_ref": "emlis-q3-source-prefix-aea36e0ea68075326da3956fa1c2772ce7a40c6a71660d13cbf9515a58c5d709",
+        "meaning_checkpoint_ref": "emlis-checkpoint-c2e06809028178047e78a05c6407db3abb9e9b471ef7ff0c4270d5e190ae81b2",
+        "qualified_evidence_refs": [
+          {
+            "thread_span_id": "s1",
+            "local_source_span_id": "s1",
+            "evidence": {
+              "evidence_id": "ev-9915b8c042f52e533eb5b7a1",
+              "source_span_id": "s1",
+              "source_envelope_id": "src-d399d4e7c84776122d48aca2",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 327,
+              "field_utf8_end": 384,
+              "scalar_start": 0,
+              "scalar_end": 18,
+              "utf8_start": 327,
+              "utf8_end": 381,
+              "field_sha256": "a5ce902fed422b050efb6820928bcfcd784df9dfa6f3c74062d966d231560805",
+              "literal_sha256": "0ba6240ba12d040267a87fa3a1f1067df13109246c45a526a5644ca5ed99be3f"
+            }
+          },
+          {
+            "thread_span_id": "s2",
+            "local_source_span_id": "s2",
+            "evidence": {
+              "evidence_id": "ev-19b5820dbe8da638f2d2eef0",
+              "source_span_id": "s2",
+              "source_envelope_id": "src-d399d4e7c84776122d48aca2",
+              "field_path": "emotion_details.0.type",
+              "element_index": 0,
+              "field_utf8_start": 445,
+              "field_utf8_end": 451,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 445,
+              "utf8_end": 451,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s3",
+            "local_source_span_id": "s3",
+            "evidence": {
+              "evidence_id": "ev-2fc21266000ff90bbca41332",
+              "source_span_id": "s3",
+              "source_envelope_id": "src-d399d4e7c84776122d48aca2",
+              "field_path": "emotions.0",
+              "element_index": 0,
+              "field_utf8_start": 475,
+              "field_utf8_end": 481,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 475,
+              "utf8_end": 481,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s4",
+            "local_source_span_id": "s4",
+            "evidence": {
+              "evidence_id": "ev-0e4bacf2f1891620ef539d29",
+              "source_span_id": "s4",
+              "source_envelope_id": "src-d399d4e7c84776122d48aca2",
+              "field_path": "category.0",
+              "element_index": 0,
+              "field_utf8_start": 505,
+              "field_utf8_end": 511,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 505,
+              "utf8_end": 511,
+              "field_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3",
+              "literal_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3"
+            }
+          }
+        ],
+        "meaning_trace": [
+          {
+            "required_difference_ref": "required-difference:045d201b186b703c4063bd6115af8671176d515137f998fc8f432fee87fd545e@cocolon.cmee.emlis.required_difference.v1",
+            "selected_reading_ref": "selected-emlis-provisional-reading:48c452e87171f4892714db23cd2fc78b91d52a409687b449fdafa007bd7f0ffc@cocolon.cmee.emlis.selected_emlis_provisional_reading.v1",
+            "configuration_ref": "difference-configuration:8fea62a3f4ec3c88cfe2d68a4701033a3f0c5e760ae4f1a9f2e032447675b59a@cocolon.cmee.emlis.difference_configuration.v1",
+            "configuration_component_refs": [
+              "node:mn-ddff1fcf7f0aa1445de141ad70a5fba32181c79655095c172443547baba24e51@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "owner:owner-8375101f78aac1d686d5a767bc43f2501295a11548796d22e9ef8feaf062e732@cocolon.cmee.emlis_thread_obligations.v1"
+            ],
+            "source_qualifier_refs": [
+              "actor:current_user",
+              "aspect:unknown",
+              "epistemic:provisional_interpretation",
+              "epistemic:source_explicit",
+              "modality:uncertain",
+              "polarity:negative",
+              "scope:source_bounded",
+              "time_scope:current_input",
+              "unknown:unknown-1ac1394d0c0fd54e803c9fb4d432c1b196fb364017939a0f77444b41b13b2f9c@cocolon.cmee.emlis_thread_obligations.v1",
+              "world:unknown"
+            ],
+            "invariant_codes": [
+              "ENDPOINT_COLLAPSE",
+              "REQUIRED_RETENTION_ERASURE"
+            ],
+            "layer1_contribution_refs": [
+              "contribution-d37c20c9abf3b85b4f7789e37464f07efddf3dad2c9b906c2f7946e84a77ee37"
+            ]
+          },
+          {
+            "required_difference_ref": "required-difference:25137d1184b4279cb5e93372ffc23cc799a74e1faffa5fb02d2468341a31ed25@cocolon.cmee.emlis.required_difference.v1",
+            "selected_reading_ref": "selected-emlis-provisional-reading:48c452e87171f4892714db23cd2fc78b91d52a409687b449fdafa007bd7f0ffc@cocolon.cmee.emlis.selected_emlis_provisional_reading.v1",
+            "configuration_ref": "difference-configuration:8fea62a3f4ec3c88cfe2d68a4701033a3f0c5e760ae4f1a9f2e032447675b59a@cocolon.cmee.emlis.difference_configuration.v1",
+            "configuration_component_refs": [
+              "node:mn-ddff1fcf7f0aa1445de141ad70a5fba32181c79655095c172443547baba24e51@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "source_qualifier_refs": [
+              "modality:uncertain",
+              "polarity:negative"
+            ],
+            "invariant_codes": [
+              "MODALITY_PROMOTION",
+              "REQUIRED_RETENTION_ERASURE"
+            ],
+            "layer1_contribution_refs": [
+              "contribution-d37c20c9abf3b85b4f7789e37464f07efddf3dad2c9b906c2f7946e84a77ee37"
+            ]
+          },
+          {
+            "required_difference_ref": "required-difference:9b3b711cfa7197a53286b31203b05596b76760d966b2971b3820d98e60c45d09@cocolon.cmee.emlis.required_difference.v1",
+            "selected_reading_ref": "selected-emlis-provisional-reading:48c452e87171f4892714db23cd2fc78b91d52a409687b449fdafa007bd7f0ffc@cocolon.cmee.emlis.selected_emlis_provisional_reading.v1",
+            "configuration_ref": "difference-configuration:8fea62a3f4ec3c88cfe2d68a4701033a3f0c5e760ae4f1a9f2e032447675b59a@cocolon.cmee.emlis.difference_configuration.v1",
+            "configuration_component_refs": [
+              "node:mn-ddff1fcf7f0aa1445de141ad70a5fba32181c79655095c172443547baba24e51@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "source_qualifier_refs": [
+              "unknown:unknown-1ac1394d0c0fd54e803c9fb4d432c1b196fb364017939a0f77444b41b13b2f9c@cocolon.cmee.emlis_thread_obligations.v1"
+            ],
+            "invariant_codes": [
+              "UNKNOWN_ERASURE",
+              "REQUIRED_RETENTION_ERASURE"
+            ],
+            "layer1_contribution_refs": [
+              "contribution-d37c20c9abf3b85b4f7789e37464f07efddf3dad2c9b906c2f7946e84a77ee37"
+            ]
+          }
+        ],
+        "reception_trace": [
+          {
+            "branch": "NORMAL",
+            "meaning_outcome_ref": "selected-emlis-provisional-reading:48c452e87171f4892714db23cd2fc78b91d52a409687b449fdafa007bd7f0ffc@cocolon.cmee.emlis.selected_emlis_provisional_reading.v1",
+            "reading_consequence_ref": "reading-consequence:d33ee3ec62b407c9493b403991755d46f95abd2068ebbd3ac585d8bee7a4fbb7@cocolon.cmee.emlis.reading_consequence.v1",
+            "reception_record_ref": "meaning-bound-reception:b5268eefc51af4462eaf0193e5e2068bad7f6ff5783b2907a741e3a5d9fb6a85@cocolon.cmee.emlis.meaning_bound_reception.v1",
+            "projected_claim_ref": "subjective-claim-208233dbec2b814c094881f64229979ff1a9aa257cd147f4206184d3a2ce5766",
+            "layer1_contribution_refs": [
+              "contribution-d37c20c9abf3b85b4f7789e37464f07efddf3dad2c9b906c2f7946e84a77ee37"
+            ],
+            "response_object_refs": [
+              "node:mn-ddff1fcf7f0aa1445de141ad70a5fba32181c79655095c172443547baba24e51@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "projected_response_object_refs": [
+              "node:mn-ddff1fcf7f0aa1445de141ad70a5fba32181c79655095c172443547baba24e51@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "preserved_difference_refs": [
+              "required-difference:045d201b186b703c4063bd6115af8671176d515137f998fc8f432fee87fd545e@cocolon.cmee.emlis.required_difference.v1",
+              "required-difference:25137d1184b4279cb5e93372ffc23cc799a74e1faffa5fb02d2468341a31ed25@cocolon.cmee.emlis.required_difference.v1",
+              "required-difference:9b3b711cfa7197a53286b31203b05596b76760d966b2971b3820d98e60c45d09@cocolon.cmee.emlis.required_difference.v1"
+            ]
+          }
+        ],
+        "body_status": "LIMITED",
+        "schema_version": "cocolon.cmee.emlis_thread_artifact.v1",
+        "history_line": null,
+        "history_line_plan": null,
+        "interpretive_frames": []
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ],
+      "question": null,
+      "selected_sha": "372b973ddcdf2843be7d10af88172ac25e547ef2152e1d1a6c09915b3422efdd"
+    },
+    {
+      "case": "relief_pair",
+      "memo": "友達からの誘いを断って、一人で休めたことに安心した。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-2eedf659d51f1aa53163f164fdaf469c2f38ea1032ff4f469ad375d8e43447a5",
+        "source_prefix_ref": "emlis-q3-source-prefix-7622060a42f5b8d59463154b377d67653c36c2f607dab5236b81ab14bcd910d5",
+        "base_meaning_ref": "emlis-base-meaning-9d82ef962b7aa671f94e931ed30e77d5c2c618d7e01cad7f33340e90e482f702",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "plan_sha": "2e6d29e0006c03659bba8789a89976d06021c8acacde11a6bb33a7cfe263b880",
+      "body": {
+        "artifact_id": "emlis-artifact-53f3b396a8534f49b6051756c236e0b7e9852139b23a086406f2c950bf97daf0",
+        "observation": "「友達からの誘いを断って、一人で休めたことに安心した」の一方で「もう誘ってもらえなくなるかもしれないと思うと寂しい」とあります。",
+        "reception": "友達からの誘いを断って、一人で休めたことに安心したと聞いて、私も少し安心しましたが、もう誘ってもらえなくなるかもしれないと思うと寂しいという気持ちにも、今、耳を傾けていたいです。",
+        "source_prefix_ref": "emlis-q3-source-prefix-7622060a42f5b8d59463154b377d67653c36c2f607dab5236b81ab14bcd910d5",
+        "meaning_checkpoint_ref": "emlis-checkpoint-2eedf659d51f1aa53163f164fdaf469c2f38ea1032ff4f469ad375d8e43447a5",
+        "qualified_evidence_refs": [
+          {
+            "thread_span_id": "s1",
+            "local_source_span_id": "s1",
+            "evidence": {
+              "evidence_id": "ev-c715d49e876bde43a0e74ba2",
+              "source_span_id": "s1",
+              "source_envelope_id": "src-1cde507cdbba6d09d12a3314",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 436,
+              "field_utf8_end": 601,
+              "scalar_start": 0,
+              "scalar_end": 25,
+              "utf8_start": 436,
+              "utf8_end": 511,
+              "field_sha256": "a7383eb60bc870f220f87ef2103d56b6116232163a8a45c63bffb5736779aaa0",
+              "literal_sha256": "b241b92192055be79527c8acf50d2bdca49da72830c9bb14cf8a7afed16a0078"
+            }
+          },
+          {
+            "thread_span_id": "s2",
+            "local_source_span_id": "s2",
+            "evidence": {
+              "evidence_id": "ev-4499de49403590b500a1fc10",
+              "source_span_id": "s2",
+              "source_envelope_id": "src-1cde507cdbba6d09d12a3314",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 436,
+              "field_utf8_end": 601,
+              "scalar_start": 26,
+              "scalar_end": 28,
+              "utf8_start": 514,
+              "utf8_end": 520,
+              "field_sha256": "a7383eb60bc870f220f87ef2103d56b6116232163a8a45c63bffb5736779aaa0",
+              "literal_sha256": "870b8730ba39c8f11f3dc0996177d2838c94ef91f77ff6b23096a4610b8742c3"
+            }
+          },
+          {
+            "thread_span_id": "s3",
+            "local_source_span_id": "s3",
+            "evidence": {
+              "evidence_id": "ev-88877bdeff35e21d9896398a",
+              "source_span_id": "s3",
+              "source_envelope_id": "src-1cde507cdbba6d09d12a3314",
+              "field_path": "memo",
+              "element_index": -1,
+              "field_utf8_start": 436,
+              "field_utf8_end": 601,
+              "scalar_start": 29,
+              "scalar_end": 54,
+              "utf8_start": 523,
+              "utf8_end": 598,
+              "field_sha256": "a7383eb60bc870f220f87ef2103d56b6116232163a8a45c63bffb5736779aaa0",
+              "literal_sha256": "b13ccbc8117aa18da152f46fcfe20d9d97b48287faa72e9e976a6e7f9a588b99"
+            }
+          },
+          {
+            "thread_span_id": "s4",
+            "local_source_span_id": "s4",
+            "evidence": {
+              "evidence_id": "ev-cbc7ec9dc77ff103b8275299",
+              "source_span_id": "s4",
+              "source_envelope_id": "src-1cde507cdbba6d09d12a3314",
+              "field_path": "emotion_details.0.type",
+              "element_index": 0,
+              "field_utf8_start": 662,
+              "field_utf8_end": 668,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 662,
+              "utf8_end": 668,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s5",
+            "local_source_span_id": "s5",
+            "evidence": {
+              "evidence_id": "ev-ec9700a3970d10f32d3a4215",
+              "source_span_id": "s5",
+              "source_envelope_id": "src-1cde507cdbba6d09d12a3314",
+              "field_path": "emotions.0",
+              "element_index": 0,
+              "field_utf8_start": 692,
+              "field_utf8_end": 698,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 692,
+              "utf8_end": 698,
+              "field_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df",
+              "literal_sha256": "bc95c7b5b70f17ee6357e6de77c5e0d572789ebbc921191438ca1fbea1f5c1df"
+            }
+          },
+          {
+            "thread_span_id": "s6",
+            "local_source_span_id": "s6",
+            "evidence": {
+              "evidence_id": "ev-c72fd48aa426362382880d53",
+              "source_span_id": "s6",
+              "source_envelope_id": "src-1cde507cdbba6d09d12a3314",
+              "field_path": "category.0",
+              "element_index": 0,
+              "field_utf8_start": 722,
+              "field_utf8_end": 728,
+              "scalar_start": 0,
+              "scalar_end": 2,
+              "utf8_start": 722,
+              "utf8_end": 728,
+              "field_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3",
+              "literal_sha256": "fb7db808eb037549d52b2149ab1384a352561105d0abfd2bf3f358b5c8acf8a3"
+            }
+          }
+        ],
+        "meaning_trace": [
+          {
+            "required_difference_ref": "required-difference:3f741a45a1676325096758e4d395ba726c84731ed8b49d1ee2c787300cfc8448@cocolon.cmee.emlis.required_difference.v1",
+            "selected_reading_ref": "selected-emlis-provisional-reading:37fc4162434b0152114cd3532dd0fc27c1b050b053acd60871a9ca9571e24a02@cocolon.cmee.emlis.selected_emlis_provisional_reading.v1",
+            "configuration_ref": "difference-configuration:d72b2f140afaa1d1ee65ffb6ebe8b1c84514e3bd31d42bf9b6f6d1cd82e0cc73@cocolon.cmee.emlis.difference_configuration.v1",
+            "configuration_component_refs": [
+              "node:mn-a357a08eafee65bf30778c9cd9cbe36b1cb9927e48906da5ebd3132a2bd53236@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-da5effe64b72cbbc67a02a1d34bc4a4e99b61409740ad6dc273e08e627bdd8ae@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "source_qualifier_refs": [
+              "actor:current_user",
+              "aspect:unknown",
+              "epistemic:provisional_interpretation",
+              "epistemic:source_explicit",
+              "modality:feeling",
+              "polarity:negative",
+              "polarity:positive",
+              "qualifier:source_relief_cognition_slot:loneliness",
+              "qualifier:source_relief_cognition_slot:relief",
+              "scope:source_bounded",
+              "time_scope:current_input",
+              "time_scope:past",
+              "world:unknown"
+            ],
+            "invariant_codes": [
+              "ENDPOINT_COLLAPSE",
+              "REQUIRED_RETENTION_ERASURE"
+            ],
+            "layer1_contribution_refs": [
+              "contribution-28f5ff39added5bdf3b61487a6fdf7378b7e122b20fa5ca324c0b752ee198f52"
+            ]
+          },
+          {
+            "required_difference_ref": "required-difference:728b6c7204740aca835d1f7d1a1be6145c3cfb85edc0d8fac7c93d8fc3e8e9cb@cocolon.cmee.emlis.required_difference.v1",
+            "selected_reading_ref": "selected-emlis-provisional-reading:37fc4162434b0152114cd3532dd0fc27c1b050b053acd60871a9ca9571e24a02@cocolon.cmee.emlis.selected_emlis_provisional_reading.v1",
+            "configuration_ref": "difference-configuration:d72b2f140afaa1d1ee65ffb6ebe8b1c84514e3bd31d42bf9b6f6d1cd82e0cc73@cocolon.cmee.emlis.difference_configuration.v1",
+            "configuration_component_refs": [
+              "node:mn-a357a08eafee65bf30778c9cd9cbe36b1cb9927e48906da5ebd3132a2bd53236@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-da5effe64b72cbbc67a02a1d34bc4a4e99b61409740ad6dc273e08e627bdd8ae@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "source_qualifier_refs": [
+              "time_scope:current_input",
+              "time_scope:past"
+            ],
+            "invariant_codes": [
+              "TEMPORAL_COLLAPSE",
+              "REQUIRED_RETENTION_ERASURE"
+            ],
+            "layer1_contribution_refs": [
+              "contribution-28f5ff39added5bdf3b61487a6fdf7378b7e122b20fa5ca324c0b752ee198f52"
+            ]
+          },
+          {
+            "required_difference_ref": "required-difference:8b9ff91b66db5602ef06113a6044791a7b9b4bcbb84af5648f98198a3fd188bf@cocolon.cmee.emlis.required_difference.v1",
+            "selected_reading_ref": "selected-emlis-provisional-reading:37fc4162434b0152114cd3532dd0fc27c1b050b053acd60871a9ca9571e24a02@cocolon.cmee.emlis.selected_emlis_provisional_reading.v1",
+            "configuration_ref": "difference-configuration:d72b2f140afaa1d1ee65ffb6ebe8b1c84514e3bd31d42bf9b6f6d1cd82e0cc73@cocolon.cmee.emlis.difference_configuration.v1",
+            "configuration_component_refs": [
+              "node:mn-a357a08eafee65bf30778c9cd9cbe36b1cb9927e48906da5ebd3132a2bd53236@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-da5effe64b72cbbc67a02a1d34bc4a4e99b61409740ad6dc273e08e627bdd8ae@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "source_qualifier_refs": [
+              "polarity:negative",
+              "polarity:positive",
+              "qualifier:source_relief_cognition_slot:loneliness",
+              "qualifier:source_relief_cognition_slot:relief",
+              "time_scope:current_input",
+              "time_scope:past"
+            ],
+            "invariant_codes": [
+              "TEMPORAL_COLLAPSE",
+              "REQUIRED_RETENTION_ERASURE"
+            ],
+            "layer1_contribution_refs": [
+              "contribution-28f5ff39added5bdf3b61487a6fdf7378b7e122b20fa5ca324c0b752ee198f52"
+            ]
+          },
+          {
+            "required_difference_ref": "required-difference:c08da6951a27785cced0590c5394f93a0629a08eafef3897b30ebce4a91861d0@cocolon.cmee.emlis.required_difference.v1",
+            "selected_reading_ref": "selected-emlis-provisional-reading:37fc4162434b0152114cd3532dd0fc27c1b050b053acd60871a9ca9571e24a02@cocolon.cmee.emlis.selected_emlis_provisional_reading.v1",
+            "configuration_ref": "difference-configuration:d72b2f140afaa1d1ee65ffb6ebe8b1c84514e3bd31d42bf9b6f6d1cd82e0cc73@cocolon.cmee.emlis.difference_configuration.v1",
+            "configuration_component_refs": [
+              "node:mn-a357a08eafee65bf30778c9cd9cbe36b1cb9927e48906da5ebd3132a2bd53236@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-da5effe64b72cbbc67a02a1d34bc4a4e99b61409740ad6dc273e08e627bdd8ae@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "source_qualifier_refs": [
+              "polarity:negative",
+              "polarity:positive"
+            ],
+            "invariant_codes": [
+              "POLARITY_REVERSAL",
+              "REQUIRED_RETENTION_ERASURE"
+            ],
+            "layer1_contribution_refs": [
+              "contribution-28f5ff39added5bdf3b61487a6fdf7378b7e122b20fa5ca324c0b752ee198f52"
+            ]
+          }
+        ],
+        "reception_trace": [
+          {
+            "branch": "NORMAL",
+            "meaning_outcome_ref": "selected-emlis-provisional-reading:37fc4162434b0152114cd3532dd0fc27c1b050b053acd60871a9ca9571e24a02@cocolon.cmee.emlis.selected_emlis_provisional_reading.v1",
+            "reading_consequence_ref": "reading-consequence:484d1ac385204783b6690a2beaf113ed41267886941ba31405ed0a2518352023@cocolon.cmee.emlis.reading_consequence.v1",
+            "reception_record_ref": "meaning-bound-reception:839c9939113f0ecf00bc17fc4144543ca44c7f5f5e676ac3e6736fbdec02121f@cocolon.cmee.emlis.meaning_bound_reception.v1",
+            "projected_claim_ref": "subjective-claim-e3e14ac8ee395887a1164981e167c8f9ab03a0ebf0dd0a59c15923001ce0fec7",
+            "layer1_contribution_refs": [
+              "contribution-28f5ff39added5bdf3b61487a6fdf7378b7e122b20fa5ca324c0b752ee198f52",
+              "contribution-d44756e5ec6376121ec3daa3a3c747b6a829994d6dc4c34cbf482dbceee58940"
+            ],
+            "response_object_refs": [
+              "node:mn-a357a08eafee65bf30778c9cd9cbe36b1cb9927e48906da5ebd3132a2bd53236@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-da5effe64b72cbbc67a02a1d34bc4a4e99b61409740ad6dc273e08e627bdd8ae@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "edge:me-246c46acf046a32874a6e6c4404904a32e39d6337874eb511e4dd884c8323a50@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "projected_response_object_refs": [
+              "node:mn-a357a08eafee65bf30778c9cd9cbe36b1cb9927e48906da5ebd3132a2bd53236@cocolon.cmee.grounded_meaning_graph.v1alpha1",
+              "node:mn-da5effe64b72cbbc67a02a1d34bc4a4e99b61409740ad6dc273e08e627bdd8ae@cocolon.cmee.grounded_meaning_graph.v1alpha1"
+            ],
+            "preserved_difference_refs": [
+              "required-difference:3f741a45a1676325096758e4d395ba726c84731ed8b49d1ee2c787300cfc8448@cocolon.cmee.emlis.required_difference.v1",
+              "required-difference:728b6c7204740aca835d1f7d1a1be6145c3cfb85edc0d8fac7c93d8fc3e8e9cb@cocolon.cmee.emlis.required_difference.v1",
+              "required-difference:8b9ff91b66db5602ef06113a6044791a7b9b4bcbb84af5648f98198a3fd188bf@cocolon.cmee.emlis.required_difference.v1",
+              "required-difference:c08da6951a27785cced0590c5394f93a0629a08eafef3897b30ebce4a91861d0@cocolon.cmee.emlis.required_difference.v1"
+            ]
+          }
+        ],
+        "body_status": "GENERATED",
+        "schema_version": "cocolon.cmee.emlis_thread_artifact.v1",
+        "history_line": null,
+        "history_line_plan": null,
+        "interpretive_frames": []
+      },
+      "reasons": [
+        "no_bound_personal_meaning_target"
+      ],
+      "question": null,
+      "selected_sha": "eeb962516b57416785ae812f186875095bfce9d93878350bcd4e05ad00911ba7"
+    }
+  ]
+}
