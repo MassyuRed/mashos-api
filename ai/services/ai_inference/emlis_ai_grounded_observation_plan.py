@@ -8089,8 +8089,17 @@ def source_owned_separate_contrast_objects(move, nuclei, relations, evidence_spa
         or not any(ref.startswith("evidence_relation_marker:")
                    for ref in edges[0].source_relation_ids)):
         return ()
+    return _source_owned_complete_contrast_pair(edges[0], nuclei, evidence_spans, normalized_input)
+
+
+def _source_owned_complete_contrast_pair(edge, nuclei, evidence_spans, normalized_input):
+    """Prove the full two-clause SELF source independently of a selected Move."""
+    if (edge.type != "contrast" or edge.retention != "required"
+        or edge.grounding_kind != "user_stated_relation"
+        or not any(ref.startswith("evidence_relation_marker:") for ref in edge.source_relation_ids)):
+        return ()
     index = {n.nucleus_id: n for n in nuclei}
-    pair = tuple(index.get(nid) for nid in (edges[0].from_nucleus_id, edges[0].to_nucleus_id))
+    pair = tuple(index.get(nid) for nid in (edge.from_nucleus_id, edge.to_nucleus_id))
     if (any(n is None or n.retention != "required" or n.grounding_kind != "explicit"
             or n.allowed_claim_scope != "explicit_current_input"
             or n.source_fields != ("memo",) or len(n.source_span_ids) != 1
@@ -8100,7 +8109,7 @@ def source_owned_separate_contrast_objects(move, nuclei, relations, evidence_spa
             for n in pair)
         or pair[0].source_span_ids == pair[1].source_span_ids
         or not set((*pair[0].source_span_ids, *pair[1].source_span_ids))
-            <= set(edges[0].source_span_ids)):
+            <= set(edge.source_span_ids)):
         return ()
     # Labels alone do not prove the diary writer owns a complete assertion.
     # Read the original field, including punctuation omitted by the ledger.
@@ -8133,6 +8142,46 @@ def source_owned_separate_contrast_objects(move, nuclei, relations, evidence_spa
         if re.search(r"は|が|も|私|僕|俺|自分|わたし|ぼく|おれ|もし|仮に|として|かもしれ|[、,]", inspected):
             return ()
     return pair
+
+
+def _final_source_reverse_time_contrast_relations(nuclei, relations, evidence_spans, normalized_input):
+    """Remove only a reverse proximity claim beside a proved present/past contrast."""
+    required = tuple(r for r in relations if r.retention == "required")
+    contrast = next((r for r in required if r.type == "contrast"), None)
+    reverse = next((r for r in required if r.type == "attempt_and_block"), None)
+    if (len(required) != 2 or contrast is None or reverse is None
+        or reverse.grounding_kind != "user_stated_relation"
+        or len(reverse.source_relation_ids) != 1
+        or not re.fullmatch(r"conflict\.e[1-9][0-9]*", reverse.source_relation_ids[0])
+        or reverse.source_meaning_arc_keys
+        or (reverse.from_nucleus_id, reverse.to_nucleus_id)
+            != (contrast.to_nucleus_id, contrast.from_nucleus_id)):
+        return relations
+    pair = _source_owned_complete_contrast_pair(contrast, nuclei, evidence_spans, normalized_input)
+    if (not pair or tuple(n.semantic_frame.time_scope for n in pair) != ("present", "past")
+        or {n.nucleus_id for n in nuclei if n.retention == "required"}
+            != {n.nucleus_id for n in pair}
+        or set(reverse.source_span_ids) != set((*pair[0].source_span_ids, *pair[1].source_span_ids))):
+        return relations
+    spans = {s.span_id: s for s in evidence_spans}
+    markers = tuple(spans.get(ref.split(":", 1)[1]) for ref in contrast.source_relation_ids
+                    if ref.startswith("evidence_relation_marker:"))
+    if (len(markers) != 1 or markers[0] is None or markers[0].source_field != "memo"
+        or markers[0].span_id not in contrast.source_span_ids
+        or not _is_pure_relation_marker(markers[0])
+        or not _LEADING_CONTRAST_RE.search(_clean(markers[0].raw_text))
+        or str(normalized_input.get("memo") or "")[markers[0].start_index:markers[0].end_index]
+            != markers[0].raw_text
+        or not (spans[pair[0].source_span_ids[0]].end_index <= markers[0].start_index
+                < markers[0].end_index <= spans[pair[1].source_span_ids[0]].start_index)):
+        return relations
+    if (not re.match(r"^(?:今日|今)(?:は|も)?[、,]?", spans[pair[0].source_span_ids[0]].raw_text)
+        or not re.match(r"^(?:昨日|その時)(?:は|も)?[、,]?", spans[pair[1].source_span_ids[0]].raw_text)):
+        return relations
+    # The source asserts contrast, not a blocked attempt from yesterday into
+    # today. Preserve both edges' IDs, endpoints and observer lineage.
+    return tuple(replace(r, type="uncertain_connection", grounding_kind="bounded_structural_inference",
+                         retention="should") if r == reverse else r for r in relations)
 
 
 def _source_separate_contrast_objects_from_resolver(move, nuclei, relations, resolver):
@@ -17458,6 +17507,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_relief_cognition_anaphora: bool = True,
     _legacy_relief_self_recipient: bool = True,
     _legacy_past_self_unknown: bool = True,
+    _legacy_reverse_time_contrast: bool = True,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -17532,6 +17582,9 @@ def project_final_stage1_grounded_observation_plan(
         nuclei,
         evidence_spans,
     )
+    if not _legacy_reverse_time_contrast:
+        relations = _final_source_reverse_time_contrast_relations(
+            nuclei, relations, evidence_spans, normalized_input)
     if not _legacy_relief_cognition_reception:
         pairs = source_owned_relief_cognition_pairs(nuclei, relations, evidence_spans,
             normalized_input, require_witness=False)
@@ -19237,6 +19290,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_relief_cognition_anaphora: bool = True,
     _legacy_relief_self_recipient: bool = True,
     _legacy_past_self_unknown: bool = True,
+    _legacy_reverse_time_contrast: bool = True,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan.
 
@@ -19313,6 +19367,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_relief_cognition_anaphora=_legacy_relief_cognition_anaphora,
         _legacy_relief_self_recipient=_legacy_relief_self_recipient,
         _legacy_past_self_unknown=_legacy_past_self_unknown,
+        _legacy_reverse_time_contrast=_legacy_reverse_time_contrast,
     )
 
 
