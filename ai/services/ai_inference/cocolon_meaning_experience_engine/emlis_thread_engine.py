@@ -13,8 +13,12 @@ from .source_kernel import SourceAdmissionError
 
 
 def _original_body_uses_prepared_plan(prepared):
-    from emlis_ai_grounded_observation_plan import source_owned_result_appraisal, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver
+    from emlis_ai_grounded_observation_plan import source_owned_result_appraisal, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_separate_contrast_objects_from_resolver
     return (prepared.thread.control.capability_snapshot.startswith("Q3_")
+        or any(_source_separate_contrast_objects_from_resolver(m, prepared.original_plan.nuclei,
+            prepared.original_plan.relations, prepared.thread.resolver())
+            for m in (prepared.original_plan.response_plan.human_reception_plan.moves
+                if prepared.original_plan.response_plan.human_reception_plan else ()))
         or (not prepared.legacy_unknown_object_action_scope
             and bool(_source_independent_unknown_object_from_resolver(
                 prepared.original_plan.nuclei, prepared.original_plan.relations, prepared.thread.resolver(), allow_scalar=True)

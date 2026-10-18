@@ -1,3 +1,5 @@
+> 2026-10-18最新：u331。具体的対比の参照と独立関係検証を修復。858成功／既知3失敗。作業の大きな単位・次の主観選択判断は末尾u331／最新weekly／監査。
+
 > 2026-10-18最新：u330。scalar不明＋別欄行動のReception欠落を修復、807成功／既知3失敗。再開は末尾u330と最新weekly。
 
 > 2026-10-18最新：u329で同欄の実行済み行動の誤分類と派生関係を修復。24例本文成立、旧意味24例保持。717成功／既知3失敗。詳細と次残件は末尾u329。
@@ -22463,3 +22465,59 @@ STRUCTURE_MAP_DELTA_NONE（既存owner内のsource証明・関係authority・Q1�
 primary outcome=TECHNICAL_CREDIT。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式0/3／candidate_ready=false／automatic_progression=false。Draft/open/unmerged・未配置。実機・本番DB・deploy・merge未実施。10/31管理線・12/18目標・Piece/Analysis主枠・53.25％は再評価しない。
 
 詳細・未加工本文・検証境界：[Cocolon_EmlisAI_u330_ScalarUnknownActionRetention_20261018.md](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u330_ScalarUnknownActionRetention_20261018.md)。
+
+
+## u331 — 対比の具体的な対象を返答へ戻し、独立検証・保存まで継続（2026-10-18 JST）
+
+Mash様が承認した「保存・commit単位は小さく、作業終了単位は一つの目的と関連修復・実本文・更新・保存確認まで」を最新weeklyへ先に記録した。方法記録commitは `6d11f3013731e3d81f020ac7e36c6957b6a27297`。15〜25分等の時間を終了条件にせず、今回は同じ目的の参照欠落と関係検証漏れを続けて修復した。
+
+「友達と話せて嬉しかった。でも、疲れた。」の2対象が解析・選択には残るのに、Receptionで「今ここに置かれた言葉／もう一方の向き」へ消える不具合を修復。既存referenceの明示化前に原文field全文・2span・順序・接続・本人の有限節・required contrast根拠を照合し、両対象を名詞節へ実現する。Q1も同じ準備済みplanへ接続。疑問／引用／別主体／報告／丁寧形等を無理に具体化しない。初期試作の主体・疑問・丁寧形への過大適用は未公開のまま修正した。
+
+- 合成20例：Reception6例を修復、14例の本文・未提供状態は不変。生成13／未提供7は前後同じ。全20のcheckpoint・核・辺が完全一致、selectedの主観内容も不変（対象の参照方式に由来するinput_ref／grounding_refは変化）。意味型・主観選択の追加ではない。
+- 新規41検査の初回40成功／1失敗で、両端を残して関係だけ「因果関係」に変えた本文が作者禁止の逆検証を通る実欠陥を発見。Gateで選択済みNONCOLLAPSEのfocal関係・両端・名詞節の並列・違いの付加句・肯定受容を独立に読み、因果化や無根拠挿入を拒否した。語句の禁止リストではなく、対象の外側の関係文法を検査する。
+- 最終：source_scope698＋新規41＝739 passed、Q3対照64 passed／既知3 failed、application54 passed、現行identity1 passed。別集合 **858 passed／既知3 failed／skip0**。途中run・同Work補助probeは加算しない。全project suite／商品合格ではない。
+- 既知3失敗は、9/20のMash指示で保持した旧名詞化本文の期待との不一致。1件の7 failed assertionsは旧語句replaceによる無変化、2件は旧全文exact不一致。現在の有限文に対する既存26検査は通過。今回、既存assertion／歴史fixtureを弱化・削除していない。
+- 実service＋隔離PGlite SQL/RPC9ケース、同じDTOの現行API client／hook／Modal native stub9ケースで、3tier・旧完成非再生成・checkpoint前後中断・実際の回答／訂正／撤回・保存GET／元入力／全履歴／close-reopenを確認。今回のcheckpoint内容は不変なので、checkpoint後中断も同じ意味eventから修復本文へ進む。保存済み旧本文は非再生成で不変。対象6例自体はENDであり、架空の問いを作らない。
+
+全体設計図・全file地図・前提資料・作業規則・恒久incident・最新weekly・正本06・既存handoffを確認。製品は既存OP／HR／Gate／thread_engineの4owner。新test／変更前fixtureを地図へ追記し、STRUCTURE_MAP_DELTA_NONE。新依存・外部AI・新schema・公開API／DB／RN変更なし。同Workのread-only補助は正式な別model評価ではない。
+
+主担当が未加工20例、rich対照6例と更新本文を読んだ。具体対象は戻ったが、「両方を小さくせずに受け止めています」の定型は残る。原03の実際の過去の安堵／認知内の不確かな予想／現在の寂しさから、Emlisが何を感じどう応じるかを選ぶ部分は未完成。新型を増やせば改善すると結論しない。次の設計判断は下記監査の未採用案で、可視本文・各主張の根拠・変更範囲・検証と停止条件を具体化した。Rule18 §11.3の新しい主観選択／内容契約の境界なので、実装へ自動進行しない。
+
+E01の他の主体／時点、Observationの時点差に対する「同時」表現、今回非対象の丁寧形・同span・逆順等、原03＋独立不明の受容欠落、E04深さ、E05問い、残るE06〜E09は未解消。本文修復件数で10/20方式継続判断を延期しない。10/31管理線・12/18目標・Piece/Analysis主枠・53.25％は不変。
+
+primary outcome=TECHNICAL_CREDIT。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式0/3／candidate_ready=false／automatic_progression=false。Draft/open/unmerged・未配置。実機・本番DB・deploy・merge未実施。
+
+詳細・全20例・次の未採用案：[Cocolon_EmlisAI_u331_ConcreteContrastReception_and_NextDecision_20261018.md](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u331_ConcreteContrastReception_and_NextDecision_20261018.md)。
+
+## 次に必要な判断：入力に根拠を持つEmlisの反応を選ぶ（未採用・未実装）
+
+原03の入力：
+
+> 友達からの誘いを断って、一人で休めたことにほっとした。でも、もう誘ってもらえなくなるかもしれないと思うと寂しい。
+
+現実装のReception（未加工）：
+
+> 友達からの誘いを断って、一人で休めたことにほっとしたという気持ちともう誘ってもらえなくなるかもしれないと思うと寂しいこととの違いをどちらの側も残したまま、感じています。
+
+可視目標の比較用の手書き案。生成結果でも品質合格でもない：
+
+> 休めてほっとしたと聞いて、私も少し安心しました。これから誘われなくなるかはまだ分からなくても、そう思うときの寂しさには、今、耳を傾けていたいです。
+
+| 内容 | 原文との関係と変更点 |
+|---|---|
+| 休めて、その時にほっとした本人の経験 | 既存のsource範囲から読む。安堵が今も続くとは言わない |
+| 誘われなくなる可能性を思うと寂しい | 予想を事実化しない。原03では将来の予想だが、認知構造全般を未来へ一般化しない |
+| その経験を聞いたEmlisの限定的な安心 | 新たに選択するEmlis側の反応。本人の感情や隠れた事情ではない |
+| 予想の確定前でも現在の寂しさを聞く姿勢 | 新たに選択するEmlis側の応答姿勢。『誘われ続けたい』『断って後悔した』等を本人の願望として補わない |
+
+現selectedはNORMAL／ATTENTIONの `RELATIONAL_NONCOLLAPSE / PRESERVE_BOTH_ENDPOINTS`。対象・対比・qualifierを保持するが、上記の限定的な反応／応答姿勢は選んでいない。作者が後から『安心した』等を足すことはできない。旧affect recipeの単純復活も、対象を読まず負荷有無からRELIEF／JOYを選ぶため採らない。現在のNORMAL内容投影ではoptional affect／stanceはNone固定で、これを変えるには選択条件・内容契約・独立readerの対応が必要になる。
+
+u320の『scope型を足すだけでは主観的な受容差分にならない』という不採用理由は維持する。今回の提案対象は型追加そのものではなく、上記2つのEmlis側の限定的反応／姿勢を、対象・時点・確実性に結び付けて選べるようにすること。既存型を使える部分と内部型を変更する部分の技術判断は実装時に分け、公開schemaは変更しない。後半にはなお汎用的な共感に見える弱さがあるため、手書き案を正解templateに固定しない。
+
+推奨する一括作業範囲は、この有限source形の初回選択→内容形成→自然な本文→作者に依存しない意味検証→既存の問いが成立する入力での回答・訂正・撤回→保存再表示。sourceの本人の願望・必要性・他人の意図を推測すること、断って正解等の行動評価、質問選択や上限変更、新外部AI・依存・実DB・deployは含めない。既存source・意味更新・保存経路を使う。新費用は要求しないが、選択・内容・本文・逆検証・更新互換の複数ownerに跨る作業が増える。所要時間の固定値は約束しない。
+
+成功条件：原文の対象・時点・確実性を保ったまま、Emlisが何にどのように応じるかの可視差が出ること。実例だけでなく自然変種でも妥当で、安堵の否定／撤回後にEmlisの安心が残らず、予想→実際の出来事への訂正で応答が変わり、寂しさ撤回後にその寂しさへの姿勢だけが残らないこと。両端を保持する既存責務は失わない。旧完成本文は非再生成で保持し、新意味が必要なら旧checkpointを付け替えない。
+
+STOP／退ける条件：反応の選択根拠がsourceに結び付かない、本人の内心や他人意図を補う、語尾差替・関係ラベル・引用の反復しか増えない、更新／撤回で旧反応が残る、意味検証を緩める必要がある場合。成立しない場合はこの案を合格扱いせず方式判断へ渡す。
+
+現在の承認は作業の進め方と既存bug修復を含むが、新たな主観選択／内容契約までの包括承認とは扱わない。作業規則18 §11.3 LEVEL_3がこの差分に個別のMash判断を求めるため、上記内容を提示して確認する。同Work補助の検討をPro／Ultra別modelの正式共同承認に置き換えない。

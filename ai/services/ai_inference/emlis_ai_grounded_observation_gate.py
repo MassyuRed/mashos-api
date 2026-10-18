@@ -8265,6 +8265,38 @@ def evaluate_grounded_surface_body_inverse(
                             )
                         )
                         if (final_stage1_plan and sentence_plan.recovery_stage == "full"
+                            and len(clause.move_ids) == 1):
+                            from emlis_ai_grounded_observation_plan import _source_separate_contrast_objects_from_resolver
+                            pair = _source_separate_contrast_objects_from_resolver(
+                                move, plan.nuclei, plan.relations, resolver)
+                            if pair:
+                                # Seeing both source strings and a receive
+                                # marker does not prove their relation. Read
+                                # the two governed objects AND the contrast
+                                # adjunct; an invented causal object cannot
+                                # discharge PRESERVE_BOTH_ENDPOINTS.
+                                decision = next((d for d in selected_subjective_input.decisions
+                                    if d.move_id == move.move_id), None) if selected_subjective_input else None
+                                appraisal = decision.subjective_proposition.appraisal_content if decision else None
+                                proposition = decision.subjective_proposition if decision else None
+                                relation = next(r for r in plan.relations if r.retention == "required"
+                                    and (r.from_nucleus_id, r.to_nucleus_id) == tuple(n.nucleus_id for n in pair))
+                                node_map = dict(selected_subjective_input.semantic_nucleus_pairs) if selected_subjective_input else {}
+                                relation_map = dict(selected_subjective_input.relation_pairs) if selected_subjective_input else {}
+                                sources = tuple(resolver.resolve(n.source_span_ids[0]).raw_text for n in pair)
+                                raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
+                                object_pattern = re.escape(sources[0] + "ことと" + sources[1] + "こと")
+                                if (appraisal is None
+                                    or (appraisal.dimension, appraisal.operation)
+                                        != ("RELATIONAL_NONCOLLAPSE", "PRESERVE_BOTH_ENDPOINTS")
+                                    or proposition.focal_relation_ref != appraisal.focal_relation_ref
+                                    or relation_map.get(appraisal.focal_relation_ref) != relation.relation_id
+                                    or tuple(node_map.get(ref) for ref in proposition.response_object_refs)
+                                        != tuple(n.nucleus_id for n in pair)
+                                    or re.fullmatch(object_pattern
+                                        + r"の両方を、(?:その)?違いも含めて小さくせずに受け止めています。", raw) is None):
+                                    failures.append(f"body_inverse_separate_contrast_scope_mismatch:{move.move_id}")
+                        if (final_stage1_plan and sentence_plan.recovery_stage == "full"
                             and len(clause.move_ids) == 1 and len(target_nuclei) == 1):
                             original_feeling = _body_inverse_original_record_feeling(target_nuclei[0], plan, resolver)
                             raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")

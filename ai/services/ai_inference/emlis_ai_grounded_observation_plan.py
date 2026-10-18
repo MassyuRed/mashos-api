@@ -7921,6 +7921,75 @@ def _source_owned_withdrawn_appraisal_reason(relation, nuclei, relations):
     return None
 
 
+def source_owned_separate_contrast_objects(move, nuclei, relations, evidence_spans, normalized_input):
+    """Keep the two already selected SELF objects of an explicit contrast.
+
+    An anaphor for the first object cannot name the different second object.
+    This changes reference realization only, not the selected relation,
+    subjective appraisal, source predicates or their time scopes.
+    """
+    if (not move.required or len(move.target_nucleus_ids) != 1
+        or len(move.support_nucleus_ids) != 1
+        or move.reception_act not in {"stay_with_current_burden", "recognize_lived_change"}):
+        return ()
+    ids = set((*move.target_nucleus_ids, *move.support_nucleus_ids))
+    edges = tuple(r for r in relations if r.retention == "required"
+                  and ids & {r.from_nucleus_id, r.to_nucleus_id})
+    if (len(ids) != 2 or len(edges) != 1 or edges[0].type != "contrast"
+        or edges[0].grounding_kind != "user_stated_relation"
+        or {edges[0].from_nucleus_id, edges[0].to_nucleus_id} != ids
+        or not any(ref.startswith("evidence_relation_marker:")
+                   for ref in edges[0].source_relation_ids)):
+        return ()
+    index = {n.nucleus_id: n for n in nuclei}
+    pair = tuple(index.get(nid) for nid in (edges[0].from_nucleus_id, edges[0].to_nucleus_id))
+    if (any(n is None or n.retention != "required" or n.grounding_kind != "explicit"
+            or n.allowed_claim_scope != "explicit_current_input"
+            or n.source_fields != ("memo",) or len(n.source_span_ids) != 1
+            or n.semantic_frame.actor != "current_user"
+            or (n.kind, n.semantic_frame.predicate_kind, n.semantic_frame.modality)
+               not in {("reaction", "feeling", "feeling"), ("state", "state", "fact")}
+            for n in pair)
+        or pair[0].source_span_ids == pair[1].source_span_ids
+        or not set((*pair[0].source_span_ids, *pair[1].source_span_ids))
+            <= set(edges[0].source_span_ids)):
+        return ()
+    # Labels alone do not prove the diary writer owns a complete assertion.
+    # Read the original field, including punctuation omitted by the ledger.
+    spans = {s.span_id: s for s in evidence_spans}
+    if any(n.source_span_ids[0] not in spans for n in pair) or normalized_input is None:
+        return ()
+    left, right = (spans[n.source_span_ids[0]] for n in pair)
+    source = str(normalized_input.get("memo") or "")
+    if (_top_level_text(source) != source or re.search(r"[「」『』?？!！…‥\r\n]", source)
+        or any(s.source_field != "memo" or not 0 <= s.start_index < s.end_index <= len(source)
+               or source[s.start_index:s.end_index] != s.raw_text for s in (left, right))
+        or source[:left.start_index].strip()
+        or not re.fullmatch(r"\s*[。．.]\s*(?:でも|しかし|ただ|それでも)[、,]?\s*",
+                            source[left.end_index:right.start_index])
+        or not re.fullmatch(r"\s*[。．.]?\s*", source[right.end_index:])):
+        return ()
+    for span in (left, right):
+        raw = re.sub(r"^(?:昨日|今日|今|その時)(?:は|も)?[、,]?", "", span.raw_text)
+        # Known time prefixes remain in the delivered clause. Other topic,
+        # owner, report, question, polite or conditional frames need their
+        # own reversible realization; do not feed them to a plain nominal.
+        if (not raw or re.search(r"は|が|も|私|僕|俺|自分|わたし|ぼく|おれ|もし|仮に|として|かもしれ|[、,]", raw)
+            or not re.search(r"(?:嬉しかった|うれしかった|楽しかった|嬉しくなかった|うれしくなかった|楽しくなかった|疲れた|疲れなかった|疲れている)$", raw)):
+            return ()
+    return pair
+
+
+def _source_separate_contrast_objects_from_resolver(move, nuclei, relations, resolver):
+    read_field = getattr(resolver, "source_text_for_span_field", None)
+    spans = resolver.resolve_many(resolver.span_ids)
+    memo = next((s for s in spans if s.source_field == "memo"), None)
+    if read_field is None or memo is None:
+        return ()
+    return source_owned_separate_contrast_objects(move, nuclei, relations, spans,
+        normalize_emlis_current_input({"memo": read_field(memo.span_id)}))
+
+
 def source_owned_relational_focus(move, plan=None, *, nuclei=None, relations=None):
     """Select an existing, complete relation for a finite reading, not a new claim.
 
@@ -10992,8 +11061,8 @@ def build_grounded_human_reception_plan(
     # never rewrites an ANAPHORIC expression into an unbound explicit one.
     if final_source_fidelity and safety_kind == TRIAGE_SAFE_OBSERVATION:
         moves = tuple(replace(move, reference_mode="short_anchor_if_ambiguous")
-            if (focus := source_owned_relational_focus(move, nuclei=nuclei, relations=relations))
-            is not None and focus[0] != "received_experience_focus" else move for move in moves)
+            if ((focus := source_owned_relational_focus(move, nuclei=nuclei, relations=relations))
+                is not None and focus[0] != "received_experience_focus") else move for move in moves)
         if ((len(moves) == 2 or "selection:primary_burden_first" in depth_policy.selection_reason_codes)
             and _source_owned_memo_duties_before_action(moves, nuclei, relations)):
             depth_policy = replace(depth_policy, selection_reason_codes=(
@@ -17737,6 +17806,12 @@ def _source_unknown_object_group_from_resolver(nuclei, relations, resolver, *, i
 
 def _explicit_unknown_object_reception(response, nuclei, relations, evidence_spans, normalized_input):
     """Change reference realization only, after the existing Move is selected."""
+    reception = response.human_reception_plan
+    if reception is not None:
+        moves = tuple(replace(m, reference_mode="short_anchor_if_ambiguous")
+            if source_owned_separate_contrast_objects(m, nuclei, relations, evidence_spans, normalized_input)
+            else m for m in reception.moves)
+        response = replace(response, human_reception_plan=replace(reception, moves=moves))
     independent = (_source_independent_unknown_object_group(nuclei, relations, evidence_spans, normalized_input)
         or _source_same_field_unknown_object_group(nuclei, relations, evidence_spans, normalized_input))
     group = (independent[:1] or _source_single_unknown_object(nuclei, relations, evidence_spans, normalized_input)

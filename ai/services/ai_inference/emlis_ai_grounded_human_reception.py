@@ -2711,9 +2711,32 @@ def _source_grounded_current_expression_nominal(
     a self-owned feeling over the whole field. That feeling's plain clause
     can adjoin こと unchanged. Preserve act, scope, axes and anaphoric policy.
     """
-    # A selected event/reaction contrast already owns two separate scalar
-    # fragments. Nominalize its finite event without labelling that event as
-    # "words placed here". Do not promote an unbounded span or quoted claim.
+    # A selected explicit contrast owns two distinct self-owned objects.
+    # Its finite feeling clause can name the first object directly; the
+    # second object must not make that referent collapse into generic words.
+    if (plan is not None and FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in plan.source_contracts
+        and move in plan.response_plan.human_reception_plan.moves
+        and move.reception_act == "stay_with_current_burden"):
+        from emlis_ai_grounded_observation_plan import _source_separate_contrast_objects_from_resolver
+        pair = _source_separate_contrast_objects_from_resolver(move, plan.nuclei, plan.relations, resolver)
+        if pair:
+            target = nucleus_index[move.target_nucleus_ids[0]]
+            fragment = _source_grounded_clause_candidate(target, resolver)
+            raw = resolver.resolve(target.source_span_ids[0]).raw_text
+            profile = _source_grounded_semantic_profile(target, fragment)
+            read_field = getattr(resolver, "source_text_for_span_field", None)
+            field = read_field(target.source_span_ids[0]) if callable(read_field) else ""
+            if (profile.nucleus_kind == "reaction" and profile.predicate_kind == "feeling"
+                and profile.modality == "feeling" and profile.actor_kind == "SELF"
+                and not (profile.quoted_boundary or profile.performed_action or profile.future_action)
+                and field and not re.search(r"[「」『』…‥?？!！]", field)
+                and (raw.strip(" \u3000、,。．.") == fragment
+                     or _typed_reception_source_fragment(target, raw) == fragment)
+                and (_SOURCE_GROUNDED_PAST_MORPHOLOGY_RE.search(fragment)
+                     or _SOURCE_GROUNDED_NONPAST_MORPHOLOGY_RE.search(fragment))
+                and not fragment.endswith(("です", "ます"))
+                and not _SOURCE_GROUNDED_TRAILING_CONNECTIVE_RE.search(fragment)):
+                return fragment + "こと"
     if (plan is not None and FINAL_STAGE1_GROUNDED_PROJECTION_VERSION in plan.source_contracts
         and move in plan.response_plan.human_reception_plan.moves
         and move.reception_act == "stay_with_current_burden"
