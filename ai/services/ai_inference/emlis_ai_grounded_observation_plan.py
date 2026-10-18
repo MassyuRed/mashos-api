@@ -17273,6 +17273,8 @@ def project_final_stage1_grounded_observation_plan(
         evidence_spans,
     )
     if not _legacy_unknown_object_action_scope:
+        nuclei, relations = _final_source_same_field_unknown_action(
+            nuclei, relations, evidence_spans, normalized_input)
         independent_unknown = _source_independent_unknown_object_group(
             nuclei, relations, evidence_spans, normalized_input, require_witness=False)
         independent_unknown = independent_unknown or _source_same_field_unknown_object_group(
@@ -17541,6 +17543,80 @@ def _source_independent_unknown_object_group(nuclei, relations, evidence_spans, 
         or not re.fullmatch(r"\s*[。．.]?\s*", source[span.end_index:])):
         return ()
     return unknown, action
+
+
+def _final_source_same_field_unknown_action(nuclei, relations, evidence_spans, normalized_input):
+    """Correct a lexical value/event default from its complete finite act.
+
+    Only the existing two-sentence SELF-unknown scope is admitted. Source
+    order and the legacy conflict observer do not prove a wish or a causal
+    link. Keep their evidence and endpoints, with their actual uncertainty.
+    """
+    spans = {s.span_id: s for s in evidence_spans}
+    candidates = tuple(n for n in nuclei if n.source_fields == ("memo",)
+        and n.kind == n.semantic_frame.predicate_kind
+        and n.kind in {"value", "event"}
+        and n.semantic_frame.modality == "fact"
+        and n.semantic_frame.polarity in {"neutral", "positive"}
+        and len(n.source_span_ids) == 1 and n.source_span_ids[0] in spans)
+    if len(candidates) != 1:
+        return nuclei, relations
+    action = candidates[0]
+    frame = action.semantic_frame
+    text = str(spans[action.source_span_ids[0]].raw_text).strip()
+    # Require one nominal object and the registered finite predicate. A
+    # permissive case-frame search alone also accepts a preceding purpose,
+    # contrast, request or reporting clause; none is independent source here.
+    core = _strip_bounded_operator_prefix(text)
+    noun = r"[一-鿿々ァ-ヶー]+[ぁ-ん]{0,4}(?:の[一-鿿々ァ-ヶー]+[ぁ-ん]{0,4}){0,2}"
+    finite_act = any(m.end() == len(core) and re.fullmatch(noun + r"を", core[:m.start()])
+        for pattern in (_COMPLETED_ACTION_RE, _ACHIEVEMENT_RE) for m in pattern.finditer(core))
+    if (not _bounded_structural_action_endpoint(text)
+        or not _source_operator_owner_scope_is_bound(text)
+        or not finite_act
+        or set(frame.attribute_codes) & {"operator:negation", "operator:uncertainty", "operator:wish",
+                                        "operator:feeling", "operator:cause", "operator:result", "operator:contrast"}
+        or _FUTURE_RE.search(text)
+        or re.search(r"(?:明日|明後日|来週|来月|来年|次回|今度)", text)
+        or _LEADING_CONTRAST_RE.search(text) or _BOUNDARY_RESULT_RE.search(text)
+        or re.match(r"(?:その後|そして|それから|そこで)", text)):
+        return nuclei, relations
+    # Keep ledger/claim provenance. It is not the semantic type of this
+    # finite predicate, nor evidence that a positive change occurred.
+    attrs = tuple(c for c in frame.attribute_codes
+        if c not in {"semantic_role:current_change", "operator:value"})
+    candidate = replace(action, kind="action", semantic_frame=replace(
+        frame, predicate_kind="action", polarity="neutral", attribute_codes=attrs))
+    projected = tuple(candidate if n == action else n for n in nuclei)
+    projected = _final_stage1_align_action_status(projected, evidence_spans, normalized_input=normalized_input)
+    pair = _source_same_field_unknown_object_group(
+        projected, (), evidence_spans, normalized_input, require_witness=False)
+    if not pair:
+        return nuclei, relations
+    unknown, proved_action = pair
+    owned = {unknown.nucleus_id, proved_action.nucleus_id}
+    source_ids = set((*unknown.source_span_ids, *proved_action.source_span_ids))
+    related = tuple(r for r in relations if {r.from_nucleus_id, r.to_nucleus_id} & owned)
+    for relation in related:
+        source_order = (relation.source_relation_ids == ("whole_input_source_order",)
+            and relation.source_meaning_arc_keys == ("whole_input:source_order",))
+        conflict_ids = tuple(ref for ref in relation.source_relation_ids
+            if re.fullmatch(r"conflict\.e[1-9][0-9]*", ref))
+        lexical_conflict = (relation.type in {"wish_and_constraint", "attempt_and_block"}
+            and len(conflict_ids) == 1 and (
+                relation.source_relation_ids == conflict_ids and not relation.source_meaning_arc_keys
+                or len(relation.source_relation_ids) == 2
+                and set(relation.source_relation_ids) == {conflict_ids[0], "whole_input_source_order"}
+                and relation.source_meaning_arc_keys == ("whole_input:source_order",)))
+        if ({relation.from_nucleus_id, relation.to_nucleus_id} != owned
+            or set(relation.source_span_ids) != source_ids
+            or not (source_order or lexical_conflict)):
+            return nuclei, relations
+    corrected = tuple(replace(r, type="uncertain_connection",
+        grounding_kind="bounded_structural_inference",
+        retention="should" if r.retention == "required" else r.retention)
+        if r in related else r for r in relations)
+    return projected, corrected
 
 
 def _source_same_field_unknown_object_group(nuclei, relations, evidence_spans, normalized_input, *, require_witness=True):

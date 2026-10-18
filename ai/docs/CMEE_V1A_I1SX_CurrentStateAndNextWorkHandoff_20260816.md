@@ -1,3 +1,5 @@
+> 2026-10-18最新：u329で同欄の実行済み行動の誤分類と派生関係を修復。24例本文成立、旧意味24例保持。717成功／既知3失敗。詳細と次残件は末尾u329。
+
 > 2026-10-18最新：u328で同欄のwh本人不明＋証明済み実行行動の本文停止を修復。旧意味・旧本文と現行生成を区別。机等の誤分類、E04/E05は未完。詳細は末尾u328。
 
 > 2026-10-18最新：u327で別欄のSELF不明対象＋独立した実行済み行動を両方受け止めるよう修復。既存MATERIAL_WEIGHTを保持し、新しい選択意味と旧checkpointの完全復元を区別。E04/E05等は未完、未配置・PRODUCT_NOT_CLEAR。詳細は末尾u327。
@@ -22415,3 +22417,24 @@ STRUCTURE_MAP_DELTA_NONE（既存owner内のsource証明・選択・本文接続
 次は同欄の机／資料整理の実source分類と、その分類から生じる誤関係を既存ownerで確認し、正しい意味と受け取りを一体で修復する。一般にrequired関係を削除してはならない。10/20には、局所的な保持・停止修復が深い受容と問いへどこまで届いたかで方式継続を判断する。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式0/3／candidate_ready=false／automatic_progression=false／Draft/open/unmerged・未配置。10/31管理線・12/18目標・Piece/Analysis主枠・53.25％は再評価しない。
 
 未加工全文：Cocolon PR30 の `Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u328_SameFieldUnknownActionReception_20261018.md`。
+
+
+## u329 — 同欄の実行済み行動を願い・一般eventへ誤分類する原因を修復（2026-10-18 JST）
+
+最新weekly20261017 E01〜E04とu328の次作業に従い、同じmemoの本人wh不明＋「机を片付けた／資料を整理した／机を片づけた」の両順序を修復した。ledgerのvalue/event既定と、近接したvalueとself-awarenessを結ぶconflict observerの派生関係が、実行済み行動を願い・制約・背景へ変えていた。
+
+既存observation_plan一つのowner内で、完全二文、本人の現在不明、単一の名詞目的語＋既存登録済み過去述語を原文・位置から証明する。既存action status解析でaction/fact/pastへ戻し、両端・全span・provenanceが一致するconflict.eN／whole_input_source_orderだけの誤派生関係をoptional uncertain_connectionへ戻す。edge ID・端点・根拠は保持する。本人が明示した因果・対比や別根拠のrequired関係を削除・無視しない。既存二責務・Q1/Q3本文へ接続し、新意味型・関係型・writer・公開contractを追加しない。
+
+- 合成24例は全て、行動と現在の不明を別の内容として本文へ保持。修正前は12本文あり／12未提供、修正後は24本文あり。既存12本文の誤った願い／背景表現も変化した。主担当が修正前後の全本文を確認した。
+- source_scope **608 passed**（既存496＋追加112＝Q1/Q3成立48、旧意味24、非対象25、関係根拠改変4、本文意味改変11）。u328の旧拒否2例は明示legacy planへの検査として残し、他17拒否は現行経路で維持。既存検査変更0とは主張しない。
+- Q3対照 **54 passed／既知3 failed**、Q2/Q3 application **54 passed**、現行共有owner identity **1 passed**。別集合の合計 **717 passed／既知3 failed、skip 0**。全体suite合格ではない。既知3件はu328と同じtest名で、既存assertionを緩めず残した。
+- 実service＋隔離PGlite SQL/RPC **7ケース**、同じ保存DTOを使う現行API client／hook／Modal native stub **7ケース**で保存・GET・元入力・履歴・close/reopen一致。本人実機・本番通信ではない。
+- 既存legacy_unknown_object_action_scopeで旧u328の24checkpointを完全再導出し、核辺・selected・本文・問いが凍結recordと一致。旧完成の誤った願い本文も、旧確定の本文未提供もGETで再生成しない。checkpoint前の中断だけ現行本文へ進み、checkpoint後の中断は旧意味・旧未提供状態を保持する。新分類・新関係の意味identityを旧IDへ付け替えない。
+
+STRUCTURE_MAP_DELTA_NONE（既存owner内のsource分類・関係authority修復）。新fixtureは修正前API f58e6ba…の合成24例。全体設計図・全file地図・前提資料・作業規則・必読incident全文・最新weeklyを確認。開始時GitHub HEADとlocal全blobが一致（API2378／資料1716）。System Context prepareはrepository metadata不在で失敗し、成功扱いせず原典直接確認へ進んだ。同Work補助は正式別model評価ではない。既存bug修復委任内、主担当のみ製品編集・GitHub write、追加費用・新依存・外部AI・本番変更なし。
+
+対象24例はEND。架空の問い・回答を作って一往復成功へ換算しない。Observationの引用・感覚分類、Receptionの近い反復と行動への定型は残り、E04の深い受容／E05の問いを完成扱いしない。昨日行動先行時の不明の時点誤分類、scalar不明＋別欄行動の片側欠落、丁寧形・複合句など今回の有限source証明外は残る。次は残るscalar不明＋別行動の意味・受け取り欠落を既存source/selection ownerで確認し、初回本文と旧保存保持まで一体で修復する。10/20には局所修復が受容・問いへ届いた実結果から方式継続を判断する。
+
+primary outcome=TECHNICAL_CREDIT。商品状態はPRODUCT_NOT_CLEAR／初回一体単位未完了／正式0/3／candidate_ready=false／automatic_progression=false。Draft/open/unmerged・未配置、実機・本番DB・deploy・merge未実施。10/31管理線・12/18目標・Piece/Analysis主枠・53.25％は再評価しない。
+
+詳細・未加工24例・検証境界：[Cocolon_EmlisAI_u329_SameFieldFiniteActionRecognition_20261018.md](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u329_SameFieldFiniteActionRecognition_20261018.md)。

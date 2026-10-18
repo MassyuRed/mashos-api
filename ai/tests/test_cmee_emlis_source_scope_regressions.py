@@ -1144,7 +1144,7 @@ def test_same_field_saved_checkpoint_retains_complete_old_meaning(same_field_unk
     assert json.loads(json.dumps(asdict(result.question_decision) if result.question_decision else None)) == row['question_decision']
 
 
-@pytest.mark.parametrize('memo', [
+@pytest.mark.parametrize('memo, legacy_source', [(memo, False) for memo in [
     '何が嫌なのか、自分でもよく分からない。友人がメモを書いた。',
     '何が嫌なのか、自分でもよく分からない。メモを書いていない。',
     '何が嫌なのか、自分でもよく分からない。メモを書くつもりだ。',
@@ -1162,13 +1162,17 @@ def test_same_field_saved_checkpoint_retains_complete_old_meaning(same_field_unk
     '何が嫌なのか、自分でもよく分からない。メモを書いた。資料を整理した。',
     'なぜ嫌なのか、自分でもよく分からない。メモを書いた。',
     '今はまだよく分からない。メモを書いた。',
-    '何が嫌なのか、自分でもよく分からない。机を片付けた。',
-    '何が嫌なのか、自分でもよく分からない。資料を整理した。',
+]] + [
+    ('何が嫌なのか、自分でもよく分からない。机を片付けた。', True),
+    ('何が嫌なのか、自分でもよく分からない。資料を整理した。', True),
 ])
-def test_same_field_pair_does_not_promote_unproved_sources(memo):
+def test_same_field_pair_does_not_promote_unproved_sources(memo, legacy_source):
     from emlis_ai_grounded_observation_plan import _source_same_field_unknown_object_from_resolver
     p = prepare_emlis_meaning(_unknown_action_request(memo, ''))
-    plan = build_updated_grounded_plan(p)
+    # The two pre-u329 lexical defaults remain unproved in their old plan.
+    # Current finite-action recognition is tested independently below.
+    from cocolon_meaning_experience_engine.emlis_question import original_meaning_plan
+    plan = original_meaning_plan(p.thread, _legacy_unknown_object_action_scope=True) if legacy_source else build_updated_grounded_plan(p)
     assert not _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, p.thread.resolver())
 
 
@@ -1195,3 +1199,137 @@ def test_same_field_reader_rejects_changed_meaning_without_author(same_field_unk
     follow = same_field_unknown_context[0].artifact.reception
     assert before in follow
     assert not inverse(same_field_unknown_context, follow.replace(before, after), without_author=True).passed
+
+
+@pytest.fixture(scope='module')
+def same_field_action_baseline():
+    import json
+    from pathlib import Path
+    return json.loads((Path(__file__).parent / 'fixtures' /
+        'cmee_emlis_u328_same_field_action_checkpoint_v1.json').read_text())
+
+
+@pytest.mark.parametrize('modern', [False, True])
+@pytest.mark.parametrize('case_index', range(24))
+def test_same_field_finite_action_replaces_lexical_default(same_field_action_baseline, case_index, modern):
+    from cocolon_meaning_experience_engine.emlis_question import original_meaning_plan
+    from emlis_ai_grounded_observation_plan import _source_same_field_unknown_object_from_resolver
+    row = same_field_action_baseline['cases'][case_index]
+    req = _unknown_action_request(row['memo'], '', modern)
+    p = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(p)
+    unknown, action = _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, p.thread.resolver())
+    assert (action.kind, action.semantic_frame.predicate_kind, action.semantic_frame.polarity,
+        action.semantic_frame.modality, action.semantic_frame.time_scope) == ('action', 'action', 'neutral', 'fact', 'past')
+    assert 'operator:performed_action' in action.semantic_frame.attribute_codes
+    assert 'semantic_role:current_change' not in action.semantic_frame.attribute_codes
+    assert unknown.kind == unknown.semantic_frame.predicate_kind == 'uncertainty'
+    assert unknown.semantic_frame.time_scope in {'present', 'current_input'}
+    old = original_meaning_plan(p.thread, _legacy_unknown_object_action_scope=True)
+    assert [(r.relation_id,r.from_nucleus_id,r.to_nucleus_id,r.source_span_ids,r.source_relation_ids,r.source_meaning_arc_keys)
+        for r in plan.relations] == [(r.relation_id,r.from_nucleus_id,r.to_nucleus_id,r.source_span_ids,r.source_relation_ids,r.source_meaning_arc_keys)
+        for r in old.relations]
+    assert all(r.type == 'uncertain_connection' and r.grounding_kind == 'bounded_structural_inference'
+        and r.retention != 'required' for r in plan.relations)
+    assert p.checkpoint.checkpoint_id != row['checkpoint']['checkpoint_id']
+    moves = plan.response_plan.human_reception_plan.moves
+    assert [m.target_nucleus_ids for m in moves] == [(unknown.nucleus_id,), (action.nucleus_id,)]
+    assert all(m.required and not m.support_nucleus_ids for m in moves)
+    decisions = project_thread_meaning(p, plan).selected_reception.decisions
+    assert len(decisions) == 2
+    assert all((d.subjective_proposition.appraisal_content.dimension,
+        d.subjective_proposition.appraisal_content.operation) == ('MATERIAL_WEIGHT','RECEIVE_AS_MATERIAL') for d in decisions)
+    result = MeaningExperienceEngine().generate(req)
+    assert result.artifact
+    assert row['unknown'].rstrip('。') in result.artifact.observation
+    assert row['action'].rstrip('。') in result.artifact.observation
+    recipient = row['unknown'].rstrip('。').replace('自分自身','ご自身').replace('自分','ご自身').replace('私','あなた')
+    assert recipient in result.artifact.reception
+    assert row['action'].rstrip('。') + 'こと' in result.artifact.reception
+    assert not any(x in result.artifact.text for x in ('という願い','という制約','を背景に'))
+    assert result.question is None and result.question_decision.disposition == 'END'
+
+
+@pytest.mark.parametrize('case_index', range(24))
+def test_u328_same_field_saved_meaning_is_restored_in_full(same_field_action_baseline, case_index):
+    import json, hashlib
+    from dataclasses import asdict
+    row = same_field_action_baseline['cases'][case_index]
+    assert same_field_action_baseline['source_commit'] == 'f58e6ba96fded4befcec2df5cfd2f284e88705ea'
+    req = _unknown_action_request(row['memo'], '')
+    req = replace(req, emlis_thread=replace(req.emlis_thread, prepared_meaning_checkpoint_ref=row['checkpoint']['checkpoint_id']))
+    restored = prepare_emlis_meaning(req)
+    assert restored.legacy_unknown_object_action_scope
+    assert json.loads(json.dumps(asdict(restored.checkpoint))) == row['checkpoint']
+    plan = build_updated_grounded_plan(restored)
+    def digest(x):
+        return hashlib.sha256(json.dumps(x,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    assert digest([asdict(n) for n in plan.nuclei]) == row['nuclei_sha256']
+    assert digest([asdict(r) for r in plan.relations]) == row['relations_sha256']
+    try:
+        selected = asdict(project_thread_meaning(restored, plan).selected_reception)
+    except ValueError as exc:
+        selected = {'error':str(exc)}
+    assert digest(selected) == row['selected_sha256']
+    result = MeaningExperienceEngine().generate(req)
+    assert (result.artifact.text if result.artifact else None) == row['body']
+    assert json.loads(json.dumps(asdict(result.question_decision) if result.question_decision else None)) == row['question_decision']
+
+
+@pytest.mark.parametrize('action', [
+    '机を片付けたい。', '机を片付けていない。', '机を片付けなかった。',
+    '机を片付けるつもりだ。', '机を片付けることにした。', '机を片付けたら休む。',
+    '友人が机を片付けた。', '机を片付けてもらった。', '「机を片付けた」と聞いた。',
+    'だから机を片付けた。', 'でも机を片付けた。', 'その後机を片付けた。',
+    '机を片付けた？', '机を片付けた。資料を整理した。',
+    '怒りを覚えた。', '失敗を恐れた。', '明日資料を整理した。',
+    '資料を整理したと思う。', '資料を整理したらしい。', '資料を整理してくれた。',
+    'しかし資料を整理した。', 'わかるために資料を整理した。', 'そこから資料を整理した。',
+    '頼まれて資料を整理した。', 'それなのに資料を整理した。',
+])
+def test_same_field_action_correction_preserves_nonperformed_and_linked_sources(action):
+    from cocolon_meaning_experience_engine.emlis_question import original_meaning_plan
+    p = prepare_emlis_meaning(_unknown_action_request('何が嫌なのか、自分でもよくわからない。'+action, ''))
+    current = build_updated_grounded_plan(p)
+    old = original_meaning_plan(p.thread, _legacy_unknown_object_action_scope=True)
+    assert current.nuclei == old.nuclei
+    assert current.relations == old.relations
+
+
+@pytest.mark.parametrize('mutation', ['extra_source','new_provenance','different_endpoint','extra_arc'])
+def test_same_field_action_correction_cannot_relax_unproved_relation(mutation):
+    from cocolon_meaning_experience_engine.emlis_question import original_meaning_plan
+    from emlis_ai_grounded_observation_plan import _final_source_same_field_unknown_action
+    p = prepare_emlis_meaning(_unknown_action_request('机を片付けた。何が嫌なのか、自分でもよくわからない。', ''))
+    old = original_meaning_plan(p.thread, _legacy_unknown_object_action_scope=True)
+    first = old.relations[0]
+    changed = {
+        'extra_source': replace(first, source_span_ids=(*first.source_span_ids,'unrelated')),
+        'new_provenance': replace(first, source_relation_ids=('explicit_cause',)),
+        'different_endpoint': replace(first, to_nucleus_id='unrelated'),
+        'extra_arc': replace(first, source_meaning_arc_keys=(*first.source_meaning_arc_keys,'explicit_cause')),
+    }[mutation]
+    relations = (changed,*old.relations[1:])
+    assert _final_source_same_field_unknown_action(old.nuclei,relations,p.thread.original.evidence_spans,
+        p.thread.original.normalized_current_input) == (old.nuclei,relations)
+
+
+@pytest.fixture(scope='module')
+def finite_same_field_action_context():
+    from test_cmee_emlis_received_discourse import actual
+    return actual(request=_unknown_action_request('何が嫌なのか、自分でもよくわからない。机を片付けた。',''))
+
+
+@pytest.mark.parametrize('before,after', [
+    ('何が嫌なのか、ご自身でもよくわからないのですね。',''),
+    ('机を片付けたことを見過ごさず、大切に受け止めています。',''),
+    ('ご自身','友人'), ('何が嫌','何が不安'), ('わからない','わかっている'),
+    ('よくわからない','分からない'), ('机を片付けた','机を片付けたい'),
+    ('机を片付けた','机を片付けていない'), ('机を片付けた','資料を整理した'),
+    ('のですね。','ので、'), ('机を片付けた','友人が机を片付けた'),
+])
+def test_same_field_finite_action_inverse_rejects_semantic_mutation(finite_same_field_action_context,before,after):
+    from test_cmee_emlis_received_discourse import inverse
+    follow = finite_same_field_action_context[0].artifact.reception
+    assert before in follow
+    assert not inverse(finite_same_field_action_context,follow.replace(before,after),without_author=True).passed
