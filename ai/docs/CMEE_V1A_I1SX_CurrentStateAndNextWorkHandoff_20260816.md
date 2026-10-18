@@ -1,3 +1,5 @@
+> 2026-10-18最新診断：u352。初回に既述の「期待されているように感じて、重かった」が返答から欠落することを、初回7件と実pending回答4件で比較。初回説明を元経験とともに保持する一体案を具体化し、Rule18 §11.3 LEVEL3の意味・選択差分は判断待ち・未実装。否定訂正は具体的対象の照応化と独立readerの不整合まで切り分け、修復候補を記録。今回production／test／fixture変更0、文書6fileのみ。詳細は[u352診断・判断案](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u352_InitialPersonalMeaning_Decision_20261018.md)。
+
 > 2026-10-18最新：u351。本人の不明を「今は／現在は」の有限感情へ訂正する既存回答で、当時へ誤帰属する時点を修復。肯定本文は「回答した時点で嬉しいという気持ちを受け止めています。」へ改善し、旧保存版を保持。最終対象77成功＋同じ8保存DTO再表示確認。否定本文・初回の受け取り方の保持・深い理解は未完。詳細は[u351監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u351_UnknownRevisionTime_20261018.md)。
 
 > 2026-10-18最新：u350。Mash個別承認済みの「安堵・寂しさ＋別経験」を、不明0/1の両方で初回・既受理一回答・訂正／両側撤回・旧互換・保存再表示まで一体実装。撤回後は残る事実／反応だけを受け取る。private logical87、商品全体の状態はPRODUCT_NOT_CLEAR。実本文・検証境界・全file地図は[u350監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u350_ReliefReceivedRetention_20261018.md)。
@@ -22920,3 +22922,16 @@ u350の残件「その時に今は嬉しい」を、既存SELF uncertainty／cur
 初回の混在入力へ「期待されているように感じて、重かった」を加えると、既述情報への質問はENDになる一方、Receptionは安堵pairだけとなり、受領経験・期待と重さ・独立不明を受け取れていないことを実生成で再確認した。次は既述の受け取り方を聞き直さず本文へ残す単位を、初回・必要な既存一更新・訂正／撤回・旧互換・保存再表示まで具体化する。追加素材はu350有限資格外なので、内容・選択契約の要否を明示する。
 
 STRUCTURE_MAP_DELTA_NONE。既存production owner1、公開API／DTO／DB／RN／型・logical87／経路は不変。新test2・新fixture1と既存test1の責務を01Aへ登録し、全11変更pathを[u351監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u351_UnknownRevisionTime_20261018.md)に記録した。必要性=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、primary outcome=TECHNICAL_CREDIT。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式Product Read0/3／candidate_ready=false／automatic_progression=false。E04〜E09・深い理解・一般入力・否定本文・本人実機は残件。10/20方式判断・10/31管理線・12/18公開目標、Piece/Analysis主枠53.25％は未再評価。Draft PR3／PR30継続、merge／deployなし。
+
+
+## 2026-10-18 u352 — 初回に既述の本人説明を保持する一体案（未実装）
+
+最新の残件継続指示に基づき、全体設計・全file地図・最新weekly・u349〜u351と既存sourceを照合し、初回7構成と実発行質問への一回答4構成を診断した。本人の説明「期待されているように感じて、重かった」が初回からあると、問いはENDとなるがReceptionにその説明が残らない。安堵・寂しさのpairが混ざると別受領経験と独立不明も落ちる。Observationには説明と不明を原文順だけで一つの流れへ結ぶ問題も残る。同じ説明を実pendingへ答える単独receivedでは本文成功、pair混在3例は意味RESOLVED ADDでも本文UNAVAILABLEであった。診断requestのcheckpoint参照不足を直して最終比較を採取した履歴も監査に残す。
+
+次の推奨単位は、単一received＋元反応＋直後の本人知覚／過去感情の説明一つを、pair0/1・独立current SELF wh不明0/1とともに初回から保持すること。初回sourceを回答へ偽装せず、他者意図の事実化・過去の現在化・不明の原因化を防ぐ。実pendingの同じ説明との整合、実際に到達可能な完全引用訂正／撤回、旧checkpointの全解釈再現、旧完成DTO非再生成、実保存・再表示を一つの単位で確認する。初回END後や一回答END後へ架空の質問・第2回答を作らず、任意多段・複数説明へ広げない。
+
+u350のINITIALは4/5対象・received二roleの明示資格であり、新しい初回説明roleと選択はその外にある。Rule18 §11.3 LEVEL3の個別判断を求める具体案として記録し、実装済み設計や承認済みへ置き換えない。既存回答文法と一回答保持自体を未承認へ戻さない。可視本文案、成功／失敗条件、STOP、作業増加、旧互換と保存の区別は[u352監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u352_InitialPersonalMeaning_Decision_20261018.md)を正本とする。
+
+否定訂正「現在は嬉しくない」の本文停止は、作者が作ったrm2の照応文を独立readerが完全object欠落として拒否するところまで実測した。最終参照だけを一時processで明示化すると、既存generic作者から両方の完全な対象が出て余分な重なりの接続も消えるが、generic MATERIAL_WEIGHT非対応のreaderは引き続き拒否する。選択contributionのsource・両basis・qualifier・contrastと完全可視対象を検証する既存契約内の整合修復が候補。資格の復活やreader緩和は行っておらず、production修復・旧互換／保存検証は未実施。この修復候補まで新初回契約の承認待ちへ変更する意味ではない。
+
+今回production／test／fixture変更0、文書6file、STRUCTURE_MAP_DELTA_NONE。pytest／実SQL／UI／本人実機の新検証は0で、初回7＋実pending4と否定1例の診断を合格数へ転用しない。u351の77成功＋8保存DTOは前回実績のまま。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式Product Read0/3／candidate_ready=false／automatic_progression=false。E04〜E09・深い理解・一般入力・否定本文・本人実機は残件。Piece/Analysis主枠53.25％、10/20方式判断・10/31管理線・12/18公開目標は再評価しない。Draft PR3／PR30継続、merge／deployなし。
