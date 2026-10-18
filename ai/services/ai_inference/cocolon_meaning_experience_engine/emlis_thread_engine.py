@@ -17,7 +17,7 @@ def _original_body_uses_prepared_plan(prepared):
     return (prepared.thread.control.capability_snapshot.startswith("Q3_")
         or (not prepared.legacy_unknown_object_action_scope
             and bool(_source_independent_unknown_object_from_resolver(
-                prepared.original_plan.nuclei, prepared.original_plan.relations, prepared.thread.resolver())
+                prepared.original_plan.nuclei, prepared.original_plan.relations, prepared.thread.resolver(), allow_scalar=True)
                 or _source_same_field_unknown_object_from_resolver(
                     prepared.original_plan.nuclei, prepared.original_plan.relations, prepared.thread.resolver())))
         or prepared.legacy_result_appraisal or prepared.legacy_appraisal_reason

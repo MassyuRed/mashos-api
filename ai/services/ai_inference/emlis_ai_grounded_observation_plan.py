@@ -17276,7 +17276,7 @@ def project_final_stage1_grounded_observation_plan(
         nuclei, relations = _final_source_same_field_unknown_action(
             nuclei, relations, evidence_spans, normalized_input)
         independent_unknown = _source_independent_unknown_object_group(
-            nuclei, relations, evidence_spans, normalized_input, require_witness=False)
+            nuclei, relations, evidence_spans, normalized_input, require_witness=False, allow_scalar=True)
         independent_unknown = independent_unknown or _source_same_field_unknown_object_group(
             nuclei, relations, evidence_spans, normalized_input, require_witness=False)
         if independent_unknown:
@@ -17474,7 +17474,7 @@ def _source_feeling_unknown_object_group(nuclei, relations, evidence_spans, norm
     return feeling, unknown
 
 
-def _source_single_unknown_object(nuclei, relations, evidence_spans, normalized_input):
+def _source_single_unknown_object(nuclei, relations, evidence_spans, normalized_input, *, allow_scalar=False):
     """Read the complete single-field SELF unknown already selected as material."""
     if normalized_input is None:
         return ()
@@ -17495,7 +17495,11 @@ def _source_single_unknown_object(nuclei, relations, evidence_spans, normalized_
         or f.time_scope not in {"current_input", "present"}
         or not {"operator:uncertainty", "semantic_role:limiting_unknown"} <= set(f.attribute_codes)
         or any(c.startswith(("source_fragment_", "surface_scalar_", "thread_time:")) for c in f.attribute_codes)
-        or not _source_self_unknown_object_parts(fragment)
+        or not (_source_self_unknown_object_parts(fragment) or allow_scalar
+            and "operator:negation" in f.attribute_codes
+            and {"lexical:source_bounded_expression", "lexical:preserve_source_predicate",
+                 "lexical:no_new_sensation_family"} <= set(f.attribute_codes)
+            and re.fullmatch(r"(?:(?:今|現在)(?:は|も))?(?:まだ)?(?:よく|はっきり)?(?:分からない|わからない)", fragment))
         or any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in relations)
         or _top_level_text(source) != source or re.search(r"[?？!！…‥\r\n]", source)
         or not 0 <= span.start_index < span.end_index <= len(source)
@@ -17506,8 +17510,13 @@ def _source_single_unknown_object(nuclei, relations, evidence_spans, normalized_
     return (n,)
 
 
-def _source_independent_unknown_object_group(nuclei, relations, evidence_spans, normalized_input, *, require_witness=True):
-    """A complete SELF wh-cognition and a separately recorded performed act."""
+def _source_independent_unknown_object_group(nuclei, relations, evidence_spans, normalized_input, *, require_witness=True, allow_scalar=False):
+    """A complete SELF cognition and a separately recorded performed act.
+
+    Scalar cognition is admitted only at the meaning seam, with its existing
+    whole-field witness. The wh-object surface readers keep their narrower
+    default and cannot invent an object for an unqualified unknown.
+    """
     if normalized_input is None:
         return ()
     text = tuple(n for n in nuclei if set(n.source_fields) & _TEXT_SOURCE_FIELDS)
@@ -17519,7 +17528,7 @@ def _source_independent_unknown_object_group(nuclei, relations, evidence_spans, 
     unknown, action = memo[0], actions[0]
     memo_spans = tuple(s for s in spans if s.source_field == "memo")
     action_spans = tuple(s for s in spans if s.source_field == "memo_action")
-    if (not _source_single_unknown_object((unknown,), (), memo_spans, normalized_input)
+    if (not _source_single_unknown_object((unknown,), (), memo_spans, normalized_input, allow_scalar=allow_scalar)
         or len(action_spans) != 1 or not _source_independent_performed_action(action, relations)
         or action.grounding_kind != "explicit" or action.allowed_claim_scope != "explicit_current_input"
         or action.kind != "action" or action.semantic_frame.predicate_kind != "action"
@@ -17533,6 +17542,29 @@ def _source_independent_unknown_object_group(nuclei, relations, evidence_spans, 
            or {r.from_nucleus_id, r.to_nucleus_id} != owned
            for r in relations if {r.from_nucleus_id, r.to_nucleus_id} & owned):
         return ()
+    scalar = not _source_self_unknown_object_parts(str(memo_spans[0].raw_text).strip(" 　。．."))
+    if scalar:
+        # Only the observed lexical conflict hypothesis may be discarded.
+        # Explicit or differently sourced relations remain authoritative.
+        text = str(action_spans[0].raw_text)
+        core = _strip_bounded_operator_prefix(text)
+        noun = r"[一-鿿々ァ-ヶー]+[ぁ-ん]{0,4}(?:の[一-鿿々ァ-ヶー]+[ぁ-ん]{0,4}){0,2}"
+        finite_act = any(m.end() == len(core) and re.fullmatch(noun + r"を", core[:m.start()])
+            for pattern in (_COMPLETED_ACTION_RE, _ACHIEVEMENT_RE) for m in pattern.finditer(core))
+        if (not finite_act or _LEADING_CONTRAST_RE.search(text) or _BOUNDARY_RESULT_RE.search(text)
+            or re.match(r"(?:その後|そして|それから|そこで)", text)
+            or {"operator:cause", "operator:result", "operator:contrast"}
+                & set(action.semantic_frame.attribute_codes)):
+            return ()
+        source_ids = set((*unknown.source_span_ids, *action.source_span_ids))
+        for relation in relations:
+            if ({relation.from_nucleus_id, relation.to_nucleus_id} & owned
+                and relation.type != "uncertain_connection"
+                and (len(relation.source_relation_ids) != 1
+                     or not re.fullmatch(r"conflict\.e[1-9][0-9]*", relation.source_relation_ids[0])
+                     or relation.source_meaning_arc_keys
+                     or set(relation.source_span_ids) != source_ids)):
+                return ()
     source = str(normalized_input.get("memo_action") or "")
     span = action_spans[0]
     if (_top_level_text(source) != source or re.search(r"[?？!！…‥\r\n]", source)
@@ -17678,14 +17710,14 @@ def _source_same_field_unknown_object_from_resolver(nuclei, relations, resolver)
     return _source_same_field_unknown_object_group(nuclei, relations, spans, normalized)
 
 
-def _source_independent_unknown_object_from_resolver(nuclei, relations, resolver):
+def _source_independent_unknown_object_from_resolver(nuclei, relations, resolver, *, allow_scalar=False):
     read_field = getattr(resolver, "source_text_for_span_field", None)
     spans = resolver.resolve_many(resolver.span_ids)
     fields = {s.source_field: s for s in spans if s.source_field in {"memo", "memo_action"}}
     if read_field is None or set(fields) != {"memo", "memo_action"}:
         return ()
     normalized = normalize_emlis_current_input({field: read_field(span.span_id) for field, span in fields.items()})
-    return _source_independent_unknown_object_group(nuclei, relations, spans, normalized)
+    return _source_independent_unknown_object_group(nuclei, relations, spans, normalized, allow_scalar=allow_scalar)
 
 
 def _source_unknown_object_group_from_resolver(nuclei, relations, resolver, *, include_single=False):

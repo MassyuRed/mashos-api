@@ -1,3 +1,5 @@
+> 2026-10-18最新：u330。scalar不明＋別欄行動のReception欠落を修復、807成功／既知3失敗。再開は末尾u330と最新weekly。
+
 > 2026-10-18最新：u329で同欄の実行済み行動の誤分類と派生関係を修復。24例本文成立、旧意味24例保持。717成功／既知3失敗。詳細と次残件は末尾u329。
 
 > 2026-10-18最新：u328で同欄のwh本人不明＋証明済み実行行動の本文停止を修復。旧意味・旧本文と現行生成を区別。机等の誤分類、E04/E05は未完。詳細は末尾u328。
@@ -22438,3 +22440,26 @@ STRUCTURE_MAP_DELTA_NONE（既存owner内のsource分類・関係authority修復
 primary outcome=TECHNICAL_CREDIT。商品状態はPRODUCT_NOT_CLEAR／初回一体単位未完了／正式0/3／candidate_ready=false／automatic_progression=false。Draft/open/unmerged・未配置、実機・本番DB・deploy・merge未実施。10/31管理線・12/18目標・Piece/Analysis主枠・53.25％は再評価しない。
 
 詳細・未加工24例・検証境界：[Cocolon_EmlisAI_u329_SameFieldFiniteActionRecognition_20261018.md](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u329_SameFieldFiniteActionRecognition_20261018.md)。
+
+
+## u330 — 対象を明示しない不明と別欄行動の受け取り欠落を修復（2026-10-18 JST）
+
+u329の次作業「scalar不明＋別行動」を実施した。「今はまだよく分からない。」＋別欄「机を片付けた。」で、不明の意味自体は保持されていたが、原文にないoptional attempt_and_blockが独立二責務の選択を妨げ、Receptionが行動だけになっていた。sourceの分類や新しい意味内容型を増やさず、既存の二責務へ接続した。
+
+既存observation_plan／thread_engineの2製品ownerを修正。既存の本人・現在・否定・程度を含む完全scalar不明と、単一名詞目的語＋登録過去述語の独立行動を証明する。端点・全span・conflict.eN・arc空が一致するoptional誤派生関係だけを既存処理で除外し、required／明示因果・対比・別provenanceを除かない。Q1も準備済み意味から本文へ渡す。wh対象付き不明の作者・readerは既定の狭い範囲を保持し、未記載の対象・理由を補わない。
+
+- 合成20例：机／部屋を片付けた8例のReceptionへ不明を回復。メモを書いた／資料を整理した／机を片づけた12例は完全record一致。全20例で核は変更前と同一、修正前後とも本文20あり。本文提供数の増加ではない。
+- source_scope **698 passed**（既存608＋新規90）、Q3対照 **54 passed／既知3 failed**、application別集合 **54 passed**、現行owner identity別 **1 passed**。合計 **807 passed／既知3 failed、最終skip 0**。全体suite合格・商品合格ではない。
+- 旧u329合成20checkpointを再導出し、完全checkpoint・核辺・selected・本文・問いを一致確認。変更8例は既存legacy分岐で旧誤関係ごと戻し、旧IDへ新意味を付け替えない。
+- 実service／隔離PGlite SQL/RPC6ケースと、同じDTOの現行API client／hook／Modal native stub6ケースで保存・GET・元入力・全履歴・close/reopenを確認。Free／Plus／Premium、旧完成の非再生成、旧checkpoint前／後中断を区別。checkpoint後retryは旧意味・旧本文を保持する。
+- 初回の新規90検査は88成功／2失敗。目的「分かるために」と対比「しかし」を独立行動へ通す過大適用を製品で制限し、最終698成功。既存assertion・歴史fixtureの弱化／削除は0。Q3初回の9skipはPGlite指定不足で、最終runは全実行。identity初回はtest所在誤指定で75 deselected・実行0、正しい既存testで1成功。途中runを合算しない。
+
+STRUCTURE_MAP_DELTA_NONE（既存owner内のsource証明・関係authority・Q1接続修復）。前提資料・作業規則・恒久incident全文・全体設計図／全file地図・最新weekly・正本06・handoffを確認。GitHub現行API2379／Cocolon1717 blobと実ファイルを照合した。System Contextは9/5の既存判断どおり任意補助として再生成せず原典を直接確認。Work内read-only補助2担当を使い、主担当だけが製品編集・GitHub writeを担う。別modelによる正式評価とは扱わない。新依存・外部AI・追加費用・公開API／DB／RN変更は0。
+
+主担当が未加工20全文を読んだ。対象・理由の捏造と片側欠落は今回の有限範囲で防いだが、Observationの引用・Receptionの近い反復・「小さくせず」「大切に思っています」の定型は残り、深い受容は未完成。対象20例はENDで、架空の問い／回答による成功を作らない。昨日行動先行時の時点誤認、丁寧形・複合行動など証明外、E05の問い、範囲外E06・E07〜E09と既知3失敗は残す。
+
+次はE04の「保持した意味から何を受け取り、どう考え、何を伝えるか」が汎用処理説明へ縮む共通原因を既存の選択・内容形成・本文ownerで確認し、自然な受け取りまで届く修復単位を扱う。単なる文末差替を成果にしない。10/20の方式継続判断では、保持修復件数でなく受容・問いへ届いた実結果を示す。今回を判断延期の理由にしない。
+
+primary outcome=TECHNICAL_CREDIT。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式0/3／candidate_ready=false／automatic_progression=false。Draft/open/unmerged・未配置。実機・本番DB・deploy・merge未実施。10/31管理線・12/18目標・Piece/Analysis主枠・53.25％は再評価しない。
+
+詳細・未加工本文・検証境界：[Cocolon_EmlisAI_u330_ScalarUnknownActionRetention_20261018.md](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u330_ScalarUnknownActionRetention_20261018.md)。

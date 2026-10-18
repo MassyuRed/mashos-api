@@ -965,6 +965,136 @@ def _unknown_action_request(memo, action, modern=True):
         emlis_thread=replace(req.emlis_thread, capability_snapshot='Q3_FREE')) if modern else req
 
 
+@pytest.fixture(scope='module')
+def scalar_action_baseline():
+    import json
+    from pathlib import Path
+    return json.loads((Path(__file__).parent / 'fixtures' /
+        'cmee_emlis_u329_scalar_action_checkpoint_v1.json').read_text())
+
+
+@pytest.mark.parametrize('modern', [False, True])
+@pytest.mark.parametrize('case_index', range(20))
+def test_scalar_unknown_and_action_retain_existing_two_duties(scalar_action_baseline, case_index, modern):
+    from dataclasses import asdict
+    import hashlib, json
+    from test_cmee_emlis_received_discourse import actual, inverse
+    from emlis_ai_grounded_observation_plan import _source_independent_unknown_object_from_resolver
+    row = scalar_action_baseline['cases'][case_index]
+    req = _unknown_action_request(row['memo'], row['action'], modern)
+    p = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(p)
+    resolver = p.thread.resolver()
+    assert not _source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver)
+    group = _source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver, allow_scalar=True)
+    assert len(group) == 2
+    nuclei_digest = hashlib.sha256(json.dumps([asdict(n) for n in plan.nuclei], ensure_ascii=False,
+        sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    assert nuclei_digest == row['nuclei_sha256']
+    assert all(r.type == 'uncertain_connection' for r in plan.relations)
+    moves = plan.response_plan.human_reception_plan.moves
+    assert [m.reception_act for m in moves] == ['stay_with_current_burden', 'honor_concrete_effort']
+    assert [m.target_nucleus_ids for m in moves] == [(n.nucleus_id,) for n in group]
+    assert all(m.required and not m.support_nucleus_ids for m in moves)
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact and out.body_state == 'FINAL' and out.question is None
+    assert out.question_decision.disposition == 'END'
+    assert row['memo'].rstrip('。') + 'こと' in out.artifact.reception
+    assert row['action'].rstrip('。') + 'こと' in out.artifact.reception
+    assert out.artifact.reception.count('まだ') == row['memo'].count('まだ')
+    assert not any(word in out.artifact.reception for word in ('理由', '何が', 'そのため', '背景'))
+    context = actual(request=req)
+    assert out.artifact.text == context[0].artifact.text
+    assert inverse(context, out.artifact.reception, without_author=True).passed
+    if '片付けた' not in row['action']:
+        assert out.artifact.text == row['body']
+
+
+@pytest.mark.parametrize('case_index', range(20))
+def test_u329_scalar_saved_meaning_and_body_are_not_relabelled(scalar_action_baseline, case_index):
+    import json, hashlib
+    from dataclasses import asdict
+    row = scalar_action_baseline['cases'][case_index]
+    assert scalar_action_baseline['source_commit'] == '6af573362ba2ff6f969e24018de80b359804080a'
+    req = _unknown_action_request(row['memo'], row['action'])
+    req = replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=row['checkpoint']['checkpoint_id']))
+    restored = prepare_emlis_meaning(req)
+    assert restored.legacy_unknown_object_action_scope == ('片付けた' in row['action'])
+    assert json.loads(json.dumps(asdict(restored.checkpoint))) == row['checkpoint']
+    plan = build_updated_grounded_plan(restored)
+    def digest(value):
+        return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
+            separators=(',', ':')).encode()).hexdigest()
+    assert digest([asdict(n) for n in plan.nuclei]) == row['nuclei_sha256']
+    assert digest([asdict(r) for r in plan.relations]) == row['relations_sha256']
+    assert digest(asdict(project_thread_meaning(restored, plan).selected_reception)) == row['selected_sha256']
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact.text == row['body']
+    assert json.loads(json.dumps(asdict(out.question_decision))) == row['question_decision']
+
+
+@pytest.mark.parametrize('memo,action', [
+    ('友人は分からない。', '机を片付けた。'),
+    ('昨日は分からなかった。', '机を片付けた。'),
+    ('「分からない」と聞いた。', '机を片付けた。'),
+    ('分からない？', '机を片付けた。'),
+    ('分からないので休む。', '机を片付けた。'),
+    ('分からない。眠い。', '机を片付けた。'),
+    ('分からない。', '友人が机を片付けた。'),
+    ('分からない。', '机を片付けたい。'),
+    ('分からない。', '机を片付けなかった。'),
+    ('分からない。', '机を片付けるつもりだ。'),
+    ('分からない。', '「机を片付けた」と聞いた。'),
+    ('分からない。', '机を片付けた。資料を整理した。'),
+    ('分からない。', '分かるために机を片付けた。'),
+    ('分からない。', 'しかし机を片付けた。'),
+])
+def test_scalar_pair_proof_excludes_unproved_source(memo, action):
+    from emlis_ai_grounded_observation_plan import _source_independent_unknown_object_from_resolver
+    p = prepare_emlis_meaning(_unknown_action_request(memo, action))
+    plan = build_updated_grounded_plan(p)
+    assert not _source_independent_unknown_object_from_resolver(
+        plan.nuclei, plan.relations, p.thread.resolver(), allow_scalar=True)
+
+
+@pytest.mark.parametrize('change', [
+    dict(retention='required'), dict(grounding_kind='user_stated_relation'),
+    dict(type='cause_effect'), dict(type='contrast'),
+    dict(source_relation_ids=('other.e1',)), dict(source_relation_ids=()),
+    dict(source_meaning_arc_keys=('explicit:cause',)), dict(source_span_ids=('s1',)),
+])
+def test_scalar_pair_cannot_discard_differently_sourced_relation(change):
+    from cocolon_meaning_experience_engine.emlis_question import original_meaning_plan
+    from emlis_ai_grounded_observation_plan import _source_independent_unknown_object_from_resolver
+    p = prepare_emlis_meaning(_unknown_action_request('今はまだよく分からない。', '机を片付けた。'))
+    old = original_meaning_plan(p.thread, _legacy_unknown_object_action_scope=True)
+    relation, = (r for r in old.relations if r.type == 'attempt_and_block')
+    changed = tuple(replace(r, **change) if r == relation else r for r in old.relations)
+    assert not _source_independent_unknown_object_from_resolver(
+        old.nuclei, changed, p.thread.resolver(), allow_scalar=True)
+
+
+@pytest.fixture(scope='module')
+def scalar_action_context():
+    from test_cmee_emlis_received_discourse import actual
+    return actual(request=_unknown_action_request('今はまだよく分からない。', '机を片付けた。'))
+
+
+@pytest.mark.parametrize('before,after', [
+    ('まだ', ''), ('よく', ''), ('今は', '昨日は'),
+    ('分からない', '分かった'), ('分からない', '何が嫌なのか分からない'),
+    ('分からない', '友人が分からない'), ('机を片付けた', '机を片付けなかった'),
+    ('机を片付けた', '部屋を片付けた'),
+])
+def test_scalar_pair_inverse_rejects_loss_or_invented_object(scalar_action_context, before, after):
+    from test_cmee_emlis_received_discourse import inverse
+    follow = scalar_action_context[0].artifact.reception
+    changed = follow.replace(before, after)
+    assert changed != follow
+    assert not inverse(scalar_action_context, changed, without_author=True).passed
+
+
 @pytest.mark.parametrize('modern', [False, True])
 @pytest.mark.parametrize('case_index', range(20))
 def test_independent_unknown_action_keeps_both_selected_duties(unknown_action_baseline, case_index, modern):
