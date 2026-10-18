@@ -1,3 +1,5 @@
+> 2026-10-18最新：u334。承認済み二反応と独立不明の限定併存を実装。本文・旧checkpoint・保存再表示の結果と限界は末尾u334。
+
 > 2026-10-18最新：u333。「私は」付き安堵・寂しさの停止を修復。独立不明の保持は契約差分案まで確定。最新実績・限界は末尾u333。
 
 > 2026-10-18最新：u332。新しい根拠付きの安心／傾聴、5更新、保存互換12ケース。934成功／10旧期待失敗。最新契約・残件は末尾u332。
@@ -22576,3 +22578,21 @@ STRUCTURE_MAP_DELTA_NONE。既存production 3owner、test1・fixture1を追加�
 primary outcome=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式0/3／candidate_ready=false／automatic_progression=false。Draft/open/unmerged・未配置。10/20方式判断、10/31管理線、12/18目標、Piece/Analysis主枠53.25％を維持。
 
 詳細・未加工本文・承認案：[Cocolon_EmlisAI_u333_SelfContinuation_and_IndependentUnknown_Boundary_20261018.md](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u333_SelfContinuation_and_IndependentUnknown_Boundary_20261018.md)。
+
+## u334 — 二反応と独立した本人の不明を併存（2026-10-18）
+
+Mashはu333監査の限定案に「→進めていいよ。」と明示承認。作業規則18 §11.3の内部契約・保持資格拡張として、過去の安堵／現在の可能性に伴う寂しさと、独立した本人・現在のwh不明を併存させた。全体LIMITED／三対象／一claim／MATERIAL_WEIGHTを保ち、二反応moveへだけ既存 `EmlisReliefCognitionAppraisalContent` を保持する新eligibility／contentとdecision版を追加。unknownは既存material reception。不明を原因や背景へ変換しない。作者・独立readerが同じ原文・役割・basis・checkpoint・sealから資格を再証明する。
+
+合成18例のうち5例でReceptionの独立不明を回復。残13例はcheckpoint／plan／selectedまたは同じ停止／本文／問いの完全recordが不変。本文提供数は9→9であり、生成件数増ではない。主担当が全18の未加工本文・未提供を読んだ。原形、私は／僕は、少し寂しい、認知内過去の可能性で二反応と不明を確認。Q1/Q3は同じ本文・ENDで、検証用の問いを追加していない。
+
+保持資格 `source_relief_unknown_retention:v1` によって新checkpointを区別。旧u333の18checkpointは完全な旧plan／selected／本文／問いへ戻し、旧IDへ新保持を付け替えない。全歴史source modeにlegacyを伝播し、u331/u332の既存凍結例と5訂正／撤回も確認。新規86検査（本文／source／作者禁止変異／carrier改変／旧復元82＋manifest1＋保存3）、重複を除いた最終集合1050 passed／既知8 failed／skip0。8件は旧replace無変化6・新規原03への旧ID要求1・u333で修復したexplicit_selfの停止期待1。全suite・商品合格とは扱わない。
+
+実service＋隔離PGlite SQL/RPC11ケース、同じ11DTOを現行API client／hook／Modalへ通すclose/reopen確認を完了。Free／Plus／Premium、旧完成の非再生成、checkpoint前／後中断、5訂正・撤回、元入力・全timeline・GET／startを確認。checkpoint前は新保持へ進み、旧checkpoint後は旧一move本文を正確に復元する。native／HTTP／Auth stubであり実機・本番ではない。
+
+STRUCTURE_MAP_DELTA_PRESENT。既存production9owner、新production file0。私有eligibility／content2型とdecision版、manifest77→79、test1・変更前fixture1を追加。既存test helperは同じ二facetを新sidecarからも読むよう対応、現行manifest件数とcurrent identityのみ更新し、歴史fixture・既存期待assertionを弱化しない。公開API／DB／RN／依存／外部AI／費用／配置は不変。
+
+原文の反復・長い一文、一般入力・主体／時点の未対応、E04の深さ／E05の問い／E06〜E09は残る。「安心した」、不明節の「自分でも」「どうしたいのか…分からない」など今回の上流資格外は未修復。否定安堵・対比欠落・不明先行等で不明がReceptionから落ちる既存結果も残す。短文化は別の保持条件判断であり、今回を自然さ全体の完成に数えない。次の判断材料は、既承認ANAPHORIC設計に照らしてObservationとReceptionの共同保持が何を保証すべきかという具体的差分と、未対応sourceの実認識である。10/20方式判断を延期しない。
+
+primary outcome=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式0/3／candidate_ready=false／automatic_progression=false。Draft/open/unmerged・未配置。10/31管理線・12/18目標・Piece/Analysis主枠53.25％を維持。
+
+詳細・未加工本文・検証境界：[Cocolon_EmlisAI_u334_ReliefCognition_and_IndependentUnknown_Retention_20261018.md](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u334_ReliefCognition_and_IndependentUnknown_Retention_20261018.md)。

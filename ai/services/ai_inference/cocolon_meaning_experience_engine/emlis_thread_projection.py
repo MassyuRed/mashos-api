@@ -770,7 +770,12 @@ def _selected_reception(meaning, reception, plan, resolver, binding, retained=()
             move.target_nucleus_ids, move.support_nucleus_ids, trace.layer1_contribution_refs, proposition,
             tuple(by_basis[ref] for ref in proposition.basis_binding_refs),
             tuple(by_qualifier[ref] for ref in proposition.source_qualifier_binding_refs))))
-    decisions = r._partition_shared_reception_move_contributions(decisions, reception, binding)
+    from emlis_ai_grounded_observation_plan import _source_relief_cognition_unknown_from_resolver
+    independent = _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver)
+    if independent and len(decisions) == 2:
+        decisions = r._partition_retained_claim_contributions(tuple(decisions), reception.moves, binding)
+    else:
+        decisions = r._partition_shared_reception_move_contributions(decisions, reception, binding)
     selected = hr.identify_selected_subjective_reception_input(hr.SelectedSubjectiveReceptionInputV1(
         "", meaning.projection_preimage_ref, meaning.projection_seal_ref,
         hr.selected_subjective_reception_grounding_ref(plan, resolver),
@@ -1014,9 +1019,100 @@ def project_thread_meaning(prepared, plan) -> ThreadMeaningProjection:
     if projection.meaning_plan.projection_branch != 'LIMITED':
         return projection
     resolver = prepared.thread.resolver()
+    relief = _retained_relief_cognition_eligibility(prepared, plan, resolver)
+    if relief is not None:
+        selected = _carry_retained_relief_cognition(projection, relief)
+        hr.validate_selected_subjective_reception_input(selected, plan.response_plan.human_reception_plan, plan, resolver)
+        return replace(projection, selected_reception=selected)
     eligibility = derive_retained_reasoned_experience_eligibility(prepared, plan, resolver)
     if eligibility is None:
         return projection
     selected = _carry_retained_reasoned_experience(projection, eligibility)
     hr.validate_selected_subjective_reception_input(selected, plan.response_plan.human_reception_plan, plan, resolver)
     return replace(projection, selected_reception=selected)
+
+
+def _retained_relief_cognition_eligibility(prepared, plan, resolver):
+    from emlis_ai_grounded_observation_plan import _source_relief_cognition_unknown_from_resolver
+    from dataclasses import fields
+    group = _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver)
+    thread, checkpoint = prepared.thread, prepared.checkpoint
+    if (not group or thread.answers or thread.control.answers or thread.control.current_round != 0
+        or any(getattr(prepared, f.name) for f in fields(prepared) if f.name.startswith('legacy_'))
+        or checkpoint.answer_update is not None or checkpoint.accepted_update_refs
+        or checkpoint.inactive_claim_refs or checkpoint.unresolved_parts
+        or checkpoint.assessment_status != 'RESOLVED'):
+        return None
+    unknown, left, right = group
+    moves = plan.response_plan.human_reception_plan.moves
+    if (len(moves) != 2 or tuple((m.reception_act, m.target_nucleus_ids, m.support_nucleus_ids) for m in moves)
+        != (('recognize_lived_change', (left.nucleus_id,), (right.nucleus_id,)),
+            ('stay_with_current_burden', (unknown.nucleus_id,), ())) or not all(m.required for m in moves)):
+        return None
+    edge, = (e for e in plan.relations if e.type == 'contrast'
+             and (e.from_nucleus_id, e.to_nucleus_id) == (left.nucleus_id, right.nucleus_id))
+    return c.RetainedReliefCognitionEligibilityV1(
+        'cocolon.cmee.retained_relief_cognition_eligibility.v1', thread.source_prefix_ref,
+        checkpoint.checkpoint_id, thread.control.original_source_ref,
+        left.nucleus_id, right.nucleus_id, unknown.nucleus_id, edge.relation_id,
+        moves[0].move_id, moves[1].move_id,
+        replace(thread.control, prepared_meaning_checkpoint_ref=checkpoint.checkpoint_id))
+
+
+def _carry_retained_relief_cognition(projection, eligibility):
+    selected = projection.selected_reception
+    if (len(projection.meaning_plan.subjective_claim_rows) != 1 or len(selected.decisions) != 2
+        or len({d.projected_claim_ref for d in selected.decisions}) != 1):
+        raise ValueError('retained_relief_cognition_aggregate_invalid')
+    decision, = (d for d in selected.decisions if d.move_id == eligibility.move_ref)
+    local = r.derive_retained_relief_cognition_content(decision, projection.premeaning)
+    content = composition.project_retained_relief_cognition_content(
+        eligibility, local, decision, selected, projection.meaning_plan)
+    carried = hr.SelectedRetainedReliefCognitionDecisionV1(
+        **{name: getattr(decision, name) for name in hr.SelectedSubjectiveReceptionDecisionV1.__dataclass_fields__},
+        retained_relief_cognition=content)
+    carried = hr.identify_selected_subjective_reception_decision(carried)
+    return hr.identify_selected_subjective_reception_input(replace(selected,
+        decisions=tuple(carried if row == decision else row for row in selected.decisions)))
+
+
+def validate_retained_relief_cognition_source(decision, selected, plan, resolver):
+    """Re-admit the original envelope and compare the entire source-derived selection.
+
+    Replay builds only the unchanged aggregate before adding this carrier;
+    it cannot recursively accept the carried content as its own authority.
+    """
+    from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
+    from .emlis_thread_source import ThreadEvidenceSpanResolver
+    from .emlis_thread_contracts import EmlisThreadInputV1
+    from .source_kernel import _parse_canonical_frame
+    from .emlis_answer_update import prepare_emlis_meaning, build_updated_grounded_plan
+    fail = 'retained_relief_cognition_source_invalid'
+    try:
+        local = decision.retained_relief_cognition
+        c.validate_retained_relief_cognition_content(local, decision, selected)
+        control = local.eligibility.thread_control
+        if (type(resolver) is not ThreadEvidenceSpanResolver or resolver.source_contract != THREAD_SCHEMA
+            or type(control) is not EmlisThreadInputV1 or control.answers or control.current_round != 0):
+            raise ValueError(fail)
+        envelopes = tuple(resolver._source_envelopes.values())
+        envelope, = (row for row in envelopes if row.source_role == 'CURRENT_INPUT')
+        snapshot, _ = _parse_canonical_frame(envelope.raw_utf8)
+        request = c.GenerationRequest('retained-relief-source-replay',
+            build_emlis_current_input_bundle(snapshot), envelope.source_record_id, emlis_thread=control)
+        prepared = prepare_emlis_meaning(request)
+        replay_resolver = prepared.thread.resolver()
+        replay_plan = build_updated_grounded_plan(prepared)
+        expected = _retained_relief_cognition_eligibility(prepared, replay_plan, replay_resolver)
+        if (expected is None or expected != local.eligibility or replay_plan != plan
+            or replay_resolver._source_envelopes != resolver._source_envelopes
+            or replay_resolver.span_ids != resolver.span_ids
+            or replay_resolver.qualified_refs != resolver.qualified_refs
+            or replay_resolver.resolve_many(replay_resolver.span_ids) != resolver.resolve_many(resolver.span_ids)):
+            raise ValueError(fail)
+        projection = _project_thread_meaning_aggregate(prepared, replay_plan)
+        if _carry_retained_relief_cognition(projection, expected) != selected:
+            raise ValueError(fail)
+    except (AttributeError, KeyError, TypeError, ValueError):
+        raise ValueError(fail) from None
+    return local

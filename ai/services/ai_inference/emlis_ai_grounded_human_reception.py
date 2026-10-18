@@ -312,6 +312,13 @@ class SelectedRetainedReasonedExperienceDecisionV1(SelectedSubjectiveReceptionDe
 
 
 @dataclass(frozen=True, repr=False)
+class SelectedRetainedReliefCognitionDecisionV1(SelectedSubjectiveReceptionDecisionV1):
+    """The original LIMITED claim with its source-qualified local relief pair."""
+
+    retained_relief_cognition: Any = field(repr=False)
+
+
+@dataclass(frozen=True, repr=False)
 class SelectedSubjectiveReceptionInputV1:
     """Pre-realization authority shared by forward and independent replay.
 
@@ -393,7 +400,7 @@ def validate_selected_subjective_reception_input(
         raise GroundedHumanReceptionSurfaceError(failure)
     for row, move in zip(value.decisions, reception_plan.moves, strict=True):
         if (type(row) not in {SelectedSubjectiveReceptionDecisionV1, SelectedRetainedReceivedExperienceDecisionV1,
-                             SelectedRetainedReasonedExperienceDecisionV1}
+                             SelectedRetainedReasonedExperienceDecisionV1, SelectedRetainedReliefCognitionDecisionV1}
             or identify_selected_subjective_reception_decision(row) != row
             or row.branch not in {"NORMAL", "LIMITED"}
             or not all((row.meaning_outcome_ref, row.reception_binding_ref, row.projected_claim_ref))
@@ -412,6 +419,12 @@ def validate_selected_subjective_reception_input(
         if type(row) is SelectedRetainedReasonedExperienceDecisionV1:
             try:
                 validate_selected_retained_reasoned_experience(row, value, plan, resolver)
+            except (ValueError, TypeError, AttributeError, KeyError):
+                raise GroundedHumanReceptionSurfaceError(failure) from None
+        if type(row) is SelectedRetainedReliefCognitionDecisionV1:
+            try:
+                from cocolon_meaning_experience_engine.emlis_thread_projection import validate_retained_relief_cognition_source
+                validate_retained_relief_cognition_source(row, value, plan, resolver)
             except (ValueError, TypeError, AttributeError, KeyError):
                 raise GroundedHumanReceptionSurfaceError(failure) from None
         proposition = row.subjective_proposition
@@ -459,7 +472,8 @@ def validate_selected_subjective_reception_input(
         ):
             raise GroundedHumanReceptionSurfaceError(failure)
         from cocolon_meaning_experience_engine.contracts import EmlisReliefCognitionAppraisalContent
-        if type(appraisal) is EmlisReliefCognitionAppraisalContent:
+        if (type(appraisal) is EmlisReliefCognitionAppraisalContent
+            or type(row) is SelectedRetainedReliefCognitionDecisionV1):
             from emlis_ai_grounded_observation_gate import _relief_cognition_selected_reception
             if not _relief_cognition_selected_reception(move, plan, resolver, value):
                 raise GroundedHumanReceptionSurfaceError(failure)
@@ -3172,11 +3186,11 @@ def _source_grounded_received_contrast_rows(targets, supports, nucleus_index, re
 
 
 def _source_unknown_object_clauses(move, plan, resolver):
-    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver
+    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_relief_cognition_unknown_from_resolver
     if plan is None or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts:
         return ()
     group = _source_unknown_object_group_from_resolver(plan.nuclei, plan.relations, resolver, include_single=True)
-    group = group or (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver))[:1]
+    group = group or (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver))[:1]
     ids = (*move.target_nucleus_ids, *move.support_nucleus_ids)
     if (not group or not move.required or move.move_role != "felt_response"
         or move.reception_act != "stay_with_current_burden"
@@ -6307,8 +6321,8 @@ def derive_source_grounded_nominalization_plan(
         if fragments != unknown_object:
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
         if len(unknown_object) == 1:
-            from emlis_ai_grounded_observation_plan import _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver
-            independent = (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver))
+            from emlis_ai_grounded_observation_plan import _source_independent_unknown_object_from_resolver, _source_same_field_unknown_object_from_resolver, _source_relief_cognition_unknown_from_resolver
+            independent = (_source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_same_field_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver) or _source_relief_cognition_unknown_from_resolver(plan.nuclei, plan.relations, resolver))
             marker = "source-independent-unknown-object:0" if independent else "source-single-unknown-object:0"
             return (*nominalization, marker)
         feeling_slot = next(i for i, n in enumerate(nuclei) if n.kind == "reaction")

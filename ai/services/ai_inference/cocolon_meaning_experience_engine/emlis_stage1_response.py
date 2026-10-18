@@ -14288,3 +14288,28 @@ def derive_retained_reasoned_experience_content(decision, premeaning):
         evaluation_kind='satisfaction', polarity=evaluation.polarity,
         reason_time=reason.time_scope, evaluation_time=evaluation.time_scope,
         reception_configuration='EXPLICIT_REASON_GROUNDS_EXPERIENCED_FULFILMENT')
+
+
+def derive_retained_relief_cognition_content(decision, premeaning):
+    """Derive the existing two-role appraisal from the selected local candidates."""
+    from . import contracts as c
+    basis = tuple(b for b in decision.basis_rows if b.contribution_ref in decision.selected_contribution_refs)
+    qualifiers = tuple(q for b in basis for q in decision.qualifier_rows if q.basis_binding_ref == b.binding_ref)
+    appraisal = c._im04_limited_appraisal_content(
+        basis_binding_refs=tuple(b.binding_ref for b in basis),
+        contribution_rows=premeaning.observation_contribution_rows,
+        candidate_rows=premeaning.interpretation_candidate_rows,
+        contribution_candidate_map=tuple((row.contribution_id, ref)
+            for row in premeaning.observation_contribution_rows for ref in row.interpretation_candidate_refs),
+        contribution_refs=decision.selected_contribution_refs,
+        semantic_refs=tuple(b.semantic_ref for b in basis), aggregate_attention=False)
+    if type(appraisal) is not c.EmlisReliefCognitionAppraisalContent:
+        raise c.CMEEStage1ContractError('retained_relief_cognition_candidate_invalid')
+    objects = tuple(dict.fromkeys(b.semantic_ref for b in basis))
+    local = replace(decision.subjective_proposition,
+        target_contribution_refs=decision.selected_contribution_refs,
+        primary_target_refs=objects, boundary_target_refs=(), response_object_refs=objects,
+        basis_binding_refs=tuple(b.binding_ref for b in basis),
+        source_qualifier_binding_refs=tuple(q.source_qualifier_binding_ref for q in qualifiers),
+        focal_relation_ref=appraisal.focal_relation_ref, appraisal_content=appraisal)
+    return local, basis, qualifiers

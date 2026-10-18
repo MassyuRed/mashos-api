@@ -17418,6 +17418,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_unknown_object_action_scope: bool = True,
     _legacy_relief_cognition_reception: bool = True,
     _legacy_cognitive_self_continuation: bool = True,
+    _legacy_relief_unknown_retention: bool = True,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -17594,7 +17595,16 @@ def project_final_stage1_grounded_observation_plan(
         # The proved two-host pair is not a lone short self-evaluation.
         # Keep the explicit unknown while allowing both existing duties.
         material_quality = "limited_grounding"
+    if not _legacy_relief_unknown_retention:
+        group = _source_relief_cognition_unknown_group(
+            nuclei, relations, evidence_spans, normalized_input, require_witness=False)
+        if group:
+            nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+                attribute_codes=(*n.semantic_frame.attribute_codes, 'source_relief_unknown_retention:v1')))
+                if n == group[0] else n for n in nuclei)
     unknown_boundaries = _final_stage1_unknown_boundaries(plan, nuclei)
+    independent_unknown = _source_relief_cognition_unknown_group(
+        nuclei, relations, evidence_spans, normalized_input)
     response_plan, coverage, surface_policy, safety_policy = (
         _build_response_and_policies(
             nuclei=nuclei,
@@ -17604,6 +17614,10 @@ def project_final_stage1_grounded_observation_plan(
             material_quality=material_quality,
             include_reception_relation_support=True,
             final_source_fidelity=True,
+            retained_reaction_groups=((
+                ("lived_change", (independent_unknown[1].nucleus_id,), (independent_unknown[2].nucleus_id,)),
+                ("current_burden", (independent_unknown[0].nucleus_id,), ()),
+            ) if independent_unknown else ()),
         )
     )
     response_plan = _explicit_unknown_object_reception(
@@ -17738,6 +17752,61 @@ def _source_single_unknown_object(nuclei, relations, evidence_spans, normalized_
         or not re.fullmatch(r"\s*[。．.]?\s*", source[span.end_index:])):
         return ()
     return (n,)
+
+
+def _source_relief_cognition_unknown_group(nuclei, relations, evidence_spans, normalized_input, *, require_witness=True):
+    """A proved relief/feeling contrast followed by one independent SELF unknown.
+
+    The final sentence owns a separate reception duty. Source adjacency and
+    the observer's uncertain connection do not make it a reason for either
+    feeling. Reuse the complete singleton proof only after proving the full
+    original field and all three owners here.
+    """
+    pairs = source_owned_relief_cognition_pairs(nuclei, relations, evidence_spans, normalized_input)
+    if len(pairs) != 1:
+        return ()
+    left, right, contrast = pairs[0]
+    owned = {left.nucleus_id, right.nucleus_id}
+    rest = tuple(n for n in nuclei if set(n.source_fields) & _TEXT_SOURCE_FIELDS
+        and n.nucleus_id not in owned and not (
+            n.retention == "optional" and n.grounding_kind == "user_stated_relation"
+            and "detected_type:relation_marker" in n.semantic_frame.attribute_codes
+            and set(n.source_span_ids) <= set(contrast.source_span_ids)))
+    if len(rest) != 1:
+        return ()
+    unknown = rest[0]
+    if require_witness and 'source_relief_unknown_retention:v1' not in unknown.semantic_frame.attribute_codes:
+        return ()
+    spans = {s.span_id: s for s in evidence_spans}
+    if len(unknown.source_span_ids) != 1 or unknown.source_span_ids[0] not in spans:
+        return ()
+    span = spans[unknown.source_span_ids[0]]
+    source = str(normalized_input.get("memo") or "")
+    end = spans[right.source_span_ids[0]].end_index
+    if (span.source_field != "memo" or not end < span.start_index < span.end_index <= len(source)
+        or source[span.start_index:span.end_index] != span.raw_text
+        or not re.fullmatch(r"\s*[。．.]\s*", source[end:span.start_index])
+        or not re.fullmatch(r"\s*[。．.]?\s*", source[span.end_index:])
+        or {s.span_id for s in evidence_spans if s.source_field in _TEXT_SOURCE_FIELDS}
+            != set((*contrast.source_span_ids, span.span_id))
+        or any(r.retention == "required" or r.type != "uncertain_connection"
+               or r.grounding_kind != "bounded_structural_inference"
+               or not {r.from_nucleus_id, r.to_nucleus_id} <= owned | {unknown.nucleus_id}
+               for r in relations if unknown.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id))
+        or not _source_single_unknown_object((unknown,), (),
+            (replace(span, start_index=0, end_index=len(span.raw_text)),), {"memo": span.raw_text})):
+        return ()
+    return unknown, left, right
+
+
+def _source_relief_cognition_unknown_from_resolver(nuclei, relations, resolver):
+    spans = resolver.resolve_many(resolver.span_ids)
+    read = getattr(resolver, "source_text_for_span_field", None)
+    if read is None:
+        return ()
+    fields = {s.source_field: read(s.span_id) for s in spans if s.source_field in _TEXT_SOURCE_FIELDS}
+    return _source_relief_cognition_unknown_group(nuclei, relations, spans,
+        normalize_emlis_current_input(fields))
 
 
 def _source_independent_unknown_object_group(nuclei, relations, evidence_spans, normalized_input, *, require_witness=True, allow_scalar=False):
@@ -17974,7 +18043,8 @@ def _explicit_unknown_object_reception(response, nuclei, relations, evidence_spa
             else m for m in reception.moves)
         response = replace(response, human_reception_plan=replace(reception, moves=moves))
     independent = (_source_independent_unknown_object_group(nuclei, relations, evidence_spans, normalized_input)
-        or _source_same_field_unknown_object_group(nuclei, relations, evidence_spans, normalized_input))
+        or _source_same_field_unknown_object_group(nuclei, relations, evidence_spans, normalized_input)
+        or _source_relief_cognition_unknown_group(nuclei, relations, evidence_spans, normalized_input))
     group = (independent[:1] or _source_single_unknown_object(nuclei, relations, evidence_spans, normalized_input)
         or _source_feeling_unknown_object_group(nuclei, relations, evidence_spans, normalized_input))
     reception = response.human_reception_plan
@@ -17985,7 +18055,7 @@ def _explicit_unknown_object_reception(response, nuclei, relations, evidence_spa
         if m.required and m.move_role == "felt_response" and m.reception_act == "stay_with_current_burden"
         and len(m.target_nucleus_ids) == 1 and len(m.support_nucleus_ids) == len(group) - 1
         and set((*m.target_nucleus_ids, *m.support_nucleus_ids)) == ids else m for m in reception.moves)
-    if independent and independent[1].source_fields == ("memo",):
+    if len(independent) == 2 and independent[1].source_fields == ("memo",):
         moves = tuple(replace(m, reference_mode="short_anchor_if_ambiguous")
             if m.required and m.reception_act == "honor_concrete_effort"
             and m.target_nucleus_ids == (independent[1].nucleus_id,)
@@ -18972,6 +19042,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_unknown_object_action_scope: bool = True,
     _legacy_relief_cognition_reception: bool = True,
     _legacy_cognitive_self_continuation: bool = True,
+    _legacy_relief_unknown_retention: bool = True,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan.
 
@@ -19043,6 +19114,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_unknown_object_action_scope=_legacy_unknown_object_action_scope,
         _legacy_relief_cognition_reception=_legacy_relief_cognition_reception,
         _legacy_cognitive_self_continuation=_legacy_cognitive_self_continuation,
+        _legacy_relief_unknown_retention=_legacy_relief_unknown_retention,
     )
 
 

@@ -88,6 +88,7 @@ class PreparedEmlisMeaning:
     legacy_unknown_object_action_scope: bool = False
     legacy_relief_cognition_reception: bool = False
     legacy_cognitive_self_continuation: bool = False
+    legacy_relief_unknown_retention: bool = False
 
 
 def _text(row, index, resolver) -> str:
@@ -1015,6 +1016,17 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
             or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
             raise
+        # The new three-object retention qualification has its own meaning
+        # identity. Restore the complete u333 selection for its old checkpoint.
+        prior_unknown = original_meaning_plan(thread, _legacy_relief_unknown_retention=True)
+        if prior_unknown.nuclei != original.nuclei or prior_unknown.relations != original.relations:
+            try:
+                restored = _prepare_emlis_meaning_from_plan(request, thread, prior_unknown)
+            except ValueError as prior_exc:
+                if str(prior_exc) not in {'emlis_checkpoint_source_prefix_mismatch', 'emlis_question_noncanonical'}:
+                    raise
+            else:
+                return replace(restored, legacy_relief_unknown_retention=True)
         # Restore u332's complete source interpretation before the local
         # SELF continuation repair. Never attach its ID to current nuclei.
         prior_self = original_meaning_plan(thread, _legacy_cognitive_self_continuation=True)
@@ -1226,12 +1238,18 @@ def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_apprai
         if focus:
             focus = tuple(dict.fromkeys((*focus, *(r.to_nucleus_id for r in original.relations if r.from_nucleus_id in focus))))
             safety = classify_emlis_safety_triage_text(" ".join(str(thread.original.normalized_current_input.get(k, "")) for k in ("memo", "memo_action")))
+            independent = gp._source_relief_cognition_unknown_from_resolver(
+                original.nuclei, original.relations, thread.resolver())
             response, coverage, surface, policy = gp._build_response_and_policies(
                 nuclei=original.nuclei, relations=original.relations, safety_decision=safety,
                 complexity=original.input_profile.semantic_complexity,
                 material_quality=original.input_profile.material_quality,
                 include_reception_relation_support=True, final_source_fidelity=True,
-                primary_focus_nucleus_ids=focus)
+                primary_focus_nucleus_ids=focus,
+                retained_reaction_groups=((
+                    ('lived_change', (independent[1].nucleus_id,), (independent[2].nucleus_id,)),
+                    ('current_burden', (independent[0].nucleus_id,), ()),
+                ) if independent else ()))
             response = gp._explicit_unknown_object_reception(response, original.nuclei, original.relations,
                 thread.resolver().resolve_many(thread.resolver().span_ids), thread.original.normalized_current_input)
             original = replace(original, response_plan=response, coverage_requirements=coverage,

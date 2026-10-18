@@ -16776,6 +16776,8 @@ def _logical_contract_descriptor(
 # introspection.  Logical Step-4 types which are not runtime-active in Step 2
 # are still frozen here with their complete approved field order/cardinality.
 _LOGICAL_CONTRACT_FIELD_SPECS = (
+    ("RetainedReliefCognitionEligibilityV1", "retained-relief-cognition-v1", "schema_version=exact1 source_prefix_ref=exact1 checkpoint_ref=exact1 original_source_ref=exact1 relief_nucleus_ref=exact1 loneliness_nucleus_ref=exact1 unknown_nucleus_ref=exact1 contrast_relation_ref=exact1 move_ref=exact1 unknown_move_ref=exact1 thread_control=exact1", ("INITIAL_SOURCE_OWNED_RELIEF_COGNITION_AND_INDEPENDENT_SELF_WH_UNKNOWN", "EXACT_SOURCE_REPLAY", "NO_ANSWER_OR_LEGACY_PROMOTION"), "POST_SELECTION_LOCAL_CONTENT"),
+    ("RetainedReliefCognitionContentV1", "retained-relief-cognition-v1", "schema_version=exact1 eligibility=exact1 projection_preimage_ref=exact1 aggregate_projection_seal_ref=exact1 aggregate_claim_ref=exact1 aggregate_proposition_ref=exact1 meaning_outcome_ref=exact1 reception_binding_ref=exact1 grounding_ref=exact1 proposition=exact1 basis_rows=exact2 qualifier_rows=exact2 seal_ref=exact1", ("LIMITED_THREE_OBJECT_ONE_CLAIM_UNCHANGED", "EXISTING_RELIEF_COGNITION_TWO_ROLE_CONTENT", "INDEPENDENT_UNKNOWN_IS_NOT_CAUSE", "FULL_AGGREGATE_REPLAY"), "POST_SELECTION_LOCAL_CONTENT"),
     ("EmlisReliefCognitionAppraisalContent", "relief-cognition-appraisal-v1", "dimension=exact1 operation=exact1 appraised_bindings=2..N focal_relation_ref=exact1 protected_bindings=exact0 basis_contribution_refs=1..N schema_version=exact1 relief_binding_refs=1..N loneliness_binding_refs=1..N reaction=exact1 response=exact1", ("SOURCE_OWNED_PAST_RELIEF_AND_PRESENT_LONELINESS", "UNCERTAIN_COGNITION_RETAINS_SOURCE_TIME", "DISJOINT_ENDPOINT_BINDINGS_CLOSE_APPRAISED_BASIS", "BOUNDED_RELIEF_AT_REPORTED_RELIEF", "LISTEN_TO_PRESENT_LONELINESS_UNDER_UNCERTAINTY", "JOINT_FACETS_EXPIRE_ON_EITHER_ENDPOINT_REVISION", "LEGACY_APPRAISAL_CONTENT_UNCHANGED"), "APPRAISAL_OPPORTUNITY_PROJECTOR"),
     ("RetainedReasonedExperienceContentV1", "retained-reasoned-experience-v1", "schema_version=exact1 eligibility=exact1 projection_preimage_ref=exact1 aggregate_projection_seal_ref=exact1 aggregate_claim_ref=exact1 aggregate_proposition_ref=exact1 meaning_outcome_ref=exact1 reception_binding_ref=exact1 grounding_ref=exact1 basis_rows=exact3 qualifier_rows=exact3 reason_binding_ref=exact1 event_binding_ref=exact1 evaluation_binding_ref=exact1 reason_relation_ref=exact1 appraisal_relation_ref=exact1 evaluation_kind=exact1 polarity=exact1 reason_time=exact1 evaluation_time=exact1 reception_configuration=exact1 seal_ref=exact1", ("UNCHANGED_REASON_TARGET_SATISFACTION", "RECEIVED_REACTION_ORIGINAL_OCCASION_REVISE_ONCE", "LIMITED_AGGREGATE_UNCHANGED"), "POST_SELECTION_LOCAL_CONTENT"),
     ("RetainedReasonedExperienceEligibilityV1", "retained-reasoned-experience-v1", "schema_version=exact1 source_prefix_ref=exact1 checkpoint_ref=exact1 original_source_ref=exact1 answer_source_ref=exact1 original_nuclei=exact5 original_relations=exact3 update=exact1 move_ref=exact1 thread_control=exact1", ("UNCHANGED_REASON_TARGET_SATISFACTION", "RECEIVED_REACTION_ORIGINAL_OCCASION_REVISE_ONCE", "LIMITED_AGGREGATE_UNCHANGED"), "POST_SELECTION_LOCAL_CONTENT"),
@@ -16896,11 +16898,11 @@ def _contract_manifest() -> tuple[Any, ...]:
         _logical_contract_descriptor(*row)
         for row in _LOGICAL_CONTRACT_FIELD_SPECS
     )
-    if len(descriptors) != 77 or len({row[0][1] for row in descriptors}) != 77:
+    if len(descriptors) != 79 or len({row[0][1] for row in descriptors}) != 79:
         raise Stage1CompositionError("LANGUAGE_CORE_CONTRACT_DESCRIPTOR_STOP")
     return (
         ("schema_version", _CONTRACT_MANIFEST_SCHEMA_VERSION),
-        ("logical_contract_count", 77),
+        ("logical_contract_count", 79),
         ("logical_contract_descriptors", descriptors),
         ("content_kind_derivation_rows", LANGUAGE_CORE_CONTENT_DERIVATION_ROWS),
         ("concrete_runtime_binding_descriptors", LANGUAGE_CORE_CONCRETE_BINDING_DESCRIPTORS),
@@ -18188,4 +18190,31 @@ def project_retained_reasoned_experience_content(eligibility, local, decision, s
         selected.grounding_ref, **local, seal_ref='')
     value = replace(value, seal_ref=c.retained_reasoned_experience_seal(value))
     c.validate_retained_reasoned_experience_content(value, decision, selected)
+    return value
+
+
+def project_retained_relief_cognition_content(eligibility, local, decision, selected, meaning):
+    """Seal local content beside the existing LIMITED projection and claim."""
+    from . import contracts as c
+    claims = tuple(row for row in meaning.subjective_claim_rows
+                   if row.subjective_claim_id == decision.projected_claim_ref)
+    traces = tuple(row for row in meaning.reception_visible_causal_trace_rows
+                   if row.projected_claim_ref == decision.projected_claim_ref)
+    if (meaning.projection_branch != 'LIMITED' or len(claims) != 1 or len(traces) != 1
+        or claims[0].asserted_subjective_proposition != decision.subjective_proposition
+        or traces[0].meaning_outcome_ref != decision.meaning_outcome_ref
+        or traces[0].reception_record_ref != decision.reception_binding_ref
+        or meaning.projection_seal_ref != selected.projection_seal_ref
+        or meaning.projection_preimage_ref != selected.projection_preimage_ref):
+        raise c.CMEEStage1ContractError('retained_relief_cognition_aggregate_invalid')
+    proposition, basis, qualifiers = local
+    value = c.RetainedReliefCognitionContentV1(
+        'cocolon.cmee.retained_relief_cognition_content.v1', eligibility,
+        selected.projection_preimage_ref, selected.projection_seal_ref,
+        decision.projected_claim_ref,
+        c.retained_relief_cognition_aggregate_ref(decision.subjective_proposition),
+        decision.meaning_outcome_ref, decision.reception_binding_ref,
+        selected.grounding_ref, proposition, basis, qualifiers, '')
+    value = replace(value, seal_ref=c.retained_relief_cognition_seal(value))
+    c.validate_retained_relief_cognition_content(value, decision, selected)
     return value

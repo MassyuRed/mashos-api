@@ -34,8 +34,11 @@ def digest(value):
 
 
 def facets(selected):
-    return tuple(d.subjective_proposition.appraisal_content for d in selected.decisions
-                 if type(d.subjective_proposition.appraisal_content) is contracts.EmlisReliefCognitionAppraisalContent)
+    from emlis_ai_grounded_human_reception import SelectedRetainedReliefCognitionDecisionV1
+    return tuple(content for d in selected.decisions
+                 if type(content := (d.retained_relief_cognition.proposition.appraisal_content
+                     if type(d) is SelectedRetainedReliefCognitionDecisionV1
+                     else d.subjective_proposition.appraisal_content)) is contracts.EmlisReliefCognitionAppraisalContent)
 
 
 @pytest.mark.parametrize('row', BASELINE['cases'], ids=lambda row: row['case'])
@@ -211,7 +214,7 @@ def test_forged_or_source_changed_checkpoint_cannot_gain_legacy_compatibility():
 
 def test_current_manifest_records_complete_new_type_and_keeps_base_unchanged():
     manifest = dict(_contract_manifest())
-    assert manifest['logical_contract_count'] == 77
+    assert manifest['logical_contract_count'] == 79
     row, = (dict(row) for row in manifest['logical_contract_descriptors']
             if dict(row)['type_name'] == 'EmlisReliefCognitionAppraisalContent')
     assert row['logical_version'] == 'relief-cognition-appraisal-v1'
