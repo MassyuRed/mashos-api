@@ -11729,6 +11729,41 @@ def source_grounded_original_record_feeling(nucleus, relations, resolver):
     return source
 
 
+def _source_owned_relief_survivor_sentence(move, plan, resolver, selected, recovery_stage):
+    """Keep the original relief speaker explicit after its joint response expires."""
+    from emlis_ai_grounded_observation_plan import _source_nominal_past_feeling_parts
+    if (recovery_stage != "full" or selected is None or not move.required
+        or move.reception_act != "recognize_lived_change"
+        or len(move.target_nucleus_ids) != 1 or move.support_nucleus_ids
+        or move.reference_mode == "anaphoric_first"
+        or move.move_role not in {"attention", "felt_response"}
+        or final_reception_context_nucleus_ids(move=move, plan=plan)):
+        return None
+    n = next(n for n in plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0])
+    f = n.semantic_frame
+    if (not {"source_relief_self_recipient:v1", "source_relief_cognition_origin:relief",
+             "lexical:source_nominal_past_feeling"} <= set(f.attribute_codes)
+        or n.source_fields != ("memo",) or n.allowed_claim_scope != "explicit_current_input"
+        or n.grounding_kind != "explicit" or n.retention != "required"
+        or len(n.source_span_ids) != 1 or n.surface_anchor_ids != n.source_span_ids
+        or (n.kind, f.actor, f.predicate_kind, f.modality, f.polarity, f.time_scope)
+           != ("reaction", "current_user", "feeling", "feeling", "positive", "past")
+        or any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)
+        or selected.target_nucleus_ids != move.target_nucleus_ids or selected.support_nucleus_ids
+        or not _selected_material_appraisal(selected)):
+        return None
+    source = final_reception_source_anchor_text(n.nucleus_id, {n.nucleus_id:n}, resolver)
+    if (source != resolver.resolve(n.source_span_ids[0]).raw_text
+        or not _source_nominal_past_feeling_parts(source)
+        or not re.match(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?=は|が)", source)):
+        return None
+    # The nominal experience grammar already proved the leading experiencer,
+    # including が. Every remaining source character stays unchanged.
+    visible = re.sub(r"^(?:わたし|ぼく|おれ|私|僕|俺|自分)(?=は|が)", "あなた", source, count=1)
+    role = "を見過ごさず、" if move.move_role == "attention" else "を"
+    return visible + "という気持ち" + role + "受け止めています"
+
+
 def _detached_feeling_source_parts(move, plan, resolver, *, allow_revised=False):
     """Prove complete finite source operands before choosing clause topology."""
     if (getattr(resolver, "source_contract", None) != "cocolon.cmee.emlis_thread.v1"
@@ -12901,6 +12936,10 @@ def _author_source_grounded_reception_clauses(
                 received_record_quote_limit=(reception_plan.quote_policy.max_anchor_visible_chars
                     if reception_plan.quote_policy.max_anchor_count > 0 else 0),
             )
+            survivor = _source_owned_relief_survivor_sentence(
+                move, plan, resolver, selected_decision, recovery_stage)
+            if survivor is not None:
+                move_sentence = survivor
             detached_parts = _source_owned_detached_feeling_parts(
                 move, meaning_realization, plan, resolver, selected_decision, recovery_stage,
             )

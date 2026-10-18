@@ -17421,6 +17421,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_relief_unknown_retention: bool = True,
     _legacy_relief_unknown_source: bool = True,
     _legacy_relief_cognition_anaphora: bool = True,
+    _legacy_relief_self_recipient: bool = True,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -17500,11 +17501,17 @@ def project_final_stage1_grounded_observation_plan(
             normalized_input, require_witness=False)
         slots = {n.nucleus_id: role for left, right, _ in pairs
                  for n, role in ((left, 'relief'), (right, 'loneliness'))}
+        spans = {s.span_id: s for s in evidence_spans}
+        recipient_ids = {left.nucleus_id for left, _, _ in pairs
+            if not _legacy_relief_self_recipient
+            and re.match(r'^(?:私|わたし|自分|僕|ぼく|俺|おれ)(?=は|が)',
+                         spans[left.source_span_ids[0]].raw_text)}
         nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
             attribute_codes=(*n.semantic_frame.attribute_codes,
                 'source_relief_cognition_slot:' + slots[n.nucleus_id],
                 'source_relief_cognition_origin:' + slots[n.nucleus_id],
-                *(() if _legacy_relief_cognition_anaphora else ('source_relief_cognition_anaphora:v1',)))))
+                *(() if _legacy_relief_cognition_anaphora else ('source_relief_cognition_anaphora:v1',)),
+                *(('source_relief_self_recipient:v1',) if n.nucleus_id in recipient_ids else ()))))
             if n.nucleus_id in slots else n for n in nuclei)
     if not _legacy_relief_unknown_source:
         nuclei, relations = _final_source_relief_unknown(
@@ -19120,6 +19127,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_relief_unknown_retention: bool = True,
     _legacy_relief_unknown_source: bool = True,
     _legacy_relief_cognition_anaphora: bool = True,
+    _legacy_relief_self_recipient: bool = True,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan.
 
@@ -19194,6 +19202,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_relief_unknown_retention=_legacy_relief_unknown_retention,
         _legacy_relief_unknown_source=_legacy_relief_unknown_source,
         _legacy_relief_cognition_anaphora=_legacy_relief_cognition_anaphora,
+        _legacy_relief_self_recipient=_legacy_relief_self_recipient,
     )
 
 

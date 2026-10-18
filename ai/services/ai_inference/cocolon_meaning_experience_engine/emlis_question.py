@@ -40,10 +40,18 @@ def original_meaning_plan(thread: AdmittedEmlisThread, *, _legacy_result_apprais
                           _legacy_feeling_reason_self_scope=False, _legacy_unknown_object_action_scope=False,
                           _legacy_relief_cognition_reception=False, _legacy_cognitive_self_continuation=False,
                           _legacy_relief_unknown_retention=False, _legacy_relief_unknown_source=False,
-                          _legacy_relief_cognition_anaphora=False):
+                          _legacy_relief_cognition_anaphora=False, _legacy_relief_self_recipient=False):
     source = thread.original
     return build_final_stage1_grounded_observation_plan(
         source.normalized_current_input, evidence_spans=source.evidence_spans,
+        _legacy_relief_self_recipient=(_legacy_relief_self_recipient or _legacy_relief_cognition_anaphora or _legacy_relief_unknown_source or _legacy_relief_unknown_retention or _legacy_cognitive_self_continuation
+            or _legacy_relief_cognition_reception or any((
+                _legacy_unknown_object_action_scope, _legacy_feeling_reason_self_scope,
+                _legacy_cognitive_temporal_topic, _legacy_cognitive_feeling_scope,
+                _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
+                _legacy_repeated_appraisal_context, _legacy_appraisal_retention, _legacy_duplicate_appraisal_source,
+                _legacy_shared_target_contrast, _legacy_received_unfinished_context,
+                _legacy_received_reason_context, _legacy_received_report_context))),
         _legacy_relief_cognition_anaphora=(_legacy_relief_cognition_anaphora or _legacy_relief_unknown_source or _legacy_relief_unknown_retention or _legacy_cognitive_self_continuation
             or _legacy_relief_cognition_reception or any((
                 _legacy_unknown_object_action_scope, _legacy_feeling_reason_self_scope,

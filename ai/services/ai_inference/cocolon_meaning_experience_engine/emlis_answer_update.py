@@ -91,6 +91,7 @@ class PreparedEmlisMeaning:
     legacy_relief_unknown_retention: bool = False
     legacy_relief_unknown_source: bool = False
     legacy_relief_cognition_anaphora: bool = False
+    legacy_relief_self_recipient: bool = False
 
 
 def _text(row, index, resolver) -> str:
@@ -1018,6 +1019,17 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
             or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
             raise
+        # u336 survivors keep their complete previous recipient surface.
+        # Restore the old source-derived checkpoint before rendering it.
+        prior_recipient = original_meaning_plan(thread, _legacy_relief_self_recipient=True)
+        if prior_recipient.nuclei != original.nuclei or prior_recipient.relations != original.relations:
+            try:
+                restored = _prepare_emlis_meaning_from_plan(request, thread, prior_recipient)
+            except ValueError as prior_exc:
+                if str(prior_exc) not in {'emlis_checkpoint_source_prefix_mismatch', 'emlis_question_noncanonical'}:
+                    raise
+            else:
+                return replace(restored, legacy_relief_self_recipient=True)
         # u335 owns its complete full-clause reception and checkpoint.
         # Re-derive it; never relabel a new anaphoric selection with an old ID.
         prior_anaphora = original_meaning_plan(thread, _legacy_relief_cognition_anaphora=True)

@@ -5165,6 +5165,65 @@ def _read_relief_cognition_discourse(raw, move, plan, resolver, selected, preced
     return tuple(replacements)
 
 
+def _read_relief_survivor_discourse(raw, move, plan, resolver, selected):
+    """Restore the whole visible recipient object to its independent source."""
+    from emlis_ai_grounded_observation_plan import _source_nominal_past_feeling_parts
+    if (selected is None or not move.required or len(move.target_nucleus_ids) != 1
+        or move.support_nucleus_ids or move.reference_mode == "anaphoric_first"
+        or move.reception_act != "recognize_lived_change"
+        or _body_inverse_reception_context_ids(move, plan)):
+        return None
+    n = next((n for n in plan.nuclei if n.nucleus_id == move.target_nucleus_ids[0]), None)
+    if n is None:
+        return None
+    f = n.semantic_frame
+    if (not {"source_relief_self_recipient:v1", "source_relief_cognition_origin:relief",
+             "lexical:source_nominal_past_feeling"} <= set(f.attribute_codes)
+        or (n.kind, f.actor, f.predicate_kind, f.modality, f.polarity, f.time_scope)
+           != ("reaction", "current_user", "feeling", "feeling", "positive", "past")
+        or n.source_fields != ("memo",) or n.allowed_claim_scope != "explicit_current_input"
+        or n.retention != "required" or n.grounding_kind != "explicit"
+        or len(n.source_span_ids) != 1 or n.surface_anchor_ids != n.source_span_ids
+        or any(n.nucleus_id in (r.from_nucleus_id, r.to_nucleus_id) for r in plan.relations)):
+        return None
+    decisions = tuple(d for d in selected.decisions if d.move_id == move.move_id)
+    if len(decisions) != 1:
+        return None
+    d = decisions[0];p = d.subjective_proposition;c = p.appraisal_content
+    mapping = dict(selected.semantic_nucleus_pairs)
+    all_basis = {b.binding_ref:b for b in d.basis_rows}
+    selected_basis = {b.binding_ref:b for b in d.basis_rows
+                      if b.contribution_ref in d.selected_contribution_refs}
+    if (d.reception_act != move.reception_act or d.target_nucleus_ids != move.target_nucleus_ids
+        or d.support_nucleus_ids or c is None
+        or (c.dimension, c.operation) != ("MATERIAL_WEIGHT", "RECEIVE_AS_MATERIAL")
+        or not set(c.appraised_bindings) <= set(all_basis)
+        or not set(c.basis_contribution_refs) <= {b.contribution_ref for b in d.basis_rows}
+        or not selected_basis or not set(selected_basis) <= set(c.appraised_bindings)
+        or not set(d.selected_contribution_refs) <= set(c.basis_contribution_refs)
+        or any(b.semantic_ref not in p.response_object_refs or b.semantic_ref not in p.primary_target_refs
+               or mapping.get(b.semantic_ref) != n.nucleus_id
+               for b in selected_basis.values())
+        or {mapping.get(b.semantic_ref) for b in d.basis_rows
+            if b.contribution_ref in d.selected_contribution_refs} != {n.nucleus_id}):
+        return None
+    source = final_reception_source_anchor_text(n.nucleus_id, {n.nucleus_id:n}, resolver)
+    owner = re.match(r"^(?:私|わたし|自分|僕|ぼく|俺|おれ)(?=は|が)", source)
+    if (owner is None or source != resolver.resolve(n.source_span_ids[0]).raw_text
+        or not _source_nominal_past_feeling_parts(source)):
+        return None
+    role = {"attention":"を見過ごさず、", "felt_response":"を"}.get(move.move_role)
+    if role is None:
+        return None
+    match = re.fullmatch(r"(?P<source>[^。]+)という気持ち" + role + "受け止めています。", raw)
+    if match is None or not match['source'].startswith("あなた"):
+        return None
+    restored = owner.group() + match['source'][len("あなた"):]
+    if restored != source:
+        return None
+    return ((0, len(match['source'].encode()), source.encode()),)
+
+
 def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_input=None,
                                 *, preceding_context=None, preceding_observation=None):
     """Read supported finite source duties without a literal-author oracle."""
@@ -5175,6 +5234,9 @@ def read_source_owned_discourse(raw, move, plan, resolver, selected_subjective_i
                      or type(decision) is SelectedRetainedReliefCognitionDecisionV1):
         # A missing new facet cannot fall back to the old contrast wording.
         return _read_relief_cognition_discourse(raw, move, plan, resolver, selected_subjective_input, preceding_observation)
+    survivor = _read_relief_survivor_discourse(raw, move, plan, resolver, selected_subjective_input)
+    if survivor is not None:
+        return survivor
     corrected = _relief_cognition_corrected_source(move, plan, resolver, selected_subjective_input)
     if corrected is not None:
         match = re.fullmatch(r'言い直してくださった気持ちは、(?P<feeling>[^。]+)ということなのですね。', raw)
@@ -7933,6 +7995,17 @@ def evaluate_grounded_surface_body_inverse(
                             # Complete body-owned proposition/edge verification
                             # replaces nominal/closing-token requirements only.
                             # Source, plan, clause, trace and safety gates remain.
+                            continue
+                        if (final_stage1_plan and sentence_plan.recovery_stage == 'full'
+                            and len(move.target_nucleus_ids) == 1 and not move.support_nucleus_ids
+                            and not _body_inverse_reception_context_ids(move, plan)
+                            and move.reception_act == 'recognize_lived_change'
+                            and any(n.nucleus_id in move.target_nucleus_ids
+                                and 'source_relief_self_recipient:v1' in n.semantic_frame.attribute_codes
+                                for n in plan.nuclei)):
+                            # Versioned recipient scope requires its complete
+                            # source AND selected-basis proof, never fallback.
+                            failures.append('body_inverse_relief_survivor_scope_mismatch:' + move_id)
                             continue
                         from cocolon_meaning_experience_engine.contracts import EmlisReliefCognitionAppraisalContent
                         selected_decision = next((d for d in selected_subjective_input.decisions

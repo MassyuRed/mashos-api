@@ -1,3 +1,5 @@
+> 2026-10-18最新：u337。訂正・撤回後の本人の安堵を「あなた」と受け止める。末尾u337と最新weeklyを参照。
+
 > 2026-10-18最新：u336。承認済みの実Observation共同保持による返答短縮。末尾u336を参照。
 
 > 2026-10-18最新：u335。安堵＋独立不明のsource誤認識修復、旧checkpoint保持、短文化の未実装限定案。末尾u335を参照。
@@ -22634,3 +22636,18 @@ STRUCTURE_MAP_DELTA_NONE。既存production8file、新production file0、論理c
 primary outcome=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式0/3／candidate_ready=false／automatic_progression=false。Draft/open/unmerged・未配置。E04の深さ／E05問い／E06〜E09、一般入力・本人実機・正式受入れは未完。10/20方式判断、10/31管理線、12/18目標、Piece/Analysis主枠53.25％を維持。
 
 実本文・検査・未解決：[Cocolon_EmlisAI_u336_ActualObservation_Anaphoric_Reception_20261018.md](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u336_ActualObservation_Anaphoric_Reception_20261018.md)。
+
+
+## u337 — 訂正・撤回後に残る本人の安堵を「あなた」と受け止める（2026-10-18）
+
+u336で残っていた、二反応の片方を訂正／撤回すると、元の「私は…ほっとした」をReceptionが自分の経験のように述べる欠陥を修復。元の完全sourceと既存SELF・過去・肯定感情の証明を保ち、既に適格だった安堵pairの残存単独核だけ、間接的に受け止める冒頭を「あなたは／あなたが」にする。助詞・対象・肯否・時点・程度は維持。新しい主観反応や保持契約は追加しない。
+
+合成21更新例中18例の人称を修復し、主語省略3例・全Observation・問い・reasonは不変。初回40例の本文可否／本文／問い／reasonも不変。u336の初回40＋更新21checkpointは全plan／selectedまたは同じ停止／artifact／問いへ完全復元し、旧IDへ新表現を付け替えない。独立readerは共通appraisal内の当該selected basisを照合し、実本文の人称を原文へ戻して全sourceをexact照合。作者禁止の改変拒否と、専用検証失敗時に汎用経路で通さないことを確認した。
+
+最終検証：重複除外650 passed／既知1 failed／skip0（新145＋関連504成功・1失敗＋current identity1）。実service＋隔離PGlite SQL/RPC15ケース、同じ15DTOの現行API client／hook／Modal close/reopen各2回。Free／Plus／Premium、旧完成非再生成、旧更新checkpoint後の中断・retry、元入力・全履歴を確認。native／HTTP／Auth stubであり、本人実機・本番の検証ではない。
+
+STRUCTURE_MAP_DELTA_NONE。既存production6file、新production file0、論理contract79、公開API／DB／RN／依存／外部AI／費用／配置は不変。新test1・凍結u336 fixture1、current owner identityを更新。必要性分類=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、primary outcome=TECHNICAL_CREDIT。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式0/3／candidate_ready=false／automatic_progression=false。Draft/open/unmerged・未配置。
+
+過去不明の現在自己評価への誤読、独立不明の欠落、「どうしたいのか」の未対応、一般入力、E04の深さ／E05の問い／E06〜E09は残る。今回の限定的な人称修復を深い受容の完成に数えない。次は過去不明のsource認識とu334の現在不明保持との境界を具体化し、必要な内容契約判断を分ける。10/20方式判断、10/31管理線、12/18目標、Piece/Analysis主枠53.25％は維持。
+
+詳細・実本文・再開先：[Cocolon_EmlisAI_u337_SelfRecipient_AfterPairRevision_20261018.md](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u337_SelfRecipient_AfterPairRevision_20261018.md)。
