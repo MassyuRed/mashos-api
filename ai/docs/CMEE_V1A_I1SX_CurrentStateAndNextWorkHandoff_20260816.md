@@ -1,3 +1,5 @@
+> 2026-10-18最新：u345。1回答後の完全pairを別行にし、実Observationに基づく短いReceptionを成立。末尾と最新weeklyを参照。
+
 > 2026-10-18最新：u342。今日→昨日の逆順停止を限定修復。374 passed／旧比較5 failed。末尾u342と最新weeklyを参照。
 
 > 2026-10-18最新：u341。「とても」のtopic誤判定を修復。228 passed／2旧比較failed。末尾u341と最新weeklyを参照。
@@ -22804,3 +22806,16 @@ STRUCTURE_MAP_DELTA_NONE。既存production4file、新production0。TECHNICAL_CR
 683 passed／1 failed／skip 0（新370成功、関連313成功・1失敗）。実service＋隔離SQL16例と同16DTOの現行API client／hook／Modalを確認。HTTP／Auth／nativeはstub。私有2型を既存保持familyに追加しlogical79→81、既存production6file・新production0、公開wire／DB／RN／releaseは不変。u334 unknown専用資格を広げず、元入力・受理更新・全plan・全selectedを独立再導出する。
 
 TECHNICAL_CREDIT／PRODUCT_NOT_CLEAR／正式0/3／candidate_ready=false／automatic_progression=false。長い原文反復・一般入力・任意多段・E04〜E09・本人実機は残る。旧fixture／本文期待を保持し、現在manifest件数とowner identityのみ同期。全24file、実本文、失敗詳細・保存境界・再開先は[u344監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u344_ReliefContinuity_20261018.md)。
+
+
+## u345 — 別経験への1回答後も、完全な観測と短い二反応を両立（2026-10-18）
+
+u344に残った原文反復を、既承認のu336共同保持とu331/u332更新責務の範囲で修復した。未変更の安堵・寂しさpairと独立した別経験を既存行構成ownerで別行へ分け、pairの完全な原文をObservationへ残す。実Observationの完全一行・一意照応を要求するreaderは変更しない。意味checkpoint・全plan・selected・問い・decisionは不変で、新しい内容選択や反応は追加しない。
+
+開始原本21入力の比較で、10入力×Q1/Q3の1回答後Receptionを短縮。初回42結果は不変。別の寂しさもある曖昧例は全文参照を保持。「かもしれなかった」はQ3で実問いを出せず、改善成功に数えない。対象集合の最終結果は重複除外323 passed／0 failed／skip 0（新規108、既存関連215）。全suite成功を意味しない。。保存23DTOの現行API client→hook→Modalでclose/reopen各2回も確認。HTTP／Auth／nativeはstubで、実機・本番DBではない。
+
+旧u343 checkpointは旧意味・全出力／停止を保持。u344と同じ意味checkpointから未完成本文を生成する場合は今回の行構成を使うが、既に完成・保存した本文は再生成せずそのまま返す。STRUCTURE_MAP_DELTA_NONE、既存production1file・新production0、logical81不変。公開wire／DB／RN／Safety／依存の変更なし。
+
+必要性=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、primary outcome=TECHNICAL_CREDIT。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式Product Read0/3／candidate_ready=false／automatic_progression=falseを維持。初回の長い混在Reception、extra_unknownの回答後のpair欠落、否定訂正、一般入力・任意多段、E04深さ／E05問い／E06〜E09・本人実機は残る。次は未変更の不明と二反応が追加回答後に同居するextra_unknownの責務脱落を原文・実問い・選択から診断し、既承認保持の修復と新しい内容判断を区別する。10/20方式判断、10/31管理線、12/18目標、Piece/Analysis主枠53.25％は維持。既存Draft PR3／PR30で継続、merge／配置なし。
+
+全13file、未加工本文、検証・互換境界は[u345監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u345_ReliefObservationLayout_20261018.md)。

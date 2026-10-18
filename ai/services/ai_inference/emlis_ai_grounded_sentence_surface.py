@@ -1160,6 +1160,51 @@ def _observation_surface_role(
     return "coexisting_observation"
 
 
+def _retained_relief_observation_pair(plan, resolver):
+    """Keep the unchanged pair separate from its independently answered event.
+
+    This chooses line layout only. The existing selected-content validator and
+    actual-body reader still own whether either Reception reference is valid.
+    """
+    if (plan is None or getattr(resolver, "source_contract", None)
+        != "cocolon.cmee.emlis_thread.v1"
+        or any(row.dimension == "answer_interpretation_unresolved" for row in plan.unknown_boundaries)):
+        return frozenset()
+    answers = {q.source_envelope_id for q in resolver.qualified_refs
+               if q.evidence.field_path == "answer_text_private"}
+    reception = plan.response_plan.human_reception_plan
+    if len(answers) != 1 or reception is None or len(reception.moves) != 2:
+        return frozenset()
+    from emlis_ai_grounded_observation_plan import source_owned_relief_cognition_from_resolver
+    pairs = source_owned_relief_cognition_from_resolver(plan.nuclei, plan.relations, resolver)
+    if len(pairs) != 1:
+        return frozenset()
+    left, right, _ = pairs[0]
+    owned = frozenset((left.nucleus_id, right.nucleus_id))
+    if any("source_relief_cognition_anaphora:v1" not in n.semantic_frame.attribute_codes
+           for n in (left, right)):
+        return frozenset()
+    moves = tuple(m for m in reception.moves if m.required
+        and m.reference_mode == "anaphoric_first"
+        and set((*m.target_nucleus_ids, *m.support_nucleus_ids)) == owned)
+    if len(moves) != 1:
+        return frozenset()
+    other, = (m for m in reception.moves if m != moves[0])
+    index = {n.nucleus_id: n for n in plan.nuclei}
+    if (not other.required or len(other.target_nucleus_ids) != 1 or other.support_nucleus_ids):
+        return frozenset()
+    target = index[other.target_nucleus_ids[0]]
+    if not (target.source_fields == ("answer_text_private",)
+            and target.allowed_claim_scope == "explicit_supplemental_answer"
+            or "thread_subject:unchanged_relief_pair_withdrawal:v1" in target.semantic_frame.attribute_codes):
+        return frozenset()
+    # A relation crossing the boundary is one experience, not two lines.
+    if any(bool(r.from_nucleus_id in owned) != bool(r.to_nucleus_id in owned)
+           for r in plan.relations if r.retention == "required"):
+        return frozenset()
+    return owned
+
+
 def _observation_surface_atoms(
     nucleus_ids: Sequence[str],
     relation_ids: Sequence[str],
@@ -1245,6 +1290,15 @@ def _observation_surface_atoms(
             for group in components if set(nucleus_ids).intersection(group))
         if component_arcs:
             arcs = component_arcs
+    if _retained_relief_observation_pair(plan, resolver):
+        # Different experiences can share the contrast grammar. Preserve each
+        # whole source component's arc, so splitting one component still fails.
+        required_relations = tuple(rid for rid, r in relation_index.items()
+                                   if r.retention == "required")
+        components = _relation_aware_groups(tuple(nucleus_index), required_relations,
+            nucleus_index, relation_index, max_groups=len(nucleus_index))
+        arcs = tuple("semantic_arc:source_component:" + ":".join(sorted(group))
+                     for group in components if set(nucleus_ids).intersection(group))
     return (
         f"observation_surface_role:{role}",
         *arcs,
@@ -2440,6 +2494,19 @@ def _build_regular_lines(
             if pending:
                 scoped_groups.append(tuple(pending))
         groups = tuple(scoped_groups)
+        pair_ids = _retained_relief_observation_pair(plan, resolver)
+        if pair_ids and recovery_stage == "full":
+            separate = []
+            for group in groups:
+                if pair_ids < set(group):
+                    parts = (tuple(nid for nid in group if nid in pair_ids),
+                             tuple(nid for nid in group if nid not in pair_ids))
+                    separate.extend(sorted(parts,
+                        key=lambda part: _nucleus_source_order(nucleus_index[part[0]])))
+                else:
+                    separate.append(group)
+            if len(separate) <= max_observation_groups:
+                groups = tuple(separate)
         for group_index, group in enumerate(groups):
             internal_relations = _internal_relation_ids(group, relation_candidates, relation_index)
             covered_relations.update(internal_relations)
