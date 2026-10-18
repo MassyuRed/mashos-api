@@ -22751,10 +22751,38 @@ class RetainedReliefCognitionContentV1:
     seal_ref: str
 
 
+@dataclass(frozen=True, slots=True, repr=False)
+class RetainedUpdatedReliefCognitionEligibilityV1:
+    """An unchanged u332 pair after one separately owned received answer."""
+
+    schema_version: str
+    source_prefix_ref: str
+    checkpoint_ref: str
+    original_source_ref: str
+    answer_source_ref: str
+    relief_nucleus_ref: str
+    loneliness_nucleus_ref: str
+    contrast_relation_ref: str
+    received_event_ref: str
+    received_reaction_ref: str
+    answer_update: Any
+    move_ref: str
+    thread_control: Any
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class RetainedUpdatedReliefCognitionContentV1(RetainedReliefCognitionContentV1):
+    """The existing two reactions beside an unchanged post-answer aggregate."""
+
+    eligibility: RetainedUpdatedReliefCognitionEligibilityV1
+
+
 def retained_relief_cognition_seal(value):
-    if type(value) is not RetainedReliefCognitionContentV1:
+    if type(value) not in {RetainedReliefCognitionContentV1, RetainedUpdatedReliefCognitionContentV1}:
         raise CMEEStage1ContractError('retained_relief_cognition_type_invalid')
-    return 'retained-relief-cognition:' + hashlib.sha256(
+    prefix = ('retained-updated-relief-cognition:' if type(value) is RetainedUpdatedReliefCognitionContentV1
+              else 'retained-relief-cognition:')
+    return prefix + hashlib.sha256(
         stage1_canonical_json_bytes(replace(value, seal_ref=''))).hexdigest()
 
 
@@ -22765,6 +22793,8 @@ def retained_relief_cognition_aggregate_ref(proposition):
 
 def validate_retained_relief_cognition_content(value, decision, selected):
     """Keep the whole three-object claim and its two-role content separately sealed."""
+    if type(value) is RetainedUpdatedReliefCognitionContentV1:
+        return _validate_retained_updated_relief_cognition_content(value, decision, selected)
     fail = 'retained_relief_cognition_content_invalid'
     if (type(value) is not RetainedReliefCognitionContentV1
         or value.schema_version != 'cocolon.cmee.retained_relief_cognition_content.v1'
@@ -22804,4 +22834,51 @@ def validate_retained_relief_cognition_content(value, decision, selected):
             focal_relation_ref=content.focal_relation_ref, appraisal_content=content)):
         raise CMEEStage1ContractError(fail)
 
+    _stage1_subjective_v2_content_bindings(local)
+
+
+def _validate_retained_updated_relief_cognition_content(value, decision, selected):
+    """Bind local pair content to the existing complete post-answer claim.
+
+    The full original/update source is independently replayed at the selected
+    input boundary. This structural check never treats an answer as unknown.
+    """
+    fail = 'retained_updated_relief_cognition_content_invalid'
+    if (type(value) is not RetainedUpdatedReliefCognitionContentV1
+        or value.schema_version != 'cocolon.cmee.retained_updated_relief_cognition_content.v1'
+        or type(value.eligibility) is not RetainedUpdatedReliefCognitionEligibilityV1
+        or value.eligibility.schema_version != 'cocolon.cmee.retained_updated_relief_cognition_eligibility.v1'
+        or value.eligibility.move_ref != decision.move_id
+        or value.projection_preimage_ref != selected.projection_preimage_ref
+        or value.aggregate_projection_seal_ref != selected.projection_seal_ref
+        or value.aggregate_claim_ref != decision.projected_claim_ref
+        or value.aggregate_proposition_ref != retained_relief_cognition_aggregate_ref(decision.subjective_proposition)
+        or value.meaning_outcome_ref != decision.meaning_outcome_ref
+        or value.reception_binding_ref != decision.reception_binding_ref
+        or value.grounding_ref != selected.grounding_ref
+        or value.seal_ref != retained_relief_cognition_seal(value)):
+        raise CMEEStage1ContractError(fail)
+    aggregate, local = decision.subjective_proposition, value.proposition
+    appraisal = aggregate.appraisal_content
+    basis = tuple(b for b in decision.basis_rows if b.contribution_ref in decision.selected_contribution_refs)
+    qualifiers = tuple(q for b in basis for q in decision.qualifier_rows if q.basis_binding_ref == b.binding_ref)
+    content = local.appraisal_content
+    objects = tuple(dict.fromkeys(b.semantic_ref for b in basis))
+    if (decision.branch != 'LIMITED' or aggregate.subjective_mode != 'ATTENTION'
+        or aggregate.subjective_operator != 'ATTEND_TO' or aggregate.focal_relation_ref is not None
+        or type(appraisal) is not EmlisAppraisalContent
+        or (appraisal.dimension, appraisal.operation) != ('MATERIAL_WEIGHT', 'RECEIVE_AS_MATERIAL')
+        or appraisal.appraised_bindings != aggregate.basis_binding_refs or appraisal.protected_bindings
+        or len(aggregate.response_object_refs) != 3 or len(objects) != 2
+        or len(basis) != 2 or len(qualifiers) != 2 or len(decision.selected_contribution_refs) != 1
+        or value.basis_rows != basis or value.qualifier_rows != qualifiers
+        or type(content) is not EmlisReliefCognitionAppraisalContent
+        or content.basis_contribution_refs != decision.selected_contribution_refs
+        or content.appraised_bindings != tuple(b.binding_ref for b in basis)
+        or local != replace(aggregate, target_contribution_refs=decision.selected_contribution_refs,
+            primary_target_refs=objects, boundary_target_refs=(), response_object_refs=objects,
+            basis_binding_refs=tuple(b.binding_ref for b in basis),
+            source_qualifier_binding_refs=tuple(q.source_qualifier_binding_ref for q in qualifiers),
+            focal_relation_ref=content.focal_relation_ref, appraisal_content=content)):
+        raise CMEEStage1ContractError(fail)
     _stage1_subjective_v2_content_bindings(local)

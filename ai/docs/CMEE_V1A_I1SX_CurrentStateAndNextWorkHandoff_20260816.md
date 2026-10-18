@@ -22795,3 +22795,12 @@ STRUCTURE_MAP_DELTA_NONE。既存production3file、新production0、新test1・�
 54凍結record中17record（原文16種類）でQ1/Q3本文を修復、37対照は全意味・出力不変。旧54×2経路の完全復元も確認。最終690 passed／7 failed／skip0（新318成功、関連372成功・7失敗）。7件は修復前の核・意味・本文との比較不一致で、既存期待値は変更していない。実service＋隔離SQL17ケースと同17DTOの現行API client／hook／Modal close/reopenを確認した。HTTP／Auth／nativeはstub。
 
 STRUCTURE_MAP_DELTA_NONE。既存production4file、新production0。TECHNICAL_CREDIT／PRODUCT_NOT_CLEAR／正式0/3／candidate_ready=false／automatic_progression=false。定型ReceptionとE04深さ・E05問い・E06〜E09は残る。既存Draft PRで継続し、merge／配置なし。実本文16例・全path・7失敗の内訳・再開先は[u343監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u343_PastThenContrast_20261018.md)。
+
+
+## u344 — 承認済み二反応を表記・別経験の1更新後まで保持（2026-10-18）
+
+既存安堵pairの原文資格に限定して「さびしい」の認識漏れを修復。30入力中13例で既存二反応本文、2例はpair認識のみ・不明の停止維持、15例は完全不変。別経験の既受理1回答により未変更pairの反応が消える欠陥も、u331/u332の承認済み更新責務として修復した。17ケース中8ケースでpairと別経験の受け取りを共存、9対照と全初回は不変。旧30×2初回・17×2回答recordは旧意味／本文／停止へ完全復元する。
+
+683 passed／1 failed／skip 0（新370成功、関連313成功・1失敗）。実service＋隔離SQL16例と同16DTOの現行API client／hook／Modalを確認。HTTP／Auth／nativeはstub。私有2型を既存保持familyに追加しlogical79→81、既存production6file・新production0、公開wire／DB／RN／releaseは不変。u334 unknown専用資格を広げず、元入力・受理更新・全plan・全selectedを独立再導出する。
+
+TECHNICAL_CREDIT／PRODUCT_NOT_CLEAR／正式0/3／candidate_ready=false／automatic_progression=false。長い原文反復・一般入力・任意多段・E04〜E09・本人実機は残る。旧fixture／本文期待を保持し、現在manifest件数とowner identityのみ同期。全24file、実本文、失敗詳細・保存境界・再開先は[u344監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u344_ReliefContinuity_20261018.md)。

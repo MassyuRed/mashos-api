@@ -215,7 +215,7 @@ def test_forged_or_source_changed_checkpoint_cannot_gain_legacy_compatibility():
 
 def test_current_manifest_records_complete_new_type_and_keeps_base_unchanged():
     manifest = dict(_contract_manifest())
-    assert manifest['logical_contract_count'] == 79
+    assert manifest['logical_contract_count'] == 81
     row, = (dict(row) for row in manifest['logical_contract_descriptors']
             if dict(row)['type_name'] == 'EmlisReliefCognitionAppraisalContent')
     assert row['logical_version'] == 'relief-cognition-appraisal-v1'

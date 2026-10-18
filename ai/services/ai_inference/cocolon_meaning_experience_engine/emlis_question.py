@@ -42,10 +42,21 @@ def original_meaning_plan(thread: AdmittedEmlisThread, *, _legacy_result_apprais
                           _legacy_relief_unknown_retention=False, _legacy_relief_unknown_source=False,
                           _legacy_relief_cognition_anaphora=False, _legacy_relief_self_recipient=False,
                           _legacy_past_self_unknown=False, _legacy_reverse_time_contrast=False,
-                          _legacy_time_contrast_source=False):
+                          _legacy_time_contrast_source=False, _legacy_cognitive_feeling_orthography=False):
     source = thread.original
     return build_final_stage1_grounded_observation_plan(
         source.normalized_current_input, evidence_spans=source.evidence_spans,
+        _legacy_cognitive_feeling_orthography=(_legacy_cognitive_feeling_orthography or any((
+            _legacy_time_contrast_source, _legacy_reverse_time_contrast, _legacy_past_self_unknown,
+            _legacy_relief_self_recipient, _legacy_relief_cognition_anaphora,
+            _legacy_relief_unknown_source, _legacy_relief_unknown_retention,
+            _legacy_cognitive_self_continuation, _legacy_relief_cognition_reception,
+            _legacy_unknown_object_action_scope, _legacy_feeling_reason_self_scope,
+            _legacy_cognitive_temporal_topic, _legacy_cognitive_feeling_scope,
+            _legacy_result_appraisal, _legacy_appraisal_reason, _legacy_received_appraisal_context,
+            _legacy_repeated_appraisal_context, _legacy_appraisal_retention, _legacy_duplicate_appraisal_source,
+            _legacy_shared_target_contrast, _legacy_received_unfinished_context,
+            _legacy_received_reason_context, _legacy_received_report_context))),
         _legacy_time_contrast_source=(_legacy_time_contrast_source or _legacy_reverse_time_contrast or any((
             _legacy_past_self_unknown, _legacy_relief_self_recipient, _legacy_relief_cognition_anaphora,
             _legacy_relief_unknown_source, _legacy_relief_unknown_retention,

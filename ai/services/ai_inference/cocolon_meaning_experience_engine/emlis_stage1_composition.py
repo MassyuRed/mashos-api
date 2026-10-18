@@ -16778,6 +16778,8 @@ def _logical_contract_descriptor(
 _LOGICAL_CONTRACT_FIELD_SPECS = (
     ("RetainedReliefCognitionEligibilityV1", "retained-relief-cognition-v1", "schema_version=exact1 source_prefix_ref=exact1 checkpoint_ref=exact1 original_source_ref=exact1 relief_nucleus_ref=exact1 loneliness_nucleus_ref=exact1 unknown_nucleus_ref=exact1 contrast_relation_ref=exact1 move_ref=exact1 unknown_move_ref=exact1 thread_control=exact1", ("INITIAL_SOURCE_OWNED_RELIEF_COGNITION_AND_INDEPENDENT_SELF_WH_UNKNOWN", "EXACT_SOURCE_REPLAY", "NO_ANSWER_OR_LEGACY_PROMOTION"), "POST_SELECTION_LOCAL_CONTENT"),
     ("RetainedReliefCognitionContentV1", "retained-relief-cognition-v1", "schema_version=exact1 eligibility=exact1 projection_preimage_ref=exact1 aggregate_projection_seal_ref=exact1 aggregate_claim_ref=exact1 aggregate_proposition_ref=exact1 meaning_outcome_ref=exact1 reception_binding_ref=exact1 grounding_ref=exact1 proposition=exact1 basis_rows=exact2 qualifier_rows=exact2 seal_ref=exact1", ("LIMITED_THREE_OBJECT_ONE_CLAIM_UNCHANGED", "EXISTING_RELIEF_COGNITION_TWO_ROLE_CONTENT", "INDEPENDENT_UNKNOWN_IS_NOT_CAUSE", "FULL_AGGREGATE_REPLAY"), "POST_SELECTION_LOCAL_CONTENT"),
+    ("RetainedUpdatedReliefCognitionEligibilityV1", "retained-updated-relief-cognition-v1", "schema_version=exact1 source_prefix_ref=exact1 checkpoint_ref=exact1 original_source_ref=exact1 answer_source_ref=exact1 relief_nucleus_ref=exact1 loneliness_nucleus_ref=exact1 contrast_relation_ref=exact1 received_event_ref=exact1 received_reaction_ref=exact1 answer_update=exact1 move_ref=exact1 thread_control=exact1", ("UNCHANGED_SOURCE_OWNED_RELIEF_COGNITION_PAIR", "ONE_EXISTING_RECEIVED_ANSWER_UPDATE", "EXACT_SOURCE_AND_ACCEPTED_UPDATE_REPLAY", "NO_ENDPOINT_OR_LEGACY_PROMOTION"), "POST_SELECTION_LOCAL_CONTENT"),
+    ("RetainedUpdatedReliefCognitionContentV1", "retained-updated-relief-cognition-v1", "schema_version=exact1 eligibility=exact1 projection_preimage_ref=exact1 aggregate_projection_seal_ref=exact1 aggregate_claim_ref=exact1 aggregate_proposition_ref=exact1 meaning_outcome_ref=exact1 reception_binding_ref=exact1 grounding_ref=exact1 proposition=exact1 basis_rows=exact2 qualifier_rows=exact2 seal_ref=exact1", ("LIMITED_THREE_OBJECT_ONE_CLAIM_UNCHANGED", "EXISTING_RELIEF_COGNITION_TWO_ROLE_CONTENT", "ANSWER_OWNS_ITS_ORIGINAL_OR_CURRENT_TIME", "FULL_AGGREGATE_REPLAY"), "POST_SELECTION_LOCAL_CONTENT"),
     ("EmlisReliefCognitionAppraisalContent", "relief-cognition-appraisal-v1", "dimension=exact1 operation=exact1 appraised_bindings=2..N focal_relation_ref=exact1 protected_bindings=exact0 basis_contribution_refs=1..N schema_version=exact1 relief_binding_refs=1..N loneliness_binding_refs=1..N reaction=exact1 response=exact1", ("SOURCE_OWNED_PAST_RELIEF_AND_PRESENT_LONELINESS", "UNCERTAIN_COGNITION_RETAINS_SOURCE_TIME", "DISJOINT_ENDPOINT_BINDINGS_CLOSE_APPRAISED_BASIS", "BOUNDED_RELIEF_AT_REPORTED_RELIEF", "LISTEN_TO_PRESENT_LONELINESS_UNDER_UNCERTAINTY", "JOINT_FACETS_EXPIRE_ON_EITHER_ENDPOINT_REVISION", "LEGACY_APPRAISAL_CONTENT_UNCHANGED"), "APPRAISAL_OPPORTUNITY_PROJECTOR"),
     ("RetainedReasonedExperienceContentV1", "retained-reasoned-experience-v1", "schema_version=exact1 eligibility=exact1 projection_preimage_ref=exact1 aggregate_projection_seal_ref=exact1 aggregate_claim_ref=exact1 aggregate_proposition_ref=exact1 meaning_outcome_ref=exact1 reception_binding_ref=exact1 grounding_ref=exact1 basis_rows=exact3 qualifier_rows=exact3 reason_binding_ref=exact1 event_binding_ref=exact1 evaluation_binding_ref=exact1 reason_relation_ref=exact1 appraisal_relation_ref=exact1 evaluation_kind=exact1 polarity=exact1 reason_time=exact1 evaluation_time=exact1 reception_configuration=exact1 seal_ref=exact1", ("UNCHANGED_REASON_TARGET_SATISFACTION", "RECEIVED_REACTION_ORIGINAL_OCCASION_REVISE_ONCE", "LIMITED_AGGREGATE_UNCHANGED"), "POST_SELECTION_LOCAL_CONTENT"),
     ("RetainedReasonedExperienceEligibilityV1", "retained-reasoned-experience-v1", "schema_version=exact1 source_prefix_ref=exact1 checkpoint_ref=exact1 original_source_ref=exact1 answer_source_ref=exact1 original_nuclei=exact5 original_relations=exact3 update=exact1 move_ref=exact1 thread_control=exact1", ("UNCHANGED_REASON_TARGET_SATISFACTION", "RECEIVED_REACTION_ORIGINAL_OCCASION_REVISE_ONCE", "LIMITED_AGGREGATE_UNCHANGED"), "POST_SELECTION_LOCAL_CONTENT"),
@@ -16898,11 +16900,11 @@ def _contract_manifest() -> tuple[Any, ...]:
         _logical_contract_descriptor(*row)
         for row in _LOGICAL_CONTRACT_FIELD_SPECS
     )
-    if len(descriptors) != 79 or len({row[0][1] for row in descriptors}) != 79:
+    if len(descriptors) != 81 or len({row[0][1] for row in descriptors}) != 81:
         raise Stage1CompositionError("LANGUAGE_CORE_CONTRACT_DESCRIPTOR_STOP")
     return (
         ("schema_version", _CONTRACT_MANIFEST_SCHEMA_VERSION),
-        ("logical_contract_count", 79),
+        ("logical_contract_count", 81),
         ("logical_contract_descriptors", descriptors),
         ("content_kind_derivation_rows", LANGUAGE_CORE_CONTENT_DERIVATION_ROWS),
         ("concrete_runtime_binding_descriptors", LANGUAGE_CORE_CONCRETE_BINDING_DESCRIPTORS),
@@ -18208,8 +18210,11 @@ def project_retained_relief_cognition_content(eligibility, local, decision, sele
         or meaning.projection_preimage_ref != selected.projection_preimage_ref):
         raise c.CMEEStage1ContractError('retained_relief_cognition_aggregate_invalid')
     proposition, basis, qualifiers = local
-    value = c.RetainedReliefCognitionContentV1(
-        'cocolon.cmee.retained_relief_cognition_content.v1', eligibility,
+    updated = type(eligibility) is c.RetainedUpdatedReliefCognitionEligibilityV1
+    content_type = c.RetainedUpdatedReliefCognitionContentV1 if updated else c.RetainedReliefCognitionContentV1
+    value = content_type(
+        ('cocolon.cmee.retained_updated_relief_cognition_content.v1' if updated
+         else 'cocolon.cmee.retained_relief_cognition_content.v1'), eligibility,
         selected.projection_preimage_ref, selected.projection_seal_ref,
         decision.projected_claim_ref,
         c.retained_relief_cognition_aggregate_ref(decision.subjective_proposition),

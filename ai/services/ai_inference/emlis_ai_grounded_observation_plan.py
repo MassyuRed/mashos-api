@@ -7319,7 +7319,8 @@ def _source_current_cognition_parts(fragment, *, _allow_object_temporal_topic=Fa
     ) if match[role] is not None)
 
 
-def _source_cognitive_feeling_parts(fragment, *, _legacy_cognitive_temporal_topic=False):
+def _source_cognitive_feeling_parts(fragment, *, _legacy_cognitive_temporal_topic=False,
+                                    _legacy_cognitive_feeling_orthography=False):
     """Compose an already bounded cognitive antecedent with its feeling host.
 
     The possibility stays inside the cognitive object. Its negation and
@@ -7357,6 +7358,10 @@ def _source_cognitive_feeling_parts(fragment, *, _legacy_cognitive_temporal_topi
             continue
         feeling = fragment[connector.end():]
         host = re.sub(r"^(?:少し(?:だけ)?|ちょっと|とても|まだ|ずっと)", "", feeling)
+        # Inspect the already bounded adjective through its known spelling.
+        # The feeling slot and every returned scalar range keep the source.
+        if not _legacy_cognitive_feeling_orthography and host in {"さびしい", "さびしいです"}:
+            host = host.replace("さびしい", "寂しい", 1)
         match = _last_finite_operator_match(host, _FEELING_RE)
         if (match is None or match.start() != 0
             or not _source_operator_owner_scope_is_bound(host)
@@ -7394,8 +7399,9 @@ def _source_current_cognition(nucleus):
 
 
 def _final_source_current_cognition_nuclei(nuclei, evidence_spans, normalized_input, *,
+        relations=(),
         _legacy_cognitive_feeling_scope=False, _legacy_cognitive_temporal_topic=False,
-        _legacy_cognitive_self_continuation=True):
+        _legacy_cognitive_self_continuation=True, _legacy_cognitive_feeling_orthography=False):
     if normalized_input is None:
         return nuclei
     source = str(normalized_input.get("memo") or "")
@@ -7408,7 +7414,12 @@ def _final_source_current_cognition_nuclei(nuclei, evidence_spans, normalized_in
         span = spans.get(nucleus.source_span_ids[0]) if len(nucleus.source_span_ids) == 1 else None
         raw = str(span.raw_text) if span is not None else ""
         cognitive_feeling = None if _legacy_cognitive_feeling_scope else _source_cognitive_feeling_parts(
-            raw, _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic)
+            raw, _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic,
+            _legacy_cognitive_feeling_orthography=_legacy_cognitive_feeling_orthography)
+        orthography_only = bool(cognitive_feeling and not _legacy_cognitive_feeling_orthography
+            and _source_cognitive_feeling_parts(raw,
+                _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic,
+                _legacy_cognitive_feeling_orthography=True) is None)
         parts = cognitive_feeling[0] if cognitive_feeling else _source_current_cognition_parts(raw)
         if (parts is None or nucleus.source_fields != ("memo",) or span.source_field != "memo"
             or nucleus.retention not in {"required", "should"}
@@ -7485,7 +7496,7 @@ def _final_source_current_cognition_nuclei(nuclei, evidence_spans, normalized_in
                  or re.match(r"(?:私|わたし|僕|ぼく|俺|おれ)(?:は|が|も)", raw))):
             provenance = tuple(c for c in frame.attribute_codes
                                if c.startswith(("semantic_analyzer:", "detected_type:", "source_claim:")))
-            nucleus = replace(nucleus, kind="reaction" if cognitive_feeling else "state", grounding_kind="explicit",
+            proposed = replace(nucleus, kind="reaction" if cognitive_feeling else "state", grounding_kind="explicit",
                 allowed_claim_scope="explicit_current_input", semantic_frame=replace(frame,
                 predicate_kind="feeling" if cognitive_feeling else "state",
                 polarity=cognitive_feeling[1] if cognitive_feeling else "neutral",
@@ -7497,6 +7508,17 @@ def _final_source_current_cognition_nuclei(nuclei, evidence_spans, normalized_in
                     "lexical:source_bounded_expression",
                     "lexical:preserve_source_predicate", "lexical:no_new_sensation_family",
                     *(f"source_clause_scope:{role}:{a}:{b}:{scope}" for role, a, b, scope in parts))))))
+            # This spelling repair belongs to the existing relief/cognition
+            # pair. Prove its unchanged left source, contrast and complete
+            # input before committing this one source-derived right nucleus.
+            if orthography_only and not any(right.nucleus_id == proposed.nucleus_id
+                    for _, right, _ in source_owned_relief_cognition_pairs(
+                        tuple(proposed if n.nucleus_id == nucleus.nucleus_id else n for n in nuclei),
+                        relations, evidence_spans, normalized_input, require_witness=False,
+                        _legacy_cognitive_feeling_orthography=False)):
+                result.append(nucleus)
+                continue
+            nucleus = proposed
         result.append(nucleus)
     return tuple(result)
 
@@ -7527,7 +7549,7 @@ def _source_explicit_original_feeling(nucleus):
 
 
 def _source_explicit_original_feeling_is_bound(fragment, *, _legacy_cognitive_feeling_scope=False,
-        _legacy_cognitive_temporal_topic=False):
+        _legacy_cognitive_temporal_topic=False, _legacy_cognitive_feeling_orthography=False):
     """Prove the affirmative current feeling host, keeping its whole object.
 
     A cognitive antecedent and an explicitly unresolved prediction stay
@@ -7537,7 +7559,8 @@ def _source_explicit_original_feeling_is_bound(fragment, *, _legacy_cognitive_fe
     if _top_level_text(fragment) != fragment or re.search(r"[「」『』!?！？…‥]", fragment):
         return False
     cognitive = None if _legacy_cognitive_feeling_scope else _source_cognitive_feeling_parts(
-        fragment, _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic)
+        fragment, _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic,
+        _legacy_cognitive_feeling_orthography=_legacy_cognitive_feeling_orthography)
     if cognitive is not None and cognitive[1] == "negative":
         return True
     prefix = (r"(?:(?:それでも|でも|けれど|けれども)[、,]?)?"
@@ -7572,7 +7595,8 @@ def _source_explicit_original_feeling_is_bound(fragment, *, _legacy_cognitive_fe
 
 
 def _final_source_explicit_original_feeling_nuclei(nuclei, evidence_spans, normalized_input, *,
-        _legacy_cognitive_feeling_scope=False, _legacy_cognitive_temporal_topic=False):
+        _legacy_cognitive_feeling_scope=False, _legacy_cognitive_temporal_topic=False,
+        _legacy_cognitive_feeling_orthography=False):
     if normalized_input is None:
         return nuclei
     source = str(normalized_input.get("memo") or "")
@@ -7614,7 +7638,11 @@ def _final_source_explicit_original_feeling_nuclei(nuclei, evidence_spans, norma
             and (not topic or topic['owner'] in {"私", "わたし", "自分", "僕", "ぼく", "俺", "おれ"} or self_reset)
             and _source_explicit_original_feeling_is_bound(raw,
                 _legacy_cognitive_feeling_scope=_legacy_cognitive_feeling_scope,
-                _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic)):
+                _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic,
+                # Only the already source-proved cognitive nucleus may use
+                # the new spelling; other existing spellings are unchanged.
+                _legacy_cognitive_feeling_orthography=(_legacy_cognitive_feeling_orthography
+                    or "lexical:source_cognitive_feeling" not in codes))):
             nucleus = replace(nucleus, semantic_frame=replace(nucleus.semantic_frame,
                 attribute_codes=tuple(_dedupe((*codes, "lexical:source_explicit_original_feeling")))))
         result.append(nucleus)
@@ -7989,7 +8017,8 @@ def source_relief_cognition_replacement(fragment, slot):
 
 
 def source_owned_relief_cognition_pairs(nuclei, relations, evidence_spans, normalized_input,
-                                       *, require_witness=True):
+                                       *, require_witness=True,
+                                       _legacy_cognitive_feeling_orthography=False):
     """Completed SELF relief and a present feeling under uncertain cognition.
 
     The two hosts retain their own tense and polarity. The possible object
@@ -8045,7 +8074,8 @@ def source_owned_relief_cognition_pairs(nuclei, relations, evidence_spans, norma
                 for text in (a.raw_text, b.raw_text)):
             continue
         relief = _source_nominal_past_feeling_parts(a.raw_text)
-        cognitive = _source_cognitive_feeling_parts(b.raw_text)
+        cognitive = _source_cognitive_feeling_parts(b.raw_text,
+            _legacy_cognitive_feeling_orthography=_legacy_cognitive_feeling_orthography)
         if not relief or relief[3] not in {'ほっとした', '安心した'} or not cognitive:
             continue
         scopes = {role: b.raw_text[start:end] for role, start, end, _ in cognitive[0]}
@@ -8852,6 +8882,26 @@ def _thread_retained_reaction_groups(nuclei, relations, *, separate_later_scopes
     between them. Corrections and withdrawals have already removed inactive
     nuclei before this selector. No question wording or body is consulted.
     """
+    # The answer owner witnesses a separate event withdrawal while the
+    # original u332 pair remains intact. Its selected local content replays
+    # that complete source/update proof; a detached tag alone is insufficient.
+    witnessed = tuple(n for n in nuclei if
+        'thread_subject:unchanged_relief_pair_withdrawal:v1' in n.semantic_frame.attribute_codes)
+    if witnessed:
+        left = tuple(n for n in nuclei if 'source_relief_cognition_slot:relief'
+            in n.semantic_frame.attribute_codes and n.retention == 'required')
+        right = tuple(n for n in nuclei if 'source_relief_cognition_slot:loneliness'
+            in n.semantic_frame.attribute_codes and n.retention == 'required')
+        if (len(witnessed) == len(left) == len(right) == 1 and len(relations) == 1
+            and _thread_withdrawn_original_reaction(witnessed[0], relations)
+            and not any(n.source_fields == ('answer_text_private',) for n in nuclei)
+            and {n.nucleus_id for n in nuclei if n.retention == 'required'}
+                == {left[0].nucleus_id, right[0].nucleus_id, witnessed[0].nucleus_id}
+            and (relations[0].type, relations[0].retention, relations[0].from_nucleus_id,
+                 relations[0].to_nucleus_id) == ('contrast', 'required', left[0].nucleus_id, right[0].nucleus_id)):
+            return (('lived_change', (left[0].nucleus_id,), (right[0].nucleus_id,)),
+                    ('current_burden', (witnessed[0].nucleus_id,), ()))
+        raise GroundedObservationPlanError('human_reception_withdrawal_capability_gap')
     # Withdrawing only the appraisal object leaves its explicit reason edge
     # active. It is therefore not an isolated withdrawal, but it must not
     # suppress the separate received experience through family ranking.
@@ -17640,6 +17690,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_past_self_unknown: bool = True,
     _legacy_reverse_time_contrast: bool = True,
     _legacy_time_contrast_source: bool = True,
+    _legacy_cognitive_feeling_orthography: bool = True,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -17689,16 +17740,25 @@ def project_final_stage1_grounded_observation_plan(
     projected_nuclei = _final_source_self_appraisal_nuclei(
         projected_nuclei, evidence_spans, normalized_input, plan.relations,
     )
+    cognitive_source_relations = plan.relations
+    if not _legacy_cognitive_feeling_orthography:
+        # Use the existing source relation classification before this spelling
+        # repair. A continuing feeling is not the left owner's intention.
+        cognitive_source_relations, _ = _final_stage1_typed_relations(
+            plan, projected_nuclei, compound_dependencies, evidence_spans)
     projected_nuclei = _final_source_current_cognition_nuclei(
         projected_nuclei, evidence_spans, normalized_input,
+        relations=cognitive_source_relations,
         _legacy_cognitive_self_continuation=_legacy_cognitive_self_continuation,
         _legacy_cognitive_feeling_scope=_legacy_cognitive_feeling_scope,
         _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic,
+        _legacy_cognitive_feeling_orthography=_legacy_cognitive_feeling_orthography,
     )
     projected_nuclei = _final_source_explicit_original_feeling_nuclei(
         projected_nuclei, evidence_spans, normalized_input,
         _legacy_cognitive_feeling_scope=_legacy_cognitive_feeling_scope,
         _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic,
+        _legacy_cognitive_feeling_orthography=_legacy_cognitive_feeling_orthography,
     )
     relations, nuclei = _final_stage1_typed_relations(
         plan,
@@ -17724,7 +17784,8 @@ def project_final_stage1_grounded_observation_plan(
             nuclei, relations, evidence_spans, normalized_input)
     if not _legacy_relief_cognition_reception:
         pairs = source_owned_relief_cognition_pairs(nuclei, relations, evidence_spans,
-            normalized_input, require_witness=False)
+            normalized_input, require_witness=False,
+            _legacy_cognitive_feeling_orthography=_legacy_cognitive_feeling_orthography)
         slots = {n.nucleus_id: role for left, right, _ in pairs
                  for n, role in ((left, 'relief'), (right, 'loneliness'))}
         spans = {s.span_id: s for s in evidence_spans}
@@ -19429,6 +19490,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_past_self_unknown: bool = True,
     _legacy_reverse_time_contrast: bool = True,
     _legacy_time_contrast_source: bool = True,
+    _legacy_cognitive_feeling_orthography: bool = True,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan.
 
@@ -19507,6 +19569,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_past_self_unknown=_legacy_past_self_unknown,
         _legacy_reverse_time_contrast=_legacy_reverse_time_contrast,
         _legacy_time_contrast_source=_legacy_time_contrast_source,
+        _legacy_cognitive_feeling_orthography=_legacy_cognitive_feeling_orthography,
     )
 
 

@@ -95,6 +95,8 @@ class PreparedEmlisMeaning:
     legacy_past_self_unknown: bool = False
     legacy_reverse_time_contrast: bool = False
     legacy_time_contrast_source: bool = False
+    legacy_cognitive_feeling_orthography: bool = False
+    legacy_relief_cognition_update_retention: bool = False
 
 
 def _text(row, index, resolver) -> str:
@@ -475,6 +477,133 @@ def _retained_relief_cognition_duties(prepared, nuclei, relations):
                     (n.nucleus_id,), ()) for n in (*changed, *survivors))
     edge, = edges
     return (*duties, ('current_burden', (edge.from_nucleus_id,), (edge.to_nucleus_id,)))
+
+
+def _unchanged_relief_cognition_update_source(prepared):
+    """Prove the u332 pair is untouched by one accepted, separate received update.
+
+    This reads the existing answer owner's result; it admits no new answer
+    grammar or reaction. The two original source roles remain the authority.
+    """
+    if prepared is None:
+        return None
+    original, thread, checkpoint = prepared.original_plan, prepared.thread, prepared.checkpoint
+    control, update = thread.control, checkpoint.answer_update
+    if (len(thread.answers) != 1 or len(control.answers) != 1 or control.current_round != 1
+        or control.admitted_history or control.rejected_frame_keys or control.frame_feedback_sources
+        or checkpoint.assessment_status != 'RESOLVED' or checkpoint.unresolved_parts
+        or update is None or update.disposition != 'MATERIAL_UPDATE'
+        or update.unresolved_parts or len(update.updates) != 1):
+        return None
+    pairs = gp.source_owned_relief_cognition_from_resolver(
+        original.nuclei, original.relations, thread.resolver())
+    if len(pairs) != 1:
+        return None
+    left, right, contrast = pairs[0]
+    owned = {left.nucleus_id, right.nucleus_id}
+    rest = tuple(n for n in original.nuclei if n.retention == 'required' and n.nucleus_id not in owned)
+    edges = tuple(e for e in original.relations if e != contrast)
+    if (len(rest) != 2 or len(edges) != 1 or not gp._received_contrast_group_targets(rest, edges)
+        or any(n.semantic_frame.actor != 'current_user' or n.grounding_kind != 'explicit'
+            or n.source_fields not in {('memo',), ('memo_action',)}
+            or n.allowed_claim_scope != 'explicit_current_input' for n in rest)):
+        return None
+    edge, = edges
+    index = {n.nucleus_id: n for n in rest}
+    event, reaction = index.get(edge.from_nucleus_id), index.get(edge.to_nucleus_id)
+    if event is None or reaction is None or event.kind != 'event' or reaction.kind != 'reaction':
+        return None
+    item, = update.updates
+    answer = prepared.accepted_nuclei[0] if len(prepared.accepted_nuclei) == 1 else None
+    evidence = tuple(q.evidence.evidence_id for q in thread.resolver().qualified_refs
+        if q.source_envelope_id == thread.answers[0].envelope.envelope_id)
+    if (len(evidence) != 1 or item.evidence_refs != evidence
+        or checkpoint.accepted_update_refs != (item.update_ref,)
+        or tuple(n.nucleus_id for n in prepared.accepted_nuclei) != item.changed_claim_refs
+        or set(item.target_meaning_refs) & owned
+        or set(checkpoint.inactive_claim_refs) & (owned | {contrast.relation_id})):
+        return None
+    if item.operation == 'ADD':
+        if (item.target_meaning_refs != (event.nucleus_id,) or item.superseded_claim_refs
+            or item.affected_dependency_refs or checkpoint.inactive_claim_refs):
+            return None
+    elif item.operation in {'REVISE', 'WITHDRAW'}:
+        targets = item.target_meaning_refs
+        if (targets not in {(reaction.nucleus_id,), (event.nucleus_id,)}
+            or item.operation == 'REVISE' and targets != (reaction.nucleus_id,)
+            or item.binding_kind != 'EXPLICIT_CORRECTION'
+            or item.superseded_claim_refs != targets
+            or item.affected_dependency_refs != (edge.relation_id,)
+            or set(checkpoint.inactive_claim_refs) != {*targets, edge.relation_id}):
+            return None
+        if item.operation == 'WITHDRAW':
+            # Reaction-only withdrawal already keeps the pair directly. Its
+            # old checkpoint and selected content need no migration.
+            if prepared.accepted_nuclei or targets != (event.nucleus_id,):
+                return None
+            return left, right, contrast, event, reaction, item, None
+    else:
+        return None
+    if (answer is None or answer.source_fields != (ANSWER_FIELD,)
+        or answer.grounding_kind != 'explicit' or answer.retention != 'required'
+        or answer.allowed_claim_scope != 'explicit_supplemental_answer'
+        or answer.semantic_frame.actor != 'current_user' or len(answer.source_span_ids) != 1
+        or answer.surface_anchor_ids != answer.source_span_ids
+        or answer.semantic_frame.target_anchor_ids != answer.source_span_ids
+        or (answer.kind, answer.semantic_frame.predicate_kind, answer.semantic_frame.modality)
+            != ('reaction', 'feeling', 'feeling')
+        or answer.semantic_frame.polarity not in {'positive', 'negative'}
+        or gp.is_grounded_current_answer_uncertainty(answer)):
+        return None
+    times = {code for code in answer.semantic_frame.attribute_codes if code.startswith('thread_time:')}
+    temporal = item.temporal_binding
+    if (temporal.anchor_source_ref != thread.original.envelope.envelope_id
+        or temporal.resolved_interval is not None or temporal.timezone_basis is not None):
+        return None
+    if item.operation == 'ADD':
+        current = (answer.semantic_frame.time_scope == 'present' and times == {'thread_time:answer_time'}
+            and (item.binding_kind, temporal.about_time, temporal.relative_relation)
+                == ('SAME_OCCASION_CURRENT_STATE', 'ANSWER_TIME', 'answer_deictic_now'))
+        past = (answer.semantic_frame.time_scope == 'past' and times == {'thread_time:original_occasion'}
+            and (item.binding_kind, temporal.about_time, temporal.relative_relation)
+                == ('QUESTION_FOCUS', 'ORIGINAL_OCCASION', None))
+        if not (current or past) or temporal.time_expression_evidence_refs != evidence:
+            return None
+    elif (answer.semantic_frame.time_scope != 'past' or times != {'thread_time:original_occasion'}
+          or temporal.about_time != 'ORIGINAL_OCCASION' or temporal.relative_relation is not None):
+        return None
+    return left, right, contrast, event, reaction, item, answer
+
+
+def _retained_unchanged_relief_cognition_duties(prepared, nuclei, relations):
+    from dataclasses import fields
+    if prepared is None or any(getattr(prepared, f.name) for f in fields(prepared)
+                               if f.name.startswith('legacy_')):
+        return ()
+    source = _unchanged_relief_cognition_update_source(prepared)
+    if source is None:
+        return ()
+    left, right, contrast, event, reaction, item, answer = source
+    index = {n.nucleus_id: n for n in nuclei}
+    pairs = gp.source_owned_relief_cognition_from_resolver(nuclei, relations, prepared.thread.resolver())
+    if ((left, right, contrast) not in pairs or any(index.get(n.nucleus_id) != n for n in (left, right))
+        or set(index) != ({n.nucleus_id for n in prepared.original_plan.nuclei}
+            - set(prepared.checkpoint.inactive_claim_refs)) | set(item.changed_claim_refs)):
+        return ()
+    pair = ('lived_change', (left.nucleus_id,), (right.nucleus_id,))
+    if item.operation == 'WITHDRAW':
+        survivor = index.get(reaction.nucleus_id)
+        if (survivor is None or 'thread_subject:withdrawn_source_event'
+            not in survivor.semantic_frame.attribute_codes):
+            return ()
+        return (pair, ('current_burden', (reaction.nucleus_id,), ()))
+    if answer is None or index.get(answer.nucleus_id) is None:
+        return ()
+    positive = gp.is_grounded_positive_feeling(answer)
+    answer_duty = ('lived_change' if positive else 'current_burden', (answer.nucleus_id,), ())
+    # The original received contrast stays complete in Observation. Keep
+    # the existing answer duty and its own time, beside the unchanged pair.
+    return pair, answer_duty
 
 
 def _retained_unfinished_received_duties(prepared, nuclei, relations):
@@ -968,12 +1097,22 @@ def _active_plan(original, thread, added, inactive, updates, unresolved=(), *, p
         if row.source_fields == (ANSWER_FIELD,) and row.retention == "required"
         and row.allowed_claim_scope == "explicit_supplemental_answer"
     )[-1:]
+    withdrawal_pair = (_unchanged_relief_cognition_update_source(prepared)
+        if prepared is not None and not any(getattr(prepared, name)
+            for name in prepared.__dataclass_fields__ if name.startswith('legacy_')) else None)
+    if withdrawal_pair is not None and withdrawal_pair[5].operation == 'WITHDRAW':
+        survivor = withdrawal_pair[4].nucleus_id
+        nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+            attribute_codes=(*n.semantic_frame.attribute_codes,
+                'thread_subject:unchanged_relief_pair_withdrawal:v1')))
+            if n.nucleus_id == survivor else n for n in nuclei)
     response, coverage, surface, safety_policy = gp._build_response_and_policies(
         nuclei=nuclei, relations=relations, safety_decision=safety, complexity=complexity,
         material_quality=quality, include_reception_relation_support=True,
         final_source_fidelity=True,
         primary_focus_nucleus_ids=focus_ids,
-        retained_reaction_groups=(_retained_relief_cognition_duties(prepared, nuclei, relations)
+        retained_reaction_groups=(_retained_unchanged_relief_cognition_duties(prepared, nuclei, relations)
+            or _retained_relief_cognition_duties(prepared, nuclei, relations)
             or _retained_reasonless_shared_target_duties(
             original, thread, nuclei, relations, updates)
             or _retained_withdrawn_appraisal_duties(original, thread, nuclei, relations, updates)
@@ -994,7 +1133,8 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
     thread = admit_emlis_thread(request)
     original = original_meaning_plan(thread)
     try:
-        return _prepare_emlis_meaning_from_plan(request, thread, original)
+        return _prepare_emlis_meaning_from_plan(request, thread, original,
+            legacy_relief_cognition_update_retention=False)
     except ValueError as exc:
         if (str(exc) == 'emlis_checkpoint_source_prefix_mismatch'
             and thread.control.prepared_meaning_checkpoint_ref is not None and thread.answers):
@@ -1022,6 +1162,28 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
             or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
             raise
+        # u343's accepted answer checkpoints own their complete old duties
+        # and delivery, even when both unchanged source roles remain valid.
+        try:
+            restored = _prepare_emlis_meaning_from_plan(request, thread, original,
+                legacy_relief_cognition_update_retention=True)
+        except ValueError as prior_exc:
+            if str(prior_exc) not in {'emlis_checkpoint_source_prefix_mismatch', 'emlis_question_noncanonical'}:
+                raise
+        else:
+            if restored.legacy_relief_cognition_update_retention:
+                return restored
+        # u343 spelling variants retain their complete former source meaning,
+        # including unavailable delivery. Validate the whole old checkpoint.
+        prior_orthography = original_meaning_plan(thread, _legacy_cognitive_feeling_orthography=True)
+        if prior_orthography.nuclei != original.nuclei or prior_orthography.relations != original.relations:
+            try:
+                restored = _prepare_emlis_meaning_from_plan(request, thread, prior_orthography)
+            except ValueError as prior_exc:
+                if str(prior_exc) not in {'emlis_checkpoint_source_prefix_mismatch', 'emlis_question_noncanonical'}:
+                    raise
+            else:
+                return replace(restored, legacy_cognitive_feeling_orthography=True)
         # u342 deictic-time and inline-connective records retain their whole
         # former meaning and delivery; a saved ID never owns the new plan.
         prior_contrast = original_meaning_plan(thread, _legacy_time_contrast_source=True)
@@ -1304,7 +1466,7 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         return replace(prepared, legacy_result_appraisal=True)
 
 
-def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_appraisal_correction=False, legacy_appraisal_answer_time=False, legacy_appraisal_original_time=False, legacy_reason_withdrawal=False, legacy_withdrawal_precedence=False):
+def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_appraisal_correction=False, legacy_appraisal_answer_time=False, legacy_appraisal_original_time=False, legacy_reason_withdrawal=False, legacy_withdrawal_precedence=False, legacy_relief_cognition_update_retention=True):
     if thread.control.capability_snapshot == "Q3_PREMIUM" and thread.control.admitted_history and not thread.answers:
         from .emlis_thread_history import frame_supported_focus
         focus = frame_supported_focus(thread, original)
@@ -1344,7 +1506,8 @@ def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_apprai
                 legacy_appraisal_answer_time=legacy_appraisal_answer_time,
                 legacy_appraisal_original_time=legacy_appraisal_original_time,
                 legacy_reason_withdrawal=legacy_reason_withdrawal,
-                legacy_withdrawal_precedence=legacy_withdrawal_precedence)
+                legacy_withdrawal_precedence=legacy_withdrawal_precedence,
+                legacy_relief_cognition_update_retention=legacy_relief_cognition_update_retention)
             cp = prepared.checkpoint
             accepted = tuple(dict.fromkeys((*accepted, *cp.accepted_update_refs)))
             inactive = tuple(dict.fromkeys((*inactive, *cp.inactive_claim_refs)))
@@ -1361,10 +1524,11 @@ def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_apprai
         legacy_appraisal_answer_time=legacy_appraisal_answer_time,
         legacy_appraisal_original_time=legacy_appraisal_original_time,
         legacy_reason_withdrawal=legacy_reason_withdrawal,
-        legacy_withdrawal_precedence=legacy_withdrawal_precedence)
+        legacy_withdrawal_precedence=legacy_withdrawal_precedence,
+        legacy_relief_cognition_update_retention=legacy_relief_cognition_update_retention)
 
 
-def _prepare_answer(thread, original, *, legacy_appraisal_correction=False, legacy_appraisal_answer_time=False, legacy_appraisal_original_time=False, legacy_reason_withdrawal=False, legacy_withdrawal_precedence=False):
+def _prepare_answer(thread, original, *, legacy_appraisal_correction=False, legacy_appraisal_answer_time=False, legacy_appraisal_original_time=False, legacy_reason_withdrawal=False, legacy_withdrawal_precedence=False, legacy_relief_cognition_update_retention=False):
     base = _base_ref(thread, original)
     if not thread.answers:
         checkpoint = EmlisMeaningCheckpointV1(
@@ -1566,11 +1730,23 @@ def _prepare_answer(thread, original, *, legacy_appraisal_correction=False, lega
         thread.source_prefix_ref, base, update,
         "PARTIAL" if updates and unresolved else "UNRESOLVED" if unresolved else "RESOLVED",
         tuple(row.update_ref for row in updates), tuple(dict.fromkeys(inactive)), tuple(unresolved))
+    prepared = PreparedEmlisMeaning(thread, original, tuple(added), checkpoint)
+    retained_pair = _unchanged_relief_cognition_update_source(prepared)
+    if retained_pair is not None:
+        if legacy_relief_cognition_update_retention:
+            prepared = replace(prepared, legacy_relief_cognition_update_retention=True)
+        else:
+            version = 'source_relief_cognition_update_retention:v1'
+            update = replace(update, new_meaning_ref=identity(
+                'emlis-meaning', base, tuple(asdict(x) for x in updates), version))
+            checkpoint = replace(checkpoint, answer_update=update, checkpoint_id=identity(
+                'emlis-checkpoint', thread.source_prefix_ref, base, asdict(update), version))
+            prepared = replace(prepared, checkpoint=checkpoint)
     # The server-bound reference is checked by re-derivation from all sources.
     supplied = thread.control.prepared_meaning_checkpoint_ref
     if supplied is not None and supplied != checkpoint.checkpoint_id:
         raise ValueError("emlis_checkpoint_source_prefix_mismatch")
-    return PreparedEmlisMeaning(thread, original, tuple(added), checkpoint)
+    return prepared
 
 
 def build_updated_grounded_plan(prepared: PreparedEmlisMeaning):
