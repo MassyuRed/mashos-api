@@ -3144,10 +3144,11 @@ def _source_grounded_received_contrast_rows(targets, supports, nucleus_index, re
 
 
 def _source_unknown_object_clauses(move, plan, resolver):
-    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver
+    from emlis_ai_grounded_observation_plan import _source_unknown_object_group_from_resolver, _source_independent_unknown_object_from_resolver
     if plan is None or FINAL_STAGE1_GROUNDED_PROJECTION_VERSION not in plan.source_contracts:
         return ()
     group = _source_unknown_object_group_from_resolver(plan.nuclei, plan.relations, resolver, include_single=True)
+    group = group or _source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver)[:1]
     ids = (*move.target_nucleus_ids, *move.support_nucleus_ids)
     if (not group or not move.required or move.move_role != "felt_response"
         or move.reception_act != "stay_with_current_burden"
@@ -3174,10 +3175,10 @@ def _unknown_object_nominal(clauses):
 
 
 def _unknown_object_group_ir_text(realization):
-    single = tuple(c for c in realization.nominalization_plan if c.startswith("source-single-unknown-object:"))
+    single = tuple(c for c in realization.nominalization_plan if c.startswith(("source-single-unknown-object:", "source-independent-unknown-object:")))
     if single:
         from emlis_ai_grounded_observation_plan import _source_self_unknown_object_parts
-        if (single != ("source-single-unknown-object:0",)
+        if (single not in {("source-single-unknown-object:0",), ("source-independent-unknown-object:0",)}
             or realization.nominalization_plan != (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, *single)
             or realization.target_slot_count != 1 or realization.context_slots
             or len(realization.semantic_fragments) != 1 or len(realization.semantic_profiles) != 1
@@ -6278,7 +6279,10 @@ def derive_source_grounded_nominalization_plan(
         if fragments != unknown_object:
             raise GroundedHumanReceptionSurfaceError("REALIZABLE_RECEPTION_EXPRESSION_MORPHOLOGY_GAP")
         if len(unknown_object) == 1:
-            return (*nominalization, "source-single-unknown-object:0")
+            from emlis_ai_grounded_observation_plan import _source_independent_unknown_object_from_resolver
+            independent = _source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, resolver)
+            marker = "source-independent-unknown-object:0" if independent else "source-single-unknown-object:0"
+            return (*nominalization, marker)
         feeling_slot = next(i for i, n in enumerate(nuclei) if n.kind == "reaction")
         return (*nominalization, f"source-unknown-object:{feeling_slot}:{1-feeling_slot}")
     shared = _source_grounded_shared_target_group(move, plan, resolver)
@@ -6425,7 +6429,8 @@ def source_grounded_negative_context_nominal(
 def _source_grounded_nominalization_shape_valid(
     plan: tuple[str, ...], semantic_count: int,
 ) -> bool:
-    if semantic_count == 1 and plan == (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, "source-single-unknown-object:0"):
+    if semantic_count == 1 and plan in {(*_SOURCE_GROUNDED_NOMINALIZATION_BASE, "source-single-unknown-object:0"),
+                                      (*_SOURCE_GROUNDED_NOMINALIZATION_BASE, "source-independent-unknown-object:0")}:
         return True
     if (semantic_count == 4 and len(plan) == 2
         and plan[:1] == _SOURCE_GROUNDED_NOMINALIZATION_BASE
@@ -8016,7 +8021,7 @@ def _validate_source_grounded_move_ir(
     expected_nominalization = _source_grounded_nominalization_from_profiles(
         move.semantic_fragments, move.semantic_profiles, move.reference_mode,
     )
-    unknown_grammar = tuple(p for p in move.nominalization_plan if p.startswith(("source-unknown-object:", "source-single-unknown-object:")))
+    unknown_grammar = tuple(p for p in move.nominalization_plan if p.startswith(("source-unknown-object:", "source-single-unknown-object:", "source-independent-unknown-object:")))
     if unknown_grammar:
         _unknown_object_group_ir_text(move)
         expected_nominalization = (*expected_nominalization, *unknown_grammar)
@@ -11038,6 +11043,16 @@ def _source_grounded_reception_fragment(
         else:
             connected = first[:-1] + "り"  # source-proven 同時に/どちらもある
         return connected + "、" + second + "のですね"
+    if "source-independent-unknown-object:0" in realization.nominalization_plan:
+        _unknown_object_group_ir_text(realization)
+        appraisal = selected_subjective_decision.subjective_proposition.appraisal_content
+        if (not move.required or move.reception_act != "stay_with_current_burden"
+            or move.move_role != "felt_response" or context_prefix
+            or recovery_stage != "full" or realization.clause_form != "FINITE"
+            or appraisal is None or appraisal.dimension != "MATERIAL_WEIGHT"
+            or appraisal.operation != "RECEIVE_AS_MATERIAL"):
+            raise GroundedHumanReceptionSurfaceError("MEANING_REALIZATION_CAUSAL_TRACE_GAP")
+        return _unknown_object_recipient(realization.semantic_fragments[0]) + "のですね"
     if "source-single-unknown-object:0" in realization.nominalization_plan:
         _unknown_object_group_ir_text(realization)
         appraisal = selected_subjective_decision.subjective_proposition.appraisal_content

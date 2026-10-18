@@ -949,3 +949,127 @@ def test_single_unknown_ir_cannot_rebind_scope(single_unknown_context, change):
         changed = replace(ir, semantic_fragments=('その理由は分からない',))
     with pytest.raises(hr.GroundedHumanReceptionSurfaceError):
         hr._unknown_object_group_ir_text(changed)
+
+
+@pytest.fixture(scope='module')
+def unknown_action_baseline():
+    import json
+    from pathlib import Path
+    return json.loads((Path(__file__).parent / 'fixtures' /
+        'cmee_emlis_u326_unknown_action_checkpoint_v1.json').read_text())
+
+
+def _unknown_action_request(memo, action, modern=True):
+    req = initial(memo, action)
+    return replace(req, execution_mode='EMLIS_APPLICATION',
+        emlis_thread=replace(req.emlis_thread, capability_snapshot='Q3_FREE')) if modern else req
+
+
+@pytest.mark.parametrize('modern', [False, True])
+@pytest.mark.parametrize('case_index', range(20))
+def test_independent_unknown_action_keeps_both_selected_duties(unknown_action_baseline, case_index, modern):
+    from test_cmee_emlis_received_discourse import actual, inverse
+    from emlis_ai_grounded_observation_plan import _source_independent_unknown_object_from_resolver
+    row = unknown_action_baseline['cases'][case_index]
+    req = _unknown_action_request(row['memo'], row['action'], modern)
+    prepared = prepare_emlis_meaning(req)
+    plan = build_updated_grounded_plan(prepared)
+    group = _source_independent_unknown_object_from_resolver(plan.nuclei, plan.relations, prepared.thread.resolver())
+    assert len(group) == 2
+    moves = plan.response_plan.human_reception_plan.moves
+    assert [m.reception_act for m in moves] == ['stay_with_current_burden', 'honor_concrete_effort']
+    assert [m.target_nucleus_ids for m in moves] == [(n.nucleus_id,) for n in group]
+    assert all(m.required and not m.support_nucleus_ids for m in moves)
+    decisions = project_thread_meaning(prepared, plan).selected_reception.decisions
+    assert len(decisions) == 2 and all(d.selected_contribution_refs for d in decisions)
+    assert not set(decisions[0].selected_contribution_refs) & set(decisions[1].selected_contribution_refs)
+    assert all((d.subjective_proposition.appraisal_content.dimension,
+                d.subjective_proposition.appraisal_content.operation) == ('MATERIAL_WEIGHT','RECEIVE_AS_MATERIAL')
+               for d in decisions)
+    assert not any(r.type in {'wish_and_constraint','attempt_and_block'} for r in plan.relations)
+    assert any(r.type == 'uncertain_connection' for r in plan.relations)
+    context = actual(request=req)
+    public = MeaningExperienceEngine().generate(req)
+    assert public.artifact and public.artifact.text == context[0].artifact.text
+    follow = public.artifact.reception
+    recipient = row['memo'].rstrip('。').replace('自分自身','ご自身').replace('自分','ご自身').replace('私','あなた')
+    assert follow.startswith(recipient + 'のですね。')
+    assert row['action'].rstrip('。') in follow
+    assert follow.count('まだ') == row['memo'].count('まだ')
+    assert '結論を急がず' not in follow and '背景' not in follow
+    assert public.question is None and public.question_decision.disposition == 'END'
+    assert inverse(context, follow, without_author=True).passed
+
+
+@pytest.mark.parametrize('case_index', range(20))
+def test_unknown_action_old_checkpoint_is_restored_without_relabelling(unknown_action_baseline, case_index):
+    import json, hashlib
+    from dataclasses import asdict
+    row = unknown_action_baseline['cases'][case_index]
+    assert unknown_action_baseline['source_commit'] == '56fcaaec23a516de70fcc86f8f0caca94b86bc50'
+    req = _unknown_action_request(row['memo'], row['action'])
+    fresh = prepare_emlis_meaning(req)
+    assert fresh.checkpoint.checkpoint_id != row['checkpoint']['checkpoint_id']
+    req = replace(req, emlis_thread=replace(req.emlis_thread,
+        prepared_meaning_checkpoint_ref=row['checkpoint']['checkpoint_id']))
+    restored = prepare_emlis_meaning(req)
+    assert restored.legacy_unknown_object_action_scope
+    assert json.loads(json.dumps(asdict(restored.checkpoint))) == row['checkpoint']
+    plan = build_updated_grounded_plan(restored)
+    def digest(x):
+        return hashlib.sha256(json.dumps(x,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    assert digest([asdict(n) for n in plan.nuclei]) == row['nuclei_sha256']
+    assert digest([asdict(r) for r in plan.relations]) == row['relations_sha256']
+    assert digest(asdict(project_thread_meaning(restored, plan).selected_reception)) == row['selected_sha256']
+    out = MeaningExperienceEngine().generate(req)
+    assert out.artifact and out.artifact.text == row['body']
+    assert json.loads(json.dumps(asdict(out.question_decision))) == row['question_decision']
+
+
+@pytest.fixture(scope='module')
+def independent_unknown_context():
+    from test_cmee_emlis_received_discourse import actual
+    return actual(request=_unknown_action_request('何が嫌なのか、自分でもまだよく分からない。','机を片付けた。'))
+
+
+@pytest.mark.parametrize('old,new', [
+    ('何が嫌なのか','なぜ嫌なのか'), ('何が嫌なのか','何が怖いのか'), ('何が嫌なのか、',''),
+    ('ご自身でも','私でも'), ('ご自身でも','友人でも'), ('ご自身でも','ご自身には'),
+    ('まだよく','よく'), ('まだよく','まだ'), ('分からない','分かった'),
+    ('分からない','分からなかった'), ('のですね。','から、'), ('のですね。','のだと受け止めています。'),
+    ('何が嫌なのか、ご自身でもまだよく分からないのですね。',''),
+    ('机を片付けたことを大切に思っています。',''),
+    ('机を片付けた','メモを書いた'), ('机を片付けた','机を片付けていない'),
+    ('机を片付けた','机を片付けるつもりだ'), ('机を片付けた','友人が机を片付けた'),
+])
+def test_independent_unknown_inverse_rejects_loss_rebinding_and_false_link(independent_unknown_context, old, new):
+    from test_cmee_emlis_received_discourse import inverse
+    follow = independent_unknown_context[0].artifact.reception
+    changed = follow.replace(old,new)
+    assert changed != follow
+    assert not inverse(independent_unknown_context, changed, without_author=True).passed
+
+
+@pytest.mark.parametrize('memo,action', [
+    ('その理由は自分でもよく分からない。','メモを書いた。'),
+    ('なぜ嫌なのか、自分でもよく分からない。','メモを書いた。'),
+    ('何が嫌なのか、友人でもよく分からない。','メモを書いた。'),
+    ('何が嫌なのか、自分でもよく分からなかった。','メモを書いた。'),
+    ('何が嫌なのか、自分でもよく分からない？','メモを書いた。'),
+    ('何が嫌なのか、自分でもよく分からないと思う。','メモを書いた。'),
+    ('「何が嫌なのか、自分でもよく分からない」と言った。','メモを書いた。'),
+    ('友人の話。何が嫌なのか、自分でもよく分からない。','メモを書いた。'),
+    ('なんだかしんどい。何が嫌なのか、自分でもよく分からない。','メモを書いた。'),
+    ('何が嫌なのか、自分でもよく分からない。机を片付けた。',''),
+    ('何が嫌なのか、自分でもよく分からない。','メモを書いた。机を片付けた。'),
+    ('何が嫌なのか、自分でもよく分からない。','友人が机を片付けた。'),
+    ('何が嫌なのか、自分でもよく分からない。','机を片付けていない。'),
+    ('何が嫌なのか、自分でもよく分からない。','机を片付けるつもりだ。'),
+    ('何が嫌なのか、自分でもよく分からない。','机を片付けたら休む。'),
+    ('何が嫌なのか、自分でもよく分からない。','「机を片付けた」と友人が言った。'),
+])
+def test_independent_unknown_proof_does_not_expand_source_scope(memo,action):
+    from emlis_ai_grounded_observation_plan import _source_independent_unknown_object_from_resolver
+    p = prepare_emlis_meaning(_unknown_action_request(memo,action))
+    plan = build_updated_grounded_plan(p)
+    assert not _source_independent_unknown_object_from_resolver(plan.nuclei,plan.relations,p.thread.resolver())

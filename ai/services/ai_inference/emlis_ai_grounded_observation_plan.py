@@ -17193,6 +17193,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_cognitive_feeling_scope: bool = False,
     _legacy_cognitive_temporal_topic: bool = False,
     _legacy_feeling_reason_self_scope: bool = False,
+    _legacy_unknown_object_action_scope: bool = True,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -17266,6 +17267,22 @@ def project_final_stage1_grounded_observation_plan(
         nuclei,
         evidence_spans,
     )
+    if not _legacy_unknown_object_action_scope:
+        independent_unknown = _source_independent_unknown_object_group(
+            nuclei, relations, evidence_spans, normalized_input, require_witness=False)
+        if independent_unknown:
+            unknown, action = independent_unknown
+            nuclei = tuple(replace(n, semantic_frame=replace(n.semantic_frame,
+                attribute_codes=tuple(_dedupe((*n.semantic_frame.attribute_codes,
+                    "lexical:source_bounded_expression", "lexical:preserve_source_predicate",
+                    "lexical:no_new_sensation_family"))))) if n == unknown else n for n in nuclei)
+            # Typed SELF cognition is neither an obstacle nor a wish. Drop
+            # only the optional cross-field hypotheses contradicted by these
+            # two complete source owners; keep their uncertain connection.
+            relations = tuple(r for r in relations if not (
+                {r.from_nucleus_id, r.to_nucleus_id} == {unknown.nucleus_id, action.nucleus_id}
+                and r.type in {"wish_and_constraint", "attempt_and_block"}
+                and r.retention != "required" and r.grounding_kind == "bounded_structural_inference"))
     if not _legacy_appraisal_retention:
         # The thread source owner explicitly enables this retention repair.
         # Direct original-body consumers retain their existing projection.
@@ -17480,6 +17497,55 @@ def _source_single_unknown_object(nuclei, relations, evidence_spans, normalized_
     return (n,)
 
 
+def _source_independent_unknown_object_group(nuclei, relations, evidence_spans, normalized_input, *, require_witness=True):
+    """A complete SELF wh-cognition and a separately recorded performed act."""
+    if normalized_input is None:
+        return ()
+    text = tuple(n for n in nuclei if set(n.source_fields) & _TEXT_SOURCE_FIELDS)
+    spans = tuple(s for s in evidence_spans if s.source_field in _TEXT_SOURCE_FIELDS)
+    memo = tuple(n for n in text if n.source_fields == ("memo",))
+    actions = tuple(n for n in text if n.source_fields == ("memo_action",))
+    if len(text) != 2 or len(spans) != 2 or len(memo) != 1 or len(actions) != 1:
+        return ()
+    unknown, action = memo[0], actions[0]
+    memo_spans = tuple(s for s in spans if s.source_field == "memo")
+    action_spans = tuple(s for s in spans if s.source_field == "memo_action")
+    if (not _source_single_unknown_object((unknown,), (), memo_spans, normalized_input)
+        or len(action_spans) != 1 or not _source_independent_performed_action(action, relations)
+        or action.grounding_kind != "explicit" or action.allowed_claim_scope != "explicit_current_input"
+        or action.kind != "action" or action.semantic_frame.predicate_kind != "action"
+        or action.source_span_ids != (action_spans[0].span_id,)
+        or require_witness and not {"lexical:source_bounded_expression", "lexical:preserve_source_predicate",
+                                   "lexical:no_new_sensation_family"} <= set(unknown.semantic_frame.attribute_codes)):
+        return ()
+    owned = {unknown.nucleus_id, action.nucleus_id}
+    if any(r.retention == "required" or r.grounding_kind != "bounded_structural_inference"
+           or r.type not in {"uncertain_connection", "wish_and_constraint", "attempt_and_block"}
+           or {r.from_nucleus_id, r.to_nucleus_id} != owned
+           for r in relations if {r.from_nucleus_id, r.to_nucleus_id} & owned):
+        return ()
+    source = str(normalized_input.get("memo_action") or "")
+    span = action_spans[0]
+    if (_top_level_text(source) != source or re.search(r"[?？!！…‥\r\n]", source)
+        or not _source_operator_owner_scope_is_bound(str(span.raw_text))
+        or not 0 <= span.start_index < span.end_index <= len(source)
+        or source[span.start_index:span.end_index] != span.raw_text
+        or source[:span.start_index].strip()
+        or not re.fullmatch(r"\s*[。．.]?\s*", source[span.end_index:])):
+        return ()
+    return unknown, action
+
+
+def _source_independent_unknown_object_from_resolver(nuclei, relations, resolver):
+    read_field = getattr(resolver, "source_text_for_span_field", None)
+    spans = resolver.resolve_many(resolver.span_ids)
+    fields = {s.source_field: s for s in spans if s.source_field in {"memo", "memo_action"}}
+    if read_field is None or set(fields) != {"memo", "memo_action"}:
+        return ()
+    normalized = normalize_emlis_current_input({field: read_field(span.span_id) for field, span in fields.items()})
+    return _source_independent_unknown_object_group(nuclei, relations, spans, normalized)
+
+
 def _source_unknown_object_group_from_resolver(nuclei, relations, resolver, *, include_single=False):
     read_field = getattr(resolver, "source_text_for_span_field", None)
     memo = tuple(s for s in resolver.resolve_many(resolver.span_ids) if s.source_field == "memo")
@@ -17497,7 +17563,8 @@ def _source_unknown_object_group_from_resolver(nuclei, relations, resolver, *, i
 
 def _explicit_unknown_object_reception(response, nuclei, relations, evidence_spans, normalized_input):
     """Change reference realization only, after the existing Move is selected."""
-    group = (_source_single_unknown_object(nuclei, relations, evidence_spans, normalized_input)
+    independent = _source_independent_unknown_object_group(nuclei, relations, evidence_spans, normalized_input)
+    group = (independent[:1] or _source_single_unknown_object(nuclei, relations, evidence_spans, normalized_input)
         or _source_feeling_unknown_object_group(nuclei, relations, evidence_spans, normalized_input))
     reception = response.human_reception_plan
     if not group or reception is None:
@@ -18486,6 +18553,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_cognitive_feeling_scope: bool = False,
     _legacy_cognitive_temporal_topic: bool = False,
     _legacy_feeling_reason_self_scope: bool = False,
+    _legacy_unknown_object_action_scope: bool = True,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan.
 
@@ -18554,6 +18622,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_cognitive_feeling_scope=_legacy_cognitive_feeling_scope,
         _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic,
         _legacy_feeling_reason_self_scope=_legacy_feeling_reason_self_scope,
+        _legacy_unknown_object_action_scope=_legacy_unknown_object_action_scope,
     )
 
 

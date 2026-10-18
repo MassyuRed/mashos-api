@@ -85,6 +85,7 @@ class PreparedEmlisMeaning:
     legacy_cognitive_feeling_scope: bool = False
     legacy_cognitive_temporal_topic: bool = False
     legacy_feeling_reason_self_scope: bool = False
+    legacy_unknown_object_action_scope: bool = False
 
 
 def _text(row, index, resolver) -> str:
@@ -949,6 +950,19 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
             or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
             raise
+        # Restore the complete pre-u327 interpretation of independent wh
+        # cognition/action. A saved checkpoint cannot be relabelled as the
+        # newly source-proven two-duty interpretation.
+        prior_unknown_action = original_meaning_plan(thread, _legacy_unknown_object_action_scope=True)
+        if (prior_unknown_action.nuclei != original.nuclei
+            or prior_unknown_action.relations != original.relations):
+            try:
+                restored = _prepare_emlis_meaning_from_plan(request, thread, prior_unknown_action)
+            except ValueError as prior_exc:
+                if str(prior_exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}:
+                    raise
+            else:
+                return replace(restored, legacy_unknown_object_action_scope=True)
         # Re-derive the complete pre-u324 source interpretation. An old
         # checkpoint cannot label the newly recognized feeling/reason pair.
         prior_reason_scope = original_meaning_plan(thread, _legacy_feeling_reason_self_scope=True)

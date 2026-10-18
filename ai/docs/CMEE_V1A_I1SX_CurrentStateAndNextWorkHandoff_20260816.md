@@ -1,4 +1,4 @@
-> 2026-10-18最新：u325で原04の選択済み不明対象を受け取り本文へ復元。意味・checkpointは不変、旧保存と中断再開を確認。E04/E05等は未完、未配置・PRODUCT_NOT_CLEAR。詳細は末尾u325。
+> 2026-10-18最新：u327で別欄のSELF不明対象＋独立した実行済み行動を両方受け止めるよう修復。既存MATERIAL_WEIGHTを保持し、新しい選択意味と旧checkpointの完全復元を区別。E04/E05等は未完、未配置・PRODUCT_NOT_CLEAR。詳細は末尾u327。
 
 **u165 内容修正（2026-10-08 JST・未配置）**：「俺は／おれは」の明示本人記述が分析に出ない表記漏れを修正。既存Analysisの8箇所と共有Planの属格希望・読点付き現在負荷の2箇所へ本人表記だけを追加し、有限節・原文出典・主体・肯否定・順序を保持する。最終対象548 tests PASS（Analysis316・共有231・identity1）、2027 subtests PASS。合成10全文と実RN表示model一致、保存後の再生成禁止readを確認。STRUCTURE_MAP_DELTA_NONE。全日本語表現対応・実DB・実機・商品受入れ未確認。詳細は06／API handoff末尾u165。
 
@@ -22375,3 +22375,20 @@ u325で残った単独入力「何が嫌なのか、自分でもよくわから�
 主担当が未加工10全文を読んだ。対象欠落の修復であり、引用中心のObservation、原文に近いReceptionや「あなたにも」等の自然さは残る。E04の深い受容・E05の問い・初回一体単位の完成とは扱わない。独立した行動の併記で不明対象の受け止めが選択から落ちる問題は別残件であり、次は選択ownerで元の不明対象と行動の役割を証明して追う。PRODUCT_NOT_CLEAR・初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置を維持。同Work補助は正式別model評価ではない。10/20方式判断・10/31管理線・12/18公開目標、Piece／Analysis主枠・53.25%は再評価しない。
 
 全文・source・検証条件：[u326監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u326_SingleUnknownObjectReception_20261018.md)。
+
+
+## u327 — 独立した不明対象と実行済み行動を両方受け止める（2026-10-18 JST）
+
+u326から残る「何が嫌なのか、自分でもよくわからない。」＋別欄の「机を片付けた。」では、不明対象がReceptionの選択から落ち、行動だけが本文へ出ていた。完全なmemoにある現在SELFのwh不明と、完全なmemo_actionにある独立実行済み行動の2核・2spanを原文から証明し、既存のsource-bounded属性を不明核へ付与する。両欄を結ぶoptional bounded推定のwish_and_constraint／attempt_and_blockだけを除去し、uncertain_connectionは残す。既存selectorの2責務へ渡し、2026-09-12 Q4のMATERIAL_WEIGHT／RECEIVE_AS_MATERIALを保つ。単独不明のUNFINISHED_OPENNESSを併記入力へ強制しない。
+
+現行Receptionは「何が嫌なのか、ご自身でもよくわからないのですね。机を片付けたことを大切に思っています。」。本人・対象・程度・否定・時点を保持し、原文にない「まだ」、因果・助言・問いは加えない。既存の有限節作者と独立readerが本人表現を原文へ逆照合する。Q3に加え、公開Q1でprepared意味が旧direct本文経路へ失われる不一致も同じsource証明の組だけ修復した。direct builderのlegacy既定、他core、単独入力・感情＋不明の契約は維持する。製品変更は既存6owner、意味型・公開API・DB・RN・質問上限の変更なし。STRUCTURE_MAP_DELTA_NONE。
+
+今回の新規入力では核属性・辺・選択内容・checkpointが変わる。旧u326の20入力を `ai/tests/fixtures/cmee_emlis_u326_unknown_action_checkpoint_v1.json` に凍結し、旧checkpointを指定した場合は今回のsource修復を無効にして元の意味を完全再導出する。checkpoint・核辺・selected内容が当時と一致することを証明し、旧IDに新しい意味を付け替えない。旧完成本文と旧checkpoint後の中断再開は、欠落を含む旧action-only本文を保つ。checkpoint前の中断再開だけは新しい意味・本文を生成する。
+
+最終source_scopeは **435 passed**（追加94件：20入力×Q1/Q3＝40、旧checkpoint20、逆照合改変18、範囲外16）。Q3理由不明／既存scalar＋別行動の対照は **54 passed／既存3 failed／899 deselected**。既知3件は旧feeling_reasonの名詞句に対する置換・一致期待で、期待値変更・削除・skipは0。Q2/Q3 applicationは別集合 **54 passed**（110.72秒）、現行owner identityは別 **1 passed／194 deselected**（25.48秒）。計544 passed／3 failedで全成功ではなく、最終skipは0、各runの既存Pydantic warningは1件。凍結歴史fixtureは変更せず、現行identity fixtureだけ実sourceから再導出した。途中のQ1本文不一致はprepared本文入口を修復して全435件を再実行した。途中結果は最終件数へ加算しない。
+
+実EmlisThreadService＋実migration SQL／RPCを隔離PGliteで6ケース検証し、現行free／plus／premiumの保存・作者禁止GET/start、旧完成のbyte保持、旧checkpoint前／後のrollback再開を区別した。現行apiClient／emlisThreadApi／useEmlisThread／EmlisThreadModalを使うnative stubでも6 DTOの全文・close/reopenが一致する。実機・本番DB・deploy・mergeは未実施。初回service確認の補助scriptにあるbaselineディレクトリ指定誤りは修正後6件を再実行し、製品検証成功へ混在させていない。
+
+主担当は20入力の未加工全文を読んだ。不明対象の欠落は対象内で修復したが、引用＋「感覚」のObservation、近い内容の反復、行動を「大切に思っています」と受け止める定型は残る。E04の入力固有の深い受容・E05の問いの完成とは扱わない。同欄へ不明と行動を併記した場合の誤分類、裸のscalar不明「今はまだよく分からない。」＋「机を片付けた。」で不明が落ちる問題は今回の証明範囲外であり残件。次はそれらのsourceと責務選択を確認し、語尾だけの変更で完了としない。PRODUCT_NOT_CLEAR・初回一体単位未完了・正式0/3・candidate_ready=false・automatic_progression=false・Draft/open/unmerged・未配置を維持。同Work補助は正式別model評価ではない。10/20方式判断・10/31管理線・12/18公開目標、Piece／Analysis主枠・53.25%は再評価しない。
+
+全文・source・検証条件：[u327監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u327_IndependentUnknownActionReception_20261018.md)。

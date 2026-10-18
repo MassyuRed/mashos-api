@@ -1,0 +1,605 @@
+{
+  "source_commit": "56fcaaec23a516de70fcc86f8f0caca94b86bc50",
+  "cases": [
+    {
+      "memo": "何が嫌なのか、自分でもよくわからない。",
+      "action": "メモを書いた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-da1484acec57957a02c2c0b550fd6cac31e792f7337c07c0d18b07955f7d863d",
+        "source_prefix_ref": "emlis-q3-source-prefix-b0687dbd71fe8eaffefdcf14d3e7f7bcdb54f546aacb31019f06cfdeed0ae577",
+        "base_meaning_ref": "emlis-base-meaning-0b10d5326abcfd81261edb63a2cc0b4b46ff1c7b80a68b972ba742ae193eadd7",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "b73d2d99607071e095e76742ea480c368efc46811d4a5794d64ec301ec4c8dda",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "d36b982e020bad3b7098419ad390b70f1052b0ce1ca9544a57f2c2160753bdf3",
+      "body": "見えたこと：\n今回の中心には、「何が嫌なのか、自分でもよくわからない」があります。\n今の入力には、「メモを書いた」という行動があります。\n\nEmlisから：\nメモを書いたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が嫌なのか、自分でもよくわからない。",
+      "action": "机を片付けた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-a5201cc36776c04c70e74103396b91011b81bfec6ca4f9cd076bd5ef52f3b72a",
+        "source_prefix_ref": "emlis-q3-source-prefix-aab633a02bcd7a45eb3d8539bd775bb9095ce03e0c443cfdb7bda778a2dbf2a7",
+        "base_meaning_ref": "emlis-base-meaning-6ad7415c373023885f09ef2fc431476313fccf0a406ecefe284464ac4a1f2652",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "2122cd69f612c27cfc400814704f7e669d8f53b7ddd0baab93993a79b0384602",
+      "relations_sha256": "73749fd224a3497ef52132520463bc974eab9c01ef1db49ac6657f26fdcb7617",
+      "selected_sha256": "aedb7cd0724e2479308c8cb5681d372c356130ea4f12b6724f87647c7b33ddae",
+      "body": "見えたこと：\n今回の中心には、「何が嫌なのか、自分でもよくわからない」があります。\n今の入力には、「机を片付けた」という行動があります。\n\nEmlisから：\n机を片付けたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が嫌なのか、自分でもはっきり分からない。",
+      "action": "メモを書いた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-0416193820bdec717ababdfdadeb5d5e478b8770a87ffea5345ac80f29650ece",
+        "source_prefix_ref": "emlis-q3-source-prefix-128a2847535618267a9a5cf71cd30aa0ac37181c15b7c0f0c2868e1ca253460f",
+        "base_meaning_ref": "emlis-base-meaning-1f9e56bceef5d2b9b7727e1a4c0629d4f02df40324c82fee690f646017c8cefd",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "b73d2d99607071e095e76742ea480c368efc46811d4a5794d64ec301ec4c8dda",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "f95f81fc440add6af16b674000f28c47955acfa395d5663b87156177e36bb825",
+      "body": "見えたこと：\n今回の中心には、「何が嫌なのか、自分でもはっきり分からない」があります。\n今の入力には、「メモを書いた」という行動があります。\n\nEmlisから：\nメモを書いたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が嫌なのか、自分でもはっきり分からない。",
+      "action": "机を片付けた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-4c36ed1d4f6b0e082fd8d8c3d267f94d6b99b26dd608f656a90699b2f093a0d6",
+        "source_prefix_ref": "emlis-q3-source-prefix-f7bc2940c7ddd70d767b53ddddd2fa44a43d5233eddad492af8c1887b8f94fca",
+        "base_meaning_ref": "emlis-base-meaning-2fee6f288fd8b3a104bab8640b56f45fb65f9a28b57afa666017633a16d51a79",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "2122cd69f612c27cfc400814704f7e669d8f53b7ddd0baab93993a79b0384602",
+      "relations_sha256": "73749fd224a3497ef52132520463bc974eab9c01ef1db49ac6657f26fdcb7617",
+      "selected_sha256": "305596eab4fe9021e30bdba864b4ead45f97c84f34942a5ba12470ce46df563a",
+      "body": "見えたこと：\n今回の中心には、「何が嫌なのか、自分でもはっきり分からない」があります。\n今の入力には、「机を片付けた」という行動があります。\n\nEmlisから：\n机を片付けたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が嫌なのか私にもまだわからない。",
+      "action": "メモを書いた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-93368e565ab2fd5311ec083f289e9e4d0ba994271170a842ce4805ae9ed676a9",
+        "source_prefix_ref": "emlis-q3-source-prefix-6792ec110643ad68b7e9577dcc1759568c9d6a85d0ce06af7a3b4257fc6e9150",
+        "base_meaning_ref": "emlis-base-meaning-fd19ab0cabd9af09bdc440a54781f58a3171fb68fe8f75886f3a6a742d6bffc7",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "dea2ef1de5ec1903c4de68980c60b4e7f1589c3c015a7ee6e6b060b403b252a9",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "906edebc8827a4eb0944e282dd47b0b67895eead83ec272b1771b1423eceb761",
+      "body": "見えたこと：\n今回の中心には、「何が嫌なのか私にもまだわからない」があります。\n今の入力には、「メモを書いた」という行動があります。\n\nEmlisから：\nメモを書いたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が嫌なのか私にもまだわからない。",
+      "action": "机を片付けた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-18c65907c159f82bcea73450814812f9f4704848c8b2015a019367909d1b4b8c",
+        "source_prefix_ref": "emlis-q3-source-prefix-2e4355491f410f5472d135a3bd7f5a520d3f6cd367055846177c5cab78c196b1",
+        "base_meaning_ref": "emlis-base-meaning-0f35b1bef150efd3a596cd3bc97e2160d85cad808dc461fbda647170fa4e5443",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "df507330a6aa5026dab07aac53af8a9675ab28d4bdb88df71217defd4f1fb4c8",
+      "relations_sha256": "31a859576afb7afd37ea71015d60e12a101e7fbe5e4cedb365cb0d634ee197aa",
+      "selected_sha256": "5a85960f9c4638aeda8710dc538a0046ade08232b2390abfd82acb7e5831c522",
+      "body": "見えたこと：\n今回の中心には、「何が嫌なのか私にもまだわからない」があります。\n今の入力には、「机を片付けた」という行動があります。\n\nEmlisから：\n机を片付けたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "どこが嫌なのか、自分でもよくわからない。",
+      "action": "メモを書いた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-55db383cdce1663b0296962872e9c6597455a37ac244a4d7cb3d97740af855f5",
+        "source_prefix_ref": "emlis-q3-source-prefix-3079d9dc54a5fa26ec4415481d0f22d57a6750bcfae0b03e5926fe9061fc72a0",
+        "base_meaning_ref": "emlis-base-meaning-ac8076483315072157bbcbd823bdac5db7ded60739677bdba48c0aca2eb89e3d",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "b73d2d99607071e095e76742ea480c368efc46811d4a5794d64ec301ec4c8dda",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "9e9de3d622a38375c6e0838961271366b31b12f3e25c484fd2dd57f9633648d8",
+      "body": "見えたこと：\n今回の中心には、「どこが嫌なのか、自分でもよくわからない」があります。\n今の入力には、「メモを書いた」という行動があります。\n\nEmlisから：\nメモを書いたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "どこが嫌なのか、自分でもよくわからない。",
+      "action": "机を片付けた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-be1498639b84aa5e1881dee16dbe590bfd5cf8d773e487a4d19172c236fa66b0",
+        "source_prefix_ref": "emlis-q3-source-prefix-d733db8f05cedda3fd979c4918f24155885e0b5fcfda9f3aecca123b05d5c5ff",
+        "base_meaning_ref": "emlis-base-meaning-ec12a1ca64166d0da21bd69303b9b3fdcaf6b8b607291e309cad9fcb09cc56f3",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "2122cd69f612c27cfc400814704f7e669d8f53b7ddd0baab93993a79b0384602",
+      "relations_sha256": "73749fd224a3497ef52132520463bc974eab9c01ef1db49ac6657f26fdcb7617",
+      "selected_sha256": "da87253cba27111b17c95b117f4aebdab06761724c3635226acaefdd62a26d36",
+      "body": "見えたこと：\n今回の中心には、「どこが嫌なのか、自分でもよくわからない」があります。\n今の入力には、「机を片付けた」という行動があります。\n\nEmlisから：\n机を片付けたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が不安なのか、自分でもよくわからない。",
+      "action": "メモを書いた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-048684a44c5cff1611aa86944185b6a1d8266697c5d3cb32606654c2068116e5",
+        "source_prefix_ref": "emlis-q3-source-prefix-31262339bb86f74af525b7d18d00675a225ec1a3eaacfeee84d57e6021b0a7f5",
+        "base_meaning_ref": "emlis-base-meaning-9eed060ff2e03f062878bb8755349509d3f57f7df0fe141ea8131249674a0f7a",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "e0abe9326517a9b75076097b9b779e42041bd11f353a530c61b45306440afee6",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "45cf2c21ffa8326cd6f2117a0eafbf98885d59560027eb728b17ba5c217f475a",
+      "body": "見えたこと：\n今回の中心には、「何が不安なのか、自分でもよくわからない」があります。\n今の入力には、「メモを書いた」という行動があります。\n\nEmlisから：\nメモを書いたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が不安なのか、自分でもよくわからない。",
+      "action": "机を片付けた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-5467abc5052c02a3309a0ab94ac365fbcc22d95e879d79c5760bb7d2a73c31a4",
+        "source_prefix_ref": "emlis-q3-source-prefix-c76ed7706d09e67404e16a5cead67f0cdb23fcbfa1ebab57392dafc07a8da3cf",
+        "base_meaning_ref": "emlis-base-meaning-940ea1f059de991e257ab9eea592e671dcc5d821239692d697339bd319ff1a41",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "4ce9de49925ad209c18ccf79715c3812aae435b871b40760ae49ca312605cc3e",
+      "relations_sha256": "73749fd224a3497ef52132520463bc974eab9c01ef1db49ac6657f26fdcb7617",
+      "selected_sha256": "b4f0c25dd18223ede07c2a4fe9dc35af672875cf3cd37ff0023acd9ed9a421a4",
+      "body": "見えたこと：\n今回の中心には、「何が不安なのか、自分でもよくわからない」があります。\n今の入力には、「机を片付けた」という行動があります。\n\nEmlisから：\n机を片付けたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何がつらいのか、私にもまだわからない。",
+      "action": "メモを書いた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-90de57e212807ebf54a25d9da7b966076974564c05fc237a7a4a8b2bf495363c",
+        "source_prefix_ref": "emlis-q3-source-prefix-874e519eaf74e579b68431c64108e87e04ca85779978969005deac94e4a1a454",
+        "base_meaning_ref": "emlis-base-meaning-187eaa71dee301ea614094e79ed23ae69d6c6f85ba222db9d72cd15395351eba",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "0442947c89557844b098ddd8a65b6e96f994719cd215de96998a57a771db8f79",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "a78f2e4b5a65cb760a171b366ca706c81c3fa76a161b52a9685d6b0601cdbd36",
+      "body": "見えたこと：\n今回の中心には、「何がつらいのか、私にもまだわからない」があります。\n今の入力には、「メモを書いた」という行動があります。\n\nEmlisから：\nメモを書いたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何がつらいのか、私にもまだわからない。",
+      "action": "机を片付けた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-789995ced0f449c1ddc1d69826d7a4fdbaa86097c569c5e596fa770736dcf04c",
+        "source_prefix_ref": "emlis-q3-source-prefix-ba418cbe521413d7ee9c959fbe9de8b1796201a02d648ec5b0e7366500f96bda",
+        "base_meaning_ref": "emlis-base-meaning-1717701adde00aeb03f27e59fc2bdb6528b06b2f000162f48cdce31febc2deec",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "0ae828451ca48d034074cc28f519c899ef0944e5f4f4707b12aff2cdd5ba914d",
+      "relations_sha256": "31a859576afb7afd37ea71015d60e12a101e7fbe5e4cedb365cb0d634ee197aa",
+      "selected_sha256": "ceeb7128153c0f21c35d282d88de5cb6ac25a91dc9ca077e03a36a49309b7063",
+      "body": "見えたこと：\n今回の中心には、「何がつらいのか、私にもまだわからない」があります。\n今の入力には、「机を片付けた」という行動があります。\n\nEmlisから：\n机を片付けたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が怖いのか、私にもまだ分からない。",
+      "action": "メモを書いた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-acdce21e6296bd1bf7747d4d9e8e3ba7bd5c474158beb706798ef8949879409d",
+        "source_prefix_ref": "emlis-q3-source-prefix-05b94855e58734b0513e906dd82dc3168d81587b090f00a634f043f8b7227a72",
+        "base_meaning_ref": "emlis-base-meaning-919cfdd64a35475324945730c150df321dc5a90da8d9351a35de96376067a5a2",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "0442947c89557844b098ddd8a65b6e96f994719cd215de96998a57a771db8f79",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "f1b8b3ded35f0c810f61fa777377a6e4447553d084686d1269e77b55a5b0ad77",
+      "body": "見えたこと：\n今回の中心には、「何が怖いのか、私にもまだ分からない」があります。\n今の入力には、「メモを書いた」という行動があります。\n\nEmlisから：\nメモを書いたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が怖いのか、私にもまだ分からない。",
+      "action": "机を片付けた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-9167132493bcb857a289b7f616a18ed91b6ce23fa43f79cd490df29c62f98b38",
+        "source_prefix_ref": "emlis-q3-source-prefix-7d43a46d6d14f606a7bfa57c82873408792d00e69c40e6469c53b8198d4982ea",
+        "base_meaning_ref": "emlis-base-meaning-3efb4e8f01a9b51f8328e13348f651bd5bb5d2dd503da0c6899c2eb2c76ca300",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "0ae828451ca48d034074cc28f519c899ef0944e5f4f4707b12aff2cdd5ba914d",
+      "relations_sha256": "31a859576afb7afd37ea71015d60e12a101e7fbe5e4cedb365cb0d634ee197aa",
+      "selected_sha256": "6d31f8440b92127b23f06f33a2988da46ebee019239524ad41d346a5190f52b2",
+      "body": "見えたこと：\n今回の中心には、「何が怖いのか、私にもまだ分からない」があります。\n今の入力には、「机を片付けた」という行動があります。\n\nEmlisから：\n机を片付けたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が嫌なのか、自分でもまだよく分からない。",
+      "action": "メモを書いた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-99c6586f97111bd01cb384f2f9c6949e9d114d02b6bf73793eceeda4d53936d7",
+        "source_prefix_ref": "emlis-q3-source-prefix-50e50ab956dc82b8e7fd28f228161d7b500170f05fde5d0fcdb5d376b7ebd2f3",
+        "base_meaning_ref": "emlis-base-meaning-0cd57da8100fe4104e0d83563b54c80a1ca4c53609def6a6af0a32e6755457bc",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "b73d2d99607071e095e76742ea480c368efc46811d4a5794d64ec301ec4c8dda",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "981b1425c4de416d1bbc83100b9375efbfd1f7602a2153232b5a1e0951d7416a",
+      "body": "見えたこと：\n今回の中心には、「何が嫌なのか、自分でもまだよく分からない」があります。\n今の入力には、「メモを書いた」という行動があります。\n\nEmlisから：\nメモを書いたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が嫌なのか、自分でもまだよく分からない。",
+      "action": "机を片付けた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-ec56077a123d62ab840d5c7105d5a5f9edae48135af56e6054a1e58a488fe0f3",
+        "source_prefix_ref": "emlis-q3-source-prefix-fc46fbe4b8152a6c84b687b0f006f500279848c2bd34f94e4196bf47383d7589",
+        "base_meaning_ref": "emlis-base-meaning-2997e08aba73bd118dd3b76e79e71c9b9c884691d2d78995e73c5d51892c1515",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "2122cd69f612c27cfc400814704f7e669d8f53b7ddd0baab93993a79b0384602",
+      "relations_sha256": "73749fd224a3497ef52132520463bc974eab9c01ef1db49ac6657f26fdcb7617",
+      "selected_sha256": "d78dfcb0177dd90f40df790b010b741824bd9e49f5afd717f78a665db35e26ab",
+      "body": "見えたこと：\n今回の中心には、「何が嫌なのか、自分でもまだよく分からない」があります。\n今の入力には、「机を片付けた」という行動があります。\n\nEmlisから：\n机を片付けたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が嫌なのか、自分自身でもよくわからない。",
+      "action": "メモを書いた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-a097024ad7c828b81a7c32d8fcee991f4d5236eba472cfc69780a348dcae0af8",
+        "source_prefix_ref": "emlis-q3-source-prefix-f6e934233fae5bdb43c4465cdd9e02b533f9cae7763e25330d3cd858bf15caa7",
+        "base_meaning_ref": "emlis-base-meaning-4812b9b4065102dce8b0ac419b1f94a5211ca17c798bf5010b5da087b88e5272",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "2a1a99582c57377560d8342403f1e9132afce93e6d15f61dc237789cd50a95ac",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "e63b26cf25361e6df656694c39dbdc443714722933869d189321ed5f814967d7",
+      "body": "見えたこと：\n今回の中心には、「何が嫌なのか、自分自身でもよくわからない」があります。\n今の入力には、「メモを書いた」という行動があります。\n\nEmlisから：\nメモを書いたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が嫌なのか、自分自身でもよくわからない。",
+      "action": "机を片付けた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-6d2efea2bc6c7d25923f9b65dd4f86d1dcdd1bdb31a13c2131b918b8eae99a65",
+        "source_prefix_ref": "emlis-q3-source-prefix-c886b0ef5418970786af4806622e98f0317cedf4061e9f5a360578c5d0f014ec",
+        "base_meaning_ref": "emlis-base-meaning-af5ef7241bd5ce36d8e1afe2151bc1b7d6548988c2c7b66d5c2a6701ba2e7230",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "6092738a4ba743b82b981818cb4cc2869e74b2bd5b42dc42cde8842376550e06",
+      "relations_sha256": "31a859576afb7afd37ea71015d60e12a101e7fbe5e4cedb365cb0d634ee197aa",
+      "selected_sha256": "a024af58011ed5b72879cea101c647321b3d1f5df1ef5e15cd58b0314d8297a2",
+      "body": "見えたこと：\n今回の中心には、「何が嫌なのか、自分自身でもよくわからない」があります。\n今の入力には、「机を片付けた」という行動があります。\n\nEmlisから：\n机を片付けたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が嫌なのか、私自身にもまだ分からない。",
+      "action": "メモを書いた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-4f66ee0a8da8552cd6f7612218ccf28926941e2d7920cd50af69cbebbf3c8f1b",
+        "source_prefix_ref": "emlis-q3-source-prefix-8a87138fe861dba5c65c0478b45e87822e78e4145f16ab6a15568d885cd02df3",
+        "base_meaning_ref": "emlis-base-meaning-6af96cba56932a96b5d16dccb46606405ec1aa3fd34df2cfdb47cf446e004518",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "dea2ef1de5ec1903c4de68980c60b4e7f1589c3c015a7ee6e6b060b403b252a9",
+      "relations_sha256": "46df217ba92a7e36adeaed588b324b6d3ff0686c62af25df8306fd7dd779f40e",
+      "selected_sha256": "d9b0d660a4c791711ac8f4a2e1a3dcfff7449a4af8a43c8fa012bd5ada3838d7",
+      "body": "見えたこと：\n今回の中心には、「何が嫌なのか、私自身にもまだ分からない」があります。\n今の入力には、「メモを書いた」という行動があります。\n\nEmlisから：\nメモを書いたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    },
+    {
+      "memo": "何が嫌なのか、私自身にもまだ分からない。",
+      "action": "机を片付けた。",
+      "checkpoint": {
+        "checkpoint_id": "emlis-checkpoint-c9b2800a4725725d994e6890c790c7325798ba3d10b137b49a6c63d0251c671b",
+        "source_prefix_ref": "emlis-q3-source-prefix-53f62515237fa748ee5bdb44786941b306d6b2a11699abc9d6d32f73a221fc6c",
+        "base_meaning_ref": "emlis-base-meaning-0e71b402f1c5e20d5c470df25b7bcb70ae5d60c7181cc47a1f4a63f7443b3a52",
+        "answer_update": null,
+        "assessment_status": "RESOLVED",
+        "accepted_update_refs": [],
+        "inactive_claim_refs": [],
+        "unresolved_parts": [],
+        "semantic_schema_version": "cocolon.cmee.emlis_answer_meaning.v1"
+      },
+      "nuclei_sha256": "df507330a6aa5026dab07aac53af8a9675ab28d4bdb88df71217defd4f1fb4c8",
+      "relations_sha256": "31a859576afb7afd37ea71015d60e12a101e7fbe5e4cedb365cb0d634ee197aa",
+      "selected_sha256": "25e980ef2d7f1d55d16c5a3e1e1d1c46a356a5556834807bd9f81ee30eaffd73",
+      "body": "見えたこと：\n今回の中心には、「何が嫌なのか、私自身にもまだ分からない」があります。\n今の入力には、「机を片付けた」という行動があります。\n\nEmlisから：\n机を片付けたことを見過ごさず、大切に受け止めています。",
+      "question_decision": {
+        "disposition": "END",
+        "target_ref": null,
+        "target_kind": null,
+        "supporting_evidence_refs": [],
+        "missing_dimension": null,
+        "affected_meaning_refs": [],
+        "affected_reception_refs": [],
+        "asked_target_refs": [],
+        "decision_reason": "no_bound_personal_meaning_target"
+      }
+    }
+  ]
+}
