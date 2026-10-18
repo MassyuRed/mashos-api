@@ -268,8 +268,16 @@ def test_one_existing_answer_preserves_valid_received_material_and_qualifiers(ca
         else:
             current = encoded(out.artifact)
             identities = {'artifact_id', 'meaning_checkpoint_ref', 'meaning_trace', 'reception_trace'}
+            expected = dict(old['artifact'])
+            if case == 'unknown_revise':
+                # u351 fixes only the already admitted explicit current
+                # replacement. Historical checkpoint expectations stay intact.
+                expected['observation'] = expected['observation'].replace(
+                    'その時の気持ちとして、「今は嬉しい」が見えます。',
+                    '回答した時点の気持ちとして、「嬉しい」が見えます。')
+                expected['reception'] = '回答した時点で嬉しいという気持ちを受け止めています。'
             assert {k: v for k, v in current.items() if k not in identities} == {
-                k: v for k, v in old['artifact'].items() if k not in identities}
+                k: v for k, v in expected.items() if k not in identities}
             assert current['meaning_checkpoint_ref'] == p.checkpoint.checkpoint_id
             assert current['meaning_checkpoint_ref'] != old['artifact']['meaning_checkpoint_ref']
             original = gp._source_relief_received_group(p.original_plan.nuclei,

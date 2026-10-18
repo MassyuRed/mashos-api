@@ -1687,7 +1687,21 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         return replace(prepared, legacy_result_appraisal=True)
 
 
-def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_appraisal_correction=False, legacy_appraisal_answer_time=False, legacy_appraisal_original_time=False, legacy_reason_withdrawal=False, legacy_withdrawal_precedence=False, legacy_relief_cognition_update_retention=True):
+def _prepare_emlis_meaning_from_plan(request, thread, original, **legacy_options):
+    # A saved identity owns its whole interpretation, including the pre-u351
+    # time binding. Try that known version only after exact checkpoint mismatch;
+    # a new pending answer has no checkpoint and always uses current semantics.
+    try:
+        return _prepare_emlis_meaning_from_plan_version(request, thread, original, **legacy_options)
+    except ValueError as exc:
+        if (str(exc) != "emlis_checkpoint_source_prefix_mismatch"
+            or thread.control.prepared_meaning_checkpoint_ref is None or not thread.answers):
+            raise
+        return _prepare_emlis_meaning_from_plan_version(request, thread, original,
+            legacy_unknown_replacement_time=True, **legacy_options)
+
+
+def _prepare_emlis_meaning_from_plan_version(request, thread, original, *, legacy_unknown_replacement_time=False, legacy_appraisal_correction=False, legacy_appraisal_answer_time=False, legacy_appraisal_original_time=False, legacy_reason_withdrawal=False, legacy_withdrawal_precedence=False, legacy_relief_cognition_update_retention=True):
     if thread.control.capability_snapshot == "Q3_PREMIUM" and thread.control.admitted_history and not thread.answers:
         from .emlis_thread_history import frame_supported_focus
         focus = frame_supported_focus(thread, original)
@@ -1728,7 +1742,8 @@ def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_apprai
                 legacy_appraisal_original_time=legacy_appraisal_original_time,
                 legacy_reason_withdrawal=legacy_reason_withdrawal,
                 legacy_withdrawal_precedence=legacy_withdrawal_precedence,
-                legacy_relief_cognition_update_retention=legacy_relief_cognition_update_retention)
+                legacy_relief_cognition_update_retention=legacy_relief_cognition_update_retention,
+                legacy_unknown_replacement_time=legacy_unknown_replacement_time)
             cp = prepared.checkpoint
             accepted = tuple(dict.fromkeys((*accepted, *cp.accepted_update_refs)))
             inactive = tuple(dict.fromkeys((*inactive, *cp.inactive_claim_refs)))
@@ -1746,10 +1761,11 @@ def _prepare_emlis_meaning_from_plan(request, thread, original, *, legacy_apprai
         legacy_appraisal_original_time=legacy_appraisal_original_time,
         legacy_reason_withdrawal=legacy_reason_withdrawal,
         legacy_withdrawal_precedence=legacy_withdrawal_precedence,
-        legacy_relief_cognition_update_retention=legacy_relief_cognition_update_retention)
+        legacy_relief_cognition_update_retention=legacy_relief_cognition_update_retention,
+        legacy_unknown_replacement_time=legacy_unknown_replacement_time)
 
 
-def _prepare_answer(thread, original, *, legacy_appraisal_correction=False, legacy_appraisal_answer_time=False, legacy_appraisal_original_time=False, legacy_reason_withdrawal=False, legacy_withdrawal_precedence=False, legacy_relief_cognition_update_retention=False):
+def _prepare_answer(thread, original, *, legacy_unknown_replacement_time=False, legacy_appraisal_correction=False, legacy_appraisal_answer_time=False, legacy_appraisal_original_time=False, legacy_reason_withdrawal=False, legacy_withdrawal_precedence=False, legacy_relief_cognition_update_retention=False):
     base = _base_ref(thread, original)
     if not thread.answers:
         checkpoint = EmlisMeaningCheckpointV1(
@@ -1885,6 +1901,32 @@ def _prepare_answer(thread, original, *, legacy_appraisal_correction=False, lega
                 result_appraisal_replacement=appraisal_replacement,
                 legacy_appraisal_answer_time=legacy_appraisal_answer_time,
                 relief_cognition_slot=response_slot)
+            # The old quote locates an already accepted SELF uncertainty; it
+            # cannot turn the replacement's explicit present into a past feeling.
+            # Stay within the existing finite present-feeling grammar and require
+            # old admission first. Other targets, past/unsupported replacements,
+            # and u350's invalidated retained groups keep their existing outcome.
+            replacement_now = _NOW.match(replacement['new']) if replacement else None
+            replacement_feeling = replacement['new'][replacement_now.end():] if replacement_now else ''
+            if (not legacy_unknown_replacement_time and nucleus is not None
+                and target_nucleus.kind == 'uncertainty'
+                and target_nucleus.semantic_frame.actor == 'current_user'
+                and target_nucleus.semantic_frame.predicate_kind == 'uncertainty'
+                and target_nucleus.semantic_frame.modality == 'uncertain'
+                and target_nucleus.semantic_frame.time_scope == 'current_input'
+                and nucleus.kind == 'reaction' and nucleus.semantic_frame.actor == 'current_user'
+                and nucleus.semantic_frame.modality == 'feeling'
+                and replacement_now and replacement_now.group().startswith(('今は', '現在は'))
+                and _FEELING.fullmatch(replacement_feeling)
+                and not _PAST.search(replacement_feeling)):
+                current = _answer_nucleus(span, raw=answer.source.answer_text_private,
+                    about_time='ANSWER_TIME',
+                    source_start=replacement.start('new') + replacement_now.end(),
+                    source_end=replacement.end('new'), outcome_standard=outcome_standard)
+                if current is not None:
+                    nucleus = current
+                    now, then = replacement_now, None
+                    about, temporal_anchor, prior_answer_time = 'ANSWER_TIME', answer.envelope.envelope_id, False
             if nucleus and prior_answer_time:
                 nucleus = replace(nucleus,semantic_frame=replace(nucleus.semantic_frame,
                     attribute_codes=(*nucleus.semantic_frame.attribute_codes,"thread_time_anchor:"+temporal_anchor)))

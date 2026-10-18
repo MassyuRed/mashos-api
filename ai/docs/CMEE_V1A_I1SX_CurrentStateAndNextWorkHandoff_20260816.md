@@ -1,3 +1,5 @@
+> 2026-10-18最新：u351。本人の不明を「今は／現在は」の有限感情へ訂正する既存回答で、当時へ誤帰属する時点を修復。肯定本文は「回答した時点で嬉しいという気持ちを受け止めています。」へ改善し、旧保存版を保持。最終対象77成功＋同じ8保存DTO再表示確認。否定本文・初回の受け取り方の保持・深い理解は未完。詳細は[u351監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u351_UnknownRevisionTime_20261018.md)。
+
 > 2026-10-18最新：u350。Mash個別承認済みの「安堵・寂しさ＋別経験」を、不明0/1の両方で初回・既受理一回答・訂正／両側撤回・旧互換・保存再表示まで一体実装。撤回後は残る事実／反応だけを受け取る。private logical87、商品全体の状態はPRODUCT_NOT_CLEAR。実本文・検証境界・全file地図は[u350監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u350_ReliefReceivedRetention_20261018.md)。
 
 > 2026-10-18最新診断：u349。別received経験の初回Reception欠落を確認し、初回・既受理一更新・訂正／撤回・旧互換・保存再表示の一体案を具体化。u348実装は維持、意味契約変更は未承認・未実装。詳細は[u349判断案](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u349_ReceivedExperienceRetention_Decision_20261018.md)。
@@ -22907,3 +22909,14 @@ STRUCTURE_MAP_DELTA_PRESENT。既存production10file・新production0。05の全
 必要性=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、primary outcome=TECHNICAL_CREDIT。今回の限定保持と商品全体完成を区別し、PRODUCT_NOT_CLEAR／初回一体単位未完了／正式Product Read0/3／candidate_ready=false／automatic_progression=falseを維持する。次は最新weeklyのE04〜E09に戻り、実本文で残る定型性・深い理解・問いの不足を診断する。一般入力・任意多段・過去不明混在とunknown自身REVISEの既存時点誤読・pair否定訂正・本人実機は未完。新資格を失効するunknown自身の変更後は既存本文へ戻り、その既存の不自然さまで今回解決済みとは扱わない。10/20方式判断・10/31管理線・12/18目標、Piece/Analysis主枠53.25％は今回再評価していない。Draft PR3／PR30継続、merge／deployなし。
 
 全変更path、原文と未加工本文、失敗修復、検証・互換境界：[u350監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u350_ReliefReceivedRetention_20261018.md)。
+
+
+## u351 — 本人の不明から現在感情への訂正時点を修復（2026-10-18）
+
+u350の残件「その時に今は嬉しい」を、既存SELF uncertainty／current_inputから既受理有限感情への明示引用訂正に限定して修復した。「今は／現在は」は回答envelopeへ束縛し、引用内感情のsource範囲を保持する。「も」や他target・他時点・未受理置換、u350の同時保持条件は変えない。肯定はObservation／Receptionまで現在時点を明示。否定4例は意味の時点・極性を保持するが本文UNAVAILABLEを維持し、本文成功へ数えない。
+
+新pendingは現行解釈、旧checkpointは同じsource-versionの旧時点解釈を完全再導出して厳密一致を要求する。旧IDを新意味へ付け替えず、旧完成DTOは非再生成で返す。最終対象77 passed／0 failed／skip0（engine65＋既存u349/current8＋実SQL4、分割再実行の重複除外）。旧u350の28と旧u349の4、計32recordを意味・選択・本文／停止まで比較。実SQLはfree／premium×新旧本文の4ケースを直列確認し、同じ8保存DTOの現行API client→hook→Modalで各2回のclose/reopenを確認した。全suite・任意多段・SQL中断再開・本人実機・本番の成功ではない。test不備と修正履歴、runtime境界、SQL実測は監査へ記録。
+
+初回の混在入力へ「期待されているように感じて、重かった」を加えると、既述情報への質問はENDになる一方、Receptionは安堵pairだけとなり、受領経験・期待と重さ・独立不明を受け取れていないことを実生成で再確認した。次は既述の受け取り方を聞き直さず本文へ残す単位を、初回・必要な既存一更新・訂正／撤回・旧互換・保存再表示まで具体化する。追加素材はu350有限資格外なので、内容・選択契約の要否を明示する。
+
+STRUCTURE_MAP_DELTA_NONE。既存production owner1、公開API／DTO／DB／RN／型・logical87／経路は不変。新test2・新fixture1と既存test1の責務を01Aへ登録し、全11変更pathを[u351監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u351_UnknownRevisionTime_20261018.md)に記録した。必要性=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、primary outcome=TECHNICAL_CREDIT。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式Product Read0/3／candidate_ready=false／automatic_progression=false。E04〜E09・深い理解・一般入力・否定本文・本人実機は残件。10/20方式判断・10/31管理線・12/18公開目標、Piece/Analysis主枠53.25％は未再評価。Draft PR3／PR30継続、merge／deployなし。
