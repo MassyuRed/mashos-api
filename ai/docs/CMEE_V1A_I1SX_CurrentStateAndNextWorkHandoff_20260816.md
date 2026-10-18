@@ -1,3 +1,5 @@
+> 2026-10-18最新：u333。「私は」付き安堵・寂しさの停止を修復。独立不明の保持は契約差分案まで確定。最新実績・限界は末尾u333。
+
 > 2026-10-18最新：u332。新しい根拠付きの安心／傾聴、5更新、保存互換12ケース。934成功／10旧期待失敗。最新契約・残件は末尾u332。
 
 > 2026-10-18最新：u331。具体的対比の参照と独立関係検証を修復。858成功／既知3失敗。作業の大きな単位・次の主観選択判断は末尾u331／最新weekly／監査。
@@ -22556,3 +22558,21 @@ u331案は2026-10-18にMashが個別承認した。本節が以後の差分正�
 - 新しいslot/originでcurrent checkpointは変わる。新モード不一致時だけu331意味を完全再導出し、canonical questionとcheckpoint全体が一致するとき復元する。以前のlegacy modeはu332資格も無効化する。旧checkpointの意味ラベルの付替えはしない。
 
 詳細・未加工本文・検証境界：[Cocolon_EmlisAI_u332_SourceBoundRelief_and_Listening_20261018.md](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u332_SourceBoundRelief_and_Listening_20261018.md)。
+
+## u333 — 明示した本人主語の継続を修復／独立不明の保持境界を確定（2026-10-18）
+
+原03の冒頭に「私は」を付けるだけで後節の主体証明が落ち、本文が停止していた。先行する名詞化された過去の安堵を実nucleus・完全source節で再証明し、実対比を経た現在の不確かな認知・寂しさに限って本人主語を継続する。わたし／僕／俺／自分、は／が、程度、過去の可能性、独立不明／別経験の併記を含む11例が本文生成へ改善。喜び等の一般肯定感情、先行する別人の文、私有物、引用・他人帰属へ適用しない。過去丁寧形の帰属もmemo／memo_actionで拒否。
+
+新規意味は旧checkpointと区別する。u332の26例（11改善・15対照）のcheckpoint全体・核辺に対応するplan・selectedまたは同じ停止・本文・問いを完全復元。旧modeを全歴史source modeへ伝播。新規95検査、既存選択集合、current owner identityを重複除外して963 passed／8 failed／skip0。8件は旧replace無変化6・新規原03へ旧IDを要求1・今回直したexplicit_selfの停止を要求1。既存assertion／歴史fixtureは変更せず、現行成功・作者禁止の実変異拒否・旧意味復元を別に確認。前回Q3旧本文期待3件はこの集合に含めず、解消したと扱わない。
+
+実service＋隔離PGlite SQL/RPC11ケースと同じ11DTOのAPI client／hook／Modal確認を実施。Free／Plus／Premium、5訂正・撤回、旧完成非再生成、checkpoint前／後の中断、GET／start、元入力・履歴・close/reopenを確認。checkpoint前は現行生成、旧checkpoint後は旧意味を保持するためUNAVAILABLE/body_not_validatedのままであり、復旧成功へ水増ししない。native/HTTP/Auth stubで、実機・本番ではない。
+
+STRUCTURE_MAP_DELTA_NONE。既存production 3owner、test1・fixture1を追加しcurrent owner identityを更新。意味型・contract数77・公開API・DB・RN・依存・外部AI・費用・配置は変更なし。
+
+独立した「何が不安なのか、私にもまだわからない」はObservationに残るがReceptionで落ちる。2moveの試作ではLIMITEDの一claimが3対象全体のMATERIAL_WEIGHTになり、承認済み二反応が消えることを実出力で確認した。試作は撤回済み。全体LIMITED／一claimを保持したまま、安堵・寂しさのlocal内容を独立不明と併存させる限定保持契約を次の個別承認案とする。既存retained型は更新後／過去経験等の資格が異なるため無断転用しない。作業規則18 §11.3の内部内容契約変更に当たるため、具体案を監査に記載。
+
+原文の反復・長文、独立不明のReception保持、一般入力・主体／時点の未対応、E04深さ／E05問い／E06〜E09は残る。「私も」の初回、および新しい訂正文自体に「私は」を含める安堵否定等は今回拡張していない。検証した安堵否定は旧全文を正確に指定し、新節では主語を省略した既承認grammarである。
+
+primary outcome=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式0/3／candidate_ready=false／automatic_progression=false。Draft/open/unmerged・未配置。10/20方式判断、10/31管理線、12/18目標、Piece/Analysis主枠53.25％を維持。
+
+詳細・未加工本文・承認案：[Cocolon_EmlisAI_u333_SelfContinuation_and_IndependentUnknown_Boundary_20261018.md](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u333_SelfContinuation_and_IndependentUnknown_Boundary_20261018.md)。

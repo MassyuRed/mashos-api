@@ -87,6 +87,7 @@ class PreparedEmlisMeaning:
     legacy_feeling_reason_self_scope: bool = False
     legacy_unknown_object_action_scope: bool = False
     legacy_relief_cognition_reception: bool = False
+    legacy_cognitive_self_continuation: bool = False
 
 
 def _text(row, index, resolver) -> str:
@@ -1014,6 +1015,17 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
             or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
             raise
+        # Restore u332's complete source interpretation before the local
+        # SELF continuation repair. Never attach its ID to current nuclei.
+        prior_self = original_meaning_plan(thread, _legacy_cognitive_self_continuation=True)
+        if prior_self.nuclei != original.nuclei or prior_self.relations != original.relations:
+            try:
+                restored = _prepare_emlis_meaning_from_plan(request, thread, prior_self)
+            except ValueError as prior_exc:
+                if str(prior_exc) not in {'emlis_checkpoint_source_prefix_mismatch', 'emlis_question_noncanonical'}:
+                    raise
+            else:
+                return replace(restored, legacy_cognitive_self_continuation=True)
         # A newly selected response cannot inherit an old meaning identity.
         prior_reception = original_meaning_plan(thread, _legacy_relief_cognition_reception=True)
         if prior_reception.nuclei != original.nuclei:

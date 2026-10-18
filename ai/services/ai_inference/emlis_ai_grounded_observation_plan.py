@@ -7394,7 +7394,8 @@ def _source_current_cognition(nucleus):
 
 
 def _final_source_current_cognition_nuclei(nuclei, evidence_spans, normalized_input, *,
-        _legacy_cognitive_feeling_scope=False, _legacy_cognitive_temporal_topic=False):
+        _legacy_cognitive_feeling_scope=False, _legacy_cognitive_temporal_topic=False,
+        _legacy_cognitive_self_continuation=True):
     if normalized_input is None:
         return nuclei
     source = str(normalized_input.get("memo") or "")
@@ -7436,6 +7437,42 @@ def _final_source_current_cognition_nuclei(nuclei, evidence_spans, normalized_in
         topic = re.match(r"(?P<owner>[一-鿿々ァ-ヶー]+|わたし|ぼく|おれ|あなた|あの人|その人)"
                          r"(?:は|が|も|" + _OWNER_FOCUS_PARTICLE_SOURCE + "|" + _OWNER_TOPIC_PARTICLE_SOURCE + ")", preceding)
         self_reset = re.match(r"(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が|も)", raw)
+        # A complete, already-proved SELF nominal feeling can carry its
+        # subject into the adjacent cognitive feeling. The generic owner
+        # checker does not parse this nominal host. Do not relax it for
+        # reports, other people's experience or unproved first-person text.
+        nominal = _source_nominal_past_feeling_parts(preceding) if cognitive_feeling else None
+        cognition_scopes = {role: raw[a:b] for role, a, b, _ in cognitive_feeling[0]} if cognitive_feeling else {}
+        self_nominal = bool(not _legacy_cognitive_self_continuation and cognitive_feeling
+            and topic and topic['owner'] in {"私", "わたし", "自分", "僕", "ぼく", "俺", "おれ"}
+            and nominal and nominal[3] in {"ほっとした", "安心した"}
+            and re.fullmatch(r"(?:少し(?:だけ)?|ちょっと|とても|まだ|ずっと)?(?:寂しい|さびしい)",
+                             cognition_scopes.get("feeling", ""))
+            and re.search(r"かも(?:しれない|知れない)?$", cognition_scopes.get("possibility", ""))
+            and "background" not in cognition_scopes
+            and not re.search(r'[「」『』?？!！…‥\r\n]', source)
+            and not any(re.search(r'の(?:話|感想|気持ち|説明|報告|発言)(?:で|だ|[。．.])',
+                                 str(normalized_input.get(field) or '')) for field in ('memo', 'memo_action'))
+            and not any(re.search(r'私|わたし|僕|ぼく|俺|おれ|自分',
+                re.sub(r'^(?:私|わたし|自分|僕|ぼく|俺|おれ)(?:は|が|も)[、,]?', '', text))
+                for text in (preceding, raw))
+            and any(n.source_fields == ("memo",) and n.kind == "reaction"
+                and n.retention in {"required", "should"} and n.grounding_kind == "explicit"
+                and n.allowed_claim_scope == "explicit_current_input"
+                and (n.semantic_frame.actor, n.semantic_frame.predicate_kind, n.semantic_frame.modality,
+                     n.semantic_frame.polarity, n.semantic_frame.time_scope)
+                    == ("current_user", "feeling", "feeling", "positive", "past")
+                and "lexical:source_nominal_past_feeling" in n.semantic_frame.attribute_codes
+                and len(n.source_span_ids) == 1
+                and (prior := spans.get(n.source_span_ids[0])) is not None
+                and prior.source_field == "memo" and prior.raw_text == preceding
+                and 0 <= prior.start_index < prior.end_index <= len(owner_prefix)
+                and not source[:prior.start_index].strip()
+                and source[prior.start_index:prior.end_index] == preceding
+                and not owner_prefix[prior.end_index:].strip(" 。．.")
+                and re.fullmatch(r"\s*[。．.]\s*(?:でも|しかし|ただ|それでも)[、,]?\s*",
+                                 source[prior.end_index:start])
+                for n in nuclei))
         if (0 <= start < end <= len(source) and source[start:end] == raw
             and (not owner_prefix.strip() or owner_prefix.rstrip().endswith(("。", "．", ".")))
             and (not source[end:].strip() or source[end:].lstrip().startswith(("。", "．", ".")))
@@ -7444,6 +7481,7 @@ def _final_source_current_cognition_nuclei(nuclei, evidence_spans, normalized_in
             and (not topic or topic['owner'] in {"私", "わたし", "自分", "僕", "ぼく", "俺", "おれ"} or self_reset)
             and (not cognitive_feeling or not re.search(r"は|が|も", preceding)
                  or _source_operator_owner_scope_is_bound(preceding)
+                 or self_nominal
                  or re.match(r"(?:私|わたし|僕|ぼく|俺|おれ)(?:は|が|も)", raw))):
             provenance = tuple(c for c in frame.attribute_codes
                                if c.startswith(("semantic_analyzer:", "detected_type:", "source_claim:")))
@@ -17379,6 +17417,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_feeling_reason_self_scope: bool = False,
     _legacy_unknown_object_action_scope: bool = True,
     _legacy_relief_cognition_reception: bool = True,
+    _legacy_cognitive_self_continuation: bool = True,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -17430,6 +17469,7 @@ def project_final_stage1_grounded_observation_plan(
     )
     projected_nuclei = _final_source_current_cognition_nuclei(
         projected_nuclei, evidence_spans, normalized_input,
+        _legacy_cognitive_self_continuation=_legacy_cognitive_self_continuation,
         _legacy_cognitive_feeling_scope=_legacy_cognitive_feeling_scope,
         _legacy_cognitive_temporal_topic=_legacy_cognitive_temporal_topic,
     )
@@ -18931,6 +18971,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_feeling_reason_self_scope: bool = False,
     _legacy_unknown_object_action_scope: bool = True,
     _legacy_relief_cognition_reception: bool = True,
+    _legacy_cognitive_self_continuation: bool = True,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan.
 
@@ -19001,6 +19042,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_feeling_reason_self_scope=_legacy_feeling_reason_self_scope,
         _legacy_unknown_object_action_scope=_legacy_unknown_object_action_scope,
         _legacy_relief_cognition_reception=_legacy_relief_cognition_reception,
+        _legacy_cognitive_self_continuation=_legacy_cognitive_self_continuation,
     )
 
 
