@@ -1,4 +1,4 @@
-> 2026-10-18最新：u346。独立不明が同居する別経験1更新後の二反応保持を修復。不明の原文・旧保存は保持し、不明への第三Receptionは未実装。末尾と[u346監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u346_UnknownAlongsidePairRetention_20261018.md)を参照。
+> 2026-10-18最新：u347。混在初回の原文反復を既承認内で修復。独立不明へのReceptionは初回〜1更新・保存を一体とする限定案まで具体化し、意味保持契約の判断待ち・未実装。末尾と[u347監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u347_InitialReliefLayout_and_UnknownDecision_20261018.md)を参照。
 
 > 2026-10-18最新：u342。今日→昨日の逆順停止を限定修復。374 passed／旧比較5 failed。末尾u342と最新weeklyを参照。
 
@@ -22834,3 +22834,17 @@ STRUCTURE_MAP_DELTA_NONE、既存production2file・新production0、logical81不
 必要性=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、primary outcome=TECHNICAL_CREDIT。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式Product Read0/3／candidate_ready=false／automatic_progression=falseを維持。次は、初回から残るextra_unknownの独立不明へのReception欠落を、更新後の不明を応答対象へ加える場合の4対象／3 movesの責務と既承認u334 exact3境界に照らして整理する。今回の保持修復と混同せず、原文・実問い・未加工本文を起点とする。初回の長い混在Reception、pair否定訂正、一般入力・任意多段、E04〜E09、本人実機は未完。10/20方式判断、10/31管理線、12/18目標、Piece/Analysis主枠53.25％は不変。既存Draft PR3／PR30で継続、merge／配置なし。
 
 全16file・未加工本文・失敗修正と互換境界は[u346監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u346_UnknownAlongsidePairRetention_20261018.md)。
+
+## u347 — 混在初回の原文反復修復と、独立不明への受容の具体案（2026-10-18）
+
+u336の既承認共同保持に基づき、回答前の安堵・寂しさpairと独立した別経験を既存行構成ownerで別行にする。完全な原文をObservationに保ち、既存readerの一意条件を満たす場合のみReceptionを短縮。意味checkpoint・全plan・全selected・問い／decisionは不変。初回7入力×Q1/Q3で改善し、基本例は90→43文字。別の寂しさがある曖昧例では全文Receptionを維持する。
+
+最終対象65 passed／0 failed／skip0（新core53＋既存identity1＋SQL11、重複除外）。初回15入力×2と更新3入力×2を凍結u346原本と比較し、意味と質問を保持。11変異の独立本文検査、同一経験分割拒否、旧完成保存、実在する問いからの1更新、意味保存前後の中断再開を確認した。同じ11DTOの現行API client→hook→Modalで各2回の再表示を確認。HTTP／Auth／nativeはstubで、全suite・本人実機・本番DBの成功ではない。初回検査中の新test期待の訂正と失敗履歴は監査へ記録した。
+
+同一意味checkpointからの未完成初回本文には現行の行構成を使うが、完成済みu346本文は再生成せず維持する。STRUCTURE_MAP_DELTA_NONE、既存production1・新production0、logical81不変。新test2・凍結fixture1・監査1を追加。全13fileの地図を監査に記載。公開API・DB・RN・Safety・依存・外部AI・費用は変更しない。
+
+独立不明は引き続きObservationだけで、混在初回と1回答後のReceptionに欠ける。次の具体案は「既存pair→独立received一経験→末尾current SELF wh不明一つ」の初回選択から、既受理ADD／REVISE／event WITHDRAW一更新、本文、旧互換、保存再表示までを一体とする。初回3応答対象／2 moves、更新後4応答対象／3 movesであり、u334の追加素材なしexact3／u346の2 movesを越える。この内容選択／保持変更はRule18 §11.3の個別判断を要するため未実装。新しい問い・任意多段・過去／原因／複数／第三者不明への拡張を含めない。初回の受領経験Reception自体と過去不明混在の既存時点誤読も未解決である。
+
+必要性=DIRECT_PRODUCT_OR_ACCEPTANCE_WORK、primary outcome=TECHNICAL_CREDIT。PRODUCT_NOT_CLEAR／初回一体単位未完了／正式Product Read0/3／candidate_ready=false／automatic_progression=false。10/20方式判断、10/31管理線、12/18目標、Piece/Analysis主枠53.25％を維持。既存Draft PR3／PR30継続、merge／配置なし。
+
+実本文・全file・検証境界・承認対象：[u347監査](https://github.com/MassyuRed/Cocolon/blob/agent/three-core-cmee-current-structure-20260815/Cocolon_前提資料/audits/emlis_ai/Cocolon_EmlisAI_u347_InitialReliefLayout_and_UnknownDecision_20261018.md)。

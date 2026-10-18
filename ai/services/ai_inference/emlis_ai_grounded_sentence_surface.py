@@ -1161,7 +1161,7 @@ def _observation_surface_role(
 
 
 def _retained_relief_observation_pair(plan, resolver):
-    """Keep the unchanged pair separate from its independently answered event.
+    """Keep the selected pair separate from an independent source experience.
 
     This chooses line layout only. The existing selected-content validator and
     actual-body reader still own whether either Reception reference is valid.
@@ -1173,7 +1173,8 @@ def _retained_relief_observation_pair(plan, resolver):
     answers = {q.source_envelope_id for q in resolver.qualified_refs
                if q.evidence.field_path == "answer_text_private"}
     reception = plan.response_plan.human_reception_plan
-    if len(answers) != 1 or reception is None or len(reception.moves) != 2:
+    if (reception is None or len(answers) not in (0, 1)
+        or len(reception.moves) != (1 if not answers else 2)):
         return frozenset()
     from emlis_ai_grounded_observation_plan import source_owned_relief_cognition_from_resolver
     pairs = source_owned_relief_cognition_from_resolver(plan.nuclei, plan.relations, resolver)
@@ -1181,6 +1182,9 @@ def _retained_relief_observation_pair(plan, resolver):
         return frozenset()
     left, right, _ = pairs[0]
     owned = frozenset((left.nucleus_id, right.nucleus_id))
+    if not answers and not any(n.retention == "required" and n.nucleus_id not in owned
+                               for n in plan.nuclei):
+        return frozenset()
     if any("source_relief_cognition_anaphora:v1" not in n.semantic_frame.attribute_codes
            for n in (left, right)):
         return frozenset()
@@ -1189,15 +1193,16 @@ def _retained_relief_observation_pair(plan, resolver):
         and set((*m.target_nucleus_ids, *m.support_nucleus_ids)) == owned)
     if len(moves) != 1:
         return frozenset()
-    other, = (m for m in reception.moves if m != moves[0])
-    index = {n.nucleus_id: n for n in plan.nuclei}
-    if (not other.required or len(other.target_nucleus_ids) != 1 or other.support_nucleus_ids):
-        return frozenset()
-    target = index[other.target_nucleus_ids[0]]
-    if not (target.source_fields == ("answer_text_private",)
-            and target.allowed_claim_scope == "explicit_supplemental_answer"
-            or "thread_subject:unchanged_relief_pair_withdrawal:v1" in target.semantic_frame.attribute_codes):
-        return frozenset()
+    if answers:
+        other, = (m for m in reception.moves if m != moves[0])
+        index = {n.nucleus_id: n for n in plan.nuclei}
+        if (not other.required or len(other.target_nucleus_ids) != 1 or other.support_nucleus_ids):
+            return frozenset()
+        target = index[other.target_nucleus_ids[0]]
+        if not (target.source_fields == ("answer_text_private",)
+                and target.allowed_claim_scope == "explicit_supplemental_answer"
+                or "thread_subject:unchanged_relief_pair_withdrawal:v1" in target.semantic_frame.attribute_codes):
+            return frozenset()
     # A relation crossing the boundary is one experience, not two lines.
     if any(bool(r.from_nucleus_id in owned) != bool(r.to_nucleus_id in owned)
            for r in plan.relations if r.retention == "required"):
