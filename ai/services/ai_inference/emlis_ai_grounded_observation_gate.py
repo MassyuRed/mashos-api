@@ -8586,10 +8586,14 @@ def evaluate_grounded_surface_body_inverse(
                                     and (r.from_nucleus_id, r.to_nucleus_id) == tuple(n.nucleus_id for n in pair))
                                 node_map = dict(selected_subjective_input.semantic_nucleus_pairs) if selected_subjective_input else {}
                                 relation_map = dict(selected_subjective_input.relation_pairs) if selected_subjective_input else {}
-                                sources = tuple(resolver.resolve(n.source_span_ids[0]).raw_text for n in pair)
+                                sources = []
+                                for nucleus in pair:
+                                    source_raw = resolver.resolve(nucleus.source_span_ids[0]).raw_text
+                                    fragment = _body_inverse_typed_source_fragment(nucleus, source_raw)
+                                    sources.append(source_raw if fragment is None else fragment)
                                 raw = body[parsed_sentence.utf8_byte_start:parsed_sentence.utf8_byte_end].decode("utf-8")
                                 object_pattern = re.escape(sources[0] + "ことと" + sources[1] + "こと")
-                                if (appraisal is None
+                                if (not all(sources) or appraisal is None
                                     or (appraisal.dimension, appraisal.operation)
                                         != ("RELATIONAL_NONCOLLAPSE", "PRESERVE_BOTH_ENDPOINTS")
                                     or proposition.focal_relation_ref != appraisal.focal_relation_ref

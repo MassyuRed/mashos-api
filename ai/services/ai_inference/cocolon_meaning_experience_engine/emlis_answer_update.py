@@ -94,6 +94,7 @@ class PreparedEmlisMeaning:
     legacy_relief_self_recipient: bool = False
     legacy_past_self_unknown: bool = False
     legacy_reverse_time_contrast: bool = False
+    legacy_time_contrast_source: bool = False
 
 
 def _text(row, index, resolver) -> str:
@@ -1021,6 +1022,17 @@ def prepare_emlis_meaning(request: GenerationRequest) -> PreparedEmlisMeaning:
         if (str(exc) not in {"emlis_checkpoint_source_prefix_mismatch", "emlis_question_noncanonical"}
             or thread.control.prepared_meaning_checkpoint_ref is None and not legacy_question):
             raise
+        # u342 deictic-time and inline-connective records retain their whole
+        # former meaning and delivery; a saved ID never owns the new plan.
+        prior_contrast = original_meaning_plan(thread, _legacy_time_contrast_source=True)
+        if prior_contrast.nuclei != original.nuclei or prior_contrast.relations != original.relations:
+            try:
+                restored = _prepare_emlis_meaning_from_plan(request, thread, prior_contrast)
+            except ValueError as prior_exc:
+                if str(prior_exc) not in {'emlis_checkpoint_source_prefix_mismatch', 'emlis_question_noncanonical'}:
+                    raise
+            else:
+                return replace(restored, legacy_time_contrast_source=True)
         # u341 reverse contrasts own their complete old relation graph and
         # unavailable delivery. Re-derive and validate the whole checkpoint.
         prior_reverse = original_meaning_plan(thread, _legacy_reverse_time_contrast=True)

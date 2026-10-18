@@ -8092,6 +8092,110 @@ def source_owned_separate_contrast_objects(move, nuclei, relations, evidence_spa
     return _source_owned_complete_contrast_pair(edges[0], nuclei, evidence_spans, normalized_input)
 
 
+def _source_contrast_clause_span(nucleus, spans):
+    """A complete clause may follow a connective inside its unchanged span."""
+    span = spans.get(nucleus.source_span_ids[0])
+    if span is None:
+        return None
+    codes = nucleus.semantic_frame.attribute_codes
+    ranges = tuple(c for c in codes if c.startswith('source_fragment_scalar_range:'))
+    if not ranges:
+        return None if any(c.startswith(('source_fragment_', 'surface_scalar_'))
+            or c == 'semantic_role:generic_relation_fragment' for c in codes) else span
+    prefix = re.match(r'^しかし[、,]?', span.raw_text)
+    if (prefix is None
+        or ranges != (f'source_fragment_scalar_range:{prefix.end()}:{len(span.raw_text)}',)
+        or codes.count('semantic_role:generic_relation_fragment') != 1
+        or any(c.startswith('surface_scalar_') for c in codes)
+        or tuple(c for c in codes if c.startswith('source_fragment_scalar_source:'))
+            != ('source_fragment_scalar_source:normalized_raw_text',)
+        or re.sub(r'\s+', ' ', span.raw_text).strip() != span.raw_text):
+        return None
+    return replace(span, raw_text=span.raw_text[prefix.end():],
+                   start_index=span.start_index + prefix.end())
+
+
+def _source_contrast_marker_is_bound(edge, pair, spans, normalized_input):
+    markers = tuple(spans.get(ref.split(':', 1)[1]) for ref in edge.source_relation_ids
+                    if ref.startswith('evidence_relation_marker:'))
+    if len(markers) != 1 or markers[0] is None or markers[0].span_id not in edge.source_span_ids:
+        return False
+    marker = markers[0]
+    left, right = (_source_contrast_clause_span(n, spans) for n in pair)
+    if left is None or right is None or marker.source_field != 'memo':
+        return False
+    source = str(normalized_input.get('memo') or '')
+    if source[marker.start_index:marker.end_index] != marker.raw_text:
+        return False
+    if marker.span_id == right.span_id and right.start_index > marker.start_index:
+        return bool(marker.raw_text.startswith('しかし')
+            and re.fullmatch(r'しかし[、,]?', source[marker.start_index:right.start_index])
+            and left.end_index <= marker.start_index < right.start_index < right.end_index)
+    return bool(_is_pure_relation_marker(marker)
+        and _LEADING_CONTRAST_RE.search(_clean(marker.raw_text))
+        and left.end_index <= marker.start_index < marker.end_index <= right.start_index)
+
+
+def _final_source_inline_time_contrast(nuclei, relations, evidence_spans, normalized_input):
+    """Recover a leading contrast without resegmenting the frozen ledger."""
+    spans = {s.span_id: s for s in evidence_spans}
+    required = tuple(n for n in nuclei if n.retention == 'required')
+    if (len(required) != 2 or any(n.source_fields != ('memo',) or len(n.source_span_ids) != 1
+            or n.source_span_ids[0] not in spans for n in required)):
+        return nuclei, relations
+    left, right = sorted(required, key=lambda n: spans[n.source_span_ids[0]].start_index)
+    raw = spans[right.source_span_ids[0]].raw_text
+    prefix = re.match(r'^しかし[、,]?', raw)
+    if (prefix is None or any(c.startswith(('source_fragment_', 'surface_scalar_'))
+            or c == 'semantic_role:generic_relation_fragment' for n in required
+            for c in n.semantic_frame.attribute_codes)):
+        return nuclei, relations
+    source_order = tuple(r for r in relations
+        if (r.from_nucleus_id, r.to_nucleus_id) == (left.nucleus_id, right.nucleus_id)
+        and r.source_meaning_arc_keys == ('whole_input:source_order',)
+        and set(r.source_span_ids) == set((*left.source_span_ids, *right.source_span_ids))
+        and ((r.source_relation_ids == ('whole_input_source_order',)
+              and (r.type, r.grounding_kind, r.retention) in {
+                  ('shift_from_to', 'user_stated_relation', 'required'),
+                  ('uncertain_connection', 'bounded_structural_inference', 'should')})
+             or (len(r.source_relation_ids) == 2
+                 and re.fullmatch(r'conflict\.e[1-9][0-9]*', r.source_relation_ids[0])
+                 and r.source_relation_ids[1] == 'whole_input_source_order'
+                 and (r.type, r.grounding_kind, r.retention)
+                     == ('attempt_and_block', 'user_stated_relation', 'required'))))
+    if len(source_order) != 1:
+        return nuclei, relations
+    old = source_order[0]
+    edge = replace(old, type='contrast', grounding_kind='user_stated_relation',
+        retention='required', source_relation_ids=(
+        *old.source_relation_ids, 'evidence_relation_marker:' + right.source_span_ids[0]))
+    updated = replace(right, semantic_frame=replace(right.semantic_frame, attribute_codes=(
+        *right.semantic_frame.attribute_codes, 'semantic_role:generic_relation_fragment',
+        f'source_fragment_scalar_range:{prefix.end()}:{len(raw)}',
+        'source_fragment_scalar_source:normalized_raw_text')))
+    candidate = tuple(updated if n == right else n for n in nuclei)
+    pair = _source_owned_complete_contrast_pair(edge, candidate, evidence_spans, normalized_input)
+    if not pair or not _source_contrast_marker_is_bound(edge, pair, spans, normalized_input):
+        return nuclei, relations
+    texts = tuple(_source_contrast_clause_span(n, spans).raw_text for n in pair)
+    times = []
+    for n, text in zip(pair, texts):
+        if n.semantic_frame.time_scope == 'present' and re.match(r'^(?:今日|今)(?:は|も)?', text):
+            times.append('present')
+        elif (n.semantic_frame.time_scope == 'past' and re.match(r'^昨日(?:は|も)?', text)
+              or n.semantic_frame.time_scope == 'current_input' and re.match(r'^その時(?:は|も)?', text)
+              and re.search(r'(?:かった|疲れた|疲れなかった)$', text)):
+            times.append('past')
+        else:
+            return nuclei, relations
+    if set(times) != {'past', 'present'}:
+        return nuclei, relations
+    # Reclassify only the exact source-order derivation, optionally merged
+    # with one proximity conflict. Keep all lineage and every other edge.
+    # Reverse proximity remains for the independently proved u342 repair.
+    return candidate, tuple(edge if r == old else r for r in relations)
+
+
 def _source_owned_complete_contrast_pair(edge, nuclei, evidence_spans, normalized_input):
     """Prove the full two-clause SELF source independently of a selected Move."""
     if (edge.type != "contrast" or edge.retention != "required"
@@ -8116,7 +8220,9 @@ def _source_owned_complete_contrast_pair(edge, nuclei, evidence_spans, normalize
     spans = {s.span_id: s for s in evidence_spans}
     if any(n.source_span_ids[0] not in spans for n in pair) or normalized_input is None:
         return ()
-    left, right = (spans[n.source_span_ids[0]] for n in pair)
+    left, right = (_source_contrast_clause_span(n, spans) for n in pair)
+    if left is None or right is None:
+        return ()
     source = str(normalized_input.get("memo") or "")
     if (_top_level_text(source) != source or re.search(r"[「」『』?？!！…‥\r\n]", source)
         or any(s.source_field != "memo" or not 0 <= s.start_index < s.end_index <= len(source)
@@ -8144,6 +8250,39 @@ def _source_owned_complete_contrast_pair(edge, nuclei, evidence_spans, normalize
     return pair
 
 
+def _final_source_past_then_contrast_nuclei(nuclei, relations, evidence_spans, normalized_input):
+    """Read an explicit past predicate at 'that time', never resolve its date.
+
+    The existing full-clause proof already admits this time prefix. A bare
+    deictic phrase is not past evidence: require the finite past predicate and
+    the other, explicitly present, complete assertion in the same field.
+    """
+    contrasts = tuple(r for r in relations if r.type == "contrast" and r.retention == "required")
+    if len(contrasts) != 1:
+        return nuclei
+    edge = contrasts[0]
+    pair = _source_owned_complete_contrast_pair(edge, nuclei, evidence_spans, normalized_input)
+    if (not pair or {n.nucleus_id for n in nuclei if n.retention == "required"}
+            != {n.nucleus_id for n in pair}):
+        return nuclei
+    spans = {s.span_id: s for s in evidence_spans}
+    if not _source_contrast_marker_is_bound(edge, pair, spans, normalized_input):
+        return nuclei
+    for past, present in (pair, pair[::-1]):
+        raw = _source_contrast_clause_span(past, spans).raw_text
+        if (past.semantic_frame.time_scope != "current_input"
+            or present.semantic_frame.time_scope != "present"
+            or not re.match(r"^その時(?:は|も)?[、,]?", raw)
+            or not re.search(r"(?:かった|疲れた|疲れなかった)$", raw)
+            or not re.match(r"^(?:今日|今)(?:は|も)?[、,]?", _source_contrast_clause_span(present, spans).raw_text)):
+            continue
+        frame = replace(past.semantic_frame, time_scope="past", attribute_codes=tuple(
+            "time_scope:past" if code == "time_scope:current_input" else code
+            for code in past.semantic_frame.attribute_codes))
+        return tuple(replace(n, semantic_frame=frame) if n == past else n for n in nuclei)
+    return nuclei
+
+
 def _final_source_reverse_time_contrast_relations(nuclei, relations, evidence_spans, normalized_input):
     """Remove only a reverse proximity claim beside a proved present/past contrast."""
     required = tuple(r for r in relations if r.retention == "required")
@@ -8164,19 +8303,10 @@ def _final_source_reverse_time_contrast_relations(nuclei, relations, evidence_sp
         or set(reverse.source_span_ids) != set((*pair[0].source_span_ids, *pair[1].source_span_ids))):
         return relations
     spans = {s.span_id: s for s in evidence_spans}
-    markers = tuple(spans.get(ref.split(":", 1)[1]) for ref in contrast.source_relation_ids
-                    if ref.startswith("evidence_relation_marker:"))
-    if (len(markers) != 1 or markers[0] is None or markers[0].source_field != "memo"
-        or markers[0].span_id not in contrast.source_span_ids
-        or not _is_pure_relation_marker(markers[0])
-        or not _LEADING_CONTRAST_RE.search(_clean(markers[0].raw_text))
-        or str(normalized_input.get("memo") or "")[markers[0].start_index:markers[0].end_index]
-            != markers[0].raw_text
-        or not (spans[pair[0].source_span_ids[0]].end_index <= markers[0].start_index
-                < markers[0].end_index <= spans[pair[1].source_span_ids[0]].start_index)):
+    if not _source_contrast_marker_is_bound(contrast, pair, spans, normalized_input):
         return relations
-    if (not re.match(r"^(?:今日|今)(?:は|も)?[、,]?", spans[pair[0].source_span_ids[0]].raw_text)
-        or not re.match(r"^(?:昨日|その時)(?:は|も)?[、,]?", spans[pair[1].source_span_ids[0]].raw_text)):
+    if (not re.match(r"^(?:今日|今)(?:は|も)?[、,]?", _source_contrast_clause_span(pair[0], spans).raw_text)
+        or not re.match(r"^(?:昨日|その時)(?:は|も)?[、,]?", _source_contrast_clause_span(pair[1], spans).raw_text)):
         return relations
     # The source asserts contrast, not a blocked attempt from yesterday into
     # today. Preserve both edges' IDs, endpoints and observer lineage.
@@ -8205,6 +8335,7 @@ def source_owned_separate_time_contrast_ids(plan, resolver):
         or reception is None):
         return frozenset()
     result = set()
+    spans = {s.span_id: s for s in resolver.resolve_many(resolver.span_ids)}
     time_prefix = {"past": r"^(?:昨日|その時)(?:は|も)?[、,]?",
                    "present": r"^(?:今日|今)(?:は|も)?[、,]?"}
     for move in reception.moves:
@@ -8212,7 +8343,7 @@ def source_owned_separate_time_contrast_ids(plan, resolver):
             move, plan.nuclei, plan.relations, resolver)
         if (not pair or {n.semantic_frame.time_scope for n in pair} != {"past", "present"}
             or any(not re.match(time_prefix[n.semantic_frame.time_scope],
-                resolver.resolve(n.source_span_ids[0]).raw_text) for n in pair)):
+                _source_contrast_clause_span(n, spans).raw_text) for n in pair)):
             continue
         result.update(r.relation_id for r in plan.relations
                       if r.retention == "required" and r.type == "contrast"
@@ -17508,6 +17639,7 @@ def project_final_stage1_grounded_observation_plan(
     _legacy_relief_self_recipient: bool = True,
     _legacy_past_self_unknown: bool = True,
     _legacy_reverse_time_contrast: bool = True,
+    _legacy_time_contrast_source: bool = True,
 ) -> GroundedObservationPlan:
     """Project final Stage-1 typed owners without changing the active plan.
 
@@ -17582,6 +17714,11 @@ def project_final_stage1_grounded_observation_plan(
         nuclei,
         evidence_spans,
     )
+    if not _legacy_time_contrast_source:
+        nuclei, relations = _final_source_inline_time_contrast(
+            nuclei, relations, evidence_spans, normalized_input)
+        nuclei = _final_source_past_then_contrast_nuclei(
+            nuclei, relations, evidence_spans, normalized_input)
     if not _legacy_reverse_time_contrast:
         relations = _final_source_reverse_time_contrast_relations(
             nuclei, relations, evidence_spans, normalized_input)
@@ -19291,6 +19428,7 @@ def build_final_stage1_grounded_observation_plan(
     _legacy_relief_self_recipient: bool = True,
     _legacy_past_self_unknown: bool = True,
     _legacy_reverse_time_contrast: bool = True,
+    _legacy_time_contrast_source: bool = True,
 ) -> GroundedObservationPlan:
     """Build the registered-disabled final Stage-1 typed grounding plan.
 
@@ -19368,6 +19506,7 @@ def build_final_stage1_grounded_observation_plan(
         _legacy_relief_self_recipient=_legacy_relief_self_recipient,
         _legacy_past_self_unknown=_legacy_past_self_unknown,
         _legacy_reverse_time_contrast=_legacy_reverse_time_contrast,
+        _legacy_time_contrast_source=_legacy_time_contrast_source,
     )
 
 
